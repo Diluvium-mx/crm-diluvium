@@ -85,6 +85,8 @@ Reglas duras:
 - Idempotencia obligatoria: `messages.provider_message_id` con índice único. Meta reenvía.
 - `web` y `worker` comparten repo y variables de entorno, se despliegan desde la misma rama.
 - Entornos: `production` y `staging` como environments de Railway, cada uno con su Postgres.
+  `staging` se crea en la Fase 1, junto con auth/org/contactos, como paso previo a validar la
+  fase ahí antes que en `production` (nunca se prueba una fase nueva directo en producción).
 
 Variables de entorno mínimas:
 ```
@@ -99,11 +101,23 @@ WHATSAPP_ACCESS_TOKEN, WHATSAPP_VERIFY_TOKEN, WHATSAPP_APP_SECRET
 
 Multi-tenant desde el día uno: **toda tabla lleva `organization_id`**. Es barato hoy e imposible después.
 
-```
-organizations        id, name, timezone, created_at
-users                id, email, password_hash, name, avatar_url
-memberships          id, org_id, user_id, role(owner|admin|agent), is_active
+**Auth/org (Fase 1, decisión tomada):** en vez de tablas `organizations/users/memberships`
+hechas a mano, se usa el schema oficial del plugin `organization` de Better Auth, generado con
+`npx @better-auth/cli generate` — resuelve invitaciones, roles personalizables y organización
+activa en sesión sin reinventarlos. Equivalencia con este documento:
 
+| Este documento | Tabla real (Better Auth) |
+|---|---|
+| `organizations` | `organization` |
+| `users` | `user` (password hash vive en `account`, provider `credential`) |
+| `memberships` (role owner\|admin\|agent) | `member` (roles personalizados vía `createAccessControl`) |
+| — (no existía) | `session.activeOrganizationId`, `invitation` |
+
+`memberships.is_active` no existe en el schema de Better Auth: en v1 "desactivar" un miembro es
+borrar su fila de `member`, no un booleano. En v1 todo miembro (owner/admin/agent) ve y edita
+todos los contactos de su organización — `owner_user_id` es informativo, no restringe acceso.
+
+```
 contacts             id, org_id, name, phone_e164 (unique por org), email,
                      custom_fields jsonb, owner_user_id, source, created_at
 tags                 id, org_id, name, color
