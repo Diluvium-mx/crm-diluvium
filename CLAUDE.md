@@ -84,7 +84,13 @@ Reglas duras:
   Todo el procesamiento ocurre en el worker. Si tarda, Meta reintenta y se duplican mensajes.
 - Idempotencia obligatoria: `messages.provider_message_id` con índice único. Meta reenvía.
 - `web` y `worker` comparten repo y variables de entorno, se despliegan desde la misma rama.
-- Entornos: `production` y `staging` como environments de Railway, cada uno con su Postgres.
+- Entornos: en la Fase 1 solo existe `production` como environment de Railway — sin datos
+  reales todavía, así que validar ahí directamente no arriesga nada. **Antes de iniciar la
+  Fase 2** (entran contactos reales y el canal de WhatsApp) se crea obligatoriamente un
+  environment `staging` con su propio Postgres. A partir de ese punto, ninguna migración,
+  cambio de webhook ni trabajo del worker toca `production` sin haberse validado antes en
+  `staging`. Antes de importar cualquier dato real también quedan definidos los
+  procedimientos de respaldo y restauración (backup/restore) de la base de datos.
 
 Variables de entorno mínimas:
 ```
@@ -99,11 +105,23 @@ WHATSAPP_ACCESS_TOKEN, WHATSAPP_VERIFY_TOKEN, WHATSAPP_APP_SECRET
 
 Multi-tenant desde el día uno: **toda tabla lleva `organization_id`**. Es barato hoy e imposible después.
 
-```
-organizations        id, name, timezone, created_at
-users                id, email, password_hash, name, avatar_url
-memberships          id, org_id, user_id, role(owner|admin|agent), is_active
+**Auth/org (Fase 1, decisión tomada):** en vez de tablas `organizations/users/memberships`
+hechas a mano, se usa el schema oficial del plugin `organization` de Better Auth, generado con
+`npx @better-auth/cli generate` — resuelve invitaciones, roles personalizables y organización
+activa en sesión sin reinventarlos. Equivalencia con este documento:
 
+| Este documento | Tabla real (Better Auth) |
+|---|---|
+| `organizations` | `organization` |
+| `users` | `user` (password hash vive en `account`, provider `credential`) |
+| `memberships` (role owner\|admin\|agent) | `member` (roles personalizados vía `createAccessControl`) |
+| — (no existía) | `session.activeOrganizationId`, `invitation` |
+
+`memberships.is_active` no existe en el schema de Better Auth: en v1 "desactivar" un miembro es
+borrar su fila de `member`, no un booleano. En v1 todo miembro (owner/admin/agent) ve y edita
+todos los contactos de su organización — `owner_user_id` es informativo, no restringe acceso.
+
+```
 contacts             id, org_id, name, phone_e164 (unique por org), email,
                      custom_fields jsonb, owner_user_id, source, created_at
 tags                 id, org_id, name, color
@@ -189,6 +207,9 @@ Reglas de UI:
 - Migraciones: nunca editar una migración ya aplicada; siempre una nueva.
 - Tests: Vitest para lógica pura (normalización de teléfono, parser de webhook, cálculo de posición,
   ventana 24 h). Sin tests de UI en v1.
+- `npm test` corre con `--passWithNoTests` **solo temporalmente**, mientras el repo no tiene
+  ningún test todavía. Quitar esa bandera de `package.json` en cuanto exista el primer test real
+  (el de `normalizePhone()` de la Fase 1) — a partir de ahí el gate debe fallar si no hay tests.
 
 ---
 
