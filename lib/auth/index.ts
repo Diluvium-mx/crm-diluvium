@@ -32,18 +32,23 @@ export const auth = betterAuth({
     cookieCache: { enabled: true, maxAge: 60 },
   },
 
-  // Capa PRINCIPAL contra fuerza bruta: límite por email en lib/auth/email-lockout.ts
-  // (5 fallos/300s por cuenta). Este bloque es la capa SECUNDARIA por IP — se
-  // guarda en Postgres (no Redis) y se suaviza solo en /sign-in/email
-  // (30/300s) para que sea el email, no el IP compartido, el que se dispare
-  // primero en un ataque a una cuenta. Sin este customRule, la regla especial
-  // de fábrica (3/10s, node_modules/better-auth/dist/api/rate-limiter/index.mjs:
-  // getDefaultSpecialRules) corre ANTES que cualquier hook y podía tumbar a
-  // todos los usuarios por un IP sin resolver — el hallazgo que cerramos aquí.
+  // El límite de IP de fábrica (3/10s, node_modules/better-auth/dist/api/
+  // rate-limiter/index.mjs: getDefaultSpecialRules) corre a nivel de router,
+  // ANTES que cualquier hook — sin trustedProxies configurado para Railway,
+  // colapsa en el bucket compartido "no-trusted-ip" y bloquea a todos los
+  // usuarios antes de que el candado por email (lib/auth/email-lockout.ts)
+  // llegue a ejecutarse. Suavizar esa regla no alcanza: sigue siendo un
+  // segundo punto de bloqueo global mientras Railway no entregue una IP de
+  // cliente confiable. Se desactiva por completo en esta ruta —
+  // `false` en customRules apaga la regla para ese path
+  // (node_modules/@better-auth/core/src/types/init-options.ts:262-278) — y
+  // el candado por email queda como ÚNICA capa de rate limiting en Fase 1.
+  // `storage: "database"` sigue activo para el resto de rutas (Postgres, no
+  // Redis) y es la misma tabla `rateLimit` que usa el candado por email.
   rateLimit: {
     storage: "database",
     customRules: {
-      "/sign-in/email": { window: 300, max: 30 },
+      "/sign-in/email": false,
     },
   },
 
