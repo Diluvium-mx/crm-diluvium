@@ -31,11 +31,18 @@ infinito y varias oportunidades a lo largo del tiempo sin duplicarse.
 ### v1 (lo único que existe hasta que funcione completo)
 1. Auth + organización + roles (owner / admin / agente)
 2. Contactos: CRUD, importación CSV, etiquetas, búsqueda, campos personalizados
-3. Canal WhatsApp (Cloud API): recibir, enviar, media, estados de entrega, ventana 24 h, plantillas
+   flexibles (gestionables desde la UI por admin/owner; arranca vacío)
+3. [Fase 2] Canal WhatsApp (Cloud API): recibir, enviar, media, estados de entrega,
+   ventana 24 h, plantillas. Requiere aprobación de Meta; no es parte del núcleo v1.
 4. Bandeja unificada + vista tablero (embudo kanban) intercambiables
-5. Asignación de conversaciones (manual + round-robin)
+5. Bandeja unificada con soporte para repartir conversaciones entre agentes
+   (capacidad presente en el modelo de datos; sin asignación automática ni
+   round-robin activos en v1). Ningún contacto tiene dueño fijo: los dos
+   agentes ven todos los contactos, siempre.
 6. Notas, tareas con recordatorio y línea de tiempo por contacto
 7. 4 reportes: conversaciones nuevas, tiempo de primera respuesta, conversión por etapa, ganadas/perdidas
+8. Fragmentos (snippets a nivel organización, con variables tipo {{nombre}}):
+   respuestas reutilizables. Separados de las plantillas de WhatsApp (Fase 2).
 
 ### v2 (no tocar antes de terminar v1)
 Automatizaciones visuales, Instagram/Messenger, email, SMS, difusiones masivas, calendario y citas,
@@ -119,13 +126,15 @@ activa en sesión sin reinventarlos. Equivalencia con este documento:
 
 `memberships.is_active` no existe en el schema de Better Auth: en v1 "desactivar" un miembro es
 borrar su fila de `member`, no un booleano. En v1 todo miembro (owner/admin/agent) ve y edita
-todos los contactos de su organización — `owner_user_id` es informativo, no restringe acceso.
+todos los contactos de su organización.
 
 ```
 contacts             id, org_id, name, phone_e164 (unique por org), email,
-                     custom_fields jsonb, owner_user_id, source, created_at
+                     custom_fields jsonb, ghl_contact_id (nullable, oculto),
+                     source, created_at
 tags                 id, org_id, name, color
 contact_tags         contact_id, tag_id
+snippets             id, org_id, name, body, variables jsonb   -- Fragmentos: {{nombre}} etc.
 
 pipelines            id, org_id, name, is_default
 stages               id, pipeline_id, name, position, color, is_won, is_lost
@@ -160,6 +169,11 @@ Detalles que importan:
   campo de texto libre** cuando expiró y obliga a elegir plantilla. Esto no es opcional.
 - `first_response_seconds` se calcula una sola vez, al primer mensaje saliente humano. Es la métrica
   reina del CRM conversacional.
+- `assignee_user_id` en `conversations` y `opportunities` existe para repartir
+  carga de chats entre agentes, no para restringir visibilidad. Todos los agentes
+  ven todo. En v1 la columna puede quedar en null; no hay round-robin activo.
+  `ghl_contact_id` es solo ancla de identidad para re-emparejar al importar/
+  re-sincronizar con GHL; no implica propiedad.
 - Índices obligatorios: `messages(conversation_id, created_at desc)`,
   `conversations(org_id, last_message_at desc)`, `opportunities(stage_id, position)`,
   `contacts(org_id, phone_e164)`.
@@ -281,3 +295,12 @@ Regla: **no se empieza una fase sin que la anterior esté desplegada en Railway 
 4. **Multi-tenant tardío.** Agregar `organization_id` después obliga a reescribir todas las consultas.
 5. **Alcance.** Cada módulo de GHL que se agregue antes de terminar la v1 retrasa el día en que
    el equipo empieza a usar el CRM de verdad.
+6. **Deudas P0 antes de exponer datos reales (entran al cerrar Fase 1, antes de Fase 2):**
+   (a) rate limiter por IP en `/sign-in/email` con `trustedProxies` verificado contra
+   headers reales de Railway (`x-real-ip` roto tras Fastly; usar `x-forwarded-for`),
+   con tests de concurrencia y carga — en Fase 1 solo queda el candado por email
+   (5 fallos/300 s, Postgres, reserva atómica); (b) staging obligatorio antes de
+   Fase 2; (c) respaldos de BD definidos antes de importar datos reales;
+   (d) evaluar Zernio como capa de API oficial de WhatsApp (precio para el volumen,
+   si Coexistence cubre envío de .XML). Principio: no sobre-blindar Fase 1 con datos
+   falsos y 2 usuarios.
