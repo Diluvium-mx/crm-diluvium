@@ -84,9 +84,8 @@ Reglas duras:
   Todo el procesamiento ocurre en el worker. Si tarda, Meta reintenta y se duplican mensajes.
 - Idempotencia obligatoria: `messages.provider_message_id` con índice único. Meta reenvía.
 - `web` y `worker` comparten repo y variables de entorno, se despliegan desde la misma rama.
-- Entornos: `production` y `staging` como environments de Railway, cada uno con su Postgres.
-  `staging` se crea en la Fase 1, junto con auth/org/contactos, como paso previo a validar la
-  fase ahí antes que en `production` (nunca se prueba una fase nueva directo en producción).
+- Entornos: solo `production` como environment de Railway. Se decidió no crear `staging`;
+  cada fase se valida directo ahí, con una persona real, antes de empezar la siguiente.
 
 Variables de entorno mínimas:
 ```
