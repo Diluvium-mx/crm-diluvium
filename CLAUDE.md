@@ -84,8 +84,13 @@ Reglas duras:
   Todo el procesamiento ocurre en el worker. Si tarda, Meta reintenta y se duplican mensajes.
 - Idempotencia obligatoria: `messages.provider_message_id` con índice único. Meta reenvía.
 - `web` y `worker` comparten repo y variables de entorno, se despliegan desde la misma rama.
-- Entornos: solo `production` como environment de Railway. Se decidió no crear `staging`;
-  cada fase se valida directo ahí, con una persona real, antes de empezar la siguiente.
+- Entornos: en la Fase 1 solo existe `production` como environment de Railway — sin datos
+  reales todavía, así que validar ahí directamente no arriesga nada. **Antes de iniciar la
+  Fase 2** (entran contactos reales y el canal de WhatsApp) se crea obligatoriamente un
+  environment `staging` con su propio Postgres. A partir de ese punto, ninguna migración,
+  cambio de webhook ni trabajo del worker toca `production` sin haberse validado antes en
+  `staging`. Antes de importar cualquier dato real también quedan definidos los
+  procedimientos de respaldo y restauración (backup/restore) de la base de datos.
 
 Variables de entorno mínimas:
 ```
@@ -202,6 +207,9 @@ Reglas de UI:
 - Migraciones: nunca editar una migración ya aplicada; siempre una nueva.
 - Tests: Vitest para lógica pura (normalización de teléfono, parser de webhook, cálculo de posición,
   ventana 24 h). Sin tests de UI en v1.
+- `npm test` corre con `--passWithNoTests` **solo temporalmente**, mientras el repo no tiene
+  ningún test todavía. Quitar esa bandera de `package.json` en cuanto exista el primer test real
+  (el de `normalizePhone()` de la Fase 1) — a partir de ahí el gate debe fallar si no hay tests.
 
 ---
 
