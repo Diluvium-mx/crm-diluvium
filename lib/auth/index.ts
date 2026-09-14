@@ -67,8 +67,15 @@ export const auth = betterAuth({
   trustedOrigins: [process.env.APP_URL],
 
   advanced: {
+    // x-real-ip está roto en Railway detrás de su CDN (Fastly): cae al IP del
+    // borde, no del cliente (confirmado por soporte de Railway). x-forwarded-for
+    // es su recomendación oficial — coincide con el default de better-auth, se
+    // deja explícito para que quede documentada la razón. Sin trustedProxies,
+    // better-auth exige un solo valor en el header o resuelve null; Railway no
+    // publica un CIDR estable de sus proxies para configurar trustedProxies, así
+    // que ese residual queda abierto — revisar con tráfico real en Fase 2.
     ipAddress: {
-      ipAddressHeaders: ["x-real-ip"],  // Railway entrega la IP real aquí
+      ipAddressHeaders: ["x-forwarded-for"],
     },
     cookiePrefix: "diluvium",
     useSecureCookies: isProd,
