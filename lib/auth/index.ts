@@ -49,6 +49,7 @@ export const auth = betterAuth({
   session: {
     expiresIn: 60 * 60 * 24 * 7,   // 7 días
     updateAge: 60 * 60 * 24,       // refresco diario
+    storeSessionInDatabase: true,  // sesión durable en Postgres, no solo Redis
     cookieCache: { enabled: true, maxAge: 60 },
   },
 
@@ -66,6 +67,9 @@ export const auth = betterAuth({
   trustedOrigins: [process.env.APP_URL],
 
   advanced: {
+    ipAddress: {
+      ipAddressHeaders: ["x-real-ip"],  // Railway entrega la IP real aquí
+    },
     cookiePrefix: "diluvium",
     useSecureCookies: isProd,
     defaultCookieAttributes: { sameSite: "lax", httpOnly: true },
