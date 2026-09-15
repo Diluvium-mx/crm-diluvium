@@ -1,11 +1,13 @@
-import { STAGES, type Contact, type Stage } from "../_data/types";
+import { STAGES, STAGE_LABELS, type Contact, type Stage } from "../_data/types";
 
 export function ContactDetailPanel({
   contact,
+  isSaving,
   onClose,
   onStageChange,
 }: {
   contact: Contact;
+  isSaving: boolean;
   onClose: () => void;
   onStageChange: (stage: Stage) => void;
 }) {
@@ -33,15 +35,11 @@ export function ContactDetailPanel({
         <dl className="space-y-3 text-sm">
           <div>
             <dt className="text-xs text-muted-foreground">Teléfono</dt>
-            <dd>{contact.phone}</dd>
+            <dd>{contact.phoneE164}</dd>
           </div>
           <div>
             <dt className="text-xs text-muted-foreground">Correo</dt>
-            <dd>{contact.email}</dd>
-          </div>
-          <div>
-            <dt className="text-xs text-muted-foreground">Empresa</dt>
-            <dd>{contact.company}</dd>
+            <dd>{contact.email ?? "—"}</dd>
           </div>
         </dl>
 
@@ -52,12 +50,13 @@ export function ContactDetailPanel({
           <select
             id="contact-stage"
             value={contact.stage}
+            disabled={isSaving}
             onChange={(event) => onStageChange(event.target.value as Stage)}
-            className="w-full rounded border px-3 py-2 text-sm"
+            className="w-full rounded border px-3 py-2 text-sm disabled:opacity-60"
           >
             {STAGES.map((stage) => (
               <option key={stage} value={stage}>
-                {stage}
+                {STAGE_LABELS[stage]}
               </option>
             ))}
           </select>
