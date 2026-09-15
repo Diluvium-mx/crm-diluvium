@@ -1,8 +1,10 @@
 import { betterAuth } from "better-auth";
 import { drizzleAdapter } from "better-auth/adapters/drizzle";
 import { nextCookies } from "better-auth/next-js";
+import { organization } from "better-auth/plugins/organization";
 import { db } from "@/lib/db";
 import { emailLockoutAfter, emailLockoutBefore } from "@/lib/auth/email-lockout";
+import { ac, admin, agent, owner } from "@/lib/auth/permissions";
 
 if (!process.env.APP_URL) {
   throw new Error("APP_URL is not set");
@@ -65,5 +67,15 @@ export const auth = betterAuth({
     after: emailLockoutAfter,
   },
 
-  plugins: [nextCookies()],        // el plugin organization entra en el PR 1.2
+  plugins: [
+    // Roles owner/admin/agent y permisos por recurso vienen de
+    // lib/auth/permissions.ts (createAccessControl). creatorRole por
+    // defecto es "owner" (node_modules/better-auth/dist/plugins/
+    // organization/types.d.mts:41), consistente con CLAUDE.md §5.
+    // sendInvitationEmail queda sin configurar: no hay proveedor de correo
+    // en el repo todavía, así que por ahora el link de invitación
+    // (/accept-invitation?id=<invitation.id>) se comparte a mano.
+    organization({ ac, roles: { owner, admin, agent } }),
+    nextCookies(),
+  ],
 });
