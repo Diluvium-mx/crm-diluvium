@@ -15,6 +15,13 @@
       "when": 1789427676936,
       "tag": "0001_previous_toad_men",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1789508388501,
+      "tag": "0002_naive_hex",
+      "breakpoints": true
     }
   ]
 }
