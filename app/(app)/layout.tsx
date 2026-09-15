@@ -6,7 +6,7 @@ import { SignOutButton } from "./_components/sign-out-button";
 
 const NAV_ITEMS = [
   { label: "Bandeja / Embudo", href: "/dashboard" },
-  { label: "Contactos", href: "/contacts" },
+  { label: "Contactos", href: "/contactos" },
   { label: "Fragmentos", href: "/snippets" },
   { label: "Reportes", href: "/reports" },
 ];
@@ -47,7 +47,7 @@ export default async function AppLayout({
           </div>
         </header>
 
-        <main className="flex flex-1 items-center justify-center bg-background text-muted-foreground">
+        <main className="flex flex-1 flex-col overflow-hidden bg-background">
           {children}
         </main>
       </div>
