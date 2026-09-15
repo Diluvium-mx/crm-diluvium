@@ -1,4 +1,4 @@
-import { STAGES, STAGE_LABELS, type Contact, type Stage } from "../_data/types";
+import { STAGES, STAGE_LABELS, getContactFullName, type Contact, type Stage } from "../_data/types";
 
 export function ContactDetailPanel({
   contact,
@@ -22,7 +22,7 @@ export function ContactDetailPanel({
 
       <aside className="flex h-full w-full max-w-sm flex-col gap-5 bg-background p-5 shadow-xl">
         <div className="flex items-start justify-between">
-          <h2 className="text-lg font-semibold">{contact.name}</h2>
+          <h2 className="text-lg font-semibold">{getContactFullName(contact)}</h2>
           <button
             type="button"
             onClick={onClose}
@@ -35,7 +35,7 @@ export function ContactDetailPanel({
         <dl className="space-y-3 text-sm">
           <div>
             <dt className="text-xs text-muted-foreground">Teléfono</dt>
-            <dd>{contact.phoneE164}</dd>
+            <dd>{contact.phoneE164 ?? "—"}</dd>
           </div>
           <div>
             <dt className="text-xs text-muted-foreground">Correo</dt>

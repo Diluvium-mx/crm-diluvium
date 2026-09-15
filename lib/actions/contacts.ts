@@ -71,8 +71,9 @@ export async function listContacts() {
 }
 
 const createContactSchema = z.object({
-  name: z.string().trim().min(1, "El nombre es obligatorio."),
-  phone: z.string().trim().min(1, "El teléfono es obligatorio."),
+  firstName: z.string().trim().min(1, "El nombre es obligatorio."),
+  lastName: z.string().trim().optional().or(z.literal("")),
+  phone: z.string().trim().optional().or(z.literal("")),
   email: z.email("Email inválido.").optional().or(z.literal("")),
   stage: z.enum(contactStageEnum.enumValues).optional(),
 });
@@ -82,14 +83,15 @@ export type CreateContactInput = z.infer<typeof createContactSchema>;
 export async function createContact(input: CreateContactInput) {
   const organizationId = await requireActiveOrganizationId();
   const parsed = createContactSchema.parse(input);
-  const phoneE164 = normalizePhone(parsed.phone);
+  const phoneE164 = parsed.phone ? normalizePhone(parsed.phone) : null;
 
   const [created] = await db
     .insert(contacts)
     .values({
       id: crypto.randomUUID(),
       organizationId,
-      name: parsed.name,
+      firstName: parsed.firstName,
+      lastName: parsed.lastName || null,
       phoneE164,
       email: parsed.email || null,
       stage: parsed.stage ?? "inbox",

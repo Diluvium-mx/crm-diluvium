@@ -89,12 +89,12 @@ function generateFakeContact(
 ) {
   const firstName = pick(FIRST_NAMES);
   const lastName = pick(LAST_NAMES);
-  const name = `${firstName} ${lastName}`;
   const email = `${slugify(firstName)}.${slugify(lastName)}${Math.floor(Math.random() * 1000)}@${pick(EMAIL_DOMAINS)}`;
 
   return {
     id: crypto.randomUUID(),
-    name,
+    firstName,
+    lastName,
     phoneE164: randomMexicanPhone(usedPhones),
     email,
     ghlContactId: null,

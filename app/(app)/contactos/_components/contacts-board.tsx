@@ -1,7 +1,7 @@
 "use client";
 
 import { useMemo, useState, useTransition } from "react";
-import { STAGES, STAGE_LABELS, type Contact, type Stage } from "../_data/types";
+import { STAGES, STAGE_LABELS, getContactFullName, type Contact, type Stage } from "../_data/types";
 import { updateContactStage } from "@/lib/actions/contacts";
 import { ContactCard } from "./contact-card";
 import { ContactDetailPanel } from "./contact-detail-panel";
@@ -31,8 +31,8 @@ export function ContactsBoard({ initialContacts }: { initialContacts: Contact[] 
     const digitsOnlySearch = normalizedSearch.replace(/\s+/g, "");
 
     return contacts.filter((contact) => {
-      const nameMatches = normalizeForSearch(contact.name).includes(normalizedSearch);
-      const phoneMatches = contact.phoneE164.replace(/\s+/g, "").includes(digitsOnlySearch);
+      const nameMatches = normalizeForSearch(getContactFullName(contact)).includes(normalizedSearch);
+      const phoneMatches = (contact.phoneE164 ?? "").replace(/\s+/g, "").includes(digitsOnlySearch);
       return nameMatches || phoneMatches;
     });
   }, [contacts, normalizedSearch]);

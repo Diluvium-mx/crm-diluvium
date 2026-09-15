@@ -19,3 +19,7 @@ export const STAGE_LABELS: Record<Stage, string> = {
 };
 
 export const STAGES = Object.keys(STAGE_LABELS) as Stage[];
+
+export function getContactFullName(contact: Pick<Contact, "firstName" | "lastName">): string {
+  return contact.lastName ? `${contact.firstName} ${contact.lastName}` : contact.firstName;
+}
