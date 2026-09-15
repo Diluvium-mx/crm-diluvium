@@ -1,8 +1,8 @@
 "use client";
 
-import { useMemo, useState } from "react";
-import { STAGES, type Contact, type Stage } from "../_data/types";
-import { generateFakeContacts } from "../_data/fake-contacts";
+import { useMemo, useState, useTransition } from "react";
+import { STAGES, STAGE_LABELS, type Contact, type Stage } from "../_data/types";
+import { updateContactStage } from "@/lib/actions/contacts";
 import { ContactCard } from "./contact-card";
 import { ContactDetailPanel } from "./contact-detail-panel";
 
@@ -14,10 +14,12 @@ function normalizeForSearch(value: string): string {
   return stripDiacritics(value).toLowerCase();
 }
 
-export function ContactsBoard() {
-  const [contacts, setContacts] = useState<Contact[]>(() => generateFakeContacts());
+export function ContactsBoard({ initialContacts }: { initialContacts: Contact[] }) {
+  const [contacts, setContacts] = useState<Contact[]>(initialContacts);
   const [search, setSearch] = useState("");
   const [selectedContactId, setSelectedContactId] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [isPending, startTransition] = useTransition();
 
   const normalizedSearch = normalizeForSearch(search.trim());
 
@@ -30,7 +32,7 @@ export function ContactsBoard() {
 
     return contacts.filter((contact) => {
       const nameMatches = normalizeForSearch(contact.name).includes(normalizedSearch);
-      const phoneMatches = contact.phone.replace(/\s+/g, "").includes(digitsOnlySearch);
+      const phoneMatches = contact.phoneE164.replace(/\s+/g, "").includes(digitsOnlySearch);
       return nameMatches || phoneMatches;
     });
   }, [contacts, normalizedSearch]);
@@ -46,13 +48,27 @@ export function ContactsBoard() {
   const selectedContact = contacts.find((contact) => contact.id === selectedContactId) ?? null;
 
   function handleStageChange(contactId: string, nextStage: Stage) {
+    const previousContacts = contacts;
+    setError(null);
+
+    // Optimista: el contacto se refleja de inmediato hasta arriba de la
+    // nueva columna; si la Server Action falla, se revierte.
     setContacts((current) => {
       const target = current.find((contact) => contact.id === contactId);
-      if (!target) {
+      if (!target || target.stage === nextStage) {
         return current;
       }
       const rest = current.filter((contact) => contact.id !== contactId);
       return [{ ...target, stage: nextStage }, ...rest];
+    });
+
+    startTransition(async () => {
+      try {
+        await updateContactStage({ contactId, stage: nextStage });
+      } catch {
+        setContacts(previousContacts);
+        setError("No se pudo actualizar la etapa. Intenta de nuevo.");
+      }
     });
   }
 
@@ -69,6 +85,8 @@ export function ContactsBoard() {
         />
       </div>
 
+      {error && <p className="text-sm text-brand-orange">{error}</p>}
+
       <div className="flex flex-1 gap-4 overflow-x-auto pb-2">
         {STAGES.map((stage) => {
           const stageContacts = columns.get(stage) ?? [];
@@ -79,7 +97,7 @@ export function ContactsBoard() {
               className="flex w-72 shrink-0 flex-col rounded-lg border bg-muted/30"
             >
               <div className="flex items-center justify-between rounded-t-lg bg-brand-navy px-3 py-2 text-brand-white">
-                <span className="text-sm font-semibold">{stage}</span>
+                <span className="text-sm font-semibold">{STAGE_LABELS[stage]}</span>
                 <span className="rounded-full bg-white/20 px-2 py-0.5 text-xs">
                   {stageContacts.length}
                 </span>
@@ -105,6 +123,7 @@ export function ContactsBoard() {
       {selectedContact && (
         <ContactDetailPanel
           contact={selectedContact}
+          isSaving={isPending}
           onClose={() => setSelectedContactId(null)}
           onStageChange={(nextStage) => handleStageChange(selectedContact.id, nextStage)}
         />
