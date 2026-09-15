@@ -16,16 +16,20 @@ export default function SignInPage() {
     setError(null);
     setIsSubmitting(true);
 
-    const { error: signInError } = await signIn.email({ email, password });
+    try {
+      const { error: signInError } = await signIn.email({ email, password });
 
-    setIsSubmitting(false);
+      if (signInError) {
+        setError(signInError.message ?? "No se pudo iniciar sesión.");
+        return;
+      }
 
-    if (signInError) {
-      setError(signInError.message ?? "No se pudo iniciar sesión.");
-      return;
+      router.push("/dashboard");
+    } catch {
+      setError("No se pudo conectar. Revisa tu conexión e intenta de nuevo.");
+    } finally {
+      setIsSubmitting(false);
     }
-
-    router.push("/dashboard");
   }
 
   return (
