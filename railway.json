@@ -1,6 +1,6 @@
 {
   "$schema": "https://railway.app/railway.schema.json",
   "deploy": {
-    "startCommand": "npx drizzle-kit migrate && next start"
+    "startCommand": "npx drizzle-kit migrate && npx tsx scripts/seed-org.ts && next start"
   }
 }
