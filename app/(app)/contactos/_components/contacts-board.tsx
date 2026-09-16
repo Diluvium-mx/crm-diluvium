@@ -5,6 +5,7 @@ import { STAGES, STAGE_LABELS, getContactFullName, type Contact, type Stage } fr
 import { updateContactStage } from "@/lib/actions/contacts";
 import { ContactCard } from "./contact-card";
 import { ContactDetailPanel } from "./contact-detail-panel";
+import { ImportContactsButton } from "./import-contacts-button";
 
 function stripDiacritics(value: string): string {
   return value.normalize("NFD").replace(/[̀-ͯ]/g, "");
@@ -16,10 +17,25 @@ function normalizeForSearch(value: string): string {
 
 export function ContactsBoard({ initialContacts }: { initialContacts: Contact[] }) {
   const [contacts, setContacts] = useState<Contact[]>(initialContacts);
+  const [syncedInitialContacts, setSyncedInitialContacts] = useState(initialContacts);
   const [search, setSearch] = useState("");
   const [selectedContactId, setSelectedContactId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [isPending, startTransition] = useTransition();
+
+  // La importación CSV llama router.refresh() y pasa una nueva referencia de
+  // initialContacts: re-sincroniza el estado local con lo que acaba de
+  // confirmar el servidor. Ajuste de estado durante el render (patrón
+  // recomendado por React para "resetear estado cuando cambia una prop",
+  // https://react.dev/learn/you-might-not-need-an-effect) en vez de un
+  // useEffect, que aquí dispara un render en cascada
+  // (react-hooks/set-state-in-effect). No afecta a handleStageChange (esa
+  // Server Action no dispara un refresh), así que el update optimista de
+  // abajo sigue funcionando igual.
+  if (initialContacts !== syncedInitialContacts) {
+    setSyncedInitialContacts(initialContacts);
+    setContacts(initialContacts);
+  }
 
   const normalizedSearch = normalizeForSearch(search.trim());
 
@@ -76,13 +92,16 @@ export function ContactsBoard({ initialContacts }: { initialContacts: Contact[] 
     <div className="flex flex-1 flex-col gap-4 p-4">
       <div className="flex items-center justify-between gap-4">
         <h1 className="text-lg font-semibold">Contactos</h1>
-        <input
-          type="search"
-          placeholder="Buscar por nombre o teléfono..."
-          value={search}
-          onChange={(event) => setSearch(event.target.value)}
-          className="w-72 rounded border px-3 py-2 text-sm"
-        />
+        <div className="flex items-center gap-3">
+          <input
+            type="search"
+            placeholder="Buscar por nombre o teléfono..."
+            value={search}
+            onChange={(event) => setSearch(event.target.value)}
+            className="w-72 rounded border px-3 py-2 text-sm"
+          />
+          <ImportContactsButton />
+        </div>
       </div>
 
       {error && <p className="text-sm text-brand-orange">{error}</p>}
