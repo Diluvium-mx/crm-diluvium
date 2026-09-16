@@ -9,6 +9,7 @@ import { db } from "@/lib/db";
 import { member } from "@/lib/db/schema/auth";
 import { contacts, contactStageEnum } from "@/lib/db/schema/contacts";
 import { normalizePhone } from "@/lib/phone";
+import { parseGhlContactsCsv } from "@/lib/import/ghl-contacts-csv";
 
 // Nunca confiar en un organization_id que venga del cliente (CLAUDE.md §7),
 // ni tampoco en session.activeOrganizationId a secas: better-auth no lo
@@ -132,4 +133,83 @@ export async function updateContactStage(input: UpdateContactStageInput) {
   revalidatePath("/contactos");
 
   return updated;
+}
+
+export interface ImportContactsFromCsvResult {
+  imported: number;
+  updated: number;
+  invalidPhones: number;
+  skipped: number;
+}
+
+// Upsert por (organization_id, ghl_contact_id): re-importar el mismo CSV no
+// duplica (índice único parcial contacts_org_ghl_contact_id_uidx,
+// lib/db/schema/contacts.ts). `stage` nunca se toca en el branch de
+// actualización — re-sincronizar desde GHL no debe resetear el avance en el
+// kanban de un contacto que el equipo ya movió de columna.
+export async function importContactsFromCsv(
+  formData: FormData,
+): Promise<ImportContactsFromCsvResult> {
+  const organizationId = await requireActiveOrganizationId();
+
+  const file = formData.get("file");
+
+  if (!(file instanceof File)) {
+    throw new Error("Sube un archivo CSV.");
+  }
+
+  if (!file.name.toLowerCase().endsWith(".csv")) {
+    throw new Error("El archivo debe tener extensión .csv.");
+  }
+
+  const csvText = await file.text();
+  const { rows, skipped } = parseGhlContactsCsv(csvText);
+
+  let imported = 0;
+  let updated = 0;
+
+  await db.transaction(async (tx) => {
+    for (const row of rows) {
+      const [existing] = await tx
+        .select({ id: contacts.id })
+        .from(contacts)
+        .where(
+          and(
+            eq(contacts.organizationId, organizationId),
+            eq(contacts.ghlContactId, row.ghlContactId),
+          ),
+        );
+
+      const mappedFields = {
+        firstName: row.firstName,
+        lastName: row.lastName,
+        phoneE164: row.phoneE164,
+        email: row.email,
+        sourceChannel: row.sourceChannel,
+        source: "ghl_import",
+      };
+
+      if (existing) {
+        await tx.update(contacts).set(mappedFields).where(eq(contacts.id, existing.id));
+        updated += 1;
+      } else {
+        await tx.insert(contacts).values({
+          id: crypto.randomUUID(),
+          organizationId,
+          ghlContactId: row.ghlContactId,
+          ...mappedFields,
+        });
+        imported += 1;
+      }
+    }
+  });
+
+  revalidatePath("/contactos");
+
+  return {
+    imported,
+    updated,
+    invalidPhones: rows.filter((row) => row.phoneInvalid).length,
+    skipped: skipped.length,
+  };
 }
