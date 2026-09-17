@@ -1,10 +1,11 @@
 "use client";
 
-import { useMemo, useState, useTransition } from "react";
+import { useMemo, useRef, useState, useTransition } from "react";
 import {
   DndContext,
   DragOverlay,
-  PointerSensor,
+  MouseSensor,
+  TouchSensor,
   useDroppable,
   useSensor,
   useSensors,
@@ -78,12 +79,24 @@ export function ContactsBoard({ initialContacts }: { initialContacts: Contact[] 
   const [error, setError] = useState<string | null>(null);
   const [isPending, startTransition] = useTransition();
 
-  // Distancia de activación: distinguir un clic (abre el panel) de un
-  // arrastre. Sin KeyboardSensor a propósito: la tarjeta es un <button> y
-  // Enter/Espacio ya abren el panel; evitamos que compitan con el arrastre.
+  // Distingue un clic (abre el panel) de un arrastre:
+  // - MouseSensor con 6px de umbral en escritorio.
+  // - TouchSensor con long-press (200ms) en táctil, para que un swipe corto
+  //   siga haciendo scroll de la columna (por eso la tarjeta ya no usa
+  //   touch-none) y solo el mantener-presionado inicie el arrastre.
+  // Sin KeyboardSensor a propósito: la tarjeta es un <button> y Enter/Espacio
+  // ya abren el panel de detalle, que es la vía accesible para cambiar etapa.
   const sensors = useSensors(
-    useSensor(PointerSensor, { activationConstraint: { distance: 6 } }),
+    useSensor(MouseSensor, { activationConstraint: { distance: 6 } }),
+    useSensor(TouchSensor, { activationConstraint: { delay: 200, tolerance: 6 } }),
   );
+
+  // Tras un arrastre, el navegador sintetiza un `click` en el pointerup sobre
+  // la tarjeta. Sin esto, cada drop abriría además el panel de detalle. La
+  // marca se pone al iniciar el arrastre y se limpia en un macrotask posterior
+  // al click sintético; si no llega ningún click, igual se limpia y el
+  // siguiente clic real funciona.
+  const justDraggedRef = useRef(false);
 
   // La importación CSV llama router.refresh() y pasa una nueva referencia de
   // initialContacts: re-sincroniza el estado local con lo que acaba de
@@ -91,9 +104,7 @@ export function ContactsBoard({ initialContacts }: { initialContacts: Contact[] 
   // recomendado por React para "resetear estado cuando cambia una prop",
   // https://react.dev/learn/you-might-not-need-an-effect) en vez de un
   // useEffect, que aquí dispara un render en cascada
-  // (react-hooks/set-state-in-effect). No afecta a handleStageChange (esa
-  // Server Action no dispara un refresh), así que el update optimista de
-  // abajo sigue funcionando igual.
+  // (react-hooks/set-state-in-effect).
   if (initialContacts !== syncedInitialContacts) {
     setSyncedInitialContacts(initialContacts);
     setContacts(initialContacts);
@@ -129,37 +140,59 @@ export function ContactsBoard({ initialContacts }: { initialContacts: Contact[] 
     : null;
 
   function handleStageChange(contactId: string, nextStage: Stage) {
-    const previousContacts = contacts;
+    const target = contacts.find((contact) => contact.id === contactId);
+    if (!target || target.stage === nextStage) {
+      return;
+    }
+    const previousStage = target.stage;
     setError(null);
 
-    // Optimista: el contacto se refleja de inmediato hasta arriba de la
-    // nueva columna; si la Server Action falla, se revierte.
+    // Optimista: el contacto se refleja de inmediato hasta arriba de la nueva
+    // columna. El revert toca SOLO esta tarjeta (no un snapshot de toda la
+    // lista): así, si hay otro drag en vuelo que sí persistió, no se pierde.
     setContacts((current) => {
-      const target = current.find((contact) => contact.id === contactId);
-      if (!target || target.stage === nextStage) {
+      const found = current.find((contact) => contact.id === contactId);
+      if (!found) {
         return current;
       }
       const rest = current.filter((contact) => contact.id !== contactId);
-      return [{ ...target, stage: nextStage }, ...rest];
+      return [{ ...found, stage: nextStage }, ...rest];
     });
 
     startTransition(async () => {
       try {
         await updateContactStage({ contactId, stage: nextStage });
       } catch {
-        setContacts(previousContacts);
+        setContacts((current) =>
+          current.map((contact) =>
+            contact.id === contactId ? { ...contact, stage: previousStage } : contact,
+          ),
+        );
         setError("No se pudo actualizar la etapa. Intenta de nuevo.");
       }
     });
   }
 
+  function handleCardClick(contactId: string) {
+    if (justDraggedRef.current) {
+      justDraggedRef.current = false;
+      return;
+    }
+    setSelectedContactId(contactId);
+  }
+
   function handleDragStart(event: DragStartEvent) {
+    justDraggedRef.current = true;
     setActiveContactId(String(event.active.id));
   }
 
   function handleDragEnd(event: DragEndEvent) {
     const { active, over } = event;
     setActiveContactId(null);
+    // Limpia la marca tras el click sintético que dispara el pointerup.
+    setTimeout(() => {
+      justDraggedRef.current = false;
+    }, 0);
     if (!over) {
       return;
     }
@@ -167,6 +200,13 @@ export function ContactsBoard({ initialContacts }: { initialContacts: Contact[] 
     if (isStage(overId)) {
       handleStageChange(String(active.id), overId);
     }
+  }
+
+  function handleDragCancel() {
+    setActiveContactId(null);
+    setTimeout(() => {
+      justDraggedRef.current = false;
+    }, 0);
   }
 
   return (
@@ -191,7 +231,7 @@ export function ContactsBoard({ initialContacts }: { initialContacts: Contact[] 
         sensors={sensors}
         onDragStart={handleDragStart}
         onDragEnd={handleDragEnd}
-        onDragCancel={() => setActiveContactId(null)}
+        onDragCancel={handleDragCancel}
       >
         <div className="flex flex-1 gap-4 overflow-x-auto pb-2">
           {STAGES.map((stage) => (
@@ -199,7 +239,7 @@ export function ContactsBoard({ initialContacts }: { initialContacts: Contact[] 
               key={stage}
               stage={stage}
               contacts={columns.get(stage) ?? []}
-              onCardClick={(contactId) => setSelectedContactId(contactId)}
+              onCardClick={handleCardClick}
             />
           ))}
         </div>

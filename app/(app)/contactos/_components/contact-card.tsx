@@ -28,7 +28,7 @@ export function ContactCard({
     id: contact.id,
   });
 
-  // El PointerSensor del board tiene una distancia de activación (6px): un
+  // El MouseSensor del board tiene una distancia de activación (6px): un
   // clic sin desplazar sigue disparando onClick y abre el panel; solo al
   // arrastrar toma el control dnd-kit. Mientras se arrastra, la tarjeta
   // original se atenúa y el DragOverlay muestra la copia que sigue al cursor.
@@ -39,7 +39,7 @@ export function ContactCard({
       onClick={onClick}
       {...attributes}
       {...listeners}
-      className={`w-full cursor-grab touch-none rounded-md text-left active:cursor-grabbing ${
+      className={`w-full cursor-grab rounded-md text-left active:cursor-grabbing ${
         isDragging ? "opacity-40" : ""
       }`}
     >
