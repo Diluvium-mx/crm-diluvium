@@ -12,8 +12,8 @@ import {
   type DragEndEvent,
   type DragStartEvent,
 } from "@dnd-kit/core";
-import { STAGES, STAGE_LABELS, getContactFullName, type Contact, type Stage } from "../_data/types";
-import { updateContactStage } from "@/lib/actions/contacts";
+import { STAGES, STAGE_LABELS, getContactFullName, type Contact, type Stage, type Temperature } from "../_data/types";
+import { updateContactStage, updateContactTemperature } from "@/lib/actions/contacts";
 import { ContactCard, ContactCardContent } from "./contact-card";
 import { ContactDetailPanel } from "./contact-detail-panel";
 import { ImportContactsButton } from "./import-contacts-button";
@@ -173,6 +173,36 @@ export function ContactsBoard({ initialContacts }: { initialContacts: Contact[] 
     });
   }
 
+  function handleTemperatureChange(contactId: string, nextTemperature: Temperature | null) {
+    const target = contacts.find((contact) => contact.id === contactId);
+    if (!target || target.temperature === nextTemperature) {
+      return;
+    }
+    const previousTemperature = target.temperature;
+    setError(null);
+
+    // Optimista y SIN reordenar: la temperatura no cambia de columna ni de
+    // posición, solo el emoji. Revierte solo esta tarjeta si la acción falla.
+    setContacts((current) =>
+      current.map((contact) =>
+        contact.id === contactId ? { ...contact, temperature: nextTemperature } : contact,
+      ),
+    );
+
+    startTransition(async () => {
+      try {
+        await updateContactTemperature({ contactId, temperature: nextTemperature });
+      } catch {
+        setContacts((current) =>
+          current.map((contact) =>
+            contact.id === contactId ? { ...contact, temperature: previousTemperature } : contact,
+          ),
+        );
+        setError("No se pudo actualizar la temperatura. Intenta de nuevo.");
+      }
+    });
+  }
+
   function handleCardClick(contactId: string) {
     if (justDraggedRef.current) {
       justDraggedRef.current = false;
@@ -259,6 +289,9 @@ export function ContactsBoard({ initialContacts }: { initialContacts: Contact[] 
           isSaving={isPending}
           onClose={() => setSelectedContactId(null)}
           onStageChange={(nextStage) => handleStageChange(selectedContact.id, nextStage)}
+          onTemperatureChange={(nextTemperature) =>
+            handleTemperatureChange(selectedContact.id, nextTemperature)
+          }
         />
       )}
     </div>
