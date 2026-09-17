@@ -18,11 +18,32 @@ export interface SkippedGhlContactRow {
   reason: string;
 }
 
-export interface ParseGhlContactsCsvResult {
-  rows: ParsedGhlContactRow[];
-  skipped: SkippedGhlContactRow[];
-  totalRows: number;
+// true si el header (case-insensitive, trim) estaba presente en el CSV.
+export interface GhlCsvColumnsPresent {
+  lastName: boolean;
+  phone: boolean;
+  email: boolean;
+  tags: boolean; // sourceChannel se deriva de esta columna
 }
+
+export interface CsvStructuralError {
+  rowNumber: number; // error.row + 1; usa 0 si Papa.parse no da row.
+  code: string;
+  message: string;
+}
+
+export type ParseGhlContactsCsvResult =
+  | {
+      ok: true;
+      rows: ParsedGhlContactRow[];
+      skipped: SkippedGhlContactRow[];
+      totalRows: number;
+      columnsPresent: GhlCsvColumnsPresent;
+    }
+  | {
+      ok: false;
+      errors: CsvStructuralError[];
+    };
 
 function sourceChannelFromTags(value: string): SourceChannel | null {
   const tags = value.split(",").map((tag) => tag.trim().toLowerCase());
@@ -46,11 +67,31 @@ function sourceChannelFromTags(value: string): SourceChannel | null {
 }
 
 export function parseGhlContactsCsv(csvText: string): ParseGhlContactsCsvResult {
-  const { data } = Papa.parse<Record<string, string | undefined>>(csvText, {
+  const { data, errors, meta } = Papa.parse<Record<string, string | undefined>>(csvText, {
+    // Evita errores de autodetección en archivos vacíos o de una sola columna.
+    delimiter: ",",
     header: true,
     skipEmptyLines: true,
     transformHeader: (header) => header.trim().toLowerCase(),
   });
+  if (errors.length > 0) {
+    return {
+      ok: false,
+      errors: errors.map((error) => ({
+        rowNumber: error.row === undefined ? 0 : error.row + 1,
+        code: error.code,
+        message: error.message,
+      })),
+    };
+  }
+
+  const fields = new Set(meta.fields ?? []);
+  const columnsPresent: GhlCsvColumnsPresent = {
+    lastName: fields.has("last name"),
+    phone: fields.has("phone"),
+    email: fields.has("email"),
+    tags: fields.has("tags"),
+  };
   const rows: ParsedGhlContactRow[] = [];
   const skipped: SkippedGhlContactRow[] = [];
 
@@ -87,5 +128,5 @@ export function parseGhlContactsCsv(csvText: string): ParseGhlContactsCsvResult 
     });
   });
 
-  return { rows, skipped, totalRows: data.length };
+  return { ok: true, rows, skipped, totalRows: data.length, columnsPresent };
 }
