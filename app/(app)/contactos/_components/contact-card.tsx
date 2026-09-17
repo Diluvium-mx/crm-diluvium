@@ -9,7 +9,7 @@ import { STAGE_LABELS, TEMPERATURE_EMOJI, TEMPERATURE_LABELS, getContactFullName
 // mientras arrastras), para que la tarjeta arrastrada se vea idéntica.
 export function ContactCardContent({ contact }: { contact: Contact }) {
   return (
-    <div className="flex w-full flex-col gap-1 rounded-md border bg-background p-3 text-left text-sm shadow-sm transition-colors hover:border-brand-navy">
+    <div className="flex w-full flex-col gap-1 rounded-md border bg-card p-3 text-left text-sm shadow-sm transition-colors hover:border-brand-navy">
       <span className="flex items-center gap-1 font-medium">
         {getContactFullName(contact)}
         {contact.temperature && (

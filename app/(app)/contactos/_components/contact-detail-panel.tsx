@@ -92,7 +92,7 @@ export function ContactDetailPanel({
             <button
               type="button"
               disabled
-              className="rounded bg-brand-navy px-3 py-2 text-sm text-brand-white opacity-50"
+              className="rounded bg-brand-orange px-3 py-2 text-sm text-brand-white opacity-50"
             >
               Enviar
             </button>
