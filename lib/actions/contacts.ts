@@ -2,7 +2,7 @@
 
 import { headers } from "next/headers";
 import { revalidatePath } from "next/cache";
-import { and, asc, eq, isNotNull, sql } from "drizzle-orm";
+import { and, desc, eq, isNotNull, sql } from "drizzle-orm";
 import { z } from "zod";
 import { auth } from "@/lib/auth";
 import { db } from "@/lib/db";
@@ -68,7 +68,7 @@ export async function listContacts() {
     .select()
     .from(contacts)
     .where(eq(contacts.organizationId, organizationId))
-    .orderBy(asc(contacts.createdAt));
+    .orderBy(desc(contacts.stageChangedAt), desc(contacts.createdAt));
 }
 
 const createContactSchema = z.object({
@@ -117,7 +117,7 @@ export async function updateContactStage(input: UpdateContactStageInput) {
 
   const [updated] = await db
     .update(contacts)
-    .set({ stage: parsed.stage })
+    .set({ stage: parsed.stage, stageChangedAt: new Date() })
     .where(
       and(
         eq(contacts.id, parsed.contactId),

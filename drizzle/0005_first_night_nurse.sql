@@ -1,0 +1,1 @@
+ALTER TABLE "contacts" ADD COLUMN "stage_changed_at" timestamp DEFAULT now() NOT NULL;
