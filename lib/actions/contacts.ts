@@ -2,7 +2,7 @@
 
 import { headers } from "next/headers";
 import { revalidatePath } from "next/cache";
-import { and, asc, eq } from "drizzle-orm";
+import { and, asc, eq, isNotNull, sql } from "drizzle-orm";
 import { z } from "zod";
 import { auth } from "@/lib/auth";
 import { db } from "@/lib/db";
@@ -142,11 +142,19 @@ export interface ImportContactsFromCsvResult {
   skipped: number;
 }
 
-// Upsert por (organization_id, ghl_contact_id): re-importar el mismo CSV no
-// duplica (índice único parcial contacts_org_ghl_contact_id_uidx,
-// lib/db/schema/contacts.ts). `stage` nunca se toca en el branch de
-// actualización — re-sincronizar desde GHL no debe resetear el avance en el
-// kanban de un contacto que el equipo ya movió de columna.
+// Upsert atómico por (organization_id, ghl_contact_id) vía
+// INSERT ... ON CONFLICT DO UPDATE sobre el índice único parcial
+// contacts_org_ghl_contact_id_uidx (lib/db/schema/contacts.ts): un
+// select-then-insert deja una ventana entre el SELECT y el INSERT donde dos
+// importaciones simultáneas pueden ver el mismo contacto como inexistente y
+// una de las dos revienta contra el índice único, tumbando toda su
+// transacción (hallazgo Codex). `stage` nunca se toca en el UPDATE —
+// re-sincronizar desde GHL no debe resetear el avance en el kanban de un
+// contacto que el equipo ya movió de columna. Tampoco se actualiza un campo
+// cuya columna no vino en el CSV: un export parcial de GHL (p. ej. solo
+// Contact Id + First Name) no debe borrar teléfono/email/apellido/canal ya
+// cargados (segundo hallazgo Codex) — por eso `updateSet` solo incluye las
+// columnas presentes en el archivo, según `columnsPresent`.
 export async function importContactsFromCsv(
   formData: FormData,
 ): Promise<ImportContactsFromCsvResult> {
@@ -163,43 +171,61 @@ export async function importContactsFromCsv(
   }
 
   const csvText = await file.text();
-  const { rows, skipped } = parseGhlContactsCsv(csvText);
+  const parsed = parseGhlContactsCsv(csvText);
+
+  if (!parsed.ok) {
+    throw new Error(
+      `El CSV tiene errores de formato y no se importó nada: ${parsed.errors
+        .map((error) => `fila ${error.rowNumber} (${error.code}): ${error.message}`)
+        .join("; ")}`,
+    );
+  }
+
+  const { rows, skipped, columnsPresent } = parsed;
+
+  // firstName es requerido por el parser (fila sin First Name se omite
+  // antes de llegar aquí), así que siempre se actualiza.
+  const updateSet = {
+    firstName: sql`excluded.first_name`,
+    source: sql`excluded.source`,
+    ...(columnsPresent.lastName ? { lastName: sql`excluded.last_name` } : {}),
+    ...(columnsPresent.phone ? { phoneE164: sql`excluded.phone_e164` } : {}),
+    ...(columnsPresent.email ? { email: sql`excluded.email` } : {}),
+    ...(columnsPresent.tags ? { sourceChannel: sql`excluded.source_channel` } : {}),
+  };
 
   let imported = 0;
   let updated = 0;
 
   await db.transaction(async (tx) => {
     for (const row of rows) {
-      const [existing] = await tx
-        .select({ id: contacts.id })
-        .from(contacts)
-        .where(
-          and(
-            eq(contacts.organizationId, organizationId),
-            eq(contacts.ghlContactId, row.ghlContactId),
-          ),
-        );
-
-      const mappedFields = {
-        firstName: row.firstName,
-        lastName: row.lastName,
-        phoneE164: row.phoneE164,
-        email: row.email,
-        sourceChannel: row.sourceChannel,
-        source: "ghl_import",
-      };
-
-      if (existing) {
-        await tx.update(contacts).set(mappedFields).where(eq(contacts.id, existing.id));
-        updated += 1;
-      } else {
-        await tx.insert(contacts).values({
+      const [result] = await tx
+        .insert(contacts)
+        .values({
           id: crypto.randomUUID(),
           organizationId,
           ghlContactId: row.ghlContactId,
-          ...mappedFields,
-        });
+          firstName: row.firstName,
+          lastName: row.lastName,
+          phoneE164: row.phoneE164,
+          email: row.email,
+          sourceChannel: row.sourceChannel,
+          source: "ghl_import",
+        })
+        .onConflictDoUpdate({
+          target: [contacts.organizationId, contacts.ghlContactId],
+          targetWhere: isNotNull(contacts.ghlContactId),
+          set: updateSet,
+        })
+        // Truco estándar de Postgres: xmax = 0 solo es cierto en la fila
+        // recién insertada por este statement, nunca en la actualizada por
+        // el branch ON CONFLICT.
+        .returning({ wasInsert: sql<boolean>`(xmax = 0)` });
+
+      if (result.wasInsert) {
         imported += 1;
+      } else {
+        updated += 1;
       }
     }
   });
