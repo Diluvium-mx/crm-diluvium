@@ -10,6 +10,16 @@ export const contactStageEnum = pgEnum("contact_stage", [
   "compra",
 ]);
 
+// Temperatura del contacto (interés/urgencia), independiente de la etapa.
+// Valores semánticos; el emoji vive en la UI (ver _data/types.ts):
+// caliente 🔥 · frio 🧊 · en_espera ⏳ · destacado ⭐
+export const contactTemperatureEnum = pgEnum("contact_temperature", [
+  "caliente",
+  "frio",
+  "en_espera",
+  "destacado",
+]);
+
 export const contacts = pgTable(
   "contacts",
   {
@@ -26,6 +36,8 @@ export const contacts = pgTable(
     source: text("source"),
     sourceChannel: text("source_channel"),
     stage: contactStageEnum("stage").default("inbox").notNull(),
+    // Nullable a propósito: sin temperatura asignada hasta que el vendedor la fije.
+    temperature: contactTemperatureEnum("temperature"),
     createdAt: timestamp("created_at").defaultNow().notNull(),
   },
   (table) => [

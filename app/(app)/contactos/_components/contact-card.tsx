@@ -2,7 +2,7 @@
 
 import { useDraggable } from "@dnd-kit/core";
 import type { Contact } from "../_data/types";
-import { STAGE_LABELS, getContactFullName } from "../_data/types";
+import { STAGE_LABELS, TEMPERATURE_EMOJI, TEMPERATURE_LABELS, getContactFullName } from "../_data/types";
 
 // Contenido puro de la tarjeta, sin lógica de arrastre. Se reutiliza tal
 // cual dentro del DragOverlay del board (la "copia" que sigue al cursor
@@ -10,7 +10,19 @@ import { STAGE_LABELS, getContactFullName } from "../_data/types";
 export function ContactCardContent({ contact }: { contact: Contact }) {
   return (
     <div className="flex w-full flex-col gap-1 rounded-md border bg-background p-3 text-left text-sm shadow-sm transition-colors hover:border-brand-navy">
-      <span className="font-medium">{getContactFullName(contact)}</span>
+      <span className="flex items-center gap-1 font-medium">
+        {getContactFullName(contact)}
+        {contact.temperature && (
+          <span
+            role="img"
+            aria-label={TEMPERATURE_LABELS[contact.temperature]}
+            title={TEMPERATURE_LABELS[contact.temperature]}
+            className="text-xs"
+          >
+            {TEMPERATURE_EMOJI[contact.temperature]}
+          </span>
+        )}
+      </span>
       <span className="text-muted-foreground">{contact.phoneE164 ?? "Sin teléfono"}</span>
       <span className="text-xs text-muted-foreground">{STAGE_LABELS[contact.stage]}</span>
     </div>
