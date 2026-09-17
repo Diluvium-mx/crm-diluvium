@@ -49,7 +49,7 @@ function StageColumn({
   return (
     <div
       ref={setNodeRef}
-      className={`flex w-72 shrink-0 flex-col rounded-lg border bg-muted/30 transition-colors ${
+      className={`flex w-72 shrink-0 flex-col rounded-lg border bg-muted transition-colors ${
         isOver ? "ring-2 ring-brand-orange" : ""
       }`}
     >
