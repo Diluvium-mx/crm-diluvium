@@ -1,9 +1,19 @@
 "use client";
 
 import { useMemo, useState, useTransition } from "react";
+import {
+  DndContext,
+  DragOverlay,
+  PointerSensor,
+  useDroppable,
+  useSensor,
+  useSensors,
+  type DragEndEvent,
+  type DragStartEvent,
+} from "@dnd-kit/core";
 import { STAGES, STAGE_LABELS, getContactFullName, type Contact, type Stage } from "../_data/types";
 import { updateContactStage } from "@/lib/actions/contacts";
-import { ContactCard } from "./contact-card";
+import { ContactCard, ContactCardContent } from "./contact-card";
 import { ContactDetailPanel } from "./contact-detail-panel";
 import { ImportContactsButton } from "./import-contacts-button";
 
@@ -15,13 +25,65 @@ function normalizeForSearch(value: string): string {
   return stripDiacritics(value).toLowerCase();
 }
 
+// Type guard: el id del droppable siempre es una etapa (solo las columnas
+// son zonas de destino), pero esto lo deja explícito para TypeScript.
+function isStage(value: string): value is Stage {
+  return (STAGES as string[]).includes(value);
+}
+
+// Una columna = una zona de destino (droppable). Se extrae a su propio
+// componente porque useDroppable es un hook y no puede llamarse dentro del
+// .map() de las etapas.
+function StageColumn({
+  stage,
+  contacts,
+  onCardClick,
+}: {
+  stage: Stage;
+  contacts: Contact[];
+  onCardClick: (contactId: string) => void;
+}) {
+  const { setNodeRef, isOver } = useDroppable({ id: stage });
+
+  return (
+    <div
+      ref={setNodeRef}
+      className={`flex w-72 shrink-0 flex-col rounded-lg border bg-muted/30 transition-colors ${
+        isOver ? "ring-2 ring-brand-orange" : ""
+      }`}
+    >
+      <div className="flex items-center justify-between rounded-t-lg bg-brand-navy px-3 py-2 text-brand-white">
+        <span className="text-sm font-semibold">{STAGE_LABELS[stage]}</span>
+        <span className="rounded-full bg-white/20 px-2 py-0.5 text-xs">{contacts.length}</span>
+      </div>
+
+      <div className="flex flex-1 flex-col gap-2 overflow-y-auto p-2">
+        {contacts.map((contact) => (
+          <ContactCard key={contact.id} contact={contact} onClick={() => onCardClick(contact.id)} />
+        ))}
+        {contacts.length === 0 && (
+          <p className="p-2 text-center text-xs text-muted-foreground">Sin contactos</p>
+        )}
+      </div>
+    </div>
+  );
+}
+
 export function ContactsBoard({ initialContacts }: { initialContacts: Contact[] }) {
   const [contacts, setContacts] = useState<Contact[]>(initialContacts);
   const [syncedInitialContacts, setSyncedInitialContacts] = useState(initialContacts);
   const [search, setSearch] = useState("");
   const [selectedContactId, setSelectedContactId] = useState<string | null>(null);
+  const [activeContactId, setActiveContactId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [isPending, startTransition] = useTransition();
+
+  // Distancia de activación: distinguir un clic (abre el panel) de un
+  // arrastre. Sin KeyboardSensor a propósito: la tarjeta es un <button> y
+  // Enter/Espacio ya abren el panel; evitamos que compitan con el arrastre.
+  const sensors = useSensors(
+    useSensor(PointerSensor, { activationConstraint: { distance: 6 } }),
+  );
 
   // La importación CSV llama router.refresh() y pasa una nueva referencia de
   // initialContacts: re-sincroniza el estado local con lo que acaba de
@@ -62,6 +124,9 @@ export function ContactsBoard({ initialContacts }: { initialContacts: Contact[] 
   }, [filteredContacts]);
 
   const selectedContact = contacts.find((contact) => contact.id === selectedContactId) ?? null;
+  const activeContact = activeContactId
+    ? contacts.find((contact) => contact.id === activeContactId) ?? null
+    : null;
 
   function handleStageChange(contactId: string, nextStage: Stage) {
     const previousContacts = contacts;
@@ -88,6 +153,22 @@ export function ContactsBoard({ initialContacts }: { initialContacts: Contact[] 
     });
   }
 
+  function handleDragStart(event: DragStartEvent) {
+    setActiveContactId(String(event.active.id));
+  }
+
+  function handleDragEnd(event: DragEndEvent) {
+    const { active, over } = event;
+    setActiveContactId(null);
+    if (!over) {
+      return;
+    }
+    const overId = String(over.id);
+    if (isStage(overId)) {
+      handleStageChange(String(active.id), overId);
+    }
+  }
+
   return (
     <div className="flex flex-1 flex-col gap-4 p-4">
       <div className="flex items-center justify-between gap-4">
@@ -106,38 +187,31 @@ export function ContactsBoard({ initialContacts }: { initialContacts: Contact[] 
 
       {error && <p className="text-sm text-brand-orange">{error}</p>}
 
-      <div className="flex flex-1 gap-4 overflow-x-auto pb-2">
-        {STAGES.map((stage) => {
-          const stageContacts = columns.get(stage) ?? [];
-
-          return (
-            <div
+      <DndContext
+        sensors={sensors}
+        onDragStart={handleDragStart}
+        onDragEnd={handleDragEnd}
+        onDragCancel={() => setActiveContactId(null)}
+      >
+        <div className="flex flex-1 gap-4 overflow-x-auto pb-2">
+          {STAGES.map((stage) => (
+            <StageColumn
               key={stage}
-              className="flex w-72 shrink-0 flex-col rounded-lg border bg-muted/30"
-            >
-              <div className="flex items-center justify-between rounded-t-lg bg-brand-navy px-3 py-2 text-brand-white">
-                <span className="text-sm font-semibold">{STAGE_LABELS[stage]}</span>
-                <span className="rounded-full bg-white/20 px-2 py-0.5 text-xs">
-                  {stageContacts.length}
-                </span>
-              </div>
+              stage={stage}
+              contacts={columns.get(stage) ?? []}
+              onCardClick={(contactId) => setSelectedContactId(contactId)}
+            />
+          ))}
+        </div>
 
-              <div className="flex flex-1 flex-col gap-2 overflow-y-auto p-2">
-                {stageContacts.map((contact) => (
-                  <ContactCard
-                    key={contact.id}
-                    contact={contact}
-                    onClick={() => setSelectedContactId(contact.id)}
-                  />
-                ))}
-                {stageContacts.length === 0 && (
-                  <p className="p-2 text-center text-xs text-muted-foreground">Sin contactos</p>
-                )}
-              </div>
+        <DragOverlay>
+          {activeContact ? (
+            <div className="w-72 cursor-grabbing">
+              <ContactCardContent contact={activeContact} />
             </div>
-          );
-        })}
-      </div>
+          ) : null}
+        </DragOverlay>
+      </DndContext>
 
       {selectedContact && (
         <ContactDetailPanel

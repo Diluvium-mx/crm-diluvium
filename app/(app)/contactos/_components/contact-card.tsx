@@ -1,5 +1,21 @@
+"use client";
+
+import { useDraggable } from "@dnd-kit/core";
 import type { Contact } from "../_data/types";
 import { STAGE_LABELS, getContactFullName } from "../_data/types";
+
+// Contenido puro de la tarjeta, sin lógica de arrastre. Se reutiliza tal
+// cual dentro del DragOverlay del board (la "copia" que sigue al cursor
+// mientras arrastras), para que la tarjeta arrastrada se vea idéntica.
+export function ContactCardContent({ contact }: { contact: Contact }) {
+  return (
+    <div className="flex w-full flex-col gap-1 rounded-md border bg-background p-3 text-left text-sm shadow-sm transition-colors hover:border-brand-navy">
+      <span className="font-medium">{getContactFullName(contact)}</span>
+      <span className="text-muted-foreground">{contact.phoneE164 ?? "Sin teléfono"}</span>
+      <span className="text-xs text-muted-foreground">{STAGE_LABELS[contact.stage]}</span>
+    </div>
+  );
+}
 
 export function ContactCard({
   contact,
@@ -8,15 +24,26 @@ export function ContactCard({
   contact: Contact;
   onClick: () => void;
 }) {
+  const { attributes, listeners, setNodeRef, isDragging } = useDraggable({
+    id: contact.id,
+  });
+
+  // El PointerSensor del board tiene una distancia de activación (6px): un
+  // clic sin desplazar sigue disparando onClick y abre el panel; solo al
+  // arrastrar toma el control dnd-kit. Mientras se arrastra, la tarjeta
+  // original se atenúa y el DragOverlay muestra la copia que sigue al cursor.
   return (
     <button
+      ref={setNodeRef}
       type="button"
       onClick={onClick}
-      className="flex w-full flex-col gap-1 rounded-md border bg-background p-3 text-left text-sm shadow-sm transition-colors hover:border-brand-navy"
+      {...attributes}
+      {...listeners}
+      className={`w-full cursor-grab touch-none rounded-md text-left active:cursor-grabbing ${
+        isDragging ? "opacity-40" : ""
+      }`}
     >
-      <span className="font-medium">{getContactFullName(contact)}</span>
-      <span className="text-muted-foreground">{contact.phoneE164 ?? "Sin teléfono"}</span>
-      <span className="text-xs text-muted-foreground">{STAGE_LABELS[contact.stage]}</span>
+      <ContactCardContent contact={contact} />
     </button>
   );
 }
