@@ -20,6 +20,7 @@
 //    (source "crm", sent_by_user_id) y la de la cola se borra.
 import { and, eq, isNull, lt, or } from "drizzle-orm";
 import { db } from "@/lib/db";
+import { withTxRetry } from "@/lib/db/retry";
 import { channels, conversations, messages } from "@/lib/db/schema";
 import { applyOutboundToConversation, latestInboundMessageId } from "./ingest";
 import { SendFailedError, type MessagingProvider, type SendResult } from "./provider";
@@ -304,14 +305,17 @@ export async function linkSentMessage(input: {
       await applyOutboundToConversation(tx, input.conversationId, input.sentAt, input.readCutoffMessageId);
       return survivor;
     });
-  try {
-    return await link();
-  } catch (error) {
-    // Carrera mínima: el eco se insertó entre la búsqueda y el UPDATE (choca
-    // con el wamid único). Al reintentar, la búsqueda ya lo encuentra.
-    if ((error as { code?: string }).code !== "23505") throw error;
-    return link();
-  }
+  // withTxRetry cubre deadlock/serialización (40P01/40001); el 23505 es la
+  // carrera del eco insertándose entre la búsqueda y el UPDATE: al repetir, la
+  // búsqueda ya lo encuentra.
+  return withTxRetry(async () => {
+    try {
+      return await link();
+    } catch (error) {
+      if ((error as { code?: string }).code !== "23505") throw error;
+      return link();
+    }
+  });
 }
 
 // Un envío de resultado desconocido que siguió sin confirmarse (ni por la
