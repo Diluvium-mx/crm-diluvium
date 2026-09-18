@@ -20,8 +20,6 @@
 // igual al pasar el límite, el header del cliente no se está respetando.
 import { isIP } from "node:net";
 
-export const UNKNOWN_IP = "unknown";
-
 /**
  * Lee la IP de cliente de `x-forwarded-for` en la posición `index`
  * (>= 0 desde la izquierda, < 0 desde la derecha) y la normaliza para usarla
