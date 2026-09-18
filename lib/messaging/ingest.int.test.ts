@@ -154,6 +154,17 @@ describe.skipIf(!TEST_DATABASE_URL)("ingesta de WhatsApp (Postgres real)", () =>
     expect(outs[0].source).toBe("business_app");
   });
 
+  it("una difusión/automatización (cloud_api sin enlazar) NO fija la primera respuesta", async () => {
+    await deliver(msgEvent({ sentAt: "2026-09-18T10:00:00Z" }));
+    await deliver(msgEvent({ direction: "outgoing", source: "cloud_api", sentAt: "2026-09-18T10:01:00Z" }));
+    let [conv] = await db.select().from(s.conversations);
+    expect(conv.firstResponseSeconds).toBeNull();
+    // La respuesta real del vendedor, después, sí la fija.
+    await deliver(msgEvent({ direction: "outgoing", source: "whatsapp_business_app", sentAt: "2026-09-18T10:10:00Z" }));
+    [conv] = await db.select().from(s.conversations);
+    expect(conv.firstResponseSeconds).toBe(600);
+  });
+
   it("estados concurrentes read + delivered tardío: nunca retrocede de read", async () => {
     for (let round = 0; round < 15; round++) {
       const wamid = `wamid.status.${round}`;

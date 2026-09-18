@@ -117,8 +117,8 @@ describe("normalizeZernioEvent", () => {
     expect(normalizeZernioEvent(echo("WhatsApp-Business-App"))).toMatchObject({ source: "business_app" });
   });
 
-  it("eco de lo enviado por API (el CRM) y de fuente desconocida", () => {
-    expect(normalizeZernioEvent(echo("cloud_api"))).toMatchObject({ direction: "out", source: "crm" });
+  it("cloud_api (API, dashboard, difusiones) y fuentes desconocidas NO se asumen humanas", () => {
+    expect(normalizeZernioEvent(echo("cloud_api"))).toMatchObject({ direction: "out", source: "other_api" });
     expect(normalizeZernioEvent(echo("otra_cosa"))).toMatchObject({ direction: "out", source: "other_api" });
   });
 

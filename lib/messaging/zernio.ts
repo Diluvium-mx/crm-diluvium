@@ -151,13 +151,11 @@ export function normalizeZernioEvent(payload: unknown): NormalizedEvent {
     // Documentado como "whatsapp_business_app" / "cloud_api"; se compara sin
     // separadores por si llega como "whatsappbusinessapp" o "WhatsApp-Business-App".
     const echoSource = (message.source ?? parsed.data.source ?? "").toLowerCase().replace(/[^a-z]/g, "");
-    const source = !outgoing
-      ? "contact"
-      : echoSource === "whatsappbusinessapp"
-        ? "business_app"
-        : echoSource === "cloudapi"
-          ? "crm"
-          : "other_api";
+    // "cloud_api" es el TRANSPORTE (API, dashboard de Zernio, difusiones,
+    // automatizaciones), no prueba que lo haya escrito un vendedor: queda como
+    // other_api. Un envío del propio CRM se reconoce al enlazar el eco con su
+    // fila en cola (ingest.ts), que ya trae source "crm" y quién lo envió.
+    const source = !outgoing ? "contact" : echoSource === "whatsappbusinessapp" ? "business_app" : "other_api";
 
     const attachments: NormalizedAttachment[] = message.attachments.map((a) => ({
       type: attachmentType(a.type),
