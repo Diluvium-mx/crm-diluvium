@@ -78,6 +78,8 @@ export type WebhookEnvelope = {
   /** Id único del evento en el proveedor: clave de idempotencia. */
   eventId: string;
   event: string;
+  /** Cuenta (número conectado) a la que pertenece el evento, si viene. */
+  providerAccountId?: string;
 };
 
 export type SendTextInput = {

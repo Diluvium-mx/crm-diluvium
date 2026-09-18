@@ -10,7 +10,13 @@
 //    en vez de dar el evento por entregado y perderlo.
 import { db } from "@/lib/db";
 import { webhookEvents } from "@/lib/db/schema";
-import { messagingProvider, webhookEventRowId } from "@/lib/messaging";
+import {
+  isAccountAllowed,
+  messagingProvider,
+  MessagingNotConfiguredError,
+  webhookEventRowId,
+} from "@/lib/messaging";
+import type { MessagingProvider, WebhookEnvelope } from "@/lib/messaging/provider";
 import { enqueueInbound } from "@/lib/queue/inbound";
 
 // Un mensaje con adjuntos llega como URL, no binario: 1 MB sobra.
@@ -44,14 +50,22 @@ export async function POST(req: Request): Promise<Response> {
   const rawBody = await readBodyLimited(req, MAX_BODY_BYTES);
   if (rawBody === null) return new Response("payload demasiado grande", { status: 413 });
 
-  const provider = messagingProvider();
+  let provider: MessagingProvider;
+  try {
+    provider = messagingProvider();
+  } catch (error) {
+    if (!(error instanceof MessagingNotConfiguredError)) throw error;
+    // 503 (no 500): Zernio reintenta y el evento llega cuando se configure.
+    console.error("[webhook zernio] canal no configurado:", error.message);
+    return new Response("canal de WhatsApp no configurado", { status: 503 });
+  }
   if (!provider.verifyWebhook(rawBody, req.headers)) {
     console.warn("[webhook zernio] firma inválida; se rechaza");
     return new Response("firma inválida", { status: 401 });
   }
 
   let payload: unknown;
-  let envelope: { eventId: string; event: string };
+  let envelope: WebhookEnvelope;
   try {
     payload = JSON.parse(rawBody);
     envelope = provider.readEnvelope(rawBody);
@@ -59,6 +73,12 @@ export async function POST(req: Request): Promise<Response> {
     // Firmado pero ilegible: reintentar no lo arreglaría.
     console.error("[webhook zernio] payload firmado pero inválido");
     return new Response("payload inválido", { status: 400 });
+  }
+
+  if (!isAccountAllowed(envelope.providerAccountId)) {
+    // Cuenta ajena a este entorno (p. ej. el número real llegando a staging):
+    // 200 para que Zernio no reintente, y NO se guarda nada.
+    return Response.json({ ok: true, ignored: "cuenta no permitida en este entorno" });
   }
 
   const rowId = webhookEventRowId(provider.name, envelope.eventId);
