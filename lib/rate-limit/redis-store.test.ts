@@ -4,23 +4,68 @@
 // prefijo único y las borran al terminar, pero no apuntarlos a prod.
 import { randomUUID } from "node:crypto";
 import Redis from "ioredis";
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
+import { createRateLimitRedis } from "./redis-client";
 import { RedisRateLimitStore } from "./redis-store";
 import type { RateLimitRule } from "./limiter";
 
 const rule: RateLimitRule = { name: "t", max: 3, windowMs: 1_000 };
 
 function fakeRedis(impl: {
+  status?: string;
+  connect?: () => Promise<void>;
   evalsha?: () => Promise<unknown>;
   eval?: () => Promise<unknown>;
 }): Redis {
   return {
+    status: impl.status ?? "ready",
+    connect: impl.connect ?? (() => Promise.resolve()),
     evalsha: impl.evalsha ?? (() => Promise.resolve([1, 2, 0])),
     eval: impl.eval ?? (() => Promise.resolve([1, 2, 0])),
   } as unknown as Redis;
 }
 
+describe("createRateLimitRedis", () => {
+  it("falla rápido: sin cola offline, sin reintentos ni reenvío tras reconectar", () => {
+    const client = createRateLimitRedis("redis://localhost:6399", { error: vi.fn() });
+    expect(client.options).toMatchObject({
+      lazyConnect: true,
+      enableOfflineQueue: false,
+      maxRetriesPerRequest: 0,
+      autoResendUnfulfilledCommands: false,
+      commandTimeout: 500,
+    });
+    expect(client.status).toBe("wait"); // no conecta al importarse
+    client.disconnect();
+  });
+
+  it("un comando sin conexión lista se rechaza al instante y no queda encolado", async () => {
+    const client = createRateLimitRedis("redis://localhost:6399", { error: vi.fn() });
+    await expect(client.evalsha("0".repeat(40), 1, "k")).rejects.toThrow(/enableOfflineQueue/);
+    client.disconnect();
+  });
+});
+
 describe("RedisRateLimitStore (cliente falso)", () => {
+  it.each(["connecting", "reconnecting", "end", "close"])(
+    "con Redis en estado %s no emite ningún comando (no puede ejecutarse tarde)",
+    async (status) => {
+      const evalsha = vi.fn(() => Promise.resolve([1, 2, 0]));
+      const store = new RedisRateLimitStore(fakeRedis({ status, evalsha }));
+      await expect(store.hit("k", rule)).rejects.toThrow(/no está listo/);
+      expect(evalsha).not.toHaveBeenCalled();
+    },
+  );
+
+  it("en el primer uso (estado wait) arranca la conexión y deja pasar esa request", async () => {
+    const connect = vi.fn(() => Promise.resolve());
+    const evalsha = vi.fn(() => Promise.resolve([1, 2, 0]));
+    const store = new RedisRateLimitStore(fakeRedis({ status: "wait", connect, evalsha }));
+    await expect(store.hit("k", rule)).rejects.toThrow(/no está listo/);
+    expect(connect).toHaveBeenCalledTimes(1);
+    expect(evalsha).not.toHaveBeenCalled();
+  });
+
   it("interpreta la respuesta del script", async () => {
     const store = new RedisRateLimitStore(fakeRedis({ evalsha: async () => [0, 0, 750] }));
     expect(await store.hit("k", rule)).toEqual({ allowed: false, remaining: 0, retryAfterMs: 750 });

@@ -50,6 +50,12 @@ export class RedisRateLimitStore implements RateLimitStore {
   ) {}
 
   async hit(key: string, rule: RateLimitRule): Promise<RateLimitDecision> {
+    // Sin conexión lista no se emite nada (ver redis-client.ts): un comando
+    // que no se envía no puede ejecutarse tarde, cuando Redis vuelva.
+    if (this.redis.status !== "ready") {
+      if (this.redis.status === "wait") this.redis.connect().catch(() => {}); // arranque perezoso
+      throw new Error(`rate-limit: Redis no está listo (${this.redis.status})`);
+    }
     const reply = await withTimeout(this.run(key, rule), this.timeoutMs);
     if (!Array.isArray(reply) || reply.length !== 3) {
       throw new Error(`rate-limit: respuesta inesperada de Redis: ${JSON.stringify(reply)}`);
