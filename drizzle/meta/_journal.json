@@ -50,6 +50,13 @@
       "when": 1789761736842,
       "tag": "0006_whatsapp_messaging",
       "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1789774286350,
+      "tag": "0007_webhook_events_tenant",
+      "breakpoints": true
     }
   ]
 }

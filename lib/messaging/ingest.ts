@@ -3,6 +3,7 @@
 // WhatsApp conectado), nunca del payload.
 import { and, asc, count, desc, eq, gte, inArray, isNotNull, isNull, or, sql } from "drizzle-orm";
 import { db } from "@/lib/db";
+import { withTxRetry } from "@/lib/db/retry";
 import { channels, contacts, conversations, messages, webhookEvents } from "@/lib/db/schema";
 import { canonicalPhone, normalizePhone, phoneLookupVariants } from "@/lib/phone";
 import type { MessagingProvider, NormalizedMessageEvent, NormalizedStatusEvent, ProviderName } from "./provider";
@@ -47,15 +48,19 @@ export async function processWebhookEvent(
   try {
     const event = provider.normalize(row.payload);
     let outcome: string;
+    let organizationId: string | null = null;
     // El proveedor viene del adaptador que VERIFICÓ la firma, no del payload.
-    if (event.kind === "message") outcome = await ingestMessage(provider.name, event, hooks);
-    else if (event.kind === "status") outcome = await ingestStatus(provider.name, event);
+    if (event.kind === "message") ({ outcome, organizationId } = await ingestMessage(provider.name, event, hooks));
+    else if (event.kind === "status") ({ outcome, organizationId } = await ingestStatus(provider.name, event));
     else if (event.malformed) throw new DeadLetterIngestError(`formato no reconocido (${event.event}): ${event.reason}`);
     else outcome = `ignorado: ${event.reason}`;
 
+    // Se atribuye el evento crudo a su organización (cuando se conoce): así al
+    // borrar una organización se llevan sus payloads, y el barrido de retención
+    // los cuenta como suyos.
     await db
       .update(webhookEvents)
-      .set({ processedAt: new Date(), lastError: event.kind === "ignored" ? outcome : null })
+      .set({ processedAt: new Date(), lastError: event.kind === "ignored" ? outcome : null, organizationId })
       .where(eq(webhookEvents.id, webhookEventId));
     return outcome;
   } catch (error) {
@@ -80,7 +85,11 @@ function channelOf(provider: ProviderName, providerAccountId: string) {
   return and(eq(channels.provider, provider), eq(channels.providerAccountId, providerAccountId));
 }
 
-async function ingestMessage(provider: ProviderName, event: NormalizedMessageEvent, hooks: IngestHooks): Promise<string> {
+async function ingestMessage(
+  provider: ProviderName,
+  event: NormalizedMessageEvent,
+  hooks: IngestHooks,
+): Promise<{ outcome: string; organizationId: string | null }> {
   const [channel] = await db
     .select()
     .from(channels)
@@ -103,7 +112,7 @@ async function ingestMessage(provider: ProviderName, event: NormalizedMessageEve
   }
 
   let mediaMessageId: string | undefined;
-  const result = await db.transaction(async (tx) => {
+  const result = await withTxRetry(() => db.transaction(async (tx) => {
     const orgId = channel.organizationId;
 
     // Conversación ya existente del proveedor (canal + providerConversationId):
@@ -153,6 +162,16 @@ async function ingestMessage(provider: ProviderName, event: NormalizedMessageEve
         })
         .returning();
     }
+
+    // Se BLOQUEA la conversación ANTES de tocar mensajes, en el MISMO orden que
+    // linkSentMessage (conversación → mensajes). Con el orden inverso, un eco
+    // del webhook y la finalización del envío podían quedar en interbloqueo
+    // (deadlock) y abortar un envío que el proveedor ya había aceptado.
+    const [conversation] = await tx
+      .select()
+      .from(conversations)
+      .where(eq(conversations.id, upserted.id))
+      .for("update");
 
     // Eco de un mensaje que el CRM mismo envió: ya existe la fila (en cola,
     // sin wamid). Se completa en lugar de duplicarla.
@@ -205,15 +224,8 @@ async function ingestMessage(provider: ProviderName, event: NormalizedMessageEve
       }
     }
 
-    // Se BLOQUEA la conversación antes de leer sus contadores: con varios
-    // mensajes procesándose a la vez, leer-y-sumar en código perdería
-    // incrementos de no leídos o movería la ventana hacia atrás.
-    const [conversation] = await tx
-      .select()
-      .from(conversations)
-      .where(eq(conversations.id, upserted.id))
-      .for("update");
-
+    // La conversación ya está bloqueada arriba (FOR UPDATE): leer-y-sumar los
+    // contadores aquí es seguro aunque varios mensajes lleguen a la vez.
     const updates: Partial<typeof conversations.$inferInsert> = {
       lastMessageAt:
         conversation.lastMessageAt && conversation.lastMessageAt > event.sentAt
@@ -245,10 +257,10 @@ async function ingestMessage(provider: ProviderName, event: NormalizedMessageEve
     }
     await tx.update(conversations).set(updates).where(eq(conversations.id, conversation.id));
     return outcome;
-  });
+  }));
   // Después del commit: la descarga ya puede leer la fila.
   if (mediaMessageId && hooks.onMediaMessage) await hooks.onMediaMessage(mediaMessageId);
-  return result;
+  return { outcome: result, organizationId: channel.organizationId };
 }
 
 /**
@@ -376,7 +388,10 @@ async function findOrCreateContact(tx: Tx, orgId: string, phone: string, name?: 
   return id;
 }
 
-async function ingestStatus(provider: ProviderName, event: NormalizedStatusEvent): Promise<string> {
+async function ingestStatus(
+  provider: ProviderName,
+  event: NormalizedStatusEvent,
+): Promise<{ outcome: string; organizationId: string | null }> {
   // La organización sale del canal (proveedor + cuenta), nunca de un id de
   // mensaje suelto: un estado jamás toca mensajes de otra organización.
   let orgId: string | undefined;
@@ -401,7 +416,8 @@ async function ingestStatus(provider: ProviderName, event: NormalizedStatusEvent
   }
 
   let revokeReplyOf: string | undefined;
-  const outcome = await db.transaction(async (tx) => {
+  let resolvedOrgId: string | null = orgId ?? null;
+  const outcome = await withTxRetry(() => db.transaction(async (tx) => {
     // FOR UPDATE: dos estados del mismo mensaje procesándose a la vez (p. ej.
     // read y un delivered tardío) se serializan; el segundo ve el valor ya
     // escrito por el primero y nextStatus nunca retrocede.
@@ -413,6 +429,7 @@ async function ingestStatus(provider: ProviderName, event: NormalizedStatusEvent
     if (orgId && message.organizationId !== orgId) {
       throw new PermanentIngestError("el estado apunta a un mensaje de otra organización; se rechaza");
     }
+    resolvedOrgId = message.organizationId;
     const status = nextStatus(message.status, event.status);
     // Un saliente que WhatsApp terminó rechazando no llegó al cliente: si fijó
     // la primera respuesta, se recalcula DESPUÉS del commit (en su propia
@@ -432,9 +449,9 @@ async function ingestStatus(provider: ProviderName, event: NormalizedStatusEvent
       })
       .where(and(eq(messages.id, message.id), eq(messages.organizationId, message.organizationId)));
     return `estado ${message.status} → ${status}`;
-  });
+  }));
   if (revokeReplyOf) await recomputeFirstResponse(revokeReplyOf);
-  return outcome;
+  return { outcome, organizationId: resolvedOrgId };
 }
 
 async function recomputeFirstResponse(conversationId: string): Promise<void> {
