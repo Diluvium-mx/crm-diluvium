@@ -226,8 +226,10 @@ export class ZernioProvider implements MessagingProvider {
   }
 
   readEnvelope(rawBody: string): WebhookEnvelope {
-    const parsed = envelopeSchema.parse(JSON.parse(rawBody));
-    return { eventId: parsed.id, event: parsed.event };
+    const json = JSON.parse(rawBody) as Record<string, unknown>;
+    const parsed = envelopeSchema.parse(json);
+    const account = (json.account ?? {}) as Record<string, unknown>;
+    return { eventId: parsed.id, event: parsed.event, providerAccountId: asString(account.id) };
   }
 
   normalize(payload: unknown): NormalizedEvent {
