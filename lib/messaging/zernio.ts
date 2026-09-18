@@ -162,6 +162,8 @@ export function normalizeZernioEvent(payload: unknown): NormalizedEvent {
       url: a.url,
       mimeType: asString(a.payload?.mimeType) ?? asString(a.payload?.mime_type),
       fileName: asString(a.payload?.filename) ?? asString(a.payload?.fileName),
+      providerMediaId: asString(a.payload?.id),
+      sha256: asString(a.payload?.sha256),
     }));
     const type: NormalizedMessageType =
       attachments[0]?.type ??
@@ -234,6 +236,19 @@ export class ZernioProvider implements MessagingProvider {
 
   normalize(payload: unknown): NormalizedEvent {
     return normalizeZernioEvent(payload);
+  }
+
+  // Media de WhatsApp vía Zernio: https://zernio.com/api/v1/whatsapp/media/{id}
+  // exige el Bearer (sin él, 401; verificado en vivo). El Bearer SOLO se
+  // agrega si la URL es del host de la API de Zernio: una URL de otro dominio
+  // en un payload nunca recibe la API key.
+  async fetchMedia(url: string, signal?: AbortSignal): Promise<Response> {
+    const target = new URL(url);
+    const api = new URL(this.config.baseUrl ?? DEFAULT_BASE_URL);
+    if (target.protocol !== "https:") throw new ZernioSendError(0, "media_url_insegura", "La URL de media no es https");
+    const headers: Record<string, string> = {};
+    if (target.host === api.host) headers.Authorization = `Bearer ${this.config.apiKey}`;
+    return this.fetchImpl(target, { headers, signal, redirect: "follow" });
   }
 
   async sendText({ providerAccountId, providerConversationId, text }: SendTextInput): Promise<SendResult> {

@@ -79,3 +79,40 @@ export async function reviveInbound(webhookEventId: string): Promise<"added" | "
     return "error";
   }
 }
+
+// ─── Descarga de media ──────────────────────────────────────────────────────
+
+export const MEDIA_QUEUE = "media-download";
+export type MediaJob = { messageId: string };
+
+const globalForMediaQueue = globalThis as unknown as { mediaQueue?: Queue<MediaJob> };
+
+function mediaQueue(): Queue<MediaJob> {
+  globalForMediaQueue.mediaQueue ??= new Queue<MediaJob>(MEDIA_QUEUE, {
+    connection: { ...redisConnection(), enableOfflineQueue: false, maxRetriesPerRequest: 1 },
+    defaultJobOptions: {
+      // ~1 h de reintentos con backoff; después sigue el barrido del worker.
+      attempts: 10,
+      backoff: { type: "exponential", delay: 10_000 },
+      removeOnComplete: { age: 24 * 3600, count: 10_000 },
+      removeOnFail: { age: 14 * 24 * 3600 },
+    },
+  });
+  return globalForMediaQueue.mediaQueue;
+}
+
+/** Encola la descarga de los adjuntos de un mensaje. Nunca lanza: el barrido cubre fallos. */
+export async function enqueueMediaDownload(messageId: string): Promise<void> {
+  const jobId = `media_${messageId}`;
+  try {
+    const existing = await mediaQueue().getJob(jobId);
+    if (existing && (await existing.getState()) === "failed") {
+      await existing.retry("failed");
+      return;
+    }
+    if (existing && (await existing.getState()) === "completed") await existing.remove();
+    await mediaQueue().add("download", { messageId }, { jobId });
+  } catch (error) {
+    console.error("[media] no se pudo encolar; lo recogerá el barrido", messageId, error);
+  }
+}
