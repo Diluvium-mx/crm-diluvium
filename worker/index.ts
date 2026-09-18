@@ -5,8 +5,8 @@
 // - Consume la cola de descarga de media: copia cada adjunto recibido al
 //   bucket propio antes de que Meta lo borre (lib/messaging/media.ts).
 // - Barrido: cada minuto re-encola eventos guardados que nunca se procesaron
-//   (p. ej. Redis no respondió cuando llegó el webhook), reconcilia envíos del
-//   CRM de resultado desconocido y re-encola media pendiente. La base es la
+//   (p. ej. Redis no respondió cuando llegó el webhook), da por no confirmados los
+//   envíos del CRM de resultado desconocido y re-encola media pendiente. La base es la
 //   fuente de verdad; la cola solo acelera.
 import { UnrecoverableError, Worker } from "bullmq";
 import { and, asc, count, gte, isNull, lt, sql } from "drizzle-orm";
@@ -15,7 +15,7 @@ import { messages, webhookEvents } from "@/lib/db/schema";
 import { messagingProvider } from "@/lib/messaging";
 import { DEAD_LETTER_ATTEMPTS, DeadLetterIngestError, PermanentIngestError, processWebhookEvent } from "@/lib/messaging/ingest";
 import { downloadMessageMedia } from "@/lib/messaging/media";
-import { reconcilePendingSends } from "@/lib/messaging/send";
+import { expireUnconfirmedSends } from "@/lib/messaging/send";
 import {
   enqueueMediaDownload,
   INBOUND_QUEUE,
@@ -122,11 +122,9 @@ async function sweep() {
     console.error(`[worker] DEAD-LETTER: ${dead} evento(s) agotaron ${SWEEP_MAX_ATTEMPTS} intentos; revisar last_error y reprocesar`);
   }
 
-  // Envíos del CRM de resultado desconocido: enlazarlos o darlos por fallidos.
-  const sends = await reconcilePendingSends(provider);
-  if (sends.linked || sends.failed) {
-    console.info(`[worker] barrido: ${sends.linked} envío(s) confirmados, ${sends.failed} sin confirmar → failed`);
-  }
+  // Envíos del CRM de resultado desconocido que nunca se confirmaron.
+  const unconfirmed = await expireUnconfirmedSends();
+  if (unconfirmed) console.warn(`[worker] barrido: ${unconfirmed} envío(s) sin confirmar → failed (send_unconfirmed)`);
 
   if (!storage) return;
   // Media pendiente: mensajes con algún adjunto sin storageKey.
