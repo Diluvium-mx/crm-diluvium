@@ -2,12 +2,12 @@
 
 import { headers } from "next/headers";
 import { revalidatePath } from "next/cache";
-import { and, asc, eq, isNotNull, sql } from "drizzle-orm";
+import { and, desc, eq, isNotNull, sql } from "drizzle-orm";
 import { z } from "zod";
 import { auth } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { member } from "@/lib/db/schema/auth";
-import { contacts, contactStageEnum } from "@/lib/db/schema/contacts";
+import { contacts, contactStageEnum, contactTemperatureEnum } from "@/lib/db/schema/contacts";
 import { normalizePhone } from "@/lib/phone";
 import { parseGhlContactsCsv } from "@/lib/import/ghl-contacts-csv";
 
@@ -68,7 +68,7 @@ export async function listContacts() {
     .select()
     .from(contacts)
     .where(eq(contacts.organizationId, organizationId))
-    .orderBy(asc(contacts.createdAt));
+    .orderBy(desc(contacts.stageChangedAt), desc(contacts.createdAt));
 }
 
 const createContactSchema = z.object({
@@ -117,7 +117,39 @@ export async function updateContactStage(input: UpdateContactStageInput) {
 
   const [updated] = await db
     .update(contacts)
-    .set({ stage: parsed.stage })
+    .set({ stage: parsed.stage, stageChangedAt: new Date() })
+    .where(
+      and(
+        eq(contacts.id, parsed.contactId),
+        eq(contacts.organizationId, organizationId),
+      ),
+    )
+    .returning();
+
+  if (!updated) {
+    throw new Error("Contacto no encontrado en esta organización.");
+  }
+
+  revalidatePath("/contactos");
+
+  return updated;
+}
+
+const updateContactTemperatureSchema = z.object({
+  contactId: z.string().trim().min(1, "contactId es obligatorio."),
+  // Nullable: pasar null limpia la temperatura ("Sin asignar").
+  temperature: z.enum(contactTemperatureEnum.enumValues).nullable(),
+});
+
+export type UpdateContactTemperatureInput = z.infer<typeof updateContactTemperatureSchema>;
+
+export async function updateContactTemperature(input: UpdateContactTemperatureInput) {
+  const organizationId = await requireActiveOrganizationId();
+  const parsed = updateContactTemperatureSchema.parse(input);
+
+  const [updated] = await db
+    .update(contacts)
+    .set({ temperature: parsed.temperature })
     .where(
       and(
         eq(contacts.id, parsed.contactId),
