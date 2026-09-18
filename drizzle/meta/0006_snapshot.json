@@ -1,5 +1,5 @@
 {
-  "id": "0eb724ec-9817-45a0-8cd9-9812c1ef5734",
+  "id": "2597f579-9dcf-4a7d-b557-40e7e103cabd",
   "prevId": "4730f3b1-579e-4b96-9b86-1fa893e80f67",
   "version": "7",
   "dialect": "postgresql",
@@ -1347,6 +1347,28 @@
             }
           ],
           "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "messages_org_provider_internal_uidx": {
+          "name": "messages_org_provider_internal_uidx",
+          "columns": [
+            {
+              "expression": "organization_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "provider_internal_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "where": "\"messages\".\"provider_internal_id\" is not null",
           "concurrently": false,
           "method": "btree",
           "with": {}

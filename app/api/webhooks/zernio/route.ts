@@ -16,14 +16,33 @@ import { enqueueInbound } from "@/lib/queue/inbound";
 // Un mensaje con adjuntos llega como URL, no binario: 1 MB sobra.
 const MAX_BODY_BYTES = 1_000_000;
 
+// Lee el body cortando en cuanto pasa el límite: sin esto, un POST sin
+// Content-Length (o chunked) obligaría a cargar en memoria un body de
+// cualquier tamaño ANTES de validar la firma.
+async function readBodyLimited(req: Request, maxBytes: number): Promise<string | null> {
+  if (!req.body) return "";
+  const reader = req.body.getReader();
+  const chunks: Uint8Array[] = [];
+  let total = 0;
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    total += value.byteLength;
+    if (total > maxBytes) {
+      await reader.cancel();
+      return null;
+    }
+    chunks.push(value);
+  }
+  return Buffer.concat(chunks).toString("utf8");
+}
+
 export async function POST(req: Request): Promise<Response> {
   const declared = Number(req.headers.get("content-length") ?? 0);
   if (declared > MAX_BODY_BYTES) return new Response("payload demasiado grande", { status: 413 });
 
-  const rawBody = await req.text();
-  if (Buffer.byteLength(rawBody) > MAX_BODY_BYTES) {
-    return new Response("payload demasiado grande", { status: 413 });
-  }
+  const rawBody = await readBodyLimited(req, MAX_BODY_BYTES);
+  if (rawBody === null) return new Response("payload demasiado grande", { status: 413 });
 
   const provider = messagingProvider();
   if (!provider.verifyWebhook(rawBody, req.headers)) {

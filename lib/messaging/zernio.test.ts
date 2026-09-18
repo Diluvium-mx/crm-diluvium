@@ -147,8 +147,15 @@ describe("normalizeZernioEvent", () => {
       event: "message.delivered",
       timestamp: "2026-09-18T20:01:00.000Z",
       message: { id: "zmsg_2", platformMessageId: "wamid.OUT2" },
+      account: { id: "zacc_1", platform: "whatsapp" },
     });
-    expect(delivered).toMatchObject({ kind: "status", status: "delivered", providerMessageId: "wamid.OUT2", providerInternalId: "zmsg_2" });
+    expect(delivered).toMatchObject({
+      kind: "status",
+      status: "delivered",
+      providerAccountId: "zacc_1",
+      providerMessageId: "wamid.OUT2",
+      providerInternalId: "zmsg_2",
+    });
 
     const failed = normalizeZernioEvent({
       id: "evt_4",

@@ -155,6 +155,11 @@ export const messages = pgTable(
       sql`${table.createdAt} desc`,
     ),
     index("messages_org_idx").on(table.organizationId),
+    // El id interno del proveedor solo es único dentro de su organización:
+    // los estados sin wamid se cruzan por (organización, id interno).
+    uniqueIndex("messages_org_provider_internal_uidx")
+      .on(table.organizationId, table.providerInternalId)
+      .where(sql`${table.providerInternalId} is not null`),
   ],
 );
 

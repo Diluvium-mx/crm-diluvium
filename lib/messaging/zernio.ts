@@ -121,7 +121,9 @@ function asString(value: unknown): string | undefined {
 function findStatusFields(payload: Record<string, unknown>) {
   const message = (payload.message ?? payload.data ?? {}) as Record<string, unknown>;
   const error = (message.error ?? payload.error ?? {}) as Record<string, unknown>;
+  const account = (payload.account ?? {}) as Record<string, unknown>;
   return {
+    providerAccountId: asString(account.id) ?? asString(message.accountId),
     providerMessageId: asString(message.platformMessageId) ?? asString(payload.platformMessageId),
     providerInternalId: asString(message.id) ?? asString(message.messageId) ?? asString(payload.messageId),
     errorCode: asString(error.code) ?? (typeof error.code === "number" ? String(error.code) : undefined),

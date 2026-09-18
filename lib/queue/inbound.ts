@@ -52,3 +52,30 @@ export async function enqueueInbound(webhookEventId: string): Promise<boolean> {
     clearTimeout(timer);
   }
 }
+
+/**
+ * Usado por el barrido del worker. Un `add` con un jobId que ya existe NO
+ * re-encola (BullMQ lo trata como duplicado), así que un job agotado en
+ * "failed" quedaría varado aunque su evento siga pendiente en la base. Aquí
+ * se revisa su estado y se reintenta explícitamente.
+ */
+export async function reviveInbound(webhookEventId: string): Promise<"added" | "retried" | "in_flight" | "error"> {
+  try {
+    const job = await inboundQueue().getJob(webhookEventId);
+    if (!job) return (await enqueueInbound(webhookEventId)) ? "added" : "error";
+    const state = await job.getState();
+    if (state === "failed") {
+      await job.retry("failed");
+      return "retried";
+    }
+    if (state === "completed" || state === "unknown") {
+      // Completado pero la base sigue pendiente (no debería pasar): se recrea.
+      await job.remove();
+      return (await enqueueInbound(webhookEventId)) ? "added" : "error";
+    }
+    return "in_flight"; // waiting / delayed / active: ya va en camino
+  } catch (error) {
+    console.error("[inbound] barrido no pudo revisar el job", webhookEventId, error);
+    return "error";
+  }
+}

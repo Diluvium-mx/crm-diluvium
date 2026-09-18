@@ -97,5 +97,6 @@ CREATE INDEX "conversations_org_last_message_idx" ON "conversations" USING btree
 CREATE UNIQUE INDEX "conversations_channel_provider_conv_uidx" ON "conversations" USING btree ("channel_id","provider_conversation_id") WHERE "conversations"."provider_conversation_id" is not null;--> statement-breakpoint
 CREATE INDEX "messages_conversation_created_idx" ON "messages" USING btree ("conversation_id","created_at" desc);--> statement-breakpoint
 CREATE INDEX "messages_org_idx" ON "messages" USING btree ("organization_id");--> statement-breakpoint
+CREATE UNIQUE INDEX "messages_org_provider_internal_uidx" ON "messages" USING btree ("organization_id","provider_internal_id") WHERE "messages"."provider_internal_id" is not null;--> statement-breakpoint
 CREATE UNIQUE INDEX "templates_channel_name_lang_uidx" ON "templates" USING btree ("channel_id","name","language");--> statement-breakpoint
 CREATE INDEX "webhook_events_pending_idx" ON "webhook_events" USING btree ("received_at") WHERE "webhook_events"."processed_at" is null;

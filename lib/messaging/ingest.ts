@@ -1,7 +1,7 @@
 // Aplica un evento normalizado a la base (lo usa el worker). Toda consulta
 // filtra por organización: la organización sale del CANAL (el número de
 // WhatsApp conectado), nunca del payload.
-import { and, asc, eq, inArray, isNull, or, sql } from "drizzle-orm";
+import { and, asc, eq, inArray, isNull, sql } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { channels, contacts, conversations, messages, webhookEvents } from "@/lib/db/schema";
 import { canonicalPhone, normalizePhone, phoneLookupVariants } from "@/lib/phone";
@@ -58,7 +58,10 @@ async function ingestMessage(event: NormalizedMessageEvent): Promise<string> {
     .where(and(eq(channels.providerAccountId, event.providerAccountId), eq(channels.isActive, true)))
     .limit(1);
   if (!channel) {
-    throw new PermanentIngestError(`no hay canal activo para la cuenta ${event.providerAccountId}`);
+    // Reintentable, NO permanente: si el canal aún no se configura (o se
+    // desactivó por error), el mensaje se aplica en cuanto exista. Agotados
+    // los intentos queda en webhook_events como dead-letter para replay.
+    throw new RetryableIngestError(`no hay canal activo para la cuenta ${event.providerAccountId}`);
   }
 
   let phone: string;
@@ -156,6 +159,11 @@ async function ingestMessage(event: NormalizedMessageEvent): Promise<string> {
 }
 
 async function findOrCreateContact(tx: Tx, orgId: string, phone: string, name?: string): Promise<string> {
+  // Serializa por (organización, teléfono canónico) dentro de la transacción:
+  // dos mensajes simultáneos de un número nuevo no pueden crear dos contactos
+  // (y partir el historial en dos conversaciones). Se usa un candado y no un
+  // índice único porque los contactos importados pueden traer duplicados.
+  await tx.execute(sql`select pg_advisory_xact_lock(hashtextextended(${`contact:${orgId}:${phone}`}, 0))`);
   const [existing] = await tx
     .select({ id: contacts.id })
     .from(contacts)
@@ -177,14 +185,36 @@ async function findOrCreateContact(tx: Tx, orgId: string, phone: string, name?: 
 }
 
 async function ingestStatus(event: NormalizedStatusEvent): Promise<string> {
-  const match = or(
-    event.providerMessageId ? eq(messages.providerMessageId, event.providerMessageId) : undefined,
-    event.providerInternalId ? eq(messages.providerInternalId, event.providerInternalId) : undefined,
-  );
+  // La organización sale del canal (cuenta del proveedor), nunca de un id de
+  // mensaje suelto: un estado jamás toca mensajes de otra organización.
+  let orgId: string | undefined;
+  if (event.providerAccountId) {
+    const [channel] = await db
+      .select({ organizationId: channels.organizationId })
+      .from(channels)
+      .where(eq(channels.providerAccountId, event.providerAccountId))
+      .limit(1);
+    if (!channel) throw new RetryableIngestError(`no hay canal para la cuenta ${event.providerAccountId}`);
+    orgId = channel.organizationId;
+  }
+
+  let match;
+  if (event.providerMessageId) {
+    // El wamid es único en todo WhatsApp (índice único global).
+    match = eq(messages.providerMessageId, event.providerMessageId);
+  } else if (event.providerInternalId && orgId) {
+    match = and(eq(messages.organizationId, orgId), eq(messages.providerInternalId, event.providerInternalId));
+  } else {
+    throw new PermanentIngestError("estado sin wamid ni cuenta del proveedor: no se puede atribuir con seguridad");
+  }
+
   const [message] = await db.select().from(messages).where(match).limit(1);
   if (!message) {
     // El estado llegó antes que el mensaje (o su eco): reintentar más tarde.
     throw new RetryableIngestError("mensaje del estado aún no existe");
+  }
+  if (orgId && message.organizationId !== orgId) {
+    throw new PermanentIngestError("el estado apunta a un mensaje de otra organización; se rechaza");
   }
   const status = nextStatus(message.status, event.status);
   await db
