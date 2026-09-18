@@ -35,3 +35,18 @@ export function nextStatus(current: Status, incoming: Status): Status {
   if (current === "failed") return current;
   return RANK[incoming] > RANK[current] ? incoming : current;
 }
+
+// Códigos de un envío del CRM de resultado ambiguo (lib/messaging/send.ts).
+export const SEND_UNKNOWN = "send_unknown";
+export const SEND_UNCONFIRMED = "send_unconfirmed";
+
+/**
+ * ¿El fallo de este envío es AMBIGUO (no se sabe si llegó al cliente)?
+ * Zernio solo guarda respuestas 2xx para la clave de idempotencia y la libera
+ * cuando su API responde error o corta; reintentar un ambiguo con la misma
+ * clave puede mandar el mensaje DOS veces. Por eso un ambiguo nunca se
+ * reintenta desde el CRM. Un rechazo definitivo (4xx: no salió) sí.
+ */
+export function isAmbiguousSendError(errorCode: string | null | undefined): boolean {
+  return errorCode === SEND_UNCONFIRMED || (errorCode?.startsWith(SEND_UNKNOWN) ?? false);
+}

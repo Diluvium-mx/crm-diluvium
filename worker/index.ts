@@ -15,6 +15,7 @@ import { messages, webhookEvents } from "@/lib/db/schema";
 import { messagingProvider } from "@/lib/messaging";
 import { DEAD_LETTER_ATTEMPTS, DeadLetterIngestError, PermanentIngestError, processWebhookEvent } from "@/lib/messaging/ingest";
 import { downloadMessageMedia } from "@/lib/messaging/media";
+import { MEDIA_MAX_ATTEMPTS, MEDIA_SWEEP_DAYS } from "@/lib/messaging/media-keys";
 import { expireUnconfirmedSends } from "@/lib/messaging/send";
 import {
   enqueueMediaDownload,
@@ -48,8 +49,6 @@ function optionalStorage(): ObjectStorage | null {
 const storage = optionalStorage();
 // Adjuntos pendientes que el barrido reintenta: hasta 30 días (antes de que
 // Meta borre la media) y hasta MEDIA_MAX_ATTEMPTS intentos por adjunto.
-const MEDIA_SWEEP_DAYS = 30;
-const MEDIA_MAX_ATTEMPTS = 25;
 
 const worker = new Worker<InboundJob>(
   INBOUND_QUEUE,

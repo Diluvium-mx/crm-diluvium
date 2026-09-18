@@ -23,7 +23,7 @@ import { db } from "@/lib/db";
 import { channels, conversations, messages } from "@/lib/db/schema";
 import { applyOutboundToConversation, latestInboundMessageId } from "./ingest";
 import { SendFailedError, type MessagingProvider, type SendResult } from "./provider";
-import { isWindowOpen, nextStatus } from "./rules";
+import { isAmbiguousSendError, isWindowOpen, nextStatus, SEND_UNCONFIRMED, SEND_UNKNOWN } from "./rules";
 
 export class SendRejectedError extends Error {
   constructor(
@@ -46,19 +46,7 @@ export type SendTextParams = {
 /** "sent": confirmado. "pending": resultado desconocido, en reconciliación (sin reintento). */
 export type SendOutcome = { messageId: string; status: "sent" | "pending" };
 
-export const SEND_UNKNOWN = "send_unknown";
-export const SEND_UNCONFIRMED = "send_unconfirmed";
-
-/**
- * ¿El fallo de este envío es AMBIGUO (no se sabe si llegó al cliente)?
- * Zernio solo guarda respuestas 2xx para la clave de idempotencia y la libera
- * cuando su API responde error o corta; reintentar un ambiguo con la misma
- * clave puede mandar el mensaje DOS veces. Por eso un ambiguo nunca se
- * reintenta desde el CRM. Un rechazo definitivo (4xx: no salió) sí.
- */
-export function isAmbiguousSendError(errorCode: string | null | undefined): boolean {
-  return errorCode === SEND_UNCONFIRMED || (errorCode?.startsWith(SEND_UNKNOWN) ?? false);
-}
+export { isAmbiguousSendError, SEND_UNCONFIRMED, SEND_UNKNOWN } from "./rules";
 const MAX_TEXT = 4096; // límite de WhatsApp para texto
 
 type ConversationRow = typeof conversations.$inferSelect;
