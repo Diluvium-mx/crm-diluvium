@@ -13,7 +13,7 @@ import { and, asc, count, gte, isNull, lt, sql } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { messages, webhookEvents } from "@/lib/db/schema";
 import { messagingProvider } from "@/lib/messaging";
-import { PermanentIngestError, processWebhookEvent } from "@/lib/messaging/ingest";
+import { DEAD_LETTER_ATTEMPTS, DeadLetterIngestError, PermanentIngestError, processWebhookEvent } from "@/lib/messaging/ingest";
 import { downloadMessageMedia } from "@/lib/messaging/media";
 import { reconcilePendingSends } from "@/lib/messaging/send";
 import {
@@ -29,7 +29,7 @@ import { objectStorage, StorageNotConfiguredError, type ObjectStorage } from "@/
 
 const SWEEP_EVERY_MS = 60_000;
 const SWEEP_MIN_AGE_MS = 60_000;
-const SWEEP_MAX_ATTEMPTS = 20;
+const SWEEP_MAX_ATTEMPTS = DEAD_LETTER_ATTEMPTS;
 
 const provider = messagingProvider();
 
@@ -61,7 +61,7 @@ const worker = new Worker<InboundJob>(
       console.info(`[worker] ${job.data.webhookEventId}: ${outcome}`);
       return outcome;
     } catch (error) {
-      if (error instanceof PermanentIngestError) {
+      if (error instanceof PermanentIngestError || error instanceof DeadLetterIngestError) {
         console.error(`[worker] ${job.data.webhookEventId}: error permanente: ${error.message}`);
         throw new UnrecoverableError(error.message);
       }

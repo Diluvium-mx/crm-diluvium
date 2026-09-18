@@ -74,6 +74,12 @@ export type NormalizedIgnoredEvent = {
   eventId: string;
   event: string;
   reason: string;
+  /**
+   * true = evento que el CRM SÍ procesa (mensaje, estado) pero con un formato
+   * que no se reconoce: probable cambio del proveedor. No se da por procesado:
+   * queda en dead-letter, visible y reprocesable, en vez de perderse.
+   */
+  malformed?: boolean;
 };
 
 export type NormalizedEvent = NormalizedMessageEvent | NormalizedStatusEvent | NormalizedIgnoredEvent;
