@@ -14,6 +14,16 @@ type Tx = Parameters<Parameters<typeof db.transaction>[0]>[0];
 export class PermanentIngestError extends Error {}
 /** Error transitorio: BullMQ reintenta con backoff (p. ej. estado que llegó antes que su mensaje). */
 export class RetryableIngestError extends Error {}
+/**
+ * Evento que el CRM debería procesar pero no entiende (formato cambiado): NO
+ * se reintenta a ciegas ni se da por procesado; va directo a dead-letter
+ * (processed_at nulo, attempts = DEAD_LETTER_ATTEMPTS) para revisarlo y
+ * reprocesarlo con scripts/replay-webhook-events.ts tras ajustar el adaptador.
+ */
+export class DeadLetterIngestError extends Error {}
+
+/** Intentos a partir de los cuales un evento pendiente se considera dead-letter. */
+export const DEAD_LETTER_ATTEMPTS = 20;
 
 export type IngestHooks = {
   /** Se llama (después del commit) con cada mensaje nuevo que trae adjuntos. */
@@ -40,6 +50,7 @@ export async function processWebhookEvent(
     // El proveedor viene del adaptador que VERIFICÓ la firma, no del payload.
     if (event.kind === "message") outcome = await ingestMessage(provider.name, event, hooks);
     else if (event.kind === "status") outcome = await ingestStatus(provider.name, event);
+    else if (event.malformed) throw new DeadLetterIngestError(`formato no reconocido (${event.event}): ${event.reason}`);
     else outcome = `ignorado: ${event.reason}`;
 
     await db
@@ -55,6 +66,7 @@ export async function processWebhookEvent(
         lastError: message,
         // Un error permanente se da por procesado (no bloquea el barrido) pero queda el error.
         ...(error instanceof PermanentIngestError ? { processedAt: new Date() } : {}),
+        ...(error instanceof DeadLetterIngestError ? { attempts: DEAD_LETTER_ATTEMPTS } : {}),
       })
       .where(eq(webhookEvents.id, webhookEventId));
     throw error;
