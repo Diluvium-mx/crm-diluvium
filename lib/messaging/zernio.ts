@@ -19,7 +19,6 @@ import {
   type NormalizedAttachment,
   type NormalizedEvent,
   type NormalizedMessageType,
-  type ProviderOutgoingMessage,
   type SendResult,
   type SendTextInput,
   type WebhookEnvelope,
@@ -329,43 +328,6 @@ export class ZernioProvider implements MessagingProvider {
       providerInternalId: isWamid ? (asString(data.id) ?? returned) : returned,
       providerMessageId: asString(data.platformMessageId) ?? (isWamid ? returned : undefined),
     };
-  }
-
-  // GET /v1/inbox/conversations/{id}/messages: en esta respuesta `id` ES el
-  // wamid (el webhook lo llama platformMessageId).
-  async listRecentOutgoing({
-    providerAccountId,
-    providerConversationId,
-  }: {
-    providerAccountId: string;
-    providerConversationId: string;
-  }): Promise<ProviderOutgoingMessage[]> {
-    const url = new URL(this.apiUrl(`/v1/inbox/conversations/${encodeURIComponent(providerConversationId)}/messages`));
-    url.searchParams.set("accountId", providerAccountId);
-    url.searchParams.set("sortOrder", "desc");
-    url.searchParams.set("limit", "50");
-    const res = await this.fetchImpl(url, {
-      headers: { Authorization: `Bearer ${this.config.apiKey}` },
-      signal: AbortSignal.timeout(SEND_TIMEOUT_MS),
-    });
-    if (!res.ok) throw new Error(`Zernio respondió ${res.status} al listar mensajes`);
-    const json = asRecord(await res.json());
-    const list = Array.isArray(json.messages) ? json.messages : [];
-    const out: ProviderOutgoingMessage[] = [];
-    for (const raw of list) {
-      const m = asRecord(raw);
-      const id = asString(m.id);
-      const at = new Date(String(m.sentAt ?? m.createdAt ?? ""));
-      if (m.direction !== "outgoing" || !id || Number.isNaN(at.getTime())) continue;
-      const status = asString(m.deliveryStatus);
-      out.push({
-        providerMessageId: id,
-        text: typeof m.message === "string" ? m.message : null,
-        at,
-        status: status === "sent" || status === "delivered" || status === "read" || status === "failed" ? status : undefined,
-      });
-    }
-    return out;
   }
 }
 

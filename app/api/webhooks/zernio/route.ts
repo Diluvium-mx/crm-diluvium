@@ -8,8 +8,9 @@
 // 3. encolar (si falla, el barrido del worker lo recoge desde la base);
 // 4. 200. Solo se responde error si NO se pudo guardar: así Zernio reintenta
 //    en vez de dar el evento por entregado y perderlo.
+import { eq } from "drizzle-orm";
 import { db } from "@/lib/db";
-import { webhookEvents } from "@/lib/db/schema";
+import { messages, webhookEvents } from "@/lib/db/schema";
 import {
   allowedAccountIds,
   isAccountAllowed,
@@ -84,19 +85,43 @@ export async function POST(req: Request): Promise<Response> {
     if (envelope.event === WEBHOOK_TEST_EVENT && !envelope.providerAccountId) {
       return Response.json({ ok: true, test: true });
     }
+    // Un estado (entregado/leído/falló) sin cuenta se acepta SOLO si su wamid
+    // ya está en esta base: eso prueba que el mensaje es de este entorno, sin
+    // abrir la puerta a datos del número real.
+    if (!envelope.providerAccountId && (await isStatusOfKnownMessage(provider, payload))) {
+      return store(provider, rowId(provider, envelope), envelope, payload);
+    }
     // Cuenta ajena a este entorno (p. ej. el número real llegando a staging),
     // o evento sin cuenta: 200 para que Zernio no reintente, y NO se guarda nada.
     return Response.json({ ok: true, ignored: "cuenta no permitida en este entorno" });
   }
 
-  const rowId = webhookEventRowId(provider.name, envelope.eventId);
+  return store(provider, rowId(provider, envelope), envelope, payload);
+}
+
+function rowId(provider: MessagingProvider, envelope: WebhookEnvelope): string {
+  return webhookEventRowId(provider.name, envelope.eventId);
+}
+
+async function store(provider: MessagingProvider, id: string, envelope: WebhookEnvelope, payload: unknown): Promise<Response> {
   const inserted = await db
     .insert(webhookEvents)
-    .values({ id: rowId, provider: provider.name, event: envelope.event, payload })
+    .values({ id, provider: provider.name, event: envelope.event, payload })
     .onConflictDoNothing({ target: webhookEvents.id })
     .returning({ id: webhookEvents.id });
 
-  if (inserted.length > 0) await enqueueInbound(rowId);
+  if (inserted.length > 0) await enqueueInbound(id);
 
   return Response.json({ ok: true, duplicate: inserted.length === 0 });
+}
+
+async function isStatusOfKnownMessage(provider: MessagingProvider, payload: unknown): Promise<boolean> {
+  const event = provider.normalize(payload);
+  if (event.kind !== "status" || !event.providerMessageId) return false;
+  const [known] = await db
+    .select({ id: messages.id })
+    .from(messages)
+    .where(eq(messages.providerMessageId, event.providerMessageId))
+    .limit(1);
+  return Boolean(known);
 }

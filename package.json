@@ -9,6 +9,8 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
+    "start:web": "drizzle-kit migrate && next start",
+    "start:worker": "tsx worker/index.ts",
     "lint": "eslint",
     "test": "vitest run",
     "db:generate": "drizzle-kit generate",
