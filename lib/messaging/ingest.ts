@@ -15,7 +15,16 @@ export class PermanentIngestError extends Error {}
 /** Error transitorio: BullMQ reintenta con backoff (p. ej. estado que llegó antes que su mensaje). */
 export class RetryableIngestError extends Error {}
 
-export async function processWebhookEvent(provider: MessagingProvider, webhookEventId: string): Promise<string> {
+export type IngestHooks = {
+  /** Se llama (después del commit) con cada mensaje nuevo que trae adjuntos. */
+  onMediaMessage?: (messageId: string) => Promise<void> | void;
+};
+
+export async function processWebhookEvent(
+  provider: MessagingProvider,
+  webhookEventId: string,
+  hooks: IngestHooks = {},
+): Promise<string> {
   const [row] = await db.select().from(webhookEvents).where(eq(webhookEvents.id, webhookEventId)).limit(1);
   if (!row) throw new PermanentIngestError(`webhook_event ${webhookEventId} no existe`);
   if (row.processedAt) return "ya procesado";
@@ -29,7 +38,7 @@ export async function processWebhookEvent(provider: MessagingProvider, webhookEv
     const event = provider.normalize(row.payload);
     let outcome: string;
     // El proveedor viene del adaptador que VERIFICÓ la firma, no del payload.
-    if (event.kind === "message") outcome = await ingestMessage(provider.name, event);
+    if (event.kind === "message") outcome = await ingestMessage(provider.name, event, hooks);
     else if (event.kind === "status") outcome = await ingestStatus(provider.name, event);
     else outcome = `ignorado: ${event.reason}`;
 
@@ -59,7 +68,7 @@ function channelOf(provider: ProviderName, providerAccountId: string) {
   return and(eq(channels.provider, provider), eq(channels.providerAccountId, providerAccountId));
 }
 
-async function ingestMessage(provider: ProviderName, event: NormalizedMessageEvent): Promise<string> {
+async function ingestMessage(provider: ProviderName, event: NormalizedMessageEvent, hooks: IngestHooks): Promise<string> {
   const [channel] = await db
     .select()
     .from(channels)
@@ -79,7 +88,8 @@ async function ingestMessage(provider: ProviderName, event: NormalizedMessageEve
     throw new PermanentIngestError(`teléfono de contacto inválido: ${event.contactPhone}`);
   }
 
-  return db.transaction(async (tx) => {
+  let mediaMessageId: string | undefined;
+  const result = await db.transaction(async (tx) => {
     const orgId = channel.organizationId;
     const contactId = await findOrCreateContact(tx, orgId, phone, event.contactName);
 
@@ -141,6 +151,7 @@ async function ingestMessage(provider: ProviderName, event: NormalizedMessageEve
         .onConflictDoNothing({ target: messages.providerMessageId })
         .returning({ id: messages.id });
       if (inserted.length === 0) return "mensaje duplicado (wamid ya guardado)";
+      if (event.attachments.length > 0) mediaMessageId = inserted[0].id;
       outcome = event.direction === "in" ? "entrante guardado" : `saliente (${event.source}) guardado`;
     }
 
@@ -174,6 +185,9 @@ async function ingestMessage(provider: ProviderName, event: NormalizedMessageEve
     await tx.update(conversations).set(updates).where(eq(conversations.id, conversation.id));
     return outcome;
   });
+  // Después del commit: la descarga ya puede leer la fila.
+  if (mediaMessageId && hooks.onMediaMessage) await hooks.onMediaMessage(mediaMessageId);
+  return result;
 }
 
 /**

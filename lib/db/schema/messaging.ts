@@ -18,16 +18,23 @@ import {
   uniqueIndex,
 } from "drizzle-orm/pg-core";
 import { organization, user } from "./auth";
+import { contacts } from "./contacts";
 
 export type MessageAttachment = {
   type: string;
   url: string;
   mimeType?: string;
   fileName?: string;
-  /** Llave en el almacenamiento propio, cuando ya se descargó. */
+  providerMediaId?: string;
+  /** sha256 (base64) según WhatsApp; la descarga se verifica contra él. */
+  sha256?: string;
+  /** Llave en el almacenamiento propio (bucket), cuando ya se descargó. */
   storageKey?: string;
+  sizeBytes?: number;
+  downloadedAt?: string;
+  downloadAttempts?: number;
+  downloadError?: string;
 };
-import { contacts } from "./contacts";
 
 export const channelTypeEnum = pgEnum("channel_type", ["whatsapp"]);
 export const messagingProviderEnum = pgEnum("messaging_provider", ["zernio", "meta_cloud"]);

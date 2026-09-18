@@ -25,6 +25,10 @@ export type NormalizedAttachment = {
   url: string;
   mimeType?: string;
   fileName?: string;
+  /** Id de la media en WhatsApp/Meta (estable entre proveedores). */
+  providerMediaId?: string;
+  /** sha256 del archivo (base64) según WhatsApp: verifica la descarga. */
+  sha256?: string;
 };
 
 // Mensaje entrante del contacto, o eco de uno saliente (enviado desde el CRM,
@@ -102,4 +106,9 @@ export interface MessagingProvider {
   /** Normaliza un payload ya verificado. Nunca lanza por formatos desconocidos: devuelve "ignored". */
   normalize(payload: unknown): NormalizedEvent;
   sendText(input: SendTextInput): Promise<SendResult>;
+  /**
+   * Descarga un adjunto recibido. El adaptador decide si la URL necesita sus
+   * credenciales, y NUNCA las envía a un dominio que no sea el suyo.
+   */
+  fetchMedia(url: string, signal?: AbortSignal): Promise<Response>;
 }
