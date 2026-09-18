@@ -194,6 +194,16 @@ describe("ZernioProvider.sendText", () => {
     expect(JSON.parse(init.body)).toEqual({ accountId: "zacc_1", message: "Hola" });
   });
 
+  it("si Zernio devuelve el wamid como messageId, se reconoce como wamid", async () => {
+    const fetchImpl = (async () =>
+      Response.json({ success: true, data: { messageId: "wamid.HBgABC=" } })) as unknown as typeof fetch;
+    const p = new ZernioProvider({ apiKey: "k", webhookSecret: SECRET }, fetchImpl);
+    await expect(p.sendText({ providerAccountId: "a", providerConversationId: "c", text: "x" })).resolves.toEqual({
+      providerInternalId: "wamid.HBgABC=",
+      providerMessageId: "wamid.HBgABC=",
+    });
+  });
+
   it("un error del proveedor se propaga con código y mensaje (para messages.error_code)", async () => {
     const fetchImpl = (async () =>
       Response.json({ error: { code: "WINDOW_CLOSED", message: "Fuera de la ventana de 24 h" } }, { status: 400 })) as unknown as typeof fetch;

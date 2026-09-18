@@ -260,9 +260,15 @@ export class ZernioProvider implements MessagingProvider {
       );
     }
     const data = (json.data ?? json) as Record<string, unknown>;
-    const providerInternalId = asString(data.messageId) ?? asString(data.id);
-    if (!providerInternalId) throw new ZernioSendError(res.status, "sin_message_id", "Zernio no devolvió messageId");
-    return { providerInternalId, providerMessageId: asString(data.platformMessageId) };
+    const returned = asString(data.messageId) ?? asString(data.id);
+    if (!returned) throw new ZernioSendError(res.status, "sin_message_id", "Zernio no devolvió messageId");
+    // Según el endpoint, Zernio devuelve su id interno o directamente el wamid
+    // de WhatsApp (visto en vivo: "wamid.HBg…").
+    const isWamid = returned.startsWith("wamid.");
+    return {
+      providerInternalId: isWamid ? (asString(data.id) ?? returned) : returned,
+      providerMessageId: asString(data.platformMessageId) ?? (isWamid ? returned : undefined),
+    };
   }
 }
 
