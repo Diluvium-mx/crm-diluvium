@@ -9,22 +9,22 @@ import { STAGE_LABELS, TEMPERATURE_EMOJI, TEMPERATURE_LABELS, getContactFullName
 // mientras arrastras), para que la tarjeta arrastrada se vea idéntica.
 export function ContactCardContent({ contact }: { contact: Contact }) {
   return (
-    <div className="flex w-full flex-col gap-1 rounded-md border bg-card p-3 text-left text-sm shadow-sm transition-colors hover:border-brand-navy">
-      <span className="flex items-center gap-1 font-medium">
-        {getContactFullName(contact)}
-        {contact.temperature && (
-          <span
-            role="img"
-            aria-label={TEMPERATURE_LABELS[contact.temperature]}
-            title={TEMPERATURE_LABELS[contact.temperature]}
-            className="text-xs"
-          >
-            {TEMPERATURE_EMOJI[contact.temperature]}
-          </span>
-        )}
-      </span>
-      <span className="text-muted-foreground">{contact.phoneE164 ?? "Sin teléfono"}</span>
-      <span className="text-xs text-muted-foreground">{STAGE_LABELS[contact.stage]}</span>
+    <div className="flex w-full items-center gap-2 rounded-md border bg-card p-3 text-left text-sm shadow-sm transition-colors hover:border-brand-navy">
+      <div className="flex min-w-0 flex-1 flex-col gap-1">
+        <span className="truncate font-medium">{getContactFullName(contact)}</span>
+        <span className="truncate text-muted-foreground">{contact.phoneE164 ?? "Sin teléfono"}</span>
+        <span className="text-xs text-muted-foreground">{STAGE_LABELS[contact.stage]}</span>
+      </div>
+      {contact.temperature && (
+        <span
+          role="img"
+          aria-label={TEMPERATURE_LABELS[contact.temperature]}
+          title={TEMPERATURE_LABELS[contact.temperature]}
+          className="shrink-0 text-xl leading-none"
+        >
+          {TEMPERATURE_EMOJI[contact.temperature]}
+        </span>
+      )}
     </div>
   );
 }
