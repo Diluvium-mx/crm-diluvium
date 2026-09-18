@@ -3,6 +3,7 @@ import { headers } from "next/headers";
 import { redirect } from "next/navigation";
 import { auth } from "@/lib/auth";
 import { SignOutButton } from "./_components/sign-out-button";
+import { ThemeToggle } from "@/components/theme-toggle";
 
 const NAV_ITEMS = [
   { label: "Bandeja / Embudo", href: "/dashboard" },
@@ -43,6 +44,7 @@ export default async function AppLayout({
           <span className="font-semibold text-brand-white">Diluvium</span>
           <div className="flex items-center gap-3">
             <span className="text-sm text-brand-white">{session.user.email}</span>
+            <ThemeToggle />
             <SignOutButton />
           </div>
         </header>
