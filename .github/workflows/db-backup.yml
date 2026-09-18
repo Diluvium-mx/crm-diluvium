@@ -1,0 +1,170 @@
+# Respaldo diario de la BD de producción (Railway Postgres) con pg_dump.
+#
+# - Dump en formato custom (-Fc), probado con un restore real en un
+#   Postgres desechable del propio job antes de guardarlo.
+# - Cifrado simétrico con GPG (AES256) ANTES de subirlo: el repo es público y
+#   los artifacts de un repo público los descarga cualquier cuenta de GitHub.
+# - Se guarda como artifact con retención de 90 días (máximo en repo público).
+#
+# Secrets del environment `production-backup` (solo se entregan a jobs que
+# corren desde `main`; una rama con un workflow modificado no los recibe):
+#   PROD_DATABASE_URL       URL PÚBLICA (TCP proxy) de producción, con un rol
+#                           de solo lectura (backup_ro)
+#   BACKUP_GPG_PASSPHRASE   passphrase de cifrado; guardarla también fuera de
+#                           GitHub (sin ella no hay restore)
+#   BACKUP_HEARTBEAT_URL    opcional: URL de un dead-man switch (p. ej.
+#                           healthchecks.io) que alerta si NO llega el ping
+#
+# Restore y monitoreo: docs/backups.md
+name: db-backup
+
+on:
+  schedule:
+    - cron: "17 9 * * *" # diario, 03:17 hora de CDMX
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: db-backup
+  cancel-in-progress: false
+
+env:
+  # Debe coincidir con la versión mayor del servidor (se verifica abajo).
+  # pg_dump no puede respaldar un servidor más nuevo que él.
+  PG_MAJOR: "18"
+  # TLS AUTENTICADO contra producción. sslmode=require solo cifra: no valida
+  # el certificado, así que un MITM (DNS/red) recibiría la credencial y el
+  # dump en claro. Railway firma el certificado con una CA propia de la
+  # instancia (CN=root-ca; el certificado es para localhost y
+  # postgres.railway.internal, no para el dominio del proxy, así que
+  # verify-full no aplica): se FIJA esa CA con verify-ca. Rotación y
+  # re-fijado: docs/backups.md.
+  PROD_PGSSLMODE: verify-ca
+  PROD_PGSSLROOTCERT: .github/backup/prod-postgres-root-ca.pem
+
+jobs:
+  backup:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    environment: production-backup
+
+    services:
+      # Postgres desechable para probar que el dump se restaura.
+      restore-check:
+        image: postgres:18
+        env:
+          POSTGRES_PASSWORD: restore-check
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s --health-timeout 5s --health-retries 10
+
+    steps:
+      - name: Checkout (solo la CA fijada)
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          sparse-checkout: .github/backup
+          persist-credentials: false
+
+      - name: Verificar secrets
+        env:
+          PROD_DATABASE_URL: ${{ secrets.PROD_DATABASE_URL }}
+          BACKUP_GPG_PASSPHRASE: ${{ secrets.BACKUP_GPG_PASSPHRASE }}
+        run: |
+          [ -n "$PROD_DATABASE_URL" ] || { echo "::error::Falta el secret PROD_DATABASE_URL"; exit 1; }
+          [ -n "$BACKUP_GPG_PASSPHRASE" ] || { echo "::error::Falta el secret BACKUP_GPG_PASSPHRASE"; exit 1; }
+          [ ${#BACKUP_GPG_PASSPHRASE} -ge 32 ] || { echo "::error::BACKUP_GPG_PASSPHRASE debe tener al menos 32 caracteres"; exit 1; }
+
+      - name: Instalar cliente de Postgres ${{ env.PG_MAJOR }} (PGDG)
+        run: |
+          sudo install -d /usr/share/postgresql-common/pgdg
+          sudo curl -fsSLo /usr/share/postgresql-common/pgdg/apt.postgresql.org.asc \
+            https://www.postgresql.org/media/keys/ACCC4CF8.asc
+          echo "deb [signed-by=/usr/share/postgresql-common/pgdg/apt.postgresql.org.asc] https://apt.postgresql.org/pub/repos/apt $(lsb_release -cs)-pgdg main" \
+            | sudo tee /etc/apt/sources.list.d/pgdg.list >/dev/null
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq "postgresql-client-${PG_MAJOR}"
+          echo "/usr/lib/postgresql/${PG_MAJOR}/bin" >> "$GITHUB_PATH"
+
+      - name: Verificar versión del servidor
+        env:
+          PGSSLMODE: ${{ env.PROD_PGSSLMODE }}
+          PGSSLROOTCERT: ${{ env.PROD_PGSSLROOTCERT }}
+          PROD_DATABASE_URL: ${{ secrets.PROD_DATABASE_URL }}
+        run: |
+          # Sin la query de la URL: un ?sslmode=require ahí ganaría sobre PGSSLMODE.
+          prod_url="${PROD_DATABASE_URL%%\?*}"
+          server_major=$(psql "$prod_url" -XAtc "select current_setting('server_version_num')::int / 10000")
+          echo "Servidor: Postgres $server_major · cliente: $(pg_dump --version)"
+          if [ "$server_major" != "$PG_MAJOR" ]; then
+            echo "::error::El servidor es Postgres $server_major y el workflow usa $PG_MAJOR. Actualiza PG_MAJOR y la imagen del service."
+            exit 1
+          fi
+
+      - name: pg_dump
+        env:
+          PGSSLMODE: ${{ env.PROD_PGSSLMODE }}
+          PGSSLROOTCERT: ${{ env.PROD_PGSSLROOTCERT }}
+          PROD_DATABASE_URL: ${{ secrets.PROD_DATABASE_URL }}
+        run: |
+          umask 077
+          prod_url="${PROD_DATABASE_URL%%\?*}"
+          stamp=$(date -u +%Y%m%dT%H%MZ)
+          echo "DUMP=crm-diluvium-prod-${stamp}.dump" >> "$GITHUB_ENV"
+          pg_dump "$prod_url" -Fc -Z 9 -f "crm-diluvium-prod-${stamp}.dump"
+          ls -l "crm-diluvium-prod-${stamp}.dump"
+
+      - name: Probar restore en Postgres desechable
+        env:
+          PGSSLMODE: ${{ env.PROD_PGSSLMODE }}
+          PGSSLROOTCERT: ${{ env.PROD_PGSSLROOTCERT }}
+          PROD_DATABASE_URL: ${{ secrets.PROD_DATABASE_URL }}
+          CHECK_URL: postgresql://postgres:restore-check@localhost:5432/postgres?sslmode=disable
+        run: |
+          pg_restore --list "$DUMP" > /dev/null
+          pg_restore --no-owner --no-acl --exit-on-error -d "$CHECK_URL" "$DUMP"
+
+          count_tables='select count(*) from information_schema.tables where table_schema not in ($$pg_catalog$$, $$information_schema$$)'
+          prod=$(psql "${PROD_DATABASE_URL%%\?*}" -XAtc "$count_tables")
+          restored=$(PGSSLMODE=disable psql "$CHECK_URL" -XAtc "$count_tables")
+          echo "Tablas en producción: $prod · restauradas: $restored"
+          if [ "$restored" -eq 0 ] || [ "$restored" != "$prod" ]; then
+            echo "::error::El restore de prueba no coincide con producción"
+            exit 1
+          fi
+
+      - name: Cifrar con GPG (AES256)
+        env:
+          BACKUP_GPG_PASSPHRASE: ${{ secrets.BACKUP_GPG_PASSPHRASE }}
+        run: |
+          umask 077
+          gpg --batch --yes --pinentry-mode loopback --passphrase-fd 3 \
+            --symmetric --cipher-algo AES256 --compress-algo none \
+            -o "$DUMP.gpg" "$DUMP" 3<<< "$BACKUP_GPG_PASSPHRASE"
+          shred -u "$DUMP"
+          ls -l "$DUMP.gpg"
+
+      - name: Subir artifact cifrado
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: ${{ env.DUMP }}.gpg
+          path: ${{ env.DUMP }}.gpg
+          retention-days: 90
+          compression-level: 0
+          if-no-files-found: error
+
+      # Dead-man switch: el monitor externo alerta cuando este ping DEJA de
+      # llegar. Así se detecta el caso que GitHub no avisa: el cron
+      # desactivado tras 60 días sin actividad en el repo público.
+      - name: Heartbeat (respaldo verificado)
+        env:
+          BACKUP_HEARTBEAT_URL: ${{ secrets.BACKUP_HEARTBEAT_URL }}
+        run: |
+          if [ -z "$BACKUP_HEARTBEAT_URL" ]; then
+            echo "::warning::Sin BACKUP_HEARTBEAT_URL: nadie avisará si el respaldo deja de correr"
+            exit 0
+          fi
+          curl -fsS -m 10 --retry 3 -o /dev/null "$BACKUP_HEARTBEAT_URL"
