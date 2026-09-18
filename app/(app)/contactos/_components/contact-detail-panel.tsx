@@ -1,4 +1,6 @@
-import type { ReactNode } from "react";
+"use client";
+
+import { useEffect, useRef, type ReactNode } from "react";
 import {
   STAGES,
   STAGE_LABELS,
@@ -53,6 +55,25 @@ export function ContactDetailPanel({
   const notes = readNotes(contact);
   const canal = contact.sourceChannel ?? contact.source ?? "—";
 
+  // a11y del modal: cerrar con Escape, enfocar el panel al abrir y devolver el
+  // foco al elemento disparador al cerrar. (Trap de foco completo queda como
+  // mejora futura; esto cubre lo esencial para uso con teclado.)
+  const panelRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    const previouslyFocused = document.activeElement as HTMLElement | null;
+    panelRef.current?.focus();
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        onClose();
+      }
+    };
+    document.addEventListener("keydown", onKey);
+    return () => {
+      document.removeEventListener("keydown", onKey);
+      previouslyFocused?.focus?.();
+    };
+  }, [onClose]);
+
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
       <button
@@ -62,12 +83,19 @@ export function ContactDetailPanel({
         className="absolute inset-0 bg-black/40"
       />
 
-      <div className="relative flex h-[80vh] w-full max-w-4xl flex-col overflow-hidden rounded-lg bg-background shadow-xl md:flex-row">
+      <div
+        ref={panelRef}
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="contact-detail-title"
+        tabIndex={-1}
+        className="relative flex h-[80vh] w-full max-w-4xl flex-col overflow-hidden rounded-lg bg-background shadow-xl outline-none md:flex-row"
+      >
         {/* Panel izquierdo: conversación (placeholder hasta conectar WhatsApp) */}
         <section className="flex min-h-0 flex-1 flex-col border-b md:border-b-0 md:border-r">
           <header className="flex items-center justify-between gap-2 bg-brand-navy px-4 py-3 text-brand-white">
             <div className="min-w-0">
-              <p className="truncate font-semibold">{getContactFullName(contact)}</p>
+              <p id="contact-detail-title" className="truncate font-semibold">{getContactFullName(contact)}</p>
               <p className="truncate text-xs text-white/70">{canal}</p>
             </div>
           </header>
