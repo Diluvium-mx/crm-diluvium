@@ -34,24 +34,24 @@ export const auth = betterAuth({
     cookieCache: { enabled: true, maxAge: 60 },
   },
 
-  // El límite de IP de fábrica (3/10s, node_modules/better-auth/dist/api/
-  // rate-limiter/index.mjs: getDefaultSpecialRules) corre a nivel de router,
-  // ANTES que cualquier hook — sin trustedProxies configurado para Railway,
-  // colapsa en el bucket compartido "no-trusted-ip" y bloquea a todos los
-  // usuarios antes de que el candado por email (lib/auth/email-lockout.ts)
-  // llegue a ejecutarse. Suavizar esa regla no alcanza: sigue siendo un
-  // segundo punto de bloqueo global mientras Railway no entregue una IP de
-  // cliente confiable. Se desactiva por completo en esta ruta —
-  // `false` en customRules apaga la regla para ese path
-  // (node_modules/@better-auth/core/src/types/init-options.ts:262-278) — y
-  // el candado por email queda como ÚNICA capa de rate limiting en Fase 1.
-  // `storage: "database"` sigue activo para el resto de rutas (Postgres, no
-  // Redis) y es la misma tabla `rateLimit` que usa el candado por email.
+  // Limiter de fábrica APAGADO en todas las rutas. Sin trustedProxies,
+  // getIPFromHeader (@better-auth/core/dist/utils/ip.mjs) devuelve null en
+  // cuanto x-forwarded-for trae más de un salto (lo normal en Railway), y
+  // entonces TODOS los usuarios caen en el bucket compartido "no-trusted-ip":
+  // un bloqueo global, no un límite por IP. Railway no publica el CIDR de sus
+  // proxies, así que trustedProxies no se puede configurar con garantías.
+  //
+  // El límite por IP lo pone lib/rate-limit (Redis, ventana deslizante) en
+  // app/api/auth/[...all]/route.ts, antes de Better Auth. El candado por
+  // email (lib/auth/email-lockout.ts) sigue igual en /sign-in/email.
+  //
+  // `storage: "database"` se conserva aunque `enabled` sea false: es lo que
+  // mantiene la tabla `rateLimit` en el schema de Better Auth
+  // (@better-auth/core/dist/db/get-tables.mjs), y el candado por email
+  // escribe en esa tabla.
   rateLimit: {
+    enabled: false,
     storage: "database",
-    customRules: {
-      "/sign-in/email": false,
-    },
   },
 
   trustedOrigins: [process.env.APP_URL],
