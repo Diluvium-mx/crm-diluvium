@@ -18,7 +18,7 @@
 // 4. El eco (message.sent) puede llegar ANTES que la respuesta de la API: si
 //    ya existe una fila con ese wamid, esa fila se queda con la autoría
 //    (source "crm", sent_by_user_id) y la de la cola se borra.
-import { and, eq, isNull, lt } from "drizzle-orm";
+import { and, eq, isNull, lt, or } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { channels, conversations, messages } from "@/lib/db/schema";
 import { applyOutboundToConversation, latestInboundMessageId } from "./ingest";
@@ -263,11 +263,20 @@ export async function linkSentMessage(input: {
       const [queued] = await tx.select().from(messages).where(queuedWhere).for("update");
       if (!queued) throw new Error(`mensaje en cola ${input.queuedId} no existe`);
       let survivor = queued.id;
-      const [echo] = input.providerMessageId
+      // El eco del webhook pudo llegar primero. Se busca por wamid O por el id
+      // interno del proveedor (Zernio a veces confirma el envío devolviendo
+      // SOLO el id interno, sin wamid): en ese caso el eco ya tiene ese id
+      // interno y buscar solo por wamid lo dejaría escapar, y escribirlo en la
+      // fila en cola chocaría con el índice único (organización, id interno).
+      const echoMatchers = [
+        input.providerMessageId ? eq(messages.providerMessageId, input.providerMessageId) : undefined,
+        input.providerInternalId ? eq(messages.providerInternalId, input.providerInternalId) : undefined,
+      ].filter((c): c is NonNullable<typeof c> => c !== undefined);
+      const [echo] = echoMatchers.length
         ? await tx
             .select({ id: messages.id, status: messages.status, source: messages.source })
             .from(messages)
-            .where(and(eq(messages.providerMessageId, input.providerMessageId), eq(messages.organizationId, input.organizationId)))
+            .where(and(eq(messages.organizationId, input.organizationId), or(...echoMatchers)))
             .for("update")
         : [];
       if (echo && echo.id !== queued.id) {
