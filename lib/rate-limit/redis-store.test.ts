@@ -3,26 +3,46 @@
 // (p. ej. `redis-server` local o el Redis de staging). Usan claves con
 // prefijo único y las borran al terminar, pero no apuntarlos a prod.
 import { randomUUID } from "node:crypto";
+import { EventEmitter } from "node:events";
 import Redis from "ioredis";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { createRateLimitRedis } from "./redis-client";
-import { RedisRateLimitStore } from "./redis-store";
+import { RedisRateLimitStore, SLIDING_WINDOW_LUA } from "./redis-store";
 import type { RateLimitRule } from "./limiter";
 
 const rule: RateLimitRule = { name: "t", max: 3, windowMs: 1_000 };
 
-function fakeRedis(impl: {
+type FakeImpl = {
   status?: string;
-  connect?: () => Promise<void>;
-  evalsha?: () => Promise<unknown>;
-  eval?: () => Promise<unknown>;
-}): Redis {
-  return {
-    status: impl.status ?? "ready",
-    connect: impl.connect ?? (() => Promise.resolve()),
-    evalsha: impl.evalsha ?? (() => Promise.resolve([1, 2, 0])),
-    eval: impl.eval ?? (() => Promise.resolve([1, 2, 0])),
-  } as unknown as Redis;
+  connect?: (fake: FakeRedis) => Promise<void>;
+  evalsha?: (...args: unknown[]) => Promise<unknown>;
+  eval?: (...args: unknown[]) => Promise<unknown>;
+};
+
+// Lo mínimo de ioredis que usa el store: status, eventos, connect y scripts.
+class FakeRedis extends EventEmitter {
+  status: string;
+  constructor(private readonly impl: FakeImpl) {
+    super();
+    this.status = impl.status ?? "ready";
+  }
+  connect() {
+    return this.impl.connect ? this.impl.connect(this) : Promise.resolve();
+  }
+  evalsha(...args: unknown[]) {
+    return this.impl.evalsha ? this.impl.evalsha(...args) : Promise.resolve([1, 2, 0]);
+  }
+  eval(...args: unknown[]) {
+    return this.impl.eval ? this.impl.eval(...args) : Promise.resolve([1, 2, 0]);
+  }
+  becomeReady() {
+    this.status = "ready";
+    this.emit("ready");
+  }
+}
+
+function fakeRedis(impl: FakeImpl): Redis {
+  return new FakeRedis(impl) as unknown as Redis;
 }
 
 describe("createRateLimitRedis", () => {
@@ -47,23 +67,55 @@ describe("createRateLimitRedis", () => {
 });
 
 describe("RedisRateLimitStore (cliente falso)", () => {
-  it.each(["connecting", "reconnecting", "end", "close"])(
-    "con Redis en estado %s no emite ningún comando (no puede ejecutarse tarde)",
+  it.each(["connecting", "reconnecting", "close"])(
+    "con Redis en %s espera la conexión con tope y, si no llega, no emite nada",
     async (status) => {
       const evalsha = vi.fn(() => Promise.resolve([1, 2, 0]));
-      const store = new RedisRateLimitStore(fakeRedis({ status, evalsha }));
-      await expect(store.hit("k", rule)).rejects.toThrow(/no está listo/);
+      const store = new RedisRateLimitStore(fakeRedis({ status, evalsha }), 500, 20);
+      await expect(store.hit("k", rule)).rejects.toThrow(/no estuvo listo en 20 ms/);
       expect(evalsha).not.toHaveBeenCalled();
     },
   );
 
-  it("en el primer uso (estado wait) arranca la conexión y deja pasar esa request", async () => {
-    const connect = vi.fn(() => Promise.resolve());
+  it("con la conexión cerrada (end) falla al instante", async () => {
     const evalsha = vi.fn(() => Promise.resolve([1, 2, 0]));
-    const store = new RedisRateLimitStore(fakeRedis({ status: "wait", connect, evalsha }));
-    await expect(store.hit("k", rule)).rejects.toThrow(/no está listo/);
-    expect(connect).toHaveBeenCalledTimes(1);
+    const store = new RedisRateLimitStore(fakeRedis({ status: "end", evalsha }));
+    await expect(store.hit("k", rule)).rejects.toThrow(/end/);
     expect(evalsha).not.toHaveBeenCalled();
+  });
+
+  it("arranque en frío: una ráfaga concurrente espera la MISMA conexión y se limita", async () => {
+    const connect = vi.fn((fake: FakeRedis) => {
+      fake.status = "connecting";
+      setTimeout(() => fake.becomeReady(), 15);
+      return Promise.resolve();
+    });
+    const evalsha = vi.fn(() => Promise.resolve([1, 2, 0]));
+    const fake = new FakeRedis({ status: "wait", connect, evalsha });
+    const store = new RedisRateLimitStore(fake as unknown as Redis, 500, 1_000);
+
+    const results = await Promise.all(Array.from({ length: 50 }, () => store.hit("k", rule)));
+    expect(results).toHaveLength(50);
+    expect(connect).toHaveBeenCalledTimes(1);
+    expect(evalsha).toHaveBeenCalledTimes(50); // ninguna pasó sin consultar a Redis
+    expect(fake.listenerCount("ready")).toBe(0); // sin listeners colgando
+  });
+
+  it("pasa al script un deadline cercano y trata la respuesta 'vencido' como error", async () => {
+    let deadlineArg = 0;
+    const store = new RedisRateLimitStore(
+      fakeRedis({
+        evalsha: async (...args: unknown[]) => {
+          deadlineArg = Number(args[args.length - 1]);
+          return [2, 0, 0];
+        },
+      }),
+      500,
+    );
+    const before = Date.now();
+    await expect(store.hit("k", rule)).rejects.toThrow(/deadline/);
+    expect(deadlineArg).toBeGreaterThanOrEqual(before + 500);
+    expect(deadlineArg).toBeLessThanOrEqual(Date.now() + 2_000);
   });
 
   it("interpreta la respuesta del script", async () => {
@@ -158,6 +210,13 @@ describe.skipIf(!REDIS_TEST_URL)("RedisRateLimitStore (Redis real)", () => {
 
     await new Promise((r) => setTimeout(r, blocked.retryAfterMs + 30));
     expect((await stores[2].hit(key, short)).allowed).toBe(true);
+  });
+
+  it("un hit que Redis ejecuta después de su deadline no reserva nada", async () => {
+    const key = `${prefix}late`;
+    const reply = await clients[0].eval(SLIDING_WINDOW_LUA, 1, key, "60000", "5", randomUUID(), String(Date.now() - 10_000));
+    expect(reply).toEqual([2, 0, 0]);
+    expect(await clients[0].exists(key)).toBe(0);
   });
 
   it("pone TTL a la clave para que Redis la borre sola", async () => {
