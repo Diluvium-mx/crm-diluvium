@@ -532,6 +532,46 @@ describe.skipIf(!TEST_DATABASE_URL)("ingesta de WhatsApp (Postgres real)", () =>
       expect((await conv()).unreadCount).toBe(1);
     });
 
+    it("carrera inversa: un failed/read por id interno llega ANTES del eco; el eco no lo pisa", async () => {
+      const c = await openConversation();
+      const { sendTextMessage } = await import("./send");
+      // La API confirma con SOLO el id interno (fila con providerInternalId, sin wamid).
+      const p = withProvider({ sendText: async () => ({ providerInternalId: "zmsg_TERM" }) });
+      const { messageId } = await sendTextMessage(p, { organizationId: ORG_A, conversationId: c.id, sentByUserId: "u_vendedor", text: "hola" });
+      // Estado "failed" por id interno (sin wamid) — WhatsApp lo rechazó.
+      await deliver({
+        id: `st_fail_${randomUUID()}`,
+        event: "message.failed",
+        message: { id: "zmsg_TERM", error: { code: 131047, message: "Re-engagement" } },
+        account: { id: "zacc_1", platform: "whatsapp" },
+      } as { id: string; event: string });
+      expect((await db.select().from(s.messages).where(eq(s.messages.id, messageId)))[0]).toMatchObject({ status: "failed", errorCode: "131047" });
+
+      // Ahora llega TARDE el eco message.sent (mismo id interno + wamid).
+      await deliver({
+        id: `evt_echo_${randomUUID()}`,
+        event: "message.sent",
+        timestamp: "2026-09-18T10:00:00Z",
+        message: {
+          id: "zmsg_TERM",
+          conversationId: "zconv_5216682410001",
+          platform: "whatsapp",
+          platformMessageId: "wamid.TERM",
+          direction: "outgoing",
+          text: "hola",
+          attachments: [],
+          sender: { id: "zacc_1" },
+          sentAt: "2026-09-18T10:00:00Z",
+          source: "cloud_api",
+        },
+        conversation: { id: "zconv_5216682410001", participantId: "5216682410001", participantName: "Cliente" },
+        account: { id: "zacc_1", platform: "whatsapp" },
+      } as { id: string; event: string });
+      const [m] = await db.select().from(s.messages).where(eq(s.messages.id, messageId));
+      // El eco enlazó el wamid PERO no borró el fallo ni retrocedió a "sent".
+      expect(m).toMatchObject({ status: "failed", errorCode: "131047", providerMessageId: "wamid.TERM" });
+    });
+
     it("carrera: el eco llega primero y la API confirma con SOLO el id interno (sin wamid)", async () => {
       const c = await openConversation();
       const { sendTextMessage } = await import("./send");
@@ -646,6 +686,52 @@ describe.skipIf(!TEST_DATABASE_URL)("ingesta de WhatsApp (Postgres real)", () =>
       });
       await sendTextMessage(p, { organizationId: ORG_A, conversationId: c.id, sentByUserId: "u_vendedor", text: "va" });
       expect((await conv()).unreadCount).toBe(1);
+    });
+  });
+
+  describe("retención y atribución de webhook_events", () => {
+    it("procesar atribuye organization_id; borrar la organización se lleva los eventos", async () => {
+      const e = msgEvent({ sentAt: "2026-09-18T10:00:00Z" });
+      await deliver(e);
+      const [row] = await db.select().from(s.webhookEvents).where(eq(s.webhookEvents.id, `zernio_${e.id}`));
+      expect(row.organizationId).toBe(ORG_A);
+
+      // Cascade: al borrar la organización, sus payloads crudos se van también.
+      await db.delete(s.organization).where(eq(s.organization.id, ORG_A));
+      expect(await db.select().from(s.webhookEvents).where(eq(s.webhookEvents.id, `zernio_${e.id}`))).toHaveLength(0);
+    });
+
+    it("un dead-letter (formato no reconocido) SÍ queda atribuido y se borra con la organización", async () => {
+      // Se guarda por la ruta del webhook (que resuelve la organización desde la cuenta).
+      const SECRET = "whsec_test";
+      const sign = async (body: string) => (await import("node:crypto")).createHmac("sha256", SECRET).update(body).digest("hex");
+      const saved = { ...process.env };
+      Object.assign(process.env, { ZERNIO_API_KEY: "k", ZERNIO_WEBHOOK_SECRET: SECRET, ZERNIO_ALLOWED_ACCOUNT_IDS: "zacc_1" });
+      let rowId: string;
+      try {
+        const { POST } = await import("@/app/api/webhooks/zernio/route");
+        const bad = { id: `evt_dl_${randomUUID()}`, event: "message.received", message: { cambio: "de formato" }, account: { id: "zacc_1", platform: "whatsapp" } };
+        const body = JSON.stringify(bad);
+        const res = await POST(new Request("https://x/api/webhooks/zernio", { method: "POST", body, headers: { "x-zernio-signature": await sign(body) } }));
+        expect(res.status).toBe(200);
+        rowId = `zernio_${bad.id}`;
+      } finally {
+        process.env = saved;
+      }
+      // Se procesa → dead-letter (no procesado), pero YA trae organización.
+      await expect(ingest.processWebhookEvent(provider, rowId)).rejects.toBeInstanceOf(ingest.DeadLetterIngestError);
+      const [row] = await db.select().from(s.webhookEvents).where(eq(s.webhookEvents.id, rowId));
+      expect(row).toMatchObject({ organizationId: ORG_A, processedAt: null });
+      // Borrar la organización se lleva también el dead-letter.
+      await db.delete(s.organization).where(eq(s.organization.id, ORG_A));
+      expect(await db.select().from(s.webhookEvents).where(eq(s.webhookEvents.id, rowId))).toHaveLength(0);
+    });
+
+    it("un evento sin organización (ignorado) queda con organization_id nulo", async () => {
+      const other = { id: `evt_ign_${randomUUID()}`, event: "comment.received" };
+      await deliver(other);
+      const [row] = await db.select().from(s.webhookEvents).where(eq(s.webhookEvents.id, `zernio_${other.id}`));
+      expect(row.organizationId).toBeNull();
     });
   });
 

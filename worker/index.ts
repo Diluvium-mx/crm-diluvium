@@ -9,7 +9,7 @@
 //   envíos del CRM de resultado desconocido y re-encola media pendiente. La base es la
 //   fuente de verdad; la cola solo acelera.
 import { UnrecoverableError, Worker } from "bullmq";
-import { and, asc, count, gte, isNull, lt, sql } from "drizzle-orm";
+import { and, asc, count, gte, isNotNull, isNull, lt, sql } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { messages, webhookEvents } from "@/lib/db/schema";
 import { messagingProvider } from "@/lib/messaging";
@@ -31,6 +31,11 @@ import { objectStorage, StorageNotConfiguredError, type ObjectStorage } from "@/
 const SWEEP_EVERY_MS = 60_000;
 const SWEEP_MIN_AGE_MS = 60_000;
 const SWEEP_MAX_ATTEMPTS = DEAD_LETTER_ATTEMPTS;
+// Retención de webhook_events PROCESADOS: traen datos crudos del cliente
+// (teléfono, nombre, texto, URLs de media). Ya aplicados a las tablas del CRM,
+// se conservan 30 días para reprocesar/depurar y luego se borran. Los NO
+// procesados (dead-letter) NO se tocan: siguen disponibles para replay.
+const WEBHOOK_RETENTION_DAYS = 30;
 
 const provider = messagingProvider();
 
@@ -124,6 +129,18 @@ async function sweep() {
   // Envíos del CRM de resultado desconocido que nunca se confirmaron.
   const unconfirmed = await expireUnconfirmedSends();
   if (unconfirmed) console.warn(`[worker] barrido: ${unconfirmed} envío(s) sin confirmar → failed (send_unconfirmed)`);
+
+  // Retención: borra los eventos ya procesados de más de 30 días.
+  const purged = await db
+    .delete(webhookEvents)
+    .where(
+      and(
+        isNotNull(webhookEvents.processedAt),
+        lt(webhookEvents.processedAt, new Date(Date.now() - WEBHOOK_RETENTION_DAYS * 86_400_000)),
+      ),
+    )
+    .returning({ id: webhookEvents.id });
+  if (purged.length) console.info(`[worker] barrido: ${purged.length} webhook_event(s) procesados purgados (>${WEBHOOK_RETENTION_DAYS} d)`);
 
   if (!storage) return;
   // Media pendiente: mensajes con algún adjunto sin storageKey.
