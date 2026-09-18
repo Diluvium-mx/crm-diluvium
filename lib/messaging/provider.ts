@@ -108,7 +108,7 @@ export type SendTextInput = {
  * - "rejected": el proveedor contestó que NO lo envió (4xx, límite de tasa):
  *   se puede reintentar sin riesgo;
  * - "unknown": no se sabe si salió (timeout, corte, 5xx, respuesta ilegible):
- *   hay que reconciliar contra el proveedor ANTES de permitir reintentar.
+ *   no se ofrece reintentar hasta confirmarlo o darlo por no confirmado.
  */
 export class SendFailedError extends Error {
   constructor(
@@ -121,13 +121,6 @@ export class SendFailedError extends Error {
   }
 }
 
-/** Saliente visto en el proveedor (para reconciliar envíos de resultado desconocido). */
-export type ProviderOutgoingMessage = {
-  providerMessageId: string;
-  text: string | null;
-  at: Date;
-  status?: "sent" | "delivered" | "read" | "failed";
-};
 
 export type SendResult = {
   providerInternalId: string;
@@ -144,8 +137,6 @@ export interface MessagingProvider {
   normalize(payload: unknown): NormalizedEvent;
   /** Lanza SendFailedError (rechazado o desconocido) si no hay confirmación. */
   sendText(input: SendTextInput): Promise<SendResult>;
-  /** Últimos salientes de una conversación en el proveedor, del más nuevo al más viejo. */
-  listRecentOutgoing(input: { providerAccountId: string; providerConversationId: string }): Promise<ProviderOutgoingMessage[]>;
   /**
    * Descarga un adjunto recibido. El adaptador decide si la URL necesita sus
    * credenciales, y NUNCA las envía a un dominio que no sea el suyo.

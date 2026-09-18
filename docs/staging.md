@@ -11,8 +11,13 @@ feature/*  →  staging (se valida en https://crm-diluvium-staging.up.railway.ap
 
 - El web de staging despliega **solo** desde la rama `staging`, y producción solo desde `main`.
   Cada environment tiene su propio *deployment trigger* en Railway.
-- Cada deploy corre `drizzle-kit migrate` antes de `next start` (ver `railway.json`), así que
-  una migración nueva se prueba en staging antes de llegar a producción.
+- Arranque por servicio (sin `railway.json`: Config as Code está deprecado y la API de Railway
+  rechaza `railwayConfigFile`). Los comandos están versionados en `package.json`:
+  - web: `npm run start:web` (= `drizzle-kit migrate && next start`): cada deploy migra antes de
+    arrancar, así que una migración nueva se prueba en staging antes de llegar a producción;
+  - worker: `npm run start:worker` (= `tsx worker/index.ts`), build sin `next build`.
+  El *Custom Start Command* de cada servicio en Railway debe ser exactamente ese script; al
+  crear un servicio o un environment nuevo, es lo primero que se revisa.
 - Para validar una rama, mérgala a `staging` y haz push. Cuando esté validada, abre el PR a `main`.
 
 ## Aislamiento verificado (18-sep-2026)
