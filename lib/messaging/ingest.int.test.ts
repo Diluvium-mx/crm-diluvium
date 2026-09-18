@@ -33,7 +33,7 @@ describe.skipIf(!TEST_DATABASE_URL)("ingesta de WhatsApp (Postgres real)", () =>
   beforeEach(async () => {
     const { sql } = await import("drizzle-orm");
     await db.execute(
-      sql`truncate webhook_events, messages, conversations, templates, channels, contacts, organization cascade`,
+      sql`truncate webhook_events, messages, conversations, templates, channels, contacts, organization, "user" cascade`,
     );
     await db.insert(s.organization).values([
       { id: ORG_A, name: "A", slug: "a", createdAt: new Date() },
@@ -236,5 +236,73 @@ describe.skipIf(!TEST_DATABASE_URL)("ingesta de WhatsApp (Postgres real)", () =>
       displayName: "Nuevo",
     });
     await expect(ingest.processWebhookEvent(provider, row.id)).resolves.toBe("entrante guardado");
+  });
+
+  describe("envío desde el CRM", () => {
+    async function openConversation() {
+      await db.insert(s.user).values({ id: "u_vendedor", name: "Vendedor", email: "v@x.mx" }).onConflictDoNothing();
+      await deliver(msgEvent({ sentAt: new Date(Date.now() - 60_000).toISOString() }));
+      const [conv] = await db.select().from(s.conversations);
+      return conv;
+    }
+    const fakeProvider = (impl: import("./provider").MessagingProvider["sendText"]) =>
+      ({ ...provider, sendText: impl }) as import("./provider").MessagingProvider;
+
+    it("envía dentro de la ventana: sent, wamid, autor y primera respuesta", async () => {
+      const conv = await openConversation();
+      const { sendTextMessage } = await import("./send");
+      const p = fakeProvider(async () => ({ providerInternalId: "wamid.CRM1", providerMessageId: "wamid.CRM1" }));
+      await sendTextMessage(p, { organizationId: ORG_A, conversationId: conv.id, sentByUserId: "u_vendedor", text: "Claro, ¿de cuántas piezas?" });
+
+      const [m] = await db.select().from(s.messages).where(eq(s.messages.direction, "out"));
+      expect(m).toMatchObject({ status: "sent", source: "crm", sentByUserId: "u_vendedor", providerMessageId: "wamid.CRM1" });
+      const [after] = await db.select().from(s.conversations);
+      expect(after.unreadCount).toBe(0);
+      expect(after.firstResponseSeconds).toBeGreaterThanOrEqual(59);
+
+      // El eco que llega después es duplicado: no crea otra fila.
+      await deliver(msgEvent({ direction: "outgoing", source: "cloud_api", wamid: "wamid.CRM1", sentAt: new Date().toISOString() }));
+      expect(await db.select().from(s.messages).where(eq(s.messages.direction, "out"))).toHaveLength(1);
+    });
+
+    it("si el eco gana la carrera, se conserva UNA fila con la autoría del vendedor", async () => {
+      const conv = await openConversation();
+      const { sendTextMessage } = await import("./send");
+      const p = fakeProvider(async () => {
+        await deliver(msgEvent({ direction: "outgoing", source: "cloud_api", wamid: "wamid.RACE", sentAt: new Date().toISOString() }));
+        return { providerInternalId: "wamid.RACE", providerMessageId: "wamid.RACE" };
+      });
+      await sendTextMessage(p, { organizationId: ORG_A, conversationId: conv.id, sentByUserId: "u_vendedor", text: "hola" });
+      const outs = await db.select().from(s.messages).where(eq(s.messages.direction, "out"));
+      expect(outs).toHaveLength(1);
+      expect(outs[0]).toMatchObject({ source: "crm", sentByUserId: "u_vendedor", providerMessageId: "wamid.RACE" });
+    });
+
+    it("error del proveedor: el mensaje queda failed con su código y el error se propaga", async () => {
+      const conv = await openConversation();
+      const { sendTextMessage } = await import("./send");
+      const { ZernioSendError } = await import("./zernio");
+      const p = fakeProvider(async () => {
+        throw new ZernioSendError(400, "WINDOW_CLOSED", "fuera de ventana");
+      });
+      await expect(
+        sendTextMessage(p, { organizationId: ORG_A, conversationId: conv.id, sentByUserId: "u_vendedor", text: "x" }),
+      ).rejects.toThrow("fuera de ventana");
+      const [m] = await db.select().from(s.messages).where(eq(s.messages.direction, "out"));
+      expect(m).toMatchObject({ status: "failed", errorCode: "WINDOW_CLOSED", errorMessage: "fuera de ventana" });
+    });
+
+    it("rechaza fuera de la ventana de 24 h y conversaciones de otra organización", async () => {
+      const conv = await openConversation();
+      const { sendTextMessage, SendRejectedError } = await import("./send");
+      const p = fakeProvider(async () => ({ providerInternalId: "x" }));
+      await expect(
+        sendTextMessage(p, { organizationId: ORG_A, conversationId: conv.id, sentByUserId: "u_vendedor", text: "x", now: new Date(Date.now() + 25 * 3600_000) }),
+      ).rejects.toMatchObject({ code: "window_closed" });
+      await expect(
+        sendTextMessage(p, { organizationId: ORG_B, conversationId: conv.id, sentByUserId: "u_vendedor", text: "x" }),
+      ).rejects.toBeInstanceOf(SendRejectedError);
+      expect(await db.select().from(s.messages).where(eq(s.messages.direction, "out"))).toHaveLength(0);
+    });
   });
 });
