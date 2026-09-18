@@ -201,7 +201,13 @@ export function normalizeZernioEvent(payload: unknown): NormalizedEvent {
       attachments[0]?.type ??
       (metadata?.interactiveType || metadata?.buttonPayload ? "interactive" : message.text ? "text" : "unknown");
 
+    // sentAt gobierna el orden del hilo, la ventana de 24 h y la primera
+    // respuesta: un valor ilegible NO se sustituye por "ahora" (abriría una
+    // ventana falsa y corrompería métricas). Se marca malformado → dead-letter.
     const sentAt = new Date(message.sentAt);
+    if (Number.isNaN(sentAt.getTime())) {
+      return { kind: "ignored", eventId, event, reason: `sentAt inválido: ${message.sentAt}`, malformed: true };
+    }
     return {
       kind: "message",
       eventId,
@@ -219,7 +225,7 @@ export function normalizeZernioEvent(payload: unknown): NormalizedEvent {
       type,
       body: message.text ?? null,
       attachments,
-      sentAt: Number.isNaN(sentAt.getTime()) ? new Date() : sentAt,
+      sentAt,
       referral:
         metadata?.referral && typeof metadata.referral === "object"
           ? (metadata.referral as Record<string, unknown>)
