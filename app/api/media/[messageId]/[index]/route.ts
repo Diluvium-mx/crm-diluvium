@@ -10,7 +10,7 @@ import { headers } from "next/headers";
 import { auth } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { member, messages } from "@/lib/db/schema";
-import { objectStorage } from "@/lib/storage/s3";
+import { objectStorage, StorageNotConfiguredError } from "@/lib/storage/s3";
 
 const SIGNED_URL_SECONDS = 300;
 
@@ -43,7 +43,14 @@ export async function GET(_req: Request, { params }: RouteContext<"/api/media/[m
     );
   }
 
-  const url = await objectStorage().signedGetUrl(attachment.storageKey, SIGNED_URL_SECONDS, attachment.fileName);
+  let url: string;
+  try {
+    url = await objectStorage().signedGetUrl(attachment.storageKey, SIGNED_URL_SECONDS, attachment.fileName);
+  } catch (error) {
+    if (!(error instanceof StorageNotConfiguredError)) throw error;
+    console.error("[media] bucket no configurado:", error.message);
+    return new Response("almacenamiento no configurado", { status: 503 });
+  }
   return new Response(null, {
     status: 302,
     headers: { Location: url, "Cache-Control": "private, no-store" },
