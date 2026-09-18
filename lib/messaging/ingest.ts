@@ -93,34 +93,66 @@ async function ingestMessage(provider: ProviderName, event: NormalizedMessageEve
     throw new RetryableIngestError(`no hay canal activo para la cuenta ${event.providerAccountId}`);
   }
 
-  let phone: string;
+  // El teléfono puede faltar en un eco saliente (p. ej. sin participantId): en
+  // ese caso NO se inventa, se atribuye por la conversación existente.
+  let phone: string | null;
   try {
     phone = canonicalPhone(normalizePhone(event.contactPhone));
   } catch {
-    throw new PermanentIngestError(`teléfono de contacto inválido: ${event.contactPhone}`);
+    phone = null;
   }
 
   let mediaMessageId: string | undefined;
   const result = await db.transaction(async (tx) => {
     const orgId = channel.organizationId;
-    const contactId = await findOrCreateContact(tx, orgId, phone, event.contactName);
 
-    const [upserted] = await tx
-      .insert(conversations)
-      .values({
-        id: crypto.randomUUID(),
-        organizationId: orgId,
-        contactId,
-        channelId: channel.id,
-        providerConversationId: event.providerConversationId,
-      })
-      .onConflictDoUpdate({
-        target: [conversations.channelId, conversations.contactId],
-        set: {
-          providerConversationId: sql`coalesce(${conversations.providerConversationId}, excluded.provider_conversation_id)`,
-        },
-      })
-      .returning();
+    // Conversación ya existente del proveedor (canal + providerConversationId):
+    // así un eco saliente sin teléfono se atribuye a su contacto sin inventarlo.
+    let upserted = event.providerConversationId
+      ? (
+          await tx
+            .select()
+            .from(conversations)
+            .where(
+              and(
+                eq(conversations.channelId, channel.id),
+                eq(conversations.providerConversationId, event.providerConversationId),
+              ),
+            )
+            .limit(1)
+        )[0]
+      : undefined;
+
+    if (!upserted) {
+      if (!phone) {
+        // Sin teléfono ni conversación conocida no hay a quién atribuirlo. Un
+        // entrante así es malformado; un eco saliente puede resolverse cuando
+        // exista la conversación → dead-letter para replay, no se pierde.
+        if (event.direction === "in") {
+          throw new PermanentIngestError(`teléfono de contacto inválido: ${event.contactPhone}`);
+        }
+        throw new DeadLetterIngestError(
+          `eco saliente sin teléfono ni conversación conocida (${event.providerConversationId})`,
+        );
+      }
+      const contactId = await findOrCreateContact(tx, orgId, phone, event.contactName);
+      [upserted] = await tx
+        .insert(conversations)
+        .values({
+          id: crypto.randomUUID(),
+          organizationId: orgId,
+          contactId,
+          channelId: channel.id,
+          providerConversationId: event.providerConversationId,
+        })
+        .onConflictDoUpdate({
+          target: [conversations.channelId, conversations.contactId],
+          set: {
+            providerConversationId: sql`coalesce(${conversations.providerConversationId}, excluded.provider_conversation_id)`,
+          },
+        })
+        .returning();
+    }
 
     // Eco de un mensaje que el CRM mismo envió: ya existe la fila (en cola,
     // sin wamid). Se completa en lugar de duplicarla.
