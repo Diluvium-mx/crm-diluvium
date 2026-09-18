@@ -193,10 +193,21 @@ async function ingestMessage(provider: ProviderName, event: NormalizedMessageEve
       updates.windowExpiresAt = windowExpiresAt(event.sentAt, conversation.windowExpiresAt);
       updates.status = "open";
     }
-    // Primera respuesta: se reconcilia desde la base con CUALQUIER mensaje
-    // nuevo (entrante o saliente), así da igual en qué orden lleguen sus
-    // webhooks. Se fija una sola vez.
-    if (conversation.firstResponseSeconds === null) {
+    // Primera respuesta: se RECALCULA desde la base con cada mensaje nuevo,
+    // no solo la primera vez. Los webhooks pueden llegar tarde y desordenados
+    // (Meta reintenta, replay): un entrante más viejo que aparece después
+    // adelanta la primera respuesta y alarga el tiempo. reconcileFirstResponse
+    // toma el primer entrante y la primera respuesta humana posteriores, así
+    // que converge al valor correcto sin importar el orden. Solo importa
+    // cuando de verdad se insertó algo (no en duplicados).
+    // Recalcular si aún no está fijada (también repara un duplicado que llega a
+    // reconciliar una conversación vieja) o si de verdad se insertó un mensaje
+    // (un entrante viejo que llega tarde adelanta la primera respuesta).
+    if (
+      conversation.firstResponseSeconds === null ||
+      outcome === "entrante guardado" ||
+      outcome.startsWith("saliente")
+    ) {
       const seconds = await reconcileFirstResponse(tx, conversation.id);
       if (seconds !== null) updates.firstResponseSeconds = seconds;
     }

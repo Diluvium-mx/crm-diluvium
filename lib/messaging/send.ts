@@ -48,8 +48,17 @@ export type SendOutcome = { messageId: string; status: "sent" | "pending" };
 
 export const SEND_UNKNOWN = "send_unknown";
 export const SEND_UNCONFIRMED = "send_unconfirmed";
-// Zernio guarda la clave de idempotencia 24 h; se deja 1 h de margen.
-export const SAFE_RETRY_WINDOW_MS = 23 * 3600_000;
+
+/**
+ * ¿El fallo de este envío es AMBIGUO (no se sabe si llegó al cliente)?
+ * Zernio solo guarda respuestas 2xx para la clave de idempotencia y la libera
+ * cuando su API responde error o corta; reintentar un ambiguo con la misma
+ * clave puede mandar el mensaje DOS veces. Por eso un ambiguo nunca se
+ * reintenta desde el CRM. Un rechazo definitivo (4xx: no salió) sí.
+ */
+export function isAmbiguousSendError(errorCode: string | null | undefined): boolean {
+  return errorCode === SEND_UNCONFIRMED || (errorCode?.startsWith(SEND_UNKNOWN) ?? false);
+}
 const MAX_TEXT = 4096; // límite de WhatsApp para texto
 
 type ConversationRow = typeof conversations.$inferSelect;
@@ -106,10 +115,11 @@ export async function sendTextMessage(provider: MessagingProvider, params: SendT
 }
 
 /**
- * ⚠ Reintentar: solo un mensaje "failed" (el proveedor lo rechazó, o la
- * reconciliación no encontró rastro de él). Reusa la MISMA fila y por tanto la
- * misma clave de idempotencia: si el intento original sí había salido, el
- * proveedor devuelve la respuesta guardada y no manda un duplicado.
+ * ⚠ Reintentar: SOLO un mensaje "failed" por rechazo DEFINITIVO del proveedor
+ * (4xx: el mensaje no salió). Un fallo ambiguo (timeout, 5xx, sin confirmar)
+ * NO se reintenta: Zernio libera la clave de idempotencia al fallar, así que
+ * reenviar podría duplicar el mensaje al cliente. Para esos, el vendedor
+ * revisa el chat y escribe de nuevo (mensaje nuevo, clave nueva).
  */
 export async function retryTextMessage(
   provider: MessagingProvider,
@@ -125,16 +135,11 @@ export async function retryTextMessage(
   if (message.direction !== "out" || message.source !== "crm" || message.type !== "text" || !message.body) {
     throw new SendRejectedError("not_retryable", "Solo se reintentan textos enviados desde el CRM");
   }
-  // Un envío AMBIGUO (sin confirmar) solo se reintenta mientras el proveedor
-  // recuerda la clave de idempotencia del PRIMER intento (created_at no cambia
-  // con los reintentos): si aquel sí salió, el proveedor contesta con la
-  // respuesta guardada y no duplica. Pasado ese plazo, reintentar podría
-  // mandar el mensaje dos veces: el vendedor debe revisar el chat y escribirlo
-  // de nuevo a conciencia.
-  if (message.errorCode === SEND_UNCONFIRMED && now.getTime() - message.createdAt.getTime() > SAFE_RETRY_WINDOW_MS) {
+  // Un envío ambiguo (no se sabe si llegó) NO se reintenta: podría duplicar.
+  if (isAmbiguousSendError(message.errorCode)) {
     throw new SendRejectedError(
       "not_retryable",
-      "Ya no se puede reintentar sin riesgo de duplicarlo: revisa el chat en el celular y, si no llegó, escríbelo de nuevo",
+      "No se sabe si este mensaje llegó. Revisa el chat en el celular y, si no llegó, escríbelo de nuevo.",
     );
   }
   const { conversation, channel } = await loadConversation(provider, params.organizationId, message.conversationId, now);
@@ -313,8 +318,9 @@ export const SEND_UNCONFIRMED_AFTER_MS = 15 * 60_000;
  * NO se intenta adivinar cuál saliente del proveedor es: Zernio no acepta un
  * id de correlación propio, y emparejar por texto y hora podría atribuirle al
  * vendedor un mensaje ajeno. Si el envío sí salió, su eco ya está en el hilo
- * (el vendedor lo ve); y "Reintentar" reusa la clave de idempotencia, así que
- * dentro de SAFE_RETRY_WINDOW_MS Zernio devuelve el mismo wamid sin duplicar.
+ * (el vendedor lo ve). No se ofrece "Reintentar" para un envío sin confirmar:
+ * Zernio libera la clave al fallar, así que reintentar podría duplicar; el
+ * vendedor revisa el chat y, si no llegó, lo escribe de nuevo.
  */
 export async function expireUnconfirmedSends(now = new Date()): Promise<number> {
   const expired = await db
