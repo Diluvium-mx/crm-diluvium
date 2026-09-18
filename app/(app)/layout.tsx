@@ -25,7 +25,7 @@ export default async function AppLayout({
   }
 
   return (
-    <div className="flex h-dvh w-full overflow-hidden font-brand">
+    <div className="flex min-h-dvh w-full font-brand">
       <aside className="flex w-56 shrink-0 flex-col bg-brand-navy">
         <nav className="flex flex-col gap-1 p-3">
           {NAV_ITEMS.map((item) => (
@@ -40,7 +40,7 @@ export default async function AppLayout({
         </nav>
       </aside>
 
-      <div className="flex min-h-0 flex-1 flex-col">
+      <div className="flex flex-1 flex-col">
         <header className="flex items-center justify-between bg-brand-navy-dark px-4 py-3">
           <div className="flex items-center rounded-md bg-white px-2.5 py-1.5">
             <Image
@@ -58,7 +58,7 @@ export default async function AppLayout({
           </div>
         </header>
 
-        <main className="flex min-h-0 flex-1 flex-col overflow-hidden bg-background">
+        <main className="flex flex-1 flex-col bg-background">
           {children}
         </main>
       </div>
