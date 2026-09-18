@@ -1,10 +1,11 @@
 "use client";
 
-import { useMemo, useRef, useState, useTransition } from "react";
+import { useCallback, useMemo, useRef, useState, useTransition } from "react";
 import {
   DndContext,
   DragOverlay,
   MouseSensor,
+  pointerWithin,
   TouchSensor,
   useDroppable,
   useSensor,
@@ -48,28 +49,37 @@ function StageColumn({
   const { setNodeRef, isOver } = useDroppable({ id: stage });
   const scrollRef = useRef<HTMLDivElement>(null);
 
-  // Virtualización: solo se montan las tarjetas visibles (~15) + un margen,
-  // reciclando el resto. Es lo que evita el React #441 al cargar miles de
-  // contactos. El droppable vive en la columna (no en las tarjetas) y el
-  // arrastre usa DragOverlay, así que ambos siguen funcionando aunque la
-  // tarjeta origen se recicle fuera de vista.
+  // El contenedor scrolleable ES el droppable (ref combinada): así el
+  // auto-scroll de dnd-kit —que recorre ancestros scrolleables— puede
+  // desplazar la lista al arrastrar cerca del borde, y la colisión encuentra
+  // la columna aunque la tarjeta origen se recicle fuera de vista.
+  const setColumnRef = useCallback(
+    (node: HTMLDivElement | null) => {
+      scrollRef.current = node;
+      setNodeRef(node);
+    },
+    [setNodeRef],
+  );
+
+  // Virtualización: solo se montan las tarjetas visibles (~15) + overscan,
+  // reciclando el resto. Es lo que evita el React #441 con miles de contactos.
   // TanStack Virtual devuelve funciones que el React Compiler no puede
-  // memoizar; es esperado y no afecta el funcionamiento.
+  // memoizar; es esperado y no afecta el funcionamiento (además el compiler no
+  // está activo en este proyecto).
   // eslint-disable-next-line react-hooks/incompatible-library
   const rowVirtualizer = useVirtualizer({
     count: contacts.length,
     getScrollElement: () => scrollRef.current,
     estimateSize: () => 74, // alto aprox. de una tarjeta + separación (pb-2)
     overscan: 6,
-    getItemKey: (index) => contacts[index].id,
+    getItemKey: (index) => contacts[index]?.id ?? index,
   });
 
   const virtualItems = rowVirtualizer.getVirtualItems();
 
   return (
     <div
-      ref={setNodeRef}
-      className={`flex w-72 shrink-0 flex-col rounded-lg border bg-muted transition-colors ${
+      className={`flex min-h-0 w-72 shrink-0 flex-col rounded-lg border bg-muted transition-colors ${
         isOver ? "ring-2 ring-brand-orange" : ""
       }`}
     >
@@ -78,13 +88,16 @@ function StageColumn({
         <span className="rounded-full bg-white/20 px-2 py-0.5 text-xs">{contacts.length}</span>
       </div>
 
-      <div ref={scrollRef} className="flex-1 overflow-y-auto p-2">
+      <div ref={setColumnRef} className="min-h-0 flex-1 overflow-y-auto p-2">
         {contacts.length === 0 ? (
           <p className="p-2 text-center text-xs text-muted-foreground">Sin contactos</p>
         ) : (
           <div style={{ height: rowVirtualizer.getTotalSize(), position: "relative", width: "100%" }}>
             {virtualItems.map((virtualRow) => {
               const contact = contacts[virtualRow.index];
+              if (!contact) {
+                return null;
+              }
               return (
                 <div
                   key={virtualRow.key}
@@ -299,6 +312,7 @@ export function ContactsBoard({ initialContacts }: { initialContacts: Contact[] 
 
       <DndContext
         sensors={sensors}
+        collisionDetection={pointerWithin}
         onDragStart={handleDragStart}
         onDragEnd={handleDragEnd}
         onDragCancel={handleDragCancel}
