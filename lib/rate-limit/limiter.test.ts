@@ -48,10 +48,10 @@ function setup(xffIndex = 0) {
 
 const rule: RateLimitRule = { name: "test", max: 3, windowMs: 10_000 };
 
-function req(ip?: string, path = "/api/auth/get-session"): Request {
+function req(ip?: string, path = "/api/auth/get-session", method = "POST"): Request {
   const headers = new Headers();
   if (ip !== undefined) headers.set("x-forwarded-for", ip);
-  return new Request(`http://localhost${path}`, { method: "POST", headers });
+  return new Request(`http://localhost${path}`, { method, headers });
 }
 
 describe("createRateLimiter", () => {
@@ -109,12 +109,23 @@ describe("createRateLimiter", () => {
     expect((await limiter.check(req("203.0.113.1, 151.101.9.9"), [rule]))?.status).toBe(429);
   });
 
-  it("sin IP resoluble usa un bucket compartido y lo registra", async () => {
+  it("sin IP resoluble NO aplica límite (nada de bucket compartido) y lo registra", async () => {
     const { limiter, log, store } = setup();
-    await limiter.check(req(), [rule]);
-    await limiter.check(req("basura"), [rule]);
-    expect(store.entries.get(rateLimitKey(rule, "unknown"))).toHaveLength(2);
-    expect(log.warn).toHaveBeenCalled();
+    for (const bad of [undefined, "basura", "", " , ", "999.1.1.1"]) {
+      for (let i = 0; i < rule.max * 3; i++) {
+        expect(await limiter.check(req(bad), [rule])).toBeNull();
+      }
+    }
+    expect(store.entries.size).toBe(0);
+    expect(log.error).toHaveBeenCalled();
+  });
+
+  it("con índice fuera de rango tampoco bloquea a todos", async () => {
+    const { limiter, store } = setup(3);
+    for (let i = 0; i < rule.max * 3; i++) {
+      expect(await limiter.check(req("203.0.113.1, 100.64.0.1"), [rule])).toBeNull();
+    }
+    expect(store.entries.size).toBe(0);
   });
 
   it("si una regla rechaza, las siguientes no consumen cupo", async () => {
@@ -185,6 +196,12 @@ describe("reglas de /api/auth", () => {
       expect(rules(req("1.1.1.1", path))).toEqual([auth, signIn]);
     }
     expect(rules(req("1.1.1.1", "/api/auth/get-session"))).toEqual([auth]);
+  });
+
+  it("GET a sign-in/email no consume el cupo estricto de login", () => {
+    for (const method of ["GET", "HEAD", "OPTIONS"]) {
+      expect(rules(req("1.1.1.1", "/api/auth/sign-in/email?x=" + method, method))).toEqual([auth]);
+    }
     expect(rules(req("1.1.1.1", "/api/auth/sign-in/social"))).toEqual([auth]);
   });
 });

@@ -7,7 +7,11 @@ const SIGN_IN_EMAIL_PATH = "/api/auth/sign-in/email";
 export function authRateLimitRules(
   config: Pick<RateLimitConfig, "auth" | "signIn">,
 ): (req: Request) => readonly RateLimitRule[] {
-  return (req) => (isSignInEmail(req) ? [config.auth, config.signIn] : [config.auth]);
+  // La estricta solo en POST: el login es POST, y si contara también GET,
+  // cualquier página podría gastar el cupo de login de una IP con 20 GET
+  // baratos (incluso cross-site) sin intentar autenticarse.
+  return (req) =>
+    req.method === "POST" && isSignInEmail(req) ? [config.auth, config.signIn] : [config.auth];
 }
 
 // Normaliza mayúsculas, barras repetidas y barra final para que
