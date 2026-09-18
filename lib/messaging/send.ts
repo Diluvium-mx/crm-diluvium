@@ -11,14 +11,14 @@
 //    - rechazado (el proveedor dijo que NO salió) → "failed" con su código;
 //      se puede reintentar (retryTextMessage) sin riesgo;
 //    - desconocido (timeout, corte, 5xx) → se queda "queued" con
-//      error_code "send_unknown": NO se ofrece reintentar. El barrido del
-//      worker (reconcilePendingSends) lo busca en el proveedor y lo enlaza, o
-//      tras SEND_UNCONFIRMED_AFTER_MS sin rastro lo pasa a "failed".
+//      error_code "send_unknown": NO se ofrece reintentar. Si el eco llega
+//      con su id, se enlaza solo (ingest.ts); si no, el barrido del worker
+//      (expireUnconfirmedSends) lo pasa a "failed" / send_unconfirmed.
 //    Los errores nunca se tragan: quedan en error_code/error_message (§7).
 // 4. El eco (message.sent) puede llegar ANTES que la respuesta de la API: si
 //    ya existe una fila con ese wamid, esa fila se queda con la autoría
 //    (source "crm", sent_by_user_id) y la de la cola se borra.
-import { and, eq, inArray, isNull, lt } from "drizzle-orm";
+import { and, eq, isNull, lt } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { channels, conversations, messages } from "@/lib/db/schema";
 import { applyOutboundToConversation, latestInboundMessageId } from "./ingest";
@@ -300,121 +300,40 @@ export async function linkSentMessage(input: {
   }
 }
 
-// Sin rastro del envío en el proveedor tras este tiempo (el eco suele llegar
-// en segundos), se da por no enviado y se permite reintentar.
+// Un envío de resultado desconocido que siguió sin confirmarse (ni por la
+// respuesta ni por el eco) tras este tiempo pasa a "failed" y se puede revisar.
 export const SEND_UNCONFIRMED_AFTER_MS = 15 * 60_000;
-const RECONCILE_MIN_AGE_MS = 2 * 60_000;
-const CLOCK_SKEW_MS = 30_000;
-const MATCH_AFTER_MS = 2 * 60_000;
 
 /**
- * Barrido del worker: envíos del CRM que siguen "queued" sin wamid (resultado
- * desconocido, o el proceso murió tras el POST). Se buscan entre los últimos
- * salientes de la conversación en el proveedor: mismo texto, dentro de la
- * ventana del intento, que no sea un eco de la app del celular ni un wamid ya
- * reclamado por otro envío del CRM, y SOLO si hay exactamente un candidato.
- * Encontrado → se enlaza. Sin rastro y viejo → "failed" (ya se puede
- * reintentar, con la misma clave de idempotencia). Error del proveedor al
- * listar → se deja para el siguiente barrido.
+ * Barrido del worker: envíos del CRM que siguen "queued" sin wamid tras
+ * SEND_UNCONFIRMED_AFTER_MS desde su último intento (resultado desconocido, o
+ * el proceso murió tras el POST) pasan a "failed" con error_code
+ * send_unconfirmed.
+ *
+ * NO se intenta adivinar cuál saliente del proveedor es: Zernio no acepta un
+ * id de correlación propio, y emparejar por texto y hora podría atribuirle al
+ * vendedor un mensaje ajeno. Si el envío sí salió, su eco ya está en el hilo
+ * (el vendedor lo ve); y "Reintentar" reusa la clave de idempotencia, así que
+ * dentro de SAFE_RETRY_WINDOW_MS Zernio devuelve el mismo wamid sin duplicar.
  */
-export async function reconcilePendingSends(provider: MessagingProvider, now = new Date()): Promise<{ linked: number; failed: number }> {
-  const pending = await db
-    .select({ message: messages, conversation: conversations, channel: channels })
-    .from(messages)
-    .innerJoin(conversations, eq(conversations.id, messages.conversationId))
-    .innerJoin(channels, eq(channels.id, conversations.channelId))
+export async function expireUnconfirmedSends(now = new Date()): Promise<number> {
+  const expired = await db
+    .update(messages)
+    .set({
+      status: "failed",
+      errorCode: SEND_UNCONFIRMED,
+      errorMessage: "WhatsApp no confirmó el envío. Revisa el chat antes de reintentar.",
+    })
     .where(
       and(
         eq(messages.direction, "out"),
         eq(messages.source, "crm"),
         eq(messages.status, "queued"),
         isNull(messages.providerMessageId),
-        eq(channels.provider, provider.name),
         // sent_at = último intento (un reintento lo renueva), no la creación.
-        lt(messages.sentAt, new Date(now.getTime() - RECONCILE_MIN_AGE_MS)),
+        lt(messages.sentAt, new Date(now.getTime() - SEND_UNCONFIRMED_AFTER_MS)),
       ),
     )
-    .limit(20);
-
-  let linked = 0;
-  let failed = 0;
-  for (const { message, conversation, channel } of pending) {
-    if (!conversation.providerConversationId) continue;
-    let candidates;
-    try {
-      candidates = await provider.listRecentOutgoing({
-        providerAccountId: channel.providerAccountId,
-        providerConversationId: conversation.providerConversationId,
-      });
-    } catch (error) {
-      console.error(`[send] no se pudo reconciliar ${message.id}; siguiente barrido`, error);
-      continue;
-    }
-    const attemptAt = (message.sentAt ?? message.createdAt).getTime();
-    // Candidatos ESTRICTOS (Zernio no acepta un id de correlación propio):
-    // mismo texto y dentro de la ventana del intento (relojes distintos:
-    // -30 s; el POST dura ≤ 15 s: +2 min).
-    const inWindow = candidates.filter(
-      (c) =>
-        c.text?.trim() === message.body &&
-        c.at.getTime() >= attemptAt - CLOCK_SKEW_MS &&
-        c.at.getTime() <= attemptAt + MATCH_AFTER_MS,
-    );
-    // Se descartan los que ya están en la base como algo que NO es un eco de
-    // la API: lo escrito desde la app del celular, o lo que otro envío del
-    // CRM ya reclamó.
-    const known = inWindow.length
-      ? await db
-          .select({ wamid: messages.providerMessageId, source: messages.source })
-          .from(messages)
-          .where(
-            and(
-              eq(messages.organizationId, message.organizationId),
-              inArray(
-                messages.providerMessageId,
-                inWindow.map((c) => c.providerMessageId),
-              ),
-            ),
-          )
-      : [];
-    const excluded = new Set(known.filter((k) => k.source !== "other_api").map((k) => k.wamid));
-    const eligible = inWindow.filter((c) => !excluded.has(c.providerMessageId));
-    // Solo un candidato inequívoco se da por confirmado. Con dos o más, se
-    // deja sin confirmar: el vendedor revisa el chat.
-    const match = eligible.length === 1 ? eligible[0] : undefined;
-
-    if (match) {
-      try {
-        await linkSentMessage({
-          queuedId: message.id,
-          conversationId: conversation.id,
-          organizationId: message.organizationId,
-          sentByUserId: message.sentByUserId,
-          providerMessageId: match.providerMessageId,
-          status: match.status ?? "sent",
-          sentAt: message.sentAt ?? message.createdAt,
-          readCutoffMessageId: null,
-        });
-        linked++;
-        continue;
-      } catch (error) {
-        // Otro barrido concurrente reclamó ese wamid primero: sin confirmar.
-        if (!(error instanceof SendConflictError)) throw error;
-      }
-    }
-    if (attemptAt < now.getTime() - SEND_UNCONFIRMED_AFTER_MS) {
-      const marked = await db
-        .update(messages)
-        .set({
-          status: "failed",
-          errorCode: SEND_UNCONFIRMED,
-          errorMessage: "WhatsApp no confirmó el envío. Revisa el chat antes de reintentar.",
-        })
-        .where(and(eq(messages.id, message.id), eq(messages.status, "queued"), isNull(messages.providerMessageId)))
-        .returning({ id: messages.id });
-      failed += marked.length;
-    }
-  }
-  return { linked, failed };
+    .returning({ id: messages.id });
+  return expired.length;
 }
-
