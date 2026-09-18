@@ -328,9 +328,9 @@ export function ContactsBoard({ initialContacts }: { initialContacts: Contact[] 
           ))}
         </div>
 
-        <DragOverlay>
+        <DragOverlay dropAnimation={{ duration: 220, easing: "cubic-bezier(0.2, 0, 0, 1)" }}>
           {activeContact ? (
-            <div className="w-72 cursor-grabbing">
+            <div className="w-72 scale-[1.02] cursor-grabbing shadow-2xl">
               <ContactCardContent contact={activeContact} />
             </div>
           ) : null}
