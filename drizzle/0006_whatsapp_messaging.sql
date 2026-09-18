@@ -41,6 +41,7 @@ CREATE TABLE "messages" (
 	"source" "message_source" NOT NULL,
 	"type" "message_type" NOT NULL,
 	"body" text,
+	"attachments" jsonb DEFAULT '[]'::jsonb NOT NULL,
 	"media_url" text,
 	"media_mime_type" text,
 	"template_name" text,

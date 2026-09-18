@@ -112,6 +112,11 @@ describe("normalizeZernioEvent", () => {
     });
   });
 
+  it("tolera variantes de escritura del source (whatsappbusinessapp, mayúsculas)", () => {
+    expect(normalizeZernioEvent(echo("whatsappbusinessapp"))).toMatchObject({ source: "business_app" });
+    expect(normalizeZernioEvent(echo("WhatsApp-Business-App"))).toMatchObject({ source: "business_app" });
+  });
+
   it("eco de lo enviado por API (el CRM) y de fuente desconocida", () => {
     expect(normalizeZernioEvent(echo("cloud_api"))).toMatchObject({ direction: "out", source: "crm" });
     expect(normalizeZernioEvent(echo("otra_cosa"))).toMatchObject({ direction: "out", source: "other_api" });

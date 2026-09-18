@@ -18,6 +18,15 @@ import {
   uniqueIndex,
 } from "drizzle-orm/pg-core";
 import { organization, user } from "./auth";
+
+export type MessageAttachment = {
+  type: string;
+  url: string;
+  mimeType?: string;
+  fileName?: string;
+  /** Llave en el almacenamiento propio, cuando ya se descargó. */
+  storageKey?: string;
+};
 import { contacts } from "./contacts";
 
 export const channelTypeEnum = pgEnum("channel_type", ["whatsapp"]);
@@ -133,6 +142,10 @@ export const messages = pgTable(
     source: messageSourceEnum("source").notNull(),
     type: messageTypeEnum("type").notNull(),
     body: text("body"),
+    // TODOS los adjuntos del mensaje ({type, url, mimeType?, fileName?}); un
+    // mensaje puede traer varios. media_url/media_mime_type = el primero,
+    // atajo para la UI. La descarga a almacenamiento propio agrega storageKey.
+    attachments: jsonb("attachments").$type<MessageAttachment[]>().notNull().default([]),
     mediaUrl: text("media_url"),
     mediaMimeType: text("media_mime_type"),
     templateName: text("template_name"),

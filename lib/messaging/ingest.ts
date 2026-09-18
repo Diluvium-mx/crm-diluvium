@@ -130,6 +130,7 @@ async function ingestMessage(provider: ProviderName, event: NormalizedMessageEve
           source: event.source,
           type: event.type,
           body: event.body,
+          attachments: event.attachments,
           mediaUrl: first?.url ?? null,
           mediaMimeType: first?.mimeType ?? null,
           providerMessageId: event.providerMessageId,
