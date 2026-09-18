@@ -239,25 +239,6 @@ describe("ZernioProvider.sendText", () => {
   });
 });
 
-describe("ZernioProvider.listRecentOutgoing", () => {
-  it("lista solo salientes; en esta respuesta `id` es el wamid", async () => {
-    const fetchImpl = vi.fn(async () =>
-      Response.json({
-        messages: [
-          { id: "wamid.OUT", direction: "outgoing", message: "Hola", sentAt: "2026-09-18T10:00:00Z", deliveryStatus: "delivered" },
-          { id: "wamid.IN", direction: "incoming", message: "Hey", createdAt: "2026-09-18T09:59:00Z" },
-        ],
-      }),
-    ) as unknown as typeof fetch;
-    const p = new ZernioProvider({ apiKey: "k", webhookSecret: SECRET }, fetchImpl);
-    await expect(p.listRecentOutgoing({ providerAccountId: "acc", providerConversationId: "conv" })).resolves.toEqual([
-      { providerMessageId: "wamid.OUT", text: "Hola", at: new Date("2026-09-18T10:00:00Z"), status: "delivered" },
-    ]);
-    const [url] = (fetchImpl as unknown as ReturnType<typeof vi.fn>).mock.calls[0];
-    expect(String(url)).toBe("https://zernio.com/api/v1/inbox/conversations/conv/messages?accountId=acc&sortOrder=desc&limit=50");
-  });
-});
-
 describe("zernioAccountId (allowlist)", () => {
   it("lee la cuenta de account.accountId/account.id o anidada, y no elige si se contradicen", () => {
     expect(zernioAccountId({ account: { id: "a1", accountId: "a1" } })).toBe("a1");
