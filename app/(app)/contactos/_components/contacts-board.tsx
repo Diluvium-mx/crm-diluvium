@@ -293,7 +293,7 @@ export function ContactsBoard({ initialContacts }: { initialContacts: Contact[] 
   }
 
   return (
-    <div className="flex flex-1 flex-col gap-4 p-4">
+    <div className="flex min-h-0 flex-1 flex-col gap-4 p-4">
       <div className="flex items-center justify-between gap-4">
         <h1 className="text-lg font-semibold">Contactos</h1>
         <div className="flex items-center gap-3">
@@ -317,7 +317,7 @@ export function ContactsBoard({ initialContacts }: { initialContacts: Contact[] 
         onDragEnd={handleDragEnd}
         onDragCancel={handleDragCancel}
       >
-        <div className="flex flex-1 gap-4 overflow-x-auto pb-2">
+        <div className="flex min-h-0 flex-1 gap-4 overflow-x-auto pb-2">
           {STAGES.map((stage) => (
             <StageColumn
               key={stage}
