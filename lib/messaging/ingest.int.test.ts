@@ -238,6 +238,19 @@ describe.skipIf(!TEST_DATABASE_URL)("ingesta de WhatsApp (Postgres real)", () =>
     await expect(ingest.processWebhookEvent(provider, row.id)).resolves.toBe("entrante guardado");
   });
 
+  it("evento conocido con formato no reconocido: dead-letter visible (no se da por procesado)", async () => {
+    const bad = { id: `evt_bad_${randomUUID()}`, event: "message.received", message: { cambio: "de formato" } };
+    await expect(deliver(bad)).rejects.toBeInstanceOf(ingest.DeadLetterIngestError);
+    const [row] = await db.select().from(s.webhookEvents).where(eq(s.webhookEvents.id, `zernio_${bad.id}`));
+    expect(row.processedAt).toBeNull();
+    expect(row.attempts).toBe(ingest.DEAD_LETTER_ATTEMPTS);
+    expect(row.lastError).toMatch(/formato no reconocido/);
+
+    // Un evento que el CRM no procesa (nombre desconocido) sí se da por procesado.
+    const other = { id: `evt_other_${randomUUID()}`, event: "comment.received" };
+    await expect(deliver(other)).resolves.toMatch(/^ignorado/);
+  });
+
   describe("envío desde el CRM", () => {
     async function openConversation() {
       await db.insert(s.user).values({ id: "u_vendedor", name: "Vendedor", email: "v@x.mx" }).onConflictDoNothing();
@@ -306,11 +319,353 @@ describe.skipIf(!TEST_DATABASE_URL)("ingesta de WhatsApp (Postgres real)", () =>
     });
   });
 
+  describe("envío: outbox, resultado desconocido y reconciliación (hallazgos 3-5)", () => {
+    async function openConversation(unread = 1) {
+      await db.insert(s.user).values({ id: "u_vendedor", name: "Vendedor", email: "v@x.mx" }).onConflictDoNothing();
+      for (let i = 0; i < unread; i++) {
+        await deliver(msgEvent({ sentAt: new Date(Date.now() - 60_000 + i).toISOString() }));
+      }
+      const [conv] = await db.select().from(s.conversations);
+      return conv;
+    }
+    type P = import("./provider").MessagingProvider;
+    const withProvider = (overrides: Partial<P>) =>
+      ({
+        name: "zernio",
+        verifyWebhook: () => true,
+        readEnvelope: provider.readEnvelope.bind(provider),
+        normalize: provider.normalize.bind(provider),
+        fetchMedia: provider.fetchMedia.bind(provider),
+        sendText: async () => {
+          throw new Error("no se esperaba sendText");
+        },
+        listRecentOutgoing: async () => [],
+        ...overrides,
+      }) as P;
+    const outs = () => db.select().from(s.messages).where(eq(s.messages.direction, "out"));
+    const conv = async () => (await db.select().from(s.conversations))[0];
+    const later = (ms: number) => new Date(Date.now() + ms);
+
+    it("timeout tras el POST: queda en cola (send_unknown), sin reintento ni primera respuesta", async () => {
+      const c = await openConversation();
+      const { sendTextMessage, retryTextMessage, SendRejectedError } = await import("./send");
+      const { ZernioSendError } = await import("./zernio");
+      const keys: string[] = [];
+      const p = withProvider({
+        sendText: async (input) => {
+          keys.push(input.idempotencyKey);
+          throw new ZernioSendError(0, "network", "timeout", "unknown");
+        },
+      });
+      const out = await sendTextMessage(p, { organizationId: ORG_A, conversationId: c.id, sentByUserId: "u_vendedor", text: "Precio: $120" });
+      expect(out.status).toBe("pending");
+      const [m] = await outs();
+      expect(m).toMatchObject({ id: out.messageId, status: "queued", errorCode: "send_unknown:network" });
+      expect(keys).toEqual([m.id]); // la clave de idempotencia es el id del mensaje
+      expect((await conv()).firstResponseSeconds).toBeNull();
+      expect((await conv()).unreadCount).toBe(1);
+      await expect(retryTextMessage(p, { organizationId: ORG_A, messageId: m.id, sentByUserId: "u_vendedor" })).rejects.toBeInstanceOf(
+        SendRejectedError,
+      );
+    });
+
+    it("reconciliación: lo encuentra en el proveedor → lo enlaza, sin duplicar el eco que ya había llegado", async () => {
+      const c = await openConversation();
+      const { sendTextMessage, reconcilePendingSends } = await import("./send");
+      const { ZernioSendError } = await import("./zernio");
+      const failing = withProvider({
+        sendText: async () => {
+          throw new ZernioSendError(502, "bad_gateway", "502", "unknown");
+        },
+      });
+      const { messageId } = await sendTextMessage(failing, { organizationId: ORG_A, conversationId: c.id, sentByUserId: "u_vendedor", text: "Sí hay" });
+      // El eco llegó por webhook (sin id interno conocido → fila other_api aparte).
+      await deliver(msgEvent({ direction: "outgoing", source: "cloud_api", wamid: "wamid.LOST", sentAt: new Date().toISOString() }));
+      expect(await outs()).toHaveLength(2);
+
+      const listing = withProvider({
+        listRecentOutgoing: async () => [
+          { providerMessageId: "wamid.OTRO", text: "otro texto", at: new Date() },
+          { providerMessageId: "wamid.LOST", text: "Sí hay", at: new Date(), status: "delivered" },
+        ],
+      });
+      // Antes de 2 min no se toca (el envío pudo seguir en vuelo).
+      await expect(reconcilePendingSends(listing)).resolves.toEqual({ linked: 0, failed: 0 });
+      await expect(reconcilePendingSends(listing, later(3 * 60_000))).resolves.toEqual({ linked: 1, failed: 0 });
+
+      const rows = await outs();
+      expect(rows).toHaveLength(1);
+      expect(rows[0]).toMatchObject({ providerMessageId: "wamid.LOST", source: "crm", sentByUserId: "u_vendedor", status: "delivered" });
+      expect(rows[0].id).not.toBe(messageId); // sobrevive la fila del eco, con la autoría
+      expect((await conv()).firstResponseSeconds).toBeGreaterThanOrEqual(59);
+    });
+
+    it("sin rastro tras 15 min → failed (send_unconfirmed); reintentar reusa la clave y un doble clic no duplica", async () => {
+      const c = await openConversation();
+      const { sendTextMessage, reconcilePendingSends, retryTextMessage, SEND_UNCONFIRMED } = await import("./send");
+      const { ZernioSendError } = await import("./zernio");
+      const p0 = withProvider({
+        sendText: async () => {
+          throw new ZernioSendError(0, "network", "corte", "unknown");
+        },
+      });
+      const { messageId } = await sendTextMessage(p0, { organizationId: ORG_A, conversationId: c.id, sentByUserId: "u_vendedor", text: "¿Lo apartamos?" });
+      await expect(reconcilePendingSends(p0, later(5 * 60_000))).resolves.toEqual({ linked: 0, failed: 0 });
+      await expect(reconcilePendingSends(p0, later(16 * 60_000))).resolves.toEqual({ linked: 0, failed: 1 });
+      expect((await outs())[0]).toMatchObject({ status: "failed", errorCode: SEND_UNCONFIRMED });
+
+      const keys: string[] = [];
+      let release!: () => void;
+      const gate = new Promise<void>((r) => (release = r));
+      const p1 = withProvider({
+        sendText: async (input) => {
+          keys.push(input.idempotencyKey);
+          await gate;
+          return { providerInternalId: "zmsg_R", providerMessageId: "wamid.RETRY" };
+        },
+      });
+      const clicks = [1, 2].map(() => retryTextMessage(p1, { organizationId: ORG_A, messageId, sentByUserId: "u_vendedor" }));
+      // Uno de los dos clics pierde la carrera antes de llegar al proveedor.
+      await expect(Promise.race(clicks.map((c) => c.then(() => "ok", (e) => e.code)))).resolves.toBe("not_retryable");
+      release();
+      const settled = await Promise.allSettled(clicks);
+      expect(settled.filter((r) => r.status === "fulfilled").map((r) => (r as PromiseFulfilledResult<unknown>).value)).toEqual([
+        { messageId, status: "sent" },
+      ]);
+      expect(keys).toEqual([messageId]);
+      expect(await outs()).toHaveLength(1);
+      expect((await outs())[0]).toMatchObject({ status: "sent", providerMessageId: "wamid.RETRY", errorCode: null });
+    });
+
+    it("un send_unconfirmed ya no se reintenta pasado el plazo de la clave de idempotencia", async () => {
+      const c = await openConversation();
+      const { retryTextMessage, SEND_UNCONFIRMED } = await import("./send");
+      await db.insert(s.messages).values({
+        id: "m_viejo",
+        organizationId: ORG_A,
+        conversationId: c.id,
+        direction: "out",
+        source: "crm",
+        type: "text",
+        body: "hola",
+        status: "failed",
+        errorCode: SEND_UNCONFIRMED,
+        sentByUserId: "u_vendedor",
+        sentAt: new Date(Date.now() - 60_000),
+        createdAt: new Date(Date.now() - 24 * 3600_000), // primer intento hace 24 h
+      });
+      const p = withProvider({ sendText: async () => ({ providerInternalId: "x", providerMessageId: "wamid.X" }) });
+      await expect(retryTextMessage(p, { organizationId: ORG_A, messageId: "m_viejo", sentByUserId: "u_vendedor" })).rejects.toMatchObject({
+        code: "not_retryable",
+      });
+      expect((await outs())[0]).toMatchObject({ status: "failed", providerMessageId: null });
+    });
+
+    it("canal desactivado o de otro proveedor: no envía ni crea la fila", async () => {
+      const c = await openConversation();
+      const { sendTextMessage } = await import("./send");
+      const p = withProvider({ sendText: async () => ({ providerInternalId: "x", providerMessageId: "wamid.NO" }) });
+      await db.update(s.channels).set({ isActive: false }).where(eq(s.channels.id, "ch_a"));
+      await expect(
+        sendTextMessage(p, { organizationId: ORG_A, conversationId: c.id, sentByUserId: "u_vendedor", text: "x" }),
+      ).rejects.toMatchObject({ code: "channel_unavailable" });
+      await db.update(s.channels).set({ isActive: true }).where(eq(s.channels.id, "ch_a"));
+      const meta = { ...p, name: "meta_cloud" } as import("./provider").MessagingProvider;
+      await expect(
+        sendTextMessage(meta, { organizationId: ORG_A, conversationId: c.id, sentByUserId: "u_vendedor", text: "x" }),
+      ).rejects.toMatchObject({ code: "channel_unavailable" });
+      expect(await outs()).toHaveLength(0);
+    });
+
+    it("rechazo definitivo (4xx) → failed y se puede reintentar", async () => {
+      const c = await openConversation();
+      const { sendTextMessage, retryTextMessage } = await import("./send");
+      const { ZernioSendError } = await import("./zernio");
+      const rejecting = withProvider({
+        sendText: async () => {
+          throw new ZernioSendError(400, "131056", "Too many messages");
+        },
+      });
+      await expect(
+        sendTextMessage(rejecting, { organizationId: ORG_A, conversationId: c.id, sentByUserId: "u_vendedor", text: "x" }),
+      ).rejects.toMatchObject({ outcome: "rejected" });
+      const [m] = await outs();
+      expect(m).toMatchObject({ status: "failed", errorCode: "131056" });
+      const ok = withProvider({ sendText: async () => ({ providerInternalId: "zmsg_ok", providerMessageId: "wamid.OK" }) });
+      await expect(retryTextMessage(ok, { organizationId: ORG_A, messageId: m.id, sentByUserId: "u_vendedor" })).resolves.toMatchObject({
+        status: "sent",
+      });
+    });
+
+    it("primera respuesta: no cuenta envíos en cola/fallidos, y se revoca si WhatsApp rechaza después", async () => {
+      const c = await openConversation();
+      const { sendTextMessage } = await import("./send");
+      const { ZernioSendError } = await import("./zernio");
+      await expect(
+        sendTextMessage(
+          withProvider({ sendText: async () => { throw new ZernioSendError(400, "x", "rechazado"); } }),
+          { organizationId: ORG_A, conversationId: c.id, sentByUserId: "u_vendedor", text: "a" },
+        ),
+      ).rejects.toThrow();
+      // Un entrante posterior dispara la reconciliación: el fallido no cuenta.
+      await deliver(msgEvent({ sentAt: new Date().toISOString() }));
+      expect((await conv()).firstResponseSeconds).toBeNull();
+
+      await sendTextMessage(withProvider({ sendText: async () => ({ providerInternalId: "zmsg_B", providerMessageId: "wamid.B" }) }), {
+        organizationId: ORG_A,
+        conversationId: c.id,
+        sentByUserId: "u_vendedor",
+        text: "b",
+      });
+      expect((await conv()).firstResponseSeconds).not.toBeNull();
+      await deliver({
+        id: `st_fail_${randomUUID()}`,
+        event: "message.failed",
+        message: { platformMessageId: "wamid.B", error: { code: 131047, message: "Re-engagement" } },
+        account: { id: "zacc_1", platform: "whatsapp" },
+      } as { id: string; event: string });
+      expect((await conv()).firstResponseSeconds).toBeNull();
+    });
+
+    it("no leídos: dos envíos simultáneos con un entrante entre medio no lo borran", async () => {
+      const c = await openConversation(2);
+      const { sendTextMessage } = await import("./send");
+      let arrived!: () => void;
+      const inboundDone = new Promise<void>((r) => (arrived = r));
+      let n = 0;
+      const p = withProvider({
+        sendText: async () => {
+          const mine = ++n;
+          if (mine === 1) {
+            await deliver(msgEvent({ sentAt: new Date().toISOString() }));
+            arrived();
+          } else await inboundDone;
+          return { providerInternalId: `zmsg_C${mine}`, providerMessageId: `wamid.C${mine}` };
+        },
+      });
+      await Promise.all(
+        ["uno", "dos"].map((text) => sendTextMessage(p, { organizationId: ORG_A, conversationId: c.id, sentByUserId: "u_vendedor", text })),
+      );
+      expect((await conv()).unreadCount).toBe(1);
+    });
+
+    it("reconciliación estricta: con dos candidatos, o si el único es un eco de la app, no se confirma", async () => {
+      const c = await openConversation();
+      const { sendTextMessage, reconcilePendingSends } = await import("./send");
+      const { ZernioSendError } = await import("./zernio");
+      const unknown = withProvider({ sendText: async () => { throw new ZernioSendError(0, "network", "corte", "unknown"); } });
+      await sendTextMessage(unknown, { organizationId: ORG_A, conversationId: c.id, sentByUserId: "u_vendedor", text: "Sí" });
+      // Un "Sí" que el vendedor mandó desde el celular (eco business_app ya guardado).
+      await deliver(msgEvent({ direction: "outgoing", source: "whatsapp_business_app", wamid: "wamid.APP", sentAt: new Date().toISOString() }));
+      const onlyApp = withProvider({ listRecentOutgoing: async () => [{ providerMessageId: "wamid.APP", text: "Sí", at: new Date() }] });
+      await expect(reconcilePendingSends(onlyApp, later(3 * 60_000))).resolves.toEqual({ linked: 0, failed: 0 });
+      const two = withProvider({
+        listRecentOutgoing: async () => [
+          { providerMessageId: "wamid.S1", text: "Sí", at: new Date() },
+          { providerMessageId: "wamid.S2", text: "Sí", at: new Date() },
+        ],
+      });
+      await expect(reconcilePendingSends(two, later(3 * 60_000))).resolves.toEqual({ linked: 0, failed: 0 });
+      // Uno viejo (antes del intento) tampoco cuenta.
+      const old = withProvider({ listRecentOutgoing: async () => [{ providerMessageId: "wamid.OLD", text: "Sí", at: new Date(Date.now() - 10 * 60_000) }] });
+      await expect(reconcilePendingSends(old, later(3 * 60_000))).resolves.toEqual({ linked: 0, failed: 0 });
+      const queued = (await outs()).filter((m) => m.source === "crm");
+      expect(queued).toMatchObject([{ status: "queued", providerMessageId: null }]);
+    });
+
+    it("dos envíos del CRM nunca se fusionan en el mismo wamid", async () => {
+      const c = await openConversation();
+      const { sendTextMessage, linkSentMessage, SendConflictError } = await import("./send");
+      await sendTextMessage(withProvider({ sendText: async () => ({ providerInternalId: "z1", providerMessageId: "wamid.ONE" }) }), {
+        organizationId: ORG_A, conversationId: c.id, sentByUserId: "u_vendedor", text: "a",
+      });
+      const { ZernioSendError } = await import("./zernio");
+      const pending = await sendTextMessage(withProvider({ sendText: async () => { throw new ZernioSendError(0, "network", "x", "unknown"); } }), {
+        organizationId: ORG_A, conversationId: c.id, sentByUserId: "u_vendedor", text: "a",
+      });
+      await expect(
+        linkSentMessage({ queuedId: pending.messageId, conversationId: c.id, organizationId: ORG_A, sentByUserId: "u_vendedor", providerMessageId: "wamid.ONE", status: "sent", sentAt: new Date(), readCutoffMessageId: null }),
+      ).rejects.toBeInstanceOf(SendConflictError);
+      expect(await outs()).toHaveLength(2);
+    });
+
+    it("un eco duplicado repara la conversación si quedó desactualizada", async () => {
+      const c = await openConversation();
+      const { sendTextMessage } = await import("./send");
+      await sendTextMessage(withProvider({ sendText: async () => ({ providerInternalId: "zR", providerMessageId: "wamid.REPAIR" }) }), {
+        organizationId: ORG_A, conversationId: c.id, sentByUserId: "u_vendedor", text: "ok",
+      });
+      // Simula un estado viejo (p. ej. escrito antes de este arreglo).
+      await db.update(s.conversations).set({ firstResponseSeconds: null, lastMessageAt: new Date(Date.now() - 3600_000) });
+      await deliver(msgEvent({ direction: "outgoing", source: "cloud_api", wamid: "wamid.REPAIR", sentAt: new Date().toISOString() }));
+      const after = await conv();
+      expect(after.firstResponseSeconds).not.toBeNull();
+      expect(after.lastMessageAt!.getTime()).toBeGreaterThan(Date.now() - 60_000);
+    });
+
+    it("no leídos: un entrante que llega DURANTE el envío sigue sin leer", async () => {
+      const c = await openConversation(2);
+      expect(c.unreadCount).toBe(2);
+      const { sendTextMessage } = await import("./send");
+      const p = withProvider({
+        sendText: async () => {
+          await deliver(msgEvent({ sentAt: new Date().toISOString() })); // llega a mitad del envío
+          return { providerInternalId: "zmsg_U", providerMessageId: "wamid.U" };
+        },
+      });
+      await sendTextMessage(p, { organizationId: ORG_A, conversationId: c.id, sentByUserId: "u_vendedor", text: "va" });
+      expect((await conv()).unreadCount).toBe(1);
+    });
+  });
+
+  describe("webhook: allowlist de cuentas (falla cerrado)", () => {
+    const SECRET = "whsec_test";
+    const sign = async (body: string) => (await import("node:crypto")).createHmac("sha256", SECRET).update(body).digest("hex");
+    async function post(payload: unknown, env: Record<string, string | undefined>) {
+      const saved = { ...process.env };
+      Object.assign(process.env, { ZERNIO_API_KEY: "k", ZERNIO_WEBHOOK_SECRET: SECRET, ...env });
+      for (const [k, v] of Object.entries(env)) if (v === undefined) delete process.env[k];
+      try {
+        const { POST } = await import("@/app/api/webhooks/zernio/route");
+        const body = JSON.stringify(payload);
+        return await POST(new Request("https://x/api/webhooks/zernio", { method: "POST", body, headers: { "x-zernio-signature": await sign(body) } }));
+      } finally {
+        process.env = saved;
+      }
+    }
+    const stored = async () => (await db.select().from(s.webhookEvents)).length;
+
+    it("sin ZERNIO_ALLOWED_ACCOUNT_IDS → 503 y no guarda nada", async () => {
+      const res = await post(msgEvent({ sentAt: "2026-09-18T10:00:00Z" }), { ZERNIO_ALLOWED_ACCOUNT_IDS: undefined });
+      expect(res.status).toBe(503);
+      expect(await stored()).toBe(0);
+      expect((await post(msgEvent({ sentAt: "2026-09-18T10:00:00Z" }), { ZERNIO_ALLOWED_ACCOUNT_IDS: " " })).status).toBe(503);
+    });
+
+    it("otra cuenta, sin cuenta o con cuentas contradictorias → 200 y no guarda; la permitida sí", async () => {
+      const env = { ZERNIO_ALLOWED_ACCOUNT_IDS: "zacc_1" };
+      expect((await post(msgEvent({ account: "zacc_real", sentAt: "2026-09-18T10:00:00Z" }), env)).status).toBe(200);
+      const noAccount = { ...msgEvent({ sentAt: "2026-09-18T10:00:00Z" }), account: undefined };
+      expect((await post(noAccount, env)).status).toBe(200);
+      const nested = msgEvent({ sentAt: "2026-09-18T10:00:00Z" });
+      (nested.message as Record<string, unknown>).accountId = "zacc_real";
+      expect((await post(nested, env)).status).toBe(200);
+      expect(await post({ id: "evt_test", event: "webhook.test" }, env).then((r) => r.json())).toEqual({ ok: true, test: true });
+      expect(await stored()).toBe(0);
+
+      expect((await post(msgEvent({ sentAt: "2026-09-18T10:00:00Z" }), env)).status).toBe(200);
+      expect(await stored()).toBe(1);
+    });
+  });
+
   describe("media: descarga a almacenamiento propio", () => {
     class MemoryStorage {
       objects = new Map<string, { body: Uint8Array; contentType: string }>();
-      async put(key: string, body: Uint8Array, contentType: string) {
-        this.objects.set(key, { body, contentType });
+      // Como S3 multipart: el objeto solo aparece si el stream termina bien.
+      async putStream(key: string, body: import("node:stream").Readable, contentType: string) {
+        const chunks: Buffer[] = [];
+        for await (const chunk of body) chunks.push(chunk as Buffer);
+        this.objects.set(key, { body: new Uint8Array(Buffer.concat(chunks)), contentType });
       }
       async exists(key: string) {
         return this.objects.has(key);
@@ -386,11 +741,36 @@ describe.skipIf(!TEST_DATABASE_URL)("ingesta de WhatsApp (Postgres real)", () =>
       expect(after.attachments[0].downloadAttempts).toBe(2);
     });
 
+    it("streaming: un archivo que excede el límite a media descarga se corta y no queda en el bucket", async () => {
+      const m = await messageWithAttachments();
+      const storage = new MemoryStorage();
+      const { downloadMessageMedia } = await import("./media");
+      let pulled = 0;
+      // Sin Content-Length y en trozos de 1 KB: el límite se aplica al vuelo.
+      const endless = {
+        ...provider,
+        fetchMedia: async () =>
+          new Response(
+            new ReadableStream<Uint8Array>({
+              pull(controller) {
+                pulled++;
+                controller.enqueue(new Uint8Array(1024));
+              },
+            }),
+          ),
+      } as import("./provider").MessagingProvider;
+      await expect(downloadMessageMedia(endless, storage, m.id, { maxBytes: 8 * 1024 })).rejects.toThrow(/excede 8192 bytes/);
+      expect(storage.objects.size).toBe(0);
+      expect(pulled).toBeLessThan(40); // se dejó de leer en cuanto pasó el límite
+      const [after] = await db.select().from(s.messages);
+      expect(after.attachments.every((a) => !a.storageKey && a.downloadError)).toBe(true);
+    });
+
     it("si el objeto ya estaba en el bucket (subida previa sin anotar), se reutiliza", async () => {
       const m = await messageWithAttachments();
       const storage = new MemoryStorage();
-      await storage.put(`org/${ORG_A}/messages/${m.id}/0-F-1.pdf`, pdf, "application/pdf");
-      await storage.put(`org/${ORG_A}/messages/${m.id}/1-F-1.xml`, xml, "application/xml");
+      storage.objects.set(`org/${ORG_A}/messages/${m.id}/0-F-1.pdf`, { body: pdf, contentType: "application/pdf" });
+      storage.objects.set(`org/${ORG_A}/messages/${m.id}/1-F-1.xml`, { body: xml, contentType: "application/xml" });
       const { downloadMessageMedia } = await import("./media");
       await expect(downloadMessageMedia(providerServing({ "1": 503, "2": 503 }), storage, m.id)).resolves.toEqual({ stored: 2, pending: 0 });
     });

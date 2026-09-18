@@ -1,19 +1,29 @@
 // Aplica un evento normalizado a la base (lo usa el worker). Toda consulta
 // filtra por organización: la organización sale del CANAL (el número de
 // WhatsApp conectado), nunca del payload.
-import { and, asc, eq, gte, inArray, isNotNull, isNull, or, sql } from "drizzle-orm";
+import { and, asc, count, desc, eq, gte, inArray, isNotNull, isNull, or, sql } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { channels, contacts, conversations, messages, webhookEvents } from "@/lib/db/schema";
 import { canonicalPhone, normalizePhone, phoneLookupVariants } from "@/lib/phone";
 import type { MessagingProvider, NormalizedMessageEvent, NormalizedStatusEvent, ProviderName } from "./provider";
 import { firstResponseSeconds, nextStatus, windowExpiresAt } from "./rules";
 
-type Tx = Parameters<Parameters<typeof db.transaction>[0]>[0];
+export type Tx = Parameters<Parameters<typeof db.transaction>[0]>[0];
 
 /** Error que no se arregla reintentando (el evento queda marcado, no se reintenta). */
 export class PermanentIngestError extends Error {}
 /** Error transitorio: BullMQ reintenta con backoff (p. ej. estado que llegó antes que su mensaje). */
 export class RetryableIngestError extends Error {}
+/**
+ * Evento que el CRM debería procesar pero no entiende (formato cambiado): NO
+ * se reintenta a ciegas ni se da por procesado; va directo a dead-letter
+ * (processed_at nulo, attempts = DEAD_LETTER_ATTEMPTS) para revisarlo y
+ * reprocesarlo con scripts/replay-webhook-events.ts tras ajustar el adaptador.
+ */
+export class DeadLetterIngestError extends Error {}
+
+/** Intentos a partir de los cuales un evento pendiente se considera dead-letter. */
+export const DEAD_LETTER_ATTEMPTS = 20;
 
 export type IngestHooks = {
   /** Se llama (después del commit) con cada mensaje nuevo que trae adjuntos. */
@@ -40,6 +50,7 @@ export async function processWebhookEvent(
     // El proveedor viene del adaptador que VERIFICÓ la firma, no del payload.
     if (event.kind === "message") outcome = await ingestMessage(provider.name, event, hooks);
     else if (event.kind === "status") outcome = await ingestStatus(provider.name, event);
+    else if (event.malformed) throw new DeadLetterIngestError(`formato no reconocido (${event.event}): ${event.reason}`);
     else outcome = `ignorado: ${event.reason}`;
 
     await db
@@ -55,6 +66,7 @@ export async function processWebhookEvent(
         lastError: message,
         // Un error permanente se da por procesado (no bloquea el barrido) pero queda el error.
         ...(error instanceof PermanentIngestError ? { processedAt: new Date() } : {}),
+        ...(error instanceof DeadLetterIngestError ? { attempts: DEAD_LETTER_ATTEMPTS } : {}),
       })
       .where(eq(webhookEvents.id, webhookEventId));
     throw error;
@@ -116,7 +128,7 @@ async function ingestMessage(provider: ProviderName, event: NormalizedMessageEve
     if (event.direction === "out") {
       const completed = await tx
         .update(messages)
-        .set({ providerMessageId: event.providerMessageId, status: "sent", sentAt: event.sentAt })
+        .set({ providerMessageId: event.providerMessageId, status: "sent", sentAt: event.sentAt, errorCode: null, errorMessage: null })
         .where(
           and(
             eq(messages.organizationId, orgId),
@@ -150,9 +162,15 @@ async function ingestMessage(provider: ProviderName, event: NormalizedMessageEve
         })
         .onConflictDoNothing({ target: messages.providerMessageId })
         .returning({ id: messages.id });
-      if (inserted.length === 0) return "mensaje duplicado (wamid ya guardado)";
-      if (event.attachments.length > 0) mediaMessageId = inserted[0].id;
-      outcome = event.direction === "in" ? "entrante guardado" : `saliente (${event.source}) guardado`;
+      if (inserted.length === 0) {
+        // Duplicado (reintento del proveedor, o eco de un envío ya enlazado):
+        // no se inserta, pero la conversación SÍ se reconcilia abajo (último
+        // mensaje, primera respuesta) por si quedó desactualizada.
+        outcome = "mensaje duplicado (wamid ya guardado)";
+      } else {
+        if (event.attachments.length > 0) mediaMessageId = inserted[0].id;
+        outcome = event.direction === "in" ? "entrante guardado" : `saliente (${event.source}) guardado`;
+      }
     }
 
     // Se BLOQUEA la conversación antes de leer sus contadores: con varios
@@ -191,28 +209,67 @@ async function ingestMessage(provider: ProviderName, event: NormalizedMessageEve
 }
 
 /**
- * Tras un saliente enviado desde el CRM: último mensaje y primera respuesta.
- * (El eco de ese envío llega como duplicado del wamid y no pasa por aquí.)
+ * Tras un saliente confirmado del CRM, DENTRO de la transacción que lo enlaza
+ * (así un corte a la mitad no deja el mensaje enviado con la conversación
+ * vieja): último mensaje, primera respuesta y no leídos hasta el corte que el
+ * vendedor tenía a la vista. Bloquea la conversación; quien llama la bloquea
+ * ANTES que los mensajes (mismo orden que la ingesta).
  */
-export async function refreshConversationAfterOutbound(conversationId: string, sentAt: Date): Promise<void> {
-  await db.transaction(async (tx) => {
-    const [conversation] = await tx
-      .select()
-      .from(conversations)
-      .where(eq(conversations.id, conversationId))
-      .for("update");
-    if (!conversation) return;
-    const updates: Partial<typeof conversations.$inferInsert> = {
-      unreadCount: 0,
-      lastMessageAt:
-        conversation.lastMessageAt && conversation.lastMessageAt > sentAt ? conversation.lastMessageAt : sentAt,
-    };
-    if (conversation.firstResponseSeconds === null) {
-      const seconds = await reconcileFirstResponse(tx, conversationId);
-      if (seconds !== null) updates.firstResponseSeconds = seconds;
-    }
-    await tx.update(conversations).set(updates).where(eq(conversations.id, conversationId));
-  });
+export async function applyOutboundToConversation(
+  tx: Tx,
+  conversationId: string,
+  sentAt: Date,
+  readCutoffMessageId: string | null,
+): Promise<void> {
+  const [conversation] = await tx.select().from(conversations).where(eq(conversations.id, conversationId)).for("update");
+  if (!conversation) return;
+  const updates: Partial<typeof conversations.$inferInsert> = {
+    lastMessageAt:
+      conversation.lastMessageAt && conversation.lastMessageAt > sentAt ? conversation.lastMessageAt : sentAt,
+    unreadCount: await unreadAfterCutoff(tx, conversation, readCutoffMessageId),
+  };
+  if (conversation.firstResponseSeconds === null) {
+    const seconds = await reconcileFirstResponse(tx, conversationId);
+    if (seconds !== null) updates.firstResponseSeconds = seconds;
+  }
+  await tx.update(conversations).set(updates).where(eq(conversations.id, conversationId));
+}
+
+/** Último entrante de la conversación: el corte de lectura de lo que hay a la vista. */
+export async function latestInboundMessageId(conversationId: string, tx: Tx | typeof db = db): Promise<string | null> {
+  const [row] = await tx
+    .select({ id: messages.id })
+    .from(messages)
+    .where(and(eq(messages.conversationId, conversationId), eq(messages.direction, "in")))
+    .orderBy(desc(messages.createdAt), desc(messages.id))
+    .limit(1);
+  return row?.id ?? null;
+}
+
+/**
+ * No leídos tras marcar como leído todo lo entrante hasta `cutoffMessageId`
+ * (inclusive): los entrantes guardados DESPUÉS del corte siguen sin leer. Se
+ * compara en SQL (la hora del corte con microsegundos, sin pasar por JS).
+ * Nunca sube el contador: un corte viejo que llega tarde (p. ej. un envío
+ * lento) no revive como no leído lo que otra lectura ya marcó. Idempotente.
+ */
+export async function unreadAfterCutoff(
+  tx: Tx,
+  conversation: { id: string; unreadCount: number },
+  cutoffMessageId: string | null,
+): Promise<number> {
+  if (!cutoffMessageId) return conversation.unreadCount; // no había nada a la vista
+  const [{ value }] = await tx
+    .select({ value: count() })
+    .from(messages)
+    .where(
+      and(
+        eq(messages.conversationId, conversation.id),
+        eq(messages.direction, "in"),
+        sql`${messages.createdAt} > (select created_at from messages where id = ${cutoffMessageId})`,
+      ),
+    );
+  return Math.min(conversation.unreadCount, value);
 }
 
 async function reconcileFirstResponse(tx: Tx, conversationId: string): Promise<number | null> {
@@ -239,6 +296,9 @@ async function reconcileFirstResponse(tx: Tx, conversationId: string): Promise<n
           eq(messages.source, "business_app"),
           and(eq(messages.source, "crm"), isNotNull(messages.sentByUserId)),
         ),
+        // Solo lo que de verdad salió: un envío en cola, de resultado
+        // desconocido o fallido no es una respuesta al cliente.
+        inArray(messages.status, ["sent", "delivered", "read"]),
         gte(messages.sentAt, firstIn.at),
       ),
     )
@@ -297,7 +357,8 @@ async function ingestStatus(provider: ProviderName, event: NormalizedStatusEvent
     throw new PermanentIngestError("estado sin wamid ni cuenta del proveedor: no se puede atribuir con seguridad");
   }
 
-  return db.transaction(async (tx) => {
+  let revokeReplyOf: string | undefined;
+  const outcome = await db.transaction(async (tx) => {
     // FOR UPDATE: dos estados del mismo mensaje procesándose a la vez (p. ej.
     // read y un delivered tardío) se serializan; el segundo ve el valor ya
     // escrito por el primero y nextStatus nunca retrocede.
@@ -310,6 +371,13 @@ async function ingestStatus(provider: ProviderName, event: NormalizedStatusEvent
       throw new PermanentIngestError("el estado apunta a un mensaje de otra organización; se rechaza");
     }
     const status = nextStatus(message.status, event.status);
+    // Un saliente que WhatsApp terminó rechazando no llegó al cliente: si fijó
+    // la primera respuesta, se recalcula DESPUÉS del commit (en su propia
+    // transacción, para no bloquear mensaje y conversación en orden inverso
+    // al de la ingesta).
+    if (status === "failed" && message.status !== "failed" && message.direction === "out") {
+      revokeReplyOf = message.conversationId;
+    }
     await tx
       .update(messages)
       .set({
@@ -321,5 +389,22 @@ async function ingestStatus(provider: ProviderName, event: NormalizedStatusEvent
       })
       .where(and(eq(messages.id, message.id), eq(messages.organizationId, message.organizationId)));
     return `estado ${message.status} → ${status}`;
+  });
+  if (revokeReplyOf) await recomputeFirstResponse(revokeReplyOf);
+  return outcome;
+}
+
+async function recomputeFirstResponse(conversationId: string): Promise<void> {
+  await db.transaction(async (tx) => {
+    const [conversation] = await tx
+      .select({ firstResponseSeconds: conversations.firstResponseSeconds })
+      .from(conversations)
+      .where(eq(conversations.id, conversationId))
+      .for("update");
+    if (!conversation || conversation.firstResponseSeconds === null) return;
+    await tx
+      .update(conversations)
+      .set({ firstResponseSeconds: await reconcileFirstResponse(tx, conversationId) })
+      .where(eq(conversations.id, conversationId));
   });
 }

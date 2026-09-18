@@ -8,19 +8,21 @@
 // - coexistencia: lo que el vendedor manda desde la app del celular llega
 //   como `message.sent` con `source: "whatsapp_business_app"`.
 //
-// Los payloads de estado (message.delivered/read/failed) no están
-// documentados: se leen de forma tolerante y, si no se reconocen, el evento
-// queda "ignored" pero guardado crudo en webhook_events (nada se pierde).
+// Los payloads de estado (message.delivered/read/failed) se leen de forma
+// tolerante. Un evento que el CRM procesa pero cuyo formato no se reconoce
+// sale "malformed": queda en dead-letter en webhook_events (nada se pierde).
 import { createHmac, timingSafeEqual } from "node:crypto";
 import { z } from "zod";
-import type {
-  MessagingProvider,
-  NormalizedAttachment,
-  NormalizedEvent,
-  NormalizedMessageType,
-  SendResult,
-  SendTextInput,
-  WebhookEnvelope,
+import {
+  SendFailedError,
+  type MessagingProvider,
+  type NormalizedAttachment,
+  type NormalizedEvent,
+  type NormalizedMessageType,
+  type ProviderOutgoingMessage,
+  type SendResult,
+  type SendTextInput,
+  type WebhookEnvelope,
 } from "./provider";
 
 const DEFAULT_BASE_URL = "https://zernio.com/api";
@@ -118,12 +120,38 @@ function asString(value: unknown): string | undefined {
   return typeof value === "string" && value.length > 0 ? value : undefined;
 }
 
+function asRecord(value: unknown): Record<string, unknown> {
+  return value && typeof value === "object" ? (value as Record<string, unknown>) : {};
+}
+
+/**
+ * Cuenta (número conectado) del evento. Zernio la documenta en
+ * `account.accountId` (canónico) y `account.id`; se buscan también las formas
+ * anidadas (`message.accountId`, `data.accountId`, `accountId`). Si dos
+ * lugares traen ids DISTINTOS no se elige ninguno: sin cuenta, el webhook
+ * rechaza el evento (falla cerrado).
+ */
+export function zernioAccountId(payload: unknown): string | undefined {
+  const root = asRecord(payload);
+  const account = asRecord(root.account);
+  const candidates = [
+    account.accountId,
+    account.id,
+    asRecord(root.message).accountId,
+    asRecord(root.data).accountId,
+    root.accountId,
+  ]
+    .map(asString)
+    .filter((id): id is string => id !== undefined);
+  const unique = new Set(candidates);
+  return unique.size === 1 ? candidates[0] : undefined;
+}
+
 function findStatusFields(payload: Record<string, unknown>) {
   const message = (payload.message ?? payload.data ?? {}) as Record<string, unknown>;
   const error = (message.error ?? payload.error ?? {}) as Record<string, unknown>;
-  const account = (payload.account ?? {}) as Record<string, unknown>;
   return {
-    providerAccountId: asString(account.id) ?? asString(message.accountId),
+    providerAccountId: zernioAccountId(payload),
     providerMessageId: asString(message.platformMessageId) ?? asString(payload.platformMessageId),
     providerInternalId: asString(message.id) ?? asString(message.messageId) ?? asString(payload.messageId),
     errorCode: asString(error.code) ?? (typeof error.code === "number" ? String(error.code) : undefined),
@@ -134,18 +162,23 @@ function findStatusFields(payload: Record<string, unknown>) {
 export function normalizeZernioEvent(payload: unknown): NormalizedEvent {
   const envelope = envelopeSchema.safeParse(payload);
   if (!envelope.success) {
-    return { kind: "ignored", eventId: "", event: "", reason: "sobre inválido" };
+    return { kind: "ignored", eventId: "", event: "", reason: "sobre inválido", malformed: true };
   }
   const { id: eventId, event } = envelope.data;
 
   if (event === "message.received" || event === "message.sent") {
     const parsed = messageEventSchema.safeParse(payload);
     if (!parsed.success) {
-      return { kind: "ignored", eventId, event, reason: `formato no reconocido: ${parsed.error.issues[0]?.message}` };
+      return { kind: "ignored", eventId, event, reason: `formato no reconocido: ${parsed.error.issues[0]?.message}`, malformed: true };
     }
     const { message, conversation, account, metadata } = parsed.data;
     if (account.platform !== "whatsapp") {
       return { kind: "ignored", eventId, event, reason: `plataforma ${account.platform}` };
+    }
+    // La MISMA cuenta que revisó la allowlist del webhook.
+    const providerAccountId = zernioAccountId(payload);
+    if (!providerAccountId) {
+      return { kind: "ignored", eventId, event, reason: "cuenta ausente o contradictoria", malformed: true };
     }
     const outgoing = message.direction === "outgoing";
     // Documentado como "whatsapp_business_app" / "cloud_api"; se compara sin
@@ -173,7 +206,7 @@ export function normalizeZernioEvent(payload: unknown): NormalizedEvent {
     return {
       kind: "message",
       eventId,
-      providerAccountId: account.id,
+      providerAccountId,
       providerConversationId: conversation.id,
       direction: outgoing ? "out" : "in",
       source,
@@ -199,7 +232,7 @@ export function normalizeZernioEvent(payload: unknown): NormalizedEvent {
   if (status) {
     const fields = findStatusFields(payload as Record<string, unknown>);
     if (!fields.providerMessageId && !fields.providerInternalId) {
-      return { kind: "ignored", eventId, event, reason: "estado sin id de mensaje reconocible" };
+      return { kind: "ignored", eventId, event, reason: "estado sin id de mensaje reconocible", malformed: true };
     }
     const ts = new Date(String((payload as Record<string, unknown>).timestamp ?? ""));
     return {
@@ -228,10 +261,9 @@ export class ZernioProvider implements MessagingProvider {
   }
 
   readEnvelope(rawBody: string): WebhookEnvelope {
-    const json = JSON.parse(rawBody) as Record<string, unknown>;
+    const json: unknown = JSON.parse(rawBody);
     const parsed = envelopeSchema.parse(json);
-    const account = (json.account ?? {}) as Record<string, unknown>;
-    return { eventId: parsed.id, event: parsed.event, providerAccountId: asString(account.id) };
+    return { eventId: parsed.id, event: parsed.event, providerAccountId: zernioAccountId(json) };
   }
 
   normalize(payload: unknown): NormalizedEvent {
@@ -251,32 +283,45 @@ export class ZernioProvider implements MessagingProvider {
     return this.fetchImpl(target, { headers, signal, redirect: "follow" });
   }
 
-  async sendText({ providerAccountId, providerConversationId, text }: SendTextInput): Promise<SendResult> {
-    const baseUrl = (this.config.baseUrl ?? DEFAULT_BASE_URL).replace(/\/$/, "");
-    const res = await this.fetchImpl(
-      `${baseUrl}/v1/inbox/conversations/${encodeURIComponent(providerConversationId)}/messages`,
-      {
+  private apiUrl(path: string): string {
+    return `${(this.config.baseUrl ?? DEFAULT_BASE_URL).replace(/\/$/, "")}${path}`;
+  }
+
+  // Idempotency-Key: si la respuesta se pierde pero Zernio sí lo envió, el
+  // reintento con la misma clave (24 h) devuelve la respuesta original en vez
+  // de mandar otro mensaje. Zernio libera la clave cuando responde error, así
+  // que un fallo AMBIGUO se marca "unknown" y se reconcilia antes de reintentar.
+  async sendText({ providerAccountId, providerConversationId, text, idempotencyKey }: SendTextInput): Promise<SendResult> {
+    let res: Response;
+    try {
+      res = await this.fetchImpl(this.apiUrl(`/v1/inbox/conversations/${encodeURIComponent(providerConversationId)}/messages`), {
         method: "POST",
         headers: {
           Authorization: `Bearer ${this.config.apiKey}`,
           "Content-Type": "application/json",
+          "Idempotency-Key": idempotencyKey,
         },
         body: JSON.stringify({ accountId: providerAccountId, message: text }),
         signal: AbortSignal.timeout(SEND_TIMEOUT_MS),
-      },
-    );
-    const json = (await res.json().catch(() => ({}))) as Record<string, unknown>;
+      });
+    } catch (error) {
+      // Timeout o corte de red: la petición pudo haber llegado.
+      throw new ZernioSendError(0, "network", `Sin respuesta de Zernio: ${error instanceof Error ? error.message : String(error)}`, "unknown");
+    }
+    const json = (await res.json().catch(() => null)) as Record<string, unknown> | null;
     if (!res.ok) {
-      const err = (json.error ?? {}) as Record<string, unknown>;
+      const err = asRecord(json?.error);
       throw new ZernioSendError(
         res.status,
         asString(err.code) ?? String(res.status),
-        asString(err.message) ?? asString(json.message) ?? `Zernio respondió ${res.status}`,
+        asString(err.message) ?? asString(json?.message) ?? `Zernio respondió ${res.status}`,
+        sendOutcomeForStatus(res.status),
       );
     }
-    const data = (json.data ?? json) as Record<string, unknown>;
+    const data = asRecord(json?.data ?? json);
     const returned = asString(data.messageId) ?? asString(data.id);
-    if (!returned) throw new ZernioSendError(res.status, "sin_message_id", "Zernio no devolvió messageId");
+    // 2xx sin id legible: Zernio lo aceptó, pero no se puede enlazar aún.
+    if (!returned) throw new ZernioSendError(res.status, "sin_message_id", "Zernio no devolvió messageId", "unknown");
     // Según el endpoint, Zernio devuelve su id interno o directamente el wamid
     // de WhatsApp (visto en vivo: "wamid.HBg…").
     const isWamid = returned.startsWith("wamid.");
@@ -285,15 +330,62 @@ export class ZernioProvider implements MessagingProvider {
       providerMessageId: asString(data.platformMessageId) ?? (isWamid ? returned : undefined),
     };
   }
+
+  // GET /v1/inbox/conversations/{id}/messages: en esta respuesta `id` ES el
+  // wamid (el webhook lo llama platformMessageId).
+  async listRecentOutgoing({
+    providerAccountId,
+    providerConversationId,
+  }: {
+    providerAccountId: string;
+    providerConversationId: string;
+  }): Promise<ProviderOutgoingMessage[]> {
+    const url = new URL(this.apiUrl(`/v1/inbox/conversations/${encodeURIComponent(providerConversationId)}/messages`));
+    url.searchParams.set("accountId", providerAccountId);
+    url.searchParams.set("sortOrder", "desc");
+    url.searchParams.set("limit", "50");
+    const res = await this.fetchImpl(url, {
+      headers: { Authorization: `Bearer ${this.config.apiKey}` },
+      signal: AbortSignal.timeout(SEND_TIMEOUT_MS),
+    });
+    if (!res.ok) throw new Error(`Zernio respondió ${res.status} al listar mensajes`);
+    const json = asRecord(await res.json());
+    const list = Array.isArray(json.messages) ? json.messages : [];
+    const out: ProviderOutgoingMessage[] = [];
+    for (const raw of list) {
+      const m = asRecord(raw);
+      const id = asString(m.id);
+      const at = new Date(String(m.sentAt ?? m.createdAt ?? ""));
+      if (m.direction !== "outgoing" || !id || Number.isNaN(at.getTime())) continue;
+      const status = asString(m.deliveryStatus);
+      out.push({
+        providerMessageId: id,
+        text: typeof m.message === "string" ? m.message : null,
+        at,
+        status: status === "sent" || status === "delivered" || status === "read" || status === "failed" ? status : undefined,
+      });
+    }
+    return out;
+  }
 }
 
-export class ZernioSendError extends Error {
+/**
+ * 4xx = Zernio/WhatsApp rechazó el mensaje: no salió. Excepciones ambiguas:
+ * 408 (timeout), 409 (la misma clave sigue en vuelo) y 5xx.
+ */
+export function sendOutcomeForStatus(status: number): "rejected" | "unknown" {
+  if (status === 408 || status === 409 || status >= 500) return "unknown";
+  return "rejected";
+}
+
+export class ZernioSendError extends SendFailedError {
   constructor(
     readonly httpStatus: number,
-    readonly code: string,
+    code: string,
     message: string,
+    outcome: "rejected" | "unknown" = sendOutcomeForStatus(httpStatus),
   ) {
-    super(message);
+    super(code, message, outcome);
     this.name = "ZernioSendError";
   }
 }
