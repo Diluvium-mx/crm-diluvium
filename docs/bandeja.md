@@ -73,12 +73,31 @@ la sesión). Tipos exactos en `lib/inbox/types.ts`.
 | `getConversation(conversationId)` | Encabezado + panel | `contact{…, stage, temperature}`, `windowExpiresAt`, `adReferral?` |
 | `getConversationByContact(contactId)` | Tarjeta del kanban → chat | lo mismo que `getConversation`, o `null` si ese contacto aún no tiene chat |
 | `listMessages(conversationId, { before?, limit? })` | Chat (paginado hacia atrás) | `id`, `direction`, `kind`, `body`, `attachments[{index,kind,fileName,mimeType,state:"ready"\|"processing"\|"failed",url}]`, `status`, `errorMessage?`, `sentAt`, `adReferral?` |
-| `sendMessage(conversationId, text)` | Composer | `{ ok, messageId }` o `{ ok:false, code:"window_closed"\|… , message }` |
-| `retryMessage(messageId)` | ⚠ Reintentar | igual que `sendMessage` |
-| `markConversationRead(conversationId)` | Al abrir | `void` |
+| `sendMessage(conversationId, text)` | Composer | `{ ok:true, messageId, pending }` o `{ ok:false, code, message }`. `pending:true` = envío en curso sin confirmar: se muestra "enviando", **sin** botón de reintentar. Códigos: `empty\|window_closed\|not_found\|not_linked\|not_retryable\|channel_unavailable\|provider_rejected\|not_configured` |
+| `retryMessage(messageId)` | ⚠ Reintentar | igual que `sendMessage`. Solo tiene sentido cuando `message.canRetry` es `true` (rechazo definitivo del proveedor); un envío ambiguo NO se reintenta |
+| `markConversationRead(conversationId, upToMessageId?)` | Al abrir / al leer | `void`. `upToMessageId` = último mensaje a la vista (corte de lectura); sin él, marca hasta el último entrante. Lo posterior al corte sigue sin leer |
 | `setConversationStarred(conversationId, starred)` | Estrella | `void` |
 | etapa/temperatura | Panel | se reusan las acciones existentes de Contactos |
-| `GET /api/inbox/stream` (SSE) | Tiempo real | eventos `conversation.updated {conversationId}` y `message.upserted {conversationId, messageId}` → la UI vuelve a pedir esa fila/mensaje |
+| `GET /api/inbox/stream` (SSE) | Tiempo real | eventos con nombre (`event:`) y JSON en `data:` — `conversation.updated {conversationId}`, `message.upserted {conversationId, messageId}`, `message.deleted {conversationId, messageId}` (el eco ganó la carrera y se borró la fila en cola). Al (re)conectar manda `event: reload` → la UI revalida todo. La UI, ante cada evento, vuelve a pedir esa fila/mensaje. Solo llegan eventos de la organización de la sesión |
+
+`listMessages` devuelve además `canRetry` por mensaje (si el botón Reintentar debe aparecer) y
+`attachments[].state` (`ready\|processing\|failed`).
 
 Los adjuntos se muestran con `url` = `/api/media/{messageId}/{index}` (ya existe; exige sesión;
-202 mientras está "processing").
+302 a una URL firmada cuando está listo; 202 mientras está "processing"; 404 si no es de tu
+organización).
+
+## Handoff al track UI (18-sep-2026)
+
+El backend de la bandeja está implementado y probado (migración 0008, `lib/inbox/`, SSE). Para la UI:
+
+- **Fuente de verdad de tipos:** `lib/inbox/types.ts` (importar de ahí; `import type`, no arrastra el servidor).
+- **Acciones (server actions):** `lib/inbox/actions.ts` — `listConversations`, `getConversation`,
+  `getConversationByContact`, `listMessages`, `sendMessage`, `retryMessage`,
+  `markConversationRead`, `setConversationStarred`. Ninguna recibe `organizationId`: se resuelve
+  de la sesión.
+- **Tiempo real:** `EventSource("/api/inbox/stream")`. Escuchar los eventos por nombre
+  (`conversation.updated`, `message.upserted`, `message.deleted`, `reload`) y revalidar; el
+  `EventSource` reconecta solo y cada reconexión reenvía `reload`.
+- **Etapa/temperatura** del panel: reusar las acciones de Contactos (mismas del tablero).
+- El chat es **un solo componente** reutilizado en Bandeja y en el panel lateral de Contactos.
