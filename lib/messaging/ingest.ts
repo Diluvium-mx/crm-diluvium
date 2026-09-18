@@ -176,6 +176,31 @@ async function ingestMessage(provider: ProviderName, event: NormalizedMessageEve
   });
 }
 
+/**
+ * Tras un saliente enviado desde el CRM: último mensaje y primera respuesta.
+ * (El eco de ese envío llega como duplicado del wamid y no pasa por aquí.)
+ */
+export async function refreshConversationAfterOutbound(conversationId: string, sentAt: Date): Promise<void> {
+  await db.transaction(async (tx) => {
+    const [conversation] = await tx
+      .select()
+      .from(conversations)
+      .where(eq(conversations.id, conversationId))
+      .for("update");
+    if (!conversation) return;
+    const updates: Partial<typeof conversations.$inferInsert> = {
+      unreadCount: 0,
+      lastMessageAt:
+        conversation.lastMessageAt && conversation.lastMessageAt > sentAt ? conversation.lastMessageAt : sentAt,
+    };
+    if (conversation.firstResponseSeconds === null) {
+      const seconds = await reconcileFirstResponse(tx, conversationId);
+      if (seconds !== null) updates.firstResponseSeconds = seconds;
+    }
+    await tx.update(conversations).set(updates).where(eq(conversations.id, conversationId));
+  });
+}
+
 async function reconcileFirstResponse(tx: Tx, conversationId: string): Promise<number | null> {
   // Columnas tipadas (no min() crudo): el driver devuelve un timestamp sin
   // zona como texto y new Date() lo leería en hora local, no en UTC.
