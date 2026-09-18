@@ -53,6 +53,8 @@ export type NormalizedMessageEvent = {
 export type NormalizedStatusEvent = {
   kind: "status";
   eventId: string;
+  /** Cuenta del proveedor (número conectado): acota el estado a SU organización. */
+  providerAccountId?: string;
   status: "sent" | "delivered" | "read" | "failed";
   providerMessageId?: string;
   providerInternalId?: string;

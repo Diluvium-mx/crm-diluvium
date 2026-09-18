@@ -6,12 +6,12 @@
 //   (p. ej. Redis no respondió cuando llegó el webhook). La base es la fuente
 //   de verdad; la cola solo acelera.
 import { UnrecoverableError, Worker } from "bullmq";
-import { and, asc, isNull, lt } from "drizzle-orm";
+import { and, asc, count, gte, isNull, lt } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { webhookEvents } from "@/lib/db/schema";
 import { messagingProvider } from "@/lib/messaging";
 import { PermanentIngestError, processWebhookEvent } from "@/lib/messaging/ingest";
-import { enqueueInbound, INBOUND_QUEUE, redisConnection, type InboundJob } from "@/lib/queue/inbound";
+import { INBOUND_QUEUE, redisConnection, reviveInbound, type InboundJob } from "@/lib/queue/inbound";
 
 const SWEEP_EVERY_MS = 60_000;
 const SWEEP_MIN_AGE_MS = 60_000;
@@ -55,8 +55,22 @@ async function sweep() {
     )
     .orderBy(asc(webhookEvents.receivedAt))
     .limit(100);
-  for (const { id } of stale) await enqueueInbound(id);
-  if (stale.length) console.info(`[worker] barrido: ${stale.length} evento(s) pendientes re-encolados`);
+  let revived = 0;
+  for (const { id } of stale) {
+    const result = await reviveInbound(id);
+    if (result === "added" || result === "retried") revived++;
+  }
+  if (revived) console.info(`[worker] barrido: ${revived} evento(s) pendientes re-encolados`);
+
+  // Dead-letter: agotaron los intentos y siguen sin procesar. Quedan crudos en
+  // webhook_events (nada se pierde); replay con scripts/replay-webhook-events.ts.
+  const [{ value: dead }] = await db
+    .select({ value: count() })
+    .from(webhookEvents)
+    .where(and(isNull(webhookEvents.processedAt), gte(webhookEvents.attempts, SWEEP_MAX_ATTEMPTS)));
+  if (dead > 0) {
+    console.error(`[worker] DEAD-LETTER: ${dead} evento(s) agotaron ${SWEEP_MAX_ATTEMPTS} intentos; revisar last_error y reprocesar`);
+  }
 }
 
 const sweepTimer = setInterval(() => {
