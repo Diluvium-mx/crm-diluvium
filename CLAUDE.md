@@ -105,8 +105,7 @@ Reglas duras:
 Variables de entorno mínimas:
 ```
 DATABASE_URL, REDIS_URL, AUTH_SECRET, APP_URL,
-WHATSAPP_PHONE_NUMBER_ID, WHATSAPP_BUSINESS_ACCOUNT_ID,
-WHATSAPP_ACCESS_TOKEN, WHATSAPP_VERIFY_TOKEN, WHATSAPP_APP_SECRET
+ZERNIO_API_KEY, ZERNIO_WEBHOOK_SECRET        (web y worker; canal WhatsApp vía Zernio)
 ```
 
 ---
@@ -305,8 +304,14 @@ Regla: **no se empieza una fase sin que la anterior esté desplegada en Railway 
    El limiter de fábrica de Better Auth queda apagado, y el candado por email sigue igual.
    (b) staging creado y aislado. (c) respaldos diarios con restore de prueba en cada corrida.
    Riesgo aceptado: si el repo pasa más de 60 días sin actividad, GitHub apaga el cron sin
-   avisar. (d) Zernio descartado: WhatsApp va por la **Cloud API oficial de Meta directa**,
-   sin intermediarios (regla del dueño: nada de terceros).
+   avisar. (d) **Decisión (18-sep): WhatsApp por Zernio con coexistencia**, no por la Cloud API
+   directa. Coexistencia (el número sigue en la app de WhatsApp Business del celular y además en
+   el CRM) solo la puede activar un Tech Provider; hacerse uno toma semanas, y Zernio ya lo es.
+   Los vendedores conservan la app, y desde ella mandan los .XML de facturación, que la API no
+   acepta como documento. La WABA sigue siendo de Diluvium (portafolio "Grupo Diluvium"). El
+   backend usa una interfaz de proveedor (`lib/messaging/provider.ts`) para poder migrar a la
+   API directa después. Desde el 1-oct-2026 Meta cobra también los mensajes dentro de la
+   ventana de 24 h.
    Ensayo de restore completo en staging (18-sep): se descargó un artifact real de `main`, se
    descifró con la passphrase guardada, se restauró en una base limpia (60 contactos, 10 tablas),
    se hizo el intercambio atómico, se inició sesión con el usuario de producción y se cargó
