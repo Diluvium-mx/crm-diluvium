@@ -34,6 +34,15 @@ env:
   # Debe coincidir con la versión mayor del servidor (se verifica abajo).
   # pg_dump no puede respaldar un servidor más nuevo que él.
   PG_MAJOR: "18"
+  # TLS AUTENTICADO contra producción. sslmode=require solo cifra: no valida
+  # el certificado, así que un MITM (DNS/red) recibiría la credencial y el
+  # dump en claro. Railway firma el certificado con una CA propia de la
+  # instancia (CN=root-ca; el certificado es para localhost y
+  # postgres.railway.internal, no para el dominio del proxy, así que
+  # verify-full no aplica): se FIJA esa CA con verify-ca. Rotación y
+  # re-fijado: docs/backups.md.
+  PROD_PGSSLMODE: verify-ca
+  PROD_PGSSLROOTCERT: .github/backup/prod-postgres-root-ca.pem
 
 jobs:
   backup:
@@ -54,6 +63,12 @@ jobs:
           --health-interval 5s --health-timeout 5s --health-retries 10
 
     steps:
+      - name: Checkout (solo la CA fijada)
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          sparse-checkout: .github/backup
+          persist-credentials: false
+
       - name: Verificar secrets
         env:
           PROD_DATABASE_URL: ${{ secrets.PROD_DATABASE_URL }}
@@ -76,10 +91,13 @@ jobs:
 
       - name: Verificar versión del servidor
         env:
-          PGSSLMODE: require # nunca en claro por internet (el servidor también acepta sin SSL)
+          PGSSLMODE: ${{ env.PROD_PGSSLMODE }}
+          PGSSLROOTCERT: ${{ env.PROD_PGSSLROOTCERT }}
           PROD_DATABASE_URL: ${{ secrets.PROD_DATABASE_URL }}
         run: |
-          server_major=$(psql "$PROD_DATABASE_URL" -XAtc "select current_setting('server_version_num')::int / 10000")
+          # Sin la query de la URL: un ?sslmode=require ahí ganaría sobre PGSSLMODE.
+          prod_url="${PROD_DATABASE_URL%%\?*}"
+          server_major=$(psql "$prod_url" -XAtc "select current_setting('server_version_num')::int / 10000")
           echo "Servidor: Postgres $server_major · cliente: $(pg_dump --version)"
           if [ "$server_major" != "$PG_MAJOR" ]; then
             echo "::error::El servidor es Postgres $server_major y el workflow usa $PG_MAJOR. Actualiza PG_MAJOR y la imagen del service."
@@ -88,18 +106,21 @@ jobs:
 
       - name: pg_dump
         env:
-          PGSSLMODE: require
+          PGSSLMODE: ${{ env.PROD_PGSSLMODE }}
+          PGSSLROOTCERT: ${{ env.PROD_PGSSLROOTCERT }}
           PROD_DATABASE_URL: ${{ secrets.PROD_DATABASE_URL }}
         run: |
           umask 077
+          prod_url="${PROD_DATABASE_URL%%\?*}"
           stamp=$(date -u +%Y%m%dT%H%MZ)
           echo "DUMP=crm-diluvium-prod-${stamp}.dump" >> "$GITHUB_ENV"
-          pg_dump "$PROD_DATABASE_URL" -Fc -Z 9 -f "crm-diluvium-prod-${stamp}.dump"
+          pg_dump "$prod_url" -Fc -Z 9 -f "crm-diluvium-prod-${stamp}.dump"
           ls -l "crm-diluvium-prod-${stamp}.dump"
 
       - name: Probar restore en Postgres desechable
         env:
-          PGSSLMODE: require
+          PGSSLMODE: ${{ env.PROD_PGSSLMODE }}
+          PGSSLROOTCERT: ${{ env.PROD_PGSSLROOTCERT }}
           PROD_DATABASE_URL: ${{ secrets.PROD_DATABASE_URL }}
           CHECK_URL: postgresql://postgres:restore-check@localhost:5432/postgres?sslmode=disable
         run: |
@@ -107,7 +128,7 @@ jobs:
           pg_restore --no-owner --no-acl --exit-on-error -d "$CHECK_URL" "$DUMP"
 
           count_tables='select count(*) from information_schema.tables where table_schema not in ($$pg_catalog$$, $$information_schema$$)'
-          prod=$(psql "$PROD_DATABASE_URL" -XAtc "$count_tables")
+          prod=$(psql "${PROD_DATABASE_URL%%\?*}" -XAtc "$count_tables")
           restored=$(PGSSLMODE=disable psql "$CHECK_URL" -XAtc "$count_tables")
           echo "Tablas en producción: $prod · restauradas: $restored"
           if [ "$restored" -eq 0 ] || [ "$restored" != "$prod" ]; then
