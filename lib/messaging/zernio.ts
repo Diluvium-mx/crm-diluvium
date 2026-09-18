@@ -148,12 +148,14 @@ export function normalizeZernioEvent(payload: unknown): NormalizedEvent {
       return { kind: "ignored", eventId, event, reason: `plataforma ${account.platform}` };
     }
     const outgoing = message.direction === "outgoing";
-    const echoSource = message.source ?? parsed.data.source;
+    // Documentado como "whatsapp_business_app" / "cloud_api"; se compara sin
+    // separadores por si llega como "whatsappbusinessapp" o "WhatsApp-Business-App".
+    const echoSource = (message.source ?? parsed.data.source ?? "").toLowerCase().replace(/[^a-z]/g, "");
     const source = !outgoing
       ? "contact"
-      : echoSource === "whatsapp_business_app"
+      : echoSource === "whatsappbusinessapp"
         ? "business_app"
-        : echoSource === "cloud_api"
+        : echoSource === "cloudapi"
           ? "crm"
           : "other_api";
 

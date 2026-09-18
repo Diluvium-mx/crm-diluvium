@@ -1,5 +1,5 @@
 {
-  "id": "2597f579-9dcf-4a7d-b557-40e7e103cabd",
+  "id": "9899345f-6fec-41ec-adc7-6d09c0768891",
   "prevId": "4730f3b1-579e-4b96-9b86-1fa893e80f67",
   "version": "7",
   "dialect": "postgresql",
@@ -1244,6 +1244,13 @@
           "type": "text",
           "primaryKey": false,
           "notNull": false
+        },
+        "attachments": {
+          "name": "attachments",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'[]'::jsonb"
         },
         "media_url": {
           "name": "media_url",

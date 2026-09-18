@@ -118,6 +118,21 @@ describe.skipIf(!TEST_DATABASE_URL)("ingesta de WhatsApp (Postgres real)", () =>
     expect(contacts.map((c) => c.id)).toEqual(["c_import"]);
   });
 
+  it("guarda TODOS los adjuntos con nombre y tipo (p. ej. PDF + XML de la factura)", async () => {
+    const e = msgEvent({ sentAt: "2026-09-18T10:00:00Z" });
+    (e.message as Record<string, unknown>).attachments = [
+      { type: "file", url: "https://cdn/f.pdf", payload: { mimeType: "application/pdf", filename: "F-1.pdf" } },
+      { type: "file", url: "https://cdn/f.xml", payload: { mimeType: "application/xml", filename: "F-1.xml" } },
+    ];
+    await deliver(e);
+    const [m] = await db.select().from(s.messages);
+    expect(m.attachments).toEqual([
+      { type: "document", url: "https://cdn/f.pdf", mimeType: "application/pdf", fileName: "F-1.pdf" },
+      { type: "document", url: "https://cdn/f.xml", mimeType: "application/xml", fileName: "F-1.xml" },
+    ]);
+    expect(m.mediaUrl).toBe("https://cdn/f.pdf");
+  });
+
   it("el mismo evento (o el mismo wamid) dos veces no duplica el mensaje", async () => {
     const e = msgEvent({ sentAt: "2026-09-18T10:00:00Z", wamid: "wamid.dup" });
     await deliver(e);
