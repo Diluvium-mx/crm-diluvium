@@ -74,6 +74,12 @@ export type NormalizedIgnoredEvent = {
   eventId: string;
   event: string;
   reason: string;
+  /**
+   * true = evento que el CRM SÍ procesa (mensaje, estado) pero con un formato
+   * que no se reconoce: probable cambio del proveedor. No se da por procesado:
+   * queda en dead-letter, visible y reprocesable, en vez de perderse.
+   */
+  malformed?: boolean;
 };
 
 export type NormalizedEvent = NormalizedMessageEvent | NormalizedStatusEvent | NormalizedIgnoredEvent;
@@ -90,6 +96,37 @@ export type SendTextInput = {
   providerAccountId: string;
   providerConversationId: string;
   text: string;
+  /**
+   * Clave de idempotencia (el id de NUESTRO mensaje): reintentar con la misma
+   * clave no vuelve a enviar si el primer intento sí llegó al proveedor.
+   */
+  idempotencyKey: string;
+};
+
+/**
+ * Fallo al enviar. `outcome` distingue lo que importa para no duplicar:
+ * - "rejected": el proveedor contestó que NO lo envió (4xx, límite de tasa):
+ *   se puede reintentar sin riesgo;
+ * - "unknown": no se sabe si salió (timeout, corte, 5xx, respuesta ilegible):
+ *   hay que reconciliar contra el proveedor ANTES de permitir reintentar.
+ */
+export class SendFailedError extends Error {
+  constructor(
+    readonly code: string,
+    message: string,
+    readonly outcome: "rejected" | "unknown",
+  ) {
+    super(message);
+    this.name = "SendFailedError";
+  }
+}
+
+/** Saliente visto en el proveedor (para reconciliar envíos de resultado desconocido). */
+export type ProviderOutgoingMessage = {
+  providerMessageId: string;
+  text: string | null;
+  at: Date;
+  status?: "sent" | "delivered" | "read" | "failed";
 };
 
 export type SendResult = {
@@ -105,7 +142,10 @@ export interface MessagingProvider {
   readEnvelope(rawBody: string): WebhookEnvelope;
   /** Normaliza un payload ya verificado. Nunca lanza por formatos desconocidos: devuelve "ignored". */
   normalize(payload: unknown): NormalizedEvent;
+  /** Lanza SendFailedError (rechazado o desconocido) si no hay confirmación. */
   sendText(input: SendTextInput): Promise<SendResult>;
+  /** Últimos salientes de una conversación en el proveedor, del más nuevo al más viejo. */
+  listRecentOutgoing(input: { providerAccountId: string; providerConversationId: string }): Promise<ProviderOutgoingMessage[]>;
   /**
    * Descarga un adjunto recibido. El adaptador decide si la URL necesita sus
    * credenciales, y NUNCA las envía a un dominio que no sea el suyo.

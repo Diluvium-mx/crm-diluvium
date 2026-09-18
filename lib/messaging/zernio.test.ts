@@ -1,6 +1,6 @@
 import { createHmac } from "node:crypto";
 import { describe, expect, it, vi } from "vitest";
-import { normalizeZernioEvent, verifyZernioSignature, ZernioProvider, ZernioSendError } from "./zernio";
+import { normalizeZernioEvent, verifyZernioSignature, zernioAccountId, ZernioProvider, ZernioSendError } from "./zernio";
 
 const SECRET = "whsec_test";
 const sign = (body: string, secret = SECRET) => createHmac("sha256", secret).update(body).digest("hex");
@@ -185,12 +185,13 @@ describe("ZernioProvider.sendText", () => {
       Response.json({ success: true, data: { messageId: "zmsg_9" } }),
     ) as unknown as typeof fetch;
     const p = new ZernioProvider({ apiKey: "sk_live", webhookSecret: SECRET }, fetchImpl);
-    const out = await p.sendText({ providerAccountId: "zacc_1", providerConversationId: "zconv_1", text: "Hola" });
+    const out = await p.sendText({ providerAccountId: "zacc_1", providerConversationId: "zconv_1", text: "Hola", idempotencyKey: "msg_1" });
 
     expect(out).toEqual({ providerInternalId: "zmsg_9", providerMessageId: undefined });
     const [url, init] = (fetchImpl as unknown as ReturnType<typeof vi.fn>).mock.calls[0];
     expect(url).toBe("https://zernio.com/api/v1/inbox/conversations/zconv_1/messages");
     expect(init.headers.Authorization).toBe("Bearer sk_live");
+    expect(init.headers["Idempotency-Key"]).toBe("msg_1");
     expect(JSON.parse(init.body)).toEqual({ accountId: "zacc_1", message: "Hola" });
   });
 
@@ -198,7 +199,7 @@ describe("ZernioProvider.sendText", () => {
     const fetchImpl = (async () =>
       Response.json({ success: true, data: { messageId: "wamid.HBgABC=" } })) as unknown as typeof fetch;
     const p = new ZernioProvider({ apiKey: "k", webhookSecret: SECRET }, fetchImpl);
-    await expect(p.sendText({ providerAccountId: "a", providerConversationId: "c", text: "x" })).resolves.toEqual({
+    await expect(p.sendText({ providerAccountId: "a", providerConversationId: "c", text: "x", idempotencyKey: "k1" })).resolves.toEqual({
       providerInternalId: "wamid.HBgABC=",
       providerMessageId: "wamid.HBgABC=",
     });
@@ -209,7 +210,60 @@ describe("ZernioProvider.sendText", () => {
       Response.json({ error: { code: "WINDOW_CLOSED", message: "Fuera de la ventana de 24 h" } }, { status: 400 })) as unknown as typeof fetch;
     const p = new ZernioProvider({ apiKey: "k", webhookSecret: SECRET }, fetchImpl);
     await expect(
-      p.sendText({ providerAccountId: "a", providerConversationId: "c", text: "x" }),
-    ).rejects.toMatchObject(new ZernioSendError(400, "WINDOW_CLOSED", "Fuera de la ventana de 24 h"));
+      p.sendText({ providerAccountId: "a", providerConversationId: "c", text: "x", idempotencyKey: "k1" }),
+    ).rejects.toMatchObject({ code: "WINDOW_CLOSED", message: "Fuera de la ventana de 24 h", outcome: "rejected" });
+  });
+
+  it("resultado desconocido (5xx, 409, timeout, 2xx sin id) vs. rechazo definitivo (4xx)", async () => {
+    const send = (fetchImpl: typeof fetch) =>
+      new ZernioProvider({ apiKey: "k", webhookSecret: SECRET }, fetchImpl).sendText({
+        providerAccountId: "a",
+        providerConversationId: "c",
+        text: "x",
+        idempotencyKey: "k1",
+      });
+    const status = (code: number) => (async () => Response.json({}, { status: code })) as unknown as typeof fetch;
+    await expect(send(status(502))).rejects.toMatchObject({ outcome: "unknown" });
+    await expect(send(status(409))).rejects.toMatchObject({ outcome: "unknown" });
+    await expect(send(status(429))).rejects.toMatchObject({ outcome: "rejected" });
+    await expect(send(status(422))).rejects.toMatchObject({ outcome: "rejected" });
+    const timeout = (async () => {
+      throw new DOMException("The operation was aborted due to timeout", "TimeoutError");
+    }) as unknown as typeof fetch;
+    await expect(send(timeout)).rejects.toMatchObject({ outcome: "unknown", code: "network" });
+    await expect(send((async () => Response.json({ ok: true })) as unknown as typeof fetch)).rejects.toMatchObject({
+      outcome: "unknown",
+      code: "sin_message_id",
+    });
+    await expect(send(status(400))).rejects.toBeInstanceOf(ZernioSendError);
+  });
+});
+
+describe("ZernioProvider.listRecentOutgoing", () => {
+  it("lista solo salientes; en esta respuesta `id` es el wamid", async () => {
+    const fetchImpl = vi.fn(async () =>
+      Response.json({
+        messages: [
+          { id: "wamid.OUT", direction: "outgoing", message: "Hola", sentAt: "2026-09-18T10:00:00Z", deliveryStatus: "delivered" },
+          { id: "wamid.IN", direction: "incoming", message: "Hey", createdAt: "2026-09-18T09:59:00Z" },
+        ],
+      }),
+    ) as unknown as typeof fetch;
+    const p = new ZernioProvider({ apiKey: "k", webhookSecret: SECRET }, fetchImpl);
+    await expect(p.listRecentOutgoing({ providerAccountId: "acc", providerConversationId: "conv" })).resolves.toEqual([
+      { providerMessageId: "wamid.OUT", text: "Hola", at: new Date("2026-09-18T10:00:00Z"), status: "delivered" },
+    ]);
+    const [url] = (fetchImpl as unknown as ReturnType<typeof vi.fn>).mock.calls[0];
+    expect(String(url)).toBe("https://zernio.com/api/v1/inbox/conversations/conv/messages?accountId=acc&sortOrder=desc&limit=50");
+  });
+});
+
+describe("zernioAccountId (allowlist)", () => {
+  it("lee la cuenta de account.accountId/account.id o anidada, y no elige si se contradicen", () => {
+    expect(zernioAccountId({ account: { id: "a1", accountId: "a1" } })).toBe("a1");
+    expect(zernioAccountId({ message: { accountId: "a2" } })).toBe("a2");
+    expect(zernioAccountId({ data: { accountId: "a3" } })).toBe("a3");
+    expect(zernioAccountId({ account: { id: "a1" }, message: { accountId: "otro" } })).toBeUndefined();
+    expect(zernioAccountId({ event: "webhook.test" })).toBeUndefined();
   });
 });

@@ -1,20 +1,21 @@
 import { describe, expect, it } from "vitest";
-import { isAccountAllowed } from "./index";
+import { allowedAccountIds, isAccountAllowed, MessagingNotConfiguredError } from "./index";
 
-describe("isAccountAllowed (aislamiento staging ↔ número real)", () => {
-  it("sin lista (producción) acepta todas las cuentas", () => {
-    expect(isAccountAllowed("acc_real", {})).toBe(true);
-    expect(isAccountAllowed("acc_real", { ZERNIO_ALLOWED_ACCOUNT_IDS: " " })).toBe(true);
+describe("allowlist de cuentas (aislamiento staging ↔ número real)", () => {
+  it("falla cerrado: sin lista, o con lista vacía, el canal no está configurado", () => {
+    expect(() => allowedAccountIds({})).toThrow(MessagingNotConfiguredError);
+    expect(() => allowedAccountIds({ ZERNIO_ALLOWED_ACCOUNT_IDS: " , " })).toThrow(MessagingNotConfiguredError);
   });
 
-  it("con lista (staging) solo acepta las cuentas listadas", () => {
-    const env = { ZERNIO_ALLOWED_ACCOUNT_IDS: "acc_sandbox, acc_otro" };
-    expect(isAccountAllowed("acc_sandbox", env)).toBe(true);
-    expect(isAccountAllowed("acc_otro", env)).toBe(true);
-    expect(isAccountAllowed("acc_real", env)).toBe(false);
+  it("solo acepta las cuentas listadas", () => {
+    const allowed = allowedAccountIds({ ZERNIO_ALLOWED_ACCOUNT_IDS: "acc_sandbox, acc_otro" });
+    expect(isAccountAllowed("acc_sandbox", allowed)).toBe(true);
+    expect(isAccountAllowed("acc_otro", allowed)).toBe(true);
+    expect(isAccountAllowed("acc_real", allowed)).toBe(false);
   });
 
-  it("un evento sin cuenta (p. ej. webhook.test) se acepta", () => {
-    expect(isAccountAllowed(undefined, { ZERNIO_ALLOWED_ACCOUNT_IDS: "acc_sandbox" })).toBe(true);
+  it("un evento sin cuenta se rechaza", () => {
+    const allowed = allowedAccountIds({ ZERNIO_ALLOWED_ACCOUNT_IDS: "acc_sandbox" });
+    expect(isAccountAllowed(undefined, allowed)).toBe(false);
   });
 });
