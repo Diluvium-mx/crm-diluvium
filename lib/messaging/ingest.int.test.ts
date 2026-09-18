@@ -649,6 +649,26 @@ describe.skipIf(!TEST_DATABASE_URL)("ingesta de WhatsApp (Postgres real)", () =>
     });
   });
 
+  describe("retención y atribución de webhook_events", () => {
+    it("procesar atribuye organization_id; borrar la organización se lleva los eventos", async () => {
+      const e = msgEvent({ sentAt: "2026-09-18T10:00:00Z" });
+      await deliver(e);
+      const [row] = await db.select().from(s.webhookEvents).where(eq(s.webhookEvents.id, `zernio_${e.id}`));
+      expect(row.organizationId).toBe(ORG_A);
+
+      // Cascade: al borrar la organización, sus payloads crudos se van también.
+      await db.delete(s.organization).where(eq(s.organization.id, ORG_A));
+      expect(await db.select().from(s.webhookEvents).where(eq(s.webhookEvents.id, `zernio_${e.id}`))).toHaveLength(0);
+    });
+
+    it("un evento sin organización (ignorado) queda con organization_id nulo", async () => {
+      const other = { id: `evt_ign_${randomUUID()}`, event: "comment.received" };
+      await deliver(other);
+      const [row] = await db.select().from(s.webhookEvents).where(eq(s.webhookEvents.id, `zernio_${other.id}`));
+      expect(row.organizationId).toBeNull();
+    });
+  });
+
   describe("webhook: allowlist de cuentas (falla cerrado)", () => {
     const SECRET = "whsec_test";
     const sign = async (body: string) => (await import("node:crypto")).createHmac("sha256", SECRET).update(body).digest("hex");

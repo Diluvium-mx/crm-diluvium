@@ -220,6 +220,11 @@ export const webhookEvents = pgTable(
     provider: messagingProviderEnum("provider").notNull(),
     event: text("event").notNull(),
     payload: jsonb("payload").notNull(),
+    // Se puebla al procesar, cuando ya se conoce el canal (y su organización).
+    // Nullable: hay eventos sin organización (p. ej. la prueba del webhook) y
+    // rows viejos anteriores a esta columna. FK con cascade: al borrar una
+    // organización se llevan también sus payloads crudos (datos del cliente).
+    organizationId: text("organization_id").references(() => organization.id, { onDelete: "cascade" }),
     receivedAt: timestamp("received_at").defaultNow().notNull(),
     processedAt: timestamp("processed_at"),
     attempts: integer("attempts").default(0).notNull(),
@@ -229,5 +234,9 @@ export const webhookEvents = pgTable(
     index("webhook_events_pending_idx")
       .on(table.receivedAt)
       .where(sql`${table.processedAt} is null`),
+    // Barrido de retención: borra procesados viejos por fecha.
+    index("webhook_events_processed_idx")
+      .on(table.processedAt)
+      .where(sql`${table.processedAt} is not null`),
   ],
 );
