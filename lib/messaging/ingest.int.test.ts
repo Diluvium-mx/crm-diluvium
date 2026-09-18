@@ -527,6 +527,82 @@ describe.skipIf(!TEST_DATABASE_URL)("ingesta de WhatsApp (Postgres real)", () =>
       expect((await conv()).firstResponseSeconds).toBeNull();
     });
 
+    it("no leídos: dos envíos simultáneos con un entrante entre medio no lo borran", async () => {
+      const c = await openConversation(2);
+      const { sendTextMessage } = await import("./send");
+      let arrived!: () => void;
+      const inboundDone = new Promise<void>((r) => (arrived = r));
+      let n = 0;
+      const p = withProvider({
+        sendText: async () => {
+          const mine = ++n;
+          if (mine === 1) {
+            await deliver(msgEvent({ sentAt: new Date().toISOString() }));
+            arrived();
+          } else await inboundDone;
+          return { providerInternalId: `zmsg_C${mine}`, providerMessageId: `wamid.C${mine}` };
+        },
+      });
+      await Promise.all(
+        ["uno", "dos"].map((text) => sendTextMessage(p, { organizationId: ORG_A, conversationId: c.id, sentByUserId: "u_vendedor", text })),
+      );
+      expect((await conv()).unreadCount).toBe(1);
+    });
+
+    it("reconciliación estricta: con dos candidatos, o si el único es un eco de la app, no se confirma", async () => {
+      const c = await openConversation();
+      const { sendTextMessage, reconcilePendingSends } = await import("./send");
+      const { ZernioSendError } = await import("./zernio");
+      const unknown = withProvider({ sendText: async () => { throw new ZernioSendError(0, "network", "corte", "unknown"); } });
+      await sendTextMessage(unknown, { organizationId: ORG_A, conversationId: c.id, sentByUserId: "u_vendedor", text: "Sí" });
+      // Un "Sí" que el vendedor mandó desde el celular (eco business_app ya guardado).
+      await deliver(msgEvent({ direction: "outgoing", source: "whatsapp_business_app", wamid: "wamid.APP", sentAt: new Date().toISOString() }));
+      const onlyApp = withProvider({ listRecentOutgoing: async () => [{ providerMessageId: "wamid.APP", text: "Sí", at: new Date() }] });
+      await expect(reconcilePendingSends(onlyApp, later(3 * 60_000))).resolves.toEqual({ linked: 0, failed: 0 });
+      const two = withProvider({
+        listRecentOutgoing: async () => [
+          { providerMessageId: "wamid.S1", text: "Sí", at: new Date() },
+          { providerMessageId: "wamid.S2", text: "Sí", at: new Date() },
+        ],
+      });
+      await expect(reconcilePendingSends(two, later(3 * 60_000))).resolves.toEqual({ linked: 0, failed: 0 });
+      // Uno viejo (antes del intento) tampoco cuenta.
+      const old = withProvider({ listRecentOutgoing: async () => [{ providerMessageId: "wamid.OLD", text: "Sí", at: new Date(Date.now() - 10 * 60_000) }] });
+      await expect(reconcilePendingSends(old, later(3 * 60_000))).resolves.toEqual({ linked: 0, failed: 0 });
+      const queued = (await outs()).filter((m) => m.source === "crm");
+      expect(queued).toMatchObject([{ status: "queued", providerMessageId: null }]);
+    });
+
+    it("dos envíos del CRM nunca se fusionan en el mismo wamid", async () => {
+      const c = await openConversation();
+      const { sendTextMessage, linkSentMessage, SendConflictError } = await import("./send");
+      await sendTextMessage(withProvider({ sendText: async () => ({ providerInternalId: "z1", providerMessageId: "wamid.ONE" }) }), {
+        organizationId: ORG_A, conversationId: c.id, sentByUserId: "u_vendedor", text: "a",
+      });
+      const { ZernioSendError } = await import("./zernio");
+      const pending = await sendTextMessage(withProvider({ sendText: async () => { throw new ZernioSendError(0, "network", "x", "unknown"); } }), {
+        organizationId: ORG_A, conversationId: c.id, sentByUserId: "u_vendedor", text: "a",
+      });
+      await expect(
+        linkSentMessage({ queuedId: pending.messageId, conversationId: c.id, organizationId: ORG_A, sentByUserId: "u_vendedor", providerMessageId: "wamid.ONE", status: "sent", sentAt: new Date(), readCutoffMessageId: null }),
+      ).rejects.toBeInstanceOf(SendConflictError);
+      expect(await outs()).toHaveLength(2);
+    });
+
+    it("un eco duplicado repara la conversación si quedó desactualizada", async () => {
+      const c = await openConversation();
+      const { sendTextMessage } = await import("./send");
+      await sendTextMessage(withProvider({ sendText: async () => ({ providerInternalId: "zR", providerMessageId: "wamid.REPAIR" }) }), {
+        organizationId: ORG_A, conversationId: c.id, sentByUserId: "u_vendedor", text: "ok",
+      });
+      // Simula un estado viejo (p. ej. escrito antes de este arreglo).
+      await db.update(s.conversations).set({ firstResponseSeconds: null, lastMessageAt: new Date(Date.now() - 3600_000) });
+      await deliver(msgEvent({ direction: "outgoing", source: "cloud_api", wamid: "wamid.REPAIR", sentAt: new Date().toISOString() }));
+      const after = await conv();
+      expect(after.firstResponseSeconds).not.toBeNull();
+      expect(after.lastMessageAt!.getTime()).toBeGreaterThan(Date.now() - 60_000);
+    });
+
     it("no leídos: un entrante que llega DURANTE el envío sigue sin leer", async () => {
       const c = await openConversation(2);
       expect(c.unreadCount).toBe(2);
