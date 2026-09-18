@@ -43,6 +43,13 @@
       "when": 1789688230499,
       "tag": "0005_first_night_nurse",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1789760432570,
+      "tag": "0006_whatsapp_messaging",
+      "breakpoints": true
     }
   ]
 }
