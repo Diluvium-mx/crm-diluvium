@@ -3,18 +3,23 @@
 // Por qué: WhatsApp no entrega el archivo, entrega un enlace que depende de
 // que Meta conserve la media; después caduca y el adjunto se perdería. El
 // worker copia cada archivo en cuanto llega:
-// - verifica el sha256 que manda WhatsApp (archivo íntegro o se reintenta);
+// - en streaming: verifica tamaño y sha256 al vuelo mientras sube por partes,
+//   sin cargar el archivo en memoria; si no cuadra, la subida se aborta
+//   (archivo íntegro o se reintenta);
 // - llave determinista org/{org}/messages/{msg}/{i}-{nombre}: reintentar no
 //   duplica; si el objeto ya existe (subida previa sin anotar), se reutiliza;
 // - anota storageKey por adjunto, con la fila bloqueada (FOR UPDATE) para no
 //   pisar el trabajo de otro intento concurrente;
 // - si un adjunto falla, anota el error y lanza para que BullMQ reintente; el
 //   barrido del worker recoge lo que quede pendiente.
+import { createHash } from "node:crypto";
+import { Readable, Transform } from "node:stream";
+import type { ReadableStream as WebReadableStream } from "node:stream/web";
 import { and, eq } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { messages, type MessageAttachment } from "@/lib/db/schema";
 import type { ObjectStorage } from "@/lib/storage/s3";
-import { sha256Base64, storageKeyFor } from "./media-keys";
+import { storageKeyFor } from "./media-keys";
 import type { MessagingProvider } from "./provider";
 
 export { sha256Base64, storageKeyFor } from "./media-keys";
@@ -25,24 +30,30 @@ const DOWNLOAD_TIMEOUT_MS = 120_000;
 
 export class MediaDownloadError extends Error {}
 
-async function readLimited(res: Response, maxBytes: number): Promise<Uint8Array> {
-  const declared = Number(res.headers.get("content-length") ?? 0);
-  if (declared > maxBytes) throw new MediaDownloadError(`archivo de ${declared} bytes excede ${maxBytes}`);
-  if (!res.body) return new Uint8Array();
-  const reader = res.body.getReader();
-  const chunks: Uint8Array[] = [];
-  let total = 0;
-  for (;;) {
-    const { done, value } = await reader.read();
-    if (done) break;
-    total += value.byteLength;
-    if (total > maxBytes) {
-      await reader.cancel();
-      throw new MediaDownloadError(`archivo excede ${maxBytes} bytes`);
-    }
-    chunks.push(value);
-  }
-  return new Uint8Array(Buffer.concat(chunks));
+/**
+ * Pasa los bytes tal cual, contando y calculando el sha256 al vuelo (nada se
+ * acumula en memoria). Falla en cuanto se pasa del límite, y al final si el
+ * hash no coincide: como falla ANTES de terminar el stream, la subida se
+ * aborta y el bucket nunca guarda un archivo incompleto o alterado.
+ */
+function verifyingStream(maxBytes: number, expectedSha256: string | undefined) {
+  const hash = createHash("sha256");
+  let size = 0;
+  const stream = new Transform({
+    transform(chunk: Buffer, _encoding, callback) {
+      size += chunk.byteLength;
+      if (size > maxBytes) return callback(new MediaDownloadError(`archivo excede ${maxBytes} bytes`));
+      hash.update(chunk);
+      callback(null, chunk);
+    },
+    flush(callback) {
+      if (expectedSha256 && hash.digest("base64") !== expectedSha256) {
+        return callback(new MediaDownloadError("el sha256 no coincide: archivo incompleto o alterado"));
+      }
+      callback();
+    },
+  });
+  return { stream, size: () => size };
 }
 
 async function downloadOne(
@@ -50,16 +61,28 @@ async function downloadOne(
   storage: ObjectStorage,
   key: string,
   attachment: MessageAttachment,
+  maxBytes: number,
 ): Promise<{ sizeBytes: number }> {
-  const res = await provider.fetchMedia(attachment.url, AbortSignal.timeout(DOWNLOAD_TIMEOUT_MS));
+  const signal = AbortSignal.timeout(DOWNLOAD_TIMEOUT_MS);
+  const res = await provider.fetchMedia(attachment.url, signal);
   if (!res.ok) throw new MediaDownloadError(`descarga respondió ${res.status}`);
-  const data = await readLimited(res, MAX_MEDIA_BYTES);
-  if (attachment.sha256 && sha256Base64(data) !== attachment.sha256) {
-    throw new MediaDownloadError("el sha256 no coincide: archivo incompleto o alterado");
+  const declared = Number(res.headers.get("content-length") ?? 0);
+  if (declared > maxBytes) {
+    await res.body?.cancel();
+    throw new MediaDownloadError(`archivo de ${declared} bytes excede ${maxBytes}`);
   }
+  const source = res.body ? Readable.fromWeb(res.body as WebReadableStream<Uint8Array>) : Readable.from([]);
+  const verifier = verifyingStream(maxBytes, attachment.sha256);
+  // Un error de la descarga (corte, timeout) también rompe el stream que se sube.
+  source.on("error", (error) => verifier.stream.destroy(error));
+  verifier.stream.on("error", () => source.destroy());
   const contentType = attachment.mimeType ?? res.headers.get("content-type") ?? "application/octet-stream";
-  await storage.put(key, data, contentType);
-  return { sizeBytes: data.byteLength };
+  try {
+    await storage.putStream(key, source.pipe(verifier.stream), contentType);
+  } finally {
+    source.destroy(); // si el bucket falló a la mitad, se corta también la descarga
+  }
+  return { sizeBytes: verifier.size() };
 }
 
 /** Descarga los adjuntos pendientes de un mensaje. Devuelve cuántos guardó. */
@@ -67,6 +90,7 @@ export async function downloadMessageMedia(
   provider: MessagingProvider,
   storage: ObjectStorage,
   messageId: string,
+  { maxBytes = MAX_MEDIA_BYTES }: { maxBytes?: number } = {},
 ): Promise<{ stored: number; pending: number }> {
   const [message] = await db.select().from(messages).where(eq(messages.id, messageId)).limit(1);
   if (!message) return { stored: 0, pending: 0 };
@@ -77,7 +101,7 @@ export async function downloadMessageMedia(
     if (attachment.storageKey) continue;
     const key = storageKeyFor(message.organizationId, message.id, index, attachment);
     try {
-      const { sizeBytes } = await downloadOne(provider, storage, key, attachment);
+      const { sizeBytes } = await downloadOne(provider, storage, key, attachment, maxBytes);
       results.set(index, { storageKey: key, sizeBytes, downloadedAt: new Date().toISOString(), downloadError: undefined });
     } catch (error) {
       const reason = error instanceof Error ? error.message : String(error);

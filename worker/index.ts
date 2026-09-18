@@ -5,8 +5,9 @@
 // - Consume la cola de descarga de media: copia cada adjunto recibido al
 //   bucket propio antes de que Meta lo borre (lib/messaging/media.ts).
 // - Barrido: cada minuto re-encola eventos guardados que nunca se procesaron
-//   (p. ej. Redis no respondió cuando llegó el webhook). La base es la fuente
-//   de verdad; la cola solo acelera.
+//   (p. ej. Redis no respondió cuando llegó el webhook), reconcilia envíos del
+//   CRM de resultado desconocido y re-encola media pendiente. La base es la
+//   fuente de verdad; la cola solo acelera.
 import { UnrecoverableError, Worker } from "bullmq";
 import { and, asc, count, gte, isNull, lt, sql } from "drizzle-orm";
 import { db } from "@/lib/db";
@@ -14,6 +15,7 @@ import { messages, webhookEvents } from "@/lib/db/schema";
 import { messagingProvider } from "@/lib/messaging";
 import { PermanentIngestError, processWebhookEvent } from "@/lib/messaging/ingest";
 import { downloadMessageMedia } from "@/lib/messaging/media";
+import { reconcilePendingSends } from "@/lib/messaging/send";
 import {
   enqueueMediaDownload,
   INBOUND_QUEUE,
@@ -23,14 +25,27 @@ import {
   type InboundJob,
   type MediaJob,
 } from "@/lib/queue/inbound";
-import { objectStorage } from "@/lib/storage/s3";
+import { objectStorage, StorageNotConfiguredError, type ObjectStorage } from "@/lib/storage/s3";
 
 const SWEEP_EVERY_MS = 60_000;
 const SWEEP_MIN_AGE_MS = 60_000;
 const SWEEP_MAX_ATTEMPTS = 20;
 
 const provider = messagingProvider();
-const storage = objectStorage();
+
+// La media es opcional para arrancar: sin bucket configurado, la ingesta de
+// mensajes sigue funcionando y los adjuntos esperan en la base (el barrido los
+// recoge en cuanto el bucket exista y el worker se reinicie).
+function optionalStorage(): ObjectStorage | null {
+  try {
+    return objectStorage();
+  } catch (error) {
+    if (!(error instanceof StorageNotConfiguredError)) throw error;
+    console.error(`[media] DESACTIVADA: ${error.message}. Los adjuntos quedan pendientes.`);
+    return null;
+  }
+}
+const storage = optionalStorage();
 // Adjuntos pendientes que el barrido reintenta: hasta 30 días (antes de que
 // Meta borre la media) y hasta MEDIA_MAX_ATTEMPTS intentos por adjunto.
 const MEDIA_SWEEP_DAYS = 30;
@@ -61,15 +76,19 @@ worker.on("failed", (job, error) => {
   console.error(`[worker] falló ${job?.data.webhookEventId} (intento ${job?.attemptsMade}): ${error.message}`);
 });
 
-const mediaWorker = new Worker<MediaJob>(
-  MEDIA_QUEUE,
-  async (job) => {
-    const { stored, pending } = await downloadMessageMedia(provider, storage, job.data.messageId);
-    console.info(`[media] ${job.data.messageId}: ${stored} guardado(s), ${pending} pendiente(s)`);
-  },
-  { connection: { ...redisConnection(), maxRetriesPerRequest: null }, concurrency: 3 },
-);
-mediaWorker.on("failed", (job, error) => {
+// Concurrencia baja: cada descarga va en streaming (memoria acotada por
+// partes de 5 MB), pero comparte proceso con la ingesta.
+const mediaWorker = storage
+  ? new Worker<MediaJob>(
+      MEDIA_QUEUE,
+      async (job) => {
+        const { stored, pending } = await downloadMessageMedia(provider, storage, job.data.messageId);
+        console.info(`[media] ${job.data.messageId}: ${stored} guardado(s), ${pending} pendiente(s)`);
+      },
+      { connection: { ...redisConnection(), maxRetriesPerRequest: null }, concurrency: 2 },
+    )
+  : null;
+mediaWorker?.on("failed", (job, error) => {
   console.error(`[media] falló ${job?.data.messageId} (intento ${job?.attemptsMade}): ${error.message}`);
 });
 
@@ -103,6 +122,13 @@ async function sweep() {
     console.error(`[worker] DEAD-LETTER: ${dead} evento(s) agotaron ${SWEEP_MAX_ATTEMPTS} intentos; revisar last_error y reprocesar`);
   }
 
+  // Envíos del CRM de resultado desconocido: enlazarlos o darlos por fallidos.
+  const sends = await reconcilePendingSends(provider);
+  if (sends.linked || sends.failed) {
+    console.info(`[worker] barrido: ${sends.linked} envío(s) confirmados, ${sends.failed} sin confirmar → failed`);
+  }
+
+  if (!storage) return;
   // Media pendiente: mensajes con algún adjunto sin storageKey.
   const pendingMedia = await db
     .select({ id: messages.id })
@@ -128,10 +154,12 @@ const sweepTimer = setInterval(() => {
 async function shutdown(signal: string) {
   console.info(`[worker] ${signal}: cerrando`);
   clearInterval(sweepTimer);
-  await Promise.all([worker.close(), mediaWorker.close()]);
+  await Promise.all([worker.close(), mediaWorker?.close()]);
   process.exit(0);
 }
 process.on("SIGTERM", () => void shutdown("SIGTERM"));
 process.on("SIGINT", () => void shutdown("SIGINT"));
 
-console.info(`[worker] escuchando ${INBOUND_QUEUE} y ${MEDIA_QUEUE} (proveedor ${provider.name})`);
+console.info(
+  `[worker] escuchando ${INBOUND_QUEUE}${mediaWorker ? ` y ${MEDIA_QUEUE}` : " (media desactivada)"} (proveedor ${provider.name})`,
+);

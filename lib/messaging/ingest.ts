@@ -116,7 +116,7 @@ async function ingestMessage(provider: ProviderName, event: NormalizedMessageEve
     if (event.direction === "out") {
       const completed = await tx
         .update(messages)
-        .set({ providerMessageId: event.providerMessageId, status: "sent", sentAt: event.sentAt })
+        .set({ providerMessageId: event.providerMessageId, status: "sent", sentAt: event.sentAt, errorCode: null, errorMessage: null })
         .where(
           and(
             eq(messages.organizationId, orgId),
@@ -194,7 +194,13 @@ async function ingestMessage(provider: ProviderName, event: NormalizedMessageEve
  * Tras un saliente enviado desde el CRM: último mensaje y primera respuesta.
  * (El eco de ese envío llega como duplicado del wamid y no pasa por aquí.)
  */
-export async function refreshConversationAfterOutbound(conversationId: string, sentAt: Date): Promise<void> {
+export async function refreshConversationAfterOutbound(
+  conversationId: string,
+  sentAt: Date,
+  // No leídos que el vendedor tenía a la vista al enviar. Solo esos se
+  // descuentan: poner 0 borraría un entrante que llegó durante el envío.
+  { seenUnread }: { seenUnread: number },
+): Promise<void> {
   await db.transaction(async (tx) => {
     const [conversation] = await tx
       .select()
@@ -203,7 +209,7 @@ export async function refreshConversationAfterOutbound(conversationId: string, s
       .for("update");
     if (!conversation) return;
     const updates: Partial<typeof conversations.$inferInsert> = {
-      unreadCount: 0,
+      unreadCount: Math.max(conversation.unreadCount - seenUnread, 0),
       lastMessageAt:
         conversation.lastMessageAt && conversation.lastMessageAt > sentAt ? conversation.lastMessageAt : sentAt,
     };
@@ -239,6 +245,9 @@ async function reconcileFirstResponse(tx: Tx, conversationId: string): Promise<n
           eq(messages.source, "business_app"),
           and(eq(messages.source, "crm"), isNotNull(messages.sentByUserId)),
         ),
+        // Solo lo que de verdad salió: un envío en cola, de resultado
+        // desconocido o fallido no es una respuesta al cliente.
+        inArray(messages.status, ["sent", "delivered", "read"]),
         gte(messages.sentAt, firstIn.at),
       ),
     )
@@ -297,7 +306,8 @@ async function ingestStatus(provider: ProviderName, event: NormalizedStatusEvent
     throw new PermanentIngestError("estado sin wamid ni cuenta del proveedor: no se puede atribuir con seguridad");
   }
 
-  return db.transaction(async (tx) => {
+  let revokeReplyOf: string | undefined;
+  const outcome = await db.transaction(async (tx) => {
     // FOR UPDATE: dos estados del mismo mensaje procesándose a la vez (p. ej.
     // read y un delivered tardío) se serializan; el segundo ve el valor ya
     // escrito por el primero y nextStatus nunca retrocede.
@@ -310,6 +320,13 @@ async function ingestStatus(provider: ProviderName, event: NormalizedStatusEvent
       throw new PermanentIngestError("el estado apunta a un mensaje de otra organización; se rechaza");
     }
     const status = nextStatus(message.status, event.status);
+    // Un saliente que WhatsApp terminó rechazando no llegó al cliente: si fijó
+    // la primera respuesta, se recalcula DESPUÉS del commit (en su propia
+    // transacción, para no bloquear mensaje y conversación en orden inverso
+    // al de la ingesta).
+    if (status === "failed" && message.status !== "failed" && message.direction === "out") {
+      revokeReplyOf = message.conversationId;
+    }
     await tx
       .update(messages)
       .set({
@@ -321,5 +338,22 @@ async function ingestStatus(provider: ProviderName, event: NormalizedStatusEvent
       })
       .where(and(eq(messages.id, message.id), eq(messages.organizationId, message.organizationId)));
     return `estado ${message.status} → ${status}`;
+  });
+  if (revokeReplyOf) await recomputeFirstResponse(revokeReplyOf);
+  return outcome;
+}
+
+async function recomputeFirstResponse(conversationId: string): Promise<void> {
+  await db.transaction(async (tx) => {
+    const [conversation] = await tx
+      .select({ firstResponseSeconds: conversations.firstResponseSeconds })
+      .from(conversations)
+      .where(eq(conversations.id, conversationId))
+      .for("update");
+    if (!conversation || conversation.firstResponseSeconds === null) return;
+    await tx
+      .update(conversations)
+      .set({ firstResponseSeconds: await reconcileFirstResponse(tx, conversationId) })
+      .where(eq(conversations.id, conversationId));
   });
 }
