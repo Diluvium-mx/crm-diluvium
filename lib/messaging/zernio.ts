@@ -8,9 +8,9 @@
 // - coexistencia: lo que el vendedor manda desde la app del celular llega
 //   como `message.sent` con `source: "whatsapp_business_app"`.
 //
-// Los payloads de estado (message.delivered/read/failed) no están
-// documentados: se leen de forma tolerante y, si no se reconocen, el evento
-// queda "ignored" pero guardado crudo en webhook_events (nada se pierde).
+// Los payloads de estado (message.delivered/read/failed) se leen de forma
+// tolerante. Un evento que el CRM procesa pero cuyo formato no se reconoce
+// sale "malformed": queda en dead-letter en webhook_events (nada se pierde).
 import { createHmac, timingSafeEqual } from "node:crypto";
 import { z } from "zod";
 import {
@@ -162,14 +162,14 @@ function findStatusFields(payload: Record<string, unknown>) {
 export function normalizeZernioEvent(payload: unknown): NormalizedEvent {
   const envelope = envelopeSchema.safeParse(payload);
   if (!envelope.success) {
-    return { kind: "ignored", eventId: "", event: "", reason: "sobre inválido" };
+    return { kind: "ignored", eventId: "", event: "", reason: "sobre inválido", malformed: true };
   }
   const { id: eventId, event } = envelope.data;
 
   if (event === "message.received" || event === "message.sent") {
     const parsed = messageEventSchema.safeParse(payload);
     if (!parsed.success) {
-      return { kind: "ignored", eventId, event, reason: `formato no reconocido: ${parsed.error.issues[0]?.message}` };
+      return { kind: "ignored", eventId, event, reason: `formato no reconocido: ${parsed.error.issues[0]?.message}`, malformed: true };
     }
     const { message, conversation, account, metadata } = parsed.data;
     if (account.platform !== "whatsapp") {
@@ -178,7 +178,7 @@ export function normalizeZernioEvent(payload: unknown): NormalizedEvent {
     // La MISMA cuenta que revisó la allowlist del webhook.
     const providerAccountId = zernioAccountId(payload);
     if (!providerAccountId) {
-      return { kind: "ignored", eventId, event, reason: "cuenta ausente o contradictoria" };
+      return { kind: "ignored", eventId, event, reason: "cuenta ausente o contradictoria", malformed: true };
     }
     const outgoing = message.direction === "outgoing";
     // Documentado como "whatsapp_business_app" / "cloud_api"; se compara sin
@@ -232,7 +232,7 @@ export function normalizeZernioEvent(payload: unknown): NormalizedEvent {
   if (status) {
     const fields = findStatusFields(payload as Record<string, unknown>);
     if (!fields.providerMessageId && !fields.providerInternalId) {
-      return { kind: "ignored", eventId, event, reason: "estado sin id de mensaje reconocible" };
+      return { kind: "ignored", eventId, event, reason: "estado sin id de mensaje reconocible", malformed: true };
     }
     const ts = new Date(String((payload as Record<string, unknown>).timestamp ?? ""));
     return {

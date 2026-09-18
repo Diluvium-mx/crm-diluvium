@@ -238,6 +238,19 @@ describe.skipIf(!TEST_DATABASE_URL)("ingesta de WhatsApp (Postgres real)", () =>
     await expect(ingest.processWebhookEvent(provider, row.id)).resolves.toBe("entrante guardado");
   });
 
+  it("evento conocido con formato no reconocido: dead-letter visible (no se da por procesado)", async () => {
+    const bad = { id: `evt_bad_${randomUUID()}`, event: "message.received", message: { cambio: "de formato" } };
+    await expect(deliver(bad)).rejects.toBeInstanceOf(ingest.DeadLetterIngestError);
+    const [row] = await db.select().from(s.webhookEvents).where(eq(s.webhookEvents.id, `zernio_${bad.id}`));
+    expect(row.processedAt).toBeNull();
+    expect(row.attempts).toBe(ingest.DEAD_LETTER_ATTEMPTS);
+    expect(row.lastError).toMatch(/formato no reconocido/);
+
+    // Un evento que el CRM no procesa (nombre desconocido) sí se da por procesado.
+    const other = { id: `evt_other_${randomUUID()}`, event: "comment.received" };
+    await expect(deliver(other)).resolves.toMatch(/^ignorado/);
+  });
+
   describe("envío desde el CRM", () => {
     async function openConversation() {
       await db.insert(s.user).values({ id: "u_vendedor", name: "Vendedor", email: "v@x.mx" }).onConflictDoNothing();
@@ -422,6 +435,46 @@ describe.skipIf(!TEST_DATABASE_URL)("ingesta de WhatsApp (Postgres real)", () =>
       expect(keys).toEqual([messageId]);
       expect(await outs()).toHaveLength(1);
       expect((await outs())[0]).toMatchObject({ status: "sent", providerMessageId: "wamid.RETRY", errorCode: null });
+    });
+
+    it("un send_unconfirmed ya no se reintenta pasado el plazo de la clave de idempotencia", async () => {
+      const c = await openConversation();
+      const { retryTextMessage, SEND_UNCONFIRMED } = await import("./send");
+      await db.insert(s.messages).values({
+        id: "m_viejo",
+        organizationId: ORG_A,
+        conversationId: c.id,
+        direction: "out",
+        source: "crm",
+        type: "text",
+        body: "hola",
+        status: "failed",
+        errorCode: SEND_UNCONFIRMED,
+        sentByUserId: "u_vendedor",
+        sentAt: new Date(Date.now() - 60_000),
+        createdAt: new Date(Date.now() - 24 * 3600_000), // primer intento hace 24 h
+      });
+      const p = withProvider({ sendText: async () => ({ providerInternalId: "x", providerMessageId: "wamid.X" }) });
+      await expect(retryTextMessage(p, { organizationId: ORG_A, messageId: "m_viejo", sentByUserId: "u_vendedor" })).rejects.toMatchObject({
+        code: "not_retryable",
+      });
+      expect((await outs())[0]).toMatchObject({ status: "failed", providerMessageId: null });
+    });
+
+    it("canal desactivado o de otro proveedor: no envía ni crea la fila", async () => {
+      const c = await openConversation();
+      const { sendTextMessage } = await import("./send");
+      const p = withProvider({ sendText: async () => ({ providerInternalId: "x", providerMessageId: "wamid.NO" }) });
+      await db.update(s.channels).set({ isActive: false }).where(eq(s.channels.id, "ch_a"));
+      await expect(
+        sendTextMessage(p, { organizationId: ORG_A, conversationId: c.id, sentByUserId: "u_vendedor", text: "x" }),
+      ).rejects.toMatchObject({ code: "channel_unavailable" });
+      await db.update(s.channels).set({ isActive: true }).where(eq(s.channels.id, "ch_a"));
+      const meta = { ...p, name: "meta_cloud" } as import("./provider").MessagingProvider;
+      await expect(
+        sendTextMessage(meta, { organizationId: ORG_A, conversationId: c.id, sentByUserId: "u_vendedor", text: "x" }),
+      ).rejects.toMatchObject({ code: "channel_unavailable" });
+      expect(await outs()).toHaveLength(0);
     });
 
     it("rechazo definitivo (4xx) → failed y se puede reintentar", async () => {
