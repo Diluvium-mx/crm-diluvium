@@ -91,13 +91,16 @@ Reglas duras:
   Todo el procesamiento ocurre en el worker. Si tarda, Meta reintenta y se duplican mensajes.
 - Idempotencia obligatoria: `messages.provider_message_id` con índice único. Meta reenvía.
 - `web` y `worker` comparten repo y variables de entorno, se despliegan desde la misma rama.
-- Entornos: en la Fase 1 solo existe `production` como environment de Railway — sin datos
-  reales todavía, así que validar ahí directamente no arriesga nada. **Antes de iniciar la
-  Fase 2** (entran contactos reales y el canal de WhatsApp) se crea obligatoriamente un
-  environment `staging` con su propio Postgres. A partir de ese punto, ninguna migración,
-  cambio de webhook ni trabajo del worker toca `production` sin haberse validado antes en
-  `staging`. Antes de importar cualquier dato real también quedan definidos los
-  procedimientos de respaldo y restauración (backup/restore) de la base de datos.
+- Entornos (desde el 18-sep-2026): `production` y `staging`, cada uno con su propio web,
+  Postgres y Redis (`DATABASE_URL`/`REDIS_URL` son referencias `${{Postgres.…}}`, nunca URLs
+  literales). Flujo obligatorio: `feature/*` → rama `staging` (despliega sola en staging) →
+  `main` (despliega sola en producción). Ninguna migración, cambio de webhook ni trabajo del
+  worker toca `production` sin haberse validado antes en `staging`. Detalle y chequeo de
+  aislamiento: `docs/staging.md`.
+- Respaldos: `pg_dump` diario cifrado desde GitHub Actions (`.github/workflows/db-backup.yml`),
+  con restore de prueba en cada corrida. Secrets en el environment `production-backup`
+  (solo `main`), rol `backup_ro` de solo lectura y TLS con CA fijada. Restore: `docs/backups.md`.
+  **Sin servicios externos**: el CRM depende solo de GitHub, Railway y Meta.
 
 Variables de entorno mínimas:
 ```
@@ -295,12 +298,13 @@ Regla: **no se empieza una fase sin que la anterior esté desplegada en Railway 
 4. **Multi-tenant tardío.** Agregar `organization_id` después obliga a reescribir todas las consultas.
 5. **Alcance.** Cada módulo de GHL que se agregue antes de terminar la v1 retrasa el día en que
    el equipo empieza a usar el CRM de verdad.
-6. **Deudas P0 antes de exponer datos reales (entran al cerrar Fase 1, antes de Fase 2):**
-   (a) rate limiter por IP en `/sign-in/email` con `trustedProxies` verificado contra
-   headers reales de Railway (`x-real-ip` roto tras Fastly; usar `x-forwarded-for`),
-   con tests de concurrencia y carga — en Fase 1 solo queda el candado por email
-   (5 fallos/300 s, Postgres, reserva atómica); (b) staging obligatorio antes de
-   Fase 2; (c) respaldos de BD definidos antes de importar datos reales;
-   (d) evaluar Zernio como capa de API oficial de WhatsApp (precio para el volumen,
-   si Coexistence cubre envío de .XML). Principio: no sobre-blindar Fase 1 con datos
-   falsos y 2 usuarios.
+6. **Deudas P0 — cerradas el 18-sep-2026 (PRs #2, #3, #4):**
+   (a) rate limiter por IP en `/api/auth/*` (`lib/rate-limit`, Redis, ventana deslizante
+   atómica; 20/15 min en sign-in, 120/min general). IP = primer valor de `x-forwarded-for`
+   (el edge de Railway descarta el del cliente; verificado en staging con XFF falsificado).
+   El limiter de fábrica de Better Auth queda apagado, y el candado por email sigue igual.
+   (b) staging creado y aislado. (c) respaldos diarios con restore de prueba en cada corrida.
+   Riesgo aceptado: si el repo pasa más de 60 días sin actividad, GitHub apaga el cron sin
+   avisar. (d) Zernio descartado: WhatsApp va por la **Cloud API oficial de Meta directa**,
+   sin intermediarios (regla del dueño: nada de terceros).
+   Pendiente no bloqueante: ensayar un restore completo en staging con un artifact real.
