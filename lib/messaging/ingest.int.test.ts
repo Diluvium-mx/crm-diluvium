@@ -532,6 +532,78 @@ describe.skipIf(!TEST_DATABASE_URL)("ingesta de WhatsApp (Postgres real)", () =>
       expect((await conv()).unreadCount).toBe(1);
     });
 
+    it("carrera: el eco llega primero y la API confirma con SOLO el id interno (sin wamid)", async () => {
+      const c = await openConversation();
+      const { sendTextMessage } = await import("./send");
+      // El proveedor: al enviar, primero llega el eco del webhook (con wamid +
+      // id interno), y la respuesta de la API trae SOLO el id interno.
+      const p = withProvider({
+        sendText: async () => {
+          await deliver({
+            id: `evt_echo_${randomUUID()}`,
+            event: "message.sent",
+            timestamp: "2026-09-18T10:00:00Z",
+            message: {
+              id: "zmsg_INT", // id interno del proveedor
+              conversationId: "zconv_5216682410001",
+              platform: "whatsapp",
+              platformMessageId: "wamid.ECHO", // el eco sí trae wamid
+              direction: "outgoing",
+              text: "hola",
+              attachments: [],
+              sender: { id: "zacc_1" },
+              sentAt: "2026-09-18T10:00:00Z",
+              source: "cloud_api",
+            },
+            conversation: { id: "zconv_5216682410001", participantId: "5216682410001", participantName: "Cliente" },
+            account: { id: "zacc_1", platform: "whatsapp" },
+          } as { id: string; event: string });
+          // La API confirma con SOLO el id interno (sin wamid).
+          return { providerInternalId: "zmsg_INT" };
+        },
+      });
+      const out = await sendTextMessage(p, { organizationId: ORG_A, conversationId: c.id, sentByUserId: "u_vendedor", text: "hola" });
+      expect(out.status).toBe("sent");
+      const rows = await outs();
+      expect(rows).toHaveLength(1); // el eco y la cola se fusionaron en una fila
+      expect(rows[0]).toMatchObject({ source: "crm", sentByUserId: "u_vendedor", providerMessageId: "wamid.ECHO", providerInternalId: "zmsg_INT" });
+    });
+
+    it("eco saliente sin participantId ni teléfono: dead-letter hasta que exista la conversación", async () => {
+      const { DeadLetterIngestError } = ingest;
+      const outNoPhone = {
+        id: `evt_np_${randomUUID()}`,
+        event: "message.sent",
+        timestamp: "2026-09-18T10:00:00Z",
+        message: {
+          id: "zmsg_NP",
+          conversationId: "zconv_desconocida",
+          platform: "whatsapp",
+          platformMessageId: "wamid.NP",
+          direction: "outgoing",
+          text: "hola",
+          attachments: [],
+          sender: { id: "zacc_1" },
+          sentAt: "2026-09-18T10:00:00Z",
+          source: "whatsapp_business_app",
+        },
+        conversation: { id: "zconv_desconocida" }, // sin participantId
+        account: { id: "zacc_1", platform: "whatsapp" },
+      };
+      // No hay conversación ni teléfono → dead-letter (no se pierde, replay).
+      await expect(deliver(outNoPhone as { id: string; event: string })).rejects.toBeInstanceOf(DeadLetterIngestError);
+      expect(await outs()).toHaveLength(0);
+
+      // Nace la conversación por un entrante del cliente…
+      await deliver(msgEvent({ phone: "5216682410099", sentAt: "2026-09-18T09:59:00Z" }));
+      const [conv] = await db.select().from(s.conversations);
+      await db.update(s.conversations).set({ providerConversationId: "zconv_desconocida" }).where(eq(s.conversations.id, conv.id));
+      // …y el replay del eco ya se atribuye por la conversación.
+      await ingest.processWebhookEvent(provider, `zernio_${outNoPhone.id}`);
+      const echo = (await db.select().from(s.messages).where(eq(s.messages.providerMessageId, "wamid.NP")))[0];
+      expect(echo).toMatchObject({ direction: "out", conversationId: conv.id });
+    });
+
     it("dos envíos del CRM nunca se fusionan en el mismo wamid", async () => {
       const c = await openConversation();
       const { sendTextMessage, linkSentMessage, SendConflictError } = await import("./send");
