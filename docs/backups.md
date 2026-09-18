@@ -19,25 +19,15 @@ la BD de producción se respalda con `pg_dump` desde GitHub Actions
 
 ## Monitoreo: que el respaldo no se apague en silencio
 
+Sin herramientas externas, a propósito: el CRM solo depende de GitHub y Railway.
+
 - **Si el job falla**, GitHub le manda un correo a quien editó el cron por última vez.
 - **Si el job deja de correr**, GitHub no avisa. Pasa, por ejemplo, porque desactiva los workflows
-  programados de un repo público tras **60 días sin actividad**, y al no haber corrida fallida no hay correo.
-  Si nadie lo nota, a los 90 días caducan todos los respaldos.
-
-Para cubrir el segundo caso, el último paso del job hace ping a un *dead-man switch*: un servicio
-externo que alerta cuando el ping **no** llega. Configúralo así:
-
-1. Crea un check en [healthchecks.io](https://healthchecks.io) (gratis): period **1 día**, grace **6 horas**,
-   con alerta a tu correo o WhatsApp.
-2. Guarda su URL de ping como secret del environment:
-
-   ```bash
-   gh secret set BACKUP_HEARTBEAT_URL --env production-backup
-   ```
-
-Sin ese secret, el job muestra un warning en cada corrida.
-
-Si llega la alerta: *Actions → db-backup → Enable workflow* (si está desactivado) y *Run workflow*.
+  programados de un repo público tras **60 días sin actividad** (commits, PRs), y al no haber corrida
+  fallida no hay correo. Si nadie lo nota, a los 90 días caducan todos los respaldos.
+  Con el repo en desarrollo activo no ocurre, porque cada push reinicia el contador. Si el proyecto
+  se congela, revisa *Actions → db-backup* al menos una vez al mes. Si está desactivado:
+  *Enable workflow* y *Run workflow*.
 
 ## Secrets
 
@@ -61,7 +51,6 @@ and tags** con solo `main`. Verificado el 18-sep-2026.
 |---|---|
 | `PROD_DATABASE_URL` | URL pública de producción con el rol `backup_ro`: `postgresql://backup_ro:PASS@<RAILWAY_TCP_PROXY_DOMAIN>:<RAILWAY_TCP_PROXY_PORT>/<PGDATABASE>?sslmode=require` |
 | `BACKUP_GPG_PASSPHRASE` | Mínimo 32 caracteres. **Guárdala en tu gestor de contraseñas:** GitHub no deja leer un secret, así que si solo existe ahí no hay restore. |
-| `BACKUP_HEARTBEAT_URL` | Opcional (ver *Monitoreo*). |
 
 ### Rol de solo lectura `backup_ro`
 
