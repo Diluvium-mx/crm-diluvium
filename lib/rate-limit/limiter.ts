@@ -12,7 +12,7 @@
 // Si el store falla (Redis caído o lento) se deja PASAR la request y se
 // registra el error: la capa de IP es defensa en profundidad, no debe tumbar
 // el login. El candado por email (Postgres) sigue activo en /sign-in/email.
-import { clientIpFromHeaders, UNKNOWN_IP } from "./client-ip";
+import { clientIpFromHeaders } from "./client-ip";
 
 export type RateLimitRule = {
   /** Identifica la regla en la clave de Redis y en los logs. */
@@ -59,14 +59,19 @@ export function createRateLimiter({
     async check(req, rules) {
       if (rules.length === 0) return null;
 
-      const ip = clientIpFromHeaders(req.headers, xffIndex);
-      if (!ip) {
+      const clientKey = clientIpFromHeaders(req.headers, xffIndex);
+      if (!clientKey) {
         // Con Railway esto no debería pasar (el edge siempre escribe el
-        // header). Si pasa, todas esas requests comparten un bucket: se loguea
-        // para detectarlo en vez de dejarlo pasar sin límite.
-        log.warn("[rate-limit] sin IP de cliente en x-forwarded-for; bucket compartido");
+        // header). Si pasa, se deja pasar SIN límite de IP: un bucket
+        // compartido convertiría 20 intentos en un bloqueo del login para
+        // todos, que es justo el fallo del limiter de Better Auth. Se
+        // registra como error para detectarlo; el candado por email sigue.
+        log.error(
+          "[rate-limit] sin IP de cliente válida en x-forwarded-for " +
+            `(índice ${xffIndex}); límite por IP NO aplicado`,
+        );
+        return null;
       }
-      const clientKey = ip ?? UNKNOWN_IP;
 
       // Reglas en orden: si una rechaza, las siguientes no consumen cupo.
       for (const rule of rules) {
