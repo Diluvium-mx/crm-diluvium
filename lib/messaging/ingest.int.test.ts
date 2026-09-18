@@ -339,7 +339,6 @@ describe.skipIf(!TEST_DATABASE_URL)("ingesta de WhatsApp (Postgres real)", () =>
         sendText: async () => {
           throw new Error("no se esperaba sendText");
         },
-        listRecentOutgoing: async () => [],
         ...overrides,
       }) as P;
     const outs = () => db.select().from(s.messages).where(eq(s.messages.direction, "out"));
@@ -369,9 +368,9 @@ describe.skipIf(!TEST_DATABASE_URL)("ingesta de WhatsApp (Postgres real)", () =>
       );
     });
 
-    it("reconciliación: lo encuentra en el proveedor → lo enlaza, sin duplicar el eco que ya había llegado", async () => {
+    it("ambiguo cuyo eco llegó aparte: no se adivina; Reintentar con la misma clave se fusiona con el eco", async () => {
       const c = await openConversation();
-      const { sendTextMessage, reconcilePendingSends } = await import("./send");
+      const { sendTextMessage, expireUnconfirmedSends, retryTextMessage } = await import("./send");
       const { ZernioSendError } = await import("./zernio");
       const failing = withProvider({
         sendText: async () => {
@@ -383,26 +382,28 @@ describe.skipIf(!TEST_DATABASE_URL)("ingesta de WhatsApp (Postgres real)", () =>
       await deliver(msgEvent({ direction: "outgoing", source: "cloud_api", wamid: "wamid.LOST", sentAt: new Date().toISOString() }));
       expect(await outs()).toHaveLength(2);
 
-      const listing = withProvider({
-        listRecentOutgoing: async () => [
-          { providerMessageId: "wamid.OTRO", text: "otro texto", at: new Date() },
-          { providerMessageId: "wamid.LOST", text: "Sí hay", at: new Date(), status: "delivered" },
-        ],
-      });
-      // Antes de 2 min no se toca (el envío pudo seguir en vuelo).
-      await expect(reconcilePendingSends(listing)).resolves.toEqual({ linked: 0, failed: 0 });
-      await expect(reconcilePendingSends(listing, later(3 * 60_000))).resolves.toEqual({ linked: 1, failed: 0 });
+      await expect(expireUnconfirmedSends(later(5 * 60_000))).resolves.toBe(0);
+      await expect(expireUnconfirmedSends(later(16 * 60_000))).resolves.toBe(1);
 
+      // El vendedor reintenta: Zernio reconoce la clave y devuelve el MISMO wamid.
+      const keys: string[] = [];
+      const replay = withProvider({
+        sendText: async (input) => {
+          keys.push(input.idempotencyKey);
+          return { providerInternalId: "wamid.LOST", providerMessageId: "wamid.LOST" };
+        },
+      });
+      await retryTextMessage(replay, { organizationId: ORG_A, messageId, sentByUserId: "u_vendedor" });
+      expect(keys).toEqual([messageId]);
       const rows = await outs();
       expect(rows).toHaveLength(1);
-      expect(rows[0]).toMatchObject({ providerMessageId: "wamid.LOST", source: "crm", sentByUserId: "u_vendedor", status: "delivered" });
-      expect(rows[0].id).not.toBe(messageId); // sobrevive la fila del eco, con la autoría
+      expect(rows[0]).toMatchObject({ providerMessageId: "wamid.LOST", source: "crm", sentByUserId: "u_vendedor", status: "sent" });
       expect((await conv()).firstResponseSeconds).toBeGreaterThanOrEqual(59);
     });
 
-    it("sin rastro tras 15 min → failed (send_unconfirmed); reintentar reusa la clave y un doble clic no duplica", async () => {
+    it("sin confirmar tras 15 min → failed (send_unconfirmed); reintentar reusa la clave y un doble clic no duplica", async () => {
       const c = await openConversation();
-      const { sendTextMessage, reconcilePendingSends, retryTextMessage, SEND_UNCONFIRMED } = await import("./send");
+      const { sendTextMessage, expireUnconfirmedSends, retryTextMessage, SEND_UNCONFIRMED } = await import("./send");
       const { ZernioSendError } = await import("./zernio");
       const p0 = withProvider({
         sendText: async () => {
@@ -410,8 +411,8 @@ describe.skipIf(!TEST_DATABASE_URL)("ingesta de WhatsApp (Postgres real)", () =>
         },
       });
       const { messageId } = await sendTextMessage(p0, { organizationId: ORG_A, conversationId: c.id, sentByUserId: "u_vendedor", text: "¿Lo apartamos?" });
-      await expect(reconcilePendingSends(p0, later(5 * 60_000))).resolves.toEqual({ linked: 0, failed: 0 });
-      await expect(reconcilePendingSends(p0, later(16 * 60_000))).resolves.toEqual({ linked: 0, failed: 1 });
+      await expect(expireUnconfirmedSends(later(5 * 60_000))).resolves.toBe(0);
+      await expect(expireUnconfirmedSends(later(16 * 60_000))).resolves.toBe(1);
       expect((await outs())[0]).toMatchObject({ status: "failed", errorCode: SEND_UNCONFIRMED });
 
       const keys: string[] = [];
@@ -549,30 +550,6 @@ describe.skipIf(!TEST_DATABASE_URL)("ingesta de WhatsApp (Postgres real)", () =>
       expect((await conv()).unreadCount).toBe(1);
     });
 
-    it("reconciliación estricta: con dos candidatos, o si el único es un eco de la app, no se confirma", async () => {
-      const c = await openConversation();
-      const { sendTextMessage, reconcilePendingSends } = await import("./send");
-      const { ZernioSendError } = await import("./zernio");
-      const unknown = withProvider({ sendText: async () => { throw new ZernioSendError(0, "network", "corte", "unknown"); } });
-      await sendTextMessage(unknown, { organizationId: ORG_A, conversationId: c.id, sentByUserId: "u_vendedor", text: "Sí" });
-      // Un "Sí" que el vendedor mandó desde el celular (eco business_app ya guardado).
-      await deliver(msgEvent({ direction: "outgoing", source: "whatsapp_business_app", wamid: "wamid.APP", sentAt: new Date().toISOString() }));
-      const onlyApp = withProvider({ listRecentOutgoing: async () => [{ providerMessageId: "wamid.APP", text: "Sí", at: new Date() }] });
-      await expect(reconcilePendingSends(onlyApp, later(3 * 60_000))).resolves.toEqual({ linked: 0, failed: 0 });
-      const two = withProvider({
-        listRecentOutgoing: async () => [
-          { providerMessageId: "wamid.S1", text: "Sí", at: new Date() },
-          { providerMessageId: "wamid.S2", text: "Sí", at: new Date() },
-        ],
-      });
-      await expect(reconcilePendingSends(two, later(3 * 60_000))).resolves.toEqual({ linked: 0, failed: 0 });
-      // Uno viejo (antes del intento) tampoco cuenta.
-      const old = withProvider({ listRecentOutgoing: async () => [{ providerMessageId: "wamid.OLD", text: "Sí", at: new Date(Date.now() - 10 * 60_000) }] });
-      await expect(reconcilePendingSends(old, later(3 * 60_000))).resolves.toEqual({ linked: 0, failed: 0 });
-      const queued = (await outs()).filter((m) => m.source === "crm");
-      expect(queued).toMatchObject([{ status: "queued", providerMessageId: null }]);
-    });
-
     it("dos envíos del CRM nunca se fusionan en el mismo wamid", async () => {
       const c = await openConversation();
       const { sendTextMessage, linkSentMessage, SendConflictError } = await import("./send");
@@ -655,6 +632,21 @@ describe.skipIf(!TEST_DATABASE_URL)("ingesta de WhatsApp (Postgres real)", () =>
 
       expect((await post(msgEvent({ sentAt: "2026-09-18T10:00:00Z" }), env)).status).toBe(200);
       expect(await stored()).toBe(1);
+    });
+
+    it("estado sin cuenta: se guarda solo si su wamid ya es de esta base", async () => {
+      const env = { ZERNIO_ALLOWED_ACCOUNT_IDS: "zacc_1" };
+      await deliver(msgEvent({ direction: "outgoing", source: "cloud_api", wamid: "wamid.KNOWN", sentAt: "2026-09-18T10:00:00Z" }));
+      const before = await stored();
+      const status = (wamid: string) => ({ id: `st_${randomUUID()}`, event: "message.failed", message: { platformMessageId: wamid, error: { code: 131047, message: "x" } } });
+      expect((await post(status("wamid.AJENO"), env)).status).toBe(200);
+      expect(await stored()).toBe(before);
+      const known = status("wamid.KNOWN");
+      expect((await post(known, env)).status).toBe(200);
+      expect(await stored()).toBe(before + 1);
+      await ingest.processWebhookEvent(provider, `zernio_${known.id}`);
+      const [m] = await db.select().from(s.messages).where(eq(s.messages.providerMessageId, "wamid.KNOWN"));
+      expect(m).toMatchObject({ status: "failed", errorCode: "131047" });
     });
   });
 
