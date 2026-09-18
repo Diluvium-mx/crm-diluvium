@@ -12,6 +12,7 @@ import {
   useSensors,
   type DragEndEvent,
   type DragStartEvent,
+  type Modifier,
 } from "@dnd-kit/core";
 import { STAGES, STAGE_LABELS, getContactFullName, type Contact, type Stage, type Temperature } from "../_data/types";
 import { updateContactStage, updateContactTemperature } from "@/lib/actions/contacts";
@@ -150,6 +151,36 @@ export function ContactsBoard({ initialContacts }: { initialContacts: Contact[] 
   // al click sintético; si no llega ningún click, igual se limpia y el
   // siguiente clic real funciona.
   const justDraggedRef = useRef(false);
+
+  // El DragOverlay es position:fixed; sin limites la tarjeta levantada se
+  // monta sobre el sidebar, sube arriba de las columnas y se sale por el
+  // borde derecho. Este modifier la mantiene dentro del recuadro visible de
+  // las columnas (el highlight vive por columna; el pop-up se contiene aqui).
+  const boardScrollRef = useRef<HTMLDivElement>(null);
+  const restrictOverlayToBoard = useCallback<Modifier>(
+    ({ transform, draggingNodeRect, overlayNodeRect }) => {
+      const rect = overlayNodeRect ?? draggingNodeRect;
+      const bounds = boardScrollRef.current?.getBoundingClientRect();
+      if (!rect || !bounds) {
+        return transform;
+      }
+      const next = { ...transform };
+      if (rect.left + next.x < bounds.left) {
+        next.x = bounds.left - rect.left;
+      }
+      if (rect.top + next.y < bounds.top) {
+        next.y = bounds.top - rect.top;
+      }
+      if (rect.left + next.x + rect.width > bounds.right) {
+        next.x = bounds.right - rect.width - rect.left;
+      }
+      if (rect.top + next.y + rect.height > bounds.bottom) {
+        next.y = bounds.bottom - rect.height - rect.top;
+      }
+      return next;
+    },
+    [],
+  );
 
   // La importación CSV llama router.refresh() y pasa una nueva referencia de
   // initialContacts: re-sincroniza el estado local con lo que acaba de
@@ -317,7 +348,7 @@ export function ContactsBoard({ initialContacts }: { initialContacts: Contact[] 
         onDragEnd={handleDragEnd}
         onDragCancel={handleDragCancel}
       >
-        <div className="flex flex-1 gap-4 overflow-x-auto pb-2">
+        <div ref={boardScrollRef} className="flex flex-1 gap-4 overflow-x-auto pb-2">
           {STAGES.map((stage) => (
             <StageColumn
               key={stage}
@@ -328,7 +359,10 @@ export function ContactsBoard({ initialContacts }: { initialContacts: Contact[] 
           ))}
         </div>
 
-        <DragOverlay dropAnimation={{ duration: 200, easing: "cubic-bezier(0.2, 0.9, 0.25, 1)" }}>
+        <DragOverlay
+          dropAnimation={{ duration: 200, easing: "cubic-bezier(0.2, 0.9, 0.25, 1)" }}
+          modifiers={[restrictOverlayToBoard]}
+        >
           {activeContact ? (
             <div className="card-pickup w-72 cursor-grabbing shadow-2xl">
               <ContactCardContent contact={activeContact} />
