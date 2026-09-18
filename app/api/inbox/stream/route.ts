@@ -4,7 +4,6 @@
 //
 // Aislamiento: solo se envían eventos de la organización de la sesión
 // (subscribeToInbox filtra por org). Exige sesión; sin ella, 401.
-import { after } from "next/server";
 import { requireActiveMembership } from "@/lib/auth/active-organization";
 import { subscribeToInbox } from "@/lib/inbox/events";
 import type { InboxEvent } from "@/lib/inbox/types";
@@ -71,11 +70,10 @@ export async function GET(request: Request): Promise<Response> {
     unsubscribe?.();
   }
 
-  // El navegador cerró la pestaña / abortó: liberar la suscripción.
+  // El navegador cerró la pestaña / abortó: liberar la suscripción. cleanup es
+  // idempotente (guarda `closed`), así que también corre desde cancel() del
+  // stream sin efecto doble; el listener se va con el request al terminar.
   request.signal.addEventListener("abort", cleanup);
-  after(() => {
-    request.signal.removeEventListener("abort", cleanup);
-  });
 
   return new Response(stream, {
     headers: {
