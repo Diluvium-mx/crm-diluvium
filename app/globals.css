@@ -142,3 +142,25 @@
     @apply font-sans;
   }
 }
+
+/* Micro-interacciones del kanban de Contactos (presentacional).
+   card-pickup: "levantar" la tarjeta al arrastrar (pop + leve inclinacion),
+   aplicado al contenido del DragOverlay. Respeta prefers-reduced-motion. */
+@keyframes card-pickup {
+  0%   { transform: scale(1) rotate(0deg); }
+  45%  { transform: scale(1.05) rotate(-1.6deg); }
+  75%  { transform: scale(1.02) rotate(0.8deg); }
+  100% { transform: scale(1.03) rotate(0deg); }
+}
+
+.card-pickup {
+  animation: card-pickup 260ms cubic-bezier(0.2, 0, 0, 1) both;
+  will-change: transform;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .card-pickup {
+    animation: none;
+    transform: scale(1.02);
+  }
+}

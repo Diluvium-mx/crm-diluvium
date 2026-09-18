@@ -79,8 +79,8 @@ function StageColumn({
 
   return (
     <div
-      className={`flex min-h-0 w-72 shrink-0 flex-col rounded-lg border bg-muted transition-colors ${
-        isOver ? "ring-2 ring-brand-orange" : ""
+      className={`flex min-h-0 w-72 shrink-0 flex-col rounded-lg border bg-muted transition-all duration-150 ${
+        isOver ? "scale-[1.01] shadow-lg ring-2 ring-brand-orange ring-offset-2 ring-offset-background" : ""
       }`}
     >
       <div className="flex items-center justify-between rounded-t-lg bg-brand-navy px-3 py-2 text-brand-white">
@@ -328,9 +328,9 @@ export function ContactsBoard({ initialContacts }: { initialContacts: Contact[] 
           ))}
         </div>
 
-        <DragOverlay dropAnimation={{ duration: 220, easing: "cubic-bezier(0.2, 0, 0, 1)" }}>
+        <DragOverlay dropAnimation={{ duration: 200, easing: "cubic-bezier(0.2, 0.9, 0.25, 1)" }}>
           {activeContact ? (
-            <div className="w-72 scale-[1.02] cursor-grabbing shadow-2xl">
+            <div className="card-pickup w-72 cursor-grabbing shadow-2xl">
               <ContactCardContent contact={activeContact} />
             </div>
           ) : null}

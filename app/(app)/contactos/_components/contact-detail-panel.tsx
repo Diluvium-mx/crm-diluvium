@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, type ReactNode } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import {
   STAGES,
   STAGE_LABELS,
@@ -59,12 +59,26 @@ export function ContactDetailPanel({
   // foco al elemento disparador al cerrar. (Trap de foco completo queda como
   // mejora futura; esto cubre lo esencial para uso con teclado.)
   const panelRef = useRef<HTMLDivElement>(null);
+
+  // Cierre con animacion de salida: se marca "cerrando" para reproducir el
+  // fade/zoom-out y, al terminar (~180ms), se avisa al padre que desmonte.
+  const [isClosing, setIsClosing] = useState(false);
+  const requestClose = () => setIsClosing(true);
+
+  useEffect(() => {
+    if (!isClosing) {
+      return;
+    }
+    const timer = window.setTimeout(onClose, 180);
+    return () => window.clearTimeout(timer);
+  }, [isClosing, onClose]);
+
   useEffect(() => {
     const previouslyFocused = document.activeElement as HTMLElement | null;
     panelRef.current?.focus();
     const onKey = (event: KeyboardEvent) => {
       if (event.key === "Escape") {
-        onClose();
+        setIsClosing(true);
       }
     };
     document.addEventListener("keydown", onKey);
@@ -72,15 +86,17 @@ export function ContactDetailPanel({
       document.removeEventListener("keydown", onKey);
       previouslyFocused?.focus?.();
     };
-  }, [onClose]);
+  }, []);
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
       <button
         type="button"
         aria-label="Cerrar detalle del contacto"
-        onClick={onClose}
-        className="absolute inset-0 bg-black/40"
+        onClick={requestClose}
+        className={`absolute inset-0 bg-black/40 duration-200 motion-reduce:animate-none ${
+          isClosing ? "animate-out fade-out-0" : "animate-in fade-in-0"
+        }`}
       />
 
       <div
@@ -89,7 +105,9 @@ export function ContactDetailPanel({
         aria-modal="true"
         aria-labelledby="contact-detail-title"
         tabIndex={-1}
-        className="relative flex h-[80vh] w-full max-w-4xl flex-col overflow-hidden rounded-lg bg-background shadow-xl outline-none md:flex-row"
+        className={`relative flex h-[80vh] w-full max-w-4xl flex-col overflow-hidden rounded-lg bg-background shadow-xl outline-none duration-200 ease-out motion-reduce:animate-none md:flex-row ${
+          isClosing ? "animate-out fade-out-0 zoom-out-95" : "animate-in fade-in-0 zoom-in-95"
+        }`}
       >
         {/* Panel izquierdo: conversación (placeholder hasta conectar WhatsApp) */}
         <section className="flex min-h-0 flex-1 flex-col border-b md:border-b-0 md:border-r">
@@ -133,7 +151,7 @@ export function ContactDetailPanel({
             <h2 className="text-sm font-semibold">Detalle del contacto</h2>
             <button
               type="button"
-              onClick={onClose}
+              onClick={requestClose}
               className="rounded px-2 py-1 text-sm text-muted-foreground hover:bg-muted"
             >
               Cerrar
