@@ -1,5 +1,5 @@
 {
-  "id": "16d72aee-df52-45c3-964b-eea1865d4683",
+  "id": "cf7985e0-fc4c-44bd-b9a1-f7302f86271d",
   "prevId": "9899345f-6fec-41ec-adc7-6d09c0768891",
   "version": "7",
   "dialect": "postgresql",
@@ -1056,19 +1056,6 @@
           "primaryKey": false,
           "notNull": false
         },
-        "is_starred": {
-          "name": "is_starred",
-          "type": "boolean",
-          "primaryKey": false,
-          "notNull": true,
-          "default": false
-        },
-        "ad_referral": {
-          "name": "ad_referral",
-          "type": "jsonb",
-          "primaryKey": false,
-          "notNull": false
-        },
         "created_at": {
           "name": "created_at",
           "type": "timestamp",
@@ -1320,12 +1307,6 @@
           "primaryKey": false,
           "notNull": false
         },
-        "ad_referral": {
-          "name": "ad_referral",
-          "type": "jsonb",
-          "primaryKey": false,
-          "notNull": false
-        },
         "sent_at": {
           "name": "sent_at",
           "type": "timestamp",
@@ -1369,27 +1350,6 @@
               "expression": "organization_id",
               "isExpression": false,
               "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        },
-        "messages_conversation_sent_idx": {
-          "name": "messages_conversation_sent_idx",
-          "columns": [
-            {
-              "expression": "conversation_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "\"sent_at\" desc",
-              "asc": true,
-              "isExpression": true,
               "nulls": "last"
             }
           ],
@@ -1641,6 +1601,12 @@
           "primaryKey": false,
           "notNull": true
         },
+        "organization_id": {
+          "name": "organization_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
         "received_at": {
           "name": "received_at",
           "type": "timestamp",
@@ -1684,9 +1650,39 @@
           "concurrently": false,
           "method": "btree",
           "with": {}
+        },
+        "webhook_events_processed_idx": {
+          "name": "webhook_events_processed_idx",
+          "columns": [
+            {
+              "expression": "processed_at",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "where": "\"webhook_events\".\"processed_at\" is not null",
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
         }
       },
-      "foreignKeys": {},
+      "foreignKeys": {
+        "webhook_events_organization_id_organization_id_fk": {
+          "name": "webhook_events_organization_id_organization_id_fk",
+          "tableFrom": "webhook_events",
+          "tableTo": "organization",
+          "columnsFrom": [
+            "organization_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
       "compositePrimaryKeys": {},
       "uniqueConstraints": {},
       "policies": {},

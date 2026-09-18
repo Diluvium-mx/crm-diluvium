@@ -8,9 +8,9 @@
 // 3. encolar (si falla, el barrido del worker lo recoge desde la base);
 // 4. 200. Solo se responde error si NO se pudo guardar: así Zernio reintenta
 //    en vez de dar el evento por entregado y perderlo.
-import { eq } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 import { db } from "@/lib/db";
-import { messages, webhookEvents } from "@/lib/db/schema";
+import { channels, messages, webhookEvents } from "@/lib/db/schema";
 import {
   allowedAccountIds,
   isAccountAllowed,
@@ -88,25 +88,36 @@ export async function POST(req: Request): Promise<Response> {
     // Un estado (entregado/leído/falló) sin cuenta se acepta SOLO si su wamid
     // ya está en esta base: eso prueba que el mensaje es de este entorno, sin
     // abrir la puerta a datos del número real.
-    if (!envelope.providerAccountId && (await isStatusOfKnownMessage(provider, payload))) {
-      return store(provider, rowId(provider, envelope), envelope, payload);
+    if (!envelope.providerAccountId) {
+      const org = await organizationOfKnownStatus(provider, payload);
+      if (org) return store(provider, rowId(provider, envelope), envelope, payload, org);
     }
     // Cuenta ajena a este entorno (p. ej. el número real llegando a staging),
     // o evento sin cuenta: 200 para que Zernio no reintente, y NO se guarda nada.
     return Response.json({ ok: true, ignored: "cuenta no permitida en este entorno" });
   }
 
-  return store(provider, rowId(provider, envelope), envelope, payload);
+  // La organización se resuelve YA (desde la cuenta ya validada) y se guarda en
+  // la fila cruda: así, aunque el evento termine en dead-letter (formato no
+  // reconocido, nunca procesado), borrar la organización se lleva sus datos.
+  const org = await organizationOfAccount(provider, envelope.providerAccountId);
+  return store(provider, rowId(provider, envelope), envelope, payload, org);
 }
 
 function rowId(provider: MessagingProvider, envelope: WebhookEnvelope): string {
   return webhookEventRowId(provider.name, envelope.eventId);
 }
 
-async function store(provider: MessagingProvider, id: string, envelope: WebhookEnvelope, payload: unknown): Promise<Response> {
+async function store(
+  provider: MessagingProvider,
+  id: string,
+  envelope: WebhookEnvelope,
+  payload: unknown,
+  organizationId: string | null,
+): Promise<Response> {
   const inserted = await db
     .insert(webhookEvents)
-    .values({ id, provider: provider.name, event: envelope.event, payload })
+    .values({ id, provider: provider.name, event: envelope.event, payload, organizationId })
     .onConflictDoNothing({ target: webhookEvents.id })
     .returning({ id: webhookEvents.id });
 
@@ -115,13 +126,25 @@ async function store(provider: MessagingProvider, id: string, envelope: WebhookE
   return Response.json({ ok: true, duplicate: inserted.length === 0 });
 }
 
-async function isStatusOfKnownMessage(provider: MessagingProvider, payload: unknown): Promise<boolean> {
+/** Organización dueña de la cuenta (número conectado) de este proveedor, si hay canal. */
+async function organizationOfAccount(provider: MessagingProvider, providerAccountId: string | undefined): Promise<string | null> {
+  if (!providerAccountId) return null;
+  const [channel] = await db
+    .select({ organizationId: channels.organizationId })
+    .from(channels)
+    .where(and(eq(channels.provider, provider.name), eq(channels.providerAccountId, providerAccountId)))
+    .limit(1);
+  return channel?.organizationId ?? null;
+}
+
+/** Un estado sin cuenta se acepta solo si su wamid ya está en la base; devuelve la organización de ese mensaje. */
+async function organizationOfKnownStatus(provider: MessagingProvider, payload: unknown): Promise<string | null> {
   const event = provider.normalize(payload);
-  if (event.kind !== "status" || !event.providerMessageId) return false;
+  if (event.kind !== "status" || !event.providerMessageId) return null;
   const [known] = await db
-    .select({ id: messages.id })
+    .select({ organizationId: messages.organizationId })
     .from(messages)
     .where(eq(messages.providerMessageId, event.providerMessageId))
     .limit(1);
-  return Boolean(known);
+  return known?.organizationId ?? null;
 }
