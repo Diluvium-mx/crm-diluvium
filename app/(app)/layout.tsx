@@ -1,3 +1,4 @@
+import Image from "next/image";
 import Link from "next/link";
 import { headers } from "next/headers";
 import { redirect } from "next/navigation";
@@ -41,7 +42,15 @@ export default async function AppLayout({
 
       <div className="flex flex-1 flex-col">
         <header className="flex items-center justify-between bg-brand-navy-dark px-4 py-3">
-          <span className="font-semibold text-brand-white">Diluvium</span>
+          <div className="flex items-center rounded-md bg-white px-2.5 py-1.5">
+            <Image
+              src="/logo-diluvium.png"
+              alt="Diluvium — Control de inundaciones"
+              width={115}
+              height={28}
+              priority
+            />
+          </div>
           <div className="flex items-center gap-3">
             <span className="text-sm text-brand-white">{session.user.email}</span>
             <ThemeToggle />
