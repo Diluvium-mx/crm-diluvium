@@ -21,7 +21,7 @@
 import { and, eq, inArray, isNull, lt } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { channels, conversations, messages } from "@/lib/db/schema";
-import { refreshConversationAfterOutbound } from "./ingest";
+import { applyOutboundToConversation, latestInboundMessageId } from "./ingest";
 import { SendFailedError, type MessagingProvider, type SendResult } from "./provider";
 import { isWindowOpen, nextStatus } from "./rules";
 
@@ -181,6 +181,9 @@ async function deliver(
   },
 ): Promise<SendOutcome> {
   const where = and(eq(messages.id, ctx.messageId), eq(messages.organizationId, ctx.organizationId));
+  // Corte de lectura: el último entrante que el vendedor tenía a la vista al
+  // enviar. Lo que entre después sigue sin leer (aunque haya otros envíos).
+  const readCutoffMessageId = await latestInboundMessageId(ctx.conversation.id);
   let result: SendResult;
   try {
     result = await provider.sendText({
@@ -205,64 +208,87 @@ async function deliver(
 
   const finalId = await linkSentMessage({
     queuedId: ctx.messageId,
+    conversationId: ctx.conversation.id,
     organizationId: ctx.organizationId,
     sentByUserId: ctx.sentByUserId,
     providerMessageId: result.providerMessageId,
     providerInternalId: result.providerInternalId,
     status: "sent",
+    sentAt: ctx.now,
+    readCutoffMessageId,
   });
-  // El vendedor contestó: último mensaje y primera respuesta. Solo se
-  // descuentan los no leídos que ya existían al abrir el envío: un entrante que
-  // llegó mientras tanto sigue sin leer.
-  await refreshConversationAfterOutbound(ctx.conversation.id, ctx.now, { seenUnread: ctx.conversation.unreadCount });
   return { messageId: finalId, status: "sent" };
 }
 
+export class SendConflictError extends Error {}
+
 /**
- * Enlaza una fila en cola con el mensaje que el proveedor confirmó. Si el eco
- * del webhook ya creó OTRA fila con ese wamid, esa se queda (con la autoría
- * del vendedor) y la de la cola se borra: nunca dos burbujas del mismo envío.
+ * Enlaza una fila en cola con el mensaje que el proveedor confirmó y, en la
+ * MISMA transacción, actualiza la conversación (último mensaje, primera
+ * respuesta, no leídos hasta el corte): un corte a la mitad no deja el
+ * mensaje enviado con la conversación vieja. Orden de bloqueo: conversación
+ * → mensajes, igual que la ingesta.
+ *
+ * Si el eco del webhook ya creó OTRA fila con ese wamid, esa se queda (con la
+ * autoría del vendedor) y la de la cola se borra: nunca dos burbujas del mismo
+ * envío. Nunca se fusionan dos envíos del CRM: si el wamid ya es de otra fila
+ * "crm", se lanza SendConflictError y la fila en cola queda como estaba.
  * Devuelve el id que sobrevive.
  */
 export async function linkSentMessage(input: {
   queuedId: string;
+  conversationId: string;
   organizationId: string;
   sentByUserId: string | null;
   providerMessageId?: string;
   providerInternalId?: string;
   status: "sent" | "delivered" | "read" | "failed";
+  sentAt: Date;
+  /** null = no descontar no leídos (p. ej. la reconciliación del worker). */
+  readCutoffMessageId: string | null;
 }): Promise<string> {
   const link = () =>
     db.transaction(async (tx) => {
+      await tx
+        .select({ id: conversations.id })
+        .from(conversations)
+        .where(and(eq(conversations.id, input.conversationId), eq(conversations.organizationId, input.organizationId)))
+        .for("update");
       const queuedWhere = and(eq(messages.id, input.queuedId), eq(messages.organizationId, input.organizationId));
       const [queued] = await tx.select().from(messages).where(queuedWhere).for("update");
       if (!queued) throw new Error(`mensaje en cola ${input.queuedId} no existe`);
-      if (input.providerMessageId) {
-        const [echo] = await tx
-          .select({ id: messages.id, status: messages.status })
-          .from(messages)
-          .where(and(eq(messages.providerMessageId, input.providerMessageId), eq(messages.organizationId, input.organizationId)))
-          .for("update");
-        if (echo && echo.id !== queued.id) {
-          await tx
-            .update(messages)
-            .set({ source: "crm", sentByUserId: input.sentByUserId, status: nextStatus(echo.status, input.status) })
-            .where(eq(messages.id, echo.id));
-          await tx.delete(messages).where(queuedWhere);
-          return echo.id;
+      let survivor = queued.id;
+      const [echo] = input.providerMessageId
+        ? await tx
+            .select({ id: messages.id, status: messages.status, source: messages.source })
+            .from(messages)
+            .where(and(eq(messages.providerMessageId, input.providerMessageId), eq(messages.organizationId, input.organizationId)))
+            .for("update")
+        : [];
+      if (echo && echo.id !== queued.id) {
+        if (echo.source === "crm") {
+          throw new SendConflictError(`el wamid ${input.providerMessageId} ya pertenece al envío ${echo.id}`);
         }
+        await tx
+          .update(messages)
+          .set({ source: "crm", sentByUserId: input.sentByUserId, status: nextStatus(echo.status, input.status) })
+          .where(eq(messages.id, echo.id));
+        await tx.delete(messages).where(queuedWhere);
+        survivor = echo.id;
+      } else {
+        await tx
+          .update(messages)
+          .set({
+            status: nextStatus(queued.status, input.status),
+            errorCode: null,
+            errorMessage: null,
+            providerMessageId: input.providerMessageId ?? queued.providerMessageId,
+            providerInternalId: input.providerInternalId ?? queued.providerInternalId,
+          })
+          .where(queuedWhere);
       }
-      await tx
-        .update(messages)
-        .set({
-          status: nextStatus(queued.status, input.status),
-          errorCode: null,
-          errorMessage: null,
-          providerMessageId: input.providerMessageId ?? queued.providerMessageId,
-          providerInternalId: input.providerInternalId ?? queued.providerInternalId,
-        })
-        .where(queuedWhere);
-      return queued.id;
+      await applyOutboundToConversation(tx, input.conversationId, input.sentAt, input.readCutoffMessageId);
+      return survivor;
     });
   try {
     return await link();
@@ -278,15 +304,15 @@ export async function linkSentMessage(input: {
 // en segundos), se da por no enviado y se permite reintentar.
 export const SEND_UNCONFIRMED_AFTER_MS = 15 * 60_000;
 const RECONCILE_MIN_AGE_MS = 2 * 60_000;
-// Se compara contra salientes del proveedor desde un poco antes de la fila
-// (relojes distintos).
-const CLOCK_SKEW_MS = 2 * 60_000;
+const CLOCK_SKEW_MS = 30_000;
+const MATCH_AFTER_MS = 2 * 60_000;
 
 /**
  * Barrido del worker: envíos del CRM que siguen "queued" sin wamid (resultado
  * desconocido, o el proceso murió tras el POST). Se buscan entre los últimos
- * salientes de la conversación en el proveedor (mismo texto, desde la hora de
- * la fila, con un wamid que ningún otro envío del CRM haya reclamado).
+ * salientes de la conversación en el proveedor: mismo texto, dentro de la
+ * ventana del intento, que no sea un eco de la app del celular ni un wamid ya
+ * reclamado por otro envío del CRM, y SOLO si hay exactamente un candidato.
  * Encontrado → se enlaza. Sin rastro y viejo → "failed" (ya se puede
  * reintentar, con la misma clave de idempotencia). Error del proveedor al
  * listar → se deja para el siguiente barrido.
@@ -325,39 +351,56 @@ export async function reconcilePendingSends(provider: MessagingProvider, now = n
       continue;
     }
     const attemptAt = (message.sentAt ?? message.createdAt).getTime();
-    const since = attemptAt - CLOCK_SKEW_MS;
-    const sameText = candidates.filter((c) => c.text?.trim() === message.body && c.at.getTime() >= since);
-    // Wamids ya reclamados por OTRO envío del CRM (el mismo texto dos veces).
-    const claimed = sameText.length
+    // Candidatos ESTRICTOS (Zernio no acepta un id de correlación propio):
+    // mismo texto y dentro de la ventana del intento (relojes distintos:
+    // -30 s; el POST dura ≤ 15 s: +2 min).
+    const inWindow = candidates.filter(
+      (c) =>
+        c.text?.trim() === message.body &&
+        c.at.getTime() >= attemptAt - CLOCK_SKEW_MS &&
+        c.at.getTime() <= attemptAt + MATCH_AFTER_MS,
+    );
+    // Se descartan los que ya están en la base como algo que NO es un eco de
+    // la API: lo escrito desde la app del celular, o lo que otro envío del
+    // CRM ya reclamó.
+    const known = inWindow.length
       ? await db
-          .select({ wamid: messages.providerMessageId })
+          .select({ wamid: messages.providerMessageId, source: messages.source })
           .from(messages)
           .where(
             and(
               eq(messages.organizationId, message.organizationId),
-              eq(messages.source, "crm"),
               inArray(
                 messages.providerMessageId,
-                sameText.map((c) => c.providerMessageId),
+                inWindow.map((c) => c.providerMessageId),
               ),
             ),
           )
       : [];
-    const claimedIds = new Set(claimed.map((c) => c.wamid));
-    // El más viejo sin reclamar: con dos envíos idénticos, se emparejan en orden.
-    const match = sameText.filter((c) => !claimedIds.has(c.providerMessageId)).sort((a, b) => a.at.getTime() - b.at.getTime())[0];
+    const excluded = new Set(known.filter((k) => k.source !== "other_api").map((k) => k.wamid));
+    const eligible = inWindow.filter((c) => !excluded.has(c.providerMessageId));
+    // Solo un candidato inequívoco se da por confirmado. Con dos o más, se
+    // deja sin confirmar: el vendedor revisa el chat.
+    const match = eligible.length === 1 ? eligible[0] : undefined;
 
     if (match) {
-      await linkSentMessage({
-        queuedId: message.id,
-        organizationId: message.organizationId,
-        sentByUserId: message.sentByUserId,
-        providerMessageId: match.providerMessageId,
-        status: match.status ?? "sent",
-      });
-      await refreshConversationAfterOutbound(conversation.id, message.sentAt ?? message.createdAt, { seenUnread: 0 });
-      linked++;
-      continue;
+      try {
+        await linkSentMessage({
+          queuedId: message.id,
+          conversationId: conversation.id,
+          organizationId: message.organizationId,
+          sentByUserId: message.sentByUserId,
+          providerMessageId: match.providerMessageId,
+          status: match.status ?? "sent",
+          sentAt: message.sentAt ?? message.createdAt,
+          readCutoffMessageId: null,
+        });
+        linked++;
+        continue;
+      } catch (error) {
+        // Otro barrido concurrente reclamó ese wamid primero: sin confirmar.
+        if (!(error instanceof SendConflictError)) throw error;
+      }
     }
     if (attemptAt < now.getTime() - SEND_UNCONFIRMED_AFTER_MS) {
       const marked = await db

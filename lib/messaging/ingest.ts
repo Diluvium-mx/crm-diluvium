@@ -1,14 +1,14 @@
 // Aplica un evento normalizado a la base (lo usa el worker). Toda consulta
 // filtra por organización: la organización sale del CANAL (el número de
 // WhatsApp conectado), nunca del payload.
-import { and, asc, eq, gte, inArray, isNotNull, isNull, or, sql } from "drizzle-orm";
+import { and, asc, count, desc, eq, gte, inArray, isNotNull, isNull, or, sql } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { channels, contacts, conversations, messages, webhookEvents } from "@/lib/db/schema";
 import { canonicalPhone, normalizePhone, phoneLookupVariants } from "@/lib/phone";
 import type { MessagingProvider, NormalizedMessageEvent, NormalizedStatusEvent, ProviderName } from "./provider";
 import { firstResponseSeconds, nextStatus, windowExpiresAt } from "./rules";
 
-type Tx = Parameters<Parameters<typeof db.transaction>[0]>[0];
+export type Tx = Parameters<Parameters<typeof db.transaction>[0]>[0];
 
 /** Error que no se arregla reintentando (el evento queda marcado, no se reintenta). */
 export class PermanentIngestError extends Error {}
@@ -162,9 +162,15 @@ async function ingestMessage(provider: ProviderName, event: NormalizedMessageEve
         })
         .onConflictDoNothing({ target: messages.providerMessageId })
         .returning({ id: messages.id });
-      if (inserted.length === 0) return "mensaje duplicado (wamid ya guardado)";
-      if (event.attachments.length > 0) mediaMessageId = inserted[0].id;
-      outcome = event.direction === "in" ? "entrante guardado" : `saliente (${event.source}) guardado`;
+      if (inserted.length === 0) {
+        // Duplicado (reintento del proveedor, o eco de un envío ya enlazado):
+        // no se inserta, pero la conversación SÍ se reconcilia abajo (último
+        // mensaje, primera respuesta) por si quedó desactualizada.
+        outcome = "mensaje duplicado (wamid ya guardado)";
+      } else {
+        if (event.attachments.length > 0) mediaMessageId = inserted[0].id;
+        outcome = event.direction === "in" ? "entrante guardado" : `saliente (${event.source}) guardado`;
+      }
     }
 
     // Se BLOQUEA la conversación antes de leer sus contadores: con varios
@@ -203,34 +209,67 @@ async function ingestMessage(provider: ProviderName, event: NormalizedMessageEve
 }
 
 /**
- * Tras un saliente enviado desde el CRM: último mensaje y primera respuesta.
- * (El eco de ese envío llega como duplicado del wamid y no pasa por aquí.)
+ * Tras un saliente confirmado del CRM, DENTRO de la transacción que lo enlaza
+ * (así un corte a la mitad no deja el mensaje enviado con la conversación
+ * vieja): último mensaje, primera respuesta y no leídos hasta el corte que el
+ * vendedor tenía a la vista. Bloquea la conversación; quien llama la bloquea
+ * ANTES que los mensajes (mismo orden que la ingesta).
  */
-export async function refreshConversationAfterOutbound(
+export async function applyOutboundToConversation(
+  tx: Tx,
   conversationId: string,
   sentAt: Date,
-  // No leídos que el vendedor tenía a la vista al enviar. Solo esos se
-  // descuentan: poner 0 borraría un entrante que llegó durante el envío.
-  { seenUnread }: { seenUnread: number },
+  readCutoffMessageId: string | null,
 ): Promise<void> {
-  await db.transaction(async (tx) => {
-    const [conversation] = await tx
-      .select()
-      .from(conversations)
-      .where(eq(conversations.id, conversationId))
-      .for("update");
-    if (!conversation) return;
-    const updates: Partial<typeof conversations.$inferInsert> = {
-      unreadCount: Math.max(conversation.unreadCount - seenUnread, 0),
-      lastMessageAt:
-        conversation.lastMessageAt && conversation.lastMessageAt > sentAt ? conversation.lastMessageAt : sentAt,
-    };
-    if (conversation.firstResponseSeconds === null) {
-      const seconds = await reconcileFirstResponse(tx, conversationId);
-      if (seconds !== null) updates.firstResponseSeconds = seconds;
-    }
-    await tx.update(conversations).set(updates).where(eq(conversations.id, conversationId));
-  });
+  const [conversation] = await tx.select().from(conversations).where(eq(conversations.id, conversationId)).for("update");
+  if (!conversation) return;
+  const updates: Partial<typeof conversations.$inferInsert> = {
+    lastMessageAt:
+      conversation.lastMessageAt && conversation.lastMessageAt > sentAt ? conversation.lastMessageAt : sentAt,
+    unreadCount: await unreadAfterCutoff(tx, conversation, readCutoffMessageId),
+  };
+  if (conversation.firstResponseSeconds === null) {
+    const seconds = await reconcileFirstResponse(tx, conversationId);
+    if (seconds !== null) updates.firstResponseSeconds = seconds;
+  }
+  await tx.update(conversations).set(updates).where(eq(conversations.id, conversationId));
+}
+
+/** Último entrante de la conversación: el corte de lectura de lo que hay a la vista. */
+export async function latestInboundMessageId(conversationId: string, tx: Tx | typeof db = db): Promise<string | null> {
+  const [row] = await tx
+    .select({ id: messages.id })
+    .from(messages)
+    .where(and(eq(messages.conversationId, conversationId), eq(messages.direction, "in")))
+    .orderBy(desc(messages.createdAt), desc(messages.id))
+    .limit(1);
+  return row?.id ?? null;
+}
+
+/**
+ * No leídos tras marcar como leído todo lo entrante hasta `cutoffMessageId`
+ * (inclusive): los entrantes guardados DESPUÉS del corte siguen sin leer. Se
+ * compara en SQL (la hora del corte con microsegundos, sin pasar por JS).
+ * Nunca sube el contador: un corte viejo que llega tarde (p. ej. un envío
+ * lento) no revive como no leído lo que otra lectura ya marcó. Idempotente.
+ */
+export async function unreadAfterCutoff(
+  tx: Tx,
+  conversation: { id: string; unreadCount: number },
+  cutoffMessageId: string | null,
+): Promise<number> {
+  if (!cutoffMessageId) return conversation.unreadCount; // no había nada a la vista
+  const [{ value }] = await tx
+    .select({ value: count() })
+    .from(messages)
+    .where(
+      and(
+        eq(messages.conversationId, conversation.id),
+        eq(messages.direction, "in"),
+        sql`${messages.createdAt} > (select created_at from messages where id = ${cutoffMessageId})`,
+      ),
+    );
+  return Math.min(conversation.unreadCount, value);
 }
 
 async function reconcileFirstResponse(tx: Tx, conversationId: string): Promise<number | null> {
