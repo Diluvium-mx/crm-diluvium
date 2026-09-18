@@ -307,4 +307,7 @@ Regla: **no se empieza una fase sin que la anterior esté desplegada en Railway 
    Riesgo aceptado: si el repo pasa más de 60 días sin actividad, GitHub apaga el cron sin
    avisar. (d) Zernio descartado: WhatsApp va por la **Cloud API oficial de Meta directa**,
    sin intermediarios (regla del dueño: nada de terceros).
-   Pendiente no bloqueante: ensayar un restore completo en staging con un artifact real.
+   Ensayo de restore completo en staging (18-sep): se descargó un artifact real de `main`, se
+   descifró con la passphrase guardada, se restauró en una base limpia (60 contactos, 10 tablas),
+   se hizo el intercambio atómico, se inició sesión con el usuario de producción y se cargó
+   /contactos. También se probó el rollback. Procedimiento: `docs/backups.md`.
