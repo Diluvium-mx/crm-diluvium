@@ -27,7 +27,7 @@ import { isWindowOpen, nextStatus } from "./rules";
 
 export class SendRejectedError extends Error {
   constructor(
-    readonly code: "not_found" | "window_closed" | "not_linked" | "empty" | "not_retryable",
+    readonly code: "not_found" | "window_closed" | "not_linked" | "empty" | "not_retryable" | "channel_unavailable",
     message: string,
   ) {
     super(message);
@@ -48,12 +48,14 @@ export type SendOutcome = { messageId: string; status: "sent" | "pending" };
 
 export const SEND_UNKNOWN = "send_unknown";
 export const SEND_UNCONFIRMED = "send_unconfirmed";
+// Zernio guarda la clave de idempotencia 24 h; se deja 1 h de margen.
+export const SAFE_RETRY_WINDOW_MS = 23 * 3600_000;
 const MAX_TEXT = 4096; // límite de WhatsApp para texto
 
 type ConversationRow = typeof conversations.$inferSelect;
 type ChannelRow = typeof channels.$inferSelect;
 
-async function loadConversation(organizationId: string, conversationId: string, now: Date) {
+async function loadConversation(provider: MessagingProvider, organizationId: string, conversationId: string, now: Date) {
   const [row] = await db
     .select({ conversation: conversations, channel: channels })
     .from(conversations)
@@ -61,6 +63,11 @@ async function loadConversation(organizationId: string, conversationId: string, 
     .where(and(eq(conversations.id, conversationId), eq(conversations.organizationId, organizationId)))
     .limit(1);
   if (!row) throw new SendRejectedError("not_found", "Conversación no encontrada");
+  // Un canal desactivado no envía, y un canal de otro proveedor (p. ej. ya
+  // migrado a Meta directa) no se manda por este adaptador.
+  if (!row.channel.isActive || row.channel.provider !== provider.name) {
+    throw new SendRejectedError("channel_unavailable", "El canal de WhatsApp de esta conversación no está disponible");
+  }
   if (!isWindowOpen(row.conversation.windowExpiresAt, now)) {
     throw new SendRejectedError("window_closed", "La ventana de 24 h está cerrada: solo se puede enviar una plantilla");
   }
@@ -80,7 +87,7 @@ function validText(raw: string): string {
 export async function sendTextMessage(provider: MessagingProvider, params: SendTextParams): Promise<SendOutcome> {
   const text = validText(params.text);
   const now = params.now ?? new Date();
-  const { conversation, channel } = await loadConversation(params.organizationId, params.conversationId, now);
+  const { conversation, channel } = await loadConversation(provider, params.organizationId, params.conversationId, now);
 
   const messageId = crypto.randomUUID();
   await db.insert(messages).values({
@@ -118,7 +125,19 @@ export async function retryTextMessage(
   if (message.direction !== "out" || message.source !== "crm" || message.type !== "text" || !message.body) {
     throw new SendRejectedError("not_retryable", "Solo se reintentan textos enviados desde el CRM");
   }
-  const { conversation, channel } = await loadConversation(params.organizationId, message.conversationId, now);
+  // Un envío AMBIGUO (sin confirmar) solo se reintenta mientras el proveedor
+  // recuerda la clave de idempotencia del PRIMER intento (created_at no cambia
+  // con los reintentos): si aquel sí salió, el proveedor contesta con la
+  // respuesta guardada y no duplica. Pasado ese plazo, reintentar podría
+  // mandar el mensaje dos veces: el vendedor debe revisar el chat y escribirlo
+  // de nuevo a conciencia.
+  if (message.errorCode === SEND_UNCONFIRMED && now.getTime() - message.createdAt.getTime() > SAFE_RETRY_WINDOW_MS) {
+    throw new SendRejectedError(
+      "not_retryable",
+      "Ya no se puede reintentar sin riesgo de duplicarlo: revisa el chat en el celular y, si no llegó, escríbelo de nuevo",
+    );
+  }
+  const { conversation, channel } = await loadConversation(provider, params.organizationId, message.conversationId, now);
 
   // Paso atómico failed → queued: dos clics simultáneos no envían dos veces.
   const claimed = await db
@@ -284,6 +303,7 @@ export async function reconcilePendingSends(provider: MessagingProvider, now = n
         eq(messages.source, "crm"),
         eq(messages.status, "queued"),
         isNull(messages.providerMessageId),
+        eq(channels.provider, provider.name),
         // sent_at = último intento (un reintento lo renueva), no la creación.
         lt(messages.sentAt, new Date(now.getTime() - RECONCILE_MIN_AGE_MS)),
       ),
