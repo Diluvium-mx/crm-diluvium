@@ -305,4 +305,94 @@ describe.skipIf(!TEST_DATABASE_URL)("ingesta de WhatsApp (Postgres real)", () =>
       expect(await db.select().from(s.messages).where(eq(s.messages.direction, "out"))).toHaveLength(0);
     });
   });
+
+  describe("media: descarga a almacenamiento propio", () => {
+    class MemoryStorage {
+      objects = new Map<string, { body: Uint8Array; contentType: string }>();
+      async put(key: string, body: Uint8Array, contentType: string) {
+        this.objects.set(key, { body, contentType });
+      }
+      async exists(key: string) {
+        return this.objects.has(key);
+      }
+      async signedGetUrl(key: string) {
+        return `https://bucket/${key}?firmado`;
+      }
+    }
+    const pdf = new TextEncoder().encode("%PDF-1.7 factura");
+    const xml = new TextEncoder().encode("<cfdi:Comprobante/>");
+    const sha = async (d: Uint8Array) => (await import("./media-keys")).sha256Base64(d);
+
+    async function messageWithAttachments(hooks: import("./ingest").IngestHooks = {}) {
+      const e = msgEvent({ sentAt: "2026-09-18T10:00:00Z" });
+      (e.message as Record<string, unknown>).attachments = [
+        { type: "file", url: "https://zernio.com/api/v1/whatsapp/media/1", payload: { id: "1", sha256: await sha(pdf), mimeType: "application/pdf", filename: "F-1.pdf" } },
+        { type: "file", url: "https://zernio.com/api/v1/whatsapp/media/2", payload: { id: "2", sha256: await sha(xml), mimeType: "application/xml", filename: "F-1.xml" } },
+      ];
+      const id = `zernio_${e.id}`;
+      await db.insert(s.webhookEvents).values({ id, provider: "zernio", event: e.event, payload: e });
+      await ingest.processWebhookEvent(provider, id, hooks);
+      const [m] = await db.select().from(s.messages);
+      return m;
+    }
+    const providerServing = (files: Record<string, Uint8Array | number>) =>
+      ({
+        ...provider,
+        fetchMedia: async (url: string) => {
+          const file = files[url.split("/").pop() ?? ""];
+          return typeof file === "number" ? new Response("x", { status: file }) : new Response(new Blob([Buffer.from(file)]));
+        },
+      }) as import("./provider").MessagingProvider;
+
+    it("la ingesta avisa (hook) solo por mensajes nuevos con adjuntos", async () => {
+      const seen: string[] = [];
+      const m = await messageWithAttachments({ onMediaMessage: (id) => void seen.push(id) });
+      expect(seen).toEqual([m.id]);
+      await deliver(msgEvent({ sentAt: "2026-09-18T11:00:00Z" })); // sin adjuntos
+      expect(seen).toHaveLength(1);
+    });
+
+    it("descarga, verifica sha256, guarda en el bucket y anota storageKey/tamaño", async () => {
+      const m = await messageWithAttachments();
+      const storage = new MemoryStorage();
+      const { downloadMessageMedia } = await import("./media");
+      await expect(downloadMessageMedia(providerServing({ "1": pdf, "2": xml }), storage, m.id)).resolves.toEqual({ stored: 2, pending: 0 });
+      const [after] = await db.select().from(s.messages);
+      expect(after.attachments.map((a) => [a.storageKey, a.sizeBytes, a.downloadError])).toEqual([
+        [`org/${ORG_A}/messages/${m.id}/0-F-1.pdf`, pdf.byteLength, undefined],
+        [`org/${ORG_A}/messages/${m.id}/1-F-1.xml`, xml.byteLength, undefined],
+      ]);
+      expect(storage.objects.get(`org/${ORG_A}/messages/${m.id}/1-F-1.xml`)?.contentType).toBe("application/xml");
+      // Idempotente: una segunda pasada no vuelve a descargar.
+      await expect(downloadMessageMedia(providerServing({}), storage, m.id)).resolves.toEqual({ stored: 0, pending: 0 });
+    });
+
+    it("sha256 que no coincide o error del proveedor: se anota, se lanza, y un reintento posterior lo completa", async () => {
+      const m = await messageWithAttachments();
+      const storage = new MemoryStorage();
+      const { downloadMessageMedia } = await import("./media");
+      const corrupted = new TextEncoder().encode("%PDF truncado");
+      await expect(downloadMessageMedia(providerServing({ "1": corrupted, "2": 500 }), storage, m.id)).rejects.toThrow(/sha256[\s\S]*adjunto 1: descarga respondió 500/);
+      let [after] = await db.select().from(s.messages);
+      expect(after.attachments.map((a) => [a.storageKey ?? null, a.downloadAttempts, Boolean(a.downloadError)])).toEqual([
+        [null, 1, true],
+        [null, 1, true],
+      ]);
+      expect(storage.objects.size).toBe(0);
+
+      await downloadMessageMedia(providerServing({ "1": pdf, "2": xml }), storage, m.id);
+      [after] = await db.select().from(s.messages);
+      expect(after.attachments.every((a) => a.storageKey && !a.downloadError)).toBe(true);
+      expect(after.attachments[0].downloadAttempts).toBe(2);
+    });
+
+    it("si el objeto ya estaba en el bucket (subida previa sin anotar), se reutiliza", async () => {
+      const m = await messageWithAttachments();
+      const storage = new MemoryStorage();
+      await storage.put(`org/${ORG_A}/messages/${m.id}/0-F-1.pdf`, pdf, "application/pdf");
+      await storage.put(`org/${ORG_A}/messages/${m.id}/1-F-1.xml`, xml, "application/xml");
+      const { downloadMessageMedia } = await import("./media");
+      await expect(downloadMessageMedia(providerServing({ "1": 503, "2": 503 }), storage, m.id)).resolves.toEqual({ stored: 2, pending: 0 });
+    });
+  });
 });
