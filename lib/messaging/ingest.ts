@@ -39,6 +39,9 @@ export async function processWebhookEvent(
   const [row] = await db.select().from(webhookEvents).where(eq(webhookEvents.id, webhookEventId)).limit(1);
   if (!row) throw new PermanentIngestError(`webhook_event ${webhookEventId} no existe`);
   if (row.processedAt) return "ya procesado";
+  // La ruta del webhook ya pudo atribuir la organización al guardar (incluso
+  // para eventos que terminarán "ignored"): no se pierde al procesar.
+  const attributedOrgId = row.organizationId;
 
   await db
     .update(webhookEvents)
@@ -48,10 +51,17 @@ export async function processWebhookEvent(
   try {
     const event = provider.normalize(row.payload);
     let outcome: string;
-    let organizationId: string | null = null;
+    let organizationId: string | null = attributedOrgId;
     // El proveedor viene del adaptador que VERIFICÓ la firma, no del payload.
-    if (event.kind === "message") ({ outcome, organizationId } = await ingestMessage(provider.name, event, hooks));
-    else if (event.kind === "status") ({ outcome, organizationId } = await ingestStatus(provider.name, event));
+    if (event.kind === "message") {
+      const r = await ingestMessage(provider.name, event, hooks);
+      outcome = r.outcome;
+      organizationId = r.organizationId ?? attributedOrgId;
+    } else if (event.kind === "status") {
+      const r = await ingestStatus(provider.name, event);
+      outcome = r.outcome;
+      organizationId = r.organizationId ?? attributedOrgId;
+    }
     else if (event.malformed) throw new DeadLetterIngestError(`formato no reconocido (${event.event}): ${event.reason}`);
     else outcome = `ignorado: ${event.reason}`;
 
