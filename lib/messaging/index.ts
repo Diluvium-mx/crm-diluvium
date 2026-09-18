@@ -27,21 +27,36 @@ export function webhookEventRowId(provider: MessagingProvider["name"], eventId: 
 
 /**
  * Zernio no permite limitar un webhook a ciertas cuentas: todas las del
- * perfil llegan a todos los endpoints. En staging, ZERNIO_ALLOWED_ACCOUNT_IDS
- * (ids separados por coma) hace que los eventos de otras cuentas —p. ej. el
- * número REAL, con datos de clientes— se descarten sin guardarse. Sin la
- * variable (producción) se aceptan todas. Un evento sin cuenta (webhook.test)
- * se acepta.
+ * perfil llegan a todos los endpoints. ZERNIO_ALLOWED_ACCOUNT_IDS (ids
+ * separados por coma) dice qué cuentas acepta ESTE entorno; lo demás —p. ej.
+ * el número REAL llegando a staging, con datos de clientes— se descarta sin
+ * guardarse.
+ *
+ * Falla CERRADO: la variable es obligatoria en todos los entornos (también en
+ * producción, con el accountId del número real). Sin ella el canal se
+ * considera no configurado y el webhook responde 503 sin guardar nada.
  */
-export function isAccountAllowed(
-  providerAccountId: string | undefined,
-  env: Record<string, string | undefined> = process.env,
-): boolean {
-  const raw = env.ZERNIO_ALLOWED_ACCOUNT_IDS?.trim();
-  if (!raw || !providerAccountId) return true;
-  return raw
+export function allowedAccountIds(env: Record<string, string | undefined> = process.env): ReadonlySet<string> {
+  const ids = (env.ZERNIO_ALLOWED_ACCOUNT_IDS ?? "")
     .split(",")
     .map((id) => id.trim())
-    .filter(Boolean)
-    .includes(providerAccountId);
+    .filter(Boolean);
+  if (ids.length === 0) {
+    throw new MessagingNotConfiguredError(
+      "ZERNIO_ALLOWED_ACCOUNT_IDS es obligatoria: lista de accountId de Zernio que acepta este entorno",
+    );
+  }
+  return new Set(ids);
+}
+
+/** Único evento que se acepta sin cuenta: la prueba del webhook (no se guarda). */
+export const WEBHOOK_TEST_EVENT = "webhook.test";
+
+/**
+ * ¿Se guarda este evento? Solo si trae una cuenta de la lista. Un evento sin
+ * cuenta (o con ids de cuenta contradictorios, que readEnvelope deja sin
+ * cuenta) se rechaza: no hay forma de saber si es del número real.
+ */
+export function isAccountAllowed(providerAccountId: string | undefined, allowed: ReadonlySet<string>): boolean {
+  return providerAccountId !== undefined && allowed.has(providerAccountId);
 }

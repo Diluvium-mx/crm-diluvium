@@ -11,9 +11,11 @@
 import { db } from "@/lib/db";
 import { webhookEvents } from "@/lib/db/schema";
 import {
+  allowedAccountIds,
   isAccountAllowed,
   messagingProvider,
   MessagingNotConfiguredError,
+  WEBHOOK_TEST_EVENT,
   webhookEventRowId,
 } from "@/lib/messaging";
 import type { MessagingProvider, WebhookEnvelope } from "@/lib/messaging/provider";
@@ -51,8 +53,10 @@ export async function POST(req: Request): Promise<Response> {
   if (rawBody === null) return new Response("payload demasiado grande", { status: 413 });
 
   let provider: MessagingProvider;
+  let allowed: ReadonlySet<string>;
   try {
     provider = messagingProvider();
+    allowed = allowedAccountIds();
   } catch (error) {
     if (!(error instanceof MessagingNotConfiguredError)) throw error;
     // 503 (no 500): Zernio reintenta y el evento llega cuando se configure.
@@ -75,9 +79,13 @@ export async function POST(req: Request): Promise<Response> {
     return new Response("payload inválido", { status: 400 });
   }
 
-  if (!isAccountAllowed(envelope.providerAccountId)) {
-    // Cuenta ajena a este entorno (p. ej. el número real llegando a staging):
-    // 200 para que Zernio no reintente, y NO se guarda nada.
+  if (!isAccountAllowed(envelope.providerAccountId, allowed)) {
+    // La prueba del webhook no trae cuenta: se contesta y no se guarda.
+    if (envelope.event === WEBHOOK_TEST_EVENT && !envelope.providerAccountId) {
+      return Response.json({ ok: true, test: true });
+    }
+    // Cuenta ajena a este entorno (p. ej. el número real llegando a staging),
+    // o evento sin cuenta: 200 para que Zernio no reintente, y NO se guarda nada.
     return Response.json({ ok: true, ignored: "cuenta no permitida en este entorno" });
   }
 

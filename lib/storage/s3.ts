@@ -2,11 +2,18 @@
 // S3, privado). Sin terceros: el bucket es de Railway, igual que la base.
 // Variables (referencias al bucket en Railway): S3_BUCKET, S3_ENDPOINT,
 // S3_REGION, S3_ACCESS_KEY_ID, S3_SECRET_ACCESS_KEY.
-import { GetObjectCommand, HeadObjectCommand, PutObjectCommand, S3Client } from "@aws-sdk/client-s3";
+import type { Readable } from "node:stream";
+import { GetObjectCommand, HeadObjectCommand, S3Client } from "@aws-sdk/client-s3";
+import { Upload } from "@aws-sdk/lib-storage";
 import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
 
 export interface ObjectStorage {
-  put(key: string, body: Uint8Array, contentType: string): Promise<void>;
+  /**
+   * Sube en streaming (por partes de 5 MB): la memoria no depende del tamaño
+   * del archivo. Si el stream termina con error, la subida se aborta y el
+   * objeto NO queda creado.
+   */
+  putStream(key: string, body: Readable, contentType: string): Promise<void>;
   exists(key: string): Promise<boolean>;
   /** URL firmada y temporal para ver/descargar un objeto privado. */
   signedGetUrl(key: string, expiresInSeconds: number, downloadName?: string): Promise<string>;
@@ -28,8 +35,14 @@ export function objectStorage(): ObjectStorage {
     credentials: { accessKeyId: S3_ACCESS_KEY_ID, secretAccessKey: S3_SECRET_ACCESS_KEY },
   });
   cached = {
-    async put(key, body, contentType) {
-      await client.send(new PutObjectCommand({ Bucket: S3_BUCKET, Key: key, Body: body, ContentType: contentType }));
+    async putStream(key, body, contentType) {
+      await new Upload({
+        client,
+        params: { Bucket: S3_BUCKET, Key: key, Body: body, ContentType: contentType },
+        partSize: 5 * 1024 * 1024,
+        queueSize: 2,
+        leavePartsOnError: false, // un error aborta el multipart: no quedan objetos a medias
+      }).done();
     },
     async exists(key) {
       try {

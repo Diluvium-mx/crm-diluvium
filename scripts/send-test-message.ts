@@ -35,7 +35,11 @@ async function main() {
     sentByUserId: owner.userId,
     text,
   });
-  console.log(`Enviado: mensaje ${result.messageId} en la conversación ${conversation.id}`);
+  console.log(
+    result.status === "sent"
+      ? `Enviado: mensaje ${result.messageId} en la conversación ${conversation.id}`
+      : `Resultado desconocido: mensaje ${result.messageId} queda en reconciliación (barrido del worker)`,
+  );
   process.exit(0);
 }
 
