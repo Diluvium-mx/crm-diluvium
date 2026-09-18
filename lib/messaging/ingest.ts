@@ -174,12 +174,15 @@ async function ingestMessage(
       .for("update");
 
     // Eco de un mensaje que el CRM mismo envió: ya existe la fila (en cola,
-    // sin wamid). Se completa en lugar de duplicarla.
+    // sin wamid). Se completa en lugar de duplicarla. El estado NO se fuerza a
+    // "sent": si un estado (delivered/read/failed) llegó antes que este eco
+    // (cuando la API confirmó con solo el id interno), nextStatus evita
+    // retroceder y no borra el motivo de un fallo.
     let outcome: string | null = null;
     if (event.direction === "out") {
-      const completed = await tx
-        .update(messages)
-        .set({ providerMessageId: event.providerMessageId, status: "sent", sentAt: event.sentAt, errorCode: null, errorMessage: null })
+      const [pending] = await tx
+        .select({ id: messages.id, status: messages.status })
+        .from(messages)
         .where(
           and(
             eq(messages.organizationId, orgId),
@@ -187,8 +190,22 @@ async function ingestMessage(
             isNull(messages.providerMessageId),
           ),
         )
-        .returning({ id: messages.id });
-      if (completed.length > 0) outcome = "eco de envío del CRM enlazado";
+        .limit(1)
+        .for("update");
+      if (pending) {
+        const merged = nextStatus(pending.status, "sent");
+        await tx
+          .update(messages)
+          .set({
+            providerMessageId: event.providerMessageId,
+            status: merged,
+            sentAt: event.sentAt,
+            // Solo se limpia el error si el estado fusionado ya no es "failed".
+            ...(merged === "failed" ? {} : { errorCode: null, errorMessage: null }),
+          })
+          .where(and(eq(messages.id, pending.id), eq(messages.organizationId, orgId)));
+        outcome = "eco de envío del CRM enlazado";
+      }
     }
 
     if (!outcome) {
