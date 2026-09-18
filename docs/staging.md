@@ -51,12 +51,12 @@ unset DATABASE_URL SEED_USER_EMAIL SEED_USER_PASSWORD
 
 (Esa sintaxis de `read` es de zsh. En bash: `read -rp "Email: " SEED_USER_EMAIL`.)
 
-Si además quieres dejar las credenciales como variables del servicio en Railway:
+**No dejes `SEED_USER_PASSWORD` como variable del servicio web.** Solo la usa el script de seed; la
+app no la lee. Si queda en el servicio, cualquier proceso del web, dependencia u operador con acceso
+a las variables ve una credencial de owner válida. Guárdala solo en tu gestor de contraseñas.
+
+Si ya la cargaste en Railway, bórrala después del seed y cambia esa password:
 
 ```bash
-railway variable set SEED_USER_EMAIL=tu-email@ejemplo.com -s crm-diluvium -e staging --skip-deploys
-```
-
-```bash
-railway variable set SEED_USER_PASSWORD --stdin -s crm-diluvium -e staging --skip-deploys
+railway variable delete SEED_USER_PASSWORD -s crm-diluvium -e staging
 ```
