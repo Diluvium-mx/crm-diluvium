@@ -12,8 +12,6 @@
 #                           de solo lectura (backup_ro)
 #   BACKUP_GPG_PASSPHRASE   passphrase de cifrado; guardarla también fuera de
 #                           GitHub (sin ella no hay restore)
-#   BACKUP_HEARTBEAT_URL    opcional: URL de un dead-man switch (p. ej.
-#                           healthchecks.io) que alerta si NO llega el ping
 #
 # Restore y monitoreo: docs/backups.md
 name: db-backup
@@ -155,16 +153,3 @@ jobs:
           retention-days: 90
           compression-level: 0
           if-no-files-found: error
-
-      # Dead-man switch: el monitor externo alerta cuando este ping DEJA de
-      # llegar. Así se detecta el caso que GitHub no avisa: el cron
-      # desactivado tras 60 días sin actividad en el repo público.
-      - name: Heartbeat (respaldo verificado)
-        env:
-          BACKUP_HEARTBEAT_URL: ${{ secrets.BACKUP_HEARTBEAT_URL }}
-        run: |
-          if [ -z "$BACKUP_HEARTBEAT_URL" ]; then
-            echo "::warning::Sin BACKUP_HEARTBEAT_URL: nadie avisará si el respaldo deja de correr"
-            exit 0
-          fi
-          curl -fsS -m 10 --retry 3 -o /dev/null "$BACKUP_HEARTBEAT_URL"
