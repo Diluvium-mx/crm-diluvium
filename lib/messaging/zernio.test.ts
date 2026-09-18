@@ -239,6 +239,29 @@ describe("ZernioProvider.sendText", () => {
   });
 });
 
+describe("sentAt inválido → malformado (no se inventa 'ahora')", () => {
+  it("un message.received con sentAt ilegible se marca malformed", () => {
+    const bad = {
+      id: "evt_ts",
+      event: "message.received",
+      message: {
+        id: "z1",
+        conversationId: "c1",
+        platform: "whatsapp",
+        platformMessageId: "wamid.TS",
+        direction: "incoming",
+        text: "hola",
+        attachments: [],
+        sender: { id: "5216682410001", name: "C", phoneNumber: "5216682410001" },
+        sentAt: "no-es-fecha",
+      },
+      conversation: { id: "c1", participantId: "5216682410001" },
+      account: { id: "zacc_1", platform: "whatsapp" },
+    };
+    expect(normalizeZernioEvent(bad)).toMatchObject({ kind: "ignored", malformed: true });
+  });
+});
+
 describe("zernioAccountId (allowlist)", () => {
   it("lee la cuenta de account.accountId/account.id o anidada, y no elige si se contradicen", () => {
     expect(zernioAccountId({ account: { id: "a1", accountId: "a1" } })).toBe("a1");

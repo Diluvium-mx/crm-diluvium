@@ -727,6 +727,22 @@ describe.skipIf(!TEST_DATABASE_URL)("ingesta de WhatsApp (Postgres real)", () =>
       expect(await db.select().from(s.webhookEvents).where(eq(s.webhookEvents.id, rowId))).toHaveLength(0);
     });
 
+    it("un evento IGNORADO de una cuenta permitida conserva la organización atribuida al guardar", async () => {
+      // Se guarda con la organización (la ruta la resuelve por la cuenta) aunque
+      // normalice a "ignored"; procesarlo NO debe borrar esa atribución.
+      const id = `zernio_ign_${randomUUID()}`;
+      await db.insert(s.webhookEvents).values({
+        id,
+        provider: "zernio",
+        event: "comment.received",
+        payload: { id: "x", event: "comment.received", account: { id: "zacc_1", platform: "whatsapp" } },
+        organizationId: ORG_A,
+      });
+      await expect(ingest.processWebhookEvent(provider, id)).resolves.toMatch(/^ignorado/);
+      const [row] = await db.select().from(s.webhookEvents).where(eq(s.webhookEvents.id, id));
+      expect(row).toMatchObject({ organizationId: ORG_A, processedAt: expect.anything() });
+    });
+
     it("un evento sin organización (ignorado) queda con organization_id nulo", async () => {
       const other = { id: `evt_ign_${randomUUID()}`, event: "comment.received" };
       await deliver(other);
