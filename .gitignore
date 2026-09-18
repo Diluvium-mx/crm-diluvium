@@ -40,3 +40,6 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# CA pública del Postgres de producción, fijada para TLS verify-ca del backup (docs/backups.md)
+!.github/backup/prod-postgres-root-ca.pem
