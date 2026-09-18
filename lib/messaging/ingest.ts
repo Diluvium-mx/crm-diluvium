@@ -1,7 +1,7 @@
 // Aplica un evento normalizado a la base (lo usa el worker). Toda consulta
 // filtra por organización: la organización sale del CANAL (el número de
 // WhatsApp conectado), nunca del payload.
-import { and, asc, eq, gte, inArray, isNull, sql } from "drizzle-orm";
+import { and, asc, eq, gte, inArray, isNotNull, isNull, or, sql } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { channels, contacts, conversations, messages, webhookEvents } from "@/lib/db/schema";
 import { canonicalPhone, normalizePhone, phoneLookupVariants } from "@/lib/phone";
@@ -193,8 +193,13 @@ async function reconcileFirstResponse(tx: Tx, conversationId: string): Promise<n
       and(
         eq(messages.conversationId, conversationId),
         eq(messages.direction, "out"),
-        // Humano: desde el CRM o desde la app del celular (coexistencia).
-        inArray(messages.source, ["crm", "business_app"]),
+        // Humano verificado: desde la app del celular (coexistencia) o desde el
+        // CRM con el usuario que lo envió. Una difusión, automatización o el bot
+        // (sin sent_by_user_id) no cuenta como primera respuesta.
+        or(
+          eq(messages.source, "business_app"),
+          and(eq(messages.source, "crm"), isNotNull(messages.sentByUserId)),
+        ),
         gte(messages.sentAt, firstIn.at),
       ),
     )
