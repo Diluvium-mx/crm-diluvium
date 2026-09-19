@@ -1,4 +1,4 @@
-// Integración del tiempo real: los triggers de la migración 0007 hacen NOTIFY
+// Integración del tiempo real: los triggers de la migración 0008 hacen NOTIFY
 // en inbox_events y subscribeToInbox reparte por organización. Contra Postgres
 // REAL (TEST_DATABASE_URL): valida el SQL del trigger y el aislamiento.
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
@@ -14,13 +14,14 @@ describe.skipIf(!TEST_DATABASE_URL)("tiempo real de la bandeja (LISTEN/NOTIFY, P
   let db: Db;
   let s: Schema;
   let subscribeToInbox: typeof import("./events").subscribeToInbox;
+  let resetHub: typeof import("./events").__resetInboxHubForTests;
   const ORG_A = "org_a";
   const ORG_B = "org_b";
 
   beforeAll(async () => {
     ({ db } = await import("@/lib/db"));
     s = await import("@/lib/db/schema");
-    ({ subscribeToInbox } = await import("./events"));
+    ({ subscribeToInbox, __resetInboxHubForTests: resetHub } = await import("./events"));
   });
 
   beforeEach(async () => {
@@ -117,4 +118,44 @@ describe.skipIf(!TEST_DATABASE_URL)("tiempo real de la bandeja (LISTEN/NOTIFY, P
       off();
     }
   });
+
+  it("el hub se recupera tras un rechazo inicial de listen() (finding 1)", async () => {
+    await resetHub();
+    const saved = process.env.DATABASE_URL;
+    try {
+      // Base inexistente → la suscripción inicial rechaza.
+      process.env.DATABASE_URL = "postgres://postgres@localhost:5433/no_existe_db_zzz";
+      await expect(subscribeToInbox(ORG_A, () => {})).rejects.toBeTruthy();
+    } finally {
+      process.env.DATABASE_URL = saved;
+    }
+    // Con la URL buena, el siguiente intento crea un hub NUEVO y funciona.
+    const a = collect();
+    const off = await subscribeToInbox(ORG_A, (e) => a.events.push(e));
+    try {
+      await db.insert(s.conversations).values({ id: "conv_rec", organizationId: ORG_A, contactId: "c_org_a", channelId: "ch_org_a" });
+      await a.wait(1);
+      expect(a.events.length).toBeGreaterThan(0);
+    } finally {
+      off();
+    }
+  });
+
+  it("difunde reload a los suscriptores cuando la escucha se re-establece (finding 2)", async () => {
+    const { sql } = await import("drizzle-orm");
+    await resetHub();
+    const a = collect();
+    const off = await subscribeToInbox(ORG_A, (e) => a.events.push(e));
+    try {
+      // Matar la conexión de LISTEN: postgres-js reconecta, re-suscribe y
+      // dispara onlisten → reload a los suscriptores abiertos.
+      await db.execute(sql`select pg_terminate_backend(pid) from pg_stat_activity
+        where datname = current_database() and query ilike '%inbox_events%' and pid <> pg_backend_pid()`);
+      await a.wait(1, 8000);
+      expect(a.events).toContainEqual({ type: "reload" });
+    } finally {
+      off();
+    }
+  });
+
 });

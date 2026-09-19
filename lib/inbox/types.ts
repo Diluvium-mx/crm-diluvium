@@ -107,8 +107,13 @@ export type SendMessageResult =
   | { ok: true; messageId: string; pending: boolean }
   | { ok: false; code: SendErrorCode; message: string };
 
-/** Eventos del SSE /api/inbox/stream. La UI vuelve a pedir la fila o el mensaje. */
+/**
+ * Eventos del SSE /api/inbox/stream. La UI vuelve a pedir la fila o el mensaje.
+ * `reload` (al conectar y tras una reconexión de la escucha) = revalida todo,
+ * porque pudieron perderse eventos mientras la escucha estuvo caída.
+ */
 export type InboxEvent =
   | { type: "conversation.updated"; conversationId: string }
   | { type: "message.upserted"; conversationId: string; messageId: string }
-  | { type: "message.deleted"; conversationId: string; messageId: string };
+  | { type: "message.deleted"; conversationId: string; messageId: string }
+  | { type: "reload" };

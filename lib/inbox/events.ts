@@ -1,5 +1,5 @@
 // Tiempo real de la bandeja: una sola conexión a Postgres escuchando el canal
-// `inbox_events` (los triggers de la migración 0007 hacen NOTIFY en cada
+// `inbox_events` (los triggers de la migración 0008 hacen NOTIFY en cada
 // INSERT/UPDATE/DELETE de messages y conversations) y la reparte a los
 // suscriptores en memoria de ESTE proceso.
 //
@@ -49,18 +49,39 @@ function createHub(): Hub {
   // de inactividad, para que la escucha no se cierre sola.
   const sql = postgres(process.env.DATABASE_URL, { max: 1, idle_timeout: 0, max_lifetime: 0 });
   const subscribers = new Set<Subscriber>();
-  // `listen` reconecta solo si la conexión se cae (postgres-js). Al reconectar
-  // se pudieron perder eventos: la UI ya revalida cada fila al recibir uno, y
-  // además el `onlisten` fuerza un refresco total (ver el SSE).
+
+  // onlisten se llama en CADA (re)suscripción del canal: la primera vez (sin
+  // suscriptores aún) y cada vez que postgres-js reconecta tras caerse la
+  // conexión. En una reconexión se pudieron perder NOTIFYs mientras estuvo
+  // caída, así que se difunde `reload` a los SSE ya abiertos para que la UI
+  // revalide todo (sin esto, la bandeja quedaría "viva pero muda").
+  const onListen = () => {
+    for (const sub of subscribers) sub.send({ type: "reload" });
+  };
+
   const ready = sql
-    .listen("inbox_events", (raw) => {
-      const parsed = payloadToEvent(raw);
-      if (!parsed) return;
-      for (const sub of subscribers) {
-        if (sub.organizationId === parsed.organizationId) sub.send(parsed.event);
-      }
-    })
-    .then(() => undefined);
+    .listen(
+      "inbox_events",
+      (raw) => {
+        const parsed = payloadToEvent(raw);
+        if (!parsed) return;
+        for (const sub of subscribers) {
+          if (sub.organizationId === parsed.organizationId) sub.send(parsed.event);
+        }
+      },
+      onListen,
+    )
+    .then(() => undefined)
+    .catch((error: unknown) => {
+      // Si la suscripción inicial falla (p. ej. un blip de la DB), este hub
+      // queda inservible: se descacha para que el próximo subscribeToInbox
+      // cree uno nuevo en vez de quedarse con una promesa rechazada para
+      // siempre. Se cierra la conexión para no filtrarla.
+      if (globalForHub.inboxHub?.sql === sql) globalForHub.inboxHub = undefined;
+      void sql.end({ timeout: 5 }).catch(() => {});
+      throw error;
+    });
+
   return { sql, subscribers, ready };
 }
 
@@ -71,7 +92,8 @@ function hub(): Hub {
 
 /**
  * Suscribe a los eventos de UNA organización. Devuelve la función para
- * cancelar. `send` se llama con cada evento de esa organización.
+ * cancelar. `send` se llama con cada evento de esa organización (y con un
+ * evento `reload` cuando la escucha se re-establece tras una reconexión).
  */
 export async function subscribeToInbox(organizationId: string, send: (event: InboxEvent) => void): Promise<() => void> {
   const h = hub();
@@ -79,4 +101,11 @@ export async function subscribeToInbox(organizationId: string, send: (event: Inb
   const subscriber: Subscriber = { organizationId, send };
   h.subscribers.add(subscriber);
   return () => h.subscribers.delete(subscriber);
+}
+
+/** Solo para pruebas: cierra el hub actual y lo descacha (fuerza recrearlo). */
+export async function __resetInboxHubForTests(): Promise<void> {
+  const h = globalForHub.inboxHub;
+  globalForHub.inboxHub = undefined;
+  if (h) await h.sql.end({ timeout: 5 }).catch(() => {});
 }

@@ -1,5 +1,5 @@
 {
-  "id": "e873d75d-bad1-454a-be5b-537b744d7241",
+  "id": "446d420a-2ebd-40c8-869a-a30c0b51b072",
   "prevId": "cf7985e0-fc4c-44bd-b9a1-f7302f86271d",
   "version": "7",
   "dialect": "postgresql",
@@ -1387,7 +1387,7 @@
               "nulls": "last"
             },
             {
-              "expression": "\"sent_at\" desc",
+              "expression": "coalesce(\"sent_at\", \"created_at\") desc",
               "asc": true,
               "isExpression": true,
               "nulls": "last"
