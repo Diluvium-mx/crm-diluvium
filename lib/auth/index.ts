@@ -75,7 +75,12 @@ export const auth = betterAuth({
     // sendInvitationEmail queda sin configurar: no hay proveedor de correo
     // en el repo todavía, así que por ahora el link de invitación
     // (/accept-invitation?id=<invitation.id>) se comparte a mano.
-    organization({ ac, roles: { owner, admin, agent } }),
+    // disableOrganizationDeletion: en v1 no se borran organizaciones (CLAUDE.md
+    // §5: "desactivar" un miembro es borrar su fila de member; los seeds de
+    // producción no se borran). Además, borrar una organización dejaría su
+    // media en el bucket (ObjectStorage no expone delete todavía): hasta tener
+    // una limpieza durable del almacenamiento, el borrado queda cerrado.
+    organization({ ac, roles: { owner, admin, agent }, disableOrganizationDeletion: true }),
     nextCookies(),
   ],
 });

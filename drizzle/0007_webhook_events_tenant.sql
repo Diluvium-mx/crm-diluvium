@@ -1,0 +1,3 @@
+ALTER TABLE "webhook_events" ADD COLUMN "organization_id" text;--> statement-breakpoint
+ALTER TABLE "webhook_events" ADD CONSTRAINT "webhook_events_organization_id_organization_id_fk" FOREIGN KEY ("organization_id") REFERENCES "public"."organization"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
+CREATE INDEX "webhook_events_processed_idx" ON "webhook_events" USING btree ("processed_at") WHERE "webhook_events"."processed_at" is not null;

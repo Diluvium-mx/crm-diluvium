@@ -105,8 +105,7 @@ Reglas duras:
 Variables de entorno mínimas:
 ```
 DATABASE_URL, REDIS_URL, AUTH_SECRET, APP_URL,
-WHATSAPP_PHONE_NUMBER_ID, WHATSAPP_BUSINESS_ACCOUNT_ID,
-WHATSAPP_ACCESS_TOKEN, WHATSAPP_VERIFY_TOKEN, WHATSAPP_APP_SECRET
+ZERNIO_API_KEY, ZERNIO_WEBHOOK_SECRET        (web y worker; canal WhatsApp vía Zernio)
 ```
 
 ---
@@ -187,26 +186,30 @@ Detalles que importan:
 
 ## 6. UX de la pantalla principal
 
-Una sola pantalla con dos modos que comparten el mismo panel derecho:
+**Decisión (18-sep-2026):** ya no es una pantalla con dos modos. Son dos secciones que comparten
+el mismo chat. Detalle de la bandeja y contrato de datos para el track UI: `docs/bandeja.md`.
+
+- **Bandeja** (la sección que antes se llamaba "Bandeja / Embudo"; ruta actual `/dashboard`): la
+  bandeja de entrada de TODOS los mensajes. Tres columnas: lista de conversaciones, chat y panel
+  de contacto. La lista y el panel se abren y cierran con un botón; el chat se queda con el espacio.
+- **Contactos**: el tablero kanban (el embudo vive SOLO aquí). Al hacer clic en una tarjeta se abre
+  el mismo chat, con el historial completo, la temperatura y la etapa, sin salir del tablero.
 
 ```
-┌─────────────┬──────────────────────────┬────────────────┐
-│ Embudos     │  Chat de la conversación │ Ficha contacto │
-│ Filtros     │  (hilo único, multicanal)│ Campos, etapa, │
-│ Mis chats   │  Composer + plantillas   │ valor, tareas, │
-│ Sin asignar │  Aviso ventana 24 h      │ notas, timeline│
-└─────────────┴──────────────────────────┴────────────────┘
-        ⇅ toggle
-┌───────────────────────────────────────────────────────────┐
-│  TABLERO: columnas = etapas, tarjetas = conversación viva │
-│  Cada tarjeta: avatar, nombre, último mensaje, tiempo sin │
-│  respuesta (color), responsable, valor, badge no leídos   │
-└───────────────────────────────────────────────────────────┘
+┌─ Lista (se cierra) ─┬──── Chat ────────────────────────┬─ Contacto (se cierra) ─┐
+│ Buscar              │ Nombre · teléfono · etapa         │ Nombre, teléfono       │
+│ No leído│Todo│Dest. │ Aviso ventana 24 h                │ Etapa ▾  Temperatura ▾ │
+│ fila: avatar,nombre,│ burbujas + adjuntos + estado ✓✓   │ Ver ficha completa     │
+│ hora,vista previa,  │ tarjeta "Llegó por anuncio"       │                        │
+│ no leídos, semáforo │ composer (bloqueado fuera de 24h) │                        │
+└─────────────────────┴───────────────────────────────────┴────────────────────────┘
 ```
 
 Reglas de UI:
 - Al hacer clic en una tarjeta del tablero se abre el chat **sin salir del tablero** (panel lateral).
-- Semáforo de tiempo sin respuesta en la tarjeta: verde <15 min, ámbar <1 h, rojo >1 h.
+- Semáforo de tiempo sin respuesta (en la lista de la bandeja y en la tarjeta): verde <15 min,
+  ámbar <1 h, rojo >1 h.
+- Menos datos es mejor: sin asignación, seguidores, etiquetas ni autor del mensaje en v1.
 - Arrastrar una tarjeta entre etapas dispara un evento (`opportunity.stage_changed`) que en v2
   alimentará las automatizaciones. En v1 solo registra actividad.
 - Marca: navy `#0A559A` / `#245595`, blanco `#FFFFFF`, naranja `#DE8C11` / `#FE9F29`, tipografía Helvetica.
@@ -305,8 +308,14 @@ Regla: **no se empieza una fase sin que la anterior esté desplegada en Railway 
    El limiter de fábrica de Better Auth queda apagado, y el candado por email sigue igual.
    (b) staging creado y aislado. (c) respaldos diarios con restore de prueba en cada corrida.
    Riesgo aceptado: si el repo pasa más de 60 días sin actividad, GitHub apaga el cron sin
-   avisar. (d) Zernio descartado: WhatsApp va por la **Cloud API oficial de Meta directa**,
-   sin intermediarios (regla del dueño: nada de terceros).
+   avisar. (d) **Decisión (18-sep): WhatsApp por Zernio con coexistencia**, no por la Cloud API
+   directa. Coexistencia (el número sigue en la app de WhatsApp Business del celular y además en
+   el CRM) solo la puede activar un Tech Provider; hacerse uno toma semanas, y Zernio ya lo es.
+   Los vendedores conservan la app, y desde ella mandan los .XML de facturación, que la API no
+   acepta como documento. La WABA sigue siendo de Diluvium (portafolio "Grupo Diluvium"). El
+   backend usa una interfaz de proveedor (`lib/messaging/provider.ts`) para poder migrar a la
+   API directa después. Desde el 1-oct-2026 Meta cobra también los mensajes dentro de la
+   ventana de 24 h.
    Ensayo de restore completo en staging (18-sep): se descargó un artifact real de `main`, se
    descifró con la passphrase guardada, se restauró en una base limpia (60 contactos, 10 tablas),
    se hizo el intercambio atómico, se inició sesión con el usuario de producción y se cargó

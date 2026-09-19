@@ -12,6 +12,7 @@ import {
   type Stage,
   type Temperature,
 } from "../_data/types";
+import { ContactChat } from "./contact-chat";
 
 // tags y notas todavía no tienen columnas propias en la BD: se leen de
 // custom_fields (jsonb) si vienen del import de GHL, sólo para mostrar. La
@@ -109,40 +110,14 @@ export function ContactDetailPanel({
           isClosing ? "animate-out fade-out-0 zoom-out-95" : "animate-in fade-in-0 zoom-in-95"
         }`}
       >
-        {/* Panel izquierdo: conversación (placeholder hasta conectar WhatsApp) */}
+        {/* Panel izquierdo: el MISMO chat de la bandeja, resuelto por contacto.
+            Su encabezado (nombre/teléfono/etapa) lo pone ChatThread; el título
+            accesible del diálogo va oculto para lectores de pantalla. */}
         <section className="flex min-h-0 flex-1 flex-col border-b md:border-b-0 md:border-r">
-          <header className="flex items-center justify-between gap-2 bg-brand-navy px-4 py-3 text-brand-white">
-            <div className="min-w-0">
-              <p id="contact-detail-title" className="truncate font-semibold">{getContactFullName(contact)}</p>
-              <p className="truncate text-xs text-white/70">{canal}</p>
-            </div>
-          </header>
-
-          <div className="flex flex-1 flex-col items-center justify-center gap-2 p-6 text-center">
-            <span className="text-3xl" role="img" aria-label="Chat">💬</span>
-            <p className="text-sm font-medium">Aún no hay conversación</p>
-            <p className="max-w-xs text-xs text-muted-foreground">
-              El historial de mensajes con este contacto aparecerá aquí cuando se
-              conecte WhatsApp.
-            </p>
-          </div>
-
-          {/* Redactor deshabilitado: anticipa el chat real, sin funcionalidad. */}
-          <div className="flex items-center gap-2 border-t p-3">
-            <input
-              type="text"
-              disabled
-              placeholder="El envío de mensajes llegará con WhatsApp…"
-              className="flex-1 rounded border bg-muted/40 px-3 py-2 text-sm"
-            />
-            <button
-              type="button"
-              disabled
-              className="rounded bg-brand-orange px-3 py-2 text-sm text-brand-white opacity-50"
-            >
-              Enviar
-            </button>
-          </div>
+          <h2 id="contact-detail-title" className="sr-only">
+            Conversación con {getContactFullName(contact)}
+          </h2>
+          <ContactChat contactId={contact.id} />
         </section>
 
         {/* Panel derecho: atributos del contacto */}

@@ -1,0 +1,150 @@
+// Webhook de Zernio (WhatsApp). CLAUDE.md §4: solo valida firma, guarda,
+// encola y responde 200 rápido; todo el procesamiento es del worker.
+//
+// Orden deliberado:
+// 1. firma sobre el body CRUDO (re-serializar el JSON rompería el HMAC);
+// 2. INSERT idempotente del evento crudo (PK = proveedor + id del evento):
+//    un reintento de Zernio choca con la PK y no se procesa dos veces;
+// 3. encolar (si falla, el barrido del worker lo recoge desde la base);
+// 4. 200. Solo se responde error si NO se pudo guardar: así Zernio reintenta
+//    en vez de dar el evento por entregado y perderlo.
+import { and, eq } from "drizzle-orm";
+import { db } from "@/lib/db";
+import { channels, messages, webhookEvents } from "@/lib/db/schema";
+import {
+  allowedAccountIds,
+  isAccountAllowed,
+  messagingProvider,
+  MessagingNotConfiguredError,
+  WEBHOOK_TEST_EVENT,
+  webhookEventRowId,
+} from "@/lib/messaging";
+import type { MessagingProvider, WebhookEnvelope } from "@/lib/messaging/provider";
+import { enqueueInbound } from "@/lib/queue/inbound";
+
+// Un mensaje con adjuntos llega como URL, no binario: 1 MB sobra.
+const MAX_BODY_BYTES = 1_000_000;
+
+// Lee el body cortando en cuanto pasa el límite: sin esto, un POST sin
+// Content-Length (o chunked) obligaría a cargar en memoria un body de
+// cualquier tamaño ANTES de validar la firma.
+async function readBodyLimited(req: Request, maxBytes: number): Promise<string | null> {
+  if (!req.body) return "";
+  const reader = req.body.getReader();
+  const chunks: Uint8Array[] = [];
+  let total = 0;
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    total += value.byteLength;
+    if (total > maxBytes) {
+      await reader.cancel();
+      return null;
+    }
+    chunks.push(value);
+  }
+  return Buffer.concat(chunks).toString("utf8");
+}
+
+export async function POST(req: Request): Promise<Response> {
+  const declared = Number(req.headers.get("content-length") ?? 0);
+  if (declared > MAX_BODY_BYTES) return new Response("payload demasiado grande", { status: 413 });
+
+  const rawBody = await readBodyLimited(req, MAX_BODY_BYTES);
+  if (rawBody === null) return new Response("payload demasiado grande", { status: 413 });
+
+  let provider: MessagingProvider;
+  let allowed: ReadonlySet<string>;
+  try {
+    provider = messagingProvider();
+    allowed = allowedAccountIds();
+  } catch (error) {
+    if (!(error instanceof MessagingNotConfiguredError)) throw error;
+    // 503 (no 500): Zernio reintenta y el evento llega cuando se configure.
+    console.error("[webhook zernio] canal no configurado:", error.message);
+    return new Response("canal de WhatsApp no configurado", { status: 503 });
+  }
+  if (!provider.verifyWebhook(rawBody, req.headers)) {
+    console.warn("[webhook zernio] firma inválida; se rechaza");
+    return new Response("firma inválida", { status: 401 });
+  }
+
+  let payload: unknown;
+  let envelope: WebhookEnvelope;
+  try {
+    payload = JSON.parse(rawBody);
+    envelope = provider.readEnvelope(rawBody);
+  } catch {
+    // Firmado pero ilegible: reintentar no lo arreglaría.
+    console.error("[webhook zernio] payload firmado pero inválido");
+    return new Response("payload inválido", { status: 400 });
+  }
+
+  if (!isAccountAllowed(envelope.providerAccountId, allowed)) {
+    // La prueba del webhook no trae cuenta: se contesta y no se guarda.
+    if (envelope.event === WEBHOOK_TEST_EVENT && !envelope.providerAccountId) {
+      return Response.json({ ok: true, test: true });
+    }
+    // Un estado (entregado/leído/falló) sin cuenta se acepta SOLO si su wamid
+    // ya está en esta base: eso prueba que el mensaje es de este entorno, sin
+    // abrir la puerta a datos del número real.
+    if (!envelope.providerAccountId) {
+      const org = await organizationOfKnownStatus(provider, payload);
+      if (org) return store(provider, rowId(provider, envelope), envelope, payload, org);
+    }
+    // Cuenta ajena a este entorno (p. ej. el número real llegando a staging),
+    // o evento sin cuenta: 200 para que Zernio no reintente, y NO se guarda nada.
+    return Response.json({ ok: true, ignored: "cuenta no permitida en este entorno" });
+  }
+
+  // La organización se resuelve YA (desde la cuenta ya validada) y se guarda en
+  // la fila cruda: así, aunque el evento termine en dead-letter (formato no
+  // reconocido, nunca procesado), borrar la organización se lleva sus datos.
+  const org = await organizationOfAccount(provider, envelope.providerAccountId);
+  return store(provider, rowId(provider, envelope), envelope, payload, org);
+}
+
+function rowId(provider: MessagingProvider, envelope: WebhookEnvelope): string {
+  return webhookEventRowId(provider.name, envelope.eventId);
+}
+
+async function store(
+  provider: MessagingProvider,
+  id: string,
+  envelope: WebhookEnvelope,
+  payload: unknown,
+  organizationId: string | null,
+): Promise<Response> {
+  const inserted = await db
+    .insert(webhookEvents)
+    .values({ id, provider: provider.name, event: envelope.event, payload, organizationId })
+    .onConflictDoNothing({ target: webhookEvents.id })
+    .returning({ id: webhookEvents.id });
+
+  if (inserted.length > 0) await enqueueInbound(id);
+
+  return Response.json({ ok: true, duplicate: inserted.length === 0 });
+}
+
+/** Organización dueña de la cuenta (número conectado) de este proveedor, si hay canal. */
+async function organizationOfAccount(provider: MessagingProvider, providerAccountId: string | undefined): Promise<string | null> {
+  if (!providerAccountId) return null;
+  const [channel] = await db
+    .select({ organizationId: channels.organizationId })
+    .from(channels)
+    .where(and(eq(channels.provider, provider.name), eq(channels.providerAccountId, providerAccountId)))
+    .limit(1);
+  return channel?.organizationId ?? null;
+}
+
+/** Un estado sin cuenta se acepta solo si su wamid ya está en la base; devuelve la organización de ese mensaje. */
+async function organizationOfKnownStatus(provider: MessagingProvider, payload: unknown): Promise<string | null> {
+  const event = provider.normalize(payload);
+  if (event.kind !== "status" || !event.providerMessageId) return null;
+  const [known] = await db
+    .select({ organizationId: messages.organizationId })
+    .from(messages)
+    .where(eq(messages.providerMessageId, event.providerMessageId))
+    .limit(1);
+  return known?.organizationId ?? null;
+}

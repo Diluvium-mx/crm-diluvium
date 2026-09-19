@@ -7,7 +7,7 @@ import { SignOutButton } from "./_components/sign-out-button";
 import { ThemeToggle } from "@/components/theme-toggle";
 
 const NAV_ITEMS = [
-  { label: "Bandeja / Embudo", href: "/dashboard" },
+  { label: "Bandeja", href: "/dashboard" },
   { label: "Contactos", href: "/contactos" },
   { label: "Fragmentos", href: "/snippets" },
   { label: "Reportes", href: "/reports" },

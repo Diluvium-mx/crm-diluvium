@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { normalizePhone } from "./phone";
+import { canonicalPhone, normalizePhone, phoneLookupVariants } from "./phone";
 
 describe("normalizePhone", () => {
   it.each(["+525512345678", "+12345678", "+123456789012345"])(
@@ -29,5 +29,22 @@ describe("normalizePhone", () => {
     ["con letras", "+52551234abcd"],
   ])("rechaza un teléfono %s", (_description, phone) => {
     expect(() => normalizePhone(phone)).toThrow(Error);
+  });
+});
+
+describe("canonicalPhone / phoneLookupVariants (México 52 vs 521)", () => {
+  it("quita el 1 heredado de los celulares mexicanos", () => {
+    expect(canonicalPhone("+5216682419579")).toBe("+526682419579");
+    expect(canonicalPhone("+526682419579")).toBe("+526682419579");
+  });
+
+  it("busca ambas formas para no duplicar al cliente", () => {
+    expect(phoneLookupVariants("+5216682419579")).toEqual(["+526682419579", "+5216682419579"]);
+    expect(phoneLookupVariants("+526682419579")).toEqual(["+526682419579", "+5216682419579"]);
+  });
+
+  it("no toca números de otros países ni fijos mexicanos con otra longitud", () => {
+    expect(phoneLookupVariants("+14155550123")).toEqual(["+14155550123"]);
+    expect(canonicalPhone("+5215512345")).toBe("+5215512345");
   });
 });
