@@ -1,5 +1,12 @@
 import { User } from "lucide-react";
-import type { Contact } from "../_data/types";
+// Prop estructural: sirve para el Contact del tablero y para el InboxContact
+// de la bandeja (ambos tienen estos campos). Evita acoplar la bandeja al
+// tipo completo de Contactos.
+export type AvatarContact = {
+  firstName: string;
+  lastName: string | null;
+  sourceChannel: string | null;
+};
 
 // Iniciales del contacto ignorando emojis/símbolos al inicio: toma la primera
 // LETRA real de nombre y apellido. Si el nombre no tiene ninguna letra (p.ej.
@@ -8,7 +15,7 @@ function firstLetter(value: string | null | undefined): string {
   return value?.match(/\p{L}/u)?.[0] ?? "";
 }
 
-function getInitials(contact: Contact): string | null {
+function getInitials(contact: AvatarContact): string | null {
   const initials = (firstLetter(contact.firstName) + firstLetter(contact.lastName)).toUpperCase();
   return initials || null;
 }
@@ -85,7 +92,7 @@ function ChannelBadge({ channel }: { channel: string | null }) {
   );
 }
 
-export function ContactAvatar({ contact }: { contact: Contact }) {
+export function ContactAvatar({ contact }: { contact: AvatarContact }) {
   const initials = getInitials(contact);
   return (
     <div className="relative shrink-0">

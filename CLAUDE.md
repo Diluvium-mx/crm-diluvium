@@ -186,26 +186,30 @@ Detalles que importan:
 
 ## 6. UX de la pantalla principal
 
-Una sola pantalla con dos modos que comparten el mismo panel derecho:
+**Decisión (18-sep-2026):** ya no es una pantalla con dos modos. Son dos secciones que comparten
+el mismo chat. Detalle de la bandeja y contrato de datos para el track UI: `docs/bandeja.md`.
+
+- **Bandeja** (la sección que antes se llamaba "Bandeja / Embudo"; ruta actual `/dashboard`): la
+  bandeja de entrada de TODOS los mensajes. Tres columnas: lista de conversaciones, chat y panel
+  de contacto. La lista y el panel se abren y cierran con un botón; el chat se queda con el espacio.
+- **Contactos**: el tablero kanban (el embudo vive SOLO aquí). Al hacer clic en una tarjeta se abre
+  el mismo chat, con el historial completo, la temperatura y la etapa, sin salir del tablero.
 
 ```
-┌─────────────┬──────────────────────────┬────────────────┐
-│ Embudos     │  Chat de la conversación │ Ficha contacto │
-│ Filtros     │  (hilo único, multicanal)│ Campos, etapa, │
-│ Mis chats   │  Composer + plantillas   │ valor, tareas, │
-│ Sin asignar │  Aviso ventana 24 h      │ notas, timeline│
-└─────────────┴──────────────────────────┴────────────────┘
-        ⇅ toggle
-┌───────────────────────────────────────────────────────────┐
-│  TABLERO: columnas = etapas, tarjetas = conversación viva │
-│  Cada tarjeta: avatar, nombre, último mensaje, tiempo sin │
-│  respuesta (color), responsable, valor, badge no leídos   │
-└───────────────────────────────────────────────────────────┘
+┌─ Lista (se cierra) ─┬──── Chat ────────────────────────┬─ Contacto (se cierra) ─┐
+│ Buscar              │ Nombre · teléfono · etapa         │ Nombre, teléfono       │
+│ No leído│Todo│Dest. │ Aviso ventana 24 h                │ Etapa ▾  Temperatura ▾ │
+│ fila: avatar,nombre,│ burbujas + adjuntos + estado ✓✓   │ Ver ficha completa     │
+│ hora,vista previa,  │ tarjeta "Llegó por anuncio"       │                        │
+│ no leídos, semáforo │ composer (bloqueado fuera de 24h) │                        │
+└─────────────────────┴───────────────────────────────────┴────────────────────────┘
 ```
 
 Reglas de UI:
 - Al hacer clic en una tarjeta del tablero se abre el chat **sin salir del tablero** (panel lateral).
-- Semáforo de tiempo sin respuesta en la tarjeta: verde <15 min, ámbar <1 h, rojo >1 h.
+- Semáforo de tiempo sin respuesta (en la lista de la bandeja y en la tarjeta): verde <15 min,
+  ámbar <1 h, rojo >1 h.
+- Menos datos es mejor: sin asignación, seguidores, etiquetas ni autor del mensaje en v1.
 - Arrastrar una tarjeta entre etapas dispara un evento (`opportunity.stage_changed`) que en v2
   alimentará las automatizaciones. En v1 solo registra actividad.
 - Marca: navy `#0A559A` / `#245595`, blanco `#FFFFFF`, naranja `#DE8C11` / `#FE9F29`, tipografía Helvetica.
