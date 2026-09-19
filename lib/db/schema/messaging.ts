@@ -118,6 +118,12 @@ export const conversations = pgTable(
     windowExpiresAt: timestamp("window_expires_at"),
     // Se fija una sola vez, al primer saliente humano (CLAUDE.md §5).
     firstResponseSeconds: integer("first_response_seconds"),
+    // Destacado: marca compartida por el equipo (todos ven todo, §5).
+    isStarred: boolean("is_starred").default(false).notNull(),
+    // Anuncio de clic a WhatsApp que ORIGINÓ la conversación (el primer
+    // `referral` recibido). Meta lo manda una sola vez: se guarda crudo y
+    // completo; la UI solo recibe una versión saneada (lib/inbox).
+    adReferral: jsonb("ad_referral").$type<Record<string, unknown>>(),
     createdAt: timestamp("created_at").defaultNow().notNull(),
   },
   (table) => [
@@ -165,6 +171,8 @@ export const messages = pgTable(
     errorCode: text("error_code"),
     errorMessage: text("error_message"),
     sentByUserId: text("sent_by_user_id").references(() => user.id, { onDelete: "set null" }),
+    // `referral` del anuncio de clic a WhatsApp que traía ESTE mensaje, crudo.
+    adReferral: jsonb("ad_referral").$type<Record<string, unknown>>(),
     // Hora del mensaje según WhatsApp; created_at es cuándo lo guardamos.
     sentAt: timestamp("sent_at"),
     createdAt: timestamp("created_at").defaultNow().notNull(),
@@ -175,6 +183,13 @@ export const messages = pgTable(
       sql`${table.createdAt} desc`,
     ),
     index("messages_org_idx").on(table.organizationId),
+    // Hilo del chat y semáforo de la bandeja: por conversación en orden de envío.
+    // La expresión es la MISMA que ordenan las consultas (coalesce(sent_at,
+    // created_at)); indexar solo sent_at no serviría a ese orden.
+    index("messages_conversation_sent_idx").on(
+      table.conversationId,
+      sql`coalesce(${table.sentAt}, ${table.createdAt}) desc`,
+    ),
     // El id interno del proveedor solo es único dentro de su organización:
     // los estados sin wamid se cruzan por (organización, id interno).
     uniqueIndex("messages_org_provider_internal_uidx")

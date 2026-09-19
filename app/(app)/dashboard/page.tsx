@@ -1,7 +1,7 @@
-export default function DashboardPage() {
-  return (
-    <div className="flex flex-1 items-center justify-center text-muted-foreground">
-      <p>Selecciona una sección.</p>
-    </div>
-  );
+import { InboxBoard } from "./_components/inbox-board";
+
+// La Bandeja es totalmente en tiempo real (SSE) e interactiva, así que el
+// board carga sus datos en el cliente vía las server actions de lib/inbox.
+export default function BandejaPage() {
+  return <InboxBoard />;
 }

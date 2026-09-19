@@ -235,6 +235,8 @@ async function ingestMessage(
           mediaMimeType: first?.mimeType ?? null,
           providerMessageId: event.providerMessageId,
           providerInternalId: event.providerInternalId,
+          // Meta manda el anuncio UNA sola vez (primer mensaje tras el clic).
+          adReferral: event.referral ?? null,
           status: event.direction === "in" ? "received" : "sent",
           sentAt: event.sentAt,
         })
@@ -263,6 +265,8 @@ async function ingestMessage(
       updates.unreadCount = conversation.unreadCount + 1;
       updates.windowExpiresAt = windowExpiresAt(event.sentAt, conversation.windowExpiresAt);
       updates.status = "open";
+      // El anuncio que ORIGINÓ la conversación: el primero, no se pisa.
+      if (event.referral && !conversation.adReferral) updates.adReferral = event.referral;
     }
     // Primera respuesta: se RECALCULA desde la base con cada mensaje nuevo,
     // no solo la primera vez. Los webhooks pueden llegar tarde y desordenados
