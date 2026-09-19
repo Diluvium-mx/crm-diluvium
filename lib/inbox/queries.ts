@@ -4,7 +4,7 @@
 //
 // Las horas que viajan en cursores se comparan en SQL (con microsegundos), no
 // ida y vuelta por JS, que solo tiene milisegundos.
-import { and, desc, eq, ilike, inArray, isNotNull, or, sql, type SQL } from "drizzle-orm";
+import { and, desc, eq, ilike, inArray, or, sql, type SQL } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { contacts, conversations, messages } from "@/lib/db/schema";
 import { latestInboundMessageId, unreadAfterCutoff } from "@/lib/messaging/ingest";
@@ -79,7 +79,6 @@ function searchCondition(search: string | undefined): SQL | undefined {
 export async function listConversationsForOrg(
   organizationId: string,
   { filter = "all", search, cursor }: { filter?: InboxFilter; search?: string; cursor?: string | null } = {},
-  now = new Date(),
 ): Promise<ConversationPage> {
   const after = cursor ? decodeCursor(cursor) : null;
   const rows = await db
@@ -120,7 +119,8 @@ export async function listConversationsForOrg(
       unreadCount: conversation.unreadCount,
       isStarred: conversation.isStarred,
       awaitingReplySince: awaiting.get(conversation.id) ?? null,
-      windowExpiresAt: conversation.windowExpiresAt && conversation.windowExpiresAt > now ? conversation.windowExpiresAt : conversation.windowExpiresAt,
+      // Se manda la ventana tal cual; la UI decide "quedan X h" o si venció.
+      windowExpiresAt: conversation.windowExpiresAt,
     };
   });
   const lastRow = page.at(-1);
@@ -298,6 +298,4 @@ export async function setConversationStarredForOrg(organizationId: string, conve
   return updated.length > 0;
 }
 
-// Re-export para las pruebas (isNotNull no se usa aquí pero lo exige el linter si falta).
 export type { ConversationListItem };
-void isNotNull;

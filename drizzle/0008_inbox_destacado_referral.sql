@@ -1,7 +1,7 @@
 ALTER TABLE "conversations" ADD COLUMN "is_starred" boolean DEFAULT false NOT NULL;--> statement-breakpoint
 ALTER TABLE "conversations" ADD COLUMN "ad_referral" jsonb;--> statement-breakpoint
 ALTER TABLE "messages" ADD COLUMN "ad_referral" jsonb;--> statement-breakpoint
-CREATE INDEX "messages_conversation_sent_idx" ON "messages" USING btree ("conversation_id","sent_at" desc);--> statement-breakpoint
+CREATE INDEX "messages_conversation_sent_idx" ON "messages" USING btree ("conversation_id",coalesce("sent_at", "created_at") desc);--> statement-breakpoint
 -- Tiempo real de la bandeja (GET /api/inbox/stream): cada cambio de un
 -- mensaje o una conversación avisa por NOTIFY en el canal "inbox_events".
 -- Va en la BASE, no en el código, para que ningún camino que escriba (worker,

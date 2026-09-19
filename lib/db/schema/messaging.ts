@@ -184,7 +184,12 @@ export const messages = pgTable(
     ),
     index("messages_org_idx").on(table.organizationId),
     // Hilo del chat y semáforo de la bandeja: por conversación en orden de envío.
-    index("messages_conversation_sent_idx").on(table.conversationId, sql`${table.sentAt} desc`),
+    // La expresión es la MISMA que ordenan las consultas (coalesce(sent_at,
+    // created_at)); indexar solo sent_at no serviría a ese orden.
+    index("messages_conversation_sent_idx").on(
+      table.conversationId,
+      sql`coalesce(${table.sentAt}, ${table.createdAt}) desc`,
+    ),
     // El id interno del proveedor solo es único dentro de su organización:
     // los estados sin wamid se cruzan por (organización, id interno).
     uniqueIndex("messages_org_provider_internal_uidx")
