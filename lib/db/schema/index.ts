@@ -4,3 +4,4 @@
 // - contacts slice adds lib/db/schema/audit-log.ts next
 export * from "./auth";
 export * from "./contacts";
+export * from "./messaging";
