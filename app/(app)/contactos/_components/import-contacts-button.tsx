@@ -62,8 +62,11 @@ export function ImportContactsButton() {
 
       {result && (
         <p className="max-w-xs text-right text-xs text-muted-foreground">
-          Importados: {result.imported} · Actualizados: {result.updated} · Sin teléfono válido:{" "}
-          {result.invalidPhones} · Omitidos: {result.skipped}
+          Importados: {result.imported} · Actualizados: {result.updated} · Sin teléfono:{" "}
+          {result.withoutPhone} · Teléfono inválido: {result.invalidPhones} · Omitidos:{" "}
+          {result.skipped}
+          {result.unrecognizedStages > 0 &&
+            ` · Etapa no reconocida (→ inbox): ${result.unrecognizedStages}`}
         </p>
       )}
     </div>

@@ -32,6 +32,14 @@ export const contacts = pgTable(
     phoneE164: text("phone_e164"),
     email: text("email"),
     customFields: jsonb("custom_fields").notNull().default({}),
+    // Etiquetas de negocio (GHL y, a futuro, el agente IA/workflows). Se
+    // conservan tal cual venían (respetando mayúsculas y acentos); el
+    // importador filtra las de sistema antes de guardar. text[] en vez de un
+    // modelo normalizado tags/contact_tags: consultable y ampliable después.
+    tags: text("tags").array().notNull().default([]),
+    // País del contacto (columna Country del export de GHL). Nullable; se
+    // guarda para el mapa/segmentación futura, sin uso en la UI de v1.
+    country: text("country"),
     ghlContactId: text("ghl_contact_id"),
     source: text("source"),
     sourceChannel: text("source_channel"),
