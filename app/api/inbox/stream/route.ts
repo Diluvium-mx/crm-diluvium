@@ -40,14 +40,21 @@ export async function GET(request: Request): Promise<Response> {
       };
       const sendEvent = (event: InboxEvent) => send(`event: ${event.type}\ndata: ${JSON.stringify(event)}\n\n`);
 
-      // Comentario inicial: abre el stream y, tras una reconexión del cliente,
-      // le dice que revalide todo (pudo perder eventos mientras estuvo caído).
-      send(`: conectado\nretry: 3000\nevent: reload\ndata: {}\n\n`);
-
+      // Se suscribe PRIMERO y sólo después se manda `reload`: así ninguna
+      // escritura que ocurra durante el handshake se pierde. Una escritura
+      // anterior a la suscripción la cubre el `reload` (revalida todo); una
+      // posterior ya llega como evento porque el suscriptor ya está registrado.
       try {
         unsubscribe = await subscribeToInbox(organizationId, sendEvent);
       } catch (error) {
+        // Si LISTEN no se pudo establecer, se ERRORA el stream para que
+        // EventSource lo detecte y reconecte, en vez de quedar abierto y mudo.
         console.error("[inbox stream] no se pudo suscribir:", error);
+        try {
+          controller.error(error);
+        } catch {
+          // el controller ya pudo cerrarse
+        }
         cleanup();
         return;
       }
@@ -56,6 +63,10 @@ export async function GET(request: Request): Promise<Response> {
         unsubscribe?.();
         return;
       }
+      // Comentario inicial + `retry` + `reload`: abre el stream y le dice a la
+      // UI que revalide todo (cubre lo escrito antes de completar la suscripción
+      // y también una reconexión del cliente).
+      send(`: conectado\nretry: 3000\nevent: reload\ndata: {}\n\n`);
       heartbeat = setInterval(() => send(`: keep-alive\n\n`), HEARTBEAT_MS);
     },
     cancel() {
