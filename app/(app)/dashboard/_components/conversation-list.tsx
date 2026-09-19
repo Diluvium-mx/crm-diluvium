@@ -95,6 +95,9 @@ export function ConversationList({
   search,
   loading,
   nowMs,
+  hasMore,
+  loadingMore,
+  onLoadMore,
   onSelect,
   onFilterChange,
   onSearchChange,
@@ -106,6 +109,9 @@ export function ConversationList({
   search: string;
   loading: boolean;
   nowMs: number;
+  hasMore: boolean;
+  loadingMore: boolean;
+  onLoadMore: () => void;
   onSelect: (id: string) => void;
   onFilterChange: (filter: InboxFilter) => void;
   onSearchChange: (value: string) => void;
@@ -148,16 +154,30 @@ export function ConversationList({
             {search ? "Sin resultados." : "No hay conversaciones."}
           </p>
         ) : (
-          items.map((item) => (
-            <ConversationRow
-              key={item.id}
-              item={item}
-              selected={item.id === selectedId}
-              nowMs={nowMs}
-              onSelect={onSelect}
-              onToggleStar={onToggleStar}
-            />
-          ))
+          <>
+            {items.map((item) => (
+              <ConversationRow
+                key={item.id}
+                item={item}
+                selected={item.id === selectedId}
+                nowMs={nowMs}
+                onSelect={onSelect}
+                onToggleStar={onToggleStar}
+              />
+            ))}
+            {hasMore && (
+              <div className="p-3">
+                <button
+                  type="button"
+                  onClick={onLoadMore}
+                  disabled={loadingMore}
+                  className="w-full rounded-md border bg-card px-3 py-2 text-xs font-medium text-muted-foreground transition-colors hover:bg-muted disabled:opacity-60"
+                >
+                  {loadingMore ? "Cargando…" : "Cargar más conversaciones"}
+                </button>
+              </div>
+            )}
+          </>
         )}
       </div>
     </div>
