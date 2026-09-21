@@ -15,14 +15,19 @@ import { createHmac, timingSafeEqual } from "node:crypto";
 import { z } from "zod";
 import {
   SendFailedError,
+  type CreateTemplateInput,
+  type CreateTemplateResult,
   type MessagingProvider,
   type NormalizedAttachment,
   type NormalizedEvent,
   type NormalizedMessageType,
+  type ProviderTemplate,
   type SendResult,
+  type SendTemplateInput,
   type SendTextInput,
   type WebhookEnvelope,
 } from "./provider";
+import { bodyHasUnsupportedPlaceholders, templateRequiresUnsupportedParams, templateVariablesFromBody } from "./template-format";
 
 const DEFAULT_BASE_URL = "https://zernio.com/api";
 const SEND_TIMEOUT_MS = 15_000;
@@ -297,6 +302,99 @@ export class ZernioProvider implements MessagingProvider {
   // de mandar otro mensaje. Zernio libera la clave cuando responde error, así
   // que un fallo AMBIGUO se marca "unknown" y se reconcilia antes de reintentar.
   async sendText({ providerAccountId, providerConversationId, text, idempotencyKey }: SendTextInput): Promise<SendResult> {
+    return this.postToConversation(providerConversationId, { accountId: providerAccountId, message: text }, idempotencyKey);
+  }
+
+  // Envía una plantilla aprobada por el MISMO endpoint que el texto. Cuerpo
+  // tomado del adaptador oficial (src/api-client.ts sendTemplate + types.ts
+  // ZernioSendMessageBody.template): { accountId, template: { elements: [{ name,
+  // language, components }] } }. Los `components` solo van si hay variables; los
+  // parameters siguen el objeto `template` de la Cloud API (posicional).
+  async sendTemplate({ providerAccountId, providerConversationId, name, language, bodyParams, idempotencyKey }: SendTemplateInput): Promise<SendResult> {
+    const element: Record<string, unknown> = { name, language };
+    if (bodyParams.length > 0) {
+      element.components = [{ type: "body", parameters: bodyParams.map((text) => ({ type: "text", text })) }];
+    }
+    return this.postToConversation(
+      providerConversationId,
+      { accountId: providerAccountId, template: { elements: [element] } },
+      idempotencyKey,
+    );
+  }
+
+  // GET /v1/whatsapp/templates?accountId=… (docs.zernio.com). FALLA CERRADO:
+  // la sincronización usa esta lista como censo COMPLETO y marca REMOVED lo
+  // ausente (lib/messaging/templates.ts). Por eso una respuesta ilegible,
+  // con formato desconocido, con una fila sin identidad, o cortada por el tope
+  // de páginas con más por leer, LANZA — nunca devuelve una lista parcial que
+  // haría desaparecer plantillas válidas. apiJson ya lanza ante JSON ilegible.
+  async listTemplates(providerAccountId: string): Promise<ProviderTemplate[]> {
+    const out: ProviderTemplate[] = [];
+    let cursor: string | undefined;
+    const MAX_PAGES = 20; // una PyME tiene decenas; más = algo raro, se aborta
+    for (let page = 0; page < MAX_PAGES; page++) {
+      const params = new URLSearchParams({ accountId: providerAccountId });
+      if (cursor) params.set("cursor", cursor);
+      const json = await this.apiJson("GET", `/v1/whatsapp/templates?${params.toString()}`);
+      const list = Array.isArray(json.templates)
+        ? json.templates
+        : Array.isArray(json.data)
+          ? json.data
+          : null;
+      if (list === null) {
+        throw new ZernioApiError(0, "Respuesta de plantillas con formato no reconocido; se aborta la sincronización");
+      }
+      for (const raw of list) out.push(parseProviderTemplate(asRecord(raw)));
+      const pagination = asRecord(json.pagination);
+      // Censo COMPLETO solo si el proveedor no indica más páginas.
+      if (pagination.hasMore === false) return out;
+      const next = asString(pagination.nextCursor);
+      if (next) {
+        cursor = next;
+        continue;
+      }
+      // Sin cursor pero con hasMore:true la respuesta está DEGRADADA (dice que
+      // hay más pero no da cómo pedirlas): abortar, no tratar la lista parcial
+      // como censo. Sin ninguna señal de más páginas, es una sola página completa.
+      if (pagination.hasMore === true) {
+        throw new ZernioApiError(0, "Zernio indicó más plantillas (hasMore) sin nextCursor; se aborta para no borrar plantillas válidas");
+      }
+      return out;
+    }
+    // Se agotó el tope de páginas con un cursor todavía pendiente: la lista
+    // estaría incompleta. Abortar es preferible a marcar plantillas como
+    // eliminadas por no haberlas leído.
+    throw new ZernioApiError(0, `Más de ${MAX_PAGES} páginas de plantillas; se aborta para no borrar plantillas válidas`);
+  }
+
+  // POST /v1/whatsapp/templates (docs.zernio.com). Queda PENDING hasta que Meta
+  // la revise; el resultado llega por el webhook whatsapp.template.status_updated
+  // o al volver a sincronizar.
+  async createTemplate({ providerAccountId, name, language, category, bodyText, bodyExample }: CreateTemplateInput): Promise<CreateTemplateResult> {
+    const bodyComponent: Record<string, unknown> = { type: "body", text: bodyText };
+    if (bodyExample.length > 0) bodyComponent.example = { body_text: [bodyExample] };
+    const json = await this.apiJson("POST", `/v1/whatsapp/templates`, {
+      accountId: providerAccountId,
+      name,
+      language,
+      category,
+      components: [bodyComponent],
+    });
+    const data = asRecord(json.data ?? json);
+    return {
+      providerTemplateId: asString(data.id) ?? asString(data.templateId) ?? null,
+      status: asString(data.status) ?? "PENDING",
+    };
+  }
+
+  // POST al endpoint de mensajes de la conversación con clasificación de
+  // resultado idéntica para texto y plantilla (mismo endpoint, misma clave de
+  // idempotencia): lo único que cambia entre ambos es el `body`.
+  private async postToConversation(
+    providerConversationId: string,
+    body: Record<string, unknown>,
+    idempotencyKey: string,
+  ): Promise<SendResult> {
     let res: Response;
     try {
       res = await this.fetchImpl(this.apiUrl(`/v1/inbox/conversations/${encodeURIComponent(providerConversationId)}/messages`), {
@@ -306,7 +404,7 @@ export class ZernioProvider implements MessagingProvider {
           "Content-Type": "application/json",
           "Idempotency-Key": idempotencyKey,
         },
-        body: JSON.stringify({ accountId: providerAccountId, message: text }),
+        body: JSON.stringify(body),
         signal: AbortSignal.timeout(SEND_TIMEOUT_MS),
       });
     } catch (error) {
@@ -334,6 +432,98 @@ export class ZernioProvider implements MessagingProvider {
       providerInternalId: isWamid ? (asString(data.id) ?? returned) : returned,
       providerMessageId: asString(data.platformMessageId) ?? (isWamid ? returned : undefined),
     };
+  }
+
+  // GET/POST JSON a la API de Zernio (plantillas). Distinto de postToConversation:
+  // un fallo aquí NO es un envío ambiguo (no hay mensaje que duplicar), así que
+  // lanza ZernioApiError con el código HTTP, no SendFailedError.
+  private async apiJson(method: string, path: string, body?: unknown): Promise<Record<string, unknown>> {
+    let res: Response;
+    try {
+      res = await this.fetchImpl(this.apiUrl(path), {
+        method,
+        headers: {
+          Authorization: `Bearer ${this.config.apiKey}`,
+          ...(body !== undefined ? { "Content-Type": "application/json" } : {}),
+        },
+        body: body !== undefined ? JSON.stringify(body) : undefined,
+        signal: AbortSignal.timeout(SEND_TIMEOUT_MS),
+      });
+    } catch (error) {
+      throw new ZernioApiError(0, `Sin respuesta de Zernio: ${error instanceof Error ? error.message : String(error)}`);
+    }
+    const parsed: unknown = await res.json().catch(() => undefined);
+    if (!res.ok) {
+      const err = asRecord(asRecord(parsed).error);
+      throw new ZernioApiError(
+        res.status,
+        asString(err.message) ?? asString(asRecord(parsed).message) ?? `Zernio respondió ${res.status}`,
+        asString(err.code),
+      );
+    }
+    // Un 2xx con cuerpo ilegible o que no es un objeto JSON NO se trata como
+    // vacío: la sincronización lo usa como censo y un [] falso borraría
+    // plantillas válidas. Se lanza para que falle cerrado.
+    if (parsed === null || typeof parsed !== "object") {
+      throw new ZernioApiError(res.status, "Respuesta de Zernio ilegible (se esperaba un objeto JSON)");
+    }
+    return parsed as Record<string, unknown>;
+  }
+}
+
+/** Componente BODY de una plantilla: su texto y los ejemplos de sus variables. */
+function bodyOfComponents(components: unknown): { text: string | null; examples: string[] } {
+  const comps = Array.isArray(components) ? components.map(asRecord) : [];
+  const body = comps.find((c) => asString(c.type)?.toUpperCase() === "BODY");
+  const text = body ? (asString(body.text) ?? null) : null;
+  const rows = asRecord(body?.example).body_text;
+  const examples = Array.isArray(rows) && Array.isArray(rows[0]) ? (rows[0] as unknown[]).map((v) => String(v)) : [];
+  return { text, examples };
+}
+
+/**
+ * Normaliza una fila del listado de Zernio a ProviderTemplate. ESTRICTO: una
+ * fila sin identidad (name/language) o sin status es un formato inesperado y
+ * LANZA — no se omite. Motivo: la sincronización trata la lista como censo
+ * completo; una fila descartada en silencio se leería como "eliminada" y
+ * marcaría REMOVED una plantilla que en realidad sigue viva.
+ */
+function parseProviderTemplate(raw: Record<string, unknown>): ProviderTemplate {
+  const name = asString(raw.name);
+  const language = asString(raw.language);
+  const status = asString(raw.status);
+  if (!name || !language || !status) {
+    throw new ZernioApiError(0, `Plantilla de Zernio con campos faltantes (name/language/status): ${JSON.stringify(raw).slice(0, 160)}`);
+  }
+  const { text, examples } = bodyOfComponents(raw.components);
+  // No enviable desde el CRM si necesita params de encabezado/botón, si el
+  // cuerpo usa variables con nombre / fuera de rango / con huecos, o si Meta
+  // marca la plantilla como de parámetros NOMBRADOS (parameter_format).
+  const requiresUnsupportedParams =
+    templateRequiresUnsupportedParams(raw.components) ||
+    bodyHasUnsupportedPlaceholders(text) ||
+    asString(raw.parameter_format)?.toUpperCase() === "NAMED";
+  return {
+    providerTemplateId: asString(raw.id) ?? null,
+    name,
+    language,
+    category: asString(raw.category) ?? null,
+    status,
+    bodyText: text,
+    variables: templateVariablesFromBody(text, examples),
+    requiresUnsupportedParams,
+  };
+}
+
+/** Fallo de un endpoint de plantillas (listar/crear). No es un envío ambiguo. */
+export class ZernioApiError extends Error {
+  constructor(
+    readonly httpStatus: number,
+    message: string,
+    readonly code?: string,
+  ) {
+    super(message);
+    this.name = "ZernioApiError";
   }
 }
 
