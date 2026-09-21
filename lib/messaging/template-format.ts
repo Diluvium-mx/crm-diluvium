@@ -3,19 +3,50 @@
 // usan variables con NOMBRE (lib/snippets/variables.ts).
 import type { TemplateVariable } from "@/lib/templates/types";
 
-// Solo dígitos dentro de las llaves: {{1}}. Un {{nombre}} NO es variable de
-// plantilla. Instancia nueva por llamada (no compartir lastIndex).
-const POS_SRC = "\\{\\{\\s*(\\d+)\\s*\\}\\}";
+// Tope de variables por plantilla: acota los bucles y las asignaciones de
+// arreglos para que un {{999999999}} malformado no cuelgue la sincronización ni
+// reviente la UI. Generoso (Meta permite pocas); más = plantilla sospechosa.
+export const MAX_TEMPLATE_VARS = 50;
 
-/** Índice posicional más alto del cuerpo ({{3}} → 3). 0 si no hay variables. */
+// Solo 1-3 dígitos dentro de las llaves: {{1}}..{{999}} (no parsea números
+// enormes). Un {{nombre}} NO es variable posicional. Instancia nueva por llamada
+// (no compartir lastIndex).
+const POS_SRC = "\\{\\{\\s*(\\d{1,3})\\s*\\}\\}";
+// Cualquier token {{…}}, para detectar placeholders NO soportados (con nombre,
+// fuera de rango o con huecos).
+const ANY_PLACEHOLDER_SRC = "\\{\\{\\s*([^{}]+?)\\s*\\}\\}";
+
+/** Índice posicional más alto del cuerpo ({{3}} → 3), acotado a MAX_TEMPLATE_VARS. 0 si no hay. */
 export function templateMaxIndex(bodyText: string | null): number {
   if (!bodyText) return 0;
   let max = 0;
   for (const match of bodyText.matchAll(new RegExp(POS_SRC, "g"))) {
     const n = Number(match[1]);
-    if (n > max) max = n;
+    if (n >= 1 && n <= MAX_TEMPLATE_VARS && n > max) max = n;
   }
   return max;
+}
+
+/**
+ * ¿El cuerpo tiene placeholders que el CRM no sabe rellenar? Verdadero si hay
+ * variables con NOMBRE ({{cliente}}), numéricas fuera de rango ({{0}}, {{99}},
+ * {{999999999}}), o posicionales con HUECOS (p. ej. {{1}} y {{3}} sin {{2}}:
+ * WhatsApp las exige contiguas desde 1). Solo {{1}}..{{N}} contiguas (N ≤ 50)
+ * son soportadas.
+ */
+export function bodyHasUnsupportedPlaceholders(bodyText: string | null): boolean {
+  if (!bodyText) return false;
+  const indices = new Set<number>();
+  for (const match of bodyText.matchAll(new RegExp(ANY_PLACEHOLDER_SRC, "g"))) {
+    const inner = match[1].trim();
+    if (!/^\d{1,3}$/.test(inner)) return true; // con nombre / no numérico
+    const n = Number(inner);
+    if (n < 1 || n > MAX_TEMPLATE_VARS) return true; // fuera de rango
+    indices.add(n);
+  }
+  if (indices.size === 0) return false;
+  // Contiguas 1..max: sin huecos, el tamaño del conjunto es igual al máximo.
+  return indices.size !== Math.max(...indices);
 }
 
 /**
