@@ -33,3 +33,17 @@ export const agent = ac.newRole({
   tag: ["create", "read", "update"],
   snippet: ["read"],
 });
+
+const roles = { owner, admin, agent } as const;
+
+/**
+ * ¿El rol (owner|admin|agent) permite `action` sobre `resource`, según el ACL de
+ * arriba? Fuente única: lee los grants de los roles, sin duplicar la política.
+ * Un rol desconocido no permite nada (falla cerrado).
+ */
+export function roleAllows(role: string, resource: keyof typeof statement, action: string): boolean {
+  const roleAc = roles[role as keyof typeof roles] as
+    | { statements: Record<string, readonly string[] | undefined> }
+    | undefined;
+  return roleAc?.statements[resource]?.includes(action) ?? false;
+}

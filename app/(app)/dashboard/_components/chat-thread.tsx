@@ -98,7 +98,11 @@ function Bubble({ row, onRetry }: { row: Row; onRetry: (row: Row) => void }) {
   const out = row.direction === "out";
   const opt = isOptimistic(row);
   const mark = out ? statusMark(row.status) : null;
-  const canRetry = opt ? row.status === "failed" : row.status === "failed" && (row as MessageView).canRetry;
+  // Una plantilla optimista fallida NO se reintenta como texto (fuera de la
+  // ventana de 24 h el texto se rechaza): el vendedor vuelve a elegir plantilla.
+  const canRetry = opt
+    ? row.status === "failed" && row.kind !== "template"
+    : row.status === "failed" && (row as MessageView).canRetry;
   const errorMessage = opt ? row.errorMessage : (row as MessageView).errorMessage;
   const attachments = opt ? [] : (row as MessageView).attachments;
   const adReferral = opt ? null : (row as MessageView).adReferral;
@@ -179,12 +183,15 @@ export function ChatThread({
   const windowOpen = isWindowOpen(detail.windowExpiresAt, nowMs);
   const hoursLeft = windowHoursLeft(detail.windowExpiresAt, nowMs);
 
-  // Descarta optimistas cuyo texto ya llegó como saliente real (reconciliación).
+  // Descarta optimistas (texto o plantilla) cuyo cuerpo ya llegó como saliente
+  // real, sin importar si estaban "queued" o "failed": así no queda un duplicado
+  // (la burbuja optimista fallida junto a la fila real) cuando el envío se
+  // rechazó y su fila real ya cargó por SSE.
   const reconcile = useCallback((server: MessageView[]) => {
     setOptimistic((current) => {
       if (current.length === 0) return current;
       const outBodies = new Set(server.filter((m) => m.direction === "out").map((m) => m.body ?? ""));
-      return current.filter((o) => !(o.status === "queued" && outBodies.has(o.body)));
+      return current.filter((o) => !outBodies.has(o.body));
     });
   }, []);
 

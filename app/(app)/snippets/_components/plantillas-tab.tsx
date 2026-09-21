@@ -21,6 +21,7 @@ function statusStyle(status: string): { label: string; className: string } {
   if (s === "APPROVED") return { label: "Aprobada", className: "bg-emerald-500/10 text-emerald-700 dark:text-emerald-300" };
   if (s === "PENDING" || s === "IN_APPEAL") return { label: s === "PENDING" ? "En revisión" : "En apelación", className: "bg-amber-500/10 text-amber-700 dark:text-amber-300" };
   if (s === "REJECTED") return { label: "Rechazada", className: "bg-red-500/10 text-red-700 dark:text-red-300" };
+  if (s === "REMOVED") return { label: "Eliminada en Meta", className: "bg-muted text-muted-foreground line-through" };
   return { label: status, className: "bg-muted text-muted-foreground" };
 }
 
@@ -40,9 +41,12 @@ export function PlantillasTab({ initial }: { initial: TemplateView[] }) {
     setError(null);
     setNote(null);
     try {
-      const { synced } = await syncTemplates();
+      const { synced, removed } = await syncTemplates();
       await refresh();
-      setNote(`Sincronizado: ${synced} plantilla(s) desde WhatsApp.`);
+      setNote(
+        `Sincronizado: ${synced} plantilla(s) desde WhatsApp` +
+          (removed > 0 ? `; ${removed} marcada(s) como eliminada(s) en Meta.` : "."),
+      );
     } catch (err) {
       setError(err instanceof Error ? err.message : "No se pudo sincronizar.");
     } finally {

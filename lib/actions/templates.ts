@@ -23,7 +23,7 @@ export async function listTemplates(): Promise<TemplateView[]> {
   return listTemplatesForOrg(organizationId);
 }
 
-export async function syncTemplates(): Promise<{ synced: number }> {
+export async function syncTemplates(): Promise<{ synced: number; removed: number }> {
   const { organizationId } = await requireActiveMembership();
   try {
     const result = await syncTemplatesForOrg(organizationId);
