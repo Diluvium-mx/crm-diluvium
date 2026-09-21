@@ -100,7 +100,10 @@ export type SendErrorCode =
   | "not_retryable"
   | "channel_unavailable"
   | "provider_rejected"
-  | "not_configured";
+  | "not_configured"
+  | "template_not_found"
+  | "template_not_approved"
+  | "template_params";
 
 /** pending = resultado desconocido: el mensaje queda "enviando" mientras se verifica. */
 export type SendMessageResult =

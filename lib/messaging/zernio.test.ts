@@ -271,3 +271,139 @@ describe("zernioAccountId (allowlist)", () => {
     expect(zernioAccountId({ event: "webhook.test" })).toBeUndefined();
   });
 });
+
+describe("ZernioProvider.sendTemplate", () => {
+  const calls = (f: typeof fetch) => (f as unknown as ReturnType<typeof vi.fn>).mock.calls;
+
+  it("POST con template.elements[0] (name, language, components) e Idempotency-Key", async () => {
+    const fetchImpl = vi.fn(async () => Response.json({ success: true, data: { messageId: "zmsg_t" } })) as unknown as typeof fetch;
+    const p = new ZernioProvider({ apiKey: "sk", webhookSecret: SECRET }, fetchImpl);
+    const out = await p.sendTemplate({
+      providerAccountId: "zacc_1",
+      providerConversationId: "zconv_1",
+      name: "order_confirmation",
+      language: "es_MX",
+      bodyParams: ["Ana", "ORD-7"],
+      idempotencyKey: "msg_t",
+    });
+    expect(out).toEqual({ providerInternalId: "zmsg_t", providerMessageId: undefined });
+    const [url, init] = calls(fetchImpl)[0];
+    expect(url).toBe("https://zernio.com/api/v1/inbox/conversations/zconv_1/messages");
+    expect(init.headers["Idempotency-Key"]).toBe("msg_t");
+    expect(JSON.parse(init.body)).toEqual({
+      accountId: "zacc_1",
+      template: {
+        elements: [
+          {
+            name: "order_confirmation",
+            language: "es_MX",
+            components: [
+              { type: "body", parameters: [{ type: "text", text: "Ana" }, { type: "text", text: "ORD-7" }] },
+            ],
+          },
+        ],
+      },
+    });
+  });
+
+  it("sin variables NO manda components", async () => {
+    const fetchImpl = vi.fn(async () => Response.json({ success: true, data: { messageId: "z" } })) as unknown as typeof fetch;
+    const p = new ZernioProvider({ apiKey: "sk", webhookSecret: SECRET }, fetchImpl);
+    await p.sendTemplate({ providerAccountId: "a", providerConversationId: "c", name: "bienvenida", language: "es", bodyParams: [], idempotencyKey: "k" });
+    expect(JSON.parse(calls(fetchImpl)[0][1].body)).toEqual({
+      accountId: "a",
+      template: { elements: [{ name: "bienvenida", language: "es" }] },
+    });
+  });
+
+  it("un rechazo del proveedor se propaga como sendText (outcome rejected)", async () => {
+    const fetchImpl = (async () => Response.json({ error: { code: "TEMPLATE_PAUSED", message: "Plantilla pausada" } }, { status: 400 })) as unknown as typeof fetch;
+    const p = new ZernioProvider({ apiKey: "k", webhookSecret: SECRET }, fetchImpl);
+    await expect(
+      p.sendTemplate({ providerAccountId: "a", providerConversationId: "c", name: "x", language: "es", bodyParams: [], idempotencyKey: "k" }),
+    ).rejects.toMatchObject({ code: "TEMPLATE_PAUSED", outcome: "rejected" });
+  });
+});
+
+describe("ZernioProvider.listTemplates", () => {
+  it("GET con accountId y normaliza a ProviderTemplate (body, variables, status)", async () => {
+    const fetchImpl = vi.fn(async () =>
+      Response.json({
+        success: true,
+        templates: [
+          {
+            id: "111",
+            name: "order_confirmation",
+            status: "APPROVED",
+            category: "UTILITY",
+            language: "es_MX",
+            components: [
+              { type: "BODY", text: "Hola {{1}}, pedido {{2}}.", example: { body_text: [["Ana", "ORD-7"]] } },
+            ],
+          },
+          { id: "222", name: "sin_body", status: "PENDING", category: "MARKETING", language: "es", components: [{ type: "HEADER", text: "x" }] },
+          { name: "", status: "APPROVED", language: "es", components: [] },
+        ],
+      }),
+    ) as unknown as typeof fetch;
+    const p = new ZernioProvider({ apiKey: "k", webhookSecret: SECRET }, fetchImpl);
+    const out = await p.listTemplates("zacc_1");
+    const [url, init] = (fetchImpl as unknown as ReturnType<typeof vi.fn>).mock.calls[0];
+    expect(url).toBe("https://zernio.com/api/v1/whatsapp/templates?accountId=zacc_1");
+    expect(init.headers.Authorization).toBe("Bearer k");
+    // La fila sin nombre se descarta.
+    expect(out).toEqual([
+      {
+        providerTemplateId: "111",
+        name: "order_confirmation",
+        language: "es_MX",
+        category: "UTILITY",
+        status: "APPROVED",
+        bodyText: "Hola {{1}}, pedido {{2}}.",
+        variables: [{ index: 1, example: "Ana" }, { index: 2, example: "ORD-7" }],
+      },
+      {
+        providerTemplateId: "222",
+        name: "sin_body",
+        language: "es",
+        category: "MARKETING",
+        status: "PENDING",
+        bodyText: null,
+        variables: [],
+      },
+    ]);
+  });
+});
+
+describe("ZernioProvider.createTemplate", () => {
+  it("POST /v1/whatsapp/templates con components.body + example y devuelve status", async () => {
+    const fetchImpl = vi.fn(async () => Response.json({ data: { id: "999", status: "PENDING" } })) as unknown as typeof fetch;
+    const p = new ZernioProvider({ apiKey: "k", webhookSecret: SECRET }, fetchImpl);
+    const out = await p.createTemplate({
+      providerAccountId: "zacc_1",
+      name: "promo_lluvias",
+      language: "es_MX",
+      category: "MARKETING",
+      bodyText: "Hola {{1}}",
+      bodyExample: ["Ana"],
+    });
+    expect(out).toEqual({ providerTemplateId: "999", status: "PENDING" });
+    const [url, init] = (fetchImpl as unknown as ReturnType<typeof vi.fn>).mock.calls[0];
+    expect(url).toBe("https://zernio.com/api/v1/whatsapp/templates");
+    expect(JSON.parse(init.body)).toEqual({
+      accountId: "zacc_1",
+      name: "promo_lluvias",
+      language: "es_MX",
+      category: "MARKETING",
+      components: [{ type: "body", text: "Hola {{1}}", example: { body_text: [["Ana"]] } }],
+    });
+  });
+
+  it("un error de la API lanza ZernioApiError con el status", async () => {
+    const fetchImpl = (async () => Response.json({ error: { message: "nombre duplicado" } }, { status: 409 })) as unknown as typeof fetch;
+    const p = new ZernioProvider({ apiKey: "k", webhookSecret: SECRET }, fetchImpl);
+    await expect(
+      p.createTemplate({ providerAccountId: "a", name: "x", language: "es", category: "UTILITY", bodyText: "hola", bodyExample: [] }),
+    ).rejects.toMatchObject({ name: "ZernioApiError", httpStatus: 409 });
+  });
+});
