@@ -14,7 +14,7 @@ type Draft = { id?: string; name: string; body: string };
 
 const TOKEN_CLASS = "rounded bg-brand-orange/15 px-1 font-medium text-brand-orange";
 
-export function FragmentosTab({ initial }: { initial: SnippetView[] }) {
+export function FragmentosTab({ initial, canManage }: { initial: SnippetView[]; canManage: boolean }) {
   const [items, setItems] = useState<SnippetView[]>(initial);
   const [draft, setDraft] = useState<Draft | null>(null);
   const [busy, setBusy] = useState(false);
@@ -79,7 +79,7 @@ export function FragmentosTab({ initial }: { initial: SnippetView[] }) {
           Respuestas rápidas con variables <code className="text-brand-orange">{"{{nombre}}"}</code>, para
           responder dentro de las 24 h.
         </p>
-        {!draft && (
+        {canManage && !draft && (
           <button
             type="button"
             onClick={openNew}
@@ -156,7 +156,9 @@ export function FragmentosTab({ initial }: { initial: SnippetView[] }) {
 
       {items.length === 0 && !draft ? (
         <div className="rounded-lg border border-dashed bg-card/50 px-4 py-10 text-center text-sm text-muted-foreground">
-          Aún no hay fragmentos. Crea el primero para responder más rápido.
+          {canManage
+            ? "Aún no hay fragmentos. Crea el primero para responder más rápido."
+            : "Aún no hay fragmentos. Un administrador puede crearlos; tú los usarás desde el chat."}
         </div>
       ) : (
         <ul className="space-y-2">
@@ -176,26 +178,28 @@ export function FragmentosTab({ initial }: { initial: SnippetView[] }) {
                     </div>
                   )}
                 </div>
-                <div className="flex shrink-0 gap-1">
-                  <button
-                    type="button"
-                    onClick={() => openEdit(snippet)}
-                    aria-label={`Editar ${snippet.name}`}
-                    title="Editar"
-                    className="rounded p-1.5 text-muted-foreground hover:bg-muted hover:text-foreground"
-                  >
-                    <Pencil className="size-4" aria-hidden="true" />
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => void remove(snippet)}
-                    aria-label={`Borrar ${snippet.name}`}
-                    title="Borrar"
-                    className="rounded p-1.5 text-muted-foreground hover:bg-red-50 hover:text-red-600 dark:hover:bg-red-950/40"
-                  >
-                    <Trash2 className="size-4" aria-hidden="true" />
-                  </button>
-                </div>
+                {canManage && (
+                  <div className="flex shrink-0 gap-1">
+                    <button
+                      type="button"
+                      onClick={() => openEdit(snippet)}
+                      aria-label={`Editar ${snippet.name}`}
+                      title="Editar"
+                      className="rounded p-1.5 text-muted-foreground hover:bg-muted hover:text-foreground"
+                    >
+                      <Pencil className="size-4" aria-hidden="true" />
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => void remove(snippet)}
+                      aria-label={`Borrar ${snippet.name}`}
+                      title="Borrar"
+                      className="rounded p-1.5 text-muted-foreground hover:bg-red-50 hover:text-red-600 dark:hover:bg-red-950/40"
+                    >
+                      <Trash2 className="size-4" aria-hidden="true" />
+                    </button>
+                  </div>
+                )}
               </div>
             </li>
           ))}

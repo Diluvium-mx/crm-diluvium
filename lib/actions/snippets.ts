@@ -8,6 +8,7 @@ import { revalidatePath } from "next/cache";
 import { and, asc, eq } from "drizzle-orm";
 import { z } from "zod";
 import { requireActiveMembership } from "@/lib/auth/active-organization";
+import { roleAllows } from "@/lib/auth/permissions";
 import { db } from "@/lib/db";
 import { snippets } from "@/lib/db/schema/snippets";
 import { extractVariables } from "@/lib/snippets/variables";
@@ -33,6 +34,16 @@ function toView(row: typeof snippets.$inferSelect): SnippetView {
   return { id: row.id, name: row.name, body: row.body, variables: row.variables };
 }
 
+// Los fragmentos son configuración compartida de la organización: cualquier
+// miembro los LEE y los inserta en el chat, pero solo quien tenga el permiso
+// `snippet` de gestión (owner/admin en lib/auth/permissions.ts) los crea, edita
+// o borra. En v1 el agente es de solo lectura sobre fragmentos.
+function requireSnippetManage(role: string, action: "create" | "update" | "delete"): void {
+  if (!roleAllows(role, "snippet", action)) {
+    throw new Error("No tienes permiso para gestionar fragmentos; pídeselo a un administrador.");
+  }
+}
+
 // Postgres 23505 = choque con el índice único (organización, nombre).
 function isDuplicateName(error: unknown): boolean {
   return typeof error === "object" && error !== null && (error as { code?: string }).code === "23505";
@@ -49,7 +60,8 @@ export async function listSnippets(): Promise<SnippetView[]> {
 }
 
 export async function createSnippet(input: CreateSnippetInput): Promise<SnippetView> {
-  const { organizationId } = await requireActiveMembership();
+  const { organizationId, role } = await requireActiveMembership();
+  requireSnippetManage(role, "create");
   const parsed = createSnippetSchema.parse(input);
   try {
     const [created] = await db
@@ -71,7 +83,8 @@ export async function createSnippet(input: CreateSnippetInput): Promise<SnippetV
 }
 
 export async function updateSnippet(input: UpdateSnippetInput): Promise<SnippetView> {
-  const { organizationId } = await requireActiveMembership();
+  const { organizationId, role } = await requireActiveMembership();
+  requireSnippetManage(role, "update");
   const parsed = updateSnippetSchema.parse(input);
   try {
     const [updated] = await db
@@ -94,7 +107,8 @@ export async function updateSnippet(input: UpdateSnippetInput): Promise<SnippetV
 }
 
 export async function deleteSnippet(id: string): Promise<void> {
-  const { organizationId } = await requireActiveMembership();
+  const { organizationId, role } = await requireActiveMembership();
+  requireSnippetManage(role, "delete");
   const cleanId = z.string().trim().min(1).parse(id);
   const [deleted] = await db
     .delete(snippets)
