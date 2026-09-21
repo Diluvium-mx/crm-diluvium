@@ -34,13 +34,13 @@ function toView(row: typeof snippets.$inferSelect): SnippetView {
   return { id: row.id, name: row.name, body: row.body, variables: row.variables };
 }
 
-// Los fragmentos son configuración compartida de la organización: cualquier
-// miembro los LEE y los inserta en el chat, pero solo quien tenga el permiso
-// `snippet` de gestión (owner/admin en lib/auth/permissions.ts) los crea, edita
-// o borra. En v1 el agente es de solo lectura sobre fragmentos.
+// Los fragmentos son configuración compartida de la organización y TODOS los
+// roles los gestionan (owner/admin/agent): son la herramienta diaria del
+// vendedor (lib/auth/permissions.ts). El permiso se checa igual contra el ACL
+// para fallar cerrado ante un rol desconocido.
 function requireSnippetManage(role: string, action: "create" | "update" | "delete"): void {
   if (!roleAllows(role, "snippet", action)) {
-    throw new Error("No tienes permiso para gestionar fragmentos; pídeselo a un administrador.");
+    throw new Error("No tienes permiso para gestionar fragmentos.");
   }
 }
 
