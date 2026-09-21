@@ -39,6 +39,7 @@ export class SendRejectedError extends Error {
       | "channel_unavailable"
       | "template_not_found"
       | "template_not_approved"
+      | "template_unsupported"
       | "template_params",
     message: string,
   ) {
@@ -107,6 +108,14 @@ async function loadSendableTemplate(organizationId: string, channelId: string, t
   }
   if (!isTemplateSendable(row.status)) {
     throw new SendRejectedError("template_not_approved", "La plantilla no está aprobada por Meta y no se puede enviar.");
+  }
+  // Defensa en profundidad: la UI ya no ofrece las no soportadas, pero si una
+  // llega aquí (params de encabezado/botón), no se envía: WhatsApp la rechazaría.
+  if (row.unsupported) {
+    throw new SendRejectedError(
+      "template_unsupported",
+      "Esta plantilla usa variables en el encabezado o botón que el CRM aún no puede enviar.",
+    );
   }
   return row;
 }

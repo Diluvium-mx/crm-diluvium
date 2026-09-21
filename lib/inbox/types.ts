@@ -103,6 +103,7 @@ export type SendErrorCode =
   | "not_configured"
   | "template_not_found"
   | "template_not_approved"
+  | "template_unsupported"
   | "template_params";
 
 /** pending = resultado desconocido: el mensaje queda "enviando" mientras se verifica. */
