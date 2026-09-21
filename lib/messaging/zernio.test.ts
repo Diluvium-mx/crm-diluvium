@@ -326,6 +326,8 @@ describe("ZernioProvider.sendTemplate", () => {
 });
 
 describe("ZernioProvider.listTemplates", () => {
+  const p = (fetchImpl: typeof fetch) => new ZernioProvider({ apiKey: "k", webhookSecret: SECRET }, fetchImpl);
+
   it("GET con accountId y normaliza a ProviderTemplate (body, variables, status)", async () => {
     const fetchImpl = vi.fn(async () =>
       Response.json({
@@ -342,16 +344,13 @@ describe("ZernioProvider.listTemplates", () => {
             ],
           },
           { id: "222", name: "sin_body", status: "PENDING", category: "MARKETING", language: "es", components: [{ type: "HEADER", text: "x" }] },
-          { name: "", status: "APPROVED", language: "es", components: [] },
         ],
       }),
     ) as unknown as typeof fetch;
-    const p = new ZernioProvider({ apiKey: "k", webhookSecret: SECRET }, fetchImpl);
-    const out = await p.listTemplates("zacc_1");
+    const out = await p(fetchImpl).listTemplates("zacc_1");
     const [url, init] = (fetchImpl as unknown as ReturnType<typeof vi.fn>).mock.calls[0];
     expect(url).toBe("https://zernio.com/api/v1/whatsapp/templates?accountId=zacc_1");
     expect(init.headers.Authorization).toBe("Bearer k");
-    // La fila sin nombre se descarta.
     expect(out).toEqual([
       {
         providerTemplateId: "111",
@@ -372,6 +371,34 @@ describe("ZernioProvider.listTemplates", () => {
         variables: [],
       },
     ]);
+  });
+
+  // Falla CERRADO: la sincronización usa la lista como censo completo, así que
+  // una respuesta dudosa NUNCA debe volverse una lista parcial (borraría plantillas).
+  it("lanza ante una fila sin name/language/status (no la descarta en silencio)", async () => {
+    const fetchImpl = (async () =>
+      Response.json({ templates: [{ name: "", status: "APPROVED", language: "es", components: [] }] })) as unknown as typeof fetch;
+    await expect(p(fetchImpl).listTemplates("a")).rejects.toMatchObject({ name: "ZernioApiError" });
+  });
+
+  it("lanza ante un cuerpo sin `templates` ni `data` (formato desconocido)", async () => {
+    const fetchImpl = (async () => Response.json({ success: true, cosa: 1 })) as unknown as typeof fetch;
+    await expect(p(fetchImpl).listTemplates("a")).rejects.toMatchObject({ name: "ZernioApiError" });
+  });
+
+  it("lanza ante un 200 con JSON ilegible (no lo trata como lista vacía)", async () => {
+    const fetchImpl = (async () => new Response("no-json", { status: 200 })) as unknown as typeof fetch;
+    await expect(p(fetchImpl).listTemplates("a")).rejects.toMatchObject({ name: "ZernioApiError" });
+  });
+
+  it("lanza si se agota el tope de páginas con un cursor todavía pendiente", async () => {
+    // Cada página devuelve una fila y SIEMPRE un nextCursor: nunca termina → aborta.
+    const fetchImpl = (async () =>
+      Response.json({
+        templates: [{ id: "x", name: "t", language: "es", status: "APPROVED", components: [] }],
+        pagination: { hasMore: true, nextCursor: "c" },
+      })) as unknown as typeof fetch;
+    await expect(p(fetchImpl).listTemplates("a")).rejects.toMatchObject({ name: "ZernioApiError" });
   });
 });
 

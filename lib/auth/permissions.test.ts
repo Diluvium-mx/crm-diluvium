@@ -24,3 +24,21 @@ describe("roleAllows (ACL de fragmentos)", () => {
     expect(roleAllows("", "snippet", "create")).toBe(false);
   });
 });
+
+// Gestionar plantillas (alta en Meta, sincronización) es owner/admin; el agente
+// solo LEE (para enviarlas desde el chat). Enviar no pasa por este ACL.
+describe("roleAllows (ACL de plantillas)", () => {
+  it("el agente lee plantillas pero NO las crea ni sincroniza", () => {
+    expect(roleAllows("agent", "template", "read")).toBe(true);
+    expect(roleAllows("agent", "template", "create")).toBe(false);
+    expect(roleAllows("agent", "template", "sync")).toBe(false);
+  });
+
+  it("owner y admin gestionan plantillas (read/create/sync)", () => {
+    for (const role of ["owner", "admin"]) {
+      expect(roleAllows(role, "template", "read")).toBe(true);
+      expect(roleAllows(role, "template", "create")).toBe(true);
+      expect(roleAllows(role, "template", "sync")).toBe(true);
+    }
+  });
+});

@@ -322,27 +322,38 @@ export class ZernioProvider implements MessagingProvider {
     );
   }
 
-  // GET /v1/whatsapp/templates?accountId=… (docs.zernio.com). Tolerante: una
-  // fila con formato inesperado se omite en vez de tumbar toda la sincronización.
+  // GET /v1/whatsapp/templates?accountId=… (docs.zernio.com). FALLA CERRADO:
+  // la sincronización usa esta lista como censo COMPLETO y marca REMOVED lo
+  // ausente (lib/messaging/templates.ts). Por eso una respuesta ilegible,
+  // con formato desconocido, con una fila sin identidad, o cortada por el tope
+  // de páginas con más por leer, LANZA — nunca devuelve una lista parcial que
+  // haría desaparecer plantillas válidas. apiJson ya lanza ante JSON ilegible.
   async listTemplates(providerAccountId: string): Promise<ProviderTemplate[]> {
     const out: ProviderTemplate[] = [];
     let cursor: string | undefined;
-    // Tope de páginas por seguridad (una PyME tiene decenas, no miles).
-    for (let page = 0; page < 20; page++) {
+    const MAX_PAGES = 20; // una PyME tiene decenas; más = algo raro, se aborta
+    for (let page = 0; page < MAX_PAGES; page++) {
       const params = new URLSearchParams({ accountId: providerAccountId });
       if (cursor) params.set("cursor", cursor);
       const json = await this.apiJson("GET", `/v1/whatsapp/templates?${params.toString()}`);
-      const list = Array.isArray(json?.templates) ? json.templates : Array.isArray(json?.data) ? json.data : [];
-      for (const raw of list) {
-        const parsed = parseProviderTemplate(asRecord(raw));
-        if (parsed.name && parsed.language) out.push(parsed);
+      const list = Array.isArray(json.templates)
+        ? json.templates
+        : Array.isArray(json.data)
+          ? json.data
+          : null;
+      if (list === null) {
+        throw new ZernioApiError(0, "Respuesta de plantillas con formato no reconocido; se aborta la sincronización");
       }
-      const pagination = asRecord(json?.pagination);
+      for (const raw of list) out.push(parseProviderTemplate(asRecord(raw)));
+      const pagination = asRecord(json.pagination);
       const next = asString(pagination.nextCursor);
-      if (!next || pagination.hasMore === false) break;
+      if (!next || pagination.hasMore === false) return out;
       cursor = next;
     }
-    return out;
+    // Se agotó el tope de páginas con un cursor todavía pendiente: la lista
+    // estaría incompleta. Abortar es preferible a marcar plantillas como
+    // eliminadas por no haberlas leído.
+    throw new ZernioApiError(0, `Más de ${MAX_PAGES} páginas de plantillas; se aborta para no borrar plantillas válidas`);
   }
 
   // POST /v1/whatsapp/templates (docs.zernio.com). Queda PENDING hasta que Meta
@@ -358,7 +369,7 @@ export class ZernioProvider implements MessagingProvider {
       category,
       components: [bodyComponent],
     });
-    const data = asRecord(json?.data ?? json);
+    const data = asRecord(json.data ?? json);
     return {
       providerTemplateId: asString(data.id) ?? asString(data.templateId) ?? null,
       status: asString(data.status) ?? "PENDING",
@@ -415,7 +426,7 @@ export class ZernioProvider implements MessagingProvider {
   // GET/POST JSON a la API de Zernio (plantillas). Distinto de postToConversation:
   // un fallo aquí NO es un envío ambiguo (no hay mensaje que duplicar), así que
   // lanza ZernioApiError con el código HTTP, no SendFailedError.
-  private async apiJson(method: string, path: string, body?: unknown): Promise<Record<string, unknown> | null> {
+  private async apiJson(method: string, path: string, body?: unknown): Promise<Record<string, unknown>> {
     let res: Response;
     try {
       res = await this.fetchImpl(this.apiUrl(path), {
@@ -430,16 +441,22 @@ export class ZernioProvider implements MessagingProvider {
     } catch (error) {
       throw new ZernioApiError(0, `Sin respuesta de Zernio: ${error instanceof Error ? error.message : String(error)}`);
     }
-    const json = (await res.json().catch(() => null)) as Record<string, unknown> | null;
+    const parsed: unknown = await res.json().catch(() => undefined);
     if (!res.ok) {
-      const err = asRecord(json?.error);
+      const err = asRecord(asRecord(parsed).error);
       throw new ZernioApiError(
         res.status,
-        asString(err.message) ?? asString(json?.message) ?? `Zernio respondió ${res.status}`,
+        asString(err.message) ?? asString(asRecord(parsed).message) ?? `Zernio respondió ${res.status}`,
         asString(err.code),
       );
     }
-    return json;
+    // Un 2xx con cuerpo ilegible o que no es un objeto JSON NO se trata como
+    // vacío: la sincronización lo usa como censo y un [] falso borraría
+    // plantillas válidas. Se lanza para que falle cerrado.
+    if (parsed === null || typeof parsed !== "object") {
+      throw new ZernioApiError(res.status, "Respuesta de Zernio ilegible (se esperaba un objeto JSON)");
+    }
+    return parsed as Record<string, unknown>;
   }
 }
 
@@ -453,15 +470,27 @@ function bodyOfComponents(components: unknown): { text: string | null; examples:
   return { text, examples };
 }
 
-/** Normaliza una fila del listado de Zernio a ProviderTemplate. */
+/**
+ * Normaliza una fila del listado de Zernio a ProviderTemplate. ESTRICTO: una
+ * fila sin identidad (name/language) o sin status es un formato inesperado y
+ * LANZA — no se omite. Motivo: la sincronización trata la lista como censo
+ * completo; una fila descartada en silencio se leería como "eliminada" y
+ * marcaría REMOVED una plantilla que en realidad sigue viva.
+ */
 function parseProviderTemplate(raw: Record<string, unknown>): ProviderTemplate {
+  const name = asString(raw.name);
+  const language = asString(raw.language);
+  const status = asString(raw.status);
+  if (!name || !language || !status) {
+    throw new ZernioApiError(0, `Plantilla de Zernio con campos faltantes (name/language/status): ${JSON.stringify(raw).slice(0, 160)}`);
+  }
   const { text, examples } = bodyOfComponents(raw.components);
   return {
     providerTemplateId: asString(raw.id) ?? null,
-    name: asString(raw.name) ?? "",
-    language: asString(raw.language) ?? "",
+    name,
+    language,
     category: asString(raw.category) ?? null,
-    status: asString(raw.status) ?? "UNKNOWN",
+    status,
     bodyText: text,
     variables: templateVariablesFromBody(text, examples),
   };
