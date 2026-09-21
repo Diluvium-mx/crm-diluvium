@@ -392,6 +392,18 @@ describe("ZernioProvider.listTemplates", () => {
     expect(t.requiresUnsupportedParams).toBe(true);
   });
 
+  it("marca requiresUnsupportedParams cuando el cuerpo usa variables con nombre", async () => {
+    const fetchImpl = (async () =>
+      Response.json({
+        templates: [
+          { id: "444", name: "con_nombre", language: "es_MX", status: "APPROVED", components: [{ type: "BODY", text: "Hola {{cliente}}" }] },
+        ],
+      })) as unknown as typeof fetch;
+    const [t] = await p(fetchImpl).listTemplates("a");
+    expect(t.requiresUnsupportedParams).toBe(true);
+    expect(t.variables).toEqual([]);
+  });
+
   // Falla CERRADO: la sincronización usa la lista como censo completo, así que
   // una respuesta dudosa NUNCA debe volverse una lista parcial (borraría plantillas).
   it("lanza ante una fila sin name/language/status (no la descarta en silencio)", async () => {

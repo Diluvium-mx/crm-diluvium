@@ -27,7 +27,7 @@ import {
   type SendTextInput,
   type WebhookEnvelope,
 } from "./provider";
-import { templateRequiresUnsupportedParams, templateVariablesFromBody } from "./template-format";
+import { bodyHasUnsupportedPlaceholders, templateRequiresUnsupportedParams, templateVariablesFromBody } from "./template-format";
 
 const DEFAULT_BASE_URL = "https://zernio.com/api";
 const SEND_TIMEOUT_MS = 15_000;
@@ -496,6 +496,13 @@ function parseProviderTemplate(raw: Record<string, unknown>): ProviderTemplate {
     throw new ZernioApiError(0, `Plantilla de Zernio con campos faltantes (name/language/status): ${JSON.stringify(raw).slice(0, 160)}`);
   }
   const { text, examples } = bodyOfComponents(raw.components);
+  // No enviable desde el CRM si necesita params de encabezado/botón, si el
+  // cuerpo usa variables con nombre / fuera de rango / con huecos, o si Meta
+  // marca la plantilla como de parámetros NOMBRADOS (parameter_format).
+  const requiresUnsupportedParams =
+    templateRequiresUnsupportedParams(raw.components) ||
+    bodyHasUnsupportedPlaceholders(text) ||
+    asString(raw.parameter_format)?.toUpperCase() === "NAMED";
   return {
     providerTemplateId: asString(raw.id) ?? null,
     name,
@@ -504,7 +511,7 @@ function parseProviderTemplate(raw: Record<string, unknown>): ProviderTemplate {
     status,
     bodyText: text,
     variables: templateVariablesFromBody(text, examples),
-    requiresUnsupportedParams: templateRequiresUnsupportedParams(raw.components),
+    requiresUnsupportedParams,
   };
 }
 

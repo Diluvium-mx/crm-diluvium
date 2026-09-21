@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  bodyHasUnsupportedPlaceholders,
   renderTemplateBody,
   templateMaxIndex,
   templateRequiresUnsupportedParams,
@@ -19,6 +20,34 @@ describe("templateMaxIndex", () => {
 
   it("ignora {{nombre}} (eso es de Fragmentos, no de plantillas)", () => {
     expect(templateMaxIndex("Hola {{nombre}}")).toBe(0);
+  });
+
+  it("acota índices enormes o fuera de rango (no cuelga ni desborda)", () => {
+    expect(templateMaxIndex("{{999999999}}")).toBe(0);
+    expect(templateMaxIndex("Hola {{99}}")).toBe(0);
+    expect(templateMaxIndex("{{50}}")).toBe(50);
+  });
+});
+
+describe("bodyHasUnsupportedPlaceholders", () => {
+  it("soportado: posicionales contiguos 1..N, o sin variables", () => {
+    expect(bodyHasUnsupportedPlaceholders("Hola {{1}}, pedido {{2}}.")).toBe(false);
+    expect(bodyHasUnsupportedPlaceholders("sin variables")).toBe(false);
+    expect(bodyHasUnsupportedPlaceholders(null)).toBe(false);
+  });
+
+  it("no soportado: variables con nombre", () => {
+    expect(bodyHasUnsupportedPlaceholders("Hola {{cliente}}")).toBe(true);
+  });
+
+  it("no soportado: fuera de rango o enormes", () => {
+    expect(bodyHasUnsupportedPlaceholders("{{0}}")).toBe(true);
+    expect(bodyHasUnsupportedPlaceholders("{{99}}")).toBe(true);
+    expect(bodyHasUnsupportedPlaceholders("{{999999999}}")).toBe(true);
+  });
+
+  it("no soportado: posicionales con huecos ({{1}} y {{3}} sin {{2}})", () => {
+    expect(bodyHasUnsupportedPlaceholders("{{1}} y {{3}}")).toBe(true);
   });
 });
 

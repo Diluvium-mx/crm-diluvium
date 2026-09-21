@@ -405,9 +405,21 @@ export async function linkSentMessage(input: {
         if (echo.source === "crm") {
           throw new SendConflictError(`el wamid ${input.providerMessageId} ya pertenece al envío ${echo.id}`);
         }
+        // El eco del webhook se clasifica por su contenido (texto/adjunto), sin
+        // la metadata de lo que el CRM envió. Al fusionarlo se copian type, body
+        // y template_name de la fila en cola: sin esto, un envío de PLANTILLA
+        // sobreviviría como "text"/"unknown" sin nombre de plantilla (se pierde
+        // el historial y la auditoría). Para un texto son idénticos (no-op).
         await tx
           .update(messages)
-          .set({ source: "crm", sentByUserId: input.sentByUserId, status: nextStatus(echo.status, input.status) })
+          .set({
+            source: "crm",
+            sentByUserId: input.sentByUserId,
+            status: nextStatus(echo.status, input.status),
+            type: queued.type,
+            body: queued.body,
+            templateName: queued.templateName,
+          })
           .where(eq(messages.id, echo.id));
         await tx.delete(messages).where(queuedWhere);
         survivor = echo.id;
