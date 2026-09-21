@@ -14,7 +14,10 @@ import { member } from "@/lib/db/schema/auth";
 // así que confiar en el campo de sesión dejaría con acceso a un miembro ya
 // removido. Por eso cada llamada resuelve la organización contra la
 // membresía vigente en `member`, no contra el campo cacheado en la sesión.
-export type ActiveMembership = { organizationId: string; userId: string };
+// `role` es el del miembro (owner|admin|agent). Lo usan las acciones que sí
+// aplican el ACL de lib/auth/permissions.ts (p. ej. gestión de fragmentos);
+// las que no lo aplican simplemente lo ignoran.
+export type ActiveMembership = { organizationId: string; userId: string; role: string };
 
 export async function requireActiveMembership(): Promise<ActiveMembership> {
   const session = await auth.api.getSession({ headers: await headers() });
@@ -24,7 +27,7 @@ export async function requireActiveMembership(): Promise<ActiveMembership> {
   }
 
   const memberships = await db
-    .select({ organizationId: member.organizationId })
+    .select({ organizationId: member.organizationId, role: member.role })
     .from(member)
     .where(eq(member.userId, session.user.id));
 
@@ -34,11 +37,11 @@ export async function requireActiveMembership(): Promise<ActiveMembership> {
 
   const sessionOrganizationId = session.session.activeOrganizationId;
 
-  if (
-    sessionOrganizationId &&
-    memberships.some((m) => m.organizationId === sessionOrganizationId)
-  ) {
-    return { organizationId: sessionOrganizationId, userId: session.user.id };
+  const active = sessionOrganizationId
+    ? memberships.find((m) => m.organizationId === sessionOrganizationId)
+    : undefined;
+  if (active) {
+    return { organizationId: active.organizationId, userId: session.user.id, role: active.role };
   }
 
   // Sesión sin organización activa (recién creada por email-signin, que no
@@ -46,7 +49,7 @@ export async function requireActiveMembership(): Promise<ActiveMembership> {
   // el modelo de una sola organización (Diluvium) basta con resolverla por
   // membresía. Con más de una, no hay forma segura de adivinar cuál.
   if (memberships.length === 1) {
-    return { organizationId: memberships[0].organizationId, userId: session.user.id };
+    return { organizationId: memberships[0].organizationId, userId: session.user.id, role: memberships[0].role };
   }
 
   throw new Error(

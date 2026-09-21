@@ -1,8 +1,11 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { Zap } from "lucide-react";
 import type { AdReferral, AttachmentView, ConversationDetail, MessageView } from "@/lib/inbox/types";
-import { listMessages, retryMessage, sendMessage } from "@/lib/inbox/actions";
+import { listMessages, retryMessage, sendMessage, sendTemplate } from "@/lib/inbox/actions";
+import { SnippetPicker } from "./snippet-picker";
+import { TemplatePicker } from "./template-picker";
 import {
   bubbleTime,
   dayLabel,
@@ -20,7 +23,7 @@ type OptimisticMessage = {
   clientId: string;
   optimistic: true;
   direction: "out";
-  kind: "text";
+  kind: "text" | "template";
   body: string;
   status: "queued" | "failed";
   errorMessage: string | null;
@@ -95,7 +98,11 @@ function Bubble({ row, onRetry }: { row: Row; onRetry: (row: Row) => void }) {
   const out = row.direction === "out";
   const opt = isOptimistic(row);
   const mark = out ? statusMark(row.status) : null;
-  const canRetry = opt ? row.status === "failed" : row.status === "failed" && (row as MessageView).canRetry;
+  // Una plantilla optimista fallida NO se reintenta como texto (fuera de la
+  // ventana de 24 h el texto se rechaza): el vendedor vuelve a elegir plantilla.
+  const canRetry = opt
+    ? row.status === "failed" && row.kind !== "template"
+    : row.status === "failed" && (row as MessageView).canRetry;
   const errorMessage = opt ? row.errorMessage : (row as MessageView).errorMessage;
   const attachments = opt ? [] : (row as MessageView).attachments;
   const adReferral = opt ? null : (row as MessageView).adReferral;
@@ -159,17 +166,32 @@ export function ChatThread({
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [draft, setDraft] = useState("");
+  const [snippetOpen, setSnippetOpen] = useState(false);
+  const [templateOpen, setTemplateOpen] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
+
+  // Cierra los selectores al cambiar de conversación. Reset en render (no en un
+  // efecto) comparando con la conversación previa: patrón recomendado de React
+  // para resetear estado cuando cambia una prop, sin cascada de renders.
+  const [pickerConvId, setPickerConvId] = useState(conversationId);
+  if (pickerConvId !== conversationId) {
+    setPickerConvId(conversationId);
+    setSnippetOpen(false);
+    setTemplateOpen(false);
+  }
 
   const windowOpen = isWindowOpen(detail.windowExpiresAt, nowMs);
   const hoursLeft = windowHoursLeft(detail.windowExpiresAt, nowMs);
 
-  // Descarta optimistas cuyo texto ya llegó como saliente real (reconciliación).
+  // Descarta optimistas (texto o plantilla) cuyo cuerpo ya llegó como saliente
+  // real, sin importar si estaban "queued" o "failed": así no queda un duplicado
+  // (la burbuja optimista fallida junto a la fila real) cuando el envío se
+  // rechazó y su fila real ya cargó por SSE.
   const reconcile = useCallback((server: MessageView[]) => {
     setOptimistic((current) => {
       if (current.length === 0) return current;
       const outBodies = new Set(server.filter((m) => m.direction === "out").map((m) => m.body ?? ""));
-      return current.filter((o) => !(o.status === "queued" && outBodies.has(o.body)));
+      return current.filter((o) => !outBodies.has(o.body));
     });
   }, []);
 
@@ -229,6 +251,28 @@ export function ChatThread({
     }
     // ok:true (pending o no) → el message.upserted del SSE recargará y
     // reconciliará; el optimista "queued" se descarta al aparecer el real.
+  }
+
+  // Envío optimista de una plantilla (misma mecánica que el texto: la burbuja
+  // guarda el cuerpo ya rellenado, que coincide con el mensaje real al llegar
+  // por SSE y reconcilia). Solo se usa con la ventana de 24 h cerrada.
+  async function doSendTemplate(templateId: string, values: string[], preview: string) {
+    const clientId = `opt-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+    setOptimistic((current) => [
+      ...current,
+      { clientId, optimistic: true, direction: "out", kind: "template", body: preview, status: "queued", errorMessage: null, sentAt: new Date() },
+    ]);
+    const result = await sendTemplate(conversationId, templateId, values);
+    if (!result.ok) {
+      setOptimistic((current) =>
+        current.map((o) => (o.clientId === clientId ? { ...o, status: "failed", errorMessage: result.message } : o)),
+      );
+    }
+  }
+
+  // Inserta un fragmento en el borrador (el vendedor rellena sus {{nombre}}).
+  function insertFragment(body: string) {
+    setDraft((current) => (current.trim() ? `${current.replace(/\s*$/, "")} ${body}` : body));
   }
 
   function handleSubmit() {
@@ -322,36 +366,64 @@ export function ChatThread({
         )}
       </div>
 
-      {/* Composer */}
+      {/* Composer: texto libre + fragmentos con ventana abierta; plantilla
+          cuando está cerrada (docs/investigacion/plantillas-zernio.md). */}
       <div className="border-t bg-card p-3">
         {windowOpen ? (
-          <div className="flex items-end gap-2">
-            <textarea
-              value={draft}
-              onChange={(event) => setDraft(event.target.value)}
-              onKeyDown={(event) => {
-                if (event.key === "Enter" && !event.shiftKey) {
-                  event.preventDefault();
-                  handleSubmit();
-                }
-              }}
-              rows={1}
-              placeholder="Escribe un mensaje… (Enter envía, Shift+Enter salto de línea)"
-              className="max-h-32 min-h-[40px] flex-1 resize-y rounded-md border bg-background px-3 py-2 text-sm outline-none transition-colors placeholder:text-muted-foreground/60 focus:border-brand-navy focus:ring-2 focus:ring-brand-navy/30"
-            />
-            <button
-              type="button"
-              onClick={handleSubmit}
-              disabled={!draft.trim()}
-              className="rounded-md bg-brand-navy px-4 py-2 text-sm font-medium text-brand-white transition-colors hover:bg-brand-navy-dark disabled:opacity-50"
-            >
-              Enviar
-            </button>
-          </div>
+          <>
+            {snippetOpen && <SnippetPicker onInsert={insertFragment} onClose={() => setSnippetOpen(false)} />}
+            <div className="flex items-end gap-2">
+              <button
+                type="button"
+                onClick={() => setSnippetOpen((open) => !open)}
+                aria-label="Insertar fragmento"
+                aria-expanded={snippetOpen}
+                title="Fragmentos"
+                className={`rounded-md border px-2.5 py-2 transition-colors ${
+                  snippetOpen ? "border-brand-orange bg-brand-orange/10 text-brand-orange" : "text-brand-orange hover:bg-brand-orange/10"
+                }`}
+              >
+                <Zap className="size-4" aria-hidden="true" />
+              </button>
+              <textarea
+                value={draft}
+                onChange={(event) => setDraft(event.target.value)}
+                onKeyDown={(event) => {
+                  if (event.key === "Enter" && !event.shiftKey) {
+                    event.preventDefault();
+                    handleSubmit();
+                  }
+                }}
+                rows={1}
+                placeholder="Escribe un mensaje… (Enter envía, Shift+Enter salto de línea)"
+                className="max-h-32 min-h-[40px] flex-1 resize-y rounded-md border bg-background px-3 py-2 text-sm outline-none transition-colors placeholder:text-muted-foreground/60 focus:border-brand-navy focus:ring-2 focus:ring-brand-navy/30"
+              />
+              <button
+                type="button"
+                onClick={handleSubmit}
+                disabled={!draft.trim()}
+                className="rounded-md bg-brand-navy px-4 py-2 text-sm font-medium text-brand-white transition-colors hover:bg-brand-navy-dark disabled:opacity-50"
+              >
+                Enviar
+              </button>
+            </div>
+          </>
+        ) : templateOpen ? (
+          <TemplatePicker
+            onSubmit={(templateId, values, preview) => {
+              setTemplateOpen(false);
+              void doSendTemplate(templateId, values, preview);
+            }}
+            onClose={() => setTemplateOpen(false)}
+          />
         ) : (
-          <div className="rounded-md bg-muted px-3 py-2 text-center text-xs text-muted-foreground">
-            Fuera de la ventana de 24 h. El envío de plantillas llega con el número real.
-          </div>
+          <button
+            type="button"
+            onClick={() => setTemplateOpen(true)}
+            className="flex w-full items-center justify-center gap-2 rounded-md bg-brand-navy px-4 py-2 text-sm font-medium text-brand-white transition-colors hover:bg-brand-navy-dark"
+          >
+            📄 Enviar plantilla
+          </button>
         )}
       </div>
     </div>
