@@ -130,6 +130,16 @@ activa en sesión sin reinventarlos. Equivalencia con este documento:
 borrar su fila de `member`, no un booleano. En v1 todo miembro (owner/admin/agent) ve y edita
 todos los contactos de su organización.
 
+**Roles y permisos de las features conversacionales (v1, 21-sep-2026; ACL en
+`lib/auth/permissions.ts` con `createAccessControl`):** el **agente** es el vendedor y hace el
+trabajo diario: gestiona **Fragmentos** (crear/editar/borrar; son su herramienta de respuesta
+rápida) y en WhatsApp ve, usa y **envía** todo —texto libre y **plantillas** aprobadas—. La
+**administración** de plantillas de Meta —darlas de alta o **sincronizarlas**, que tocan la WABA y
+su revisión— queda en **owner/admin**. **Enviar** una plantilla aprobada NO pasa por el ACL: es
+acción de vendedor, igual que enviar un mensaje. Las plantillas cuyas variables van en el
+**encabezado o un botón** no se pueden armar desde el CRM en v1 (solo BODY posicional `{{1}}`): se
+marcan `templates.unsupported` al sincronizar y no se ofrecen para enviar.
+
 ```
 contacts             id, org_id, name, phone_e164 (unique por org), email,
                      custom_fields jsonb, ghl_contact_id (nullable, oculto),
@@ -154,7 +164,8 @@ messages             id, org_id, conversation_id, opportunity_id (nullable),
                      body, media_url, template_name, provider_message_id (unique),
                      status(queued|sent|delivered|read|failed), error_code,
                      sent_by_user_id, created_at
-templates            id, org_id, channel_id, name, language, category, body, status, variables jsonb
+templates            id, org_id, channel_id, name, language, category, body, status, variables jsonb,
+                     unsupported (bool)  -- true: variables en encabezado/botón; no enviable desde el CRM en v1
 
 notes                id, org_id, contact_id, user_id, body, created_at
 tasks                id, org_id, contact_id, opportunity_id, assignee_user_id,
