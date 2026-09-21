@@ -146,6 +146,11 @@ export type ProviderTemplate = {
   bodyText: string | null;
   /** Variables posicionales del BODY (1-based), con ejemplo si el proveedor lo trae. */
   variables: TemplateVariable[];
+  /**
+   * true si la plantilla necesita parámetros que el CRM no arma hoy (variables
+   * en encabezado o botón): no es enviable desde aquí aunque Meta la apruebe.
+   */
+  requiresUnsupportedParams: boolean;
 };
 
 export type SendTemplateInput = {

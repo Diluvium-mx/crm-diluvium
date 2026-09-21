@@ -135,7 +135,11 @@ export function PlantillasTab({ initial, canManage }: { initial: TemplateView[];
                     <span className="rounded-full bg-muted px-2 py-0.5 text-[11px] font-medium text-muted-foreground">{t.category}</span>
                   )}
                   {!t.sendable && (
-                    <span className="ml-auto text-[11px] text-muted-foreground">No enviable hasta que Meta la apruebe</span>
+                    <span className="ml-auto text-[11px] text-muted-foreground">
+                      {t.unsupported
+                        ? "Encabezado/botón con variables: no enviable desde el CRM aún"
+                        : "No enviable hasta que Meta la apruebe"}
+                    </span>
                   )}
                 </div>
                 {t.bodyText && (

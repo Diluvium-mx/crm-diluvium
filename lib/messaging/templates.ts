@@ -47,7 +47,10 @@ function toView(row: typeof templates.$inferSelect): TemplateView {
     status: row.status,
     bodyText: row.body,
     variables: row.variables,
-    sendable: isTemplateSendable(row.status),
+    // Enviable = aprobada por Meta Y soportada por el CRM (sin params de
+    // encabezado/botón que no sabemos construir).
+    sendable: isTemplateSendable(row.status) && !row.unsupported,
+    unsupported: row.unsupported,
   };
 }
 
@@ -93,6 +96,7 @@ export async function syncTemplatesForOrg(organizationId: string): Promise<{ syn
           body: t.bodyText,
           status: t.status,
           variables: t.variables,
+          unsupported: t.requiresUnsupportedParams,
           providerTemplateId: t.providerTemplateId,
           updatedAt: now,
         })
@@ -103,6 +107,7 @@ export async function syncTemplatesForOrg(organizationId: string): Promise<{ syn
             body: t.bodyText,
             status: t.status,
             variables: t.variables,
+            unsupported: t.requiresUnsupportedParams,
             providerTemplateId: t.providerTemplateId,
             updatedAt: now,
           },

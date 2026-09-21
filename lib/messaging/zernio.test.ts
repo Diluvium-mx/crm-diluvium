@@ -360,6 +360,7 @@ describe("ZernioProvider.listTemplates", () => {
         status: "APPROVED",
         bodyText: "Hola {{1}}, pedido {{2}}.",
         variables: [{ index: 1, example: "Ana" }, { index: 2, example: "ORD-7" }],
+        requiresUnsupportedParams: false,
       },
       {
         providerTemplateId: "222",
@@ -369,8 +370,26 @@ describe("ZernioProvider.listTemplates", () => {
         status: "PENDING",
         bodyText: null,
         variables: [],
+        requiresUnsupportedParams: false,
       },
     ]);
+  });
+
+  it("marca requiresUnsupportedParams cuando la plantilla lleva encabezado de media", async () => {
+    const fetchImpl = (async () =>
+      Response.json({
+        templates: [
+          {
+            id: "333",
+            name: "con_media",
+            language: "es_MX",
+            status: "APPROVED",
+            components: [{ type: "HEADER", format: "IMAGE" }, { type: "BODY", text: "Hola {{1}}" }],
+          },
+        ],
+      })) as unknown as typeof fetch;
+    const [t] = await p(fetchImpl).listTemplates("a");
+    expect(t.requiresUnsupportedParams).toBe(true);
   });
 
   // Falla CERRADO: la sincronización usa la lista como censo completo, así que
@@ -389,6 +408,21 @@ describe("ZernioProvider.listTemplates", () => {
   it("lanza ante un 200 con JSON ilegible (no lo trata como lista vacía)", async () => {
     const fetchImpl = (async () => new Response("no-json", { status: 200 })) as unknown as typeof fetch;
     await expect(p(fetchImpl).listTemplates("a")).rejects.toMatchObject({ name: "ZernioApiError" });
+  });
+
+  it("lanza si dice hasMore:true pero NO da nextCursor (respuesta degradada)", async () => {
+    const fetchImpl = (async () =>
+      Response.json({
+        templates: [{ id: "x", name: "t", language: "es", status: "APPROVED", components: [] }],
+        pagination: { hasMore: true },
+      })) as unknown as typeof fetch;
+    await expect(p(fetchImpl).listTemplates("a")).rejects.toMatchObject({ name: "ZernioApiError" });
+  });
+
+  it("una sola página sin info de paginación se toma como censo completo", async () => {
+    const fetchImpl = (async () =>
+      Response.json({ templates: [{ id: "x", name: "t", language: "es", status: "APPROVED", components: [] }] })) as unknown as typeof fetch;
+    await expect(p(fetchImpl).listTemplates("a")).resolves.toHaveLength(1);
   });
 
   it("lanza si se agota el tope de páginas con un cursor todavía pendiente", async () => {

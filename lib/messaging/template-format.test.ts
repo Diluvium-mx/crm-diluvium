@@ -1,5 +1,10 @@
 import { describe, expect, it } from "vitest";
-import { renderTemplateBody, templateMaxIndex, templateVariablesFromBody } from "./template-format";
+import {
+  renderTemplateBody,
+  templateMaxIndex,
+  templateRequiresUnsupportedParams,
+  templateVariablesFromBody,
+} from "./template-format";
 
 describe("templateMaxIndex", () => {
   it("toma el índice posicional más alto", () => {
@@ -43,5 +48,39 @@ describe("renderTemplateBody", () => {
 
   it("un {{n}} sin valor se deja tal cual", () => {
     expect(renderTemplateBody("{{1}} y {{2}}", ["solo-uno"])).toBe("solo-uno y {{2}}");
+  });
+});
+
+describe("templateRequiresUnsupportedParams", () => {
+  it("soportadas: solo BODY con variables, o encabezado/pie/botón estáticos", () => {
+    expect(templateRequiresUnsupportedParams([{ type: "BODY", text: "Hola {{1}}" }])).toBe(false);
+    expect(
+      templateRequiresUnsupportedParams([
+        { type: "HEADER", format: "TEXT", text: "Diluvium" },
+        { type: "BODY", text: "Hola {{1}}" },
+        { type: "FOOTER", text: "Gracias" },
+        { type: "BUTTONS", buttons: [{ type: "QUICK_REPLY", text: "Sí" }, { type: "URL", text: "Web", url: "https://diluvium.com.mx" }] },
+      ]),
+    ).toBe(false);
+    expect(templateRequiresUnsupportedParams([])).toBe(false);
+    expect(templateRequiresUnsupportedParams(undefined)).toBe(false);
+  });
+
+  it("no soportadas: variable en encabezado de texto", () => {
+    expect(
+      templateRequiresUnsupportedParams([{ type: "HEADER", format: "TEXT", text: "Hola {{1}}" }, { type: "BODY", text: "x" }]),
+    ).toBe(true);
+  });
+
+  it("no soportadas: encabezado de media (imagen/video/documento)", () => {
+    expect(templateRequiresUnsupportedParams([{ type: "HEADER", format: "IMAGE" }])).toBe(true);
+    expect(templateRequiresUnsupportedParams([{ type: "HEADER", format: "DOCUMENT" }])).toBe(true);
+  });
+
+  it("no soportadas: botón con URL dinámica o código", () => {
+    expect(
+      templateRequiresUnsupportedParams([{ type: "BUTTONS", buttons: [{ type: "URL", text: "Ver", url: "https://x.mx/{{1}}" }] }]),
+    ).toBe(true);
+    expect(templateRequiresUnsupportedParams([{ type: "BUTTONS", buttons: [{ type: "COPY_CODE", text: "Copiar" }] }])).toBe(true);
   });
 });

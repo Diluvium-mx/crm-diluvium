@@ -16,8 +16,13 @@ export type TemplateView = {
   /** Texto del componente BODY (con los {{n}} sin rellenar). */
   bodyText: string | null;
   variables: TemplateVariable[];
-  /** true solo si se puede ENVIAR (aprobada por Meta). */
+  /** true solo si se puede ENVIAR: aprobada por Meta Y soportada por el CRM. */
   sendable: boolean;
+  /**
+   * true si necesita parámetros que el CRM no arma hoy (variables en encabezado
+   * o botón): aunque esté aprobada, no es enviable desde aquí. La UI lo explica.
+   */
+  unsupported: boolean;
 };
 
 /** Solo se envían las aprobadas (regla de Meta). */

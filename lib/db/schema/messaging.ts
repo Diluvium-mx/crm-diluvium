@@ -216,6 +216,9 @@ export const templates = pgTable(
     status: text("status").notNull(),
     // Variables POSICIONALES del BODY ({{1}}, {{2}}): [{ index, example? }].
     variables: jsonb("variables").$type<TemplateVariable[]>().notNull().default([]),
+    // true si necesita parámetros que el CRM no arma (variables en encabezado o
+    // botón): aunque esté aprobada por Meta, no es enviable desde el CRM.
+    unsupported: boolean("unsupported").notNull().default(false),
     providerTemplateId: text("provider_template_id"),
     updatedAt: timestamp("updated_at").defaultNow().notNull(),
   },

@@ -27,7 +27,7 @@ import {
   type SendTextInput,
   type WebhookEnvelope,
 } from "./provider";
-import { templateVariablesFromBody } from "./template-format";
+import { templateRequiresUnsupportedParams, templateVariablesFromBody } from "./template-format";
 
 const DEFAULT_BASE_URL = "https://zernio.com/api";
 const SEND_TIMEOUT_MS = 15_000;
@@ -346,9 +346,20 @@ export class ZernioProvider implements MessagingProvider {
       }
       for (const raw of list) out.push(parseProviderTemplate(asRecord(raw)));
       const pagination = asRecord(json.pagination);
+      // Censo COMPLETO solo si el proveedor no indica más páginas.
+      if (pagination.hasMore === false) return out;
       const next = asString(pagination.nextCursor);
-      if (!next || pagination.hasMore === false) return out;
-      cursor = next;
+      if (next) {
+        cursor = next;
+        continue;
+      }
+      // Sin cursor pero con hasMore:true la respuesta está DEGRADADA (dice que
+      // hay más pero no da cómo pedirlas): abortar, no tratar la lista parcial
+      // como censo. Sin ninguna señal de más páginas, es una sola página completa.
+      if (pagination.hasMore === true) {
+        throw new ZernioApiError(0, "Zernio indicó más plantillas (hasMore) sin nextCursor; se aborta para no borrar plantillas válidas");
+      }
+      return out;
     }
     // Se agotó el tope de páginas con un cursor todavía pendiente: la lista
     // estaría incompleta. Abortar es preferible a marcar plantillas como
@@ -493,6 +504,7 @@ function parseProviderTemplate(raw: Record<string, unknown>): ProviderTemplate {
     status,
     bodyText: text,
     variables: templateVariablesFromBody(text, examples),
+    requiresUnsupportedParams: templateRequiresUnsupportedParams(raw.components),
   };
 }
 
