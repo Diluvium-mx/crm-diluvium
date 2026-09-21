@@ -9,7 +9,7 @@ import { ThemeToggle } from "@/components/theme-toggle";
 const NAV_ITEMS = [
   { label: "Bandeja", href: "/dashboard" },
   { label: "Contactos", href: "/contactos" },
-  { label: "Fragmentos", href: "/snippets" },
+  { label: "Fragmentos y plantillas", href: "/snippets" },
   { label: "Reportes", href: "/reports" },
 ];
 

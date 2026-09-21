@@ -21,14 +21,26 @@
 import { and, eq, isNull, lt, or } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { withTxRetry } from "@/lib/db/retry";
-import { channels, conversations, messages } from "@/lib/db/schema";
+import { channels, conversations, messages, templates } from "@/lib/db/schema";
 import { applyOutboundToConversation, latestInboundMessageId } from "./ingest";
 import { SendFailedError, type MessagingProvider, type SendResult } from "./provider";
 import { isAmbiguousSendError, isWindowOpen, nextStatus, SEND_UNCONFIRMED, SEND_UNKNOWN } from "./rules";
+import { renderTemplateBody, templateMaxIndex } from "./template-format";
+import { isTemplateSendable } from "@/lib/templates/types";
 
 export class SendRejectedError extends Error {
   constructor(
-    readonly code: "not_found" | "window_closed" | "not_linked" | "empty" | "not_retryable" | "channel_unavailable",
+    readonly code:
+      | "not_found"
+      | "window_closed"
+      | "not_linked"
+      | "empty"
+      | "not_retryable"
+      | "channel_unavailable"
+      | "template_not_found"
+      | "template_not_approved"
+      | "template_unsupported"
+      | "template_params",
     message: string,
   ) {
     super(message);
@@ -51,9 +63,17 @@ export { isAmbiguousSendError, SEND_UNCONFIRMED, SEND_UNKNOWN } from "./rules";
 const MAX_TEXT = 4096; // límite de WhatsApp para texto
 
 type ConversationRow = typeof conversations.$inferSelect;
-type ChannelRow = typeof channels.$inferSelect;
 
-async function loadConversation(provider: MessagingProvider, organizationId: string, conversationId: string, now: Date) {
+// enforceWindow=true (texto libre): fuera de la ventana de 24 h solo se permiten
+// plantillas. Una plantilla (enforceWindow=false) se manda precisamente cuando
+// la ventana está cerrada (ese es su propósito), así que no la valida.
+async function loadConversation(
+  provider: MessagingProvider,
+  organizationId: string,
+  conversationId: string,
+  now: Date,
+  enforceWindow = true,
+) {
   const [row] = await db
     .select({ conversation: conversations, channel: channels })
     .from(conversations)
@@ -66,11 +86,36 @@ async function loadConversation(provider: MessagingProvider, organizationId: str
   if (!row.channel.isActive || row.channel.provider !== provider.name) {
     throw new SendRejectedError("channel_unavailable", "El canal de WhatsApp de esta conversación no está disponible");
   }
-  if (!isWindowOpen(row.conversation.windowExpiresAt, now)) {
+  if (enforceWindow && !isWindowOpen(row.conversation.windowExpiresAt, now)) {
     throw new SendRejectedError("window_closed", "La ventana de 24 h está cerrada: solo se puede enviar una plantilla");
   }
   if (!row.conversation.providerConversationId) {
     throw new SendRejectedError("not_linked", "La conversación aún no está enlazada con el proveedor");
+  }
+  return row;
+}
+
+// La plantilla debe existir en la organización, pertenecer al canal de la
+// conversación y estar APROBADA por Meta.
+async function loadSendableTemplate(organizationId: string, channelId: string, templateId: string) {
+  const [row] = await db
+    .select()
+    .from(templates)
+    .where(and(eq(templates.id, templateId), eq(templates.organizationId, organizationId)))
+    .limit(1);
+  if (!row || row.channelId !== channelId) {
+    throw new SendRejectedError("template_not_found", "La plantilla no existe en el canal de esta conversación.");
+  }
+  if (!isTemplateSendable(row.status)) {
+    throw new SendRejectedError("template_not_approved", "La plantilla no está aprobada por Meta y no se puede enviar.");
+  }
+  // Defensa en profundidad: la UI ya no ofrece las no soportadas, pero si una
+  // llega aquí (params de encabezado/botón), no se envía: WhatsApp la rechazaría.
+  if (row.unsupported) {
+    throw new SendRejectedError(
+      "template_unsupported",
+      "Esta plantilla usa variables en el encabezado o botón que el CRM aún no puede enviar.",
+    );
   }
   return row;
 }
@@ -100,7 +145,94 @@ export async function sendTextMessage(provider: MessagingProvider, params: SendT
     sentByUserId: params.sentByUserId,
     sentAt: now,
   });
-  return deliver(provider, { messageId, text, now, conversation, channel, organizationId: params.organizationId, sentByUserId: params.sentByUserId });
+  return deliver({
+    messageId,
+    send: () =>
+      provider.sendText({
+        providerAccountId: channel.providerAccountId,
+        providerConversationId: conversation.providerConversationId!,
+        text,
+        idempotencyKey: messageId,
+      }),
+    now,
+    conversation,
+    organizationId: params.organizationId,
+    sentByUserId: params.sentByUserId,
+  });
+}
+
+export type SendTemplateParams = {
+  organizationId: string;
+  conversationId: string;
+  sentByUserId: string;
+  templateId: string;
+  /** Valores de las variables del BODY en orden ({{1}}, {{2}}, …). */
+  variableValues: string[];
+  now?: Date;
+};
+
+/**
+ * Envía una plantilla aprobada (para FUERA de la ventana de 24 h). Mismo patrón
+ * outbox que el texto: fila "queued" ANTES de llamar al proveedor (su id es la
+ * clave de idempotencia), y luego la misma clasificación enviado/rechazado/
+ * desconocido de `deliver`. NO valida la ventana (una plantilla se manda cuando
+ * está cerrada) y NO mueve `window_expires_at` (eso solo lo hace un entrante).
+ * La burbuja guarda el BODY ya rellenado y `template_name`.
+ */
+export async function sendTemplateMessage(provider: MessagingProvider, params: SendTemplateParams): Promise<SendOutcome> {
+  const now = params.now ?? new Date();
+  const { conversation, channel } = await loadConversation(
+    provider,
+    params.organizationId,
+    params.conversationId,
+    now,
+    false,
+  );
+  const template = await loadSendableTemplate(params.organizationId, channel.id, params.templateId);
+
+  // Los valores deben ser exactamente los {{1..N}} del cuerpo, todos con texto.
+  const expected = templateMaxIndex(template.body);
+  const values = params.variableValues.map((value) => value.trim());
+  if (values.length !== expected || values.some((value) => value.length === 0)) {
+    throw new SendRejectedError(
+      "template_params",
+      expected === 0
+        ? "Esta plantilla no lleva variables."
+        : `La plantilla necesita ${expected} variable(s), todas con valor.`,
+    );
+  }
+  const preview = template.body ? renderTemplateBody(template.body, values) : null;
+
+  const messageId = crypto.randomUUID();
+  await db.insert(messages).values({
+    id: messageId,
+    organizationId: params.organizationId,
+    conversationId: conversation.id,
+    direction: "out",
+    source: "crm",
+    type: "template",
+    body: preview,
+    templateName: template.name,
+    status: "queued",
+    sentByUserId: params.sentByUserId,
+    sentAt: now,
+  });
+  return deliver({
+    messageId,
+    send: () =>
+      provider.sendTemplate({
+        providerAccountId: channel.providerAccountId,
+        providerConversationId: conversation.providerConversationId!,
+        name: template.name,
+        language: template.language,
+        bodyParams: values,
+        idempotencyKey: messageId,
+      }),
+    now,
+    conversation,
+    organizationId: params.organizationId,
+    sentByUserId: params.sentByUserId,
+  });
 }
 
 /**
@@ -151,25 +283,31 @@ export async function retryTextMessage(
   // escribe de nuevo (mensaje nuevo), no se reintenta.
   if (claimed.length === 0) throw new SendRejectedError("not_retryable", "El mensaje ya se envió, se está enviando o WhatsApp lo rechazó");
 
-  return deliver(provider, {
+  return deliver({
     messageId: message.id,
-    text: message.body,
+    send: () =>
+      provider.sendText({
+        providerAccountId: channel.providerAccountId,
+        providerConversationId: conversation.providerConversationId!,
+        text: message.body!,
+        idempotencyKey: message.id,
+      }),
     now,
     conversation,
-    channel,
     organizationId: params.organizationId,
     sentByUserId: params.sentByUserId,
   });
 }
 
+// Envía (texto o plantilla, vía la closure `send`) y clasifica el resultado
+// igual para ambos: enviado → enlaza el wamid; rechazado (4xx) → "failed" con su
+// código; desconocido (timeout/5xx/2xx sin id) → queda "queued" y se reconcilia.
 async function deliver(
-  provider: MessagingProvider,
   ctx: {
     messageId: string;
-    text: string;
+    send: () => Promise<SendResult>;
     now: Date;
     conversation: ConversationRow;
-    channel: ChannelRow;
     organizationId: string;
     sentByUserId: string;
   },
@@ -180,12 +318,7 @@ async function deliver(
   const readCutoffMessageId = await latestInboundMessageId(ctx.conversation.id);
   let result: SendResult;
   try {
-    result = await provider.sendText({
-      providerAccountId: ctx.channel.providerAccountId,
-      providerConversationId: ctx.conversation.providerConversationId!,
-      text: ctx.text,
-      idempotencyKey: ctx.messageId,
-    });
+    result = await ctx.send();
   } catch (error) {
     const reason = error instanceof Error ? error.message : String(error);
     // Cualquier error que no sea un rechazo EXPLÍCITO del proveedor se trata
@@ -272,9 +405,21 @@ export async function linkSentMessage(input: {
         if (echo.source === "crm") {
           throw new SendConflictError(`el wamid ${input.providerMessageId} ya pertenece al envío ${echo.id}`);
         }
+        // El eco del webhook se clasifica por su contenido (texto/adjunto), sin
+        // la metadata de lo que el CRM envió. Al fusionarlo se copian type, body
+        // y template_name de la fila en cola: sin esto, un envío de PLANTILLA
+        // sobreviviría como "text"/"unknown" sin nombre de plantilla (se pierde
+        // el historial y la auditoría). Para un texto son idénticos (no-op).
         await tx
           .update(messages)
-          .set({ source: "crm", sentByUserId: input.sentByUserId, status: nextStatus(echo.status, input.status) })
+          .set({
+            source: "crm",
+            sentByUserId: input.sentByUserId,
+            status: nextStatus(echo.status, input.status),
+            type: queued.type,
+            body: queued.body,
+            templateName: queued.templateName,
+          })
           .where(eq(messages.id, echo.id));
         await tx.delete(messages).where(queuedWhere);
         survivor = echo.id;

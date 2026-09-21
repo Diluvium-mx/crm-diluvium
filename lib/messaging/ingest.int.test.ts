@@ -291,6 +291,49 @@ describe.skipIf(!TEST_DATABASE_URL)("ingesta de WhatsApp (Postgres real)", () =>
       expect(outs[0]).toMatchObject({ source: "crm", sentByUserId: "u_vendedor", providerMessageId: "wamid.RACE" });
     });
 
+    it("plantilla: si el eco gana la carrera, la fila conserva type/template_name/body", async () => {
+      const conv = await openConversation();
+      const tplId = randomUUID();
+      await db.insert(s.templates).values({
+        id: tplId,
+        organizationId: ORG_A,
+        channelId: conv.channelId,
+        name: "order_confirmation",
+        language: "es_MX",
+        body: "Hola {{1}}",
+        status: "APPROVED",
+        variables: [{ index: 1 }],
+      });
+      const { sendTemplateMessage } = await import("./send");
+      // El eco (message.sent) llega ANTES de que sendTemplate devuelva: se
+      // clasifica como texto, sin metadata de plantilla. Al fusionarse debe
+      // conservar type "template", el nombre y el cuerpo ya rellenado.
+      const p = {
+        ...provider,
+        sendTemplate: async () => {
+          await deliver(msgEvent({ direction: "outgoing", source: "cloud_api", wamid: "wamid.TPL", sentAt: new Date().toISOString() }));
+          return { providerInternalId: "wamid.TPL", providerMessageId: "wamid.TPL" };
+        },
+      } as import("./provider").MessagingProvider;
+      await sendTemplateMessage(p, {
+        organizationId: ORG_A,
+        conversationId: conv.id,
+        sentByUserId: "u_vendedor",
+        templateId: tplId,
+        variableValues: ["Ana"],
+      });
+      const outs = await db.select().from(s.messages).where(eq(s.messages.direction, "out"));
+      expect(outs).toHaveLength(1);
+      expect(outs[0]).toMatchObject({
+        type: "template",
+        templateName: "order_confirmation",
+        body: "Hola Ana",
+        source: "crm",
+        sentByUserId: "u_vendedor",
+        providerMessageId: "wamid.TPL",
+      });
+    });
+
     it("error del proveedor: el mensaje queda failed con su código y el error se propaga", async () => {
       const conv = await openConversation();
       const { sendTextMessage } = await import("./send");

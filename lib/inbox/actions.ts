@@ -14,7 +14,7 @@ import {
   markConversationReadForOrg,
   setConversationStarredForOrg,
 } from "./queries";
-import { retryTextMessage, SendRejectedError, sendTextMessage } from "@/lib/messaging/send";
+import { retryTextMessage, SendRejectedError, sendTemplateMessage, sendTextMessage } from "@/lib/messaging/send";
 import { SendFailedError } from "@/lib/messaging/provider";
 import type {
   ConversationDetail,
@@ -88,6 +88,29 @@ export async function sendMessage(conversationId: string, text: string): Promise
       conversationId,
       sentByUserId: userId,
       text,
+    });
+    return { ok: true, messageId, pending: status === "pending" };
+  } catch (error) {
+    const { code, message } = toSendError(error);
+    return { ok: false, code, message };
+  }
+}
+
+// Envía una plantilla aprobada en la conversación (para FUERA de la ventana de
+// 24 h). `variableValues` van en orden ({{1}}, {{2}}, …).
+export async function sendTemplate(
+  conversationId: string,
+  templateId: string,
+  variableValues: string[],
+): Promise<SendMessageResult> {
+  const { organizationId, userId } = await requireActiveMembership();
+  try {
+    const { messageId, status } = await sendTemplateMessage(messagingProvider(), {
+      organizationId,
+      conversationId,
+      sentByUserId: userId,
+      templateId,
+      variableValues,
     });
     return { ok: true, messageId, pending: status === "pending" };
   } catch (error) {

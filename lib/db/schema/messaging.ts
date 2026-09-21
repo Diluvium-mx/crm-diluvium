@@ -19,6 +19,7 @@ import {
 } from "drizzle-orm/pg-core";
 import { organization, user } from "./auth";
 import { contacts } from "./contacts";
+import type { TemplateVariable } from "@/lib/templates/types";
 
 export type MessageAttachment = {
   type: string;
@@ -213,7 +214,11 @@ export const templates = pgTable(
     category: text("category"),
     body: text("body"),
     status: text("status").notNull(),
-    variables: jsonb("variables").notNull().default([]),
+    // Variables POSICIONALES del BODY ({{1}}, {{2}}): [{ index, example? }].
+    variables: jsonb("variables").$type<TemplateVariable[]>().notNull().default([]),
+    // true si necesita parámetros que el CRM no arma (variables en encabezado o
+    // botón): aunque esté aprobada por Meta, no es enviable desde el CRM.
+    unsupported: boolean("unsupported").notNull().default(false),
     providerTemplateId: text("provider_template_id"),
     updatedAt: timestamp("updated_at").defaultNow().notNull(),
   },
