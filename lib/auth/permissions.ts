@@ -38,7 +38,10 @@ export const admin = ac.newRole({
 export const agent = ac.newRole({
   contact: ["create", "read", "update"],
   tag: ["create", "read", "update"],
-  snippet: ["read"],
+  // Los agentes (los vendedores) gestionan los Fragmentos: son su herramienta
+  // de trabajo diaria. En plantillas solo leen y ENVÍAN (crear/sincronizar,
+  // que tocan Meta y la WABA, quedan en owner/admin).
+  snippet: ["create", "read", "update", "delete"],
   template: ["read"],
 });
 
