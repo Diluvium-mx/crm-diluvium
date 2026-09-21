@@ -7,6 +7,7 @@
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import { requireActiveMembership } from "@/lib/auth/active-organization";
+import { roleAllows } from "@/lib/auth/permissions";
 import { messagingProvider, MessagingNotConfiguredError } from "@/lib/messaging";
 import {
   activeWhatsappChannel,
@@ -18,13 +19,22 @@ import { ZernioApiError } from "@/lib/messaging/zernio";
 import { templateMaxIndex } from "@/lib/messaging/template-format";
 import type { TemplateView } from "@/lib/templates/types";
 
+// Gestionar plantillas afecta a la cuenta de WhatsApp y la revisión de Meta:
+// solo owner/admin (ACL en lib/auth/permissions.ts). Listar/enviar es de todos.
+function requireTemplateManage(role: string, action: "create" | "sync"): void {
+  if (!roleAllows(role, "template", action)) {
+    throw new Error("No tienes permiso para gestionar plantillas; pídeselo a un administrador.");
+  }
+}
+
 export async function listTemplates(): Promise<TemplateView[]> {
   const { organizationId } = await requireActiveMembership();
   return listTemplatesForOrg(organizationId);
 }
 
 export async function syncTemplates(): Promise<{ synced: number; removed: number }> {
-  const { organizationId } = await requireActiveMembership();
+  const { organizationId, role } = await requireActiveMembership();
+  requireTemplateManage(role, "sync");
   try {
     const result = await syncTemplatesForOrg(organizationId);
     revalidatePath("/snippets");
@@ -54,7 +64,8 @@ export type CreateTemplateActionInput = z.infer<typeof createTemplateSchema>;
 export async function createTemplate(
   input: CreateTemplateActionInput,
 ): Promise<{ status: string; synced: number }> {
-  const { organizationId } = await requireActiveMembership();
+  const { organizationId, role } = await requireActiveMembership();
+  requireTemplateManage(role, "create");
   const parsed = createTemplateSchema.parse(input);
 
   // El ejemplo debe cubrir exactamente los {{1..N}} del cuerpo.

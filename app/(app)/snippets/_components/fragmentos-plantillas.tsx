@@ -18,10 +18,12 @@ export function FragmentosPlantillas({
   initialSnippets,
   initialTemplates,
   canManageSnippets,
+  canManageTemplates,
 }: {
   initialSnippets: SnippetView[];
   initialTemplates: TemplateView[];
   canManageSnippets: boolean;
+  canManageTemplates: boolean;
 }) {
   const [tab, setTab] = useState<Tab>("fragmentos");
 
@@ -61,7 +63,7 @@ export function FragmentosPlantillas({
         {tab === "fragmentos" ? (
           <FragmentosTab initial={initialSnippets} canManage={canManageSnippets} />
         ) : (
-          <PlantillasTab initial={initialTemplates} />
+          <PlantillasTab initial={initialTemplates} canManage={canManageTemplates} />
         )}
       </div>
     </div>

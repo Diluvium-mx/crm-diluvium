@@ -25,7 +25,7 @@ function statusStyle(status: string): { label: string; className: string } {
   return { label: status, className: "bg-muted text-muted-foreground" };
 }
 
-export function PlantillasTab({ initial }: { initial: TemplateView[] }) {
+export function PlantillasTab({ initial, canManage }: { initial: TemplateView[]; canManage: boolean }) {
   const [items, setItems] = useState<TemplateView[]>(initial);
   const [syncing, setSyncing] = useState(false);
   const [note, setNote] = useState<string | null>(null);
@@ -61,28 +61,30 @@ export function PlantillasTab({ initial }: { initial: TemplateView[] }) {
           Aprobadas por Meta, con variables <code className="text-brand-navy">{"{{1}}"}</code>. Para escribir
           fuera de las 24 h. Se envían desde el chat.
         </p>
-        <div className="flex shrink-0 gap-2">
-          <button
-            type="button"
-            onClick={() => void sync()}
-            disabled={syncing}
-            className="flex items-center gap-1.5 rounded-md border px-3 py-2 text-sm font-medium hover:bg-muted disabled:opacity-50"
-          >
-            <RefreshCw className={`size-4 ${syncing ? "animate-spin" : ""}`} aria-hidden="true" />
-            {syncing ? "Sincronizando…" : "Sincronizar"}
-          </button>
-          <button
-            type="button"
-            onClick={() => {
-              setError(null);
-              setNote(null);
-              setCreating((c) => !c);
-            }}
-            className="flex items-center gap-1.5 rounded-md bg-brand-navy px-3 py-2 text-sm font-medium text-brand-white transition-colors hover:bg-brand-navy-dark"
-          >
-            <Plus className="size-4" aria-hidden="true" /> Crear plantilla
-          </button>
-        </div>
+        {canManage && (
+          <div className="flex shrink-0 gap-2">
+            <button
+              type="button"
+              onClick={() => void sync()}
+              disabled={syncing}
+              className="flex items-center gap-1.5 rounded-md border px-3 py-2 text-sm font-medium hover:bg-muted disabled:opacity-50"
+            >
+              <RefreshCw className={`size-4 ${syncing ? "animate-spin" : ""}`} aria-hidden="true" />
+              {syncing ? "Sincronizando…" : "Sincronizar"}
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                setError(null);
+                setNote(null);
+                setCreating((c) => !c);
+              }}
+              className="flex items-center gap-1.5 rounded-md bg-brand-navy px-3 py-2 text-sm font-medium text-brand-white transition-colors hover:bg-brand-navy-dark"
+            >
+              <Plus className="size-4" aria-hidden="true" /> Crear plantilla
+            </button>
+          </div>
+        )}
       </div>
 
       {note && (
@@ -110,8 +112,14 @@ export function PlantillasTab({ initial }: { initial: TemplateView[] }) {
 
       {items.length === 0 ? (
         <div className="rounded-lg border border-dashed bg-card/50 px-4 py-10 text-center text-sm text-muted-foreground">
-          No hay plantillas todavía. Pulsa <strong>Sincronizar</strong> para traerlas de WhatsApp, o créalas en
-          el WhatsApp Manager de Meta.
+          {canManage ? (
+            <>
+              No hay plantillas todavía. Pulsa <strong>Sincronizar</strong> para traerlas de WhatsApp, o créalas
+              en el WhatsApp Manager de Meta.
+            </>
+          ) : (
+            "No hay plantillas todavía. Un administrador las sincroniza; tú las enviarás desde el chat."
+          )}
         </div>
       ) : (
         <ul className="space-y-2">
