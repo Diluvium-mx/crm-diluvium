@@ -9,7 +9,7 @@ import { ThemeToggle } from "@/components/theme-toggle";
 const NAV_ITEMS = [
   { label: "Bandeja", href: "/dashboard" },
   { label: "Contactos", href: "/contactos" },
-  { label: "Fragmentos", href: "/snippets" },
+  { label: "Fragmentos y plantillas", href: "/snippets" },
   { label: "Reportes", href: "/reports" },
 ];
 
@@ -41,8 +41,13 @@ export default async function AppLayout({
       </aside>
 
       <div className="flex flex-1 flex-col">
-        <header className="flex items-center justify-between bg-brand-navy-dark px-4 py-3">
-          <div className="flex items-center rounded-md bg-white px-2.5 py-1.5">
+        {/* Alto GARANTIZADO de 4rem: h-16 fija la altura y shrink-0 evita que
+            se comprima. El board de Contactos y la bandeja restan justo 4rem
+            (h-[calc(100dvh-4rem)]); si el header pudiera crecer (email largo,
+            zoom, ventana angosta) ese cálculo dejaría de cuadrar. El email se
+            trunca para no desbordar ni forzar más alto. */}
+        <header className="flex h-16 shrink-0 items-center justify-between bg-brand-navy-dark px-4 py-3">
+          <div className="flex shrink-0 items-center rounded-md bg-white px-2.5 py-1.5">
             <Image
               src="/logo-diluvium.png"
               alt="Diluvium — Control de inundaciones"
@@ -51,8 +56,8 @@ export default async function AppLayout({
               priority
             />
           </div>
-          <div className="flex items-center gap-3">
-            <span className="text-sm text-brand-white">{session.user.email}</span>
+          <div className="flex min-w-0 items-center gap-3">
+            <span className="min-w-0 truncate text-sm text-brand-white">{session.user.email}</span>
             <ThemeToggle />
             <SignOutButton />
           </div>

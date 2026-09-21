@@ -324,7 +324,16 @@ export function ContactsBoard({ initialContacts }: { initialContacts: Contact[] 
   }
 
   return (
-    <div className="flex flex-1 flex-col gap-4 p-4">
+    // Altura DEFINIDA (viewport − header de 4rem). Sin esto, la cadena flex del
+    // layout es todo min-h-* y la columna scrolleable crece al alto del
+    // contenido (clientHeight === scrollHeight): @tanstack/react-virtual mide
+    // el scroll element y, al verlo "infinitamente alto", monta las ~11k
+    // tarjetas en vez de virtualizar. Es una altura DURA (sin flex-1): en un
+    // flex-col, flex-1 fija flex-basis:0 y anularía esta height, dejando que el
+    // board vuelva a crecer con su contenido. min-h-0 permite que el
+    // contenedor de columnas (flex-1) encoja por debajo de su contenido y su
+    // hijo overflow-y-auto acote de verdad el viewport del virtualizador.
+    <div className="flex h-[calc(100dvh-4rem)] min-h-0 flex-col gap-4 p-4">
       <div className="flex items-center justify-between gap-4">
         <h1 className="text-lg font-semibold">Contactos</h1>
         <div className="flex items-center gap-3">
@@ -348,7 +357,7 @@ export function ContactsBoard({ initialContacts }: { initialContacts: Contact[] 
         onDragEnd={handleDragEnd}
         onDragCancel={handleDragCancel}
       >
-        <div ref={boardScrollRef} className="flex flex-1 gap-4 overflow-x-auto pb-2">
+        <div ref={boardScrollRef} className="flex min-h-0 flex-1 gap-4 overflow-x-auto pb-2">
           {STAGES.map((stage) => (
             <StageColumn
               key={stage}

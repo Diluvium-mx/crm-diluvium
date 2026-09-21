@@ -1,0 +1,1 @@
+ALTER TABLE "templates" ADD COLUMN "unsupported" boolean DEFAULT false NOT NULL;

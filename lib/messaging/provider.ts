@@ -4,6 +4,7 @@
 //
 // Los eventos se normalizan a este formato antes de tocar la base: el worker
 // nunca lee el payload crudo del proveedor.
+import type { TemplateVariable } from "@/lib/templates/types";
 
 export type ProviderName = "zernio" | "meta_cloud";
 
@@ -127,6 +128,56 @@ export type SendResult = {
   providerMessageId?: string;
 };
 
+// ─── Plantillas (aprobadas por Meta) ────────────────────────────────────────
+// El resto del CRM habla con las plantillas por esta interfaz; el shape de red
+// (Zernio) vive solo en el adaptador. Ver docs/investigacion/plantillas-zernio.md.
+
+/** Plantilla del proveedor ya normalizada (independiente de Zernio). */
+export type ProviderTemplate = {
+  /** Id de la plantilla en el proveedor/Meta, si lo da. */
+  providerTemplateId: string | null;
+  name: string;
+  /** Código de idioma exacto de Meta (p. ej. "es_MX"). */
+  language: string;
+  category: string | null;
+  /** APPROVED | PENDING | REJECTED | IN_APPEAL | PAUSED | DISABLED | PENDING_DELETION | … */
+  status: string;
+  /** Texto del componente BODY (con los {{n}} sin rellenar). */
+  bodyText: string | null;
+  /** Variables posicionales del BODY (1-based), con ejemplo si el proveedor lo trae. */
+  variables: TemplateVariable[];
+  /**
+   * true si la plantilla necesita parámetros que el CRM no arma hoy (variables
+   * en encabezado o botón): no es enviable desde aquí aunque Meta la apruebe.
+   */
+  requiresUnsupportedParams: boolean;
+};
+
+export type SendTemplateInput = {
+  providerAccountId: string;
+  providerConversationId: string;
+  name: string;
+  language: string;
+  /** Valores del BODY en orden ({{1}}, {{2}}, …). Vacío si la plantilla no tiene variables. */
+  bodyParams: string[];
+  /** Igual que en sendText: reintentar con la misma clave no reenvía si el primero llegó. */
+  idempotencyKey: string;
+};
+
+export type CreateTemplateInput = {
+  providerAccountId: string;
+  name: string;
+  language: string;
+  /** UTILITY | MARKETING | AUTHENTICATION */
+  category: string;
+  /** Texto del BODY con placeholders posicionales {{1}}, {{2}}, … */
+  bodyText: string;
+  /** Ejemplo para cada {{n}} del BODY (Meta lo exige para revisar). */
+  bodyExample: string[];
+};
+
+export type CreateTemplateResult = { providerTemplateId: string | null; status: string };
+
 export interface MessagingProvider {
   readonly name: ProviderName;
   /** Valida la firma del webhook sobre el body CRUDO (antes de parsear). */
@@ -137,6 +188,15 @@ export interface MessagingProvider {
   normalize(payload: unknown): NormalizedEvent;
   /** Lanza SendFailedError (rechazado o desconocido) si no hay confirmación. */
   sendText(input: SendTextInput): Promise<SendResult>;
+  /**
+   * Envía una plantilla aprobada. Mismo contrato de fallo que sendText
+   * (SendFailedError rechazado/desconocido): el envío es idempotente por clave.
+   */
+  sendTemplate(input: SendTemplateInput): Promise<SendResult>;
+  /** Lista las plantillas de la WABA (para sincronizarlas al CRM). */
+  listTemplates(providerAccountId: string): Promise<ProviderTemplate[]>;
+  /** Da de alta una plantilla en Meta; queda PENDING hasta que la revisen. */
+  createTemplate(input: CreateTemplateInput): Promise<CreateTemplateResult>;
   /**
    * Descarga un adjunto recibido. El adaptador decide si la URL necesita sus
    * credenciales, y NUNCA las envía a un dominio que no sea el suyo.
