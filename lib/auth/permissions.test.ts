@@ -1,19 +1,14 @@
 import { describe, expect, it } from "vitest";
 import { roleAllows } from "./permissions";
 
-// El enforcement de fragmentos (lib/actions/snippets.ts) se apoya en esta
-// política: agente es SOLO lectura sobre snippets; owner/admin gestionan.
+// Política de fragmentos: TODOS los roles (owner/admin/agent) los gestionan —
+// son la herramienta diaria del vendedor. El enforcement (lib/actions/snippets.ts)
+// se apoya en esto y falla cerrado ante un rol desconocido.
 describe("roleAllows (ACL de fragmentos)", () => {
-  it("el agente NO puede crear/editar/borrar fragmentos, pero sí leer", () => {
-    expect(roleAllows("agent", "snippet", "create")).toBe(false);
-    expect(roleAllows("agent", "snippet", "update")).toBe(false);
-    expect(roleAllows("agent", "snippet", "delete")).toBe(false);
-    expect(roleAllows("agent", "snippet", "read")).toBe(true);
-  });
-
-  it("owner y admin sí gestionan fragmentos", () => {
-    for (const role of ["owner", "admin"]) {
+  it("todos los roles (incluido agent) crean/leen/editan/borran fragmentos", () => {
+    for (const role of ["owner", "admin", "agent"]) {
       expect(roleAllows(role, "snippet", "create")).toBe(true);
+      expect(roleAllows(role, "snippet", "read")).toBe(true);
       expect(roleAllows(role, "snippet", "update")).toBe(true);
       expect(roleAllows(role, "snippet", "delete")).toBe(true);
     }
