@@ -3,6 +3,8 @@ import Link from "next/link";
 import { headers } from "next/headers";
 import { redirect } from "next/navigation";
 import { auth } from "@/lib/auth";
+import { requireActiveMembership } from "@/lib/auth/active-organization";
+import { roleAllows } from "@/lib/auth/permissions";
 import { SignOutButton } from "./_components/sign-out-button";
 import { ThemeToggle } from "@/components/theme-toggle";
 
@@ -24,11 +26,28 @@ export default async function AppLayout({
     redirect("/sign-in");
   }
 
+  // La pestaña "Agente IA" es configuración del CRM: solo owner/admin (ACL:
+  // recurso `aiConfig` en lib/auth/permissions.ts). Se resuelve el rol contra la
+  // membresía vigente; si por alguna razón no hay membresía, la pestaña no se
+  // muestra (falla cerrado).
+  let role: string | null = null;
+  try {
+    role = (await requireActiveMembership()).role;
+  } catch {
+    role = null;
+  }
+  const navItems = [
+    ...NAV_ITEMS,
+    ...(role && roleAllows(role, "aiConfig", "read")
+      ? [{ label: "Agente IA", href: "/agente-ia" }]
+      : []),
+  ];
+
   return (
     <div className="flex min-h-dvh w-full font-brand">
       <aside className="flex w-56 shrink-0 flex-col bg-brand-navy">
         <nav className="flex flex-col gap-1 p-3">
-          {NAV_ITEMS.map((item) => (
+          {navItems.map((item) => (
             <Link
               key={item.href}
               href={item.href}
