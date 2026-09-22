@@ -110,7 +110,7 @@ export function TemplatePicker({
           </div>
         ) : templates.length === 0 ? (
           <p className="py-4 text-center text-sm text-muted-foreground">
-            No hay plantillas aprobadas. Sincronízalas en “Fragmentos y plantillas”.
+            No hay plantillas aprobadas. Sincronízalas en “Mensajes rápidos”.
           </p>
         ) : (
           <ul className="space-y-1">

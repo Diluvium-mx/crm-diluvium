@@ -74,7 +74,7 @@ export async function createSnippet(input: CreateSnippetInput): Promise<SnippetV
         variables: extractVariables(parsed.body),
       })
       .returning();
-    revalidatePath("/snippets");
+    revalidatePath("/mensajes-rapidos");
     return toView(created);
   } catch (error) {
     if (isDuplicateName(error)) throw new Error(`Ya existe un fragmento llamado "${parsed.name}".`);
@@ -98,7 +98,7 @@ export async function updateSnippet(input: UpdateSnippetInput): Promise<SnippetV
       .where(and(eq(snippets.id, parsed.id), eq(snippets.organizationId, organizationId)))
       .returning();
     if (!updated) throw new Error("Fragmento no encontrado en esta organización.");
-    revalidatePath("/snippets");
+    revalidatePath("/mensajes-rapidos");
     return toView(updated);
   } catch (error) {
     if (isDuplicateName(error)) throw new Error(`Ya existe un fragmento llamado "${parsed.name}".`);
@@ -115,5 +115,5 @@ export async function deleteSnippet(id: string): Promise<void> {
     .where(and(eq(snippets.id, cleanId), eq(snippets.organizationId, organizationId)))
     .returning({ id: snippets.id });
   if (!deleted) throw new Error("Fragmento no encontrado en esta organización.");
-  revalidatePath("/snippets");
+  revalidatePath("/mensajes-rapidos");
 }
