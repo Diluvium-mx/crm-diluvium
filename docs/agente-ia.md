@@ -59,6 +59,26 @@ El runtime del Agente (Fase B) **debe PERSISTIR tokens/uso por mensaje procesado
 el agente responda de verdad. Eso alimenta un **panel de gasto** futuro (no se
 construye ahora). El dry-run "Probar modelo" ya muestra tokens, pero no persiste.
 
+## Roadmap del Agente IA (B → C → D → E)
+
+- **Fase A (hecha):** fundación del modelo — multi-proveedor, catálogo, `ai_config`,
+  pestaña "Agente IA". El agente todavía no responde.
+- **Fase B (en curso):** runtime que **responde por texto**. En el worker: debounce
+  deslizante (`response_delay_seconds`=15, tope `max_wait_seconds`=60) → **filtro** →
+  **cerebro** (Goal + 47 FAQs cacheados + últimos 20 mensajes + imágenes) → responde
+  por Zernio (máx 2 burbujas separadas por doble salto + pausa 1.5s). Interruptor por
+  canal (off/borrador/auto). Pausas: respuesta manual del vendedor (incl. echo
+  `business_app`) = pausa indefinida con **reactivación manual**; pasar-a-humano =
+  etiqueta + pausa + **reactivación automática a las 8h** (`handover_reactivate_hours`);
+  anti-bucle (10 respuestas/hora, configurable) = pausa + etiqueta "revisión humana".
+  Ventana 24h, idempotencia por `provider_message_id`, 24/7, y **persistencia de uso por
+  mensaje** en `ai_usage`. Deja campos de estado por conversación (`agent_state`,
+  `paused_until`, `last_inbound_at`, `last_agent_reply_at`) para la Fase C.
+- **Fase C:** follow-ups automáticos — "ocupado" a las 2h; "dejó de responder" a los
+  4 días con plantilla fuera de la ventana de 24h; horario 8:00–17:00.
+- **Fase D:** acciones del Goal — datos bancarios, videos, tabla de tamaños, cambio de etapa.
+- **Fase E:** panel de gasto (lee `ai_usage`).
+
 ## Fuera de alcance (próximos briefs)
 
 Que el agente responda a conversaciones reales, ejecución de las
