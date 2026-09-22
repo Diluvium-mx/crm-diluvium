@@ -120,6 +120,41 @@
       "when": 1790119250490,
       "tag": "0016_contacts_notify",
       "breakpoints": true
+    },
+    {
+      "idx": 17,
+      "version": "7",
+      "when": 1790121452921,
+      "tag": "0017_calificacion_contacto",
+      "breakpoints": true
+    },
+    {
+      "idx": 18,
+      "version": "7",
+      "when": 1790121453216,
+      "tag": "0018_tallas_compuerta_seed",
+      "breakpoints": true
+    },
+    {
+      "idx": 19,
+      "version": "7",
+      "when": 1790121453608,
+      "tag": "0019_mensajes_programados",
+      "breakpoints": true
+    },
+    {
+      "idx": 20,
+      "version": "7",
+      "when": 1790121453951,
+      "tag": "0020_usuarios_desactivables",
+      "breakpoints": true
+    },
+    {
+      "idx": 21,
+      "version": "7",
+      "when": 1790121454256,
+      "tag": "0021_owner_activo_guard",
+      "breakpoints": true
     }
   ]
 }
