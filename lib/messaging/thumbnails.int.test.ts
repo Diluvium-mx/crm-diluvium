@@ -112,4 +112,44 @@ describe.skipIf(!TEST_DATABASE_URL)("miniaturas de PDF (Postgres real)", () => {
     expect(await thumbs.generateMessageThumbnails(new MemoryStorage(), "m_t")).toBe(0);
     expect((await read())[0].thumbnailAttempts).toBeUndefined();
   });
+
+  it("dos generaciones a la vez del mismo PDF → un solo render (reclamo atómico)", async () => {
+    const storage = new MemoryStorage();
+    storage.objects.set("k/f.pdf", { body: PDF, contentType: "application/pdf" });
+    let reads = 0;
+    const counting = Object.assign(Object.create(storage) as MemoryStorage, {
+      getBytes: async (key: string) => {
+        reads++;
+        return storage.getBytes(key);
+      },
+    });
+    await message([{ type: "document", url: "u", mimeType: "application/pdf", fileName: "F.pdf", storageKey: "k/f.pdf" }]);
+    const results = await Promise.all([
+      thumbs.generateMessageThumbnails(counting, "m_t"),
+      thumbs.generateMessageThumbnails(counting, "m_t"),
+    ]);
+    expect(results.sort()).toEqual([0, 1]);
+    expect(reads).toBe(1);
+    const [att] = await read();
+    expect(att.thumbnailAttempts).toBe(1);
+    expect(att.thumbnailClaimedAt).toBeUndefined();
+  });
+
+  it("una página con proporción extrema produce una miniatura acotada (sin lienzo gigante)", async () => {
+    const tall = new TextEncoder().encode(`%PDF-1.4
+1 0 obj<</Type/Catalog/Pages 2 0 R>>endobj
+2 0 obj<</Type/Pages/Kids[3 0 R]/Count 1>>endobj
+3 0 obj<</Type/Page/Parent 2 0 R/MediaBox[0 0 10 200000]>>endobj
+trailer<</Root 1 0 R>>
+%%EOF`);
+    const storage = new MemoryStorage();
+    storage.objects.set("k/alto.pdf", { body: tall, contentType: "application/pdf" });
+    await message([{ type: "document", url: "u", mimeType: "application/pdf", fileName: "alto.pdf", storageKey: "k/alto.pdf" }]);
+    expect(await thumbs.generateMessageThumbnails(storage, "m_t")).toBe(1);
+    const png = storage.objects.get("k/alto.pdf.thumb.png")?.body;
+    expect(png).toBeDefined();
+    // Alto del PNG (bytes 20-23 del encabezado IHDR, big-endian).
+    const height = new DataView(png!.buffer, png!.byteOffset).getUint32(20);
+    expect(height).toBeLessThanOrEqual(480);
+  });
 });

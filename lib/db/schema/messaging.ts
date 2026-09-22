@@ -41,6 +41,8 @@ export type MessageAttachment = {
   pageCount?: number;
   thumbnailAttempts?: number;
   thumbnailError?: string;
+  /** Reclamo en curso (ISO): evita dos renders del mismo PDF a la vez; vence a los 2 min. */
+  thumbnailClaimedAt?: string;
 };
 
 /**

@@ -248,8 +248,16 @@ async function sweep() {
   for (const { id } of pendingThumbs) await generateMessageThumbnails(storage, id);
 }
 
+// Sin barridos solapados: si uno tarda más de un minuto, el siguiente espera.
+let sweeping = false;
 const sweepTimer = setInterval(() => {
-  sweep().catch((error) => console.error("[worker] barrido falló", error));
+  if (sweeping) return;
+  sweeping = true;
+  sweep()
+    .catch((error) => console.error("[worker] barrido falló", error))
+    .finally(() => {
+      sweeping = false;
+    });
 }, SWEEP_EVERY_MS);
 
 // Monitoreo del go-live (cada 5 min): la misma revisión que usa la GitHub
