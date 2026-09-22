@@ -35,7 +35,7 @@ const PAGE_SIZE = 50;
 const MAX_MESSAGES_PAGE = 100;
 
 // Orden de la lista: último mensaje arriba (docs/bandeja.md: no hay "Reciente").
-// La columna tal cual (NOT NULL desde 0013): así el orden y el cursor usan el
+// La columna tal cual (NOT NULL desde 0015): así el orden y el cursor usan el
 // índice conversations_org_last_message_idx (org, last_message_at, id) desc.
 const conversationSortKey = sql`${conversations.lastMessageAt}`;
 // Orden del hilo: hora de WhatsApp; si faltara, cuándo se guardó.
