@@ -1,4 +1,4 @@
-import { pgTable, text, timestamp } from "drizzle-orm/pg-core";
+import { pgTable, text, timestamp, integer } from "drizzle-orm/pg-core";
 import { organization } from "./auth";
 
 // Configuración del Agente IA por organización (Fase A: Fundación del modelo).
@@ -14,6 +14,21 @@ export const aiConfig = pgTable("ai_config", {
     .references(() => organization.id, { onDelete: "cascade" }),
   modeloFiltro: text("modelo_filtro").notNull(),
   modeloCerebro: text("modelo_cerebro").notNull(),
+  // Goal (system prompt maestro) del "cerebro" (Fase B). Fuente versionada:
+  // docs/agente-ia/angela-goal.md, sembrado con scripts/seed-ai-knowledge.ts.
+  // Nullable: una org sin Goal cargado todavía no puede responder de verdad.
+  goal: text("goal"),
+  // ── Tiempo de respuesta y seguridad (Fase B); editable por org desde la UI ──
+  // Debounce deslizante: espera tras el último entrante antes de responder.
+  responseDelaySeconds: integer("response_delay_seconds").default(15).notNull(),
+  // Tope de la espera: aunque el cliente siga escribiendo, no espera más que esto.
+  maxWaitSeconds: integer("max_wait_seconds").default(60).notNull(),
+  // "Pasar a humano": horas tras las que el agente se reactiva automáticamente.
+  handoverReactivateHours: integer("handover_reactivate_hours").default(8).notNull(),
+  // Freno anti-bucle: máx respuestas del agente por conversación por hora.
+  antiLoopMaxPerHour: integer("anti_loop_max_per_hour").default(10).notNull(),
+  // Tope total de respuestas por contacto. null = sin tope (NO copiamos el 50 de GHL).
+  maxRepliesPerContact: integer("max_replies_per_contact"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 });
