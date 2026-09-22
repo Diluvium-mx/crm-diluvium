@@ -19,6 +19,9 @@ export const statement = {
   // config del CRM: solo owner/admin la ven (`read`) y editan (`update`); el
   // agente (vendedor) no tiene acceso a esta pestaña.
   aiConfig: ["read", "update"],
+  // Rangos editables de tallas: todos los vendedores los consultan para las
+  // sugerencias; solo owner/admin cambian la configuración compartida.
+  sizeRange: ["read", "update"],
 } as const;
 
 export const ac = createAccessControl(statement);
@@ -30,6 +33,7 @@ export const owner = ac.newRole({
   snippet: ["create", "read", "update", "delete"],
   template: ["read", "create", "sync"],
   aiConfig: ["read", "update"],
+  sizeRange: ["read", "update"],
 });
 
 export const admin = ac.newRole({
@@ -39,6 +43,7 @@ export const admin = ac.newRole({
   snippet: ["create", "read", "update", "delete"],
   template: ["read", "create", "sync"],
   aiConfig: ["read", "update"],
+  sizeRange: ["read", "update"],
 });
 
 export const agent = ac.newRole({
@@ -49,6 +54,7 @@ export const agent = ac.newRole({
   // que tocan Meta y la WABA, quedan en owner/admin).
   snippet: ["create", "read", "update", "delete"],
   template: ["read"],
+  sizeRange: ["read"],
   // El agente NO gestiona la config del Agente IA: `aiConfig` se omite a
   // propósito (roleAllows falla cerrado → sin acceso a la pestaña ni a editar).
 });

@@ -8,3 +8,4 @@ export * from "./messaging";
 export * from "./snippets";
 export * from "./ai-config";
 export * from "./ai-knowledge";
+export * from "./qualification";
