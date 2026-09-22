@@ -130,6 +130,9 @@ function StageColumn({
 export function ContactsBoard({ initialContacts }: { initialContacts: Contact[] }) {
   const [contacts, setContacts] = useState<Contact[]>(initialContacts);
   const router = useRouter();
+  // Contactos agregados por el SSE que el servidor aún no ha devuelto en una
+  // recarga (ver la sincronización con initialContacts más abajo).
+  const [liveAdded, setLiveAdded] = useState<Contact[]>([]);
   const [syncedInitialContacts, setSyncedInitialContacts] = useState(initialContacts);
   const [search, setSearch] = useState("");
   const [selectedContactId, setSelectedContactId] = useState<string | null>(null);
@@ -193,9 +196,15 @@ export function ContactsBoard({ initialContacts }: { initialContacts: Contact[] 
   // https://react.dev/learn/you-might-not-need-an-effect) en vez de un
   // useEffect, que aquí dispara un render en cascada
   // (react-hooks/set-state-in-effect).
+  // Los contactos que el SSE agregó en vivo se CONSERVAN al sincronizar: una
+  // recarga (p. ej. por contacts.bulk) pudo leer la base ANTES de que se
+  // crearan y, si reemplazara todo, los borraría de la vista sin aviso.
   if (initialContacts !== syncedInitialContacts) {
     setSyncedInitialContacts(initialContacts);
-    setContacts(initialContacts);
+    const fromServer = new Set(initialContacts.map((c) => c.id));
+    const stillMissing = liveAdded.filter((c) => !fromServer.has(c.id));
+    setContacts(stillMissing.length ? [...stillMissing, ...initialContacts] : initialContacts);
+    if (stillMissing.length !== liveAdded.length) setLiveAdded(stillMissing);
   }
 
   // Tiempo real: un contacto NUEVO (p. ej. el primer WhatsApp de un número
@@ -228,6 +237,10 @@ export function ContactsBoard({ initialContacts }: { initialContacts: Contact[] 
           const known = new Set(current.map((c) => c.id));
           const added = fresh.filter((c) => !known.has(c.id));
           return added.length ? [...added, ...current] : current;
+        });
+        setLiveAdded((current) => {
+          const known = new Set(current.map((c) => c.id));
+          return [...fresh.filter((c) => !known.has(c.id)), ...current];
         });
       });
     }, 500);

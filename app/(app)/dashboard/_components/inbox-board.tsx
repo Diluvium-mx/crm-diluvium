@@ -132,7 +132,18 @@ export function InboxBoard() {
       const generation = generationRef.current;
       const seq = ++requestSeqRef.current;
       for (const id of ids) latestRequestRef.current.set(id, seq);
-      const items = await getConversationItems(ids, params());
+      let items: ConversationListItem[];
+      try {
+        items = await getConversationItems(ids, params());
+      } catch {
+        // Fallo transitorio (red, deploy): nada se descarta. Este lote y los
+        // que faltaban vuelven a la cola y se reintentan en 2 s.
+        const failed = all.slice(i);
+        setTimeout(() => {
+          for (const id of failed) scheduleUpdateRef.current(id);
+        }, 2_000);
+        return;
+      }
       if (generation !== generationRef.current) continue;
       // Solo se aplican las conversaciones cuyo pedido más reciente es este.
       const current = ids.filter((id) => latestRequestRef.current.get(id) === seq);
@@ -142,7 +153,6 @@ export function InboxBoard() {
       setConversations((list) => mergeItems(list, current, fresh, hasMore));
     }
   }, []);
-
   // Ventana FIJA de 250 ms: el primer evento programa el envío y los demás se
   // suman al lote sin reiniciar el reloj. Con tráfico sostenido la lista igual
   // se actualiza 4 veces por segundo (un debounce que se reinicia no llegaría nunca).
