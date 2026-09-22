@@ -1,0 +1,94 @@
+# Vigilante EXTERNO de la entrada de WhatsApp (Fase 3, go-live).
+#
+# Cada 15 min consulta GET /api/health/inbound de producción. Si responde con
+# problemas (503), no responde o no autoriza, abre un issue con la etiqueta
+# `alerta-whatsapp` (GitHub lo manda por correo a quien vigila el repo); si ya
+# hay uno abierto, le agrega un comentario. Cuando vuelve a estar sano, lo
+# cierra. Es independiente del worker (que hace su propio chequeo cada 5 min
+# al log) y de Zernio/WhatsApp: si ellos fallan, este aviso igual llega.
+#
+# Secret del repo: MONITOR_TOKEN (el mismo valor que la variable MONITOR_TOKEN
+# del servicio web de producción en Railway). El cuerpo del issue solo lleva
+# conteos: el repo es público.
+name: inbound-monitor
+
+on:
+  schedule:
+    - cron: "*/15 * * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  issues: write
+
+concurrency:
+  group: inbound-monitor
+  cancel-in-progress: false
+
+env:
+  HEALTH_URL: https://crm-diluvium-production.up.railway.app/api/health/inbound
+  LABEL: alerta-whatsapp
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Consultar salud de la entrada
+        id: health
+        env:
+          MONITOR_TOKEN: ${{ secrets.MONITOR_TOKEN }}
+        run: |
+          set +e
+          code=$(curl -sS -o body.json -w '%{http_code}' --max-time 30 \
+            -H "Authorization: Bearer ${MONITOR_TOKEN}" "$HEALTH_URL")
+          curl_exit=$?
+          set -e
+          if [ "$curl_exit" -ne 0 ]; then
+            echo "status=unreachable" >> "$GITHUB_OUTPUT"
+            echo "summary=El CRM no respondió (curl $curl_exit)." >> "$GITHUB_OUTPUT"
+          elif [ "$code" = "200" ]; then
+            echo "status=ok" >> "$GITHUB_OUTPUT"
+          elif [ "$code" = "503" ] && jq -e '.problems' body.json > /dev/null 2>&1; then
+            echo "status=problems" >> "$GITHUB_OUTPUT"
+            {
+              echo "summary<<EOF"
+              jq -r '.problems[] | "- " + .' body.json
+              echo
+              echo '```json'
+              jq '.metrics' body.json
+              echo '```'
+              echo "EOF"
+            } >> "$GITHUB_OUTPUT"
+          else
+            echo "status=unexpected" >> "$GITHUB_OUTPUT"
+            echo "summary=Respuesta inesperada del CRM: HTTP $code." >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Abrir o actualizar el issue de alerta
+        if: steps.health.outputs.status != 'ok'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SUMMARY: ${{ steps.health.outputs.summary }}
+        run: |
+          gh label create "$LABEL" --repo "$GITHUB_REPOSITORY" --color D93F0B \
+            --description "Entrada de WhatsApp con problemas" 2>/dev/null || true
+          body=$(printf '%s\n\nRevisado: %s UTC · [corrida](%s/%s/actions/runs/%s)\n\nRunbook: docs/go-live.md' \
+            "$SUMMARY" "$(date -u '+%Y-%m-%d %H:%M')" "$GITHUB_SERVER_URL" "$GITHUB_REPOSITORY" "$GITHUB_RUN_ID")
+          open=$(gh issue list --repo "$GITHUB_REPOSITORY" --label "$LABEL" --state open --json number --jq '.[0].number')
+          if [ -n "$open" ]; then
+            gh issue comment "$open" --repo "$GITHUB_REPOSITORY" --body "$body"
+          else
+            gh issue create --repo "$GITHUB_REPOSITORY" --label "$LABEL" \
+              --title "⚠️ Entrada de WhatsApp con problemas" --body "$body"
+          fi
+
+      - name: Cerrar la alerta si ya está sano
+        if: steps.health.outputs.status == 'ok'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          open=$(gh issue list --repo "$GITHUB_REPOSITORY" --label "$LABEL" --state open --json number --jq '.[0].number')
+          if [ -n "$open" ]; then
+            gh issue close "$open" --repo "$GITHUB_REPOSITORY" --comment "Sano de nuevo: $(date -u '+%Y-%m-%d %H:%M') UTC."
+          fi

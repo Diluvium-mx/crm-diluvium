@@ -9,6 +9,7 @@ import { messagingProvider, MessagingNotConfiguredError } from "@/lib/messaging"
 import {
   getConversationByContactForOrg,
   getConversationForOrg,
+  listConversationItemsByIdsForOrg,
   listConversationsForOrg,
   listMessagesForOrg,
   markConversationReadForOrg,
@@ -18,6 +19,7 @@ import { retryTextMessage, SendRejectedError, sendTemplateMessage, sendTextMessa
 import { SendFailedError } from "@/lib/messaging/provider";
 import type {
   ConversationDetail,
+  ConversationListItem,
   ConversationPage,
   InboxFilter,
   MessagePage,
@@ -32,6 +34,19 @@ export async function listConversations(params: {
 } = {}): Promise<ConversationPage> {
   const { organizationId } = await requireActiveMembership();
   return listConversationsForOrg(organizationId, params);
+}
+
+/**
+ * Filas frescas de la lista para ciertas conversaciones (tiempo real: la UI
+ * actualiza solo las afectadas). Aplica el mismo filtro/búsqueda que la lista:
+ * una que ya no pasa el filtro no vuelve (la UI la quita).
+ */
+export async function getConversationItems(
+  conversationIds: string[],
+  params: { filter?: InboxFilter; search?: string } = {},
+): Promise<ConversationListItem[]> {
+  const { organizationId } = await requireActiveMembership();
+  return listConversationItemsByIdsForOrg(organizationId, conversationIds.slice(0, 100), params);
 }
 
 export async function getConversation(conversationId: string): Promise<ConversationDetail | null> {

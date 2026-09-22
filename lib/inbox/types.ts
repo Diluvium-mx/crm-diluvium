@@ -69,6 +69,12 @@ export type AttachmentView = {
   state: "ready" | "processing" | "failed";
   /** /api/media/{messageId}/{index} (exige sesión; 202 mientras procesa). */
   url: string;
+  /** Misma ruta con ?download=1: fuerza "Guardar como". */
+  downloadUrl: string;
+  /** Miniatura de la 1ª página (PDF), cuando ya se generó. */
+  thumbnailUrl: string | null;
+  sizeBytes: number | null;
+  pageCount: number | null;
 };
 
 export type MessageView = {
@@ -87,6 +93,16 @@ export type MessageView = {
   canRetry: boolean;
   sentAt: Date;
   adReferral: AdReferral | null;
+  /** Reacción vigente de cada lado (WhatsApp: una por persona). */
+  reactions: { contact?: string; business?: string };
+  editedAt: Date | null;
+  /** Su autor lo borró en WhatsApp; el contenido se conserva en el CRM. */
+  deletedAt: Date | null;
+  location: { latitude: number; longitude: number; name: string | null; address: string | null } | null;
+  /** Nombres de las tarjetas de contacto compartidas. */
+  contactCards: string[];
+  /** Mensaje citado (respuesta a otro), si está en el CRM. */
+  quoted: { direction: "in" | "out"; preview: string } | null;
 };
 
 /** Página de mensajes en orden cronológico (viejo → nuevo); `hasMore` = hay más viejos. */
@@ -120,4 +136,8 @@ export type InboxEvent =
   | { type: "conversation.updated"; conversationId: string }
   | { type: "message.upserted"; conversationId: string; messageId: string }
   | { type: "message.deleted"; conversationId: string; messageId: string }
+  /** Contacto nuevo (p. ej. primer mensaje de un número desconocido): el kanban lo agrega. */
+  | { type: "contact.created"; contactId: string }
+  /** Muchos contactos nuevos en una sola sentencia (importación): el kanban se recarga una vez. */
+  | { type: "contacts.bulk" }
   | { type: "reload" };
