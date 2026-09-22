@@ -16,14 +16,22 @@ export function MediaViewer({ attachment, onClose }: { attachment: AttachmentVie
   const isPdf = fileExtension(attachment.fileName, attachment.mimeType) === "pdf";
   const title = attachment.fileName ?? (isImage ? "Imagen" : "Documento");
 
+  // En CAPTURA sobre window y consumiendo el evento: el visor está encima de
+  // otros diálogos (la ficha de Contactos escucha Esc en document) y Esc debe
+  // cerrar SOLO el visor.
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
-      if (event.key === "Escape") onClose();
+      if (event.key === "Escape") {
+        event.stopImmediatePropagation();
+        event.stopPropagation();
+        onClose();
+        return;
+      }
       if (isImage && (event.key === "+" || event.key === "=")) setZoom((z) => Math.min(z + 1, ZOOM_STEPS.length - 1));
       if (isImage && event.key === "-") setZoom((z) => Math.max(z - 1, 0));
     };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
+    window.addEventListener("keydown", onKey, true);
+    return () => window.removeEventListener("keydown", onKey, true);
   }, [isImage, onClose]);
 
   return (

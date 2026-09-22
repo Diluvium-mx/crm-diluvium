@@ -65,11 +65,24 @@ export function objectStorage(): ObjectStorage {
     },
     async getBytes(key, maxBytes) {
       const res = await client.send(new GetObjectCommand({ Bucket: S3_BUCKET, Key: key }));
-      if ((res.ContentLength ?? 0) > maxBytes) throw new Error(`objeto de ${res.ContentLength} bytes; máximo ${maxBytes}`);
-      const bytes = await res.Body?.transformToByteArray();
-      if (!bytes) throw new Error("objeto vacío");
-      if (bytes.byteLength > maxBytes) throw new Error(`objeto de ${bytes.byteLength} bytes; máximo ${maxBytes}`);
-      return bytes;
+      const body = res.Body as Readable | undefined;
+      if (!body) throw new Error("objeto vacío");
+      // En streaming, contando bytes: se corta en cuanto pasa el límite (aunque
+      // ContentLength falte o mienta) y el stream SIEMPRE se cierra.
+      try {
+        if ((res.ContentLength ?? 0) > maxBytes) throw new Error(`objeto de ${res.ContentLength} bytes; máximo ${maxBytes}`);
+        const chunks: Buffer[] = [];
+        let total = 0;
+        for await (const chunk of body) {
+          const buf = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk as Uint8Array);
+          total += buf.byteLength;
+          if (total > maxBytes) throw new Error(`objeto de más de ${maxBytes} bytes`);
+          chunks.push(buf);
+        }
+        return new Uint8Array(Buffer.concat(chunks));
+      } finally {
+        body.destroy();
+      }
     },
     signedGetUrl(key, expiresInSeconds, downloadName, disposition = "inline") {
       return getSignedUrl(
