@@ -48,6 +48,11 @@ infinito y varias oportunidades a lo largo del tiempo sin duplicarse.
 Automatizaciones visuales, Instagram/Messenger, email, SMS, difusiones masivas, calendario y citas,
 formularios y landing pages, agente IA de calificación.
 
+> **Agente IA — Fase A (hecha):** mecanismo de modelo multi-proveedor + selector (`lib/ai/`, tabla
+> `ai_config`, pestaña "Agente IA"). Detalle: `docs/agente-ia.md`. **La Fase B (runtime del agente)
+> debe PERSISTIR tokens/uso por mensaje procesado** (`callModel` ya devuelve `usage` normalizado) para
+> alimentar un panel de gasto futuro.
+
 ### Fuera de alcance indefinido
 Multi-cliente tipo agencia (snapshots, sub-cuentas), facturación, telefonía/VoIP.
 
