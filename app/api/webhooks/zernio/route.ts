@@ -94,6 +94,12 @@ export async function POST(req: Request): Promise<Response> {
     }
     // Cuenta ajena a este entorno (p. ej. el número real llegando a staging),
     // o evento sin cuenta: 200 para que Zernio no reintente, y NO se guarda nada.
+    // Se deja rastro en el log: sin esto, un número real sin dar de alta en
+    // ZERNIO_ALLOWED_ACCOUNT_IDS perdería mensajes sin que nadie lo note.
+    console.warn(
+      `[webhook zernio] evento IGNORADO (cuenta no permitida en este entorno): ` +
+        `account_id=${envelope.providerAccountId ?? "ninguna"} event=${envelope.event} id=${envelope.eventId}`,
+    );
     return Response.json({ ok: true, ignored: "cuenta no permitida en este entorno" });
   }
 

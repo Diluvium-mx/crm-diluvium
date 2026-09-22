@@ -37,6 +37,9 @@ export type MessageAttachment = {
   downloadError?: string;
 };
 
+/** Reacción vigente de cada lado de la conversación (WhatsApp: una por persona). */
+export type MessageReactions = { contact?: string; business?: string };
+
 export const channelTypeEnum = pgEnum("channel_type", ["whatsapp"]);
 export const messagingProviderEnum = pgEnum("messaging_provider", ["zernio", "meta_cloud"]);
 export const conversationStatusEnum = pgEnum("conversation_status", ["open", "pending", "closed"]);
@@ -139,7 +142,9 @@ export const conversations = pgTable(
     // Reparto de carga, no visibilidad: todos ven todo (CLAUDE.md §5).
     assigneeUserId: text("assignee_user_id").references(() => user.id, { onDelete: "set null" }),
     status: conversationStatusEnum("status").default("open").notNull(),
-    lastMessageAt: timestamp("last_message_at"),
+    // NOT NULL: una conversación nace con su primer mensaje. Así la lista
+    // ordena por la columna tal cual y usa conversations_org_last_message_idx.
+    lastMessageAt: timestamp("last_message_at").defaultNow().notNull(),
     unreadCount: integer("unread_count").default(0).notNull(),
     // Ventana de 24 h: se mueve con cada mensaje ENTRANTE del contacto.
     windowExpiresAt: timestamp("window_expires_at"),
@@ -168,9 +173,11 @@ export const conversations = pgTable(
   (table) => [
     // Conversación continua por canal y contacto: una sola fila por par.
     uniqueIndex("conversations_channel_contact_uidx").on(table.channelId, table.contactId),
+    // Orden y cursor de la bandeja: (last_message_at, id) desc.
     index("conversations_org_last_message_idx").on(
       table.organizationId,
-      sql`${table.lastMessageAt} desc nulls last`,
+      sql`${table.lastMessageAt} desc`,
+      sql`${table.id} desc`,
     ),
     uniqueIndex("conversations_channel_provider_conv_uidx")
       .on(table.channelId, table.providerConversationId)
@@ -212,6 +219,17 @@ export const messages = pgTable(
     sentByUserId: text("sent_by_user_id").references(() => user.id, { onDelete: "set null" }),
     // `referral` del anuncio de clic a WhatsApp que traía ESTE mensaje, crudo.
     adReferral: jsonb("ad_referral").$type<Record<string, unknown>>(),
+    // Contexto del proveedor tal cual (Zernio `metadata`): respuesta citada
+    // (quotedMessageId), ubicación, tarjetas de contacto, pedido del catálogo,
+    // botones/listas. Se guarda completo; la UI lee lo que entiende.
+    metadata: jsonb("metadata").$type<Record<string, unknown>>(),
+    // Reacciones vigentes por lado ({ contact?: "👍", business?: "❤️" }):
+    // WhatsApp permite UNA reacción por persona y mensaje.
+    reactions: jsonb("reactions").$type<MessageReactions>().notNull().default({}),
+    // Edición / borrado por quien lo envió (message.edited / .deleted). El
+    // texto original se conserva (historial en metadata.editHistory).
+    editedAt: timestamp("edited_at"),
+    deletedAt: timestamp("deleted_at"),
     // Hora del mensaje según WhatsApp; created_at es cuándo lo guardamos.
     sentAt: timestamp("sent_at"),
     createdAt: timestamp("created_at").defaultNow().notNull(),
@@ -287,12 +305,18 @@ export const webhookEvents = pgTable(
     processedAt: timestamp("processed_at"),
     attempts: integer("attempts").default(0).notNull(),
     lastError: text("last_error"),
+    // Cuándo quedó en dead-letter (agotó intentos o formato no reconocido).
+    // Queda en la BD para revisarlo y reprocesarlo; la retención no lo purga.
+    deadLetteredAt: timestamp("dead_lettered_at"),
   },
   (table) => [
     index("webhook_events_pending_idx")
       .on(table.receivedAt)
       .where(sql`${table.processedAt} is null`),
     // Barrido de retención: borra procesados viejos por fecha.
+    index("webhook_events_dead_letter_idx")
+      .on(table.deadLetteredAt)
+      .where(sql`${table.deadLetteredAt} is not null`),
     index("webhook_events_processed_idx")
       .on(table.processedAt)
       .where(sql`${table.processedAt} is not null`),

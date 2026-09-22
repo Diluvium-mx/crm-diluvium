@@ -4,11 +4,22 @@
 //
 // Las horas que viajan en cursores se comparan en SQL (con microsegundos), no
 // ida y vuelta por JS, que solo tiene milisegundos.
-import { and, desc, eq, ilike, inArray, or, sql, type SQL } from "drizzle-orm";
+import { and, desc, eq, ilike, inArray, like, or, sql, type SQL } from "drizzle-orm";
+import { nationalSearchPrefixes } from "@/lib/phone";
 import { db } from "@/lib/db";
 import { contacts, conversations, messages } from "@/lib/db/schema";
 import { latestInboundMessageId, unreadAfterCutoff } from "@/lib/messaging/ingest";
-import { attachmentView, avatarInitials, canRetry, fullName, messagePreview, sanitizeReferral } from "./format";
+import {
+  attachmentView,
+  avatarInitials,
+  canRetry,
+  contactCardsFromMetadata,
+  fullName,
+  locationFromMetadata,
+  messagePreview,
+  quotedIdFromMetadata,
+  sanitizeReferral,
+} from "./format";
 import type {
   ConversationDetail,
   ConversationListItem,
@@ -24,7 +35,9 @@ const PAGE_SIZE = 50;
 const MAX_MESSAGES_PAGE = 100;
 
 // Orden de la lista: último mensaje arriba (docs/bandeja.md: no hay "Reciente").
-const conversationSortKey = sql`coalesce(${conversations.lastMessageAt}, ${conversations.createdAt})`;
+// La columna tal cual (NOT NULL desde 0013): así el orden y el cursor usan el
+// índice conversations_org_last_message_idx (org, last_message_at, id) desc.
+const conversationSortKey = sql`${conversations.lastMessageAt}`;
 // Orden del hilo: hora de WhatsApp; si faltara, cuándo se guardó.
 const messageSortKey = sql`coalesce(${messages.sentAt}, ${messages.createdAt})`;
 
@@ -71,9 +84,15 @@ function searchCondition(search: string | undefined): SQL | undefined {
   const term = search?.trim();
   if (!term) return undefined;
   const byName = ilike(sql`${contacts.firstName} || ' ' || coalesce(${contacts.lastName}, '')`, `%${escapeLike(term)}%`);
+  // Dígitos: los 10 solos, o con 52 / +52 / 521 delante → prefijo del número
+  // nacional, con índice (contacts_org_phone_national_idx).
+  const prefixes = nationalSearchPrefixes(term);
+  if (prefixes.length === 0) return byName;
+  // Respaldo para contactos aún sin phone_national (antes del backfill): la
+  // búsqueda vieja por dígitos, solo sobre esas filas.
   const digits = term.replace(/\D/g, "");
-  if (digits.length < 3) return byName;
-  return or(byName, sql`regexp_replace(coalesce(${contacts.phoneE164}, ''), '\\D', '', 'g') like ${`%${digits}%`}`);
+  const legacy = sql`(${contacts.phoneNational} is null and regexp_replace(coalesce(${contacts.phoneE164}, ''), '\\D', '', 'g') like ${`%${digits}%`})`;
+  return or(byName, ...prefixes.map((p) => like(contacts.phoneNational, `${p}%`)), legacy);
 }
 
 export async function listConversationsForOrg(
@@ -234,6 +253,17 @@ export async function listMessagesForOrg(
     .limit(size + 1);
 
   const page = rows.slice(0, size).reverse();
+
+  // Respuestas citadas: una sola consulta por página para los wamid citados.
+  const quotedIds = [...new Set(page.map((m) => quotedIdFromMetadata(m.metadata)).filter((id): id is string => id !== null))];
+  const quotedRows = quotedIds.length
+    ? await db
+        .select({ wamid: messages.providerMessageId, direction: messages.direction, type: messages.type, body: messages.body })
+        .from(messages)
+        .where(and(eq(messages.organizationId, organizationId), inArray(messages.providerMessageId, quotedIds)))
+    : [];
+  const quotedByWamid = new Map(quotedRows.map((q) => [q.wamid, q]));
+
   return {
     hasMore: rows.length > size,
     messages: page.map(
@@ -248,6 +278,15 @@ export async function listMessagesForOrg(
         canRetry: canRetry(m),
         sentAt: m.sentAt ?? m.createdAt,
         adReferral: sanitizeReferral(m.adReferral),
+        reactions: m.reactions,
+        editedAt: m.editedAt,
+        deletedAt: m.deletedAt,
+        location: locationFromMetadata(m.metadata),
+        contactCards: contactCardsFromMetadata(m.metadata),
+        quoted: (() => {
+          const q = quotedByWamid.get(quotedIdFromMetadata(m.metadata) ?? "");
+          return q ? { direction: q.direction, preview: messagePreview(q.type as MessageKind, q.body) } : null;
+        })(),
       }),
     ),
   };

@@ -87,6 +87,16 @@ export type MessageView = {
   canRetry: boolean;
   sentAt: Date;
   adReferral: AdReferral | null;
+  /** Reacción vigente de cada lado (WhatsApp: una por persona). */
+  reactions: { contact?: string; business?: string };
+  editedAt: Date | null;
+  /** Su autor lo borró en WhatsApp; el contenido se conserva en el CRM. */
+  deletedAt: Date | null;
+  location: { latitude: number; longitude: number; name: string | null; address: string | null } | null;
+  /** Nombres de las tarjetas de contacto compartidas. */
+  contactCards: string[];
+  /** Mensaje citado (respuesta a otro), si está en el CRM. */
+  quoted: { direction: "in" | "out"; preview: string } | null;
 };
 
 /** Página de mensajes en orden cronológico (viejo → nuevo); `hasMore` = hay más viejos. */
