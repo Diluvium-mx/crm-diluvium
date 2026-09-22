@@ -47,7 +47,7 @@ export function SnippetPicker({
           <p className="py-4 text-center text-sm text-muted-foreground">Cargando fragmentos…</p>
         ) : snippets.length === 0 ? (
           <p className="py-4 text-center text-sm text-muted-foreground">
-            No hay fragmentos. Créalos en “Fragmentos y plantillas”.
+            No hay fragmentos. Créalos en “Mensajes rápidos”.
           </p>
         ) : (
           <ul className="space-y-1">

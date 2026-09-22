@@ -11,7 +11,7 @@ import { ThemeToggle } from "@/components/theme-toggle";
 const NAV_ITEMS = [
   { label: "Bandeja", href: "/dashboard" },
   { label: "Contactos", href: "/contactos" },
-  { label: "Fragmentos y plantillas", href: "/snippets" },
+  { label: "Mensajes rápidos", href: "/mensajes-rapidos" },
   { label: "Reportes", href: "/reports" },
 ];
 
