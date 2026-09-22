@@ -280,6 +280,21 @@ se lo pidan:
 3. **Delegar no es desentenderse.** Si no se sabe qué se movió, no se está repartiendo.
 4. Antes de cada merge a `main`: `/codex:adversarial-review` sobre el diff.
 
+### Comandos de verificación (sandbox de revisión)
+
+La revisión de Codex corre con `sandbox: read-only` y `approvalPolicy: never`:
+un muro técnico **sin red y sin escrituras**, donde el agente **no puede
+aprobar prompts**. Por eso las verificaciones se ejecutan con **scripts de npm**
+(resuelven el binario local) y **nunca con `npx`** —que iría al registry o
+pediría confirmación y colgaría la corrida—, siempre con **timeout** (120 s):
+
+- `npm run typecheck` → `tsc --noEmit --incremental false` (sin `tsconfig.tsbuildinfo`; escribirlo daría `EPERM/TS5033` bajo read-only)
+- `npm test` → `vitest run`
+- `npm run lint` → `eslint`
+
+Regla para Codex y Claude: cualquier check nuevo se agrega como script de
+`package.json`, no como comando suelto con `npx`. Detalle idéntico en `AGENTS.md`.
+
 ### Higiene de trabajo en paralelo
 - **Nunca dos agentes sobre los mismos archivos.** Usar git worktrees:
   ```
