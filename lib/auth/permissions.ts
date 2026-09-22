@@ -15,6 +15,10 @@ export const statement = {
   // sincronizar el listado a la BD (puede marcar como eliminadas). Gestionarlas
   // afecta a la cuenta de WhatsApp y la revisión de Meta: solo owner/admin.
   template: ["read", "create", "sync"],
+  // Configuración del Agente IA (modelo de filtro y modelo de cerebro). Es
+  // config del CRM: solo owner/admin la ven (`read`) y editan (`update`); el
+  // agente (vendedor) no tiene acceso a esta pestaña.
+  aiConfig: ["read", "update"],
 } as const;
 
 export const ac = createAccessControl(statement);
@@ -25,6 +29,7 @@ export const owner = ac.newRole({
   tag: ["create", "read", "update", "delete"],
   snippet: ["create", "read", "update", "delete"],
   template: ["read", "create", "sync"],
+  aiConfig: ["read", "update"],
 });
 
 export const admin = ac.newRole({
@@ -33,6 +38,7 @@ export const admin = ac.newRole({
   tag: ["create", "read", "update", "delete"],
   snippet: ["create", "read", "update", "delete"],
   template: ["read", "create", "sync"],
+  aiConfig: ["read", "update"],
 });
 
 export const agent = ac.newRole({
@@ -43,6 +49,8 @@ export const agent = ac.newRole({
   // que tocan Meta y la WABA, quedan en owner/admin).
   snippet: ["create", "read", "update", "delete"],
   template: ["read"],
+  // El agente NO gestiona la config del Agente IA: `aiConfig` se omite a
+  // propósito (roleAllows falla cerrado → sin acceso a la pestaña ni a editar).
 });
 
 const roles = { owner, admin, agent } as const;
