@@ -70,6 +70,30 @@ export const messageSourceEnum = pgEnum("message_source", [
   "crm",
   "business_app",
   "other_api",
+  // Respuesta generada por el Agente IA (Fase B). Se distingue de `crm` (humano
+  // desde el CRM) y `business_app` (humano desde el celular) para: no contar como
+  // "respuesta manual" que silencia al agente, contar el freno anti-bucle, y
+  // atribuir el uso/costo en ai_usage.
+  "ai_agent",
+]);
+
+// Interruptor del Agente IA POR CANAL (Fase B). Apagado por defecto:
+//   off      = el agente no actúa;
+//   borrador = genera la respuesta y la deja en la bandeja SIN enviarla;
+//   auto     = genera y envía por el proveedor.
+// Solo owner/admin lo cambian (pestaña Agente IA).
+export const channelAiAgentModeEnum = pgEnum("channel_ai_agent_mode", ["off", "borrador", "auto"]);
+
+// Estado del Agente IA en una conversación (Fase B):
+//   activo            = elegible para responder;
+//   pausado_humano    = un vendedor respondió a mano; pausa indefinida, reactivación manual;
+//   pausado_handover  = "pasar a humano"; reactivación automática a las N horas;
+//   pausado_antibucle = se disparó el freno anti-bucle; reactivación manual (revisión humana).
+export const conversationAgentStateEnum = pgEnum("conversation_agent_state", [
+  "activo",
+  "pausado_humano",
+  "pausado_handover",
+  "pausado_antibucle",
 ]);
 
 export const channels = pgTable(
@@ -86,6 +110,8 @@ export const channels = pgTable(
     displayName: text("display_name").notNull(),
     phoneE164: text("phone_e164"),
     isActive: boolean("is_active").default(true).notNull(),
+    // Interruptor del Agente IA en este canal. Apagado por defecto (seguro).
+    aiAgentMode: channelAiAgentModeEnum("ai_agent_mode").default("off").notNull(),
     createdAt: timestamp("created_at").defaultNow().notNull(),
   },
   (table) => [
@@ -119,6 +145,18 @@ export const conversations = pgTable(
     windowExpiresAt: timestamp("window_expires_at"),
     // Se fija una sola vez, al primer saliente humano (CLAUDE.md §5).
     firstResponseSeconds: integer("first_response_seconds"),
+    // ── Agente IA (Fase B) ──────────────────────────────────────────────────
+    // Estado del agente en esta conversación. Default activo: elegible si el
+    // canal está en borrador/auto (el interruptor del canal es el gate maestro).
+    agentState: conversationAgentStateEnum("agent_state").default("activo").notNull(),
+    // Hasta cuándo dura la pausa. handover = now + handover_reactivate_hours
+    // (reactivación automática); humano/antibucle = null (reactivación manual
+    // con el botón "Reactivar agente" en la bandeja).
+    agentPausedUntil: timestamp("agent_paused_until"),
+    // Último mensaje ENTRANTE del cliente y última respuesta del AGENTE en el
+    // hilo. Los usa la Fase B (silencios/anti-bucle) y la Fase C (follow-ups).
+    lastInboundAt: timestamp("last_inbound_at"),
+    lastAgentReplyAt: timestamp("last_agent_reply_at"),
     // Destacado: marca compartida por el equipo (todos ven todo, §5).
     isStarred: boolean("is_starred").default(false).notNull(),
     // Anuncio de clic a WhatsApp que ORIGINÓ la conversación (el primer
