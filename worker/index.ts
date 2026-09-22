@@ -265,6 +265,7 @@ const sweepTimer = setInterval(() => {
 // llega por correo aunque este proceso esté caído.
 const MONITOR_EVERY_MS = 5 * 60_000;
 async function monitor() {
+  if (!migrationsReady) return;
   const report = await inboundHealth({
     heartbeatAgeSeconds: async () => 0, // este mismo proceso está vivo
     checkZernio: false, // lo revisa el web (/api/health/inbound), que tiene APP_URL
