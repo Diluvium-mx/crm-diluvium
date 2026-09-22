@@ -73,3 +73,23 @@ historial queda repartido. No se pierde nada y cada caso deja en los logs del wo
 `[ingest] identidad: … revisar para fusionar` con ambos ids. Se resuelve con la
 herramienta de fusión de contactos (pendiente, junto con los 5 grupos de duplicados de
 GHL). Mientras tanto: buscar esa línea en los logs tras el go-live.
+
+## Monitoreo (Fase 3)
+
+Dos vigilantes independientes; ninguno depende de WhatsApp ni de Zernio para avisar:
+
+| Vigilante | Frecuencia | Qué revisa | Aviso |
+|---|---|---|---|
+| Worker (`worker/index.ts`) | cada 5 min | silencio de webhooks en horario laboral (lun–sáb 9–19 Mazatlán, `MONITOR_SILENCE_MINUTES`, 60 por omisión), eventos sin procesar > 5 min, dead-letter, cuarentena | log `[monitor] ALERTA: …` en Railway |
+| GitHub Action `inbound-monitor` | cada 15 min | lo mismo vía `GET /api/health/inbound` + latido del worker (Redis) + webhook de Zernio activo y sin fallos | issue `alerta-whatsapp` (llega por correo); se cierra solo al sanar. Si el CRM no responde, también abre issue |
+
+Configurar una vez (el dueño pega el valor; nunca en el chat):
+
+1. Generar un token largo al azar (p. ej. `openssl rand -hex 32`).
+2. Railway → servicio web de **producción** → variable `MONITOR_TOKEN` = ese valor.
+3. GitHub → Settings → Secrets and variables → Actions → secret de repositorio
+   `MONITOR_TOKEN` = el mismo valor.
+4. Verificar a mano: Actions → inbound-monitor → Run workflow.
+
+El endpoint solo devuelve conteos (el repo es público). Sin `MONITOR_TOKEN` responde 401 y
+la Action abre un issue, así que el paso 2 va antes que el merge a `main`.

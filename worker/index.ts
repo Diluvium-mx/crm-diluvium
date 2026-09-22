@@ -35,6 +35,8 @@ import {
   type MediaJob,
 } from "@/lib/queue/inbound";
 import { objectStorage, StorageNotConfiguredError, type ObjectStorage } from "@/lib/storage/s3";
+import { inboundHealth, WORKER_HEARTBEAT_KEY } from "@/lib/monitoring/inbound-health";
+import { redis } from "@/lib/redis";
 
 const SWEEP_EVERY_MS = 60_000;
 const SWEEP_MIN_AGE_MS = 60_000;
@@ -114,6 +116,13 @@ let migrationsReady = false;
 
 async function sweep() {
   if (!migrationsReady) return;
+
+  // Latido para el monitoreo externo (/api/health/inbound): si el worker cae
+  // (o se queda esperando migraciones), deja de actualizarse y la GitHub Action
+  // avisa aunque aquí no corra nada.
+  await redis.set(WORKER_HEARTBEAT_KEY, String(Date.now()), "EX", 3_600).catch((error: unknown) => {
+    console.error("[monitor] no se pudo escribir el latido en Redis", error);
+  });
 
   // Huérfanos (estado/reacción/edición sin su mensaje) cuyo mensaje ya llegó:
   // vuelven a pendientes y se procesan en este mismo barrido.
@@ -243,9 +252,25 @@ const sweepTimer = setInterval(() => {
   sweep().catch((error) => console.error("[worker] barrido falló", error));
 }, SWEEP_EVERY_MS);
 
+// Monitoreo del go-live (cada 5 min): la misma revisión que usa la GitHub
+// Action. Al log de Railway como [monitor] ALERTA; la Action es el aviso que
+// llega por correo aunque este proceso esté caído.
+const MONITOR_EVERY_MS = 5 * 60_000;
+async function monitor() {
+  const report = await inboundHealth({
+    heartbeatAgeSeconds: async () => 0, // este mismo proceso está vivo
+  });
+  if (report.ok) console.info("[monitor] entrada de WhatsApp sana");
+  else console.error(`[monitor] ALERTA: ${report.problems.join(" · ")}`);
+}
+const monitorTimer = setInterval(() => {
+  monitor().catch((error) => console.error("[monitor] la revisión falló", error));
+}, MONITOR_EVERY_MS);
+
 async function shutdown(signal: string) {
   console.info(`[worker] ${signal}: cerrando`);
   clearInterval(sweepTimer);
+  clearInterval(monitorTimer);
   await Promise.all([worker.close(), mediaWorker?.close()]);
   process.exit(0);
 }
