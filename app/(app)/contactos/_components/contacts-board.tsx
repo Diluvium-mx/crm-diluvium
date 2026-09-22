@@ -20,7 +20,6 @@ import { getContactsByIds, updateContactStage, updateContactTemperature } from "
 import { useVirtualizer } from "@tanstack/react-virtual";
 import { ContactCard, ContactCardContent } from "./contact-card";
 import { ContactDetailPanel } from "./contact-detail-panel";
-import { ImportContactsButton } from "./import-contacts-button";
 import { phoneMatchesSearch } from "@/lib/phone-format";
 import { useInboxStream } from "../../dashboard/_components/use-inbox-stream";
 
@@ -385,7 +384,7 @@ export function ContactsBoard({ initialContacts }: { initialContacts: Contact[] 
     // hijo overflow-y-auto acote de verdad el viewport del virtualizador.
     <div className="flex h-[calc(100dvh-4rem)] min-h-0 flex-col gap-4 p-4">
       <div className="flex items-center justify-between gap-4">
-        <h1 className="text-lg font-semibold">Contactos</h1>
+        <h1 className="text-lg font-semibold">Embudo</h1>
         <div className="flex items-center gap-3">
           <input
             type="search"
@@ -394,7 +393,6 @@ export function ContactsBoard({ initialContacts }: { initialContacts: Contact[] 
             onChange={(event) => setSearch(event.target.value)}
             className="w-72 rounded border px-3 py-2 text-sm"
           />
-          <ImportContactsButton />
         </div>
       </div>
 
