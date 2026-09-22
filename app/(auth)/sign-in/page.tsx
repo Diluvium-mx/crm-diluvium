@@ -27,7 +27,7 @@ export default function SignInPage() {
         return;
       }
 
-      router.push("/dashboard");
+      router.push("/inicio");
     } catch {
       setError("No se pudo conectar. Revisa tu conexión e intenta de nuevo.");
     } finally {

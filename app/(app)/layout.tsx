@@ -8,11 +8,14 @@ import { roleAllows } from "@/lib/auth/permissions";
 import { SignOutButton } from "./_components/sign-out-button";
 import { ThemeToggle } from "@/components/theme-toggle";
 
+// "Dashboard" va primero y es el destino al entrar (/inicio). La Bandeja
+// conserva su URL histórica /dashboard. "Reportes" (/reports, sin página) se
+// reemplazó por el Dashboard.
 const NAV_ITEMS = [
+  { label: "Dashboard", href: "/inicio" },
   { label: "Bandeja", href: "/dashboard" },
   { label: "Embudo", href: "/embudo" },
   { label: "Mensajes rápidos", href: "/mensajes-rapidos" },
-  { label: "Reportes", href: "/reports" },
 ];
 
 export default async function AppLayout({
