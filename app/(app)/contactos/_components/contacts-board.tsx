@@ -1,6 +1,7 @@
 "use client";
 
-import { useCallback, useMemo, useRef, useState, useTransition } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, useTransition } from "react";
+import { useRouter } from "next/navigation";
 import {
   DndContext,
   DragOverlay,
@@ -15,12 +16,13 @@ import {
   type Modifier,
 } from "@dnd-kit/core";
 import { STAGES, STAGE_LABELS, getContactFullName, type Contact, type Stage, type Temperature } from "../_data/types";
-import { updateContactStage, updateContactTemperature } from "@/lib/actions/contacts";
+import { getContactsByIds, updateContactStage, updateContactTemperature } from "@/lib/actions/contacts";
 import { useVirtualizer } from "@tanstack/react-virtual";
 import { ContactCard, ContactCardContent } from "./contact-card";
 import { ContactDetailPanel } from "./contact-detail-panel";
 import { ImportContactsButton } from "./import-contacts-button";
 import { phoneMatchesSearch } from "@/lib/phone-format";
+import { useInboxStream } from "../../dashboard/_components/use-inbox-stream";
 
 function stripDiacritics(value: string): string {
   return value.normalize("NFD").replace(/[̀-ͯ]/g, "");
@@ -127,6 +129,7 @@ function StageColumn({
 
 export function ContactsBoard({ initialContacts }: { initialContacts: Contact[] }) {
   const [contacts, setContacts] = useState<Contact[]>(initialContacts);
+  const router = useRouter();
   const [syncedInitialContacts, setSyncedInitialContacts] = useState(initialContacts);
   const [search, setSearch] = useState("");
   const [selectedContactId, setSelectedContactId] = useState<string | null>(null);
@@ -194,6 +197,35 @@ export function ContactsBoard({ initialContacts }: { initialContacts: Contact[] 
     setSyncedInitialContacts(initialContacts);
     setContacts(initialContacts);
   }
+
+  // Tiempo real: un contacto NUEVO (p. ej. el primer WhatsApp de un número
+  // desconocido) aparece arriba de su columna sin recargar. Se agrupan los
+  // avisos (una importación manda miles): hasta 200 se piden por id; más que
+  // eso, se recarga la página completa una vez.
+  const pendingNewRef = useRef(new Set<string>());
+  const newTimerRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+  useEffect(() => () => clearTimeout(newTimerRef.current), []);
+  useInboxStream((event) => {
+    if (event.type !== "contact.created") return;
+    pendingNewRef.current.add(event.contactId);
+    clearTimeout(newTimerRef.current);
+    newTimerRef.current = setTimeout(() => {
+      const ids = [...pendingNewRef.current];
+      pendingNewRef.current.clear();
+      if (ids.length > 200) {
+        router.refresh();
+        return;
+      }
+      void getContactsByIds(ids).then((fresh) => {
+        if (fresh.length === 0) return;
+        setContacts((current) => {
+          const known = new Set(current.map((c) => c.id));
+          const added = fresh.filter((c) => !known.has(c.id));
+          return added.length ? [...added, ...current] : current;
+        });
+      });
+    }, 500);
+  });
 
   const normalizedSearch = normalizeForSearch(search.trim());
 

@@ -29,8 +29,14 @@ function payloadToEvent(raw: string): { organizationId: string; event: InboxEven
   try {
     const data: unknown = JSON.parse(raw);
     if (!data || typeof data !== "object") return null;
-    const { org, type, conversationId, messageId } = data as Record<string, unknown>;
-    if (typeof org !== "string" || typeof type !== "string" || typeof conversationId !== "string") return null;
+    const { org, type, conversationId, messageId, contactId } = data as Record<string, unknown>;
+    if (typeof org !== "string" || typeof type !== "string") return null;
+    // Contacto nuevo (p. ej. el primer mensaje de un número desconocido): el
+    // kanban de Contactos lo agrega sin recargar.
+    if (type === "contact.created" && typeof contactId === "string") {
+      return { organizationId: org, event: { type, contactId } };
+    }
+    if (typeof conversationId !== "string") return null;
     if (type === "conversation.updated") {
       return { organizationId: org, event: { type, conversationId } };
     }

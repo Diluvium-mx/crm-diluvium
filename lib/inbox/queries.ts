@@ -95,34 +95,16 @@ function searchCondition(search: string | undefined): SQL | undefined {
   return or(byName, ...prefixes.map((p) => like(contacts.phoneNational, `${p}%`)), legacy);
 }
 
-export async function listConversationsForOrg(
-  organizationId: string,
-  { filter = "all", search, cursor }: { filter?: InboxFilter; search?: string; cursor?: string | null } = {},
-): Promise<ConversationPage> {
-  const after = cursor ? decodeCursor(cursor) : null;
-  const rows = await db
-    .select({ conversation: conversations, contact: contacts, sortKey: sql<string>`${conversationSortKey}::text` })
-    .from(conversations)
-    .innerJoin(contacts, and(eq(contacts.id, conversations.contactId), eq(contacts.organizationId, organizationId)))
-    .where(
-      and(
-        eq(conversations.organizationId, organizationId),
-        filter === "unread" ? sql`${conversations.unreadCount} > 0` : undefined,
-        filter === "starred" ? eq(conversations.isStarred, true) : undefined,
-        searchCondition(search),
-        after ? sql`(${conversationSortKey}, ${conversations.id}) < (${after[0]}::timestamp, ${after[1]})` : undefined,
-      ),
-    )
-    .orderBy(desc(conversationSortKey), desc(conversations.id))
-    .limit(PAGE_SIZE + 1);
+type ListRow = { conversation: typeof conversations.$inferSelect; contact: typeof contacts.$inferSelect };
 
-  const page = rows.slice(0, PAGE_SIZE);
+/** Filas de la lista (último mensaje y semáforo en dos consultas por lote). */
+async function toListItems(organizationId: string, page: ListRow[]): Promise<ConversationListItem[]> {
   const ids = page.map((r) => r.conversation.id);
   const [lastMessages, awaiting] = ids.length
     ? await Promise.all([lastMessageOf(organizationId, ids), awaitingReplySince(organizationId, ids)])
     : [new Map(), new Map()];
 
-  const items: ConversationListItem[] = page.map(({ conversation, contact }) => {
+  return page.map(({ conversation, contact }) => {
     const last = lastMessages.get(conversation.id);
     return {
       id: conversation.id,
@@ -142,6 +124,56 @@ export async function listConversationsForOrg(
       windowExpiresAt: conversation.windowExpiresAt,
     };
   });
+}
+
+function listFilter(organizationId: string, filter: InboxFilter, search: string | undefined): SQL | undefined {
+  return and(
+    eq(conversations.organizationId, organizationId),
+    filter === "unread" ? sql`${conversations.unreadCount} > 0` : undefined,
+    filter === "starred" ? eq(conversations.isStarred, true) : undefined,
+    searchCondition(search),
+  );
+}
+
+/**
+ * Filas frescas de ciertas conversaciones con el MISMO filtro/búsqueda que la
+ * lista (tiempo real: la UI actualiza solo las afectadas). Las que ya no pasan
+ * el filtro no vuelven.
+ */
+export async function listConversationItemsByIdsForOrg(
+  organizationId: string,
+  conversationIds: string[],
+  { filter = "all", search }: { filter?: InboxFilter; search?: string } = {},
+): Promise<ConversationListItem[]> {
+  if (conversationIds.length === 0) return [];
+  const rows = await db
+    .select({ conversation: conversations, contact: contacts })
+    .from(conversations)
+    .innerJoin(contacts, and(eq(contacts.id, conversations.contactId), eq(contacts.organizationId, organizationId)))
+    .where(and(listFilter(organizationId, filter, search), inArray(conversations.id, conversationIds)));
+  return toListItems(organizationId, rows);
+}
+
+export async function listConversationsForOrg(
+  organizationId: string,
+  { filter = "all", search, cursor }: { filter?: InboxFilter; search?: string; cursor?: string | null } = {},
+): Promise<ConversationPage> {
+  const after = cursor ? decodeCursor(cursor) : null;
+  const rows = await db
+    .select({ conversation: conversations, contact: contacts, sortKey: sql<string>`${conversationSortKey}::text` })
+    .from(conversations)
+    .innerJoin(contacts, and(eq(contacts.id, conversations.contactId), eq(contacts.organizationId, organizationId)))
+    .where(
+      and(
+        listFilter(organizationId, filter, search),
+        after ? sql`(${conversationSortKey}, ${conversations.id}) < (${after[0]}::timestamp, ${after[1]})` : undefined,
+      ),
+    )
+    .orderBy(desc(conversationSortKey), desc(conversations.id))
+    .limit(PAGE_SIZE + 1);
+
+  const page = rows.slice(0, PAGE_SIZE);
+  const items = await toListItems(organizationId, page);
   const lastRow = page.at(-1);
   return {
     items,
