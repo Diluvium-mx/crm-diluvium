@@ -3,6 +3,11 @@
 -- MISMO `when` del journal (ya aplicada en staging; en prod se aplica aquí, es
 -- aditiva y el agente queda APAGADO: ai_agent_mode default 'off').
 -- Idempotente: si se re-ejecuta sobre una base que ya la tiene, no falla.
+-- lock_timeout: drizzle corre todas las migraciones en UNA transacción; si un
+-- ALTER TABLE no consigue su lock en 5 s, falla (y se reintenta) en vez de
+-- quedarse esperando y bloquear el tráfico detrás de él. SET LOCAL solo dura
+-- esta transacción.
+SET LOCAL lock_timeout = '5s';--> statement-breakpoint
 DO $$ BEGIN
   CREATE TYPE "public"."channel_ai_agent_mode" AS ENUM('off', 'borrador', 'auto');
 EXCEPTION WHEN duplicate_object THEN NULL;

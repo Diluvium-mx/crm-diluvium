@@ -11,6 +11,7 @@
 import { UnrecoverableError, Worker } from "bullmq";
 import { and, asc, count, gte, isNotNull, isNull, lt, sql } from "drizzle-orm";
 import { db } from "@/lib/db";
+import { waitForMigrations } from "@/lib/db/wait-for-migrations";
 import { messages, webhookEvents } from "@/lib/db/schema";
 import { messagingProvider } from "@/lib/messaging";
 import { DEAD_LETTER_ATTEMPTS, DeadLetterIngestError, PermanentIngestError, processWebhookEvent } from "@/lib/messaging/ingest";
@@ -73,7 +74,8 @@ const worker = new Worker<InboundJob>(
     }
   },
   // BullMQ exige maxRetriesPerRequest: null en la conexión del Worker.
-  { connection: { ...redisConnection(), maxRetriesPerRequest: null }, concurrency: 5 },
+  // autorun: false → arranca cuando la base ya tiene las migraciones (abajo).
+  { connection: { ...redisConnection(), maxRetriesPerRequest: null }, concurrency: 5, autorun: false },
 );
 
 worker.on("failed", (job, error) => {
@@ -89,14 +91,18 @@ const mediaWorker = storage
         const { stored, pending } = await downloadMessageMedia(provider, storage, job.data.messageId);
         console.info(`[media] ${job.data.messageId}: ${stored} guardado(s), ${pending} pendiente(s)`);
       },
-      { connection: { ...redisConnection(), maxRetriesPerRequest: null }, concurrency: 2 },
+      { connection: { ...redisConnection(), maxRetriesPerRequest: null }, concurrency: 2, autorun: false },
     )
   : null;
 mediaWorker?.on("failed", (job, error) => {
   console.error(`[media] falló ${job?.data.messageId} (intento ${job?.attemptsMade}): ${error.message}`);
 });
 
+// Hasta que la base tenga la última migración del código, ni colas ni barrido.
+let migrationsReady = false;
+
 async function sweep() {
+  if (!migrationsReady) return;
   const stale = await db
     .select({ id: webhookEvents.id })
     .from(webhookEvents)
@@ -177,3 +183,15 @@ process.on("SIGINT", () => void shutdown("SIGINT"));
 console.info(
   `[worker] escuchando ${INBOUND_QUEUE}${mediaWorker ? ` y ${MEDIA_QUEUE}` : " (media desactivada)"} (proveedor ${provider.name})`,
 );
+
+waitForMigrations()
+  .then(() => {
+    migrationsReady = true;
+    console.info("[worker] migraciones al día: arrancan las colas");
+    void worker.run();
+    void mediaWorker?.run();
+  })
+  .catch((error: unknown) => {
+    console.error("[worker] no se pudo verificar las migraciones", error);
+    process.exit(1);
+  });
