@@ -1,4 +1,6 @@
-import { isNotNull, sql } from "drizzle-orm";
+import { canonicalPhone, countryFromPhone, phoneColumns, phoneLookupVariants } from "@/lib/phone";
+import { and, asc, eq, inArray, isNotNull, isNull, sql } from "drizzle-orm";
+import { contactsImportLockKey } from "@/lib/db/locks";
 import { contacts } from "@/lib/db/schema/contacts";
 import type { ParsedGhlContactsSuccess } from "./ghl-contacts-csv";
 
@@ -77,10 +79,17 @@ export async function importParsedContacts(
     // llegan como null) NO debe borrar un número válido ya guardado (hallazgo
     // adversarial-review). Solo se sobrescribe cuando el CSV trae uno válido.
     ...(columnsPresent.phone
-      ? { phoneE164: sql`coalesce(excluded.phone_e164, ${contacts.phoneE164})` }
+      ? {
+          phoneE164: sql`coalesce(excluded.phone_e164, ${contacts.phoneE164})`,
+          // Las partes siguen al teléfono que queda (el nuevo si vino válido).
+          phoneCountryCode: sql`case when excluded.phone_e164 is not null then excluded.phone_country_code else ${contacts.phoneCountryCode} end`,
+          phoneNational: sql`case when excluded.phone_e164 is not null then excluded.phone_national else ${contacts.phoneNational} end`,
+          phoneCountryIso: sql`case when excluded.phone_e164 is not null then excluded.phone_country_iso else ${contacts.phoneCountryIso} end`,
+        }
       : {}),
     ...(columnsPresent.email ? { email: sql`excluded.email` } : {}),
-    ...(columnsPresent.country ? { country: sql`excluded.country` } : {}),
+    // País: el del CSV; si viene vacío, no se borra el que ya había.
+    ...(columnsPresent.country ? { country: sql`coalesce(excluded.country, ${contacts.country})` } : {}),
     ...(columnsPresent.tags
       ? { sourceChannel: sql`excluded.source_channel`, tags: sql`excluded.tags` }
       : {}),
@@ -99,9 +108,10 @@ export async function importParsedContacts(
     ghlContactId: row.ghlContactId,
     firstName: row.firstName,
     lastName: row.lastName,
-    phoneE164: row.phoneE164,
+    ...phoneColumns(row.phoneE164),
     email: row.email,
-    country: row.country,
+    // Sin país en el CSV → se deduce del teléfono (nunca pisa uno que venga).
+    country: row.country ?? countryFromPhone(row.phoneE164),
     sourceChannel: row.sourceChannel,
     tags: row.tags,
     // Etapa la que venga; en re-sync no se toca (ver nota arriba).
@@ -118,6 +128,42 @@ export async function importParsedContacts(
   let unrecognizedStages = 0;
 
   await database.transaction(async (tx) => {
+    // Exclusivo frente a la ingesta de WhatsApp (que lo toma compartido): un
+    // mensaje de un teléfono que viene en el CSV espera a que termine la
+    // importación y entonces encuentra el contacto importado, sin duplicarlo.
+    await tx.execute(sql`select pg_advisory_xact_lock(hashtextextended(${contactsImportLockKey(organizationId)}, 0))`);
+    // Adopción por teléfono: un contacto que ya llegó por WhatsApp (sin
+    // ghl_contact_id) con el mismo teléfono que una fila del CSV NO se duplica:
+    // se le asigna el ghl_contact_id y el upsert de abajo lo actualiza. Solo si
+    // ese ghl_contact_id no está ya en otro contacto (índice único).
+    const phones = [...new Set(valuesToInsert.flatMap((v) => (v.phoneE164 ? phoneLookupVariants(v.phoneE164) : [])))];
+    for (let i = 0; i < phones.length; i += BATCH_SIZE) {
+      const chunk = phones.slice(i, i + BATCH_SIZE);
+      const orphans = await tx
+        .select({ id: contacts.id, phoneE164: contacts.phoneE164 })
+        .from(contacts)
+        .where(
+          and(
+            eq(contacts.organizationId, organizationId),
+            isNull(contacts.ghlContactId),
+            inArray(contacts.phoneE164, chunk),
+          ),
+        )
+        .orderBy(asc(contacts.createdAt), asc(contacts.id));
+      const byPhone = new Map<string, string>();
+      for (const o of orphans) if (o.phoneE164 && !byPhone.has(canonicalPhone(o.phoneE164))) byPhone.set(canonicalPhone(o.phoneE164), o.id);
+      for (const v of valuesToInsert) {
+        const target = v.phoneE164 ? byPhone.get(canonicalPhone(v.phoneE164)) : undefined;
+        if (!target) continue;
+        byPhone.delete(canonicalPhone(v.phoneE164 as string));
+        const [taken] = await tx
+          .select({ id: contacts.id })
+          .from(contacts)
+          .where(and(eq(contacts.organizationId, organizationId), eq(contacts.ghlContactId, v.ghlContactId)))
+          .limit(1);
+        if (!taken) await tx.update(contacts).set({ ghlContactId: v.ghlContactId }).where(eq(contacts.id, target));
+      }
+    }
     for (let i = 0; i < valuesToInsert.length; i += BATCH_SIZE) {
       const chunk = valuesToInsert.slice(i, i + BATCH_SIZE);
       const returned = await tx

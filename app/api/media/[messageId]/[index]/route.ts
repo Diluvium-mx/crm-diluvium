@@ -14,7 +14,7 @@ import { objectStorage, StorageNotConfiguredError } from "@/lib/storage/s3";
 
 const SIGNED_URL_SECONDS = 300;
 
-export async function GET(_req: Request, { params }: RouteContext<"/api/media/[messageId]/[index]">): Promise<Response> {
+export async function GET(req: Request, { params }: RouteContext<"/api/media/[messageId]/[index]">): Promise<Response> {
   const session = await auth.api.getSession({ headers: await headers() });
   if (!session) return new Response("no autenticado", { status: 401 });
 
@@ -43,9 +43,18 @@ export async function GET(_req: Request, { params }: RouteContext<"/api/media/[m
     );
   }
 
+  // ?thumb=1 → miniatura de la 1ª página (PDF); ?download=1 → forzar descarga.
+  const search = new URL(req.url).searchParams;
+  const wantsThumb = search.get("thumb") === "1";
+  if (wantsThumb && !attachment.thumbnailKey) return new Response("sin miniatura", { status: 404 });
+  const key = wantsThumb && attachment.thumbnailKey ? attachment.thumbnailKey : attachment.storageKey;
+  const disposition = search.get("download") === "1" ? "attachment" : "inline";
+
   let url: string;
   try {
-    url = await objectStorage().signedGetUrl(attachment.storageKey, SIGNED_URL_SECONDS, attachment.fileName);
+    // Para forzar la descarga hace falta un nombre (una foto no trae fileName).
+    const name = wantsThumb ? undefined : (attachment.fileName ?? (disposition === "attachment" ? `adjunto-${index + 1}` : undefined));
+    url = await objectStorage().signedGetUrl(key, SIGNED_URL_SECONDS, name, disposition);
   } catch (error) {
     if (!(error instanceof StorageNotConfiguredError)) throw error;
     console.error("[media] bucket no configurado:", error.message);

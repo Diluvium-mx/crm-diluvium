@@ -4,17 +4,10 @@
 // de chat de la bandeja (ChatThread). Resuelve la conversación por contacto,
 // cubre carga / sin conversación / error, y se mantiene en vivo con el SSE.
 import { useCallback, useEffect, useRef, useState } from "react";
-import type { ConversationDetail, InboxEvent } from "@/lib/inbox/types";
+import type { ConversationDetail } from "@/lib/inbox/types";
 import { getConversationByContact } from "@/lib/inbox/actions";
 import { ChatThread } from "../../dashboard/_components/chat-thread";
-
-function parseEvent(data: string): InboxEvent | null {
-  try {
-    return JSON.parse(data) as InboxEvent;
-  } catch {
-    return null;
-  }
-}
+import { useInboxStream } from "../../dashboard/_components/use-inbox-stream";
 
 type State =
   | { status: "loading" }
@@ -29,6 +22,8 @@ export function ContactChat({ contactId }: { contactId: string }) {
   // Id de la conversación resuelta, para que los handlers del SSE (suscritos
   // una sola vez) filtren sin re-suscribirse.
   const conversationIdRef = useRef<string | null>(null);
+  const pendingLoadRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+  useEffect(() => () => clearTimeout(pendingLoadRef.current), []);
 
   const load = useCallback(async () => {
     try {
@@ -52,28 +47,27 @@ export function ContactChat({ contactId }: { contactId: string }) {
     return () => clearInterval(id);
   }, []);
 
-  // Tiempo real: recarga el hilo ante cambios de ESTA conversación y re-pide el
-  // detalle en conversation.updated (ventana de 24 h) y en reload.
-  useEffect(() => {
-    const source = new EventSource("/api/inbox/stream");
-    const matches = (event: MessageEvent): boolean => {
-      const payload = parseEvent(event.data);
-      const id = conversationIdRef.current;
-      return Boolean(id && payload && "conversationId" in payload && payload.conversationId === id);
-    };
-    const onThread = (event: MessageEvent) => {
-      if (matches(event)) setRevalToken((n) => n + 1);
-    };
-    const onConversation = (event: MessageEvent) => {
-      if (matches(event)) void load();
-    };
-    const onReload = () => void load();
-    source.addEventListener("reload", onReload);
-    source.addEventListener("conversation.updated", onConversation);
-    source.addEventListener("message.upserted", onThread);
-    source.addEventListener("message.deleted", onThread);
-    return () => source.close();
-  }, [load]);
+  // Tiempo real con el MISMO hook que la Bandeja: recarga el hilo ante cambios
+  // de ESTA conversación y re-pide el detalle en conversation.updated (ventana
+  // de 24 h) y en reload. Si el contacto aún no tenía conversación, la primera
+  // que se cree para cualquiera dispara una nueva búsqueda (barata) por si es
+  // la suya: así su primer mensaje aparece aquí sin recargar.
+  useInboxStream((event) => {
+    if (event.type === "reload") return void load();
+    if (event.type === "contact.created" || event.type === "contacts.bulk") return;
+    const id = conversationIdRef.current;
+    if (!id) {
+      // Con debounce: una ráfaga de mensajes de otros clientes = una búsqueda.
+      if (event.type === "conversation.updated") {
+        clearTimeout(pendingLoadRef.current);
+        pendingLoadRef.current = setTimeout(() => void load(), 1_000);
+      }
+      return;
+    }
+    if (event.conversationId !== id) return;
+    if (event.type === "conversation.updated") void load();
+    else setRevalToken((n) => n + 1);
+  });
 
   if (state.status === "loading") {
     return <div className="flex flex-1 items-center justify-center text-sm text-muted-foreground">Cargando conversación…</div>;

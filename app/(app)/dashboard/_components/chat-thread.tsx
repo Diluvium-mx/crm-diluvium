@@ -6,6 +6,8 @@ import type { AdReferral, AttachmentView, ConversationDetail, MessageView } from
 import { listMessages, retryMessage, sendMessage, sendTemplate } from "@/lib/inbox/actions";
 import { SnippetPicker } from "./snippet-picker";
 import { TemplatePicker } from "./template-picker";
+import { DocumentCard } from "./document-card";
+import { MediaViewer } from "./media-viewer";
 import {
   bubbleTime,
   dayLabel,
@@ -13,6 +15,7 @@ import {
   statusMark,
   windowHoursLeft,
 } from "./format";
+import { displayPhone } from "@/lib/phone-format";
 
 const PAGE_LIMIT = 30;
 
@@ -60,41 +63,48 @@ function AdReferralCard({ referral }: { referral: AdReferral }) {
   );
 }
 
-function Attachment({ attachment }: { attachment: AttachmentView }) {
-  if (attachment.state === "processing") {
-    return <div className="rounded-md bg-black/5 px-3 py-2 text-xs text-muted-foreground">Procesando…</div>;
-  }
+function Attachment({ attachment, onOpen }: { attachment: AttachmentView; onOpen: () => void }) {
   if (attachment.state === "failed") {
     return <div className="rounded-md bg-black/5 px-3 py-2 text-xs text-muted-foreground">Adjunto no disponible</div>;
+  }
+  // Mientras se copia al bucket el mensaje ya se ve: "Procesando…" y el SSE lo
+  // rellena al terminar (message.upserted).
+  if (attachment.state === "processing") {
+    return attachment.kind === "document" ? (
+      <div className="w-64 max-w-full rounded-lg border bg-card px-3 py-2 text-xs text-muted-foreground">
+        📄 {attachment.fileName ?? "Documento"} · Procesando…
+      </div>
+    ) : (
+      <div className="rounded-md bg-black/5 px-3 py-2 text-xs text-muted-foreground">Procesando…</div>
+    );
   }
   switch (attachment.kind) {
     case "image":
     case "sticker":
       return (
-        // eslint-disable-next-line @next/next/no-img-element
-        <img src={attachment.url} alt={attachment.fileName ?? "Imagen"} className="max-h-64 rounded-md object-cover" />
+        <button type="button" onClick={onOpen} className="block cursor-zoom-in" aria-label="Ver imagen">
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img src={attachment.url} alt={attachment.fileName ?? "Imagen"} className="max-h-64 rounded-md object-cover" />
+        </button>
       );
     case "audio":
       return <audio controls src={attachment.url} className="w-56" />;
     case "video":
       return <video controls src={attachment.url} className="max-h-64 rounded-md" />;
     default:
-      return (
-        <a
-          href={attachment.url}
-          target="_blank"
-          rel="noreferrer"
-          className="flex items-center gap-2 rounded-md border bg-card px-3 py-2 text-xs hover:bg-muted"
-        >
-          <span aria-hidden="true">📄</span>
-          <span className="min-w-0 truncate">{attachment.fileName ?? "Documento"}</span>
-          <span className="ml-auto text-brand-navy">Descargar</span>
-        </a>
-      );
+      return <DocumentCard attachment={attachment} onOpen={onOpen} />;
   }
 }
 
-function Bubble({ row, onRetry }: { row: Row; onRetry: (row: Row) => void }) {
+function Bubble({
+  row,
+  onRetry,
+  onOpenAttachment,
+}: {
+  row: Row;
+  onRetry: (row: Row) => void;
+  onOpenAttachment: (attachment: AttachmentView) => void;
+}) {
   const out = row.direction === "out";
   const opt = isOptimistic(row);
   const mark = out ? statusMark(row.status) : null;
@@ -106,24 +116,60 @@ function Bubble({ row, onRetry }: { row: Row; onRetry: (row: Row) => void }) {
   const errorMessage = opt ? row.errorMessage : (row as MessageView).errorMessage;
   const attachments = opt ? [] : (row as MessageView).attachments;
   const adReferral = opt ? null : (row as MessageView).adReferral;
+  const view = opt ? null : (row as MessageView);
+  const reactions = view ? [view.reactions.contact, view.reactions.business].filter(Boolean) : [];
 
   return (
-    <div className={`flex ${out ? "justify-end" : "justify-start"}`}>
+    <div className={`flex ${out ? "justify-end" : "justify-start"} ${reactions.length ? "mb-3" : ""}`}>
       <div
-        className={`max-w-[78%] rounded-2xl px-3 py-2 text-sm shadow-sm ${
+        className={`relative max-w-[78%] rounded-2xl px-3 py-2 text-sm shadow-sm ${
           out ? "bg-brand-navy text-brand-white" : "bg-card text-foreground border"
         }`}
       >
+        {view?.quoted && (
+          <div
+            className={`mb-1 rounded-md border-l-4 px-2 py-1 text-xs ${
+              out ? "border-brand-white/60 bg-brand-white/10" : "border-brand-navy/60 bg-muted"
+            }`}
+          >
+            <span className="font-medium">{view.quoted.direction === "out" ? "Tú" : "Cliente"}</span>
+            <p className="line-clamp-2 opacity-80">{view.quoted.preview}</p>
+          </div>
+        )}
+        {view?.deletedAt && (
+          <p className={`mb-1 text-[11px] italic ${out ? "text-brand-white/70" : "text-muted-foreground"}`}>
+            🚫 Eliminado en WhatsApp por su autor (se conserva en el CRM)
+          </p>
+        )}
         {adReferral && <AdReferralCard referral={adReferral} />}
+        {view?.location && (
+          <a
+            href={`https://www.google.com/maps?q=${view.location.latitude},${view.location.longitude}`}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="mb-1 block rounded-md border px-2 py-1 text-xs underline-offset-2 hover:underline"
+          >
+            📍 {view.location.name ?? "Ubicación"}
+            {view.location.address && <span className="block opacity-80">{view.location.address}</span>}
+          </a>
+        )}
+        {view && view.contactCards.length > 0 && (
+          <div className="mb-1 flex flex-col gap-0.5 text-xs">
+            {view.contactCards.map((name, i) => (
+              <span key={i}>👤 {name}</span>
+            ))}
+          </div>
+        )}
         {attachments.length > 0 && (
           <div className="mb-1 flex flex-col gap-1">
             {attachments.map((att) => (
-              <Attachment key={att.index} attachment={att} />
+              <Attachment key={att.index} attachment={att} onOpen={() => onOpenAttachment(att)} />
             ))}
           </div>
         )}
         {row.body && <p className="whitespace-pre-wrap break-words">{row.body}</p>}
         <div className={`mt-1 flex items-center justify-end gap-1 text-[10px] ${out ? "text-brand-white/70" : "text-muted-foreground"}`}>
+          {view?.editedAt && <span>editado</span>}
           <span>{bubbleTime(row.sentAt)}</span>
           {mark && mark.glyph && (
             <span className={mark.className} title={mark.label} aria-label={mark.label}>
@@ -131,6 +177,14 @@ function Bubble({ row, onRetry }: { row: Row; onRetry: (row: Row) => void }) {
             </span>
           )}
         </div>
+        {reactions.length > 0 && (
+          <span
+            className={`absolute -bottom-3 ${out ? "right-2" : "left-2"} rounded-full border bg-card px-1.5 text-xs text-foreground shadow-sm`}
+            aria-label={`Reacciones: ${reactions.join(" ")}`}
+          >
+            {reactions.join(" ")}
+          </span>
+        )}
         {out && row.status === "failed" && (
           <div className="mt-1 flex items-center justify-end gap-2 text-[11px] text-red-200">
             <span className="text-red-300">{errorMessage ?? "No se envió."}</span>
@@ -168,6 +222,7 @@ export function ChatThread({
   const [draft, setDraft] = useState("");
   const [snippetOpen, setSnippetOpen] = useState(false);
   const [templateOpen, setTemplateOpen] = useState(false);
+  const [viewing, setViewing] = useState<AttachmentView | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
 
   // Cierra los selectores al cambiar de conversación. Reset en render (no en un
@@ -305,7 +360,7 @@ export function ChatThread({
       <header className="flex items-center gap-3 border-b bg-card px-4 py-3">
         <div className="min-w-0 flex-1">
           <p className="truncate text-sm font-semibold">{detail.contact.name}</p>
-          <p className="truncate text-xs text-muted-foreground">{detail.contact.phone ?? "Sin teléfono"}</p>
+          <p className="truncate text-xs text-muted-foreground">{displayPhone(detail.contact.phone) || "Sin teléfono"}</p>
         </div>
         <span className="shrink-0 rounded-full bg-brand-navy/10 px-2.5 py-1 text-xs font-medium text-brand-navy">
           {detail.contact.stage}
@@ -324,7 +379,7 @@ export function ChatThread({
       </div>
 
       {/* Hilo */}
-      <div ref={scrollRef} className="min-h-0 flex-1 space-y-2 overflow-y-auto p-4">
+      <div ref={scrollRef} className="chat-wallpaper min-h-0 flex-1 space-y-2 overflow-y-auto p-4">
         {loading && messages.length === 0 ? (
           <p className="py-8 text-center text-sm text-muted-foreground">Cargando mensajes…</p>
         ) : loadError ? (
@@ -358,7 +413,7 @@ export function ChatThread({
                       </span>
                     </div>
                   )}
-                  <Bubble row={row} onRetry={handleRetry} />
+                  <Bubble row={row} onRetry={handleRetry} onOpenAttachment={setViewing} />
                 </div>
               );
             })}
@@ -426,6 +481,7 @@ export function ChatThread({
           </button>
         )}
       </div>
+      {viewing && <MediaViewer attachment={viewing} onClose={() => setViewing(null)} />}
     </div>
   );
 }
