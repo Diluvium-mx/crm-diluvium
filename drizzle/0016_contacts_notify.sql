@@ -1,3 +1,7 @@
+-- lock_timeout: drizzle corre todas las migraciones en UNA transacción; si un
+-- ALTER no consigue su lock en 5 s, falla (y se reintenta) en vez de bloquear el
+-- tráfico. Se restablece al final para no afectar a las migraciones siguientes.
+SET LOCAL lock_timeout = '5s';--> statement-breakpoint
 -- Tiempo real de Contactos: un contacto NUEVO avisa por NOTIFY en el mismo canal
 -- "inbox_events" que la bandeja (GET /api/inbox/stream). Así el primer mensaje
 -- de un número desconocido aparece en el kanban (columna Inbox, arriba) sin
@@ -30,4 +34,5 @@ $$ LANGUAGE plpgsql;
 --> statement-breakpoint
 CREATE TRIGGER contacts_created_notify AFTER INSERT ON "contacts"
   REFERENCING NEW TABLE AS new_contacts
-  FOR EACH STATEMENT EXECUTE FUNCTION contacts_notify();
+  FOR EACH STATEMENT EXECUTE FUNCTION contacts_notify();--> statement-breakpoint
+SET LOCAL lock_timeout = DEFAULT;

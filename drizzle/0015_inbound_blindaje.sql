@@ -1,3 +1,7 @@
+-- lock_timeout: drizzle corre todas las migraciones en UNA transacción; si un
+-- ALTER no consigue su lock en 5 s, falla (y se reintenta) en vez de bloquear el
+-- tráfico. Se restablece al final para no afectar a las migraciones siguientes.
+SET LOCAL lock_timeout = '5s';--> statement-breakpoint
 DROP INDEX "conversations_org_last_message_idx";--> statement-breakpoint
 ALTER TABLE "conversations" ALTER COLUMN "last_message_at" SET DEFAULT now();--> statement-breakpoint
 -- Relleno antes del NOT NULL: una conversación sin last_message_at toma la hora
@@ -34,4 +38,5 @@ WHERE "processed_at" IS NULL
   AND "last_error" = 'mensaje del estado aún no existe';--> statement-breakpoint
 -- El resto de dead-letters existentes quedan registrados como tales.
 UPDATE "webhook_events" SET "dead_lettered_at" = now()
-WHERE "processed_at" IS NULL AND "attempts" >= 20;
+WHERE "processed_at" IS NULL AND "attempts" >= 20;--> statement-breakpoint
+SET LOCAL lock_timeout = DEFAULT;
