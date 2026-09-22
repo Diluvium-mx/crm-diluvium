@@ -44,4 +44,23 @@ describe("mergeItems (tiempo real de la lista)", () => {
     expect(out).toHaveLength(120);
     expect(out[0].id).toBe("k50");
   });
+
+  it("actualizar la ÚLTIMA fila cargada (con más páginas) no la hace desaparecer", () => {
+    const out = mergeItems(list, ["a"], new Map([["a", item("a", "2026-09-22T10:00:00Z", 2)]]), true);
+    expect(out.map((c) => c.id)).toEqual(["c", "b", "a"]);
+    expect(out[2].unreadCount).toBe(2);
+  });
+
+  it("varias filas finales actualizadas a la vez se conservan", () => {
+    const out = mergeItems(
+      list,
+      ["b", "a"],
+      new Map([
+        ["b", item("b", "2026-09-22T11:00:00Z", 1)],
+        ["a", item("a", "2026-09-22T10:00:00Z", 1)],
+      ]),
+      true,
+    );
+    expect(out.map((c) => c.id)).toEqual(["c", "b", "a"]);
+  });
 });

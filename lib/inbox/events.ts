@@ -36,6 +36,7 @@ function payloadToEvent(raw: string): { organizationId: string; event: InboxEven
     if (type === "contact.created" && typeof contactId === "string") {
       return { organizationId: org, event: { type, contactId } };
     }
+    if (type === "contacts.bulk") return { organizationId: org, event: { type } };
     if (typeof conversationId !== "string") return null;
     if (type === "conversation.updated") {
       return { organizationId: org, event: { type, conversationId } };

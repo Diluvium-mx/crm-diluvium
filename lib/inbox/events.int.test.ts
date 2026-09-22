@@ -116,6 +116,22 @@ describe.skipIf(!TEST_DATABASE_URL)("tiempo real de la bandeja (LISTEN/NOTIFY, P
     }
   });
 
+  it("una importación (muchos contactos en una sentencia) emite UN contacts.bulk, no uno por fila", async () => {
+    const a = collect();
+    const off = await subscribeToInbox(ORG_A, (e) => a.events.push(e));
+    try {
+      await db.insert(s.contacts).values(
+        Array.from({ length: 500 }, (_, i) => ({ id: `c_bulk_${i}`, organizationId: ORG_A, firstName: `B${i}` })),
+      );
+      await a.wait(1);
+      await new Promise((r) => setTimeout(r, 200));
+      expect(a.events.filter((e) => e.type === "contacts.bulk")).toHaveLength(1);
+      expect(a.events.filter((e) => e.type === "contact.created")).toHaveLength(0);
+    } finally {
+      off();
+    }
+  });
+
   it("borrar un mensaje (eco que gana la carrera) emite message.deleted", async () => {
     const a = collect();
     const off = await subscribeToInbox(ORG_A, (e) => a.events.push(e));

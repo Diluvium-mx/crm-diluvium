@@ -132,4 +132,6 @@ export type InboxEvent =
   | { type: "message.deleted"; conversationId: string; messageId: string }
   /** Contacto nuevo (p. ej. primer mensaje de un número desconocido): el kanban lo agrega. */
   | { type: "contact.created"; contactId: string }
+  /** Muchos contactos nuevos en una sola sentencia (importación): el kanban se recarga una vez. */
+  | { type: "contacts.bulk" }
   | { type: "reload" };
