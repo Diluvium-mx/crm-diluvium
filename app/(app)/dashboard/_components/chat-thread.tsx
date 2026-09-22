@@ -6,6 +6,7 @@ import { listMessages, retryMessage, sendMessage, sendTemplate } from "@/lib/inb
 import { Composer } from "./composer";
 import { DocumentCard } from "./document-card";
 import { MediaViewer } from "./media-viewer";
+import { ScheduledStrip } from "./scheduled-strip";
 import {
   bubbleTime,
   dayLabel,
@@ -219,6 +220,8 @@ export function ChatThread({
   const [loadError, setLoadError] = useState<string | null>(null);
   const [viewing, setViewing] = useState<AttachmentView | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
+  // Sube al programar un mensaje: la franja de programados (A6) se recarga.
+  const [scheduledRev, setScheduledRev] = useState(0);
 
   const windowOpen = isWindowOpen(detail.windowExpiresAt, nowMs);
   const hoursLeft = windowHoursLeft(detail.windowExpiresAt, nowMs);
@@ -397,11 +400,20 @@ export function ChatThread({
       {/* Composer (composer.tsx): texto libre, fragmentos y plantillas con la
           ventana abierta; solo plantilla cuando está cerrada. key: al cambiar de
           conversación se reinicia el borrador y se cierran los selectores. */}
+      <ScheduledStrip
+        key={`sched-${conversationId}`}
+        conversationId={conversationId}
+        windowExpiresAt={detail.windowExpiresAt}
+        refreshToken={revalToken + scheduledRev}
+      />
       <Composer
         key={conversationId}
+        conversationId={conversationId}
         windowOpen={windowOpen}
+        windowExpiresAt={detail.windowExpiresAt}
         onSendText={(text) => void doSend(text)}
         onSendTemplate={(templateId, values, preview) => void doSendTemplate(templateId, values, preview)}
+        onScheduled={() => setScheduledRev((n) => n + 1)}
       />
       {viewing && <MediaViewer attachment={viewing} onClose={() => setViewing(null)} />}
     </div>

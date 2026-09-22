@@ -15,9 +15,12 @@ const TOKEN_CLASS = "rounded bg-brand-navy/15 px-1 font-medium text-brand-navy";
 export function TemplatePicker({
   onSubmit,
   onClose,
+  submitLabel = "Enviar plantilla",
 }: {
   onSubmit: (templateId: string, values: string[], preview: string) => void;
   onClose: () => void;
+  /** Texto del botón final (p. ej. "Programar plantilla" en A6). */
+  submitLabel?: string;
 }) {
   const [templates, setTemplates] = useState<TemplateView[] | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -104,7 +107,7 @@ export function TemplatePicker({
                 disabled={!ready}
                 className="rounded-md bg-brand-navy px-4 py-1.5 text-sm font-medium text-brand-white hover:bg-brand-navy-dark disabled:opacity-50"
               >
-                Enviar plantilla
+                {submitLabel}
               </button>
             </div>
           </div>
