@@ -21,6 +21,14 @@ export const user = pgTable("user", {
     .defaultNow()
     .$onUpdate(() => /* @__PURE__ */ new Date())
     .notNull(),
+  // Campos del plugin admin de Better Auth (dist/plugins/admin/schema.mjs).
+  // `role` es el rol GLOBAL del plugin: este CRM NO lo usa (el rol vive solo
+  // en member.role). `banned` = usuario desactivado (A4): no puede iniciar
+  // sesión y requireActiveMembership lo rechaza.
+  role: text("role"),
+  banned: boolean("banned").default(false),
+  banReason: text("ban_reason"),
+  banExpires: timestamp("ban_expires"),
 });
 
 export const session = pgTable(
@@ -39,6 +47,8 @@ export const session = pgTable(
       .notNull()
       .references(() => user.id, { onDelete: "cascade" }),
     activeOrganizationId: text("active_organization_id"),
+    // Plugin admin (suplantación). No se usa; lo exige su schema.
+    impersonatedBy: text("impersonated_by"),
   },
   (table) => [index("session_userId_idx").on(table.userId)],
 );

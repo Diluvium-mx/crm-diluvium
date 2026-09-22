@@ -2,7 +2,7 @@ import { headers } from "next/headers";
 import { eq } from "drizzle-orm";
 import { auth } from "@/lib/auth";
 import { db } from "@/lib/db";
-import { member } from "@/lib/db/schema/auth";
+import { member, user } from "@/lib/db/schema/auth";
 
 // Nunca confiar en un organization_id que venga del cliente (CLAUDE.md §7),
 // ni tampoco en session.activeOrganizationId a secas: better-auth no lo
@@ -27,9 +27,16 @@ export async function requireActiveMembership(): Promise<ActiveMembership> {
   }
 
   const memberships = await db
-    .select({ organizationId: member.organizationId, role: member.role })
+    .select({ organizationId: member.organizationId, role: member.role, banned: user.banned })
     .from(member)
+    .innerJoin(user, eq(user.id, member.userId))
     .where(eq(member.userId, session.user.id));
+
+  // Usuario desactivado (A4): sus sesiones se borran al desactivarlo, pero la
+  // cookie de sesión en caché (hasta 60 s) podría seguir viva; aquí se corta.
+  if (memberships.some((m) => m.banned)) {
+    throw new Error("Usuario desactivado.");
+  }
 
   if (memberships.length === 0) {
     throw new Error("El usuario no tiene membresía activa en ninguna organización.");
