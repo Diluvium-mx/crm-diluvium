@@ -5,8 +5,8 @@
 -- Idempotente: si se re-ejecuta sobre una base que ya la tiene, no falla.
 -- lock_timeout: drizzle corre todas las migraciones en UNA transacción; si un
 -- ALTER TABLE no consigue su lock en 5 s, falla (y se reintenta) en vez de
--- quedarse esperando y bloquear el tráfico detrás de él. SET LOCAL solo dura
--- esta transacción.
+-- quedarse esperando y bloquear el tráfico detrás de él. Se restablece al final
+-- para no afectar a las migraciones siguientes del mismo lote.
 SET LOCAL lock_timeout = '5s';--> statement-breakpoint
 DO $$ BEGIN
   CREATE TYPE "public"."channel_ai_agent_mode" AS ENUM('off', 'borrador', 'auto');
@@ -26,4 +26,5 @@ ALTER TABLE "ai_config" ADD COLUMN IF NOT EXISTS "response_delay_seconds" intege
 ALTER TABLE "ai_config" ADD COLUMN IF NOT EXISTS "max_wait_seconds" integer DEFAULT 60 NOT NULL;--> statement-breakpoint
 ALTER TABLE "ai_config" ADD COLUMN IF NOT EXISTS "handover_reactivate_hours" integer DEFAULT 8 NOT NULL;--> statement-breakpoint
 ALTER TABLE "ai_config" ADD COLUMN IF NOT EXISTS "anti_loop_max_per_hour" integer DEFAULT 10 NOT NULL;--> statement-breakpoint
-ALTER TABLE "ai_config" ADD COLUMN IF NOT EXISTS "max_replies_per_contact" integer;
+ALTER TABLE "ai_config" ADD COLUMN IF NOT EXISTS "max_replies_per_contact" integer;--> statement-breakpoint
+SET LOCAL lock_timeout = DEFAULT;
