@@ -51,6 +51,14 @@ railway variable set 'ANTHROPIC_API_KEY=${{crm-diluvium.ANTHROPIC_API_KEY}}' -s 
 zsh trata `${{...}}` como *bad substitution* con comillas dobles. Una opción del
 selector cuya llave falte queda en gris automáticamente.
 
+## Nota para la Fase B (panel de gasto)
+
+El runtime del Agente (Fase B) **debe PERSISTIR tokens/uso por mensaje procesado**
+(input, output, caché read/write, modelo, proveedor). `callModel` ya devuelve ese
+`usage` normalizado (`ModelUsage`); falta escribirlo por mensaje en la base cuando
+el agente responda de verdad. Eso alimenta un **panel de gasto** futuro (no se
+construye ahora). El dry-run "Probar modelo" ya muestra tokens, pero no persiste.
+
 ## Fuera de alcance (próximos briefs)
 
 Que el agente responda a conversaciones reales, ejecución de las
