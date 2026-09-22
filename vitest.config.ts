@@ -13,6 +13,12 @@ export default defineConfig({
     },
   },
   test: {
+    // Pool `threads` (no el `forks` por defecto): forks escribe un dir temporal
+    // `ssr` en $TMPDIR vía tinypool, y el sandbox read-only de la revisión de
+    // Codex deniega esa escritura → EPERM y la suite reporta "0 tests" (falso
+    // verde que dejaría pasar el gate sin correr ninguna prueba). Con `threads`
+    // corre en hilos sin ese temp y pasa bajo read-only (verificado: 206 tests).
+    pool: "threads",
     // Los tests de integración (*.int.test.ts) comparten UNA base de pruebas y
     // la truncan en cada beforeEach; si dos archivos corrieran en paralelo se
     // pisarían. La suite completa tarda <2 s, así que se corren los archivos en

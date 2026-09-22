@@ -12,6 +12,7 @@
     "start:web": "drizzle-kit migrate && next start",
     "start:worker": "tsx worker/index.ts",
     "lint": "eslint",
+    "typecheck": "tsc --noEmit --incremental false",
     "test": "vitest run",
     "db:generate": "drizzle-kit generate",
     "db:migrate": "drizzle-kit migrate",
