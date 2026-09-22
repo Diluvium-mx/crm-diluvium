@@ -303,6 +303,7 @@ waitForMigrations()
     console.info("[worker] migraciones al día: arrancan las colas");
     void worker.run();
     void mediaWorker?.run();
+    scheduled.run();
   })
   .catch((error: unknown) => {
     console.error("[worker] no se pudo verificar las migraciones", error);

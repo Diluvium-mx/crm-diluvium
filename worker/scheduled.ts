@@ -19,7 +19,9 @@ export function startScheduledWorker(provider: MessagingProvider) {
       console.info(`[scheduled] ${job.data.scheduledId}: ${outcome}`);
       return outcome;
     },
-    { connection: { ...redisConnection(), maxRetriesPerRequest: null }, concurrency: 2 },
+    // autorun: false → worker/index.ts lo arranca cuando la base ya tiene las
+    // migraciones (mismo patrón que las otras colas).
+    { connection: { ...redisConnection(), maxRetriesPerRequest: null }, concurrency: 2, autorun: false },
   );
   worker.on("failed", (job, error) => {
     console.error(`[scheduled] falló ${job?.data.scheduledId} (intento ${job?.attemptsMade}): ${error.message}`);
@@ -37,5 +39,5 @@ export function startScheduledWorker(provider: MessagingProvider) {
     if (stuck) console.warn(`[scheduled] barrido: ${stuck} envío(s) programados atorados → failed (interrupted)`);
   }
 
-  return { worker, sweep, close: () => worker.close() };
+  return { worker, sweep, run: () => void worker.run(), close: () => worker.close() };
 }
