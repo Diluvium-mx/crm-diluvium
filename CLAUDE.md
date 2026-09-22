@@ -83,8 +83,8 @@ en Railway se crea con un clic y evita una migración dolorosa en tres meses.
 Cuatro servicios dentro de un mismo proyecto Railway:
 
 ```
-railway project: crm-diluvium
-├── web       → Next.js (UI + API routes + webhook receiver)
+railway project: energetic-ambition          # el servicio web se llama "crm-diluvium"
+├── web       → Next.js (UI + API routes + webhook receiver)   # servicio "crm-diluvium"
 ├── worker    → proceso Node con BullMQ (envíos, automatizaciones, recordatorios, descarga de media)
 ├── postgres  → plugin administrado
 └── redis     → plugin administrado
