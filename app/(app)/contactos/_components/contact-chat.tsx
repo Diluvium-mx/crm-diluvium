@@ -54,7 +54,7 @@ export function ContactChat({ contactId }: { contactId: string }) {
   // la suya: así su primer mensaje aparece aquí sin recargar.
   useInboxStream((event) => {
     if (event.type === "reload") return void load();
-    if (event.type === "contact.created") return;
+    if (event.type === "contact.created" || event.type === "contacts.bulk") return;
     const id = conversationIdRef.current;
     if (!id) {
       // Con debounce: una ráfaga de mensajes de otros clientes = una búsqueda.

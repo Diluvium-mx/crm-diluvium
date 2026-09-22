@@ -24,13 +24,16 @@ export function mergeItems(
   fresh: Map<string, ConversationListItem>,
   hasMore: boolean,
 ): ConversationListItem[] {
+  // El límite de lo cargado se toma de la lista ORIGINAL (antes de retirar las
+  // tocadas): si se actualiza la última fila cargada y sigue siendo la última,
+  // debe volver a su lugar, no desaparecer.
+  const boundary = list.at(-1);
   const touched = new Set(ids);
   const rest = list.filter((c) => !touched.has(c.id));
-  const last = rest.at(-1);
   for (const id of ids) {
     const item = fresh.get(id);
     if (!item) continue; // borrada o ya no pasa el filtro
-    if (hasMore && last && before(last, item)) continue;
+    if (hasMore && boundary && before(boundary, item)) continue;
     const at = rest.findIndex((c) => before(item, c));
     rest.splice(at === -1 ? rest.length : at, 0, item);
   }

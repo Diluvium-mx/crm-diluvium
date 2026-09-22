@@ -205,14 +205,20 @@ export function ContactsBoard({ initialContacts }: { initialContacts: Contact[] 
   const pendingNewRef = useRef(new Set<string>());
   const newTimerRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   useEffect(() => () => clearTimeout(newTimerRef.current), []);
+  const bulkRef = useRef(false);
   useInboxStream((event) => {
-    if (event.type !== "contact.created") return;
-    pendingNewRef.current.add(event.contactId);
-    clearTimeout(newTimerRef.current);
+    if (event.type === "contacts.bulk") bulkRef.current = true;
+    else if (event.type === "contact.created") pendingNewRef.current.add(event.contactId);
+    else return;
+    // Ventana fija (no se reinicia con cada aviso): con tráfico sostenido el
+    // kanban igual se actualiza cada 500 ms.
+    if (newTimerRef.current) return;
     newTimerRef.current = setTimeout(() => {
+      newTimerRef.current = undefined;
       const ids = [...pendingNewRef.current];
       pendingNewRef.current.clear();
-      if (ids.length > 200) {
+      if (bulkRef.current || ids.length > 200) {
+        bulkRef.current = false;
         router.refresh();
         return;
       }

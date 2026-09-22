@@ -63,6 +63,9 @@ export function InboxBoard() {
   const latestRequestRef = useRef(new Map<string, number>());
   const pendingIdsRef = useRef(new Set<string>());
   const flushTimerRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+  // Conversaciones que cambiaron durante una recarga completa en curso.
+  const touchedDuringRefreshRef = useRef<Set<string> | null>(null);
+  const scheduleUpdateRef = useRef<(id: string) => void>(() => {});
 
   const params = () => ({ filter: filterRef.current, search: searchRef.current.trim() || undefined });
 
@@ -73,6 +76,9 @@ export function InboxBoard() {
    */
   const refreshList = useCallback(async (keepLoaded = false) => {
     const generation = ++generationRef.current;
+    // Lo que cambie MIENTRAS esta recarga lee (puede tardar varias páginas) se
+    // vuelve a pedir al terminar: la foto completa, más vieja, no lo pisa.
+    touchedDuringRefreshRef.current = new Set();
     const want = keepLoaded ? loadedCountRef.current : 0;
     let page = await listConversations(params());
     let items = page.items;
@@ -85,6 +91,9 @@ export function InboxBoard() {
     setConversations(items);
     setNextCursor(page.nextCursor);
     setLoadingList(false);
+    const touched = touchedDuringRefreshRef.current;
+    touchedDuringRefreshRef.current = null;
+    for (const id of touched ?? []) scheduleUpdateRef.current(id);
   }, []);
 
   // Página siguiente: agrega al final sin duplicar.
@@ -113,30 +122,42 @@ export function InboxBoard() {
    * contador…). Agrupa con debounce: una ráfaga de eventos = un pedido.
    */
   const flushUpdates = useCallback(async () => {
-    const ids = [...pendingIdsRef.current];
+    flushTimerRef.current = undefined;
+    const all = [...pendingIdsRef.current];
     pendingIdsRef.current.clear();
-    if (ids.length === 0) return;
-    const generation = generationRef.current;
-    const seq = ++requestSeqRef.current;
-    for (const id of ids) latestRequestRef.current.set(id, seq);
-    const items = await getConversationItems(ids, params());
-    if (generation !== generationRef.current) return;
-    // Solo se aplican las conversaciones cuyo pedido más reciente es este.
-    const current = ids.filter((id) => latestRequestRef.current.get(id) === seq);
-    if (current.length === 0) return;
-    const fresh = new Map(items.map((item) => [item.id, item]));
-    const hasMore = nextCursorRef.current !== null;
-    setConversations((list) => mergeItems(list, current, fresh, hasMore));
+    // Lotes de 100 (el máximo que acepta getConversationItems): una ráfaga
+    // grande no deja fuera ninguna conversación.
+    for (let i = 0; i < all.length; i += 100) {
+      const ids = all.slice(i, i + 100);
+      const generation = generationRef.current;
+      const seq = ++requestSeqRef.current;
+      for (const id of ids) latestRequestRef.current.set(id, seq);
+      const items = await getConversationItems(ids, params());
+      if (generation !== generationRef.current) continue;
+      // Solo se aplican las conversaciones cuyo pedido más reciente es este.
+      const current = ids.filter((id) => latestRequestRef.current.get(id) === seq);
+      if (current.length === 0) continue;
+      const fresh = new Map(items.map((item) => [item.id, item]));
+      const hasMore = nextCursorRef.current !== null;
+      setConversations((list) => mergeItems(list, current, fresh, hasMore));
+    }
   }, []);
 
+  // Ventana FIJA de 250 ms: el primer evento programa el envío y los demás se
+  // suman al lote sin reiniciar el reloj. Con tráfico sostenido la lista igual
+  // se actualiza 4 veces por segundo (un debounce que se reinicia no llegaría nunca).
   const scheduleUpdate = useCallback(
     (conversationId: string) => {
       pendingIdsRef.current.add(conversationId);
-      clearTimeout(flushTimerRef.current);
+      touchedDuringRefreshRef.current?.add(conversationId);
+      if (flushTimerRef.current) return;
       flushTimerRef.current = setTimeout(() => void flushUpdates(), 250);
     },
     [flushUpdates],
   );
+  useEffect(() => {
+    scheduleUpdateRef.current = scheduleUpdate;
+  }, [scheduleUpdate]);
 
   const refreshDetail = useCallback(async (id: string) => {
     const next = await getConversation(id);
@@ -169,7 +190,7 @@ export function InboxBoard() {
       }
       return;
     }
-    if (event.type === "contact.created") return; // sin conversación aún
+    if (event.type === "contact.created" || event.type === "contacts.bulk") return; // sin conversación aún
     scheduleUpdate(event.conversationId);
     const id = selectedIdRef.current;
     if (!id || event.conversationId !== id) return;

@@ -1,13 +1,27 @@
 "use client";
 
-// Suscripción ÚNICA al tiempo real de la bandeja (GET /api/inbox/stream, SSE
-// sobre LISTEN/NOTIFY). La usan la Bandeja y el chat del pop-up de Contactos:
-// mismo flujo de eventos en ambos lados. EventSource reconecta solo y el
-// servidor manda `reload` en cada (re)conexión.
+// Suscripción ÚNICA por pestaña al tiempo real de la bandeja (GET
+// /api/inbox/stream, SSE sobre LISTEN/NOTIFY). La usan la Bandeja, el kanban de
+// Contactos y el chat de su pop-up: todos comparten UNA sola conexión
+// (EventSource de módulo con conteo de suscriptores) y reciben los mismos
+// eventos. Se abre con el primer suscriptor y se cierra con el último.
+// EventSource reconecta solo y el servidor manda `reload` en cada (re)conexión.
 import { useEffect, useRef } from "react";
 import type { InboxEvent } from "@/lib/inbox/types";
 
-const EVENT_TYPES = ["reload", "conversation.updated", "message.upserted", "message.deleted", "contact.created"] as const;
+const EVENT_TYPES = [
+  "reload",
+  "conversation.updated",
+  "message.upserted",
+  "message.deleted",
+  "contact.created",
+  "contacts.bulk",
+] as const;
+
+type Listener = (event: InboxEvent) => void;
+
+const listeners = new Set<Listener>();
+let source: EventSource | null = null;
 
 function parse(type: string, data: string): InboxEvent | null {
   if (type === "reload") return { type: "reload" };
@@ -18,6 +32,30 @@ function parse(type: string, data: string): InboxEvent | null {
   }
 }
 
+function open(): void {
+  if (source) return;
+  source = new EventSource("/api/inbox/stream");
+  for (const type of EVENT_TYPES) {
+    source.addEventListener(type, (message: MessageEvent<string>) => {
+      const event = parse(type, message.data);
+      if (!event) return;
+      for (const listener of [...listeners]) listener(event);
+    });
+  }
+}
+
+function subscribe(listener: Listener): () => void {
+  listeners.add(listener);
+  open();
+  return () => {
+    listeners.delete(listener);
+    if (listeners.size === 0 && source) {
+      source.close();
+      source = null;
+    }
+  };
+}
+
 /** Llama `onEvent` con cada evento de la organización activa. El handler puede cambiar sin re-suscribir. */
 export function useInboxStream(onEvent: (event: InboxEvent) => void): void {
   const handler = useRef(onEvent);
@@ -25,19 +63,5 @@ export function useInboxStream(onEvent: (event: InboxEvent) => void): void {
     handler.current = onEvent;
   });
 
-  useEffect(() => {
-    const source = new EventSource("/api/inbox/stream");
-    const listeners = EVENT_TYPES.map((type) => {
-      const listener = (message: MessageEvent<string>) => {
-        const event = parse(type, message.data);
-        if (event) handler.current(event);
-      };
-      source.addEventListener(type, listener);
-      return [type, listener] as const;
-    });
-    return () => {
-      for (const [type, listener] of listeners) source.removeEventListener(type, listener);
-      source.close();
-    };
-  }, []);
+  useEffect(() => subscribe((event) => handler.current(event)), []);
 }
