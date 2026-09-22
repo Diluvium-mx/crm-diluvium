@@ -25,12 +25,16 @@ export type InboundHealth = {
   };
 };
 
-type ZernioWebhook = { url?: string; isActive?: boolean; failureCount?: number };
+type ZernioWebhook = { url?: string; isActive?: boolean; failureCount?: number; events?: string[] };
 
-async function zernioWebhookStatus(): Promise<{ isActive: boolean; failureCount: number } | null> {
+/** Eventos sin los que la Bandeja no se entera de mensajes nuevos. */
+const REQUIRED_EVENTS = ["message.received", "message.sent", "message.delivered", "message.read", "message.failed"];
+
+async function zernioWebhookStatus(): Promise<{ isActive: boolean; failureCount: number; missingEvents: string[] }> {
   const apiKey = process.env.ZERNIO_API_KEY;
   const appUrl = process.env.APP_URL;
-  if (!apiKey || !appUrl) return null;
+  // Sin esta configuración el receptor de webhooks no funciona: es un problema, no "sin datos".
+  if (!apiKey || !appUrl) throw new Error("faltan ZERNIO_API_KEY o APP_URL en este servicio");
   const base = process.env.ZERNIO_BASE_URL ?? "https://zernio.com/api";
   const res = await fetch(`${base}/v1/webhooks/settings`, {
     headers: { Authorization: `Bearer ${apiKey}` },
@@ -41,12 +45,20 @@ async function zernioWebhookStatus(): Promise<{ isActive: boolean; failureCount:
   const target = `${appUrl.replace(/\/$/, "")}/api/webhooks/zernio`;
   const hook = body.webhooks?.find((w) => w.url === target);
   if (!hook) throw new Error("no hay webhook de Zernio apuntando a este entorno");
-  return { isActive: hook.isActive === true, failureCount: hook.failureCount ?? 0 };
+  const subscribed = new Set(hook.events ?? []);
+  return {
+    isActive: hook.isActive === true,
+    failureCount: hook.failureCount ?? 0,
+    missingEvents: REQUIRED_EVENTS.filter((e) => !subscribed.has(e)),
+  };
 }
 
-export async function inboundHealth(
-  deps: { heartbeatAgeSeconds: () => Promise<number | null>; now?: Date },
-): Promise<InboundHealth> {
+export async function inboundHealth(deps: {
+  heartbeatAgeSeconds: () => Promise<number | null>;
+  /** El web (que recibe los webhooks) revisa también Zernio; el worker no (no tiene APP_URL). */
+  checkZernio: boolean;
+  now?: Date;
+}): Promise<InboundHealth> {
   const now = deps.now ?? new Date();
   const silenceMinutes = Number(process.env.MONITOR_SILENCE_MINUTES ?? 60);
   const problems: string[] = [];
@@ -54,7 +66,10 @@ export async function inboundHealth(
   // Edades calculadas en SQL (received_at es timestamp sin zona escrito por la base).
   const [row] = await db
     .select({
-      minutesSinceLastEvent: sql<number | null>`(extract(epoch from localtimestamp - max(${webhookEvents.receivedAt})) / 60)::int`,
+      // Solo MENSAJES ENTRANTES: ecos, estados o reacciones no prueban que los
+      // clientes estén llegando.
+      minutesSinceLastEvent: sql<number | null>`(extract(epoch from localtimestamp - max(${webhookEvents.receivedAt})
+        filter (where ${webhookEvents.event} = 'message.received' and ${webhookEvents.quarantinedAt} is null)) / 60)::int`,
       stuckPending: sql<number>`count(*) filter (where ${webhookEvents.processedAt} is null
         and ${webhookEvents.quarantinedAt} is null and ${webhookEvents.deadLetteredAt} is null
         and ${webhookEvents.receivedAt} < localtimestamp - interval '5 minutes')::int`,
@@ -65,7 +80,7 @@ export async function inboundHealth(
 
   const businessHours = isBusinessHours(now);
   if (businessHours && (row.minutesSinceLastEvent === null || row.minutesSinceLastEvent > silenceMinutes)) {
-    problems.push(`sin webhooks de WhatsApp hace más de ${silenceMinutes} min en horario laboral`);
+    problems.push(`sin mensajes entrantes de WhatsApp hace más de ${silenceMinutes} min en horario laboral`);
   }
   if (row.stuckPending > 0) problems.push(`${row.stuckPending} evento(s) sin procesar hace más de 5 min`);
   if (row.deadLetters > 0) problems.push(`${row.deadLetters} evento(s) en dead-letter`);
@@ -82,14 +97,18 @@ export async function inboundHealth(
   }
 
   let zernioWebhook: InboundHealth["metrics"]["zernioWebhook"] = null;
-  try {
-    zernioWebhook = await zernioWebhookStatus();
-    if (zernioWebhook && !zernioWebhook.isActive) problems.push("el webhook de Zernio está DESACTIVADO");
-    if (zernioWebhook && zernioWebhook.failureCount > 0) {
-      problems.push(`el webhook de Zernio acumula ${zernioWebhook.failureCount} fallo(s) de entrega`);
+  if (deps.checkZernio) {
+    try {
+      const status = await zernioWebhookStatus();
+      zernioWebhook = { isActive: status.isActive, failureCount: status.failureCount };
+      if (!status.isActive) problems.push("el webhook de Zernio está DESACTIVADO");
+      if (status.failureCount > 0) problems.push(`el webhook de Zernio acumula ${status.failureCount} fallo(s) de entrega`);
+      if (status.missingEvents.length > 0) {
+        problems.push(`el webhook de Zernio no está suscrito a: ${status.missingEvents.join(", ")}`);
+      }
+    } catch (error) {
+      problems.push(`no se pudo revisar el webhook de Zernio: ${error instanceof Error ? error.message : "error"}`);
     }
-  } catch (error) {
-    problems.push(`no se pudo revisar el webhook de Zernio: ${error instanceof Error ? error.message : "error"}`);
   }
 
   return {

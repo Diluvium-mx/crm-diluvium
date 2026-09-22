@@ -43,6 +43,8 @@ export type MessageAttachment = {
   thumbnailError?: string;
   /** Reclamo en curso (ISO): evita dos renders del mismo PDF a la vez; vence a los 2 min. */
   thumbnailClaimedAt?: string;
+  /** Id del reclamo vigente (solo su dueño aplica el resultado). */
+  thumbnailClaimId?: string;
 };
 
 /**

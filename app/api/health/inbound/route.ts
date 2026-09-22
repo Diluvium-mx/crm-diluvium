@@ -19,6 +19,7 @@ function authorized(req: Request): boolean {
 export async function GET(req: Request): Promise<Response> {
   if (!authorized(req)) return new Response("no autorizado", { status: 401 });
   const report = await inboundHealth({
+    checkZernio: true,
     heartbeatAgeSeconds: async () => {
       const value = await redis.get(WORKER_HEARTBEAT_KEY);
       return value ? Math.round((Date.now() - Number(value)) / 1000) : null;

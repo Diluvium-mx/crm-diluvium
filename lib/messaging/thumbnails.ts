@@ -17,8 +17,13 @@ import type { ObjectStorage } from "@/lib/storage/s3";
 
 export const THUMBNAIL_MAX_ATTEMPTS = 3;
 /** Un PDF más grande no se renderiza; se muestra sin miniatura. */
-const THUMBNAIL_MAX_PDF_BYTES = 25 * 1024 * 1024;
-/** Límites del proceso hijo. */
+const THUMBNAIL_MAX_PDF_BYTES = 10 * 1024 * 1024;
+/**
+ * Límites del proceso hijo. OJO: --max-old-space-size acota el heap de V8, NO
+ * toda la memoria (buffers y canvas nativo quedan fuera); por eso además se
+ * renderiza UN PDF a la vez en todo el worker (renderQueue) y el PDF se limita
+ * a 10 MB. Sin un contenedor aparte no hay aislamiento total de memoria.
+ */
 const CHILD_TIMEOUT_MS = 20_000;
 const CHILD_MAX_OLD_SPACE_MB = 256;
 /** Un reclamo más viejo que esto se da por muerto (el proceso cayó a medias) y se puede retomar. */
@@ -38,6 +43,14 @@ export function needsThumbnail(attachment: MessageAttachment, now = Date.now()):
     (attachment.thumbnailAttempts ?? 0) < THUMBNAIL_MAX_ATTEMPTS &&
     now - claimedAt > CLAIM_LEASE_MS
   );
+}
+
+// Un render a la vez en todo el proceso (los jobs de media y el barrido comparten esta cola).
+let renderQueue: Promise<unknown> = Promise.resolve();
+function renderOneAtATime(bytes: Uint8Array): Promise<{ png: Uint8Array; pageCount: number }> {
+  const run = renderQueue.then(() => renderInChild(bytes));
+  renderQueue = run.catch(() => undefined);
+  return run;
 }
 
 /** Renderiza en un proceso aparte; lo mata si pasa del tiempo o de la memoria. */
@@ -112,12 +125,17 @@ export async function generateMessageThumbnails(storage: ObjectStorage, messageI
   // 1) Reclamo atómico.
   const claimed = new Set<number>();
   const now = new Date();
+  // Identificador de ESTE reclamo: el resultado solo se aplica (y el reclamo
+  // solo se libera) si sigue siendo el vigente; un render que venció su plazo
+  // no pisa al que lo retomó.
+  const claimId = crypto.randomUUID();
   const afterClaim = await writeAttachments(message.id, message.organizationId, (attachment, index) => {
     if (!needsThumbnail(attachment, now.getTime())) return attachment;
     claimed.add(index);
     return {
       ...attachment,
       thumbnailClaimedAt: now.toISOString(),
+      thumbnailClaimId: claimId,
       thumbnailAttempts: (attachment.thumbnailAttempts ?? 0) + 1,
     };
   });
@@ -131,7 +149,7 @@ export async function generateMessageThumbnails(storage: ObjectStorage, messageI
     const thumbnailKey = `${attachment.storageKey}.thumb.png`;
     try {
       const bytes = await storage.getBytes(attachment.storageKey, THUMBNAIL_MAX_PDF_BYTES);
-      const { png, pageCount } = await renderInChild(bytes);
+      const { png, pageCount } = await renderOneAtATime(bytes);
       await storage.putStream(thumbnailKey, Readable.from(Buffer.from(png)), "image/png");
       results.set(index, { thumbnailKey, pageCount });
     } catch (error) {
@@ -143,9 +161,10 @@ export async function generateMessageThumbnails(storage: ObjectStorage, messageI
   let generated = 0;
   await writeAttachments(message.id, message.organizationId, (attachment, index) => {
     const update = results.get(index);
-    if (!update || attachment.thumbnailKey) return attachment;
+    if (!update || attachment.thumbnailKey || attachment.thumbnailClaimId !== claimId) return attachment;
     const next: MessageAttachment = { ...attachment, ...update };
     delete next.thumbnailClaimedAt;
+    delete next.thumbnailClaimId;
     if (update.thumbnailKey) {
       delete next.thumbnailError;
       generated++;

@@ -91,5 +91,16 @@ Configurar una vez (el dueño pega el valor; nunca en el chat):
    `MONITOR_TOKEN` = el mismo valor.
 4. Verificar a mano: Actions → inbound-monitor → Run workflow.
 
+Riesgos aceptados del monitoreo y de las miniaturas:
+
+- **GitHub apaga las Actions programadas** de un repo público tras 60 días sin actividad
+  (mismo riesgo ya aceptado para los respaldos, CLAUDE.md §10.6). Si el repo lleva
+  semanas sin commits, revisar que `inbound-monitor` siga activo (Actions → reactivar).
+  El chequeo del worker (logs) sigue corriendo aunque la Action se apague.
+- **Miniaturas de PDF:** el render corre en un proceso hijo con heap limitado, 20 s
+  máximo, un PDF a la vez y PDFs de hasta 10 MB; aun así comparte la memoria del
+  contenedor del worker (no hay un contenedor aparte). Si un PDF extremo tumbara el
+  worker, Railway lo reinicia y el intento ya quedó contado (3 como máximo).
+
 El endpoint solo devuelve conteos (el repo es público). Sin `MONITOR_TOKEN` responde 401 y
 la Action abre un issue, así que el paso 2 va antes que el merge a `main`.
