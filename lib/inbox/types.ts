@@ -130,4 +130,6 @@ export type InboxEvent =
   | { type: "conversation.updated"; conversationId: string }
   | { type: "message.upserted"; conversationId: string; messageId: string }
   | { type: "message.deleted"; conversationId: string; messageId: string }
+  /** Contacto nuevo (p. ej. primer mensaje de un número desconocido): el kanban lo agrega. */
+  | { type: "contact.created"; contactId: string }
   | { type: "reload" };

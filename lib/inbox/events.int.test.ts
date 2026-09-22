@@ -48,9 +48,15 @@ describe.skipIf(!TEST_DATABASE_URL)("tiempo real de la bandeja (LISTEN/NOTIFY, P
     if (db) await (db.$client as unknown as { end: () => Promise<void> }).end();
   });
 
-  // Espera hasta `n` eventos o hasta el timeout.
+  // Espera hasta `n` eventos o hasta el timeout. Los contact.created de los
+  // contactos semilla del beforeEach pueden llegar tarde (NOTIFY es asíncrono):
+  // se descartan para no contaminar las aserciones de cada prueba.
   function collect(): { events: InboxEvent[]; wait: (n: number, ms?: number) => Promise<void> } {
+    const seeds = new Set([`c_${ORG_A}`, `c_${ORG_B}`]);
     const events: InboxEvent[] = [];
+    const push = events.push.bind(events);
+    events.push = (...items: InboxEvent[]) =>
+      push(...items.filter((e) => !(e.type === "contact.created" && seeds.has(e.contactId))));
     const wait = (n: number, ms = 2000) =>
       new Promise<void>((resolve, reject) => {
         const started = Date.now();
@@ -87,6 +93,22 @@ describe.skipIf(!TEST_DATABASE_URL)("tiempo real de la bandeja (LISTEN/NOTIFY, P
       expect(a.events).toContainEqual({ type: "message.upserted", conversationId: "conv_a", messageId: "m_a" });
       expect(a.events).toContainEqual({ type: "conversation.updated", conversationId: "conv_a" });
       // La organización B no recibió NADA.
+      expect(b.events).toHaveLength(0);
+    } finally {
+      offA();
+      offB();
+    }
+  });
+
+  it("un contacto nuevo emite contact.created a su organización, no a otra", async () => {
+    const a = collect();
+    const b = collect();
+    const offA = await subscribeToInbox(ORG_A, (e) => a.events.push(e));
+    const offB = await subscribeToInbox(ORG_B, (e) => b.events.push(e));
+    try {
+      await db.insert(s.contacts).values({ id: "c_nuevo", organizationId: ORG_A, firstName: "Nuevo" });
+      await a.wait(1);
+      expect(a.events).toContainEqual({ type: "contact.created", contactId: "c_nuevo" });
       expect(b.events).toHaveLength(0);
     } finally {
       offA();

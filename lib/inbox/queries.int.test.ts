@@ -131,6 +131,20 @@ describe.skipIf(!TEST_DATABASE_URL)("bandeja: lecturas y escrituras (Postgres re
     expect(page.items[1].contact.avatarInitials).toBe("AL");
   });
 
+  it("filas por id (tiempo real): mismo filtro que la lista y nunca de otra organización", async () => {
+    const unread = await seedConversation({ lastMessageAt: "2026-09-18T10:00:00Z", unread: 3 });
+    const read = await seedConversation({ lastMessageAt: "2026-09-18T11:00:00Z" });
+    const other = await seedConversation({ org: ORG_B, lastMessageAt: "2026-09-18T12:00:00Z" });
+    const ids = [unread.convId, read.convId, other.convId];
+    expect((await q.listConversationItemsByIdsForOrg(ORG_A, ids)).map((c) => c.id).sort()).toEqual(
+      [unread.convId, read.convId].sort(),
+    );
+    expect((await q.listConversationItemsByIdsForOrg(ORG_A, ids, { filter: "unread" })).map((c) => c.id)).toEqual([
+      unread.convId,
+    ]);
+    expect(await q.listConversationItemsByIdsForOrg(ORG_A, [])).toEqual([]);
+  });
+
   it("filtros No leído y Destacado", async () => {
     await seedConversation({ lastMessageAt: "2026-09-18T10:00:00Z", unread: 3 });
     await seedConversation({ lastMessageAt: "2026-09-18T11:00:00Z", starred: true });
