@@ -37,8 +37,15 @@ export type MessageAttachment = {
   downloadError?: string;
 };
 
-/** Reacción vigente de cada lado de la conversación (WhatsApp: una por persona). */
-export type MessageReactions = { contact?: string; business?: string };
+/**
+ * Reacción de cada lado de la conversación (WhatsApp: una por persona). `at` =
+ * hora del evento: solo se aplica uno más reciente (los webhooks llegan
+ * desordenados). `emoji` null = la quitó (se conserva la hora de la baja).
+ */
+export type MessageReactions = {
+  contact?: { emoji: string | null; at: string };
+  business?: { emoji: string | null; at: string };
+};
 
 export const channelTypeEnum = pgEnum("channel_type", ["whatsapp"]);
 export const messagingProviderEnum = pgEnum("messaging_provider", ["zernio", "meta_cloud"]);
@@ -308,12 +315,25 @@ export const webhookEvents = pgTable(
     // Cuándo quedó en dead-letter (agotó intentos o formato no reconocido).
     // Queda en la BD para revisarlo y reprocesarlo; la retención no lo purga.
     deadLetteredAt: timestamp("dead_lettered_at"),
+    // Firmado pero de una cuenta NO permitida en este entorno (p. ej. el número
+    // real antes de agregarlo a ZERNIO_ALLOWED_ACCOUNT_IDS). Se guarda en vez
+    // de tirarlo: no se procesa hasta liberarlo con scripts/replay-webhook-events.ts.
+    quarantinedAt: timestamp("quarantined_at"),
+    // Estado/reacción/edición cerrado porque su mensaje no existía: el wamid
+    // que esperaba. Si ese mensaje llega después, la ingesta lo reabre.
+    orphanWamid: text("orphan_wamid"),
   },
   (table) => [
     index("webhook_events_pending_idx")
       .on(table.receivedAt)
       .where(sql`${table.processedAt} is null`),
     // Barrido de retención: borra procesados viejos por fecha.
+    index("webhook_events_quarantine_idx")
+      .on(table.quarantinedAt)
+      .where(sql`${table.quarantinedAt} is not null`),
+    index("webhook_events_orphan_wamid_idx")
+      .on(table.orphanWamid)
+      .where(sql`${table.orphanWamid} is not null`),
     index("webhook_events_dead_letter_idx")
       .on(table.deadLetteredAt)
       .where(sql`${table.deadLetteredAt} is not null`),

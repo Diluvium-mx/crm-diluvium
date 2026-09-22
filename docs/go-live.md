@@ -1,10 +1,12 @@
 # Go-live del número real de WhatsApp (Zernio, coexistencia)
 
-Checklist para conectar el número real (+52 668 241 9579) a **producción**. Sin estos
-pasos, los mensajes del número real llegan al webhook, se contestan con 200 y **no se
-guardan** (el webhook ignora cuentas que no están en la allowlist; desde
-`fix/webhook-inbound` cada evento ignorado deja un `console.warn` con `account_id`
-y tipo en los logs del servicio web).
+Checklist para conectar el número real (+52 668 241 9579) a **producción**. Si la
+cuenta del número no está en `ZERNIO_ALLOWED_ACCOUNT_IDS`, sus mensajes llegan al
+webhook, se contestan con 200 y quedan **en cuarentena** (`webhook_events.quarantined_at`):
+no se pierden, pero tampoco aparecen en la Bandeja hasta liberarlos. Cada uno deja un
+`console.warn` con `account_id` y tipo, y el worker avisa cada minuto
+(`[worker] CUARENTENA: …`). Liberarlos tras corregir la allowlist y el canal:
+`npx tsx scripts/replay-webhook-events.ts` (la cuarentena caduca a los 30 días).
 
 Todo se valida primero en `staging` (CLAUDE.md §4). Los secretos los pega el dueño
 por portapapeles; nunca en el chat.

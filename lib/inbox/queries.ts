@@ -278,7 +278,10 @@ export async function listMessagesForOrg(
         canRetry: canRetry(m),
         sentAt: m.sentAt ?? m.createdAt,
         adReferral: sanitizeReferral(m.adReferral),
-        reactions: m.reactions,
+        reactions: {
+          ...(m.reactions.contact?.emoji ? { contact: m.reactions.contact.emoji } : {}),
+          ...(m.reactions.business?.emoji ? { business: m.reactions.business.emoji } : {}),
+        },
         editedAt: m.editedAt,
         deletedAt: m.deletedAt,
         location: locationFromMetadata(m.metadata),

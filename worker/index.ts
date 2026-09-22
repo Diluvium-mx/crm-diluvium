@@ -14,7 +14,13 @@ import { db } from "@/lib/db";
 import { waitForMigrations } from "@/lib/db/wait-for-migrations";
 import { messages, webhookEvents } from "@/lib/db/schema";
 import { messagingProvider } from "@/lib/messaging";
-import { DEAD_LETTER_ATTEMPTS, DeadLetterIngestError, PermanentIngestError, processWebhookEvent } from "@/lib/messaging/ingest";
+import {
+  DEAD_LETTER_ATTEMPTS,
+  DeadLetterIngestError,
+  PermanentIngestError,
+  processWebhookEvent,
+  reopenResolvedOrphans,
+} from "@/lib/messaging/ingest";
 import { downloadMessageMedia } from "@/lib/messaging/media";
 import { MEDIA_MAX_ATTEMPTS, MEDIA_SWEEP_DAYS } from "@/lib/messaging/media-keys";
 import { expireUnconfirmedSends } from "@/lib/messaging/send";
@@ -103,12 +109,20 @@ let migrationsReady = false;
 
 async function sweep() {
   if (!migrationsReady) return;
+
+  // Huérfanos (estado/reacción/edición sin su mensaje) cuyo mensaje ya llegó:
+  // vuelven a pendientes y se procesan en este mismo barrido.
+  const reopened = await reopenResolvedOrphans();
+  if (reopened) console.info(`[worker] barrido: ${reopened} evento(s) huérfanos reabiertos (su mensaje ya existe)`);
+
   const stale = await db
     .select({ id: webhookEvents.id })
     .from(webhookEvents)
     .where(
       and(
         isNull(webhookEvents.processedAt),
+        // La cuarentena (cuenta no permitida) no se procesa hasta liberarla.
+        isNull(webhookEvents.quarantinedAt),
         lt(webhookEvents.receivedAt, new Date(Date.now() - SWEEP_MIN_AGE_MS)),
         lt(webhookEvents.attempts, SWEEP_MAX_ATTEMPTS),
       ),
@@ -132,6 +146,7 @@ async function sweep() {
       and(
         isNull(webhookEvents.processedAt),
         isNull(webhookEvents.deadLetteredAt),
+        isNull(webhookEvents.quarantinedAt),
         gte(webhookEvents.attempts, SWEEP_MAX_ATTEMPTS),
       ),
     )
@@ -151,6 +166,17 @@ async function sweep() {
   const unconfirmed = await expireUnconfirmedSends();
   if (unconfirmed) console.warn(`[worker] barrido: ${unconfirmed} envío(s) sin confirmar → failed (send_unconfirmed)`);
 
+  const [{ value: quarantined }] = await db
+    .select({ value: count() })
+    .from(webhookEvents)
+    .where(and(isNull(webhookEvents.processedAt), isNotNull(webhookEvents.quarantinedAt)));
+  if (quarantined > 0) {
+    console.error(
+      `[worker] CUARENTENA: ${quarantined} evento(s) de cuentas no permitidas en este entorno; ` +
+        "revisar ZERNIO_ALLOWED_ACCOUNT_IDS y liberar con scripts/replay-webhook-events.ts",
+    );
+  }
+
   // Retención: borra los eventos ya procesados de más de 30 días.
   const purged = await db
     .delete(webhookEvents)
@@ -162,6 +188,16 @@ async function sweep() {
     )
     .returning({ id: webhookEvents.id });
   if (purged.length) console.info(`[worker] barrido: ${purged.length} webhook_event(s) procesados purgados (>${WEBHOOK_RETENTION_DAYS} d)`);
+  // La cuarentena también caduca a los 30 días: son datos crudos de una cuenta
+  // ajena a este entorno; si en 30 días nadie la liberó, no era de aquí.
+  await db
+    .delete(webhookEvents)
+    .where(
+      and(
+        isNotNull(webhookEvents.quarantinedAt),
+        lt(webhookEvents.quarantinedAt, new Date(Date.now() - WEBHOOK_RETENTION_DAYS * 86_400_000)),
+      ),
+    );
 
   if (!storage) return;
   // Media pendiente: mensajes con algún adjunto sin storageKey.
