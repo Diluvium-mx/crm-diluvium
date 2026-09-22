@@ -2,9 +2,10 @@
 
 import { PanelLeftClose, PanelLeftOpen, PanelRightClose, PanelRightOpen } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
-import type { ConversationDetail, ConversationListItem, InboxEvent, InboxFilter } from "@/lib/inbox/types";
+import type { ConversationDetail, ConversationListItem, InboxFilter } from "@/lib/inbox/types";
 import {
   getConversation,
+  getConversationItems,
   listConversations,
   markConversationRead,
   setConversationStarred,
@@ -12,14 +13,8 @@ import {
 import { ChatThread } from "./chat-thread";
 import { ContactPanel } from "./contact-panel";
 import { ConversationList } from "./conversation-list";
-
-function parseEvent(data: string): InboxEvent | null {
-  try {
-    return JSON.parse(data) as InboxEvent;
-  } catch {
-    return null;
-  }
-}
+import { useInboxStream } from "./use-inbox-stream";
+import { mergeItems } from "@/lib/inbox/list-merge";
 
 // ¿La pestaña está realmente a la vista? Solo entonces se marca leído por una
 // llegada en vivo (una pestaña en segundo plano no debe limpiar el contador
@@ -49,47 +44,130 @@ export function InboxBoard() {
   const searchRef = useRef(search);
   const nextCursorRef = useRef<string | null>(null);
   const loadingMoreRef = useRef(false);
-  // Sincroniza los refs DESPUÉS del render (no durante), para que los handlers
-  // del SSE —suscritos una sola vez— lean siempre el estado actual.
+  const loadedCountRef = useRef(0);
   useEffect(() => {
     selectedIdRef.current = selectedId;
     filterRef.current = filter;
     searchRef.current = search;
     nextCursorRef.current = nextCursor;
     loadingMoreRef.current = loadingMore;
+    loadedCountRef.current = conversations.length;
   });
 
-  const refreshList = useCallback(async () => {
-    const page = await listConversations({
-      filter: filterRef.current,
-      search: searchRef.current.trim() || undefined,
-    });
-    setConversations(page.items);
+  // Generación de la lista: cambia con filtro/búsqueda y con cada recarga
+  // completa. Una respuesta de una generación vieja se descarta (llegó tarde).
+  const generationRef = useRef(0);
+  // Último pedido por conversación: una respuesta más vieja que el último
+  // pedido de ESA conversación no pisa a una más nueva.
+  const requestSeqRef = useRef(0);
+  const latestRequestRef = useRef(new Map<string, number>());
+  const pendingIdsRef = useRef(new Set<string>());
+  const flushTimerRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+  // Conversaciones que cambiaron durante una recarga completa en curso.
+  const touchedDuringRefreshRef = useRef<Set<string> | null>(null);
+  const scheduleUpdateRef = useRef<(id: string) => void>(() => {});
+
+  const params = () => ({ filter: filterRef.current, search: searchRef.current.trim() || undefined });
+
+  /**
+   * Recarga completa (al cambiar filtro/búsqueda, o `reload` del SSE tras una
+   * reconexión). Con `keepLoaded` vuelve a pedir tantas páginas como ya había
+   * cargadas: una reconexión no regresa al usuario a la página 1.
+   */
+  const refreshList = useCallback(async (keepLoaded = false) => {
+    const generation = ++generationRef.current;
+    // Lo que cambie MIENTRAS esta recarga lee (puede tardar varias páginas) se
+    // vuelve a pedir al terminar: la foto completa, más vieja, no lo pisa.
+    touchedDuringRefreshRef.current = new Set();
+    const want = keepLoaded ? loadedCountRef.current : 0;
+    let page = await listConversations(params());
+    let items = page.items;
+    while (page.nextCursor && items.length < want && generation === generationRef.current) {
+      page = await listConversations({ ...params(), cursor: page.nextCursor });
+      const seen = new Set(items.map((c) => c.id));
+      items = [...items, ...page.items.filter((c) => !seen.has(c.id))];
+    }
+    if (generation !== generationRef.current) return;
+    setConversations(items);
     setNextCursor(page.nextCursor);
     setLoadingList(false);
+    const touched = touchedDuringRefreshRef.current;
+    touchedDuringRefreshRef.current = null;
+    for (const id of touched ?? []) scheduleUpdateRef.current(id);
   }, []);
 
-  // Página siguiente: agrega al final sin duplicar. La dispara el usuario
-  // ("Cargar más"); una recarga en vivo vuelve a la primera página.
+  // Página siguiente: agrega al final sin duplicar.
   const loadMore = useCallback(async () => {
     const cursor = nextCursorRef.current;
     if (!cursor || loadingMoreRef.current) return;
+    const generation = generationRef.current;
+    loadingMoreRef.current = true;
     setLoadingMore(true);
     try {
-      const page = await listConversations({
-        filter: filterRef.current,
-        search: searchRef.current.trim() || undefined,
-        cursor,
-      });
+      const page = await listConversations({ ...params(), cursor });
+      if (generation !== generationRef.current) return;
       setConversations((current) => {
         const seen = new Set(current.map((c) => c.id));
         return [...current, ...page.items.filter((item) => !seen.has(item.id))];
       });
       setNextCursor(page.nextCursor);
     } finally {
+      loadingMoreRef.current = false;
       setLoadingMore(false);
     }
   }, []);
+
+  /**
+   * Actualiza SOLO las conversaciones indicadas (llegó un mensaje, cambió un
+   * contador…). Agrupa con debounce: una ráfaga de eventos = un pedido.
+   */
+  const flushUpdates = useCallback(async () => {
+    flushTimerRef.current = undefined;
+    const all = [...pendingIdsRef.current];
+    pendingIdsRef.current.clear();
+    // Lotes de 100 (el máximo que acepta getConversationItems): una ráfaga
+    // grande no deja fuera ninguna conversación.
+    for (let i = 0; i < all.length; i += 100) {
+      const ids = all.slice(i, i + 100);
+      const generation = generationRef.current;
+      const seq = ++requestSeqRef.current;
+      for (const id of ids) latestRequestRef.current.set(id, seq);
+      let items: ConversationListItem[];
+      try {
+        items = await getConversationItems(ids, params());
+      } catch {
+        // Fallo transitorio (red, deploy): nada se descarta. Este lote y los
+        // que faltaban vuelven a la cola y se reintentan en 2 s.
+        const failed = all.slice(i);
+        setTimeout(() => {
+          for (const id of failed) scheduleUpdateRef.current(id);
+        }, 2_000);
+        return;
+      }
+      if (generation !== generationRef.current) continue;
+      // Solo se aplican las conversaciones cuyo pedido más reciente es este.
+      const current = ids.filter((id) => latestRequestRef.current.get(id) === seq);
+      if (current.length === 0) continue;
+      const fresh = new Map(items.map((item) => [item.id, item]));
+      const hasMore = nextCursorRef.current !== null;
+      setConversations((list) => mergeItems(list, current, fresh, hasMore));
+    }
+  }, []);
+  // Ventana FIJA de 250 ms: el primer evento programa el envío y los demás se
+  // suman al lote sin reiniciar el reloj. Con tráfico sostenido la lista igual
+  // se actualiza 4 veces por segundo (un debounce que se reinicia no llegaría nunca).
+  const scheduleUpdate = useCallback(
+    (conversationId: string) => {
+      pendingIdsRef.current.add(conversationId);
+      touchedDuringRefreshRef.current?.add(conversationId);
+      if (flushTimerRef.current) return;
+      flushTimerRef.current = setTimeout(() => void flushUpdates(), 250);
+    },
+    [flushUpdates],
+  );
+  useEffect(() => {
+    scheduleUpdateRef.current = scheduleUpdate;
+  }, [scheduleUpdate]);
 
   const refreshDetail = useCallback(async (id: string) => {
     const next = await getConversation(id);
@@ -103,65 +181,42 @@ export function InboxBoard() {
     return () => clearTimeout(t);
   }, [filter, search, refreshList]);
 
+  useEffect(() => () => clearTimeout(flushTimerRef.current), []);
+
   // Reloj para semáforo y cuenta regresiva de la ventana.
   useEffect(() => {
     const id = setInterval(() => setNowMs(Date.now()), 30_000);
     return () => clearInterval(id);
   }, []);
 
-  // SSE: una sola conexión para todo el board. EventSource reconecta solo y
-  // reenvía `reload` en cada reconexión.
-  useEffect(() => {
-    const source = new EventSource("/api/inbox/stream");
-
-    // conversation.updated: refresca la lista y, si es la conversación abierta,
-    // vuelve a pedir el detalle (ventana de 24 h, estrella, etapa) — sin esto,
-    // una llegada nueva dejaría el composer bloqueado o con la ventana vieja.
-    const onConversation = (event: MessageEvent) => {
-      void refreshList();
-      const payload = parseEvent(event.data);
-      const id = selectedIdRef.current;
-      if (id && payload && "conversationId" in payload && payload.conversationId === id) {
-        void refreshDetail(id);
-      }
-    };
-    const onReload = () => {
-      void refreshList();
+  // Tiempo real (el mismo hook que el chat del pop-up de Contactos).
+  useInboxStream((event) => {
+    if (event.type === "reload") {
+      void refreshList(true);
       const id = selectedIdRef.current;
       if (id) {
         void refreshDetail(id);
         setRevalToken((n) => n + 1);
       }
-    };
-    const onUpserted = (event: MessageEvent) => {
-      void refreshList();
-      const payload = parseEvent(event.data);
-      const id = selectedIdRef.current;
-      if (id && payload && "conversationId" in payload && payload.conversationId === id) {
-        setRevalToken((n) => n + 1); // recarga el hilo abierto
-        // Marcar leído SOLO si la pestaña está a la vista, y solo hasta el
-        // mensaje que llegó (corte): una llegada posterior sigue sin leer.
-        if (tabVisible()) {
-          const upTo = "messageId" in payload ? payload.messageId : undefined;
-          void markConversationRead(id, upTo).then(() => void refreshList());
-        }
+      return;
+    }
+    if (event.type === "contact.created" || event.type === "contacts.bulk") return; // sin conversación aún
+    scheduleUpdate(event.conversationId);
+    const id = selectedIdRef.current;
+    if (!id || event.conversationId !== id) return;
+    if (event.type === "conversation.updated") {
+      // Ventana de 24 h, estrella, etapa: sin esto una llegada nueva dejaría
+      // el composer bloqueado o con la ventana vieja.
+      void refreshDetail(id);
+    } else {
+      setRevalToken((n) => n + 1); // recarga el hilo abierto
+      // Marcar leído SOLO si la pestaña está a la vista, y solo hasta el
+      // mensaje que llegó (corte): una llegada posterior sigue sin leer.
+      if (event.type === "message.upserted" && tabVisible()) {
+        void markConversationRead(id, event.messageId).then(() => scheduleUpdate(id));
       }
-    };
-    const onDeleted = (event: MessageEvent) => {
-      void refreshList();
-      const payload = parseEvent(event.data);
-      const id = selectedIdRef.current;
-      if (id && payload && "conversationId" in payload && payload.conversationId === id) {
-        setRevalToken((n) => n + 1);
-      }
-    };
-
-    source.addEventListener("reload", onReload);
-    source.addEventListener("conversation.updated", onConversation);
-    source.addEventListener("message.upserted", onUpserted);
-    source.addEventListener("message.deleted", onDeleted);
-    return () => source.close();
-  }, [refreshList, refreshDetail]);
+    }
+  });
 
   // Al volver a la pestaña con una conversación abierta, marcar leído lo que
   // haya llegado mientras estuvo en segundo plano (hasta el último entrante).
@@ -169,7 +224,7 @@ export function InboxBoard() {
     const onVisible = () => {
       const id = selectedIdRef.current;
       if (id && tabVisible()) {
-        void markConversationRead(id).then(() => void refreshList());
+        void markConversationRead(id).then(() => scheduleUpdate(id));
       }
     };
     document.addEventListener("visibilitychange", onVisible);
@@ -178,7 +233,7 @@ export function InboxBoard() {
       document.removeEventListener("visibilitychange", onVisible);
       window.removeEventListener("focus", onVisible);
     };
-  }, [refreshList]);
+  }, [scheduleUpdate]);
 
   function selectConversation(id: string) {
     setSelectedId(id);
@@ -186,12 +241,12 @@ export function InboxBoard() {
     void refreshDetail(id);
     // Abrir la conversación la marca como leída; limpia el contador optimista.
     setConversations((current) => current.map((c) => (c.id === id ? { ...c, unreadCount: 0 } : c)));
-    void markConversationRead(id).then(() => void refreshList());
+    void markConversationRead(id).then(() => scheduleUpdate(id));
   }
 
   function toggleStar(id: string, starred: boolean) {
     setConversations((current) => current.map((c) => (c.id === id ? { ...c, isStarred: starred } : c)));
-    void setConversationStarred(id, starred).then(() => void refreshList());
+    void setConversationStarred(id, starred).then(() => scheduleUpdate(id));
   }
 
   return (

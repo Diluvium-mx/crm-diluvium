@@ -1,6 +1,8 @@
 "use client";
 
+import { useVirtualizer } from "@tanstack/react-virtual";
 import { Star } from "lucide-react";
+import { useEffect, useRef } from "react";
 import type { ConversationListItem, InboxFilter } from "@/lib/inbox/types";
 import { ContactAvatar } from "../../contactos/_components/contact-avatar";
 import {
@@ -117,6 +119,28 @@ export function ConversationList({
   onSearchChange: (value: string) => void;
   onToggleStar: (id: string, starred: boolean) => void;
 }) {
+  // Lista virtualizada (misma técnica que el kanban de Contactos): solo se
+  // montan las filas visibles aunque haya cientos cargadas. El contenedor
+  // scrolleable tiene altura acotada (min-h-0 + flex-1 dentro de un h-full).
+  const scrollRef = useRef<HTMLDivElement>(null);
+  // Igual que el kanban: useVirtualizer devuelve funciones que el React
+  // Compiler no puede memoizar; es esperado (el compiler no está activo).
+  // eslint-disable-next-line react-hooks/incompatible-library
+  const virtualizer = useVirtualizer({
+    count: items.length,
+    getScrollElement: () => scrollRef.current,
+    estimateSize: () => 76,
+    overscan: 8,
+    getItemKey: (index) => items[index]?.id ?? index,
+  });
+  const virtualItems = virtualizer.getVirtualItems();
+  const lastIndex = virtualItems.at(-1)?.index ?? -1;
+
+  // Scroll infinito: al acercarse al final se pide la página siguiente.
+  useEffect(() => {
+    if (hasMore && !loadingMore && lastIndex >= items.length - 5) onLoadMore();
+  }, [hasMore, loadingMore, lastIndex, items.length, onLoadMore]);
+
   return (
     <div className="flex h-full min-h-0 flex-col">
       <div className="border-b p-3">
@@ -146,7 +170,7 @@ export function ConversationList({
         </div>
       </div>
 
-      <div className="min-h-0 flex-1 overflow-y-auto">
+      <div ref={scrollRef} className="min-h-0 flex-1 overflow-y-auto">
         {loading && items.length === 0 ? (
           <p className="p-6 text-center text-sm text-muted-foreground">Cargando…</p>
         ) : items.length === 0 ? (
@@ -155,27 +179,32 @@ export function ConversationList({
           </p>
         ) : (
           <>
-            {items.map((item) => (
-              <ConversationRow
-                key={item.id}
-                item={item}
-                selected={item.id === selectedId}
-                nowMs={nowMs}
-                onSelect={onSelect}
-                onToggleStar={onToggleStar}
-              />
-            ))}
+            <div className="relative w-full" style={{ height: virtualizer.getTotalSize() }}>
+              {virtualItems.map((row) => {
+                const item = items[row.index];
+                return (
+                  <div
+                    key={row.key}
+                    data-index={row.index}
+                    ref={virtualizer.measureElement}
+                    className="absolute left-0 top-0 w-full"
+                    style={{ transform: `translateY(${row.start}px)` }}
+                  >
+                    <ConversationRow
+                      item={item}
+                      selected={item.id === selectedId}
+                      nowMs={nowMs}
+                      onSelect={onSelect}
+                      onToggleStar={onToggleStar}
+                    />
+                  </div>
+                );
+              })}
+            </div>
             {hasMore && (
-              <div className="p-3">
-                <button
-                  type="button"
-                  onClick={onLoadMore}
-                  disabled={loadingMore}
-                  className="w-full rounded-md border bg-card px-3 py-2 text-xs font-medium text-muted-foreground transition-colors hover:bg-muted disabled:opacity-60"
-                >
-                  {loadingMore ? "Cargando…" : "Cargar más conversaciones"}
-                </button>
-              </div>
+              <p className="p-3 text-center text-xs text-muted-foreground">
+                {loadingMore ? "Cargando…" : "Desliza para cargar más"}
+              </p>
             )}
           </>
         )}

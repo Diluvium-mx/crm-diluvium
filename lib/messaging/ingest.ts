@@ -3,10 +3,18 @@
 // WhatsApp conectado), nunca del payload.
 import { and, asc, count, desc, eq, gte, inArray, isNotNull, isNull, or, sql } from "drizzle-orm";
 import { db } from "@/lib/db";
+import { contactsImportLockKey } from "@/lib/db/locks";
 import { withTxRetry } from "@/lib/db/retry";
 import { channels, contacts, conversations, messages, webhookEvents } from "@/lib/db/schema";
-import { canonicalPhone, normalizePhone, phoneLookupVariants } from "@/lib/phone";
-import type { MessagingProvider, NormalizedMessageEvent, NormalizedStatusEvent, ProviderName } from "./provider";
+import { countryFromPhone, normalizePhone, phoneColumns, phoneLookupVariants } from "@/lib/phone";
+import type {
+  MessagingProvider,
+  NormalizedMessageChangeEvent,
+  NormalizedMessageEvent,
+  NormalizedReactionEvent,
+  NormalizedStatusEvent,
+  ProviderName,
+} from "./provider";
 import { firstResponseSeconds, nextStatus, windowExpiresAt } from "./rules";
 
 export type Tx = Parameters<Parameters<typeof db.transaction>[0]>[0];
@@ -26,6 +34,35 @@ export class DeadLetterIngestError extends Error {}
 /** Intentos a partir de los cuales un evento pendiente se considera dead-letter. */
 export const DEAD_LETTER_ATTEMPTS = 20;
 
+/**
+ * Un estado, reacción o edición cuyo mensaje el CRM no tiene se reintenta
+ * (puede llegar antes que el mensaje); pasado este tiempo desde que se recibió
+ * se da por procesado como "ignorado" en vez de acabar en dead-letter: es un
+ * mensaje que nunca pasó por el CRM (p. ej. anterior a conectar el número).
+ */
+export const ORPHAN_GRACE_MS = 10 * 60_000;
+
+/**
+ * El mensaje al que apunta el evento no existe (todavía). `awaiting` = el wamid
+ * que espera, o "internal:<id>" si el estado solo trae el id interno.
+ */
+class OrphanEventError extends RetryableIngestError {
+  constructor(
+    message: string,
+    readonly awaiting: string | null,
+    /** Organización del canal: la reapertura exige que el mensaje sea de ella. */
+    readonly organizationId: string | null,
+  ) {
+    super(message);
+  }
+}
+
+/** Llave con la que un huérfano cerrado espera a su mensaje (webhook_events.orphan_wamid). */
+export function orphanKey(ids: { providerMessageId?: string | null; providerInternalId?: string | null }): string | null {
+  if (ids.providerMessageId) return ids.providerMessageId;
+  return ids.providerInternalId ? `internal:${ids.providerInternalId}` : null;
+}
+
 export type IngestHooks = {
   /** Se llama (después del commit) con cada mensaje nuevo que trae adjuntos. */
   onMediaMessage?: (messageId: string) => Promise<void> | void;
@@ -39,6 +76,9 @@ export async function processWebhookEvent(
   const [row] = await db.select().from(webhookEvents).where(eq(webhookEvents.id, webhookEventId)).limit(1);
   if (!row) throw new PermanentIngestError(`webhook_event ${webhookEventId} no existe`);
   if (row.processedAt) return "ya procesado";
+  // Defensa adicional: la cuarentena (cuenta no permitida) no se procesa
+  // aunque alguien la encole; se libera con scripts/replay-webhook-events.ts.
+  if (row.quarantinedAt) return "en cuarentena: no se procesa";
   // La ruta del webhook ya pudo atribuir la organización al guardar (incluso
   // para eventos que terminarán "ignored"): no se pierde al procesar.
   const attributedOrgId = row.organizationId;
@@ -52,25 +92,42 @@ export async function processWebhookEvent(
     const event = provider.normalize(row.payload);
     let outcome: string;
     let organizationId: string | null = attributedOrgId;
+    let ignored = event.kind === "ignored";
+    let orphanWamid: string | null = null;
     // El proveedor viene del adaptador que VERIFICÓ la firma, no del payload.
-    if (event.kind === "message") {
-      const r = await ingestMessage(provider.name, event, hooks);
-      outcome = r.outcome;
-      organizationId = r.organizationId ?? attributedOrgId;
-    } else if (event.kind === "status") {
-      const r = await ingestStatus(provider.name, event);
-      outcome = r.outcome;
-      organizationId = r.organizationId ?? attributedOrgId;
+    try {
+      if (event.kind === "message") {
+        const r = await ingestMessage(provider.name, event, hooks);
+        outcome = r.outcome;
+        organizationId = r.organizationId ?? attributedOrgId;
+      } else if (event.kind === "status") {
+        const r = await ingestStatus(provider.name, event);
+        outcome = r.outcome;
+        organizationId = r.organizationId ?? attributedOrgId;
+      } else if (event.kind === "reaction" || event.kind === "message_change") {
+        const r = await ingestMessageUpdate(provider.name, event);
+        outcome = r.outcome;
+        organizationId = r.organizationId ?? attributedOrgId;
+      } else if (event.malformed) throw new DeadLetterIngestError(`formato no reconocido (${event.event}): ${event.reason}`);
+      else outcome = `ignorado: ${event.reason}`;
+    } catch (error) {
+      // Huérfano viejo: se cierra como ignorado (queda la nota en last_error).
+      if (!(error instanceof OrphanEventError) || !(await receivedBefore(webhookEventId, ORPHAN_GRACE_MS))) throw error;
+      // No se pierde: queda marcado con el wamid que espera y el barrido del
+      // worker lo REABRE en cuanto ese mensaje exista (llegue por webhook, por
+      // la confirmación de un envío del CRM o por un replay).
+      outcome = `huérfano: ${error.message} tras ${ORPHAN_GRACE_MS / 60_000} min; se reabre si llega el mensaje`;
+      ignored = true;
+      orphanWamid = error.awaiting;
+      organizationId = error.organizationId ?? organizationId;
     }
-    else if (event.malformed) throw new DeadLetterIngestError(`formato no reconocido (${event.event}): ${event.reason}`);
-    else outcome = `ignorado: ${event.reason}`;
 
     // Se atribuye el evento crudo a su organización (cuando se conoce): así al
     // borrar una organización se llevan sus payloads, y el barrido de retención
     // los cuenta como suyos.
     await db
       .update(webhookEvents)
-      .set({ processedAt: new Date(), lastError: event.kind === "ignored" ? outcome : null, organizationId })
+      .set({ processedAt: new Date(), lastError: ignored ? outcome : null, organizationId, orphanWamid })
       .where(eq(webhookEvents.id, webhookEventId));
     return outcome;
   } catch (error) {
@@ -81,11 +138,24 @@ export async function processWebhookEvent(
         lastError: message,
         // Un error permanente se da por procesado (no bloquea el barrido) pero queda el error.
         ...(error instanceof PermanentIngestError ? { processedAt: new Date() } : {}),
-        ...(error instanceof DeadLetterIngestError ? { attempts: DEAD_LETTER_ATTEMPTS } : {}),
+        ...(error instanceof DeadLetterIngestError ? { attempts: DEAD_LETTER_ATTEMPTS, deadLetteredAt: new Date() } : {}),
       })
       .where(eq(webhookEvents.id, webhookEventId));
     throw error;
   }
+}
+
+/**
+ * ¿El evento se recibió hace más de `ms`? Se compara en SQL: received_at es un
+ * timestamp sin zona escrito por la base (defaultNow), y leerlo en JS lo
+ * desfasaría según la zona horaria de la sesión.
+ */
+async function receivedBefore(webhookEventId: string, ms: number): Promise<boolean> {
+  const [row] = await db
+    .select({ old: sql<boolean>`${webhookEvents.receivedAt} < localtimestamp - make_interval(secs => ${ms / 1000})` })
+    .from(webhookEvents)
+    .where(eq(webhookEvents.id, webhookEventId));
+  return row?.old ?? false;
 }
 
 // El id de cuenta solo es único POR proveedor (índice (provider,
@@ -112,14 +182,19 @@ async function ingestMessage(
     throw new RetryableIngestError(`no hay canal activo para la cuenta ${event.providerAccountId}`);
   }
 
-  // El teléfono puede faltar en un eco saliente (p. ej. sin participantId): en
-  // ese caso NO se inventa, se atribuye por la conversación existente.
-  let phone: string | null;
-  try {
-    phone = canonicalPhone(normalizePhone(event.contactPhone));
-  } catch {
-    phone = null;
+  // El teléfono puede faltar (eco sin participantId, o cliente con nombre de
+  // usuario de WhatsApp: solo BSUID). NO se inventa: se atribuye por la
+  // conversación existente, o por el BSUID. normalizePhone ya deja a México
+  // como +52 + 10 dígitos (quita el 1 heredado del wa_id).
+  let phone: string | null = null;
+  if (event.contactPhone) {
+    try {
+      phone = normalizePhone(event.contactPhone);
+    } catch {
+      phone = null;
+    }
   }
+  const bsuid = event.contactBsuid ?? null;
 
   let mediaMessageId: string | undefined;
   const result = await withTxRetry(() => db.transaction(async (tx) => {
@@ -143,18 +218,16 @@ async function ingestMessage(
       : undefined;
 
     if (!upserted) {
-      if (!phone) {
-        // Sin teléfono ni conversación conocida no hay a quién atribuirlo. Un
-        // entrante así es malformado; un eco saliente puede resolverse cuando
-        // exista la conversación → dead-letter para replay, no se pierde.
-        if (event.direction === "in") {
-          throw new PermanentIngestError(`teléfono de contacto inválido: ${event.contactPhone}`);
-        }
+      if (!phone && !bsuid) {
+        // Sin teléfono, sin BSUID y sin conversación conocida no hay a quién
+        // atribuirlo. NUNCA se descarta: dead-letter (queda en la BD, visible
+        // y reprocesable con scripts/replay-webhook-events.ts).
         throw new DeadLetterIngestError(
-          `eco saliente sin teléfono ni conversación conocida (${event.providerConversationId})`,
+          `${event.direction === "in" ? "entrante" : "eco saliente"} sin teléfono, BSUID ni conversación conocida ` +
+            `(teléfono recibido: ${event.contactPhone ?? "ninguno"}, conversación ${event.providerConversationId})`,
         );
       }
-      const contactId = await findOrCreateContact(tx, orgId, phone, event.contactName);
+      const contactId = await resolveContact(tx, orgId, { phone, bsuid, name: event.contactName });
       [upserted] = await tx
         .insert(conversations)
         .values({
@@ -163,6 +236,7 @@ async function ingestMessage(
           contactId,
           channelId: channel.id,
           providerConversationId: event.providerConversationId,
+          lastMessageAt: event.sentAt,
         })
         .onConflictDoUpdate({
           target: [conversations.channelId, conversations.contactId],
@@ -171,6 +245,10 @@ async function ingestMessage(
           },
         })
         .returning();
+    } else if (phone || bsuid) {
+      // Conversación ya conocida: su contacto aprende el teléfono/BSUID del
+      // mensaje (los contactos previos no tienen BSUID).
+      await resolveContact(tx, orgId, { phone, bsuid }, upserted.contactId);
     }
 
     // Se BLOQUEA la conversación ANTES de tocar mensajes, en el MISMO orden que
@@ -237,6 +315,7 @@ async function ingestMessage(
           providerInternalId: event.providerInternalId,
           // Meta manda el anuncio UNA sola vez (primer mensaje tras el clic).
           adReferral: event.referral ?? null,
+          metadata: event.metadata ?? null,
           status: event.direction === "in" ? "received" : "sent",
           sentAt: event.sentAt,
         })
@@ -393,30 +472,91 @@ async function reconcileFirstResponse(tx: Tx, conversationId: string): Promise<n
   return firstReply?.at ? firstResponseSeconds(firstIn.at, firstReply.at) : null;
 }
 
-async function findOrCreateContact(tx: Tx, orgId: string, phone: string, name?: string): Promise<string> {
-  // Serializa por (organización, teléfono canónico) dentro de la transacción:
-  // dos mensajes simultáneos de un número nuevo no pueden crear dos contactos
-  // (y partir el historial en dos conversaciones). Se usa un candado y no un
-  // índice único porque los contactos importados pueden traer duplicados.
-  await tx.execute(sql`select pg_advisory_xact_lock(hashtextextended(${`contact:${orgId}:${phone}`}, 0))`);
-  const [existing] = await tx
-    .select({ id: contacts.id })
-    .from(contacts)
-    .where(and(eq(contacts.organizationId, orgId), inArray(contacts.phoneE164, phoneLookupVariants(phone))))
-    .orderBy(asc(contacts.createdAt))
-    .limit(1);
-  if (existing) return existing.id;
+type Identity = { phone: string | null; bsuid: string | null; name?: string };
 
-  const id = crypto.randomUUID();
-  await tx.insert(contacts).values({
-    id,
-    organizationId: orgId,
-    firstName: name?.trim() || phone,
-    phoneE164: phone,
-    source: "whatsapp",
-    sourceChannel: "whatsapp",
-  });
-  return id;
+/**
+ * Contacto del mensaje. Prioridad ESTABLE: BSUID (único por organización; Zernio
+ * lo recomienda como ancla principal de identidad) → teléfono → nuevo. Con
+ * `knownContactId` (la conversación del proveedor ya existía) no busca a quién
+ * atribuir: solo le ENSEÑA al contacto el BSUID/teléfono del mensaje, si nadie
+ * más los tiene. Un BSUID NUNCA se mueve de contacto: si dos contactos parecen
+ * el mismo cliente (uno por BSUID, otro por teléfono) se registra el conflicto
+ * para fusionarlos a mano, sin que la atribución cambie de un mensaje a otro.
+ */
+async function resolveContact(tx: Tx, orgId: string, identity: Identity, knownContactId?: string): Promise<string> {
+  const { phone, bsuid } = identity;
+  await tx.execute(sql`select pg_advisory_xact_lock_shared(hashtextextended(${contactsImportLockKey(orgId)}, 0))`);
+  // Serializa por (organización, identidad): dos mensajes simultáneos de un
+  // número nuevo no pueden crear dos contactos. Un candado por CADA identidad
+  // del mensaje, en orden fijo (sin interbloqueos).
+  const keys = [phone && `contact:${orgId}:phone:${phone}`, bsuid && `contact:${orgId}:bsuid:${bsuid}`]
+    .filter((k): k is string => Boolean(k))
+    .sort();
+  for (const key of keys) await tx.execute(sql`select pg_advisory_xact_lock(hashtextextended(${key}, 0))`);
+
+  const [byBsuid] = bsuid
+    ? await tx
+        .select({ id: contacts.id })
+        .from(contacts)
+        .where(and(eq(contacts.organizationId, orgId), eq(contacts.waBsuid, bsuid)))
+        .limit(1)
+    : [];
+  // Teléfono (el más viejo gana si hay duplicados de GHL).
+  const [byPhone] = phone
+    ? await tx
+        .select({ id: contacts.id })
+        .from(contacts)
+        .where(and(eq(contacts.organizationId, orgId), inArray(contacts.phoneE164, phoneLookupVariants(phone))))
+        .orderBy(asc(contacts.createdAt), asc(contacts.id))
+        .limit(1)
+    : [];
+
+  const targetId = knownContactId ?? byBsuid?.id ?? byPhone?.id;
+  if (!targetId) {
+    const id = crypto.randomUUID();
+    const name = identity.name?.trim();
+    await tx.insert(contacts).values({
+      id,
+      organizationId: orgId,
+      // Nombre de perfil de WhatsApp; si no viene, el teléfono; si tampoco, algo legible.
+      firstName: name || phone || "Cliente de WhatsApp",
+      ...phoneColumns(phone),
+      country: countryFromPhone(phone),
+      waBsuid: bsuid,
+      source: "whatsapp",
+      sourceChannel: "whatsapp",
+      // Arriba de su columna en el kanban (Contactos ordena por stage_changed_at).
+      stage: "inbox",
+      stageChangedAt: new Date(),
+    });
+    return id;
+  }
+
+  const conflicts = [byBsuid, byPhone].filter((c) => c && c.id !== targetId).map((c) => c!.id);
+  if (conflicts.length > 0) {
+    console.warn(
+      `[ingest] identidad: el mensaje se atribuye al contacto ${targetId}, pero su ` +
+        `${byBsuid && byBsuid.id !== targetId ? "BSUID" : "teléfono"} también está en ${[...new Set(conflicts)].join(", ")}; revisar para fusionar`,
+    );
+  }
+
+  const [target] = await tx
+    .select({ waBsuid: contacts.waBsuid, phoneE164: contacts.phoneE164, country: contacts.country })
+    .from(contacts)
+    .where(and(eq(contacts.id, targetId), eq(contacts.organizationId, orgId)));
+  if (!target) return targetId;
+  // Aprender el BSUID solo si el contacto no tiene y NADIE más lo tiene.
+  if (bsuid && !target.waBsuid && !byBsuid) {
+    await tx.update(contacts).set({ waBsuid: bsuid }).where(eq(contacts.id, targetId));
+  }
+  // Aprender el teléfono solo si el contacto no tiene y NADIE más lo tiene.
+  if (phone && !target.phoneE164 && !byPhone) {
+    await tx
+      .update(contacts)
+      .set({ ...phoneColumns(phone), ...(target.country ? {} : { country: countryFromPhone(phone) }) })
+      .where(eq(contacts.id, targetId));
+  }
+  return targetId;
 }
 
 async function ingestStatus(
@@ -455,7 +595,8 @@ async function ingestStatus(
     const [message] = await tx.select().from(messages).where(match).limit(1).for("update");
     if (!message) {
       // El estado llegó antes que el mensaje (o su eco): reintentar más tarde.
-      throw new RetryableIngestError("mensaje del estado aún no existe");
+      // Pasado ORPHAN_GRACE_MS se da por ignorado (processWebhookEvent).
+      throw new OrphanEventError("mensaje del estado aún no existe", orphanKey(event), orgId ?? null);
     }
     if (orgId && message.organizationId !== orgId) {
       throw new PermanentIngestError("el estado apunta a un mensaje de otra organización; se rechaza");
@@ -498,4 +639,92 @@ async function recomputeFirstResponse(conversationId: string): Promise<void> {
       .set({ firstResponseSeconds: await reconcileFirstResponse(tx, conversationId) })
       .where(eq(conversations.id, conversationId));
   });
+}
+
+/**
+ * Reacción, edición o borrado de un mensaje ya guardado. Se cruza por wamid
+ * (único en WhatsApp) y se acota a la organización del canal. Si el mensaje aún
+ * no existe se reintenta; pasado ORPHAN_GRACE_MS se da por ignorado.
+ */
+async function ingestMessageUpdate(
+  provider: ProviderName,
+  event: NormalizedReactionEvent | NormalizedMessageChangeEvent,
+): Promise<{ outcome: string; organizationId: string | null }> {
+  const [channel] = await db
+    .select({ organizationId: channels.organizationId })
+    .from(channels)
+    .where(channelOf(provider, event.providerAccountId))
+    .limit(1);
+  if (!channel) throw new RetryableIngestError(`no hay canal para la cuenta ${event.providerAccountId}`);
+  const orgId = channel.organizationId;
+
+  const outcome = await withTxRetry(() => db.transaction(async (tx) => {
+    const [message] = await tx
+      .select({
+        id: messages.id,
+        reactions: messages.reactions,
+        metadata: messages.metadata,
+        editedAt: messages.editedAt,
+        deletedAt: messages.deletedAt,
+      })
+      .from(messages)
+      .where(and(eq(messages.organizationId, orgId), eq(messages.providerMessageId, event.providerMessageId)))
+      .limit(1)
+      .for("update");
+    if (!message) throw new OrphanEventError(`mensaje ${event.providerMessageId} no existe en el CRM`, event.providerMessageId, orgId);
+
+    // Los webhooks (y los replays) llegan desordenados: solo se aplica un
+    // evento MÁS RECIENTE que lo vigente; uno viejo no revive ni retrocede nada.
+    if (event.kind === "reaction") {
+      const current = message.reactions[event.side];
+      if (current && new Date(current.at).getTime() >= event.at.getTime()) {
+        return `reacción ${event.action} (${event.side}) más vieja que la vigente: sin cambios`;
+      }
+      const reactions = {
+        ...message.reactions,
+        [event.side]: { emoji: event.action === "removed" || !event.emoji ? null : event.emoji, at: event.at.toISOString() },
+      };
+      await tx.update(messages).set({ reactions }).where(eq(messages.id, message.id));
+      return `reacción ${event.action} (${event.side})`;
+    }
+    if (event.change === "edited") {
+      if (message.editedAt && message.editedAt.getTime() >= event.at.getTime()) {
+        return "edición más vieja que la vigente: sin cambios";
+      }
+      await tx
+        .update(messages)
+        .set({
+          body: event.body ?? null,
+          editedAt: event.at,
+          metadata: { ...(message.metadata ?? {}), editHistory: event.editHistory ?? [] },
+        })
+        .where(eq(messages.id, message.id));
+      return "mensaje editado";
+    }
+    // Borrado: se marca, NO se borra el contenido (queda para consulta).
+    if (message.deletedAt) return "mensaje ya marcado como eliminado";
+    await tx.update(messages).set({ deletedAt: event.at }).where(eq(messages.id, message.id));
+    return "mensaje eliminado por su autor";
+  }));
+  return { outcome, organizationId: orgId };
+}
+
+/**
+ * Barrido del worker: reabre los huérfanos cerrados cuyo mensaje YA existe
+ * (llegó tarde: caída del worker, cola larga, confirmación de envío lenta).
+ * Vuelven a pendientes y el mismo barrido los procesa. Devuelve cuántos.
+ */
+export async function reopenResolvedOrphans(): Promise<number> {
+  const reopened = await db.execute<{ id: string }>(sql`
+    update ${webhookEvents} w
+       set processed_at = null, attempts = 0, last_error = null, orphan_wamid = null
+     where w.orphan_wamid is not null
+       and exists (
+         select 1 from ${messages} m
+          where m.organization_id = w.organization_id
+            and (m.provider_message_id = w.orphan_wamid
+                 or (w.orphan_wamid like 'internal:%' and m.provider_internal_id = substr(w.orphan_wamid, 10)))
+       )
+    returning w.id`);
+  return reopened.length;
 }
