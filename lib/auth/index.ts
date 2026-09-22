@@ -1,6 +1,7 @@
 import { betterAuth } from "better-auth";
 import { drizzleAdapter } from "better-auth/adapters/drizzle";
 import { nextCookies } from "better-auth/next-js";
+import { admin as adminPlugin } from "better-auth/plugins/admin";
 import { organization } from "better-auth/plugins/organization";
 import { db } from "@/lib/db";
 import { emailLockoutAfter, emailLockoutBefore } from "@/lib/auth/email-lockout";
@@ -81,6 +82,12 @@ export const auth = betterAuth({
     // media en el bucket (ObjectStorage no expone delete todavía): hasta tener
     // una limpieza durable del almacenamiento, el borrado queda cerrado.
     organization({ ac, roles: { owner, admin, agent }, disableOrganizationDeletion: true }),
+    // Plugin admin: SOLO para crear usuarios desde el servidor y para el campo
+    // `banned` (desactivar), cuyo hook bloquea el inicio de sesión
+    // (dist/plugins/admin/admin.mjs:30-45). Nunca para roles: su user.role
+    // global no se usa (el rol vive en member.role). Sus endpoints HTTP
+    // /admin/* quedan cerrados porque nadie tiene rol global "admin".
+    adminPlugin({ bannedUserMessage: "Tu usuario está desactivado. Pide a un administrador que lo reactive." }),
     nextCookies(),
   ],
 });

@@ -44,6 +44,8 @@ export default async function AppLayout({
     ...(role && roleAllows(role, "aiConfig", "read")
       ? [{ label: "Agente IA", href: "/agente-ia" }]
       : []),
+    // Configuración va al final: "Mi cuenta" es para todos (A4).
+    ...(role ? [{ label: "Configuración", href: "/configuracion" }] : []),
   ];
 
   return (
