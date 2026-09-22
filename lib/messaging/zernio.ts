@@ -172,10 +172,29 @@ function firstOf<T>(...values: (T | null | undefined)[]): T | null {
   return null;
 }
 
-function validDate(value: string | null | undefined): Date | null {
+// ISO 8601 COMPLETO y con zona (Z u offset). Sin zona, el instante dependería
+// de la TZ del servidor; por eso se rechaza.
+const ISO_WITH_ZONE = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})(?::(\d{2})(?:\.\d+)?)?(?:Z|[+-]\d{2}:?\d{2})$/;
+/** Un evento no puede venir de más de un día en el futuro (reloj roto o dato corrupto). */
+const MAX_FUTURE_SKEW_MS = 24 * 3_600_000;
+
+/**
+ * Fecha de un webhook, estricta: ISO con zona, fecha de calendario REAL (Node
+ * convierte "2026-02-30" en 2 de marzo sin avisar) y no más de un día en el
+ * futuro (una fecha absurda bloquearía para siempre reacciones/ediciones
+ * posteriores y abriría ventanas de 24 h falsas). Si no, null.
+ */
+export function validDate(value: string | null | undefined, now = Date.now()): Date | null {
   if (!value) return null;
+  const m = ISO_WITH_ZONE.exec(value);
+  if (!m) return null;
+  const [year, month, day, hour, minute, second] = [m[1], m[2], m[3], m[4], m[5], m[6] ?? "0"].map(Number);
+  const calendar = new Date(Date.UTC(year, month - 1, day));
+  if (calendar.getUTCFullYear() !== year || calendar.getUTCMonth() !== month - 1 || calendar.getUTCDate() !== day) return null;
+  if (hour > 23 || minute > 59 || second > 59) return null;
   const date = new Date(value);
-  return Number.isNaN(date.getTime()) ? null : date;
+  if (Number.isNaN(date.getTime()) || date.getTime() > now + MAX_FUTURE_SKEW_MS) return null;
+  return date;
 }
 
 function asString(value: unknown): string | undefined {
@@ -277,8 +296,8 @@ export function normalizeZernioEvent(payload: unknown): NormalizedEvent {
     // sentAt gobierna el orden del hilo, la ventana de 24 h y la primera
     // respuesta: un valor ilegible NO se sustituye por "ahora" (abriría una
     // ventana falsa y corrompería métricas). Se marca malformado → dead-letter.
-    const sentAt = new Date(message.sentAt);
-    if (Number.isNaN(sentAt.getTime())) {
+    const sentAt = validDate(message.sentAt);
+    if (!sentAt) {
       return { kind: "ignored", eventId, event, reason: `sentAt inválido: ${message.sentAt}`, malformed: true };
     }
     return {
