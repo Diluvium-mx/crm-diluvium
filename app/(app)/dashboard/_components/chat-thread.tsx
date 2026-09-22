@@ -6,6 +6,8 @@ import type { AdReferral, AttachmentView, ConversationDetail, MessageView } from
 import { listMessages, retryMessage, sendMessage, sendTemplate } from "@/lib/inbox/actions";
 import { SnippetPicker } from "./snippet-picker";
 import { TemplatePicker } from "./template-picker";
+import { DocumentCard } from "./document-card";
+import { MediaViewer } from "./media-viewer";
 import {
   bubbleTime,
   dayLabel,
@@ -61,41 +63,48 @@ function AdReferralCard({ referral }: { referral: AdReferral }) {
   );
 }
 
-function Attachment({ attachment }: { attachment: AttachmentView }) {
-  if (attachment.state === "processing") {
-    return <div className="rounded-md bg-black/5 px-3 py-2 text-xs text-muted-foreground">Procesando…</div>;
-  }
+function Attachment({ attachment, onOpen }: { attachment: AttachmentView; onOpen: () => void }) {
   if (attachment.state === "failed") {
     return <div className="rounded-md bg-black/5 px-3 py-2 text-xs text-muted-foreground">Adjunto no disponible</div>;
+  }
+  // Mientras se copia al bucket el mensaje ya se ve: "Procesando…" y el SSE lo
+  // rellena al terminar (message.upserted).
+  if (attachment.state === "processing") {
+    return attachment.kind === "document" ? (
+      <div className="w-64 max-w-full rounded-lg border bg-card px-3 py-2 text-xs text-muted-foreground">
+        📄 {attachment.fileName ?? "Documento"} · Procesando…
+      </div>
+    ) : (
+      <div className="rounded-md bg-black/5 px-3 py-2 text-xs text-muted-foreground">Procesando…</div>
+    );
   }
   switch (attachment.kind) {
     case "image":
     case "sticker":
       return (
-        // eslint-disable-next-line @next/next/no-img-element
-        <img src={attachment.url} alt={attachment.fileName ?? "Imagen"} className="max-h-64 rounded-md object-cover" />
+        <button type="button" onClick={onOpen} className="block cursor-zoom-in" aria-label="Ver imagen">
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img src={attachment.url} alt={attachment.fileName ?? "Imagen"} className="max-h-64 rounded-md object-cover" />
+        </button>
       );
     case "audio":
       return <audio controls src={attachment.url} className="w-56" />;
     case "video":
       return <video controls src={attachment.url} className="max-h-64 rounded-md" />;
     default:
-      return (
-        <a
-          href={attachment.url}
-          target="_blank"
-          rel="noreferrer"
-          className="flex items-center gap-2 rounded-md border bg-card px-3 py-2 text-xs hover:bg-muted"
-        >
-          <span aria-hidden="true">📄</span>
-          <span className="min-w-0 truncate">{attachment.fileName ?? "Documento"}</span>
-          <span className="ml-auto text-brand-navy">Descargar</span>
-        </a>
-      );
+      return <DocumentCard attachment={attachment} onOpen={onOpen} />;
   }
 }
 
-function Bubble({ row, onRetry }: { row: Row; onRetry: (row: Row) => void }) {
+function Bubble({
+  row,
+  onRetry,
+  onOpenAttachment,
+}: {
+  row: Row;
+  onRetry: (row: Row) => void;
+  onOpenAttachment: (attachment: AttachmentView) => void;
+}) {
   const out = row.direction === "out";
   const opt = isOptimistic(row);
   const mark = out ? statusMark(row.status) : null;
@@ -154,7 +163,7 @@ function Bubble({ row, onRetry }: { row: Row; onRetry: (row: Row) => void }) {
         {attachments.length > 0 && (
           <div className="mb-1 flex flex-col gap-1">
             {attachments.map((att) => (
-              <Attachment key={att.index} attachment={att} />
+              <Attachment key={att.index} attachment={att} onOpen={() => onOpenAttachment(att)} />
             ))}
           </div>
         )}
@@ -213,6 +222,7 @@ export function ChatThread({
   const [draft, setDraft] = useState("");
   const [snippetOpen, setSnippetOpen] = useState(false);
   const [templateOpen, setTemplateOpen] = useState(false);
+  const [viewing, setViewing] = useState<AttachmentView | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
 
   // Cierra los selectores al cambiar de conversación. Reset en render (no en un
@@ -369,7 +379,7 @@ export function ChatThread({
       </div>
 
       {/* Hilo */}
-      <div ref={scrollRef} className="min-h-0 flex-1 space-y-2 overflow-y-auto p-4">
+      <div ref={scrollRef} className="chat-wallpaper min-h-0 flex-1 space-y-2 overflow-y-auto p-4">
         {loading && messages.length === 0 ? (
           <p className="py-8 text-center text-sm text-muted-foreground">Cargando mensajes…</p>
         ) : loadError ? (
@@ -403,7 +413,7 @@ export function ChatThread({
                       </span>
                     </div>
                   )}
-                  <Bubble row={row} onRetry={handleRetry} />
+                  <Bubble row={row} onRetry={handleRetry} onOpenAttachment={setViewing} />
                 </div>
               );
             })}
@@ -471,6 +481,7 @@ export function ChatThread({
           </button>
         )}
       </div>
+      {viewing && <MediaViewer attachment={viewing} onClose={() => setViewing(null)} />}
     </div>
   );
 }

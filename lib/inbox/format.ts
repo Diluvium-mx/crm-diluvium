@@ -90,6 +90,10 @@ export function attachmentView(
     mimeType: attachment.mimeType ?? null,
     state,
     url: `/api/media/${encodeURIComponent(messageId)}/${index}`,
+    downloadUrl: `/api/media/${encodeURIComponent(messageId)}/${index}?download=1`,
+    thumbnailUrl: attachment.thumbnailKey ? `/api/media/${encodeURIComponent(messageId)}/${index}?thumb=1` : null,
+    sizeBytes: attachment.sizeBytes ?? null,
+    pageCount: attachment.pageCount ?? null,
   };
 }
 

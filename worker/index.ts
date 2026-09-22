@@ -22,6 +22,7 @@ import {
   reopenResolvedOrphans,
 } from "@/lib/messaging/ingest";
 import { downloadMessageMedia } from "@/lib/messaging/media";
+import { generateMessageThumbnails, THUMBNAIL_MAX_ATTEMPTS } from "@/lib/messaging/thumbnails";
 import { MEDIA_MAX_ATTEMPTS, MEDIA_SWEEP_DAYS } from "@/lib/messaging/media-keys";
 import { expireUnconfirmedSends } from "@/lib/messaging/send";
 import {
@@ -96,6 +97,10 @@ const mediaWorker = storage
       async (job) => {
         const { stored, pending } = await downloadMessageMedia(provider, storage, job.data.messageId);
         console.info(`[media] ${job.data.messageId}: ${stored} guardado(s), ${pending} pendiente(s)`);
+        // Miniatura de PDF (tarjeta de documento): después de la descarga y
+        // sin afectar el resultado del job (generateMessageThumbnails no lanza).
+        const thumbs = await generateMessageThumbnails(storage, job.data.messageId);
+        if (thumbs) console.info(`[media] ${job.data.messageId}: ${thumbs} miniatura(s)`);
       },
       { connection: { ...redisConnection(), maxRetriesPerRequest: null }, concurrency: 2, autorun: false },
     )
@@ -216,6 +221,22 @@ async function sweep() {
     .limit(50);
   for (const { id } of pendingMedia) await enqueueMediaDownload(id);
   if (pendingMedia.length) console.info(`[worker] barrido: ${pendingMedia.length} mensaje(s) con media pendiente`);
+
+  // Miniaturas de PDF que faltan (ya descargados; pocos intentos por adjunto).
+  const pendingThumbs = await db
+    .select({ id: messages.id })
+    .from(messages)
+    .where(
+      and(
+        gte(messages.createdAt, new Date(Date.now() - MEDIA_SWEEP_DAYS * 86_400_000)),
+        sql`exists (select 1 from jsonb_array_elements(${messages.attachments}) a
+                    where a->>'storageKey' is not null and a->>'thumbnailKey' is null
+                      and (a->>'mimeType' = 'application/pdf' or a->>'fileName' ilike '%.pdf')
+                      and coalesce((a->>'thumbnailAttempts')::int, 0) < ${THUMBNAIL_MAX_ATTEMPTS})`,
+      ),
+    )
+    .limit(10);
+  for (const { id } of pendingThumbs) await generateMessageThumbnails(storage, id);
 }
 
 const sweepTimer = setInterval(() => {

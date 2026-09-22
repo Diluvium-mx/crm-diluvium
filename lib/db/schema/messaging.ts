@@ -35,6 +35,12 @@ export type MessageAttachment = {
   downloadedAt?: string;
   downloadAttempts?: number;
   downloadError?: string;
+  /** Miniatura de la 1ª página (PDF) en el bucket; se genera una vez, después de la descarga. */
+  thumbnailKey?: string;
+  /** Páginas del documento (PDF). */
+  pageCount?: number;
+  thumbnailAttempts?: number;
+  thumbnailError?: string;
 };
 
 /**
