@@ -873,6 +873,11 @@ describe.skipIf(!TEST_DATABASE_URL)("ingesta de WhatsApp (Postgres real)", () =>
       async signedGetUrl(key: string) {
         return `https://bucket/${key}?firmado`;
       }
+      async getBytes(key: string) {
+        const object = this.objects.get(key);
+        if (!object) throw new Error("no existe");
+        return object.body;
+      }
     }
     const pdf = new TextEncoder().encode("%PDF-1.7 factura");
     const xml = new TextEncoder().encode("<cfdi:Comprobante/>");

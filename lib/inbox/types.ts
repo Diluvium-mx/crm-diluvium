@@ -69,6 +69,12 @@ export type AttachmentView = {
   state: "ready" | "processing" | "failed";
   /** /api/media/{messageId}/{index} (exige sesión; 202 mientras procesa). */
   url: string;
+  /** Misma ruta con ?download=1: fuerza "Guardar como". */
+  downloadUrl: string;
+  /** Miniatura de la 1ª página (PDF), cuando ya se generó. */
+  thumbnailUrl: string | null;
+  sizeBytes: number | null;
+  pageCount: number | null;
 };
 
 export type MessageView = {
