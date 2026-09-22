@@ -6,3 +6,4 @@ export * from "./auth";
 export * from "./contacts";
 export * from "./messaging";
 export * from "./snippets";
+export * from "./ai-config";
