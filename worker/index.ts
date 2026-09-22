@@ -267,6 +267,7 @@ const MONITOR_EVERY_MS = 5 * 60_000;
 async function monitor() {
   const report = await inboundHealth({
     heartbeatAgeSeconds: async () => 0, // este mismo proceso está vivo
+    checkZernio: false, // lo revisa el web (/api/health/inbound), que tiene APP_URL
   });
   if (report.ok) console.info("[monitor] entrada de WhatsApp sana");
   else console.error(`[monitor] ALERTA: ${report.problems.join(" · ")}`);

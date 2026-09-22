@@ -152,4 +152,28 @@ trailer<</Root 1 0 R>>
     const height = new DataView(png!.buffer, png!.byteOffset).getUint32(20);
     expect(height).toBeLessThanOrEqual(480);
   });
+
+  it("una miniatura pesada (> 64 KiB por stdout) llega completa del proceso hijo", async () => {
+    // Página con una imagen de ruido 320×480 sin comprimir: el PNG resultante
+    // pesa cientos de KB y no cabe en un solo buffer del pipe.
+    const w = 320;
+    const h = 480;
+    const pixels = (await import("node:crypto")).randomBytes(w * h * 3);
+    const head = Buffer.from(
+      `%PDF-1.4\n1 0 obj<</Type/Catalog/Pages 2 0 R>>endobj\n` +
+        `2 0 obj<</Type/Pages/Kids[3 0 R]/Count 1>>endobj\n` +
+        `3 0 obj<</Type/Page/Parent 2 0 R/MediaBox[0 0 ${w} ${h}]/Resources<</XObject<</Im 5 0 R>>>>/Contents 4 0 R>>endobj\n` +
+        `4 0 obj<</Length 28>>stream\nq ${w} 0 0 ${h} 0 0 cm /Im Do Q\nendstream endobj\n` +
+        `5 0 obj<</Type/XObject/Subtype/Image/Width ${w}/Height ${h}/ColorSpace/DeviceRGB/BitsPerComponent 8/Length ${pixels.length}>>stream\n`,
+    );
+    const tail = Buffer.from(`\nendstream endobj\ntrailer<</Root 1 0 R>>\n%%EOF`);
+    const storage = new MemoryStorage();
+    storage.objects.set("k/ruido.pdf", { body: new Uint8Array(Buffer.concat([head, pixels, tail])), contentType: "application/pdf" });
+    await message([{ type: "document", url: "u", mimeType: "application/pdf", fileName: "ruido.pdf", storageKey: "k/ruido.pdf" }]);
+    expect(await thumbs.generateMessageThumbnails(storage, "m_t")).toBe(1);
+    const png = storage.objects.get("k/ruido.pdf.thumb.png")!.body;
+    expect(png.byteLength).toBeGreaterThan(64 * 1024);
+    // Termina con el bloque IEND: el PNG no llegó truncado.
+    expect(Buffer.from(png.subarray(-8, -4)).toString("latin1")).toBe("IEND");
+  });
 });

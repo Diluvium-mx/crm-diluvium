@@ -44,7 +44,7 @@ describe.skipIf(!TEST_DATABASE_URL)("inboundHealth (Postgres real)", () => {
 
   it("sano: evento reciente, nada pendiente, worker con latido", async () => {
     await db.insert(s.webhookEvents).values({ id: "e1", provider: "zernio", event: "message.received", payload: {}, processedAt: new Date() });
-    const report = await health.inboundHealth({ heartbeatAgeSeconds: async () => 30, now: tuesday10am });
+    const report = await health.inboundHealth({ heartbeatAgeSeconds: async () => 30, checkZernio: false, now: tuesday10am });
     expect(report.problems).toEqual([]);
     expect(report.ok).toBe(true);
   });
@@ -55,10 +55,10 @@ describe.skipIf(!TEST_DATABASE_URL)("inboundHealth (Postgres real)", () => {
       { id: "dead", provider: "zernio", event: "message.received", payload: {}, receivedAt: sql`localtimestamp - interval '3 hours'`, deadLetteredAt: new Date(), attempts: 20 },
       { id: "q", provider: "zernio", event: "message.received", payload: {}, receivedAt: sql`localtimestamp - interval '3 hours'`, quarantinedAt: new Date() },
     ]);
-    const report = await health.inboundHealth({ heartbeatAgeSeconds: async () => null, now: tuesday10am });
+    const report = await health.inboundHealth({ heartbeatAgeSeconds: async () => null, checkZernio: false, now: tuesday10am });
     expect(report.ok).toBe(false);
     expect(report.metrics).toMatchObject({ stuckPending: 1, deadLetters: 1, quarantined: 1 });
-    expect(report.problems.join(" | ")).toMatch(/sin webhooks/);
+    expect(report.problems.join(" | ")).toMatch(/sin mensajes entrantes/);
     expect(report.problems.join(" | ")).toMatch(/latido/);
   });
 
@@ -68,7 +68,24 @@ describe.skipIf(!TEST_DATABASE_URL)("inboundHealth (Postgres real)", () => {
       receivedAt: sql`localtimestamp - interval '5 hours'`,
     });
     const sunday = new Date("2026-09-27T18:00:00Z");
-    const report = await health.inboundHealth({ heartbeatAgeSeconds: async () => 10, now: sunday });
+    const report = await health.inboundHealth({ heartbeatAgeSeconds: async () => 10, checkZernio: false, now: sunday });
     expect(report.ok).toBe(true);
+  });
+
+  it("solo cuentan los mensajes ENTRANTES: estados o ecos recientes no tapan el silencio", async () => {
+    await db.insert(s.webhookEvents).values([
+      { id: "in_viejo", provider: "zernio", event: "message.received", payload: {}, processedAt: new Date(), receivedAt: sql`localtimestamp - interval '3 hours'` },
+      { id: "estado", provider: "zernio", event: "message.read", payload: {}, processedAt: new Date() },
+      { id: "eco", provider: "zernio", event: "message.sent", payload: {}, processedAt: new Date() },
+    ]);
+    const report = await health.inboundHealth({ heartbeatAgeSeconds: async () => 10, checkZernio: false, now: tuesday10am });
+    expect(report.problems.join(" | ")).toMatch(/sin mensajes entrantes/);
+  });
+
+  it("sin configuración de Zernio en el web → problema (no 'sano')", async () => {
+    await db.insert(s.webhookEvents).values({ id: "in", provider: "zernio", event: "message.received", payload: {}, processedAt: new Date() });
+    const report = await health.inboundHealth({ heartbeatAgeSeconds: async () => 10, checkZernio: true, now: tuesday10am });
+    expect(report.ok).toBe(false);
+    expect(report.problems.join(" | ")).toMatch(/faltan ZERNIO_API_KEY o APP_URL/);
   });
 });
