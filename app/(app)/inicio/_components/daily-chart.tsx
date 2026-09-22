@@ -24,7 +24,8 @@ function niceMax(value: number): number {
 export function DailyChart({ series }: { series: DailyCount[] }) {
   const max = niceMax(Math.max(0, ...series.map((d) => d.total)));
   const total = series.reduce((sum, d) => sum + d.total, 0);
-  // Etiquetas del eje X: primera, última y ~6 intermedias, para no encimarlas.
+  // Etiquetas del eje X: ~7 repartidas; la última solo si no queda pegada a
+  // la anterior, para no encimarlas.
   const labelEvery = Math.max(1, Math.ceil(series.length / 7));
 
   return (
@@ -71,7 +72,7 @@ export function DailyChart({ series }: { series: DailyCount[] }) {
       <div className="ml-8 mt-1 flex gap-0.5 text-[11px] text-muted-foreground" aria-hidden="true">
         {series.map((d, i) => (
           <span key={d.dia} className="min-w-0 flex-1 overflow-visible whitespace-nowrap">
-            {i % labelEvery === 0 || i === series.length - 1 ? shortDay(d.dia) : ""}
+            {i % labelEvery === 0 || (i === series.length - 1 && i % labelEvery >= labelEvery / 2) ? shortDay(d.dia) : ""}
           </span>
         ))}
       </div>
