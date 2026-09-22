@@ -15,22 +15,6 @@ import {
 import { ContactChat } from "./contact-chat";
 import { displayPhone } from "@/lib/phone-format";
 
-// tags y notas todavía no tienen columnas propias en la BD: se leen de
-// custom_fields (jsonb) si vienen del import de GHL, sólo para mostrar. La
-// edición real llega cuando tengan almacenamiento propio.
-function readTags(contact: Contact): string[] {
-  const raw = (contact.customFields as Record<string, unknown> | null)?.tags;
-  if (Array.isArray(raw)) {
-    return raw.filter((tag): tag is string => typeof tag === "string");
-  }
-  return [];
-}
-
-function readNotes(contact: Contact): string {
-  const raw = (contact.customFields as Record<string, unknown> | null)?.notas;
-  return typeof raw === "string" ? raw : "";
-}
-
 function Attribute({ label, value }: { label: string; value: ReactNode }) {
   return (
     <div>
@@ -53,8 +37,10 @@ export function ContactDetailPanel({
   onStageChange: (stage: Stage) => void;
   onTemperatureChange: (temperature: Temperature | null) => void;
 }) {
-  const tags = readTags(contact);
-  const notes = readNotes(contact);
+  // Las etiquetas viven en contacts.tags (migración 0009). Las "Notas" de
+  // custom_fields se quitaron: nunca tuvieron datos y las reemplazan los
+  // comentarios del contacto (A7/A10).
+  const tags = contact.tags;
   const canal = contact.sourceChannel ?? contact.source ?? "—";
 
   // a11y del modal: cerrar con Escape, enfocar el panel al abrir y devolver el
@@ -155,7 +141,6 @@ export function ContactDetailPanel({
                 )
               }
             />
-            <Attribute label="Notas" value={notes || "—"} />
           </dl>
 
           <div className="space-y-1">
