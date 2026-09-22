@@ -74,6 +74,16 @@ construye ahora). El dry-run "Probar modelo" ya muestra tokens, pero no persiste
   Ventana 24h, idempotencia por `provider_message_id`, 24/7, y **persistencia de uso por
   mensaje** en `ai_usage`. Deja campos de estado por conversación (`agent_state`,
   `paused_until`, `last_inbound_at`, `last_agent_reply_at`) para la Fase C.
+
+  **Ojo con la migración de Fase B en staging (22-sep-2026).** Staging ya tiene
+  aplicada la `0014_little_omega_flight.sql` de esta rama (tablas del agente ya creadas),
+  pero la rama no ha mergeado a `main`. En paralelo va `feat/bloque-a`, que también
+  genera migraciones. Si `feat/bloque-a` mergea primero, ella toma el número 0014 y la
+  migración de Fase B se tendrá que **regenerar** con otro número, y al migrar staging
+  va a chocar (las tablas ya existen). **Al retomar Fase B:** antes de correr las
+  migraciones en staging, reconciliar `drizzle.__drizzle_migrations` de staging (quitar
+  o ajustar el registro de la 0014 vieja y dejar la base alineada con la migración
+  regenerada). Nunca editar una migración ya aplicada: se regenera y se reconcilia.
 - **Fase C:** follow-ups automáticos — "ocupado" a las 2h; "dejó de responder" a los
   4 días con plantilla fuera de la ventana de 24h; horario 8:00–17:00.
 - **Fase D:** acciones del Goal — datos bancarios, videos, tabla de tamaños, cambio de etapa.
