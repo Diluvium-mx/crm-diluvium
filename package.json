@@ -18,6 +18,8 @@
     "db:migrate": "drizzle-kit migrate",
     "db:studio": "drizzle-kit studio",
     "db:reset": "tsx scripts/reset-db.ts",
+    "seed:ai-knowledge": "tsx scripts/seed-ai-knowledge.ts",
+    "ai:system-tokens": "tsx scripts/ai-system-tokens.ts",
     "preview:inbox": "npm run db:reset && npm run db:migrate && tsx scripts/seed-user.ts && tsx scripts/seed-org.ts && tsx scripts/seed-inbox.ts"
   },
   "dependencies": {
