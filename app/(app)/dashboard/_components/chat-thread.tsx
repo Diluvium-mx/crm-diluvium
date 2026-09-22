@@ -13,6 +13,7 @@ import {
   statusMark,
   windowHoursLeft,
 } from "./format";
+import { displayPhone } from "@/lib/phone-format";
 
 const PAGE_LIMIT = 30;
 
@@ -106,15 +107,50 @@ function Bubble({ row, onRetry }: { row: Row; onRetry: (row: Row) => void }) {
   const errorMessage = opt ? row.errorMessage : (row as MessageView).errorMessage;
   const attachments = opt ? [] : (row as MessageView).attachments;
   const adReferral = opt ? null : (row as MessageView).adReferral;
+  const view = opt ? null : (row as MessageView);
+  const reactions = view ? [view.reactions.contact, view.reactions.business].filter(Boolean) : [];
 
   return (
-    <div className={`flex ${out ? "justify-end" : "justify-start"}`}>
+    <div className={`flex ${out ? "justify-end" : "justify-start"} ${reactions.length ? "mb-3" : ""}`}>
       <div
-        className={`max-w-[78%] rounded-2xl px-3 py-2 text-sm shadow-sm ${
+        className={`relative max-w-[78%] rounded-2xl px-3 py-2 text-sm shadow-sm ${
           out ? "bg-brand-navy text-brand-white" : "bg-card text-foreground border"
         }`}
       >
+        {view?.quoted && (
+          <div
+            className={`mb-1 rounded-md border-l-4 px-2 py-1 text-xs ${
+              out ? "border-brand-white/60 bg-brand-white/10" : "border-brand-navy/60 bg-muted"
+            }`}
+          >
+            <span className="font-medium">{view.quoted.direction === "out" ? "Tú" : "Cliente"}</span>
+            <p className="line-clamp-2 opacity-80">{view.quoted.preview}</p>
+          </div>
+        )}
+        {view?.deletedAt && (
+          <p className={`mb-1 text-[11px] italic ${out ? "text-brand-white/70" : "text-muted-foreground"}`}>
+            🚫 Eliminado en WhatsApp por su autor (se conserva en el CRM)
+          </p>
+        )}
         {adReferral && <AdReferralCard referral={adReferral} />}
+        {view?.location && (
+          <a
+            href={`https://www.google.com/maps?q=${view.location.latitude},${view.location.longitude}`}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="mb-1 block rounded-md border px-2 py-1 text-xs underline-offset-2 hover:underline"
+          >
+            📍 {view.location.name ?? "Ubicación"}
+            {view.location.address && <span className="block opacity-80">{view.location.address}</span>}
+          </a>
+        )}
+        {view && view.contactCards.length > 0 && (
+          <div className="mb-1 flex flex-col gap-0.5 text-xs">
+            {view.contactCards.map((name, i) => (
+              <span key={i}>👤 {name}</span>
+            ))}
+          </div>
+        )}
         {attachments.length > 0 && (
           <div className="mb-1 flex flex-col gap-1">
             {attachments.map((att) => (
@@ -124,6 +160,7 @@ function Bubble({ row, onRetry }: { row: Row; onRetry: (row: Row) => void }) {
         )}
         {row.body && <p className="whitespace-pre-wrap break-words">{row.body}</p>}
         <div className={`mt-1 flex items-center justify-end gap-1 text-[10px] ${out ? "text-brand-white/70" : "text-muted-foreground"}`}>
+          {view?.editedAt && <span>editado</span>}
           <span>{bubbleTime(row.sentAt)}</span>
           {mark && mark.glyph && (
             <span className={mark.className} title={mark.label} aria-label={mark.label}>
@@ -131,6 +168,14 @@ function Bubble({ row, onRetry }: { row: Row; onRetry: (row: Row) => void }) {
             </span>
           )}
         </div>
+        {reactions.length > 0 && (
+          <span
+            className={`absolute -bottom-3 ${out ? "right-2" : "left-2"} rounded-full border bg-card px-1.5 text-xs text-foreground shadow-sm`}
+            aria-label={`Reacciones: ${reactions.join(" ")}`}
+          >
+            {reactions.join(" ")}
+          </span>
+        )}
         {out && row.status === "failed" && (
           <div className="mt-1 flex items-center justify-end gap-2 text-[11px] text-red-200">
             <span className="text-red-300">{errorMessage ?? "No se envió."}</span>
@@ -305,7 +350,7 @@ export function ChatThread({
       <header className="flex items-center gap-3 border-b bg-card px-4 py-3">
         <div className="min-w-0 flex-1">
           <p className="truncate text-sm font-semibold">{detail.contact.name}</p>
-          <p className="truncate text-xs text-muted-foreground">{detail.contact.phone ?? "Sin teléfono"}</p>
+          <p className="truncate text-xs text-muted-foreground">{displayPhone(detail.contact.phone) || "Sin teléfono"}</p>
         </div>
         <span className="shrink-0 rounded-full bg-brand-navy/10 px-2.5 py-1 text-xs font-medium text-brand-navy">
           {detail.contact.stage}

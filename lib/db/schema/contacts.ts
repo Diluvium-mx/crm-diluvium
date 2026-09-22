@@ -1,4 +1,4 @@
-import { isNotNull } from "drizzle-orm";
+import { isNotNull, sql } from "drizzle-orm";
 import { pgEnum, pgTable, text, timestamp, jsonb, index, uniqueIndex } from "drizzle-orm/pg-core";
 import { organization } from "./auth";
 
@@ -30,6 +30,16 @@ export const contacts = pgTable(
     firstName: text("first_name").notNull(),
     lastName: text("last_name"),
     phoneE164: text("phone_e164"),
+    // Partes del teléfono derivadas de phone_e164 con libphonenumber-js
+    // (lib/phone.ts → phoneColumns). phone_e164 sigue siendo la llave; estas
+    // sirven para mostrar/filtrar por país y buscar por los 10 dígitos.
+    phoneCountryCode: text("phone_country_code"), // "52"
+    phoneNational: text("phone_national"), // "6682426364"
+    phoneCountryIso: text("phone_country_iso"), // "MX"
+    // Business-scoped user ID de WhatsApp (Meta, 2026+): identidad del cliente
+    // cuando usa nombre de usuario y el webhook NO trae su teléfono. Se busca
+    // por teléfono y, si no hay, por este id; así nunca se descarta un entrante.
+    waBsuid: text("wa_bsuid"),
     email: text("email"),
     customFields: jsonb("custom_fields").notNull().default({}),
     // Etiquetas de negocio (GHL y, a futuro, el agente IA/workflows). Se
@@ -54,6 +64,14 @@ export const contacts = pgTable(
   },
   (table) => [
     index("contacts_org_idx").on(table.organizationId),
+    // No único a propósito: el import de GHL trae duplicados (fusión aparte).
+    // Lo usa la ingesta en cada entrante (CLAUDE.md §5, índice obligatorio).
+    index("contacts_org_phone_idx").on(table.organizationId, table.phoneE164),
+    // Búsqueda por dígitos (LIKE '6682%'): text_pattern_ops permite prefijo.
+    index("contacts_org_phone_national_idx").on(table.organizationId, sql`${table.phoneNational} text_pattern_ops`),
+    uniqueIndex("contacts_org_wa_bsuid_uidx")
+      .on(table.organizationId, table.waBsuid)
+      .where(isNotNull(table.waBsuid)),
     // Parcial: ghl_contact_id es nullable (contactos nativos no vienen de
     // GHL) — un índice único normal rechazaría más de un NULL solo en
     // MySQL; en Postgres los NULL ya se consideran distintos entre sí, pero

@@ -6,7 +6,7 @@ import { z } from "zod";
 import { requireActiveMembership } from "@/lib/auth/active-organization";
 import { db } from "@/lib/db";
 import { contacts, contactStageEnum, contactTemperatureEnum } from "@/lib/db/schema/contacts";
-import { normalizePhone } from "@/lib/phone";
+import { countryFromPhone, normalizePhone, phoneColumns } from "@/lib/phone";
 import { parseGhlContactsCsv } from "@/lib/import/ghl-contacts-csv";
 import {
   importParsedContacts,
@@ -53,7 +53,8 @@ export async function createContact(input: CreateContactInput) {
       organizationId,
       firstName: parsed.firstName,
       lastName: parsed.lastName || null,
-      phoneE164,
+      ...phoneColumns(phoneE164),
+      country: countryFromPhone(phoneE164),
       email: parsed.email || null,
       stage: parsed.stage ?? "inbox",
     })

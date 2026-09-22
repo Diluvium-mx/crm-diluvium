@@ -123,13 +123,28 @@ async function sweep() {
   if (revived) console.info(`[worker] barrido: ${revived} evento(s) pendientes re-encolados`);
 
   // Dead-letter: agotaron los intentos y siguen sin procesar. Quedan crudos en
-  // webhook_events (nada se pierde); replay con scripts/replay-webhook-events.ts.
+  // webhook_events (nada se pierde) y se MARCAN en la BD (dead_lettered_at) la
+  // primera vez, para el monitoreo; replay con scripts/replay-webhook-events.ts.
+  const newlyDead = await db
+    .update(webhookEvents)
+    .set({ deadLetteredAt: new Date() })
+    .where(
+      and(
+        isNull(webhookEvents.processedAt),
+        isNull(webhookEvents.deadLetteredAt),
+        gte(webhookEvents.attempts, SWEEP_MAX_ATTEMPTS),
+      ),
+    )
+    .returning({ id: webhookEvents.id, event: webhookEvents.event, lastError: webhookEvents.lastError });
+  for (const row of newlyDead) {
+    console.error(`[worker] DEAD-LETTER nuevo: ${row.id} (${row.event}): ${row.lastError ?? "sin error registrado"}`);
+  }
   const [{ value: dead }] = await db
     .select({ value: count() })
     .from(webhookEvents)
-    .where(and(isNull(webhookEvents.processedAt), gte(webhookEvents.attempts, SWEEP_MAX_ATTEMPTS)));
+    .where(and(isNull(webhookEvents.processedAt), isNotNull(webhookEvents.deadLetteredAt)));
   if (dead > 0) {
-    console.error(`[worker] DEAD-LETTER: ${dead} evento(s) agotaron ${SWEEP_MAX_ATTEMPTS} intentos; revisar last_error y reprocesar`);
+    console.error(`[worker] DEAD-LETTER: ${dead} evento(s) sin procesar; revisar last_error y reprocesar`);
   }
 
   // Envíos del CRM de resultado desconocido que nunca se confirmaron.

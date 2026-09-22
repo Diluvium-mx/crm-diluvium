@@ -20,6 +20,7 @@ import { useVirtualizer } from "@tanstack/react-virtual";
 import { ContactCard, ContactCardContent } from "./contact-card";
 import { ContactDetailPanel } from "./contact-detail-panel";
 import { ImportContactsButton } from "./import-contacts-button";
+import { phoneMatchesSearch } from "@/lib/phone-format";
 
 function stripDiacritics(value: string): string {
   return value.normalize("NFD").replace(/[̀-ͯ]/g, "");
@@ -201,11 +202,9 @@ export function ContactsBoard({ initialContacts }: { initialContacts: Contact[] 
       return contacts;
     }
 
-    const digitsOnlySearch = normalizedSearch.replace(/\s+/g, "");
-
     return contacts.filter((contact) => {
       const nameMatches = normalizeForSearch(getContactFullName(contact)).includes(normalizedSearch);
-      const phoneMatches = (contact.phoneE164 ?? "").replace(/\s+/g, "").includes(digitsOnlySearch);
+      const phoneMatches = phoneMatchesSearch(contact.phoneE164, normalizedSearch);
       return nameMatches || phoneMatches;
     });
   }, [contacts, normalizedSearch]);

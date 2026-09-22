@@ -44,8 +44,11 @@ export type NormalizedMessageEvent = {
   // wamid de WhatsApp: estable entre proveedores.
   providerMessageId: string;
   providerInternalId: string;
-  // Teléfono del contacto (no del negocio), sin normalizar.
-  contactPhone: string;
+  // Teléfono del contacto (no del negocio), sin normalizar. null cuando el
+  // proveedor no lo manda (cliente con nombre de usuario de WhatsApp: BSUID).
+  contactPhone: string | null;
+  // Business-scoped user ID de WhatsApp: identidad de respaldo sin teléfono.
+  contactBsuid?: string;
   contactName?: string;
   type: NormalizedMessageType;
   body: string | null;
@@ -53,6 +56,36 @@ export type NormalizedMessageEvent = {
   sentAt: Date;
   // Atribución de anuncio Click-to-WhatsApp, cuando la conversación vino de uno.
   referral?: Record<string, unknown>;
+  // Contexto crudo del proveedor (cita, ubicación, tarjetas, pedido…).
+  metadata?: Record<string, unknown>;
+};
+
+/** Reacción (agregada o quitada) sobre un mensaje ya existente. */
+export type NormalizedReactionEvent = {
+  kind: "reaction";
+  eventId: string;
+  providerAccountId: string;
+  /** wamid del mensaje al que se reaccionó. */
+  providerMessageId: string;
+  /** Quién reaccionó: el cliente o el negocio (desde la app o la API). */
+  side: "contact" | "business";
+  /** Vacío cuando se quitó (Meta no dice cuál). */
+  emoji: string;
+  action: "added" | "removed";
+  at: Date;
+};
+
+/** Edición o borrado de un mensaje por quien lo envió. */
+export type NormalizedMessageChangeEvent = {
+  kind: "message_change";
+  eventId: string;
+  providerAccountId: string;
+  providerMessageId: string;
+  change: "edited" | "deleted";
+  /** Texto vigente tras la edición. */
+  body?: string | null;
+  editHistory?: unknown[];
+  at: Date;
 };
 
 export type NormalizedStatusEvent = {
@@ -83,7 +116,12 @@ export type NormalizedIgnoredEvent = {
   malformed?: boolean;
 };
 
-export type NormalizedEvent = NormalizedMessageEvent | NormalizedStatusEvent | NormalizedIgnoredEvent;
+export type NormalizedEvent =
+  | NormalizedMessageEvent
+  | NormalizedStatusEvent
+  | NormalizedReactionEvent
+  | NormalizedMessageChangeEvent
+  | NormalizedIgnoredEvent;
 
 export type WebhookEnvelope = {
   /** Id único del evento en el proveedor: clave de idempotencia. */

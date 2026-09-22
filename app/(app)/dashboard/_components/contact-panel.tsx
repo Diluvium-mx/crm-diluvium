@@ -13,6 +13,7 @@ import {
   type Stage,
   type Temperature,
 } from "../../contactos/_data/types";
+import { displayPhone } from "@/lib/phone-format";
 
 export function ContactPanel({ detail }: { detail: ConversationDetail }) {
   const router = useRouter();
@@ -65,7 +66,7 @@ export function ContactPanel({ detail }: { detail: ConversationDetail }) {
         </div>
         <div>
           <dt className="text-xs text-muted-foreground">Teléfono</dt>
-          <dd className="mt-0.5 break-words">{contact.phone ?? "—"}</dd>
+          <dd className="mt-0.5 break-words">{displayPhone(contact.phone) || "—"}</dd>
         </div>
       </dl>
 

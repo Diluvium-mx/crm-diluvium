@@ -1,3 +1,4 @@
+import { countryFromPhone, phoneColumns } from "@/lib/phone";
 import { isNotNull, sql } from "drizzle-orm";
 import { contacts } from "@/lib/db/schema/contacts";
 import type { ParsedGhlContactsSuccess } from "./ghl-contacts-csv";
@@ -77,10 +78,17 @@ export async function importParsedContacts(
     // llegan como null) NO debe borrar un número válido ya guardado (hallazgo
     // adversarial-review). Solo se sobrescribe cuando el CSV trae uno válido.
     ...(columnsPresent.phone
-      ? { phoneE164: sql`coalesce(excluded.phone_e164, ${contacts.phoneE164})` }
+      ? {
+          phoneE164: sql`coalesce(excluded.phone_e164, ${contacts.phoneE164})`,
+          // Las partes siguen al teléfono que queda (el nuevo si vino válido).
+          phoneCountryCode: sql`case when excluded.phone_e164 is not null then excluded.phone_country_code else ${contacts.phoneCountryCode} end`,
+          phoneNational: sql`case when excluded.phone_e164 is not null then excluded.phone_national else ${contacts.phoneNational} end`,
+          phoneCountryIso: sql`case when excluded.phone_e164 is not null then excluded.phone_country_iso else ${contacts.phoneCountryIso} end`,
+        }
       : {}),
     ...(columnsPresent.email ? { email: sql`excluded.email` } : {}),
-    ...(columnsPresent.country ? { country: sql`excluded.country` } : {}),
+    // País: el del CSV; si viene vacío, no se borra el que ya había.
+    ...(columnsPresent.country ? { country: sql`coalesce(excluded.country, ${contacts.country})` } : {}),
     ...(columnsPresent.tags
       ? { sourceChannel: sql`excluded.source_channel`, tags: sql`excluded.tags` }
       : {}),
@@ -99,9 +107,10 @@ export async function importParsedContacts(
     ghlContactId: row.ghlContactId,
     firstName: row.firstName,
     lastName: row.lastName,
-    phoneE164: row.phoneE164,
+    ...phoneColumns(row.phoneE164),
     email: row.email,
-    country: row.country,
+    // Sin país en el CSV → se deduce del teléfono (nunca pisa uno que venga).
+    country: row.country ?? countryFromPhone(row.phoneE164),
     sourceChannel: row.sourceChannel,
     tags: row.tags,
     // Etapa la que venga; en re-sync no se toca (ver nota arriba).

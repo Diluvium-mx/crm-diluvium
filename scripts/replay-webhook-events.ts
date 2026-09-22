@@ -14,7 +14,7 @@ async function main() {
     : and(isNull(webhookEvents.processedAt));
   const rows = await db
     .update(webhookEvents)
-    .set({ attempts: 0, processedAt: null, lastError: null })
+    .set({ attempts: 0, processedAt: null, lastError: null, deadLetteredAt: null })
     .where(where)
     .returning({ id: webhookEvents.id });
   console.log(`${rows.length} evento(s) reactivados; el worker los procesa en el próximo barrido (≤ 1 min).`);
