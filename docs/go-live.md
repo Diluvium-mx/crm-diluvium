@@ -63,3 +63,13 @@ VALUES ('ch_zernio_real', '<organization_id de Diluvium>', 'whatsapp', 'zernio',
 3. Responder desde el CRM → llega al celular con ✓✓.
 4. Revisar: `select count(*) from webhook_events where processed_at is null` = 0 y
    `dead_lettered_at is not null` = 0.
+
+## Riesgo conocido (aceptado hasta la fusión de contactos)
+
+Si un mismo cliente ya existe como DOS contactos, cada uno con su conversación (p. ej.
+uno importado de GHL con su teléfono y otro creado solo por BSUID), la ingesta no
+reasigna ni fusiona: cada mensaje sigue a la conversación por la que llega, así que el
+historial queda repartido. No se pierde nada y cada caso deja en los logs del worker
+`[ingest] identidad: … revisar para fusionar` con ambos ids. Se resuelve con la
+herramienta de fusión de contactos (pendiente, junto con los 5 grupos de duplicados de
+GHL). Mientras tanto: buscar esa línea en los logs tras el go-live.
