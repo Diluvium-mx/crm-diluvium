@@ -92,9 +92,28 @@ export async function POST(req: Request): Promise<Response> {
       const org = await organizationOfKnownStatus(provider, payload);
       if (org) return store(provider, rowId(provider, envelope), envelope, payload, org);
     }
-    // Cuenta ajena a este entorno (p. ej. el número real llegando a staging),
-    // o evento sin cuenta: 200 para que Zernio no reintente, y NO se guarda nada.
-    return Response.json({ ok: true, ignored: "cuenta no permitida en este entorno" });
+    // Cuenta ajena a este entorno (p. ej. el número real antes de agregarlo a
+    // ZERNIO_ALLOWED_ACCOUNT_IDS), o evento sin cuenta. Se contesta 200 (Zernio
+    // no reintenta) pero el evento firmado SE GUARDA EN CUARENTENA: no se
+    // procesa ni se atribuye a ninguna organización, y el monitoreo avisa. Si
+    // era del número real, se libera con scripts/replay-webhook-events.ts tras
+    // corregir la allowlist: una configuración olvidada ya no pierde mensajes.
+    console.warn(
+      `[webhook zernio] evento en CUARENTENA (cuenta no permitida en este entorno): ` +
+        `account_id=${envelope.providerAccountId ?? "ninguna"} event=${envelope.event} id=${envelope.eventId}`,
+    );
+    await db
+      .insert(webhookEvents)
+      .values({
+        id: rowId(provider, envelope),
+        provider: provider.name,
+        event: envelope.event,
+        payload,
+        organizationId: null,
+        quarantinedAt: new Date(),
+      })
+      .onConflictDoNothing({ target: webhookEvents.id });
+    return Response.json({ ok: true, quarantined: "cuenta no permitida en este entorno" });
   }
 
   // La organización se resuelve YA (desde la cuenta ya validada) y se guarda en

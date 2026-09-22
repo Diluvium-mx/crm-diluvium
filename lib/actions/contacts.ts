@@ -1,12 +1,12 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import { and, desc, eq } from "drizzle-orm";
+import { and, desc, eq, inArray } from "drizzle-orm";
 import { z } from "zod";
 import { requireActiveMembership } from "@/lib/auth/active-organization";
 import { db } from "@/lib/db";
 import { contacts, contactStageEnum, contactTemperatureEnum } from "@/lib/db/schema/contacts";
-import { normalizePhone } from "@/lib/phone";
+import { countryFromPhone, normalizePhone, phoneColumns } from "@/lib/phone";
 import { parseGhlContactsCsv } from "@/lib/import/ghl-contacts-csv";
 import {
   importParsedContacts,
@@ -28,6 +28,21 @@ export async function listContacts() {
     .select()
     .from(contacts)
     .where(eq(contacts.organizationId, organizationId))
+    .orderBy(desc(contacts.stageChangedAt), desc(contacts.createdAt));
+}
+
+/**
+ * Contactos por id (tiempo real del kanban: `contact.created` del SSE). Máximo
+ * 200 por llamada; siempre acotado a la organización activa.
+ */
+export async function getContactsByIds(ids: string[]) {
+  const organizationId = await requireActiveOrganizationId();
+  const wanted = z.array(z.string().min(1)).max(200).parse(ids);
+  if (wanted.length === 0) return [];
+  return db
+    .select()
+    .from(contacts)
+    .where(and(eq(contacts.organizationId, organizationId), inArray(contacts.id, wanted)))
     .orderBy(desc(contacts.stageChangedAt), desc(contacts.createdAt));
 }
 
@@ -53,7 +68,8 @@ export async function createContact(input: CreateContactInput) {
       organizationId,
       firstName: parsed.firstName,
       lastName: parsed.lastName || null,
-      phoneE164,
+      ...phoneColumns(phoneE164),
+      country: countryFromPhone(phoneE164),
       email: parsed.email || null,
       stage: parsed.stage ?? "inbox",
     })

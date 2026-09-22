@@ -1,6 +1,6 @@
 import { createHmac } from "node:crypto";
 import { describe, expect, it, vi } from "vitest";
-import { normalizeZernioEvent, verifyZernioSignature, zernioAccountId, ZernioProvider, ZernioSendError } from "./zernio";
+import { normalizeZernioEvent, validDate, verifyZernioSignature, zernioAccountId, ZernioProvider, ZernioSendError } from "./zernio";
 
 const SECRET = "whsec_test";
 const sign = (body: string, secret = SECRET) => createHmac("sha256", secret).update(body).digest("hex");
@@ -479,4 +479,20 @@ describe("ZernioProvider.createTemplate", () => {
       p.createTemplate({ providerAccountId: "a", name: "x", language: "es", category: "UTILITY", bodyText: "hola", bodyExample: [] }),
     ).rejects.toMatchObject({ name: "ZernioApiError", httpStatus: 409 });
   });
+});
+
+describe("validDate (horas de webhooks, estrictas)", () => {
+  const now = Date.parse("2026-09-22T12:00:00Z");
+  it("acepta ISO con zona", () => {
+    expect(validDate("2026-09-22T11:00:00.000Z", now)?.toISOString()).toBe("2026-09-22T11:00:00.000Z");
+    expect(validDate("2026-09-22T05:00:00-06:00", now)?.toISOString()).toBe("2026-09-22T11:00:00.000Z");
+  });
+  it.each([
+    ["fecha imposible", "2026-02-30T12:00:00Z"],
+    ["sin zona", "2026-09-22T11:00:00"],
+    ["solo fecha", "2026-09-22"],
+    ["futuro extremo", "2099-01-01T00:00:00Z"],
+    ["texto", "no-es-fecha"],
+    ["hora imposible", "2026-09-22T25:00:00Z"],
+  ])("rechaza %s", (_d, value) => expect(validDate(value, now)).toBeNull());
 });

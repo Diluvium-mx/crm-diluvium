@@ -3,7 +3,7 @@
 import type { MessageAttachment } from "@/lib/db/schema";
 import { MEDIA_MAX_ATTEMPTS, MEDIA_SWEEP_DAYS } from "@/lib/messaging/media-keys";
 import { isAmbiguousSendError } from "@/lib/messaging/rules";
-import type { AdReferral, AttachmentView, MessageKind } from "./types";
+import type { AdReferral, AttachmentView, MessageKind, MessageView } from "./types";
 
 function firstLetter(value: string | null | undefined): string {
   return value?.match(/\p{L}/u)?.[0] ?? "";
@@ -90,6 +90,10 @@ export function attachmentView(
     mimeType: attachment.mimeType ?? null,
     state,
     url: `/api/media/${encodeURIComponent(messageId)}/${index}`,
+    downloadUrl: `/api/media/${encodeURIComponent(messageId)}/${index}?download=1`,
+    thumbnailUrl: attachment.thumbnailKey ? `/api/media/${encodeURIComponent(messageId)}/${index}?thumb=1` : null,
+    sizeBytes: attachment.sizeBytes ?? null,
+    pageCount: attachment.pageCount ?? null,
   };
 }
 
@@ -109,4 +113,47 @@ export function canRetry(message: {
   if (message.direction !== "out" || message.source !== "crm" || message.type !== "text") return false;
   if (message.status !== "failed" || message.providerMessageId) return false;
   return !isAmbiguousSendError(message.errorCode);
+}
+
+function num(value: unknown): number | null {
+  const n = typeof value === "string" ? Number(value) : value;
+  return typeof n === "number" && Number.isFinite(n) ? n : null;
+}
+
+function str(value: unknown): string | null {
+  return typeof value === "string" && value.trim() ? value.trim() : null;
+}
+
+/** Ubicación de `messages.metadata.location` (Zernio), saneada para la UI. */
+export function locationFromMetadata(metadata: Record<string, unknown> | null): MessageView["location"] {
+  const loc = metadata?.location;
+  if (!loc || typeof loc !== "object") return null;
+  const l = loc as Record<string, unknown>;
+  const latitude = num(l.latitude);
+  const longitude = num(l.longitude);
+  if (latitude === null || longitude === null) return null;
+  return { latitude, longitude, name: str(l.name), address: str(l.address) };
+}
+
+/** Nombres de las tarjetas de `messages.metadata.contacts` (formas de API y de Meta). */
+export function contactCardsFromMetadata(metadata: Record<string, unknown> | null): string[] {
+  const cards = metadata?.contacts;
+  if (!Array.isArray(cards)) return [];
+  return cards
+    .map((card) => {
+      if (!card || typeof card !== "object") return null;
+      const name = (card as Record<string, unknown>).name;
+      if (typeof name === "string") return str(name);
+      if (name && typeof name === "object") {
+        const n = name as Record<string, unknown>;
+        return str(n.formatted_name) ?? str([n.first_name, n.last_name].filter(Boolean).join(" "));
+      }
+      return null;
+    })
+    .filter((name): name is string => name !== null);
+}
+
+/** wamid del mensaje citado, si es una respuesta. */
+export function quotedIdFromMetadata(metadata: Record<string, unknown> | null): string | null {
+  return str(metadata?.quotedMessageId);
 }

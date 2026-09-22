@@ -53,6 +53,14 @@ const attachmentSchema = z
   })
   .passthrough();
 
+const conversationSchema = z
+  .object({
+    id: z.string(),
+    participantId: z.string().nullish(),
+    participantName: z.string().nullish(),
+  })
+  .passthrough();
+
 const messageEventSchema = z.object({
   id: z.string(),
   event: z.enum(["message.received", "message.sent"]),
@@ -66,28 +74,58 @@ const messageEventSchema = z.object({
       direction: z.enum(["incoming", "outgoing"]),
       text: z.string().nullable().optional(),
       attachments: z.array(attachmentSchema).optional().default([]),
+      // phoneNumber es "string,null" en la doc: null/ausente cuando el cliente
+      // usa nombre de usuario de WhatsApp (BSUID, 2026+). Nunca debe tumbar el
+      // parseo del mensaje: la identidad cae a businessScopedUserId.
       sender: z
         .object({
           id: z.string(),
-          name: z.string().optional(),
-          phoneNumber: z.string().optional(),
+          name: z.string().nullish(),
+          phoneNumber: z.string().nullish(),
+          businessScopedUserId: z.string().nullish(),
         })
         .passthrough(),
       sentAt: z.string(),
       source: z.string().optional(),
     })
     .passthrough(),
-  conversation: z
-    .object({
-      id: z.string(),
-      participantId: z.string().optional(),
-      participantName: z.string().optional(),
-    })
-    .passthrough(),
+  conversation: conversationSchema,
   account: z.object({ id: z.string(), platform: z.string() }).passthrough(),
-  metadata: z.record(z.string(), z.unknown()).optional(),
+  metadata: z.record(z.string(), z.unknown()).nullish(),
   // En eventos de eco, algunas versiones ponen `source` en el sobre.
   source: z.string().optional(),
+});
+
+// reaction.received (docs.zernio.com/webhooks/inbox#reactionreceived).
+const reactionEventSchema = z.object({
+  id: z.string(),
+  event: z.literal("reaction.received"),
+  reaction: z
+    .object({
+      emoji: z.string(),
+      action: z.enum(["added", "removed"]),
+      platformMessageId: z.string().min(1),
+      sender: z.object({ id: z.string(), phoneNumber: z.string().nullish() }).passthrough(),
+      reactedAt: z.string(),
+    })
+    .passthrough(),
+  conversation: conversationSchema,
+  account: z.object({ id: z.string(), platform: z.string() }).passthrough(),
+  timestamp: z.string().nullish(),
+});
+
+// message.edited / message.deleted (docs.zernio.com/webhooks/inbox).
+const messageChangeEventSchema = z.object({
+  id: z.string(),
+  event: z.enum(["message.edited", "message.deleted"]),
+  message: z
+    .object({ platformMessageId: z.string().min(1), text: z.string().nullish() })
+    .passthrough(),
+  editHistory: z.array(z.unknown()).nullish(),
+  editedAt: z.string().nullish(),
+  deletedAt: z.string().nullish(),
+  timestamp: z.string().nullish(),
+  account: z.object({ id: z.string(), platform: z.string() }).passthrough(),
 });
 
 const STATUS_BY_EVENT: Record<string, "sent" | "delivered" | "read" | "failed"> = {
@@ -113,11 +151,50 @@ function attachmentType(type: string): NormalizedMessageType {
   }
 }
 
-// Solo dígitos del teléfono, con "+" (Zernio a veces lo manda sin prefijo).
-function phoneFromSender(sender: { id: string; phoneNumber?: string }, participantId?: string) {
-  const candidate = sender.phoneNumber ?? participantId ?? sender.id;
-  const digits = candidate.replace(/[^\d]/g, "");
-  return digits ? `+${digits}` : candidate;
+// Un valor es teléfono solo si, sin separadores, son 8-15 dígitos con o sin
+// "+" (Zernio a veces lo manda sin prefijo). Un BSUID ("MX.1446…") o cualquier
+// otro id NO se convierte en teléfono: antes se le sacaban los dígitos y
+// terminaba descartado o, peor, como un contacto con número inventado.
+function asPhone(value: string | null | undefined): string | null {
+  if (!value) return null;
+  const compact = value.replace(/[\s()\-.]/g, "");
+  return /^\+?\d{8,15}$/.test(compact) ? `+${compact.replace(/^\+/, "")}` : null;
+}
+
+// Forma del BSUID de Meta: país ISO + "." + dígitos (visto en prod: "MX.1446369767399131").
+const BSUID_PATTERN = /^[A-Z]{2}\.[0-9A-Za-z]+$/;
+function asBsuid(value: string | null | undefined): string | undefined {
+  return value && BSUID_PATTERN.test(value) ? value : undefined;
+}
+
+function firstOf<T>(...values: (T | null | undefined)[]): T | null {
+  for (const value of values) if (value !== null && value !== undefined) return value;
+  return null;
+}
+
+// ISO 8601 COMPLETO y con zona (Z u offset). Sin zona, el instante dependería
+// de la TZ del servidor; por eso se rechaza.
+const ISO_WITH_ZONE = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})(?::(\d{2})(?:\.\d+)?)?(?:Z|[+-]\d{2}:?\d{2})$/;
+/** Un evento no puede venir de más de un día en el futuro (reloj roto o dato corrupto). */
+const MAX_FUTURE_SKEW_MS = 24 * 3_600_000;
+
+/**
+ * Fecha de un webhook, estricta: ISO con zona, fecha de calendario REAL (Node
+ * convierte "2026-02-30" en 2 de marzo sin avisar) y no más de un día en el
+ * futuro (una fecha absurda bloquearía para siempre reacciones/ediciones
+ * posteriores y abriría ventanas de 24 h falsas). Si no, null.
+ */
+export function validDate(value: string | null | undefined, now = Date.now()): Date | null {
+  if (!value) return null;
+  const m = ISO_WITH_ZONE.exec(value);
+  if (!m) return null;
+  const [year, month, day, hour, minute, second] = [m[1], m[2], m[3], m[4], m[5], m[6] ?? "0"].map(Number);
+  const calendar = new Date(Date.UTC(year, month - 1, day));
+  if (calendar.getUTCFullYear() !== year || calendar.getUTCMonth() !== month - 1 || calendar.getUTCDate() !== day) return null;
+  if (hour > 23 || minute > 59 || second > 59) return null;
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime()) || date.getTime() > now + MAX_FUTURE_SKEW_MS) return null;
+  return date;
 }
 
 function asString(value: unknown): string | undefined {
@@ -202,15 +279,25 @@ export function normalizeZernioEvent(payload: unknown): NormalizedEvent {
       providerMediaId: asString(a.payload?.id),
       sha256: asString(a.payload?.sha256),
     }));
+    // La ubicación y las tarjetas de contacto viajan en metadata; el texto es
+    // solo la vista previa ("📍 …", "👤 …").
     const type: NormalizedMessageType =
       attachments[0]?.type ??
-      (metadata?.interactiveType || metadata?.buttonPayload ? "interactive" : message.text ? "text" : "unknown");
+      (metadata?.location
+        ? "location"
+        : metadata?.contacts
+          ? "contact"
+          : metadata?.interactiveType || metadata?.buttonPayload
+            ? "interactive"
+            : message.text
+              ? "text"
+              : "unknown");
 
     // sentAt gobierna el orden del hilo, la ventana de 24 h y la primera
     // respuesta: un valor ilegible NO se sustituye por "ahora" (abriría una
     // ventana falsa y corrompería métricas). Se marca malformado → dead-letter.
-    const sentAt = new Date(message.sentAt);
-    if (Number.isNaN(sentAt.getTime())) {
+    const sentAt = validDate(message.sentAt);
+    if (!sentAt) {
       return { kind: "ignored", eventId, event, reason: `sentAt inválido: ${message.sentAt}`, malformed: true };
     }
     return {
@@ -224,9 +311,13 @@ export function normalizeZernioEvent(payload: unknown): NormalizedEvent {
       providerInternalId: message.id,
       // En un eco saliente el "sender" es el negocio: el contacto es el participante.
       contactPhone: outgoing
-        ? phoneFromSender({ id: conversation.participantId ?? "" }, conversation.participantId)
-        : phoneFromSender(message.sender, conversation.participantId),
-      contactName: outgoing ? conversation.participantName : (message.sender.name ?? conversation.participantName),
+        ? asPhone(conversation.participantId)
+        : firstOf(asPhone(message.sender.phoneNumber), asPhone(message.sender.id), asPhone(conversation.participantId)),
+      contactBsuid: outgoing
+        ? asBsuid(conversation.participantId)
+        : (asBsuid(message.sender.businessScopedUserId) ?? asBsuid(message.sender.id) ?? asBsuid(conversation.participantId)),
+      contactName:
+        (outgoing ? conversation.participantName : (message.sender.name ?? conversation.participantName)) ?? undefined,
       type,
       body: message.text ?? null,
       attachments,
@@ -235,6 +326,63 @@ export function normalizeZernioEvent(payload: unknown): NormalizedEvent {
         metadata?.referral && typeof metadata.referral === "object"
           ? (metadata.referral as Record<string, unknown>)
           : undefined,
+      metadata: metadata && Object.keys(metadata).length > 0 ? metadata : undefined,
+    };
+  }
+
+  if (event === "reaction.received") {
+    const parsed = reactionEventSchema.safeParse(payload);
+    if (!parsed.success) {
+      return { kind: "ignored", eventId, event, reason: `formato no reconocido: ${parsed.error.issues[0]?.message}`, malformed: true };
+    }
+    const { reaction, conversation, account } = parsed.data;
+    if (account.platform !== "whatsapp") return { kind: "ignored", eventId, event, reason: `plataforma ${account.platform}` };
+    const providerAccountId = zernioAccountId(payload);
+    if (!providerAccountId) return { kind: "ignored", eventId, event, reason: "cuenta ausente o contradictoria", malformed: true };
+    // Doc de Zernio: quien reacciona "usually the participant", pero es el
+    // negocio si reaccionó desde la app o la API → comparar con participantId.
+    const participant = conversation.participantId ?? "";
+    const digits = (v: string | null | undefined) => (v ?? "").replace(/\D/g, "");
+    const fromContact =
+      reaction.sender.id === participant ||
+      (digits(participant) !== "" &&
+        (digits(reaction.sender.id) === digits(participant) || digits(reaction.sender.phoneNumber) === digits(participant)));
+    // Hora confiable o nada: sin ella no se puede ordenar (una reacción vieja
+    // reprocesada con la hora de "ahora" pisaría a una posterior) → dead-letter.
+    const at = validDate(reaction.reactedAt) ?? validDate(parsed.data.timestamp);
+    if (!at) return { kind: "ignored", eventId, event, reason: "reacción sin hora válida", malformed: true };
+    return {
+      kind: "reaction",
+      eventId,
+      providerAccountId,
+      providerMessageId: reaction.platformMessageId,
+      side: fromContact ? "contact" : "business",
+      emoji: reaction.emoji,
+      action: reaction.action,
+      at,
+    };
+  }
+
+  if (event === "message.edited" || event === "message.deleted") {
+    const parsed = messageChangeEventSchema.safeParse(payload);
+    if (!parsed.success) {
+      return { kind: "ignored", eventId, event, reason: `formato no reconocido: ${parsed.error.issues[0]?.message}`, malformed: true };
+    }
+    const data = parsed.data;
+    if (data.account.platform !== "whatsapp") return { kind: "ignored", eventId, event, reason: `plataforma ${data.account.platform}` };
+    const providerAccountId = zernioAccountId(payload);
+    if (!providerAccountId) return { kind: "ignored", eventId, event, reason: "cuenta ausente o contradictoria", malformed: true };
+    const at = validDate(event === "message.edited" ? data.editedAt : data.deletedAt) ?? validDate(data.timestamp);
+    if (!at) return { kind: "ignored", eventId, event, reason: "cambio de mensaje sin hora válida", malformed: true };
+    return {
+      kind: "message_change",
+      eventId,
+      providerAccountId,
+      providerMessageId: data.message.platformMessageId,
+      change: event === "message.edited" ? "edited" : "deleted",
+      body: event === "message.edited" ? (data.message.text ?? null) : undefined,
+      editHistory: data.editHistory ?? undefined,
+      at,
     };
   }
 

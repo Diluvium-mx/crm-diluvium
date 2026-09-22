@@ -13,6 +13,7 @@ import {
   type Temperature,
 } from "../_data/types";
 import { ContactChat } from "./contact-chat";
+import { displayPhone } from "@/lib/phone-format";
 
 // tags y notas todavía no tienen columnas propias en la BD: se leen de
 // custom_fields (jsonb) si vienen del import de GHL, sólo para mostrar. La
@@ -135,7 +136,7 @@ export function ContactDetailPanel({
 
           <dl className="space-y-3 text-sm">
             <Attribute label="Nombre" value={getContactFullName(contact)} />
-            <Attribute label="Teléfono" value={contact.phoneE164 ?? "—"} />
+            <Attribute label="Teléfono" value={displayPhone(contact.phoneE164) || "—"} />
             <Attribute label="Correo" value={contact.email ?? "—"} />
             <Attribute label="Canal" value={canal} />
             <Attribute

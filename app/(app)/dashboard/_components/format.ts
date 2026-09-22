@@ -90,3 +90,39 @@ export function statusMark(status: MessageView["status"]): { glyph: string; labe
       return { glyph: "", label: "", className: "" };
   }
 }
+
+/** "71 KB", "2.4 MB". */
+export function formatBytes(bytes: number | null): string {
+  if (bytes === null || bytes < 0) return "";
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${Math.round(bytes / 1024)} KB`;
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+}
+
+const EXTENSION_BY_MIME: Record<string, string> = {
+  "application/pdf": "pdf",
+  "application/xml": "xml",
+  "text/xml": "xml",
+  "application/vnd.openxmlformats-officedocument.wordprocessingml.document": "docx",
+  "application/msword": "doc",
+  "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet": "xlsx",
+  "application/vnd.ms-excel": "xls",
+  "text/csv": "csv",
+  "application/zip": "zip",
+  "text/plain": "txt",
+};
+
+/** Extensión del documento (del nombre o, si no trae, del tipo MIME). */
+export function fileExtension(fileName: string | null, mimeType: string | null): string {
+  const fromName = fileName?.match(/\.([a-z0-9]{1,5})$/i)?.[1];
+  return (fromName ?? (mimeType ? EXTENSION_BY_MIME[mimeType] : undefined) ?? "archivo").toLowerCase();
+}
+
+/** Color del ícono por tipo de documento (como WhatsApp: rojo PDF, verde hoja, azul texto). */
+export function extensionColor(ext: string): string {
+  if (ext === "pdf") return "bg-red-600";
+  if (["xls", "xlsx", "csv"].includes(ext)) return "bg-green-600";
+  if (["doc", "docx", "txt"].includes(ext)) return "bg-blue-600";
+  if (ext === "xml") return "bg-brand-orange";
+  return "bg-slate-500";
+}

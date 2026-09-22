@@ -1,0 +1,40 @@
+{
+ "id": "99264db7-e13e-4b2e-8ca5-f60f1e893529",
+ "event": "message.received",
+ "account": {
+  "id": "6a180a034c7f364ffded3c9c",
+  "platform": "whatsapp",
+  "username": "+12029087457",
+  "accountId": "6a180a034c7f364ffded3c9c",
+  "displayName": "Zernio Sandbox"
+ },
+ "message": {
+  "id": "6ab2d7068c2cf65b5c4aeb43",
+  "text": "A",
+  "isRead": false,
+  "sender": {
+   "id": "5216680000000",
+   "name": "Cliente Prueba",
+   "contactId": "6aadaaabd63fc10a7f0cb954",
+   "phoneNumber": "+5216680000000",
+   "businessScopedUserId": "MX.1000000000000001"
+  },
+  "sentAt": "2026-09-22T19:29:09.000Z",
+  "sentVia": null,
+  "platform": "whatsapp",
+  "direction": "incoming",
+  "attachments": [],
+  "conversationId": "6aadaa730010e25a03147543",
+  "platformMessageId": "wamid.HBgNNTIxNjY4MjQyNjM2NBUCABIYFDJBNjdCQjQyQjhGNThBRTdENEJDAA=="
+ },
+ "timestamp": "2026-09-22T19:29:10.323Z",
+ "conversation": {
+  "id": "6aadaa730010e25a03147543",
+  "status": "active",
+  "contactId": "6aadaaabd63fc10a7f0cb954",
+  "participantId": "5216680000000",
+  "participantName": "526680000000",
+  "participantUsername": "526680000000",
+  "platformConversationId": "5216680000000"
+ }
+}
