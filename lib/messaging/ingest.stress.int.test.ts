@@ -423,24 +423,77 @@ describe.skipIf(!TEST_DATABASE_URL)("ingesta bajo carga (Postgres real)", () => 
     expect(await count(s.messages)).toBe(3);
   });
 
-  it("conflicto teléfono ↔ BSUID en dos contactos: gana el teléfono y el BSUID se mueve (sin partir los siguientes)", async () => {
-    // Contacto A: solo BSUID. Contacto B: importado con el teléfono.
+  it("conflicto teléfono ↔ BSUID en dos contactos: el BSUID manda, NUNCA se mueve y la atribución no oscila", async () => {
+    // Contacto A: solo BSUID (conversación vieja). Contacto B: importado con el teléfono.
     await deliver(inbound({ phone: null, bsuid: "MX.1000000000000555", conversationId: "zc_a" }));
     await db.insert(s.contacts).values({ id: "c_b", organizationId: ORG, firstName: "B", phoneE164: "+526689990000", source: "ghl_import" });
-    // Llega teléfono + BSUID: dos contactos distintos lo reclaman.
+    const [a] = (await db.select().from(s.contacts)).filter((c) => c.id !== "c_b");
+
+    // Alternan mensajes: conversación nueva con teléfono + BSUID, la vieja con
+    // BSUID, y otra nueva solo con BSUID. Todo cae en A (dueño del BSUID).
     await deliver(inbound({ phone: "526689990000", bsuid: "MX.1000000000000555", conversationId: "zc_b" }));
-    const all = await db.select().from(s.contacts);
-    expect(all.find((c) => c.id === "c_b")?.waBsuid).toBe("MX.1000000000000555");
-    expect(all.filter((c) => c.waBsuid === "MX.1000000000000555")).toHaveLength(1);
-    // Lo siguiente solo con BSUID va al contacto del teléfono.
+    await deliver(inbound({ phone: null, bsuid: "MX.1000000000000555", conversationId: "zc_a" }));
+    await deliver(inbound({ phone: "526689990000", bsuid: "MX.1000000000000555", conversationId: "zc_b" }));
     await deliver(inbound({ phone: null, bsuid: "MX.1000000000000555", conversationId: "zc_c" }));
-    const convs = await db.select().from(s.conversations).where(dz.eq(s.conversations.contactId, "c_b"));
+
+    const all = await db.select().from(s.contacts);
+    expect(all.find((c) => c.id === a.id)?.waBsuid).toBe("MX.1000000000000555");
+    expect(all.find((c) => c.id === "c_b")?.waBsuid).toBeNull();
+    // A no se "roba" el teléfono de B (ya lo tiene otro contacto).
+    expect(all.find((c) => c.id === a.id)?.phoneE164).toBeNull();
+    const convs = await db.select().from(s.conversations);
     expect(convs).toHaveLength(1);
-    const [{ n }] = await db
-      .select({ n: dz.count() })
-      .from(s.messages)
-      .where(dz.eq(s.messages.conversationId, convs[0].id));
-    expect(n).toBe(2);
+    expect(convs[0].contactId).toBe(a.id);
+    expect(await count(s.messages)).toBe(5);
+  });
+
+  it("un huérfano de una organización no se reabre por un wamid de OTRA organización", async () => {
+    await db.insert(s.organization).values({ id: "org_otra", name: "Otra", slug: "otra", createdAt: new Date() });
+    await db.insert(s.channels).values({
+      id: "ch_otra",
+      organizationId: "org_otra",
+      type: "whatsapp",
+      provider: "zernio",
+      providerAccountId: "zacc_otra",
+      displayName: "Otra",
+    });
+    const rid = `zernio_evt_cross_${randomUUID()}`;
+    await db.insert(s.webhookEvents).values({
+      id: rid,
+      provider: "zernio",
+      event: "reaction.received",
+      payload: {},
+      organizationId: ORG,
+      processedAt: new Date(),
+      orphanWamid: "wamid.compartido",
+    });
+    const other = inbound({ phone: "526680007777", wamid: "wamid.compartido" });
+    (other.account as Record<string, unknown>).id = "zacc_otra";
+    (other.account as Record<string, unknown>).accountId = "zacc_otra";
+    await deliver(other);
+    expect(await ingest.reopenResolvedOrphans()).toBe(0);
+  });
+
+  it("reacción o edición sin hora válida → dead-letter (no se inventa 'ahora')", async () => {
+    await deliver(inbound({ phone: "526680008888", wamid: "wamid.hora" }));
+    const bad: Payload = {
+      id: `evt_bad_${randomUUID()}`,
+      event: "reaction.received",
+      reaction: { emoji: "👍", action: "added", platformMessageId: "wamid.hora", sender: { id: "526680008888" }, reactedAt: "no-es-fecha" },
+      conversation: { id: "zconv_526680008888", participantId: "526680008888" },
+      account: { id: ACCOUNT, accountId: ACCOUNT, platform: "whatsapp" },
+    };
+    await expect(deliver(bad)).rejects.toBeInstanceOf(ingest.DeadLetterIngestError);
+    const [msg] = await db.select().from(s.messages).where(dz.eq(s.messages.providerMessageId, "wamid.hora"));
+    expect(msg.reactions).toEqual({});
+  });
+
+  it("un evento en cuarentena no se procesa aunque se encole", async () => {
+    const q = inbound({ phone: "526680009990" });
+    const id = `zernio_${q.id}`;
+    await db.insert(s.webhookEvents).values({ id, provider: "zernio", event: q.event, payload: q, quarantinedAt: new Date() });
+    await expect(ingest.processWebhookEvent(provider, id)).resolves.toMatch(/cuarentena/);
+    expect(await count(s.messages)).toBe(0);
   });
 
   it("importación de contactos y webhook del mismo teléfono en paralelo → un solo contacto", async () => {

@@ -111,6 +111,7 @@ const reactionEventSchema = z.object({
     .passthrough(),
   conversation: conversationSchema,
   account: z.object({ id: z.string(), platform: z.string() }).passthrough(),
+  timestamp: z.string().nullish(),
 });
 
 // message.edited / message.deleted (docs.zernio.com/webhooks/inbox).
@@ -123,6 +124,7 @@ const messageChangeEventSchema = z.object({
   editHistory: z.array(z.unknown()).nullish(),
   editedAt: z.string().nullish(),
   deletedAt: z.string().nullish(),
+  timestamp: z.string().nullish(),
   account: z.object({ id: z.string(), platform: z.string() }).passthrough(),
 });
 
@@ -168,6 +170,12 @@ function asBsuid(value: string | null | undefined): string | undefined {
 function firstOf<T>(...values: (T | null | undefined)[]): T | null {
   for (const value of values) if (value !== null && value !== undefined) return value;
   return null;
+}
+
+function validDate(value: string | null | undefined): Date | null {
+  if (!value) return null;
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? null : date;
 }
 
 function asString(value: unknown): string | undefined {
@@ -320,7 +328,10 @@ export function normalizeZernioEvent(payload: unknown): NormalizedEvent {
       reaction.sender.id === participant ||
       (digits(participant) !== "" &&
         (digits(reaction.sender.id) === digits(participant) || digits(reaction.sender.phoneNumber) === digits(participant)));
-    const at = new Date(reaction.reactedAt);
+    // Hora confiable o nada: sin ella no se puede ordenar (una reacción vieja
+    // reprocesada con la hora de "ahora" pisaría a una posterior) → dead-letter.
+    const at = validDate(reaction.reactedAt) ?? validDate(parsed.data.timestamp);
+    if (!at) return { kind: "ignored", eventId, event, reason: "reacción sin hora válida", malformed: true };
     return {
       kind: "reaction",
       eventId,
@@ -329,7 +340,7 @@ export function normalizeZernioEvent(payload: unknown): NormalizedEvent {
       side: fromContact ? "contact" : "business",
       emoji: reaction.emoji,
       action: reaction.action,
-      at: Number.isNaN(at.getTime()) ? new Date() : at,
+      at,
     };
   }
 
@@ -342,7 +353,8 @@ export function normalizeZernioEvent(payload: unknown): NormalizedEvent {
     if (data.account.platform !== "whatsapp") return { kind: "ignored", eventId, event, reason: `plataforma ${data.account.platform}` };
     const providerAccountId = zernioAccountId(payload);
     if (!providerAccountId) return { kind: "ignored", eventId, event, reason: "cuenta ausente o contradictoria", malformed: true };
-    const at = new Date(data.editedAt ?? data.deletedAt ?? "");
+    const at = validDate(event === "message.edited" ? data.editedAt : data.deletedAt) ?? validDate(data.timestamp);
+    if (!at) return { kind: "ignored", eventId, event, reason: "cambio de mensaje sin hora válida", malformed: true };
     return {
       kind: "message_change",
       eventId,
@@ -351,7 +363,7 @@ export function normalizeZernioEvent(payload: unknown): NormalizedEvent {
       change: event === "message.edited" ? "edited" : "deleted",
       body: event === "message.edited" ? (data.message.text ?? null) : undefined,
       editHistory: data.editHistory ?? undefined,
-      at: Number.isNaN(at.getTime()) ? new Date() : at,
+      at,
     };
   }
 
