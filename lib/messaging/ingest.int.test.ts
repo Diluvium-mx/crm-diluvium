@@ -17,6 +17,8 @@ describe.skipIf(!TEST_DATABASE_URL)("ingesta de WhatsApp (Postgres real)", () =>
   let s: Schema;
   let ingest: Ingest;
   let eq: typeof import("drizzle-orm").eq;
+  let isNull: typeof import("drizzle-orm").isNull;
+  let isNotNull: typeof import("drizzle-orm").isNotNull;
   let provider: import("./provider").MessagingProvider;
   const ORG_A = "org_a";
   const ORG_B = "org_b";
@@ -25,7 +27,7 @@ describe.skipIf(!TEST_DATABASE_URL)("ingesta de WhatsApp (Postgres real)", () =>
     ({ db } = await import("@/lib/db"));
     s = await import("@/lib/db/schema");
     ingest = await import("./ingest");
-    ({ eq } = await import("drizzle-orm"));
+    ({ eq, isNull, isNotNull } = await import("drizzle-orm"));
     const { ZernioProvider } = await import("./zernio");
     provider = new ZernioProvider({ apiKey: "k", webhookSecret: "s" });
   });
@@ -809,7 +811,9 @@ describe.skipIf(!TEST_DATABASE_URL)("ingesta de WhatsApp (Postgres real)", () =>
         process.env = saved;
       }
     }
-    const stored = async () => (await db.select().from(s.webhookEvents)).length;
+    // Procesables (no en cuarentena).
+    const stored = async () => (await db.select().from(s.webhookEvents).where(isNull(s.webhookEvents.quarantinedAt))).length;
+    const quarantined = async () => (await db.select().from(s.webhookEvents).where(isNotNull(s.webhookEvents.quarantinedAt))).length;
 
     it("sin ZERNIO_ALLOWED_ACCOUNT_IDS → 503 y no guarda nada", async () => {
       const res = await post(msgEvent({ sentAt: "2026-09-18T10:00:00Z" }), { ZERNIO_ALLOWED_ACCOUNT_IDS: undefined });
@@ -818,7 +822,7 @@ describe.skipIf(!TEST_DATABASE_URL)("ingesta de WhatsApp (Postgres real)", () =>
       expect((await post(msgEvent({ sentAt: "2026-09-18T10:00:00Z" }), { ZERNIO_ALLOWED_ACCOUNT_IDS: " " })).status).toBe(503);
     });
 
-    it("otra cuenta, sin cuenta o con cuentas contradictorias → 200 y no guarda; la permitida sí", async () => {
+    it("otra cuenta, sin cuenta o con cuentas contradictorias → 200 y CUARENTENA (no se procesa); la permitida sí", async () => {
       const env = { ZERNIO_ALLOWED_ACCOUNT_IDS: "zacc_1" };
       expect((await post(msgEvent({ account: "zacc_real", sentAt: "2026-09-18T10:00:00Z" }), env)).status).toBe(200);
       const noAccount = { ...msgEvent({ sentAt: "2026-09-18T10:00:00Z" }), account: undefined };
@@ -828,6 +832,10 @@ describe.skipIf(!TEST_DATABASE_URL)("ingesta de WhatsApp (Postgres real)", () =>
       expect((await post(nested, env)).status).toBe(200);
       expect(await post({ id: "evt_test", event: "webhook.test" }, env).then((r) => r.json())).toEqual({ ok: true, test: true });
       expect(await stored()).toBe(0);
+      // Nada se tira: los tres quedan guardados en cuarentena, sin organización.
+      expect(await quarantined()).toBe(3);
+      const rows = await db.select().from(s.webhookEvents).where(isNotNull(s.webhookEvents.quarantinedAt));
+      expect(rows.every((r) => r.organizationId === null && r.processedAt === null)).toBe(true);
 
       expect((await post(msgEvent({ sentAt: "2026-09-18T10:00:00Z" }), env)).status).toBe(200);
       expect(await stored()).toBe(1);
@@ -840,6 +848,7 @@ describe.skipIf(!TEST_DATABASE_URL)("ingesta de WhatsApp (Postgres real)", () =>
       const status = (wamid: string) => ({ id: `st_${randomUUID()}`, event: "message.failed", message: { platformMessageId: wamid, error: { code: 131047, message: "x" } } });
       expect((await post(status("wamid.AJENO"), env)).status).toBe(200);
       expect(await stored()).toBe(before);
+      expect(await quarantined()).toBe(1);
       const known = status("wamid.KNOWN");
       expect((await post(known, env)).status).toBe(200);
       expect(await stored()).toBe(before + 1);

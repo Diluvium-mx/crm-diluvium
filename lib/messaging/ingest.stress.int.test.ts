@@ -321,12 +321,21 @@ describe.skipIf(!TEST_DATABASE_URL)("ingesta bajo carga (Postgres real)", () => 
     });
     const read = async () => (await db.select().from(s.messages).where(dz.eq(s.messages.providerMessageId, "wamid.base")))[0];
 
+    const emojis = async () => {
+      const r = (await read()).reactions;
+      return { contact: r.contact?.emoji ?? null, business: r.business?.emoji ?? null };
+    };
     await deliver(reaction("added", "👍"));
-    expect((await read()).reactions).toEqual({ contact: "👍" });
+    expect(await emojis()).toEqual({ contact: "👍", business: null });
     await deliver(reaction("added", "❤️", true));
-    expect((await read()).reactions).toEqual({ contact: "👍", business: "❤️" });
-    await deliver(reaction("removed", ""));
-    expect((await read()).reactions).toEqual({ business: "❤️" });
+    expect(await emojis()).toEqual({ contact: "👍", business: "❤️" });
+    const removed = reaction("removed", "");
+    (removed.reaction as { reactedAt: string }).reactedAt = "2026-09-22T16:02:00.000Z";
+    await deliver(removed);
+    expect(await emojis()).toEqual({ contact: null, business: "❤️" });
+    // Un "added" VIEJO que llega después (desorden/replay) no revive la reacción quitada.
+    await deliver(reaction("added", "👍"));
+    expect(await emojis()).toEqual({ contact: null, business: "❤️" });
 
     const change = (event: "message.edited" | "message.deleted"): Payload => ({
       id: `evt_c_${randomUUID()}`,
@@ -345,6 +354,13 @@ describe.skipIf(!TEST_DATABASE_URL)("ingesta bajo carga (Postgres real)", () => 
     expect(row.editedAt?.toISOString()).toBe("2026-09-22T16:05:00.000Z");
     expect(row.metadata?.editHistory).toEqual([{ text: "precio?" }]);
 
+    // Una edición VIEJA que llega después no pisa el texto vigente.
+    const stale = change("message.edited");
+    Object.assign(stale, { editedAt: "2026-09-22T16:01:00.000Z" });
+    (stale.message as Record<string, unknown>).text = "texto viejo";
+    await deliver(stale);
+    expect((await read()).body).toBe("¿precio con envío?");
+
     await deliver(change("message.deleted"));
     row = await read();
     expect(row.deletedAt?.toISOString()).toBe("2026-09-22T16:10:00.000Z");
@@ -354,6 +370,117 @@ describe.skipIf(!TEST_DATABASE_URL)("ingesta bajo carga (Postgres real)", () => 
     const orphan = reaction("added", "🔥");
     (orphan.reaction as { platformMessageId: string }).platformMessageId = "wamid.no-existe";
     await expect(deliver(orphan)).rejects.toBeInstanceOf(ingest.RetryableIngestError);
+  });
+
+  it("caída del worker > 10 min: la reacción huérfana se cierra y se REABRE al llegar su mensaje", async () => {
+    // El worker estuvo caído: la reacción se recibió hace 30 min y se procesa
+    // ANTES que su mensaje (cola desordenada).
+    const reactionEvent: Payload = {
+      id: `evt_r_${randomUUID()}`,
+      event: "reaction.received",
+      reaction: {
+        emoji: "🔥",
+        action: "added",
+        platformMessageId: "wamid.tarde",
+        sender: { id: "526680006666" },
+        reactedAt: "2026-09-22T16:00:00.000Z",
+      },
+      conversation: { id: "zconv_526680006666", participantId: "526680006666" },
+      account: { id: ACCOUNT, accountId: ACCOUNT, platform: "whatsapp" },
+    };
+    const rid = `zernio_${reactionEvent.id}`;
+    await db.insert(s.webhookEvents).values({
+      id: rid,
+      provider: "zernio",
+      event: reactionEvent.event,
+      payload: reactionEvent,
+      receivedAt: dz.sql`localtimestamp - interval '30 minutes'`,
+    });
+    await expect(ingest.processWebhookEvent(provider, rid)).resolves.toMatch(/^huérfano/);
+    let [row] = await db.select().from(s.webhookEvents).where(dz.eq(s.webhookEvents.id, rid));
+    expect(row.processedAt).not.toBeNull();
+    expect(row.orphanWamid).toBe("wamid.tarde");
+
+    // Llega el mensaje; el barrido reabre la reacción y se aplica.
+    await deliver(inbound({ phone: "526680006666", wamid: "wamid.tarde" }));
+    expect(await ingest.reopenResolvedOrphans()).toBe(1);
+    [row] = await db.select().from(s.webhookEvents).where(dz.eq(s.webhookEvents.id, rid));
+    expect(row.processedAt).toBeNull();
+    await ingest.processWebhookEvent(provider, rid);
+    const [msg] = await db.select().from(s.messages).where(dz.eq(s.messages.providerMessageId, "wamid.tarde"));
+    expect(msg.reactions.contact?.emoji).toBe("🔥");
+    expect(await ingest.reopenResolvedOrphans()).toBe(0);
+  });
+
+  it("una conversación que ya existía aprende el BSUID; luego un mensaje solo con BSUID en otra conversación cae en el MISMO contacto", async () => {
+    await deliver(inbound({ phone: "526681230000", conversationId: "zc_hist" }));
+    await deliver(inbound({ phone: "526681230000", bsuid: "MX.1000000000000999", conversationId: "zc_hist" }));
+    const [contact] = await db.select().from(s.contacts);
+    expect(contact.waBsuid).toBe("MX.1000000000000999");
+    await deliver(inbound({ phone: null, bsuid: "MX.1000000000000999", conversationId: "zc_nueva" }));
+    expect(await count(s.contacts)).toBe(1);
+    expect(await count(s.conversations)).toBe(1);
+    expect(await count(s.messages)).toBe(3);
+  });
+
+  it("conflicto teléfono ↔ BSUID en dos contactos: gana el teléfono y el BSUID se mueve (sin partir los siguientes)", async () => {
+    // Contacto A: solo BSUID. Contacto B: importado con el teléfono.
+    await deliver(inbound({ phone: null, bsuid: "MX.1000000000000555", conversationId: "zc_a" }));
+    await db.insert(s.contacts).values({ id: "c_b", organizationId: ORG, firstName: "B", phoneE164: "+526689990000", source: "ghl_import" });
+    // Llega teléfono + BSUID: dos contactos distintos lo reclaman.
+    await deliver(inbound({ phone: "526689990000", bsuid: "MX.1000000000000555", conversationId: "zc_b" }));
+    const all = await db.select().from(s.contacts);
+    expect(all.find((c) => c.id === "c_b")?.waBsuid).toBe("MX.1000000000000555");
+    expect(all.filter((c) => c.waBsuid === "MX.1000000000000555")).toHaveLength(1);
+    // Lo siguiente solo con BSUID va al contacto del teléfono.
+    await deliver(inbound({ phone: null, bsuid: "MX.1000000000000555", conversationId: "zc_c" }));
+    const convs = await db.select().from(s.conversations).where(dz.eq(s.conversations.contactId, "c_b"));
+    expect(convs).toHaveLength(1);
+    const [{ n }] = await db
+      .select({ n: dz.count() })
+      .from(s.messages)
+      .where(dz.eq(s.messages.conversationId, convs[0].id));
+    expect(n).toBe(2);
+  });
+
+  it("importación de contactos y webhook del mismo teléfono en paralelo → un solo contacto", async () => {
+    const { importParsedContacts } = await import("@/lib/import/persist");
+    const rows = Array.from({ length: 30 }, (_, i) => ({
+      ghlContactId: `ghl_${i}`,
+      firstName: `GHL ${i}`,
+      lastName: null,
+      phoneE164: `+52668444${String(1000 + i)}`,
+      phoneInvalid: false,
+      phoneMissing: false,
+      email: null,
+      country: null,
+      sourceChannel: "whatsapp" as const,
+      tags: [],
+      pipelineStage: null,
+      stage: "inbox" as const,
+      stageRecognized: true,
+    }));
+    const parsed = {
+      ok: true as const,
+      rows,
+      skipped: [],
+      totalRows: rows.length,
+      columnsPresent: { lastName: true, phone: true, email: true, tags: true, country: true, opportunities: false },
+    };
+    // La mitad de los clientes escribió ANTES de la importación (ya existen
+    // como contactos de WhatsApp); la otra mitad escribe durante la importación.
+    await Promise.all(rows.slice(0, 15).map((r) => deliver(inbound({ phone: `521${r.phoneE164.slice(3)}` }))));
+    await Promise.all([
+      importParsedContacts(db, ORG, parsed as Parameters<typeof importParsedContacts>[2]),
+      ...rows.slice(15).map((r) => deliver(inbound({ phone: `521${r.phoneE164.slice(3)}` }))),
+    ]);
+    const all = await db.select().from(s.contacts);
+    const phones = all.map((c) => c.phoneE164);
+    expect(new Set(phones).size).toBe(phones.length);
+    expect(all).toHaveLength(30);
+    // Los que llegaron por WhatsApp quedaron enlazados a su fila de GHL.
+    expect(all.filter((c) => c.ghlContactId !== null)).toHaveLength(30);
+    expect(await count(s.messages)).toBe(30);
   });
 
   it("sin teléfono, sin BSUID y sin conversación conocida → dead-letter en la BD, nunca procesado en silencio", async () => {
