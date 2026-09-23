@@ -73,9 +73,14 @@ export async function findOrphanConversations(now: Date, limit = 50): Promise<Or
   return rows.map((r) => ({ conversationId: r.id, organizationId: r.organization_id }));
 }
 
-// Un borrador aprobado cuyo envío quedó a la mitad (el proceso murió en "enviando")
-// se concilia con el hilo: si ya hay un saliente del agente desde la aprobación,
-// queda "enviado"; si no, vuelve a "pendiente" (o a obsoleto si ya hay otro).
+// Un borrador aprobado que quedó en "enviando" (el proceso murió a la mitad, o
+// alguna burbuja quedó "pending" con resultado desconocido) se concilia con el
+// ESTADO REAL de los salientes del agente desde la aprobación:
+//   - ninguno → no salió nada: vuelve a "pendiente" (u obsoleto si ya hay otro);
+//   - alguno fallido (incl. sin confirmar vencido) → "obsoleto": el fallo se ve en
+//     el hilo y NO se reenvía solo (podría duplicar);
+//   - alguno todavía en camino ("queued") → se espera;
+//   - todos confirmados → "enviado".
 export const DRAFT_SENDING_STUCK_MS = 10 * 60_000;
 
 export async function reconcileStuckDrafts(now: Date): Promise<number> {
@@ -89,10 +94,11 @@ export async function reconcileStuckDrafts(now: Date): Promise<number> {
     .from(aiAgentDrafts)
     .where(and(eq(aiAgentDrafts.status, "enviando"), lt(aiAgentDrafts.resolvedAt, new Date(now.getTime() - DRAFT_SENDING_STUCK_MS))))
     .limit(100);
+  let resolved = 0;
   for (const d of stuck) {
     const since = new Date((d.resolvedAt ?? now).getTime() - 5_000);
-    const [out] = await db
-      .select({ id: messages.id })
+    const outs = await db
+      .select({ status: messages.status })
       .from(messages)
       .where(
         and(
@@ -102,16 +108,17 @@ export async function reconcileStuckDrafts(now: Date): Promise<number> {
           eq(messages.source, "ai_agent"),
           gte(messages.createdAt, since),
         ),
-      )
-      .limit(1);
-    if (out) {
-      await db
+      );
+    const setStatus = (status: "enviado" | "obsoleto") =>
+      db
         .update(aiAgentDrafts)
-        .set({ status: "enviado" })
+        .set({ status })
         .where(and(eq(aiAgentDrafts.id, d.id), eq(aiAgentDrafts.organizationId, d.organizationId), eq(aiAgentDrafts.status, "enviando")));
-    } else {
-      await releaseDraft(d.organizationId, d.id, d.conversationId);
-    }
+    if (outs.length === 0) await releaseDraft(d.organizationId, d.id, d.conversationId);
+    else if (outs.some((m) => m.status === "failed")) await setStatus("obsoleto");
+    else if (outs.some((m) => m.status === "queued")) continue; // aún en camino
+    else await setStatus("enviado");
+    resolved++;
   }
-  return stuck.length;
+  return resolved;
 }

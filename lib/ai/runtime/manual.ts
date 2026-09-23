@@ -33,7 +33,14 @@ export async function reactivateAgentInConversation(
 
 export class DraftNotAvailableError extends Error {}
 
-type SendBubble = (p: { organizationId: string; conversationId: string; text: string; sentByUserId: string }) => Promise<void>;
+// Devuelve el resultado del proveedor: "pending" = resultado desconocido (timeout, 5xx):
+// el mensaje queda en el outbox y se concilia solo; el borrador NO se da por enviado.
+type SendBubble = (p: {
+  organizationId: string;
+  conversationId: string;
+  text: string;
+  sentByUserId: string;
+}) => Promise<{ status: "sent" | "pending" }>;
 
 // Envía un borrador. Lo RECLAMA primero (pendiente → enviando) en una sola
 // sentencia: dos clics o dos vendedores no lo mandan dos veces. Queda "enviado"
@@ -47,7 +54,7 @@ export async function approveDraft(input: {
   now: Date;
   sendBubble: SendBubble;
   sleep?: (ms: number) => Promise<void>;
-}): Promise<{ sent: number }> {
+}): Promise<{ sent: number; confirmed: boolean }> {
   const org = input.organizationId;
   const [draft] = await db
     .update(aiAgentDrafts)
@@ -70,6 +77,7 @@ export async function approveDraft(input: {
   await notify();
   const sleep = input.sleep ?? ((ms: number) => new Promise((r) => setTimeout(r, ms)));
   let sent = 0;
+  let unconfirmed = false;
   let channelOff = false;
   try {
     for (const text of draft.bubbles) {
@@ -79,12 +87,14 @@ export async function approveDraft(input: {
         channelOff = true;
         break;
       }
-      await input.sendBubble({ organizationId: org, conversationId: draft.conversationId, text, sentByUserId: input.userId });
+      const outcome = await input.sendBubble({ organizationId: org, conversationId: draft.conversationId, text, sentByUserId: input.userId });
+      if (outcome.status !== "sent") unconfirmed = true;
       sent++;
     }
   } catch (error) {
     if (sent === 0) await releaseDraft(org, draft.id, draft.conversationId);
-    else await finishDraft(org, draft.id, "enviado", input.now, draft.conversationId);
+    else if (!unconfirmed) await finishDraft(org, draft.id, "enviado", input.now, draft.conversationId);
+    // (con una burbuja sin confirmar queda "enviando": la concilia el barrido)
     await notify();
     throw error;
   }
@@ -93,9 +103,12 @@ export async function approveDraft(input: {
     await notify();
     throw new DraftNotAvailableError("El agente se apagó en este canal: el borrador ya no se envía.");
   }
-  await finishDraft(org, draft.id, "enviado", input.now, draft.conversationId);
+  // "enviado" solo si WhatsApp confirmó todas las burbujas; si alguna quedó
+  // "pending", el borrador sigue "enviando" y el barrido lo resuelve con el estado
+  // real de sus mensajes (enviado, u obsoleto si alguno falló; nunca reenvía).
+  if (!unconfirmed) await finishDraft(org, draft.id, "enviado", input.now, draft.conversationId);
   await notify();
-  return { sent };
+  return { sent, confirmed: !unconfirmed };
 }
 
 // El canal de la conversación tiene el agente encendido (y todo es de la organización).
