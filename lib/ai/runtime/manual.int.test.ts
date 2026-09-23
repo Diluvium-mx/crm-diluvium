@@ -258,6 +258,50 @@ describe.skipIf(!TEST_DATABASE_URL)("acciones manuales del agente (Postgres real
     }
   });
 
+  it("aprobar: si el cliente escribe o un vendedor responde DURANTE el reclamo, no sale ni la 1ª burbuja", async () => {
+    const { sql } = await import("drizzle-orm");
+    try {
+      for (const who of ["cliente", "vendedor"] as const) {
+        await db.execute(sql`truncate ai_agent_drafts, messages cascade`);
+        // El mensaje entra en la MISMA sentencia que reclama el borrador (pendiente → enviando):
+        // una línea base tomada después del reclamo ya lo incluiría y lo absorbería.
+        const row = who === "cliente" ? `'in', 'contact', 'text', '…', 'received', null` : `'out', 'crm', 'text', '…', 'sent', 'u1'`;
+        await db.execute(
+          sql.raw(`create or replace function test_msg_on_claim() returns trigger language plpgsql as $f$
+            begin
+              insert into messages (id, organization_id, conversation_id, direction, source, type, body, status, sent_by_user_id)
+              values (gen_random_uuid()::text, new.organization_id, new.conversation_id, ${row});
+              return new;
+            end $f$`),
+        );
+        await db.execute(
+          sql.raw(`create or replace trigger test_msg_on_claim after update on ai_agent_drafts for each row
+            when (old.status = 'pendiente' and new.status = 'enviando') execute function test_msg_on_claim()`),
+        );
+        const id = await draft();
+        const sent: string[] = [];
+        const r = await manual.approveDraft({
+          organizationId: ORG,
+          draftId: id,
+          userId: "u1",
+          now: new Date(),
+          sendBubble: async (p) => {
+            sent.push(p.text);
+            return { status: "sent" as const };
+          },
+          sleep: async () => undefined,
+        });
+        expect(r.sent).toBe(0);
+        expect(sent).toEqual([]);
+        const [d] = await db.select().from(s.aiAgentDrafts).where(eq(s.aiAgentDrafts.id, id));
+        expect(d).toMatchObject({ status: "pendiente", bubbles: ["Hola", "¿Cuánto mide?"] });
+      }
+    } finally {
+      await db.execute(sql`drop trigger if exists test_msg_on_claim on ai_agent_drafts`);
+      await db.execute(sql`drop function if exists test_msg_on_claim()`);
+    }
+  });
+
   it("si la 1ª burbuja falla y ya hay OTRO borrador pendiente, el aprobado queda obsoleto (sin chocar con el índice único)", async () => {
     const id = await draft();
     await expect(
@@ -296,6 +340,8 @@ describe.skipIf(!TEST_DATABASE_URL)("acciones manuales del agente (Postgres real
       type: "text",
       body: "x",
       status: "sent",
+      // sent_at lo pone sendTextMessage con el reloj de la app al mandar (≥ resolved_at).
+      sentAt: new Date(old.getTime() + 1_000),
       createdAt: new Date(old.getTime() + 1_000),
     });
     await mk("d_ok");
@@ -316,6 +362,7 @@ describe.skipIf(!TEST_DATABASE_URL)("acciones manuales del agente (Postgres real
       type: "text",
       body: "x",
       status: "queued",
+      sentAt: new Date(old.getTime() + 1_000),
       createdAt: new Date(old.getTime() + 1_000),
     });
     await reconcileStuckDrafts(new Date());
@@ -324,6 +371,37 @@ describe.skipIf(!TEST_DATABASE_URL)("acciones manuales del agente (Postgres real
     await db.update(s.messages).set({ status: "failed", errorCode: "send_unconfirmed" }).where(eq(s.messages.id, "m_q"));
     await reconcileStuckDrafts(new Date());
     expect(await status()).toBe("obsoleto");
+  });
+
+  it("barrido: una respuesta ANTERIOR del agente (segundos antes del plan) no cuenta como burbuja del plan", async () => {
+    const { reconcileStuckDrafts } = await import("./sweep");
+    const old = new Date(Date.now() - 20 * 60_000);
+    // Respuesta previa del agente 3 s antes del plan; el plan de 2 burbujas se guardó y el
+    // worker se reinició antes de mandar la 1ª. Nada del plan salió: no se corta ninguna.
+    await db.insert(s.messages).values({
+      id: "m_prev",
+      organizationId: ORG,
+      conversationId: "cv_m",
+      direction: "out",
+      source: "ai_agent",
+      type: "text",
+      body: "respuesta anterior",
+      status: "delivered",
+      sentAt: new Date(old.getTime() - 3_000),
+      createdAt: new Date(old.getTime() - 3_000),
+    });
+    await db.insert(s.aiAgentDrafts).values({
+      id: "d_plan",
+      organizationId: ORG,
+      conversationId: "cv_m",
+      bubbles: ["Sí incluye el envío", "¿Para cuántas entradas?"],
+      status: "enviando",
+      resolvedAt: old,
+    });
+    expect(await reconcileStuckDrafts(new Date())).toBe(1);
+    const [d] = await db.select().from(s.aiAgentDrafts).where(eq(s.aiAgentDrafts.id, "d_plan"));
+    expect(d).toMatchObject({ status: "pendiente", bubbles: ["Sí incluye el envío", "¿Para cuántas entradas?"] });
+    expect(d.reviewReason).toBeNull();
   });
 
   it("canal apagado: el borrador pendiente ya no sale y apagar lo deja obsoleto", async () => {
