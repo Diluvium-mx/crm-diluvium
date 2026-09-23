@@ -449,3 +449,40 @@ bucket (retención pendiente); borrar un workflow cascadea sus corridas; editar 
 corrida a medias mueve el cursor; sin token CSRF en la ruta de subida (los headers X-* fuerzan
 preflight); varios workflows con la misma etapa disparan en cadena sin tope; sin sniffing de
 contenido en la subida (un MIME falso falla después en el proveedor, visible en la corrida).
+
+## 9. Plan de salida a producción (parte a)
+
+Reglas del dueño: **nada va a staging ni al sandbox hasta su aviso**; los archivos se suben a la
+biblioteca de PRODUCCIÓN desde la pestaña Automatización cuando la Fase D entre a `main`; la
+prueba de `/tabla` y `/banco` es en producción, solo en `ch_zernio_sandbox`, después del cierre
+de la Fase B.
+
+1. **Cierre de la Fase B** (otro chat): `fix/agente-ia-auto` entra a `main`. Pre-chequeo hecho el
+   23-sep: la rama de la Fase D **no comparte archivos** con `origin/fix/agente-ia-auto`,
+   `origin/fix/agente-ia-auto-8` ni `origin/staging`; el ensayo de merge (`git merge-tree`) es
+   **limpio** contra las tres, y ninguna agrega migración (la 0025 sigue libre).
+2. **Rebase** de `feat/agente-ia-fase-d` sobre `main`; si `main` trae una migración nueva, la
+   0025 se regenera con el siguiente número libre (todavía no está aplicada en ningún entorno).
+3. **Gate** de nuevo: `npm run typecheck`, `npm test` (BD propia), `npm run lint`; revisión
+   adversarial solo si el rebase tocó algo.
+4. `feat/agente-ia-fase-d` → **`staging`** (con el aviso del dueño): despliega web + worker; la
+   migración 0025 corre sola en `start:web`; verificar `/api/health/inbound` y que el worker
+   loguee `[workflows]`. En staging no hay canal encendido: solo se revisa que la pestaña cargue,
+   "Restaurar predeterminados" cree los 14 y la biblioteca acepte un video de 12 MB.
+5. `staging` → **`main`** (producción). Después del deploy, en la pestaña Automatización:
+   "Restaurar predeterminados" (nacen apagados), subir los 6 archivos de `listos/` desde
+   Biblioteca, asignarlos en cada workflow y habilitar solo los que tengan todos sus archivos
+   (`tabla_tamanos_estandar`, `datos_bancarios`, `video_instalacion_estandar`,
+   `video_instalacion_medida`, `video_instalacion_mini`, `transferir_humano`, `cambiar_etapa`);
+   `tapones_inflables` y `donde_medir` quedan apagados con "falta archivo" hasta tener fotos y
+   `donde-medir.mp4`; `tabla_tamanos_mini` y `medidas_especiales` también. Llenar Configuración →
+   Datos de cobro.
+6. **Prueba en producción, solo `ch_zernio_sandbox`** (teléfono del dueño): `/tabla` y `/banco`
+   desde el composer; verificar burbuja con adjunto, `workflow_runs` `done`, etapa → Cerca de
+   compra, y que un segundo `/banco` repita a propósito (comando) mientras el agente no.
+7. **Vuelta atrás:** los workflows nacen apagados y los comandos solo corren si el workflow está
+   habilitado: deshabilitar todo desde la pestaña detiene la Fase D sin deploy. La migración 0025
+   solo agrega tablas y un valor de enum (`system_note`); no toca datos existentes.
+
+Parte (b) (enganche al agente, guardia con montos ya vistos, comprobantes) arranca después del
+punto 1, con su propio gate y su propia prueba en `ch_zernio_sandbox` en modo AUTO.
