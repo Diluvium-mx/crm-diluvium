@@ -67,9 +67,11 @@ export async function approveDraft(input: {
     .limit(1);
   const inboundsAtClaim = target ? await inboundCount(org, target.conversationId) : 0;
   const humansAtClaim = target ? await humanOutboundCount(org, target.conversationId) : 0;
+  // resolved_at con el reloj de Postgres (el mismo de messages.created_at): la
+  // conciliación del barrido cuenta solo las burbujas guardadas DESDE el reclamo.
   const [draft] = await db
     .update(aiAgentDrafts)
-    .set({ status: "enviando", resolvedAt: input.now, resolvedByUserId: input.userId })
+    .set({ status: "enviando", resolvedAt: sql`now()`, resolvedByUserId: input.userId })
     .where(
       and(
         eq(aiAgentDrafts.id, input.draftId),
@@ -207,7 +209,7 @@ export async function releaseDraft(organizationId: string, draftId: string, conv
 export async function discardDraft(input: { organizationId: string; draftId: string; userId: string; now: Date }): Promise<void> {
   const rows = await db
     .update(aiAgentDrafts)
-    .set({ status: "descartado", resolvedAt: input.now, resolvedByUserId: input.userId })
+    .set({ status: "descartado", resolvedAt: sql`now()`, resolvedByUserId: input.userId })
     .where(
       and(
         eq(aiAgentDrafts.id, input.draftId),
