@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { AdReferral, AttachmentView, ConversationDetail, MessageView } from "@/lib/inbox/types";
 import { listMessages, retryMessage, sendMessage, sendTemplate } from "@/lib/inbox/actions";
+import { runWorkflowCommand } from "@/lib/actions/workflows";
 import { Composer } from "./composer";
 import { DocumentCard } from "./document-card";
 import { MediaViewer } from "./media-viewer";
@@ -108,6 +109,22 @@ function Bubble({
 }) {
   const out = row.direction === "out";
   const opt = isOptimistic(row);
+  // Aviso interno (Fase D): nota para el vendedor, centrada y en ámbar. No es
+  // una burbuja de WhatsApp (nunca salió al cliente).
+  if (!opt && row.kind === "system_note") {
+    return (
+      <div className="my-2 flex justify-center">
+        <div
+          role="note"
+          className="max-w-[85%] rounded-lg border border-brand-orange/50 bg-brand-orange/10 px-3 py-2 text-xs text-foreground shadow-sm"
+        >
+          <span className="font-semibold text-brand-orange">📝 Aviso interno · </span>
+          <span className="whitespace-pre-wrap break-words">{row.body}</span>
+          <span className="ml-2 text-[10px] text-muted-foreground">{bubbleTime(row.sentAt)}</span>
+        </div>
+      </div>
+    );
+  }
   const mark = out ? statusMark(row.status) : null;
   // Una plantilla optimista fallida NO se reintenta como texto (fuera de la
   // ventana de 24 h el texto se rechaza): el vendedor vuelve a elegir plantilla.
@@ -289,6 +306,24 @@ export function ChatThread({
     if (el) el.scrollTop = el.scrollHeight;
   }, [rows.length, scheduledCount, conversationId, noticeCount]);
 
+  // "/tabla" y similares (Fase D): si el texto es un comando de workflow, se
+  // dispara la automatización; si no corresponde a ninguno, sale como texto.
+  const [commandNotice, setCommandNotice] = useState<string | null>(null);
+  async function doSendOrCommand(text: string) {
+    if (!/^\/[a-z0-9][a-z0-9-]{0,29}$/i.test(text.trim())) return doSend(text);
+    const result = await runWorkflowCommand({ conversationId, text });
+    if (!result.ok) {
+      if ("notCommand" in result) return doSend(text);
+      setCommandNotice(`⚠ ${result.error}`);
+      return;
+    }
+    setCommandNotice(
+      result.status === "queued"
+        ? `▶ ${result.name}: en marcha (los mensajes aparecen en el hilo).`
+        : `⚠ ${result.name}: no se ejecutó (${result.reason ?? "omitido"}).`,
+    );
+  }
+
   async function doSend(text: string) {
     const clientId = `opt-${Date.now()}-${Math.random().toString(36).slice(2)}`;
     setOptimistic((current) => [
@@ -417,6 +452,14 @@ export function ChatThread({
         />
       </div>
 
+      {commandNotice && (
+        <div className="mx-4 mb-1 flex items-center justify-between rounded-md border border-brand-orange/40 bg-brand-orange/10 px-3 py-1.5 text-xs">
+          <span>{commandNotice}</span>
+          <button type="button" onClick={() => setCommandNotice(null)} className="ml-3 text-muted-foreground hover:text-foreground" aria-label="Cerrar aviso">
+            ✕
+          </button>
+        </div>
+      )}
       {/* Composer (composer.tsx): texto libre, fragmentos y plantillas con la
           ventana abierta; solo plantilla cuando está cerrada. key: al cambiar de
           conversación se reinicia el borrador y se cierran los selectores. */}
@@ -425,7 +468,10 @@ export function ChatThread({
         conversationId={conversationId}
         windowOpen={windowOpen}
         windowExpiresAt={detail.windowExpiresAt}
-        onSendText={(text) => void doSend(text)}
+        onSendText={(text) => {
+          setCommandNotice(null);
+          void doSendOrCommand(text);
+        }}
         onSendTemplate={(templateId, values, preview) => void doSendTemplate(templateId, values, preview)}
         onScheduled={() => setScheduledRev((n) => n + 1)}
       />
