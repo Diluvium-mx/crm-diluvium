@@ -1,15 +1,22 @@
 // Política del runtime del Agente IA (Fase B). PURO: sin DB, red ni SDK — es el
 // "criterio" testeable que envuelve al runtime. El worker (wiring) consulta la
-// base, llama a estas funciones y aplica el resultado (pausas, envío, etc.).
+// base, llama a estas funciones y aplica el resultado (pausa, avisos, envío).
 //
-// Cubre: debounce deslizante con tope, reactivación por vencimiento (handover),
-// la compuerta de decisión (interruptor de canal, estado, ventana 24h, anti-bucle,
-// tope por contacto, silencio por respuesta humana) y el corte en burbujas.
+// Cubre: debounce deslizante con tope, la compuerta de decisión (interruptor de
+// canal, estado, ventana 24h, anti-bucle, tope por contacto, silencio por
+// respuesta humana) y el corte en burbujas.
+//
+// Reglas del dueño (23-sep-2026): el agente SIEMPRE contesta. Lo ÚNICO que lo
+// pausa es la respuesta de un vendedor (se reactiva con "Reactivar"). Los frenos
+// (anti-bucle, tope de llamadas, presupuesto, tope por contacto) solo dejan de
+// responder esa vez y avisan al vendedor; nunca pausan ni etiquetan.
 
-import { TAG_ANTI_LOOP } from "./tags";
-
+// "borrador" sigue en el enum de la BD como historia: se trata igual que "off".
 export type AgentMode = "off" | "borrador" | "auto";
 export type AgentState = "activo" | "pausado_humano" | "pausado_handover" | "pausado_antibucle";
+
+// Tipos de aviso del agente para el vendedor (ver notices.ts).
+export type NoticeKind = "guardia" | "pasar_a_humano" | "anti_bucle" | "presupuesto" | "tope_contacto" | "envio";
 
 // ── Debounce deslizante ──────────────────────────────────────────────────────
 // Cada entrante reinicia la espera (`responseDelaySeconds`), pero nunca más allá
@@ -58,17 +65,10 @@ export function maxModelCallsPerHour(antiLoopMaxPerHour: number): number {
   return Math.max(12, antiLoopMaxPerHour * 4);
 }
 
-// ── Reactivación por vencimiento (solo handover) ─────────────────────────────
-// El "pasar a humano" se reactiva solo a las N horas; humano/antibucle son manuales.
-export function pauseElapsed(state: AgentState, pausedUntil: number | null, now: number): boolean {
-  return state === "pausado_handover" && pausedUntil !== null && now >= pausedUntil;
-}
-
 // ── Compuerta de decisión al dispararse el job ───────────────────────────────
 export type GateInput = {
   channelMode: AgentMode;
   agentState: AgentState;
-  agentPausedUntil: number | null;
   now: number;
   windowExpiresAt: number | null; // ventana de 24h; el agente solo actúa dentro
   humanRepliedSincePending: boolean; // vendedor respondió a mano (crm/business_app) tras el último entrante
@@ -76,8 +76,8 @@ export type GateInput = {
   antiLoopMaxPerHour: number;
   // Llamadas COBRADAS al modelo (filtro + cerebro, también las descartadas) en la última hora.
   modelCallsLastHour: number;
-  // Hay un envío del agente en camino ("queued") o fallido SIN CONFIRMAR sin revisar:
-  // no se responde encima (el barrido lo pasa a revisión humana si vence ambiguo).
+  // Hay un envío del agente en camino ("queued") o un plan de burbujas "enviando":
+  // no se responde encima (lo concilian el outbox y el barrido).
   agentSendUnresolved: boolean;
   // Gasto de TODA la organización en las últimas 24 h (USD) y su presupuesto.
   orgSpendLast24hUsd: number;
@@ -87,25 +87,22 @@ export type GateInput = {
 };
 
 export type GateDecision =
-  // No responder; `pauseTo`/`tag` indican una transición de estado a persistir.
-  | { action: "skip"; reason: string; pauseTo?: AgentState; tag?: string }
-  // Responder. `reactivated` = venía de handover vencido y se reactiva a `activo`.
-  | { action: "respond"; mode: "borrador" | "auto"; reactivated: boolean };
+  // No responder. `pauseTo`: la única pausa (un vendedor contestó). `notice`: avisar
+  // al vendedor en el hilo (frenos), sin pausar.
+  | { action: "skip"; reason: string; pauseTo?: "pausado_humano"; notice?: NoticeKind }
+  | { action: "respond" };
 
 // Evalúa las compuertas EN ORDEN. La clasificación de contenido (spam / lead que
 // no sigue / necesita cerebro / pasar a humano) la hace el modelo FILTRO en el
 // wiring; aquí van las compuertas duras de interruptor y seguridad.
 export function decideGate(i: GateInput): GateDecision {
-  // 1. Interruptor del canal (gate maestro).
-  if (i.channelMode === "off") return { action: "skip", reason: "canal_off" };
+  // 1. Interruptor del canal (gate maestro): solo "auto" responde.
+  if (i.channelMode !== "auto") return { action: "skip", reason: "canal_off" };
 
-  // 2. Estado de pausa. handover vencido → reactiva y sigue; el resto → calla.
-  const reactivated = pauseElapsed(i.agentState, i.agentPausedUntil, i.now);
-  if (i.agentState !== "activo" && !reactivated) {
-    return { action: "skip", reason: i.agentState }; // pausado_humano | pausado_handover (vigente) | pausado_antibucle
-  }
+  // 2. Pausado (un vendedor contestó o lo pausó a mano): calla hasta "Reactivar".
+  if (i.agentState !== "activo") return { action: "skip", reason: i.agentState };
 
-  // 3. Silencio si un humano respondió a mano en el hilo → pausa indefinida.
+  // 3. Un vendedor respondió a mano en el hilo → pausa indefinida.
   if (i.humanRepliedSincePending) {
     return { action: "skip", reason: "respuesta_humana", pauseTo: "pausado_humano" };
   }
@@ -115,35 +112,32 @@ export function decideGate(i: GateInput): GateDecision {
     return { action: "skip", reason: "fuera_de_ventana_24h" };
   }
 
-  // 4b. Envío del agente sin resolver: esperar (sin pausar; lo concilia el outbox/barrido).
+  // 4b. Envío del agente todavía en camino: esperar (lo concilia el outbox/barrido).
   if (i.agentSendUnresolved) {
     return { action: "skip", reason: "envio_sin_confirmar" };
   }
 
-  // 5. Freno anti-bucle: tope de respuestas del agente por hora → pausa + revisión humana.
+  // 5. Freno anti-bucle (bucle real con otro bot): no responde esta vez y avisa.
   if (i.agentRepliesLastHour >= i.antiLoopMaxPerHour) {
-    return { action: "skip", reason: "anti_bucle", pauseTo: "pausado_antibucle", tag: TAG_ANTI_LOOP };
+    return { action: "skip", reason: "anti_bucle", notice: "anti_bucle" };
   }
   // 5b. Tope de GASTO: un cliente que escribe sin parar hace que las respuestas se
   // descarten y regeneren sin llegar nunca al anti-bucle; esto sí lo frena.
   if (i.modelCallsLastHour >= maxModelCallsPerHour(i.antiLoopMaxPerHour)) {
-    return { action: "skip", reason: "tope_de_llamadas", pauseTo: "pausado_antibucle", tag: TAG_ANTI_LOOP };
+    return { action: "skip", reason: "tope_de_llamadas", notice: "anti_bucle" };
   }
 
-  // 5c. Presupuesto diario de la ORGANIZACIÓN: muchos números, cada uno bajo sus
-  // topes, no suman gasto sin límite. No pausa conversaciones: vuelve solo al
-  // bajar la ventana de 24 h.
+  // 5c. Presupuesto diario de la ORGANIZACIÓN: vuelve solo al bajar la ventana de 24 h.
   if (i.orgSpendLast24hUsd >= i.dailyBudgetUsd) {
-    return { action: "skip", reason: "presupuesto_diario" };
+    return { action: "skip", reason: "presupuesto_diario", notice: "presupuesto" };
   }
 
   // 6. Tope total por contacto (opcional).
   if (i.maxRepliesPerContact !== null && i.agentRepliesToContact >= i.maxRepliesPerContact) {
-    return { action: "skip", reason: "tope_por_contacto" };
+    return { action: "skip", reason: "tope_por_contacto", notice: "tope_contacto" };
   }
 
-  // 7. Responder según el modo del canal.
-  return { action: "respond", mode: i.channelMode, reactivated };
+  return { action: "respond" };
 }
 
 // ── Corte en burbujas ────────────────────────────────────────────────────────

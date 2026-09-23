@@ -13,8 +13,7 @@ import { DEFAULT_BRAIN_MODEL, DEFAULT_FILTER_MODEL, getModel, MODEL_CATALOG } fr
 import { PROVIDER_META } from "@/lib/ai/provider";
 import { DEFAULT_MODEL_PRICES } from "@/lib/ai/pricing";
 import { loadAgentConfig } from "@/lib/ai/runtime/config";
-import { agentModeSchema, agentSettingsSchema, idSchema, priceSchema, type AgentSettings } from "@/lib/agente-ia/settings";
-import { obsoleteChannelDrafts } from "@/lib/ai/runtime/state";
+import { agentModeSchema, agentSettingsSchema, idSchema, priceSchema, toAgentMode, type AgentSettings } from "@/lib/agente-ia/settings";
 import type { AgentSettingsBundleView, ChannelAgentView, ModelPriceView } from "@/lib/agente-ia/types";
 
 async function requireManage(action: "read" | "update") {
@@ -38,7 +37,6 @@ export async function getAgentSettings(): Promise<AgentSettingsBundleView> {
     responseDelaySeconds: cfg.responseDelaySeconds,
     maxWaitSeconds: cfg.maxWaitSeconds,
     pauseOnHumanReply: cfg.pauseOnHumanReply,
-    handoverReactivateHours: cfg.handoverReactivateHours,
     antiLoopMaxPerHour: cfg.antiLoopMaxPerHour,
     maxRepliesPerContact: cfg.maxRepliesPerContact,
     contextMessages: cfg.contextMessages,
@@ -55,7 +53,7 @@ export async function getAgentSettings(): Promise<AgentSettingsBundleView> {
     displayName: c.displayName,
     phoneE164: c.phoneE164,
     isActive: c.isActive,
-    mode: c.aiAgentMode,
+    mode: toAgentMode(c.aiAgentMode),
   }));
   const overrides = await db.select().from(aiModelPrices).where(eq(aiModelPrices.organizationId, organizationId));
   const prices: ModelPriceView[] = MODEL_CATALOG.map((m) => {
@@ -112,11 +110,9 @@ export async function setChannelAgentMode(input: { channelId: string; mode: stri
     .where(and(eq(channels.id, channelId), eq(channels.organizationId, organizationId)))
     .returning();
   if (!row) throw new Error("Canal no encontrado en tu organización.");
-  // Apagado = nada del agente sale por este canal, ni un borrador que ya esperaba.
-  if (mode === "off") await obsoleteChannelDrafts(organizationId, row.id, new Date());
   console.info(`[agente] canal ${row.id} → ${mode}`);
   revalidatePath("/agente-ia");
-  return { id: row.id, displayName: row.displayName, phoneE164: row.phoneE164, isActive: row.isActive, mode: row.aiAgentMode };
+  return { id: row.id, displayName: row.displayName, phoneE164: row.phoneE164, isActive: row.isActive, mode: toAgentMode(row.aiAgentMode) };
 }
 
 export async function updateModelPrice(input: {

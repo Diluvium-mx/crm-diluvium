@@ -15,8 +15,7 @@ import type { AgentSettingsBundleView, ChannelAgentView, ModelPriceView } from "
 
 const MODE_HINT: Record<AgentModeValue, string> = {
   off: "El agente no hace nada en este canal.",
-  borrador: "Genera la respuesta y la deja en la bandeja SIN enviarla.",
-  auto: "Responde solo a los clientes.",
+  auto: "Responde solo a los clientes. Se pausa en una conversación cuando un vendedor contesta.",
 };
 
 function errorMessage(error: unknown, fallback: string): string {
@@ -79,7 +78,7 @@ function ChannelSwitch({ channel }: { channel: ChannelAgentView }) {
 
   function choose(next: AgentModeValue) {
     if (next === mode) return;
-    if (next === "auto" && !window.confirm(`El agente responderá SOLO a los clientes de «${channel.displayName}». ¿Activar el modo automático?`)) {
+    if (next === "auto" && !window.confirm(`El agente responderá SOLO a los clientes de «${channel.displayName}». ¿Encenderlo?`)) {
       return;
     }
     const previous = mode;
@@ -106,7 +105,7 @@ function ChannelSwitch({ channel }: { channel: ChannelAgentView }) {
           </span>
         </div>
         <div role="radiogroup" aria-label={`Modo del agente en ${channel.displayName}`} className="flex overflow-hidden rounded border border-black/15 dark:border-white/15">
-          {(["off", "borrador", "auto"] as const).map((m) => (
+          {(["off", "auto"] as const).map((m) => (
             <button
               key={m}
               type="button"
@@ -144,7 +143,6 @@ function toDraft(s: AgentSettings): Draft {
     responseDelaySeconds: String(s.responseDelaySeconds),
     maxWaitSeconds: String(s.maxWaitSeconds),
     pauseOnHumanReply: s.pauseOnHumanReply,
-    handoverReactivateHours: String(s.handoverReactivateHours),
     antiLoopMaxPerHour: String(s.antiLoopMaxPerHour),
     noContactCap: s.maxRepliesPerContact === null,
     maxRepliesPerContact: String(s.maxRepliesPerContact ?? 50),
@@ -159,7 +157,6 @@ function fromDraft(d: Draft): unknown {
     responseDelaySeconds: Number(d.responseDelaySeconds),
     maxWaitSeconds: Number(d.maxWaitSeconds),
     pauseOnHumanReply: d.pauseOnHumanReply,
-    handoverReactivateHours: Number(d.handoverReactivateHours),
     antiLoopMaxPerHour: Number(d.antiLoopMaxPerHour),
     maxRepliesPerContact: d.noContactCap ? null : Number(d.maxRepliesPerContact),
     contextMessages: Number(d.contextMessages),
@@ -223,28 +220,21 @@ function SettingsForm({ initial }: { initial: AgentSettings }) {
             className="mt-1 h-4 w-4 accent-[var(--brand-navy)]"
           />
           <span className="flex flex-col gap-0.5">
-            <span className="text-sm font-medium text-foreground">Pausar el agente cuando un vendedor responde a mano</span>
+            <span className="text-sm font-medium text-foreground">Pausar el agente cuando un vendedor responde</span>
             <span className="text-xs text-foreground/70">
-              Incluye respuestas desde el celular (WhatsApp Business). Queda pausado en esa conversación hasta que alguien
-              pulse «Reactivar agente» en la bandeja.
+              Desde la Bandeja, el Embudo o el celular (WhatsApp Business). Es la única pausa: queda pausado en esa
+              conversación hasta que alguien pulse «Reactivar». Si el cliente pide a un vendedor, el agente le avisa, deja
+              un aviso en el hilo y sigue contestando.
             </span>
           </span>
         </label>
-        <NumberField
-          id="handover"
-          label="Reactivar después de «pasar a humano»"
-          hint="Al transferir, el contacto recibe la etiqueta «pasar a humano» y el agente se calla este tiempo."
-          unit="horas"
-          value={draft.handoverReactivateHours}
-          onChange={set("handoverReactivateHours")}
-        />
       </Section>
 
       <Section title="Límites">
         <NumberField
           id="presupuesto"
           label="Presupuesto de modelos por día"
-          hint="Gasto máximo de toda la organización en las últimas 24 h. Al llegar, el agente deja de responder hasta que baje."
+          hint="Gasto máximo de toda la organización en las últimas 24 h. Al llegar, el agente deja de responder hasta que baje y deja un aviso en el hilo."
           unit="USD"
           value={draft.dailyBudgetUsd}
           onChange={set("dailyBudgetUsd")}
@@ -252,7 +242,7 @@ function SettingsForm({ initial }: { initial: AgentSettings }) {
         <NumberField
           id="antibucle"
           label="Máximo de respuestas por conversación por hora"
-          hint="Freno anti-bucle: si se alcanza, el agente se pausa y el contacto recibe la etiqueta «revisión humana»."
+          hint="Freno anti-bucle, solo para un bucle con otro bot: al llegar, el agente no responde esa vez y deja un aviso en el hilo (no se pausa)."
           value={draft.antiLoopMaxPerHour}
           onChange={set("antiLoopMaxPerHour")}
         />
@@ -408,7 +398,7 @@ export function AgenteSettings({ bundle }: { bundle: AgentSettingsBundleView }) 
 
       <Section
         title="Interruptor por canal"
-        hint="Apagado por defecto. Prueba primero en «Borrador»: la respuesta aparece en la bandeja y un vendedor decide si la envía."
+        hint="Encendido = el agente responde solo a los clientes del canal. Apagado por defecto."
       >
         {bundle.channels.length === 0 ? (
           <p className="text-sm text-foreground/70">No hay canales de WhatsApp conectados.</p>

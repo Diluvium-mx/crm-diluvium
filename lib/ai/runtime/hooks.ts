@@ -16,20 +16,20 @@ import {
   type KvPort,
 } from "./queue";
 import { debounceDelayFor } from "./schedule";
-import { obsoletePendingDrafts, setAgentState } from "./state";
+import { setAgentState } from "./state";
 
 type Ports = { queue?: AgentQueuePort; kv?: KvPort; now?: Date };
 
-// Tras guardar un ENTRANTE del cliente: marca last_inbound_at, deja viejo el
-// borrador vigente y (re)programa el job de respuesta con el debounce
-// deslizante. Con el canal apagado no escribe nada (una sola lectura).
+// Tras guardar un ENTRANTE del cliente: marca last_inbound_at y (re)programa el
+// job de respuesta con el debounce deslizante. Con el canal apagado no escribe
+// nada (una sola lectura).
 export async function onInboundCustomerMessage(
   input: { organizationId: string; conversationId: string; receivedAt: Date },
   ports: Ports = {},
 ): Promise<void> {
   try {
     const snap = await loadSnapshot(input.organizationId, input.conversationId);
-    if (!snap || snap.channel.aiAgentMode === "off") return;
+    if (!snap || snap.channel.aiAgentMode !== "auto") return;
     const now = ports.now ?? new Date();
     await db
       .update(conversations)
@@ -38,13 +38,6 @@ export async function onInboundCustomerMessage(
         lastInboundAt: sql`greatest(coalesce(${conversations.lastInboundAt}, ${input.receivedAt.toISOString()}::timestamp), ${input.receivedAt.toISOString()}::timestamp)`,
       })
       .where(and(eq(conversations.id, input.conversationId), eq(conversations.organizationId, input.organizationId)));
-    // El cliente escribió después del borrador: ya no responde a lo último que
-    // dijo. Con el agente ACTIVO, generará otro que lo cubra (o ninguno). Con el
-    // agente pausado se conserva: p. ej. una respuesta RETENIDA por la guardia de
-    // salida es justo la tarjeta que el vendedor debe revisar.
-    if (snap.conversation.agentState === "activo") {
-      await obsoletePendingDrafts(input.organizationId, input.conversationId, now);
-    }
     const delay = await debounceDelayFor(input.organizationId, input.conversationId, now);
     if (delay === null) return; // canal apagado o nada pendiente
     await withQueueTimeout(
@@ -70,16 +63,12 @@ export async function onHumanOutbound(
   try {
     const snap = await loadSnapshot(input.organizationId, input.conversationId);
     if (!snap) return;
-    // Canal apagado: nada que pausar y sin borradores (apagarlo los deja obsoletos).
-    if (snap.channel.aiAgentMode === "off") return;
+    // Canal apagado: nada que pausar.
+    if (snap.channel.aiAgentMode !== "auto") return;
     const now = ports.now ?? new Date();
-    // El vendedor ya respondió: un borrador vigente del agente quedó viejo.
-    await obsoletePendingDrafts(input.organizationId, input.conversationId, now);
     const cfg = await loadAgentConfig(input.organizationId);
     if (!cfg.pauseOnHumanReply) return;
-    // También durante un "pasar a humano": si un vendedor ya contestó, el agente no
-    // debe reactivarse solo al vencer el plazo (queda en reactivación manual).
-    if (snap.conversation.agentState === "activo" || snap.conversation.agentState === "pausado_handover") {
+    if (snap.conversation.agentState === "activo") {
       await setAgentState(input.organizationId, input.conversationId, "pausado_humano", { now });
     }
     // La pausa ya quedó guardada: cancelar el job es solo optimización (acotada).

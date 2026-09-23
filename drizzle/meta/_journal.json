@@ -176,6 +176,13 @@
       "when": 1790188043706,
       "tag": "0024_agente_ia_runtime",
       "breakpoints": true
+    },
+    {
+      "idx": 25,
+      "version": "7",
+      "when": 1790205961870,
+      "tag": "0025_agente_siempre_contesta",
+      "breakpoints": true
     }
   ]
 }
