@@ -148,6 +148,8 @@ describe("guardia: lo que encontró la revisión enfocada (23-sep)", () => {
     expect(reviewReply("Te la dejo en diluvium.com.mx 4200", knowledge).ok).toBe(false);
     expect(reviewReply("Cuesta www.diluvium.com.mx 850", knowledge).ok).toBe(false);
     expect(reviewReply("total $6.500@x.co", knowledge).ok).toBe(false);
+    expect(reviewReply("total $6.500a@x.co", knowledge).ok).toBe(false);
+    expect(reviewReply("Cuesta diluvium.com.mx diluvium.com.mx diluvium.com.mx 6500", knowledge).ok).toBe(false);
     expect(reviewReply("Escríbeme a ventas@diluvium.com.mx o a juan.perez@gmail.com", knowledge)).toEqual({ ok: true });
   });
 
@@ -190,10 +192,12 @@ describe("guardia: lo que encontró la revisión enfocada (23-sep)", () => {
     expect(r("3 × $5,500 = $16,500")).toEqual({ ok: true });
     expect(r("$5,500 + $7,000 = $12,500")).toEqual({ ok: true });
     expect(r("Serían 3 x $5,500 = $16,500 MXN en total.")).toEqual({ ok: true });
-    // Con etiquetas por término (grande, mediana, "(1 m)").
+    // Con etiquetas de vocabulario cerrado y frases de precio unitario.
     expect(r("Grande $7,000 + mediana $5,500 = $12,500")).toEqual({ ok: true });
-    expect(r("2 compuertas medianas (1 m) × $5,500 = $11,000")).toEqual({ ok: true });
     expect(r("$5,500 (mediana) + $7,000 (grande) = $12,500")).toEqual({ ok: true });
+    expect(r("Mediana $5,500 + tapón $749 = $6,249")).toEqual({ ok: true });
+    expect(r("3 × $749 por pieza = $2,247")).toEqual({ ok: true });
+    expect(r("$5,500 c/u + $7,000 = $12,500")).toEqual({ ok: true });
     expect(r("2 × $5,500 + 1 × $7,000 = $18,000")).toEqual({ ok: true });
     expect(r("$5,500 × 3 = $16,500")).toEqual({ ok: true });
     expect(r("10 × $749 = $7,490")).toEqual({ ok: true });
@@ -225,9 +229,35 @@ describe("guardia: lo que encontró la revisión enfocada (23-sep)", () => {
       "3 × $5,500 = $16,500 − $1,500 = $15,000",
       "3 × $5,500 = $16,500 - $1,500",
       "3 × $5,500 menos $1,000 = $15,500",
-      // Restarle un monto que SÍ está en la base (la mini, $3,000) no vuelve válido el total.
+      // Restarle un monto que SÍ está en la base (la mini, $3,000) no vuelve válido el total,
+      // con cualquier raya o con palabras.
       "3 × $5,500 = $16,500 − $3,000",
       "3 × $5,500 = $16,500 - $3,000",
+      "3 × $5,500 = $16,500 – $3,000 de descuento",
+      "3 × $5,500 = $16,500 — $3,000",
+      "3 × $5,500 = $16,500 menos $3,000",
+      "3 × $5,500 = $16,500, menos $3,000",
+      "3 × $5,500 = $16,500 ÷ 2",
+      "$11,000 – $3,000 + $3,500 = $6,500",
+      "$11,000 entre $3,000 + $3,500 = $6,500",
+      "Grande $11,000 menos mini $3,000 + chica $3,500 = $6,500",
+    ]) expect(r(t).ok, t).toBe(false);
+    // Etiquetas que esconden montos, cantidades u operaciones → revisión humana.
+    for (const t of [
+      "Grande $11,000 (hoy $6,500) = $11,000",
+      "Mediana $5,500 (hoy 4,500) = $5,500",
+      "$7,000 ($1,000 de descuento) = $7,000",
+      "Mediana (hoy $4,500) $5,500 = $5,500",
+      "$5,500 (x2) + $7,000 = $12,500",
+      "3 × $749 (×2) = $2,247",
+      "3 × $5,500 x tres = $16,500",
+      "$5,500 x dos + $7,000 = $12,500",
+      "dos x $5,500 + $7,000 = $12,500",
+      "3 medianas $5,500 + grande $7,000 = $12,500",
+      "tres × $5,500 = $16,500",
+      "3 × $749 por 2 = $1,498",
+      // Falso positivo aceptado (lado seguro): la etiqueta no admite cifras.
+      "2 compuertas medianas (1 m) × $5,500 = $11,000",
     ]) expect(r(t).ok, t).toBe(false);
     // Montos escritos tal cual en la base (anticipo, pago completo) → pasan como siempre.
     expect(r("El anticipo es de $3,500 y el resto antes del envío.")).toEqual({ ok: true });

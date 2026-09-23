@@ -23,9 +23,10 @@ const BARE_DOMAIN =
   /(?<![\p{L}\p{N}@._%+\-])(?:[\p{L}\p{N}](?:[\p{L}\p{N}\-]{0,61}[\p{L}\p{N}])?\.){1,8}(?!(?:jpe?g|png|gif|webp|heic|pdf|xml|docx?|xlsx?|mp4|mov|txt)(?![\p{L}\p{N}]))\p{L}{2,24}(?![\p{L}\p{N}@\-])(?:[/?#][^\s<>"'`]*)?/giu;
 const IPV4 = /(?<![\p{N}.])\d{1,3}(?:\.\d{1,3}){3}(?![\p{N}.])(?:[/:][^\s<>"'`]*)?/gu;
 // Correos: no son enlaces; se quitan antes de buscar montos (sus dígitos no cuentan).
-// La parte local lleva al menos una letra: "$6.500@x.co" no es un correo (y su monto cuenta).
+// La parte local lleva al menos una letra y no empieza pegada a "$": "$6.500@x.co" y
+// "$6.500a@x.co" no son correos (y su monto cuenta).
 const EMAIL =
-  /(?<![\p{L}\p{N}._%+\-])(?=[\p{N}._%+\-]{0,63}\p{L})[\p{L}\p{N}._%+\-]{1,64}@(?:[\p{L}\p{N}\-]{1,63}\.){1,8}\p{L}{2,24}/giu;
+  /(?<![\p{L}\p{N}._%+\-$])(?=[\p{N}._%+\-]{0,63}\p{L})[\p{L}\p{N}._%+\-]{1,64}@(?:[\p{L}\p{N}\-]{1,63}\.){1,8}\p{L}{2,24}/giu;
 const DOMAIN_LIKE_LOCAL = /\.(?:com|mx|net|org|info|io|co|app|ai|ru)(?:\.|$)|https?|www\./iu;
 const TRAILING_PUNCT = /[.,;:!?¡¿)\]}"'»”’]+$/u;
 
@@ -50,7 +51,12 @@ export function extractLinks(text: string): string[] {
 // precio en contexto. Montos y desgloses se buscan ambos en ESTE texto, así que
 // sus posiciones coinciden entre sí.
 function withoutLinks(text: string): string {
-  return text.replace(URL_WITH_SCHEME, " ").replace(EMAIL, " ").replace(IPV4, " ").replace(BARE_DOMAIN, " ");
+  return text
+    .replace(URL_WITH_SCHEME, " ")
+    .replace(EMAIL, " ")
+    .replace(IPV4, " ")
+    .replace(BARE_DOMAIN, " ")
+    .replace(/[ \t]{2,}/g, " "); // varios enlaces seguidos tampoco separan precio y contexto
 }
 
 // host (sin www, minúsculas, punycode) + ruta (sin "/" final); sin query ni #:
@@ -170,34 +176,70 @@ export const MAX_QTY = 10;
 const TIMES = String.raw`[×xX*]`;
 const PRICE_NUM = String.raw`(?:${MONEY_NUM})(?!\p{N}|[.,]\p{N})`;
 const CURRENCY = String.raw`(?:${H}{0,3}(?:mxn|pesos))?`;
-// Etiqueta opcional de un término: "mediana $5,500", "$5,500 (mediana)".
-const LABEL = String.raw`(?:\p{L}{1,20}(?:${H}{1,3}\p{L}{1,20}){0,2}|\([^()\n]{1,30}\))`;
+// Etiqueta opcional de un término, con VOCABULARIO CERRADO (sin dígitos, "x",
+// "por", "menos" ni números con letra): "mediana $5,500", "$5,500 (grande)". Una
+// etiqueta libre dejaba esconder cantidades u operaciones ("(x2)", "x tres").
+const LABEL_WORD = String.raw`(?:minis?|chic[ao]s?|median[ao]s?|grandes?|est[aá]ndar(?:es)?|medidas?|especial(?:es)?|tap[oó]n(?:es)?|compuertas?|kits?|a|la|de)(?!\p{L})`;
+// Frases de precio unitario ("3 × $749 por pieza", "$5,500 c/u"): tampoco llevan cifras.
+const UNIT_PHRASE = String.raw`(?:por${H}{1,3}(?:pieza|unidad)|cada${H}{1,3}un[oa]|c/u)(?!\p{L})`;
+const LABEL = String.raw`(?:${UNIT_PHRASE}|${LABEL_WORD}(?:${H}{1,3}${LABEL_WORD}){0,3}|\(${H}{0,2}${LABEL_WORD}(?:${H}{1,3}${LABEL_WORD}){0,3}${H}{0,2}\))`;
 // Núcleo de un término: "3 × $5,500", "3 compuertas × $5,500", "$5,500 × 3" o "$5,500".
 const CORE = (g: boolean) => {
   const c = (x: string) => (g ? `(${x})` : x);
-  return String.raw`(?:${c(String.raw`\d{1,3}`)}(?!\p{N})(?:${H}{1,3}\p{L}{1,20}){0,2}${H}{0,3}${TIMES}${H}{0,3}\$${H}{0,3}${c(PRICE_NUM)}${CURRENCY}|\$${H}{0,3}${c(PRICE_NUM)}${CURRENCY}${H}{0,3}${TIMES}${H}{0,3}${c(String.raw`\d{1,3}`)}(?!\p{N})|\$${H}{0,3}${c(PRICE_NUM)}${CURRENCY})`;
+  return String.raw`(?:${c(String.raw`\d{1,3}`)}(?!\p{N})(?:${H}{1,3}${LABEL_WORD}){0,3}${H}{0,3}${TIMES}${H}{0,3}\$${H}{0,3}${c(PRICE_NUM)}${CURRENCY}|\$${H}{0,3}${c(PRICE_NUM)}${CURRENCY}${H}{0,3}${TIMES}${H}{0,3}${c(String.raw`\d{1,3}`)}(?!\p{N})|\$${H}{0,3}${c(PRICE_NUM)}${CURRENCY})`;
 };
 const TERM = String.raw`(?:${LABEL}${H}{1,3})?${CORE(false)}(?:${H}{1,3}${LABEL})?`;
-// Ni antes ni después del desglose puede haber otra operación: en "3 × $749 × 2 =
-// $1,498" o "… = $16,500 − $1,500" solo se leería un pedazo de la cuenta.
-const NO_OP_BEFORE = String.raw`(?<![×*+−/xX]${H}{0,3})(?<!\p{N}${H}{0,3}-${H}{0,3})`;
-const NO_OP_AFTER = String.raw`(?!${H}{0,3}(?:[×*+−/]|[xX]${H}{0,3}\p{N}|-${H}{0,3}[\p{N}$]))`;
 // Términos unidos por "+" (hasta 10), "=" y el total.
 const BREAKDOWN = new RegExp(
-  String.raw`(?<![\p{L}\p{N}$.,])${NO_OP_BEFORE}(${TERM}(?:${H}{0,3}\+${H}{0,3}${TERM}){0,9})${H}{0,3}=${H}{0,3}\$?${H}{0,3}(${PRICE_NUM})${CURRENCY}${NO_OP_AFTER}`,
+  String.raw`(?<![\p{L}\p{N}$.,])(${TERM}(?:${H}{0,3}\+${H}{0,3}${TERM}){0,9})${H}{0,3}=${H}{0,3}\$?${H}{0,3}(${PRICE_NUM})${CURRENCY}`,
   "giu",
 );
 const TERM_PARTS = new RegExp(String.raw`^(?:${LABEL}${H}{1,3})?${CORE(true)}(?:${H}{1,3}${LABEL})?$`, "iu");
 
-export type Breakdown = { text: string; start: number; end: number; total: number; valid: boolean };
+// Ni antes ni después del desglose puede haber otra operación o cantidad: en
+// "3 × $749 × 2 = $1,498", "3 medianas $5,500 + …", "$11,000 – $3,000 + …" o
+// "… = $16,500 menos $3,000" solo se leería un pedazo de la cuenta.
+const TOKEN = /\p{L}+|[\p{N}$][\p{N}$.,]*|[^\s\p{L}\p{N}]/gu;
+const OP_CHAR = /^[×*÷/=+−]$/u;
+const DASH = /^[-‐‑‒–—]$/u;
+const OP_WORD = /^(?:x|por|veces|menos|m[aá]s|entre)$/iu;
+const NUM_WORD = /^(?:un[oa]?|dos|tres|cuatro|cinco|seis|siete|ocho|nueve|diez|once|doce|media|medio)$/iu;
+const LABEL_ONLY = new RegExp(String.raw`^${LABEL_WORD}$`, "iu");
+const PUNCT = /^[,;:]$/u;
+const endsInNumber = (t: string | undefined) => t !== undefined && /\p{N}$/u.test(t);
+
+function operationBefore(prefix: string): boolean {
+  const toks = prefix.match(TOKEN) ?? [];
+  let i = toks.length - 1;
+  while (i >= 0 && (LABEL_ONLY.test(toks[i]) || PUNCT.test(toks[i]))) i--; // "3 medianas $5,500 …"
+  if (i < 0) return false;
+  const t = toks[i];
+  if (endsInNumber(t) || OP_CHAR.test(t) || OP_WORD.test(t) || NUM_WORD.test(t)) return true;
+  // Raya: resta si hay un número antes ("$11,000 – $3,000 + …"); si no, es puntuación ("Claro - …").
+  return DASH.test(t) && endsInNumber(toks[i - 1]);
+}
+
+function operationAfter(suffix: string): boolean {
+  const toks = (suffix.match(TOKEN) ?? []).filter((t, i) => !(i === 0 && PUNCT.test(t)));
+  const [t, next] = toks;
+  if (t === undefined) return false;
+  if (OP_CHAR.test(t) || OP_WORD.test(t) || t === "%") return true;
+  return DASH.test(t) && next !== undefined && /^[\p{N}$]/u.test(next);
+}
+
+// start/end: tramo del desglose; totalAt: posición del número del total. Todo en el
+// texto sin enlaces (el mismo en el que extractAmounts reporta sus posiciones).
+export type Breakdown = { text: string; start: number; end: number; totalAt: number; total: number; valid: boolean };
 
 // Desgloses de la respuesta, validados contra los precios de la base (centavos).
 export function findBreakdowns(text: string, known: ReadonlySet<number>): Breakdown[] {
   const out: Breakdown[] = [];
-  for (const m of withoutLinks(text).matchAll(BREAKDOWN)) {
+  const clean = withoutLinks(text);
+  for (const m of clean.matchAll(BREAKDOWN)) {
+    const end = m.index + m[0].length;
     const total = cents(parseAmount(m[2]));
     let sum = 0;
-    let valid = true;
+    let valid = !operationBefore(clean.slice(Math.max(0, m.index - 80), m.index)) && !operationAfter(clean.slice(end, end + 40));
     for (const raw of m[1].split("+")) {
       const t = raw.trim().match(TERM_PARTS);
       if (!t) {
@@ -209,7 +251,9 @@ export function findBreakdowns(text: string, known: ReadonlySet<number>): Breakd
       if (!Number.isInteger(qty) || qty < 1 || qty > MAX_QTY || !known.has(price)) valid = false;
       sum += qty * price;
     }
-    out.push({ text: m[0].trim(), start: m.index, end: m.index + m[0].length, total, valid: valid && sum === total });
+    // El total es el último número del tramo.
+    const totalAt = m.index + m[0].lastIndexOf(m[2]);
+    out.push({ text: m[0].trim(), start: m.index, end, totalAt, total, valid: valid && sum === total });
   }
   return out;
 }
@@ -239,14 +283,15 @@ export function reviewReply(text: string, knowledge: { goal: string; faqs: reado
       `desglose que no cuadra (precios de la base, cantidades de 1 a ${MAX_QTY}, cuenta exacta): ${badBreakdowns.map((b) => b.text).join(" · ")}`,
     );
   }
-  // Un total con desglose correcto vale SOLO ahí (en su posición): el mismo número
-  // en otra frase ("… = $6,500. La grande te la dejo en $6,500") no queda justificado.
-  const inside = (list: Breakdown[], at: number) => list.some((b) => at >= b.start && at < b.end);
-  const goodBreakdowns = breakdowns.filter((b) => b.valid);
+  // Un desglose correcto justifica SOLO su total, en su posición exacta: ni el mismo
+  // número en otra frase ("… = $6,500. La grande te la dejo en $6,500") ni otro
+  // monto metido dentro del tramo ("Grande $11,000 (hoy $6,500) = $11,000").
+  const justifiedAt = new Set(breakdowns.filter((b) => b.valid).map((b) => b.totalAt));
+  const insideBad = (at: number) => badBreakdowns.some((b) => at >= b.start && at < b.end);
   const badAmounts = [
     ...new Set(
       extractAmounts(text)
-        .filter((a) => !known.has(cents(a.value)) && !inside(goodBreakdowns, a.at) && !inside(badBreakdowns, a.at))
+        .filter((a) => !known.has(cents(a.value)) && !justifiedAt.has(a.at) && !insideBad(a.at))
         .map((a) => a.text),
     ),
   ];
