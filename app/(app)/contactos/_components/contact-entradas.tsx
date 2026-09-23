@@ -3,16 +3,27 @@
 // Anchos por entrada (A7/B2): una fila por entrada (las crea "¿cuántas
 // entradas?"), con su línea y el tamaño de compuerta sugerido por los rangos de
 // la organización. El tamaño manual, si lo hay, manda sobre el sugerido.
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { updateEntrada } from "@/lib/actions/contact-qualification";
+import type { SerialSaves } from "@/lib/autosave/serial-saves";
 
 export type Entrada = {
+  /** Cambia si la fila se borra y se vuelve a crear: la fila se remonta limpia. */
+  id: string;
   posicion: number;
   anchoCm: number | null;
   linea: "mini" | "estandar";
   tamanoSugerido: string | null;
   tamanoManual: string | null;
 };
+
+type Values = Pick<Entrada, "anchoCm" | "linea" | "tamanoManual">;
+
+function without<K extends keyof Values>(pending: Partial<Values>, field: K): Partial<Values> {
+  const next = { ...pending };
+  delete next[field];
+  return next;
+}
 
 const LINEA_LABELS: Record<Entrada["linea"], string> = { mini: "Mini", estandar: "Estándar" };
 
@@ -24,33 +35,65 @@ function EntradaRow({
   entrada,
   onSaved,
   run,
+  saves,
 }: {
   contactId: string;
   entrada: Entrada;
   onSaved: (next: Entrada) => void;
   run: (action: () => Promise<unknown>, errorMessage?: string) => Promise<boolean>;
+  saves: SerialSaves;
 }) {
   const [ancho, setAncho] = useState(entrada.anchoCm === null ? "" : String(entrada.anchoCm));
   const [manual, setManual] = useState(entrada.tamanoManual ?? "");
+  // Hallazgo 4: los campos de TODAS las filas y "¿Cuántas entradas?" salen en
+  // UN carril del panel ("entradas"): updateEntrada reescribe ancho y línea
+  // juntos, y una relectura del número nunca pisa un guardado posterior de una
+  // fila. Solo la última respuesta de cada campo decide. `pending` = lo pedido
+  // que aún no termina: se muestra (la línea) y se compara contra eso (para no
+  // saltarse ni repetir un guardado). Sin nada pendiente manda `entrada`: lo
+  // que el padre sabe del servidor, que se actualiza con cada respuesta y al
+  // releer las entradas. La fila va con key por id: si se borra y se vuelve a
+  // crear, se remonta limpia (sin anchos viejos en pantalla).
+  const [pending, setPending] = useState<Partial<Values>>({});
+  const latest = useRef(entrada);
+  useEffect(() => {
+    latest.current = entrada;
+  }, [entrada]);
+  const requested = <K extends keyof Values>(field: K): Values[K] =>
+    field in pending ? (pending[field] as Values[K]) : entrada[field];
+  const showDraft: { [K in keyof Values]: (value: Values[K]) => void } = {
+    anchoCm: (v) => setAncho(v === null ? "" : String(v)),
+    linea: () => {},
+    tamanoManual: (v) => setManual(v ?? ""),
+  };
 
-  async function save(patch: Parameters<typeof updateEntrada>[2]) {
-    const ok = await run(async () => onSaved(await updateEntrada(contactId, entrada.posicion, patch)));
-    // Si falla, los campos vuelven a lo último guardado.
-    if (!ok) {
-      setAncho(entrada.anchoCm === null ? "" : String(entrada.anchoCm));
-      setManual(entrada.tamanoManual ?? "");
-    }
+  function save<K extends keyof Values>(field: K, value: Values[K]) {
+    setPending((p) => ({ ...p, [field]: value }));
+    void run(async () => {
+      const patch = { [field]: value } as Pick<Values, K>;
+      const outcome = await saves.save(`entrada:${entrada.id}:${field}`, () => updateEntrada(contactId, entrada.posicion, patch), {
+        lane: "entradas",
+      });
+      // Un solo carril: las respuestas llegan en el orden en que se guardaron.
+      if (outcome.status === "saved") onSaved(outcome.result);
+      if (outcome.status === "superseded" || !outcome.latest) return;
+      setPending((p) => without(p, field));
+      if (outcome.status === "saved") return;
+      // Falló el último: el campo vuelve a lo último que el servidor guardó.
+      showDraft[field](latest.current[field]);
+      throw outcome.error;
+    });
   }
 
   function saveAncho() {
     const text = ancho.trim();
     const value = text === "" ? null : /^\d+$/.test(text) ? Number(text) : NaN;
     if (value !== null && (Number.isNaN(value) || value < 1 || value > 1000)) {
-      setAncho(entrada.anchoCm === null ? "" : String(entrada.anchoCm));
+      showDraft.anchoCm(requested("anchoCm"));
       void run(() => Promise.reject(new Error("ancho")), "El ancho debe ser un entero de 1 a 1000 cm.");
       return;
     }
-    if (value !== entrada.anchoCm) void save({ anchoCm: value });
+    if (value !== requested("anchoCm")) save("anchoCm", value);
   }
 
   const suggestion = entrada.tamanoSugerido ?? (entrada.anchoCm === null ? "—" : "Sin sugerencia");
@@ -70,8 +113,8 @@ function EntradaRow({
         />
         <select
           aria-label={`Línea de la entrada ${entrada.posicion}`}
-          value={entrada.linea}
-          onChange={(e) => void save({ linea: e.target.value as Entrada["linea"] })}
+          value={requested("linea")}
+          onChange={(e) => save("linea", e.target.value as Entrada["linea"])}
           className={`${field} min-w-0 flex-1`}
         >
           {(Object.keys(LINEA_LABELS) as Entrada["linea"][]).map((l) => (
@@ -90,9 +133,11 @@ function EntradaRow({
           aria-label={`Tamaño manual de la entrada ${entrada.posicion}`}
           placeholder="Manual"
           value={manual}
+          maxLength={50}
           onChange={(e) => setManual(e.target.value)}
           onBlur={() => {
-            if (manual.trim() !== (entrada.tamanoManual ?? "")) void save({ tamanoManual: manual.trim() || null });
+            const next = manual.trim() || null;
+            if (next !== requested("tamanoManual")) save("tamanoManual", next);
           }}
           className={`${field} w-24`}
         />
@@ -106,17 +151,19 @@ export function ContactEntradas({
   entradas,
   onSaved,
   run,
+  saves,
 }: {
   contactId: string;
   entradas: Entrada[];
   onSaved: (next: Entrada) => void;
   run: (action: () => Promise<unknown>, errorMessage?: string) => Promise<boolean>;
+  saves: SerialSaves;
 }) {
   if (entradas.length === 0) return null;
   return (
     <ul className="space-y-1.5">
       {entradas.map((e) => (
-        <EntradaRow key={e.posicion} contactId={contactId} entrada={e} onSaved={onSaved} run={run} />
+        <EntradaRow key={e.id} contactId={contactId} entrada={e} onSaved={onSaved} run={run} saves={saves} />
       ))}
     </ul>
   );
