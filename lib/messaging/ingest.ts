@@ -66,6 +66,15 @@ export function orphanKey(ids: { providerMessageId?: string | null; providerInte
 export type IngestHooks = {
   /** Se llama (después del commit) con cada mensaje nuevo que trae adjuntos. */
   onMediaMessage?: (messageId: string) => Promise<void> | void;
+  /** Agente IA: (después del commit) cada ENTRANTE NUEVO del cliente; no duplicados. */
+  onInboundMessage?: (m: {
+    organizationId: string;
+    conversationId: string;
+    messageId: string;
+    receivedAt: Date;
+  }) => Promise<void> | void;
+  /** Agente IA: (después del commit) cada eco NUEVO escrito por un humano desde el celular (business_app). */
+  onHumanOutbound?: (m: { organizationId: string; conversationId: string }) => Promise<void> | void;
 };
 
 export async function processWebhookEvent(
@@ -197,7 +206,14 @@ async function ingestMessage(
   const bsuid = event.contactBsuid ?? null;
 
   let mediaMessageId: string | undefined;
+  // Mensaje NUEVO guardado en este intento (para los ganchos del Agente IA).
+  // Objeto contenedor: se reinicia en cada intento de withTxRetry, así un
+  // intento fallido no deja un aviso de una fila que no existe.
+  const saved: { value: { direction: "in" | "out"; source: string; conversationId: string; messageId: string } | null } = {
+    value: null,
+  };
   const result = await withTxRetry(() => db.transaction(async (tx) => {
+    saved.value = null;
     const orgId = channel.organizationId;
 
     // Conversación ya existente del proveedor (canal + providerConversationId):
@@ -352,6 +368,7 @@ async function ingestMessage(
         outcome = "mensaje duplicado (wamid ya guardado)";
       } else {
         if (event.attachments.length > 0) mediaMessageId = inserted[0].id;
+        saved.value = { direction: event.direction, source: event.source, conversationId: upserted.id, messageId: inserted[0].id };
         outcome = event.direction === "in" ? "entrante guardado" : `saliente (${event.source}) guardado`;
       }
     }
@@ -402,6 +419,19 @@ async function ingestMessage(
   }));
   // Después del commit: la descarga ya puede leer la fila.
   if (mediaMessageId && hooks.onMediaMessage) await hooks.onMediaMessage(mediaMessageId);
+  // Agente IA (después del commit): el entrante programa la respuesta; un eco
+  // del vendedor desde el celular pausa al agente. Los ganchos no lanzan.
+  const m = saved.value;
+  if (m?.direction === "in" && hooks.onInboundMessage) {
+    await hooks.onInboundMessage({
+      organizationId: channel.organizationId,
+      conversationId: m.conversationId,
+      messageId: m.messageId,
+      receivedAt: new Date(),
+    });
+  } else if (m?.direction === "out" && m.source === "business_app" && hooks.onHumanOutbound) {
+    await hooks.onHumanOutbound({ organizationId: channel.organizationId, conversationId: m.conversationId });
+  }
   return { outcome: result, organizationId: channel.organizationId };
 }
 

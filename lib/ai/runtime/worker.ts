@@ -1,6 +1,6 @@
-// Consumer del Agente IA (Fase B). Lo arranca el servicio `worker` con UNA línea
-// (startAgentRuntime) — el registro en worker/index.ts se hace al final, en un
-// cambio mínimo. Todo lo demás vive aquí.
+// Consumer del Agente IA (Fase B). Mismo patrón que los programados
+// (worker/scheduled.ts): se crea con autorun:false y worker/index.ts llama a
+// run() cuando waitForMigrations confirma que la base ya tiene sus tablas.
 import { DelayedError, Worker } from "bullmq";
 import { callModel } from "@/lib/ai";
 import { redisConnection } from "@/lib/queue/inbound";
@@ -79,18 +79,24 @@ export function startAgentRuntime(opts: { provider: MessagingProvider; storage: 
         throw new DelayedError();
       }
     },
-    { connection: { ...redisConnection(), maxRetriesPerRequest: null }, concurrency: 5 },
+    { connection: { ...redisConnection(), maxRetriesPerRequest: null }, concurrency: 5, autorun: false },
   );
   worker.on("failed", (job, error) => {
     console.error(`[agente] falló ${job?.data.conversationId} (intento ${job?.attemptsMade}): ${error.message}`);
   });
-  const timer = setInterval(() => {
-    sweepOnce(queue, kv, new Date()).catch((error) => console.error("[agente] barrido falló", error));
-  }, SWEEP_EVERY_MS);
-  console.info(`[agente] escuchando ${AGENT_QUEUE}`);
+  let timer: ReturnType<typeof setInterval> | undefined;
   return {
+    // Arranca el consumer y su barrido (reactiva handovers vencidos y recoge
+    // conversaciones sin atender). Solo tras las migraciones.
+    run: () => {
+      void worker.run();
+      timer = setInterval(() => {
+        sweepOnce(queue, kv, new Date()).catch((error) => console.error("[agente] barrido falló", error));
+      }, SWEEP_EVERY_MS);
+      console.info(`[agente] escuchando ${AGENT_QUEUE}`);
+    },
     close: async () => {
-      clearInterval(timer);
+      if (timer) clearInterval(timer);
       await worker.close();
       await closeAgentConnections();
     },
