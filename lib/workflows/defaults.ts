@@ -108,6 +108,21 @@ export const DEFAULT_WORKFLOWS: readonly DefaultWorkflow[] = [
     ],
   },
   {
+    slug: "video_instalacion_mini",
+    name: "Video de instalación (mini)",
+    agentDescription:
+      "Envía el video de instalación de la mini compuerta (30 cm de alto) como archivo. " +
+      "Úsala cuando el cliente que ya eligió o pregunta por una mini compuerta quiera saber cómo se instala o pida el video. No la uses si ya se envió.",
+    triggerAgent: true,
+    triggerKeywords: [],
+    triggerCommand: "/video-mini",
+    oncePerConversation: true,
+    steps: [
+      text("Te comparto el video de instalación de la mini compuerta. Se coloca en minutos, igual que la estándar, solo que con 30 cm de alto."),
+      media("Video de instalación — mini compuerta (MP4 H.264, ≤16 MB)"),
+    ],
+  },
+  {
     slug: "tapones_inflables",
     name: "Tapones inflables",
     agentDescription:
@@ -129,7 +144,7 @@ export const DEFAULT_WORKFLOWS: readonly DefaultWorkflow[] = [
     slug: "donde_medir",
     name: "Dónde medir la entrada",
     agentDescription:
-      "Envía la imagen guía de dónde medir la entrada (de lateral a lateral, en el punto exacto donde se apoyará la compuerta). " +
+      "Envía el video guía de dónde medir la entrada (de lateral a lateral, en el punto exacto donde se apoyará la compuerta) como archivo. " +
       "Úsala cuando el cliente pregunte cómo o dónde medir, dude de su medida, o dé una medida sin decir de dónde a dónde. " +
       "Responde primero en texto y luego llama esta herramienta. No la uses si ya se envió.",
     triggerAgent: true,
@@ -137,8 +152,8 @@ export const DEFAULT_WORKFLOWS: readonly DefaultWorkflow[] = [
     triggerCommand: "/medir",
     oncePerConversation: true,
     steps: [
-      text("La medida es de lateral a lateral, en centímetros, justo en el punto donde se va a apoyar la compuerta. Te dejo una imagen para que veas dónde tomarla."),
-      media("Guía de dónde medir la entrada (PNG/JPG)"),
+      text("La medida es de lateral a lateral, en centímetros, justo en el punto donde se va a apoyar la compuerta. Te dejo un video corto para que veas dónde tomarla."),
+      media("Video de dónde medir la entrada (MP4 H.264, ≤16 MB)"),
     ],
   },
   {
