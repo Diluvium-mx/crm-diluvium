@@ -144,6 +144,13 @@ describe("guardia: lo que encontró la revisión enfocada (23-sep)", () => {
       "Manda la foto.jpg o el comprobante.pdf",
     ]) expect(held(t), t).toBe(false);
   });
+  it("un enlace en medio no oculta un precio en contexto; un monto con forma de correo cuenta", () => {
+    expect(reviewReply("Te la dejo en diluvium.com.mx 4200", knowledge).ok).toBe(false);
+    expect(reviewReply("Cuesta www.diluvium.com.mx 850", knowledge).ok).toBe(false);
+    expect(reviewReply("total $6.500@x.co", knowledge).ok).toBe(false);
+    expect(reviewReply("Escríbeme a ventas@diluvium.com.mx o a juan.perez@gmail.com", knowledge)).toEqual({ ok: true });
+  });
+
   it("sin retroceso exponencial: entradas patológicas se revisan en milisegundos", () => {
     const bad = [
       "precio" + " de".repeat(200) + " x",
@@ -152,6 +159,10 @@ describe("guardia: lo que encontró la revisión enfocada (23-sep)", () => {
       "1".repeat(5000) + "x",
       "1,".repeat(2500) + "x",
       ("a-".repeat(60) + ".").repeat(40),
+      "1 x x $1 + ".repeat(700),
+      "$1+".repeat(2600) + "=",
+      "mediana $5,500 + ".repeat(400) + "= $1",
+      "(a) ".repeat(1900) + "= $1",
     ];
     for (const b of bad) {
       const t0 = performance.now();
@@ -178,7 +189,11 @@ describe("guardia: lo que encontró la revisión enfocada (23-sep)", () => {
     // Desglose correcto (ejemplos del dueño) → pasa, también con el total repetido.
     expect(r("3 × $5,500 = $16,500")).toEqual({ ok: true });
     expect(r("$5,500 + $7,000 = $12,500")).toEqual({ ok: true });
-    expect(r("Serían 3 x $5,500 = $16,500 MXN. Tu total queda en $16,500.")).toEqual({ ok: true });
+    expect(r("Serían 3 x $5,500 = $16,500 MXN en total.")).toEqual({ ok: true });
+    // Con etiquetas por término (grande, mediana, "(1 m)").
+    expect(r("Grande $7,000 + mediana $5,500 = $12,500")).toEqual({ ok: true });
+    expect(r("2 compuertas medianas (1 m) × $5,500 = $11,000")).toEqual({ ok: true });
+    expect(r("$5,500 (mediana) + $7,000 (grande) = $12,500")).toEqual({ ok: true });
     expect(r("2 × $5,500 + 1 × $7,000 = $18,000")).toEqual({ ok: true });
     expect(r("$5,500 × 3 = $16,500")).toEqual({ ok: true });
     expect(r("10 × $749 = $7,490")).toEqual({ ok: true });
@@ -196,8 +211,24 @@ describe("guardia: lo que encontró la revisión enfocada (23-sep)", () => {
     expect(r("La mediana: 1 × $6,500 = $6,500")).toMatchObject({ ok: false, reason: expect.stringContaining("Desglose que no cuadra") });
     expect(r("Te queda en $6,500 = $6,500").ok).toBe(false);
     expect(r("2 × $3,250 = $6,500").ok).toBe(false);
-    // Un desglose correcto no justifica OTRO monto de la misma respuesta.
+    // Un desglose correcto no justifica OTRO monto de la misma respuesta, ni el MISMO
+    // número en otra frase (desglose "señuelo" para colar un descuento).
     expect(r("3 × $5,500 = $16,500 y el envío te lo dejo en $15,000").ok).toBe(false);
+    expect(r("$3,000 + $3,500 = $6,500. La grande te la dejo en $6,500.").ok).toBe(false);
+    expect(r("Referencia: 1 × $5,500 + 1 × $749 = $6,249.\n\nLa grande te la dejo en $6,249 si pagas hoy.").ok).toBe(false);
+    expect(r("Serían 3 x $5,500 = $16,500 MXN. Tu total queda en $16,500.").ok).toBe(false);
+    // Operaciones encadenadas o restas: solo se leería un pedazo de la cuenta.
+    for (const t of [
+      "3 × $749 × 2 = $1,498",
+      "3 × 2 × $749 = $1,498",
+      "3 × $749 × 2 = $4,494",
+      "3 × $5,500 = $16,500 − $1,500 = $15,000",
+      "3 × $5,500 = $16,500 - $1,500",
+      "3 × $5,500 menos $1,000 = $15,500",
+      // Restarle un monto que SÍ está en la base (la mini, $3,000) no vuelve válido el total.
+      "3 × $5,500 = $16,500 − $3,000",
+      "3 × $5,500 = $16,500 - $3,000",
+    ]) expect(r(t).ok, t).toBe(false);
     // Montos escritos tal cual en la base (anticipo, pago completo) → pasan como siempre.
     expect(r("El anticipo es de $3,500 y el resto antes del envío.")).toEqual({ ok: true });
     expect(r("Pago completo: $11,000")).toEqual({ ok: true });
