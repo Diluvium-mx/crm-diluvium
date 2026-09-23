@@ -30,7 +30,7 @@ import {
 import { buildFilterPrompt, FILTER_SYSTEM, parseFilterDecision } from "./filter";
 import { decideGate, toBubbles, type AgentState } from "./policy";
 import { rescheduleDelayFor } from "./schedule";
-import { addContactTag, markAgentReply, saveDraft, setAgentState } from "./state";
+import { addContactTag, closePlan, markAgentReply, retainRemainder, saveDraft, setAgentState } from "./state";
 import { reviewReply } from "./output-guard";
 import { TAG_HANDOVER, TAG_HUMAN_REVIEW } from "./tags";
 import { buildModelMessages, toTranscriptLines } from "./transcript";
@@ -151,6 +151,9 @@ export async function runAgent(job: { organizationId: string; conversationId: st
 
     const pending = await pendingInbound(org, conv.id);
     const lastOut = await lastOutbound(org, conv.id);
+    // Línea base de salientes HUMANOS al INICIO de la ronda (antes del modelo): un
+    // envío manual que entre en cualquier momento después detiene el envío del agente.
+    const humansAtStart = await humanOutboundCount(org, conv.id);
     const pausedUntilMs = conv.agentPausedUntil?.getTime() ?? null;
     // Encender el canal también es corte: lo que un vendedor contestó ANTES de
     // prender el agente no pausa conversaciones que ya existían.
@@ -347,19 +350,26 @@ export async function runAgent(job: { organizationId: string; conversationId: st
       return { kind: "draft", draftId };
     }
 
-    // auto: burbujas con pausa. Si la PRIMERA falla, nada salió → error y
-    // reintento; si falla una posterior, lo enviado ya cuenta (no se duplica).
-    // Antes de CADA burbuja se revisa el estado fresco: si un vendedor respondió,
-    // alguien apagó el canal o pausó al agente (p. ej. durante la pausa de 1.5 s),
-    // el agente se detiene ahí.
-    const humansAtCheck = await humanOutboundCount(org, conv.id);
+    // auto: burbujas con pausa. Antes de CADA burbuja se revisa el estado fresco: si
+    // un vendedor respondió (desde el INICIO de la ronda), alguien apagó el canal o
+    // pausó al agente, o el cliente escribió, el agente se detiene ahí.
+    // Con varias burbujas, antes del primer envío se guarda un PLAN durable con todas
+    // ("enviando"): si algo falla a la mitad (sin confirmar, error o proceso
+    // interrumpido), el resto queda como borrador visible para revisión humana.
+    const planId = bubbles.length > 1 ? await saveDraft({ ...draftInput, now: deps.now(), status: "enviando" }) : null;
+    const retain = async (reason: string) => {
+      if (planId) await retainRemainder(org, planId, conv.id, bubbles.slice(sent), reason);
+      await pause(conv, "pausado_antibucle", deps.now(), { tag: TAG_HUMAN_REVIEW }).catch((error: unknown) =>
+        console.error(`[agente] ${conv.id}: no se pudo pausar para revisión humana`, error),
+      );
+    };
     let sent = 0;
     let unconfirmed = 0;
     let stopped: StopReason | null = null;
     try {
       for (const text of bubbles) {
         if (sent > 0) await deps.sleep(BUBBLE_PAUSE_MS);
-        stopped = await stopBeforeBubble(org, conv.id, humansAtCheck, readCount);
+        stopped = await stopBeforeBubble(org, conv.id, humansAtStart, readCount);
         if (stopped) break;
         const outcome = await deps.sendBubble({ organizationId: org, conversationId: conv.id, text });
         sent++;
@@ -372,22 +382,29 @@ export async function runAgent(job: { organizationId: string; conversationId: st
       }
     } catch (error) {
       if (sent === 0) {
+        // Nada salió: el plan no cuenta (obsoleto) y la cola reintenta.
+        if (planId) await closePlan(org, planId, "obsoleto");
         await recordAiUsage({ ...brainUsage, outcome: "error", error: `envío: ${errorText(error)}` });
         throw error;
       }
-      await recordAiUsage({ ...brainUsage, outcome: "sent", error: `burbuja ${sent + 1} no salió: ${errorText(error)}` });
+      // Salió una parte: el resto NO se pierde (borrador visible) y se pausa para revisión.
       await markAgentReply(org, conv.id, deps.now());
+      await retain(`Se enviaron ${sent} de ${bubbles.length} burbujas y la siguiente falló; revisa el hilo antes de mandar el resto.`);
+      await recordAiUsage({ ...brainUsage, outcome: "sent", error: `burbuja ${sent + 1} no salió: ${errorText(error)}` });
       return { kind: "sent", bubbles: sent };
     }
     if (stopped === "entrante_nuevo" && sent === 0) {
       // Nada salió: igual que la revisión antes de enviar, se descarta y se regenera con TODO.
+      if (planId) await closePlan(org, planId, "obsoleto");
       await recordAiUsage({ ...brainUsage, outcome: "discarded_stale" });
       console.info(`[agente] ${conv.id}: respuesta descartada (entró un mensaje antes de la 1ª burbuja), ronda ${round}`);
       continue;
     }
     if (stopped) {
-      // Con "entrante_nuevo" tras ≥1 burbuja: el mensaje nuevo queda pendiente (es
-      // posterior a lo enviado) y lo atiende la siguiente corrida (aviso "dirty").
+      // Detenido a propósito (humano, canal/estado o mensaje nuevo): el resto ya no
+      // aplica (plan obsoleto). Con "entrante_nuevo" tras ≥1 burbuja, el mensaje nuevo
+      // queda pendiente (es posterior a lo enviado) y lo atiende la siguiente corrida.
+      if (planId) await closePlan(org, planId, "obsoleto");
       if (stopped === "respuesta_humana" && cfg.pauseOnHumanReply) await pause(conv, "pausado_humano", deps.now());
       if (sent === 0) {
         await recordAiUsage({ ...brainUsage, outcome: "skipped", error: `detenido antes de enviar: ${stopped}` });
@@ -400,23 +417,14 @@ export async function runAgent(job: { organizationId: string; conversationId: st
     await markAgentReply(org, conv.id, deps.now());
     // Una burbuja sin confirmar queda en el outbox: si vence como "sin confirmar",
     // el barrido pausa la conversación para revisión humana (nunca reenvía a ciegas).
-    const omitted = bubbles.slice(sent);
-    if (unconfirmed && omitted.length > 0) {
-      // El resto NO se pierde en silencio: queda como borrador para revisión humana
-      // (con el motivo) y el agente se pausa; el vendedor ve en el hilo si la burbuja
-      // anterior llegó y decide mandar o descartar el resto.
-      await saveDraft({
-        ...draftInput,
-        bubbles: omitted,
-        now: deps.now(),
-        reviewReason: "WhatsApp no confirmó la burbuja anterior; revisa el hilo antes de mandar el resto.",
-      });
-      await pause(conv, "pausado_antibucle", deps.now(), { tag: TAG_HUMAN_REVIEW }).catch((error: unknown) =>
-        console.error(`[agente] ${conv.id}: no se pudo pausar tras un envío sin confirmar`, error),
-      );
+    const omitted = bubbles.length - sent;
+    if (unconfirmed && omitted > 0) {
+      await retain("WhatsApp no confirmó la burbuja anterior; revisa el hilo antes de mandar el resto.");
+    } else if (planId) {
+      await closePlan(org, planId, "enviado");
     }
     const note = unconfirmed
-      ? `${unconfirmed} burbuja(s) sin confirmar${omitted.length ? `; ${omitted.length} en borrador para revisión humana` : ""}`
+      ? `${unconfirmed} burbuja(s) sin confirmar${omitted ? `; ${omitted} en borrador para revisión humana` : ""}`
       : null;
     await recordAiUsage({ ...brainUsage, outcome: "sent", error: note });
     return { kind: "sent", bubbles: sent };

@@ -673,6 +673,86 @@ describe.skipIf(!TEST_DATABASE_URL)("runtime del Agente IA (Postgres real)", () 
     expect(await sweep.findOrphanConversations(new Date())).toEqual([]);
   });
 
+  it("un saliente humano que entra DESPUÉS del inicio de la ronda detiene el envío aunque la revisión fresca no lo vea", async () => {
+    await agentMsg({ status: "sent", at: ago(60_000) }); // último saliente: del agente
+    await msg({ direction: "in", body: "¿precio?", at: ago(10_000) });
+    const { deps, calls } = makeDeps({
+      // Eco del vendedor desde el celular con hora de WhatsApp MÁS VIEJA que el último
+      // saliente: freshLastOut no cambia, pero el conteo humano sí.
+      onBrain: async () => {
+        await agentMsg({ status: "sent", source: "crm", at: ago(120_000) });
+      },
+    });
+    expect(await run.runAgent(JOB, deps)).toEqual({ kind: "skipped", reason: "respuesta_humana" });
+    expect(calls.filter((c) => c.kind === "cerebro")).toHaveLength(1);
+    expect((await agentOuts()).filter((m) => m.createdAt > ago(30_000))).toEqual([]);
+    expect((await conv()).agentState).toBe("pausado_humano");
+  });
+
+  it("plan durable: mientras salen las burbujas existe como 'enviando' y al terminar queda 'enviado'", async () => {
+    await msg({ direction: "in", body: "¿precio?", at: ago(10_000) });
+    const seen: string[] = [];
+    const { deps } = makeDeps();
+    const real = deps.sendBubble;
+    deps.sendBubble = async (p) => {
+      const [plan] = await db.select().from(s.aiAgentDrafts);
+      seen.push(plan.status);
+      return real(p);
+    };
+    expect(await run.runAgent(JOB, deps)).toEqual({ kind: "sent", bubbles: 2 });
+    expect(seen).toEqual(["enviando", "enviando"]);
+    expect((await db.select().from(s.aiAgentDrafts))[0].status).toBe("enviado");
+  });
+
+  it("AUTO: si falla la 2ª burbuja, la 2ª queda en borrador visible y el agente pasa a revisión humana", async () => {
+    await msg({ direction: "in", body: "¿precio?", at: ago(10_000) });
+    const { deps } = makeDeps();
+    const real = deps.sendBubble;
+    let n = 0;
+    deps.sendBubble = async (p) => {
+      n++;
+      if (n === 2) throw new Error("se cayó el proveedor");
+      return real(p);
+    };
+    expect(await run.runAgent(JOB, deps)).toEqual({ kind: "sent", bubbles: 1 });
+    const [d] = await db.select().from(s.aiAgentDrafts);
+    expect(d).toMatchObject({ status: "pendiente", bubbles: ["¿Cuánto mide tu entrada?"] });
+    expect(d.reviewReason).toContain("Se enviaron 1 de 2");
+    expect((await conv()).agentState).toBe("pausado_antibucle");
+  });
+
+  it("AUTO: si falla la 1ª burbuja, el plan queda obsoleto y el reintento de la cola sí responde", async () => {
+    await msg({ direction: "in", body: "¿precio?", at: ago(10_000) });
+    const { deps } = makeDeps();
+    deps.sendBubble = async () => {
+      throw new Error("se cayó el proveedor");
+    };
+    await expect(run.runAgent(JOB, deps)).rejects.toThrow("se cayó el proveedor");
+    expect((await db.select().from(s.aiAgentDrafts))[0].status).toBe("obsoleto");
+    expect(await run.runAgent(JOB, makeDeps().deps)).toEqual({ kind: "sent", bubbles: 2 });
+  });
+
+  it("barrido: un plan AUTO interrumpido a la mitad deja visible lo que faltó y pausa para revisión", async () => {
+    const trigger = await msg({ direction: "in", body: "¿precio?", at: ago(25 * 60_000) });
+    const claimed = ago(20 * 60_000);
+    await db.insert(s.aiAgentDrafts).values({
+      id: "plan_x",
+      organizationId: ORG,
+      conversationId: CONV,
+      bubbles: ["Primera", "Segunda"],
+      triggerMessageId: trigger,
+      status: "enviando",
+      resolvedAt: claimed,
+    });
+    await agentMsg({ status: "sent", at: new Date(claimed.getTime() + 1_000) }); // salió solo la 1ª
+    const { reconcileStuckDrafts } = await import("./sweep");
+    await reconcileStuckDrafts(new Date());
+    const [d] = await db.select().from(s.aiAgentDrafts);
+    expect(d).toMatchObject({ status: "pendiente", bubbles: ["Segunda"] });
+    expect(d.reviewReason).toContain("salieron 1 de 2");
+    expect((await conv()).agentState).toBe("pausado_antibucle");
+  });
+
   it("pending → confirmado: no pausa ni bloquea", async () => {
     const id = await agentMsg({ status: "queued" });
     await db.update(s.messages).set({ status: "sent" }).where(eq(s.messages.id, id));

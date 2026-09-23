@@ -7,7 +7,7 @@ import { db } from "@/lib/db";
 import { aiAgentDrafts, channels, conversations } from "@/lib/db/schema";
 import { bullAgentQueuePort, cancelAgentRun, withQueueTimeout } from "./queue";
 import { BUBBLE_PAUSE_MS } from "./run";
-import { markAgentReply, notifyConversation } from "./state";
+import { markAgentReply, notifyConversation, retainRemainder } from "./state";
 
 // Vuelve a activar el agente. El corte (agent_state_changed_at = ahora) hace
 // que lo que un vendedor respondió ANTES ya no lo vuelva a pausar. No responde
@@ -88,13 +88,26 @@ export async function approveDraft(input: {
         break;
       }
       const outcome = await input.sendBubble({ organizationId: org, conversationId: draft.conversationId, text, sentByUserId: input.userId });
-      if (outcome.status !== "sent") unconfirmed = true;
       sent++;
+      // Sin confirmación no se manda la siguiente (igual que en AUTO).
+      if (outcome.status !== "sent") {
+        unconfirmed = true;
+        break;
+      }
     }
   } catch (error) {
     if (sent === 0) await releaseDraft(org, draft.id, draft.conversationId);
-    else if (!unconfirmed) await finishDraft(org, draft.id, "enviado", input.now, draft.conversationId);
-    // (con una burbuja sin confirmar queda "enviando": la concilia el barrido)
+    else {
+      // Salió una parte: lo que faltó vuelve a la tarjeta con el motivo (nunca se pierde).
+      await markAgentReply(org, draft.conversationId, input.now);
+      await retainRemainder(
+        org,
+        draft.id,
+        draft.conversationId,
+        draft.bubbles.slice(sent),
+        `Se enviaron ${sent} de ${draft.bubbles.length} burbujas y la siguiente falló; revisa el hilo antes de mandar el resto.`,
+      );
+    }
     await notify();
     throw error;
   }
@@ -103,10 +116,20 @@ export async function approveDraft(input: {
     await notify();
     throw new DraftNotAvailableError("El agente se apagó en este canal: el borrador ya no se envía.");
   }
-  // "enviado" solo si WhatsApp confirmó todas las burbujas; si alguna quedó
-  // "pending", el borrador sigue "enviando" y el barrido lo resuelve con el estado
-  // real de sus mensajes (enviado, u obsoleto si alguno falló; nunca reenvía).
+  // "enviado" solo si WhatsApp confirmó todas las burbujas. Si una quedó "pending":
+  // con resto, el resto vuelve a la tarjeta con el motivo; sin resto, el borrador
+  // sigue "enviando" y el barrido lo resuelve con el estado real (nunca reenvía).
   if (!unconfirmed) await finishDraft(org, draft.id, "enviado", input.now, draft.conversationId);
+  else if (sent < draft.bubbles.length) {
+    await markAgentReply(org, draft.conversationId, input.now);
+    await retainRemainder(
+      org,
+      draft.id,
+      draft.conversationId,
+      draft.bubbles.slice(sent),
+      "WhatsApp no confirmó la burbuja anterior; revisa el hilo antes de mandar el resto.",
+    );
+  }
   await notify();
   return { sent, confirmed: !unconfirmed };
 }
