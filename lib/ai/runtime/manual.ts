@@ -5,7 +5,7 @@
 import { and, desc, eq, ne } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { aiAgentDrafts, channels, conversations } from "@/lib/db/schema";
-import { bullAgentQueuePort, cancelAgentRun } from "./queue";
+import { bullAgentQueuePort, cancelAgentRun, withQueueTimeout } from "./queue";
 import { BUBBLE_PAUSE_MS } from "./run";
 import { markAgentReply, notifyConversation } from "./state";
 
@@ -117,8 +117,8 @@ export async function pauseAgentInConversation(
     )
     .returning({ id: conversations.id });
   if (rows.length > 0) {
-    await cancelAgentRun(bullAgentQueuePort(), conversationId).catch((error) =>
-      console.error(`[agente] no se pudo cancelar el job de ${conversationId}`, error),
+    await withQueueTimeout(cancelAgentRun(bullAgentQueuePort(), conversationId), "cancelar").catch((error) =>
+      console.error(`[agente] no se pudo cancelar el job de ${conversationId}: ${String(error)}`),
     );
   }
   return rows.length > 0;

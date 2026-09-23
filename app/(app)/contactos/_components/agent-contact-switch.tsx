@@ -5,11 +5,12 @@
 // WhatsApp): encendido = el agente puede responder; apagado = pausado por un
 // vendedor (se reactiva aquí o con "Reactivar" en la Bandeja). Si el canal está
 // apagado en la pestaña Agente IA, el interruptor no aplica.
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { getContactAgentStatus, pauseAgent, reactivateAgent } from "@/lib/actions/agente-conversacion";
 import { pauseReason } from "@/lib/agente-ia/labels";
 import { AGENT_MODE_LABEL } from "@/lib/agente-ia/settings";
 import type { ContactAgentView } from "@/lib/agente-ia/types";
+import { useInboxStream } from "../../dashboard/_components/use-inbox-stream";
 
 export function AgentContactSwitch({ contactId }: { contactId: string }) {
   const [rows, setRows] = useState<ContactAgentView[] | null>(null);
@@ -27,6 +28,18 @@ export function AgentContactSwitch({ contactId }: { contactId: string }) {
     const t = setTimeout(() => void load(), 0);
     return () => clearTimeout(t);
   }, [load]);
+
+  // Tiempo real con el MISMO SSE compartido de la Bandeja: si el agente se
+  // pausa o reactiva en otro lado (worker, "Reactivar" del hilo, otro vendedor),
+  // el interruptor se actualiza solo.
+  const idsRef = useRef<Set<string>>(new Set());
+  useEffect(() => {
+    idsRef.current = new Set((rows ?? []).map((r) => r.conversationId));
+  }, [rows]);
+  useInboxStream((event) => {
+    if (event.type === "reload") return void load();
+    if (event.type === "conversation.updated" && idsRef.current.has(event.conversationId)) void load();
+  });
 
   async function toggle(row: ContactAgentView) {
     setBusyId(row.conversationId);

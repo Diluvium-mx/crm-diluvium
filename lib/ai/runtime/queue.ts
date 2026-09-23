@@ -36,6 +36,27 @@ const DIRTY_TTL_SECONDS = 15 * 60;
 
 export type ScheduleOutcome = "added" | "rescheduled" | "waiting" | "running_marked";
 
+// Tope para operaciones de cola que llaman la BANDEJA (envío del vendedor,
+// pausa) y la ingesta: si Redis está lento o caído, no se cuelgan esperando.
+// La cola es una optimización: la compuerta ya frena a un agente pausado y el
+// barrido del worker recoge lo que quede sin programar. Mismo criterio que
+// enqueueInbound (lib/queue/inbound.ts).
+export const QUEUE_OP_TIMEOUT_MS = 1_500;
+
+export async function withQueueTimeout<T>(op: Promise<T>, label: string, ms = QUEUE_OP_TIMEOUT_MS): Promise<T> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  try {
+    return await Promise.race([
+      op,
+      new Promise<never>((_, reject) => {
+        timer = setTimeout(() => reject(new Error(`cola del agente: timeout al ${label}`)), ms);
+      }),
+    ]);
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
 export async function scheduleAgentRun(
   queue: AgentQueuePort,
   kv: KvPort,
@@ -94,7 +115,8 @@ const globalForAgent = globalThis as unknown as { agentQueue?: Queue<AgentJob>; 
 
 export function agentQueue(): Queue<AgentJob> {
   globalForAgent.agentQueue ??= new Queue<AgentJob>(AGENT_QUEUE, {
-    connection: { ...redisConnection(), maxRetriesPerRequest: 1 },
+    // Falla rápido si Redis no está conectado (como la cola de entrantes).
+    connection: { ...redisConnection(), enableOfflineQueue: false, maxRetriesPerRequest: 1 },
     defaultJobOptions: {
       attempts: 3,
       backoff: { type: "exponential", delay: 15_000 },

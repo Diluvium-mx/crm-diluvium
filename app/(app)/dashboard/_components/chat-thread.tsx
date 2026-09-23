@@ -225,7 +225,7 @@ export function ChatThread({
   const [scheduledRev, setScheduledRev] = useState(0);
   const [scheduledCount, setScheduledCount] = useState(0);
   // Agente IA (Fase B): pausa + borrador; se recarga con el SSE de la conversación.
-  const { agent, reload: reloadAgent } = useConversationAgent(conversationId, revalToken);
+  const { agent, reload: reloadAgent } = useConversationAgent(conversationId, revalToken, detail);
 
   const windowOpen = isWindowOpen(detail.windowExpiresAt, nowMs);
   const hoursLeft = windowHoursLeft(detail.windowExpiresAt, nowMs);
