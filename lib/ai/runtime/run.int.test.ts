@@ -670,6 +670,26 @@ describe.skipIf(!TEST_DATABASE_URL)("runtime del Agente IA (Postgres real)", () 
     expect(r).toEqual({ kind: "sent", bubbles: 1 });
   });
 
+  it("auto: promoción inventada (10%) → retenida; meses sin intereses escritos en la base → se envía", async () => {
+    await db.insert(s.aiKnowledge).values({
+      id: "k_msi",
+      organizationId: ORG,
+      ghlId: "g_msi",
+      question: "¿Meses sin intereses?",
+      answer: "Sí, a 6 meses sin intereses con tarjeta participante.",
+      position: 3,
+    });
+    await msg({ direction: "in", body: "¿algún descuento?", at: ago(20_000) });
+    expect(await run.runAgent(JOB, makeDeps({ brain: ["Te doy 10% de descuento si pagas hoy."] }).deps)).toMatchObject({
+      kind: "held",
+      reason: "Promoción que no está en el Goal ni en las FAQs: 10%",
+    });
+    await state.setAgentState(ORG, CONV, "activo", { now: new Date() });
+    await msg({ direction: "in", body: "¿y a meses?", at: new Date(Date.now() + 1_000) });
+    const r = await run.runAgent(JOB, makeDeps({ brain: ["Sí, puedes pagar a 6 meses sin intereses."] }).deps);
+    expect(r).toEqual({ kind: "sent", bubbles: 1 });
+  });
+
   it("auto: un enlace fuera de la lista NO se envía; diluvium.com.mx sí", async () => {
     await msg({ direction: "in", body: "¿dónde pago?", at: ago(10_000) });
     const held = await run.runAgent(JOB, makeDeps({ brain: ["Paga aquí: https://pagos-rapidos.com/x"] }).deps);

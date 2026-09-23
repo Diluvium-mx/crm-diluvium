@@ -102,8 +102,20 @@ construye ahora). El dry-run "Probar modelo" ya muestra tokens, pero no persiste
   - **Prompt:** filtro con máx. 20 pendientes, texto del cliente escapado como JSON y
     2,000 caracteres por mensaje; el cerebro tiene la regla de no revelar instrucciones
     ni inventar precios. Timeouts: filtro 20 s, cerebro 60 s.
-  - **Pendiente antes de AUTO con clientes reales:** revisión de la salida antes de enviar
-    (montos fuera de las FAQs, URLs) y la revisión completa de Codex.
+  - **Guardia de salida (modo AUTO, `lib/ai/runtime/output-guard.ts`), CONGELADA el 23-sep:**
+    retiene (borrador + "revisión humana" + motivo en la tarjeta, agente pausado) una
+    respuesta con: un monto que no esté tal cual en el Goal/FAQs activas, salvo un total con
+    desglose correcto en la misma respuesta ("3 × $5,500 = $16,500": precios de la base,
+    cantidades 1–10, cuenta exacta); un %, "NxM" o "N meses sin intereses" que no esté tal cual
+    en la base; o un enlace fuera de diluvium.com.mx y los de Amazon/Mercado Libre de las FAQs.
+    El system del runtime pide montos con cifras y $, y desglose "cantidad × precio unitario".
+  - **AUTO con clientes reales:** no se prende antes de la revisión completa de Codex (26-sep).
+  - **Lista para la revisión de Codex (26-sep)** — decidido por el dueño, NO se toca antes:
+    - "te descuento $3,000": un monto que sí está en la base usado como descuento pasa.
+    - Montos escritos con palabras ("seis mil quinientos") y con "k" ("5k") no se detectan.
+    - Falsos positivos (van a revisión humana): "listo.Me" (parece enlace), etiqueta con
+      cifras "2 compuertas medianas (1 m) × $5,500", y cualquier % que no esté en la base
+      aunque no sea descuento ("100% impermeable").
 
   **Ojo con la migración de Fase B en staging (22-sep-2026).** Staging ya tiene
   aplicada la `0014_little_omega_flight.sql` de esta rama (tablas del agente ya creadas),
