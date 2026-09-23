@@ -169,10 +169,10 @@ describe.skipIf(!TEST_DATABASE_URL)("executor de workflows", () => {
     expect(byCommand.status).toBe("queued");
   });
 
-  it("canal en borrador o apagado: el agente/palabra clave no ejecutan acciones; el comando humano sí", async () => {
+  it("canal que no está en auto (borrador u off cuentan igual: apagado): el agente/palabra clave no ejecutan; el comando humano sí", async () => {
     const wf = await workflow([{ kind: "send_text", text: "x" }]);
     await db.update(s.channels).set({ aiAgentMode: "borrador" }).where(eq(s.channels.id, "ch_wf"));
-    expect(await ex.startWorkflowRun({ organizationId: ORG, workflowId: wf, conversationId: CONV, trigger: "agent" })).toMatchObject({ status: "skipped", reason: ex.SKIP_DRAFT_MODE });
+    expect(await ex.startWorkflowRun({ organizationId: ORG, workflowId: wf, conversationId: CONV, trigger: "agent" })).toMatchObject({ status: "skipped", reason: ex.SKIP_CHANNEL_OFF });
     await db.update(s.channels).set({ aiAgentMode: "off" }).where(eq(s.channels.id, "ch_wf"));
     expect(await ex.startWorkflowRun({ organizationId: ORG, workflowId: wf, conversationId: CONV, trigger: "keyword" })).toMatchObject({ status: "skipped", reason: ex.SKIP_CHANNEL_OFF });
     const human = await ex.startWorkflowRun({ organizationId: ORG, workflowId: wf, conversationId: CONV, trigger: "command", triggeredByUserId: "u_v" });
