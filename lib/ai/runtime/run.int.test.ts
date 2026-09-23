@@ -121,6 +121,7 @@ describe.skipIf(!TEST_DATABASE_URL)("runtime del Agente IA (Postgres real)", () 
     filter?: string; // JSON de decisión
     brain?: string[]; // una salida por llamada al cerebro
     onBrain?: (call: number) => Promise<void>; // efecto durante la generación
+    onSleep?: () => Promise<void>; // efecto durante la pausa entre burbujas
   };
 
   function fakeModels(script: Script) {
@@ -170,6 +171,7 @@ describe.skipIf(!TEST_DATABASE_URL)("runtime del Agente IA (Postgres real)", () 
       },
       sleep: async (ms) => {
         sleeps.push(ms);
+        if (script.onSleep) await script.onSleep();
       },
       resolveImage: async (key) => {
         images.push(key);
@@ -573,6 +575,86 @@ describe.skipIf(!TEST_DATABASE_URL)("runtime del Agente IA (Postgres real)", () 
     const { deps, calls } = makeDeps();
     await run.runAgent(JOB, deps);
     expect(JSON.stringify(calls.find((c) => c.kind === "cerebro")!.input.messages)).not.toContain("NUNCA LLEGÓ");
+  });
+
+  // ── Gate de entrada a main (medios de las revisiones) ────────────────────
+  it("AUTO: si un vendedor responde en la pausa entre burbujas, la 2ª ya no sale y el agente se pausa", async () => {
+    await msg({ direction: "in", body: "¿precio?", at: ago(10_000) });
+    const { deps } = makeDeps({
+      onSleep: async () => {
+        await msg({ direction: "out", source: "crm", body: "Yo le atiendo", at: new Date() });
+      },
+    });
+    expect(await run.runAgent(JOB, deps)).toEqual({ kind: "sent", bubbles: 1 });
+    expect((await agentOuts()).map((m) => m.body)).toEqual(["Claro, cuesta $5,500 MXN."]);
+    expect((await conv()).agentState).toBe("pausado_humano");
+    const brain = (await usage()).find((u) => u.stage === "cerebro")!;
+    expect(brain.error).toContain("detenido tras 1 burbuja(s): respuesta_humana");
+  });
+
+  it("AUTO: si apagan el canal en la pausa entre burbujas, la 2ª ya no sale", async () => {
+    await msg({ direction: "in", body: "¿precio?", at: ago(10_000) });
+    const { deps } = makeDeps({
+      onSleep: async () => {
+        await db.update(s.channels).set({ aiAgentMode: "off" }).where(eq(s.channels.id, "ch_rt"));
+      },
+    });
+    expect(await run.runAgent(JOB, deps)).toEqual({ kind: "sent", bubbles: 1 });
+    expect(await agentOuts()).toHaveLength(1);
+  });
+
+
+  it("presupuesto diario de la organización: al llegar, no llama modelos (y no pausa la conversación)", async () => {
+    await db.update(s.aiConfig).set({ dailyBudgetUsd: 1 }).where(eq(s.aiConfig.organizationId, ORG));
+    await db.insert(s.aiUsage).values({
+      id: "u_gasto",
+      organizationId: ORG,
+      conversationId: CONV,
+      stage: "cerebro",
+      provider: "anthropic",
+      modelId: "claude-sonnet-5",
+      inputTokens: 100,
+      latencyMs: 1,
+      costUsd: 1.25,
+      outcome: "sent",
+      createdAt: ago(3 * 3_600_000),
+    });
+    await msg({ direction: "in", body: "¿precio?", at: ago(10_000) });
+    const { deps, calls } = makeDeps();
+    expect(await run.runAgent(JOB, deps)).toEqual({ kind: "skipped", reason: "presupuesto_diario" });
+    expect(calls).toHaveLength(0);
+    expect((await conv()).agentState).toBe("activo");
+    // Gasto de hace más de 24 h ya no cuenta.
+    await db.update(s.aiUsage).set({ createdAt: ago(25 * 3_600_000) }).where(eq(s.aiUsage.id, "u_gasto"));
+    expect((await run.runAgent(JOB, makeDeps().deps)).kind).toBe("sent");
+  });
+
+  it("encender el canal es corte: una respuesta humana de ANTES no pausa la conversación", async () => {
+    await msg({ direction: "in", body: "hola", at: ago(10 * 86_400_000) });
+    await msg({ direction: "out", source: "crm", body: "Hola, soy Luis", at: ago(9 * 86_400_000) });
+    await db.update(s.channels).set({ aiAgentModeChangedAt: ago(60_000) }).where(eq(s.channels.id, "ch_rt"));
+    await msg({ direction: "in", body: "¿siguen vendiendo?", at: ago(10_000) });
+    const r = await run.runAgent(JOB, makeDeps().deps);
+    expect(r.kind).toBe("sent");
+    expect((await conv()).agentState).toBe("activo");
+  });
+
+  it("con el agente pausado no se programa nada; un pase a humano VENCIDO sí", async () => {
+    const at = new Date();
+    await msg({ direction: "in", body: "hola", at });
+    await state.setAgentState(ORG, CONV, "pausado_humano", { now: ago(60_000) });
+    expect(await schedule.debounceDelayFor(ORG, CONV, at)).toBeNull();
+    await state.setAgentState(ORG, CONV, "pausado_handover", { now: ago(60_000), pausedUntil: ago(1_000) });
+    expect(await schedule.debounceDelayFor(ORG, CONV, at)).not.toBeNull();
+  });
+
+  it("pendientes acotados: con 60 entrantes sin respuesta solo se leen los 50 más recientes, en orden", async () => {
+    const { pendingInbound, MAX_PENDING } = await import("./context");
+    for (let i = 0; i < 60; i++) await msg({ direction: "in", body: `spam ${i}`, at: ago((60 - i) * 1_000) });
+    const rows = await pendingInbound(ORG, CONV);
+    expect(rows).toHaveLength(MAX_PENDING);
+    expect(rows[0].body).toBe("spam 10");
+    expect(rows.at(-1)!.body).toBe("spam 59");
   });
 
   // ── Guardia de salida (modo auto) ────────────────────────────────────────

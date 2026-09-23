@@ -10,6 +10,7 @@ const ok = {
   maxRepliesPerContact: null,
   contextMessages: 20,
   maxBubbles: 2,
+  dailyBudgetUsd: 20,
 };
 
 describe("agentSettingsSchema", () => {
@@ -32,6 +33,8 @@ describe("agentSettingsSchema", () => {
       { antiLoopMaxPerHour: 0 },
       { handoverReactivateHours: 0 },
       { responseDelaySeconds: 1.5 },
+      { dailyBudgetUsd: 0 },
+      { dailyBudgetUsd: 1_001 },
     ]) {
       expect(agentSettingsSchema.safeParse({ ...ok, ...bad }).success).toBe(false);
     }

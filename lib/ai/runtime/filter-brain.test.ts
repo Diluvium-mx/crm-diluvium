@@ -84,6 +84,8 @@ describe("rastro del freno anti-bucle", () => {
       agentRepliesLastHour: 10,
       antiLoopMaxPerHour: 10,
       modelCallsLastHour: 0,
+      orgSpendLast24hUsd: 0,
+      dailyBudgetUsd: 20,
       agentRepliesToContact: 0,
       maxRepliesPerContact: null,
     });

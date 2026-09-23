@@ -94,6 +94,8 @@ describe("decideGate (compuerta de interruptor y seguridad)", () => {
     agentRepliesLastHour: 0,
     antiLoopMaxPerHour: 10,
     modelCallsLastHour: 0,
+    orgSpendLast24hUsd: 0,
+    dailyBudgetUsd: 20,
     agentRepliesToContact: 0,
     maxRepliesPerContact: null,
   };
@@ -146,6 +148,11 @@ describe("decideGate (compuerta de interruptor y seguridad)", () => {
       pauseTo: "pausado_antibucle",
       tag: "revisión humana",
     });
+  });
+
+  it("presupuesto diario de la organización: al llegar, no responde (sin pausar la conversación)", () => {
+    expect(decideGate({ ...base, orgSpendLast24hUsd: 19.99 }).action).toBe("respond");
+    expect(decideGate({ ...base, orgSpendLast24hUsd: 20 })).toEqual({ action: "skip", reason: "presupuesto_diario" });
   });
 
   it("tope por contacto (si se activa) → no responde; null = sin tope", () => {

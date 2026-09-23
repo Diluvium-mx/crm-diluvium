@@ -15,11 +15,13 @@ import {
   agentRepliesSince,
   agentRepliesToContact,
   alreadyHandled,
+  humanOutboundCount,
   inboundCount,
   lastOutbound,
   loadSnapshot,
   messageAt,
   modelCallsSince,
+  orgSpendSince,
   pendingInbound,
   recentMessages,
   type MessageRow,
@@ -73,6 +75,12 @@ function isHumanReply(m: MessageRow | null): boolean {
   return m !== null && m.direction === "out" && HUMAN_SOURCES.has(m.source);
 }
 
+function latestDate(a: Date | null, b: Date | null): Date | null {
+  if (!a) return b;
+  if (!b) return a;
+  return a > b ? a : b;
+}
+
 function errorText(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
 }
@@ -88,6 +96,20 @@ async function imageUrlsFor(rows: readonly MessageRow[], resolve: RunDeps["resol
     }
   }
   return urls;
+}
+
+// ¿Sigue pudiendo enviar el agente? Estado FRESCO justo antes de una burbuja.
+async function stopBeforeBubble(
+  organizationId: string,
+  conversationId: string,
+  humansAtCheck: number,
+): Promise<"cambio_antes_de_enviar" | "respuesta_humana" | null> {
+  const snap = await loadSnapshot(organizationId, conversationId);
+  if (!snap || snap.channel.aiAgentMode !== "auto" || snap.conversation.agentState !== "activo") {
+    return "cambio_antes_de_enviar";
+  }
+  if ((await humanOutboundCount(organizationId, conversationId)) > humansAtCheck) return "respuesta_humana";
+  return null;
 }
 
 async function pause(
@@ -123,7 +145,10 @@ export async function runAgent(job: { organizationId: string; conversationId: st
     const pausedUntilMs = conv.agentPausedUntil?.getTime() ?? null;
     // Un handover vencido se reactiva: su corte es AHORA (lo que el vendedor
     // contestó durante la transferencia era lo esperado, no vuelve a pausar).
-    const boundary = pauseElapsed(conv.agentState, pausedUntilMs, now.getTime()) ? now : conv.agentStateChangedAt;
+    // Encender el canal también es corte: lo que un vendedor contestó ANTES de
+    // prender el agente no pausa conversaciones que ya existían.
+    const cut = latestDate(conv.agentStateChangedAt, channel.aiAgentModeChangedAt);
+    const boundary = pauseElapsed(conv.agentState, pausedUntilMs, now.getTime()) ? now : cut;
     // "Un vendedor tomó la conversación": el último saliente es humano (CRM o
     // celular) y es posterior al último cambio de estado del agente.
     const humanTookOver =
@@ -147,6 +172,8 @@ export async function runAgent(job: { organizationId: string; conversationId: st
       agentRepliesLastHour: await agentRepliesSince(org, conv.id, hourAgo),
       antiLoopMaxPerHour: cfg.antiLoopMaxPerHour,
       modelCallsLastHour: await modelCallsSince(org, conv.id, hourAgo),
+      orgSpendLast24hUsd: await orgSpendSince(org, new Date(now.getTime() - 24 * 3_600_000)),
+      dailyBudgetUsd: cfg.dailyBudgetUsd,
       agentRepliesToContact: cfg.maxRepliesPerContact === null ? 0 : await agentRepliesToContact(org, conv.contactId),
       maxRepliesPerContact: cfg.maxRepliesPerContact,
     });
@@ -311,10 +338,17 @@ export async function runAgent(job: { organizationId: string; conversationId: st
 
     // auto: burbujas con pausa. Si la PRIMERA falla, nada salió → error y
     // reintento; si falla una posterior, lo enviado ya cuenta (no se duplica).
+    // Antes de CADA burbuja se revisa el estado fresco: si un vendedor respondió,
+    // alguien apagó el canal o pausó al agente (p. ej. durante la pausa de 1.5 s),
+    // el agente se detiene ahí.
+    const humansAtCheck = await humanOutboundCount(org, conv.id);
     let sent = 0;
+    let stopped: "cambio_antes_de_enviar" | "respuesta_humana" | null = null;
     try {
       for (const text of bubbles) {
         if (sent > 0) await deps.sleep(BUBBLE_PAUSE_MS);
+        stopped = await stopBeforeBubble(org, conv.id, humansAtCheck);
+        if (stopped) break;
         await deps.sendBubble({ organizationId: org, conversationId: conv.id, text });
         sent++;
       }
@@ -325,6 +359,16 @@ export async function runAgent(job: { organizationId: string; conversationId: st
       }
       await recordAiUsage({ ...brainUsage, outcome: "sent", error: `burbuja ${sent + 1} no salió: ${errorText(error)}` });
       await markAgentReply(org, conv.id, deps.now());
+      return { kind: "sent", bubbles: sent };
+    }
+    if (stopped) {
+      if (stopped === "respuesta_humana" && cfg.pauseOnHumanReply) await pause(conv, "pausado_humano", deps.now());
+      if (sent === 0) {
+        await recordAiUsage({ ...brainUsage, outcome: "skipped", error: `detenido antes de enviar: ${stopped}` });
+        return { kind: "skipped", reason: stopped };
+      }
+      await markAgentReply(org, conv.id, deps.now());
+      await recordAiUsage({ ...brainUsage, outcome: "sent", error: `detenido tras ${sent} burbuja(s): ${stopped}` });
       return { kind: "sent", bubbles: sent };
     }
     await markAgentReply(org, conv.id, deps.now());

@@ -2,14 +2,15 @@
 -- editables por organización (ai_model_prices), borradores del modo "borrador"
 -- (ai_agent_drafts, con review_reason de la guardia de salida), cortes de "respuesta
 -- humana" y de encendido (conversations.agent_state_changed_at,
--- channels.ai_agent_mode_changed_at) y ajustes del runtime en ai_config. Aditiva: el
+-- channels.ai_agent_mode_changed_at) y ajustes del runtime en ai_config (incl. presupuesto
+-- diario daily_budget_usd). Aditiva: el
 -- agente sigue APAGADO por canal. Regenerada como 0024 tras rebasar sobre main
 -- (da53cc4, que trae su propia 0023); when posterior al de esa 0023.
 -- lock_timeout: drizzle corre todas las migraciones en UNA transacción; si un
 -- ALTER no consigue su lock en 5 s, falla (y se reintenta) en vez de bloquear el
 -- tráfico. Se restablece al final para no afectar a las migraciones siguientes.
 SET LOCAL lock_timeout = '5s';--> statement-breakpoint
-CREATE TYPE "public"."ai_draft_status" AS ENUM('pendiente', 'enviado', 'descartado', 'obsoleto');--> statement-breakpoint
+CREATE TYPE "public"."ai_draft_status" AS ENUM('pendiente', 'enviando', 'enviado', 'descartado', 'obsoleto');--> statement-breakpoint
 CREATE TYPE "public"."ai_usage_stage" AS ENUM('filtro', 'cerebro');--> statement-breakpoint
 CREATE TABLE "ai_agent_drafts" (
 	"id" text PRIMARY KEY NOT NULL,
@@ -61,6 +62,7 @@ ALTER TABLE "conversations" ADD COLUMN "agent_state_changed_at" timestamp;--> st
 ALTER TABLE "ai_config" ADD COLUMN "pause_on_human_reply" boolean DEFAULT true NOT NULL;--> statement-breakpoint
 ALTER TABLE "ai_config" ADD COLUMN "context_messages" integer DEFAULT 20 NOT NULL;--> statement-breakpoint
 ALTER TABLE "ai_config" ADD COLUMN "max_bubbles" integer DEFAULT 2 NOT NULL;--> statement-breakpoint
+ALTER TABLE "ai_config" ADD COLUMN "daily_budget_usd" numeric(10, 2) DEFAULT 20 NOT NULL;--> statement-breakpoint
 ALTER TABLE "ai_agent_drafts" ADD CONSTRAINT "ai_agent_drafts_organization_id_organization_id_fk" FOREIGN KEY ("organization_id") REFERENCES "public"."organization"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "ai_agent_drafts" ADD CONSTRAINT "ai_agent_drafts_conversation_id_conversations_id_fk" FOREIGN KEY ("conversation_id") REFERENCES "public"."conversations"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "ai_agent_drafts" ADD CONSTRAINT "ai_agent_drafts_trigger_message_id_messages_id_fk" FOREIGN KEY ("trigger_message_id") REFERENCES "public"."messages"("id") ON DELETE set null ON UPDATE no action;--> statement-breakpoint
@@ -72,6 +74,7 @@ ALTER TABLE "ai_usage" ADD CONSTRAINT "ai_usage_conversation_id_conversations_id
 ALTER TABLE "ai_usage" ADD CONSTRAINT "ai_usage_message_id_messages_id_fk" FOREIGN KEY ("message_id") REFERENCES "public"."messages"("id") ON DELETE set null ON UPDATE no action;--> statement-breakpoint
 CREATE UNIQUE INDEX "ai_agent_drafts_one_pending_uidx" ON "ai_agent_drafts" USING btree ("conversation_id") WHERE "ai_agent_drafts"."status" = 'pendiente';--> statement-breakpoint
 CREATE INDEX "ai_agent_drafts_org_idx" ON "ai_agent_drafts" USING btree ("organization_id");--> statement-breakpoint
+CREATE INDEX "ai_agent_drafts_trigger_idx" ON "ai_agent_drafts" USING btree ("trigger_message_id");--> statement-breakpoint
 CREATE INDEX "ai_usage_org_created_idx" ON "ai_usage" USING btree ("organization_id","created_at" desc);--> statement-breakpoint
 CREATE INDEX "ai_usage_conversation_created_idx" ON "ai_usage" USING btree ("conversation_id","created_at");--> statement-breakpoint
 CREATE INDEX "ai_usage_message_outcome_idx" ON "ai_usage" USING btree ("message_id","outcome");--> statement-breakpoint

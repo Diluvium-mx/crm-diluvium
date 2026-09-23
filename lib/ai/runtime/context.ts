@@ -3,7 +3,7 @@
 // Multi-tenant (CLAUDE.md §7): TODA lectura filtra por organization_id, además
 // del id. Un id de otra organización no encuentra nada (defensa en profundidad:
 // los ids vienen de la cola interna, pero nunca se confía en ellos solos).
-import { and, asc, count, desc, eq, gte, inArray, isNotNull, ne, sql } from "drizzle-orm";
+import { and, count, desc, eq, gte, inArray, isNotNull, ne, sql } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { aiAgentDrafts, aiUsage, channels, conversations, messages } from "@/lib/db/schema";
 import { FINAL_OUTCOMES, REPLY_OUTCOMES } from "./usage";
@@ -44,9 +44,13 @@ export async function lastOutbound(organizationId: string, conversationId: strin
 }
 
 // Entrantes posteriores al último saliente (lo que el agente debe atender), en
-// orden cronológico. Se compara en SQL para no perder microsegundos en JS.
+// orden cronológico. Se compara en SQL para no perder microsegundos en JS. Solo
+// los MAX_PENDING más recientes: un remitente que manda miles de mensajes (spam,
+// nunca hay saliente) no vuelve cuadrático el trabajo de cada entrante.
+export const MAX_PENDING = 50;
+
 export async function pendingInbound(organizationId: string, conversationId: string): Promise<MessageRow[]> {
-  return db
+  const rows = await db
     .select()
     .from(messages)
     .where(
@@ -60,7 +64,9 @@ export async function pendingInbound(organizationId: string, conversationId: str
         ), '-infinity'::timestamp)`,
       ),
     )
-    .orderBy(asc(waAt), asc(messages.createdAt));
+    .orderBy(desc(waAt), desc(messages.createdAt))
+    .limit(MAX_PENDING);
+  return rows.reverse();
 }
 
 // Los últimos `n` mensajes en orden cronológico (contexto del cerebro). Sin los
@@ -73,6 +79,23 @@ export async function recentMessages(organizationId: string, conversationId: str
     .orderBy(desc(waAt), desc(messages.createdAt))
     .limit(Math.max(1, n));
   return rows.reverse();
+}
+
+// Salientes HUMANOS (CRM o celular) que no fallaron: si el conteo crece mientras el
+// agente envía, un vendedor tomó el hilo y el agente se detiene (antes de cada burbuja).
+export async function humanOutboundCount(organizationId: string, conversationId: string): Promise<number> {
+  const [{ value }] = await db
+    .select({ value: count() })
+    .from(messages)
+    .where(
+      and(
+        inConversation(organizationId, conversationId),
+        eq(messages.direction, "out"),
+        inArray(messages.source, ["crm", "business_app"]),
+        ne(messages.status, "failed"),
+      ),
+    );
+  return value;
 }
 
 // Total de entrantes: si crece entre leer y enviar, llegó algo nuevo (revisión
@@ -165,6 +188,16 @@ export async function modelCallsSince(organizationId: string, conversationId: st
       ),
     );
   return value;
+}
+
+// Gasto (USD) de la organización desde `since`. Un modelo sin precio (cost_usd
+// null) no suma: el catálogo trae precio para todos los modelos del runtime.
+export async function orgSpendSince(organizationId: string, since: Date): Promise<number> {
+  const [{ value }] = await db
+    .select({ value: sql<string | null>`sum(${aiUsage.costUsd})` })
+    .from(aiUsage)
+    .where(and(eq(aiUsage.organizationId, organizationId), gte(aiUsage.createdAt, since)));
+  return Number(value ?? 0);
 }
 
 // Respuestas del agente a un contacto en todas sus conversaciones (tope opcional).
