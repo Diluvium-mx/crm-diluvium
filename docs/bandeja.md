@@ -18,7 +18,7 @@ El chat es un solo componente reutilizado en las dos secciones.
 ┌─ Lista (se cierra) ─┬──── Chat ────────────────────────┬─ Contacto (se cierra) ─┐
 │ Buscar              │ Nombre · teléfono · etapa         │ Nombre, teléfono       │
 │ No leído│Todo│Dest. │ Aviso ventana 24 h                │ Etapa ▾  Temperatura ▾ │
-│ fila: avatar,nombre,│ burbujas + adjuntos + estado ✓✓   │ Ver ficha completa     │
+│ fila: avatar,nombre,│ burbujas + adjuntos + estado ✓✓   │ calificación, coment.  │
 │ hora,vista previa,  │ tarjeta "Llegó por anuncio"       │                        │
 │ no leídos, semáforo │ composer (bloqueado fuera de 24h) │                        │
 └─────────────────────┴───────────────────────────────────┴────────────────────────┘
@@ -54,8 +54,22 @@ El chat es un solo componente reutilizado en las dos secciones.
 - **Composer:** Enter envía, Shift+Enter salto de línea. Abrir la conversación la marca como leída.
 
 ### Panel de contacto
-Nombre, teléfono, **etapa** y **temperatura** editables (las mismas del tablero, sincronizadas) y
-"Ver ficha completa" (panel de detalle de Contactos).
+**Desde el Bloque B (22-sep-2026)** es el MISMO componente "Detalle del contacto" que el pop-up de
+la tarjeta del Embudo (`contactos/_components/contact-details.tsx`), en este orden: nombre,
+teléfono, etapa y temperatura, ¿tiene problemas de inundaciones?, ¿cuánta agua entra?, ¿cuántas
+entradas?, ancho + línea + tamaño de compuerta (sugerido por rangos / manual) por entrada, monto
+de cotización (MXN), % de convencimiento, [espacio para el interruptor del Agente IA, Fase B],
+comentarios (autor y fecha) y, al final compactos, correo y etiquetas. Guardado automático al
+salir de cada campo (sin botón Guardar) con aviso "Guardado ✓". Ya no existe "Ver ficha completa".
+
+### Lista: temperatura (C1)
+Debajo de la estrella de cada fila va la temperatura del contacto (🔥/🧊/⏳/⭐; ○ sin asignar); un
+clic abre un menú para cambiarla sin abrir el chat. Lista y panel quedan sincronizados.
+
+### Programados (A6)
+Van dentro del hilo, al final, como burbujas punteadas "🕒 Programado para …" con Editar/Cancelar
+(fallidos: Reintentar/Descartar; cancelados solos: el cliente escribió antes o el autor ya no está
+activo). El composer tiene 🕒 junto a "Enviar" (y junto a "📄 Enviar plantilla" fuera de ventana).
 
 ### Lo que NO va (vs. GHL)
 Nueva conversación/Importar (requiere plantilla: llega con el número real), asignado/seguido/chat
