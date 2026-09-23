@@ -77,7 +77,9 @@ export async function onHumanOutbound(
     await obsoletePendingDrafts(input.organizationId, input.conversationId, now);
     const cfg = await loadAgentConfig(input.organizationId);
     if (!cfg.pauseOnHumanReply) return;
-    if (snap.conversation.agentState === "activo") {
+    // También durante un "pasar a humano": si un vendedor ya contestó, el agente no
+    // debe reactivarse solo al vencer el plazo (queda en reactivación manual).
+    if (snap.conversation.agentState === "activo" || snap.conversation.agentState === "pausado_handover") {
       await setAgentState(input.organizationId, input.conversationId, "pausado_humano", { now });
     }
     // La pausa ya quedó guardada: cancelar el job es solo optimización (acotada).

@@ -76,6 +76,9 @@ export type GateInput = {
   antiLoopMaxPerHour: number;
   // Llamadas COBRADAS al modelo (filtro + cerebro, también las descartadas) en la última hora.
   modelCallsLastHour: number;
+  // Hay un envío del agente en camino ("queued") o fallido SIN CONFIRMAR sin revisar:
+  // no se responde encima (el barrido lo pasa a revisión humana si vence ambiguo).
+  agentSendUnresolved: boolean;
   // Gasto de TODA la organización en las últimas 24 h (USD) y su presupuesto.
   orgSpendLast24hUsd: number;
   dailyBudgetUsd: number;
@@ -110,6 +113,11 @@ export function decideGate(i: GateInput): GateDecision {
   // 4. Ventana de 24h: la Fase B solo responde texto dentro de la ventana.
   if (i.windowExpiresAt === null || i.now > i.windowExpiresAt) {
     return { action: "skip", reason: "fuera_de_ventana_24h" };
+  }
+
+  // 4b. Envío del agente sin resolver: esperar (sin pausar; lo concilia el outbox/barrido).
+  if (i.agentSendUnresolved) {
+    return { action: "skip", reason: "envio_sin_confirmar" };
   }
 
   // 5. Freno anti-bucle: tope de respuestas del agente por hora → pausa + revisión humana.
