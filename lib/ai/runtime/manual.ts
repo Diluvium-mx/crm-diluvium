@@ -80,7 +80,7 @@ export async function approveDraft(input: {
     }
     throw error;
   }
-  await markAgentReply(draft.conversationId, input.now);
+  await markAgentReply(input.organizationId, draft.conversationId, input.now);
   return { sent };
 }
 

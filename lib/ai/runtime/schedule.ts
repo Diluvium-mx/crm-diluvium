@@ -11,7 +11,7 @@ export async function pendingWindow(
   pending: readonly MessageRow[],
 ): Promise<{ firstPendingAt: number; lastInboundAt: number } | null> {
   if (pending.length === 0) return null;
-  const handled = await lastHandledInboundAt(snap.conversation.id);
+  const handled = await lastHandledInboundAt(snap.conversation.organizationId, snap.conversation.id);
   // Hora de LLEGADA (created_at): el debounce mide cuánto lleva esperando el CRM.
   return debounceWindow(
     pending.map((m) => m.createdAt.getTime()),
@@ -24,10 +24,10 @@ export async function pendingWindow(
 }
 
 // null = no hay nada que programar (canal apagado o sin pendientes).
-export async function debounceDelayFor(conversationId: string, now: Date): Promise<number | null> {
-  const snap = await loadSnapshot(conversationId);
+export async function debounceDelayFor(organizationId: string, conversationId: string, now: Date): Promise<number | null> {
+  const snap = await loadSnapshot(organizationId, conversationId);
   if (!snap || snap.channel.aiAgentMode === "off") return null;
-  const win = await pendingWindow(snap, await pendingInbound(conversationId));
+  const win = await pendingWindow(snap, await pendingInbound(organizationId, conversationId));
   if (!win) return null;
   const cfg = await loadAgentConfig(snap.conversation.organizationId);
   return debounceDelayMs({
@@ -39,10 +39,10 @@ export async function debounceDelayFor(conversationId: string, now: Date): Promi
 }
 
 // Tras descartar respuestas en todas las rondas: de vuelta al debounce, nunca en 0.
-export async function rescheduleDelayFor(conversationId: string, now: Date): Promise<number> {
-  const snap = await loadSnapshot(conversationId);
+export async function rescheduleDelayFor(organizationId: string, conversationId: string, now: Date): Promise<number> {
+  const snap = await loadSnapshot(organizationId, conversationId);
   if (!snap) return 0;
-  const win = await pendingWindow(snap, await pendingInbound(conversationId));
+  const win = await pendingWindow(snap, await pendingInbound(organizationId, conversationId));
   if (!win) return 0;
   const cfg = await loadAgentConfig(snap.conversation.organizationId);
   return rescheduleDelayMs({

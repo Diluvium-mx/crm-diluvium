@@ -9,9 +9,15 @@ import type { AgentState } from "./policy";
 
 export { TAG_ANTI_LOOP, TAG_HANDOVER } from "./tags";
 
+// Multi-tenant (CLAUDE.md §7): toda escritura filtra por organization_id además
+// del id; un id de otra organización no cambia nada.
+const ownConversation = (organizationId: string, conversationId: string) =>
+  and(eq(conversations.id, conversationId), eq(conversations.organizationId, organizationId));
+
 // Cambia el estado del agente en la conversación. `agent_state_changed_at` es
 // el corte de "respuesta humana": lo anterior a una reactivación ya no pausa.
 export async function setAgentState(
+  organizationId: string,
   conversationId: string,
   state: AgentState,
   opts: { now: Date; pausedUntil?: Date | null },
@@ -19,19 +25,19 @@ export async function setAgentState(
   await db
     .update(conversations)
     .set({ agentState: state, agentPausedUntil: opts.pausedUntil ?? null, agentStateChangedAt: opts.now })
-    .where(eq(conversations.id, conversationId));
+    .where(ownConversation(organizationId, conversationId));
 }
 
 // Agrega una etiqueta al contacto si no la tiene (idempotente).
-export async function addContactTag(contactId: string, tag: string): Promise<void> {
+export async function addContactTag(organizationId: string, contactId: string, tag: string): Promise<void> {
   await db
     .update(contacts)
     .set({ tags: sql`case when ${tag} = any(${contacts.tags}) then ${contacts.tags} else array_append(${contacts.tags}, ${tag}) end` })
-    .where(eq(contacts.id, contactId));
+    .where(and(eq(contacts.id, contactId), eq(contacts.organizationId, organizationId)));
 }
 
-export async function markAgentReply(conversationId: string, at: Date): Promise<void> {
-  await db.update(conversations).set({ lastAgentReplyAt: at }).where(eq(conversations.id, conversationId));
+export async function markAgentReply(organizationId: string, conversationId: string, at: Date): Promise<void> {
+  await db.update(conversations).set({ lastAgentReplyAt: at }).where(ownConversation(organizationId, conversationId));
 }
 
 type Executor = Pick<typeof db, "execute">;
@@ -57,10 +63,23 @@ export async function saveDraft(input: {
 }): Promise<string> {
   const id = crypto.randomUUID();
   await db.transaction(async (tx) => {
+    // La FK solo exige que la conversación exista: se exige además que sea de esta organización.
+    const [own] = await tx
+      .select({ id: conversations.id })
+      .from(conversations)
+      .where(ownConversation(input.organizationId, input.conversationId))
+      .limit(1);
+    if (!own) throw new Error(`conversación ${input.conversationId} no pertenece a la organización`);
     await tx
       .update(aiAgentDrafts)
       .set({ status: "obsoleto", resolvedAt: input.now })
-      .where(and(eq(aiAgentDrafts.conversationId, input.conversationId), eq(aiAgentDrafts.status, "pendiente")));
+      .where(
+        and(
+          eq(aiAgentDrafts.organizationId, input.organizationId),
+          eq(aiAgentDrafts.conversationId, input.conversationId),
+          eq(aiAgentDrafts.status, "pendiente"),
+        ),
+      );
     await tx.insert(aiAgentDrafts).values({
       id,
       organizationId: input.organizationId,

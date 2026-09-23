@@ -65,7 +65,7 @@ export function startAgentRuntime(opts: { provider: MessagingProvider; storage: 
   const deps = {
     kv,
     now: runDeps.now,
-    run: (conversationId: string) => runAgent(conversationId, runDeps),
+    run: (job: AgentJob) => runAgent(job, runDeps),
     delayFor: debounceDelayFor,
   };
   const worker = new Worker<AgentJob>(
