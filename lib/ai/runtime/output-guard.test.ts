@@ -174,9 +174,10 @@ describe("guardia: lo que encontró la revisión enfocada (23-sep)", () => {
     expect(ok("Mediana + grande: $12,500 en total")).toBe(true);
     expect(ok("10 tapones de 2 pulgadas: $7,490")).toBe(true); // 10 × $749
     expect(ok("Dos compuertas y un tapón: 11,749 pesos")).toBe(true); // $5,500 + $5,500 + $749
-    // Hasta 10 piezas: 11 ya no.
-    expect(ok("11 tapones de 2 pulgadas: $8,239")).toBe(false); // 11 × $749
-    expect(ok("11 kits grandes: $121,000")).toBe(false); // 11 × $11,000
+    // Hasta 10 piezas: 11 ya no. $8,239 (11 × $749) está bajo el techo (10 × $11,000),
+    // así que lo frena el TOPE DE PIEZAS; $121,000 lo frena el techo.
+    expect(ok("11 tapones de 2 pulgadas: $8,239")).toBe(false);
+    expect(ok("11 kits grandes: $121,000")).toBe(false);
     // Montos que no son suma de precios reales.
     for (const t of ["Te la dejo en $4,200", "$16,501", "Son 8 mil las dos", "$1,000 de descuento"]) expect(ok(t), t).toBe(false);
   });
@@ -184,8 +185,14 @@ describe("guardia: lo que encontró la revisión enfocada (23-sep)", () => {
   it("sumsOfPrices: tabla en unidades del mcd, tope de piezas y precios desactivados fuera", () => {
     const c = (pesos: number) => pesos * 100;
     const got = sumsOfPrices([c(16_500), c(16_501), c(55_000), c(60_500)], [c(5_500)]);
-    expect([...got].sort((a, b) => a - b)).toEqual([c(16_500), c(55_000)]); // 10 × 5,500 sí; 11 × 5,500 no
+    // 10 × 5,500 sí; 16,501 no es múltiplo; 11 × 5,500 lo frena el techo (10 × el mayor).
+    expect([...got].sort((a, b) => a - b)).toEqual([c(16_500), c(55_000)]);
     expect(MAX_PIECES).toBe(10);
+    // Tope de piezas bajo el techo: con $1 y $50, $59 = 50 + 9 × 1 (10 piezas) sí; $60 = 50 + 10 × 1 (11) no.
+    expect([...sumsOfPrices([c(59), c(60)], [c(1), c(50)])]).toEqual([c(59)]);
+    // Unidades de 1 centavo: 9 × $10 + 999 × $0.01 necesita 1,008 piezas; la tabla (Uint8)
+    // no debe desbordarse y "darle la vuelta" a un conteo chico.
+    expect(sumsOfPrices([9_999], [1, 1_000])).toEqual(new Set());
     expect(sumsOfPrices([c(100)], [])).toEqual(new Set());
     // Una FAQ desactivada no aporta piezas: promo ($4,999, desactivada) + tapón ($749) = $5,748
     // solo se forma con ese precio, así que se retiene.
