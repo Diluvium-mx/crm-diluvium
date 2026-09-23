@@ -753,6 +753,37 @@ describe.skipIf(!TEST_DATABASE_URL)("runtime del Agente IA (Postgres real)", () 
     expect((await conv()).agentState).toBe("pausado_antibucle");
   });
 
+  it("un plan 'enviando' en la conversación bloquea nuevas corridas (la conciliación no se mezcla)", async () => {
+    const trigger = await msg({ direction: "in", body: "¿precio?", at: ago(10_000) });
+    await db.insert(s.aiAgentDrafts).values({
+      id: "plan_vivo",
+      organizationId: ORG,
+      conversationId: CONV,
+      bubbles: ["a", "b"],
+      triggerMessageId: trigger,
+      status: "enviando",
+      resolvedAt: new Date(),
+    });
+    await msg({ direction: "in", body: "¿hola?", at: new Date(Date.now() + 1_000) });
+    const { deps, calls } = makeDeps();
+    expect(await run.runAgent(JOB, deps)).toEqual({ kind: "skipped", reason: "envio_sin_confirmar" });
+    expect(calls).toHaveLength(0);
+  });
+
+  it("un plan OBSOLETO (la 1ª burbuja falló) no impide que el barrido rescate el entrante", async () => {
+    const trigger = await msg({ direction: "in", body: "¿precio?", at: ago(120_000) });
+    await db.insert(s.aiAgentDrafts).values({
+      id: "plan_muerto",
+      organizationId: ORG,
+      conversationId: CONV,
+      bubbles: ["a", "b"],
+      triggerMessageId: trigger,
+      status: "obsoleto",
+    });
+    expect(await sweep.findOrphanConversations(new Date())).toEqual([{ conversationId: CONV, organizationId: ORG }]);
+    expect((await run.runAgent(JOB, makeDeps().deps)).kind).toBe("sent");
+  });
+
   it("pending → confirmado: no pausa ni bloquea", async () => {
     const id = await agentMsg({ status: "queued" });
     await db.update(s.messages).set({ status: "sent" }).where(eq(s.messages.id, id));

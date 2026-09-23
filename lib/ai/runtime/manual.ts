@@ -7,6 +7,7 @@ import { db } from "@/lib/db";
 import { aiAgentDrafts, channels, conversations } from "@/lib/db/schema";
 import { bullAgentQueuePort, cancelAgentRun, withQueueTimeout } from "./queue";
 import { BUBBLE_PAUSE_MS } from "./run";
+import { humanOutboundCount, inboundCount } from "./context";
 import { markAgentReply, notifyConversation, retainRemainder } from "./state";
 
 // Vuelve a activar el agente. El corte (agent_state_changed_at = ahora) hace
@@ -79,12 +80,25 @@ export async function approveDraft(input: {
   let sent = 0;
   let unconfirmed = false;
   let channelOff = false;
+  let interrupted: string | null = null;
+  // Líneas base al reclamar: si el cliente escribe o un vendedor responde mientras
+  // salen las burbujas, el resto ya no contesta lo último (queda en la tarjeta).
+  const inboundsAtClaim = await inboundCount(org, draft.conversationId);
+  const humansAtClaim = await humanOutboundCount(org, draft.conversationId);
   try {
     for (const text of draft.bubbles) {
       if (sent > 0) await sleep(BUBBLE_PAUSE_MS);
       const [check] = await db.execute<{ ok: boolean }>(sql`select ${channelOn(org, draft.conversationId)} as ok`);
       if (!check?.ok) {
         channelOff = true;
+        break;
+      }
+      if ((await inboundCount(org, draft.conversationId)) > inboundsAtClaim) {
+        interrupted = "El cliente escribió mientras se enviaba";
+        break;
+      }
+      if ((await humanOutboundCount(org, draft.conversationId)) > humansAtClaim) {
+        interrupted = "Un vendedor respondió mientras se enviaba";
         break;
       }
       const outcome = await input.sendBubble({ organizationId: org, conversationId: draft.conversationId, text, sentByUserId: input.userId });
@@ -110,6 +124,21 @@ export async function approveDraft(input: {
     }
     await notify();
     throw error;
+  }
+  if (interrupted) {
+    if (sent === 0) await releaseDraft(org, draft.id, draft.conversationId);
+    else {
+      await markAgentReply(org, draft.conversationId, input.now);
+      await retainRemainder(
+        org,
+        draft.id,
+        draft.conversationId,
+        draft.bubbles.slice(sent),
+        `${interrupted}: salieron ${sent} de ${draft.bubbles.length} burbujas; revisa el hilo antes de mandar el resto.`,
+      );
+    }
+    await notify();
+    return { sent, confirmed: !unconfirmed };
   }
   if (sent === 0 && channelOff) {
     await finishDraft(org, draft.id, "obsoleto", input.now, draft.conversationId);

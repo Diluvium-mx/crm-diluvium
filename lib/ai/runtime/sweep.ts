@@ -83,7 +83,9 @@ export async function findOrphanConversations(now: Date, limit = 50): Promise<Or
         select 1 from ai_usage u
         where u.message_id = last.id and u.outcome in ('sent', 'draft', 'skipped', 'handover')
       )
-      and not exists (select 1 from ai_agent_drafts d where d.trigger_message_id = last.id)
+      -- Un plan/borrador OBSOLETO no cuenta (p. ej. la 1ª burbuja falló en los 3 intentos):
+      -- el barrido lo rescata hasta MAX_ERRORS_PER_MESSAGE.
+      and not exists (select 1 from ai_agent_drafts d where d.trigger_message_id = last.id and d.status <> 'obsoleto')
       and (select count(*) from ai_usage u where u.message_id = last.id and u.outcome = 'error') < ${MAX_ERRORS_PER_MESSAGE}
     limit ${limit}
   `);
