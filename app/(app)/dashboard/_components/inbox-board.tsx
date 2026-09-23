@@ -256,7 +256,24 @@ export function InboxBoard() {
   function changeTemperature(item: ConversationListItem, temperature: Temperature | null) {
     const previous = item.temperature;
     applyTemperature(item.contact.id, temperature);
-    updateContactTemperature({ contactId: item.contact.id, temperature }).catch(() => applyTemperature(item.contact.id, previous));
+    updateContactTemperature({ contactId: item.contact.id, temperature }).catch(() => {
+      // Revertir SOLO si nadie la cambió después (un fallo tardío no debe
+      // pisar un cambio más nuevo).
+      setConversations((current) =>
+        current.map((c) => (c.contact.id === item.contact.id && c.temperature === temperature ? { ...c, temperature: previous } : c)),
+      );
+      setDetail((d) =>
+        d && d.contact.id === item.contact.id && d.contact.temperature === temperature
+          ? { ...d, contact: { ...d.contact, temperature: previous } }
+          : d,
+      );
+    });
+  }
+
+  // La etapa cambió en el panel: el detalle abierto la guarda (así un cambio
+  // posterior de temperatura no la regresa).
+  function applyStage(contactId: string, stage: string) {
+    setDetail((d) => (d && d.contact.id === contactId ? { ...d, contact: { ...d.contact, stage } } : d));
   }
 
   function toggleStar(id: string, starred: boolean) {
@@ -335,6 +352,7 @@ export function InboxBoard() {
             <ContactPanel
               detail={detail}
               onTemperatureChanged={applyTemperature}
+              onStageChanged={applyStage}
               action={
                 <button
                   type="button"
