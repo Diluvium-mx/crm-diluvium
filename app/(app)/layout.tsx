@@ -64,7 +64,10 @@ export default async function AppLayout({
         </nav>
       </aside>
 
-      <div className="flex flex-1 flex-col">
+      {/* min-w-0: sin él, esta columna crece al ancho de su contenido (el
+          kanban de 5 etapas) y el scroll horizontal se va a toda la página en
+          vez de quedarse dentro del tablero (B3). */}
+      <div className="flex min-w-0 flex-1 flex-col">
         {/* Alto GARANTIZADO de 4rem: h-16 fija la altura y shrink-0 evita que
             se comprima. El board de Contactos y la bandeja restan justo 4rem
             (h-[calc(100dvh-4rem)]); si el header pudiera crecer (email largo,

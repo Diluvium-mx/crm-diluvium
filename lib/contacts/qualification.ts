@@ -112,6 +112,9 @@ export async function getContactQualification(
   ]);
 
   return {
+    // Datos básicos que el panel muestra al final (compactos).
+    email: contact.email,
+    tags: contact.tags,
     tieneInundaciones: contact.tieneInundaciones,
     nivelAguaCm: contact.nivelAguaCm,
     nivelAguaTexto: contact.nivelAguaTexto,

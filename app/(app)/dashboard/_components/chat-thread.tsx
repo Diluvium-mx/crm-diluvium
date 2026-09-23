@@ -6,7 +6,7 @@ import { listMessages, retryMessage, sendMessage, sendTemplate } from "@/lib/inb
 import { Composer } from "./composer";
 import { DocumentCard } from "./document-card";
 import { MediaViewer } from "./media-viewer";
-import { ScheduledStrip } from "./scheduled-strip";
+import { ScheduledInThread } from "./scheduled-in-thread";
 import {
   bubbleTime,
   dayLabel,
@@ -222,6 +222,7 @@ export function ChatThread({
   const scrollRef = useRef<HTMLDivElement>(null);
   // Sube al programar un mensaje: la franja de programados (A6) se recarga.
   const [scheduledRev, setScheduledRev] = useState(0);
+  const [scheduledCount, setScheduledCount] = useState(0);
 
   const windowOpen = isWindowOpen(detail.windowExpiresAt, nowMs);
   const hoursLeft = windowHoursLeft(detail.windowExpiresAt, nowMs);
@@ -278,7 +279,7 @@ export function ChatThread({
   useEffect(() => {
     const el = scrollRef.current;
     if (el) el.scrollTop = el.scrollHeight;
-  }, [rows.length, conversationId]);
+  }, [rows.length, scheduledCount, conversationId]);
 
   async function doSend(text: string) {
     const clientId = `opt-${Date.now()}-${Math.random().toString(36).slice(2)}`;
@@ -395,17 +396,19 @@ export function ChatThread({
             })}
           </>
         )}
+        {/* Programados (A6) al final del hilo: van después de lo ya enviado. */}
+        <ScheduledInThread
+          key={`sched-${conversationId}`}
+          conversationId={conversationId}
+          windowExpiresAt={detail.windowExpiresAt}
+          refreshToken={revalToken + scheduledRev}
+          onCountChange={setScheduledCount}
+        />
       </div>
 
       {/* Composer (composer.tsx): texto libre, fragmentos y plantillas con la
           ventana abierta; solo plantilla cuando está cerrada. key: al cambiar de
           conversación se reinicia el borrador y se cierran los selectores. */}
-      <ScheduledStrip
-        key={`sched-${conversationId}`}
-        conversationId={conversationId}
-        windowExpiresAt={detail.windowExpiresAt}
-        refreshToken={revalToken + scheduledRev}
-      />
       <Composer
         key={conversationId}
         conversationId={conversationId}
