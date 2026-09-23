@@ -86,6 +86,25 @@ construye ahora). El dry-run "Probar modelo" ya muestra tokens, pero no persiste
   mensaje** en `ai_usage`. Deja campos de estado por conversación (`agent_state`,
   `paused_until`, `last_inbound_at`, `last_agent_reply_at`) para la Fase C.
 
+  **Frenos y aislamiento (revisión adversarial + cyber-neo, 23-sep-2026):**
+  - **OFF no toca nada:** los ganchos de la ingesta y del envío solo LEEN con el canal
+    apagado (sin Redis, sin modelos, sin escrituras); todo va en try/catch y la ingesta
+    además aísla los ganchos en su frontera (`lib/ai/runtime/isolation.int.test.ts`).
+  - **Tope de gasto:** llamadas cobradas por conversación/hora ≤ anti-bucle × 4 (mín. 12);
+    al llegar → `pausado_antibucle` + "revisión humana". Tras descartar respuestas, el job
+    vuelve con al menos `response_delay_seconds` (nunca 0).
+  - **Cortes del debounce y del barrido:** solo cuentan los entrantes posteriores al último
+    ya atendido, a la reactivación (`agent_state_changed_at`) y al encendido del canal
+    (`channels.ai_agent_mode_changed_at`). Encender un canal o "Reactivar" NO contesta
+    historia; el barrido solo rescata entrantes de los últimos 30 min.
+  - **Borradores:** un entrante nuevo o apagar el canal los deja obsoletos; con el canal
+    apagado no se pueden enviar.
+  - **Prompt:** filtro con máx. 20 pendientes, texto del cliente escapado como JSON y
+    2,000 caracteres por mensaje; el cerebro tiene la regla de no revelar instrucciones
+    ni inventar precios. Timeouts: filtro 20 s, cerebro 60 s.
+  - **Pendiente antes de AUTO con clientes reales:** revisión de la salida antes de enviar
+    (montos fuera de las FAQs, URLs) y la revisión completa de Codex.
+
   **Ojo con la migración de Fase B en staging (22-sep-2026).** Staging ya tiene
   aplicada la `0014_little_omega_flight.sql` de esta rama (tablas del agente ya creadas),
   pero la rama no ha mergeado a `main`. En paralelo va `feat/bloque-a`, que también
