@@ -56,7 +56,8 @@ export async function approveDraft(input: {
         eq(aiAgentDrafts.status, "pendiente"),
         // Con el agente apagado en el canal, el borrador ya no sale.
         sql`exists (select 1 from ${conversations} c join ${channels} ch on ch.id = c.channel_id
-          where c.id = ${aiAgentDrafts.conversationId} and ch.ai_agent_mode <> 'off')`,
+          where c.id = ${aiAgentDrafts.conversationId} and c.organization_id = ${input.organizationId}
+            and ch.organization_id = ${input.organizationId} and ch.ai_agent_mode <> 'off')`,
       ),
     )
     .returning();
@@ -75,7 +76,7 @@ export async function approveDraft(input: {
       await db
         .update(aiAgentDrafts)
         .set({ status: "pendiente", resolvedAt: null, resolvedByUserId: null })
-        .where(eq(aiAgentDrafts.id, draft.id));
+        .where(and(eq(aiAgentDrafts.id, draft.id), eq(aiAgentDrafts.organizationId, input.organizationId)));
       await notifyConversation(db, input.organizationId, draft.conversationId);
     }
     throw error;
@@ -132,7 +133,7 @@ export async function loadConversationAgent(organizationId: string, conversation
   const [row] = await db
     .select({ conversation: conversations, channel: channels })
     .from(conversations)
-    .innerJoin(channels, eq(channels.id, conversations.channelId))
+    .innerJoin(channels, and(eq(channels.id, conversations.channelId), eq(channels.organizationId, organizationId)))
     .where(and(eq(conversations.id, conversationId), eq(conversations.organizationId, organizationId)))
     .limit(1);
   if (!row) return null;
@@ -166,7 +167,7 @@ export async function loadContactAgents(organizationId: string, contactId: strin
       pausedUntil: conversations.agentPausedUntil,
     })
     .from(conversations)
-    .innerJoin(channels, eq(channels.id, conversations.channelId))
+    .innerJoin(channels, and(eq(channels.id, conversations.channelId), eq(channels.organizationId, organizationId)))
     .where(and(eq(conversations.contactId, contactId), eq(conversations.organizationId, organizationId)))
     .orderBy(desc(conversations.lastMessageAt));
 }

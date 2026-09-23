@@ -20,7 +20,7 @@ export function pauseReason(s: { agentState: AgentStateValue; pausedUntil: strin
         ? `pasado a humano · se reactiva solo el ${timeFormat.format(new Date(s.pausedUntil))}`
         : "pasado a humano";
     case "pausado_antibucle":
-      return "freno anti-bucle: necesita revisión humana";
+      return "freno de seguridad: necesita revisión humana";
     default:
       return "";
   }

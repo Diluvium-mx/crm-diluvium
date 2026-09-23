@@ -1,3 +1,5 @@
+import { readFileSync } from "node:fs";
+import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import { extractAmounts, extractLinks, parseAmount, reviewReply } from "./output-guard";
 
@@ -42,7 +44,8 @@ describe("parseAmount / extractAmounts", () => {
 describe("extractLinks", () => {
   it("con y sin esquema, sin puntuación final; 'Diluvium.' no es enlace", () => {
     expect(extractLinks("Visita https://diluvium.com.mx/tienda. Gracias, Diluvium.")).toEqual(["https://diluvium.com.mx/tienda"]);
-    expect(extractLinks("entra a bit.ly/abc123, o escribe a ventas@otro.com")).toEqual(["bit.ly/abc123", "otro.com"]);
+    // Un correo no es enlace (salvo el engaño con dominio en la parte local).
+    expect(extractLinks("entra a bit.ly/abc123, o escribe a ventas@otro.com")).toEqual(["bit.ly/abc123"]);
     expect(extractLinks("S.A. de C.V., etc. 1.20 m")).toEqual([]);
   });
 });
@@ -85,5 +88,86 @@ describe("reviewReply (guardia de salida)", () => {
   });
   it("respuesta sin montos ni enlaces pasa", () => {
     expect(reviewReply("¡Hola! ¿Cuánto mide de ancho tu entrada?", knowledge)).toEqual({ ok: true });
+  });
+});
+
+describe("guardia: lo que encontró la revisión enfocada (23-sep)", () => {
+  const held = (t: string) => reviewReply(t, knowledge).ok === false;
+  it("montos sin $ ni moneda, con 'mil', rangos, miles con espacio, moneda antes o $ después → retenidos", () => {
+    for (const t of [
+      "Te la dejo en 4 mil",
+      "Son 9 mil las dos",
+      "Serían 4,200 en total",
+      "Te la dejo en 4,200",
+      "entre $3,500 y 4,200",
+      "$3,500–4,200",
+      "Mediana: 4,200",
+      "MXN 4200",
+      "4200$",
+      "$  4,200",
+      "$4 200",
+      "$4.200",
+      "te queda en 4200mxn",
+      "Son 850 las dos",
+    ]) expect(held(t), t).toBe(true);
+  });
+  it("enlaces con cualquier TLD, www., @ en la ruta, usuario, IP u homógrafo → retenidos", () => {
+    for (const t of [
+      "paga en pagos-diluvium.ru",
+      "www.evil.ru/pago",
+      "evil.ai",
+      "is.gd/abc",
+      "linktr.ee/x",
+      "pagos.com/x@diluvium.com.mx",
+      "diluvium.com.mx@evil.com",
+      "https://diluvium.com.mx@evil.com/pago",
+      "HTTPS://EVIL.COM",
+      "[diluvium](https://evil.com)",
+      "http://1.2.3.4/pago",
+      "1.2.3.4/pago",
+      "diluvіum.com.mx", // "і" cirílica
+    ]) expect(held(t), t).toBe(true);
+  });
+  it("respuestas normales NO se retienen (tiempos, cantidades, medidas, %, correos, direcciones)", () => {
+    for (const t of [
+      "Tu pedido sale en 3 a 5 días hábiles",
+      "La fabricación queda en 3 semanas",
+      "Puedes hacer el pago a 6 meses sin intereses",
+      "El pago es en 2 partes: 50% y 50%",
+      "En total: 3 tapones de $749",
+      "Precio por 2 entradas",
+      "La compuerta de 1.20 m cuesta $5,500 MXN",
+      "Mide 60 cm de alto y pesa 12 kg",
+      "Abrimos de 9:00 a.m. a 6:00 p.m.",
+      "Calle Morelos #254",
+      "Te envío la factura a juan.perez@gmail.com",
+      "Manda la foto.jpg o el comprobante.pdf",
+    ]) expect(held(t), t).toBe(false);
+  });
+  it("sin retroceso exponencial: entradas patológicas se revisan en milisegundos", () => {
+    const bad = [
+      "precio" + " de".repeat(200) + " x",
+      "a".repeat(5000) + ".",
+      "a.".repeat(2000) + "!",
+      "1".repeat(5000) + "x",
+      "1,".repeat(2500) + "x",
+      ("a-".repeat(60) + ".").repeat(40),
+    ];
+    for (const b of bad) {
+      const t0 = performance.now();
+      reviewReply(b, knowledge);
+      expect(performance.now() - t0, b.slice(0, 20)).toBeLessThan(200);
+    }
+    expect(reviewReply("x".repeat(9_000), knowledge)).toEqual({ ok: false, reason: "Respuesta demasiado larga para revisarla sola" });
+  });
+  it("la base real (Goal + 47 FAQs) pasa completa: sus propios montos y enlaces están permitidos", () => {
+    const docs = (f: string) => readFileSync(fileURLToPath(new URL(`../../../docs/agente-ia/${f}`, import.meta.url)), "utf8");
+    const goal = docs("angela-goal.md");
+    const faqs = (JSON.parse(docs("angela-faqs.json")) as { faqs: { question: string; answer: string }[] }).faqs.map(
+      (f, i) => ({ ...f, position: i + 1 }),
+    );
+    const kb = { goal, faqs };
+    for (const f of faqs) expect(reviewReply(f.answer, kb), f.question).toEqual({ ok: true });
+    for (const chunk of goal.split(/\n\n+/)) expect(reviewReply(chunk, kb), chunk.slice(0, 60)).toEqual({ ok: true });
   });
 });

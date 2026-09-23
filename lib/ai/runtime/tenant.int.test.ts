@@ -117,8 +117,10 @@ describe.skipIf(!TEST_DATABASE_URL)("el runtime del agente no cruza organizacion
     expect(await ctx.agentRepliesToContact(A, CONTACT)).toBe(1);
   });
 
-  it("escrituras: con la organización B no cambia nada de A", async () => {
+  it("escrituras: con la organización B no cambia nada de A (y con A sí)", async () => {
     const now = new Date();
+    // Un borrador vigente de A: los "obsoletar" de B no deben tocarlo.
+    await db.insert(s.aiAgentDrafts).values({ id: "d_a", organizationId: A, conversationId: CONV, bubbles: ["hola"], status: "pendiente" });
     await state.setAgentState(B, CONV, "pausado_humano", { now });
     await state.markAgentReply(B, CONV, now);
     await state.addContactTag(B, CONTACT, "cruce");
@@ -130,10 +132,17 @@ describe.skipIf(!TEST_DATABASE_URL)("el runtime del agente no cruza organizacion
     const c = await conv();
     expect(c).toMatchObject({ agentState: "activo", agentStateChangedAt: null, lastAgentReplyAt: null });
     expect((await contact()).tags).not.toContain("cruce");
-    expect(await db.select().from(s.aiAgentDrafts)).toEqual([]);
-    // Control positivo.
+    expect((await db.select().from(s.aiAgentDrafts)).map((d) => [d.id, d.status])).toEqual([["d_a", "pendiente"]]);
+    // Control positivo: las mismas escrituras con A sí cambian.
     await state.setAgentState(A, CONV, "pausado_humano", { now });
-    expect((await conv()).agentState).toBe("pausado_humano");
+    await state.markAgentReply(A, CONV, now);
+    await state.addContactTag(A, CONTACT, "cruce");
+    expect(await conv()).toMatchObject({ agentState: "pausado_humano", lastAgentReplyAt: now });
+    expect((await contact()).tags).toContain("cruce");
+    expect(await state.obsoleteChannelDrafts(A, "ch_a", now)).toBe(1);
+    await state.saveDraft({ organizationId: A, conversationId: CONV, bubbles: ["x"], triggerMessageId: MSG, now });
+    expect((await db.select().from(s.aiAgentDrafts)).filter((d) => d.status === "pendiente")).toHaveLength(1);
+    expect(await state.obsoletePendingDrafts(A, CONV, now)).toBe(1);
   });
 
   it("ganchos y corrida: la organización B no programa, no pausa y no llama modelos sobre A", async () => {
