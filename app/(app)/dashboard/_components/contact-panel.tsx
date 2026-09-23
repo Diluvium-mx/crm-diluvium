@@ -13,6 +13,7 @@ import { ContactDetails } from "../../contactos/_components/contact-details";
 export function ContactPanel({
   detail,
   onTemperatureChanged,
+  onStageChanged,
   action,
 }: {
   detail: ConversationDetail;
@@ -20,16 +21,23 @@ export function ContactPanel({
   action?: React.ReactNode;
   /** La temperatura cambió aquí: la lista de la Bandeja la refleja (C1). */
   onTemperatureChanged?: (contactId: string, temperature: Temperature | null) => void;
+  /** La etapa cambió aquí: el detalle abierto la refleja (no se regresa a la vieja). */
+  onStageChanged?: (contactId: string, stage: Stage) => void;
 }) {
   const contact = detail.contact;
   const [stage, setStage] = useState<Stage>(contact.stage as Stage);
   const [temperature, setTemperature] = useState<Temperature | null>((contact.temperature as Temperature | null) ?? null);
-  // Si la etapa/temperatura cambian desde fuera (la lista, otra pestaña vía
-  // SSE), el panel se pone al día. Reset en render al cambiar la prop.
-  const [seen, setSeen] = useState({ stage: contact.stage, temperature: contact.temperature });
-  if (seen.stage !== contact.stage || seen.temperature !== contact.temperature) {
-    setSeen({ stage: contact.stage, temperature: contact.temperature });
+  // Si la etapa o la temperatura cambian desde fuera (p. ej. la temperatura
+  // desde la lista), el panel se pone al día CAMPO POR CAMPO: un cambio de
+  // temperatura no debe regresar la etapa. Reset en render al cambiar la prop.
+  const [seenStage, setSeenStage] = useState(contact.stage);
+  if (seenStage !== contact.stage) {
+    setSeenStage(contact.stage);
     setStage(contact.stage as Stage);
+  }
+  const [seenTemperature, setSeenTemperature] = useState(contact.temperature);
+  if (seenTemperature !== contact.temperature) {
+    setSeenTemperature(contact.temperature);
     setTemperature((contact.temperature as Temperature | null) ?? null);
   }
   const [error, setError] = useState<string | null>(null);
@@ -39,11 +47,13 @@ export function ContactPanel({
     const previous = stage;
     setStage(next);
     setError(null);
+    onStageChanged?.(contact.id, next);
     startTransition(async () => {
       try {
         await updateContactStage({ contactId: contact.id, stage: next });
       } catch {
         setStage(previous);
+        onStageChanged?.(contact.id, previous);
         setError("No se pudo cambiar la etapa.");
       }
     });

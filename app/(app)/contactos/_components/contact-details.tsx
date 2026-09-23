@@ -48,9 +48,13 @@ function Field({ title, children }: { title: string; children: React.ReactNode }
   );
 }
 
-/** Texto de un input numérico → número o null. undefined = inválido. */
+/**
+ * Texto de un input numérico → número o null. undefined = inválido. Solo el
+ * monto acepta "$" y comas de miles ("12,500.50"); en los enteros una coma es
+ * inválida (así "2,5" no se vuelve 25).
+ */
 function parseNumber(text: string, { integer, min, max }: { integer: boolean; min: number; max: number }): number | null | undefined {
-  const clean = text.replace(/[$,\s]/g, "");
+  const clean = integer ? text.trim() : text.replace(/[$,\s]/g, "");
   if (clean === "") return null;
   const value = Number(clean);
   if (!Number.isFinite(value) || value < min || value > max) return undefined;
@@ -108,14 +112,26 @@ export function ContactDetails({
     }
   }, [applyDetails, contactId]);
 
+  // Recargas PARCIALES (tras cambiar las entradas o los comentarios): solo esa
+  // parte, sin pisar lo que el vendedor esté tecleando en otros campos.
+  async function refreshEntradas() {
+    const fresh = await getContactDetails(contactId);
+    setDetails((d) => (d ? { ...d, numEntradas: fresh.numEntradas, entradas: fresh.entradas } : d));
+    setNumEntradasDraft(fresh.numEntradas === null ? "" : String(fresh.numEntradas));
+  }
+  async function refreshComments() {
+    const fresh = await getContactDetails(contactId);
+    setDetails((d) => (d ? { ...d, comentarios: fresh.comentarios } : d));
+  }
+
   useEffect(() => {
     const t = setTimeout(() => void reload(), 0);
     return () => clearTimeout(t);
   }, [reload]);
 
   // Guarda un parche de la calificación y refleja lo que devolvió el servidor.
-  async function savePatch(patch: Parameters<typeof updateContactQualification>[1]) {
-    await run(async () => {
+  async function savePatch(patch: Parameters<typeof updateContactQualification>[1]): Promise<boolean> {
+    return run(async () => {
       await updateContactQualification(contactId, patch);
       setDetails((d) => (d ? { ...d, ...patch } : d));
     });
@@ -136,7 +152,11 @@ export function ContactDetails({
       return;
     }
     if (value !== current) {
-      void savePatch(field === "nivelAguaCm" ? { nivelAguaCm: value } : { montoCotizacion: value });
+      // Si falla, el campo vuelve al último valor guardado (no queda mostrando
+      // algo que no se guardó).
+      void savePatch(field === "nivelAguaCm" ? { nivelAguaCm: value } : { montoCotizacion: value }).then((ok) => {
+        if (!ok) reset();
+      });
       // El monto se muestra con formato (12,500.50) en cuanto se guarda.
       if (field === "montoCotizacion") setMonto(value === null ? "" : money.format(value));
     } else reset();
@@ -157,10 +177,15 @@ export function ContactDetails({
           {action}
         </div>
       </div>
+      {/* Errores fuera de la zona con scroll: se ven aunque el vendedor esté
+          abajo (en los comentarios). */}
+      {(status.state === "error" || error) && (
+        <p role="alert" className="border-b bg-brand-orange/10 px-4 py-1.5 text-xs text-brand-orange">
+          {status.state === "error" ? status.message : error}
+        </p>
+      )}
 
       <div className="min-h-0 flex-1 space-y-3 overflow-y-auto px-4 py-3 text-sm">
-        {status.state === "error" && <p className="text-xs text-brand-orange">{status.message}</p>}
-        {error && <p className="text-xs text-brand-orange">{error}</p>}
 
         <div>
           <p className="font-medium break-words">{name}</p>
@@ -252,7 +277,11 @@ export function ContactDetails({
                   onChange={(e) => setNivelTexto(e.target.value)}
                   onBlur={() => {
                     const next = nivelTexto.trim() || null;
-                    if (next !== details.nivelAguaTexto) void savePatch({ nivelAguaTexto: next });
+                    if (next !== details.nivelAguaTexto) {
+                      void savePatch({ nivelAguaTexto: next }).then((ok) => {
+                        if (!ok) setNivelTexto(details.nivelAguaTexto ?? "");
+                      });
+                    }
                   }}
                   className={input}
                 />
@@ -273,14 +302,20 @@ export function ContactDetails({
                     return;
                   }
                   if (value === details.numEntradas) return;
-                  const fewer = details.numEntradas !== null && value !== null && value < details.numEntradas;
-                  if (fewer && !window.confirm(`Se borrarán los anchos de las entradas ${value + 1} a ${details.numEntradas}. ¿Continuar?`)) {
-                    setNumEntradasDraft(String(details.numEntradas));
-                    return;
+                  // Vaciar el campo equivale a 0: si ya había entradas, también
+                  // borra sus anchos y pide confirmación.
+                  const target = value ?? 0;
+                  const existing = details.entradas.length;
+                  if (target < existing) {
+                    const which = target === 0 ? "todas las entradas" : `las entradas ${target + 1} a ${existing}`;
+                    if (!window.confirm(`Se borrarán los anchos de ${which}. ¿Continuar?`)) {
+                      setNumEntradasDraft(details.numEntradas === null ? "" : String(details.numEntradas));
+                      return;
+                    }
                   }
                   void run(async () => {
                     await setNumEntradas(contactId, value);
-                    await reload();
+                    await refreshEntradas();
                   });
                 }}
                 className={`${input} w-24`}
@@ -343,7 +378,7 @@ export function ContactDetails({
             <div data-slot="interruptor-agente-ia" />
 
             <Field title="Comentarios">
-              <ContactComments contactId={contactId} comments={details.comentarios} viewer={details.viewer} run={run} onChanged={reload} />
+              <ContactComments contactId={contactId} comments={details.comentarios} viewer={details.viewer} run={run} onChanged={refreshComments} />
             </Field>
 
             <div className="space-y-1 border-t pt-2 text-xs text-muted-foreground">

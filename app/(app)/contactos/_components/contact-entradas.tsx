@@ -34,13 +34,18 @@ function EntradaRow({
   const [manual, setManual] = useState(entrada.tamanoManual ?? "");
 
   async function save(patch: Parameters<typeof updateEntrada>[2]) {
-    await run(async () => onSaved(await updateEntrada(contactId, entrada.posicion, patch)));
+    const ok = await run(async () => onSaved(await updateEntrada(contactId, entrada.posicion, patch)));
+    // Si falla, los campos vuelven a lo último guardado.
+    if (!ok) {
+      setAncho(entrada.anchoCm === null ? "" : String(entrada.anchoCm));
+      setManual(entrada.tamanoManual ?? "");
+    }
   }
 
   function saveAncho() {
     const text = ancho.trim();
-    const value = text === "" ? null : Number(text);
-    if (value !== null && (!Number.isInteger(value) || value < 1 || value > 1000)) {
+    const value = text === "" ? null : /^\d+$/.test(text) ? Number(text) : NaN;
+    if (value !== null && (Number.isNaN(value) || value < 1 || value > 1000)) {
       setAncho(entrada.anchoCm === null ? "" : String(entrada.anchoCm));
       void run(() => Promise.reject(new Error("ancho")), "El ancho debe ser un entero de 1 a 1000 cm.");
       return;

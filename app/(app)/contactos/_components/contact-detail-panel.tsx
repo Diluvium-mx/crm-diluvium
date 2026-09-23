@@ -40,9 +40,20 @@ export function ContactDetailPanel({
     const previouslyFocused = document.activeElement as HTMLElement | null;
     panelRef.current?.focus();
     const onKey = (event: KeyboardEvent) => {
-      if (event.key === "Escape") {
-        setIsClosing(true);
+      if (event.key !== "Escape") return;
+      // Con el foco en un campo, el primer Escape solo sale del campo (su blur
+      // guarda o cancela la edición); el siguiente cierra el pop-up. Así no se
+      // pierde lo tecleado ni se cierra al cancelar la edición de un comentario.
+      const active = document.activeElement;
+      if (
+        active instanceof HTMLElement &&
+        panelRef.current?.contains(active) &&
+        (active instanceof HTMLInputElement || active instanceof HTMLTextAreaElement || active instanceof HTMLSelectElement)
+      ) {
+        active.blur();
+        return;
       }
+      setIsClosing(true);
     };
     document.addEventListener("keydown", onKey);
     return () => {

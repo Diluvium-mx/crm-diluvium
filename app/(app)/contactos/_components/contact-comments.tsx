@@ -39,14 +39,21 @@ export function ContactComments({
   const [editText, setEditText] = useState("");
   // Esc cancela la edición: el blur que llega al desmontar no debe guardar.
   const cancelled = useRef(false);
+  // Candado contra el doble Enter/clic con la red lenta (un solo comentario).
+  const adding = useRef(false);
 
   async function add() {
     const body = draft.trim();
-    if (!body) return;
-    const ok = await run(() => addComment(contactId, body), "No se pudo agregar el comentario.");
-    if (ok) {
-      setDraft("");
-      await onChanged();
+    if (!body || adding.current) return;
+    adding.current = true;
+    try {
+      const ok = await run(() => addComment(contactId, body), "No se pudo agregar el comentario.");
+      if (ok) {
+        setDraft("");
+        await onChanged();
+      }
+    } finally {
+      adding.current = false;
     }
   }
 
@@ -114,11 +121,17 @@ export function ContactComments({
                           setEditingId(c.id);
                           setEditText(c.body);
                         }}
+                        aria-label={`Editar comentario de ${c.author.name}`}
                         className="rounded px-1 hover:bg-muted hover:text-foreground"
                       >
                         Editar
                       </button>
-                      <button type="button" onClick={() => void remove(c)} className="rounded px-1 hover:bg-muted hover:text-brand-orange">
+                      <button
+                        type="button"
+                        onClick={() => void remove(c)}
+                        aria-label={`Borrar comentario de ${c.author.name}`}
+                        className="rounded px-1 hover:bg-muted hover:text-brand-orange"
+                      >
                         Borrar
                       </button>
                     </span>
