@@ -430,7 +430,20 @@ Para la **parte (b)** (tocan `lib/ai/runtime`, prohibido hasta el cierre de la F
   si no, cliente recibe dos respuestas al mismo "tabla".
 - Los envíos por etapa/comando cuentan como primera respuesta humana (`first_response_seconds`).
 
-Sin escenario (lista, no frena): borrar un workflow cascadea sus corridas; editar pasos con una
+**Revisión de Codex (14 hallazgos), corregido con escenario real:** `workflow_runs.once` para que el
+índice único no bloquee workflows repetibles; un envío **sin confirmar** (timeout) detiene la corrida,
+no mueve la etapa y avisa al vendedor (`envio_sin_confirmar`); una corrida `running` con **lease
+vencido (2 min)** se retoma por cursor tras un reinicio del worker (máx. 3 intentos); **exclusividad por
+conversación** (dos corridas no se intercalan: `busy` → reintento); al reclamar se **revalida**
+habilitado y archivos; el agente relee el estado antes de **cada** paso (apagar el canal frena también
+etapa/etiqueta/pausa); `set_stage` **no pisa** una etapa que un humano movió después de crearse la
+corrida; **anticipo del 50 %** tiene workflow propio (`anticipo_confirmado` → cerca_compra); la palabra
+clave más larga gana entre **todos** los workflows; `system_note` fuera del semáforo y de la primera
+respuesta (`lib/inbox/queries.ts`, `ingest.ts`); videos **HEVC** (iPhone) rechazados al subir.
+
+Sin escenario (lista, no frena): fallos transitorios de BD en los disparadores no se reintentan (solo
+log); carrera guardar-workflow vs borrar-archivo entre dos pestañas; el borrado lógico no purga el
+bucket (retención pendiente); borrar un workflow cascadea sus corridas; editar pasos con una
 corrida a medias mueve el cursor; sin token CSRF en la ruta de subida (los headers X-* fuerzan
 preflight); varios workflows con la misma etapa disparan en cadena sin tope; sin sniffing de
 contenido en la subida (un MIME falso falla después en el proveedor, visible en la corrida).
