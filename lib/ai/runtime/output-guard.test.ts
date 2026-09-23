@@ -144,6 +144,51 @@ describe("guardia: lo que encontró la revisión enfocada (23-sep)", () => {
       "Manda la foto.jpg o el comprobante.pdf",
     ]) expect(held(t), t).toBe(false);
   });
+  it("detección de montos (4ª revisión): 'mil' con resto, cifras sueltas, más contexto, Unicode y $ ilegible", () => {
+    const held = (t: string) => reviewReply(t, knowledge).ok === false;
+    for (const t of [
+      "Te la dejo en $7 mil 500.", // antes se leía $7,000 (en la base) y el 500 quedaba suelto
+      "La grande te queda en 11 mil 500.",
+      "Te la dejo a 6500.",
+      "Sí, 6500 está bien.",
+      "Precio final 6500",
+      "El costo es 2500",
+      "Te dejo los 3 tapones por 2000.",
+      "Te rebajo 500 si pagas hoy.",
+      "Te la dejo a 850.", // 3 cifras: solo lo atrapa el contexto "dejo"
+      "Te la dejo en ６５００", // cifras de ancho completo sin $: solo tras normalizar
+      "Te la dejo en 6\u200b500", // ancho cero dentro del número
+      "La grande sale en $11,000 + 500 de envío.",
+      "＄6500", // signo de ancho completo
+      "$６５００",
+      "$6⁵⁰⁰",
+      "$\u200b6500", // ancho cero
+      "$\n6500", // salto de línea entre $ y cifras → no se pudo leer → revisión
+      "$6,5000",
+      "$ 6.500a@x.co",
+    ]) expect(held(t), t).toBe(true);
+    expect(reviewReply("$6,5000", knowledge)).toEqual({ ok: false, reason: "Monto que no se pudo leer: $6" });
+    // Identificadores y datos que no son precio siguen pasando.
+    for (const t of [
+      "Tu CP 81200 y teléfono 668 242 6364, ¿correcto?",
+      "Tu pedido #45821 ya salió.",
+      "Desde 2019 fabricamos compuertas.",
+      "Mide 1200 mm de ancho",
+      "Horario de 9:00 a 18:00",
+    ]) expect(held(t), t).toBe(false);
+  });
+
+  it("las cantidades de la frase deben ser las del desglose", () => {
+    const r = (t: string) => reviewReply(t, knowledge).ok;
+    expect(r("Para tus 6 compuertas el total es 3 × $5,500 = $16,500")).toBe(false);
+    expect(r("Por las seis te queda: 3 × $5,500 = $16,500")).toBe(false);
+    expect(r("3 × $5,500 = $16,500 las 6 compuertas")).toBe(false);
+    expect(r("Para tus 3 compuertas: 3 × $5,500 = $16,500")).toBe(true);
+    expect(r("Las dos: 2 × $5,500 = $11,000")).toBe(true);
+    expect(r("Son 3 × $5,500 = $16,500 para tus 3 entradas de 95 cm.")).toBe(true); // 95 cm es medida
+    expect(r("Tus 2 medianas y 1 chica: 2 × $5,500 + 1 × $3,500 = $14,500")).toBe(true); // 2, 1 y 3 piezas
+  });
+
   it("un enlace en medio no oculta un precio en contexto; un monto con forma de correo cuenta", () => {
     expect(reviewReply("Te la dejo en diluvium.com.mx 4200", knowledge).ok).toBe(false);
     expect(reviewReply("Cuesta www.diluvium.com.mx 850", knowledge).ok).toBe(false);
