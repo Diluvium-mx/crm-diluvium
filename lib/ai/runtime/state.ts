@@ -92,7 +92,8 @@ export async function saveDraft(input: {
       triggerMessageId: input.triggerMessageId,
       reviewReason: input.reviewReason ?? null,
       status: input.status ?? "pendiente",
-      resolvedAt: input.status === "enviando" ? input.now : null,
+      // Plan: reloj de Postgres, igual que messages.created_at (ver reconcileStuckDrafts).
+      resolvedAt: input.status === "enviando" ? sql`now()` : null,
       createdAt: input.now,
     });
     await notifyConversation(tx, input.organizationId, input.conversationId);

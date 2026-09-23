@@ -340,7 +340,6 @@ describe.skipIf(!TEST_DATABASE_URL)("acciones manuales del agente (Postgres real
       type: "text",
       body: "x",
       status: "sent",
-      // sent_at lo pone sendTextMessage con el reloj de la app al mandar (≥ resolved_at).
       sentAt: new Date(old.getTime() + 1_000),
       createdAt: new Date(old.getTime() + 1_000),
     });
@@ -402,6 +401,47 @@ describe.skipIf(!TEST_DATABASE_URL)("acciones manuales del agente (Postgres real
     const [d] = await db.select().from(s.aiAgentDrafts).where(eq(s.aiAgentDrafts.id, "d_plan"));
     expect(d).toMatchObject({ status: "pendiente", bubbles: ["Sí incluye el envío", "¿Para cuántas entradas?"] });
     expect(d.reviewReason).toBeNull();
+  });
+
+  it("barrido: aprobar una burbuja sin confirmar cuyo eco trae una hora ANTERIOR al reclamo la cuenta como enviada (no vuelve a la tarjeta)", async () => {
+    const { reconcileStuckDrafts } = await import("./sweep");
+    const [id] = [`d_${crypto.randomUUID()}`];
+    await db.insert(s.aiAgentDrafts).values({ id, organizationId: ORG, conversationId: "cv_m", bubbles: ["Son $5,500"], status: "pendiente" });
+    const r = await manual.approveDraft({
+      organizationId: ORG,
+      draftId: id,
+      userId: "u1",
+      now: new Date(Date.now() + 5_000), // reloj de la app adelantado respecto a Postgres
+      sendBubble: async () => {
+        // La burbuja se guarda tras el reclamo; el eco de Zernio le pone a sent_at la
+        // hora del proveedor, que puede quedar ANTES del reclamo (otro reloj).
+        await db.insert(s.messages).values({
+          id: "m_eco",
+          organizationId: ORG,
+          conversationId: "cv_m",
+          direction: "out",
+          source: "ai_agent",
+          type: "text",
+          body: "Son $5,500",
+          status: "queued",
+          sentAt: new Date(Date.now() - 800),
+        });
+        return { status: "pending" as const };
+      },
+      sleep: async () => undefined,
+    });
+    expect(r).toEqual({ sent: 1, confirmed: false });
+    await db.update(s.messages).set({ status: "delivered" }).where(eq(s.messages.id, "m_eco")); // sí llegó
+    expect(await reconcileStuckDrafts(new Date(Date.now() + 11 * 60_000))).toBe(1);
+    const [d] = await db.select().from(s.aiAgentDrafts).where(eq(s.aiAgentDrafts.id, id));
+    expect(d.status).toBe("enviado"); // nunca "pendiente": aprobarla otra vez duplicaría el mensaje
+  });
+
+  it("un plan AUTO ('enviando') toma resolved_at del reloj de Postgres, no del de la app", async () => {
+    const appAhead = new Date(Date.now() + 60_000);
+    const id = await state.saveDraft({ organizationId: ORG, conversationId: "cv_m", bubbles: ["a", "b"], triggerMessageId: null, now: appAhead, status: "enviando" });
+    const [d] = await db.select().from(s.aiAgentDrafts).where(eq(s.aiAgentDrafts.id, id));
+    expect(d.resolvedAt!.getTime()).toBeLessThan(appAhead.getTime() - 30_000);
   });
 
   it("canal apagado: el borrador pendiente ya no sale y apagar lo deja obsoleto", async () => {

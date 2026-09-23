@@ -116,9 +116,10 @@ export async function reconcileStuckDrafts(now: Date): Promise<number> {
     .limit(100);
   let resolved = 0;
   for (const d of stuck) {
-    // Solo salientes del agente enviados DESDE el reclamo del plan (sent_at y
-    // resolved_at usan el mismo reloj de la app): una respuesta anterior —aunque sea
-    // de segundos antes— no cuenta como burbuja de este plan.
+    // Solo salientes del agente guardados DESDE el reclamo del plan. created_at y
+    // resolved_at salen del MISMO reloj (now() de Postgres): una respuesta anterior
+    // —aunque sea de segundos antes— no cuenta como burbuja de este plan. No se usa
+    // sent_at: el eco del proveedor lo reemplaza con la hora de Zernio/WhatsApp.
     const since = d.resolvedAt ?? now;
     const outs = await db
       .select({ status: messages.status })
@@ -129,7 +130,7 @@ export async function reconcileStuckDrafts(now: Date): Promise<number> {
           eq(messages.conversationId, d.conversationId),
           eq(messages.direction, "out"),
           eq(messages.source, "ai_agent"),
-          gte(messages.sentAt, since),
+          gte(messages.createdAt, since),
         ),
       );
     const setStatus = (status: "enviado" | "obsoleto") =>
