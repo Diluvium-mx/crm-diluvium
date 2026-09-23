@@ -77,6 +77,7 @@ export async function getContactQualification(
   const [entradas, comentarios] = await Promise.all([
     database
       .select({
+        id: contactEntradas.id,
         posicion: contactEntradas.posicion,
         anchoCm: contactEntradas.anchoCm,
         linea: contactEntradas.linea,
@@ -309,6 +310,7 @@ export async function updateEntrada(
   }
 
   return {
+    id: updated.id,
     posicion: updated.posicion,
     anchoCm: updated.anchoCm,
     linea: updated.linea,

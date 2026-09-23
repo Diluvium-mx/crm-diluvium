@@ -49,7 +49,7 @@ const qualificationPatchSchema = z
       1000,
       "El nivel de agua debe ser un entero entre 0 y 1000.",
     ).optional(),
-    nivelAguaTexto: z.string().nullable().optional(),
+    nivelAguaTexto: z.string().max(500, "La descripción del nivel no puede pasar de 500 caracteres.").nullable().optional(),
     montoCotizacion: moneySchema.optional(),
     porcentajeConvencimiento: nullableInteger(
       0,
@@ -78,24 +78,26 @@ const entradaPatchSchema = z
       "El ancho debe ser un entero entre 1 y 1000.",
     ).optional(),
     linea: z.enum(lineaCompuertaEnum.enumValues).optional(),
-    tamanoManual: z.string().nullable().optional(),
+    tamanoManual: z.string().max(50, "El tamaño manual no puede pasar de 50 caracteres.").nullable().optional(),
   })
   .refine((patch) => Object.keys(patch).length > 0, {
     message: "Indica al menos un campo de la entrada para actualizar.",
   });
-const sizeRangesSchema = z.array(
-  z.object({
-    linea: z.enum(lineaCompuertaEnum.enumValues),
-    talla: z.string(),
-    minCm: z.number().int("El mínimo debe ser un entero."),
-    maxCm: z.number().int("El máximo debe ser un entero."),
-    posicion: z
-      .number()
-      .int("La posición debe ser un entero.")
-      .min(1, "La posición debe ser mayor que 0.")
-      .max(32767, "La posición excede el máximo permitido."),
-  }),
-);
+const sizeRangesSchema = z
+  .array(
+    z.object({
+      linea: z.enum(lineaCompuertaEnum.enumValues),
+      talla: z.string().max(50, "La talla no puede pasar de 50 caracteres."),
+      minCm: z.number().int("El mínimo debe ser un entero."),
+      maxCm: z.number().int("El máximo debe ser un entero."),
+      posicion: z
+        .number()
+        .int("La posición debe ser un entero.")
+        .min(1, "La posición debe ser mayor que 0.")
+        .max(32767, "La posición excede el máximo permitido."),
+    }),
+  )
+  .max(100, "No puede haber más de 100 rangos de tallas.");
 const commentBodySchema = z
   .string()
   .trim()
