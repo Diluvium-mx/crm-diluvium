@@ -130,6 +130,20 @@ describe.skipIf(!TEST_DATABASE_URL)("vendedores (Postgres real + Better Auth)", 
     expect(await team.countActiveOwners(ORG)).toBe(1);
   });
 
+  it("con sesión (HTTP) nadie puede crear organizaciones; desde el servidor sí", async () => {
+    await team.createSeller({ organizationId: ORG, name: "Carlos", email: "carlos@diluvium.mx", password: "vendedor-pass-12", role: "agent" });
+    const { headers: signedIn } = await auth.api.signInEmail({
+      body: { email: "carlos@diluvium.mx", password: "vendedor-pass-12" },
+      returnHeaders: true,
+    });
+    const cookie = (signedIn.get("set-cookie") ?? "").split(";")[0];
+    await expect(
+      auth.api.createOrganization({ body: { name: "Mía", slug: "de-carlos" }, headers: new Headers({ cookie }) }),
+    ).rejects.toMatchObject({ body: { code: "YOU_ARE_NOT_ALLOWED_TO_CREATE_A_NEW_ORGANIZATION" } });
+    const orgs = await db.select().from(s.organization);
+    expect(orgs.map((o) => o.slug)).toEqual(["team"]);
+  });
+
   it("una organización nueva nace con los rangos de tallas por defecto", async () => {
     const created = await auth.api.createOrganization({ body: { name: "Nueva", slug: "nueva-org", userId: ownerId } });
     const rows = await db.select().from(s.tallasCompuerta).where(eq(s.tallasCompuerta.organizationId, created!.id));
