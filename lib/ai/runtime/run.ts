@@ -152,8 +152,6 @@ export async function runAgent(job: { organizationId: string; conversationId: st
     const pending = await pendingInbound(org, conv.id);
     const lastOut = await lastOutbound(org, conv.id);
     const pausedUntilMs = conv.agentPausedUntil?.getTime() ?? null;
-    // Un handover vencido se reactiva: su corte es AHORA (lo que el vendedor
-    // contestó durante la transferencia era lo esperado, no vuelve a pausar).
     // Encender el canal también es corte: lo que un vendedor contestó ANTES de
     // prender el agente no pausa conversaciones que ya existían.
     const cut = latestDate(conv.agentStateChangedAt, channel.aiAgentModeChangedAt);
@@ -402,8 +400,23 @@ export async function runAgent(job: { organizationId: string; conversationId: st
     await markAgentReply(org, conv.id, deps.now());
     // Una burbuja sin confirmar queda en el outbox: si vence como "sin confirmar",
     // el barrido pausa la conversación para revisión humana (nunca reenvía a ciegas).
+    const omitted = bubbles.slice(sent);
+    if (unconfirmed && omitted.length > 0) {
+      // El resto NO se pierde en silencio: queda como borrador para revisión humana
+      // (con el motivo) y el agente se pausa; el vendedor ve en el hilo si la burbuja
+      // anterior llegó y decide mandar o descartar el resto.
+      await saveDraft({
+        ...draftInput,
+        bubbles: omitted,
+        now: deps.now(),
+        reviewReason: "WhatsApp no confirmó la burbuja anterior; revisa el hilo antes de mandar el resto.",
+      });
+      await pause(conv, "pausado_antibucle", deps.now(), { tag: TAG_HUMAN_REVIEW }).catch((error: unknown) =>
+        console.error(`[agente] ${conv.id}: no se pudo pausar tras un envío sin confirmar`, error),
+      );
+    }
     const note = unconfirmed
-      ? `${unconfirmed} burbuja(s) sin confirmar${sent < bubbles.length ? `; no se enviaron ${bubbles.length - sent}` : ""}`
+      ? `${unconfirmed} burbuja(s) sin confirmar${omitted.length ? `; ${omitted.length} en borrador para revisión humana` : ""}`
       : null;
     await recordAiUsage({ ...brainUsage, outcome: "sent", error: note });
     return { kind: "sent", bubbles: sent };
