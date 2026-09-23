@@ -420,17 +420,22 @@ async function ingestMessage(
   // Después del commit: la descarga ya puede leer la fila.
   if (mediaMessageId && hooks.onMediaMessage) await hooks.onMediaMessage(mediaMessageId);
   // Agente IA (después del commit): el entrante programa la respuesta; un eco
-  // del vendedor desde el celular pausa al agente. Los ganchos no lanzan.
+  // del vendedor desde el celular pausa al agente. Falla aislada: el mensaje ya
+  // quedó guardado y un error del agente no debe volver a encolar la ingesta.
   const m = saved.value;
-  if (m?.direction === "in" && hooks.onInboundMessage) {
-    await hooks.onInboundMessage({
-      organizationId: channel.organizationId,
-      conversationId: m.conversationId,
-      messageId: m.messageId,
-      receivedAt: new Date(),
-    });
-  } else if (m?.direction === "out" && m.source === "business_app" && hooks.onHumanOutbound) {
-    await hooks.onHumanOutbound({ organizationId: channel.organizationId, conversationId: m.conversationId });
+  try {
+    if (m?.direction === "in" && hooks.onInboundMessage) {
+      await hooks.onInboundMessage({
+        organizationId: channel.organizationId,
+        conversationId: m.conversationId,
+        messageId: m.messageId,
+        receivedAt: new Date(),
+      });
+    } else if (m?.direction === "out" && m.source === "business_app" && hooks.onHumanOutbound) {
+      await hooks.onHumanOutbound({ organizationId: channel.organizationId, conversationId: m.conversationId });
+    }
+  } catch (error) {
+    console.error(`[ingest] gancho del Agente IA falló para ${m?.conversationId}; el mensaje ya está guardado`, error);
   }
   return { outcome: result, organizationId: channel.organizationId };
 }

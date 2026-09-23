@@ -88,7 +88,12 @@ export const agentIngestHooks = {
 // llaman las acciones de la bandeja y el despacho de programados tras un envío
 // que no falló. Nunca lanza.
 export async function pauseAgentOnManualMessage(conversationId: string): Promise<void> {
-  await onHumanOutbound({ conversationId });
+  // onHumanOutbound ya atrapa todo; este catch es la última red del envío del vendedor.
+  try {
+    await onHumanOutbound({ conversationId });
+  } catch (error) {
+    console.error(`[agente] no se pudo pausar ${conversationId} tras envío manual`, error);
+  }
 }
 
 // Igual, a partir del mensaje enviado (el reintento de la bandeja solo trae su id).
