@@ -1,7 +1,7 @@
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
-import { extractAmounts, extractLinks, findBreakdowns, MAX_QTY, parseAmount, reviewReply } from "./output-guard";
+import { extractAmounts, extractLinks, extractPromos, findBreakdowns, MAX_QTY, parseAmount, reviewReply } from "./output-guard";
 
 // Base de conocimiento con la forma real (docs/agente-ia): precios con $ y los
 // enlaces de Amazon y Mercado Libre en las FAQs.
@@ -132,8 +132,7 @@ describe("guardia: lo que encontró la revisión enfocada (23-sep)", () => {
     for (const t of [
       "Tu pedido sale en 3 a 5 días hábiles",
       "La fabricación queda en 3 semanas",
-      "Puedes hacer el pago a 6 meses sin intereses",
-      "El pago es en 2 partes: 50% y 50%",
+      // (Meses sin intereses y % dependen de la base: los cubre el test de promociones.)
       "En total: 3 tapones de $749",
       "Precio por 2 entradas",
       "La compuerta de 1.20 m cuesta $5,500 MXN",
@@ -316,6 +315,42 @@ describe("guardia: lo que encontró la revisión enfocada (23-sep)", () => {
     expect(findBreakdowns("sin cuentas aquí", known)).toEqual([]);
     // Una FAQ desactivada no aporta precios: $4,999 no vale como precio unitario.
     expect(reviewReply("2 × $4,999 = $9,998", knowledge).ok).toBe(false);
+  });
+
+  it("promociones: %, NxM y meses sin intereses solo si están tal cual en la base activa", () => {
+    const docs = (f: string) => readFileSync(fileURLToPath(new URL(`../../../docs/agente-ia/${f}`, import.meta.url)), "utf8");
+    const goal = docs("angela-goal.md");
+    const faqs = (JSON.parse(docs("angela-faqs.json")) as { faqs: { question: string; answer: string }[] }).faqs.map(
+      (f, i) => ({ ...f, position: i + 1 }),
+    );
+    const kb = { goal, faqs };
+    // La base real trae 50% y 6 meses sin intereses; lo codificado dentro de un enlace ("%3A", "39x3") no cuenta.
+    const base = [...new Set(extractPromos(`${goal}\n${faqs.map((f) => `${f.question}\n${f.answer}`).join("\n")}`).map((p) => p.key))];
+    expect(base.sort()).toEqual(["%50", "msi6"]);
+    expect(reviewReply("Te puedo dar un 10% de descuento si pagas hoy.", kb)).toEqual({
+      ok: false,
+      reason: "Promoción que no está en el Goal ni en las FAQs: 10%",
+    });
+    for (const t of [
+      "Solo por hoy tenemos 2x1 en tapones.",
+      "Llévate 3x2",
+      "Promoción 2 por 1",
+      "2 × 1 en tapones",
+      "Hasta 18 meses sin intereses.",
+      "Paga a 12 MSI",
+      "Te hago el 15 por ciento",
+      "3 × $5,500 = $16,500 con 10% de descuento",
+    ]) expect(reviewReply(t, kb).ok, t).toBe(false);
+    for (const t of [
+      "Puedes pagar a 6 meses sin intereses.",
+      "El anticipo es del 50%.",
+      "La entrada mide 90x60 cm", // medida, no promoción
+      "3 × $5,500 = $16,500",
+    ]) expect(reviewReply(t, kb), t).toEqual({ ok: true });
+    // Una promo de una FAQ DESACTIVADA no cuenta.
+    const off = { goal: "Eres Angela.", faqs: [{ position: 1, question: "¿Promo?", answer: "2x1 en tapones", enabled: false }] };
+    expect(reviewReply("Tenemos 2x1 en tapones", off).ok).toBe(false);
+    expect(reviewReply("Tenemos 2x1 en tapones", { ...off, faqs: [{ ...off.faqs[0], enabled: true }] })).toEqual({ ok: true });
   });
 
   it("la base real (Goal + 47 FAQs) pasa completa: sus propios montos y enlaces están permitidos", () => {

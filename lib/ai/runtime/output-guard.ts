@@ -4,6 +4,8 @@
 //   - un monto o precio que no aparezca tal cual en el Goal ni en las FAQs activas,
 //     salvo un TOTAL con su desglose correcto en la misma respuesta
 //     ("3 × $5,500 = $16,500", "$5,500 + $7,000 = $12,500"), o
+//   - un porcentaje, un "NxM" (2x1) o unos "N meses sin intereses" que no estén tal
+//     cual en la base activa, o
 //   - un enlace fuera de la lista permitida (diluvium.com.mx y los enlaces de
 //     Amazon / Mercado Libre que ya están en las FAQs activas)
 // → NO se envía: queda como borrador para revisión humana, con el motivo.
@@ -303,6 +305,35 @@ export function findBreakdowns(text: string, known: ReadonlySet<number>): Breakd
   return out;
 }
 
+// ── Promociones: porcentajes, NxM y meses sin intereses ──────────────────────
+// Solo pasan si están escritos tal cual en la base activa ("50%", "6 meses sin
+// intereses"); si no, van a revisión: "10% de descuento", "2x1", "18 MSI". Se
+// buscan en el texto SIN enlaces (un enlace trae "%3A", "39x3"… que no son promos).
+const PERCENT = new RegExp(
+  String.raw`(?<![\p{N}.,])(\d{1,3}(?:[.,]\d{1,2})?)${H}{0,2}(?:%|por${H}{1,3}ciento(?!\p{L}))`,
+  "giu",
+);
+const N_X_M = new RegExp(
+  String.raw`(?<![\p{L}\p{N}.,$])(\d{1,2})${H}{0,2}(?:[x×]|por)${H}{0,2}(\d{1,2})(?![\p{N}.,])(?!${H}{0,3}(?:cm|mm|m|mts?|metros?|pulgadas?|pulg|\$)(?!\p{L}))`,
+  "giu",
+);
+const MSI = new RegExp(
+  String.raw`(?<![\p{N}.,])(\d{1,2})${H}{0,3}(?:meses${H}{1,3}sin${H}{1,3}intereses|msi)(?!\p{L})`,
+  "giu",
+);
+
+type Promo = { key: string; text: string };
+
+export function extractPromos(text: string): Promo[] {
+  const clean = withoutLinks(text);
+  const num = (x: string) => Number(x.replace(",", "."));
+  return [
+    ...[...clean.matchAll(PERCENT)].map((m) => ({ key: `%${num(m[1])}`, text: m[0].trim() })),
+    ...[...clean.matchAll(N_X_M)].map((m) => ({ key: `${Number(m[1])}x${Number(m[2])}`, text: m[0].trim() })),
+    ...[...clean.matchAll(MSI)].map((m) => ({ key: `msi${Number(m[1])}`, text: m[0].trim() })),
+  ];
+}
+
 // Más largo que esto no se revisa: se retiene (acota el costo de las regex; el
 // cerebro tiene tope de 1,024 tokens de salida, ~5,000 caracteres).
 export const MAX_GUARD_CHARS = 8_000;
@@ -324,6 +355,7 @@ export function reviewReply(input: string, rawKnowledge: { goal: string; faqs: r
   const active = knowledge.faqs.filter((f) => f.enabled !== false);
   const faqText = active.map((f) => `${f.question}\n${f.answer}`).join("\n");
   const known = new Set(extractAmounts(`${knowledge.goal}\n${faqText}`).map((a) => cents(a.value)));
+  const knownPromos = new Set(extractPromos(`${knowledge.goal}\n${faqText}`).map((p) => p.key));
   const allowedMarketplace = new Set(
     extractLinks(faqText)
       .map(linkKey)
@@ -361,6 +393,9 @@ export function reviewReply(input: string, rawKnowledge: { goal: string; faqs: r
   if (badAmounts.length) {
     problems.push(`monto que no está en el Goal ni en las FAQs ni tiene desglose correcto: ${badAmounts.join(", ")}`);
   }
+
+  const badPromos = [...new Set(extractPromos(text).filter((p) => !knownPromos.has(p.key)).map((p) => p.text))];
+  if (badPromos.length) problems.push(`promoción que no está en el Goal ni en las FAQs: ${badPromos.join(", ")}`);
 
   const badLinks = [
     ...new Set(
