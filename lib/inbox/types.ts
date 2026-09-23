@@ -30,6 +30,8 @@ export type ConversationListItem = {
   lastMessage: { preview: string; direction: "in" | "out"; kind: MessageKind; at: Date } | null;
   unreadCount: number;
   isStarred: boolean;
+  /** Temperatura del CONTACTO (🔥🧊⏳⭐), editable desde la lista (C1). */
+  temperature: string | null;
   /**
    * Semáforo: desde cuándo espera respuesta el cliente (su mensaje más viejo
    * sin contestar después de la última respuesta humana que sí salió). null =

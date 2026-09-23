@@ -1,5 +1,17 @@
 import { isNotNull, sql } from "drizzle-orm";
-import { pgEnum, pgTable, text, timestamp, jsonb, index, uniqueIndex } from "drizzle-orm/pg-core";
+import {
+  check,
+  index,
+  integer,
+  jsonb,
+  numeric,
+  pgEnum,
+  pgTable,
+  smallint,
+  text,
+  timestamp,
+  uniqueIndex,
+} from "drizzle-orm/pg-core";
 import { organization } from "./auth";
 
 export const contactStageEnum = pgEnum("contact_stage", [
@@ -18,6 +30,12 @@ export const contactTemperatureEnum = pgEnum("contact_temperature", [
   "frio",
   "en_espera",
   "destacado",
+]);
+
+export const contactInundacionesEnum = pgEnum("contact_inundaciones", [
+  "si",
+  "no",
+  "no_sabe",
 ]);
 
 export const contacts = pgTable(
@@ -56,6 +74,13 @@ export const contacts = pgTable(
     stage: contactStageEnum("stage").default("inbox").notNull(),
     // Nullable a propósito: sin temperatura asignada hasta que el vendedor la fije.
     temperature: contactTemperatureEnum("temperature"),
+    tieneInundaciones: contactInundacionesEnum("tiene_inundaciones"),
+    nivelAguaCm: integer("nivel_agua_cm"),
+    nivelAguaTexto: text("nivel_agua_texto"),
+    numEntradas: integer("num_entradas"),
+    // Todas las cotizaciones se expresan en MXN; no se necesita columna de moneda.
+    montoCotizacion: numeric("monto_cotizacion", { precision: 12, scale: 2 }),
+    porcentajeConvencimiento: smallint("porcentaje_convencimiento"),
     createdAt: timestamp("created_at").defaultNow().notNull(),
     // Marca cuándo se colocó la tarjeta en su etapa actual (al crear y en
     // cada cambio de etapa). El board ordena por esto DESC: el recién movido
@@ -80,5 +105,21 @@ export const contacts = pgTable(
     uniqueIndex("contacts_org_ghl_contact_id_uidx")
       .on(table.organizationId, table.ghlContactId)
       .where(isNotNull(table.ghlContactId)),
+    check(
+      "contacts_nivel_agua_cm_check",
+      sql`${table.nivelAguaCm} is null or ${table.nivelAguaCm} between 0 and 1000`,
+    ),
+    check(
+      "contacts_num_entradas_check",
+      sql`${table.numEntradas} is null or ${table.numEntradas} between 0 and 50`,
+    ),
+    check(
+      "contacts_monto_cotizacion_check",
+      sql`${table.montoCotizacion} is null or ${table.montoCotizacion} >= 0`,
+    ),
+    check(
+      "contacts_porcentaje_convencimiento_check",
+      sql`${table.porcentajeConvencimiento} is null or (${table.porcentajeConvencimiento} between 0 and 100 and ${table.porcentajeConvencimiento} % 10 = 0)`,
+    ),
   ],
 );
