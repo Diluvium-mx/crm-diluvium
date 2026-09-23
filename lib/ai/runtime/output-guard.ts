@@ -23,7 +23,9 @@ const BARE_DOMAIN =
   /(?<![\p{L}\p{N}@._%+\-])(?:[\p{L}\p{N}](?:[\p{L}\p{N}\-]{0,61}[\p{L}\p{N}])?\.){1,8}(?!(?:jpe?g|png|gif|webp|heic|pdf|xml|docx?|xlsx?|mp4|mov|txt)(?![\p{L}\p{N}]))\p{L}{2,24}(?![\p{L}\p{N}@\-])(?:[/?#][^\s<>"'`]*)?/giu;
 const IPV4 = /(?<![\p{N}.])\d{1,3}(?:\.\d{1,3}){3}(?![\p{N}.])(?:[/:][^\s<>"'`]*)?/gu;
 // Correos: no son enlaces; se quitan antes de buscar montos (sus dígitos no cuentan).
-const EMAIL = /[\p{L}\p{N}._%+\-]{1,64}@(?:[\p{L}\p{N}\-]{1,63}\.){1,8}\p{L}{2,24}/giu;
+// La parte local lleva al menos una letra: "$6.500@x.co" no es un correo (y su monto cuenta).
+const EMAIL =
+  /(?<![\p{L}\p{N}._%+\-])(?=[\p{N}._%+\-]{0,63}\p{L})[\p{L}\p{N}._%+\-]{1,64}@(?:[\p{L}\p{N}\-]{1,63}\.){1,8}\p{L}{2,24}/giu;
 const DOMAIN_LIKE_LOCAL = /\.(?:com|mx|net|org|info|io|co|app|ai|ru)(?:\.|$)|https?|www\./iu;
 const TRAILING_PUNCT = /[.,;:!?¡¿)\]}"'»”’]+$/u;
 
@@ -43,11 +45,12 @@ export function extractLinks(text: string): string[] {
   return links;
 }
 
-// Texto sin enlaces ni correos (para buscar montos sin contar sus dígitos). Los
-// cambia por espacios del MISMO largo: las posiciones siguen siendo las del texto.
+// Texto sin enlaces ni correos (para buscar montos sin contar sus dígitos). Un
+// solo espacio por enlace: "te la dejo en diluvium.com.mx 4200" sigue siendo
+// precio en contexto. Montos y desgloses se buscan ambos en ESTE texto, así que
+// sus posiciones coinciden entre sí.
 function withoutLinks(text: string): string {
-  const blank = (m: string) => " ".repeat(m.length);
-  return text.replace(URL_WITH_SCHEME, blank).replace(EMAIL, blank).replace(IPV4, blank).replace(BARE_DOMAIN, blank);
+  return text.replace(URL_WITH_SCHEME, " ").replace(EMAIL, " ").replace(IPV4, " ").replace(BARE_DOMAIN, " ");
 }
 
 // host (sin www, minúsculas, punycode) + ruta (sin "/" final); sin query ni #:
@@ -167,18 +170,24 @@ export const MAX_QTY = 10;
 const TIMES = String.raw`[×xX*]`;
 const PRICE_NUM = String.raw`(?:${MONEY_NUM})(?!\p{N}|[.,]\p{N})`;
 const CURRENCY = String.raw`(?:${H}{0,3}(?:mxn|pesos))?`;
-const QTY = String.raw`\d{1,3}(?!\p{N})`;
-// Un término: "3 × $5,500", "3 compuertas × $5,500", "$5,500 × 3" o "$5,500".
-const TERM = String.raw`(?:${QTY}(?:${H}{1,3}\p{L}{1,20}){0,2}${H}{0,3}${TIMES}${H}{0,3}\$${H}{0,3}${PRICE_NUM}${CURRENCY}|\$${H}{0,3}${PRICE_NUM}${CURRENCY}${H}{0,3}${TIMES}${H}{0,3}${QTY}|\$${H}{0,3}${PRICE_NUM}${CURRENCY})`;
+// Etiqueta opcional de un término: "mediana $5,500", "$5,500 (mediana)".
+const LABEL = String.raw`(?:\p{L}{1,20}(?:${H}{1,3}\p{L}{1,20}){0,2}|\([^()\n]{1,30}\))`;
+// Núcleo de un término: "3 × $5,500", "3 compuertas × $5,500", "$5,500 × 3" o "$5,500".
+const CORE = (g: boolean) => {
+  const c = (x: string) => (g ? `(${x})` : x);
+  return String.raw`(?:${c(String.raw`\d{1,3}`)}(?!\p{N})(?:${H}{1,3}\p{L}{1,20}){0,2}${H}{0,3}${TIMES}${H}{0,3}\$${H}{0,3}${c(PRICE_NUM)}${CURRENCY}|\$${H}{0,3}${c(PRICE_NUM)}${CURRENCY}${H}{0,3}${TIMES}${H}{0,3}${c(String.raw`\d{1,3}`)}(?!\p{N})|\$${H}{0,3}${c(PRICE_NUM)}${CURRENCY})`;
+};
+const TERM = String.raw`(?:${LABEL}${H}{1,3})?${CORE(false)}(?:${H}{1,3}${LABEL})?`;
+// Ni antes ni después del desglose puede haber otra operación: en "3 × $749 × 2 =
+// $1,498" o "… = $16,500 − $1,500" solo se leería un pedazo de la cuenta.
+const NO_OP_BEFORE = String.raw`(?<![×*+−/xX]${H}{0,3})(?<!\p{N}${H}{0,3}-${H}{0,3})`;
+const NO_OP_AFTER = String.raw`(?!${H}{0,3}(?:[×*+−/]|[xX]${H}{0,3}\p{N}|-${H}{0,3}[\p{N}$]))`;
 // Términos unidos por "+" (hasta 10), "=" y el total.
 const BREAKDOWN = new RegExp(
-  String.raw`(?<![\p{L}\p{N}$.,])(${TERM}(?:${H}{0,3}\+${H}{0,3}${TERM}){0,9})${H}{0,3}=${H}{0,3}\$?${H}{0,3}(${PRICE_NUM})${CURRENCY}`,
+  String.raw`(?<![\p{L}\p{N}$.,])${NO_OP_BEFORE}(${TERM}(?:${H}{0,3}\+${H}{0,3}${TERM}){0,9})${H}{0,3}=${H}{0,3}\$?${H}{0,3}(${PRICE_NUM})${CURRENCY}${NO_OP_AFTER}`,
   "giu",
 );
-const TERM_PARTS = new RegExp(
-  String.raw`^(?:(\d{1,3})(?:${H}{1,3}\p{L}{1,20}){0,2}${H}{0,3}${TIMES}${H}{0,3}\$${H}{0,3}(${PRICE_NUM})${CURRENCY}|\$${H}{0,3}(${PRICE_NUM})${CURRENCY}${H}{0,3}${TIMES}${H}{0,3}(\d{1,3})|\$${H}{0,3}(${PRICE_NUM})${CURRENCY})$`,
-  "iu",
-);
+const TERM_PARTS = new RegExp(String.raw`^(?:${LABEL}${H}{1,3})?${CORE(true)}(?:${H}{1,3}${LABEL})?$`, "iu");
 
 export type Breakdown = { text: string; start: number; end: number; total: number; valid: boolean };
 
@@ -230,13 +239,14 @@ export function reviewReply(text: string, knowledge: { goal: string; faqs: reado
       `desglose que no cuadra (precios de la base, cantidades de 1 a ${MAX_QTY}, cuenta exacta): ${badBreakdowns.map((b) => b.text).join(" · ")}`,
     );
   }
-  // Un total con desglose correcto vale en toda la respuesta (p. ej. repetido abajo).
-  const justified = new Set(breakdowns.filter((b) => b.valid).map((b) => b.total));
-  const insideBad = (at: number) => badBreakdowns.some((b) => at >= b.start && at < b.end);
+  // Un total con desglose correcto vale SOLO ahí (en su posición): el mismo número
+  // en otra frase ("… = $6,500. La grande te la dejo en $6,500") no queda justificado.
+  const inside = (list: Breakdown[], at: number) => list.some((b) => at >= b.start && at < b.end);
+  const goodBreakdowns = breakdowns.filter((b) => b.valid);
   const badAmounts = [
     ...new Set(
       extractAmounts(text)
-        .filter((a) => !known.has(cents(a.value)) && !justified.has(cents(a.value)) && !insideBad(a.at))
+        .filter((a) => !known.has(cents(a.value)) && !inside(goodBreakdowns, a.at) && !inside(badBreakdowns, a.at))
         .map((a) => a.text),
     ),
   ];
