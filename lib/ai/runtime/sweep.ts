@@ -116,7 +116,10 @@ export async function reconcileStuckDrafts(now: Date): Promise<number> {
     .limit(100);
   let resolved = 0;
   for (const d of stuck) {
-    const since = new Date((d.resolvedAt ?? now).getTime() - 5_000);
+    // Solo salientes del agente enviados DESDE el reclamo del plan (sent_at y
+    // resolved_at usan el mismo reloj de la app): una respuesta anterior —aunque sea
+    // de segundos antes— no cuenta como burbuja de este plan.
+    const since = d.resolvedAt ?? now;
     const outs = await db
       .select({ status: messages.status })
       .from(messages)
@@ -126,7 +129,7 @@ export async function reconcileStuckDrafts(now: Date): Promise<number> {
           eq(messages.conversationId, d.conversationId),
           eq(messages.direction, "out"),
           eq(messages.source, "ai_agent"),
-          gte(messages.createdAt, since),
+          gte(messages.sentAt, since),
         ),
       );
     const setStatus = (status: "enviado" | "obsoleto") =>

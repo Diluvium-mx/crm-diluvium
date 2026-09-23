@@ -57,6 +57,16 @@ export async function approveDraft(input: {
   sleep?: (ms: number) => Promise<void>;
 }): Promise<{ sent: number; confirmed: boolean }> {
   const org = input.organizationId;
+  // Líneas base ANTES de reclamar: si el cliente escribe o un vendedor responde en
+  // cualquier momento desde aquí (incluido el reclamo), el resto ya no contesta lo
+  // último y queda en la tarjeta. Se revisan antes de CADA burbuja, también la 1ª.
+  const [target] = await db
+    .select({ conversationId: aiAgentDrafts.conversationId })
+    .from(aiAgentDrafts)
+    .where(and(eq(aiAgentDrafts.id, input.draftId), eq(aiAgentDrafts.organizationId, org)))
+    .limit(1);
+  const inboundsAtClaim = target ? await inboundCount(org, target.conversationId) : 0;
+  const humansAtClaim = target ? await humanOutboundCount(org, target.conversationId) : 0;
   const [draft] = await db
     .update(aiAgentDrafts)
     .set({ status: "enviando", resolvedAt: input.now, resolvedByUserId: input.userId })
@@ -81,10 +91,6 @@ export async function approveDraft(input: {
   let unconfirmed = false;
   let channelOff = false;
   let interrupted: string | null = null;
-  // Líneas base al reclamar: si el cliente escribe o un vendedor responde mientras
-  // salen las burbujas, el resto ya no contesta lo último (queda en la tarjeta).
-  const inboundsAtClaim = await inboundCount(org, draft.conversationId);
-  const humansAtClaim = await humanOutboundCount(org, draft.conversationId);
   try {
     for (const text of draft.bubbles) {
       if (sent > 0) await sleep(BUBBLE_PAUSE_MS);
