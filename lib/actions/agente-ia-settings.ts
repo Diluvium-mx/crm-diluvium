@@ -107,7 +107,7 @@ export async function setChannelAgentMode(input: { channelId: string; mode: stri
   const channelId = idSchema.parse(input.channelId);
   const [row] = await db
     .update(channels)
-    .set({ aiAgentMode: mode })
+    .set({ aiAgentMode: mode, aiAgentModeChangedAt: new Date() })
     .where(and(eq(channels.id, channelId), eq(channels.organizationId, organizationId)))
     .returning();
   if (!row) throw new Error("Canal no encontrado en tu organización.");

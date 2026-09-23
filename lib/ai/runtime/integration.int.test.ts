@@ -174,13 +174,13 @@ describe.skipIf(!TEST_DATABASE_URL)("enganche del Agente IA (Postgres real)", ()
     expect(drafts.map((d) => d.status)).toEqual(["obsoleto"]);
   });
 
-  it("con el canal apagado, un mensaje humano no pausa (pero sí deja viejo el borrador)", async () => {
+  it("con el canal apagado, un mensaje humano no pausa ni toca nada (apagarlo ya dejó viejos los borradores)", async () => {
     await openConversation();
     await db.update(s.channels).set({ aiAgentMode: "off" }).where(eq(s.channels.id, "ch_eng"));
-    await state.saveDraft({ organizationId: ORG, conversationId: CONV, bubbles: ["x"], triggerMessageId: null, now: new Date() });
     await hooks.pauseAgentOnManualMessage(CONV);
-    expect((await conv()).agentState).toBe("activo");
-    expect((await db.select().from(s.aiAgentDrafts))[0].status).toBe("obsoleto");
+    const c = await conv();
+    expect(c.agentState).toBe("activo");
+    expect(c.agentStateChangedAt).toBeNull();
   });
 
   // ── Pausa manual y lecturas para la UI ───────────────────────────────────

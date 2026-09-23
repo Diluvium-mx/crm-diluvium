@@ -492,4 +492,85 @@ describe.skipIf(!TEST_DATABASE_URL)("runtime del Agente IA (Postgres real)", () 
     expect((await conv()).lastInboundAt?.getTime()).toBe(at.getTime());
     expect(jobs.get(CONV)).toEqual({ state: "delayed", delay: 15_000 });
   });
+
+  // ── Revisión adversarial (P1/P2) ─────────────────────────────────────────
+  it("un 'gracias' que el filtro saltó días atrás no rompe el debounce del siguiente mensaje", async () => {
+    await msg({ direction: "in", body: "gracias", at: ago(3 * 86_400_000) });
+    await run.runAgent(CONV, makeDeps({ filter: '{"decision":"lead_no_sigue"}' }).deps);
+    const at = new Date();
+    await msg({ direction: "in", body: "Hola, quiero info", at });
+    // Antes: firstPendingAt = el "gracias" viejo → tope vencido → 0 (dispara al instante).
+    expect(await schedule.debounceDelayFor(CONV, at)).toBe(15_000);
+  });
+
+  it("encender el canal o reactivar al agente no contesta lo escrito antes (barrido y debounce)", async () => {
+    await msg({ direction: "in", body: "hola", at: ago(10 * 60_000) });
+    expect(await sweep.findOrphanConversations(new Date())).toHaveLength(1);
+    // Se encendió el canal DESPUÉS de ese mensaje.
+    await db.update(s.channels).set({ aiAgentModeChangedAt: ago(60_000) }).where(eq(s.channels.id, "ch_rt"));
+    expect(await sweep.findOrphanConversations(new Date())).toEqual([]);
+    // Igual con una reactivación manual posterior al mensaje.
+    await db.update(s.channels).set({ aiAgentModeChangedAt: null }).where(eq(s.channels.id, "ch_rt"));
+    await db.update(s.conversations).set({ agentStateChangedAt: ago(60_000) }).where(eq(s.conversations.id, CONV));
+    expect(await sweep.findOrphanConversations(new Date())).toEqual([]);
+    // El siguiente mensaje del cliente sí espera su debounce completo (no 0).
+    const at = new Date();
+    await msg({ direction: "in", body: "¿siguen ahí?", at });
+    expect(await schedule.debounceDelayFor(CONV, at)).toBe(15_000);
+  });
+
+  it("el barrido no contesta historia: un entrante de hace más de 30 min se queda", async () => {
+    await msg({ direction: "in", body: "hola", at: ago(31 * 60_000) });
+    expect(await sweep.findOrphanConversations(new Date())).toEqual([]);
+  });
+
+  it("un borrador ya generado cuenta como atendido aunque su fila de ai_usage no exista", async () => {
+    const id = await msg({ direction: "in", body: "precio?", at: ago(120_000) });
+    await state.saveDraft({ organizationId: ORG, conversationId: CONV, bubbles: ["hola"], triggerMessageId: id, now: new Date() });
+    expect(await sweep.findOrphanConversations(new Date())).toEqual([]);
+    const { deps, calls } = makeDeps();
+    expect(await run.runAgent(CONV, deps)).toEqual({ kind: "noop", reason: "ya_atendido" });
+    expect(calls).toHaveLength(0);
+  });
+
+  it("un mensaje nuevo del cliente deja viejo el borrador vigente", async () => {
+    await db.update(s.channels).set({ aiAgentMode: "borrador" }).where(eq(s.channels.id, "ch_rt"));
+    const first = await msg({ direction: "in", body: "precio?", at: ago(60_000) });
+    await state.saveDraft({ organizationId: ORG, conversationId: CONV, bubbles: ["Cuesta X"], triggerMessageId: first, now: new Date() });
+    const { port, kv } = fakeQueue();
+    const at = new Date();
+    await msg({ direction: "in", body: "ya no, gracias", at });
+    await hooks.onInboundCustomerMessage({ organizationId: ORG, conversationId: CONV, receivedAt: at }, { queue: port, kv, now: at });
+    const drafts = await db.select().from(s.aiAgentDrafts);
+    expect(drafts.map((d) => d.status)).toEqual(["obsoleto"]);
+  });
+
+  it("canal apagado: el gancho de entrante no escribe nada ni programa", async () => {
+    await db.update(s.channels).set({ aiAgentMode: "off" }).where(eq(s.channels.id, "ch_rt"));
+    const { port, kv, jobs } = fakeQueue();
+    const at = new Date();
+    await msg({ direction: "in", body: "hola", at });
+    await hooks.onInboundCustomerMessage({ organizationId: ORG, conversationId: CONV, receivedAt: at }, { queue: port, kv, now: at });
+    expect((await conv()).lastInboundAt).toBeNull();
+    expect(jobs.size).toBe(0);
+  });
+
+  it("el contexto del cerebro no incluye salientes que fallaron", async () => {
+    await msg({ direction: "in", body: "hola", at: ago(60_000) });
+    await db.insert(s.messages).values({
+      id: "m_fallido",
+      organizationId: ORG,
+      conversationId: CONV,
+      direction: "out",
+      source: "ai_agent",
+      type: "text",
+      body: "RESPUESTA QUE NUNCA LLEGÓ",
+      status: "failed",
+      createdAt: ago(50_000),
+    });
+    await msg({ direction: "in", body: "¿hola?", at: ago(10_000) });
+    const { deps, calls } = makeDeps();
+    await run.runAgent(CONV, deps);
+    expect(JSON.stringify(calls.find((c) => c.kind === "cerebro")!.input.messages)).not.toContain("NUNCA LLEGÓ");
+  });
 });

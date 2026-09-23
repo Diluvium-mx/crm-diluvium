@@ -20,13 +20,17 @@ import { obsoletePendingDrafts, setAgentState } from "./state";
 
 type Ports = { queue?: AgentQueuePort; kv?: KvPort; now?: Date };
 
-// Tras guardar un ENTRANTE del cliente: marca last_inbound_at y (re)programa el
-// job de respuesta con el debounce deslizante.
+// Tras guardar un ENTRANTE del cliente: marca last_inbound_at, deja viejo el
+// borrador vigente y (re)programa el job de respuesta con el debounce
+// deslizante. Con el canal apagado no escribe nada (una sola lectura).
 export async function onInboundCustomerMessage(
   input: { organizationId: string; conversationId: string; receivedAt: Date },
   ports: Ports = {},
 ): Promise<void> {
   try {
+    const snap = await loadSnapshot(input.conversationId);
+    if (!snap || snap.channel.aiAgentMode === "off") return;
+    const now = ports.now ?? new Date();
     await db
       .update(conversations)
       // ISO con cast: en SQL crudo el driver no serializa Date.
@@ -34,7 +38,9 @@ export async function onInboundCustomerMessage(
         lastInboundAt: sql`greatest(coalesce(${conversations.lastInboundAt}, ${input.receivedAt.toISOString()}::timestamp), ${input.receivedAt.toISOString()}::timestamp)`,
       })
       .where(eq(conversations.id, input.conversationId));
-    const now = ports.now ?? new Date();
+    // El cliente escribió después del borrador: ya no responde a lo último que
+    // dijo. El agente generará otro que lo cubra (o ninguno, si no hace falta).
+    await obsoletePendingDrafts(input.organizationId, input.conversationId, now);
     const delay = await debounceDelayFor(input.conversationId, now);
     if (delay === null) return; // canal apagado o nada pendiente
     await withQueueTimeout(
@@ -57,10 +63,11 @@ export async function onHumanOutbound(input: { conversationId: string }, ports: 
   try {
     const snap = await loadSnapshot(input.conversationId);
     if (!snap) return;
+    // Canal apagado: nada que pausar y sin borradores (apagarlo los deja obsoletos).
+    if (snap.channel.aiAgentMode === "off") return;
     const now = ports.now ?? new Date();
     // El vendedor ya respondió: un borrador vigente del agente quedó viejo.
     await obsoletePendingDrafts(snap.conversation.organizationId, input.conversationId, now);
-    if (snap.channel.aiAgentMode === "off") return;
     const cfg = await loadAgentConfig(snap.conversation.organizationId);
     if (!cfg.pauseOnHumanReply) return;
     if (snap.conversation.agentState === "activo") {

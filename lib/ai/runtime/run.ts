@@ -25,7 +25,8 @@ import {
   type MessageRow,
 } from "./context";
 import { buildFilterPrompt, FILTER_SYSTEM, parseFilterDecision } from "./filter";
-import { decideGate, pauseElapsed, rescheduleDelayMs, toBubbles, type AgentState } from "./policy";
+import { decideGate, pauseElapsed, toBubbles, type AgentState } from "./policy";
+import { rescheduleDelayFor } from "./schedule";
 import { addContactTag, markAgentReply, saveDraft, setAgentState } from "./state";
 import { TAG_HANDOVER } from "./tags";
 import { buildModelMessages, toTranscriptLines } from "./transcript";
@@ -313,19 +314,6 @@ export async function runAgent(conversationId: string, deps: RunDeps): Promise<R
   }
 
   // El cliente siguió escribiendo en todas las rondas: de vuelta al debounce.
-  const snap = await loadSnapshot(conversationId);
-  const pending = snap ? await pendingInbound(conversationId) : [];
-  const cfg = snap ? await loadAgentConfig(snap.conversation.organizationId) : null;
-  const now = deps.now().getTime();
-  const delayMs =
-    cfg && pending.length
-      ? rescheduleDelayMs({
-          now,
-          firstPendingAt: pending[0].createdAt.getTime(),
-          lastInboundAt: pending[pending.length - 1].createdAt.getTime(),
-          responseDelaySeconds: cfg.responseDelaySeconds,
-          maxWaitSeconds: cfg.maxWaitSeconds,
-        })
-      : 0;
+  const delayMs = await rescheduleDelayFor(conversationId, deps.now());
   return { kind: "reschedule", delayMs, reason: "mensajes_nuevos_durante_generacion" };
 }

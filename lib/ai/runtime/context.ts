@@ -2,7 +2,7 @@
 // entrantes pendientes, el contexto, y los conteos del freno anti-bucle.
 import { and, asc, count, desc, eq, gte, inArray, isNotNull, ne, sql } from "drizzle-orm";
 import { db } from "@/lib/db";
-import { aiUsage, channels, conversations, messages } from "@/lib/db/schema";
+import { aiAgentDrafts, aiUsage, channels, conversations, messages } from "@/lib/db/schema";
 import { FINAL_OUTCOMES, REPLY_OUTCOMES } from "./usage";
 
 export type ConversationRow = typeof conversations.$inferSelect;
@@ -55,12 +55,13 @@ export async function pendingInbound(conversationId: string): Promise<MessageRow
     .orderBy(asc(waAt), asc(messages.createdAt));
 }
 
-// Los últimos `n` mensajes en orden cronológico (contexto del cerebro).
+// Los últimos `n` mensajes en orden cronológico (contexto del cerebro). Sin los
+// salientes FALLIDOS: el cliente nunca los recibió y el modelo no debe creer que sí.
 export async function recentMessages(conversationId: string, n: number): Promise<MessageRow[]> {
   const rows = await db
     .select()
     .from(messages)
-    .where(eq(messages.conversationId, conversationId))
+    .where(and(eq(messages.conversationId, conversationId), ne(messages.status, "failed")))
     .orderBy(desc(waAt), desc(messages.createdAt))
     .limit(Math.max(1, n));
   return rows.reverse();
@@ -76,14 +77,43 @@ export async function inboundCount(conversationId: string): Promise<number> {
   return value;
 }
 
-// Idempotencia: ¿este entrante ya tiene un resultado final del agente?
+// Idempotencia: ¿este entrante ya tiene un resultado final del agente? Un
+// borrador generado para él también cuenta (aunque su fila de ai_usage no se
+// haya podido guardar): así el barrido no lo regenera cada minuto.
 export async function alreadyHandled(messageId: string): Promise<boolean> {
   const [row] = await db
     .select({ id: aiUsage.id })
     .from(aiUsage)
     .where(and(eq(aiUsage.messageId, messageId), inArray(aiUsage.outcome, [...FINAL_OUTCOMES])))
     .limit(1);
-  return Boolean(row);
+  if (row) return true;
+  const [draft] = await db
+    .select({ id: aiAgentDrafts.id })
+    .from(aiAgentDrafts)
+    .where(eq(aiAgentDrafts.triggerMessageId, messageId))
+    .limit(1);
+  return Boolean(draft);
+}
+
+// Llegada del último entrante que el agente ya atendió (respuesta, borrador,
+// salto del filtro o transferencia): corte del debounce. Recorre los entrantes
+// del más nuevo al más viejo y se detiene en el primero atendido.
+export async function lastHandledInboundAt(conversationId: string): Promise<Date | null> {
+  const [row] = await db
+    .select({ createdAt: messages.createdAt })
+    .from(messages)
+    .where(
+      and(
+        eq(messages.conversationId, conversationId),
+        eq(messages.direction, "in"),
+        sql`(exists (select 1 from ${aiUsage} u where u.message_id = ${messages.id}
+              and u.outcome in (${sql.join(FINAL_OUTCOMES.map((o) => sql`${o}`), sql`, `)}))
+            or exists (select 1 from ${aiAgentDrafts} d where d.trigger_message_id = ${messages.id}))`,
+      ),
+    )
+    .orderBy(desc(messages.createdAt))
+    .limit(1);
+  return row?.createdAt ?? null;
 }
 
 // Respuestas del agente (enviadas o en borrador) en esta conversación desde `since`.
