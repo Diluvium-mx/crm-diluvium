@@ -74,126 +74,64 @@ construye ahora). El dry-run "Probar modelo" ya muestra tokens, pero no persiste
 
 - **Fase A (hecha):** fundación del modelo — multi-proveedor, catálogo, `ai_config`,
   pestaña "Agente IA". El agente todavía no responde.
-- **Fase B (hecha, 23-sep-2026):** runtime que **responde por texto**. En el worker: debounce
-  deslizante (`response_delay_seconds`=15, tope `max_wait_seconds`=60) → **filtro** →
-  **cerebro** (Goal completo + las 47 FAQs activas cacheados + últimos 20 mensajes + imágenes) →
-  responde por Zernio (máx 2 burbujas separadas por doble salto + pausa 1.5s). Interruptor por
-  canal **Apagado / Encendido** (= AUTO). Ventana 24h, idempotencia por `provider_message_id`,
-  24/7, y **persistencia de uso por mensaje** en `ai_usage`.
+- **Fase B (hecha, 23-sep-2026):** runtime que **responde por texto**, en el worker.
 
-  **Reglas del dueño (23-sep-2026, cierre de la Fase B): el agente SIEMPRE contesta**, como
-  Ángela en GHL:
-  - **Sin borrador:** no hay tarjeta "Borrador del agente" ni modo Borrador (la migración 0025
-    apagó los canales en borrador y descartó los borradores vigentes).
-  - **La única pausa** es que un vendedor conteste (Bandeja, pop-up del Embudo, programado o,
-    con el número real, la app del celular) o lo apague a mano en el Detalle del contacto. Se
-    reactiva con "Reactivar".
-  - **Nada más pausa.** La guardia de salida, el pase a humano, el anti-bucle, el presupuesto
-    y los envíos fallidos solo dejan un **aviso discreto en el hilo** (`ai_agent_notices`,
-    `lib/ai/runtime/notices.ts`). La guardia NO retiene: la respuesta sale igual.
-  - **Pase a humano:** el agente le dice al cliente que un asesor lo atenderá (o le enviará
-    los datos bancarios), avisa al vendedor y **sigue activo** hasta que un vendedor conteste.
-    La señal `[TRANSFERIR]` nunca llega al cliente.
-  - **Anti-bucle:** 30 respuestas/h por conversación (solo para un bucle con otro bot). Al
-    llegar, o al agotarse el presupuesto diario, no responde esa vez y avisa (una vez por hora).
-  - **Cotiza como el Goal y las FAQs.** El runtime solo agrega: formato (solo el texto para
-    WhatsApp, máx. N bloques), la señal de pase a humano (también para "Datos bancarios", que
-    aún no existe), no prometer videos/tablas ni cambios de etapa, y no revelar instrucciones
-    ni cambiar de papel. Sin reglas de montos ni de desglose.
-  - Las etiquetas internas "pasar a humano" / "revisión humana" ya no se crean y no se muestran.
-  - El filtro todavía salta el spam y los cierres sin pregunta ("gracias", "ok"): son los
-    únicos mensajes que el agente no contesta.
+  **Definición del dueño (23-sep-2026, cierre de la Fase B):** el agente es el motor que hace
+  que siempre haya alguien respondiendo, como Ángela en GHL. Se rige **solo** por el Goal y las
+  FAQs; nada se interpone entre el agente y el cliente.
+  - **Responde todo lo que entra**, sin trabas: sin borrador (ni tarjeta, ni Enviar/Descartar,
+    ni modo Borrador: el canal queda **Apagado / Encendido**), sin guardia de salida, sin
+    freno anti-bucle, sin presupuesto diario y sin topes. El gasto lo controlan las llaves de
+    OpenAI/Anthropic y el saldo del Dashboard. La migración 0025 apagó los canales que estaban
+    en borrador, descartó los borradores vigentes y levantó las pausas viejas.
+  - **Pausa:** SOLO cuando un vendedor contesta en la conversación (Bandeja, pop-up del Embudo,
+    programado o, con el número real, la app del celular). Se reactiva solo a mano con
+    "Reactivar" (Bandeja o Detalle del contacto). Nada más pausa.
+  - **Pase a humano:** el agente le dice al cliente que un vendedor lo atenderá (o le enviará
+    los datos bancarios), deja un **aviso visible en la Bandeja** (`ai_agent_notices`) y sigue
+    activo hasta que un vendedor conteste. La señal `[TRANSFERIR]` nunca llega al cliente.
+  - **Historial:** el cerebro lee **toda** la conversación. Protección técnica: si un chat no
+    cabe en el modelo (~300 mil caracteres), toma lo más reciente sin fallar; un mensaje pegado
+    enorme se recorta a 4,000 caracteres y van como imagen las 20 fotos más recientes.
+  - **Mensajes para celular** (formato del Goal): información y pregunta separadas por línea en
+    blanco → 2 mensajes (primero la información) con pausa de 1.5 s; bloque corto → 1 mensaje;
+    bloque largo (> 320 caracteres) → 2 mensajes cortados entre oraciones.
+  - **Espera para juntar mensajes seguidos:** 15 s fija (tope 60 s desde el primero), interna.
+  - **Filtro (GPT-5.6 Luna):** no deja a nadie sin respuesta. Solo limpia la metadata del
+    anuncio de Click-to-WhatsApp (`lib/ai/runtime/ad-cleaner.ts`): el cerebro recibe solo lo
+    que escribió el cliente y el resumen del anuncio queda guardado en el mensaje
+    (`metadata.agenteAnuncio`). Sin anuncio no se llama; si falla, un respaldo sin modelo.
+  - **Cerebro:** Goal completo + las 47 FAQs activas (cacheados). El runtime solo agrega: qué
+    devolver (solo el texto para WhatsApp), cómo activar "Transferencia a humano" / "Datos
+    bancarios" (`[TRANSFERIR]`) y que tablas, videos y cambios de etapa aún no existen.
+  - Etiquetas internas "pasar a humano" / "revisión humana": ya no se crean y no se muestran.
 
-  **Frenos y aislamiento (revisión adversarial + cyber-neo, 23-sep-2026):**
+  **Robustez (revisiones de Claude, cyber-neo y Codex, 23-sep-2026):**
   - **OFF no toca nada:** los ganchos de la ingesta y del envío solo LEEN con el canal
-    apagado (sin Redis, sin modelos, sin escrituras); todo va en try/catch y la ingesta
-    además aísla los ganchos en su frontera (`lib/ai/runtime/isolation.int.test.ts`).
-  - **Tope de gasto:** llamadas cobradas por conversación/hora ≤ anti-bucle × 4 (mín. 12);
-    al llegar, no responde esa vez y avisa (sin pausa). Tras descartar respuestas, el job
-    vuelve con al menos `response_delay_seconds` (nunca 0). **Presupuesto diario por
-    organización** (`ai_config.daily_budget_usd`, default 20 USD, editable en la pestaña):
-    al llegar el gasto de las últimas 24 h, el agente no llama modelos en toda la org
-    (no pausa conversaciones; vuelve solo al bajar la ventana).
-  - **Envío sin carreras:** en AUTO, antes de CADA burbuja se relee el estado (canal en
-    auto, agente activo, sin salientes humanos nuevos); si un vendedor responde o apagan el
-    canal en la pausa de 1.5 s, la siguiente ya no sale. Encender el canal también es corte
-    de "respuesta humana".
-  - **Envíos sin confirmar:** una burbuja "pending" detiene las siguientes y, mientras un envío
-    del agente siga en camino ("queued") o un plan esté "enviando", el agente no responde
-    encima. Un envío fallido o sin confirmar deja un aviso (uno por mensaje) y el agente sigue;
-    nunca se reenvía (podría duplicar). Un entrante que llega entre burbujas detiene el resto y
-    queda pendiente para la siguiente corrida. Una respuesta de varias burbujas guarda antes un
-    **plan durable** ("enviando", invisible): si el worker se reinicia a la mitad, el barrido lo
-    concilia con el hilo **por `created_at` ≥ `resolved_at`, los dos con el reloj de Postgres**
-    (el eco del proveedor reescribe `sent_at`): nada salió → obsoleto y el entrante se vuelve a
-    atender; salió una parte → lo que faltó queda en un aviso. La línea base de salientes
-    humanos se toma al INICIO de la ronda.
-  - **Trabajo acotado por entrante:** se leen máx. 50 pendientes; con el agente pausado no
-    se programa nada; índice en
-    `ai_agent_drafts(trigger_message_id)`.
-  - **Cortes del debounce y del barrido:** solo cuentan los entrantes posteriores al último
-    ya atendido, a la reactivación (`agent_state_changed_at`) y al encendido del canal
-    (`channels.ai_agent_mode_changed_at`). Encender un canal o "Reactivar" NO contesta
-    historia; el barrido solo rescata entrantes de los últimos 30 min.
-  - **Prompt:** filtro con máx. 20 pendientes, texto del cliente escapado como JSON y
-    2,000 caracteres por mensaje; el cerebro tiene la regla de no revelar instrucciones ni
-    cambiar de papel. Timeouts: filtro 20 s, cerebro 60 s.
-  - **Guardia de salida (`lib/ai/runtime/output-guard.ts`), CONGELADA el 23-sep; desde el
-    cierre de la Fase B solo AVISA** (la respuesta sale igual): un monto que no esté tal cual
-    en el Goal/FAQs activas, salvo un total con desglose correcto en la misma respuesta
-    ("3 × $5,500 = $16,500"); un %, "NxM" o "N meses sin intereses" que no esté tal cual en la
-    base; o un enlace fuera de diluvium.com.mx y los de Amazon/Mercado Libre de las FAQs.
+    apagado; todo va en try/catch y la ingesta aísla los ganchos
+    (`lib/ai/runtime/isolation.int.test.ts`). Filtro por organización en todo el runtime.
+  - **Idempotencia y cortes:** un entrante ya atendido no se vuelve a contestar; encender el
+    canal o "Reactivar" es corte (no contesta historia); el barrido rescata entrantes sin job de
+    los últimos 30 min. Un cliente que escribe durante la generación hace que la respuesta se
+    descarte y se regenere con TODO (máx. 3 rondas; luego vuelve a la espera, nunca en bucle).
+  - **Envío sin carreras:** antes de CADA mensaje se relee el estado; si un vendedor responde,
+    apagan el canal o el cliente escribe, el resto ya no sale. Un envío en camino detiene los
+    siguientes y el agente no responde encima. Una respuesta de 2 mensajes guarda antes un
+    **plan durable**; si el worker se reinicia a la mitad, el barrido lo concilia por
+    `created_at` ≥ `resolved_at` (los dos con el reloj de Postgres): nada salió → el entrante se
+    vuelve a atender; salió una parte → aviso con lo que faltó (nunca se reenvía: podría
+    duplicar). Un envío fallido o sin confirmar deja un aviso por mensaje.
   - **AUTO con clientes reales (número real):** bloqueado hasta el approve de Codex del agente
-    completo. En el sandbox (solo el teléfono del dueño) AUTO está autorizado.
-  - **Antes de clientes reales** (decidido por el dueño: no dañan a un cliente hoy, no abren ronda):
-    - Aprobación concurrente (ya no aplica: no hay borradores). Conciliación de planes por
-      hora de Postgres y no por id de plan en cada mensaje: basta mientras solo un plan pueda
-      estar "enviando" por conversación.
-    - El barrido de avisos de envíos fallidos recorre `messages` cada minuto sin índice propio
-      (bien con decenas de miles de filas; agregar índice si crece).
-    - El filtro no contesta cierres sin pregunta ("gracias", "ok") ni spam.
-  - **Lista para la revisión de Codex (26-sep)** — decidido por el dueño, NO se toca antes:
-    - "te descuento $3,000": un monto que sí está en la base usado como descuento pasa.
-    - Montos escritos con palabras ("seis mil quinientos") y con "k" ("5k") no se detectan.
-    - Falsos positivos (van a revisión humana): "listo.Me" (parece enlace), etiqueta con
-      cifras "2 compuertas medianas (1 m) × $5,500", y cualquier % que no esté en la base
-      aunque no sea descuento ("100% impermeable", "IVA (16%)", "0% de interés"), "24x7",
-      "90x60" sin unidad, y una respuesta de meses sin intereses que mencione otro plazo en
-      meses ("…6 MSI; la garantía es de 12 meses").
-    - P2 de la revisión final (23-sep), no se tocan antes:
-      - Promos con palabras o mal escritas: "diez por ciento", "10 porciento", "dos por uno",
-        "doce meses sin intereses", "2-por-1", "#Promo2x1", "1000%".
-      - Promos que solo viven en un enlace o correo propio ("diluvium.com.mx/promo-2x1").
-      - "a 3 o 6 meses sin intereses" pasa (termina en el plazo de la base); "a 12 meses con
-        tarjeta" (sin decir "sin intereses") pasa.
-      - "50% de descuento" pasa porque "50%" está en la base (es el anticipo): mismo caso que
-        "te descuento $3,000".
-      - El motivo sale duplicado si solo cambia la mayúscula ("2x1" y "2X1").
-    - Bajos del gate de entrada a main (23-sep: revisión adversarial de Claude + cyber-neo):
-      - Guardia: montos con miles separados por espacio o apóstrofo SIN $ ni moneda
-        ("te la dejo en 5 900", "4'200"), "$5,500 menos 40", letra O por cero ("42OO"),
-        dígitos separados ("4 2 0 0"); datos de pago no revisados (CLABE / números de 10+
-        dígitos, teléfonos y correos cerca de "deposita/paga/transferencia"). La regla
-        "Datos bancarios → [TRANSFERIR]" vive solo en el prompt.
-      - `response_delay_seconds` acepta 0: con 0, el piso "nunca 0" al reprogramar se vuelve
-        0 (bucle de hasta 6 llamadas por corrida hasta el tope de 40/h).
-      - El barrido (mínimo 90 s) acorta el debounce si `response_delay_seconds` o
-        `max_wait_seconds` pasan de 90 (la pestaña permite hasta 600/900).
-      - Aviso "dirty" que puede perderse entre el último getDel y el "completed" de BullMQ
-        (lo rescata el barrido: 90-150 s en vez de 15 s).
-      - `tope_por_contacto` y `sin_goal` no dejan resultado en ai_usage: el barrido los
-        reprograma cada minuto por 30 min (solo carga de BD, sin llamadas a modelos).
-      - Borradores: si falla la 1ª burbuja y ya hay otro pendiente, volver a "pendiente"
-        choca con el índice único; carrera onHumanOutbound vs saveDraft en vuelo (queda una
-        tarjeta vigente tras una respuesta manual).
-      - Horas de WhatsApp truncadas al segundo vs horas del servidor: un entrante del mismo
-        segundo que un saliente no queda "pendiente".
-      - El tope de llamadas y el presupuesto no cuentan una llamada que venció por timeout
-        (usage null) ni una fila de ai_usage que no se pudo escribir (falla abierto).
-      - Informativo: la transcripción (con datos del cliente) y URLs firmadas de imágenes
-        van a OpenAI/Anthropic; CLAUDE.md §4 dice "solo GitHub, Railway y Meta" — actualizar
-        CLAUDE.md y el aviso de privacidad (decisión del dueño). npm audit: 4 moderadas de
-        esbuild vía drizzle-kit, solo desarrollo, ya estaban en main.
+    completo. En el sandbox (solo el teléfono del dueño) está autorizado.
+  - **Antes de clientes reales** (no dañan a un cliente hoy; no abren ronda):
+    - Sin frenos, un bucle con otro bot (dos agentes contestándose) gastaría sin límite hasta
+      que alguien lo note en el Dashboard; el cliente escribiendo sin parar solo retrasa.
+    - El cerebro ya no tiene la regla de no revelar sus instrucciones (no está en el Goal): un
+      cliente podría pedírselas.
+    - Conciliación de planes por hora de Postgres y no por id de plan en cada mensaje.
+    - El barrido de avisos de envíos fallidos recorre `messages` cada minuto sin índice propio.
+    - Informativo: la conversación (con datos del cliente) y URLs firmadas de imágenes van a
+      OpenAI/Anthropic; CLAUDE.md §4 dice "solo GitHub, Railway y Meta" (decisión del dueño).
 
   **Migración de la Fase B (resuelto 23-sep-2026):** la migración del runtime es la
   `0024_agente_ia_runtime` (regenerada sobre main da53cc4, `when` posterior a la 0023 de

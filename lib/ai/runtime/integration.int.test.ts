@@ -231,21 +231,20 @@ describe.skipIf(!TEST_DATABASE_URL)("enganche del Agente IA (Postgres real)", ()
     expect(c.agentStateChangedAt).toBeNull();
   });
 
-  // ── Pausa manual y lecturas para la UI ───────────────────────────────────
-  it("interruptor del contacto: pausa y reactiva; las lecturas para la UI reflejan el estado y los avisos", async () => {
+  // ── Reactivar y lecturas para la UI ──────────────────────────────────────
+  it("Detalle del contacto y Bandeja: un vendedor contesta → pausado; Reactivar lo regresa; lecturas con avisos", async () => {
     await openConversation();
-    expect(await manual.pauseAgentInConversation(ORG, CONV, new Date())).toBe(true);
-    expect(await manual.pauseAgentInConversation(ORG, CONV, new Date())).toBe(false); // ya pausado
-    expect(await manual.pauseAgentInConversation("otra_org", CONV, new Date())).toBe(false);
+    await hooks.pauseAgentForManualSend(ORG, CONV); // un vendedor contestó
     const [row] = await manual.loadContactAgents(ORG, "ct_eng");
     expect(row).toMatchObject({ conversationId: CONV, channelName: "Sandbox", channelMode: "auto", agentState: "pausado_humano" });
     expect(await manual.loadContactAgents("otra_org", "ct_eng")).toEqual([]);
 
     await manual.reactivateAgentInConversation(ORG, CONV, new Date());
-    await notices.addNotice({ organizationId: ORG, conversationId: CONV, kind: "guardia", body: "Revisa la respuesta", now: new Date() });
+    expect(await manual.reactivateAgentInConversation("otra_org", CONV, new Date())).toBe(false);
+    await notices.addNotice({ organizationId: ORG, conversationId: CONV, kind: "pasar_a_humano", body: "Pidió un vendedor" });
     const view = await manual.loadConversationAgent(ORG, CONV);
     expect(view).toMatchObject({ channelMode: "auto", agentState: "activo", pausedUntil: null });
-    expect(view!.notices.map((n) => n.body)).toEqual(["Revisa la respuesta"]);
+    expect(view!.notices.map((n) => n.body)).toEqual(["Pidió un vendedor"]);
     expect(await manual.loadConversationAgent("otra_org", CONV)).toBeNull();
   });
 
@@ -254,7 +253,7 @@ describe.skipIf(!TEST_DATABASE_URL)("enganche del Agente IA (Postgres real)", ()
     const got: { type: string; conversationId?: string }[] = [];
     const off = await events.subscribeToInbox(ORG, (e) => got.push(e as { type: string; conversationId?: string }));
     try {
-      await notices.addNotice({ organizationId: ORG, conversationId: CONV, kind: "pasar_a_humano", body: "Pidió un vendedor", now: new Date() });
+      await notices.addNotice({ organizationId: ORG, conversationId: CONV, kind: "pasar_a_humano", body: "Pidió un vendedor" });
       for (let i = 0; i < 50 && !got.some((e) => e.type === "conversation.updated" && e.conversationId === CONV); i++) {
         await new Promise((r) => setTimeout(r, 20));
       }

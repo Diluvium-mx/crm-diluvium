@@ -1,8 +1,8 @@
 "use server";
 
 // Server Actions del agente en una conversación (Bandeja y panel del contacto).
-// Cualquier miembro de la organización (owner/admin/agente): pausar y reactivar
-// son acciones de vendedor. La organización sale de la SESIÓN; toda
+// Cualquier miembro de la organización (owner/admin/agente): reactivar es acción
+// de vendedor (la pausa la pone el propio vendedor al contestar). La organización sale de la SESIÓN; toda
 // lectura/escritura filtra por ella.
 import { revalidatePath } from "next/cache";
 import { ZodError } from "zod";
@@ -10,7 +10,6 @@ import { requireActiveMembership } from "@/lib/auth/active-organization";
 import {
   loadContactAgents,
   loadConversationAgent,
-  pauseAgentInConversation,
   reactivateAgentInConversation,
 } from "@/lib/ai/runtime/manual";
 import { idSchema, toAgentMode } from "@/lib/agente-ia/settings";
@@ -48,16 +47,5 @@ export async function reactivateAgent(input: { conversationId: string }): Promis
     return { ok: true };
   } catch (error) {
     return fail(error, "No se pudo reactivar el agente.");
-  }
-}
-
-export async function pauseAgent(input: { conversationId: string }): Promise<AgentActionResult> {
-  try {
-    const { organizationId } = await requireActiveMembership();
-    await pauseAgentInConversation(organizationId, idSchema.parse(input.conversationId), new Date());
-    revalidatePath("/dashboard");
-    return { ok: true };
-  } catch (error) {
-    return fail(error, "No se pudo pausar el agente.");
   }
 }
