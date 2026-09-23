@@ -1,11 +1,10 @@
-// Acciones manuales sobre el agente en una conversación (desde la bandeja y el
-// Detalle del contacto): reactivarlo tras una pausa o pausarlo a mano. Filtran
-// SIEMPRE por organización. Las usan las Server Actions de
-// lib/actions/agente-conversacion.ts. (Desde el 23-sep-2026 no hay borradores.)
+// Acción manual sobre el agente en una conversación (Bandeja y Detalle del
+// contacto): "Reactivar" tras la pausa por respuesta de un vendedor, la única
+// pausa que existe (23-sep-2026). Filtra SIEMPRE por organización. La usan las
+// Server Actions de lib/actions/agente-conversacion.ts.
 import { desc, and, eq, ne } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { channels, conversations } from "@/lib/db/schema";
-import { bullAgentQueuePort, cancelAgentRun, withQueueTimeout } from "./queue";
 import { loadNotices } from "./notices";
 
 // Vuelve a activar el agente. El corte (agent_state_changed_at = ahora) hace
@@ -27,33 +26,6 @@ export async function reactivateAgentInConversation(
       ),
     )
     .returning({ id: conversations.id });
-  return rows.length > 0;
-}
-
-// Pausa manual desde el interruptor del contacto (un vendedor apaga al agente
-// en esa conversación): pausado_humano, reactivación manual. Cancela el job
-// pendiente si lo hay (sin Redis, el candado y la compuerta lo frenan igual).
-export async function pauseAgentInConversation(
-  organizationId: string,
-  conversationId: string,
-  now: Date,
-): Promise<boolean> {
-  const rows = await db
-    .update(conversations)
-    .set({ agentState: "pausado_humano", agentPausedUntil: null, agentStateChangedAt: now })
-    .where(
-      and(
-        eq(conversations.id, conversationId),
-        eq(conversations.organizationId, organizationId),
-        eq(conversations.agentState, "activo"),
-      ),
-    )
-    .returning({ id: conversations.id });
-  if (rows.length > 0) {
-    await withQueueTimeout(cancelAgentRun(bullAgentQueuePort(), conversationId), "cancelar").catch((error) =>
-      console.error(`[agente] no se pudo cancelar el job de ${conversationId}: ${String(error)}`),
-    );
-  }
   return rows.length > 0;
 }
 

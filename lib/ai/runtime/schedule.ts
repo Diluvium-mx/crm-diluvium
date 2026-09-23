@@ -1,7 +1,6 @@
-// Cuánto esperar antes de responder una conversación (debounce deslizante con
-// tope), calculado desde la BD: el primer y el último entrante pendientes
+// Cuánto esperar antes de responder una conversación (debounce deslizante fijo de
+// 15 s con tope de 60 s, como Ángela en GHL), calculado desde la BD: el primer y el último entrante pendientes
 // POSTERIORES al último corte (ver debounceWindow).
-import { loadAgentConfig } from "./config";
 import { lastHandledInboundAt, loadSnapshot, pendingInbound, type ChannelRow, type ConversationRow, type MessageRow } from "./context";
 import { debounceDelayMs, debounceWindow, rescheduleDelayMs } from "./policy";
 
@@ -31,13 +30,7 @@ export async function debounceDelayFor(organizationId: string, conversationId: s
   if (snap.conversation.agentState !== "activo") return null;
   const win = await pendingWindow(snap, await pendingInbound(organizationId, conversationId));
   if (!win) return null;
-  const cfg = await loadAgentConfig(snap.conversation.organizationId);
-  return debounceDelayMs({
-    now: now.getTime(),
-    ...win,
-    responseDelaySeconds: cfg.responseDelaySeconds,
-    maxWaitSeconds: cfg.maxWaitSeconds,
-  });
+  return debounceDelayMs({ now: now.getTime(), ...win });
 }
 
 // Tras descartar respuestas en todas las rondas: de vuelta al debounce, nunca en 0.
@@ -46,11 +39,5 @@ export async function rescheduleDelayFor(organizationId: string, conversationId:
   if (!snap) return 0;
   const win = await pendingWindow(snap, await pendingInbound(organizationId, conversationId));
   if (!win) return 0;
-  const cfg = await loadAgentConfig(snap.conversation.organizationId);
-  return rescheduleDelayMs({
-    now: now.getTime(),
-    ...win,
-    responseDelaySeconds: cfg.responseDelaySeconds,
-    maxWaitSeconds: cfg.maxWaitSeconds,
-  });
+  return rescheduleDelayMs({ now: now.getTime(), ...win });
 }

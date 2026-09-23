@@ -1,9 +1,10 @@
-// Avisos del agente para el vendedor, dentro del hilo. Sustituyen a la tarjeta de
-// borrador, a la pausa y a las etiquetas de "revisión humana" / "pasar a humano":
-// el agente SIEMPRE contesta y solo deja rastro (23-sep-2026). Nunca lanzan: un
-// aviso que no se pudo guardar no debe frenar una respuesta al cliente.
+// Avisos del agente para el vendedor, dentro del hilo de la Bandeja: el cliente
+// pidió hablar con una persona (el agente sigue activo hasta que un vendedor
+// conteste) o WhatsApp no confirmó/rechazó una respuesta del agente. Nunca pausan
+// ni frenan al agente, y nunca lanzan: un aviso que no se pudo guardar no debe
+// frenar una respuesta al cliente.
 // Multi-tenant (CLAUDE.md §7): toda lectura/escritura filtra por organization_id.
-import { and, desc, eq, gte, sql } from "drizzle-orm";
+import { and, desc, eq, sql } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { aiAgentNotices, conversations } from "@/lib/db/schema";
 import type { NoticeKind } from "./policy";
@@ -11,20 +12,13 @@ import { notifyConversation } from "./state";
 
 export type { NoticeKind };
 
-// Un aviso de frenos (anti-bucle, presupuesto, tope) se repite como máximo una vez
-// por hora y conversación: el barrido reprograma cada minuto un entrante sin atender.
-export const NOTICE_REPEAT_MINUTES = 60;
-
 export async function addNotice(input: {
   organizationId: string;
   conversationId: string;
   kind: NoticeKind;
   body: string;
-  now: Date;
   // Saliente del agente al que se refiere: un aviso por mensaje y tipo.
   messageId?: string | null;
-  // No repetir si ya hay uno del mismo tipo en esta ventana.
-  dedupeMinutes?: number;
 }): Promise<boolean> {
   try {
     const own = await db
@@ -33,22 +27,6 @@ export async function addNotice(input: {
       .where(and(eq(conversations.id, input.conversationId), eq(conversations.organizationId, input.organizationId)))
       .limit(1);
     if (own.length === 0) return false;
-    if (input.dedupeMinutes) {
-      const since = new Date(input.now.getTime() - input.dedupeMinutes * 60_000);
-      const [recent] = await db
-        .select({ id: aiAgentNotices.id })
-        .from(aiAgentNotices)
-        .where(
-          and(
-            eq(aiAgentNotices.organizationId, input.organizationId),
-            eq(aiAgentNotices.conversationId, input.conversationId),
-            eq(aiAgentNotices.kind, input.kind),
-            gte(aiAgentNotices.createdAt, since),
-          ),
-        )
-        .limit(1);
-      if (recent) return false;
-    }
     const rows = await db
       .insert(aiAgentNotices)
       .values({

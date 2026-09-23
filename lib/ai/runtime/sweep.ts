@@ -119,8 +119,7 @@ export async function reconcileStuckDrafts(now: Date): Promise<number> {
         organizationId: d.organizationId,
         conversationId: d.conversationId,
         kind: "envio",
-        body: `El envío de una respuesta del agente se interrumpió: salieron ${ok} de ${d.bubbles.length} partes. No se envió: «${d.bubbles.slice(ok).join(" / ")}». Revisa el hilo.`,
-        now,
+        body: `El envío de una respuesta del agente se interrumpió: salieron ${ok} de ${d.bubbles.length} mensajes. No se envió: «${d.bubbles.slice(ok).join(" / ")}». Revisa el hilo.`,
       });
     }
     resolved++;
@@ -146,7 +145,7 @@ export async function noticeFailedAgentSends(now: Date): Promise<number> {
     const body = ambiguous
       ? "WhatsApp no confirmó una respuesta del agente: revisa en el celular si le llegó al cliente."
       : `WhatsApp rechazó una respuesta del agente${r.error_code ? ` (código ${r.error_code})` : ""}: el cliente no la recibió.`;
-    if (await addNotice({ organizationId: r.organization_id, conversationId: r.conversation_id, kind: "envio", body, now, messageId: r.id })) added++;
+    if (await addNotice({ organizationId: r.organization_id, conversationId: r.conversation_id, kind: "envio", body, messageId: r.id })) added++;
   }
   return added;
 }

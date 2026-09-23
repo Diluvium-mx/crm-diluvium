@@ -193,14 +193,11 @@ describe.skipIf(!TEST_DATABASE_URL)("acciones manuales del agente (Postgres real
     expect(d.resolvedAt!.getTime()).toBeLessThan(appAhead.getTime() - 30_000);
   });
 
-  it("pausar a mano y reactivar desde el contacto; los avisos se leen en el hilo, solo de la organización", async () => {
+  it("los avisos se leen en el hilo, solo de la organización", async () => {
     const { addNotice } = await import("./notices");
-    await manual.reactivateAgentInConversation(ORG, "cv_m", new Date());
-    expect(await manual.pauseAgentInConversation(ORG, "cv_m", new Date())).toBe(true);
-    expect((await conv()).agentState).toBe("pausado_humano");
-    expect(await addNotice({ organizationId: "org_otra", conversationId: "cv_m", kind: "guardia", body: "x", now: new Date() })).toBe(false);
-    expect(await addNotice({ organizationId: ORG, conversationId: "cv_m", kind: "guardia", body: "Revisa", now: new Date() })).toBe(true);
-    expect((await manual.loadConversationAgent(ORG, "cv_m"))!.notices.map((n) => n.body)).toEqual(["Revisa"]);
+    expect(await addNotice({ organizationId: "org_otra", conversationId: "cv_m", kind: "pasar_a_humano", body: "x" })).toBe(false);
+    expect(await addNotice({ organizationId: ORG, conversationId: "cv_m", kind: "pasar_a_humano", body: "Pidió un vendedor" })).toBe(true);
+    expect((await manual.loadConversationAgent(ORG, "cv_m"))!.notices.map((n) => n.body)).toEqual(["Pidió un vendedor"]);
     expect(await manual.loadConversationAgent("org_otra", "cv_m")).toBeNull();
   });
 });

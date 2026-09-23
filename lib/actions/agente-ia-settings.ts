@@ -1,19 +1,19 @@
 "use server";
 
 // Server Actions de los ajustes del runtime del Agente IA (Fase B): interruptor
-// por canal, tiempos, pausas, límites, respuesta y precios de los modelos. Solo
-// owner/admin (ACL: recurso `aiConfig`). La organización sale de la SESIÓN.
+// por canal y precios de los modelos. Solo owner/admin (ACL: recurso `aiConfig`).
+// La organización sale de la SESIÓN.
 import { revalidatePath } from "next/cache";
 import { and, count, eq } from "drizzle-orm";
 import { requireActiveMembership } from "@/lib/auth/active-organization";
 import { roleAllows } from "@/lib/auth/permissions";
 import { db } from "@/lib/db";
-import { aiConfig, aiKnowledge, aiModelPrices, channels } from "@/lib/db/schema";
-import { DEFAULT_BRAIN_MODEL, DEFAULT_FILTER_MODEL, getModel, MODEL_CATALOG } from "@/lib/ai/catalog";
+import { aiKnowledge, aiModelPrices, channels } from "@/lib/db/schema";
+import { getModel, MODEL_CATALOG } from "@/lib/ai/catalog";
 import { PROVIDER_META } from "@/lib/ai/provider";
 import { DEFAULT_MODEL_PRICES } from "@/lib/ai/pricing";
 import { loadAgentConfig } from "@/lib/ai/runtime/config";
-import { agentModeSchema, agentSettingsSchema, idSchema, priceSchema, toAgentMode, type AgentSettings } from "@/lib/agente-ia/settings";
+import { agentModeSchema, idSchema, priceSchema, toAgentMode } from "@/lib/agente-ia/settings";
 import type { AgentSettingsBundleView, ChannelAgentView, ModelPriceView } from "@/lib/agente-ia/types";
 
 async function requireManage(action: "read" | "update") {
@@ -33,16 +33,6 @@ function cacheNote(provider: string): string {
 export async function getAgentSettings(): Promise<AgentSettingsBundleView> {
   const { organizationId } = await requireManage("read");
   const cfg = await loadAgentConfig(organizationId);
-  const settings: AgentSettings = {
-    responseDelaySeconds: cfg.responseDelaySeconds,
-    maxWaitSeconds: cfg.maxWaitSeconds,
-    pauseOnHumanReply: cfg.pauseOnHumanReply,
-    antiLoopMaxPerHour: cfg.antiLoopMaxPerHour,
-    maxRepliesPerContact: cfg.maxRepliesPerContact,
-    contextMessages: cfg.contextMessages,
-    maxBubbles: cfg.maxBubbles,
-    dailyBudgetUsd: cfg.dailyBudgetUsd,
-  };
   const channelRows = await db
     .select()
     .from(channels)
@@ -75,29 +65,10 @@ export async function getAgentSettings(): Promise<AgentSettingsBundleView> {
     .from(aiKnowledge)
     .where(and(eq(aiKnowledge.organizationId, organizationId), eq(aiKnowledge.enabled, true)));
   return {
-    settings,
     channels: channelViews,
     prices,
     knowledge: { goalChars: cfg.goal?.length ?? 0, faqsEnabled },
   };
-}
-
-export async function updateAgentSettings(input: AgentSettings): Promise<AgentSettings> {
-  const { organizationId } = await requireManage("update");
-  const parsed = agentSettingsSchema.parse(input);
-  const now = new Date();
-  await db
-    .insert(aiConfig)
-    .values({
-      organizationId,
-      modeloFiltro: DEFAULT_FILTER_MODEL,
-      modeloCerebro: DEFAULT_BRAIN_MODEL,
-      ...parsed,
-      updatedAt: now,
-    })
-    .onConflictDoUpdate({ target: aiConfig.organizationId, set: { ...parsed, updatedAt: now } });
-  revalidatePath("/agente-ia");
-  return parsed;
 }
 
 export async function setChannelAgentMode(input: { channelId: string; mode: string }): Promise<ChannelAgentView> {
