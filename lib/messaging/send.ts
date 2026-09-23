@@ -31,6 +31,8 @@ import { applyOutboundToConversation, latestInboundMessageId } from "./ingest";
 import { SendFailedError, type MessagingProvider, type SendResult } from "./provider";
 import { isAmbiguousSendError, isWindowOpen, nextStatus, SEND_UNCONFIRMED, SEND_UNKNOWN } from "./rules";
 import { renderTemplateBody, templateMaxIndex } from "./template-format";
+import { loadMediaAsset, mediaAssetSignedUrl } from "@/lib/media-library/service";
+import type { ObjectStorage } from "@/lib/storage/s3";
 import { isTemplateSendable } from "@/lib/templates/types";
 
 export class SendRejectedError extends Error {
@@ -45,7 +47,9 @@ export class SendRejectedError extends Error {
       | "template_not_found"
       | "template_not_approved"
       | "template_unsupported"
-      | "template_params",
+      | "template_params"
+      | "media_not_found"
+      | "storage_unavailable",
     message: string,
   ) {
     super(message);
@@ -172,6 +176,92 @@ export async function sendTextMessage(provider: MessagingProvider, params: SendT
     organizationId: params.organizationId,
     sentByUserId,
     // El agente no "lee" por el vendedor: sus envíos no descuentan no leídos.
+    markRead: source === "crm",
+  });
+}
+
+export type SendMediaParams = {
+  organizationId: string;
+  conversationId: string;
+  /** Archivo de la biblioteca (media_assets) de la MISMA organización. */
+  assetId: string;
+  /** Pie de foto / texto que acompaña. */
+  caption?: string | null;
+  sentByUserId?: string | null;
+  source?: OutboundTextSource;
+  now?: Date;
+};
+
+// Vida de la URL firmada que descarga el proveedor: suficiente para reintentos
+// del proveedor, corta para que no circule.
+export const MEDIA_SEND_URL_SECONDS = 15 * 60;
+
+/**
+ * Envía un archivo de la biblioteca (Fase D) con el MISMO patrón outbox que el
+ * texto: fila "queued" antes de llamar al proveedor (su id = clave de
+ * idempotencia) y la clasificación enviado/rechazado/desconocido de `deliver`.
+ * Es texto libre para WhatsApp: exige la ventana de 24 h abierta. El archivo
+ * viaja por URL firmada temporal; en la burbuja queda el storageKey (la bandeja
+ * lo sirve por /api/media/{messageId}/{index} como cualquier adjunto).
+ */
+export async function sendMediaMessage(provider: MessagingProvider, storage: ObjectStorage, params: SendMediaParams): Promise<SendOutcome> {
+  const now = params.now ?? new Date();
+  const caption = params.caption?.trim() ? validText(params.caption) : null;
+  const { conversation, channel } = await loadConversation(provider, params.organizationId, params.conversationId, now);
+  const asset = await loadMediaAsset(params.organizationId, params.assetId);
+  if (!asset) throw new SendRejectedError("media_not_found", "El archivo no existe en la biblioteca de esta organización.");
+  let url: string;
+  try {
+    url = await mediaAssetSignedUrl(storage, asset, MEDIA_SEND_URL_SECONDS);
+  } catch (error) {
+    throw new SendRejectedError("storage_unavailable", `No se pudo firmar el archivo: ${error instanceof Error ? error.message : String(error)}`);
+  }
+
+  const source = params.source ?? "crm";
+  const sentByUserId = params.sentByUserId ?? null;
+  const messageId = crypto.randomUUID();
+  await db.insert(messages).values({
+    id: messageId,
+    organizationId: params.organizationId,
+    conversationId: conversation.id,
+    direction: "out",
+    source,
+    type: asset.kind,
+    body: caption,
+    attachments: [
+      {
+        type: asset.kind,
+        // Ruta interna: la bandeja sirve el archivo por storageKey, nunca por esta URL.
+        url: `/api/biblioteca/${asset.id}`,
+        mimeType: asset.mimeType,
+        fileName: asset.fileName,
+        storageKey: asset.storageKey,
+        sizeBytes: asset.bytes,
+        downloadedAt: now.toISOString(),
+      },
+    ],
+    mediaUrl: `/api/biblioteca/${asset.id}`,
+    mediaMimeType: asset.mimeType,
+    status: "queued",
+    sentByUserId,
+    sentAt: now,
+  });
+  return deliver({
+    messageId,
+    send: () =>
+      provider.sendMedia({
+        providerAccountId: channel.providerAccountId,
+        providerConversationId: conversation.providerConversationId!,
+        url,
+        kind: asset.kind,
+        caption: caption ?? undefined,
+        fileName: asset.fileName,
+        idempotencyKey: messageId,
+      }),
+    now,
+    conversation,
+    organizationId: params.organizationId,
+    sentByUserId,
     markRead: source === "crm",
   });
 }

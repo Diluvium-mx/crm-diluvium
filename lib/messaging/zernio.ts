@@ -23,6 +23,7 @@ import {
   type NormalizedMessageType,
   type ProviderTemplate,
   type SendResult,
+  type SendMediaInput,
   type SendTemplateInput,
   type SendTextInput,
   type WebhookEnvelope,
@@ -468,6 +469,23 @@ export class ZernioProvider implements MessagingProvider {
       { accountId: providerAccountId, template: { elements: [element] } },
       idempotencyKey,
     );
+  }
+
+  // Media saliente (Fase D). Cuerpo verificado en vivo contra el sandbox
+  // (docs/fase-d-diseno.md §0.3): attachmentUrl (pública) + attachmentType
+  // image|video|audio|file + attachmentName (documentos) + message (pie).
+  // El objeto `media: {url,type}` de la guía del inbox NO funciona (400).
+  async sendMedia({ providerAccountId, providerConversationId, url, kind, caption, fileName, idempotencyKey }: SendMediaInput): Promise<SendResult> {
+    const target = new URL(url);
+    if (target.protocol !== "https:") throw new ZernioSendError(0, "media_url_insegura", "La URL del archivo debe ser https", "rejected");
+    const body: Record<string, unknown> = {
+      accountId: providerAccountId,
+      attachmentUrl: url,
+      attachmentType: kind === "document" ? "file" : kind,
+    };
+    if (kind === "document" && fileName) body.attachmentName = fileName;
+    if (caption) body.message = caption;
+    return this.postToConversation(providerConversationId, body, idempotencyKey);
   }
 
   // GET /v1/whatsapp/templates?accountId=… (docs.zernio.com). FALLA CERRADO:

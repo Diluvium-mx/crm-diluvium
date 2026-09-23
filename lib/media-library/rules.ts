@@ -63,8 +63,10 @@ export function assetStorageKey(organizationId: string, assetId: string, fileNam
   const safe = fileName
     .normalize("NFKD")
     .replace(/[\u0300-\u036f]/g, "")
+    .replace(/\.{2,}/g, ".")
     .replace(/[^\w.-]+/g, "_")
     .replace(/_+/g, "_")
+    .replace(/^[._-]+/, "")
     .slice(0, 80);
   return `org/${organizationId}/library/${assetId}-${safe || "archivo"}`;
 }
