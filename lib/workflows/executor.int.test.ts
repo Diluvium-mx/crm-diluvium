@@ -1,0 +1,290 @@
+// Ejecutor de workflows contra una base real (TEST_DATABASE_URL). El proveedor
+// y el bucket son dobles; la cola de BullMQ se sustituye (sin Redis).
+import { Readable } from "node:stream";
+import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
+import type { ObjectStorage } from "@/lib/storage/s3";
+import type { MessagingProvider, SendMediaInput, SendTextInput } from "@/lib/messaging/provider";
+
+const TEST_DATABASE_URL = process.env.TEST_DATABASE_URL;
+if (TEST_DATABASE_URL) process.env.DATABASE_URL = TEST_DATABASE_URL;
+
+// Sin Redis en los tests: encolar es un no-op (la fila queda "queued").
+vi.mock("@/lib/queue/workflows", () => ({
+  enqueueWorkflowRun: async () => true,
+  reviveWorkflowRun: async () => "added",
+}));
+
+class MemoryStorage implements ObjectStorage {
+  async putStream(_key: string, body: Readable) {
+    for await (const _ of body) void _;
+  }
+  async exists() {
+    return true;
+  }
+  async head() {
+    return { bytes: 1, contentType: null };
+  }
+  async deleteObject() {}
+  async getBytes(): Promise<Uint8Array> {
+    throw new Error("no usado");
+  }
+  async signedGetUrl(key: string) {
+    return `https://bucket.test/${key}?firma=1`;
+  }
+}
+
+describe.skipIf(!TEST_DATABASE_URL)("executor de workflows", () => {
+  let db: typeof import("@/lib/db").db;
+  let s: typeof import("@/lib/db/schema");
+  let ex: typeof import("./executor");
+  let media: typeof import("@/lib/media-library/service");
+  let eq: typeof import("drizzle-orm").eq;
+  const ORG = "org_wf";
+  const CONTACT = "c_wf";
+  const CONV = "conv_wf";
+  const storage = new MemoryStorage();
+  let sent: Array<{ kind: "text" | "media"; input: SendTextInput | SendMediaInput }>;
+  let rejectNext: Error | null;
+
+  const provider = {
+    name: "zernio",
+    verifyWebhook: () => true,
+    readEnvelope: () => ({ eventId: "x", event: "x" }),
+    normalize: () => ({ kind: "ignored", eventId: "x", event: "x", reason: "test" }),
+    fetchMedia: async () => new Response(null),
+    sendText: async (input: SendTextInput) => {
+      if (rejectNext) {
+        const e = rejectNext;
+        rejectNext = null;
+        throw e;
+      }
+      sent.push({ kind: "text", input });
+      return { providerInternalId: `z${sent.length}`, providerMessageId: `wamid.${sent.length}` };
+    },
+    sendMedia: async (input: SendMediaInput) => {
+      sent.push({ kind: "media", input });
+      return { providerInternalId: `z${sent.length}`, providerMessageId: `wamid.${sent.length}` };
+    },
+    sendTemplate: async () => {
+      throw new Error("no se esperaba sendTemplate");
+    },
+    listTemplates: async () => [],
+    createTemplate: async () => ({ providerTemplateId: null, status: "PENDING" }),
+  } satisfies MessagingProvider;
+
+  beforeAll(async () => {
+    ({ db } = await import("@/lib/db"));
+    s = await import("@/lib/db/schema");
+    ex = await import("./executor");
+    media = await import("@/lib/media-library/service");
+    ({ eq } = await import("drizzle-orm"));
+  });
+
+  beforeEach(async () => {
+    sent = [];
+    rejectNext = null;
+    const { sql } = await import("drizzle-orm");
+    await db.execute(
+      sql`truncate workflow_runs, workflow_steps, workflows, media_assets, ai_config, messages, conversations, channels, contacts, organization, "user" cascade`,
+    );
+    await db.insert(s.organization).values({ id: ORG, name: "Org", slug: "org", createdAt: new Date() });
+    await db.insert(s.user).values({ id: "u_v", name: "Paty", email: "p@x.mx" });
+    await db.insert(s.channels).values({
+      id: "ch_wf",
+      organizationId: ORG,
+      type: "whatsapp",
+      provider: "zernio",
+      providerAccountId: "zacc",
+      displayName: "Diluvium",
+      aiAgentMode: "auto",
+    });
+    await db.insert(s.contacts).values({ id: CONTACT, organizationId: ORG, firstName: "Ana", lastName: "López", phoneE164: "+526681112233", stage: "prospecto" });
+    await db.insert(s.conversations).values({
+      id: CONV,
+      organizationId: ORG,
+      contactId: CONTACT,
+      channelId: "ch_wf",
+      providerConversationId: "zconv",
+      windowExpiresAt: new Date(Date.now() + 20 * 3_600_000),
+      lastMessageAt: new Date(),
+      agentState: "activo",
+    });
+  });
+  afterAll(async () => {
+    if (db) await (db.$client as unknown as { end: () => Promise<void> }).end();
+  });
+
+  async function asset() {
+    return media.storeUploadedAsset(storage, {
+      organizationId: ORG,
+      userId: null,
+      title: "Tabla",
+      fileName: "tabla.png",
+      mimeType: "image/png",
+      declaredBytes: 3,
+      body: Readable.from([Buffer.from("abc")]),
+    });
+  }
+  async function workflow(steps: import("@/lib/db/schema/automation").WorkflowStepPayload[], opts: Partial<typeof s.workflows.$inferInsert> = {}) {
+    const id = crypto.randomUUID();
+    await db.insert(s.workflows).values({ id, organizationId: ORG, slug: `wf_${id.slice(0, 6)}`, name: "WF", enabled: true, oncePerConversation: true, ...opts });
+    await db.insert(s.workflowSteps).values(steps.map((payload, position) => ({ id: crypto.randomUUID(), organizationId: ORG, workflowId: id, position, kind: payload.kind, payload })));
+    return id;
+  }
+  const run = (id: string) => db.select().from(s.workflowRuns).where(eq(s.workflowRuns.id, id)).then((r) => r[0]);
+  const contact = () => db.select().from(s.contacts).where(eq(s.contacts.id, CONTACT)).then((r) => r[0]);
+  const conv = () => db.select().from(s.conversations).where(eq(s.conversations.id, CONV)).then((r) => r[0]);
+
+  it("comando del vendedor: texto con variables + imagen + etapa; sale como crm con el vendedor y queda el rastro", async () => {
+    const a = await asset();
+    const wf = await workflow([
+      { kind: "send_text", text: "Hola {{nombre}}, soy {{vendedor}}. Te comparto la tabla." },
+      { kind: "send_media", assetId: a.id, title: "Tabla", caption: "Tabla de tamaños" },
+      { kind: "set_stage", stage: "interesado" },
+    ]);
+    const start = await ex.startWorkflowRun({ organizationId: ORG, workflowId: wf, conversationId: CONV, trigger: "command", triggeredByUserId: "u_v" });
+    expect(start.status).toBe("queued");
+    expect(await ex.executeWorkflowRun(start.runId, { provider, storage })).toBe("done");
+    expect(sent.map((x) => x.kind)).toEqual(["text", "media"]);
+    expect((sent[0].input as SendTextInput).text).toBe("Hola Ana López, soy Paty. Te comparto la tabla.");
+    expect((sent[1].input as SendMediaInput).url).toContain("firma=1");
+    const r = await run(start.runId);
+    expect(r).toMatchObject({ status: "done", stepCursor: 3 });
+    expect(r.messageIds).toHaveLength(2);
+    const outs = await db.select().from(s.messages).where(eq(s.messages.direction, "out"));
+    expect(outs.every((m) => m.source === "crm" && m.sentByUserId === "u_v")).toBe(true);
+    expect((await contact()).stage).toBe("interesado");
+    // Un segundo job del mismo run no lo vuelve a ejecutar (ya no está "queued").
+    expect(await ex.executeWorkflowRun(start.runId, { provider, storage })).toBe("not_claimed");
+    expect(sent).toHaveLength(2);
+  });
+
+  it("'una vez por conversación': el agente no repite la tabla, pero el vendedor sí puede con el comando", async () => {
+    const wf = await workflow([{ kind: "send_text", text: "tabla" }]);
+    const first = await ex.startWorkflowRun({ organizationId: ORG, workflowId: wf, conversationId: CONV, trigger: "agent" });
+    await ex.executeWorkflowRun(first.runId, { provider, storage });
+    const again = await ex.startWorkflowRun({ organizationId: ORG, workflowId: wf, conversationId: CONV, trigger: "agent" });
+    expect(again).toMatchObject({ status: "skipped", reason: ex.SKIP_ALREADY_SENT });
+    const byCommand = await ex.startWorkflowRun({ organizationId: ORG, workflowId: wf, conversationId: CONV, trigger: "command", triggeredByUserId: "u_v" });
+    expect(byCommand.status).toBe("queued");
+  });
+
+  it("canal en borrador o apagado: el agente/palabra clave no ejecutan acciones; el comando humano sí", async () => {
+    const wf = await workflow([{ kind: "send_text", text: "x" }]);
+    await db.update(s.channels).set({ aiAgentMode: "borrador" }).where(eq(s.channels.id, "ch_wf"));
+    expect(await ex.startWorkflowRun({ organizationId: ORG, workflowId: wf, conversationId: CONV, trigger: "agent" })).toMatchObject({ status: "skipped", reason: ex.SKIP_DRAFT_MODE });
+    await db.update(s.channels).set({ aiAgentMode: "off" }).where(eq(s.channels.id, "ch_wf"));
+    expect(await ex.startWorkflowRun({ organizationId: ORG, workflowId: wf, conversationId: CONV, trigger: "keyword" })).toMatchObject({ status: "skipped", reason: ex.SKIP_CHANNEL_OFF });
+    const human = await ex.startWorkflowRun({ organizationId: ORG, workflowId: wf, conversationId: CONV, trigger: "command", triggeredByUserId: "u_v" });
+    expect(human.status).toBe("queued");
+    expect(await ex.executeWorkflowRun(human.runId, { provider, storage })).toBe("done");
+    expect(sent).toHaveLength(1);
+  });
+
+  it("archivo faltante o workflow deshabilitado: no se manda nada y queda el motivo", async () => {
+    const sinArchivo = await workflow([{ kind: "send_media", assetId: null, title: "Tabla" }]);
+    expect(await ex.startWorkflowRun({ organizationId: ORG, workflowId: sinArchivo, conversationId: CONV, trigger: "command" })).toMatchObject({ status: "skipped", reason: ex.SKIP_MISSING_MEDIA });
+    const apagado = await workflow([{ kind: "send_text", text: "x" }], { enabled: false });
+    expect(await ex.startWorkflowRun({ organizationId: ORG, workflowId: apagado, conversationId: CONV, trigger: "command" })).toMatchObject({ status: "skipped", reason: ex.SKIP_DISABLED });
+    expect(sent).toHaveLength(0);
+  });
+
+  it("si un vendedor responde a la mitad, la corrida del agente se cancela y no manda lo que falta", async () => {
+    const wf = await workflow([
+      { kind: "send_text", text: "uno" },
+      { kind: "send_text", text: "dos" },
+    ]);
+    const start = await ex.startWorkflowRun({ organizationId: ORG, workflowId: wf, conversationId: CONV, trigger: "agent", now: new Date(Date.now() - 1_000) });
+    // Humano escribe después de creada la corrida.
+    await db.insert(s.messages).values({
+      id: "m_h",
+      organizationId: ORG,
+      conversationId: CONV,
+      direction: "out",
+      source: "crm",
+      type: "text",
+      body: "yo me encargo",
+      status: "sent",
+      createdAt: new Date(),
+    });
+    expect(await ex.executeWorkflowRun(start.runId, { provider, storage })).toBe("cancelled");
+    expect(sent).toHaveLength(0);
+    expect(await run(start.runId)).toMatchObject({ status: "cancelled", errorCode: "respuesta_humana" });
+  });
+
+  it("fuera de la ventana de 24 h la corrida falla con ventana_24h y no deja mensajes", async () => {
+    await db.update(s.conversations).set({ windowExpiresAt: new Date(Date.now() - 1_000) }).where(eq(s.conversations.id, CONV));
+    const wf = await workflow([{ kind: "send_text", text: "x" }]);
+    const start = await ex.startWorkflowRun({ organizationId: ORG, workflowId: wf, conversationId: CONV, trigger: "command" });
+    expect(await ex.executeWorkflowRun(start.runId, { provider, storage })).toBe("failed");
+    expect(await run(start.runId)).toMatchObject({ status: "failed", errorCode: ex.FAIL_WINDOW });
+    expect(sent).toHaveLength(0);
+  });
+
+  it("rechazo del proveedor en el 2º paso: el 1º ya salió, el cursor lo recuerda y la corrida queda failed con el código", async () => {
+    const { ZernioSendError } = await import("@/lib/messaging/zernio");
+    const wf = await workflow([
+      { kind: "send_text", text: "uno" },
+      { kind: "send_text", text: "dos" },
+    ]);
+    const start = await ex.startWorkflowRun({ organizationId: ORG, workflowId: wf, conversationId: CONV, trigger: "command" });
+    // El primer envío pasa; el segundo lo rechaza WhatsApp.
+    const orig = provider.sendText;
+    let n = 0;
+    provider.sendText = async (input) => {
+      n++;
+      if (n === 2) throw new ZernioSendError(400, "rate_limited", "límite", "rejected");
+      return orig(input);
+    };
+    try {
+      expect(await ex.executeWorkflowRun(start.runId, { provider, storage })).toBe("failed");
+    } finally {
+      provider.sendText = orig;
+    }
+    const r = await run(start.runId);
+    expect(r).toMatchObject({ status: "failed", errorCode: "rate_limited", stepCursor: 1 });
+    expect(r.messageIds).toHaveLength(1);
+  });
+
+  it("pasar a humano pausa al agente con etiqueta; el aviso interno queda en el hilo sin ir al proveedor; la etapa del argumento manda", async () => {
+    const wf = await workflow([
+      { kind: "internal_note", text: "Pago reportado: {{monto}} · ref. {{referencia}}. Cotejar." },
+      { kind: "add_tag", tag: "cotejar depósito" },
+      { kind: "set_stage", stage: "interesado" },
+      { kind: "handover" },
+    ]);
+    const start = await ex.startWorkflowRun({
+      organizationId: ORG,
+      workflowId: wf,
+      conversationId: CONV,
+      trigger: "agent",
+      payload: { monto: "$5,500", referencia: "1234", etapa: "compra" },
+    });
+    expect(await ex.executeWorkflowRun(start.runId, { provider, storage })).toBe("done");
+    expect(sent).toHaveLength(0);
+    const notes = await db.select().from(s.messages).where(eq(s.messages.type, "system_note"));
+    expect(notes).toHaveLength(1);
+    expect(notes[0]).toMatchObject({ body: "Pago reportado: $5,500 · ref. 1234. Cotejar.", source: "ai_agent", providerMessageId: null });
+    const c = await contact();
+    expect(c.stage).toBe("compra");
+    expect(c.tags).toEqual(expect.arrayContaining(["cotejar depósito", "pasar a humano"]));
+    const cv = await conv();
+    expect(cv.agentState).toBe("pausado_handover");
+    expect(cv.agentPausedUntil).not.toBeNull();
+  });
+
+  it("otra organización no puede disparar ni ejecutar workflows ajenos", async () => {
+    const wf = await workflow([{ kind: "send_text", text: "x" }]);
+    await expect(ex.startWorkflowRun({ organizationId: "otra", workflowId: wf, conversationId: CONV, trigger: "command" })).rejects.toThrow(/no encontrado/);
+  });
+
+  it("barrido: corridas atoradas en running se dan por fallidas; queued viejas se listan para re-encolar", async () => {
+    const wf = await workflow([{ kind: "wait", seconds: 1 }]);
+    const a = await ex.startWorkflowRun({ organizationId: ORG, workflowId: wf, conversationId: CONV, trigger: "command" });
+    await db.update(s.workflowRuns).set({ status: "running", startedAt: new Date(Date.now() - 11 * 60_000) }).where(eq(s.workflowRuns.id, a.runId));
+    expect(await ex.failStuckRuns()).toBe(1);
+    expect(await run(a.runId)).toMatchObject({ status: "failed", errorCode: ex.FAIL_STUCK });
+    const b = await ex.startWorkflowRun({ organizationId: ORG, workflowId: wf, conversationId: CONV, trigger: "command", now: new Date(Date.now() - 60_000) });
+    expect(await ex.staleQueuedRuns()).toContain(b.runId);
+  });
+});
