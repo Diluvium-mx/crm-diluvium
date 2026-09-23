@@ -83,19 +83,21 @@ const entradaPatchSchema = z
   .refine((patch) => Object.keys(patch).length > 0, {
     message: "Indica al menos un campo de la entrada para actualizar.",
   });
-const sizeRangesSchema = z.array(
-  z.object({
-    linea: z.enum(lineaCompuertaEnum.enumValues),
-    talla: z.string(),
-    minCm: z.number().int("El mínimo debe ser un entero."),
-    maxCm: z.number().int("El máximo debe ser un entero."),
-    posicion: z
-      .number()
-      .int("La posición debe ser un entero.")
-      .min(1, "La posición debe ser mayor que 0.")
-      .max(32767, "La posición excede el máximo permitido."),
-  }),
-);
+const sizeRangesSchema = z
+  .array(
+    z.object({
+      linea: z.enum(lineaCompuertaEnum.enumValues),
+      talla: z.string().max(50, "La talla no puede pasar de 50 caracteres."),
+      minCm: z.number().int("El mínimo debe ser un entero."),
+      maxCm: z.number().int("El máximo debe ser un entero."),
+      posicion: z
+        .number()
+        .int("La posición debe ser un entero.")
+        .min(1, "La posición debe ser mayor que 0.")
+        .max(32767, "La posición excede el máximo permitido."),
+    }),
+  )
+  .max(100, "No puede haber más de 100 rangos de tallas.");
 const commentBodySchema = z
   .string()
   .trim()

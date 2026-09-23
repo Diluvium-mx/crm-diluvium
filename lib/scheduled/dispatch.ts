@@ -217,7 +217,13 @@ export async function failStuckSending(now: Date = new Date()): Promise<number> 
               updatedAt: now,
             },
       )
-      .where(and(eq(scheduledMessages.id, row.id), eq(scheduledMessages.status, "sending")));
+      .where(
+        and(
+          eq(scheduledMessages.organizationId, row.organizationId),
+          eq(scheduledMessages.id, row.id),
+          eq(scheduledMessages.status, "sending"),
+        ),
+      );
   }
   return stuck.length;
 }

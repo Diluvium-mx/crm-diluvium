@@ -139,7 +139,8 @@ export function ContactDetails({
   // en su carril: una relectura vieja no pisa a una más nueva.
   //
   // "¿Cuántas entradas?": cada pedido (guardar o solo releer) termina releyendo
-  // lo que quedó en el servidor, y solo se muestra la respuesta del último. Las
+  // lo que quedó en el servidor, y solo se muestra la respuesta del último. Va
+  // en el carril "entradas", el mismo de los guardados de cada fila. Las
   // escrituras nunca se descartan sin salir (bajar el número borra filas: 7 → 2
   // → 6 no es lo mismo que 7 → 6). Si el último guardado falla, el número vuelve
   // a lo último confirmado (así se puede reintentar el mismo valor) y, si hay
@@ -151,7 +152,7 @@ export function ContactDetails({
         await write?.();
         return getContactDetails(contactId);
       },
-      { droppable: !write },
+      { lane: "entradas", droppable: !write },
     );
     if (outcome.status === "saved") confirmedNum.current = outcome.result.numEntradas;
     if (outcome.status === "superseded" || !outcome.latest) return;
@@ -378,6 +379,7 @@ export function ContactDetails({
                   contactId={contactId}
                   entradas={details.entradas as Entrada[]}
                   run={run}
+                  saves={saves}
                   onSaved={(next) =>
                     setDetails((d) => (d ? { ...d, entradas: d.entradas.map((e) => (e.posicion === next.posicion ? next : e)) } : d))
                   }

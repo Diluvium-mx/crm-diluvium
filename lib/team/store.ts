@@ -20,7 +20,9 @@ import { db } from "@/lib/db";
 import { member, user } from "@/lib/db/schema";
 
 // Autor de sistema de las notas importadas (migraciones 0022/0023): no inicia
-// sesión ni es miembro de ninguna organización. Nunca se "adopta" como vendedor.
+// sesión ni es miembro de ninguna organización. Nunca se "adopta" como vendedor,
+// y su correo (dominio .invalid, RFC 2606: no existe) no se le da a nadie aunque
+// la fila aún no exista (la 0022/0023 solo la crean si hay notas).
 const SYSTEM_IMPORT_USER_ID = "usuario-sistema-importado";
 
 export class TeamError extends Error {
@@ -122,6 +124,7 @@ export async function createSeller(params: {
 }): Promise<void> {
   await checkPasswordLength(params.password);
   const email = params.email.trim().toLowerCase();
+  if (email.endsWith(".invalid")) throw new TeamError("Ese correo está reservado por el sistema.");
   const [existing] = await db.select({ id: user.id }).from(user).where(eq(user.email, email)).limit(1);
   if (existing) {
     if (existing.id === SYSTEM_IMPORT_USER_ID) throw new TeamError("Ese correo está reservado por el sistema.");

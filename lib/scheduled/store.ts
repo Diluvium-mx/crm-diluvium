@@ -249,7 +249,7 @@ export async function retryScheduled(organizationId: string, id: string, now: Da
       const [conversation] = await tx
         .select({ windowExpiresAt: conversations.windowExpiresAt })
         .from(conversations)
-        .where(eq(conversations.id, row.conversationId))
+        .where(and(eq(conversations.organizationId, organizationId), eq(conversations.id, row.conversationId)))
         .limit(1);
       if (!textAllowedAt(conversation?.windowExpiresAt ?? null, now)) {
         throw new ScheduleError("La ventana de 24 h está cerrada: programa una plantilla en su lugar.");
