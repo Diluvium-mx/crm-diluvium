@@ -169,6 +169,13 @@
       "when": 1790177331057,
       "tag": "0023_notas_largas_continuacion",
       "breakpoints": true
+    },
+    {
+      "idx": 24,
+      "version": "7",
+      "when": 1790188043706,
+      "tag": "0024_agente_ia_runtime",
+      "breakpoints": true
     }
   ]
 }

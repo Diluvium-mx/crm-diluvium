@@ -17,6 +17,7 @@ import {
 } from "./queries";
 import { retryTextMessage, SendRejectedError, sendTemplateMessage, sendTextMessage } from "@/lib/messaging/send";
 import { SendFailedError } from "@/lib/messaging/provider";
+import { pauseAgentForManualSend, pauseAgentOnManualMessageId } from "@/lib/ai/runtime/hooks";
 import type {
   ConversationDetail,
   ConversationListItem,
@@ -104,6 +105,8 @@ export async function sendMessage(conversationId: string, text: string): Promise
       sentByUserId: userId,
       text,
     });
+    // Un mensaje manual del vendedor pausa al Agente IA en esta conversación.
+    await pauseAgentForManualSend(organizationId, conversationId);
     return { ok: true, messageId, pending: status === "pending" };
   } catch (error) {
     const { code, message } = toSendError(error);
@@ -127,6 +130,7 @@ export async function sendTemplate(
       templateId,
       variableValues,
     });
+    await pauseAgentForManualSend(organizationId, conversationId);
     return { ok: true, messageId, pending: status === "pending" };
   } catch (error) {
     const { code, message } = toSendError(error);
@@ -142,6 +146,7 @@ export async function retryMessage(messageId: string): Promise<SendMessageResult
       messageId,
       sentByUserId: userId,
     });
+    await pauseAgentOnManualMessageId(organizationId, id);
     return { ok: true, messageId: id, pending: status === "pending" };
   } catch (error) {
     const { code, message } = toSendError(error);
