@@ -592,6 +592,22 @@ describe.skipIf(!TEST_DATABASE_URL)("runtime del Agente IA (Postgres real)", () 
     expect(brain.error).toContain("detenido tras 1 burbuja(s): respuesta_humana");
   });
 
+  it("AUTO: si el CLIENTE escribe en la pausa entre burbujas, la 2ª no sale y su mensaje queda pendiente", async () => {
+    await msg({ direction: "in", body: "¿precio?", at: ago(10_000) });
+    let nuevo = "";
+    const { deps } = makeDeps({
+      onSleep: async () => {
+        nuevo = await msg({ direction: "in", body: "¿y hacen envíos?", at: new Date(Date.now() + 1_000) });
+      },
+    });
+    expect(await run.runAgent(JOB, deps)).toEqual({ kind: "sent", bubbles: 1 });
+    expect(await agentOuts()).toHaveLength(1);
+    const { pendingInbound } = await import("./context");
+    expect((await pendingInbound(ORG, CONV)).map((m) => m.id)).toEqual([nuevo]); // la siguiente corrida lo atiende
+    const brain = (await usage()).find((u) => u.stage === "cerebro")!;
+    expect(brain.error).toContain("detenido tras 1 burbuja(s): entrante_nuevo");
+  });
+
   it("AUTO: si apagan el canal en la pausa entre burbujas, la 2ª ya no sale", async () => {
     await msg({ direction: "in", body: "¿precio?", at: ago(10_000) });
     const { deps } = makeDeps({

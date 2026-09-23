@@ -99,16 +99,22 @@ async function imageUrlsFor(rows: readonly MessageRow[], resolve: RunDeps["resol
 }
 
 // ¿Sigue pudiendo enviar el agente? Estado FRESCO justo antes de una burbuja.
+type StopReason = "cambio_antes_de_enviar" | "respuesta_humana" | "entrante_nuevo";
+
 async function stopBeforeBubble(
   organizationId: string,
   conversationId: string,
   humansAtCheck: number,
-): Promise<"cambio_antes_de_enviar" | "respuesta_humana" | null> {
+  inboundsAtCheck: number,
+): Promise<StopReason | null> {
   const snap = await loadSnapshot(organizationId, conversationId);
   if (!snap || snap.channel.aiAgentMode !== "auto" || snap.conversation.agentState !== "activo") {
     return "cambio_antes_de_enviar";
   }
   if ((await humanOutboundCount(organizationId, conversationId)) > humansAtCheck) return "respuesta_humana";
+  // El cliente escribió después de lo que leyó el modelo: esta respuesta ya no
+  // contesta lo último (y, si saliera, dejaría su mensaje como "atendido").
+  if ((await inboundCount(organizationId, conversationId)) > inboundsAtCheck) return "entrante_nuevo";
   return null;
 }
 
@@ -343,11 +349,11 @@ export async function runAgent(job: { organizationId: string; conversationId: st
     // el agente se detiene ahí.
     const humansAtCheck = await humanOutboundCount(org, conv.id);
     let sent = 0;
-    let stopped: "cambio_antes_de_enviar" | "respuesta_humana" | null = null;
+    let stopped: StopReason | null = null;
     try {
       for (const text of bubbles) {
         if (sent > 0) await deps.sleep(BUBBLE_PAUSE_MS);
-        stopped = await stopBeforeBubble(org, conv.id, humansAtCheck);
+        stopped = await stopBeforeBubble(org, conv.id, humansAtCheck, readCount);
         if (stopped) break;
         await deps.sendBubble({ organizationId: org, conversationId: conv.id, text });
         sent++;
@@ -361,7 +367,15 @@ export async function runAgent(job: { organizationId: string; conversationId: st
       await markAgentReply(org, conv.id, deps.now());
       return { kind: "sent", bubbles: sent };
     }
+    if (stopped === "entrante_nuevo" && sent === 0) {
+      // Nada salió: igual que la revisión antes de enviar, se descarta y se regenera con TODO.
+      await recordAiUsage({ ...brainUsage, outcome: "discarded_stale" });
+      console.info(`[agente] ${conv.id}: respuesta descartada (entró un mensaje antes de la 1ª burbuja), ronda ${round}`);
+      continue;
+    }
     if (stopped) {
+      // Con "entrante_nuevo" tras ≥1 burbuja: el mensaje nuevo queda pendiente (es
+      // posterior a lo enviado) y lo atiende la siguiente corrida (aviso "dirty").
       if (stopped === "respuesta_humana" && cfg.pauseOnHumanReply) await pause(conv, "pausado_humano", deps.now());
       if (sent === 0) {
         await recordAiUsage({ ...brainUsage, outcome: "skipped", error: `detenido antes de enviar: ${stopped}` });
