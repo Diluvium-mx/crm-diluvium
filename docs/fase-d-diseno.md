@@ -86,7 +86,8 @@ el contacto entra a esa etapa (arrastre en el Embudo, panel de contacto o el pro
 | 4 | `video_instalacion_estandar` | agente · comando `/video` | texto + **video como archivo** | `instalacion-estandar.mp4` |
 | 5 | `video_instalacion_medida` | agente · comando `/video-medida` | texto + **video como archivo** | `instalacion-medida.mp4` |
 | 6 | `tapones_inflables` | agente · comando `/tapones` · clave "tapón", "tapones" | texto + 1–3 **imágenes** + **video** | `tapones-1.png`, `tapones-2.png`, `tapones.mp4` |
-| 7 | `donde_medir` | agente · comando `/medir` | texto (cómo medir de lateral a lateral) + **imagen** guía | `donde-medir.png` |
+| 7 | `donde_medir` | agente · comando `/medir` | texto (cómo medir de lateral a lateral) + **video** guía como archivo | `donde-medir.mp4` |
+| 7b | `video_instalacion_mini` | agente · comando `/video-mini` | texto + **video como archivo** | `instalacion-mini.mp4` |
 | 8 | `medidas_especiales` | agente (entrada > 250 cm, poste central, ∼280 cm) | texto + **imagen** (diagrama poste/dos compuertas) | `medidas-especiales.png` (opcional) |
 | 9 | `transferir_humano` | agente (reglas del Goal) · comando `/humano` | pasar a humano (etiqueta "pasar a humano" + pausa 8 h, igual que hoy) | — |
 | 10 | `cambiar_etapa` | agente · clave (configurable) | etapa → destino (cualquiera de las 5, incluida `compra`) | — |
@@ -302,7 +303,8 @@ Carpeta propuesta: `~/Documents/diluvium-media/` (fuera del repo). Archivos:
 4. `instalacion-estandar.mp4` y 5. `instalacion-medida.mp4` — los videos que hoy manda GHL
    **como archivo** (MP4 original).
 6. `tapones-1.png`, `tapones-2.png` (2–3 imágenes) y `tapones.mp4`.
-7. `donde-medir.png` — imagen/diagrama de dónde medir (lateral a lateral, en el punto de apoyo).
+7. `donde-medir.mp4` — video de dónde medir (lateral a lateral, en el punto de apoyo). El dueño lo entrega después.
+7b. `instalacion-mini.mp4` — video de instalación de la mini compuerta (entregado como .mov HEVC; convertido).
 8. `medidas-especiales.png` — opcional: poste central + dos compuertas / ∼280 cm.
 
 Hasta que lleguen, los seeds apuntan a **archivos de prueba** generados (PNG y MP4 de 5 s) y los
