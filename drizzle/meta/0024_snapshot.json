@@ -2258,6 +2258,13 @@
           "notNull": true,
           "default": 2
         },
+        "daily_budget_usd": {
+          "name": "daily_budget_usd",
+          "type": "numeric(10, 2)",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 20
+        },
         "created_at": {
           "name": "created_at",
           "type": "timestamp",
@@ -3147,6 +3154,21 @@
           "concurrently": false,
           "method": "btree",
           "with": {}
+        },
+        "ai_agent_drafts_trigger_idx": {
+          "name": "ai_agent_drafts_trigger_idx",
+          "columns": [
+            {
+              "expression": "trigger_message_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
         }
       },
       "foreignKeys": {
@@ -3682,6 +3704,7 @@
       "schema": "public",
       "values": [
         "pendiente",
+        "enviando",
         "enviado",
         "descartado",
         "obsoleto"

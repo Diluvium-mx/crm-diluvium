@@ -13,6 +13,7 @@ export const agentSettingsSchema = z
     maxRepliesPerContact: z.number().int().min(1, "Mínimo 1").max(10_000, "Máximo 10,000").nullable(),
     contextMessages: z.number().int().min(1, "Mínimo 1").max(50, "Máximo 50"),
     maxBubbles: z.number().int().min(1, "Mínimo 1").max(5, "Máximo 5"),
+    dailyBudgetUsd: z.number().min(1, "Mínimo 1 USD").max(1_000, "Máximo 1,000 USD"),
   })
   .refine((s) => s.maxWaitSeconds >= s.responseDelaySeconds, {
     message: "La espera máxima no puede ser menor que la espera antes de responder.",

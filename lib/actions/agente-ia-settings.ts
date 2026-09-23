@@ -43,6 +43,7 @@ export async function getAgentSettings(): Promise<AgentSettingsBundleView> {
     maxRepliesPerContact: cfg.maxRepliesPerContact,
     contextMessages: cfg.contextMessages,
     maxBubbles: cfg.maxBubbles,
+    dailyBudgetUsd: cfg.dailyBudgetUsd,
   };
   const channelRows = await db
     .select()

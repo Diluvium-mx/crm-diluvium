@@ -150,6 +150,7 @@ function toDraft(s: AgentSettings): Draft {
     maxRepliesPerContact: String(s.maxRepliesPerContact ?? 50),
     contextMessages: String(s.contextMessages),
     maxBubbles: String(s.maxBubbles),
+    dailyBudgetUsd: String(s.dailyBudgetUsd),
   };
 }
 
@@ -163,6 +164,7 @@ function fromDraft(d: Draft): unknown {
     maxRepliesPerContact: d.noContactCap ? null : Number(d.maxRepliesPerContact),
     contextMessages: Number(d.contextMessages),
     maxBubbles: Number(d.maxBubbles),
+    dailyBudgetUsd: Number(d.dailyBudgetUsd),
   };
 }
 
@@ -239,6 +241,14 @@ function SettingsForm({ initial }: { initial: AgentSettings }) {
       </Section>
 
       <Section title="Límites">
+        <NumberField
+          id="presupuesto"
+          label="Presupuesto de modelos por día"
+          hint="Gasto máximo de toda la organización en las últimas 24 h. Al llegar, el agente deja de responder hasta que baje."
+          unit="USD"
+          value={draft.dailyBudgetUsd}
+          onChange={set("dailyBudgetUsd")}
+        />
         <NumberField
           id="antibucle"
           label="Máximo de respuestas por conversación por hora"

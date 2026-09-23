@@ -19,6 +19,7 @@ export type AgentConfig = {
   pauseOnHumanReply: boolean;
   contextMessages: number;
   maxBubbles: number;
+  dailyBudgetUsd: number;
 };
 
 // Mismos defaults que las columnas de ai_config (migraciones 0014/0015).
@@ -34,6 +35,7 @@ export const AGENT_CONFIG_DEFAULTS: AgentConfig = {
   pauseOnHumanReply: true,
   contextMessages: 20,
   maxBubbles: 2,
+  dailyBudgetUsd: 20,
 };
 
 export async function loadAgentConfig(organizationId: string): Promise<AgentConfig> {
@@ -51,6 +53,7 @@ export async function loadAgentConfig(organizationId: string): Promise<AgentConf
     pauseOnHumanReply: row.pauseOnHumanReply,
     contextMessages: row.contextMessages,
     maxBubbles: row.maxBubbles,
+    dailyBudgetUsd: row.dailyBudgetUsd,
   };
 }
 

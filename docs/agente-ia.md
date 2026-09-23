@@ -92,7 +92,18 @@ construye ahora). El dry-run "Probar modelo" ya muestra tokens, pero no persiste
     además aísla los ganchos en su frontera (`lib/ai/runtime/isolation.int.test.ts`).
   - **Tope de gasto:** llamadas cobradas por conversación/hora ≤ anti-bucle × 4 (mín. 12);
     al llegar → `pausado_antibucle` + "revisión humana". Tras descartar respuestas, el job
-    vuelve con al menos `response_delay_seconds` (nunca 0).
+    vuelve con al menos `response_delay_seconds` (nunca 0). **Presupuesto diario por
+    organización** (`ai_config.daily_budget_usd`, default 20 USD, editable en la pestaña):
+    al llegar el gasto de las últimas 24 h, el agente no llama modelos en toda la org
+    (no pausa conversaciones; vuelve solo al bajar la ventana).
+  - **Envío sin carreras:** en AUTO, antes de CADA burbuja se relee el estado (canal en
+    auto, agente activo, sin salientes humanos nuevos); si un vendedor responde o apagan el
+    canal en la pausa de 1.5 s, la siguiente ya no sale. Aprobar un borrador lo pasa a
+    "enviando" (recuperable) y solo queda "enviado" tras mandar; el barrido concilia los
+    atorados > 10 min con el hilo. Encender el canal también es corte de "respuesta humana".
+  - **Trabajo acotado por entrante:** se leen máx. 50 pendientes; con el agente pausado no
+    se programa nada (salvo un pase a humano vencido); índice en
+    `ai_agent_drafts(trigger_message_id)`.
   - **Cortes del debounce y del barrido:** solo cuentan los entrantes posteriores al último
     ya atendido, a la reactivación (`agent_state_changed_at`) y al encendido del canal
     (`channels.ai_agent_mode_changed_at`). Encender un canal o "Reactivar" NO contesta
@@ -127,16 +138,37 @@ construye ahora). El dry-run "Probar modelo" ya muestra tokens, pero no persiste
       - "50% de descuento" pasa porque "50%" está en la base (es el anticipo): mismo caso que
         "te descuento $3,000".
       - El motivo sale duplicado si solo cambia la mayúscula ("2x1" y "2X1").
+    - Bajos del gate de entrada a main (23-sep: revisión adversarial de Claude + cyber-neo):
+      - Guardia: montos con miles separados por espacio o apóstrofo SIN $ ni moneda
+        ("te la dejo en 5 900", "4'200"), "$5,500 menos 40", letra O por cero ("42OO"),
+        dígitos separados ("4 2 0 0"); datos de pago no revisados (CLABE / números de 10+
+        dígitos, teléfonos y correos cerca de "deposita/paga/transferencia"). La regla
+        "Datos bancarios → [TRANSFERIR]" vive solo en el prompt.
+      - `response_delay_seconds` acepta 0: con 0, el piso "nunca 0" al reprogramar se vuelve
+        0 (bucle de hasta 6 llamadas por corrida hasta el tope de 40/h).
+      - El barrido (mínimo 90 s) acorta el debounce si `response_delay_seconds` o
+        `max_wait_seconds` pasan de 90 (la pestaña permite hasta 600/900).
+      - Aviso "dirty" que puede perderse entre el último getDel y el "completed" de BullMQ
+        (lo rescata el barrido: 90-150 s en vez de 15 s).
+      - `tope_por_contacto` y `sin_goal` no dejan resultado en ai_usage: el barrido los
+        reprograma cada minuto por 30 min (solo carga de BD, sin llamadas a modelos).
+      - Borradores: si falla la 1ª burbuja y ya hay otro pendiente, volver a "pendiente"
+        choca con el índice único; carrera onHumanOutbound vs saveDraft en vuelo (queda una
+        tarjeta vigente tras una respuesta manual).
+      - Horas de WhatsApp truncadas al segundo vs horas del servidor: un entrante del mismo
+        segundo que un saliente no queda "pendiente".
+      - El tope de llamadas y el presupuesto no cuentan una llamada que venció por timeout
+        (usage null) ni una fila de ai_usage que no se pudo escribir (falla abierto).
+      - Informativo: la transcripción (con datos del cliente) y URLs firmadas de imágenes
+        van a OpenAI/Anthropic; CLAUDE.md §4 dice "solo GitHub, Railway y Meta" — actualizar
+        CLAUDE.md y el aviso de privacidad (decisión del dueño). npm audit: 4 moderadas de
+        esbuild vía drizzle-kit, solo desarrollo, ya estaban en main.
 
-  **Ojo con la migración de Fase B en staging (22-sep-2026).** Staging ya tiene
-  aplicada la `0014_little_omega_flight.sql` de esta rama (tablas del agente ya creadas),
-  pero la rama no ha mergeado a `main`. En paralelo va `feat/bloque-a`, que también
-  genera migraciones. Si `feat/bloque-a` mergea primero, ella toma el número 0014 y la
-  migración de Fase B se tendrá que **regenerar** con otro número, y al migrar staging
-  va a chocar (las tablas ya existen). **Al retomar Fase B:** antes de correr las
-  migraciones en staging, reconciliar `drizzle.__drizzle_migrations` de staging (quitar
-  o ajustar el registro de la 0014 vieja y dejar la base alineada con la migración
-  regenerada). Nunca editar una migración ya aplicada: se regenera y se reconcilia.
+  **Migración de la Fase B (resuelto 23-sep-2026):** la migración del runtime es la
+  `0024_agente_ia_runtime` (regenerada sobre main da53cc4, `when` posterior a la 0023 de
+  main). El aviso viejo de una "0014" aplicada en staging ya no aplica: el 23-sep staging
+  tenía 24 migraciones (hasta la 0023 de main), solo `ai_config`/`ai_knowledge` y ningún
+  canal encendido; la 0024 crea sus tablas y columnas sin chocar.
 - **Fase C:** follow-ups automáticos — "ocupado" a las 2h; "dejó de responder" a los
   4 días con plantilla fuera de la ventana de 24h; horario 8:00–17:00.
 - **Fase D:** acciones del Goal — datos bancarios, videos, tabla de tamaños, cambio de etapa.

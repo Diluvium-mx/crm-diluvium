@@ -82,7 +82,9 @@ export const aiModelPrices = pgTable(
 
 // Borradores del modo "borrador": el agente genera la respuesta y la deja aquí
 // SIN enviarla; la bandeja la muestra y un humano la envía o la descarta.
-export const aiDraftStatusEnum = pgEnum("ai_draft_status", ["pendiente", "enviado", "descartado", "obsoleto"]);
+// "enviando" = un vendedor lo aprobó y sus burbujas están saliendo: estado
+// recuperable (si el proceso muere a la mitad, el barrido lo concilia con el hilo).
+export const aiDraftStatusEnum = pgEnum("ai_draft_status", ["pendiente", "enviando", "enviado", "descartado", "obsoleto"]);
 
 export const aiAgentDrafts = pgTable(
   "ai_agent_drafts",
@@ -112,5 +114,7 @@ export const aiAgentDrafts = pgTable(
       .on(t.conversationId)
       .where(sql`${t.status} = 'pendiente'`),
     index("ai_agent_drafts_org_idx").on(t.organizationId),
+    // "¿Este entrante ya tiene borrador?" (idempotencia, corte del debounce y barrido).
+    index("ai_agent_drafts_trigger_idx").on(t.triggerMessageId),
   ],
 );

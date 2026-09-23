@@ -4,9 +4,10 @@
 // 2. Recoge conversaciones con un entrante sin atender y sin job (p. ej. Redis
 //    no respondió al programar): la BD es la fuente de verdad; la cola solo acelera.
 // Es mantenimiento de sistema (todas las organizaciones), como el barrido de webhooks.
-import { and, eq, isNotNull, lte, sql } from "drizzle-orm";
+import { and, eq, gte, isNotNull, lt, lte, sql } from "drizzle-orm";
 import { db } from "@/lib/db";
-import { conversations } from "@/lib/db/schema";
+import { aiAgentDrafts, conversations, messages } from "@/lib/db/schema";
+import { releaseDraft } from "./manual";
 
 // Un entrante con este número de errores del agente ya no se reintenta solo
 // (los errores quedan en ai_usage como rastro).
@@ -70,4 +71,47 @@ export async function findOrphanConversations(now: Date, limit = 50): Promise<Or
     limit ${limit}
   `);
   return rows.map((r) => ({ conversationId: r.id, organizationId: r.organization_id }));
+}
+
+// Un borrador aprobado cuyo envío quedó a la mitad (el proceso murió en "enviando")
+// se concilia con el hilo: si ya hay un saliente del agente desde la aprobación,
+// queda "enviado"; si no, vuelve a "pendiente" (o a obsoleto si ya hay otro).
+export const DRAFT_SENDING_STUCK_MS = 10 * 60_000;
+
+export async function reconcileStuckDrafts(now: Date): Promise<number> {
+  const stuck = await db
+    .select({
+      id: aiAgentDrafts.id,
+      organizationId: aiAgentDrafts.organizationId,
+      conversationId: aiAgentDrafts.conversationId,
+      resolvedAt: aiAgentDrafts.resolvedAt,
+    })
+    .from(aiAgentDrafts)
+    .where(and(eq(aiAgentDrafts.status, "enviando"), lt(aiAgentDrafts.resolvedAt, new Date(now.getTime() - DRAFT_SENDING_STUCK_MS))))
+    .limit(100);
+  for (const d of stuck) {
+    const since = new Date((d.resolvedAt ?? now).getTime() - 5_000);
+    const [out] = await db
+      .select({ id: messages.id })
+      .from(messages)
+      .where(
+        and(
+          eq(messages.organizationId, d.organizationId),
+          eq(messages.conversationId, d.conversationId),
+          eq(messages.direction, "out"),
+          eq(messages.source, "ai_agent"),
+          gte(messages.createdAt, since),
+        ),
+      )
+      .limit(1);
+    if (out) {
+      await db
+        .update(aiAgentDrafts)
+        .set({ status: "enviado" })
+        .where(and(eq(aiAgentDrafts.id, d.id), eq(aiAgentDrafts.organizationId, d.organizationId), eq(aiAgentDrafts.status, "enviando")));
+    } else {
+      await releaseDraft(d.organizationId, d.id, d.conversationId);
+    }
+  }
+  return stuck.length;
 }

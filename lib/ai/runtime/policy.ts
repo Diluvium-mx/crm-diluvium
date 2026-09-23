@@ -76,6 +76,9 @@ export type GateInput = {
   antiLoopMaxPerHour: number;
   // Llamadas COBRADAS al modelo (filtro + cerebro, también las descartadas) en la última hora.
   modelCallsLastHour: number;
+  // Gasto de TODA la organización en las últimas 24 h (USD) y su presupuesto.
+  orgSpendLast24hUsd: number;
+  dailyBudgetUsd: number;
   agentRepliesToContact: number;
   maxRepliesPerContact: number | null; // null = sin tope
 };
@@ -117,6 +120,13 @@ export function decideGate(i: GateInput): GateDecision {
   // descarten y regeneren sin llegar nunca al anti-bucle; esto sí lo frena.
   if (i.modelCallsLastHour >= maxModelCallsPerHour(i.antiLoopMaxPerHour)) {
     return { action: "skip", reason: "tope_de_llamadas", pauseTo: "pausado_antibucle", tag: TAG_ANTI_LOOP };
+  }
+
+  // 5c. Presupuesto diario de la ORGANIZACIÓN: muchos números, cada uno bajo sus
+  // topes, no suman gasto sin límite. No pausa conversaciones: vuelve solo al
+  // bajar la ventana de 24 h.
+  if (i.orgSpendLast24hUsd >= i.dailyBudgetUsd) {
+    return { action: "skip", reason: "presupuesto_diario" };
   }
 
   // 6. Tope total por contacto (opcional).

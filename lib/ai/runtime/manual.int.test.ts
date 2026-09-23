@@ -139,6 +139,75 @@ describe.skipIf(!TEST_DATABASE_URL)("acciones manuales del agente (Postgres real
     expect(d.status).toBe("descartado");
   });
 
+  it("aprobar: el borrador queda 'enviando' mientras salen sus burbujas; si apagan el canal en la pausa, se detiene", async () => {
+    const id = await draft();
+    const seen: string[] = [];
+    const sent: string[] = [];
+    await manual.approveDraft({
+      organizationId: ORG,
+      draftId: id,
+      userId: "u1",
+      now: new Date(),
+      sendBubble: async (p) => {
+        const [d] = await db.select().from(s.aiAgentDrafts).where(eq(s.aiAgentDrafts.id, id));
+        seen.push(d.status);
+        sent.push(p.text);
+      },
+      sleep: async () => {
+        await db.update(s.channels).set({ aiAgentMode: "off" }).where(eq(s.channels.id, "ch_m"));
+      },
+    });
+    expect(seen).toEqual(["enviando"]); // nunca "enviado" antes de mandar
+    expect(sent).toEqual(["Hola"]); // la 2ª burbuja ya no salió
+    const [d] = await db.select().from(s.aiAgentDrafts).where(eq(s.aiAgentDrafts.id, id));
+    expect(d.status).toBe("enviado"); // lo que salió, salió
+  });
+
+  it("si la 1ª burbuja falla y ya hay OTRO borrador pendiente, el aprobado queda obsoleto (sin chocar con el índice único)", async () => {
+    const id = await draft();
+    await expect(
+      manual.approveDraft({
+        organizationId: ORG,
+        draftId: id,
+        userId: "u1",
+        now: new Date(),
+        sendBubble: async () => {
+          await draft(); // mientras tanto el agente guardó un borrador nuevo
+          throw new Error("ventana cerrada");
+        },
+        sleep: async () => undefined,
+      }),
+    ).rejects.toThrow("ventana cerrada");
+    const [d] = await db.select().from(s.aiAgentDrafts).where(eq(s.aiAgentDrafts.id, id));
+    expect(d.status).toBe("obsoleto");
+  });
+
+  it("barrido: un borrador atorado en 'enviando' se concilia con el hilo", async () => {
+    const { reconcileStuckDrafts } = await import("./sweep");
+    const old = new Date(Date.now() - 20 * 60_000);
+    const mk = async (id: string) =>
+      db.insert(s.aiAgentDrafts).values({ id, organizationId: ORG, conversationId: "cv_m", bubbles: ["x"], status: "enviando", resolvedAt: old });
+    // Sin saliente del agente → vuelve a pendiente para reintentar.
+    await mk("d_sin");
+    expect(await reconcileStuckDrafts(new Date())).toBe(1);
+    expect((await db.select().from(s.aiAgentDrafts).where(eq(s.aiAgentDrafts.id, "d_sin")))[0].status).toBe("pendiente");
+    // Con su saliente → enviado; y si ya hay otro pendiente, el que no salió queda obsoleto.
+    await db.insert(s.messages).values({
+      id: "m_ag",
+      organizationId: ORG,
+      conversationId: "cv_m",
+      direction: "out",
+      source: "ai_agent",
+      type: "text",
+      body: "x",
+      status: "sent",
+      createdAt: new Date(old.getTime() + 1_000),
+    });
+    await mk("d_ok");
+    await reconcileStuckDrafts(new Date());
+    expect((await db.select().from(s.aiAgentDrafts).where(eq(s.aiAgentDrafts.id, "d_ok")))[0].status).toBe("enviado");
+  });
+
   it("canal apagado: el borrador pendiente ya no sale y apagar lo deja obsoleto", async () => {
     const id = await draft();
     await db.update(s.channels).set({ aiAgentMode: "off" }).where(eq(s.channels.id, "ch_m"));

@@ -3,7 +3,7 @@
 // POSTERIORES al último corte (ver debounceWindow).
 import { loadAgentConfig } from "./config";
 import { lastHandledInboundAt, loadSnapshot, pendingInbound, type ChannelRow, type ConversationRow, type MessageRow } from "./context";
-import { debounceDelayMs, debounceWindow, rescheduleDelayMs } from "./policy";
+import { debounceDelayMs, debounceWindow, pauseElapsed, rescheduleDelayMs } from "./policy";
 
 // Ventana del debounce para estos pendientes (null si no hay ninguno).
 export async function pendingWindow(
@@ -27,6 +27,10 @@ export async function pendingWindow(
 export async function debounceDelayFor(organizationId: string, conversationId: string, now: Date): Promise<number | null> {
   const snap = await loadSnapshot(organizationId, conversationId);
   if (!snap || snap.channel.aiAgentMode === "off") return null;
+  // Agente pausado (humano, antibucle o pase a humano vigente): no hay nada que
+  // programar; un pase a humano VENCIDO sí (la corrida lo reactiva).
+  const { agentState, agentPausedUntil } = snap.conversation;
+  if (agentState !== "activo" && !pauseElapsed(agentState, agentPausedUntil?.getTime() ?? null, now.getTime())) return null;
   const win = await pendingWindow(snap, await pendingInbound(organizationId, conversationId));
   if (!win) return null;
   const cfg = await loadAgentConfig(snap.conversation.organizationId);
