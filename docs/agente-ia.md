@@ -47,15 +47,15 @@ railway variable set 'OPENAI_API_KEY=${{crm-diluvium.OPENAI_API_KEY}}' -s worker
 railway variable set 'ANTHROPIC_API_KEY=${{crm-diluvium.ANTHROPIC_API_KEY}}' -s worker -e staging
 ```
 
-**Ojo: el worker de producción es OTRO servicio**, `worker-production` (id 189e0d41);
-el servicio `worker` solo corre en staging (su instancia en production está vacía).
-Verificado el 22-sep-2026 (solo lectura): las llaves de IA de producción quedaron en
-`worker` (sin deployments) y **faltan en `worker-production`**, que es el que corre.
-Antes de encender el agente en producción (con OK del dueño; reinicia el worker):
+**En producción el worker es OTRO servicio: `worker-production`** (id 189e0d41). El
+servicio `worker` (id e2140b5d) existe SOLO en staging; en production no tiene
+instancia. **Nunca usar `-s worker -e production`**: guarda variables huérfanas que
+nada lee (pasó en la Fase A; se borraron el 22-sep-2026). Con un servicio sin instancia
+en ese entorno, apuntar por ID (`-s e2140b5d-…`) en vez de por nombre. Estado al
+22-sep-2026: las llaves de IA están en `worker-production` como referencia al web:
 
 ```bash
-railway variable set 'OPENAI_API_KEY=${{crm-diluvium.OPENAI_API_KEY}}' -s worker-production -e production
-railway variable set 'ANTHROPIC_API_KEY=${{crm-diluvium.ANTHROPIC_API_KEY}}' -s worker-production -e production
+railway variable set 'OPENAI_API_KEY=${{crm-diluvium.OPENAI_API_KEY}}' 'ANTHROPIC_API_KEY=${{crm-diluvium.ANTHROPIC_API_KEY}}' -s worker-production -e production
 ```
 
 Comillas **simples**:
