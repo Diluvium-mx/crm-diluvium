@@ -7,7 +7,7 @@ import { db } from "@/lib/db";
 import { conversations, scheduledMessages, templates } from "@/lib/db/schema";
 import { renderTemplateBody, templateMaxIndex } from "@/lib/messaging/template-format";
 import { isTemplateSendable } from "@/lib/templates/types";
-import { SEND_AT_MESSAGES, textAllowedAt, validateSendAt } from "./rules";
+import { isRetryableScheduledError, SEND_AT_MESSAGES, textAllowedAt, validateSendAt } from "./rules";
 import type { ScheduledView } from "./types";
 
 const MAX_TEXT = 4096; // límite de WhatsApp para texto
@@ -31,7 +31,7 @@ function toView(row: Row): ScheduledView {
     status: row.status,
     cancelReason: row.cancelReason,
     errorMessage: row.errorMessage,
-    canRetry: row.status === "failed" && row.errorCode !== "provider_rejected",
+    canRetry: row.status === "failed" && isRetryableScheduledError(row.errorCode),
   };
 }
 
@@ -241,6 +241,9 @@ export async function retryScheduled(organizationId: string, id: string, now: Da
     if (row.status !== "failed") throw new ScheduleError("Solo se puede reintentar un mensaje que falló.");
     if (row.errorCode === "provider_rejected") {
       throw new ScheduleError("WhatsApp lo rechazó: reinténtalo desde el mensaje en el chat.");
+    }
+    if (!isRetryableScheduledError(row.errorCode)) {
+      throw new ScheduleError("No se sabe si salió: revisa el chat y, si no llegó, prográmalo de nuevo.");
     }
     if (row.kind === "text") {
       const [conversation] = await tx
