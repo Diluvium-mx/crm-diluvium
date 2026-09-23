@@ -52,14 +52,22 @@ describe.skipIf(!TEST_DATABASE_URL)("disparadores de workflows", () => {
   }
   const runs = () => db.select().from(s.workflowRuns).where(eq(s.workflowRuns.organizationId, ORG));
 
-  it("palabra clave del cliente: dispara UN solo workflow (el primero por posición) y deja rastro", async () => {
+  it("palabra clave del cliente: dispara UN solo workflow (empate → el primero por posición) y deja rastro", async () => {
     await wf("w_tapones", { triggerKeywords: ["tapones", "tapón"], position: 1 });
     await wf("w_tabla", { triggerKeywords: ["tabla"], position: 0 });
-    const r = await inbound("m1", "¿Me mandan la TABLA y tapones?");
+    // Empate de longitud ("tabla" / "tapon"): desempata la posición.
+    const r = await inbound("m1", "¿Me mandan la TABLA y tapón?");
     expect(r).toMatchObject({ status: "queued" });
     const all = await runs();
     expect(all).toHaveLength(1);
     expect(all[0]).toMatchObject({ workflowId: "w_tabla", trigger: "keyword", conversationId: "cv_new" });
+  });
+
+  it("la frase más específica gana entre workflows: 'video a la medida' no manda el video estándar", async () => {
+    await wf("w_video", { triggerKeywords: ["video"], position: 0 });
+    await wf("w_medida", { triggerKeywords: ["video a la medida"], position: 1 });
+    await inbound("m9", "me mandas el video a la medida?");
+    expect((await runs())[0]).toMatchObject({ workflowId: "w_medida" });
   });
 
   it("una imagen o un mensaje sin coincidencia no dispara; un workflow deshabilitado tampoco", async () => {

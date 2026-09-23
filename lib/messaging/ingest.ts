@@ -570,6 +570,8 @@ async function reconcileFirstResponse(tx: Tx, conversationId: string): Promise<n
       and(
         eq(messages.conversationId, conversationId),
         eq(messages.direction, "out"),
+        // Un aviso interno (Fase D) nunca salió al cliente: no es respuesta.
+        sql`${messages.type} <> 'system_note'`,
         // Humano verificado: desde la app del celular (coexistencia) o desde el
         // CRM con el usuario que lo envió. Una difusión, automatización o el bot
         // (sin sent_by_user_id) no cuenta como primera respuesta.
