@@ -7,7 +7,7 @@
 // 3. Manda con las MISMAS funciones del envío inmediato (outbox, idempotencia,
 //    ventana de 24 h para texto), a nombre de quien lo programó.
 // 4. Cualquier falla queda en la fila (visible con Reintentar); nunca se traga.
-import { and, eq, gt, gte, isNull, lt, or, sql } from "drizzle-orm";
+import { and, asc, eq, gt, gte, isNull, lt, lte, or, sql } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { member, messages, scheduledMessages, user } from "@/lib/db/schema";
 import { MessagingNotConfiguredError } from "@/lib/messaging";
@@ -18,6 +18,8 @@ export type DispatchOutcome = "skipped" | "cancelled" | "sent" | "failed";
 
 /** Tras esto, un "sending" sin terminar se da por interrumpido (el worker murió a la mitad). */
 export const SENDING_STUCK_MS = 10 * 60_000;
+/** Al conciliar un atorado, su saliente debe estar a lo más a esto de la toma. */
+const SENDING_MATCH_WINDOW_MS = 2 * 60_000;
 /**
  * Un programado que se dispara más de esto después de su hora (el worker estuvo
  * detenido) NO se manda solo: el contexto pudo cambiar. Queda fallido y visible;
@@ -178,6 +180,7 @@ export async function failStuckSending(now: Date = new Date()): Promise<number> 
     )
     .limit(100);
   for (const row of stuck) {
+    const claimedAt = row.updatedAt.getTime();
     const [sent] = await db
       .select({ id: messages.id })
       .from(messages)
@@ -187,11 +190,20 @@ export async function failStuckSending(now: Date = new Date()): Promise<number> 
           eq(messages.conversationId, row.conversationId),
           eq(messages.direction, "out"),
           eq(messages.sentByUserId, row.createdByUserId),
-          eq(messages.body, row.body),
-          // sent_at del saliente = la hora en que el worker tomó la fila.
-          gte(messages.sentAt, new Date(row.updatedAt.getTime() - 1_000)),
+          // Texto: mismo cuerpo. Plantilla: tipo plantilla con el mismo cuerpo
+          // o sin cuerpo (una plantilla sin BODY guarda null en el mensaje).
+          row.kind === "text"
+            ? eq(messages.body, row.body)
+            : and(eq(messages.type, "template"), or(eq(messages.body, row.body), isNull(messages.body))),
+          // sent_at del saliente = la hora en que el worker tomó la fila (el
+          // eco de WhatsApp puede traer la suya, un poco después).
+          gte(messages.sentAt, new Date(claimedAt - 1_000)),
+          lte(messages.sentAt, new Date(claimedAt + SENDING_MATCH_WINDOW_MS)),
+          // Nunca el saliente de OTRO programado (dos iguales del mismo autor).
+          sql`not exists (select 1 from ${scheduledMessages} sm where sm.message_id = ${messages.id})`,
         ),
       )
+      .orderBy(asc(messages.sentAt))
       .limit(1);
     await db
       .update(scheduledMessages)

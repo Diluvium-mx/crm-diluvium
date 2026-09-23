@@ -373,6 +373,30 @@ describe.skipIf(!TEST_DATABASE_URL)("mensajes programados (Postgres real)", () =
       expect(await row(job.id)).toMatchObject({ status: "sent", messageId: "m_ya_salio" });
     });
 
+    it("barrido: no enlaza el saliente de OTRO programado igual, ni uno muy posterior a la toma", async () => {
+      const a = await due();
+      const b = await due();
+      const claimedAt = new Date(Date.now() - 12 * 60_000);
+      await db.update(s.scheduledMessages).set({ status: "sending", updatedAt: claimedAt }).where(eq(s.scheduledMessages.id, a.id));
+      const out = (id: string, sentAt: Date) => ({
+        id,
+        organizationId: ORG,
+        conversationId: CONV,
+        direction: "out" as const,
+        source: "crm" as const,
+        type: "text" as const,
+        body: "Buenos días",
+        status: "sent" as const,
+        sentByUserId: USER,
+        sentAt,
+      });
+      // El de B (ya enlazado a B) y uno escrito a mano 10 min después: ninguno es de A.
+      await db.insert(s.messages).values([out("m_de_b", claimedAt), out("m_a_mano", new Date(claimedAt.getTime() + 10 * 60_000))]);
+      await db.update(s.scheduledMessages).set({ status: "sent", messageId: "m_de_b" }).where(eq(s.scheduledMessages.id, b.id));
+      expect(await dispatch.failStuckSending()).toBe(1);
+      expect(await row(a.id)).toMatchObject({ status: "failed", errorCode: "interrupted" });
+    });
+
     it("un error inesperado (pudo haber salido) no ofrece Reintentar; 'late' sí", async () => {
       const job = await due();
       await db.update(s.scheduledMessages).set({ status: "failed", errorCode: "unexpected", errorMessage: "x" }).where(eq(s.scheduledMessages.id, job.id));
