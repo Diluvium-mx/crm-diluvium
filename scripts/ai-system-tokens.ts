@@ -6,7 +6,7 @@
 // Conteo REAL:  railway run -e staging -s crm-diluvium npm run ai:system-tokens
 //   (usa ANTHROPIC_API_KEY del entorno y el endpoint /v1/messages/count_tokens).
 import { readFileSync } from "node:fs";
-import { buildBrainSystem, type Faq } from "@/lib/agente-ia/knowledge";
+import { buildBrainSystem, type Faq } from "@/lib/ai/runtime/knowledge";
 import { getModel, DEFAULT_BRAIN_MODEL } from "@/lib/ai/catalog";
 
 const goalUrl = new URL("../docs/agente-ia/angela-goal.md", import.meta.url);

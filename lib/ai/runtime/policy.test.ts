@@ -5,7 +5,7 @@ import {
   decideGate,
   toBubbles,
   type GateInput,
-} from "./runtime-policy";
+} from "./policy";
 
 const S = 1000;
 

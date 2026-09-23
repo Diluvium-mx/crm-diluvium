@@ -6,6 +6,8 @@
 // la compuerta de decisión (interruptor de canal, estado, ventana 24h, anti-bucle,
 // tope por contacto, silencio por respuesta humana) y el corte en burbujas.
 
+import { TAG_ANTI_LOOP } from "./tags";
+
 export type AgentMode = "off" | "borrador" | "auto";
 export type AgentState = "activo" | "pausado_humano" | "pausado_handover" | "pausado_antibucle";
 
@@ -79,7 +81,7 @@ export function decideGate(i: GateInput): GateDecision {
 
   // 5. Freno anti-bucle: tope de respuestas del agente por hora → pausa + revisión humana.
   if (i.agentRepliesLastHour >= i.antiLoopMaxPerHour) {
-    return { action: "skip", reason: "anti_bucle", pauseTo: "pausado_antibucle", tag: "revisión humana" };
+    return { action: "skip", reason: "anti_bucle", pauseTo: "pausado_antibucle", tag: TAG_ANTI_LOOP };
   }
 
   // 6. Tope total por contacto (opcional).
