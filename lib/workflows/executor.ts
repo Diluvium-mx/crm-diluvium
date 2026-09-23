@@ -25,6 +25,7 @@ import { addContactTag, notifyConversation, setAgentState } from "@/lib/ai/runti
 import { TAG_HANDOVER } from "@/lib/ai/runtime/tags";
 import { loadAgentConfig } from "@/lib/ai/runtime/config";
 import { missingMedia, stripUnresolvedVariables } from "./steps";
+import { isUniqueViolation } from "@/lib/db/errors";
 
 export type RunTrigger = "agent" | "keyword" | "command" | "stage";
 
@@ -49,7 +50,6 @@ export const SKIP_DISABLED = "workflow_deshabilitado";
 export const SKIP_MISSING_MEDIA = "falta_archivo";
 export const SKIP_ALREADY_SENT = "ya_enviado";
 export const SKIP_CHANNEL_OFF = "canal_apagado";
-export const SKIP_DRAFT_MODE = "modo_borrador";
 export const SKIP_NO_STEPS = "sin_pasos";
 export const FAIL_WINDOW = "ventana_24h";
 export const FAIL_STUCK = "atorado";
@@ -129,12 +129,10 @@ export async function startWorkflowRun(input: StartRunInput): Promise<StartRunRe
   if (!wf.enabled && !(input.allowDisabled && input.trigger === "command")) return skip(SKIP_DISABLED);
   if (steps.length === 0) return skip(SKIP_NO_STEPS);
   if (missingMedia(steps.map((s) => s.payload)).length > 0) return skip(SKIP_MISSING_MEDIA);
-  // Disparos NO humanos (agente, palabra clave del cliente) respetan el modo del
-  // canal: apagado no toca nada; borrador no ejecuta acciones (definición 1).
-  if (!HUMAN_TRIGGERS.has(input.trigger)) {
-    if (conv.aiAgentMode === "off") return skip(SKIP_CHANNEL_OFF);
-    if (conv.aiAgentMode === "borrador") return skip(SKIP_DRAFT_MODE);
-  }
+  // Disparos NO humanos (agente, palabra clave del cliente) solo con el canal en
+  // AUTO: cualquier otro valor cuenta como apagado (el modo "borrador" ya no
+  // existe en el negocio). Los comandos del vendedor y la etapa manual siempre.
+  if (!HUMAN_TRIGGERS.has(input.trigger) && conv.aiAgentMode !== "auto") return skip(SKIP_CHANNEL_OFF);
   // "No vuelvas a enviar contenido ya compartido": un comando del vendedor lo
   // repite a propósito; el agente y las palabras clave no.
   if (wf.oncePerConversation && input.trigger !== "command") {
@@ -158,7 +156,7 @@ export async function startWorkflowRun(input: StartRunInput): Promise<StartRunRe
   } catch (error) {
     // Carrera con otra corrida viva del mismo workflow (índice único parcial):
     // se registra como omitida, nunca se manda dos veces.
-    if ((error as { code?: string }).code === "23505") return skip(SKIP_ALREADY_SENT);
+    if (isUniqueViolation(error)) return skip(SKIP_ALREADY_SENT);
     throw error;
   }
   await enqueueWorkflowRun(runId);

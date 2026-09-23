@@ -31,6 +31,17 @@ describe("amountsFromMessages", () => {
   });
 });
 
+describe("regla del dueño", () => {
+  it("el cliente escribe '¿me lo dejas en $4,000?' y ese monto NO entra en los aceptables", () => {
+    const known = amountsFromMessages([
+      out("La compuerta estándar cuesta $5,500 con envío", { source: "ai_agent" }),
+      { direction: "in", source: "contact", type: "text", status: "received", body: "¿me lo dejas en $4,000?" },
+    ]);
+    expect(known.has(400000)).toBe(false);
+    expect(known.has(550000)).toBe(true);
+  });
+});
+
 describe("amountFromPayload", () => {
   it("lee el monto del comprobante en varios formatos", () => {
     expect(amountFromPayload({ monto: "$5,500" })).toBe(550000);

@@ -15,6 +15,7 @@ import { listRecentRuns, startWorkflowRun, type StartRunResult } from "@/lib/wor
 import { seedDefaultWorkflows } from "@/lib/workflows/seed";
 import { commandSchema, keywordsSchema, missingMedia, stepsSchema, unknownVariables, type StepPayload } from "@/lib/workflows/steps";
 import { findWorkflowByCommand } from "@/lib/workflows/triggers";
+import { isUniqueViolation } from "@/lib/db/errors";
 
 const idSchema = z.string().trim().min(1).max(200);
 
@@ -142,9 +143,6 @@ function slugFrom(name: string): string {
   return base || "workflow";
 }
 
-function isUniqueViolation(error: unknown): boolean {
-  return typeof error === "object" && error !== null && (error as { code?: string }).code === "23505";
-}
 
 /** Crea o actualiza un workflow con sus pasos (todo o nada). */
 export async function saveWorkflow(raw: WorkflowInput): Promise<{ ok: true; id: string } | { ok: false; error: string }> {
