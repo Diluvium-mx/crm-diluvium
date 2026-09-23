@@ -109,6 +109,16 @@ describe.skipIf(!TEST_DATABASE_URL)("vendedores (Postgres real + Better Auth)", 
   });
 
   it("el usuario de sistema de las notas importadas no se adopta como vendedor", async () => {
+    // Su correo está reservado aunque la fila todavía no exista (la 0022/0023
+    // solo la crean si hay notas): si no, la migración chocaría por correo.
+    await expect(
+      team.createSeller({ organizationId: ORG, name: "Antes", email: "Importado@Sistema.Invalid", password: "vendedor-pass-12", role: "agent" }),
+    ).rejects.toThrow(/reservado/);
+    await expect(
+      team.createSeller({ organizationId: ORG, name: "Otro", email: "alguien@ejemplo.invalid", password: "vendedor-pass-12", role: "agent" }),
+    ).rejects.toThrow(/reservado/);
+    expect(await db.select().from(s.user).where(eq(s.user.email, "importado@sistema.invalid"))).toHaveLength(0);
+
     const { sql } = await import("drizzle-orm");
     await db.execute(sql`
       insert into "user" (id, name, email, email_verified, created_at, updated_at, banned)
