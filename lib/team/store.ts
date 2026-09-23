@@ -119,7 +119,19 @@ export async function createSeller(params: {
   await checkPasswordLength(params.password);
   const email = params.email.trim().toLowerCase();
   const [existing] = await db.select({ id: user.id }).from(user).where(eq(user.email, email)).limit(1);
-  if (existing) throw new TeamError("Ya existe un usuario con ese correo.");
+  if (existing) {
+    const memberships = await db.select({ id: member.id }).from(member).where(eq(member.userId, existing.id)).limit(1);
+    if (memberships.length > 0) throw new TeamError("Ya existe un usuario con ese correo.");
+    // Usuario huérfano (un alta anterior se cortó entre crear el usuario y
+    // agregarlo a la organización): se completa en vez de bloquear el correo.
+    const ctx = await auth.$context;
+    await ctx.internalAdapter.updateUser(existing.id, { name: params.name.trim() });
+    await setPassword(existing.id, params.password);
+    await auth.api.addMember({
+      body: { userId: existing.id, organizationId: params.organizationId, role: params.role as "agent" },
+    });
+    return;
+  }
 
   // Sin headers = llamada de servidor (ver arriba). No se manda `role`: el rol
   // global del plugin admin no se usa; el rol real va en member.role.

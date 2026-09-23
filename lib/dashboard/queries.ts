@@ -1,10 +1,13 @@
 // Lecturas del Dashboard (A2) con la organización EXPLÍCITA: la resuelve la
 // página desde la sesión, nunca viene del cliente (CLAUDE.md §7).
 //
-// "Conversación nueva" = contacto creado en el rango. Se excluyen los que
-// entraron por importación (source ghl_import) y los de prueba (seed): el
-// import de GHL guardó ~10,900 contactos con created_at del día del import (no
-// guardó la fecha original), así que contarlos pintaría un pico falso.
+// "Conversación nueva" = contacto creado en el rango que ESCRIBIÓ (tiene al
+// menos un mensaje entrante). Se excluyen los que entraron por importación
+// (source ghl_import) y los de prueba (seed): el import de GHL guardó ~10,900
+// contactos con created_at del día del import (no guardó la fecha original), así
+// que contarlos pintaría un pico falso. Tampoco cuentan los creados a mano ni
+// los que solo tienen salientes (p. ej. el vendedor escribió primero desde la
+// app del celular) hasta que el cliente conteste.
 //
 // Los días son LOCALES de America/Mazatlan. created_at es `timestamp` sin zona
 // guardado en UTC (defaultNow del servidor en UTC y los Date de JS llegan en
@@ -34,6 +37,13 @@ export type PeriodCards = {
 
 const tz = DASHBOARD_TIME_ZONE;
 
+// El contacto escribió al menos una vez (en cualquiera de sus conversaciones).
+const wroteIn = sql`exists (
+  select 1 from conversations cv
+  join messages m on m.conversation_id = cv.id
+  where cv.organization_id = c.organization_id and cv.contact_id = c.id and m.direction = 'in'
+)`;
+
 // created_at (UTC, sin zona) → hora local de Mazatlán (sin zona).
 const localCreatedAt = sql`((c.created_at at time zone 'UTC') at time zone ${tz})`;
 
@@ -50,7 +60,8 @@ function newContactsWhere(organizationId: string, range: DateRange): SQL {
       sql`, `,
     )})
     and c.created_at >= ${localDayStartUtc(range.desde)}
-    and c.created_at < ${localDayStartUtc(range.hasta, 1)}`;
+    and c.created_at < ${localDayStartUtc(range.hasta, 1)}
+    and ${wroteIn}`;
 }
 
 /** Conversaciones nuevas por día local del rango (días sin datos = 0). */
@@ -153,6 +164,7 @@ export async function newConversationsCards(
           sql`, `,
         )})
         and c.created_at >= (((k.mes_ini - interval '1 month') at time zone ${tz}) at time zone 'UTC')
+        and ${wroteIn}
     )
     select
       count(*) filter (where local >= k.hoy_ini and local <= k.ahora)::int as hoy,

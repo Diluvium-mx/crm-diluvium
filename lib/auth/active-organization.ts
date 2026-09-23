@@ -32,8 +32,8 @@ export async function requireActiveMembership(): Promise<ActiveMembership> {
     .innerJoin(user, eq(user.id, member.userId))
     .where(eq(member.userId, session.user.id));
 
-  // Usuario desactivado (A4): sus sesiones se borran al desactivarlo, pero la
-  // cookie de sesión en caché (hasta 60 s) podría seguir viva; aquí se corta.
+  // Usuario desactivado (A4): sus sesiones se borran al desactivarlo; esto es
+  // una segunda barrera por si quedara alguna sesión viva.
   if (memberships.some((m) => m.banned)) {
     throw new Error("Usuario desactivado.");
   }

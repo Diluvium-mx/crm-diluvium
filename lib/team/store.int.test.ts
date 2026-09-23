@@ -100,6 +100,42 @@ describe.skipIf(!TEST_DATABASE_URL)("vendedores (Postgres real + Better Auth)", 
     await expect(team.setPassword(carlos.userId, "corta")).rejects.toThrow(/al menos 12/);
   });
 
+  it("un alta que se cortó a la mitad (usuario sin organización) se completa en vez de bloquear el correo", async () => {
+    await auth.api.createUser({ body: { email: "huerfano@diluvium.mx", password: "cualquier-pass-1", name: "Viejo" } });
+    await team.createSeller({ organizationId: ORG, name: "Daniel", email: "huerfano@diluvium.mx", password: "vendedor-pass-12", role: "agent" });
+    const daniel = (await team.listTeam(ORG)).find((m) => m.email === "huerfano@diluvium.mx");
+    expect(daniel).toMatchObject({ name: "Daniel", role: "agent" });
+    await expect(signIn("huerfano@diluvium.mx", "vendedor-pass-12")).resolves.toHaveProperty("token");
+  });
+
+  it("dos owners que se desactivan mutuamente a la vez: solo uno lo logra (candado en el trigger)", async () => {
+    await team.createSeller({ organizationId: ORG, name: "Socio", email: "socio@diluvium.mx", password: "socio-password-1", role: "owner" });
+    const socio = (await team.listTeam(ORG)).find((m) => m.email === "socio@diluvium.mx")!;
+    let releaseA!: () => void;
+    let releaseB!: () => void;
+    const gateA = new Promise<void>((r) => (releaseA = r));
+    const gateB = new Promise<void>((r) => (releaseB = r));
+    const txA = db.transaction(async (tx) => {
+      await tx.update(s.user).set({ banned: true }).where(eq(s.user.id, socio.userId));
+      await gateA;
+    });
+    const txB = db.transaction(async (tx) => {
+      await tx.update(s.user).set({ banned: true }).where(eq(s.user.id, ownerId));
+      await gateB;
+    });
+    releaseA();
+    releaseB();
+    const results = await Promise.allSettled([txA, txB]);
+    expect(results.filter((r) => r.status === "fulfilled")).toHaveLength(1);
+    expect(await team.countActiveOwners(ORG)).toBe(1);
+  });
+
+  it("una organización nueva nace con los rangos de tallas por defecto", async () => {
+    const created = await auth.api.createOrganization({ body: { name: "Nueva", slug: "nueva-org", userId: ownerId } });
+    const rows = await db.select().from(s.tallasCompuerta).where(eq(s.tallasCompuerta.organizationId, created!.id));
+    expect(rows).toHaveLength(9);
+  });
+
   it("la BD no deja desactivar al único owner activo (trigger), pero sí si hay otro", async () => {
     await expect(team.setDeactivated(ownerId, true)).rejects.toThrow(/al menos un owner activo/);
     expect(await team.countActiveOwners(ORG)).toBe(1);

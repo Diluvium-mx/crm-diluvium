@@ -96,7 +96,9 @@ export function ScheduledStrip({
                 {item.status === "failed"
                   ? `⚠ No se envió el mensaje programado para ${whenFormat.format(new Date(item.sendAt))}`
                   : item.status === "cancelled"
-                    ? "🕒 Cancelado: el cliente escribió antes"
+                    ? item.cancelReason === "autor_inactivo"
+                      ? "🕒 Cancelado: quien lo programó ya no está activo"
+                      : "🕒 Cancelado: el cliente escribió antes"
                     : item.status === "sending"
                       ? "🕒 Enviando mensaje programado…"
                       : `🕒 Programado para ${whenFormat.format(new Date(item.sendAt))}${item.kind === "template" ? " · 📄 plantilla" : ""}`}
@@ -116,7 +118,7 @@ export function ScheduledStrip({
                 </button>
               </>
             )}
-            {item.status === "failed" && (
+            {item.status === "failed" && item.canRetry && (
               <button type="button" onClick={() => void act(() => retryScheduledMessage(item.id))} className="rounded px-2 py-1 font-medium text-brand-orange hover:bg-brand-orange/10">
                 Reintentar
               </button>

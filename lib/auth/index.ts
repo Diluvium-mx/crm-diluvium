@@ -5,6 +5,7 @@ import { admin as adminPlugin } from "better-auth/plugins/admin";
 import { organization } from "better-auth/plugins/organization";
 import { db } from "@/lib/db";
 import { emailLockoutAfter, emailLockoutBefore } from "@/lib/auth/email-lockout";
+import { seedDefaultSizeRanges } from "@/lib/contacts/sizes-seed";
 import { ac, admin, agent, owner } from "@/lib/auth/permissions";
 
 if (!process.env.APP_URL) {
@@ -32,7 +33,12 @@ export const auth = betterAuth({
     expiresIn: 60 * 60 * 24 * 7,   // 7 días
     updateAge: 60 * 60 * 24,       // refresco diario
     storeSessionInDatabase: true,  // sesión durable en Postgres, no solo Redis
-    cookieCache: { enabled: true, maxAge: 60 },
+    // Sin caché de sesión en cookie (antes 60 s): al DESACTIVAR a un vendedor
+    // (A4) se borran sus sesiones y debe perder el acceso al instante en TODO
+    // (páginas, /api/media, SSE y los endpoints /organization/* de Better Auth).
+    // Con la caché, esa cookie seguía valiendo hasta 60 s. A esta escala, una
+    // consulta de sesión por request es despreciable.
+    cookieCache: { enabled: false },
   },
 
   // Limiter de fábrica APAGADO en todas las rutas. Sin trustedProxies,
@@ -81,7 +87,15 @@ export const auth = betterAuth({
     // producción no se borran). Además, borrar una organización dejaría su
     // media en el bucket (ObjectStorage no expone delete todavía): hasta tener
     // una limpieza durable del almacenamiento, el borrado queda cerrado.
-    organization({ ac, roles: { owner, admin, agent }, disableOrganizationDeletion: true }),
+    organization({
+      ac,
+      roles: { owner, admin, agent },
+      disableOrganizationDeletion: true,
+      // Toda organización nueva nace con los rangos de tallas por defecto (A7).
+      organizationHooks: {
+        afterCreateOrganization: async ({ organization: created }) => seedDefaultSizeRanges(db, created.id),
+      },
+    }),
     // Plugin admin: SOLO para crear usuarios desde el servidor y para el campo
     // `banned` (desactivar), cuyo hook bloquea el inicio de sesión
     // (dist/plugins/admin/admin.mjs:30-45). Nunca para roles: su user.role

@@ -9,7 +9,7 @@
 // 4. Cualquier falla queda en la fila (visible con Reintentar); nunca se traga.
 import { and, eq, gt, isNull, lt, or, sql } from "drizzle-orm";
 import { db } from "@/lib/db";
-import { messages, scheduledMessages } from "@/lib/db/schema";
+import { member, messages, scheduledMessages, user } from "@/lib/db/schema";
 import { MessagingNotConfiguredError } from "@/lib/messaging";
 import { SendFailedError, type MessagingProvider } from "@/lib/messaging/provider";
 import { sendTemplateMessage, sendTextMessage, SendRejectedError } from "@/lib/messaging/send";
@@ -18,11 +18,19 @@ export type DispatchOutcome = "skipped" | "cancelled" | "sent" | "failed";
 
 /** Tras esto, un "sending" sin terminar se da por interrumpido (el worker murió a la mitad). */
 export const SENDING_STUCK_MS = 10 * 60_000;
+/**
+ * Un programado que se dispara más de esto después de su hora (el worker estuvo
+ * detenido) NO se manda solo: el contexto pudo cambiar. Queda fallido y visible;
+ * "Reintentar" lo manda ya (decisión del vendedor).
+ */
+export const MAX_LATE_MS = 2 * 60 * 60_000;
 
 function failure(error: unknown): { code: string; message: string } {
   if (error instanceof SendRejectedError) return { code: error.code, message: error.message };
   if (error instanceof SendFailedError && error.outcome === "rejected") {
-    return { code: "provider_rejected", message: "WhatsApp rechazó el mensaje programado." };
+    // El mensaje ya quedó en el chat como fallido con su propio "Reintentar":
+    // se reintenta desde ahí (reintentar también aquí lo duplicaría).
+    return { code: "provider_rejected", message: "WhatsApp lo rechazó; reinténtalo desde el mensaje en el chat." };
   }
   if (error instanceof MessagingNotConfiguredError) {
     return { code: "not_configured", message: "El canal de WhatsApp no está configurado." };
@@ -51,6 +59,35 @@ export async function dispatchScheduled(
     )
     .returning();
   if (!row) return "skipped";
+
+  // Quien lo programó debe seguir activo (miembro de la org y no desactivado):
+  // el mensaje sale a su nombre.
+  const [author] = await db
+    .select({ banned: user.banned })
+    .from(member)
+    .innerJoin(user, eq(user.id, member.userId))
+    .where(and(eq(member.organizationId, row.organizationId), eq(member.userId, row.createdByUserId)))
+    .limit(1);
+  if (!author || author.banned) {
+    await db
+      .update(scheduledMessages)
+      .set({ status: "cancelled", cancelReason: "autor_inactivo", updatedAt: new Date() })
+      .where(eq(scheduledMessages.id, row.id));
+    return "cancelled";
+  }
+
+  if (now.getTime() - row.sendAt.getTime() > MAX_LATE_MS) {
+    await db
+      .update(scheduledMessages)
+      .set({
+        status: "failed",
+        errorCode: "late",
+        errorMessage: "No se envió a tiempo (el sistema estuvo detenido). Revisa el chat antes de reintentar.",
+        updatedAt: new Date(),
+      })
+      .where(eq(scheduledMessages.id, row.id));
+    return "failed";
+  }
 
   if (row.cancelIfInbound) {
     const [inbound] = await db

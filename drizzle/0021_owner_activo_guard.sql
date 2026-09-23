@@ -11,8 +11,13 @@ SET LOCAL lock_timeout = '5s';--> statement-breakpoint
 CREATE OR REPLACE FUNCTION crm_check_org_active_owner(org_id text) RETURNS void
 LANGUAGE plpgsql AS $$
 BEGIN
-  -- La organización se borró (cascade a member): no hay nada que proteger.
-  IF NOT EXISTS (SELECT 1 FROM organization WHERE id = org_id) THEN
+  -- Candado sobre la organización: dos transacciones que cambian owners de la
+  -- MISMA org hacen esta revisión una tras otra, y la segunda ya ve lo que
+  -- confirmó la primera (READ COMMITTED toma una foto nueva por sentencia).
+  -- Sin esto, A desactiva a B y B desactiva a A a la vez y ambas pasan.
+  -- Si la organización se borró (cascade a member), no hay nada que proteger.
+  PERFORM 1 FROM organization WHERE id = org_id FOR UPDATE;
+  IF NOT FOUND THEN
     RETURN;
   END IF;
   IF NOT EXISTS (

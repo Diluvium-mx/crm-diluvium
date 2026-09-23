@@ -3,7 +3,7 @@
 // Formulario para programar (o editar) un mensaje (A6). Fecha y hora en hora
 // de Mazatlán. Si a esa hora la ventana de 24 h ya estará cerrada, solo deja
 // elegir PLANTILLA (el servidor lo vuelve a validar al programar y al enviar).
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { X } from "lucide-react";
 import { scheduleMessage, updateScheduledMessage } from "@/lib/actions/scheduled";
 import { instantToLocal, localToInstant, textAllowedAt } from "@/lib/scheduled/rules";
@@ -42,12 +42,16 @@ export function ScheduleForm({
   );
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
+  // Candado síncrono contra el doble clic (el estado `saving` llega un render tarde).
+  const inFlight = useRef(false);
 
   const sendAt = localToInstant(when);
   const textOk = sendAt ? textAllowedAt(windowExpiresAt, sendAt) : true;
   const canUseText = !(mode.type === "new" && mode.templateOnly);
 
   async function submit(action: () => ReturnType<typeof scheduleMessage>) {
+    if (inFlight.current) return;
+    inFlight.current = true;
     setSaving(true);
     setError(null);
     try {
@@ -57,6 +61,7 @@ export function ScheduleForm({
     } catch {
       setError("No se pudo programar. Intenta de nuevo.");
     } finally {
+      inFlight.current = false;
       setSaving(false);
     }
   }
@@ -160,6 +165,7 @@ export function ScheduleForm({
         <div className="mt-2">
           <TemplatePicker
             submitLabel={saving ? "Guardando…" : "Programar plantilla"}
+            busy={saving}
             onSubmit={(templateId, values) =>
               void submit(() =>
                 scheduleMessage({

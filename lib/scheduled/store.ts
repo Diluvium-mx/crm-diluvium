@@ -31,6 +31,7 @@ function toView(row: Row): ScheduledView {
     status: row.status,
     cancelReason: row.cancelReason,
     errorMessage: row.errorMessage,
+    canRetry: row.status === "failed" && row.errorCode !== "provider_rejected",
   };
 }
 
@@ -52,7 +53,10 @@ export async function listScheduledForConversation(organizationId: string, conve
             isNull(scheduledMessages.dismissedAt),
             or(
               eq(scheduledMessages.status, "failed"),
-              and(eq(scheduledMessages.status, "cancelled"), eq(scheduledMessages.cancelReason, "cliente_escribio")),
+              and(
+                eq(scheduledMessages.status, "cancelled"),
+                inArray(scheduledMessages.cancelReason, ["cliente_escribio", "autor_inactivo"]),
+              ),
             ),
           ),
         ),
@@ -235,6 +239,9 @@ export async function retryScheduled(organizationId: string, id: string, now: Da
   return db.transaction(async (tx) => {
     const row = await lockScheduled(tx, organizationId, id);
     if (row.status !== "failed") throw new ScheduleError("Solo se puede reintentar un mensaje que falló.");
+    if (row.errorCode === "provider_rejected") {
+      throw new ScheduleError("WhatsApp lo rechazó: reinténtalo desde el mensaje en el chat.");
+    }
     if (row.kind === "text") {
       const [conversation] = await tx
         .select({ windowExpiresAt: conversations.windowExpiresAt })

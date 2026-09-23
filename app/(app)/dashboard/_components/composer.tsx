@@ -261,6 +261,13 @@ export function Composer({
           onChange={(event) => updateDraft(event.target.value, event.target.selectionStart)}
           onSelect={(event) => setCaret(event.currentTarget.selectionStart)}
           onKeyDown={(event) => {
+            // Con el buscador abierto, Enter NUNCA envía: inserta si hay
+            // coincidencia; si no (cargando, sin resultados o error), no hace
+            // nada. Para mandar un texto que empiece con "/", Esc y luego Enter.
+            if (slash && event.key === "Enter" && !event.shiftKey && matches.length === 0) {
+              event.preventDefault();
+              return;
+            }
             if (slash && matches.length > 0) {
               if (event.key === "ArrowDown") {
                 event.preventDefault();

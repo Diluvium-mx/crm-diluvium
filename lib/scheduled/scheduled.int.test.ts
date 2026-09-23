@@ -204,6 +204,10 @@ describe.skipIf(!TEST_DATABASE_URL)("mensajes programados (Postgres real)", () =
     // Programado "en el pasado" directamente en la base: el worker corre con la
     // hora real, así que la ventana se abre alrededor de ahora.
     async function due(opts: { kind?: "text" | "template"; cancelIfInbound?: boolean; programmedAt?: Date } = {}) {
+      await db
+        .insert(s.member)
+        .values({ id: "m_sched", organizationId: ORG, userId: USER, role: "agent", createdAt: new Date() })
+        .onConflictDoNothing();
       const sendAt = new Date(Date.now() - 1_000);
       await setWindow(new Date(Date.now() + 20 * HOUR));
       const id = crypto.randomUUID();
@@ -303,6 +307,35 @@ describe.skipIf(!TEST_DATABASE_URL)("mensajes programados (Postgres real)", () =
       const other = await due({ kind: "template" });
       expect(await dispatch.dispatchScheduled(bad.provider, other.id, other.sendAtMs)).toBe("failed");
       expect(await row(other.id)).toMatchObject({ status: "failed", errorCode: "provider_rejected" });
+    });
+
+    it("si quien lo programó ya no está activo, se cancela a la vista sin enviar", async () => {
+      const { provider, calls } = fakeProvider();
+      await db.insert(s.member).values({ id: "m_sched", organizationId: ORG, userId: USER, role: "agent", createdAt: new Date() });
+      await db.update(s.user).set({ banned: true }).where(eq(s.user.id, USER));
+      const job = await due();
+      expect(await dispatch.dispatchScheduled(provider, job.id, job.sendAtMs)).toBe("cancelled");
+      expect(await row(job.id)).toMatchObject({ status: "cancelled", cancelReason: "autor_inactivo" });
+      expect(calls).toHaveLength(0);
+      expect((await store.listScheduledForConversation(ORG, CONV)).map((v) => v.cancelReason)).toEqual(["autor_inactivo"]);
+    });
+
+    it("más de 2 h tarde (worker detenido) no se manda solo: falla visible y se puede reintentar", async () => {
+      const { provider, calls } = fakeProvider();
+      const job = await due();
+      const late = new Date(job.sendAtMs + 2 * HOUR + 60_000);
+      expect(await dispatch.dispatchScheduled(provider, job.id, job.sendAtMs, late)).toBe("failed");
+      expect(await row(job.id)).toMatchObject({ status: "failed", errorCode: "late" });
+      expect(calls).toHaveLength(0);
+      expect((await store.listScheduledForConversation(ORG, CONV))[0].canRetry).toBe(true);
+    });
+
+    it("un rechazo de WhatsApp se reintenta desde la burbuja, no desde la franja (sin duplicar)", async () => {
+      const bad = fakeProvider({ reject: true });
+      const job = await due();
+      expect(await dispatch.dispatchScheduled(bad.provider, job.id, job.sendAtMs)).toBe("failed");
+      expect((await store.listScheduledForConversation(ORG, CONV))[0].canRetry).toBe(false);
+      await expect(store.retryScheduled(ORG, job.id)).rejects.toThrow(/desde el mensaje en el chat/);
     });
 
     it("barrido: un 'sending' atorado más de 10 min pasa a fallido; uno reciente no", async () => {
