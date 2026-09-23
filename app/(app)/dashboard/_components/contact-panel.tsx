@@ -12,11 +12,14 @@ import { ContactDetails } from "../../contactos/_components/contact-details";
 
 export function ContactPanel({
   detail,
+  onTemperatureChanged,
   action,
 }: {
   detail: ConversationDetail;
   /** Botón del encabezado (ocultar el panel). */
   action?: React.ReactNode;
+  /** La temperatura cambió aquí: la lista de la Bandeja la refleja (C1). */
+  onTemperatureChanged?: (contactId: string, temperature: Temperature | null) => void;
 }) {
   const contact = detail.contact;
   const [stage, setStage] = useState<Stage>(contact.stage as Stage);
@@ -50,11 +53,13 @@ export function ContactPanel({
     const previous = temperature;
     setTemperature(next);
     setError(null);
+    onTemperatureChanged?.(contact.id, next);
     startTransition(async () => {
       try {
         await updateContactTemperature({ contactId: contact.id, temperature: next });
       } catch {
         setTemperature(previous);
+        onTemperatureChanged?.(contact.id, previous);
         setError("No se pudo cambiar la temperatura.");
       }
     });
