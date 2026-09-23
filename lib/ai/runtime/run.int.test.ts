@@ -574,4 +574,67 @@ describe.skipIf(!TEST_DATABASE_URL)("runtime del Agente IA (Postgres real)", () 
     await run.runAgent(JOB, deps);
     expect(JSON.stringify(calls.find((c) => c.kind === "cerebro")!.input.messages)).not.toContain("NUNCA LLEGÓ");
   });
+
+  // ── Guardia de salida (modo auto) ────────────────────────────────────────
+  async function heldDraft() {
+    const [d] = await db.select().from(s.aiAgentDrafts);
+    return d;
+  }
+
+  it("auto: un monto que no está en el Goal ni en las FAQs NO se envía → borrador + 'revisión humana' + motivo", async () => {
+    await msg({ direction: "in", body: "¿me haces descuento?", at: ago(10_000) });
+    const { deps } = makeDeps({ brain: ["Va, te la dejo en $4,200 si confirmas hoy."] });
+    const r = await run.runAgent(JOB, deps);
+    expect(r).toMatchObject({ kind: "held", reason: "Monto que no está en el Goal ni en las FAQs: $4,200" });
+    expect(await agentOuts()).toEqual([]);
+    const d = await heldDraft();
+    expect(d).toMatchObject({ status: "pendiente", bubbles: ["Va, te la dejo en $4,200 si confirmas hoy."] });
+    expect(d.reviewReason).toContain("$4,200");
+    const [c] = await db.select().from(s.contacts).where(eq(s.contacts.id, CONTACT));
+    expect(c.tags).toContain("revisión humana");
+    const brain = (await usage()).find((u) => u.stage === "cerebro")!;
+    expect(brain.outcome).toBe("draft");
+    expect(brain.error).toMatch(/^guardia de salida: /);
+    // La tarjeta lo muestra (misma lectura que usa la Bandeja).
+    const { loadConversationAgent } = await import("./manual");
+    expect((await loadConversationAgent(ORG, CONV))!.draft!.reviewReason).toContain("$4,200");
+    // No pausa: el siguiente mensaje del cliente vuelve a pasar por el agente.
+    expect((await conv()).agentState).toBe("activo");
+  });
+
+  it("auto: un enlace fuera de la lista NO se envía; diluvium.com.mx sí", async () => {
+    await msg({ direction: "in", body: "¿dónde pago?", at: ago(10_000) });
+    const held = await run.runAgent(JOB, makeDeps({ brain: ["Paga aquí: https://pagos-rapidos.com/x"] }).deps);
+    expect(held).toMatchObject({ kind: "held", reason: "Enlace fuera de la lista permitida: https://pagos-rapidos.com/x" });
+    expect(await agentOuts()).toEqual([]);
+
+    await msg({ direction: "in", body: "¿tienen página?", at: new Date() });
+    const ok = await run.runAgent(JOB, makeDeps({ brain: ["Sí: https://www.diluvium.com.mx/compuertas"] }).deps);
+    expect(ok).toEqual({ kind: "sent", bubbles: 1 });
+  });
+
+  it("auto: un monto que solo está en una FAQ DESACTIVADA también se retiene", async () => {
+    await db.insert(s.aiKnowledge).values({
+      id: "k3",
+      organizationId: ORG,
+      ghlId: "g3",
+      question: "¿Promo?",
+      answer: "Solo este mes $4,999",
+      position: 3,
+      enabled: false,
+    });
+    await msg({ direction: "in", body: "¿promo?", at: ago(10_000) });
+    const r = await run.runAgent(JOB, makeDeps({ brain: ["Este mes queda en $4,999."] }).deps);
+    expect(r.kind).toBe("held");
+  });
+
+  it("borrador: la guardia no cambia el flujo pero deja el motivo visible (sin etiqueta)", async () => {
+    await db.update(s.channels).set({ aiAgentMode: "borrador" }).where(eq(s.channels.id, "ch_rt"));
+    await msg({ direction: "in", body: "¿descuento?", at: ago(10_000) });
+    const r = await run.runAgent(JOB, makeDeps({ brain: ["Te lo dejo en $4,200."] }).deps);
+    expect(r.kind).toBe("draft");
+    expect((await heldDraft()).reviewReason).toContain("$4,200");
+    const [c] = await db.select().from(s.contacts).where(eq(s.contacts.id, CONTACT));
+    expect(c.tags ?? []).not.toContain("revisión humana");
+  });
 });

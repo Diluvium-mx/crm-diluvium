@@ -79,7 +79,13 @@ export type AgentSettingsBundleView = {
 // ── Fase B: el agente en una conversación (Bandeja y panel del contacto) ─────
 export type AgentStateValue = "activo" | "pausado_humano" | "pausado_handover" | "pausado_antibucle";
 
-export type AgentDraftView = { id: string; bubbles: string[]; createdAt: string };
+export type AgentDraftView = {
+  id: string;
+  bubbles: string[];
+  createdAt: string;
+  /** Por qué no se envió solo (guardia de salida); null = borrador normal. */
+  reviewReason: string | null;
+};
 
 export type AgentThreadView = {
   channelMode: AgentModeValue;

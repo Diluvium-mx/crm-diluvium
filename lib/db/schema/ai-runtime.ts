@@ -98,6 +98,9 @@ export const aiAgentDrafts = pgTable(
     bubbles: jsonb("bubbles").$type<string[]>().notNull(),
     // Último entrante que leyó el modelo al generar el borrador.
     triggerMessageId: text("trigger_message_id").references(() => messages.id, { onDelete: "set null" }),
+    // Por qué NO se envió solo (guardia de salida del modo auto: monto o enlace
+    // fuera de la base de conocimiento). Se muestra en la tarjeta del borrador.
+    reviewReason: text("review_reason"),
     status: aiDraftStatusEnum("status").default("pendiente").notNull(),
     createdAt: timestamp("created_at").defaultNow().notNull(),
     resolvedAt: timestamp("resolved_at"),

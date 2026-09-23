@@ -15,6 +15,7 @@ CREATE TABLE "ai_agent_drafts" (
 	"conversation_id" text NOT NULL,
 	"bubbles" jsonb NOT NULL,
 	"trigger_message_id" text,
+	"review_reason" text,
 	"status" "ai_draft_status" DEFAULT 'pendiente' NOT NULL,
 	"created_at" timestamp DEFAULT now() NOT NULL,
 	"resolved_at" timestamp,

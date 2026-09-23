@@ -28,7 +28,8 @@ import { buildFilterPrompt, FILTER_SYSTEM, parseFilterDecision } from "./filter"
 import { decideGate, pauseElapsed, toBubbles, type AgentState } from "./policy";
 import { rescheduleDelayFor } from "./schedule";
 import { addContactTag, markAgentReply, saveDraft, setAgentState } from "./state";
-import { TAG_HANDOVER } from "./tags";
+import { reviewReply } from "./output-guard";
+import { TAG_HANDOVER, TAG_HUMAN_REVIEW } from "./tags";
 import { buildModelMessages, toTranscriptLines } from "./transcript";
 import { recordAiUsage } from "./usage";
 
@@ -62,6 +63,8 @@ export type RunResult =
   | { kind: "handover"; reason: string }
   | { kind: "sent"; bubbles: number }
   | { kind: "draft"; draftId: string }
+  // Modo auto, pero la guardia de salida la retuvo: borrador para revisión humana.
+  | { kind: "held"; draftId: string; reason: string }
   | { kind: "reschedule"; delayMs: number; reason: string };
 
 const HUMAN_SOURCES = new Set(["crm", "business_app"]);
@@ -279,16 +282,23 @@ export async function runAgent(job: { organizationId: string; conversationId: st
       return { kind: "skipped", reason: "respuesta_vacia" };
     }
     const bubbles = toBubbles(out.text, cfg.maxBubbles);
+    // Guardia de salida: un monto o enlace fuera de la base de conocimiento ACTIVA
+    // no sale solo. En borrador el motivo también se muestra (ayuda al revisar).
+    const guard = reviewReply(out.text, { goal: cfg.goal, faqs });
+    const draftInput = { organizationId: org, conversationId: conv.id, bubbles, triggerMessageId: lastRead.id };
+
+    if (fresh.channel.aiAgentMode === "auto" && !guard.ok) {
+      const draftId = await saveDraft({ ...draftInput, now: deps.now(), reviewReason: guard.reason });
+      await addContactTag(org, conv.contactId, TAG_HUMAN_REVIEW);
+      await recordAiUsage({ ...brainUsage, outcome: "draft", error: `guardia de salida: ${guard.reason}` });
+      console.info(`[agente] ${conv.id}: respuesta retenida para revisión humana (${guard.reason})`);
+      return { kind: "held", draftId, reason: guard.reason };
+    }
 
     if (fresh.channel.aiAgentMode === "borrador") {
-      const draftId = await saveDraft({
-        organizationId: org,
-        conversationId: conv.id,
-        bubbles,
-        triggerMessageId: lastRead.id,
-        now: deps.now(),
-      });
-      await recordAiUsage({ ...brainUsage, outcome: "draft" });
+      const reviewReason = guard.ok ? null : guard.reason;
+      const draftId = await saveDraft({ ...draftInput, now: deps.now(), reviewReason });
+      await recordAiUsage({ ...brainUsage, outcome: "draft", error: reviewReason });
       return { kind: "draft", draftId };
     }
 

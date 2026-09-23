@@ -60,6 +60,7 @@ export async function saveDraft(input: {
   bubbles: string[];
   triggerMessageId: string | null;
   now: Date;
+  reviewReason?: string | null;
 }): Promise<string> {
   const id = crypto.randomUUID();
   await db.transaction(async (tx) => {
@@ -86,6 +87,7 @@ export async function saveDraft(input: {
       conversationId: input.conversationId,
       bubbles: input.bubbles,
       triggerMessageId: input.triggerMessageId,
+      reviewReason: input.reviewReason ?? null,
       status: "pendiente",
       createdAt: input.now,
     });

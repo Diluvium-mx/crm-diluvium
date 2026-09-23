@@ -98,6 +98,11 @@ export function AgentDraftInThread({
     <div className="flex justify-end">
       <div className="max-w-[78%] rounded-2xl border border-dashed border-brand-navy/50 bg-card px-3 py-2 text-sm shadow-sm">
         <p className="text-[11px] font-medium text-muted-foreground">🤖 Borrador del agente · aún no se envía</p>
+        {draft.reviewReason && (
+          <p className="mt-1 border-l-2 border-brand-orange pl-2 text-[11px] text-foreground">
+            ⚠ Revisión humana: {draft.reviewReason}
+          </p>
+        )}
         <div className="mt-1 space-y-2">
           {draft.bubbles.map((b, i) => (
             <p key={i} className="whitespace-pre-wrap break-words">
