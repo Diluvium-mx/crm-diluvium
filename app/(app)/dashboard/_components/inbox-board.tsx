@@ -10,6 +10,8 @@ import {
   markConversationRead,
   setConversationStarred,
 } from "@/lib/inbox/actions";
+import { updateContactTemperature } from "@/lib/actions/contacts";
+import type { Temperature } from "../../contactos/_data/types";
 import { ChatThread } from "./chat-thread";
 import { ContactPanel } from "./contact-panel";
 import { ConversationList } from "./conversation-list";
@@ -244,6 +246,19 @@ export function InboxBoard() {
     void markConversationRead(id).then(() => scheduleUpdate(id));
   }
 
+  // Temperatura del contacto desde la lista (C1) o desde el panel: se refleja en
+  // TODAS las filas de ese contacto y en el panel abierto; optimista + revert.
+  function applyTemperature(contactId: string, temperature: string | null) {
+    setConversations((current) => current.map((c) => (c.contact.id === contactId ? { ...c, temperature } : c)));
+    setDetail((d) => (d && d.contact.id === contactId ? { ...d, contact: { ...d.contact, temperature } } : d));
+  }
+
+  function changeTemperature(item: ConversationListItem, temperature: Temperature | null) {
+    const previous = item.temperature;
+    applyTemperature(item.contact.id, temperature);
+    updateContactTemperature({ contactId: item.contact.id, temperature }).catch(() => applyTemperature(item.contact.id, previous));
+  }
+
   function toggleStar(id: string, starred: boolean) {
     setConversations((current) => current.map((c) => (c.id === id ? { ...c, isStarred: starred } : c)));
     void setConversationStarred(id, starred).then(() => scheduleUpdate(id));
@@ -281,6 +296,7 @@ export function InboxBoard() {
               onFilterChange={setFilter}
               onSearchChange={setSearch}
               onToggleStar={toggleStar}
+              onChangeTemperature={changeTemperature}
             />
           </div>
         </aside>
@@ -318,6 +334,7 @@ export function InboxBoard() {
                 para ocultar el panel (B2: compacto). */}
             <ContactPanel
               detail={detail}
+              onTemperatureChanged={applyTemperature}
               action={
                 <button
                   type="button"
