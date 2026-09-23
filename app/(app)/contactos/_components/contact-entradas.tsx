@@ -3,8 +3,9 @@
 // Anchos por entrada (A7/B2): una fila por entrada (las crea "¿cuántas
 // entradas?"), con su línea y el tamaño de compuerta sugerido por los rangos de
 // la organización. El tamaño manual, si lo hay, manda sobre el sugerido.
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { updateEntrada } from "@/lib/actions/contact-qualification";
+import { createSerialSaves } from "@/lib/autosave/serial-saves";
 
 export type Entrada = {
   posicion: number;
@@ -13,6 +14,12 @@ export type Entrada = {
   tamanoSugerido: string | null;
   tamanoManual: string | null;
 };
+
+type Values = Pick<Entrada, "anchoCm" | "linea" | "tamanoManual">;
+
+function valuesOf(e: Values): Values {
+  return { anchoCm: e.anchoCm, linea: e.linea, tamanoManual: e.tamanoManual };
+}
 
 const LINEA_LABELS: Record<Entrada["linea"], string> = { mini: "Mini", estandar: "Estándar" };
 
@@ -32,25 +39,49 @@ function EntradaRow({
 }) {
   const [ancho, setAncho] = useState(entrada.anchoCm === null ? "" : String(entrada.anchoCm));
   const [manual, setManual] = useState(entrada.tamanoManual ?? "");
+  const [linea, setLinea] = useState(entrada.linea);
+  // Hallazgo 4: los tres campos de la fila salen en UN carril (updateEntrada
+  // reescribe ancho y línea juntos) y solo la última respuesta de cada campo
+  // decide. `requested` = lo último pedido (para no saltarse ni repetir un
+  // guardado); `confirmed` = lo último que devolvió el servidor, a donde vuelve
+  // un campo si su último guardado falla.
+  const [saves] = useState(createSerialSaves);
+  const requested = useRef<Values>(valuesOf(entrada));
+  const confirmed = useRef<Values>(valuesOf(entrada));
+  const show: { [K in keyof Values]: (value: Values[K]) => void } = {
+    anchoCm: (v) => setAncho(v === null ? "" : String(v)),
+    linea: setLinea,
+    tamanoManual: (v) => setManual(v ?? ""),
+  };
 
-  async function save(patch: Parameters<typeof updateEntrada>[2]) {
-    const ok = await run(async () => onSaved(await updateEntrada(contactId, entrada.posicion, patch)));
-    // Si falla, los campos vuelven a lo último guardado.
-    if (!ok) {
-      setAncho(entrada.anchoCm === null ? "" : String(entrada.anchoCm));
-      setManual(entrada.tamanoManual ?? "");
-    }
+  function save<K extends keyof Values>(field: K, value: Values[K]) {
+    requested.current = { ...requested.current, [field]: value };
+    void run(async () => {
+      const patch = { [field]: value } as Pick<Values, K>;
+      const outcome = await saves.save(field, () => updateEntrada(contactId, entrada.posicion, patch), "entrada");
+      if (outcome.status === "saved") {
+        // Un solo carril: las respuestas llegan en el orden en que se guardaron.
+        confirmed.current = valuesOf(outcome.result);
+        onSaved(outcome.result);
+        return;
+      }
+      if (outcome.status === "superseded" || !outcome.latest) return;
+      const saved = confirmed.current[field];
+      requested.current = { ...requested.current, [field]: saved };
+      show[field](saved);
+      throw outcome.error;
+    });
   }
 
   function saveAncho() {
     const text = ancho.trim();
     const value = text === "" ? null : /^\d+$/.test(text) ? Number(text) : NaN;
     if (value !== null && (Number.isNaN(value) || value < 1 || value > 1000)) {
-      setAncho(entrada.anchoCm === null ? "" : String(entrada.anchoCm));
+      show.anchoCm(requested.current.anchoCm);
       void run(() => Promise.reject(new Error("ancho")), "El ancho debe ser un entero de 1 a 1000 cm.");
       return;
     }
-    if (value !== entrada.anchoCm) void save({ anchoCm: value });
+    if (value !== requested.current.anchoCm) save("anchoCm", value);
   }
 
   const suggestion = entrada.tamanoSugerido ?? (entrada.anchoCm === null ? "—" : "Sin sugerencia");
@@ -70,8 +101,12 @@ function EntradaRow({
         />
         <select
           aria-label={`Línea de la entrada ${entrada.posicion}`}
-          value={entrada.linea}
-          onChange={(e) => void save({ linea: e.target.value as Entrada["linea"] })}
+          value={linea}
+          onChange={(e) => {
+            const next = e.target.value as Entrada["linea"];
+            setLinea(next);
+            save("linea", next);
+          }}
           className={`${field} min-w-0 flex-1`}
         >
           {(Object.keys(LINEA_LABELS) as Entrada["linea"][]).map((l) => (
@@ -92,7 +127,8 @@ function EntradaRow({
           value={manual}
           onChange={(e) => setManual(e.target.value)}
           onBlur={() => {
-            if (manual.trim() !== (entrada.tamanoManual ?? "")) void save({ tamanoManual: manual.trim() || null });
+            const next = manual.trim() || null;
+            if (next !== requested.current.tamanoManual) save("tamanoManual", next);
           }}
           className={`${field} w-24`}
         />
