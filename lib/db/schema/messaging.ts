@@ -73,6 +73,9 @@ export const messageTypeEnum = pgEnum("message_type", [
   "template",
   "interactive",
   "unknown",
+  // Fase D: aviso interno para el vendedor (p. ej. "cotejar depósito"). Se
+  // guarda en el hilo, la bandeja lo pinta distinto y NUNCA se envía al proveedor.
+  "system_note",
 ]);
 export const messageStatusEnum = pgEnum("message_status", [
   "queued",
