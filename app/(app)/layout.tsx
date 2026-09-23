@@ -44,6 +44,11 @@ export default async function AppLayout({
     ...(role && roleAllows(role, "aiConfig", "read")
       ? [{ label: "Agente IA", href: "/agente-ia" }]
       : []),
+    // Automatización (Fase D): editar workflows es configuración (owner/admin);
+    // el vendedor los usa desde el composer y no necesita la pestaña.
+    ...(role && roleAllows(role, "workflow", "create")
+      ? [{ label: "Automatización", href: "/automatizacion" }]
+      : []),
     // Configuración va al final: "Mi cuenta" es para todos (A4).
     ...(role ? [{ label: "Configuración", href: "/configuracion" }] : []),
   ];
