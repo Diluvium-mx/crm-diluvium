@@ -202,6 +202,24 @@ export type SendTemplateInput = {
   idempotencyKey: string;
 };
 
+/** Media saliente (Fase D): imagen, video o documento desde la biblioteca. */
+export type SendMediaInput = {
+  providerAccountId: string;
+  providerConversationId: string;
+  /**
+   * URL PÚBLICA y temporal del archivo (firmada, sin encabezados de auth): el
+   * proveedor la descarga para reenviarla a WhatsApp. Nunca la URL del bucket
+   * sin firmar.
+   */
+  url: string;
+  kind: "image" | "video" | "document";
+  /** Texto que acompaña al archivo (pie de foto). */
+  caption?: string;
+  /** Nombre visible del documento (WhatsApp lo muestra). */
+  fileName?: string;
+  idempotencyKey: string;
+};
+
 export type CreateTemplateInput = {
   providerAccountId: string;
   name: string;
@@ -231,6 +249,8 @@ export interface MessagingProvider {
    * (SendFailedError rechazado/desconocido): el envío es idempotente por clave.
    */
   sendTemplate(input: SendTemplateInput): Promise<SendResult>;
+  /** Envía un archivo por URL pública temporal. Mismo contrato de fallo e idempotencia que sendText. */
+  sendMedia(input: SendMediaInput): Promise<SendResult>;
   /** Lista las plantillas de la WABA (para sincronizarlas al CRM). */
   listTemplates(providerAccountId: string): Promise<ProviderTemplate[]>;
   /** Da de alta una plantilla en Meta; queda PENDING hasta que la revisen. */
