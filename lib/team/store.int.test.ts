@@ -108,6 +108,30 @@ describe.skipIf(!TEST_DATABASE_URL)("vendedores (Postgres real + Better Auth)", 
     await expect(signIn("huerfano@diluvium.mx", "vendedor-pass-12")).resolves.toHaveProperty("token");
   });
 
+  it("el usuario de sistema de las notas importadas no se adopta como vendedor", async () => {
+    // Su correo está reservado aunque la fila todavía no exista (la 0022/0023
+    // solo la crean si hay notas): si no, la migración chocaría por correo.
+    await expect(
+      team.createSeller({ organizationId: ORG, name: "Antes", email: "Importado@Sistema.Invalid", password: "vendedor-pass-12", role: "agent" }),
+    ).rejects.toThrow(/reservado/);
+    await expect(
+      team.createSeller({ organizationId: ORG, name: "Otro", email: "alguien@ejemplo.invalid", password: "vendedor-pass-12", role: "agent" }),
+    ).rejects.toThrow(/reservado/);
+    expect(await db.select().from(s.user).where(eq(s.user.email, "importado@sistema.invalid"))).toHaveLength(0);
+
+    const { sql } = await import("drizzle-orm");
+    await db.execute(sql`
+      insert into "user" (id, name, email, email_verified, created_at, updated_at, banned)
+      values ('usuario-sistema-importado', 'Importado', 'importado@sistema.invalid', false, now(), now(), true)`);
+    await expect(
+      team.createSeller({ organizationId: ORG, name: "Intruso", email: "importado@sistema.invalid", password: "vendedor-pass-12", role: "agent" }),
+    ).rejects.toThrow(/reservado/);
+    const [row] = await db.select().from(s.user).where(eq(s.user.id, "usuario-sistema-importado"));
+    expect(row).toMatchObject({ name: "Importado", banned: true });
+    expect(await db.select().from(s.member).where(eq(s.member.userId, "usuario-sistema-importado"))).toHaveLength(0);
+    expect(await db.select().from(s.account).where(eq(s.account.userId, "usuario-sistema-importado"))).toHaveLength(0);
+  });
+
   it("dos owners que se desactivan mutuamente a la vez: solo uno lo logra (candado en el trigger)", async () => {
     await team.createSeller({ organizationId: ORG, name: "Socio", email: "socio@diluvium.mx", password: "socio-password-1", role: "owner" });
     const socio = (await team.listTeam(ORG)).find((m) => m.email === "socio@diluvium.mx")!;
@@ -128,6 +152,20 @@ describe.skipIf(!TEST_DATABASE_URL)("vendedores (Postgres real + Better Auth)", 
     const results = await Promise.allSettled([txA, txB]);
     expect(results.filter((r) => r.status === "fulfilled")).toHaveLength(1);
     expect(await team.countActiveOwners(ORG)).toBe(1);
+  });
+
+  it("con sesión (HTTP) nadie puede crear organizaciones; desde el servidor sí", async () => {
+    await team.createSeller({ organizationId: ORG, name: "Carlos", email: "carlos@diluvium.mx", password: "vendedor-pass-12", role: "agent" });
+    const { headers: signedIn } = await auth.api.signInEmail({
+      body: { email: "carlos@diluvium.mx", password: "vendedor-pass-12" },
+      returnHeaders: true,
+    });
+    const cookie = (signedIn.get("set-cookie") ?? "").split(";")[0];
+    await expect(
+      auth.api.createOrganization({ body: { name: "Mía", slug: "de-carlos" }, headers: new Headers({ cookie }) }),
+    ).rejects.toMatchObject({ body: { code: "YOU_ARE_NOT_ALLOWED_TO_CREATE_A_NEW_ORGANIZATION" } });
+    const orgs = await db.select().from(s.organization);
+    expect(orgs.map((o) => o.slug)).toEqual(["team"]);
   });
 
   it("una organización nueva nace con los rangos de tallas por defecto", async () => {

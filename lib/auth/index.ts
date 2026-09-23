@@ -91,6 +91,12 @@ export const auth = betterAuth({
       ac,
       roles: { owner, admin, agent },
       disableOrganizationDeletion: true,
+      // Nadie crea organizaciones por HTTP (/api/auth/organization/create): el
+      // CRM es de UNA organización (Diluvium). Si un vendedor pudiera crear otra,
+      // quedaría como su único owner y el trigger de "≥1 owner activo" (0021)
+      // impediría desactivarlo. Las llamadas de SERVIDOR con userId (seed-org)
+      // siguen permitidas (dist/plugins/organization/routes/crud-org.mjs:56-58).
+      allowUserToCreateOrganization: false,
       // Toda organización nueva nace con los rangos de tallas por defecto (A7).
       organizationHooks: {
         afterCreateOrganization: async ({ organization: created }) => seedDefaultSizeRanges(db, created.id),

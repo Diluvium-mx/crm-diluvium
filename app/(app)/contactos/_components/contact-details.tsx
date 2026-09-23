@@ -8,8 +8,9 @@
 // Guardado automático al salir de cada campo (sin botón Guardar), con aviso
 // sutil. Etapa y temperatura las maneja el padre (cada vista las sincroniza a su
 // modo: el tablero con su estado optimista, la Bandeja con el suyo).
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { getContactDetails, setNumEntradas, updateContactQualification } from "@/lib/actions/contact-qualification";
+import { createSerialSaves } from "@/lib/autosave/serial-saves";
 import { displayPhone } from "@/lib/phone-format";
 import {
   STAGES,
@@ -26,6 +27,18 @@ import { useSaveStatus } from "./use-save-status";
 
 type Details = Awaited<ReturnType<typeof getContactDetails>>;
 type Inundaciones = NonNullable<Details["tieneInundaciones"]>;
+type QualField = "tieneInundaciones" | "nivelAguaCm" | "nivelAguaTexto" | "montoCotizacion" | "porcentajeConvencimiento";
+type Qualification = Pick<Details, QualField>;
+
+function qualificationOf(d: Details): Qualification {
+  return {
+    tieneInundaciones: d.tieneInundaciones,
+    nivelAguaCm: d.nivelAguaCm,
+    nivelAguaTexto: d.nivelAguaTexto,
+    montoCotizacion: d.montoCotizacion,
+    porcentajeConvencimiento: d.porcentajeConvencimiento,
+  };
+}
 
 const INUNDACIONES: { value: Inundaciones; label: string }[] = [
   { value: "si", label: "Sí" },
@@ -94,8 +107,17 @@ export function ContactDetails({
   const [nivelTexto, setNivelTexto] = useState("");
   const [numEntradas, setNumEntradasDraft] = useState("");
   const [monto, setMonto] = useState("");
+  // Hallazgo 4: los guardados de cada campo salen en serie y solo la respuesta
+  // del último pedido se muestra (lib/autosave/serial-saves.ts). `details`
+  // muestra lo último PEDIDO; `confirmed`, lo último que el servidor guardó: a
+  // eso vuelve un campo si su último guardado falla.
+  const [saves] = useState(createSerialSaves);
+  const confirmed = useRef<Qualification | null>(null);
+  const confirmedNum = useRef<number | null>(null);
 
   const applyDetails = useCallback((next: Details) => {
+    confirmed.current = qualificationOf(next);
+    confirmedNum.current = next.numEntradas;
     setDetails(next);
     setNivelCm(next.nivelAguaCm === null ? "" : String(next.nivelAguaCm));
     setNivelTexto(next.nivelAguaTexto ?? "");
@@ -113,14 +135,44 @@ export function ContactDetails({
   }, [applyDetails, contactId]);
 
   // Recargas PARCIALES (tras cambiar las entradas o los comentarios): solo esa
-  // parte, sin pisar lo que el vendedor esté tecleando en otros campos.
-  async function refreshEntradas() {
-    const fresh = await getContactDetails(contactId);
-    setDetails((d) => (d ? { ...d, numEntradas: fresh.numEntradas, entradas: fresh.entradas } : d));
-    setNumEntradasDraft(fresh.numEntradas === null ? "" : String(fresh.numEntradas));
+  // parte, sin pisar lo que el vendedor esté tecleando en otros campos. Cada una
+  // en su carril: una relectura vieja no pisa a una más nueva.
+  //
+  // "¿Cuántas entradas?": cada pedido (guardar o solo releer) termina releyendo
+  // lo que quedó en el servidor, y solo se muestra la respuesta del último. Va
+  // en el carril "entradas", el mismo de los guardados de cada fila. Las
+  // escrituras nunca se descartan sin salir (bajar el número borra filas: 7 → 2
+  // → 6 no es lo mismo que 7 → 6). Si el último guardado falla, el número vuelve
+  // a lo último confirmado (así se puede reintentar el mismo valor) y, si hay
+  // red, se relee lo que el servidor sí tiene.
+  async function syncEntradas(write?: () => Promise<unknown>): Promise<void> {
+    const outcome = await saves.save(
+      "numEntradas",
+      async () => {
+        await write?.();
+        return getContactDetails(contactId);
+      },
+      { lane: "entradas", droppable: !write },
+    );
+    if (outcome.status === "saved") confirmedNum.current = outcome.result.numEntradas;
+    if (outcome.status === "superseded" || !outcome.latest) return;
+    if (outcome.status === "saved") {
+      const fresh = outcome.result;
+      setDetails((d) => (d ? { ...d, numEntradas: fresh.numEntradas, entradas: fresh.entradas } : d));
+      setNumEntradasDraft(fresh.numEntradas === null ? "" : String(fresh.numEntradas));
+      return;
+    }
+    const saved = confirmedNum.current;
+    setDetails((d) => (d ? { ...d, numEntradas: saved } : d));
+    setNumEntradasDraft(saved === null ? "" : String(saved));
+    if (write) await syncEntradas().catch(() => undefined);
+    throw outcome.error;
   }
   async function refreshComments() {
-    const fresh = await getContactDetails(contactId);
+    const outcome = await saves.save("comentarios", () => getContactDetails(contactId));
+    if (outcome.status === "superseded" || !outcome.latest) return;
+    if (outcome.status === "failed") throw outcome.error;
+    const fresh = outcome.result;
     setDetails((d) => (d ? { ...d, comentarios: fresh.comentarios } : d));
   }
 
@@ -129,11 +181,22 @@ export function ContactDetails({
     return () => clearTimeout(t);
   }, [reload]);
 
-  // Guarda un parche de la calificación y refleja lo que devolvió el servidor.
-  async function savePatch(patch: Parameters<typeof updateContactQualification>[1]): Promise<boolean> {
-    return run(async () => {
-      await updateContactQualification(contactId, patch);
-      setDetails((d) => (d ? { ...d, ...patch } : d));
+  // Guarda UN campo de la calificación. El valor se muestra al instante; si su
+  // último guardado falla, el campo (y su borrador, vía `show`) vuelve a lo
+  // último que el servidor guardó, no a lo que había cuando se pidió.
+  function saveField<K extends QualField>(field: K, value: Qualification[K], show?: (saved: Qualification[K]) => void) {
+    setDetails((d) => (d ? { ...d, [field]: value } : d));
+    void run(async () => {
+      const patch = { [field]: value } as Pick<Qualification, K>;
+      const outcome = await saves.save(field, () => updateContactQualification(contactId, patch));
+      if (outcome.status === "saved" && confirmed.current) confirmed.current = { ...confirmed.current, ...patch };
+      if (outcome.status !== "failed" || !outcome.latest) return;
+      if (confirmed.current) {
+        const saved = confirmed.current[field];
+        setDetails((d) => (d ? { ...d, [field]: saved } : d));
+        show?.(saved);
+      }
+      throw outcome.error;
     });
   }
 
@@ -142,24 +205,18 @@ export function ContactDetails({
     current: number | null,
     opts: { integer: boolean; min: number; max: number },
     field: "nivelAguaCm" | "montoCotizacion",
-    reset: () => void,
+    show: (value: number | null) => void,
     message: string,
   ) {
     const value = parseNumber(text, opts);
     if (value === undefined) {
-      reset();
+      show(current);
       void run(() => Promise.reject(new Error(field)), message);
       return;
     }
-    if (value !== current) {
-      // Si falla, el campo vuelve al último valor guardado (no queda mostrando
-      // algo que no se guardó).
-      void savePatch(field === "nivelAguaCm" ? { nivelAguaCm: value } : { montoCotizacion: value }).then((ok) => {
-        if (!ok) reset();
-      });
-      // El monto se muestra con formato (12,500.50) en cuanto se guarda.
-      if (field === "montoCotizacion") setMonto(value === null ? "" : money.format(value));
-    } else reset();
+    // El monto se muestra con formato (12,500.50) en cuanto se pide guardarlo.
+    show(value);
+    if (value !== current) saveField(field, value, show);
   }
 
   if (loadError) {
@@ -235,7 +292,7 @@ export function ContactDetails({
                       type="button"
                       role="radio"
                       aria-checked={selected}
-                      onClick={() => void savePatch({ tieneInundaciones: selected ? null : o.value })}
+                      onClick={() => saveField("tieneInundaciones", selected ? null : o.value)}
                       className={`flex-1 rounded-md border px-2 py-1 text-xs ${
                         selected ? "border-brand-navy bg-brand-navy text-brand-white" : "hover:bg-muted"
                       }`}
@@ -261,7 +318,7 @@ export function ContactDetails({
                         details.nivelAguaCm,
                         { integer: true, min: 0, max: 1000 },
                         "nivelAguaCm",
-                        () => setNivelCm(details.nivelAguaCm === null ? "" : String(details.nivelAguaCm)),
+                        (v) => setNivelCm(v === null ? "" : String(v)),
                         "El nivel debe ser un entero de 0 a 1000 cm.",
                       )
                     }
@@ -277,11 +334,7 @@ export function ContactDetails({
                   onChange={(e) => setNivelTexto(e.target.value)}
                   onBlur={() => {
                     const next = nivelTexto.trim() || null;
-                    if (next !== details.nivelAguaTexto) {
-                      void savePatch({ nivelAguaTexto: next }).then((ok) => {
-                        if (!ok) setNivelTexto(details.nivelAguaTexto ?? "");
-                      });
-                    }
+                    if (next !== details.nivelAguaTexto) saveField("nivelAguaTexto", next, (saved) => setNivelTexto(saved ?? ""));
                   }}
                   className={input}
                 />
@@ -313,10 +366,8 @@ export function ContactDetails({
                       return;
                     }
                   }
-                  void run(async () => {
-                    await setNumEntradas(contactId, value);
-                    await refreshEntradas();
-                  });
+                  setDetails((d) => (d ? { ...d, numEntradas: value } : d));
+                  void run(() => syncEntradas(() => setNumEntradas(contactId, value)));
                 }}
                 className={`${input} w-24`}
               />
@@ -328,6 +379,7 @@ export function ContactDetails({
                   contactId={contactId}
                   entradas={details.entradas as Entrada[]}
                   run={run}
+                  saves={saves}
                   onSaved={(next) =>
                     setDetails((d) => (d ? { ...d, entradas: d.entradas.map((e) => (e.posicion === next.posicion ? next : e)) } : d))
                   }
@@ -349,7 +401,7 @@ export function ContactDetails({
                       details.montoCotizacion,
                       { integer: false, min: 0, max: 9_999_999_999.99 },
                       "montoCotizacion",
-                      () => setMonto(details.montoCotizacion === null ? "" : money.format(details.montoCotizacion)),
+                      (v) => setMonto(v === null ? "" : money.format(v)),
                       "El monto debe ser un número positivo.",
                     )
                   }
@@ -362,7 +414,7 @@ export function ContactDetails({
               <select
                 aria-label="Porcentaje de convencimiento"
                 value={details.porcentajeConvencimiento ?? ""}
-                onChange={(e) => void savePatch({ porcentajeConvencimiento: e.target.value === "" ? null : Number(e.target.value) })}
+                onChange={(e) => saveField("porcentajeConvencimiento", e.target.value === "" ? null : Number(e.target.value))}
                 className={`${input} w-28`}
               >
                 <option value="">—</option>

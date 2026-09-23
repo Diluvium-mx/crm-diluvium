@@ -36,7 +36,7 @@ export function startScheduledWorker(provider: MessagingProvider) {
     }
     if (revived) console.info(`[scheduled] barrido: ${revived} programado(s) vencidos re-encolados`);
     const stuck = await failStuckSending();
-    if (stuck) console.warn(`[scheduled] barrido: ${stuck} envío(s) programados atorados → failed (interrupted)`);
+    if (stuck) console.warn(`[scheduled] barrido: ${stuck} envío(s) programados atorados conciliados (sent si ya salió; si no, failed sin reintento)`);
   }
 
   return { worker, sweep, run: () => void worker.run(), close: () => worker.close() };

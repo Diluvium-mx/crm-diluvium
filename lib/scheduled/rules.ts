@@ -79,3 +79,30 @@ export const SEND_AT_MESSAGES: Record<SendAtError, string> = {
 export function textAllowedAt(windowExpiresAt: Date | null, sendAt: Date): boolean {
   return isWindowOpen(windowExpiresAt, sendAt);
 }
+
+/**
+ * Fallas de un programado que se pueden REINTENTAR desde el CRM: solo las que
+ * ocurren ANTES de llamar al proveedor (seguro no salió): validaciones del envío,
+ * canal no configurado o el disparo tardío. Todo lo demás —rechazo de WhatsApp
+ * (se reintenta desde su burbuja), error inesperado o envío interrumpido— puede
+ * haber salido: reintentar crearía otro mensaje con otra clave de idempotencia y
+ * el cliente lo recibiría dos veces. Ahí el vendedor revisa el chat y, si no
+ * llegó, lo programa de nuevo.
+ */
+const RETRYABLE_ERROR_CODES = new Set([
+  "late",
+  "not_configured",
+  "not_found",
+  "window_closed",
+  "not_linked",
+  "empty",
+  "channel_unavailable",
+  "template_not_found",
+  "template_not_approved",
+  "template_unsupported",
+  "template_params",
+]);
+
+export function isRetryableScheduledError(errorCode: string | null): boolean {
+  return errorCode !== null && RETRYABLE_ERROR_CODES.has(errorCode);
+}

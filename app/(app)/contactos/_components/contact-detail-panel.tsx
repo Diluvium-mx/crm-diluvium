@@ -96,6 +96,7 @@ export function ContactDetailPanel({
         {/* Panel derecho: el MISMO "Detalle del contacto" de la Bandeja (B2). */}
         <aside className="flex h-1/2 min-h-0 w-full shrink-0 flex-col md:h-auto md:w-80">
           <ContactDetails
+            key={contact.id}
             contactId={contact.id}
             name={getContactFullName(contact)}
             phone={contact.phoneE164}
