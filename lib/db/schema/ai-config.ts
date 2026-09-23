@@ -1,4 +1,4 @@
-import { pgTable, text, timestamp, integer } from "drizzle-orm/pg-core";
+import { pgTable, text, timestamp, integer, boolean, numeric } from "drizzle-orm/pg-core";
 import { organization } from "./auth";
 
 // Configuración del Agente IA por organización (Fase A: Fundación del modelo).
@@ -29,6 +29,17 @@ export const aiConfig = pgTable("ai_config", {
   antiLoopMaxPerHour: integer("anti_loop_max_per_hour").default(10).notNull(),
   // Tope total de respuestas por contacto. null = sin tope (NO copiamos el 50 de GHL).
   maxRepliesPerContact: integer("max_replies_per_contact"),
+  // Si un vendedor responde a mano (CRM o celular), el agente se pausa en esa
+  // conversación hasta que alguien lo reactive (comportamiento de GHL).
+  pauseOnHumanReply: boolean("pause_on_human_reply").default(true).notNull(),
+  // Mensajes del hilo que el cerebro recibe como contexto.
+  contextMessages: integer("context_messages").default(20).notNull(),
+  // Máx. burbujas por respuesta (separadas por doble salto de línea).
+  maxBubbles: integer("max_bubbles").default(2).notNull(),
+  // Presupuesto de modelos por organización en las últimas 24 h (USD, suma de
+  // ai_usage.cost_usd). Al llegar, el agente deja de llamar modelos en TODA la org
+  // hasta que la ventana de 24 h baje: tope contra gasto repartido en muchos números.
+  dailyBudgetUsd: numeric("daily_budget_usd", { precision: 10, scale: 2, mode: "number" }).default(20).notNull(),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 });

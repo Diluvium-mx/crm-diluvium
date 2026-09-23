@@ -7,6 +7,7 @@ import { Composer } from "./composer";
 import { DocumentCard } from "./document-card";
 import { MediaViewer } from "./media-viewer";
 import { ScheduledInThread } from "./scheduled-in-thread";
+import { AgentDraftInThread, AgentPausedBanner, useConversationAgent } from "./agent-in-thread";
 import {
   bubbleTime,
   dayLabel,
@@ -223,6 +224,8 @@ export function ChatThread({
   // Sube al programar un mensaje: la franja de programados (A6) se recarga.
   const [scheduledRev, setScheduledRev] = useState(0);
   const [scheduledCount, setScheduledCount] = useState(0);
+  // Agente IA (Fase B): pausa + borrador; se recarga con el SSE de la conversación.
+  const { agent, reload: reloadAgent } = useConversationAgent(conversationId, revalToken, detail);
 
   const windowOpen = isWindowOpen(detail.windowExpiresAt, nowMs);
   const hoursLeft = windowHoursLeft(detail.windowExpiresAt, nowMs);
@@ -279,7 +282,7 @@ export function ChatThread({
   useEffect(() => {
     const el = scrollRef.current;
     if (el) el.scrollTop = el.scrollHeight;
-  }, [rows.length, scheduledCount, conversationId]);
+  }, [rows.length, scheduledCount, conversationId, agent?.draft?.id]);
 
   async function doSend(text: string) {
     const clientId = `opt-${Date.now()}-${Math.random().toString(36).slice(2)}`;
@@ -354,6 +357,7 @@ export function ChatThread({
           ? `Ventana abierta · quedan ${hoursLeft} h`
           : "Pasaron 24 h desde su último mensaje. Solo se puede enviar una plantilla."}
       </div>
+      <AgentPausedBanner conversationId={conversationId} agent={agent} onChanged={() => void reloadAgent()} />
 
       {/* Hilo */}
       <div ref={scrollRef} className="chat-wallpaper min-h-0 flex-1 space-y-2 overflow-y-auto p-4">
@@ -404,6 +408,8 @@ export function ChatThread({
           refreshToken={revalToken + scheduledRev}
           onCountChange={setScheduledCount}
         />
+        {/* Borrador del Agente IA (modo "borrador"): al final, después de lo programado. */}
+        <AgentDraftInThread agent={agent} onChanged={() => void reloadAgent()} />
       </div>
 
       {/* Composer (composer.tsx): texto libre, fragmentos y plantillas con la

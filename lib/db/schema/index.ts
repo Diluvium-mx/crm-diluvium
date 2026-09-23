@@ -10,3 +10,4 @@ export * from "./ai-config";
 export * from "./ai-knowledge";
 export * from "./qualification";
 export * from "./scheduled";
+export * from "./ai-runtime";

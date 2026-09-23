@@ -132,6 +132,9 @@ export const channels = pgTable(
     isActive: boolean("is_active").default(true).notNull(),
     // Interruptor del Agente IA en este canal. Apagado por defecto (seguro).
     aiAgentMode: channelAiAgentModeEnum("ai_agent_mode").default("off").notNull(),
+    // Cuándo se movió el interruptor por última vez: lo que el cliente escribió
+    // ANTES de encender el agente no se contesta solo (barrido) ni vence el debounce.
+    aiAgentModeChangedAt: timestamp("ai_agent_mode_changed_at"),
     createdAt: timestamp("created_at").defaultNow().notNull(),
   },
   (table) => [
@@ -179,6 +182,10 @@ export const conversations = pgTable(
     // hilo. Los usa la Fase B (silencios/anti-bucle) y la Fase C (follow-ups).
     lastInboundAt: timestamp("last_inbound_at"),
     lastAgentReplyAt: timestamp("last_agent_reply_at"),
+    // Cuándo cambió agent_state por última vez (pausa o reactivación). Es el
+    // corte para "un vendedor respondió a mano": lo anterior a una reactivación
+    // manual ya no vuelve a pausar al agente.
+    agentStateChangedAt: timestamp("agent_state_changed_at"),
     // Destacado: marca compartida por el equipo (todos ven todo, §5).
     isStarred: boolean("is_starred").default(false).notNull(),
     // Anuncio de clic a WhatsApp que ORIGINÓ la conversación (el primer
