@@ -3,7 +3,7 @@
 // Variables (referencias al bucket en Railway): S3_BUCKET, S3_ENDPOINT,
 // S3_REGION, S3_ACCESS_KEY_ID, S3_SECRET_ACCESS_KEY.
 import type { Readable } from "node:stream";
-import { GetObjectCommand, HeadObjectCommand, S3Client } from "@aws-sdk/client-s3";
+import { DeleteObjectCommand, GetObjectCommand, HeadObjectCommand, S3Client } from "@aws-sdk/client-s3";
 import { Upload } from "@aws-sdk/lib-storage";
 import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
 
@@ -15,6 +15,10 @@ export interface ObjectStorage {
    */
   putStream(key: string, body: Readable, contentType: string): Promise<void>;
   exists(key: string): Promise<boolean>;
+  /** Tamaño y tipo del objeto, o null si no existe. */
+  head(key: string): Promise<{ bytes: number; contentType: string | null } | null>;
+  /** Borra el objeto (idempotente: si no existe, no falla). */
+  deleteObject(key: string): Promise<void>;
   /**
    * URL firmada y temporal de un objeto privado. `disposition`: "inline" para
    * verlo en el navegador (visor), "attachment" para forzar la descarga.
@@ -62,6 +66,18 @@ export function objectStorage(): ObjectStorage {
         if ((error as { name?: string }).name === "NotFound") return false;
         throw error;
       }
+    },
+    async head(key) {
+      try {
+        const res = await client.send(new HeadObjectCommand({ Bucket: S3_BUCKET, Key: key }));
+        return { bytes: res.ContentLength ?? 0, contentType: res.ContentType ?? null };
+      } catch (error) {
+        if ((error as { name?: string }).name === "NotFound") return null;
+        throw error;
+      }
+    },
+    async deleteObject(key) {
+      await client.send(new DeleteObjectCommand({ Bucket: S3_BUCKET, Key: key }));
     },
     async getBytes(key, maxBytes) {
       const res = await client.send(new GetObjectCommand({ Bucket: S3_BUCKET, Key: key }));
