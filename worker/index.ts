@@ -38,6 +38,8 @@ import { objectStorage, StorageNotConfiguredError, type ObjectStorage } from "@/
 import { inboundHealth, WORKER_HEARTBEAT_KEY } from "@/lib/monitoring/inbound-health";
 import { redis } from "@/lib/redis";
 import { startScheduledWorker } from "./scheduled";
+import { agentIngestHooks } from "@/lib/ai/runtime/hooks";
+import { startAgentRuntime } from "@/lib/ai/runtime/worker";
 
 const SWEEP_EVERY_MS = 60_000;
 const SWEEP_MIN_AGE_MS = 60_000;
@@ -65,6 +67,8 @@ function optionalStorage(): ObjectStorage | null {
   }
 }
 const storage = optionalStorage();
+// Agente IA (Fase B): cola de respuestas con debounce; arranca tras las migraciones.
+const agent = startAgentRuntime({ provider, storage });
 // Adjuntos pendientes que el barrido reintenta: hasta 30 días (antes de que
 // Meta borre la media) y hasta MEDIA_MAX_ATTEMPTS intentos por adjunto.
 
@@ -74,6 +78,7 @@ const worker = new Worker<InboundJob>(
     try {
       const outcome = await processWebhookEvent(provider, job.data.webhookEventId, {
         onMediaMessage: enqueueMediaDownload,
+        ...agentIngestHooks,
       });
       console.info(`[worker] ${job.data.webhookEventId}: ${outcome}`);
       return outcome;
@@ -287,7 +292,7 @@ async function shutdown(signal: string) {
   console.info(`[worker] ${signal}: cerrando`);
   clearInterval(sweepTimer);
   clearInterval(monitorTimer);
-  await Promise.all([worker.close(), mediaWorker?.close(), scheduled.close()]);
+  await Promise.all([worker.close(), mediaWorker?.close(), scheduled.close(), agent.close()]);
   process.exit(0);
 }
 process.on("SIGTERM", () => void shutdown("SIGTERM"));
@@ -304,6 +309,7 @@ waitForMigrations()
     void worker.run();
     void mediaWorker?.run();
     scheduled.run();
+    agent.run();
   })
   .catch((error: unknown) => {
     console.error("[worker] no se pudo verificar las migraciones", error);

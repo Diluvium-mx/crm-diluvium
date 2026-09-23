@@ -75,3 +75,26 @@ export type AgentSettingsBundleView = {
   prices: ModelPriceView[];
   knowledge: KnowledgeStatusView;
 };
+
+// ── Fase B: el agente en una conversación (Bandeja y panel del contacto) ─────
+export type AgentStateValue = "activo" | "pausado_humano" | "pausado_handover" | "pausado_antibucle";
+
+export type AgentDraftView = { id: string; bubbles: string[]; createdAt: string };
+
+export type AgentThreadView = {
+  channelMode: AgentModeValue;
+  agentState: AgentStateValue;
+  /** ISO; solo en "pasado a humano" (reactivación automática). */
+  pausedUntil: string | null;
+  draft: AgentDraftView | null;
+};
+
+export type ContactAgentView = {
+  conversationId: string;
+  channelName: string;
+  channelMode: AgentModeValue;
+  agentState: AgentStateValue;
+  pausedUntil: string | null;
+};
+
+export type AgentActionResult = { ok: true } | { ok: false; message: string };

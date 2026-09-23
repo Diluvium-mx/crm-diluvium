@@ -34,6 +34,18 @@ export async function markAgentReply(conversationId: string, at: Date): Promise<
   await db.update(conversations).set({ lastAgentReplyAt: at }).where(eq(conversations.id, conversationId));
 }
 
+type Executor = Pick<typeof db, "execute">;
+
+// Avisa a la bandeja (SSE) que algo del agente cambió en la conversación. Los
+// cambios en `conversations` ya avisan por el trigger de la 0008; los borradores
+// viven en su propia tabla, así que se avisa a mano con el MISMO canal y forma
+// ("conversation.updated"). Dentro de una transacción, sale al hacer COMMIT.
+export async function notifyConversation(exec: Executor, organizationId: string, conversationId: string): Promise<void> {
+  await exec.execute(
+    sql`select pg_notify('inbox_events', json_build_object('org', ${organizationId}::text, 'type', 'conversation.updated', 'conversationId', ${conversationId}::text)::text)`,
+  );
+}
+
 // Guarda el borrador del modo "borrador". Uno solo vigente por conversación: el
 // anterior "pendiente" pasa a "obsoleto" en la misma transacción.
 export async function saveDraft(input: {
@@ -58,6 +70,24 @@ export async function saveDraft(input: {
       status: "pendiente",
       createdAt: input.now,
     });
+    await notifyConversation(tx, input.organizationId, input.conversationId);
   });
   return id;
+}
+
+// Un vendedor ya respondió: el borrador vigente de esa conversación quedó viejo.
+export async function obsoletePendingDrafts(organizationId: string, conversationId: string, now: Date): Promise<number> {
+  const rows = await db
+    .update(aiAgentDrafts)
+    .set({ status: "obsoleto", resolvedAt: now })
+    .where(
+      and(
+        eq(aiAgentDrafts.conversationId, conversationId),
+        eq(aiAgentDrafts.organizationId, organizationId),
+        eq(aiAgentDrafts.status, "pendiente"),
+      ),
+    )
+    .returning({ id: aiAgentDrafts.id });
+  if (rows.length > 0) await notifyConversation(db, organizationId, conversationId);
+  return rows.length;
 }

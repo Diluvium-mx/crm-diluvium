@@ -13,6 +13,7 @@ import { member, messages, scheduledMessages, user } from "@/lib/db/schema";
 import { MessagingNotConfiguredError } from "@/lib/messaging";
 import { SendFailedError, type MessagingProvider } from "@/lib/messaging/provider";
 import { sendTemplateMessage, sendTextMessage, SendRejectedError } from "@/lib/messaging/send";
+import { pauseAgentOnManualMessage } from "@/lib/ai/runtime/hooks";
 
 export type DispatchOutcome = "skipped" | "cancelled" | "sent" | "failed";
 
@@ -147,6 +148,8 @@ export async function dispatchScheduled(
       .update(scheduledMessages)
       .set({ status: "sent", messageId: outcome.messageId, updatedAt: new Date() })
       .where(eq(scheduledMessages.id, row.id));
+    // Un programado es un envío humano: pausa al Agente IA en esa conversación.
+    await pauseAgentOnManualMessage(row.conversationId);
     return "sent";
   } catch (error) {
     const { code, message } = failure(error);

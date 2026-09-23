@@ -24,6 +24,7 @@ import {
 import { ContactComments } from "./contact-comments";
 import { ContactEntradas, type Entrada } from "./contact-entradas";
 import { useSaveStatus } from "./use-save-status";
+import { AgentContactSwitch } from "./agent-contact-switch";
 
 type Details = Awaited<ReturnType<typeof getContactDetails>>;
 type Inundaciones = NonNullable<Details["tieneInundaciones"]>;
@@ -426,8 +427,8 @@ export function ContactDetails({
               </select>
             </Field>
 
-            {/* Espacio reservado: interruptor del Agente IA en esta conversación (Fase B). */}
-            <div data-slot="interruptor-agente-ia" />
+            {/* Interruptor del Agente IA en esta conversación (Fase B). */}
+            <AgentContactSwitch contactId={contactId} />
 
             <Field title="Comentarios">
               <ContactComments contactId={contactId} comments={details.comentarios} viewer={details.viewer} run={run} onChanged={refreshComments} />
