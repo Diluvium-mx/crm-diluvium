@@ -5,8 +5,12 @@
 // Flujo: pendientes → idempotencia → compuerta (interruptor, estado, silencio
 // por humano, 24h, anti-bucle, tope) → FILTRO → CEREBRO → revisión antes de
 // enviar (si entró algo nuevo: descartar y regenerar con TODO el contexto) →
-// re-chequeo de la compuerta → borrador o envío en burbujas. Cada llamada al
-// modelo deja su fila en ai_usage (también las descartadas).
+// re-chequeo de la compuerta → envío en burbujas. Cada llamada al modelo deja su
+// fila en ai_usage (también las descartadas).
+//
+// Reglas del dueño (23-sep-2026): el agente SIEMPRE contesta. Lo único que lo pausa
+// es la respuesta de un vendedor. La guardia de salida, el pase a humano y los
+// frenos solo dejan un AVISO al vendedor en el hilo (notices.ts).
 import type { CallModelInput, CallModelResult } from "@/lib/ai/types";
 import { getModel } from "@/lib/ai/catalog";
 import { buildBrainSystemWithRuntime, parseBrainOutput } from "./brain";
@@ -28,11 +32,11 @@ import {
   type MessageRow,
 } from "./context";
 import { buildFilterPrompt, FILTER_SYSTEM, parseFilterDecision } from "./filter";
-import { decideGate, toBubbles, type AgentState } from "./policy";
+import { addNotice, NOTICE_REPEAT_MINUTES } from "./notices";
+import { decideGate, toBubbles, type NoticeKind } from "./policy";
 import { rescheduleDelayFor } from "./schedule";
-import { addContactTag, closePlan, markAgentReply, retainRemainder, saveDraft, setAgentState } from "./state";
+import { closePlan, markAgentReply, savePlan, setAgentState } from "./state";
 import { reviewReply } from "./output-guard";
-import { TAG_HANDOVER, TAG_HUMAN_REVIEW } from "./tags";
 import { buildModelMessages, toTranscriptLines } from "./transcript";
 import { recordAiUsage } from "./usage";
 
@@ -55,7 +59,7 @@ export type RunDeps = {
   callModel: (modelId: string, input: CallModelInput) => Promise<CallModelResult>;
   // Envía UNA burbuja como el agente (source "ai_agent", sin usuario).
   // Devuelve el resultado del proveedor: "pending" = no confirmado (timeout, 5xx); el
-  // outbox lo concilia y, si vence sin confirmar, el barrido pausa para revisión humana.
+  // outbox lo concilia y, si vence sin confirmar, el barrido deja un aviso al vendedor.
   sendBubble: (p: { organizationId: string; conversationId: string; text: string }) => Promise<{ status: "sent" | "pending" }>;
   sleep: (ms: number) => Promise<void>;
   // URL firmada de una imagen del bucket (o null si no se puede).
@@ -65,11 +69,7 @@ export type RunDeps = {
 export type RunResult =
   | { kind: "noop"; reason: string }
   | { kind: "skipped"; reason: string }
-  | { kind: "handover"; reason: string }
   | { kind: "sent"; bubbles: number }
-  | { kind: "draft"; draftId: string }
-  // Modo auto, pero la guardia de salida la retuvo: borrador para revisión humana.
-  | { kind: "held"; draftId: string; reason: string }
   | { kind: "reschedule"; delayMs: number; reason: string };
 
 const HUMAN_SOURCES = new Set(["crm", "business_app"]);
@@ -121,20 +121,26 @@ async function stopBeforeBubble(
   return null;
 }
 
-async function pause(
-  conversation: { id: string; organizationId: string; contactId: string },
-  state: AgentState,
-  now: Date,
-  opts: { pausedUntil?: Date | null; tag?: string } = {},
-) {
-  await setAgentState(conversation.organizationId, conversation.id, state, { now, pausedUntil: opts.pausedUntil ?? null });
-  if (opts.tag) await addContactTag(conversation.organizationId, conversation.contactId, opts.tag);
-  console.info(`[agente] ${conversation.id}: ${state}${opts.tag ? ` (+etiqueta "${opts.tag}")` : ""}`);
+// La ÚNICA pausa del agente: un vendedor contestó en la conversación.
+async function pauseForHuman(conversation: { id: string; organizationId: string }, now: Date) {
+  await setAgentState(conversation.organizationId, conversation.id, "pausado_humano", { now });
+  console.info(`[agente] ${conversation.id}: pausado_humano`);
 }
 
-async function handover(conversation: { id: string; organizationId: string; contactId: string }, cfg: AgentConfig, now: Date) {
-  const until = new Date(now.getTime() + cfg.handoverReactivateHours * 3_600_000);
-  await pause(conversation, "pausado_handover", now, { pausedUntil: until, tag: TAG_HANDOVER });
+// Texto del aviso cuando un freno de la compuerta no deja responder.
+function gateNoticeText(reason: string, cfg: AgentConfig): string {
+  switch (reason) {
+    case "anti_bucle":
+      return `El agente no respondió: llegó a su tope de ${cfg.antiLoopMaxPerHour} respuestas por hora en esta conversación (posible bucle con otro bot). Vuelve a responder cuando baje.`;
+    case "tope_de_llamadas":
+      return "El agente no respondió: demasiadas llamadas al modelo en la última hora en esta conversación. Vuelve a responder cuando baje.";
+    case "presupuesto_diario":
+      return `El agente no respondió: se agotó el presupuesto diario de IA (${cfg.dailyBudgetUsd} USD en 24 h). Vuelve a responder cuando baje el gasto.`;
+    case "tope_por_contacto":
+      return `El agente no respondió: llegó al tope de ${cfg.maxRepliesPerContact ?? 0} respuestas con este contacto.`;
+    default:
+      return `El agente no respondió (${reason}).`;
+  }
 }
 
 // `job` viene de la cola interna: la organización acota TODAS las lecturas y
@@ -146,7 +152,8 @@ export async function runAgent(job: { organizationId: string; conversationId: st
     const snap = await loadSnapshot(org, conversationId);
     if (!snap) return { kind: "noop", reason: "conversacion_no_existe" };
     const { conversation: conv, channel } = snap;
-    if (channel.aiAgentMode === "off") return { kind: "skipped", reason: "canal_off" };
+    // Solo "auto" responde ("borrador" ya no existe: se trata como apagado).
+    if (channel.aiAgentMode !== "auto") return { kind: "skipped", reason: "canal_off" };
     const cfg = await loadAgentConfig(org);
 
     const pending = await pendingInbound(org, conv.id);
@@ -154,21 +161,15 @@ export async function runAgent(job: { organizationId: string; conversationId: st
     // Línea base de salientes HUMANOS al INICIO de la ronda (antes del modelo): un
     // envío manual que entre en cualquier momento después detiene el envío del agente.
     const humansAtStart = await humanOutboundCount(org, conv.id);
-    const pausedUntilMs = conv.agentPausedUntil?.getTime() ?? null;
-    // Encender el canal también es corte: lo que un vendedor contestó ANTES de
-    // prender el agente no pausa conversaciones que ya existían.
+    // Encender el canal o "Reactivar" es corte: lo que un vendedor contestó ANTES
+    // no vuelve a pausar.
     const cut = latestDate(conv.agentStateChangedAt, channel.aiAgentModeChangedAt);
-    // Con un "pasar a humano" vencido el corte es su INICIO (agent_state_changed_at):
-    // si un vendedor contestó durante la transferencia, tomó la conversación y el
-    // agente NO se reactiva solo.
-    const boundary = cut;
     // "Un vendedor tomó la conversación": el último saliente es humano (CRM o
-    // celular) y es posterior al último cambio de estado del agente.
-    const humanTookOver =
-      cfg.pauseOnHumanReply && isHumanReply(lastOut) && (boundary === null || messageAt(lastOut!) > boundary);
+    // celular) y es posterior al último corte.
+    const humanTookOver = cfg.pauseOnHumanReply && isHumanReply(lastOut) && (cut === null || messageAt(lastOut!) > cut);
 
     if (pending.length === 0) {
-      if (humanTookOver && conv.agentState === "activo") await pause(conv, "pausado_humano", now);
+      if (humanTookOver && conv.agentState === "activo") await pauseForHuman(conv, now);
       return { kind: "noop", reason: "sin_pendientes" };
     }
     const lastRead = pending[pending.length - 1];
@@ -178,24 +179,32 @@ export async function runAgent(job: { organizationId: string; conversationId: st
     const gate = decideGate({
       channelMode: channel.aiAgentMode,
       agentState: conv.agentState,
-      agentPausedUntil: pausedUntilMs,
       now: now.getTime(),
       windowExpiresAt: conv.windowExpiresAt?.getTime() ?? null,
       humanRepliedSincePending: humanTookOver,
       agentRepliesLastHour: await agentRepliesSince(org, conv.id, hourAgo),
       antiLoopMaxPerHour: cfg.antiLoopMaxPerHour,
       modelCallsLastHour: await modelCallsSince(org, conv.id, hourAgo),
-      agentSendUnresolved: await agentSendUnresolved(org, conv.id, cut),
+      agentSendUnresolved: await agentSendUnresolved(org, conv.id),
       orgSpendLast24hUsd: await orgSpendSince(org, new Date(now.getTime() - 24 * 3_600_000)),
       dailyBudgetUsd: cfg.dailyBudgetUsd,
       agentRepliesToContact: cfg.maxRepliesPerContact === null ? 0 : await agentRepliesToContact(org, conv.contactId),
       maxRepliesPerContact: cfg.maxRepliesPerContact,
     });
     if (gate.action === "skip") {
-      if (gate.pauseTo) await pause(conv, gate.pauseTo, now, { tag: gate.tag });
+      if (gate.pauseTo) await pauseForHuman(conv, now);
+      if (gate.notice) {
+        await addNotice({
+          organizationId: org,
+          conversationId: conv.id,
+          kind: gate.notice,
+          body: gateNoticeText(gate.reason, cfg),
+          now,
+          dedupeMinutes: NOTICE_REPEAT_MINUTES,
+        });
+      }
       return { kind: "skipped", reason: gate.reason };
     }
-    if (gate.reactivated) await setAgentState(org, conv.id, "activo", { now });
     if (!cfg.goal) return { kind: "skipped", reason: "sin_goal" };
 
     const readCount = await inboundCount(org, conv.id);
@@ -232,8 +241,9 @@ export async function runAgent(job: { organizationId: string; conversationId: st
       throw error;
     }
     const filter = parseFilterDecision(filterRes.text);
-    const filterOutcome =
-      filter.decision === "necesita_cerebro" ? "passed" : filter.decision === "pasar_a_humano" ? "handover" : "skipped";
+    // "pasar a humano" ya no calla al agente: el cerebro contesta según el Goal
+    // (p. ej. que un asesor lo atenderá) y se avisa al vendedor.
+    const skipByFilter = filter.decision === "spam" || filter.decision === "lead_no_sigue";
     await recordAiUsage({
       ...base,
       stage: "filtro",
@@ -242,16 +252,11 @@ export async function runAgent(job: { organizationId: string; conversationId: st
       usage: filterRes.usage,
       latencyMs: Date.now() - t0,
       filterDecision: filter.decision,
-      outcome: filterOutcome,
+      outcome: skipByFilter ? "skipped" : "passed",
       error: filter.parsed ? null : `filtro_no_parseable: ${filterRes.text.slice(0, 200)}`,
     });
-    if (filter.decision === "spam" || filter.decision === "lead_no_sigue") {
-      return { kind: "skipped", reason: filter.decision };
-    }
-    if (filter.decision === "pasar_a_humano") {
-      await handover(conv, cfg, now);
-      return { kind: "handover", reason: "filtro" };
-    }
+    if (skipByFilter) return { kind: "skipped", reason: filter.decision };
+    const filterHandover = filter.decision === "pasar_a_humano";
 
     // ── CEREBRO ─────────────────────────────────────────────────────────────
     const brainModel = getModel(cfg.modeloCerebro);
@@ -301,71 +306,64 @@ export async function runAgent(job: { organizationId: string; conversationId: st
     // o responder un humano.
     const fresh = await loadSnapshot(org, conv.id);
     const freshLastOut = await lastOutbound(org, conv.id);
-    if (!fresh || fresh.channel.aiAgentMode === "off" || fresh.conversation.agentState !== "activo") {
+    if (!fresh || fresh.channel.aiAgentMode !== "auto" || fresh.conversation.agentState !== "activo") {
       await recordAiUsage({ ...brainUsage, outcome: "skipped", error: "cambió el interruptor o el estado antes de enviar" });
       return { kind: "skipped", reason: "cambio_antes_de_enviar" };
     }
     if ((freshLastOut?.id ?? null) !== (lastOut?.id ?? null)) {
       await recordAiUsage({ ...brainUsage, outcome: "skipped", error: "otro saliente antes de enviar" });
-      if (cfg.pauseOnHumanReply && isHumanReply(freshLastOut)) await pause(conv, "pausado_humano", deps.now());
+      if (cfg.pauseOnHumanReply && isHumanReply(freshLastOut)) await pauseForHuman(conv, deps.now());
       return { kind: "skipped", reason: "respuesta_humana" };
     }
 
     const out = parseBrainOutput(brainRes.text);
-    if (out.kind === "handover") {
-      await recordAiUsage({ ...brainUsage, outcome: "handover" });
-      await handover(conv, cfg, now);
-      return { kind: "handover", reason: "cerebro" };
-    }
     if (out.kind === "empty") {
       // Final (no "error"): reintentar cada minuto gastaría sin sentido.
       await recordAiUsage({ ...brainUsage, outcome: "skipped", error: "respuesta_vacia" });
       return { kind: "skipped", reason: "respuesta_vacia" };
     }
     const bubbles = toBubbles(out.text, cfg.maxBubbles);
-    // Guardia de salida: un monto o enlace fuera de la base de conocimiento ACTIVA
-    // no sale solo. En borrador el motivo también se muestra (ayuda al revisar).
+    // Guardia de salida: ya NO retiene ni pausa. Un monto o enlace fuera de la base
+    // de conocimiento activa solo deja un aviso al vendedor (la respuesta sale igual).
     const guard = reviewReply(out.text, { goal: cfg.goal, faqs });
-    const draftInput = { organizationId: org, conversationId: conv.id, bubbles, triggerMessageId: lastRead.id };
+    // Avisos que acompañan a una respuesta que SÍ salió (al menos una burbuja).
+    const noticesAfterSend = async () => {
+      const at = deps.now();
+      const notices: { kind: NoticeKind; body: string }[] = [];
+      if (out.handover || filterHandover) {
+        const motivo = filterHandover && filter.motivo ? ` (${filter.motivo})` : "";
+        notices.push({
+          kind: "pasar_a_humano",
+          body: `El cliente pidió atención de un vendedor${motivo}. El agente le avisó y sigue contestando hasta que alguien responda.`,
+        });
+      }
+      if (!guard.ok) notices.push({ kind: "guardia", body: `Revisa la respuesta del agente: ${guard.reason}` });
+      for (const n of notices) await addNotice({ organizationId: org, conversationId: conv.id, ...n, now: at });
+    };
 
-    if (fresh.channel.aiAgentMode === "auto" && !guard.ok) {
-      const draftId = await saveDraft({ ...draftInput, now: deps.now(), reviewReason: guard.reason });
-      // Primero el uso (nunca lanza): la llamada ya se cobró y el borrador ya la
-      // "atiende", así que un reintento no volvería a registrarla.
-      await recordAiUsage({ ...brainUsage, outcome: "draft", error: `guardia de salida: ${guard.reason}` });
-      console.info(`[agente] ${conv.id}: respuesta retenida para revisión humana (${guard.reason})`);
-      // Pausa en "revisión humana" (+ etiqueta): el agente no sigue solo y el
-      // siguiente mensaje del cliente no reemplaza esta tarjeta hasta que un
-      // vendedor la revise y lo reactive.
-      await pause(conv, "pausado_antibucle", deps.now(), { tag: TAG_HUMAN_REVIEW }).catch((error: unknown) =>
-        console.error(`[agente] ${conv.id}: no se pudo pausar tras retener la respuesta`, error),
-      );
-      return { kind: "held", draftId, reason: guard.reason };
-    }
-
-    if (fresh.channel.aiAgentMode === "borrador") {
-      const reviewReason = guard.ok ? null : guard.reason;
-      const draftId = await saveDraft({ ...draftInput, now: deps.now(), reviewReason });
-      await recordAiUsage({ ...brainUsage, outcome: "draft", error: reviewReason });
-      return { kind: "draft", draftId };
-    }
-
-    // auto: burbujas con pausa. Antes de CADA burbuja se revisa el estado fresco: si
-    // un vendedor respondió (desde el INICIO de la ronda), alguien apagó el canal o
+    // Burbujas con pausa. Antes de CADA burbuja se revisa el estado fresco: si un
+    // vendedor respondió (desde el INICIO de la ronda), alguien apagó el canal o
     // pausó al agente, o el cliente escribió, el agente se detiene ahí.
     // Con varias burbujas, antes del primer envío se guarda un PLAN durable con todas
-    // ("enviando"): si algo falla a la mitad (sin confirmar, error o proceso
-    // interrumpido), el resto queda como borrador visible para revisión humana.
-    const planId = bubbles.length > 1 ? await saveDraft({ ...draftInput, now: deps.now(), status: "enviando" }) : null;
-    const retain = async (reason: string) => {
-      if (planId) await retainRemainder(org, planId, conv.id, bubbles.slice(sent), reason);
-      await pause(conv, "pausado_antibucle", deps.now(), { tag: TAG_HUMAN_REVIEW }).catch((error: unknown) =>
-        console.error(`[agente] ${conv.id}: no se pudo pausar para revisión humana`, error),
-      );
-    };
+    // ("enviando"): si el worker se reinicia a la mitad, el barrido lo concilia.
     let sent = 0;
     let unconfirmed = 0;
     let stopped: StopReason | null = null;
+    const planId =
+      bubbles.length > 1
+        ? await savePlan({ organizationId: org, conversationId: conv.id, bubbles, triggerMessageId: lastRead.id, now: deps.now() })
+        : null;
+    // Lo que no alcanzó a salir no se reenvía solo (podría duplicar): queda en un aviso.
+    const noticeRemainder = async (why: string) => {
+      const rest = bubbles.slice(sent);
+      await addNotice({
+        organizationId: org,
+        conversationId: conv.id,
+        kind: "envio",
+        body: `${why} No se envió: «${rest.join(" / ")}». Revisa el hilo.`,
+        now: deps.now(),
+      });
+    };
     try {
       for (const text of bubbles) {
         if (sent > 0) await deps.sleep(BUBBLE_PAUSE_MS);
@@ -374,7 +372,7 @@ export async function runAgent(job: { organizationId: string; conversationId: st
         const outcome = await deps.sendBubble({ organizationId: org, conversationId: conv.id, text });
         sent++;
         // Sin confirmación no se manda la siguiente: el cliente no recibe media respuesta
-        // encima de algo que quizá no le llegó (lo resuelve el outbox; si vence, revisión humana).
+        // encima de algo que quizá no le llegó (lo resuelve el outbox; si vence, aviso).
         if (outcome.status !== "sent") {
           unconfirmed++;
           break;
@@ -387,10 +385,12 @@ export async function runAgent(job: { organizationId: string; conversationId: st
         await recordAiUsage({ ...brainUsage, outcome: "error", error: `envío: ${errorText(error)}` });
         throw error;
       }
-      // Salió una parte: el resto NO se pierde (borrador visible) y se pausa para revisión.
+      // Salió una parte: el agente sigue activo; el resto queda en un aviso al vendedor.
       await markAgentReply(org, conv.id, deps.now());
-      await retain(`Se enviaron ${sent} de ${bubbles.length} burbujas y la siguiente falló; revisa el hilo antes de mandar el resto.`);
+      if (planId) await closePlan(org, planId, "enviado");
       await recordAiUsage({ ...brainUsage, outcome: "sent", error: `burbuja ${sent + 1} no salió: ${errorText(error)}` });
+      await noticeRemainder(`Se enviaron ${sent} de ${bubbles.length} partes de la respuesta del agente y la siguiente falló.`);
+      await noticesAfterSend();
       return { kind: "sent", bubbles: sent };
     }
     if (stopped === "entrante_nuevo" && sent === 0) {
@@ -402,31 +402,28 @@ export async function runAgent(job: { organizationId: string; conversationId: st
     }
     if (stopped) {
       // Detenido a propósito (humano, canal/estado o mensaje nuevo): el resto ya no
-      // aplica (plan obsoleto). Con "entrante_nuevo" tras ≥1 burbuja, el mensaje nuevo
-      // queda pendiente (es posterior a lo enviado) y lo atiende la siguiente corrida.
-      if (planId) await closePlan(org, planId, "obsoleto");
-      if (stopped === "respuesta_humana" && cfg.pauseOnHumanReply) await pause(conv, "pausado_humano", deps.now());
+      // aplica. Con "entrante_nuevo" tras ≥1 burbuja, el mensaje nuevo queda
+      // pendiente (es posterior a lo enviado) y lo atiende la siguiente corrida.
+      if (planId) await closePlan(org, planId, sent > 0 ? "enviado" : "obsoleto");
+      if (stopped === "respuesta_humana" && cfg.pauseOnHumanReply) await pauseForHuman(conv, deps.now());
       if (sent === 0) {
         await recordAiUsage({ ...brainUsage, outcome: "skipped", error: `detenido antes de enviar: ${stopped}` });
         return { kind: "skipped", reason: stopped };
       }
       await markAgentReply(org, conv.id, deps.now());
       await recordAiUsage({ ...brainUsage, outcome: "sent", error: `detenido tras ${sent} burbuja(s): ${stopped}` });
+      if (stopped !== "respuesta_humana") await noticesAfterSend();
       return { kind: "sent", bubbles: sent };
     }
     await markAgentReply(org, conv.id, deps.now());
+    if (planId) await closePlan(org, planId, "enviado");
     // Una burbuja sin confirmar queda en el outbox: si vence como "sin confirmar",
-    // el barrido pausa la conversación para revisión humana (nunca reenvía a ciegas).
+    // el barrido deja un aviso (nunca reenvía a ciegas).
     const omitted = bubbles.length - sent;
-    if (unconfirmed && omitted > 0) {
-      await retain("WhatsApp no confirmó la burbuja anterior; revisa el hilo antes de mandar el resto.");
-    } else if (planId) {
-      await closePlan(org, planId, "enviado");
-    }
-    const note = unconfirmed
-      ? `${unconfirmed} burbuja(s) sin confirmar${omitted ? `; ${omitted} en borrador para revisión humana` : ""}`
-      : null;
+    const note = unconfirmed ? `${unconfirmed} burbuja(s) sin confirmar${omitted ? `; ${omitted} sin enviar (aviso)` : ""}` : null;
     await recordAiUsage({ ...brainUsage, outcome: "sent", error: note });
+    if (unconfirmed && omitted > 0) await noticeRemainder("WhatsApp no confirmó una parte de la respuesta del agente.");
+    await noticesAfterSend();
     return { kind: "sent", bubbles: sent };
   }
 

@@ -3,7 +3,6 @@ import {
   debounceDelayMs,
   debounceWindow,
   maxModelCallsPerHour,
-  pauseElapsed,
   decideGate,
   rescheduleDelayMs,
   toBubbles,
@@ -69,30 +68,15 @@ describe("debounceWindow (qué pendientes cuentan para el debounce)", () => {
   });
 });
 
-describe("pauseElapsed (reactivación por vencimiento)", () => {
-  const now = 1_000_000;
-  it("handover vencido → true", () => {
-    expect(pauseElapsed("pausado_handover", now - 1, now)).toBe(true);
-  });
-  it("handover aún vigente → false", () => {
-    expect(pauseElapsed("pausado_handover", now + 10 * S, now)).toBe(false);
-  });
-  it("humano/antibucle nunca vencen solos", () => {
-    expect(pauseElapsed("pausado_humano", now - 1, now)).toBe(false);
-    expect(pauseElapsed("pausado_antibucle", null, now)).toBe(false);
-  });
-});
-
 describe("decideGate (compuerta de interruptor y seguridad)", () => {
   const base: GateInput = {
     channelMode: "auto",
     agentState: "activo",
-    agentPausedUntil: null,
     now: 1_000_000,
     windowExpiresAt: 1_000_000 + 3600 * S, // dentro de 24h
     humanRepliedSincePending: false,
     agentRepliesLastHour: 0,
-    antiLoopMaxPerHour: 10,
+    antiLoopMaxPerHour: 30,
     modelCallsLastHour: 0,
     orgSpendLast24hUsd: 0,
     agentSendUnresolved: false,
@@ -101,19 +85,13 @@ describe("decideGate (compuerta de interruptor y seguridad)", () => {
     maxRepliesPerContact: null,
   };
 
-  it("canal off → no responde", () => {
+  it("canal off (o el viejo modo borrador) → no responde", () => {
     expect(decideGate({ ...base, channelMode: "off" })).toEqual({ action: "skip", reason: "canal_off" });
+    expect(decideGate({ ...base, channelMode: "borrador" })).toEqual({ action: "skip", reason: "canal_off" });
   });
 
-  it("pausado_humano → calla", () => {
-    expect(decideGate({ ...base, agentState: "pausado_humano" }).action).toBe("skip");
-  });
-
-  it("handover vigente calla; handover vencido responde y reactiva", () => {
-    const vigente = decideGate({ ...base, agentState: "pausado_handover", agentPausedUntil: base.now + 5 * S });
-    expect(vigente).toEqual({ action: "skip", reason: "pausado_handover" });
-    const vencido = decideGate({ ...base, agentState: "pausado_handover", agentPausedUntil: base.now - 1 });
-    expect(vencido).toEqual({ action: "respond", mode: "auto", reactivated: true });
+  it("pausado (un vendedor contestó) → calla hasta Reactivar; ninguna pausa vence sola", () => {
+    expect(decideGate({ ...base, agentState: "pausado_humano" })).toEqual({ action: "skip", reason: "pausado_humano" });
   });
 
   it("respuesta humana en el hilo → pausa a pausado_humano", () => {
@@ -129,49 +107,47 @@ describe("decideGate (compuerta de interruptor y seguridad)", () => {
     expect(decideGate({ ...base, windowExpiresAt: null }).action).toBe("skip");
   });
 
-  it("anti-bucle: tope/hora → pausa + etiqueta revisión humana", () => {
-    expect(decideGate({ ...base, agentRepliesLastHour: 10 })).toEqual({
-      action: "skip",
-      reason: "anti_bucle",
-      pauseTo: "pausado_antibucle",
-      tag: "revisión humana",
-    });
+  it("anti-bucle: tope/hora (30) → no responde esa vez y avisa; nunca pausa ni etiqueta", () => {
+    expect(decideGate({ ...base, agentRepliesLastHour: 29 }).action).toBe("respond");
+    expect(decideGate({ ...base, agentRepliesLastHour: 30 })).toEqual({ action: "skip", reason: "anti_bucle", notice: "anti_bucle" });
   });
 
-  it("tope de gasto: muchas llamadas sin respuesta (descartes) → pausa + revisión humana", () => {
-    // antiLoop 10/h → tope 40 llamadas/h (4 por respuesta: filtro + cerebro + holgura).
-    expect(maxModelCallsPerHour(10)).toBe(40);
+  it("tope de gasto: muchas llamadas sin respuesta (descartes) → no responde y avisa, sin pausar", () => {
+    // antiLoop 30/h → tope 120 llamadas/h (4 por respuesta: filtro + cerebro + holgura).
+    expect(maxModelCallsPerHour(30)).toBe(120);
     expect(maxModelCallsPerHour(1)).toBe(12);
-    expect(decideGate({ ...base, modelCallsLastHour: 39 }).action).toBe("respond");
-    expect(decideGate({ ...base, agentRepliesLastHour: 0, modelCallsLastHour: 40 })).toEqual({
+    expect(decideGate({ ...base, modelCallsLastHour: 119 }).action).toBe("respond");
+    expect(decideGate({ ...base, agentRepliesLastHour: 0, modelCallsLastHour: 120 })).toEqual({
       action: "skip",
       reason: "tope_de_llamadas",
-      pauseTo: "pausado_antibucle",
-      tag: "revisión humana",
+      notice: "anti_bucle",
     });
   });
 
-  it("envío del agente sin resolver (en camino o sin confirmar): espera, sin pausar", () => {
+  it("envío del agente en camino (o plan de burbujas enviando): espera, sin pausar", () => {
     expect(decideGate({ ...base, agentSendUnresolved: true })).toEqual({ action: "skip", reason: "envio_sin_confirmar" });
   });
 
-  it("presupuesto diario de la organización: al llegar, no responde (sin pausar la conversación)", () => {
+  it("presupuesto diario de la organización: al llegar, no responde y avisa (sin pausar la conversación)", () => {
     expect(decideGate({ ...base, orgSpendLast24hUsd: 19.99 }).action).toBe("respond");
-    expect(decideGate({ ...base, orgSpendLast24hUsd: 20 })).toEqual({ action: "skip", reason: "presupuesto_diario" });
+    expect(decideGate({ ...base, orgSpendLast24hUsd: 20 })).toEqual({
+      action: "skip",
+      reason: "presupuesto_diario",
+      notice: "presupuesto",
+    });
   });
 
-  it("tope por contacto (si se activa) → no responde; null = sin tope", () => {
-    expect(decideGate({ ...base, maxRepliesPerContact: 3, agentRepliesToContact: 3 }).action).toBe("skip");
+  it("tope por contacto (si se activa) → no responde y avisa; null = sin tope", () => {
+    expect(decideGate({ ...base, maxRepliesPerContact: 3, agentRepliesToContact: 3 })).toEqual({
+      action: "skip",
+      reason: "tope_por_contacto",
+      notice: "tope_contacto",
+    });
     expect(decideGate({ ...base, maxRepliesPerContact: null, agentRepliesToContact: 999 }).action).toBe("respond");
   });
 
-  it("camino feliz respeta el modo del canal (auto/borrador)", () => {
-    expect(decideGate(base)).toEqual({ action: "respond", mode: "auto", reactivated: false });
-    expect(decideGate({ ...base, channelMode: "borrador" })).toEqual({
-      action: "respond",
-      mode: "borrador",
-      reactivated: false,
-    });
+  it("camino feliz → responde", () => {
+    expect(decideGate(base)).toEqual({ action: "respond" });
   });
 
   it("prioridad: el interruptor off gana incluso si hay respuesta humana", () => {

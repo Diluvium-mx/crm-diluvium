@@ -12,6 +12,7 @@ import {
   type LineaCompuerta,
   type SizeRange,
 } from "./sizes";
+import { isInternalAgentTag } from "@/lib/ai/runtime/tags";
 
 // La conexión principal y las transacciones comparten esta interfaz. Así estas
 // funciones sirven igual para Server Actions y para procesos futuros del agente IA.
@@ -115,7 +116,8 @@ export async function getContactQualification(
   return {
     // Datos básicos que el panel muestra al final (compactos).
     email: contact.email,
-    tags: contact.tags,
+    // Sin las etiquetas internas del agente ("pasar a humano", "revisión humana").
+    tags: contact.tags.filter((t) => !isInternalAgentTag(t)),
     tieneInundaciones: contact.tieneInundaciones,
     nivelAguaCm: contact.nivelAguaCm,
     nivelAguaTexto: contact.nivelAguaTexto,
