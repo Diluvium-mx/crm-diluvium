@@ -31,17 +31,6 @@ export async function loadSnapshot(
   return row ?? null;
 }
 
-// Organización de una conversación (solo para el envoltorio temporal de la
-// pausa por envío manual; ver hooks.ts). Lectura por llave primaria.
-export async function conversationOrganization(conversationId: string): Promise<string | null> {
-  const [row] = await db
-    .select({ organizationId: conversations.organizationId })
-    .from(conversations)
-    .where(eq(conversations.id, conversationId))
-    .limit(1);
-  return row?.organizationId ?? null;
-}
-
 // Último saliente que salió o va en camino (un envío FALLIDO no le respondió al
 // cliente, así que no cierra los pendientes).
 export async function lastOutbound(organizationId: string, conversationId: string): Promise<MessageRow | null> {

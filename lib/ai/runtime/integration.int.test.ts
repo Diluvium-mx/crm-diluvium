@@ -174,10 +174,62 @@ describe.skipIf(!TEST_DATABASE_URL)("enganche del Agente IA (Postgres real)", ()
     expect(drafts.map((d) => d.status)).toEqual(["obsoleto"]);
   });
 
+  it("un programado ATORADO que el barrido concilia como enviado también pausa al agente (acotado a su org)", async () => {
+    await openConversation();
+    const claimedAt = new Date(Date.now() - 20 * 60_000); // tomado hace 20 min (> SENDING_STUCK_MS)
+    const stuck = (id: string, body: string, organizationId = ORG) => ({
+      id,
+      organizationId,
+      conversationId: CONV,
+      createdByUserId: "u_eng",
+      kind: "text" as const,
+      body,
+      sendAt: claimedAt,
+      programmedAt: new Date(claimedAt.getTime() - 60_000),
+      status: "sending" as const,
+      updatedAt: claimedAt,
+    });
+    // Sin su saliente en el hilo → fallido y el agente NO se pausa.
+    await db.insert(s.scheduledMessages).values(stuck("sch_sin", "Nunca salió"));
+    await dispatch.failStuckSending(new Date());
+    expect((await db.select().from(s.scheduledMessages).where(eq(s.scheduledMessages.id, "sch_sin")))[0].status).toBe("failed");
+    expect((await conv()).agentState).toBe("activo");
+    // Con su saliente (mismo autor y texto, a la hora de la toma) → "sent" y pausa.
+    await db.insert(s.messages).values({
+      id: "msg_sch",
+      organizationId: ORG,
+      conversationId: CONV,
+      direction: "out",
+      source: "crm",
+      type: "text",
+      body: "¿Pudo medir la entrada?",
+      status: "sent",
+      sentByUserId: "u_eng",
+      sentAt: new Date(claimedAt.getTime() + 5_000),
+    });
+    await db.insert(s.scheduledMessages).values(stuck("sch_ok", "¿Pudo medir la entrada?"));
+    await dispatch.failStuckSending(new Date());
+    expect((await db.select().from(s.scheduledMessages).where(eq(s.scheduledMessages.id, "sch_ok")))[0]).toMatchObject({
+      status: "sent",
+      messageId: "msg_sch",
+    });
+    expect((await conv()).agentState).toBe("pausado_humano");
+  });
+
+  it("la pausa por programado conciliado no cruza organizaciones", async () => {
+    await openConversation();
+    await db.insert(s.organization).values({ id: "org_otra_eng", name: "Otra", slug: "otra-eng", createdAt: new Date() });
+    // Pausar con la conversación de ORG pero la organización de otra: no toca nada.
+    await hooks.pauseAgentForManualSend("org_otra_eng", CONV);
+    expect((await conv()).agentState).toBe("activo");
+    await hooks.pauseAgentForManualSend(ORG, CONV);
+    expect((await conv()).agentState).toBe("pausado_humano");
+  });
+
   it("con el canal apagado, un mensaje humano no pausa ni toca nada (apagarlo ya dejó viejos los borradores)", async () => {
     await openConversation();
     await db.update(s.channels).set({ aiAgentMode: "off" }).where(eq(s.channels.id, "ch_eng"));
-    await hooks.pauseAgentOnManualMessage(CONV);
+    await hooks.pauseAgentForManualSend(ORG, CONV);
     const c = await conv();
     expect(c.agentState).toBe("activo");
     expect(c.agentStateChangedAt).toBeNull();
