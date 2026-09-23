@@ -8,7 +8,7 @@ import type { WorkflowStepPayload } from "@/lib/db/schema/automation";
 export const MAX_STEP_TEXT = 4_096; // tope de WhatsApp para un texto
 export const MAX_CAPTION = 1_024;
 export const MAX_TAG = 40;
-export const MAX_WAIT_SECONDS = 30;
+export const MAX_WAIT_SECONDS = 10;
 export const MAX_STEPS = 12;
 
 const nonEmpty = (max: number) => z.string().trim().min(1, "El texto está vacío.").max(max, `Máximo ${max} caracteres.`);
@@ -71,16 +71,58 @@ export function normalizeKeyword(text: string): string {
     .trim();
 }
 
+// Un mensaje más largo que esto no es un "pedido directo" ("vi su video en
+// Facebook, ¿cuánto cuesta?") y NO dispara por palabra clave: lo atiende el
+// agente o el vendedor. Evita mandar contenido que nadie pidió.
+export const KEYWORD_MAX_WORDS = 8;
+
 // ¿El mensaje del cliente contiene alguna palabra clave? Coincidencia por
 // palabra completa (sin acentos): "tabla" no dispara con "establa" pero sí con
-// "la tabla?" o "TABLA de tamaños".
+// "la tabla?" o "TABLA de tamaños". Devuelve la coincidencia MÁS LARGA ("video a
+// la medida" gana a "video"). Solo mensajes cortos (KEYWORD_MAX_WORDS).
 export function matchesKeyword(message: string, keywords: readonly string[]): string | null {
-  const haystack = ` ${normalizeKeyword(message).replace(/[^\p{L}\p{N}]+/gu, " ")} `;
+  const words = normalizeKeyword(message).replace(/[^\p{L}\p{N}]+/gu, " ").trim();
+  if (!words || words.split(" ").length > KEYWORD_MAX_WORDS) return null;
+  const haystack = ` ${words} `;
+  let best: { raw: string; len: number } | null = null;
   for (const raw of keywords) {
-    const kw = normalizeKeyword(raw).replace(/[^\p{L}\p{N}]+/gu, " ");
-    if (kw && haystack.includes(` ${kw} `)) return raw;
+    const kw = normalizeKeyword(raw).replace(/[^\p{L}\p{N}]+/gu, " ").trim();
+    if (kw && haystack.includes(` ${kw} `) && (!best || kw.length > best.len)) best = { raw, len: kw.length };
   }
-  return null;
+  return best?.raw ?? null;
+}
+
+// Variables que el ejecutor sabe rellenar: las del CRM y los argumentos de las
+// herramientas del agente (comprobante) o del disparador. Cualquier otra
+// llegaría literal al cliente ("tu total es {{monto}}"), así que el editor la rechaza.
+export const ALLOWED_VARIABLES = new Set([
+  "nombre",
+  "vendedor",
+  "monto",
+  "fecha",
+  "banco",
+  "referencia",
+  "destinatario",
+  "motivo",
+  "mensaje",
+  "etapa_disparadora",
+]);
+
+export function unknownVariables(text: string): string[] {
+  const out = new Set<string>();
+  for (const m of text.matchAll(/\{\{\s*([^{}]+?)\s*\}\}/g)) {
+    if (!ALLOWED_VARIABLES.has(m[1].trim())) out.add(m[1].trim());
+  }
+  return [...out];
+}
+
+// Antes de mandar al cliente: una variable que quedó sin valor se quita en vez
+// de salir como "{{monto}}" en WhatsApp.
+export function stripUnresolvedVariables(text: string): string {
+  return text
+    .replace(/\{\{\s*[^{}]+?\s*\}\}/g, "")
+    .replace(/[ \t]{2,}/g, " ")
+    .trim();
 }
 
 // Un comando del vendedor es el mensaje ENTERO ("/tabla"), sin texto extra.

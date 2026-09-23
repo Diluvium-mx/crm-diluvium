@@ -394,3 +394,43 @@ Decisiones que no estaban en el diseño original:
 
 Pendiente para cerrar la parte (a): gate (§7 A7) y prueba de `/tabla` y `/banco` en staging con
 el sandbox, con archivos de prueba hasta que el dueño entregue los reales (§5).
+
+### 8.1 Gate de la parte (a) — 23-sep-2026 (revisión adversarial de Claude + cyber-neo + Codex)
+
+Corregido de inmediato (escenario real):
+- **Palabras clave demasiado agresivas en AUTO** ("vi su video en Facebook" mandaba el video y quemaba
+  el "una vez por conversación"): los predeterminados nacen **sin palabras clave** (en AUTO el agente
+  tiene cada workflow como herramienta); si el admin las agrega, gana la coincidencia **más larga** y
+  solo disparan mensajes de **≤ 8 palabras**.
+- **Carrera de "una vez por conversación"** ("tabla" dos veces seguidas = dos imágenes): índice único
+  parcial `workflow_runs_once_uidx (conversation_id, workflow_id) where status in
+  (queued, running, done) and trigger <> 'command'`; el choque queda `skipped: ya_enviado`.
+- **Fallo silencioso al arrastrar una tarjeta** (ventana cerrada: el vendedor cree que el cliente ya
+  tiene la CLABE): una corrida disparada por humano que falla deja un **aviso interno en el hilo**.
+- **Marcado de leídos indebido**: los envíos por etapa/agente/palabra clave ya **no marcan leídos**
+  (`markRead` explícito; solo el comando del vendedor, que está viendo el chat).
+- **Aviso de pago sin visibilidad**: el aviso interno **sube la conversación y la marca no leída**; en
+  `pago_confirmado` va antes de la etapa "Compra".
+- **"Probar"** ya no obliga a habilitar el workflow (no queda expuesto a clientes reales antes de
+  verlo), no preselecciona conversación y muestra canal + teléfono.
+- **Enter en el composer** ejecuta un comando solo con coincidencia **exacta** ("/t" + Enter no manda nada).
+- **Eco antes del enlace**: la burbuja del archivo enviado conserva el adjunto de la biblioteca (no
+  queda "procesando" y el vendedor no lo reenvía).
+- **Variables**: el editor rechaza variables desconocidas y una sin valor se quita antes de enviar.
+- **Argumentos de herramienta** nunca pisan `{{nombre}}`/`{{vendedor}}`; la etapa del argumento solo
+  la toma `cambiar_etapa`.
+- Encabezados de subida malformados → 400; errores crudos de BD ya no llegan a la pantalla;
+  concurrencia 3 del worker y espera máxima de 10 s por paso.
+
+Para la **parte (b)** (tocan `lib/ai/runtime`, prohibido hasta el cierre de la Fase B):
+- Excluir `type = system_note` de `lastOutbound` / `humanOutboundCount` / `recentMessages`
+  (`context.ts`, `run.ts`, `transcript.ts`): hoy una nota contaría como "respuesta humana" (pausa
+  indefinida) y entraría al transcript del modelo como frase propia.
+- Con el canal en AUTO, el gancho de palabra clave debe **ceder al agente** (que tiene las tools):
+  si no, cliente recibe dos respuestas al mismo "tabla".
+- Los envíos por etapa/comando cuentan como primera respuesta humana (`first_response_seconds`).
+
+Sin escenario (lista, no frena): borrar un workflow cascadea sus corridas; editar pasos con una
+corrida a medias mueve el cursor; sin token CSRF en la ruta de subida (los headers X-* fuerzan
+preflight); varios workflows con la misma etapa disparan en cadena sin tope; sin sniffing de
+contenido en la subida (un MIME falso falla después en el proveedor, visible en la corrida).

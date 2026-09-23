@@ -16,9 +16,10 @@ export function startWorkflowWorker(provider: MessagingProvider, storage: Object
       console.info(`[workflows] ${job.data.runId}: ${outcome}`);
       return outcome;
     },
-    // Concurrencia 1 por diseño: las corridas mandan varias burbujas seguidas y
-    // dos corridas de la misma conversación no deben intercalarse.
-    { connection: { ...redisConnection(), maxRetriesPerRequest: null }, concurrency: 1, autorun: false },
+    // Concurrencia 3: una corrida con pasos "esperar" no debe retrasar a los
+    // demás clientes (tope de espera 10 s por paso). Dos corridas de la MISMA
+    // conversación son raras (una vez por conversación) y el orden lo da la cola.
+    { connection: { ...redisConnection(), maxRetriesPerRequest: null }, concurrency: 3, autorun: false },
   );
   worker.on("failed", (job, error) => {
     console.error(`[workflows] falló ${job?.data.runId} (intento ${job?.attemptsMade}): ${error.message}`);

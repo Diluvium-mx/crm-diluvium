@@ -24,7 +24,7 @@ import { enqueueWorkflowRun } from "@/lib/queue/workflows";
 import { addContactTag, notifyConversation, setAgentState } from "@/lib/ai/runtime/state";
 import { TAG_HANDOVER } from "@/lib/ai/runtime/tags";
 import { loadAgentConfig } from "@/lib/ai/runtime/config";
-import { missingMedia } from "./steps";
+import { missingMedia, stripUnresolvedVariables } from "./steps";
 
 export type RunTrigger = "agent" | "keyword" | "command" | "stage";
 
@@ -37,6 +37,8 @@ export type StartRunInput = {
   triggeredByUserId?: string | null;
   /** Argumentos de la herramienta (agente) o del disparador; se vuelcan a las variables {{…}}. */
   payload?: Record<string, unknown> | null;
+  /** Solo "Probar" del admin: ejecuta aunque el workflow esté deshabilitado. */
+  allowDisabled?: boolean;
   now?: Date;
 };
 
@@ -122,7 +124,7 @@ export async function startWorkflowRun(input: StartRunInput): Promise<StartRunRe
     reason,
   });
 
-  if (!wf.enabled) return skip(SKIP_DISABLED);
+  if (!wf.enabled && !(input.allowDisabled && input.trigger === "command")) return skip(SKIP_DISABLED);
   if (steps.length === 0) return skip(SKIP_NO_STEPS);
   if (missingMedia(steps.map((s) => s.payload)).length > 0) return skip(SKIP_MISSING_MEDIA);
   // Disparos NO humanos (agente, palabra clave del cliente) respetan el modo del
@@ -148,7 +150,15 @@ export async function startWorkflowRun(input: StartRunInput): Promise<StartRunRe
     if (prev) return skip(SKIP_ALREADY_SENT);
   }
 
-  const runId = await insertRun(input, conv.contactId, "queued");
+  let runId: string;
+  try {
+    runId = await insertRun(input, conv.contactId, "queued");
+  } catch (error) {
+    // Carrera con otra corrida viva del mismo workflow (índice único parcial):
+    // se registra como omitida, nunca se manda dos veces.
+    if ((error as { code?: string }).code === "23505") return skip(SKIP_ALREADY_SENT);
+    throw error;
+  }
   await enqueueWorkflowRun(runId);
   return { runId, status: "queued" };
 }
@@ -163,13 +173,14 @@ export type ExecutorDeps = {
 export type ExecuteOutcome = "done" | "failed" | "cancelled" | "not_claimed";
 
 function variablesFor(run: { payload: Record<string, unknown> | null }, contact: { firstName: string; lastName: string | null }, sellerName: string | null) {
-  const values: Record<string, string> = {
-    nombre: [contact.firstName, contact.lastName].filter(Boolean).join(" ").trim(),
-    vendedor: sellerName ?? "",
-  };
+  const values: Record<string, string> = {};
   for (const [k, v] of Object.entries(run.payload ?? {})) {
-    if (typeof v === "string" || typeof v === "number") values[k] = String(v);
+    if (typeof v === "string" || typeof v === "number") values[k] = String(v).slice(0, 500);
   }
+  // Las variables del CRM van DESPUÉS: un argumento de herramienta o un texto
+  // del cliente nunca pisa el nombre del contacto ni el del vendedor.
+  values.nombre = [contact.firstName, contact.lastName].filter(Boolean).join(" ").trim();
+  values.vendedor = sellerName ?? "";
   return values;
 }
 
@@ -207,12 +218,20 @@ export async function executeWorkflowRun(runId: string, deps: ExecutorDeps): Pro
     ? (await db.select({ name: user.name }).from(user).where(eq(user.id, run.triggeredByUserId)).limit(1))[0]?.name ?? null
     : null;
   const values = variablesFor(run, contact, seller);
-  const source = run.trigger === "agent" || run.trigger === "keyword" ? ("ai_agent" as const) : ("crm" as const);
+  const source = ctxSource(run);
   const sentBy = source === "crm" ? (run.triggeredByUserId ?? null) : null;
   const messageIds = [...run.messageIds];
 
   const fail = async (code: string, message: string): Promise<ExecuteOutcome> => {
     await markRun(runId, { status: "failed", errorCode: code, errorMessage: message.slice(0, 500), messageIds, finishedAt: now() });
+    // Una corrida disparada por un humano que falla (ventana cerrada, rechazo)
+    // se avisa EN EL HILO: el vendedor que arrastró la tarjeta creería que el
+    // cliente ya recibió los datos y esperaría un comprobante que nunca llega.
+    if (run.trigger === "command" || run.trigger === "stage") {
+      await insertInternalNote(run, `No se envió "${loaded.wf.name}": ${FAIL_LABEL[code] ?? message.slice(0, 200)}.`, ctxSource(run), sentBy, now()).catch(
+        (e) => console.error("[workflows] no se pudo dejar el aviso de fallo", e),
+      );
+    }
     return "failed";
   };
 
@@ -231,6 +250,7 @@ export async function executeWorkflowRun(runId: string, deps: ExecutorDeps): Pro
     try {
       const sent = await runStep(step, {
         run,
+        workflowSlug: loaded.wf.slug,
         values,
         source,
         sentBy,
@@ -269,6 +289,8 @@ async function agentMustStop(organizationId: string, conversationId: string, sin
         eq(messages.organizationId, organizationId),
         eq(messages.direction, "out"),
         inArray(messages.source, ["crm", "business_app"]),
+        // Un aviso interno (system_note) no es una respuesta humana.
+        sql`${messages.type} <> 'system_note'`,
         gt(messages.createdAt, since),
       ),
     )
@@ -276,8 +298,52 @@ async function agentMustStop(organizationId: string, conversationId: string, sin
   return human ? "respuesta_humana" : null;
 }
 
+const FAIL_LABEL: Record<string, string> = {
+  [FAIL_WINDOW]: "la ventana de 24 h está cerrada; solo se puede mandar una plantilla",
+  media_not_found: "el archivo ya no está en la biblioteca",
+  storage_unavailable: "el almacenamiento de archivos no está disponible",
+};
+
+function ctxSource(run: { trigger: RunTrigger }): "crm" | "ai_agent" {
+  return run.trigger === "agent" || run.trigger === "keyword" ? "ai_agent" : "crm";
+}
+
+// Aviso interno en el hilo: fila system_note que NUNCA va al proveedor. Sube la
+// conversación en la bandeja y la marca no leída: es algo que el vendedor debe
+// ver (cotejar un depósito, un envío que no salió).
+async function insertInternalNote(
+  run: { organizationId: string; conversationId: string },
+  text: string,
+  source: "crm" | "ai_agent",
+  sentBy: string | null,
+  at: Date,
+): Promise<string> {
+  const id = crypto.randomUUID();
+  await db.transaction(async (tx) => {
+    await tx.insert(messages).values({
+      id,
+      organizationId: run.organizationId,
+      conversationId: run.conversationId,
+      direction: "out",
+      source,
+      type: "system_note",
+      body: text,
+      status: "sent",
+      sentByUserId: sentBy,
+      sentAt: at,
+    });
+    await tx
+      .update(conversations)
+      .set({ lastMessageAt: at, unreadCount: sql`${conversations.unreadCount} + 1` })
+      .where(and(eq(conversations.id, run.conversationId), eq(conversations.organizationId, run.organizationId)));
+    await notifyConversation(tx, run.organizationId, run.conversationId);
+  });
+  return id;
+}
+
 type StepCtx = {
   run: typeof workflowRuns.$inferSelect;
+  workflowSlug: string;
   values: Record<string, string>;
   source: "crm" | "ai_agent";
   sentBy: string | null;
@@ -291,9 +357,11 @@ async function runStep(step: WorkflowStepPayload, ctx: StepCtx): Promise<SendOut
       return sendTextMessage(deps.provider, {
         organizationId: run.organizationId,
         conversationId: run.conversationId,
-        text: renderSnippet(step.text, ctx.values),
+        text: stripUnresolvedVariables(renderSnippet(step.text, ctx.values)),
         source: ctx.source,
         sentByUserId: ctx.sentBy,
+        // Solo un comando (el vendedor está viendo el chat) marca leídos.
+        markRead: run.trigger === "command",
         now: deps.now(),
       });
     case "send_media": {
@@ -303,15 +371,18 @@ async function runStep(step: WorkflowStepPayload, ctx: StepCtx): Promise<SendOut
         organizationId: run.organizationId,
         conversationId: run.conversationId,
         assetId: step.assetId,
-        caption: step.caption ? renderSnippet(step.caption, ctx.values) : null,
+        caption: step.caption ? stripUnresolvedVariables(renderSnippet(step.caption, ctx.values)) : null,
         source: ctx.source,
         sentByUserId: ctx.sentBy,
+        markRead: run.trigger === "command",
         now: deps.now(),
       });
     }
     case "set_stage": {
-      // La etapa puede venir del argumento de la herramienta (cambiar_etapa).
-      const fromPayload = typeof run.payload?.etapa === "string" ? run.payload.etapa : null;
+      // SOLO el workflow `cambiar_etapa` toma la etapa del argumento de la
+      // herramienta; en cualquier otro manda el paso (un argumento "etapa" no
+      // puede mover a "compra" desde datos_bancarios).
+      const fromPayload = ctx.workflowSlug === "cambiar_etapa" && typeof run.payload?.etapa === "string" ? run.payload.etapa : null;
       const stage = isStage(fromPayload) ? fromPayload : step.stage;
       await db
         .update(contacts)
@@ -335,21 +406,7 @@ async function runStep(step: WorkflowStepPayload, ctx: StepCtx): Promise<SendOut
       return null;
     }
     case "internal_note": {
-      // Aviso para el vendedor: fila en el hilo que NUNCA va al proveedor.
-      const id = crypto.randomUUID();
-      await db.insert(messages).values({
-        id,
-        organizationId: run.organizationId,
-        conversationId: run.conversationId,
-        direction: "out",
-        source: ctx.source,
-        type: "system_note",
-        body: renderSnippet(step.text, ctx.values),
-        status: "sent",
-        sentByUserId: ctx.sentBy,
-        sentAt: deps.now(),
-      });
-      await notifyConversation(db, run.organizationId, run.conversationId);
+      const id = await insertInternalNote(run, renderSnippet(step.text, ctx.values), ctx.source, ctx.sentBy, deps.now());
       return { messageId: id, status: "sent" };
     }
     case "wait":

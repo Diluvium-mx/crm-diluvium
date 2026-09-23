@@ -25,8 +25,14 @@ export async function POST(req: Request): Promise<Response> {
     return Response.json({ error: "Sin permiso para subir archivos." }, { status: 403 });
   }
   const mimeType = req.headers.get("content-type") ?? "";
-  const fileName = decodeURIComponent(req.headers.get("x-file-name") ?? "");
-  const title = decodeURIComponent(req.headers.get("x-title") ?? "");
+  let fileName: string;
+  let title: string;
+  try {
+    fileName = decodeURIComponent(req.headers.get("x-file-name") ?? "");
+    title = decodeURIComponent(req.headers.get("x-title") ?? "");
+  } catch {
+    return Response.json({ error: "Nombre de archivo inválido.", code: "name" }, { status: 400 });
+  }
   const declaredBytes = Number(req.headers.get("content-length") ?? req.headers.get("x-file-size") ?? 0);
   if (!req.body) return Response.json({ error: "Sin archivo." }, { status: 400 });
 

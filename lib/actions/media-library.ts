@@ -29,7 +29,9 @@ export async function renameMediaAssetAction(input: { assetId: string; title: st
   try {
     await renameMediaAsset(organizationId, parsed.data.assetId, parsed.data.title);
   } catch (error) {
-    return { ok: false, error: error instanceof Error ? error.message : "No se pudo renombrar." };
+    if (error instanceof MediaRejectedError) return { ok: false, error: error.message };
+    console.error("[biblioteca] renombrar falló", error);
+    return { ok: false, error: "No se pudo renombrar el archivo." };
   }
   revalidatePath("/automatizacion");
   return { ok: true };
@@ -43,10 +45,9 @@ export async function deleteMediaAssetAction(input: { assetId: string }): Promis
   try {
     await deleteMediaAsset(organizationId, parsed.data.assetId);
   } catch (error) {
-    if (error instanceof MediaInUseError || error instanceof MediaRejectedError || error instanceof Error) {
-      return { ok: false, error: error.message };
-    }
-    return { ok: false, error: "No se pudo borrar." };
+    if (error instanceof MediaInUseError || error instanceof MediaRejectedError) return { ok: false, error: error.message };
+    console.error("[biblioteca] borrar falló", error);
+    return { ok: false, error: "No se pudo borrar el archivo." };
   }
   revalidatePath("/automatizacion");
   return { ok: true };

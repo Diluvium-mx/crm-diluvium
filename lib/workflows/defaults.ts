@@ -2,6 +2,10 @@
 // redactados desde el Goal de Ángela y sus FAQs (definición 4 del dueño): el
 // admin los ajusta después en la pestaña Automatización. Puro: sin DB.
 //
+// Palabras clave: los predeterminados nacen SIN palabras clave. En AUTO el agente
+// ya tiene cada workflow como herramienta y decide con el contexto; una palabra
+// suelta ("vi su video en Facebook") mandaría contenido que nadie pidió y
+// quemaría el "una vez por conversación". El admin las agrega si las quiere.
 // Reglas del Goal que respetan estos textos: mensajes breves para celular, sin
 // listas ni catálogo, "tamaño" (nunca "talla"), precios tal cual la base
 // ($5,500 estándar, $7,000 a la medida, $3,000 mini, tapones $749/$799/$849),
@@ -31,7 +35,7 @@ export const DEFAULT_WORKFLOWS: readonly DefaultWorkflow[] = [
       "Úsala cuando el cliente pregunte qué tamaños hay, cómo saber cuál le queda, o pida la tabla. " +
       "Responde primero su duda en texto y luego llama esta herramienta. No la uses si ya se envió en esta conversación.",
     triggerAgent: true,
-    triggerKeywords: ["tabla", "tabla de tamaños", "tamaños"],
+    triggerKeywords: [],
     triggerCommand: "/tabla",
     oncePerConversation: true,
     steps: [
@@ -47,7 +51,7 @@ export const DEFAULT_WORKFLOWS: readonly DefaultWorkflow[] = [
       "Úsala solo cuando el cliente ya confirmó que necesita menor altura y pregunte tamaños o pida la tabla. " +
       "Nunca la ofrezcas por tu cuenta. No la uses si ya se envió en esta conversación.",
     triggerAgent: true,
-    triggerKeywords: ["tabla mini", "tamaños mini"],
+    triggerKeywords: [],
     triggerCommand: "/mini",
     oncePerConversation: true,
     steps: [
@@ -80,7 +84,7 @@ export const DEFAULT_WORKFLOWS: readonly DefaultWorkflow[] = [
       "Úsala cuando el cliente pregunte cómo se instala, cómo se coloca, si es difícil, o pida el video. " +
       "Responde primero en texto (no requiere obra ni herramientas especiales) y luego llama esta herramienta. No la uses si ya se envió.",
     triggerAgent: true,
-    triggerKeywords: ["video", "video de instalacion", "como se instala"],
+    triggerKeywords: [],
     triggerCommand: "/video",
     oncePerConversation: true,
     steps: [
@@ -95,7 +99,7 @@ export const DEFAULT_WORKFLOWS: readonly DefaultWorkflow[] = [
       "Envía el video de instalación de la compuerta hecha a la medida (entradas de 121 a 250 cm) como archivo. " +
       "Úsala cuando el cliente con una entrada mayor a 120 cm pregunte cómo se instala o pida el video. No la uses si ya se envió.",
     triggerAgent: true,
-    triggerKeywords: ["video a la medida"],
+    triggerKeywords: [],
     triggerCommand: "/video-medida",
     oncePerConversation: true,
     steps: [
@@ -111,7 +115,7 @@ export const DEFAULT_WORKFLOWS: readonly DefaultWorkflow[] = [
       "Úsala cuando el cliente pregunte por tapones, coladeras, desagües o cómo evitar que el agua suba por el drenaje. " +
       "Responde primero con los precios en texto y luego llama esta herramienta. No la uses si ya se envió.",
     triggerAgent: true,
-    triggerKeywords: ["tapon", "tapones", "tapon inflable", "coladera"],
+    triggerKeywords: [],
     triggerCommand: "/tapones",
     oncePerConversation: true,
     steps: [
@@ -129,7 +133,7 @@ export const DEFAULT_WORKFLOWS: readonly DefaultWorkflow[] = [
       "Úsala cuando el cliente pregunte cómo o dónde medir, dude de su medida, o dé una medida sin decir de dónde a dónde. " +
       "Responde primero en texto y luego llama esta herramienta. No la uses si ya se envió.",
     triggerAgent: true,
-    triggerKeywords: ["como mido", "donde mido", "como medir", "donde medir"],
+    triggerKeywords: [],
     triggerCommand: "/medir",
     oncePerConversation: true,
     steps: [
@@ -194,13 +198,15 @@ export const DEFAULT_WORKFLOWS: readonly DefaultWorkflow[] = [
     triggerKeywords: [],
     triggerCommand: null,
     oncePerConversation: true,
+    // El aviso va PRIMERO (sube la conversación y la marca no leída) y la etapa
+    // al final: nadie ve "Compra" sin ver el freno de cotejar.
     steps: [
-      { kind: "set_stage", stage: "compra" },
-      { kind: "add_tag", tag: "cotejar depósito" },
       {
         kind: "internal_note",
         text: "Pago reportado por el agente: {{monto}} · {{banco}} · ref. {{referencia}} · {{fecha}}. Cotejar el depósito en el banco antes de enviar.",
       },
+      { kind: "add_tag", tag: "cotejar depósito" },
+      { kind: "set_stage", stage: "compra" },
     ],
   },
   {

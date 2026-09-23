@@ -69,6 +69,13 @@ export type SendTextParams = {
   now?: Date;
   /** Default "crm". "ai_agent" = respuesta del Agente IA. */
   source?: OutboundTextSource;
+  /**
+   * Marcar como leídos los entrantes hasta ahora. Default: solo si source es
+   * "crm". Un envío automático disparado por un humano que NO está viendo el
+   * chat (p. ej. al arrastrar una tarjeta) debe mandar false: si no, una
+   * pregunta del cliente desaparece de "No leído" sin que nadie la lea.
+   */
+  markRead?: boolean;
 };
 
 /** "sent": confirmado. "pending": resultado desconocido, en reconciliación (sin reintento). */
@@ -176,7 +183,7 @@ export async function sendTextMessage(provider: MessagingProvider, params: SendT
     organizationId: params.organizationId,
     sentByUserId,
     // El agente no "lee" por el vendedor: sus envíos no descuentan no leídos.
-    markRead: source === "crm",
+    markRead: params.markRead ?? source === "crm",
   });
 }
 
@@ -189,6 +196,8 @@ export type SendMediaParams = {
   caption?: string | null;
   sentByUserId?: string | null;
   source?: OutboundTextSource;
+  /** Igual que en SendTextParams. */
+  markRead?: boolean;
   now?: Date;
 };
 
@@ -262,7 +271,7 @@ export async function sendMediaMessage(provider: MessagingProvider, storage: Obj
     conversation,
     organizationId: params.organizationId,
     sentByUserId,
-    markRead: source === "crm",
+    markRead: params.markRead ?? source === "crm",
   });
 }
 
@@ -503,7 +512,7 @@ export async function linkSentMessage(input: {
       ].filter((c): c is NonNullable<typeof c> => c !== undefined);
       const [echo] = echoMatchers.length
         ? await tx
-            .select({ id: messages.id, status: messages.status, source: messages.source })
+            .select({ id: messages.id, status: messages.status, source: messages.source, attachments: messages.attachments })
             .from(messages)
             .where(and(eq(messages.organizationId, input.organizationId), or(...echoMatchers)))
             .for("update")
@@ -528,6 +537,13 @@ export async function linkSentMessage(input: {
             type: queued.type,
             body: queued.body,
             templateName: queued.templateName,
+            // Media de la BIBLIOTECA (Fase D): la fila en cola ya trae el
+            // storageKey; el eco trae la URL del proveedor y dispararía una
+            // descarga que puede fallar ("procesando"/"no se pudo descargar" y
+            // el vendedor lo reenvía). Se conserva el adjunto propio.
+            ...(queued.attachments.some((a) => a.storageKey) && !echo.attachments.some((a) => a.storageKey)
+              ? { attachments: queued.attachments, mediaUrl: queued.mediaUrl, mediaMimeType: queued.mediaMimeType }
+              : {}),
           })
           .where(eq(messages.id, echo.id));
         await tx.delete(messages).where(queuedWhere);

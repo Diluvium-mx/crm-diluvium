@@ -246,7 +246,7 @@ describe.skipIf(!TEST_DATABASE_URL)("executor de workflows", () => {
     expect(r.messageIds).toHaveLength(1);
   });
 
-  it("pasar a humano pausa al agente con etiqueta; el aviso interno queda en el hilo sin ir al proveedor; la etapa del argumento manda", async () => {
+  it("pasar a humano pausa al agente con etiqueta; el aviso interno queda en el hilo sin ir al proveedor; la etapa del argumento NO manda fuera de cambiar_etapa", async () => {
     const wf = await workflow([
       { kind: "internal_note", text: "Pago reportado: {{monto}} · ref. {{referencia}}. Cotejar." },
       { kind: "add_tag", tag: "cotejar depósito" },
@@ -266,11 +266,51 @@ describe.skipIf(!TEST_DATABASE_URL)("executor de workflows", () => {
     expect(notes).toHaveLength(1);
     expect(notes[0]).toMatchObject({ body: "Pago reportado: $5,500 · ref. 1234. Cotejar.", source: "ai_agent", providerMessageId: null });
     const c = await contact();
-    expect(c.stage).toBe("compra");
+    // "etapa" del argumento NO manda en un workflow que no sea cambiar_etapa: queda la del paso.
+    expect(c.stage).toBe("interesado");
     expect(c.tags).toEqual(expect.arrayContaining(["cotejar depósito", "pasar a humano"]));
     const cv = await conv();
     expect(cv.agentState).toBe("pausado_handover");
     expect(cv.agentPausedUntil).not.toBeNull();
+    // cambiar_etapa sí toma la etapa del argumento.
+    const wfStage = await workflow([{ kind: "set_stage", stage: "interesado" }], { slug: "cambiar_etapa" });
+    const st = await ex.startWorkflowRun({ organizationId: ORG, workflowId: wfStage, conversationId: CONV, trigger: "agent", payload: { etapa: "compra" } });
+    expect(await ex.executeWorkflowRun(st.runId, { provider, storage })).toBe("done");
+    expect((await contact()).stage).toBe("compra");
+  });
+
+  it("carrera: dos disparos no humanos simultáneos dejan UNA corrida (índice único); el segundo queda omitido", async () => {
+    const wf = await workflow([{ kind: "send_text", text: "tabla" }]);
+    const [a, b] = await Promise.all([
+      ex.startWorkflowRun({ organizationId: ORG, workflowId: wf, conversationId: CONV, trigger: "keyword" }),
+      ex.startWorkflowRun({ organizationId: ORG, workflowId: wf, conversationId: CONV, trigger: "keyword" }),
+    ]);
+    expect([a.status, b.status].sort()).toEqual(["queued", "skipped"]);
+    expect([a.reason, b.reason].filter(Boolean)).toEqual([ex.SKIP_ALREADY_SENT]);
+  });
+
+  it("disparo por etapa: no marca leídos los mensajes del cliente y avisa en el hilo si falla por ventana cerrada", async () => {
+    await db.insert(s.messages).values({ id: "m_in", organizationId: ORG, conversationId: CONV, direction: "in", source: "contact", type: "text", body: "¿aguanta 1 metro?", status: "received" });
+    await db.update(s.conversations).set({ unreadCount: 1 }).where(eq(s.conversations.id, CONV));
+    const wf = await workflow([{ kind: "send_text", text: "datos" }]);
+    const ok = await ex.startWorkflowRun({ organizationId: ORG, workflowId: wf, conversationId: CONV, trigger: "stage", triggeredByUserId: "u_v" });
+    expect(await ex.executeWorkflowRun(ok.runId, { provider, storage })).toBe("done");
+    expect((await conv()).unreadCount).toBe(1); // la pregunta del cliente sigue sin leer
+    // Ahora con la ventana cerrada: falla y deja aviso interno visible.
+    await db.update(s.conversations).set({ windowExpiresAt: new Date(Date.now() - 1_000) }).where(eq(s.conversations.id, CONV));
+    const wf2 = await workflow([{ kind: "send_text", text: "datos" }]);
+    const bad = await ex.startWorkflowRun({ organizationId: ORG, workflowId: wf2, conversationId: CONV, trigger: "stage", triggeredByUserId: "u_v" });
+    expect(await ex.executeWorkflowRun(bad.runId, { provider, storage })).toBe("failed");
+    const notes = await db.select().from(s.messages).where(eq(s.messages.type, "system_note"));
+    expect(notes).toHaveLength(1);
+    expect(notes[0].body).toMatch(/No se envió .*ventana de 24 h/);
+    expect((await conv()).unreadCount).toBe(2); // el aviso sube como no leído
+  });
+
+  it("Probar: un workflow deshabilitado corre con allowDisabled solo como comando", async () => {
+    const wf = await workflow([{ kind: "send_text", text: "x" }], { enabled: false });
+    expect((await ex.startWorkflowRun({ organizationId: ORG, workflowId: wf, conversationId: CONV, trigger: "command", allowDisabled: true })).status).toBe("queued");
+    expect((await ex.startWorkflowRun({ organizationId: ORG, workflowId: wf, conversationId: CONV, trigger: "agent", allowDisabled: true })).status).toBe("skipped");
   });
 
   it("otra organización no puede disparar ni ejecutar workflows ajenos", async () => {

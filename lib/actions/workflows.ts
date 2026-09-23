@@ -13,7 +13,7 @@ import { contactStageEnum } from "@/lib/db/schema/contacts";
 import { conversations, mediaAssets, workflowRuns, workflowSteps, workflows } from "@/lib/db/schema";
 import { listRecentRuns, startWorkflowRun, type StartRunResult } from "@/lib/workflows/executor";
 import { seedDefaultWorkflows } from "@/lib/workflows/seed";
-import { commandSchema, keywordsSchema, missingMedia, stepsSchema, type StepPayload } from "@/lib/workflows/steps";
+import { commandSchema, keywordsSchema, missingMedia, stepsSchema, unknownVariables, type StepPayload } from "@/lib/workflows/steps";
 import { findWorkflowByCommand } from "@/lib/workflows/triggers";
 
 const idSchema = z.string().trim().min(1).max(200);
@@ -167,6 +167,12 @@ export async function saveWorkflow(raw: WorkflowInput): Promise<{ ok: true; id: 
     return { ok: false, error: "Faltan archivos en los pasos: elige el archivo de la biblioteca antes de habilitarlo." };
   }
   if (input.enabled && input.steps.length === 0) return { ok: false, error: "Un workflow habilitado necesita al menos un paso." };
+  // Una variable que el ejecutor no sabe rellenar llegaría literal al cliente.
+  for (const st of input.steps) {
+    const text = st.kind === "send_text" || st.kind === "internal_note" ? st.text : st.kind === "send_media" ? (st.caption ?? "") : "";
+    const unknown = unknownVariables(text);
+    if (unknown.length) return { ok: false, error: `Variable desconocida: {{${unknown[0]}}}. Disponibles: {{nombre}}, {{vendedor}}, {{monto}}, {{banco}}, {{referencia}}, {{fecha}}, {{motivo}}.` };
+  }
   const now = new Date();
   try {
     const id = await db.transaction(async (tx) => {
@@ -215,7 +221,8 @@ export async function saveWorkflow(raw: WorkflowInput): Promise<{ ok: true; id: 
     return { ok: true, id };
   } catch (error) {
     if (isUniqueViolation(error)) return { ok: false, error: "Ese comando ya lo usa otro workflow." };
-    return { ok: false, error: error instanceof Error ? error.message : "No se pudo guardar." };
+    console.error("[workflows] no se pudo guardar", error);
+    return { ok: false, error: "No se pudo guardar el workflow." };
   }
 }
 
@@ -325,7 +332,8 @@ export async function runWorkflowCommand(input: { conversationId: string; text: 
     });
     return { ok: true, runId: r.runId, status: r.status, reason: r.reason, name: wf.name };
   } catch (error) {
-    return { ok: false, error: error instanceof Error ? error.message : "No se pudo ejecutar." };
+    console.error("[workflows] comando falló", error);
+    return { ok: false, error: "No se pudo ejecutar el comando." };
   }
 }
 
@@ -348,11 +356,14 @@ export async function runWorkflowTest(input: { workflowId: string; conversationI
       conversationId: parsed.data.conversationId,
       trigger: "command",
       triggeredByUserId: userId,
+      // Probar no obliga a habilitar (habilitarlo lo expondría a clientes reales antes de verlo).
+      allowDisabled: true,
     });
     revalidatePath("/automatizacion");
     return { ok: true, runId: r.runId, status: r.status, reason: r.reason, name: wf.name };
   } catch (error) {
-    return { ok: false, error: error instanceof Error ? error.message : "No se pudo ejecutar." };
+    console.error("[workflows] prueba falló", error);
+    return { ok: false, error: "No se pudo ejecutar la prueba." };
   }
 }
 
@@ -360,13 +371,16 @@ export async function runWorkflowTest(input: { workflowId: string; conversationI
 export async function listConversationsForTest(): Promise<{ id: string; label: string }[]> {
   const { organizationId, role } = await requireActiveMembership();
   requireWorkflow(role, "update");
-  const { contacts } = await import("@/lib/db/schema");
+  const { contacts, channels } = await import("@/lib/db/schema");
   const rows = await db
-    .select({ id: conversations.id, first: contacts.firstName, last: contacts.lastName, phone: contacts.phoneE164 })
+    .select({ id: conversations.id, first: contacts.firstName, last: contacts.lastName, phone: contacts.phoneE164, channel: channels.displayName })
     .from(conversations)
     .innerJoin(contacts, eq(contacts.id, conversations.contactId))
+    .innerJoin(channels, eq(channels.id, conversations.channelId))
     .where(eq(conversations.organizationId, organizationId))
     .orderBy(sql`${conversations.lastMessageAt} desc nulls last`)
     .limit(20);
-  return rows.map((r) => ({ id: r.id, label: `${[r.first, r.last].filter(Boolean).join(" ")} · ${r.phone ?? "sin teléfono"}` }));
+  // Manda mensajes REALES: la etiqueta lleva canal y teléfono para que el admin
+  // sepa exactamente a quién le llega, y la UI no preselecciona ninguna.
+  return rows.map((r) => ({ id: r.id, label: `${r.channel} · ${[r.first, r.last].filter(Boolean).join(" ")} · ${r.phone ?? "sin teléfono"}` }));
 }
