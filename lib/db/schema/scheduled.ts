@@ -45,7 +45,7 @@ export const scheduledMessages = pgTable(
     programmedAt: timestamp("programmed_at").defaultNow().notNull(),
     cancelIfInbound: boolean("cancel_if_inbound").notNull().default(true),
     status: scheduledStatusEnum("status").notNull().default("scheduled"),
-    // manual | cliente_escribio
+    // manual | cliente_escribio | autor_inactivo
     cancelReason: text("cancel_reason"),
     errorCode: text("error_code"),
     errorMessage: text("error_message"),

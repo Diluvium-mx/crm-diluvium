@@ -16,11 +16,14 @@ export function TemplatePicker({
   onSubmit,
   onClose,
   submitLabel = "Enviar plantilla",
+  busy = false,
 }: {
   onSubmit: (templateId: string, values: string[], preview: string) => void;
   onClose: () => void;
   /** Texto del botón final (p. ej. "Programar plantilla" en A6). */
   submitLabel?: string;
+  /** Hay un envío en curso: el botón final queda deshabilitado (sin doble envío). */
+  busy?: boolean;
 }) {
   const [templates, setTemplates] = useState<TemplateView[] | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -104,7 +107,7 @@ export function TemplatePicker({
               <button
                 type="button"
                 onClick={() => selected && onSubmit(selected.id, values.map((v) => v.trim()), preview)}
-                disabled={!ready}
+                disabled={!ready || busy}
                 className="rounded-md bg-brand-navy px-4 py-1.5 text-sm font-medium text-brand-white hover:bg-brand-navy-dark disabled:opacity-50"
               >
                 {submitLabel}

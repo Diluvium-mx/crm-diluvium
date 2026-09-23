@@ -30,14 +30,16 @@ describe.skipIf(!TEST_DATABASE_URL)("dashboard: conversaciones nuevas (Postgres 
       { id: ORG_A, name: "A", slug: "dash-a", createdAt: new Date() },
       { id: ORG_B, name: "B", slug: "dash-b", createdAt: new Date() },
     ]);
-    await db.insert(s.channels).values({
-      id: "ch_dash_a",
-      organizationId: ORG_A,
-      type: "whatsapp",
-      provider: "zernio",
-      providerAccountId: "zacc_dash_a",
-      displayName: "Diluvium",
-    });
+    for (const [id, org] of [["ch_dash_a", ORG_A], ["ch_dash_b", ORG_B]] as const) {
+      await db.insert(s.channels).values({
+        id,
+        organizationId: org,
+        type: "whatsapp",
+        provider: "zernio",
+        providerAccountId: `zacc_${id}`,
+        displayName: "Diluvium",
+      });
+    }
   });
 
   afterAll(async () => {
@@ -52,6 +54,8 @@ describe.skipIf(!TEST_DATABASE_URL)("dashboard: conversaciones nuevas (Postgres 
     sourceChannel?: string | null;
     stage?: "inbox" | "prospecto" | "interesado" | "cerca_compra" | "compra";
     adReferral?: boolean;
+    /** Default true: el contacto escribió (conversación + mensaje entrante). */
+    wrote?: boolean;
   }) {
     seq++;
     const id = `c_dash_${seq}`;
@@ -65,15 +69,24 @@ describe.skipIf(!TEST_DATABASE_URL)("dashboard: conversaciones nuevas (Postgres 
       stage: opts.stage ?? "inbox",
       createdAt: new Date(opts.createdAtUtc),
     });
-    if (opts.adReferral !== undefined) {
-      await db.insert(s.conversations).values({
-        id: `conv_dash_${seq}`,
-        organizationId: org,
-        contactId: id,
-        channelId: "ch_dash_a",
-        adReferral: opts.adReferral ? { headline: "Compuertas" } : null,
-      });
-    }
+    await db.insert(s.conversations).values({
+      id: `conv_dash_${seq}`,
+      organizationId: org,
+      contactId: id,
+      channelId: org === ORG_A ? "ch_dash_a" : "ch_dash_b",
+      adReferral: opts.adReferral ? { headline: "Compuertas" } : null,
+    });
+    await db.insert(s.messages).values({
+      id: `m_dash_${seq}`,
+      organizationId: org,
+      conversationId: `conv_dash_${seq}`,
+      direction: opts.wrote === false ? "out" : "in",
+      source: opts.wrote === false ? "business_app" : "contact",
+      type: "text",
+      body: "hola",
+      status: opts.wrote === false ? "sent" : "received",
+      sentAt: new Date(opts.createdAtUtc),
+    });
     return id;
   }
 
@@ -112,6 +125,8 @@ describe.skipIf(!TEST_DATABASE_URL)("dashboard: conversaciones nuevas (Postgres 
     await contact({ createdAtUtc: "2026-09-10T18:00:00Z", source: null });
     await contact({ createdAtUtc: "2026-09-10T18:00:00Z", source: "whatsapp" });
     await contact({ createdAtUtc: "2026-09-10T18:00:00Z", org: ORG_B });
+    // Solo con salientes (el vendedor escribió primero y el cliente no contestó): no cuenta.
+    await contact({ createdAtUtc: "2026-09-10T18:00:00Z", wrote: false });
 
     const breakdown = await q.newConversationsBreakdown(db, ORG_A, { desde: "2026-09-01", hasta: "2026-09-30" });
     expect(breakdown.total).toBe(2);

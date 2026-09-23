@@ -9,9 +9,11 @@ export type ScheduledView = {
   sendAt: Date;
   cancelIfInbound: boolean;
   status: ScheduledStatus;
-  /** manual | cliente_escribio */
+  /** manual | cliente_escribio | autor_inactivo */
   cancelReason: string | null;
   errorMessage: string | null;
+  /** Fallido que se puede reintentar desde la franja (no los rechazados por WhatsApp). */
+  canRetry: boolean;
 };
 
 export type ScheduleInput =
