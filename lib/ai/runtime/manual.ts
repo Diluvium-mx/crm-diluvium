@@ -2,7 +2,7 @@
 // reactivarlo tras una pausa y enviar/descartar el borrador del modo "borrador".
 // Filtran SIEMPRE por organización. Las usan las Server Actions de
 // lib/actions/agente-conversacion.ts (la UI de la bandeja llega al final).
-import { and, desc, eq, ne } from "drizzle-orm";
+import { and, desc, eq, ne, sql } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { aiAgentDrafts, channels, conversations } from "@/lib/db/schema";
 import { bullAgentQueuePort, cancelAgentRun, withQueueTimeout } from "./queue";
@@ -54,10 +54,13 @@ export async function approveDraft(input: {
         eq(aiAgentDrafts.id, input.draftId),
         eq(aiAgentDrafts.organizationId, input.organizationId),
         eq(aiAgentDrafts.status, "pendiente"),
+        // Con el agente apagado en el canal, el borrador ya no sale.
+        sql`exists (select 1 from ${conversations} c join ${channels} ch on ch.id = c.channel_id
+          where c.id = ${aiAgentDrafts.conversationId} and ch.ai_agent_mode <> 'off')`,
       ),
     )
     .returning();
-  if (!draft) throw new DraftNotAvailableError("Este borrador ya no está vigente (se envió, se descartó o hay uno más nuevo).");
+  if (!draft) throw new DraftNotAvailableError("Este borrador ya no está vigente (se envió, se descartó, hay uno más nuevo o el agente está apagado).");
   await notifyConversation(db, input.organizationId, draft.conversationId);
   const sleep = input.sleep ?? ((ms: number) => new Promise((r) => setTimeout(r, ms)));
   let sent = 0;

@@ -55,6 +55,8 @@ export const aiUsage = pgTable(
     index("ai_usage_org_created_idx").on(t.organizationId, sql`${t.createdAt} desc`),
     // Freno anti-bucle: respuestas del agente por conversación en la última hora.
     index("ai_usage_conversation_created_idx").on(t.conversationId, t.createdAt),
+    // Idempotencia por entrante (alreadyHandled) y el barrido de cada minuto.
+    index("ai_usage_message_outcome_idx").on(t.messageId, t.outcome),
   ],
 );
 

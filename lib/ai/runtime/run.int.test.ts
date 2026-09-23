@@ -387,6 +387,34 @@ describe.skipIf(!TEST_DATABASE_URL)("runtime del Agente IA (Postgres real)", () 
     expect(c.tags).toContain("revisión humana");
   });
 
+  it("los timeouts de las 3 rondas (filtro + cerebro) caben en el candado de la corrida", async () => {
+    const { LOCK_TTL_MS } = await import("./process");
+    expect(run.MAX_ROUNDS * (run.FILTER_TIMEOUT_MS + run.BRAIN_TIMEOUT_MS)).toBeLessThan(LOCK_TTL_MS);
+  });
+
+  it("cliente que escribe sin parar: nunca bucle inmediato y el tope de gasto lo pausa", async () => {
+    await msg({ direction: "in", body: "hola", at: ago(120_000) }); // tope de 60 s ya vencido
+    const { deps, calls } = makeDeps({
+      onBrain: async () => {
+        await msg({ direction: "in", body: "¿y?", at: new Date() }); // entra algo en cada generación
+      },
+    });
+    const results: import("./run").RunResult[] = [];
+    for (let i = 0; i < 12; i++) {
+      const r = await run.runAgent(CONV, deps);
+      results.push(r);
+      if (r.kind !== "reschedule") break;
+      expect(r.delayMs).toBeGreaterThanOrEqual(15_000); // nunca 0 aunque el tope duro venció
+    }
+    expect(results.at(-1)).toEqual({ kind: "skipped", reason: "tope_de_llamadas" });
+    // 40 llamadas/h (antiLoop 10 × 4) + a lo más una corrida (3 rondas × 2) de holgura.
+    expect(calls.length).toBeLessThanOrEqual(46);
+    expect(await agentOuts()).toEqual([]);
+    expect((await conv()).agentState).toBe("pausado_antibucle");
+    const [c] = await db.select().from(s.contacts).where(eq(s.contacts.id, CONTACT));
+    expect(c.tags).toContain("revisión humana");
+  });
+
   it("filtro 'pasar a humano' → etiqueta + pausa 8 h; el barrido lo reactiva al vencer", async () => {
     await msg({ direction: "in", body: "quiero hablar con una persona", at: ago(10_000) });
     const { deps, calls } = makeDeps({ filter: '{"decision":"pasar_a_humano"}' });

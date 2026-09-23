@@ -13,7 +13,8 @@ import { DEFAULT_BRAIN_MODEL, DEFAULT_FILTER_MODEL, getModel, MODEL_CATALOG } fr
 import { PROVIDER_META } from "@/lib/ai/provider";
 import { DEFAULT_MODEL_PRICES } from "@/lib/ai/pricing";
 import { loadAgentConfig } from "@/lib/ai/runtime/config";
-import { agentModeSchema, agentSettingsSchema, priceSchema, type AgentSettings } from "@/lib/agente-ia/settings";
+import { agentModeSchema, agentSettingsSchema, idSchema, priceSchema, type AgentSettings } from "@/lib/agente-ia/settings";
+import { obsoleteChannelDrafts } from "@/lib/ai/runtime/state";
 import type { AgentSettingsBundleView, ChannelAgentView, ModelPriceView } from "@/lib/agente-ia/types";
 
 async function requireManage(action: "read" | "update") {
@@ -103,12 +104,15 @@ export async function updateAgentSettings(input: AgentSettings): Promise<AgentSe
 export async function setChannelAgentMode(input: { channelId: string; mode: string }): Promise<ChannelAgentView> {
   const { organizationId } = await requireManage("update");
   const mode = agentModeSchema.parse(input.mode);
+  const channelId = idSchema.parse(input.channelId);
   const [row] = await db
     .update(channels)
     .set({ aiAgentMode: mode })
-    .where(and(eq(channels.id, input.channelId), eq(channels.organizationId, organizationId)))
+    .where(and(eq(channels.id, channelId), eq(channels.organizationId, organizationId)))
     .returning();
   if (!row) throw new Error("Canal no encontrado en tu organización.");
+  // Apagado = nada del agente sale por este canal, ni un borrador que ya esperaba.
+  if (mode === "off") await obsoleteChannelDrafts(organizationId, row.id, new Date());
   console.info(`[agente] canal ${row.id} → ${mode}`);
   revalidatePath("/agente-ia");
   return { id: row.id, displayName: row.displayName, phoneE164: row.phoneE164, isActive: row.isActive, mode: row.aiAgentMode };
@@ -137,6 +141,6 @@ export async function resetModelPrice(input: { modelId: string }): Promise<void>
   const { organizationId } = await requireManage("update");
   await db
     .delete(aiModelPrices)
-    .where(and(eq(aiModelPrices.organizationId, organizationId), eq(aiModelPrices.modelId, input.modelId)));
+    .where(and(eq(aiModelPrices.organizationId, organizationId), eq(aiModelPrices.modelId, idSchema.parse(input.modelId))));
   revalidatePath("/agente-ia");
 }

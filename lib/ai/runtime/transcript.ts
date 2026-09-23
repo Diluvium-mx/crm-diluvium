@@ -5,6 +5,14 @@ import type { ModelMessage } from "ai";
 import type { MessageAttachment } from "@/lib/db/schema";
 import type { TranscriptLine } from "./filter";
 
+// Tope de caracteres por mensaje que leen los modelos: un cliente no puede
+// inflar el costo por llamada pegando textos enormes.
+export const MAX_MESSAGE_CHARS = 2_000;
+
+export function clip(text: string, max = MAX_MESSAGE_CHARS): string {
+  return text.length > max ? `${text.slice(0, max)}… [recortado]` : text;
+}
+
 // Lo mínimo de una fila de `messages` que se necesita aquí.
 export type ThreadMessage = {
   id: string;
@@ -35,7 +43,7 @@ function attachmentNote(a: MessageAttachment): string {
 // Texto visible de un mensaje (cuerpo + notas de adjuntos / plantilla).
 export function messageText(m: ThreadMessage): string {
   const parts: string[] = [];
-  if (m.body?.trim()) parts.push(m.body.trim());
+  if (m.body?.trim()) parts.push(clip(m.body.trim()));
   if (!m.body?.trim() && m.templateName) parts.push(`[plantilla: ${m.templateName}]`);
   for (const a of m.attachments) parts.push(attachmentNote(a));
   if (parts.length === 0) parts.push(`[mensaje ${m.type}]`);
@@ -80,7 +88,7 @@ export function buildModelMessages(
     const parts: Part[] = [];
     if (role === "user") {
       const text: string[] = [];
-      if (m.body?.trim()) text.push(m.body.trim());
+      if (m.body?.trim()) text.push(clip(m.body.trim()));
       for (const a of m.attachments) {
         if (a.type === "image" && a.storageKey && allowed.has(a.storageKey)) {
           parts.push({ type: "image", image: new URL(imageUrls.get(a.storageKey)!) });

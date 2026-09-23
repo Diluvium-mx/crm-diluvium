@@ -13,6 +13,7 @@ describe.skipIf(!TEST_DATABASE_URL)("acciones manuales del agente (Postgres real
   let s: Schema;
   let eq: typeof import("drizzle-orm").eq;
   let manual: typeof import("./manual");
+  let state: typeof import("./state");
   const ORG = "org_m";
 
   beforeAll(async () => {
@@ -20,6 +21,7 @@ describe.skipIf(!TEST_DATABASE_URL)("acciones manuales del agente (Postgres real
     s = await import("@/lib/db/schema");
     ({ eq } = await import("drizzle-orm"));
     manual = await import("./manual");
+    state = await import("./state");
   });
 
   afterAll(async () => {
@@ -43,6 +45,7 @@ describe.skipIf(!TEST_DATABASE_URL)("acciones manuales del agente (Postgres real
       provider: "zernio",
       providerAccountId: "zacc_m",
       displayName: "Diluvium",
+      aiAgentMode: "borrador",
     });
     await db.insert(s.contacts).values({ id: "ct_m", organizationId: ORG, firstName: "C" });
     await db.insert(s.conversations).values({
@@ -134,5 +137,21 @@ describe.skipIf(!TEST_DATABASE_URL)("acciones manuales del agente (Postgres real
     await manual.discardDraft({ organizationId: ORG, draftId: id, userId: "u1", now: new Date() });
     const [d] = await db.select().from(s.aiAgentDrafts).where(eq(s.aiAgentDrafts.id, id));
     expect(d.status).toBe("descartado");
+  });
+
+  it("canal apagado: el borrador pendiente ya no sale y apagar lo deja obsoleto", async () => {
+    const id = await draft();
+    await db.update(s.channels).set({ aiAgentMode: "off" }).where(eq(s.channels.id, "ch_m"));
+    const sent: string[] = [];
+    const base = { userId: "u1", now: new Date(), sleep: async () => undefined };
+    await expect(
+      manual.approveDraft({ ...base, organizationId: ORG, draftId: id, sendBubble: async (p) => void sent.push(p.text) }),
+    ).rejects.toBeInstanceOf(manual.DraftNotAvailableError);
+    expect(sent).toEqual([]);
+    // Lo que hace setChannelAgentMode(off): los pendientes del canal quedan obsoletos (solo de esa org).
+    expect(await state.obsoleteChannelDrafts("org_otra", "ch_m", new Date())).toBe(0);
+    expect(await state.obsoleteChannelDrafts(ORG, "ch_m", new Date())).toBe(1);
+    const [d] = await db.select().from(s.aiAgentDrafts).where(eq(s.aiAgentDrafts.id, id));
+    expect(d.status).toBe("obsoleto");
   });
 });

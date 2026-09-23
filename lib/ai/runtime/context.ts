@@ -1,6 +1,6 @@
 // Lecturas de BD del runtime del agente: la conversación y su canal, los
 // entrantes pendientes, el contexto, y los conteos del freno anti-bucle.
-import { and, asc, count, desc, eq, gte, inArray, ne, sql } from "drizzle-orm";
+import { and, asc, count, desc, eq, gte, inArray, isNotNull, ne, sql } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { aiUsage, channels, conversations, messages } from "@/lib/db/schema";
 import { FINAL_OUTCOMES, REPLY_OUTCOMES } from "./usage";
@@ -98,6 +98,19 @@ export async function agentRepliesSince(conversationId: string, since: Date): Pr
         inArray(aiUsage.outcome, [...REPLY_OUTCOMES]),
         gte(aiUsage.createdAt, since),
       ),
+    );
+  return value;
+}
+
+// Llamadas COBRADAS al modelo en esta conversación desde `since` (filtro y
+// cerebro, incluidas las descartadas). Un error sin tokens (proveedor caído) no
+// cuenta: no costó y no debe pausar al agente.
+export async function modelCallsSince(conversationId: string, since: Date): Promise<number> {
+  const [{ value }] = await db
+    .select({ value: count() })
+    .from(aiUsage)
+    .where(
+      and(eq(aiUsage.conversationId, conversationId), isNotNull(aiUsage.inputTokens), gte(aiUsage.createdAt, since)),
     );
   return value;
 }

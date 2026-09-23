@@ -30,6 +30,18 @@ export function debounceDelayMs(i: DebounceInput): number {
   return Math.max(0, fireAt - i.now);
 }
 
+// Piso al volver al debounce tras descartar respuestas: nunca 0 (el tope duro ya
+// venció y un cliente que no para de escribir haría correr el job en bucle).
+export function rescheduleDelayMs(i: DebounceInput): number {
+  return Math.max(i.responseDelaySeconds * 1000, debounceDelayMs(i));
+}
+
+// Tope de llamadas cobradas por conversación y hora: cada respuesta cuesta
+// filtro + cerebro (2) y deja holgura para descartes y filtros sin respuesta.
+export function maxModelCallsPerHour(antiLoopMaxPerHour: number): number {
+  return Math.max(12, antiLoopMaxPerHour * 4);
+}
+
 // ── Reactivación por vencimiento (solo handover) ─────────────────────────────
 // El "pasar a humano" se reactiva solo a las N horas; humano/antibucle son manuales.
 export function pauseElapsed(state: AgentState, pausedUntil: number | null, now: number): boolean {
@@ -46,6 +58,8 @@ export type GateInput = {
   humanRepliedSincePending: boolean; // vendedor respondió a mano (crm/business_app) tras el último entrante
   agentRepliesLastHour: number;
   antiLoopMaxPerHour: number;
+  // Llamadas COBRADAS al modelo (filtro + cerebro, también las descartadas) en la última hora.
+  modelCallsLastHour: number;
   agentRepliesToContact: number;
   maxRepliesPerContact: number | null; // null = sin tope
 };
@@ -82,6 +96,11 @@ export function decideGate(i: GateInput): GateDecision {
   // 5. Freno anti-bucle: tope de respuestas del agente por hora → pausa + revisión humana.
   if (i.agentRepliesLastHour >= i.antiLoopMaxPerHour) {
     return { action: "skip", reason: "anti_bucle", pauseTo: "pausado_antibucle", tag: TAG_ANTI_LOOP };
+  }
+  // 5b. Tope de GASTO: un cliente que escribe sin parar hace que las respuestas se
+  // descarten y regeneren sin llegar nunca al anti-bucle; esto sí lo frena.
+  if (i.modelCallsLastHour >= maxModelCallsPerHour(i.antiLoopMaxPerHour)) {
+    return { action: "skip", reason: "tope_de_llamadas", pauseTo: "pausado_antibucle", tag: TAG_ANTI_LOOP };
   }
 
   // 6. Tope total por contacto (opcional).
