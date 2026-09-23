@@ -166,9 +166,7 @@ describe.skipIf(!TEST_DATABASE_URL)("runtime del Agente IA (Postgres real)", () 
     const deps: import("./run").RunDeps = {
       now: () => new Date(),
       callModel: models.callModel,
-      sendBubble: async (p) => {
-        await send.sendTextMessage(provider, { ...p, source: "ai_agent", sentByUserId: null });
-      },
+      sendBubble: (p) => send.sendTextMessage(provider, { ...p, source: "ai_agent", sentByUserId: null }),
       sleep: async (ms) => {
         sleeps.push(ms);
         if (script.onSleep) await script.onSleep();
@@ -606,6 +604,65 @@ describe.skipIf(!TEST_DATABASE_URL)("runtime del Agente IA (Postgres real)", () 
     expect((await pendingInbound(ORG, CONV)).map((m) => m.id)).toEqual([nuevo]); // la siguiente corrida lo atiende
     const brain = (await usage()).find((u) => u.stage === "cerebro")!;
     expect(brain.error).toContain("detenido tras 1 burbuja(s): entrante_nuevo");
+  });
+
+  it("AUTO → envío sin confirmar → vence 'sin confirmar' → el barrido pausa para revisión humana (sin reenviar)", async () => {
+    const { SEND_UNCONFIRMED } = await import("@/lib/messaging/rules");
+    const trigger = await msg({ direction: "in", body: "¿precio?", at: ago(10_000) });
+    const { deps } = makeDeps();
+    // El proveedor no confirma: la burbuja queda en el outbox ("queued") y vuelve "pending".
+    deps.sendBubble = async (p) => {
+      await db.insert(s.messages).values({
+        id: `m_pend_${crypto.randomUUID()}`,
+        organizationId: p.organizationId,
+        conversationId: p.conversationId,
+        direction: "out",
+        source: "ai_agent",
+        type: "text",
+        body: p.text,
+        status: "queued",
+        sentAt: new Date(),
+      });
+      return { status: "pending" as const };
+    };
+    expect(await run.runAgent(JOB, deps)).toEqual({ kind: "sent", bubbles: 2 });
+    const brain = (await usage()).find((u) => u.stage === "cerebro")!;
+    expect(brain).toMatchObject({ outcome: "sent", error: "2 burbuja(s) sin confirmar" });
+    // Mientras sigue en camino, nada que pausar.
+    expect(await sweep.pauseOnUnconfirmedAgentSends(new Date())).toBe(0);
+    // El outbox vence: fallido SIN CONFIRMAR (no se sabe si llegó).
+    await db
+      .update(s.messages)
+      .set({ status: "failed", errorCode: SEND_UNCONFIRMED })
+      .where(eq(s.messages.source, "ai_agent"));
+    expect(await sweep.pauseOnUnconfirmedAgentSends(new Date())).toBe(1);
+    expect((await conv()).agentState).toBe("pausado_antibucle");
+    const [c] = await db.select().from(s.contacts).where(eq(s.contacts.id, CONTACT));
+    expect(c.tags).toContain("revisión humana");
+    // No se reenvía a ciegas: ni el barrido lo reprograma ni una corrida responde.
+    expect(await sweep.findOrphanConversations(new Date())).toEqual([]);
+    const again = makeDeps();
+    expect(await run.runAgent(JOB, again.deps)).toEqual({ kind: "noop", reason: "ya_atendido" });
+    expect(again.calls).toHaveLength(0);
+    void trigger;
+  });
+
+  it("un rechazo DEFINITIVO del agente no pausa (se reintenta por la cola); solo el ambiguo", async () => {
+    await msg({ direction: "in", body: "hola", at: ago(10_000) });
+    await db.insert(s.messages).values({
+      id: "m_rech",
+      organizationId: ORG,
+      conversationId: CONV,
+      direction: "out",
+      source: "ai_agent",
+      type: "text",
+      body: "x",
+      status: "failed",
+      errorCode: "provider_rejected",
+      sentAt: new Date(),
+    });
+    expect(await sweep.pauseOnUnconfirmedAgentSends(new Date())).toBe(0);
+    expect((await conv()).agentState).toBe("activo");
   });
 
   it("AUTO: si apagan el canal en la pausa entre burbujas, la 2ª ya no sale", async () => {

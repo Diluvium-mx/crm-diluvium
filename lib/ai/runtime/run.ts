@@ -53,7 +53,9 @@ export type RunDeps = {
   now: () => Date;
   callModel: (modelId: string, input: CallModelInput) => Promise<CallModelResult>;
   // Envía UNA burbuja como el agente (source "ai_agent", sin usuario).
-  sendBubble: (p: { organizationId: string; conversationId: string; text: string }) => Promise<void>;
+  // Devuelve el resultado del proveedor: "pending" = no confirmado (timeout, 5xx); el
+  // outbox lo concilia y, si vence sin confirmar, el barrido pausa para revisión humana.
+  sendBubble: (p: { organizationId: string; conversationId: string; text: string }) => Promise<{ status: "sent" | "pending" }>;
   sleep: (ms: number) => Promise<void>;
   // URL firmada de una imagen del bucket (o null si no se puede).
   resolveImage: (storageKey: string) => Promise<string | null>;
@@ -349,13 +351,15 @@ export async function runAgent(job: { organizationId: string; conversationId: st
     // el agente se detiene ahí.
     const humansAtCheck = await humanOutboundCount(org, conv.id);
     let sent = 0;
+    let unconfirmed = 0;
     let stopped: StopReason | null = null;
     try {
       for (const text of bubbles) {
         if (sent > 0) await deps.sleep(BUBBLE_PAUSE_MS);
         stopped = await stopBeforeBubble(org, conv.id, humansAtCheck, readCount);
         if (stopped) break;
-        await deps.sendBubble({ organizationId: org, conversationId: conv.id, text });
+        const outcome = await deps.sendBubble({ organizationId: org, conversationId: conv.id, text });
+        if (outcome.status !== "sent") unconfirmed++;
         sent++;
       }
     } catch (error) {
@@ -386,7 +390,9 @@ export async function runAgent(job: { organizationId: string; conversationId: st
       return { kind: "sent", bubbles: sent };
     }
     await markAgentReply(org, conv.id, deps.now());
-    await recordAiUsage({ ...brainUsage, outcome: "sent" });
+    // Una burbuja sin confirmar queda en el outbox: si vence como "sin confirmar",
+    // el barrido pausa la conversación para revisión humana (nunca reenvía a ciegas).
+    await recordAiUsage({ ...brainUsage, outcome: "sent", error: unconfirmed ? `${unconfirmed} burbuja(s) sin confirmar` : null });
     return { kind: "sent", bubbles: sent };
   }
 

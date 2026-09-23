@@ -7,7 +7,10 @@
 import { and, eq, gte, isNotNull, lt, lte, sql } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { aiAgentDrafts, conversations, messages } from "@/lib/db/schema";
+import { SEND_UNCONFIRMED, SEND_UNKNOWN } from "@/lib/messaging/rules";
 import { releaseDraft } from "./manual";
+import { addContactTag, setAgentState } from "./state";
+import { TAG_HUMAN_REVIEW } from "./tags";
 
 // Un entrante con este número de errores del agente ya no se reintenta solo
 // (los errores quedan en ai_usage como rastro).
@@ -121,4 +124,37 @@ export async function reconcileStuckDrafts(now: Date): Promise<number> {
     resolved++;
   }
   return resolved;
+}
+
+// AUTO con resultado ambiguo: si el ÚLTIMO saliente de la conversación es del
+// agente y el outbox lo dio por fallido SIN CONFIRMAR (no se sabe si llegó), no se
+// regenera ni se reenvía (podría duplicar): se pausa en "revisión humana" con la
+// etiqueta, y el vendedor ve el aviso y el mensaje fallido en el hilo. Va antes que
+// findOrphanConversations (una conversación pausada ya no se reprograma).
+export async function pauseOnUnconfirmedAgentSends(now: Date): Promise<number> {
+  const since = new Date(now.getTime() - 24 * 3_600_000);
+  const rows = await db.execute<{ id: string; organization_id: string; contact_id: string }>(sql`
+    select c.id, c.organization_id, c.contact_id
+    from conversations c
+    join channels ch on ch.id = c.channel_id and ch.organization_id = c.organization_id
+    join lateral (
+      select m.source, m.status, m.error_code, m.created_at
+      from messages m
+      where m.conversation_id = c.id and m.organization_id = c.organization_id and m.direction = 'out'
+      order by coalesce(m.sent_at, m.created_at) desc, m.created_at desc
+      limit 1
+    ) last on true
+    where ch.ai_agent_mode <> 'off'
+      and c.agent_state = 'activo'
+      and last.source = 'ai_agent'
+      and last.status = 'failed'
+      and (last.error_code = ${SEND_UNCONFIRMED} or last.error_code like ${`${SEND_UNKNOWN}%`})
+      and last.created_at > ${since.toISOString()}::timestamp
+    limit 50
+  `);
+  for (const r of rows) {
+    await setAgentState(r.organization_id, r.id, "pausado_antibucle", { now });
+    await addContactTag(r.organization_id, r.contact_id, TAG_HUMAN_REVIEW);
+  }
+  return rows.length;
 }
