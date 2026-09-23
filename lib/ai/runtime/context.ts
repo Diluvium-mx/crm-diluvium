@@ -1,12 +1,12 @@
 // Lecturas de BD del runtime del agente: la conversación y su canal, los
-// entrantes pendientes, el contexto, y los conteos del freno anti-bucle.
+// entrantes pendientes, el historial completo y la idempotencia.
 // Multi-tenant (CLAUDE.md §7): TODA lectura filtra por organization_id, además
 // del id. Un id de otra organización no encuentra nada (defensa en profundidad:
 // los ids vienen de la cola interna, pero nunca se confía en ellos solos).
-import { and, count, desc, eq, gte, inArray, isNotNull, ne, sql } from "drizzle-orm";
+import { and, count, desc, eq, inArray, ne, sql } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { aiAgentDrafts, aiUsage, channels, conversations, messages } from "@/lib/db/schema";
-import { FINAL_OUTCOMES, REPLY_OUTCOMES } from "./usage";
+import { FINAL_OUTCOMES } from "./usage";
 
 export type ConversationRow = typeof conversations.$inferSelect;
 export type ChannelRow = typeof channels.$inferSelect;
@@ -69,15 +69,19 @@ export async function pendingInbound(organizationId: string, conversationId: str
   return rows.reverse();
 }
 
-// Los últimos `n` mensajes en orden cronológico (contexto del cerebro). Sin los
-// salientes FALLIDOS: el cliente nunca los recibió y el modelo no debe creer que sí.
-export async function recentMessages(organizationId: string, conversationId: string, n: number): Promise<MessageRow[]> {
+// TODA la conversación en orden cronológico (historial del cerebro). Sin los
+// salientes FALLIDOS: el cliente nunca los recibió y el modelo no debe creer que
+// sí. MAX_HISTORY_ROWS es solo protección técnica de la lectura; lo que cabe en el
+// modelo lo decide fitHistory (transcript.ts), quedándose con lo más reciente.
+export const MAX_HISTORY_ROWS = 2_000;
+
+export async function loadHistory(organizationId: string, conversationId: string): Promise<MessageRow[]> {
   const rows = await db
     .select()
     .from(messages)
     .where(and(inConversation(organizationId, conversationId), ne(messages.status, "failed")))
     .orderBy(desc(waAt), desc(messages.createdAt))
-    .limit(Math.max(1, n));
+    .limit(MAX_HISTORY_ROWS);
   return rows.reverse();
 }
 
@@ -192,69 +196,6 @@ export async function lastHandledInboundAt(organizationId: string, conversationI
     .orderBy(desc(messages.createdAt))
     .limit(1);
   return row?.createdAt ?? null;
-}
-
-// Respuestas del agente (enviadas o en borrador) en esta conversación desde `since`.
-export async function agentRepliesSince(organizationId: string, conversationId: string, since: Date): Promise<number> {
-  const [{ value }] = await db
-    .select({ value: count() })
-    .from(aiUsage)
-    .where(
-      and(
-        eq(aiUsage.organizationId, organizationId),
-        eq(aiUsage.conversationId, conversationId),
-        eq(aiUsage.stage, "cerebro"),
-        inArray(aiUsage.outcome, [...REPLY_OUTCOMES]),
-        gte(aiUsage.createdAt, since),
-      ),
-    );
-  return value;
-}
-
-// Llamadas COBRADAS al modelo en esta conversación desde `since` (filtro y
-// cerebro, incluidas las descartadas). Un error sin tokens (proveedor caído) no
-// cuenta: no costó y no debe pausar al agente.
-export async function modelCallsSince(organizationId: string, conversationId: string, since: Date): Promise<number> {
-  const [{ value }] = await db
-    .select({ value: count() })
-    .from(aiUsage)
-    .where(
-      and(
-        eq(aiUsage.organizationId, organizationId),
-        eq(aiUsage.conversationId, conversationId),
-        isNotNull(aiUsage.inputTokens),
-        gte(aiUsage.createdAt, since),
-      ),
-    );
-  return value;
-}
-
-// Gasto (USD) de la organización desde `since`. Un modelo sin precio (cost_usd
-// null) no suma: el catálogo trae precio para todos los modelos del runtime.
-export async function orgSpendSince(organizationId: string, since: Date): Promise<number> {
-  const [{ value }] = await db
-    .select({ value: sql<string | null>`sum(${aiUsage.costUsd})` })
-    .from(aiUsage)
-    .where(and(eq(aiUsage.organizationId, organizationId), gte(aiUsage.createdAt, since)));
-  return Number(value ?? 0);
-}
-
-// Respuestas del agente a un contacto en todas sus conversaciones (tope opcional).
-export async function agentRepliesToContact(organizationId: string, contactId: string): Promise<number> {
-  const [{ value }] = await db
-    .select({ value: count() })
-    .from(aiUsage)
-    .innerJoin(conversations, eq(conversations.id, aiUsage.conversationId))
-    .where(
-      and(
-        eq(aiUsage.organizationId, organizationId),
-        eq(conversations.organizationId, organizationId),
-        eq(conversations.contactId, contactId),
-        eq(aiUsage.stage, "cerebro"),
-        inArray(aiUsage.outcome, [...REPLY_OUTCOMES]),
-      ),
-    );
-  return value;
 }
 
 // Hora (WhatsApp) de un mensaje ya cargado.

@@ -95,25 +95,20 @@ describe.skipIf(!TEST_DATABASE_URL)("el runtime del agente no cruza organizacion
   const conv = async () => (await db.select().from(s.conversations).where(eq(s.conversations.id, CONV)))[0];
 
   it("lecturas: con la organización B no encuentra nada de A (y con A sí)", async () => {
-    const since = new Date(Date.now() - 3_600_000);
     expect(await ctx.loadSnapshot(B, CONV)).toBeNull();
     expect(await ctx.lastOutbound(B, CONV)).toBeNull();
     expect(await ctx.pendingInbound(B, CONV)).toEqual([]);
-    expect(await ctx.recentMessages(B, CONV, 20)).toEqual([]);
+    expect(await ctx.loadHistory(B, CONV)).toEqual([]);
     expect(await ctx.inboundCount(B, CONV)).toBe(0);
     expect(await ctx.alreadyHandled(B, MSG)).toBe(false);
     expect(await ctx.lastHandledInboundAt(B, CONV)).toBeNull();
-    expect(await ctx.agentRepliesSince(B, CONV, since)).toBe(0);
-    expect(await ctx.modelCallsSince(B, CONV, since)).toBe(0);
-    expect(await ctx.agentRepliesToContact(B, CONTACT)).toBe(0);
     expect(await schedule.debounceDelayFor(B, CONV, new Date())).toBeNull();
     expect(await schedule.rescheduleDelayFor(B, CONV, new Date())).toBe(0);
     // Control positivo: con A sí.
     expect(await ctx.loadSnapshot(A, CONV)).not.toBeNull();
     expect(await ctx.pendingInbound(A, CONV)).toHaveLength(1);
     expect(await ctx.alreadyHandled(A, MSG)).toBe(true);
-    expect(await ctx.modelCallsSince(A, CONV, since)).toBe(1);
-    expect(await ctx.agentRepliesToContact(A, CONTACT)).toBe(1);
+    expect(await ctx.loadHistory(A, CONV)).toHaveLength(2);
   });
 
   it("escrituras: con la organización B no cambia nada de A (y con A sí)", async () => {
@@ -124,7 +119,7 @@ describe.skipIf(!TEST_DATABASE_URL)("el runtime del agente no cruza organizacion
     await expect(
       state.savePlan({ organizationId: B, conversationId: CONV, bubbles: ["x"], triggerMessageId: MSG, now }),
     ).rejects.toThrow("no pertenece");
-    expect(await addNotice({ organizationId: B, conversationId: CONV, kind: "guardia", body: "x", now })).toBe(false);
+    expect(await addNotice({ organizationId: B, conversationId: CONV, kind: "pasar_a_humano", body: "x" })).toBe(false);
     const c = await conv();
     expect(c).toMatchObject({ agentState: "activo", agentStateChangedAt: null, lastAgentReplyAt: null });
     expect(await db.select().from(s.aiAgentDrafts)).toEqual([]);
@@ -135,7 +130,7 @@ describe.skipIf(!TEST_DATABASE_URL)("el runtime del agente no cruza organizacion
     expect(await conv()).toMatchObject({ agentState: "pausado_humano", lastAgentReplyAt: now });
     await state.savePlan({ organizationId: A, conversationId: CONV, bubbles: ["x"], triggerMessageId: MSG, now });
     expect((await db.select().from(s.aiAgentDrafts)).map((d) => d.status)).toEqual(["enviando"]);
-    expect(await addNotice({ organizationId: A, conversationId: CONV, kind: "guardia", body: "x", now })).toBe(true);
+    expect(await addNotice({ organizationId: A, conversationId: CONV, kind: "pasar_a_humano", body: "x" })).toBe(true);
   });
 
   it("ganchos y corrida: la organización B no programa, no pausa y no llama modelos sobre A", async () => {

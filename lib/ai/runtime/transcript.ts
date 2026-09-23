@@ -1,13 +1,19 @@
-// Convierte el hilo de WhatsApp en lo que leen los modelos. PURO (sin DB): el
-// filtro recibe una transcripción de texto; el cerebro recibe mensajes del AI
-// SDK con las imágenes del cliente (multimodal) como URLs firmadas del bucket.
+// Convierte el hilo de WhatsApp en lo que lee el cerebro. PURO (sin DB): mensajes
+// del AI SDK con las imágenes del cliente (multimodal) como URLs firmadas del bucket.
+//
+// El cerebro lee TODA la conversación (23-sep-2026). Solo hay protecciones técnicas
+// para no exceder lo que el modelo puede leer: si un chat es enorme, se queda con lo
+// más reciente (fitHistory), un mensaje pegado gigante se recorta y las imágenes
+// que van como imagen son las más recientes (las demás, como nota de texto).
 import type { ModelMessage } from "ai";
 import type { MessageAttachment } from "@/lib/db/schema";
-import type { TranscriptLine } from "./filter";
 
-// Tope de caracteres por mensaje que leen los modelos: un cliente no puede
-// inflar el costo por llamada pegando textos enormes.
-export const MAX_MESSAGE_CHARS = 2_000;
+// Protección técnica por mensaje (un texto pegado enorme).
+export const MAX_MESSAGE_CHARS = 4_000;
+// Protección técnica de todo el historial (~85 mil tokens): con el Goal, las FAQs y
+// las imágenes cabe en cualquier modelo del catálogo.
+export const MAX_HISTORY_CHARS = 300_000;
+export const MAX_IMAGES = 20;
 
 export function clip(text: string, max = MAX_MESSAGE_CHARS): string {
   return text.length > max ? `${text.slice(0, max)}… [recortado]` : text;
@@ -50,18 +56,25 @@ export function messageText(m: ThreadMessage): string {
   return parts.join(" ");
 }
 
-export function toTranscriptLines(rows: readonly ThreadMessage[], pendingIds: ReadonlySet<string>): TranscriptLine[] {
-  return rows.map((m) => ({
-    role: m.direction === "in" ? "cliente" : "diluvium",
-    text: messageText(m),
-    pending: pendingIds.has(m.id),
-  }));
+// Toda la conversación mientras quepa; si no, lo más reciente (sin fallar).
+export function fitHistory<T extends ThreadMessage>(rows: readonly T[], maxChars = MAX_HISTORY_CHARS): T[] {
+  let total = 0;
+  let start = rows.length;
+  while (start > 0) {
+    const size = messageText(rows[start - 1]).length + 20;
+    if (total + size > maxChars && start < rows.length) break;
+    total += size;
+    start--;
+  }
+  return rows.slice(start);
 }
 
 type Part = { type: "text"; text: string } | { type: "image"; image: URL };
 
 // Mensajes para el cerebro:
 // - entrante → user; saliente (humano o agente) → assistant;
+// - `cleanText`: el texto limpio de los entrantes que traían metadata del anuncio
+//   de Click-to-WhatsApp (lo deja el filtro); sustituye al cuerpo original;
 // - las imágenes del CLIENTE van como parte "image" (URL firmada) si ya están en
 //   el bucket y caben en el cupo `maxImages` (las más recientes); si no, nota de texto;
 // - mensajes seguidos del mismo rol se fusionan (Anthropic exige alternar);
@@ -69,8 +82,9 @@ type Part = { type: "text"; text: string } | { type: "image"; image: URL };
 export function buildModelMessages(
   rows: readonly ThreadMessage[],
   imageUrls: ReadonlyMap<string, string>,
-  maxImages = 4,
+  opts: { maxImages?: number; cleanText?: ReadonlyMap<string, string> } = {},
 ): ModelMessage[] {
+  const maxImages = opts.maxImages ?? MAX_IMAGES;
   // Qué adjuntos de imagen entran (los más recientes con URL).
   const allowed = new Set<string>();
   for (let i = rows.length - 1; i >= 0 && allowed.size < maxImages; i--) {
@@ -88,7 +102,8 @@ export function buildModelMessages(
     const parts: Part[] = [];
     if (role === "user") {
       const text: string[] = [];
-      if (m.body?.trim()) text.push(clip(m.body.trim()));
+      const body = opts.cleanText?.get(m.id) ?? m.body;
+      if (body?.trim()) text.push(clip(body.trim()));
       for (const a of m.attachments) {
         if (a.type === "image" && a.storageKey && allowed.has(a.storageKey)) {
           parts.push({ type: "image", image: new URL(imageUrls.get(a.storageKey)!) });

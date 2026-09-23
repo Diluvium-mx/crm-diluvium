@@ -1,5 +1,5 @@
 import type { ModelTier, ProviderId } from "@/lib/ai/types";
-import type { AgentModeValue, AgentSettings } from "./settings";
+import type { AgentModeValue } from "./settings";
 
 // Vistas seguras para el cliente (sin imports de servidor ni del SDK). El
 // componente cliente de la pestaña "Agente IA" importa solo estos tipos.
@@ -70,7 +70,6 @@ export type ModelPriceView = {
 export type KnowledgeStatusView = { goalChars: number; faqsEnabled: number };
 
 export type AgentSettingsBundleView = {
-  settings: AgentSettings;
   channels: ChannelAgentView[];
   prices: ModelPriceView[];
   knowledge: KnowledgeStatusView;

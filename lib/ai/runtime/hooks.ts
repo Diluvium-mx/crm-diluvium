@@ -4,7 +4,6 @@
 import { and, eq, sql } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { conversations, messages } from "@/lib/db/schema";
-import { loadAgentConfig } from "./config";
 import { loadSnapshot } from "./context";
 import {
   bullAgentQueuePort,
@@ -66,8 +65,7 @@ export async function onHumanOutbound(
     // Canal apagado: nada que pausar.
     if (snap.channel.aiAgentMode !== "auto") return;
     const now = ports.now ?? new Date();
-    const cfg = await loadAgentConfig(input.organizationId);
-    if (!cfg.pauseOnHumanReply) return;
+    // La ÚNICA pausa del agente: se reactiva solo a mano con "Reactivar".
     if (snap.conversation.agentState === "activo") {
       await setAgentState(input.organizationId, input.conversationId, "pausado_humano", { now });
     }
