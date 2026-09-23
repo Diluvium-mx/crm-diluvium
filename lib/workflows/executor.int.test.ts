@@ -272,7 +272,9 @@ describe.skipIf(!TEST_DATABASE_URL)("executor de workflows", () => {
     const cv = await conv();
     expect(cv.agentState).toBe("pausado_handover");
     expect(cv.agentPausedUntil).not.toBeNull();
-    // cambiar_etapa sí toma la etapa del argumento.
+    // cambiar_etapa sí toma la etapa del argumento (con el agente activo de nuevo:
+    // pausado por el handover, ningún paso del agente corre).
+    await db.update(s.conversations).set({ agentState: "activo", agentPausedUntil: null }).where(eq(s.conversations.id, CONV));
     const wfStage = await workflow([{ kind: "set_stage", stage: "interesado" }], { slug: "cambiar_etapa" });
     const st = await ex.startWorkflowRun({ organizationId: ORG, workflowId: wfStage, conversationId: CONV, trigger: "agent", payload: { etapa: "compra" } });
     expect(await ex.executeWorkflowRun(st.runId, { provider, storage })).toBe("done");
@@ -311,6 +313,87 @@ describe.skipIf(!TEST_DATABASE_URL)("executor de workflows", () => {
     const wf = await workflow([{ kind: "send_text", text: "x" }], { enabled: false });
     expect((await ex.startWorkflowRun({ organizationId: ORG, workflowId: wf, conversationId: CONV, trigger: "command", allowDisabled: true })).status).toBe("queued");
     expect((await ex.startWorkflowRun({ organizationId: ORG, workflowId: wf, conversationId: CONV, trigger: "agent", allowDisabled: true })).status).toBe("skipped");
+  });
+
+  it("un workflow repetible (once=false) sí corre dos veces por etapa; el índice único no lo bloquea", async () => {
+    const wf = await workflow([{ kind: "send_text", text: "recordatorio" }], { oncePerConversation: false });
+    const a = await ex.startWorkflowRun({ organizationId: ORG, workflowId: wf, conversationId: CONV, trigger: "stage" });
+    await ex.executeWorkflowRun(a.runId, { provider, storage });
+    const b = await ex.startWorkflowRun({ organizationId: ORG, workflowId: wf, conversationId: CONV, trigger: "stage" });
+    expect(b.status).toBe("queued");
+  });
+
+  it("envío sin confirmar (timeout del proveedor): la corrida se detiene, no mueve la etapa y avisa al vendedor", async () => {
+    const { ZernioSendError } = await import("@/lib/messaging/zernio");
+    const wf = await workflow([
+      { kind: "send_text", text: "datos" },
+      { kind: "set_stage", stage: "cerca_compra" },
+    ]);
+    const start = await ex.startWorkflowRun({ organizationId: ORG, workflowId: wf, conversationId: CONV, trigger: "command", triggeredByUserId: "u_v" });
+    const orig = provider.sendText;
+    provider.sendText = async () => {
+      throw new ZernioSendError(0, "network", "timeout", "unknown");
+    };
+    try {
+      expect(await ex.executeWorkflowRun(start.runId, { provider, storage })).toBe("failed");
+    } finally {
+      provider.sendText = orig;
+    }
+    expect(await run(start.runId)).toMatchObject({ status: "failed", errorCode: ex.FAIL_UNCONFIRMED, stepCursor: 1 });
+    expect((await contact()).stage).toBe("prospecto");
+    const notes = await db.select().from(s.messages).where(eq(s.messages.type, "system_note"));
+    expect(notes[0].body).toMatch(/no confirmó/);
+  });
+
+  it("reinicio del worker a la mitad: con el lease vencido se retoma por cursor sin repetir lo enviado", async () => {
+    const wf = await workflow([
+      { kind: "send_text", text: "uno" },
+      { kind: "send_text", text: "dos" },
+    ]);
+    const start = await ex.startWorkflowRun({ organizationId: ORG, workflowId: wf, conversationId: CONV, trigger: "command" });
+    // El worker murió tras el primer paso (cursor 1), hace 3 minutos.
+    await db.update(s.workflowRuns).set({ status: "running", stepCursor: 1, startedAt: new Date(Date.now() - 3 * 60_000), attempts: 1 }).where(eq(s.workflowRuns.id, start.runId));
+    expect(await ex.staleRunningRuns()).toContain(start.runId);
+    expect(await ex.executeWorkflowRun(start.runId, { provider, storage })).toBe("done");
+    expect(sent.map((x) => (x.input as SendTextInput).text)).toEqual(["dos"]);
+    // Con reintentos agotados ya no se retoma: falla.
+    const other = await ex.startWorkflowRun({ organizationId: ORG, workflowId: wf, conversationId: CONV, trigger: "command" });
+    await db.update(s.workflowRuns).set({ status: "running", startedAt: new Date(Date.now() - 3 * 60_000), attempts: 4 }).where(eq(s.workflowRuns.id, other.runId));
+    expect(await ex.failStuckRuns()).toBe(1);
+  });
+
+  it("dos corridas de la misma conversación no se intercalan: la segunda espera (busy) mientras la primera corre", async () => {
+    const wfA = await workflow([{ kind: "send_text", text: "tabla" }]);
+    const wfB = await workflow([{ kind: "send_text", text: "banco" }]);
+    const a = await ex.startWorkflowRun({ organizationId: ORG, workflowId: wfA, conversationId: CONV, trigger: "command" });
+    const b = await ex.startWorkflowRun({ organizationId: ORG, workflowId: wfB, conversationId: CONV, trigger: "command" });
+    await db.update(s.workflowRuns).set({ status: "running", startedAt: new Date() }).where(eq(s.workflowRuns.id, a.runId));
+    expect(await ex.executeWorkflowRun(b.runId, { provider, storage })).toBe("busy");
+    await db.update(s.workflowRuns).set({ status: "done" }).where(eq(s.workflowRuns.id, a.runId));
+    expect(await ex.executeWorkflowRun(b.runId, { provider, storage })).toBe("done");
+  });
+
+  it("deshabilitar el workflow o apagar el canal mientras la corrida espera: no se ejecuta ni un paso interno", async () => {
+    const wf = await workflow([{ kind: "add_tag", tag: "x" }, { kind: "set_stage", stage: "compra" }]);
+    const a = await ex.startWorkflowRun({ organizationId: ORG, workflowId: wf, conversationId: CONV, trigger: "keyword" });
+    await db.update(s.workflows).set({ enabled: false }).where(eq(s.workflows.id, wf));
+    expect(await ex.executeWorkflowRun(a.runId, { provider, storage })).toBe("cancelled");
+    expect(await run(a.runId)).toMatchObject({ status: "skipped", errorCode: ex.SKIP_DISABLED });
+    await db.update(s.workflows).set({ enabled: true }).where(eq(s.workflows.id, wf));
+    const b = await ex.startWorkflowRun({ organizationId: ORG, workflowId: wf, conversationId: CONV, trigger: "agent" });
+    await db.update(s.channels).set({ aiAgentMode: "off" }).where(eq(s.channels.id, "ch_wf"));
+    expect(await ex.executeWorkflowRun(b.runId, { provider, storage })).toBe("cancelled");
+    expect((await contact()).stage).toBe("prospecto");
+    expect((await contact()).tags).not.toContain("x");
+  });
+
+  it("una corrida atrasada no regresa la etapa que un vendedor movió después", async () => {
+    const wf = await workflow([{ kind: "wait", seconds: 1 }, { kind: "set_stage", stage: "cerca_compra" }]);
+    const a = await ex.startWorkflowRun({ organizationId: ORG, workflowId: wf, conversationId: CONV, trigger: "command", now: new Date(Date.now() - 5_000) });
+    // El vendedor confirmó el pago y movió a Compra DESPUÉS de crearse la corrida.
+    await db.update(s.contacts).set({ stage: "compra", stageChangedAt: new Date() }).where(eq(s.contacts.id, CONTACT));
+    expect(await ex.executeWorkflowRun(a.runId, { provider, storage, sleep: async () => undefined })).toBe("done");
+    expect((await contact()).stage).toBe("compra");
   });
 
   it("otra organización no puede disparar ni ejecutar workflows ajenos", async () => {

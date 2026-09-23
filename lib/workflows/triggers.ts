@@ -25,19 +25,22 @@ export async function onInboundKeyword(m: { organizationId: string; conversation
       .from(workflows)
       .where(and(eq(workflows.organizationId, m.organizationId), eq(workflows.enabled, true)))
       .orderBy(workflows.position);
+    // La frase MÁS específica gana entre TODOS los workflows ("video a la
+    // medida" del especial le gana a "video" del estándar); `position` desempata.
+    let best: { id: string; len: number } | null = null;
     for (const wf of rows) {
       if (wf.keywords.length === 0) continue;
-      if (matchesKeyword(msg.body, wf.keywords)) {
-        return await startWorkflowRun({
-          organizationId: m.organizationId,
-          workflowId: wf.id,
-          conversationId: m.conversationId,
-          trigger: "keyword",
-          payload: { mensaje: msg.body.slice(0, 200) },
-        });
-      }
+      const hit = matchesKeyword(msg.body, wf.keywords);
+      if (hit && (!best || hit.length > best.len)) best = { id: wf.id, len: hit.length };
     }
-    return null;
+    if (!best) return null;
+    return await startWorkflowRun({
+      organizationId: m.organizationId,
+      workflowId: best.id,
+      conversationId: m.conversationId,
+      trigger: "keyword",
+      payload: { mensaje: msg.body.slice(0, 200) },
+    });
   } catch (error) {
     console.error(`[workflows] disparador por palabra clave falló (${m.conversationId}); el mensaje ya está guardado`, error);
     return null;

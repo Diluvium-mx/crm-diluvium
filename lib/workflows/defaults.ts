@@ -210,6 +210,27 @@ export const DEFAULT_WORKFLOWS: readonly DefaultWorkflow[] = [
     ],
   },
   {
+    slug: "anticipo_confirmado",
+    name: "Anticipo confirmado (50 % a la medida)",
+    agentDescription:
+      "Confirma la recepción del ANTICIPO del 50 % de una compuerta hecha a la medida ($3,500 de $7,000) y deja al contacto en 'Cerca de compra' " +
+      "(la venta no está completa: falta la liquidación antes del envío). Úsala solo tras analizar la IMAGEN del comprobante y verificar monto y destinatario. " +
+      "Pasa como argumentos monto, fecha, banco, referencia y destinatario. Escribe primero al cliente que su compuerta entra en fabricación y que avisarás para el pago final. " +
+      "Para un pago completo usa 'Pago confirmado', no esta.",
+    triggerAgent: true,
+    triggerKeywords: [],
+    triggerCommand: null,
+    oncePerConversation: true,
+    steps: [
+      {
+        kind: "internal_note",
+        text: "Anticipo reportado por el agente: {{monto}} · {{banco}} · ref. {{referencia}} · {{fecha}}. Cotejar en el banco; falta la liquidación antes de enviar.",
+      },
+      { kind: "add_tag", tag: "anticipo 50%" },
+      { kind: "set_stage", stage: "cerca_compra" },
+    ],
+  },
+  {
     slug: "pago_no_cuadra",
     name: "Comprobante que no cuadra",
     agentDescription:

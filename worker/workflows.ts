@@ -6,7 +6,7 @@ import type { MessagingProvider } from "@/lib/messaging/provider";
 import { redisConnection } from "@/lib/queue/inbound";
 import { reviveWorkflowRun, WORKFLOW_QUEUE, type WorkflowJob } from "@/lib/queue/workflows";
 import type { ObjectStorage } from "@/lib/storage/s3";
-import { executeWorkflowRun, failStuckRuns, staleQueuedRuns } from "@/lib/workflows/executor";
+import { executeWorkflowRun, failStuckRuns, staleQueuedRuns, staleRunningRuns } from "@/lib/workflows/executor";
 
 export function startWorkflowWorker(provider: MessagingProvider, storage: ObjectStorage | null) {
   const worker = new Worker<WorkflowJob>(
@@ -14,6 +14,9 @@ export function startWorkflowWorker(provider: MessagingProvider, storage: Object
     async (job) => {
       const outcome = await executeWorkflowRun(job.data.runId, { provider, storage });
       console.info(`[workflows] ${job.data.runId}: ${outcome}`);
+      // Otra corrida de la misma conversación en curso: BullMQ reintenta con
+      // backoff; si agota intentos, el barrido la vuelve a encolar.
+      if (outcome === "busy") throw new Error("conversación ocupada por otra corrida; reintentar");
       return outcome;
     },
     // Concurrencia 3: una corrida con pasos "esperar" no debe retrasar a los
@@ -26,7 +29,7 @@ export function startWorkflowWorker(provider: MessagingProvider, storage: Object
   });
 
   async function sweep() {
-    const stale = await staleQueuedRuns();
+    const stale = [...(await staleQueuedRuns()), ...(await staleRunningRuns())];
     let revived = 0;
     for (const id of stale) {
       const r = await reviveWorkflowRun(id);

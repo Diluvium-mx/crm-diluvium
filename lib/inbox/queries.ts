@@ -43,6 +43,7 @@ const messageSortKey = sql`coalesce(${messages.sentAt}, ${messages.createdAt})`;
 
 // Respuesta humana que SÍ salió (misma regla que la primera respuesta, ingest.ts).
 const humanReplySent = sql`${messages.direction} = 'out'
+  and ${messages.type} <> 'system_note'
   and ${messages.status} in ('sent', 'delivered', 'read')
   and (${messages.source} = 'business_app' or (${messages.source} = 'crm' and ${messages.sentByUserId} is not null))`;
 

@@ -43,20 +43,36 @@ export async function listMediaAssets(organizationId: string): Promise<MediaAsse
   return rows.map(toView);
 }
 
+// Códecs de video que WhatsApp NO reproduce aunque el contenedor sea MP4. Un
+// video grabado con iPhone suele ser HEVC ("hvc1"/"hev1"): pasaría la subida,
+// el workflow diría "aquí te va el video" y WhatsApp rechazaría el archivo.
+const HEVC_MARKERS = [Buffer.from("hvc1"), Buffer.from("hev1")];
+const H264_MARKER = Buffer.from("avc1");
+
 // Cuenta bytes y calcula el sha256 al vuelo; corta en cuanto pasa el límite,
 // así el bucket nunca recibe un archivo mayor de lo que WhatsApp aceptaría.
-function countingStream(maxBytes: number) {
+// Para video, además busca el códec en los bytes (con solape entre chunks).
+function countingStream(maxBytes: number, sniffVideo: boolean) {
   const hash = createHash("sha256");
   let size = 0;
+  let tail = Buffer.alloc(0);
+  let sawHevc = false;
+  let sawH264 = false;
   const stream = new Transform({
     transform(chunk: Buffer, _enc, cb) {
       size += chunk.byteLength;
       if (size > maxBytes) return cb(new MediaRejectedError("size", `El archivo pesa más de ${Math.round(maxBytes / 1024 / 1024)} MB.`));
       hash.update(chunk);
+      if (sniffVideo) {
+        const window = Buffer.concat([tail, chunk]);
+        if (!sawHevc && HEVC_MARKERS.some((m) => window.includes(m))) sawHevc = true;
+        if (!sawH264 && window.includes(H264_MARKER)) sawH264 = true;
+        tail = window.subarray(Math.max(0, window.length - 8));
+      }
       cb(null, chunk);
     },
   });
-  return { stream, size: () => size, sha256: () => hash.digest("hex") };
+  return { stream, size: () => size, sha256: () => hash.digest("hex"), hevcOnly: () => sawHevc && !sawH264 };
 }
 
 /**
@@ -80,7 +96,7 @@ export async function storeUploadedAsset(
   const title = input.title.trim().slice(0, 120) || fileName;
   const id = crypto.randomUUID();
   const key = assetStorageKey(input.organizationId, id, fileName);
-  const counter = countingStream(MEDIA_LIMITS[kind].maxBytes);
+  const counter = countingStream(MEDIA_LIMITS[kind].maxBytes, kind === "video");
   input.body.on("error", (e) => counter.stream.destroy(e));
   counter.stream.on("error", () => input.body.destroy());
   try {
@@ -91,6 +107,10 @@ export async function storeUploadedAsset(
   if (counter.size() === 0) {
     await storage.deleteObject(key).catch(() => undefined);
     throw new MediaRejectedError("empty", "El archivo está vacío.");
+  }
+  if (counter.hevcOnly()) {
+    await storage.deleteObject(key).catch(() => undefined);
+    throw new MediaRejectedError("mime", "El video está en HEVC (H.265, típico de iPhone) y WhatsApp no lo reproduce. Conviértelo a MP4 H.264 + AAC y súbelo de nuevo.");
   }
   try {
     const [row] = await db

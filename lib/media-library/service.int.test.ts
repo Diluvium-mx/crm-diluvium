@@ -115,6 +115,16 @@ describe.skipIf(!TEST_DATABASE_URL)("biblioteca de media", () => {
     await expect(svc.renameMediaAsset(otherOrg, again.id, "Z")).rejects.toThrow(/no encontrado/);
   });
 
+  it("un MP4 en HEVC (iPhone) se rechaza con mensaje claro; uno H.264 pasa", async () => {
+    const mk = (codec: string) => Buffer.concat([Buffer.from("....ftypisom....moov....stsd...."), Buffer.from(codec), Buffer.alloc(64, 0)]);
+    const up = (buf: Buffer, name: string) =>
+      svc.storeUploadedAsset(storage, { organizationId: org, userId: null, title: "v", fileName: name, mimeType: "video/mp4", declaredBytes: buf.length, body: Readable.from([buf]) });
+    await expect(up(mk("hvc1"), "iphone.mp4")).rejects.toThrow(/HEVC/);
+    expect(storage.objects.size).toBe(0);
+    const ok = await up(mk("avc1"), "ok.mp4");
+    expect(ok.kind).toBe("video");
+  });
+
   it("la URL firmada sale del storage con el nombre del archivo", async () => {
     const asset = await upload(10);
     const row = await svc.loadMediaAsset(org, asset.id);

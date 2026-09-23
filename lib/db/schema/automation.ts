@@ -157,6 +157,9 @@ export const workflowRuns = pgTable(
     // Argumentos con los que se disparó (p. ej. lo que leyó el agente de un comprobante).
     payload: jsonb("payload").$type<Record<string, unknown>>(),
     status: workflowRunStatusEnum("status").notNull().default("queued"),
+    // Copia de workflows.once_per_conversation al crear la corrida: el índice
+    // único parcial solo aplica a estas (un recordatorio repetible no se bloquea).
+    once: boolean("once").notNull().default(true),
     // Índice del siguiente paso a ejecutar: un reintento retoma aquí, nunca repite lo enviado.
     stepCursor: integer("step_cursor").notNull().default(0),
     // Ids de `messages` que generó esta corrida, en orden.
@@ -177,7 +180,7 @@ export const workflowRuns = pgTable(
     // Un comando del vendedor sí puede repetir a propósito.
     uniqueIndex("workflow_runs_once_uidx")
       .on(table.conversationId, table.workflowId)
-      .where(sql`${table.status} in ('queued', 'running', 'done') and ${table.trigger} <> 'command'`),
+      .where(sql`${table.status} in ('queued', 'running', 'done') and ${table.trigger} <> 'command' and ${table.once} = true`),
     index("workflow_runs_org_created_idx").on(table.organizationId, sql`${table.createdAt} desc`),
   ],
 );

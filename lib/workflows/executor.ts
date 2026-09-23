@@ -12,7 +12,7 @@
 // Los envíos al cliente pasan por lib/messaging/send (outbox + ventana de 24 h
 // + idempotencia); los pasos internos (etapa, etiqueta, pausa del agente, aviso)
 // escriben directo, siempre acotados a la organización.
-import { and, desc, eq, gt, inArray, lt, sql } from "drizzle-orm";
+import { and, desc, eq, gt, inArray, lt, lte, or, sql } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { channels, contacts, conversations, messages, user, workflowRuns, workflowSteps, workflows } from "@/lib/db/schema";
 import type { WorkflowStepPayload } from "@/lib/db/schema/automation";
@@ -81,6 +81,7 @@ async function insertRun(
   contactId: string,
   status: "queued" | "skipped",
   reason?: string,
+  once = true,
 ): Promise<string> {
   const id = crypto.randomUUID();
   const now = input.now ?? new Date();
@@ -91,6 +92,7 @@ async function insertRun(
     conversationId: input.conversationId,
     contactId,
     trigger: input.trigger,
+    once,
     triggeredByUserId: input.triggeredByUserId ?? null,
     payload: input.payload ?? null,
     status,
@@ -152,7 +154,7 @@ export async function startWorkflowRun(input: StartRunInput): Promise<StartRunRe
 
   let runId: string;
   try {
-    runId = await insertRun(input, conv.contactId, "queued");
+    runId = await insertRun(input, conv.contactId, "queued", undefined, wf.oncePerConversation);
   } catch (error) {
     // Carrera con otra corrida viva del mismo workflow (índice único parcial):
     // se registra como omitida, nunca se manda dos veces.
@@ -170,7 +172,15 @@ export type ExecutorDeps = {
   sleep?: (ms: number) => Promise<void>;
 };
 
-export type ExecuteOutcome = "done" | "failed" | "cancelled" | "not_claimed";
+// "busy": otra corrida de la MISMA conversación está en curso; el job se
+// reintenta (los mensajes de dos corridas no deben intercalarse al cliente).
+export type ExecuteOutcome = "done" | "failed" | "cancelled" | "not_claimed" | "busy";
+
+// Una corrida "running" cuyo worker no avanzó en este tiempo se puede
+// reclamar de nuevo y retomar por cursor (reinicio del worker a la mitad).
+export const RUN_LEASE_MS = 2 * 60_000;
+export const RUN_MAX_ATTEMPTS = 3;
+export const FAIL_UNCONFIRMED = "envio_sin_confirmar";
 
 function variablesFor(run: { payload: Record<string, unknown> | null }, contact: { firstName: string; lastName: string | null }, sellerName: string | null) {
   const values: Record<string, string> = {};
@@ -196,13 +206,31 @@ export async function executeWorkflowRun(runId: string, deps: ExecutorDeps): Pro
   const now = deps.now ?? (() => new Date());
   const sleep = deps.sleep ?? ((ms: number) => new Promise<void>((r) => setTimeout(r, ms)));
 
+  const leaseCut = new Date(now().getTime() - RUN_LEASE_MS);
+  // Reclamo atómico: "queued", o "running" con lease vencido (retoma por cursor).
+  // Exclusividad por conversación: si otra corrida viva de la misma
+  // conversación está en curso, no se reclama (busy → reintento).
   const [claimed] = await db
     .update(workflowRuns)
     .set({ status: "running", startedAt: now(), attempts: sql`${workflowRuns.attempts} + 1` })
-    .where(and(eq(workflowRuns.id, runId), eq(workflowRuns.status, "queued")))
+    .where(
+      and(
+        eq(workflowRuns.id, runId),
+        or(eq(workflowRuns.status, "queued"), and(eq(workflowRuns.status, "running"), lt(workflowRuns.startedAt, leaseCut))),
+        sql`not exists (select 1 from workflow_runs r2 where r2.conversation_id = ${workflowRuns.conversationId} and r2.id <> ${runId} and r2.status = 'running' and r2.started_at > ${leaseCut.toISOString()}::timestamp)`,
+      ),
+    )
     .returning();
-  if (!claimed) return "not_claimed";
+  if (!claimed) {
+    const [row] = await db.select({ status: workflowRuns.status, startedAt: workflowRuns.startedAt }).from(workflowRuns).where(eq(workflowRuns.id, runId)).limit(1);
+    if (row && (row.status === "queued" || (row.status === "running" && row.startedAt && row.startedAt < leaseCut))) return "busy";
+    return "not_claimed";
+  }
   const run = claimed;
+  if (run.attempts > RUN_MAX_ATTEMPTS) {
+    await markRun(runId, { status: "failed", errorCode: FAIL_STUCK, errorMessage: "reintentos agotados", finishedAt: now() });
+    return "failed";
+  }
 
   const loaded = await loadWorkflowWithSteps(run.organizationId, run.workflowId);
   const [contact] = await db
@@ -213,6 +241,17 @@ export async function executeWorkflowRun(runId: string, deps: ExecutorDeps): Pro
   if (!loaded || !contact) {
     await markRun(runId, { status: "failed", errorCode: "no_encontrado", finishedAt: now() });
     return "failed";
+  }
+  // Se revalida al reclamar: si el admin deshabilitó el workflow (o borró un
+  // archivo) mientras la corrida esperaba en cola, no se ejecuta. Un comando
+  // del vendedor ("Probar") es una acción explícita y no exige "habilitado".
+  if (run.trigger !== "command" && !loaded.wf.enabled) {
+    await markRun(runId, { status: "skipped", errorCode: SKIP_DISABLED, finishedAt: now() });
+    return "cancelled";
+  }
+  if (missingMedia(loaded.steps.map((st) => st.payload)).length > 0) {
+    await markRun(runId, { status: "skipped", errorCode: SKIP_MISSING_MEDIA, finishedAt: now() });
+    return "cancelled";
   }
   const seller = run.triggeredByUserId
     ? (await db.select({ name: user.name }).from(user).where(eq(user.id, run.triggeredByUserId)).limit(1))[0]?.name ?? null
@@ -237,10 +276,11 @@ export async function executeWorkflowRun(runId: string, deps: ExecutorDeps): Pro
 
   for (let i = run.stepCursor; i < loaded.steps.length; i++) {
     const step = loaded.steps[i].payload;
-    // Antes de cada paso que llega al cliente, el agente relee si sigue
-    // pudiendo hablar (definición 1 / Fase B): si un vendedor respondió a la
-    // mitad o apagaron el canal, lo que falta no sale.
-    if (source === "ai_agent" && (step.kind === "send_text" || step.kind === "send_media")) {
+    // Antes de CADA paso (también etapa/etiqueta/pausa), el agente relee si
+    // sigue pudiendo actuar (definición 1 / Fase B): si un vendedor respondió a
+    // la mitad o apagaron el canal, lo que falta no se ejecuta ("apagado no
+    // toca nada").
+    if (source === "ai_agent") {
       const stop = await agentMustStop(run.organizationId, run.conversationId, run.createdAt);
       if (stop) {
         await markRun(runId, { status: "cancelled", errorCode: stop, messageIds, stepCursor: i, finishedAt: now() });
@@ -257,6 +297,14 @@ export async function executeWorkflowRun(runId: string, deps: ExecutorDeps): Pro
         deps: { ...deps, now, sleep },
       });
       if (sent) messageIds.push(sent.messageId);
+      // Resultado DESCONOCIDO del proveedor (timeout): no se sabe si el cliente
+      // recibió el archivo. No se avanza (moverlo a "Cerca de compra" sin la
+      // CLABE sería mentir): la corrida queda fallida con motivo y el mensaje se
+      // reconcilia solo (send_unconfirmed) como cualquier envío manual.
+      if (sent?.status === "pending") {
+        await markRun(runId, { messageIds, stepCursor: i + 1 });
+        return fail(FAIL_UNCONFIRMED, "el proveedor no confirmó el envío; se verifica en unos minutos");
+      }
     } catch (error) {
       if (error instanceof SendRejectedError && error.code === "window_closed") return fail(FAIL_WINDOW, error.message);
       if (error instanceof SendRejectedError) return fail(error.code, error.message);
@@ -300,6 +348,7 @@ async function agentMustStop(organizationId: string, conversationId: string, sin
 
 const FAIL_LABEL: Record<string, string> = {
   [FAIL_WINDOW]: "la ventana de 24 h está cerrada; solo se puede mandar una plantilla",
+  [FAIL_UNCONFIRMED]: "WhatsApp no confirmó el envío; revisa el hilo antes de repetirlo",
   media_not_found: "el archivo ya no está en la biblioteca",
   storage_unavailable: "el almacenamiento de archivos no está disponible",
 };
@@ -384,10 +433,20 @@ async function runStep(step: WorkflowStepPayload, ctx: StepCtx): Promise<SendOut
       // puede mover a "compra" desde datos_bancarios).
       const fromPayload = ctx.workflowSlug === "cambiar_etapa" && typeof run.payload?.etapa === "string" ? run.payload.etapa : null;
       const stage = isStage(fromPayload) ? fromPayload : step.stage;
+      // Si un humano movió la etapa DESPUÉS de crearse la corrida, manda el
+      // humano: una corrida atrasada no regresa a "Cerca de compra" a un
+      // contacto que un vendedor ya puso en "Compra".
       await db
         .update(contacts)
         .set({ stage, stageChangedAt: deps.now() })
-        .where(and(eq(contacts.id, run.contactId), eq(contacts.organizationId, run.organizationId), sql`${contacts.stage} <> ${stage}`));
+        .where(
+          and(
+            eq(contacts.id, run.contactId),
+            eq(contacts.organizationId, run.organizationId),
+            sql`${contacts.stage} <> ${stage}`,
+            lte(contacts.stageChangedAt, run.createdAt),
+          ),
+        );
       await notifyConversation(db, run.organizationId, run.conversationId);
       return null;
     }
@@ -430,12 +489,36 @@ export async function staleQueuedRuns(now = new Date(), graceMs = RUN_QUEUED_GRA
   return rows.map((r) => r.id);
 }
 
-/** Barrido: corridas "running" atoradas (el worker murió a la mitad) → failed sin reintento. */
+/** Barrido: corridas "running" con lease vencido y reintentos disponibles → se re-encolan (retoman por cursor). */
+export async function staleRunningRuns(now = new Date()): Promise<string[]> {
+  const rows = await db
+    .select({ id: workflowRuns.id })
+    .from(workflowRuns)
+    .where(
+      and(
+        eq(workflowRuns.status, "running"),
+        lt(workflowRuns.startedAt, new Date(now.getTime() - RUN_LEASE_MS)),
+        lte(workflowRuns.attempts, RUN_MAX_ATTEMPTS),
+      ),
+    )
+    .limit(100);
+  return rows.map((r) => r.id);
+}
+
+/** Barrido: corridas "running" atoradas SIN reintentos (o muy viejas) → failed. */
 export async function failStuckRuns(now = new Date()): Promise<number> {
   const rows = await db
     .update(workflowRuns)
     .set({ status: "failed", errorCode: FAIL_STUCK, finishedAt: now })
-    .where(and(eq(workflowRuns.status, "running"), lt(workflowRuns.startedAt, new Date(now.getTime() - RUN_STUCK_AFTER_MS))))
+    .where(
+      and(
+        eq(workflowRuns.status, "running"),
+        or(
+          and(lt(workflowRuns.startedAt, new Date(now.getTime() - RUN_LEASE_MS)), gt(workflowRuns.attempts, RUN_MAX_ATTEMPTS)),
+          lt(workflowRuns.startedAt, new Date(now.getTime() - RUN_STUCK_AFTER_MS)),
+        ),
+      ),
+    )
     .returning({ id: workflowRuns.id });
   return rows.length;
 }
