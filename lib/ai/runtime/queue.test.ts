@@ -178,3 +178,15 @@ describe("processAgentJob (consumer)", () => {
     expect((await processAgentJob(data, deps(kv, run))).rescheduleMs).toBe(3_000);
   });
 });
+
+describe("withQueueTimeout (Redis lento o caído no cuelga la bandeja)", () => {
+  it("deja pasar el resultado si la operación responde a tiempo", async () => {
+    const { withQueueTimeout } = await import("./queue");
+    expect(await withQueueTimeout(Promise.resolve("ok"), "prueba", 50)).toBe("ok");
+  });
+  it("corta con error si la operación no responde dentro del tope", async () => {
+    const { withQueueTimeout } = await import("./queue");
+    const never = new Promise<string>(() => undefined);
+    await expect(withQueueTimeout(never, "cancelar", 20)).rejects.toThrow("timeout al cancelar");
+  });
+});

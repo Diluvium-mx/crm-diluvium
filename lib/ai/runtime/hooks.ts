@@ -11,6 +11,7 @@ import {
   cancelAgentRun,
   redisKvPort,
   scheduleAgentRun,
+  withQueueTimeout,
   type AgentQueuePort,
   type KvPort,
 } from "./queue";
@@ -36,11 +37,14 @@ export async function onInboundCustomerMessage(
     const now = ports.now ?? new Date();
     const delay = await debounceDelayFor(input.conversationId, now);
     if (delay === null) return; // canal apagado o nada pendiente
-    await scheduleAgentRun(
-      ports.queue ?? bullAgentQueuePort(),
-      ports.kv ?? redisKvPort(),
-      { conversationId: input.conversationId, organizationId: input.organizationId },
-      delay,
+    await withQueueTimeout(
+      scheduleAgentRun(
+        ports.queue ?? bullAgentQueuePort(),
+        ports.kv ?? redisKvPort(),
+        { conversationId: input.conversationId, organizationId: input.organizationId },
+        delay,
+      ),
+      "programar",
     );
   } catch (error) {
     console.error(`[agente] no se pudo programar ${input.conversationId}; lo recoge el barrido`, error);
@@ -62,7 +66,10 @@ export async function onHumanOutbound(input: { conversationId: string }, ports: 
     if (snap.conversation.agentState === "activo") {
       await setAgentState(input.conversationId, "pausado_humano", { now });
     }
-    await cancelAgentRun(ports.queue ?? bullAgentQueuePort(), input.conversationId);
+    // La pausa ya quedó guardada: cancelar el job es solo optimización (acotada).
+    await withQueueTimeout(cancelAgentRun(ports.queue ?? bullAgentQueuePort(), input.conversationId), "cancelar").catch(
+      (error) => console.error(`[agente] no se pudo cancelar el job de ${input.conversationId}: ${String(error)}`),
+    );
   } catch (error) {
     console.error(`[agente] no se pudo pausar ${input.conversationId} tras respuesta humana`, error);
   }

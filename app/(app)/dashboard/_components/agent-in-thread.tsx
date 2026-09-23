@@ -14,7 +14,10 @@ import {
 import type { AgentActionResult, AgentThreadView } from "@/lib/agente-ia/types";
 import { pauseReason } from "@/lib/agente-ia/labels";
 
-export function useConversationAgent(conversationId: string, refreshToken: number) {
+// Recarga con cada evento del hilo (refreshToken) y cada vez que la Bandeja
+// vuelve a pedir el detalle (detailKey): un `conversation.updated` —pausa,
+// reactivación o borrador nuevo— llega por ahí, no por refreshToken.
+export function useConversationAgent(conversationId: string, refreshToken: number, detailKey?: unknown) {
   const [agent, setAgent] = useState<AgentThreadView | null>(null);
   const load = useCallback(async () => {
     try {
@@ -26,7 +29,7 @@ export function useConversationAgent(conversationId: string, refreshToken: numbe
   useEffect(() => {
     const t = setTimeout(() => void load(), 0);
     return () => clearTimeout(t);
-  }, [load, refreshToken]);
+  }, [load, refreshToken, detailKey]);
   return { agent, reload: load };
 }
 
