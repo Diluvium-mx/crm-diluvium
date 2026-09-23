@@ -9,6 +9,11 @@
 -- 0022: la lista de comentarios (más reciente arriba) los muestra en orden de
 -- lectura. Idempotente (id determinista + ON CONFLICT). No borra
 -- custom_fields.notas. Al 23-sep-2026 staging y prod tenían 0 notas.
+--
+-- También inserta la PRIMERA parte (los primeros 5000, con el mismo id que usa
+-- la 0022) si no existe: si una nota larga apareció después de correr la 0022,
+-- no quedan continuaciones sin su principio. Donde la 0022 ya la copió, choca con
+-- ese id y no hace nada.
 INSERT INTO "user" ("id", "name", "email", "email_verified", "created_at", "updated_at", "banned", "ban_reason")
 SELECT 'usuario-sistema-importado', 'Importado', 'importado@sistema.invalid', false, now(), now(), true,
        'Usuario del sistema: autor de las notas importadas (no inicia sesión)'
@@ -17,6 +22,12 @@ WHERE EXISTS (
   WHERE jsonb_typeof("custom_fields"->'notas') = 'string' AND length(trim("custom_fields"->>'notas')) > 5000
 )
 ON CONFLICT DO NOTHING;--> statement-breakpoint
+INSERT INTO "contact_comentarios" ("id", "organization_id", "contact_id", "author_user_id", "body", "created_at")
+SELECT 'nota-importada-' || c."id", c."organization_id", c."id", 'usuario-sistema-importado',
+       left(trim(c."custom_fields"->>'notas'), 5000), c."created_at"
+FROM "contacts" c
+WHERE jsonb_typeof(c."custom_fields"->'notas') = 'string' AND length(trim(c."custom_fields"->>'notas')) > 5000
+ON CONFLICT ("id") DO NOTHING;--> statement-breakpoint
 INSERT INTO "contact_comentarios" ("id", "organization_id", "contact_id", "author_user_id", "body", "created_at")
 SELECT 'nota-importada-' || c."id" || '-' || (j + 1),
        c."organization_id",
