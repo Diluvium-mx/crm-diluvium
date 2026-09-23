@@ -1,6 +1,7 @@
 import { createOpenAI } from "@ai-sdk/openai";
 import { generateText, isStepCount } from "ai";
 import type { ProviderAdapter } from "../provider";
+import { DEFAULT_MODEL_TIMEOUT_MS } from "../types";
 import { toModelUsage } from "./usage";
 
 // Adaptador OpenAI. La caché del prompt es AUTOMÁTICA (se activa con prompts de
@@ -18,6 +19,7 @@ export const openaiAdapter: ProviderAdapter = {
       system: input.system,
       messages: input.messages,
       ...(input.maxOutputTokens ? { maxOutputTokens: input.maxOutputTokens } : {}),
+      abortSignal: AbortSignal.timeout(input.timeoutMs ?? DEFAULT_MODEL_TIMEOUT_MS),
       // Tools quedan cableados para la Fase B (multi-paso con stopWhen); el
       // dry-run de la Fase A no los usa.
       ...(input.tools ? { tools: input.tools, stopWhen: isStepCount(4) } : {}),
