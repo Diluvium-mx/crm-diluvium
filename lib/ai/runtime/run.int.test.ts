@@ -627,8 +627,7 @@ describe.skipIf(!TEST_DATABASE_URL)("runtime del Agente IA (Postgres real)", () 
     return id;
   }
 
-  it("AUTO → 1ª burbuja sin confirmar: la 2ª no sale; si vence sin confirmar, el barrido pausa (sin reenviar)", async () => {
-    const { SEND_UNCONFIRMED } = await import("@/lib/messaging/rules");
+  it("AUTO → 1ª burbuja sin confirmar (y se confirma tarde): la 2ª queda en borrador visible y el agente se pausa", async () => {
     await msg({ direction: "in", body: "¿precio?", at: ago(10_000) });
     const { deps } = makeDeps();
     let pendingId = "";
@@ -638,7 +637,29 @@ describe.skipIf(!TEST_DATABASE_URL)("runtime del Agente IA (Postgres real)", () 
     };
     expect(await run.runAgent(JOB, deps)).toEqual({ kind: "sent", bubbles: 1 });
     const brain = (await usage()).find((u) => u.stage === "cerebro")!;
-    expect(brain).toMatchObject({ outcome: "sent", error: "1 burbuja(s) sin confirmar; no se enviaron 1" });
+    expect(brain).toMatchObject({ outcome: "sent", error: "1 burbuja(s) sin confirmar; 1 en borrador para revisión humana" });
+    const [d] = await db.select().from(s.aiAgentDrafts);
+    expect(d).toMatchObject({ status: "pendiente", bubbles: ["¿Cuánto mide tu entrada?"] });
+    expect(d.reviewReason).toContain("no confirmó");
+    expect((await conv()).agentState).toBe("pausado_antibucle");
+    const [c] = await db.select().from(s.contacts).where(eq(s.contacts.id, CONTACT));
+    expect(c.tags).toContain("revisión humana");
+    // La 1ª se confirma tarde: nada se pierde (el resto sigue visible para el vendedor).
+    await db.update(s.messages).set({ status: "sent" }).where(eq(s.messages.id, pendingId));
+    expect((await db.select().from(s.aiAgentDrafts))[0].status).toBe("pendiente");
+  });
+
+  it("AUTO → una sola burbuja sin confirmar: espera; si vence sin confirmar, el barrido pausa (sin reenviar)", async () => {
+    const { SEND_UNCONFIRMED } = await import("@/lib/messaging/rules");
+    await msg({ direction: "in", body: "¿precio?", at: ago(10_000) });
+    const { deps } = makeDeps({ brain: ["Claro, cuesta $5,500 MXN."] });
+    let pendingId = "";
+    deps.sendBubble = async () => {
+      pendingId = await agentMsg({ status: "queued" });
+      return { status: "pending" as const };
+    };
+    expect(await run.runAgent(JOB, deps)).toEqual({ kind: "sent", bubbles: 1 });
+    expect(await db.select().from(s.aiAgentDrafts)).toEqual([]); // nada omitido
     // En camino: no se pausa, y el agente no responde encima de un envío sin resolver.
     expect(await sweep.pauseOnFailedAgentSends(new Date())).toBe(0);
     await msg({ direction: "in", body: "¿hola?", at: new Date(Date.now() + 1_000) });
@@ -649,8 +670,6 @@ describe.skipIf(!TEST_DATABASE_URL)("runtime del Agente IA (Postgres real)", () 
     await db.update(s.messages).set({ status: "failed", errorCode: SEND_UNCONFIRMED }).where(eq(s.messages.id, pendingId));
     expect(await sweep.pauseOnFailedAgentSends(new Date())).toBe(1);
     expect((await conv()).agentState).toBe("pausado_antibucle");
-    const [c] = await db.select().from(s.contacts).where(eq(s.contacts.id, CONTACT));
-    expect(c.tags).toContain("revisión humana");
     expect(await sweep.findOrphanConversations(new Date())).toEqual([]);
   });
 
