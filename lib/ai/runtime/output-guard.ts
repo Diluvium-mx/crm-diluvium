@@ -1,8 +1,9 @@
 // GUARDIA DE SALIDA del Agente IA (Fase B). PURO: sin DB ni red. Antes de
 // enviar en modo AUTO, la respuesta del cerebro se revisa contra la base de
 // conocimiento ACTIVA de la organización:
-//   - un monto o precio que no aparezca en el Goal ni en las FAQs activas (ni sea
-//     suma de hasta 10 de esos precios, con repetición: totales de varias piezas), o
+//   - un monto o precio que no aparezca tal cual en el Goal ni en las FAQs activas,
+//     salvo un TOTAL con su desglose correcto en la misma respuesta
+//     ("3 × $5,500 = $16,500", "$5,500 + $7,000 = $12,500"), o
 //   - un enlace fuera de la lista permitida (diluvium.com.mx y los enlaces de
 //     Amazon / Mercado Libre que ya están en las FAQs activas)
 // → NO se envía: queda como borrador para revisión humana, con el motivo.
@@ -42,9 +43,11 @@ export function extractLinks(text: string): string[] {
   return links;
 }
 
-// Texto sin enlaces ni correos (para buscar montos sin contar sus dígitos).
+// Texto sin enlaces ni correos (para buscar montos sin contar sus dígitos). Los
+// cambia por espacios del MISMO largo: las posiciones siguen siendo las del texto.
 function withoutLinks(text: string): string {
-  return text.replace(URL_WITH_SCHEME, " ").replace(EMAIL, " ").replace(IPV4, " ").replace(BARE_DOMAIN, " ");
+  const blank = (m: string) => " ".repeat(m.length);
+  return text.replace(URL_WITH_SCHEME, blank).replace(EMAIL, blank).replace(IPV4, blank).replace(BARE_DOMAIN, blank);
 }
 
 // host (sin www, minúsculas, punycode) + ruta (sin "/" final); sin query ni #:
@@ -84,7 +87,7 @@ const END = String.raw`(?!\p{N}|[.,]\p{N})`;
 const UNIT = String.raw`(?!${H}{0,3}(?:cm|mm|m|mts?|metros?|cent[ií]metros?|mil[ií]metros?|kg|kilos?|litros?|lts?|%|x|piezas?|pzas?|unidades?|compuertas?|tapones?|entradas?|d[ií]as?|semanas?|mes(?:es)?|años?|horas?|hrs?|minutos?|min|h[aá]biles|veces|personas?|pulgadas?|pulg)(?![\p{L}]))`;
 const MIL = String.raw`(${H}{0,3}mil\b)?`;
 
-type AmountHit = { text: string; value: number };
+type AmountHit = { text: string; value: number; at: number };
 type Pattern = { re: RegExp; shown: (m: RegExpMatchArray) => string };
 
 const rx = (src: string) => new RegExp(src, "giu");
@@ -146,7 +149,7 @@ export function extractAmounts(text: string): AmountHit[] {
       const at = m.index + m[0].indexOf(m[1]);
       if (seen.has(at)) continue;
       seen.add(at);
-      hits.push({ text: shown(m), value: parseAmount(m[1], Boolean(m[2]?.trim())) });
+      hits.push({ text: shown(m), value: parseAmount(m[1], Boolean(m[2]?.trim())), at });
     }
   }
   return hits;
@@ -154,45 +157,52 @@ export function extractAmounts(text: string): AmountHit[] {
 
 const cents = (v: number) => Math.round(v * 100);
 
-// ── Totales ──────────────────────────────────────────────────────────────────
-// Un total también es válido si es SUMA de hasta MAX_PIECES precios reales de la
-// base, con repetición: 3 × $5,500 = $16,500; $5,500 + $7,000 = $12,500.
-export const MAX_PIECES = 10;
-// Tope de trabajo (unidades del mcd de los precios): un total más grande se retiene.
-const MAX_SUM_UNITS = 2_000_000;
+// ── Totales con desglose ─────────────────────────────────────────────────────
+// Un monto que NO está tal cual en la base solo pasa como TOTAL con su desglose
+// en la misma respuesta: "3 × $5,500 = $16,500", "$5,500 + $7,000 = $12,500".
+// Cada precio unitario debe ser un monto de la base activa, cada cantidad de 1 a
+// MAX_QTY y la cuenta exacta. Un desglose que no cuadra → revisión humana. Sin
+// desglose ("te la dejo en $6,500") → revisión humana.
+export const MAX_QTY = 10;
+const TIMES = String.raw`[×xX*]`;
+const PRICE_NUM = String.raw`(?:${MONEY_NUM})(?!\p{N}|[.,]\p{N})`;
+const CURRENCY = String.raw`(?:${H}{0,3}(?:mxn|pesos))?`;
+const QTY = String.raw`\d{1,3}(?!\p{N})`;
+// Un término: "3 × $5,500", "3 compuertas × $5,500", "$5,500 × 3" o "$5,500".
+const TERM = String.raw`(?:${QTY}(?:${H}{1,3}\p{L}{1,20}){0,2}${H}{0,3}${TIMES}${H}{0,3}\$${H}{0,3}${PRICE_NUM}${CURRENCY}|\$${H}{0,3}${PRICE_NUM}${CURRENCY}${H}{0,3}${TIMES}${H}{0,3}${QTY}|\$${H}{0,3}${PRICE_NUM}${CURRENCY})`;
+// Términos unidos por "+" (hasta 10), "=" y el total.
+const BREAKDOWN = new RegExp(
+  String.raw`(?<![\p{L}\p{N}$.,])(${TERM}(?:${H}{0,3}\+${H}{0,3}${TERM}){0,9})${H}{0,3}=${H}{0,3}\$?${H}{0,3}(${PRICE_NUM})${CURRENCY}`,
+  "giu",
+);
+const TERM_PARTS = new RegExp(
+  String.raw`^(?:(\d{1,3})(?:${H}{1,3}\p{L}{1,20}){0,2}${H}{0,3}${TIMES}${H}{0,3}\$${H}{0,3}(${PRICE_NUM})${CURRENCY}|\$${H}{0,3}(${PRICE_NUM})${CURRENCY}${H}{0,3}${TIMES}${H}{0,3}(\d{1,3})|\$${H}{0,3}(${PRICE_NUM})${CURRENCY})$`,
+  "iu",
+);
 
-const gcd = (a: number, b: number): number => (b === 0 ? a : gcd(b, a % b));
+export type Breakdown = { text: string; start: number; end: number; total: number; valid: boolean };
 
-// Mínimo de piezas para formar cada total 0..max (mochila sin límite de copias,
-// en unidades del mcd). Satura en 255 (= imposible / demasiadas): solo se asigna
-// un valor MENOR que el actual, así que el Uint8 nunca da la vuelta.
-function minPiecesTable(units: readonly number[], max: number): Uint8Array {
-  const best = new Uint8Array(max + 1).fill(255);
-  best[0] = 0;
-  for (let x = 1; x <= max; x++) {
-    for (const u of units) {
-      if (u <= x && best[x - u] + 1 < best[x]) best[x] = best[x - u] + 1;
+// Desgloses de la respuesta, validados contra los precios de la base (centavos).
+export function findBreakdowns(text: string, known: ReadonlySet<number>): Breakdown[] {
+  const out: Breakdown[] = [];
+  for (const m of withoutLinks(text).matchAll(BREAKDOWN)) {
+    const total = cents(parseAmount(m[2]));
+    let sum = 0;
+    let valid = true;
+    for (const raw of m[1].split("+")) {
+      const t = raw.trim().match(TERM_PARTS);
+      if (!t) {
+        valid = false;
+        break;
+      }
+      const qty = Number(t[1] ?? t[4] ?? "1");
+      const price = cents(parseAmount(t[2] ?? t[3] ?? t[5]));
+      if (!Number.isInteger(qty) || qty < 1 || qty > MAX_QTY || !known.has(price)) valid = false;
+      sum += qty * price;
     }
+    out.push({ text: m[0].trim(), start: m.index, end: m.index + m[0].length, total, valid: valid && sum === total });
   }
-  return best;
-}
-
-// Qué montos (en centavos) son suma de ≤ MAX_PIECES precios. Una sola tabla por
-// revisión, hasta el mayor total que haga falta.
-export function sumsOfPrices(amounts: readonly number[], prices: readonly number[]): Set<number> {
-  const ps = [...new Set(prices.filter((p) => p > 0))];
-  const ok = new Set<number>();
-  if (ps.length === 0) return ok;
-  const g = ps.reduce(gcd);
-  const ceiling = MAX_PIECES * Math.max(...ps);
-  const targets = amounts.filter((a) => a > 0 && a % g === 0 && a <= ceiling && a / g <= MAX_SUM_UNITS);
-  if (targets.length === 0) return ok;
-  const table = minPiecesTable(
-    ps.map((p) => p / g),
-    Math.max(...targets) / g,
-  );
-  for (const a of targets) if (table[a / g] <= MAX_PIECES) ok.add(a);
-  return ok;
+  return out;
 }
 
 // Más largo que esto no se revisa: se retiene (acota el costo de las regex; el
@@ -213,14 +223,25 @@ export function reviewReply(text: string, knowledge: { goal: string; faqs: reado
   );
 
   const problems: string[] = [];
-  const unknown = extractAmounts(text).filter((a) => !known.has(cents(a.value)));
-  const sums = sumsOfPrices(
-    unknown.map((a) => cents(a.value)),
-    [...known],
-  );
-  const badAmounts = [...new Set(unknown.filter((a) => !sums.has(cents(a.value))).map((a) => a.text))];
+  const breakdowns = findBreakdowns(text, known);
+  const badBreakdowns = breakdowns.filter((b) => !b.valid);
+  if (badBreakdowns.length) {
+    problems.push(
+      `desglose que no cuadra (precios de la base, cantidades de 1 a ${MAX_QTY}, cuenta exacta): ${badBreakdowns.map((b) => b.text).join(" · ")}`,
+    );
+  }
+  // Un total con desglose correcto vale en toda la respuesta (p. ej. repetido abajo).
+  const justified = new Set(breakdowns.filter((b) => b.valid).map((b) => b.total));
+  const insideBad = (at: number) => badBreakdowns.some((b) => at >= b.start && at < b.end);
+  const badAmounts = [
+    ...new Set(
+      extractAmounts(text)
+        .filter((a) => !known.has(cents(a.value)) && !justified.has(cents(a.value)) && !insideBad(a.at))
+        .map((a) => a.text),
+    ),
+  ];
   if (badAmounts.length) {
-    problems.push(`monto que no está en el Goal ni en las FAQs ni es suma de sus precios: ${badAmounts.join(", ")}`);
+    problems.push(`monto que no está en el Goal ni en las FAQs ni tiene desglose correcto: ${badAmounts.join(", ")}`);
   }
 
   const badLinks = [

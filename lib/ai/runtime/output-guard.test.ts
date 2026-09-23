@@ -1,7 +1,7 @@
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
-import { extractAmounts, extractLinks, MAX_PIECES, parseAmount, reviewReply, sumsOfPrices } from "./output-guard";
+import { extractAmounts, extractLinks, findBreakdowns, MAX_QTY, parseAmount, reviewReply } from "./output-guard";
 
 // Base de conocimiento con la forma real (docs/agente-ia): precios con $ y los
 // enlaces de Amazon y Mercado Libre en las FAQs.
@@ -58,7 +58,7 @@ describe("reviewReply (guardia de salida)", () => {
   });
   it("un monto inventado (o de una FAQ desactivada) → no se envía, con el motivo", () => {
     const r = reviewReply("Te la dejo en $4,200 y el envío gratis.", knowledge);
-    expect(r).toEqual({ ok: false, reason: "Monto que no está en el Goal ni en las FAQs ni es suma de sus precios: $4,200" });
+    expect(r).toEqual({ ok: false, reason: "Monto que no está en el Goal ni en las FAQs ni tiene desglose correcto: $4,200" });
     expect(reviewReply("Promoción: $4,999", knowledge).ok).toBe(false);
     expect(reviewReply("el total es de 16,501", knowledge).ok).toBe(false);
   });
@@ -83,7 +83,7 @@ describe("reviewReply (guardia de salida)", () => {
     const r = reviewReply("Son $1,000 en bit.ly/x", knowledge);
     expect(r).toEqual({
       ok: false,
-      reason: "Monto que no está en el Goal ni en las FAQs ni es suma de sus precios: $1,000 · enlace fuera de la lista permitida: bit.ly/x",
+      reason: "Monto que no está en el Goal ni en las FAQs ni tiene desglose correcto: $1,000 · enlace fuera de la lista permitida: bit.ly/x",
     });
   });
   it("respuesta sin montos ni enlaces pasa", () => {
@@ -160,7 +160,7 @@ describe("guardia: lo que encontró la revisión enfocada (23-sep)", () => {
     }
     expect(reviewReply("x".repeat(9_000), knowledge)).toEqual({ ok: false, reason: "Respuesta demasiado larga para revisarla sola" });
   });
-  it("totales: suma de hasta 10 precios reales de la base (con repetición) pasa; cualquier otro, no", () => {
+  it("totales (opción A): solo con desglose correcto; montos escritos tal cual en la base pasan", () => {
     const docs = (f: string) => readFileSync(fileURLToPath(new URL(`../../../docs/agente-ia/${f}`, import.meta.url)), "utf8");
     const kb = {
       goal: docs("angela-goal.md"),
@@ -168,35 +168,48 @@ describe("guardia: lo que encontró la revisión enfocada (23-sep)", () => {
         (f, i) => ({ ...f, position: i + 1 }),
       ),
     };
-    const ok = (t: string) => reviewReply(t, kb).ok;
-    // Los ejemplos del dueño, con los precios reales ($5,500 y $7,000).
-    expect(ok("Las 3 medianas te salen en $16,500")).toBe(true);
-    expect(ok("Mediana + grande: $12,500 en total")).toBe(true);
-    expect(ok("10 tapones de 2 pulgadas: $7,490")).toBe(true); // 10 × $749
-    expect(ok("Dos compuertas y un tapón: 11,749 pesos")).toBe(true); // $5,500 + $5,500 + $749
-    // Hasta 10 piezas: 11 ya no. $8,239 (11 × $749) está bajo el techo (10 × $11,000),
-    // así que lo frena el TOPE DE PIEZAS; $121,000 lo frena el techo.
-    expect(ok("11 tapones de 2 pulgadas: $8,239")).toBe(false);
-    expect(ok("11 kits grandes: $121,000")).toBe(false);
-    // Montos que no son suma de precios reales.
-    for (const t of ["Te la dejo en $4,200", "$16,501", "Son 8 mil las dos", "$1,000 de descuento"]) expect(ok(t), t).toBe(false);
+    const r = (t: string) => reviewReply(t, kb);
+    // Descuento inventado (sin desglose) → retenido, aunque "cuadre" como suma de precios.
+    expect(r("La mediana te la dejo en $6,500")).toEqual({
+      ok: false,
+      reason: "Monto que no está en el Goal ni en las FAQs ni tiene desglose correcto: $6,500",
+    });
+    expect(r("Las 3 te salen en $16,500").ok).toBe(false);
+    // Desglose correcto (ejemplos del dueño) → pasa, también con el total repetido.
+    expect(r("3 × $5,500 = $16,500")).toEqual({ ok: true });
+    expect(r("$5,500 + $7,000 = $12,500")).toEqual({ ok: true });
+    expect(r("Serían 3 x $5,500 = $16,500 MXN. Tu total queda en $16,500.")).toEqual({ ok: true });
+    expect(r("2 × $5,500 + 1 × $7,000 = $18,000")).toEqual({ ok: true });
+    expect(r("$5,500 × 3 = $16,500")).toEqual({ ok: true });
+    expect(r("10 × $749 = $7,490")).toEqual({ ok: true });
+    // Desglose con cuentas mal hechas → retenido con su motivo (aunque el total esté en la base).
+    expect(r("3 × $5,500 = $15,000")).toEqual({
+      ok: false,
+      reason: `Desglose que no cuadra (precios de la base, cantidades de 1 a ${MAX_QTY}, cuenta exacta): 3 × $5,500 = $15,000`,
+    });
+    expect(r("3 × $5,500 = $11,000").ok).toBe(false);
+    expect(r("2 × $5,500 + 1 × $7,000 = $18,500").ok).toBe(false);
+    // Cantidad fuera de 1 a 10, o precio unitario que no está en la base → retenido.
+    expect(r("11 × $749 = $8,239").ok).toBe(false);
+    expect(r("3 × $5,000 = $15,000").ok).toBe(false);
+    // Un desglose que se justifica a sí mismo con un precio inventado no cuela un descuento.
+    expect(r("La mediana: 1 × $6,500 = $6,500")).toMatchObject({ ok: false, reason: expect.stringContaining("Desglose que no cuadra") });
+    expect(r("Te queda en $6,500 = $6,500").ok).toBe(false);
+    expect(r("2 × $3,250 = $6,500").ok).toBe(false);
+    // Un desglose correcto no justifica OTRO monto de la misma respuesta.
+    expect(r("3 × $5,500 = $16,500 y el envío te lo dejo en $15,000").ok).toBe(false);
+    // Montos escritos tal cual en la base (anticipo, pago completo) → pasan como siempre.
+    expect(r("El anticipo es de $3,500 y el resto antes del envío.")).toEqual({ ok: true });
+    expect(r("Pago completo: $11,000")).toEqual({ ok: true });
   });
 
-  it("sumsOfPrices: tabla en unidades del mcd, tope de piezas y precios desactivados fuera", () => {
-    const c = (pesos: number) => pesos * 100;
-    const got = sumsOfPrices([c(16_500), c(16_501), c(55_000), c(60_500)], [c(5_500)]);
-    // 10 × 5,500 sí; 16,501 no es múltiplo; 11 × 5,500 lo frena el techo (10 × el mayor).
-    expect([...got].sort((a, b) => a - b)).toEqual([c(16_500), c(55_000)]);
-    expect(MAX_PIECES).toBe(10);
-    // Tope de piezas bajo el techo: con $1 y $50, $59 = 50 + 9 × 1 (10 piezas) sí; $60 = 50 + 10 × 1 (11) no.
-    expect([...sumsOfPrices([c(59), c(60)], [c(1), c(50)])]).toEqual([c(59)]);
-    // Unidades de 1 centavo: 9 × $10 + 999 × $0.01 necesita 1,008 piezas; la tabla (Uint8)
-    // no debe desbordarse y "darle la vuelta" a un conteo chico.
-    expect(sumsOfPrices([9_999], [1, 1_000])).toEqual(new Set());
-    expect(sumsOfPrices([c(100)], [])).toEqual(new Set());
-    // Una FAQ desactivada no aporta piezas: promo ($4,999, desactivada) + tapón ($749) = $5,748
-    // solo se forma con ese precio, así que se retiene.
-    expect(reviewReply("Promo y un tapón: $5,748", knowledge).ok).toBe(false);
+  it("findBreakdowns: posiciones, cantidad por omisión 1 y precio desactivado fuera", () => {
+    const known = new Set([550_000, 700_000]);
+    const [b] = findBreakdowns("Claro: $5,500 + $7,000 = $12,500 MXN", known);
+    expect(b).toMatchObject({ text: "$5,500 + $7,000 = $12,500 MXN", start: 7, total: 1_250_000, valid: true });
+    expect(findBreakdowns("sin cuentas aquí", known)).toEqual([]);
+    // Una FAQ desactivada no aporta precios: $4,999 no vale como precio unitario.
+    expect(reviewReply("2 × $4,999 = $9,998", knowledge).ok).toBe(false);
   });
 
   it("la base real (Goal + 47 FAQs) pasa completa: sus propios montos y enlaces están permitidos", () => {

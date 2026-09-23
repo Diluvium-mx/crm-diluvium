@@ -585,7 +585,7 @@ describe.skipIf(!TEST_DATABASE_URL)("runtime del Agente IA (Postgres real)", () 
     await msg({ direction: "in", body: "¿me haces descuento?", at: ago(10_000) });
     const { deps } = makeDeps({ brain: ["Va, te la dejo en $4,200 si confirmas hoy."] });
     const r = await run.runAgent(JOB, deps);
-    expect(r).toMatchObject({ kind: "held", reason: "Monto que no está en el Goal ni en las FAQs ni es suma de sus precios: $4,200" });
+    expect(r).toMatchObject({ kind: "held", reason: "Monto que no está en el Goal ni en las FAQs ni tiene desglose correcto: $4,200" });
     expect(await agentOuts()).toEqual([]);
     const d = await heldDraft();
     expect(d).toMatchObject({ status: "pendiente", bubbles: ["Va, te la dejo en $4,200 si confirmas hoy."] });
@@ -633,9 +633,40 @@ describe.skipIf(!TEST_DATABASE_URL)("runtime del Agente IA (Postgres real)", () 
     expect(cfg.goal).toBe(GOAL);
   });
 
-  it("auto: un total que es suma de precios reales (2 × $5,500) se envía solo", async () => {
+  it("auto: total SIN desglose → retenido aunque sea 2 × $5,500; con desglose correcto → se envía", async () => {
     await msg({ direction: "in", body: "¿y dos?", at: ago(10_000) });
-    const r = await run.runAgent(JOB, makeDeps({ brain: ["Las dos te salen en $11,000 MXN."] }).deps);
+    expect(await run.runAgent(JOB, makeDeps({ brain: ["Las dos te salen en $11,000 MXN."] }).deps)).toMatchObject({
+      kind: "held",
+      reason: "Monto que no está en el Goal ni en las FAQs ni tiene desglose correcto: $11,000",
+    });
+    await state.setAgentState(ORG, CONV, "activo", { now: new Date() }); // un vendedor revisó y reactivó
+    await msg({ direction: "in", body: "¿entonces?", at: new Date(Date.now() + 1_000) });
+    const r = await run.runAgent(JOB, makeDeps({ brain: ["Serían 2 × $5,500 = $11,000 MXN."] }).deps);
+    expect(r).toEqual({ kind: "sent", bubbles: 1 });
+  });
+
+  it("auto: desglose con cuentas mal hechas → retenido con su motivo", async () => {
+    await msg({ direction: "in", body: "¿cuánto las dos?", at: ago(10_000) });
+    const r = await run.runAgent(JOB, makeDeps({ brain: ["Son 2 × $5,500 = $10,000."] }).deps);
+    expect(r).toMatchObject({ kind: "held", reason: expect.stringContaining("Desglose que no cuadra") });
+    expect(await agentOuts()).toEqual([]);
+    expect((await heldDraft()).reviewReason).toContain("2 × $5,500 = $10,000");
+  });
+
+  it("auto: descuento inventado → retenido; anticipo escrito tal cual en la base → se envía", async () => {
+    await db.insert(s.aiKnowledge).values({
+      id: "k_anticipo",
+      organizationId: ORG,
+      ghlId: "g_anticipo",
+      question: "¿Anticipo de medida especial?",
+      answer: "Anticipo de $3,500 y liquidación de $3,500 antes del envío.",
+      position: 3,
+    });
+    await msg({ direction: "in", body: "¿me la dejas más barata?", at: ago(20_000) });
+    expect((await run.runAgent(JOB, makeDeps({ brain: ["Te la dejo en $5,000."] }).deps)).kind).toBe("held");
+    await state.setAgentState(ORG, CONV, "activo", { now: new Date() });
+    await msg({ direction: "in", body: "¿y el anticipo?", at: new Date(Date.now() + 1_000) });
+    const r = await run.runAgent(JOB, makeDeps({ brain: ["El anticipo es de $3,500."] }).deps);
     expect(r).toEqual({ kind: "sent", bubbles: 1 });
   });
 
