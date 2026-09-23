@@ -148,7 +148,7 @@ respondió a la mitad, lo que falta no sale y la corrida queda `cancelled` con m
   extraer **monto, fecha, banco, referencia y destinatario**, comparar contra **lo cotizado en la
   conversación** (el último total que el propio agente o el vendedor escribió) y decidir:
   - **Cuadra** (monto = total cotizado o = 50 % de un total a la medida, destinatario coincide
-    con el de los datos bancarios, fecha ≤ hoy) → texto de confirmación + tool `pago_confirmado`
+    con el de los datos bancarios, fecha legible y no futura) → texto de confirmación + tool `pago_confirmado`
     con los datos leídos. El workflow pone etapa `compra` (o `cerca_compra` si fue anticipo del
     50 %), etiqueta "cotejar depósito" y escribe el **aviso interno**: una fila en `messages` con
     `direction: "out"`, `type: "system_note"` (nuevo), `source: "ai_agent"`, que la bandeja
@@ -472,7 +472,8 @@ workflow deshabilitado).
    `video_instalacion_medida`, `video_instalacion_mini`, `transferir_humano`, `cambiar_etapa`).
    `tapones_inflables`, `donde_medir`, `tabla_tamanos_mini` y `medidas_especiales` quedan apagados
    con "falta archivo" (los archivos se agregan después desde el editor). Llenar Configuración →
-   Datos de cobro (beneficiario y CLABE: sin ellos ningún comprobante se confirma).
+   Datos de cobro (beneficiario y CLABE: sin ellos ningún comprobante se confirma). Un comprobante se
+   confirma con monto + destinatario + referencia no repetida; la fecha solo debe ser legible y no futura.
 6. **Prueba en producción, solo `ch_zernio_sandbox`** (teléfono del dueño): `/tabla`, `/banco` y
    una palabra clave del cliente (con el canal en `auto`). Verificar burbuja con adjunto,
    `workflow_runs` `done`, etapa → Cerca de compra, y que un segundo `/banco` repita a propósito
