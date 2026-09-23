@@ -1,8 +1,10 @@
 -- Fase B (Agente IA): uso y costo por llamada al modelo (ai_usage), precios
 -- editables por organización (ai_model_prices), borradores del modo "borrador"
--- (ai_agent_drafts), cortes de "respuesta humana" y de encendido (conversations.agent_state_changed_at,
--- channels.ai_agent_mode_changed_at)
--- y ajustes del runtime en ai_config. Aditiva: el agente sigue APAGADO por canal.
+-- (ai_agent_drafts, con review_reason de la guardia de salida), cortes de "respuesta
+-- humana" y de encendido (conversations.agent_state_changed_at,
+-- channels.ai_agent_mode_changed_at) y ajustes del runtime en ai_config. Aditiva: el
+-- agente sigue APAGADO por canal. Regenerada como 0024 tras rebasar sobre main
+-- (da53cc4, que trae su propia 0023); when posterior al de esa 0023.
 -- lock_timeout: drizzle corre todas las migraciones en UNA transacción; si un
 -- ALTER no consigue su lock en 5 s, falla (y se reintenta) en vez de bloquear el
 -- tráfico. Se restablece al final para no afectar a las migraciones siguientes.
@@ -54,8 +56,8 @@ CREATE TABLE "ai_usage" (
 	"created_at" timestamp DEFAULT now() NOT NULL
 );
 --> statement-breakpoint
-ALTER TABLE "conversations" ADD COLUMN "agent_state_changed_at" timestamp;--> statement-breakpoint
 ALTER TABLE "channels" ADD COLUMN "ai_agent_mode_changed_at" timestamp;--> statement-breakpoint
+ALTER TABLE "conversations" ADD COLUMN "agent_state_changed_at" timestamp;--> statement-breakpoint
 ALTER TABLE "ai_config" ADD COLUMN "pause_on_human_reply" boolean DEFAULT true NOT NULL;--> statement-breakpoint
 ALTER TABLE "ai_config" ADD COLUMN "context_messages" integer DEFAULT 20 NOT NULL;--> statement-breakpoint
 ALTER TABLE "ai_config" ADD COLUMN "max_bubbles" integer DEFAULT 2 NOT NULL;--> statement-breakpoint
