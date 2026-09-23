@@ -261,6 +261,18 @@ async function ingestMessage(
       .where(eq(conversations.id, upserted.id))
       .for("update");
 
+    // Zernio puede abrir OTRA conversación (otro conversationId) para el mismo
+    // cliente, y el envío usa provider_conversation_id: si se quedara el viejo,
+    // el CRM mandaría a una conversación que Zernio ya pudo cerrar. Manda el
+    // ENTRANTE más reciente; uno de la conversación vieja que llega tarde
+    // (reintento, replay) no pisa al nuevo. Se decide ANTES de insertar este
+    // mensaje y con la conversación bloqueada: la comparación es firme.
+    const adoptProviderConversation =
+      event.direction === "in" &&
+      !!event.providerConversationId &&
+      conversation.providerConversationId !== event.providerConversationId &&
+      (await isNewestInbound(tx, orgId, conversation.id, event.sentAt));
+
     // Eco de un mensaje que el CRM mismo envió: ya existe la fila (en cola,
     // sin wamid). Se completa en lugar de duplicarla. El estado NO se fuerza a
     // "sent": si un estado (delivered/read/failed) llegó antes que este eco
@@ -347,6 +359,13 @@ async function ingestMessage(
       // El anuncio que ORIGINÓ la conversación: el primero, no se pisa.
       if (event.referral && !conversation.adReferral) updates.adReferral = event.referral;
     }
+    if (adoptProviderConversation) {
+      updates.providerConversationId = event.providerConversationId;
+      console.info(
+        `[ingest] conversación ${conversation.id}: Zernio cambió de conversación ` +
+          `${conversation.providerConversationId} → ${event.providerConversationId}; los envíos van a la nueva`,
+      );
+    }
     // Primera respuesta: se RECALCULA desde la base con cada mensaje nuevo,
     // no solo la primera vez. Los webhooks pueden llegar tarde y desordenados
     // (Meta reintenta, replay): un entrante más viejo que aparece después
@@ -398,6 +417,27 @@ export async function applyOutboundToConversation(
     if (seconds !== null) updates.firstResponseSeconds = seconds;
   }
   await tx.update(conversations).set(updates).where(eq(conversations.id, conversationId));
+}
+
+/**
+ * ¿Un entrante con esta hora sería el más reciente de la conversación? Estricto:
+ * con la misma hora (WhatsApp tiene resolución de segundos) no se sabe cuál es
+ * el nuevo y se queda el actual. Un duplicado (mismo wamid) tampoco cuenta.
+ */
+async function isNewestInbound(tx: Tx, orgId: string, conversationId: string, sentAt: Date): Promise<boolean> {
+  const [sameOrNewer] = await tx
+    .select({ id: messages.id })
+    .from(messages)
+    .where(
+      and(
+        eq(messages.organizationId, orgId),
+        eq(messages.conversationId, conversationId),
+        eq(messages.direction, "in"),
+        gte(messages.sentAt, sentAt),
+      ),
+    )
+    .limit(1);
+  return !sameOrNewer;
 }
 
 /** Último entrante de la conversación: el corte de lectura de lo que hay a la vista. */

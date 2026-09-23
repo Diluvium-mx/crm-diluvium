@@ -63,17 +63,20 @@ describe.skipIf(!TEST_DATABASE_URL)("ingesta de WhatsApp (Postgres real)", () =>
     wamid?: string;
     sentAt: string;
     account?: string;
+    /** conversationId de Zernio (por omisión, uno fijo por teléfono). */
+    conv?: string;
   }) {
     seq++;
     const phone = opts.phone ?? "5216682410001";
     const outgoing = opts.direction === "outgoing";
+    const conv = opts.conv ?? `zconv_${phone}`;
     return {
       id: `evt_${seq}_${randomUUID()}`,
       event: outgoing ? "message.sent" : "message.received",
       timestamp: opts.sentAt,
       message: {
         id: `zmsg_${seq}`,
-        conversationId: `zconv_${phone}`,
+        conversationId: conv,
         platform: "whatsapp",
         platformMessageId: opts.wamid ?? `wamid.${seq}.${randomUUID()}`,
         direction: opts.direction ?? "incoming",
@@ -83,7 +86,7 @@ describe.skipIf(!TEST_DATABASE_URL)("ingesta de WhatsApp (Postgres real)", () =>
         sentAt: opts.sentAt,
         source: opts.source,
       },
-      conversation: { id: `zconv_${phone}`, participantId: phone, participantName: "Cliente" },
+      conversation: { id: conv, participantId: phone, participantName: "Cliente" },
       account: { id: opts.account ?? "zacc_1", platform: "whatsapp" },
     };
   }
@@ -731,6 +734,83 @@ describe.skipIf(!TEST_DATABASE_URL)("ingesta de WhatsApp (Postgres real)", () =>
       });
       await sendTextMessage(p, { organizationId: ORG_A, conversationId: c.id, sentByUserId: "u_vendedor", text: "va" });
       expect((await conv()).unreadCount).toBe(1);
+    });
+  });
+
+  describe("Zernio cambia el conversationId del mismo cliente", () => {
+    const providerConv = async () => (await db.select().from(s.conversations)).map((c) => c.providerConversationId);
+
+    it("un entrante más nuevo por otra conversación la adopta: una sola conversación, mismo hilo", async () => {
+      await deliver(msgEvent({ conv: "zconv_A", sentAt: "2026-09-18T10:00:00Z" }));
+      await deliver(msgEvent({ conv: "zconv_B", sentAt: "2026-09-18T11:00:00Z" }));
+      expect(await providerConv()).toEqual(["zconv_B"]);
+      expect(await db.select().from(s.messages)).toHaveLength(2);
+      expect(await db.select().from(s.contacts)).toHaveLength(1);
+    });
+
+    it("fuera de orden: un entrante de la conversación VIEJA que llega tarde no pisa a la nueva", async () => {
+      await deliver(msgEvent({ conv: "zconv_A", sentAt: "2026-09-18T10:00:00Z" }));
+      await deliver(msgEvent({ conv: "zconv_B", sentAt: "2026-09-18T12:00:00Z" }));
+      await deliver(msgEvent({ conv: "zconv_A", sentAt: "2026-09-18T11:00:00Z" })); // reintento/replay tardío
+      expect(await providerConv()).toEqual(["zconv_B"]);
+      const msgs = await db.select().from(s.messages);
+      expect(msgs).toHaveLength(3);
+      expect(new Set(msgs.map((m) => m.conversationId)).size).toBe(1);
+    });
+
+    it("fuera de orden desde el inicio: llega primero el nuevo y después el viejo → se queda el nuevo", async () => {
+      await deliver(msgEvent({ conv: "zconv_B", sentAt: "2026-09-18T12:00:00Z" }));
+      await deliver(msgEvent({ conv: "zconv_A", sentAt: "2026-09-18T10:00:00Z" }));
+      expect(await providerConv()).toEqual(["zconv_B"]);
+    });
+
+    it("en paralelo (nuevo y viejo a la vez) converge al más reciente sin importar quién gane", async () => {
+      await deliver(msgEvent({ conv: "zconv_A", sentAt: "2026-09-18T09:00:00Z" }));
+      await Promise.all([
+        deliver(msgEvent({ conv: "zconv_A", sentAt: "2026-09-18T10:00:00Z" })),
+        deliver(msgEvent({ conv: "zconv_B", sentAt: "2026-09-18T11:00:00Z" })),
+      ]);
+      expect(await providerConv()).toEqual(["zconv_B"]);
+    });
+
+    it("misma hora exacta: no se sabe cuál es el nuevo y se queda el actual", async () => {
+      await deliver(msgEvent({ conv: "zconv_A", sentAt: "2026-09-18T10:00:00Z" }));
+      await deliver(msgEvent({ conv: "zconv_B", sentAt: "2026-09-18T10:00:00Z" }));
+      expect(await providerConv()).toEqual(["zconv_A"]);
+    });
+
+    it("el reintento del mismo entrante viejo (mismo wamid) no cambia nada", async () => {
+      const viejo = msgEvent({ conv: "zconv_A", sentAt: "2026-09-18T10:00:00Z", wamid: "wamid.viejo" });
+      await deliver(viejo);
+      await deliver(msgEvent({ conv: "zconv_B", sentAt: "2026-09-18T11:00:00Z" }));
+      await deliver({ ...viejo, id: `${viejo.id}_retry` });
+      expect(await providerConv()).toEqual(["zconv_B"]);
+      expect(await db.select().from(s.messages)).toHaveLength(2);
+    });
+
+    it("solo un ENTRANTE la cambia: un eco saliente por otra conversación no", async () => {
+      await deliver(msgEvent({ conv: "zconv_A", sentAt: "2026-09-18T10:00:00Z" }));
+      await deliver(msgEvent({ conv: "zconv_B", direction: "outgoing", source: "whatsapp_business_app", sentAt: "2026-09-18T11:00:00Z" }));
+      expect(await providerConv()).toEqual(["zconv_A"]);
+      expect(await db.select().from(s.messages)).toHaveLength(2);
+    });
+
+    it("tras el cambio, el envío del CRM va a la conversación NUEVA", async () => {
+      await db.insert(s.user).values({ id: "u_vendedor", name: "Vendedor", email: "v@x.mx" }).onConflictDoNothing();
+      await deliver(msgEvent({ conv: "zconv_A", sentAt: new Date(Date.now() - 120_000).toISOString() }));
+      await deliver(msgEvent({ conv: "zconv_B", sentAt: new Date(Date.now() - 60_000).toISOString() }));
+      const [c] = await db.select().from(s.conversations);
+      const { sendTextMessage } = await import("./send");
+      const destinos: string[] = [];
+      const p = {
+        ...provider,
+        sendText: async (input: { providerConversationId: string }) => {
+          destinos.push(input.providerConversationId);
+          return { providerInternalId: "zmsg_N", providerMessageId: "wamid.N" };
+        },
+      } as import("./provider").MessagingProvider;
+      await sendTextMessage(p, { organizationId: ORG_A, conversationId: c.id, sentByUserId: "u_vendedor", text: "hola" });
+      expect(destinos).toEqual(["zconv_B"]);
     });
   });
 
