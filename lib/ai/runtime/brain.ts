@@ -5,10 +5,13 @@ import { buildBrainSystem, type Faq } from "./knowledge";
 // Señal para transferir a humano (la Fase B no tiene herramientas todavía).
 export const HANDOVER_TOKEN = "[TRANSFERIR]";
 
-// Montos siempre en cifras con $: la guardia de salida (output-guard.ts) solo
-// reconoce montos en cifras. Es una instrucción al modelo, no una garantía: un
+// Montos siempre en cifras con $ y totales con su desglose: la guardia de salida
+// (output-guard.ts) solo reconoce montos en cifras y solo acepta un total fuera de
+// la base si viene desglosado. Es una instrucción al modelo, no una garantía: un
 // monto escrito con palabras o con "k" todavía no lo detecta la guardia.
-export const MONEY_FORMAT_RULE = "Escribe siempre los montos con cifras y signo $ (ej. $5,500), nunca con palabras ni con k.";
+export const MONEY_FORMAT_RULE =
+  "Escribe siempre los montos con cifras y signo $ (ej. $5,500), nunca con palabras ni con k. " +
+  "Al dar un total, desglosa siempre cantidad × precio unitario (ej. 3 × $5,500 = $16,500).";
 
 // Sufijo fijo (depende solo de maxBubbles, que cambia rara vez): va DESPUÉS del
 // Goal y las FAQs, así el prefijo largo sigue siendo idéntico entre llamadas y

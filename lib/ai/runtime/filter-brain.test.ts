@@ -55,7 +55,8 @@ describe("cerebro", () => {
   });
   it("la regla de montos (cifras y $) va en el system del runtime, después del Goal y las FAQs", () => {
     expect(MONEY_FORMAT_RULE).toBe(
-      "Escribe siempre los montos con cifras y signo $ (ej. $5,500), nunca con palabras ni con k.",
+      "Escribe siempre los montos con cifras y signo $ (ej. $5,500), nunca con palabras ni con k. " +
+        "Al dar un total, desglosa siempre cantidad × precio unitario (ej. 3 × $5,500 = $16,500).",
     );
     const sys = buildBrainSystemWithRuntime("GOAL", [{ position: 1, question: "q", answer: "a" }], 2);
     expect(runtimeSuffix(2)).toContain(`- ${MONEY_FORMAT_RULE}`);
