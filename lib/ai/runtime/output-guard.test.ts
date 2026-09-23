@@ -340,12 +340,22 @@ describe("guardia: lo que encontró la revisión enfocada (23-sep)", () => {
       "Paga a 12 MSI",
       "Te hago el 15 por ciento",
       "3 × $5,500 = $16,500 con 10% de descuento",
+      // Revisión final (P1): puntuación al final, "interés" en singular, mensualidades y plazo aparte.
+      "Esta semana tenemos 2x1.",
+      "Aprovecha el 2x1, solo hoy.",
+      "Solo hoy: 2 por 1.",
+      "Sí, también a 12 meses sin interés con tarjeta participante.",
+      "Sí, puedes pagar hasta en 12 mensualidades sin intereses.",
+      "Sí, manejamos meses sin intereses: hasta 12 meses con tarjeta de crédito.",
+      "Tenemos MSI hasta 12 meses.",
     ]) expect(reviewReply(t, kb).ok, t).toBe(false);
     for (const t of [
       "Puedes pagar a 6 meses sin intereses.",
       "El anticipo es del 50%.",
       "La entrada mide 90x60 cm", // medida, no promoción
       "3 × $5,500 = $16,500",
+      "Sí, 6 meses sin interés.",
+      "Sí, 6 meses sin intereses. La fabricación tarda 3 semanas.",
     ]) expect(reviewReply(t, kb), t).toEqual({ ok: true });
     // Una promo de una FAQ DESACTIVADA no cuenta.
     const off = { goal: "Eres Angela.", faqs: [{ position: 1, question: "¿Promo?", answer: "2x1 en tapones", enabled: false }] };
