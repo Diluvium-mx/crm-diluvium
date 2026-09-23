@@ -55,7 +55,7 @@ function ModelSelect({
   return (
     <label htmlFor={id} className="flex flex-col gap-1">
       <span className="text-sm font-medium text-foreground">{title}</span>
-      <span className="text-xs text-foreground/60">{hint}</span>
+      <span className="text-xs text-foreground/70">{hint}</span>
       <select
         id={id}
         value={value}
@@ -79,17 +79,17 @@ function StageCard({ stage }: { stage: DryRunStageView }) {
     <div className="rounded-lg border border-black/10 p-4 dark:border-white/10">
       <div className="flex items-baseline justify-between gap-2">
         <span className="text-sm font-semibold text-foreground">{title}</span>
-        <span className="text-xs text-foreground/60">
+        <span className="text-xs text-foreground/70">
           {stage.label} · <code className="font-mono">{stage.modelId}</code>
         </span>
       </div>
       {stage.ok ? (
         <>
           <p className="mt-2 whitespace-pre-wrap text-sm text-foreground">{stage.text}</p>
-          <p className="mt-2 text-xs text-foreground/50">{tokenLine(stage.usage)}</p>
+          <p className="mt-2 text-xs text-foreground/70">{tokenLine(stage.usage)}</p>
         </>
       ) : (
-        <p className="mt-2 text-sm text-brand-orange">{stage.error}</p>
+        <p className="mt-2 border-l-2 border-brand-orange pl-2 text-sm text-foreground">{stage.error}</p>
       )}
     </div>
   );
@@ -158,7 +158,7 @@ export function AgenteIaPanel({
       <div className="mx-auto flex max-w-3xl flex-col gap-6 p-6">
         <header className="flex flex-col gap-1">
           <h1 className="text-xl font-semibold text-foreground">Agente IA</h1>
-          <p className="text-sm text-foreground/60">
+          <p className="text-sm text-foreground/70">
             Angela responde por WhatsApp con el Goal y las preguntas frecuentes. El filtro decide si
             un mensaje necesita respuesta; el cerebro la redacta. Enciéndelo por canal abajo.
           </p>
@@ -184,13 +184,13 @@ export function AgenteIaPanel({
             onChange={changeCerebro}
           />
           <div className="min-h-5 text-xs">
-            {isSaving && <span className="text-foreground/60">Guardando…</span>}
-            {!isSaving && saveError && <span className="text-brand-orange">{saveError}</span>}
+            {isSaving && <span className="text-foreground/70">Guardando…</span>}
+            {!isSaving && saveError && <span className="border-l-2 border-brand-orange pl-2 text-foreground">{saveError}</span>}
             {!isSaving && !saveError && savedAt && (
-              <span className="text-foreground/60">Guardado a las {savedAt}.</span>
+              <span className="text-foreground/70">Guardado a las {savedAt}</span>
             )}
           </div>
-          <p className="text-xs text-foreground/50">
+          <p className="text-xs text-foreground/70">
             Una opción en gris no tiene su llave (API key) configurada en el entorno, o su proveedor
             aún no está disponible. Agrega la llave en Railway (servicio web) para habilitarla.
           </p>
@@ -202,7 +202,7 @@ export function AgenteIaPanel({
           <div className="flex items-center justify-between gap-3">
             <div className="flex flex-col">
               <h2 className="text-sm font-semibold text-foreground">Probar modelo</h2>
-              <p className="text-xs text-foreground/60">
+              <p className="text-xs text-foreground/70">
                 Manda un mensaje de ejemplo por filtro → cerebro con la config actual. No toca
                 WhatsApp ni conversaciones reales.
               </p>
@@ -217,7 +217,7 @@ export function AgenteIaPanel({
             </button>
           </div>
 
-          {testError && <p className="text-sm text-brand-orange">{testError}</p>}
+          {testError && <p className="border-l-2 border-brand-orange pl-2 text-sm text-foreground">{testError}</p>}
 
           {result && (
             <div className="flex flex-col gap-3">
