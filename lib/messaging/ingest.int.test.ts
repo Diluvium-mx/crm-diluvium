@@ -812,6 +812,71 @@ describe.skipIf(!TEST_DATABASE_URL)("ingesta de WhatsApp (Postgres real)", () =>
       await sendTextMessage(p, { organizationId: ORG_A, conversationId: c.id, sentByUserId: "u_vendedor", text: "hola" });
       expect(destinos).toEqual(["zconv_B"]);
     });
+
+    it("un reenvío del entrante viejo (mismo wamid) con hora más nueva no revierte la adopción", async () => {
+      await deliver(msgEvent({ conv: "zconv_A", sentAt: "2026-09-18T10:00:00Z", wamid: "wamid.viejo" }));
+      await deliver(msgEvent({ conv: "zconv_B", sentAt: "2026-09-18T11:00:00Z" }));
+      await deliver(msgEvent({ conv: "zconv_A", sentAt: "2026-09-18T12:00:00Z", wamid: "wamid.viejo" }));
+      expect(await providerConv()).toEqual(["zconv_B"]);
+      expect(await db.select().from(s.messages)).toHaveLength(2);
+    });
+
+    describe("eco de un envío del CRM por la conversación VIEJA, sin participantId", () => {
+      // Zernio ya pasó al cliente a zconv_B, pero el eco de un envío que iba en
+      // vuelo llega por zconv_A y sin teléfono: lo atribuye la fila del mensaje.
+      const ecoViejo = (internalId: string, wamid: string) => ({
+        id: `evt_eco_${randomUUID()}`,
+        event: "message.sent",
+        timestamp: new Date().toISOString(),
+        message: {
+          id: internalId,
+          conversationId: "zconv_A",
+          platform: "whatsapp",
+          platformMessageId: wamid,
+          direction: "outgoing",
+          text: "hola",
+          attachments: [],
+          sender: { id: "zacc_1" },
+          sentAt: new Date().toISOString(),
+          source: "cloud_api",
+        },
+        conversation: { id: "zconv_A" }, // sin participantId
+        account: { id: "zacc_1", platform: "whatsapp" },
+      });
+      async function adoptada() {
+        await db.insert(s.user).values({ id: "u_vendedor", name: "Vendedor", email: "v@x.mx" }).onConflictDoNothing();
+        await deliver(msgEvent({ conv: "zconv_A", sentAt: new Date(Date.now() - 120_000).toISOString() }));
+        await deliver(msgEvent({ conv: "zconv_B", sentAt: new Date(Date.now() - 60_000).toISOString() }));
+        const [c] = await db.select().from(s.conversations);
+        expect(c.providerConversationId).toBe("zconv_B");
+        return c;
+      }
+      const salientes = () => db.select().from(s.messages).where(eq(s.messages.direction, "out"));
+
+      it("la API confirmó con SOLO el id interno: el eco completa la fila en cola (no dead-letter)", async () => {
+        const c = await adoptada();
+        const { sendTextMessage } = await import("./send");
+        const p = { ...provider, sendText: async () => ({ providerInternalId: "zmsg_VUELO" }) } as import("./provider").MessagingProvider;
+        await sendTextMessage(p, { organizationId: ORG_A, conversationId: c.id, sentByUserId: "u_vendedor", text: "hola" });
+        await deliver(ecoViejo("zmsg_VUELO", "wamid.VUELO"));
+        const rows = await salientes();
+        expect(rows).toHaveLength(1);
+        expect(rows[0]).toMatchObject({ conversationId: c.id, source: "crm", providerMessageId: "wamid.VUELO" });
+        expect(await providerConv()).toEqual(["zconv_B"]);
+      });
+
+      it("la fila ya tenía el wamid: el eco es duplicado (no dead-letter)", async () => {
+        const c = await adoptada();
+        const { sendTextMessage } = await import("./send");
+        const p = {
+          ...provider,
+          sendText: async () => ({ providerInternalId: "zmsg_L", providerMessageId: "wamid.L" }),
+        } as import("./provider").MessagingProvider;
+        await sendTextMessage(p, { organizationId: ORG_A, conversationId: c.id, sentByUserId: "u_vendedor", text: "hola" });
+        await expect(deliver(ecoViejo("zmsg_L", "wamid.L"))).resolves.toBe("mensaje duplicado (wamid ya guardado)");
+        expect(await salientes()).toHaveLength(1);
+      });
+    });
   });
 
   describe("retención y atribución de webhook_events", () => {
