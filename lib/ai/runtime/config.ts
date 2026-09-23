@@ -22,7 +22,7 @@ export type AgentConfig = {
   dailyBudgetUsd: number;
 };
 
-// Mismos defaults que las columnas de ai_config (migraciones 0014/0015).
+// Mismos defaults que las columnas de ai_config (migraciones 0014/0015/0025).
 export const AGENT_CONFIG_DEFAULTS: AgentConfig = {
   modeloFiltro: DEFAULT_FILTER_MODEL,
   modeloCerebro: DEFAULT_BRAIN_MODEL,
@@ -30,7 +30,7 @@ export const AGENT_CONFIG_DEFAULTS: AgentConfig = {
   responseDelaySeconds: 15,
   maxWaitSeconds: 60,
   handoverReactivateHours: 8,
-  antiLoopMaxPerHour: 10,
+  antiLoopMaxPerHour: 30,
   maxRepliesPerContact: null,
   pauseOnHumanReply: true,
   contextMessages: 20,

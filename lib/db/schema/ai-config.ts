@@ -23,10 +23,10 @@ export const aiConfig = pgTable("ai_config", {
   responseDelaySeconds: integer("response_delay_seconds").default(15).notNull(),
   // Tope de la espera: aunque el cliente siga escribiendo, no espera más que esto.
   maxWaitSeconds: integer("max_wait_seconds").default(60).notNull(),
-  // "Pasar a humano": horas tras las que el agente se reactiva automáticamente.
+  // Sin uso desde el 23-sep (pasar a humano ya no pausa); se conserva la columna.
   handoverReactivateHours: integer("handover_reactivate_hours").default(8).notNull(),
   // Freno anti-bucle: máx respuestas del agente por conversación por hora.
-  antiLoopMaxPerHour: integer("anti_loop_max_per_hour").default(10).notNull(),
+  antiLoopMaxPerHour: integer("anti_loop_max_per_hour").default(30).notNull(),
   // Tope total de respuestas por contacto. null = sin tope (NO copiamos el 50 de GHL).
   maxRepliesPerContact: integer("max_replies_per_contact"),
   // Si un vendedor responde a mano (CRM o celular), el agente se pausa en esa

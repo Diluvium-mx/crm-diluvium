@@ -6,7 +6,6 @@
 import { and, count, desc, eq, gte, inArray, isNotNull, ne, sql } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { aiAgentDrafts, aiUsage, channels, conversations, messages } from "@/lib/db/schema";
-import { SEND_UNCONFIRMED, SEND_UNKNOWN } from "@/lib/messaging/rules";
 import { FINAL_OUTCOMES, REPLY_OUTCOMES } from "./usage";
 
 export type ConversationRow = typeof conversations.$inferSelect;
@@ -99,10 +98,11 @@ export async function humanOutboundCount(organizationId: string, conversationId:
   return value;
 }
 
-// ¿Hay un saliente del agente en camino, fallido SIN CONFIRMAR posterior al corte
-// (última reactivación/encendido), o un plan/aprobación todavía "enviando"? Entonces
-// el agente no responde encima (y la conciliación del plan no se mezcla con otra respuesta).
-export async function agentSendUnresolved(organizationId: string, conversationId: string, cut: Date | null): Promise<boolean> {
+// ¿Hay un saliente del agente en camino ("queued") o un plan de burbujas todavía
+// "enviando"? Entonces el agente no responde encima (y la conciliación del plan no
+// se mezcla con otra respuesta). Un envío FALLIDO ya no frena al agente: el barrido
+// deja un aviso al vendedor (23-sep-2026: el agente siempre contesta).
+export async function agentSendUnresolved(organizationId: string, conversationId: string): Promise<boolean> {
   const [plan] = await db
     .select({ id: aiAgentDrafts.id })
     .from(aiAgentDrafts)
@@ -123,9 +123,7 @@ export async function agentSendUnresolved(organizationId: string, conversationId
         inConversation(organizationId, conversationId),
         eq(messages.direction, "out"),
         eq(messages.source, "ai_agent"),
-        sql`(${messages.status} = 'queued' or (${messages.status} = 'failed'
-          and (${messages.errorCode} = ${SEND_UNCONFIRMED} or ${messages.errorCode} like ${`${SEND_UNKNOWN}%`})
-          and ${messages.createdAt} > coalesce(${cut ? cut.toISOString() : null}::timestamp, '-infinity'::timestamp)))`,
+        eq(messages.status, "queued"),
       ),
     )
     .limit(1);

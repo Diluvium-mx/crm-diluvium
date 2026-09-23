@@ -8,7 +8,7 @@
 //     cual en la base activa, o
 //   - un enlace fuera de la lista permitida (diluvium.com.mx y los enlaces de
 //     Amazon / Mercado Libre que ya están en las FAQs activas)
-// → NO se envía: queda como borrador para revisión humana, con el motivo.
+// → desde el 23-sep-2026 SÍ se envía: solo deja un aviso al vendedor en el hilo.
 // Es un freno contra respuestas inventadas o inducidas por el cliente (prompt
 // injection): ante la duda, a revisión humana (nunca bloquea en silencio).
 import type { Faq } from "./knowledge";

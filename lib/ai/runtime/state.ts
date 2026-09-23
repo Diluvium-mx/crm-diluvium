@@ -1,13 +1,10 @@
 // Escrituras de estado del runtime del agente: transiciones de agent_state,
-// etiquetas de rastro en el contacto, marca de respuesta y borradores.
-// "Nunca callarse sin dejar rastro": toda pausa queda en agent_state (visible en
-// la bandeja) y, cuando aplica, como etiqueta del contacto.
-import { and, eq, inArray, sql } from "drizzle-orm";
+// marca de respuesta y planes de envío. La única pausa (un vendedor contestó)
+// queda en agent_state, visible en la bandeja; lo demás deja un aviso (notices.ts).
+import { and, eq, sql } from "drizzle-orm";
 import { db } from "@/lib/db";
-import { aiAgentDrafts, contacts, conversations } from "@/lib/db/schema";
+import { aiAgentDrafts, conversations } from "@/lib/db/schema";
 import type { AgentState } from "./policy";
-
-export { TAG_ANTI_LOOP, TAG_HANDOVER } from "./tags";
 
 // Multi-tenant (CLAUDE.md §7): toda escritura filtra por organization_id además
 // del id; un id de otra organización no cambia nada.
@@ -28,14 +25,6 @@ export async function setAgentState(
     .where(ownConversation(organizationId, conversationId));
 }
 
-// Agrega una etiqueta al contacto si no la tiene (idempotente).
-export async function addContactTag(organizationId: string, contactId: string, tag: string): Promise<void> {
-  await db
-    .update(contacts)
-    .set({ tags: sql`case when ${tag} = any(${contacts.tags}) then ${contacts.tags} else array_append(${contacts.tags}, ${tag}) end` })
-    .where(and(eq(contacts.id, contactId), eq(contacts.organizationId, organizationId)));
-}
-
 export async function markAgentReply(organizationId: string, conversationId: string, at: Date): Promise<void> {
   await db.update(conversations).set({ lastAgentReplyAt: at }).where(ownConversation(organizationId, conversationId));
 }
@@ -43,7 +32,7 @@ export async function markAgentReply(organizationId: string, conversationId: str
 type Executor = Pick<typeof db, "execute">;
 
 // Avisa a la bandeja (SSE) que algo del agente cambió en la conversación. Los
-// cambios en `conversations` ya avisan por el trigger de la 0008; los borradores
+// cambios en `conversations` ya avisan por el trigger de la 0008; los avisos
 // viven en su propia tabla, así que se avisa a mano con el MISMO canal y forma
 // ("conversation.updated"). Dentro de una transacción, sale al hacer COMMIT.
 export async function notifyConversation(exec: Executor, organizationId: string, conversationId: string): Promise<void> {
@@ -52,94 +41,36 @@ export async function notifyConversation(exec: Executor, organizationId: string,
   );
 }
 
-// Guarda el borrador del modo "borrador". Uno solo vigente por conversación: el
-// anterior "pendiente" pasa a "obsoleto" en la misma transacción.
-export async function saveDraft(input: {
+// Guarda el PLAN durable de una respuesta AUTO de varias burbujas ("enviando",
+// invisible en la bandeja) ANTES de mandar la 1ª: si el worker se reinicia a la
+// mitad, el barrido (reconcileStuckDrafts) lo concilia con el hilo. resolved_at
+// sale del reloj de Postgres, el mismo de messages.created_at.
+export async function savePlan(input: {
   organizationId: string;
   conversationId: string;
   bubbles: string[];
   triggerMessageId: string | null;
   now: Date;
-  reviewReason?: string | null;
-  // "enviando" = PLAN durable de un envío AUTO de varias burbujas: invisible para la
-  // bandeja y no aprobable; si algo falla a la mitad, el resto queda recuperable.
-  status?: "pendiente" | "enviando";
 }): Promise<string> {
   const id = crypto.randomUUID();
-  await db.transaction(async (tx) => {
-    // La FK solo exige que la conversación exista: se exige además que sea de esta organización.
-    const [own] = await tx
-      .select({ id: conversations.id })
-      .from(conversations)
-      .where(ownConversation(input.organizationId, input.conversationId))
-      .limit(1);
-    if (!own) throw new Error(`conversación ${input.conversationId} no pertenece a la organización`);
-    await tx
-      .update(aiAgentDrafts)
-      .set({ status: "obsoleto", resolvedAt: input.now })
-      .where(
-        and(
-          eq(aiAgentDrafts.organizationId, input.organizationId),
-          eq(aiAgentDrafts.conversationId, input.conversationId),
-          eq(aiAgentDrafts.status, "pendiente"),
-        ),
-      );
-    await tx.insert(aiAgentDrafts).values({
-      id,
-      organizationId: input.organizationId,
-      conversationId: input.conversationId,
-      bubbles: input.bubbles,
-      triggerMessageId: input.triggerMessageId,
-      reviewReason: input.reviewReason ?? null,
-      status: input.status ?? "pendiente",
-      // Plan: reloj de Postgres, igual que messages.created_at (ver reconcileStuckDrafts).
-      resolvedAt: input.status === "enviando" ? sql`now()` : null,
-      createdAt: input.now,
-    });
-    await notifyConversation(tx, input.organizationId, input.conversationId);
+  // La FK solo exige que la conversación exista: se exige además que sea de esta organización.
+  const [own] = await db
+    .select({ id: conversations.id })
+    .from(conversations)
+    .where(ownConversation(input.organizationId, input.conversationId))
+    .limit(1);
+  if (!own) throw new Error(`conversación ${input.conversationId} no pertenece a la organización`);
+  await db.insert(aiAgentDrafts).values({
+    id,
+    organizationId: input.organizationId,
+    conversationId: input.conversationId,
+    bubbles: input.bubbles,
+    triggerMessageId: input.triggerMessageId,
+    status: "enviando",
+    resolvedAt: sql`now()`,
+    createdAt: input.now,
   });
   return id;
-}
-
-// Un vendedor ya respondió: el borrador vigente de esa conversación quedó viejo.
-export async function obsoletePendingDrafts(organizationId: string, conversationId: string, now: Date): Promise<number> {
-  const rows = await db
-    .update(aiAgentDrafts)
-    .set({ status: "obsoleto", resolvedAt: now })
-    .where(
-      and(
-        eq(aiAgentDrafts.conversationId, conversationId),
-        eq(aiAgentDrafts.organizationId, organizationId),
-        eq(aiAgentDrafts.status, "pendiente"),
-      ),
-    )
-    .returning({ id: aiAgentDrafts.id });
-  if (rows.length > 0) await notifyConversation(db, organizationId, conversationId);
-  return rows.length;
-}
-
-// El canal se apagó: sus borradores vigentes quedan viejos (nada del agente sale
-// por un canal apagado). Avisa a la bandeja de cada conversación afectada.
-export async function obsoleteChannelDrafts(organizationId: string, channelId: string, now: Date): Promise<number> {
-  const rows = await db
-    .update(aiAgentDrafts)
-    .set({ status: "obsoleto", resolvedAt: now })
-    .where(
-      and(
-        eq(aiAgentDrafts.organizationId, organizationId),
-        eq(aiAgentDrafts.status, "pendiente"),
-        inArray(
-          aiAgentDrafts.conversationId,
-          db
-            .select({ id: conversations.id })
-            .from(conversations)
-            .where(and(eq(conversations.channelId, channelId), eq(conversations.organizationId, organizationId))),
-        ),
-      ),
-    )
-    .returning({ conversationId: aiAgentDrafts.conversationId });
-  for (const r of rows) await notifyConversation(db, organizationId, r.conversationId);
-  return rows.length;
 }
 
 // Cierra el PLAN de un envío AUTO ("enviando") como enviado u obsoleto.
@@ -148,28 +79,4 @@ export async function closePlan(organizationId: string, planId: string, status: 
     .update(aiAgentDrafts)
     .set({ status })
     .where(and(eq(aiAgentDrafts.id, planId), eq(aiAgentDrafts.organizationId, organizationId), eq(aiAgentDrafts.status, "enviando")));
-}
-
-// El resto de una respuesta que no salió (sin confirmar, fallo a la mitad o proceso
-// interrumpido) queda como borrador VISIBLE con el motivo (u obsoleto si ya hay otro
-// pendiente en la conversación: índice único). Nunca se reenvía solo.
-export async function retainRemainder(
-  organizationId: string,
-  draftId: string,
-  conversationId: string,
-  remainder: string[],
-  reason: string,
-): Promise<void> {
-  await db
-    .update(aiAgentDrafts)
-    .set({
-      bubbles: remainder,
-      reviewReason: reason,
-      resolvedAt: null,
-      resolvedByUserId: null,
-      status: sql`case when exists (select 1 from ${aiAgentDrafts} d2 where d2.conversation_id = ${conversationId}
-        and d2.status = 'pendiente') then 'obsoleto'::ai_draft_status else 'pendiente'::ai_draft_status end`,
-    })
-    .where(and(eq(aiAgentDrafts.id, draftId), eq(aiAgentDrafts.organizationId, organizationId), eq(aiAgentDrafts.status, "enviando")));
-  await notifyConversation(db, organizationId, conversationId);
 }
