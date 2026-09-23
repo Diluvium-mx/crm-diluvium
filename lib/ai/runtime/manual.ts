@@ -7,7 +7,8 @@ import { db } from "@/lib/db";
 import { aiAgentDrafts, channels, conversations } from "@/lib/db/schema";
 import { bullAgentQueuePort, cancelAgentRun, withQueueTimeout } from "./queue";
 import { BUBBLE_PAUSE_MS } from "./run";
-import { markAgentReply, notifyConversation } from "./state";
+import { humanOutboundCount, inboundCount } from "./context";
+import { markAgentReply, notifyConversation, retainRemainder } from "./state";
 
 // Vuelve a activar el agente. El corte (agent_state_changed_at = ahora) hace
 // que lo que un vendedor respondió ANTES ya no lo vuelva a pausar. No responde
@@ -33,7 +34,14 @@ export async function reactivateAgentInConversation(
 
 export class DraftNotAvailableError extends Error {}
 
-type SendBubble = (p: { organizationId: string; conversationId: string; text: string; sentByUserId: string }) => Promise<void>;
+// Devuelve el resultado del proveedor: "pending" = resultado desconocido (timeout, 5xx):
+// el mensaje queda en el outbox y se concilia solo; el borrador NO se da por enviado.
+type SendBubble = (p: {
+  organizationId: string;
+  conversationId: string;
+  text: string;
+  sentByUserId: string;
+}) => Promise<{ status: "sent" | "pending" }>;
 
 // Envía un borrador. Lo RECLAMA primero (pendiente → enviando) en una sola
 // sentencia: dos clics o dos vendedores no lo mandan dos veces. Queda "enviado"
@@ -47,7 +55,7 @@ export async function approveDraft(input: {
   now: Date;
   sendBubble: SendBubble;
   sleep?: (ms: number) => Promise<void>;
-}): Promise<{ sent: number }> {
+}): Promise<{ sent: number; confirmed: boolean }> {
   const org = input.organizationId;
   const [draft] = await db
     .update(aiAgentDrafts)
@@ -70,7 +78,13 @@ export async function approveDraft(input: {
   await notify();
   const sleep = input.sleep ?? ((ms: number) => new Promise((r) => setTimeout(r, ms)));
   let sent = 0;
+  let unconfirmed = false;
   let channelOff = false;
+  let interrupted: string | null = null;
+  // Líneas base al reclamar: si el cliente escribe o un vendedor responde mientras
+  // salen las burbujas, el resto ya no contesta lo último (queda en la tarjeta).
+  const inboundsAtClaim = await inboundCount(org, draft.conversationId);
+  const humansAtClaim = await humanOutboundCount(org, draft.conversationId);
   try {
     for (const text of draft.bubbles) {
       if (sent > 0) await sleep(BUBBLE_PAUSE_MS);
@@ -79,23 +93,74 @@ export async function approveDraft(input: {
         channelOff = true;
         break;
       }
-      await input.sendBubble({ organizationId: org, conversationId: draft.conversationId, text, sentByUserId: input.userId });
+      if ((await inboundCount(org, draft.conversationId)) > inboundsAtClaim) {
+        interrupted = "El cliente escribió mientras se enviaba";
+        break;
+      }
+      if ((await humanOutboundCount(org, draft.conversationId)) > humansAtClaim) {
+        interrupted = "Un vendedor respondió mientras se enviaba";
+        break;
+      }
+      const outcome = await input.sendBubble({ organizationId: org, conversationId: draft.conversationId, text, sentByUserId: input.userId });
       sent++;
+      // Sin confirmación no se manda la siguiente (igual que en AUTO).
+      if (outcome.status !== "sent") {
+        unconfirmed = true;
+        break;
+      }
     }
   } catch (error) {
     if (sent === 0) await releaseDraft(org, draft.id, draft.conversationId);
-    else await finishDraft(org, draft.id, "enviado", input.now, draft.conversationId);
+    else {
+      // Salió una parte: lo que faltó vuelve a la tarjeta con el motivo (nunca se pierde).
+      await markAgentReply(org, draft.conversationId, input.now);
+      await retainRemainder(
+        org,
+        draft.id,
+        draft.conversationId,
+        draft.bubbles.slice(sent),
+        `Se enviaron ${sent} de ${draft.bubbles.length} burbujas y la siguiente falló; revisa el hilo antes de mandar el resto.`,
+      );
+    }
     await notify();
     throw error;
+  }
+  if (interrupted) {
+    if (sent === 0) await releaseDraft(org, draft.id, draft.conversationId);
+    else {
+      await markAgentReply(org, draft.conversationId, input.now);
+      await retainRemainder(
+        org,
+        draft.id,
+        draft.conversationId,
+        draft.bubbles.slice(sent),
+        `${interrupted}: salieron ${sent} de ${draft.bubbles.length} burbujas; revisa el hilo antes de mandar el resto.`,
+      );
+    }
+    await notify();
+    return { sent, confirmed: !unconfirmed };
   }
   if (sent === 0 && channelOff) {
     await finishDraft(org, draft.id, "obsoleto", input.now, draft.conversationId);
     await notify();
     throw new DraftNotAvailableError("El agente se apagó en este canal: el borrador ya no se envía.");
   }
-  await finishDraft(org, draft.id, "enviado", input.now, draft.conversationId);
+  // "enviado" solo si WhatsApp confirmó todas las burbujas. Si una quedó "pending":
+  // con resto, el resto vuelve a la tarjeta con el motivo; sin resto, el borrador
+  // sigue "enviando" y el barrido lo resuelve con el estado real (nunca reenvía).
+  if (!unconfirmed) await finishDraft(org, draft.id, "enviado", input.now, draft.conversationId);
+  else if (sent < draft.bubbles.length) {
+    await markAgentReply(org, draft.conversationId, input.now);
+    await retainRemainder(
+      org,
+      draft.id,
+      draft.conversationId,
+      draft.bubbles.slice(sent),
+      "WhatsApp no confirmó la burbuja anterior; revisa el hilo antes de mandar el resto.",
+    );
+  }
   await notify();
-  return { sent };
+  return { sent, confirmed: !unconfirmed };
 }
 
 // El canal de la conversación tiene el agente encendido (y todo es de la organización).
