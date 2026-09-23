@@ -47,7 +47,18 @@ railway variable set 'OPENAI_API_KEY=${{crm-diluvium.OPENAI_API_KEY}}' -s worker
 railway variable set 'ANTHROPIC_API_KEY=${{crm-diluvium.ANTHROPIC_API_KEY}}' -s worker -e staging
 ```
 
-(y lo mismo con `-e production` tras validar en staging). Comillas **simples**:
+**Ojo: el worker de producción es OTRO servicio**, `worker-production` (id 189e0d41);
+el servicio `worker` solo corre en staging (su instancia en production está vacía).
+Verificado el 22-sep-2026 (solo lectura): las llaves de IA de producción quedaron en
+`worker` (sin deployments) y **faltan en `worker-production`**, que es el que corre.
+Antes de encender el agente en producción (con OK del dueño; reinicia el worker):
+
+```bash
+railway variable set 'OPENAI_API_KEY=${{crm-diluvium.OPENAI_API_KEY}}' -s worker-production -e production
+railway variable set 'ANTHROPIC_API_KEY=${{crm-diluvium.ANTHROPIC_API_KEY}}' -s worker-production -e production
+```
+
+Comillas **simples**:
 zsh trata `${{...}}` como *bad substitution* con comillas dobles. Una opción del
 selector cuya llave falte queda en gris automáticamente.
 
