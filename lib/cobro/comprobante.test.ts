@@ -5,7 +5,6 @@ const hoy = new Date("2026-09-23T18:00:00Z");
 const datosCobro = { beneficiario: "Diluvium Control de Inundaciones SA de CV", clabe: "002010077777777771", cuenta: "1234567890", banco: "Banamex" };
 const ctx = (over: Partial<ContextoCotizacion> = {}): ContextoCotizacion => ({
   totalCotizado: 5_500,
-  cotizadoEn: new Date("2026-09-20T00:00:00Z"),
   anticipoConfirmado: 0,
   datosCobro,
   referenciaYaUsada: false,
@@ -45,10 +44,10 @@ describe("verificarComprobante", () => {
     expect(verificarComprobante(lectura(), ctx({ referenciaYaUsada: true }))).toMatchObject({ ok: false, motivo: expect.stringMatching(/ya se usó/) });
     expect(verificarComprobante(lectura({ referencia: "12" }), ctx())).toMatchObject({ ok: false, motivo: expect.stringMatching(/referencia/) });
   });
-  it("fecha futura o anterior a la cotización → humano; hoy y la fecha de la cotización sí valen", () => {
+  it("fecha futura → humano; hoy o cualquier fecha pasada legible sí vale", () => {
     expect(verificarComprobante(lectura({ fecha: "25/09/2026" }), ctx())).toMatchObject({ ok: false, motivo: expect.stringMatching(/futura/) });
-    expect(verificarComprobante(lectura({ fecha: "15/09/2026" }), ctx())).toMatchObject({ ok: false, motivo: expect.stringMatching(/anterior a la cotización/) });
-    expect(verificarComprobante(lectura({ fecha: "20/09/2026" }), ctx()).ok).toBe(true);
+    expect(verificarComprobante(lectura({ fecha: "15/09/2026" }), ctx()).ok).toBe(true);
+    expect(verificarComprobante(lectura({ fecha: "23/09/2026" }), ctx()).ok).toBe(true);
     expect(verificarComprobante(lectura({ fecha: "no se ve" }), ctx())).toMatchObject({ ok: false, motivo: expect.stringMatching(/fecha/) });
   });
   it("sin monto de cotización en el contacto → humano (el vendedor lo fija en el detalle)", () => {

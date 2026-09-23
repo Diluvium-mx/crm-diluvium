@@ -44,10 +44,6 @@ export async function contextoParaComprobante(organizationId: string, conversati
   const [dc] = await db.select().from(datosCobro).where(eq(datosCobro.organizationId, organizationId)).limit(1);
   return {
     totalCotizado: c?.monto != null ? Number(c.monto) : null,
-    // El contacto no guarda cuándo se cotizó: sin corte por fecha de cotización
-    // hasta que exista ese dato (la regla "no anterior a la cotización" queda
-    // sin efecto aquí, no bloquea).
-    cotizadoEn: null as Date | null,
     anticipoConfirmado: await anticipoConfirmado(organizationId, conversationId),
     datosCobro: { beneficiario: dc?.beneficiario ?? "", clabe: dc?.clabe ?? "", cuenta: dc?.cuenta ?? "", banco: dc?.banco ?? "" },
     referenciaYaUsada: referencia ? await referenciaYaUsada(organizationId, referencia) : false,

@@ -18,8 +18,6 @@ export type LecturaComprobante = {
 export type ContextoCotizacion = {
   /** Total cotizado en MXN (contacts.monto_cotizacion). null = sin cotización. */
   totalCotizado: number | null;
-  /** Cuándo se cotizó (para rechazar comprobantes anteriores). null = sin dato. */
-  cotizadoEn: Date | null;
   /** Anticipo ya confirmado en esta conversación (MXN), 0 si ninguno. */
   anticipoConfirmado: number;
   datosCobro: { beneficiario: string; clabe: string; cuenta: string; banco: string };
@@ -59,6 +57,7 @@ export function parseMontoMxn(raw: string | number | null): number | null {
 
 // Fechas como salen en comprobantes mexicanos: "23/09/2026", "23-09-26",
 // "2026-09-23", "23 sep 2026", "23 de septiembre de 2026". null si no se entiende.
+// La fecha solo debe ser legible y no futura (decisión del dueño, 23-sep-2026).
 const MESES: Record<string, number> = {
   ene: 1, feb: 2, mar: 3, abr: 4, may: 5, jun: 6, jul: 7, ago: 8, sep: 9, sept: 9, oct: 10, nov: 11, dic: 12,
 };
@@ -128,9 +127,6 @@ export function verificarComprobante(lectura: LecturaComprobante, ctx: ContextoC
   const fecha = parseFecha(lectura.fecha);
   if (!fecha) return humano("no se alcanza a leer la fecha del comprobante");
   if (fecha.getTime() > ctx.hoy.getTime() && !sameDay(fecha, ctx.hoy)) return humano(`la fecha del comprobante (${lectura.fecha}) es futura`);
-  if (ctx.cotizadoEn && fecha.getTime() < ctx.cotizadoEn.getTime() && !sameDay(fecha, ctx.cotizadoEn)) {
-    return humano(`la fecha del comprobante (${lectura.fecha}) es anterior a la cotización`);
-  }
   if (ctx.totalCotizado === null || ctx.totalCotizado <= 0) return humano("el contacto no tiene monto de cotización; el vendedor debe fijarlo en el detalle");
   const total = ctx.totalCotizado;
   const restante = total - ctx.anticipoConfirmado;
