@@ -1,6 +1,6 @@
 "use client";
 
-// Sección conjunta Fragmentos + Plantillas (2ª mitad de la Fase 2).
+// Sección "Mensajes rápidos": Fragmentos + Plantillas (2ª mitad de la Fase 2).
 // - Fragmentos ⚡ (naranja de acción): texto libre editable, para DENTRO de la
 //   ventana de 24 h; se crean/editan/borran aquí, con variables {{nombre}}.
 // - Plantillas 📄 (azul estructural): aprobadas por Meta, para FUERA de la
@@ -30,7 +30,7 @@ export function FragmentosPlantillas({
   return (
     <div className="flex h-[calc(100dvh-4rem)] min-h-0 flex-col">
       <header className="flex flex-wrap items-center gap-3 border-b bg-card px-4 py-3">
-        <h1 className="text-sm font-semibold">Fragmentos y plantillas</h1>
+        <h1 className="text-sm font-semibold">Mensajes rápidos</h1>
         <div role="tablist" aria-label="Fragmentos o plantillas" className="ml-auto flex gap-1 rounded-lg bg-muted p-1">
           <button
             role="tab"

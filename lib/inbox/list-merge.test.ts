@@ -9,6 +9,7 @@ function item(id: string, at: string | null, unread = 0): ConversationListItem {
     lastMessage: at ? { preview: "hola", direction: "in", kind: "text", at: new Date(at) } : null,
     unreadCount: unread,
     isStarred: false,
+    temperature: null,
     awaitingReplySince: null,
     windowExpiresAt: null,
   };

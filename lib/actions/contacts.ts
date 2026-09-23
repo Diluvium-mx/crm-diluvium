@@ -75,7 +75,7 @@ export async function createContact(input: CreateContactInput) {
     })
     .returning();
 
-  revalidatePath("/contactos");
+  revalidatePath("/embudo");
 
   return created;
 }
@@ -106,7 +106,7 @@ export async function updateContactStage(input: UpdateContactStageInput) {
     throw new Error("Contacto no encontrado en esta organización.");
   }
 
-  revalidatePath("/contactos");
+  revalidatePath("/embudo");
 
   return updated;
 }
@@ -138,7 +138,7 @@ export async function updateContactTemperature(input: UpdateContactTemperatureIn
     throw new Error("Contacto no encontrado en esta organización.");
   }
 
-  revalidatePath("/contactos");
+  revalidatePath("/embudo");
 
   return updated;
 }
@@ -185,7 +185,7 @@ export async function importContactsFromCsv(
 
   const result = await importParsedContacts(db, organizationId, parsed);
 
-  revalidatePath("/contactos");
+  revalidatePath("/embudo");
 
   return result;
 }

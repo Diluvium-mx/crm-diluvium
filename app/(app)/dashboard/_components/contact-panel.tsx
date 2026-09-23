@@ -1,39 +1,59 @@
 "use client";
 
-import { useRouter } from "next/navigation";
+// Panel derecho de la Bandeja: el MISMO "Detalle del contacto" que el pop-up
+// del Embudo (B2). Aquí se maneja la etapa/temperatura con las mismas acciones
+// del tablero (revalidatePath mantiene ambos en sync), optimista + revert. Sin
+// "Ver ficha completa" (B1): todo el detalle ya está en este panel.
 import { useState, useTransition } from "react";
 import type { ConversationDetail } from "@/lib/inbox/types";
 import { updateContactStage, updateContactTemperature } from "@/lib/actions/contacts";
-import {
-  STAGES,
-  STAGE_LABELS,
-  TEMPERATURES,
-  TEMPERATURE_EMOJI,
-  TEMPERATURE_LABELS,
-  type Stage,
-  type Temperature,
-} from "../../contactos/_data/types";
-import { displayPhone } from "@/lib/phone-format";
+import type { Stage, Temperature } from "../../contactos/_data/types";
+import { ContactDetails } from "../../contactos/_components/contact-details";
 
-export function ContactPanel({ detail }: { detail: ConversationDetail }) {
-  const router = useRouter();
+export function ContactPanel({
+  detail,
+  onTemperatureChanged,
+  onStageChanged,
+  action,
+}: {
+  detail: ConversationDetail;
+  /** Botón del encabezado (ocultar el panel). */
+  action?: React.ReactNode;
+  /** La temperatura cambió aquí: la lista de la Bandeja la refleja (C1). */
+  onTemperatureChanged?: (contactId: string, temperature: Temperature | null) => void;
+  /** La etapa cambió aquí: el detalle abierto la refleja (no se regresa a la vieja). */
+  onStageChanged?: (contactId: string, stage: Stage) => void;
+}) {
   const contact = detail.contact;
-  const [stage, setStage] = useState<string>(contact.stage);
-  const [temperature, setTemperature] = useState<string>(contact.temperature ?? "");
+  const [stage, setStage] = useState<Stage>(contact.stage as Stage);
+  const [temperature, setTemperature] = useState<Temperature | null>((contact.temperature as Temperature | null) ?? null);
+  // Si la etapa o la temperatura cambian desde fuera (p. ej. la temperatura
+  // desde la lista), el panel se pone al día CAMPO POR CAMPO: un cambio de
+  // temperatura no debe regresar la etapa. Reset en render al cambiar la prop.
+  const [seenStage, setSeenStage] = useState(contact.stage);
+  if (seenStage !== contact.stage) {
+    setSeenStage(contact.stage);
+    setStage(contact.stage as Stage);
+  }
+  const [seenTemperature, setSeenTemperature] = useState(contact.temperature);
+  if (seenTemperature !== contact.temperature) {
+    setSeenTemperature(contact.temperature);
+    setTemperature((contact.temperature as Temperature | null) ?? null);
+  }
   const [error, setError] = useState<string | null>(null);
   const [isSaving, startTransition] = useTransition();
 
-  // La etapa/temperatura se guardan con las MISMAS acciones del tablero de
-  // Contactos (revalidatePath mantiene ambos en sync). Optimista + revert.
   function changeStage(next: Stage) {
     const previous = stage;
     setStage(next);
     setError(null);
+    onStageChanged?.(contact.id, next);
     startTransition(async () => {
       try {
         await updateContactStage({ contactId: contact.id, stage: next });
       } catch {
         setStage(previous);
+        onStageChanged?.(contact.id, previous);
         setError("No se pudo cambiar la etapa.");
       }
     });
@@ -41,85 +61,33 @@ export function ContactPanel({ detail }: { detail: ConversationDetail }) {
 
   function changeTemperature(next: Temperature | null) {
     const previous = temperature;
-    setTemperature(next ?? "");
+    setTemperature(next);
     setError(null);
+    onTemperatureChanged?.(contact.id, next);
     startTransition(async () => {
       try {
         await updateContactTemperature({ contactId: contact.id, temperature: next });
       } catch {
         setTemperature(previous);
+        onTemperatureChanged?.(contact.id, previous);
         setError("No se pudo cambiar la temperatura.");
       }
     });
   }
 
   return (
-    <div className="flex h-full min-h-0 flex-col gap-5 overflow-y-auto p-5">
-      <div>
-        <h2 className="text-sm font-semibold">Detalle del contacto</h2>
-      </div>
-
-      <dl className="space-y-3 text-sm">
-        <div>
-          <dt className="text-xs text-muted-foreground">Nombre</dt>
-          <dd className="mt-0.5 break-words">{contact.name}</dd>
-        </div>
-        <div>
-          <dt className="text-xs text-muted-foreground">Teléfono</dt>
-          <dd className="mt-0.5 break-words">{displayPhone(contact.phone) || "—"}</dd>
-        </div>
-      </dl>
-
-      <div className="space-y-1">
-        <label htmlFor="panel-stage" className="text-xs text-muted-foreground">
-          Etapa
-        </label>
-        <select
-          id="panel-stage"
-          value={stage}
-          disabled={isSaving}
-          onChange={(event) => changeStage(event.target.value as Stage)}
-          className="w-full rounded-md border bg-background px-3 py-2 text-sm outline-none transition-colors focus:border-brand-navy focus:ring-2 focus:ring-brand-navy/30 disabled:opacity-60"
-        >
-          {STAGES.map((value) => (
-            <option key={value} value={value}>
-              {STAGE_LABELS[value]}
-            </option>
-          ))}
-        </select>
-      </div>
-
-      <div className="space-y-1">
-        <label htmlFor="panel-temperature" className="text-xs text-muted-foreground">
-          Temperatura
-        </label>
-        <select
-          id="panel-temperature"
-          value={temperature}
-          disabled={isSaving}
-          onChange={(event) =>
-            changeTemperature(event.target.value === "" ? null : (event.target.value as Temperature))
-          }
-          className="w-full rounded-md border bg-background px-3 py-2 text-sm outline-none transition-colors focus:border-brand-navy focus:ring-2 focus:ring-brand-navy/30 disabled:opacity-60"
-        >
-          <option value="">Sin asignar</option>
-          {TEMPERATURES.map((value) => (
-            <option key={value} value={value}>
-              {TEMPERATURE_EMOJI[value]} {TEMPERATURE_LABELS[value]}
-            </option>
-          ))}
-        </select>
-      </div>
-
-      {error && <p className="text-sm text-brand-orange">{error}</p>}
-
-      <button
-        type="button"
-        onClick={() => router.push("/contactos")}
-        className="mt-auto rounded-md border px-3 py-2 text-sm font-medium transition-colors hover:bg-muted"
-      >
-        Ver ficha completa
-      </button>
-    </div>
+    <ContactDetails
+      key={contact.id}
+      contactId={contact.id}
+      name={contact.name}
+      phone={contact.phone}
+      stage={stage}
+      temperature={temperature}
+      onStageChange={changeStage}
+      onTemperatureChange={changeTemperature}
+      busy={isSaving}
+      error={error}
+      action={action}
+    />
   );
 }
