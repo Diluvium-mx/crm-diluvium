@@ -5,8 +5,9 @@ import { buildBrainSystem, type Faq } from "./knowledge";
 // Señal para transferir a humano (la Fase B no tiene herramientas todavía).
 export const HANDOVER_TOKEN = "[TRANSFERIR]";
 
-// Montos siempre en cifras con $: así la guardia de salida (output-guard.ts) los
-// reconoce y los compara con los precios reales de la base.
+// Montos siempre en cifras con $: la guardia de salida (output-guard.ts) solo
+// reconoce montos en cifras. Es una instrucción al modelo, no una garantía: un
+// monto escrito con palabras o con "k" todavía no lo detecta la guardia.
 export const MONEY_FORMAT_RULE = "Escribe siempre los montos con cifras y signo $ (ej. $5,500), nunca con palabras ni con k.";
 
 // Sufijo fijo (depende solo de maxBubbles, que cambia rara vez): va DESPUÉS del

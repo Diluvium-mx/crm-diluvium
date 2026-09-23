@@ -164,13 +164,14 @@ const MAX_SUM_UNITS = 2_000_000;
 const gcd = (a: number, b: number): number => (b === 0 ? a : gcd(b, a % b));
 
 // Mínimo de piezas para formar cada total 0..max (mochila sin límite de copias,
-// en unidades del mcd); 255 = imposible con MAX_PIECES o menos.
+// en unidades del mcd). Satura en 255 (= imposible / demasiadas): solo se asigna
+// un valor MENOR que el actual, así que el Uint8 nunca da la vuelta.
 function minPiecesTable(units: readonly number[], max: number): Uint8Array {
   const best = new Uint8Array(max + 1).fill(255);
   best[0] = 0;
   for (let x = 1; x <= max; x++) {
     for (const u of units) {
-      if (u <= x && best[x - u] < MAX_PIECES && best[x - u] + 1 < best[x]) best[x] = best[x - u] + 1;
+      if (u <= x && best[x - u] + 1 < best[x]) best[x] = best[x - u] + 1;
     }
   }
   return best;
