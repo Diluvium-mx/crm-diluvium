@@ -191,6 +191,8 @@ contact_entradas     id, org_id, contact_id, posicion, ancho_cm, linea (mini|est
                      tamano_sugerido, tamano_manual   -- nunca más filas que num_entradas
 tallas_compuerta     id, org_id, linea, talla, min_cm, max_cm, posicion   -- editable owner/admin
 contact_comentarios  id, org_id, contact_id, author_user_id (obligatorio), body, created_at, updated_at
+                     -- 0022: las notas viejas (custom_fields.notas) se copian aquí con autor de
+                     -- sistema "Importado" (sin login ni membresía; solo owner/admin las editan)
 scheduled_messages   id, org_id, conversation_id, created_by_user_id, kind (text|template), body,
                      template_id, template_params, send_at, programmed_at, cancel_if_inbound,
                      status (scheduled|sending|sent|failed|cancelled), error_code, message_id
