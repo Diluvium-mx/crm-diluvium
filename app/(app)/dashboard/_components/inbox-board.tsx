@@ -314,21 +314,22 @@ export function InboxBoard() {
       {detail &&
         (contactOpen ? (
           <aside className="flex w-80 shrink-0 flex-col border-l bg-card">
-            <div className="flex items-center justify-between border-b px-3 py-2">
-              <span className="text-sm font-semibold">Contacto</span>
-              <button
-                type="button"
-                onClick={() => setContactOpen(false)}
-                aria-label="Ocultar panel de contacto"
-                title="Ocultar panel"
-                className="rounded p-1 text-muted-foreground hover:bg-muted hover:text-foreground"
-              >
-                <PanelRightClose className="size-4" aria-hidden="true" />
-              </button>
-            </div>
-            <div className="min-h-0 flex-1">
-              <ContactPanel detail={detail} />
-            </div>
+            {/* Un solo encabezado: el del "Detalle del contacto", con el botón
+                para ocultar el panel (B2: compacto). */}
+            <ContactPanel
+              detail={detail}
+              action={
+                <button
+                  type="button"
+                  onClick={() => setContactOpen(false)}
+                  aria-label="Ocultar panel de contacto"
+                  title="Ocultar panel"
+                  className="rounded p-1 text-muted-foreground hover:bg-muted hover:text-foreground"
+                >
+                  <PanelRightClose className="size-4" aria-hidden="true" />
+                </button>
+              }
+            />
           </aside>
         ) : (
           <button

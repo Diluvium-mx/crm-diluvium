@@ -1,28 +1,9 @@
 "use client";
 
-import { useEffect, useRef, useState, type ReactNode } from "react";
-import {
-  STAGES,
-  STAGE_LABELS,
-  TEMPERATURES,
-  TEMPERATURE_EMOJI,
-  TEMPERATURE_LABELS,
-  getContactFullName,
-  type Contact,
-  type Stage,
-  type Temperature,
-} from "../_data/types";
+import { useEffect, useRef, useState } from "react";
+import { getContactFullName, type Contact, type Stage, type Temperature } from "../_data/types";
 import { ContactChat } from "./contact-chat";
-import { displayPhone } from "@/lib/phone-format";
-
-function Attribute({ label, value }: { label: string; value: ReactNode }) {
-  return (
-    <div>
-      <dt className="text-xs text-muted-foreground">{label}</dt>
-      <dd className="mt-0.5 break-words">{value}</dd>
-    </div>
-  );
-}
+import { ContactDetails } from "./contact-details";
 
 export function ContactDetailPanel({
   contact,
@@ -37,12 +18,6 @@ export function ContactDetailPanel({
   onStageChange: (stage: Stage) => void;
   onTemperatureChange: (temperature: Temperature | null) => void;
 }) {
-  // Las etiquetas viven en contacts.tags (migración 0009). Las "Notas" de
-  // custom_fields se quitaron: nunca tuvieron datos y las reemplazan los
-  // comentarios del contacto (A7/A10).
-  const tags = contact.tags;
-  const canal = contact.sourceChannel ?? contact.source ?? "—";
-
   // a11y del modal: cerrar con Escape, enfocar el panel al abrir y devolver el
   // foco al elemento disparador al cerrar. (Trap de foco completo queda como
   // mejora futura; esto cubre lo esencial para uso con teclado.)
@@ -107,82 +82,23 @@ export function ContactDetailPanel({
           <ContactChat contactId={contact.id} />
         </section>
 
-        {/* Panel derecho: atributos del contacto */}
-        <aside className="flex w-full shrink-0 flex-col gap-5 overflow-y-auto p-5 md:w-80">
-          <div className="flex items-start justify-between">
-            <h2 className="text-sm font-semibold">Detalle del contacto</h2>
-            <button
-              type="button"
-              onClick={requestClose}
-              className="rounded px-2 py-1 text-sm text-muted-foreground hover:bg-muted"
-            >
-              Cerrar
-            </button>
-          </div>
-
-          <dl className="space-y-3 text-sm">
-            <Attribute label="Nombre" value={getContactFullName(contact)} />
-            <Attribute label="Teléfono" value={displayPhone(contact.phoneE164) || "—"} />
-            <Attribute label="Correo" value={contact.email ?? "—"} />
-            <Attribute label="Canal" value={canal} />
-            <Attribute
-              label="Etiquetas"
-              value={
-                tags.length > 0 ? (
-                  <span className="flex flex-wrap gap-1">
-                    {tags.map((tag) => (
-                      <span key={tag} className="rounded-full bg-muted px-2 py-0.5 text-xs">
-                        {tag}
-                      </span>
-                    ))}
-                  </span>
-                ) : (
-                  "—"
-                )
-              }
-            />
-          </dl>
-
-          <div className="space-y-1">
-            <label htmlFor="contact-stage" className="text-xs text-muted-foreground">
-              Etapa
-            </label>
-            <select
-              id="contact-stage"
-              value={contact.stage}
-              disabled={isSaving}
-              onChange={(event) => onStageChange(event.target.value as Stage)}
-              className="w-full rounded border px-3 py-2 text-sm disabled:opacity-60"
-            >
-              {STAGES.map((stage) => (
-                <option key={stage} value={stage}>
-                  {STAGE_LABELS[stage]}
-                </option>
-              ))}
-            </select>
-          </div>
-
-          <div className="space-y-1">
-            <label htmlFor="contact-temperature" className="text-xs text-muted-foreground">
-              Temperatura
-            </label>
-            <select
-              id="contact-temperature"
-              value={contact.temperature ?? ""}
-              disabled={isSaving}
-              onChange={(event) =>
-                onTemperatureChange(event.target.value === "" ? null : (event.target.value as Temperature))
-              }
-              className="w-full rounded border px-3 py-2 text-sm disabled:opacity-60"
-            >
-              <option value="">Sin asignar</option>
-              {TEMPERATURES.map((temperature) => (
-                <option key={temperature} value={temperature}>
-                  {TEMPERATURE_EMOJI[temperature]} {TEMPERATURE_LABELS[temperature]}
-                </option>
-              ))}
-            </select>
-          </div>
+        {/* Panel derecho: el MISMO "Detalle del contacto" de la Bandeja (B2). */}
+        <aside className="flex h-1/2 min-h-0 w-full shrink-0 flex-col md:h-auto md:w-80">
+          <ContactDetails
+            contactId={contact.id}
+            name={getContactFullName(contact)}
+            phone={contact.phoneE164}
+            stage={contact.stage}
+            temperature={contact.temperature}
+            onStageChange={onStageChange}
+            onTemperatureChange={onTemperatureChange}
+            busy={isSaving}
+            action={
+              <button type="button" onClick={requestClose} className="rounded px-2 py-1 text-sm text-muted-foreground hover:bg-muted">
+                Cerrar
+              </button>
+            }
+          />
         </aside>
       </div>
     </div>

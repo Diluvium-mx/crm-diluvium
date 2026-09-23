@@ -109,6 +109,25 @@ export async function getContactQualification(contactId: string) {
   return getContactQualificationData(db, membership.organizationId, parsedContactId);
 }
 
+/**
+ * Lo que necesita el panel "Detalle del contacto" (B2): la calificación, correo y
+ * etiquetas, y quién mira (para mostrar editar/borrar solo en los comentarios que
+ * puede modificar: los suyos, o todos si es owner/admin; el servidor lo vuelve a
+ * exigir al modificar).
+ */
+export async function getContactDetails(contactId: string) {
+  const membership = await requireActiveMembership();
+  requirePermission(membership.role, "contact", "read");
+  const data = await getContactQualificationData(db, membership.organizationId, contactIdSchema.parse(contactId));
+  return {
+    ...data,
+    viewer: {
+      userId: membership.userId,
+      canModerate: membership.role === "owner" || membership.role === "admin",
+    },
+  };
+}
+
 export async function updateContactQualification(
   contactId: string,
   patch: z.input<typeof qualificationPatchSchema>,
