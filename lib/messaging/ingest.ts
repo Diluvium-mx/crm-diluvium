@@ -217,6 +217,14 @@ async function ingestMessage(
         )[0]
       : undefined;
 
+    // Eco de un envío del CRM cuya conversación ya no se encuentra por id
+    // (Zernio la cambió mientras el envío iba en vuelo): lo atribuye la fila
+    // del propio mensaje, que sabe a qué conversación va. Sin esto, un eco sin
+    // participantId acabaría en dead-letter y su fila en cola, sin enlazar.
+    if (!upserted && event.direction === "out") {
+      upserted = await conversationOfOwnMessage(tx, orgId, channel.id, event);
+    }
+
     if (!upserted) {
       if (!phone && !bsuid) {
         // Sin teléfono, sin BSUID y sin conversación conocida no hay a quién
@@ -260,6 +268,22 @@ async function ingestMessage(
       .from(conversations)
       .where(eq(conversations.id, upserted.id))
       .for("update");
+
+    // Zernio puede abrir OTRA conversación (otro conversationId) para el mismo
+    // cliente, y el envío usa provider_conversation_id: si se quedara el viejo,
+    // el CRM mandaría a una conversación que Zernio ya pudo cerrar. Manda el
+    // ENTRANTE más reciente; uno de la conversación vieja que llega tarde
+    // (reintento, replay) no pisa al nuevo. Se decide ANTES de insertar este
+    // mensaje y con la conversación bloqueada: la comparación es firme. Se
+    // aplica abajo solo si el entrante de verdad se guardó (no en duplicados).
+    // Si el id nuevo ya es de OTRA conversación (cliente duplicado como dos
+    // contactos) solo puede ser por una carrera: el índice único rechaza la
+    // transacción y el reintento lo atribuye por id (docs/go-live.md).
+    const adoptProviderConversation =
+      event.direction === "in" &&
+      !!event.providerConversationId &&
+      conversation.providerConversationId !== event.providerConversationId &&
+      (await isNewestInbound(tx, orgId, conversation.id, event.sentAt));
 
     // Eco de un mensaje que el CRM mismo envió: ya existe la fila (en cola,
     // sin wamid). Se completa en lugar de duplicarla. El estado NO se fuerza a
@@ -347,6 +371,14 @@ async function ingestMessage(
       // El anuncio que ORIGINÓ la conversación: el primero, no se pisa.
       if (event.referral && !conversation.adReferral) updates.adReferral = event.referral;
     }
+    if (adoptProviderConversation && outcome === "entrante guardado") {
+      updates.providerConversationId = event.providerConversationId;
+      console.info(
+        `[ingest] conversación ${conversation.id}: Zernio cambió de conversación ` +
+          `${JSON.stringify(conversation.providerConversationId)} → ${JSON.stringify(event.providerConversationId)}; ` +
+          `los envíos van a la nueva`,
+      );
+    }
     // Primera respuesta: se RECALCULA desde la base con cada mensaje nuevo,
     // no solo la primera vez. Los webhooks pueden llegar tarde y desordenados
     // (Meta reintenta, replay): un entrante más viejo que aparece después
@@ -398,6 +430,55 @@ export async function applyOutboundToConversation(
     if (seconds !== null) updates.firstResponseSeconds = seconds;
   }
   await tx.update(conversations).set(updates).where(eq(conversations.id, conversationId));
+}
+
+/**
+ * ¿Un entrante con esta hora sería el más reciente de la conversación? Estricto:
+ * con la misma hora (WhatsApp tiene resolución de segundos) no se sabe cuál es
+ * el nuevo y se queda el actual. Un duplicado (mismo wamid) tampoco cuenta.
+ */
+async function isNewestInbound(tx: Tx, orgId: string, conversationId: string, sentAt: Date): Promise<boolean> {
+  const [sameOrNewer] = await tx
+    .select({ id: messages.id })
+    .from(messages)
+    .where(
+      and(
+        eq(messages.organizationId, orgId),
+        eq(messages.conversationId, conversationId),
+        eq(messages.direction, "in"),
+        gte(messages.sentAt, sentAt),
+      ),
+    )
+    .limit(1);
+  return !sameOrNewer;
+}
+
+/**
+ * Conversación (del canal) del mensaje propio al que corresponde un eco: la
+ * fila en cola (id interno) o la ya enlazada (wamid).
+ */
+async function conversationOfOwnMessage(
+  tx: Tx,
+  orgId: string,
+  channelId: string,
+  event: NormalizedMessageEvent,
+): Promise<typeof conversations.$inferSelect | undefined> {
+  const [row] = await tx
+    .select({ conversation: conversations })
+    .from(messages)
+    .innerJoin(conversations, eq(conversations.id, messages.conversationId))
+    .where(
+      and(
+        eq(messages.organizationId, orgId),
+        eq(conversations.channelId, channelId),
+        or(
+          eq(messages.providerInternalId, event.providerInternalId),
+          eq(messages.providerMessageId, event.providerMessageId),
+        ),
+      ),
+    )
+    .limit(1);
+  return row?.conversation;
 }
 
 /** Último entrante de la conversación: el corte de lectura de lo que hay a la vista. */
