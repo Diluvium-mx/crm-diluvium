@@ -12,6 +12,7 @@ import { useEffect, useRef, useState } from "react";
 import { Clock, Zap } from "lucide-react";
 import { useSession } from "@/lib/auth/client";
 import { listSnippets } from "@/lib/actions/snippets";
+import { listWorkflowCommands } from "@/lib/actions/workflows";
 import { applySlashInsert, filterSnippets, findSlashQuery } from "@/lib/snippets/slash";
 import type { SnippetView } from "@/lib/snippets/types";
 import { renderSnippet } from "@/lib/snippets/variables";
@@ -45,6 +46,9 @@ export function Composer({
   const [scheduleOpen, setScheduleOpen] = useState(false);
   const [snippets, setSnippets] = useState<SnippetView[] | null>(null);
   const [snippetsError, setSnippetsError] = useState(false);
+  // Comandos de Automatización (Fase D): "/tabla", "/banco"… se listan bajo los
+  // fragmentos y al elegir uno se ENVÍA el comando (dispara el workflow).
+  const [commands, setCommands] = useState<{ id: string; name: string; command: string }[]>([]);
   const [active, setActive] = useState(0);
   // "/" que el vendedor cerró con Esc: no se vuelve a abrir mientras siga ahí.
   const [dismissedAt, setDismissedAt] = useState<number | null>(null);
@@ -56,11 +60,20 @@ export function Composer({
   const slashOpen = slash !== null;
   const slashQuery = slash?.query ?? null;
   const matches = slashQuery !== null && snippets ? filterSnippets(snippets, slashQuery) : [];
+  const commandMatches =
+    slashQuery !== null
+      ? commands.filter((c) => c.command.slice(1).startsWith(slashQuery.toLowerCase()) || c.name.toLowerCase().includes(slashQuery.toLowerCase()))
+      : [];
 
   // Carga los fragmentos la primera vez que se abre el buscador con "/".
   useEffect(() => {
     if (!slashOpen || snippets !== null || snippetsError) return;
     let alive = true;
+    listWorkflowCommands()
+      .then((list) => {
+        if (alive) setCommands(list);
+      })
+      .catch(() => undefined);
     listSnippets()
       .then((all) => {
         if (alive) setSnippets(all);
@@ -116,6 +129,13 @@ export function Composer({
     if (!text || !windowOpen) return;
     updateDraft("", 0);
     onSendText(text);
+  }
+
+  // Elegir un comando en "/": se manda tal cual; el hilo lo dispara.
+  function runCommand(command: string) {
+    updateDraft("", 0);
+    setDismissedAt(null);
+    onSendText(command);
   }
 
   const scheduleForm = scheduleOpen && (
@@ -192,6 +212,26 @@ export function Composer({
             <span className="font-semibold text-brand-orange">⚡ Fragmentos</span>
             <span className="text-muted-foreground">↑↓ elegir · Enter insertar · Esc cerrar</span>
           </div>
+          {commandMatches.length > 0 && (
+            <ul aria-label="Automatizaciones" className="border-b py-1">
+              {commandMatches.map((c) => (
+                <li key={c.id}>
+                  <button
+                    type="button"
+                    onMouseDown={(event) => {
+                      event.preventDefault();
+                      runCommand(c.command);
+                    }}
+                    className="flex w-full items-center gap-2 px-3 py-1.5 text-left text-sm hover:bg-brand-orange/10"
+                  >
+                    <span className="rounded bg-brand-navy px-1.5 py-0.5 font-mono text-[11px] text-brand-white">{c.command}</span>
+                    <span className="font-medium">{c.name}</span>
+                    <span className="ml-auto text-[11px] text-muted-foreground">▶ ejecutar</span>
+                  </button>
+                </li>
+              ))}
+            </ul>
+          )}
           {snippetsError ? (
             <p className="px-3 py-3 text-sm text-brand-orange">No se pudieron cargar los fragmentos.</p>
           ) : snippets === null ? (
@@ -266,6 +306,8 @@ export function Composer({
             // nada. Para mandar un texto que empiece con "/", Esc y luego Enter.
             if (slash && event.key === "Enter" && !event.shiftKey && matches.length === 0) {
               event.preventDefault();
+              // Sin fragmentos pero con UN comando que coincide: se ejecuta.
+              if (commandMatches.length === 1) runCommand(commandMatches[0].command);
               return;
             }
             if (slash && matches.length > 0) {

@@ -39,6 +39,7 @@ import { inboundHealth, WORKER_HEARTBEAT_KEY } from "@/lib/monitoring/inbound-he
 import { redis } from "@/lib/redis";
 import { startScheduledWorker } from "./scheduled";
 import { startWorkflowWorker } from "./workflows";
+import { onInboundKeyword } from "@/lib/workflows/triggers";
 import { agentIngestHooks } from "@/lib/ai/runtime/hooks";
 import { startAgentRuntime } from "@/lib/ai/runtime/worker";
 
@@ -82,6 +83,12 @@ const worker = new Worker<InboundJob>(
       const outcome = await processWebhookEvent(provider, job.data.webhookEventId, {
         onMediaMessage: enqueueMediaDownload,
         ...agentIngestHooks,
+        // Fase D: palabra clave del cliente → workflow. Corre DESPUÉS del gancho
+        // del agente y aislado (nunca lanza): un fallo no re-encola la ingesta.
+        onInboundMessage: async (m) => {
+          await agentIngestHooks.onInboundMessage?.(m);
+          await onInboundKeyword(m);
+        },
       });
       console.info(`[worker] ${job.data.webhookEventId}: ${outcome}`);
       return outcome;
