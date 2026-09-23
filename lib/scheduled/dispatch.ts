@@ -7,7 +7,7 @@
 // 3. Manda con las MISMAS funciones del envío inmediato (outbox, idempotencia,
 //    ventana de 24 h para texto), a nombre de quien lo programó.
 // 4. Cualquier falla queda en la fila (visible con Reintentar); nunca se traga.
-import { and, eq, lt, sql } from "drizzle-orm";
+import { and, eq, gt, isNull, lt, or, sql } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { messages, scheduledMessages } from "@/lib/db/schema";
 import { MessagingNotConfiguredError } from "@/lib/messaging";
@@ -61,7 +61,12 @@ export async function dispatchScheduled(
           eq(messages.organizationId, row.organizationId),
           eq(messages.conversationId, row.conversationId),
           eq(messages.direction, "in"),
-          sql`coalesce(${messages.sentAt}, ${messages.createdAt}) > ${row.programmedAt}`,
+          // "Posterior a la programación": hora de WhatsApp o, si faltara, de
+          // guardado. Comparación por columna (drizzle serializa el Date).
+          or(
+            gt(messages.sentAt, row.programmedAt),
+            and(isNull(messages.sentAt), gt(messages.createdAt, row.programmedAt)),
+          ),
         ),
       )
       .limit(1);

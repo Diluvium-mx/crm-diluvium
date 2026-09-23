@@ -2,7 +2,7 @@
 // EXPLÍCITA (la resuelven las server actions desde la sesión; nunca viene del
 // cliente). Validan igual que el envío inmediato: ventana de 24 h para texto
 // libre y plantilla aprobada del canal de la conversación.
-import { and, asc, eq, inArray, isNull, or, sql } from "drizzle-orm";
+import { and, asc, eq, inArray, isNull, lte, or } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { conversations, scheduledMessages, templates } from "@/lib/db/schema";
 import { renderTemplateBody, templateMaxIndex } from "@/lib/messaging/template-format";
@@ -267,7 +267,7 @@ export async function dueScheduled(now: Date, graceMs: number, limit = 100) {
   return db
     .select({ id: scheduledMessages.id, sendAt: scheduledMessages.sendAt })
     .from(scheduledMessages)
-    .where(and(eq(scheduledMessages.status, "scheduled"), sql`${scheduledMessages.sendAt} <= ${new Date(now.getTime() - graceMs)}`))
+    .where(and(eq(scheduledMessages.status, "scheduled"), lte(scheduledMessages.sendAt, new Date(now.getTime() - graceMs))))
     .orderBy(asc(scheduledMessages.sendAt))
     .limit(limit);
 }
