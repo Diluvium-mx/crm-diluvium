@@ -56,6 +56,13 @@ VALUES ('ch_zernio_real', '<organization_id de Diluvium>', 'whatsapp', 'zernio',
   `npx tsx scripts/backfill-phone-parts.ts` (simulación) y luego `--apply`.
   Staging primero; producción solo con OK del dueño.
 
+## 5b. Monitoreo: umbral de silencio
+
+Hasta el go-live, el web de producción tiene `MONITOR_SILENCE_MINUTES=1440` (el sandbox
+casi no tiene tráfico y la alerta de silencio saltaba cada 15 min; issue #7). **Al conectar
+el número real, regresar `MONITOR_SILENCE_MINUTES` a 60** (Railway → crm-diluvium →
+production → Variables) para que un silencio de 1 h en horario laboral vuelva a alertar.
+
 ## 6. Prueba de humo
 
 1. Desde un teléfono que NO sea de prueba, mandar texto, foto y PDF al número real.
@@ -104,3 +111,18 @@ Riesgos aceptados del monitoreo y de las miniaturas:
 
 El endpoint solo devuelve conteos (el repo es público). Sin `MONITOR_TOKEN` responde 401 y
 la Action abre un issue, así que el paso 2 va antes que el merge a `main`.
+
+## Sandbox de Zernio (pruebas antes del número real)
+
+- La sesión del teléfono de prueba (52 668 242 6364) vence el **25-sep-2026 21:14 UTC**
+  (`GET /v1/whatsapp/sandbox/sessions` → `expiresAt`). Una sesión activada dura 7 días; una
+  pendiente, 24 h ([doc](https://docs.zernio.com/whatsapp/create-whatsapp-sandbox-session.mdx)).
+- No hay endpoint para "extender": se **renueva re-creándola** para el MISMO teléfono
+  (idempotente; reenvía la plantilla `sandbox_start`):
+  `POST https://zernio.com/api/v1/whatsapp/sandbox/sessions` con `{"phone": "+526682426364"}`
+  y `Authorization: Bearer <ZERNIO_API_KEY>`. La sesión queda `pending` hasta que el teléfono
+  **responda** la plantilla en WhatsApp; entonces pasa a `active` por 7 días más. Funciona
+  también después de vencida.
+- Un solo teléfono por usuario de Zernio: para probar con otro hay que revocar el actual
+  (`DELETE /v1/whatsapp/sandbox/sessions/{id}`) y crear el nuevo. Límite: 50 mensajes / 24 h.
+- Renovarla justo antes de la prueba en vivo del Agente IA (Fase B), no antes.
