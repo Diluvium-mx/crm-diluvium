@@ -101,6 +101,19 @@ construye ahora). El dry-run "Probar modelo" ya muestra tokens, pero no persiste
     canal en la pausa de 1.5 s, la siguiente ya no sale. Aprobar un borrador lo pasa a
     "enviando" (recuperable) y solo queda "enviado" tras mandar; el barrido concilia los
     atorados > 10 min con el hilo. Encender el canal también es corte de "respuesta humana".
+  - **Envíos sin confirmar (AUTO):** una burbuja "pending" detiene las siguientes; mientras un
+    envío del agente siga en camino (o haya uno fallido sin confirmar sin revisar) el agente
+    no responde encima; el barrido pausa en "revisión humana" + etiqueta una conversación con
+    un envío del agente fallido sin confirmar (o fallido como último saliente) posterior al
+    último corte — nunca reenvía (podría duplicar). Un entrante que llega entre burbujas
+    detiene el resto y queda pendiente para la siguiente corrida. Una respuesta de varias
+    burbujas guarda antes un **plan durable** (borrador "enviando", invisible): si una burbuja
+    queda sin confirmar, falla a la mitad o el proceso se interrumpe, lo que faltó queda como
+    borrador visible con el motivo y el agente pasa a revisión humana (el barrido recupera
+    los planes interrumpidos). La línea base de salientes humanos se toma al INICIO de la
+    ronda. Aprobar un borrador sigue las mismas reglas.
+  - **Pase a humano:** si un vendedor contesta durante la transferencia, pasa a
+    `pausado_humano` (gancho y barrido): el agente ya no se reactiva solo a las 8 h.
   - **Trabajo acotado por entrante:** se leen máx. 50 pendientes; con el agente pausado no
     se programa nada (salvo un pase a humano vencido); índice en
     `ai_agent_drafts(trigger_message_id)`.
