@@ -17,8 +17,13 @@
 //    Los errores nunca se tragan: quedan en error_code/error_message (§7).
 // 4. El eco (message.sent) puede llegar ANTES que la respuesta de la API: si
 //    ya existe una fila con ese wamid, esa fila se queda con la autoría
-//    (source "crm", sent_by_user_id) y la de la cola se borra.
-import { and, eq, isNull, lt, or } from "drizzle-orm";
+//    (el source de la fila en cola —"crm" o "ai_agent"— y sent_by_user_id) y
+//    la de la cola se borra.
+// 5. `source`/`sentByUserId` son opcionales: default "crm" + el vendedor. El
+//    Agente IA manda "ai_agent" sin usuario; esos envíos NO marcan como leídos
+//    los entrantes (el vendedor sigue viéndolos) y no cuentan como primera
+//    respuesta humana (reconcileFirstResponse ya los excluye).
+import { and, eq, inArray, isNull, lt, or } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { withTxRetry } from "@/lib/db/retry";
 import { channels, conversations, messages, templates } from "@/lib/db/schema";
@@ -48,12 +53,18 @@ export class SendRejectedError extends Error {
   }
 }
 
+/** Origen de un saliente de texto: humano desde el CRM, o el Agente IA. */
+export type OutboundTextSource = "crm" | "ai_agent";
+
 export type SendTextParams = {
   organizationId: string;
   conversationId: string;
-  sentByUserId: string;
+  /** Usuario que envía. null/ausente = sin humano (p. ej. el Agente IA). */
+  sentByUserId?: string | null;
   text: string;
   now?: Date;
+  /** Default "crm". "ai_agent" = respuesta del Agente IA. */
+  source?: OutboundTextSource;
 };
 
 /** "sent": confirmado. "pending": resultado desconocido, en reconciliación (sin reintento). */
@@ -132,17 +143,19 @@ export async function sendTextMessage(provider: MessagingProvider, params: SendT
   const now = params.now ?? new Date();
   const { conversation, channel } = await loadConversation(provider, params.organizationId, params.conversationId, now);
 
+  const source = params.source ?? "crm";
+  const sentByUserId = params.sentByUserId ?? null;
   const messageId = crypto.randomUUID();
   await db.insert(messages).values({
     id: messageId,
     organizationId: params.organizationId,
     conversationId: conversation.id,
     direction: "out",
-    source: "crm",
+    source,
     type: "text",
     body: text,
     status: "queued",
-    sentByUserId: params.sentByUserId,
+    sentByUserId,
     sentAt: now,
   });
   return deliver({
@@ -157,7 +170,9 @@ export async function sendTextMessage(provider: MessagingProvider, params: SendT
     now,
     conversation,
     organizationId: params.organizationId,
-    sentByUserId: params.sentByUserId,
+    sentByUserId,
+    // El agente no "lee" por el vendedor: sus envíos no descuentan no leídos.
+    markRead: source === "crm",
   });
 }
 
@@ -309,13 +324,15 @@ async function deliver(
     now: Date;
     conversation: ConversationRow;
     organizationId: string;
-    sentByUserId: string;
+    sentByUserId: string | null;
+    /** Default true. false = no marca como leídos los entrantes (envío del agente). */
+    markRead?: boolean;
   },
 ): Promise<SendOutcome> {
   const where = and(eq(messages.id, ctx.messageId), eq(messages.organizationId, ctx.organizationId));
   // Corte de lectura: el último entrante que el vendedor tenía a la vista al
   // enviar. Lo que entre después sigue sin leer (aunque haya otros envíos).
-  const readCutoffMessageId = await latestInboundMessageId(ctx.conversation.id);
+  const readCutoffMessageId = ctx.markRead === false ? null : await latestInboundMessageId(ctx.conversation.id);
   let result: SendResult;
   try {
     result = await ctx.send();
@@ -402,7 +419,8 @@ export async function linkSentMessage(input: {
             .for("update")
         : [];
       if (echo && echo.id !== queued.id) {
-        if (echo.source === "crm") {
+        // Otro envío originado en el CRM (humano o agente) nunca se fusiona.
+        if (echo.source === "crm" || echo.source === "ai_agent") {
           throw new SendConflictError(`el wamid ${input.providerMessageId} ya pertenece al envío ${echo.id}`);
         }
         // El eco del webhook se clasifica por su contenido (texto/adjunto), sin
@@ -413,7 +431,8 @@ export async function linkSentMessage(input: {
         await tx
           .update(messages)
           .set({
-            source: "crm",
+            // La autoría es la de la fila en cola ("crm" o "ai_agent").
+            source: queued.source,
             sentByUserId: input.sentByUserId,
             status: nextStatus(echo.status, input.status),
             type: queued.type,
@@ -479,7 +498,7 @@ export async function expireUnconfirmedSends(now = new Date()): Promise<number> 
     .where(
       and(
         eq(messages.direction, "out"),
-        eq(messages.source, "crm"),
+        inArray(messages.source, ["crm", "ai_agent"]),
         eq(messages.status, "queued"),
         isNull(messages.providerMessageId),
         // sent_at = último intento (un reintento lo renueva), no la creación.

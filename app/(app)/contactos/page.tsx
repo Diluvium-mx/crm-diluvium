@@ -1,8 +1,7 @@
-import { listContacts } from "@/lib/actions/contacts";
-import { ContactsBoard } from "./_components/contacts-board";
+import { redirect } from "next/navigation";
 
-export default async function ContactosPage() {
-  const contacts = await listContacts();
-
-  return <ContactsBoard initialContacts={contacts} />;
+// Ruta vieja del tablero. La sección ahora se llama "Embudo" y vive en
+// /embudo; esto conserva los enlaces guardados.
+export default function ContactosRedirect() {
+  redirect("/embudo");
 }

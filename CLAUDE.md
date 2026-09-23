@@ -131,9 +131,14 @@ activa en sesión sin reinventarlos. Equivalencia con este documento:
 | `memberships` (role owner\|admin\|agent) | `member` (roles personalizados vía `createAccessControl`) |
 | — (no existía) | `session.activeOrganizationId`, `invitation` |
 
-`memberships.is_active` no existe en el schema de Better Auth: en v1 "desactivar" un miembro es
-borrar su fila de `member`, no un booleano. En v1 todo miembro (owner/admin/agent) ve y edita
-todos los contactos de su organización.
+`memberships.is_active` no existe en el schema de Better Auth. **Decisión (Bloque A, 22-sep-2026):**
+"desactivar" un vendedor es `user.banned = true` (campo del plugin **admin** de Better Auth, cuyo
+hook bloquea el inicio de sesión) y revocar sus sesiones; **no** se borra su fila de `member` (sus
+mensajes conservan el autor y se puede reactivar). El plugin admin se usa SOLO para crear usuarios
+desde el servidor y para `banned`: el rol vive **solo** en `member.role` (su `user.role` global no se
+usa). Reglas: admin no toca al owner, nadie se desactiva a sí mismo y siempre queda ≥1 owner activo
+(también en la BD: triggers diferidos de la migración 0021). En v1 todo miembro (owner/admin/agent)
+ve y edita todos los contactos de su organización.
 
 **Roles y permisos de las features conversacionales (v1, 21-sep-2026; ACL en
 `lib/auth/permissions.ts` con `createAccessControl`):** el **agente** es el vendedor y hace el
@@ -177,6 +182,20 @@ tasks                id, org_id, contact_id, opportunity_id, assignee_user_id,
                      title, due_at, completed_at
 activities           id, org_id, contact_id, type, payload jsonb, created_at   -- append-only
 audit_log            id, org_id, user_id, action, entity, entity_id, diff jsonb, created_at
+
+-- Bloque A (22-sep-2026). En el CRM no hay "oportunidades" como tabla: la etapa y la
+-- calificación viven en el CONTACTO.
+contacts (+)         tiene_inundaciones (si|no|no_sabe), nivel_agua_cm, nivel_agua_texto,
+                     num_entradas, monto_cotizacion numeric(12,2) MXN, porcentaje_convencimiento (0-100, de 10 en 10)
+contact_entradas     id, org_id, contact_id, posicion, ancho_cm, linea (mini|estandar),
+                     tamano_sugerido, tamano_manual   -- nunca más filas que num_entradas
+tallas_compuerta     id, org_id, linea, talla, min_cm, max_cm, posicion   -- editable owner/admin
+contact_comentarios  id, org_id, contact_id, author_user_id (obligatorio), body, created_at, updated_at
+                     -- 0022: las notas viejas (custom_fields.notas) se copian aquí con autor de
+                     -- sistema "Importado" (sin login ni membresía; solo owner/admin las editan)
+scheduled_messages   id, org_id, conversation_id, created_by_user_id, kind (text|template), body,
+                     template_id, template_params, send_at, programmed_at, cancel_if_inbound,
+                     status (scheduled|sending|sent|failed|cancelled), error_code, message_id
 ```
 
 Detalles que importan:
@@ -205,11 +224,24 @@ Detalles que importan:
 **Decisión (18-sep-2026):** ya no es una pantalla con dos modos. Son dos secciones que comparten
 el mismo chat. Detalle de la bandeja y contrato de datos para el track UI: `docs/bandeja.md`.
 
+**Sidebar desde el Bloque A (22-sep-2026):** Dashboard (`/inicio`, primero y destino al entrar) ·
+Bandeja (`/dashboard`) · Embudo (`/embudo`; antes "Contactos", `/contactos` redirige) · Mensajes
+rápidos (`/mensajes-rapidos`; antes "Fragmentos y plantillas", `/snippets` redirige) · Agente IA
+(owner/admin) · Configuración (`/configuracion`, al final: Mi cuenta para todos; Vendedores y Tallas
+solo owner/admin).
+
 - **Bandeja** (la sección que antes se llamaba "Bandeja / Embudo"; ruta actual `/dashboard`): la
   bandeja de entrada de TODOS los mensajes. Tres columnas: lista de conversaciones, chat y panel
   de contacto. La lista y el panel se abren y cierran con un botón; el chat se queda con el espacio.
-- **Contactos**: el tablero kanban (el embudo vive SOLO aquí). Al hacer clic en una tarjeta se abre
-  el mismo chat, con el historial completo, la temperatura y la etapa, sin salir del tablero.
+- **Embudo** (antes "Contactos"): el tablero kanban (el embudo vive SOLO aquí). Al hacer clic en una
+  tarjeta se abre el mismo chat, con el historial completo, la temperatura y la etapa, sin salir del
+  tablero.
+- **Dashboard**: conversaciones nuevas (contactos creados, sin `ghl_import` ni `seed`) por día local
+  de Mazatlán, desgloses por canal/etapa/anuncio y comparación contra el mismo tramo del periodo
+  anterior. "Gasto de IA" solo owner/admin (placeholder hasta `ai_usage`).
+- **Composer**: "/" busca Fragmentos (`{{vendedor}}` = usuario logueado), ⚡ Fragmentos, 📄
+  Plantillas y 🕒 Programar (hora de Mazatlán; fuera de la ventana de 24 h a esa hora, solo
+  plantilla; "cancelar si el cliente escribe antes" lo decide el worker al disparar).
 
 ```
 ┌─ Lista (se cierra) ─┬──── Chat ────────────────────────┬─ Contacto (se cierra) ─┐

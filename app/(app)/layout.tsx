@@ -8,11 +8,14 @@ import { roleAllows } from "@/lib/auth/permissions";
 import { SignOutButton } from "./_components/sign-out-button";
 import { ThemeToggle } from "@/components/theme-toggle";
 
+// "Dashboard" va primero y es el destino al entrar (/inicio). La Bandeja
+// conserva su URL histórica /dashboard. "Reportes" (/reports, sin página) se
+// reemplazó por el Dashboard.
 const NAV_ITEMS = [
+  { label: "Dashboard", href: "/inicio" },
   { label: "Bandeja", href: "/dashboard" },
-  { label: "Contactos", href: "/contactos" },
-  { label: "Fragmentos y plantillas", href: "/snippets" },
-  { label: "Reportes", href: "/reports" },
+  { label: "Embudo", href: "/embudo" },
+  { label: "Mensajes rápidos", href: "/mensajes-rapidos" },
 ];
 
 export default async function AppLayout({
@@ -41,6 +44,8 @@ export default async function AppLayout({
     ...(role && roleAllows(role, "aiConfig", "read")
       ? [{ label: "Agente IA", href: "/agente-ia" }]
       : []),
+    // Configuración va al final: "Mi cuenta" es para todos (A4).
+    ...(role ? [{ label: "Configuración", href: "/configuracion" }] : []),
   ];
 
   return (
@@ -59,7 +64,10 @@ export default async function AppLayout({
         </nav>
       </aside>
 
-      <div className="flex flex-1 flex-col">
+      {/* min-w-0: sin él, esta columna crece al ancho de su contenido (el
+          kanban de 5 etapas) y el scroll horizontal se va a toda la página en
+          vez de quedarse dentro del tablero (B3). */}
+      <div className="flex min-w-0 flex-1 flex-col">
         {/* Alto GARANTIZADO de 4rem: h-16 fija la altura y shrink-0 evita que
             se comprima. El board de Contactos y la bandeja restan justo 4rem
             (h-[calc(100dvh-4rem)]); si el header pudiera crecer (email largo,

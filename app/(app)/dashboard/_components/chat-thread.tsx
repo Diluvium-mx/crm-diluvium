@@ -1,13 +1,12 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Zap } from "lucide-react";
 import type { AdReferral, AttachmentView, ConversationDetail, MessageView } from "@/lib/inbox/types";
 import { listMessages, retryMessage, sendMessage, sendTemplate } from "@/lib/inbox/actions";
-import { SnippetPicker } from "./snippet-picker";
-import { TemplatePicker } from "./template-picker";
+import { Composer } from "./composer";
 import { DocumentCard } from "./document-card";
 import { MediaViewer } from "./media-viewer";
+import { ScheduledInThread } from "./scheduled-in-thread";
 import {
   bubbleTime,
   dayLabel,
@@ -219,21 +218,11 @@ export function ChatThread({
   const [hasMore, setHasMore] = useState(false);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
-  const [draft, setDraft] = useState("");
-  const [snippetOpen, setSnippetOpen] = useState(false);
-  const [templateOpen, setTemplateOpen] = useState(false);
   const [viewing, setViewing] = useState<AttachmentView | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
-
-  // Cierra los selectores al cambiar de conversación. Reset en render (no en un
-  // efecto) comparando con la conversación previa: patrón recomendado de React
-  // para resetear estado cuando cambia una prop, sin cascada de renders.
-  const [pickerConvId, setPickerConvId] = useState(conversationId);
-  if (pickerConvId !== conversationId) {
-    setPickerConvId(conversationId);
-    setSnippetOpen(false);
-    setTemplateOpen(false);
-  }
+  // Sube al programar un mensaje: la franja de programados (A6) se recarga.
+  const [scheduledRev, setScheduledRev] = useState(0);
+  const [scheduledCount, setScheduledCount] = useState(0);
 
   const windowOpen = isWindowOpen(detail.windowExpiresAt, nowMs);
   const hoursLeft = windowHoursLeft(detail.windowExpiresAt, nowMs);
@@ -290,7 +279,7 @@ export function ChatThread({
   useEffect(() => {
     const el = scrollRef.current;
     if (el) el.scrollTop = el.scrollHeight;
-  }, [rows.length, conversationId]);
+  }, [rows.length, scheduledCount, conversationId]);
 
   async function doSend(text: string) {
     const clientId = `opt-${Date.now()}-${Math.random().toString(36).slice(2)}`;
@@ -323,18 +312,6 @@ export function ChatThread({
         current.map((o) => (o.clientId === clientId ? { ...o, status: "failed", errorMessage: result.message } : o)),
       );
     }
-  }
-
-  // Inserta un fragmento en el borrador (el vendedor rellena sus {{nombre}}).
-  function insertFragment(body: string) {
-    setDraft((current) => (current.trim() ? `${current.replace(/\s*$/, "")} ${body}` : body));
-  }
-
-  function handleSubmit() {
-    const text = draft.trim();
-    if (!text || !windowOpen) return;
-    setDraft("");
-    void doSend(text);
   }
 
   async function handleRetry(row: Row) {
@@ -419,68 +396,28 @@ export function ChatThread({
             })}
           </>
         )}
+        {/* Programados (A6) al final del hilo: van después de lo ya enviado. */}
+        <ScheduledInThread
+          key={`sched-${conversationId}`}
+          conversationId={conversationId}
+          windowExpiresAt={detail.windowExpiresAt}
+          refreshToken={revalToken + scheduledRev}
+          onCountChange={setScheduledCount}
+        />
       </div>
 
-      {/* Composer: texto libre + fragmentos con ventana abierta; plantilla
-          cuando está cerrada (docs/investigacion/plantillas-zernio.md). */}
-      <div className="border-t bg-card p-3">
-        {windowOpen ? (
-          <>
-            {snippetOpen && <SnippetPicker onInsert={insertFragment} onClose={() => setSnippetOpen(false)} />}
-            <div className="flex items-end gap-2">
-              <button
-                type="button"
-                onClick={() => setSnippetOpen((open) => !open)}
-                aria-label="Insertar fragmento"
-                aria-expanded={snippetOpen}
-                title="Fragmentos"
-                className={`rounded-md border px-2.5 py-2 transition-colors ${
-                  snippetOpen ? "border-brand-orange bg-brand-orange/10 text-brand-orange" : "text-brand-orange hover:bg-brand-orange/10"
-                }`}
-              >
-                <Zap className="size-4" aria-hidden="true" />
-              </button>
-              <textarea
-                value={draft}
-                onChange={(event) => setDraft(event.target.value)}
-                onKeyDown={(event) => {
-                  if (event.key === "Enter" && !event.shiftKey) {
-                    event.preventDefault();
-                    handleSubmit();
-                  }
-                }}
-                rows={1}
-                placeholder="Escribe un mensaje… (Enter envía, Shift+Enter salto de línea)"
-                className="max-h-32 min-h-[40px] flex-1 resize-y rounded-md border bg-background px-3 py-2 text-sm outline-none transition-colors placeholder:text-muted-foreground/60 focus:border-brand-navy focus:ring-2 focus:ring-brand-navy/30"
-              />
-              <button
-                type="button"
-                onClick={handleSubmit}
-                disabled={!draft.trim()}
-                className="rounded-md bg-brand-navy px-4 py-2 text-sm font-medium text-brand-white transition-colors hover:bg-brand-navy-dark disabled:opacity-50"
-              >
-                Enviar
-              </button>
-            </div>
-          </>
-        ) : templateOpen ? (
-          <TemplatePicker
-            onSubmit={(templateId, values, preview) => {
-              setTemplateOpen(false);
-              void doSendTemplate(templateId, values, preview);
-            }}
-            onClose={() => setTemplateOpen(false)}
-          />
-        ) : (
-          <button
-            type="button"
-            onClick={() => setTemplateOpen(true)}
-            className="flex w-full items-center justify-center gap-2 rounded-md bg-brand-navy px-4 py-2 text-sm font-medium text-brand-white transition-colors hover:bg-brand-navy-dark"
-          >
-            📄 Enviar plantilla
-          </button>
-        )}
-      </div>
+      {/* Composer (composer.tsx): texto libre, fragmentos y plantillas con la
+          ventana abierta; solo plantilla cuando está cerrada. key: al cambiar de
+          conversación se reinicia el borrador y se cierran los selectores. */}
+      <Composer
+        key={conversationId}
+        conversationId={conversationId}
+        windowOpen={windowOpen}
+        windowExpiresAt={detail.windowExpiresAt}
+        onSendText={(text) => void doSend(text)}
+        onSendTemplate={(templateId, values, preview) => void doSendTemplate(templateId, values, preview)}
+        onScheduled={() => setScheduledRev((n) => n + 1)}
+      />
       {viewing && <MediaViewer attachment={viewing} onClose={() => setViewing(null)} />}
     </div>
   );

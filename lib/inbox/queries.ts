@@ -118,6 +118,7 @@ async function toListItems(organizationId: string, page: ListRow[]): Promise<Con
           }
         : null,
       unreadCount: conversation.unreadCount,
+      temperature: contact.temperature,
       isStarred: conversation.isStarred,
       awaitingReplySince: awaiting.get(conversation.id) ?? null,
       // Se manda la ventana tal cual; la UI decide "quedan X h" o si venció.
