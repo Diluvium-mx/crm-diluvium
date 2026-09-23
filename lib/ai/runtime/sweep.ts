@@ -9,7 +9,7 @@ import { db } from "@/lib/db";
 import { aiAgentDrafts, conversations, messages } from "@/lib/db/schema";
 import { SEND_UNCONFIRMED, SEND_UNKNOWN } from "@/lib/messaging/rules";
 import { releaseDraft } from "./manual";
-import { addContactTag, setAgentState } from "./state";
+import { addContactTag, retainRemainder, setAgentState } from "./state";
 import { TAG_HUMAN_REVIEW } from "./tags";
 
 // Un entrante con este número de errores del agente ya no se reintenta solo
@@ -107,6 +107,7 @@ export async function reconcileStuckDrafts(now: Date): Promise<number> {
       organizationId: aiAgentDrafts.organizationId,
       conversationId: aiAgentDrafts.conversationId,
       resolvedAt: aiAgentDrafts.resolvedAt,
+      bubbles: aiAgentDrafts.bubbles,
     })
     .from(aiAgentDrafts)
     .where(and(eq(aiAgentDrafts.status, "enviando"), lt(aiAgentDrafts.resolvedAt, new Date(now.getTime() - DRAFT_SENDING_STUCK_MS))))
@@ -134,7 +135,26 @@ export async function reconcileStuckDrafts(now: Date): Promise<number> {
     if (outs.length === 0) await releaseDraft(d.organizationId, d.id, d.conversationId);
     else if (outs.some((m) => m.status === "failed")) await setStatus("obsoleto");
     else if (outs.some((m) => m.status === "queued")) continue; // aún en camino
-    else await setStatus("enviado");
+    else if (outs.length < d.bubbles.length) {
+      // Salió solo una parte (el proceso se interrumpió): lo que faltó queda visible y
+      // la conversación pasa a revisión humana; nunca se reenvía solo.
+      await retainRemainder(
+        d.organizationId,
+        d.id,
+        d.conversationId,
+        d.bubbles.slice(outs.length),
+        `El envío se interrumpió: salieron ${outs.length} de ${d.bubbles.length} burbujas; revisa el hilo antes de mandar el resto.`,
+      );
+      const [c] = await db
+        .select({ contactId: conversations.contactId, agentState: conversations.agentState })
+        .from(conversations)
+        .where(and(eq(conversations.id, d.conversationId), eq(conversations.organizationId, d.organizationId)))
+        .limit(1);
+      if (c?.agentState === "activo") {
+        await setAgentState(d.organizationId, d.conversationId, "pausado_antibucle", { now });
+        await addContactTag(d.organizationId, c.contactId, TAG_HUMAN_REVIEW);
+      }
+    } else await setStatus("enviado");
     resolved++;
   }
   return resolved;

@@ -165,7 +165,7 @@ describe.skipIf(!TEST_DATABASE_URL)("acciones manuales del agente (Postgres real
     expect(d.status).toBe("enviado"); // lo que salió, salió
   });
 
-  it("aprobar con un envío sin confirmar (pending): el borrador NO queda 'enviado'", async () => {
+  it("aprobar con la 1ª burbuja sin confirmar: no manda la 2ª y el resto vuelve a la tarjeta con el motivo", async () => {
     const id = await draft();
     const r = await manual.approveDraft({
       organizationId: ORG,
@@ -175,9 +175,47 @@ describe.skipIf(!TEST_DATABASE_URL)("acciones manuales del agente (Postgres real
       sendBubble: async () => ({ status: "pending" as const }),
       sleep: async () => undefined,
     });
-    expect(r).toEqual({ sent: 2, confirmed: false });
+    expect(r).toEqual({ sent: 1, confirmed: false });
     const [d] = await db.select().from(s.aiAgentDrafts).where(eq(s.aiAgentDrafts.id, id));
-    expect(d.status).toBe("enviando");
+    expect(d).toMatchObject({ status: "pendiente", bubbles: ["¿Cuánto mide?"] });
+    expect(d.reviewReason).toContain("no confirmó");
+  });
+
+  it("aprobar un borrador de UNA burbuja sin confirmar: queda 'enviando' para el barrido", async () => {
+    const [id] = [`d_${crypto.randomUUID()}`];
+    await db.insert(s.aiAgentDrafts).values({ id, organizationId: ORG, conversationId: "cv_m", bubbles: ["Hola"], status: "pendiente" });
+    const r = await manual.approveDraft({
+      organizationId: ORG,
+      draftId: id,
+      userId: "u1",
+      now: new Date(),
+      sendBubble: async () => ({ status: "pending" as const }),
+      sleep: async () => undefined,
+    });
+    expect(r).toEqual({ sent: 1, confirmed: false });
+    expect((await db.select().from(s.aiAgentDrafts).where(eq(s.aiAgentDrafts.id, id)))[0].status).toBe("enviando");
+  });
+
+  it("aprobar: si falla la 2ª burbuja, la 1ª cuenta y la 2ª vuelve a la tarjeta con el motivo", async () => {
+    const id = await draft();
+    let n = 0;
+    await expect(
+      manual.approveDraft({
+        organizationId: ORG,
+        draftId: id,
+        userId: "u1",
+        now: new Date(),
+        sendBubble: async () => {
+          n++;
+          if (n === 2) throw new Error("se cayó el proveedor");
+          return { status: "sent" as const };
+        },
+        sleep: async () => undefined,
+      }),
+    ).rejects.toThrow("se cayó el proveedor");
+    const [d] = await db.select().from(s.aiAgentDrafts).where(eq(s.aiAgentDrafts.id, id));
+    expect(d).toMatchObject({ status: "pendiente", bubbles: ["¿Cuánto mide?"] });
+    expect(d.reviewReason).toContain("Se enviaron 1 de 2");
   });
 
   it("si la 1ª burbuja falla y ya hay OTRO borrador pendiente, el aprobado queda obsoleto (sin chocar con el índice único)", async () => {

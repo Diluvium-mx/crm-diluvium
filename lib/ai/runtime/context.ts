@@ -148,7 +148,14 @@ export async function alreadyHandled(organizationId: string, messageId: string):
   const [draft] = await db
     .select({ id: aiAgentDrafts.id })
     .from(aiAgentDrafts)
-    .where(and(eq(aiAgentDrafts.organizationId, organizationId), eq(aiAgentDrafts.triggerMessageId, messageId)))
+    .where(
+      and(
+        eq(aiAgentDrafts.organizationId, organizationId),
+        eq(aiAgentDrafts.triggerMessageId, messageId),
+        // Un plan de envío que quedó obsoleto (la 1ª burbuja falló) no cuenta: se reintenta.
+        ne(aiAgentDrafts.status, "obsoleto"),
+      ),
+    )
     .limit(1);
   return Boolean(draft);
 }
