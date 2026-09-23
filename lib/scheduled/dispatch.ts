@@ -88,7 +88,10 @@ export async function dispatchScheduled(
     };
     let outcome: { messageId: string };
     if (row.kind === "text") {
-      outcome = await sendTextMessage(provider, { ...base, text: row.body });
+      // Autoría: un programado es un envío HUMANO desde el CRM, a nombre de quien
+      // lo programó (source "crm" + sent_by_user_id): cuenta como respuesta del
+      // vendedor y marca como leído, igual que un envío inmediato.
+      outcome = await sendTextMessage(provider, { ...base, text: row.body, source: "crm" });
     } else {
       if (!row.templateId) throw new SendRejectedError("template_not_found", "La plantilla ya no existe.");
       outcome = await sendTemplateMessage(provider, {
