@@ -1,7 +1,8 @@
 // GUARDIA DE SALIDA del Agente IA (Fase B). PURO: sin DB ni red. Antes de
 // enviar en modo AUTO, la respuesta del cerebro se revisa contra la base de
 // conocimiento ACTIVA de la organización:
-//   - un monto o precio que no aparezca en el Goal ni en las FAQs activas, o
+//   - un monto o precio que no aparezca en el Goal ni en las FAQs activas (ni sea
+//     suma de hasta 10 de esos precios, con repetición: totales de varias piezas), o
 //   - un enlace fuera de la lista permitida (diluvium.com.mx y los enlaces de
 //     Amazon / Mercado Libre que ya están en las FAQs activas)
 // → NO se envía: queda como borrador para revisión humana, con el motivo.
@@ -153,6 +154,46 @@ export function extractAmounts(text: string): AmountHit[] {
 
 const cents = (v: number) => Math.round(v * 100);
 
+// ── Totales ──────────────────────────────────────────────────────────────────
+// Un total también es válido si es SUMA de hasta MAX_PIECES precios reales de la
+// base, con repetición: 3 × $5,500 = $16,500; $5,500 + $7,000 = $12,500.
+export const MAX_PIECES = 10;
+// Tope de trabajo (unidades del mcd de los precios): un total más grande se retiene.
+const MAX_SUM_UNITS = 2_000_000;
+
+const gcd = (a: number, b: number): number => (b === 0 ? a : gcd(b, a % b));
+
+// Mínimo de piezas para formar cada total 0..max (mochila sin límite de copias,
+// en unidades del mcd); 255 = imposible con MAX_PIECES o menos.
+function minPiecesTable(units: readonly number[], max: number): Uint8Array {
+  const best = new Uint8Array(max + 1).fill(255);
+  best[0] = 0;
+  for (let x = 1; x <= max; x++) {
+    for (const u of units) {
+      if (u <= x && best[x - u] < MAX_PIECES && best[x - u] + 1 < best[x]) best[x] = best[x - u] + 1;
+    }
+  }
+  return best;
+}
+
+// Qué montos (en centavos) son suma de ≤ MAX_PIECES precios. Una sola tabla por
+// revisión, hasta el mayor total que haga falta.
+export function sumsOfPrices(amounts: readonly number[], prices: readonly number[]): Set<number> {
+  const ps = [...new Set(prices.filter((p) => p > 0))];
+  const ok = new Set<number>();
+  if (ps.length === 0) return ok;
+  const g = ps.reduce(gcd);
+  const ceiling = MAX_PIECES * Math.max(...ps);
+  const targets = amounts.filter((a) => a > 0 && a % g === 0 && a <= ceiling && a / g <= MAX_SUM_UNITS);
+  if (targets.length === 0) return ok;
+  const table = minPiecesTable(
+    ps.map((p) => p / g),
+    Math.max(...targets) / g,
+  );
+  for (const a of targets) if (table[a / g] <= MAX_PIECES) ok.add(a);
+  return ok;
+}
+
 // Más largo que esto no se revisa: se retiene (acota el costo de las regex; el
 // cerebro tiene tope de 1,024 tokens de salida, ~5,000 caracteres).
 export const MAX_GUARD_CHARS = 8_000;
@@ -171,8 +212,15 @@ export function reviewReply(text: string, knowledge: { goal: string; faqs: reado
   );
 
   const problems: string[] = [];
-  const badAmounts = [...new Set(extractAmounts(text).filter((a) => !known.has(cents(a.value))).map((a) => a.text))];
-  if (badAmounts.length) problems.push(`monto que no está en el Goal ni en las FAQs: ${badAmounts.join(", ")}`);
+  const unknown = extractAmounts(text).filter((a) => !known.has(cents(a.value)));
+  const sums = sumsOfPrices(
+    unknown.map((a) => cents(a.value)),
+    [...known],
+  );
+  const badAmounts = [...new Set(unknown.filter((a) => !sums.has(cents(a.value))).map((a) => a.text))];
+  if (badAmounts.length) {
+    problems.push(`monto que no está en el Goal ni en las FAQs ni es suma de sus precios: ${badAmounts.join(", ")}`);
+  }
 
   const badLinks = [
     ...new Set(

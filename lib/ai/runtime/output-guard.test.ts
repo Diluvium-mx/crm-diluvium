@@ -1,7 +1,7 @@
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
-import { extractAmounts, extractLinks, parseAmount, reviewReply } from "./output-guard";
+import { extractAmounts, extractLinks, MAX_PIECES, parseAmount, reviewReply, sumsOfPrices } from "./output-guard";
 
 // Base de conocimiento con la forma real (docs/agente-ia): precios con $ y los
 // enlaces de Amazon y Mercado Libre en las FAQs.
@@ -58,9 +58,9 @@ describe("reviewReply (guardia de salida)", () => {
   });
   it("un monto inventado (o de una FAQ desactivada) → no se envía, con el motivo", () => {
     const r = reviewReply("Te la dejo en $4,200 y el envío gratis.", knowledge);
-    expect(r).toEqual({ ok: false, reason: "Monto que no está en el Goal ni en las FAQs: $4,200" });
+    expect(r).toEqual({ ok: false, reason: "Monto que no está en el Goal ni en las FAQs ni es suma de sus precios: $4,200" });
     expect(reviewReply("Promoción: $4,999", knowledge).ok).toBe(false);
-    expect(reviewReply("el total es de 16,500", knowledge).ok).toBe(false);
+    expect(reviewReply("el total es de 16,501", knowledge).ok).toBe(false);
   });
   it("enlaces: diluvium.com.mx y los de Amazon/Mercado Libre de las FAQs pasan", () => {
     expect(reviewReply("Mira https://www.diluvium.com.mx/compuertas y tienda.diluvium.com.mx", knowledge)).toEqual({ ok: true });
@@ -83,7 +83,7 @@ describe("reviewReply (guardia de salida)", () => {
     const r = reviewReply("Son $1,000 en bit.ly/x", knowledge);
     expect(r).toEqual({
       ok: false,
-      reason: "Monto que no está en el Goal ni en las FAQs: $1,000 · enlace fuera de la lista permitida: bit.ly/x",
+      reason: "Monto que no está en el Goal ni en las FAQs ni es suma de sus precios: $1,000 · enlace fuera de la lista permitida: bit.ly/x",
     });
   });
   it("respuesta sin montos ni enlaces pasa", () => {
@@ -96,7 +96,7 @@ describe("guardia: lo que encontró la revisión enfocada (23-sep)", () => {
   it("montos sin $ ni moneda, con 'mil', rangos, miles con espacio, moneda antes o $ después → retenidos", () => {
     for (const t of [
       "Te la dejo en 4 mil",
-      "Son 9 mil las dos",
+      "Son 8 mil las dos",
       "Serían 4,200 en total",
       "Te la dejo en 4,200",
       "entre $3,500 y 4,200",
@@ -160,6 +160,38 @@ describe("guardia: lo que encontró la revisión enfocada (23-sep)", () => {
     }
     expect(reviewReply("x".repeat(9_000), knowledge)).toEqual({ ok: false, reason: "Respuesta demasiado larga para revisarla sola" });
   });
+  it("totales: suma de hasta 10 precios reales de la base (con repetición) pasa; cualquier otro, no", () => {
+    const docs = (f: string) => readFileSync(fileURLToPath(new URL(`../../../docs/agente-ia/${f}`, import.meta.url)), "utf8");
+    const kb = {
+      goal: docs("angela-goal.md"),
+      faqs: (JSON.parse(docs("angela-faqs.json")) as { faqs: { question: string; answer: string }[] }).faqs.map(
+        (f, i) => ({ ...f, position: i + 1 }),
+      ),
+    };
+    const ok = (t: string) => reviewReply(t, kb).ok;
+    // Los ejemplos del dueño, con los precios reales ($5,500 y $7,000).
+    expect(ok("Las 3 medianas te salen en $16,500")).toBe(true);
+    expect(ok("Mediana + grande: $12,500 en total")).toBe(true);
+    expect(ok("10 tapones de 2 pulgadas: $7,490")).toBe(true); // 10 × $749
+    expect(ok("Dos compuertas y un tapón: 11,749 pesos")).toBe(true); // $5,500 + $5,500 + $749
+    // Hasta 10 piezas: 11 ya no.
+    expect(ok("11 tapones de 2 pulgadas: $8,239")).toBe(false); // 11 × $749
+    expect(ok("11 kits grandes: $121,000")).toBe(false); // 11 × $11,000
+    // Montos que no son suma de precios reales.
+    for (const t of ["Te la dejo en $4,200", "$16,501", "Son 8 mil las dos", "$1,000 de descuento"]) expect(ok(t), t).toBe(false);
+  });
+
+  it("sumsOfPrices: tabla en unidades del mcd, tope de piezas y precios desactivados fuera", () => {
+    const c = (pesos: number) => pesos * 100;
+    const got = sumsOfPrices([c(16_500), c(16_501), c(55_000), c(60_500)], [c(5_500)]);
+    expect([...got].sort((a, b) => a - b)).toEqual([c(16_500), c(55_000)]); // 10 × 5,500 sí; 11 × 5,500 no
+    expect(MAX_PIECES).toBe(10);
+    expect(sumsOfPrices([c(100)], [])).toEqual(new Set());
+    // Una FAQ desactivada no aporta piezas: promo ($4,999, desactivada) + tapón ($749) = $5,748
+    // solo se forma con ese precio, así que se retiene.
+    expect(reviewReply("Promo y un tapón: $5,748", knowledge).ok).toBe(false);
+  });
+
   it("la base real (Goal + 47 FAQs) pasa completa: sus propios montos y enlaces están permitidos", () => {
     const docs = (f: string) => readFileSync(fileURLToPath(new URL(`../../../docs/agente-ia/${f}`, import.meta.url)), "utf8");
     const goal = docs("angela-goal.md");

@@ -585,7 +585,7 @@ describe.skipIf(!TEST_DATABASE_URL)("runtime del Agente IA (Postgres real)", () 
     await msg({ direction: "in", body: "¿me haces descuento?", at: ago(10_000) });
     const { deps } = makeDeps({ brain: ["Va, te la dejo en $4,200 si confirmas hoy."] });
     const r = await run.runAgent(JOB, deps);
-    expect(r).toMatchObject({ kind: "held", reason: "Monto que no está en el Goal ni en las FAQs: $4,200" });
+    expect(r).toMatchObject({ kind: "held", reason: "Monto que no está en el Goal ni en las FAQs ni es suma de sus precios: $4,200" });
     expect(await agentOuts()).toEqual([]);
     const d = await heldDraft();
     expect(d).toMatchObject({ status: "pendiente", bubbles: ["Va, te la dejo en $4,200 si confirmas hoy."] });
@@ -619,6 +619,24 @@ describe.skipIf(!TEST_DATABASE_URL)("runtime del Agente IA (Postgres real)", () 
     await msg({ direction: "in", body: "hola?", at });
     await hooks.onInboundCustomerMessage({ organizationId: ORG, conversationId: CONV, receivedAt: at }, { queue: port, kv, now: at });
     expect((await heldDraft()).status).toBe("obsoleto");
+  });
+
+  it("la regla de montos (cifras y $) llega en el system del cerebro; el Goal guardado no cambia", async () => {
+    const { MONEY_FORMAT_RULE } = await import("./brain");
+    await msg({ direction: "in", body: "¿precio?", at: ago(10_000) });
+    const { deps, calls } = makeDeps();
+    await run.runAgent(JOB, deps);
+    const brain = calls.find((c) => c.kind === "cerebro")!;
+    expect(brain.input.system.startsWith(GOAL)).toBe(true);
+    expect(brain.input.system).toContain(MONEY_FORMAT_RULE);
+    const [cfg] = await db.select().from(s.aiConfig).where(eq(s.aiConfig.organizationId, ORG));
+    expect(cfg.goal).toBe(GOAL);
+  });
+
+  it("auto: un total que es suma de precios reales (2 × $5,500) se envía solo", async () => {
+    await msg({ direction: "in", body: "¿y dos?", at: ago(10_000) });
+    const r = await run.runAgent(JOB, makeDeps({ brain: ["Las dos te salen en $11,000 MXN."] }).deps);
+    expect(r).toEqual({ kind: "sent", bubbles: 1 });
   });
 
   it("auto: un enlace fuera de la lista NO se envía; diluvium.com.mx sí", async () => {
