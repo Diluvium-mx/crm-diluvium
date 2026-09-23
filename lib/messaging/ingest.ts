@@ -1,7 +1,7 @@
 // Aplica un evento normalizado a la base (lo usa el worker). Toda consulta
 // filtra por organización: la organización sale del CANAL (el número de
 // WhatsApp conectado), nunca del payload.
-import { and, asc, count, desc, eq, gte, inArray, isNotNull, isNull, ne, or, sql } from "drizzle-orm";
+import { and, asc, count, desc, eq, gte, inArray, isNotNull, isNull, or, sql } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { contactsImportLockKey } from "@/lib/db/locks";
 import { withTxRetry } from "@/lib/db/retry";
@@ -276,12 +276,14 @@ async function ingestMessage(
     // (reintento, replay) no pisa al nuevo. Se decide ANTES de insertar este
     // mensaje y con la conversación bloqueada: la comparación es firme. Se
     // aplica abajo solo si el entrante de verdad se guardó (no en duplicados).
+    // Si el id nuevo ya es de OTRA conversación (cliente duplicado como dos
+    // contactos) solo puede ser por una carrera: el índice único rechaza la
+    // transacción y el reintento lo atribuye por id (docs/go-live.md).
     const adoptProviderConversation =
       event.direction === "in" &&
       !!event.providerConversationId &&
       conversation.providerConversationId !== event.providerConversationId &&
-      (await isNewestInbound(tx, orgId, conversation.id, event.sentAt)) &&
-      !(await providerConversationTaken(tx, channel.id, event.providerConversationId, conversation.id));
+      (await isNewestInbound(tx, orgId, conversation.id, event.sentAt));
 
     // Eco de un mensaje que el CRM mismo envió: ya existe la fila (en cola,
     // sin wamid). Se completa en lugar de duplicarla. El estado NO se fuerza a
@@ -449,38 +451,6 @@ async function isNewestInbound(tx: Tx, orgId: string, conversationId: string, se
     )
     .limit(1);
   return !sameOrNewer;
-}
-
-/**
- * ¿El id del proveedor ya es de OTRA conversación del canal? (el mismo cliente
- * duplicado como dos contactos, p. ej. teléfono y BSUID). Entonces no se adopta:
- * el índice único lo rechazaría, y cada mensaje sigue a la conversación por la
- * que llega (riesgo aceptado hasta la fusión de contactos, docs/go-live.md).
- */
-async function providerConversationTaken(
-  tx: Tx,
-  channelId: string,
-  providerConversationId: string,
-  conversationId: string,
-): Promise<boolean> {
-  const [other] = await tx
-    .select({ id: conversations.id })
-    .from(conversations)
-    .where(
-      and(
-        eq(conversations.channelId, channelId),
-        eq(conversations.providerConversationId, providerConversationId),
-        ne(conversations.id, conversationId),
-      ),
-    )
-    .limit(1);
-  if (other) {
-    console.warn(
-      `[ingest] identidad: Zernio movió la conversación ${conversationId} a ${JSON.stringify(providerConversationId)}, ` +
-        `que ya es de la conversación ${other.id}; revisar para fusionar`,
-    );
-  }
-  return !!other;
 }
 
 /**
