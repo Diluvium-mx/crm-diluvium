@@ -1,4 +1,5 @@
 import type { ModelTier, ProviderId } from "@/lib/ai/types";
+import type { AgentModeValue, AgentSettings } from "./settings";
 
 // Vistas seguras para el cliente (sin imports de servidor ni del SDK). El
 // componente cliente de la pestaña "Agente IA" importa solo estos tipos.
@@ -41,4 +42,36 @@ export type DryRunStageView = {
 
 export type ProbarModeloResultView = {
   stages: DryRunStageView[];
+};
+
+// ── Fase B: ajustes del runtime (pestaña Agente IA) ──────────────────────────
+
+export type ChannelAgentView = {
+  id: string;
+  displayName: string;
+  phoneE164: string | null;
+  isActive: boolean;
+  mode: AgentModeValue;
+};
+
+export type ModelPriceView = {
+  modelId: string;
+  label: string;
+  providerLabel: string;
+  // Default del código (null = sin precio conocido).
+  defaultInput: number | null;
+  defaultOutput: number | null;
+  // Sobrescritura de la organización (null = usa el default).
+  overrideInput: number | null;
+  overrideOutput: number | null;
+  cacheNote: string;
+};
+
+export type KnowledgeStatusView = { goalChars: number; faqsEnabled: number };
+
+export type AgentSettingsBundleView = {
+  settings: AgentSettings;
+  channels: ChannelAgentView[];
+  prices: ModelPriceView[];
+  knowledge: KnowledgeStatusView;
 };

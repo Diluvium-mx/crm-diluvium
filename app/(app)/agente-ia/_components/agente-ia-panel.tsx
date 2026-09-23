@@ -2,7 +2,9 @@
 
 import { useState, useTransition } from "react";
 import { probarModelo, updateAiConfig } from "@/lib/actions/ai-config";
+import { AgenteSettings } from "./agente-settings";
 import type {
+  AgentSettingsBundleView,
   AiConfigView,
   DryRunStageView,
   ModelOptionView,
@@ -97,10 +99,12 @@ export function AgenteIaPanel({
   config,
   filterOptions,
   brainOptions,
+  bundle,
 }: {
   config: AiConfigView;
   filterOptions: ModelOptionView[];
   brainOptions: ModelOptionView[];
+  bundle: AgentSettingsBundleView;
 }) {
   const [filtro, setFiltro] = useState(config.modeloFiltro);
   const [cerebro, setCerebro] = useState(config.modeloCerebro);
@@ -155,8 +159,8 @@ export function AgenteIaPanel({
         <header className="flex flex-col gap-1">
           <h1 className="text-xl font-semibold text-foreground">Agente IA</h1>
           <p className="text-sm text-foreground/60">
-            Elige qué modelo filtra la bandeja y cuál es el cerebro del agente. Fase de fundación: el
-            agente todavía no responde a clientes; aquí solo dejas el modelo listo y seleccionable.
+            Angela responde por WhatsApp con el Goal y las preguntas frecuentes. El filtro decide si
+            un mensaje necesita respuesta; el cerebro la redacta. Enciéndelo por canal abajo.
           </p>
         </header>
 
@@ -191,6 +195,8 @@ export function AgenteIaPanel({
             aún no está disponible. Agrega la llave en Railway (servicio web) para habilitarla.
           </p>
         </section>
+
+        <AgenteSettings bundle={bundle} />
 
         <section className="flex flex-col gap-3 rounded-lg border border-black/10 p-4 dark:border-white/10">
           <div className="flex items-center justify-between gap-3">
