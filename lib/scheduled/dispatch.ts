@@ -13,7 +13,7 @@ import { member, messages, scheduledMessages, user } from "@/lib/db/schema";
 import { MessagingNotConfiguredError } from "@/lib/messaging";
 import { SendFailedError, type MessagingProvider } from "@/lib/messaging/provider";
 import { sendTemplateMessage, sendTextMessage, SendRejectedError } from "@/lib/messaging/send";
-import { pauseAgentOnManualMessage } from "@/lib/ai/runtime/hooks";
+import { pauseAgentForManualSend } from "@/lib/ai/runtime/hooks";
 
 export type DispatchOutcome = "skipped" | "cancelled" | "sent" | "failed";
 
@@ -159,7 +159,7 @@ export async function dispatchScheduled(
   }
   // Un programado es un envío humano: pausa al Agente IA en esa conversación.
   // Fuera del try: el envío ya quedó "sent" y nada del agente puede marcarlo fallido.
-  await pauseAgentOnManualMessage(row.conversationId);
+  await pauseAgentForManualSend(row.organizationId, row.conversationId);
   return "sent";
 }
 
@@ -209,7 +209,7 @@ export async function failStuckSending(now: Date = new Date()): Promise<number> 
       )
       .orderBy(asc(messages.sentAt))
       .limit(1);
-    await db
+    const updated = await db
       .update(scheduledMessages)
       .set(
         sent
@@ -227,7 +227,11 @@ export async function failStuckSending(now: Date = new Date()): Promise<number> 
           eq(scheduledMessages.id, row.id),
           eq(scheduledMessages.status, "sending"),
         ),
-      );
+      )
+      .returning({ id: scheduledMessages.id });
+    // Conciliado como enviado = un envío humano, igual que en dispatchScheduled:
+    // pausa al Agente IA en esa conversación (acotado a su organización; nunca lanza).
+    if (sent && updated.length > 0) await pauseAgentForManualSend(row.organizationId, row.conversationId);
   }
   return stuck.length;
 }

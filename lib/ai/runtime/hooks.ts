@@ -5,7 +5,7 @@ import { and, eq, sql } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { conversations, messages } from "@/lib/db/schema";
 import { loadAgentConfig } from "./config";
-import { conversationOrganization, loadSnapshot } from "./context";
+import { loadSnapshot } from "./context";
 import {
   bullAgentQueuePort,
   cancelAgentRun,
@@ -106,20 +106,6 @@ export async function pauseAgentForManualSend(organizationId: string, conversati
   // onHumanOutbound ya atrapa todo; este catch es la última red del envío del vendedor.
   try {
     await onHumanOutbound({ organizationId, conversationId });
-  } catch (error) {
-    console.error(`[agente] no se pudo pausar ${conversationId} tras envío manual`, error);
-  }
-}
-
-// ENVOLTORIO TEMPORAL: lib/inbox/actions.ts y lib/scheduled/dispatch.ts todavía
-// llaman con solo el id (dispatch.ts lo toca también fix/mejoras-codex; se cambia
-// al rebasar sobre main y este envoltorio se borra). Resuelve la organización de
-// la conversación —que la capa de envío ya validó contra la sesión— y de ahí en
-// adelante todo va acotado a ella.
-export async function pauseAgentOnManualMessage(conversationId: string): Promise<void> {
-  try {
-    const organizationId = await conversationOrganization(conversationId);
-    if (organizationId) await pauseAgentForManualSend(organizationId, conversationId);
   } catch (error) {
     console.error(`[agente] no se pudo pausar ${conversationId} tras envío manual`, error);
   }
