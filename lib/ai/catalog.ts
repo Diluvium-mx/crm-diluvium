@@ -38,6 +38,16 @@ export const MODEL_CATALOG = [
     roles: ["cerebro"],
   },
   {
+    // Opción TOPE de cerebro (Fase B). Id de API confirmado con dry-run.
+    id: "claude-opus-5-5",
+    label: "Claude Opus 5.5",
+    provider: "anthropic",
+    providerModelId: "claude-opus-5-5",
+    tier: "tope",
+    multimodal: true,
+    roles: ["cerebro"],
+  },
+  {
     id: "claude-haiku-4-5",
     label: "Claude Haiku 4.5",
     provider: "anthropic",

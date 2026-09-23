@@ -179,6 +179,10 @@ export const conversations = pgTable(
     // hilo. Los usa la Fase B (silencios/anti-bucle) y la Fase C (follow-ups).
     lastInboundAt: timestamp("last_inbound_at"),
     lastAgentReplyAt: timestamp("last_agent_reply_at"),
+    // Cuándo cambió agent_state por última vez (pausa o reactivación). Es el
+    // corte para "un vendedor respondió a mano": lo anterior a una reactivación
+    // manual ya no vuelve a pausar al agente.
+    agentStateChangedAt: timestamp("agent_state_changed_at"),
     // Destacado: marca compartida por el equipo (todos ven todo, §5).
     isStarred: boolean("is_starred").default(false).notNull(),
     // Anuncio de clic a WhatsApp que ORIGINÓ la conversación (el primer
