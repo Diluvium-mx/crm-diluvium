@@ -4,7 +4,7 @@
 // ACL `workflow`: owner/admin crean/editan/borran; todos leen y EJECUTAN
 // (comandos del composer). Los pasos se validan con Zod (lib/workflows/steps).
 import { revalidatePath } from "next/cache";
-import { and, asc, eq, inArray, sql } from "drizzle-orm";
+import { and, asc, eq, gte, inArray, sql } from "drizzle-orm";
 import { z } from "zod";
 import { requireActiveMembership } from "@/lib/auth/active-organization";
 import { roleAllows } from "@/lib/auth/permissions";
@@ -94,7 +94,7 @@ async function loadViews(organizationId: string): Promise<WorkflowView[]> {
   const counts = await db
     .select({ workflowId: workflowRuns.workflowId, n: sql<number>`count(*)::int` })
     .from(workflowRuns)
-    .where(and(eq(workflowRuns.organizationId, organizationId), sql`${workflowRuns.createdAt} >= ${since}`))
+    .where(and(eq(workflowRuns.organizationId, organizationId), gte(workflowRuns.createdAt, since)))
     .groupBy(workflowRuns.workflowId);
   const runsBy = new Map(counts.map((c) => [c.workflowId, c.n]));
   return rows.map((w) => {
