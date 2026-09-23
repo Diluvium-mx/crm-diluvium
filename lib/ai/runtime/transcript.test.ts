@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { buildModelMessages, messageText, toTranscriptLines, type ThreadMessage } from "./transcript";
+import { buildModelMessages, MAX_MESSAGE_CHARS, messageText, toTranscriptLines, type ThreadMessage } from "./transcript";
 
 let n = 0;
 function msg(direction: "in" | "out", body: string | null, extra: Partial<ThreadMessage> = {}): ThreadMessage {
@@ -70,5 +70,16 @@ describe("buildModelMessages", () => {
       "https://b/k3",
     ]);
     expect(parts.filter((p) => p.type === "text").map((p) => p.text)).toEqual(["[imagen]"]);
+  });
+});
+
+describe("tope de texto por mensaje (costo por llamada acotado)", () => {
+  it("un mensaje enorme del cliente llega recortado al filtro y al cerebro", () => {
+    const huge = "x".repeat(MAX_MESSAGE_CHARS * 5);
+    expect(messageText(msg("in", huge)).length).toBeLessThan(MAX_MESSAGE_CHARS + 20);
+    const [user] = buildModelMessages([msg("in", huge)], new Map());
+    const parts = user.content as { type: string; text: string }[];
+    expect(parts[0].text.length).toBeLessThan(MAX_MESSAGE_CHARS + 20);
+    expect(parts[0].text.endsWith("[recortado]")).toBe(true);
   });
 });

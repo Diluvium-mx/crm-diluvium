@@ -74,6 +74,9 @@ export async function recordAiUsage(r: UsageRecord): Promise<void> {
       filterDecision: r.filterDecision ?? null,
       outcome: r.outcome,
       error: r.error ? r.error.slice(0, 2000) : null,
+      // Mismo reloj (JS, UTC) con el que el anti-bucle y el tope de gasto cuentan
+      // "la última hora": no depende de la zona horaria de la sesión de Postgres.
+      createdAt: new Date(),
     });
   } catch (error) {
     console.error(`[agente] no se pudo registrar ai_usage (${r.stage}/${r.outcome})`, error);

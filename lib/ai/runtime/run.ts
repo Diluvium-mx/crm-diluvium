@@ -19,12 +19,13 @@ import {
   lastOutbound,
   loadSnapshot,
   messageAt,
+  modelCallsSince,
   pendingInbound,
   recentMessages,
   type MessageRow,
 } from "./context";
 import { buildFilterPrompt, FILTER_SYSTEM, parseFilterDecision } from "./filter";
-import { debounceDelayMs, decideGate, pauseElapsed, toBubbles, type AgentState } from "./policy";
+import { decideGate, pauseElapsed, rescheduleDelayMs, toBubbles, type AgentState } from "./policy";
 import { addContactTag, markAgentReply, saveDraft, setAgentState } from "./state";
 import { TAG_HANDOVER } from "./tags";
 import { buildModelMessages, toTranscriptLines } from "./transcript";
@@ -36,7 +37,13 @@ export const FILTER_MAX_OUTPUT_TOKENS = 200;
 // Holgado: algunos modelos (p. ej. Opus 5.5) gastan tokens de razonamiento
 // ocultos antes del texto; con un tope corto la respuesta sale vacía.
 export const BRAIN_MAX_OUTPUT_TOKENS = 1_024;
+// Timeouts por llamada: 3 rondas × (filtro + cerebro) = 4 min < candado de 5 min (process.ts).
+export const FILTER_TIMEOUT_MS = 20_000;
+export const BRAIN_TIMEOUT_MS = 60_000;
 const FILTER_CONTEXT_MESSAGES = 12;
+// Pendientes que ve el filtro: los más recientes. Si clasificó "spam" o "lead no
+// sigue" nunca hay saliente y la lista crecería sin fin con cada mensaje.
+const FILTER_MAX_PENDING = 20;
 
 export type RunDeps = {
   now: () => Date;
@@ -123,6 +130,7 @@ export async function runAgent(conversationId: string, deps: RunDeps): Promise<R
     const lastRead = pending[pending.length - 1];
     if (await alreadyHandled(lastRead.id)) return { kind: "noop", reason: "ya_atendido" };
 
+    const hourAgo = new Date(now.getTime() - 3_600_000);
     const gate = decideGate({
       channelMode: channel.aiAgentMode,
       agentState: conv.agentState,
@@ -130,8 +138,9 @@ export async function runAgent(conversationId: string, deps: RunDeps): Promise<R
       now: now.getTime(),
       windowExpiresAt: conv.windowExpiresAt?.getTime() ?? null,
       humanRepliedSincePending: humanTookOver,
-      agentRepliesLastHour: await agentRepliesSince(conv.id, new Date(now.getTime() - 3_600_000)),
+      agentRepliesLastHour: await agentRepliesSince(conv.id, hourAgo),
       antiLoopMaxPerHour: cfg.antiLoopMaxPerHour,
+      modelCallsLastHour: await modelCallsSince(conv.id, hourAgo),
       agentRepliesToContact: cfg.maxRepliesPerContact === null ? 0 : await agentRepliesToContact(conv.contactId),
       maxRepliesPerContact: cfg.maxRepliesPerContact,
     });
@@ -151,7 +160,7 @@ export async function runAgent(conversationId: string, deps: RunDeps): Promise<R
     const pendingIds = new Set(pending.map((m) => m.id));
     // El filtro siempre ve los pendientes aunque excedan el contexto corto.
     const filterRows = [...context.slice(-FILTER_CONTEXT_MESSAGES)];
-    for (const p of pending) if (!filterRows.some((r) => r.id === p.id)) filterRows.push(p);
+    for (const p of pending.slice(-FILTER_MAX_PENDING)) if (!filterRows.some((r) => r.id === p.id)) filterRows.push(p);
     const base = { organizationId: org, conversationId: conv.id, messageId: lastRead.id };
     let t0 = Date.now();
     let filterRes: CallModelResult;
@@ -160,6 +169,7 @@ export async function runAgent(conversationId: string, deps: RunDeps): Promise<R
         system: FILTER_SYSTEM,
         messages: [{ role: "user", content: buildFilterPrompt(toTranscriptLines(filterRows, pendingIds)) }],
         maxOutputTokens: FILTER_MAX_OUTPUT_TOKENS,
+        timeoutMs: FILTER_TIMEOUT_MS,
       });
     } catch (error) {
       await recordAiUsage({
@@ -209,6 +219,7 @@ export async function runAgent(conversationId: string, deps: RunDeps): Promise<R
         system,
         messages: modelMessages,
         maxOutputTokens: BRAIN_MAX_OUTPUT_TOKENS,
+        timeoutMs: BRAIN_TIMEOUT_MS,
       });
     } catch (error) {
       await recordAiUsage({
@@ -308,7 +319,7 @@ export async function runAgent(conversationId: string, deps: RunDeps): Promise<R
   const now = deps.now().getTime();
   const delayMs =
     cfg && pending.length
-      ? debounceDelayMs({
+      ? rescheduleDelayMs({
           now,
           firstPendingAt: pending[0].createdAt.getTime(),
           lastInboundAt: pending[pending.length - 1].createdAt.getTime(),

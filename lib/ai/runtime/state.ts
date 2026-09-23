@@ -2,7 +2,7 @@
 // etiquetas de rastro en el contacto, marca de respuesta y borradores.
 // "Nunca callarse sin dejar rastro": toda pausa queda en agent_state (visible en
 // la bandeja) y, cuando aplica, como etiqueta del contacto.
-import { and, eq, sql } from "drizzle-orm";
+import { and, eq, inArray, sql } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { aiAgentDrafts, contacts, conversations } from "@/lib/db/schema";
 import type { AgentState } from "./policy";
@@ -89,5 +89,29 @@ export async function obsoletePendingDrafts(organizationId: string, conversation
     )
     .returning({ id: aiAgentDrafts.id });
   if (rows.length > 0) await notifyConversation(db, organizationId, conversationId);
+  return rows.length;
+}
+
+// El canal se apagó: sus borradores vigentes quedan viejos (nada del agente sale
+// por un canal apagado). Avisa a la bandeja de cada conversación afectada.
+export async function obsoleteChannelDrafts(organizationId: string, channelId: string, now: Date): Promise<number> {
+  const rows = await db
+    .update(aiAgentDrafts)
+    .set({ status: "obsoleto", resolvedAt: now })
+    .where(
+      and(
+        eq(aiAgentDrafts.organizationId, organizationId),
+        eq(aiAgentDrafts.status, "pendiente"),
+        inArray(
+          aiAgentDrafts.conversationId,
+          db
+            .select({ id: conversations.id })
+            .from(conversations)
+            .where(and(eq(conversations.channelId, channelId), eq(conversations.organizationId, organizationId))),
+        ),
+      ),
+    )
+    .returning({ conversationId: aiAgentDrafts.conversationId });
+  for (const r of rows) await notifyConversation(db, organizationId, r.conversationId);
   return rows.length;
 }

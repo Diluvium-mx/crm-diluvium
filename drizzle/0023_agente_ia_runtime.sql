@@ -69,4 +69,5 @@ CREATE UNIQUE INDEX "ai_agent_drafts_one_pending_uidx" ON "ai_agent_drafts" USIN
 CREATE INDEX "ai_agent_drafts_org_idx" ON "ai_agent_drafts" USING btree ("organization_id");--> statement-breakpoint
 CREATE INDEX "ai_usage_org_created_idx" ON "ai_usage" USING btree ("organization_id","created_at" desc);--> statement-breakpoint
 CREATE INDEX "ai_usage_conversation_created_idx" ON "ai_usage" USING btree ("conversation_id","created_at");--> statement-breakpoint
+CREATE INDEX "ai_usage_message_outcome_idx" ON "ai_usage" USING btree ("message_id","outcome");--> statement-breakpoint
 SET LOCAL lock_timeout = DEFAULT;

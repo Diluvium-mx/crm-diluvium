@@ -1,8 +1,10 @@
 import { describe, it, expect } from "vitest";
 import {
   debounceDelayMs,
+  maxModelCallsPerHour,
   pauseElapsed,
   decideGate,
+  rescheduleDelayMs,
   toBubbles,
   type GateInput,
 } from "./policy";
@@ -44,6 +46,12 @@ describe("debounceDelayMs (debounce deslizante con tope)", () => {
     });
     expect(d).toBe(0);
   });
+
+  it("al volver al debounce tras descartar, nunca 0: espera al menos responseDelaySeconds", () => {
+    const i = { now: 100 * S, firstPendingAt: 0, lastInboundAt: 100 * S, responseDelaySeconds: 15, maxWaitSeconds: 60 };
+    expect(rescheduleDelayMs(i)).toBe(15 * S);
+    expect(rescheduleDelayMs({ ...i, now: 4 * S, lastInboundAt: 4 * S })).toBe(15 * S);
+  });
 });
 
 describe("pauseElapsed (reactivación por vencimiento)", () => {
@@ -70,6 +78,7 @@ describe("decideGate (compuerta de interruptor y seguridad)", () => {
     humanRepliedSincePending: false,
     agentRepliesLastHour: 0,
     antiLoopMaxPerHour: 10,
+    modelCallsLastHour: 0,
     agentRepliesToContact: 0,
     maxRepliesPerContact: null,
   };
@@ -106,6 +115,19 @@ describe("decideGate (compuerta de interruptor y seguridad)", () => {
     expect(decideGate({ ...base, agentRepliesLastHour: 10 })).toEqual({
       action: "skip",
       reason: "anti_bucle",
+      pauseTo: "pausado_antibucle",
+      tag: "revisión humana",
+    });
+  });
+
+  it("tope de gasto: muchas llamadas sin respuesta (descartes) → pausa + revisión humana", () => {
+    // antiLoop 10/h → tope 40 llamadas/h (4 por respuesta: filtro + cerebro + holgura).
+    expect(maxModelCallsPerHour(10)).toBe(40);
+    expect(maxModelCallsPerHour(1)).toBe(12);
+    expect(decideGate({ ...base, modelCallsLastHour: 39 }).action).toBe("respond");
+    expect(decideGate({ ...base, agentRepliesLastHour: 0, modelCallsLastHour: 40 })).toEqual({
+      action: "skip",
+      reason: "tope_de_llamadas",
       pauseTo: "pausado_antibucle",
       tag: "revisión humana",
     });

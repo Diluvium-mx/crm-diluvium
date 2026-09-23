@@ -30,6 +30,9 @@ export const AGENT_MODE_LABEL: Record<AgentModeValue, string> = {
   auto: "Automático",
 };
 
+// Ids que llegan del cliente a las Server Actions del agente (CLAUDE.md §7: Zod en todo borde).
+export const idSchema = z.string().trim().min(1, "Falta el identificador.").max(200);
+
 export const priceSchema = z.object({
   modelId: z.string().min(1),
   inputPerMTok: z.number().min(0).max(1_000),

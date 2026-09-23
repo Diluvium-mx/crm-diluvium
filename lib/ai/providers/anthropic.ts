@@ -1,6 +1,7 @@
 import { createAnthropic } from "@ai-sdk/anthropic";
 import { generateText, isStepCount } from "ai";
 import type { ProviderAdapter } from "../provider";
+import { DEFAULT_MODEL_TIMEOUT_MS } from "../types";
 import { toModelUsage } from "./usage";
 
 // Adaptador Anthropic. La caché del prompt es EXPLÍCITA: el system se cachea con
@@ -27,6 +28,7 @@ export const anthropicAdapter: ProviderAdapter = {
       },
       messages: input.messages,
       ...(input.maxOutputTokens ? { maxOutputTokens: input.maxOutputTokens } : {}),
+      abortSignal: AbortSignal.timeout(input.timeoutMs ?? DEFAULT_MODEL_TIMEOUT_MS),
       ...(input.tools ? { tools: input.tools, stopWhen: isStepCount(4) } : {}),
     });
     return {

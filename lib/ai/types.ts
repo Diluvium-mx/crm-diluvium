@@ -43,7 +43,12 @@ export type CallModelInput = {
   messages: ModelMessage[];
   tools?: ToolSet;
   maxOutputTokens?: number;
+  // Tope de espera de la llamada (ms); por defecto DEFAULT_MODEL_TIMEOUT_MS. Un
+  // proveedor colgado no debe retener al worker ni la pantalla de prueba.
+  timeoutMs?: number;
 };
+
+export const DEFAULT_MODEL_TIMEOUT_MS = 90_000;
 
 export type CallModelResult = {
   modelId: string;
