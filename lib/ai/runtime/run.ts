@@ -289,9 +289,16 @@ export async function runAgent(job: { organizationId: string; conversationId: st
 
     if (fresh.channel.aiAgentMode === "auto" && !guard.ok) {
       const draftId = await saveDraft({ ...draftInput, now: deps.now(), reviewReason: guard.reason });
-      await addContactTag(org, conv.contactId, TAG_HUMAN_REVIEW);
+      // Primero el uso (nunca lanza): la llamada ya se cobró y el borrador ya la
+      // "atiende", así que un reintento no volvería a registrarla.
       await recordAiUsage({ ...brainUsage, outcome: "draft", error: `guardia de salida: ${guard.reason}` });
       console.info(`[agente] ${conv.id}: respuesta retenida para revisión humana (${guard.reason})`);
+      // Pausa en "revisión humana" (+ etiqueta): el agente no sigue solo y el
+      // siguiente mensaje del cliente no reemplaza esta tarjeta hasta que un
+      // vendedor la revise y lo reactive.
+      await pause(conv, "pausado_antibucle", deps.now(), { tag: TAG_HUMAN_REVIEW }).catch((error: unknown) =>
+        console.error(`[agente] ${conv.id}: no se pudo pausar tras retener la respuesta`, error),
+      );
       return { kind: "held", draftId, reason: guard.reason };
     }
 

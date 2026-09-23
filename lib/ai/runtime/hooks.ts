@@ -39,8 +39,12 @@ export async function onInboundCustomerMessage(
       })
       .where(and(eq(conversations.id, input.conversationId), eq(conversations.organizationId, input.organizationId)));
     // El cliente escribió después del borrador: ya no responde a lo último que
-    // dijo. El agente generará otro que lo cubra (o ninguno, si no hace falta).
-    await obsoletePendingDrafts(input.organizationId, input.conversationId, now);
+    // dijo. Con el agente ACTIVO, generará otro que lo cubra (o ninguno). Con el
+    // agente pausado se conserva: p. ej. una respuesta RETENIDA por la guardia de
+    // salida es justo la tarjeta que el vendedor debe revisar.
+    if (snap.conversation.agentState === "activo") {
+      await obsoletePendingDrafts(input.organizationId, input.conversationId, now);
+    }
     const delay = await debounceDelayFor(input.organizationId, input.conversationId, now);
     if (delay === null) return; // canal apagado o nada pendiente
     await withQueueTimeout(

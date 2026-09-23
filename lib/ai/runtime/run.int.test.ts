@@ -598,8 +598,27 @@ describe.skipIf(!TEST_DATABASE_URL)("runtime del Agente IA (Postgres real)", () 
     // La tarjeta lo muestra (misma lectura que usa la Bandeja).
     const { loadConversationAgent } = await import("./manual");
     expect((await loadConversationAgent(ORG, CONV))!.draft!.reviewReason).toContain("$4,200");
-    // No pausa: el siguiente mensaje del cliente vuelve a pasar por el agente.
-    expect((await conv()).agentState).toBe("activo");
+    // Pausa en "revisión humana": el agente no sigue solo.
+    expect((await conv()).agentState).toBe("pausado_antibucle");
+  });
+
+  it("retenida: el siguiente mensaje del cliente NO borra la tarjeta ni el agente responde solo; tras Reactivar, sí", async () => {
+    await msg({ direction: "in", body: "¿descuento?", at: ago(20_000) });
+    expect((await run.runAgent(JOB, makeDeps({ brain: ["Te la dejo en $4,200."] }).deps)).kind).toBe("held");
+    const { port, kv } = fakeQueue();
+    let at = new Date();
+    await msg({ direction: "in", body: "¿entonces?", at });
+    await hooks.onInboundCustomerMessage({ organizationId: ORG, conversationId: CONV, receivedAt: at }, { queue: port, kv, now: at });
+    expect((await heldDraft()).status).toBe("pendiente");
+    const { deps, calls } = makeDeps();
+    expect(await run.runAgent(JOB, deps)).toEqual({ kind: "skipped", reason: "pausado_antibucle" });
+    expect(calls).toHaveLength(0);
+    // Un vendedor revisa y reactiva: el siguiente mensaje ya reemplaza la tarjeta.
+    await state.setAgentState(ORG, CONV, "activo", { now: new Date() });
+    at = new Date(Date.now() + 1_000);
+    await msg({ direction: "in", body: "hola?", at });
+    await hooks.onInboundCustomerMessage({ organizationId: ORG, conversationId: CONV, receivedAt: at }, { queue: port, kv, now: at });
+    expect((await heldDraft()).status).toBe("obsoleto");
   });
 
   it("auto: un enlace fuera de la lista NO se envía; diluvium.com.mx sí", async () => {
@@ -608,7 +627,8 @@ describe.skipIf(!TEST_DATABASE_URL)("runtime del Agente IA (Postgres real)", () 
     expect(held).toMatchObject({ kind: "held", reason: "Enlace fuera de la lista permitida: https://pagos-rapidos.com/x" });
     expect(await agentOuts()).toEqual([]);
 
-    await msg({ direction: "in", body: "¿tienen página?", at: new Date() });
+    await state.setAgentState(ORG, CONV, "activo", { now: new Date() }); // un vendedor revisó y reactivó
+    await msg({ direction: "in", body: "¿tienen página?", at: new Date(Date.now() + 1_000) });
     const ok = await run.runAgent(JOB, makeDeps({ brain: ["Sí: https://www.diluvium.com.mx/compuertas"] }).deps);
     expect(ok).toEqual({ kind: "sent", bubbles: 1 });
   });
