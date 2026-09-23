@@ -115,7 +115,18 @@ construye ahora). El dry-run "Probar modelo" ya muestra tokens, pero no persiste
     - Montos escritos con palabras ("seis mil quinientos") y con "k" ("5k") no se detectan.
     - Falsos positivos (van a revisión humana): "listo.Me" (parece enlace), etiqueta con
       cifras "2 compuertas medianas (1 m) × $5,500", y cualquier % que no esté en la base
-      aunque no sea descuento ("100% impermeable").
+      aunque no sea descuento ("100% impermeable", "IVA (16%)", "0% de interés"), "24x7",
+      "90x60" sin unidad, y una respuesta de meses sin intereses que mencione otro plazo en
+      meses ("…6 MSI; la garantía es de 12 meses").
+    - P2 de la revisión final (23-sep), no se tocan antes:
+      - Promos con palabras o mal escritas: "diez por ciento", "10 porciento", "dos por uno",
+        "doce meses sin intereses", "2-por-1", "#Promo2x1", "1000%".
+      - Promos que solo viven en un enlace o correo propio ("diluvium.com.mx/promo-2x1").
+      - "a 3 o 6 meses sin intereses" pasa (termina en el plazo de la base); "a 12 meses con
+        tarjeta" (sin decir "sin intereses") pasa.
+      - "50% de descuento" pasa porque "50%" está en la base (es el anticipo): mismo caso que
+        "te descuento $3,000".
+      - El motivo sale duplicado si solo cambia la mayúscula ("2x1" y "2X1").
 
   **Ojo con la migración de Fase B en staging (22-sep-2026).** Staging ya tiene
   aplicada la `0014_little_omega_flight.sql` de esta rama (tablas del agente ya creadas),

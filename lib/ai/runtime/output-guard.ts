@@ -314,23 +314,34 @@ const PERCENT = new RegExp(
   "giu",
 );
 const N_X_M = new RegExp(
-  String.raw`(?<![\p{L}\p{N}.,$])(\d{1,2})${H}{0,2}(?:[x×]|por)${H}{0,2}(\d{1,2})(?![\p{N}.,])(?!${H}{0,3}(?:cm|mm|m|mts?|metros?|pulgadas?|pulg|\$)(?!\p{L}))`,
+  String.raw`(?<![\p{L}\p{N}.,$])(\d{1,2})${H}{0,2}(?:[x×]|por)${H}{0,2}(\d{1,2})(?!\p{N}|[.,]\p{N})(?!${H}{0,3}(?:cm|mm|m|mts?|metros?|pulgadas?|pulg|\$)(?!\p{L}))`,
   "giu",
 );
 const MSI = new RegExp(
-  String.raw`(?<![\p{N}.,])(\d{1,2})${H}{0,3}(?:meses${H}{1,3}sin${H}{1,3}intereses|msi)(?!\p{L})`,
+  String.raw`(?<![\p{N}.,])(\d{1,2})${H}{0,3}(?:(?:meses|mensualidades)${H}{1,3}sin${H}{1,3}inter[eé]s(?:es)?|msi)(?!\p{L})`,
   "giu",
 );
+
+// Si la respuesta habla de meses sin intereses, cualquier "N meses" / "N mensualidades"
+// cuenta como plazo ofrecido ("Manejamos meses sin intereses: hasta 12 meses").
+const MSI_CONTEXT = /sin\s{1,3}inter[eé]s|(?<!\p{L})msi(?!\p{L})/iu;
+const MONTHS = new RegExp(String.raw`(?<![\p{N}.,])(\d{1,2})${H}{0,3}(?:meses|mensualidades)(?!\p{L})`, "giu");
 
 type Promo = { key: string; text: string };
 
 export function extractPromos(text: string): Promo[] {
   const clean = withoutLinks(text);
   const num = (x: string) => Number(x.replace(",", "."));
+  const msiAt = new Set([...clean.matchAll(MSI)].map((m) => m.index));
   return [
     ...[...clean.matchAll(PERCENT)].map((m) => ({ key: `%${num(m[1])}`, text: m[0].trim() })),
     ...[...clean.matchAll(N_X_M)].map((m) => ({ key: `${Number(m[1])}x${Number(m[2])}`, text: m[0].trim() })),
     ...[...clean.matchAll(MSI)].map((m) => ({ key: `msi${Number(m[1])}`, text: m[0].trim() })),
+    ...(MSI_CONTEXT.test(clean)
+      ? [...clean.matchAll(MONTHS)]
+          .filter((m) => !msiAt.has(m.index))
+          .map((m) => ({ key: `msi${Number(m[1])}`, text: m[0].trim() }))
+      : []),
   ];
 }
 
