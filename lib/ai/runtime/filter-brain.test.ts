@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { buildFilterPrompt, parseFilterDecision } from "./filter";
-import { buildBrainSystemWithRuntime, HANDOVER_TOKEN, parseBrainOutput, runtimeSuffix } from "./brain";
+import { buildBrainSystemWithRuntime, HANDOVER_TOKEN, MONEY_FORMAT_RULE, parseBrainOutput, runtimeSuffix } from "./brain";
 import { FAQ_SECTION_HEADER } from "./knowledge";
 import { decideGate } from "./policy";
 import { TAG_ANTI_LOOP } from "./tags";
@@ -52,6 +52,15 @@ describe("cerebro", () => {
     expect(sys.startsWith("GOAL\n\n" + FAQ_SECTION_HEADER)).toBe(true);
     expect(sys.endsWith(runtimeSuffix(2))).toBe(true);
     expect(runtimeSuffix(2)).toContain("Máximo 2 bloque(s)");
+  });
+  it("la regla de montos (cifras y $) va en el system del runtime, después del Goal y las FAQs", () => {
+    expect(MONEY_FORMAT_RULE).toBe(
+      "Escribe siempre los montos con cifras y signo $ (ej. $5,500), nunca con palabras ni con k.",
+    );
+    const sys = buildBrainSystemWithRuntime("GOAL", [{ position: 1, question: "q", answer: "a" }], 2);
+    expect(runtimeSuffix(2)).toContain(`- ${MONEY_FORMAT_RULE}`);
+    expect(sys.indexOf(MONEY_FORMAT_RULE)).toBeGreaterThan(sys.indexOf("GOAL"));
+    expect(sys.split(MONEY_FORMAT_RULE)).toHaveLength(2); // una sola vez
   });
   it("el token de transferencia gana aunque venga con texto", () => {
     expect(parseBrainOutput(`Te comunico con un asesor ${HANDOVER_TOKEN}`)).toEqual({ kind: "handover" });
