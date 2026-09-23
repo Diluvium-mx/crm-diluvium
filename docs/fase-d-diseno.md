@@ -1,8 +1,9 @@
 # Agente IA — Fase D: Acciones y Automatización (diseño)
 
 > Estado: **APROBADO por el dueño el 23-sep-2026** con las definiciones de negocio de §0.1.
-> Rama `feat/agente-ia-fase-d` (desde main 086143d). Se construye primero la parte (a) (§7);
-> la parte (b) espera al cierre de la Fase B y a un rebase sobre main.
+> Rama `feat/agente-ia-fase-d` (desde main 086143d). **Parte (a) construida el 23-sep-2026**
+> (A0–A6; §8 tiene las decisiones de implementación). La parte (b) espera al cierre de la
+> Fase B y a un rebase sobre main.
 
 ## 0. Qué resuelve
 
@@ -350,3 +351,46 @@ Cada paso es una rebanada vertical desplegable; A5 ya se puede usar (con comando
 | B5 | Guardia: `conversationKnownAmounts` + `extraKnown` (§2.3) con tests de los escenarios: repetir cotización, confirmar pago, cliente propone precio (rechazado) | `lib/ai/runtime/output-guard.ts` (solo firma), `known-amounts.ts` (nuevo) |
 | B6 | Contexto "ya enviado en esta conversación" (lee `workflow_runs`) | `lib/ai/runtime/context.ts` |
 | B7 | Gate completo + prueba en el sandbox con el dueño (tabla, banco, comprobante que cuadra y que no cuadra) | — |
+
+## 8. Estado de la parte (a) y decisiones de implementación (23-sep-2026)
+
+Construido y con tests (unitarios + integración en Postgres real): migración `0025_automatizacion`,
+ACL `workflow`/`mediaAsset`, 12 predeterminados (`lib/workflows/defaults.ts`), seed idempotente por
+slug (hook de creación de organización + botón "Restaurar predeterminados"; **no hay migración de
+seed**: la organización que ya existía los recibe con el botón), biblioteca de media
+(`lib/media-library/*`, `POST /api/biblioteca/upload` en streaming con tope real por bytes,
+`GET /api/biblioteca/[assetId]` → URL firmada de 5 min), media saliente (`sendMedia` en el
+proveedor + `sendMediaMessage`, URL firmada de 15 min, outbox e idempotencia iguales que el
+texto), ejecutor (`lib/workflows/executor.ts`, cola `workflow-runs`, `worker/workflows.ts`),
+disparadores (`lib/workflows/triggers.ts`), server actions, pestaña `/automatizacion` y comandos
+en el composer.
+
+Decisiones que no estaban en el diseño original:
+- **Predeterminados nacen apagados.** Solo se pueden habilitar cuando todos sus pasos de archivo
+  tienen media elegida (el editor y `toggleWorkflow` lo exigen). Un archivo borrado de la
+  biblioteca vuelve a dejar el workflow en "falta archivo".
+- **Palabra clave del cliente: dispara UN workflow por mensaje** (el primero por posición) para
+  no inundar; solo mensajes de texto, nunca imágenes.
+- **`set_stage` dentro de un workflow NO dispara** los workflows "al entrar a la etapa" (evita
+  cadenas y bucles). El disparo por etapa solo ocurre por acción humana (`updateContactStage`),
+  y solo si la etapa realmente cambió.
+- **Modo borrador:** un disparo del agente o por palabra clave con el canal en borrador queda
+  `skipped` con motivo `modo_borrador` (definición 1); con el canal apagado, `canal_apagado`. Los
+  comandos del vendedor y los disparos por etapa manual corren siempre (salen como `crm`).
+- **Corridas del agente** (`source: ai_agent`) releen el estado antes de cada envío al cliente:
+  si un vendedor escribió después de crearse la corrida, o el canal salió de auto, se cancela con
+  motivo (`respuesta_humana`, `cambio_de_modo`, `agente_pausado`).
+- **Reintentos:** el ejecutor avanza `step_cursor` después de cada paso; un reintento de BullMQ
+  retoma donde quedó. Un rechazo del proveedor deja la corrida `failed` con el código y no se
+  reintenta sola (igual que un envío manual). El barrido re-encola `queued` > 30 s sin job y da por
+  fallidas las `running` > 10 min.
+- **Aviso interno** = fila en `messages` con `type: system_note`, `status: sent`, sin wamid: la
+  bandeja la pinta centrada en ámbar y nunca pasa por el proveedor.
+- **Reordenar** en la lista es con flechas ↑↓ (no arrastre) en v1.
+- Los comandos del vendedor aparecen en el menú "/" del composer como sección "Automatizaciones";
+  un texto que sea exactamente `/algo` y corresponda a un workflow lo dispara en vez de enviarse.
+- El limitador de tasa y las colas nunca bloquean la pestaña: sin Redis, encolar falla y el
+  barrido del worker recoge la corrida.
+
+Pendiente para cerrar la parte (a): gate (§7 A7) y prueba de `/tabla` y `/banco` en staging con
+el sandbox, con archivos de prueba hasta que el dueño entregue los reales (§5).
