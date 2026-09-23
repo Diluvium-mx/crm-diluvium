@@ -30,6 +30,22 @@ export function debounceDelayMs(i: DebounceInput): number {
   return Math.max(0, fireAt - i.now);
 }
 
+// Qué entrantes pendientes cuentan para el debounce: solo los posteriores al
+// último corte (último entrante ya atendido —aunque el filtro lo haya saltado—,
+// reactivación del agente o encendido del canal). Sin esto, un "gracias" que el
+// filtro saltó días atrás seguiría "pendiente", el tope ya habría vencido y el
+// siguiente mensaje dispararía al instante (sin debounce → dos respuestas).
+export function debounceWindow(
+  arrivals: readonly number[], // epoch ms de llegada de los pendientes, cualquier orden
+  cutoffs: readonly (number | null)[],
+): { firstPendingAt: number; lastInboundAt: number } | null {
+  if (arrivals.length === 0) return null;
+  const cut = Math.max(-Infinity, ...cutoffs.filter((c): c is number => c !== null));
+  const last = Math.max(...arrivals);
+  const fresh = arrivals.filter((a) => a > cut);
+  return { firstPendingAt: fresh.length ? Math.min(...fresh) : last, lastInboundAt: last };
+}
+
 // Piso al volver al debounce tras descartar respuestas: nunca 0 (el tope duro ya
 // venció y un cliente que no para de escribir haría correr el job en bucle).
 export function rescheduleDelayMs(i: DebounceInput): number {

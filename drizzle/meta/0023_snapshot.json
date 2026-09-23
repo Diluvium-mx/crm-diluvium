@@ -1110,6 +1110,12 @@
           "notNull": true,
           "default": "'off'"
         },
+        "ai_agent_mode_changed_at": {
+          "name": "ai_agent_mode_changed_at",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": false
+        },
         "created_at": {
           "name": "created_at",
           "type": "timestamp",

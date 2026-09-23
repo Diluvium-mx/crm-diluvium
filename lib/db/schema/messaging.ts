@@ -132,6 +132,9 @@ export const channels = pgTable(
     isActive: boolean("is_active").default(true).notNull(),
     // Interruptor del Agente IA en este canal. Apagado por defecto (seguro).
     aiAgentMode: channelAiAgentModeEnum("ai_agent_mode").default("off").notNull(),
+    // Cuándo se movió el interruptor por última vez: lo que el cliente escribió
+    // ANTES de encender el agente no se contesta solo (barrido) ni vence el debounce.
+    aiAgentModeChangedAt: timestamp("ai_agent_mode_changed_at"),
     createdAt: timestamp("created_at").defaultNow().notNull(),
   },
   (table) => [

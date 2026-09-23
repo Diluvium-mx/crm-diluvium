@@ -1,6 +1,7 @@
 import { describe, it, expect } from "vitest";
 import {
   debounceDelayMs,
+  debounceWindow,
   maxModelCallsPerHour,
   pauseElapsed,
   decideGate,
@@ -51,6 +52,20 @@ describe("debounceDelayMs (debounce deslizante con tope)", () => {
     const i = { now: 100 * S, firstPendingAt: 0, lastInboundAt: 100 * S, responseDelaySeconds: 15, maxWaitSeconds: 60 };
     expect(rescheduleDelayMs(i)).toBe(15 * S);
     expect(rescheduleDelayMs({ ...i, now: 4 * S, lastInboundAt: 4 * S })).toBe(15 * S);
+  });
+});
+
+describe("debounceWindow (qué pendientes cuentan para el debounce)", () => {
+  it("sin cortes: del más viejo al más nuevo", () => {
+    expect(debounceWindow([5 * S, 1 * S, 3 * S], [])).toEqual({ firstPendingAt: 1 * S, lastInboundAt: 5 * S });
+  });
+  it("un pendiente viejo ya atendido (o previo a reactivar/encender) no vence el tope", () => {
+    expect(debounceWindow([0, 100 * S, 102 * S], [10 * S, null])).toEqual({ firstPendingAt: 100 * S, lastInboundAt: 102 * S });
+    expect(debounceWindow([0, 100 * S], [null, 50 * S, 20 * S])).toEqual({ firstPendingAt: 100 * S, lastInboundAt: 100 * S });
+  });
+  it("todo anterior al corte → cuenta solo el último; sin pendientes → null", () => {
+    expect(debounceWindow([1 * S, 2 * S], [9 * S])).toEqual({ firstPendingAt: 2 * S, lastInboundAt: 2 * S });
+    expect(debounceWindow([], [9 * S])).toBeNull();
   });
 });
 
