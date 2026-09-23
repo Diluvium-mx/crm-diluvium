@@ -22,12 +22,13 @@ import {
   messageAt,
   modelCallsSince,
   orgSpendSince,
+  agentSendUnresolved,
   pendingInbound,
   recentMessages,
   type MessageRow,
 } from "./context";
 import { buildFilterPrompt, FILTER_SYSTEM, parseFilterDecision } from "./filter";
-import { decideGate, pauseElapsed, toBubbles, type AgentState } from "./policy";
+import { decideGate, toBubbles, type AgentState } from "./policy";
 import { rescheduleDelayFor } from "./schedule";
 import { addContactTag, markAgentReply, saveDraft, setAgentState } from "./state";
 import { reviewReply } from "./output-guard";
@@ -156,7 +157,10 @@ export async function runAgent(job: { organizationId: string; conversationId: st
     // Encender el canal también es corte: lo que un vendedor contestó ANTES de
     // prender el agente no pausa conversaciones que ya existían.
     const cut = latestDate(conv.agentStateChangedAt, channel.aiAgentModeChangedAt);
-    const boundary = pauseElapsed(conv.agentState, pausedUntilMs, now.getTime()) ? now : cut;
+    // Con un "pasar a humano" vencido el corte es su INICIO (agent_state_changed_at):
+    // si un vendedor contestó durante la transferencia, tomó la conversación y el
+    // agente NO se reactiva solo.
+    const boundary = cut;
     // "Un vendedor tomó la conversación": el último saliente es humano (CRM o
     // celular) y es posterior al último cambio de estado del agente.
     const humanTookOver =
@@ -180,6 +184,7 @@ export async function runAgent(job: { organizationId: string; conversationId: st
       agentRepliesLastHour: await agentRepliesSince(org, conv.id, hourAgo),
       antiLoopMaxPerHour: cfg.antiLoopMaxPerHour,
       modelCallsLastHour: await modelCallsSince(org, conv.id, hourAgo),
+      agentSendUnresolved: await agentSendUnresolved(org, conv.id, cut),
       orgSpendLast24hUsd: await orgSpendSince(org, new Date(now.getTime() - 24 * 3_600_000)),
       dailyBudgetUsd: cfg.dailyBudgetUsd,
       agentRepliesToContact: cfg.maxRepliesPerContact === null ? 0 : await agentRepliesToContact(org, conv.contactId),
@@ -359,8 +364,13 @@ export async function runAgent(job: { organizationId: string; conversationId: st
         stopped = await stopBeforeBubble(org, conv.id, humansAtCheck, readCount);
         if (stopped) break;
         const outcome = await deps.sendBubble({ organizationId: org, conversationId: conv.id, text });
-        if (outcome.status !== "sent") unconfirmed++;
         sent++;
+        // Sin confirmación no se manda la siguiente: el cliente no recibe media respuesta
+        // encima de algo que quizá no le llegó (lo resuelve el outbox; si vence, revisión humana).
+        if (outcome.status !== "sent") {
+          unconfirmed++;
+          break;
+        }
       }
     } catch (error) {
       if (sent === 0) {
@@ -392,7 +402,10 @@ export async function runAgent(job: { organizationId: string; conversationId: st
     await markAgentReply(org, conv.id, deps.now());
     // Una burbuja sin confirmar queda en el outbox: si vence como "sin confirmar",
     // el barrido pausa la conversación para revisión humana (nunca reenvía a ciegas).
-    await recordAiUsage({ ...brainUsage, outcome: "sent", error: unconfirmed ? `${unconfirmed} burbuja(s) sin confirmar` : null });
+    const note = unconfirmed
+      ? `${unconfirmed} burbuja(s) sin confirmar${sent < bubbles.length ? `; no se enviaron ${bubbles.length - sent}` : ""}`
+      : null;
+    await recordAiUsage({ ...brainUsage, outcome: "sent", error: note });
     return { kind: "sent", bubbles: sent };
   }
 

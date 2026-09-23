@@ -21,6 +21,20 @@ const ORPHAN_MIN_AGE_SECONDS = 90;
 export const ORPHAN_MAX_AGE_MINUTES = 30;
 
 export async function reactivateExpiredHandovers(now: Date): Promise<number> {
+  // Si un vendedor contestó DURANTE el pase a humano, NO se reactiva: pasa a
+  // pausado_humano (reactivación manual), aunque el gancho no lo haya alcanzado a marcar.
+  await db.execute(sql`
+    update conversations c
+       set agent_state = 'pausado_humano', agent_paused_until = null, agent_state_changed_at = ${ts(now)}
+     where c.agent_state = 'pausado_handover'
+       and c.agent_paused_until is not null and c.agent_paused_until <= ${ts(now)}
+       and exists (
+         select 1 from messages m
+          where m.conversation_id = c.id and m.organization_id = c.organization_id
+            and m.direction = 'out' and m.source in ('crm', 'business_app') and m.status <> 'failed'
+            and coalesce(m.sent_at, m.created_at) > coalesce(c.agent_state_changed_at, '-infinity'::timestamp)
+       )
+  `);
   const rows = await db
     .update(conversations)
     .set({ agentState: "activo", agentPausedUntil: null, agentStateChangedAt: now })
@@ -126,19 +140,22 @@ export async function reconcileStuckDrafts(now: Date): Promise<number> {
   return resolved;
 }
 
-// AUTO con resultado ambiguo: si el ÚLTIMO saliente de la conversación es del
-// agente y el outbox lo dio por fallido SIN CONFIRMAR (no se sabe si llegó), no se
-// regenera ni se reenvía (podría duplicar): se pausa en "revisión humana" con la
-// etiqueta, y el vendedor ve el aviso y el mensaje fallido en el hilo. Va antes que
-// findOrphanConversations (una conversación pausada ya no se reprograma).
-export async function pauseOnUnconfirmedAgentSends(now: Date): Promise<number> {
-  const since = new Date(now.getTime() - 24 * 3_600_000);
+// AUTO con envío fallido: se pausa en "revisión humana" + etiqueta (sin regenerar ni
+// reenviar: podría duplicar) la conversación con el agente activo que, DESPUÉS del
+// último corte (reactivación / cambio de estado), tiene:
+//   - un saliente del agente fallido SIN CONFIRMAR sin una respuesta humana posterior
+//     (aunque no sea el último: p. ej. 1ª burbuja ambigua y la 2ª confirmada), o
+//   - como ÚLTIMO saliente uno del agente fallido (también un rechazo definitivo que
+//     llegó después de "pending": el cliente no recibió la respuesta).
+// Sin límite de antigüedad (una caída larga del worker no las pierde); el corte evita
+// volver a pausar tras "Reactivar". Va antes que findOrphanConversations.
+export async function pauseOnFailedAgentSends(now: Date): Promise<number> {
   const rows = await db.execute<{ id: string; organization_id: string; contact_id: string }>(sql`
     select c.id, c.organization_id, c.contact_id
     from conversations c
     join channels ch on ch.id = c.channel_id and ch.organization_id = c.organization_id
     join lateral (
-      select m.source, m.status, m.error_code, m.created_at
+      select m.source, m.status, m.created_at
       from messages m
       where m.conversation_id = c.id and m.organization_id = c.organization_id and m.direction = 'out'
       order by coalesce(m.sent_at, m.created_at) desc, m.created_at desc
@@ -146,10 +163,23 @@ export async function pauseOnUnconfirmedAgentSends(now: Date): Promise<number> {
     ) last on true
     where ch.ai_agent_mode <> 'off'
       and c.agent_state = 'activo'
-      and last.source = 'ai_agent'
-      and last.status = 'failed'
-      and (last.error_code = ${SEND_UNCONFIRMED} or last.error_code like ${`${SEND_UNKNOWN}%`})
-      and last.created_at > ${since.toISOString()}::timestamp
+      and (
+        (last.source = 'ai_agent' and last.status = 'failed'
+          and last.created_at > coalesce(c.agent_state_changed_at, '-infinity'::timestamp))
+        or exists (
+          select 1 from messages f
+           where f.conversation_id = c.id and f.organization_id = c.organization_id
+             and f.direction = 'out' and f.source = 'ai_agent' and f.status = 'failed'
+             and (f.error_code = ${SEND_UNCONFIRMED} or f.error_code like ${`${SEND_UNKNOWN}%`})
+             and f.created_at > coalesce(c.agent_state_changed_at, '-infinity'::timestamp)
+             and not exists (
+               select 1 from messages h
+                where h.conversation_id = c.id and h.organization_id = c.organization_id
+                  and h.direction = 'out' and h.source in ('crm', 'business_app') and h.status <> 'failed'
+                  and h.created_at > f.created_at
+             )
+        )
+      )
     limit 50
   `);
   for (const r of rows) {
