@@ -20,7 +20,7 @@ import {
 } from "./queue";
 import { runAgent, type RunDeps, type RunResult } from "./run";
 import { debounceDelayFor } from "./schedule";
-import { findOrphanConversations, pauseOnUnconfirmedAgentSends, reactivateExpiredHandovers, reconcileStuckDrafts } from "./sweep";
+import { findOrphanConversations, pauseOnFailedAgentSends, reactivateExpiredHandovers, reconcileStuckDrafts } from "./sweep";
 
 const SWEEP_EVERY_MS = 60_000;
 
@@ -54,8 +54,8 @@ export function makeRunDeps(provider: MessagingProvider, storage: ObjectStorage 
 export async function sweepOnce(queue: AgentQueuePort, kv: KvPort, now: Date): Promise<void> {
   const reactivated = await reactivateExpiredHandovers(now);
   if (reactivated) console.info(`[agente] barrido: ${reactivated} conversación(es) reactivada(s) tras pasar a humano`);
-  const unconfirmed = await pauseOnUnconfirmedAgentSends(now);
-  if (unconfirmed) console.info(`[agente] barrido: ${unconfirmed} conversación(es) pausada(s) por un envío del agente sin confirmar`);
+  const failedSends = await pauseOnFailedAgentSends(now);
+  if (failedSends) console.info(`[agente] barrido: ${failedSends} conversación(es) pausada(s) por un envío del agente fallido o sin confirmar`);
   const drafts = await reconcileStuckDrafts(now);
   if (drafts) console.info(`[agente] barrido: ${drafts} borrador(es) atorado(s) en "enviando" conciliado(s)`);
   const orphans = await findOrphanConversations(now);

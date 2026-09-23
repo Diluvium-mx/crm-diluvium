@@ -95,6 +95,7 @@ describe("decideGate (compuerta de interruptor y seguridad)", () => {
     antiLoopMaxPerHour: 10,
     modelCallsLastHour: 0,
     orgSpendLast24hUsd: 0,
+    agentSendUnresolved: false,
     dailyBudgetUsd: 20,
     agentRepliesToContact: 0,
     maxRepliesPerContact: null,
@@ -148,6 +149,10 @@ describe("decideGate (compuerta de interruptor y seguridad)", () => {
       pauseTo: "pausado_antibucle",
       tag: "revisión humana",
     });
+  });
+
+  it("envío del agente sin resolver (en camino o sin confirmar): espera, sin pausar", () => {
+    expect(decideGate({ ...base, agentSendUnresolved: true })).toEqual({ action: "skip", reason: "envio_sin_confirmar" });
   });
 
   it("presupuesto diario de la organización: al llegar, no responde (sin pausar la conversación)", () => {

@@ -606,63 +606,104 @@ describe.skipIf(!TEST_DATABASE_URL)("runtime del Agente IA (Postgres real)", () 
     expect(brain.error).toContain("detenido tras 1 burbuja(s): entrante_nuevo");
   });
 
-  it("AUTO → envío sin confirmar → vence 'sin confirmar' → el barrido pausa para revisión humana (sin reenviar)", async () => {
-    const { SEND_UNCONFIRMED } = await import("@/lib/messaging/rules");
-    const trigger = await msg({ direction: "in", body: "¿precio?", at: ago(10_000) });
-    const { deps } = makeDeps();
-    // El proveedor no confirma: la burbuja queda en el outbox ("queued") y vuelve "pending".
-    deps.sendBubble = async (p) => {
-      await db.insert(s.messages).values({
-        id: `m_pend_${crypto.randomUUID()}`,
-        organizationId: p.organizationId,
-        conversationId: p.conversationId,
-        direction: "out",
-        source: "ai_agent",
-        type: "text",
-        body: p.text,
-        status: "queued",
-        sentAt: new Date(),
-      });
-      return { status: "pending" as const };
-    };
-    expect(await run.runAgent(JOB, deps)).toEqual({ kind: "sent", bubbles: 2 });
-    const brain = (await usage()).find((u) => u.stage === "cerebro")!;
-    expect(brain).toMatchObject({ outcome: "sent", error: "2 burbuja(s) sin confirmar" });
-    // Mientras sigue en camino, nada que pausar.
-    expect(await sweep.pauseOnUnconfirmedAgentSends(new Date())).toBe(0);
-    // El outbox vence: fallido SIN CONFIRMAR (no se sabe si llegó).
-    await db
-      .update(s.messages)
-      .set({ status: "failed", errorCode: SEND_UNCONFIRMED })
-      .where(eq(s.messages.source, "ai_agent"));
-    expect(await sweep.pauseOnUnconfirmedAgentSends(new Date())).toBe(1);
-    expect((await conv()).agentState).toBe("pausado_antibucle");
-    const [c] = await db.select().from(s.contacts).where(eq(s.contacts.id, CONTACT));
-    expect(c.tags).toContain("revisión humana");
-    // No se reenvía a ciegas: ni el barrido lo reprograma ni una corrida responde.
-    expect(await sweep.findOrphanConversations(new Date())).toEqual([]);
-    const again = makeDeps();
-    expect(await run.runAgent(JOB, again.deps)).toEqual({ kind: "noop", reason: "ya_atendido" });
-    expect(again.calls).toHaveLength(0);
-    void trigger;
-  });
-
-  it("un rechazo DEFINITIVO del agente no pausa (se reintenta por la cola); solo el ambiguo", async () => {
-    await msg({ direction: "in", body: "hola", at: ago(10_000) });
+  // ── Envíos del agente sin confirmar o fallidos (re-revisiones de Codex) ────
+  async function agentMsg(opts: { status: "queued" | "sent" | "failed"; errorCode?: string; at?: Date; source?: "ai_agent" | "crm" }) {
+    const id = `m_${opts.source ?? "ai"}_${crypto.randomUUID()}`;
+    const at = opts.at ?? new Date();
     await db.insert(s.messages).values({
-      id: "m_rech",
+      id,
       organizationId: ORG,
       conversationId: CONV,
       direction: "out",
-      source: "ai_agent",
+      source: opts.source ?? "ai_agent",
       type: "text",
       body: "x",
-      status: "failed",
-      errorCode: "provider_rejected",
-      sentAt: new Date(),
+      status: opts.status,
+      errorCode: opts.errorCode ?? null,
+      sentByUserId: opts.source === "crm" ? "u_vendedor" : null,
+      sentAt: at,
+      createdAt: at,
     });
-    expect(await sweep.pauseOnUnconfirmedAgentSends(new Date())).toBe(0);
+    return id;
+  }
+
+  it("AUTO → 1ª burbuja sin confirmar: la 2ª no sale; si vence sin confirmar, el barrido pausa (sin reenviar)", async () => {
+    const { SEND_UNCONFIRMED } = await import("@/lib/messaging/rules");
+    await msg({ direction: "in", body: "¿precio?", at: ago(10_000) });
+    const { deps } = makeDeps();
+    let pendingId = "";
+    deps.sendBubble = async () => {
+      pendingId = await agentMsg({ status: "queued" });
+      return { status: "pending" as const };
+    };
+    expect(await run.runAgent(JOB, deps)).toEqual({ kind: "sent", bubbles: 1 });
+    const brain = (await usage()).find((u) => u.stage === "cerebro")!;
+    expect(brain).toMatchObject({ outcome: "sent", error: "1 burbuja(s) sin confirmar; no se enviaron 1" });
+    // En camino: no se pausa, y el agente no responde encima de un envío sin resolver.
+    expect(await sweep.pauseOnFailedAgentSends(new Date())).toBe(0);
+    await msg({ direction: "in", body: "¿hola?", at: new Date(Date.now() + 1_000) });
+    const busy = makeDeps();
+    expect(await run.runAgent(JOB, busy.deps)).toEqual({ kind: "skipped", reason: "envio_sin_confirmar" });
+    expect(busy.calls).toHaveLength(0);
+    // Vence sin confirmar → revisión humana, sin regenerar ni reenviar.
+    await db.update(s.messages).set({ status: "failed", errorCode: SEND_UNCONFIRMED }).where(eq(s.messages.id, pendingId));
+    expect(await sweep.pauseOnFailedAgentSends(new Date())).toBe(1);
+    expect((await conv()).agentState).toBe("pausado_antibucle");
+    const [c] = await db.select().from(s.contacts).where(eq(s.contacts.id, CONTACT));
+    expect(c.tags).toContain("revisión humana");
+    expect(await sweep.findOrphanConversations(new Date())).toEqual([]);
+  });
+
+  it("pending → confirmado: no pausa ni bloquea", async () => {
+    const id = await agentMsg({ status: "queued" });
+    await db.update(s.messages).set({ status: "sent" }).where(eq(s.messages.id, id));
+    expect(await sweep.pauseOnFailedAgentSends(new Date())).toBe(0);
     expect((await conv()).agentState).toBe("activo");
+  });
+
+  it("pending → rechazo definitivo (último saliente del agente) → revisión humana", async () => {
+    await agentMsg({ status: "failed", errorCode: "131047" });
+    expect(await sweep.pauseOnFailedAgentSends(new Date())).toBe(1);
+    expect((await conv()).agentState).toBe("pausado_antibucle");
+  });
+
+  it("una burbuja ambigua que NO es el último saliente también pausa (la 2ª sí salió)", async () => {
+    const { SEND_UNCONFIRMED } = await import("@/lib/messaging/rules");
+    await agentMsg({ status: "failed", errorCode: SEND_UNCONFIRMED, at: ago(5_000) });
+    await agentMsg({ status: "sent", at: ago(3_000) });
+    expect(await sweep.pauseOnFailedAgentSends(new Date())).toBe(1);
+  });
+
+  it("sin límite de antigüedad (worker caído 2 días) y sin volver a pausar tras 'Reactivar'", async () => {
+    const { SEND_UNCONFIRMED } = await import("@/lib/messaging/rules");
+    await agentMsg({ status: "failed", errorCode: SEND_UNCONFIRMED, at: ago(2 * 86_400_000) });
+    expect(await sweep.pauseOnFailedAgentSends(new Date())).toBe(1);
+    await state.setAgentState(ORG, CONV, "activo", { now: new Date() }); // un vendedor revisó y reactivó
+    expect(await sweep.pauseOnFailedAgentSends(new Date())).toBe(0);
+    expect((await conv()).agentState).toBe("activo");
+  });
+
+  it("un rechazo definitivo seguido de un reintento exitoso no pausa", async () => {
+    await agentMsg({ status: "failed", errorCode: "provider_rejected", at: ago(20_000) });
+    await agentMsg({ status: "sent", at: ago(5_000) });
+    expect(await sweep.pauseOnFailedAgentSends(new Date())).toBe(0);
+  });
+
+  it("respuesta humana DURANTE un pase a humano: el agente no se reactiva solo (gancho y barrido)", async () => {
+    // Gancho: el saliente del vendedor convierte el handover en pausa manual.
+    await state.setAgentState(ORG, CONV, "pausado_handover", { now: ago(60_000), pausedUntil: new Date(Date.now() + 3_600_000) });
+    await hooks.onHumanOutbound({ organizationId: ORG, conversationId: CONV }, { queue: fakeQueue().port, kv: fakeQueue().kv });
+    expect(await conv()).toMatchObject({ agentState: "pausado_humano", agentPausedUntil: null });
+    // Barrido: aunque el gancho no lo marcara, un handover vencido con respuesta humana
+    // posterior a su inicio pasa a pausado_humano (no a activo).
+    await state.setAgentState(ORG, CONV, "pausado_handover", { now: ago(9 * 3_600_000), pausedUntil: ago(60_000) });
+    await agentMsg({ status: "sent", source: "crm", at: ago(8 * 3_600_000) });
+    await sweep.reactivateExpiredHandovers(new Date());
+    expect((await conv()).agentState).toBe("pausado_humano");
+    await msg({ direction: "in", body: "¿siguen?", at: new Date() });
+    const { deps, calls } = makeDeps();
+    expect((await run.runAgent(JOB, deps)).kind).toBe("skipped");
+    expect(calls).toHaveLength(0);
   });
 
   it("AUTO: si apagan el canal en la pausa entre burbujas, la 2ª ya no sale", async () => {
