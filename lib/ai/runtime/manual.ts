@@ -152,7 +152,7 @@ export async function loadConversationAgent(organizationId: string, conversation
     channelMode: row.channel.aiAgentMode,
     agentState: row.conversation.agentState,
     pausedUntil: row.conversation.agentPausedUntil,
-    draft: draft ? { id: draft.id, bubbles: draft.bubbles, createdAt: draft.createdAt } : null,
+    draft: draft ? { id: draft.id, bubbles: draft.bubbles, createdAt: draft.createdAt, reviewReason: draft.reviewReason } : null,
   };
 }
 

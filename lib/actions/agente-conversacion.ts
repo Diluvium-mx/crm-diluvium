@@ -39,7 +39,12 @@ export async function getConversationAgent(conversationId: string): Promise<Agen
     agentState: row.agentState,
     pausedUntil: row.pausedUntil?.toISOString() ?? null,
     draft: row.draft
-      ? { id: row.draft.id, bubbles: row.draft.bubbles, createdAt: row.draft.createdAt.toISOString() }
+      ? {
+          id: row.draft.id,
+          bubbles: row.draft.bubbles,
+          createdAt: row.draft.createdAt.toISOString(),
+          reviewReason: row.draft.reviewReason,
+        }
       : null,
   };
 }

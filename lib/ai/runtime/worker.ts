@@ -31,6 +31,8 @@ function describe(result: RunResult | null): string {
       return `enviado (${result.bubbles} burbuja/s)`;
     case "draft":
       return `borrador ${result.draftId}`;
+    case "held":
+      return `retenido para revisión humana ${result.draftId} (${result.reason})`;
     case "reschedule":
       return `re-programado en ${result.delayMs} ms (${result.reason})`;
     default:
