@@ -37,6 +37,7 @@ import {
 import { objectStorage, StorageNotConfiguredError, type ObjectStorage } from "@/lib/storage/s3";
 import { inboundHealth, WORKER_HEARTBEAT_KEY } from "@/lib/monitoring/inbound-health";
 import { redis } from "@/lib/redis";
+import { startScheduledWorker } from "./scheduled";
 
 const SWEEP_EVERY_MS = 60_000;
 const SWEEP_MIN_AGE_MS = 60_000;
@@ -48,6 +49,8 @@ const SWEEP_MAX_ATTEMPTS = DEAD_LETTER_ATTEMPTS;
 const WEBHOOK_RETENTION_DAYS = 30;
 
 const provider = messagingProvider();
+// Mensajes programados (A6): cola diferida + su parte del barrido.
+const scheduled = startScheduledWorker(provider);
 
 // La media es opcional para arrancar: sin bucket configurado, la ingesta de
 // mensajes sigue funcionando y los adjuntos esperan en la base (el barrido los
@@ -128,6 +131,9 @@ async function sweep() {
   // vuelven a pendientes y se procesan en este mismo barrido.
   const reopened = await reopenResolvedOrphans();
   if (reopened) console.info(`[worker] barrido: ${reopened} evento(s) huérfanos reabiertos (su mensaje ya existe)`);
+
+  // Mensajes programados (A6): vencidos sin job y envíos atorados.
+  await scheduled.sweep().catch((error) => console.error("[scheduled] barrido falló", error));
 
   const stale = await db
     .select({ id: webhookEvents.id })
@@ -281,7 +287,7 @@ async function shutdown(signal: string) {
   console.info(`[worker] ${signal}: cerrando`);
   clearInterval(sweepTimer);
   clearInterval(monitorTimer);
-  await Promise.all([worker.close(), mediaWorker?.close()]);
+  await Promise.all([worker.close(), mediaWorker?.close(), scheduled.close()]);
   process.exit(0);
 }
 process.on("SIGTERM", () => void shutdown("SIGTERM"));
@@ -297,6 +303,7 @@ waitForMigrations()
     console.info("[worker] migraciones al día: arrancan las colas");
     void worker.run();
     void mediaWorker?.run();
+    scheduled.run();
   })
   .catch((error: unknown) => {
     console.error("[worker] no se pudo verificar las migraciones", error);

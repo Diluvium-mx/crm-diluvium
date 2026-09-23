@@ -37,3 +37,22 @@ describe("roleAllows (ACL de plantillas)", () => {
     }
   });
 });
+
+describe("roleAllows (ACL de rangos de tallas)", () => {
+  it("el agente puede leer rangos, pero no reemplazarlos", () => {
+    expect(roleAllows("agent", "sizeRange", "read")).toBe(true);
+    expect(roleAllows("agent", "sizeRange", "update")).toBe(false);
+  });
+
+  it("owner y admin pueden leer y reemplazar rangos", () => {
+    for (const role of ["owner", "admin"]) {
+      expect(roleAllows(role, "sizeRange", "read")).toBe(true);
+      expect(roleAllows(role, "sizeRange", "update")).toBe(true);
+    }
+  });
+
+  it("un rol desconocido no obtiene acceso a los rangos", () => {
+    expect(roleAllows("desconocido", "sizeRange", "read")).toBe(false);
+    expect(roleAllows("desconocido", "sizeRange", "update")).toBe(false);
+  });
+});

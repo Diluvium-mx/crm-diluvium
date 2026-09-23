@@ -10,6 +10,8 @@ import {
   markConversationRead,
   setConversationStarred,
 } from "@/lib/inbox/actions";
+import { updateContactTemperature } from "@/lib/actions/contacts";
+import type { Temperature } from "../../contactos/_data/types";
 import { ChatThread } from "./chat-thread";
 import { ContactPanel } from "./contact-panel";
 import { ConversationList } from "./conversation-list";
@@ -244,6 +246,36 @@ export function InboxBoard() {
     void markConversationRead(id).then(() => scheduleUpdate(id));
   }
 
+  // Temperatura del contacto desde la lista (C1) o desde el panel: se refleja en
+  // TODAS las filas de ese contacto y en el panel abierto; optimista + revert.
+  function applyTemperature(contactId: string, temperature: string | null) {
+    setConversations((current) => current.map((c) => (c.contact.id === contactId ? { ...c, temperature } : c)));
+    setDetail((d) => (d && d.contact.id === contactId ? { ...d, contact: { ...d.contact, temperature } } : d));
+  }
+
+  function changeTemperature(item: ConversationListItem, temperature: Temperature | null) {
+    const previous = item.temperature;
+    applyTemperature(item.contact.id, temperature);
+    updateContactTemperature({ contactId: item.contact.id, temperature }).catch(() => {
+      // Revertir SOLO si nadie la cambió después (un fallo tardío no debe
+      // pisar un cambio más nuevo).
+      setConversations((current) =>
+        current.map((c) => (c.contact.id === item.contact.id && c.temperature === temperature ? { ...c, temperature: previous } : c)),
+      );
+      setDetail((d) =>
+        d && d.contact.id === item.contact.id && d.contact.temperature === temperature
+          ? { ...d, contact: { ...d.contact, temperature: previous } }
+          : d,
+      );
+    });
+  }
+
+  // La etapa cambió en el panel: el detalle abierto la guarda (así un cambio
+  // posterior de temperatura no la regresa).
+  function applyStage(contactId: string, stage: string) {
+    setDetail((d) => (d && d.contact.id === contactId ? { ...d, contact: { ...d.contact, stage } } : d));
+  }
+
   function toggleStar(id: string, starred: boolean) {
     setConversations((current) => current.map((c) => (c.id === id ? { ...c, isStarred: starred } : c)));
     void setConversationStarred(id, starred).then(() => scheduleUpdate(id));
@@ -281,6 +313,7 @@ export function InboxBoard() {
               onFilterChange={setFilter}
               onSearchChange={setSearch}
               onToggleStar={toggleStar}
+              onChangeTemperature={changeTemperature}
             />
           </div>
         </aside>
@@ -314,21 +347,24 @@ export function InboxBoard() {
       {detail &&
         (contactOpen ? (
           <aside className="flex w-80 shrink-0 flex-col border-l bg-card">
-            <div className="flex items-center justify-between border-b px-3 py-2">
-              <span className="text-sm font-semibold">Contacto</span>
-              <button
-                type="button"
-                onClick={() => setContactOpen(false)}
-                aria-label="Ocultar panel de contacto"
-                title="Ocultar panel"
-                className="rounded p-1 text-muted-foreground hover:bg-muted hover:text-foreground"
-              >
-                <PanelRightClose className="size-4" aria-hidden="true" />
-              </button>
-            </div>
-            <div className="min-h-0 flex-1">
-              <ContactPanel detail={detail} />
-            </div>
+            {/* Un solo encabezado: el del "Detalle del contacto", con el botón
+                para ocultar el panel (B2: compacto). */}
+            <ContactPanel
+              detail={detail}
+              onTemperatureChanged={applyTemperature}
+              onStageChanged={applyStage}
+              action={
+                <button
+                  type="button"
+                  onClick={() => setContactOpen(false)}
+                  aria-label="Ocultar panel de contacto"
+                  title="Ocultar panel"
+                  className="rounded p-1 text-muted-foreground hover:bg-muted hover:text-foreground"
+                >
+                  <PanelRightClose className="size-4" aria-hidden="true" />
+                </button>
+              }
+            />
           </aside>
         ) : (
           <button

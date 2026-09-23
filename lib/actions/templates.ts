@@ -37,7 +37,7 @@ export async function syncTemplates(): Promise<{ synced: number; removed: number
   requireTemplateManage(role, "sync");
   try {
     const result = await syncTemplatesForOrg(organizationId);
-    revalidatePath("/snippets");
+    revalidatePath("/mensajes-rapidos");
     return result;
   } catch (error) {
     throw friendly(error);
@@ -98,7 +98,7 @@ export async function createTemplate(
     } catch {
       // se ignora: el alta fue exitosa; el listado se pondrá al día al sincronizar
     }
-    revalidatePath("/snippets");
+    revalidatePath("/mensajes-rapidos");
     return { status: result.status, synced };
   } catch (error) {
     throw friendly(error);

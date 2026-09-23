@@ -15,9 +15,15 @@ const TOKEN_CLASS = "rounded bg-brand-navy/15 px-1 font-medium text-brand-navy";
 export function TemplatePicker({
   onSubmit,
   onClose,
+  submitLabel = "Enviar plantilla",
+  busy = false,
 }: {
   onSubmit: (templateId: string, values: string[], preview: string) => void;
   onClose: () => void;
+  /** Texto del botón final (p. ej. "Programar plantilla" en A6). */
+  submitLabel?: string;
+  /** Hay un envío en curso: el botón final queda deshabilitado (sin doble envío). */
+  busy?: boolean;
 }) {
   const [templates, setTemplates] = useState<TemplateView[] | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -101,16 +107,16 @@ export function TemplatePicker({
               <button
                 type="button"
                 onClick={() => selected && onSubmit(selected.id, values.map((v) => v.trim()), preview)}
-                disabled={!ready}
+                disabled={!ready || busy}
                 className="rounded-md bg-brand-navy px-4 py-1.5 text-sm font-medium text-brand-white hover:bg-brand-navy-dark disabled:opacity-50"
               >
-                Enviar plantilla
+                {submitLabel}
               </button>
             </div>
           </div>
         ) : templates.length === 0 ? (
           <p className="py-4 text-center text-sm text-muted-foreground">
-            No hay plantillas aprobadas. Sincronízalas en “Fragmentos y plantillas”.
+            No hay plantillas aprobadas. Sincronízalas en “Mensajes rápidos”.
           </p>
         ) : (
           <ul className="space-y-1">
