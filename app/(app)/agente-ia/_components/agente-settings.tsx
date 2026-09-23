@@ -28,7 +28,7 @@ function Section({ title, hint, children }: { title: string; hint?: string; chil
     <section className="flex flex-col gap-4 rounded-lg border border-black/10 p-4 dark:border-white/10">
       <div className="flex flex-col gap-0.5">
         <h2 className="text-sm font-semibold text-foreground">{title}</h2>
-        {hint && <p className="text-xs text-foreground/60">{hint}</p>}
+        {hint && <p className="text-xs text-foreground/70">{hint}</p>}
       </div>
       {children}
     </section>
@@ -55,7 +55,7 @@ function NumberField({
   return (
     <label htmlFor={id} className="flex flex-col gap-1">
       <span className="text-sm font-medium text-foreground">{label}</span>
-      {hint && <span className="text-xs text-foreground/60">{hint}</span>}
+      {hint && <span className="text-xs text-foreground/70">{hint}</span>}
       <span className="mt-1 flex items-center gap-2">
         <input
           id={id}
@@ -66,7 +66,7 @@ function NumberField({
           onChange={(e) => onChange(e.target.value)}
           className="w-28 rounded border border-black/15 bg-background px-3 py-2 text-sm disabled:opacity-50 dark:border-white/15"
         />
-        {unit && <span className="text-sm text-foreground/60">{unit}</span>}
+        {unit && <span className="text-sm text-foreground/70">{unit}</span>}
       </span>
     </label>
   );
@@ -100,7 +100,7 @@ function ChannelSwitch({ channel }: { channel: ChannelAgentView }) {
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div className="flex flex-col">
           <span className="text-sm font-medium text-foreground">{channel.displayName}</span>
-          <span className="text-xs text-foreground/60">
+          <span className="text-xs text-foreground/70">
             {channel.phoneE164 ?? "sin teléfono"}
             {!channel.isActive && " · canal desactivado"}
           </span>
@@ -127,8 +127,8 @@ function ChannelSwitch({ channel }: { channel: ChannelAgentView }) {
           ))}
         </div>
       </div>
-      <span className="text-xs text-foreground/60">{MODE_HINT[mode]}</span>
-      {error && <span className="text-xs text-brand-orange">{error}</span>}
+      <span className="text-xs text-foreground/70">{MODE_HINT[mode]}</span>
+      {error && <span className="border-l-2 border-brand-orange pl-2 text-xs text-foreground">{error}</span>}
     </div>
   );
 }
@@ -222,7 +222,7 @@ function SettingsForm({ initial }: { initial: AgentSettings }) {
           />
           <span className="flex flex-col gap-0.5">
             <span className="text-sm font-medium text-foreground">Pausar el agente cuando un vendedor responde a mano</span>
-            <span className="text-xs text-foreground/60">
+            <span className="text-xs text-foreground/70">
               Incluye respuestas desde el celular (WhatsApp Business). Queda pausado en esa conversación hasta que alguien
               pulse «Reactivar agente» en la bandeja.
             </span>
@@ -248,7 +248,7 @@ function SettingsForm({ initial }: { initial: AgentSettings }) {
         />
         <div className="flex flex-col gap-1">
           <span className="text-sm font-medium text-foreground">Máximo de respuestas por contacto</span>
-          <span className="text-xs text-foreground/60">Tope total del agente con un mismo contacto.</span>
+          <span className="text-xs text-foreground/70">Tope total del agente con un mismo contacto.</span>
           <label className="mt-1 flex items-center gap-2 text-sm text-foreground">
             <input
               type="checkbox"
@@ -284,9 +284,9 @@ function SettingsForm({ initial }: { initial: AgentSettings }) {
 
       <div className="flex items-center justify-end gap-3">
         <span className="min-h-5 text-xs">
-          {pending && <span className="text-foreground/60">Guardando…</span>}
-          {!pending && error && <span className="text-brand-orange">{error}</span>}
-          {!pending && !error && savedAt && <span className="text-foreground/60">Guardado a las {savedAt}.</span>}
+          {pending && <span className="text-foreground/70">Guardando…</span>}
+          {!pending && error && <span className="border-l-2 border-brand-orange pl-2 text-foreground">{error}</span>}
+          {!pending && !error && savedAt && <span className="text-foreground/70">Guardado a las {savedAt}</span>}
         </span>
         <button
           type="button"
@@ -349,11 +349,11 @@ function PriceRow({ price }: { price: ModelPriceView }) {
     <tr className="border-t border-black/5 align-top dark:border-white/5">
       <td className="py-2 pr-3">
         <div className="text-sm text-foreground">{price.label}</div>
-        <div className="text-xs text-foreground/50">
+        <div className="text-xs text-foreground/70">
           {price.providerLabel} · {price.cacheNote}
         </div>
         {price.defaultInput === null && !hasOverride && (
-          <div className="text-xs text-brand-orange">Sin precio: el gasto se registra sin costo.</div>
+          <div className="border-l-2 border-brand-orange pl-2 text-xs text-foreground">Sin precio: el gasto se registra sin costo.</div>
         )}
       </td>
       <td className="py-2 pr-2">
@@ -364,15 +364,15 @@ function PriceRow({ price }: { price: ModelPriceView }) {
       </td>
       <td className="py-2">
         <div className="flex flex-col items-start gap-1">
-          <button type="button" onClick={save} disabled={pending} className="text-sm font-medium text-brand-navy hover:underline disabled:opacity-50">
+          <button type="button" onClick={save} disabled={pending} className="text-sm font-medium text-brand-navy hover:underline disabled:opacity-50 dark:text-white">
             Guardar
           </button>
           {hasOverride && (
-            <button type="button" onClick={reset} disabled={pending} className="text-xs text-foreground/60 hover:underline disabled:opacity-50">
+            <button type="button" onClick={reset} disabled={pending} className="text-xs text-foreground/70 hover:underline disabled:opacity-50">
               Restablecer
             </button>
           )}
-          {msg && <span className="text-xs text-foreground/60">{msg}</span>}
+          {msg && <span className="text-xs text-foreground/70">{msg}</span>}
         </div>
       </td>
     </tr>
@@ -390,7 +390,7 @@ export function AgenteSettings({ bundle }: { bundle: AgentSettingsBundleView }) 
             frecuentes activas.
           </p>
         ) : (
-          <p className="text-sm text-brand-orange">
+          <p className="border-l-2 border-brand-orange pl-2 text-sm text-foreground">
             Sin Goal cargado: el agente no responderá hasta que se cargue su conocimiento.
           </p>
         )}
@@ -401,7 +401,7 @@ export function AgenteSettings({ bundle }: { bundle: AgentSettingsBundleView }) 
         hint="Apagado por defecto. Prueba primero en «Borrador»: la respuesta aparece en la bandeja y un vendedor decide si la envía."
       >
         {bundle.channels.length === 0 ? (
-          <p className="text-sm text-foreground/60">No hay canales de WhatsApp conectados.</p>
+          <p className="text-sm text-foreground/70">No hay canales de WhatsApp conectados.</p>
         ) : (
           bundle.channels.map((c) => <ChannelSwitch key={c.id} channel={c} />)
         )}
@@ -416,7 +416,7 @@ export function AgenteSettings({ bundle }: { bundle: AgentSettingsBundleView }) 
         <div className="overflow-x-auto">
           <table className="w-full text-left">
             <thead>
-              <tr className="text-xs text-foreground/60">
+              <tr className="text-xs text-foreground/70">
                 <th className="pb-2 font-medium">Modelo</th>
                 <th className="pb-2 font-medium">Entrada</th>
                 <th className="pb-2 font-medium">Salida</th>
