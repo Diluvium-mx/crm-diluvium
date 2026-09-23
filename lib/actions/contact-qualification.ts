@@ -49,7 +49,7 @@ const qualificationPatchSchema = z
       1000,
       "El nivel de agua debe ser un entero entre 0 y 1000.",
     ).optional(),
-    nivelAguaTexto: z.string().nullable().optional(),
+    nivelAguaTexto: z.string().max(500, "La descripción del nivel no puede pasar de 500 caracteres.").nullable().optional(),
     montoCotizacion: moneySchema.optional(),
     porcentajeConvencimiento: nullableInteger(
       0,
@@ -78,7 +78,7 @@ const entradaPatchSchema = z
       "El ancho debe ser un entero entre 1 y 1000.",
     ).optional(),
     linea: z.enum(lineaCompuertaEnum.enumValues).optional(),
-    tamanoManual: z.string().nullable().optional(),
+    tamanoManual: z.string().max(50, "El tamaño manual no puede pasar de 50 caracteres.").nullable().optional(),
   })
   .refine((patch) => Object.keys(patch).length > 0, {
     message: "Indica al menos un campo de la entrada para actualizar.",

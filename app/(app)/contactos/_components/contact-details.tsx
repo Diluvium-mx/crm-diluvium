@@ -113,9 +113,11 @@ export function ContactDetails({
   // eso vuelve un campo si su último guardado falla.
   const [saves] = useState(createSerialSaves);
   const confirmed = useRef<Qualification | null>(null);
+  const confirmedNum = useRef<number | null>(null);
 
   const applyDetails = useCallback((next: Details) => {
     confirmed.current = qualificationOf(next);
+    confirmedNum.current = next.numEntradas;
     setDetails(next);
     setNivelCm(next.nivelAguaCm === null ? "" : String(next.nivelAguaCm));
     setNivelTexto(next.nivelAguaTexto ?? "");
@@ -137,13 +139,21 @@ export function ContactDetails({
   // en su carril: una relectura vieja no pisa a una más nueva.
   //
   // "¿Cuántas entradas?": cada pedido (guardar o solo releer) termina releyendo
-  // lo que quedó en el servidor, y solo se muestra la respuesta del último. Si el
-  // último guardado falla, se relee lo que el servidor sí tiene.
+  // lo que quedó en el servidor, y solo se muestra la respuesta del último. Las
+  // escrituras nunca se descartan sin salir (bajar el número borra filas: 7 → 2
+  // → 6 no es lo mismo que 7 → 6). Si el último guardado falla, el número vuelve
+  // a lo último confirmado (así se puede reintentar el mismo valor) y, si hay
+  // red, se relee lo que el servidor sí tiene.
   async function syncEntradas(write?: () => Promise<unknown>): Promise<void> {
-    const outcome = await saves.save("numEntradas", async () => {
-      await write?.();
-      return getContactDetails(contactId);
-    });
+    const outcome = await saves.save(
+      "numEntradas",
+      async () => {
+        await write?.();
+        return getContactDetails(contactId);
+      },
+      { droppable: !write },
+    );
+    if (outcome.status === "saved") confirmedNum.current = outcome.result.numEntradas;
     if (outcome.status === "superseded" || !outcome.latest) return;
     if (outcome.status === "saved") {
       const fresh = outcome.result;
@@ -151,6 +161,9 @@ export function ContactDetails({
       setNumEntradasDraft(fresh.numEntradas === null ? "" : String(fresh.numEntradas));
       return;
     }
+    const saved = confirmedNum.current;
+    setDetails((d) => (d ? { ...d, numEntradas: saved } : d));
+    setNumEntradasDraft(saved === null ? "" : String(saved));
     if (write) await syncEntradas().catch(() => undefined);
     throw outcome.error;
   }

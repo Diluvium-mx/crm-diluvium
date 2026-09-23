@@ -10,6 +10,9 @@
 //   no se depende de eso.)
 // - Si mientras uno vuela llegan varios del mismo campo, solo sale el último:
 //   los de en medio ya son viejos y se resuelven como "superseded" sin salir.
+//   Salvo los marcados `droppable: false` (una escritura cuyo efecto no lo
+//   reemplaza la siguiente, p. ej. bajar el número de entradas borra filas):
+//   esos salen siempre, en orden.
 // - Cada respuesta dice si sigue siendo la del último pedido de su campo
 //   (`latest`). La interfaz solo muestra o revierte con esa; una respuesta vieja
 //   nunca pisa lo que el vendedor cambió después.
@@ -25,6 +28,7 @@ export type SaveOutcome<T> =
 
 type Job = {
   field: string;
+  droppable: boolean;
   /** Manda el pedido y resuelve su promesa; nunca rechaza. */
   execute: () => Promise<void>;
   /** Lo resuelve como "superseded" sin mandarlo. */
@@ -33,8 +37,15 @@ type Job = {
 
 type Lane = { busy: boolean; jobs: Job[] };
 
+export type SaveOptions = {
+  /** Carril; por defecto, el propio campo. */
+  lane?: string;
+  /** false = este pedido nunca se descarta sin salir. Por defecto, true. */
+  droppable?: boolean;
+};
+
 export type SerialSaves = {
-  save<T>(field: string, send: () => Promise<T>, lane?: string): Promise<SaveOutcome<T>>;
+  save<T>(field: string, send: () => Promise<T>, options?: SaveOptions): Promise<SaveOutcome<T>>;
 };
 
 export function createSerialSaves(): SerialSaves {
@@ -50,7 +61,7 @@ export function createSerialSaves(): SerialSaves {
     lane.busy = false;
   }
 
-  function save<T>(field: string, send: () => Promise<T>, laneKey: string = field): Promise<SaveOutcome<T>> {
+  function save<T>(field: string, send: () => Promise<T>, { lane: laneKey = field, droppable = true }: SaveOptions = {}): Promise<SaveOutcome<T>> {
     const seq = ++nextSeq;
     latestSeq.set(field, seq);
     const isLatest = () => latestSeq.get(field) === seq;
@@ -58,12 +69,14 @@ export function createSerialSaves(): SerialSaves {
     const lane = lanes.get(laneKey) ?? { busy: false, jobs: [] };
     lanes.set(laneKey, lane);
     // Un pedido del mismo campo que todavía no sale ya es viejo.
-    for (const old of lane.jobs.filter((job) => job.field === field)) old.supersede();
-    lane.jobs = lane.jobs.filter((job) => job.field !== field);
+    const stale = (job: Job) => job.field === field && job.droppable;
+    for (const old of lane.jobs.filter(stale)) old.supersede();
+    lane.jobs = lane.jobs.filter((job) => !stale(job));
 
     return new Promise<SaveOutcome<T>>((resolve) => {
       lane.jobs.push({
         field,
+        droppable,
         supersede: () => resolve({ status: "superseded" }),
         execute: async () => {
           try {

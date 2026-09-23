@@ -108,6 +108,20 @@ describe.skipIf(!TEST_DATABASE_URL)("vendedores (Postgres real + Better Auth)", 
     await expect(signIn("huerfano@diluvium.mx", "vendedor-pass-12")).resolves.toHaveProperty("token");
   });
 
+  it("el usuario de sistema de las notas importadas no se adopta como vendedor", async () => {
+    const { sql } = await import("drizzle-orm");
+    await db.execute(sql`
+      insert into "user" (id, name, email, email_verified, created_at, updated_at, banned)
+      values ('usuario-sistema-importado', 'Importado', 'importado@sistema.invalid', false, now(), now(), true)`);
+    await expect(
+      team.createSeller({ organizationId: ORG, name: "Intruso", email: "importado@sistema.invalid", password: "vendedor-pass-12", role: "agent" }),
+    ).rejects.toThrow(/reservado/);
+    const [row] = await db.select().from(s.user).where(eq(s.user.id, "usuario-sistema-importado"));
+    expect(row).toMatchObject({ name: "Importado", banned: true });
+    expect(await db.select().from(s.member).where(eq(s.member.userId, "usuario-sistema-importado"))).toHaveLength(0);
+    expect(await db.select().from(s.account).where(eq(s.account.userId, "usuario-sistema-importado"))).toHaveLength(0);
+  });
+
   it("dos owners que se desactivan mutuamente a la vez: solo uno lo logra (candado en el trigger)", async () => {
     await team.createSeller({ organizationId: ORG, name: "Socio", email: "socio@diluvium.mx", password: "socio-password-1", role: "owner" });
     const socio = (await team.listTeam(ORG)).find((m) => m.email === "socio@diluvium.mx")!;

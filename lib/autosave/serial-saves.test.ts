@@ -145,8 +145,8 @@ describe("createSerialSaves", () => {
     // Una entrada: ancho y línea se escriben juntos en el servidor.
     const saves = createSerialSaves();
     const server = fakeServer();
-    const ancho = saves.save("anchoCm", server.write("anchoCm", 120), "entrada");
-    const linea = saves.save("linea", server.write("linea", "mini"), "entrada");
+    const ancho = saves.save("anchoCm", server.write("anchoCm", 120), { lane: "entrada" });
+    const linea = saves.save("linea", server.write("linea", "mini"), { lane: "entrada" });
     await flush();
     expect(server.inFlight.map((r) => r.field)).toEqual(["anchoCm"]);
 
@@ -161,10 +161,10 @@ describe("createSerialSaves", () => {
   it("en un carril compartido solo se reemplaza el pedido pendiente del mismo campo", async () => {
     const saves = createSerialSaves();
     const server = fakeServer();
-    void saves.save("anchoCm", server.write("anchoCm", 100), "entrada");
-    const linea = saves.save("linea", server.write("linea", "mini"), "entrada");
-    const ancho2 = saves.save("anchoCm", server.write("anchoCm", 110), "entrada");
-    const ancho3 = saves.save("anchoCm", server.write("anchoCm", 120), "entrada");
+    void saves.save("anchoCm", server.write("anchoCm", 100), { lane: "entrada" });
+    const linea = saves.save("linea", server.write("linea", "mini"), { lane: "entrada" });
+    const ancho2 = saves.save("anchoCm", server.write("anchoCm", 110), { lane: "entrada" });
+    const ancho3 = saves.save("anchoCm", server.write("anchoCm", 120), { lane: "entrada" });
     expect(await ancho2).toEqual({ status: "superseded" });
 
     for (let i = 0; i < 3; i++) {
@@ -177,13 +177,39 @@ describe("createSerialSaves", () => {
     expect(server.db).toEqual({ anchoCm: 120, linea: "mini" });
   });
 
+  it("un pedido `droppable: false` no se descarta: sale en orden aunque haya uno más nuevo", async () => {
+    // Bajar el número de entradas borra filas: 7 → 2 → 6 no equivale a 7 → 6.
+    const saves = createSerialSaves();
+    const server = fakeServer();
+    const siete = saves.save("numEntradas", server.write("numEntradas", 7), { droppable: false });
+    const dos = saves.save("numEntradas", server.write("numEntradas", 2), { droppable: false });
+    const seis = saves.save("numEntradas", server.write("numEntradas", 6), { droppable: false });
+    for (let i = 0; i < 3; i++) {
+      await flush();
+      server.finish(i);
+    }
+    expect(await siete).toMatchObject({ status: "saved", latest: false });
+    expect(await dos).toMatchObject({ status: "saved", latest: false });
+    expect(await seis).toMatchObject({ status: "saved", latest: true });
+    expect(server.inFlight.map((r) => r.value)).toEqual([7, 2, 6]);
+  });
+
+  it("una relectura (droppable) en cola sí la reemplaza el pedido siguiente", async () => {
+    const saves = createSerialSaves();
+    const server = fakeServer();
+    void saves.save("numEntradas", server.write("numEntradas", 3), { droppable: false });
+    const relectura = saves.save("numEntradas", server.write("numEntradas", "relee"));
+    void saves.save("numEntradas", server.write("numEntradas", 4), { droppable: false });
+    expect(await relectura).toEqual({ status: "superseded" });
+  });
+
   it("un error síncrono del pedido se reporta y el carril sigue", async () => {
     const saves = createSerialSaves();
     const boom = new Error("síncrono");
     const a = saves.save("x", () => {
       throw boom;
     });
-    const b = saves.save("y", () => Promise.resolve("ok"), "x");
+    const b = saves.save("y", () => Promise.resolve("ok"), { lane: "x" });
     expect(await a).toEqual({ status: "failed", error: boom, latest: true });
     expect(await b).toEqual({ status: "saved", result: "ok", latest: true });
   });

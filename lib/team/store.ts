@@ -19,6 +19,10 @@ import { auth } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { member, user } from "@/lib/db/schema";
 
+// Autor de sistema de las notas importadas (migraciones 0022/0023): no inicia
+// sesión ni es miembro de ninguna organización. Nunca se "adopta" como vendedor.
+const SYSTEM_IMPORT_USER_ID = "usuario-sistema-importado";
+
 export class TeamError extends Error {
   constructor(message: string) {
     super(message);
@@ -120,6 +124,7 @@ export async function createSeller(params: {
   const email = params.email.trim().toLowerCase();
   const [existing] = await db.select({ id: user.id }).from(user).where(eq(user.email, email)).limit(1);
   if (existing) {
+    if (existing.id === SYSTEM_IMPORT_USER_ID) throw new TeamError("Ese correo está reservado por el sistema.");
     const memberships = await db.select({ id: member.id }).from(member).where(eq(member.userId, existing.id)).limit(1);
     if (memberships.length > 0) throw new TeamError("Ya existe un usuario con ese correo.");
     // Usuario huérfano (un alta anterior se cortó entre crear el usuario y
