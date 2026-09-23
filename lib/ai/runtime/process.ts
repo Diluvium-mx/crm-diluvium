@@ -11,8 +11,8 @@ export const LOCKED_RETRY_MS = 5_000;
 export type ProcessDeps = {
   kv: KvPort;
   now: () => Date;
-  run: (conversationId: string) => Promise<RunResult>;
-  delayFor: (conversationId: string, now: Date) => Promise<number | null>;
+  run: (job: AgentJob) => Promise<RunResult>;
+  delayFor: (organizationId: string, conversationId: string, now: Date) => Promise<number | null>;
 };
 
 // Devuelve cuándo re-programar el MISMO job (ms) o null.
@@ -27,14 +27,14 @@ export async function processAgentJob(
   if (!token) return { result: null, rescheduleMs: LOCKED_RETRY_MS };
   let result: RunResult;
   try {
-    result = await deps.run(id);
+    result = await deps.run(data);
   } finally {
     await releaseLock(deps.kv, id, token);
   }
   if (result.kind === "reschedule") return { result, rescheduleMs: result.delayMs };
   // Entró algo mientras corría: otra vuelta con su debounce.
   if (await deps.kv.getDel(dirtyKey(id))) {
-    const delay = await deps.delayFor(id, deps.now());
+    const delay = await deps.delayFor(data.organizationId, id, deps.now());
     if (delay !== null) return { result, rescheduleMs: delay };
   }
   return { result, rescheduleMs: null };

@@ -5,7 +5,7 @@ import { and, eq, sql } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { conversations, messages } from "@/lib/db/schema";
 import { loadAgentConfig } from "./config";
-import { loadSnapshot } from "./context";
+import { conversationOrganization, loadSnapshot } from "./context";
 import {
   bullAgentQueuePort,
   cancelAgentRun,
@@ -28,7 +28,7 @@ export async function onInboundCustomerMessage(
   ports: Ports = {},
 ): Promise<void> {
   try {
-    const snap = await loadSnapshot(input.conversationId);
+    const snap = await loadSnapshot(input.organizationId, input.conversationId);
     if (!snap || snap.channel.aiAgentMode === "off") return;
     const now = ports.now ?? new Date();
     await db
@@ -37,11 +37,11 @@ export async function onInboundCustomerMessage(
       .set({
         lastInboundAt: sql`greatest(coalesce(${conversations.lastInboundAt}, ${input.receivedAt.toISOString()}::timestamp), ${input.receivedAt.toISOString()}::timestamp)`,
       })
-      .where(eq(conversations.id, input.conversationId));
+      .where(and(eq(conversations.id, input.conversationId), eq(conversations.organizationId, input.organizationId)));
     // El cliente escribió después del borrador: ya no responde a lo último que
     // dijo. El agente generará otro que lo cubra (o ninguno, si no hace falta).
     await obsoletePendingDrafts(input.organizationId, input.conversationId, now);
-    const delay = await debounceDelayFor(input.conversationId, now);
+    const delay = await debounceDelayFor(input.organizationId, input.conversationId, now);
     if (delay === null) return; // canal apagado o nada pendiente
     await withQueueTimeout(
       scheduleAgentRun(
@@ -59,19 +59,22 @@ export async function onInboundCustomerMessage(
 
 // Tras guardar un SALIENTE HUMANO (CRM o eco business_app): pausa al agente en
 // esa conversación sin límite de tiempo y cancela el job pendiente (GHL).
-export async function onHumanOutbound(input: { conversationId: string }, ports: Ports = {}): Promise<void> {
+export async function onHumanOutbound(
+  input: { organizationId: string; conversationId: string },
+  ports: Ports = {},
+): Promise<void> {
   try {
-    const snap = await loadSnapshot(input.conversationId);
+    const snap = await loadSnapshot(input.organizationId, input.conversationId);
     if (!snap) return;
     // Canal apagado: nada que pausar y sin borradores (apagarlo los deja obsoletos).
     if (snap.channel.aiAgentMode === "off") return;
     const now = ports.now ?? new Date();
     // El vendedor ya respondió: un borrador vigente del agente quedó viejo.
-    await obsoletePendingDrafts(snap.conversation.organizationId, input.conversationId, now);
-    const cfg = await loadAgentConfig(snap.conversation.organizationId);
+    await obsoletePendingDrafts(input.organizationId, input.conversationId, now);
+    const cfg = await loadAgentConfig(input.organizationId);
     if (!cfg.pauseOnHumanReply) return;
     if (snap.conversation.agentState === "activo") {
-      await setAgentState(input.conversationId, "pausado_humano", { now });
+      await setAgentState(input.organizationId, input.conversationId, "pausado_humano", { now });
     }
     // La pausa ya quedó guardada: cancelar el job es solo optimización (acotada).
     await withQueueTimeout(cancelAgentRun(ports.queue ?? bullAgentQueuePort(), input.conversationId), "cancelar").catch(
@@ -87,17 +90,32 @@ export async function onHumanOutbound(input: { conversationId: string }, ports: 
 export const agentIngestHooks = {
   onInboundMessage: (m: { organizationId: string; conversationId: string; receivedAt: Date }) =>
     onInboundCustomerMessage({ organizationId: m.organizationId, conversationId: m.conversationId, receivedAt: m.receivedAt }),
-  onHumanOutbound: (m: { conversationId: string }) => onHumanOutbound({ conversationId: m.conversationId }),
+  onHumanOutbound: (m: { organizationId: string; conversationId: string }) =>
+    onHumanOutbound({ organizationId: m.organizationId, conversationId: m.conversationId }),
 };
 
 // "Sleep on manual message" (GHL): un envío humano desde el CRM —inmediato,
 // plantilla, reintento o PROGRAMADO— pausa al agente en esa conversación. Lo
 // llaman las acciones de la bandeja y el despacho de programados tras un envío
 // que no falló. Nunca lanza.
-export async function pauseAgentOnManualMessage(conversationId: string): Promise<void> {
+export async function pauseAgentForManualSend(organizationId: string, conversationId: string): Promise<void> {
   // onHumanOutbound ya atrapa todo; este catch es la última red del envío del vendedor.
   try {
-    await onHumanOutbound({ conversationId });
+    await onHumanOutbound({ organizationId, conversationId });
+  } catch (error) {
+    console.error(`[agente] no se pudo pausar ${conversationId} tras envío manual`, error);
+  }
+}
+
+// ENVOLTORIO TEMPORAL: lib/inbox/actions.ts y lib/scheduled/dispatch.ts todavía
+// llaman con solo el id (dispatch.ts lo toca también fix/mejoras-codex; se cambia
+// al rebasar sobre main y este envoltorio se borra). Resuelve la organización de
+// la conversación —que la capa de envío ya validó contra la sesión— y de ahí en
+// adelante todo va acotado a ella.
+export async function pauseAgentOnManualMessage(conversationId: string): Promise<void> {
+  try {
+    const organizationId = await conversationOrganization(conversationId);
+    if (organizationId) await pauseAgentForManualSend(organizationId, conversationId);
   } catch (error) {
     console.error(`[agente] no se pudo pausar ${conversationId} tras envío manual`, error);
   }
@@ -111,7 +129,7 @@ export async function pauseAgentOnManualMessageId(organizationId: string, messag
       .from(messages)
       .where(and(eq(messages.id, messageId), eq(messages.organizationId, organizationId)))
       .limit(1);
-    if (m) await onHumanOutbound({ conversationId: m.conversationId });
+    if (m) await onHumanOutbound({ organizationId, conversationId: m.conversationId });
   } catch (error) {
     console.error(`[agente] no se pudo pausar tras el reintento ${messageId}`, error);
   }

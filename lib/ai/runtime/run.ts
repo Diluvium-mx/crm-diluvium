@@ -88,33 +88,35 @@ async function imageUrlsFor(rows: readonly MessageRow[], resolve: RunDeps["resol
 }
 
 async function pause(
-  conversation: { id: string; contactId: string },
+  conversation: { id: string; organizationId: string; contactId: string },
   state: AgentState,
   now: Date,
   opts: { pausedUntil?: Date | null; tag?: string } = {},
 ) {
-  await setAgentState(conversation.id, state, { now, pausedUntil: opts.pausedUntil ?? null });
-  if (opts.tag) await addContactTag(conversation.contactId, opts.tag);
+  await setAgentState(conversation.organizationId, conversation.id, state, { now, pausedUntil: opts.pausedUntil ?? null });
+  if (opts.tag) await addContactTag(conversation.organizationId, conversation.contactId, opts.tag);
   console.info(`[agente] ${conversation.id}: ${state}${opts.tag ? ` (+etiqueta "${opts.tag}")` : ""}`);
 }
 
-async function handover(conversation: { id: string; contactId: string }, cfg: AgentConfig, now: Date) {
+async function handover(conversation: { id: string; organizationId: string; contactId: string }, cfg: AgentConfig, now: Date) {
   const until = new Date(now.getTime() + cfg.handoverReactivateHours * 3_600_000);
   await pause(conversation, "pausado_handover", now, { pausedUntil: until, tag: TAG_HANDOVER });
 }
 
-export async function runAgent(conversationId: string, deps: RunDeps): Promise<RunResult> {
+// `job` viene de la cola interna: la organización acota TODAS las lecturas y
+// escrituras (una conversación de otra organización no se encuentra: noop).
+export async function runAgent(job: { organizationId: string; conversationId: string }, deps: RunDeps): Promise<RunResult> {
+  const { organizationId: org, conversationId } = job;
   for (let round = 1; round <= MAX_ROUNDS; round++) {
     const now = deps.now();
-    const snap = await loadSnapshot(conversationId);
+    const snap = await loadSnapshot(org, conversationId);
     if (!snap) return { kind: "noop", reason: "conversacion_no_existe" };
     const { conversation: conv, channel } = snap;
-    const org = conv.organizationId;
     if (channel.aiAgentMode === "off") return { kind: "skipped", reason: "canal_off" };
     const cfg = await loadAgentConfig(org);
 
-    const pending = await pendingInbound(conv.id);
-    const lastOut = await lastOutbound(conv.id);
+    const pending = await pendingInbound(org, conv.id);
+    const lastOut = await lastOutbound(org, conv.id);
     const pausedUntilMs = conv.agentPausedUntil?.getTime() ?? null;
     // Un handover vencido se reactiva: su corte es AHORA (lo que el vendedor
     // contestó durante la transferencia era lo esperado, no vuelve a pausar).
@@ -129,7 +131,7 @@ export async function runAgent(conversationId: string, deps: RunDeps): Promise<R
       return { kind: "noop", reason: "sin_pendientes" };
     }
     const lastRead = pending[pending.length - 1];
-    if (await alreadyHandled(lastRead.id)) return { kind: "noop", reason: "ya_atendido" };
+    if (await alreadyHandled(org, lastRead.id)) return { kind: "noop", reason: "ya_atendido" };
 
     const hourAgo = new Date(now.getTime() - 3_600_000);
     const gate = decideGate({
@@ -139,21 +141,21 @@ export async function runAgent(conversationId: string, deps: RunDeps): Promise<R
       now: now.getTime(),
       windowExpiresAt: conv.windowExpiresAt?.getTime() ?? null,
       humanRepliedSincePending: humanTookOver,
-      agentRepliesLastHour: await agentRepliesSince(conv.id, hourAgo),
+      agentRepliesLastHour: await agentRepliesSince(org, conv.id, hourAgo),
       antiLoopMaxPerHour: cfg.antiLoopMaxPerHour,
-      modelCallsLastHour: await modelCallsSince(conv.id, hourAgo),
-      agentRepliesToContact: cfg.maxRepliesPerContact === null ? 0 : await agentRepliesToContact(conv.contactId),
+      modelCallsLastHour: await modelCallsSince(org, conv.id, hourAgo),
+      agentRepliesToContact: cfg.maxRepliesPerContact === null ? 0 : await agentRepliesToContact(org, conv.contactId),
       maxRepliesPerContact: cfg.maxRepliesPerContact,
     });
     if (gate.action === "skip") {
       if (gate.pauseTo) await pause(conv, gate.pauseTo, now, { tag: gate.tag });
       return { kind: "skipped", reason: gate.reason };
     }
-    if (gate.reactivated) await setAgentState(conv.id, "activo", { now });
+    if (gate.reactivated) await setAgentState(org, conv.id, "activo", { now });
     if (!cfg.goal) return { kind: "skipped", reason: "sin_goal" };
 
-    const readCount = await inboundCount(conv.id);
-    const context = await recentMessages(conv.id, cfg.contextMessages);
+    const readCount = await inboundCount(org, conv.id);
+    const context = await recentMessages(org, conv.id, cfg.contextMessages);
 
     // ── FILTRO ──────────────────────────────────────────────────────────────
     const filterModel = getModel(cfg.modeloFiltro);
@@ -245,7 +247,7 @@ export async function runAgent(conversationId: string, deps: RunDeps): Promise<R
     };
 
     // ── Revisión antes de enviar: ¿llegó algo después de lo que leyó? ────────
-    if ((await inboundCount(conv.id)) > readCount) {
+    if ((await inboundCount(org, conv.id)) > readCount) {
       await recordAiUsage({ ...brainUsage, outcome: "discarded_stale" });
       console.info(`[agente] ${conv.id}: respuesta descartada (entró un mensaje durante la generación), ronda ${round}`);
       continue; // regenerar con TODO el contexto
@@ -253,8 +255,8 @@ export async function runAgent(conversationId: string, deps: RunDeps): Promise<R
 
     // Re-chequeo: durante la generación pudo cambiar el interruptor, el estado
     // o responder un humano.
-    const fresh = await loadSnapshot(conv.id);
-    const freshLastOut = await lastOutbound(conv.id);
+    const fresh = await loadSnapshot(org, conv.id);
+    const freshLastOut = await lastOutbound(org, conv.id);
     if (!fresh || fresh.channel.aiAgentMode === "off" || fresh.conversation.agentState !== "activo") {
       await recordAiUsage({ ...brainUsage, outcome: "skipped", error: "cambió el interruptor o el estado antes de enviar" });
       return { kind: "skipped", reason: "cambio_antes_de_enviar" };
@@ -305,15 +307,15 @@ export async function runAgent(conversationId: string, deps: RunDeps): Promise<R
         throw error;
       }
       await recordAiUsage({ ...brainUsage, outcome: "sent", error: `burbuja ${sent + 1} no salió: ${errorText(error)}` });
-      await markAgentReply(conv.id, deps.now());
+      await markAgentReply(org, conv.id, deps.now());
       return { kind: "sent", bubbles: sent };
     }
-    await markAgentReply(conv.id, deps.now());
+    await markAgentReply(org, conv.id, deps.now());
     await recordAiUsage({ ...brainUsage, outcome: "sent" });
     return { kind: "sent", bubbles: sent };
   }
 
   // El cliente siguió escribiendo en todas las rondas: de vuelta al debounce.
-  const delayMs = await rescheduleDelayFor(conversationId, deps.now());
+  const delayMs = await rescheduleDelayFor(org, conversationId, deps.now());
   return { kind: "reschedule", delayMs, reason: "mensajes_nuevos_durante_generacion" };
 }

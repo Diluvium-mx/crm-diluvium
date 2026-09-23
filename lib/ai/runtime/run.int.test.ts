@@ -28,6 +28,7 @@ describe.skipIf(!TEST_DATABASE_URL)("runtime del Agente IA (Postgres real)", () 
   const ORG = "org_rt";
   const CONV = "conv_rt";
   const CONTACT = "contact_rt";
+  const JOB = { organizationId: ORG, conversationId: CONV };
   const GOAL = "GOAL DE PRUEBA: eres Angela.";
 
   beforeAll(async () => {
@@ -218,14 +219,14 @@ describe.skipIf(!TEST_DATABASE_URL)("runtime del Agente IA (Postgres real)", () 
     for (let i = 0; i < 3; i++) {
       const at = new Date(t1.getTime() + i * 2_000);
       await msg({ direction: "in", body: texts[i], at });
-      const delay = await schedule.debounceDelayFor(CONV, at);
+      const delay = await schedule.debounceDelayFor(ORG, CONV, at);
       expect(delay).toBe(15_000); // cada entrante reinicia la espera de 15 s
       await queue.scheduleAgentRun(port, kv, { conversationId: CONV, organizationId: ORG }, delay!);
     }
     expect(jobs.size).toBe(1);
 
     const { deps, calls, sleeps } = makeDeps();
-    const r = await run.runAgent(CONV, deps);
+    const r = await run.runAgent(JOB, deps);
     expect(r).toEqual({ kind: "sent", bubbles: 2 });
     expect(calls.map((c) => c.kind)).toEqual(["filtro", "cerebro"]);
     // El cerebro recibió los 3 pendientes juntos, en el último turno del cliente.
@@ -254,14 +255,14 @@ describe.skipIf(!TEST_DATABASE_URL)("runtime del Agente IA (Postgres real)", () 
     expect(brainRow.costUsd).toBeCloseTo(0.00408, 8);
     expect(brainRow.cacheReadTokens).toBe(11_400);
     // Una segunda corrida no vuelve a responder.
-    expect((await run.runAgent(CONV, deps)).kind).toBe("noop");
+    expect((await run.runAgent(JOB, deps)).kind).toBe("noop");
   });
 
   it("tope máximo: si el cliente sigue escribiendo, no espera más de 60 s desde el primero", async () => {
     const t1 = ago(60_000);
     await msg({ direction: "in", body: "a", at: t1 });
     await msg({ direction: "in", body: "b", at: new Date(t1.getTime() + 55_000) });
-    expect(await schedule.debounceDelayFor(CONV, new Date(t1.getTime() + 55_000))).toBe(5_000);
+    expect(await schedule.debounceDelayFor(ORG, CONV, new Date(t1.getTime() + 55_000))).toBe(5_000);
   });
 
   it("mensaje nuevo durante la generación → descarta, regenera con TODO el contexto y envía solo la nueva", async () => {
@@ -272,7 +273,7 @@ describe.skipIf(!TEST_DATABASE_URL)("runtime del Agente IA (Postgres real)", () 
         if (n === 1) await msg({ direction: "in", body: "¿envían a Monterrey?", at: new Date() });
       },
     });
-    const r = await run.runAgent(CONV, deps);
+    const r = await run.runAgent(JOB, deps);
     expect(r).toEqual({ kind: "sent", bubbles: 1 });
     expect(calls.map((c) => c.kind)).toEqual(["filtro", "cerebro", "filtro", "cerebro"]);
     expect(JSON.stringify(calls[3].input.messages)).toContain("¿envían a Monterrey?");
@@ -286,7 +287,7 @@ describe.skipIf(!TEST_DATABASE_URL)("runtime del Agente IA (Postgres real)", () 
     await msg({ direction: "out", source: "crm", body: "Hola, soy Luis", at: ago(20_000) });
     await msg({ direction: "in", body: "precio?", at: ago(10_000) });
     const { deps, calls } = makeDeps();
-    expect(await run.runAgent(CONV, deps)).toEqual({ kind: "skipped", reason: "respuesta_humana" });
+    expect(await run.runAgent(JOB, deps)).toEqual({ kind: "skipped", reason: "respuesta_humana" });
     expect(calls).toHaveLength(0);
     expect((await conv()).agentState).toBe("pausado_humano");
   });
@@ -295,14 +296,14 @@ describe.skipIf(!TEST_DATABASE_URL)("runtime del Agente IA (Postgres real)", () 
     await msg({ direction: "out", source: "business_app", body: "te marco", at: ago(20_000) });
     await msg({ direction: "in", body: "ok", at: ago(10_000) });
     const { deps } = makeDeps();
-    expect((await run.runAgent(CONV, deps)).kind).toBe("skipped");
+    expect((await run.runAgent(JOB, deps)).kind).toBe("skipped");
     expect((await conv()).agentState).toBe("pausado_humano");
   });
 
   it("hook de respuesta humana: pausa y cancela el job pendiente", async () => {
     const { port, kv, jobs } = fakeQueue();
     await queue.scheduleAgentRun(port, kv, { conversationId: CONV, organizationId: ORG }, 15_000);
-    await hooks.onHumanOutbound({ conversationId: CONV }, { queue: port, kv });
+    await hooks.onHumanOutbound({ organizationId: ORG, conversationId: CONV }, { queue: port, kv });
     expect(jobs.size).toBe(0);
     expect((await conv()).agentState).toBe("pausado_humano");
   });
@@ -314,7 +315,7 @@ describe.skipIf(!TEST_DATABASE_URL)("runtime del Agente IA (Postgres real)", () 
         await msg({ direction: "out", source: "crm", body: "Yo te atiendo", at: new Date() });
       },
     });
-    expect(await run.runAgent(CONV, deps)).toEqual({ kind: "skipped", reason: "respuesta_humana" });
+    expect(await run.runAgent(JOB, deps)).toEqual({ kind: "skipped", reason: "respuesta_humana" });
     expect(await agentOuts()).toHaveLength(0);
     expect((await conv()).agentState).toBe("pausado_humano");
   });
@@ -322,21 +323,21 @@ describe.skipIf(!TEST_DATABASE_URL)("runtime del Agente IA (Postgres real)", () 
   it("reactivación manual: lo que respondió el vendedor ANTES ya no vuelve a pausar", async () => {
     await msg({ direction: "in", body: "hola", at: ago(40_000) });
     await msg({ direction: "out", source: "crm", body: "Hola", at: ago(30_000) });
-    await state.setAgentState(CONV, "activo", { now: ago(20_000) }); // botón "Reactivar agente"
+    await state.setAgentState(ORG, CONV, "activo", { now: ago(20_000) }); // botón "Reactivar agente"
     await msg({ direction: "in", body: "¿precio?", at: ago(10_000) });
     const { deps } = makeDeps();
-    expect((await run.runAgent(CONV, deps)).kind).toBe("sent");
+    expect((await run.runAgent(JOB, deps)).kind).toBe("sent");
   });
 
   it("modo borrador: deja el borrador (uno vigente) y NO envía", async () => {
     await db.update(s.channels).set({ aiAgentMode: "borrador" }).where(eq(s.channels.id, "ch_rt"));
     await msg({ direction: "in", body: "precio?", at: ago(20_000) });
     const { deps } = makeDeps();
-    const r1 = await run.runAgent(CONV, deps);
+    const r1 = await run.runAgent(JOB, deps);
     expect(r1.kind).toBe("draft");
     expect(await agentOuts()).toHaveLength(0);
     await msg({ direction: "in", body: "¿y envío?", at: ago(5_000) });
-    const r2 = await run.runAgent(CONV, deps);
+    const r2 = await run.runAgent(JOB, deps);
     expect(r2.kind).toBe("draft");
     const drafts = await db.select().from(s.aiAgentDrafts);
     expect(drafts.map((d) => d.status).sort()).toEqual(["obsoleto", "pendiente"]);
@@ -350,9 +351,9 @@ describe.skipIf(!TEST_DATABASE_URL)("runtime del Agente IA (Postgres real)", () 
   it("interruptor apagado = silencio total (ni programa ni llama modelos)", async () => {
     await db.update(s.channels).set({ aiAgentMode: "off" }).where(eq(s.channels.id, "ch_rt"));
     await msg({ direction: "in", body: "hola", at: ago(20_000) });
-    expect(await schedule.debounceDelayFor(CONV, new Date())).toBeNull();
+    expect(await schedule.debounceDelayFor(ORG, CONV, new Date())).toBeNull();
     const { deps, calls } = makeDeps();
-    expect(await run.runAgent(CONV, deps)).toEqual({ kind: "skipped", reason: "canal_off" });
+    expect(await run.runAgent(JOB, deps)).toEqual({ kind: "skipped", reason: "canal_off" });
     expect(calls).toHaveLength(0);
   });
 
@@ -360,7 +361,7 @@ describe.skipIf(!TEST_DATABASE_URL)("runtime del Agente IA (Postgres real)", () 
     await db.update(s.conversations).set({ windowExpiresAt: ago(1_000) }).where(eq(s.conversations.id, CONV));
     await msg({ direction: "in", body: "hola", at: ago(20_000) });
     const { deps, calls } = makeDeps();
-    expect(await run.runAgent(CONV, deps)).toEqual({ kind: "skipped", reason: "fuera_de_ventana_24h" });
+    expect(await run.runAgent(JOB, deps)).toEqual({ kind: "skipped", reason: "fuera_de_ventana_24h" });
     expect(calls).toHaveLength(0);
   });
 
@@ -380,7 +381,7 @@ describe.skipIf(!TEST_DATABASE_URL)("runtime del Agente IA (Postgres real)", () 
     );
     await msg({ direction: "in", body: "hola?", at: ago(10_000) });
     const { deps, calls } = makeDeps();
-    expect(await run.runAgent(CONV, deps)).toEqual({ kind: "skipped", reason: "anti_bucle" });
+    expect(await run.runAgent(JOB, deps)).toEqual({ kind: "skipped", reason: "anti_bucle" });
     expect(calls).toHaveLength(0);
     expect((await conv()).agentState).toBe("pausado_antibucle");
     const [c] = await db.select().from(s.contacts).where(eq(s.contacts.id, CONTACT));
@@ -401,7 +402,7 @@ describe.skipIf(!TEST_DATABASE_URL)("runtime del Agente IA (Postgres real)", () 
     });
     const results: import("./run").RunResult[] = [];
     for (let i = 0; i < 12; i++) {
-      const r = await run.runAgent(CONV, deps);
+      const r = await run.runAgent(JOB, deps);
       results.push(r);
       if (r.kind !== "reschedule") break;
       expect(r.delayMs).toBeGreaterThanOrEqual(15_000); // nunca 0 aunque el tope duro venció
@@ -418,7 +419,7 @@ describe.skipIf(!TEST_DATABASE_URL)("runtime del Agente IA (Postgres real)", () 
   it("filtro 'pasar a humano' → etiqueta + pausa 8 h; el barrido lo reactiva al vencer", async () => {
     await msg({ direction: "in", body: "quiero hablar con una persona", at: ago(10_000) });
     const { deps, calls } = makeDeps({ filter: '{"decision":"pasar_a_humano"}' });
-    expect(await run.runAgent(CONV, deps)).toEqual({ kind: "handover", reason: "filtro" });
+    expect(await run.runAgent(JOB, deps)).toEqual({ kind: "handover", reason: "filtro" });
     expect(calls.map((c) => c.kind)).toEqual(["filtro"]);
     const c1 = await conv();
     expect(c1.agentState).toBe("pausado_handover");
@@ -435,7 +436,7 @@ describe.skipIf(!TEST_DATABASE_URL)("runtime del Agente IA (Postgres real)", () 
   it("el cerebro también puede transferir ([TRANSFERIR])", async () => {
     await msg({ direction: "in", body: "mándame link para pagar con tarjeta", at: ago(10_000) });
     const { deps } = makeDeps({ brain: ["[TRANSFERIR]"] });
-    expect(await run.runAgent(CONV, deps)).toEqual({ kind: "handover", reason: "cerebro" });
+    expect(await run.runAgent(JOB, deps)).toEqual({ kind: "handover", reason: "cerebro" });
     expect(await agentOuts()).toHaveLength(0);
     expect((await conv()).agentState).toBe("pausado_handover");
   });
@@ -443,8 +444,8 @@ describe.skipIf(!TEST_DATABASE_URL)("runtime del Agente IA (Postgres real)", () 
   it("idempotencia: un entrante ya atendido no se vuelve a procesar", async () => {
     await msg({ direction: "in", body: "compra seguidores baratos", at: ago(10_000) });
     const { deps, calls } = makeDeps({ filter: '{"decision":"spam"}' });
-    expect(await run.runAgent(CONV, deps)).toEqual({ kind: "skipped", reason: "spam" });
-    expect(await run.runAgent(CONV, deps)).toEqual({ kind: "noop", reason: "ya_atendido" });
+    expect(await run.runAgent(JOB, deps)).toEqual({ kind: "skipped", reason: "spam" });
+    expect(await run.runAgent(JOB, deps)).toEqual({ kind: "noop", reason: "ya_atendido" });
     expect(calls).toHaveLength(1);
   });
 
@@ -457,7 +458,7 @@ describe.skipIf(!TEST_DATABASE_URL)("runtime del Agente IA (Postgres real)", () 
     });
     await msg({ direction: "in", body: "precio?", at: ago(10_000) });
     const { deps } = makeDeps();
-    await run.runAgent(CONV, deps);
+    await run.runAgent(JOB, deps);
     const brain = (await usage()).find((u) => u.stage === "cerebro")!;
     // 600 × 3 + 11,400 × 0.3 + 60 × 15 = 1,800 + 3,420 + 900 = 6,120 µ$
     expect(brain.costUsd).toBeCloseTo(0.00612, 8);
@@ -471,7 +472,7 @@ describe.skipIf(!TEST_DATABASE_URL)("runtime del Agente IA (Postgres real)", () 
       attachments: [{ type: "image", url: "zernio://x", storageKey: "media/k1.jpg" }],
     });
     const { deps, calls, images } = makeDeps();
-    await run.runAgent(CONV, deps);
+    await run.runAgent(JOB, deps);
     expect(images).toEqual(["media/k1.jpg"]);
     expect(JSON.stringify(calls[1].input.messages)).toContain("https://bucket.test/media/k1.jpg");
   });
@@ -480,7 +481,7 @@ describe.skipIf(!TEST_DATABASE_URL)("runtime del Agente IA (Postgres real)", () 
     await msg({ direction: "in", body: "hola", at: ago(120_000) });
     expect(await sweep.findOrphanConversations(new Date())).toEqual([{ conversationId: CONV, organizationId: ORG }]);
     const { deps } = makeDeps({ filter: '{"decision":"lead_no_sigue"}' });
-    await run.runAgent(CONV, deps);
+    await run.runAgent(JOB, deps);
     expect(await sweep.findOrphanConversations(new Date())).toEqual([]);
   });
 
@@ -496,11 +497,11 @@ describe.skipIf(!TEST_DATABASE_URL)("runtime del Agente IA (Postgres real)", () 
   // ── Revisión adversarial (P1/P2) ─────────────────────────────────────────
   it("un 'gracias' que el filtro saltó días atrás no rompe el debounce del siguiente mensaje", async () => {
     await msg({ direction: "in", body: "gracias", at: ago(3 * 86_400_000) });
-    await run.runAgent(CONV, makeDeps({ filter: '{"decision":"lead_no_sigue"}' }).deps);
+    await run.runAgent(JOB, makeDeps({ filter: '{"decision":"lead_no_sigue"}' }).deps);
     const at = new Date();
     await msg({ direction: "in", body: "Hola, quiero info", at });
     // Antes: firstPendingAt = el "gracias" viejo → tope vencido → 0 (dispara al instante).
-    expect(await schedule.debounceDelayFor(CONV, at)).toBe(15_000);
+    expect(await schedule.debounceDelayFor(ORG, CONV, at)).toBe(15_000);
   });
 
   it("encender el canal o reactivar al agente no contesta lo escrito antes (barrido y debounce)", async () => {
@@ -516,7 +517,7 @@ describe.skipIf(!TEST_DATABASE_URL)("runtime del Agente IA (Postgres real)", () 
     // El siguiente mensaje del cliente sí espera su debounce completo (no 0).
     const at = new Date();
     await msg({ direction: "in", body: "¿siguen ahí?", at });
-    expect(await schedule.debounceDelayFor(CONV, at)).toBe(15_000);
+    expect(await schedule.debounceDelayFor(ORG, CONV, at)).toBe(15_000);
   });
 
   it("el barrido no contesta historia: un entrante de hace más de 30 min se queda", async () => {
@@ -529,7 +530,7 @@ describe.skipIf(!TEST_DATABASE_URL)("runtime del Agente IA (Postgres real)", () 
     await state.saveDraft({ organizationId: ORG, conversationId: CONV, bubbles: ["hola"], triggerMessageId: id, now: new Date() });
     expect(await sweep.findOrphanConversations(new Date())).toEqual([]);
     const { deps, calls } = makeDeps();
-    expect(await run.runAgent(CONV, deps)).toEqual({ kind: "noop", reason: "ya_atendido" });
+    expect(await run.runAgent(JOB, deps)).toEqual({ kind: "noop", reason: "ya_atendido" });
     expect(calls).toHaveLength(0);
   });
 
@@ -570,7 +571,7 @@ describe.skipIf(!TEST_DATABASE_URL)("runtime del Agente IA (Postgres real)", () 
     });
     await msg({ direction: "in", body: "¿hola?", at: ago(10_000) });
     const { deps, calls } = makeDeps();
-    await run.runAgent(CONV, deps);
+    await run.runAgent(JOB, deps);
     expect(JSON.stringify(calls.find((c) => c.kind === "cerebro")!.input.messages)).not.toContain("NUNCA LLEGÓ");
   });
 });
