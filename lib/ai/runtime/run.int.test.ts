@@ -166,9 +166,7 @@ describe.skipIf(!TEST_DATABASE_URL)("runtime del Agente IA (Postgres real)", () 
     const deps: import("./run").RunDeps = {
       now: () => new Date(),
       callModel: models.callModel,
-      sendBubble: async (p) => {
-        await send.sendTextMessage(provider, { ...p, source: "ai_agent", sentByUserId: null });
-      },
+      sendBubble: (p) => send.sendTextMessage(provider, { ...p, source: "ai_agent", sentByUserId: null }),
       sleep: async (ms) => {
         sleeps.push(ms);
         if (script.onSleep) await script.onSleep();
@@ -590,6 +588,252 @@ describe.skipIf(!TEST_DATABASE_URL)("runtime del Agente IA (Postgres real)", () 
     expect((await conv()).agentState).toBe("pausado_humano");
     const brain = (await usage()).find((u) => u.stage === "cerebro")!;
     expect(brain.error).toContain("detenido tras 1 burbuja(s): respuesta_humana");
+  });
+
+  it("AUTO: si el CLIENTE escribe en la pausa entre burbujas, la 2ª no sale y su mensaje queda pendiente", async () => {
+    await msg({ direction: "in", body: "¿precio?", at: ago(10_000) });
+    let nuevo = "";
+    const { deps } = makeDeps({
+      onSleep: async () => {
+        nuevo = await msg({ direction: "in", body: "¿y hacen envíos?", at: new Date(Date.now() + 1_000) });
+      },
+    });
+    expect(await run.runAgent(JOB, deps)).toEqual({ kind: "sent", bubbles: 1 });
+    expect(await agentOuts()).toHaveLength(1);
+    const { pendingInbound } = await import("./context");
+    expect((await pendingInbound(ORG, CONV)).map((m) => m.id)).toEqual([nuevo]); // la siguiente corrida lo atiende
+    const brain = (await usage()).find((u) => u.stage === "cerebro")!;
+    expect(brain.error).toContain("detenido tras 1 burbuja(s): entrante_nuevo");
+  });
+
+  // ── Envíos del agente sin confirmar o fallidos (re-revisiones de Codex) ────
+  async function agentMsg(opts: { status: "queued" | "sent" | "failed"; errorCode?: string; at?: Date; source?: "ai_agent" | "crm" }) {
+    const id = `m_${opts.source ?? "ai"}_${crypto.randomUUID()}`;
+    const at = opts.at ?? new Date();
+    await db.insert(s.messages).values({
+      id,
+      organizationId: ORG,
+      conversationId: CONV,
+      direction: "out",
+      source: opts.source ?? "ai_agent",
+      type: "text",
+      body: "x",
+      status: opts.status,
+      errorCode: opts.errorCode ?? null,
+      sentByUserId: opts.source === "crm" ? "u_vendedor" : null,
+      sentAt: at,
+      createdAt: at,
+    });
+    return id;
+  }
+
+  it("AUTO → 1ª burbuja sin confirmar (y se confirma tarde): la 2ª queda en borrador visible y el agente se pausa", async () => {
+    await msg({ direction: "in", body: "¿precio?", at: ago(10_000) });
+    const { deps } = makeDeps();
+    let pendingId = "";
+    deps.sendBubble = async () => {
+      pendingId = await agentMsg({ status: "queued" });
+      return { status: "pending" as const };
+    };
+    expect(await run.runAgent(JOB, deps)).toEqual({ kind: "sent", bubbles: 1 });
+    const brain = (await usage()).find((u) => u.stage === "cerebro")!;
+    expect(brain).toMatchObject({ outcome: "sent", error: "1 burbuja(s) sin confirmar; 1 en borrador para revisión humana" });
+    const [d] = await db.select().from(s.aiAgentDrafts);
+    expect(d).toMatchObject({ status: "pendiente", bubbles: ["¿Cuánto mide tu entrada?"] });
+    expect(d.reviewReason).toContain("no confirmó");
+    expect((await conv()).agentState).toBe("pausado_antibucle");
+    const [c] = await db.select().from(s.contacts).where(eq(s.contacts.id, CONTACT));
+    expect(c.tags).toContain("revisión humana");
+    // La 1ª se confirma tarde: nada se pierde (el resto sigue visible para el vendedor).
+    await db.update(s.messages).set({ status: "sent" }).where(eq(s.messages.id, pendingId));
+    expect((await db.select().from(s.aiAgentDrafts))[0].status).toBe("pendiente");
+  });
+
+  it("AUTO → una sola burbuja sin confirmar: espera; si vence sin confirmar, el barrido pausa (sin reenviar)", async () => {
+    const { SEND_UNCONFIRMED } = await import("@/lib/messaging/rules");
+    await msg({ direction: "in", body: "¿precio?", at: ago(10_000) });
+    const { deps } = makeDeps({ brain: ["Claro, cuesta $5,500 MXN."] });
+    let pendingId = "";
+    deps.sendBubble = async () => {
+      pendingId = await agentMsg({ status: "queued" });
+      return { status: "pending" as const };
+    };
+    expect(await run.runAgent(JOB, deps)).toEqual({ kind: "sent", bubbles: 1 });
+    expect(await db.select().from(s.aiAgentDrafts)).toEqual([]); // nada omitido
+    // En camino: no se pausa, y el agente no responde encima de un envío sin resolver.
+    expect(await sweep.pauseOnFailedAgentSends(new Date())).toBe(0);
+    await msg({ direction: "in", body: "¿hola?", at: new Date(Date.now() + 1_000) });
+    const busy = makeDeps();
+    expect(await run.runAgent(JOB, busy.deps)).toEqual({ kind: "skipped", reason: "envio_sin_confirmar" });
+    expect(busy.calls).toHaveLength(0);
+    // Vence sin confirmar → revisión humana, sin regenerar ni reenviar.
+    await db.update(s.messages).set({ status: "failed", errorCode: SEND_UNCONFIRMED }).where(eq(s.messages.id, pendingId));
+    expect(await sweep.pauseOnFailedAgentSends(new Date())).toBe(1);
+    expect((await conv()).agentState).toBe("pausado_antibucle");
+    expect(await sweep.findOrphanConversations(new Date())).toEqual([]);
+  });
+
+  it("un saliente humano que entra DESPUÉS del inicio de la ronda detiene el envío aunque la revisión fresca no lo vea", async () => {
+    await agentMsg({ status: "sent", at: ago(60_000) }); // último saliente: del agente
+    await msg({ direction: "in", body: "¿precio?", at: ago(10_000) });
+    const { deps, calls } = makeDeps({
+      // Eco del vendedor desde el celular con hora de WhatsApp MÁS VIEJA que el último
+      // saliente: freshLastOut no cambia, pero el conteo humano sí.
+      onBrain: async () => {
+        await agentMsg({ status: "sent", source: "crm", at: ago(120_000) });
+      },
+    });
+    expect(await run.runAgent(JOB, deps)).toEqual({ kind: "skipped", reason: "respuesta_humana" });
+    expect(calls.filter((c) => c.kind === "cerebro")).toHaveLength(1);
+    expect((await agentOuts()).filter((m) => m.createdAt > ago(30_000))).toEqual([]);
+    expect((await conv()).agentState).toBe("pausado_humano");
+  });
+
+  it("plan durable: mientras salen las burbujas existe como 'enviando' y al terminar queda 'enviado'", async () => {
+    await msg({ direction: "in", body: "¿precio?", at: ago(10_000) });
+    const seen: string[] = [];
+    const { deps } = makeDeps();
+    const real = deps.sendBubble;
+    deps.sendBubble = async (p) => {
+      const [plan] = await db.select().from(s.aiAgentDrafts);
+      seen.push(plan.status);
+      return real(p);
+    };
+    expect(await run.runAgent(JOB, deps)).toEqual({ kind: "sent", bubbles: 2 });
+    expect(seen).toEqual(["enviando", "enviando"]);
+    expect((await db.select().from(s.aiAgentDrafts))[0].status).toBe("enviado");
+  });
+
+  it("AUTO: si falla la 2ª burbuja, la 2ª queda en borrador visible y el agente pasa a revisión humana", async () => {
+    await msg({ direction: "in", body: "¿precio?", at: ago(10_000) });
+    const { deps } = makeDeps();
+    const real = deps.sendBubble;
+    let n = 0;
+    deps.sendBubble = async (p) => {
+      n++;
+      if (n === 2) throw new Error("se cayó el proveedor");
+      return real(p);
+    };
+    expect(await run.runAgent(JOB, deps)).toEqual({ kind: "sent", bubbles: 1 });
+    const [d] = await db.select().from(s.aiAgentDrafts);
+    expect(d).toMatchObject({ status: "pendiente", bubbles: ["¿Cuánto mide tu entrada?"] });
+    expect(d.reviewReason).toContain("Se enviaron 1 de 2");
+    expect((await conv()).agentState).toBe("pausado_antibucle");
+  });
+
+  it("AUTO: si falla la 1ª burbuja, el plan queda obsoleto y el reintento de la cola sí responde", async () => {
+    await msg({ direction: "in", body: "¿precio?", at: ago(10_000) });
+    const { deps } = makeDeps();
+    deps.sendBubble = async () => {
+      throw new Error("se cayó el proveedor");
+    };
+    await expect(run.runAgent(JOB, deps)).rejects.toThrow("se cayó el proveedor");
+    expect((await db.select().from(s.aiAgentDrafts))[0].status).toBe("obsoleto");
+    expect(await run.runAgent(JOB, makeDeps().deps)).toEqual({ kind: "sent", bubbles: 2 });
+  });
+
+  it("barrido: un plan AUTO interrumpido a la mitad deja visible lo que faltó y pausa para revisión", async () => {
+    const trigger = await msg({ direction: "in", body: "¿precio?", at: ago(25 * 60_000) });
+    const claimed = ago(20 * 60_000);
+    await db.insert(s.aiAgentDrafts).values({
+      id: "plan_x",
+      organizationId: ORG,
+      conversationId: CONV,
+      bubbles: ["Primera", "Segunda"],
+      triggerMessageId: trigger,
+      status: "enviando",
+      resolvedAt: claimed,
+    });
+    await agentMsg({ status: "sent", at: new Date(claimed.getTime() + 1_000) }); // salió solo la 1ª
+    const { reconcileStuckDrafts } = await import("./sweep");
+    await reconcileStuckDrafts(new Date());
+    const [d] = await db.select().from(s.aiAgentDrafts);
+    expect(d).toMatchObject({ status: "pendiente", bubbles: ["Segunda"] });
+    expect(d.reviewReason).toContain("salieron 1 de 2");
+    expect((await conv()).agentState).toBe("pausado_antibucle");
+  });
+
+  it("un plan 'enviando' en la conversación bloquea nuevas corridas (la conciliación no se mezcla)", async () => {
+    const trigger = await msg({ direction: "in", body: "¿precio?", at: ago(10_000) });
+    await db.insert(s.aiAgentDrafts).values({
+      id: "plan_vivo",
+      organizationId: ORG,
+      conversationId: CONV,
+      bubbles: ["a", "b"],
+      triggerMessageId: trigger,
+      status: "enviando",
+      resolvedAt: new Date(),
+    });
+    await msg({ direction: "in", body: "¿hola?", at: new Date(Date.now() + 1_000) });
+    const { deps, calls } = makeDeps();
+    expect(await run.runAgent(JOB, deps)).toEqual({ kind: "skipped", reason: "envio_sin_confirmar" });
+    expect(calls).toHaveLength(0);
+  });
+
+  it("un plan OBSOLETO (la 1ª burbuja falló) no impide que el barrido rescate el entrante", async () => {
+    const trigger = await msg({ direction: "in", body: "¿precio?", at: ago(120_000) });
+    await db.insert(s.aiAgentDrafts).values({
+      id: "plan_muerto",
+      organizationId: ORG,
+      conversationId: CONV,
+      bubbles: ["a", "b"],
+      triggerMessageId: trigger,
+      status: "obsoleto",
+    });
+    expect(await sweep.findOrphanConversations(new Date())).toEqual([{ conversationId: CONV, organizationId: ORG }]);
+    expect((await run.runAgent(JOB, makeDeps().deps)).kind).toBe("sent");
+  });
+
+  it("pending → confirmado: no pausa ni bloquea", async () => {
+    const id = await agentMsg({ status: "queued" });
+    await db.update(s.messages).set({ status: "sent" }).where(eq(s.messages.id, id));
+    expect(await sweep.pauseOnFailedAgentSends(new Date())).toBe(0);
+    expect((await conv()).agentState).toBe("activo");
+  });
+
+  it("pending → rechazo definitivo (último saliente del agente) → revisión humana", async () => {
+    await agentMsg({ status: "failed", errorCode: "131047" });
+    expect(await sweep.pauseOnFailedAgentSends(new Date())).toBe(1);
+    expect((await conv()).agentState).toBe("pausado_antibucle");
+  });
+
+  it("una burbuja ambigua que NO es el último saliente también pausa (la 2ª sí salió)", async () => {
+    const { SEND_UNCONFIRMED } = await import("@/lib/messaging/rules");
+    await agentMsg({ status: "failed", errorCode: SEND_UNCONFIRMED, at: ago(5_000) });
+    await agentMsg({ status: "sent", at: ago(3_000) });
+    expect(await sweep.pauseOnFailedAgentSends(new Date())).toBe(1);
+  });
+
+  it("sin límite de antigüedad (worker caído 2 días) y sin volver a pausar tras 'Reactivar'", async () => {
+    const { SEND_UNCONFIRMED } = await import("@/lib/messaging/rules");
+    await agentMsg({ status: "failed", errorCode: SEND_UNCONFIRMED, at: ago(2 * 86_400_000) });
+    expect(await sweep.pauseOnFailedAgentSends(new Date())).toBe(1);
+    await state.setAgentState(ORG, CONV, "activo", { now: new Date() }); // un vendedor revisó y reactivó
+    expect(await sweep.pauseOnFailedAgentSends(new Date())).toBe(0);
+    expect((await conv()).agentState).toBe("activo");
+  });
+
+  it("un rechazo definitivo seguido de un reintento exitoso no pausa", async () => {
+    await agentMsg({ status: "failed", errorCode: "provider_rejected", at: ago(20_000) });
+    await agentMsg({ status: "sent", at: ago(5_000) });
+    expect(await sweep.pauseOnFailedAgentSends(new Date())).toBe(0);
+  });
+
+  it("respuesta humana DURANTE un pase a humano: el agente no se reactiva solo (gancho y barrido)", async () => {
+    // Gancho: el saliente del vendedor convierte el handover en pausa manual.
+    await state.setAgentState(ORG, CONV, "pausado_handover", { now: ago(60_000), pausedUntil: new Date(Date.now() + 3_600_000) });
+    await hooks.onHumanOutbound({ organizationId: ORG, conversationId: CONV }, { queue: fakeQueue().port, kv: fakeQueue().kv });
+    expect(await conv()).toMatchObject({ agentState: "pausado_humano", agentPausedUntil: null });
+    // Barrido: aunque el gancho no lo marcara, un handover vencido con respuesta humana
+    // posterior a su inicio pasa a pausado_humano (no a activo).
+    await state.setAgentState(ORG, CONV, "pausado_handover", { now: ago(9 * 3_600_000), pausedUntil: ago(60_000) });
+    await agentMsg({ status: "sent", source: "crm", at: ago(8 * 3_600_000) });
+    await sweep.reactivateExpiredHandovers(new Date());
+    expect((await conv()).agentState).toBe("pausado_humano");
+    await msg({ direction: "in", body: "¿siguen?", at: new Date() });
+    const { deps, calls } = makeDeps();
+    expect((await run.runAgent(JOB, deps)).kind).toBe("skipped");
+    expect(calls).toHaveLength(0);
   });
 
   it("AUTO: si apagan el canal en la pausa entre burbujas, la 2ª ya no sale", async () => {

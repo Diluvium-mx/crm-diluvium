@@ -167,7 +167,7 @@ describe.skipIf(!TEST_DATABASE_URL)("el runtime del agente no cruza organizacion
     const callModel = vi.fn(async (): Promise<CallModelResult> => {
       throw new Error("no debería llamarse");
     }) as unknown as (id: string, input: CallModelInput) => Promise<CallModelResult>;
-    const sendBubble = vi.fn(async () => undefined);
+    const sendBubble = vi.fn(async () => ({ status: "sent" as const }));
     const r = await run.runAgent(
       { organizationId: B, conversationId: CONV },
       { now: () => new Date(), callModel, sendBubble, sleep: async () => undefined, resolveImage: async () => null },

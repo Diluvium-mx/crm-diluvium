@@ -6,6 +6,7 @@
 import { and, count, desc, eq, gte, inArray, isNotNull, ne, sql } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { aiAgentDrafts, aiUsage, channels, conversations, messages } from "@/lib/db/schema";
+import { SEND_UNCONFIRMED, SEND_UNKNOWN } from "@/lib/messaging/rules";
 import { FINAL_OUTCOMES, REPLY_OUTCOMES } from "./usage";
 
 export type ConversationRow = typeof conversations.$inferSelect;
@@ -98,6 +99,39 @@ export async function humanOutboundCount(organizationId: string, conversationId:
   return value;
 }
 
+// ¿Hay un saliente del agente en camino, fallido SIN CONFIRMAR posterior al corte
+// (última reactivación/encendido), o un plan/aprobación todavía "enviando"? Entonces
+// el agente no responde encima (y la conciliación del plan no se mezcla con otra respuesta).
+export async function agentSendUnresolved(organizationId: string, conversationId: string, cut: Date | null): Promise<boolean> {
+  const [plan] = await db
+    .select({ id: aiAgentDrafts.id })
+    .from(aiAgentDrafts)
+    .where(
+      and(
+        eq(aiAgentDrafts.organizationId, organizationId),
+        eq(aiAgentDrafts.conversationId, conversationId),
+        eq(aiAgentDrafts.status, "enviando"),
+      ),
+    )
+    .limit(1);
+  if (plan) return true;
+  const [row] = await db
+    .select({ id: messages.id })
+    .from(messages)
+    .where(
+      and(
+        inConversation(organizationId, conversationId),
+        eq(messages.direction, "out"),
+        eq(messages.source, "ai_agent"),
+        sql`(${messages.status} = 'queued' or (${messages.status} = 'failed'
+          and (${messages.errorCode} = ${SEND_UNCONFIRMED} or ${messages.errorCode} like ${`${SEND_UNKNOWN}%`})
+          and ${messages.createdAt} > coalesce(${cut ? cut.toISOString() : null}::timestamp, '-infinity'::timestamp)))`,
+      ),
+    )
+    .limit(1);
+  return Boolean(row);
+}
+
 // Total de entrantes: si crece entre leer y enviar, llegó algo nuevo (revisión
 // antes de enviar). Los mensajes no se borran, así que el conteo solo sube.
 export async function inboundCount(organizationId: string, conversationId: string): Promise<number> {
@@ -127,7 +161,14 @@ export async function alreadyHandled(organizationId: string, messageId: string):
   const [draft] = await db
     .select({ id: aiAgentDrafts.id })
     .from(aiAgentDrafts)
-    .where(and(eq(aiAgentDrafts.organizationId, organizationId), eq(aiAgentDrafts.triggerMessageId, messageId)))
+    .where(
+      and(
+        eq(aiAgentDrafts.organizationId, organizationId),
+        eq(aiAgentDrafts.triggerMessageId, messageId),
+        // Un plan de envío que quedó obsoleto (la 1ª burbuja falló) no cuenta: se reintenta.
+        ne(aiAgentDrafts.status, "obsoleto"),
+      ),
+    )
     .limit(1);
   return Boolean(draft);
 }
@@ -147,7 +188,7 @@ export async function lastHandledInboundAt(organizationId: string, conversationI
               and u.message_id = ${messages.id}
               and u.outcome in (${sql.join(FINAL_OUTCOMES.map((o) => sql`${o}`), sql`, `)}))
             or exists (select 1 from ${aiAgentDrafts} d where d.organization_id = ${organizationId}
-              and d.trigger_message_id = ${messages.id}))`,
+              and d.trigger_message_id = ${messages.id} and d.status <> 'obsoleto'))`,
       ),
     )
     .orderBy(desc(messages.createdAt))

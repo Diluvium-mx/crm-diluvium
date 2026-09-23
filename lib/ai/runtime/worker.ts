@@ -20,7 +20,7 @@ import {
 } from "./queue";
 import { runAgent, type RunDeps, type RunResult } from "./run";
 import { debounceDelayFor } from "./schedule";
-import { findOrphanConversations, reactivateExpiredHandovers, reconcileStuckDrafts } from "./sweep";
+import { findOrphanConversations, pauseOnFailedAgentSends, reactivateExpiredHandovers, reconcileStuckDrafts } from "./sweep";
 
 const SWEEP_EVERY_MS = 60_000;
 
@@ -44,9 +44,8 @@ export function makeRunDeps(provider: MessagingProvider, storage: ObjectStorage 
   return {
     now: () => new Date(),
     callModel,
-    sendBubble: async ({ organizationId, conversationId, text }) => {
-      await sendTextMessage(provider, { organizationId, conversationId, text, source: "ai_agent", sentByUserId: null });
-    },
+    sendBubble: ({ organizationId, conversationId, text }) =>
+      sendTextMessage(provider, { organizationId, conversationId, text, source: "ai_agent", sentByUserId: null }),
     sleep: (ms) => new Promise((r) => setTimeout(r, ms)),
     resolveImage: async (key) => (storage ? storage.signedGetUrl(key, 15 * 60) : null),
   };
@@ -55,6 +54,8 @@ export function makeRunDeps(provider: MessagingProvider, storage: ObjectStorage 
 export async function sweepOnce(queue: AgentQueuePort, kv: KvPort, now: Date): Promise<void> {
   const reactivated = await reactivateExpiredHandovers(now);
   if (reactivated) console.info(`[agente] barrido: ${reactivated} conversación(es) reactivada(s) tras pasar a humano`);
+  const failedSends = await pauseOnFailedAgentSends(now);
+  if (failedSends) console.info(`[agente] barrido: ${failedSends} conversación(es) pausada(s) por un envío del agente fallido o sin confirmar`);
   const drafts = await reconcileStuckDrafts(now);
   if (drafts) console.info(`[agente] barrido: ${drafts} borrador(es) atorado(s) en "enviando" conciliado(s)`);
   const orphans = await findOrphanConversations(now);

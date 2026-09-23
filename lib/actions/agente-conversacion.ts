@@ -86,10 +86,8 @@ export async function approveAgentDraft(input: { draftId: string }): Promise<Age
       draftId: idSchema.parse(input.draftId),
       userId,
       now: new Date(),
-      sendBubble: async (p) => {
-        // Autoría: sigue siendo del agente (él lo redactó); queda quién lo aprobó.
-        await sendTextMessage(provider, { ...p, source: "ai_agent" });
-      },
+      // Autoría: sigue siendo del agente (él lo redactó); queda quién lo aprobó.
+      sendBubble: (p) => sendTextMessage(provider, { ...p, source: "ai_agent" }),
     });
     revalidatePath("/dashboard");
     return { ok: true };

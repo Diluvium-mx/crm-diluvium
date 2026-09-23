@@ -22,14 +22,15 @@ import {
   messageAt,
   modelCallsSince,
   orgSpendSince,
+  agentSendUnresolved,
   pendingInbound,
   recentMessages,
   type MessageRow,
 } from "./context";
 import { buildFilterPrompt, FILTER_SYSTEM, parseFilterDecision } from "./filter";
-import { decideGate, pauseElapsed, toBubbles, type AgentState } from "./policy";
+import { decideGate, toBubbles, type AgentState } from "./policy";
 import { rescheduleDelayFor } from "./schedule";
-import { addContactTag, markAgentReply, saveDraft, setAgentState } from "./state";
+import { addContactTag, closePlan, markAgentReply, retainRemainder, saveDraft, setAgentState } from "./state";
 import { reviewReply } from "./output-guard";
 import { TAG_HANDOVER, TAG_HUMAN_REVIEW } from "./tags";
 import { buildModelMessages, toTranscriptLines } from "./transcript";
@@ -53,7 +54,9 @@ export type RunDeps = {
   now: () => Date;
   callModel: (modelId: string, input: CallModelInput) => Promise<CallModelResult>;
   // Envía UNA burbuja como el agente (source "ai_agent", sin usuario).
-  sendBubble: (p: { organizationId: string; conversationId: string; text: string }) => Promise<void>;
+  // Devuelve el resultado del proveedor: "pending" = no confirmado (timeout, 5xx); el
+  // outbox lo concilia y, si vence sin confirmar, el barrido pausa para revisión humana.
+  sendBubble: (p: { organizationId: string; conversationId: string; text: string }) => Promise<{ status: "sent" | "pending" }>;
   sleep: (ms: number) => Promise<void>;
   // URL firmada de una imagen del bucket (o null si no se puede).
   resolveImage: (storageKey: string) => Promise<string | null>;
@@ -99,16 +102,22 @@ async function imageUrlsFor(rows: readonly MessageRow[], resolve: RunDeps["resol
 }
 
 // ¿Sigue pudiendo enviar el agente? Estado FRESCO justo antes de una burbuja.
+type StopReason = "cambio_antes_de_enviar" | "respuesta_humana" | "entrante_nuevo";
+
 async function stopBeforeBubble(
   organizationId: string,
   conversationId: string,
   humansAtCheck: number,
-): Promise<"cambio_antes_de_enviar" | "respuesta_humana" | null> {
+  inboundsAtCheck: number,
+): Promise<StopReason | null> {
   const snap = await loadSnapshot(organizationId, conversationId);
   if (!snap || snap.channel.aiAgentMode !== "auto" || snap.conversation.agentState !== "activo") {
     return "cambio_antes_de_enviar";
   }
   if ((await humanOutboundCount(organizationId, conversationId)) > humansAtCheck) return "respuesta_humana";
+  // El cliente escribió después de lo que leyó el modelo: esta respuesta ya no
+  // contesta lo último (y, si saliera, dejaría su mensaje como "atendido").
+  if ((await inboundCount(organizationId, conversationId)) > inboundsAtCheck) return "entrante_nuevo";
   return null;
 }
 
@@ -142,13 +151,17 @@ export async function runAgent(job: { organizationId: string; conversationId: st
 
     const pending = await pendingInbound(org, conv.id);
     const lastOut = await lastOutbound(org, conv.id);
+    // Línea base de salientes HUMANOS al INICIO de la ronda (antes del modelo): un
+    // envío manual que entre en cualquier momento después detiene el envío del agente.
+    const humansAtStart = await humanOutboundCount(org, conv.id);
     const pausedUntilMs = conv.agentPausedUntil?.getTime() ?? null;
-    // Un handover vencido se reactiva: su corte es AHORA (lo que el vendedor
-    // contestó durante la transferencia era lo esperado, no vuelve a pausar).
     // Encender el canal también es corte: lo que un vendedor contestó ANTES de
     // prender el agente no pausa conversaciones que ya existían.
     const cut = latestDate(conv.agentStateChangedAt, channel.aiAgentModeChangedAt);
-    const boundary = pauseElapsed(conv.agentState, pausedUntilMs, now.getTime()) ? now : cut;
+    // Con un "pasar a humano" vencido el corte es su INICIO (agent_state_changed_at):
+    // si un vendedor contestó durante la transferencia, tomó la conversación y el
+    // agente NO se reactiva solo.
+    const boundary = cut;
     // "Un vendedor tomó la conversación": el último saliente es humano (CRM o
     // celular) y es posterior al último cambio de estado del agente.
     const humanTookOver =
@@ -172,6 +185,7 @@ export async function runAgent(job: { organizationId: string; conversationId: st
       agentRepliesLastHour: await agentRepliesSince(org, conv.id, hourAgo),
       antiLoopMaxPerHour: cfg.antiLoopMaxPerHour,
       modelCallsLastHour: await modelCallsSince(org, conv.id, hourAgo),
+      agentSendUnresolved: await agentSendUnresolved(org, conv.id, cut),
       orgSpendLast24hUsd: await orgSpendSince(org, new Date(now.getTime() - 24 * 3_600_000)),
       dailyBudgetUsd: cfg.dailyBudgetUsd,
       agentRepliesToContact: cfg.maxRepliesPerContact === null ? 0 : await agentRepliesToContact(org, conv.contactId),
@@ -336,32 +350,61 @@ export async function runAgent(job: { organizationId: string; conversationId: st
       return { kind: "draft", draftId };
     }
 
-    // auto: burbujas con pausa. Si la PRIMERA falla, nada salió → error y
-    // reintento; si falla una posterior, lo enviado ya cuenta (no se duplica).
-    // Antes de CADA burbuja se revisa el estado fresco: si un vendedor respondió,
-    // alguien apagó el canal o pausó al agente (p. ej. durante la pausa de 1.5 s),
-    // el agente se detiene ahí.
-    const humansAtCheck = await humanOutboundCount(org, conv.id);
+    // auto: burbujas con pausa. Antes de CADA burbuja se revisa el estado fresco: si
+    // un vendedor respondió (desde el INICIO de la ronda), alguien apagó el canal o
+    // pausó al agente, o el cliente escribió, el agente se detiene ahí.
+    // Con varias burbujas, antes del primer envío se guarda un PLAN durable con todas
+    // ("enviando"): si algo falla a la mitad (sin confirmar, error o proceso
+    // interrumpido), el resto queda como borrador visible para revisión humana.
+    const planId = bubbles.length > 1 ? await saveDraft({ ...draftInput, now: deps.now(), status: "enviando" }) : null;
+    const retain = async (reason: string) => {
+      if (planId) await retainRemainder(org, planId, conv.id, bubbles.slice(sent), reason);
+      await pause(conv, "pausado_antibucle", deps.now(), { tag: TAG_HUMAN_REVIEW }).catch((error: unknown) =>
+        console.error(`[agente] ${conv.id}: no se pudo pausar para revisión humana`, error),
+      );
+    };
     let sent = 0;
-    let stopped: "cambio_antes_de_enviar" | "respuesta_humana" | null = null;
+    let unconfirmed = 0;
+    let stopped: StopReason | null = null;
     try {
       for (const text of bubbles) {
         if (sent > 0) await deps.sleep(BUBBLE_PAUSE_MS);
-        stopped = await stopBeforeBubble(org, conv.id, humansAtCheck);
+        stopped = await stopBeforeBubble(org, conv.id, humansAtStart, readCount);
         if (stopped) break;
-        await deps.sendBubble({ organizationId: org, conversationId: conv.id, text });
+        const outcome = await deps.sendBubble({ organizationId: org, conversationId: conv.id, text });
         sent++;
+        // Sin confirmación no se manda la siguiente: el cliente no recibe media respuesta
+        // encima de algo que quizá no le llegó (lo resuelve el outbox; si vence, revisión humana).
+        if (outcome.status !== "sent") {
+          unconfirmed++;
+          break;
+        }
       }
     } catch (error) {
       if (sent === 0) {
+        // Nada salió: el plan no cuenta (obsoleto) y la cola reintenta.
+        if (planId) await closePlan(org, planId, "obsoleto");
         await recordAiUsage({ ...brainUsage, outcome: "error", error: `envío: ${errorText(error)}` });
         throw error;
       }
-      await recordAiUsage({ ...brainUsage, outcome: "sent", error: `burbuja ${sent + 1} no salió: ${errorText(error)}` });
+      // Salió una parte: el resto NO se pierde (borrador visible) y se pausa para revisión.
       await markAgentReply(org, conv.id, deps.now());
+      await retain(`Se enviaron ${sent} de ${bubbles.length} burbujas y la siguiente falló; revisa el hilo antes de mandar el resto.`);
+      await recordAiUsage({ ...brainUsage, outcome: "sent", error: `burbuja ${sent + 1} no salió: ${errorText(error)}` });
       return { kind: "sent", bubbles: sent };
     }
+    if (stopped === "entrante_nuevo" && sent === 0) {
+      // Nada salió: igual que la revisión antes de enviar, se descarta y se regenera con TODO.
+      if (planId) await closePlan(org, planId, "obsoleto");
+      await recordAiUsage({ ...brainUsage, outcome: "discarded_stale" });
+      console.info(`[agente] ${conv.id}: respuesta descartada (entró un mensaje antes de la 1ª burbuja), ronda ${round}`);
+      continue;
+    }
     if (stopped) {
+      // Detenido a propósito (humano, canal/estado o mensaje nuevo): el resto ya no
+      // aplica (plan obsoleto). Con "entrante_nuevo" tras ≥1 burbuja, el mensaje nuevo
+      // queda pendiente (es posterior a lo enviado) y lo atiende la siguiente corrida.
+      if (planId) await closePlan(org, planId, "obsoleto");
       if (stopped === "respuesta_humana" && cfg.pauseOnHumanReply) await pause(conv, "pausado_humano", deps.now());
       if (sent === 0) {
         await recordAiUsage({ ...brainUsage, outcome: "skipped", error: `detenido antes de enviar: ${stopped}` });
@@ -372,7 +415,18 @@ export async function runAgent(job: { organizationId: string; conversationId: st
       return { kind: "sent", bubbles: sent };
     }
     await markAgentReply(org, conv.id, deps.now());
-    await recordAiUsage({ ...brainUsage, outcome: "sent" });
+    // Una burbuja sin confirmar queda en el outbox: si vence como "sin confirmar",
+    // el barrido pausa la conversación para revisión humana (nunca reenvía a ciegas).
+    const omitted = bubbles.length - sent;
+    if (unconfirmed && omitted > 0) {
+      await retain("WhatsApp no confirmó la burbuja anterior; revisa el hilo antes de mandar el resto.");
+    } else if (planId) {
+      await closePlan(org, planId, "enviado");
+    }
+    const note = unconfirmed
+      ? `${unconfirmed} burbuja(s) sin confirmar${omitted ? `; ${omitted} en borrador para revisión humana` : ""}`
+      : null;
+    await recordAiUsage({ ...brainUsage, outcome: "sent", error: note });
     return { kind: "sent", bubbles: sent };
   }
 

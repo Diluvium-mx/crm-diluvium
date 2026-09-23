@@ -61,6 +61,9 @@ export async function saveDraft(input: {
   triggerMessageId: string | null;
   now: Date;
   reviewReason?: string | null;
+  // "enviando" = PLAN durable de un envío AUTO de varias burbujas: invisible para la
+  // bandeja y no aprobable; si algo falla a la mitad, el resto queda recuperable.
+  status?: "pendiente" | "enviando";
 }): Promise<string> {
   const id = crypto.randomUUID();
   await db.transaction(async (tx) => {
@@ -88,7 +91,8 @@ export async function saveDraft(input: {
       bubbles: input.bubbles,
       triggerMessageId: input.triggerMessageId,
       reviewReason: input.reviewReason ?? null,
-      status: "pendiente",
+      status: input.status ?? "pendiente",
+      resolvedAt: input.status === "enviando" ? input.now : null,
       createdAt: input.now,
     });
     await notifyConversation(tx, input.organizationId, input.conversationId);
@@ -135,4 +139,36 @@ export async function obsoleteChannelDrafts(organizationId: string, channelId: s
     .returning({ conversationId: aiAgentDrafts.conversationId });
   for (const r of rows) await notifyConversation(db, organizationId, r.conversationId);
   return rows.length;
+}
+
+// Cierra el PLAN de un envío AUTO ("enviando") como enviado u obsoleto.
+export async function closePlan(organizationId: string, planId: string, status: "enviado" | "obsoleto"): Promise<void> {
+  await db
+    .update(aiAgentDrafts)
+    .set({ status })
+    .where(and(eq(aiAgentDrafts.id, planId), eq(aiAgentDrafts.organizationId, organizationId), eq(aiAgentDrafts.status, "enviando")));
+}
+
+// El resto de una respuesta que no salió (sin confirmar, fallo a la mitad o proceso
+// interrumpido) queda como borrador VISIBLE con el motivo (u obsoleto si ya hay otro
+// pendiente en la conversación: índice único). Nunca se reenvía solo.
+export async function retainRemainder(
+  organizationId: string,
+  draftId: string,
+  conversationId: string,
+  remainder: string[],
+  reason: string,
+): Promise<void> {
+  await db
+    .update(aiAgentDrafts)
+    .set({
+      bubbles: remainder,
+      reviewReason: reason,
+      resolvedAt: null,
+      resolvedByUserId: null,
+      status: sql`case when exists (select 1 from ${aiAgentDrafts} d2 where d2.conversation_id = ${conversationId}
+        and d2.status = 'pendiente') then 'obsoleto'::ai_draft_status else 'pendiente'::ai_draft_status end`,
+    })
+    .where(and(eq(aiAgentDrafts.id, draftId), eq(aiAgentDrafts.organizationId, organizationId), eq(aiAgentDrafts.status, "enviando")));
+  await notifyConversation(db, organizationId, conversationId);
 }

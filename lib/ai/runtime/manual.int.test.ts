@@ -94,9 +94,10 @@ describe.skipIf(!TEST_DATABASE_URL)("acciones manuales del agente (Postgres real
     const send = async (p: { text: string; sentByUserId: string }) => {
       expect(p.sentByUserId).toBe("u1");
       sent.push(p.text);
+      return { status: "sent" as const };
     };
     const opts = { organizationId: ORG, draftId: id, userId: "u1", now: new Date(), sendBubble: send, sleep: async (ms: number) => void sleeps.push(ms) };
-    expect(await manual.approveDraft(opts)).toEqual({ sent: 2 });
+    expect(await manual.approveDraft(opts)).toEqual({ sent: 2, confirmed: true });
     expect(sent).toEqual(["Hola", "¿Cuánto mide?"]);
     expect(sleeps).toEqual([1_500]);
     const [d] = await db.select().from(s.aiAgentDrafts).where(eq(s.aiAgentDrafts.id, id));
@@ -126,7 +127,7 @@ describe.skipIf(!TEST_DATABASE_URL)("acciones manuales del agente (Postgres real
 
   it("no se puede enviar un borrador obsoleto ni de otra organización; descartar lo cierra", async () => {
     const old = await draft("obsoleto");
-    const base = { userId: "u1", now: new Date(), sendBubble: async () => undefined, sleep: async () => undefined };
+    const base = { userId: "u1", now: new Date(), sendBubble: async () => ({ status: "sent" as const }), sleep: async () => undefined };
     await expect(manual.approveDraft({ ...base, organizationId: ORG, draftId: old })).rejects.toBeInstanceOf(
       manual.DraftNotAvailableError,
     );
@@ -152,6 +153,7 @@ describe.skipIf(!TEST_DATABASE_URL)("acciones manuales del agente (Postgres real
         const [d] = await db.select().from(s.aiAgentDrafts).where(eq(s.aiAgentDrafts.id, id));
         seen.push(d.status);
         sent.push(p.text);
+        return { status: "sent" as const };
       },
       sleep: async () => {
         await db.update(s.channels).set({ aiAgentMode: "off" }).where(eq(s.channels.id, "ch_m"));
@@ -161,6 +163,99 @@ describe.skipIf(!TEST_DATABASE_URL)("acciones manuales del agente (Postgres real
     expect(sent).toEqual(["Hola"]); // la 2ª burbuja ya no salió
     const [d] = await db.select().from(s.aiAgentDrafts).where(eq(s.aiAgentDrafts.id, id));
     expect(d.status).toBe("enviado"); // lo que salió, salió
+  });
+
+  it("aprobar con la 1ª burbuja sin confirmar: no manda la 2ª y el resto vuelve a la tarjeta con el motivo", async () => {
+    const id = await draft();
+    const r = await manual.approveDraft({
+      organizationId: ORG,
+      draftId: id,
+      userId: "u1",
+      now: new Date(),
+      sendBubble: async () => ({ status: "pending" as const }),
+      sleep: async () => undefined,
+    });
+    expect(r).toEqual({ sent: 1, confirmed: false });
+    const [d] = await db.select().from(s.aiAgentDrafts).where(eq(s.aiAgentDrafts.id, id));
+    expect(d).toMatchObject({ status: "pendiente", bubbles: ["¿Cuánto mide?"] });
+    expect(d.reviewReason).toContain("no confirmó");
+  });
+
+  it("aprobar un borrador de UNA burbuja sin confirmar: queda 'enviando' para el barrido", async () => {
+    const [id] = [`d_${crypto.randomUUID()}`];
+    await db.insert(s.aiAgentDrafts).values({ id, organizationId: ORG, conversationId: "cv_m", bubbles: ["Hola"], status: "pendiente" });
+    const r = await manual.approveDraft({
+      organizationId: ORG,
+      draftId: id,
+      userId: "u1",
+      now: new Date(),
+      sendBubble: async () => ({ status: "pending" as const }),
+      sleep: async () => undefined,
+    });
+    expect(r).toEqual({ sent: 1, confirmed: false });
+    expect((await db.select().from(s.aiAgentDrafts).where(eq(s.aiAgentDrafts.id, id)))[0].status).toBe("enviando");
+  });
+
+  it("aprobar: si falla la 2ª burbuja, la 1ª cuenta y la 2ª vuelve a la tarjeta con el motivo", async () => {
+    const id = await draft();
+    let n = 0;
+    await expect(
+      manual.approveDraft({
+        organizationId: ORG,
+        draftId: id,
+        userId: "u1",
+        now: new Date(),
+        sendBubble: async () => {
+          n++;
+          if (n === 2) throw new Error("se cayó el proveedor");
+          return { status: "sent" as const };
+        },
+        sleep: async () => undefined,
+      }),
+    ).rejects.toThrow("se cayó el proveedor");
+    const [d] = await db.select().from(s.aiAgentDrafts).where(eq(s.aiAgentDrafts.id, id));
+    expect(d).toMatchObject({ status: "pendiente", bubbles: ["¿Cuánto mide?"] });
+    expect(d.reviewReason).toContain("Se enviaron 1 de 2");
+  });
+
+  it("aprobar: si el cliente escribe o un vendedor responde entre burbujas, el resto vuelve a la tarjeta", async () => {
+    for (const [who, expected] of [
+      ["cliente", "El cliente escribió"],
+      ["vendedor", "Un vendedor respondió"],
+    ] as const) {
+      const { sql } = await import("drizzle-orm");
+      await db.execute(sql`truncate ai_agent_drafts, messages cascade`);
+      const id = await draft();
+      const sent: string[] = [];
+      const r = await manual.approveDraft({
+        organizationId: ORG,
+        draftId: id,
+        userId: "u1",
+        now: new Date(),
+        sendBubble: async (p) => {
+          sent.push(p.text);
+          return { status: "sent" as const };
+        },
+        sleep: async () => {
+          await db.insert(s.messages).values({
+            id: `m_${who}_${crypto.randomUUID()}`,
+            organizationId: ORG,
+            conversationId: "cv_m",
+            direction: who === "cliente" ? "in" : "out",
+            source: who === "cliente" ? "contact" : "crm",
+            type: "text",
+            body: "…",
+            status: who === "cliente" ? "received" : "sent",
+            sentByUserId: who === "cliente" ? null : "u1",
+          });
+        },
+      });
+      expect(r.sent).toBe(1);
+      expect(sent).toEqual(["Hola"]);
+      const [d] = await db.select().from(s.aiAgentDrafts).where(eq(s.aiAgentDrafts.id, id));
+      expect(d).toMatchObject({ status: "pendiente", bubbles: ["¿Cuánto mide?"] });
+      expect(d.reviewReason).toContain(expected);
+    }
   });
 
   it("si la 1ª burbuja falla y ya hay OTRO borrador pendiente, el aprobado queda obsoleto (sin chocar con el índice único)", async () => {
@@ -208,13 +303,36 @@ describe.skipIf(!TEST_DATABASE_URL)("acciones manuales del agente (Postgres real
     expect((await db.select().from(s.aiAgentDrafts).where(eq(s.aiAgentDrafts.id, "d_ok")))[0].status).toBe("enviado");
   });
 
+  it("barrido: con un saliente del agente aún en camino espera; si falló queda obsoleto (sin reenviar)", async () => {
+    const { reconcileStuckDrafts } = await import("./sweep");
+    const old = new Date(Date.now() - 20 * 60_000);
+    await db.insert(s.aiAgentDrafts).values({ id: "d_q", organizationId: ORG, conversationId: "cv_m", bubbles: ["x"], status: "enviando", resolvedAt: old });
+    await db.insert(s.messages).values({
+      id: "m_q",
+      organizationId: ORG,
+      conversationId: "cv_m",
+      direction: "out",
+      source: "ai_agent",
+      type: "text",
+      body: "x",
+      status: "queued",
+      createdAt: new Date(old.getTime() + 1_000),
+    });
+    await reconcileStuckDrafts(new Date());
+    const status = async () => (await db.select().from(s.aiAgentDrafts).where(eq(s.aiAgentDrafts.id, "d_q")))[0].status;
+    expect(await status()).toBe("enviando");
+    await db.update(s.messages).set({ status: "failed", errorCode: "send_unconfirmed" }).where(eq(s.messages.id, "m_q"));
+    await reconcileStuckDrafts(new Date());
+    expect(await status()).toBe("obsoleto");
+  });
+
   it("canal apagado: el borrador pendiente ya no sale y apagar lo deja obsoleto", async () => {
     const id = await draft();
     await db.update(s.channels).set({ aiAgentMode: "off" }).where(eq(s.channels.id, "ch_m"));
     const sent: string[] = [];
     const base = { userId: "u1", now: new Date(), sleep: async () => undefined };
     await expect(
-      manual.approveDraft({ ...base, organizationId: ORG, draftId: id, sendBubble: async (p) => void sent.push(p.text) }),
+      manual.approveDraft({ ...base, organizationId: ORG, draftId: id, sendBubble: async (p) => { sent.push(p.text); return { status: "sent" as const }; } }),
     ).rejects.toBeInstanceOf(manual.DraftNotAvailableError);
     expect(sent).toEqual([]);
     // Lo que hace setChannelAgentMode(off): los pendientes del canal quedan obsoletos (solo de esa org).
