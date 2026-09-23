@@ -218,6 +218,46 @@ describe.skipIf(!TEST_DATABASE_URL)("acciones manuales del agente (Postgres real
     expect(d.reviewReason).toContain("Se enviaron 1 de 2");
   });
 
+  it("aprobar: si el cliente escribe o un vendedor responde entre burbujas, el resto vuelve a la tarjeta", async () => {
+    for (const [who, expected] of [
+      ["cliente", "El cliente escribió"],
+      ["vendedor", "Un vendedor respondió"],
+    ] as const) {
+      const { sql } = await import("drizzle-orm");
+      await db.execute(sql`truncate ai_agent_drafts, messages cascade`);
+      const id = await draft();
+      const sent: string[] = [];
+      const r = await manual.approveDraft({
+        organizationId: ORG,
+        draftId: id,
+        userId: "u1",
+        now: new Date(),
+        sendBubble: async (p) => {
+          sent.push(p.text);
+          return { status: "sent" as const };
+        },
+        sleep: async () => {
+          await db.insert(s.messages).values({
+            id: `m_${who}_${crypto.randomUUID()}`,
+            organizationId: ORG,
+            conversationId: "cv_m",
+            direction: who === "cliente" ? "in" : "out",
+            source: who === "cliente" ? "contact" : "crm",
+            type: "text",
+            body: "…",
+            status: who === "cliente" ? "received" : "sent",
+            sentByUserId: who === "cliente" ? null : "u1",
+          });
+        },
+      });
+      expect(r.sent).toBe(1);
+      expect(sent).toEqual(["Hola"]);
+      const [d] = await db.select().from(s.aiAgentDrafts).where(eq(s.aiAgentDrafts.id, id));
+      expect(d).toMatchObject({ status: "pendiente", bubbles: ["¿Cuánto mide?"] });
+      expect(d.reviewReason).toContain(expected);
+    }
+  });
+
   it("si la 1ª burbuja falla y ya hay OTRO borrador pendiente, el aprobado queda obsoleto (sin chocar con el índice único)", async () => {
     const id = await draft();
     await expect(

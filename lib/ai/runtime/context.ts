@@ -99,9 +99,22 @@ export async function humanOutboundCount(organizationId: string, conversationId:
   return value;
 }
 
-// ¿Hay un saliente del agente en camino, o fallido SIN CONFIRMAR posterior al corte
-// (última reactivación/encendido)? Entonces el agente no responde encima.
+// ¿Hay un saliente del agente en camino, fallido SIN CONFIRMAR posterior al corte
+// (última reactivación/encendido), o un plan/aprobación todavía "enviando"? Entonces
+// el agente no responde encima (y la conciliación del plan no se mezcla con otra respuesta).
 export async function agentSendUnresolved(organizationId: string, conversationId: string, cut: Date | null): Promise<boolean> {
+  const [plan] = await db
+    .select({ id: aiAgentDrafts.id })
+    .from(aiAgentDrafts)
+    .where(
+      and(
+        eq(aiAgentDrafts.organizationId, organizationId),
+        eq(aiAgentDrafts.conversationId, conversationId),
+        eq(aiAgentDrafts.status, "enviando"),
+      ),
+    )
+    .limit(1);
+  if (plan) return true;
   const [row] = await db
     .select({ id: messages.id })
     .from(messages)
@@ -175,7 +188,7 @@ export async function lastHandledInboundAt(organizationId: string, conversationI
               and u.message_id = ${messages.id}
               and u.outcome in (${sql.join(FINAL_OUTCOMES.map((o) => sql`${o}`), sql`, `)}))
             or exists (select 1 from ${aiAgentDrafts} d where d.organization_id = ${organizationId}
-              and d.trigger_message_id = ${messages.id}))`,
+              and d.trigger_message_id = ${messages.id} and d.status <> 'obsoleto'))`,
       ),
     )
     .orderBy(desc(messages.createdAt))
