@@ -188,13 +188,13 @@ describe.skipIf(!TEST_DATABASE_URL)("mensajes programados (Postgres real)", () =
     it("reintentar: solo fallidos, se manda ya; texto con la ventana cerrada no", async () => {
       const row = await store.createScheduled({ ...base, kind: "text", text: "x", sendAt: at(HOUR) });
       await expect(store.retryScheduled(ORG, row.id, NOW)).rejects.toThrow(/Solo se puede reintentar/);
-      await db.update(s.scheduledMessages).set({ status: "failed", errorCode: "x", errorMessage: "y" }).where(eq(s.scheduledMessages.id, row.id));
+      await db.update(s.scheduledMessages).set({ status: "failed", errorCode: "late", errorMessage: "y" }).where(eq(s.scheduledMessages.id, row.id));
       const retryAt = at(5 * 60_000);
       const retried = await store.retryScheduled(ORG, row.id, retryAt);
       expect(retried).toMatchObject({ status: "scheduled", errorCode: null, errorMessage: null });
       expect(retried.sendAt.getTime()).toBe(retryAt.getTime());
 
-      await db.update(s.scheduledMessages).set({ status: "failed" }).where(eq(s.scheduledMessages.id, row.id));
+      await db.update(s.scheduledMessages).set({ status: "failed", errorCode: "late" }).where(eq(s.scheduledMessages.id, row.id));
       await setWindow(at(-HOUR));
       await expect(store.retryScheduled(ORG, row.id, retryAt)).rejects.toThrow(/ventana de 24 h está cerrada/);
     });
@@ -338,7 +338,7 @@ describe.skipIf(!TEST_DATABASE_URL)("mensajes programados (Postgres real)", () =
       await expect(store.retryScheduled(ORG, job.id)).rejects.toThrow(/desde el mensaje en el chat/);
     });
 
-    it("barrido: un 'sending' atorado más de 10 min pasa a fallido; uno reciente no", async () => {
+    it("barrido: un 'sending' atorado sin saliente pasa a fallido SIN reintento; uno reciente no se toca", async () => {
       const old = await due();
       const fresh = await due();
       await db.update(s.scheduledMessages).set({ status: "sending", updatedAt: new Date(Date.now() - 11 * 60_000) }).where(eq(s.scheduledMessages.id, old.id));
@@ -346,6 +346,64 @@ describe.skipIf(!TEST_DATABASE_URL)("mensajes programados (Postgres real)", () =
       expect(await dispatch.failStuckSending()).toBe(1);
       expect(await row(old.id)).toMatchObject({ status: "failed", errorCode: "interrupted" });
       expect((await row(fresh.id)).status).toBe("sending");
+      // No se sabe si salió: reintentar con otra clave podría duplicarlo.
+      const view = (await store.listScheduledForConversation(ORG, CONV)).find((v) => v.id === old.id);
+      expect(view?.canRetry).toBe(false);
+      await expect(store.retryScheduled(ORG, old.id)).rejects.toThrow(/No se sabe si salió/);
+    });
+
+    it("barrido: si el worker cayó DESPUÉS de enviar, el atorado se concilia como enviado (no se reenvía)", async () => {
+      const job = await due();
+      const claimedAt = new Date(Date.now() - 12 * 60_000);
+      await db.update(s.scheduledMessages).set({ status: "sending", updatedAt: claimedAt }).where(eq(s.scheduledMessages.id, job.id));
+      // El saliente que sí se creó antes de la caída (mismo autor y texto, desde la toma).
+      await db.insert(s.messages).values({
+        id: "m_ya_salio",
+        organizationId: ORG,
+        conversationId: CONV,
+        direction: "out",
+        source: "crm",
+        type: "text",
+        body: "Buenos días",
+        status: "sent",
+        sentByUserId: USER,
+        sentAt: claimedAt,
+      });
+      expect(await dispatch.failStuckSending()).toBe(1);
+      expect(await row(job.id)).toMatchObject({ status: "sent", messageId: "m_ya_salio" });
+    });
+
+    it("barrido: no enlaza el saliente de OTRO programado igual, ni uno muy posterior a la toma", async () => {
+      const a = await due();
+      const b = await due();
+      const claimedAt = new Date(Date.now() - 12 * 60_000);
+      await db.update(s.scheduledMessages).set({ status: "sending", updatedAt: claimedAt }).where(eq(s.scheduledMessages.id, a.id));
+      const out = (id: string, sentAt: Date) => ({
+        id,
+        organizationId: ORG,
+        conversationId: CONV,
+        direction: "out" as const,
+        source: "crm" as const,
+        type: "text" as const,
+        body: "Buenos días",
+        status: "sent" as const,
+        sentByUserId: USER,
+        sentAt,
+      });
+      // El de B (ya enlazado a B) y uno escrito a mano 10 min después: ninguno es de A.
+      await db.insert(s.messages).values([out("m_de_b", claimedAt), out("m_a_mano", new Date(claimedAt.getTime() + 10 * 60_000))]);
+      await db.update(s.scheduledMessages).set({ status: "sent", messageId: "m_de_b" }).where(eq(s.scheduledMessages.id, b.id));
+      expect(await dispatch.failStuckSending()).toBe(1);
+      expect(await row(a.id)).toMatchObject({ status: "failed", errorCode: "interrupted" });
+    });
+
+    it("un error inesperado (pudo haber salido) no ofrece Reintentar; 'late' sí", async () => {
+      const job = await due();
+      await db.update(s.scheduledMessages).set({ status: "failed", errorCode: "unexpected", errorMessage: "x" }).where(eq(s.scheduledMessages.id, job.id));
+      expect((await store.listScheduledForConversation(ORG, CONV))[0].canRetry).toBe(false);
+      await expect(store.retryScheduled(ORG, job.id)).rejects.toThrow(/No se sabe si salió/);
+      await db.update(s.scheduledMessages).set({ errorCode: "late" }).where(eq(s.scheduledMessages.id, job.id));
+      expect((await store.listScheduledForConversation(ORG, CONV))[0].canRetry).toBe(true);
     });
 
     it("dueScheduled: solo los programados vencidos más allá del margen", async () => {

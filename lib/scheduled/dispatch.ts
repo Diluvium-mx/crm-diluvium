@@ -7,7 +7,7 @@
 // 3. Manda con las MISMAS funciones del envío inmediato (outbox, idempotencia,
 //    ventana de 24 h para texto), a nombre de quien lo programó.
 // 4. Cualquier falla queda en la fila (visible con Reintentar); nunca se traga.
-import { and, eq, gt, isNull, lt, or, sql } from "drizzle-orm";
+import { and, asc, eq, gt, gte, isNull, lt, lte, or, sql } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { member, messages, scheduledMessages, user } from "@/lib/db/schema";
 import { MessagingNotConfiguredError } from "@/lib/messaging";
@@ -18,6 +18,8 @@ export type DispatchOutcome = "skipped" | "cancelled" | "sent" | "failed";
 
 /** Tras esto, un "sending" sin terminar se da por interrumpido (el worker murió a la mitad). */
 export const SENDING_STUCK_MS = 10 * 60_000;
+/** Al conciliar un atorado, su saliente debe estar a lo más a esto de la toma. */
+const SENDING_MATCH_WINDOW_MS = 2 * 60_000;
 /**
  * Un programado que se dispara más de esto después de su hora (el worker estuvo
  * detenido) NO se manda solo: el contexto pudo cambiar. Queda fallido y visible;
@@ -35,9 +37,11 @@ function failure(error: unknown): { code: string; message: string } {
   if (error instanceof MessagingNotConfiguredError) {
     return { code: "not_configured", message: "El canal de WhatsApp no está configurado." };
   }
+  // Pudo haber salido (p. ej. falló algo después de llamar al proveedor): no se
+  // ofrece Reintentar (lib/scheduled/rules.ts: isRetryableScheduledError).
   return {
     code: "unexpected",
-    message: "Error inesperado al enviar. Revisa el chat antes de reintentar.",
+    message: "No se sabe si salió. Revisa el chat y, si no llegó, prográmalo de nuevo.",
   };
 }
 
@@ -155,22 +159,71 @@ export async function dispatchScheduled(
   }
 }
 
-/** Barrido: un "sending" atorado (el worker murió a la mitad) pasa a fallido y visible. */
+/**
+ * Barrido: un "sending" atorado (el worker murió a la mitad) se CONCILIA con el
+ * hilo antes de darlo por fallido. Si ya existe el saliente de ese envío (misma
+ * conversación, mismo autor y texto, a partir de la hora en que se tomó), el
+ * proveedor pudo haberlo recibido: se marca "sent" y se enlaza (su burbuja
+ * muestra el estado real y nunca se reintenta desde la franja). Si no existe,
+ * queda fallido SIN Reintentar: no se sabe si salió; reenviarlo usaría otra
+ * clave de idempotencia y podría duplicarlo.
+ */
 export async function failStuckSending(now: Date = new Date()): Promise<number> {
-  const rows = await db
-    .update(scheduledMessages)
-    .set({
-      status: "failed",
-      errorCode: "interrupted",
-      errorMessage: "No se confirmó el envío programado. Revisa el chat antes de reintentar.",
-      updatedAt: now,
-    })
+  const stuck = await db
+    .select()
+    .from(scheduledMessages)
     .where(
       and(
         eq(scheduledMessages.status, "sending"),
         lt(scheduledMessages.updatedAt, new Date(now.getTime() - SENDING_STUCK_MS)),
       ),
     )
-    .returning({ id: scheduledMessages.id });
-  return rows.length;
+    .limit(100);
+  for (const row of stuck) {
+    const claimedAt = row.updatedAt.getTime();
+    const [sent] = await db
+      .select({ id: messages.id })
+      .from(messages)
+      .where(
+        and(
+          eq(messages.organizationId, row.organizationId),
+          eq(messages.conversationId, row.conversationId),
+          eq(messages.direction, "out"),
+          eq(messages.sentByUserId, row.createdByUserId),
+          // Texto: mismo cuerpo. Plantilla: tipo plantilla con el mismo cuerpo
+          // o sin cuerpo (una plantilla sin BODY guarda null en el mensaje).
+          row.kind === "text"
+            ? eq(messages.body, row.body)
+            : and(eq(messages.type, "template"), or(eq(messages.body, row.body), isNull(messages.body))),
+          // sent_at del saliente = la hora en que el worker tomó la fila (el
+          // eco de WhatsApp puede traer la suya, un poco después).
+          gte(messages.sentAt, new Date(claimedAt - 1_000)),
+          lte(messages.sentAt, new Date(claimedAt + SENDING_MATCH_WINDOW_MS)),
+          // Nunca el saliente de OTRO programado (dos iguales del mismo autor).
+          sql`not exists (select 1 from ${scheduledMessages} sm where sm.message_id = ${messages.id})`,
+        ),
+      )
+      .orderBy(asc(messages.sentAt))
+      .limit(1);
+    await db
+      .update(scheduledMessages)
+      .set(
+        sent
+          ? { status: "sent", messageId: sent.id, updatedAt: now }
+          : {
+              status: "failed",
+              errorCode: "interrupted",
+              errorMessage: "No se confirmó el envío programado. Revisa el chat y, si no llegó, prográmalo de nuevo.",
+              updatedAt: now,
+            },
+      )
+      .where(
+        and(
+          eq(scheduledMessages.organizationId, row.organizationId),
+          eq(scheduledMessages.id, row.id),
+          eq(scheduledMessages.status, "sending"),
+        ),
+      );
+  }
+  return stuck.length;
 }
