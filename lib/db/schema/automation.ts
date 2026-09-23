@@ -171,6 +171,13 @@ export const workflowRuns = pgTable(
   (table) => [
     // once_per_conversation y el contexto "ya enviado" del agente.
     index("workflow_runs_conv_workflow_idx").on(table.conversationId, table.workflowId, table.status),
+    // Garantía en la BD de "una vez por conversación" para disparos NO humanos:
+    // dos entrantes seguidos ("tabla", "tabla") no pueden encolar dos corridas
+    // vivas del mismo workflow (el check-then-insert del ejecutor tiene carrera).
+    // Un comando del vendedor sí puede repetir a propósito.
+    uniqueIndex("workflow_runs_once_uidx")
+      .on(table.conversationId, table.workflowId)
+      .where(sql`${table.status} in ('queued', 'running', 'done') and ${table.trigger} <> 'command'`),
     index("workflow_runs_org_created_idx").on(table.organizationId, sql`${table.createdAt} desc`),
   ],
 );

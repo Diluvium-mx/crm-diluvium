@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { commandSchema, keywordsSchema, matchesKeyword, missingMedia, parseCommand, stepPayloadSchema, stepsSchema } from "./steps";
+import { commandSchema, keywordsSchema, matchesKeyword, missingMedia, parseCommand, stepPayloadSchema, stepsSchema, stripUnresolvedVariables, unknownVariables } from "./steps";
 
 describe("stepPayloadSchema", () => {
   it("acepta cada tipo de paso", () => {
@@ -11,7 +11,7 @@ describe("stepPayloadSchema", () => {
   it("rechaza etapa desconocida, espera fuera de rango y texto vacío", () => {
     expect(() => stepPayloadSchema.parse({ kind: "set_stage", stage: "ganado" })).toThrow();
     expect(() => stepPayloadSchema.parse({ kind: "wait", seconds: 0 })).toThrow();
-    expect(() => stepPayloadSchema.parse({ kind: "wait", seconds: 31 })).toThrow();
+    expect(() => stepPayloadSchema.parse({ kind: "wait", seconds: 11 })).toThrow();
     expect(() => stepPayloadSchema.parse({ kind: "send_text", text: "   " })).toThrow();
     expect(() => stepPayloadSchema.parse({ kind: "explode" })).toThrow();
   });
@@ -50,5 +50,14 @@ describe("comandos y palabras clave", () => {
     expect(matchesKeyword("¿tienen tapones?", ["tapón"])).toBeNull();
     expect(matchesKeyword("establa", ["tabla"])).toBeNull();
     expect(matchesKeyword("quiero la tabla de tamaños", ["tabla de tamaños"])).toBe("tabla de tamaños");
+  });
+  it("gana la palabra clave más larga y un mensaje largo no dispara (evita mandar contenido que nadie pidió)", () => {
+    expect(matchesKeyword("me mandas el video a la medida?", ["video", "video a la medida"])).toBe("video a la medida");
+    expect(matchesKeyword("vi su video en facebook y quería saber cuánto cuesta la compuerta", ["video"])).toBeNull();
+    expect(matchesKeyword("video", ["video"])).toBe("video");
+  });
+  it("variables: solo las conocidas; las sin valor no salen al cliente", () => {
+    expect(unknownVariables("Hola {{nombre}}, total {{monto}} y {{ cosa }}")).toEqual(["cosa"]);
+    expect(stripUnresolvedVariables("Tu total es {{monto}} pesos")).toBe("Tu total es pesos");
   });
 });

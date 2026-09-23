@@ -306,8 +306,10 @@ export function Composer({
             // nada. Para mandar un texto que empiece con "/", Esc y luego Enter.
             if (slash && event.key === "Enter" && !event.shiftKey && matches.length === 0) {
               event.preventDefault();
-              // Sin fragmentos pero con UN comando que coincide: se ejecuta.
-              if (commandMatches.length === 1) runCommand(commandMatches[0].command);
+              // Solo si el texto es EXACTAMENTE el comando ("/tabla"), nunca por prefijo:
+              // "/t" + Enter no debe mandar nada al cliente.
+              const exact = commands.find((c) => c.command === draft.trim().toLowerCase());
+              if (exact) runCommand(exact.command);
               return;
             }
             if (slash && matches.length > 0) {

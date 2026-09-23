@@ -178,7 +178,7 @@ export function AutomatizacionPanel({
                           <IconBtn label="Bajar" onClick={() => void move(i, 1)} disabled={i === items.length - 1}>
                             <ArrowDown className="size-4" />
                           </IconBtn>
-                          <IconBtn label="Probar" onClick={() => setTesting(w)} disabled={!w.enabled}>
+                          <IconBtn label="Probar" onClick={() => setTesting(w)} disabled={w.steps.length === 0 || w.missingMedia.length > 0}>
                             <Play className="size-4" />
                           </IconBtn>
                           <IconBtn label="Editar" onClick={() => setDraft(toDraft(w))}>
@@ -245,10 +245,7 @@ function TestDialog({ workflow, onClose, onDone }: { workflow: WorkflowView; onC
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   if (options === null) {
-    void listConversationsForTest().then((list) => {
-      setOptions(list);
-      if (list[0]) setConversationId(list[0].id);
-    });
+    void listConversationsForTest().then(setOptions);
   }
   async function run() {
     setBusy(true);
@@ -264,6 +261,7 @@ function TestDialog({ workflow, onClose, onDone }: { workflow: WorkflowView; onC
         <h3 className="text-sm font-semibold">Probar “{workflow.name}”</h3>
         <p className="text-xs text-muted-foreground">Se ejecuta como comando del vendedor en la conversación elegida (manda mensajes reales por WhatsApp).</p>
         <select value={conversationId} onChange={(e) => setConversationId(e.target.value)} className="w-full rounded-md border bg-background px-3 py-2 text-sm">
+          <option value="">— elige la conversación (canal · contacto · teléfono) —</option>
           {(options ?? []).map((o) => (
             <option key={o.id} value={o.id}>
               {o.label}

@@ -55,7 +55,7 @@ describe.skipIf(!TEST_DATABASE_URL)("disparadores de workflows", () => {
   it("palabra clave del cliente: dispara UN solo workflow (el primero por posición) y deja rastro", async () => {
     await wf("w_tapones", { triggerKeywords: ["tapones", "tapón"], position: 1 });
     await wf("w_tabla", { triggerKeywords: ["tabla"], position: 0 });
-    const r = await inbound("m1", "¿Me mandan la TABLA y los tapones?");
+    const r = await inbound("m1", "¿Me mandan la TABLA y tapones?");
     expect(r).toMatchObject({ status: "queued" });
     const all = await runs();
     expect(all).toHaveLength(1);
