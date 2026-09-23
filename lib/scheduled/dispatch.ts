@@ -148,9 +148,6 @@ export async function dispatchScheduled(
       .update(scheduledMessages)
       .set({ status: "sent", messageId: outcome.messageId, updatedAt: new Date() })
       .where(eq(scheduledMessages.id, row.id));
-    // Un programado es un envío humano: pausa al Agente IA en esa conversación.
-    await pauseAgentOnManualMessage(row.conversationId);
-    return "sent";
   } catch (error) {
     const { code, message } = failure(error);
     if (code === "unexpected") console.error(`[scheduled] ${row.id}: error inesperado al enviar`, error);
@@ -160,6 +157,10 @@ export async function dispatchScheduled(
       .where(eq(scheduledMessages.id, row.id));
     return "failed";
   }
+  // Un programado es un envío humano: pausa al Agente IA en esa conversación.
+  // Fuera del try: el envío ya quedó "sent" y nada del agente puede marcarlo fallido.
+  await pauseAgentOnManualMessage(row.conversationId);
+  return "sent";
 }
 
 /**
