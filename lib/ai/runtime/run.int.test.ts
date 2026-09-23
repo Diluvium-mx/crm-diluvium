@@ -118,7 +118,7 @@ describe.skipIf(!TEST_DATABASE_URL)("runtime del Agente IA (Postgres real)", () 
   }
 
   type Script = {
-    filter?: string; // JSON de decisión
+    filter?: string; // JSON de la limpieza del anuncio (Luna)
     brain?: string[]; // una salida por llamada al cerebro
     onBrain?: (call: number) => Promise<void>; // efecto durante la generación
     onSleep?: () => Promise<void>; // efecto durante la pausa entre burbujas
@@ -134,7 +134,7 @@ describe.skipIf(!TEST_DATABASE_URL)("runtime del Agente IA (Postgres real)", () 
           modelId,
           provider: "openai",
           providerModelId: modelId,
-          text: script.filter ?? '{"decision":"necesita_cerebro"}',
+          text: script.filter ?? '{"mensaje":"Hola","anuncio":"Compuertas contra inundaciones"}',
           usage: { inputTokens: 300, outputTokens: 20, cacheReadTokens: 0, cacheWriteTokens: 0 },
           finishReason: "stop",
         };
@@ -230,15 +230,16 @@ describe.skipIf(!TEST_DATABASE_URL)("runtime del Agente IA (Postgres real)", () 
     const { deps, calls, sleeps } = makeDeps();
     const r = await run.runAgent(JOB, deps);
     expect(r).toEqual({ kind: "sent", bubbles: 2 });
-    expect(calls.map((c) => c.kind)).toEqual(["filtro", "cerebro"]);
+    // Sin anuncio no hay limpieza: el filtro no se llama (ni frena nada).
+    expect(calls.map((c) => c.kind)).toEqual(["cerebro"]);
     // El cerebro recibió los 3 pendientes juntos, en el último turno del cliente.
-    const last = calls[1].input.messages.at(-1)!;
+    const last = calls[0].input.messages.at(-1)!;
     expect(JSON.stringify(last.content)).toContain("Hola");
     expect(JSON.stringify(last.content)).toContain("es para una cochera");
     // System = Goal + FAQs (+ sufijo del CRM).
-    expect(calls[1].input.system.startsWith(GOAL)).toBe(true);
-    expect(calls[1].input.system).toContain("P: ¿Precio?\nR: $5,500 MXN");
-    // Dos burbujas del agente con UNA pausa de 1.5 s entre ellas.
+    expect(calls[0].input.system.startsWith(GOAL)).toBe(true);
+    expect(calls[0].input.system).toContain("P: ¿Precio?\nR: $5,500 MXN");
+    // Información y pregunta como 2 mensajes con UNA pausa corta (1.5 s) entre ellos.
     const outs = await agentOuts();
     expect(outs.map((m) => m.body)).toEqual(["Claro, cuesta $5,500 MXN.", "¿Cuánto mide tu entrada?"]);
     expect(outs.every((m) => m.sentByUserId === null)).toBe(true);
@@ -247,10 +248,7 @@ describe.skipIf(!TEST_DATABASE_URL)("runtime del Agente IA (Postgres real)", () 
     // Uso/costo por llamada.
     const u = await usage();
     expect(u.map((x) => [x.stage, x.outcome])).toEqual(
-      expect.arrayContaining([
-        ["filtro", "passed"],
-        ["cerebro", "sent"],
-      ]),
+      expect.arrayContaining([["cerebro", "sent"]]),
     );
     const brainRow = u.find((x) => x.stage === "cerebro")!;
     // 600 sin caché × $2 + 11,400 caché × $0.2 + 60 × $10 = 1,200 + 2,280 + 600 = 4,080 µ$
@@ -277,8 +275,8 @@ describe.skipIf(!TEST_DATABASE_URL)("runtime del Agente IA (Postgres real)", () 
     });
     const r = await run.runAgent(JOB, deps);
     expect(r).toEqual({ kind: "sent", bubbles: 1 });
-    expect(calls.map((c) => c.kind)).toEqual(["filtro", "cerebro", "filtro", "cerebro"]);
-    expect(JSON.stringify(calls[3].input.messages)).toContain("¿envían a Monterrey?");
+    expect(calls.map((c) => c.kind)).toEqual(["cerebro", "cerebro"]);
+    expect(JSON.stringify(calls[1].input.messages)).toContain("¿envían a Monterrey?");
     expect((await agentOuts()).map((m) => m.body)).toEqual(["Cuesta $5,500 y sí enviamos a Monterrey."]);
     const outcomes = (await usage()).filter((x) => x.stage === "cerebro").map((x) => x.outcome);
     expect(outcomes.sort()).toEqual(["discarded_stale", "sent"]);
@@ -358,30 +356,26 @@ describe.skipIf(!TEST_DATABASE_URL)("runtime del Agente IA (Postgres real)", () 
     expect(calls).toHaveLength(0);
   });
 
-  it("freno anti-bucle: 30 respuestas en la última hora → no responde, avisa UNA vez y NO pausa ni etiqueta", async () => {
+  it("sin freno anti-bucle: aunque el agente lleve 40 respuestas en la hora, contesta (sin pausa ni etiqueta)", async () => {
     await db.insert(s.aiUsage).values(
-      Array.from({ length: 30 }, (_, i) => ({
+      Array.from({ length: 40 }, (_, i) => ({
         id: `u${i}`,
         organizationId: ORG,
         conversationId: CONV,
         stage: "cerebro" as const,
         provider: "anthropic",
         modelId: "claude-sonnet-5",
+        inputTokens: 100,
         latencyMs: 1,
         outcome: "sent",
         createdAt: ago((i + 1) * 60_000),
       })),
     );
     await msg({ direction: "in", body: "hola?", at: ago(10_000) });
-    const { deps, calls } = makeDeps();
-    expect(await run.runAgent(JOB, deps)).toEqual({ kind: "skipped", reason: "anti_bucle" });
-    expect(await run.runAgent(JOB, deps)).toEqual({ kind: "skipped", reason: "anti_bucle" }); // el barrido lo reintenta
-    expect(calls).toHaveLength(0);
+    expect(await run.runAgent(JOB, makeDeps().deps)).toEqual({ kind: "sent", bubbles: 2 });
     expect((await conv()).agentState).toBe("activo");
     expect(await contactTags()).not.toContain("revisión humana");
-    const n = await notices();
-    expect(n.map((x) => x.kind)).toEqual(["anti_bucle"]);
-    expect(n[0].body).toContain("30 respuestas por hora");
+    expect(await notices()).toEqual([]);
   });
 
   it("los timeouts de las 3 rondas (filtro + cerebro) caben en el candado de la corrida", async () => {
@@ -389,48 +383,78 @@ describe.skipIf(!TEST_DATABASE_URL)("runtime del Agente IA (Postgres real)", () 
     expect(run.MAX_ROUNDS * (run.FILTER_TIMEOUT_MS + run.BRAIN_TIMEOUT_MS)).toBeLessThan(LOCK_TTL_MS);
   });
 
-  it("cliente que escribe sin parar: nunca bucle inmediato y el tope de gasto lo frena con aviso (sin pausar)", async () => {
-    await db.update(s.aiConfig).set({ antiLoopMaxPerHour: 10 }).where(eq(s.aiConfig.organizationId, ORG));
+  it("cliente que escribe sin parar: nunca bucle inmediato (vuelve al debounce ≥ 15 s) y contesta cuando hace una pausa", async () => {
     await msg({ direction: "in", body: "hola", at: ago(120_000) }); // tope de 60 s ya vencido
-    const { deps, calls } = makeDeps({
+    const writing = makeDeps({
       onBrain: async () => {
         await msg({ direction: "in", body: "¿y?", at: new Date() }); // entra algo en cada generación
       },
     });
-    const results: import("./run").RunResult[] = [];
-    for (let i = 0; i < 12; i++) {
-      const r = await run.runAgent(JOB, deps);
-      results.push(r);
-      if (r.kind !== "reschedule") break;
-      expect(r.delayMs).toBeGreaterThanOrEqual(15_000); // nunca 0 aunque el tope duro venció
-    }
-    expect(results.at(-1)).toEqual({ kind: "skipped", reason: "tope_de_llamadas" });
-    // 40 llamadas/h (antiLoop 10 × 4) + a lo más una corrida (3 rondas × 2) de holgura.
-    expect(calls.length).toBeLessThanOrEqual(46);
+    const r = await run.runAgent(JOB, writing.deps);
+    expect(r.kind).toBe("reschedule");
+    if (r.kind === "reschedule") expect(r.delayMs).toBeGreaterThanOrEqual(15_000); // nunca 0
+    expect(writing.calls).toHaveLength(run.MAX_ROUNDS); // acotado por corrida
     expect(await agentOuts()).toEqual([]);
+    // El cliente para de escribir: la siguiente corrida contesta TODO.
+    expect(await run.runAgent(JOB, makeDeps().deps)).toEqual({ kind: "sent", bubbles: 2 });
     expect((await conv()).agentState).toBe("activo");
-    expect(await contactTags()).not.toContain("revisión humana");
-    expect((await notices()).map((n) => n.kind)).toEqual(["anti_bucle"]);
   });
 
-  it("filtro 'pasar a humano' → el agente contesta, avisa al vendedor y SIGUE activo (sin etiqueta ni pausa)", async () => {
-    await msg({ direction: "in", body: "quiero hablar con una persona", at: ago(10_000) });
-    const { deps, calls } = makeDeps({
-      filter: '{"decision":"pasar_a_humano","motivo":"pide hablar con una persona"}',
-      brain: ["Claro, en un momento te atiende un asesor."],
+  it("cliente que llega por anuncio: Luna limpia la metadata, el cerebro recibe solo lo que escribió y la limpieza se guarda", async () => {
+    const adMsg = await msg({
+      direction: "in",
+      body: "Hola\nbody: Compuertas contra inundaciones desde $5,500\nctwaClid: ARsecreto\nsourceType: ad",
+      at: ago(10_000),
     });
-    expect(await run.runAgent(JOB, deps)).toEqual({ kind: "sent", bubbles: 1 });
+    await db
+      .update(s.messages)
+      .set({ adReferral: { headline: "Compuertas contra inundaciones", ctwa_clid: "ARsecreto" } })
+      .where(eq(s.messages.id, adMsg));
+    const { deps, calls } = makeDeps({ filter: '{"mensaje":"Hola","anuncio":"Compuertas contra inundaciones desde $5,500"}' });
+    expect(await run.runAgent(JOB, deps)).toEqual({ kind: "sent", bubbles: 2 });
     expect(calls.map((c) => c.kind)).toEqual(["filtro", "cerebro"]);
-    expect((await agentOuts()).map((m) => m.body)).toEqual(["Claro, en un momento te atiende un asesor."]);
-    expect((await usage()).find((u) => u.stage === "filtro")).toMatchObject({ filterDecision: "pasar_a_humano", outcome: "passed" });
-    expect((await conv()).agentState).toBe("activo");
-    expect(await contactTags()).not.toContain("pasar a humano");
-    const [n] = await notices();
-    expect(n).toMatchObject({ kind: "pasar_a_humano" });
-    expect(n.body).toContain("pide hablar con una persona");
-    // Sigue activo hasta que un vendedor conteste: el siguiente mensaje se contesta.
-    await msg({ direction: "in", body: "¿siguen ahí?", at: new Date(Date.now() + 1_000) });
-    expect((await run.runAgent(JOB, makeDeps().deps)).kind).toBe("sent");
+    expect(JSON.stringify(calls[0].input.messages)).not.toContain("ARsecreto"); // ids de rastreo nunca van al modelo
+    const brainInput = JSON.stringify(calls[1].input.messages);
+    expect(brainInput).not.toContain("ctwaClid");
+    expect(brainInput).not.toContain("desde $5,500");
+    expect(calls[1].input.messages[0]).toMatchObject({ role: "user", content: [{ type: "text", text: "Hola" }] });
+    const [m] = await db.select().from(s.messages).where(eq(s.messages.id, adMsg));
+    expect((m.metadata as Record<string, unknown>).agenteAnuncio).toEqual({
+      mensaje: "Hola",
+      anuncio: "Compuertas contra inundaciones desde $5,500",
+    });
+    expect((await usage()).find((u) => u.stage === "filtro")).toMatchObject({ filterDecision: "limpieza_anuncio", outcome: "passed" });
+    // La siguiente respuesta reutiliza la limpieza guardada (no vuelve a pagar a Luna).
+    await msg({ direction: "in", body: "¿envían a Culiacán?", at: new Date(Date.now() + 1_000) });
+    const again = makeDeps();
+    expect((await run.runAgent(JOB, again.deps)).kind).toBe("sent");
+    expect(again.calls.map((c) => c.kind)).toEqual(["cerebro"]);
+  });
+
+  it("si Luna falla al limpiar el anuncio, el cliente igual recibe respuesta (respaldo sin modelo)", async () => {
+    await msg({ direction: "in", body: "Quiero info\nbody: Texto del anuncio\nctwaClid: X1", at: ago(10_000) });
+    const { deps, calls } = makeDeps();
+    const real = deps.callModel;
+    deps.callModel = async (id, input) => {
+      if (input.system === filter.FILTER_SYSTEM) throw new Error("Luna caída");
+      return real(id, input);
+    };
+    expect((await run.runAgent(JOB, deps)).kind).toBe("sent");
+    expect(calls.map((c) => c.kind)).toEqual(["cerebro"]);
+    expect(JSON.stringify(calls[0].input.messages)).not.toContain("ctwaClid");
+    expect(JSON.stringify(calls[0].input.messages)).toContain("Quiero info");
+  });
+
+  it("lee TODA la conversación (no solo los últimos 20 mensajes)", async () => {
+    for (let i = 0; i < 40; i++) {
+      await msg({ direction: i % 2 ? "out" : "in", source: i % 2 ? "ai_agent" : undefined, body: `m${i}-texto`, at: ago((60 - i) * 60_000) });
+    }
+    await msg({ direction: "in", body: "¿y el envío?", at: ago(10_000) });
+    const { deps, calls } = makeDeps();
+    expect((await run.runAgent(JOB, deps)).kind).toBe("sent");
+    const seen = JSON.stringify(calls[0].input.messages);
+    expect(seen).toContain("m0-texto");
+    expect(seen).toContain("m39-texto");
   });
 
   it("el cerebro también puede pedir a un vendedor ([TRANSFERIR]): la señal no llega al cliente y se avisa", async () => {
@@ -450,11 +474,18 @@ describe.skipIf(!TEST_DATABASE_URL)("runtime del Agente IA (Postgres real)", () 
   });
 
   it("idempotencia: un entrante ya atendido no se vuelve a procesar", async () => {
-    await msg({ direction: "in", body: "compra seguidores baratos", at: ago(10_000) });
-    const { deps, calls } = makeDeps({ filter: '{"decision":"spam"}' });
-    expect(await run.runAgent(JOB, deps)).toEqual({ kind: "skipped", reason: "spam" });
-    expect(await run.runAgent(JOB, deps)).toEqual({ kind: "noop", reason: "ya_atendido" });
+    await msg({ direction: "in", body: "hola", at: ago(10_000) });
+    const { deps, calls } = makeDeps();
+    expect((await run.runAgent(JOB, deps)).kind).toBe("sent");
+    expect(await run.runAgent(JOB, deps)).toEqual({ kind: "noop", reason: "sin_pendientes" });
     expect(calls).toHaveLength(1);
+  });
+
+  it("responde TODO: un 'gracias' o un 'ok' también se contesta (el filtro ya no salta mensajes)", async () => {
+    await msg({ direction: "in", body: "ok gracias", at: ago(10_000) });
+    const { deps, calls } = makeDeps({ brain: ["¡Con gusto! Aquí estoy si necesitas algo más."] });
+    expect(await run.runAgent(JOB, deps)).toEqual({ kind: "sent", bubbles: 1 });
+    expect(calls.map((c) => c.kind)).toEqual(["cerebro"]);
   });
 
   it("precio editado por la org (sin redeploy) → cost_usd lo usa", async () => {
@@ -482,14 +513,13 @@ describe.skipIf(!TEST_DATABASE_URL)("runtime del Agente IA (Postgres real)", () 
     const { deps, calls, images } = makeDeps();
     await run.runAgent(JOB, deps);
     expect(images).toEqual(["media/k1.jpg"]);
-    expect(JSON.stringify(calls[1].input.messages)).toContain("https://bucket.test/media/k1.jpg");
+    expect(JSON.stringify(calls[0].input.messages)).toContain("https://bucket.test/media/k1.jpg");
   });
 
   it("barrido: recoge un entrante sin atender y sin job; ignora el ya atendido", async () => {
     await msg({ direction: "in", body: "hola", at: ago(120_000) });
     expect(await sweep.findOrphanConversations(new Date())).toEqual([{ conversationId: CONV, organizationId: ORG }]);
-    const { deps } = makeDeps({ filter: '{"decision":"lead_no_sigue"}' });
-    await run.runAgent(JOB, deps);
+    await run.runAgent(JOB, makeDeps().deps);
     expect(await sweep.findOrphanConversations(new Date())).toEqual([]);
   });
 
@@ -503,9 +533,9 @@ describe.skipIf(!TEST_DATABASE_URL)("runtime del Agente IA (Postgres real)", () 
   });
 
   // ── Revisión adversarial (P1/P2) ─────────────────────────────────────────
-  it("un 'gracias' que el filtro saltó días atrás no rompe el debounce del siguiente mensaje", async () => {
+  it("un mensaje viejo ya atendido no rompe el debounce del siguiente mensaje", async () => {
     await msg({ direction: "in", body: "gracias", at: ago(3 * 86_400_000) });
-    await run.runAgent(JOB, makeDeps({ filter: '{"decision":"lead_no_sigue"}' }).deps);
+    await run.runAgent(JOB, makeDeps().deps);
     const at = new Date();
     await msg({ direction: "in", body: "Hola, quiero info", at });
     // Antes: firstPendingAt = el "gracias" viejo → tope vencido → 0 (dispara al instante).
@@ -583,7 +613,7 @@ describe.skipIf(!TEST_DATABASE_URL)("runtime del Agente IA (Postgres real)", () 
     expect((await agentOuts()).map((m) => m.body)).toEqual(["Claro, cuesta $5,500 MXN."]);
     expect((await conv()).agentState).toBe("pausado_humano");
     const brain = (await usage()).find((u) => u.stage === "cerebro")!;
-    expect(brain.error).toContain("detenido tras 1 burbuja(s): respuesta_humana");
+    expect(brain.error).toContain("detenido tras 1 mensaje(s): respuesta_humana");
   });
 
   it("AUTO: si el CLIENTE escribe en la pausa entre burbujas, la 2ª no sale y su mensaje queda pendiente", async () => {
@@ -599,7 +629,7 @@ describe.skipIf(!TEST_DATABASE_URL)("runtime del Agente IA (Postgres real)", () 
     const { pendingInbound } = await import("./context");
     expect((await pendingInbound(ORG, CONV)).map((m) => m.id)).toEqual([nuevo]); // la siguiente corrida lo atiende
     const brain = (await usage()).find((u) => u.stage === "cerebro")!;
-    expect(brain.error).toContain("detenido tras 1 burbuja(s): entrante_nuevo");
+    expect(brain.error).toContain("detenido tras 1 mensaje(s): entrante_nuevo");
   });
 
   // ── Envíos del agente sin confirmar o fallidos (re-revisiones de Codex) ────
@@ -632,7 +662,7 @@ describe.skipIf(!TEST_DATABASE_URL)("runtime del Agente IA (Postgres real)", () 
     };
     expect(await run.runAgent(JOB, deps)).toEqual({ kind: "sent", bubbles: 1 });
     const brain = (await usage()).find((u) => u.stage === "cerebro")!;
-    expect(brain).toMatchObject({ outcome: "sent", error: "1 burbuja(s) sin confirmar; 1 sin enviar (aviso)" });
+    expect(brain).toMatchObject({ outcome: "sent", error: "1 mensaje(s) sin confirmar; 1 sin enviar (aviso)" });
     expect((await db.select().from(s.aiAgentDrafts)).map((d) => d.status)).toEqual(["enviado"]);
     const [n] = await notices();
     expect(n).toMatchObject({ kind: "envio" });
@@ -711,7 +741,7 @@ describe.skipIf(!TEST_DATABASE_URL)("runtime del Agente IA (Postgres real)", () 
     expect(await run.runAgent(JOB, deps)).toEqual({ kind: "sent", bubbles: 1 });
     expect((await db.select().from(s.aiAgentDrafts)).map((d) => d.status)).toEqual(["enviado"]);
     const [aviso] = await notices();
-    expect(aviso.body).toContain("Se enviaron 1 de 2");
+    expect(aviso.body).toContain("Salieron 1 de 2");
     expect(aviso.body).toContain("¿Cuánto mide tu entrada?");
     expect((await conv()).agentState).toBe("activo");
   });
@@ -837,8 +867,7 @@ describe.skipIf(!TEST_DATABASE_URL)("runtime del Agente IA (Postgres real)", () 
   });
 
 
-  it("presupuesto diario de la organización: al llegar, no llama modelos (y no pausa la conversación)", async () => {
-    await db.update(s.aiConfig).set({ dailyBudgetUsd: 1 }).where(eq(s.aiConfig.organizationId, ORG));
+  it("sin presupuesto diario: con mucho gasto en las últimas 24 h igual contesta", async () => {
     await db.insert(s.aiUsage).values({
       id: "u_gasto",
       organizationId: ORG,
@@ -848,18 +877,13 @@ describe.skipIf(!TEST_DATABASE_URL)("runtime del Agente IA (Postgres real)", () 
       modelId: "claude-sonnet-5",
       inputTokens: 100,
       latencyMs: 1,
-      costUsd: 1.25,
+      costUsd: 500,
       outcome: "sent",
       createdAt: ago(3 * 3_600_000),
     });
     await msg({ direction: "in", body: "¿precio?", at: ago(10_000) });
-    const { deps, calls } = makeDeps();
-    expect(await run.runAgent(JOB, deps)).toEqual({ kind: "skipped", reason: "presupuesto_diario" });
-    expect(calls).toHaveLength(0);
-    expect((await conv()).agentState).toBe("activo");
-    // Gasto de hace más de 24 h ya no cuenta.
-    await db.update(s.aiUsage).set({ createdAt: ago(25 * 3_600_000) }).where(eq(s.aiUsage.id, "u_gasto"));
     expect((await run.runAgent(JOB, makeDeps().deps)).kind).toBe("sent");
+    expect(await notices()).toEqual([]);
   });
 
   it("encender el canal es corte: una respuesta humana de ANTES no pausa la conversación", async () => {
@@ -890,27 +914,16 @@ describe.skipIf(!TEST_DATABASE_URL)("runtime del Agente IA (Postgres real)", () 
     expect(rows.at(-1)!.body).toBe("spam 59");
   });
 
-  // ── Guardia de salida: la respuesta SIEMPRE sale; solo deja un aviso ─────
-  const guardNotices = async () => (await notices()).filter((n) => n.kind === "guardia").map((n) => n.body);
+  // ── Sin guardia: nada se interpone entre el agente y el cliente ──────────
 
-  it("un monto que no está en el Goal ni en las FAQs SE ENVÍA y deja un aviso (sin pausa, sin etiqueta, sin borrador)", async () => {
+  it("sin guardia: la respuesta del cerebro sale tal cual (montos, enlaces, promociones), sin avisos ni pausa", async () => {
     await msg({ direction: "in", body: "¿me haces descuento?", at: ago(10_000) });
-    const { deps } = makeDeps({ brain: ["Va, te la dejo en $4,200 si confirmas hoy."] });
-    expect(await run.runAgent(JOB, deps)).toEqual({ kind: "sent", bubbles: 1 });
-    expect((await agentOuts()).map((m) => m.body)).toEqual(["Va, te la dejo en $4,200 si confirmas hoy."]);
-    expect(await guardNotices()).toEqual([
-      "Revisa la respuesta del agente: Monto que no está en el Goal ni en las FAQs ni tiene desglose correcto: $4,200",
-    ]);
-    expect((await usage()).find((u) => u.stage === "cerebro")).toMatchObject({ outcome: "sent", error: null });
+    const text = "Va, te la dejo en $4,200 con 10% de descuento: https://pagos.ejemplo.com/x";
+    expect(await run.runAgent(JOB, makeDeps({ brain: [text] }).deps)).toEqual({ kind: "sent", bubbles: 1 });
+    expect((await agentOuts()).map((m) => m.body)).toEqual([text]);
+    expect(await notices()).toEqual([]);
     expect(await db.select().from(s.aiAgentDrafts)).toEqual([]);
-    expect(await contactTags()).not.toContain("revisión humana");
     expect((await conv()).agentState).toBe("activo");
-    // La Bandeja lo lee en el hilo (misma lectura que usa la UI).
-    const { loadConversationAgent } = await import("./manual");
-    expect((await loadConversationAgent(ORG, CONV))!.notices.map((n) => n.kind)).toEqual(["guardia"]);
-    // El siguiente mensaje del cliente se contesta normal.
-    await msg({ direction: "in", body: "¿entonces?", at: new Date(Date.now() + 1_000) });
-    expect((await run.runAgent(JOB, makeDeps({ brain: ["Sí, queda en $5,500."] }).deps)).kind).toBe("sent");
   });
 
   it("el cerebro recibe el Goal completo + TODAS las FAQs activas + instrucciones del CRM sin reglas de montos", async () => {
@@ -925,80 +938,5 @@ describe.skipIf(!TEST_DATABASE_URL)("runtime del Agente IA (Postgres real)", () 
     expect(brain.input.system).not.toContain("desglos");
     const [cfg] = await db.select().from(s.aiConfig).where(eq(s.aiConfig.organizationId, ORG));
     expect(cfg.goal).toBe(GOAL);
-  });
-
-  it("total SIN desglose → sale con aviso; con desglose correcto → sale sin aviso", async () => {
-    await msg({ direction: "in", body: "¿y dos?", at: ago(10_000) });
-    expect(await run.runAgent(JOB, makeDeps({ brain: ["Las dos te salen en $11,000 MXN."] }).deps)).toEqual({ kind: "sent", bubbles: 1 });
-    expect(await guardNotices()).toHaveLength(1);
-    await msg({ direction: "in", body: "¿entonces?", at: new Date(Date.now() + 1_000) });
-    expect(await run.runAgent(JOB, makeDeps({ brain: ["Serían 2 × $5,500 = $11,000 MXN."] }).deps)).toEqual({ kind: "sent", bubbles: 1 });
-    expect(await guardNotices()).toHaveLength(1);
-  });
-
-  it("desglose con cuentas mal hechas → sale y el aviso dice por qué", async () => {
-    await msg({ direction: "in", body: "¿cuánto las dos?", at: ago(10_000) });
-    expect(await run.runAgent(JOB, makeDeps({ brain: ["Son 2 × $5,500 = $10,000."] }).deps)).toEqual({ kind: "sent", bubbles: 1 });
-    const [aviso] = await guardNotices();
-    expect(aviso).toContain("Desglose que no cuadra");
-    expect(aviso).toContain("2 × $5,500 = $10,000");
-  });
-
-  it("descuento inventado → sale con aviso; anticipo escrito tal cual en la base → sin aviso", async () => {
-    await db.insert(s.aiKnowledge).values({
-      id: "k_anticipo",
-      organizationId: ORG,
-      ghlId: "g_anticipo",
-      question: "¿Anticipo de medida especial?",
-      answer: "Anticipo de $3,500 y liquidación de $3,500 antes del envío.",
-      position: 3,
-    });
-    await msg({ direction: "in", body: "¿me la dejas más barata?", at: ago(20_000) });
-    expect((await run.runAgent(JOB, makeDeps({ brain: ["Te la dejo en $5,000."] }).deps)).kind).toBe("sent");
-    expect(await guardNotices()).toHaveLength(1);
-    await msg({ direction: "in", body: "¿y el anticipo?", at: new Date(Date.now() + 1_000) });
-    expect(await run.runAgent(JOB, makeDeps({ brain: ["El anticipo es de $3,500."] }).deps)).toEqual({ kind: "sent", bubbles: 1 });
-    expect(await guardNotices()).toHaveLength(1);
-  });
-
-  it("promoción inventada (10%) → sale con aviso; meses sin intereses escritos en la base → sin aviso", async () => {
-    await db.insert(s.aiKnowledge).values({
-      id: "k_msi",
-      organizationId: ORG,
-      ghlId: "g_msi",
-      question: "¿Meses sin intereses?",
-      answer: "Sí, a 6 meses sin intereses con tarjeta participante.",
-      position: 3,
-    });
-    await msg({ direction: "in", body: "¿algún descuento?", at: ago(20_000) });
-    expect((await run.runAgent(JOB, makeDeps({ brain: ["Te doy 10% de descuento si pagas hoy."] }).deps)).kind).toBe("sent");
-    expect(await guardNotices()).toEqual(["Revisa la respuesta del agente: Promoción que no está en el Goal ni en las FAQs: 10%"]);
-    await msg({ direction: "in", body: "¿y a meses?", at: new Date(Date.now() + 1_000) });
-    expect(await run.runAgent(JOB, makeDeps({ brain: ["Sí, puedes pagar a 6 meses sin intereses."] }).deps)).toEqual({ kind: "sent", bubbles: 1 });
-    expect(await guardNotices()).toHaveLength(1);
-  });
-
-  it("un enlace fuera de la lista sale con aviso; diluvium.com.mx sin aviso", async () => {
-    await msg({ direction: "in", body: "¿dónde pago?", at: ago(10_000) });
-    expect(await run.runAgent(JOB, makeDeps({ brain: ["Paga aquí: https://pagos-rapidos.com/x"] }).deps)).toEqual({ kind: "sent", bubbles: 1 });
-    expect(await guardNotices()).toEqual(["Revisa la respuesta del agente: Enlace fuera de la lista permitida: https://pagos-rapidos.com/x"]);
-    await msg({ direction: "in", body: "¿tienen página?", at: new Date(Date.now() + 1_000) });
-    expect(await run.runAgent(JOB, makeDeps({ brain: ["Sí: https://www.diluvium.com.mx/compuertas"] }).deps)).toEqual({ kind: "sent", bubbles: 1 });
-    expect(await guardNotices()).toHaveLength(1);
-  });
-
-  it("un monto que solo está en una FAQ DESACTIVADA también deja aviso", async () => {
-    await db.insert(s.aiKnowledge).values({
-      id: "k3",
-      organizationId: ORG,
-      ghlId: "g3",
-      question: "¿Promo?",
-      answer: "Solo este mes $4,999",
-      position: 3,
-      enabled: false,
-    });
-    await msg({ direction: "in", body: "¿promo?", at: ago(10_000) });
-    expect((await run.runAgent(JOB, makeDeps({ brain: ["Este mes queda en $4,999."] }).deps)).kind).toBe("sent");
-    expect(await guardNotices()).toHaveLength(1);
   });
 });

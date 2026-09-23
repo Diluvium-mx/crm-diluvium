@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { buildModelMessages, MAX_MESSAGE_CHARS, messageText, toTranscriptLines, type ThreadMessage } from "./transcript";
+import { buildModelMessages, fitHistory, MAX_MESSAGE_CHARS, messageText, type ThreadMessage } from "./transcript";
 
 let n = 0;
 function msg(direction: "in" | "out", body: string | null, extra: Partial<ThreadMessage> = {}): ThreadMessage {
@@ -14,17 +14,6 @@ describe("messageText", () => {
     ).toBe("mira [documento: F.pdf]");
     expect(messageText(msg("out", null, { type: "template", templateName: "saludo" }))).toBe("[plantilla: saludo]");
     expect(messageText(msg("in", null, { type: "audio", attachments: [{ type: "audio", url: "u" }] }))).toBe("[audio]");
-  });
-});
-
-describe("toTranscriptLines", () => {
-  it("marca los pendientes por id", () => {
-    const a = msg("out", "hola");
-    const b = msg("in", "precio?");
-    expect(toTranscriptLines([a, b], new Set([b.id]))).toEqual([
-      { role: "diluvium", text: "hola", pending: false },
-      { role: "cliente", text: "precio?", pending: true },
-    ]);
   });
 });
 
@@ -63,7 +52,7 @@ describe("buildModelMessages", () => {
       msg("in", null, { type: "image", attachments: [{ type: "image", url: "z", storageKey: `k${i}` }] }),
     );
     const urls = new Map(rows.map((_, i) => [`k${i + 1}`, `https://b/k${i + 1}`]));
-    const out = buildModelMessages(rows, urls, 2);
+    const out = buildModelMessages(rows, urls, { maxImages: 2 });
     const parts = out[0].content as { type: string; image?: URL; text?: string }[];
     expect(parts.filter((p) => p.type === "image").map((p) => p.image!.toString())).toEqual([
       "https://b/k2",
@@ -73,13 +62,28 @@ describe("buildModelMessages", () => {
   });
 });
 
-describe("tope de texto por mensaje (costo por llamada acotado)", () => {
-  it("un mensaje enorme del cliente llega recortado al filtro y al cerebro", () => {
+describe("protecciones técnicas del historial", () => {
+  it("un mensaje pegado gigante llega recortado al cerebro", () => {
     const huge = "x".repeat(MAX_MESSAGE_CHARS * 5);
     expect(messageText(msg("in", huge)).length).toBeLessThan(MAX_MESSAGE_CHARS + 20);
     const [user] = buildModelMessages([msg("in", huge)], new Map());
     const parts = user.content as { type: string; text: string }[];
     expect(parts[0].text.length).toBeLessThan(MAX_MESSAGE_CHARS + 20);
     expect(parts[0].text.endsWith("[recortado]")).toBe(true);
+  });
+
+  it("lee TODA la conversación mientras quepa; si no, se queda con lo más reciente sin fallar", () => {
+    const rows = Array.from({ length: 50 }, (_, i) => msg(i % 2 ? "out" : "in", `mensaje ${i} ${"x".repeat(80)}`));
+    expect(fitHistory(rows)).toHaveLength(50);
+    const recent = fitHistory(rows, 1_000);
+    expect(recent.length).toBeGreaterThan(0);
+    expect(recent.length).toBeLessThan(50);
+    expect(recent.at(-1)).toBe(rows.at(-1));
+  });
+
+  it("el texto limpio del anuncio sustituye al cuerpo con la metadata", () => {
+    const ad = msg("in", "Hola\nbody: Compuertas antiinundación\nctwaClid: abc");
+    const [user] = buildModelMessages([ad], new Map(), { cleanText: new Map([[ad.id, "Hola"]]) });
+    expect(user.content).toEqual([{ type: "text", text: "Hola" }]);
   });
 });

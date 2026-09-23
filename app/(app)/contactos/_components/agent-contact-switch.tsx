@@ -1,12 +1,11 @@
 "use client";
 
-// Interruptor del Agente IA en "Detalle del contacto" (Fase B), en el espacio
-// reservado. Una fila por conversación del contacto (normalmente una, la de
-// WhatsApp): encendido = el agente puede responder; apagado = pausado por un
-// vendedor (se reactiva aquí o con "Reactivar" en la Bandeja). Si el canal está
-// apagado en la pestaña Agente IA, el interruptor no aplica.
+// Estado del Agente IA en "Detalle del contacto" (Fase B). Una fila por
+// conversación del contacto (normalmente una, la de WhatsApp): activo, o pausado
+// porque un vendedor contestó (la única pausa) con el botón "Reactivar" (igual que
+// en la Bandeja). Si el canal está apagado en la pestaña Agente IA, no aplica.
 import { useCallback, useEffect, useRef, useState } from "react";
-import { getContactAgentStatus, pauseAgent, reactivateAgent } from "@/lib/actions/agente-conversacion";
+import { getContactAgentStatus, reactivateAgent } from "@/lib/actions/agente-conversacion";
 import { pauseReason } from "@/lib/agente-ia/labels";
 import type { ContactAgentView } from "@/lib/agente-ia/types";
 import { useInboxStream } from "../../dashboard/_components/use-inbox-stream";
@@ -40,13 +39,10 @@ export function AgentContactSwitch({ contactId }: { contactId: string }) {
     if (event.type === "conversation.updated" && idsRef.current.has(event.conversationId)) void load();
   });
 
-  async function toggle(row: ContactAgentView) {
+  async function reactivate(row: ContactAgentView) {
     setBusyId(row.conversationId);
     setError(null);
-    const on = row.agentState === "activo";
-    const result = on
-      ? await pauseAgent({ conversationId: row.conversationId })
-      : await reactivateAgent({ conversationId: row.conversationId });
+    const result = await reactivateAgent({ conversationId: row.conversationId });
     setBusyId(null);
     if (!result.ok) setError(result.message);
     await load();
@@ -69,25 +65,18 @@ export function AgentContactSwitch({ contactId }: { contactId: string }) {
               ? "Activo"
               : `Pausado · ${pauseReason(row)}`;
           return (
-            <div key={row.conversationId} className="flex items-start gap-2">
-              <button
-                type="button"
-                role="switch"
-                aria-checked={!channelOff && on}
-                aria-label={`Agente IA en la conversación de ${row.channelName}`}
-                disabled={channelOff || busyId === row.conversationId}
-                onClick={() => void toggle(row)}
-                className={`relative mt-0.5 inline-flex h-5 w-9 shrink-0 items-center rounded-full transition-colors disabled:opacity-50 ${
-                  !channelOff && on ? "bg-brand-navy" : "bg-muted-foreground/40"
-                }`}
-              >
-                <span
-                  className={`inline-block h-4 w-4 rounded-full bg-white shadow transition-transform ${
-                    !channelOff && on ? "translate-x-4" : "translate-x-0.5"
-                  }`}
-                />
-              </button>
+            <div key={row.conversationId} className="flex flex-wrap items-center gap-x-2 gap-y-1">
               <span className="text-xs text-foreground">🤖 {status}</span>
+              {!channelOff && !on && (
+                <button
+                  type="button"
+                  disabled={busyId === row.conversationId}
+                  onClick={() => void reactivate(row)}
+                  className="rounded px-2 py-0.5 text-xs font-medium text-brand-navy hover:bg-brand-navy/10 disabled:opacity-50 dark:text-sky-300"
+                >
+                  {busyId === row.conversationId ? "Reactivando…" : "Reactivar"}
+                </button>
+              )}
             </div>
           );
         })

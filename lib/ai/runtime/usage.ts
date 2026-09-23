@@ -12,8 +12,6 @@ export type UsageStage = "filtro" | "cerebro";
 export type UsageOutcome = "passed" | "sent" | "draft" | "discarded_stale" | "skipped" | "handover" | "error";
 // Resultados finales: si el último entrante ya tiene uno, no se vuelve a atender.
 export const FINAL_OUTCOMES: readonly UsageOutcome[] = ["sent", "draft", "skipped", "handover"];
-// Respuestas del agente que cuentan para el freno anti-bucle y el tope por contacto.
-export const REPLY_OUTCOMES: readonly UsageOutcome[] = ["sent", "draft"];
 
 export type UsageRecord = {
   organizationId: string;
