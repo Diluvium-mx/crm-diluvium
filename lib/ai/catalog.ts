@@ -38,6 +38,16 @@ export const MODEL_CATALOG = [
     roles: ["cerebro"],
   },
   {
+    // Respaldo de Terra (mismo proveedor, nivel superior). Id confirmado con dry-run.
+    id: "gpt-5.6-sol",
+    label: "GPT-5.6 Sol",
+    provider: "openai",
+    providerModelId: "gpt-5.6-sol",
+    tier: "tope",
+    multimodal: true,
+    roles: ["cerebro"],
+  },
+  {
     // Opción TOPE de cerebro (Fase B). Id de API confirmado con dry-run.
     id: "claude-opus-5-5",
     label: "Claude Opus 5.5",

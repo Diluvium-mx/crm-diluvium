@@ -22,7 +22,7 @@ export type ModelPrice = {
 
 type BasePrice = { input: number; output: number };
 
-// Por id del catálogo. gpt-5.6-sol tiene precio pero aún no está en el catálogo.
+// Por id del catálogo (todo modelo del catálogo tiene entrada: número o null).
 export const DEFAULT_MODEL_PRICES: Readonly<Record<string, BasePrice | null>> = {
   "gpt-5.6-luna": { input: 0.2, output: 1.2 },
   "claude-sonnet-5": { input: 2, output: 10 },
