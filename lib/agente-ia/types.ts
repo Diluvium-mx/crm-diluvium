@@ -79,20 +79,20 @@ export type AgentSettingsBundleView = {
 // ── Fase B: el agente en una conversación (Bandeja y panel del contacto) ─────
 export type AgentStateValue = "activo" | "pausado_humano" | "pausado_handover" | "pausado_antibucle";
 
-export type AgentDraftView = {
+// Aviso del agente para el vendedor, dentro del hilo (discreto, sin acción).
+export type AgentNoticeView = {
   id: string;
-  bubbles: string[];
+  kind: string;
+  body: string;
   createdAt: string;
-  /** Por qué no se envió solo (guardia de salida); null = borrador normal. */
-  reviewReason: string | null;
 };
 
 export type AgentThreadView = {
   channelMode: AgentModeValue;
   agentState: AgentStateValue;
-  /** ISO; solo en "pasado a humano" (reactivación automática). */
+  /** ISO; histórico (ya ninguna pausa vence sola). */
   pausedUntil: string | null;
-  draft: AgentDraftView | null;
+  notices: AgentNoticeView[];
 };
 
 export type ContactAgentView = {

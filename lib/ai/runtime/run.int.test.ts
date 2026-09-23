@@ -183,6 +183,8 @@ describe.skipIf(!TEST_DATABASE_URL)("runtime del Agente IA (Postgres real)", () 
   const usage = () => db.select().from(s.aiUsage);
   const agentOuts = async () =>
     (await db.select().from(s.messages).where(eq(s.messages.direction, "out"))).filter((m) => m.source === "ai_agent");
+  const notices = () => db.select().from(s.aiAgentNotices).orderBy(s.aiAgentNotices.createdAt);
+  const contactTags = async () => (await db.select().from(s.contacts).where(eq(s.contacts.id, CONTACT)))[0].tags ?? [];
 
   function fakeQueue() {
     const jobs = new Map<string, { state: string; delay: number }>();
@@ -329,23 +331,14 @@ describe.skipIf(!TEST_DATABASE_URL)("runtime del Agente IA (Postgres real)", () 
     expect((await run.runAgent(JOB, deps)).kind).toBe("sent");
   });
 
-  it("modo borrador: deja el borrador (uno vigente) y NO envía", async () => {
+  it("un canal viejo en 'borrador' se trata como apagado: ni programa ni llama modelos", async () => {
     await db.update(s.channels).set({ aiAgentMode: "borrador" }).where(eq(s.channels.id, "ch_rt"));
     await msg({ direction: "in", body: "precio?", at: ago(20_000) });
-    const { deps } = makeDeps();
-    const r1 = await run.runAgent(JOB, deps);
-    expect(r1.kind).toBe("draft");
-    expect(await agentOuts()).toHaveLength(0);
-    await msg({ direction: "in", body: "¿y envío?", at: ago(5_000) });
-    const r2 = await run.runAgent(JOB, deps);
-    expect(r2.kind).toBe("draft");
-    const drafts = await db.select().from(s.aiAgentDrafts);
-    expect(drafts.map((d) => d.status).sort()).toEqual(["obsoleto", "pendiente"]);
-    expect(drafts.find((d) => d.status === "pendiente")!.bubbles).toEqual([
-      "Claro, cuesta $5,500 MXN.",
-      "¿Cuánto mide tu entrada?",
-    ]);
-    expect((await usage()).filter((u) => u.outcome === "draft")).toHaveLength(2);
+    expect(await schedule.debounceDelayFor(ORG, CONV, new Date())).toBeNull();
+    const { deps, calls } = makeDeps();
+    expect(await run.runAgent(JOB, deps)).toEqual({ kind: "skipped", reason: "canal_off" });
+    expect(calls).toHaveLength(0);
+    expect(await db.select().from(s.aiAgentDrafts)).toEqual([]);
   });
 
   it("interruptor apagado = silencio total (ni programa ni llama modelos)", async () => {
@@ -365,9 +358,9 @@ describe.skipIf(!TEST_DATABASE_URL)("runtime del Agente IA (Postgres real)", () 
     expect(calls).toHaveLength(0);
   });
 
-  it("freno anti-bucle: 10 respuestas en la última hora → pausa + etiqueta 'revisión humana'", async () => {
+  it("freno anti-bucle: 30 respuestas en la última hora → no responde, avisa UNA vez y NO pausa ni etiqueta", async () => {
     await db.insert(s.aiUsage).values(
-      Array.from({ length: 10 }, (_, i) => ({
+      Array.from({ length: 30 }, (_, i) => ({
         id: `u${i}`,
         organizationId: ORG,
         conversationId: CONV,
@@ -382,10 +375,13 @@ describe.skipIf(!TEST_DATABASE_URL)("runtime del Agente IA (Postgres real)", () 
     await msg({ direction: "in", body: "hola?", at: ago(10_000) });
     const { deps, calls } = makeDeps();
     expect(await run.runAgent(JOB, deps)).toEqual({ kind: "skipped", reason: "anti_bucle" });
+    expect(await run.runAgent(JOB, deps)).toEqual({ kind: "skipped", reason: "anti_bucle" }); // el barrido lo reintenta
     expect(calls).toHaveLength(0);
-    expect((await conv()).agentState).toBe("pausado_antibucle");
-    const [c] = await db.select().from(s.contacts).where(eq(s.contacts.id, CONTACT));
-    expect(c.tags).toContain("revisión humana");
+    expect((await conv()).agentState).toBe("activo");
+    expect(await contactTags()).not.toContain("revisión humana");
+    const n = await notices();
+    expect(n.map((x) => x.kind)).toEqual(["anti_bucle"]);
+    expect(n[0].body).toContain("30 respuestas por hora");
   });
 
   it("los timeouts de las 3 rondas (filtro + cerebro) caben en el candado de la corrida", async () => {
@@ -393,7 +389,8 @@ describe.skipIf(!TEST_DATABASE_URL)("runtime del Agente IA (Postgres real)", () 
     expect(run.MAX_ROUNDS * (run.FILTER_TIMEOUT_MS + run.BRAIN_TIMEOUT_MS)).toBeLessThan(LOCK_TTL_MS);
   });
 
-  it("cliente que escribe sin parar: nunca bucle inmediato y el tope de gasto lo pausa", async () => {
+  it("cliente que escribe sin parar: nunca bucle inmediato y el tope de gasto lo frena con aviso (sin pausar)", async () => {
+    await db.update(s.aiConfig).set({ antiLoopMaxPerHour: 10 }).where(eq(s.aiConfig.organizationId, ORG));
     await msg({ direction: "in", body: "hola", at: ago(120_000) }); // tope de 60 s ya vencido
     const { deps, calls } = makeDeps({
       onBrain: async () => {
@@ -411,34 +408,45 @@ describe.skipIf(!TEST_DATABASE_URL)("runtime del Agente IA (Postgres real)", () 
     // 40 llamadas/h (antiLoop 10 × 4) + a lo más una corrida (3 rondas × 2) de holgura.
     expect(calls.length).toBeLessThanOrEqual(46);
     expect(await agentOuts()).toEqual([]);
-    expect((await conv()).agentState).toBe("pausado_antibucle");
-    const [c] = await db.select().from(s.contacts).where(eq(s.contacts.id, CONTACT));
-    expect(c.tags).toContain("revisión humana");
+    expect((await conv()).agentState).toBe("activo");
+    expect(await contactTags()).not.toContain("revisión humana");
+    expect((await notices()).map((n) => n.kind)).toEqual(["anti_bucle"]);
   });
 
-  it("filtro 'pasar a humano' → etiqueta + pausa 8 h; el barrido lo reactiva al vencer", async () => {
+  it("filtro 'pasar a humano' → el agente contesta, avisa al vendedor y SIGUE activo (sin etiqueta ni pausa)", async () => {
     await msg({ direction: "in", body: "quiero hablar con una persona", at: ago(10_000) });
-    const { deps, calls } = makeDeps({ filter: '{"decision":"pasar_a_humano"}' });
-    expect(await run.runAgent(JOB, deps)).toEqual({ kind: "handover", reason: "filtro" });
-    expect(calls.map((c) => c.kind)).toEqual(["filtro"]);
-    const c1 = await conv();
-    expect(c1.agentState).toBe("pausado_handover");
-    const hours = (c1.agentPausedUntil!.getTime() - Date.now()) / 3_600_000;
-    expect(hours).toBeGreaterThan(7.99);
-    expect(hours).toBeLessThanOrEqual(8);
-    const [ct] = await db.select().from(s.contacts).where(eq(s.contacts.id, CONTACT));
-    expect(ct.tags).toContain("pasar a humano");
-    expect(await sweep.reactivateExpiredHandovers(new Date())).toBe(0);
-    expect(await sweep.reactivateExpiredHandovers(new Date(Date.now() + 8 * 3_600_000 + 1_000))).toBe(1);
+    const { deps, calls } = makeDeps({
+      filter: '{"decision":"pasar_a_humano","motivo":"pide hablar con una persona"}',
+      brain: ["Claro, en un momento te atiende un asesor."],
+    });
+    expect(await run.runAgent(JOB, deps)).toEqual({ kind: "sent", bubbles: 1 });
+    expect(calls.map((c) => c.kind)).toEqual(["filtro", "cerebro"]);
+    expect((await agentOuts()).map((m) => m.body)).toEqual(["Claro, en un momento te atiende un asesor."]);
+    expect((await usage()).find((u) => u.stage === "filtro")).toMatchObject({ filterDecision: "pasar_a_humano", outcome: "passed" });
+    expect((await conv()).agentState).toBe("activo");
+    expect(await contactTags()).not.toContain("pasar a humano");
+    const [n] = await notices();
+    expect(n).toMatchObject({ kind: "pasar_a_humano" });
+    expect(n.body).toContain("pide hablar con una persona");
+    // Sigue activo hasta que un vendedor conteste: el siguiente mensaje se contesta.
+    await msg({ direction: "in", body: "¿siguen ahí?", at: new Date(Date.now() + 1_000) });
+    expect((await run.runAgent(JOB, makeDeps().deps)).kind).toBe("sent");
+  });
+
+  it("el cerebro también puede pedir a un vendedor ([TRANSFERIR]): la señal no llega al cliente y se avisa", async () => {
+    await msg({ direction: "in", body: "mándame link para pagar con tarjeta", at: ago(10_000) });
+    const { deps } = makeDeps({ brain: ["Con gusto, un asesor te envía el enlace en un momento.\n[TRANSFERIR]"] });
+    expect(await run.runAgent(JOB, deps)).toEqual({ kind: "sent", bubbles: 1 });
+    expect((await agentOuts()).map((m) => m.body)).toEqual(["Con gusto, un asesor te envía el enlace en un momento."]);
+    expect((await notices()).map((n) => n.kind)).toEqual(["pasar_a_humano"]);
     expect((await conv()).agentState).toBe("activo");
   });
 
-  it("el cerebro también puede transferir ([TRANSFERIR])", async () => {
-    await msg({ direction: "in", body: "mándame link para pagar con tarjeta", at: ago(10_000) });
-    const { deps } = makeDeps({ brain: ["[TRANSFERIR]"] });
-    expect(await run.runAgent(JOB, deps)).toEqual({ kind: "handover", reason: "cerebro" });
-    expect(await agentOuts()).toHaveLength(0);
-    expect((await conv()).agentState).toBe("pausado_handover");
+  it("[TRANSFERIR] sin texto: el cliente igual recibe respuesta (el agente siempre contesta)", async () => {
+    const { HANDOVER_FALLBACK_TEXT } = await import("./brain");
+    await msg({ direction: "in", body: "quiero una persona", at: ago(10_000) });
+    expect(await run.runAgent(JOB, makeDeps({ brain: ["[TRANSFERIR]"] }).deps)).toEqual({ kind: "sent", bubbles: 1 });
+    expect((await agentOuts()).map((m) => m.body)).toEqual([HANDOVER_FALLBACK_TEXT]);
   });
 
   it("idempotencia: un entrante ya atendido no se vuelve a procesar", async () => {
@@ -525,25 +533,13 @@ describe.skipIf(!TEST_DATABASE_URL)("runtime del Agente IA (Postgres real)", () 
     expect(await sweep.findOrphanConversations(new Date())).toEqual([]);
   });
 
-  it("un borrador ya generado cuenta como atendido aunque su fila de ai_usage no exista", async () => {
+  it("un plan ya enviado cuenta como atendido aunque su fila de ai_usage no exista", async () => {
     const id = await msg({ direction: "in", body: "precio?", at: ago(120_000) });
-    await state.saveDraft({ organizationId: ORG, conversationId: CONV, bubbles: ["hola"], triggerMessageId: id, now: new Date() });
+    await db.insert(s.aiAgentDrafts).values({ id: "plan_ok", organizationId: ORG, conversationId: CONV, bubbles: ["a", "b"], triggerMessageId: id, status: "enviado" });
     expect(await sweep.findOrphanConversations(new Date())).toEqual([]);
     const { deps, calls } = makeDeps();
     expect(await run.runAgent(JOB, deps)).toEqual({ kind: "noop", reason: "ya_atendido" });
     expect(calls).toHaveLength(0);
-  });
-
-  it("un mensaje nuevo del cliente deja viejo el borrador vigente", async () => {
-    await db.update(s.channels).set({ aiAgentMode: "borrador" }).where(eq(s.channels.id, "ch_rt"));
-    const first = await msg({ direction: "in", body: "precio?", at: ago(60_000) });
-    await state.saveDraft({ organizationId: ORG, conversationId: CONV, bubbles: ["Cuesta X"], triggerMessageId: first, now: new Date() });
-    const { port, kv } = fakeQueue();
-    const at = new Date();
-    await msg({ direction: "in", body: "ya no, gracias", at });
-    await hooks.onInboundCustomerMessage({ organizationId: ORG, conversationId: CONV, receivedAt: at }, { queue: port, kv, now: at });
-    const drafts = await db.select().from(s.aiAgentDrafts);
-    expect(drafts.map((d) => d.status)).toEqual(["obsoleto"]);
   });
 
   it("canal apagado: el gancho de entrante no escribe nada ni programa", async () => {
@@ -627,29 +623,25 @@ describe.skipIf(!TEST_DATABASE_URL)("runtime del Agente IA (Postgres real)", () 
     return id;
   }
 
-  it("AUTO → 1ª burbuja sin confirmar (y se confirma tarde): la 2ª queda en borrador visible y el agente se pausa", async () => {
+  it("AUTO → 1ª burbuja sin confirmar: la 2ª no sale, queda en un AVISO y el agente sigue activo", async () => {
     await msg({ direction: "in", body: "¿precio?", at: ago(10_000) });
     const { deps } = makeDeps();
-    let pendingId = "";
     deps.sendBubble = async () => {
-      pendingId = await agentMsg({ status: "queued" });
+      await agentMsg({ status: "queued" });
       return { status: "pending" as const };
     };
     expect(await run.runAgent(JOB, deps)).toEqual({ kind: "sent", bubbles: 1 });
     const brain = (await usage()).find((u) => u.stage === "cerebro")!;
-    expect(brain).toMatchObject({ outcome: "sent", error: "1 burbuja(s) sin confirmar; 1 en borrador para revisión humana" });
-    const [d] = await db.select().from(s.aiAgentDrafts);
-    expect(d).toMatchObject({ status: "pendiente", bubbles: ["¿Cuánto mide tu entrada?"] });
-    expect(d.reviewReason).toContain("no confirmó");
-    expect((await conv()).agentState).toBe("pausado_antibucle");
-    const [c] = await db.select().from(s.contacts).where(eq(s.contacts.id, CONTACT));
-    expect(c.tags).toContain("revisión humana");
-    // La 1ª se confirma tarde: nada se pierde (el resto sigue visible para el vendedor).
-    await db.update(s.messages).set({ status: "sent" }).where(eq(s.messages.id, pendingId));
-    expect((await db.select().from(s.aiAgentDrafts))[0].status).toBe("pendiente");
+    expect(brain).toMatchObject({ outcome: "sent", error: "1 burbuja(s) sin confirmar; 1 sin enviar (aviso)" });
+    expect((await db.select().from(s.aiAgentDrafts)).map((d) => d.status)).toEqual(["enviado"]);
+    const [n] = await notices();
+    expect(n).toMatchObject({ kind: "envio" });
+    expect(n.body).toContain("¿Cuánto mide tu entrada?");
+    expect((await conv()).agentState).toBe("activo");
+    expect(await contactTags()).not.toContain("revisión humana");
   });
 
-  it("AUTO → una sola burbuja sin confirmar: espera; si vence sin confirmar, el barrido pausa (sin reenviar)", async () => {
+  it("AUTO → una sola burbuja sin confirmar: espera; si vence sin confirmar, el barrido AVISA (una vez) y el agente sigue", async () => {
     const { SEND_UNCONFIRMED } = await import("@/lib/messaging/rules");
     await msg({ direction: "in", body: "¿precio?", at: ago(10_000) });
     const { deps } = makeDeps({ brain: ["Claro, cuesta $5,500 MXN."] });
@@ -659,18 +651,20 @@ describe.skipIf(!TEST_DATABASE_URL)("runtime del Agente IA (Postgres real)", () 
       return { status: "pending" as const };
     };
     expect(await run.runAgent(JOB, deps)).toEqual({ kind: "sent", bubbles: 1 });
-    expect(await db.select().from(s.aiAgentDrafts)).toEqual([]); // nada omitido
-    // En camino: no se pausa, y el agente no responde encima de un envío sin resolver.
-    expect(await sweep.pauseOnFailedAgentSends(new Date())).toBe(0);
+    expect(await db.select().from(s.aiAgentDrafts)).toEqual([]); // una burbuja: sin plan
+    // En camino: sin aviso, y el agente no responde encima de un envío sin resolver.
+    expect(await sweep.noticeFailedAgentSends(new Date())).toBe(0);
     await msg({ direction: "in", body: "¿hola?", at: new Date(Date.now() + 1_000) });
     const busy = makeDeps();
     expect(await run.runAgent(JOB, busy.deps)).toEqual({ kind: "skipped", reason: "envio_sin_confirmar" });
     expect(busy.calls).toHaveLength(0);
-    // Vence sin confirmar → revisión humana, sin regenerar ni reenviar.
+    // Vence sin confirmar → aviso al vendedor, sin reenviar; el agente sigue contestando.
     await db.update(s.messages).set({ status: "failed", errorCode: SEND_UNCONFIRMED }).where(eq(s.messages.id, pendingId));
-    expect(await sweep.pauseOnFailedAgentSends(new Date())).toBe(1);
-    expect((await conv()).agentState).toBe("pausado_antibucle");
-    expect(await sweep.findOrphanConversations(new Date())).toEqual([]);
+    expect(await sweep.noticeFailedAgentSends(new Date())).toBe(1);
+    expect(await sweep.noticeFailedAgentSends(new Date())).toBe(0);
+    expect((await notices())[0].body).toContain("no confirmó");
+    expect((await conv()).agentState).toBe("activo");
+    expect((await run.runAgent(JOB, makeDeps().deps)).kind).toBe("sent");
   });
 
   it("un saliente humano que entra DESPUÉS del inicio de la ronda detiene el envío aunque la revisión fresca no lo vea", async () => {
@@ -704,7 +698,7 @@ describe.skipIf(!TEST_DATABASE_URL)("runtime del Agente IA (Postgres real)", () 
     expect((await db.select().from(s.aiAgentDrafts))[0].status).toBe("enviado");
   });
 
-  it("AUTO: si falla la 2ª burbuja, la 2ª queda en borrador visible y el agente pasa a revisión humana", async () => {
+  it("AUTO: si falla la 2ª burbuja, lo que faltó queda en un AVISO y el agente sigue activo", async () => {
     await msg({ direction: "in", body: "¿precio?", at: ago(10_000) });
     const { deps } = makeDeps();
     const real = deps.sendBubble;
@@ -715,10 +709,11 @@ describe.skipIf(!TEST_DATABASE_URL)("runtime del Agente IA (Postgres real)", () 
       return real(p);
     };
     expect(await run.runAgent(JOB, deps)).toEqual({ kind: "sent", bubbles: 1 });
-    const [d] = await db.select().from(s.aiAgentDrafts);
-    expect(d).toMatchObject({ status: "pendiente", bubbles: ["¿Cuánto mide tu entrada?"] });
-    expect(d.reviewReason).toContain("Se enviaron 1 de 2");
-    expect((await conv()).agentState).toBe("pausado_antibucle");
+    expect((await db.select().from(s.aiAgentDrafts)).map((d) => d.status)).toEqual(["enviado"]);
+    const [aviso] = await notices();
+    expect(aviso.body).toContain("Se enviaron 1 de 2");
+    expect(aviso.body).toContain("¿Cuánto mide tu entrada?");
+    expect((await conv()).agentState).toBe("activo");
   });
 
   it("AUTO: si falla la 1ª burbuja, el plan queda obsoleto y el reintento de la cola sí responde", async () => {
@@ -732,7 +727,7 @@ describe.skipIf(!TEST_DATABASE_URL)("runtime del Agente IA (Postgres real)", () 
     expect(await run.runAgent(JOB, makeDeps().deps)).toEqual({ kind: "sent", bubbles: 2 });
   });
 
-  it("barrido: un plan AUTO interrumpido a la mitad deja visible lo que faltó y pausa para revisión", async () => {
+  it("barrido (reinicio del worker): un plan interrumpido a la mitad queda 'enviado' y lo que faltó en un AVISO", async () => {
     const trigger = await msg({ direction: "in", body: "¿precio?", at: ago(25 * 60_000) });
     const claimed = ago(20 * 60_000);
     await db.insert(s.aiAgentDrafts).values({
@@ -745,12 +740,31 @@ describe.skipIf(!TEST_DATABASE_URL)("runtime del Agente IA (Postgres real)", () 
       resolvedAt: claimed,
     });
     await agentMsg({ status: "sent", at: new Date(claimed.getTime() + 1_000) }); // salió solo la 1ª
-    const { reconcileStuckDrafts } = await import("./sweep");
-    await reconcileStuckDrafts(new Date());
-    const [d] = await db.select().from(s.aiAgentDrafts);
-    expect(d).toMatchObject({ status: "pendiente", bubbles: ["Segunda"] });
-    expect(d.reviewReason).toContain("salieron 1 de 2");
-    expect((await conv()).agentState).toBe("pausado_antibucle");
+    expect(await sweep.reconcileStuckDrafts(new Date())).toBe(1);
+    expect((await db.select().from(s.aiAgentDrafts))[0].status).toBe("enviado");
+    const [n] = await notices();
+    expect(n.body).toContain("salieron 1 de 2");
+    expect(n.body).toContain("Segunda");
+    expect((await conv()).agentState).toBe("activo");
+    expect(await sweep.reconcileStuckDrafts(new Date())).toBe(0); // no repite el aviso
+  });
+
+  it("barrido (reinicio del worker): un plan sin ninguna burbuja enviada queda obsoleto y el entrante se vuelve a atender", async () => {
+    const trigger = await msg({ direction: "in", body: "¿precio?", at: ago(12 * 60_000) });
+    await db.insert(s.aiAgentDrafts).values({
+      id: "plan_nada",
+      organizationId: ORG,
+      conversationId: CONV,
+      bubbles: ["Primera", "Segunda"],
+      triggerMessageId: trigger,
+      status: "enviando",
+      resolvedAt: ago(11 * 60_000),
+    });
+    expect(await sweep.reconcileStuckDrafts(new Date())).toBe(1);
+    expect((await db.select().from(s.aiAgentDrafts))[0].status).toBe("obsoleto");
+    expect(await notices()).toEqual([]);
+    expect(await sweep.findOrphanConversations(new Date())).toEqual([{ conversationId: CONV, organizationId: ORG }]);
+    expect(await run.runAgent(JOB, makeDeps().deps)).toEqual({ kind: "sent", bubbles: 2 });
   });
 
   it("un plan 'enviando' en la conversación bloquea nuevas corridas (la conciliación no se mezcla)", async () => {
@@ -784,56 +798,31 @@ describe.skipIf(!TEST_DATABASE_URL)("runtime del Agente IA (Postgres real)", () 
     expect((await run.runAgent(JOB, makeDeps().deps)).kind).toBe("sent");
   });
 
-  it("pending → confirmado: no pausa ni bloquea", async () => {
+  it("pending → confirmado: sin aviso ni pausa", async () => {
     const id = await agentMsg({ status: "queued" });
     await db.update(s.messages).set({ status: "sent" }).where(eq(s.messages.id, id));
-    expect(await sweep.pauseOnFailedAgentSends(new Date())).toBe(0);
+    expect(await sweep.noticeFailedAgentSends(new Date())).toBe(0);
     expect((await conv()).agentState).toBe("activo");
   });
 
-  it("pending → rechazo definitivo (último saliente del agente) → revisión humana", async () => {
+  it("rechazo definitivo de una respuesta del agente → aviso con el código (sin pausa)", async () => {
     await agentMsg({ status: "failed", errorCode: "131047" });
-    expect(await sweep.pauseOnFailedAgentSends(new Date())).toBe(1);
-    expect((await conv()).agentState).toBe("pausado_antibucle");
+    expect(await sweep.noticeFailedAgentSends(new Date())).toBe(1);
+    expect((await notices())[0].body).toContain("131047");
+    expect((await conv()).agentState).toBe("activo");
   });
 
-  it("una burbuja ambigua que NO es el último saliente también pausa (la 2ª sí salió)", async () => {
+  it("una burbuja ambigua que NO es el último saliente también avisa (la 2ª sí salió)", async () => {
     const { SEND_UNCONFIRMED } = await import("@/lib/messaging/rules");
     await agentMsg({ status: "failed", errorCode: SEND_UNCONFIRMED, at: ago(5_000) });
     await agentMsg({ status: "sent", at: ago(3_000) });
-    expect(await sweep.pauseOnFailedAgentSends(new Date())).toBe(1);
+    expect(await sweep.noticeFailedAgentSends(new Date())).toBe(1);
   });
 
-  it("sin límite de antigüedad (worker caído 2 días) y sin volver a pausar tras 'Reactivar'", async () => {
+  it("un envío fallido de hace más de 24 h no genera aviso (no se avisa historia al desplegar)", async () => {
     const { SEND_UNCONFIRMED } = await import("@/lib/messaging/rules");
     await agentMsg({ status: "failed", errorCode: SEND_UNCONFIRMED, at: ago(2 * 86_400_000) });
-    expect(await sweep.pauseOnFailedAgentSends(new Date())).toBe(1);
-    await state.setAgentState(ORG, CONV, "activo", { now: new Date() }); // un vendedor revisó y reactivó
-    expect(await sweep.pauseOnFailedAgentSends(new Date())).toBe(0);
-    expect((await conv()).agentState).toBe("activo");
-  });
-
-  it("un rechazo definitivo seguido de un reintento exitoso no pausa", async () => {
-    await agentMsg({ status: "failed", errorCode: "provider_rejected", at: ago(20_000) });
-    await agentMsg({ status: "sent", at: ago(5_000) });
-    expect(await sweep.pauseOnFailedAgentSends(new Date())).toBe(0);
-  });
-
-  it("respuesta humana DURANTE un pase a humano: el agente no se reactiva solo (gancho y barrido)", async () => {
-    // Gancho: el saliente del vendedor convierte el handover en pausa manual.
-    await state.setAgentState(ORG, CONV, "pausado_handover", { now: ago(60_000), pausedUntil: new Date(Date.now() + 3_600_000) });
-    await hooks.onHumanOutbound({ organizationId: ORG, conversationId: CONV }, { queue: fakeQueue().port, kv: fakeQueue().kv });
-    expect(await conv()).toMatchObject({ agentState: "pausado_humano", agentPausedUntil: null });
-    // Barrido: aunque el gancho no lo marcara, un handover vencido con respuesta humana
-    // posterior a su inicio pasa a pausado_humano (no a activo).
-    await state.setAgentState(ORG, CONV, "pausado_handover", { now: ago(9 * 3_600_000), pausedUntil: ago(60_000) });
-    await agentMsg({ status: "sent", source: "crm", at: ago(8 * 3_600_000) });
-    await sweep.reactivateExpiredHandovers(new Date());
-    expect((await conv()).agentState).toBe("pausado_humano");
-    await msg({ direction: "in", body: "¿siguen?", at: new Date() });
-    const { deps, calls } = makeDeps();
-    expect((await run.runAgent(JOB, deps)).kind).toBe("skipped");
-    expect(calls).toHaveLength(0);
+    expect(await sweep.noticeFailedAgentSends(new Date())).toBe(0);
   });
 
   it("AUTO: si apagan el canal en la pausa entre burbujas, la 2ª ya no sale", async () => {
@@ -883,13 +872,13 @@ describe.skipIf(!TEST_DATABASE_URL)("runtime del Agente IA (Postgres real)", () 
     expect((await conv()).agentState).toBe("activo");
   });
 
-  it("con el agente pausado no se programa nada; un pase a humano VENCIDO sí", async () => {
+  it("con el agente pausado no se programa nada (ninguna pausa vence sola)", async () => {
     const at = new Date();
     await msg({ direction: "in", body: "hola", at });
     await state.setAgentState(ORG, CONV, "pausado_humano", { now: ago(60_000) });
     expect(await schedule.debounceDelayFor(ORG, CONV, at)).toBeNull();
     await state.setAgentState(ORG, CONV, "pausado_handover", { now: ago(60_000), pausedUntil: ago(1_000) });
-    expect(await schedule.debounceDelayFor(ORG, CONV, at)).not.toBeNull();
+    expect(await schedule.debounceDelayFor(ORG, CONV, at)).toBeNull();
   });
 
   it("pendientes acotados: con 60 entrantes sin respuesta solo se leen los 50 más recientes, en orden", async () => {
@@ -901,85 +890,61 @@ describe.skipIf(!TEST_DATABASE_URL)("runtime del Agente IA (Postgres real)", () 
     expect(rows.at(-1)!.body).toBe("spam 59");
   });
 
-  // ── Guardia de salida (modo auto) ────────────────────────────────────────
-  async function heldDraft() {
-    const [d] = await db.select().from(s.aiAgentDrafts);
-    return d;
-  }
+  // ── Guardia de salida: la respuesta SIEMPRE sale; solo deja un aviso ─────
+  const guardNotices = async () => (await notices()).filter((n) => n.kind === "guardia").map((n) => n.body);
 
-  it("auto: un monto que no está en el Goal ni en las FAQs NO se envía → borrador + 'revisión humana' + motivo", async () => {
+  it("un monto que no está en el Goal ni en las FAQs SE ENVÍA y deja un aviso (sin pausa, sin etiqueta, sin borrador)", async () => {
     await msg({ direction: "in", body: "¿me haces descuento?", at: ago(10_000) });
     const { deps } = makeDeps({ brain: ["Va, te la dejo en $4,200 si confirmas hoy."] });
-    const r = await run.runAgent(JOB, deps);
-    expect(r).toMatchObject({ kind: "held", reason: "Monto que no está en el Goal ni en las FAQs ni tiene desglose correcto: $4,200" });
-    expect(await agentOuts()).toEqual([]);
-    const d = await heldDraft();
-    expect(d).toMatchObject({ status: "pendiente", bubbles: ["Va, te la dejo en $4,200 si confirmas hoy."] });
-    expect(d.reviewReason).toContain("$4,200");
-    const [c] = await db.select().from(s.contacts).where(eq(s.contacts.id, CONTACT));
-    expect(c.tags).toContain("revisión humana");
-    const brain = (await usage()).find((u) => u.stage === "cerebro")!;
-    expect(brain.outcome).toBe("draft");
-    expect(brain.error).toMatch(/^guardia de salida: /);
-    // La tarjeta lo muestra (misma lectura que usa la Bandeja).
+    expect(await run.runAgent(JOB, deps)).toEqual({ kind: "sent", bubbles: 1 });
+    expect((await agentOuts()).map((m) => m.body)).toEqual(["Va, te la dejo en $4,200 si confirmas hoy."]);
+    expect(await guardNotices()).toEqual([
+      "Revisa la respuesta del agente: Monto que no está en el Goal ni en las FAQs ni tiene desglose correcto: $4,200",
+    ]);
+    expect((await usage()).find((u) => u.stage === "cerebro")).toMatchObject({ outcome: "sent", error: null });
+    expect(await db.select().from(s.aiAgentDrafts)).toEqual([]);
+    expect(await contactTags()).not.toContain("revisión humana");
+    expect((await conv()).agentState).toBe("activo");
+    // La Bandeja lo lee en el hilo (misma lectura que usa la UI).
     const { loadConversationAgent } = await import("./manual");
-    expect((await loadConversationAgent(ORG, CONV))!.draft!.reviewReason).toContain("$4,200");
-    // Pausa en "revisión humana": el agente no sigue solo.
-    expect((await conv()).agentState).toBe("pausado_antibucle");
+    expect((await loadConversationAgent(ORG, CONV))!.notices.map((n) => n.kind)).toEqual(["guardia"]);
+    // El siguiente mensaje del cliente se contesta normal.
+    await msg({ direction: "in", body: "¿entonces?", at: new Date(Date.now() + 1_000) });
+    expect((await run.runAgent(JOB, makeDeps({ brain: ["Sí, queda en $5,500."] }).deps)).kind).toBe("sent");
   });
 
-  it("retenida: el siguiente mensaje del cliente NO borra la tarjeta ni el agente responde solo; tras Reactivar, sí", async () => {
-    await msg({ direction: "in", body: "¿descuento?", at: ago(20_000) });
-    expect((await run.runAgent(JOB, makeDeps({ brain: ["Te la dejo en $4,200."] }).deps)).kind).toBe("held");
-    const { port, kv } = fakeQueue();
-    let at = new Date();
-    await msg({ direction: "in", body: "¿entonces?", at });
-    await hooks.onInboundCustomerMessage({ organizationId: ORG, conversationId: CONV, receivedAt: at }, { queue: port, kv, now: at });
-    expect((await heldDraft()).status).toBe("pendiente");
-    const { deps, calls } = makeDeps();
-    expect(await run.runAgent(JOB, deps)).toEqual({ kind: "skipped", reason: "pausado_antibucle" });
-    expect(calls).toHaveLength(0);
-    // Un vendedor revisa y reactiva: el siguiente mensaje ya reemplaza la tarjeta.
-    await state.setAgentState(ORG, CONV, "activo", { now: new Date() });
-    at = new Date(Date.now() + 1_000);
-    await msg({ direction: "in", body: "hola?", at });
-    await hooks.onInboundCustomerMessage({ organizationId: ORG, conversationId: CONV, receivedAt: at }, { queue: port, kv, now: at });
-    expect((await heldDraft()).status).toBe("obsoleto");
-  });
-
-  it("la regla de montos (cifras y $) llega en el system del cerebro; el Goal guardado no cambia", async () => {
-    const { MONEY_FORMAT_RULE } = await import("./brain");
+  it("el cerebro recibe el Goal completo + TODAS las FAQs activas + instrucciones del CRM sin reglas de montos", async () => {
     await msg({ direction: "in", body: "¿precio?", at: ago(10_000) });
     const { deps, calls } = makeDeps();
     await run.runAgent(JOB, deps);
     const brain = calls.find((c) => c.kind === "cerebro")!;
     expect(brain.input.system.startsWith(GOAL)).toBe(true);
-    expect(brain.input.system).toContain(MONEY_FORMAT_RULE);
+    expect(brain.input.system).toContain("P: ¿Precio?\nR: $5,500 MXN");
+    expect(brain.input.system).toContain("P: ¿Dónde?\nR: Los Mochis");
+    expect(brain.input.system).toContain("INSTRUCCIONES DEL CRM");
+    expect(brain.input.system).not.toContain("desglos");
     const [cfg] = await db.select().from(s.aiConfig).where(eq(s.aiConfig.organizationId, ORG));
     expect(cfg.goal).toBe(GOAL);
   });
 
-  it("auto: total SIN desglose → retenido aunque sea 2 × $5,500; con desglose correcto → se envía", async () => {
+  it("total SIN desglose → sale con aviso; con desglose correcto → sale sin aviso", async () => {
     await msg({ direction: "in", body: "¿y dos?", at: ago(10_000) });
-    expect(await run.runAgent(JOB, makeDeps({ brain: ["Las dos te salen en $11,000 MXN."] }).deps)).toMatchObject({
-      kind: "held",
-      reason: "Monto que no está en el Goal ni en las FAQs ni tiene desglose correcto: $11,000",
-    });
-    await state.setAgentState(ORG, CONV, "activo", { now: new Date() }); // un vendedor revisó y reactivó
+    expect(await run.runAgent(JOB, makeDeps({ brain: ["Las dos te salen en $11,000 MXN."] }).deps)).toEqual({ kind: "sent", bubbles: 1 });
+    expect(await guardNotices()).toHaveLength(1);
     await msg({ direction: "in", body: "¿entonces?", at: new Date(Date.now() + 1_000) });
-    const r = await run.runAgent(JOB, makeDeps({ brain: ["Serían 2 × $5,500 = $11,000 MXN."] }).deps);
-    expect(r).toEqual({ kind: "sent", bubbles: 1 });
+    expect(await run.runAgent(JOB, makeDeps({ brain: ["Serían 2 × $5,500 = $11,000 MXN."] }).deps)).toEqual({ kind: "sent", bubbles: 1 });
+    expect(await guardNotices()).toHaveLength(1);
   });
 
-  it("auto: desglose con cuentas mal hechas → retenido con su motivo", async () => {
+  it("desglose con cuentas mal hechas → sale y el aviso dice por qué", async () => {
     await msg({ direction: "in", body: "¿cuánto las dos?", at: ago(10_000) });
-    const r = await run.runAgent(JOB, makeDeps({ brain: ["Son 2 × $5,500 = $10,000."] }).deps);
-    expect(r).toMatchObject({ kind: "held", reason: expect.stringContaining("Desglose que no cuadra") });
-    expect(await agentOuts()).toEqual([]);
-    expect((await heldDraft()).reviewReason).toContain("2 × $5,500 = $10,000");
+    expect(await run.runAgent(JOB, makeDeps({ brain: ["Son 2 × $5,500 = $10,000."] }).deps)).toEqual({ kind: "sent", bubbles: 1 });
+    const [aviso] = await guardNotices();
+    expect(aviso).toContain("Desglose que no cuadra");
+    expect(aviso).toContain("2 × $5,500 = $10,000");
   });
 
-  it("auto: descuento inventado → retenido; anticipo escrito tal cual en la base → se envía", async () => {
+  it("descuento inventado → sale con aviso; anticipo escrito tal cual en la base → sin aviso", async () => {
     await db.insert(s.aiKnowledge).values({
       id: "k_anticipo",
       organizationId: ORG,
@@ -989,14 +954,14 @@ describe.skipIf(!TEST_DATABASE_URL)("runtime del Agente IA (Postgres real)", () 
       position: 3,
     });
     await msg({ direction: "in", body: "¿me la dejas más barata?", at: ago(20_000) });
-    expect((await run.runAgent(JOB, makeDeps({ brain: ["Te la dejo en $5,000."] }).deps)).kind).toBe("held");
-    await state.setAgentState(ORG, CONV, "activo", { now: new Date() });
+    expect((await run.runAgent(JOB, makeDeps({ brain: ["Te la dejo en $5,000."] }).deps)).kind).toBe("sent");
+    expect(await guardNotices()).toHaveLength(1);
     await msg({ direction: "in", body: "¿y el anticipo?", at: new Date(Date.now() + 1_000) });
-    const r = await run.runAgent(JOB, makeDeps({ brain: ["El anticipo es de $3,500."] }).deps);
-    expect(r).toEqual({ kind: "sent", bubbles: 1 });
+    expect(await run.runAgent(JOB, makeDeps({ brain: ["El anticipo es de $3,500."] }).deps)).toEqual({ kind: "sent", bubbles: 1 });
+    expect(await guardNotices()).toHaveLength(1);
   });
 
-  it("auto: promoción inventada (10%) → retenida; meses sin intereses escritos en la base → se envía", async () => {
+  it("promoción inventada (10%) → sale con aviso; meses sin intereses escritos en la base → sin aviso", async () => {
     await db.insert(s.aiKnowledge).values({
       id: "k_msi",
       organizationId: ORG,
@@ -1006,29 +971,23 @@ describe.skipIf(!TEST_DATABASE_URL)("runtime del Agente IA (Postgres real)", () 
       position: 3,
     });
     await msg({ direction: "in", body: "¿algún descuento?", at: ago(20_000) });
-    expect(await run.runAgent(JOB, makeDeps({ brain: ["Te doy 10% de descuento si pagas hoy."] }).deps)).toMatchObject({
-      kind: "held",
-      reason: "Promoción que no está en el Goal ni en las FAQs: 10%",
-    });
-    await state.setAgentState(ORG, CONV, "activo", { now: new Date() });
+    expect((await run.runAgent(JOB, makeDeps({ brain: ["Te doy 10% de descuento si pagas hoy."] }).deps)).kind).toBe("sent");
+    expect(await guardNotices()).toEqual(["Revisa la respuesta del agente: Promoción que no está en el Goal ni en las FAQs: 10%"]);
     await msg({ direction: "in", body: "¿y a meses?", at: new Date(Date.now() + 1_000) });
-    const r = await run.runAgent(JOB, makeDeps({ brain: ["Sí, puedes pagar a 6 meses sin intereses."] }).deps);
-    expect(r).toEqual({ kind: "sent", bubbles: 1 });
+    expect(await run.runAgent(JOB, makeDeps({ brain: ["Sí, puedes pagar a 6 meses sin intereses."] }).deps)).toEqual({ kind: "sent", bubbles: 1 });
+    expect(await guardNotices()).toHaveLength(1);
   });
 
-  it("auto: un enlace fuera de la lista NO se envía; diluvium.com.mx sí", async () => {
+  it("un enlace fuera de la lista sale con aviso; diluvium.com.mx sin aviso", async () => {
     await msg({ direction: "in", body: "¿dónde pago?", at: ago(10_000) });
-    const held = await run.runAgent(JOB, makeDeps({ brain: ["Paga aquí: https://pagos-rapidos.com/x"] }).deps);
-    expect(held).toMatchObject({ kind: "held", reason: "Enlace fuera de la lista permitida: https://pagos-rapidos.com/x" });
-    expect(await agentOuts()).toEqual([]);
-
-    await state.setAgentState(ORG, CONV, "activo", { now: new Date() }); // un vendedor revisó y reactivó
+    expect(await run.runAgent(JOB, makeDeps({ brain: ["Paga aquí: https://pagos-rapidos.com/x"] }).deps)).toEqual({ kind: "sent", bubbles: 1 });
+    expect(await guardNotices()).toEqual(["Revisa la respuesta del agente: Enlace fuera de la lista permitida: https://pagos-rapidos.com/x"]);
     await msg({ direction: "in", body: "¿tienen página?", at: new Date(Date.now() + 1_000) });
-    const ok = await run.runAgent(JOB, makeDeps({ brain: ["Sí: https://www.diluvium.com.mx/compuertas"] }).deps);
-    expect(ok).toEqual({ kind: "sent", bubbles: 1 });
+    expect(await run.runAgent(JOB, makeDeps({ brain: ["Sí: https://www.diluvium.com.mx/compuertas"] }).deps)).toEqual({ kind: "sent", bubbles: 1 });
+    expect(await guardNotices()).toHaveLength(1);
   });
 
-  it("auto: un monto que solo está en una FAQ DESACTIVADA también se retiene", async () => {
+  it("un monto que solo está en una FAQ DESACTIVADA también deja aviso", async () => {
     await db.insert(s.aiKnowledge).values({
       id: "k3",
       organizationId: ORG,
@@ -1039,17 +998,7 @@ describe.skipIf(!TEST_DATABASE_URL)("runtime del Agente IA (Postgres real)", () 
       enabled: false,
     });
     await msg({ direction: "in", body: "¿promo?", at: ago(10_000) });
-    const r = await run.runAgent(JOB, makeDeps({ brain: ["Este mes queda en $4,999."] }).deps);
-    expect(r.kind).toBe("held");
-  });
-
-  it("borrador: la guardia no cambia el flujo pero deja el motivo visible (sin etiqueta)", async () => {
-    await db.update(s.channels).set({ aiAgentMode: "borrador" }).where(eq(s.channels.id, "ch_rt"));
-    await msg({ direction: "in", body: "¿descuento?", at: ago(10_000) });
-    const r = await run.runAgent(JOB, makeDeps({ brain: ["Te lo dejo en $4,200."] }).deps);
-    expect(r.kind).toBe("draft");
-    expect((await heldDraft()).reviewReason).toContain("$4,200");
-    const [c] = await db.select().from(s.contacts).where(eq(s.contacts.id, CONTACT));
-    expect(c.tags ?? []).not.toContain("revisión humana");
+    expect((await run.runAgent(JOB, makeDeps({ brain: ["Este mes queda en $4,999."] }).deps)).kind).toBe("sent");
+    expect(await guardNotices()).toHaveLength(1);
   });
 });

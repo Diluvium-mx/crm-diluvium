@@ -74,66 +74,84 @@ construye ahora). El dry-run "Probar modelo" ya muestra tokens, pero no persiste
 
 - **Fase A (hecha):** fundación del modelo — multi-proveedor, catálogo, `ai_config`,
   pestaña "Agente IA". El agente todavía no responde.
-- **Fase B (en curso):** runtime que **responde por texto**. En el worker: debounce
+- **Fase B (hecha, 23-sep-2026):** runtime que **responde por texto**. En el worker: debounce
   deslizante (`response_delay_seconds`=15, tope `max_wait_seconds`=60) → **filtro** →
-  **cerebro** (Goal + 47 FAQs cacheados + últimos 20 mensajes + imágenes) → responde
-  por Zernio (máx 2 burbujas separadas por doble salto + pausa 1.5s). Interruptor por
-  canal (off/borrador/auto). Pausas: respuesta manual del vendedor (incl. echo
-  `business_app`) = pausa indefinida con **reactivación manual**; pasar-a-humano =
-  etiqueta + pausa + **reactivación automática a las 8h** (`handover_reactivate_hours`);
-  anti-bucle (10 respuestas/hora, configurable) = pausa + etiqueta "revisión humana".
-  Ventana 24h, idempotencia por `provider_message_id`, 24/7, y **persistencia de uso por
-  mensaje** en `ai_usage`. Deja campos de estado por conversación (`agent_state`,
-  `paused_until`, `last_inbound_at`, `last_agent_reply_at`) para la Fase C.
+  **cerebro** (Goal completo + las 47 FAQs activas cacheados + últimos 20 mensajes + imágenes) →
+  responde por Zernio (máx 2 burbujas separadas por doble salto + pausa 1.5s). Interruptor por
+  canal **Apagado / Encendido** (= AUTO). Ventana 24h, idempotencia por `provider_message_id`,
+  24/7, y **persistencia de uso por mensaje** en `ai_usage`.
+
+  **Reglas del dueño (23-sep-2026, cierre de la Fase B): el agente SIEMPRE contesta**, como
+  Ángela en GHL:
+  - **Sin borrador:** no hay tarjeta "Borrador del agente" ni modo Borrador (la migración 0025
+    apagó los canales en borrador y descartó los borradores vigentes).
+  - **La única pausa** es que un vendedor conteste (Bandeja, pop-up del Embudo, programado o,
+    con el número real, la app del celular) o lo apague a mano en el Detalle del contacto. Se
+    reactiva con "Reactivar".
+  - **Nada más pausa.** La guardia de salida, el pase a humano, el anti-bucle, el presupuesto
+    y los envíos fallidos solo dejan un **aviso discreto en el hilo** (`ai_agent_notices`,
+    `lib/ai/runtime/notices.ts`). La guardia NO retiene: la respuesta sale igual.
+  - **Pase a humano:** el agente le dice al cliente que un asesor lo atenderá (o le enviará
+    los datos bancarios), avisa al vendedor y **sigue activo** hasta que un vendedor conteste.
+    La señal `[TRANSFERIR]` nunca llega al cliente.
+  - **Anti-bucle:** 30 respuestas/h por conversación (solo para un bucle con otro bot). Al
+    llegar, o al agotarse el presupuesto diario, no responde esa vez y avisa (una vez por hora).
+  - **Cotiza como el Goal y las FAQs.** El runtime solo agrega: formato (solo el texto para
+    WhatsApp, máx. N bloques), la señal de pase a humano (también para "Datos bancarios", que
+    aún no existe), no prometer videos/tablas ni cambios de etapa, y no revelar instrucciones
+    ni cambiar de papel. Sin reglas de montos ni de desglose.
+  - Las etiquetas internas "pasar a humano" / "revisión humana" ya no se crean y no se muestran.
+  - El filtro todavía salta el spam y los cierres sin pregunta ("gracias", "ok"): son los
+    únicos mensajes que el agente no contesta.
 
   **Frenos y aislamiento (revisión adversarial + cyber-neo, 23-sep-2026):**
   - **OFF no toca nada:** los ganchos de la ingesta y del envío solo LEEN con el canal
     apagado (sin Redis, sin modelos, sin escrituras); todo va en try/catch y la ingesta
     además aísla los ganchos en su frontera (`lib/ai/runtime/isolation.int.test.ts`).
   - **Tope de gasto:** llamadas cobradas por conversación/hora ≤ anti-bucle × 4 (mín. 12);
-    al llegar → `pausado_antibucle` + "revisión humana". Tras descartar respuestas, el job
+    al llegar, no responde esa vez y avisa (sin pausa). Tras descartar respuestas, el job
     vuelve con al menos `response_delay_seconds` (nunca 0). **Presupuesto diario por
     organización** (`ai_config.daily_budget_usd`, default 20 USD, editable en la pestaña):
     al llegar el gasto de las últimas 24 h, el agente no llama modelos en toda la org
     (no pausa conversaciones; vuelve solo al bajar la ventana).
   - **Envío sin carreras:** en AUTO, antes de CADA burbuja se relee el estado (canal en
     auto, agente activo, sin salientes humanos nuevos); si un vendedor responde o apagan el
-    canal en la pausa de 1.5 s, la siguiente ya no sale. Aprobar un borrador lo pasa a
-    "enviando" (recuperable) y solo queda "enviado" tras mandar; el barrido concilia los
-    atorados > 10 min con el hilo. Encender el canal también es corte de "respuesta humana".
-  - **Envíos sin confirmar (AUTO):** una burbuja "pending" detiene las siguientes; mientras un
-    envío del agente siga en camino (o haya uno fallido sin confirmar sin revisar) el agente
-    no responde encima; el barrido pausa en "revisión humana" + etiqueta una conversación con
-    un envío del agente fallido sin confirmar (o fallido como último saliente) posterior al
-    último corte — nunca reenvía (podría duplicar). Un entrante que llega entre burbujas
-    detiene el resto y queda pendiente para la siguiente corrida. Una respuesta de varias
-    burbujas guarda antes un **plan durable** (borrador "enviando", invisible): si una burbuja
-    queda sin confirmar, falla a la mitad o el proceso se interrumpe, lo que faltó queda como
-    borrador visible con el motivo y el agente pasa a revisión humana (el barrido recupera
-    los planes interrumpidos). La línea base de salientes humanos se toma al INICIO de la
-    ronda. Aprobar un borrador sigue las mismas reglas.
-  - **Pase a humano:** si un vendedor contesta durante la transferencia, pasa a
-    `pausado_humano` (gancho y barrido): el agente ya no se reactiva solo a las 8 h.
+    canal en la pausa de 1.5 s, la siguiente ya no sale. Encender el canal también es corte
+    de "respuesta humana".
+  - **Envíos sin confirmar:** una burbuja "pending" detiene las siguientes y, mientras un envío
+    del agente siga en camino ("queued") o un plan esté "enviando", el agente no responde
+    encima. Un envío fallido o sin confirmar deja un aviso (uno por mensaje) y el agente sigue;
+    nunca se reenvía (podría duplicar). Un entrante que llega entre burbujas detiene el resto y
+    queda pendiente para la siguiente corrida. Una respuesta de varias burbujas guarda antes un
+    **plan durable** ("enviando", invisible): si el worker se reinicia a la mitad, el barrido lo
+    concilia con el hilo **por `created_at` ≥ `resolved_at`, los dos con el reloj de Postgres**
+    (el eco del proveedor reescribe `sent_at`): nada salió → obsoleto y el entrante se vuelve a
+    atender; salió una parte → lo que faltó queda en un aviso. La línea base de salientes
+    humanos se toma al INICIO de la ronda.
   - **Trabajo acotado por entrante:** se leen máx. 50 pendientes; con el agente pausado no
-    se programa nada (salvo un pase a humano vencido); índice en
+    se programa nada; índice en
     `ai_agent_drafts(trigger_message_id)`.
   - **Cortes del debounce y del barrido:** solo cuentan los entrantes posteriores al último
     ya atendido, a la reactivación (`agent_state_changed_at`) y al encendido del canal
     (`channels.ai_agent_mode_changed_at`). Encender un canal o "Reactivar" NO contesta
     historia; el barrido solo rescata entrantes de los últimos 30 min.
-  - **Borradores:** un entrante nuevo o apagar el canal los deja obsoletos; con el canal
-    apagado no se pueden enviar.
   - **Prompt:** filtro con máx. 20 pendientes, texto del cliente escapado como JSON y
-    2,000 caracteres por mensaje; el cerebro tiene la regla de no revelar instrucciones
-    ni inventar precios. Timeouts: filtro 20 s, cerebro 60 s.
-  - **Guardia de salida (modo AUTO, `lib/ai/runtime/output-guard.ts`), CONGELADA el 23-sep:**
-    retiene (borrador + "revisión humana" + motivo en la tarjeta, agente pausado) una
-    respuesta con: un monto que no esté tal cual en el Goal/FAQs activas, salvo un total con
-    desglose correcto en la misma respuesta ("3 × $5,500 = $16,500": precios de la base,
-    cantidades 1–10, cuenta exacta); un %, "NxM" o "N meses sin intereses" que no esté tal cual
-    en la base; o un enlace fuera de diluvium.com.mx y los de Amazon/Mercado Libre de las FAQs.
-    El system del runtime pide montos con cifras y $, y desglose "cantidad × precio unitario".
-  - **AUTO con clientes reales:** no se prende antes de la revisión completa de Codex (26-sep).
+    2,000 caracteres por mensaje; el cerebro tiene la regla de no revelar instrucciones ni
+    cambiar de papel. Timeouts: filtro 20 s, cerebro 60 s.
+  - **Guardia de salida (`lib/ai/runtime/output-guard.ts`), CONGELADA el 23-sep; desde el
+    cierre de la Fase B solo AVISA** (la respuesta sale igual): un monto que no esté tal cual
+    en el Goal/FAQs activas, salvo un total con desglose correcto en la misma respuesta
+    ("3 × $5,500 = $16,500"); un %, "NxM" o "N meses sin intereses" que no esté tal cual en la
+    base; o un enlace fuera de diluvium.com.mx y los de Amazon/Mercado Libre de las FAQs.
+  - **AUTO con clientes reales (número real):** bloqueado hasta el approve de Codex del agente
+    completo. En el sandbox (solo el teléfono del dueño) AUTO está autorizado.
+  - **Antes de clientes reales** (decidido por el dueño: no dañan a un cliente hoy, no abren ronda):
+    - Aprobación concurrente (ya no aplica: no hay borradores). Conciliación de planes por
+      hora de Postgres y no por id de plan en cada mensaje: basta mientras solo un plan pueda
+      estar "enviando" por conversación.
+    - El barrido de avisos de envíos fallidos recorre `messages` cada minuto sin índice propio
+      (bien con decenas de miles de filas; agregar índice si crece).
+    - El filtro no contesta cierres sin pregunta ("gracias", "ok") ni spam.
   - **Lista para la revisión de Codex (26-sep)** — decidido por el dueño, NO se toca antes:
     - "te descuento $3,000": un monto que sí está en la base usado como descuento pasa.
     - Montos escritos con palabras ("seis mil quinientos") y con "k" ("5k") no se detectan.
