@@ -46,6 +46,7 @@ export const MODEL_CATALOG = [
     tier: "tope",
     multimodal: true,
     roles: ["cerebro"],
+    isNew: true,
   },
   {
     // Opción TOPE de cerebro (Fase B). Id de API confirmado con dry-run.
@@ -56,6 +57,7 @@ export const MODEL_CATALOG = [
     tier: "tope",
     multimodal: true,
     roles: ["cerebro"],
+    isNew: true,
   },
   {
     id: "claude-haiku-4-5",

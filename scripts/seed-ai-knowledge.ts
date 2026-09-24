@@ -4,6 +4,9 @@
 // El contenido NO se hardcodea: se lee de las fuentes versionadas
 // docs/agente-ia/angela-goal.md y docs/agente-ia/angela-faqs.json. Re-ejecutable
 // (upsert), no borra nada y preserva el toggle `enabled` que se haya puesto en el CRM.
+// Desde el 24-sep-2026 la fuente de verdad es la pestaña "Agente IA": si el Goal o las
+// FAQs ya se editaron ahí (hay versiones), el seed NO corre (pisaría lo editado sin
+// dejar versión). Solo con SEED_FORCE=1 se regresa a las fuentes de docs/.
 //
 // Uso local (org única en la base):   npm run seed:ai-knowledge
 // Org explícita:                      SEED_ORG_ID=<org> npm run seed:ai-knowledge
@@ -14,7 +17,7 @@ import { randomUUID } from "node:crypto";
 import { eq, isNotNull } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { organization } from "@/lib/db/schema/auth";
-import { aiConfig, aiKnowledge } from "@/lib/db/schema";
+import { aiConfig, aiKnowledge, aiKnowledgeVersions } from "@/lib/db/schema";
 import { DEFAULT_BRAIN_MODEL, DEFAULT_FILTER_MODEL } from "@/lib/ai/catalog";
 
 const goalUrl = new URL("../docs/agente-ia/angela-goal.md", import.meta.url);
@@ -54,6 +57,18 @@ async function main(): Promise<void> {
   const faqs = loadFaqs();
   const orgId = await resolveOrgId();
   const now = new Date();
+
+  const [edited] = await db
+    .select({ id: aiKnowledgeVersions.id })
+    .from(aiKnowledgeVersions)
+    .where(eq(aiKnowledgeVersions.organizationId, orgId))
+    .limit(1);
+  if (edited && process.env.SEED_FORCE !== "1") {
+    throw new Error(
+      "El Goal o las FAQs ya se editaron desde la pestaña Agente IA: el seed los pisaría sin dejar versión. " +
+        "No se tocó nada. Edita desde la pestaña (o usa SEED_FORCE=1 solo si de verdad quieres volver a las fuentes de docs/).",
+    );
+  }
 
   // Goal -> ai_config.goal. Si la fila no existe, se crea con los modelos por
   // defecto del catálogo; si existe, solo se actualiza el goal (no se pisan los

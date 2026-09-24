@@ -110,6 +110,29 @@ describe.skipIf(!TEST_DATABASE_URL)("calificación del contacto (Postgres real)"
     );
   }
 
+  it("Llegó por anuncio: muestra el resumen de Luna; sin él, el título y texto del anuncio; sin anuncio, nada", async () => {
+    expect((await q.getContactQualification(db, ORG_A, CONTACT_A)).anuncio).toBeNull();
+    await db.insert(s.channels).values({ id: "ch_q", organizationId: ORG_A, type: "whatsapp", provider: "zernio", providerAccountId: "zacc_q", displayName: "Q" });
+    await db.insert(s.conversations).values({ id: "cv_q", organizationId: ORG_A, contactId: CONTACT_A, channelId: "ch_q" });
+    await db.insert(s.messages).values({
+      id: "m_q_ad",
+      organizationId: ORG_A,
+      conversationId: "cv_q",
+      direction: "in",
+      source: "contact",
+      type: "text",
+      body: "Hola",
+      status: "received",
+      adReferral: { headline: "Compuertas antiinundación", body: "Desde $5,500", ctwa_clid: "secreto" },
+    });
+    expect((await q.getContactQualification(db, ORG_A, CONTACT_A)).anuncio).toBe("Compuertas antiinundación — Desde $5,500");
+    await db
+      .update(s.messages)
+      .set({ metadata: { agenteAnuncio: { mensaje: "Hola", anuncio: "Anuncio de compuertas para cochera, desde $5,500" } } })
+      .where(d.eq(s.messages.id, "m_q_ad"));
+    expect((await q.getContactQualification(db, ORG_A, CONTACT_A)).anuncio).toBe("Anuncio de compuertas para cochera, desde $5,500");
+  });
+
   it("sube y baja num_entradas sin dejar posiciones sobrantes", async () => {
     await q.setNumEntradas(db, ORG_A, CONTACT_A, 3);
     await expectEntryState(3, 3);
