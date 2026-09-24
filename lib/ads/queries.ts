@@ -6,8 +6,7 @@
 // posterior ("Métricas de anuncios") que se monta sobre estas mismas tablas.
 import { and, asc, desc, eq, gte, inArray, sql } from "drizzle-orm";
 import { db } from "@/lib/db";
-import { adClicks, contacts, conversations, messages, metaAds, type AdMediaItem } from "@/lib/db/schema";
-import { freeEntryWindow, type FreeWindow } from "./free-window";
+import { adClicks, contacts, messages, metaAds, type AdMediaItem } from "@/lib/db/schema";
 import { adsManagerUrl, storyUrl } from "./meta-api";
 import { httpsUrl, normalizeReferral } from "./referral";
 
@@ -282,7 +281,7 @@ export async function contactAdAttribution(
   return { first, others };
 }
 
-// ─── Ventana gratis de 72 h ─────────────────────────────────────────────────
+// ─── Ventana gratis de 72 h (lib/ads/free-window.ts) ────────────────────────
 
 /** Primera respuesta del NEGOCIO (humano, agente o app) que sí salió, desde la entrada por anuncio. */
 export async function firstReplyAfter(organizationId: string, conversationId: string, entryAt: Date): Promise<Date | null> {
@@ -305,13 +304,3 @@ export async function firstReplyAfter(organizationId: string, conversationId: st
   return reply?.at ?? null;
 }
 
-/** Ventana gratis de la conversación (null si el cliente no entró por un anuncio). */
-export async function conversationFreeWindow(organizationId: string, conversationId: string, now = new Date()): Promise<FreeWindow | null> {
-  const [conversation] = await db
-    .select({ adEntryAt: conversations.adEntryAt })
-    .from(conversations)
-    .where(and(eq(conversations.id, conversationId), eq(conversations.organizationId, organizationId)))
-    .limit(1);
-  if (!conversation?.adEntryAt) return null;
-  return freeEntryWindow(conversation.adEntryAt, await firstReplyAfter(organizationId, conversationId, conversation.adEntryAt), now);
-}
