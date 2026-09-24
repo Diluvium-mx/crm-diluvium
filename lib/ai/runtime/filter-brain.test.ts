@@ -35,6 +35,13 @@ describe("filtro: solo limpia el anuncio de Click-to-WhatsApp", () => {
     expect(parseAdCleaner("???", m)).toEqual({ mensaje: "Hola, quiero información", anuncio: "Compuertas", parsed: false });
     expect(stripAdMetadata(AD_BODY)).toBe("Hola, quiero información");
   });
+
+  it("respaldo con SOLO metadata: usa el saludo automático o 'Hola', nunca el cuerpo con metadata", () => {
+    const onlyMeta = "body: Compuertas\nctwaClid: X\ngreetingMessageBody: ¡Hola! Quiero info";
+    expect(parseAdCleaner("???", { direction: "in", body: onlyMeta, adReferral: null }).mensaje).toBe("¡Hola! Quiero info");
+    expect(stripAdMetadata("body: Compuertas\nctwaClid: X")).toBe("Hola");
+    expect(stripAdMetadata("")).toBe("");
+  });
 });
 
 describe("cerebro: se rige solo por el Goal y las FAQs", () => {

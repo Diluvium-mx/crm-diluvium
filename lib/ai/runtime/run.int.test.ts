@@ -445,6 +445,52 @@ describe.skipIf(!TEST_DATABASE_URL)("runtime del Agente IA (Postgres real)", () 
     expect(JSON.stringify(calls[0].input.messages)).toContain("Quiero info");
   });
 
+  it("respuesta VACÍA del modelo: no cuenta como atendida; se reintenta y el cliente recibe respuesta", async () => {
+    await msg({ direction: "in", body: "¿precio?", at: ago(120_000) });
+    await expect(run.runAgent(JOB, makeDeps({ brain: ["   "] }).deps)).rejects.toThrow("vacía");
+    expect((await usage()).find((u) => u.stage === "cerebro")).toMatchObject({ outcome: "error" });
+    expect(await sweep.findOrphanConversations(new Date())).toEqual([{ conversationId: CONV, organizationId: ORG }]);
+    expect((await run.runAgent(JOB, makeDeps().deps)).kind).toBe("sent");
+  });
+
+  it("pase a humano: el aviso se guarda ANTES de enviar y no se pierde ni se duplica si el envío falla y se reintenta", async () => {
+    await msg({ direction: "in", body: "quiero hablar con una persona", at: ago(10_000) });
+    const script = { brain: ["Claro, en un momento te atiende un asesor.\n[TRANSFERIR]"] };
+    const failing = makeDeps(script);
+    failing.deps.sendBubble = async () => {
+      throw new Error("se cayó el proveedor");
+    };
+    await expect(run.runAgent(JOB, failing.deps)).rejects.toThrow("se cayó el proveedor");
+    expect((await notices()).map((n) => n.kind)).toEqual(["pasar_a_humano"]); // ya lo ve el vendedor
+    expect(await run.runAgent(JOB, makeDeps(script).deps)).toEqual({ kind: "sent", bubbles: 1 });
+    expect((await notices()).map((n) => n.kind)).toEqual(["pasar_a_humano"]); // sin duplicar
+  });
+
+  it("anuncio con SOLO metadata y Luna caída: el cerebro nunca recibe la metadata", async () => {
+    await msg({
+      direction: "in",
+      body: "body: Compuertas desde $5,500\nctwaClid: ARsecreto\nsourceType: ad\ngreetingMessageBody: ¡Hola! Quiero más información",
+      at: ago(10_000),
+    });
+    const { deps, calls } = makeDeps();
+    const real = deps.callModel;
+    deps.callModel = async (id, input) => {
+      if (input.system === filter.FILTER_SYSTEM) throw new Error("Luna caída");
+      return real(id, input);
+    };
+    expect((await run.runAgent(JOB, deps)).kind).toBe("sent");
+    const seen = JSON.stringify(calls[0].input.messages);
+    for (const leaked of ["body:", "ctwaClid", "ARsecreto", "sourceType", "desde $5,500"]) expect(seen).not.toContain(leaked);
+    expect(seen).toContain("¡Hola! Quiero más información");
+  });
+
+  it("historial sin tope de mensajes: se lee por páginas completo y en orden", async () => {
+    const { loadHistory } = await import("./context");
+    for (let i = 0; i < 40; i++) await msg({ direction: i % 2 ? "out" : "in", body: `h${i}`, at: ago((50 - i) * 60_000) });
+    const rows = await loadHistory(ORG, CONV, { pageRows: 7 });
+    expect(rows.map((r) => r.body)).toEqual(Array.from({ length: 40 }, (_, i) => `h${i}`));
+  });
+
   it("lee TODA la conversación (no solo los últimos 20 mensajes)", async () => {
     for (let i = 0; i < 40; i++) {
       await msg({ direction: i % 2 ? "out" : "in", source: i % 2 ? "ai_agent" : undefined, body: `m${i}-texto`, at: ago((60 - i) * 60_000) });
