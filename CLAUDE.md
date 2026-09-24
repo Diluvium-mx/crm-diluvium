@@ -262,6 +262,32 @@ Reglas de UI:
   alimentará las automatizaciones. En v1 solo registra actividad.
 - Marca: navy `#0A559A` / `#245595`, blanco `#FFFFFF`, naranja `#DE8C11` / `#FE9F29`, tipografía Helvetica.
   Naranja reservado para acciones primarias y alertas, nunca como fondo extenso.
+- **Buscadores (regla del repositorio, 24-sep-2026):** todo buscador del CRM, actual o nuevo,
+  ignora acentos, ñ y mayúsculas con `lib/text/search.ts` (`matchesSearch` / `normalizeSearch`;
+  en el servidor, la misma normalización en SQL con `lower(translate(...))` usando
+  `SQL_SEARCH_FROM/TO`, sin extensión `unaccent`). **Prohibido** filtrar con
+  `toLowerCase().includes` o `ilike` directo. La prueba guardiana
+  `lib/text/search-guard.test.ts` falla si aparece uno; la única excepción anotada es el filtro de
+  comandos del composer (Fase D).
+- **Paneles que se ocultan** (lista y Detalle de la Bandeja, Detalle del pop-up del Embudo):
+  se recuerdan por computadora con `components/ui/use-persistent-toggle.ts` (localStorage con
+  try/catch; sin almacenamiento, abierto por defecto; sin parpadeo). Cualquier panel nuevo que se
+  pueda ocultar usa ese hook.
+- **Indicador "Agente IA leyendo/escribiendo/enviando"** (píldora en el chat,
+  `app/(app)/dashboard/_components/agent-activity-pill.tsx`, lector `lib/agente-ia/activity*.ts`,
+  orbe del paquete `thinking-orbs` 0.3.2 fijo): depende de DOS contratos de Fase D que no se
+  cambian sin actualizarlo: (1) en la cola BullMQ `agent-replies` el **jobId = conversationId**
+  (`lib/ai/runtime/queue.ts`); (2) `workflow_runs.trigger` ∈ `agent|keyword|command|stage` y
+  `status` `queued|running` = corrida abierta (`lib/db/schema/automation.ts`). Lee la cola con
+  `withQueueTimeout` (1.5 s); si Redis falla, muestra nada.
+- **Enlaces** (estilo propio en `app/globals.css`, sin el fondo iluminado de los botones):
+  `data-link="text"` (subrayado que se dibuja + navy más intenso), `data-link="card"`
+  (tarjeta-enlace: borde navy, sombra, sube 1 px; su flecha lleva `data-link-arrow`),
+  `data-link="tab"` (pestaña-enlace: fondo navy tenue). Un enlace con forma de botón sólido lleva
+  `data-glow`. Al llegar Anuncios a `main`: la tarjeta "Llegó por anuncio" y la lista de
+  `/anuncios` llevan `data-link="card"`, "Ver en Meta" lleva `data-link="text"`. La tabla de
+  anuncios (`components/anuncios/ads-table.tsx`, contrato en `docs/ui-anuncios-tabla.md`)
+  reemplaza la lista de `/anuncios` con luz verde del dueño.
 
 ---
 
