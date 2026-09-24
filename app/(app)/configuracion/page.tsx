@@ -44,6 +44,7 @@ export default async function ConfiguracionPage({ searchParams }: PageProps<"/co
               key={t.key}
               href={`/configuracion?tab=${t.key}`}
               aria-current={tab === t.key ? "page" : undefined}
+              data-link="tab"
               className={`rounded-md px-3 py-1.5 ${tab === t.key ? "bg-card font-medium shadow-sm" : "text-muted-foreground hover:text-foreground"}`}
             >
               {t.label}
