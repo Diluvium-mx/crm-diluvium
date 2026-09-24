@@ -22,8 +22,9 @@ export const statement = {
   // Rangos editables de tallas: todos los vendedores los consultan para las
   // sugerencias; solo owner/admin cambian la configuración compartida.
   sizeRange: ["read", "update"],
-  // Tarjeta "Gasto de IA" del Dashboard (A2): solo owner/admin.
-  aiSpend: ["read"],
+  // Tarjeta "Gasto de IA" del Dashboard (A2): solo owner/admin la ven (`read`) y
+  // registran las recargas de crédito de los proveedores (`update`).
+  aiSpend: ["read", "update"],
 } as const;
 
 export const ac = createAccessControl(statement);
@@ -36,7 +37,7 @@ export const owner = ac.newRole({
   template: ["read", "create", "sync"],
   aiConfig: ["read", "update"],
   sizeRange: ["read", "update"],
-  aiSpend: ["read"],
+  aiSpend: ["read", "update"],
 });
 
 export const admin = ac.newRole({
@@ -47,7 +48,7 @@ export const admin = ac.newRole({
   template: ["read", "create", "sync"],
   aiConfig: ["read", "update"],
   sizeRange: ["read", "update"],
-  aiSpend: ["read"],
+  aiSpend: ["read", "update"],
 });
 
 export const agent = ac.newRole({

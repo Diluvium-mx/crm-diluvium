@@ -1,5 +1,7 @@
 import "server-only";
-import { modelsForRole } from "@/lib/ai/catalog";
+import { DEFAULT_BRAIN_MODEL, modelsForRole } from "@/lib/ai/catalog";
+import { DEFAULT_MODEL_PRICES } from "@/lib/ai/pricing";
+import { costTier } from "./editor";
 import { modelAvailability, PROVIDER_META } from "@/lib/ai/provider";
 import type { ModelRole } from "@/lib/ai/types";
 import type { ModelOptionView } from "./types";
@@ -34,6 +36,9 @@ export function buildModelOptions(role: ModelRole): ModelOptionView[] {
       multimodal: m.multimodal,
       available: availability.available,
       disabledReason: availability.available ? null : reasonText(availability.reason, availability.envKey),
+      costTier: costTier(DEFAULT_MODEL_PRICES[m.id]?.output ?? null),
+      recommended: m.id === DEFAULT_BRAIN_MODEL,
+      isNew: m.isNew === true,
     };
   });
 }

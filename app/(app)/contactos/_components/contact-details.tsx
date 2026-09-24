@@ -427,7 +427,13 @@ export function ContactDetails({
               </select>
             </Field>
 
-            {/* Interruptor del Agente IA en esta conversación (Fase B). */}
+            {details.anuncio && (
+              <Field title="Llegó por anuncio">
+                <p className="text-xs text-foreground">{details.anuncio}</p>
+              </Field>
+            )}
+
+            {/* Estado del Agente IA en esta conversación (Fase B). */}
             <AgentContactSwitch contactId={contactId} />
 
             <Field title="Comentarios">
