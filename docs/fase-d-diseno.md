@@ -541,3 +541,21 @@ workflow deshabilitado).
    `pagos.ts`), con su propio gate y prueba en `ch_zernio_sandbox` en `auto`.
 8. **Vuelta atrás:** deshabilitar todo desde la pestaña detiene la Fase D sin deploy; la 0027 solo
    agrega tablas y un valor de enum.
+
+## 10. Parte (b) — diseño corto (24-sep-2026, tras la prueba en producción de la parte a)
+
+Rama `feat/agente-ia-fase-d-b` desde `main`. Ya se puede tocar `lib/ai/runtime`. Sin migraciones
+previstas. Reglas que mandan: el agente siempre en AUTO; los workflows nunca lo pausan; por palabra
+clave una vez por contacto, por el agente siempre; comprobante = monto + referencia.
+
+| Paso | Qué hace | Toca |
+|---|---|---|
+| **B0 Palabra clave + agente** | Los salientes de una corrida `keyword` dejan de "cerrar" los pendientes: `pendingInbound`, `lastOutbound` y el chequeo "otro saliente antes de enviar" ignoran los mensajes cuyo id esté en `workflow_runs.message_ids` de corridas `keyword`/`agent`, y también `type = system_note`. Así el workflow manda la media y el agente contesta el resto del mismo mensaje, como Ángela en GHL. Test: "me pasas la tabla y el precio" → tabla (workflow) + precio (agente). | `context.ts`, `run.ts` |
+| **B1 Herramientas** | `toolCalls` en `CallModelResult` (tools sin `execute`, `strict`, `tool_choice: auto`, una sola vuelta). `tools.ts` arma una herramienta por workflow habilitado con "agente": `wf_<slug>` + descripción = "Cuándo usarlo". Argumentos: `cambiar_etapa {etapa}`, `transferir_humano {motivo}`, `pago_confirmado` / `anticipo_confirmado` `{monto, fecha, banco, referencia}`, `pago_no_cuadra {motivo}`; el resto `{}`. Orden estable por `position` (caché del prompt). | `lib/ai/types.ts`, `lib/ai/providers/*`, `lib/ai/runtime/tools.ts` (nuevo), `brain.ts` (system: "texto primero, luego herramienta"; quitar "todavía no disponible") |
+| **B2 Ejecución** | `run.ts`: texto → burbujas → por cada tool call válida, `startWorkflowRun({ trigger: "agent", payload: args })` en el orden pedido (una herramienta desconocida o deshabilitada se ignora y se registra). El ejecutor ya relee el estado antes de cada paso y ya mueve la etapa (`datos_bancarios` → Cerca de compra; `pago_confirmado` → Compra; `cambiar_etapa` toma `etapa` del argumento). `transferir_humano` desde el agente = aviso en el hilo, sin pausa (Fase B 3). | `run.ts`, `executor.ts` (sin cambios de fondo) |
+| **B3 Comprobante** | Entrante con imagen: el cerebro ya la ve. El system le pide leer monto, fecha, banco y referencia y llamar `pago_confirmado` (o `anticipo_confirmado`). **La confirmación la decide el CRM, no el modelo:** antes de correr la herramienta, `run.ts` arma `contextoParaComprobante` y llama `verificarComprobante` (monto contra el total cotizado, anticipo 50 % o $3,500, o resto pendiente; referencia no repetida). Cuadra → `registrarPagoConfirmado` + corrida del workflow (aviso interno "cotejar el depósito" + etapa) y sale el texto del modelo. No cuadra → se descarta el texto del modelo y corre `pago_no_cuadra` con `{{motivo}}` de la verificación: texto amable al cliente ("Gracias por tu comprobante… {{motivo}}; un asesor lo revisa") + aviso interno; **sin pausa ni handover** (el predeterminado pierde su paso `handover`). Si el modelo llama `pago_confirmado` sin imagen en el entrante, se ignora. | `run.ts`, `lib/cobro/pagos.ts`, `defaults.ts` (`pago_no_cuadra`) |
+| **B4 Cotización** | El monto cotizado vive en `contacts.monto_cotizacion` (lo fija el vendedor en el detalle). Propuesta: herramienta `fijar_cotizacion {monto}` para que el agente lo guarde cuando cotiza ($5,500 / $7,000 / $3,000 / tapones); sin ella, un comprobante sin cotización fijada pasa a "no cuadra" con el motivo "el contacto no tiene monto de cotización". **Decisión del dueño pendiente.** | `tools.ts`, `executor.ts` (paso `set_quote`) |
+| **B5 Gate + prueba** | Adversarial + cyber-neo + Codex sobre el delta; `typecheck|test|lint`. Prueba en `ch_zernio_sandbox`: "me pasas la tabla y el precio" (ambos contestan), "¿cómo pago?" (datos bancarios por el agente → Cerca de compra), comprobante que cuadra (→ Compra + aviso) y que no cuadra (texto amable + aviso, agente activo), "quiero hablar con una persona" (aviso, sin pausa). | — |
+
+Fuera de (b): tope de repetición por palabra clave (decisión 7), MIME sniffing, snapshot de pasos por corrida.
+
