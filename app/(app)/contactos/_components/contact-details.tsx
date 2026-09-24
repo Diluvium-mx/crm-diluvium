@@ -8,6 +8,7 @@
 // Guardado automático al salir de cada campo (sin botón Guardar), con aviso
 // sutil. Etapa y temperatura las maneja el padre (cada vista las sincroniza a su
 // modo: el tablero con su estado optimista, la Bandeja con el suyo).
+import Link from "next/link";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { getContactDetails, setNumEntradas, updateContactQualification } from "@/lib/actions/contact-qualification";
 import { createSerialSaves } from "@/lib/autosave/serial-saves";
@@ -427,9 +428,27 @@ export function ContactDetails({
               </select>
             </Field>
 
-            {details.anuncio && (
+            {(details.anuncios || details.anuncio) && (
               <Field title="Llegó por anuncio">
-                <p className="text-xs text-foreground">{details.anuncio}</p>
+                {details.anuncios && (
+                  <Link href={details.anuncios.first.href} className="block truncate text-xs font-medium text-brand-navy hover:underline dark:text-brand-white">
+                    📣 {details.anuncios.first.name}
+                  </Link>
+                )}
+                {details.anuncio && <p className="text-xs text-muted-foreground">{details.anuncio}</p>}
+                {details.anuncios && details.anuncios.others.length > 0 && (
+                  <p className="text-xs text-muted-foreground">
+                    También volvió por:{" "}
+                    {details.anuncios.others.map((o, i) => (
+                      <span key={o.href}>
+                        {i > 0 && ", "}
+                        <Link href={o.href} className="text-brand-navy hover:underline dark:text-brand-white">
+                          {o.name}
+                        </Link>
+                      </span>
+                    ))}
+                  </p>
+                )}
               </Field>
             )}
 

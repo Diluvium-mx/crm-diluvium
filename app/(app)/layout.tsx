@@ -16,6 +16,8 @@ const NAV_ITEMS = [
   { label: "Bandeja", href: "/dashboard" },
   { label: "Embudo", href: "/embudo" },
   { label: "Mensajes rápidos", href: "/mensajes-rapidos" },
+  // De qué anuncios de Meta llegan los clientes (todos lo ven: la tarjeta del chat lleva aquí).
+  { label: "Anuncios", href: "/anuncios" },
 ];
 
 export default async function AppLayout({

@@ -15,6 +15,7 @@ import {
 import { isInternalAgentTag } from "@/lib/ai/runtime/tags";
 import { conversations, messages } from "@/lib/db/schema/messaging";
 import { sanitizeReferral } from "@/lib/inbox/format";
+import { contactAdAttribution } from "@/lib/ads/queries";
 
 // La conexión principal y las transacciones comparten esta interfaz. Así estas
 // funciones sirven igual para Server Actions y para procesos futuros del agente IA.
@@ -106,7 +107,7 @@ export async function getContactQualification(
   contactId: string,
 ) {
   const contact = await requireContact(database, organizationId, contactId);
-  const [entradas, comentarios, anuncio] = await Promise.all([
+  const [entradas, comentarios, anuncio, anuncios] = await Promise.all([
     database
       .select({
         id: contactEntradas.id,
@@ -143,11 +144,20 @@ export async function getContactQualification(
       )
       .orderBy(desc(contactComentarios.createdAt)),
     adSummary(database, organizationId, contactId),
+    contactAdAttribution(organizationId, contactId),
   ]);
 
   return {
     // Resumen corto del anuncio de Click-to-WhatsApp por el que llegó (lo deja Luna).
     anuncio,
+    // Anuncio (nombre de Meta + enlace a su página) por el que llegó primero y
+    // los otros por los que volvió. null = no llegó por anuncio.
+    anuncios: anuncios
+      ? {
+          first: { name: anuncios.first.name, href: anuncios.first.href },
+          others: anuncios.others.map((o) => ({ name: o.name, href: o.href })),
+        }
+      : null,
     // Datos básicos que el panel muestra al final (compactos).
     email: contact.email,
     // Sin las etiquetas internas del agente ("pasar a humano", "revisión humana").
