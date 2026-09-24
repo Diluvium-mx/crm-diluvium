@@ -6,6 +6,7 @@ import { callModel } from "@/lib/ai";
 import { redisConnection } from "@/lib/queue/inbound";
 import type { MessagingProvider } from "@/lib/messaging/provider";
 import { sendTextMessage } from "@/lib/messaging/send";
+import { startWorkflowRun } from "@/lib/workflows/executor";
 import type { ObjectStorage } from "@/lib/storage/s3";
 import { processAgentJob } from "./process";
 import {
@@ -44,6 +45,8 @@ export function makeRunDeps(provider: MessagingProvider, storage: ObjectStorage 
       sendTextMessage(provider, { organizationId, conversationId, text, source: "ai_agent", sentByUserId: null }),
     sleep: (ms) => new Promise((r) => setTimeout(r, ms)),
     resolveImage: async (key) => (storage ? storage.signedGetUrl(key, 15 * 60) : null),
+    // Acciones del cerebro (Fase D): corridas de workflow con trigger "agent".
+    startWorkflow: startWorkflowRun,
   };
 }
 
