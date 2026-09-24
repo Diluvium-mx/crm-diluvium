@@ -27,6 +27,7 @@ export async function loadAgentTools(organizationId: string): Promise<AgentTools
 export type StartWorkflow = (input: StartRunInput) => Promise<StartRunResult>;
 
 const PAGO_SLUGS = new Set(["pago_confirmado", "anticipo_confirmado"]);
+const SLUG_CAMBIAR_ETAPA = "cambiar_etapa";
 export const SLUG_PAGO_COMPLETO = "pago_confirmado";
 export const SLUG_ANTICIPO = "anticipo_confirmado";
 export const SLUG_NO_CUADRA = "pago_no_cuadra";
@@ -46,7 +47,15 @@ export type ActionPlan = {
 // Texto al cliente cuando el comprobante no cuadra (definición 3 del dueño):
 // amable, con el motivo, y un asesor lo revisa. El agente sigue activo.
 export function noCuadraText(motivo: string): string {
-  return `Gracias por tu comprobante 🙏 Lo revisé y ${motivo}. Ya le avisé a un asesor para que lo revise y te confirme en un momento.`;
+  return `Gracias por tu comprobante 🙏 Lo revisé y ${motivoParaCliente(motivo)}. Ya le avisé a un asesor para que lo revise y te confirme en un momento.`;
+}
+
+// Los motivos de verificarComprobante son para el vendedor; al cliente le llega
+// una frase sin jerga interna ni acusaciones.
+export function motivoParaCliente(motivo: string): string {
+  if (/no tiene monto de cotizaci/i.test(motivo)) return "todavía no tengo registrado el total de tu pedido";
+  if (/ya se usó/i.test(motivo)) return "esa referencia ya la tenemos registrada de un pago anterior";
+  return motivo.replace(/\s*\(posible captura reenviada\)/i, "");
 }
 
 const money = (n: number) => `$${n.toLocaleString("es-MX", { minimumFractionDigits: 0, maximumFractionDigits: 2 })}`;
@@ -63,9 +72,20 @@ export async function prepareActions(input: {
 }): Promise<ActionPlan> {
   const plan: ActionPlan = { text: input.modelText, runs: [], quote: null, pago: null, notes: [] };
   let pagoHandled = false;
+  // Cotización y comprobante NUNCA en la misma vuelta: un cliente podría dictarle
+  // al modelo un total bajo ("me cotizaron en $500") y "cuadrar" un comprobante
+  // barato. La cotización solo cuenta si ya estaba guardada de una vuelta anterior.
+  const pideConfirmarPago = input.calls.some((c) => c.kind === "workflow" && PAGO_SLUGS.has(c.workflow.slug));
   for (const c of input.calls) {
     if (c.kind === "cotizacion") {
-      plan.quote = c.monto;
+      if (pideConfirmarPago) plan.notes.push("fijar_cotizacion ignorada: vino junto con un comprobante");
+      else plan.quote = c.monto;
+      continue;
+    }
+    if (c.workflow.slug === SLUG_CAMBIAR_ETAPA && c.args.etapa === "compra") {
+      // A "Compra" solo se llega con un pago verificado (pago_confirmado).
+      plan.notes.push("cambiar_etapa a compra sin pago verificado: se deja en cerca_compra");
+      plan.runs.push({ slug: c.workflow.slug, workflowId: c.workflow.id, payload: { ...c.args, etapa: "cerca_compra" } });
       continue;
     }
     if (PAGO_SLUGS.has(c.workflow.slug)) {
@@ -81,10 +101,9 @@ export async function prepareActions(input: {
         fecha: str(c.args.fecha),
         banco: str(c.args.banco),
         referencia: str(c.args.referencia),
+        moneda: str(c.args.moneda),
       };
-      // Si el modelo acaba de fijar la cotización en esta misma respuesta, cuenta.
       const ctx = await contextoParaComprobante(input.organizationId, input.conversationId, input.contactId, lectura.referencia);
-      if (plan.quote !== null && (ctx.totalCotizado === null || ctx.totalCotizado <= 0)) ctx.totalCotizado = plan.quote;
       const res = verificarComprobante(lectura, ctx);
       if (!res.ok) {
         plan.text = noCuadraText(res.motivo);
@@ -138,9 +157,44 @@ export async function setQuoteByAgent(organizationId: string, contactId: string,
 
 export type ExecutedActions = { started: string[]; skipped: string[]; notes: string[] };
 
-// Corre el plan DESPUÉS de las burbujas: cotización, registro del pago y corridas
-// en el orden en que el modelo las pidió. Cada corrida relee el estado del agente
-// antes de cada paso (executor); aquí solo se encolan.
+// ANTES de las burbujas: el pago verificado se registra primero. Si la referencia
+// entró dos veces a la vez (carrera) o la BD falla, al cliente NO se le dice
+// "confirmado": el texto pasa a ser el amable y corre pago_no_cuadra.
+export async function commitPagoBeforeText(
+  plan: ActionPlan,
+  ctx: { organizationId: string; conversationId: string; contactId: string },
+  workflowsBySlug: ReadonlyMap<string, { id: string; slug: string }>,
+): Promise<void> {
+  if (!plan.pago) return;
+  const fallo = (motivo: string) => {
+    plan.notes.push(`pago no registrado: ${motivo}`);
+    plan.pago = null;
+    plan.runs = plan.runs.filter((r) => !PAGO_SLUGS.has(r.slug));
+    plan.text = noCuadraText(motivo);
+    const wf = workflowsBySlug.get(SLUG_NO_CUADRA);
+    if (wf) plan.runs.push({ slug: wf.slug, workflowId: wf.id, payload: { motivo } });
+  };
+  try {
+    await registrarPagoConfirmado({
+      organizationId: ctx.organizationId,
+      conversationId: ctx.conversationId,
+      contactId: ctx.contactId,
+      referencia: plan.pago.referencia,
+      montoMxn: plan.pago.montoMxn,
+      tipo: plan.pago.tipo,
+      banco: plan.pago.banco,
+      fechaComprobante: plan.pago.fecha,
+      confirmadoPor: "agente",
+    });
+  } catch (error) {
+    if (error instanceof ReferenciaDuplicadaError) fallo(`la referencia ${plan.pago.referencia} ya se usó en un pago confirmado antes`);
+    else fallo(`no se pudo registrar el pago (${error instanceof Error ? error.message : String(error)})`);
+  }
+}
+
+// DESPUÉS de las burbujas: cotización y corridas en el orden en que el modelo las
+// pidió. Cada corrida relee el estado del agente antes de cada paso (executor);
+// aquí solo se encolan.
 export async function executeActions(
   plan: ActionPlan,
   ctx: { organizationId: string; conversationId: string; contactId: string; now: Date },
@@ -150,26 +204,6 @@ export async function executeActions(
   if (plan.quote !== null) {
     const ok = await setQuoteByAgent(ctx.organizationId, ctx.contactId, plan.quote);
     if (!ok) out.notes.push("cotización no guardada: la fijó un vendedor");
-  }
-  if (plan.pago) {
-    try {
-      await registrarPagoConfirmado({
-        organizationId: ctx.organizationId,
-        conversationId: ctx.conversationId,
-        contactId: ctx.contactId,
-        referencia: plan.pago.referencia,
-        montoMxn: plan.pago.montoMxn,
-        tipo: plan.pago.tipo,
-        banco: plan.pago.banco,
-        fechaComprobante: plan.pago.fecha,
-        confirmadoPor: "agente",
-      });
-    } catch (error) {
-      if (!(error instanceof ReferenciaDuplicadaError)) throw error;
-      // Carrera: la misma referencia entró dos veces. El workflow de pago no corre.
-      out.notes.push(`referencia ${plan.pago.referencia} ya registrada; no se repite la confirmación`);
-      plan.runs = plan.runs.filter((r) => !PAGO_SLUGS.has(r.slug));
-    }
   }
   for (const r of plan.runs) {
     const res = await startWorkflow({
