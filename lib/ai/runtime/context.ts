@@ -34,12 +34,14 @@ export async function loadSnapshot(
 
 // Saliente que CUENTA como respuesta al cliente (cierra los pendientes): no
 // fallido, no aviso interno (system_note: solo lo ve el vendedor) y no mandado por
-// una corrida de workflow por PALABRA CLAVE (Fase D, 24-sep-2026: el workflow
-// manda la media y el agente contesta el resto del mismo mensaje, como en GHL).
+// una corrida de workflow por PALABRA CLAVE o del AGENTE (Fase D, 24-sep-2026: el
+// workflow manda la media y el agente contesta el resto del mismo mensaje, como en
+// GHL; y lo que el cliente escriba durante la espera de 30 s de la tabla no queda
+// "atendido" por la imagen).
 const closesPending = sql`${messages.type} <> 'system_note' and not exists (
   select 1 from workflow_runs r
   where r.organization_id = ${messages.organizationId} and r.conversation_id = ${messages.conversationId}
-    and r.trigger = 'keyword' and r.message_ids ? ${messages.id}
+    and r.trigger in ('keyword', 'agent') and r.message_ids ? ${messages.id}
 )`;
 
 // Último saliente que salió o va en camino (un envío FALLIDO no le respondió al
@@ -75,7 +77,7 @@ export async function pendingInbound(organizationId: string, conversationId: str
             and not exists (
               select 1 from workflow_runs r
               where r.organization_id = o.organization_id and r.conversation_id = o.conversation_id
-                and r.trigger = 'keyword' and r.message_ids ? o.id
+                and r.trigger in ('keyword', 'agent') and r.message_ids ? o.id
             )
         ), '-infinity'::timestamp)`,
       ),
@@ -237,6 +239,30 @@ export async function lastHandledInboundAt(organizationId: string, conversationI
     .orderBy(desc(messages.createdAt))
     .limit(1);
   return row?.createdAt ?? null;
+}
+
+// ¿El cliente mandó una imagen después del último pago confirmado en esta
+// conversación (o en las últimas 24 h si no hay ninguno)? El modelo puede llamar
+// pago_confirmado una vuelta después de la foto ("¿es el pago de la estándar?" →
+// "sí"); sin foto reciente, no hay comprobante que verificar.
+export async function recentInboundImage(organizationId: string, conversationId: string, now = new Date()): Promise<boolean> {
+  const [row] = await db
+    .select({ id: messages.id })
+    .from(messages)
+    .where(
+      and(
+        inConversation(organizationId, conversationId),
+        eq(messages.direction, "in"),
+        sql`exists (select 1 from jsonb_array_elements(${messages.attachments}) a where a->>'type' = 'image')`,
+        sql`${messages.createdAt} > greatest(
+          ${new Date(now.getTime() - 24 * 3_600_000).toISOString()}::timestamp,
+          coalesce((select max(p.created_at) from pagos_confirmados p
+                    where p.organization_id = ${organizationId} and p.conversation_id = ${conversationId}), '-infinity'::timestamp)
+        )`,
+      ),
+    )
+    .limit(1);
+  return Boolean(row);
 }
 
 // Hora (WhatsApp) de un mensaje ya cargado.
