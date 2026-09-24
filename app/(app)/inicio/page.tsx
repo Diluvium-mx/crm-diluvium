@@ -8,6 +8,7 @@ import {
 } from "@/lib/dashboard/queries";
 import { resolveRange } from "@/lib/dashboard/range";
 import { aiSpendSummary } from "@/lib/dashboard/ai-spend";
+import { fetchStagingSpend } from "@/lib/dashboard/staging-spend";
 import { STAGES, STAGE_LABELS } from "../contactos/_data/types";
 import { AiSpendCard } from "./_components/ai-spend-card";
 import { BreakdownList } from "./_components/breakdown-list";
@@ -39,7 +40,13 @@ export default async function InicioPage({ searchParams }: PageProps<"/inicio">)
     newConversationsCards(db, organizationId),
     newConversationsByDay(db, organizationId, range),
     newConversationsBreakdown(db, organizationId, range),
-    canSeeSpend ? aiSpendSummary(db, organizationId) : null,
+    canSeeSpend
+      ? aiSpendSummary(db, organizationId, {
+          // Railway da RAILWAY_ENVIRONMENT_NAME; en staging la tarjeta solo muestra su propio gasto.
+          environment: process.env.RAILWAY_ENVIRONMENT_NAME === "staging" ? "staging" : "production",
+          fetchStaging: (from) => fetchStagingSpend(from),
+        })
+      : null,
   ]);
 
   const byStage = new Map(breakdown.porEtapa.map((b) => [b.clave, b.total]));

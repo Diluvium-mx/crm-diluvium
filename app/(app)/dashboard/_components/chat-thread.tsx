@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import type { AdReferral, AttachmentView, ConversationDetail, MessageView } from "@/lib/inbox/types";
 import { listMessages, retryMessage, sendMessage, sendTemplate } from "@/lib/inbox/actions";
 import { runWorkflowCommand } from "@/lib/actions/workflows";
@@ -20,6 +20,10 @@ import {
 import { displayPhone } from "@/lib/phone-format";
 
 const PAGE_LIMIT = 30;
+// Distancia al tope (px) a la que se cargan solos los mensajes anteriores, y al
+// fondo para considerar que el vendedor "está abajo" (los nuevos lo siguen).
+const LOAD_OLDER_AT_PX = 120;
+const NEAR_BOTTOM_PX = 120;
 
 // Mensaje pintado de forma optimista (aún sin id del servidor). Se reconcilia
 // con el `message.upserted` del SSE: al re-pedir el hilo, se descarta el
@@ -239,6 +243,17 @@ export function ChatThread({
   const [loadError, setLoadError] = useState<string | null>(null);
   const [viewing, setViewing] = useState<AttachmentView | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
+  // A qué conversación pertenecen los mensajes cargados (el chat se reutiliza al
+  // cambiar de conversación en la Bandeja) y cuál está abierta ahora.
+  const loadedRef = useRef<{ conversationId: string | null; messages: MessageView[]; hasMore: boolean }>({
+    conversationId: null,
+    messages: [],
+    hasMore: false,
+  });
+  const openConversationRef = useRef(conversationId);
+  useEffect(() => {
+    openConversationRef.current = conversationId;
+  }, [conversationId]);
   // Sube al programar un mensaje: la franja de programados (A6) se recarga.
   const [scheduledRev, setScheduledRev] = useState(0);
   const [scheduledCount, setScheduledCount] = useState(0);
@@ -269,8 +284,24 @@ export function ChatThread({
         setLoadError("No se pudo cargar la conversación.");
         return;
       }
-      setMessages(page.messages);
-      setHasMore(page.hasMore);
+      // Respuesta tardía de una conversación que ya no está abierta: se ignora.
+      if (openConversationRef.current !== conversationId) return;
+      // Recarga (SSE): trae la página más reciente y CONSERVA los anteriores que el
+      // vendedor ya cargó hacia arriba EN ESTA conversación, para no perder su lugar.
+      // Solo si EMPALMAN: el mensaje más antiguo de la página nueva ya estaba cargado.
+      // Si no (llegaron más de una página de mensajes), se descartan los anteriores
+      // y se vuelve a paginar desde la página nueva: nunca queda un hueco escondido.
+      const loaded = loadedRef.current;
+      const joinAt =
+        loaded.conversationId === conversationId && page.messages[0]
+          ? loaded.messages.findIndex((m) => m.id === page.messages[0].id)
+          : -1;
+      const older = joinAt > 0 ? loaded.messages.slice(0, joinAt) : [];
+      const next = older.length ? [...older, ...page.messages] : page.messages;
+      const nextHasMore = older.length ? loaded.hasMore : page.hasMore;
+      loadedRef.current = { conversationId, messages: next, hasMore: nextHasMore };
+      setMessages(next);
+      setHasMore(nextHasMore);
       reconcile(page.messages);
     } catch {
       setLoadError("No se pudo cargar la conversación.");
@@ -286,13 +317,41 @@ export function ChatThread({
     return () => clearTimeout(t);
   }, [load, revalToken]);
 
+  // Scroll del historial: SOLO se desliza el historial (la página y el composer
+  // quedan fijos). Al cargar anteriores se conserva el lugar; los mensajes nuevos
+  // bajan al fondo solo si el vendedor ya estaba abajo, cambió de conversación o
+  // acaba de enviar.
+  const loadingOlderRef = useRef(false);
+  const prependRef = useRef<{ height: number; top: number } | null>(null);
+  const nearBottomRef = useRef(true);
+  const forceBottomRef = useRef(true);
+  const shownConversationRef = useRef(conversationId);
+
   async function loadOlder() {
     const oldest = messages[0];
-    if (!oldest) return;
-    const page = await listMessages(conversationId, { before: oldest.id, limit: PAGE_LIMIT });
-    if (!page) return;
-    setMessages((current) => [...page.messages, ...current]);
-    setHasMore(page.hasMore);
+    const el = scrollRef.current;
+    if (!oldest || loadingOlderRef.current) return;
+    loadingOlderRef.current = true;
+    try {
+      const page = await listMessages(conversationId, { before: oldest.id, limit: PAGE_LIMIT });
+      const loaded = loadedRef.current;
+      if (!page || openConversationRef.current !== conversationId || loaded.conversationId !== conversationId) return;
+      if (page.messages.length > 0 && el) prependRef.current = { height: el.scrollHeight, top: el.scrollTop };
+      const known = new Set(loaded.messages.map((m) => m.id));
+      const next = [...page.messages.filter((m) => !known.has(m.id)), ...loaded.messages];
+      loadedRef.current = { conversationId, messages: next, hasMore: page.hasMore };
+      setMessages(next);
+      setHasMore(page.hasMore);
+    } finally {
+      loadingOlderRef.current = false;
+    }
+  }
+
+  function onHistoryScroll() {
+    const el = scrollRef.current;
+    if (!el) return;
+    nearBottomRef.current = el.scrollHeight - el.scrollTop - el.clientHeight < NEAR_BOTTOM_PX;
+    if (el.scrollTop < LOAD_OLDER_AT_PX && hasMore && !loading) void loadOlder();
   }
 
   // Auto-scroll al fondo cuando cambia la cantidad de mensajes/optimistas.
@@ -301,10 +360,31 @@ export function ChatThread({
   const timeline = useMemo(() => interleaveNotices(rows, agent?.notices ?? [], hasMore), [rows, agent?.notices, hasMore]);
   const rowIndex = useMemo(() => new Map(rows.map((r, i) => [r, i])), [rows]);
   const noticeCount = agent?.notices.length ?? 0;
-  useEffect(() => {
+  // El último mensaje mostrado: cambia al llegar uno nuevo o al abrir otra
+  // conversación aunque tenga la misma cantidad de mensajes cargados.
+  const lastRow = rows[rows.length - 1];
+  const lastKey = lastRow ? (isOptimistic(lastRow) ? lastRow.clientId : lastRow.id) : null;
+  useLayoutEffect(() => {
     const el = scrollRef.current;
-    if (el) el.scrollTop = el.scrollHeight;
-  }, [rows.length, scheduledCount, conversationId, noticeCount]);
+    if (!el) return;
+    if (shownConversationRef.current !== conversationId) {
+      shownConversationRef.current = conversationId;
+      forceBottomRef.current = true;
+      prependRef.current = null;
+    }
+    const prepend = prependRef.current;
+    if (prepend) {
+      // Anteriores agregados arriba: el mismo mensaje sigue a la vista.
+      prependRef.current = null;
+      el.scrollTop = el.scrollHeight - prepend.height + prepend.top;
+      return;
+    }
+    if (forceBottomRef.current || nearBottomRef.current) {
+      el.scrollTop = el.scrollHeight;
+      nearBottomRef.current = true;
+      if (rows.length > 0) forceBottomRef.current = false;
+    }
+  }, [rows.length, lastKey, scheduledCount, conversationId, noticeCount]);
 
   // "/tabla" y similares (Fase D): si el texto es un comando de workflow, se
   // dispara la automatización; si no corresponde a ninguno, sale como texto.
@@ -325,6 +405,7 @@ export function ChatThread({
   }
 
   async function doSend(text: string) {
+    forceBottomRef.current = true;
     const clientId = `opt-${Date.now()}-${Math.random().toString(36).slice(2)}`;
     setOptimistic((current) => [
       ...current,
@@ -344,6 +425,7 @@ export function ChatThread({
   // guarda el cuerpo ya rellenado, que coincide con el mensaje real al llegar
   // por SSE y reconcilia). Solo se usa con la ventana de 24 h cerrada.
   async function doSendTemplate(templateId: string, values: string[], preview: string) {
+    forceBottomRef.current = true;
     const clientId = `opt-${Date.now()}-${Math.random().toString(36).slice(2)}`;
     setOptimistic((current) => [
       ...current,
@@ -375,9 +457,11 @@ export function ChatThread({
   }
 
   return (
-    <div className="flex h-full min-h-0 flex-col bg-muted/40">
+    // Alto fijo (lo da el contenedor: Bandeja o pop-up del Embudo): encabezado y
+    // composer siempre visibles; solo el historial se desliza.
+    <div className="flex h-full min-h-0 flex-1 flex-col overflow-hidden bg-muted/40">
       {/* Encabezado */}
-      <header className="flex items-center gap-3 border-b bg-card px-4 py-3">
+      <header className="flex shrink-0 items-center gap-3 border-b bg-card px-4 py-3">
         <div className="min-w-0 flex-1">
           <p className="truncate text-sm font-semibold">{detail.contact.name}</p>
           <p className="truncate text-xs text-muted-foreground">{displayPhone(detail.contact.phone) || "Sin teléfono"}</p>
@@ -400,7 +484,11 @@ export function ChatThread({
       <AgentPausedBanner conversationId={conversationId} agent={agent} onChanged={() => void reloadAgent()} />
 
       {/* Hilo */}
-      <div ref={scrollRef} className="chat-wallpaper min-h-0 flex-1 space-y-2 overflow-y-auto p-4">
+      <div
+        ref={scrollRef}
+        onScroll={onHistoryScroll}
+        className="chat-wallpaper min-h-0 flex-1 space-y-2 overflow-y-auto overscroll-contain p-4"
+      >
         {loading && messages.length === 0 ? (
           <p className="py-8 text-center text-sm text-muted-foreground">Cargando mensajes…</p>
         ) : loadError ? (
