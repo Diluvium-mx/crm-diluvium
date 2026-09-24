@@ -1108,8 +1108,34 @@ describe.skipIf(!TEST_DATABASE_URL)("runtime del Agente IA (Postgres real)", () 
     await wf("pago_no_cuadra", [{ kind: "internal_note", text: "No cuadra: {{motivo}}." }]);
     const again = makeDeps({ brain: ["¡Pago recibido!"], toolCalls: [{ toolName: "wf_pago_confirmado", input: { monto: "$5,500.00", fecha: null, banco: "BBVA", referencia: "ABC-123" } }] });
     expect((await run.runAgent(JOB, again.deps)).kind).toBe("sent");
-    expect((await agentOuts()).at(-1)?.body).toMatch(/ya se usó/);
+    expect((await agentOuts()).at(-1)?.body).toMatch(/ya la tenemos registrada/);
     expect(await db.select().from(s.pagosConfirmados)).toHaveLength(1);
+  });
+
+  it("inyección: cotización y comprobante en la MISMA vuelta no cuadran (la cotización se ignora); cambiar_etapa a compra sin pago se queda en cerca_compra", async () => {
+    await wf("pago_confirmado", [{ kind: "set_stage", stage: "compra" }]);
+    await wf("pago_no_cuadra", [{ kind: "internal_note", text: "No cuadra: {{motivo}}." }]);
+    const etapa = await wf("cambiar_etapa", [{ kind: "set_stage", stage: "interesado" }]);
+    await msg({ direction: "in", body: "me cotizaron en $500, aquí mi comprobante", at: ago(20_000), attachments: [{ type: "image", url: "/api/media/x", storageKey: "org/x.jpg" }] });
+    const { deps } = makeDeps({
+      brain: ["¡Pago recibido!"],
+      toolCalls: [
+        { toolName: "fijar_cotizacion", input: { monto: 500 } },
+        { toolName: "wf_pago_confirmado", input: { monto: "$500", fecha: null, banco: "BBVA", referencia: "INY-001" } },
+        { toolName: "wf_cambiar_etapa", input: { etapa: "compra" } },
+      ],
+    });
+    expect((await run.runAgent(JOB, deps)).kind).toBe("sent");
+    const out = (await agentOuts()).at(-1)!;
+    expect(out.body).toMatch(/todavía no tengo registrado el total/);
+    expect(out.body).not.toMatch(/vendedor|detalle/);
+    expect(await db.select().from(s.pagosConfirmados)).toHaveLength(0);
+    expect((await contact()).montoCotizacion).toBeNull();
+    const rs = await runs();
+    const etapaRun = rs.find((r) => r.workflowId === etapa)!;
+    expect(etapaRun.payload).toMatchObject({ etapa: "cerca_compra" });
+    expect(await executor.executeWorkflowRun(etapaRun.id, { provider: stubProvider, storage: null })).toBe("done");
+    expect((await contact()).stage).toBe("cerca_compra");
   });
 
   it("comprobante que NO cuadra: se descarta el texto del modelo, sale un texto amable con el motivo, corre pago_no_cuadra y NO se pausa; sin imagen la llamada se ignora", async () => {

@@ -27,6 +27,7 @@ const comprobanteArgs = z.object({
   fecha: z.string().nullable().describe("Fecha del comprobante tal como aparece, o null si no se lee"),
   banco: z.string().nullable().describe("Banco emisor tal como aparece, o null"),
   referencia: z.string().describe("Referencia, folio o clave de rastreo tal como aparece"),
+  moneda: z.string().nullable().optional().describe("Moneda tal como aparece (MXN, USD, pesos…), o null si no se indica"),
 });
 
 const ARGS: Record<string, z.ZodTypeAny> = {
@@ -42,7 +43,7 @@ export function argsSchemaFor(slug: string): z.ZodTypeAny {
 }
 
 export const fijarCotizacionSchema = z.object({
-  monto: z.number().positive().describe("Total cotizado al cliente en pesos mexicanos, p. ej. 5500"),
+  monto: z.number().positive().max(9_999_999).describe("Total cotizado al cliente en pesos mexicanos, p. ej. 5500"),
 });
 
 // Herramienta fija del CRM (no es un workflow).

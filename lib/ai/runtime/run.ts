@@ -16,7 +16,7 @@ import type { CallModelInput, CallModelResult } from "@/lib/ai/types";
 import { getModel } from "@/lib/ai/catalog";
 import { cleanAdMessages } from "./ad-cleaner";
 import { buildBrainSystemWithRuntime, parseBrainOutput } from "./brain";
-import { executeActions, loadAgentTools, prepareActions, type StartWorkflow } from "./actions";
+import { commitPagoBeforeText, executeActions, loadAgentTools, prepareActions, type StartWorkflow } from "./actions";
 import { validateToolCalls } from "./tools";
 import { applyCustomValues } from "@/lib/agente-ia/editor";
 import { loadAgentConfig, loadCustomValues, loadEnabledFaqs } from "./config";
@@ -278,6 +278,9 @@ export async function runAgent(job: { organizationId: string; conversationId: st
       inboundHasImage: pending.some((m) => m.attachments.some((a) => a.type === "image")),
       modelText: out.kind === "reply" ? out.text : "",
     });
+    // Un pago verificado se registra ANTES de decirle nada al cliente (si falla o
+    // la referencia entró dos veces, el texto pasa a ser el amable).
+    await commitPagoBeforeText(plan, { organizationId: org, conversationId: conv.id, contactId: conv.contactId }, workflowsBySlug);
     // Mensajes para celular: información y pregunta por separado (máx. 2).
     const bubbles = plan.text.trim() ? toBubbles(plan.text) : [];
     // El cliente pidió a una persona: el aviso al vendedor se guarda ANTES de enviar
@@ -361,7 +364,7 @@ export async function runAgent(job: { organizationId: string; conversationId: st
     // cotización, registro del pago verificado y corridas de workflow (cada corrida
     // relee el estado del agente antes de cada paso). Un fallo aquí no quita la
     // respuesta ya enviada: queda un aviso al vendedor.
-    if (plan.runs.length || plan.quote !== null || plan.pago) {
+    if (plan.runs.length || plan.quote !== null) {
       try {
         const done = await executeActions(plan, { organizationId: org, conversationId: conv.id, contactId: conv.contactId, now: deps.now() }, deps.startWorkflow);
         if (done.started.length || done.skipped.length || done.notes.length) {
