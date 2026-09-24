@@ -254,7 +254,8 @@ export interface MessagingProvider {
   /**
    * Anuncios: primer clic que el proveedor guardó en la conversación (respaldo
    * cuando un mensaje de anuncio llega sin ficha). null = no hay clic guardado.
-   * Lanza si el proveedor no respondió (se reintenta).
+   * Lanza si el proveedor no respondió (se reintenta). Opcional: un proveedor
+   * que no guarda el clic (p. ej. la Cloud API directa) simplemente no lo tiene.
    */
-  conversationAdClick(providerAccountId: string, providerConversationId: string): Promise<ConversationClick | null>;
+  conversationAdClick?(providerAccountId: string, providerConversationId: string): Promise<ConversationClick | null>;
 }
