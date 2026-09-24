@@ -1,8 +1,9 @@
 // Verificación PURA de un comprobante de pago (Fase D; se engancha al agente en
 // la parte b). Entrada: lo que el modelo leyó de la foto + lo cotizado (campo
 // "monto de cotización" del contacto; si el vendedor lo editó, manda el
-// vendedor) + los Datos de cobro + los anticipos ya confirmados + si la
-// referencia ya se usó. Confirma SOLO si TODO cuadra; si no, "pasar a humano"
+// vendedor) + los anticipos ya confirmados + si la referencia ya se usó. Sin
+// cotejo de destinatario/CLABE (24-sep-2026): los datos bancarios existen solo
+// como imagen en el workflow "Datos bancarios". Confirma SOLO si TODO cuadra; si no, "pasar a humano"
 // con el motivo exacto. Sin BD ni red: se testea sola.
 
 export type LecturaComprobante = {
@@ -13,8 +14,6 @@ export type LecturaComprobante = {
   referencia: string | null;
   /** Moneda tal como se lea ("MXN", "USD", "pesos"); null si no aparece. */
   moneda?: string | null;
-  /** Nombre del beneficiario o CLABE/cuenta destino, como aparezca. */
-  destinatario: string | null;
 };
 
 export type ContextoCotizacion = {
@@ -22,7 +21,6 @@ export type ContextoCotizacion = {
   totalCotizado: number | null;
   /** Anticipo ya confirmado en esta conversación (MXN), 0 si ninguno. */
   anticipoConfirmado: number;
-  datosCobro: { beneficiario: string; clabe: string; cuenta: string; banco: string };
   /** true si la referencia leída ya fue usada en un pago confirmado de la organización. */
   referenciaYaUsada: boolean;
   hoy: Date;
@@ -96,37 +94,6 @@ export function parseFecha(raw: string | null): Date | null {
   return Number.isNaN(date.getTime()) ? null : date;
 }
 
-const norm = (s: string) =>
-  s
-    .toLowerCase()
-    .normalize("NFD")
-    .replace(/[̀-ͯ]/g, "")
-    .replace(/[^a-z0-9]+/g, " ")
-    .trim();
-
-// ¿El destinatario leído es el nuestro? Nombre del beneficiario (todas sus
-// palabras significativas presentes) o CLABE/cuenta (completa o últimos 4
-// dígitos, como suelen mostrarse enmascaradas).
-export function destinatarioCoincide(leido: string | null, datos: ContextoCotizacion["datosCobro"]): boolean {
-  if (!leido) return false;
-  const tokens = new Set(norm(leido).split(" "));
-  const digits = leido.replace(/\D/g, "");
-  const masked = /[*•·x]{2,}/i.test(leido);
-  for (const propio of [datos.clabe, datos.cuenta.replace(/\D/g, "")]) {
-    if (!propio || digits.length < 4) continue;
-    if (propio === digits) return true;
-    // SOLO enmascarada ("**** 7771" / "···7771") valen los últimos 4; un número
-    // suelto (sucursal, folio) que termine igual no cuenta.
-    if (masked && propio.slice(-4) === digits.slice(-4)) return true;
-  }
-  // Palabras COMPLETAS del beneficiario ("ana lopez" no coincide con "mariana lopez").
-  const words = norm(datos.beneficiario)
-    .split(" ")
-    .filter((w) => w.length >= 3 && !["de", "del", "la", "los", "las", "sa", "cv", "y"].includes(w));
-  if (words.length === 0) return false;
-  return words.every((w) => tokens.has(w));
-}
-
 const eqMxn = (a: number, b: number) => Math.abs(a - b) <= TOLERANCIA_MXN;
 
 export function verificarComprobante(lectura: LecturaComprobante, ctx: ContextoCotizacion): ResultadoComprobante {
@@ -138,9 +105,6 @@ export function verificarComprobante(lectura: LecturaComprobante, ctx: ContextoC
   if (referencia.length < 4) return humano("no se alcanza a leer la referencia o clave de rastreo");
   if (!esMxn(lectura.moneda)) return humano(`el comprobante está en ${lectura.moneda}, no en pesos mexicanos`);
   if (ctx.referenciaYaUsada) return humano(`la referencia ${referencia} ya se usó en un pago confirmado antes (posible captura reenviada)`);
-  if (!destinatarioCoincide(lectura.destinatario, ctx.datosCobro)) {
-    return humano(`el destinatario "${lectura.destinatario ?? "(no legible)"}" no coincide con los Datos de cobro`);
-  }
   // Sin regla de fecha (decisión del dueño, 24-sep-2026): la fecha solo se copia
   // al aviso para que el vendedor coteje en el banco.
   if (ctx.totalCotizado === null || ctx.totalCotizado <= 0) return humano("el contacto no tiene monto de cotización; el vendedor debe fijarlo en el detalle");

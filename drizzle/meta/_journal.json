@@ -204,6 +204,13 @@
       "when": 1790271098413,
       "tag": "0028_palabra_clave_una_vez_por_contacto",
       "breakpoints": true
+    },
+    {
+      "idx": 29,
+      "version": "7",
+      "when": 1790273029172,
+      "tag": "0029_sin_datos_cobro",
+      "breakpoints": true
     }
   ]
 }

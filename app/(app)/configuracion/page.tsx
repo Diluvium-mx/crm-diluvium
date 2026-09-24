@@ -8,14 +8,11 @@ import { listSizeRanges } from "@/lib/actions/contact-qualification";
 import { MyAccountForm } from "./_components/my-account-form";
 import { SellersPanel } from "./_components/sellers-panel";
 import { SizeRangesPanel } from "./_components/size-ranges-panel";
-import { DatosCobroPanel } from "./_components/datos-cobro-panel";
-import { getDatosCobro } from "@/lib/actions/datos-cobro";
 
 // Configuración (A4, al final del sidebar). "Mi cuenta" para todos;
 // "Vendedores" y "Tallas" (rangos de A7) solo owner/admin. La pestaña va en la
 // URL (?tab=); una pestaña sin permiso cae a "Mi cuenta".
-// "Datos de cobro" (Fase D): todos la ven (CLABE enmascarada), owner/admin editan.
-type Tab = "cuenta" | "vendedores" | "tallas" | "cobro";
+type Tab = "cuenta" | "vendedores" | "tallas";
 
 export default async function ConfiguracionPage({ searchParams }: PageProps<"/configuracion">) {
   const { role } = await requireActiveMembership();
@@ -24,21 +21,17 @@ export default async function ConfiguracionPage({ searchParams }: PageProps<"/co
   const canManageSizes = roleAllows(role, "sizeRange", "update");
 
   const requested = (await searchParams).tab;
-  const canSeeCobro = roleAllows(role, "paymentInfo", "read");
   const tab: Tab =
     requested === "vendedores" && canManageTeam
       ? "vendedores"
       : requested === "tallas" && canManageSizes
         ? "tallas"
-        : requested === "cobro" && canSeeCobro
-          ? "cobro"
-          : "cuenta";
+        : "cuenta";
 
   const tabs: { key: Tab; label: string }[] = [
     { key: "cuenta", label: "Mi cuenta" },
     ...(canManageTeam ? [{ key: "vendedores" as const, label: "Vendedores" }] : []),
     ...(canManageSizes ? [{ key: "tallas" as const, label: "Tallas de compuerta" }] : []),
-    ...(canSeeCobro ? [{ key: "cobro" as const, label: "Datos de cobro" }] : []),
   ];
 
   return (
@@ -62,7 +55,6 @@ export default async function ConfiguracionPage({ searchParams }: PageProps<"/co
       {tab === "cuenta" && <MyAccountForm name={session?.user.name ?? ""} email={session?.user.email ?? ""} />}
       {tab === "vendedores" && <SellersPanel {...await listSellers()} />}
       {tab === "tallas" && <SizeRangesPanel initial={await listSizeRanges()} />}
-      {tab === "cobro" && <DatosCobroPanel initial={await getDatosCobro()} />}
     </div>
   );
 }

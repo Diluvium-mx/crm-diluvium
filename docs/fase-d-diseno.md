@@ -24,8 +24,8 @@ una **biblioteca de media** en el bucket `crm-media` de Railway. Nada de tercero
 2. **Etapas:** el agente mueve al contacto por **todas** las etapas del Embudo según el
    contexto del chat, **incluida "Compra"** cuando él mismo cierra la venta. Ejemplos: datos
    bancarios → "Cerca de compra"; pago confirmado → "Compra".
-3. **Comprobante de pago:** el agente analiza la foto (monto, fecha, banco, referencia,
-   destinatario) contra lo cotizado en la conversación y confirma el pago, como Ángela en GHL.
+3. **Comprobante de pago:** el agente analiza la foto (monto, fecha, banco, referencia)
+   contra lo cotizado en la conversación y confirma el pago, como Ángela en GHL.
    Si el monto no cuadra o la imagen no es un comprobante legible, se lo dice al cliente con
    amabilidad y pasa a humano. Al confirmar un pago deja además un **aviso visible para el
    vendedor** en la conversación para cotejar el depósito en el banco antes de enviar, sin
@@ -36,7 +36,9 @@ una **biblioteca de media** en el bucket `crm-media` de Railway. Nada de tercero
    del repo (p. ej. `~/Documents/diluvium-media`). Mientras tanto, archivos de prueba.
 6. **Sin guardia de salida ni módulo de montos** (decisión del 24-sep-2026): la Fase B 3 quitó
    la guardia; el diseño de "montos ya vistos" (§2.3 original) queda **descartado** y su módulo
-   se eliminó. El comprobante se confirma con monto + destinatario + referencia no repetida.
+   se eliminó. El comprobante se confirma con **monto + referencia no repetida** (24-sep, 2.ª decisión:
+   sin cotejo de destinatario/CLABE; la sección "Datos de cobro" y la tabla `datos_cobro` se eliminaron
+   en la 0029; los datos bancarios existen SOLO como imagen en el workflow "Datos bancarios").
 7. **Sin "una vez por conversación"** (24-sep-2026): el CRM no bloquea repetir un contenido; el
    agente decide con el contexto (el Goal le pide no repetir) y el vendedor repite con el comando.
 
@@ -146,10 +148,10 @@ respondió a la mitad, lo que falta no sale y la corrida queda `cancelled` con m
 
 - El filtro ya ve imágenes (Fase B). Cuando el entrante trae una imagen y el contexto es de
   pago, el cerebro recibe la imagen (URL firmada, como hoy) y las instrucciones del system:
-  extraer **monto, fecha, banco, referencia y destinatario**, comparar contra **lo cotizado en la
+  extraer **monto, fecha, banco y referencia**, comparar contra **lo cotizado en la
   conversación** (el último total que el propio agente o el vendedor escribió) y decidir:
-  - **Cuadra** (monto = total cotizado o = 50 % de un total a la medida, destinatario coincide
-    con el de los datos bancarios; sin regla de fecha) → texto de confirmación + tool `pago_confirmado`
+  - **Cuadra** (monto = total cotizado, 50 % o $3,500 de anticipo, o resto pendiente; referencia no
+    repetida; sin regla de fecha ni de destinatario) → texto de confirmación + tool `pago_confirmado`
     con los datos leídos. El workflow pone etapa `compra` (o `cerca_compra` si fue anticipo del
     50 %), etiqueta "cotejar depósito" y escribe el **aviso interno**: una fila en `messages` con
     `direction: "out"`, `type: "system_note"` (nuevo), `source: "ai_agent"`, que la bandeja
@@ -457,7 +459,7 @@ Corregido de inmediato (escenario real):
 - **Paso "pasar a humano"** tras la Fase B 3 (ya no existen `addContactTag`, `TAG_HANDOVER` ni la pausa
   de 8 h): desde un comando/"Probar" → `pausado_humano` hasta "Reactivar"; desde el agente → solo aviso
   en el hilo; sin etiqueta por defecto.
-- **Comprobante sin regla de fecha**; **cuenta/tarjeta enmascarada** para quien no edita Datos de cobro;
+- **Comprobante sin regla de fecha**; ~~cuenta/tarjeta enmascarada~~ (Datos de cobro eliminado el 24-sep);
   el aviso interno de un comando no marca no leído al vendedor que lo pidió.
 
 Revisión de Codex (16 hallazgos "A"; corregido lo que duplica mensajes o confirma un pago que no cuadra):
@@ -468,7 +470,7 @@ Revisión de Codex (16 hallazgos "A"; corregido lo que duplica mensajes o confir
 - **Referencia del comprobante**: `ABC-123`, `abc 123` y `ABC123` eran referencias distintas para el índice
   único (mismo comprobante confirmando dos pedidos); ahora se normaliza a alfanumérico en mayúsculas.
 - **Moneda**: "USD 5,500" cuadraba contra MXN 5,500; con moneda distinta de MXN pasa a humano.
-- **Destinatario**: los últimos 4 dígitos solo valen con máscara visible y el beneficiario se compara por
+- ~~Destinatario~~ (cotejo eliminado el 24-sep): los últimos 4 dígitos solo valían con máscara y el beneficiario se comparaba por
   palabras completas ("Ana López" ya no coincide con "Mariana López").
 - **Tolerancia** de $1 → un centavo ($5,499 contra $5,500 ya no cuadra).
 - Descripciones de las herramientas: "no la repitas" → "vuelve a mandarla solo si el cliente la pide otra vez".
@@ -525,9 +527,8 @@ workflow deshabilitado).
    completos** (`tabla_tamanos_estandar`, `datos_bancarios`, `video_instalacion_estandar`,
    `video_instalacion_medida`, `video_instalacion_mini`, `tapones_inflables` (solo video desde el 24-sep),
    `transferir_humano`, `cambiar_etapa`). `donde_medir`, `tabla_tamanos_mini` y `medidas_especiales`
-   quedan apagados con "falta archivo" (los archivos se agregan después desde el editor). Llenar Configuración →
-   Datos de cobro (beneficiario y CLABE: sin ellos ningún comprobante se confirma). Un comprobante se
-   confirma con monto + destinatario + referencia no repetida; **sin regla de fecha** (solo va al aviso).
+   quedan apagados con "falta archivo" (los archivos se agregan después desde el editor). Un comprobante se
+   confirma con monto + referencia no repetida; **sin regla de fecha ni de destinatario** (24-sep).
 6. **Prueba en producción, solo `ch_zernio_sandbox`** (teléfono del dueño): `/tabla`, `/banco` y
    una palabra clave del cliente (con el canal en `auto`). Verificar burbuja con adjunto,
    `workflow_runs` `done`, etapa → Cerca de compra, y que un segundo `/banco` repita a propósito
