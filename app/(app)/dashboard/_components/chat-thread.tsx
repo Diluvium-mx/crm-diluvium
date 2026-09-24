@@ -9,6 +9,7 @@ import { DocumentCard } from "./document-card";
 import { MediaViewer } from "./media-viewer";
 import { ScheduledInThread } from "./scheduled-in-thread";
 import { AgentNoticeLine, AgentPausedBanner, useConversationAgent } from "./agent-in-thread";
+import { AgentActivityPill } from "./agent-activity-pill";
 import { interleaveNotices } from "@/lib/agente-ia/timeline";
 import {
   bubbleTime,
@@ -169,7 +170,8 @@ function Bubble({
             href={`https://www.google.com/maps?q=${view.location.latitude},${view.location.longitude}`}
             target="_blank"
             rel="noopener noreferrer"
-            className="mb-1 block rounded-md border px-2 py-1 text-xs underline-offset-2 hover:underline"
+            data-link="text"
+            className="mb-1 block rounded-md border px-2 py-1 text-xs"
           >
             📍 {view.location.name ?? "Ubicación"}
             {view.location.address && <span className="block opacity-80">{view.location.address}</span>}
@@ -542,6 +544,8 @@ export function ChatThread({
         />
       </div>
 
+      {/* Píldora "Agente IA leyendo/escribiendo/enviando" (flota sobre el fondo del historial). */}
+      <AgentActivityPill conversationId={conversationId} refreshToken={revalToken} detailKey={detail} />
       {commandNotice && (
         <div className="mx-4 mb-1 flex items-center justify-between rounded-md border border-brand-orange/40 bg-brand-orange/10 px-3 py-1.5 text-xs">
           <span>{commandNotice}</span>
