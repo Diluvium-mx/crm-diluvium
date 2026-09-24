@@ -73,6 +73,7 @@ export function MediaViewer({ attachment, onClose }: { attachment: AttachmentVie
           href={attachment.downloadUrl}
           aria-label="Descargar"
           title="Descargar"
+          data-glow="light"
           className="rounded p-2 hover:bg-white/10"
         >
           <Download className="size-4" aria-hidden="true" />
@@ -97,7 +98,7 @@ export function MediaViewer({ attachment, onClose }: { attachment: AttachmentVie
         ) : (
           <div className="flex flex-col items-center gap-3 text-center">
             <p className="text-sm text-white/80">Este tipo de archivo no se puede previsualizar.</p>
-            <a href={attachment.downloadUrl} className="rounded-md bg-brand-orange px-4 py-2 text-sm font-medium text-white">
+            <a href={attachment.downloadUrl} data-glow="light" className="rounded-md bg-brand-orange px-4 py-2 text-sm font-medium text-white">
               Descargar {title}
             </a>
           </div>
