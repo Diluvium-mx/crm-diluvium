@@ -186,7 +186,7 @@ v1; eso es Fase C).
 
 ## 3. Modelo de datos y permisos
 
-Tablas nuevas (todas con `organization_id`, migración **0026** (era la 0025; se renumeró al
+Tablas nuevas (todas con `organization_id`, migración **0027** (era la 0025; se renumeró dos veces al
 rebasar, en la parte a):
 
 ```
@@ -337,7 +337,7 @@ Cada paso es una rebanada vertical desplegable; A5 ya se puede usar (con comando
 
 ## 8. Estado de la parte (a) y decisiones de implementación (23-sep-2026)
 
-Construido y con tests (unitarios + integración en Postgres real): migración `0026_automatizacion` (renumerada desde 0025 tras el rebase sobre la Fase B, 24-sep),
+Construido y con tests (unitarios + integración en Postgres real): migración `0027_automatizacion` (renumerada desde 0025 tras la Fase B 3 y la parte 2 del editor, 24-sep),
 ACL `workflow`/`mediaAsset`, 12 predeterminados (`lib/workflows/defaults.ts`), seed idempotente por
 slug (hook de creación de organización + botón "Restaurar predeterminados"; **no hay migración de
 seed**: la organización que ya existía los recibe con el botón), biblioteca de media
@@ -489,7 +489,7 @@ header (solo HEVC se detecta; un archivo malo falla al enviar y queda visible en
 organización ni rate limit en la subida (solo owner/admin); borrar un workflow cascadea sus corridas (perder
 traza de `message_ids`; valorar borrado lógico); "Probar" ejecuta pasos reales sobre un contacto real (usar
 uno de prueba); `/api/biblioteca/[assetId]` sin `Cache-Control: private`; filas `skipped` por cada palabra
-clave con el canal apagado; `ALTER TYPE … ADD VALUE` de la 0026 requiere PG ≥ 12 (Railway cumple); un fallo
+clave con el canal apagado; `ALTER TYPE … ADD VALUE` de la 0027 requiere PG ≥ 12 (Railway cumple); un fallo
 transitorio de BD en los disparadores se absorbe (la palabra clave no se reevalúa; en etapa el vendedor no ve aviso);
 editar/reordenar pasos con una corrida a medias mueve el cursor (guardar snapshot de pasos en la corrida); las
 consultas internas del ejecutor filtran por id de corrida sin `organization_id` (ids únicos; no explotable);
@@ -509,7 +509,7 @@ workflow deshabilitado).
    se regenera con el siguiente número libre (no está aplicada en ningún entorno).
 3. **Gate solo del delta**: revisión adversarial de Claude + cyber-neo + `/codex:adversarial-review
    --base main`, con `npm run typecheck`, `npm test` (BD propia) y `npm run lint`. Sin `npx`.
-4. **`main` con los workflows apagados** (nacen así). La migración 0026 corre sola en `start:web`;
+4. **`main` con los workflows apagados** (nacen así). La migración 0027 corre sola en `start:web`;
    verificar `/api/health/inbound` y que el worker loguee `[workflows]`.
 5. En producción, pestaña Automatización: "Restaurar predeterminados" (14, apagados); **subir los 6
    archivos de `listos/`** desde Biblioteca; asignarlos en cada workflow; **habilitar solo los
@@ -525,5 +525,5 @@ workflow deshabilitado).
    mientras el agente no.
 7. **Parte (b)**: enganche al agente (tools) y comprobantes (`lib/cobro/comprobante` +
    `pagos.ts`), con su propio gate y prueba en `ch_zernio_sandbox` en `auto`.
-8. **Vuelta atrás:** deshabilitar todo desde la pestaña detiene la Fase D sin deploy; la 0026 solo
+8. **Vuelta atrás:** deshabilitar todo desde la pestaña detiene la Fase D sin deploy; la 0027 solo
    agrega tablas y un valor de enum.

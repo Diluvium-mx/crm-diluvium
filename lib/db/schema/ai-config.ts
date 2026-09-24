@@ -18,6 +18,10 @@ export const aiConfig = pgTable("ai_config", {
   // docs/agente-ia/angela-goal.md, sembrado con scripts/seed-ai-knowledge.ts.
   // Nullable: una org sin Goal cargado todavía no puede responder de verdad.
   goal: text("goal"),
+  // Nombre del agente (encabezado de la pestaña, editable con lápiz) y de la empresa
+  // (valor personalizado {{empresa.nombre}}). 24-sep-2026.
+  agentName: text("agent_name").default("Ángela").notNull(),
+  companyName: text("company_name"),
   // ── Tiempo de respuesta y seguridad (Fase B); editable por org desde la UI ──
   // Debounce deslizante: espera tras el último entrante antes de responder.
   responseDelaySeconds: integer("response_delay_seconds").default(15).notNull(),

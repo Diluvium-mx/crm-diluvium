@@ -22,8 +22,9 @@ export const statement = {
   // Rangos editables de tallas: todos los vendedores los consultan para las
   // sugerencias; solo owner/admin cambian la configuración compartida.
   sizeRange: ["read", "update"],
-  // Tarjeta "Gasto de IA" del Dashboard (A2): solo owner/admin.
-  aiSpend: ["read"],
+  // Tarjeta "Gasto de IA" del Dashboard (A2): solo owner/admin la ven (`read`) y
+  // registran las recargas de crédito de los proveedores (`update`).
+  aiSpend: ["read", "update"],
   // Automatización (Fase D). Editar workflows y su biblioteca de media es
   // configuración del CRM (owner/admin); el vendedor los LEE y los EJECUTA
   // desde el composer (`run`: comandos tipo /tabla).
@@ -44,7 +45,7 @@ export const owner = ac.newRole({
   template: ["read", "create", "sync"],
   aiConfig: ["read", "update"],
   sizeRange: ["read", "update"],
-  aiSpend: ["read"],
+  aiSpend: ["read", "update"],
   workflow: ["read", "run", "create", "update", "delete"],
   mediaAsset: ["read", "create", "delete"],
   paymentInfo: ["read", "update"],
@@ -58,7 +59,7 @@ export const admin = ac.newRole({
   template: ["read", "create", "sync"],
   aiConfig: ["read", "update"],
   sizeRange: ["read", "update"],
-  aiSpend: ["read"],
+  aiSpend: ["read", "update"],
   workflow: ["read", "run", "create", "update", "delete"],
   mediaAsset: ["read", "create", "delete"],
   paymentInfo: ["read", "update"],
