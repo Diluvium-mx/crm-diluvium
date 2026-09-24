@@ -49,17 +49,25 @@ export function AgentActivityPill({
   }
 
   // Consulta ahora y reintenta a 1 s y 3 s (respuestas viejas se descartan).
+  // SOLO con la pestaña en primer plano: una pestaña oculta con el SSE abierto
+  // no consulta nada; al volver a verse, consulta de inmediato.
   useEffect(() => {
     let alive = true;
     const ask = async () => {
+      if (document.visibilityState !== "visible") return;
       const result = await getAgentActivity(conversationId);
       if (alive) setActivity(result);
     };
     void ask();
     const timers = RETRY_DELAYS_MS.map((ms) => setTimeout(() => void ask(), ms));
+    const onVisible = () => {
+      if (document.visibilityState === "visible") void ask();
+    };
+    document.addEventListener("visibilitychange", onVisible);
     return () => {
       alive = false;
       timers.forEach(clearTimeout);
+      document.removeEventListener("visibilitychange", onVisible);
     };
   }, [conversationId, refreshToken, detailKey]);
 
