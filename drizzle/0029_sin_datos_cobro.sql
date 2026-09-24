@@ -1,0 +1,1 @@
+DROP TABLE "datos_cobro" CASCADE;

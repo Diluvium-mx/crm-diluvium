@@ -17,7 +17,7 @@ describe.skipIf(!TEST_DATABASE_URL)("pagos confirmados", () => {
   });
   beforeEach(async () => {
     const { sql } = await import("drizzle-orm");
-    await db.execute(sql`truncate pagos_confirmados, datos_cobro, conversations, channels, contacts, organization cascade`);
+    await db.execute(sql`truncate pagos_confirmados, conversations, channels, contacts, organization cascade`);
     await db.insert(s.organization).values([
       { id: ORG, name: "Org", slug: "org", createdAt: new Date() },
       { id: "org_otra", name: "Otra", slug: "otra", createdAt: new Date() },
@@ -25,7 +25,6 @@ describe.skipIf(!TEST_DATABASE_URL)("pagos confirmados", () => {
     await db.insert(s.channels).values({ id: "ch_p", organizationId: ORG, type: "whatsapp", provider: "zernio", providerAccountId: "z", displayName: "D" });
     await db.insert(s.contacts).values({ id: "c_p", organizationId: ORG, firstName: "Ana", phoneE164: "+526681112244", montoCotizacion: "7000.00" });
     await db.insert(s.conversations).values({ id: "cv_p", organizationId: ORG, contactId: "c_p", channelId: "ch_p", providerConversationId: "zp", lastMessageAt: new Date() });
-    await db.insert(s.datosCobro).values({ organizationId: ORG, beneficiario: "Diluvium SA de CV", clabe: "002010077777777771" });
   });
   afterAll(async () => {
     if (db) await (db.$client as unknown as { end: () => Promise<void> }).end();
@@ -41,10 +40,9 @@ describe.skipIf(!TEST_DATABASE_URL)("pagos confirmados", () => {
     ).rejects.toThrow(pagos.ReferenciaDuplicadaError);
   });
 
-  it("el contexto trae lo cotizado del contacto, los Datos de cobro y el anticipo ya confirmado", async () => {
+  it("el contexto trae lo cotizado del contacto y el anticipo ya confirmado", async () => {
     await pagos.registrarPagoConfirmado({ organizationId: ORG, conversationId: "cv_p", contactId: "c_p", referencia: "R1", montoMxn: 3500, tipo: "anticipo", banco: null, fechaComprobante: null, confirmadoPor: "agente" });
     const ctx = await pagos.contextoParaComprobante(ORG, "cv_p", "c_p", "R1");
     expect(ctx).toMatchObject({ totalCotizado: 7000, anticipoConfirmado: 3500, referenciaYaUsada: true });
-    expect(ctx.datosCobro.clabe).toBe("002010077777777771");
   });
 });
