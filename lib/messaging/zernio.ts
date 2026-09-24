@@ -260,6 +260,21 @@ export function zernioEventId(payload: unknown, headers?: Headers): string | und
 }
 
 /**
+ * Hora que trae el id interno de Zernio: es un ObjectId de Mongo (24 hex; los
+ * primeros 8 = segundos Unix de su creación; visto: 6ab2d706… = 19:29:10Z para
+ * un sentAt de 19:29:09Z). Mejor respaldo que la hora de recepción cuando
+ * Zernio entrega tarde (reintentos). Solo si es verosímil: no después de la
+ * recepción ni más de 7 días antes.
+ */
+export function objectIdTime(id: string | undefined, receivedAt?: Date): Date | null {
+  if (!id || !/^[0-9a-f]{24}$/i.test(id)) return null;
+  const date = new Date(parseInt(id.slice(0, 8), 16) * 1000);
+  const ref = receivedAt?.getTime() ?? Date.now();
+  if (date.getTime() > ref + 60_000 || date.getTime() < ref - 7 * 86_400_000) return null;
+  return date;
+}
+
+/**
  * Mensaje en formato PLANO (campos en la raíz: messageId, conversationId,
  * platformMessageId, text, sender…, como el ejemplo de CTWA de Zernio) → la
  * forma anidada (`message: {…}`) que reciben los webhooks reales. Si ya viene
@@ -356,7 +371,7 @@ export function normalizeZernioEvent(payload: unknown, context: { receivedAt?: D
         return { kind: "ignored", eventId, event, reason: `sentAt inválido: ${message.sentAt}`, malformed: true };
       }
     } else {
-      sentAt = validDate(parsed.data.timestamp) ?? context.receivedAt ?? null;
+      sentAt = validDate(parsed.data.timestamp) ?? objectIdTime(message.id, context.receivedAt) ?? context.receivedAt ?? null;
       sentAtFromReceipt = true;
       if (!sentAt) return { kind: "ignored", eventId, event, reason: "mensaje sin hora", malformed: true };
     }

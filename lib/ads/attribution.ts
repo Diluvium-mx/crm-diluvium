@@ -154,7 +154,7 @@ export async function messagesWithUnrecordedReferral(limit = 50): Promise<{ id: 
         // (sin esto, el barrido lo re-encolaría cada minuto sin registrarlo nunca).
         sql`not exists (select 1 from ${adClicks} dup
                          where dup.organization_id = ${messages.organizationId}
-                           and dup.ctwa_clid = coalesce(${messages.adReferral}->>'ctwa_clid', ${messages.adReferral}->>'ctwaClid'))`,
+                           and dup.ctwa_clid = btrim(coalesce(${messages.adReferral}->>'ctwa_clid', ${messages.adReferral}->>'ctwaClid')))`,
         gte(messages.createdAt, sql`now() - interval '7 days'`),
         lte(messages.createdAt, sql`now() - interval '1 minute'`),
       ),
