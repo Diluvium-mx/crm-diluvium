@@ -52,6 +52,12 @@ export type CallModelInput = {
 
 export const DEFAULT_MODEL_TIMEOUT_MS = 90_000;
 
+// Llamada a herramienta que pidió el modelo (Fase D). Las herramientas se declaran
+// sin `execute`: el modelo devuelve texto + llamadas en UNA vuelta y el runtime
+// decide qué corre. `input` ya pasó el esquema de la herramienta en el SDK; el
+// runtime lo re-valida.
+export type ToolCallOutput = { toolName: string; input: unknown };
+
 export type CallModelResult = {
   modelId: string;
   provider: ProviderId;
@@ -59,6 +65,7 @@ export type CallModelResult = {
   text: string;
   usage: ModelUsage;
   finishReason: string;
+  toolCalls?: ToolCallOutput[];
 };
 
 // Lo que devuelve el adaptador de un proveedor; callModel completa el resto.
@@ -66,4 +73,5 @@ export type ProviderGenerateOutput = {
   text: string;
   usage: ModelUsage;
   finishReason: string;
+  toolCalls?: ToolCallOutput[];
 };

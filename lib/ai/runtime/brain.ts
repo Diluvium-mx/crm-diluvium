@@ -7,9 +7,9 @@
 // Goal que aquí todavía no existen (así el cliente nunca espera algo que no llega).
 import { buildBrainSystem, type Faq } from "./knowledge";
 
-// Señal de la acción "Transferencia a humano" (y de "Datos bancarios", que aún no
-// existe en el CRM). El agente la agrega AL FINAL: el CRM la quita, envía el resto
-// y deja un aviso al vendedor en la Bandeja. El agente sigue activo.
+// Señal de respaldo de "Transferencia a humano" (la herramienta wf_transferir_humano
+// hace lo mismo). El agente la agrega AL FINAL: el CRM la quita, envía el resto y
+// deja un aviso al vendedor en la Bandeja. El agente sigue activo.
 export const HANDOVER_TOKEN = "[TRANSFERIR]";
 
 // Si el modelo solo devolvió la señal (sin texto para el cliente), el cliente
@@ -20,8 +20,10 @@ export const HANDOVER_FALLBACK_TEXT = "Con gusto, en un momento te atiende un as
 // entre llamadas y la caché del proveedor lo reutiliza.
 export const RUNTIME_SUFFIX = `INSTRUCCIONES DEL CRM
 - Escribe solo el texto que se enviará al cliente por WhatsApp, sin etiquetas ni explicaciones.
-- Para activar "Transferencia a humano" o "Datos bancarios", dile al cliente lo que corresponda según el Goal (que un asesor lo atenderá o le enviará los datos) y escribe ${HANDOVER_TOKEN} al final, en una línea aparte. Si el cliente vuelve a escribir antes de que conteste un asesor, sigue atendiéndolo.
-- En este CRM todavía no se pueden enviar tablas ni videos ni cambiar etapas: responde con texto y no prometas enviarlos.`;
+- Las acciones del Goal (tabla de tamaños, videos de instalación, datos bancarios, tapones, dónde medir, medidas especiales, cambiar de etapa, pasar a humano, confirmar un pago) se activan llamando la herramienta que corresponda en la MISMA respuesta: primero tu texto para el cliente y luego la llamada. El CRM envía el archivo después de tu texto. No prometas enviar algo sin llamar su herramienta; si no hay herramienta para eso, responde solo con texto.
+- Cada vez que le digas un total al cliente, llama fijar_cotizacion con ese total en pesos.
+- Si el cliente manda la imagen de un comprobante de pago, lee monto, fecha, banco y referencia y llama pago_confirmado (o anticipo_confirmado si es el 50 % de una compuerta a la medida). El CRM verifica el monto contra lo cotizado antes de confirmar: escribe tu texto como si el pago cuadrara y el CRM lo sustituye si no cuadra.
+- Para "Transferencia a humano" también puedes escribir ${HANDOVER_TOKEN} al final, en una línea aparte. Si el cliente vuelve a escribir antes de que conteste un asesor, sigue atendiéndolo.`;
 
 export function buildBrainSystemWithRuntime(goal: string, faqs: readonly Faq[]): string {
   return `${buildBrainSystem(goal, faqs)}\n\n${RUNTIME_SUFFIX}`;

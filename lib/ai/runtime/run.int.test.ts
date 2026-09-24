@@ -24,6 +24,7 @@ describe.skipIf(!TEST_DATABASE_URL)("runtime del Agente IA (Postgres real)", () 
   let hooks: typeof import("./hooks");
   let state: typeof import("./state");
   let send: typeof import("@/lib/messaging/send");
+  let executor: typeof import("@/lib/workflows/executor");
 
   const ORG = "org_rt";
   const CONV = "conv_rt";
@@ -43,6 +44,7 @@ describe.skipIf(!TEST_DATABASE_URL)("runtime del Agente IA (Postgres real)", () 
     hooks = await import("./hooks");
     state = await import("./state");
     send = await import("@/lib/messaging/send");
+    executor = await import("@/lib/workflows/executor");
   });
 
   afterAll(async () => {
@@ -120,6 +122,7 @@ describe.skipIf(!TEST_DATABASE_URL)("runtime del Agente IA (Postgres real)", () 
   type Script = {
     filter?: string; // JSON de la limpieza del anuncio (Luna)
     brain?: string[]; // una salida por llamada al cerebro
+    toolCalls?: { toolName: string; input: unknown }[]; // llamadas a herramientas del cerebro (Fase D)
     onBrain?: (call: number) => Promise<void>; // efecto durante la generación
     onSleep?: () => Promise<void>; // efecto durante la pausa entre burbujas
   };
@@ -150,6 +153,7 @@ describe.skipIf(!TEST_DATABASE_URL)("runtime del Agente IA (Postgres real)", () 
         text: outputs[Math.min(brainCalls - 1, outputs.length - 1)],
         usage: { inputTokens: 12_000, outputTokens: 60, cacheReadTokens: 11_400, cacheWriteTokens: 0 },
         finishReason: "stop",
+        toolCalls: script.toolCalls ?? [],
       };
     };
     return { calls, callModel };
@@ -175,6 +179,7 @@ describe.skipIf(!TEST_DATABASE_URL)("runtime del Agente IA (Postgres real)", () 
         images.push(key);
         return `https://bucket.test/${key}?sig=1`;
       },
+      startWorkflow: (input) => executor.startWorkflowRun(input),
     };
     return { deps, calls: models.calls, sleeps, images };
   }
@@ -1013,5 +1018,194 @@ describe.skipIf(!TEST_DATABASE_URL)("runtime del Agente IA (Postgres real)", () 
     expect(brain.input.system).not.toContain("desglos");
     const [cfg] = await db.select().from(s.aiConfig).where(eq(s.aiConfig.organizationId, ORG));
     expect(cfg.goal).toBe(GOAL);
+  });
+
+  // ── Fase D, parte (b): acciones del cerebro ────────────────────────────────
+  async function wf(slug: string, steps: Record<string, unknown>[], opts: { enabled?: boolean } = {}) {
+    const id = `wf_${slug}`;
+    await db.insert(s.workflows).values({ id, organizationId: ORG, slug, name: slug, agentDescription: `Cuándo usar ${slug}.`, enabled: opts.enabled ?? true, isSystem: true, triggerAgent: true, triggerKeywords: [], triggerCommand: null, triggerStage: null, position: 0 });
+    type Step = import("@/lib/db/schema/automation").WorkflowStepPayload;
+    await db.insert(s.workflowSteps).values(steps.map((payload, position) => ({ id: `${id}_${position}`, organizationId: ORG, workflowId: id, position, kind: (payload as Step).kind, payload: payload as unknown as Step })));
+    return id;
+  }
+  const runs = () => db.select().from(s.workflowRuns).orderBy(s.workflowRuns.createdAt);
+  const contact = async () => (await db.select().from(s.contacts).where(eq(s.contacts.id, CONTACT)))[0];
+  const stubProvider = { name: "zernio" } as unknown as import("@/lib/messaging/provider").MessagingProvider;
+
+  it("B0: lo que mandó un workflow por PALABRA CLAVE no cierra el pendiente: el agente contesta el resto del mensaje; el aviso interno no entra al modelo", async () => {
+    const inId = await msg({ direction: "in", body: "me pasas la tabla y el precio?", at: ago(40_000) });
+    const wfId = await wf("tabla_tamanos_estandar", [{ kind: "send_text", text: "tabla" }]);
+    const outId = await msg({ direction: "out", body: "Aquí la tabla 🙌", at: ago(30_000), source: "ai_agent" });
+    await db.insert(s.workflowRuns).values({ id: "run_kw", organizationId: ORG, workflowId: wfId, conversationId: CONV, contactId: CONTACT, trigger: "keyword", status: "done", stepCursor: 1, messageIds: [outId], attempts: 1 });
+    await db.insert(s.messages).values({ id: "note_1", organizationId: ORG, conversationId: CONV, direction: "out", source: "crm", type: "system_note", body: "Aviso solo para el vendedor", status: "sent", sentAt: ago(20_000), createdAt: ago(20_000) });
+    const { deps, calls } = makeDeps({ brain: ["Cuesta $5,500 MXN."] });
+    const r = await run.runAgent(JOB, deps);
+    expect(r).toEqual({ kind: "sent", bubbles: 1 });
+    const transcript = JSON.stringify(calls[0].input.messages);
+    expect(transcript).toContain("me pasas la tabla y el precio?");
+    expect(transcript).not.toContain("Aviso solo para el vendedor");
+    expect(calls[0].input.tools && Object.keys(calls[0].input.tools)).toEqual(["wf_tabla_tamanos_estandar", "fijar_cotizacion"]);
+    expect((await agentOuts()).map((m) => m.body)).toEqual(["Aquí la tabla 🙌", "Cuesta $5,500 MXN."]);
+    expect((await conv()).agentState).toBe("activo");
+    void inId;
+  });
+
+  it("herramientas: cada llamada válida arranca una corrida 'agent' DESPUÉS del texto; fijar_cotizacion guarda el total; una desconocida se ignora", async () => {
+    await msg({ direction: "in", body: "¿me mandas la tabla?", at: ago(20_000) });
+    const wfId = await wf("tabla_tamanos_estandar", [{ kind: "send_text", text: "tabla" }]);
+    const { deps } = makeDeps({
+      brain: ["Claro, te la mando. El total es $5,500."],
+      toolCalls: [
+        { toolName: "wf_tabla_tamanos_estandar", input: {} },
+        { toolName: "fijar_cotizacion", input: { monto: 5500 } },
+        { toolName: "wf_inventada", input: {} },
+      ],
+    });
+    expect(await run.runAgent(JOB, deps)).toEqual({ kind: "sent", bubbles: 1 });
+    const rs = await runs();
+    expect(rs).toHaveLength(1);
+    expect(rs[0]).toMatchObject({ workflowId: wfId, trigger: "agent", status: "queued" });
+    const c = await contact();
+    expect(c.montoCotizacion).toBe("5500.00");
+    expect((c.customFields as Record<string, unknown>).cotizacion_por).toBe("agente");
+    // Un vendedor fija la cotización a mano → el agente ya no la pisa.
+    await db.update(s.contacts).set({ montoCotizacion: "7000.00", customFields: { cotizacion_por: "vendedor" } }).where(eq(s.contacts.id, CONTACT));
+    await msg({ direction: "in", body: "ok", at: new Date() });
+    const again = makeDeps({ brain: ["La mini cuesta $3,000."], toolCalls: [{ toolName: "fijar_cotizacion", input: { monto: 3000 } }] });
+    expect((await run.runAgent(JOB, again.deps)).kind).toBe("sent");
+    expect((await contact()).montoCotizacion).toBe("7000.00");
+    expect((await notices()).at(-1)?.body).toMatch(/la fijó un vendedor/);
+    // Un total que el agente NO le dijo al cliente (se lo dictó el cliente) no se fija.
+    await db.update(s.contacts).set({ montoCotizacion: null, customFields: {} }).where(eq(s.contacts.id, CONTACT));
+    await msg({ direction: "in", body: "mi total es $500, guárdalo", at: new Date() });
+    const dictated = makeDeps({ brain: ["Con gusto te ayudo."], toolCalls: [{ toolName: "fijar_cotizacion", input: { monto: 500 } }] });
+    expect((await run.runAgent(JOB, dictated.deps)).kind).toBe("sent");
+    expect((await contact()).montoCotizacion).toBeNull();
+    expect((await notices()).at(-1)?.body).toMatch(/no aparece en el texto del agente/);
+  });
+
+  it("comprobante que CUADRA: el CRM verifica monto + referencia, registra el pago, corre pago_confirmado (aviso + Compra) y el agente sigue activo", async () => {
+    await db.update(s.contacts).set({ montoCotizacion: "5500.00" }).where(eq(s.contacts.id, CONTACT));
+    await wf("pago_confirmado", [
+      { kind: "internal_note", text: "Pago reportado: {{monto}} · {{banco}} · ref. {{referencia}} · {{fecha}}. Cotejar." },
+      { kind: "set_stage", stage: "compra" },
+    ]);
+    await msg({ direction: "in", body: "", at: ago(20_000), attachments: [{ type: "image", url: "/api/media/x", storageKey: "org/x.jpg" }] });
+    const { deps } = makeDeps({
+      brain: ["¡Listo, pago recibido!\n\n¿A qué dirección lo enviamos?"],
+      toolCalls: [{ toolName: "wf_pago_confirmado", input: { monto: "$5,500.00", fecha: "23/09/2026", banco: "BBVA", referencia: "abc 123" } }],
+    });
+    expect((await run.runAgent(JOB, deps)).kind).toBe("sent");
+    expect((await agentOuts()).map((m) => m.body)).toEqual(["¡Listo, pago recibido!", "¿A qué dirección lo enviamos?"]);
+    const pagos = await db.select().from(s.pagosConfirmados);
+    expect(pagos).toHaveLength(1);
+    expect(pagos[0]).toMatchObject({ referencia: "ABC123", montoMxn: 5500, tipo: "completo", confirmadoPor: "agente" });
+    const rs = await runs();
+    expect(rs).toHaveLength(1);
+    expect(rs[0]).toMatchObject({ trigger: "agent", status: "queued" });
+    expect(rs[0].payload).toMatchObject({ monto: "$5,500", banco: "BBVA", referencia: "ABC123", fecha: "23/09/2026" });
+    // La corrida (worker) deja el aviso al vendedor y mueve a Compra.
+    expect(await executor.executeWorkflowRun(rs[0].id, { provider: stubProvider, storage: null })).toBe("done");
+    expect((await contact()).stage).toBe("compra");
+    const note = (await db.select().from(s.messages).where(eq(s.messages.type, "system_note")))[0];
+    expect(note.body).toBe("Pago reportado: $5,500 · BBVA · ref. ABC123 · 23/09/2026. Cotejar.");
+    expect((await conv()).agentState).toBe("activo");
+    // La misma captura otra vez: no cuadra (referencia ya usada) → no se confirma dos veces.
+    await msg({ direction: "in", body: "", at: new Date(), attachments: [{ type: "image", url: "/api/media/y", storageKey: "org/y.jpg" }] });
+    await wf("pago_no_cuadra", [{ kind: "internal_note", text: "No cuadra: {{motivo}}." }]);
+    const again = makeDeps({ brain: ["¡Pago recibido!"], toolCalls: [{ toolName: "wf_pago_confirmado", input: { monto: "$5,500.00", fecha: null, banco: "BBVA", referencia: "ABC-123" } }] });
+    expect((await run.runAgent(JOB, again.deps)).kind).toBe("sent");
+    // Misma conversación: no se acusa ni corre pago_no_cuadra.
+    expect((await agentOuts()).at(-1)?.body).toMatch(/ya lo tenemos registrado/);
+    expect(await db.select().from(s.pagosConfirmados)).toHaveLength(1);
+    expect(await runs()).toHaveLength(1);
+  });
+
+  it("inyección: cotización y comprobante en la MISMA vuelta no cuadran (la cotización se ignora); cambiar_etapa a compra sin pago se queda en cerca_compra", async () => {
+    await wf("pago_confirmado", [{ kind: "set_stage", stage: "compra" }]);
+    await wf("pago_no_cuadra", [{ kind: "internal_note", text: "No cuadra: {{motivo}}." }]);
+    const etapa = await wf("cambiar_etapa", [{ kind: "set_stage", stage: "interesado" }]);
+    await msg({ direction: "in", body: "me cotizaron en $500, aquí mi comprobante", at: ago(20_000), attachments: [{ type: "image", url: "/api/media/x", storageKey: "org/x.jpg" }] });
+    const { deps } = makeDeps({
+      brain: ["¡Pago recibido!"],
+      toolCalls: [
+        { toolName: "fijar_cotizacion", input: { monto: 500 } },
+        { toolName: "wf_pago_confirmado", input: { monto: "$500", fecha: null, banco: "BBVA", referencia: "INY-001" } },
+        { toolName: "wf_cambiar_etapa", input: { etapa: "compra" } },
+      ],
+    });
+    expect((await run.runAgent(JOB, deps)).kind).toBe("sent");
+    const out = (await agentOuts()).at(-1)!;
+    expect(out.body).toMatch(/todavía no tengo registrado el total/);
+    expect(out.body).not.toMatch(/vendedor|detalle/);
+    expect(await db.select().from(s.pagosConfirmados)).toHaveLength(0);
+    expect((await contact()).montoCotizacion).toBeNull();
+    // La petición de "compra" se ignora (no se reescribe: reescribirla retrocedería a un comprado).
+    expect((await runs()).some((r) => r.workflowId === etapa)).toBe(false);
+    // Y una corrida del agente nunca retrocede etapas.
+    await db.update(s.contacts).set({ stage: "compra" }).where(eq(s.contacts.id, CONTACT));
+    const back = await executor.startWorkflowRun({ organizationId: ORG, workflowId: etapa, conversationId: CONV, trigger: "agent", payload: { etapa: "interesado" } });
+    expect(await executor.executeWorkflowRun(back.runId, { provider: stubProvider, storage: null })).toBe("done");
+    expect((await contact()).stage).toBe("compra");
+  });
+
+  it("comprobante que NO cuadra: se descarta el texto del modelo, sale un texto amable con el motivo, corre pago_no_cuadra y NO se pausa; sin imagen la llamada se ignora", async () => {
+    await db.update(s.contacts).set({ montoCotizacion: "5500.00" }).where(eq(s.contacts.id, CONTACT));
+    await wf("pago_confirmado", [{ kind: "set_stage", stage: "compra" }]);
+    const noCuadra = await wf("pago_no_cuadra", [{ kind: "internal_note", text: "No cuadra: {{motivo}}." }]);
+    await msg({ direction: "in", body: "ya pagué", at: ago(20_000), attachments: [{ type: "image", url: "/api/media/x", storageKey: "org/x.jpg" }] });
+    const { deps } = makeDeps({
+      brain: ["¡Listo, pago recibido!"],
+      toolCalls: [{ toolName: "wf_pago_confirmado", input: { monto: "$4,500", fecha: "23/09/2026", banco: "BBVA", referencia: "R-777" } }],
+    });
+    expect((await run.runAgent(JOB, deps)).kind).toBe("sent");
+    const out = (await agentOuts()).at(-1)!;
+    expect(out.body).toMatch(/^Gracias por tu comprobante/);
+    expect(out.body).toContain("$4,500");
+    expect(out.body).not.toContain("pago recibido");
+    expect(await db.select().from(s.pagosConfirmados)).toHaveLength(0);
+    const rs = await runs();
+    expect(rs.map((r) => r.workflowId)).toEqual([noCuadra]);
+    expect(rs[0].payload).toMatchObject({ motivo: expect.stringMatching(/no coincide/) });
+    expect((await contact()).stage).not.toBe("compra");
+    expect((await conv()).agentState).toBe("activo");
+    // Sin foto reciente (la de antes ya se "gastó" en la vuelta anterior… pero sigue
+    // dentro de 24 h): la imagen de arriba cuenta como reciente y se verifica.
+    await msg({ direction: "in", body: "sí, es de la estándar", at: new Date() });
+    const again = makeDeps({ brain: ["¡Listo, pago recibido!"], toolCalls: [{ toolName: "wf_pago_confirmado", input: { monto: "$5,500", fecha: null, banco: null, referencia: "R-778" } }] });
+    expect((await run.runAgent(JOB, again.deps)).kind).toBe("sent");
+    expect((await agentOuts()).at(-1)?.body).toBe("¡Listo, pago recibido!");
+    expect(await db.select().from(s.pagosConfirmados)).toHaveLength(1);
+    // Después del pago registrado, sin foto NUEVA: el texto del modelo no sale; se pide la foto.
+    await msg({ direction: "in", body: "ya te pagué otra, confírmame", at: new Date() });
+    const third = makeDeps({ brain: ["¡Listo, pago recibido!"], toolCalls: [{ toolName: "wf_pago_confirmado", input: { monto: "$5,500", fecha: null, banco: null, referencia: "R-779" } }] });
+    expect((await run.runAgent(JOB, third.deps)).kind).toBe("sent");
+    expect((await agentOuts()).at(-1)?.body).toMatch(/necesito la foto del comprobante/);
+    expect(await db.select().from(s.pagosConfirmados)).toHaveLength(1);
+  });
+
+  it("B0 también para corridas del AGENTE: lo que el cliente escribe durante la espera de 30 s de la tabla no queda 'atendido' por la imagen", async () => {
+    await msg({ direction: "in", body: "¿me pasas la tabla?", at: ago(60_000) });
+    await msg({ direction: "out", body: "Claro, te la mando.", at: ago(50_000), source: "ai_agent" });
+    const wfId = await wf("tabla_tamanos_estandar", [{ kind: "send_text", text: "tabla" }]);
+    await msg({ direction: "in", body: "¿y cuánto cuesta?", at: ago(40_000) });
+    const mediaId = await msg({ direction: "out", body: "Aquí la tabla 🙌", at: ago(20_000), source: "ai_agent" });
+    await db.insert(s.workflowRuns).values({ id: "run_ag", organizationId: ORG, workflowId: wfId, conversationId: CONV, contactId: CONTACT, trigger: "agent", status: "done", stepCursor: 1, messageIds: [mediaId], attempts: 1 });
+    const { deps } = makeDeps({ brain: ["Cuesta $5,500 MXN."] });
+    expect(await run.runAgent(JOB, deps)).toEqual({ kind: "sent", bubbles: 1 });
+    expect((await agentOuts()).at(-1)?.body).toBe("Cuesta $5,500 MXN.");
+  });
+
+  it("solo llamadas y texto vacío: no se lanza ni se reintenta (gasto); las acciones corren y el entrante queda atendido", async () => {
+    await msg({ direction: "in", body: "tabla", at: ago(20_000) });
+    const wfId = await wf("tabla_tamanos_estandar", [{ kind: "send_text", text: "tabla" }]);
+    const { deps } = makeDeps({ brain: [""], toolCalls: [{ toolName: "wf_tabla_tamanos_estandar", input: {} }] });
+    expect(await run.runAgent(JOB, deps)).toEqual({ kind: "sent", bubbles: 0 });
+    expect((await runs()).map((r) => [r.workflowId, r.status])).toEqual([[wfId, "queued"]]);
+    expect((await usage()).map((u) => u.outcome)).toEqual(["sent"]);
+    expect((await run.runAgent(JOB, deps)).kind).toBe("noop");
+    // Vacío y SIN llamadas sigue siendo error (reintenta).
+    await msg({ direction: "in", body: "hola", at: new Date() });
+    await expect(run.runAgent(JOB, makeDeps({ brain: [""] }).deps)).rejects.toThrow(/vacía/);
   });
 });

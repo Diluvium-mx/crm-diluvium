@@ -23,6 +23,8 @@ export type ContextoCotizacion = {
   anticipoConfirmado: number;
   /** true si la referencia leída ya fue usada en un pago confirmado de la organización. */
   referenciaYaUsada: boolean;
+  /** Quién fijó el total ("agente" | "vendedor" | null); solo informativo. */
+  cotizacionPor?: string | null;
   hoy: Date;
 };
 
@@ -39,8 +41,8 @@ export type ResultadoComprobante =
   | { ok: false; motivo: string };
 
 export const ANTICIPO_MEDIDA_ESPECIAL_MXN = 3_500;
-// Tolerancia de UN centavo por redondeo de la lectura; $5,499 contra $5,500 NO cuadra.
-const TOLERANCIA_MXN = 0.01;
+// Igualdad EXACTA en centavos enteros (sin tolerancia): $748.99 contra $749 NO cuadra.
+const centavos = (n: number) => Math.round(n * 100);
 
 // Referencia canónica: sin espacios, guiones ni acentos, en mayúsculas. "ABC-123",
 // "abc 123" y "ABC123" son la misma transferencia (índice único por organización).
@@ -94,7 +96,7 @@ export function parseFecha(raw: string | null): Date | null {
   return Number.isNaN(date.getTime()) ? null : date;
 }
 
-const eqMxn = (a: number, b: number) => Math.abs(a - b) <= TOLERANCIA_MXN;
+const eqMxn = (a: number, b: number) => centavos(a) === centavos(b);
 
 export function verificarComprobante(lectura: LecturaComprobante, ctx: ContextoCotizacion): ResultadoComprobante {
   const humano = (motivo: string): ResultadoComprobante => ({ ok: false, motivo });

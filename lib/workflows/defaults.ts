@@ -174,7 +174,7 @@ export const DEFAULT_WORKFLOWS: readonly DefaultWorkflow[] = [
     slug: "transferir_humano",
     name: "Pasar a humano",
     agentDescription:
-      "Pasa la conversación a un asesor humano y deja de responder. " +
+      "Avisa a un asesor humano para que tome la conversación; tú sigues atendiendo hasta que él conteste. " +
       "Úsala solo en los casos del Goal: el cliente pide hablar con una persona, pide un enlace para pagar con tarjeta, hay un problema de garantía, devolución, daño o pedido incompleto, " +
       "reporta un problema con Amazon o Mercado Libre, pide un descuento o condición no autorizada, menciona fraude o insulta de forma persistente, o falta información oficial. " +
       "Escribe primero una despedida breve en texto y luego llama esta herramienta con el motivo.",
@@ -244,15 +244,17 @@ export const DEFAULT_WORKFLOWS: readonly DefaultWorkflow[] = [
     slug: "pago_no_cuadra",
     name: "Comprobante que no cuadra",
     agentDescription:
-      "Pasa a un asesor humano un comprobante de pago que no cuadra: el monto no coincide con lo cotizado, la referencia ya se usó, la imagen no se lee o no es un comprobante. " +
-      "Escribe primero al cliente, con amabilidad, qué viste y qué esperabas (por ejemplo el monto del comprobante y el total cotizado) y que un asesor lo revisa; luego llama esta herramienta con el motivo.",
+      "Avisa a un asesor de un comprobante de pago que no se puede confirmar: la imagen no se lee, no es un comprobante o falta un dato. " +
+      "Escribe primero al cliente, con amabilidad, qué viste y que un asesor lo revisa; luego llama esta herramienta con el motivo. " +
+      "Si el comprobante sí se lee, usa pago_confirmado: el CRM verifica el monto.",
     triggerAgent: true,
     triggerKeywords: [],
     triggerCommand: null,
+    // El texto amable al cliente lo manda el agente (lib/ai/runtime/actions.ts);
+    // aquí solo queda el rastro para el vendedor. Sin pausa (el agente sigue).
     steps: [
       { kind: "add_tag", tag: "revisar comprobante" },
-      { kind: "internal_note", text: "Comprobante que no cuadra según el agente: {{motivo}}. Revisar con el cliente." },
-      { kind: "handover" },
+      { kind: "internal_note", text: "Comprobante que no cuadra: {{motivo}}. Revisar con el cliente." },
     ],
   },
 ];
