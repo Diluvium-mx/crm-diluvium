@@ -189,6 +189,16 @@ Dashboard ya muestra el gasto del mes y el saldo estimado (24-sep-2026).
   - **Saldo estimado:** recargas registradas − `ai_usage.cost_usd` desde el día (hora de
     Mazatlán) de la primera recarga del proveedor. Es un estimado: depende de los precios
     internos (`lib/ai/pricing.ts` + `ai_model_prices`) y no incluye impuestos.
+  - **Gasto dividido (24-sep-2026):** staging y producción usan las MISMAS llaves. La tarjeta de
+    producción muestra por proveedor "Gasto producción" y "Gasto pruebas (staging)" del mes, y el
+    saldo estimado = recargas − ambos gastos desde la primera recarga. Producción lee el gasto de
+    staging de `GET /api/internal/ai-spend?from=YYYY-MM-DD` (sumas por día local y proveedor de
+    TODAS las orgs de staging, Bearer `AI_SPEND_TOKEN`, tiempo límite 4 s; el endpoint responde
+    404 fuera de staging, así que el token no abre nada en producción). Si staging no
+    responde o falta configurarlo, muestra solo producción con un aviso. En staging la tarjeta
+    solo muestra su propio gasto (`RAILWAY_ENVIRONMENT_NAME`). Variables, en el servicio web
+    `crm-diluvium`: staging → `AI_SPEND_TOKEN`; producción → `AI_SPEND_TOKEN` (mismo valor) y
+    `STAGING_APP_URL=https://crm-diluvium-staging.up.railway.app`.
   - **Seed del conocimiento:** desde que existe el editor, `npm run seed:ai-knowledge` se
     niega a correr si la organización ya tiene versiones (el Goal o las FAQs se editaron en
     la pestaña): pisaría lo editado sin dejar versión. `SEED_FORCE=1` lo obliga.
