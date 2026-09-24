@@ -59,3 +59,23 @@ export async function loadNotices(organizationId: string, conversationId: string
     .limit(limit);
   return rows.reverse();
 }
+
+// Aviso de pase a humano ANTES de enviar la respuesta, idempotente por el entrante
+// que la disparó (índice único message_id+kind): si el worker cae a la mitad o la
+// cola reintenta, no se pierde ni se duplica. A diferencia de addNotice, LANZA si
+// la BD falla: la corrida se reintenta antes de decirle al cliente que lo atenderán.
+export async function ensureHandoverNotice(input: { organizationId: string; conversationId: string; triggerMessageId: string }): Promise<void> {
+  const rows = await db
+    .insert(aiAgentNotices)
+    .values({
+      id: crypto.randomUUID(),
+      organizationId: input.organizationId,
+      conversationId: input.conversationId,
+      messageId: input.triggerMessageId,
+      kind: "pasar_a_humano",
+      body: "El cliente pidió hablar con un vendedor. El agente le dijo que lo atenderán y sigue contestando hasta que alguien responda.",
+    })
+    .onConflictDoNothing()
+    .returning({ id: aiAgentNotices.id });
+  if (rows.length > 0) await notifyConversation(db, input.organizationId, input.conversationId);
+}
