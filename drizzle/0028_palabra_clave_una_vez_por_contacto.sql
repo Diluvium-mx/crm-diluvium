@@ -1,0 +1,1 @@
+ALTER TABLE "contacts" ADD COLUMN "keyword_workflows_sent" text[] DEFAULT '{}' NOT NULL;

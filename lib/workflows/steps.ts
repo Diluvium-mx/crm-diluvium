@@ -8,7 +8,8 @@ import type { WorkflowStepPayload } from "@/lib/db/schema/automation";
 export const MAX_STEP_TEXT = 4_096; // tope de WhatsApp para un texto
 export const MAX_CAPTION = 1_024;
 export const MAX_TAG = 40;
-export const MAX_WAIT_SECONDS = 10;
+// 30 s es lo que GHL espera antes de la tabla de tamaños; tope holgado.
+export const MAX_WAIT_SECONDS = 60;
 export const MAX_STEPS = 12;
 
 const nonEmpty = (max: number) => z.string().trim().min(1, "El texto está vacío.").max(max, `Máximo ${max} caracteres.`);
@@ -71,23 +72,17 @@ export function normalizeKeyword(text: string): string {
     .trim();
 }
 
-// Un mensaje más largo que esto no es un "pedido directo" ("vi su video en
-// Facebook, ¿cuánto cuesta?") y NO dispara por palabra clave: lo atiende el
-// agente o el vendedor. Evita mandar contenido que nadie pidió.
-export const KEYWORD_MAX_WORDS = 8;
-
-// ¿El mensaje del cliente contiene alguna palabra clave? Coincidencia por
-// palabra completa (sin acentos): "tabla" no dispara con "establa" pero sí con
-// "la tabla?" o "TABLA de tamaños". Devuelve la coincidencia MÁS LARGA ("video a
-// la medida" gana a "video"). Solo mensajes cortos (KEYWORD_MAX_WORDS).
+// ¿El mensaje del cliente CONTIENE alguna palabra clave? Igual que GHL
+// (24-sep-2026): coincidencia "contiene", sin distinguir mayúsculas ni acentos y
+// sin tope de palabras ("instalacion" dispara con "¿cómo es la instalación?").
+// Devuelve la coincidencia MÁS LARGA ("video a la medida" gana a "video").
 export function matchesKeyword(message: string, keywords: readonly string[]): string | null {
-  const words = normalizeKeyword(message).replace(/[^\p{L}\p{N}]+/gu, " ").trim();
-  if (!words || words.split(" ").length > KEYWORD_MAX_WORDS) return null;
-  const haystack = ` ${words} `;
+  const haystack = normalizeKeyword(message).replace(/[^\p{L}\p{N}]+/gu, " ").trim();
+  if (!haystack) return null;
   let best: { raw: string; len: number } | null = null;
   for (const raw of keywords) {
     const kw = normalizeKeyword(raw).replace(/[^\p{L}\p{N}]+/gu, " ").trim();
-    if (kw && haystack.includes(` ${kw} `) && (!best || kw.length > best.len)) best = { raw, len: kw.length };
+    if (kw && haystack.includes(kw) && (!best || kw.length > best.len)) best = { raw, len: kw.length };
   }
   return best?.raw ?? null;
 }

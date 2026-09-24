@@ -42,6 +42,7 @@ export const SKIP_REASON_LABEL: Record<string, string> = {
   falta_archivo: "falta un archivo",
   canal_apagado: "el canal no está en automático",
   sin_pasos: "sin pasos",
+  ya_enviado_a_este_contacto: "ya se envió a este contacto por palabra clave",
   ventana_24h: "ventana de 24 h cerrada",
   atorado: "se atoró (worker)",
   respuesta_humana: "un vendedor respondió",

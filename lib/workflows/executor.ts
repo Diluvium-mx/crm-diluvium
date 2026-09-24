@@ -49,6 +49,8 @@ export const SKIP_DISABLED = "workflow_deshabilitado";
 export const SKIP_MISSING_MEDIA = "falta_archivo";
 export const SKIP_CHANNEL_OFF = "canal_apagado";
 export const SKIP_NO_STEPS = "sin_pasos";
+// Por palabra clave, un workflow se manda UNA vez por contacto (como GHL).
+export const SKIP_ALREADY_SENT = "ya_enviado_a_este_contacto";
 export const FAIL_WINDOW = "ventana_24h";
 export const FAIL_STUCK = "atorado";
 
@@ -109,9 +111,10 @@ export async function startWorkflowRun(input: StartRunInput): Promise<StartRunRe
   if (!loaded) throw new Error("Workflow no encontrado en esta organización.");
   const { wf, steps } = loaded;
   const [conv] = await db
-    .select({ id: conversations.id, contactId: conversations.contactId, aiAgentMode: channels.aiAgentMode })
+    .select({ id: conversations.id, contactId: conversations.contactId, aiAgentMode: channels.aiAgentMode, keywordSent: contacts.keywordWorkflowsSent })
     .from(conversations)
     .innerJoin(channels, eq(channels.id, conversations.channelId))
+    .innerJoin(contacts, eq(contacts.id, conversations.contactId))
     .where(and(eq(conversations.id, input.conversationId), eq(conversations.organizationId, input.organizationId)))
     .limit(1);
   if (!conv) throw new Error("Conversación no encontrada en esta organización.");
@@ -129,6 +132,8 @@ export async function startWorkflowRun(input: StartRunInput): Promise<StartRunRe
   // AUTO: cualquier otro valor cuenta como apagado (el modo "borrador" ya no
   // existe en el negocio). Los comandos del vendedor y la etapa manual siempre.
   if (!HUMAN_TRIGGERS.has(input.trigger) && conv.aiAgentMode !== "auto") return skip(SKIP_CHANNEL_OFF);
+  // Palabra clave: una sola vez por contacto (marca invisible, como GHL).
+  if (input.trigger === "keyword" && conv.keywordSent.includes(input.workflowId)) return skip(SKIP_ALREADY_SENT);
   const runId = await insertRun(input, conv.contactId, "queued");
   await enqueueWorkflowRun(runId);
   return { runId, status: "queued" };
@@ -213,7 +218,7 @@ export async function executeWorkflowRun(runId: string, deps: ExecutorDeps): Pro
 
   const loaded = await loadWorkflowWithSteps(run.organizationId, run.workflowId);
   const [contact] = await db
-    .select({ firstName: contacts.firstName, lastName: contacts.lastName })
+    .select({ firstName: contacts.firstName, lastName: contacts.lastName, keywordSent: contacts.keywordWorkflowsSent })
     .from(contacts)
     .where(and(eq(contacts.id, run.contactId), eq(contacts.organizationId, run.organizationId)))
     .limit(1);
@@ -230,6 +235,12 @@ export async function executeWorkflowRun(runId: string, deps: ExecutorDeps): Pro
   }
   if (missingMedia(loaded.steps.map((st) => st.payload)).length > 0) {
     await markRun(runId, { status: "skipped", errorCode: SKIP_MISSING_MEDIA, finishedAt: now() });
+    return "cancelled";
+  }
+  // Dos mensajes seguidos con la misma palabra clave encolan dos corridas; la
+  // segunda encuentra la marca al reclamar y no repite.
+  if (run.trigger === "keyword" && run.stepCursor === 0 && contact.keywordSent.includes(run.workflowId)) {
+    await markRun(runId, { status: "skipped", errorCode: SKIP_ALREADY_SENT, finishedAt: now() });
     return "cancelled";
   }
   const seller = run.triggeredByUserId
@@ -296,6 +307,14 @@ export async function executeWorkflowRun(runId: string, deps: ExecutorDeps): Pro
     await markRun(runId, { stepCursor: i + 1, messageIds, startedAt: now() });
   }
   await markRun(runId, { status: "done", finishedAt: now(), messageIds });
+  if (run.trigger === "keyword") {
+    await db
+      .update(contacts)
+      .set({
+        keywordWorkflowsSent: sql`case when ${run.workflowId} = any(${contacts.keywordWorkflowsSent}) then ${contacts.keywordWorkflowsSent} else array_append(${contacts.keywordWorkflowsSent}, ${run.workflowId}) end`,
+      })
+      .where(and(eq(contacts.id, run.contactId), eq(contacts.organizationId, run.organizationId)));
+  }
   return "done";
 }
 

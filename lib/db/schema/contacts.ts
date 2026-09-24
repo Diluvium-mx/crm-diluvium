@@ -65,6 +65,11 @@ export const contacts = pgTable(
     // importador filtra las de sistema antes de guardar. text[] en vez de un
     // modelo normalizado tags/contact_tags: consultable y ampliable después.
     tags: text("tags").array().notNull().default([]),
+    // Fase D (24-sep-2026): workflows ya enviados a este contacto POR PALABRA
+    // CLAVE (ids). Como la etiqueta "medidas enviadas" de GHL: por palabra clave
+    // cada workflow sale una sola vez por contacto; por comando o por el agente,
+    // siempre. Invisible para el vendedor.
+    keywordWorkflowsSent: text("keyword_workflows_sent").array().notNull().default([]),
     // País del contacto (columna Country del export de GHL). Nullable; se
     // guarda para el mapa/segmentación futura, sin uso en la UI de v1.
     country: text("country"),

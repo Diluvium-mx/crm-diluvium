@@ -374,6 +374,27 @@ describe.skipIf(!TEST_DATABASE_URL)("executor de workflows", () => {
     expect((await db.select().from(s.messages).where(eq(s.messages.conversationId, CONV))).filter((m) => m.direction === "out")).toHaveLength(2);
   });
 
+  it("palabra clave: una sola vez por contacto (marca invisible); por comando se manda siempre", async () => {
+    const wf = await workflow([{ kind: "send_text", text: "tabla" }]);
+    const a = await ex.startWorkflowRun({ organizationId: ORG, workflowId: wf, conversationId: CONV, trigger: "keyword" });
+    expect(a.status).toBe("queued");
+    expect(await ex.executeWorkflowRun(a.runId, { provider, storage })).toBe("done");
+    expect((await contact()).keywordWorkflowsSent).toEqual([wf]);
+    expect((await contact()).tags).toEqual([]); // sin etiqueta visible
+    const b = await ex.startWorkflowRun({ organizationId: ORG, workflowId: wf, conversationId: CONV, trigger: "keyword" });
+    expect(b).toMatchObject({ status: "skipped", reason: ex.SKIP_ALREADY_SENT });
+    // Dos mensajes seguidos: la segunda corrida ya estaba en cola antes de la marca → la rechaza al reclamar.
+    await db.update(s.contacts).set({ keywordWorkflowsSent: [] }).where(eq(s.contacts.id, CONTACT));
+    const c = await ex.startWorkflowRun({ organizationId: ORG, workflowId: wf, conversationId: CONV, trigger: "keyword" });
+    await db.update(s.contacts).set({ keywordWorkflowsSent: [wf] }).where(eq(s.contacts.id, CONTACT));
+    expect(await ex.executeWorkflowRun(c.runId, { provider, storage })).toBe("cancelled");
+    expect(sent).toHaveLength(1);
+    // El comando del vendedor no mira la marca.
+    const d = await ex.startWorkflowRun({ organizationId: ORG, workflowId: wf, conversationId: CONV, trigger: "command", triggeredByUserId: "u_v" });
+    expect(await ex.executeWorkflowRun(d.runId, { provider, storage })).toBe("done");
+    expect(sent).toHaveLength(2);
+  });
+
   it("dos corridas de la misma conversación no se intercalan: la segunda espera (busy) mientras la primera corre", async () => {
     const wfA = await workflow([{ kind: "send_text", text: "tabla" }]);
     const wfB = await workflow([{ kind: "send_text", text: "banco" }]);

@@ -20,7 +20,7 @@ export function startWorkflowWorker(provider: MessagingProvider, storage: Object
       return outcome;
     },
     // Concurrencia 3: una corrida con pasos "esperar" no debe retrasar a los
-    // demás clientes (tope de espera 10 s por paso). Dos corridas de la MISMA
+    // demás clientes (tope de espera 60 s por paso; GHL espera 30 s antes de la tabla). Dos corridas de la MISMA
     // conversación no se intercalan: el reclamo toma un candado por conversación
     // y la segunda espera ("busy" → reintento).
     { connection: { ...redisConnection(), maxRetriesPerRequest: null }, concurrency: 3, autorun: false },
