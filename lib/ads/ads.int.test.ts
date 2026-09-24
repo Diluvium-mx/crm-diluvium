@@ -250,6 +250,68 @@ describe.skipIf(!TEST_DATABASE_URL)("anuncios de Meta (Postgres real)", () => {
     expect(await db.select().from(s.adClicks)).toHaveLength(1);
   });
 
+  it("respaldo DURABLE: nace pendiente en la base; si la cola falló, el barrido lo encuentra y reintenta con tope", async () => {
+    await deliver(adEvent({ phone: "5216681000020", conv: "zconv_dur", sentAt: "2026-09-24T18:00:00Z" }));
+    const [msg] = await db.select().from(s.messages);
+    // Pendiente en la MISMA transacción del mensaje (aunque el hook nunca encolara).
+    expect((msg.metadata as Record<string, { resultado: string; cuenta: string; conversacion: string }>).anuncioRespaldo).toMatchObject({
+      resultado: "pendiente",
+      cuenta: ACCOUNT,
+      conversacion: "zconv_dur",
+    });
+    await db.execute(d.sql`update messages set created_at = created_at - interval '2 minutes'`);
+    const [job] = await attribution.messagesPendingFallback();
+    expect(job).toMatchObject({ messageId: msg.id, providerAccountId: ACCOUNT, providerConversationId: "zconv_dur" });
+
+    // Zernio caído: no lanza; queda "error" y se reintenta tras la espera.
+    const down = { conversationAdClick: async () => Promise.reject(new Error("Zernio respondió 503")) };
+    expect((await attribution.attributeFromProviderConversation(down, job)).result).toBe("error");
+    expect(await attribution.messagesPendingFallback()).toHaveLength(0); // aún en espera
+    const age = (min: number) =>
+      db.execute(d.sql`update messages set metadata = jsonb_set(metadata, '{anuncioRespaldo,consultadoEn}', to_jsonb((now() - make_interval(mins => ${min}))::text))`);
+    await age(6);
+    expect(await attribution.messagesPendingFallback()).toHaveLength(1);
+
+    // Zernio aún sin el clic: "sin_datos" hasta 3 intentos; al llegar el clic, se atribuye.
+    const empty = { conversationAdClick: async () => null };
+    expect((await attribution.attributeFromProviderConversation(empty, job)).result).toBe("sin_datos");
+    await age(4);
+    const later = {
+      conversationAdClick: async () => ({ referral: { source_id: AD_IMAGE, ctwa_clid: "c-dur" }, capturedAt: new Date("2026-09-24T17:59:59Z") }),
+    };
+    expect((await attribution.attributeFromProviderConversation(later, job)).result).toBe("atribuido");
+    expect(await attribution.messagesPendingFallback()).toHaveLength(0);
+  });
+
+  it("respaldo: 'sin_datos' se deja de intentar al tercer intento", async () => {
+    await deliver(adEvent({ phone: "5216681000021", conv: "zconv_tope", sentAt: "2026-09-24T18:00:00Z" }));
+    await db.execute(d.sql`update messages set created_at = created_at - interval '2 minutes'`);
+    const [job] = await attribution.messagesPendingFallback();
+    const empty = { conversationAdClick: async () => null };
+    for (let i = 0; i < 3; i++) {
+      expect((await attribution.attributeFromProviderConversation(empty, job)).result).toBe("sin_datos");
+      await db.execute(d.sql`update messages set metadata = jsonb_set(metadata, '{anuncioRespaldo,consultadoEn}', to_jsonb((now() - interval '10 minutes')::text))`);
+    }
+    expect(await attribution.messagesPendingFallback()).toHaveLength(0);
+  });
+
+  it("fichas SIN id de anuncios distintos no se mezclan; la clave es la misma en JS y en SQL", async () => {
+    await deliver(adEvent({ phone: "5216681000030", referral: { source_type: "ad", headline: "Promo A" }, sentAt: "2026-09-24T18:00:00Z" }));
+    await deliver(adEvent({ phone: "5216681000031", referral: { source_type: "ad", headline: "Promo B" }, sentAt: "2026-09-24T18:01:00Z" }));
+    await deliver(adEvent({ phone: "5216681000032", referral: { source_type: "ad", headline: "Promo A" }, sentAt: "2026-09-24T18:02:00Z" }));
+    await deliver(adEvent({ phone: "5216681000033", referral: { source_type: "ad" }, sentAt: "2026-09-24T18:03:00Z" }));
+    await deliver(adEvent({ phone: "5216681000034", referral: { source_type: "ad" }, sentAt: "2026-09-24T18:04:00Z" }));
+    const list = await queries.listAds(ORG);
+    // Promo A (2 clientes), Promo B (1) y dos fichas vacías, cada una sola.
+    expect(list.map((a) => a.clients).sort()).toEqual([1, 1, 1, 2]);
+    const { adKeyOf, adKeySql } = await import("./ad-key");
+    const rows = await db.select({ click: s.adClicks, key: d.sql<string>`${adKeySql()}` }).from(s.adClicks);
+    for (const r of rows) expect(r.key).toBe(adKeyOf(r.click));
+    const promoA = list.find((a) => a.name === "Promo A")!;
+    expect((await queries.getAd(ORG, promoA.key))?.clients).toBe(2);
+    expect(await queries.getAd(ORG, "sin-id")).toBeNull();
+  });
+
   it("respaldo: Zernio sin clic, o un clic viejo que no es de este mensaje → registro, sin atribuir", async () => {
     await deliver(adEvent({ phone: "5216681000011", conv: "zconv_old", sentAt: "2026-09-24T18:00:00Z" }));
     const job = hooksLog.fallbacks[0];
@@ -305,6 +367,28 @@ describe.skipIf(!TEST_DATABASE_URL)("anuncios de Meta (Postgres real)", () => {
         } as unknown as import("@/lib/storage/s3").ObjectStorage,
       };
     }
+
+    it("anuncio dinámico: otro archivo bajo el mismo id NO reusa la copia (cada cliente ve lo que él vio)", async () => {
+      const a = { ...imageFicha("c-dyn-a"), image_url: "https://scontent-a.xx.fbcdn.net/v/t45/imagen-uno.jpg?oe=1" };
+      const b = { ...imageFicha("c-dyn-b"), image_url: "https://scontent-b.xx.fbcdn.net/v/t45/imagen-dos.jpg?oe=2" };
+      const c = { ...imageFicha("c-dyn-c"), image_url: "https://scontent-c.xx.fbcdn.net/v/t45/imagen-uno.jpg?oe=3" };
+      await deliver(adEvent({ phone: "5216681000040", referral: a, sentAt: new Date().toISOString() }));
+      await deliver(adEvent({ phone: "5216681000041", referral: b, sentAt: new Date().toISOString() }));
+      await deliver(adEvent({ phone: "5216681000042", referral: c, sentAt: new Date().toISOString() }));
+      const { storage } = memoryStorage();
+      const fetched: string[] = [];
+      const fetchImpl = (async (url: URL | string) => {
+        fetched.push(new URL(String(url)).pathname);
+        return new Response("JPG", { status: 200, headers: { "content-type": "image/jpeg" } });
+      }) as typeof fetch;
+      const clicks = await db.select().from(s.adClicks).orderBy(s.adClicks.createdAt);
+      for (const cl of clicks) await media.downloadClickMedia(storage, cl.id, fetchImpl);
+      // imagen-dos se descarga aparte; el tercero (mismo archivo que el primero, otro nodo del CDN) reusa.
+      expect(fetched).toEqual(["/v/t45/imagen-uno.jpg", "/v/t45/imagen-dos.jpg"]);
+      const [r1, r2, r3] = await db.select().from(s.adClicks).orderBy(s.adClicks.createdAt);
+      expect(r3.media[0].storageKey).toBe(r1.media[0].storageKey);
+      expect(r2.media[0].storageKey).not.toBe(r1.media[0].storageKey);
+    });
 
     it("copia video y miniatura; el segundo clic del mismo anuncio reusa la copia", async () => {
       await deliver(adEvent({ phone: "5216681000013", referral: videoFicha("c-13"), sentAt: new Date().toISOString() }));

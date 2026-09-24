@@ -18,6 +18,7 @@ import { ADS_QUEUE, enqueueAdsJob, type AdsJob } from "@/lib/queue/ads";
 import type { ObjectStorage } from "@/lib/storage/s3";
 import {
   attributeFromProviderConversation,
+  messagesPendingFallback,
   messagesWithUnrecordedReferral,
   recordClickFromMessage,
   type FallbackJob,
@@ -87,6 +88,8 @@ export function startAdsWorker({ provider, storage }: { provider: MessagingProvi
     for (const m of await messagesWithUnrecordedReferral()) {
       await enqueueAdsJob({ kind: "record", organizationId: m.organizationId, messageId: m.id });
     }
+    // 1b) Respaldos pendientes o por reintentar (registro durable en el mensaje).
+    for (const job of await messagesPendingFallback()) await enqueueAdsJob({ kind: "fallback", job });
     if (storage) {
       // 2) Media de clics pendiente (los links caducan: solo las últimas 48 h).
       const pendingMedia = await db

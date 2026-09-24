@@ -7,19 +7,9 @@
 import { and, asc, desc, eq, gte, inArray, sql } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { adClicks, contacts, messages, metaAds, type AdMediaItem } from "@/lib/db/schema";
+import { adHrefOf, adKeyOf, adKeySql, isAdKey } from "./ad-key";
 import { adsManagerUrl, storyUrl } from "./meta-api";
 import { httpsUrl, normalizeReferral } from "./referral";
-
-/** Clave de la página de un anuncio: su id de Meta, o "sin-id" para las fichas sin él. */
-export const NO_AD_ID_KEY = "sin-id";
-
-export function adKey(adId: string | null): string {
-  return adId ?? NO_AD_ID_KEY;
-}
-
-export function adHref(adId: string | null): string {
-  return `/anuncios/${adKey(adId)}`;
-}
 
 type MetaRow = typeof metaAds.$inferSelect;
 
@@ -63,16 +53,16 @@ async function metaFor(organizationId: string, adIds: string[]): Promise<Map<str
   return new Map(rows.map((r) => [r.adId, r]));
 }
 
-/** El clic más reciente de cada anuncio que ya tiene media en el bucket (para la miniatura). */
-async function latestStoredClicks(organizationId: string, adIds: (string | null)[]) {
-  const keys = [...new Set(adIds.map(adKey))];
+/** El clic más reciente de cada anuncio (por clave) que ya tiene media en el bucket (para la miniatura). */
+async function latestStoredClicks(organizationId: string, keysIn: string[]) {
+  const keys = [...new Set(keysIn)];
   if (keys.length === 0) return new Map<string, { id: string; media: AdMediaItem[] }>();
   const rows = await db.execute<{ key: string; id: string; media: AdMediaItem[] }>(sql`
     select distinct on (t.key) t.key, t.id, t.media
-      from (select coalesce(ad_id, ${NO_AD_ID_KEY}) as key, id, media, clicked_at
-              from ${adClicks}
-             where organization_id = ${organizationId}
-               and exists (select 1 from jsonb_array_elements(media) m where m->>'storageKey' is not null)) t
+      from (select ${adKeySql("c")} as key, c.id, c.media, c.clicked_at
+              from ${adClicks} c
+             where c.organization_id = ${organizationId}
+               and exists (select 1 from jsonb_array_elements(c.media) m where m->>'storageKey' is not null)) t
      where t.key in ${keys}
      order by t.key, t.clicked_at desc`);
   return new Map(rows.map((r) => [r.key, { id: r.id, media: r.media }]));
@@ -96,15 +86,15 @@ export async function adCardsForMessages(organizationId: string, messageIds: str
     .where(and(eq(adClicks.organizationId, organizationId), inArray(adClicks.messageId, messageIds)));
   if (clicks.length === 0) return new Map();
   const metas = await metaFor(organizationId, clicks.map((c) => c.adId).filter((id): id is string => id !== null));
-  const siblings = await latestStoredClicks(organizationId, clicks.map((c) => c.adId));
+  const siblings = await latestStoredClicks(organizationId, clicks.map(adKeyOf));
   const out = new Map<string, AdCard>();
   for (const c of clicks) {
     const meta = c.adId ? metas.get(c.adId) : undefined;
-    const ownOrSibling = c.media.some((m) => m.storageKey) ? c : (siblings.get(adKey(c.adId)) ?? null);
+    const ownOrSibling = c.media.some((m) => m.storageKey) ? c : (siblings.get(adKeyOf(c)) ?? null);
     const visual = pickVisual(ownOrSibling, meta ? { adId: meta.adId, media: meta.creativeMedia } : null);
     out.set(c.messageId!, {
       name: adDisplayName(meta, c.headline, c.adId),
-      href: adHref(c.adId),
+      href: adHrefOf(c),
       thumbnailUrl: visual.thumbnailUrl,
       mediaType: c.mediaType,
     });
@@ -120,7 +110,14 @@ export async function adCardsForMessages(organizationId: string, messageIds: str
 export function adCardFromRaw(raw: Record<string, unknown> | null | undefined): AdCard | null {
   if (!raw || typeof raw !== "object" || Object.keys(raw).length === 0) return null;
   const data = normalizeReferral(raw);
-  return { name: adDisplayName(null, data.headline, data.adId), href: adHref(data.adId), thumbnailUrl: null, mediaType: data.mediaType };
+  // Sin clic registrado no hay página aún (el barrido lo registra): con id, su
+  // página; sin id, la lista de anuncios.
+  return {
+    name: adDisplayName(null, data.headline, data.adId),
+    href: data.adId ? `/anuncios/${data.adId}` : "/anuncios",
+    thumbnailUrl: null,
+    mediaType: data.mediaType,
+  };
 }
 
 // ─── Lista de anuncios ──────────────────────────────────────────────────────
@@ -140,6 +137,7 @@ export type AdListItem = {
 
 export async function listAds(organizationId: string): Promise<AdListItem[]> {
   const rows = await db.execute<{
+    key: string;
     ad_id: string | null;
     clients: number;
     bought: number;
@@ -147,7 +145,8 @@ export async function listAds(organizationId: string): Promise<AdListItem[]> {
     headline: string | null;
     media_type: string | null;
   }>(sql`
-    select c.ad_id,
+    select ${adKeySql("c")} as key,
+           max(c.ad_id) as ad_id,
            count(distinct c.contact_id)::int as clients,
            count(distinct c.contact_id) filter (where ct.stage = 'compra')::int as bought,
            -- clicked_at lo escribe la ingesta desde JS (UTC, sin zona): epoch sin conversión.
@@ -157,15 +156,15 @@ export async function listAds(organizationId: string): Promise<AdListItem[]> {
       from ${adClicks} c
       join ${contacts} ct on ct.id = c.contact_id and ct.organization_id = c.organization_id
      where c.organization_id = ${organizationId}
-     group by c.ad_id
+     group by 1
      order by max(c.clicked_at) desc`);
   const adIds = rows.map((r) => r.ad_id).filter((id): id is string => id !== null);
-  const [metas, clicks] = await Promise.all([metaFor(organizationId, adIds), latestStoredClicks(organizationId, rows.map((r) => r.ad_id))]);
+  const [metas, clicks] = await Promise.all([metaFor(organizationId, adIds), latestStoredClicks(organizationId, rows.map((r) => r.key))]);
   return rows.map((r) => {
     const meta = r.ad_id ? metas.get(r.ad_id) : undefined;
-    const visual = pickVisual(clicks.get(adKey(r.ad_id)) ?? null, meta ? { adId: meta.adId, media: meta.creativeMedia } : null);
+    const visual = pickVisual(clicks.get(r.key) ?? null, meta ? { adId: meta.adId, media: meta.creativeMedia } : null);
     return {
-      key: adKey(r.ad_id),
+      key: r.key,
       adId: r.ad_id,
       name: adDisplayName(meta, r.headline, r.ad_id),
       campaignName: meta?.campaignName ?? null,
@@ -201,9 +200,9 @@ export type AdDetail = {
 };
 
 export async function getAd(organizationId: string, key: string): Promise<AdDetail | null> {
-  const adId = key === NO_AD_ID_KEY ? null : key;
-  if (adId !== null && !/^\d{5,25}$/.test(adId)) return null;
-  const byAd = adId === null ? sql`${adClicks.adId} is null` : eq(adClicks.adId, adId);
+  if (!isAdKey(key)) return null;
+  const adId = /^\d+$/.test(key) ? key : null;
+  const byAd = adId !== null ? eq(adClicks.adId, adId) : sql`${adKeySql()} = ${key}`;
   const clicks = await db
     .select({ click: adClicks, contact: { id: contacts.id, firstName: contacts.firstName, lastName: contacts.lastName, stage: contacts.stage } })
     .from(adClicks)
@@ -257,28 +256,38 @@ export async function contactAdAttribution(
   contactId: string,
 ): Promise<{ first: ContactAdRef; others: ContactAdRef[] } | null> {
   const clicks = await db
-    .select({ adId: adClicks.adId, headline: adClicks.headline, clickedAt: adClicks.clickedAt })
+    .select({
+      id: adClicks.id,
+      adId: adClicks.adId,
+      sourceUrl: adClicks.sourceUrl,
+      headline: adClicks.headline,
+      body: adClicks.body,
+      clickedAt: adClicks.clickedAt,
+    })
     .from(adClicks)
     .where(and(eq(adClicks.organizationId, organizationId), eq(adClicks.contactId, contactId)))
     .orderBy(asc(adClicks.clickedAt));
   if (clicks.length === 0) return null;
   const metas = await metaFor(organizationId, clicks.map((c) => c.adId).filter((id): id is string => id !== null));
   const refs = clicks.map((c) => ({
-    adId: c.adId,
-    name: adDisplayName(c.adId ? metas.get(c.adId) : undefined, c.headline, c.adId),
-    href: adHref(c.adId),
-    clickedAt: c.clickedAt,
+    key: adKeyOf(c),
+    ref: {
+      adId: c.adId,
+      name: adDisplayName(c.adId ? metas.get(c.adId) : undefined, c.headline, c.adId),
+      href: adHrefOf(c),
+      clickedAt: c.clickedAt,
+    },
   }));
   const [first, ...rest] = refs;
-  const seen = new Set([adKey(first.adId)]);
+  const seen = new Set([first.key]);
   const others: ContactAdRef[] = [];
   // La vuelta más reciente de cada anuncio distinto.
   for (const r of rest.reverse()) {
-    if (seen.has(adKey(r.adId))) continue;
-    seen.add(adKey(r.adId));
-    others.push(r);
+    if (seen.has(r.key)) continue;
+    seen.add(r.key);
+    others.push(r.ref);
   }
-  return { first, others };
+  return { first: first.ref, others };
 }
 
 // ─── Ventana gratis de 72 h (lib/ads/free-window.ts) ────────────────────────

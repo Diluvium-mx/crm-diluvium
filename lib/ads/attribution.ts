@@ -173,22 +173,94 @@ export type FallbackJob = {
   looksLikeAd: boolean;
 };
 
-export type FallbackResult = "atribuido" | "sin_datos" | "fuera_de_tiempo" | "ya_registrado" | "mensaje_no_existe";
+export type FallbackResult = "atribuido" | "sin_datos" | "fuera_de_tiempo" | "ya_registrado" | "mensaje_no_existe" | "error";
 
-/** Deja el resultado del respaldo en el mensaje (registro visible y consultable). */
-async function noteFallback(organizationId: string, messageId: string, result: FallbackResult | "error", detail?: string) {
-  const note = { resultado: result, consultadoEn: new Date().toISOString(), ...(detail ? { detalle: detail.slice(0, 300) } : {}) };
+/**
+ * Registro DURABLE del respaldo en el mensaje (messages.metadata.anuncioRespaldo):
+ * nace "pendiente" en la ingesta (misma transacción que el mensaje) con lo
+ * necesario para consultar; cada intento anota resultado, hora e intentos. Así,
+ * si Redis falla al encolar o Zernio aún no tiene el clic, el barrido lo retoma
+ * desde la base (messagesPendingFallback) — nunca depende solo de la cola.
+ */
+export type FallbackNote = {
+  resultado: "pendiente" | FallbackResult;
+  cuenta: string;
+  conversacion: string;
+  pareceAnuncio: boolean;
+  intentos: number;
+  consultadoEn?: string;
+  detalle?: string;
+};
+
+export function pendingFallbackNote(job: Omit<FallbackJob, "organizationId" | "messageId">): FallbackNote {
+  return {
+    resultado: "pendiente",
+    cuenta: job.providerAccountId,
+    conversacion: job.providerConversationId,
+    pareceAnuncio: job.looksLikeAd,
+    intentos: 0,
+  };
+}
+
+/** Reintentos del respaldo: "sin_datos" (Zernio aún no tiene el clic) y "error" (Zernio no respondió). */
+export const FALLBACK_MAX_EMPTY = 3;
+export const FALLBACK_MAX_ERRORS = 8;
+
+async function noteFallback(organizationId: string, job: FallbackJob, attempts: number, result: FallbackResult, detail?: string) {
+  const note: FallbackNote = {
+    ...pendingFallbackNote(job),
+    resultado: result,
+    intentos: attempts,
+    consultadoEn: new Date().toISOString(),
+    ...(detail ? { detalle: detail.slice(0, 300) } : {}),
+  };
   await db
     .update(messages)
     .set({ metadata: sql`coalesce(${messages.metadata}, '{}'::jsonb) || jsonb_build_object('anuncioRespaldo', ${JSON.stringify(note)}::jsonb)` })
-    .where(and(eq(messages.id, messageId), eq(messages.organizationId, organizationId)));
+    .where(and(eq(messages.id, job.messageId), eq(messages.organizationId, organizationId)));
+}
+
+/**
+ * Respaldos por hacer o por reintentar (para el barrido), últimas 24 h:
+ * "pendiente" (el job pudo no encolarse), "sin_datos" (<3 intentos, cada 3 min)
+ * y "error" (<8 intentos, cada 5 min).
+ */
+export async function messagesPendingFallback(limit = 50): Promise<FallbackJob[]> {
+  const note = sql`${messages.metadata}->'anuncioRespaldo'`;
+  const rows = await db
+    .select({ id: messages.id, organizationId: messages.organizationId, note: sql<FallbackNote>`${note}` })
+    .from(messages)
+    .where(
+      and(
+        eq(messages.direction, "in"),
+        gte(messages.createdAt, sql`now() - interval '24 hours'`),
+        lte(messages.createdAt, sql`now() - interval '1 minute'`),
+        sql`(
+          ${note}->>'resultado' = 'pendiente'
+          or (${note}->>'resultado' = 'sin_datos' and coalesce((${note}->>'intentos')::int, 0) < ${FALLBACK_MAX_EMPTY}
+              and (${note}->>'consultadoEn')::timestamptz < now() - interval '3 minutes')
+          or (${note}->>'resultado' = 'error' and coalesce((${note}->>'intentos')::int, 0) < ${FALLBACK_MAX_ERRORS}
+              and (${note}->>'consultadoEn')::timestamptz < now() - interval '5 minutes')
+        )`,
+      ),
+    )
+    .limit(limit);
+  return rows
+    .filter((r) => r.note?.cuenta && r.note?.conversacion)
+    .map((r) => ({
+      organizationId: r.organizationId,
+      messageId: r.id,
+      providerAccountId: r.note.cuenta,
+      providerConversationId: r.note.conversacion,
+      looksLikeAd: Boolean(r.note.pareceAnuncio),
+    }));
 }
 
 /**
  * Mensaje que parece de anuncio y llegó sin ficha: consulta el primer clic que
  * Zernio guardó en la conversación y, si corresponde a este mensaje, lo
- * atribuye. Siempre deja registro (metadata.anuncioRespaldo + log). Lanza solo
- * si Zernio no respondió (el job se reintenta).
+ * atribuye. Siempre deja registro (metadata.anuncioRespaldo + log). No lanza:
+ * un "sin_datos" o un "error" queda anotado y el barrido lo reintenta con espera.
  */
 export async function attributeFromProviderConversation(
   provider: Pick<MessagingProvider, "conversationAdClick">,
@@ -207,12 +279,18 @@ export async function attributeFromProviderConversation(
     .where(and(eq(messages.id, job.messageId), eq(messages.organizationId, job.organizationId)))
     .limit(1);
   if (!m) return { result: "mensaje_no_existe", click: null };
+  const [current] = await db
+    .select({ note: sql<FallbackNote | null>`${messages.metadata}->'anuncioRespaldo'` })
+    .from(messages)
+    .where(eq(messages.id, m.id));
+  const attempts = Number(current?.note?.intentos ?? 0) + 1;
+  const note = (result: FallbackResult, detail?: string) => noteFallback(job.organizationId, job, attempts, result, detail);
   const log = (result: FallbackResult, detail?: string) =>
     console.info(`[anuncios] respaldo por conversación ${job.providerConversationId} (mensaje ${job.messageId}): ${result}${detail ? ` — ${detail}` : ""}`);
 
   const [already] = await db.select({ id: adClicks.id }).from(adClicks).where(eq(adClicks.messageId, m.id)).limit(1);
   if (already) {
-    await noteFallback(job.organizationId, m.id, "ya_registrado");
+    await note("ya_registrado");
     log("ya_registrado");
     return { result: "ya_registrado", click: null };
   }
@@ -223,18 +301,20 @@ export async function attributeFromProviderConversation(
       ? await provider.conversationAdClick(job.providerAccountId, job.providerConversationId)
       : null;
   } catch (error) {
-    await noteFallback(job.organizationId, m.id, "error", error instanceof Error ? error.message : String(error)).catch(() => undefined);
-    throw error;
+    const detail = error instanceof Error ? error.message : String(error);
+    await note("error", detail);
+    log("error", `${detail} (intento ${attempts}; el barrido reintenta)`);
+    return { result: "error", click: null };
   }
   const messageAt = m.sentAt ?? m.createdAt;
   if (!click) {
-    await noteFallback(job.organizationId, m.id, "sin_datos");
-    log("sin_datos", "Zernio no tiene clic guardado en la conversación");
+    await note("sin_datos");
+    log("sin_datos", `Zernio no tiene clic guardado en la conversación (intento ${attempts} de ${FALLBACK_MAX_EMPTY})`);
     return { result: "sin_datos", click: null };
   }
   if (!conversationClickMatches(click, messageAt, job.looksLikeAd)) {
     const detail = `clic capturado ${click.capturedAt?.toISOString() ?? "sin fecha"}, mensaje ${messageAt.toISOString()}`;
-    await noteFallback(job.organizationId, m.id, "fuera_de_tiempo", detail);
+    await note("fuera_de_tiempo", detail);
     log("fuera_de_tiempo", detail);
     return { result: "fuera_de_tiempo", click: null };
   }
@@ -258,7 +338,7 @@ export async function attributeFromProviderConversation(
       .orderBy(desc(adClicks.clickedAt))
       .limit(1);
     if (dup) {
-      await noteFallback(job.organizationId, m.id, "ya_registrado");
+      await note("ya_registrado");
       log("ya_registrado", "mismo anuncio ya registrado en la conversación");
       return { result: "ya_registrado", click: null };
     }
@@ -273,7 +353,7 @@ export async function attributeFromProviderConversation(
     clickedAt: messageAt,
   });
   const result: FallbackResult = recorded ? "atribuido" : "ya_registrado";
-  await noteFallback(job.organizationId, m.id, result, data.adId ? `anuncio ${data.adId}` : undefined);
+  await note(result, data.adId ? `anuncio ${data.adId}` : undefined);
   log(result, data.adId ? `anuncio ${data.adId}` : "sin id de anuncio");
   return { result, click: recorded };
 }
