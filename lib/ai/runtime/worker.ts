@@ -20,7 +20,7 @@ import {
 } from "./queue";
 import { runAgent, type RunDeps, type RunResult } from "./run";
 import { debounceDelayFor } from "./schedule";
-import { findOrphanConversations, pauseOnFailedAgentSends, reactivateExpiredHandovers, reconcileStuckDrafts } from "./sweep";
+import { findOrphanConversations, noticeFailedAgentSends, reconcileStuckDrafts } from "./sweep";
 
 const SWEEP_EVERY_MS = 60_000;
 
@@ -29,10 +29,6 @@ function describe(result: RunResult | null): string {
   switch (result.kind) {
     case "sent":
       return `enviado (${result.bubbles} burbuja/s)`;
-    case "draft":
-      return `borrador ${result.draftId}`;
-    case "held":
-      return `retenido para revisión humana ${result.draftId} (${result.reason})`;
     case "reschedule":
       return `re-programado en ${result.delayMs} ms (${result.reason})`;
     default:
@@ -52,12 +48,10 @@ export function makeRunDeps(provider: MessagingProvider, storage: ObjectStorage 
 }
 
 export async function sweepOnce(queue: AgentQueuePort, kv: KvPort, now: Date): Promise<void> {
-  const reactivated = await reactivateExpiredHandovers(now);
-  if (reactivated) console.info(`[agente] barrido: ${reactivated} conversación(es) reactivada(s) tras pasar a humano`);
-  const failedSends = await pauseOnFailedAgentSends(now);
-  if (failedSends) console.info(`[agente] barrido: ${failedSends} conversación(es) pausada(s) por un envío del agente fallido o sin confirmar`);
-  const drafts = await reconcileStuckDrafts(now);
-  if (drafts) console.info(`[agente] barrido: ${drafts} borrador(es) atorado(s) en "enviando" conciliado(s)`);
+  const failedSends = await noticeFailedAgentSends(now);
+  if (failedSends) console.info(`[agente] barrido: ${failedSends} aviso(s) de envío del agente fallido o sin confirmar`);
+  const plans = await reconcileStuckDrafts(now);
+  if (plans) console.info(`[agente] barrido: ${plans} plan(es) de burbujas atorado(s) en "enviando" conciliado(s)`);
   const orphans = await findOrphanConversations(now);
   for (const o of orphans) await scheduleAgentRun(queue, kv, o, 0);
   if (orphans.length) console.info(`[agente] barrido: ${orphans.length} conversación(es) sin atender re-programada(s)`);
@@ -91,7 +85,7 @@ export function startAgentRuntime(opts: { provider: MessagingProvider; storage: 
   });
   let timer: ReturnType<typeof setInterval> | undefined;
   return {
-    // Arranca el consumer y su barrido (reactiva handovers vencidos y recoge
+    // Arranca el consumer y su barrido (planes atorados, avisos de envíos fallidos y
     // conversaciones sin atender). Solo tras las migraciones.
     run: () => {
       void worker.run();

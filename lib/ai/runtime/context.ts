@@ -1,13 +1,13 @@
 // Lecturas de BD del runtime del agente: la conversación y su canal, los
-// entrantes pendientes, el contexto, y los conteos del freno anti-bucle.
+// entrantes pendientes, el historial completo y la idempotencia.
 // Multi-tenant (CLAUDE.md §7): TODA lectura filtra por organization_id, además
 // del id. Un id de otra organización no encuentra nada (defensa en profundidad:
 // los ids vienen de la cola interna, pero nunca se confía en ellos solos).
-import { and, count, desc, eq, gte, inArray, isNotNull, ne, sql } from "drizzle-orm";
+import { and, count, desc, eq, inArray, ne, sql } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { aiAgentDrafts, aiUsage, channels, conversations, messages } from "@/lib/db/schema";
-import { SEND_UNCONFIRMED, SEND_UNKNOWN } from "@/lib/messaging/rules";
-import { FINAL_OUTCOMES, REPLY_OUTCOMES } from "./usage";
+import { MAX_HISTORY_CHARS, messageText } from "./transcript";
+import { FINAL_OUTCOMES } from "./usage";
 
 export type ConversationRow = typeof conversations.$inferSelect;
 export type ChannelRow = typeof channels.$inferSelect;
@@ -70,16 +70,40 @@ export async function pendingInbound(organizationId: string, conversationId: str
   return rows.reverse();
 }
 
-// Los últimos `n` mensajes en orden cronológico (contexto del cerebro). Sin los
-// salientes FALLIDOS: el cliente nunca los recibió y el modelo no debe creer que sí.
-export async function recentMessages(organizationId: string, conversationId: string, n: number): Promise<MessageRow[]> {
-  const rows = await db
-    .select()
-    .from(messages)
-    .where(and(inConversation(organizationId, conversationId), ne(messages.status, "failed")))
-    .orderBy(desc(waAt), desc(messages.createdAt))
-    .limit(Math.max(1, n));
-  return rows.reverse();
+// TODA la conversación en orden cronológico (historial del cerebro), sin tope de
+// mensajes. Sin los salientes FALLIDOS: el cliente nunca los recibió y el modelo no
+// debe creer que sí. Se lee por páginas desde lo más reciente y solo se deja de leer
+// cuando ya no cabría en el modelo (MAX_HISTORY_CHARS, la misma medida de
+// fitHistory, que recorta lo que sobre).
+export const HISTORY_PAGE_ROWS = 500;
+
+export async function loadHistory(
+  organizationId: string,
+  conversationId: string,
+  opts: { pageRows?: number; maxChars?: number } = {},
+): Promise<MessageRow[]> {
+  const pageRows = opts.pageRows ?? HISTORY_PAGE_ROWS;
+  const maxChars = opts.maxChars ?? MAX_HISTORY_CHARS;
+  const newestFirst: MessageRow[] = [];
+  let chars = 0;
+  for (;;) {
+    const last = newestFirst[newestFirst.length - 1];
+    // Cursor por (hora WhatsApp, created_at, id), mismo orden que la consulta. Se lee
+    // de la fila en SQL (microsegundos exactos; un Date de JS los truncaría).
+    const before = last
+      ? sql`(${waAt}, ${messages.createdAt}, ${messages.id}) < (select coalesce(c.sent_at, c.created_at), c.created_at, c.id from ${messages} c where c.id = ${last.id})`
+      : undefined;
+    const page = await db
+      .select()
+      .from(messages)
+      .where(and(inConversation(organizationId, conversationId), ne(messages.status, "failed"), before))
+      .orderBy(desc(waAt), desc(messages.createdAt), desc(messages.id))
+      .limit(pageRows);
+    newestFirst.push(...page);
+    for (const m of page) chars += messageText(m).length;
+    if (page.length < pageRows || chars > maxChars) break;
+  }
+  return newestFirst.reverse();
 }
 
 // Salientes HUMANOS (CRM o celular) que no fallaron: si el conteo crece mientras el
@@ -99,10 +123,11 @@ export async function humanOutboundCount(organizationId: string, conversationId:
   return value;
 }
 
-// ¿Hay un saliente del agente en camino, fallido SIN CONFIRMAR posterior al corte
-// (última reactivación/encendido), o un plan/aprobación todavía "enviando"? Entonces
-// el agente no responde encima (y la conciliación del plan no se mezcla con otra respuesta).
-export async function agentSendUnresolved(organizationId: string, conversationId: string, cut: Date | null): Promise<boolean> {
+// ¿Hay un saliente del agente en camino ("queued") o un plan de burbujas todavía
+// "enviando"? Entonces el agente no responde encima (y la conciliación del plan no
+// se mezcla con otra respuesta). Un envío FALLIDO ya no frena al agente: el barrido
+// deja un aviso al vendedor (23-sep-2026: el agente siempre contesta).
+export async function agentSendUnresolved(organizationId: string, conversationId: string): Promise<boolean> {
   const [plan] = await db
     .select({ id: aiAgentDrafts.id })
     .from(aiAgentDrafts)
@@ -123,9 +148,7 @@ export async function agentSendUnresolved(organizationId: string, conversationId
         inConversation(organizationId, conversationId),
         eq(messages.direction, "out"),
         eq(messages.source, "ai_agent"),
-        sql`(${messages.status} = 'queued' or (${messages.status} = 'failed'
-          and (${messages.errorCode} = ${SEND_UNCONFIRMED} or ${messages.errorCode} like ${`${SEND_UNKNOWN}%`})
-          and ${messages.createdAt} > coalesce(${cut ? cut.toISOString() : null}::timestamp, '-infinity'::timestamp)))`,
+        eq(messages.status, "queued"),
       ),
     )
     .limit(1);
@@ -194,69 +217,6 @@ export async function lastHandledInboundAt(organizationId: string, conversationI
     .orderBy(desc(messages.createdAt))
     .limit(1);
   return row?.createdAt ?? null;
-}
-
-// Respuestas del agente (enviadas o en borrador) en esta conversación desde `since`.
-export async function agentRepliesSince(organizationId: string, conversationId: string, since: Date): Promise<number> {
-  const [{ value }] = await db
-    .select({ value: count() })
-    .from(aiUsage)
-    .where(
-      and(
-        eq(aiUsage.organizationId, organizationId),
-        eq(aiUsage.conversationId, conversationId),
-        eq(aiUsage.stage, "cerebro"),
-        inArray(aiUsage.outcome, [...REPLY_OUTCOMES]),
-        gte(aiUsage.createdAt, since),
-      ),
-    );
-  return value;
-}
-
-// Llamadas COBRADAS al modelo en esta conversación desde `since` (filtro y
-// cerebro, incluidas las descartadas). Un error sin tokens (proveedor caído) no
-// cuenta: no costó y no debe pausar al agente.
-export async function modelCallsSince(organizationId: string, conversationId: string, since: Date): Promise<number> {
-  const [{ value }] = await db
-    .select({ value: count() })
-    .from(aiUsage)
-    .where(
-      and(
-        eq(aiUsage.organizationId, organizationId),
-        eq(aiUsage.conversationId, conversationId),
-        isNotNull(aiUsage.inputTokens),
-        gte(aiUsage.createdAt, since),
-      ),
-    );
-  return value;
-}
-
-// Gasto (USD) de la organización desde `since`. Un modelo sin precio (cost_usd
-// null) no suma: el catálogo trae precio para todos los modelos del runtime.
-export async function orgSpendSince(organizationId: string, since: Date): Promise<number> {
-  const [{ value }] = await db
-    .select({ value: sql<string | null>`sum(${aiUsage.costUsd})` })
-    .from(aiUsage)
-    .where(and(eq(aiUsage.organizationId, organizationId), gte(aiUsage.createdAt, since)));
-  return Number(value ?? 0);
-}
-
-// Respuestas del agente a un contacto en todas sus conversaciones (tope opcional).
-export async function agentRepliesToContact(organizationId: string, contactId: string): Promise<number> {
-  const [{ value }] = await db
-    .select({ value: count() })
-    .from(aiUsage)
-    .innerJoin(conversations, eq(conversations.id, aiUsage.conversationId))
-    .where(
-      and(
-        eq(aiUsage.organizationId, organizationId),
-        eq(conversations.organizationId, organizationId),
-        eq(conversations.contactId, contactId),
-        eq(aiUsage.stage, "cerebro"),
-        inArray(aiUsage.outcome, [...REPLY_OUTCOMES]),
-      ),
-    );
-  return value;
 }
 
 // Hora (WhatsApp) de un mensaje ya cargado.

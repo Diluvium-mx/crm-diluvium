@@ -80,10 +80,10 @@ export const aiModelPrices = pgTable(
   (t) => [primaryKey({ columns: [t.organizationId, t.modelId] })],
 );
 
-// Borradores del modo "borrador": el agente genera la respuesta y la deja aquí
-// SIN enviarla; la bandeja la muestra y un humano la envía o la descarta.
-// "enviando" = un vendedor lo aprobó y sus burbujas están saliendo: estado
-// recuperable (si el proceso muere a la mitad, el barrido lo concilia con el hilo).
+// PLANES de envío del agente (desde el 23-sep ya no hay modo "borrador"): una
+// respuesta de varias burbujas se guarda aquí como "enviando" antes de la 1ª para
+// que, si el worker se reinicia a la mitad, el barrido la concilie con el hilo.
+// "pendiente" y "descartado" quedan solo como historia de la etapa de borradores.
 export const aiDraftStatusEnum = pgEnum("ai_draft_status", ["pendiente", "enviando", "enviado", "descartado", "obsoleto"]);
 
 export const aiAgentDrafts = pgTable(
@@ -116,5 +116,34 @@ export const aiAgentDrafts = pgTable(
     index("ai_agent_drafts_org_idx").on(t.organizationId),
     // "¿Este entrante ya tiene borrador?" (idempotencia, corte del debounce y barrido).
     index("ai_agent_drafts_trigger_idx").on(t.triggerMessageId),
+  ],
+);
+
+// Avisos del agente para el vendedor, dentro del hilo (discretos, sin acción):
+// la guardia vio un monto/enlace fuera de la base, el cliente pidió a un
+// vendedor, el freno anti-bucle o el presupuesto frenaron una respuesta, o un
+// envío no se confirmó. Nunca pausan al agente. `message_id` = el saliente del
+// agente al que se refiere (un aviso por mensaje y tipo: el barrido no repite).
+export const aiAgentNotices = pgTable(
+  "ai_agent_notices",
+  {
+    id: text("id").primaryKey(),
+    organizationId: text("organization_id")
+      .notNull()
+      .references(() => organization.id, { onDelete: "cascade" }),
+    conversationId: text("conversation_id")
+      .notNull()
+      .references(() => conversations.id, { onDelete: "cascade" }),
+    messageId: text("message_id").references(() => messages.id, { onDelete: "cascade" }),
+    // guardia | pasar_a_humano | anti_bucle | presupuesto | tope_contacto | envio
+    kind: text("kind").notNull(),
+    body: text("body").notNull(),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+  },
+  (t) => [
+    index("ai_agent_notices_conversation_created_idx").on(t.conversationId, t.createdAt),
+    uniqueIndex("ai_agent_notices_message_kind_uidx")
+      .on(t.messageId, t.kind)
+      .where(sql`${t.messageId} is not null`),
   ],
 );

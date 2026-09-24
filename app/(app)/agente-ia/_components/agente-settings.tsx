@@ -1,22 +1,17 @@
 "use client";
 
-// Ajustes del runtime del Agente IA (Fase B), estilo GHL recortado: interruptor
-// por canal, tiempos, pausas, límites, respuesta y precios. Sin lógica de datos:
-// solo llama a las Server Actions de lib/actions/agente-ia-settings.ts.
+// Ajustes del runtime del Agente IA (Fase B): interruptor por canal y precios.
+// Desde el 23-sep-2026 no hay tiempos, pausas ni límites configurables (el agente
+// se rige solo por el Goal y las FAQs). Sin lógica de datos: solo llama a las
+// Server Actions de lib/actions/agente-ia-settings.ts.
 import { useState, useTransition } from "react";
-import {
-  resetModelPrice,
-  setChannelAgentMode,
-  updateAgentSettings,
-  updateModelPrice,
-} from "@/lib/actions/agente-ia-settings";
-import { AGENT_MODE_LABEL, agentSettingsSchema, type AgentModeValue, type AgentSettings } from "@/lib/agente-ia/settings";
+import { resetModelPrice, setChannelAgentMode, updateModelPrice } from "@/lib/actions/agente-ia-settings";
+import { AGENT_MODE_LABEL, type AgentModeValue } from "@/lib/agente-ia/settings";
 import type { AgentSettingsBundleView, ChannelAgentView, ModelPriceView } from "@/lib/agente-ia/types";
 
 const MODE_HINT: Record<AgentModeValue, string> = {
   off: "El agente no hace nada en este canal.",
-  borrador: "Genera la respuesta y la deja en la bandeja SIN enviarla.",
-  auto: "Responde solo a los clientes.",
+  auto: "Responde todo a los clientes. Se pausa en una conversación solo cuando un vendedor contesta (se reactiva con «Reactivar»).",
 };
 
 function errorMessage(error: unknown, fallback: string): string {
@@ -35,43 +30,6 @@ function Section({ title, hint, children }: { title: string; hint?: string; chil
   );
 }
 
-function NumberField({
-  id,
-  label,
-  hint,
-  unit,
-  value,
-  onChange,
-  disabled,
-}: {
-  id: string;
-  label: string;
-  hint?: string;
-  unit?: string;
-  value: string;
-  onChange: (v: string) => void;
-  disabled?: boolean;
-}) {
-  return (
-    <label htmlFor={id} className="flex flex-col gap-1">
-      <span className="text-sm font-medium text-foreground">{label}</span>
-      {hint && <span className="text-xs text-foreground/70">{hint}</span>}
-      <span className="mt-1 flex items-center gap-2">
-        <input
-          id={id}
-          type="number"
-          inputMode="numeric"
-          value={value}
-          disabled={disabled}
-          onChange={(e) => onChange(e.target.value)}
-          className="w-28 rounded border border-black/15 bg-background px-3 py-2 text-sm disabled:opacity-50 dark:border-white/15"
-        />
-        {unit && <span className="text-sm text-foreground/70">{unit}</span>}
-      </span>
-    </label>
-  );
-}
-
 function ChannelSwitch({ channel }: { channel: ChannelAgentView }) {
   const [mode, setMode] = useState<AgentModeValue>(channel.mode);
   const [error, setError] = useState<string | null>(null);
@@ -79,7 +37,7 @@ function ChannelSwitch({ channel }: { channel: ChannelAgentView }) {
 
   function choose(next: AgentModeValue) {
     if (next === mode) return;
-    if (next === "auto" && !window.confirm(`El agente responderá SOLO a los clientes de «${channel.displayName}». ¿Activar el modo automático?`)) {
+    if (next === "auto" && !window.confirm(`El agente responderá SOLO a los clientes de «${channel.displayName}». ¿Encenderlo?`)) {
       return;
     }
     const previous = mode;
@@ -106,7 +64,7 @@ function ChannelSwitch({ channel }: { channel: ChannelAgentView }) {
           </span>
         </div>
         <div role="radiogroup" aria-label={`Modo del agente en ${channel.displayName}`} className="flex overflow-hidden rounded border border-black/15 dark:border-white/15">
-          {(["off", "borrador", "auto"] as const).map((m) => (
+          {(["off", "auto"] as const).map((m) => (
             <button
               key={m}
               type="button"
@@ -130,184 +88,6 @@ function ChannelSwitch({ channel }: { channel: ChannelAgentView }) {
       <span className="text-xs text-foreground/70">{MODE_HINT[mode]}</span>
       {error && <span className="border-l-2 border-brand-orange pl-2 text-xs text-foreground">{error}</span>}
     </div>
-  );
-}
-
-type Draft = Record<Exclude<keyof AgentSettings, "pauseOnHumanReply" | "maxRepliesPerContact">, string> & {
-  pauseOnHumanReply: boolean;
-  noContactCap: boolean;
-  maxRepliesPerContact: string;
-};
-
-function toDraft(s: AgentSettings): Draft {
-  return {
-    responseDelaySeconds: String(s.responseDelaySeconds),
-    maxWaitSeconds: String(s.maxWaitSeconds),
-    pauseOnHumanReply: s.pauseOnHumanReply,
-    handoverReactivateHours: String(s.handoverReactivateHours),
-    antiLoopMaxPerHour: String(s.antiLoopMaxPerHour),
-    noContactCap: s.maxRepliesPerContact === null,
-    maxRepliesPerContact: String(s.maxRepliesPerContact ?? 50),
-    contextMessages: String(s.contextMessages),
-    maxBubbles: String(s.maxBubbles),
-    dailyBudgetUsd: String(s.dailyBudgetUsd),
-  };
-}
-
-function fromDraft(d: Draft): unknown {
-  return {
-    responseDelaySeconds: Number(d.responseDelaySeconds),
-    maxWaitSeconds: Number(d.maxWaitSeconds),
-    pauseOnHumanReply: d.pauseOnHumanReply,
-    handoverReactivateHours: Number(d.handoverReactivateHours),
-    antiLoopMaxPerHour: Number(d.antiLoopMaxPerHour),
-    maxRepliesPerContact: d.noContactCap ? null : Number(d.maxRepliesPerContact),
-    contextMessages: Number(d.contextMessages),
-    maxBubbles: Number(d.maxBubbles),
-    dailyBudgetUsd: Number(d.dailyBudgetUsd),
-  };
-}
-
-function SettingsForm({ initial }: { initial: AgentSettings }) {
-  const [draft, setDraft] = useState<Draft>(() => toDraft(initial));
-  const [error, setError] = useState<string | null>(null);
-  const [savedAt, setSavedAt] = useState<string | null>(null);
-  const [pending, start] = useTransition();
-  const set = <K extends keyof Draft>(k: K) => (v: Draft[K]) => setDraft((d) => ({ ...d, [k]: v }));
-
-  function save() {
-    setError(null);
-    setSavedAt(null);
-    const parsed = agentSettingsSchema.safeParse(fromDraft(draft));
-    if (!parsed.success) {
-      setError(parsed.error.issues[0]?.message ?? "Revisa los valores.");
-      return;
-    }
-    start(async () => {
-      try {
-        await updateAgentSettings(parsed.data);
-        setSavedAt(new Date().toLocaleTimeString("es-MX", { hour: "2-digit", minute: "2-digit" }));
-      } catch (e) {
-        setError(errorMessage(e, "No se pudo guardar."));
-      }
-    });
-  }
-
-  return (
-    <>
-      <Section title="Tiempo de respuesta" hint="Espera a que el cliente termine de escribir para contestar todo en una sola respuesta.">
-        <NumberField
-          id="espera"
-          label="Esperar antes de responder"
-          hint="Cada mensaje nuevo del cliente reinicia la espera."
-          unit="segundos"
-          value={draft.responseDelaySeconds}
-          onChange={set("responseDelaySeconds")}
-        />
-        <NumberField
-          id="espera-max"
-          label="Espera máxima"
-          hint="Aunque el cliente siga escribiendo, responde a más tardar este tiempo después de su primer mensaje."
-          unit="segundos"
-          value={draft.maxWaitSeconds}
-          onChange={set("maxWaitSeconds")}
-        />
-      </Section>
-
-      <Section title="Pausas">
-        <label className="flex items-start gap-3">
-          <input
-            type="checkbox"
-            checked={draft.pauseOnHumanReply}
-            onChange={(e) => set("pauseOnHumanReply")(e.target.checked)}
-            className="mt-1 h-4 w-4 accent-[var(--brand-navy)]"
-          />
-          <span className="flex flex-col gap-0.5">
-            <span className="text-sm font-medium text-foreground">Pausar el agente cuando un vendedor responde a mano</span>
-            <span className="text-xs text-foreground/70">
-              Incluye respuestas desde el celular (WhatsApp Business). Queda pausado en esa conversación hasta que alguien
-              pulse «Reactivar agente» en la bandeja.
-            </span>
-          </span>
-        </label>
-        <NumberField
-          id="handover"
-          label="Reactivar después de «pasar a humano»"
-          hint="Al transferir, el contacto recibe la etiqueta «pasar a humano» y el agente se calla este tiempo."
-          unit="horas"
-          value={draft.handoverReactivateHours}
-          onChange={set("handoverReactivateHours")}
-        />
-      </Section>
-
-      <Section title="Límites">
-        <NumberField
-          id="presupuesto"
-          label="Presupuesto de modelos por día"
-          hint="Gasto máximo de toda la organización en las últimas 24 h. Al llegar, el agente deja de responder hasta que baje."
-          unit="USD"
-          value={draft.dailyBudgetUsd}
-          onChange={set("dailyBudgetUsd")}
-        />
-        <NumberField
-          id="antibucle"
-          label="Máximo de respuestas por conversación por hora"
-          hint="Freno anti-bucle: si se alcanza, el agente se pausa y el contacto recibe la etiqueta «revisión humana»."
-          value={draft.antiLoopMaxPerHour}
-          onChange={set("antiLoopMaxPerHour")}
-        />
-        <div className="flex flex-col gap-1">
-          <span className="text-sm font-medium text-foreground">Máximo de respuestas por contacto</span>
-          <span className="text-xs text-foreground/70">Tope total del agente con un mismo contacto.</span>
-          <label className="mt-1 flex items-center gap-2 text-sm text-foreground">
-            <input
-              type="checkbox"
-              checked={draft.noContactCap}
-              onChange={(e) => set("noContactCap")(e.target.checked)}
-              className="h-4 w-4 accent-[var(--brand-navy)]"
-            />
-            Sin tope
-          </label>
-          {!draft.noContactCap && (
-            <NumberField id="tope-contacto" label="" value={draft.maxRepliesPerContact} onChange={set("maxRepliesPerContact")} unit="respuestas" />
-          )}
-        </div>
-      </Section>
-
-      <Section title="Respuesta">
-        <NumberField
-          id="contexto"
-          label="Mensajes del historial que lee el agente"
-          unit="mensajes"
-          value={draft.contextMessages}
-          onChange={set("contextMessages")}
-        />
-        <NumberField
-          id="burbujas"
-          label="Máximo de burbujas por respuesta"
-          hint="Separadas por un salto de línea doble, con 1.5 s entre cada una."
-          unit="burbujas"
-          value={draft.maxBubbles}
-          onChange={set("maxBubbles")}
-        />
-      </Section>
-
-      <div className="flex items-center justify-end gap-3">
-        <span className="min-h-5 text-xs">
-          {pending && <span className="text-foreground/70">Guardando…</span>}
-          {!pending && error && <span className="border-l-2 border-brand-orange pl-2 text-foreground">{error}</span>}
-          {!pending && !error && savedAt && <span className="text-foreground/70">Guardado a las {savedAt}</span>}
-        </span>
-        <button
-          type="button"
-          onClick={save}
-          disabled={pending}
-          className="rounded bg-brand-orange px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-brand-orange-light disabled:opacity-60"
-        >
-          Guardar ajustes
-        </button>
-      </div>
-    </>
   );
 }
 
@@ -408,7 +188,7 @@ export function AgenteSettings({ bundle }: { bundle: AgentSettingsBundleView }) 
 
       <Section
         title="Interruptor por canal"
-        hint="Apagado por defecto. Prueba primero en «Borrador»: la respuesta aparece en la bandeja y un vendedor decide si la envía."
+        hint="Encendido = el agente responde solo a los clientes del canal. Apagado por defecto."
       >
         {bundle.channels.length === 0 ? (
           <p className="text-sm text-foreground/70">No hay canales de WhatsApp conectados.</p>
@@ -416,8 +196,6 @@ export function AgenteSettings({ bundle }: { bundle: AgentSettingsBundleView }) 
           bundle.channels.map((c) => <ChannelSwitch key={c.id} channel={c} />)
         )}
       </Section>
-
-      <SettingsForm initial={bundle.settings} />
 
       <Section
         title="Precios de los modelos"
