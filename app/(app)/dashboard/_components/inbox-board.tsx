@@ -12,6 +12,7 @@ import {
 } from "@/lib/inbox/actions";
 import { updateContactTemperature } from "@/lib/actions/contacts";
 import type { Temperature } from "../../contactos/_data/types";
+import { usePersistentToggle } from "@/components/ui/use-persistent-toggle";
 import { ChatThread } from "./chat-thread";
 import { ContactPanel } from "./contact-panel";
 import { ConversationList } from "./conversation-list";
@@ -34,8 +35,10 @@ export function InboxBoard() {
   const [loadingList, setLoadingList] = useState(true);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [detail, setDetail] = useState<ConversationDetail | null>(null);
-  const [listOpen, setListOpen] = useState(true);
-  const [contactOpen, setContactOpen] = useState(true);
+  // Lista y detalle: se RECUERDAN en esta computadora (ocultos siguen ocultos al
+  // cambiar de conversación, recargar o al día siguiente).
+  const [listOpen, setListOpen] = usePersistentToggle("bandeja.lista");
+  const [contactOpen, setContactOpen] = usePersistentToggle("bandeja.detalle");
   const [nowMs, setNowMs] = useState(() => Date.now());
   const [revalToken, setRevalToken] = useState(0);
 
