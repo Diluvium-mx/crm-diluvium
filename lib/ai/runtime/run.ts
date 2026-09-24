@@ -251,12 +251,6 @@ export async function runAgent(job: { organizationId: string; conversationId: st
     }
 
     const out = parseBrainOutput(brainRes.text);
-    if (out.kind === "empty") {
-      // Sin texto (tokens agotados, filtro del proveedor…): NO es final. Se registra
-      // como error y la cola/el barrido reintentan: el cliente nunca queda sin respuesta.
-      await recordAiUsage({ ...brainUsage, outcome: "error", error: `respuesta_vacia (${brainRes.finishReason})` });
-      throw new Error("el cerebro devolvió una respuesta vacía");
-    }
     // ── ACCIONES pedidas con herramientas (Fase D) ──────────────────────────
     // Se validan contra las herramientas ofrecidas; un comprobante se verifica
     // AQUÍ (monto contra lo cotizado + referencia): si no cuadra, el texto del
@@ -264,6 +258,16 @@ export async function runAgent(job: { organizationId: string; conversationId: st
     // DESPUÉS de las burbujas.
     const { valid: toolCalls, ignored } = validateToolCalls(brainRes.toolCalls ?? [], agentTools);
     if (ignored.length) console.warn(`[agente] ${conv.id}: herramientas ignoradas: ${ignored.join("; ")}`);
+    if (out.kind === "empty" && toolCalls.length === 0) {
+      // Sin texto (tokens agotados, filtro del proveedor…): NO es final. Se registra
+      // como error y la cola/el barrido reintentan: el cliente nunca queda sin respuesta.
+      await recordAiUsage({ ...brainUsage, outcome: "error", error: `respuesta_vacia (${brainRes.finishReason})` });
+      throw new Error("el cerebro devolvió una respuesta vacía");
+    }
+    // Solo llamadas, sin texto (algunos modelos lo hacen con tools): NO se lanza
+    // (cada reintento sería otra llamada pagada). Las acciones corren igual; para
+    // un archivo el cliente recibe la media con su pie, y el entrante queda
+    // atendido por la fila de uso.
     const workflowsBySlug = new Map([...agentTools.byName.values()].map((w) => [w.slug, w] as const));
     const plan = await prepareActions({
       organizationId: org,
@@ -272,14 +276,14 @@ export async function runAgent(job: { organizationId: string; conversationId: st
       calls: toolCalls,
       workflowsBySlug,
       inboundHasImage: pending.some((m) => m.attachments.some((a) => a.type === "image")),
-      modelText: out.text,
+      modelText: out.kind === "reply" ? out.text : "",
     });
     // Mensajes para celular: información y pregunta por separado (máx. 2).
-    const bubbles = toBubbles(plan.text);
+    const bubbles = plan.text.trim() ? toBubbles(plan.text) : [];
     // El cliente pidió a una persona: el aviso al vendedor se guarda ANTES de enviar
     // (idempotente por el entrante): nunca se le dice al cliente que lo atenderán sin
     // que un vendedor lo vea en la Bandeja. El agente sigue activo.
-    if (out.handover) await ensureHandoverNotice({ organizationId: org, conversationId: conv.id, triggerMessageId: lastRead.id });
+    if (out.kind === "reply" && out.handover) await ensureHandoverNotice({ organizationId: org, conversationId: conv.id, triggerMessageId: lastRead.id });
 
     // Mensajes con pausa corta. Antes de CADA uno se revisa el estado fresco: si un
     // vendedor respondió (desde el INICIO de la ronda), alguien apagó el canal o

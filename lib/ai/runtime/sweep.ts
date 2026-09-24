@@ -37,6 +37,13 @@ export async function findOrphanConversations(now: Date, limit = 50): Promise<Or
       select m.id, m.direction, m.created_at
       from messages m
       where m.conversation_id = c.id and m.status <> 'failed'
+        -- Igual que pendingInbound (Fase D): un aviso interno o la media de un
+        -- workflow por palabra clave no cuentan como respuesta al cliente.
+        and m.type <> 'system_note'
+        and not exists (
+          select 1 from workflow_runs r
+          where r.conversation_id = m.conversation_id and r.trigger = 'keyword' and r.message_ids ? m.id
+        )
       order by coalesce(m.sent_at, m.created_at) desc, m.created_at desc
       limit 1
     ) last on true
