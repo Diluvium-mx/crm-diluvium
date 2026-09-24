@@ -2,9 +2,8 @@ import { describe, it, expect } from "vitest";
 import {
   debounceDelayMs,
   debounceWindow,
-  maxModelCallsPerHour,
-  pauseElapsed,
   decideGate,
+  LONG_MESSAGE_CHARS,
   rescheduleDelayMs,
   toBubbles,
   type GateInput,
@@ -19,8 +18,6 @@ describe("debounceDelayMs (debounce deslizante con tope)", () => {
       now: 4 * S,
       firstPendingAt: 0,
       lastInboundAt: 4 * S,
-      responseDelaySeconds: 15,
-      maxWaitSeconds: 60,
     });
     expect(d).toBe(15 * S); // una sola respuesta cubrirá los 3
   });
@@ -31,8 +28,6 @@ describe("debounceDelayMs (debounce deslizante con tope)", () => {
       now: 55 * S,
       firstPendingAt: 0,
       lastInboundAt: 55 * S,
-      responseDelaySeconds: 15,
-      maxWaitSeconds: 60,
     });
     expect(d).toBe(5 * S); // dispara al tope (60s), no a los 70s
   });
@@ -42,14 +37,12 @@ describe("debounceDelayMs (debounce deslizante con tope)", () => {
       now: 100 * S,
       firstPendingAt: 0,
       lastInboundAt: 100 * S,
-      responseDelaySeconds: 15,
-      maxWaitSeconds: 60,
     });
     expect(d).toBe(0);
   });
 
-  it("al volver al debounce tras descartar, nunca 0: espera al menos responseDelaySeconds", () => {
-    const i = { now: 100 * S, firstPendingAt: 0, lastInboundAt: 100 * S, responseDelaySeconds: 15, maxWaitSeconds: 60 };
+  it("al volver al debounce tras descartar, nunca 0: espera al menos los 15 s fijos", () => {
+    const i = { now: 100 * S, firstPendingAt: 0, lastInboundAt: 100 * S };
     expect(rescheduleDelayMs(i)).toBe(15 * S);
     expect(rescheduleDelayMs({ ...i, now: 4 * S, lastInboundAt: 4 * S })).toBe(15 * S);
   });
@@ -69,54 +62,30 @@ describe("debounceWindow (qué pendientes cuentan para el debounce)", () => {
   });
 });
 
-describe("pauseElapsed (reactivación por vencimiento)", () => {
-  const now = 1_000_000;
-  it("handover vencido → true", () => {
-    expect(pauseElapsed("pausado_handover", now - 1, now)).toBe(true);
-  });
-  it("handover aún vigente → false", () => {
-    expect(pauseElapsed("pausado_handover", now + 10 * S, now)).toBe(false);
-  });
-  it("humano/antibucle nunca vencen solos", () => {
-    expect(pauseElapsed("pausado_humano", now - 1, now)).toBe(false);
-    expect(pauseElapsed("pausado_antibucle", null, now)).toBe(false);
-  });
-});
-
-describe("decideGate (compuerta de interruptor y seguridad)", () => {
+describe("decideGate (responde todo; solo pausa un vendedor)", () => {
   const base: GateInput = {
     channelMode: "auto",
     agentState: "activo",
-    agentPausedUntil: null,
     now: 1_000_000,
     windowExpiresAt: 1_000_000 + 3600 * S, // dentro de 24h
     humanRepliedSincePending: false,
-    agentRepliesLastHour: 0,
-    antiLoopMaxPerHour: 10,
-    modelCallsLastHour: 0,
-    orgSpendLast24hUsd: 0,
     agentSendUnresolved: false,
-    dailyBudgetUsd: 20,
-    agentRepliesToContact: 0,
-    maxRepliesPerContact: null,
   };
 
-  it("canal off → no responde", () => {
+  it("camino feliz → responde (sin anti-bucle, presupuesto ni topes)", () => {
+    expect(decideGate(base)).toEqual({ action: "respond" });
+  });
+
+  it("canal off (o el viejo modo borrador) → no responde", () => {
     expect(decideGate({ ...base, channelMode: "off" })).toEqual({ action: "skip", reason: "canal_off" });
+    expect(decideGate({ ...base, channelMode: "borrador" })).toEqual({ action: "skip", reason: "canal_off" });
   });
 
-  it("pausado_humano → calla", () => {
-    expect(decideGate({ ...base, agentState: "pausado_humano" }).action).toBe("skip");
+  it("pausado (un vendedor contestó) → calla hasta Reactivar; ninguna pausa vence sola", () => {
+    expect(decideGate({ ...base, agentState: "pausado_humano" })).toEqual({ action: "skip", reason: "pausado_humano" });
   });
 
-  it("handover vigente calla; handover vencido responde y reactiva", () => {
-    const vigente = decideGate({ ...base, agentState: "pausado_handover", agentPausedUntil: base.now + 5 * S });
-    expect(vigente).toEqual({ action: "skip", reason: "pausado_handover" });
-    const vencido = decideGate({ ...base, agentState: "pausado_handover", agentPausedUntil: base.now - 1 });
-    expect(vencido).toEqual({ action: "respond", mode: "auto", reactivated: true });
-  });
-
-  it("respuesta humana en el hilo → pausa a pausado_humano", () => {
+  it("respuesta de un vendedor en el hilo → pausa (la única)", () => {
     expect(decideGate({ ...base, humanRepliedSincePending: true })).toEqual({
       action: "skip",
       reason: "respuesta_humana",
@@ -124,54 +93,13 @@ describe("decideGate (compuerta de interruptor y seguridad)", () => {
     });
   });
 
-  it("fuera de la ventana de 24h (o sin ventana) → no responde", () => {
+  it("fuera de la ventana de 24h (o sin ventana) → no puede mandar texto", () => {
     expect(decideGate({ ...base, now: base.windowExpiresAt! + 1 }).action).toBe("skip");
     expect(decideGate({ ...base, windowExpiresAt: null }).action).toBe("skip");
   });
 
-  it("anti-bucle: tope/hora → pausa + etiqueta revisión humana", () => {
-    expect(decideGate({ ...base, agentRepliesLastHour: 10 })).toEqual({
-      action: "skip",
-      reason: "anti_bucle",
-      pauseTo: "pausado_antibucle",
-      tag: "revisión humana",
-    });
-  });
-
-  it("tope de gasto: muchas llamadas sin respuesta (descartes) → pausa + revisión humana", () => {
-    // antiLoop 10/h → tope 40 llamadas/h (4 por respuesta: filtro + cerebro + holgura).
-    expect(maxModelCallsPerHour(10)).toBe(40);
-    expect(maxModelCallsPerHour(1)).toBe(12);
-    expect(decideGate({ ...base, modelCallsLastHour: 39 }).action).toBe("respond");
-    expect(decideGate({ ...base, agentRepliesLastHour: 0, modelCallsLastHour: 40 })).toEqual({
-      action: "skip",
-      reason: "tope_de_llamadas",
-      pauseTo: "pausado_antibucle",
-      tag: "revisión humana",
-    });
-  });
-
-  it("envío del agente sin resolver (en camino o sin confirmar): espera, sin pausar", () => {
+  it("envío del agente en camino (o plan de mensajes enviando): espera, sin pausar", () => {
     expect(decideGate({ ...base, agentSendUnresolved: true })).toEqual({ action: "skip", reason: "envio_sin_confirmar" });
-  });
-
-  it("presupuesto diario de la organización: al llegar, no responde (sin pausar la conversación)", () => {
-    expect(decideGate({ ...base, orgSpendLast24hUsd: 19.99 }).action).toBe("respond");
-    expect(decideGate({ ...base, orgSpendLast24hUsd: 20 })).toEqual({ action: "skip", reason: "presupuesto_diario" });
-  });
-
-  it("tope por contacto (si se activa) → no responde; null = sin tope", () => {
-    expect(decideGate({ ...base, maxRepliesPerContact: 3, agentRepliesToContact: 3 }).action).toBe("skip");
-    expect(decideGate({ ...base, maxRepliesPerContact: null, agentRepliesToContact: 999 }).action).toBe("respond");
-  });
-
-  it("camino feliz respeta el modo del canal (auto/borrador)", () => {
-    expect(decideGate(base)).toEqual({ action: "respond", mode: "auto", reactivated: false });
-    expect(decideGate({ ...base, channelMode: "borrador" })).toEqual({
-      action: "respond",
-      mode: "borrador",
-      reactivated: false,
-    });
   });
 
   it("prioridad: el interruptor off gana incluso si hay respuesta humana", () => {
@@ -182,17 +110,36 @@ describe("decideGate (compuerta de interruptor y seguridad)", () => {
   });
 });
 
-describe("toBubbles (máx 2 burbujas por doble salto)", () => {
-  it("un bloque → una burbuja", () => {
-    expect(toBubbles("hola")).toEqual(["hola"]);
+describe("toBubbles (mensajes para celular, máx 2)", () => {
+  it("un bloque corto → un mensaje", () => {
+    expect(toBubbles("Cuesta $5,500 con envío incluido.")).toEqual(["Cuesta $5,500 con envío incluido."]);
   });
-  it("dos bloques → dos burbujas", () => {
-    expect(toBubbles("info aquí\n\n¿una pregunta?")).toEqual(["info aquí", "¿una pregunta?"]);
+  it("información + pregunta separadas por línea en blanco → 2 mensajes, primero la información", () => {
+    expect(toBubbles("Cuesta $5,500 con envío incluido.\n\n¿Cuánto mide tu entrada?")).toEqual([
+      "Cuesta $5,500 con envío incluido.",
+      "¿Cuánto mide tu entrada?",
+    ]);
   });
-  it("tres+ bloques → se limita a 2, sin perder texto", () => {
-    expect(toBubbles("a\n\nb\n\nc")).toEqual(["a", "b\n\nc"]);
+  it("un bloque largo → 2 mensajes cortados entre oraciones, sin perder texto", () => {
+    const a = "La compuerta estándar mide 60 cm de alto y se ajusta al ancho de tu entrada con un marco de aluminio.";
+    const b = "Se instala en minutos, no requiere obra y la puedes quitar cuando pase la lluvia para guardarla.";
+    const c = "Además incluye el envío a toda la República y tiene garantía por defectos de fabricación.";
+    const d = "La entrega tarda de 3 a 5 días hábiles según tu ciudad.";
+    const long = `${a} ${b} ${c} ${d}`;
+    expect(long.length).toBeGreaterThan(LONG_MESSAGE_CHARS);
+    const out = toBubbles(long);
+    expect(out).toHaveLength(2);
+    expect(out.join(" ")).toBe(long);
+    expect(out.every((p) => p.length < long.length)).toBe(true);
+  });
+  it("más de 2 bloques con pregunta al final → la información junta y la pregunta sola", () => {
+    expect(toBubbles("a.\n\nb.\n\n¿Te sirve?")).toEqual(["a.\n\nb.", "¿Te sirve?"]);
+  });
+  it("más de 2 bloques sin pregunta → 2 mensajes de largo parecido, sin romper bloques", () => {
+    expect(toBubbles("uno uno uno.\n\ndos dos.\n\ntres tres tres.")).toEqual(["uno uno uno.\n\ndos dos.", "tres tres tres."]);
   });
   it("recorta y descarta bloques vacíos", () => {
     expect(toBubbles("  a  \n\n\n  b  ")).toEqual(["a", "b"]);
+    expect(toBubbles("   ")).toEqual([]);
   });
 });

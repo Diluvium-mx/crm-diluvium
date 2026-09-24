@@ -7,7 +7,8 @@ import { Composer } from "./composer";
 import { DocumentCard } from "./document-card";
 import { MediaViewer } from "./media-viewer";
 import { ScheduledInThread } from "./scheduled-in-thread";
-import { AgentDraftInThread, AgentPausedBanner, useConversationAgent } from "./agent-in-thread";
+import { AgentNoticeLine, AgentPausedBanner, useConversationAgent } from "./agent-in-thread";
+import { interleaveNotices } from "@/lib/agente-ia/timeline";
 import {
   bubbleTime,
   dayLabel,
@@ -224,7 +225,7 @@ export function ChatThread({
   // Sube al programar un mensaje: la franja de programados (A6) se recarga.
   const [scheduledRev, setScheduledRev] = useState(0);
   const [scheduledCount, setScheduledCount] = useState(0);
-  // Agente IA (Fase B): pausa + borrador; se recarga con el SSE de la conversación.
+  // Agente IA (Fase B): pausa + avisos; se recarga con el SSE de la conversación.
   const { agent, reload: reloadAgent } = useConversationAgent(conversationId, revalToken, detail);
 
   const windowOpen = isWindowOpen(detail.windowExpiresAt, nowMs);
@@ -279,10 +280,14 @@ export function ChatThread({
 
   // Auto-scroll al fondo cuando cambia la cantidad de mensajes/optimistas.
   const rows: Row[] = useMemo(() => [...messages, ...optimistic], [messages, optimistic]);
+  // Avisos del agente intercalados por hora con los mensajes.
+  const timeline = useMemo(() => interleaveNotices(rows, agent?.notices ?? [], hasMore), [rows, agent?.notices, hasMore]);
+  const rowIndex = useMemo(() => new Map(rows.map((r, i) => [r, i])), [rows]);
+  const noticeCount = agent?.notices.length ?? 0;
   useEffect(() => {
     const el = scrollRef.current;
     if (el) el.scrollTop = el.scrollHeight;
-  }, [rows.length, scheduledCount, conversationId, agent?.draft?.id]);
+  }, [rows.length, scheduledCount, conversationId, noticeCount]);
 
   async function doSend(text: string) {
     const clientId = `opt-${Date.now()}-${Math.random().toString(36).slice(2)}`;
@@ -380,9 +385,11 @@ export function ChatThread({
                 </button>
               </div>
             )}
-            {rows.map((row, index) => {
+            {timeline.map((item) => {
+              if (item.kind === "notice") return <AgentNoticeLine key={`aviso-${item.notice.id}`} notice={item.notice} />;
+              const row = item.row;
               const key = isOptimistic(row) ? row.clientId : row.id;
-              const prev = rows[index - 1];
+              const prev = rows[(rowIndex.get(row) ?? 0) - 1];
               const showDay =
                 !prev || dayLabel(new Date(prev.sentAt)) !== dayLabel(new Date(row.sentAt));
               return (
@@ -408,8 +415,6 @@ export function ChatThread({
           refreshToken={revalToken + scheduledRev}
           onCountChange={setScheduledCount}
         />
-        {/* Borrador del Agente IA (modo "borrador"): al final, después de lo programado. */}
-        <AgentDraftInThread agent={agent} onChanged={() => void reloadAgent()} />
       </div>
 
       {/* Composer (composer.tsx): texto libre, fragmentos y plantillas con la

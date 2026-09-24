@@ -1,5 +1,5 @@
 import type { ModelTier, ProviderId } from "@/lib/ai/types";
-import type { AgentModeValue, AgentSettings } from "./settings";
+import type { AgentModeValue } from "./settings";
 
 // Vistas seguras para el cliente (sin imports de servidor ni del SDK). El
 // componente cliente de la pestaña "Agente IA" importa solo estos tipos.
@@ -70,7 +70,6 @@ export type ModelPriceView = {
 export type KnowledgeStatusView = { goalChars: number; faqsEnabled: number };
 
 export type AgentSettingsBundleView = {
-  settings: AgentSettings;
   channels: ChannelAgentView[];
   prices: ModelPriceView[];
   knowledge: KnowledgeStatusView;
@@ -79,20 +78,20 @@ export type AgentSettingsBundleView = {
 // ── Fase B: el agente en una conversación (Bandeja y panel del contacto) ─────
 export type AgentStateValue = "activo" | "pausado_humano" | "pausado_handover" | "pausado_antibucle";
 
-export type AgentDraftView = {
+// Aviso del agente para el vendedor, dentro del hilo (discreto, sin acción).
+export type AgentNoticeView = {
   id: string;
-  bubbles: string[];
+  kind: string;
+  body: string;
   createdAt: string;
-  /** Por qué no se envió solo (guardia de salida); null = borrador normal. */
-  reviewReason: string | null;
 };
 
 export type AgentThreadView = {
   channelMode: AgentModeValue;
   agentState: AgentStateValue;
-  /** ISO; solo en "pasado a humano" (reactivación automática). */
+  /** ISO; histórico (ya ninguna pausa vence sola). */
   pausedUntil: string | null;
-  draft: AgentDraftView | null;
+  notices: AgentNoticeView[];
 };
 
 export type ContactAgentView = {

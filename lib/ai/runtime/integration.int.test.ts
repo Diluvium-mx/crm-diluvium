@@ -1,6 +1,6 @@
 // Enganche del Agente IA con el resto del CRM contra Postgres REAL: ganchos de
 // la ingesta, pausa por mensaje humano (manual o PROGRAMADO), pausa manual y
-// lecturas para la UI, y aviso SSE de los borradores. Solo con TEST_DATABASE_URL
+// lecturas para la UI, y aviso SSE de los avisos del agente. Solo con TEST_DATABASE_URL
 // (base DESECHABLE con migraciones). Sin Redis: la cancelación del job falla
 // rápido y se registra, sin afectar la pausa (que va primero).
 import { randomUUID } from "node:crypto";
@@ -22,7 +22,7 @@ describe.skipIf(!TEST_DATABASE_URL)("enganche del Agente IA (Postgres real)", ()
   let zernio: typeof import("@/lib/messaging/zernio");
   let provider: MessagingProvider;
   let manual: typeof import("./manual");
-  let state: typeof import("./state");
+  let notices: typeof import("./notices");
   let hooks: typeof import("./hooks");
   let store: typeof import("@/lib/scheduled/store");
   let dispatch: typeof import("@/lib/scheduled/dispatch");
@@ -38,7 +38,7 @@ describe.skipIf(!TEST_DATABASE_URL)("enganche del Agente IA (Postgres real)", ()
     zernio = await import("@/lib/messaging/zernio");
     provider = new zernio.ZernioProvider({ apiKey: "k", webhookSecret: "s" });
     manual = await import("./manual");
-    state = await import("./state");
+    notices = await import("./notices");
     hooks = await import("./hooks");
     store = await import("@/lib/scheduled/store");
     dispatch = await import("@/lib/scheduled/dispatch");
@@ -153,9 +153,8 @@ describe.skipIf(!TEST_DATABASE_URL)("enganche del Agente IA (Postgres real)", ()
     return { name: "zernio", sendText: send, sendTemplate: send } as unknown as MessagingProvider;
   }
 
-  it("un mensaje PROGRAMADO del vendedor pausa al agente y deja viejo el borrador vigente", async () => {
+  it("un mensaje PROGRAMADO del vendedor pausa al agente", async () => {
     await openConversation();
-    await state.saveDraft({ organizationId: ORG, conversationId: CONV, bubbles: ["hola"], triggerMessageId: null, now: new Date() });
     const now = new Date();
     const row = await store.createScheduled({
       organizationId: ORG,
@@ -168,10 +167,7 @@ describe.skipIf(!TEST_DATABASE_URL)("enganche del Agente IA (Postgres real)", ()
       sendAt: new Date(now.getTime() + 60_000),
     });
     expect(await dispatch.dispatchScheduled(fakeProvider(), row.id, row.sendAt.getTime())).toBe("sent");
-    const c = await conv();
-    expect(c.agentState).toBe("pausado_humano");
-    const drafts = await db.select().from(s.aiAgentDrafts);
-    expect(drafts.map((d) => d.status)).toEqual(["obsoleto"]);
+    expect((await conv()).agentState).toBe("pausado_humano");
   });
 
   it("un programado ATORADO que el barrido concilia como enviado también pausa al agente (acotado a su org)", async () => {
@@ -226,7 +222,7 @@ describe.skipIf(!TEST_DATABASE_URL)("enganche del Agente IA (Postgres real)", ()
     expect((await conv()).agentState).toBe("pausado_humano");
   });
 
-  it("con el canal apagado, un mensaje humano no pausa ni toca nada (apagarlo ya dejó viejos los borradores)", async () => {
+  it("con el canal apagado, un mensaje humano no pausa ni toca nada", async () => {
     await openConversation();
     await db.update(s.channels).set({ aiAgentMode: "off" }).where(eq(s.channels.id, "ch_eng"));
     await hooks.pauseAgentForManualSend(ORG, CONV);
@@ -235,30 +231,29 @@ describe.skipIf(!TEST_DATABASE_URL)("enganche del Agente IA (Postgres real)", ()
     expect(c.agentStateChangedAt).toBeNull();
   });
 
-  // ── Pausa manual y lecturas para la UI ───────────────────────────────────
-  it("interruptor del contacto: pausa y reactiva; las lecturas para la UI reflejan el estado y el borrador", async () => {
+  // ── Reactivar y lecturas para la UI ──────────────────────────────────────
+  it("Detalle del contacto y Bandeja: un vendedor contesta → pausado; Reactivar lo regresa; lecturas con avisos", async () => {
     await openConversation();
-    expect(await manual.pauseAgentInConversation(ORG, CONV, new Date())).toBe(true);
-    expect(await manual.pauseAgentInConversation(ORG, CONV, new Date())).toBe(false); // ya pausado
-    expect(await manual.pauseAgentInConversation("otra_org", CONV, new Date())).toBe(false);
+    await hooks.pauseAgentForManualSend(ORG, CONV); // un vendedor contestó
     const [row] = await manual.loadContactAgents(ORG, "ct_eng");
     expect(row).toMatchObject({ conversationId: CONV, channelName: "Sandbox", channelMode: "auto", agentState: "pausado_humano" });
     expect(await manual.loadContactAgents("otra_org", "ct_eng")).toEqual([]);
 
     await manual.reactivateAgentInConversation(ORG, CONV, new Date());
-    await state.saveDraft({ organizationId: ORG, conversationId: CONV, bubbles: ["a", "b"], triggerMessageId: null, now: new Date() });
+    expect(await manual.reactivateAgentInConversation("otra_org", CONV, new Date())).toBe(false);
+    await notices.addNotice({ organizationId: ORG, conversationId: CONV, kind: "pasar_a_humano", body: "Pidió un vendedor" });
     const view = await manual.loadConversationAgent(ORG, CONV);
     expect(view).toMatchObject({ channelMode: "auto", agentState: "activo", pausedUntil: null });
-    expect(view!.draft!.bubbles).toEqual(["a", "b"]);
+    expect(view!.notices.map((n) => n.body)).toEqual(["Pidió un vendedor"]);
     expect(await manual.loadConversationAgent("otra_org", CONV)).toBeNull();
   });
 
-  it("guardar un borrador avisa a la bandeja por SSE (conversation.updated)", async () => {
+  it("un aviso del agente avisa a la bandeja por SSE (conversation.updated)", async () => {
     await openConversation();
     const got: { type: string; conversationId?: string }[] = [];
     const off = await events.subscribeToInbox(ORG, (e) => got.push(e as { type: string; conversationId?: string }));
     try {
-      await state.saveDraft({ organizationId: ORG, conversationId: CONV, bubbles: ["hola"], triggerMessageId: null, now: new Date() });
+      await notices.addNotice({ organizationId: ORG, conversationId: CONV, kind: "pasar_a_humano", body: "Pidió un vendedor" });
       for (let i = 0; i < 50 && !got.some((e) => e.type === "conversation.updated" && e.conversationId === CONV); i++) {
         await new Promise((r) => setTimeout(r, 20));
       }

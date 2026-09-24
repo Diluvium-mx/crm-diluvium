@@ -1,39 +1,43 @@
 // Política del runtime del Agente IA (Fase B). PURO: sin DB, red ni SDK — es el
 // "criterio" testeable que envuelve al runtime. El worker (wiring) consulta la
-// base, llama a estas funciones y aplica el resultado (pausas, envío, etc.).
+// base, llama a estas funciones y aplica el resultado (pausa, envío).
 //
-// Cubre: debounce deslizante con tope, reactivación por vencimiento (handover),
-// la compuerta de decisión (interruptor de canal, estado, ventana 24h, anti-bucle,
-// tope por contacto, silencio por respuesta humana) y el corte en burbujas.
+// Definición del dueño (23-sep-2026): el agente es el motor que hace que siempre
+// haya alguien respondiendo, como Ángela en GHL. Responde TODO lo que entra, sin
+// trabas. Lo ÚNICO que lo pausa es que un vendedor conteste en la conversación; se
+// reactiva solo a mano con "Reactivar". Sin freno anti-bucle, sin presupuesto y sin
+// topes: el gasto lo controlan las llaves de los proveedores y el saldo del Dashboard.
 
-import { TAG_ANTI_LOOP } from "./tags";
-
+// "borrador" sigue en el enum de la BD como historia: se trata igual que "off".
 export type AgentMode = "off" | "borrador" | "auto";
 export type AgentState = "activo" | "pausado_humano" | "pausado_handover" | "pausado_antibucle";
 
-// ── Debounce deslizante ──────────────────────────────────────────────────────
-// Cada entrante reinicia la espera (`responseDelaySeconds`), pero nunca más allá
-// del tope (`maxWaitSeconds`) contado desde el PRIMER entrante sin responder.
+// Avisos del agente para el vendedor en la Bandeja (ver notices.ts).
+export type NoticeKind = "pasar_a_humano" | "envio";
+
+// ── Debounce deslizante (interno y fijo, como Ángela en GHL) ─────────────────
+// Cada entrante reinicia la espera de 15 s, pero nunca más de 60 s desde el
+// PRIMER entrante sin responder.
+export const RESPONSE_DELAY_SECONDS = 15;
+export const MAX_WAIT_SECONDS = 60;
+
 export type DebounceInput = {
   now: number; // epoch ms
   firstPendingAt: number; // epoch ms del entrante más viejo aún sin responder
   lastInboundAt: number; // epoch ms del entrante más reciente
-  responseDelaySeconds: number;
-  maxWaitSeconds: number;
 };
 
 // Delay (ms) desde `now` hasta que debe dispararse el job de respuesta.
 export function debounceDelayMs(i: DebounceInput): number {
-  const soft = i.lastInboundAt + i.responseDelaySeconds * 1000;
-  const hard = i.firstPendingAt + i.maxWaitSeconds * 1000;
+  const soft = i.lastInboundAt + RESPONSE_DELAY_SECONDS * 1000;
+  const hard = i.firstPendingAt + MAX_WAIT_SECONDS * 1000;
   const fireAt = Math.min(soft, hard);
   return Math.max(0, fireAt - i.now);
 }
 
 // Qué entrantes pendientes cuentan para el debounce: solo los posteriores al
-// último corte (último entrante ya atendido —aunque el filtro lo haya saltado—,
-// reactivación del agente o encendido del canal). Sin esto, un "gracias" que el
-// filtro saltó días atrás seguiría "pendiente", el tope ya habría vencido y el
+// último corte (último entrante ya atendido, reactivación del agente o encendido
+// del canal). Sin esto, un pendiente viejo ya habría vencido el tope y el
 // siguiente mensaje dispararía al instante (sin debounce → dos respuestas).
 export function debounceWindow(
   arrivals: readonly number[], // epoch ms de llegada de los pendientes, cualquier orden
@@ -46,117 +50,91 @@ export function debounceWindow(
   return { firstPendingAt: fresh.length ? Math.min(...fresh) : last, lastInboundAt: last };
 }
 
-// Piso al volver al debounce tras descartar respuestas: nunca 0 (el tope duro ya
-// venció y un cliente que no para de escribir haría correr el job en bucle).
+// Piso al volver al debounce tras descartar respuestas (el cliente siguió
+// escribiendo): nunca 0, así un cliente que no para de escribir no hace correr
+// el job en bucle; responde cuando haga una pausa.
 export function rescheduleDelayMs(i: DebounceInput): number {
-  return Math.max(i.responseDelaySeconds * 1000, debounceDelayMs(i));
-}
-
-// Tope de llamadas cobradas por conversación y hora: cada respuesta cuesta
-// filtro + cerebro (2) y deja holgura para descartes y filtros sin respuesta.
-export function maxModelCallsPerHour(antiLoopMaxPerHour: number): number {
-  return Math.max(12, antiLoopMaxPerHour * 4);
-}
-
-// ── Reactivación por vencimiento (solo handover) ─────────────────────────────
-// El "pasar a humano" se reactiva solo a las N horas; humano/antibucle son manuales.
-export function pauseElapsed(state: AgentState, pausedUntil: number | null, now: number): boolean {
-  return state === "pausado_handover" && pausedUntil !== null && now >= pausedUntil;
+  return Math.max(RESPONSE_DELAY_SECONDS * 1000, debounceDelayMs(i));
 }
 
 // ── Compuerta de decisión al dispararse el job ───────────────────────────────
 export type GateInput = {
   channelMode: AgentMode;
   agentState: AgentState;
-  agentPausedUntil: number | null;
   now: number;
   windowExpiresAt: number | null; // ventana de 24h; el agente solo actúa dentro
-  humanRepliedSincePending: boolean; // vendedor respondió a mano (crm/business_app) tras el último entrante
-  agentRepliesLastHour: number;
-  antiLoopMaxPerHour: number;
-  // Llamadas COBRADAS al modelo (filtro + cerebro, también las descartadas) en la última hora.
-  modelCallsLastHour: number;
-  // Hay un envío del agente en camino ("queued") o fallido SIN CONFIRMAR sin revisar:
-  // no se responde encima (el barrido lo pasa a revisión humana si vence ambiguo).
+  humanRepliedSincePending: boolean; // vendedor respondió (crm/business_app) tras el último corte
+  // Hay un envío del agente en camino ("queued") o un plan de burbujas "enviando":
+  // no se responde encima (lo concilian el outbox y el barrido).
   agentSendUnresolved: boolean;
-  // Gasto de TODA la organización en las últimas 24 h (USD) y su presupuesto.
-  orgSpendLast24hUsd: number;
-  dailyBudgetUsd: number;
-  agentRepliesToContact: number;
-  maxRepliesPerContact: number | null; // null = sin tope
 };
 
 export type GateDecision =
-  // No responder; `pauseTo`/`tag` indican una transición de estado a persistir.
-  | { action: "skip"; reason: string; pauseTo?: AgentState; tag?: string }
-  // Responder. `reactivated` = venía de handover vencido y se reactiva a `activo`.
-  | { action: "respond"; mode: "borrador" | "auto"; reactivated: boolean };
+  // No responder. `pauseTo`: la única pausa (un vendedor contestó).
+  | { action: "skip"; reason: string; pauseTo?: "pausado_humano" }
+  | { action: "respond" };
 
-// Evalúa las compuertas EN ORDEN. La clasificación de contenido (spam / lead que
-// no sigue / necesita cerebro / pasar a humano) la hace el modelo FILTRO en el
-// wiring; aquí van las compuertas duras de interruptor y seguridad.
 export function decideGate(i: GateInput): GateDecision {
-  // 1. Interruptor del canal (gate maestro).
-  if (i.channelMode === "off") return { action: "skip", reason: "canal_off" };
-
-  // 2. Estado de pausa. handover vencido → reactiva y sigue; el resto → calla.
-  const reactivated = pauseElapsed(i.agentState, i.agentPausedUntil, i.now);
-  if (i.agentState !== "activo" && !reactivated) {
-    return { action: "skip", reason: i.agentState }; // pausado_humano | pausado_handover (vigente) | pausado_antibucle
-  }
-
-  // 3. Silencio si un humano respondió a mano en el hilo → pausa indefinida.
-  if (i.humanRepliedSincePending) {
-    return { action: "skip", reason: "respuesta_humana", pauseTo: "pausado_humano" };
-  }
-
-  // 4. Ventana de 24h: la Fase B solo responde texto dentro de la ventana.
-  if (i.windowExpiresAt === null || i.now > i.windowExpiresAt) {
-    return { action: "skip", reason: "fuera_de_ventana_24h" };
-  }
-
-  // 4b. Envío del agente sin resolver: esperar (sin pausar; lo concilia el outbox/barrido).
-  if (i.agentSendUnresolved) {
-    return { action: "skip", reason: "envio_sin_confirmar" };
-  }
-
-  // 5. Freno anti-bucle: tope de respuestas del agente por hora → pausa + revisión humana.
-  if (i.agentRepliesLastHour >= i.antiLoopMaxPerHour) {
-    return { action: "skip", reason: "anti_bucle", pauseTo: "pausado_antibucle", tag: TAG_ANTI_LOOP };
-  }
-  // 5b. Tope de GASTO: un cliente que escribe sin parar hace que las respuestas se
-  // descarten y regeneren sin llegar nunca al anti-bucle; esto sí lo frena.
-  if (i.modelCallsLastHour >= maxModelCallsPerHour(i.antiLoopMaxPerHour)) {
-    return { action: "skip", reason: "tope_de_llamadas", pauseTo: "pausado_antibucle", tag: TAG_ANTI_LOOP };
-  }
-
-  // 5c. Presupuesto diario de la ORGANIZACIÓN: muchos números, cada uno bajo sus
-  // topes, no suman gasto sin límite. No pausa conversaciones: vuelve solo al
-  // bajar la ventana de 24 h.
-  if (i.orgSpendLast24hUsd >= i.dailyBudgetUsd) {
-    return { action: "skip", reason: "presupuesto_diario" };
-  }
-
-  // 6. Tope total por contacto (opcional).
-  if (i.maxRepliesPerContact !== null && i.agentRepliesToContact >= i.maxRepliesPerContact) {
-    return { action: "skip", reason: "tope_por_contacto" };
-  }
-
-  // 7. Responder según el modo del canal.
-  return { action: "respond", mode: i.channelMode, reactivated };
+  // 1. Interruptor del canal: solo "auto" (Encendido) responde.
+  if (i.channelMode !== "auto") return { action: "skip", reason: "canal_off" };
+  // 2. Pausado (un vendedor contestó): calla hasta "Reactivar".
+  if (i.agentState !== "activo") return { action: "skip", reason: i.agentState };
+  // 3. Un vendedor respondió en el hilo → pausa hasta "Reactivar".
+  if (i.humanRepliedSincePending) return { action: "skip", reason: "respuesta_humana", pauseTo: "pausado_humano" };
+  // 4. Ventana de 24h: fuera de ella WhatsApp no deja mandar texto libre.
+  if (i.windowExpiresAt === null || i.now > i.windowExpiresAt) return { action: "skip", reason: "fuera_de_ventana_24h" };
+  // 5. Envío del agente todavía en camino: esperar (nunca contestar encima).
+  if (i.agentSendUnresolved) return { action: "skip", reason: "envio_sin_confirmar" };
+  return { action: "respond" };
 }
 
-// ── Corte en burbujas ────────────────────────────────────────────────────────
-// El Goal pide separar bloques con doble salto de línea. Se cortan por línea en
-// blanco y se limita a `max` (2); el excedente se une a la última burbuja para
-// no perder texto. La pausa de 1.5s entre burbujas la aplica el envío (wiring).
-export function toBubbles(text: string, max = 2): string[] {
+// ── Mensajes para celular ────────────────────────────────────────────────────
+// El Goal ("FORMATO PARA MÓVIL") separa la información y la pregunta con una
+// línea en blanco. Se mandan como mensajes distintos (máx. 2), con una pausa
+// corta entre ambos (la aplica el envío):
+//   - información + pregunta → 2 mensajes (primero la información);
+//   - un solo bloque corto → 1 mensaje; largo → 2 mensajes cortados entre oraciones;
+//   - más de 2 bloques → 2 mensajes (lo último, si es pregunta, va solo al final).
+// Nunca un solo bloque grande de texto.
+export const MAX_BUBBLES = 2;
+export const LONG_MESSAGE_CHARS = 320;
+
+function isQuestion(text: string): boolean {
+  return /[?¿]\s*\S{0,3}$/u.test(text.trim());
+}
+
+// Corta un bloque largo en 2 por la frontera de oración más cercana a la mitad.
+function splitLong(text: string): string[] {
+  if (text.length <= LONG_MESSAGE_CHARS) return [text];
+  const boundaries: number[] = [];
+  const re = /[.!?…](?:["»”)]*)\s+|\n+/gu;
+  for (let m = re.exec(text); m; m = re.exec(text)) boundaries.push(m.index + m[0].length);
+  const cuts = boundaries.filter((b) => b > 0 && b < text.length);
+  if (cuts.length === 0) return [text];
+  const mid = text.length / 2;
+  const cut = cuts.reduce((best, b) => (Math.abs(b - mid) < Math.abs(best - mid) ? b : best));
+  const [a, b] = [text.slice(0, cut).trim(), text.slice(cut).trim()];
+  return a && b ? [a, b] : [text];
+}
+
+export function toBubbles(text: string): string[] {
   const parts = text
     .split(/\n\s*\n/)
     .map((p) => p.trim())
     .filter(Boolean);
-  if (parts.length <= max) return parts;
-  const head = parts.slice(0, max - 1);
-  const tail = parts.slice(max - 1).join("\n\n");
-  return [...head, tail];
+  if (parts.length === 0) return [];
+  if (parts.length === 1) return splitLong(parts[0]);
+  if (parts.length === MAX_BUBBLES) return parts;
+  const last = parts[parts.length - 1];
+  if (isQuestion(last)) return [parts.slice(0, -1).join("\n\n"), last];
+  // Sin pregunta al final: dos mensajes de largo parecido, sin romper bloques.
+  const total = parts.join("\n\n").length;
+  let best = 1;
+  let bestDiff = Infinity;
+  for (let k = 1; k < parts.length; k++) {
+    const head = parts.slice(0, k).join("\n\n").length;
+    const diff = Math.abs(head - (total - head));
+    if (diff < bestDiff) [best, bestDiff] = [k, diff];
+  }
+  return [parts.slice(0, best).join("\n\n"), parts.slice(best).join("\n\n")];
 }
