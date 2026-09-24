@@ -75,7 +75,7 @@ describe.skipIf(!TEST_DATABASE_URL)("disparadores de workflows", () => {
     await wf("w_off", { triggerKeywords: ["precio"], enabled: false });
     expect(await inbound("m2", "foto", "image")).toBeNull();
     expect(await inbound("m3", "cuánto cuesta, precio por favor")).toBeNull();
-    expect(await inbound("m4", "establa")).toBeNull();
+    expect(await inbound("m4", "hola, buenas tardes")).toBeNull(); // "contiene" como GHL: "establa" SÍ dispararía "tabla"
     expect(await runs()).toHaveLength(0);
   });
 

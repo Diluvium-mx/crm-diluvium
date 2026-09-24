@@ -352,8 +352,13 @@ Decisiones que no estaban en el diseño original:
 - **Predeterminados nacen apagados.** Solo se pueden habilitar cuando todos sus pasos de archivo
   tienen media elegida (el editor y `toggleWorkflow` lo exigen). Un archivo borrado de la
   biblioteca vuelve a dejar el workflow en "falta archivo".
-- **Palabra clave del cliente: dispara UN workflow por mensaje** (el primero por posición) para
-  no inundar; solo mensajes de texto, nunca imágenes.
+- **Palabra clave del cliente: dispara UN workflow por mensaje** (la coincidencia más larga; `position`
+  desempata) para no inundar; solo mensajes de texto, nunca imágenes. **Igual que GHL (24-sep):** coincidencia
+  "contiene", sin mayúsculas ni acentos, sin tope de palabras; por palabra clave cada workflow se manda **una
+  sola vez por contacto** (`contacts.keyword_workflows_sent`, migración 0028; invisible al vendedor); por
+  comando del vendedor y por petición del agente se manda siempre. Textos y palabras clave de los
+  predeterminados copiados de la auditoría de GHL; "Cliente entrante inbox", "Leads redes sociales" y "Cambio
+  de etapa cliente" no se replican (el CRM ya crea el contacto en Inbox y la etapa la mueve el agente).
 - **`set_stage` dentro de un workflow NO dispara** los workflows "al entrar a la etapa" (evita
   cadenas y bucles). El disparo por etapa solo ocurre por acción humana (`updateContactStage`),
   y solo si la etapa realmente cambió.
@@ -383,10 +388,8 @@ el sandbox, con archivos de prueba hasta que el dueño entregue los reales (§5)
 ### 8.1 Gate de la parte (a) — 23-sep-2026 (revisión adversarial de Claude + cyber-neo + Codex)
 
 Corregido de inmediato (escenario real):
-- **Palabras clave demasiado agresivas en AUTO** ("vi su video en Facebook" mandaba el video y quemaba
-  el "una vez por conversación"): los predeterminados nacen **sin palabras clave** (en AUTO el agente
-  tiene cada workflow como herramienta); si el admin las agrega, gana la coincidencia **más larga** y
-  solo disparan mensajes de **≤ 8 palabras**.
+- ~~Palabras clave demasiado agresivas en AUTO~~ — sustituido el 24-sep por la paridad con GHL: palabras
+  clave exactas de GHL, coincidencia "contiene" sin tope de palabras y una vez por contacto.
 - ~~Carrera de "una vez por conversación"~~ — regla eliminada el 24-sep (definición 7); la
   exclusividad por conversación del ejecutor evita que dos corridas se intercalen.
 - **Fallo silencioso al arrastrar una tarjeta** (ventana cerrada: el vendedor cree que el cliente ya
@@ -407,6 +410,12 @@ Corregido de inmediato (escenario real):
   concurrencia 3 del worker y espera máxima de 10 s por paso.
 
 Para la **parte (b)** (tocan `lib/ai/runtime`, prohibido hasta el cierre de la Fase B):
+- **PRIMERO (24-sep-2026, paridad con GHL): la corrida por palabra clave hace que el agente NO responda lo
+  demás del mensaje.** La corrida sale en segundos como `ai_agent`; el job del agente (debounce) encuentra
+  0 pendientes (`pendingInbound` = entrantes posteriores al último saliente) y calla. En GHL el workflow
+  manda la media y Ángela contesta el mismo mensaje con normalidad: hay que corregirlo para que **ambos**
+  salgan (p. ej. `pendingInbound` ignora los salientes cuyo id esté en `workflow_runs.message_ids` de
+  corridas `keyword`, o el ejecutor no cierra el pendiente). Los workflows NUNCA pausan al agente.
 - Excluir `type = system_note` de `lastOutbound` / `humanOutboundCount` / `recentMessages`
   (`context.ts`, `run.ts`, `transcript.ts`): hoy una nota contaría como "respuesta humana" (pausa
   indefinida) y entraría al transcript del modelo como frase propia.
@@ -514,9 +523,9 @@ workflow deshabilitado).
 5. En producción, pestaña Automatización: "Restaurar predeterminados" (14, apagados); **subir los 6
    archivos de `listos/`** desde Biblioteca; asignarlos en cada workflow; **habilitar solo los
    completos** (`tabla_tamanos_estandar`, `datos_bancarios`, `video_instalacion_estandar`,
-   `video_instalacion_medida`, `video_instalacion_mini`, `transferir_humano`, `cambiar_etapa`).
-   `tapones_inflables`, `donde_medir`, `tabla_tamanos_mini` y `medidas_especiales` quedan apagados
-   con "falta archivo" (los archivos se agregan después desde el editor). Llenar Configuración →
+   `video_instalacion_medida`, `video_instalacion_mini`, `tapones_inflables` (solo video desde el 24-sep),
+   `transferir_humano`, `cambiar_etapa`). `donde_medir`, `tabla_tamanos_mini` y `medidas_especiales`
+   quedan apagados con "falta archivo" (los archivos se agregan después desde el editor). Llenar Configuración →
    Datos de cobro (beneficiario y CLABE: sin ellos ningún comprobante se confirma). Un comprobante se
    confirma con monto + destinatario + referencia no repetida; **sin regla de fecha** (solo va al aviso).
 6. **Prueba en producción, solo `ch_zernio_sandbox`** (teléfono del dueño): `/tabla`, `/banco` y

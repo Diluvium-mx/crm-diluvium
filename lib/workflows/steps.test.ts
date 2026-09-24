@@ -11,7 +11,7 @@ describe("stepPayloadSchema", () => {
   it("rechaza etapa desconocida, espera fuera de rango y texto vacío", () => {
     expect(() => stepPayloadSchema.parse({ kind: "set_stage", stage: "ganado" })).toThrow();
     expect(() => stepPayloadSchema.parse({ kind: "wait", seconds: 0 })).toThrow();
-    expect(() => stepPayloadSchema.parse({ kind: "wait", seconds: 11 })).toThrow();
+    expect(() => stepPayloadSchema.parse({ kind: "wait", seconds: 61 })).toThrow();
     expect(() => stepPayloadSchema.parse({ kind: "send_text", text: "   " })).toThrow();
     expect(() => stepPayloadSchema.parse({ kind: "explode" })).toThrow();
   });
@@ -43,17 +43,19 @@ describe("comandos y palabras clave", () => {
     expect(parseCommand("/banco ahora")).toBeNull();
     expect(parseCommand("hola /banco")).toBeNull();
   });
-  it("palabras clave: sin duplicados, coincidencia por palabra completa y sin acentos", () => {
+  it("palabras clave: sin duplicados, coincidencia 'contiene' como GHL, sin mayúsculas ni acentos", () => {
     expect(keywordsSchema.parse(["Tabla", "tabla", "tamaños"])).toEqual(["tabla", "tamaños"]);
     expect(matchesKeyword("Me pasas la TABLA de tamanos?", ["tabla"])).toBe("tabla");
     expect(matchesKeyword("¿tienen tapón inflable?", ["tapon"])).toBe("tapon");
-    expect(matchesKeyword("¿tienen tapones?", ["tapón"])).toBeNull();
-    expect(matchesKeyword("establa", ["tabla"])).toBeNull();
+    expect(matchesKeyword("¿tienen tapones?", ["tapón"])).toBe("tapón"); // "contiene": tapon ⊂ tapones
+    expect(matchesKeyword("¿cómo es la instalación?", ["instalacion"])).toBe("instalacion");
+    expect(matchesKeyword("¿Qué tamaño son?", ["que tamaño son"])).toBe("que tamaño son");
     expect(matchesKeyword("quiero la tabla de tamaños", ["tabla de tamaños"])).toBe("tabla de tamaños");
+    expect(matchesKeyword("hola, buenas tardes", ["tabla"])).toBeNull();
   });
-  it("gana la palabra clave más larga y un mensaje largo no dispara (evita mandar contenido que nadie pidió)", () => {
+  it("gana la palabra clave más larga; un mensaje largo también dispara (como GHL)", () => {
     expect(matchesKeyword("me mandas el video a la medida?", ["video", "video a la medida"])).toBe("video a la medida");
-    expect(matchesKeyword("vi su video en facebook y quería saber cuánto cuesta la compuerta", ["video"])).toBeNull();
+    expect(matchesKeyword("vi su video en facebook y quería saber cómo se instalan las compuertas", ["como se instalan"])).toBe("como se instalan");
     expect(matchesKeyword("video", ["video"])).toBe("video");
   });
   it("variables: solo las conocidas; las sin valor no salen al cliente", () => {
