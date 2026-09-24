@@ -219,7 +219,9 @@ export async function attributeFromProviderConversation(
 
   let click;
   try {
-    click = await provider.conversationAdClick(job.providerAccountId, job.providerConversationId);
+    click = provider.conversationAdClick
+      ? await provider.conversationAdClick(job.providerAccountId, job.providerConversationId)
+      : null;
   } catch (error) {
     await noteFallback(job.organizationId, m.id, "error", error instanceof Error ? error.message : String(error)).catch(() => undefined);
     throw error;
