@@ -29,7 +29,7 @@ import {
   pendingInbound,
   type MessageRow,
 } from "./context";
-import { addNotice } from "./notices";
+import { addNotice, ensureHandoverNotice } from "./notices";
 import { decideGate, toBubbles } from "./policy";
 import { rescheduleDelayFor } from "./schedule";
 import { closePlan, markAgentReply, savePlan, setAgentState } from "./state";
@@ -238,22 +238,17 @@ export async function runAgent(job: { organizationId: string; conversationId: st
 
     const out = parseBrainOutput(brainRes.text);
     if (out.kind === "empty") {
-      // Final (no "error"): reintentar cada minuto gastaría sin sentido.
-      await recordAiUsage({ ...brainUsage, outcome: "skipped", error: "respuesta_vacia" });
-      return { kind: "skipped", reason: "respuesta_vacia" };
+      // Sin texto (tokens agotados, filtro del proveedor…): NO es final. Se registra
+      // como error y la cola/el barrido reintentan: el cliente nunca queda sin respuesta.
+      await recordAiUsage({ ...brainUsage, outcome: "error", error: `respuesta_vacia (${brainRes.finishReason})` });
+      throw new Error("el cerebro devolvió una respuesta vacía");
     }
     // Mensajes para celular: información y pregunta por separado (máx. 2).
     const bubbles = toBubbles(out.text);
-    // El cliente pidió a una persona: aviso al vendedor en la Bandeja (sin pausar).
-    const noticeHandover = async () => {
-      if (!out.handover) return;
-      await addNotice({
-        organizationId: org,
-        conversationId: conv.id,
-        kind: "pasar_a_humano",
-        body: "El cliente pidió hablar con un vendedor. El agente le dijo que lo atenderán y sigue contestando hasta que alguien responda.",
-      });
-    };
+    // El cliente pidió a una persona: el aviso al vendedor se guarda ANTES de enviar
+    // (idempotente por el entrante): nunca se le dice al cliente que lo atenderán sin
+    // que un vendedor lo vea en la Bandeja. El agente sigue activo.
+    if (out.handover) await ensureHandoverNotice({ organizationId: org, conversationId: conv.id, triggerMessageId: lastRead.id });
 
     // Mensajes con pausa corta. Antes de CADA uno se revisa el estado fresco: si un
     // vendedor respondió (desde el INICIO de la ronda), alguien apagó el canal o
@@ -302,7 +297,6 @@ export async function runAgent(job: { organizationId: string; conversationId: st
       if (planId) await closePlan(org, planId, "enviado");
       await recordAiUsage({ ...brainUsage, outcome: "sent", error: `mensaje ${sent + 1} no salió: ${errorText(error)}` });
       await noticeRemainder(`Salieron ${sent} de ${bubbles.length} mensajes de la respuesta del agente y el siguiente falló.`);
-      await noticeHandover();
       return { kind: "sent", bubbles: sent };
     }
     if (stopped === "entrante_nuevo" && sent === 0) {
@@ -324,7 +318,6 @@ export async function runAgent(job: { organizationId: string; conversationId: st
       }
       await markAgentReply(org, conv.id, deps.now());
       await recordAiUsage({ ...brainUsage, outcome: "sent", error: `detenido tras ${sent} mensaje(s): ${stopped}` });
-      if (stopped !== "respuesta_humana") await noticeHandover();
       return { kind: "sent", bubbles: sent };
     }
     await markAgentReply(org, conv.id, deps.now());
@@ -335,7 +328,6 @@ export async function runAgent(job: { organizationId: string; conversationId: st
     const note = unconfirmed ? `${unconfirmed} mensaje(s) sin confirmar${omitted ? `; ${omitted} sin enviar (aviso)` : ""}` : null;
     await recordAiUsage({ ...brainUsage, outcome: "sent", error: note });
     if (unconfirmed && omitted > 0) await noticeRemainder("WhatsApp no confirmó una parte de la respuesta del agente.");
-    await noticeHandover();
     return { kind: "sent", bubbles: sent };
   }
 
