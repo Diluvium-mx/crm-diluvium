@@ -24,10 +24,30 @@ clientes** (eso llega en la Fase B y siguientes).
 - **`ai_config`** (una fila por organización): `modelo_filtro`,
   `modelo_cerebro`. Default filtro = Luna, cerebro = Sonnet 5. Editable solo
   owner/admin (ACL: recurso `aiConfig` en `lib/auth/permissions.ts`).
-- **Pestaña "Agente IA"** (`/agente-ia`, solo owner/admin): selectores de filtro
-  y cerebro (cada opción muestra nivel + multimodal; **en gris** si falta su
-  llave o su adaptador) + botón **"Probar modelo"** (dry-run filtro→cerebro con
-  la config actual, **sin tocar WhatsApp** ni conversaciones).
+- **Pestaña "Agente IA"** (`/agente-ia`, solo owner/admin) — desde el 24-sep-2026 es el
+  **editor estilo GHL** (solo personaliza al agente):
+  - Encabezado con el **nombre del agente** editable con lápiz (`ai_config.agent_name`).
+  - **Crear:** selector del modelo **cerebro** con indicador de costo ($ a $$$$ por precio
+    de salida) y etiquetas "Recomendado" (Sonnet 5) y "Nuevo" (en gris si falta su llave);
+    **Nombre de la empresa** (`ai_config.company_name`); editor grande del **Goal** con
+    deshacer, contador de palabras, tokens aproximados y **Valores personalizados**
+    (`{{contacto.nombre}}`, `{{vendedor.nombre}}` = asignado o "un asesor",
+    `{{empresa.nombre}}`, `{{agente.nombre}}`; el runtime los sustituye por conversación);
+    **base de conocimiento** (FAQs: agregar, editar, activar/desactivar, borrar). Cada
+    guardado del Goal o cambio de FAQs deja una **versión** (`ai_knowledge_versions`) y se
+    puede **restaurar** cualquiera (la primera vez guarda también la anterior).
+  - **Implementar:** los canales con interruptor Encendido / Apagado.
+  - Ya no están: selector de filtro (queda Luna), "Probar modelo", tabla de precios (los
+    precios siguen internos para el gasto), tiempos, pausas y límites.
+  - Nota de costo: un Goal con `{{contacto.nombre}}`/`{{vendedor.nombre}}` cambia el
+    system por conversación y la caché del proveedor se reutiliza menos.
+- **Detalle del contacto:** "Llegó por anuncio" con el resumen corto que deja Luna
+  (`messages.metadata.agenteAnuncio.anuncio`); si Luna aún no lo procesó, el título y
+  texto del anuncio.
+- **Dashboard → Gasto de IA** (solo owner/admin): gasto del **mes** (días de Mazatlán) por
+  proveedor y **saldo estimado** = recargas − gasto desde la primera recarga
+  (`ai_credit_topups`, owner/admin las registran con monto y fecha). Aclara en pantalla
+  que es un estimado (tokens del CRM × precios internos, sin impuestos).
 
 ## Modelos (Fase A)
 
@@ -141,7 +161,8 @@ construye ahora). El dry-run "Probar modelo" ya muestra tokens, pero no persiste
 - **Fase C:** follow-ups automáticos — "ocupado" a las 2h; "dejó de responder" a los
   4 días con plantilla fuera de la ventana de 24h; horario 8:00–17:00.
 - **Fase D:** acciones del Goal — datos bancarios, videos, tabla de tamaños, cambio de etapa.
-- **Fase E:** panel de gasto (lee `ai_usage`).
+- **Fase E:** panel de gasto (lee `ai_usage`) — la tarjeta del Dashboard con gasto del mes y
+  saldo estimado ya existe (24-sep-2026); falta, si se quiere, conciliar contra las Cost API.
 
 ## Fuera de alcance (próximos briefs)
 
