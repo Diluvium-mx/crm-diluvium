@@ -23,6 +23,8 @@ export type CatalogModel = {
   tier: ModelTier;
   multimodal: boolean;
   roles: readonly ModelRole[];
+  // Etiqueta "Nuevo" en el selector de la pestaña Agente IA.
+  isNew?: boolean;
 };
 
 // Uso de tokens normalizado (independiente del proveedor). null = el proveedor

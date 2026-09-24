@@ -7,6 +7,7 @@ import {
   newConversationsCards,
 } from "@/lib/dashboard/queries";
 import { resolveRange } from "@/lib/dashboard/range";
+import { aiSpendSummary } from "@/lib/dashboard/ai-spend";
 import { STAGES, STAGE_LABELS } from "../contactos/_data/types";
 import { AiSpendCard } from "./_components/ai-spend-card";
 import { BreakdownList } from "./_components/breakdown-list";
@@ -33,10 +34,12 @@ export default async function InicioPage({ searchParams }: PageProps<"/inicio">)
   const params = await searchParams;
   const range = resolveRange({ mes: param(params.mes), desde: param(params.desde), hasta: param(params.hasta) });
 
-  const [cards, series, breakdown] = await Promise.all([
+  const canSeeSpend = roleAllows(role, "aiSpend", "read");
+  const [cards, series, breakdown, spend] = await Promise.all([
     newConversationsCards(db, organizationId),
     newConversationsByDay(db, organizationId, range),
     newConversationsBreakdown(db, organizationId, range),
+    canSeeSpend ? aiSpendSummary(db, organizationId) : null,
   ]);
 
   const byStage = new Map(breakdown.porEtapa.map((b) => [b.clave, b.total]));
@@ -78,7 +81,7 @@ export default async function InicioPage({ searchParams }: PageProps<"/inicio">)
         </div>
       </div>
 
-      {roleAllows(role, "aiSpend", "read") && <AiSpendCard />}
+      {spend && <AiSpendCard summary={spend} canRegister={roleAllows(role, "aiSpend", "update")} />}
     </div>
   );
 }
