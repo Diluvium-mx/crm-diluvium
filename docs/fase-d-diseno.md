@@ -149,7 +149,7 @@ respondió a la mitad, lo que falta no sale y la corrida queda `cancelled` con m
   extraer **monto, fecha, banco, referencia y destinatario**, comparar contra **lo cotizado en la
   conversación** (el último total que el propio agente o el vendedor escribió) y decidir:
   - **Cuadra** (monto = total cotizado o = 50 % de un total a la medida, destinatario coincide
-    con el de los datos bancarios, fecha legible y no futura) → texto de confirmación + tool `pago_confirmado`
+    con el de los datos bancarios; sin regla de fecha) → texto de confirmación + tool `pago_confirmado`
     con los datos leídos. El workflow pone etapa `compra` (o `cerca_compra` si fue anticipo del
     50 %), etiqueta "cotejar depósito" y escribe el **aviso interno**: una fila en `messages` con
     `direction: "out"`, `type: "system_note"` (nuevo), `source: "ai_agent"`, que la bandeja
@@ -359,7 +359,9 @@ Decisiones que no estaban en el diseño original:
   y solo si la etapa realmente cambió.
 - **Modo del canal:** un disparo del agente o por palabra clave con el canal fuera de `auto`
   queda `skipped` con motivo `canal_apagado` (el modo borrador ya no existe). Los comandos del
-  vendedor y los disparos por etapa manual corren siempre (salen como `crm`).
+  vendedor y los disparos por etapa manual corren siempre. **Solo el comando sale como `crm`** (y pausa al
+  agente de inmediato, como un envío manual); una etapa arrastrada sale como `ai_agent`: lo que manda un
+  workflow cuenta como del agente, no pausa al agente ni apaga el semáforo (24-sep-2026).
 - **Corridas del agente** (`source: ai_agent`) releen el estado antes de cada envío al cliente:
   si un vendedor escribió después de crearse la corrida, o el canal salió de auto, se cancela con
   motivo (`respuesta_humana`, `cambio_de_modo`, `agente_pausado`).
@@ -410,7 +412,7 @@ Para la **parte (b)** (tocan `lib/ai/runtime`, prohibido hasta el cierre de la F
   indefinida) y entraría al transcript del modelo como frase propia.
 - Con el canal en AUTO, el gancho de palabra clave debe **ceder al agente** (que tiene las tools):
   si no, cliente recibe dos respuestas al mismo "tabla".
-- Los envíos por etapa/comando cuentan como primera respuesta humana (`first_response_seconds`).
+- Solo los envíos por comando cuentan como respuesta humana (`first_response_seconds`); los de etapa ya no (24-sep).
 
 **Revisión de Codex (14 hallazgos), corregido con escenario real:** `workflow_runs.once` para que el
 índice único no bloquee workflows repetibles; un envío **sin confirmar** (timeout) detiene la corrida,
@@ -453,7 +455,7 @@ workflow deshabilitado).
    `tapones_inflables`, `donde_medir`, `tabla_tamanos_mini` y `medidas_especiales` quedan apagados
    con "falta archivo" (los archivos se agregan después desde el editor). Llenar Configuración →
    Datos de cobro (beneficiario y CLABE: sin ellos ningún comprobante se confirma). Un comprobante se
-   confirma con monto + destinatario + referencia no repetida; la fecha solo debe ser legible y no futura.
+   confirma con monto + destinatario + referencia no repetida; **sin regla de fecha** (solo va al aviso).
 6. **Prueba en producción, solo `ch_zernio_sandbox`** (teléfono del dueño): `/tabla`, `/banco` y
    una palabra clave del cliente (con el canal en `auto`). Verificar burbuja con adjunto,
    `workflow_runs` `done`, etapa → Cerca de compra, y que un segundo `/banco` repita a propósito

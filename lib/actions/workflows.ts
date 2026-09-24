@@ -14,6 +14,7 @@ import { conversations, mediaAssets, workflowRuns, workflowSteps, workflows } fr
 import { listRecentRuns, startWorkflowRun, type StartRunResult } from "@/lib/workflows/executor";
 import { seedDefaultWorkflows } from "@/lib/workflows/seed";
 import { commandSchema, keywordsSchema, missingMedia, stepsSchema, unknownVariables, type StepPayload } from "@/lib/workflows/steps";
+import { pauseAgentForManualSend } from "@/lib/ai/runtime/hooks";
 import { findWorkflowByCommand } from "@/lib/workflows/triggers";
 import { isUniqueViolation } from "@/lib/db/errors";
 
@@ -324,6 +325,9 @@ export async function runWorkflowCommand(input: { conversationId: string; text: 
       trigger: "command",
       triggeredByUserId: userId,
     });
+    // Regla del dueño: un comando del vendedor SÍ pausa al agente (como un envío
+    // manual), de inmediato y no "de rebote" en el siguiente entrante.
+    if (r.status === "queued") await pauseAgentForManualSend(organizationId, parsed.data.conversationId);
     return { ok: true, runId: r.runId, status: r.status, reason: r.reason, name: wf.name };
   } catch (error) {
     console.error("[workflows] comando falló", error);
@@ -353,6 +357,8 @@ export async function runWorkflowTest(input: { workflowId: string; conversationI
       // Probar no obliga a habilitar (habilitarlo lo expondría a clientes reales antes de verlo).
       allowDisabled: true,
     });
+    // "Probar" es un envío del vendedor: pausa al agente igual que un comando.
+    if (r.status === "queued") await pauseAgentForManualSend(organizationId, parsed.data.conversationId);
     revalidatePath("/automatizacion");
     return { ok: true, runId: r.runId, status: r.status, reason: r.reason, name: wf.name };
   } catch (error) {

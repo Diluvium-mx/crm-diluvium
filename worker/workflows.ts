@@ -21,7 +21,8 @@ export function startWorkflowWorker(provider: MessagingProvider, storage: Object
     },
     // Concurrencia 3: una corrida con pasos "esperar" no debe retrasar a los
     // demás clientes (tope de espera 10 s por paso). Dos corridas de la MISMA
-    // conversación son raras (una vez por conversación) y el orden lo da la cola.
+    // conversación no se intercalan: el reclamo toma un candado por conversación
+    // y la segunda espera ("busy" → reintento).
     { connection: { ...redisConnection(), maxRetriesPerRequest: null }, concurrency: 3, autorun: false },
   );
   worker.on("failed", (job, error) => {

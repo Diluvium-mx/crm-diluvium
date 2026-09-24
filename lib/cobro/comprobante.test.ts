@@ -44,11 +44,13 @@ describe("verificarComprobante", () => {
     expect(verificarComprobante(lectura(), ctx({ referenciaYaUsada: true }))).toMatchObject({ ok: false, motivo: expect.stringMatching(/ya se usó/) });
     expect(verificarComprobante(lectura({ referencia: "12" }), ctx())).toMatchObject({ ok: false, motivo: expect.stringMatching(/referencia/) });
   });
-  it("fecha futura → humano; hoy o cualquier fecha pasada legible sí vale", () => {
-    expect(verificarComprobante(lectura({ fecha: "25/09/2026" }), ctx())).toMatchObject({ ok: false, motivo: expect.stringMatching(/futura/) });
+  it("sin regla de fecha (24-sep): futura, pasada, ilegible o ausente no cambian el resultado; solo va al aviso", () => {
+    expect(verificarComprobante(lectura({ fecha: "25/09/2026" }), ctx()).ok).toBe(true);
     expect(verificarComprobante(lectura({ fecha: "15/09/2026" }), ctx()).ok).toBe(true);
-    expect(verificarComprobante(lectura({ fecha: "23/09/2026" }), ctx()).ok).toBe(true);
-    expect(verificarComprobante(lectura({ fecha: "no se ve" }), ctx())).toMatchObject({ ok: false, motivo: expect.stringMatching(/fecha/) });
+    expect(verificarComprobante(lectura({ fecha: "no se ve" }), ctx()).ok).toBe(true);
+    const r = verificarComprobante(lectura({ fecha: null }), ctx());
+    expect(r.ok).toBe(true);
+    if (r.ok) expect(r.aviso).toMatch(/sin fecha legible/);
   });
   it("sin monto de cotización en el contacto → humano (el vendedor lo fija en el detalle)", () => {
     expect(verificarComprobante(lectura(), ctx({ totalCotizado: null }))).toMatchObject({ ok: false, motivo: expect.stringMatching(/monto de cotización/) });
