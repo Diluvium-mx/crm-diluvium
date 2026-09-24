@@ -178,17 +178,27 @@ export async function executeWorkflowRun(runId: string, deps: ExecutorDeps): Pro
   // Reclamo atómico: "queued", o "running" con lease vencido (retoma por cursor).
   // Exclusividad por conversación: si otra corrida viva de la misma
   // conversación está en curso, no se reclama (busy → reintento).
-  const [claimed] = await db
-    .update(workflowRuns)
-    .set({ status: "running", startedAt: now(), attempts: sql`${workflowRuns.attempts} + 1` })
-    .where(
-      and(
-        eq(workflowRuns.id, runId),
-        or(eq(workflowRuns.status, "queued"), and(eq(workflowRuns.status, "running"), lt(workflowRuns.startedAt, leaseCut))),
-        sql`not exists (select 1 from workflow_runs r2 where r2.conversation_id = ${workflowRuns.conversationId} and r2.id <> ${runId} and r2.status = 'running' and r2.started_at > ${leaseCut.toISOString()}::timestamp)`,
-      ),
-    )
-    .returning();
+  // Candado consultivo por conversación dentro de la transacción del reclamo:
+  // en READ COMMITTED dos UPDATEs concurrentes de corridas distintas de la misma
+  // conversación se verían mutuamente como "queued" y ambos reclamarían (los
+  // mensajes de A y B se intercalarían al cliente). Con el candado, el segundo
+  // espera a que el primero confirme y entonces sí ve la corrida "running".
+  const [claimed] = await db.transaction(async (tx) => {
+    const [target] = await tx.select({ conversationId: workflowRuns.conversationId }).from(workflowRuns).where(eq(workflowRuns.id, runId)).limit(1);
+    if (!target) return [];
+    await tx.execute(sql`select pg_advisory_xact_lock(hashtext(${target.conversationId}))`);
+    return tx
+      .update(workflowRuns)
+      .set({ status: "running", startedAt: now(), attempts: sql`${workflowRuns.attempts} + 1` })
+      .where(
+        and(
+          eq(workflowRuns.id, runId),
+          or(eq(workflowRuns.status, "queued"), and(eq(workflowRuns.status, "running"), lt(workflowRuns.startedAt, leaseCut))),
+          sql`not exists (select 1 from workflow_runs r2 where r2.conversation_id = ${workflowRuns.conversationId} and r2.id <> ${runId} and r2.status = 'running' and r2.started_at > ${leaseCut.toISOString()}::timestamp)`,
+        ),
+      )
+      .returning();
+  });
   if (!claimed) {
     const [row] = await db.select({ status: workflowRuns.status, startedAt: workflowRuns.startedAt }).from(workflowRuns).where(eq(workflowRuns.id, runId)).limit(1);
     if (row && (row.status === "queued" || (row.status === "running" && row.startedAt && row.startedAt < leaseCut))) return "busy";
@@ -248,7 +258,7 @@ export async function executeWorkflowRun(runId: string, deps: ExecutorDeps): Pro
     // sigue pudiendo actuar (definición 1 / Fase B): si un vendedor respondió a
     // la mitad o apagaron el canal, lo que falta no se ejecuta ("apagado no
     // toca nada").
-    if (source === "ai_agent") {
+    if (isAgentTrigger(run)) {
       const stop = await agentMustStop(run.organizationId, run.conversationId, run.createdAt);
       if (stop) {
         await markRun(runId, { status: "cancelled", errorCode: stop, messageIds, stepCursor: i, finishedAt: now() });
@@ -321,15 +331,25 @@ const FAIL_LABEL: Record<string, string> = {
   storage_unavailable: "el almacenamiento de archivos no está disponible",
 };
 
+// Regla del dueño (24-sep-2026): lo que manda un workflow cuenta como del AGENTE
+// (no pausa al agente, no apaga el semáforo ni cuenta como primera respuesta
+// humana); la única excepción es el comando del vendedor, que sí es suyo.
 function ctxSource(run: { trigger: RunTrigger }): "crm" | "ai_agent" {
-  return run.trigger === "agent" || run.trigger === "keyword" ? "ai_agent" : "crm";
+  return run.trigger === "command" ? "crm" : "ai_agent";
+}
+
+// ¿La corrida la disparó el agente o el cliente (no un humano del CRM)? Solo
+// estas releen el estado del agente antes de cada paso; una etapa arrastrada o
+// un comando corren siempre.
+function isAgentTrigger(run: { trigger: RunTrigger }): boolean {
+  return run.trigger === "agent" || run.trigger === "keyword";
 }
 
 // Aviso interno en el hilo: fila system_note que NUNCA va al proveedor. Sube la
 // conversación en la bandeja y la marca no leída: es algo que el vendedor debe
 // ver (cotejar un depósito, un envío que no salió).
 async function insertInternalNote(
-  run: { organizationId: string; conversationId: string },
+  run: { organizationId: string; conversationId: string; trigger?: RunTrigger },
   text: string,
   source: "crm" | "ai_agent",
   sentBy: string | null,
@@ -351,7 +371,8 @@ async function insertInternalNote(
     });
     await tx
       .update(conversations)
-      .set({ lastMessageAt: at, unreadCount: sql`${conversations.unreadCount} + 1` })
+      // Un comando del vendedor: él está viendo el chat, no se le marca no leído.
+      .set({ lastMessageAt: at, ...(run.trigger === "command" ? {} : { unreadCount: sql`${conversations.unreadCount} + 1` }) })
       .where(and(eq(conversations.id, run.conversationId), eq(conversations.organizationId, run.organizationId)));
     await notifyConversation(tx, run.organizationId, run.conversationId);
   });

@@ -57,7 +57,7 @@ export function parseMontoMxn(raw: string | number | null): number | null {
 
 // Fechas como salen en comprobantes mexicanos: "23/09/2026", "23-09-26",
 // "2026-09-23", "23 sep 2026", "23 de septiembre de 2026". null si no se entiende.
-// La fecha solo debe ser legible y no futura (decisión del dueño, 23-sep-2026).
+// Solo informativa en el aviso al vendedor: no hay regla de fecha (24-sep-2026).
 const MESES: Record<string, number> = {
   ene: 1, feb: 2, mar: 3, abr: 4, may: 5, jun: 6, jul: 7, ago: 8, sep: 9, sept: 9, oct: 10, nov: 11, dic: 12,
 };
@@ -110,7 +110,6 @@ export function destinatarioCoincide(leido: string | null, datos: ContextoCotiza
   return words.every((w) => l.includes(w));
 }
 
-const sameDay = (a: Date, b: Date) => a.toISOString().slice(0, 10) === b.toISOString().slice(0, 10);
 const eqMxn = (a: number, b: number) => Math.abs(a - b) <= TOLERANCIA_MXN;
 
 export function verificarComprobante(lectura: LecturaComprobante, ctx: ContextoCotizacion): ResultadoComprobante {
@@ -124,15 +123,14 @@ export function verificarComprobante(lectura: LecturaComprobante, ctx: ContextoC
   if (!destinatarioCoincide(lectura.destinatario, ctx.datosCobro)) {
     return humano(`el destinatario "${lectura.destinatario ?? "(no legible)"}" no coincide con los Datos de cobro`);
   }
-  const fecha = parseFecha(lectura.fecha);
-  if (!fecha) return humano("no se alcanza a leer la fecha del comprobante");
-  if (fecha.getTime() > ctx.hoy.getTime() && !sameDay(fecha, ctx.hoy)) return humano(`la fecha del comprobante (${lectura.fecha}) es futura`);
+  // Sin regla de fecha (decisión del dueño, 24-sep-2026): la fecha solo se copia
+  // al aviso para que el vendedor coteje en el banco.
   if (ctx.totalCotizado === null || ctx.totalCotizado <= 0) return humano("el contacto no tiene monto de cotización; el vendedor debe fijarlo en el detalle");
   const total = ctx.totalCotizado;
   const restante = total - ctx.anticipoConfirmado;
 
   const aviso = (tipo: string) =>
-    `${tipo} reportado por el agente: $${monto.toLocaleString("es-MX")} · ${lectura.banco ?? "banco no legible"} · ref. ${referencia} · ${lectura.fecha}. Cotejar el depósito en el banco antes de enviar.`;
+    `${tipo} reportado por el agente: $${monto.toLocaleString("es-MX")} · ${lectura.banco ?? "banco no legible"} · ref. ${referencia} · ${lectura.fecha ?? "sin fecha legible"}. Cotejar el depósito en el banco antes de enviar.`;
 
   if (ctx.anticipoConfirmado > 0) {
     if (eqMxn(monto, restante)) {

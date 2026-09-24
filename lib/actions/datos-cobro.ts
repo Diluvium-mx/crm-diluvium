@@ -32,6 +32,8 @@ export async function getDatosCobro(): Promise<DatosCobroView> {
     ...data,
     clabe: canEdit ? data.clabe : "",
     clabeMasked: clabeMasked(data.clabe),
+    // La cuenta/tarjeta también va enmascarada para quien no edita (solo los últimos 4).
+    cuenta: canEdit ? data.cuenta : data.cuenta ? `•••• ${data.cuenta.slice(-4)}` : "",
     canEdit,
     updatedAt: row?.updatedAt.toISOString() ?? null,
   };
