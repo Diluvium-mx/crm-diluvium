@@ -137,12 +137,20 @@ describe.skipIf(!TEST_DATABASE_URL)("gasto de IA (Postgres real)", () => {
     expect(await spend.spendByDay(db, ORG, "2026-09-10")).toHaveLength(3);
   });
 
-  it("endpoint de staging: exige el token y valida la fecha", async () => {
+  it("endpoint de staging: solo existe en staging, exige el token y valida la fecha", async () => {
     const { GET } = await import("@/app/api/internal/ai-spend/route");
     const call = (auth: string | null, from: string) =>
       GET(new Request(`http://x/api/internal/ai-spend?from=${from}`, { headers: auth ? { authorization: auth } : {} }));
     const prev = process.env.AI_SPEND_TOKEN;
+    const prevEnv = process.env.RAILWAY_ENVIRONMENT_NAME;
     try {
+      // Fuera de staging (producción, local) no existe, aunque el token sea correcto.
+      process.env.AI_SPEND_TOKEN = "secreto-de-prueba";
+      process.env.RAILWAY_ENVIRONMENT_NAME = "production";
+      expect((await call("Bearer secreto-de-prueba", "2026-09-15")).status).toBe(404);
+      delete process.env.RAILWAY_ENVIRONMENT_NAME;
+      expect((await call("Bearer secreto-de-prueba", "2026-09-15")).status).toBe(404);
+      process.env.RAILWAY_ENVIRONMENT_NAME = "staging";
       delete process.env.AI_SPEND_TOKEN;
       expect((await call("Bearer x", "2026-09-01")).status).toBe(401); // sin token configurado nadie entra
       process.env.AI_SPEND_TOKEN = "secreto-de-prueba";
@@ -156,6 +164,8 @@ describe.skipIf(!TEST_DATABASE_URL)("gasto de IA (Postgres real)", () => {
     } finally {
       if (prev === undefined) delete process.env.AI_SPEND_TOKEN;
       else process.env.AI_SPEND_TOKEN = prev;
+      if (prevEnv === undefined) delete process.env.RAILWAY_ENVIRONMENT_NAME;
+      else process.env.RAILWAY_ENVIRONMENT_NAME = prevEnv;
     }
   });
 
