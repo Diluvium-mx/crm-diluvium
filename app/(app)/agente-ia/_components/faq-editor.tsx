@@ -8,6 +8,7 @@
 import { useState } from "react";
 import { ChevronRight, Search } from "lucide-react";
 import { createAgentFaq, deleteAgentFaq, restoreAgentFaqs, updateAgentFaq } from "@/lib/actions/agente-ia-editor";
+import { matchesSearch } from "@/lib/text/search";
 import type { AgentActionResult, FaqView, VersionView } from "@/lib/agente-ia/types";
 import { VersionsList } from "./versions-list";
 
@@ -115,11 +116,9 @@ export function FaqEditor({ faqs, versions }: { faqs: FaqView[]; versions: Versi
 
   const active = faqs.filter((f) => f.enabled).length;
   const counts: Record<Filter, number> = { todas: faqs.length, activas: active, inactivas: faqs.length - active };
-  const q = query.trim().toLowerCase();
+  // Sin acentos ni mayúsculas (regla de todo buscador: lib/text/search.ts).
   const shown = faqs.filter(
-    (f) =>
-      (filter === "todas" || (filter === "activas") === f.enabled) &&
-      (!q || `${f.question} ${f.answer}`.toLowerCase().includes(q)),
+    (f) => (filter === "todas" || (filter === "activas") === f.enabled) && matchesSearch(`${f.question} ${f.answer}`, query),
   );
 
   return (
