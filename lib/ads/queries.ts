@@ -9,7 +9,7 @@ import { db } from "@/lib/db";
 import { adClicks, contacts, conversations, messages, metaAds, type AdMediaItem } from "@/lib/db/schema";
 import { freeEntryWindow, type FreeWindow } from "./free-window";
 import { adsManagerUrl, storyUrl } from "./meta-api";
-import { httpsUrl } from "./referral";
+import { httpsUrl, normalizeReferral } from "./referral";
 
 /** Clave de la página de un anuncio: su id de Meta, o "sin-id" para las fichas sin él. */
 export const NO_AD_ID_KEY = "sin-id";
@@ -111,6 +111,17 @@ export async function adCardsForMessages(organizationId: string, messageIds: str
     });
   }
   return out;
+}
+
+/**
+ * Tarjeta mínima desde la ficha cruda del mensaje, para un mensaje con ficha
+ * cuyo clic aún no está registrado (lo registra el barrido en ≤1 min). Sin
+ * miniatura: los links de Meta caducan y nunca se muestran directo.
+ */
+export function adCardFromRaw(raw: Record<string, unknown> | null | undefined): AdCard | null {
+  if (!raw || typeof raw !== "object" || Object.keys(raw).length === 0) return null;
+  const data = normalizeReferral(raw);
+  return { name: adDisplayName(null, data.headline, data.adId), href: adHref(data.adId), thumbnailUrl: null, mediaType: data.mediaType };
 }
 
 // ─── Lista de anuncios ──────────────────────────────────────────────────────
@@ -273,15 +284,8 @@ export async function contactAdAttribution(
 
 // ─── Ventana gratis de 72 h ─────────────────────────────────────────────────
 
-/** Ventana gratis de la conversación (null si el cliente no entró por un anuncio). */
-export async function conversationFreeWindow(organizationId: string, conversationId: string, now = new Date()): Promise<FreeWindow | null> {
-  const [conversation] = await db
-    .select({ adEntryAt: conversations.adEntryAt })
-    .from(conversations)
-    .where(and(eq(conversations.id, conversationId), eq(conversations.organizationId, organizationId)))
-    .limit(1);
-  if (!conversation?.adEntryAt) return null;
-  // Primera respuesta del NEGOCIO (humano, agente o app) que sí salió, tras la entrada.
+/** Primera respuesta del NEGOCIO (humano, agente o app) que sí salió, desde la entrada por anuncio. */
+export async function firstReplyAfter(organizationId: string, conversationId: string, entryAt: Date): Promise<Date | null> {
   const [reply] = await db
     .select({ at: messages.sentAt })
     .from(messages)
@@ -293,10 +297,21 @@ export async function conversationFreeWindow(organizationId: string, conversatio
         inArray(messages.status, ["sent", "delivered", "read"]),
         // Un aviso interno (system_note, Fase D) nunca salió al cliente.
         sql`${messages.type}::text <> 'system_note'`,
-        gte(messages.sentAt, conversation.adEntryAt),
+        gte(messages.sentAt, entryAt),
       ),
     )
     .orderBy(asc(messages.sentAt))
     .limit(1);
-  return freeEntryWindow(conversation.adEntryAt, reply?.at ?? null, now);
+  return reply?.at ?? null;
+}
+
+/** Ventana gratis de la conversación (null si el cliente no entró por un anuncio). */
+export async function conversationFreeWindow(organizationId: string, conversationId: string, now = new Date()): Promise<FreeWindow | null> {
+  const [conversation] = await db
+    .select({ adEntryAt: conversations.adEntryAt })
+    .from(conversations)
+    .where(and(eq(conversations.id, conversationId), eq(conversations.organizationId, organizationId)))
+    .limit(1);
+  if (!conversation?.adEntryAt) return null;
+  return freeEntryWindow(conversation.adEntryAt, await firstReplyAfter(organizationId, conversationId, conversation.adEntryAt), now);
 }

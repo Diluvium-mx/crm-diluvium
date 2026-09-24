@@ -44,12 +44,17 @@ export type ConversationListItem = {
 
 export type ConversationPage = { items: ConversationListItem[]; nextCursor: string | null };
 
-/** Tarjeta "📣 Llegó por anuncio": solo lo que se muestra, NUNCA el volcado crudo. */
+/**
+ * Tarjeta compacta "📣 Llegó por anuncio" (1–2 líneas, toda clicable): solo
+ * lo que se muestra, NUNCA la ficha completa ni ids de rastreo.
+ */
 export type AdReferral = {
-  headline: string | null;
-  body: string | null;
+  /** Nombre del anuncio en Meta; si aún no se consultó, el titular de la ficha. */
+  name: string;
+  /** Página del anuncio en el CRM (/anuncios/{id}). */
+  href: string;
+  /** Miniatura desde el bucket propio (/api/ads/media/…); null mientras se copia. */
   thumbnailUrl: string | null;
-  sourceUrl: string | null;
   mediaType: string | null;
 };
 
@@ -59,7 +64,11 @@ export type ConversationDetail = {
   windowExpiresAt: Date | null;
   isStarred: boolean;
   unreadCount: number;
-  adReferral: AdReferral | null;
+  /**
+   * Entrada por anuncio (ventana GRATIS de 72 h de Meta: la abre la primera
+   * respuesta del negocio dentro de 24 h). null = no llegó por anuncio.
+   */
+  adEntry: { entryAt: Date; firstReplyAt: Date | null } | null;
 };
 
 export type AttachmentView = {
