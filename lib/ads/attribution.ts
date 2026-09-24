@@ -150,6 +150,11 @@ export async function messagesWithUnrecordedReferral(limit = 50): Promise<{ id: 
         eq(messages.direction, "in"),
         sql`${messages.adReferral} is not null and ${messages.adReferral} <> '{}'::jsonb`,
         isNull(adClicks.id),
+        // El mismo clic (ctwa_clid) ya registrado en otro mensaje no se reintenta
+        // (sin esto, el barrido lo re-encolaría cada minuto sin registrarlo nunca).
+        sql`not exists (select 1 from ${adClicks} dup
+                         where dup.organization_id = ${messages.organizationId}
+                           and dup.ctwa_clid = coalesce(${messages.adReferral}->>'ctwa_clid', ${messages.adReferral}->>'ctwaClid'))`,
         gte(messages.createdAt, sql`now() - interval '7 days'`),
         lte(messages.createdAt, sql`now() - interval '1 minute'`),
       ),
