@@ -361,6 +361,10 @@ Decisiones que no estaban en el diseño original:
   comando del vendedor y por petición del agente se manda siempre. Textos y palabras clave de los
   predeterminados copiados de la auditoría de GHL; "Cliente entrante inbox", "Leads redes sociales" y "Cambio
   de etapa cliente" no se replican (el CRM ya crea el contacto en Inbox y la etapa la mueve el agente).
+  **Pie del adjunto (24-sep):** como en GHL, el texto de cada paso de imagen/video va como pie del archivo
+  (un solo mensaje de WhatsApp); solo los pasos de texto puro van aparte. Fuente: referencia de Zernio
+  `POST /v1/inbox/conversations/{id}/messages` (`message` + `attachmentUrl` en la misma petición) y el
+  spike del §0.3 (imagen + `message` → un solo `wamid`).
 - **`set_stage` dentro de un workflow NO dispara** los workflows "al entrar a la etapa" (evita
   cadenas y bucles). El disparo por etapa solo ocurre por acción humana (`updateContactStage`),
   y solo si la etapa realmente cambió.
