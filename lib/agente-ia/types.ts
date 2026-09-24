@@ -5,7 +5,8 @@ import type { AgentModeValue } from "./settings";
 // componente cliente de la pestaña "Agente IA" importa solo estos tipos.
 
 // Una opción de modelo para el selector. Incluye disponibilidad para
-// deshabilitar (gris) la opción y explicar por qué.
+// deshabilitar (gris) la opción y explicar por qué, el indicador de costo ($ a
+// $$$$) y las etiquetas "Recomendado" y "Nuevo".
 export type ModelOptionView = {
   id: string;
   label: string;
@@ -15,33 +16,9 @@ export type ModelOptionView = {
   multimodal: boolean;
   available: boolean;
   disabledReason: string | null;
-};
-
-export type AiConfigView = {
-  modeloFiltro: string;
-  modeloCerebro: string;
-};
-
-export type DryRunUsageView = {
-  inputTokens: number | null;
-  outputTokens: number | null;
-  cacheReadTokens: number | null;
-  cacheWriteTokens: number | null;
-};
-
-// Resultado de una etapa del dry-run (filtro o cerebro).
-export type DryRunStageView = {
-  stage: "filtro" | "cerebro";
-  modelId: string;
-  label: string;
-  ok: boolean;
-  text: string | null;
-  error: string | null;
-  usage: DryRunUsageView | null;
-};
-
-export type ProbarModeloResultView = {
-  stages: DryRunStageView[];
+  costTier: 1 | 2 | 3 | 4 | null;
+  recommended: boolean;
+  isNew: boolean;
 };
 
 // ── Fase B: ajustes del runtime (pestaña Agente IA) ──────────────────────────
@@ -54,25 +31,20 @@ export type ChannelAgentView = {
   mode: AgentModeValue;
 };
 
-export type ModelPriceView = {
-  modelId: string;
-  label: string;
-  providerLabel: string;
-  // Default del código (null = sin precio conocido).
-  defaultInput: number | null;
-  defaultOutput: number | null;
-  // Sobrescritura de la organización (null = usa el default).
-  overrideInput: number | null;
-  overrideOutput: number | null;
-  cacheNote: string;
-};
+// ── Editor del agente (pestaña "Agente IA" estilo GHL) ───────────────────────
+export type FaqView = { id: string; question: string; answer: string; enabled: boolean; position: number };
+export type VersionView = { id: string; createdAt: string; author: string | null; summary: string };
 
-export type KnowledgeStatusView = { goalChars: number; faqsEnabled: number };
-
-export type AgentSettingsBundleView = {
+export type AgentEditorView = {
+  agentName: string;
+  companyName: string;
+  modeloCerebro: string;
+  goal: string;
+  faqs: FaqView[];
+  goalVersions: VersionView[];
+  faqVersions: VersionView[];
+  brainOptions: ModelOptionView[];
   channels: ChannelAgentView[];
-  prices: ModelPriceView[];
-  knowledge: KnowledgeStatusView;
 };
 
 // ── Fase B: el agente en una conversación (Bandeja y panel del contacto) ─────

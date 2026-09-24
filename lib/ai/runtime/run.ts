@@ -16,7 +16,8 @@ import type { CallModelInput, CallModelResult } from "@/lib/ai/types";
 import { getModel } from "@/lib/ai/catalog";
 import { cleanAdMessages } from "./ad-cleaner";
 import { buildBrainSystemWithRuntime, parseBrainOutput } from "./brain";
-import { loadAgentConfig, loadEnabledFaqs } from "./config";
+import { applyCustomValues } from "@/lib/agente-ia/editor";
+import { loadAgentConfig, loadCustomValues, loadEnabledFaqs } from "./config";
 import {
   alreadyHandled,
   humanOutboundCount,
@@ -181,8 +182,14 @@ export async function runAgent(job: { organizationId: string; conversationId: st
     // ── CEREBRO ─────────────────────────────────────────────────────────────
     const brainModel = getModel(cfg.modeloCerebro);
     if (!brainModel) throw new Error(`modelo de cerebro desconocido: ${cfg.modeloCerebro}`);
-    const faqs = await loadEnabledFaqs(org);
-    const system = buildBrainSystemWithRuntime(cfg.goal, faqs);
+    // Goal y FAQs con los valores personalizados de esta conversación sustituidos.
+    const values = await loadCustomValues(org, conv, cfg);
+    const faqs = (await loadEnabledFaqs(org)).map((f) => ({
+      ...f,
+      question: applyCustomValues(f.question, values),
+      answer: applyCustomValues(f.answer, values),
+    }));
+    const system = buildBrainSystemWithRuntime(applyCustomValues(cfg.goal, values), faqs);
     const modelMessages = buildModelMessages(history, await imageUrlsFor(history, deps.resolveImage), { cleanText });
     const t0 = Date.now();
     let brainRes: CallModelResult;

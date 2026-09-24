@@ -1,6 +1,6 @@
-import { isNotNull } from "drizzle-orm";
-import { pgTable, text, integer, boolean, timestamp, index, uniqueIndex } from "drizzle-orm/pg-core";
-import { organization } from "./auth";
+import { isNotNull, sql } from "drizzle-orm";
+import { pgTable, text, integer, boolean, timestamp, index, uniqueIndex, jsonb } from "drizzle-orm/pg-core";
+import { organization, user } from "./auth";
 
 // Base de conocimiento del Agente IA por organización (Fase B): las FAQs que
 // alimentan el "cerebro". El system del cerebro = Goal (ai_config.goal) + estas
@@ -38,4 +38,23 @@ export const aiKnowledge = pgTable(
       .on(table.organizationId, table.ghlId)
       .where(isNotNull(table.ghlId)),
   ],
+);
+
+// Versiones del conocimiento del agente (pestaña "Agente IA", 24-sep-2026): cada vez
+// que se guarda el Goal o se cambian las FAQs queda una foto completa, para poder
+// regresar a una anterior. kind = "goal" (snapshot: { goal }) | "faqs" (snapshot:
+// { faqs: [{ question, answer, position, enabled }] }).
+export const aiKnowledgeVersions = pgTable(
+  "ai_knowledge_versions",
+  {
+    id: text("id").primaryKey(),
+    organizationId: text("organization_id")
+      .notNull()
+      .references(() => organization.id, { onDelete: "cascade" }),
+    kind: text("kind").notNull(),
+    snapshot: jsonb("snapshot").$type<Record<string, unknown>>().notNull(),
+    createdByUserId: text("created_by_user_id").references(() => user.id, { onDelete: "set null" }),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+  },
+  (table) => [index("ai_knowledge_versions_org_kind_idx").on(table.organizationId, table.kind, sql`${table.createdAt} desc`)],
 );
