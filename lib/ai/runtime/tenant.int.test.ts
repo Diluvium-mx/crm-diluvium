@@ -158,7 +158,7 @@ describe.skipIf(!TEST_DATABASE_URL)("el runtime del agente no cruza organizacion
     const sendBubble = vi.fn(async () => ({ status: "sent" as const }));
     const r = await run.runAgent(
       { organizationId: B, conversationId: CONV },
-      { now: () => new Date(), callModel, sendBubble, sleep: async () => undefined, resolveImage: async () => null },
+      { now: () => new Date(), callModel, sendBubble, sleep: async () => undefined, resolveImage: async () => null, startWorkflow: async () => ({ runId: "x", status: "skipped" as const }) },
     );
     expect(r).toEqual({ kind: "noop", reason: "conversacion_no_existe" });
     expect(callModel).not.toHaveBeenCalled();

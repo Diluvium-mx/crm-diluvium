@@ -16,6 +16,8 @@ import type { CallModelInput, CallModelResult } from "@/lib/ai/types";
 import { getModel } from "@/lib/ai/catalog";
 import { cleanAdMessages } from "./ad-cleaner";
 import { buildBrainSystemWithRuntime, parseBrainOutput } from "./brain";
+import { executeActions, loadAgentTools, prepareActions, type StartWorkflow } from "./actions";
+import { validateToolCalls } from "./tools";
 import { applyCustomValues } from "@/lib/agente-ia/editor";
 import { loadAgentConfig, loadCustomValues, loadEnabledFaqs } from "./config";
 import {
@@ -57,6 +59,8 @@ export type RunDeps = {
   sleep: (ms: number) => Promise<void>;
   // URL firmada de una imagen del bucket (o null si no se puede).
   resolveImage: (storageKey: string) => Promise<string | null>;
+  // Fase D: arranca una corrida de workflow (trigger "agent") pedida por el cerebro.
+  startWorkflow: StartWorkflow;
 };
 
 export type RunResult =
@@ -191,12 +195,15 @@ export async function runAgent(job: { organizationId: string; conversationId: st
     }));
     const system = buildBrainSystemWithRuntime(applyCustomValues(cfg.goal, values), faqs);
     const modelMessages = buildModelMessages(history, await imageUrlsFor(history, deps.resolveImage), { cleanText });
+    // Herramientas (Fase D): una por workflow habilitado con "agente" + fijar_cotizacion.
+    const agentTools = await loadAgentTools(org);
     const t0 = Date.now();
     let brainRes: CallModelResult;
     try {
       brainRes = await deps.callModel(brainModel.id, {
         system,
         messages: modelMessages,
+        tools: agentTools.tools,
         maxOutputTokens: BRAIN_MAX_OUTPUT_TOKENS,
         timeoutMs: BRAIN_TIMEOUT_MS,
       });
@@ -250,8 +257,25 @@ export async function runAgent(job: { organizationId: string; conversationId: st
       await recordAiUsage({ ...brainUsage, outcome: "error", error: `respuesta_vacia (${brainRes.finishReason})` });
       throw new Error("el cerebro devolvió una respuesta vacía");
     }
+    // ── ACCIONES pedidas con herramientas (Fase D) ──────────────────────────
+    // Se validan contra las herramientas ofrecidas; un comprobante se verifica
+    // AQUÍ (monto contra lo cotizado + referencia): si no cuadra, el texto del
+    // modelo se sustituye por uno amable con el motivo. Las corridas salen
+    // DESPUÉS de las burbujas.
+    const { valid: toolCalls, ignored } = validateToolCalls(brainRes.toolCalls ?? [], agentTools);
+    if (ignored.length) console.warn(`[agente] ${conv.id}: herramientas ignoradas: ${ignored.join("; ")}`);
+    const workflowsBySlug = new Map([...agentTools.byName.values()].map((w) => [w.slug, w] as const));
+    const plan = await prepareActions({
+      organizationId: org,
+      conversationId: conv.id,
+      contactId: conv.contactId,
+      calls: toolCalls,
+      workflowsBySlug,
+      inboundHasImage: pending.some((m) => m.attachments.some((a) => a.type === "image")),
+      modelText: out.text,
+    });
     // Mensajes para celular: información y pregunta por separado (máx. 2).
-    const bubbles = toBubbles(out.text);
+    const bubbles = toBubbles(plan.text);
     // El cliente pidió a una persona: el aviso al vendedor se guarda ANTES de enviar
     // (idempotente por el entrante): nunca se le dice al cliente que lo atenderán sin
     // que un vendedor lo vea en la Bandeja. El agente sigue activo.
@@ -329,6 +353,24 @@ export async function runAgent(job: { organizationId: string; conversationId: st
     }
     await markAgentReply(org, conv.id, deps.now());
     if (planId) await closePlan(org, planId, "enviado");
+    // Acciones (Fase D), después del texto y solo si el agente no fue detenido:
+    // cotización, registro del pago verificado y corridas de workflow (cada corrida
+    // relee el estado del agente antes de cada paso). Un fallo aquí no quita la
+    // respuesta ya enviada: queda un aviso al vendedor.
+    if (plan.runs.length || plan.quote !== null || plan.pago) {
+      try {
+        const done = await executeActions(plan, { organizationId: org, conversationId: conv.id, contactId: conv.contactId, now: deps.now() }, deps.startWorkflow);
+        if (done.started.length || done.skipped.length || done.notes.length) {
+          console.info(`[agente] ${conv.id}: acciones → ${[...done.started, ...done.skipped, ...done.notes].join("; ")}`);
+        }
+        if (done.skipped.length || done.notes.length) {
+          await addNotice({ organizationId: org, conversationId: conv.id, kind: "envio", body: `Acción del agente no ejecutada: ${[...done.skipped, ...done.notes].join("; ")}.` });
+        }
+      } catch (error) {
+        console.error(`[agente] ${conv.id}: acciones fallaron`, error);
+        await addNotice({ organizationId: org, conversationId: conv.id, kind: "envio", body: `Las acciones del agente (${plan.runs.map((r) => r.slug).join(", ") || "cotización/pago"}) no se ejecutaron: ${errorText(error)}. Revisa el hilo.` });
+      }
+    }
     // Un mensaje sin confirmar queda en el outbox: si vence como "sin confirmar",
     // el barrido deja un aviso (nunca reenvía a ciegas).
     const omitted = bubbles.length - sent;
