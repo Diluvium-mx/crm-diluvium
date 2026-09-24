@@ -23,7 +23,7 @@ export function localToday(now: Date = new Date()): string {
   }).format(now);
 }
 
-export function isValidDay(value: string): boolean {
+function isValidDay(value: string): boolean {
   if (!DAY_RE.test(value)) return false;
   const [y, m, d] = value.split("-").map(Number);
   const date = new Date(Date.UTC(y, m - 1, d));

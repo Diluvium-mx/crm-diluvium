@@ -458,8 +458,10 @@ export function ChatThread({
 
   return (
     // Alto fijo (lo da el contenedor: Bandeja o pop-up del Embudo): encabezado y
-    // composer siempre visibles; solo el historial se desliza.
-    <div className="flex h-full min-h-0 flex-1 flex-col overflow-hidden bg-muted/40">
+    // composer siempre visibles; solo el historial se desliza. container-type:size:
+    // los selectores del composer miden su tope contra el alto del chat (cqh) y un
+    // texto largo no puede ensanchar la columna (sacaba de vista "Cerrar").
+    <div className="flex h-full min-h-0 min-w-0 flex-1 flex-col overflow-hidden bg-muted/40 [container-type:size]">
       {/* Encabezado */}
       <header className="flex shrink-0 items-center gap-3 border-b bg-card px-4 py-3">
         <div className="min-w-0 flex-1">

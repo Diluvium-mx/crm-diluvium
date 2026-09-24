@@ -1,10 +1,10 @@
 import Image from "next/image";
-import Link from "next/link";
 import { headers } from "next/headers";
 import { redirect } from "next/navigation";
 import { auth } from "@/lib/auth";
 import { requireActiveMembership } from "@/lib/auth/active-organization";
 import { roleAllows } from "@/lib/auth/permissions";
+import { NavItem } from "./_components/nav-item";
 import { SignOutButton } from "./_components/sign-out-button";
 import { ThemeToggle } from "@/components/theme-toggle";
 
@@ -55,16 +55,13 @@ export default async function AppLayout({
 
   return (
     <div className="flex min-h-dvh w-full font-brand">
-      <aside className="flex w-56 shrink-0 flex-col bg-brand-navy">
-        <nav className="flex flex-col gap-1 p-3">
+      {/* Capas: el sidebar va encima (z-20) y proyecta su sombra sobre la barra y
+          el contenido; la barra (z-10) proyecta la suya sobre el contenido. Sin
+          z-index en <main>: los pop-ups (fixed z-50) siguen tapando todo. */}
+      <aside className="relative z-20 flex w-56 shrink-0 flex-col border-r border-white/5 bg-brand-navy bg-linear-to-b from-brand-navy to-[#08477f] shadow-[6px_0_24px_-10px_rgb(4_30_60/0.6)] dark:to-[#073763]">
+        <nav aria-label="Principal" className="flex flex-col gap-1 p-3">
           {navItems.map((item) => (
-            <Link
-              key={item.href}
-              href={item.href}
-              className="rounded px-3 py-2 text-sm text-brand-white transition-colors hover:bg-white/10"
-            >
-              {item.label}
-            </Link>
+            <NavItem key={item.href} href={item.href} label={item.label} />
           ))}
         </nav>
       </aside>
@@ -78,8 +75,8 @@ export default async function AppLayout({
             (h-[calc(100dvh-4rem)]); si el header pudiera crecer (email largo,
             zoom, ventana angosta) ese cálculo dejaría de cuadrar. El email se
             trunca para no desbordar ni forzar más alto. */}
-        <header className="flex h-16 shrink-0 items-center justify-between bg-brand-navy-dark px-4 py-3">
-          <div className="flex shrink-0 items-center rounded-md bg-white px-2.5 py-1.5">
+        <header className="relative z-10 flex h-16 shrink-0 items-center justify-between border-b border-white/10 bg-brand-navy-dark px-4 py-3 shadow-[0_6px_18px_-8px_rgb(4_30_60/0.55)]">
+          <div className="flex shrink-0 items-center rounded-md bg-white px-2.5 py-1.5 shadow-sm ring-1 ring-black/5">
             <Image
               src="/logo-diluvium.png"
               alt="Diluvium — Control de inundaciones"
