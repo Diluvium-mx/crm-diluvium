@@ -216,7 +216,7 @@ describe.skipIf(!TEST_DATABASE_URL)("bandeja: lecturas y escrituras (Postgres re
     expect(page!.messages[0].attachments[0]).toMatchObject({ index: 0, state: "ready", url: expect.stringContaining("/api/media/") });
     // Tarjeta compacta: nombre y enlace; nunca ctwa_clid ni el link de Meta
     // (caduca): sin clic registrado aún, sin miniatura.
-    expect(page!.messages[0].adReferral).toEqual({ name: "Portón", href: "/anuncios/sin-id", thumbnailUrl: null, mediaType: null });
+    expect(page!.messages[0].adReferral).toEqual({ name: "Portón", href: "/anuncios", thumbnailUrl: null, mediaType: null });
 
     const older = await q.listMessagesForOrg(ORG_A, convId, { before: page!.messages[1].id, limit: 10 });
     expect(older!.messages.map((m) => m.body)).toEqual([null]);

@@ -190,9 +190,24 @@ async function downloadPending(
 }
 
 /**
- * Otro clic del MISMO anuncio ya copió ese archivo (mismo creativo): se reusa
- * su copia en vez de descargar otra vez el mismo video. Devuelve la media ya
- * completada con lo reusado.
+ * Identidad del ARCHIVO en el CDN de Meta: la ruta, sin la firma de la query
+ * (la firma cambia en cada entrega; la ruta nombra el archivo). Dos links con
+ * la misma ruta son el mismo archivo.
+ */
+export function mediaAssetKey(url: string): string | null {
+  try {
+    const u = new URL(url);
+    return `${u.hostname.replace(/^[^.]+\./, "")}${u.pathname}`;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Otro clic del MISMO anuncio ya copió ESE archivo: se reusa su copia en vez de
+ * descargar otra vez el mismo video. Solo si es el mismo archivo de Meta (misma
+ * ruta): un anuncio dinámico sirve imágenes distintas bajo el mismo id, y cada
+ * cliente debe ver el creativo que él vio. Devuelve la media ya completada.
  */
 async function reuseSiblingMedia(clickId: string, organizationId: string, adId: string): Promise<AdMediaItem[] | null> {
   const siblings = await db
@@ -208,16 +223,22 @@ async function reuseSiblingMedia(clickId: string, organizationId: string, adId: 
     )
     .orderBy(desc(adClicks.clickedAt))
     .limit(5);
-  const storedByRole = new Map<AdMediaItem["role"], AdMediaItem>();
-  for (const s of siblings) for (const m of s.media) if (m.storageKey && !storedByRole.has(m.role)) storedByRole.set(m.role, m);
-  if (storedByRole.size === 0) return null;
+  const storedByAsset = new Map<string, AdMediaItem>();
+  for (const s of siblings) {
+    for (const m of s.media) {
+      const asset = mediaAssetKey(m.url);
+      if (m.storageKey && asset && !storedByAsset.has(`${m.role}|${asset}`)) storedByAsset.set(`${m.role}|${asset}`, m);
+    }
+  }
+  if (storedByAsset.size === 0) return null;
   let merged: AdMediaItem[] | null = null;
   await db.transaction(async (tx) => {
     const [row] = await tx.select({ media: adClicks.media }).from(adClicks).where(eq(adClicks.id, clickId)).for("update");
     if (!row) return;
     let changed = false;
     merged = row.media.map((m) => {
-      const sibling = storedByRole.get(m.role);
+      const asset = mediaAssetKey(m.url);
+      const sibling = asset ? storedByAsset.get(`${m.role}|${asset}`) : undefined;
       if (!mediaPending(m) || !sibling?.storageKey) return m;
       changed = true;
       const reused: AdMediaItem = {

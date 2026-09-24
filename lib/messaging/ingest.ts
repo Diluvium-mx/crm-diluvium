@@ -16,7 +16,7 @@ import type {
   ProviderName,
 } from "./provider";
 import { firstResponseSeconds, nextStatus, windowExpiresAt } from "./rules";
-import { recordAdClickSafely, type FallbackJob, type RecordedClick } from "@/lib/ads/attribution";
+import { pendingFallbackNote, recordAdClickSafely, type FallbackJob, type RecordedClick } from "@/lib/ads/attribution";
 import { looksLikeAdMessage } from "@/lib/ads/referral";
 
 export type Tx = Parameters<Parameters<typeof db.transaction>[0]>[0];
@@ -554,6 +554,14 @@ async function attributeAd(
       providerConversationId: p.providerConversationId,
       looksLikeAd,
     };
+    // Registro durable ("pendiente") en la MISMA transacción del mensaje: si
+    // encolar falla después del commit, el barrido lo retoma desde aquí.
+    await tx
+      .update(messages)
+      .set({
+        metadata: sql`coalesce(${messages.metadata}, '{}'::jsonb) || jsonb_build_object('anuncioRespaldo', ${JSON.stringify(pendingFallbackNote(p.ad.fallback))}::jsonb)`,
+      })
+      .where(and(eq(messages.id, p.messageId), eq(messages.organizationId, p.orgId)));
   }
 }
 
