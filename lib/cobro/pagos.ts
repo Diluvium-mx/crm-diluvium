@@ -10,6 +10,16 @@ import { normalizarReferencia } from "./comprobante";
 
 export { normalizarReferencia };
 
+/** Conversación donde ya se confirmó esa referencia (null si no existe). */
+export async function conversacionDeReferencia(organizationId: string, referencia: string): Promise<string | null> {
+  const [row] = await db
+    .select({ conversationId: pagosConfirmados.conversationId })
+    .from(pagosConfirmados)
+    .where(and(eq(pagosConfirmados.organizationId, organizationId), eq(pagosConfirmados.referencia, normalizarReferencia(referencia))))
+    .limit(1);
+  return row ? row.conversationId : null;
+}
+
 export async function referenciaYaUsada(organizationId: string, referencia: string): Promise<boolean> {
   const [row] = await db
     .select({ id: pagosConfirmados.id })
@@ -37,12 +47,17 @@ export async function anticipoConfirmado(organizationId: string, conversationId:
 /** Lo que necesita `verificarComprobante` además de la lectura de la foto. */
 export async function contextoParaComprobante(organizationId: string, conversationId: string, contactId: string, referencia: string | null) {
   const [c] = await db
-    .select({ monto: contacts.montoCotizacion })
+    .select({ monto: contacts.montoCotizacion, customFields: contacts.customFields })
     .from(contacts)
     .where(and(eq(contacts.id, contactId), eq(contacts.organizationId, organizationId)))
     .limit(1);
   return {
     totalCotizado: c?.monto != null ? Number(c.monto) : null,
+    // "agente" | "vendedor" | null: quién fijó el total (para el aviso al vendedor).
+    cotizacionPor: (() => {
+      const v = (c?.customFields as Record<string, unknown> | undefined)?.cotizacion_por;
+      return typeof v === "string" ? v : null;
+    })(),
     anticipoConfirmado: await anticipoConfirmado(organizationId, conversationId),
     referenciaYaUsada: referencia ? await referenciaYaUsada(organizationId, referencia) : false,
     hoy: new Date(),
@@ -64,7 +79,9 @@ export async function registrarPagoConfirmado(input: {
 }): Promise<string> {
   const id = crypto.randomUUID();
   try {
-    await db.insert(pagosConfirmados).values({ ...input, id, referencia: normalizarReferencia(input.referencia) });
+    // created_at desde JS (no default now() de la BD): se compara con created_at de
+    // `messages`, que también se escribe desde JS (mismo reloj y misma zona).
+    await db.insert(pagosConfirmados).values({ ...input, id, referencia: normalizarReferencia(input.referencia), createdAt: new Date() });
   } catch (error) {
     if (isUniqueViolation(error)) throw new ReferenciaDuplicadaError(`la referencia ${input.referencia} ya está registrada`);
     throw error;

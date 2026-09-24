@@ -42,7 +42,8 @@ export async function findOrphanConversations(now: Date, limit = 50): Promise<Or
         and m.type <> 'system_note'
         and not exists (
           select 1 from workflow_runs r
-          where r.conversation_id = m.conversation_id and r.trigger = 'keyword' and r.message_ids ? m.id
+          where r.organization_id = m.organization_id and r.conversation_id = m.conversation_id
+            and r.trigger in ('keyword', 'agent') and r.message_ids ? m.id
         )
       order by coalesce(m.sent_at, m.created_at) desc, m.created_at desc
       limit 1
@@ -60,11 +61,12 @@ export async function findOrphanConversations(now: Date, limit = 50): Promise<Or
       and last.created_at > coalesce(c.agent_state_changed_at, '-infinity'::timestamp)
       and not exists (
         select 1 from ai_usage u
-        where u.message_id = last.id and u.outcome in ('sent', 'draft', 'skipped', 'handover')
+        where u.organization_id = c.organization_id and u.message_id = last.id
+          and u.outcome in ('sent', 'draft', 'skipped', 'handover')
       )
       -- Un plan/borrador OBSOLETO no cuenta (p. ej. la 1ª burbuja falló en los 3 intentos):
       -- el barrido lo rescata hasta MAX_ERRORS_PER_MESSAGE.
-      and not exists (select 1 from ai_agent_drafts d where d.trigger_message_id = last.id and d.status <> 'obsoleto')
+      and not exists (select 1 from ai_agent_drafts d where d.organization_id = c.organization_id and d.trigger_message_id = last.id and d.status <> 'obsoleto')
       and (select count(*) from ai_usage u where u.message_id = last.id and u.outcome = 'error') < ${MAX_ERRORS_PER_MESSAGE}
     limit ${limit}
   `);
@@ -110,6 +112,12 @@ export async function reconcileStuckDrafts(now: Date): Promise<number> {
           eq(messages.direction, "out"),
           eq(messages.source, "ai_agent"),
           gte(messages.createdAt, since),
+          // Ni avisos internos ni media/texto de corridas de workflow: no son burbujas del plan.
+          sql`${messages.type} <> 'system_note' and not exists (
+            select 1 from workflow_runs r
+            where r.organization_id = ${messages.organizationId} and r.conversation_id = ${messages.conversationId}
+              and r.message_ids ? ${messages.id}
+          )`,
         ),
       );
     if (outs.some((m) => m.status === "queued")) continue; // aún en camino

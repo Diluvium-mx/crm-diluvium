@@ -174,7 +174,7 @@ export const DEFAULT_WORKFLOWS: readonly DefaultWorkflow[] = [
     slug: "transferir_humano",
     name: "Pasar a humano",
     agentDescription:
-      "Pasa la conversación a un asesor humano y deja de responder. " +
+      "Avisa a un asesor humano para que tome la conversación; tú sigues atendiendo hasta que él conteste. " +
       "Úsala solo en los casos del Goal: el cliente pide hablar con una persona, pide un enlace para pagar con tarjeta, hay un problema de garantía, devolución, daño o pedido incompleto, " +
       "reporta un problema con Amazon o Mercado Libre, pide un descuento o condición no autorizada, menciona fraude o insulta de forma persistente, o falta información oficial. " +
       "Escribe primero una despedida breve en texto y luego llama esta herramienta con el motivo.",

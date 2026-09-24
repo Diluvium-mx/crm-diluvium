@@ -233,7 +233,9 @@ describe.skipIf(!TEST_DATABASE_URL)("executor de workflows", () => {
     }
     const r = await run(start.runId);
     expect(r).toMatchObject({ status: "failed", errorCode: "rate_limited", stepCursor: 1 });
-    expect(r.messageIds).toHaveLength(1);
+    // El id del 2º paso se anota ANTES de mandar (su fila quedó "failed"): 2 ids, 1 enviado.
+    expect(r.messageIds).toEqual([ex.stepMessageId(start.runId, 0), ex.stepMessageId(start.runId, 1)]);
+    expect(sent).toHaveLength(1);
   });
 
   it("pasar a humano pausa al agente con etiqueta; el aviso interno queda en el hilo sin ir al proveedor; la etapa del argumento NO manda fuera de cambiar_etapa", async () => {

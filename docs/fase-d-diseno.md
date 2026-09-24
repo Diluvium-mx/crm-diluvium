@@ -510,6 +510,40 @@ editar/reordenar pasos con una corrida a medias mueve el cursor (guardar snapsho
 consultas internas del ejecutor filtran por id de corrida sin `organization_id` (ids únicos; no explotable);
 `pagos.ts` recibe conversación/contacto/organización por separado (validar en la parte b).
 
+### 8.3 Gate de la parte (b) — 24-sep-2026 (adversarial de Claude + cyber-neo + Codex)
+
+Corregido de inmediato (escenario real):
+- **Inyección de cotización**: el cliente podía dictarle al modelo un total bajo y "cuadrar" un
+  comprobante barato (misma vuelta o dos mensajes). Ahora `fijar_cotizacion` se ignora si viene con un
+  comprobante, solo se acepta un total que el agente le está diciendo al cliente en su propio texto, no
+  hay respaldo de cotización en memoria, y un pago confirmado contra una cotización del agente deja un
+  aviso extra al vendedor ("cotejar el monto"). Un total fijado a mano por un vendedor no se pisa.
+- **"Pago confirmado" antes de registrar**: el pago se registra y su corrida (aviso + etapa) se encola
+  ANTES de mandar el texto; si la referencia entró dos veces a la vez o la BD falla, sale el texto
+  amable y corre `pago_no_cuadra`. Si el envío se detiene tras ≥1 burbuja, las acciones corren igual.
+- **Compra solo con pago**: `cambiar_etapa {compra}` se ignora; una corrida del agente nunca retrocede
+  etapas (comprobado en SQL); si el comprobante no cuadra, ninguna `cambiar_etapa` de esa vuelta corre.
+- **Silencio del agente**: la media de una corrida del AGENTE (espera de 30 s de la tabla) cerraba los
+  pendientes y lo que el cliente escribía mientras tanto quedaba sin respuesta; el id del mensaje se
+  anota en la corrida ANTES de mandarlo (ventana de 1 s); solo llamadas sin texto ya no lanza (cada
+  reintento era otra llamada pagada) y, si ninguna acción manda nada, sale un texto de respaldo del CRM.
+- **Comprobante**: sin foto reciente (desde el último pago, tope 24 h) se pide la foto en vez de mandar
+  el "pago recibido" del modelo; la misma referencia reenviada en la MISMA conversación responde "ya lo
+  tenemos registrado" sin acusar; un anticipo cuyo workflow está deshabilitado no se registra; argumento
+  `moneda`; igualdad exacta en centavos; motivos internos traducidos para el cliente.
+- **Doble tabla**: palabra clave + herramienta del mismo workflow para el mismo mensaje → la del agente
+  no se repite. Barrido: avisos y media de corridas fuera de las burbujas de un plan; correlación por
+  organización en las subconsultas.
+
+Sin escenario (lista, no frena): confirmación falsa SOLO por texto (el modelo escribe "pago confirmado"
+sin llamar la herramienta: no hay gate determinista sobre el texto; el aviso "cotejar" no existe en ese
+caso); uso/costo se persiste al final (una caída entre la llamada y el registro pierde la fila);
+`cambiar_etapa` hacia atrás por el vendedor sigue permitido; corridas del agente sin tope de repetición
+(las de palabra clave sí: una por contacto); el modelo puede pedir media a voluntad (costo por mensaje);
+`InvalidToolInputError` del SDK no lanza (AI SDK 7 marca `invalid` y el runtime lo ignora); humano que mueve
+la etapa durante la generación (ahora se usa el `now` de la ronda); descripciones de herramientas son
+solo texto para el modelo.
+
 ## 9. Plan de salida a producción (parte a)
 
 Reglas del dueño: **nada va a staging ni al sandbox hasta su aviso**; el modo "borrador" **ya no
