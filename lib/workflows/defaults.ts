@@ -70,7 +70,7 @@ export const DEFAULT_WORKFLOWS: readonly DefaultWorkflow[] = [
     triggerCommand: "/banco",
     steps: [
       text("Aquí le paso nuestros datos bancarios ✅"),
-      media("Datos bancarios (imagen con banco, CLABE y beneficiario)"),
+      media("Datos bancarios (imagen con banco, cuenta y beneficiario)"),
       { kind: "set_stage", stage: "cerca_compra" },
     ],
   },
@@ -197,7 +197,7 @@ export const DEFAULT_WORKFLOWS: readonly DefaultWorkflow[] = [
     agentDescription:
       "Confirma la recepción de un pago y mueve al contacto a 'Compra'. " +
       "Úsala únicamente después de analizar la IMAGEN del comprobante y verificar que el monto coincide con el total cotizado en esta conversación " +
-      "(o con el 50 % de anticipo de una compuerta a la medida), que el destinatario coincide con los datos bancarios y que la fecha no es futura. " +
+      "(o con el 50 % de anticipo de una compuerta a la medida) y que la referencia no se usó antes. " +
       "Pasa como argumentos lo que leíste: monto, fecha, banco, referencia y destinatario. Escribe primero al cliente la confirmación con la petición de datos de envío " +
       "(o, si fue anticipo, que su compuerta entra en fabricación). Nunca la uses sin imagen del comprobante.",
     triggerAgent: true,
@@ -219,7 +219,7 @@ export const DEFAULT_WORKFLOWS: readonly DefaultWorkflow[] = [
     name: "Anticipo confirmado (50 % a la medida)",
     agentDescription:
       "Confirma la recepción del ANTICIPO del 50 % de una compuerta hecha a la medida ($3,500 de $7,000) y deja al contacto en 'Cerca de compra' " +
-      "(la venta no está completa: falta la liquidación antes del envío). Úsala solo tras analizar la IMAGEN del comprobante y verificar monto y destinatario. " +
+      "(la venta no está completa: falta la liquidación antes del envío). Úsala solo tras analizar la IMAGEN del comprobante y verificar el monto. " +
       "Pasa como argumentos monto, fecha, banco, referencia y destinatario. Escribe primero al cliente que su compuerta entra en fabricación y que avisarás para el pago final. " +
       "Para un pago completo usa 'Pago confirmado', no esta.",
     triggerAgent: true,
@@ -238,7 +238,7 @@ export const DEFAULT_WORKFLOWS: readonly DefaultWorkflow[] = [
     slug: "pago_no_cuadra",
     name: "Comprobante que no cuadra",
     agentDescription:
-      "Pasa a un asesor humano un comprobante de pago que no cuadra: el monto no coincide con lo cotizado, el destinatario es otro, la imagen no se lee o no es un comprobante. " +
+      "Pasa a un asesor humano un comprobante de pago que no cuadra: el monto no coincide con lo cotizado, la referencia ya se usó, la imagen no se lee o no es un comprobante. " +
       "Escribe primero al cliente, con amabilidad, qué viste y qué esperabas (por ejemplo el monto del comprobante y el total cotizado) y que un asesor lo revisa; luego llama esta herramienta con el motivo.",
     triggerAgent: true,
     triggerKeywords: [],

@@ -3,7 +3,7 @@
 // `registrarPagoConfirmado`; el registro es atómico por referencia (índice único).
 import { and, eq, sum } from "drizzle-orm";
 import { db } from "@/lib/db";
-import { contacts, datosCobro, pagosConfirmados } from "@/lib/db/schema";
+import { contacts, pagosConfirmados } from "@/lib/db/schema";
 import { isUniqueViolation } from "@/lib/db/errors";
 
 import { normalizarReferencia } from "./comprobante";
@@ -41,11 +41,9 @@ export async function contextoParaComprobante(organizationId: string, conversati
     .from(contacts)
     .where(and(eq(contacts.id, contactId), eq(contacts.organizationId, organizationId)))
     .limit(1);
-  const [dc] = await db.select().from(datosCobro).where(eq(datosCobro.organizationId, organizationId)).limit(1);
   return {
     totalCotizado: c?.monto != null ? Number(c.monto) : null,
     anticipoConfirmado: await anticipoConfirmado(organizationId, conversationId),
-    datosCobro: { beneficiario: dc?.beneficiario ?? "", clabe: dc?.clabe ?? "", cuenta: dc?.cuenta ?? "", banco: dc?.banco ?? "" },
     referenciaYaUsada: referencia ? await referenciaYaUsada(organizationId, referencia) : false,
     hoy: new Date(),
   };
