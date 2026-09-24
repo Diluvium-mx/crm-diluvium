@@ -21,15 +21,8 @@ import { useVirtualizer } from "@tanstack/react-virtual";
 import { ContactCard, ContactCardContent } from "./contact-card";
 import { ContactDetailPanel } from "./contact-detail-panel";
 import { phoneMatchesSearch } from "@/lib/phone-format";
+import { normalizeSearch } from "@/lib/text/search";
 import { useInboxStream } from "../../dashboard/_components/use-inbox-stream";
-
-function stripDiacritics(value: string): string {
-  return value.normalize("NFD").replace(/[̀-ͯ]/g, "");
-}
-
-function normalizeForSearch(value: string): string {
-  return stripDiacritics(value).toLowerCase();
-}
 
 // Type guard: el id del droppable siempre es una etapa (solo las columnas
 // son zonas de destino), pero esto lo deja explícito para TypeScript.
@@ -245,7 +238,8 @@ export function ContactsBoard({ initialContacts }: { initialContacts: Contact[] 
     }, 500);
   });
 
-  const normalizedSearch = normalizeForSearch(search.trim());
+  // Sin acentos ni mayúsculas (regla de todo buscador: lib/text/search.ts).
+  const normalizedSearch = normalizeSearch(search);
 
   const filteredContacts = useMemo(() => {
     if (!normalizedSearch) {
@@ -253,7 +247,7 @@ export function ContactsBoard({ initialContacts }: { initialContacts: Contact[] 
     }
 
     return contacts.filter((contact) => {
-      const nameMatches = normalizeForSearch(getContactFullName(contact)).includes(normalizedSearch);
+      const nameMatches = normalizeSearch(getContactFullName(contact)).includes(normalizedSearch);
       const phoneMatches = phoneMatchesSearch(contact.phoneE164, normalizedSearch);
       return nameMatches || phoneMatches;
     });
