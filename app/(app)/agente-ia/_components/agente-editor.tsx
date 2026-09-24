@@ -24,7 +24,7 @@ function Section({ title, hint, children }: { title: string; hint?: string; chil
   );
 }
 
-function AgentName({ name, companyName }: { name: string; companyName: string }) {
+function AgentName({ name }: { name: string }) {
   const [editing, setEditing] = useState(false);
   const [value, setValue] = useState(name);
   const [shown, setShown] = useState(name);
@@ -34,7 +34,7 @@ function AgentName({ name, companyName }: { name: string; companyName: string })
   function save() {
     setError(null);
     start(async () => {
-      const r = await updateAgentProfile({ agentName: value, companyName });
+      const r = await updateAgentProfile({ agentName: value });
       if (r.ok) {
         setShown(value.trim());
         setEditing(false);
@@ -82,7 +82,7 @@ function AgentName({ name, companyName }: { name: string; companyName: string })
   );
 }
 
-function CompanyName({ agentName, value: initial }: { agentName: string; value: string }) {
+function CompanyName({ value: initial }: { value: string }) {
   const [value, setValue] = useState(initial);
   const [saved, setSaved] = useState(initial);
   const [error, setError] = useState<string | null>(null);
@@ -92,7 +92,7 @@ function CompanyName({ agentName, value: initial }: { agentName: string; value: 
     if (value.trim() === saved.trim()) return;
     setError(null);
     start(async () => {
-      const r = await updateAgentProfile({ agentName, companyName: value });
+      const r = await updateAgentProfile({ companyName: value });
       if (r.ok) setSaved(value);
       else setError(r.message);
     });
@@ -123,7 +123,7 @@ export function AgenteEditor({ data }: { data: AgentEditorView }) {
   return (
     <div className="mx-auto flex w-full max-w-4xl flex-col gap-4 p-4">
       <header className="flex flex-wrap items-center justify-between gap-3">
-        <AgentName name={data.agentName} companyName={data.companyName} />
+        <AgentName name={data.agentName} />
         <div role="tablist" aria-label="Secciones del agente" className="flex overflow-hidden rounded border border-black/15 dark:border-white/15">
           {(["crear", "implementar"] as const).map((t) => (
             <button
@@ -148,7 +148,7 @@ export function AgenteEditor({ data }: { data: AgentEditorView }) {
             <BrainModelPicker options={data.brainOptions} value={data.modeloCerebro} />
           </Section>
           <Section title="Empresa">
-            <CompanyName agentName={data.agentName} value={data.companyName} />
+            <CompanyName value={data.companyName} />
           </Section>
           <Section title="Instrucciones (Goal)" hint="Cómo se comporta el agente: lo que dice aquí es lo único que sigue, junto con las preguntas frecuentes.">
             <GoalEditor goal={data.goal} versions={data.goalVersions} />

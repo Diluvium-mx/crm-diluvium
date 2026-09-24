@@ -45,11 +45,15 @@ export async function loadEditor(organizationId: string) {
   };
 }
 
-export async function saveProfile(organizationId: string, input: { agentName: string; companyName: string }): Promise<void> {
+export async function saveProfile(organizationId: string, input: { agentName?: string; companyName?: string }): Promise<void> {
   await ensureConfig(db, organizationId);
   await db
     .update(aiConfig)
-    .set({ agentName: input.agentName, companyName: input.companyName || null, updatedAt: new Date() })
+    .set({
+      ...(input.agentName !== undefined ? { agentName: input.agentName } : {}),
+      ...(input.companyName !== undefined ? { companyName: input.companyName || null } : {}),
+      updatedAt: new Date(),
+    })
     .where(eq(aiConfig.organizationId, organizationId));
 }
 

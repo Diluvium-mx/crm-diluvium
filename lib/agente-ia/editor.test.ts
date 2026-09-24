@@ -38,5 +38,7 @@ describe("validación", () => {
     expect(faqSchema.safeParse({ question: "¿Precio?", answer: "" }).success).toBe(false);
     expect(faqSchema.parse({ question: " ¿Precio? ", answer: "$5,500" })).toEqual({ question: "¿Precio?", answer: "$5,500", enabled: true });
     expect(profileSchema.safeParse({ agentName: " ", companyName: "" }).success).toBe(false);
+    expect(profileSchema.safeParse({}).success).toBe(false);
+    expect(profileSchema.safeParse({ companyName: "Diluvium" }).success).toBe(true);
   });
 });

@@ -70,6 +70,12 @@ export function FaqEditor({ faqs, versions }: { faqs: FaqView[]; versions: Versi
     if (!r.ok) setError(r.message);
   }
 
+  async function toggle(f: FaqView) {
+    setError(null);
+    const r = await updateAgentFaq({ id: f.id, question: f.question, answer: f.answer, enabled: !f.enabled });
+    if (!r.ok) setError(r.message);
+  }
+
   const q = filter.trim().toLowerCase();
   const shown = q ? faqs.filter((f) => `${f.question} ${f.answer}`.toLowerCase().includes(q)) : faqs;
   const active = faqs.filter((f) => f.enabled).length;
@@ -112,6 +118,16 @@ export function FaqEditor({ faqs, versions }: { faqs: FaqView[]; versions: Versi
                   {!f.enabled && <span className="ml-2 text-xs font-normal text-muted-foreground">(desactivada)</span>}
                 </p>
                 <span className="flex shrink-0 gap-1 text-xs">
+                  <button
+                    type="button"
+                    role="switch"
+                    aria-checked={f.enabled}
+                    onClick={() => void toggle(f)}
+                    title={f.enabled ? "El agente la usa. Clic para desactivarla." : "El agente no la usa. Clic para activarla."}
+                    className="rounded px-1.5 py-0.5 text-foreground/70 hover:bg-muted"
+                  >
+                    {f.enabled ? "Desactivar" : "Activar"}
+                  </button>
                   <button type="button" onClick={() => setEditing(f.id)} className="rounded px-1.5 py-0.5 text-brand-navy hover:bg-brand-navy/10 dark:text-sky-300">
                     Editar
                   </button>

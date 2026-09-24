@@ -90,6 +90,10 @@ describe.skipIf(!TEST_DATABASE_URL)("editor del agente (Postgres real)", () => {
     await store.saveProfile(ORG, { agentName: "Sofía", companyName: "Diluvium MX" });
     await store.saveBrainModel(ORG, "claude-opus-5-5");
     expect(await store.loadEditor(ORG)).toMatchObject({ agentName: "Sofía", companyName: "Diluvium MX", modeloCerebro: "claude-opus-5-5" });
+    // Cada campo se guarda solo: cambiar uno no regresa el otro a un valor viejo.
+    await store.saveProfile(ORG, { agentName: "Luz" });
+    await store.saveProfile(ORG, { companyName: "Grupo Diluvium" });
+    expect(await store.loadEditor(ORG)).toMatchObject({ agentName: "Luz", companyName: "Grupo Diluvium" });
     // Una org sin fila de ai_config la obtiene con los defaults al editar.
     await store.saveProfile(OTRA, { agentName: "Ángela", companyName: "" });
     expect(await store.loadEditor(OTRA)).toMatchObject({ agentName: "Ángela", companyName: "", goal: "" });
