@@ -111,6 +111,7 @@ Variables de entorno mínimas:
 ```
 DATABASE_URL, REDIS_URL, AUTH_SECRET, APP_URL,
 ZERNIO_API_KEY, ZERNIO_WEBHOOK_SECRET        (web y worker; canal WhatsApp vía Zernio)
+META_ADS_ACCESS_TOKEN                        (web; el worker la referencia; solo ads_read — docs/anuncios.md)
 ```
 
 ---
@@ -196,6 +197,13 @@ contact_comentarios  id, org_id, contact_id, author_user_id (obligatorio), body,
 scheduled_messages   id, org_id, conversation_id, created_by_user_id, kind (text|template), body,
                      template_id, template_params, send_at, programmed_at, cancel_if_inbound,
                      status (scheduled|sending|sent|failed|cancelled), error_code, message_id
+
+-- Anuncios de Meta (24-sep-2026, 0028; detalle en docs/anuncios.md)
+ad_clicks            id, org_id, contact_id, conversation_id, message_id, origin (webhook|zernio_conversation),
+                     ad_id, ctwa_clid, headline…, raw jsonb (ficha original), media jsonb, clicked_at
+                     -- una fila por entrada desde un anuncio; la atribución vive aquí (contacto + conversación)
+meta_ads             org_id + ad_id, nombres de campaña/conjunto/anuncio y creativo (caché de la API de Marketing)
+conversations (+)    ad_entry_at   -- última entrada por anuncio (ventana gratis de 72 h)
 ```
 
 Detalles que importan:
@@ -226,7 +234,8 @@ el mismo chat. Detalle de la bandeja y contrato de datos para el track UI: `docs
 
 **Sidebar desde el Bloque A (22-sep-2026):** Dashboard (`/inicio`, primero y destino al entrar) ·
 Bandeja (`/dashboard`) · Embudo (`/embudo`; antes "Contactos", `/contactos` redirige) · Mensajes
-rápidos (`/mensajes-rapidos`; antes "Fragmentos y plantillas", `/snippets` redirige) · Agente IA
+rápidos (`/mensajes-rapidos`; antes "Fragmentos y plantillas", `/snippets` redirige) · Anuncios (`/anuncios`,
+24-sep-2026: anuncios de Meta que trajeron clientes) · Agente IA
 (owner/admin) · Configuración (`/configuracion`, al final: Mi cuenta para todos; Vendedores y Tallas
 solo owner/admin).
 
