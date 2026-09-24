@@ -271,13 +271,15 @@ export function ChatThread({
       if (openConversationRef.current !== conversationId) return;
       // Recarga (SSE): trae la página más reciente y CONSERVA los anteriores que el
       // vendedor ya cargó hacia arriba EN ESTA conversación, para no perder su lugar.
+      // Solo si EMPALMAN: el mensaje más antiguo de la página nueva ya estaba cargado.
+      // Si no (llegaron más de una página de mensajes), se descartan los anteriores
+      // y se vuelve a paginar desde la página nueva: nunca queda un hueco escondido.
       const loaded = loadedRef.current;
-      const freshIds = new Set(page.messages.map((m) => m.id));
-      const oldestFresh = page.messages[0] ? new Date(page.messages[0].sentAt).getTime() : null;
-      const older =
-        loaded.conversationId === conversationId && oldestFresh !== null
-          ? loaded.messages.filter((m) => !freshIds.has(m.id) && new Date(m.sentAt).getTime() < oldestFresh)
-          : [];
+      const joinAt =
+        loaded.conversationId === conversationId && page.messages[0]
+          ? loaded.messages.findIndex((m) => m.id === page.messages[0].id)
+          : -1;
+      const older = joinAt > 0 ? loaded.messages.slice(0, joinAt) : [];
       const next = older.length ? [...older, ...page.messages] : page.messages;
       const nextHasMore = older.length ? loaded.hasMore : page.hasMore;
       loadedRef.current = { conversationId, messages: next, hasMore: nextHasMore };
