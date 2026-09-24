@@ -1139,4 +1139,17 @@ describe.skipIf(!TEST_DATABASE_URL)("runtime del Agente IA (Postgres real)", () 
     expect((await agentOuts()).at(-1)?.body).toBe("Necesito la foto del comprobante 🙏");
     expect(await runs()).toHaveLength(1);
   });
+
+  it("solo llamadas y texto vacío: no se lanza ni se reintenta (gasto); las acciones corren y el entrante queda atendido", async () => {
+    await msg({ direction: "in", body: "tabla", at: ago(20_000) });
+    const wfId = await wf("tabla_tamanos_estandar", [{ kind: "send_text", text: "tabla" }]);
+    const { deps } = makeDeps({ brain: [""], toolCalls: [{ toolName: "wf_tabla_tamanos_estandar", input: {} }] });
+    expect(await run.runAgent(JOB, deps)).toEqual({ kind: "sent", bubbles: 0 });
+    expect((await runs()).map((r) => [r.workflowId, r.status])).toEqual([[wfId, "queued"]]);
+    expect((await usage()).map((u) => u.outcome)).toEqual(["sent"]);
+    expect((await run.runAgent(JOB, deps)).kind).toBe("noop");
+    // Vacío y SIN llamadas sigue siendo error (reintenta).
+    await msg({ direction: "in", body: "hola", at: new Date() });
+    await expect(run.runAgent(JOB, makeDeps({ brain: [""] }).deps)).rejects.toThrow(/vacía/);
+  });
 });
