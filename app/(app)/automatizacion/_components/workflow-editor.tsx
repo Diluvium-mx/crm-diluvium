@@ -233,8 +233,15 @@ function StepFields({
             </div>
           </div>
           <label className="min-w-[14rem] flex-1 space-y-1">
-            <span className="text-xs font-medium text-muted-foreground">Pie de foto (opcional)</span>
-            <input value={step.caption ?? ""} onChange={(e) => onChange({ ...step, caption: e.target.value || undefined })} className={inputClass} />
+            <span className="text-xs font-medium text-muted-foreground">Texto del archivo (va como pie del adjunto, en el mismo mensaje; opcional)</span>
+            <textarea
+              value={step.caption ?? ""}
+              onChange={(e) => onChange({ ...step, caption: e.target.value || undefined })}
+              rows={3}
+              maxLength={1024}
+              className={inputClass}
+              placeholder="Texto que acompaña a la imagen o video…"
+            />
           </label>
         </div>
       );
