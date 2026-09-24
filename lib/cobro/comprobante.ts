@@ -11,6 +11,8 @@ export type LecturaComprobante = {
   banco: string | null;
   /** Referencia, folio o clave de rastreo. */
   referencia: string | null;
+  /** Moneda tal como se lea ("MXN", "USD", "pesos"); null si no aparece. */
+  moneda?: string | null;
   /** Nombre del beneficiario o CLABE/cuenta destino, como aparezca. */
   destinatario: string | null;
 };
@@ -39,8 +41,21 @@ export type ResultadoComprobante =
   | { ok: false; motivo: string };
 
 export const ANTICIPO_MEDIDA_ESPECIAL_MXN = 3_500;
-// Tolerancia de centavos por redondeo de la foto ("5,500.00" vs "5500").
-const TOLERANCIA_MXN = 1;
+// Tolerancia de UN centavo por redondeo de la lectura; $5,499 contra $5,500 NO cuadra.
+const TOLERANCIA_MXN = 0.01;
+
+// Referencia canónica: sin espacios, guiones ni acentos, en mayúsculas. "ABC-123",
+// "abc 123" y "ABC123" son la misma transferencia (índice único por organización).
+export function normalizarReferencia(ref: string): string {
+  return ref.normalize("NFKC").toUpperCase().replace(/[^A-Z0-9]/g, "");
+}
+
+// ¿La moneda leída es peso mexicano (o no se lee)? "USD 300" nunca cuadra con MXN.
+export function esMxn(moneda: string | null | undefined): boolean {
+  if (!moneda) return true;
+  const m = moneda.trim().toLowerCase();
+  return m === "" || /^(mxn|mx\$|\$|mn|m\.n\.|pesos?( mexicanos?)?)$/.test(m);
+}
 
 export function parseMontoMxn(raw: string | number | null): number | null {
   if (typeof raw === "number") return Number.isFinite(raw) && raw > 0 ? raw : null;
@@ -94,20 +109,22 @@ const norm = (s: string) =>
 // dígitos, como suelen mostrarse enmascaradas).
 export function destinatarioCoincide(leido: string | null, datos: ContextoCotizacion["datosCobro"]): boolean {
   if (!leido) return false;
-  const l = norm(leido);
+  const tokens = new Set(norm(leido).split(" "));
   const digits = leido.replace(/\D/g, "");
-  const masked = /[*•x]{2,}/i.test(leido);
+  const masked = /[*•·x]{2,}/i.test(leido);
   for (const propio of [datos.clabe, datos.cuenta.replace(/\D/g, "")]) {
     if (!propio || digits.length < 4) continue;
     if (propio === digits) return true;
-    // Enmascarada ("**** 7771" / "···7771"): valen los últimos 4.
-    if ((masked || digits.length <= 6) && propio.slice(-4) === digits.slice(-4)) return true;
+    // SOLO enmascarada ("**** 7771" / "···7771") valen los últimos 4; un número
+    // suelto (sucursal, folio) que termine igual no cuenta.
+    if (masked && propio.slice(-4) === digits.slice(-4)) return true;
   }
+  // Palabras COMPLETAS del beneficiario ("ana lopez" no coincide con "mariana lopez").
   const words = norm(datos.beneficiario)
     .split(" ")
     .filter((w) => w.length >= 3 && !["de", "del", "la", "los", "las", "sa", "cv", "y"].includes(w));
   if (words.length === 0) return false;
-  return words.every((w) => l.includes(w));
+  return words.every((w) => tokens.has(w));
 }
 
 const eqMxn = (a: number, b: number) => Math.abs(a - b) <= TOLERANCIA_MXN;
@@ -117,8 +134,9 @@ export function verificarComprobante(lectura: LecturaComprobante, ctx: ContextoC
 
   const monto = parseMontoMxn(lectura.monto);
   if (monto === null) return humano("no se alcanza a leer el monto del comprobante");
-  const referencia = (lectura.referencia ?? "").trim();
+  const referencia = normalizarReferencia(lectura.referencia ?? "");
   if (referencia.length < 4) return humano("no se alcanza a leer la referencia o clave de rastreo");
+  if (!esMxn(lectura.moneda)) return humano(`el comprobante está en ${lectura.moneda}, no en pesos mexicanos`);
   if (ctx.referenciaYaUsada) return humano(`la referencia ${referencia} ya se usó en un pago confirmado antes (posible captura reenviada)`);
   if (!destinatarioCoincide(lectura.destinatario, ctx.datosCobro)) {
     return humano(`el destinatario "${lectura.destinatario ?? "(no legible)"}" no coincide con los Datos de cobro`);

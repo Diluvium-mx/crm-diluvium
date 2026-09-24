@@ -6,9 +6,9 @@ import { db } from "@/lib/db";
 import { contacts, datosCobro, pagosConfirmados } from "@/lib/db/schema";
 import { isUniqueViolation } from "@/lib/db/errors";
 
-export function normalizarReferencia(ref: string): string {
-  return ref.replace(/\s+/g, "").toUpperCase();
-}
+import { normalizarReferencia } from "./comprobante";
+
+export { normalizarReferencia };
 
 export async function referenciaYaUsada(organizationId: string, referencia: string): Promise<boolean> {
   const [row] = await db

@@ -33,7 +33,7 @@ export const DEFAULT_WORKFLOWS: readonly DefaultWorkflow[] = [
     agentDescription:
       "Envía la imagen con la tabla de tamaños de las compuertas estándar (XCH a XG, entradas de 69 a 120 cm). " +
       "Úsala cuando el cliente pregunte qué tamaños hay, cómo saber cuál le queda, o pida la tabla. " +
-      "Responde primero su duda en texto y luego llama esta herramienta. No la repitas si ya se envió en esta conversación.",
+      "Responde primero su duda en texto y luego llama esta herramienta. Si ya se mandó en esta conversación, vuelve a mandarla solo si el cliente la pide otra vez.",
     triggerAgent: true,
     triggerKeywords: [],
     triggerCommand: "/tabla",

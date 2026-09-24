@@ -12,6 +12,7 @@
 // Los envíos al cliente pasan por lib/messaging/send (outbox + ventana de 24 h
 // + idempotencia); los pasos internos (etapa, etiqueta, pausa del agente, aviso)
 // escriben directo, siempre acotados a la organización.
+import { createHash } from "node:crypto";
 import { and, desc, eq, gt, inArray, lt, lte, or, sql } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { channels, contacts, conversations, messages, user, workflowRuns, workflowSteps, workflows } from "@/lib/db/schema";
@@ -269,6 +270,7 @@ export async function executeWorkflowRun(runId: string, deps: ExecutorDeps): Pro
       const sent = await runStep(step, {
         run,
         workflowSlug: loaded.wf.slug,
+        stepIndex: i,
         values,
         source,
         sentBy,
@@ -289,7 +291,9 @@ export async function executeWorkflowRun(runId: string, deps: ExecutorDeps): Pro
       if (error instanceof SendFailedError) return fail(error.code, error.message);
       return fail("error", error instanceof Error ? error.message : String(error));
     }
-    await markRun(runId, { stepCursor: i + 1, messageIds });
+    // Avanza el cursor y RENUEVA el lease: una corrida larga (esperas + envíos
+    // lentos) que siga viva no debe poder ser reclamada por otro worker.
+    await markRun(runId, { stepCursor: i + 1, messageIds, startedAt: now() });
   }
   await markRun(runId, { status: "done", finishedAt: now(), messageIds });
   return "done";
@@ -382,16 +386,39 @@ async function insertInternalNote(
 type StepCtx = {
   run: typeof workflowRuns.$inferSelect;
   workflowSlug: string;
+  stepIndex: number;
   values: Record<string, string>;
   source: "crm" | "ai_agent";
   sentBy: string | null;
   deps: ExecutorDeps & { now: () => Date; sleep: (ms: number) => Promise<void> };
 };
 
+// Id DETERMINISTA del mensaje de un paso: uuid v5-like de (corrida, paso). Si
+// el worker muere entre el 2xx del proveedor y el avance del cursor, el
+// reintento encuentra la fila ya creada y NO vuelve a mandar la imagen.
+export function stepMessageId(runId: string, stepIndex: number): string {
+  const h = createHash("sha256").update(`workflow-step:${runId}:${stepIndex}`).digest("hex");
+  return `${h.slice(0, 8)}-${h.slice(8, 12)}-5${h.slice(13, 16)}-a${h.slice(17, 20)}-${h.slice(20, 32)}`;
+}
+
+async function alreadySent(organizationId: string, messageId: string): Promise<SendOutcome | null> {
+  const [row] = await db
+    .select({ status: messages.status })
+    .from(messages)
+    .where(and(eq(messages.id, messageId), eq(messages.organizationId, organizationId)))
+    .limit(1);
+  if (!row) return null;
+  // "queued" = el envío anterior quedó sin confirmar; lo concilia el outbox, no se reenvía.
+  return { messageId, status: row.status === "queued" ? "pending" : "sent" };
+}
+
 async function runStep(step: WorkflowStepPayload, ctx: StepCtx): Promise<SendOutcome | null> {
   const { run, deps } = ctx;
   switch (step.kind) {
-    case "send_text":
+    case "send_text": {
+      const messageId = stepMessageId(run.id, ctx.stepIndex);
+      const prior = await alreadySent(run.organizationId, messageId);
+      if (prior) return prior;
       return sendTextMessage(deps.provider, {
         organizationId: run.organizationId,
         conversationId: run.conversationId,
@@ -400,11 +427,16 @@ async function runStep(step: WorkflowStepPayload, ctx: StepCtx): Promise<SendOut
         sentByUserId: ctx.sentBy,
         // Solo un comando (el vendedor está viendo el chat) marca leídos.
         markRead: run.trigger === "command",
+        messageId,
         now: deps.now(),
       });
+    }
     case "send_media": {
       if (!step.assetId) throw new SendRejectedError("media_not_found", "El paso no tiene archivo.");
       if (!deps.storage) throw new SendRejectedError("storage_unavailable", "El almacenamiento de archivos no está configurado.");
+      const messageId = stepMessageId(run.id, ctx.stepIndex);
+      const prior = await alreadySent(run.organizationId, messageId);
+      if (prior) return prior;
       return sendMediaMessage(deps.provider, deps.storage, {
         organizationId: run.organizationId,
         conversationId: run.conversationId,
@@ -413,6 +445,7 @@ async function runStep(step: WorkflowStepPayload, ctx: StepCtx): Promise<SendOut
         source: ctx.source,
         sentByUserId: ctx.sentBy,
         markRead: run.trigger === "command",
+        messageId,
         now: deps.now(),
       });
     }

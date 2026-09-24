@@ -67,6 +67,12 @@ export type SendTextParams = {
   sentByUserId?: string | null;
   text: string;
   now?: Date;
+  /**
+   * Id de la fila de `messages` (y clave de idempotencia ante el proveedor).
+   * Default: uuid nuevo. El ejecutor de workflows pasa uno DETERMINISTA por
+   * (corrida, paso) para que un reintento tras una caída no duplique el envío.
+   */
+  messageId?: string;
   /** Default "crm". "ai_agent" = respuesta del Agente IA. */
   source?: OutboundTextSource;
   /**
@@ -156,7 +162,7 @@ export async function sendTextMessage(provider: MessagingProvider, params: SendT
 
   const source = params.source ?? "crm";
   const sentByUserId = params.sentByUserId ?? null;
-  const messageId = crypto.randomUUID();
+  const messageId = params.messageId ?? crypto.randomUUID();
   await db.insert(messages).values({
     id: messageId,
     organizationId: params.organizationId,
@@ -198,6 +204,7 @@ export type SendMediaParams = {
   source?: OutboundTextSource;
   /** Igual que en SendTextParams. */
   markRead?: boolean;
+  messageId?: string;
   now?: Date;
 };
 
@@ -228,7 +235,7 @@ export async function sendMediaMessage(provider: MessagingProvider, storage: Obj
 
   const source = params.source ?? "crm";
   const sentByUserId = params.sentByUserId ?? null;
-  const messageId = crypto.randomUUID();
+  const messageId = params.messageId ?? crypto.randomUUID();
   await db.insert(messages).values({
     id: messageId,
     organizationId: params.organizationId,

@@ -52,6 +52,18 @@ describe("verificarComprobante", () => {
     expect(r.ok).toBe(true);
     if (r.ok) expect(r.aviso).toMatch(/sin fecha legible/);
   });
+  it("moneda distinta de MXN → humano; $5,499 contra $5,500 no cuadra (tolerancia de un centavo)", () => {
+    expect(verificarComprobante(lectura({ moneda: "USD" }), ctx())).toMatchObject({ ok: false, motivo: expect.stringMatching(/USD/) });
+    expect(verificarComprobante(lectura({ moneda: "MXN" }), ctx()).ok).toBe(true);
+    expect(verificarComprobante(lectura({ moneda: "pesos" }), ctx()).ok).toBe(true);
+    expect(verificarComprobante(lectura({ monto: "5,499" }), ctx())).toMatchObject({ ok: false, motivo: expect.stringMatching(/no coincide/) });
+    expect(verificarComprobante(lectura({ monto: "5,500.00" }), ctx()).ok).toBe(true);
+  });
+  it("la referencia se normaliza (ABC-123 = abc 123 = ABC123) y se devuelve canónica", () => {
+    const r = verificarComprobante(lectura({ referencia: "abc-1 23" }), ctx());
+    expect(r).toMatchObject({ ok: true, referencia: "ABC123" });
+    expect(verificarComprobante(lectura({ referencia: "1 2 3" }), ctx())).toMatchObject({ ok: false, motivo: expect.stringMatching(/referencia/) });
+  });
   it("sin monto de cotización en el contacto → humano (el vendedor lo fija en el detalle)", () => {
     expect(verificarComprobante(lectura(), ctx({ totalCotizado: null }))).toMatchObject({ ok: false, motivo: expect.stringMatching(/monto de cotización/) });
   });
@@ -80,6 +92,8 @@ describe("helpers", () => {
     expect(destinatarioCoincide("CLABE **** 7771", datosCobro)).toBe(true);
     expect(destinatarioCoincide("Cuenta ••••7890", datosCobro)).toBe(true);
     expect(destinatarioCoincide("DILUVIUM", datosCobro)).toBe(false); // faltan palabras del beneficiario
+    expect(destinatarioCoincide("sucursal 7771", datosCobro)).toBe(false); // sin máscara, los últimos 4 no bastan
+    expect(destinatarioCoincide("MARIANA LOPEZ", { ...datosCobro, beneficiario: "Ana López" })).toBe(false); // palabras completas
     expect(destinatarioCoincide("MARIA LOPEZ 002010077777777772", datosCobro)).toBe(false);
   });
 });
