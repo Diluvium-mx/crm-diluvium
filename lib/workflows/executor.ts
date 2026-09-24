@@ -278,6 +278,16 @@ export async function executeWorkflowRun(runId: string, deps: ExecutorDeps): Pro
       }
     }
     try {
+      // El id del mensaje es determinista: se anota en la corrida ANTES de mandar,
+      // así el runtime del agente (que excluye los mensajes de corridas keyword/
+      // agent al calcular pendientes) nunca ve la fila sin su marca.
+      if (step.kind === "send_text" || step.kind === "send_media") {
+        const preId = stepMessageId(run.id, i);
+        if (!messageIds.includes(preId)) {
+          messageIds.push(preId);
+          await markRun(runId, { messageIds });
+        }
+      }
       const sent = await runStep(step, {
         run,
         workflowSlug: loaded.wf.slug,
@@ -287,7 +297,7 @@ export async function executeWorkflowRun(runId: string, deps: ExecutorDeps): Pro
         sentBy,
         deps: { ...deps, now, sleep },
       });
-      if (sent) messageIds.push(sent.messageId);
+      if (sent && !messageIds.includes(sent.messageId)) messageIds.push(sent.messageId);
       // Resultado DESCONOCIDO del proveedor (timeout): no se sabe si el cliente
       // recibió el archivo. No se avanza (moverlo a "Cerca de compra" sin la
       // CLABE sería mentir): la corrida queda fallida con motivo y el mensaje se
@@ -477,6 +487,11 @@ async function runStep(step: WorkflowStepPayload, ctx: StepCtx): Promise<SendOut
       // Si un humano movió la etapa DESPUÉS de crearse la corrida, manda el
       // humano: una corrida atrasada no regresa a "Cerca de compra" a un
       // contacto que un vendedor ya puso en "Compra".
+      // Una corrida del AGENTE nunca retrocede etapas (Compra → Cerca de compra):
+      // "no la uses para retroceder" deja de ser solo texto para el modelo.
+      const noRetroceder = isAgentTrigger(run)
+        ? sql`array_position(${STAGE_ORDER}, ${stage}::text) >= array_position(${STAGE_ORDER}, ${contacts.stage}::text)`
+        : sql`true`;
       await db
         .update(contacts)
         .set({ stage, stageChangedAt: deps.now() })
@@ -486,6 +501,7 @@ async function runStep(step: WorkflowStepPayload, ctx: StepCtx): Promise<SendOut
             eq(contacts.organizationId, run.organizationId),
             sql`${contacts.stage} <> ${stage}`,
             lte(contacts.stageChangedAt, run.createdAt),
+            noRetroceder,
           ),
         );
       await notifyConversation(db, run.organizationId, run.conversationId);
@@ -537,6 +553,7 @@ async function addContactTag(organizationId: string, contactId: string, tag: str
 }
 
 const STAGES = new Set(["inbox", "prospecto", "interesado", "cerca_compra", "compra"]);
+const STAGE_ORDER = sql`array['inbox','prospecto','interesado','cerca_compra','compra']::text[]`;
 function isStage(v: string | null): v is "inbox" | "prospecto" | "interesado" | "cerca_compra" | "compra" {
   return v !== null && STAGES.has(v);
 }

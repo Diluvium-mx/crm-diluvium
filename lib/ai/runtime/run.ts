@@ -16,6 +16,13 @@ import type { CallModelInput, CallModelResult } from "@/lib/ai/types";
 import { getModel } from "@/lib/ai/catalog";
 import { cleanAdMessages } from "./ad-cleaner";
 import { buildBrainSystemWithRuntime, parseBrainOutput } from "./brain";
+import { commitPagoBeforeText, executeActions, loadAgentTools, prepareActions, runsThatSend, type StartWorkflow } from "./actions";
+
+// Textos de respaldo del CRM cuando el modelo solo devolvió acciones (sin texto)
+// y ninguna manda algo al cliente: el agente SIEMPRE contesta.
+export const PAGO_REGISTRADO_TEXT = "¡Gracias! Tu pago quedó registrado ✅ En un momento te confirmamos los siguientes pasos.";
+export const SOLO_ACCIONES_TEXT = "Listo 👍 ¿En qué más te ayudo?";
+import { validateToolCalls } from "./tools";
 import { applyCustomValues } from "@/lib/agente-ia/editor";
 import { loadAgentConfig, loadCustomValues, loadEnabledFaqs } from "./config";
 import {
@@ -28,6 +35,7 @@ import {
   messageAt,
   agentSendUnresolved,
   pendingInbound,
+  recentInboundImage,
   type MessageRow,
 } from "./context";
 import { addNotice, ensureHandoverNotice } from "./notices";
@@ -57,6 +65,8 @@ export type RunDeps = {
   sleep: (ms: number) => Promise<void>;
   // URL firmada de una imagen del bucket (o null si no se puede).
   resolveImage: (storageKey: string) => Promise<string | null>;
+  // Fase D: arranca una corrida de workflow (trigger "agent") pedida por el cerebro.
+  startWorkflow: StartWorkflow;
 };
 
 export type RunResult =
@@ -112,6 +122,28 @@ async function stopBeforeBubble(
   // contesta lo último (y, si saliera, dejaría su mensaje como "atendido").
   if ((await inboundCount(organizationId, conversationId)) > inboundsAtCheck) return "entrante_nuevo";
   return null;
+}
+
+// Acciones del cerebro (Fase D): nunca lanzan hacia afuera; lo que no se pudo
+// ejecutar queda como aviso al vendedor.
+async function runActions(
+  plan: import("./actions").ActionPlan,
+  ctx: { organizationId: string; conversationId: string; contactId: string; now: Date },
+  startWorkflow: StartWorkflow,
+): Promise<void> {
+  if (!plan.runs.length && plan.quote === null && !plan.notes.length) return;
+  try {
+    const done = await executeActions(plan, ctx, startWorkflow);
+    if (done.started.length || done.skipped.length || done.notes.length) {
+      console.info(`[agente] ${ctx.conversationId}: acciones → ${[...done.started, ...done.skipped, ...done.notes].join("; ")}`);
+    }
+    if (done.skipped.length || done.notes.length) {
+      await addNotice({ organizationId: ctx.organizationId, conversationId: ctx.conversationId, kind: "envio", body: `Acción del agente no ejecutada: ${[...done.skipped, ...done.notes].join("; ")}.` });
+    }
+  } catch (error) {
+    console.error(`[agente] ${ctx.conversationId}: acciones fallaron`, error);
+    await addNotice({ organizationId: ctx.organizationId, conversationId: ctx.conversationId, kind: "envio", body: `Las acciones del agente (${plan.runs.map((r) => r.slug).join(", ") || "cotización/pago"}) no se ejecutaron: ${errorText(error)}. Revisa el hilo.` });
+  }
 }
 
 // La ÚNICA pausa del agente: un vendedor contestó en la conversación.
@@ -191,12 +223,15 @@ export async function runAgent(job: { organizationId: string; conversationId: st
     }));
     const system = buildBrainSystemWithRuntime(applyCustomValues(cfg.goal, values), faqs);
     const modelMessages = buildModelMessages(history, await imageUrlsFor(history, deps.resolveImage), { cleanText });
+    // Herramientas (Fase D): una por workflow habilitado con "agente" + fijar_cotizacion.
+    const agentTools = await loadAgentTools(org);
     const t0 = Date.now();
     let brainRes: CallModelResult;
     try {
       brainRes = await deps.callModel(brainModel.id, {
         system,
         messages: modelMessages,
+        tools: agentTools.tools,
         maxOutputTokens: BRAIN_MAX_OUTPUT_TOKENS,
         timeoutMs: BRAIN_TIMEOUT_MS,
       });
@@ -244,18 +279,50 @@ export async function runAgent(job: { organizationId: string; conversationId: st
     }
 
     const out = parseBrainOutput(brainRes.text);
-    if (out.kind === "empty") {
+    // ── ACCIONES pedidas con herramientas (Fase D) ──────────────────────────
+    // Se validan contra las herramientas ofrecidas; un comprobante se verifica
+    // AQUÍ (monto contra lo cotizado + referencia): si no cuadra, el texto del
+    // modelo se sustituye por uno amable con el motivo. Las corridas salen
+    // DESPUÉS de las burbujas.
+    const { valid: toolCalls, ignored } = validateToolCalls(brainRes.toolCalls ?? [], agentTools);
+    if (ignored.length) console.warn(`[agente] ${conv.id}: herramientas ignoradas: ${ignored.join("; ")}`);
+    if (out.kind === "empty" && toolCalls.length === 0) {
       // Sin texto (tokens agotados, filtro del proveedor…): NO es final. Se registra
       // como error y la cola/el barrido reintentan: el cliente nunca queda sin respuesta.
       await recordAiUsage({ ...brainUsage, outcome: "error", error: `respuesta_vacia (${brainRes.finishReason})` });
       throw new Error("el cerebro devolvió una respuesta vacía");
     }
+    // Solo llamadas, sin texto (algunos modelos lo hacen con tools): NO se lanza
+    // (cada reintento sería otra llamada pagada). Las acciones corren igual; para
+    // un archivo el cliente recibe la media con su pie, y el entrante queda
+    // atendido por la fila de uso.
+    const workflowsBySlug = new Map([...agentTools.byName.values()].map((w) => [w.slug, w] as const));
+    const plan = await prepareActions({
+      organizationId: org,
+      conversationId: conv.id,
+      contactId: conv.contactId,
+      calls: toolCalls,
+      workflowsBySlug,
+      inboundHasImage: pending.some((m) => m.attachments.some((a) => a.type === "image")) || (await recentInboundImage(org, conv.id)),
+      modelText: out.kind === "reply" ? out.text : "",
+      pendingSince: pending[0]?.createdAt ?? null,
+    });
+    // Un pago verificado se registra ANTES de decirle nada al cliente (si falla o
+    // la referencia entró dos veces, el texto pasa a ser el amable).
+    await commitPagoBeforeText(plan, { organizationId: org, conversationId: conv.id, contactId: conv.contactId, now }, workflowsBySlug, deps.startWorkflow);
+    // Sin texto del modelo y sin ninguna acción que mande algo al cliente (solo
+    // etapa/cotización/aviso): el cliente no puede quedarse sin respuesta.
+    if (!plan.text.trim()) {
+      const sending = await runsThatSend(org, plan.runs.map((r) => r.workflowId));
+      if (!plan.runs.some((r) => sending.has(r.workflowId))) plan.text = plan.pago ? PAGO_REGISTRADO_TEXT : SOLO_ACCIONES_TEXT;
+    }
+    for (const w of plan.warnings) await addNotice({ organizationId: org, conversationId: conv.id, kind: "envio", body: w });
     // Mensajes para celular: información y pregunta por separado (máx. 2).
-    const bubbles = toBubbles(out.text);
+    const bubbles = plan.text.trim() ? toBubbles(plan.text) : [];
     // El cliente pidió a una persona: el aviso al vendedor se guarda ANTES de enviar
     // (idempotente por el entrante): nunca se le dice al cliente que lo atenderán sin
     // que un vendedor lo vea en la Bandeja. El agente sigue activo.
-    if (out.handover) await ensureHandoverNotice({ organizationId: org, conversationId: conv.id, triggerMessageId: lastRead.id });
+    if (out.kind === "reply" && out.handover) await ensureHandoverNotice({ organizationId: org, conversationId: conv.id, triggerMessageId: lastRead.id });
 
     // Mensajes con pausa corta. Antes de CADA uno se revisa el estado fresco: si un
     // vendedor respondió (desde el INICIO de la ronda), alguien apagó el canal o
@@ -325,10 +392,19 @@ export async function runAgent(job: { organizationId: string; conversationId: st
       }
       await markAgentReply(org, conv.id, deps.now());
       await recordAiUsage({ ...brainUsage, outcome: "sent", error: `detenido tras ${sent} mensaje(s): ${stopped}` });
+      // Las acciones no se pierden: el pago ya está registrado y su workflow (aviso
+      // + etapa) debe correr; cada corrida relee el estado antes de cada paso.
+      await runActions(plan, { organizationId: org, conversationId: conv.id, contactId: conv.contactId, now }, deps.startWorkflow);
       return { kind: "sent", bubbles: sent };
     }
     await markAgentReply(org, conv.id, deps.now());
     if (planId) await closePlan(org, planId, "enviado");
+    // Acciones (Fase D), después del texto y solo si el agente no fue detenido:
+    // cotización, registro del pago verificado y corridas de workflow (cada corrida
+    // relee el estado del agente antes de cada paso). Un fallo aquí no quita la
+    // respuesta ya enviada: queda un aviso al vendedor.
+    // `now` de la ronda: si un humano movió la etapa DURANTE la generación, manda el humano.
+    await runActions(plan, { organizationId: org, conversationId: conv.id, contactId: conv.contactId, now }, deps.startWorkflow);
     // Un mensaje sin confirmar queda en el outbox: si vence como "sin confirmar",
     // el barrido deja un aviso (nunca reenvía a ciegas).
     const omitted = bubbles.length - sent;

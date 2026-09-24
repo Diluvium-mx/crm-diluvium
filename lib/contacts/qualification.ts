@@ -190,6 +190,9 @@ export async function updateContactQualification(
   if (Object.prototype.hasOwnProperty.call(patch, "montoCotizacion")) {
     values.montoCotizacion =
       patch.montoCotizacion === null ? null : String(patch.montoCotizacion);
+    // Fijado a mano por un vendedor: el agente ya no lo pisa (fijar_cotizacion
+    // solo escribe si está vacío o lo puso el propio agente).
+    values.customFields = sql`${contacts.customFields} || '{"cotizacion_por":"vendedor"}'::jsonb`;
   }
   if (Object.prototype.hasOwnProperty.call(patch, "porcentajeConvencimiento")) {
     values.porcentajeConvencimiento = patch.porcentajeConvencimiento;
