@@ -58,9 +58,21 @@ export function TemplatePicker({
   const ready = selected !== null && values.length === (selected?.variables.length ?? 0) && values.every((v) => v.trim().length > 0);
 
   return (
-    <div className="mb-2 rounded-lg border bg-background shadow-sm">
-      <div className="flex items-center justify-between border-b px-3 py-2">
-        <div className="flex items-center gap-2">
+    // Alto tope = la mitad del chat (cqh: el chat es el contenedor, chat-thread.tsx):
+    // el historial sigue a la vista en la Bandeja y en el pop-up del Embudo. El
+    // encabezado (con Cerrar) y el botón final no se desplazan; solo la lista.
+    // Esc cierra (o regresa a la lista si hay una plantilla elegida).
+    <div
+      onKeyDown={(event) => {
+        if (event.key !== "Escape") return;
+        event.stopPropagation();
+        if (selected) setSelectedId(null);
+        else onClose();
+      }}
+      className="mb-2 flex max-h-[min(24rem,50cqh)] min-w-0 flex-col overflow-hidden rounded-lg border bg-background shadow-md"
+    >
+      <div className="flex shrink-0 items-center justify-between gap-2 border-b px-3 py-1.5">
+        <div className="flex min-w-0 items-center gap-2">
           {selected && (
             <button
               type="button"
@@ -71,14 +83,20 @@ export function TemplatePicker({
               <ArrowLeft className="size-4" aria-hidden="true" />
             </button>
           )}
-          <span className="text-sm font-semibold text-brand-navy">📄 {selected ? selected.name : "Elegir plantilla"}</span>
+          <span className="truncate text-sm font-semibold text-brand-navy dark:text-sky-300">📄 {selected ? selected.name : "Elegir plantilla"}</span>
         </div>
-        <button type="button" onClick={onClose} aria-label="Cerrar" className="rounded p-1 text-muted-foreground hover:bg-muted hover:text-foreground">
+        <button
+          type="button"
+          onClick={onClose}
+          aria-label="Cerrar plantillas"
+          className="flex shrink-0 items-center gap-1 rounded-md px-2 py-1 text-xs font-medium text-muted-foreground hover:bg-muted hover:text-foreground"
+        >
           <X className="size-4" aria-hidden="true" />
+          Cerrar
         </button>
       </div>
 
-      <div className="max-h-64 overflow-y-auto p-3">
+      <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain p-3">
         {error ? (
           <p className="py-4 text-center text-sm text-brand-orange">{error}</p>
         ) : templates === null ? (
@@ -103,33 +121,23 @@ export function TemplatePicker({
               <p className="mb-1 text-[11px] font-medium text-muted-foreground">Vista previa</p>
               <p className="whitespace-pre-wrap break-words">{preview}</p>
             </div>
-            <div className="flex justify-end">
-              <button
-                type="button"
-                onClick={() => selected && onSubmit(selected.id, values.map((v) => v.trim()), preview)}
-                disabled={!ready || busy}
-                className="rounded-md bg-brand-navy px-4 py-1.5 text-sm font-medium text-brand-white hover:bg-brand-navy-dark disabled:opacity-50"
-              >
-                {submitLabel}
-              </button>
-            </div>
           </div>
         ) : templates.length === 0 ? (
           <p className="py-4 text-center text-sm text-muted-foreground">
-            No hay plantillas aprobadas. Sincronízalas en “Mensajes rápidos”.
+            No hay plantillas aprobadas. Créalas o sincronízalas en “Mensajes rápidos”.
           </p>
         ) : (
           <ul className="space-y-1">
             {templates.map((t) => (
-              <li key={t.id}>
+              <li key={t.id} className="min-w-0">
                 <button
                   type="button"
                   onClick={() => select(t)}
-                  className="w-full rounded-md border px-3 py-2 text-left text-sm hover:border-brand-navy hover:bg-brand-navy/5"
+                  className="w-full min-w-0 rounded-md border px-3 py-2 text-left text-sm hover:border-brand-navy hover:bg-brand-navy/5"
                 >
-                  <span className="flex items-center gap-2">
-                    <span className="font-medium">{t.name}</span>
-                    <span className="rounded-full bg-brand-navy/10 px-1.5 py-0.5 text-[10px] font-medium text-brand-navy">{t.language}</span>
+                  <span className="flex min-w-0 items-center gap-2">
+                    <span className="truncate font-medium">{t.name}</span>
+                    <span className="shrink-0 rounded-full bg-brand-navy/10 px-1.5 py-0.5 text-[10px] font-medium text-brand-navy dark:text-sky-300">{t.language}</span>
                   </span>
                   {t.bodyText && <span className="mt-0.5 block truncate text-xs text-muted-foreground">{t.bodyText}</span>}
                 </button>
@@ -138,6 +146,20 @@ export function TemplatePicker({
           </ul>
         )}
       </div>
+
+      {/* Pie fijo: el botón final siempre se ve, aunque la plantilla sea larga. */}
+      {selected && (
+        <div className="flex shrink-0 justify-end border-t px-3 py-2">
+          <button
+            type="button"
+            onClick={() => onSubmit(selected.id, values.map((v) => v.trim()), preview)}
+            disabled={!ready || busy}
+            className="rounded-md bg-brand-navy px-4 py-1.5 text-sm font-medium text-brand-white hover:bg-brand-navy-dark disabled:opacity-50"
+          >
+            {submitLabel}
+          </button>
+        </div>
+      )}
     </div>
   );
 }
