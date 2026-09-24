@@ -356,6 +356,24 @@ describe.skipIf(!TEST_DATABASE_URL)("executor de workflows", () => {
     expect(await ex.failStuckRuns()).toBe(1);
   });
 
+  it("caída ENTRE el 2xx del proveedor y el avance del cursor: el reintento encuentra la fila (id determinista por paso) y no reenvía", async () => {
+    const wf = await workflow([
+      { kind: "send_text", text: "uno" },
+      { kind: "send_text", text: "dos" },
+    ]);
+    const start = await ex.startWorkflowRun({ organizationId: ORG, workflowId: wf, conversationId: CONV, trigger: "command" });
+    expect(await ex.executeWorkflowRun(start.runId, { provider, storage })).toBe("done");
+    expect(sent).toHaveLength(2);
+    const run = (await db.select().from(s.workflowRuns).where(eq(s.workflowRuns.id, start.runId)))[0];
+    expect(run.messageIds).toEqual([ex.stepMessageId(start.runId, 0), ex.stepMessageId(start.runId, 1)]);
+    // El worker murió justo después de mandar "dos" y ANTES de guardar cursor 2: la
+    // fila del paso 1 ya existe; al retomar por lease vencido no se vuelve a mandar.
+    await db.update(s.workflowRuns).set({ status: "running", stepCursor: 1, startedAt: new Date(Date.now() - 3 * 60_000), attempts: 1 }).where(eq(s.workflowRuns.id, start.runId));
+    expect(await ex.executeWorkflowRun(start.runId, { provider, storage })).toBe("done");
+    expect(sent).toHaveLength(2);
+    expect((await db.select().from(s.messages).where(eq(s.messages.conversationId, CONV))).filter((m) => m.direction === "out")).toHaveLength(2);
+  });
+
   it("dos corridas de la misma conversación no se intercalan: la segunda espera (busy) mientras la primera corre", async () => {
     const wfA = await workflow([{ kind: "send_text", text: "tabla" }]);
     const wfB = await workflow([{ kind: "send_text", text: "banco" }]);

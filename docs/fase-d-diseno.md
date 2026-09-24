@@ -432,6 +432,69 @@ corrida a medias mueve el cursor; sin token CSRF en la ruta de subida (los heade
 preflight); varios workflows con la misma etapa disparan en cadena sin tope; sin sniffing de
 contenido en la subida (un MIME falso falla después en el proveedor, visible en la corrida).
 
+### 8.2 Gate del delta contra `main` — 24-sep-2026 (tras el rebase sobre la Fase B 3)
+
+Corregido de inmediato (escenario real):
+- **Arrastrar una tarjeta pausaba al agente y apagaba el semáforo**: los envíos por etapa salían como
+  `crm` con el vendedor como autor → el runtime los leía como "un vendedor tomó el hilo" (pausa hasta
+  "Reactivar"), la bandeja daba por contestada la última pregunta del cliente y contaba como primera
+  respuesta. Ahora **solo el comando** sale como `crm`; etapa/agente/palabra clave salen como `ai_agent`.
+- **El comando del vendedor no pausaba al agente de inmediato** (solo "de rebote" en el siguiente entrante
+  y solo si su mensaje quedaba como último saliente): `runWorkflowCommand`/"Probar" llaman
+  `pauseAgentForManualSend` al encolar.
+- **Dos corridas de la misma conversación se reclamaban a la vez** (READ COMMITTED: cada UPDATE veía a la
+  otra aún `queued`) e intercalaban texto/imagen de A y B al cliente: candado consultivo por conversación
+  (`pg_advisory_xact_lock`) en la transacción del reclamo.
+- **Paso "pasar a humano"** tras la Fase B 3 (ya no existen `addContactTag`, `TAG_HANDOVER` ni la pausa
+  de 8 h): desde un comando/"Probar" → `pausado_humano` hasta "Reactivar"; desde el agente → solo aviso
+  en el hilo; sin etiqueta por defecto.
+- **Comprobante sin regla de fecha**; **cuenta/tarjeta enmascarada** para quien no edita Datos de cobro;
+  el aviso interno de un comando no marca no leído al vendedor que lo pidió.
+
+Revisión de Codex (16 hallazgos "A"; corregido lo que duplica mensajes o confirma un pago que no cuadra):
+- **Reenvío si el worker muere entre el 2xx del proveedor y el avance del cursor**: id de mensaje
+  DETERMINISTA por (corrida, paso) (`stepMessageId`); el reintento encuentra la fila y no reenvía (test).
+- **Lease sin renovar**: una corrida larga (esperas + envíos lentos) podía ser reclamada por otro worker
+  estando viva; ahora `started_at` se renueva en cada paso.
+- **Referencia del comprobante**: `ABC-123`, `abc 123` y `ABC123` eran referencias distintas para el índice
+  único (mismo comprobante confirmando dos pedidos); ahora se normaliza a alfanumérico en mayúsculas.
+- **Moneda**: "USD 5,500" cuadraba contra MXN 5,500; con moneda distinta de MXN pasa a humano.
+- **Destinatario**: los últimos 4 dígitos solo valen con máscara visible y el beneficiario se compara por
+  palabras completas ("Ana López" ya no coincide con "Mariana López").
+- **Tolerancia** de $1 → un centavo ($5,499 contra $5,500 ya no cuadra).
+- Descripciones de las herramientas: "no la repitas" → "vuelve a mandarla solo si el cliente la pide otra vez".
+- No se acepta: quitar `add_tag`/`addContactTag` (la Fase B retiró las etiquetas *internas del agente*; la
+  etiqueta "cotejar depósito" del workflow de pago es un paso configurado por el admin, no una regresión).
+
+Para la **parte (b)** (tocan `lib/ai/runtime`):
+- `system_note` sigue entrando a `lastOutbound`/`humanOutboundCount`/`pendingInbound` y al transcript del
+  modelo como turno propio (`context.ts`, `transcript.ts`): una nota de un comando (`crm`) cuenta como
+  saliente humano (hoy coincide con la regla: el comando pausa) y, tras "Reactivar", el modelo ve "No se
+  envió «Datos bancarios»…" o "Pago reportado… Cotejar" como frase suya y puede repetir esa jerga al
+  cliente. Excluir el tipo en esas consultas.
+- Palabra clave en AUTO: la corrida sale en segundos como `ai_agent`, así que el job del agente encuentra
+  0 pendientes y **no contesta lo demás** del mismo mensaje ("me pasas la tabla y el precio?" → solo la
+  tabla). Los predeterminados nacen sin palabras clave; si se activan, `pendingInbound` debe ignorar los
+  salientes de corridas `keyword` o el gancho debe ceder al agente.
+
+Sin escenario (lista, no frena): tras una caída del
+worker la corrida `running` espera el lease de 2 min (BullMQ reentrega a los ~30 s pero el reclamo la rechaza);
+`envio_sin_confirmar` corta la corrida aunque el mensaje se concilie después (la etapa no se mueve; queda aviso
+solo en comando/etapa); sin tope de repetición por palabra clave (definición 7: el agente decide; si se activan
+palabras clave, valorar un tope de 10 min por workflow y conversación); `verificarComprobante` sin moneda
+("USD 300" se compara contra MXN) y "12.345" se lee como 12 345; reintento del mismo comprobante tras un fallo
+parcial lanza `ReferenciaDuplicadaError` (devolver el pago existente si coincide la conversación); últimos 4
+dígitos del destinatario coinciden con cualquier número corto que termine igual; MIME de la subida confiado del
+header (solo HEVC se detecta; un archivo malo falla al enviar y queda visible en la corrida); sin cuota por
+organización ni rate limit en la subida (solo owner/admin); borrar un workflow cascadea sus corridas (perder
+traza de `message_ids`; valorar borrado lógico); "Probar" ejecuta pasos reales sobre un contacto real (usar
+uno de prueba); `/api/biblioteca/[assetId]` sin `Cache-Control: private`; filas `skipped` por cada palabra
+clave con el canal apagado; `ALTER TYPE … ADD VALUE` de la 0026 requiere PG ≥ 12 (Railway cumple); un fallo
+transitorio de BD en los disparadores se absorbe (la palabra clave no se reevalúa; en etapa el vendedor no ve aviso);
+editar/reordenar pasos con una corrida a medias mueve el cursor (guardar snapshot de pasos en la corrida); las
+consultas internas del ejecutor filtran por id de corrida sin `organization_id` (ids únicos; no explotable);
+`pagos.ts` recibe conversación/contacto/organización por separado (validar en la parte b).
+
 ## 9. Plan de salida a producción (parte a)
 
 Reglas del dueño: **nada va a staging ni al sandbox hasta su aviso**; el modo "borrador" **ya no
