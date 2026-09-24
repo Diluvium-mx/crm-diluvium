@@ -83,9 +83,6 @@ export const workflows = pgTable(
     triggerCommand: text("trigger_command"),
     // Se dispara cuando el contacto ENTRA a esta etapa.
     triggerStage: contactStageEnum("trigger_stage"),
-    // "No vuelvas a enviar contenido ya compartido" (Goal): una corrida done
-    // por conversación; un comando del vendedor la puede repetir a propósito.
-    oncePerConversation: boolean("once_per_conversation").notNull().default(true),
     position: integer("position").notNull().default(0),
     createdByUserId: text("created_by_user_id").references(() => user.id, { onDelete: "set null" }),
     updatedByUserId: text("updated_by_user_id").references(() => user.id, { onDelete: "set null" }),
@@ -157,9 +154,6 @@ export const workflowRuns = pgTable(
     // Argumentos con los que se disparó (p. ej. lo que leyó el agente de un comprobante).
     payload: jsonb("payload").$type<Record<string, unknown>>(),
     status: workflowRunStatusEnum("status").notNull().default("queued"),
-    // Copia de workflows.once_per_conversation al crear la corrida: el índice
-    // único parcial solo aplica a estas (un recordatorio repetible no se bloquea).
-    once: boolean("once").notNull().default(true),
     // Índice del siguiente paso a ejecutar: un reintento retoma aquí, nunca repite lo enviado.
     stepCursor: integer("step_cursor").notNull().default(0),
     // Ids de `messages` que generó esta corrida, en orden.
@@ -172,15 +166,8 @@ export const workflowRuns = pgTable(
     finishedAt: timestamp("finished_at"),
   },
   (table) => [
-    // once_per_conversation y el contexto "ya enviado" del agente.
+    // Corridas por conversación (historial y exclusividad en el ejecutor).
     index("workflow_runs_conv_workflow_idx").on(table.conversationId, table.workflowId, table.status),
-    // Garantía en la BD de "una vez por conversación" para disparos NO humanos:
-    // dos entrantes seguidos ("tabla", "tabla") no pueden encolar dos corridas
-    // vivas del mismo workflow (el check-then-insert del ejecutor tiene carrera).
-    // Un comando del vendedor sí puede repetir a propósito.
-    uniqueIndex("workflow_runs_once_uidx")
-      .on(table.conversationId, table.workflowId)
-      .where(sql`${table.status} in ('queued', 'running', 'done') and ${table.trigger} <> 'command' and ${table.once} = true`),
     index("workflow_runs_org_created_idx").on(table.organizationId, sql`${table.createdAt} desc`),
   ],
 );

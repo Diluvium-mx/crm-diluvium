@@ -30,7 +30,6 @@ export type WorkflowView = {
   triggerKeywords: string[];
   triggerCommand: string | null;
   triggerStage: (typeof contactStageEnum.enumValues)[number] | null;
-  oncePerConversation: boolean;
   position: number;
   steps: StepPayload[];
   /** Títulos de los archivos que faltan (el workflow no se puede habilitar). */
@@ -67,7 +66,6 @@ const workflowInputSchema = z.object({
   triggerKeywords: keywordsSchema,
   triggerCommand: commandSchema,
   triggerStage: z.enum(contactStageEnum.enumValues).nullable(),
-  oncePerConversation: z.boolean(),
   steps: stepsSchema,
 });
 export type WorkflowInput = z.infer<typeof workflowInputSchema>;
@@ -117,7 +115,6 @@ async function loadViews(organizationId: string): Promise<WorkflowView[]> {
       triggerKeywords: w.triggerKeywords,
       triggerCommand: w.triggerCommand,
       triggerStage: w.triggerStage,
-      oncePerConversation: w.oncePerConversation,
       position: w.position,
       steps: own,
       missingMedia: missingMedia(own),
@@ -183,7 +180,6 @@ export async function saveWorkflow(raw: WorkflowInput): Promise<{ ok: true; id: 
         triggerKeywords: input.triggerKeywords,
         triggerCommand: input.triggerCommand,
         triggerStage: input.triggerStage,
-        oncePerConversation: input.oncePerConversation,
         updatedByUserId: userId,
         updatedAt: now,
       };

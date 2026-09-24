@@ -17,11 +17,10 @@ una **biblioteca de media** en el bucket `crm-media` de Railway. Nada de tercero
 
 ### 0.1 Definiciones del dueño (23-sep-2026) — mandan sobre el resto del documento
 
-1. **El agente trabaja siempre en AUTO.** No se diseña nada para "borrador": ni tarjeta de
-   borrador con acciones ni acciones "por aprobar". Las acciones se ejecutan directo en la
-   conversación. (El modo borrador de la Fase B sigue existiendo para el TEXTO mientras el
-   dueño lo use en pruebas; con el canal en borrador el agente **no ejecuta acciones**: las
-   registra como "omitidas por modo borrador" en la corrida y nada más.)
+1. **El agente trabaja siempre en AUTO.** El modo "borrador" **ya no existe** (Fase B 3 lo
+   quitó junto con la guardia de salida): para el agente y las palabras clave del cliente,
+   cualquier valor del canal distinto de `auto` es apagado. Las acciones se ejecutan directo
+   en la conversación.
 2. **Etapas:** el agente mueve al contacto por **todas** las etapas del Embudo según el
    contexto del chat, **incluida "Compra"** cuando él mismo cierra la venta. Ejemplos: datos
    bancarios → "Cerca de compra"; pago confirmado → "Compra".
@@ -35,8 +34,11 @@ una **biblioteca de media** en el bucket `crm-media` de Railway. Nada de tercero
    FAQs; el dueño los revisa después en el editor.
 5. **Archivos de media:** el dueño los tiene todos; se piden con lista exacta y carpeta fuera
    del repo (p. ej. `~/Documents/diluvium-media`). Mientras tanto, archivos de prueba.
-6. **Guardia de salida (parte b):** debe aceptar montos que ya aparecen en la conversación
-   (cotización previa o comprobante) sin abrir la puerta a precios inventados. Diseño en §2.3.
+6. **Sin guardia de salida ni módulo de montos** (decisión del 24-sep-2026): la Fase B 3 quitó
+   la guardia; el diseño de "montos ya vistos" (§2.3 original) queda **descartado** y su módulo
+   se eliminó. El comprobante se confirma con monto + destinatario + referencia no repetida.
+7. **Sin "una vez por conversación"** (24-sep-2026): el CRM no bloquea repetir un contenido; el
+   agente decide con el contexto (el Goal le pide no repetir) y el vendedor repite con el comando.
 
 ### 0.2 Punto de partida verificado en el código (main 086143d)
 
@@ -82,7 +84,7 @@ el contacto entra a esa etapa (arrastre en el Embudo, panel de contacto o el pro
 |---|---|---|---|---|
 | 1 | `tabla_tamanos_estandar` | agente · comando `/tabla` · clave "tabla", "tamaños" | texto corto + **imagen** | `tabla-tamanos-estandar.png` |
 | 2 | `tabla_tamanos_mini` | agente · comando `/mini` | texto corto + **imagen** | `tabla-tamanos-mini.png` |
-| 3 | `datos_bancarios` | agente (cliente eligió transferencia/depósito) · comando `/banco` | texto + **imagen** de datos bancarios + etapa → `cerca_compra` · **una vez por conversación** | `datos-bancarios.png` |
+| 3 | `datos_bancarios` | agente (cliente eligió transferencia/depósito) · comando `/banco` | texto + **imagen** de datos bancarios + etapa → `cerca_compra` | `datos-bancarios.png` |
 | 4 | `video_instalacion_estandar` | agente · comando `/video` | texto + **video como archivo** | `instalacion-estandar.mp4` |
 | 5 | `video_instalacion_medida` | agente · comando `/video-medida` | texto + **video como archivo** | `instalacion-medida.mp4` |
 | 6 | `tapones_inflables` | agente · comando `/tapones` · clave "tapón", "tapones" | texto + 1–3 **imágenes** + **video** | `tapones-1.png`, `tapones-2.png`, `tapones.mp4` |
@@ -97,9 +99,8 @@ el contacto entra a esa etapa (arrastre en el Embudo, panel de contacto o el pro
 Reglas transversales (vienen del Goal de Ángela):
 - "Responde primero la duda, después activa la tabla/video": el texto del cerebro sale
   **antes** que las acciones.
-- "No vuelvas a enviar contenido ya compartido": todo workflow tiene `once_per_conversation`;
-  para 1–8 arranca en **sí** (se puede volver a mandar con comando del vendedor). El agente ve
-  en su contexto qué workflows ya salieron en esa conversación.
+- "No vuelvas a enviar contenido ya compartido": lo aplica el **agente** con el contexto (ve en
+  el hilo lo que ya salió); el CRM no lo bloquea (definición 7).
 - Un workflow con un paso de media cuyo archivo falta queda **deshabilitado** y no se ofrece
   al agente ni a los comandos (la pestaña lo marca en ámbar).
 - Los textos y palabras clave de 1–12 los redacta Claude (definición 4) en el seed de la
@@ -163,27 +164,10 @@ respondió a la mitad, lo que falta no sale y la corrida queda `cancelled` con m
 - El agente **nunca** confirma un pago sin imagen: "ya te transferí" en texto → responde que
   espera el comprobante.
 
-### 2.3 Guardia de salida y montos de la conversación (definición 6, parte b)
+### 2.3 Guardia de salida — DESCARTADA
 
-Hoy la guardia (`reviewReply`, congelada) acepta un monto solo si está tal cual en el Goal/FAQs
-o si es un total con desglose correcto en la misma respuesta. Al confirmar un pago o repetir
-una cotización, el agente dirá "$16,500" sin desglose. Propuesta, sin tocar la lógica actual:
-**un segundo conjunto de montos permitidos, derivado de la conversación**, que se pasa a la
-guardia como `known` adicional:
-
-1. **Montos ya emitidos por el CRM** en esa conversación: cifras `$N` que aparezcan en mensajes
-   salientes previos con `source` `crm`, `business_app` o `ai_agent` **que ya pasaron la
-   guardia o los escribió un humano** (los borradores descartados no cuentan). Un humano o el
-   propio agente ya "aprobó" ese monto: repetirlo no inventa nada.
-2. **Montos de un comprobante confirmado**: los que el propio agente reportó en
-   `pago_confirmado` (quedan en `workflow_runs.payload`). Solo cuando la corrida terminó `done`.
-3. **Nunca** montos escritos por el cliente (un cliente que escribe "$3,000" no autoriza ese
-   precio), ni de mensajes entrantes.
-
-Implementación: `conversationKnownAmounts(orgId, convId)` (lectura pura de `messages` +
-`workflow_runs`, últimas N salidas) y `reviewReply(text, knowledge, { extraKnown })`; la regla
-del total con desglose sigue igual. Riesgo residual aceptado: un monto que un humano escribió
-mal se puede repetir; ese error ya existía en el hilo y es visible.
+La Fase B 3 eliminó la guardia de salida y el modo borrador. Este apartado y el módulo
+"montos ya vistos" que lo acompañaba quedan sin efecto (24-sep-2026).
 
 ### 2.4 Modos por canal
 
@@ -191,9 +175,7 @@ mal se puede repetir; ese error ya existía en el hilo y es visible.
   nada). Los disparadores de palabra clave del **cliente** tampoco corren. Los **comandos del
   vendedor** y los disparos por **cambio de etapa hecho por un humano** sí, porque son acciones
   humanas, y salen con `source: "crm"`.
-- **Borrador (solo texto, mientras exista):** el texto sigue como en la Fase B; las acciones
-  del modelo no se ejecutan ni se guardan para aprobar: quedan en `workflow_runs` como
-  `skipped` con motivo `modo_borrador`, visibles en la pestaña. Nada de tarjeta con acciones.
+- **Cualquier otro valor del canal** cuenta como apagado para el agente y las palabras clave.
 - **Auto:** lo descrito en §2.1.
 - Media sale con `source: "ai_agent"` (agente) o `"crm"` (comando/etapa), así el semáforo,
   `first_response_seconds` y las pausas por "respuesta humana" siguen funcionando igual.
@@ -217,7 +199,7 @@ workflows           id, org_id, slug (único por org), name, agent_description (
                     va a la descripción de la tool), enabled, is_system (predeterminado: no se
                     borra, sí se edita), trigger_agent (bool), trigger_keywords text[],
                     trigger_command (p. ej. "/tabla", único por org), trigger_stage
-                    (contact_stage, nullable), once_per_conversation, position,
+                    (contact_stage, nullable), position,
                     created_by_user_id, updated_by_user_id, updated_at
 
 workflow_steps      id, org_id, workflow_id, position,
@@ -236,8 +218,7 @@ workflow_runs       id, org_id, workflow_id, conversation_id, contact_id,
                     triggered_by_user_id (nullable), payload jsonb (args de la tool),
                     status (queued | running | done | failed | cancelled | skipped), step_cursor,
                     message_ids jsonb, error_code, created_at, finished_at
-                    -- índice (conversation_id, workflow_id, status) para once_per_conversation
-                    -- y para el contexto "ya enviado" del agente.
+                    -- índice (conversation_id, workflow_id, status): historial y exclusividad.
 ```
 
 Cambios en tablas existentes:
@@ -273,7 +254,7 @@ junto a Fragmentos, y los comandos `/tabla`, `/banco`, … Nada de asignaciones 
 - **Lista**: tarjetas ordenables (dnd-kit, ya en el stack) con nombre, disparadores como chips,
   interruptor habilitado, aviso ámbar "falta archivo", y corridas de los últimos 7 días.
 - **Formulario** (una página por workflow): Nombre · "Cuándo usarlo" (texto que ve el agente)
-  · Disparadores (agente ✓ / palabras clave / comando / etapa) · "Una vez por conversación" ·
+  · Disparadores (agente ✓ / palabras clave / comando / etapa) ·
   **Pasos**: lista ordenable de tarjetas; botón "+ paso" con 7 tipos (Texto, Archivo, Etapa,
   Pasar a humano, Etiqueta, Aviso interno, Esperar). El paso Archivo abre el **selector de
   biblioteca** (subir / elegir / vista previa firmada).
@@ -323,7 +304,7 @@ workflows con media quedan habilitados solo en el entorno de pruebas.
   "cotejar depósito" es obligatorio y el envío físico sigue siendo humano. El agente nunca
   confirma sin imagen.
 - **Datos bancarios**: hoy el Goal pide handover; con la imagen se automatiza. Sigue la regla
-  del Goal: tras un comprobante no se reenvían (once_per_conversation + contexto "ya enviado").
+  del Goal: tras un comprobante no se reenvían (lo decide el agente con el contexto del hilo).
 
 ## 7. Plan en pasos chicos
 
@@ -335,7 +316,7 @@ workflows con media quedan habilitados solo en el entorno de pruebas.
 | A1 | Rebase sobre main; migración (siguiente número libre): `media_assets`, `workflows`, `workflow_steps`, `workflow_runs`, `messages.type` + `system_note`; ACL `workflow` / `mediaAsset`; seed de los 12 predeterminados con textos y palabras clave redactados desde el Goal/FAQs (deshabilitados los que necesitan archivo hasta subirlo) | `lib/db/schema/automation.ts`, `drizzle/00NN_*`, `lib/auth/permissions.ts` |
 | A2 | **Biblioteca de media**: PUT firmado, `confirmAsset`, listar, borrar; validación mime/tamaño; tests puros de claves y validación | `lib/storage/s3.ts` (+PUT), `lib/media-library/*` |
 | A3 | **Media saliente**: `sendMedia` en `MessagingProvider` + Zernio (`attachmentUrl`) + `sendMediaMessage` en `send.ts` (idempotente, mismo contrato de fallo, ventana 24 h) | `lib/messaging/provider.ts`, `zernio.ts`, `send.ts` |
-| A4 | **Ejecutor**: `lib/workflows/executor.ts` + job BullMQ `workflow.run` (pasos secuenciales, cursor, reintento por paso, `ventana_24h`, `once_per_conversation`, `internal_note`) + `runWorkflow()` server action | `lib/workflows/*`, `worker/*` |
+| A4 | **Ejecutor**: `lib/workflows/executor.ts` + job BullMQ `workflow.run` (pasos secuenciales, cursor, reintento por paso, `ventana_24h`, `internal_note`) + `runWorkflow()` server action | `lib/workflows/*`, `worker/*` |
 | A5 | **Pestaña Automatización** (`/automatizacion`): lista, formulario, pasos, selector de biblioteca, "Probar", corridas | `app/(app)/automatizacion/*`, `app/(app)/layout.tsx` |
 | A6 | **Disparadores humanos y de cliente**: comandos y sección en el menú "/" del composer; palabras clave del cliente como hook propio en `ingest.ts` (aislado, try/catch, respeta modo del canal); disparo por etapa en `updateContactStage` y en el arrastre del Embudo; nota `system_note` en la bandeja | `lib/inbox/*`, `lib/messaging/ingest.ts`, `lib/actions/contacts.ts` |
 | A7 | Gate: revisión adversarial Claude + cyber-neo + `/codex:adversarial-review --base main` (criterio: escenario real o va a la lista); typecheck/test/lint; prueba de `/tabla` y `/banco` en el sandbox | — |
@@ -350,7 +331,7 @@ Cada paso es una rebanada vertical desplegable; A5 ya se puede usar (con comando
 | B2 | `toolCalls` en `CallModelResult`; tools sin `execute` (una sola vuelta); `strict` | `lib/ai/types.ts`, `providers/*`, `index.ts` |
 | B3 | Tools dinámicas desde `workflows` + `cambiar_etapa` + `transferir_humano` + `pago_confirmado` / `pago_no_cuadra`; system: quitar las líneas "todavía no disponible", regla "texto primero, luego herramienta", instrucciones de comprobante (§2.2) | `lib/ai/runtime/brain.ts`, `tools.ts` (nuevo) |
 | B4 | `run.ts`: texto → guardia → burbujas → acciones con relectura de estado; borrador = acciones `skipped` | `lib/ai/runtime/run.ts`, `state.ts` |
-| B5 | Guardia: `conversationKnownAmounts` + `extraKnown` (§2.3) con tests de los escenarios: repetir cotización, confirmar pago, cliente propone precio (rechazado) | `lib/ai/runtime/output-guard.ts` (solo firma), `known-amounts.ts` (nuevo) |
+| B5 | ~~Guardia con montos ya vistos~~ — **descartado** (la Fase B 3 quitó la guardia; módulo eliminado el 24-sep) | — |
 | B6 | Contexto "ya enviado en esta conversación" (lee `workflow_runs`) | `lib/ai/runtime/context.ts` |
 | B7 | Gate completo + prueba en el sandbox con el dueño (tabla, banco, comprobante que cuadra y que no cuadra) | — |
 
@@ -376,9 +357,9 @@ Decisiones que no estaban en el diseño original:
 - **`set_stage` dentro de un workflow NO dispara** los workflows "al entrar a la etapa" (evita
   cadenas y bucles). El disparo por etapa solo ocurre por acción humana (`updateContactStage`),
   y solo si la etapa realmente cambió.
-- **Modo borrador:** un disparo del agente o por palabra clave con el canal en borrador queda
-  `skipped` con motivo `modo_borrador` (definición 1); con el canal apagado, `canal_apagado`. Los
-  comandos del vendedor y los disparos por etapa manual corren siempre (salen como `crm`).
+- **Modo del canal:** un disparo del agente o por palabra clave con el canal fuera de `auto`
+  queda `skipped` con motivo `canal_apagado` (el modo borrador ya no existe). Los comandos del
+  vendedor y los disparos por etapa manual corren siempre (salen como `crm`).
 - **Corridas del agente** (`source: ai_agent`) releen el estado antes de cada envío al cliente:
   si un vendedor escribió después de crearse la corrida, o el canal salió de auto, se cancela con
   motivo (`respuesta_humana`, `cambio_de_modo`, `agente_pausado`).
@@ -404,9 +385,8 @@ Corregido de inmediato (escenario real):
   el "una vez por conversación"): los predeterminados nacen **sin palabras clave** (en AUTO el agente
   tiene cada workflow como herramienta); si el admin las agrega, gana la coincidencia **más larga** y
   solo disparan mensajes de **≤ 8 palabras**.
-- **Carrera de "una vez por conversación"** ("tabla" dos veces seguidas = dos imágenes): índice único
-  parcial `workflow_runs_once_uidx (conversation_id, workflow_id) where status in
-  (queued, running, done) and trigger <> 'command'`; el choque queda `skipped: ya_enviado`.
+- ~~Carrera de "una vez por conversación"~~ — regla eliminada el 24-sep (definición 7); la
+  exclusividad por conversación del ejecutor evita que dos corridas se intercalen.
 - **Fallo silencioso al arrastrar una tarjeta** (ventana cerrada: el vendedor cree que el cliente ya
   tiene la CLABE): una corrida disparada por humano que falla deja un **aviso interno en el hilo**.
 - **Marcado de leídos indebido**: los envíos por etapa/agente/palabra clave ya **no marcan leídos**
@@ -478,8 +458,7 @@ workflow deshabilitado).
    una palabra clave del cliente (con el canal en `auto`). Verificar burbuja con adjunto,
    `workflow_runs` `done`, etapa → Cerca de compra, y que un segundo `/banco` repita a propósito
    mientras el agente no.
-7. **Parte (b)**: enganche al agente (tools), guardia con montos ya vistos (`lib/ai/known-amounts`),
-   comprobantes (`lib/cobro/comprobante` + `pagos.ts`), con su propio gate y prueba en
-   `ch_zernio_sandbox` en `auto`.
+7. **Parte (b)**: enganche al agente (tools) y comprobantes (`lib/cobro/comprobante` +
+   `pagos.ts`), con su propio gate y prueba en `ch_zernio_sandbox` en `auto`.
 8. **Vuelta atrás:** deshabilitar todo desde la pestaña detiene la Fase D sin deploy; la 0025 solo
    agrega tablas y un valor de enum.
