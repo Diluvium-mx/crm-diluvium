@@ -180,6 +180,16 @@ Dashboard ya muestra el gasto del mes y el saldo estimado (24-sep-2026).
   - **Saldo estimado:** recargas registradas − `ai_usage.cost_usd` desde el día (hora de
     Mazatlán) de la primera recarga del proveedor. Es un estimado: depende de los precios
     internos (`lib/ai/pricing.ts` + `ai_model_prices`) y no incluye impuestos.
+  - **Seed del conocimiento:** desde que existe el editor, `npm run seed:ai-knowledge` se
+    niega a correr si la organización ya tiene versiones (el Goal o las FAQs se editaron en
+    la pestaña): pisaría lo editado sin dejar versión. `SEED_FORCE=1` lo obliga.
+  - **Revisión de Codex (24-sep-2026), bajos que no abren ronda:**
+    - El saldo se calcula por organización, pero la llave del proveedor es global: lo que
+      gasten staging u otra app con la misma llave no se descuenta. La pantalla lo aclara.
+    - Registrar una recarga no es idempotente: si se pierde la respuesta y se captura otra
+      vez, queda duplicada (se ve en la lista y se borra con "Borrar").
+    - `{{vendedor.nombre}}` ya ignora a un vendedor desactivado ("un asesor"); en v1 las
+      conversaciones no tienen asignado, así que hoy siempre sale "un asesor".
 - **Fase C:** follow-ups automáticos — "ocupado" a las 2h; "dejó de responder" a los
   4 días con plantilla fuera de la ventana de 24h; horario 8:00–17:00.
 - **Fase D:** acciones del Goal — datos bancarios, videos, tabla de tamaños, cambio de etapa.

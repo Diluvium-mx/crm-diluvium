@@ -40,7 +40,8 @@ export function AiSpendCard({ summary, canRegister }: { summary: AiSpendSummary;
       </div>
       <p className="mt-3 text-xs text-muted-foreground">
         Es un <strong>estimado</strong>: el gasto se calcula con los tokens que registra el CRM y los precios de cada modelo;
-        no incluye impuestos. El saldo real está en el panel de cada proveedor.
+        no incluye impuestos ni lo que gaste otra app con la misma llave (por ejemplo, las pruebas en staging). El saldo
+        real está en el panel de cada proveedor.
       </p>
       <AiTopups topups={summary.topups} canRegister={canRegister} />
     </div>

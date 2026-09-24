@@ -1,7 +1,7 @@
 // Configuración efectiva del Agente IA para una organización (Fase B): la fila
 // de ai_config con defaults si falta, y la base de conocimiento habilitada.
 // Sin "server-only": lo importa el worker (Node puro), no solo Next.
-import { and, asc, eq } from "drizzle-orm";
+import { and, asc, eq, sql } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { aiConfig, aiKnowledge, contacts, member, organization, user } from "@/lib/db/schema";
 import type { CustomValues } from "@/lib/agente-ia/editor";
@@ -45,7 +45,7 @@ export async function loadAgentConfig(organizationId: string): Promise<AgentConf
 
 // Valores personalizados de UNA conversación ({{contacto.nombre}}, etc., ver
 // lib/agente-ia/editor.ts). Vendedor = el asignado a la conversación; sin
-// asignar (v1), "un asesor". Empresa = la de la pestaña o el nombre de la org.
+// asignar (v1) o desactivado (banned), "un asesor". Empresa = la de la pestaña o el nombre de la org.
 export async function loadCustomValues(
   organizationId: string,
   conversation: { contactId: string; assigneeUserId: string | null },
@@ -61,7 +61,7 @@ export async function loadCustomValues(
         .select({ name: user.name })
         .from(user)
         .innerJoin(member, and(eq(member.userId, user.id), eq(member.organizationId, organizationId)))
-        .where(eq(user.id, conversation.assigneeUserId))
+        .where(and(eq(user.id, conversation.assigneeUserId), sql`coalesce(${user.banned}, false) = false`))
         .limit(1)
     : [];
   const [org] = await db.select({ name: organization.name }).from(organization).where(eq(organization.id, organizationId)).limit(1);
