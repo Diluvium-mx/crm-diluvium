@@ -96,7 +96,16 @@ Dashboard ya muestra el gasto del mes y el saldo estimado (24-sep-2026).
 
 - **Fase A (hecha):** fundación del modelo — multi-proveedor, catálogo, `ai_config`,
   pestaña "Agente IA". El agente todavía no responde.
-- **Fase B (hecha, 23-sep-2026):** runtime que **responde por texto**, en el worker.
+- **Fase B (CERRADA el 24-sep-2026):** parte 1 en producción desde el 23-sep (main 65473e8) y
+  parte 2 desde el 24-sep (main b66610a, migración 0026). **Prueba en vivo del dueño (24-sep,
+  sandbox, +52 668 242 6364), aprobada:** texto normal; 3 mensajes seguidos → 1 respuesta;
+  3 compuertas de 95 cm = talla M, 3 × $5,500 = $16,500; descuento y contra entrega sin
+  pausarse; foto leída; "quiero hablar con una persona" → aviso y sigue activo; respuesta
+  desde la Bandeja → pausa y "Reactivar" → vuelve. 7 llamadas al cerebro, 0 errores, $0.11 USD.
+  Para afinar con el número oficial: ante "¿hacen descuento?" el Goal pide pase a humano y
+  el agente respondió él mismo sin dejar aviso; "ok, gracias" no se llegó a enviar.
+
+  Runtime que **responde por texto**, en el worker.
 
   **Definición del dueño (23-sep-2026, cierre de la Fase B):** el agente es el motor que hace
   que siempre haya alguien respondiendo, como Ángela en GHL. Se rige **solo** por el Goal y las
@@ -160,7 +169,7 @@ Dashboard ya muestra el gasto del mes y el saldo estimado (24-sep-2026).
   main). El aviso viejo de una "0014" aplicada en staging ya no aplica: el 23-sep staging
   tenía 24 migraciones (hasta la 0023 de main), solo `ai_config`/`ai_knowledge` y ningún
   canal encendido; la 0024 crea sus tablas y columnas sin chocar.
-- **Fase B, parte 2 (24-sep-2026, rama `feat/agente-ia-editor`, migración
+- **Fase B, parte 2 (24-sep-2026, en main b66610a, rama `feat/agente-ia-editor`, migración
   `0026_agente_editor_y_saldo`):** la pestaña "Agente IA" pasa a ser el editor estilo GHL
   (ver "Qué hay"), el Detalle del contacto muestra "Llegó por anuncio" y el Dashboard muestra
   el gasto del mes y el saldo estimado por proveedor. La 0026 solo AGREGA: tablas
@@ -180,6 +189,16 @@ Dashboard ya muestra el gasto del mes y el saldo estimado (24-sep-2026).
   - **Saldo estimado:** recargas registradas − `ai_usage.cost_usd` desde el día (hora de
     Mazatlán) de la primera recarga del proveedor. Es un estimado: depende de los precios
     internos (`lib/ai/pricing.ts` + `ai_model_prices`) y no incluye impuestos.
+  - **Gasto dividido (24-sep-2026):** staging y producción usan las MISMAS llaves. La tarjeta de
+    producción muestra por proveedor "Gasto producción" y "Gasto pruebas (staging)" del mes, y el
+    saldo estimado = recargas − ambos gastos desde la primera recarga. Producción lee el gasto de
+    staging de `GET /api/internal/ai-spend?from=YYYY-MM-DD` (sumas por día local y proveedor de
+    TODAS las orgs de staging, Bearer `AI_SPEND_TOKEN`, tiempo límite 4 s; el endpoint responde
+    404 fuera de staging, así que el token no abre nada en producción). Si staging no
+    responde o falta configurarlo, muestra solo producción con un aviso. En staging la tarjeta
+    solo muestra su propio gasto (`RAILWAY_ENVIRONMENT_NAME`). Variables, en el servicio web
+    `crm-diluvium`: staging → `AI_SPEND_TOKEN`; producción → `AI_SPEND_TOKEN` (mismo valor) y
+    `STAGING_APP_URL=https://crm-diluvium-staging.up.railway.app`.
   - **Seed del conocimiento:** desde que existe el editor, `npm run seed:ai-knowledge` se
     niega a correr si la organización ya tiene versiones (el Goal o las FAQs se editaron en
     la pestaña): pisaría lo editado sin dejar versión. `SEED_FORCE=1` lo obliga.
