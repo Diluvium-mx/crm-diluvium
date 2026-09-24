@@ -8,6 +8,9 @@
 // vendedor y por petición del agente se manda siempre. Los workflows NUNCA
 // pausan al agente. Datos bancarios, tabla mini, dónde medir y medidas
 // especiales no llevan palabra clave (solo agente y comando).
+// Como GHL, el texto de un paso de imagen/video va como PIE del adjunto (un solo
+// mensaje de WhatsApp: Zernio manda `message` junto con `attachmentUrl`); un
+// paso de solo texto sigue siendo un mensaje aparte.
 // Reglas del Goal que respetan estos textos: "tamaño" (nunca "talla"), precios
 // tal cual la base ($5,500 estándar, $7,000 a la medida, $3,000 mini, tapones
 // $749/$799/$849).
@@ -39,8 +42,7 @@ export const DEFAULT_WORKFLOWS: readonly DefaultWorkflow[] = [
     triggerCommand: "/tabla",
     steps: [
       { kind: "wait", seconds: 30 },
-      text("Aquí le comparto una foto de los tamaños estándar disponibles para envío inmediato 🙌"),
-      media("Tabla de tamaños — compuerta estándar (PNG/JPG)"),
+      media("Tabla de tamaños — compuerta estándar (PNG/JPG)", "Aquí le comparto una foto de los tamaños estándar disponibles para envío inmediato 🙌"),
     ],
   },
   {
@@ -54,8 +56,7 @@ export const DEFAULT_WORKFLOWS: readonly DefaultWorkflow[] = [
     triggerKeywords: [],
     triggerCommand: "/mini",
     steps: [
-      text("Aquí le comparto una foto de los tamaños de las mini compuertas 🙌"),
-      media("Tabla de tamaños — mini compuerta (PNG/JPG)"),
+      media("Tabla de tamaños — mini compuerta (PNG/JPG)", "Aquí le comparto una foto de los tamaños de las mini compuertas 🙌"),
     ],
   },
   {
@@ -69,8 +70,7 @@ export const DEFAULT_WORKFLOWS: readonly DefaultWorkflow[] = [
     triggerKeywords: [],
     triggerCommand: "/banco",
     steps: [
-      text("Aquí le paso nuestros datos bancarios ✅"),
-      media("Datos bancarios (imagen con banco, cuenta y beneficiario)"),
+      media("Datos bancarios (imagen con banco, cuenta y beneficiario)", "Aquí le paso nuestros datos bancarios ✅"),
       { kind: "set_stage", stage: "cerca_compra" },
     ],
   },
@@ -85,8 +85,10 @@ export const DEFAULT_WORKFLOWS: readonly DefaultWorkflow[] = [
     triggerKeywords: ["como se instalan", "como se ponen", "como es el proceso de instalación", "instalacion", "instalación", "ponen"],
     triggerCommand: "/video",
     steps: [
-      text("Aquí le comparto un video de la instalación de las compuertas tamaño estándar 🙌\n\nEstán diseñadas para que el cliente las instale en menos de 15 minutos"),
-      media("Video de instalación — compuerta estándar (MP4 H.264, ≤16 MB)"),
+      media(
+        "Video de instalación — compuerta estándar (MP4 H.264, ≤16 MB)",
+        "Aquí le comparto un video de la instalación de las compuertas tamaño estándar 🙌\n\nEstán diseñadas para que el cliente las instale en menos de 15 minutos",
+      ),
     ],
   },
   {
@@ -99,8 +101,10 @@ export const DEFAULT_WORKFLOWS: readonly DefaultWorkflow[] = [
     triggerKeywords: ["hecha a la medida", "es para una cochera", "no le queda", "es para un porton", "portón"],
     triggerCommand: "/video-medida",
     steps: [
-      text("Aquí le comparto un video de instalación de las compuertas hechas a la medida 🙌\n\nComo máximo fabricamos compuertas de 2.50mts de ancho"),
-      media("Video de instalación — compuerta a la medida (MP4 H.264, ≤16 MB)"),
+      media(
+        "Video de instalación — compuerta a la medida (MP4 H.264, ≤16 MB)",
+        "Aquí le comparto un video de instalación de las compuertas hechas a la medida 🙌\n\nComo máximo fabricamos compuertas de 2.50mts de ancho",
+      ),
     ],
   },
   {
@@ -113,8 +117,7 @@ export const DEFAULT_WORKFLOWS: readonly DefaultWorkflow[] = [
     triggerKeywords: [],
     triggerCommand: "/video-mini",
     steps: [
-      text("Aquí le comparto un video de la instalación de las mini compuertas 🙌"),
-      media("Video de instalación — mini compuerta (MP4 H.264, ≤16 MB)"),
+      media("Video de instalación — mini compuerta (MP4 H.264, ≤16 MB)", "Aquí le comparto un video de la instalación de las mini compuertas 🙌"),
     ],
   },
   {
@@ -131,8 +134,7 @@ export const DEFAULT_WORKFLOWS: readonly DefaultWorkflow[] = [
         "El Tapón Inflable Anti Inundaciones se introduce en la tubería y, al inflarse, bloquea de manera segura el paso del agua\n\n" +
           "Su costo depende del tamaño, por ejemplo:\n\nDe 2\" = $749\nDe 3\" = $799\nDe 4\" = $849\n\nTodos los tapones incluyen el envío e IVA",
       ),
-      text("Aquí le comparto el video de instalación de los tapones inflables 🙌"),
-      media("Tapones inflables — video (MP4 H.264, ≤16 MB)"),
+      media("Tapones inflables — video (MP4 H.264, ≤16 MB)", "Aquí le comparto el video de instalación de los tapones inflables 🙌"),
     ],
   },
   {
@@ -146,8 +148,10 @@ export const DEFAULT_WORKFLOWS: readonly DefaultWorkflow[] = [
     triggerKeywords: [],
     triggerCommand: "/medir",
     steps: [
-      text("La medida es de lateral a lateral, en centímetros, justo en el punto donde se va a apoyar la compuerta. Te dejo un video corto para que veas dónde tomarla."),
-      media("Video de dónde medir la entrada (MP4 H.264, ≤16 MB)"),
+      media(
+        "Video de dónde medir la entrada (MP4 H.264, ≤16 MB)",
+        "La medida es de lateral a lateral, en centímetros, justo en el punto donde se va a apoyar la compuerta. Te dejo un video corto para que veas dónde tomarla.",
+      ),
     ],
   },
   {
@@ -160,8 +164,10 @@ export const DEFAULT_WORKFLOWS: readonly DefaultWorkflow[] = [
     triggerKeywords: [],
     triggerCommand: "/especial",
     steps: [
-      text("Para entradas mayores a 250 cm sí hay opción: una fabricación especial de aproximadamente 280 cm, o un poste central de acero con dos compuertas a la medida, una por lado. Te dejo un diagrama para que se entienda mejor."),
-      media("Diagrama de medidas especiales — poste central / 280 cm (PNG/JPG)"),
+      media(
+        "Diagrama de medidas especiales — poste central / 280 cm (PNG/JPG)",
+        "Para entradas mayores a 250 cm sí hay opción: una fabricación especial de aproximadamente 280 cm, o un poste central de acero con dos compuertas a la medida, una por lado. Te dejo un diagrama para que se entienda mejor.",
+      ),
     ],
   },
   {
