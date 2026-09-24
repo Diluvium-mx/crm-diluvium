@@ -91,7 +91,7 @@ el contacto entra a esa etapa (arrastre en el Embudo, panel de contacto o el pro
 | 7 | `donde_medir` | agente · comando `/medir` | texto (cómo medir de lateral a lateral) + **video** guía como archivo | `donde-medir.mp4` |
 | 7b | `video_instalacion_mini` | agente · comando `/video-mini` | texto + **video como archivo** | `instalacion-mini.mp4` |
 | 8 | `medidas_especiales` | agente (entrada > 250 cm, poste central, ∼280 cm) | texto + **imagen** (diagrama poste/dos compuertas) | `medidas-especiales.png` (opcional) |
-| 9 | `transferir_humano` | agente (reglas del Goal) · comando `/humano` | pasar a humano (etiqueta "pasar a humano" + pausa 8 h, igual que hoy) | — |
+| 9 | `transferir_humano` | agente (reglas del Goal) · comando `/humano` | pasar a humano (aviso en el hilo; si lo dispara un vendedor con el comando, pausa `pausado_humano` hasta "Reactivar"; si lo dispara el agente, no lo pausa — Fase B 3) | — |
 | 10 | `cambiar_etapa` | agente · clave (configurable) | etapa → destino (cualquiera de las 5, incluida `compra`) | — |
 | 11 | `pago_confirmado` | agente (comprobante analizado y cuadra) | texto de confirmación al cliente + etapa → `compra` + etiqueta "cotejar depósito" + **aviso interno** al vendedor en la conversación | — |
 | 12 | `pago_no_cuadra` | agente (monto distinto / imagen ilegible / no es comprobante) | texto amable al cliente + pasar a humano con motivo | — |
@@ -158,7 +158,7 @@ respondió a la mitad, lo que falta no sale y la corrida queda `cancelled` con m
     cliente: el agente sigue respondiendo dudas de envío.
   - **No cuadra o ilegible** → texto amable ("veo un comprobante por $X y el total es $Y…" /
     "no alcanzo a leer el comprobante, ¿me lo mandas de nuevo?") + tool `pago_no_cuadra` con el
-    motivo → pasa a humano (pausa + etiqueta "pasar a humano" + motivo en la tarjeta).
+    motivo → pasa a humano (aviso en el hilo con el motivo; el agente sigue activo hasta que un vendedor conteste — Fase B 3).
 - Una vez confirmado un pago en la conversación, `datos_bancarios` no se vuelve a mandar
   (Goal) y un segundo comprobante va directo a humano (evita confirmar dos veces).
 - El agente **nunca** confirma un pago sin imagen: "ya te transferí" en texto → responde que
@@ -186,7 +186,7 @@ v1; eso es Fase C).
 
 ## 3. Modelo de datos y permisos
 
-Tablas nuevas (todas con `organization_id`, migración **0025** o el siguiente número libre al
+Tablas nuevas (todas con `organization_id`, migración **0026** (era la 0025; se renumeró al
 rebasar, en la parte a):
 
 ```
@@ -208,7 +208,7 @@ workflow_steps      id, org_id, workflow_id, position,
                       send_text     { text }               -- admite {{nombre}}, {{vendedor}} como los Fragmentos
                       send_media    { asset_id, caption? }
                       set_stage     { stage }              -- enum contact_stage (las 5)
-                      handover      { tag? }               -- reutiliza pausa + etiqueta de la Fase B
+                      handover      { tag? }               -- aviso en el hilo; pausa solo si lo dispara un vendedor
                       add_tag       { tag }
                       internal_note { text }               -- aviso al vendedor; no sale por WhatsApp
                       wait          { seconds }            -- 1–30 s entre burbujas
@@ -337,7 +337,7 @@ Cada paso es una rebanada vertical desplegable; A5 ya se puede usar (con comando
 
 ## 8. Estado de la parte (a) y decisiones de implementación (23-sep-2026)
 
-Construido y con tests (unitarios + integración en Postgres real): migración `0025_automatizacion`,
+Construido y con tests (unitarios + integración en Postgres real): migración `0026_automatizacion` (renumerada desde 0025 tras el rebase sobre la Fase B, 24-sep),
 ACL `workflow`/`mediaAsset`, 12 predeterminados (`lib/workflows/defaults.ts`), seed idempotente por
 slug (hook de creación de organización + botón "Restaurar predeterminados"; **no hay migración de
 seed**: la organización que ya existía los recibe con el botón), biblioteca de media
@@ -444,7 +444,7 @@ workflow deshabilitado).
    se regenera con el siguiente número libre (no está aplicada en ningún entorno).
 3. **Gate solo del delta**: revisión adversarial de Claude + cyber-neo + `/codex:adversarial-review
    --base main`, con `npm run typecheck`, `npm test` (BD propia) y `npm run lint`. Sin `npx`.
-4. **`main` con los workflows apagados** (nacen así). La migración 0025 corre sola en `start:web`;
+4. **`main` con los workflows apagados** (nacen así). La migración 0026 corre sola en `start:web`;
    verificar `/api/health/inbound` y que el worker loguee `[workflows]`.
 5. En producción, pestaña Automatización: "Restaurar predeterminados" (14, apagados); **subir los 6
    archivos de `listos/`** desde Biblioteca; asignarlos en cada workflow; **habilitar solo los
@@ -460,5 +460,5 @@ workflow deshabilitado).
    mientras el agente no.
 7. **Parte (b)**: enganche al agente (tools) y comprobantes (`lib/cobro/comprobante` +
    `pagos.ts`), con su propio gate y prueba en `ch_zernio_sandbox` en `auto`.
-8. **Vuelta atrás:** deshabilitar todo desde la pestaña detiene la Fase D sin deploy; la 0025 solo
+8. **Vuelta atrás:** deshabilitar todo desde la pestaña detiene la Fase D sin deploy; la 0026 solo
    agrega tablas y un valor de enum.

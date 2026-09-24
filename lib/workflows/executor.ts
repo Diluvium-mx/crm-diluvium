@@ -21,9 +21,8 @@ import { sendMediaMessage, sendTextMessage, SendRejectedError, type SendOutcome 
 import { SendFailedError, type MessagingProvider } from "@/lib/messaging/provider";
 import type { ObjectStorage } from "@/lib/storage/s3";
 import { enqueueWorkflowRun } from "@/lib/queue/workflows";
-import { addContactTag, notifyConversation, setAgentState } from "@/lib/ai/runtime/state";
-import { TAG_HANDOVER } from "@/lib/ai/runtime/tags";
-import { loadAgentConfig } from "@/lib/ai/runtime/config";
+import { notifyConversation, setAgentState } from "@/lib/ai/runtime/state";
+import { addNotice } from "@/lib/ai/runtime/notices";
 import { missingMedia, stripUnresolvedVariables } from "./steps";
 
 export type RunTrigger = "agent" | "keyword" | "command" | "stage";
@@ -423,13 +422,25 @@ async function runStep(step: WorkflowStepPayload, ctx: StepCtx): Promise<SendOut
       await addContactTag(run.organizationId, run.contactId, renderSnippet(step.tag, ctx.values).slice(0, 40));
       return null;
     case "handover": {
-      const cfg = await loadAgentConfig(run.organizationId);
-      const now = deps.now();
-      await setAgentState(run.organizationId, run.conversationId, "pausado_handover", {
-        now,
-        pausedUntil: new Date(now.getTime() + cfg.handoverReactivateHours * 3_600_000),
+      // Desde la Fase B 3 (23-sep-2026) la ÚNICA pausa del agente es un vendedor:
+      // un comando o "Probar" (source crm) lo deja en pausado_humano hasta que
+      // alguien pulse "Reactivar"; un disparo del propio agente NO lo pausa (sigue
+      // contestando hasta que un vendedor responda) y solo deja el aviso en el
+      // hilo, igual que el runtime. Sin etiqueta por defecto (las internas ya no
+      // se muestran); solo la que el admin configure en el paso.
+      const fromSeller = ctx.source === "crm";
+      if (fromSeller) {
+        await setAgentState(run.organizationId, run.conversationId, "pausado_humano", { now: deps.now() });
+      }
+      await addNotice({
+        organizationId: run.organizationId,
+        conversationId: run.conversationId,
+        kind: "pasar_a_humano",
+        body: fromSeller
+          ? "Un vendedor pasó la conversación a humano: el agente queda en pausa hasta que alguien pulse «Reactivar»."
+          : "El agente pasó la conversación a humano. Sigue contestando hasta que un vendedor responda.",
       });
-      await addContactTag(run.organizationId, run.contactId, step.tag ?? TAG_HANDOVER);
+      if (step.tag) await addContactTag(run.organizationId, run.contactId, renderSnippet(step.tag, ctx.values).slice(0, 40));
       await notifyConversation(db, run.organizationId, run.conversationId);
       return null;
     }
@@ -441,6 +452,15 @@ async function runStep(step: WorkflowStepPayload, ctx: StepCtx): Promise<SendOut
       await deps.sleep(step.seconds * 1_000);
       return null;
   }
+}
+
+// Agrega una etiqueta al contacto si no la tiene (idempotente). Vivía en
+// lib/ai/runtime/state.ts hasta la Fase B 3; el agente ya no etiqueta.
+async function addContactTag(organizationId: string, contactId: string, tag: string): Promise<void> {
+  await db
+    .update(contacts)
+    .set({ tags: sql`case when ${tag} = any(${contacts.tags}) then ${contacts.tags} else array_append(${contacts.tags}, ${tag}) end` })
+    .where(and(eq(contacts.id, contactId), eq(contacts.organizationId, organizationId)));
 }
 
 const STAGES = new Set(["inbox", "prospecto", "interesado", "cerca_compra", "compra"]);

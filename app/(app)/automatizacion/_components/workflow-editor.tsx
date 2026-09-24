@@ -252,7 +252,7 @@ function StepFields({
     case "handover":
       return (
         <label className="space-y-1">
-          <span className="text-xs font-medium text-muted-foreground">Etiqueta al contacto (opcional; por defecto “pasar a humano”)</span>
+          <span className="text-xs font-medium text-muted-foreground">Etiqueta al contacto (opcional; sin etiqueta por defecto). Desde un comando o “Probar” pausa al agente; desde el agente solo deja el aviso.</span>
           <input value={step.tag ?? ""} onChange={(e) => onChange({ ...step, tag: e.target.value || undefined })} maxLength={40} className={inputClass} />
         </label>
       );

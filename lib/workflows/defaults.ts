@@ -4,8 +4,8 @@
 //
 // Palabras clave: los predeterminados nacen SIN palabras clave. En AUTO el agente
 // ya tiene cada workflow como herramienta y decide con el contexto; una palabra
-// suelta ("vi su video en Facebook") mandaría contenido que nadie pidió y
-// quemaría el "una vez por conversación". El admin las agrega si las quiere.
+// suelta ("vi su video en Facebook") mandaría contenido que nadie pidió.
+// El admin las agrega si las quiere.
 // Reglas del Goal que respetan estos textos: mensajes breves para celular, sin
 // listas ni catálogo, "tamaño" (nunca "talla"), precios tal cual la base
 // ($5,500 estándar, $7,000 a la medida, $3,000 mini, tapones $749/$799/$849).

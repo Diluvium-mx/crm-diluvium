@@ -3,7 +3,7 @@
 // haberlo editado); solo se crean los que faltan. La usa el hook de creación
 // de organizaciones (lib/auth/index.ts) y el botón "Restaurar predeterminados"
 // de la pestaña Automatización (para la organización que ya existía antes de
-// la migración 0025).
+// la migración 0026).
 import { and, eq } from "drizzle-orm";
 import type { db as appDb } from "@/lib/db";
 import { workflowSteps, workflows } from "@/lib/db/schema/automation";
