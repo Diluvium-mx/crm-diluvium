@@ -8,8 +8,9 @@
 // quemaría el "una vez por conversación". El admin las agrega si las quiere.
 // Reglas del Goal que respetan estos textos: mensajes breves para celular, sin
 // listas ni catálogo, "tamaño" (nunca "talla"), precios tal cual la base
-// ($5,500 estándar, $7,000 a la medida, $3,000 mini, tapones $749/$799/$849),
-// no reenviar contenido ya compartido (once_per_conversation).
+// ($5,500 estándar, $7,000 a la medida, $3,000 mini, tapones $749/$799/$849).
+// Repetir o no un contenido ya enviado lo decide el agente con el contexto (el
+// Goal se lo pide); el CRM no lo bloquea.
 import type { StepPayload } from "./steps";
 
 export type DefaultWorkflow = {
@@ -19,7 +20,6 @@ export type DefaultWorkflow = {
   triggerAgent: boolean;
   triggerKeywords: string[];
   triggerCommand: string | null;
-  oncePerConversation: boolean;
   steps: StepPayload[];
 };
 
@@ -33,11 +33,10 @@ export const DEFAULT_WORKFLOWS: readonly DefaultWorkflow[] = [
     agentDescription:
       "Envía la imagen con la tabla de tamaños de las compuertas estándar (XCH a XG, entradas de 69 a 120 cm). " +
       "Úsala cuando el cliente pregunte qué tamaños hay, cómo saber cuál le queda, o pida la tabla. " +
-      "Responde primero su duda en texto y luego llama esta herramienta. No la uses si ya se envió en esta conversación.",
+      "Responde primero su duda en texto y luego llama esta herramienta. No la repitas si ya se envió en esta conversación.",
     triggerAgent: true,
     triggerKeywords: [],
     triggerCommand: "/tabla",
-    oncePerConversation: true,
     steps: [
       text("Te comparto la tabla de tamaños de las compuertas estándar. Solo ubica el ancho de tu entrada, de lateral a lateral, y ahí ves el tamaño que te corresponde."),
       media("Tabla de tamaños — compuerta estándar (PNG/JPG)"),
@@ -53,7 +52,6 @@ export const DEFAULT_WORKFLOWS: readonly DefaultWorkflow[] = [
     triggerAgent: true,
     triggerKeywords: [],
     triggerCommand: "/mini",
-    oncePerConversation: true,
     steps: [
       text("Esta es la tabla de tamaños de las mini compuertas, de 30 cm de alto. Ubica el ancho de tu entrada y ahí está el tamaño que te corresponde."),
       media("Tabla de tamaños — mini compuerta (PNG/JPG)"),
@@ -69,7 +67,6 @@ export const DEFAULT_WORKFLOWS: readonly DefaultWorkflow[] = [
     triggerAgent: true,
     triggerKeywords: [],
     triggerCommand: "/banco",
-    oncePerConversation: true,
     steps: [
       text("Perfecto. Te comparto los datos para tu transferencia o depósito. Cuando lo realices, mándame aquí mismo tu comprobante para continuar con tu pedido."),
       media("Datos bancarios (imagen con banco, CLABE y beneficiario)"),
@@ -86,7 +83,6 @@ export const DEFAULT_WORKFLOWS: readonly DefaultWorkflow[] = [
     triggerAgent: true,
     triggerKeywords: [],
     triggerCommand: "/video",
-    oncePerConversation: true,
     steps: [
       text("Aquí te va el video de instalación. Está pensada para que tú mismo la coloques en pocos minutos, sin obra ni herramientas especiales."),
       media("Video de instalación — compuerta estándar (MP4 H.264, ≤16 MB)"),
@@ -101,7 +97,6 @@ export const DEFAULT_WORKFLOWS: readonly DefaultWorkflow[] = [
     triggerAgent: true,
     triggerKeywords: [],
     triggerCommand: "/video-medida",
-    oncePerConversation: true,
     steps: [
       text("Te comparto el video de instalación de la compuerta hecha a la medida. La colocación es igual de sencilla, solo cambia el tamaño."),
       media("Video de instalación — compuerta a la medida (MP4 H.264, ≤16 MB)"),
@@ -116,7 +111,6 @@ export const DEFAULT_WORKFLOWS: readonly DefaultWorkflow[] = [
     triggerAgent: true,
     triggerKeywords: [],
     triggerCommand: "/video-mini",
-    oncePerConversation: true,
     steps: [
       text("Te comparto el video de instalación de la mini compuerta. Se coloca en minutos, igual que la estándar, solo que con 30 cm de alto."),
       media("Video de instalación — mini compuerta (MP4 H.264, ≤16 MB)"),
@@ -132,7 +126,6 @@ export const DEFAULT_WORKFLOWS: readonly DefaultWorkflow[] = [
     triggerAgent: true,
     triggerKeywords: [],
     triggerCommand: "/tapones",
-    oncePerConversation: true,
     steps: [
       text("Los tapones inflables sellan coladeras y desagües para que el agua no suba por ahí. Te mando fotos y un video para que veas cómo funcionan; se inflan con una bomba manual chica, nunca con compresor."),
       media("Tapones inflables — foto 1 (PNG/JPG)"),
@@ -150,7 +143,6 @@ export const DEFAULT_WORKFLOWS: readonly DefaultWorkflow[] = [
     triggerAgent: true,
     triggerKeywords: [],
     triggerCommand: "/medir",
-    oncePerConversation: true,
     steps: [
       text("La medida es de lateral a lateral, en centímetros, justo en el punto donde se va a apoyar la compuerta. Te dejo un video corto para que veas dónde tomarla."),
       media("Video de dónde medir la entrada (MP4 H.264, ≤16 MB)"),
@@ -165,7 +157,6 @@ export const DEFAULT_WORKFLOWS: readonly DefaultWorkflow[] = [
     triggerAgent: true,
     triggerKeywords: [],
     triggerCommand: "/especial",
-    oncePerConversation: true,
     steps: [
       text("Para entradas mayores a 250 cm sí hay opción: una fabricación especial de aproximadamente 280 cm, o un poste central de acero con dos compuertas a la medida, una por lado. Te dejo un diagrama para que se entienda mejor."),
       media("Diagrama de medidas especiales — poste central / 280 cm (PNG/JPG)"),
@@ -182,7 +173,6 @@ export const DEFAULT_WORKFLOWS: readonly DefaultWorkflow[] = [
     triggerAgent: true,
     triggerKeywords: [],
     triggerCommand: "/humano",
-    oncePerConversation: false,
     steps: [{ kind: "handover" }],
   },
   {
@@ -195,7 +185,6 @@ export const DEFAULT_WORKFLOWS: readonly DefaultWorkflow[] = [
     triggerAgent: true,
     triggerKeywords: [],
     triggerCommand: null,
-    oncePerConversation: false,
     // Sin pasos fijos: la etapa la trae el argumento de la herramienta (el
     // ejecutor la aplica con set_stage). Los seeds dejan el paso como plantilla.
     steps: [{ kind: "set_stage", stage: "interesado" }],
@@ -212,7 +201,6 @@ export const DEFAULT_WORKFLOWS: readonly DefaultWorkflow[] = [
     triggerAgent: true,
     triggerKeywords: [],
     triggerCommand: null,
-    oncePerConversation: true,
     // El aviso va PRIMERO (sube la conversación y la marca no leída) y la etapa
     // al final: nadie ve "Compra" sin ver el freno de cotejar.
     steps: [
@@ -235,7 +223,6 @@ export const DEFAULT_WORKFLOWS: readonly DefaultWorkflow[] = [
     triggerAgent: true,
     triggerKeywords: [],
     triggerCommand: null,
-    oncePerConversation: true,
     steps: [
       {
         kind: "internal_note",
@@ -254,7 +241,6 @@ export const DEFAULT_WORKFLOWS: readonly DefaultWorkflow[] = [
     triggerAgent: true,
     triggerKeywords: [],
     triggerCommand: null,
-    oncePerConversation: false,
     steps: [
       { kind: "add_tag", tag: "revisar comprobante" },
       { kind: "internal_note", text: "Comprobante que no cuadra según el agente: {{motivo}}. Revisar con el cliente." },

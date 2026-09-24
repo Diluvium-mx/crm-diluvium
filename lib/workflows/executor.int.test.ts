@@ -127,7 +127,7 @@ describe.skipIf(!TEST_DATABASE_URL)("executor de workflows", () => {
   }
   async function workflow(steps: import("@/lib/db/schema/automation").WorkflowStepPayload[], opts: Partial<typeof s.workflows.$inferInsert> = {}) {
     const id = crypto.randomUUID();
-    await db.insert(s.workflows).values({ id, organizationId: ORG, slug: `wf_${id.slice(0, 6)}`, name: "WF", enabled: true, oncePerConversation: true, ...opts });
+    await db.insert(s.workflows).values({ id, organizationId: ORG, slug: `wf_${id.slice(0, 6)}`, name: "WF", enabled: true, ...opts });
     await db.insert(s.workflowSteps).values(steps.map((payload, position) => ({ id: crypto.randomUUID(), organizationId: ORG, workflowId: id, position, kind: payload.kind, payload })));
     return id;
   }
@@ -157,16 +157,6 @@ describe.skipIf(!TEST_DATABASE_URL)("executor de workflows", () => {
     // Un segundo job del mismo run no lo vuelve a ejecutar (ya no está "queued").
     expect(await ex.executeWorkflowRun(start.runId, { provider, storage })).toBe("not_claimed");
     expect(sent).toHaveLength(2);
-  });
-
-  it("'una vez por conversación': el agente no repite la tabla, pero el vendedor sí puede con el comando", async () => {
-    const wf = await workflow([{ kind: "send_text", text: "tabla" }]);
-    const first = await ex.startWorkflowRun({ organizationId: ORG, workflowId: wf, conversationId: CONV, trigger: "agent" });
-    await ex.executeWorkflowRun(first.runId, { provider, storage });
-    const again = await ex.startWorkflowRun({ organizationId: ORG, workflowId: wf, conversationId: CONV, trigger: "agent" });
-    expect(again).toMatchObject({ status: "skipped", reason: ex.SKIP_ALREADY_SENT });
-    const byCommand = await ex.startWorkflowRun({ organizationId: ORG, workflowId: wf, conversationId: CONV, trigger: "command", triggeredByUserId: "u_v" });
-    expect(byCommand.status).toBe("queued");
   });
 
   it("canal que no está en auto (borrador u off cuentan igual: apagado): el agente/palabra clave no ejecutan; el comando humano sí", async () => {
@@ -281,16 +271,6 @@ describe.skipIf(!TEST_DATABASE_URL)("executor de workflows", () => {
     expect((await contact()).stage).toBe("compra");
   });
 
-  it("carrera: dos disparos no humanos simultáneos dejan UNA corrida (índice único); el segundo queda omitido", async () => {
-    const wf = await workflow([{ kind: "send_text", text: "tabla" }]);
-    const [a, b] = await Promise.all([
-      ex.startWorkflowRun({ organizationId: ORG, workflowId: wf, conversationId: CONV, trigger: "keyword" }),
-      ex.startWorkflowRun({ organizationId: ORG, workflowId: wf, conversationId: CONV, trigger: "keyword" }),
-    ]);
-    expect([a.status, b.status].sort()).toEqual(["queued", "skipped"]);
-    expect([a.reason, b.reason].filter(Boolean)).toEqual([ex.SKIP_ALREADY_SENT]);
-  });
-
   it("disparo por etapa: no marca leídos los mensajes del cliente y avisa en el hilo si falla por ventana cerrada", async () => {
     await db.insert(s.messages).values({ id: "m_in", organizationId: ORG, conversationId: CONV, direction: "in", source: "contact", type: "text", body: "¿aguanta 1 metro?", status: "received" });
     await db.update(s.conversations).set({ unreadCount: 1 }).where(eq(s.conversations.id, CONV));
@@ -313,14 +293,6 @@ describe.skipIf(!TEST_DATABASE_URL)("executor de workflows", () => {
     const wf = await workflow([{ kind: "send_text", text: "x" }], { enabled: false });
     expect((await ex.startWorkflowRun({ organizationId: ORG, workflowId: wf, conversationId: CONV, trigger: "command", allowDisabled: true })).status).toBe("queued");
     expect((await ex.startWorkflowRun({ organizationId: ORG, workflowId: wf, conversationId: CONV, trigger: "agent", allowDisabled: true })).status).toBe("skipped");
-  });
-
-  it("un workflow repetible (once=false) sí corre dos veces por etapa; el índice único no lo bloquea", async () => {
-    const wf = await workflow([{ kind: "send_text", text: "recordatorio" }], { oncePerConversation: false });
-    const a = await ex.startWorkflowRun({ organizationId: ORG, workflowId: wf, conversationId: CONV, trigger: "stage" });
-    await ex.executeWorkflowRun(a.runId, { provider, storage });
-    const b = await ex.startWorkflowRun({ organizationId: ORG, workflowId: wf, conversationId: CONV, trigger: "stage" });
-    expect(b.status).toBe("queued");
   });
 
   it("envío sin confirmar (timeout del proveedor): la corrida se detiene, no mueve la etapa y avisa al vendedor", async () => {

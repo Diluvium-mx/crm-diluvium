@@ -24,7 +24,6 @@ export function toDraft(w: WorkflowView | null): EditorDraft {
     keywordsText: (w?.triggerKeywords ?? []).join(", "),
     triggerCommand: w?.triggerCommand ?? null,
     triggerStage: w?.triggerStage ?? null,
-    oncePerConversation: w?.oncePerConversation ?? true,
     steps: w?.steps ?? [],
   };
 }
@@ -42,7 +41,6 @@ export function toInput(d: EditorDraft): WorkflowInput {
       .filter(Boolean),
     triggerCommand: d.triggerCommand?.trim() ? d.triggerCommand.trim().toLowerCase() : null,
     triggerStage: d.triggerStage,
-    oncePerConversation: d.oncePerConversation,
     steps: d.steps,
   };
 }
@@ -110,10 +108,6 @@ export function WorkflowEditor({
           <label className="flex items-center gap-2 text-sm">
             <input type="checkbox" checked={draft.triggerAgent} onChange={(e) => set({ triggerAgent: e.target.checked })} />
             El Agente IA puede dispararlo
-          </label>
-          <label className="flex items-center gap-2 text-sm">
-            <input type="checkbox" checked={draft.oncePerConversation} onChange={(e) => set({ oncePerConversation: e.target.checked })} />
-            Una vez por conversación (el vendedor puede repetirlo con el comando)
           </label>
           <label className="space-y-1">
             <span className="text-xs font-medium text-muted-foreground">Comando del vendedor (en el chat)</span>

@@ -46,7 +46,6 @@ export async function seedDefaultWorkflows(database: Db, organizationId: string)
         triggerKeywords: def.triggerKeywords,
         triggerCommand: commandTaken ? null : def.triggerCommand,
         triggerStage: null,
-        oncePerConversation: def.oncePerConversation,
         position: i,
       });
       if (def.steps.length > 0) {

@@ -25,7 +25,6 @@ import { addContactTag, notifyConversation, setAgentState } from "@/lib/ai/runti
 import { TAG_HANDOVER } from "@/lib/ai/runtime/tags";
 import { loadAgentConfig } from "@/lib/ai/runtime/config";
 import { missingMedia, stripUnresolvedVariables } from "./steps";
-import { isUniqueViolation } from "@/lib/db/errors";
 
 export type RunTrigger = "agent" | "keyword" | "command" | "stage";
 
@@ -48,7 +47,6 @@ export type StartRunResult = { runId: string; status: "queued" | "skipped"; reas
 // Motivos de `skipped` (error_code) visibles en la pestaña.
 export const SKIP_DISABLED = "workflow_deshabilitado";
 export const SKIP_MISSING_MEDIA = "falta_archivo";
-export const SKIP_ALREADY_SENT = "ya_enviado";
 export const SKIP_CHANNEL_OFF = "canal_apagado";
 export const SKIP_NO_STEPS = "sin_pasos";
 export const FAIL_WINDOW = "ventana_24h";
@@ -81,7 +79,6 @@ async function insertRun(
   contactId: string,
   status: "queued" | "skipped",
   reason?: string,
-  once = true,
 ): Promise<string> {
   const id = crypto.randomUUID();
   const now = input.now ?? new Date();
@@ -92,7 +89,6 @@ async function insertRun(
     conversationId: input.conversationId,
     contactId,
     trigger: input.trigger,
-    once,
     triggeredByUserId: input.triggeredByUserId ?? null,
     payload: input.payload ?? null,
     status,
@@ -133,32 +129,7 @@ export async function startWorkflowRun(input: StartRunInput): Promise<StartRunRe
   // AUTO: cualquier otro valor cuenta como apagado (el modo "borrador" ya no
   // existe en el negocio). Los comandos del vendedor y la etapa manual siempre.
   if (!HUMAN_TRIGGERS.has(input.trigger) && conv.aiAgentMode !== "auto") return skip(SKIP_CHANNEL_OFF);
-  // "No vuelvas a enviar contenido ya compartido": un comando del vendedor lo
-  // repite a propósito; el agente y las palabras clave no.
-  if (wf.oncePerConversation && input.trigger !== "command") {
-    const [prev] = await db
-      .select({ id: workflowRuns.id })
-      .from(workflowRuns)
-      .where(
-        and(
-          eq(workflowRuns.conversationId, conv.id),
-          eq(workflowRuns.workflowId, wf.id),
-          inArray(workflowRuns.status, ["queued", "running", "done"]),
-        ),
-      )
-      .limit(1);
-    if (prev) return skip(SKIP_ALREADY_SENT);
-  }
-
-  let runId: string;
-  try {
-    runId = await insertRun(input, conv.contactId, "queued", undefined, wf.oncePerConversation);
-  } catch (error) {
-    // Carrera con otra corrida viva del mismo workflow (índice único parcial):
-    // se registra como omitida, nunca se manda dos veces.
-    if (isUniqueViolation(error)) return skip(SKIP_ALREADY_SENT);
-    throw error;
-  }
+  const runId = await insertRun(input, conv.contactId, "queued");
   await enqueueWorkflowRun(runId);
   return { runId, status: "queued" };
 }
