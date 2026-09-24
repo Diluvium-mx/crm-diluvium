@@ -54,8 +54,8 @@ export const workflowRunStatusEnum = pgEnum("workflow_run_status", [
   "done",
   "failed",
   "cancelled",
-  // No se ejecutó por diseño (p. ej. canal en modo borrador, ya enviado en la
-  // conversación); queda visible en la pestaña con su motivo en error_code.
+  // No se ejecutó por diseño (p. ej. canal fuera de "auto" para un disparo del
+  // agente o por palabra clave); queda visible en la pestaña con su motivo en error_code.
   "skipped",
 ]);
 

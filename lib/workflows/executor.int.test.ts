@@ -258,17 +258,39 @@ describe.skipIf(!TEST_DATABASE_URL)("executor de workflows", () => {
     const c = await contact();
     // "etapa" del argumento NO manda en un workflow que no sea cambiar_etapa: queda la del paso.
     expect(c.stage).toBe("interesado");
-    expect(c.tags).toEqual(expect.arrayContaining(["cotejar depósito", "pasar a humano"]));
+    // Sin etiqueta por defecto (Fase B 3: las internas ya no se crean ni se muestran).
+    expect(c.tags).toEqual(["cotejar depósito"]);
+    // Disparo del AGENTE: no lo pausa (sigue contestando hasta que un vendedor
+    // responda); deja el aviso de pase a humano en el hilo.
     const cv = await conv();
-    expect(cv.agentState).toBe("pausado_handover");
-    expect(cv.agentPausedUntil).not.toBeNull();
-    // cambiar_etapa sí toma la etapa del argumento (con el agente activo de nuevo:
-    // pausado por el handover, ningún paso del agente corre).
-    await db.update(s.conversations).set({ agentState: "activo", agentPausedUntil: null }).where(eq(s.conversations.id, CONV));
+    expect(cv.agentState).toBe("activo");
+    expect(cv.agentPausedUntil).toBeNull();
+    const avisos = await db.select().from(s.aiAgentNotices).where(eq(s.aiAgentNotices.conversationId, CONV));
+    expect(avisos.map((a) => a.kind)).toEqual(["pasar_a_humano"]);
+    // cambiar_etapa sí toma la etapa del argumento.
     const wfStage = await workflow([{ kind: "set_stage", stage: "interesado" }], { slug: "cambiar_etapa" });
     const st = await ex.startWorkflowRun({ organizationId: ORG, workflowId: wfStage, conversationId: CONV, trigger: "agent", payload: { etapa: "compra" } });
     expect(await ex.executeWorkflowRun(st.runId, { provider, storage })).toBe("done");
     expect((await contact()).stage).toBe("compra");
+  });
+
+  it("pasar a humano desde un comando del vendedor pausa al agente (pausado_humano, sin fecha) y etiqueta solo si el paso lo pide", async () => {
+    const wf = await workflow([{ kind: "handover", tag: "revisar {{nombre}}" }]);
+    const start = await ex.startWorkflowRun({
+      organizationId: ORG,
+      workflowId: wf,
+      conversationId: CONV,
+      trigger: "command",
+      triggeredByUserId: "u_v",
+    });
+    expect(await ex.executeWorkflowRun(start.runId, { provider, storage })).toBe("done");
+    const cv = await conv();
+    expect(cv.agentState).toBe("pausado_humano");
+    expect(cv.agentPausedUntil).toBeNull();
+    expect((await contact()).tags.find((t) => t.startsWith("revisar "))).toBeDefined();
+    const avisos = await db.select().from(s.aiAgentNotices).where(eq(s.aiAgentNotices.conversationId, CONV));
+    expect(avisos).toHaveLength(1);
+    expect(avisos[0]?.body).toMatch(/pausa/);
   });
 
   it("disparo por etapa: no marca leídos los mensajes del cliente y avisa en el hilo si falla por ventana cerrada", async () => {
