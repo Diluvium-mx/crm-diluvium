@@ -1,11 +1,9 @@
-// Gasto de IA del Dashboard (solo owner/admin). Producción y staging usan las MISMAS
-// llaves de OpenAI/Anthropic (24-sep-2026), así que la tarjeta muestra, por
-// proveedor, el gasto del MES (días locales de Mazatlán) de producción y el de
-// pruebas (staging), y un SALDO ESTIMADO = recargas − gasto de ambos desde la
-// primera recarga. Ni OpenAI ni Anthropic dan el saldo por API
+// Gasto de IA del Dashboard (solo owner/admin): por proveedor, el gasto del MES
+// (días locales de Mazatlán) y un SALDO ESTIMADO = recargas − gasto de producción
+// desde la primera recarga. Ni OpenAI ni Anthropic dan el saldo por API
 // (docs/investigacion/gasto-ia-saldo.md): el gasto sale de ai_usage.cost_usd
-// (precios internos de lib/ai/pricing.ts). El gasto de staging llega por HTTP
-// (lib/dashboard/staging-spend.ts); si no responde, el saldo solo descuenta producción.
+// (precios internos de lib/ai/pricing.ts). Solo cuenta el gasto de ESTE entorno:
+// el de pruebas (staging) ya no se lee ni se descuenta (24-sep-2026).
 import { sql } from "drizzle-orm";
 import type { db as appDb } from "@/lib/db";
 import { PROVIDER_META } from "@/lib/ai/provider";
@@ -21,26 +19,15 @@ const ALWAYS: readonly ProviderId[] = ["openai", "anthropic"];
 // Gasto de un día local (YYYY-MM-DD, Mazatlán) de un proveedor.
 export type DaySpend = { day: string; provider: string; usd: number };
 
-// Gasto del otro entorno (staging) visto desde producción.
-// ok = llegó · no_config = faltan STAGING_APP_URL / AI_SPEND_TOKEN · unreachable = no respondió.
-export type RemoteSpend = { status: "ok"; days: DaySpend[] } | { status: "no_config" | "unreachable" };
-
-// "production": la tarjeta separa producción y staging. "staging": este ES el entorno
-// de pruebas; solo muestra su propio gasto.
-export type SpendEnvironment = "production" | "staging";
-
 export type ProviderSpend = {
   provider: string;
   label: string;
-  // Gasto de ESTE entorno en el mes.
+  // Gasto del mes.
   monthUsd: number;
-  // Gasto de staging en el mes; null = sin dato (no respondió, sin configurar o este es staging).
-  stagingMonthUsd: number | null;
   // null = sin recargas registradas (no hay saldo que estimar).
   loadedUsd: number | null;
   firstTopupOn: string | null;
   spentSinceFirstUsd: number | null;
-  stagingSpentSinceFirstUsd: number | null;
   balanceUsd: number | null;
 };
 
@@ -48,9 +35,6 @@ export type TopupRow = { id: string; provider: string; label: string; amountUsd:
 
 export type AiSpendSummary = {
   monthLabel: string;
-  environment: SpendEnvironment;
-  // Cómo llegó el gasto de staging (en staging mismo siempre "self").
-  staging: RemoteSpend["status"] | "self";
   providers: ProviderSpend[];
   topups: TopupRow[];
 };
@@ -91,67 +75,43 @@ export function spendFrom(monthStart: string, firstTopups: readonly string[]): s
 
 type Load = { provider: string; loadedUsd: number; firstTopupOn: string };
 
-// PURO: arma los números de cada proveedor a partir del gasto diario de este entorno,
-// el de staging (null = sin dato) y las recargas.
-export function summarizeProviders(input: {
-  monthStart: string;
-  ownDays: readonly DaySpend[];
-  stagingDays: readonly DaySpend[] | null;
-  loads: readonly Load[];
-}): ProviderSpend[] {
+// PURO: arma los números de cada proveedor a partir del gasto diario y las recargas.
+export function summarizeProviders(input: { monthStart: string; days: readonly DaySpend[]; loads: readonly Load[] }): ProviderSpend[] {
   const monthEnd = nextMonthStart(input.monthStart);
   const loadBy = new Map(input.loads.map((l) => [l.provider, l]));
   const seen = new Set<string>([...ALWAYS]);
-  for (const d of input.ownDays) seen.add(d.provider);
-  for (const d of input.stagingDays ?? []) seen.add(d.provider);
+  for (const d of input.days) seen.add(d.provider);
   for (const l of input.loads) seen.add(l.provider);
   return [...seen].map((provider) => {
     const load = loadBy.get(provider);
-    const staging = input.stagingDays;
-    const spentOwn = load ? sumDays(input.ownDays, provider, load.firstTopupOn) : null;
-    const spentStaging = load && staging ? sumDays(staging, provider, load.firstTopupOn) : null;
+    const spent = load ? sumDays(input.days, provider, load.firstTopupOn) : null;
     return {
       provider,
       label: providerLabel(provider),
-      monthUsd: sumDays(input.ownDays, provider, input.monthStart, monthEnd),
-      stagingMonthUsd: staging ? sumDays(staging, provider, input.monthStart, monthEnd) : null,
+      monthUsd: sumDays(input.days, provider, input.monthStart, monthEnd),
       loadedUsd: load ? load.loadedUsd : null,
       firstTopupOn: load?.firstTopupOn ?? null,
-      spentSinceFirstUsd: spentOwn,
-      stagingSpentSinceFirstUsd: spentStaging,
-      balanceUsd: load ? estimateBalance(load.loadedUsd, (spentOwn ?? 0) + (spentStaging ?? 0)) : null,
+      spentSinceFirstUsd: spent,
+      balanceUsd: load ? estimateBalance(load.loadedUsd, spent ?? 0) : null,
     };
   });
 }
 
-// Gasto por día LOCAL (Mazatlán) y proveedor desde `from` (inclusive). Con
-// organizationId = null suma TODAS las organizaciones del entorno: es lo que consume
-// la llave (la usa el endpoint que staging le expone a producción).
-export async function spendByDay(database: Database, organizationId: string | null, from: string): Promise<DaySpend[]> {
-  const byOrg = organizationId === null ? sql`` : sql`and organization_id = ${organizationId}`;
+// Gasto por día LOCAL (Mazatlán) y proveedor de la organización desde `from` (inclusive).
+export async function spendByDay(database: Database, organizationId: string, from: string): Promise<DaySpend[]> {
   const rows = await database.execute<{ day: string; provider: string; usd: string | null }>(sql`
     select to_char((created_at at time zone 'UTC') at time zone ${tz}, 'YYYY-MM-DD') as day,
       provider, sum(cost_usd)::text as usd
     from ai_usage
     where created_at >= (((${from}::date)::timestamp at time zone ${tz}) at time zone 'UTC')
-      ${byOrg}
+      and organization_id = ${organizationId}
     group by 1, 2
     order by 1, 2
   `);
   return rows.map((r) => ({ day: r.day, provider: r.provider, usd: Number(r.usd ?? 0) }));
 }
 
-export async function aiSpendSummary(
-  database: Database,
-  organizationId: string,
-  options: {
-    now?: Date;
-    environment?: SpendEnvironment;
-    // Lee el gasto de staging desde `from` (solo en producción).
-    fetchStaging?: (from: string) => Promise<RemoteSpend>;
-  } = {},
-): Promise<AiSpendSummary> {
-  const environment = options.environment ?? "production";
+export async function aiSpendSummary(database: Database, organizationId: string, options: { now?: Date } = {}): Promise<AiSpendSummary> {
   const today = localToday(options.now ?? new Date());
   const monthStart = `${today.slice(0, 7)}-01`;
   const loadRows = await database.execute<{ provider: string; loaded: string; first: string }>(sql`
@@ -161,15 +121,7 @@ export async function aiSpendSummary(
     group by provider
   `);
   const loads: Load[] = loadRows.map((r) => ({ provider: r.provider, loadedUsd: Number(r.loaded), firstTopupOn: r.first }));
-  const from = spendFrom(monthStart, loads.map((l) => l.firstTopupOn));
-
-  const [ownDays, remote] = await Promise.all([
-    spendByDay(database, organizationId, from),
-    environment === "staging" || !options.fetchStaging
-      ? Promise.resolve<RemoteSpend | null>(null)
-      : options.fetchStaging(from),
-  ]);
-  const staging: AiSpendSummary["staging"] = environment === "staging" ? "self" : (remote?.status ?? "no_config");
+  const days = await spendByDay(database, organizationId, spendFrom(monthStart, loads.map((l) => l.firstTopupOn)));
 
   const topups = await database.execute<{ id: string; provider: string; amount: string; day: string; author: string | null }>(sql`
     select tp.id, tp.provider, tp.amount_usd::text as amount, to_char(tp.topped_up_on, 'YYYY-MM-DD') as day, u.name as author
@@ -182,14 +134,7 @@ export async function aiSpendSummary(
 
   return {
     monthLabel: new Intl.DateTimeFormat("es-MX", { month: "long", year: "numeric", timeZone: "UTC" }).format(new Date(`${monthStart}T12:00:00Z`)),
-    environment,
-    staging,
-    providers: summarizeProviders({
-      monthStart,
-      ownDays,
-      stagingDays: remote?.status === "ok" ? remote.days : null,
-      loads,
-    }),
+    providers: summarizeProviders({ monthStart, days, loads }),
     topups: topups.map((t) => ({
       id: t.id,
       provider: t.provider,
