@@ -46,6 +46,9 @@ export function ContactCard({
   // clic sin desplazar sigue disparando onClick y abre el panel; solo al
   // arrastrar toma el control dnd-kit. Mientras se arrastra, la tarjeta
   // original se atenúa y el DragOverlay muestra la copia que sigue al cursor.
+  // El fondo lo lleva el botón y el contenido va transparente: así el "fondo
+  // iluminado" (app/globals.css) se ve DETRÁS del contenido. La copia del
+  // DragOverlay conserva su propio fondo.
   return (
     <button
       ref={setNodeRef}
@@ -53,7 +56,7 @@ export function ContactCard({
       onClick={onClick}
       {...attributes}
       {...listeners}
-      className={`w-full cursor-grab rounded-md text-left active:cursor-grabbing ${
+      className={`w-full cursor-grab rounded-md bg-card text-left active:cursor-grabbing [&>div]:bg-transparent ${
         isDragging ? "opacity-40" : ""
       }`}
     >

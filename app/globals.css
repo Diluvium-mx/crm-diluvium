@@ -143,6 +143,106 @@
   }
 }
 
+/* ── Superficies interactivas: fondo iluminado + pulsación (TODO el CRM) ──────────
+   Una sola regla para botones, pestañas, opciones, interruptores, filas y tarjetas
+   que son <button>/role, e ítems del sidebar (data-glow): al pasar el cursor (o con
+   foco de teclado) se ilumina el fondo DETRÁS del contenido, más intenso donde está
+   el cursor (components/ui/glow-pointer.tsx fija --glow-x/--glow-y); al presionar,
+   una pulsación corta. Navy en lo general; BLANCO sobre fondos sólidos de marca
+   (navy, naranja): el naranja nunca se usa como luz (CLAUDE.md §6). Claro y oscuro.
+   Con "reducir movimiento" no hay pulsación ni transiciones y la luz queda centrada.
+   Fuera: deshabilitados, data-no-glow y fondos de pantalla completa (inset-0). */
+:root {
+  --glow-surface: 10 85 154;
+  --glow-rgb: var(--glow-surface);
+  --glow-alpha: 0.12;
+  --glow-alpha-press: 0.22;
+}
+
+.dark {
+  --glow-surface: 150 195 240;
+  --glow-alpha: 0.12;
+  --glow-alpha-press: 0.22;
+}
+
+/* Sobre superficies claras la luz es navy; sobre fondos sólidos de marca, blanca. */
+:where([class~="bg-card"], [class~="bg-background"], [class~="bg-popover"], [class~="bg-muted"], [class~="bg-secondary"], [class~="bg-white"], [class~="bg-brand-white"], .chat-wallpaper) {
+  --glow-rgb: var(--glow-surface);
+}
+
+:where([class~="bg-brand-navy"], [class~="bg-brand-navy-dark"], [class~="bg-brand-orange"], [class~="bg-brand-orange-light"], [class~="bg-primary"], [class~="bg-destructive"], [data-glow="light"]) {
+  --glow-rgb: 255 255 255;
+  --glow-alpha: 0.16;
+  --glow-alpha-press: 0.3;
+}
+
+@layer base {
+  :where(button, [role="button"], [role="tab"], [role="radio"], [role="switch"], [role="menuitem"], [role="menuitemradio"], [role="menuitemcheckbox"], [role="option"]:not(:has(button)), summary, [data-glow]):where(:not([data-no-glow], [class~="inset-0"])) {
+    /* Base de capas: la luz (::before, z-index -1) queda sobre el fondo del
+       elemento y debajo de su contenido. Las utilidades (absolute, fixed…) mandan. */
+    position: relative;
+    isolation: isolate;
+    -webkit-tap-highlight-color: transparent;
+
+    &::before {
+      content: "";
+      position: absolute;
+      inset: 0;
+      z-index: -1;
+      border-radius: inherit;
+      pointer-events: none;
+      background-image: radial-gradient(
+        circle at var(--glow-x, 50%) var(--glow-y, 50%),
+        rgb(var(--glow-rgb) / var(--glow-alpha)),
+        rgb(var(--glow-rgb) / calc(var(--glow-alpha) * 0.55)) 55%,
+        rgb(var(--glow-rgb) / calc(var(--glow-alpha) * 0.35))
+      );
+      opacity: 0;
+    }
+
+    &:where(:not(:disabled, [aria-disabled="true"], [data-disabled])) {
+      @media (hover: hover) {
+        &:hover::before {
+          opacity: 1;
+        }
+      }
+      &:focus-visible::before {
+        opacity: 1;
+      }
+      &:active::before {
+        opacity: 1;
+        --glow-alpha: var(--glow-alpha-press);
+      }
+    }
+  }
+
+  @media (prefers-reduced-motion: no-preference) {
+    :where(button, [role="button"], [role="tab"], [role="radio"], [role="switch"], [role="menuitem"], [role="menuitemradio"], [role="menuitemcheckbox"], [role="option"]:not(:has(button)), summary, [data-glow]):where(:not([data-no-glow], [class~="inset-0"])) {
+      &::before {
+        transition: opacity 180ms ease-out;
+      }
+      &:where(:not(:disabled, [aria-disabled="true"], [data-disabled])):active::before {
+        animation: glow-press 360ms cubic-bezier(0.2, 0, 0, 1);
+      }
+      /* Las tarjetas arrastrables (dnd-kit) no encogen: el arrastre mide su tamaño. */
+      &:where(:not(:disabled, [aria-disabled="true"], [data-disabled], [aria-roledescription="draggable"])):active {
+        animation: press-pulse 200ms cubic-bezier(0.2, 0, 0, 1);
+      }
+    }
+  }
+}
+
+@keyframes press-pulse {
+  0% { scale: 1; }
+  45% { scale: 0.97; }
+  100% { scale: 1; }
+}
+
+@keyframes glow-press {
+  0% { box-shadow: 0 0 0 0 rgb(var(--glow-rgb) / 0.35); }
+  100% { box-shadow: 0 0 0 6px rgb(var(--glow-rgb) / 0); }
+}
+
 /* Micro-interacciones del kanban de Contactos (presentacional).
    card-pickup: "levantar" la tarjeta al arrastrar (pop + leve inclinacion),
    aplicado al contenido del DragOverlay. Respeta prefers-reduced-motion. */

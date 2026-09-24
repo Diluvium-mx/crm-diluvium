@@ -19,11 +19,14 @@ export function FragmentosPlantillas({
   initialTemplates,
   canManageSnippets,
   canManageTemplates,
+  sandboxChannel = false,
 }: {
   initialSnippets: SnippetView[];
   initialTemplates: TemplateView[];
   canManageSnippets: boolean;
   canManageTemplates: boolean;
+  /** El canal activo es el sandbox de Zernio: Plantillas lo avisa (sin Sincronizar/Crear). */
+  sandboxChannel?: boolean;
 }) {
   const [tab, setTab] = useState<Tab>("fragmentos");
 
@@ -63,7 +66,7 @@ export function FragmentosPlantillas({
         {tab === "fragmentos" ? (
           <FragmentosTab initial={initialSnippets} canManage={canManageSnippets} />
         ) : (
-          <PlantillasTab initial={initialTemplates} canManage={canManageTemplates} />
+          <PlantillasTab initial={initialTemplates} canManage={canManageTemplates} sandboxChannel={sandboxChannel} />
         )}
       </div>
     </div>

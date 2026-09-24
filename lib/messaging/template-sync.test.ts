@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { templateKey, templatesToRemove } from "./template-sync";
+import { isForeignTemplateAccount, templateKey, templatesToRemove } from "./template-sync";
 
 const row = (id: string, name: string, language: string, status: string) => ({ id, name, language, status });
 
@@ -32,6 +32,18 @@ describe("templatesToRemove", () => {
   it("un remoto vacío (lectura completa) marca todo lo no-removido", () => {
     const existing = [row("a", "x", "es", "APPROVED"), row("b", "y", "es", "PENDING")];
     expect(templatesToRemove(existing, [])).toEqual(["a", "b"]);
+  });
+});
+
+describe("isForeignTemplateAccount", () => {
+  it("el sandbox compartido de Zernio no es de Diluvium (con o sin espacios)", () => {
+    expect(isForeignTemplateAccount("6a180a034c7f364ffded3c9c")).toBe(true);
+    expect(isForeignTemplateAccount(" 6a180a034c7f364ffded3c9c ")).toBe(true);
+  });
+
+  it("cualquier otra cuenta (la de Diluvium, pruebas) sí es propia", () => {
+    expect(isForeignTemplateAccount("acc_diluvium")).toBe(false);
+    expect(isForeignTemplateAccount("")).toBe(false);
   });
 });
 
