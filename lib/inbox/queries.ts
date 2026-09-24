@@ -4,8 +4,9 @@
 //
 // Las horas que viajan en cursores se comparan en SQL (con microsegundos), no
 // ida y vuelta por JS, que solo tiene milisegundos.
-import { and, desc, eq, ilike, inArray, like, or, sql, type SQL } from "drizzle-orm";
+import { and, desc, eq, inArray, like, or, sql, type SQL } from "drizzle-orm";
 import { nationalSearchPrefixes } from "@/lib/phone";
+import { normalizeSearch, SQL_SEARCH_FROM, SQL_SEARCH_TO } from "@/lib/text/search";
 import { db } from "@/lib/db";
 import { contacts, conversations, messages } from "@/lib/db/schema";
 import { latestInboundMessageId, unreadAfterCutoff } from "@/lib/messaging/ingest";
@@ -84,7 +85,11 @@ function escapeLike(text: string): string {
 function searchCondition(search: string | undefined): SQL | undefined {
   const term = search?.trim();
   if (!term) return undefined;
-  const byName = ilike(sql`${contacts.firstName} || ' ' || coalesce(${contacts.lastName}, '')`, `%${escapeLike(term)}%`);
+  // Nombre SIN acentos, ñ ni mayúsculas (regla de todo buscador: lib/text/search.ts):
+  // el término se normaliza en JS y el nombre en SQL con la misma tabla de letras
+  // (translate antes de lower: funciona aunque la base tenga locale C).
+  const normalizedName = sql`lower(translate(${contacts.firstName} || ' ' || coalesce(${contacts.lastName}, ''), ${SQL_SEARCH_FROM}, ${SQL_SEARCH_TO}))`;
+  const byName = like(normalizedName, `%${escapeLike(normalizeSearch(term))}%`);
   // Dígitos: los 10 solos, o con 52 / +52 / 521 delante → prefijo del número
   // nacional, con índice (contacts_org_phone_national_idx).
   const prefixes = nationalSearchPrefixes(term);
