@@ -31,6 +31,7 @@ import { applyOutboundToConversation, latestInboundMessageId } from "./ingest";
 import { SendFailedError, type MessagingProvider, type SendResult } from "./provider";
 import { isAmbiguousSendError, isWindowOpen, nextStatus, SEND_UNCONFIRMED, SEND_UNKNOWN } from "./rules";
 import { renderTemplateBody, templateMaxIndex } from "./template-format";
+import { isForeignTemplateAccount } from "./template-sync";
 import { loadMediaAsset, mediaAssetSignedUrl } from "@/lib/media-library/service";
 import type { ObjectStorage } from "@/lib/storage/s3";
 import { isTemplateSendable } from "@/lib/templates/types";
@@ -124,14 +125,19 @@ async function loadConversation(
 }
 
 // La plantilla debe existir en la organización, pertenecer al canal de la
-// conversación y estar APROBADA por Meta.
-async function loadSendableTemplate(organizationId: string, channelId: string, templateId: string) {
+// conversación y estar APROBADA por Meta. Las del sandbox de Zernio (cuenta ajena)
+// no se envían: están ocultas en el CRM (lib/messaging/template-sync.ts).
+async function loadSendableTemplate(
+  organizationId: string,
+  channel: { id: string; providerAccountId: string },
+  templateId: string,
+) {
   const [row] = await db
     .select()
     .from(templates)
     .where(and(eq(templates.id, templateId), eq(templates.organizationId, organizationId)))
     .limit(1);
-  if (!row || row.channelId !== channelId) {
+  if (!row || row.channelId !== channel.id || isForeignTemplateAccount(channel.providerAccountId)) {
     throw new SendRejectedError("template_not_found", "La plantilla no existe en el canal de esta conversación.");
   }
   if (!isTemplateSendable(row.status)) {
@@ -309,7 +315,7 @@ export async function sendTemplateMessage(provider: MessagingProvider, params: S
     now,
     false,
   );
-  const template = await loadSendableTemplate(params.organizationId, channel.id, params.templateId);
+  const template = await loadSendableTemplate(params.organizationId, channel, params.templateId);
 
   // Los valores deben ser exactamente los {{1..N}} del cuerpo, todos con texto.
   const expected = templateMaxIndex(template.body);

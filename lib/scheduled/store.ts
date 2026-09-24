@@ -4,8 +4,9 @@
 // libre y plantilla aprobada del canal de la conversación.
 import { and, asc, eq, inArray, isNull, lte, or } from "drizzle-orm";
 import { db } from "@/lib/db";
-import { conversations, scheduledMessages, templates } from "@/lib/db/schema";
+import { channels, conversations, scheduledMessages, templates } from "@/lib/db/schema";
 import { renderTemplateBody, templateMaxIndex } from "@/lib/messaging/template-format";
+import { isForeignTemplateAccount } from "@/lib/messaging/template-sync";
 import { isTemplateSendable } from "@/lib/templates/types";
 import { isRetryableScheduledError, SEND_AT_MESSAGES, textAllowedAt, validateSendAt } from "./rules";
 import type { ScheduledView } from "./types";
@@ -96,13 +97,16 @@ function checkText(raw: string, windowExpiresAt: Date | null, sendAt: Date): str
 
 // La plantilla debe ser de la organización y del canal de la conversación,
 // estar aprobada y ser enviable desde el CRM, con todas sus variables llenas.
+// Las del sandbox de Zernio (cuenta ajena) están ocultas y no se programan.
 async function checkTemplate(organizationId: string, channelId: string, templateId: string, params: string[]) {
-  const [template] = await db
-    .select()
+  const [row] = await db
+    .select({ template: templates, providerAccountId: channels.providerAccountId })
     .from(templates)
+    .innerJoin(channels, eq(channels.id, templates.channelId))
     .where(and(eq(templates.id, templateId), eq(templates.organizationId, organizationId)))
     .limit(1);
-  if (!template || template.channelId !== channelId) {
+  const template = row?.template;
+  if (!row || !template || template.channelId !== channelId || isForeignTemplateAccount(row.providerAccountId)) {
     throw new ScheduleError("La plantilla no existe en el canal de esta conversación.");
   }
   if (!isTemplateSendable(template.status)) throw new ScheduleError("La plantilla no está aprobada por Meta.");
