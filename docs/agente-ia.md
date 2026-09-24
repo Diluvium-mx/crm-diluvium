@@ -24,10 +24,30 @@ clientes** (eso llega en la Fase B y siguientes).
 - **`ai_config`** (una fila por organización): `modelo_filtro`,
   `modelo_cerebro`. Default filtro = Luna, cerebro = Sonnet 5. Editable solo
   owner/admin (ACL: recurso `aiConfig` en `lib/auth/permissions.ts`).
-- **Pestaña "Agente IA"** (`/agente-ia`, solo owner/admin): selectores de filtro
-  y cerebro (cada opción muestra nivel + multimodal; **en gris** si falta su
-  llave o su adaptador) + botón **"Probar modelo"** (dry-run filtro→cerebro con
-  la config actual, **sin tocar WhatsApp** ni conversaciones).
+- **Pestaña "Agente IA"** (`/agente-ia`, solo owner/admin) — desde el 24-sep-2026 es el
+  **editor estilo GHL** (solo personaliza al agente):
+  - Encabezado con el **nombre del agente** editable con lápiz (`ai_config.agent_name`).
+  - **Crear:** selector del modelo **cerebro** con indicador de costo ($ a $$$$ por precio
+    de salida) y etiquetas "Recomendado" (Sonnet 5) y "Nuevo" (en gris si falta su llave);
+    **Nombre de la empresa** (`ai_config.company_name`); editor grande del **Goal** con
+    deshacer, contador de palabras, tokens aproximados y **Valores personalizados**
+    (`{{contacto.nombre}}`, `{{vendedor.nombre}}` = asignado o "un asesor",
+    `{{empresa.nombre}}`, `{{agente.nombre}}`; el runtime los sustituye por conversación);
+    **base de conocimiento** (FAQs: agregar, editar, activar/desactivar, borrar). Cada
+    guardado del Goal o cambio de FAQs deja una **versión** (`ai_knowledge_versions`) y se
+    puede **restaurar** cualquiera (la primera vez guarda también la anterior).
+  - **Implementar:** los canales con interruptor Encendido / Apagado.
+  - Ya no están: selector de filtro (queda Luna), "Probar modelo", tabla de precios (los
+    precios siguen internos para el gasto), tiempos, pausas y límites.
+  - Nota de costo: un Goal con `{{contacto.nombre}}`/`{{vendedor.nombre}}` cambia el
+    system por conversación y la caché del proveedor se reutiliza menos.
+- **Detalle del contacto:** "Llegó por anuncio" con el resumen corto que deja Luna
+  (`messages.metadata.agenteAnuncio.anuncio`); si Luna aún no lo procesó, el título y
+  texto del anuncio.
+- **Dashboard → Gasto de IA** (solo owner/admin): gasto del **mes** (días de Mazatlán) por
+  proveedor y **saldo estimado** = recargas − gasto desde la primera recarga
+  (`ai_credit_topups`, owner/admin las registran con monto y fecha). Aclara en pantalla
+  que es un estimado (tokens del CRM × precios internos, sin impuestos).
 
 ## Modelos (Fase A)
 
@@ -39,7 +59,8 @@ model-id de API se verificaron contra docs oficiales / OpenRouter (2026-09).
 ## Llaves (Railway)
 
 `OPENAI_API_KEY` y `ANTHROPIC_API_KEY` van en el **servicio web** (`crm-diluvium`),
-en `production` y `staging` (el web las usa en el dry-run "Probar modelo"), y se
+en `production` y `staging` (el web las usa para saber qué modelos salen en gris en el
+selector; el dry-run "Probar modelo" se quitó de la pestaña el 24-sep-2026), y se
 referencian desde el **worker**:
 
 ```bash
@@ -68,7 +89,8 @@ El runtime del Agente (Fase B) **debe PERSISTIR tokens/uso por mensaje procesado
 (input, output, caché read/write, modelo, proveedor). `callModel` ya devuelve ese
 `usage` normalizado (`ModelUsage`); falta escribirlo por mensaje en la base cuando
 el agente responda de verdad. Eso alimenta un **panel de gasto** futuro (no se
-construye ahora). El dry-run "Probar modelo" ya muestra tokens, pero no persiste.
+construye ahora). **Hecho:** el runtime escribe `ai_usage` por llamada (23-sep-2026) y el
+Dashboard ya muestra el gasto del mes y el saldo estimado (24-sep-2026).
 
 ## Roadmap del Agente IA (B → C → D → E)
 
@@ -138,13 +160,43 @@ construye ahora). El dry-run "Probar modelo" ya muestra tokens, pero no persiste
   main). El aviso viejo de una "0014" aplicada en staging ya no aplica: el 23-sep staging
   tenía 24 migraciones (hasta la 0023 de main), solo `ai_config`/`ai_knowledge` y ningún
   canal encendido; la 0024 crea sus tablas y columnas sin chocar.
+- **Fase B, parte 2 (24-sep-2026, rama `feat/agente-ia-editor`, migración
+  `0026_agente_editor_y_saldo`):** la pestaña "Agente IA" pasa a ser el editor estilo GHL
+  (ver "Qué hay"), el Detalle del contacto muestra "Llegó por anuncio" y el Dashboard muestra
+  el gasto del mes y el saldo estimado por proveedor. La 0026 solo AGREGA: tablas
+  `ai_knowledge_versions` y `ai_credit_topups`, y columnas `ai_config.agent_name` (default
+  "Ángela") y `ai_config.company_name`. No cambia datos existentes. La **0027** queda
+  reservada para la Fase D.
+  - **Valores personalizados:** el runtime sustituye `{{contacto.nombre}}`,
+    `{{vendedor.nombre}}`, `{{empresa.nombre}}` y `{{agente.nombre}}` en el Goal y en las
+    FAQs por conversación, antes de llamar al cerebro. El Goal y las 47 FAQs de producción
+    no tenían llaves `{{…}}` al 24-sep-2026: el cerebro recibe exactamente lo mismo que antes
+    hasta que alguien inserte un valor desde el editor.
+  - **Versiones:** cada guardado del Goal y cada cambio de FAQs (agregar, editar,
+    activar/desactivar, borrar, restaurar) deja una foto completa en `ai_knowledge_versions`;
+    la primera vez guarda también la anterior. "Restaurar" deja, a su vez, otra versión.
+  - **Nombre del agente y de la empresa** se guardan cada uno por separado (cambiar uno no
+    regresa el otro a un valor viejo).
+  - **Saldo estimado:** recargas registradas − `ai_usage.cost_usd` desde el día (hora de
+    Mazatlán) de la primera recarga del proveedor. Es un estimado: depende de los precios
+    internos (`lib/ai/pricing.ts` + `ai_model_prices`) y no incluye impuestos.
+  - **Seed del conocimiento:** desde que existe el editor, `npm run seed:ai-knowledge` se
+    niega a correr si la organización ya tiene versiones (el Goal o las FAQs se editaron en
+    la pestaña): pisaría lo editado sin dejar versión. `SEED_FORCE=1` lo obliga.
+  - **Revisión de Codex (24-sep-2026), bajos que no abren ronda:**
+    - El saldo se calcula por organización, pero la llave del proveedor es global: lo que
+      gasten staging u otra app con la misma llave no se descuenta. La pantalla lo aclara.
+    - Registrar una recarga no es idempotente: si se pierde la respuesta y se captura otra
+      vez, queda duplicada (se ve en la lista y se borra con "Borrar").
+    - `{{vendedor.nombre}}` ya ignora a un vendedor desactivado ("un asesor"); en v1 las
+      conversaciones no tienen asignado, así que hoy siempre sale "un asesor".
 - **Fase C:** follow-ups automáticos — "ocupado" a las 2h; "dejó de responder" a los
   4 días con plantilla fuera de la ventana de 24h; horario 8:00–17:00.
 - **Fase D:** acciones del Goal — datos bancarios, videos, tabla de tamaños, cambio de etapa.
-- **Fase E:** panel de gasto (lee `ai_usage`).
+- **Fase E:** panel de gasto (lee `ai_usage`) — la tarjeta del Dashboard con gasto del mes y
+  saldo estimado ya existe (24-sep-2026); falta, si se quiere, conciliar contra las Cost API.
 
 ## Fuera de alcance (próximos briefs)
 
-Que el agente responda a conversaciones reales, ejecución de las
-acciones/herramientas del Goal, el system de producción (Goal + 47 FAQs), el
-editor de workflows, la pestaña Automatización y la librería de media.
+Ejecución de las acciones/herramientas del Goal (Fase D), follow-ups (Fase C), el editor de
+workflows, la pestaña Automatización y la librería de media.

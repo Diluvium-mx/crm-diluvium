@@ -491,6 +491,35 @@ describe.skipIf(!TEST_DATABASE_URL)("runtime del Agente IA (Postgres real)", () 
     expect(rows.map((r) => r.body)).toEqual(Array.from({ length: 40 }, (_, i) => `h${i}`));
   });
 
+  it("valores personalizados: el cerebro recibe el Goal y las FAQs con los datos de ESTA conversación", async () => {
+    await db
+      .update(s.aiConfig)
+      .set({ goal: "Hola {{contacto.nombre}}, soy {{agente.nombre}} de {{empresa.nombre}}; te atiende {{vendedor.nombre}}.", agentName: "Sofía" })
+      .where(eq(s.aiConfig.organizationId, ORG));
+    await db.update(s.aiKnowledge).set({ answer: "Pregunta por {{vendedor.nombre}}" }).where(eq(s.aiKnowledge.id, "k2"));
+    await msg({ direction: "in", body: "hola", at: ago(10_000) });
+    const { deps, calls } = makeDeps();
+    await run.runAgent(JOB, deps);
+    const system = calls[0].input.system;
+    expect(system.startsWith("Hola Cliente, soy Sofía de Org; te atiende un asesor.")).toBe(true);
+    expect(system).toContain("R: Pregunta por un asesor");
+    expect(system).not.toContain("{{");
+    // Con vendedor asignado a la conversación y nombre de empresa en la pestaña.
+    await db.update(s.conversations).set({ assigneeUserId: "u_vendedor" }).where(eq(s.conversations.id, CONV));
+    await db.insert(s.member).values({ id: "mem_v", organizationId: ORG, userId: "u_vendedor", role: "agent", createdAt: new Date() });
+    await db.update(s.aiConfig).set({ companyName: "Diluvium" }).where(eq(s.aiConfig.organizationId, ORG));
+    await msg({ direction: "in", body: "¿y?", at: new Date(Date.now() + 1_000) });
+    const again = makeDeps();
+    await run.runAgent(JOB, again.deps);
+    expect(again.calls[0].input.system.startsWith("Hola Cliente, soy Sofía de Diluvium; te atiende Vendedor.")).toBe(true);
+    // Un vendedor desactivado (banned) ya no se nombra al cliente: vuelve a "un asesor".
+    await db.update(s.user).set({ banned: true }).where(eq(s.user.id, "u_vendedor"));
+    await msg({ direction: "in", body: "¿sigues?", at: new Date(Date.now() + 2_000) });
+    const third = makeDeps();
+    await run.runAgent(JOB, third.deps);
+    expect(third.calls[0].input.system.startsWith("Hola Cliente, soy Sofía de Diluvium; te atiende un asesor.")).toBe(true);
+  });
+
   it("lee TODA la conversación (no solo los últimos 20 mensajes)", async () => {
     for (let i = 0; i < 40; i++) {
       await msg({ direction: i % 2 ? "out" : "in", source: i % 2 ? "ai_agent" : undefined, body: `m${i}-texto`, at: ago((60 - i) * 60_000) });
