@@ -28,6 +28,7 @@ import {
   type WebhookEnvelope,
 } from "./provider";
 import { bodyHasUnsupportedPlaceholders, templateRequiresUnsupportedParams, templateVariablesFromBody } from "./template-format";
+import { clickFromZernioConversation, extractReferral, type ConversationClick } from "@/lib/ads/referral";
 
 const DEFAULT_BASE_URL = "https://zernio.com/api";
 const SEND_TIMEOUT_MS = 15_000;
@@ -40,8 +41,10 @@ export function verifyZernioSignature(rawBody: string, signature: string | null,
   return given.length === expected.length && timingSafeEqual(given, expected);
 }
 
+// El id del evento puede faltar en el cuerpo (el ejemplo de CTWA que Zernio
+// mandó por escrito el 24-sep-2026 es "plano" y no lo trae): ver zernioEventId.
 const envelopeSchema = z.object({
-  id: z.string().min(1),
+  id: z.string().min(1).optional(),
   event: z.string().min(1),
 });
 
@@ -62,7 +65,7 @@ const conversationSchema = z
   .passthrough();
 
 const messageEventSchema = z.object({
-  id: z.string(),
+  id: z.string().optional(),
   event: z.enum(["message.received", "message.sent"]),
   timestamp: z.string().optional(),
   message: z
@@ -79,13 +82,14 @@ const messageEventSchema = z.object({
       // parseo del mensaje: la identidad cae a businessScopedUserId.
       sender: z
         .object({
-          id: z.string(),
+          id: z.string().nullish(),
           name: z.string().nullish(),
           phoneNumber: z.string().nullish(),
           businessScopedUserId: z.string().nullish(),
         })
         .passthrough(),
-      sentAt: z.string(),
+      // Puede faltar (formato plano): se usa la hora del sobre o la de recepción.
+      sentAt: z.string().nullish(),
       source: z.string().optional(),
     })
     .passthrough(),
@@ -240,14 +244,59 @@ function findStatusFields(payload: Record<string, unknown>) {
   };
 }
 
-export function normalizeZernioEvent(payload: unknown): NormalizedEvent {
+/**
+ * Id del evento (idempotencia del webhook): `id` del sobre → encabezado
+ * X-Zernio-Event-Id → DERIVADO del wamid (`message.received-wamid.…`). El
+ * derivado es estable: un reintento del mismo mensaje cae en la misma fila y
+ * no se procesa dos veces. Sin ninguno de los tres, undefined.
+ */
+export function zernioEventId(payload: unknown, headers?: Headers): string | undefined {
+  const root = asRecord(payload);
+  const explicit = asString(root.id) ?? asString(headers?.get("x-zernio-event-id") ?? undefined);
+  if (explicit) return explicit;
+  const event = asString(root.event);
+  const wamid = asString(asRecord(root.message).platformMessageId) ?? asString(root.platformMessageId);
+  return event && wamid ? `${event}-${wamid}` : undefined;
+}
+
+/**
+ * Mensaje en formato PLANO (campos en la raíz: messageId, conversationId,
+ * platformMessageId, text, sender…, como el ejemplo de CTWA de Zernio) → la
+ * forma anidada (`message: {…}`) que reciben los webhooks reales. Si ya viene
+ * anidado, se devuelve igual.
+ */
+function nestFlatMessage(payload: unknown): unknown {
+  const root = asRecord(payload);
+  if (root.message && typeof root.message === "object") return payload;
+  const wamid = asString(root.platformMessageId);
+  if (!wamid) return payload;
+  return {
+    ...root,
+    message: {
+      id: asString(root.messageId) ?? wamid,
+      conversationId: asString(root.conversationId) ?? asString(asRecord(root.conversation).id),
+      platform: asString(root.platform) ?? asString(asRecord(root.account).platform),
+      platformMessageId: wamid,
+      direction: asString(root.direction) ?? (root.event === "message.sent" ? "outgoing" : "incoming"),
+      text: typeof root.text === "string" ? root.text : null,
+      attachments: Array.isArray(root.attachments) ? root.attachments : [],
+      sender: asRecord(root.sender),
+      sentAt: asString(root.sentAt),
+      source: asString(root.source),
+    },
+  };
+}
+
+export function normalizeZernioEvent(payload: unknown, context: { receivedAt?: Date } = {}): NormalizedEvent {
   const envelope = envelopeSchema.safeParse(payload);
-  if (!envelope.success) {
-    return { kind: "ignored", eventId: "", event: "", reason: "sobre inválido", malformed: true };
+  const eventId = zernioEventId(payload) ?? "";
+  if (!envelope.success || !eventId) {
+    return { kind: "ignored", eventId, event: envelope.data?.event ?? "", reason: "sobre inválido", malformed: true };
   }
-  const { id: eventId, event } = envelope.data;
+  const { event } = envelope.data;
 
   if (event === "message.received" || event === "message.sent") {
+    payload = nestFlatMessage(payload);
     const parsed = messageEventSchema.safeParse(payload);
     if (!parsed.success) {
       return { kind: "ignored", eventId, event, reason: `formato no reconocido: ${parsed.error.issues[0]?.message}`, malformed: true };
@@ -296,9 +345,20 @@ export function normalizeZernioEvent(payload: unknown): NormalizedEvent {
     // sentAt gobierna el orden del hilo, la ventana de 24 h y la primera
     // respuesta: un valor ilegible NO se sustituye por "ahora" (abriría una
     // ventana falsa y corrompería métricas). Se marca malformado → dead-letter.
-    const sentAt = validDate(message.sentAt);
-    if (!sentAt) {
-      return { kind: "ignored", eventId, event, reason: `sentAt inválido: ${message.sentAt}`, malformed: true };
+    // Si NO viene (formato plano), se usa la hora del sobre y, sin ella, la de
+    // RECEPCIÓN del webhook (guardada al llegar, no la del reproceso): un
+    // mensaje de anuncio nunca se queda fuera por no traer hora.
+    let sentAt: Date | null;
+    let sentAtFromReceipt = false;
+    if (message.sentAt) {
+      sentAt = validDate(message.sentAt);
+      if (!sentAt) {
+        return { kind: "ignored", eventId, event, reason: `sentAt inválido: ${message.sentAt}`, malformed: true };
+      }
+    } else {
+      sentAt = validDate(parsed.data.timestamp) ?? context.receivedAt ?? null;
+      sentAtFromReceipt = true;
+      if (!sentAt) return { kind: "ignored", eventId, event, reason: "mensaje sin hora", malformed: true };
     }
     return {
       kind: "message",
@@ -322,10 +382,10 @@ export function normalizeZernioEvent(payload: unknown): NormalizedEvent {
       body: message.text ?? null,
       attachments,
       sentAt,
-      referral:
-        metadata?.referral && typeof metadata.referral === "object"
-          ? (metadata.referral as Record<string, unknown>)
-          : undefined,
+      ...(sentAtFromReceipt ? { sentAtFromReceipt } : {}),
+      // Ficha del anuncio: raíz → metadata.referral (Zernio manda ambas). Solo
+      // en entrantes: es del cliente que tocó el anuncio.
+      referral: outgoing ? undefined : extractReferral(payload),
       metadata: metadata && Object.keys(metadata).length > 0 ? metadata : undefined,
     };
   }
@@ -418,14 +478,29 @@ export class ZernioProvider implements MessagingProvider {
     return verifyZernioSignature(rawBody, signature, this.config.webhookSecret);
   }
 
-  readEnvelope(rawBody: string): WebhookEnvelope {
+  readEnvelope(rawBody: string, headers?: Headers): WebhookEnvelope {
     const json: unknown = JSON.parse(rawBody);
     const parsed = envelopeSchema.parse(json);
-    return { eventId: parsed.id, event: parsed.event, providerAccountId: zernioAccountId(json) };
+    const eventId = zernioEventId(json, headers);
+    if (!eventId) throw new Error("evento sin id (ni en el cuerpo, ni en X-Zernio-Event-Id, ni wamid)");
+    return { eventId, event: parsed.event, providerAccountId: zernioAccountId(json) };
   }
 
-  normalize(payload: unknown): NormalizedEvent {
-    return normalizeZernioEvent(payload);
+  normalize(payload: unknown, context?: { receivedAt?: Date }): NormalizedEvent {
+    return normalizeZernioEvent(payload, context);
+  }
+
+  // Anuncios (respaldo): GET /v1/inbox/conversations/{id}?accountId=… — el
+  // accountId es OBLIGATORIO (400 sin él) y un id inexistente responde 200 con
+  // datos vacíos (verificado en vivo, 24-sep-2026): la ausencia de clic se lee
+  // del contenido, nunca de un 404.
+  async conversationAdClick(providerAccountId: string, providerConversationId: string): Promise<ConversationClick | null> {
+    if (!/^[\w-]{1,128}$/.test(providerConversationId)) {
+      throw new ZernioApiError(0, `conversationId con formato inesperado: ${JSON.stringify(providerConversationId.slice(0, 60))}`);
+    }
+    const params = new URLSearchParams({ accountId: providerAccountId });
+    const json = await this.apiJson("GET", `/v1/inbox/conversations/${encodeURIComponent(providerConversationId)}?${params.toString()}`);
+    return clickFromZernioConversation(json);
   }
 
   // Media de WhatsApp vía Zernio: https://zernio.com/api/v1/whatsapp/media/{id}

@@ -12,3 +12,4 @@ export * from "./qualification";
 export * from "./scheduled";
 export * from "./ai-runtime";
 export * from "./ai-credit";
+export * from "./ads";

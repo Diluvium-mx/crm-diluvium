@@ -16,6 +16,8 @@ import type {
   ProviderName,
 } from "./provider";
 import { firstResponseSeconds, nextStatus, windowExpiresAt } from "./rules";
+import { recordAdClickSafely, type FallbackJob, type RecordedClick } from "@/lib/ads/attribution";
+import { looksLikeAdMessage } from "@/lib/ads/referral";
 
 export type Tx = Parameters<Parameters<typeof db.transaction>[0]>[0];
 
@@ -75,6 +77,10 @@ export type IngestHooks = {
   }) => Promise<void> | void;
   /** Agente IA: (después del commit) cada eco NUEVO escrito por un humano desde el celular (business_app). */
   onHumanOutbound?: (m: { organizationId: string; conversationId: string }) => Promise<void> | void;
+  /** Anuncios: (después del commit) cada clic NUEVO registrado (media del anuncio y nombres de Meta). */
+  onAdClick?: (click: RecordedClick) => Promise<void> | void;
+  /** Anuncios: (después del commit) entrante SIN ficha que pudo venir de un anuncio (respaldo con la conversación del proveedor). */
+  onAdFallbackCandidate?: (job: FallbackJob) => Promise<void> | void;
 };
 
 export async function processWebhookEvent(
@@ -82,8 +88,18 @@ export async function processWebhookEvent(
   webhookEventId: string,
   hooks: IngestHooks = {},
 ): Promise<string> {
-  const [row] = await db.select().from(webhookEvents).where(eq(webhookEvents.id, webhookEventId)).limit(1);
-  if (!row) throw new PermanentIngestError(`webhook_event ${webhookEventId} no existe`);
+  const [found] = await db
+    .select({
+      row: webhookEvents,
+      // Hora de RECEPCIÓN como instante (received_at es sin zona, escrito por
+      // la base en su zona de sesión): respaldo de un mensaje que no trae hora.
+      receivedMs: sql<string>`(extract(epoch from ${webhookEvents.receivedAt}::timestamptz) * 1000)::bigint`,
+    })
+    .from(webhookEvents)
+    .where(eq(webhookEvents.id, webhookEventId))
+    .limit(1);
+  if (!found) throw new PermanentIngestError(`webhook_event ${webhookEventId} no existe`);
+  const row = found.row;
   if (row.processedAt) return "ya procesado";
   // Defensa adicional: la cuarentena (cuenta no permitida) no se procesa
   // aunque alguien la encole; se libera con scripts/replay-webhook-events.ts.
@@ -98,7 +114,7 @@ export async function processWebhookEvent(
     .where(eq(webhookEvents.id, webhookEventId));
 
   try {
-    const event = provider.normalize(row.payload);
+    const event = provider.normalize(row.payload, { receivedAt: new Date(Number(found.receivedMs)) });
     let outcome: string;
     let organizationId: string | null = attributedOrgId;
     let ignored = event.kind === "ignored";
@@ -212,8 +228,12 @@ async function ingestMessage(
   const saved: { value: { direction: "in" | "out"; source: string; conversationId: string; messageId: string } | null } = {
     value: null,
   };
+  // Anuncios (mismo patrón: se reinicia en cada intento de la transacción).
+  const ad: { click: RecordedClick | null; fallback: FallbackJob | null } = { click: null, fallback: null };
   const result = await withTxRetry(() => db.transaction(async (tx) => {
     saved.value = null;
+    ad.click = null;
+    ad.fallback = null;
     const orgId = channel.organizationId;
 
     // Conversación ya existente del proveedor (canal + providerConversationId):
@@ -370,6 +390,22 @@ async function ingestMessage(
         if (event.attachments.length > 0) mediaMessageId = inserted[0].id;
         saved.value = { direction: event.direction, source: event.source, conversationId: upserted.id, messageId: inserted[0].id };
         outcome = event.direction === "in" ? "entrante guardado" : `saliente (${event.source}) guardado`;
+        if (event.direction === "in") {
+          await attributeAd(tx, {
+            orgId,
+            contactId: upserted.contactId,
+            conversationId: upserted.id,
+            messageId: inserted[0].id,
+            providerAccountId: event.providerAccountId,
+            providerConversationId: event.providerConversationId,
+            referral: event.referral,
+            body: event.body,
+            metadata: event.metadata,
+            sentAt: event.sentAt,
+            conversationChanged: adoptProviderConversation,
+            ad,
+          });
+        }
       }
     }
 
@@ -387,6 +423,12 @@ async function ingestMessage(
       updates.status = "open";
       // El anuncio que ORIGINÓ la conversación: el primero, no se pisa.
       if (event.referral && !conversation.adReferral) updates.adReferral = event.referral;
+      // Cada entrada por anuncio (también la de un cliente que vuelve por otro)
+      // mueve la marca de la ventana gratis de 72 h.
+      if (ad.click) {
+        updates.adEntryAt =
+          conversation.adEntryAt && conversation.adEntryAt > event.sentAt ? conversation.adEntryAt : event.sentAt;
+      }
     }
     if (adoptProviderConversation && outcome === "entrante guardado") {
       updates.providerConversationId = event.providerConversationId;
@@ -437,7 +479,82 @@ async function ingestMessage(
   } catch (error) {
     console.error(`[ingest] gancho del Agente IA falló para ${m?.conversationId}; el mensaje ya está guardado`, error);
   }
+  // Anuncios (después del commit, aislado): media, nombres de Meta y respaldo.
+  // Si encolar falla, el barrido del worker lo recoge desde la base.
+  try {
+    if (ad.click && hooks.onAdClick) await hooks.onAdClick(ad.click);
+    if (ad.fallback && hooks.onAdFallbackCandidate) await hooks.onAdFallbackCandidate(ad.fallback);
+  } catch (error) {
+    console.error(`[ingest] gancho de anuncios falló para ${m?.conversationId}; el mensaje ya está guardado`, error);
+  }
   return { outcome: result, organizationId: channel.organizationId };
+}
+
+/**
+ * Anuncio de un entrante recién guardado (dentro de la transacción):
+ * - con ficha → registra el clic (en un savepoint: si falla, el mensaje entra
+ *   igual y el barrido lo reintenta desde messages.ad_referral);
+ * - sin ficha, pero pudo venir de un anuncio (primer entrante de la
+ *   conversación, Zernio cambió de conversación, o señales de anuncio en el
+ *   texto/metadata) → candidato al respaldo con la conversación del proveedor.
+ */
+async function attributeAd(
+  tx: Tx,
+  p: {
+    orgId: string;
+    contactId: string;
+    conversationId: string;
+    messageId: string;
+    providerAccountId: string;
+    providerConversationId: string;
+    referral: Record<string, unknown> | undefined;
+    body: string | null;
+    metadata: Record<string, unknown> | undefined;
+    sentAt: Date;
+    conversationChanged: boolean;
+    ad: { click: RecordedClick | null; fallback: FallbackJob | null };
+  },
+): Promise<void> {
+  if (p.referral) {
+    const click = await recordAdClickSafely(tx, {
+      organizationId: p.orgId,
+      contactId: p.contactId,
+      conversationId: p.conversationId,
+      messageId: p.messageId,
+      origin: "webhook",
+      raw: p.referral,
+      clickedAt: p.sentAt,
+    });
+    p.ad.click = click === "error" ? null : click;
+    return;
+  }
+  if (!p.providerConversationId) return;
+  const looksLikeAd = looksLikeAdMessage(p.body, p.metadata);
+  let candidate = looksLikeAd || p.conversationChanged;
+  if (!candidate) {
+    const [earlier] = await tx
+      .select({ id: messages.id })
+      .from(messages)
+      .where(
+        and(
+          eq(messages.organizationId, p.orgId),
+          eq(messages.conversationId, p.conversationId),
+          eq(messages.direction, "in"),
+          sql`${messages.id} <> ${p.messageId}`,
+        ),
+      )
+      .limit(1);
+    candidate = !earlier;
+  }
+  if (candidate) {
+    p.ad.fallback = {
+      organizationId: p.orgId,
+      messageId: p.messageId,
+      providerAccountId: p.providerAccountId,
+      providerConversationId: p.providerConversationId,
+      looksLikeAd,
+    };
+  }
 }
 
 /**
