@@ -170,8 +170,10 @@ function Bubble({
             href={`https://www.google.com/maps?q=${view.location.latitude},${view.location.longitude}`}
             target="_blank"
             rel="noopener noreferrer"
-            data-link="text"
-            className="mb-1 block rounded-md border px-2 py-1 text-xs"
+            // data-link="text" pinta navy: solo en burbujas entrantes (fondo claro).
+            // En las salientes (fondo navy) el enlace conserva el texto blanco.
+            data-link={out ? undefined : "text"}
+            className={`mb-1 block rounded-md border px-2 py-1 text-xs ${out ? "border-brand-white/40 underline-offset-2 hover:underline" : ""}`}
           >
             📍 {view.location.name ?? "Ubicación"}
             {view.location.address && <span className="block opacity-80">{view.location.address}</span>}
