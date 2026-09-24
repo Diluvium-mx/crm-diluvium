@@ -3,6 +3,8 @@
 // saldo (mismas llaves en los dos entornos). Endpoint público protegido con
 // Bearer AI_SPEND_TOKEN; responde solo sumas por día y proveedor (sin datos de
 // clientes). Suma TODAS las organizaciones: es lo que consume la llave.
+// SOLO existe en staging (RAILWAY_ENVIRONMENT_NAME): producción también tiene el
+// token (para LLAMAR a staging), y así ese token no abre nada en producción.
 import { timingSafeEqual } from "node:crypto";
 import { db } from "@/lib/db";
 import { spendByDay } from "@/lib/dashboard/ai-spend";
@@ -22,6 +24,7 @@ function authorized(req: Request): boolean {
 }
 
 export async function GET(req: Request): Promise<Response> {
+  if (process.env.RAILWAY_ENVIRONMENT_NAME !== "staging") return new Response("no encontrado", { status: 404 });
   if (!authorized(req)) return new Response("no autorizado", { status: 401 });
   const from = new URL(req.url).searchParams.get("from") ?? "";
   const today = localToday();

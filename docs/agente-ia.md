@@ -193,7 +193,8 @@ Dashboard ya muestra el gasto del mes y el saldo estimado (24-sep-2026).
     producción muestra por proveedor "Gasto producción" y "Gasto pruebas (staging)" del mes, y el
     saldo estimado = recargas − ambos gastos desde la primera recarga. Producción lee el gasto de
     staging de `GET /api/internal/ai-spend?from=YYYY-MM-DD` (sumas por día local y proveedor de
-    TODAS las orgs de staging, Bearer `AI_SPEND_TOKEN`, tiempo límite 4 s). Si staging no
+    TODAS las orgs de staging, Bearer `AI_SPEND_TOKEN`, tiempo límite 4 s; el endpoint responde
+    404 fuera de staging, así que el token no abre nada en producción). Si staging no
     responde o falta configurarlo, muestra solo producción con un aviso. En staging la tarjeta
     solo muestra su propio gasto (`RAILWAY_ENVIRONMENT_NAME`). Variables, en el servicio web
     `crm-diluvium`: staging → `AI_SPEND_TOKEN`; producción → `AI_SPEND_TOKEN` (mismo valor) y
