@@ -17,13 +17,21 @@ export function needsAdCleaning(m: AdMessage): boolean {
   return (m.body ?? "").split("\n").some((line) => METADATA_LABEL.test(line));
 }
 
-// Respaldo sin modelo (si Luna falla): quita las líneas de metadata.
+// Respaldo sin modelo (si Luna falla): quita las líneas de metadata. Si no queda
+// texto del cliente, usa el saludo automático del anuncio (greetingMessageBody) o
+// "Hola": NUNCA regresa el cuerpo con la metadata.
 export function stripAdMetadata(body: string | null): string {
-  return (body ?? "")
-    .split("\n")
+  if (!(body ?? "").trim()) return ""; // sin texto (p. ej. solo una foto): nada que limpiar
+  const lines = (body ?? "").split("\n");
+  const kept = lines
     .filter((line) => !METADATA_LABEL.test(line))
     .join("\n")
     .trim();
+  if (kept) return kept;
+  const greeting = lines
+    .map((line) => line.match(/^\s*greeting_?message_?body\s*:\s*(.+)$/iu)?.[1]?.trim())
+    .find(Boolean);
+  return greeting || "Hola";
 }
 
 export const FILTER_SYSTEM = `Eres el FILTRO de la bandeja de WhatsApp de Diluvium (compuertas y tapones contra inundaciones). NO respondes al cliente. El cliente llegó desde un anuncio de Click-to-WhatsApp: recibes los datos del anuncio y el mensaje tal como llegó, que puede traer metadata de Facebook con etiquetas (body:, ctwaClid:, sourceType:, greetingMessageBody:, entre otras). El campo body: de la metadata es el texto del anuncio, no del cliente.
@@ -77,7 +85,7 @@ export function parseAdCleaner(raw: string, m: AdMessage): CleanedAd {
   const fallback = (): CleanedAd => {
     const f = adFields(m.adReferral);
     const anuncio = [f.titulo, f.texto].filter(Boolean).join(" — ").slice(0, 200) || null;
-    return { mensaje: stripAdMetadata(m.body) || (m.body ?? "").trim(), anuncio, parsed: false };
+    return { mensaje: stripAdMetadata(m.body), anuncio, parsed: false };
   };
   const json = raw.match(/\{[\s\S]*\}/);
   if (!json) return fallback();

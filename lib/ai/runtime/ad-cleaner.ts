@@ -45,6 +45,7 @@ export async function cleanAdMessages(
     }
     const model = getModel(ctx.filterModelId);
     let clean = parseAdCleaner("", m); // respaldo sin modelo
+    let answered = false;
     if (model) {
       const t0 = Date.now();
       try {
@@ -55,6 +56,7 @@ export async function cleanAdMessages(
           timeoutMs: AD_CLEANER_TIMEOUT_MS,
         });
         clean = parseAdCleaner(res.text, m);
+        answered = true;
         await recordAiUsage({
           organizationId: ctx.organizationId,
           conversationId: ctx.conversationId,
@@ -85,8 +87,9 @@ export async function cleanAdMessages(
       }
     }
     out.set(m.id, clean.mensaje);
-    // Solo se guarda lo que limpió Luna: un respaldo se reintenta en la siguiente respuesta.
-    if (clean.parsed) {
+    // Se guarda si Luna contestó (aunque no se entendiera: queda el respaldo); si falló
+    // la llamada (caída, timeout), se reintenta en la siguiente respuesta.
+    if (answered) {
       await db
         .update(messages)
         .set({
