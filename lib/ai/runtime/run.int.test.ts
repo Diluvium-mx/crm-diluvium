@@ -512,6 +512,12 @@ describe.skipIf(!TEST_DATABASE_URL)("runtime del Agente IA (Postgres real)", () 
     const again = makeDeps();
     await run.runAgent(JOB, again.deps);
     expect(again.calls[0].input.system.startsWith("Hola Cliente, soy Sofía de Diluvium; te atiende Vendedor.")).toBe(true);
+    // Un vendedor desactivado (banned) ya no se nombra al cliente: vuelve a "un asesor".
+    await db.update(s.user).set({ banned: true }).where(eq(s.user.id, "u_vendedor"));
+    await msg({ direction: "in", body: "¿sigues?", at: new Date(Date.now() + 2_000) });
+    const third = makeDeps();
+    await run.runAgent(JOB, third.deps);
+    expect(third.calls[0].input.system.startsWith("Hola Cliente, soy Sofía de Diluvium; te atiende un asesor.")).toBe(true);
   });
 
   it("lee TODA la conversación (no solo los últimos 20 mensajes)", async () => {
