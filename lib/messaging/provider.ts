@@ -4,6 +4,7 @@
 //
 // Los eventos se normalizan a este formato antes de tocar la base: el worker
 // nunca lee el payload crudo del proveedor.
+import type { ConversationClick } from "@/lib/ads/referral";
 import type { TemplateVariable } from "@/lib/templates/types";
 
 export type ProviderName = "zernio" | "meta_cloud";
@@ -54,8 +55,11 @@ export type NormalizedMessageEvent = {
   body: string | null;
   attachments: NormalizedAttachment[];
   sentAt: Date;
-  // Atribución de anuncio Click-to-WhatsApp, cuando la conversación vino de uno.
+  // Ficha ORIGINAL y completa del anuncio de clic a WhatsApp, cuando el mensaje
+  // vino de uno (Meta la manda SOLO en el primer mensaje tras el clic).
   referral?: Record<string, unknown>;
+  // true si el evento no traía hora y se usó la de recepción del webhook.
+  sentAtFromReceipt?: boolean;
   // Contexto crudo del proveedor (cita, ubicación, tarjetas, pedido…).
   metadata?: Record<string, unknown>;
 };
@@ -220,10 +224,17 @@ export interface MessagingProvider {
   readonly name: ProviderName;
   /** Valida la firma del webhook sobre el body CRUDO (antes de parsear). */
   verifyWebhook(rawBody: string, headers: Headers): boolean;
-  /** Lee lo mínimo del sobre para deduplicar y guardar. Lanza si no es JSON válido. */
-  readEnvelope(rawBody: string): WebhookEnvelope;
-  /** Normaliza un payload ya verificado. Nunca lanza por formatos desconocidos: devuelve "ignored". */
-  normalize(payload: unknown): NormalizedEvent;
+  /**
+   * Lee lo mínimo del sobre para deduplicar y guardar. Lanza si no es JSON
+   * válido. `headers`: el id del evento puede venir en un encabezado.
+   */
+  readEnvelope(rawBody: string, headers?: Headers): WebhookEnvelope;
+  /**
+   * Normaliza un payload ya verificado. Nunca lanza por formatos desconocidos:
+   * devuelve "ignored". `receivedAt`: cuándo llegó el webhook (respaldo de la
+   * hora de un mensaje que no la trae).
+   */
+  normalize(payload: unknown, context?: { receivedAt?: Date }): NormalizedEvent;
   /** Lanza SendFailedError (rechazado o desconocido) si no hay confirmación. */
   sendText(input: SendTextInput): Promise<SendResult>;
   /**
@@ -240,4 +251,10 @@ export interface MessagingProvider {
    * credenciales, y NUNCA las envía a un dominio que no sea el suyo.
    */
   fetchMedia(url: string, signal?: AbortSignal): Promise<Response>;
+  /**
+   * Anuncios: primer clic que el proveedor guardó en la conversación (respaldo
+   * cuando un mensaje de anuncio llega sin ficha). null = no hay clic guardado.
+   * Lanza si el proveedor no respondió (se reintenta).
+   */
+  conversationAdClick(providerAccountId: string, providerConversationId: string): Promise<ConversationClick | null>;
 }
