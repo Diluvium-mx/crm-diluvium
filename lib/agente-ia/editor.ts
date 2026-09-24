@@ -52,7 +52,11 @@ export const faqSchema = z.object({
   enabled: z.boolean().default(true),
 });
 
-export const profileSchema = z.object({
-  agentName: z.string().trim().min(1, "El agente necesita un nombre.").max(60, "Máximo 60 caracteres."),
-  companyName: z.string().trim().max(120, "Máximo 120 caracteres."),
-});
+// Cada campo se guarda por separado (el que no viene no se toca): así cambiar el
+// nombre del agente nunca regresa el de la empresa a un valor viejo, ni al revés.
+export const profileSchema = z
+  .object({
+    agentName: z.string().trim().min(1, "El agente necesita un nombre.").max(60, "Máximo 60 caracteres.").optional(),
+    companyName: z.string().trim().max(120, "Máximo 120 caracteres.").optional(),
+  })
+  .refine((v) => v.agentName !== undefined || v.companyName !== undefined, { message: "Nada que guardar." });

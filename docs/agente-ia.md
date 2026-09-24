@@ -59,7 +59,8 @@ model-id de API se verificaron contra docs oficiales / OpenRouter (2026-09).
 ## Llaves (Railway)
 
 `OPENAI_API_KEY` y `ANTHROPIC_API_KEY` van en el **servicio web** (`crm-diluvium`),
-en `production` y `staging` (el web las usa en el dry-run "Probar modelo"), y se
+en `production` y `staging` (el web las usa para saber qué modelos salen en gris en el
+selector; el dry-run "Probar modelo" se quitó de la pestaña el 24-sep-2026), y se
 referencian desde el **worker**:
 
 ```bash
@@ -88,7 +89,8 @@ El runtime del Agente (Fase B) **debe PERSISTIR tokens/uso por mensaje procesado
 (input, output, caché read/write, modelo, proveedor). `callModel` ya devuelve ese
 `usage` normalizado (`ModelUsage`); falta escribirlo por mensaje en la base cuando
 el agente responda de verdad. Eso alimenta un **panel de gasto** futuro (no se
-construye ahora). El dry-run "Probar modelo" ya muestra tokens, pero no persiste.
+construye ahora). **Hecho:** el runtime escribe `ai_usage` por llamada (23-sep-2026) y el
+Dashboard ya muestra el gasto del mes y el saldo estimado (24-sep-2026).
 
 ## Roadmap del Agente IA (B → C → D → E)
 
@@ -158,6 +160,26 @@ construye ahora). El dry-run "Probar modelo" ya muestra tokens, pero no persiste
   main). El aviso viejo de una "0014" aplicada en staging ya no aplica: el 23-sep staging
   tenía 24 migraciones (hasta la 0023 de main), solo `ai_config`/`ai_knowledge` y ningún
   canal encendido; la 0024 crea sus tablas y columnas sin chocar.
+- **Fase B, parte 2 (24-sep-2026, rama `feat/agente-ia-editor`, migración
+  `0026_agente_editor_y_saldo`):** la pestaña "Agente IA" pasa a ser el editor estilo GHL
+  (ver "Qué hay"), el Detalle del contacto muestra "Llegó por anuncio" y el Dashboard muestra
+  el gasto del mes y el saldo estimado por proveedor. La 0026 solo AGREGA: tablas
+  `ai_knowledge_versions` y `ai_credit_topups`, y columnas `ai_config.agent_name` (default
+  "Ángela") y `ai_config.company_name`. No cambia datos existentes. La **0027** queda
+  reservada para la Fase D.
+  - **Valores personalizados:** el runtime sustituye `{{contacto.nombre}}`,
+    `{{vendedor.nombre}}`, `{{empresa.nombre}}` y `{{agente.nombre}}` en el Goal y en las
+    FAQs por conversación, antes de llamar al cerebro. El Goal y las 47 FAQs de producción
+    no tenían llaves `{{…}}` al 24-sep-2026: el cerebro recibe exactamente lo mismo que antes
+    hasta que alguien inserte un valor desde el editor.
+  - **Versiones:** cada guardado del Goal y cada cambio de FAQs (agregar, editar,
+    activar/desactivar, borrar, restaurar) deja una foto completa en `ai_knowledge_versions`;
+    la primera vez guarda también la anterior. "Restaurar" deja, a su vez, otra versión.
+  - **Nombre del agente y de la empresa** se guardan cada uno por separado (cambiar uno no
+    regresa el otro a un valor viejo).
+  - **Saldo estimado:** recargas registradas − `ai_usage.cost_usd` desde el día (hora de
+    Mazatlán) de la primera recarga del proveedor. Es un estimado: depende de los precios
+    internos (`lib/ai/pricing.ts` + `ai_model_prices`) y no incluye impuestos.
 - **Fase C:** follow-ups automáticos — "ocupado" a las 2h; "dejó de responder" a los
   4 días con plantilla fuera de la ventana de 24h; horario 8:00–17:00.
 - **Fase D:** acciones del Goal — datos bancarios, videos, tabla de tamaños, cambio de etapa.
@@ -166,6 +188,5 @@ construye ahora). El dry-run "Probar modelo" ya muestra tokens, pero no persiste
 
 ## Fuera de alcance (próximos briefs)
 
-Que el agente responda a conversaciones reales, ejecución de las
-acciones/herramientas del Goal, el system de producción (Goal + 47 FAQs), el
-editor de workflows, la pestaña Automatización y la librería de media.
+Ejecución de las acciones/herramientas del Goal (Fase D), follow-ups (Fase C), el editor de
+workflows, la pestaña Automatización y la librería de media.
