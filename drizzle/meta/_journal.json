@@ -183,6 +183,13 @@
       "when": 1790205961870,
       "tag": "0025_agente_siempre_contesta",
       "breakpoints": true
+    },
+    {
+      "idx": 26,
+      "version": "7",
+      "when": 1790208591622,
+      "tag": "0026_agente_editor_y_saldo",
+      "breakpoints": true
     }
   ]
 }

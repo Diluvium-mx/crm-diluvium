@@ -1,4 +1,4 @@
-import { and, asc, desc, eq, gt } from "drizzle-orm";
+import { and, asc, desc, eq, gt, isNotNull, or, sql } from "drizzle-orm";
 import { member, user } from "@/lib/db/schema/auth";
 import { contacts, contactInundacionesEnum } from "@/lib/db/schema/contacts";
 import {
@@ -13,6 +13,8 @@ import {
   type SizeRange,
 } from "./sizes";
 import { isInternalAgentTag } from "@/lib/ai/runtime/tags";
+import { conversations, messages } from "@/lib/db/schema/messaging";
+import { sanitizeReferral } from "@/lib/inbox/format";
 
 // La conexión principal y las transacciones comparten esta interfaz. Así estas
 // funciones sirven igual para Server Actions y para procesos futuros del agente IA.
@@ -69,13 +71,42 @@ function canModifyComment(actor: CommentActor, authorUserId: string): boolean {
   );
 }
 
+// Resumen del anuncio por el que llegó el contacto: el del filtro (Luna) guardado en
+// el primer entrante con anuncio; si Luna aún no lo procesó (p. ej. el agente está
+// apagado en ese canal), el título y el texto del anuncio. null = no llegó por anuncio.
+async function adSummary(database: Database, organizationId: string, contactId: string): Promise<string | null> {
+  const [row] = await database
+    .select({ adReferral: messages.adReferral, metadata: messages.metadata })
+    .from(messages)
+    .innerJoin(
+      conversations,
+      and(eq(conversations.id, messages.conversationId), eq(conversations.organizationId, organizationId)),
+    )
+    .where(
+      and(
+        eq(messages.organizationId, organizationId),
+        eq(conversations.contactId, contactId),
+        eq(messages.direction, "in"),
+        or(isNotNull(messages.adReferral), sql`${messages.metadata} ? 'agenteAnuncio'`),
+      ),
+    )
+    .orderBy(asc(messages.createdAt))
+    .limit(1);
+  if (!row) return null;
+  const luna = (row.metadata as { agenteAnuncio?: { anuncio?: unknown } } | null)?.agenteAnuncio?.anuncio;
+  if (typeof luna === "string" && luna.trim()) return luna.trim();
+  const ad = sanitizeReferral(row.adReferral);
+  if (!ad) return null;
+  return [ad.headline, ad.body].filter(Boolean).join(" — ").slice(0, 200) || null;
+}
+
 export async function getContactQualification(
   database: Database,
   organizationId: string,
   contactId: string,
 ) {
   const contact = await requireContact(database, organizationId, contactId);
-  const [entradas, comentarios] = await Promise.all([
+  const [entradas, comentarios, anuncio] = await Promise.all([
     database
       .select({
         id: contactEntradas.id,
@@ -111,9 +142,12 @@ export async function getContactQualification(
         ),
       )
       .orderBy(desc(contactComentarios.createdAt)),
+    adSummary(database, organizationId, contactId),
   ]);
 
   return {
+    // Resumen corto del anuncio de Click-to-WhatsApp por el que llegó (lo deja Luna).
+    anuncio,
     // Datos básicos que el panel muestra al final (compactos).
     email: contact.email,
     // Sin las etiquetas internas del agente ("pasar a humano", "revisión humana").
