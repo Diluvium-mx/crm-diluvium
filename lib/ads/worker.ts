@@ -36,8 +36,10 @@ export async function enqueueAfterClick(click: RecordedClick): Promise<void> {
 /** Ganchos de la ingesta (lib/messaging/ingest.ts → IngestHooks). */
 export const adsIngestHooks = {
   onAdClick: enqueueAfterClick,
+  // 30 s de gracia: Zernio guarda el clic en la conversación al procesar el
+  // mismo webhook; consultar al instante podría no encontrarlo aún.
   onAdFallbackCandidate: async (job: FallbackJob) => {
-    await enqueueAdsJob({ kind: "fallback", job });
+    await enqueueAdsJob({ kind: "fallback", job }, 30_000);
   },
 };
 

@@ -23,11 +23,13 @@ function adsQueue(): Queue<AdsJob> {
     defaultJobOptions: {
       attempts: 6,
       backoff: { type: "exponential", delay: 20_000 },
-      // Se borran al terminar: el mismo jobId puede volver a encolarse después
-      // (p. ej. refrescar los nombres de un anuncio). Mientras un job existe,
-      // un duplicado con el mismo jobId se ignora (deduplicación).
+      // Se borran al terminar (bien o mal): el mismo jobId puede volver a
+      // encolarse (el barrido lo retoma; los topes de intentos viven en la
+      // base). Un job fallido que se quedara guardado haría que BullMQ ignore
+      // el reencolado con su mismo jobId. Mientras un job existe, un duplicado
+      // se ignora (deduplicación).
       removeOnComplete: true,
-      removeOnFail: { age: 3_600 },
+      removeOnFail: true,
     },
   });
   return globalForQueue.adsQueue;

@@ -23,8 +23,8 @@ describe("formato plano del ejemplo de Zernio", () => {
     expect(event.contactName).toBe("Juan");
     expect(event.body).toBe("Hola, quiero más información");
     expect(event.type).toBe("text");
-    // Sin sentAt en el evento: hora de recepción del webhook (nunca "ahora").
-    expect(event.sentAt).toEqual(RECEIVED_AT);
+    // Sin sentAt en el evento: la hora que trae el id de Zernio (ObjectId), no "ahora".
+    expect(event.sentAt.toISOString()).toBe(new Date(parseInt(example.messageId.slice(0, 8), 16) * 1000).toISOString());
     expect(event.sentAtFromReceipt).toBe(true);
     // La ficha ORIGINAL completa (todos los campos, tal cual).
     expect(event.referral).toEqual(example.referral);
@@ -56,8 +56,13 @@ describe("formato plano del ejemplo de Zernio", () => {
     expect(normalizeZernioEvent(broken).kind).toBe("ignored");
   });
 
+  it("id de Zernio que no es ObjectId: hora de recepción del webhook", () => {
+    const event = normalizeZernioEvent({ ...clone(example), messageId: "zmsg-sin-hora" }, { receivedAt: RECEIVED_AT });
+    expect(event.kind === "message" && event.sentAt).toEqual(RECEIVED_AT);
+  });
+
   it("sin hora en ninguna parte y sin hora de recepción → malformado (dead-letter, no se pierde)", () => {
-    const event = normalizeZernioEvent(clone(example));
+    const event = normalizeZernioEvent({ ...clone(example), messageId: "zmsg-sin-hora" });
     expect(event).toMatchObject({ kind: "ignored", malformed: true });
   });
 });
@@ -166,5 +171,18 @@ describe("ZernioProvider.conversationAdClick (respaldo)", () => {
       (async () => new Response(JSON.stringify({ error: "boom" }), { status: 503 })) as typeof fetch,
     );
     await expect(provider.conversationAdClick("zacc_1", "zconv_9")).rejects.toThrow();
+  });
+});
+
+describe("hora de un mensaje plano sin sentAt ni timestamp", () => {
+  it("usa la hora del ObjectId de Zernio antes que la de recepción (entrega tardía)", async () => {
+    const { objectIdTime } = await import("./zernio");
+    const lateReceipt = new Date("2026-09-22T23:00:00Z"); // Zernio reintentó horas después
+    const payload = { ...clone(example), messageId: "6ab2d7068c2cf65b5c4aeb43" };
+    const event = normalizeZernioEvent(payload, { receivedAt: lateReceipt });
+    expect(event.kind === "message" && event.sentAt.toISOString()).toBe("2026-09-22T19:29:10.000Z");
+    // Inverosímil (posterior a la recepción o de hace semanas) → se ignora.
+    expect(objectIdTime("6ab2d7068c2cf65b5c4aeb43", new Date("2026-09-01T00:00:00Z"))).toBeNull();
+    expect(objectIdTime("no-es-objectid")).toBeNull();
   });
 });
