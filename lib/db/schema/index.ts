@@ -11,4 +11,6 @@ export * from "./ai-knowledge";
 export * from "./qualification";
 export * from "./scheduled";
 export * from "./ai-runtime";
+export * from "./automation";
+export * from "./cobro";
 export * from "./ai-credit";

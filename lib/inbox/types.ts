@@ -4,7 +4,9 @@ import type { NormalizedMessageType } from "@/lib/messaging/provider";
 
 export type InboxFilter = "unread" | "all" | "starred";
 
-export type MessageKind = NormalizedMessageType;
+// "system_note" (Fase D): aviso interno para el vendedor (p. ej. "cotejar
+// depósito"); vive en el hilo, nunca se manda por WhatsApp.
+export type MessageKind = NormalizedMessageType | "system_note";
 
 export type InboxContact = {
   id: string;
@@ -122,7 +124,9 @@ export type SendErrorCode =
   | "template_not_found"
   | "template_not_approved"
   | "template_unsupported"
-  | "template_params";
+  | "template_params"
+  | "media_not_found"
+  | "storage_unavailable";
 
 /** pending = resultado desconocido: el mensaje queda "enviando" mientras se verifica. */
 export type SendMessageResult =

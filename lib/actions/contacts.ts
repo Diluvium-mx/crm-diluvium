@@ -1,13 +1,14 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import { and, desc, eq, inArray } from "drizzle-orm";
+import { and, desc, eq, inArray, ne } from "drizzle-orm";
 import { z } from "zod";
 import { requireActiveMembership } from "@/lib/auth/active-organization";
 import { db } from "@/lib/db";
 import { contacts, contactStageEnum, contactTemperatureEnum } from "@/lib/db/schema/contacts";
 import { countryFromPhone, normalizePhone, phoneColumns } from "@/lib/phone";
 import { parseGhlContactsCsv } from "@/lib/import/ghl-contacts-csv";
+import { onContactStageEntered } from "@/lib/workflows/triggers";
 import {
   importParsedContacts,
   type ImportContactsFromCsvResult,
@@ -88,9 +89,11 @@ const updateContactStageSchema = z.object({
 export type UpdateContactStageInput = z.infer<typeof updateContactStageSchema>;
 
 export async function updateContactStage(input: UpdateContactStageInput) {
-  const organizationId = await requireActiveOrganizationId();
+  const { organizationId, userId } = await requireActiveMembership();
   const parsed = updateContactStageSchema.parse(input);
 
+  // Solo cambia (y dispara) si la etapa es distinta: soltar la tarjeta en su
+  // misma columna no es "entrar" a la etapa.
   const [updated] = await db
     .update(contacts)
     .set({ stage: parsed.stage, stageChangedAt: new Date() })
@@ -98,13 +101,23 @@ export async function updateContactStage(input: UpdateContactStageInput) {
       and(
         eq(contacts.id, parsed.contactId),
         eq(contacts.organizationId, organizationId),
+        ne(contacts.stage, parsed.stage),
       ),
     )
     .returning();
 
   if (!updated) {
-    throw new Error("Contacto no encontrado en esta organización.");
+    const [same] = await db
+      .select()
+      .from(contacts)
+      .where(and(eq(contacts.id, parsed.contactId), eq(contacts.organizationId, organizationId)))
+      .limit(1);
+    if (!same) throw new Error("Contacto no encontrado en esta organización.");
+    return same;
   }
+
+  // Fase D: workflows con "al entrar a esta etapa". Aislado: nunca rompe el cambio.
+  await onContactStageEntered({ organizationId, contactId: updated.id, stage: updated.stage, userId });
 
   revalidatePath("/embudo");
 
