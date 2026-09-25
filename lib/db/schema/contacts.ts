@@ -1,5 +1,6 @@
 import { isNotNull, sql } from "drizzle-orm";
 import {
+  boolean,
   check,
   index,
   integer,
@@ -76,6 +77,10 @@ export const contacts = pgTable(
     ghlContactId: text("ghl_contact_id"),
     source: text("source"),
     sourceChannel: text("source_channel"),
+    // Contacto de PRUEBA (docs/numero-prueba.md): NACIÓ en un canal marcado
+    // `channels.is_test` (número de prueba o sandbox). Un contacto que ya existía
+    // nunca se marca. El Dashboard no lo cuenta y el Embudo lo marca "Prueba".
+    esPrueba: boolean("es_prueba").default(false).notNull(),
     stage: contactStageEnum("stage").default("inbox").notNull(),
     // Nullable a propósito: sin temperatura asignada hasta que el vendedor la fije.
     temperature: contactTemperatureEnum("temperature"),

@@ -198,6 +198,11 @@ export function validDate(value: string | null | undefined, now = Date.now()): D
   return date;
 }
 
+/** ¿Alguna de las marcas de origen dice "coexistence_history"? (sin separadores ni mayúsculas) */
+export function isCoexistenceHistory(...sources: unknown[]): boolean {
+  return sources.some((s) => typeof s === "string" && s.toLowerCase().replace(/[^a-z]/g, "") === "coexistencehistory");
+}
+
 function asString(value: unknown): string | undefined {
   return typeof value === "string" && value.length > 0 ? value : undefined;
 }
@@ -270,7 +275,16 @@ export function normalizeZernioEvent(payload: unknown): NormalizedEvent {
     // automatizaciones), no prueba que lo haya escrito un vendedor: queda como
     // other_api. Un envío del propio CRM se reconoce al enlazar el eco con su
     // fila en cola (ingest.ts), que ya trae source "crm" y quién lo envió.
-    const source = !outgoing ? "contact" : echoSource === "whatsappbusinessapp" ? "business_app" : "other_api";
+    // Copia del historial del celular (coexistencia): Zernio la marca con
+    // source "coexistence_history" (docs.zernio.com, List messages → metadata).
+    // No se sabe si además dispara webhooks; si llega, NUNCA se trata como vivo.
+    const history = isCoexistenceHistory(message.source, parsed.data.source, metadata?.source);
+    // En el historial, lo saliente lo escribió el negocio desde la app del celular.
+    const source = !outgoing
+      ? "contact"
+      : echoSource === "whatsappbusinessapp" || history
+        ? "business_app"
+        : "other_api";
 
     const attachments: NormalizedAttachment[] = message.attachments.map((a) => ({
       type: attachmentType(a.type),
@@ -328,6 +342,7 @@ export function normalizeZernioEvent(payload: unknown): NormalizedEvent {
           ? (metadata.referral as Record<string, unknown>)
           : undefined,
       metadata: metadata && Object.keys(metadata).length > 0 ? metadata : undefined,
+      ...(history ? { history: true } : {}),
     };
   }
 
