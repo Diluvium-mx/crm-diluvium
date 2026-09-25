@@ -5,6 +5,7 @@ import type { Contact } from "../_data/types";
 import { TEMPERATURE_EMOJI, TEMPERATURE_LABELS, getContactFullName } from "../_data/types";
 import { ContactAvatar } from "./contact-avatar";
 import { displayPhone } from "@/lib/phone-format";
+import { PhoneLocation } from "@/components/ui/phone-location";
 
 // Contenido puro de la tarjeta, sin lógica de arrastre. Se reutiliza tal
 // cual dentro del DragOverlay del board (la "copia" que sigue al cursor
@@ -16,6 +17,7 @@ export function ContactCardContent({ contact }: { contact: Contact }) {
       <div className="flex min-w-0 flex-1 flex-col gap-0.5">
         <span className="truncate font-medium">{getContactFullName(contact)}</span>
         <span className="truncate text-muted-foreground">{displayPhone(contact.phoneE164) || "Sin teléfono"}</span>
+        <PhoneLocation phone={contact.phoneE164} />
       </div>
       {contact.temperature && (
         <span

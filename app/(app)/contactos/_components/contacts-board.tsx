@@ -66,7 +66,9 @@ function StageColumn({
   const rowVirtualizer = useVirtualizer({
     count: contacts.length,
     getScrollElement: () => scrollRef.current,
-    estimateSize: () => 74, // alto aprox. de una tarjeta + separación (pb-2)
+    // Alto medido de una tarjeta con la línea "📍 ciudad por lada" + separación
+    // (pb-2): 94 px (76 sin teléfono o sin dato de lada; measureElement corrige).
+    estimateSize: () => 94,
     overscan: 6,
     getItemKey: (index) => contacts[index]?.id ?? index,
   });
