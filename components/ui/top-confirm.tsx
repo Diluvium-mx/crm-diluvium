@@ -7,8 +7,10 @@
 //   fuera cancelan (salvo mientras guarda). Enfoca "Cancelar" al abrir y devuelve el
 //   foco al cerrar.
 // - TopNotice: aviso breve de que ya quedó (quien lo muestra decide cuánto dura).
+//   Va siempre montado: su región para lectores de pantalla existe antes de que
+//   llegue el texto, así el aviso sí se anuncia.
 // Sin lógica de datos. Respeta "reducir movimiento" (la animación es motion-safe).
-import { useEffect, useRef } from "react";
+import { useEffect, useId, useLayoutEffect, useRef } from "react";
 
 function TopLayer({ children }: { children: React.ReactNode }) {
   return (
@@ -37,11 +39,13 @@ export function TopConfirm({
   onConfirm: () => void;
   onCancel: () => void;
 }) {
+  const titleId = useId();
+  const bodyId = useId();
   const boxRef = useRef<HTMLDivElement>(null);
   const cancelRef = useRef<HTMLButtonElement>(null);
   // Los manejadores del documento leen siempre lo último sin re-suscribirse.
   const latest = useRef({ pending, onCancel });
-  useEffect(() => {
+  useLayoutEffect(() => {
     latest.current = { pending, onCancel };
   });
 
@@ -74,16 +78,16 @@ export function TopConfirm({
       <div
         ref={boxRef}
         role="alertdialog"
-        aria-labelledby="top-confirm-title"
-        aria-describedby={children ? "top-confirm-body" : undefined}
+        aria-labelledby={titleId}
+        aria-describedby={children ? bodyId : undefined}
         className="flex flex-col gap-3 rounded-lg border bg-card p-3 text-sm shadow-lg ring-1 ring-black/5 dark:ring-white/10"
       >
         <div className="flex flex-col gap-1">
-          <p id="top-confirm-title" className="font-medium text-foreground">
+          <p id={titleId} className="font-medium text-foreground">
             {title}
           </p>
           {children && (
-            <div id="top-confirm-body" className="text-xs text-muted-foreground">
+            <div id={bodyId} className="text-xs text-muted-foreground">
               {children}
             </div>
           )}
@@ -112,18 +116,23 @@ export function TopConfirm({
   );
 }
 
-export function TopNotice({ children }: { children: React.ReactNode }) {
+export function TopNotice({ message }: { message: string | null }) {
   return (
-    <TopLayer>
-      <div
-        role="status"
-        className="flex items-center gap-2 rounded-lg border bg-card px-3 py-2 text-sm text-foreground shadow-lg ring-1 ring-black/5 dark:ring-white/10"
-      >
-        <span aria-hidden="true" className="font-semibold text-brand-navy dark:text-sky-300">
-          ✓
-        </span>
-        {children}
-      </div>
-    </TopLayer>
+    <>
+      <p role="status" className="sr-only">
+        {message ?? ""}
+      </p>
+      {message && (
+        <TopLayer>
+          <div
+            aria-hidden="true"
+            className="flex items-center gap-2 rounded-lg border bg-card px-3 py-2 text-sm text-foreground shadow-lg ring-1 ring-black/5 dark:ring-white/10"
+          >
+            <span className="font-semibold text-brand-navy dark:text-sky-300">✓</span>
+            {message}
+          </div>
+        </TopLayer>
+      )}
+    </>
   );
 }

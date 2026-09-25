@@ -16,7 +16,7 @@ export function ProgressBar({ value, tone = "navy", label }: { value: number; to
       aria-label={label}
       aria-valuemin={0}
       aria-valuemax={100}
-      aria-valuenow={Math.round(pct)}
+      aria-valuenow={Math.floor(pct)}
       className="h-2 w-full overflow-hidden rounded-full bg-muted ring-1 ring-black/5 ring-inset dark:ring-white/10"
     >
       <div

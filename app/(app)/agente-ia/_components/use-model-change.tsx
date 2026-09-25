@@ -65,13 +65,17 @@ export function useModelChange({
       } catch {
         r = { ok: false, message: "No se pudo cambiar el modelo." };
       }
-      setAsking(null);
-      if (r.ok) {
-        setSelected(option.id);
-        setDone({ label: option.label, key: Date.now() });
-      } else {
-        setError(r.message);
-      }
+      // Después del await, las actualizaciones van en su propia transición (React
+      // 19): así el pop-up se cierra en el mismo render en que termina "pending".
+      start(() => {
+        setAsking(null);
+        if (r.ok) {
+          setSelected(option.id);
+          setDone({ label: option.label, key: Date.now() });
+        } else {
+          setError(r.message);
+        }
+      });
     });
   }
 
@@ -80,6 +84,7 @@ export function useModelChange({
     <>
       {asking && (
         <TopConfirm
+          key={asking.id}
           title={modelChangeQuestion({ target, agentName, from: fromLabel, to: asking.label })}
           confirmLabel="Sí, cambiar"
           pendingLabel="Cambiando…"
@@ -91,11 +96,7 @@ export function useModelChange({
           <span title="aproximado, sin impuestos">{sentence(costPer100Label(asking.costPer100Usd))}</span>
         </TopConfirm>
       )}
-      {!asking && done && (
-        <TopNotice key={done.key}>
-          Listo: {agentName} ahora usa {done.label}
-        </TopNotice>
-      )}
+      <TopNotice message={!asking && done ? `Listo: ${agentName} ahora usa ${done.label}` : null} />
     </>
   );
 
