@@ -365,10 +365,11 @@ Regla para Codex y Claude: cualquier check nuevo se agrega como script de
 `package.json`, no como comando suelto con `npx`. Detalle idéntico en `AGENTS.md`.
 
 ### Higiene de trabajo en paralelo
-- **Nunca dos agentes sobre los mismos archivos.** Usar git worktrees:
+- **Nunca dos agentes sobre los mismos archivos.** Usar git worktrees, siempre dentro de
+  `~/Documents/Diluvium/chats/` (una carpeta por chat de Code; mapa completo en `docs/migrar-mac.md`):
   ```
-  git worktree add ../crm-inbox    feature/inbox
-  git worktree add ../crm-contacts feature/contacts
+  git worktree add ~/Documents/Diluvium/chats/crm-inbox    -b feature/inbox    origin/main
+  git worktree add ~/Documents/Diluvium/chats/crm-contacts -b feature/contacts origin/main
   ```
 - Trabajar en **rebanadas verticales** (schema → API → UI de una sola feature), nunca por capas.
   Una rebanada terminada es una que se puede desplegar y usar.
