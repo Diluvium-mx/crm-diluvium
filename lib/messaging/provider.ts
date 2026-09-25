@@ -58,6 +58,12 @@ export type NormalizedMessageEvent = {
   referral?: Record<string, unknown>;
   // Contexto crudo del proveedor (cita, ubicación, tarjetas, pedido…).
   metadata?: Record<string, unknown>;
+  /**
+   * Copia del HISTORIAL del celular (coexistencia), no un mensaje en vivo: se
+   * importa sin agente, workflows, no leídos, ventana ni primera respuesta
+   * (lib/messaging/history.ts).
+   */
+  history?: boolean;
 };
 
 /** Reacción (agregada o quitada) sobre un mensaje ya existente. */

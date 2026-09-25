@@ -7,6 +7,7 @@ import type { ConversationListItem, InboxFilter } from "@/lib/inbox/types";
 import { ContactAvatar } from "../../contactos/_components/contact-avatar";
 import type { Temperature } from "../../contactos/_data/types";
 import { TemperaturePicker } from "./temperature-picker";
+import { PruebaBadge } from "@/components/ui/prueba-badge";
 import {
   SEMAFORO_CLASS,
   SEMAFORO_LABEL,
@@ -67,6 +68,7 @@ function ConversationRow({
         <div className="flex min-w-0 flex-1 flex-col gap-0.5">
           <div className="flex items-center gap-2">
             <span className="min-w-0 flex-1 truncate text-sm font-medium">{item.contact.name}</span>
+            {item.isTestChannel && <PruebaBadge />}
             <span className="shrink-0 text-xs text-muted-foreground">
               {item.lastMessage ? shortTime(item.lastMessage.at) : ""}
             </span>

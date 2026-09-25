@@ -42,6 +42,8 @@ export type ConversationListItem = {
   awaitingReplySince: Date | null;
   /** Fin de la ventana de 24 h (null = nunca escribió el cliente). */
   windowExpiresAt: Date | null;
+  /** El canal de la conversación es de PRUEBA (etiqueta "Prueba"). */
+  isTestChannel: boolean;
 };
 
 export type ConversationPage = { items: ConversationListItem[]; nextCursor: string | null };
@@ -62,6 +64,8 @@ export type ConversationDetail = {
   isStarred: boolean;
   unreadCount: number;
   adReferral: AdReferral | null;
+  /** Canal de la conversación: de prueba (etiqueta) y archivado (sin envíos). */
+  channel: { isTest: boolean; archived: boolean };
 };
 
 export type AttachmentView = {
@@ -107,6 +111,8 @@ export type MessageView = {
   contactCards: string[];
   /** Mensaje citado (respuesta a otro), si está en el CRM. */
   quoted: { direction: "in" | "out"; preview: string } | null;
+  /** Copiado del historial del celular (coexistencia): marca "Importado del celular". */
+  importedFromPhone: boolean;
 };
 
 /** Página de mensajes en orden cronológico (viejo → nuevo); `hasMore` = hay más viejos. */
