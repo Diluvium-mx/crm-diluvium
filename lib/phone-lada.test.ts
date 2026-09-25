@@ -18,8 +18,8 @@ describe("phoneLocation (México, por lada)", () => {
   });
 
   // Google (libphonenumber v9.0.9) solo trae el ESTADO para 667/668/669/687
-  // ("Sinaloa") y nada para 664: la ciudad sale de lib/phone-lada-cities.ts (dos
-  // listas públicas que coinciden) y el estado, de Google.
+  // ("Sinaloa"): la ciudad sale de lib/phone-lada-cities.ts (dos listas públicas que
+  // coinciden) y el estado, de Google.
   it("Sinaloa: la ciudad de las listas con el estado de Google", () => {
     expect(label("+526682426364")).toBe("Los Mochis, Sin.");
     expect(label("+526672426364")).toBe("Culiacán, Sin.");
@@ -28,7 +28,13 @@ describe("phoneLocation (México, por lada)", () => {
   });
 
   it("Google no trae la lada: solo la ciudad (sin estado inventado)", () => {
-    expect(label("+526641234567")).toBe("Tijuana");
+    expect(label("+525971234567")).toBe("Amecameca");
+  });
+
+  it("decisión del dueño: 664 → Tijuana, B.C.; 56 → Ciudad de México (misma zona que la 55)", () => {
+    expect(label("+526641234567")).toBe("Tijuana, B.C.");
+    expect(label("+525612345678")).toBe("Ciudad de México");
+    expect(phoneLocation("+525612345678")?.code).toBe("56");
   });
 
   it("Google da dos estados: solo la ciudad", () => {
@@ -49,7 +55,7 @@ describe("phoneLocation (México, por lada)", () => {
       const national = lada.padEnd(10, "0");
       expect(phoneLocation(`+52${national}`)?.label.startsWith(city), lada).toBe(true);
     }
-    expect(Object.keys(LADA_CITIES)).toHaveLength(84);
+    expect(Object.keys(LADA_CITIES)).toHaveLength(83);
   });
 
   it("el código ambiguo QRO de la fuente: Querétaro vs. Quintana Roo (Cozumel)", () => {
@@ -68,9 +74,8 @@ describe("phoneLocation (México, por lada)", () => {
     expect(phoneLocationHint(phoneLocation("+526682426364")!)).toBe("Según la lada 668 (dónde se contrató la línea)");
   });
 
-  // 56 (la segunda lada de CDMX) no viene en los datos de Google: sin dato, nada.
-  it("lada sin dato en la fuente o número incompleto: nada", () => {
-    expect(label("+525612345678")).toBeNull();
+  it("lada sin dato en ninguna fuente o número incompleto: nada", () => {
+    expect(label("+522001234567")).toBeNull();
     expect(label("+52668242")).toBeNull();
   });
 });
