@@ -19,6 +19,9 @@ export const googleAdapter: ProviderAdapter = {
       messages: input.messages,
       ...(input.maxOutputTokens ? { maxOutputTokens: input.maxOutputTokens } : {}),
       abortSignal: AbortSignal.timeout(input.timeoutMs ?? DEFAULT_MODEL_TIMEOUT_MS),
+      // Sin reintentos ocultos del SDK (Fase E): el runtime decide (un solo reintento
+      // si el proveedor está saturado; si no, tarjeta para el vendedor).
+      maxRetries: 0,
       // Herramientas sin `execute` (Fase D): una sola vuelta.
       ...(input.tools ? { tools: input.tools, stopWhen: isStepCount(1) } : {}),
     });

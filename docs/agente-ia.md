@@ -102,11 +102,11 @@ zsh trata `${{...}}` como *bad substitution* con comillas dobles. Una opción de
 selector cuya llave falte queda en gris automáticamente.
 
 **Fase E — llaves nuevas** (mismo patrón: el valor en el web, el worker lo referencia):
-`GOOGLE_GENERATIVE_AI_API_KEY` (Gemini), `XAI_API_KEY` (Grok) y `OPENROUTER_API_KEY` (Qwen).
+`GEMINI_API_KEY` (Gemini), `GROK_API_KEY` (Grok) y `QWEN_API_KEY` (Qwen).
 
 ```bash
-railway variable set 'GOOGLE_GENERATIVE_AI_API_KEY=${{crm-diluvium.GOOGLE_GENERATIVE_AI_API_KEY}}' 'XAI_API_KEY=${{crm-diluvium.XAI_API_KEY}}' 'OPENROUTER_API_KEY=${{crm-diluvium.OPENROUTER_API_KEY}}' -s worker-production -e production
-railway variable set 'GOOGLE_GENERATIVE_AI_API_KEY=${{crm-diluvium.GOOGLE_GENERATIVE_AI_API_KEY}}' 'XAI_API_KEY=${{crm-diluvium.XAI_API_KEY}}' 'OPENROUTER_API_KEY=${{crm-diluvium.OPENROUTER_API_KEY}}' -s worker -e staging
+railway variable set 'GEMINI_API_KEY=${{crm-diluvium.GEMINI_API_KEY}}' 'GROK_API_KEY=${{crm-diluvium.GROK_API_KEY}}' 'QWEN_API_KEY=${{crm-diluvium.QWEN_API_KEY}}' -s worker-production -e production
+railway variable set 'GEMINI_API_KEY=${{crm-diluvium.GEMINI_API_KEY}}' 'GROK_API_KEY=${{crm-diluvium.GROK_API_KEY}}' 'QWEN_API_KEY=${{crm-diluvium.QWEN_API_KEY}}' -s worker -e staging
 ```
 
 ## Nota para la Fase B (panel de gasto)
@@ -247,7 +247,36 @@ Dashboard ya muestra el gasto del mes y el saldo estimado (24-sep-2026).
   `feat/agente-ia-fase-e` (migración 0033):** los dos selectores y la asignación por etapa
   (Modelo 1 = Inbox, Prospecto e Interesado, decisión del dueño), adaptadores de Google, xAI y
   OpenRouter con sus precios, tope de 4,096 tokens con aviso si se corta (parte del pendiente B
-  de la Fase D), sin sección "Empresa" y favicon nuevo. Siguen: reenvío seguro y pendientes A–F. El panel de gasto que antes
+  de la Fase D), sin sección "Empresa" y favicon nuevo (main 0f495e9). **Parte 2 (migración 0034):**
+  - **Reenvío seguro** (definición del dueño, 25-sep): si el modelo falla, el CRM NO lo vuelve a
+    llamar solo. Deja en el chat la tarjeta ⚠ 🤖 "El agente no pudo responder" con el error en
+    palabras simples (sin saldo, llave faltante o inválida, proveedor saturado, tardó demasiado,
+    rechazó la conversación, respuesta vacía; `lib/ai/runtime/model-errors.ts`) y los botones
+    **Reintentar** (un intento más, ya) y **Apagar** (pausa al agente solo en esa conversación;
+    "Reactivar" lo regresa). Mientras nadie elija, ni mensajes nuevos, ni la cola, ni el barrido
+    vuelven a llamar al modelo ahí. Única excepción: si el proveedor está **saturado** se reintenta
+    UNA vez sola tras 10 s. Los adaptadores ya no usan los reintentos ocultos del SDK (`maxRetries: 0`).
+  - **"Depósito recibido"**: el aviso de pago es un texto fijo, sin montos, folio ni texto del modelo.
+    El agente ya no anota monto/folio y se quitó el chequeo de folio repetido (decisión del dueño);
+    la tabla `comprobantes` queda sin uso. El contexto del CRM ya no lista comprobantes.
+  - **Caché del historial** (Anthropic): segundo punto de caché antes del último turno del cliente;
+    probado con Sonnet 5 real: la 2.ª llamada leyó de caché 4,931 de 4,962 tokens de entrada.
+  - La nota "ya salió por palabra clave" solo queda en el log del worker (ya no es aviso al vendedor).
+  - Revisión adversarial de Claude (Codex sin sesión el 25-sep): una tarjeta VIEJA ya no bloquea
+    tras "Reactivar" o tras encender el canal (solo bloquea si es posterior al último cambio de
+    estado); cuando el agente vuelve a contestar, las tarjetas abiertas quedan "superadas"; no hay
+    tarjeta si durante la falla un vendedor contestó o pausaron al agente; "Reintentar" que no
+    pudo programar la corrida reabre la tarjeta; "Apagar" pausa antes de cerrar la tarjeta; el
+    aviso automático al mover a Compra sin comprobante es neutral y no sale junto a "Comprobante
+    dudoso"; el punto de caché de Anthropic va antes de la primera foto o PDF (su URL firmada
+    cambia en cada respuesta y la caché no se reutilizaría).
+  - Llaves con los nombres de Railway: `GEMINI_API_KEY`, `GROK_API_KEY`, `QWEN_API_KEY` (valor en
+    el web de producción; `worker-production` las referencia). Prueba real del 25-sep: Gemini y
+    Qwen contestan con herramientas; Grok rechazó la llave (hay que volver a copiarla).
+  Siguen (decisión del dueño): A (por verificar con "¿cómo se instalan y cuánto cuestan?"), la nota
+  del tope diario, un indicador "agente con error" en la lista de la Bandeja (si el saldo se acaba,
+  cada conversación deja su tarjeta y nadie lo ve sin abrirla), y que un fallo de ENVÍO antes de la
+  primera burbuja todavía reintenta en la cola (cada intento vuelve a llamar al modelo). El panel de gasto que antes
   se anotaba aquí ya existe en el Dashboard (24-sep-2026); conciliar contra las Cost API queda como
   pendiente sin fase.
 

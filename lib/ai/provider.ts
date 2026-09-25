@@ -5,13 +5,15 @@ export type ProviderMeta = { id: ProviderId; label: string; envKey: string };
 
 // Metadatos de TODOS los proveedores (aunque aún no tengan adaptador): la UI los
 // usa para decir qué llave falta y con qué etiqueta mostrar el proveedor.
-// `envKey` es la variable de entorno con la llave del proveedor.
+// `envKey` es la variable de entorno con la llave del proveedor. Google, xAI y
+// OpenRouter usan los nombres que eligió el dueño en Railway (25-sep-2026):
+// GEMINI_API_KEY, GROK_API_KEY y QWEN_API_KEY (la llave se pasa explícita al SDK).
 export const PROVIDER_META: Record<ProviderId, ProviderMeta> = {
   openai: { id: "openai", label: "OpenAI", envKey: "OPENAI_API_KEY" },
   anthropic: { id: "anthropic", label: "Anthropic", envKey: "ANTHROPIC_API_KEY" },
-  google: { id: "google", label: "Google", envKey: "GOOGLE_GENERATIVE_AI_API_KEY" },
-  xai: { id: "xai", label: "xAI", envKey: "XAI_API_KEY" },
-  openrouter: { id: "openrouter", label: "OpenRouter", envKey: "OPENROUTER_API_KEY" },
+  google: { id: "google", label: "Google", envKey: "GEMINI_API_KEY" },
+  xai: { id: "xai", label: "xAI", envKey: "GROK_API_KEY" },
+  openrouter: { id: "openrouter", label: "OpenRouter", envKey: "QWEN_API_KEY" },
 };
 
 // Proveedores con adaptador implementado (openai/anthropic desde la Fase A;
