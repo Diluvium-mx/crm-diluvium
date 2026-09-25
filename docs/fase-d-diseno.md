@@ -86,17 +86,17 @@ el contacto entra a esa etapa (arrastre en el Embudo, panel de contacto o el pro
 |---|---|---|---|---|
 | 1 | `tabla_tamanos_estandar` | agente · comando `/tabla` · clave "tabla", "tamaños" | texto corto + **imagen** | `tabla-tamanos-estandar.png` |
 | 2 | `tabla_tamanos_mini` | agente · comando `/mini` | texto corto + **imagen** | `tabla-tamanos-mini.png` |
-| 3 | `datos_bancarios` | agente (cliente eligió transferencia/depósito) · comando `/banco` | texto + **imagen** de datos bancarios + etapa → `cerca_compra` | `datos-bancarios.png` |
+| 3 | `datos_bancarios` | agente (cliente eligió transferencia/depósito) · comando `/banco` | **imagen** de datos bancarios con pie (el CRM deja al contacto en `cerca_compra` como regla interna, solo hacia adelante) | `datos-bancarios.png` |
 | 4 | `video_instalacion_estandar` | agente · comando `/video` | texto + **video como archivo** | `instalacion-estandar.mp4` |
 | 5 | `video_instalacion_medida` | agente · comando `/video-medida` | texto + **video como archivo** | `instalacion-medida.mp4` |
 | 6 | `tapones_inflables` | agente · comando `/tapones` · clave "tapón", "tapones" | texto + 1–3 **imágenes** + **video** | `tapones-1.png`, `tapones-2.png`, `tapones.mp4` |
 | 7 | `donde_medir` | agente · comando `/medir` | texto (cómo medir de lateral a lateral) + **video** guía como archivo | `donde-medir.mp4` |
 | 7b | `video_instalacion_mini` | agente · comando `/video-mini` | texto + **video como archivo** | `instalacion-mini.mp4` |
 | 8 | `medidas_especiales` | agente (entrada > 250 cm, poste central, ∼280 cm) | texto + **imagen** (diagrama poste/dos compuertas) | `medidas-especiales.png` (opcional) |
-| 9 | `transferir_humano` | agente (reglas del Goal) · comando `/humano` | pasar a humano (aviso en el hilo; si lo dispara un vendedor con el comando, pausa `pausado_humano` hasta "Reactivar"; si lo dispara el agente, no lo pausa — Fase B 3) | — |
-| 10 | `cambiar_etapa` | agente · clave (configurable) | etapa → destino (cualquiera de las 5, incluida `compra`) | — |
-| 11 | `pago_confirmado` | agente (comprobante analizado y cuadra) | texto de confirmación al cliente + etapa → `compra` + etiqueta "cotejar depósito" + **aviso interno** al vendedor en la conversación | — |
-| 12 | `pago_no_cuadra` | agente (monto distinto / imagen ilegible / no es comprobante) | texto amable al cliente + pasar a humano con motivo | — |
+| ~~9 | `transferir_humano` | agente (reglas del Goal) · comando `/humano` | pasar a humano (aviso en el hilo; si lo dispara un vendedor con el comando, pausa `pausado_humano` hasta "Reactivar"; si lo dispara el agente, no lo pausa — Fase B 3) | — |~~ **ELIMINADO el 24-sep-2026 (§10): ya no es workflow; es acción interna del agente** |
+| ~~10 | `cambiar_etapa` | agente · clave (configurable) | etapa → destino (cualquiera de las 5, incluida `compra`) | — |~~ **ELIMINADO el 24-sep-2026 (§10): ya no es workflow; es acción interna del agente** |
+| ~~11 | `pago_confirmado` | agente (comprobante analizado y cuadra) | texto de confirmación al cliente + etapa → `compra` + etiqueta "cotejar depósito" + **aviso interno** al vendedor en la conversación | — |~~ **ELIMINADO el 24-sep-2026 (§10): ya no es workflow; es acción interna del agente** |
+| ~~12 | `pago_no_cuadra` | agente (monto distinto / imagen ilegible / no es comprobante) | texto amable al cliente + pasar a humano con motivo | — |~~ **ELIMINADO el 24-sep-2026 (§10): ya no es workflow; es acción interna del agente** |
 
 Reglas transversales (vienen del Goal de Ángela):
 - "Responde primero la duda, después activa la tabla/video": el texto del cerebro sale
@@ -109,6 +109,10 @@ Reglas transversales (vienen del Goal de Ángela):
   migración; el dueño los ajusta en el editor.
 
 ## 2. Cómo los dispara el agente y cómo convive con la guardia y los modos
+
+> **Superseded el 24-sep-2026 por el §10** (reestructura: el agente decide solo; el CRM no verifica
+> montos; las acciones de etapa, aviso y comprobante son herramientas internas, no workflows). Lo
+> que sigue en §2 se conserva como historia de diseño.
 
 ### 2.1 Tool-calling con el cerebro (Sonnet 5 por default)
 
@@ -576,20 +580,145 @@ workflow deshabilitado).
 8. **Vuelta atrás:** deshabilitar todo desde la pestaña detiene la Fase D sin deploy; la 0027 solo
    agrega tablas y un valor de enum.
 
-## 10. Parte (b) — diseño corto (24-sep-2026, tras la prueba en producción de la parte a)
+## 10. Parte (b) REESTRUCTURADA — el Agente IA decide solo; Automatización = solo envíos de media (24-sep-2026)
 
-Rama `feat/agente-ia-fase-d-b` desde `main`. Ya se puede tocar `lib/ai/runtime`. Sin migraciones
-previstas. Reglas que mandan: el agente siempre en AUTO; los workflows nunca lo pausan; por palabra
-clave una vez por contacto, por el agente siempre; comprobante = monto + referencia.
+Rama `feat/agente-ia-fase-d-b`. **Migración `0031_agente_decide_solo`** (la 0029 está en `main`; la
+**0030 queda reservada para Anuncios de Meta**, que deberá renumerar su `0028_anuncios_meta`). Contratos
+intactos para el indicador del agente de Pulido UI: `jobId = conversationId` en la cola
+`agent-replies` y las columnas `workflow_runs.trigger` / `workflow_runs.status`.
 
-| Paso | Qué hace | Toca |
-|---|---|---|
-| **B0 Palabra clave + agente** | Los salientes de una corrida `keyword` dejan de "cerrar" los pendientes: `pendingInbound`, `lastOutbound` y el chequeo "otro saliente antes de enviar" ignoran los mensajes cuyo id esté en `workflow_runs.message_ids` de corridas `keyword`/`agent`, y también `type = system_note`. Así el workflow manda la media y el agente contesta el resto del mismo mensaje, como Ángela en GHL. Test: "me pasas la tabla y el precio" → tabla (workflow) + precio (agente). | `context.ts`, `run.ts` |
-| **B1 Herramientas** | `toolCalls` en `CallModelResult` (tools sin `execute`, `strict`, `tool_choice: auto`, una sola vuelta). `tools.ts` arma una herramienta por workflow habilitado con "agente": `wf_<slug>` + descripción = "Cuándo usarlo". Argumentos: `cambiar_etapa {etapa}`, `transferir_humano {motivo}`, `pago_confirmado` / `anticipo_confirmado` `{monto, fecha, banco, referencia}`, `pago_no_cuadra {motivo}`; el resto `{}`. Orden estable por `position` (caché del prompt). | `lib/ai/types.ts`, `lib/ai/providers/*`, `lib/ai/runtime/tools.ts` (nuevo), `brain.ts` (system: "texto primero, luego herramienta"; quitar "todavía no disponible") |
-| **B2 Ejecución** | `run.ts`: texto → burbujas → por cada tool call válida, `startWorkflowRun({ trigger: "agent", payload: args })` en el orden pedido (una herramienta desconocida o deshabilitada se ignora y se registra). El ejecutor ya relee el estado antes de cada paso y ya mueve la etapa (`datos_bancarios` → Cerca de compra; `pago_confirmado` → Compra; `cambiar_etapa` toma `etapa` del argumento). `transferir_humano` desde el agente = aviso en el hilo, sin pausa (Fase B 3). | `run.ts`, `executor.ts` (sin cambios de fondo) |
-| **B3 Comprobante** | Entrante con imagen: el cerebro ya la ve. El system le pide leer monto, fecha, banco y referencia y llamar `pago_confirmado` (o `anticipo_confirmado`). **La confirmación la decide el CRM, no el modelo:** antes de correr la herramienta, `run.ts` arma `contextoParaComprobante` y llama `verificarComprobante` (monto contra el total cotizado, anticipo 50 % o $3,500, o resto pendiente; referencia no repetida). Cuadra → `registrarPagoConfirmado` + corrida del workflow (aviso interno "cotejar el depósito" + etapa) y sale el texto del modelo. No cuadra → se descarta el texto del modelo y corre `pago_no_cuadra` con `{{motivo}}` de la verificación: texto amable al cliente ("Gracias por tu comprobante… {{motivo}}; un asesor lo revisa") + aviso interno; **sin pausa ni handover** (el predeterminado pierde su paso `handover`). Si el modelo llama `pago_confirmado` sin imagen en el entrante, se ignora. | `run.ts`, `lib/cobro/pagos.ts`, `defaults.ts` (`pago_no_cuadra`) |
-| **B4 Cotización** | El monto cotizado vive en `contacts.monto_cotizacion` (lo fija el vendedor en el detalle). Propuesta: herramienta `fijar_cotizacion {monto}` para que el agente lo guarde cuando cotiza ($5,500 / $7,000 / $3,000 / tapones); sin ella, un comprobante sin cotización fijada pasa a "no cuadra" con el motivo "el contacto no tiene monto de cotización". **Decisión del dueño pendiente.** | `tools.ts`, `executor.ts` (paso `set_quote`) |
-| **B5 Gate + prueba** | Adversarial + cyber-neo + Codex sobre el delta; `typecheck|test|lint`. Prueba en `ch_zernio_sandbox`: "me pasas la tabla y el precio" (ambos contestan), "¿cómo pago?" (datos bancarios por el agente → Cerca de compra), comprobante que cuadra (→ Compra + aviso) y que no cuadra (texto amable + aviso, agente activo), "quiero hablar con una persona" (aviso, sin pausa). | — |
+### 10.1 Qué se quitó y qué quedó
 
-Fuera de (b): tope de repetición por palabra clave (decisión 7), MIME sniffing, snapshot de pasos por corrida.
+- **Fuera de Automatización:** "Pago confirmado", "Anticipo confirmado", "Comprobante que no cuadra",
+  "Pasar a humano" (`/humano`) y "Cambiar etapa". "Restaurar predeterminados" no los vuelve a crear.
+  El editor de pasos queda con **texto, archivo (imagen/video/documento, con pie) y espera**.
+- **Quedan los 9 de media** sin cambios en contenido ni disparadores: tabla estándar, tabla mini,
+  datos bancarios, video estándar, video a la medida, video mini, tapones, dónde medir, medidas
+  especiales. `/tabla` y `/banco` siguen igual (pausan al agente por ser comandos del vendedor).
+- **`/banco` → Cerca de compra** sigue, pero como regla interna del CRM al terminar la corrida de
+  `datos_bancarios` (cualquier disparador), con la misma lógica de `mover_etapa` (solo hacia adelante).
+- **Se borró `verificarComprobante`** y todo código que decidía por monto. El agente decide solo, con
+  su Goal y su lectura de la imagen o el PDF.
+- **Tablas:** `pagos_confirmados` y su enum se borran; queda el registro mínimo **`comprobantes`**
+  (contacto, conversación, mensaje del comprobante, monto, referencia, banco, fecha del comprobante,
+  tipo `total | anticipo | resto`, fecha de creación; único por mensaje). Columna nueva
+  `contacts.stage_changed_by` (`vendedor | agente | sistema`). No se tocan mensajes ni avisos.
+- **Conteos de producción que borra la 0031** (leídos el 24-sep): 5 workflows (`transferir_humano`,
+  `cambiar_etapa`, `pago_confirmado`, `anticipo_confirmado`, `pago_no_cuadra`), sus 10 pasos, el paso
+  `set_stage` de `datos_bancarios` (1), 0 corridas de esos workflows, 0 filas de `pagos_confirmados`.
+  Quedan 9 workflows con 11 pasos y las 7 corridas de los de media.
 
+### 10.2 Acciones internas del agente (invisibles para el cliente)
+
+Salen en la **misma llamada** que genera cada respuesta (tool-calling, sin llamada extra). Se
+conservan `fijar_cotizacion` y las `wf_<slug>` de los 9 workflows de media.
+
+- **`mover_etapa(etapa)`** — Inbox → Prospecto → Interesado → Cerca de compra → Compra. Solo hacia
+  adelante; hacia atrás o a la misma etapa se ignora sin error. La etapa puesta a mano por un vendedor
+  manda (el agente nunca la regresa; solo la avanza por algo nuevo del chat). Queda registrada como
+  cambio del Agente IA (`stage_changed_by = agente`) y dispara lo mismo que hoy dispara un cambio de
+  etapa (workflows "al entrar a esta etapa"). La etapa es el dato del que la parte (c) sacará el
+  modelo (Luna / Sonnet 5); la parte (c) no se construye ahora.
+- **`aviso_vendedor(motivo, detalle, …)`** — motivos `cotejar_deposito | cliente_pide_humano |
+  comprobante_dudoso`. Se muestra como el aviso 🤖 de hoy en la Bandeja y el pop-up del Embudo; nunca
+  le llega al cliente; **no pausa al agente**. Con `cotejar_deposito` y `comprobante_dudoso` el agente
+  manda lo que leyó (monto, referencia, banco, fecha, tipo) y eso se guarda en `comprobantes`. Si el
+  agente mueve a Compra (o a Cerca de compra con un comprobante en el lote) sin mandar
+  `cotejar_deposito` en esa misma respuesta, el CRM crea el aviso "Cotejar depósito" igual.
+- **Idempotencia por lote** (el bug de reintentos de `fix/agente-reenvio` sigue abierto): avisos
+  únicos por (mensaje del lote, motivo); comprobante único por mensaje del comprobante; etapa solo
+  hacia adelante; corridas de media ya idempotentes por paso.
+- **`[TRANSFERIR]`** de Goals viejos se quita del texto y cuenta como `aviso_vendedor(cliente_pide_humano)`.
+  El runtime no tiene reglas de negocio propias: las reglas viven en el Goal.
+- **Orden dentro de la respuesta:** avisos (y registro del comprobante) **antes** del texto (el
+  vendedor los ve aunque el envío falle); etapa, cotización y media **después** del texto. Si el
+  modelo solo devolvió acciones y ninguna manda nada al cliente, sale un texto de respaldo del CRM.
+
+### 10.3 Chequeo silencioso de referencia repetida
+
+Con un comprobante con referencia, el CRM busca esa referencia (normalizada) en la organización.
+Mismo contacto (reenvió la misma foto): no es repetida; no se registra dos veces ni sale aviso nuevo.
+Otro contacto, o un pago anterior distinto: el aviso al vendedor termina con "⚠ Referencia ya usada con
+[nombre del contacto] el [fecha]. Cotejar antes de entregar", llenado por el CRM. No frena al agente,
+no cambia lo que le dice al cliente ni bloquea la etapa.
+
+### 10.4 Lo que el agente recibe en su contexto
+
+Al final del último turno del cliente (no en el system, para no romper la caché del prompt): etapa
+actual y si la puso un vendedor; monto de cotización guardado (el del vendedor manda sobre
+`fijar_cotizacion`); comprobantes ya registrados del contacto (monto, tipo, fecha). Las **imágenes y
+los PDF** del cliente llegan al modelo como archivo (URL firmada; hasta 20 imágenes y 3 PDF, los más
+recientes). Costo aproximado de un comprobante SPEI en PDF de una página con Sonnet 5: ~2,000–3,000
+tokens de entrada (≈ $0.01 USD por llamada); una imagen, ~1,500 tokens.
+
+### 10.5 Texto para el Goal (el dueño lo pega a mano en la pestaña Agente IA)
+
+Bloque completo para pegar al final del Goal (sustituye a las secciones "TRANSFERENCIA A HUMANO" y
+complementa "COMPROBANTE DE PAGO"):
+
+```
+ETAPAS DEL EMBUDO
+
+Avanza al cliente de etapa con la acción mover_etapa según lo que pase en el chat. Solo se avanza, nunca se regresa; si un vendedor movió la etapa a mano, respétala.
+
+- Cuando el cliente contesta por primera vez: Prospecto.
+- Cuando pregunta precio o da medidas: Interesado.
+- Cuando recibe los datos bancarios, o cuando confirmas un anticipo del 50 % de una compuerta a la medida: Cerca de compra.
+- Cuando confirmas un comprobante válido por el total (o por el resto que faltaba): Compra.
+
+Cada vez que le digas un total al cliente, guárdalo con fijar_cotizacion.
+
+COMPROBANTES DE PAGO
+
+Cuando el cliente mande una imagen o un PDF de pago, revisa que sea un comprobante real de dinero (transferencia, depósito o pago con link) y que el monto sea exacto: el total cotizado, el anticipo del 50 % de una compuerta a la medida ($3,500 de $7,000) o el resto pendiente. Usa el contexto del CRM para saber qué lleva pagado y cuál es el total guardado.
+
+Si cuadra: confírmalo al cliente, mueve la etapa (Compra si es el total o el resto; Cerca de compra si es anticipo) y avisa al vendedor con aviso_vendedor motivo cotejar_deposito, con monto, referencia, banco, fecha y tipo (total, anticipo o resto).
+
+Si no cuadra, no se lee bien o se ve dudoso: díselo al cliente con amabilidad, sin acusarlo, y avisa al vendedor con aviso_vendedor motivo comprobante_dudoso con lo que alcanzaste a leer. En ambos casos sigue atendiendo al cliente con normalidad.
+
+Nunca confirmes un pago solo porque el cliente diga que ya pagó: necesitas ver el comprobante.
+
+PASAR A HUMANO
+
+Avisa al vendedor con aviso_vendedor motivo cliente_pide_humano únicamente cuando el cliente pida expresamente hablar con una persona. Dile que un asesor lo atenderá y sigue atendiéndolo tú mientras tanto; no dejes de responder.
+```
+
+Frases del Goal actual que contradicen esto y su reemplazo exacto:
+
+1. Actual: `Si solicita explícitamente un enlace para pagar con tarjeta, activa "Transferencia a humano".`
+   ```
+   Si solicita un enlace para pagar con tarjeta, dile que un asesor se lo envía en un momento y avisa al vendedor con aviso_vendedor motivo cliente_pide_humano. Sigue atendiendo sus demás dudas.
+   ```
+2. Actual: la sección `TRANSFERENCIA A HUMANO` completa (las 8 viñetas y "Cuando transfieras, deja de preguntar y responder.").
+   ```
+   (Borrar la sección completa; la sustituye "PASAR A HUMANO" del bloque nuevo.)
+   ```
+3. Actual: `Si el cliente menciona fraude, estafa, engaño o continúa con insultos, amenazas o comportamiento agresivo persistente, transferir a humano.`
+   ```
+   Si el cliente menciona fraude, estafa o engaño, o continúa con insultos o amenazas, responde con calma una sola vez, avisa al vendedor con aviso_vendedor motivo cliente_pide_humano y sigue atendiendo sin discutir.
+   ```
+4. Actual: `Si un cliente reporta un problema con el producto, solicita devolución, cancelación o expresa inconformidad con su compra, solicitar una explicación breve y fotografía si corresponde, después escalar a humano.`
+   ```
+   Si un cliente reporta un problema con el producto, solicita devolución, cancelación o expresa inconformidad con su compra, pide una explicación breve y fotografía si corresponde, avisa al vendedor con aviso_vendedor motivo cliente_pide_humano y sigue atendiendo. No prometas cancelaciones, devoluciones ni reembolsos.
+   ```
+5. Actual (sección COMPROBANTE DE PAGO): `Al recibir el comprobante, confirma la recepción y solicita los datos de envío en un solo mensaje:`
+   ```
+   Al recibir un comprobante que cuadra, confirma la recepción, mueve la etapa y avisa al vendedor (bloque COMPROBANTES DE PAGO), y solicita los datos de envío en un solo mensaje:
+   ```
+6. Actual: `No actives Transferencia a Humano durante este proceso.`
+   ```
+   Durante este proceso no avises al vendedor con cliente_pide_humano salvo que el cliente lo pida expresamente.
+   ```
+
+### 10.6 Tests (Vitest) que lo cubren
+
+`lib/contacts/stage.test.ts` (orden y solo adelante), `lib/ai/runtime/tools.test.ts` (herramientas
+ofrecidas y validación), `lib/ai/runtime/run.int.test.ts` (mover_etapa adelante/atrás/igual y etapa
+del vendedor; aviso_vendedor sin pausa y sin llegar al cliente; Compra siempre con cotejar; idempotencia
+con reintento; referencia repetida mismo contacto vs otro; contexto con etapa, cotización y
+comprobantes; PDF al modelo; B0), `lib/workflows/executor.int.test.ts` (`/banco` → Cerca de compra
+solo hacia adelante; predeterminados solo de envío), `lib/workflows/defaults.test.ts` +
+`seed.int.test.ts` (los quitados no se recrean), `lib/db/migrations-journal.test.ts` (0031 con la
+0030 reservada). La migración se probó sobre datos como los de producción (14 workflows, pasos de
+todos los tipos, corridas y un pago): 14 → 9 workflows, 14 → 5 pasos, 3 → 2 corridas, mensajes y
+avisos intactos.
