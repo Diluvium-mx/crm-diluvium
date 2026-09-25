@@ -165,7 +165,7 @@ export async function saveWorkflow(raw: WorkflowInput): Promise<{ ok: true; id: 
   if (input.enabled && input.steps.length === 0) return { ok: false, error: "Un workflow habilitado necesita al menos un paso." };
   // Una variable que el ejecutor no sabe rellenar llegaría literal al cliente.
   for (const st of input.steps) {
-    const text = st.kind === "send_text" || st.kind === "internal_note" ? st.text : st.kind === "send_media" ? (st.caption ?? "") : "";
+    const text = st.kind === "send_text" ? st.text : st.kind === "send_media" ? (st.caption ?? "") : "";
     const unknown = unknownVariables(text);
     if (unknown.length) return { ok: false, error: `Variable desconocida: {{${unknown[0]}}}. Disponibles: {{nombre}}, {{vendedor}}, {{monto}}, {{banco}}, {{referencia}}, {{fecha}}, {{motivo}}.` };
   }

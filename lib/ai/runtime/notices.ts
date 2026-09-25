@@ -19,6 +19,9 @@ export async function addNotice(input: {
   body: string;
   // Saliente del agente al que se refiere: un aviso por mensaje y tipo.
   messageId?: string | null;
+  // true: si la BD falla, LANZA (avisos que el vendedor debe ver sí o sí: pagos,
+  // pase a humano). Default: nunca lanza.
+  strict?: boolean;
 }): Promise<boolean> {
   try {
     const own = await db
@@ -43,6 +46,7 @@ export async function addNotice(input: {
     return rows.length > 0;
   } catch (error) {
     console.error(`[agente] no se pudo guardar el aviso "${input.kind}" en ${input.conversationId}`, error);
+    if (input.strict) throw error;
     return false;
   }
 }

@@ -4,20 +4,12 @@ import type { StepPayload } from "@/lib/workflows/steps";
 export const STEP_LABEL: Record<StepPayload["kind"], string> = {
   send_text: "Texto",
   send_media: "Archivo",
-  set_stage: "Etapa",
-  handover: "Pasar a humano",
-  add_tag: "Etiqueta",
-  internal_note: "Aviso interno",
   wait: "Esperar",
 };
 
 export const STEP_ICON: Record<StepPayload["kind"], string> = {
   send_text: "💬",
   send_media: "📎",
-  set_stage: "↗",
-  handover: "🙋",
-  add_tag: "🏷",
-  internal_note: "📝",
   wait: "⏱",
 };
 
@@ -62,14 +54,6 @@ export function stepSummary(step: StepPayload): string {
       return step.text;
     case "send_media":
       return step.assetId ? `${step.title}${step.caption ? ` · "${step.caption}"` : ""}` : `⚠ Falta archivo: ${step.title}`;
-    case "set_stage":
-      return `→ ${step.stage}`;
-    case "handover":
-      return step.tag ? `etiqueta "${step.tag}"` : "pausa al agente y etiqueta";
-    case "add_tag":
-      return `"${step.tag}"`;
-    case "internal_note":
-      return step.text;
     case "wait":
       return `${step.seconds} s`;
   }

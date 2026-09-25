@@ -2,12 +2,10 @@
 // definición de qué acepta cada tipo de paso; el editor, el seed y el ejecutor
 // pasan por aquí (CLAUDE.md §7: Zod en todo borde de entrada).
 import { z } from "zod";
-import { contactStageEnum } from "@/lib/db/schema/contacts";
 import type { WorkflowStepPayload } from "@/lib/db/schema/automation";
 
 export const MAX_STEP_TEXT = 4_096; // tope de WhatsApp para un texto
 export const MAX_CAPTION = 1_024;
-export const MAX_TAG = 40;
 // 30 s es lo que GHL espera antes de la tabla de tamaños; tope holgado.
 export const MAX_WAIT_SECONDS = 60;
 export const MAX_STEPS = 12;
@@ -22,10 +20,6 @@ export const stepPayloadSchema = z.discriminatedUnion("kind", [
     title: z.string().trim().min(1, "Describe qué archivo va aquí.").max(120),
     caption: z.string().trim().max(MAX_CAPTION).optional(),
   }),
-  z.object({ kind: z.literal("set_stage"), stage: z.enum(contactStageEnum.enumValues) }),
-  z.object({ kind: z.literal("handover"), tag: z.string().trim().min(1).max(MAX_TAG).optional() }),
-  z.object({ kind: z.literal("add_tag"), tag: nonEmpty(MAX_TAG) }),
-  z.object({ kind: z.literal("internal_note"), text: nonEmpty(MAX_STEP_TEXT) }),
   z.object({ kind: z.literal("wait"), seconds: z.number().int().min(1).max(MAX_WAIT_SECONDS) }),
 ]);
 
@@ -90,18 +84,7 @@ export function matchesKeyword(message: string, keywords: readonly string[]): st
 // Variables que el ejecutor sabe rellenar: las del CRM y los argumentos de las
 // herramientas del agente (comprobante) o del disparador. Cualquier otra
 // llegaría literal al cliente ("tu total es {{monto}}"), así que el editor la rechaza.
-export const ALLOWED_VARIABLES = new Set([
-  "nombre",
-  "vendedor",
-  "monto",
-  "fecha",
-  "banco",
-  "referencia",
-  "destinatario",
-  "motivo",
-  "mensaje",
-  "etapa_disparadora",
-]);
+export const ALLOWED_VARIABLES = new Set(["nombre", "vendedor", "mensaje", "etapa_disparadora"]);
 
 export function unknownVariables(text: string): string[] {
   const out = new Set<string>();

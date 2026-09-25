@@ -96,7 +96,7 @@ export async function updateContactStage(input: UpdateContactStageInput) {
   // misma columna no es "entrar" a la etapa.
   const [updated] = await db
     .update(contacts)
-    .set({ stage: parsed.stage, stageChangedAt: new Date() })
+    .set({ stage: parsed.stage, stageChangedAt: new Date(), stageChangedBy: "vendedor" })
     .where(
       and(
         eq(contacts.id, parsed.contactId),
