@@ -102,11 +102,11 @@ zsh trata `${{...}}` como *bad substitution* con comillas dobles. Una opción de
 selector cuya llave falte queda en gris automáticamente.
 
 **Fase E — llaves nuevas** (mismo patrón: el valor en el web, el worker lo referencia):
-`GOOGLE_GENERATIVE_AI_API_KEY` (Gemini), `XAI_API_KEY` (Grok) y `OPENROUTER_API_KEY` (Qwen).
+`GEMINI_API_KEY` (Gemini), `GROK_API_KEY` (Grok) y `QWEN_API_KEY` (Qwen).
 
 ```bash
-railway variable set 'GOOGLE_GENERATIVE_AI_API_KEY=${{crm-diluvium.GOOGLE_GENERATIVE_AI_API_KEY}}' 'XAI_API_KEY=${{crm-diluvium.XAI_API_KEY}}' 'OPENROUTER_API_KEY=${{crm-diluvium.OPENROUTER_API_KEY}}' -s worker-production -e production
-railway variable set 'GOOGLE_GENERATIVE_AI_API_KEY=${{crm-diluvium.GOOGLE_GENERATIVE_AI_API_KEY}}' 'XAI_API_KEY=${{crm-diluvium.XAI_API_KEY}}' 'OPENROUTER_API_KEY=${{crm-diluvium.OPENROUTER_API_KEY}}' -s worker -e staging
+railway variable set 'GEMINI_API_KEY=${{crm-diluvium.GEMINI_API_KEY}}' 'GROK_API_KEY=${{crm-diluvium.GROK_API_KEY}}' 'QWEN_API_KEY=${{crm-diluvium.QWEN_API_KEY}}' -s worker-production -e production
+railway variable set 'GEMINI_API_KEY=${{crm-diluvium.GEMINI_API_KEY}}' 'GROK_API_KEY=${{crm-diluvium.GROK_API_KEY}}' 'QWEN_API_KEY=${{crm-diluvium.QWEN_API_KEY}}' -s worker -e staging
 ```
 
 ## Nota para la Fase B (panel de gasto)

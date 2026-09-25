@@ -15,7 +15,7 @@ describe("errores del modelo en palabras simples", () => {
   });
 
   it("llave faltante, llave inválida, modelo inexistente, tiempo y conversación rechazada", () => {
-    expect(classifyModelError(Object.assign(new Error("x"), { name: "ModelNotConfiguredError", envKey: "XAI_API_KEY" }), "xAI").resumen).toBe("Falta la llave XAI_API_KEY en Railway.");
+    expect(classifyModelError(Object.assign(new Error("x"), { name: "ModelNotConfiguredError", envKey: "GROK_API_KEY" }), "xAI").resumen).toBe("Falta la llave GROK_API_KEY en Railway.");
     expect(classifyModelError(api(401, "invalid x-api-key"), "Anthropic").kind).toBe("llave_invalida");
     expect(classifyModelError(api(404, "model not found"), "Google").kind).toBe("modelo_no_existe");
     expect(classifyModelError(Object.assign(new Error("The operation was aborted due to timeout"), { name: "TimeoutError" }), "OpenAI").kind).toBe("tiempo");
