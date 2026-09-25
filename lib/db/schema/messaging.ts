@@ -187,9 +187,9 @@ export const conversations = pgTable(
     // Estado del agente en esta conversación. Default activo: elegible si el
     // canal está en borrador/auto (el interruptor del canal es el gate maestro).
     agentState: conversationAgentStateEnum("agent_state").default("activo").notNull(),
-    // Hasta cuándo dura la pausa. handover = now + handover_reactivate_hours
-    // (reactivación automática); humano/antibucle = null (reactivación manual
-    // con el botón "Reactivar agente" en la bandeja).
+    // Hora de regreso del bot: la pone "Apagar bot" (8/12/24 h o una hora exacta)
+    // y el barrido del worker lo reactiva al cumplirse. null = hasta "Reactivar"
+    // (un vendedor contestó, o "hasta que lo reactive").
     agentPausedUntil: timestamp("agent_paused_until"),
     // Último mensaje ENTRANTE del cliente y última respuesta del AGENTE en el
     // hilo. Los usa la Fase B (silencios/anti-bucle) y la Fase C (follow-ups).
