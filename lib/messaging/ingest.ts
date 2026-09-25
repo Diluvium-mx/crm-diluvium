@@ -16,7 +16,7 @@ import type {
   ProviderName,
 } from "./provider";
 import { firstResponseSeconds, nextStatus, windowExpiresAt } from "./rules";
-import { ingestHistoryMessage } from "./history";
+import { ingestHistoryMessage, isPhoneHistory } from "./history";
 
 export type Tx = Parameters<Parameters<typeof db.transaction>[0]>[0];
 
@@ -210,9 +210,9 @@ async function ingestMessage(
     throw new RetryableIngestError(`no hay canal activo para la cuenta ${event.providerAccountId}`);
   }
 
-  // Copia del historial del celular: sin agente, workflows, no leídos, ventana
-  // ni primera respuesta (lib/messaging/history.ts).
-  if (event.history) return ingestHistoryMessage(provider, channel, event, hooks);
+  // Copia del historial del celular (con marca, o enviada antes de conectar el
+  // número): sin agente, workflows, no leídos, ventana ni primera respuesta.
+  if (isPhoneHistory(channel, event)) return ingestHistoryMessage(provider, channel, event, hooks);
 
   const { phone, bsuid } = eventIdentity(event);
 
@@ -287,9 +287,6 @@ async function ingestMessage(
       // mensaje (los contactos previos no tienen BSUID).
       await resolveContact(tx, orgId, { phone, bsuid }, upserted.contactId);
     }
-
-    // Canal de prueba: el contacto que SOLO habla por canales de prueba es de prueba.
-    if (channel.isTest) await markTestContact(tx, orgId, upserted.contactId);
 
     // Se BLOQUEA la conversación ANTES de tocar mensajes, en el MISMO orden que
     // linkSentMessage (conversación → mensajes). Con el orden inverso, un eco
@@ -537,7 +534,8 @@ export async function latestInboundMessageId(conversationId: string, tx: Tx | ty
   const [row] = await tx
     .select({ id: messages.id })
     .from(messages)
-    .where(and(eq(messages.conversationId, conversationId), eq(messages.direction, "in")))
+    // Lo importado del historial nunca es el corte de lectura (se guarda "ahora" pero es viejo).
+    .where(and(eq(messages.conversationId, conversationId), eq(messages.direction, "in"), isNull(messages.importedAt)))
     .orderBy(desc(messages.createdAt), desc(messages.id))
     .limit(1);
   return row?.id ?? null;
@@ -563,6 +561,8 @@ export async function unreadAfterCutoff(
       and(
         eq(messages.conversationId, conversation.id),
         eq(messages.direction, "in"),
+        // El historial importado no cuenta como no leído.
+        isNull(messages.importedAt),
         sql`${messages.createdAt} > (select created_at from messages where id = ${cutoffMessageId})`,
       ),
     );
@@ -631,22 +631,13 @@ export function eventIdentity(event: Pick<NormalizedMessageEvent, "contactPhone"
   return { phone, bsuid: event.contactBsuid ?? null };
 }
 
-/** Cómo nace un contacto que aún no existe (source/etapa por omisión: WhatsApp, Inbox). */
-export type NewContactOptions = { source?: string; esPrueba?: boolean };
-
 /**
- * Canal de prueba: marca "Prueba" al contacto si NO tiene conversación en un
- * canal real (un cliente real que además escribió al número de prueba no se marca).
+ * Cómo nace un contacto que aún no existe (source/etapa por omisión: WhatsApp, Inbox).
+ * `esPrueba`: lo creó un canal de prueba. Solo se marca al NACER: un contacto que ya
+ * existía (p. ej. un cliente real importado de GHL que también escribió al número de
+ * prueba) nunca se marca "Prueba".
  */
-export async function markTestContact(tx: Tx, orgId: string, contactId: string): Promise<void> {
-  await tx.execute(sql`
-    update ${contacts} c set es_prueba = true
-     where c.id = ${contactId} and c.organization_id = ${orgId} and not c.es_prueba
-       and not exists (
-         select 1 from ${conversations} cv join ${channels} ch on ch.id = cv.channel_id
-          where cv.organization_id = ${orgId} and cv.contact_id = c.id and not ch.is_test
-       )`);
-}
+export type NewContactOptions = { source?: string; esPrueba?: boolean };
 
 /**
  * Contacto del mensaje. Prioridad ESTABLE: BSUID (único por organización; Zernio

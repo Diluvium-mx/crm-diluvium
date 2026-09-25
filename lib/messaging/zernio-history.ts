@@ -85,15 +85,16 @@ export function historyEventFromRest(
   const sentAt = validDate(m.sentAt) ?? validDate(m.createdAt);
   if (!sentAt) return { skip: `sin fecha válida (${m.sentAt ?? m.createdAt ?? "vacía"})` };
   const outgoing = m.direction === "outgoing";
-  const attachments: NormalizedAttachment[] = (m.attachments ?? [])
-    .filter((a) => a.url)
-    .map((a) => ({
-      type: attachmentType(a.type),
-      url: a.url!,
-      mimeType: a.mimeType ?? undefined,
-      fileName: a.filename ?? undefined,
-      providerMediaId: a.id ?? undefined,
-    }));
+  // Meta solo copia la media reciente (~14 días): un adjunto sin URL se conserva
+  // como "no disponible" (tipo y nombre) en vez de perder qué había.
+  const attachments: NormalizedAttachment[] = (m.attachments ?? []).map((a) => ({
+    type: attachmentType(a.type),
+    url: a.url ?? "",
+    mimeType: a.mimeType ?? undefined,
+    fileName: a.filename ?? undefined,
+    providerMediaId: a.id ?? undefined,
+    ...(a.url ? {} : { unavailable: "El historial del celular no trae este archivo (Meta solo copia la media reciente)" }),
+  }));
   const metadata = m.metadata ?? undefined;
   const type: NormalizedMessageType =
     attachments[0]?.type ??

@@ -86,7 +86,7 @@ describe("historyEventFromRest", () => {
     });
   });
 
-  it("convierte file a document y descarta adjuntos sin URL", () => {
+  it("convierte file a document y conserva como NO disponible un adjunto sin URL (media vieja del historial)", () => {
     const parsed = historyEventFromRest(
       "zacc_1",
       conversation,
@@ -109,9 +109,13 @@ describe("historyEventFromRest", () => {
             fileName: "factura.pdf",
             providerMediaId: "media_1",
           },
+          { type: "image", url: "", mimeType: "image/jpeg", providerMediaId: "media_2" },
         ],
       },
     });
+    if (!("event" in parsed)) throw new Error("se esperaba evento");
+    expect(parsed.event.attachments[0].unavailable).toBeUndefined();
+    expect(parsed.event.attachments[1].unavailable).toMatch(/no trae este archivo/);
   });
 });
 

@@ -297,6 +297,68 @@ describe.skipIf(!TEST_DATABASE_URL)("historial del celular (Postgres real)", () 
     expect(rows.find((c) => c.id === "c_real")?.esPrueba).toBe(false);
   });
 
+  it("un cliente importado de GHL (sin conversaciones) que escribe al canal de prueba, en vivo o en el historial, NO se marca prueba", async () => {
+    await db.insert(s.contacts).values([
+      { id: "c_ghl_vivo", organizationId: ORG, firstName: "Cliente GHL", phoneE164: "+526682410401", source: "ghl_import" },
+      { id: "c_ghl_hist", organizationId: ORG, firstName: "Cliente GHL 2", phoneE164: "+526682410402", source: "ghl_import" },
+    ]);
+    await deliver(payload({ account: "zacc_test", phone: "5216682410401", conv: "zconv_ghl_vivo" }));
+    await deliver(payload({ account: "zacc_test", phone: "5216682410402", conv: "zconv_ghl_hist", history: true, sentAt: "2026-03-01T10:00:00Z" }));
+
+    const rows = await db.select().from(s.contacts);
+    expect(rows).toHaveLength(2);
+    expect(rows.every((c) => c.esPrueba === false)).toBe(true);
+  });
+
+  it("con hora de conexión, un webhook SIN la marca de historial pero enviado antes de conectar entra como historial (sin agente ni no leídos)", async () => {
+    await db.update(s.channels).set({ connectedAt: new Date("2026-09-20T12:00:00Z") }).where(eq(s.channels.id, TEST));
+    const hooks = { onInboundMessage: vi.fn(), onHumanOutbound: vi.fn(), onMediaMessage: vi.fn() };
+    // Copia vieja SIN marca (Zernio podría mandarla así) y un mensaje vivo después de conectar.
+    await deliver(payload({ account: "zacc_test", phone: "5216682410501", conv: "zconv_corte", sentAt: "2026-09-10T09:00:00Z" }), hooks);
+    await deliver(payload({ account: "zacc_test", phone: "5216682410501", conv: "zconv_corte", outgoing: true, source: "whatsapp_business_app", sentAt: "2026-09-10T09:05:00Z" }), hooks);
+    expect(hooks.onInboundMessage).not.toHaveBeenCalled();
+    expect(hooks.onHumanOutbound).not.toHaveBeenCalled();
+    let [conv] = await db.select().from(s.conversations).where(eq(s.conversations.providerConversationId, "zconv_corte"));
+    expect(conv).toMatchObject({ unreadCount: 0, windowExpiresAt: null, firstResponseSeconds: null });
+
+    await deliver(payload({ account: "zacc_test", phone: "5216682410501", conv: "zconv_corte", sentAt: "2026-09-20T12:00:05Z" }), hooks);
+    expect(hooks.onInboundMessage).toHaveBeenCalledTimes(1);
+    [conv] = await db.select().from(s.conversations).where(eq(s.conversations.providerConversationId, "zconv_corte"));
+    expect(conv.unreadCount).toBe(1);
+    const rows = await db.select().from(s.messages).where(eq(s.messages.conversationId, conv.id));
+    expect(rows.filter((m) => m.importedAt !== null)).toHaveLength(2);
+    expect(rows.filter((m) => m.importedAt === null)).toHaveLength(1);
+  });
+
+  it("el historial importado nunca es el corte de lectura ni cuenta como no leído", async () => {
+    await deliver(payload({ account: "zacc_1", phone: "5216682410601", conv: "zconv_leido", sentAt: "2026-09-18T10:00:00Z" }));
+    const [conv] = await db.select().from(s.conversations).where(eq(s.conversations.providerConversationId, "zconv_leido"));
+    const [live] = await db.select().from(s.messages).where(eq(s.messages.conversationId, conv.id));
+    // El importador guarda una copia vieja DESPUÉS (created_at más nuevo) del entrante vivo.
+    await history.ingestHistoryMessage("zernio", await channel(REAL), normalized(payload({ history: true, phone: "5216682410601", conv: "zconv_leido", sentAt: "2026-05-01T10:00:00Z" })));
+    expect(await ingest.latestInboundMessageId(conv.id)).toBe(live.id);
+    const unread = await db.transaction((tx) => ingest.unreadAfterCutoff(tx, { id: conv.id, unreadCount: 1 }, live.id));
+    expect(unread).toBe(0);
+  });
+
+  it("un adjunto del historial sin URL queda guardado como no disponible (tipo intacto, sin descarga)", async () => {
+    const onMediaMessage = vi.fn();
+    const base = normalized(payload({ history: true, phone: "5216682410701", conv: "zconv_sin_url", sentAt: "2026-04-01T10:00:00Z" }));
+    const event: NormalizedMessageEvent = {
+      ...base,
+      type: "image",
+      body: null,
+      attachments: [{ type: "image", url: "", mimeType: "image/jpeg", unavailable: "El historial del celular no trae este archivo" }],
+    };
+    await history.ingestHistoryMessage("zernio", await channel(REAL), event, { onMediaMessage });
+    const [row] = await db.select().from(s.messages).where(eq(s.messages.providerMessageId, base.providerMessageId));
+    expect(row.type).toBe("image");
+    expect(row.mediaUrl).toBeNull();
+    expect(row.attachments[0]).toMatchObject({ type: "image", downloadAttempts: 25, downloadError: "El historial del celular no trae este archivo" });
+    expect(row.attachments[0]).not.toHaveProperty("unavailable");
+    expect(onMediaMessage).not.toHaveBeenCalled();
+  });
+
   it("el eco vivo de la app se guarda como business_app, llama al gancho y no cambia ventana ni no leídos", async () => {
     await db.insert(s.contacts).values({ id: "c_echo", organizationId: ORG, firstName: "Ana", phoneE164: "+526682410401" });
     const expires = new Date("2026-09-19T10:00:00Z");

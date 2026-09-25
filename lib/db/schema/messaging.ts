@@ -139,6 +139,10 @@ export const channels = pgTable(
     // Canal ARCHIVADO: historial visible, sin envíos y sus webhooks se registran
     // sin procesar (docs/numero-prueba.md, paso 8). Implica is_active = false.
     archivedAt: timestamp("archived_at"),
+    // Cuándo se conectó el número a la API (coexistencia). Todo mensaje con hora de
+    // WhatsApp ANTERIOR es copia del historial del celular, traiga o no la marca
+    // `coexistence_history`: nunca activa agente, no leídos ni ventana.
+    connectedAt: timestamp("connected_at"),
     // Interruptor del Agente IA en este canal. Apagado por defecto (seguro).
     aiAgentMode: channelAiAgentModeEnum("ai_agent_mode").default("off").notNull(),
     // Cuándo se movió el interruptor por última vez: lo que el cliente escribió

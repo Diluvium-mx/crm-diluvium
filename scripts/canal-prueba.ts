@@ -1,14 +1,17 @@
-// Uso: npm run canal:prueba -- --cuenta <accountId> [--nombre "Número de prueba"] [--telefono +52…] [--org <id>] [--confirmar]
+// Uso: npm run canal:prueba -- --cuenta <accountId> --conectado <ISO> [--nombre "Número de prueba"] [--telefono +52…] [--org <id>] [--confirmar]
 // Da de alta (o marca) un canal de WhatsApp de PRUEBA (docs/numero-prueba.md):
 // - si la cuenta ya tiene canal, lo marca is_test (y actualiza nombre/teléfono si se pasan);
 // - si no, lo crea activo, marcado Prueba y con el agente APAGADO (se enciende después
 //   desde la pestaña Agente IA, para que lo copiado antes no se conteste solo);
-// - marca "Prueba" a los contactos que solo hablan por canales de prueba.
+// - --conectado = cuándo se conectó el número en Zernio (ISO con zona): lo enviado ANTES
+//   es historial del celular aunque llegue por webhook sin marca (obligatorio al crear);
+// - marca "Prueba" a los contactos que NACIERON en canales de prueba (nunca a un importado).
 // Sin --confirmar solo muestra lo que haría. Nunca borra nada.
 import { parseArgs } from "node:util";
 import { and, eq, sql } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { channels, member } from "@/lib/db/schema";
+import { validDate } from "@/lib/messaging/zernio";
 import { normalizePhone } from "@/lib/phone";
 
 async function main() {
@@ -18,12 +21,15 @@ async function main() {
       nombre: { type: "string" },
       telefono: { type: "string" },
       org: { type: "string" },
+      conectado: { type: "string" },
       confirmar: { type: "boolean", default: false },
     },
   });
   const accountId = values.cuenta?.trim();
   if (!accountId || !/^[A-Za-z0-9_-]{6,64}$/.test(accountId)) throw new Error("--cuenta <accountId de Zernio> es obligatorio");
   const phone = values.telefono ? normalizePhone(values.telefono) : null;
+  const connectedAt = values.conectado ? validDate(values.conectado) : null;
+  if (values.conectado && !connectedAt) throw new Error("--conectado debe ser ISO con zona (p. ej. 2026-09-25T18:30:00Z)");
 
   const [existing] = await db
     .select()
@@ -39,12 +45,14 @@ async function main() {
     organizationId = orgs[0].id;
   }
 
+  if (!existing && !connectedAt) throw new Error("Canal nuevo: --conectado <ISO> es obligatorio (hora de conexión en Zernio)");
   if (existing) {
     console.log(`Canal existente ${existing.id} (${existing.displayName}): is_test ${existing.isTest} → true` +
-      (values.nombre ? `, nombre → ${values.nombre}` : "") + (phone ? `, teléfono → ${phone}` : ""));
+      (values.nombre ? `, nombre → ${values.nombre}` : "") + (phone ? `, teléfono → ${phone}` : "") +
+      (connectedAt ? `, conectado → ${connectedAt.toISOString()}` : ""));
   } else {
     console.log(`Canal NUEVO para la cuenta ${accountId} en la organización ${organizationId}: "${values.nombre ?? "Número de prueba"}", ` +
-      `${phone ?? "sin teléfono"}, marcado Prueba, activo, agente apagado`);
+      `${phone ?? "sin teléfono"}, conectado ${connectedAt!.toISOString()}, marcado Prueba, activo, agente apagado`);
   }
   if (!values.confirmar) {
     console.log("Simulación: no se cambió nada. Repite con --confirmar para aplicarlo.");
@@ -55,7 +63,12 @@ async function main() {
     if (existing) {
       await tx
         .update(channels)
-        .set({ isTest: true, ...(values.nombre ? { displayName: values.nombre } : {}), ...(phone ? { phoneE164: phone } : {}) })
+        .set({
+          isTest: true,
+          ...(values.nombre ? { displayName: values.nombre } : {}),
+          ...(phone ? { phoneE164: phone } : {}),
+          ...(connectedAt ? { connectedAt } : {}),
+        })
         .where(eq(channels.id, existing.id));
     } else {
       await tx.insert(channels).values({
@@ -68,13 +81,16 @@ async function main() {
         phoneE164: phone,
         isActive: true,
         isTest: true,
+        connectedAt,
         aiAgentMode: "off",
       });
     }
-    // Contactos que solo hablan por canales de prueba → Prueba.
+    // Contactos que NACIERON en un canal de prueba (creados por WhatsApp o por el
+    // historial, nunca importados ni a mano) y solo hablan por canales de prueba → Prueba.
     const marked = await tx.execute<{ id: string }>(sql`
       update contacts c set es_prueba = true
        where c.organization_id = ${organizationId} and not c.es_prueba
+         and c.source in ('whatsapp', 'historial_celular')
          and exists (select 1 from conversations cv join channels ch on ch.id = cv.channel_id
                       where cv.contact_id = c.id and ch.is_test)
          and not exists (select 1 from conversations cv join channels ch on ch.id = cv.channel_id
