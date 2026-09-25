@@ -7,7 +7,7 @@
 // llama a Server Actions.
 import { useState, useTransition } from "react";
 import { updateAgentProfile } from "@/lib/actions/agente-ia-editor";
-import { COST_WINDOW_DAYS, MIN_REAL_RESPONSES } from "@/lib/agente-ia/model-cost";
+import { COST_WINDOW_DAYS, MIN_REAL_CONVERSATIONS, MIN_REAL_RESPONSES } from "@/lib/agente-ia/model-cost";
 import type { AgentEditorView } from "@/lib/agente-ia/types";
 import { ApiStatusPanel } from "./api-status-panel";
 import { BrainModelPicker } from "./brain-model-picker";
@@ -123,8 +123,8 @@ function CompanyName({ value: initial }: { value: string }) {
 
 function costHint(basis: AgentEditorView["costBasis"]): string {
   return basis.source === "real"
-    ? `Costo aproximado por cada 100 conversaciones, con el uso real de los últimos ${COST_WINDOW_DAYS} días (${basis.responses} respuestas).`
-    : `Costo aproximado por cada 100 conversaciones, con un perfil fijo (aún hay menos de ${MIN_REAL_RESPONSES} respuestas en ${COST_WINDOW_DAYS} días).`;
+    ? `Costo aproximado por cada 100 conversaciones, con el uso real de los últimos ${COST_WINDOW_DAYS} días (${basis.responses} respuestas en ${basis.conversations} conversaciones).`
+    : `Costo aproximado por cada 100 conversaciones, con un perfil fijo (el uso real cuenta desde ${MIN_REAL_RESPONSES} respuestas en ${MIN_REAL_CONVERSATIONS} conversaciones de los últimos ${COST_WINDOW_DAYS} días).`;
 }
 
 export function AgenteEditor({ data }: { data: AgentEditorView }) {

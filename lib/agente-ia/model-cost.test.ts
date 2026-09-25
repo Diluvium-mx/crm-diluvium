@@ -4,6 +4,7 @@ import {
   costPer100Conversations,
   costPer100Label,
   FIXED_PROFILE,
+  MIN_REAL_CONVERSATIONS,
   MIN_REAL_RESPONSES,
   usageProfile,
   type UsageTotals,
@@ -20,9 +21,9 @@ const totals = (over: Partial<UsageTotals> = {}): UsageTotals => ({
 });
 
 describe("usageProfile", () => {
-  it("con 20 o más respuestas: promedios reales por respuesta y respuestas por conversación", () => {
+  it("con 20 o más respuestas en 10 o más conversaciones: promedios reales por respuesta y respuestas por conversación", () => {
     const { profile, basis } = usageProfile(totals());
-    expect(basis).toEqual({ source: "real", responses: 40 });
+    expect(basis).toEqual({ source: "real", responses: 40, conversations: 10 });
     expect(profile).toEqual({
       inputTokens: 10_000,
       cacheReadTokens: 8_000,
@@ -35,7 +36,18 @@ describe("usageProfile", () => {
   it("con menos de 20 respuestas: perfil fijo", () => {
     const { profile, basis } = usageProfile(totals({ responses: MIN_REAL_RESPONSES - 1 }));
     expect(profile).toBe(FIXED_PROFILE);
-    expect(basis).toEqual({ source: "fijo", responses: 19 });
+    expect(basis).toEqual({ source: "fijo", responses: 19, conversations: 10 });
+  });
+
+  // Las pruebas con el celular del sandbox: muchas respuestas en pocas conversaciones
+  // darían 20+ respuestas por conversación en vez de ~6.
+  it("20 o más respuestas en menos de 10 conversaciones: perfil fijo", () => {
+    expect(usageProfile(totals({ responses: 25, conversations: 1 })).profile).toBe(FIXED_PROFILE);
+    expect(usageProfile(totals({ conversations: MIN_REAL_CONVERSATIONS - 1 })).basis).toEqual({
+      source: "fijo",
+      responses: 40,
+      conversations: 9,
+    });
   });
 
   it("sin conversaciones (datos raros): perfil fijo, sin dividir entre cero", () => {

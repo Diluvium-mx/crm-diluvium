@@ -6,12 +6,15 @@
 // Perfil = promedio de tokens por RESPUESTA (fila de ai_usage del cerebro con uso
 // reportado: entrada total, caché leída/escrita y salida) y de respuestas por
 // conversación, de los últimos 30 días de la organización. Con menos de
-// MIN_REAL_RESPONSES respuestas se usa FIXED_PROFILE.
+// MIN_REAL_RESPONSES respuestas o de MIN_REAL_CONVERSATIONS conversaciones se usa
+// FIXED_PROFILE: pocas conversaciones largas (p. ej. las pruebas con el celular del
+// sandbox) inflarían las respuestas por conversación y el costo mostrado.
 import { computeCostUsd, type ModelPrice } from "@/lib/ai/pricing";
 import { formatUsd } from "@/lib/usd-format";
 
 export const COST_WINDOW_DAYS = 30;
 export const MIN_REAL_RESPONSES = 20;
+export const MIN_REAL_CONVERSATIONS = 10;
 
 export type UsageProfile = {
   // Por respuesta. inputTokens es el TOTAL de entrada e incluye la caché (mismo
@@ -23,7 +26,7 @@ export type UsageProfile = {
   responsesPerConversation: number;
 };
 
-// Perfil fijo (menos de 20 respuestas registradas), estimado con lo que el agente
+// Perfil fijo (sin uso real suficiente), estimado con lo que el agente
 // manda hoy en cada respuesta:
 // - System ≈ 9,000 tokens: Goal + FAQs de Ángela (docs/agente-ia/angela-goal.md +
 //   angela-faqs.json ≈ 30.7k caracteres ≈ 8,000 tokens) + ~12 herramientas
@@ -51,11 +54,12 @@ export type UsageTotals = {
   outputTokens: number;
 };
 
-export type CostBasis = { source: "real" | "fijo"; responses: number };
+export type CostBasis = { source: "real" | "fijo"; responses: number; conversations: number };
 
 export function usageProfile(t: UsageTotals): { profile: UsageProfile; basis: CostBasis } {
-  if (t.responses < MIN_REAL_RESPONSES || t.conversations <= 0) {
-    return { profile: FIXED_PROFILE, basis: { source: "fijo", responses: t.responses } };
+  const counts = { responses: t.responses, conversations: t.conversations };
+  if (t.responses < MIN_REAL_RESPONSES || t.conversations < MIN_REAL_CONVERSATIONS) {
+    return { profile: FIXED_PROFILE, basis: { source: "fijo", ...counts } };
   }
   return {
     profile: {
@@ -65,7 +69,7 @@ export function usageProfile(t: UsageTotals): { profile: UsageProfile; basis: Co
       outputTokens: t.outputTokens / t.responses,
       responsesPerConversation: t.responses / t.conversations,
     },
-    basis: { source: "real", responses: t.responses },
+    basis: { source: "real", ...counts },
   };
 }
 
