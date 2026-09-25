@@ -71,6 +71,29 @@ Van dentro del hilo, al final, como burbujas punteadas "🕒 Programado para …
 (fallidos: Reintentar/Descartar; cancelados solos: el cliente escribió antes o el autor ya no está
 activo). El composer tiene 🕒 junto a "Enviar" (y junto a "📄 Enviar plantilla" fuera de ventana).
 
+### Apagar bot (25-sep-2026)
+Botón "🤖 Apagar bot" en el encabezado del chat (Bandeja y pop-up del Embudo, mismo componente) y
+en "Detalle del contacto", solo con el Agente IA encendido en el canal. Apaga al agente en ESA
+conversación; todas las demás siguen contestando. Menú: 8 horas · 12 horas · 24 horas · Hasta una
+fecha y hora (hora de Mazatlán; rechaza horas pasadas y más de 30 días) · Hasta que lo reactive. Lo
+usan vendedores, admin y owner (Server Action `pauseAgent`, sin ACL, como "Reactivar").
+- **Estado:** `agent_state = pausado_humano` + `agent_paused_until` = hora de regreso (null = sin
+  tiempo). Sin migración. Con el bot apagado, el mismo botón dice "Cambiar hora".
+- **Aviso:** "🤖 Bot apagado · vuelve hoy 22:30" (o "mañana 08:15", "sáb 26-sep 10:00", "hasta que
+  lo reactives") + "Reactivar". Decisión del dueño: toda pausa es "bot apagado"; la que deja un
+  vendedor al contestar desde el CRM (sin tiempo, como antes) dice "hasta que lo reactives".
+- **Vuelve solo:** el barrido del worker (cada minuto) pasa a `activo` las pausas con hora cumplida,
+  con `agent_state_changed_at = ahora`, filtrando por organización; la Bandeja se entera por el SSE.
+  Si el cliente escribe después de la hora y antes del barrido, el gancho de entrante lo reactiva en
+  ese momento (ese mensaje sí se contesta).
+- **Solo mensajes nuevos:** lo que el cliente escribió con el bot apagado no se contesta al volver
+  (ni tras un reinicio del worker: el barrido de huérfanos solo ve entrantes posteriores al corte).
+  Responde a partir del siguiente mensaje del cliente; como hoy, el modelo lee TODO el historial.
+- **El temporizador se respeta:** si el vendedor escribe con el bot apagado por tiempo, la hora no
+  cambia. Si escribe con el bot encendido (o ya cumplida la hora), se apaga sin tiempo como siempre.
+- Al apagarlo se cancela el job pendiente; si el agente ya estaba escribiendo, su respuesta no sale.
+- El interruptor general del canal (pestaña Agente IA) no cambia.
+
 ### Lo que NO va (vs. GHL)
 Nueva conversación/Importar (requiere plantilla: llega con el número real), asignado/seguido/chat
 interno/visualizaciones, selección múltiple, íconos de llamar/carpeta/correo/borrar,

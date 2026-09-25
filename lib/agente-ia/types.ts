@@ -76,7 +76,7 @@ export type AgentNoticeView = {
 export type AgentThreadView = {
   channelMode: AgentModeValue;
   agentState: AgentStateValue;
-  /** ISO; histórico (ya ninguna pausa vence sola). */
+  /** ISO; hora de regreso del bot ("Apagar bot"); null = hasta "Reactivar". */
   pausedUntil: string | null;
   notices: AgentNoticeView[];
 };

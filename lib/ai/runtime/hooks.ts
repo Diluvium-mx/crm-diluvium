@@ -14,6 +14,7 @@ import {
   type AgentQueuePort,
   type KvPort,
 } from "./queue";
+import { isPauseDue, reactivateDuePause } from "./pause";
 import { debounceDelayFor } from "./schedule";
 import { setAgentState } from "./state";
 
@@ -30,6 +31,9 @@ export async function onInboundCustomerMessage(
     const snap = await loadSnapshot(input.organizationId, input.conversationId);
     if (!snap || snap.channel.aiAgentMode !== "auto") return;
     const now = ports.now ?? new Date();
+    // "Apagar bot" con la hora de regreso ya cumplida y el barrido (cada minuto)
+    // todavía sin pasar: el bot ya volvió y este mensaje es el primero nuevo.
+    if (isPauseDue(snap.conversation, now)) await reactivateDuePause(input.organizationId, input.conversationId, now);
     await db
       .update(conversations)
       // ISO con cast: en SQL crudo el driver no serializa Date.
@@ -54,7 +58,9 @@ export async function onInboundCustomerMessage(
 }
 
 // Tras guardar un SALIENTE HUMANO (CRM o eco business_app): pausa al agente en
-// esa conversación sin límite de tiempo y cancela el job pendiente (GHL).
+// esa conversación sin límite de tiempo y cancela el job pendiente (GHL). Si el bot
+// ya estaba apagado con hora de regreso ("Apagar bot"), la hora se respeta: el
+// vendedor puede escribir sin cambiarla.
 export async function onHumanOutbound(
   input: { organizationId: string; conversationId: string },
   ports: Ports = {},
@@ -65,8 +71,9 @@ export async function onHumanOutbound(
     // Canal apagado: nada que pausar.
     if (snap.channel.aiAgentMode !== "auto") return;
     const now = ports.now ?? new Date();
-    // La ÚNICA pausa del agente: se reactiva solo a mano con "Reactivar".
-    if (snap.conversation.agentState === "activo") {
+    // Pausa sin tiempo: se reactiva a mano con "Reactivar". Una pausa con hora ya
+    // cumplida (el barrido aún no pasa) cuenta como bot encendido.
+    if (snap.conversation.agentState === "activo" || isPauseDue(snap.conversation, now)) {
       await setAgentState(input.organizationId, input.conversationId, "pausado_humano", { now });
     }
     // La pausa ya quedó guardada: cancelar el job es solo optimización (acotada).
