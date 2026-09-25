@@ -58,19 +58,26 @@ export async function onContactStageEntered(input: {
   contactId: string;
   stage: string;
   userId: string | null;
+  /** Workflows que ya salen en la misma respuesta del agente: no se repiten por etapa. */
+  excludeWorkflowIds?: readonly string[];
+  /** Quién movió la etapa: "vendedor" (o ausente) → corridas "stage"; "agente"/"sistema" → "agent". */
+  by?: "vendedor" | "agente" | "sistema";
 }): Promise<StartRunResult[]> {
   try {
-    const rows = await db
-      .select({ id: workflows.id })
-      .from(workflows)
-      .where(
-        and(
-          eq(workflows.organizationId, input.organizationId),
-          eq(workflows.enabled, true),
-          eq(workflows.triggerStage, input.stage as (typeof workflows.$inferSelect)["triggerStage"] & string),
-        ),
-      )
-      .orderBy(workflows.position);
+    const exclude = new Set(input.excludeWorkflowIds ?? []);
+    const rows = (
+      await db
+        .select({ id: workflows.id })
+        .from(workflows)
+        .where(
+          and(
+            eq(workflows.organizationId, input.organizationId),
+            eq(workflows.enabled, true),
+            eq(workflows.triggerStage, input.stage as (typeof workflows.$inferSelect)["triggerStage"] & string),
+          ),
+        )
+        .orderBy(workflows.position)
+    ).filter((w) => !exclude.has(w.id));
     if (rows.length === 0) return [];
     const [conv] = await db
       .select({ id: conversations.id })
@@ -86,7 +93,7 @@ export async function onContactStageEntered(input: {
           organizationId: input.organizationId,
           workflowId: wf.id,
           conversationId: conv.id,
-          trigger: "stage",
+          trigger: input.by === "agente" || input.by === "sistema" ? "agent" : "stage",
           triggeredByUserId: input.userId,
           payload: { etapa_disparadora: input.stage },
         }),

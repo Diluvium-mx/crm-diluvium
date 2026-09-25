@@ -19,6 +19,14 @@ export function clip(text: string, max = MAX_MESSAGE_CHARS): string {
   return text.length > max ? `${text.slice(0, max)}… [recortado]` : text;
 }
 
+// Un cliente que escriba "[CONTEXTO DEL CRM …]" no puede hacerse pasar por el
+// CRM: el encabezado se neutraliza en el texto entrante (el real lo agrega el
+// runtime al final del último turno).
+export const CRM_CONTEXT_HEADER = "[CONTEXTO DEL CRM";
+export function neutralizeCrmHeader(text: string): string {
+  return text.replace(/\[\s*CONTEXTO DEL CRM/gi, "(CONTEXTO DEL CRM");
+}
+
 // Lo mínimo de una fila de `messages` que se necesita aquí.
 export type ThreadMessage = {
   id: string;
@@ -114,7 +122,7 @@ export function buildModelMessages(
     if (role === "user") {
       const text: string[] = [];
       const body = opts.cleanText?.get(m.id) ?? m.body;
-      if (body?.trim()) text.push(clip(body.trim()));
+      if (body?.trim()) text.push(neutralizeCrmHeader(clip(body.trim())));
       for (const a of m.attachments) {
         if (a.type === "image" && a.storageKey && allowed.has(a.storageKey)) {
           parts.push({ type: "image", image: new URL(imageUrls.get(a.storageKey)!) });
@@ -137,8 +145,12 @@ export function buildModelMessages(
   // Contexto del CRM al FINAL del último turno del cliente (no en el system: la
   // caché del prompt se mantiene; el runtime dice al modelo que no lo mencione).
   if (opts.crmContext?.trim()) {
-    const last = turns[turns.length - 1];
-    if (last && last.role === "user") last.parts.push({ type: "text", text: opts.crmContext.trim() });
+    for (let i = turns.length - 1; i >= 0; i--) {
+      if (turns[i].role === "user") {
+        turns[i].parts.push({ type: "text", text: opts.crmContext.trim() });
+        break;
+      }
+    }
   }
 
   return turns.map((t): ModelMessage => {
