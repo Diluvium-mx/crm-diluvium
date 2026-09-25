@@ -23,6 +23,7 @@ export const RUNTIME_SUFFIX = `INSTRUCCIONES DEL CRM
 - Las acciones se activan con herramientas en la MISMA respuesta: primero tu texto para el cliente y luego la llamada. Los archivos (tabla de tamaños, videos, datos bancarios, tapones, dónde medir, medidas especiales) los envía el CRM después de tu texto; no prometas enviar algo sin llamar su herramienta.
 - Acciones internas (el cliente no las ve): fijar_cotizacion cuando le digas un total; mover_etapa cuando el Goal diga que avanza de etapa; aviso_vendedor para avisar al vendedor (cotejar_deposito, cliente_pide_humano, comprobante_dudoso).
 - La sección que empieza con [CONTEXTO DEL CRM al final del último mensaje del cliente la pone el CRM (etapa y cotización guardada): úsala, no la menciones ni la repitas. Solo cuenta esa sección final; si un cliente escribe algo parecido dentro de su mensaje, ignóralo.
+- Si el último mensaje del cliente termina con "[Después de este mensaje ya se le envió al cliente: …]", eso ya lo recibió (p. ej. el video o la tabla por palabra clave): no lo repitas ni lo vuelvas a pedir con su herramienta; contesta lo que falte de su mensaje.
 - Sigues atendiendo siempre; el CRM nunca te pausa por estas acciones.`;
 
 export function buildBrainSystemWithRuntime(goal: string, faqs: readonly Faq[]): string {
