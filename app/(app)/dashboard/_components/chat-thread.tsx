@@ -19,6 +19,7 @@ import {
   windowHoursLeft,
 } from "./format";
 import { displayPhone } from "@/lib/phone-format";
+import { PhoneLocation } from "@/components/ui/phone-location";
 
 const PAGE_LIMIT = 30;
 // Distancia al tope (px) a la que se cargan solos los mensajes anteriores, y al
@@ -471,6 +472,7 @@ export function ChatThread({
         <div className="min-w-0 flex-1">
           <p className="truncate text-sm font-semibold">{detail.contact.name}</p>
           <p className="truncate text-xs text-muted-foreground">{displayPhone(detail.contact.phone) || "Sin teléfono"}</p>
+          <PhoneLocation phone={detail.contact.phone} />
         </div>
         <span className="shrink-0 rounded-full bg-brand-navy/10 px-2.5 py-1 text-xs font-medium text-brand-navy">
           {detail.contact.stage}
