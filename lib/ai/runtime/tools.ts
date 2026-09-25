@@ -39,19 +39,19 @@ export const moverEtapaSchema = z.object({
 export const avisoVendedorSchema = z.object({
   motivo: z.enum(AVISO_MOTIVOS).describe("cotejar_deposito = el cliente pagó y hay que cotejar el depósito; cliente_pide_humano = pidió hablar con una persona; comprobante_dudoso = el comprobante no cuadra o se ve dudoso"),
   detalle: z.string().max(500).describe("Qué debe saber el vendedor, en una o dos frases"),
-  monto: z.string().nullable().optional().describe("Monto del comprobante tal como se lee"),
+  monto: z.string().nullable().optional().describe("Monto del comprobante tal como se lee, o null si no se lee"),
   referencia: z.string().nullable().optional().describe("Referencia, folio o clave de rastreo tal como se lee"),
   banco: z.string().nullable().optional().describe("Banco tal como se lee"),
   fecha: z.string().nullable().optional().describe("Fecha del comprobante tal como se lee"),
-  tipo: z.enum(["total", "anticipo", "resto"]).nullable().optional().describe("total = pago completo; anticipo = 50 % a la medida; resto = liquidación"),
+  tipo: z.enum(["total", "anticipo", "resto"]).nullable().optional().describe("total = pago completo; anticipo = primer pago parcial; resto = liquidación"),
 });
 
 export const FIJAR_COTIZACION_DESCRIPTION =
-  "Guarda el total cotizado al cliente en pesos (el total que le dijiste). Llámala cada vez que le des un total o el total cambie.";
+  "Guarda el total de la COMPRA cotizada al cliente en pesos (el total que le dijiste: compuerta o compuertas más lo que incluya). No es para accesorios sueltos ni precios de referencia. Llámala cada vez que le des un total o el total cambie.";
 export const MOVER_ETAPA_DESCRIPTION =
-  "Avanza al contacto en el Embudo según el Goal (contesta → prospecto; pregunta precio o medidas → interesado; recibe datos bancarios o anticipo confirmado → cerca_compra; comprobante válido por el total o el resto → compra). Solo avanza; un retroceso se ignora.";
+  "Avanza al contacto a una etapa del Embudo (inbox → prospecto → interesado → cerca_compra → compra). Úsala cuando el Goal lo indique. Solo avanza; un retroceso o la misma etapa se ignoran.";
 export const AVISO_VENDEDOR_DESCRIPTION =
-  "Deja un aviso interno al vendedor (el cliente no lo ve). Úsala cuando confirmes un pago (cotejar_deposito, con monto, referencia, banco, fecha y tipo), cuando el cliente pida hablar con una persona (cliente_pide_humano) o cuando un comprobante no cuadre o se vea dudoso (comprobante_dudoso, con lo que leíste). Tú sigues atendiendo.";
+  "Deja un aviso interno al vendedor; el cliente no lo ve y tú sigues atendiendo. Motivos: cotejar_deposito (pago que confirmaste: manda monto, referencia, banco, fecha y tipo), cliente_pide_humano, comprobante_dudoso (manda lo que alcanzaste a leer). Cuándo usar cada uno lo dice el Goal.";
 
 // Puro: arma el ToolSet a partir de las filas de workflows (orden estable: la
 // consulta viene por position; fijas al final → la caché del prompt no se rompe).

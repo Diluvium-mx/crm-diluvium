@@ -241,30 +241,6 @@ export async function lastHandledInboundAt(organizationId: string, conversationI
   return row?.createdAt ?? null;
 }
 
-// ¿El cliente mandó una imagen después del último pago confirmado en esta
-// conversación (o en las últimas 24 h si no hay ninguno)? El modelo puede llamar
-// pago_confirmado una vuelta después de la foto ("¿es el pago de la estándar?" →
-// "sí"); sin foto reciente, no hay comprobante que verificar.
-export async function recentInboundImage(organizationId: string, conversationId: string, now = new Date()): Promise<boolean> {
-  const [row] = await db
-    .select({ id: messages.id })
-    .from(messages)
-    .where(
-      and(
-        inConversation(organizationId, conversationId),
-        eq(messages.direction, "in"),
-        sql`exists (select 1 from jsonb_array_elements(${messages.attachments}) a where a->>'type' = 'image')`,
-        sql`${messages.createdAt} > greatest(
-          ${new Date(now.getTime() - 24 * 3_600_000).toISOString()}::timestamp,
-          coalesce((select max(p.created_at) from pagos_confirmados p
-                    where p.organization_id = ${organizationId} and p.conversation_id = ${conversationId}), '-infinity'::timestamp)
-        )`,
-      ),
-    )
-    .limit(1);
-  return Boolean(row);
-}
-
 // Hora (WhatsApp) de un mensaje ya cargado.
 export function messageAt(m: Pick<MessageRow, "sentAt" | "createdAt">): Date {
   return m.sentAt ?? m.createdAt;

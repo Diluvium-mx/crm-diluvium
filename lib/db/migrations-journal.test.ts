@@ -12,15 +12,14 @@ const drizzleDir = new URL("../../drizzle/", import.meta.url);
 const journal = JSON.parse(readFileSync(new URL("meta/_journal.json", drizzleDir), "utf8")) as Journal;
 
 describe("journal de migraciones de drizzle", () => {
-  it("idx consecutivos; el número del tag nunca baja ni se repite (puede saltar: la 0030 quedó reservada para Anuncios de Meta)", () => {
-    let last = -1;
+  it("idx consecutivos; el número del tag no se repite (puede saltar u ordenarse distinto: la 0030 quedó reservada para Anuncios de Meta y entra después de la 0031; lo que ordena es `when`)", () => {
+    const seen = new Set<number>();
     journal.entries.forEach((entry, i) => {
       expect(entry.idx).toBe(i);
       const n = Number(entry.tag.slice(0, 4));
       expect(entry.tag, `${entry.tag} no empieza con número`).toMatch(/^\d{4}_/);
-      expect(n, `${entry.tag} tiene número menor que su idx`).toBeGreaterThanOrEqual(i);
-      expect(n, `${entry.tag} repite o baja el número`).toBeGreaterThan(last);
-      last = n;
+      expect(seen.has(n), `${entry.tag} repite el número`).toBe(false);
+      seen.add(n);
     });
   });
 

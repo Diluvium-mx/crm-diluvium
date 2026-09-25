@@ -23,6 +23,7 @@ import { SendFailedError, type MessagingProvider } from "@/lib/messaging/provide
 import type { ObjectStorage } from "@/lib/storage/s3";
 import { enqueueWorkflowRun } from "@/lib/queue/workflows";
 import { notifyConversation } from "@/lib/ai/runtime/state";
+import { addNotice } from "@/lib/ai/runtime/notices";
 import { moveStageForward } from "@/lib/contacts/stage";
 import { missingMedia, stripUnresolvedVariables } from "./steps";
 
@@ -39,6 +40,8 @@ export type StartRunInput = {
   payload?: Record<string, unknown> | null;
   /** Solo "Probar" del admin: ejecuta aunque el workflow esté deshabilitado. */
   allowDisabled?: boolean;
+  /** Agente: entrante que originó la corrida (idempotencia entre reintentos del job). */
+  triggerMessageId?: string | null;
   now?: Date;
 };
 
@@ -85,21 +88,40 @@ async function insertRun(
 ): Promise<string> {
   const id = crypto.randomUUID();
   const now = input.now ?? new Date();
-  await db.insert(workflowRuns).values({
-    id,
-    organizationId: input.organizationId,
-    workflowId: input.workflowId,
-    conversationId: input.conversationId,
-    contactId,
-    trigger: input.trigger,
-    triggeredByUserId: input.triggeredByUserId ?? null,
-    payload: input.payload ?? null,
-    status,
-    errorCode: reason ?? null,
-    createdAt: now,
-    ...(status === "skipped" ? { finishedAt: now } : {}),
-  });
-  return id;
+  const rows = await db
+    .insert(workflowRuns)
+    .values({
+      id,
+      organizationId: input.organizationId,
+      workflowId: input.workflowId,
+      conversationId: input.conversationId,
+      contactId,
+      trigger: input.trigger,
+      triggeredByUserId: input.triggeredByUserId ?? null,
+      triggerMessageId: input.trigger === "agent" ? (input.triggerMessageId ?? null) : null,
+      payload: input.payload ?? null,
+      status,
+      errorCode: reason ?? null,
+      createdAt: now,
+      ...(status === "skipped" ? { finishedAt: now } : {}),
+    })
+    // Reintento del job del agente para el mismo entrante: la corrida ya existe.
+    .onConflictDoNothing()
+    .returning({ id: workflowRuns.id });
+  if (rows.length) return id;
+  const [existing] = await db
+    .select({ id: workflowRuns.id })
+    .from(workflowRuns)
+    .where(
+      and(
+        eq(workflowRuns.organizationId, input.organizationId),
+        eq(workflowRuns.workflowId, input.workflowId),
+        eq(workflowRuns.trigger, "agent"),
+        eq(workflowRuns.triggerMessageId, input.triggerMessageId ?? ""),
+      ),
+    )
+    .limit(1);
+  return existing?.id ?? id;
 }
 
 /**
@@ -261,6 +283,16 @@ export async function executeWorkflowRun(runId: string, deps: ExecutorDeps): Pro
       await insertInternalNote(run, `No se envió "${loaded.wf.name}": ${FAIL_LABEL[code] ?? message.slice(0, 200)}.`, ctxSource(run), sentBy, now()).catch(
         (e) => console.error("[workflows] no se pudo dejar el aviso de fallo", e),
       );
+    } else {
+      // Del agente o por palabra clave: el cliente esperaba un archivo que no llegó;
+      // el vendedor lo ve como aviso 🤖 (idempotente por corrida).
+      await addNotice({
+        organizationId: run.organizationId,
+        conversationId: run.conversationId,
+        messageId: run.triggerMessageId,
+        kind: "envio",
+        body: `No se envió "${loaded.wf.name}" (${FAIL_LABEL[code] ?? message.slice(0, 200)}). El cliente lo estaba esperando: revisa el hilo.`,
+      });
     }
     return "failed";
   };
@@ -322,7 +354,8 @@ export async function executeWorkflowRun(runId: string, deps: ExecutorDeps): Pro
   // contacto en "Cerca de compra" (solo hacia adelante; la etapa de un vendedor
   // no se regresa). No es un paso del workflow: vive aquí, sea cual sea el disparador.
   if (loaded.wf.slug === SLUG_DATOS_BANCARIOS) {
-    await moveStageForward({ organizationId: run.organizationId, contactId: run.contactId, to: "cerca_compra", by: run.trigger === "agent" ? "agente" : "sistema", now: now() }).catch((error) =>
+    // Sin disparar workflows por etapa (evita "datos bancarios → cerca_compra → datos bancarios otra vez").
+    await moveStageForward({ organizationId: run.organizationId, contactId: run.contactId, to: "cerca_compra", by: run.trigger === "agent" ? "agente" : "sistema", now: now(), since: run.createdAt, fireStageTriggers: false }).catch((error) =>
       console.error(`[workflows] no se pudo mover a cerca_compra tras ${loaded.wf.slug}`, error),
     );
     await notifyConversation(db, run.organizationId, run.conversationId).catch(() => undefined);

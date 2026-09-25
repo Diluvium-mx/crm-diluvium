@@ -375,6 +375,22 @@ describe.skipIf(!TEST_DATABASE_URL)("executor de workflows", () => {
     expect(await contact()).toMatchObject({ stage: "compra", stageChangedBy: "vendedor" });
   });
 
+  it("la regla de /banco no re-dispara workflows 'al entrar a Cerca de compra' (sin CLABE doble); una etapa movida por el agente dispara corridas 'agent', no humanas", async () => {
+    const a = await asset();
+    const banco = await workflow([{ kind: "send_media", assetId: a.id, title: "Banco", caption: "Datos" }], { slug: "datos_bancarios", triggerStage: "cerca_compra" });
+    const c1 = await ex.startWorkflowRun({ organizationId: ORG, workflowId: banco, conversationId: CONV, trigger: "command", triggeredByUserId: "u_v" });
+    expect(await ex.executeWorkflowRun(c1.runId, { provider, storage })).toBe("done");
+    expect((await contact()).stage).toBe("cerca_compra");
+    expect(sent).toHaveLength(1); // ni una segunda corrida por la etapa
+    expect(await db.select().from(s.workflowRuns)).toHaveLength(1);
+    // El agente mueve a "compra" con un workflow "al entrar a compra": la corrida sale como "agent".
+    const { moveStageForward } = await import("@/lib/contacts/stage");
+    const wfCompra = await workflow([{ kind: "send_text", text: "gracias por tu compra" }], { triggerStage: "compra" });
+    expect(await moveStageForward({ organizationId: ORG, contactId: CONTACT, to: "compra", by: "agente" })).toEqual({ from: "cerca_compra" });
+    const r = (await db.select().from(s.workflowRuns)).find((x) => x.workflowId === wfCompra)!;
+    expect(r.trigger).toBe("agent");
+  });
+
   it("otra organización no puede disparar ni ejecutar workflows ajenos", async () => {
     const wf = await workflow([{ kind: "send_text", text: "x" }]);
     await expect(ex.startWorkflowRun({ organizationId: "otra", workflowId: wf, conversationId: CONV, trigger: "command" })).rejects.toThrow(/no encontrado/);
