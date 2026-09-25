@@ -285,6 +285,28 @@ describe.skipIf(!TEST_DATABASE_URL)("Apagar bot por conversación (Postgres real
     expect(q.jobs.has(CONV)).toBe(true);
   });
 
+  it("WhatsApp da segundos enteros: lo escrito en el MISMO segundo de la hora de regreso (o de Reactivar) es nuevo", async () => {
+    const q = fakeQueue();
+    // "Hora exacta": regreso en un segundo entero; el cliente escribe en ese segundo.
+    const until = new Date(Math.floor((Date.now() - 5_000) / 1000) * 1000);
+    await pause.pauseAgentManually({ organizationId: ORG, conversationId: CONV, until, now: ago(HOUR) }, { queue: q.port });
+    const a = await msg(CONV, { direction: "in", body: "hola", at: new Date(), sentAt: until });
+    await inbound(CONV, new Date(), q, a);
+    expect((await conv()).agentState).toBe("activo");
+    expect(q.jobs.has(CONV)).toBe(true);
+    // "Reactivar" a los .600 s; el cliente escribe a los .800 (sent_at truncado a .000).
+    await pause.pauseAgentManually({ organizationId: ORG, conversationId: CONV2, until: null, now: ago(HOUR) }, { queue: q.port });
+    const second = Math.floor((Date.now() - 200_000) / 1000) * 1000;
+    await manual.reactivateAgentInConversation(ORG, CONV2, new Date(second + 600));
+    const b = await msg(CONV2, { direction: "in", body: "¿precio?", at: new Date(second + 1_500), sentAt: new Date(second) });
+    await inbound(CONV2, new Date(), q, b);
+    expect(q.jobs.has(CONV2)).toBe(true);
+    expect(await sweep.findOrphanConversations(new Date())).toEqual([{ conversationId: CONV2, organizationId: ORG }]);
+    // Uno del segundo ANTERIOR sigue siendo "escrito durante la pausa".
+    await db.update(s.messages).set({ sentAt: new Date(second - 1_000) }).where(eq(s.messages.id, b));
+    expect(await sweep.findOrphanConversations(new Date())).toEqual([]);
+  });
+
   it("si la cola falla justo al reactivar por un mensaje nuevo, el barrido de huérfanos lo rescata", async () => {
     const q = fakeQueue();
     const until = ago(20_000);

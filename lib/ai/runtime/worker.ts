@@ -52,8 +52,8 @@ export function makeRunDeps(provider: MessagingProvider, storage: ObjectStorage 
 }
 
 export async function sweepOnce(queue: AgentQueuePort, kv: KvPort, now: Date): Promise<void> {
-  // "Apagar bot" con hora cumplida → activo (corte = ahora). Va antes que los
-  // huérfanos: lo que el cliente escribió durante la pausa queda atrás del corte.
+  // "Apagar bot" con hora cumplida → activo (corte = la hora de regreso). Va antes
+  // que los huérfanos: lo que el cliente escribió durante la pausa queda atrás del corte.
   const back = await reactivateDuePauses(now);
   if (back) console.info(`[agente] barrido: bot reactivado en ${back} conversación(es) (se cumplió la hora de regreso)`);
   const failedSends = await noticeFailedAgentSends(now);
