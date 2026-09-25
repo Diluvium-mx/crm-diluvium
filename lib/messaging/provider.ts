@@ -30,6 +30,8 @@ export type NormalizedAttachment = {
   providerMediaId?: string;
   /** sha256 del archivo (base64) según WhatsApp: verifica la descarga. */
   sha256?: string;
+  /** El proveedor no trae el archivo (p. ej. media vieja del historial): motivo. `url` va vacía. */
+  unavailable?: string;
 };
 
 // Mensaje entrante del contacto, o eco de uno saliente (enviado desde el CRM,
@@ -58,6 +60,12 @@ export type NormalizedMessageEvent = {
   referral?: Record<string, unknown>;
   // Contexto crudo del proveedor (cita, ubicación, tarjetas, pedido…).
   metadata?: Record<string, unknown>;
+  /**
+   * Copia del HISTORIAL del celular (coexistencia), no un mensaje en vivo: se
+   * importa sin agente, workflows, no leídos, ventana ni primera respuesta
+   * (lib/messaging/history.ts).
+   */
+  history?: boolean;
 };
 
 /** Reacción (agregada o quitada) sobre un mensaje ya existente. */

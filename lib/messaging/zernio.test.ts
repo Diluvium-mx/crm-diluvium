@@ -112,6 +112,23 @@ describe("normalizeZernioEvent", () => {
     });
   });
 
+  it("message.received del historial queda marcado y conserva origen contact", () => {
+    const e = normalizeZernioEvent(received({ metadata: { source: "coexistence_history" } }));
+    expect(e).toMatchObject({ kind: "message", direction: "in", source: "contact", history: true });
+  });
+
+  it("message.sent del historial queda marcado como business_app", () => {
+    const base = echo("cloud_api");
+    const e = normalizeZernioEvent({ ...base, metadata: { source: "coexistence_history" } });
+    expect(e).toMatchObject({ kind: "message", direction: "out", source: "business_app", history: true });
+  });
+
+  it("un mensaje vivo normal no trae la marca history", () => {
+    const e = normalizeZernioEvent(received());
+    expect(e).toMatchObject({ kind: "message", direction: "in", source: "contact" });
+    expect(e).not.toHaveProperty("history");
+  });
+
   it("tolera variantes de escritura del source (whatsappbusinessapp, mayúsculas)", () => {
     expect(normalizeZernioEvent(echo("whatsappbusinessapp"))).toMatchObject({ source: "business_app" });
     expect(normalizeZernioEvent(echo("WhatsApp-Business-App"))).toMatchObject({ source: "business_app" });
