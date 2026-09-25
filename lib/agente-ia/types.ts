@@ -71,6 +71,10 @@ export type AgentNoticeView = {
   kind: string;
   body: string;
   createdAt: string;
+  // Fase E (tarjeta "agente_error"): ISO de cuándo la atendió un vendedor y con qué
+  // botón ("reintentar" | "apagar"); null = sin atender.
+  resolvedAt: string | null;
+  resolution: string | null;
 };
 
 export type AgentThreadView = {

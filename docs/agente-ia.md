@@ -247,7 +247,22 @@ Dashboard ya muestra el gasto del mes y el saldo estimado (24-sep-2026).
   `feat/agente-ia-fase-e` (migración 0033):** los dos selectores y la asignación por etapa
   (Modelo 1 = Inbox, Prospecto e Interesado, decisión del dueño), adaptadores de Google, xAI y
   OpenRouter con sus precios, tope de 4,096 tokens con aviso si se corta (parte del pendiente B
-  de la Fase D), sin sección "Empresa" y favicon nuevo. Siguen: reenvío seguro y pendientes A–F. El panel de gasto que antes
+  de la Fase D), sin sección "Empresa" y favicon nuevo (main 0f495e9). **Parte 2 (migración 0034):**
+  - **Reenvío seguro** (definición del dueño, 25-sep): si el modelo falla, el CRM NO lo vuelve a
+    llamar solo. Deja en el chat la tarjeta ⚠ 🤖 "El agente no pudo responder" con el error en
+    palabras simples (sin saldo, llave faltante o inválida, proveedor saturado, tardó demasiado,
+    rechazó la conversación, respuesta vacía; `lib/ai/runtime/model-errors.ts`) y los botones
+    **Reintentar** (un intento más, ya) y **Apagar** (pausa al agente solo en esa conversación;
+    "Reactivar" lo regresa). Mientras nadie elija, ni mensajes nuevos, ni la cola, ni el barrido
+    vuelven a llamar al modelo ahí. Única excepción: si el proveedor está **saturado** se reintenta
+    UNA vez sola tras 10 s. Los adaptadores ya no usan los reintentos ocultos del SDK (`maxRetries: 0`).
+  - **"Depósito recibido"**: el aviso de pago es un texto fijo, sin montos, folio ni texto del modelo.
+    El agente ya no anota monto/folio y se quitó el chequeo de folio repetido (decisión del dueño);
+    la tabla `comprobantes` queda sin uso. El contexto del CRM ya no lista comprobantes.
+  - **Caché del historial** (Anthropic): segundo punto de caché antes del último turno del cliente;
+    probado con Sonnet 5 real: la 2.ª llamada leyó de caché 4,931 de 4,962 tokens de entrada.
+  - La nota "ya salió por palabra clave" solo queda en el log del worker (ya no es aviso al vendedor).
+  Siguen: A (por verificar con "¿cómo se instalan y cuánto cuestan?") y la nota del tope diario. El panel de gasto que antes
   se anotaba aquí ya existe en el Dashboard (24-sep-2026); conciliar contra las Cost API queda como
   pendiente sin fase.
 

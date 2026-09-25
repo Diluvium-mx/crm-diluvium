@@ -11,6 +11,7 @@ import { DocumentCard } from "./document-card";
 import { MediaViewer } from "./media-viewer";
 import { ScheduledInThread } from "./scheduled-in-thread";
 import { AgentNoticeLine, AgentPausedBanner, useConversationAgent } from "./agent-in-thread";
+import { AgentErrorCard } from "./agent-error-card";
 import { AgentActivityPill } from "./agent-activity-pill";
 import { interleaveNotices } from "@/lib/agente-ia/timeline";
 import {
@@ -521,7 +522,13 @@ export function ChatThread({
               </div>
             )}
             {timeline.map((item) => {
-              if (item.kind === "notice") return <AgentNoticeLine key={`aviso-${item.notice.id}`} notice={item.notice} />;
+              if (item.kind === "notice") {
+                // Fase E: el error del modelo lleva botones ("Reintentar" / "Apagar").
+                if (item.notice.kind === "agente_error") {
+                  return <AgentErrorCard key={`aviso-${item.notice.id}`} notice={item.notice} onChanged={() => void reloadAgent()} />;
+                }
+                return <AgentNoticeLine key={`aviso-${item.notice.id}`} notice={item.notice} />;
+              }
               const row = item.row;
               const key = isOptimistic(row) ? row.clientId : row.id;
               const prev = rows[(rowIndex.get(row) ?? 0) - 1];

@@ -29,7 +29,14 @@ export async function getConversationAgent(conversationId: string): Promise<Agen
     channelMode: toAgentMode(row.channelMode),
     agentState: row.agentState,
     pausedUntil: row.pausedUntil?.toISOString() ?? null,
-    notices: row.notices.map((n) => ({ id: n.id, kind: n.kind, body: n.body, createdAt: n.createdAt.toISOString() })),
+    notices: row.notices.map((n) => ({
+      id: n.id,
+      kind: n.kind,
+      body: n.body,
+      createdAt: n.createdAt.toISOString(),
+      resolvedAt: n.resolvedAt?.toISOString() ?? null,
+      resolution: n.resolution,
+    })),
   };
 }
 

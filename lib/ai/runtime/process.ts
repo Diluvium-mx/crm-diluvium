@@ -5,7 +5,9 @@ import { acquireLock, dirtyKey, releaseLock, type AgentJob, type KvPort } from "
 import type { RunResult } from "./run";
 
 // El candado dura más que la peor corrida (filtro + cerebro × 3 rondas).
-export const LOCK_TTL_MS = 5 * 60_000;
+// 6 min (antes 5): 3 rondas × (limpieza + cerebro) + el único reintento por proveedor
+// saturado de la Fase E (10 s + otra llamada) caben con holgura.
+export const LOCK_TTL_MS = 6 * 60_000;
 export const LOCKED_RETRY_MS = 5_000;
 
 export type ProcessDeps = {
