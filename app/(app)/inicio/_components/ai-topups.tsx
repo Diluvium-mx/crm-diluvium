@@ -6,8 +6,8 @@
 import { useState, useTransition } from "react";
 import { addAiTopup, deleteAiTopup } from "@/lib/actions/ai-spend";
 import type { TopupRow } from "@/lib/dashboard/ai-spend";
+import { formatUsd } from "@/lib/usd-format";
 
-const usd = new Intl.NumberFormat("es-MX", { style: "currency", currency: "USD" });
 const PROVIDERS = [
   { id: "openai", label: "OpenAI" },
   { id: "anthropic", label: "Anthropic" },
@@ -42,7 +42,7 @@ export function AiTopups({ topups, canRegister }: { topups: TopupRow[]; canRegis
   }
 
   function remove(t: TopupRow) {
-    if (!window.confirm(`¿Borrar la recarga de ${usd.format(t.amountUsd)} en ${t.label} del ${t.toppedUpOn}?`)) return;
+    if (!window.confirm(`¿Borrar la recarga de ${formatUsd(t.amountUsd)} en ${t.label} del ${t.toppedUpOn}?`)) return;
     start(async () => {
       const r = await deleteAiTopup({ id: t.id });
       if (!r.ok) setError(r.message);
@@ -94,7 +94,7 @@ export function AiTopups({ topups, canRegister }: { topups: TopupRow[]; canRegis
           {topups.map((t) => (
             <li key={t.id} className="flex items-center justify-between gap-2 py-1">
               <span className="text-foreground">
-                {t.toppedUpOn} · {t.label} · <span className="tabular-nums">{usd.format(t.amountUsd)}</span>
+                {t.toppedUpOn} · {t.label} · <span className="tabular-nums">{formatUsd(t.amountUsd)}</span>
                 {t.author ? <span className="text-muted-foreground"> · {t.author}</span> : null}
               </span>
               {canRegister && (
