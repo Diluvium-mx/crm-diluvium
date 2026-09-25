@@ -1,6 +1,10 @@
 # Agente IA — Fase D: Acciones y Automatización (diseño)
 
-> Estado: **APROBADO por el dueño el 23-sep-2026** con las definiciones de negocio de §0.1.
+> Estado: **FASE D CERRADA el 25-sep-2026.** En producción desde main 057725c (migración 0031,
+> §10). Prueba B5 en producción el 25-sep (§11): pasaron los pasos 1, 3, 4 y 5; el 2 y el 6 con
+> observaciones. Pendientes A–F en §11.3, **sin construir**. Siguiente: Fase E (§11.4).
+>
+> Historial: **APROBADO por el dueño el 23-sep-2026** con las definiciones de negocio de §0.1.
 > Rama `feat/agente-ia-fase-d` (desde main 086143d). **Parte (a) construida el 23-sep-2026**
 > (A0–A6; §8 tiene las decisiones de implementación). La parte (b) espera al cierre de la
 > Fase B y a un rebase sobre main.
@@ -573,7 +577,8 @@ Corregido de inmediato (escenario real):
 - **Contexto perdido**: se anexa al último turno del cliente aunque después haya media del agente/palabra clave.
 - Workflows que quedan sin pasos se apagan; descripciones de herramientas sin reglas de negocio (viven en el Goal).
 
-Sin escenario (lista, no frena): dos comprobantes en un mismo lote registran solo el último (único por mensaje);
+Sin escenario (lista, no frena): dos comprobantes en un mismo lote registran solo el último (único por mensaje)
+— **dejó de ser teórico: pasó en B5, paso 6 (§11.2); es el pendiente C de §11.3**;
 dos avisos del mismo motivo en una respuesta cuentan una vez; caída del worker entre el texto y el arranque de la
 media (se pierde la media de esa respuesta; ya no la etapa ni los avisos) — persistir el plan de acciones queda para
 la parte (c); `fijar_cotizacion` puede pisar la cotización del propio agente (no la del vendedor); el modelo podría
@@ -765,3 +770,69 @@ solo hacia adelante; predeterminados solo de envío), `lib/workflows/defaults.te
 0030 reservada). La migración se probó sobre datos como los de producción (14 workflows, pasos de
 todos los tipos, corridas y un pago): 14 → 9 workflows, 14 → 5 pasos, 3 → 2 corridas, mensajes y
 avisos intactos.
+
+## 11. Prueba B5 en producción y cierre de la Fase D (25-sep-2026)
+
+### 11.1 Salida a producción y preparación
+
+- **Main 057725c** (merge de `feat/agente-ia-fase-d-b` rebasada sobre a9fa3b3; 706 tests + 5 omitidos,
+  typecheck y lint en verde). Respaldo manual previo en verde, con restore de prueba (corrida 36154174023).
+  Web y worker en SUCCESS; la 0031 quedó aplicada (31 migraciones).
+- **Conteos antes → después:** 14 → 9 workflows, 23 → 11 pasos, 7 → 7 corridas; 70 mensajes y 1 aviso sin
+  cambio; `pagos_confirmados` (0 filas) borrada; `comprobantes` creada. Canal `ch_zernio_sandbox` en `auto`.
+  Los 12 pasos borrados: 11 de los 5 workflows retirados + el `set_stage` de `datos_bancarios` (ahora regla
+  del CRM, §10.1). Los 9 de media conservan cada paso de envío con su archivo y su pie; siguen encendidos
+  los mismos 6 y apagados "dónde medir", "medidas especiales" y "tabla mini" (sin archivo).
+- **Goal de producción = versión 2** del historial de la pestaña (guardada con `saveGoal`; la versión 1 es el
+  Goal anterior). Lleva los 6 reemplazos de §10.5 y el bloque ETAPAS DEL EMBUDO / COMPROBANTES DE PAGO /
+  PASAR A HUMANO con los ajustes del dueño del 25-sep: anticipo sin monto fijo, "el monto coincida
+  exactamente con lo que se acordó en esta conversación" y PASAR A HUMANO con sus otros casos. **Frases
+  que quedan sin cambiar (propuesta dada, decide el dueño):** menciones de "transferir" en FOTOGRAFÍAS,
+  COMPRA ONLINE, CLIENTES FUERA DE MÉXICO y CIERRE DE VENTA (dos), y los montos fijos de TIPOS DE
+  COMPROBANTE ("Pago completo ($5,500 / $11,000 / $7,000 …)").
+- **Contacto de prueba** (+52 668 242 6364): marcas de palabra clave borradas, regresado a Inbox sin
+  "puesta por vendedor", sin cotización (quedaba $11,000 de pruebas viejas) y agente reactivado.
+
+### 11.2 Resultado (conversación real desde el celular del dueño)
+
+| Paso | Qué pasó | Resultado |
+|---|---|---|
+| 1. "tamaños" | Respuesta del agente y la tabla con su pie a los 30 s; etapa → Prospecto | Pasó |
+| 2. "cómo se instalan" | El video con su pie salió por palabra clave; el cerebro dio error dos veces (Sonnet 5 rechaza un historial que termina en un mensaje nuestro: el video salió antes de su llamada) y no mandó texto. El cliente no notó falla: el video contestó la pregunta | Observación → pendiente A |
+| 3. Cotización | Pidió medidas; 95 cm = M, 105 cm = G, total $11,000 guardado con `fijar_cotizacion`; etapa → Interesado | Pasó |
+| 4. "quiero hacer transferencia" | Texto + imagen de datos bancarios con su pie en un solo mensaje; etapa → Cerca de compra | Pasó |
+| 5. Comprobante de $39,500 | Texto amable; aviso "Comprobante dudoso" con lo leído; etapa sin cambio. Quedó una fila en `comprobantes` (así se construyó); en el paso 6 no confundió al agente | Pasó → pendiente D |
+| 6. Dos comprobantes de $5,500 juntos | Sumó bien, confirmó, pidió datos de envío y movió a Compra. Pero la respuesta llegó al tope de 1,024 tokens de salida (el razonamiento de Sonnet 5 cuenta) y su `aviso_vendedor` se descartó por argumentos inválidos: solo quedó el aviso genérico del CRM y ninguna fila en `comprobantes` | Observación → pendientes B y C |
+
+Etapa solo hacia adelante y agente activo en todo el guion. **Costo:** 9 llamadas al cerebro (7 respuestas,
+2 errores sin costo), $1.15 USD, ~88 mil tokens de entrada por llamada en ese chat (95 mensajes, 6 fotos,
+2 PDF); solo el Goal y las FAQs van en caché (~15 mil) → $0.15–0.19 por respuesta.
+
+### 11.3 Pendientes (anotados, sin construir)
+
+- **A — POR VERIFICAR.** El dueño no vio falla desde el celular (el video contestó todo). Antes de
+  construirla se prueba con un mensaje que traiga otra pregunta, por ejemplo "¿cómo se instalan y
+  cuánto cuestan?". Si falla: el historial para el modelo termina siempre en el turno del cliente (lo
+  que salió por palabra clave va como nota) y un error definitivo del cerebro deja aviso al vendedor.
+- **B (ajustada por el dueño).** El aviso de pago se llamará **"Depósito recibido"**, sin montos ni
+  referencias (se ajustará también la frase del Goal que pide mandarlos). Queda subir el tope de respuesta
+  del cerebro de 1,024 a 4,096 tokens y **avisar si una respuesta se corta**, en vez de descartarla en
+  silencio.
+- **C.** Dos o más comprobantes en un mismo mensaje/lote: cada aviso del agente dice a qué imagen se
+  refiere y el CRM registra una fila (y un aviso) por comprobante. Hoy solo cabe uno por lote.
+- **D.** Marcar cada fila de `comprobantes` como cotejar o dudoso (migración nueva) y que el contexto del
+  agente solo cuente como pagados los de cotejar.
+- **E.** Caché también del historial (segundo punto de caché al final del turno anterior): en chats
+  largos bajaría de ~$0.15 a ~$0.03 por respuesta, sin cambiar lo que el agente lee.
+- **F.** El aviso "Acción del agente no ejecutada: … ya salió por palabra clave" no le pide nada al
+  vendedor: que quede solo en el registro interno.
+- **Nota — tope diario de $20:** `ai_config.daily_budget_usd` vale 20.00 en producción, pero no se aplica
+  (desde el cierre de la Fase B el agente va sin presupuesto diario por decisión del dueño) ni se muestra
+  en la UI. Queda para decidir: aplicarlo o quitar la columna para que no confunda.
+
+### 11.4 Fase E (definición del dueño)
+
+Modelo 1 (Luna) y Modelo 2 (Sonnet 5) **por etapa**, cada uno con su selector en la pestaña Agente IA,
+más el **reenvío seguro** (ver también §10.2: el bug de reintentos de `fix/agente-reenvio` sigue abierto).
+
+**Fase D cerrada.**
