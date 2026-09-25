@@ -53,7 +53,10 @@ formularios y landing pages, agente IA de calificación.
 > Automatización solo tiene envíos de media (texto, archivo con pie, espera) con disparadores agente /
 > comando / palabra clave / etapa; etapa, avisos al vendedor y comprobantes son **acciones internas del
 > agente** (`mover_etapa` solo hacia adelante, `aviso_vendedor`, `fijar_cotizacion`) decididas por el
-> Goal, no por código. Diseño: `docs/fase-d-diseno.md` §10. **La Fase B (runtime del agente)
+> Goal, no por código. Diseño: `docs/fase-d-diseno.md` §10. **Fase D CERRADA el 25-sep-2026** (main
+> 057725c, migración 0031; prueba B5 en producción y pendientes A–F sin construir: §11 del mismo doc).
+> **Fase E:** Modelo 1 (Luna) y Modelo 2 (Sonnet 5) por etapa, con sus selectores en la pestaña Agente IA,
+> más el reenvío seguro. **La Fase B (runtime del agente)
 > debe PERSISTIR tokens/uso por mensaje procesado** (`callModel` ya devuelve `usage` normalizado) para
 > alimentar un panel de gasto futuro.
 
