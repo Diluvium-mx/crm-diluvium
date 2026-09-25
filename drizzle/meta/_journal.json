@@ -190,13 +190,6 @@
       "when": 1790208591622,
       "tag": "0026_agente_editor_y_saldo",
       "breakpoints": true
-    },
-    {
-      "idx": 27,
-      "version": "7",
-      "when": 1790267250878,
-      "tag": "0028_anuncios_meta",
-      "breakpoints": true
     }
   ]
 }
