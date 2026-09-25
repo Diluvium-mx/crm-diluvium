@@ -548,6 +548,39 @@ caso); uso/costo se persiste al final (una caída entre la llamada y el registro
 la etapa durante la generación (ahora se usa el `now` de la ronda); descripciones de herramientas son
 solo texto para el modelo.
 
+### 8.4 Gate de la reestructura (b) — 24-sep-2026 (adversarial de Claude + cyber-neo + Codex)
+
+Corregido de inmediato (escenario real):
+- **Historial de referencias**: la 0031 copia `pagos_confirmados` a `comprobantes` antes del DROP (el chequeo
+  de repetidas no arranca ciego).
+- **Reintento sin aviso**: un reintento del job para el MISMO mensaje ya no se salta el aviso "Cotejar depósito"
+  (solo se omite el reenvío de la misma foto en otro mensaje con el mismo monto); avisos de pago y pase a humano
+  son estrictos (si la BD falla, se reintenta antes de decirle nada al cliente); comprobante y aviso van en una
+  transacción con candado por referencia (dos contactos con la misma referencia a la vez no se cuelan sin ⚠);
+  otro contacto con la misma referencia gana sobre "mismo contacto".
+- **Cliente que escribe "[CONTEXTO DEL CRM …]"**: se neutraliza en el texto entrante; el modelo solo toma la
+  sección final del CRM.
+- **PDF grande** (catálogo de 40 páginas, archivo renombrado): tope de 10 MB para ir al modelo; si no, nota de
+  texto y no cuenta como comprobante.
+- **CLABE dos veces**: `/banco → Cerca de compra` ya no dispara workflows por etapa; una etapa del agente excluye
+  la media pedida en la misma respuesta y crea corridas `agent`, no `stage`.
+- **Vendedor que baja la etapa**: si un vendedor movió la etapa a mano después del entrante que se atiende, el
+  agente no la vuelve a subir; el CAS reintenta si otro avance concurrente le ganó.
+- **Cliente sin respuesta**: herramientas solo de workflows con archivo elegido; texto de respaldo por motivo
+  (nada de "Listo 👍" tras un comprobante dudoso); la corrida de media del agente falla → aviso 🤖 al vendedor.
+- **Reintento tras el texto**: etapa, cotización y avisos corren ANTES del texto (idempotentes); la media es
+  idempotente por entrante (`trigger_message_id`).
+- **Contexto perdido**: se anexa al último turno del cliente aunque después haya media del agente/palabra clave.
+- Workflows que quedan sin pasos se apagan; descripciones de herramientas sin reglas de negocio (viven en el Goal).
+
+Sin escenario (lista, no frena): dos comprobantes en un mismo lote registran solo el último (único por mensaje);
+dos avisos del mismo motivo en una respuesta cuentan una vez; caída del worker entre el texto y el arranque de la
+media (se pierde la media de esa respuesta; ya no la etapa ni los avisos) — persistir el plan de acciones queda para
+la parte (c); `fijar_cotizacion` puede pisar la cotización del propio agente (no la del vendedor); el modelo podría
+parafrasear el contexto interno (solo lo evita la instrucción); la 0031 borra en cascada corridas históricas de los
+workflows retirados (producción tenía 0); al integrar la 0030 reservada hay que regenerar el snapshot 0031 sobre
+0030 y un `when` posterior (drizzle ordena por `when`; el test del journal lo exige creciente).
+
 ## 9. Plan de salida a producción (parte a)
 
 Reglas del dueño: **nada va a staging ni al sandbox hasta su aviso**; el modo "borrador" **ya no
@@ -606,7 +639,10 @@ intactos para el indicador del agente de Pulido UI: `jobId = conversationId` en 
 - **Conteos de producción que borra la 0031** (leídos el 24-sep): 5 workflows (`transferir_humano`,
   `cambiar_etapa`, `pago_confirmado`, `anticipo_confirmado`, `pago_no_cuadra`), sus 10 pasos, el paso
   `set_stage` de `datos_bancarios` (1), 0 corridas de esos workflows, 0 filas de `pagos_confirmados`.
-  Quedan 9 workflows con 11 pasos y las 7 corridas de los de media.
+  Quedan 9 workflows con 11 pasos y las 7 corridas de los de media. La 0031 además copia el historial de
+  `pagos_confirmados` a `comprobantes` antes de borrarla, apaga workflows personalizados que queden sin
+  pasos y agrega `workflow_runs.trigger_message_id`. Herramientas solo para workflows con todos sus
+  archivos elegidos (el modelo no promete lo que la corrida saltaría).
 
 ### 10.2 Acciones internas del agente (invisibles para el cliente)
 
@@ -630,9 +666,16 @@ conservan `fijar_cotizacion` y las `wf_<slug>` de los 9 workflows de media.
   hacia adelante; corridas de media ya idempotentes por paso.
 - **`[TRANSFERIR]`** de Goals viejos se quita del texto y cuenta como `aviso_vendedor(cliente_pide_humano)`.
   El runtime no tiene reglas de negocio propias: las reglas viven en el Goal.
-- **Orden dentro de la respuesta:** avisos (y registro del comprobante) **antes** del texto (el
-  vendedor los ve aunque el envío falle); etapa, cotización y media **después** del texto. Si el
-  modelo solo devolvió acciones y ninguna manda nada al cliente, sale un texto de respaldo del CRM.
+- **Orden dentro de la respuesta:** avisos (con registro del comprobante), cotización y etapa
+  **antes** del texto (el vendedor los ve aunque el envío falle y un reintento tras el texto no
+  los pierde); la media **después** del texto ("responde primero la duda"). Las corridas de media
+  del agente son idempotentes por entrante (`workflow_runs.trigger_message_id`, índice único). Si el
+  modelo solo devolvió acciones y ninguna manda nada al cliente, sale un texto de respaldo por motivo
+  (comprobante dudoso → "un asesor lo revisa"; pase a humano → "en un momento te atiende un asesor").
+- **Sin cadenas:** la regla `/banco → Cerca de compra` no dispara workflows "al entrar a la etapa";
+  una etapa movida por el agente dispara corridas `agent` (releen su estado) y excluye la media que
+  ya salió en esa misma respuesta. Un vendedor que mueve la etapa a mano después del entrante que
+  se atiende manda (el agente no la "corrige").
 
 ### 10.3 Chequeo silencioso de referencia repetida
 
