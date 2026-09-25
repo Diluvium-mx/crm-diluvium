@@ -1,6 +1,7 @@
 # Anuncios de Meta (clic a WhatsApp)
 
-Bloque "ANUNCIOS DE META" (24-sep-2026, rama `feat/anuncios-meta`, migración `0028_anuncios_meta`).
+Bloque "ANUNCIOS DE META" (24/25-sep-2026, rama `feat/anuncios-meta`, migración `0030_anuncios_meta`,
+número reservado; entra DESPUÉS de la 0034 por `when`. La 0028 vieja de esta rama se retiró).
 La mayoría de los clientes llegan por anuncios Click-to-WhatsApp (CTWA) de la cuenta publicitaria
 "Diluvium" (1058203117932599, portafolio Grupo Diluvium). Objetivo: el día que se conecte el número
 oficial, cada mensaje que llegue desde un anuncio entra completo, ordenado y sin un solo error.
@@ -15,9 +16,22 @@ oficial, cada mensaje que llegue desde un anuncio entra completo, ordenado y sin
   Estados de WhatsApp).
 - El referral viene SOLO en el primer mensaje después del clic. Zernio guarda el primer clic en la
   conversación (`metadata.ctwa_clid`, `ctwa_source_id`, `ctwa_source_url`, `ctwa_headline`,
-  `ctwa_source_type`, `ctwa_captured_at`), consultable con `GET /v1/inbox/conversations/{id}`.
-  Verificado en vivo: exige `?accountId=` (400 sin él) y un id inexistente responde **200 con datos
-  vacíos** (no 404): la ausencia de clic se lee del contenido.
+  `ctwa_source_type`, `ctwa_captured_at`).
+- **Dónde se consulta ese clic (documentación oficial, revisada el 25-sep-2026):**
+  - *Get conversation* (`GET /v1/inbox/conversations/{id}`): *"This operation currently returns only
+    the `meta_ad_*` family, which covers Instagram Click-to-Direct and Facebook Messenger
+    Click-to-Message. WhatsApp Click-to-WhatsApp attribution (the `ctwa_*` keys, where the ad ID is
+    `ctwa_source_id`) is returned by `GET /v1/inbox/conversations` instead."*
+  - *Click-to-WhatsApp Ads* (docs.zernio.com/platforms/whatsapp/ctwa, "Step 1: The click id is
+    captured for you"): ejemplo exacto del objeto `metadata` de la conversación, copiado tal cual en
+    `lib/messaging/__fixtures__/zernio-conversations-ctwa.json` y usado en el test.
+  - *List conversations*: cada llave de `metadata` es opcional (*"read defensively"*) y
+    `ctwa_captured_at` es cuándo Zernio GUARDÓ el valor (un evento automático de Meta puede refrescarlo),
+    no la hora exacta del clic.
+  - Verificado en vivo, solo lectura (25-sep): el filtro `accountId` del listado devuelve solo esa
+    cuenta; el **sandbox no aparece** en el listado; ninguna conversación conectada tiene aún
+    `metadata` (nadie ha llegado por anuncio a un número conectado). El GET de una conversación exige
+    `?accountId=` y para un id inexistente responde 200 con datos vacíos.
 - `image_url` / `video_url` / `thumbnail_url` son links firmados del CDN de Meta que caducan en horas
   (verificado: un link vencido responde 403 "URL signature expired").
 - Su ejemplo del evento es **plano**: sin `id`, sin `message{}` y sin `sentAt`. Los webhooks reales del
@@ -37,28 +51,31 @@ oficial, cada mensaje que llegue desde un anuncio entra completo, ordenado y sin
    `messages.ad_referral`. Cada entrada mueve `conversations.ad_entry_at`. `conversations.ad_referral`
    sigue siendo el PRIMER anuncio (el Dashboard lo cuenta).
 4. **Después del commit** (worker, cola `ads`, `lib/ads/worker.ts`), sin frenar nada:
-   - `media`: copia imagen/video/miniatura al bucket (`org/{org}/ads/clicks/{clic}/{rol}`). Reintenta
-     red/5xx hasta 8 veces; un 4xx (link caducado) se abandona al 3.º intento; nada tras 48 h. Otro clic
-     del mismo anuncio reusa la copia.
-   - `meta`: nombres de Meta (ver abajo) y luego `creative_media` (imagen/miniatura del creativo; el
-     video del creativo solo si ningún clic trajo el suyo).
+   - `thumb`: **UNA miniatura chica por anuncio** (JPEG ≤ 320 px, `org/{org}/ads/meta/{adId}/miniatura.jpg`,
+     `lib/ads/thumbnail.ts`), nunca por clic. Fuente: el link de la ficha del primer clic
+     (`thumbnail_url` en video, `image_url` en imagen, reducida) y, si ese ya caducó, el del creativo
+     que da la API. **Sin videos** (decisión del dueño, 25-sep-2026): el video se ve en Meta; lo que ya
+     se había copiado al bucket en staging se queda ahí (no se borra nada).
+   - `meta`: nombres y datos de Meta (ver abajo); si el anuncio aún no tiene miniatura, encola `thumb`.
    - `fallback`: entrante SIN ficha que pudo venir de un anuncio (primer entrante de la conversación,
-     Zernio cambió de conversación, o etiquetas/llaves de anuncio) → primer clic guardado por Zernio.
-     Solo se acepta si se capturó entre 24 h antes y 1 h después del mensaje (Zernio guarda el PRIMER
-     clic; uno viejo no es de este mensaje). Siempre deja registro en
-     `messages.metadata.anuncioRespaldo` (`atribuido`, `sin_datos`, `fuera_de_tiempo`, `ya_registrado`,
-     `error`) y en el log `[anuncios]`.
-   - Barrido cada minuto: clics sin registrar, media pendiente, creativos pendientes y nombres de Meta
-     vencidos.
+     Zernio cambió de conversación, o etiquetas/llaves de anuncio) → primer clic guardado por Zernio
+     en la conversación (listado por cuenta, ver arriba). Solo se acepta si se capturó entre 24 h antes y
+     1 h después del mensaje. **Durable:** nace "pendiente" en la base con el mensaje; la primera
+     consulta es a los 30 s; `sin_datos` se reintenta 3 veces (cada 3 min) y `error` 8 (cada 5 min).
+     Siempre deja registro en `messages.metadata.anuncioRespaldo` y en el log `[anuncios]`.
+   - Barrido cada minuto: clics sin registrar, respaldos pendientes, miniaturas pendientes y nombres
+     de Meta vencidos.
 5. **Agente IA**: no cambia nada (no se tocó `lib/ai/runtime`). Luna limpia la ficha y el cerebro recibe
    solo lo que escribió el cliente.
 
 ## Nombres desde Meta (API de Marketing)
 
 - `lib/ads/meta-api.ts`: `GET /{ad_id}` (nombre, estado, cuenta, conjunto, campaña, creativo) →
-  `GET /{creative_id}` (título, texto, imagen, miniatura de 720 px, video, publicación) →
-  `GET /{video_id}?fields=source,picture` (opcional: si no hay permiso sobre la página, queda la
-  miniatura). Graph API **v26.0** (vigente desde el 29-jul-2026), cambiable con `META_GRAPH_API_VERSION`.
+  `GET /{creative_id}` (título, texto, llamada a la acción, enlace, imagen, miniatura de 320 px, id del
+  video, publicación) → `GET /{video_id}?fields=title,length,picture` (solo DATOS del video; el archivo
+  no se descarga). Se guarda todo: columnas de `meta_ads` + respuestas crudas (`meta_raw`) + enlaces
+  "Ver en Meta" (`ads_manager_url`) y "Ver publicación" (`post_url`). Graph API **v26.0** (vigente desde
+  el 29-jul-2026), cambiable con `META_GRAPH_API_VERSION`.
 - Caché por anuncio en `meta_ads`; se refresca si tiene más de 24 h. Si Meta falla o falta el token se
   guarda el error y se reintenta con espera (10 min sin token, 1 h por límite de uso, 6 h por permisos,
   exponencial en lo demás). La UI muestra lo que haya (el titular de la ficha).
@@ -76,12 +93,17 @@ oficial, cada mensaje que llegue desde un anuncio entra completo, ordenado y sin
   Junto al aviso de 24 h: "Responde antes de X: 72 h gratis" o "Gratis por anuncio hasta X".
 - **Sidebar "Anuncios"** (`/anuncios`, todos los miembros): anuncios que trajeron clientes, con
   clientes y cuántos compraron (etapa Compra).
-- **Página del anuncio** (`/anuncios/{id}`; `/anuncios/sin-id` para fichas sin id): Campaña › Conjunto
-  › Anuncio, video o imagen, texto, conteos, "Ver en Meta" (Administrador de anuncios) y "Ver
-  publicación", y la lista de clientes que llegaron.
+- **Página del anuncio** (`/anuncios/{id}`; una ficha sin id tiene su propia página por huella
+  `f-…` o por clic `c-…`, nunca mezclada con otras): Campaña › Conjunto › Anuncio, **la miniatura** (sin
+  reproductor de video: "🎬 Anuncio de video · título · duración · se ve en Meta"), texto, llamada a la
+  acción y enlace, conteos, "Ver en Meta" (Administrador de anuncios) y "Ver publicación", y la lista de
+  clientes que llegaron.
 - **Detalle del contacto**: anuncio por el que llegó (enlace), resumen de Luna y "También volvió por…".
-- Media: `/api/ads/media/{click|ad}/{id}/{rol}` (sesión + organización; URL firmada de 5 min). Nunca se
+- Miniatura: `/api/ads/thumbnail/{adId}` (sesión + organización; URL firmada de 5 min). Nunca se
   muestran los links de Meta (caducan).
+- Pendiente de conectar: la tabla de `components/anuncios/ads-table.tsx` (vista previa con datos de
+  ejemplo en `/vista-previa/anuncios`, hecha en otro chat) está pensada para reemplazar la lista de
+  `/anuncios`; su contrato (`AdRow`) ya coincide con `listAds` salvo `status` y `linkClicks`.
 
 ## Ventana gratis de 72 h
 
@@ -116,3 +138,75 @@ Script en el scratchpad de la sesión (`sim-anuncios.mjs`), corrido con
 formato de Zernio y ids de anuncios reales de las campañas activas, sobre un canal de simulación
 (`ch_sim_anuncios`, cuenta ficticia `sim_anuncios_meta` que Zernio rechaza: ninguna respuesta del
 agente sale a nadie). Resultados en el reporte del bloque.
+
+## Mensaje opcional para el soporte de Zernio
+
+La documentación trae el ejemplo del objeto `metadata` y dice qué endpoint lo devuelve, así que el
+respaldo ya está ajustado a la forma oficial. Si se quiere una confirmación con un caso real (sin datos
+de clientes), este es el mensaje (lo manda el dueño):
+
+> Hola, equipo de Zernio. En coexistencia con WhatsApp, para una conversación que empezó por un anuncio
+> Click-to-WhatsApp, ¿nos pueden compartir un JSON real de ejemplo (con datos anonimizados) de un
+> elemento de `GET /v1/inbox/conversations?accountId=…` que traiga `metadata.ctwa_*`? Queremos confirmar
+> que (1) el GET de una sola conversación no devuelve los `ctwa_*` (su documentación dice que solo
+> `meta_ad_*`) y (2) no hay forma de pedir esa `metadata` para un `conversationId` sin recorrer el listado.
+> Gracias.
+
+## Checklist del día del número real (anuncios)
+
+1. `ZERNIO_ALLOWED_ACCOUNT_IDS` de production incluye el accountId del número real (sin él, los
+   eventos quedan en cuarentena; nada se pierde, se liberan con el replay).
+2. `META_ADS_ACCESS_TOKEN` en el web de production y referenciado en `worker-production`.
+3. En WhatsApp Business (Meta), "atribución de anuncios" activada: sin eso Meta no manda el `referral`.
+4. Tras el primer clic real en un anuncio (solo lectura):
+   - `select event, payload ? 'referral' en_raiz, payload->'metadata' ? 'referral' en_metadata,
+     payload ? 'message' anidado from webhook_events where payload::text like '%"referral"%' order by
+     received_at desc limit 5;` → confirma la forma real (plana o anidada) y dónde vino la ficha.
+   - `select origin, ad_id, ctwa_clid is not null, clicked_at from ad_clicks order by created_at desc limit 5;`
+   - `railway run -e production -s crm-diluvium -- npm run ads:probe -- --account <accountId real>
+     --conversation <conversationId>` → confirma que el listado de Zernio trae `metadata.ctwa_*` (es el
+     respaldo sin ficha). Solo imprime conteos y nombres de llaves.
+5. En la Bandeja: tarjeta "📣 Llegó por anuncio" con nombre y miniatura; página del anuncio con
+   campaña › conjunto; Detalle del contacto con el enlace.
+6. Log del worker `[anuncios]` durante 24 h: sin `falló` repetidos; `respaldo … sin_datos` es normal
+   para quien escribe sin anuncio.
+
+## Hallazgos para la revisión del agente (B, diagnóstico en solo lectura, 25-sep-2026)
+
+**Síntoma (simulación en staging, 24-sep):** con la cuenta ficticia, Zernio rechaza cada envío (400) y
+el agente generó **3 respuestas distintas por mensaje** (16:56:52, 16:57:10, 16:57:44): cada una es una
+llamada nueva al modelo y una fila más "fallida" en el hilo.
+
+**Dónde vive el reintento** (main `a58ebf7`, ya con la Fase E parte 2):
+- Cola BullMQ **`agent-replies`** (`lib/ai/runtime/queue.ts`, `agentQueue()`): `attempts: 3`,
+  `backoff: { type: "exponential", delay: 15_000 }` → reintentos a +15 s y +30 s.
+- Consumer: `startAgentRuntime` (`lib/ai/runtime/worker.ts`) → `processAgentJob`
+  (`lib/ai/runtime/process.ts`) → **`runAgent`** (`lib/ai/runtime/run.ts`). `runAgent` arma el historial,
+  **llama al modelo** y manda las burbujas con `deps.sendBubble` = `sendTextMessage`
+  (`lib/messaging/send.ts`).
+- `sendTextMessage` → `deliver()` (`lib/messaging/send.ts`, ~l. 455): un **rechazo 4xx** marca el mensaje
+  `failed` y **relanza** el error; un resultado **desconocido** (5xx, sin respuesta) lo deja pendiente y
+  devuelve `status: "pending"` (no relanza).
+- En `runAgent`, bucle de envío (~l. 483–497): si el primer envío lanza (`sent === 0`), cierra el plan
+  como obsoleto y hace **`throw error`**. El job falla y BullMQ lo corre **desde cero**: vuelve a llamar
+  al modelo (texto nuevo) y a intentar el envío. Por eso 3 generaciones.
+- La Fase E parte 2 ya quitó esto para fallas **del modelo** (tarjeta "El agente no pudo responder", sin
+  relanzar), pero **no para fallas del envío**: el `throw error` del bucle de envío sigue.
+- 5xx / sin respuesta: no se regenera ni se reenvía; queda "pendiente" → `expireUnconfirmedSends` lo da
+  por no confirmado → aviso al vendedor (`noticeFailedAgentSends`). El texto no se reintenta.
+
+**Lo que dice Zernio sobre confirmar un envío dudoso** (guía oficial *Idempotency & Safe Retries*):
+*"only a successful (`2xx`) response is stored for replay: a first attempt that fails releases the key"*
+y *"After an ambiguous failure (a `5xx` or a network timeout) the platform may already have accepted the
+message, and a failure after that point releases the key as well, so reconcile before you retry: list
+the conversation's messages … and treat an empty result as inconclusive rather than as proof nothing was
+sent."* O sea: la llave de idempotencia (el CRM ya manda `Idempotency-Key` = id del mensaje) solo cubre
+"salió y se perdió la respuesta 2xx"; tras un 5xx/timeout, listar los mensajes de la conversación puede
+**confirmar que sí salió**, pero **no puede probar que no salió**. Esto hay que decidirlo antes de
+programar el punto 4 de fix/agente-reenvio.
+
+**Plan acordado (NO construido; rama fix/agente-reenvio cuando lo indique el dueño):** generar una sola
+vez por lote y guardar antes de enviar; reintentar el MISMO texto; 4xx sin reintento (⚠ + "Reintentar" +
+aviso 🤖, sin pausar); 5xx/timeout con espera y conciliación previa; tests 400/500/timeout; prueba en el
+canal de simulación de staging (`ch_sim_anuncios`, cuenta ficticia `sim_anuncios_meta`, agente apagado
+salvo durante la prueba).
