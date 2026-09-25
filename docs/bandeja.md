@@ -83,14 +83,18 @@ usan vendedores, admin y owner (Server Action `pauseAgent`, sin ACL, como "React
   lo reactives") + "Reactivar". Decisión del dueño: toda pausa es "bot apagado"; la que deja un
   vendedor al contestar desde el CRM (sin tiempo, como antes) dice "hasta que lo reactives".
 - **Vuelve solo:** el barrido del worker (cada minuto) pasa a `activo` las pausas con hora cumplida,
-  con `agent_state_changed_at = ahora`, filtrando por organización; la Bandeja se entera por el SSE.
-  Si el cliente escribe después de la hora y antes del barrido, el gancho de entrante lo reactiva en
-  ese momento (ese mensaje sí se contesta).
-- **Solo mensajes nuevos:** lo que el cliente escribió con el bot apagado no se contesta al volver
-  (ni tras un reinicio del worker: el barrido de huérfanos solo ve entrantes posteriores al corte).
-  Responde a partir del siguiente mensaje del cliente; como hoy, el modelo lee TODO el historial.
+  filtrando por organización; la Bandeja se entera por el SSE. El corte (`agent_state_changed_at`)
+  es la HORA DE REGRESO prometida, no la del barrido (revisión de Codex: con "ahora", un mensaje
+  escrito entre la hora y el barrido no se podía rescatar si fallaba la cola). Si el cliente escribe
+  después de la hora y antes del barrido, el gancho de entrante lo reactiva en ese momento (ese
+  mensaje sí se contesta).
+- **Solo mensajes nuevos:** lo que el cliente ESCRIBIÓ con el bot apagado no se contesta al volver,
+  aunque el webhook llegue tarde (se compara la hora de WhatsApp, `sent_at`, con el corte; aplica
+  también tras "Reactivar") ni tras un reinicio del worker (el barrido de huérfanos usa la misma
+  regla). Responde a partir del siguiente mensaje del cliente; como hoy, el modelo lee TODO el historial.
 - **El temporizador se respeta:** si el vendedor escribe con el bot apagado por tiempo, la hora no
-  cambia. Si escribe con el bot encendido (o ya cumplida la hora), se apaga sin tiempo como siempre.
+  cambia. Si escribe con el bot encendido (o ya cumplida la hora), se apaga sin tiempo como siempre
+  (un solo UPDATE condicional: no borra una hora que otro vendedor acaba de elegir).
 - Al apagarlo se cancela el job pendiente; si el agente ya estaba escribiendo, su respuesta no sale.
 - El interruptor general del canal (pestaña Agente IA) no cambia.
 
