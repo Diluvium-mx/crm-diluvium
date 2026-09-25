@@ -88,3 +88,37 @@ export const EMPTY_RESPONSE_INFO: ModelErrorInfo = { kind: "vacia", resumen: "El
 export function agentErrorBody(info: ModelErrorInfo, modelLabel: string, retried: boolean): string {
   return `El agente no pudo responder (${modelLabel}). ${info.resumen}${retried ? " Ya se reintentó una vez." : ""} El cliente sigue sin respuesta: elige "Reintentar" o "Apagar".`;
 }
+
+// ── Falla al ENVIAR la respuesta por WhatsApp (Fase E, 25-sep-2026) ─────────────
+// El modelo sí contestó, pero el primer mensaje no salió porque lo rechazaron de forma
+// DEFINITIVA: el CRM (ventana de 24 h cerrada, canal apagado, conversación sin enlazar,
+// texto inválido) o WhatsApp/Zernio (rechazo explícito). Antes la cola reintentaba 3
+// veces (y el barrido hasta 5): cada intento pagaba OTRA llamada al modelo y dejaba otra
+// burbuja fallida con distinto texto, y el cliente seguía sin respuesta. Ahora: tarjeta
+// con el motivo y "Reintentar"/"Apagar", como un error del modelo. Un resultado
+// DUDOSO (timeout, 5xx) no llega aquí: queda "pendiente" y el outbox lo concilia sin
+// reenviar. Devuelve null si no es un rechazo definitivo (p. ej. la BD falló: la cola
+// reintenta como siempre, nada salió).
+const SEND_REJECTED_TEXT: Record<string, string> = {
+  window_closed: "La ventana de 24 h de WhatsApp ya cerró: solo se puede mandar una plantilla.",
+  channel_unavailable: "El canal de WhatsApp de esta conversación no está disponible.",
+  not_linked: "La conversación aún no está enlazada con el proveedor de WhatsApp.",
+  empty: "La respuesta del agente no es válida para WhatsApp (vacía o demasiado larga).",
+  not_found: "La conversación ya no existe.",
+};
+
+export function classifySendError(error: unknown): string | null {
+  const e = asObj(error);
+  const name = str(e.name);
+  const code = str((e as { code?: unknown }).code);
+  if (name === "SendRejectedError") return SEND_REJECTED_TEXT[code] ?? `El CRM no pudo enviar el mensaje (${detalle(e) || code}).`;
+  if (name === "SendFailedError" && (e as { outcome?: unknown }).outcome === "rejected") {
+    const d = detalle(e);
+    return `WhatsApp rechazó el mensaje${d ? ` (${d})` : ""}.`;
+  }
+  return null;
+}
+
+export function sendErrorBody(motivo: string): string {
+  return `El agente no pudo enviar su respuesta por WhatsApp. ${motivo} El cliente sigue sin respuesta: elige "Reintentar" o "Apagar".`;
+}

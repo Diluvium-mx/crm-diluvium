@@ -254,9 +254,11 @@ solo owner/admin).
 - **Embudo** (antes "Contactos"): el tablero kanban (el embudo vive SOLO aquí). Al hacer clic en una
   tarjeta se abre el mismo chat, con el historial completo, la temperatura y la etapa, sin salir del
   tablero.
-- **Dashboard**: conversaciones nuevas (contactos creados, sin `ghl_import` ni `seed`) por día local
-  de Mazatlán, desgloses por canal/etapa/anuncio y comparación contra el mismo tramo del periodo
-  anterior. "Gasto de IA" solo owner/admin (placeholder hasta `ai_usage`).
+- **Dashboard**: HASTA ARRIBA el "Gasto de IA" (solo owner/admin; decisión del dueño 25-sep: el saldo
+  importa más que las métricas): total del mes y, por cada proveedor con llave, gasto del mes y saldo
+  estimado en cifras grandes. Debajo, conversaciones nuevas (contactos creados, sin `ghl_import` ni
+  `seed`) por día local de Mazatlán, desgloses por canal/etapa/anuncio y comparación contra el mismo
+  tramo del periodo anterior.
 - **Composer**: "/" busca Fragmentos (`{{vendedor}}` = usuario logueado), ⚡ Fragmentos, 📄
   Plantillas y 🕒 Programar (hora de Mazatlán; fuera de la ventana de 24 h a esa hora, solo
   plantilla; "cancelar si el cliente escribe antes" lo decide el worker al disparar).

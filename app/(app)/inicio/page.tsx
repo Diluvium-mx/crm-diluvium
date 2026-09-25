@@ -16,7 +16,7 @@ import { PeriodCards } from "./_components/period-cards";
 import { RangeFilter } from "./_components/range-filter";
 
 // Dashboard (A2): destino al entrar. Todos lo ven; "Gasto de IA" solo
-// owner/admin. Los datos se calculan en el servidor para la organización de la
+// owner/admin y, desde la Fase E, hasta arriba. Los datos se calculan en el servidor para la organización de la
 // sesión (lib/dashboard/queries.ts).
 const CHANNEL_LABELS: Record<string, string> = {
   whatsapp: "WhatsApp",
@@ -47,9 +47,14 @@ export default async function InicioPage({ searchParams }: PageProps<"/inicio">)
 
   return (
     <div className="mx-auto flex w-full max-w-6xl flex-col gap-4 p-4">
+      <h1 className="text-lg font-semibold">Dashboard</h1>
+
+      {/* Fase E (decisión del dueño): el Gasto de IA va primero; el saldo importa más que las métricas. */}
+      {spend && <AiSpendCard summary={spend} canRegister={roleAllows(role, "aiSpend", "update")} />}
+
       <header className="flex flex-wrap items-end justify-between gap-3">
         <div>
-          <h1 className="text-lg font-semibold">Dashboard</h1>
+          <h2 className="text-base font-semibold">Conversaciones nuevas</h2>
           <p className="text-xs text-muted-foreground">
             Conversaciones nuevas = contactos nuevos que escribieron. No cuenta los importados de GHL.
           </p>
@@ -80,8 +85,6 @@ export default async function InicioPage({ searchParams }: PageProps<"/inicio">)
           </p>
         </div>
       </div>
-
-      {spend && <AiSpendCard summary={spend} canRegister={roleAllows(role, "aiSpend", "update")} />}
     </div>
   );
 }
