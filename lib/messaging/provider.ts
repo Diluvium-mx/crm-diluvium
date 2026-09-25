@@ -30,6 +30,8 @@ export type NormalizedAttachment = {
   providerMediaId?: string;
   /** sha256 del archivo (base64) según WhatsApp: verifica la descarga. */
   sha256?: string;
+  /** El proveedor no trae el archivo (p. ej. media vieja del historial): motivo. `url` va vacía. */
+  unavailable?: string;
 };
 
 // Mensaje entrante del contacto, o eco de uno saliente (enviado desde el CRM,

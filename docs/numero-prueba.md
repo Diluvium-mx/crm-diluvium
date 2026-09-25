@@ -80,8 +80,8 @@ documentación, no lo dice) y que las fechas de la API sean las originales. El i
 ## 2–6. Lo que hace el CRM (ya en producción antes del QR)
 
 - **Marca "Prueba" por canal** (`channels.is_test`): nada de lo que entra o sale por N1/N2 cuenta en el
-  Dashboard (conversaciones nuevas, desgloses, comparación), ni sus contactos (`contacts.es_prueba`), ni lo
-  importado. Etiqueta **Prueba** en la fila de la Bandeja, la cabecera del chat (también el pop-up del
+  Dashboard (conversaciones nuevas, desgloses, comparación), ni los contactos que nacieron en ellos
+  (`contacts.es_prueba`; un cliente que ya existía, p. ej. importado de GHL, nunca se marca), ni lo importado. Etiqueta **Prueba** en la fila de la Bandeja, la cabecera del chat (también el pop-up del
   Embudo) y la tarjeta del Embudo. El gasto de IA sí cuenta (no se filtra). El Dashboard no muestra la
   primera respuesta; en la base, lo importado nunca la calcula.
 - **Varios canales a la vez:** todo envío (vendedor, fragmento, plantilla, programado, workflow, agente)
@@ -95,6 +95,9 @@ documentación, no lo dice) y que las fechas de la API sean las originales. El i
   respuesta, no pone el semáforo en rojo y no mueve etapa ni temperatura. Los contactos nuevos nacen en
   Inbox, marcados Prueba (source `historial_celular`). La agenda del celular solo **rellena nombres vacíos**
   de contactos que ya existen. Sirve igual para N3.
+- **Red de seguridad por hora de conexión** (`channels.connected_at`): lo enviado antes de conectar el
+  número es historial aunque llegue por webhook sin marca. Adjuntos viejos sin archivo (Meta solo copia la
+  media reciente) quedan como "no disponible" con su tipo, en vez de perderse.
 - **Eco de la app:** se guarda como saliente "desde la app", pausa al agente en esa conversación (se
   reactiva solo con "Reactivar") y no toca la ventana de 24 h (ya existía; verificado con tests).
 
@@ -125,9 +128,11 @@ servicio `crm-diluvium` (nunca se imprimen). `$PROD` = el prefijo que arma ambas
 railway run -p a59d3041-d62f-4d10-822f-2e3026ca4f21 -e production -s Postgres -- sh -c 'railway run -p a59d3041-d62f-4d10-822f-2e3026ca4f21 -e production -s crm-diluvium -- env DATABASE_URL="postgresql://$PGUSER:$PGPASSWORD@$RAILWAY_TCP_PROXY_DOMAIN:$RAILWAY_TCP_PROXY_PORT/$PGDATABASE?sslmode=require" npm run <comando>'
 ```
 
-1. accountId de N2 (solo lectura): `GET /v1/accounts?page=1&limit=100`.
+1. accountId de N2 y su hora de conexión (solo lectura): `GET /v1/accounts?page=1&limit=100`.
 2. Alta del canal **antes** de permitir la cuenta (así no hay hueco):
-   `npm run canal:prueba -- --cuenta <N2> --nombre "Número de prueba" --telefono +52… --confirmar`.
+   `npm run canal:prueba -- --cuenta <N2> --conectado <hora de conexión ISO> --nombre "Número de prueba" --telefono +52… --confirmar`.
+   `--conectado` es la red de seguridad: todo lo enviado ANTES de esa hora entra como historial aunque
+   Zernio lo mande por webhook sin la marca `coexistence_history` (nunca activa agente ni no leídos).
 3. `ZERNIO_ALLOWED_ACCOUNT_IDS` de `crm-diluvium` (production): se agrega `<N2>` conservando lo demás
    (mostrar antes y después). El worker no la usa (solo el webhook y el replay).
 4. `npm run webhooks:replay` (libera la cuarentena de N2).
@@ -250,8 +255,9 @@ Fuera de hoy: N2 está en otra cuenta de Meta ("Diluvium Pruebas"); se prueban c
   el Dashboard (regla "ni los contactos creados por él").
 - Un historial muy grande (N3, 6 meses) genera un aviso de tiempo real por mensaje: la Bandeja abierta
   recarga filas durante la importación.
-- Los adjuntos del historial de más de ~14 días pueden no traer URL (Meta) o caducar en Zernio (~7 días):
-  quedan como "no se pudo descargar".
+- Los adjuntos del historial de más de ~14 días no traen archivo (Meta): quedan "no disponible". Si una
+  corrida posterior del importador sí trae la URL, no se enriquece el mensaje ya guardado.
+- Archivar N1 no puede frenar un envío que ya iba en curso al momento de archivar (se reporta y se espera).
 
 ## Estado y relevo
 

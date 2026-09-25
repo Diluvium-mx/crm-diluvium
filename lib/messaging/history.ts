@@ -17,16 +17,33 @@
 import { and, eq, inArray, sql } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { withTxRetry } from "@/lib/db/retry";
-import { channels, contacts, conversations, messages } from "@/lib/db/schema";
+import { channels, contacts, conversations, messages, type MessageAttachment } from "@/lib/db/schema";
+import { MEDIA_MAX_ATTEMPTS } from "./media-keys";
 import { phoneLookupVariants } from "@/lib/phone";
 import {
   DeadLetterIngestError,
   eventIdentity,
-  markTestContact,
   resolveContact,
   type IngestHooks,
 } from "./ingest";
 import type { NormalizedMessageEvent, ProviderName } from "./provider";
+
+/**
+ * ¿Es copia del historial del celular? Sí si trae la marca, o si su hora de WhatsApp
+ * es ANTERIOR a la conexión del número a la API (channels.connected_at): nada de lo
+ * enviado antes de conectar puede ser un mensaje vivo, aunque Zernio lo mande por
+ * webhook sin la marca `coexistence_history`.
+ */
+export function isPhoneHistory(channel: Pick<ChannelRow, "connectedAt">, event: Pick<NormalizedMessageEvent, "history" | "sentAt">): boolean {
+  return event.history === true || (channel.connectedAt !== null && event.sentAt.getTime() < channel.connectedAt.getTime());
+}
+
+/** Adjunto del historial ya listo para guardar (uno sin URL queda como "no disponible"). */
+function storedAttachments(event: NormalizedMessageEvent): MessageAttachment[] {
+  return event.attachments.map((a) =>
+    a.unavailable ? { ...a, unavailable: undefined, downloadAttempts: MEDIA_MAX_ATTEMPTS, downloadError: a.unavailable } : a,
+  );
+}
 
 /** source de los contactos que nacen del historial (el Dashboard los excluye). */
 export const HISTORY_CONTACT_SOURCE = "historial_celular";
@@ -86,12 +103,12 @@ export async function ingestHistoryMessage(
           })
           .returning();
       }
-      if (channel.isTest) await markTestContact(tx, orgId, conversation.contactId);
 
       // Mismo orden de bloqueo que la ingesta en vivo: conversación → mensajes.
       const [locked] = await tx.select().from(conversations).where(eq(conversations.id, conversation.id)).for("update");
 
-      const first = event.attachments[0];
+      const attachments = storedAttachments(event);
+      const first = attachments[0];
       const rows = await tx
         .insert(messages)
         .values({
@@ -102,8 +119,8 @@ export async function ingestHistoryMessage(
           source: event.source,
           type: event.type,
           body: event.body,
-          attachments: event.attachments,
-          mediaUrl: first?.url ?? null,
+          attachments,
+          mediaUrl: first?.url || null,
           mediaMimeType: first?.mimeType ?? null,
           providerMessageId: event.providerMessageId,
           // La API de Zernio no da su id interno en el historial (solo el wamid).
@@ -129,7 +146,7 @@ export async function ingestHistoryMessage(
 
   // Después del commit: la descarga ya puede leer la fila (si no hay cola, el
   // barrido del worker recoge los adjuntos pendientes).
-  if (inserted && event.attachments.length > 0 && hooks.onMediaMessage) await hooks.onMediaMessage(inserted);
+  if (inserted && event.attachments.some((a) => a.url && !a.unavailable) && hooks.onMediaMessage) await hooks.onMediaMessage(inserted);
   return inserted
     ? { outcome: "historial del celular importado", organizationId: orgId, result: "importado" }
     : { outcome: "historial del celular duplicado (wamid ya guardado)", organizationId: orgId, result: "duplicado" };

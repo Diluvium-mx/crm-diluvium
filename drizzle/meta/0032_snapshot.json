@@ -1,5 +1,5 @@
 {
-  "id": "a43f01c2-614b-4016-8fed-13824e171532",
+  "id": "186de593-d588-49e5-ba21-118516d9b213",
   "prevId": "99285099-429c-40db-bd54-cfc28123ceb1",
   "version": "7",
   "dialect": "postgresql",
@@ -1131,6 +1131,12 @@
         },
         "archived_at": {
           "name": "archived_at",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "connected_at": {
+          "name": "connected_at",
           "type": "timestamp",
           "primaryKey": false,
           "notNull": false
