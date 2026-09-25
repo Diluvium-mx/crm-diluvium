@@ -1,40 +1,39 @@
 import { describe, expect, it } from "vitest";
-import { buildAgentTools, TOOL_FIJAR_COTIZACION, validateToolCalls } from "./tools";
+import { buildAgentTools, TOOL_AVISO_VENDEDOR, TOOL_FIJAR_COTIZACION, TOOL_MOVER_ETAPA, validateToolCalls } from "./tools";
 
 const rows = [
   { id: "w1", slug: "tabla_tamanos_estandar", name: "Tabla", description: "Envía la tabla de tamaños." },
-  { id: "w2", slug: "cambiar_etapa", name: "Etapa", description: "Mueve la etapa." },
-  { id: "w3", slug: "pago_confirmado", name: "Pago", description: "Confirma un pago." },
+  { id: "w2", slug: "datos_bancarios", name: "Banco", description: "Envía los datos bancarios." },
 ];
 
-describe("herramientas del cerebro (Fase D)", () => {
-  it("una por workflow (wf_<slug>, descripción = 'Cuándo usarlo') + fijar_cotizacion", () => {
+describe("herramientas del cerebro (Fase D reestructurada)", () => {
+  it("una por workflow de media + fijar_cotizacion, mover_etapa y aviso_vendedor; ninguna de cobro/etapa/humano como workflow", () => {
     const t = buildAgentTools(rows);
-    expect(Object.keys(t.tools)).toEqual(["wf_tabla_tamanos_estandar", "wf_cambiar_etapa", "wf_pago_confirmado", TOOL_FIJAR_COTIZACION]);
-    expect(t.tools.wf_tabla_tamanos_estandar.description).toBe("Envía la tabla de tamaños.");
-    expect(t.byName.get("wf_cambiar_etapa")).toEqual({ id: "w2", slug: "cambiar_etapa", name: "Etapa" });
+    expect(Object.keys(t.tools)).toEqual(["wf_tabla_tamanos_estandar", "wf_datos_bancarios", TOOL_FIJAR_COTIZACION, TOOL_MOVER_ETAPA, TOOL_AVISO_VENDEDOR]);
+    expect(Object.keys(t.tools)).not.toContain("wf_pago_confirmado");
+    expect(Object.keys(t.tools)).not.toContain("wf_cambiar_etapa");
+    expect(Object.keys(t.tools)).not.toContain("wf_transferir_humano");
   });
-  it("valida llamadas: desconocida/deshabilitada se ignora, argumentos con Zod, repetida cuenta una vez", () => {
+  it("valida llamadas: argumentos con Zod, desconocida se ignora, la misma media una vez", () => {
     const t = buildAgentTools(rows);
     const { valid, ignored } = validateToolCalls(
       [
         { toolName: "wf_tabla_tamanos_estandar", input: {} },
         { toolName: "wf_tabla_tamanos_estandar", input: {} },
-        { toolName: "wf_cambiar_etapa", input: { etapa: "compra" } },
-        { toolName: "wf_cambiar_etapa", input: { etapa: "ganado" } },
-        { toolName: "wf_datos_bancarios", input: {} },
+        { toolName: "wf_pago_confirmado", input: {} },
+        { toolName: TOOL_MOVER_ETAPA, input: { etapa: "compra" } },
+        { toolName: TOOL_MOVER_ETAPA, input: { etapa: "ganado" } },
         { toolName: TOOL_FIJAR_COTIZACION, input: { monto: 5500 } },
-        { toolName: TOOL_FIJAR_COTIZACION, input: { monto: -1 } },
-        { toolName: "wf_pago_confirmado", input: { monto: "$5,500", fecha: null, banco: "BBVA", referencia: "ABC123" } },
+        { toolName: TOOL_AVISO_VENDEDOR, input: { motivo: "cotejar_deposito", detalle: "Pagó", monto: "$5,500", referencia: "ABC 123", banco: "BBVA", fecha: "23/09/2026", tipo: "total" } },
+        { toolName: TOOL_AVISO_VENDEDOR, input: { motivo: "otro", detalle: "x" } },
       ],
       t,
     );
-    expect(valid).toEqual([
-      { kind: "workflow", workflow: { id: "w1", slug: "tabla_tamanos_estandar", name: "Tabla" }, args: {} },
-      { kind: "workflow", workflow: { id: "w2", slug: "cambiar_etapa", name: "Etapa" }, args: { etapa: "compra" } },
-      { kind: "cotizacion", monto: 5500 },
-      { kind: "workflow", workflow: { id: "w3", slug: "pago_confirmado", name: "Pago" }, args: { monto: "$5,500", fecha: null, banco: "BBVA", referencia: "ABC123" } },
+    expect(valid.map((v) => v.kind)).toEqual(["workflow", "etapa", "cotizacion", "aviso"]);
+    expect(ignored).toEqual([
+      "wf_pago_confirmado: herramienta desconocida o deshabilitada",
+      `${TOOL_MOVER_ETAPA}: argumentos inválidos`,
+      `${TOOL_AVISO_VENDEDOR}: argumentos inválidos`,
     ]);
-    expect(ignored).toEqual(["wf_cambiar_etapa: argumentos inválidos", "wf_datos_bancarios: herramienta desconocida o deshabilitada", `${TOOL_FIJAR_COTIZACION}: argumentos inválidos`]);
   });
 });

@@ -7,9 +7,9 @@
 // Goal que aquí todavía no existen (así el cliente nunca espera algo que no llega).
 import { buildBrainSystem, type Faq } from "./knowledge";
 
-// Señal de respaldo de "Transferencia a humano" (la herramienta wf_transferir_humano
-// hace lo mismo). El agente la agrega AL FINAL: el CRM la quita, envía el resto y
-// deja un aviso al vendedor en la Bandeja. El agente sigue activo.
+// Señal vieja de "Transferencia a humano" (Goals anteriores al 24-sep-2026): si el
+// modelo todavía la escribe, el CRM la quita del texto y la trata como
+// aviso_vendedor(cliente_pide_humano). El agente sigue activo.
 export const HANDOVER_TOKEN = "[TRANSFERIR]";
 
 // Si el modelo solo devolvió la señal (sin texto para el cliente), el cliente
@@ -20,10 +20,10 @@ export const HANDOVER_FALLBACK_TEXT = "Con gusto, en un momento te atiende un as
 // entre llamadas y la caché del proveedor lo reutiliza.
 export const RUNTIME_SUFFIX = `INSTRUCCIONES DEL CRM
 - Escribe solo el texto que se enviará al cliente por WhatsApp, sin etiquetas ni explicaciones.
-- Las acciones del Goal (tabla de tamaños, videos de instalación, datos bancarios, tapones, dónde medir, medidas especiales, cambiar de etapa, pasar a humano, confirmar un pago) se activan llamando la herramienta que corresponda en la MISMA respuesta: primero tu texto para el cliente y luego la llamada. El CRM envía el archivo después de tu texto. No prometas enviar algo sin llamar su herramienta; si no hay herramienta para eso, responde solo con texto.
-- Cada vez que le digas un total al cliente, llama fijar_cotizacion con ese total en pesos.
-- Si el cliente manda la imagen de un comprobante de pago, lee monto, fecha, banco y referencia y llama pago_confirmado (o anticipo_confirmado si es el 50 % de una compuerta a la medida). El CRM verifica el monto contra lo cotizado antes de confirmar: escribe tu texto como si el pago cuadrara y el CRM lo sustituye si no cuadra.
-- Para "Transferencia a humano" también puedes escribir ${HANDOVER_TOKEN} al final, en una línea aparte. Si el cliente vuelve a escribir antes de que conteste un asesor, sigue atendiéndolo.`;
+- Las acciones se activan con herramientas en la MISMA respuesta: primero tu texto para el cliente y luego la llamada. Los archivos (tabla de tamaños, videos, datos bancarios, tapones, dónde medir, medidas especiales) los envía el CRM después de tu texto; no prometas enviar algo sin llamar su herramienta.
+- Acciones internas (el cliente no las ve): fijar_cotizacion cuando le digas un total; mover_etapa cuando el Goal diga que avanza de etapa; aviso_vendedor para avisar al vendedor (cotejar_deposito, cliente_pide_humano, comprobante_dudoso). Al confirmar un pago o dudar de un comprobante manda en aviso_vendedor lo que leíste: monto, referencia, banco, fecha y tipo.
+- La sección [CONTEXTO DEL CRM] al final del último mensaje del cliente la pone el CRM (etapa, cotización, comprobantes registrados): úsala, no la menciones ni la repitas.
+- Sigues atendiendo siempre; el CRM nunca te pausa por estas acciones.`;
 
 export function buildBrainSystemWithRuntime(goal: string, faqs: readonly Faq[]): string {
   return `${buildBrainSystem(goal, faqs)}\n\n${RUNTIME_SUFFIX}`;

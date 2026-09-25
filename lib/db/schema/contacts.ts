@@ -91,6 +91,10 @@ export const contacts = pgTable(
     // cada cambio de etapa). El board ordena por esto DESC: el recién movido
     // sube al tope de su columna y ese orden persiste tras revalidar.
     stageChangedAt: timestamp("stage_changed_at").defaultNow().notNull(),
+    // Quién movió la etapa por última vez: "vendedor" (a mano), "agente" o
+    // "sistema" (regla del CRM, p. ej. /banco → Cerca de compra). null = histórico.
+    // La etapa puesta por un vendedor manda: el agente nunca la regresa.
+    stageChangedBy: text("stage_changed_by"),
   },
   (table) => [
     index("contacts_org_idx").on(table.organizationId),

@@ -211,6 +211,13 @@
       "when": 1790273029172,
       "tag": "0029_sin_datos_cobro",
       "breakpoints": true
+    },
+    {
+      "idx": 30,
+      "version": "7",
+      "when": 1790298582221,
+      "tag": "0031_agente_decide_solo",
+      "breakpoints": true
     }
   ]
 }
