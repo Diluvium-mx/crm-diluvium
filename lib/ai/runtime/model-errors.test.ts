@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { agentErrorBody, classifyModelError } from "./model-errors";
+import { agentErrorBody, classifyModelError, classifySendError, sendErrorBody } from "./model-errors";
 
 const api = (statusCode: number, message: string, responseBody = "") => Object.assign(new Error(message), { name: "AI_APICallError", statusCode, responseBody });
 
@@ -38,5 +38,14 @@ describe("errores del modelo en palabras simples", () => {
   it("la tarjeta dice qué pasó, con qué modelo y qué hacer", () => {
     const body = agentErrorBody(classifyModelError(api(529, "Overloaded"), "Anthropic"), "Claude Sonnet 5", true);
     expect(body).toBe('El agente no pudo responder (Claude Sonnet 5). Anthropic está saturado o con fallas en este momento. Ya se reintentó una vez. El cliente sigue sin respuesta: elige "Reintentar" o "Apagar".');
+  });
+
+  it("envío rechazado de forma definitiva → motivo simple; lo dudoso o de BD → null (sigue la cola)", () => {
+    const rejected = (code: string, message: string) => Object.assign(new Error(message), { name: "SendRejectedError", code });
+    expect(classifySendError(rejected("window_closed", "La ventana de 24 h está cerrada"))).toBe("La ventana de 24 h de WhatsApp ya cerró: solo se puede mandar una plantilla.");
+    expect(classifySendError(Object.assign(new Error("recipient not allowed"), { name: "SendFailedError", code: "131030", outcome: "rejected" }))).toBe("WhatsApp rechazó el mensaje (recipient not allowed).");
+    expect(classifySendError(Object.assign(new Error("timeout"), { name: "SendFailedError", code: "x", outcome: "unknown" }))).toBeNull();
+    expect(classifySendError(new Error("connection terminated"))).toBeNull();
+    expect(sendErrorBody("Motivo.")).toBe('El agente no pudo enviar su respuesta por WhatsApp. Motivo. El cliente sigue sin respuesta: elige "Reintentar" o "Apagar".');
   });
 });

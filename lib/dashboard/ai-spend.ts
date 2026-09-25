@@ -76,13 +76,22 @@ export function spendFrom(monthStart: string, firstTopups: readonly string[]): s
 type Load = { provider: string; loadedUsd: number; firstTopupOn: string };
 
 // PURO: arma los números de cada proveedor a partir del gasto diario y las recargas.
-export function summarizeProviders(input: { monthStart: string; days: readonly DaySpend[]; loads: readonly Load[] }): ProviderSpend[] {
+// `connected` (Fase E): proveedores con su llave en el servidor; salen aunque aún no
+// tengan gasto (el dueño les cargó saldo y quiere verlos). Orden fijo: el de PROVIDER_META.
+export function summarizeProviders(input: {
+  monthStart: string;
+  days: readonly DaySpend[];
+  loads: readonly Load[];
+  connected?: readonly string[];
+}): ProviderSpend[] {
   const monthEnd = nextMonthStart(input.monthStart);
   const loadBy = new Map(input.loads.map((l) => [l.provider, l]));
-  const seen = new Set<string>([...ALWAYS]);
+  const seen = new Set<string>([...ALWAYS, ...(input.connected ?? [])]);
   for (const d of input.days) seen.add(d.provider);
   for (const l of input.loads) seen.add(l.provider);
-  return [...seen].map((provider) => {
+  const order = Object.keys(PROVIDER_META);
+  const rank = (p: string) => (order.includes(p) ? order.indexOf(p) : order.length);
+  return [...seen].sort((a, b) => rank(a) - rank(b)).map((provider) => {
     const load = loadBy.get(provider);
     const spent = load ? sumDays(input.days, provider, load.firstTopupOn) : null;
     return {
@@ -134,7 +143,13 @@ export async function aiSpendSummary(database: Database, organizationId: string,
 
   return {
     monthLabel: new Intl.DateTimeFormat("es-MX", { month: "long", year: "numeric", timeZone: "UTC" }).format(new Date(`${monthStart}T12:00:00Z`)),
-    providers: summarizeProviders({ monthStart, days, loads }),
+    providers: summarizeProviders({
+      monthStart,
+      days,
+      loads,
+      // Solo si la variable de la llave EXISTE en el servidor (nunca su valor).
+      connected: Object.values(PROVIDER_META).filter((m) => Boolean(process.env[m.envKey])).map((m) => m.id),
+    }),
     topups: topups.map((t) => ({
       id: t.id,
       provider: t.provider,

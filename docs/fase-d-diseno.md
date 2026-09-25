@@ -810,7 +810,7 @@ Etapa solo hacia adelante y agente activo en todo el guion. **Costo:** 9 llamada
 
 ### 11.3 Pendientes (anotados, sin construir)
 
-- **A — POR VERIFICAR.** El dueño no vio falla desde el celular (el video contestó todo). Antes de
+- **A — RESUELTO en la Fase E (25-sep, ver `docs/agente-ia.md`).** El dueño no vio falla desde el celular (el video contestó todo). Antes de
   construirla se prueba con un mensaje que traiga otra pregunta, por ejemplo "¿cómo se instalan y
   cuánto cuestan?". Si falla: el historial para el modelo termina siempre en el turno del cliente (lo
   que salió por palabra clave va como nota) y un error definitivo del cerebro deja aviso al vendedor.
@@ -831,7 +831,7 @@ Etapa solo hacia adelante y agente activo en todo el guion. **Costo:** 9 llamada
   largos bajaría de ~$0.15 a ~$0.03 por respuesta, sin cambiar lo que el agente lee.
 - **F (hecho).** El aviso "Acción del agente no ejecutada: … ya salió por palabra clave" no le pide nada al
   vendedor: que quede solo en el registro interno.
-- **Nota — tope diario de $20:** `ai_config.daily_budget_usd` vale 20.00 en producción, pero no se aplica
+- **Nota — tope diario de $20 (el dueño decidió quitarlo; la columna se borra después de Anuncios):** `ai_config.daily_budget_usd` vale 20.00 en producción, pero no se aplica
   (desde el cierre de la Fase B el agente va sin presupuesto diario por decisión del dueño) ni se muestra
   en la UI. Queda para decidir: aplicarlo o quitar la columna para que no confunda.
 
