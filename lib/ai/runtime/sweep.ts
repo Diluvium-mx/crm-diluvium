@@ -34,7 +34,7 @@ export async function findOrphanConversations(now: Date, limit = 50): Promise<Or
     from conversations c
     join channels ch on ch.id = c.channel_id
     join lateral (
-      select m.id, m.direction, m.created_at
+      select m.id, m.direction, m.created_at, m.sent_at
       from messages m
       where m.conversation_id = c.id and m.status <> 'failed'
         -- Igual que pendingInbound (Fase D): un aviso interno o la media de un
@@ -56,9 +56,12 @@ export async function findOrphanConversations(now: Date, limit = 50): Promise<Or
       and last.created_at < ${ts(new Date(now.getTime() - ORPHAN_MIN_AGE_SECONDS * 1000))}
       and last.created_at > ${ts(since)}
       -- Lo escrito ANTES de encender el canal o de reactivar al agente no se
-      -- contesta solo: espera al siguiente mensaje del cliente.
+      -- contesta solo: espera al siguiente mensaje del cliente. Contra la
+      -- reactivación cuenta la hora en que el cliente lo ESCRIBIÓ (WhatsApp): un
+      -- mensaje escrito con el bot apagado que llegó tarde tampoco ("Apagar bot").
+      -- WhatsApp da segundos enteros: lo escrito en el mismo segundo del corte es nuevo.
       and last.created_at > coalesce(ch.ai_agent_mode_changed_at, '-infinity'::timestamp)
-      and last.created_at > coalesce(c.agent_state_changed_at, '-infinity'::timestamp)
+      and coalesce(last.sent_at, last.created_at) >= coalesce(date_trunc('second', c.agent_state_changed_at), '-infinity'::timestamp)
       and not exists (
         select 1 from ai_usage u
         where u.organization_id = c.organization_id and u.message_id = last.id

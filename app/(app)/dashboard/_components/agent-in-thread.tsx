@@ -1,9 +1,9 @@
 "use client";
 
-// El Agente IA dentro del hilo (Fase B): aviso "🤖 Agente pausado" con
-// "Reactivar" (bajo el aviso de 24 h) y los avisos del agente para el vendedor,
-// intercalados en el hilo (discretos, sin acción). Se recarga con cada evento SSE
-// de la conversación (refreshToken), igual que los programados.
+// El Agente IA dentro del hilo (Fase B): aviso "🤖 Bot apagado · vuelve hoy 22:30"
+// (o "hasta que lo reactives") con "Reactivar" (bajo el aviso de 24 h) y los avisos
+// del agente para el vendedor, intercalados en el hilo (discretos, sin acción). Se
+// recarga con cada evento SSE de la conversación (refreshToken), igual que los programados.
 import { useCallback, useEffect, useState } from "react";
 import { getConversationAgent, reactivateAgent } from "@/lib/actions/agente-conversacion";
 import type { AgentNoticeView, AgentThreadView } from "@/lib/agente-ia/types";
@@ -32,10 +32,13 @@ export function AgentPausedBanner({
   conversationId,
   agent,
   onChanged,
+  nowMs,
 }: {
   conversationId: string;
   agent: AgentThreadView | null;
   onChanged: () => void;
+  // Reloj del chat: "hoy"/"mañana" se recalculan con él.
+  nowMs?: number;
 }) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -53,7 +56,7 @@ export function AgentPausedBanner({
   return (
     <div className="flex flex-wrap items-center justify-center gap-x-3 gap-y-1 border-b bg-muted/60 px-4 py-1.5 text-xs text-foreground">
       <span>
-        🤖 <span className="font-medium">Agente pausado</span> · {pauseReason(agent)}
+        🤖 <span className="font-medium">Bot apagado</span> · {pauseReason(agent, nowMs === undefined ? undefined : new Date(nowMs))}
       </span>
       <button
         type="button"
