@@ -260,6 +260,7 @@ solo owner/admin).
 - **Composer**: "/" busca Fragmentos (`{{vendedor}}` = usuario logueado), ⚡ Fragmentos, 📄
   Plantillas y 🕒 Programar (hora de Mazatlán; fuera de la ventana de 24 h a esa hora, solo
   plantilla; "cancelar si el cliente escribe antes" lo decide el worker al disparar).
+- **Apagar bot** (25-sep-2026): por conversación, 8/12/24 h, hora exacta (Mazatlán, ≤30 días) o hasta reactivarlo; vuelve solo con el barrido del worker y no contesta lo escrito mientras estuvo apagado. Detalle: `docs/bandeja.md`.
 
 ```
 ┌─ Lista (se cierra) ─┬──── Chat ────────────────────────┬─ Contacto (se cierra) ─┐
