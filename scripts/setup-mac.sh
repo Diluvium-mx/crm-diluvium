@@ -1,11 +1,11 @@
 #!/usr/bin/env bash
 # Prepara una Mac para trabajar en el CRM Diluvium (ver docs/migrar-mac.md).
-# Instala lo que falte, crea ~/Documents/Diluvium/{crm-diluvium,chats,media,notas},
+# Instala lo que falte, crea "~/Documents/Diluvium CRM"/{crm-diluvium,chats,media,notas},
 # clona el repo e instala dependencias. No toca secretos ni inicia sesiones por ti.
 # Se puede correr varias veces: lo que ya existe se deja igual.
 set -euo pipefail
 
-BASE="$HOME/Documents/Diluvium"
+BASE="$HOME/Documents/Diluvium CRM"
 REPO_DIR="$BASE/crm-diluvium"
 REPO="Diluvium-mx/crm-diluvium"
 

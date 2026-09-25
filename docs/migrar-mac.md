@@ -6,10 +6,11 @@
 
 ## 1. La carpeta única
 
-Todo lo del CRM en la Mac vive en `~/Documents/Diluvium/`:
+Todo lo del CRM en la Mac vive en `~/Documents/Diluvium CRM/` (el nombre lleva espacio: en la terminal,
+siempre entre comillas, p. ej. `cd "$HOME/Documents/Diluvium CRM"`):
 
 ```
-~/Documents/Diluvium/
+~/Documents/Diluvium CRM/
   crm-diluvium/   copia principal del repo (todos los .md del CRM viven en su raíz y en docs/)
   chats/          una carpeta por chat de Code (git worktrees)
   media/          videos, fotos y PDF originales de los workflows; media/listos/ = versiones para WhatsApp
@@ -46,7 +47,7 @@ Nadie más que el usuario escribe contraseñas. Cada uno abre el navegador:
    (`.git/.push-credentials` de la Mac anterior es un token en texto plano): cuando la Mac vieja se
    retire, revócalo en GitHub → Settings → Developer settings → Personal access tokens, y en
    Settings → Applications quita la sesión de GitHub CLI de la Mac vieja.
-2. **Railway:** `railway login`. Luego, dentro de `~/Documents/Diluvium/crm-diluvium`:
+2. **Railway:** `railway login`. Luego, dentro de `~/Documents/Diluvium CRM/crm-diluvium`:
    `railway link` → proyecto `energetic-ambition` → entorno `production` → servicio `crm-diluvium`.
 3. **Claude:** abrir la app de Claude e iniciar sesión. En Claude Code: `/plugin install codex@openai-codex`
    y luego `/codex:setup`.
@@ -58,22 +59,23 @@ Solo esto (todo lo demás se clona o se instala):
 
 | Qué | De dónde | A dónde |
 |---|---|---|
-| Medios | `~/Documents/Diluvium/media/` | igual |
-| Notas | `~/Documents/Diluvium/notas/` y `LEEME.md` | igual |
+| Medios | `~/Documents/Diluvium CRM/media/` | igual |
+| Notas | `~/Documents/Diluvium CRM/notas/` y `LEEME.md` | igual |
 | Memoria de Claude del proyecto | `~/.claude/projects/-Users-<usuario>-Documents-crm-diluvium/memory/` | `~/.claude/projects/<ruta nueva>/memory/` (ver abajo) |
 | Skill cyber-neo | `~/.claude/skills/cyber-neo/` | igual |
 
-**Memoria de Claude:** Claude guarda la memoria en una carpeta cuyo nombre es la ruta del proyecto
-con `/` cambiadas por `-`. Si el repo pasa a `~/Documents/Diluvium/crm-diluvium`, la carpeta nueva es
-`~/.claude/projects/-Users-<usuario>-Documents-Diluvium-crm-diluvium/memory/`. Copia ahí el
-contenido de la vieja; si no, Claude arranca sin memoria del proyecto.
+**Memoria de Claude:** Claude guarda la memoria en una carpeta cuyo nombre es la ruta del proyecto con
+todo lo que no es letra o número cambiado por `-` (las `/` y el espacio). Con el repo en
+`~/Documents/Diluvium CRM/crm-diluvium`, la carpeta es
+`~/.claude/projects/-Users-<usuario>-Documents-Diluvium-CRM-crm-diluvium/memory/`. Copia ahí el contenido de
+la vieja (`-Users-<usuario>-Documents-crm-diluvium`); si no, Claude arranca sin memoria del proyecto.
 
 **No se copian:** `.env.local` (se crea de nuevo desde `.env.example` con valores locales; los secretos
 de producción viven en Railway), `.git/.push-credentials`, `node_modules/`, `.next/`, sesiones de
 `gh`/`railway`/`codex` (se vuelven a iniciar) y las bases locales de prueba (se recrean vacías).
 
 Para copiar: AirDrop o un disco externo con las carpetas `media/` y `notas/`, o
-`rsync -a --progress <mac-vieja>:Documents/Diluvium/{media,notas,LEEME.md} ~/Documents/Diluvium/`.
+`rsync -a --progress "<mac-vieja>:Documents/Diluvium CRM/"{media,notas,LEEME.md} "$HOME/Documents/Diluvium CRM/"`.
 
 ## 5. Pasos en orden
 
@@ -95,12 +97,12 @@ Todo debe salir igual que en la Mac vieja:
 
 - [ ] `gh auth status` → sesión en `Diluvium-mx` con scopes `repo` y `workflow`.
 - [ ] `railway whoami` y `railway status` → proyecto `energetic-ambition`, entorno `production`.
-- [ ] `cd ~/Documents/Diluvium/crm-diluvium && git status` → limpio, en `main` al día con `origin/main`.
+- [ ] `cd "$HOME/Documents/Diluvium CRM/crm-diluvium" && git status` → limpio, en `main` al día con `origin/main`.
 - [ ] `npm run typecheck`, `npm test` y `npm run lint` en verde (mismo número de tests que en la Mac vieja).
 - [ ] `psql -h localhost -d postgres -c 'select 1'` responde.
 - [ ] En Claude Code, `/codex:setup` dice que Codex está listo.
 - [ ] Al abrir un chat nuevo en el repo, Claude muestra la memoria del proyecto (MEMORY.md).
 - [ ] `ls ~/.claude/skills/cyber-neo` existe.
-- [ ] `du -sh ~/Documents/Diluvium/media ~/Documents/Diluvium/notas` da lo mismo que en la Mac vieja
+- [ ] `du -sh "$HOME/Documents/Diluvium CRM/media" "$HOME/Documents/Diluvium CRM/notas"` da lo mismo que en la Mac vieja
       (y `find media -type f | wc -l` el mismo número de archivos).
 - [ ] La URL de producción abre y se puede iniciar sesión (eso no depende de la Mac; si falla, es de Railway).
