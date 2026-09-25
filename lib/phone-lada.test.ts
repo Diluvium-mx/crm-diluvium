@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { formatLadaPlace, mexicanLada, phoneLocation, phoneLocationHint } from "./phone-lada";
+import { LADA_CITIES } from "./phone-lada-cities";
 
 const label = (e164: string | null) => phoneLocation(e164)?.label ?? null;
 
@@ -16,15 +17,40 @@ describe("phoneLocation (México, por lada)", () => {
     expect(label("+526601234567")).toBe("Culiacán");
   });
 
-  // Los datos de Google (libphonenumber v9.0.9) solo tienen el ESTADO para las
-  // ladas de Sinaloa 667, 668 y 669; el IFT ya no publica ciudades por lada (desde
-  // julio de 2025 su plan va por zonas). No se inventa la ciudad: se muestra el estado.
-  it("Sinaloa: 667, 668 y 669 → Sinaloa (la fuente no trae la ciudad)", () => {
-    expect(label("+526672426364")).toBe("Sinaloa");
-    expect(label("+526682426364")).toBe("Sinaloa");
-    expect(label("+526692426364")).toBe("Sinaloa");
+  // Google (libphonenumber v9.0.9) solo trae el ESTADO para 667/668/669/687
+  // ("Sinaloa") y nada para 664: la ciudad sale de lib/phone-lada-cities.ts (dos
+  // listas públicas que coinciden) y el estado, de Google.
+  it("Sinaloa: la ciudad de las listas con el estado de Google", () => {
+    expect(label("+526682426364")).toBe("Los Mochis, Sin.");
+    expect(label("+526672426364")).toBe("Culiacán, Sin.");
+    expect(label("+526692426364")).toBe("Mazatlán, Sin.");
+    expect(label("+526872426364")).toBe("Guasave, Sin.");
   });
-  it.todo("668 → Los Mochis, Sin.; 667 → Culiacán, Sin.; 669 → Mazatlán, Sin. (pendiente: fuente con respaldo que traiga la ciudad)");
+
+  it("Google no trae la lada: solo la ciudad (sin estado inventado)", () => {
+    expect(label("+526641234567")).toBe("Tijuana");
+  });
+
+  it("Google da dos estados: solo la ciudad", () => {
+    expect(label("+528671234567")).toBe("Nuevo Laredo");
+  });
+
+  it("donde Google ya trae ciudad, manda Google", () => {
+    expect(label("+526651234567")).toBe("Tecate, B.C.");
+    expect(label("+529991234567")).toBe("Conkal/Mérida, Yuc.");
+  });
+
+  it("891: las listas dicen Santa Rosalía (B.C.S.), Google dice Tamaulipas → Tamaulipas", () => {
+    expect(label("+528911234567")).toBe("Tamaulipas");
+  });
+
+  it("cada ciudad de las listas llena un hueco de Google (ninguna queda tapada)", () => {
+    for (const [lada, city] of Object.entries(LADA_CITIES)) {
+      const national = lada.padEnd(10, "0");
+      expect(phoneLocation(`+52${national}`)?.label.startsWith(city), lada).toBe(true);
+    }
+    expect(Object.keys(LADA_CITIES)).toHaveLength(84);
+  });
 
   it("el código ambiguo QRO de la fuente: Querétaro vs. Quintana Roo (Cozumel)", () => {
     expect(label("+524141234567")).toBe("Tequisquiapan, Qro.");
