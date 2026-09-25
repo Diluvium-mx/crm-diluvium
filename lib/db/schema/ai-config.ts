@@ -1,4 +1,4 @@
-import { pgTable, text, timestamp, integer, boolean } from "drizzle-orm/pg-core";
+import { pgTable, text, timestamp, integer, boolean, numeric } from "drizzle-orm/pg-core";
 import { organization } from "./auth";
 
 // Configuración del Agente IA por organización (Fase A: Fundación del modelo).
@@ -47,6 +47,11 @@ export const aiConfig = pgTable("ai_config", {
   contextMessages: integer("context_messages").default(20).notNull(),
   // Máx. burbujas por respuesta (separadas por doble salto de línea).
   maxBubbles: integer("max_bubbles").default(2).notNull(),
+  // SIN USO y POR BORRAR (decisión del dueño, 25-sep-2026: "quítalo"). Nunca se aplicó
+  // desde el cierre de la Fase B. Se borra en la PRIMERA migración que entre a main
+  // después de Anuncios de Meta (su 0030 ya está en staging y ocupa el siguiente lugar
+  // del journal; borrarla antes rompería el orden de migraciones de esa rama).
+  dailyBudgetUsd: numeric("daily_budget_usd", { precision: 10, scale: 2, mode: "number" }).default(20).notNull(),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 });
