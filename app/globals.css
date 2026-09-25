@@ -243,6 +243,83 @@
   100% { box-shadow: 0 0 0 6px rgb(var(--glow-rgb) / 0); }
 }
 
+/* ── Enlaces: estilo propio (SIN fondo iluminado; ese es de botones) ──────────
+   Opt-in con data-link, para no tocar el sidebar ni enlaces con estilo propio:
+     data-link="text" → subrayado que se dibuja de izquierda a derecha y navy más
+                        intenso (en oscuro, azul claro más brillante);
+     data-link="card" → tarjeta-enlace: borde navy, sombra leve, sube 1 px; si
+                        trae una flecha [data-link-arrow], esta avanza 2 px;
+     data-link="tab"  → pestaña-enlace: fondo navy tenue al pasar el cursor.
+   Un enlace con forma de botón sólido lleva data-glow (se comporta como botón).
+   Claro y oscuro; con "reducir movimiento" sin transiciones; nunca naranja. */
+:root {
+  --link: #0a559a;
+  --link-strong: #063d70;
+}
+.dark {
+  --link: #8fbdf0;
+  --link-strong: #c4dfff;
+}
+
+[data-link="text"] {
+  color: var(--link);
+  text-decoration: none;
+  background-image: linear-gradient(currentColor, currentColor);
+  background-repeat: no-repeat;
+  background-position: 0 100%;
+  background-size: 0% 1.5px;
+  transition: background-size 220ms ease-out, color 160ms ease-out;
+}
+[data-link="text"]:hover,
+[data-link="text"]:focus-visible {
+  color: var(--link-strong);
+  background-size: 100% 1.5px;
+}
+
+[data-link="card"] {
+  transition: border-color 160ms ease-out, box-shadow 200ms ease-out, transform 200ms ease-out, background-color 160ms ease-out;
+}
+[data-link="card"]:hover,
+[data-link="card"]:focus-visible,
+[data-link="card"]:focus-within {
+  border-color: var(--link);
+  box-shadow: 0 6px 16px -10px rgb(10 85 154 / 0.45);
+  transform: translateY(-1px);
+}
+[data-link="card"] [data-link-arrow] {
+  display: inline-block;
+  transition: transform 200ms ease-out;
+}
+[data-link="card"]:hover [data-link-arrow],
+[data-link="card"]:focus-within [data-link-arrow] {
+  transform: translateX(2px);
+}
+
+[data-link="tab"] {
+  transition: background-color 160ms ease-out, color 160ms ease-out;
+}
+[data-link="tab"]:hover,
+[data-link="tab"]:focus-visible {
+  background-color: rgb(10 85 154 / 0.1);
+}
+.dark [data-link="tab"]:hover,
+.dark [data-link="tab"]:focus-visible {
+  background-color: rgb(143 189 240 / 0.14);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  [data-link] {
+    transition: none;
+  }
+  [data-link="card"]:hover,
+  [data-link="card"]:focus-visible {
+    transform: none;
+  }
+  [data-link="card"] [data-link-arrow] {
+    transition: none;
+  }
+}
+
 /* Micro-interacciones del kanban de Contactos (presentacional).
    card-pickup: "levantar" la tarjeta al arrastrar (pop + leve inclinacion),
    aplicado al contenido del DragOverlay. Respeta prefers-reduced-motion. */

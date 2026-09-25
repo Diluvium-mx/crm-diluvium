@@ -9,6 +9,7 @@ import { DocumentCard } from "./document-card";
 import { MediaViewer } from "./media-viewer";
 import { ScheduledInThread } from "./scheduled-in-thread";
 import { AgentNoticeLine, AgentPausedBanner, useConversationAgent } from "./agent-in-thread";
+import { AgentActivityPill } from "./agent-activity-pill";
 import { interleaveNotices } from "@/lib/agente-ia/timeline";
 import {
   bubbleTime,
@@ -18,6 +19,7 @@ import {
   windowHoursLeft,
 } from "./format";
 import { displayPhone } from "@/lib/phone-format";
+import { PhoneLocation } from "@/components/ui/phone-location";
 
 const PAGE_LIMIT = 30;
 // Distancia al tope (px) a la que se cargan solos los mensajes anteriores, y al
@@ -169,7 +171,10 @@ function Bubble({
             href={`https://www.google.com/maps?q=${view.location.latitude},${view.location.longitude}`}
             target="_blank"
             rel="noopener noreferrer"
-            className="mb-1 block rounded-md border px-2 py-1 text-xs underline-offset-2 hover:underline"
+            // data-link="text" pinta navy: solo en burbujas entrantes (fondo claro).
+            // En las salientes (fondo navy) el enlace conserva el texto blanco.
+            data-link={out ? undefined : "text"}
+            className={`mb-1 block rounded-md border px-2 py-1 text-xs ${out ? "border-brand-white/40 underline-offset-2 hover:underline" : ""}`}
           >
             📍 {view.location.name ?? "Ubicación"}
             {view.location.address && <span className="block opacity-80">{view.location.address}</span>}
@@ -467,6 +472,7 @@ export function ChatThread({
         <div className="min-w-0 flex-1">
           <p className="truncate text-sm font-semibold">{detail.contact.name}</p>
           <p className="truncate text-xs text-muted-foreground">{displayPhone(detail.contact.phone) || "Sin teléfono"}</p>
+          <PhoneLocation phone={detail.contact.phone} />
         </div>
         <span className="shrink-0 rounded-full bg-brand-navy/10 px-2.5 py-1 text-xs font-medium text-brand-navy">
           {detail.contact.stage}
@@ -542,6 +548,8 @@ export function ChatThread({
         />
       </div>
 
+      {/* Píldora "Agente IA leyendo/escribiendo/enviando" (flota sobre el fondo del historial). */}
+      <AgentActivityPill conversationId={conversationId} refreshToken={revalToken} detailKey={detail} />
       {commandNotice && (
         <div className="mx-4 mb-1 flex items-center justify-between rounded-md border border-brand-orange/40 bg-brand-orange/10 px-3 py-1.5 text-xs">
           <span>{commandNotice}</span>

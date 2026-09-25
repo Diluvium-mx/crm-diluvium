@@ -21,7 +21,9 @@ import {
   saveProfile,
   updateFaq,
 } from "@/lib/agente-ia/editor-store";
-import { buildModelOptions } from "@/lib/agente-ia/options";
+import { buildApiProviders, buildModelOptions } from "@/lib/agente-ia/options";
+import { usageProfile } from "@/lib/agente-ia/model-cost";
+import { brainUsageTotals, priceOverrides } from "@/lib/agente-ia/model-cost-store";
 import { idSchema, toAgentMode } from "@/lib/agente-ia/settings";
 import type { AgentActionResult, AgentEditorView } from "@/lib/agente-ia/types";
 import { db } from "@/lib/db";
@@ -41,6 +43,9 @@ export async function getAgentEditor(): Promise<AgentEditorView> {
   if (!roleAllows(role, "aiConfig", "read")) throw new Error("No tienes permiso para ver el Agente IA.");
   const data = await loadEditor(organizationId);
   const channelRows = await db.select().from(channels).where(eq(channels.organizationId, organizationId)).orderBy(channels.createdAt);
+  // Costo aproximado por modelo: uso real del cerebro (30 días) o perfil fijo.
+  const [totals, overrides] = await Promise.all([brainUsageTotals(organizationId), priceOverrides(organizationId)]);
+  const { profile, basis } = usageProfile(totals);
   const version = (v: { id: string; createdAt: Date; author: string | null; summary: string }) => ({ ...v, createdAt: v.createdAt.toISOString() });
   return {
     agentName: data.agentName,
@@ -50,7 +55,11 @@ export async function getAgentEditor(): Promise<AgentEditorView> {
     faqs: data.faqs,
     goalVersions: data.goalVersions.map(version),
     faqVersions: data.faqVersions.map(version),
-    brainOptions: buildModelOptions("cerebro"),
+    brainOptions: buildModelOptions("cerebro", { profile, overrides }),
+    costBasis: basis,
+    // Solo si la variable de cada llave existe (nunca su valor). Esta vista ya es
+    // solo de owner/admin (aiConfig:read arriba).
+    apiProviders: buildApiProviders(),
     channels: channelRows.map((c) => ({
       id: c.id,
       displayName: c.displayName,
