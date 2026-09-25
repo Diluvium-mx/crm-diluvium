@@ -365,11 +365,16 @@ Regla para Codex y Claude: cualquier check nuevo se agrega como script de
 `package.json`, no como comando suelto con `npx`. Detalle idéntico en `AGENTS.md`.
 
 ### Higiene de trabajo en paralelo
+- **Dónde vive el trabajo en esta Mac (25-sep-2026):** todo en `~/Documents/Diluvium CRM/` — copia
+  principal del repo en `crm-diluvium/`, un worktree por chat en `chats/`, medios en `media/` y archivos
+  del CRM fuera del repo en `notas/` (qué hay en cada una: `LEEME.md` de esa carpeta). Nada de eso va
+  DENTRO del repo (datos de clientes y del banco).
 - **Nunca dos agentes sobre los mismos archivos.** Usar git worktrees, siempre dentro de
-  `~/Documents/Diluvium/chats/` (una carpeta por chat de Code; mapa completo en `docs/migrar-mac.md`):
+  `~/Documents/Diluvium CRM/chats/` (una carpeta por chat de Code; el nombre lleva espacio: siempre entre
+  comillas; mapa completo en `docs/migrar-mac.md`):
   ```
-  git worktree add ~/Documents/Diluvium/chats/crm-inbox    -b feature/inbox    origin/main
-  git worktree add ~/Documents/Diluvium/chats/crm-contacts -b feature/contacts origin/main
+  git worktree add "$HOME/Documents/Diluvium CRM/chats/crm-inbox"    -b feature/inbox    origin/main
+  git worktree add "$HOME/Documents/Diluvium CRM/chats/crm-contacts" -b feature/contacts origin/main
   ```
 - Trabajar en **rebanadas verticales** (schema → API → UI de una sola feature), nunca por capas.
   Una rebanada terminada es una que se puede desplegar y usar.
