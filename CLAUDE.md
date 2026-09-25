@@ -216,11 +216,12 @@ scheduled_messages   id, org_id, conversation_id, created_by_user_id, kind (text
                      template_id, template_params, send_at, programmed_at, cancel_if_inbound,
                      status (scheduled|sending|sent|failed|cancelled), error_code, message_id
 
--- Anuncios de Meta (24-sep-2026, 0028; detalle en docs/anuncios.md)
+-- Anuncios de Meta (24/25-sep-2026, 0030 reservada, entra tras la 0034; detalle en docs/anuncios.md)
 ad_clicks            id, org_id, contact_id, conversation_id, message_id, origin (webhook|zernio_conversation),
                      ad_id, ctwa_clid, headline…, raw jsonb (ficha original), media jsonb, clicked_at
                      -- una fila por entrada desde un anuncio; la atribución vive aquí (contacto + conversación)
-meta_ads             org_id + ad_id, nombres de campaña/conjunto/anuncio y creativo (caché de la API de Marketing)
+meta_ads             org_id + ad_id, campaña/conjunto/anuncio, creativo (título, texto, CTA, enlace), datos del
+                     video (sin archivo), enlaces a Meta, meta_raw y UNA miniatura chica (thumbnail_key)
 conversations (+)    ad_entry_at   -- última entrada por anuncio (ventana gratis de 72 h)
 ```
 
@@ -326,7 +327,10 @@ Reglas de UI:
 - Toda consulta a DB filtra por `organization_id`. Helper `withOrg(ctx)` obligatorio, sin excepciones.
 - Errores de proveedor nunca se tragan: se guardan en `messages.error_code` y se muestran en la UI.
 - Un archivo = una responsabilidad. Componentes de UI sin lógica de datos.
-- Migraciones: nunca editar una migración ya aplicada; siempre una nueva.
+- Migraciones: nunca editar una migración ya aplicada; siempre una nueva. **Candado** (25-sep-2026,
+  docs/migraciones.md): `npm run db:check` falla si falta CUALQUIER migración del journal (drizzle salta en
+  silencio las de `when` menor); corre en el pre-deploy de Railway, así un faltante detiene el despliegue
+  sin tumbar la versión que está atendiendo.
 - Tests: Vitest para lógica pura (normalización de teléfono, parser de webhook, cálculo de posición,
   ventana 24 h). Sin tests de UI en v1.
 - `npm test` corre con `--passWithNoTests` **solo temporalmente**, mientras el repo no tiene
