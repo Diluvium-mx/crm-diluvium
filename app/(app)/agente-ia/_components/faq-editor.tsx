@@ -1,6 +1,6 @@
 "use client";
 
-// Base de conocimiento del agente (sección "Crear"): las preguntas frecuentes en una
+// FAQs del agente (sección "Crear"): las preguntas frecuentes en una
 // lista compacta tipo acordeón (una línea por pregunta; al dar clic se despliega la
 // respuesta para verla o editarla), con buscador y filtro arriba. El panel se
 // desliza por dentro: la página no crece con las FAQs. Cada cambio deja una versión

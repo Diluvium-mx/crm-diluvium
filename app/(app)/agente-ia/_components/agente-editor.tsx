@@ -1,12 +1,15 @@
 "use client";
 
 // Pestaña "Agente IA" como el editor de GHL: nombre del agente editable con lápiz y
-// dos secciones. "Crear": modelo cerebro, nombre de la empresa, Goal y base de
-// conocimiento (FAQs). "Implementar": los canales con su interruptor. Solo sirve
-// para personalizar al agente. Sin lógica de datos: solo llama a Server Actions.
+// dos secciones. "Crear": modelo cerebro (con su costo aproximado y el panel "APIs
+// de IA"), nombre de la empresa, Goal y FAQs. "Implementar": los canales con su
+// interruptor. Solo sirve para personalizar al agente. Sin lógica de datos: solo
+// llama a Server Actions.
 import { useState, useTransition } from "react";
 import { updateAgentProfile } from "@/lib/actions/agente-ia-editor";
+import { COST_WINDOW_DAYS, MIN_REAL_RESPONSES } from "@/lib/agente-ia/model-cost";
 import type { AgentEditorView } from "@/lib/agente-ia/types";
+import { ApiStatusPanel } from "./api-status-panel";
 import { BrainModelPicker } from "./brain-model-picker";
 import { ChannelSwitches } from "./channel-switches";
 import { FaqEditor } from "./faq-editor";
@@ -24,10 +27,11 @@ function Section({ title, hint, children }: { title: string; hint?: string; chil
   );
 }
 
-function AgentName({ name }: { name: string }) {
+// El nombre que se muestra vive en AgenteEditor (lo usa también la confirmación
+// del cambio de modelo); aquí solo se edita.
+function AgentName({ shown, onSaved }: { shown: string; onSaved: (name: string) => void }) {
   const [editing, setEditing] = useState(false);
-  const [value, setValue] = useState(name);
-  const [shown, setShown] = useState(name);
+  const [value, setValue] = useState(shown);
   const [error, setError] = useState<string | null>(null);
   const [pending, start] = useTransition();
 
@@ -36,7 +40,7 @@ function AgentName({ name }: { name: string }) {
     start(async () => {
       const r = await updateAgentProfile({ agentName: value });
       if (r.ok) {
-        setShown(value.trim());
+        onSaved(value.trim());
         setEditing(false);
       } else setError(r.message);
     });
@@ -117,13 +121,20 @@ function CompanyName({ value: initial }: { value: string }) {
   );
 }
 
+function costHint(basis: AgentEditorView["costBasis"]): string {
+  return basis.source === "real"
+    ? `Costo aproximado por cada 100 conversaciones, con el uso real de los últimos ${COST_WINDOW_DAYS} días (${basis.responses} respuestas).`
+    : `Costo aproximado por cada 100 conversaciones, con un perfil fijo (aún hay menos de ${MIN_REAL_RESPONSES} respuestas en ${COST_WINDOW_DAYS} días).`;
+}
+
 export function AgenteEditor({ data }: { data: AgentEditorView }) {
   const [tab, setTab] = useState<"crear" | "implementar">("crear");
+  const [agentName, setAgentName] = useState(data.agentName);
 
   return (
     <div className="mx-auto flex w-full max-w-4xl flex-col gap-4 p-4">
       <header className="flex flex-wrap items-center justify-between gap-3">
-        <AgentName name={data.agentName} />
+        <AgentName shown={agentName} onSaved={setAgentName} />
         <div role="tablist" aria-label="Secciones del agente" className="flex overflow-hidden rounded border border-black/15 dark:border-white/15">
           {(["crear", "implementar"] as const).map((t) => (
             <button
@@ -144,8 +155,9 @@ export function AgenteEditor({ data }: { data: AgentEditorView }) {
 
       {tab === "crear" ? (
         <>
-          <Section title="Modelo" hint="El modelo que piensa y redacta las respuestas. $ = costo relativo por respuesta.">
-            <BrainModelPicker options={data.brainOptions} value={data.modeloCerebro} />
+          <Section title="Modelo" hint={`El modelo que piensa y redacta las respuestas. ${costHint(data.costBasis)}`}>
+            <BrainModelPicker options={data.brainOptions} value={data.modeloCerebro} agentName={agentName} />
+            <ApiStatusPanel providers={data.apiProviders} />
           </Section>
           <Section title="Empresa">
             <CompanyName value={data.companyName} />
@@ -153,7 +165,7 @@ export function AgenteEditor({ data }: { data: AgentEditorView }) {
           <Section title="Instrucciones (Goal)" hint="Cómo se comporta el agente: lo que dice aquí es lo único que sigue, junto con las preguntas frecuentes.">
             <GoalEditor goal={data.goal} versions={data.goalVersions} />
           </Section>
-          <Section title="Base de conocimiento" hint="Preguntas frecuentes que el agente usa para responder.">
+          <Section title="FAQs" hint="Preguntas frecuentes que el agente usa para responder.">
             <FaqEditor faqs={data.faqs} versions={data.faqVersions} />
           </Section>
         </>
