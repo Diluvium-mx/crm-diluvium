@@ -51,12 +51,19 @@ export async function addNotice(input: {
   }
 }
 
-export type NoticeRow = { id: string; kind: string; body: string; createdAt: Date };
+export type NoticeRow = { id: string; kind: string; body: string; createdAt: Date; resolvedAt: Date | null; resolution: string | null };
 
 // Los avisos más recientes de la conversación, en orden cronológico (para el hilo).
 export async function loadNotices(organizationId: string, conversationId: string, limit = 50): Promise<NoticeRow[]> {
   const rows = await db
-    .select({ id: aiAgentNotices.id, kind: aiAgentNotices.kind, body: aiAgentNotices.body, createdAt: aiAgentNotices.createdAt })
+    .select({
+      id: aiAgentNotices.id,
+      kind: aiAgentNotices.kind,
+      body: aiAgentNotices.body,
+      createdAt: aiAgentNotices.createdAt,
+      resolvedAt: aiAgentNotices.resolvedAt,
+      resolution: aiAgentNotices.resolution,
+    })
     .from(aiAgentNotices)
     .where(and(eq(aiAgentNotices.organizationId, organizationId), eq(aiAgentNotices.conversationId, conversationId)))
     .orderBy(desc(aiAgentNotices.createdAt), desc(sql`${aiAgentNotices.id}`))
