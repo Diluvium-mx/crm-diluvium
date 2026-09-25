@@ -71,6 +71,16 @@ export async function findOrphanConversations(now: Date, limit = 50): Promise<Or
       -- el barrido lo rescata hasta MAX_ERRORS_PER_MESSAGE.
       and not exists (select 1 from ai_agent_drafts d where d.organization_id = c.organization_id and d.trigger_message_id = last.id and d.status <> 'obsoleto')
       and (select count(*) from ai_usage u where u.message_id = last.id and u.outcome = 'error') < ${MAX_ERRORS_PER_MESSAGE}
+      -- Fase E ("reenvío seguro"): con la tarjeta de error sin atender no se reintenta solo.
+      and not exists (
+        select 1 from ai_agent_notices n
+        where n.organization_id = c.organization_id and n.conversation_id = c.id
+          and n.kind = 'agente_error' and n.resolved_at is null
+          -- misma regla que hasUnresolvedAgentError: una tarjeta anterior a "Reactivar"
+          -- o al encendido del canal ya no bloquea
+          and n.created_at > coalesce(c.agent_state_changed_at, '-infinity'::timestamp)
+          and n.created_at > coalesce(ch.ai_agent_mode_changed_at, '-infinity'::timestamp)
+      )
     limit ${limit}
   `);
   return rows.map((r) => ({ conversationId: r.id, organizationId: r.organization_id }));

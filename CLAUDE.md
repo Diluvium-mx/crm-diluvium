@@ -56,8 +56,12 @@ formularios y landing pages, agente IA de calificación.
 > Goal, no por código. Diseño: `docs/fase-d-diseno.md` §10. **Fase D CERRADA el 25-sep-2026** (main
 > 057725c, migración 0031; prueba B5 en producción y pendientes A–F sin construir: §11 del mismo doc).
 > **Fase E:** Modelo 1 (Luna) y Modelo 2 (Sonnet 5) por etapa, con sus selectores en la pestaña Agente IA,
-> más el reenvío seguro. En curso (25-sep): selectores, etapas (Modelo 1 = Inbox, Prospecto,
-> Interesado), adaptadores de Google/xAI/OpenRouter y tope de 4,096 tokens en la migración 0033. **La Fase B (runtime del agente)
+> más el reenvío seguro. En main desde el 25-sep: selectores, etapas (Modelo 1 = Inbox, Prospecto,
+> Interesado), adaptadores de Google/xAI/OpenRouter y tope de 4,096 tokens (migración 0033). Parte 2
+> (migración 0034): **reenvío seguro** = si el modelo falla, tarjeta en el chat con el error explicado y
+> botones "Reintentar" / "Apagar" (pausa esa conversación); sin reintentos automáticos salvo UNO si el
+> proveedor está saturado. Aviso de pago = "Depósito recibido" fijo; el agente ya no anota monto ni
+> folio y no hay chequeo de folio repetido (decisión del dueño). Detalle: `docs/agente-ia.md`. **La Fase B (runtime del agente)
 > debe PERSISTIR tokens/uso por mensaje procesado** (`callModel` ya devuelve `usage` normalizado) para
 > alimentar un panel de gasto futuro.
 
@@ -204,7 +208,9 @@ contact_comentarios  id, org_id, contact_id, author_user_id (obligatorio), body,
                      -- sistema "Importado" (sin login ni membresía; solo owner/admin las editan)
 comprobantes         id, org_id, contact_id, conversation_id, message_id (único), monto, referencia,
                      referencia_norm, banco, fecha_comprobante, tipo (total|anticipo|resto), created_at
-                     -- Fase D (0031): lo que el agente leyó; sin reglas de monto en código
+                     -- Fase D (0031). SIN USO desde la Fase E (25-sep): el agente ya no anota monto ni
+                     -- folio; la tabla se conserva con su historial (no se borra)
+ai_agent_notices (+) resolved_at, resolution (reintentar|apagar), resolved_by_user_id   -- 0034, tarjeta agente_error
 contacts (+)         stage_changed_by (vendedor|agente|sistema): la etapa de un vendedor manda; el agente solo avanza
 scheduled_messages   id, org_id, conversation_id, created_by_user_id, kind (text|template), body,
                      template_id, template_params, send_at, programmed_at, cancel_if_inbound,

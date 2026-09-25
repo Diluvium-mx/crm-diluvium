@@ -136,9 +136,17 @@ export const aiAgentNotices = pgTable(
       .references(() => conversations.id, { onDelete: "cascade" }),
     messageId: text("message_id").references(() => messages.id, { onDelete: "cascade" }),
     // guardia | pasar_a_humano | anti_bucle | presupuesto | tope_contacto | envio
+    // | cotejar_deposito | cliente_pide_humano | comprobante_dudoso | respuesta_cortada
+    // | agente_error (Fase E: el modelo falló; tarjeta con "Reintentar" y "Apagar")
     kind: text("kind").notNull(),
     body: text("body").notNull(),
     createdAt: timestamp("created_at").defaultNow().notNull(),
+    // Fase E (agente_error): cuándo y cómo lo atendió un vendedor ("reintentar" |
+    // "apagar"). null = sin atender: el agente no vuelve a llamar al modelo en esa
+    // conversación hasta que alguien elija.
+    resolvedAt: timestamp("resolved_at"),
+    resolution: text("resolution"),
+    resolvedByUserId: text("resolved_by_user_id").references(() => user.id, { onDelete: "set null" }),
   },
   (t) => [
     index("ai_agent_notices_conversation_created_idx").on(t.conversationId, t.createdAt),

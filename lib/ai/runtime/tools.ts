@@ -4,8 +4,8 @@
 // - `fijar_cotizacion { monto }`: guarda el total cotizado en el contacto.
 // - `mover_etapa { etapa }`: avanza la etapa (solo hacia adelante; el CRM ignora
 //   retrocesos sin error).
-// - `aviso_vendedor { motivo, detalle, monto?, referencia?, banco?, fecha?, tipo? }`:
-//   aviso interno 🤖 al vendedor; nunca llega al cliente ni pausa al agente.
+// - `aviso_vendedor { motivo, detalle? }`: aviso interno 🤖 al vendedor; nunca llega
+//   al cliente ni pausa al agente. Desde la Fase E (25-sep-2026) sin monto ni folio.
 // Sin `execute`: el modelo devuelve texto + llamadas en UNA vuelta y el runtime
 // decide qué corre. Las reglas de negocio viven en el Goal, no aquí.
 import { tool, type ToolSet } from "ai";
@@ -37,13 +37,8 @@ export const moverEtapaSchema = z.object({
 });
 
 export const avisoVendedorSchema = z.object({
-  motivo: z.enum(AVISO_MOTIVOS).describe("cotejar_deposito = el cliente pagó y hay que cotejar el depósito; cliente_pide_humano = pidió hablar con una persona; comprobante_dudoso = el comprobante no cuadra o se ve dudoso"),
-  detalle: z.string().max(500).describe("Qué debe saber el vendedor, en una o dos frases"),
-  monto: z.string().nullable().optional().describe("Monto del comprobante tal como se lee, o null si no se lee"),
-  referencia: z.string().nullable().optional().describe("Referencia, folio o clave de rastreo tal como se lee"),
-  banco: z.string().nullable().optional().describe("Banco tal como se lee"),
-  fecha: z.string().nullable().optional().describe("Fecha del comprobante tal como se lee"),
-  tipo: z.enum(["total", "anticipo", "resto"]).nullable().optional().describe("total = pago completo; anticipo = primer pago parcial; resto = liquidación"),
+  motivo: z.enum(AVISO_MOTIVOS).describe("cotejar_deposito = el cliente pagó y el pago cuadra (el vendedor ve \"Depósito recibido\"); cliente_pide_humano = pidió hablar con una persona; comprobante_dudoso = el comprobante no cuadra o se ve dudoso"),
+  detalle: z.string().max(500).optional().describe("Qué debe saber el vendedor, en una frase (no hace falta con cotejar_deposito)"),
 });
 
 export const FIJAR_COTIZACION_DESCRIPTION =
@@ -51,7 +46,7 @@ export const FIJAR_COTIZACION_DESCRIPTION =
 export const MOVER_ETAPA_DESCRIPTION =
   "Avanza al contacto a una etapa del Embudo (inbox → prospecto → interesado → cerca_compra → compra). Úsala cuando el Goal lo indique. Solo avanza; un retroceso o la misma etapa se ignoran.";
 export const AVISO_VENDEDOR_DESCRIPTION =
-  "Deja un aviso interno al vendedor; el cliente no lo ve y tú sigues atendiendo. Motivos: cotejar_deposito (pago que confirmaste: manda monto, referencia, banco, fecha y tipo), cliente_pide_humano, comprobante_dudoso (manda lo que alcanzaste a leer). Cuándo usar cada uno lo dice el Goal.";
+  "Deja un aviso interno al vendedor; el cliente no lo ve y tú sigues atendiendo. Motivos: cotejar_deposito (pago que confirmaste), cliente_pide_humano, comprobante_dudoso (en una frase, por qué). Cuándo usar cada uno lo dice el Goal.";
 
 // Puro: arma el ToolSet a partir de las filas de workflows (orden estable: la
 // consulta viene por position; fijas al final → la caché del prompt no se rompe).
