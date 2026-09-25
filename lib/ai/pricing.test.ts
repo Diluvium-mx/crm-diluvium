@@ -26,8 +26,20 @@ describe("resolveModelPrice", () => {
 
   it("Fase E: Gemini 3.8 Flash, Grok 4.6 y Qwen 3.7 Flash con su precio y su caché oficiales", () => {
     expect(resolveModelPrice("gemini-3.8-flash", "google")).toEqual({ inputPerMTok: 0.75, outputPerMTok: 3.75, cacheReadPerMTok: 0.075, cacheWritePerMTok: 0.75 });
-    expect(resolveModelPrice("grok-4.6", "xai")).toEqual({ inputPerMTok: 2, outputPerMTok: 6, cacheReadPerMTok: 0.5, cacheWritePerMTok: 2 });
-    expect(resolveModelPrice("qwen-3.7-flash", "openrouter")).toEqual({ inputPerMTok: 0.1, outputPerMTok: 0.4, cacheReadPerMTok: 0.02, cacheWritePerMTok: 0.125 });
+    expect(resolveModelPrice("grok-4.6", "xai")).toMatchObject({ inputPerMTok: 2, outputPerMTok: 6, cacheReadPerMTok: 0.5, cacheWritePerMTok: 2 });
+    expect(resolveModelPrice("qwen-3.7-flash", "openrouter")).toMatchObject({ inputPerMTok: 0.03, outputPerMTok: 0.13, cacheReadPerMTok: 0.006, cacheWritePerMTok: 0.038 });
+  });
+
+  it("tramos por entrada total: Qwen bajo 32 mil, de 32 mil y de 256 mil; Grok desde 200 mil", () => {
+    const qwen = resolveModelPrice("qwen-3.7-flash", "openrouter");
+    const u = (inputTokens: number) => ({ inputTokens, outputTokens: 1_000_000, cacheReadTokens: 0, cacheWriteTokens: 0 });
+    // 1M de salida = el precio de salida del tramo (más la entrada).
+    expect(computeCostUsd(u(10_000), qwen)).toBeCloseTo(10_000 * 0.03 / 1e6 + 0.13, 8);
+    expect(computeCostUsd(u(32_000), qwen)).toBeCloseTo(32_000 * 0.1 / 1e6 + 0.4, 8);
+    expect(computeCostUsd(u(300_000), qwen)).toBeCloseTo(300_000 * 0.2 / 1e6 + 0.8, 8);
+    const grok = resolveModelPrice("grok-4.6", "xai");
+    expect(computeCostUsd(u(199_999), grok)).toBeCloseTo(199_999 * 2 / 1e6 + 6, 8);
+    expect(computeCostUsd(u(200_000), grok)).toBeCloseTo(200_000 * 4 / 1e6 + 12, 8);
   });
 
   it("la sobrescritura de la org gana; su caché null usa la regla del proveedor", () => {

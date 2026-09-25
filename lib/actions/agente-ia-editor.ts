@@ -8,6 +8,7 @@ import { ZodError } from "zod";
 import { requireActiveMembership } from "@/lib/auth/active-organization";
 import { roleAllows } from "@/lib/auth/permissions";
 import { DEFAULT_MODEL_1, modelsForRole } from "@/lib/ai/catalog";
+import { modelAvailability } from "@/lib/ai/provider";
 import { STAGES } from "@/lib/contacts/stages";
 import { z } from "zod";
 import { faqSchema, goalSchema, profileSchema } from "@/lib/agente-ia/editor";
@@ -99,20 +100,28 @@ export async function updateAgentProfile(input: { agentName?: string; companyNam
 
 const brainIds = new Set(modelsForRole("cerebro").map((m) => m.id));
 
+// Solo modelos del cerebro que se pueden usar en este entorno (llave y adaptador):
+// un cliente viejo o una llamada directa no deja al agente con un modelo sin llave.
+function usableBrainModel(modelId: string, slot: string): string {
+  const id = idSchema.parse(modelId);
+  if (!brainIds.has(id)) throw new EditorNotFoundError(`Modelo no válido para ${slot}.`);
+  const a = modelAvailability(id);
+  if (!a.available) {
+    throw new EditorNotFoundError(a.reason === "missing_key" ? `Ese modelo aún no se puede usar: falta la llave ${a.envKey} en Railway.` : "Ese modelo aún no se puede usar.");
+  }
+  return id;
+}
+
 export async function updateBrainModel(input: { modelId: string }): Promise<AgentActionResult> {
   return run("No se pudo cambiar el modelo.", async ({ organizationId }) => {
-    const id = idSchema.parse(input.modelId);
-    if (!brainIds.has(id)) throw new EditorNotFoundError("Modelo no válido para el cerebro.");
-    await saveBrainModel(organizationId, id);
+    await saveBrainModel(organizationId, usableBrainModel(input.modelId, "el Modelo 2"));
   });
 }
 
 // Fase E: Modelo 1 (mismo catálogo que el Modelo 2) y las etapas que atiende.
 export async function updateModel1(input: { modelId: string }): Promise<AgentActionResult> {
   return run("No se pudo cambiar el Modelo 1.", async ({ organizationId }) => {
-    const id = idSchema.parse(input.modelId);
-    if (!brainIds.has(id)) throw new EditorNotFoundError("Modelo no válido para el Modelo 1.");
-    await saveModel1(organizationId, id);
+    await saveModel1(organizationId, usableBrainModel(input.modelId, "el Modelo 1"));
   });
 }
 

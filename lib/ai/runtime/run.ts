@@ -14,6 +14,7 @@
 // conteste; si el cliente pide a una persona, avisa al vendedor y sigue activo.
 import type { CallModelInput, CallModelResult } from "@/lib/ai/types";
 import { getModel } from "@/lib/ai/catalog";
+import { modelAvailability } from "@/lib/ai/provider";
 import { cleanAdMessages } from "./ad-cleaner";
 import { buildBrainSystemWithRuntime, parseBrainOutput } from "./brain";
 import { crmContextFor, executeActions, loadAgentTools, prepareActions, runsThatSend, type ActionPhase, type ActionPlan, type StartWorkflow } from "./actions";
@@ -36,7 +37,7 @@ export function fallbackTextFor(plan: ActionPlan): string {
 import { validateToolCalls } from "./tools";
 import { applyCustomValues } from "@/lib/agente-ia/editor";
 import { loadAgentConfig, loadCustomValues, loadEnabledFaqs } from "./config";
-import { brainModelForStage } from "./model-by-stage";
+import { pickBrainModel } from "./model-by-stage";
 import { loadContactStage } from "@/lib/contacts/stage";
 import {
   alreadyHandled,
@@ -81,6 +82,9 @@ export type RunDeps = {
   resolveImage: (storageKey: string) => Promise<string | null>;
   // Fase D: arranca una corrida de workflow (trigger "agent") pedida por el cerebro.
   startWorkflow: StartWorkflow;
+  // Fase E: ¿el modelo tiene llave y adaptador en este entorno? Por defecto,
+  // modelAvailability (lee process.env). Los tests lo sustituyen.
+  isModelAvailable?: (modelId: string) => boolean;
 };
 
 export type RunResult =
@@ -258,8 +262,12 @@ export async function runAgent(job: { organizationId: string; conversationId: st
 
     // ── CEREBRO ─────────────────────────────────────────────────────────────
     // Fase E: Modelo 1 o Modelo 2 según la etapa del contacto AL RESPONDER (si el
-    // agente la mueve en esta misma respuesta, la siguiente usa el de la nueva).
-    const pick = brainModelForStage(cfg, await loadContactStage(org, conv.contactId));
+    // agente la mueve en esta misma respuesta, la siguiente usa el de la nueva). Sin
+    // llave del Modelo 1 en este entorno, contesta el Modelo 2.
+    const isAvailable = deps.isModelAvailable ?? ((id: string) => modelAvailability(id).available);
+    const stageAtStart = await loadContactStage(org, conv.contactId);
+    const pick = pickBrainModel(cfg, stageAtStart, isAvailable);
+    if (pick.fallback) console.warn(`[agente] ${conv.id}: el Modelo 1 (${cfg.modelo1}) no está disponible aquí; contesta el Modelo 2 (${pick.modelId})`);
     const brainModel = getModel(pick.modelId);
     if (!brainModel) throw new Error(`modelo ${pick.slot} desconocido: ${pick.modelId}`);
     // Goal y FAQs con los valores personalizados de esta conversación sustituidos.
@@ -317,6 +325,14 @@ export async function runAgent(job: { organizationId: string; conversationId: st
       await recordAiUsage({ ...brainUsage, outcome: "discarded_stale" });
       console.info(`[agente] ${conv.id}: respuesta descartada (entró un mensaje durante la generación), ronda ${round}`);
       continue; // regenerar con TODO el contexto
+    }
+    // Fase E: si un vendedor movió la etapa durante la generación y con ella cambió
+    // el modelo que debe contestar, esta respuesta no sale: se regenera con el correcto.
+    const stageNow = await loadContactStage(org, conv.contactId);
+    if (stageNow !== stageAtStart && pickBrainModel(cfg, stageNow, isAvailable).modelId !== brainModel.id) {
+      await recordAiUsage({ ...brainUsage, outcome: "discarded_stale", error: "cambió la etapa y con ella el modelo" });
+      console.info(`[agente] ${conv.id}: respuesta descartada (la etapa cambió a ${stageNow} durante la generación), ronda ${round}`);
+      continue;
     }
 
     // Re-chequeo: durante la generación pudo cambiar el interruptor, el estado
