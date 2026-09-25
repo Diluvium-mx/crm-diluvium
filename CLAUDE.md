@@ -123,6 +123,7 @@ Variables de entorno mínimas:
 ```
 DATABASE_URL, REDIS_URL, AUTH_SECRET, APP_URL,
 ZERNIO_API_KEY, ZERNIO_WEBHOOK_SECRET        (web y worker; canal WhatsApp vía Zernio)
+META_ADS_ACCESS_TOKEN                        (web; el worker la referencia; solo ads_read — docs/anuncios.md)
 ```
 
 ---
@@ -214,6 +215,14 @@ contacts (+)         stage_changed_by (vendedor|agente|sistema): la etapa de un 
 scheduled_messages   id, org_id, conversation_id, created_by_user_id, kind (text|template), body,
                      template_id, template_params, send_at, programmed_at, cancel_if_inbound,
                      status (scheduled|sending|sent|failed|cancelled), error_code, message_id
+
+-- Anuncios de Meta (24/25-sep-2026, 0030 reservada, entra tras la 0034; detalle en docs/anuncios.md)
+ad_clicks            id, org_id, contact_id, conversation_id, message_id, origin (webhook|zernio_conversation),
+                     ad_id, ctwa_clid, headline…, raw jsonb (ficha original completa), clicked_at
+                     -- una fila por entrada desde un anuncio; la atribución vive aquí (contacto + conversación)
+meta_ads             org_id + ad_id, campaña/conjunto/anuncio, creativo (título, texto, CTA, enlace), datos del
+                     video (sin archivo), enlaces a Meta, meta_raw y UNA miniatura chica (thumbnail_key)
+conversations (+)    ad_entry_at   -- última entrada por anuncio (ventana gratis de 72 h)
 ```
 
 Detalles que importan:
@@ -244,7 +253,8 @@ el mismo chat. Detalle de la bandeja y contrato de datos para el track UI: `docs
 
 **Sidebar desde el Bloque A (22-sep-2026):** Dashboard (`/inicio`, primero y destino al entrar) ·
 Bandeja (`/dashboard`) · Embudo (`/embudo`; antes "Contactos", `/contactos` redirige) · Mensajes
-rápidos (`/mensajes-rapidos`; antes "Fragmentos y plantillas", `/snippets` redirige) · Agente IA
+rápidos (`/mensajes-rapidos`; antes "Fragmentos y plantillas", `/snippets` redirige) · Anuncios (`/anuncios`,
+24-sep-2026: anuncios de Meta que trajeron clientes) · Agente IA
 (owner/admin) · Configuración (`/configuracion`, al final: Mi cuenta para todos; Vendedores y Tallas
 solo owner/admin).
 
@@ -317,7 +327,10 @@ Reglas de UI:
 - Toda consulta a DB filtra por `organization_id`. Helper `withOrg(ctx)` obligatorio, sin excepciones.
 - Errores de proveedor nunca se tragan: se guardan en `messages.error_code` y se muestran en la UI.
 - Un archivo = una responsabilidad. Componentes de UI sin lógica de datos.
-- Migraciones: nunca editar una migración ya aplicada; siempre una nueva.
+- Migraciones: nunca editar una migración ya aplicada; siempre una nueva. **Candado** (25-sep-2026,
+  docs/migraciones.md): `npm run db:check` falla si falta CUALQUIER migración del journal (drizzle salta en
+  silencio las de `when` menor); corre en el pre-deploy de Railway, así un faltante detiene el despliegue
+  sin tumbar la versión que está atendiendo.
 - Tests: Vitest para lógica pura (normalización de teléfono, parser de webhook, cálculo de posición,
   ventana 24 h). Sin tests de UI en v1.
 - `npm test` corre con `--passWithNoTests` **solo temporalmente**, mientras el repo no tiene

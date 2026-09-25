@@ -231,7 +231,9 @@ describe.skipIf(!TEST_DATABASE_URL)("bandeja: lecturas y escrituras (Postgres re
     expect(page).not.toBeNull();
     expect(page!.messages.map((m) => m.body)).toEqual([null, "Va"]);
     expect(page!.messages[0].attachments[0]).toMatchObject({ index: 0, state: "ready", url: expect.stringContaining("/api/media/") });
-    expect(page!.messages[0].adReferral).toEqual({ headline: "Portón", body: null, thumbnailUrl: "https://cdn/ad.jpg", sourceUrl: null, mediaType: null });
+    // Tarjeta compacta: nombre y enlace; nunca ctwa_clid ni el link de Meta
+    // (caduca): sin clic registrado aún, sin miniatura.
+    expect(page!.messages[0].adReferral).toEqual({ name: "Portón", href: "/anuncios", thumbnailUrl: null, mediaType: null });
 
     const older = await q.listMessagesForOrg(ORG_A, convId, { before: page!.messages[1].id, limit: 10 });
     expect(older!.messages.map((m) => m.body)).toEqual([null]);
@@ -267,7 +269,10 @@ describe.skipIf(!TEST_DATABASE_URL)("bandeja: lecturas y escrituras (Postgres re
 
   it("setConversationStarred y getConversation con anuncio; aislamiento entre organizaciones", async () => {
     const { convId, contactId } = await seedConversation({ lastMessageAt: "2026-09-18T10:00:00Z" });
-    await db.update(s.conversations).set({ adReferral: { headline: "Anuncio", source_url: "https://fb.com/a" } }).where(eq(s.conversations.id, convId));
+    await db
+      .update(s.conversations)
+      .set({ adReferral: { headline: "Anuncio", source_url: "https://fb.com/a" }, adEntryAt: new Date("2026-09-24T18:00:00Z") })
+      .where(eq(s.conversations.id, convId));
 
     expect(await q.setConversationStarredForOrg(ORG_A, convId, true)).toBe(true);
     // Otra organización no puede tocar ni ver la conversación.
@@ -276,7 +281,7 @@ describe.skipIf(!TEST_DATABASE_URL)("bandeja: lecturas y escrituras (Postgres re
     expect(await q.listMessagesForOrg(ORG_B, convId)).toBeNull();
 
     const detail = await q.getConversationForOrg(ORG_A, convId);
-    expect(detail).toMatchObject({ isStarred: true, adReferral: { headline: "Anuncio", sourceUrl: "https://fb.com/a" } });
+    expect(detail).toMatchObject({ isStarred: true, adEntry: { entryAt: new Date("2026-09-24T18:00:00Z"), firstReplyAt: null } });
     expect(detail!.contact.stage).toBeDefined();
 
     const byContact = await q.getConversationByContactForOrg(ORG_A, contactId);
