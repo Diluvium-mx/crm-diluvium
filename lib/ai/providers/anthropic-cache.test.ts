@@ -32,4 +32,20 @@ describe("caché del historial (Anthropic)", () => {
     const out = withHistoryCacheBreakpoint([{ role: "user", content: "hola" }]);
     expect(out[0].providerOptions).toBeUndefined();
   });
+
+  it("con fotos o PDF (URL firmada que cambia) el punto va antes del primer mensaje con archivo", () => {
+    const msgs: ModelMessage[] = [
+      { role: "user", content: "hola" },
+      { role: "assistant", content: "¿en qué te ayudo?" },
+      { role: "user", content: [{ type: "image", image: new URL("https://bucket.test/a.jpg?X-Amz-Date=1") }] },
+      { role: "assistant", content: "¡Qué bonita entrada!" },
+      { role: "user", content: "precio?" },
+    ];
+    const out = withHistoryCacheBreakpoint(msgs);
+    expect(out[1].providerOptions).toEqual(cc);
+    expect(out[3].providerOptions).toBeUndefined();
+    // Si la primera foto está en el primer mensaje, no hay nada estable que cachear.
+    const first = withHistoryCacheBreakpoint([{ role: "user", content: [{ type: "image", image: new URL("https://x.test/b.jpg") }] }, { role: "assistant", content: "ok" }, { role: "user", content: "y?" }]);
+    expect(first.every((m) => m.providerOptions === undefined)).toBe(true);
+  });
 });
