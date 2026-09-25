@@ -273,10 +273,17 @@ Dashboard ya muestra el gasto del mes y el saldo estimado (24-sep-2026).
   - Llaves con los nombres de Railway: `GEMINI_API_KEY`, `GROK_API_KEY`, `QWEN_API_KEY` (valor en
     el web de producción; `worker-production` las referencia). Prueba real del 25-sep: Gemini y
     Qwen contestan con herramientas; Grok rechazó la llave (hay que volver a copiarla).
-  Siguen (decisión del dueño): A (por verificar con "¿cómo se instalan y cuánto cuestan?"), la nota
-  del tope diario, un indicador "agente con error" en la lista de la Bandeja (si el saldo se acaba,
-  cada conversación deja su tarjeta y nadie lo ve sin abrirla), y que un fallo de ENVÍO antes de la
-  primera burbuja todavía reintenta en la cola (cada intento vuelve a llamar al modelo). El panel de gasto que antes
+  **Parte 3 (25-sep, migración 0035):**
+  - **A resuelto:** la conversación para el modelo SIEMPRE termina en el turno del cliente; lo que
+    salió por palabra clave después de su mensaje va como nota ("[Después de este mensaje ya se le
+    envió al cliente: …]"). Probado con Sonnet 5 real: antes daba el 400 de B5; ahora contesta el
+    precio y no repite el video.
+  - **Falla al ENVIAR:** si el CRM (ventana cerrada, canal apagado) o WhatsApp rechazan el primer
+    mensaje, sale la tarjeta con el motivo y "Reintentar"/"Apagar"; antes la cola reintentaba hasta
+    3–5 veces pagando otra llamada al modelo cada vez y dejando burbujas fallidas.
+  - **Tope diario de $20 quitado** (columna `ai_config.daily_budget_usd` borrada, decisión del dueño).
+  - **Dashboard:** "Gasto de IA" hasta arriba con cifras grandes y los cinco proveedores con llave.
+  - Decidido NO hacer: indicador "agente con error" en la lista de la Bandeja (el dueño no lo ve probable). El panel de gasto que antes
   se anotaba aquí ya existe en el Dashboard (24-sep-2026); conciliar contra las Cost API queda como
   pendiente sin fase.
 
