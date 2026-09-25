@@ -5,6 +5,8 @@ import type { Contact } from "../_data/types";
 import { TEMPERATURE_EMOJI, TEMPERATURE_LABELS, getContactFullName } from "../_data/types";
 import { ContactAvatar } from "./contact-avatar";
 import { displayPhone } from "@/lib/phone-format";
+import { PhoneLocation } from "@/components/ui/phone-location";
+import { PruebaBadge } from "@/components/ui/prueba-badge";
 
 // Contenido puro de la tarjeta, sin lógica de arrastre. Se reutiliza tal
 // cual dentro del DragOverlay del board (la "copia" que sigue al cursor
@@ -14,8 +16,12 @@ export function ContactCardContent({ contact }: { contact: Contact }) {
     <div className="flex w-full items-center gap-3 rounded-md border bg-card p-3 text-left text-sm shadow-sm transition-colors hover:border-brand-navy">
       <ContactAvatar contact={contact} />
       <div className="flex min-w-0 flex-1 flex-col gap-0.5">
-        <span className="truncate font-medium">{getContactFullName(contact)}</span>
+        <span className="flex min-w-0 items-center gap-1.5">
+          <span className="truncate font-medium">{getContactFullName(contact)}</span>
+          {contact.esPrueba && <PruebaBadge />}
+        </span>
         <span className="truncate text-muted-foreground">{displayPhone(contact.phoneE164) || "Sin teléfono"}</span>
+        <PhoneLocation phone={contact.phoneE164} />
       </div>
       {contact.temperature && (
         <span
@@ -46,6 +52,9 @@ export function ContactCard({
   // clic sin desplazar sigue disparando onClick y abre el panel; solo al
   // arrastrar toma el control dnd-kit. Mientras se arrastra, la tarjeta
   // original se atenúa y el DragOverlay muestra la copia que sigue al cursor.
+  // El fondo lo lleva el botón y el contenido va transparente: así el "fondo
+  // iluminado" (app/globals.css) se ve DETRÁS del contenido. La copia del
+  // DragOverlay conserva su propio fondo.
   return (
     <button
       ref={setNodeRef}
@@ -53,7 +62,7 @@ export function ContactCard({
       onClick={onClick}
       {...attributes}
       {...listeners}
-      className={`w-full cursor-grab rounded-md text-left active:cursor-grabbing ${
+      className={`w-full cursor-grab rounded-md bg-card text-left active:cursor-grabbing [&>div]:bg-transparent ${
         isDragging ? "opacity-40" : ""
       }`}
     >

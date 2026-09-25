@@ -49,7 +49,15 @@ Automatizaciones visuales, Instagram/Messenger, email, SMS, difusiones masivas, 
 formularios y landing pages, agente IA de calificación.
 
 > **Agente IA — Fase A (hecha):** mecanismo de modelo multi-proveedor + selector (`lib/ai/`, tabla
-> `ai_config`, pestaña "Agente IA"). Detalle: `docs/agente-ia.md`. **La Fase B (runtime del agente)
+> `ai_config`, pestaña "Agente IA"). Detalle: `docs/agente-ia.md`. **Fase D (24-sep-2026):** la pestaña
+> Automatización solo tiene envíos de media (texto, archivo con pie, espera) con disparadores agente /
+> comando / palabra clave / etapa; etapa, avisos al vendedor y comprobantes son **acciones internas del
+> agente** (`mover_etapa` solo hacia adelante, `aviso_vendedor`, `fijar_cotizacion`) decididas por el
+> Goal, no por código. Diseño: `docs/fase-d-diseno.md` §10. **Fase D CERRADA el 25-sep-2026** (main
+> 057725c, migración 0031; prueba B5 en producción y pendientes A–F sin construir: §11 del mismo doc).
+> **Fase E:** Modelo 1 (Luna) y Modelo 2 (Sonnet 5) por etapa, con sus selectores en la pestaña Agente IA,
+> más el reenvío seguro. En curso (25-sep): selectores, etapas (Modelo 1 = Inbox, Prospecto,
+> Interesado), adaptadores de Google/xAI/OpenRouter y tope de 4,096 tokens en la migración 0033. **La Fase B (runtime del agente)
 > debe PERSISTIR tokens/uso por mensaje procesado** (`callModel` ya devuelve `usage` normalizado) para
 > alimentar un panel de gasto futuro.
 
@@ -194,6 +202,10 @@ tallas_compuerta     id, org_id, linea, talla, min_cm, max_cm, posicion   -- edi
 contact_comentarios  id, org_id, contact_id, author_user_id (obligatorio), body, created_at, updated_at
                      -- 0022: las notas viejas (custom_fields.notas) se copian aquí con autor de
                      -- sistema "Importado" (sin login ni membresía; solo owner/admin las editan)
+comprobantes         id, org_id, contact_id, conversation_id, message_id (único), monto, referencia,
+                     referencia_norm, banco, fecha_comprobante, tipo (total|anticipo|resto), created_at
+                     -- Fase D (0031): lo que el agente leyó; sin reglas de monto en código
+contacts (+)         stage_changed_by (vendedor|agente|sistema): la etapa de un vendedor manda; el agente solo avanza
 scheduled_messages   id, org_id, conversation_id, created_by_user_id, kind (text|template), body,
                      template_id, template_params, send_at, programmed_at, cancel_if_inbound,
                      status (scheduled|sending|sent|failed|cancelled), error_code, message_id
@@ -251,6 +263,7 @@ solo owner/admin).
 - **Composer**: "/" busca Fragmentos (`{{vendedor}}` = usuario logueado), ⚡ Fragmentos, 📄
   Plantillas y 🕒 Programar (hora de Mazatlán; fuera de la ventana de 24 h a esa hora, solo
   plantilla; "cancelar si el cliente escribe antes" lo decide el worker al disparar).
+- **Apagar bot** (25-sep-2026): por conversación, 8/12/24 h, hora exacta (Mazatlán, ≤30 días) o hasta reactivarlo; vuelve solo con el barrido del worker y no contesta lo escrito mientras estuvo apagado. Detalle: `docs/bandeja.md`.
 
 ```
 ┌─ Lista (se cierra) ─┬──── Chat ────────────────────────┬─ Contacto (se cierra) ─┐
@@ -271,6 +284,32 @@ Reglas de UI:
   alimentará las automatizaciones. En v1 solo registra actividad.
 - Marca: navy `#0A559A` / `#245595`, blanco `#FFFFFF`, naranja `#DE8C11` / `#FE9F29`, tipografía Helvetica.
   Naranja reservado para acciones primarias y alertas, nunca como fondo extenso.
+- **Buscadores (regla del repositorio, 24-sep-2026):** todo buscador del CRM, actual o nuevo,
+  ignora acentos, ñ y mayúsculas con `lib/text/search.ts` (`matchesSearch` / `normalizeSearch`;
+  en el servidor, la misma normalización en SQL con `lower(translate(...))` usando
+  `SQL_SEARCH_FROM/TO`, sin extensión `unaccent`). **Prohibido** filtrar con
+  `toLowerCase().includes` o `ilike` directo. La prueba guardiana
+  `lib/text/search-guard.test.ts` falla si aparece uno; la única excepción anotada es el filtro de
+  comandos del composer (Fase D).
+- **Paneles que se ocultan** (lista y Detalle de la Bandeja, Detalle del pop-up del Embudo):
+  se recuerdan por computadora con `components/ui/use-persistent-toggle.ts` (localStorage con
+  try/catch; sin almacenamiento, abierto por defecto; sin parpadeo). Cualquier panel nuevo que se
+  pueda ocultar usa ese hook.
+- **Indicador "Agente IA leyendo/escribiendo/enviando"** (píldora en el chat,
+  `app/(app)/dashboard/_components/agent-activity-pill.tsx`, lector `lib/agente-ia/activity*.ts`,
+  orbe del paquete `thinking-orbs` 0.3.2 fijo): depende de DOS contratos de Fase D que no se
+  cambian sin actualizarlo: (1) en la cola BullMQ `agent-replies` el **jobId = conversationId**
+  (`lib/ai/runtime/queue.ts`); (2) `workflow_runs.trigger` ∈ `agent|keyword|command|stage` y
+  `status` `queued|running` = corrida abierta (`lib/db/schema/automation.ts`). Lee la cola con
+  `withQueueTimeout` (1.5 s); si Redis falla, muestra nada.
+- **Enlaces** (estilo propio en `app/globals.css`, sin el fondo iluminado de los botones):
+  `data-link="text"` (subrayado que se dibuja + navy más intenso), `data-link="card"`
+  (tarjeta-enlace: borde navy, sombra, sube 1 px; su flecha lleva `data-link-arrow`),
+  `data-link="tab"` (pestaña-enlace: fondo navy tenue). Un enlace con forma de botón sólido lleva
+  `data-glow`. Al llegar Anuncios a `main`: la tarjeta "Llegó por anuncio" y la lista de
+  `/anuncios` llevan `data-link="card"`, "Ver en Meta" lleva `data-link="text"`. La tabla de
+  anuncios (`components/anuncios/ads-table.tsx`, contrato en `docs/ui-anuncios-tabla.md`)
+  reemplaza la lista de `/anuncios` con luz verde del dueño.
 
 ---
 
@@ -337,10 +376,16 @@ Regla para Codex y Claude: cualquier check nuevo se agrega como script de
 `package.json`, no como comando suelto con `npx`. Detalle idéntico en `AGENTS.md`.
 
 ### Higiene de trabajo en paralelo
-- **Nunca dos agentes sobre los mismos archivos.** Usar git worktrees:
+- **Dónde vive el trabajo en esta Mac (25-sep-2026):** todo en `~/Documents/Diluvium CRM/` — copia
+  principal del repo en `crm-diluvium/`, un worktree por chat en `chats/`, medios en `media/` y archivos
+  del CRM fuera del repo en `notas/` (qué hay en cada una: `LEEME.md` de esa carpeta). Nada de eso va
+  DENTRO del repo (datos de clientes y del banco).
+- **Nunca dos agentes sobre los mismos archivos.** Usar git worktrees, siempre dentro de
+  `~/Documents/Diluvium CRM/chats/` (una carpeta por chat de Code; el nombre lleva espacio: siempre entre
+  comillas; mapa completo en `docs/migrar-mac.md`):
   ```
-  git worktree add ../crm-inbox    feature/inbox
-  git worktree add ../crm-contacts feature/contacts
+  git worktree add "$HOME/Documents/Diluvium CRM/chats/crm-inbox"    -b feature/inbox    origin/main
+  git worktree add "$HOME/Documents/Diluvium CRM/chats/crm-contacts" -b feature/contacts origin/main
   ```
 - Trabajar en **rebanadas verticales** (schema → API → UI de una sola feature), nunca por capas.
   Una rebanada terminada es una que se puede desplegar y usar.

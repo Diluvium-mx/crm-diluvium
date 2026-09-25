@@ -34,9 +34,17 @@ export async function findOrphanConversations(now: Date, limit = 50): Promise<Or
     from conversations c
     join channels ch on ch.id = c.channel_id
     join lateral (
-      select m.id, m.direction, m.created_at
+      select m.id, m.direction, m.created_at, m.sent_at
       from messages m
       where m.conversation_id = c.id and m.status <> 'failed'
+        -- Igual que pendingInbound (Fase D): un aviso interno o la media de un
+        -- workflow por palabra clave no cuentan como respuesta al cliente.
+        and m.type <> 'system_note'
+        and not exists (
+          select 1 from workflow_runs r
+          where r.organization_id = m.organization_id and r.conversation_id = m.conversation_id
+            and r.trigger in ('keyword', 'agent') and r.message_ids ? m.id
+        )
       order by coalesce(m.sent_at, m.created_at) desc, m.created_at desc
       limit 1
     ) last on true
@@ -48,16 +56,20 @@ export async function findOrphanConversations(now: Date, limit = 50): Promise<Or
       and last.created_at < ${ts(new Date(now.getTime() - ORPHAN_MIN_AGE_SECONDS * 1000))}
       and last.created_at > ${ts(since)}
       -- Lo escrito ANTES de encender el canal o de reactivar al agente no se
-      -- contesta solo: espera al siguiente mensaje del cliente.
+      -- contesta solo: espera al siguiente mensaje del cliente. Contra la
+      -- reactivación cuenta la hora en que el cliente lo ESCRIBIÓ (WhatsApp): un
+      -- mensaje escrito con el bot apagado que llegó tarde tampoco ("Apagar bot").
+      -- WhatsApp da segundos enteros: lo escrito en el mismo segundo del corte es nuevo.
       and last.created_at > coalesce(ch.ai_agent_mode_changed_at, '-infinity'::timestamp)
-      and last.created_at > coalesce(c.agent_state_changed_at, '-infinity'::timestamp)
+      and coalesce(last.sent_at, last.created_at) >= coalesce(date_trunc('second', c.agent_state_changed_at), '-infinity'::timestamp)
       and not exists (
         select 1 from ai_usage u
-        where u.message_id = last.id and u.outcome in ('sent', 'draft', 'skipped', 'handover')
+        where u.organization_id = c.organization_id and u.message_id = last.id
+          and u.outcome in ('sent', 'draft', 'skipped', 'handover')
       )
       -- Un plan/borrador OBSOLETO no cuenta (p. ej. la 1ª burbuja falló en los 3 intentos):
       -- el barrido lo rescata hasta MAX_ERRORS_PER_MESSAGE.
-      and not exists (select 1 from ai_agent_drafts d where d.trigger_message_id = last.id and d.status <> 'obsoleto')
+      and not exists (select 1 from ai_agent_drafts d where d.organization_id = c.organization_id and d.trigger_message_id = last.id and d.status <> 'obsoleto')
       and (select count(*) from ai_usage u where u.message_id = last.id and u.outcome = 'error') < ${MAX_ERRORS_PER_MESSAGE}
     limit ${limit}
   `);
@@ -103,6 +115,12 @@ export async function reconcileStuckDrafts(now: Date): Promise<number> {
           eq(messages.direction, "out"),
           eq(messages.source, "ai_agent"),
           gte(messages.createdAt, since),
+          // Ni avisos internos ni media/texto de corridas de workflow: no son burbujas del plan.
+          sql`${messages.type} <> 'system_note' and not exists (
+            select 1 from workflow_runs r
+            where r.organization_id = ${messages.organizationId} and r.conversation_id = ${messages.conversationId}
+              and r.message_ids ? ${messages.id}
+          )`,
         ),
       );
     if (outs.some((m) => m.status === "queued")) continue; // aún en camino

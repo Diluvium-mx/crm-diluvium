@@ -1,19 +1,38 @@
 // Plantillas de WhatsApp (aprobadas por Meta): sincronización desde el
 // proveedor a la tabla `templates` y lectura para la UI. Toda consulta filtra
 // por organización (CLAUDE.md §7). Ver docs/investigacion/plantillas-zernio.md.
-import { and, asc, desc, eq } from "drizzle-orm";
+import { and, asc, desc, eq, notInArray } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { channels, templates } from "@/lib/db/schema";
 import { isTemplateSendable, type TemplateView } from "@/lib/templates/types";
 import { messagingProvider } from "./index";
 import type { ProviderName } from "./provider";
-import { TEMPLATE_STATUS_REMOVED, templatesToRemove } from "./template-sync";
+import {
+  FOREIGN_TEMPLATE_ACCOUNT_IDS,
+  isForeignTemplateAccount,
+  TEMPLATE_STATUS_REMOVED,
+  templatesToRemove,
+} from "./template-sync";
 
 /** No hay canal de WhatsApp activo para esta organización (nada que sincronizar/enviar). */
 export class TemplatesChannelError extends Error {
   constructor(message = "No hay un canal de WhatsApp activo en esta organización.") {
     super(message);
     this.name = "TemplatesChannelError";
+  }
+}
+
+/**
+ * El canal activo es el sandbox compartido de Zernio: sus plantillas son de otros
+ * clientes de Zernio. No se importan ni se crean ahí (una plantilla de Diluvium
+ * creada en esa WABA quedaría a la vista de todos y no serviría con el número real).
+ */
+export class TemplatesSandboxError extends Error {
+  constructor(
+    message = "El canal conectado es el sandbox de Zernio: sus plantillas no son de Diluvium y no se usan en el CRM. Las plantillas se crean y sincronizan cuando se conecte el número de Diluvium.",
+  ) {
+    super(message);
+    this.name = "TemplatesSandboxError";
   }
 }
 
@@ -38,6 +57,20 @@ export async function activeWhatsappChannel(
   return channel ?? null;
 }
 
+/**
+ * ¿El canal de WhatsApp activo es el sandbox de Zernio? La pestaña Plantillas lo
+ * avisa y deshabilita Sincronizar/Crear (el servidor también lo rechaza). Sin
+ * proveedor configurado o sin canal → false (no hay nada que avisar).
+ */
+export async function activeChannelIsForeign(organizationId: string): Promise<boolean> {
+  try {
+    const channel = await activeWhatsappChannel(organizationId, messagingProvider().name);
+    return channel !== null && isForeignTemplateAccount(channel.providerAccountId);
+  } catch {
+    return false;
+  }
+}
+
 function toView(row: typeof templates.$inferSelect): TemplateView {
   return {
     id: row.id,
@@ -54,14 +87,24 @@ function toView(row: typeof templates.$inferSelect): TemplateView {
   };
 }
 
-/** Lista TODAS las plantillas de la organización (aprobadas o no) para la UI. */
+/**
+ * Lista las plantillas de la organización (aprobadas o no) para la UI, SIN las de
+ * cuentas ajenas (el sandbox de Zernio): esas quedan guardadas pero ocultas.
+ */
 export async function listTemplatesForOrg(organizationId: string): Promise<TemplateView[]> {
   const rows = await db
-    .select()
+    .select({ template: templates })
     .from(templates)
-    .where(eq(templates.organizationId, organizationId))
+    .innerJoin(channels, eq(channels.id, templates.channelId))
+    .where(
+      and(
+        eq(templates.organizationId, organizationId),
+        eq(channels.organizationId, organizationId),
+        notInArray(channels.providerAccountId, [...FOREIGN_TEMPLATE_ACCOUNT_IDS]),
+      ),
+    )
     .orderBy(asc(templates.name), asc(templates.language));
-  return rows.map(toView);
+  return rows.map((r) => toView(r.template));
 }
 
 /**
@@ -73,11 +116,14 @@ export async function listTemplatesForOrg(organizationId: string): Promise<Templ
  *    para que dejen de ser enviables (Meta pudo eliminarlas: desaparecen del
  *    listado sin un estado terminal, y sin esto quedarían "APPROVED" para siempre
  *    y todo envío se rechazaría). Un buen sync posterior las vuelve a aprobar.
+ * Con el canal del sandbox de Zernio NO se importa nada (TemplatesSandboxError),
+ * ni se toca lo ya guardado: sus plantillas no son de Diluvium.
  */
 export async function syncTemplatesForOrg(organizationId: string): Promise<{ synced: number; removed: number }> {
   const provider = messagingProvider();
   const channel = await activeWhatsappChannel(organizationId, provider.name);
   if (!channel) throw new TemplatesChannelError();
+  if (isForeignTemplateAccount(channel.providerAccountId)) throw new TemplatesSandboxError();
 
   const remote = await provider.listTemplates(channel.providerAccountId);
 

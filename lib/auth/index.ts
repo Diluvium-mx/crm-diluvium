@@ -6,6 +6,7 @@ import { organization } from "better-auth/plugins/organization";
 import { db } from "@/lib/db";
 import { emailLockoutAfter, emailLockoutBefore } from "@/lib/auth/email-lockout";
 import { seedDefaultSizeRanges } from "@/lib/contacts/sizes-seed";
+import { seedDefaultWorkflows } from "@/lib/workflows/seed";
 import { ac, admin, agent, owner } from "@/lib/auth/permissions";
 
 if (!process.env.APP_URL) {
@@ -97,9 +98,13 @@ export const auth = betterAuth({
       // impediría desactivarlo. Las llamadas de SERVIDOR con userId (seed-org)
       // siguen permitidas (dist/plugins/organization/routes/crud-org.mjs:56-58).
       allowUserToCreateOrganization: false,
-      // Toda organización nueva nace con los rangos de tallas por defecto (A7).
+      // Toda organización nueva nace con los rangos de tallas por defecto (A7)
+      // y con los workflows predeterminados apagados (Fase D).
       organizationHooks: {
-        afterCreateOrganization: async ({ organization: created }) => seedDefaultSizeRanges(db, created.id),
+        afterCreateOrganization: async ({ organization: created }) => {
+          await seedDefaultSizeRanges(db, created.id);
+          await seedDefaultWorkflows(db, created.id);
+        },
       },
     }),
     // Plugin admin: SOLO para crear usuarios desde el servidor y para el campo

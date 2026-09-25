@@ -25,6 +25,11 @@ export const statement = {
   // Tarjeta "Gasto de IA" del Dashboard (A2): solo owner/admin la ven (`read`) y
   // registran las recargas de crédito de los proveedores (`update`).
   aiSpend: ["read", "update"],
+  // Automatización (Fase D). Editar workflows y su biblioteca de media es
+  // configuración del CRM (owner/admin); el vendedor los LEE y los EJECUTA
+  // desde el composer (`run`: comandos tipo /tabla).
+  workflow: ["read", "run", "create", "update", "delete"],
+  mediaAsset: ["read", "create", "delete"],
 } as const;
 
 export const ac = createAccessControl(statement);
@@ -38,6 +43,8 @@ export const owner = ac.newRole({
   aiConfig: ["read", "update"],
   sizeRange: ["read", "update"],
   aiSpend: ["read", "update"],
+  workflow: ["read", "run", "create", "update", "delete"],
+  mediaAsset: ["read", "create", "delete"],
 });
 
 export const admin = ac.newRole({
@@ -49,6 +56,8 @@ export const admin = ac.newRole({
   aiConfig: ["read", "update"],
   sizeRange: ["read", "update"],
   aiSpend: ["read", "update"],
+  workflow: ["read", "run", "create", "update", "delete"],
+  mediaAsset: ["read", "create", "delete"],
 });
 
 export const agent = ac.newRole({
@@ -60,6 +69,8 @@ export const agent = ac.newRole({
   snippet: ["create", "read", "update", "delete"],
   template: ["read"],
   sizeRange: ["read"],
+  workflow: ["read", "run"],
+  mediaAsset: ["read"],
   // El agente NO gestiona la config del Agente IA: `aiConfig` se omite a
   // propósito (roleAllows falla cerrado → sin acceso a la pestaña ni a editar).
 });

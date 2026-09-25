@@ -16,6 +16,7 @@ import type {
   ProviderName,
 } from "./provider";
 import { firstResponseSeconds, nextStatus, windowExpiresAt } from "./rules";
+import { ingestHistoryMessage, isPhoneHistory } from "./history";
 import { pendingFallbackNote, recordAdClickSafely, type FallbackJob, type RecordedClick } from "@/lib/ads/attribution";
 import { looksLikeAdMessage } from "@/lib/ads/referral";
 
@@ -119,9 +120,17 @@ export async function processWebhookEvent(
     let organizationId: string | null = attributedOrgId;
     let ignored = event.kind === "ignored";
     let orphanWamid: string | null = null;
+    // Canal ARCHIVADO (docs/numero-prueba.md, paso 8): sus eventos quedan
+    // registrados en webhook_events y NO se procesan (ni reintento ni dead-letter).
+    const archived =
+      event.kind !== "ignored" && event.providerAccountId ? await archivedChannelOf(provider.name, event.providerAccountId) : null;
     // El proveedor viene del adaptador que VERIFICÓ la firma, no del payload.
     try {
-      if (event.kind === "message") {
+      if (archived) {
+        outcome = `canal archivado: evento ${event.kind} registrado sin procesar`;
+        organizationId = archived.organizationId;
+        ignored = true;
+      } else if (event.kind === "message") {
         const r = await ingestMessage(provider.name, event, hooks);
         outcome = r.outcome;
         organizationId = r.organizationId ?? attributedOrgId;
@@ -183,6 +192,16 @@ async function receivedBefore(webhookEventId: string, ms: number): Promise<boole
   return row?.old ?? false;
 }
 
+/** Canal archivado de esa cuenta (si lo hay): sus eventos no se procesan. */
+async function archivedChannelOf(provider: ProviderName, providerAccountId: string) {
+  const [channel] = await db
+    .select({ organizationId: channels.organizationId })
+    .from(channels)
+    .where(and(channelOf(provider, providerAccountId), isNotNull(channels.archivedAt)))
+    .limit(1);
+  return channel ?? null;
+}
+
 // El id de cuenta solo es único POR proveedor (índice (provider,
 // provider_account_id)): buscar sin el proveedor podría, durante una migración
 // Zernio → Meta, caer en el canal de otra organización.
@@ -207,19 +226,11 @@ async function ingestMessage(
     throw new RetryableIngestError(`no hay canal activo para la cuenta ${event.providerAccountId}`);
   }
 
-  // El teléfono puede faltar (eco sin participantId, o cliente con nombre de
-  // usuario de WhatsApp: solo BSUID). NO se inventa: se atribuye por la
-  // conversación existente, o por el BSUID. normalizePhone ya deja a México
-  // como +52 + 10 dígitos (quita el 1 heredado del wa_id).
-  let phone: string | null = null;
-  if (event.contactPhone) {
-    try {
-      phone = normalizePhone(event.contactPhone);
-    } catch {
-      phone = null;
-    }
-  }
-  const bsuid = event.contactBsuid ?? null;
+  // Copia del historial del celular (con marca, o enviada antes de conectar el
+  // número): sin agente, workflows, no leídos, ventana ni primera respuesta.
+  if (isPhoneHistory(channel, event)) return ingestHistoryMessage(provider, channel, event, hooks);
+
+  const { phone, bsuid } = eventIdentity(event);
 
   let mediaMessageId: string | undefined;
   // Mensaje NUEVO guardado en este intento (para los ganchos del Agente IA).
@@ -271,7 +282,9 @@ async function ingestMessage(
             `(teléfono recibido: ${event.contactPhone ?? "ninguno"}, conversación ${event.providerConversationId})`,
         );
       }
-      const contactId = await resolveContact(tx, orgId, { phone, bsuid, name: event.contactName });
+      const contactId = await resolveContact(tx, orgId, { phone, bsuid, name: event.contactName }, undefined, {
+        esPrueba: channel.isTest,
+      });
       [upserted] = await tx
         .insert(conversations)
         .values({
@@ -646,7 +659,8 @@ export async function latestInboundMessageId(conversationId: string, tx: Tx | ty
   const [row] = await tx
     .select({ id: messages.id })
     .from(messages)
-    .where(and(eq(messages.conversationId, conversationId), eq(messages.direction, "in")))
+    // Lo importado del historial nunca es el corte de lectura (se guarda "ahora" pero es viejo).
+    .where(and(eq(messages.conversationId, conversationId), eq(messages.direction, "in"), isNull(messages.importedAt)))
     .orderBy(desc(messages.createdAt), desc(messages.id))
     .limit(1);
   return row?.id ?? null;
@@ -672,6 +686,8 @@ export async function unreadAfterCutoff(
       and(
         eq(messages.conversationId, conversation.id),
         eq(messages.direction, "in"),
+        // El historial importado no cuenta como no leído.
+        isNull(messages.importedAt),
         sql`${messages.createdAt} > (select created_at from messages where id = ${cutoffMessageId})`,
       ),
     );
@@ -684,7 +700,8 @@ async function reconcileFirstResponse(tx: Tx, conversationId: string): Promise<n
   const [firstIn] = await tx
     .select({ at: messages.sentAt })
     .from(messages)
-    .where(and(eq(messages.conversationId, conversationId), eq(messages.direction, "in")))
+    // Lo importado del historial del celular no cuenta (ni entrante ni respuesta).
+    .where(and(eq(messages.conversationId, conversationId), eq(messages.direction, "in"), isNull(messages.importedAt)))
     .orderBy(asc(messages.sentAt))
     .limit(1);
   if (!firstIn?.at) return null;
@@ -695,6 +712,9 @@ async function reconcileFirstResponse(tx: Tx, conversationId: string): Promise<n
       and(
         eq(messages.conversationId, conversationId),
         eq(messages.direction, "out"),
+        isNull(messages.importedAt),
+        // Un aviso interno (Fase D) nunca salió al cliente: no es respuesta.
+        sql`${messages.type} <> 'system_note'`,
         // Humano verificado: desde la app del celular (coexistencia) o desde el
         // CRM con el usuario que lo envió. Una difusión, automatización o el bot
         // (sin sent_by_user_id) no cuenta como primera respuesta.
@@ -716,6 +736,35 @@ async function reconcileFirstResponse(tx: Tx, conversationId: string): Promise<n
 type Identity = { phone: string | null; bsuid: string | null; name?: string };
 
 /**
+ * Teléfono y BSUID del mensaje. El teléfono puede faltar (eco sin
+ * participantId, o cliente con nombre de usuario de WhatsApp: solo BSUID). NO
+ * se inventa: se atribuye por la conversación existente, o por el BSUID.
+ * normalizePhone ya deja a México como +52 + 10 dígitos (quita el 1 heredado).
+ */
+export function eventIdentity(event: Pick<NormalizedMessageEvent, "contactPhone" | "contactBsuid">): {
+  phone: string | null;
+  bsuid: string | null;
+} {
+  let phone: string | null = null;
+  if (event.contactPhone) {
+    try {
+      phone = normalizePhone(event.contactPhone);
+    } catch {
+      phone = null;
+    }
+  }
+  return { phone, bsuid: event.contactBsuid ?? null };
+}
+
+/**
+ * Cómo nace un contacto que aún no existe (source/etapa por omisión: WhatsApp, Inbox).
+ * `esPrueba`: lo creó un canal de prueba. Solo se marca al NACER: un contacto que ya
+ * existía (p. ej. un cliente real importado de GHL que también escribió al número de
+ * prueba) nunca se marca "Prueba".
+ */
+export type NewContactOptions = { source?: string; esPrueba?: boolean };
+
+/**
  * Contacto del mensaje. Prioridad ESTABLE: BSUID (único por organización; Zernio
  * lo recomienda como ancla principal de identidad) → teléfono → nuevo. Con
  * `knownContactId` (la conversación del proveedor ya existía) no busca a quién
@@ -724,7 +773,13 @@ type Identity = { phone: string | null; bsuid: string | null; name?: string };
  * el mismo cliente (uno por BSUID, otro por teléfono) se registra el conflicto
  * para fusionarlos a mano, sin que la atribución cambie de un mensaje a otro.
  */
-async function resolveContact(tx: Tx, orgId: string, identity: Identity, knownContactId?: string): Promise<string> {
+export async function resolveContact(
+  tx: Tx,
+  orgId: string,
+  identity: Identity,
+  knownContactId?: string,
+  newContact: NewContactOptions = {},
+): Promise<string> {
   const { phone, bsuid } = identity;
   await tx.execute(sql`select pg_advisory_xact_lock_shared(hashtextextended(${contactsImportLockKey(orgId)}, 0))`);
   // Serializa por (organización, identidad): dos mensajes simultáneos de un
@@ -764,8 +819,9 @@ async function resolveContact(tx: Tx, orgId: string, identity: Identity, knownCo
       ...phoneColumns(phone),
       country: countryFromPhone(phone),
       waBsuid: bsuid,
-      source: "whatsapp",
+      source: newContact.source ?? "whatsapp",
       sourceChannel: "whatsapp",
+      esPrueba: newContact.esPrueba ?? false,
       // Arriba de su columna en el kanban (Contactos ordena por stage_changed_at).
       stage: "inbox",
       stageChangedAt: new Date(),

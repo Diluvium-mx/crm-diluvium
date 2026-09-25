@@ -5,16 +5,20 @@ import { and, asc, eq, sql } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { aiConfig, aiKnowledge, contacts, member, organization, user } from "@/lib/db/schema";
 import type { CustomValues } from "@/lib/agente-ia/editor";
-import { DEFAULT_BRAIN_MODEL, DEFAULT_FILTER_MODEL } from "@/lib/ai/catalog";
+import { DEFAULT_BRAIN_MODEL, DEFAULT_FILTER_MODEL, DEFAULT_MODEL_1 } from "@/lib/ai/catalog";
+import { DEFAULT_MODEL_1_STAGES } from "./model-by-stage";
 import type { Faq } from "./knowledge";
 
-// Lo único que el runtime lee de ai_config: los modelos y el Goal. Todo lo demás
+// Lo único que el runtime lee de ai_config: los modelos (filtro, Modelo 1 con sus
+// etapas y Modelo 2 = modelo_cerebro, Fase E) y el Goal. Todo lo demás
 // es fijo desde el 23-sep-2026 (espera de 15 s, sin topes ni pausas configurables):
 // el agente se rige solo por su definición (Goal + FAQs). Las columnas viejas
 // (tiempos, anti-bucle, presupuesto, etc.) se conservan en la BD sin uso.
 export type AgentConfig = {
   modeloFiltro: string;
   modeloCerebro: string;
+  modelo1: string;
+  etapasModelo1: string[];
   goal: string | null;
   agentName: string;
   companyName: string | null;
@@ -23,6 +27,8 @@ export type AgentConfig = {
 export const AGENT_CONFIG_DEFAULTS: AgentConfig = {
   modeloFiltro: DEFAULT_FILTER_MODEL,
   modeloCerebro: DEFAULT_BRAIN_MODEL,
+  modelo1: DEFAULT_MODEL_1,
+  etapasModelo1: [...DEFAULT_MODEL_1_STAGES],
   goal: null,
   agentName: "Ángela",
   companyName: null,
@@ -33,6 +39,8 @@ export async function loadAgentConfig(organizationId: string): Promise<AgentConf
     .select({
       modeloFiltro: aiConfig.modeloFiltro,
       modeloCerebro: aiConfig.modeloCerebro,
+      modelo1: aiConfig.modelo1,
+      etapasModelo1: aiConfig.etapasModelo1,
       goal: aiConfig.goal,
       agentName: aiConfig.agentName,
       companyName: aiConfig.companyName,

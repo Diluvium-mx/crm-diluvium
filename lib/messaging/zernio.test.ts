@@ -112,6 +112,23 @@ describe("normalizeZernioEvent", () => {
     });
   });
 
+  it("message.received del historial queda marcado y conserva origen contact", () => {
+    const e = normalizeZernioEvent(received({ metadata: { source: "coexistence_history" } }));
+    expect(e).toMatchObject({ kind: "message", direction: "in", source: "contact", history: true });
+  });
+
+  it("message.sent del historial queda marcado como business_app", () => {
+    const base = echo("cloud_api");
+    const e = normalizeZernioEvent({ ...base, metadata: { source: "coexistence_history" } });
+    expect(e).toMatchObject({ kind: "message", direction: "out", source: "business_app", history: true });
+  });
+
+  it("un mensaje vivo normal no trae la marca history", () => {
+    const e = normalizeZernioEvent(received());
+    expect(e).toMatchObject({ kind: "message", direction: "in", source: "contact" });
+    expect(e).not.toHaveProperty("history");
+  });
+
   it("tolera variantes de escritura del source (whatsappbusinessapp, mayúsculas)", () => {
     expect(normalizeZernioEvent(echo("whatsappbusinessapp"))).toMatchObject({ source: "business_app" });
     expect(normalizeZernioEvent(echo("WhatsApp-Business-App"))).toMatchObject({ source: "business_app" });
@@ -495,4 +512,46 @@ describe("validDate (horas de webhooks, estrictas)", () => {
     ["texto", "no-es-fecha"],
     ["hora imposible", "2026-09-22T25:00:00Z"],
   ])("rechaza %s", (_d, value) => expect(validDate(value, now)).toBeNull());
+});
+
+describe("ZernioProvider.sendMedia", () => {
+  it("manda attachmentUrl/attachmentType/message por el mismo endpoint (formato verificado en el sandbox)", async () => {
+    const fetchImpl = vi.fn(async () => Response.json({ success: true, data: { messageId: "wamid.M1" } })) as unknown as typeof fetch;
+    const p = new ZernioProvider({ apiKey: "sk", webhookSecret: SECRET }, fetchImpl);
+    const out = await p.sendMedia({
+      providerAccountId: "zacc_1",
+      providerConversationId: "zconv_1",
+      url: "https://bucket.test/org/x/library/a1-tabla.png?firma=1",
+      kind: "image",
+      caption: "Tabla de tamaños",
+      idempotencyKey: "msg_m1",
+    });
+    expect(out).toEqual({ providerInternalId: "wamid.M1", providerMessageId: "wamid.M1" });
+    const [url, init] = (fetchImpl as unknown as ReturnType<typeof vi.fn>).mock.calls[0];
+    expect(url).toBe("https://zernio.com/api/v1/inbox/conversations/zconv_1/messages");
+    expect(init.headers["Idempotency-Key"]).toBe("msg_m1");
+    expect(JSON.parse(init.body)).toEqual({
+      accountId: "zacc_1",
+      attachmentUrl: "https://bucket.test/org/x/library/a1-tabla.png?firma=1",
+      attachmentType: "image",
+      message: "Tabla de tamaños",
+    });
+  });
+  it("un documento va como 'file' con su nombre; un video sin pie no manda message", async () => {
+    const fetchImpl = vi.fn(async () => Response.json({ success: true, data: { messageId: "z1" } })) as unknown as typeof fetch;
+    const p = new ZernioProvider({ apiKey: "sk", webhookSecret: SECRET }, fetchImpl);
+    await p.sendMedia({ providerAccountId: "a", providerConversationId: "c", url: "https://x/y.pdf", kind: "document", fileName: "Guía.pdf", idempotencyKey: "k" });
+    await p.sendMedia({ providerAccountId: "a", providerConversationId: "c", url: "https://x/v.mp4", kind: "video", idempotencyKey: "k2" });
+    const calls = (fetchImpl as unknown as ReturnType<typeof vi.fn>).mock.calls;
+    expect(JSON.parse(calls[0][1].body)).toEqual({ accountId: "a", attachmentUrl: "https://x/y.pdf", attachmentType: "file", attachmentName: "Guía.pdf" });
+    expect(JSON.parse(calls[1][1].body)).toEqual({ accountId: "a", attachmentUrl: "https://x/v.mp4", attachmentType: "video" });
+  });
+  it("rechaza una URL que no sea https sin llamar a la red (el bucket sin firmar nunca sale)", async () => {
+    const fetchImpl = vi.fn() as unknown as typeof fetch;
+    const p = new ZernioProvider({ apiKey: "sk", webhookSecret: SECRET }, fetchImpl);
+    await expect(
+      p.sendMedia({ providerAccountId: "a", providerConversationId: "c", url: "http://x/y.png", kind: "image", idempotencyKey: "k" }),
+    ).rejects.toMatchObject({ code: "media_url_insegura", outcome: "rejected" });
+    expect(fetchImpl).not.toHaveBeenCalled();
+  });
 });

@@ -163,6 +163,23 @@ describe.skipIf(!TEST_DATABASE_URL)("bandeja: lecturas y escrituras (Postgres re
     expect((await q.listConversationsForOrg(ORG_A, { search: "999" })).items).toHaveLength(0);
   });
 
+  it("búsqueda por nombre sin acentos, ñ ni mayúsculas (regla de todo buscador)", async () => {
+    await seedConversation({ lastMessageAt: "2026-09-18T10:00:00Z", firstName: "Ramón", lastName: "Peña" });
+    await seedConversation({ lastMessageAt: "2026-09-18T11:00:00Z", firstName: "Ramon", lastName: "Pena" });
+    await seedConversation({ lastMessageAt: "2026-09-18T12:00:00Z", firstName: "Lucía", lastName: "Núñez" });
+    const names = async (search: string) =>
+      (await q.listConversationsForOrg(ORG_A, { search })).items.map((i) => i.contact.name).sort();
+    expect(await names("ramon")).toEqual(["Ramon Pena", "Ramón Peña"]);
+    expect(await names("ramón")).toEqual(["Ramon Pena", "Ramón Peña"]);
+    expect(await names("PENA")).toEqual(["Ramon Pena", "Ramón Peña"]);
+    expect(await names("nunez")).toEqual(["Lucía Núñez"]);
+    expect(await names("LUCÍA")).toEqual(["Lucía Núñez"]);
+    expect(await names("ramon  pena")).toEqual(["Ramon Pena", "Ramón Peña"]);
+    // Los ids que ya no pasan la búsqueda tampoco vuelven en la recarga en vivo.
+    const all = (await q.listConversationsForOrg(ORG_A, {})).items.map((i) => i.id);
+    expect((await q.listConversationItemsByIdsForOrg(ORG_A, all, { search: "peña" })).length).toBe(2);
+  });
+
   it("paginación por cursor, estable con el mismo timestamp", async () => {
     for (let i = 0; i < 3; i++) {
       await seedConversation({ lastMessageAt: "2026-09-18T10:00:00Z", firstName: `C${i}` });

@@ -73,6 +73,9 @@ export const messageTypeEnum = pgEnum("message_type", [
   "template",
   "interactive",
   "unknown",
+  // Fase D: aviso interno para el vendedor (p. ej. "cotejar depósito"). Se
+  // guarda en el hilo, la bandeja lo pinta distinto y NUNCA se envía al proveedor.
+  "system_note",
 ]);
 export const messageStatusEnum = pgEnum("message_status", [
   "queued",
@@ -130,6 +133,16 @@ export const channels = pgTable(
     displayName: text("display_name").notNull(),
     phoneE164: text("phone_e164"),
     isActive: boolean("is_active").default(true).notNull(),
+    // Canal de PRUEBA (sandbox de Zernio, número de prueba): nada de lo que entra
+    // o sale por él cuenta en el Dashboard y la UI lo marca "Prueba".
+    isTest: boolean("is_test").default(false).notNull(),
+    // Canal ARCHIVADO: historial visible, sin envíos y sus webhooks se registran
+    // sin procesar (docs/numero-prueba.md, paso 8). Implica is_active = false.
+    archivedAt: timestamp("archived_at"),
+    // Cuándo se conectó el número a la API (coexistencia). Todo mensaje con hora de
+    // WhatsApp ANTERIOR es copia del historial del celular, traiga o no la marca
+    // `coexistence_history`: nunca activa agente, no leídos ni ventana.
+    connectedAt: timestamp("connected_at"),
     // Interruptor del Agente IA en este canal. Apagado por defecto (seguro).
     aiAgentMode: channelAiAgentModeEnum("ai_agent_mode").default("off").notNull(),
     // Cuándo se movió el interruptor por última vez: lo que el cliente escribió
@@ -174,9 +187,9 @@ export const conversations = pgTable(
     // Estado del agente en esta conversación. Default activo: elegible si el
     // canal está en borrador/auto (el interruptor del canal es el gate maestro).
     agentState: conversationAgentStateEnum("agent_state").default("activo").notNull(),
-    // Hasta cuándo dura la pausa. handover = now + handover_reactivate_hours
-    // (reactivación automática); humano/antibucle = null (reactivación manual
-    // con el botón "Reactivar agente" en la bandeja).
+    // Hora de regreso del bot: la pone "Apagar bot" (8/12/24 h o una hora exacta)
+    // y el barrido del worker lo reactiva al cumplirse. null = hasta "Reactivar"
+    // (un vendedor contestó, o "hasta que lo reactive").
     agentPausedUntil: timestamp("agent_paused_until"),
     // Último mensaje ENTRANTE del cliente y última respuesta del AGENTE en el
     // hilo. Los usa la Fase B (silencios/anti-bucle) y la Fase C (follow-ups).
@@ -260,6 +273,10 @@ export const messages = pgTable(
     deletedAt: timestamp("deleted_at"),
     // Hora del mensaje según WhatsApp; created_at es cuándo lo guardamos.
     sentAt: timestamp("sent_at"),
+    // Importado del HISTORIAL del celular (coexistencia): cuándo se importó. Nunca
+    // dispara agente ni workflows, no suma no leídos, no abre ventana y no cuenta
+    // como primera respuesta ni en el Dashboard (lib/messaging/history.ts).
+    importedAt: timestamp("imported_at"),
     createdAt: timestamp("created_at").defaultNow().notNull(),
   },
   (table) => [

@@ -25,7 +25,16 @@ function statusStyle(status: string): { label: string; className: string } {
   return { label: status, className: "bg-muted text-muted-foreground" };
 }
 
-export function PlantillasTab({ initial, canManage }: { initial: TemplateView[]; canManage: boolean }) {
+export function PlantillasTab({
+  initial,
+  canManage,
+  sandboxChannel = false,
+}: {
+  initial: TemplateView[];
+  canManage: boolean;
+  /** Canal activo = sandbox de Zernio: sus plantillas son ajenas (ocultas); no se sincroniza ni se crea. */
+  sandboxChannel?: boolean;
+}) {
   const [items, setItems] = useState<TemplateView[]>(initial);
   const [syncing, setSyncing] = useState(false);
   const [note, setNote] = useState<string | null>(null);
@@ -66,7 +75,7 @@ export function PlantillasTab({ initial, canManage }: { initial: TemplateView[];
             <button
               type="button"
               onClick={() => void sync()}
-              disabled={syncing}
+              disabled={syncing || sandboxChannel}
               className="flex items-center gap-1.5 rounded-md border px-3 py-2 text-sm font-medium hover:bg-muted disabled:opacity-50"
             >
               <RefreshCw className={`size-4 ${syncing ? "animate-spin" : ""}`} aria-hidden="true" />
@@ -79,7 +88,8 @@ export function PlantillasTab({ initial, canManage }: { initial: TemplateView[];
                 setNote(null);
                 setCreating((c) => !c);
               }}
-              className="flex items-center gap-1.5 rounded-md bg-brand-navy px-3 py-2 text-sm font-medium text-brand-white transition-colors hover:bg-brand-navy-dark"
+              disabled={sandboxChannel}
+              className="flex items-center gap-1.5 rounded-md bg-brand-navy px-3 py-2 text-sm font-medium text-brand-white transition-colors hover:bg-brand-navy-dark disabled:opacity-50"
             >
               <Plus className="size-4" aria-hidden="true" /> Crear plantilla
             </button>
@@ -87,6 +97,12 @@ export function PlantillasTab({ initial, canManage }: { initial: TemplateView[];
         )}
       </div>
 
+      {sandboxChannel && canManage && (
+        <div role="note" className="rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-sm text-amber-800 dark:border-amber-700 dark:bg-amber-950/40 dark:text-amber-200">
+          El número conectado es el <strong>sandbox de Zernio</strong>: sus plantillas son de otros clientes de Zernio,
+          no de Diluvium, y no se muestran. Sincronizar y crear se habilitan al conectar el número de Diluvium.
+        </div>
+      )}
       {note && (
         <div className="rounded-md border border-emerald-300 bg-emerald-50 px-3 py-2 text-sm text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-300">
           {note}
@@ -114,8 +130,8 @@ export function PlantillasTab({ initial, canManage }: { initial: TemplateView[];
         <div className="rounded-lg border border-dashed bg-card/50 px-4 py-10 text-center text-sm text-muted-foreground">
           {canManage ? (
             <>
-              No hay plantillas todavía. Pulsa <strong>Sincronizar</strong> para traerlas de WhatsApp, o créalas
-              en el WhatsApp Manager de Meta.
+              No hay plantillas todavía. Pulsa <strong>Crear plantilla</strong> para darlas de alta desde aquí, o{" "}
+              <strong>Sincronizar</strong> para traer las que ya existan en WhatsApp.
             </>
           ) : (
             "No hay plantillas todavía. Un administrador las sincroniza; tú las enviarás desde el chat."

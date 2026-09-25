@@ -81,7 +81,8 @@ export function ScheduleForm({
   }
 
   return (
-    <div className="mb-2 rounded-lg border bg-background p-3 shadow-sm">
+    // Tope de alto contra el chat (cqh, chat-thread.tsx): no tapa todo el historial.
+    <div className="mb-2 max-h-[min(32rem,65cqh)] overflow-y-auto overscroll-contain rounded-lg border bg-background p-3 shadow-md">
       <div className="mb-2 flex items-center justify-between">
         <span className="text-sm font-semibold">🕒 {editing ? "Editar mensaje programado" : "Programar mensaje"}</span>
         <button type="button" onClick={onCancel} aria-label="Cerrar" className="rounded p-1 text-muted-foreground hover:bg-muted hover:text-foreground">

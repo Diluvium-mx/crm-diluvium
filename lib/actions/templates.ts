@@ -14,9 +14,11 @@ import {
   listTemplatesForOrg,
   syncTemplatesForOrg,
   TemplatesChannelError,
+  TemplatesSandboxError,
 } from "@/lib/messaging/templates";
 import { ZernioApiError } from "@/lib/messaging/zernio";
 import { templateMaxIndex } from "@/lib/messaging/template-format";
+import { isForeignTemplateAccount } from "@/lib/messaging/template-sync";
 import type { TemplateView } from "@/lib/templates/types";
 
 // Gestionar plantillas afecta a la cuenta de WhatsApp y la revisión de Meta:
@@ -81,6 +83,9 @@ export async function createTemplate(
   try {
     const channel = await activeWhatsappChannel(organizationId, messagingProvider().name);
     if (!channel) throw new TemplatesChannelError();
+    // En el sandbox compartido de Zernio NO se da de alta nada: sería una plantilla
+    // de Diluvium en una WABA ajena (a la vista de otros, inútil con el número real).
+    if (isForeignTemplateAccount(channel.providerAccountId)) throw new TemplatesSandboxError();
     const result = await messagingProvider().createTemplate({
       providerAccountId: channel.providerAccountId,
       name: parsed.name,
@@ -107,7 +112,7 @@ export async function createTemplate(
 
 // Traduce errores del proveedor a un mensaje que el vendedor entienda.
 function friendly(error: unknown): Error {
-  if (error instanceof TemplatesChannelError) return new Error(error.message);
+  if (error instanceof TemplatesChannelError || error instanceof TemplatesSandboxError) return new Error(error.message);
   if (error instanceof MessagingNotConfiguredError) {
     return new Error("El canal de WhatsApp no está configurado.");
   }

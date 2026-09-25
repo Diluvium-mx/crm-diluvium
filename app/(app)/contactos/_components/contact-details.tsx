@@ -24,6 +24,7 @@ import {
 } from "../_data/types";
 import { ContactComments } from "./contact-comments";
 import { ContactEntradas, type Entrada } from "./contact-entradas";
+import { ConvencimientoPicker } from "./convencimiento-picker";
 import { useSaveStatus } from "./use-save-status";
 import { AgentContactSwitch } from "./agent-contact-switch";
 
@@ -413,19 +414,11 @@ export function ContactDetails({
             </Field>
 
             <Field title="% de convencimiento">
-              <select
-                aria-label="Porcentaje de convencimiento"
-                value={details.porcentajeConvencimiento ?? ""}
-                onChange={(e) => saveField("porcentajeConvencimiento", e.target.value === "" ? null : Number(e.target.value))}
-                className={`${input} w-28`}
-              >
-                <option value="">—</option>
-                {Array.from({ length: 11 }, (_, i) => i * 10).map((p) => (
-                  <option key={p} value={p}>
-                    {p}%
-                  </option>
-                ))}
-              </select>
+              <ConvencimientoPicker
+                value={details.porcentajeConvencimiento}
+                onChange={(next) => saveField("porcentajeConvencimiento", next)}
+                selectClassName={input}
+              />
             </Field>
 
             {(details.anuncios || details.anuncio) && (

@@ -1,13 +1,15 @@
 "use client";
 
 // Estado del Agente IA en "Detalle del contacto" (Fase B). Una fila por
-// conversación del contacto (normalmente una, la de WhatsApp): activo, o pausado
-// porque un vendedor contestó (la única pausa) con el botón "Reactivar" (igual que
-// en la Bandeja). Si el canal está apagado en la pestaña Agente IA, no aplica.
+// conversación del contacto (normalmente una, la de WhatsApp): activo con "Apagar
+// bot", o apagado (un vendedor contestó o lo apagó con el botón) con su hora de
+// regreso y "Reactivar", igual que en la Bandeja. Si el canal está apagado en la
+// pestaña Agente IA, no aplica.
 import { useCallback, useEffect, useRef, useState } from "react";
 import { getContactAgentStatus, reactivateAgent } from "@/lib/actions/agente-conversacion";
 import { pauseReason } from "@/lib/agente-ia/labels";
 import type { ContactAgentView } from "@/lib/agente-ia/types";
+import { BotOffMenu } from "../../dashboard/_components/bot-off-menu";
 import { useInboxStream } from "../../dashboard/_components/use-inbox-stream";
 
 export function AgentContactSwitch({ contactId }: { contactId: string }) {
@@ -63,10 +65,13 @@ export function AgentContactSwitch({ contactId }: { contactId: string }) {
             ? `Apagado en «${row.channelName}» (se enciende en la pestaña Agente IA)`
             : on
               ? "Activo"
-              : `Pausado · ${pauseReason(row)}`;
+              : `Bot apagado · ${pauseReason(row)}`;
           return (
             <div key={row.conversationId} className="flex flex-wrap items-center gap-x-2 gap-y-1">
               <span className="text-xs text-foreground">🤖 {status}</span>
+              {!channelOff && (
+                <BotOffMenu conversationId={row.conversationId} paused={!on} onChanged={() => void load()} align="start" />
+              )}
               {!channelOff && !on && (
                 <button
                   type="button"

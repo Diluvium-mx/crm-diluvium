@@ -20,14 +20,15 @@ export const openaiAdapter: ProviderAdapter = {
       messages: input.messages,
       ...(input.maxOutputTokens ? { maxOutputTokens: input.maxOutputTokens } : {}),
       abortSignal: AbortSignal.timeout(input.timeoutMs ?? DEFAULT_MODEL_TIMEOUT_MS),
-      // Tools quedan cableados para la Fase B (multi-paso con stopWhen); el
-      // dry-run de la Fase A no los usa.
-      ...(input.tools ? { tools: input.tools, stopWhen: isStepCount(4) } : {}),
+      // Herramientas sin `execute` (Fase D): una sola vuelta; el modelo devuelve
+      // texto + llamadas y el runtime decide qué corre (nada se ejecuta aquí).
+      ...(input.tools ? { tools: input.tools, stopWhen: isStepCount(1) } : {}),
     });
     return {
       text: result.text,
       usage: toModelUsage(result.usage),
       finishReason: result.finishReason,
+      toolCalls: result.toolCalls.map((c) => ({ toolName: c.toolName, input: c.input })),
     };
   },
 };

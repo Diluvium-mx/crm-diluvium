@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { ThemeProvider } from "@/components/theme-provider";
+import { GlowPointer } from "@/components/ui/glow-pointer";
 import "./globals.css";
 
 export const metadata: Metadata = {
@@ -17,6 +18,8 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
         <ThemeProvider attribute="class" defaultTheme="light" enableSystem={false} disableTransitionOnChange>
           {children}
         </ThemeProvider>
+        {/* Luz del "fondo iluminado" que sigue al cursor (app/globals.css). */}
+        <GlowPointer />
       </body>
     </html>
   );

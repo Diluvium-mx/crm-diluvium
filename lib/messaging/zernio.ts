@@ -23,6 +23,7 @@ import {
   type NormalizedMessageType,
   type ProviderTemplate,
   type SendResult,
+  type SendMediaInput,
   type SendTemplateInput,
   type SendTextInput,
   type WebhookEnvelope,
@@ -201,6 +202,11 @@ export function validDate(value: string | null | undefined, now = Date.now()): D
   return date;
 }
 
+/** ¿Alguna de las marcas de origen dice "coexistence_history"? (sin separadores ni mayúsculas) */
+export function isCoexistenceHistory(...sources: unknown[]): boolean {
+  return sources.some((s) => typeof s === "string" && s.toLowerCase().replace(/[^a-z]/g, "") === "coexistencehistory");
+}
+
 function asString(value: unknown): string | undefined {
   return typeof value === "string" && value.length > 0 ? value : undefined;
 }
@@ -333,7 +339,16 @@ export function normalizeZernioEvent(payload: unknown, context: { receivedAt?: D
     // automatizaciones), no prueba que lo haya escrito un vendedor: queda como
     // other_api. Un envío del propio CRM se reconoce al enlazar el eco con su
     // fila en cola (ingest.ts), que ya trae source "crm" y quién lo envió.
-    const source = !outgoing ? "contact" : echoSource === "whatsappbusinessapp" ? "business_app" : "other_api";
+    // Copia del historial del celular (coexistencia): Zernio la marca con
+    // source "coexistence_history" (docs.zernio.com, List messages → metadata).
+    // No se sabe si además dispara webhooks; si llega, NUNCA se trata como vivo.
+    const history = isCoexistenceHistory(message.source, parsed.data.source, metadata?.source);
+    // En el historial, lo saliente lo escribió el negocio desde la app del celular.
+    const source = !outgoing
+      ? "contact"
+      : echoSource === "whatsappbusinessapp" || history
+        ? "business_app"
+        : "other_api";
 
     const attachments: NormalizedAttachment[] = message.attachments.map((a) => ({
       type: attachmentType(a.type),
@@ -402,6 +417,7 @@ export function normalizeZernioEvent(payload: unknown, context: { receivedAt?: D
       // en entrantes: es del cliente que tocó el anuncio.
       referral: outgoing ? undefined : extractReferral(payload),
       metadata: metadata && Object.keys(metadata).length > 0 ? metadata : undefined,
+      ...(history ? { history: true } : {}),
     };
   }
 
@@ -558,6 +574,23 @@ export class ZernioProvider implements MessagingProvider {
       { accountId: providerAccountId, template: { elements: [element] } },
       idempotencyKey,
     );
+  }
+
+  // Media saliente (Fase D). Cuerpo verificado en vivo contra el sandbox
+  // (docs/fase-d-diseno.md §0.3): attachmentUrl (pública) + attachmentType
+  // image|video|audio|file + attachmentName (documentos) + message (pie).
+  // El objeto `media: {url,type}` de la guía del inbox NO funciona (400).
+  async sendMedia({ providerAccountId, providerConversationId, url, kind, caption, fileName, idempotencyKey }: SendMediaInput): Promise<SendResult> {
+    const target = new URL(url);
+    if (target.protocol !== "https:") throw new ZernioSendError(0, "media_url_insegura", "La URL del archivo debe ser https", "rejected");
+    const body: Record<string, unknown> = {
+      accountId: providerAccountId,
+      attachmentUrl: url,
+      attachmentType: kind === "document" ? "file" : kind,
+    };
+    if (kind === "document" && fileName) body.attachmentName = fileName;
+    if (caption) body.message = caption;
+    return this.postToConversation(providerConversationId, body, idempotencyKey);
   }
 
   // GET /v1/whatsapp/templates?accountId=… (docs.zernio.com). FALLA CERRADO:
