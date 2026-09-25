@@ -80,3 +80,14 @@ async function tryMove(input: Parameters<typeof moveStageForward>[0], now: Date)
   }
   return { from: current.stage };
 }
+
+// Etapa actual del contacto (o null si no existe). La usa el agente para elegir
+// el modelo de la respuesta (Fase E, lib/ai/runtime/model-by-stage.ts).
+export async function loadContactStage(organizationId: string, contactId: string): Promise<Stage | null> {
+  const [row] = await db
+    .select({ stage: contacts.stage })
+    .from(contacts)
+    .where(and(eq(contacts.id, contactId), eq(contacts.organizationId, organizationId)))
+    .limit(1);
+  return (row?.stage as Stage | undefined) ?? null;
+}

@@ -83,6 +83,9 @@ describe.skipIf(!TEST_DATABASE_URL)("runtime del Agente IA (Postgres real)", () 
       organizationId: ORG,
       modeloFiltro: "gpt-5.6-luna",
       modeloCerebro: "claude-sonnet-5",
+      // Fase E: sin etapas para el Modelo 1 → todo lo atiende el Modelo 2 (Sonnet 5),
+      // como antes; el modelo por etapa tiene sus propios tests al final.
+      etapasModelo1: [],
       goal: GOAL,
     });
     await db.insert(s.aiKnowledge).values([
@@ -123,16 +126,17 @@ describe.skipIf(!TEST_DATABASE_URL)("runtime del Agente IA (Postgres real)", () 
     filter?: string; // JSON de la limpieza del anuncio (Luna)
     brain?: string[]; // una salida por llamada al cerebro
     toolCalls?: { toolName: string; input: unknown }[]; // llamadas a herramientas del cerebro (Fase D)
+    finishReason?: string; // del cerebro (Fase E: "length" = respuesta cortada)
     onBrain?: (call: number) => Promise<void>; // efecto durante la generación
     onSleep?: () => Promise<void>; // efecto durante la pausa entre burbujas
   };
 
   function fakeModels(script: Script) {
-    const calls: { kind: "filtro" | "cerebro"; input: CallModelInput }[] = [];
+    const calls: { kind: "filtro" | "cerebro"; modelId: string; input: CallModelInput }[] = [];
     let brainCalls = 0;
     const callModel = async (modelId: string, input: CallModelInput): Promise<CallModelResult> => {
       if (input.system === filter.FILTER_SYSTEM) {
-        calls.push({ kind: "filtro", input });
+        calls.push({ kind: "filtro", modelId, input });
         return {
           modelId,
           provider: "openai",
@@ -142,7 +146,7 @@ describe.skipIf(!TEST_DATABASE_URL)("runtime del Agente IA (Postgres real)", () 
           finishReason: "stop",
         };
       }
-      calls.push({ kind: "cerebro", input });
+      calls.push({ kind: "cerebro", modelId, input });
       brainCalls++;
       if (script.onBrain) await script.onBrain(brainCalls);
       const outputs = script.brain ?? ["Claro, cuesta $5,500 MXN.\n\n¿Cuánto mide tu entrada?"];
@@ -152,7 +156,7 @@ describe.skipIf(!TEST_DATABASE_URL)("runtime del Agente IA (Postgres real)", () 
         providerModelId: modelId,
         text: outputs[Math.min(brainCalls - 1, outputs.length - 1)],
         usage: { inputTokens: 12_000, outputTokens: 60, cacheReadTokens: 11_400, cacheWriteTokens: 0 },
-        finishReason: "stop",
+        finishReason: script.finishReason ?? "stop",
         toolCalls: script.toolCalls ?? [],
       };
     };
@@ -1214,5 +1218,48 @@ describe.skipIf(!TEST_DATABASE_URL)("runtime del Agente IA (Postgres real)", () 
     expect(rs).toHaveLength(1);
     expect(rs[0].triggerMessageId).not.toBeNull();
     void wfId;
+  });
+
+  // ── Fase E: Modelo 1 / Modelo 2 por etapa, PDF como nota y respuesta cortada ──
+  it("Fase E: Inbox → Modelo 1 (Luna); Cerca de compra → Modelo 2 (Sonnet 5)", async () => {
+    await db.update(s.aiConfig).set({ modelo1: "gpt-5.6-luna", etapasModelo1: ["inbox", "prospecto", "interesado"] }).where(eq(s.aiConfig.organizationId, ORG));
+    await msg({ direction: "in", body: "hola, precio?", at: ago(20_000) });
+    const a = makeDeps({ brain: ["Cuesta $5,500 MXN."] });
+    expect((await run.runAgent(JOB, a.deps)).kind).toBe("sent");
+    expect(a.calls.filter((c) => c.kind === "cerebro").map((c) => c.modelId)).toEqual(["gpt-5.6-luna"]);
+
+    await db.update(s.contacts).set({ stage: "cerca_compra" }).where(eq(s.contacts.id, CONTACT));
+    await msg({ direction: "in", body: "ya te transferí", at: new Date() });
+    const b = makeDeps({ brain: ["Gracias, lo reviso."] });
+    expect((await run.runAgent(JOB, b.deps)).kind).toBe("sent");
+    expect(b.calls.filter((c) => c.kind === "cerebro").map((c) => c.modelId)).toEqual(["claude-sonnet-5"]);
+  });
+
+  it("Fase E: un modelo sin lectura de PDF (Qwen) recibe el PDF como nota de texto, no como archivo", async () => {
+    await db.update(s.aiConfig).set({ modelo1: "qwen-3.7-flash", etapasModelo1: ["inbox"] }).where(eq(s.aiConfig.organizationId, ORG));
+    await msg({ direction: "in", body: "mi comprobante", at: ago(20_000), attachments: [{ type: "document", url: "/api/media/p", storageKey: "org/spei.pdf", mimeType: "application/pdf", fileName: "spei.pdf", sizeBytes: 180_000 } as never] });
+    const { deps, calls } = makeDeps({ brain: ["Gracias, lo reviso."] });
+    expect((await run.runAgent(JOB, deps)).kind).toBe("sent");
+    const brain = calls.find((c) => c.kind === "cerebro")!;
+    expect(brain.modelId).toBe("qwen-3.7-flash");
+    const last = lastUserText(brain.input);
+    expect(last).not.toContain('"type":"file"');
+    expect(last).toContain("[documento: spei.pdf]");
+  });
+
+  it("Fase E: respuesta cortada por el tope o acción con argumentos inválidos → aviso al vendedor (nunca en silencio); el texto sale igual", async () => {
+    await msg({ direction: "in", body: "te mando dos comprobantes", at: ago(20_000) });
+    const { deps } = makeDeps({
+      brain: ["Recibimos tus comprobantes ✅"],
+      finishReason: "length",
+      toolCalls: [{ toolName: "aviso_vendedor", input: { motivo: "cotejar_deposito" } }],
+    });
+    expect((await run.runAgent(JOB, deps)).kind).toBe("sent");
+    const n = (await notices()).filter((x) => x.kind === "respuesta_cortada");
+    expect(n).toHaveLength(1);
+    expect(n[0].body).toContain("se cortó");
+    expect(n[0].body).toContain(`${run.BRAIN_MAX_OUTPUT_TOKENS.toLocaleString("es-MX")} tokens`);
+    expect(n[0].body).toContain("aviso_vendedor: argumentos inválidos");
+    expect((await agentOuts()).map((m) => m.body)).toEqual(["Recibimos tus comprobantes ✅"]);
   });
 });

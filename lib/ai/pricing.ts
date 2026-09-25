@@ -9,8 +9,18 @@
 // - Caché OpenAI: doc oficial https://developers.openai.com/api/docs/pricing
 //   (Standard, contexto corto; gpt-5.6-luna 0.20 / cached 0.02 / cache writes 0.25):
 //   también 10% lectura y 125% escritura.
-// - xAI / Google / OpenRouter: sin fuente verificada de caché → sin descuento
-//   (los tokens de caché se cobran como entrada normal).
+// - Fase E (25-sep-2026), con caché propia por modelo:
+//   · Gemini 3.8 Flash: https://ai.google.dev/gemini-api/docs/pricing (Standard,
+//     precio hasta el 31-dic-2026: 0.75 / 3.75, caché 0.075; desde el 1-ene-2027
+//     se duplica → actualizar aquí o en ai_model_prices). Caché implícita: sin
+//     cargo de escritura (se cobra como entrada).
+//   · Grok 4.6: https://docs.x.ai/docs/models (prompts < 200 mil tokens: 2 / 6,
+//     caché 0.50).
+//   · Qwen 3.7 Flash por OpenRouter: https://openrouter.ai/api/v1/models, tramo de
+//     32 mil a 256 mil tokens (0.10 / 0.40, caché 0.02 / escritura 0.125): el
+//     agente manda de ~12 mil a ~90 mil; bajo 32 mil cuesta menos (0.03 / 0.13).
+// - Overrides sin caché de xAI / Google / OpenRouter: sin descuento (los tokens de
+//   caché se cobran como entrada normal).
 import type { ModelUsage, ProviderId } from "./types";
 
 export type ModelPrice = {
@@ -20,7 +30,9 @@ export type ModelPrice = {
   cacheWritePerMTok: number;
 };
 
-type BasePrice = { input: number; output: number };
+// cacheRead/cacheWrite: solo cuando el modelo tiene precio de caché propio
+// (si no, cachePriceRule).
+type BasePrice = { input: number; output: number; cacheRead?: number; cacheWrite?: number };
 
 // Por id del catálogo (todo modelo del catálogo tiene entrada: número o null).
 export const DEFAULT_MODEL_PRICES: Readonly<Record<string, BasePrice | null>> = {
@@ -29,10 +41,10 @@ export const DEFAULT_MODEL_PRICES: Readonly<Record<string, BasePrice | null>> = 
   "gpt-5.6-terra": { input: 2, output: 12 },
   "gpt-5.6-sol": { input: 4, output: 20 },
   "claude-haiku-4-5": { input: 1, output: 5 },
-  "grok-4.6": { input: 2, output: 6 },
+  "grok-4.6": { input: 2, output: 6, cacheRead: 0.5, cacheWrite: 2 },
   "claude-opus-5-5": { input: 4, output: 20 },
-  "gemini-3.8-flash": null,
-  "qwen-3.7-flash": null,
+  "gemini-3.8-flash": { input: 0.75, output: 3.75, cacheRead: 0.075, cacheWrite: 0.75 },
+  "qwen-3.7-flash": { input: 0.1, output: 0.4, cacheRead: 0.02, cacheWrite: 0.125 },
 };
 
 // 6 decimales, igual que las columnas numeric(12,6) de ai_model_prices (evita
@@ -77,8 +89,8 @@ export function resolveModelPrice(
   return {
     inputPerMTok: base.input,
     outputPerMTok: base.output,
-    cacheReadPerMTok: rule.read,
-    cacheWritePerMTok: rule.write,
+    cacheReadPerMTok: base.cacheRead ?? rule.read,
+    cacheWritePerMTok: base.cacheWrite ?? rule.write,
   };
 }
 

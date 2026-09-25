@@ -35,7 +35,7 @@ export type UsageProfile = {
 // - Historial + mensaje nuevo sin caché ≈ 1,500 tokens.
 // - Escritura de caché ≈ 1,000 por respuesta en promedio (supuesto: 1 de cada 9
 //   respuestas vuelve a escribir el system).
-// - Salida ≈ 250 tokens (tope BRAIN_MAX_OUTPUT_TOKENS = 1,024).
+// - Salida ≈ 250 tokens (tope BRAIN_MAX_OUTPUT_TOKENS = 4,096 desde la Fase E).
 // - 6 respuestas por conversación.
 export const FIXED_PROFILE: UsageProfile = {
   inputTokens: 11_500,

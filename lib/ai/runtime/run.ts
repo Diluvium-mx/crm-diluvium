@@ -36,6 +36,8 @@ export function fallbackTextFor(plan: ActionPlan): string {
 import { validateToolCalls } from "./tools";
 import { applyCustomValues } from "@/lib/agente-ia/editor";
 import { loadAgentConfig, loadCustomValues, loadEnabledFaqs } from "./config";
+import { brainModelForStage } from "./model-by-stage";
+import { loadContactStage } from "@/lib/contacts/stage";
 import {
   alreadyHandled,
   humanOutboundCount,
@@ -57,9 +59,11 @@ import { recordAiUsage } from "./usage";
 
 export const MAX_ROUNDS = 3; // regeneraciones por corrida antes de volver al debounce
 export const BUBBLE_PAUSE_MS = 1_500;
-// Holgado: algunos modelos (p. ej. Opus 5.5) gastan tokens de razonamiento
-// ocultos antes del texto; con un tope corto la respuesta sale vacía.
-export const BRAIN_MAX_OUTPUT_TOKENS = 1_024;
+// Holgado: los modelos actuales (Sonnet 5, Luna, Opus 5.5…) razonan antes del texto
+// y ese razonamiento cuenta en el tope. Con 1,024 la respuesta de B5 (dos comprobantes
+// juntos) se cortó y su aviso al vendedor se perdió (docs/fase-d-diseno.md §11); desde
+// la Fase E son 4,096 (solo se paga lo que se usa) y si aun así se corta, aviso.
+export const BRAIN_MAX_OUTPUT_TOKENS = 4_096;
 // Timeouts por llamada: 3 rondas × (limpieza del anuncio + cerebro) = 4 min < candado
 // de 5 min (process.ts). La limpieza del anuncio (ad-cleaner.ts) usa 20 s.
 export const FILTER_TIMEOUT_MS = 20_000;
@@ -253,8 +257,11 @@ export async function runAgent(job: { organizationId: string; conversationId: st
     });
 
     // ── CEREBRO ─────────────────────────────────────────────────────────────
-    const brainModel = getModel(cfg.modeloCerebro);
-    if (!brainModel) throw new Error(`modelo de cerebro desconocido: ${cfg.modeloCerebro}`);
+    // Fase E: Modelo 1 o Modelo 2 según la etapa del contacto AL RESPONDER (si el
+    // agente la mueve en esta misma respuesta, la siguiente usa el de la nueva).
+    const pick = brainModelForStage(cfg, await loadContactStage(org, conv.contactId));
+    const brainModel = getModel(pick.modelId);
+    if (!brainModel) throw new Error(`modelo ${pick.slot} desconocido: ${pick.modelId}`);
     // Goal y FAQs con los valores personalizados de esta conversación sustituidos.
     const values = await loadCustomValues(org, conv, cfg);
     const faqs = (await loadEnabledFaqs(org)).map((f) => ({
@@ -265,7 +272,12 @@ export async function runAgent(job: { organizationId: string; conversationId: st
     const system = buildBrainSystemWithRuntime(applyCustomValues(cfg.goal, values), faqs);
     // Contexto del CRM (etapa, cotización, comprobantes) en el último turno del cliente.
     const crmContext = await crmContextFor(org, conv.contactId);
-    const modelMessages = buildModelMessages(history, await mediaUrlsFor(history, deps.resolveImage), { cleanText, crmContext });
+    // Un modelo sin lectura de PDF (p. ej. Qwen) recibe el PDF como nota de texto.
+    const modelMessages = buildModelMessages(history, await mediaUrlsFor(history, deps.resolveImage), {
+      cleanText,
+      crmContext,
+      ...(brainModel.pdf ? {} : { maxPdfs: 0 }),
+    });
     // Herramientas (Fase D): una por workflow habilitado con "agente" + fijar_cotizacion.
     const agentTools = await loadAgentTools(org);
     const t0 = Date.now();
@@ -329,6 +341,23 @@ export async function runAgent(job: { organizationId: string; conversationId: st
     // DESPUÉS de las burbujas.
     const { valid: toolCalls, ignored } = validateToolCalls(brainRes.toolCalls ?? [], agentTools);
     if (ignored.length) console.warn(`[agente] ${conv.id}: herramientas ignoradas: ${ignored.join("; ")}`);
+    // Respuesta cortada por el tope, o una acción descartada por argumentos inválidos
+    // (lo que pasó en B5): NUNCA en silencio. Aviso al vendedor, uno por lote.
+    const invalid = ignored.filter((i) => i.endsWith("argumentos inválidos"));
+    if (brainRes.finishReason === "length" || invalid.length) {
+      await addNotice({
+        organizationId: org,
+        conversationId: conv.id,
+        messageId: lastRead.id,
+        kind: "respuesta_cortada",
+        body:
+          (brainRes.finishReason === "length"
+            ? `La respuesta del agente se cortó (tope de ${BRAIN_MAX_OUTPUT_TOKENS.toLocaleString("es-MX")} tokens): pudo quedar incompleta o sin alguna acción.`
+            : "El agente pidió una acción con datos incompletos y no se ejecutó.") +
+          (invalid.length ? ` No se ejecutó: ${invalid.join("; ")}.` : "") +
+          " Revisa el hilo.",
+      });
+    }
     if (out.kind === "empty" && toolCalls.length === 0) {
       // Sin texto (tokens agotados, filtro del proveedor…): NO es final. Se registra
       // como error y la cola/el barrido reintentan: el cliente nunca queda sin respuesta.
