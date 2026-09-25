@@ -21,6 +21,9 @@ type Ports = { queue?: AgentQueuePort; kv?: KvPort; now?: Date };
 
 // Hora en que el cliente ESCRIBIÓ el mensaje: la de WhatsApp (sent_at); si no
 // viene, la de llegada. Un webhook retrasado llega después, pero se escribió antes.
+// WhatsApp da segundos enteros: "escrito antes del corte" = antes del SEGUNDO del
+// corte (lo escrito en ese mismo segundo cuenta como nuevo; nunca se ignora uno nuevo).
+const writtenBefore = (wrote: Date, cut: Date) => wrote.getTime() < Math.floor(cut.getTime() / 1000) * 1000;
 async function writtenAt(organizationId: string, conversationId: string, messageId: string): Promise<Date | null> {
   const [m] = await db
     .select({ sentAt: messages.sentAt, createdAt: messages.createdAt })
@@ -55,9 +58,9 @@ export async function onInboundCustomerMessage(
     if (isPauseDue(conv, now)) {
       // Hora de regreso cumplida y el barrido (cada minuto) aún sin pasar: si el
       // mensaje se escribió después de esa hora, el bot ya volvió y es el primero nuevo.
-      if (wrote && conv.agentPausedUntil && wrote.getTime() <= conv.agentPausedUntil.getTime()) return;
+      if (wrote && conv.agentPausedUntil && writtenBefore(wrote, conv.agentPausedUntil)) return;
       await reactivateDuePause(input.organizationId, input.conversationId, now);
-    } else if (wrote && conv.agentState === "activo" && conv.agentStateChangedAt && wrote.getTime() <= conv.agentStateChangedAt.getTime()) {
+    } else if (wrote && conv.agentState === "activo" && conv.agentStateChangedAt && writtenBefore(wrote, conv.agentStateChangedAt)) {
       return; // escrito antes de que el bot volviera (solo o con "Reactivar") y llegó tarde
     }
     const delay = await debounceDelayFor(input.organizationId, input.conversationId, now);

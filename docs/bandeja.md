@@ -97,6 +97,14 @@ usan vendedores, admin y owner (Server Action `pauseAgent`, sin ACL, como "React
   (un solo UPDATE condicional: no borra una hora que otro vendedor acaba de elegir).
 - Al apagarlo se cancela el job pendiente; si el agente ya estaba escribiendo, su respuesta no sale.
 - El interruptor general del canal (pestaña Agente IA) no cambia.
+- WhatsApp da la hora en segundos enteros: lo escrito en el MISMO segundo del corte cuenta como nuevo
+  (nunca se ignora un mensaje nuevo; a lo más se contesta uno escrito <1 s antes).
+- Pendientes teóricos (sin escenario hoy): un eco TARDÍO del celular del vendedor (business_app)
+  escrito durante la pausa, si llega después de la hora de regreso, deja el bot apagado sin tiempo
+  (Zernio no reenvía hoy los ecos de coexistencia; igual pasaba con "Reactivar"). Carreras de
+  milisegundos entre el gancho de entrante y "Reactivar"/barrido. `pauseAgent` no revisa en el
+  servidor el modo del canal (solo la UI oculta el botón). Sin registro de quién apagó el bot. El
+  barrido lee `conversations` completa cada minuto (sin índice; ~11 k filas).
 
 ### Lo que NO va (vs. GHL)
 Nueva conversación/Importar (requiere plantilla: llega con el número real), asignado/seguido/chat
