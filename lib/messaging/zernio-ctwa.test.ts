@@ -4,6 +4,7 @@
 import { describe, expect, it } from "vitest";
 import example from "./__fixtures__/zernio-ctwa-received.json";
 import real from "./__fixtures__/zernio-message-received.json";
+import listing from "./__fixtures__/zernio-conversations-ctwa.json";
 import { normalizeZernioEvent, zernioEventId, ZernioProvider } from "./zernio";
 
 const RECEIVED_AT = new Date("2026-09-24T18:00:05.000Z");
@@ -118,59 +119,51 @@ describe("ficha en la raíz con respaldo en metadata.referral (formato anidado r
   });
 });
 
-describe("ZernioProvider.conversationAdClick (respaldo)", () => {
-  it("GET con accountId y lee el clic de metadata.ctwa_*", async () => {
+describe("ZernioProvider.conversationAdClick (respaldo, forma documentada por Zernio)", () => {
+  const json = (body: unknown, status = 200) => new Response(JSON.stringify(body), { status, headers: { "content-type": "application/json" } });
+
+  it("lista las conversaciones de la cuenta y lee metadata.ctwa_* del ejemplo oficial", async () => {
     const calls: string[] = [];
     const fetchImpl = (async (url: string | URL) => {
       calls.push(String(url));
-      return new Response(
-        JSON.stringify({
-          data: {
-            id: "zconv_9",
-            metadata: {
-              ctwa_clid: "ARAkZ",
-              ctwa_source_id: "120251044855190604",
-              ctwa_source_url: "https://fb.me/x",
-              ctwa_headline: "IMG 14",
-              ctwa_source_type: "ad",
-              ctwa_captured_at: "2026-09-24T18:00:00.000Z",
-            },
-          },
-        }),
-        { status: 200, headers: { "content-type": "application/json" } },
-      );
+      return json(listing);
     }) as typeof fetch;
     const provider = new ZernioProvider({ apiKey: "k", webhookSecret: "s" }, fetchImpl);
-    const click = await provider.conversationAdClick("zacc_1", "zconv_9");
-    expect(calls[0]).toBe("https://zernio.com/api/v1/inbox/conversations/zconv_9?accountId=zacc_1");
+    const click = await provider.conversationAdClick("zacc_1", "6ab7aa11bb22cc33dd44ee55");
+    // El GET de UNA conversación no trae los ctwa_* de WhatsApp (solo meta_ad_*): se usa el listado.
+    expect(calls).toEqual(["https://zernio.com/api/v1/inbox/conversations?accountId=zacc_1&limit=100"]);
     expect(click?.referral).toEqual({
-      source_id: "120251044855190604",
-      source_url: "https://fb.me/x",
-      headline: "IMG 14",
+      source_id: "120000000000000000",
+      source_url: "https://fb.me/...",
+      headline: "Chat with us on WhatsApp",
       source_type: "ad",
-      ctwa_clid: "ARAkZ",
+      ctwa_clid: "AbCdEfGhIjKlMn0pQrStUvWxYz",
     });
-    expect(click?.capturedAt?.toISOString()).toBe("2026-09-24T18:00:00.000Z");
+    expect(click?.capturedAt?.toISOString()).toBe("2027-01-01T08:18:44.991Z");
   });
 
-  it("id inexistente: Zernio responde 200 con datos vacíos → sin clic (no se confía en un 404)", async () => {
-    const fetchImpl = (async () =>
-      new Response(JSON.stringify({ data: { id: "sim-no-existe", accountId: "zacc_1", participants: [] } }), { status: 200 })) as typeof fetch;
+  it("conversación sin metadata (no llegó por anuncio) → sin clic", async () => {
+    const provider = new ZernioProvider({ apiKey: "k", webhookSecret: "s" }, (async () => json(listing)) as typeof fetch);
+    expect(await provider.conversationAdClick("zacc_1", "6ab7aa11bb22cc33dd44ee66")).toBeNull();
+  });
+
+  it("recorre páginas con el cursor y se detiene al tope (no la encontró → sin clic)", async () => {
+    const calls: string[] = [];
+    const fetchImpl = (async (url: string | URL) => {
+      calls.push(String(url));
+      return json({ data: [{ id: "otra" }], pagination: { hasMore: true, nextCursor: `c${calls.length}` } });
+    }) as typeof fetch;
     const provider = new ZernioProvider({ apiKey: "k", webhookSecret: "s" }, fetchImpl);
-    expect(await provider.conversationAdClick("zacc_1", "sim-no-existe")).toBeNull();
+    expect(await provider.conversationAdClick("zacc_1", "6ab7aa11bb22cc33dd44ee55")).toBeNull();
+    expect(calls).toHaveLength(3);
+    expect(calls[1]).toContain("cursor=c1");
   });
 
-  it("rechaza ids con formato raro (no arma rutas con '..' o '/')", async () => {
-    const provider = new ZernioProvider({ apiKey: "k", webhookSecret: "s" }, (async () => new Response("{}")) as typeof fetch);
-    await expect(provider.conversationAdClick("zacc_1", "../v1/otra")).rejects.toThrow();
-  });
-
-  it("un error de Zernio lanza (el job se reintenta)", async () => {
-    const provider = new ZernioProvider(
-      { apiKey: "k", webhookSecret: "s" },
-      (async () => new Response(JSON.stringify({ error: "boom" }), { status: 503 })) as typeof fetch,
-    );
-    await expect(provider.conversationAdClick("zacc_1", "zconv_9")).rejects.toThrow();
+  it("formato desconocido o error de Zernio → lanza (el respaldo lo anota y reintenta)", async () => {
+    const odd = new ZernioProvider({ apiKey: "k", webhookSecret: "s" }, (async () => json({ conversations: [] })) as typeof fetch);
+    await expect(odd.conversationAdClick("zacc_1", "x")).rejects.toThrow(/formato/);
+    const down = new ZernioProvider({ apiKey: "k", webhookSecret: "s" }, (async () => json({ error: "boom" }, 503)) as typeof fetch);
+    await expect(down.conversationAdClick("zacc_1", "x")).rejects.toThrow();
   });
 });
 
