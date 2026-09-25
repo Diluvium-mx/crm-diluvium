@@ -8,6 +8,10 @@
 import type { ModelMessage } from "ai";
 import type { MessageAttachment } from "@/lib/db/schema";
 
+// Nota con lo que ya se le envió al cliente después de su último mensaje (ver
+// buildModelMessages): la conversación para el modelo nunca termina en un turno nuestro.
+export const SENT_AFTER_HEADER = "[Después de este mensaje ya se le envió al cliente:";
+
 // Protección técnica por mensaje (un texto pegado enorme).
 export const MAX_MESSAGE_CHARS = 4_000;
 // Protección técnica de todo el historial (~85 mil tokens): con el Goal, las FAQs y
@@ -142,15 +146,28 @@ export function buildModelMessages(
     else turns.push({ role, parts });
   }
   while (turns.length && turns[0].role === "assistant") turns.shift();
+  // La conversación SIEMPRE termina en el turno del cliente (Fase E, 25-sep-2026). Lo
+  // que salió DESPUÉS de su último mensaje —la media por palabra clave (p. ej. el video
+  // de "cómo se instalan") o de una corrida— no puede ir como turno nuestro al final:
+  // Sonnet 5 y los demás modelos actuales de Anthropic lo rechazan ("assistant message
+  // prefill", error 400; pasó en B5) y el cliente se quedaba sin respuesta. Va como
+  // nota dentro de su último turno: el modelo sabe qué ya recibió y no lo repite.
+  const lastUser = turns.findLastIndex((t) => t.role === "user");
+  if (lastUser >= 0 && lastUser < turns.length - 1) {
+    const after = turns
+      .splice(lastUser + 1)
+      .flatMap((t) => t.parts)
+      .map((p) => (p.type === "text" ? p.text.trim() : ""))
+      .filter(Boolean);
+    turns[lastUser].parts.push({
+      type: "text",
+      text: `${SENT_AFTER_HEADER} ${after.map((t) => `«${clip(t, 500)}»`).join(" · ") || "(un archivo)"}]`,
+    });
+  }
   // Contexto del CRM al FINAL del último turno del cliente (no en el system: la
   // caché del prompt se mantiene; el runtime dice al modelo que no lo mencione).
-  if (opts.crmContext?.trim()) {
-    for (let i = turns.length - 1; i >= 0; i--) {
-      if (turns[i].role === "user") {
-        turns[i].parts.push({ type: "text", text: opts.crmContext.trim() });
-        break;
-      }
-    }
+  if (opts.crmContext?.trim() && lastUser >= 0) {
+    turns[turns.length - 1].parts.push({ type: "text", text: opts.crmContext.trim() });
   }
 
   return turns.map((t): ModelMessage => {

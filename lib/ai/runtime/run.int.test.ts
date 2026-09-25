@@ -1205,7 +1205,7 @@ describe.skipIf(!TEST_DATABASE_URL)("runtime del Agente IA (Postgres real)", () 
     expect(await comprobantes()).toHaveLength(0);
   });
 
-  it("reintento del job del agente: la corrida de media del mismo entrante no se crea dos veces; el contexto del CRM llega aunque el último turno sea del agente", async () => {
+  it("reintento del job del agente: la corrida de media del mismo entrante no se crea dos veces; lo que salió por palabra clave va como nota y la conversación termina en el cliente", async () => {
     await msg({ direction: "in", body: "mándame el video", at: ago(40_000) });
     const wfId = await wf("video_instalacion_estandar", [{ kind: "send_text", text: "video" }]);
     // Media de una corrida por palabra clave DESPUÉS del entrante: el historial termina en assistant.
@@ -1217,10 +1217,13 @@ describe.skipIf(!TEST_DATABASE_URL)("runtime del Agente IA (Postgres real)", () 
     const script = { brain: [""], toolCalls: [{ toolName: "wf_tabla_tamanos_estandar", input: {} }] };
     const first = makeDeps(script);
     expect(await run.runAgent(JOB, first.deps)).toEqual({ kind: "sent", bubbles: 0 });
-    // El historial termina en assistant (la media por palabra clave): el contexto va en el último turno del CLIENTE.
-    const lastUser = [...first.calls[0].input.messages].reverse().find((m) => m.role === "user")!;
-    expect(JSON.stringify(lastUser.content)).toContain("[CONTEXTO DEL CRM");
-    expect(first.calls[0].input.messages.at(-1)?.role).toBe("assistant");
+    // Fase E (pendiente A): lo que salió por palabra clave DESPUÉS del entrante va como nota
+    // en el último turno del CLIENTE; la conversación nunca termina en un turno nuestro
+    // (Anthropic lo rechaza con 400) y el contexto del CRM va al final.
+    const last = first.calls[0].input.messages.at(-1)!;
+    expect(last.role).toBe("user");
+    expect(JSON.stringify(last.content)).toContain("ya se le envió al cliente: «Video 🎬»");
+    expect(JSON.stringify(last.content)).toContain("[CONTEXTO DEL CRM");
     // El worker cayó antes de registrar el uso: el reintento vuelve a llamar al modelo…
     await db.delete(s.aiUsage);
     expect((await run.runAgent(JOB, makeDeps(script).deps)).kind).toBe("sent");
@@ -1415,5 +1418,21 @@ describe.skipIf(!TEST_DATABASE_URL)("runtime del Agente IA (Postgres real)", () 
     });
     expect((await run.runAgent(JOB, deps)).kind).toBe("sent");
     expect((await notices()).map((n) => n.kind)).toEqual(["comprobante_dudoso"]);
+  });
+
+  it("Fase E (punto 5): WhatsApp rechaza el primer mensaje → tarjeta con el motivo; sin reintento de la cola ni otra llamada pagada", async () => {
+    await msg({ direction: "in", body: "hola", at: ago(20_000) });
+    const { SendRejectedError } = await import("@/lib/messaging/send");
+    const failing = makeDeps({ brain: ["¡Hola!"] });
+    failing.deps.sendBubble = async () => {
+      throw new SendRejectedError("window_closed", "La ventana de 24 h está cerrada");
+    };
+    expect(await run.runAgent(JOB, failing.deps)).toEqual({ kind: "failed", reason: "envio_rechazado" });
+    const [card] = (await notices()).filter((n) => n.kind === "agente_error");
+    expect(card.body).toContain("La ventana de 24 h de WhatsApp ya cerró");
+    // Mientras nadie elija, no se vuelve a llamar al modelo.
+    const again = makeDeps();
+    expect(await run.runAgent(JOB, again.deps)).toEqual({ kind: "skipped", reason: "error_sin_atender" });
+    expect(again.calls).toHaveLength(0);
   });
 });
