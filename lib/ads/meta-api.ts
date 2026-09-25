@@ -50,14 +50,21 @@ export type MetaAdInfo = {
   title: string | null;
   body: string | null;
   objectType: string | null;
+  /** Llamada a la acción (p. ej. WHATSAPP_MESSAGE) y enlace del creativo. */
+  ctaType: string | null;
+  linkUrl: string | null;
   imageUrl: string | null;
   thumbnailUrl: string | null;
+  /** Video: solo sus datos (el archivo NO se descarga; se ve en Meta). */
   videoId: string | null;
-  videoSourceUrl: string | null;
+  videoTitle: string | null;
+  videoLengthSeconds: number | null;
   videoPictureUrl: string | null;
   storyId: string | null;
   /** Error al leer el video (sin permiso sobre la página, etc.); lo demás sí se obtuvo. */
   videoError: string | null;
+  /** Respuestas de la API tal cual (anuncio, creativo, video): la información completa. */
+  raw: { ad: Record<string, unknown>; creative?: Record<string, unknown>; video?: Record<string, unknown> };
 };
 
 export type MetaApiConfig = {
@@ -136,6 +143,11 @@ function creativeFallbacks(creative: Json) {
     body: str(video.message) ?? str(link.message) ?? first(feed.bodies, "text"),
     imageUrl: https(video.image_url) ?? https(link.picture) ?? (Array.isArray(feed.images) ? https(rec(feed.images[0]).url) : null),
     videoId: str(video.video_id) ?? (Array.isArray(feed.videos) ? str(rec(feed.videos[0]).video_id) : null),
+    ctaType: str(rec(video.call_to_action).type) ?? str(rec(link.call_to_action).type),
+    linkUrl:
+      https(rec(rec(video.call_to_action).value).link) ??
+      https(rec(rec(link.call_to_action).value).link) ??
+      https(link.link),
   };
 }
 
@@ -159,37 +171,48 @@ export async function fetchMetaAd(adId: string, config: MetaApiConfig): Promise<
     title: null,
     body: null,
     objectType: null,
+    ctaType: null,
+    linkUrl: null,
     imageUrl: null,
     thumbnailUrl: null,
     videoId: null,
-    videoSourceUrl: null,
+    videoTitle: null,
+    videoLengthSeconds: null,
     videoPictureUrl: null,
     storyId: null,
     videoError: null,
+    raw: { ad },
   };
   if (!creativeId) return info;
 
   const creative = await graphGet(config, creativeId, {
-    fields: "id,title,body,object_type,image_url,thumbnail_url,video_id,effective_object_story_id,object_story_spec,asset_feed_spec",
-    // Miniatura grande (la de por omisión es de 64×64).
-    thumbnail_width: "720",
-    thumbnail_height: "720",
+    fields:
+      "id,name,title,body,object_type,call_to_action_type,link_url,image_url,thumbnail_url,video_id," +
+      "effective_object_story_id,effective_instagram_media_id,object_story_spec,asset_feed_spec",
+    // Miniatura chica pero legible (la de por omisión es de 64×64).
+    thumbnail_width: "320",
+    thumbnail_height: "320",
   });
+  info.raw.creative = creative;
   const fallback = creativeFallbacks(creative);
   info.title = str(creative.title) ?? fallback.title;
   info.body = str(creative.body) ?? fallback.body;
   info.objectType = str(creative.object_type);
+  info.ctaType = str(creative.call_to_action_type) ?? fallback.ctaType;
+  info.linkUrl = https(creative.link_url) ?? fallback.linkUrl;
   info.imageUrl = https(creative.image_url) ?? fallback.imageUrl;
   info.thumbnailUrl = https(creative.thumbnail_url);
   info.videoId = str(creative.video_id) ?? fallback.videoId;
   info.storyId = str(creative.effective_object_story_id);
 
   if (info.videoId) {
-    // El video puede ser de la página (no de la cuenta publicitaria): sin
-    // permiso sobre la página, Meta lo niega. No es fatal: queda la miniatura.
+    // Solo los DATOS del video (título, duración, portada). El video puede ser
+    // de la página: sin permiso sobre ella, Meta lo niega; no es fatal.
     try {
-      const video = await graphGet(config, info.videoId, { fields: "source,picture" });
-      info.videoSourceUrl = https(video.source);
+      const video = await graphGet(config, info.videoId, { fields: "title,length,picture" });
+      info.raw.video = video;
+      info.videoTitle = str(video.title);
+      info.videoLengthSeconds = typeof video.length === "number" && Number.isFinite(video.length) ? video.length : null;
       info.videoPictureUrl = https(video.picture);
     } catch (error) {
       info.videoError = error instanceof Error ? error.message : String(error);

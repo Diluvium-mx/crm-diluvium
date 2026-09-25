@@ -9,12 +9,19 @@
 // el barrido del worker vuelve a intentar con la ficha guardada en el mensaje.
 import { and, desc, eq, gte, isNull, lte, sql } from "drizzle-orm";
 import { db } from "@/lib/db";
-import { adClicks, conversations, messages, metaAds, type AdMediaItem } from "@/lib/db/schema";
+import { adClicks, conversations, messages, metaAds } from "@/lib/db/schema";
 import type { MessagingProvider } from "@/lib/messaging/provider";
 import type { Tx } from "@/lib/messaging/ingest";
-import { conversationClickMatches, normalizeReferral, referralMediaUrls, type AdPlatform } from "./referral";
+import { adsManagerUrl } from "./meta-api";
+import { conversationClickMatches, normalizeReferral, referralThumbUrl, type AdPlatform } from "./referral";
 
-export type RecordedClick = { clickId: string; organizationId: string; adId: string | null; hasMedia: boolean };
+export type RecordedClick = {
+  clickId: string;
+  organizationId: string;
+  adId: string | null;
+  /** Link de la ficha para la miniatura del anuncio (thumbnail_url o image_url; caduca en horas). */
+  thumbUrl: string | null;
+};
 
 type ClickInput = {
   organizationId: string;
@@ -34,7 +41,6 @@ type ClickInput = {
  */
 export async function insertAdClick(tx: Tx, input: ClickInput): Promise<RecordedClick | null> {
   const data = normalizeReferral(input.raw, input.platform ?? "whatsapp");
-  const media: AdMediaItem[] = referralMediaUrls(data).map((m) => ({ ...m, attempts: 0 }));
   const id = crypto.randomUUID();
   const inserted = await tx
     .insert(adClicks)
@@ -55,7 +61,6 @@ export async function insertAdClick(tx: Tx, input: ClickInput): Promise<Recorded
       ctwaClid: data.ctwaClid,
       welcomeMessage: data.welcomeMessage,
       raw: input.raw,
-      media,
       clickedAt: input.clickedAt,
     })
     // Sin target: cubre ambos índices únicos (mensaje y ctwa_clid).
@@ -63,12 +68,23 @@ export async function insertAdClick(tx: Tx, input: ClickInput): Promise<Recorded
     .returning({ id: adClicks.id });
   if (inserted.length === 0) return null;
   if (data.adId) {
+    // Fila del anuncio (la llena la API de Marketing). "Ver en Meta" ya se
+    // puede armar con el id; "Ver publicación", con el link de la ficha hasta
+    // que Meta dé la publicación.
     await tx
       .insert(metaAds)
-      .values({ organizationId: input.organizationId, adId: data.adId })
-      .onConflictDoNothing();
+      .values({
+        organizationId: input.organizationId,
+        adId: data.adId,
+        adsManagerUrl: adsManagerUrl(data.adId, null),
+        postUrl: data.sourceUrl,
+      })
+      .onConflictDoUpdate({
+        target: [metaAds.organizationId, metaAds.adId],
+        set: { postUrl: sql`coalesce(${metaAds.postUrl}, excluded.post_url)` },
+      });
   }
-  return { clickId: id, organizationId: input.organizationId, adId: data.adId, hasMedia: media.length > 0 };
+  return { clickId: id, organizationId: input.organizationId, adId: data.adId, thumbUrl: referralThumbUrl(data) };
 }
 
 /**

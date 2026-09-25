@@ -1,4 +1,4 @@
-// Cola de anuncios (BullMQ): media del anuncio al bucket, nombres de Meta,
+// Cola de anuncios (BullMQ): miniatura del anuncio al bucket, nombres de Meta,
 // respaldo con la conversación de Zernio y red de seguridad del registro del
 // clic. La base es la fuente de verdad: si encolar falla, el barrido del worker
 // lo recoge (lib/ads/worker.ts).
@@ -9,9 +9,9 @@ import { redisConnection } from "./inbound";
 export const ADS_QUEUE = "ads";
 
 export type AdsJob =
-  | { kind: "media"; clickId: string }
+  /** Miniatura del anuncio; `url` = link de la ficha (sin él, el del creativo). */
+  | { kind: "thumb"; organizationId: string; adId: string; url?: string }
   | { kind: "meta"; organizationId: string; adId: string }
-  | { kind: "creative_media"; organizationId: string; adId: string }
   | { kind: "fallback"; job: FallbackJob }
   | { kind: "record"; organizationId: string; messageId: string };
 
@@ -39,10 +39,8 @@ function adsQueue(): Queue<AdsJob> {
 function jobId(job: AdsJob): string {
   const id = (() => {
     switch (job.kind) {
-      case "media":
-        return `media_${job.clickId}`;
+      case "thumb":
       case "meta":
-      case "creative_media":
         return `${job.kind}_${job.organizationId}_${job.adId}`;
       case "fallback":
         return `fallback_${job.job.messageId}`;

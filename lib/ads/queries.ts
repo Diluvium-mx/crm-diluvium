@@ -6,7 +6,7 @@
 // posterior ("Métricas de anuncios") que se monta sobre estas mismas tablas.
 import { and, asc, desc, eq, gte, inArray, sql } from "drizzle-orm";
 import { db } from "@/lib/db";
-import { adClicks, contacts, messages, metaAds, type AdMediaItem } from "@/lib/db/schema";
+import { adClicks, contacts, messages, metaAds } from "@/lib/db/schema";
 import { adHrefOf, adKeyOf, adKeySql, isAdKey } from "./ad-key";
 import { adsManagerUrl, storyUrl } from "./meta-api";
 import { httpsUrl, normalizeReferral } from "./referral";
@@ -18,30 +18,12 @@ export function adDisplayName(meta: Pick<MetaRow, "adName" | "creativeTitle"> | 
   return meta?.adName ?? headline ?? meta?.creativeTitle ?? (adId ? `Anuncio ${adId}` : "Anuncio sin identificar");
 }
 
-export type AdVisual = { thumbnailUrl: string | null; imageUrl: string | null; videoUrl: string | null };
-
-function stored(media: AdMediaItem[], role: AdMediaItem["role"]): boolean {
-  return media.some((m) => m.role === role && m.storageKey);
-}
-
 /**
- * Qué mostrar (solo lo que ya está en el bucket propio, nunca links de Meta
- * que caducan): primero la ficha del clic, luego el creativo de la API.
+ * Miniatura del anuncio: la ÚNICA copia chica guardada en el bucket propio
+ * (nunca links de Meta, que caducan). Sin miniatura aún → null (la UI pone un ícono).
  */
-export function pickVisual(
-  click: { id: string; media: AdMediaItem[] } | null,
-  ad: { adId: string; media: AdMediaItem[] } | null,
-): AdVisual {
-  const fromClick = (role: AdMediaItem["role"]) =>
-    click && stored(click.media, role) ? `/api/ads/media/click/${encodeURIComponent(click.id)}/${role}` : null;
-  const fromAd = (role: AdMediaItem["role"]) =>
-    ad && stored(ad.media, role) ? `/api/ads/media/ad/${encodeURIComponent(ad.adId)}/${role}` : null;
-  const imageUrl = fromClick("image") ?? fromAd("image");
-  return {
-    thumbnailUrl: fromClick("thumbnail") ?? fromClick("image") ?? fromAd("thumbnail") ?? imageUrl,
-    imageUrl,
-    videoUrl: fromClick("video") ?? fromAd("video"),
-  };
+export function thumbnailOf(meta: Pick<MetaRow, "adId" | "thumbnailKey"> | null | undefined): string | null {
+  return meta?.thumbnailKey ? `/api/ads/thumbnail/${encodeURIComponent(meta.adId)}` : null;
 }
 
 async function metaFor(organizationId: string, adIds: string[]): Promise<Map<string, MetaRow>> {
@@ -51,21 +33,6 @@ async function metaFor(organizationId: string, adIds: string[]): Promise<Map<str
     .from(metaAds)
     .where(and(eq(metaAds.organizationId, organizationId), inArray(metaAds.adId, adIds)));
   return new Map(rows.map((r) => [r.adId, r]));
-}
-
-/** El clic más reciente de cada anuncio (por clave) que ya tiene media en el bucket (para la miniatura). */
-async function latestStoredClicks(organizationId: string, keysIn: string[]) {
-  const keys = [...new Set(keysIn)];
-  if (keys.length === 0) return new Map<string, { id: string; media: AdMediaItem[] }>();
-  const rows = await db.execute<{ key: string; id: string; media: AdMediaItem[] }>(sql`
-    select distinct on (t.key) t.key, t.id, t.media
-      from (select ${adKeySql("c")} as key, c.id, c.media, c.clicked_at
-              from ${adClicks} c
-             where c.organization_id = ${organizationId}
-               and exists (select 1 from jsonb_array_elements(c.media) m where m->>'storageKey' is not null)) t
-     where t.key in ${keys}
-     order by t.key, t.clicked_at desc`);
-  return new Map(rows.map((r) => [r.key, { id: r.id, media: r.media }]));
 }
 
 // ─── Tarjeta del chat ───────────────────────────────────────────────────────
@@ -86,16 +53,13 @@ export async function adCardsForMessages(organizationId: string, messageIds: str
     .where(and(eq(adClicks.organizationId, organizationId), inArray(adClicks.messageId, messageIds)));
   if (clicks.length === 0) return new Map();
   const metas = await metaFor(organizationId, clicks.map((c) => c.adId).filter((id): id is string => id !== null));
-  const siblings = await latestStoredClicks(organizationId, clicks.map(adKeyOf));
   const out = new Map<string, AdCard>();
   for (const c of clicks) {
     const meta = c.adId ? metas.get(c.adId) : undefined;
-    const ownOrSibling = c.media.some((m) => m.storageKey) ? c : (siblings.get(adKeyOf(c)) ?? null);
-    const visual = pickVisual(ownOrSibling, meta ? { adId: meta.adId, media: meta.creativeMedia } : null);
     out.set(c.messageId!, {
       name: adDisplayName(meta, c.headline, c.adId),
       href: adHrefOf(c),
-      thumbnailUrl: visual.thumbnailUrl,
+      thumbnailUrl: thumbnailOf(meta),
       mediaType: c.mediaType,
     });
   }
@@ -159,10 +123,9 @@ export async function listAds(organizationId: string): Promise<AdListItem[]> {
      group by 1
      order by max(c.clicked_at) desc`);
   const adIds = rows.map((r) => r.ad_id).filter((id): id is string => id !== null);
-  const [metas, clicks] = await Promise.all([metaFor(organizationId, adIds), latestStoredClicks(organizationId, rows.map((r) => r.key))]);
+  const metas = await metaFor(organizationId, adIds);
   return rows.map((r) => {
     const meta = r.ad_id ? metas.get(r.ad_id) : undefined;
-    const visual = pickVisual(clicks.get(r.key) ?? null, meta ? { adId: meta.adId, media: meta.creativeMedia } : null);
     return {
       key: r.key,
       adId: r.ad_id,
@@ -172,7 +135,7 @@ export async function listAds(organizationId: string): Promise<AdListItem[]> {
       clients: Number(r.clients),
       bought: Number(r.bought),
       lastClickAt: new Date(Number(r.last_click_ms)),
-      thumbnailUrl: visual.thumbnailUrl,
+      thumbnailUrl: thumbnailOf(meta),
       mediaType: r.media_type,
     };
   });
@@ -189,7 +152,13 @@ export type AdDetail = {
   status: string | null;
   title: string | null;
   body: string | null;
-  visual: AdVisual;
+  /** Llamada a la acción (texto legible) y enlace del creativo. */
+  cta: string | null;
+  linkUrl: string | null;
+  /** Solo los datos del video (el archivo se ve en Meta). */
+  video: { id: string; title: string | null; lengthSeconds: number | null } | null;
+  mediaType: string | null;
+  thumbnailUrl: string | null;
   clients: number;
   bought: number;
   metaUrl: string | null;
@@ -211,7 +180,7 @@ export async function getAd(organizationId: string, key: string): Promise<AdDeta
     .orderBy(desc(adClicks.clickedAt));
   if (clicks.length === 0) return null;
   const meta = adId ? (await metaFor(organizationId, [adId])).get(adId) : undefined;
-  const latestWithMedia = clicks.find((c) => c.click.media.some((m) => m.storageKey))?.click ?? null;
+  const withMediaType = clicks.find((c) => c.click.mediaType)?.click;
   const withText = clicks.find((c) => c.click.headline || c.click.body)?.click;
   const withUrl = clicks.find((c) => c.click.sourceUrl)?.click;
 
@@ -236,14 +205,35 @@ export async function getAd(organizationId: string, key: string): Promise<AdDeta
     status: meta?.effectiveStatus ?? null,
     title: meta?.creativeTitle ?? withText?.headline ?? null,
     body: meta?.creativeBody ?? withText?.body ?? null,
-    visual: pickVisual(latestWithMedia, meta ? { adId: meta.adId, media: meta.creativeMedia } : null),
+    cta: ctaLabel(meta?.ctaType ?? null),
+    linkUrl: httpsUrl(meta?.linkUrl ?? null),
+    video: meta?.videoId ? { id: meta.videoId, title: meta.videoTitle, lengthSeconds: meta.videoLengthSeconds } : null,
+    mediaType: meta?.videoId ? "video" : (withMediaType?.mediaType ?? null),
+    thumbnailUrl: thumbnailOf(meta),
     clients: list.length,
     bought: list.filter((p) => p.stage === "compra").length,
-    metaUrl: adId ? adsManagerUrl(adId, meta?.accountId ?? null) : null,
-    postUrl: storyUrl(meta?.storyId ?? null) ?? httpsUrl(withUrl?.sourceUrl ?? null),
+    metaUrl: adId ? (meta?.adsManagerUrl ?? adsManagerUrl(adId, meta?.accountId ?? null)) : null,
+    postUrl: storyUrl(meta?.storyId ?? null) ?? httpsUrl(meta?.postUrl ?? null) ?? httpsUrl(withUrl?.sourceUrl ?? null),
     metaPending: Boolean(adId && (!meta?.fetchedAt || meta.fetchError)),
     people: list,
   };
+}
+
+const CTA_LABELS: Record<string, string> = {
+  WHATSAPP_MESSAGE: "Enviar mensaje de WhatsApp",
+  MESSAGE_PAGE: "Enviar mensaje",
+  LEARN_MORE: "Más información",
+  SHOP_NOW: "Comprar",
+  SIGN_UP: "Registrarte",
+  CONTACT_US: "Contáctanos",
+  GET_QUOTE: "Obtener cotización",
+  CALL_NOW: "Llamar",
+};
+
+/** Llamada a la acción de Meta en texto legible (la desconocida, tal cual). */
+export function ctaLabel(type: string | null): string | null {
+  if (!type) return null;
+  return CTA_LABELS[type] ?? type.toLowerCase().replace(/_/g, " ");
 }
 
 // ─── Detalle del contacto ───────────────────────────────────────────────────

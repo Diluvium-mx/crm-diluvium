@@ -49,7 +49,7 @@ describe("fetchMetaAd", () => {
     const { calls, fetchImpl } = graph({
       [AD.id]: { body: AD },
       [CREATIVE.id]: { body: CREATIVE },
-      "1206767124908982": { body: { source: "https://video.xx.fbcdn.net/v.mp4", picture: "https://scontent.xx.fbcdn.net/p.jpg" } },
+      "1206767124908982": { body: { title: "Protege tu Casa 🏠", length: 25.866, picture: "https://scontent.xx.fbcdn.net/p.jpg" } },
     });
     const info = await fetchMetaAd(AD.id, { token: "SECRETO", version: "v26.0", fetchImpl });
     expect(info).toMatchObject({
@@ -60,13 +60,17 @@ describe("fetchMetaAd", () => {
       title: "Protege tu Casa 🏠",
       objectType: "VIDEO",
       videoId: "1206767124908982",
-      videoSourceUrl: "https://video.xx.fbcdn.net/v.mp4",
+      videoTitle: "Protege tu Casa 🏠",
+      videoLengthSeconds: 25.866,
       storyId: "114715000320568_1452532606896168",
     });
     expect(calls.map((c) => c.url.startsWith("https://graph.facebook.com/v26.0/"))).toEqual([true, true, true]);
     expect(calls.every((c) => c.auth === "Bearer SECRETO" && !c.url.includes("SECRETO"))).toBe(true);
-    // Miniatura grande (la de por omisión es de 64×64).
-    expect(calls[1].url).toContain("thumbnail_width=720");
+    // Miniatura chica pero legible (la de por omisión es de 64×64); del video solo sus datos.
+    expect(calls[1].url).toContain("thumbnail_width=320");
+    expect(calls[2].url).toContain("fields=title%2Clength%2Cpicture");
+    expect(calls[2].url).not.toContain("source");
+    expect(info.raw.creative?.id).toBe(CREATIVE.id);
   });
 
   it("sin permiso sobre el video: lo demás sí se obtiene", async () => {
@@ -77,7 +81,7 @@ describe("fetchMetaAd", () => {
     });
     const info = await fetchMetaAd(AD.id, { token: "t", fetchImpl });
     expect(info.adName).toBe("AC - Video 9");
-    expect(info.videoSourceUrl).toBeNull();
+    expect(info.videoTitle).toBeNull();
     expect(info.videoError).toContain("código 10");
   });
 
