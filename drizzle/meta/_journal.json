@@ -239,13 +239,6 @@
       "when": 1790375449652,
       "tag": "0034_agente_error",
       "breakpoints": true
-    },
-    {
-      "idx": 34,
-      "version": "7",
-      "when": 1790379881267,
-      "tag": "0035_sin_tope_diario",
-      "breakpoints": true
     }
   ]
 }

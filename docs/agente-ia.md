@@ -281,7 +281,9 @@ Dashboard ya muestra el gasto del mes y el saldo estimado (24-sep-2026).
   - **Falla al ENVIAR:** si el CRM (ventana cerrada, canal apagado) o WhatsApp rechazan el primer
     mensaje, sale la tarjeta con el motivo y "Reintentar"/"Apagar"; antes la cola reintentaba hasta
     3–5 veces pagando otra llamada al modelo cada vez y dejando burbujas fallidas.
-  - **Tope diario de $20 quitado** (columna `ai_config.daily_budget_usd` borrada, decisión del dueño).
+  - **Tope diario de $20:** el dueño decidió quitarlo. No se usa ni se muestra en ningún lado; la
+    columna `ai_config.daily_budget_usd` se borra en la primera migración después de que Anuncios de
+    Meta entre a main (su 0030 ya ocupa el siguiente lugar del journal en staging).
   - **Dashboard:** "Gasto de IA" hasta arriba con cifras grandes y los cinco proveedores con llave.
   - Decidido NO hacer: indicador "agente con error" en la lista de la Bandeja (el dueño no lo ve probable). El panel de gasto que antes
   se anotaba aquí ya existe en el Dashboard (24-sep-2026); conciliar contra las Cost API queda como
