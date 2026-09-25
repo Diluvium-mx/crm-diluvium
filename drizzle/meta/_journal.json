@@ -232,6 +232,13 @@
       "when": 1790370329686,
       "tag": "0033_modelo_por_etapa",
       "breakpoints": true
+    },
+    {
+      "idx": 33,
+      "version": "7",
+      "when": 1790375449652,
+      "tag": "0034_agente_error",
+      "breakpoints": true
     }
   ]
 }

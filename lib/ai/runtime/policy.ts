@@ -17,7 +17,7 @@ export type AgentState = "activo" | "pausado_humano" | "pausado_handover" | "pau
 // son los tres motivos de aviso_vendedor (+ "envio" para fallos de envío del CRM).
 // "respuesta_cortada" (Fase E): la respuesta llegó al tope de tokens o una acción
 // traía argumentos inválidos; el vendedor revisa el hilo.
-export type NoticeKind = "pasar_a_humano" | "envio" | "cotejar_deposito" | "cliente_pide_humano" | "comprobante_dudoso" | "respuesta_cortada";
+export type NoticeKind = "pasar_a_humano" | "envio" | "cotejar_deposito" | "cliente_pide_humano" | "comprobante_dudoso" | "respuesta_cortada" | "agente_error";
 
 // ── Debounce deslizante (interno y fijo, como Ángela en GHL) ─────────────────
 // Cada entrante reinicia la espera de 15 s, pero nunca más de 60 s desde el

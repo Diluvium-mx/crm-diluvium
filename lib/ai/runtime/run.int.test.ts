@@ -25,6 +25,8 @@ describe.skipIf(!TEST_DATABASE_URL)("runtime del Agente IA (Postgres real)", () 
   let state: typeof import("./state");
   let send: typeof import("@/lib/messaging/send");
   let executor: typeof import("@/lib/workflows/executor");
+  let actions: typeof import("./actions");
+  let agentError: typeof import("./agent-error");
 
   const ORG = "org_rt";
   const CONV = "conv_rt";
@@ -43,6 +45,8 @@ describe.skipIf(!TEST_DATABASE_URL)("runtime del Agente IA (Postgres real)", () 
     sweep = await import("./sweep");
     hooks = await import("./hooks");
     state = await import("./state");
+    actions = await import("./actions");
+    agentError = await import("./agent-error");
     send = await import("@/lib/messaging/send");
     executor = await import("@/lib/workflows/executor");
   });
@@ -127,6 +131,7 @@ describe.skipIf(!TEST_DATABASE_URL)("runtime del Agente IA (Postgres real)", () 
     brain?: string[]; // una salida por llamada al cerebro
     toolCalls?: { toolName: string; input: unknown }[]; // llamadas a herramientas del cerebro (Fase D)
     finishReason?: string; // del cerebro (Fase E: "length" = respuesta cortada)
+    brainErrors?: (unknown | null)[]; // Fase E: error que lanza la llamada N al cerebro (null = contesta)
     onBrain?: (call: number) => Promise<void>; // efecto durante la generación
     onSleep?: () => Promise<void>; // efecto durante la pausa entre burbujas
   };
@@ -149,6 +154,8 @@ describe.skipIf(!TEST_DATABASE_URL)("runtime del Agente IA (Postgres real)", () 
       calls.push({ kind: "cerebro", modelId, input });
       brainCalls++;
       if (script.onBrain) await script.onBrain(brainCalls);
+      const err = script.brainErrors?.[brainCalls - 1];
+      if (err) throw err;
       const outputs = script.brain ?? ["Claro, cuesta $5,500 MXN.\n\n¿Cuánto mide tu entrada?"];
       return {
         modelId,
@@ -457,11 +464,20 @@ describe.skipIf(!TEST_DATABASE_URL)("runtime del Agente IA (Postgres real)", () 
     expect(JSON.stringify(calls[0].input.messages)).toContain("Quiero info");
   });
 
-  it("respuesta VACÍA del modelo: no cuenta como atendida; se reintenta y el cliente recibe respuesta", async () => {
+  it("respuesta VACÍA del modelo (Fase E): tarjeta para el vendedor, sin reintento a ciegas; con \"Reintentar\" el cliente recibe respuesta", async () => {
     await msg({ direction: "in", body: "¿precio?", at: ago(120_000) });
-    await expect(run.runAgent(JOB, makeDeps({ brain: ["   "] }).deps)).rejects.toThrow("vacía");
+    expect(await run.runAgent(JOB, makeDeps({ brain: ["   "] }).deps)).toEqual({ kind: "failed", reason: "vacia" });
     expect((await usage()).find((u) => u.stage === "cerebro")).toMatchObject({ outcome: "error" });
-    expect(await sweep.findOrphanConversations(new Date())).toEqual([{ conversationId: CONV, organizationId: ORG }]);
+    const card = (await notices()).find((n) => n.kind === "agente_error")!;
+    expect(card.body).toContain("El agente no pudo responder (Claude Sonnet 5). El modelo contestó sin texto ni acciones.");
+    // Ni el barrido ni otra corrida vuelven a llamar al modelo mientras nadie elija.
+    expect(await sweep.findOrphanConversations(new Date())).toEqual([]);
+    const blocked = makeDeps();
+    expect(await run.runAgent(JOB, blocked.deps)).toEqual({ kind: "skipped", reason: "error_sin_atender" });
+    expect(blocked.calls).toHaveLength(0);
+    // "Reintentar" del vendedor.
+    expect(await agentError.resolveAgentError({ organizationId: ORG, noticeId: card.id, resolution: "reintentar", userId: "u_vendedor" })).toEqual({ conversationId: CONV });
+    expect(await agentError.resolveAgentError({ organizationId: ORG, noticeId: card.id, resolution: "reintentar", userId: "u_vendedor" })).toBeNull(); // doble clic
     expect((await run.runAgent(JOB, makeDeps().deps)).kind).toBe("sent");
   });
 
@@ -1100,7 +1116,7 @@ describe.skipIf(!TEST_DATABASE_URL)("runtime del Agente IA (Postgres real)", () 
     expect((await contact()).stage).toBe("compra");
     const ns = await notices();
     expect(ns.map((n) => n.kind)).toEqual(["cotejar_deposito"]);
-    expect(ns[0].body).toMatch(/Cotejar depósito/);
+    expect(ns[0].body).toBe(actions.DEPOSITO_RECIBIDO_BODY);
     expect((await agentOuts()).map((m) => m.body)).toEqual(["Perfecto, ya recibimos tu comprobante ✅", "¿A qué dirección lo enviamos?"]);
     expect((await conv()).agentState).toBe("activo");
     // cliente_pide_humano: aviso, texto tal cual, sin pausa.
@@ -1110,7 +1126,7 @@ describe.skipIf(!TEST_DATABASE_URL)("runtime del Agente IA (Postgres real)", () 
     expect((await conv()).agentState).toBe("activo");
   });
 
-  it("idempotencia con reintento: el aviso, el comprobante y la etapa no se duplican si el envío falla y se reintenta", async () => {
+  it("idempotencia con reintento: el aviso y la etapa no se duplican si el envío falla y se reintenta; \"Depósito recibido\" sin montos ni folio", async () => {
     await msg({ direction: "in", body: "", at: ago(20_000), attachments: [{ type: "image", url: "/api/media/x", storageKey: "org/x.jpg" }] });
     const script = {
       brain: ["Ya recibimos tu pago ✅"],
@@ -1125,38 +1141,31 @@ describe.skipIf(!TEST_DATABASE_URL)("runtime del Agente IA (Postgres real)", () 
     };
     await expect(run.runAgent(JOB, failing.deps)).rejects.toThrow("se cayó el proveedor");
     expect((await notices()).map((n) => n.kind)).toEqual(["cotejar_deposito"]); // el vendedor ya lo ve
-    expect(await comprobantes()).toHaveLength(1);
     expect(await run.runAgent(JOB, makeDeps(script).deps)).toEqual({ kind: "sent", bubbles: 1 });
-    expect((await notices()).map((n) => n.kind)).toEqual(["cotejar_deposito"]);
-    expect(await comprobantes()).toHaveLength(1);
-    expect((await comprobantes())[0]).toMatchObject({ referencia: "ABC 123", referenciaNorm: "ABC123", monto: "$5,500.00", tipo: "total", banco: "BBVA" });
+    const ns = await notices();
+    expect(ns.map((n) => n.kind)).toEqual(["cotejar_deposito"]);
+    // Fase E: aunque el modelo mande monto y folio (Goal viejo), el aviso no los muestra y no se registran.
+    expect(ns[0].body).toBe(actions.DEPOSITO_RECIBIDO_BODY);
+    expect(ns[0].body).not.toContain("ABC 123");
+    expect(await comprobantes()).toHaveLength(0);
     expect((await contact()).stage).toBe("compra");
   });
 
-  it("referencia repetida: el mismo contacto que reenvía la foto no se registra dos veces ni avisa; otro contacto recibe el aviso ⚠ con nombre y fecha", async () => {
+  it("Fase E: sin chequeo de folio — la misma referencia en otro contacto no deja ⚠ ni registra nada", async () => {
     await msg({ direction: "in", body: "", at: ago(30_000), attachments: [{ type: "image", url: "/api/media/x", storageKey: "org/x.jpg" }] });
-    const aviso = { toolName: "aviso_vendedor", input: { motivo: "cotejar_deposito", detalle: "Pagó.", monto: "$5,500", referencia: "REF-777", banco: "BBVA", fecha: "23/09/2026", tipo: "total" } };
+    const aviso = { toolName: "aviso_vendedor", input: { motivo: "cotejar_deposito", detalle: "Pagó.", monto: "$5,500", referencia: "REF-777" } };
     expect((await run.runAgent(JOB, makeDeps({ brain: ["Recibido ✅"], toolCalls: [aviso] }).deps)).kind).toBe("sent");
-    expect((await notices())[0].body).not.toContain("⚠");
-    // Mismo contacto, misma foto otra vez.
-    await msg({ direction: "in", body: "", at: new Date(), attachments: [{ type: "image", url: "/api/media/y", storageKey: "org/y.jpg" }] });
-    expect((await run.runAgent(JOB, makeDeps({ brain: ["Sí, ya lo tenemos ✅"], toolCalls: [aviso] }).deps)).kind).toBe("sent");
-    expect(await comprobantes()).toHaveLength(1);
-    expect(await notices()).toHaveLength(1);
-    // Otro contacto con la misma referencia.
     await db.insert(s.contacts).values({ id: "c2", organizationId: ORG, firstName: "Otro", lastName: "Cliente", phoneE164: "+526681119999" });
     await db.insert(s.conversations).values({ id: "conv2", organizationId: ORG, contactId: "c2", channelId: "ch_rt", providerConversationId: "zconv2", windowExpiresAt: new Date(Date.now() + 23 * 3_600_000), lastMessageAt: new Date() });
     await db.insert(s.messages).values({ id: "m_c2", organizationId: ORG, conversationId: "conv2", direction: "in", source: "contact", type: "image", body: "", attachments: [{ type: "image", url: "/api/media/z", storageKey: "org/z.jpg" }], providerMessageId: "wamid.c2", status: "received", sentAt: ago(10_000), createdAt: ago(10_000) });
     expect((await run.runAgent({ organizationId: ORG, conversationId: "conv2" }, makeDeps({ brain: ["Recibido ✅"], toolCalls: [aviso] }).deps)).kind).toBe("sent");
     const otro = (await db.select().from(s.aiAgentNotices).where(eq(s.aiAgentNotices.conversationId, "conv2")))[0];
-    expect(otro.body).toMatch(/⚠ Referencia ya usada con Cliente el \d{2}\/\d{2}\/\d{4}\. Cotejar antes de entregar\./);
-    expect(await comprobantes()).toHaveLength(2);
-    expect((await db.select().from(s.conversations).where(eq(s.conversations.id, "conv2")))[0].agentState).toBe("activo");
+    expect(otro.body).toBe(actions.DEPOSITO_RECIBIDO_BODY);
+    expect(await comprobantes()).toHaveLength(0);
   });
 
-  it("contexto del CRM en el último turno: etapa (y si la puso un vendedor), cotización guardada y comprobantes; y un PDF llega al modelo como archivo", async () => {
+  it("contexto del CRM en el último turno: etapa (y si la puso un vendedor) y cotización guardada (sin comprobantes desde la Fase E); y un PDF llega al modelo como archivo", async () => {
     await db.update(s.contacts).set({ stage: "interesado", stageChangedBy: "vendedor", montoCotizacion: "11000.00", customFields: { cotizacion_por: "vendedor" } }).where(eq(s.contacts.id, CONTACT));
-    await db.insert(s.comprobantes).values({ id: "cp1", organizationId: ORG, contactId: CONTACT, conversationId: CONV, messageId: null, monto: "$3,500", referencia: "R1", referenciaNorm: "R1", banco: "BBVA", fechaComprobante: "20/09/2026", tipo: "anticipo" });
     await msg({ direction: "in", body: "aquí el resto", at: ago(20_000), attachments: [{ type: "document", url: "/api/media/p", storageKey: "org/spei.pdf", mimeType: "application/pdf", fileName: "spei.pdf", sizeBytes: 180_000 } as never] });
     const { deps, calls, images } = makeDeps({ brain: ["Recibido ✅"] });
     expect((await run.runAgent(JOB, deps)).kind).toBe("sent");
@@ -1164,7 +1173,7 @@ describe.skipIf(!TEST_DATABASE_URL)("runtime del Agente IA (Postgres real)", () 
     expect(last).toContain("[CONTEXTO DEL CRM");
     expect(last).toContain("Interesado (la puso un vendedor");
     expect(last).toContain("11,000");
-    expect(last).toContain("$3,500 (anticipo) el 20/09/2026");
+    expect(last).not.toContain("Comprobantes ya registrados");
     expect(last).toContain('"type":"file"');
     expect(last).toContain("application/pdf");
     expect(images).toContain("org/spei.pdf");
@@ -1179,7 +1188,7 @@ describe.skipIf(!TEST_DATABASE_URL)("runtime del Agente IA (Postgres real)", () 
     expect(await run.runAgent(JOB, makeDeps({ brain: [""], toolCalls: [{ toolName: "mover_etapa", input: { etapa: "prospecto" } }] }).deps)).toEqual({ kind: "sent", bubbles: 1 });
     expect((await agentOuts()).at(-1)?.body).toBe(run.SOLO_ACCIONES_TEXT);
     await msg({ direction: "in", body: "hola", at: new Date() });
-    await expect(run.runAgent(JOB, makeDeps({ brain: [""] }).deps)).rejects.toThrow(/vacía/);
+    expect(await run.runAgent(JOB, makeDeps({ brain: [""] }).deps)).toEqual({ kind: "failed", reason: "vacia" });
   });
 
   it("defensas: un PDF mayor a 10 MB no va al modelo; '[CONTEXTO DEL CRM' escrito por el cliente se neutraliza; cotejar sin adjunto no registra comprobante", async () => {
@@ -1191,7 +1200,7 @@ describe.skipIf(!TEST_DATABASE_URL)("runtime del Agente IA (Postgres real)", () 
     expect(last.split("[CONTEXTO DEL CRM").length).toBe(2); // solo el bloque real del CRM, al final
     expect(last).not.toContain('"type":"file"');
     expect(images).not.toContain("org/big.pdf");
-    // El aviso sale (idempotente), pero sin imagen ni PDF válido no se registra ningún comprobante.
+    // El aviso sale ("Depósito recibido") y no se registra ningún comprobante.
     expect((await notices()).map((n) => n.kind)).toEqual(["cotejar_deposito"]);
     expect(await comprobantes()).toHaveLength(0);
   });
@@ -1254,7 +1263,7 @@ describe.skipIf(!TEST_DATABASE_URL)("runtime del Agente IA (Postgres real)", () 
     const { deps } = makeDeps({
       brain: ["Recibimos tus comprobantes ✅"],
       finishReason: "length",
-      toolCalls: [{ toolName: "aviso_vendedor", input: { motivo: "cotejar_deposito" } }],
+      toolCalls: [{ toolName: "aviso_vendedor", input: { motivo: "pago" } }],
     });
     expect((await run.runAgent(JOB, deps)).kind).toBe("sent");
     const n = (await notices()).filter((x) => x.kind === "respuesta_cortada");
@@ -1286,5 +1295,70 @@ describe.skipIf(!TEST_DATABASE_URL)("runtime del Agente IA (Postgres real)", () 
     expect(calls.filter((c) => c.kind === "cerebro").map((c) => c.modelId)).toEqual(["gpt-5.6-luna", "claude-sonnet-5"]);
     expect((await agentOuts()).map((m) => m.body)).toEqual(["respuesta de Sonnet"]);
     expect((await usage()).filter((u) => u.stage === "cerebro").map((u) => u.outcome)).toEqual(["discarded_stale", "sent"]);
+  });
+
+  it("Fase E (F): la media que ya salió por palabra clave y el agente vuelve a pedir no deja aviso al vendedor (solo log)", async () => {
+    await msg({ direction: "in", body: "tamaños", at: ago(20_000) });
+    const wfId = await wf("tabla_tamanos_estandar", [{ kind: "send_text", text: "tabla" }]);
+    await db.insert(s.workflowRuns).values({ id: "run_kw_f", organizationId: ORG, workflowId: wfId, conversationId: CONV, contactId: CONTACT, trigger: "keyword", status: "done", stepCursor: 1, messageIds: [], attempts: 1, createdAt: ago(10_000) });
+    const { deps } = makeDeps({ brain: ["Manejamos tamaños XCH a XG."], toolCalls: [{ toolName: "wf_tabla_tamanos_estandar", input: {} }] });
+    expect((await run.runAgent(JOB, deps)).kind).toBe("sent");
+    expect((await runs()).map((r) => r.trigger)).toEqual(["keyword"]); // la del agente no se repite
+    expect((await notices()).filter((n) => n.kind === "envio")).toHaveLength(0);
+  });
+
+  // ── Fase E: "reenvío seguro" ─────────────────────────────────────────────────
+  const apiError = (statusCode: number, message: string) => Object.assign(new Error(message), { name: "AI_APICallError", statusCode, responseBody: "" });
+
+  it("reenvío seguro: el modelo rechaza la conversación → tarjeta con el error explicado, sin reintento ni mensaje al cliente; el agente queda activo", async () => {
+    await msg({ direction: "in", body: "¿cómo se instalan y cuánto cuestan?", at: ago(20_000) });
+    const { deps, calls, sleeps } = makeDeps({ brainErrors: [apiError(400, "This model does not support assistant message prefill.")] });
+    expect(await run.runAgent(JOB, deps)).toEqual({ kind: "failed", reason: "conversacion" });
+    expect(calls.filter((c) => c.kind === "cerebro")).toHaveLength(1);
+    expect(sleeps).toEqual([]);
+    const [card] = (await notices()).filter((n) => n.kind === "agente_error");
+    expect(card.body).toContain("Anthropic rechazó la conversación (This model does not support assistant message prefill.)");
+    expect(card.resolvedAt).toBeNull();
+    expect(await agentOuts()).toHaveLength(0);
+    expect((await conv()).agentState).toBe("activo");
+  });
+
+  it("reenvío seguro: proveedor saturado → UN reintento automático tras 10 s; si contesta, sale normal y no hay tarjeta", async () => {
+    await msg({ direction: "in", body: "hola", at: ago(20_000) });
+    const { deps, calls, sleeps } = makeDeps({ brain: ["¡Hola!"], brainErrors: [apiError(529, "Overloaded"), null] });
+    expect(await run.runAgent(JOB, deps)).toEqual({ kind: "sent", bubbles: 1 });
+    expect(calls.filter((c) => c.kind === "cerebro")).toHaveLength(2);
+    expect(sleeps).toContain(run.SATURATED_RETRY_MS);
+    expect((await notices()).filter((n) => n.kind === "agente_error")).toHaveLength(0);
+  });
+
+  it("reenvío seguro: saturado dos veces → tarjeta que dice que ya se reintentó; \"Reintentar\" que vuelve a fallar reabre la MISMA tarjeta", async () => {
+    await msg({ direction: "in", body: "hola", at: ago(20_000) });
+    const first = makeDeps({ brainErrors: [apiError(529, "Overloaded"), apiError(529, "Overloaded")] });
+    expect(await run.runAgent(JOB, first.deps)).toEqual({ kind: "failed", reason: "saturado" });
+    expect(first.calls.filter((c) => c.kind === "cerebro")).toHaveLength(2);
+    let cards = (await notices()).filter((n) => n.kind === "agente_error");
+    expect(cards).toHaveLength(1);
+    expect(cards[0].body).toContain("Ya se reintentó una vez.");
+    await agentError.resolveAgentError({ organizationId: ORG, noticeId: cards[0].id, resolution: "reintentar", userId: "u_vendedor" });
+    const again = makeDeps({ brainErrors: [apiError(401, "invalid x-api-key")] });
+    expect(await run.runAgent(JOB, again.deps)).toEqual({ kind: "failed", reason: "llave_invalida" });
+    cards = (await notices()).filter((n) => n.kind === "agente_error");
+    expect(cards).toHaveLength(1);
+    expect(cards[0].resolvedAt).toBeNull();
+    expect(cards[0].body).toContain("La llave de Anthropic no es válida");
+  });
+
+  it("reenvío seguro: \"Apagar\" pausa al agente solo en esta conversación; no vuelve a llamar al modelo", async () => {
+    await msg({ direction: "in", body: "hola", at: ago(20_000) });
+    await run.runAgent(JOB, makeDeps({ brainErrors: [apiError(400, "bad request")] }).deps);
+    const [card] = (await notices()).filter((n) => n.kind === "agente_error");
+    await agentError.resolveAgentError({ organizationId: ORG, noticeId: card.id, resolution: "apagar", userId: "u_vendedor" });
+    await state.setAgentState(ORG, CONV, "pausado_humano", { now: new Date() });
+    await msg({ direction: "in", body: "¿sigues ahí?", at: new Date(Date.now() + 1_000) });
+    const after = makeDeps();
+    expect((await run.runAgent(JOB, after.deps)).kind).toBe("skipped");
+    expect(after.calls).toHaveLength(0);
+    expect((await notices()).find((n) => n.id === card.id)).toMatchObject({ resolution: "apagar", resolvedByUserId: "u_vendedor" });
   });
 });

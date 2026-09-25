@@ -2,6 +2,7 @@ import { createAnthropic } from "@ai-sdk/anthropic";
 import { generateText, isStepCount } from "ai";
 import type { ProviderAdapter } from "../provider";
 import { DEFAULT_MODEL_TIMEOUT_MS } from "../types";
+import { withHistoryCacheBreakpoint } from "./anthropic-cache";
 import { toModelUsage } from "./usage";
 
 // Adaptador Anthropic. La caché del prompt es EXPLÍCITA: el system se cachea con
@@ -26,9 +27,13 @@ export const anthropicAdapter: ProviderAdapter = {
         content: input.system,
         providerOptions: { anthropic: { cacheControl: { type: "ephemeral" } } },
       },
-      messages: input.messages,
+      // Fase E: el historial también se cachea (anthropic-cache.ts).
+      messages: withHistoryCacheBreakpoint(input.messages),
       ...(input.maxOutputTokens ? { maxOutputTokens: input.maxOutputTokens } : {}),
       abortSignal: AbortSignal.timeout(input.timeoutMs ?? DEFAULT_MODEL_TIMEOUT_MS),
+      // Sin reintentos ocultos del SDK (Fase E): el runtime decide (un solo reintento
+      // si el proveedor está saturado; si no, tarjeta para el vendedor).
+      maxRetries: 0,
       // Herramientas sin `execute` (Fase D): una sola vuelta; el modelo devuelve
       // texto + llamadas y el runtime decide qué corre (nada se ejecuta aquí).
       ...(input.tools ? { tools: input.tools, stopWhen: isStepCount(1) } : {}),
