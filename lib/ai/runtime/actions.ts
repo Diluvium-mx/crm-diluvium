@@ -238,15 +238,22 @@ export async function executeActions(
       excludeWorkflowIds: plan.runs.map((r) => r.workflowId),
     });
     out.stageMoved = moved !== null;
-    // A Compra (o a Cerca de compra con comprobante) sin "Depósito recibido": el CRM lo deja igual.
+    // A Compra (o a Cerca de compra con comprobante) sin "Depósito recibido": el CRM deja
+    // un aviso igual. "Depósito recibido" solo si el cliente mandó imagen o PDF; sin
+    // adjunto, un aviso neutral. Con "Comprobante dudoso" en la misma respuesta no se
+    // agrega nada (el vendedor no debe ver "dudoso" y "recibido" juntos).
     const necesitaCotejar = plan.stage === "compra" || (plan.stage === "cerca_compra" && ctx.receiptMessageId !== null);
-    if (moved && necesitaCotejar && !cotejarEnviado) {
+    const dudoso = plan.avisos.some((a) => a.motivo === "comprobante_dudoso");
+    if (moved && necesitaCotejar && !cotejarEnviado && !dudoso) {
       const added = await addNotice({
         organizationId: ctx.organizationId,
         conversationId: ctx.conversationId,
         messageId: ctx.batchMessageId,
         kind: "cotejar_deposito",
-        body: DEPOSITO_RECIBIDO_BODY,
+        body:
+          ctx.receiptMessageId !== null
+            ? DEPOSITO_RECIBIDO_BODY
+            : `El agente movió al contacto a ${plan.stage === "compra" ? "Compra" : "Cerca de compra"} sin comprobante en este mensaje. Revisa el hilo y el depósito en el banco antes de enviar.`,
         strict: true,
       });
       if (added) out.avisos++;

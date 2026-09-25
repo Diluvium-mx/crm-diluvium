@@ -73,6 +73,10 @@ export async function findOrphanConversations(now: Date, limit = 50): Promise<Or
         select 1 from ai_agent_notices n
         where n.organization_id = c.organization_id and n.conversation_id = c.id
           and n.kind = 'agente_error' and n.resolved_at is null
+          -- misma regla que hasUnresolvedAgentError: una tarjeta anterior a "Reactivar"
+          -- o al encendido del canal ya no bloquea
+          and n.created_at > coalesce(c.agent_state_changed_at, '-infinity'::timestamp)
+          and n.created_at > coalesce(ch.ai_agent_mode_changed_at, '-infinity'::timestamp)
       )
     limit ${limit}
   `);

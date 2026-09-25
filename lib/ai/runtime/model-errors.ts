@@ -42,7 +42,9 @@ function detalle(e: ErrorLike): string {
 // Llave mal copiada o revocada: xAI lo manda como 400 "invalid-argument" (visto el
 // 25-sep-2026 con una GROK_API_KEY equivocada), otros como 401/403.
 const LLAVE_INVALIDA = /incorrect api key|invalid api key|invalid x-api-key|api key not valid|invalid_api_key|api key is invalid/i;
-const SIN_SALDO = /insufficient[_ ]quota|credit balance|billing|balance is too low|exceeded your current quota|payment required|out of credits|insufficient credits|spending limit/i;
+// Solo textos inequívocos de falta de crédito (un 429 de límite de peticiones que
+// menciona "billing" en su URL NO es falta de saldo: es saturación).
+const SIN_SALDO = /insufficient[_ ]quota|credit balance|balance is too low|payment required|out of credits|insufficient credits|spending limit/i;
 
 export function classifyModelError(error: unknown, providerLabel: string): ModelErrorInfo {
   let e = asObj(error);
@@ -55,7 +57,9 @@ export function classifyModelError(error: unknown, providerLabel: string): Model
   if (name === "ModelNotConfiguredError") {
     return { kind: "sin_llave", resumen: `Falta la llave ${str(e.envKey) || `de ${providerLabel}`} en Railway.`, autoRetry: false };
   }
-  if (name === "TimeoutError" || name === "AbortError" || /timed? ?out|aborted/i.test(text)) {
+  // Sin código HTTP: nuestro tope de tiempo o una falla de red (no se reintenta solo:
+  // el proveedor pudo haber procesado y cobrado la llamada).
+  if (status === null && (name === "TimeoutError" || name === "AbortError" || /timed? ?out|aborted/i.test(text))) {
     return { kind: "tiempo", resumen: `${providerLabel} tardó demasiado en responder.`, autoRetry: false };
   }
   if (status === 402 || SIN_SALDO.test(text)) {

@@ -1361,4 +1361,59 @@ describe.skipIf(!TEST_DATABASE_URL)("runtime del Agente IA (Postgres real)", () 
     expect(after.calls).toHaveLength(0);
     expect((await notices()).find((n) => n.id === card.id)).toMatchObject({ resolution: "apagar", resolvedByUserId: "u_vendedor" });
   });
+
+  it("revisión Fase E: tras \"Reactivar\" una tarjeta VIEJA ya no bloquea; al contestar el agente queda \"superada\"", async () => {
+    await msg({ direction: "in", body: "hola", at: ago(60_000) });
+    await run.runAgent(JOB, makeDeps({ brainErrors: [apiError(400, "bad request")] }).deps);
+    const [card] = (await notices()).filter((n) => n.kind === "agente_error");
+    expect(card.resolvedAt).toBeNull();
+    // El vendedor pausó (contestó) y luego reactivó: el cambio de estado es posterior a la tarjeta.
+    await state.setAgentState(ORG, CONV, "activo", { now: new Date(Date.now() + 2_000) });
+    await msg({ direction: "in", body: "¿sigues ahí?", at: new Date(Date.now() + 3_000) });
+    expect((await run.runAgent(JOB, makeDeps({ brain: ["¡Aquí estoy!"] }).deps)).kind).toBe("sent");
+    expect((await notices()).find((n) => n.id === card.id)).toMatchObject({ resolution: "superada" });
+  });
+
+  it("revisión Fase E: si un vendedor contesta mientras la llamada falla, no hay tarjeta (ya decidió alguien)", async () => {
+    await msg({ direction: "in", body: "hola", at: ago(20_000) });
+    const { deps } = makeDeps({
+      brainErrors: [apiError(400, "bad request")],
+      onBrain: async () => {
+        await msg({ direction: "out", body: "Hola, te atiendo yo", at: new Date(), source: "crm" });
+      },
+    });
+    expect(await run.runAgent(JOB, deps)).toEqual({ kind: "skipped", reason: "cambio_durante_error" });
+    expect((await notices()).filter((n) => n.kind === "agente_error")).toHaveLength(0);
+  });
+
+  it("revisión Fase E: \"Reintentar\" que no pudo programar la corrida reabre la tarjeta", async () => {
+    await msg({ direction: "in", body: "hola", at: ago(20_000) });
+    await run.runAgent(JOB, makeDeps({ brainErrors: [apiError(400, "bad request")] }).deps);
+    const [card] = (await notices()).filter((n) => n.kind === "agente_error");
+    await agentError.resolveAgentError({ organizationId: ORG, noticeId: card.id, resolution: "reintentar", userId: "u_vendedor" });
+    await agentError.reopenAgentError(ORG, card.id);
+    expect((await notices()).find((n) => n.id === card.id)).toMatchObject({ resolvedAt: null, resolution: null });
+    expect(await agentError.hasUnresolvedAgentError(ORG, CONV)).toBe(true);
+  });
+
+  it("revisión Fase E: a Compra SIN comprobante el aviso automático es neutral; con \"Comprobante dudoso\" no se agrega", async () => {
+    await msg({ direction: "in", body: "ya quedó", at: ago(20_000) });
+    expect((await run.runAgent(JOB, makeDeps({ brain: ["¡Gracias!"], toolCalls: [{ toolName: "mover_etapa", input: { etapa: "compra" } }] }).deps)).kind).toBe("sent");
+    const [auto] = (await notices()).filter((n) => n.kind === "cotejar_deposito");
+    expect(auto.body).toContain("sin comprobante en este mensaje");
+    expect(auto.body).not.toBe(actions.DEPOSITO_RECIBIDO_BODY);
+  });
+
+  it("revisión Fase E: comprobante dudoso + mover a Compra en la misma respuesta → solo \"Comprobante dudoso\"", async () => {
+    await msg({ direction: "in", body: "", at: ago(20_000), attachments: [{ type: "image", url: "/api/media/x", storageKey: "org/x.jpg" }] });
+    const { deps } = makeDeps({
+      brain: ["Revisamos tu comprobante 🙏"],
+      toolCalls: [
+        { toolName: "aviso_vendedor", input: { motivo: "comprobante_dudoso", detalle: "El monto no coincide." } },
+        { toolName: "mover_etapa", input: { etapa: "compra" } },
+      ],
+    });
+    expect((await run.runAgent(JOB, deps)).kind).toBe("sent");
+    expect((await notices()).map((n) => n.kind)).toEqual(["comprobante_dudoso"]);
+  });
 });

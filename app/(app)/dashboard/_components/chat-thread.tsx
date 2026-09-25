@@ -525,7 +525,8 @@ export function ChatThread({
               if (item.kind === "notice") {
                 // Fase E: el error del modelo lleva botones ("Reintentar" / "Apagar").
                 if (item.notice.kind === "agente_error") {
-                  return <AgentErrorCard key={`aviso-${item.notice.id}`} notice={item.notice} onChanged={() => void reloadAgent()} />;
+                  // La clave lleva la fecha: una tarjeta reabierta (mismo id) empieza limpia.
+                  return <AgentErrorCard key={`aviso-${item.notice.id}-${item.notice.createdAt}`} notice={item.notice} onChanged={() => void reloadAgent()} />;
                 }
                 return <AgentNoticeLine key={`aviso-${item.notice.id}`} notice={item.notice} />;
               }

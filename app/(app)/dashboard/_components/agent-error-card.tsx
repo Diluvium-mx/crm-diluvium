@@ -12,6 +12,7 @@ import type { AgentNoticeView } from "@/lib/agente-ia/types";
 const RESOLUTION_TEXT: Record<string, string> = {
   reintentar: "Se reintentó.",
   apagar: "Se apagó el agente en esta conversación.",
+  superada: "El agente volvió a contestar.",
 };
 
 export function AgentErrorCard({ notice, onChanged }: { notice: AgentNoticeView; onChanged: () => void }) {

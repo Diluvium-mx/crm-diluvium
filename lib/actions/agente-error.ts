@@ -11,7 +11,7 @@ import { ZodError } from "zod";
 import { requireActiveMembership } from "@/lib/auth/active-organization";
 import { idSchema } from "@/lib/agente-ia/settings";
 import type { AgentActionResult } from "@/lib/agente-ia/types";
-import { resolveAgentError } from "@/lib/ai/runtime/agent-error";
+import { openAgentErrorConversation, reopenAgentError, resolveAgentError } from "@/lib/ai/runtime/agent-error";
 import { bullAgentQueuePort, cancelAgentRun, redisKvPort, scheduleAgentRun, withQueueTimeout } from "@/lib/ai/runtime/queue";
 import { setAgentState } from "@/lib/ai/runtime/state";
 
@@ -25,9 +25,10 @@ export async function retryAgentAfterError(input: { noticeId: string }): Promise
     try {
       await withQueueTimeout(scheduleAgentRun(bullAgentQueuePort(), redisKvPort(), { conversationId: done.conversationId, organizationId }, 0), "reintentar");
     } catch (error) {
-      // La tarjeta ya quedó atendida: el barrido del worker rescata la conversación en minutos.
+      // Sin corrida programada nadie quedaría a cargo: la tarjeta se reabre.
       console.error("[agente-error] no se pudo programar el reintento", error);
-      return { ok: false, message: "No se pudo reintentar ahora; el CRM lo intentará en unos minutos." };
+      await reopenAgentError(organizationId, idSchema.parse(input.noticeId));
+      return { ok: false, message: "No se pudo reintentar ahora; inténtalo de nuevo en un momento." };
     }
     revalidatePath("/dashboard");
     return { ok: true };
@@ -41,11 +42,14 @@ export async function retryAgentAfterError(input: { noticeId: string }): Promise
 export async function pauseAgentAfterError(input: { noticeId: string }): Promise<AgentActionResult> {
   try {
     const { organizationId, userId } = await requireActiveMembership();
-    const done = await resolveAgentError({ organizationId, noticeId: idSchema.parse(input.noticeId), resolution: "apagar", userId });
-    if (!done) return { ok: false, message: YA_ATENDIDA };
-    // La misma pausa que cuando un vendedor contesta: se reactiva con "Reactivar".
-    await setAgentState(organizationId, done.conversationId, "pausado_humano", { now: new Date() });
-    await withQueueTimeout(cancelAgentRun(bullAgentQueuePort(), done.conversationId), "apagar").catch(() => false);
+    const noticeId = idSchema.parse(input.noticeId);
+    const conversationId = await openAgentErrorConversation(organizationId, noticeId);
+    if (!conversationId) return { ok: false, message: YA_ATENDIDA };
+    // PRIMERO la pausa (la misma que cuando un vendedor contesta; se reactiva con
+    // "Reactivar") y DESPUÉS la tarjeta: nunca "Se apagó" con el agente todavía activo.
+    await setAgentState(organizationId, conversationId, "pausado_humano", { now: new Date() });
+    await withQueueTimeout(cancelAgentRun(bullAgentQueuePort(), conversationId), "apagar").catch(() => false);
+    await resolveAgentError({ organizationId, noticeId, resolution: "apagar", userId });
     revalidatePath("/dashboard");
     return { ok: true };
   } catch (error) {

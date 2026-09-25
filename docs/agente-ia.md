@@ -262,7 +262,21 @@ Dashboard ya muestra el gasto del mes y el saldo estimado (24-sep-2026).
   - **Caché del historial** (Anthropic): segundo punto de caché antes del último turno del cliente;
     probado con Sonnet 5 real: la 2.ª llamada leyó de caché 4,931 de 4,962 tokens de entrada.
   - La nota "ya salió por palabra clave" solo queda en el log del worker (ya no es aviso al vendedor).
-  Siguen: A (por verificar con "¿cómo se instalan y cuánto cuestan?") y la nota del tope diario. El panel de gasto que antes
+  - Revisión adversarial de Claude (Codex sin sesión el 25-sep): una tarjeta VIEJA ya no bloquea
+    tras "Reactivar" o tras encender el canal (solo bloquea si es posterior al último cambio de
+    estado); cuando el agente vuelve a contestar, las tarjetas abiertas quedan "superadas"; no hay
+    tarjeta si durante la falla un vendedor contestó o pausaron al agente; "Reintentar" que no
+    pudo programar la corrida reabre la tarjeta; "Apagar" pausa antes de cerrar la tarjeta; el
+    aviso automático al mover a Compra sin comprobante es neutral y no sale junto a "Comprobante
+    dudoso"; el punto de caché de Anthropic va antes de la primera foto o PDF (su URL firmada
+    cambia en cada respuesta y la caché no se reutilizaría).
+  - Llaves con los nombres de Railway: `GEMINI_API_KEY`, `GROK_API_KEY`, `QWEN_API_KEY` (valor en
+    el web de producción; `worker-production` las referencia). Prueba real del 25-sep: Gemini y
+    Qwen contestan con herramientas; Grok rechazó la llave (hay que volver a copiarla).
+  Siguen (decisión del dueño): A (por verificar con "¿cómo se instalan y cuánto cuestan?"), la nota
+  del tope diario, un indicador "agente con error" en la lista de la Bandeja (si el saldo se acaba,
+  cada conversación deja su tarjeta y nadie lo ve sin abrirla), y que un fallo de ENVÍO antes de la
+  primera burbuja todavía reintenta en la cola (cada intento vuelve a llamar al modelo). El panel de gasto que antes
   se anotaba aquí ya existe en el Dashboard (24-sep-2026); conciliar contra las Cost API queda como
   pendiente sin fase.
 

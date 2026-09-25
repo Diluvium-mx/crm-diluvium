@@ -26,6 +26,11 @@ describe("errores del modelo en palabras simples", () => {
     expect(prefill.resumen).toContain("rechazó la conversación (This model does not support assistant message prefill.");
   });
 
+  it("504 Gateway Timeout y 429 de límite de peticiones (con 'billing' en la URL) son saturación, no tiempo ni falta de saldo", () => {
+    expect(classifyModelError(api(504, "Gateway Timeout"), "Google")).toMatchObject({ kind: "saturado", autoRetry: true });
+    expect(classifyModelError(api(429, "Rate limit reached for requests. Visit https://platform.openai.com/account/billing"), "OpenAI")).toMatchObject({ kind: "saturado", autoRetry: true });
+  });
+
   it("RetryError del AI SDK: cuenta el último intento", () => {
     expect(classifyModelError({ name: "AI_RetryError", lastError: api(529, "Overloaded") }, "Anthropic").kind).toBe("saturado");
   });

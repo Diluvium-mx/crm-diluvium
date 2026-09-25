@@ -7,11 +7,12 @@
 // Multi-tenant (CLAUDE.md §7): toda lectura/escritura filtra por organization_id.
 import { and, eq, isNull, sql } from "drizzle-orm";
 import { db } from "@/lib/db";
-import { aiAgentNotices, conversations } from "@/lib/db/schema";
+import { aiAgentNotices, channels, conversations } from "@/lib/db/schema";
 import { notifyConversation } from "./state";
 
 export const AGENT_ERROR_KIND = "agente_error";
-export type AgentErrorResolution = "reintentar" | "apagar";
+// "superada": el agente volvió a contestar en la conversación (p. ej. tras "Reactivar").
+export type AgentErrorResolution = "reintentar" | "apagar" | "superada";
 
 // Guarda (o renueva) la tarjeta del lote que falló. Un reintento que vuelve a fallar
 // sobre el mismo mensaje la reabre con el error nuevo (índice único message_id+kind).
@@ -43,22 +44,61 @@ export async function recordAgentError(input: { organizationId: string; conversa
   await notifyConversation(db, input.organizationId, input.conversationId);
 }
 
-// ¿Hay una tarjeta de error sin atender en la conversación? Mientras la haya, el
-// agente no llama al modelo ahí (ni con mensajes nuevos del cliente).
+// ¿Hay una tarjeta de error sin atender que BLOQUEE la conversación? Mientras la
+// haya, el agente no llama al modelo ahí (ni con mensajes nuevos del cliente). Solo
+// bloquea si es POSTERIOR al último cambio de estado del agente en la conversación
+// (pausa, "Reactivar") y al último encendido del canal: un vendedor que contestó a
+// mano y luego reactivó ya decidió; la tarjeta vieja no lo deja callado. La misma
+// regla usa el barrido (sweep.ts).
 export async function hasUnresolvedAgentError(organizationId: string, conversationId: string): Promise<boolean> {
   const [row] = await db
     .select({ id: aiAgentNotices.id })
     .from(aiAgentNotices)
+    .innerJoin(conversations, and(eq(conversations.id, aiAgentNotices.conversationId), eq(conversations.organizationId, organizationId)))
+    .innerJoin(channels, and(eq(channels.id, conversations.channelId), eq(channels.organizationId, organizationId)))
     .where(
       and(
         eq(aiAgentNotices.organizationId, organizationId),
         eq(aiAgentNotices.conversationId, conversationId),
         eq(aiAgentNotices.kind, AGENT_ERROR_KIND),
         isNull(aiAgentNotices.resolvedAt),
+        sql`${aiAgentNotices.createdAt} > coalesce(${conversations.agentStateChangedAt}, '-infinity'::timestamp)`,
+        sql`${aiAgentNotices.createdAt} > coalesce(${channels.aiAgentModeChangedAt}, '-infinity'::timestamp)`,
       ),
     )
     .limit(1);
   return row !== undefined;
+}
+
+// El agente volvió a contestar: las tarjetas abiertas de la conversación quedan
+// "superadas" (dejan de mostrar botones). Nunca lanza: es solo limpieza de la vista.
+export async function supersedeAgentErrors(organizationId: string, conversationId: string): Promise<void> {
+  try {
+    const rows = await db
+      .update(aiAgentNotices)
+      .set({ resolvedAt: sql`now()`, resolution: "superada" })
+      .where(
+        and(
+          eq(aiAgentNotices.organizationId, organizationId),
+          eq(aiAgentNotices.conversationId, conversationId),
+          eq(aiAgentNotices.kind, AGENT_ERROR_KIND),
+          isNull(aiAgentNotices.resolvedAt),
+        ),
+      )
+      .returning({ id: aiAgentNotices.id });
+    if (rows.length) await notifyConversation(db, organizationId, conversationId);
+  } catch (error) {
+    console.error(`[agente] no se pudieron cerrar las tarjetas de error de ${conversationId}`, error);
+  }
+}
+
+// "Reintentar" no pudo programar la corrida (cola caída): la tarjeta vuelve a quedar
+// abierta para que el vendedor lo intente de nuevo (no queda nadie a cargo).
+export async function reopenAgentError(organizationId: string, noticeId: string): Promise<void> {
+  await db
+    .update(aiAgentNotices)
+    .set({ resolvedAt: null, resolution: null, resolvedByUserId: null })
+    .where(and(eq(aiAgentNotices.id, noticeId), eq(aiAgentNotices.organizationId, organizationId), eq(aiAgentNotices.resolution, "reintentar")));
 }
 
 // Marca la tarjeta como atendida. Devuelve la conversación si ESTA llamada la
@@ -85,4 +125,21 @@ export async function resolveAgentError(input: {
   if (rows.length === 0) return null;
   await notifyConversation(db, input.organizationId, rows[0].conversationId);
   return rows[0];
+}
+
+// Conversación de una tarjeta de error ABIERTA de la organización (o null).
+export async function openAgentErrorConversation(organizationId: string, noticeId: string): Promise<string | null> {
+  const [row] = await db
+    .select({ conversationId: aiAgentNotices.conversationId })
+    .from(aiAgentNotices)
+    .where(
+      and(
+        eq(aiAgentNotices.id, noticeId),
+        eq(aiAgentNotices.organizationId, organizationId),
+        eq(aiAgentNotices.kind, AGENT_ERROR_KIND),
+        isNull(aiAgentNotices.resolvedAt),
+      ),
+    )
+    .limit(1);
+  return row?.conversationId ?? null;
 }
