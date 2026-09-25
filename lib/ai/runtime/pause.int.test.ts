@@ -357,6 +357,10 @@ describe.skipIf(!TEST_DATABASE_URL)("Apagar bot por conversación (Postgres real
     await pause.pauseAgentManually({ organizationId: ORG, conversationId: CONV, until, now: new Date() }, { queue: q.port });
     expect(await pause.pauseForHumanReply(ORG, CONV, new Date())).toBe(false);
     expect(await conv()).toMatchObject({ agentState: "pausado_humano", agentPausedUntil: until });
+    // Igual si quien escribe tarde es una corrida del agente (run.ts → setAgentState).
+    const { setAgentState } = await import("./state");
+    await setAgentState(ORG, CONV, "pausado_humano", { now: new Date() });
+    expect(await conv()).toMatchObject({ agentState: "pausado_humano", agentPausedUntil: until });
     // Encendido (o con la hora cumplida) sí lo apaga sin tiempo; nunca en otra organización.
     await manual.reactivateAgentInConversation(ORG, CONV, new Date());
     expect(await pause.pauseForHumanReply("org_ajena", CONV, new Date())).toBe(false);
