@@ -24,9 +24,10 @@ describe("resolveModelPrice", () => {
     expect(cachePriceRule("xai", 2)).toEqual({ read: 2, write: 2 });
   });
 
-  it("Gemini 3.8 Flash y Qwen 3.7 Flash: sin precio → null", () => {
-    expect(resolveModelPrice("gemini-3.8-flash", "google")).toBeNull();
-    expect(resolveModelPrice("qwen-3.7-flash", "openrouter")).toBeNull();
+  it("Fase E: Gemini 3.8 Flash, Grok 4.6 y Qwen 3.7 Flash con su precio y su caché oficiales", () => {
+    expect(resolveModelPrice("gemini-3.8-flash", "google")).toEqual({ inputPerMTok: 0.75, outputPerMTok: 3.75, cacheReadPerMTok: 0.075, cacheWritePerMTok: 0.75 });
+    expect(resolveModelPrice("grok-4.6", "xai")).toEqual({ inputPerMTok: 2, outputPerMTok: 6, cacheReadPerMTok: 0.5, cacheWritePerMTok: 2 });
+    expect(resolveModelPrice("qwen-3.7-flash", "openrouter")).toEqual({ inputPerMTok: 0.1, outputPerMTok: 0.4, cacheReadPerMTok: 0.02, cacheWritePerMTok: 0.125 });
   });
 
   it("la sobrescritura de la org gana; su caché null usa la regla del proveedor", () => {

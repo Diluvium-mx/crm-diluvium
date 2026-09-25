@@ -1,8 +1,8 @@
 import type { ModelMessage, ToolSet } from "ai";
 
-// Identidad de proveedor. openai/anthropic tienen adaptador en la Fase A;
-// google/xai/openrouter se agregan después (un archivo adaptador por proveedor,
-// sin tocar el resto).
+// Identidad de proveedor. Los cinco tienen adaptador (openai/anthropic desde la
+// Fase A; google/xai/openrouter desde la Fase E, 25-sep-2026): un archivo por
+// proveedor en lib/ai/providers/.
 export type ProviderId = "openai" | "anthropic" | "google" | "xai" | "openrouter";
 
 // Nivel: para que el admin elija con criterio de costo/capacidad. No cambia
@@ -22,6 +22,9 @@ export type CatalogModel = {
   providerModelId: string;
   tier: ModelTier;
   multimodal: boolean;
+  // ¿Acepta PDF como archivo? (un comprobante SPEI suele llegar en PDF). Si no,
+  // el runtime le manda al modelo una nota de texto en lugar del PDF.
+  pdf: boolean;
   roles: readonly ModelRole[];
   // Etiqueta "Nuevo" en el selector de la pestaña Agente IA.
   isNew?: boolean;

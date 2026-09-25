@@ -56,7 +56,8 @@ formularios y landing pages, agente IA de calificación.
 > Goal, no por código. Diseño: `docs/fase-d-diseno.md` §10. **Fase D CERRADA el 25-sep-2026** (main
 > 057725c, migración 0031; prueba B5 en producción y pendientes A–F sin construir: §11 del mismo doc).
 > **Fase E:** Modelo 1 (Luna) y Modelo 2 (Sonnet 5) por etapa, con sus selectores en la pestaña Agente IA,
-> más el reenvío seguro. **La Fase B (runtime del agente)
+> más el reenvío seguro. En curso (25-sep): selectores, etapas (Modelo 1 = Inbox, Prospecto,
+> Interesado), adaptadores de Google/xAI/OpenRouter y tope de 4,096 tokens en la migración 0033. **La Fase B (runtime del agente)
 > debe PERSISTIR tokens/uso por mensaje procesado** (`callModel` ya devuelve `usage` normalizado) para
 > alimentar un panel de gasto futuro.
 

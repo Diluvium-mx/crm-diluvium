@@ -8,7 +8,7 @@ import type { ProviderApiState, ProviderApiView } from "@/lib/agente-ia/types";
 const STATES: { state: ProviderApiState; label: string; dot: string }[] = [
   { state: "conectada", label: "Conectada", dot: "bg-brand-navy dark:bg-[#6fa3dc]" },
   { state: "falta_llave", label: "Falta la llave en Railway", dot: "bg-brand-orange" },
-  { state: "falta_soporte", label: "Falta soporte en el CRM (llega con la parte (c) de Fase D)", dot: "bg-muted-foreground/40" },
+  { state: "falta_soporte", label: "Falta soporte en el CRM", dot: "bg-muted-foreground/40" },
 ];
 
 export function ApiStatusPanel({ providers }: { providers: ProviderApiView[] }) {

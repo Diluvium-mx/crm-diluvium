@@ -1,0 +1,2 @@
+ALTER TABLE "ai_config" ADD COLUMN "modelo_1" text DEFAULT 'gpt-5.6-luna' NOT NULL;--> statement-breakpoint
+ALTER TABLE "ai_config" ADD COLUMN "etapas_modelo_1" text[] DEFAULT '{"inbox","prospecto","interesado"}' NOT NULL;

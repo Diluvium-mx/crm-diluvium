@@ -46,12 +46,16 @@ export type VersionView = { id: string; createdAt: string; author: string | null
 export type AgentEditorView = {
   agentName: string;
   companyName: string;
+  // Fase E: Modelo 2 = modeloCerebro (brainOptions); Modelo 1 atiende etapasModelo1.
   modeloCerebro: string;
+  modelo1: string;
+  etapasModelo1: string[];
   goal: string;
   faqs: FaqView[];
   goalVersions: VersionView[];
   faqVersions: VersionView[];
   brainOptions: ModelOptionView[];
+  model1Options: ModelOptionView[];
   // De dónde sale el costo aproximado: uso real de 30 días o perfil fijo.
   costBasis: CostBasis;
   apiProviders: ProviderApiView[];
