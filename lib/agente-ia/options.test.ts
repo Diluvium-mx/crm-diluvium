@@ -8,10 +8,10 @@ describe("buildApiProviders (panel APIs de IA)", () => {
     expect(view.map((p) => [p.id, p.state])).toEqual([
       ["openai", "conectada"],
       ["anthropic", "falta_llave"],
-      // Google tiene llave pero el CRM aún no tiene su adaptador.
-      ["google", "falta_soporte"],
-      ["xai", "falta_soporte"],
-      ["openrouter", "falta_soporte"],
+      // Fase E: los cinco tienen adaptador; sin llave → falta_llave.
+      ["google", "conectada"],
+      ["xai", "falta_llave"],
+      ["openrouter", "falta_llave"],
     ]);
     expect(view.find((p) => p.id === "anthropic")?.envKey).toBe("ANTHROPIC_API_KEY");
     expect(JSON.stringify(view)).not.toContain("secreto");
@@ -19,13 +19,22 @@ describe("buildApiProviders (panel APIs de IA)", () => {
 });
 
 describe("buildModelOptions", () => {
-  it("cada opción trae su costo aproximado (null sin precio) y el porqué si está deshabilitada", () => {
+  it("cada opción trae su costo aproximado y el porqué si está deshabilitada; Luna está entre las opciones", () => {
     const options = buildModelOptions("cerebro", { profile: FIXED_PROFILE, overrides: {} });
     const gemini = options.find((o) => o.id === "gemini-3.8-flash");
-    expect(gemini?.costPer100Usd).toBeNull();
-    expect(gemini?.available).toBe(false);
-    expect(gemini?.disabledReason).toBe("Falta soporte en el CRM (llega con la parte (c) de Fase D)");
+    expect(gemini?.costPer100Usd).toBeGreaterThan(0);
     const sonnet = options.find((o) => o.id === "claude-sonnet-5");
     expect(sonnet?.costPer100Usd).toBeGreaterThan(0);
+    expect(options.some((o) => o.id === "gpt-5.6-luna")).toBe(true);
+    for (const o of options) {
+      if (!o.available) expect(o.disabledReason).toMatch(/^Falta la llave [A-Z_]+ en Railway$/);
+    }
+  });
+
+  it("'Recomendado' según el selector: Sonnet 5 en el Modelo 2 y Luna en el Modelo 1", () => {
+    const m2 = buildModelOptions("cerebro", { profile: FIXED_PROFILE, overrides: {} });
+    const m1 = buildModelOptions("cerebro", { profile: FIXED_PROFILE, overrides: {} }, "gpt-5.6-luna");
+    expect(m2.filter((o) => o.recommended).map((o) => o.id)).toEqual(["claude-sonnet-5"]);
+    expect(m1.filter((o) => o.recommended).map((o) => o.id)).toEqual(["gpt-5.6-luna"]);
   });
 });

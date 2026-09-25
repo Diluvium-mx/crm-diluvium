@@ -75,10 +75,15 @@ describe("modelAvailability", () => {
     expect(a.envKey).toBe("OPENAI_API_KEY");
   });
 
-  it("proveedor sin adaptador queda no disponible aunque tenga llave", () => {
-    const a = modelAvailability("qwen-3.7-flash", { OPENROUTER_API_KEY: "sk-test" });
-    expect(a.available).toBe(false);
-    expect(a.reason).toBe("no_adapter");
+  it("Fase E: google/xai/openrouter ya tienen adaptador; disponibles con su llave y en gris sin ella", () => {
+    expect(modelAvailability("qwen-3.7-flash", { OPENROUTER_API_KEY: "sk-test" })).toEqual({ available: true, reason: "ok", envKey: "OPENROUTER_API_KEY" });
+    expect(modelAvailability("gemini-3.8-flash", {})).toEqual({ available: false, reason: "missing_key", envKey: "GOOGLE_GENERATIVE_AI_API_KEY" });
+    expect(modelAvailability("grok-4.6", { XAI_API_KEY: "xai-test" }).available).toBe(true);
+  });
+
+  it("Fase E: Luna también es cerebro (Modelo 1); solo Qwen no lee PDF", () => {
+    expect(getModel("gpt-5.6-luna")?.roles).toEqual(["filtro", "cerebro"]);
+    expect(MODEL_CATALOG.filter((m) => !m.pdf).map((m) => m.id)).toEqual(["qwen-3.7-flash"]);
   });
 
   it("id desconocido → unknown_model", () => {
