@@ -1,6 +1,6 @@
 // Ciudad por lada para las ladas donde Google (lib/phone-lada-data.ts) NO trae la
-// ciudad: solo el estado (667/668/669 → "Sinaloa") o nada (664, 597). Mantenido a
-// mano; lo usa lib/phone-lada.ts.
+// ciudad: solo el estado (667/668/669 → "Sinaloa") o nada (597). Mantenido a mano;
+// lo usa lib/phone-lada.ts. Al final, LADA_LABELS: dos ladas que decidió el dueño.
 //
 // Regla: una lada entra aquí SOLO si estas dos listas públicas le dan la MISMA
 // ciudad; si no coinciden o una no la trae, se queda lo de Google (estado o nada).
@@ -12,11 +12,12 @@
 //      https://www.adn40.mx/mexico/la-lista-completa-todas-las-lada-mexico/
 // Consultadas el 25-sep-2026: las dos traen las mismas 173 ladas con la misma
 // ciudad (parecen salir de la misma fuente, así que coincidir no es prueba
-// independiente). De esas 173, aquí solo van las 84 que llenan un hueco de Google;
-// donde Google ya da la ciudad, manda Google.
+// independiente). De esas 173, aquí solo van las 83 que llenan un hueco de Google
+// (más la 664, que va en LADA_LABELS con su estado); donde Google ya da la ciudad,
+// manda Google.
 //
 // - El ESTADO no viene de las listas: lo pone lib/phone-lada.ts a partir de Google
-//   ("Sinaloa" → "Los Mochis, Sin."). Si Google no trae la lada (664, 597) o da dos
+//   ("Sinaloa" → "Los Mochis, Sin."). Si Google no trae la lada (597) o da dos
 //   estados (427, 867), se muestra solo la ciudad.
 // - Fuera: 891. Las dos listas dicen "Santa Rosalía" (la de Baja California Sur,
 //   cuya lada es la 615), pero Google pone la 891 en Tamaulipas: se queda Tamaulipas.
@@ -68,7 +69,6 @@ export const LADA_CITIES: Readonly<Record<string, string>> = {
   "647": "Huatabampo",
   "656": "Ciudad Juárez",
   "662": "Hermosillo",
-  "664": "Tijuana",
   "667": "Culiacán",
   "668": "Los Mochis",
   "669": "Mazatlán",
@@ -108,4 +108,12 @@ export const LADA_CITIES: Readonly<Record<string, string>> = {
   "983": "Chetumal",
   "993": "Villahermosa",
   "998": "Cancún",
+};
+
+// Decisión del dueño (25-sep-2026), fuera de la regla de las dos listas: el texto
+// completo, tal cual. La 664 con su estado (Google no trae la lada) y la 56, que es
+// la misma zona que la 55 (Google solo trae la 55).
+export const LADA_LABELS: Readonly<Record<string, string>> = {
+  "56": "Ciudad de México",
+  "664": "Tijuana, B.C.",
 };

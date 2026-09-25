@@ -5,13 +5,13 @@
 // (Monterrey); de 3 dígitos para el resto. El lugar sale de los datos de
 // geocodificación de libphonenumber de Google (lib/phone-lada-data.ts, generado;
 // fuente y versión citadas allí), por prefijo más largo, con el estado abreviado.
-// Donde Google solo da el estado (667/668/669 → "Sinaloa") o nada (664), la ciudad
+// Donde Google solo da el estado (667/668/669 → "Sinaloa") o nada (597), la ciudad
 // sale de lib/phone-lada-cities.ts (solo si dos listas públicas coinciden) con el
 // estado de Google: "Los Mochis, Sin.". Si tampoco hay ciudad ahí, queda el estado:
-// no se inventan ciudades. Otro país: su nombre en español. Sin teléfono o lada sin
-// dato: null.
+// no se inventan ciudades. La 664 y la 56 las fijó el dueño (LADA_LABELS). Otro
+// país: su nombre en español. Sin teléfono o lada sin dato: null.
 import { parsePhoneNumberFromString } from "libphonenumber-js/min";
-import { LADA_CITIES } from "./phone-lada-cities";
+import { LADA_CITIES, LADA_LABELS } from "./phone-lada-cities";
 import { LADA_PLACES } from "./phone-lada-data";
 
 export type PhoneLocation = {
@@ -134,6 +134,8 @@ function googlePlace(national: string): { prefix: string; place: string } | null
 
 function mexicoLocation(national: string): PhoneLocation | null {
   const code = mexicanLada(national);
+  const fixed = LADA_LABELS[code];
+  if (fixed) return { label: fixed, code, kind: "lada" };
   const found = googlePlace(national);
   const city = LADA_CITIES[code];
   // La ciudad de las listas solo llena huecos: si Google ya trae ciudad, manda Google.
