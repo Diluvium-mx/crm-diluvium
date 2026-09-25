@@ -14,22 +14,38 @@ import {
   type AgentQueuePort,
   type KvPort,
 } from "./queue";
+import { isPauseDue, pauseForHumanReply, reactivateDuePause } from "./pause";
 import { debounceDelayFor } from "./schedule";
-import { setAgentState } from "./state";
 
 type Ports = { queue?: AgentQueuePort; kv?: KvPort; now?: Date };
+
+// Hora en que el cliente ESCRIBIÓ el mensaje: la de WhatsApp (sent_at); si no
+// viene, la de llegada. Un webhook retrasado llega después, pero se escribió antes.
+// WhatsApp da segundos enteros: "escrito antes del corte" = antes del SEGUNDO del
+// corte (lo escrito en ese mismo segundo cuenta como nuevo; nunca se ignora uno nuevo).
+const writtenBefore = (wrote: Date, cut: Date) => wrote.getTime() < Math.floor(cut.getTime() / 1000) * 1000;
+async function writtenAt(organizationId: string, conversationId: string, messageId: string): Promise<Date | null> {
+  const [m] = await db
+    .select({ sentAt: messages.sentAt, createdAt: messages.createdAt })
+    .from(messages)
+    .where(and(eq(messages.id, messageId), eq(messages.organizationId, organizationId), eq(messages.conversationId, conversationId)))
+    .limit(1);
+  return m ? (m.sentAt ?? m.createdAt) : null;
+}
 
 // Tras guardar un ENTRANTE del cliente: marca last_inbound_at y (re)programa el
 // job de respuesta con el debounce deslizante. Con el canal apagado no escribe
 // nada (una sola lectura).
 export async function onInboundCustomerMessage(
-  input: { organizationId: string; conversationId: string; receivedAt: Date },
+  input: { organizationId: string; conversationId: string; receivedAt: Date; messageId?: string },
   ports: Ports = {},
 ): Promise<void> {
   try {
     const snap = await loadSnapshot(input.organizationId, input.conversationId);
     if (!snap || snap.channel.aiAgentMode !== "auto") return;
     const now = ports.now ?? new Date();
+    const conv = snap.conversation;
+    const wrote = input.messageId ? await writtenAt(input.organizationId, input.conversationId, input.messageId) : null;
     await db
       .update(conversations)
       // ISO con cast: en SQL crudo el driver no serializa Date.
@@ -37,6 +53,16 @@ export async function onInboundCustomerMessage(
         lastInboundAt: sql`greatest(coalesce(${conversations.lastInboundAt}, ${input.receivedAt.toISOString()}::timestamp), ${input.receivedAt.toISOString()}::timestamp)`,
       })
       .where(and(eq(conversations.id, input.conversationId), eq(conversations.organizationId, input.organizationId)));
+    // "Apagar bot" — solo mensajes nuevos: lo que el cliente ESCRIBIÓ con el bot
+    // apagado no se contesta aunque llegue tarde (webhook retrasado).
+    if (isPauseDue(conv, now)) {
+      // Hora de regreso cumplida y el barrido (cada minuto) aún sin pasar: si el
+      // mensaje se escribió después de esa hora, el bot ya volvió y es el primero nuevo.
+      if (wrote && conv.agentPausedUntil && writtenBefore(wrote, conv.agentPausedUntil)) return;
+      await reactivateDuePause(input.organizationId, input.conversationId, now);
+    } else if (wrote && conv.agentState === "activo" && conv.agentStateChangedAt && writtenBefore(wrote, conv.agentStateChangedAt)) {
+      return; // escrito antes de que el bot volviera (solo o con "Reactivar") y llegó tarde
+    }
     const delay = await debounceDelayFor(input.organizationId, input.conversationId, now);
     if (delay === null) return; // canal apagado o nada pendiente
     await withQueueTimeout(
@@ -54,7 +80,9 @@ export async function onInboundCustomerMessage(
 }
 
 // Tras guardar un SALIENTE HUMANO (CRM o eco business_app): pausa al agente en
-// esa conversación sin límite de tiempo y cancela el job pendiente (GHL).
+// esa conversación sin límite de tiempo y cancela el job pendiente (GHL). Si el bot
+// ya estaba apagado con hora de regreso ("Apagar bot"), la hora se respeta: el
+// vendedor puede escribir sin cambiarla.
 export async function onHumanOutbound(
   input: { organizationId: string; conversationId: string },
   ports: Ports = {},
@@ -65,10 +93,9 @@ export async function onHumanOutbound(
     // Canal apagado: nada que pausar.
     if (snap.channel.aiAgentMode !== "auto") return;
     const now = ports.now ?? new Date();
-    // La ÚNICA pausa del agente: se reactiva solo a mano con "Reactivar".
-    if (snap.conversation.agentState === "activo") {
-      await setAgentState(input.organizationId, input.conversationId, "pausado_humano", { now });
-    }
+    // Pausa sin tiempo (se reactiva a mano con "Reactivar"), solo si el bot estaba
+    // encendido o su hora de regreso ya se cumplió; condicional en la BD.
+    await pauseForHumanReply(input.organizationId, input.conversationId, now);
     // La pausa ya quedó guardada: cancelar el job es solo optimización (acotada).
     await withQueueTimeout(cancelAgentRun(ports.queue ?? bullAgentQueuePort(), input.conversationId), "cancelar").catch(
       (error) => console.error(`[agente] no se pudo cancelar el job de ${input.conversationId}: ${String(error)}`),
@@ -81,8 +108,13 @@ export async function onHumanOutbound(
 // Ganchos listos para processWebhookEvent (lib/messaging/ingest.ts): se pasan
 // junto a onMediaMessage en el worker.
 export const agentIngestHooks = {
-  onInboundMessage: (m: { organizationId: string; conversationId: string; receivedAt: Date }) =>
-    onInboundCustomerMessage({ organizationId: m.organizationId, conversationId: m.conversationId, receivedAt: m.receivedAt }),
+  onInboundMessage: (m: { organizationId: string; conversationId: string; receivedAt: Date; messageId?: string }) =>
+    onInboundCustomerMessage({
+      organizationId: m.organizationId,
+      conversationId: m.conversationId,
+      receivedAt: m.receivedAt,
+      messageId: m.messageId,
+    }),
   onHumanOutbound: (m: { organizationId: string; conversationId: string }) =>
     onHumanOutbound({ organizationId: m.organizationId, conversationId: m.conversationId }),
 };

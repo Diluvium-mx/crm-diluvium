@@ -4,6 +4,7 @@
 import { and, eq, sql } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { aiAgentDrafts, conversations } from "@/lib/db/schema";
+import { pauseForHumanReply } from "./pause";
 import type { AgentState } from "./policy";
 
 // Multi-tenant (CLAUDE.md §7): toda escritura filtra por organization_id además
@@ -13,12 +14,20 @@ const ownConversation = (organizationId: string, conversationId: string) =>
 
 // Cambia el estado del agente en la conversación. `agent_state_changed_at` es
 // el corte de "respuesta humana": lo anterior a una reactivación ya no pausa.
+// La pausa por respuesta humana (pausado_humano sin hora) es condicional: solo si
+// el bot seguía encendido (o su hora de regreso ya se cumplió). Una corrida del
+// agente que leyó "activo" y escribe tarde no borra la hora que un vendedor acaba
+// de elegir con "Apagar bot".
 export async function setAgentState(
   organizationId: string,
   conversationId: string,
   state: AgentState,
   opts: { now: Date; pausedUntil?: Date | null },
 ): Promise<void> {
+  if (state === "pausado_humano" && !opts.pausedUntil) {
+    await pauseForHumanReply(organizationId, conversationId, opts.now);
+    return;
+  }
   await db
     .update(conversations)
     .set({ agentState: state, agentPausedUntil: opts.pausedUntil ?? null, agentStateChangedAt: opts.now })

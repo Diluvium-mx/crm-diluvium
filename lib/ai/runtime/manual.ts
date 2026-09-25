@@ -1,6 +1,6 @@
 // Acción manual sobre el agente en una conversación (Bandeja y Detalle del
-// contacto): "Reactivar" tras la pausa por respuesta de un vendedor, la única
-// pausa que existe (23-sep-2026). Filtra SIEMPRE por organización. La usan las
+// contacto): "Reactivar" tras una pausa (un vendedor contestó o apagó el bot con
+// "Apagar bot", ver pause.ts). Filtra SIEMPRE por organización. La usan las
 // Server Actions de lib/actions/agente-conversacion.ts.
 import { desc, and, eq, ne } from "drizzle-orm";
 import { db } from "@/lib/db";
