@@ -48,10 +48,6 @@ export function toInput(d: EditorDraft): WorkflowInput {
 const NEW_STEP: Record<StepPayload["kind"], () => StepPayload> = {
   send_text: () => ({ kind: "send_text", text: "" }),
   send_media: () => ({ kind: "send_media", assetId: null, title: "Archivo" }),
-  set_stage: () => ({ kind: "set_stage", stage: "interesado" }),
-  handover: () => ({ kind: "handover" }),
-  add_tag: () => ({ kind: "add_tag", tag: "" }),
-  internal_note: () => ({ kind: "internal_note", text: "" }),
   wait: () => ({ kind: "wait", seconds: 2 }),
 };
 
@@ -209,14 +205,13 @@ function StepFields({
 }) {
   switch (step.kind) {
     case "send_text":
-    case "internal_note":
       return (
         <textarea
           value={step.text}
           onChange={(e) => onChange({ ...step, text: e.target.value })}
           rows={3}
           className={inputClass}
-          placeholder={step.kind === "send_text" ? "Texto que recibe el cliente…" : "Aviso que ve el vendedor en el hilo (no se envía)…"}
+          placeholder="Texto que recibe el cliente…"
         />
       );
     case "send_media": {
@@ -246,25 +241,6 @@ function StepFields({
         </div>
       );
     }
-    case "set_stage":
-      return (
-        <select value={step.stage} onChange={(e) => onChange({ ...step, stage: e.target.value as Extract<StepPayload, { kind: "set_stage" }>["stage"] })} className={inputClass}>
-          {STAGES.map((s) => (
-            <option key={s} value={s}>
-              {STAGE_LABELS[s]}
-            </option>
-          ))}
-        </select>
-      );
-    case "handover":
-      return (
-        <label className="space-y-1">
-          <span className="text-xs font-medium text-muted-foreground">Etiqueta al contacto (opcional; sin etiqueta por defecto). Desde un comando o “Probar” pausa al agente; desde el agente solo deja el aviso.</span>
-          <input value={step.tag ?? ""} onChange={(e) => onChange({ ...step, tag: e.target.value || undefined })} maxLength={40} className={inputClass} />
-        </label>
-      );
-    case "add_tag":
-      return <input value={step.tag} onChange={(e) => onChange({ ...step, tag: e.target.value })} maxLength={40} className={inputClass} placeholder="cotejar depósito" />;
     case "wait":
       return (
         <label className="flex items-center gap-2 text-sm">

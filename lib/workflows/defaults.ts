@@ -1,4 +1,7 @@
-// Workflows predeterminados de la Fase D (docs/fase-d-diseno.md §1). Textos y
+// Workflows predeterminados de la Fase D (docs/fase-d-diseno.md §1): SOLO envíos
+// de media (24-sep-2026). Etapa, avisos y comprobantes son acciones internas del
+// agente (lib/ai/runtime/actions.ts), no workflows; "Restaurar predeterminados"
+// nunca vuelve a crear los viejos de cobro/humano/etapa. Textos y
 // palabras clave IGUALES a los workflows de GHL (auditoría del dueño, 24-sep-2026);
 // el admin los ajusta después en la pestaña Automatización. Puro: sin DB.
 //
@@ -63,7 +66,7 @@ export const DEFAULT_WORKFLOWS: readonly DefaultWorkflow[] = [
     slug: "datos_bancarios",
     name: "Datos bancarios",
     agentDescription:
-      "Envía la imagen con los datos bancarios para depósito o transferencia y mueve al contacto a 'Cerca de compra'. " +
+      "Envía la imagen con los datos bancarios para depósito o transferencia (el CRM mueve al contacto a 'Cerca de compra'). " +
       "Úsala únicamente cuando el cliente ya tiene tamaño y total definidos y elige pagar por transferencia o depósito. " +
       "No la uses después de que el cliente mandó un comprobante.",
     triggerAgent: true,
@@ -71,7 +74,6 @@ export const DEFAULT_WORKFLOWS: readonly DefaultWorkflow[] = [
     triggerCommand: "/banco",
     steps: [
       media("Datos bancarios (imagen con banco, cuenta y beneficiario)", "Aquí le paso nuestros datos bancarios ✅"),
-      { kind: "set_stage", stage: "cerca_compra" },
     ],
   },
   {
@@ -168,93 +170,6 @@ export const DEFAULT_WORKFLOWS: readonly DefaultWorkflow[] = [
         "Diagrama de medidas especiales — poste central / 280 cm (PNG/JPG)",
         "Para entradas mayores a 250 cm sí hay opción: una fabricación especial de aproximadamente 280 cm, o un poste central de acero con dos compuertas a la medida, una por lado. Te dejo un diagrama para que se entienda mejor.",
       ),
-    ],
-  },
-  {
-    slug: "transferir_humano",
-    name: "Pasar a humano",
-    agentDescription:
-      "Avisa a un asesor humano para que tome la conversación; tú sigues atendiendo hasta que él conteste. " +
-      "Úsala solo en los casos del Goal: el cliente pide hablar con una persona, pide un enlace para pagar con tarjeta, hay un problema de garantía, devolución, daño o pedido incompleto, " +
-      "reporta un problema con Amazon o Mercado Libre, pide un descuento o condición no autorizada, menciona fraude o insulta de forma persistente, o falta información oficial. " +
-      "Escribe primero una despedida breve en texto y luego llama esta herramienta con el motivo.",
-    triggerAgent: true,
-    triggerKeywords: [],
-    triggerCommand: "/humano",
-    steps: [{ kind: "handover" }],
-  },
-  {
-    slug: "cambiar_etapa",
-    name: "Cambiar etapa del contacto",
-    agentDescription:
-      "Mueve al contacto a la etapa del Embudo que corresponda según la conversación: 'prospecto' cuando pregunta precio o producto, " +
-      "'interesado' cuando da medidas o fotos y quiere avanzar, 'cerca_compra' cuando ya tiene total y eligió cómo pagar, " +
-      "'compra' únicamente cuando el pago quedó confirmado con comprobante. Úsala en cuanto cambie el contexto; no la uses para retroceder etapas.",
-    triggerAgent: true,
-    triggerKeywords: [],
-    triggerCommand: null,
-    // Sin pasos fijos: la etapa la trae el argumento de la herramienta (el
-    // ejecutor la aplica con set_stage). Los seeds dejan el paso como plantilla.
-    steps: [{ kind: "set_stage", stage: "interesado" }],
-  },
-  {
-    slug: "pago_confirmado",
-    name: "Pago confirmado",
-    agentDescription:
-      "Confirma la recepción de un pago y mueve al contacto a 'Compra'. " +
-      "Úsala únicamente después de analizar la IMAGEN del comprobante y verificar que el monto coincide con el total cotizado en esta conversación " +
-      "(o con el 50 % de anticipo de una compuerta a la medida) y que la referencia no se usó antes. " +
-      "Pasa como argumentos lo que leíste: monto, fecha, banco, referencia y destinatario. Escribe primero al cliente la confirmación con la petición de datos de envío " +
-      "(o, si fue anticipo, que su compuerta entra en fabricación). Nunca la uses sin imagen del comprobante.",
-    triggerAgent: true,
-    triggerKeywords: [],
-    triggerCommand: null,
-    // El aviso va PRIMERO (sube la conversación y la marca no leída) y la etapa
-    // al final: nadie ve "Compra" sin ver el freno de cotejar.
-    steps: [
-      {
-        kind: "internal_note",
-        text: "Pago reportado por el agente: {{monto}} · {{banco}} · ref. {{referencia}} · {{fecha}}. Cotejar el depósito en el banco antes de enviar.",
-      },
-      { kind: "add_tag", tag: "cotejar depósito" },
-      { kind: "set_stage", stage: "compra" },
-    ],
-  },
-  {
-    slug: "anticipo_confirmado",
-    name: "Anticipo confirmado (50 % a la medida)",
-    agentDescription:
-      "Confirma la recepción del ANTICIPO del 50 % de una compuerta hecha a la medida ($3,500 de $7,000) y deja al contacto en 'Cerca de compra' " +
-      "(la venta no está completa: falta la liquidación antes del envío). Úsala solo tras analizar la IMAGEN del comprobante y verificar el monto. " +
-      "Pasa como argumentos monto, fecha, banco, referencia y destinatario. Escribe primero al cliente que su compuerta entra en fabricación y que avisarás para el pago final. " +
-      "Para un pago completo usa 'Pago confirmado', no esta.",
-    triggerAgent: true,
-    triggerKeywords: [],
-    triggerCommand: null,
-    steps: [
-      {
-        kind: "internal_note",
-        text: "Anticipo reportado por el agente: {{monto}} · {{banco}} · ref. {{referencia}} · {{fecha}}. Cotejar en el banco; falta la liquidación antes de enviar.",
-      },
-      { kind: "add_tag", tag: "anticipo 50%" },
-      { kind: "set_stage", stage: "cerca_compra" },
-    ],
-  },
-  {
-    slug: "pago_no_cuadra",
-    name: "Comprobante que no cuadra",
-    agentDescription:
-      "Avisa a un asesor de un comprobante de pago que no se puede confirmar: la imagen no se lee, no es un comprobante o falta un dato. " +
-      "Escribe primero al cliente, con amabilidad, qué viste y que un asesor lo revisa; luego llama esta herramienta con el motivo. " +
-      "Si el comprobante sí se lee, usa pago_confirmado: el CRM verifica el monto.",
-    triggerAgent: true,
-    triggerKeywords: [],
-    triggerCommand: null,
-    // El texto amable al cliente lo manda el agente (lib/ai/runtime/actions.ts);
-    // aquí solo queda el rastro para el vendedor. Sin pausa (el agente sigue).
-    steps: [
-      { kind: "add_tag", tag: "revisar comprobante" },
-      { kind: "internal_note", text: "Comprobante que no cuadra: {{motivo}}. Revisar con el cliente." },
     ],
   },
 ];
