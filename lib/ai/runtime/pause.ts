@@ -5,11 +5,14 @@
 // el barrido del worker (cada minuto) lo vuelve a "activo". Toda escritura filtra
 // por organización.
 //
-// Regla del dueño — solo mensajes nuevos: al reactivarse, el corte
-// (agent_state_changed_at = ahora) deja atrás lo que el cliente escribió durante la
-// pausa: nada lo contesta solo (ni el barrido de huérfanos tras un reinicio); el
-// agente responde a partir del siguiente mensaje del cliente.
-import { and, eq, isNotNull, lte } from "drizzle-orm";
+// Regla del dueño — solo mensajes nuevos: al volver, el corte
+// (agent_state_changed_at) deja atrás lo que el cliente escribió durante la pausa:
+// nada lo contesta solo (ni el barrido de huérfanos tras un reinicio); el agente
+// responde a partir del siguiente mensaje del cliente. Con hora de regreso, el
+// corte es ESA hora (la que vio el vendedor), no la del barrido: un mensaje escrito
+// después siempre se puede rescatar, y uno escrito antes que llegó tarde (webhook
+// retrasado) no se contesta (se compara con la hora de WhatsApp del mensaje).
+import { and, eq, isNotNull, lte, or, sql } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { conversations } from "@/lib/db/schema";
 import { bullAgentQueuePort, cancelAgentRun, withQueueTimeout, type AgentQueuePort } from "./queue";
@@ -48,13 +51,27 @@ export async function pauseAgentManually(
   return true;
 }
 
-// Vuelve a "activo" una pausa con hora cumplida. Condicional: si otro vendedor la
-// cambió o la reactivó en medio, no se pisa. Devuelve si cambió algo.
+// Vuelve a "activo" una pausa con hora cumplida; el corte es la hora de regreso
+// (en el UPDATE, la columna vale lo de ANTES de ponerla en null). Condicional: si
+// otro vendedor la cambió o la reactivó en medio, no se pisa. Devuelve si cambió algo.
 export async function reactivateDuePause(organizationId: string, conversationId: string, now: Date): Promise<boolean> {
   const rows = await db
     .update(conversations)
-    .set({ agentState: "activo", agentPausedUntil: null, agentStateChangedAt: now })
+    .set({ agentState: "activo", agentPausedUntil: null, agentStateChangedAt: sql`${conversations.agentPausedUntil}` })
     .where(and(ownConversation(organizationId, conversationId), pauseDue(now)))
+    .returning({ id: conversations.id });
+  return rows.length > 0;
+}
+
+// Un vendedor contestó (CRM, celular, programado o comando): apaga el bot sin
+// tiempo SOLO si estaba encendido (o su hora de regreso ya se cumplió). Un solo
+// UPDATE condicional: si otro vendedor acaba de elegir "Apagar bot 8 h", su hora
+// no se pisa. Devuelve si cambió algo.
+export async function pauseForHumanReply(organizationId: string, conversationId: string, now: Date): Promise<boolean> {
+  const rows = await db
+    .update(conversations)
+    .set({ agentState: "pausado_humano", agentPausedUntil: null, agentStateChangedAt: now })
+    .where(and(ownConversation(organizationId, conversationId), or(eq(conversations.agentState, "activo"), pauseDue(now))))
     .returning({ id: conversations.id });
   return rows.length > 0;
 }

@@ -89,7 +89,8 @@ describe.skipIf(!TEST_DATABASE_URL)("Apagar bot por conversación (Postgres real
   });
 
   let seq = 0;
-  async function msg(conversationId: string, opts: { direction: "in" | "out"; body: string; at: Date; org?: string }) {
+  // `at` = llegada al CRM (created_at); `sentAt` = cuando el cliente lo escribió (WhatsApp).
+  async function msg(conversationId: string, opts: { direction: "in" | "out"; body: string; at: Date; sentAt?: Date; org?: string }) {
     seq++;
     const id = `m_ab_${seq}`;
     await db.insert(s.messages).values({
@@ -104,7 +105,7 @@ describe.skipIf(!TEST_DATABASE_URL)("Apagar bot por conversación (Postgres real
       providerMessageId: `wamid.ab.${seq}`,
       status: opts.direction === "in" ? "received" : "sent",
       sentByUserId: opts.direction === "out" ? "u_vendedor" : null,
-      sentAt: opts.at,
+      sentAt: opts.sentAt ?? opts.at,
       createdAt: opts.at,
     });
     return id;
@@ -172,8 +173,8 @@ describe.skipIf(!TEST_DATABASE_URL)("Apagar bot por conversación (Postgres real
   const agentOuts = async (id = CONV) =>
     (await db.select().from(s.messages).where(eq(s.messages.conversationId, id))).filter((m) => m.source === "ai_agent");
   const job = (conversationId = CONV, organizationId = ORG) => ({ organizationId, conversationId });
-  const inbound = (conversationId: string, at: Date, q: ReturnType<typeof fakeQueue>, now = at) =>
-    hooks.onInboundCustomerMessage({ organizationId: ORG, conversationId, receivedAt: at }, { queue: q.port, kv: q.kv, now });
+  const inbound = (conversationId: string, at: Date, q: ReturnType<typeof fakeQueue>, messageId?: string, now = at) =>
+    hooks.onInboundCustomerMessage({ organizationId: ORG, conversationId, receivedAt: at, messageId }, { queue: q.port, kv: q.kv, now });
 
   it("apagar → el cliente escribe → no contesta (y el job que ya estaba programado se cancela)", async () => {
     const q = fakeQueue();
@@ -186,8 +187,8 @@ describe.skipIf(!TEST_DATABASE_URL)("Apagar bot por conversación (Postgres real
     expect(c).toMatchObject({ agentState: "pausado_humano", agentPausedUntil: new Date(now.getTime() + 8 * HOUR), agentStateChangedAt: now });
 
     const at = new Date();
-    await msg(CONV, { direction: "in", body: "¿precio?", at });
-    await inbound(CONV, at, q);
+    const id = await msg(CONV, { direction: "in", body: "¿precio?", at });
+    await inbound(CONV, at, q, id);
     expect(q.jobs.size).toBe(0);
     const { deps, brainCalls } = makeDeps();
     expect(await run.runAgent(job(), deps)).toEqual({ kind: "skipped", reason: "pausado_humano" });
@@ -211,15 +212,17 @@ describe.skipIf(!TEST_DATABASE_URL)("Apagar bot por conversación (Postgres real
   it("vence el tiempo → el barrido lo pasa a activo → el cliente escribe → sí contesta", async () => {
     const q = fakeQueue();
     const pausedAt = ago(8 * HOUR + 120_000);
-    await pause.pauseAgentManually({ organizationId: ORG, conversationId: CONV, until: new Date(pausedAt.getTime() + 8 * HOUR), now: pausedAt }, { queue: q.port });
+    const until = new Date(pausedAt.getTime() + 8 * HOUR);
+    await pause.pauseAgentManually({ organizationId: ORG, conversationId: CONV, until, now: pausedAt }, { queue: q.port });
     const now = new Date();
     await worker.sweepOnce(q.port, q.kv, now);
-    expect(await conv()).toMatchObject({ agentState: "activo", agentPausedUntil: null, agentStateChangedAt: now });
+    // El corte es la hora de regreso prometida, no la del barrido.
+    expect(await conv()).toMatchObject({ agentState: "activo", agentPausedUntil: null, agentStateChangedAt: until });
     expect(q.jobs.size).toBe(0); // reactivarse no contesta nada por sí solo
 
     const at = new Date(now.getTime() + 1_000);
-    await msg(CONV, { direction: "in", body: "¿siguen ahí?", at });
-    await inbound(CONV, at, q);
+    const id = await msg(CONV, { direction: "in", body: "¿siguen ahí?", at });
+    await inbound(CONV, at, q, id);
     expect(q.jobs.get(CONV)).toMatchObject({ delay: 15_000 });
     const { deps } = makeDeps();
     expect(await run.runAgent(job(), deps)).toEqual({ kind: "sent", bubbles: 1 });
@@ -231,8 +234,8 @@ describe.skipIf(!TEST_DATABASE_URL)("Apagar bot por conversación (Postgres real
     await pause.pauseAgentManually({ organizationId: ORG, conversationId: CONV, until: ago(60_000), now: pausedAt }, { queue: q.port });
     // Durante la pausa: el gancho no programa nada.
     const during = ago(10 * 60_000);
-    await msg(CONV, { direction: "in", body: "¿me pasas el precio?", at: during });
-    await inbound(CONV, during, q);
+    const duringId = await msg(CONV, { direction: "in", body: "¿me pasas el precio?", at: during });
+    await inbound(CONV, during, q, duringId);
     expect(q.jobs.size).toBe(0);
     // Sin pausa, ese entrante sería un huérfano para el barrido (entre 90 s y 30 min).
     // Barrido (igual tras reiniciar el worker): reactiva y NO lo recoge.
@@ -240,30 +243,76 @@ describe.skipIf(!TEST_DATABASE_URL)("Apagar bot por conversación (Postgres real
     await worker.sweepOnce(q.port, q.kv, now);
     expect((await conv()).agentState).toBe("activo");
     expect(q.jobs.size).toBe(0);
-    // Control: lo que lo deja fuera es el corte (agent_state_changed_at = ahora).
+    // Control: lo que lo deja fuera es el corte (agent_state_changed_at = hora de regreso).
+    const cut = (await conv()).agentStateChangedAt;
     await db.update(s.conversations).set({ agentStateChangedAt: pausedAt }).where(eq(s.conversations.id, CONV));
     expect(await sweep.findOrphanConversations(now)).toEqual([{ conversationId: CONV, organizationId: ORG }]);
-    await db.update(s.conversations).set({ agentStateChangedAt: now }).where(eq(s.conversations.id, CONV));
+    await db.update(s.conversations).set({ agentStateChangedAt: cut }).where(eq(s.conversations.id, CONV));
     // Otro barrido minutos después (otro reinicio): sigue sin recogerlo.
     expect(await sweep.findOrphanConversations(new Date(now.getTime() + 5 * 60_000))).toEqual([]);
     await worker.sweepOnce(q.port, q.kv, new Date(now.getTime() + 5 * 60_000));
     expect(q.jobs.size).toBe(0);
     // A partir del siguiente mensaje del cliente, sí contesta.
     const at = new Date(now.getTime() + 1_000);
-    await msg(CONV, { direction: "in", body: "hola?", at });
-    await inbound(CONV, at, q);
+    const id = await msg(CONV, { direction: "in", body: "hola?", at });
+    await inbound(CONV, at, q, id);
     expect(q.jobs.has(CONV)).toBe(true);
     const { deps } = makeDeps();
     expect((await run.runAgent(job(), deps)).kind).toBe("sent");
   });
 
+  it("webhook retrasado: un mensaje ESCRITO con el bot apagado que llega después de la hora de regreso no se contesta", async () => {
+    const q = fakeQueue();
+    const until = ago(5_000);
+    await pause.pauseAgentManually({ organizationId: ORG, conversationId: CONV, until, now: ago(HOUR) }, { queue: q.port });
+    // Escrito 3 s antes de la hora de regreso, llega 5 s después (barrido aún sin pasar).
+    const late = await msg(CONV, { direction: "in", body: "¿precio?", at: new Date(), sentAt: new Date(until.getTime() - 3_000) });
+    await inbound(CONV, new Date(), q, late);
+    expect((await conv()).agentState).toBe("pausado_humano"); // no lo reactiva ese mensaje
+    expect(q.jobs.size).toBe(0);
+    // El barrido lo reactiva con corte = hora de regreso, y el huérfano no lo recoge.
+    await worker.sweepOnce(q.port, q.kv, new Date());
+    expect(await conv()).toMatchObject({ agentState: "activo", agentStateChangedAt: until });
+    expect(await sweep.findOrphanConversations(new Date(Date.now() + 2 * 60_000))).toEqual([]);
+    // Otro escrito durante la pausa que llega ya con el bot activo: tampoco.
+    const later = await msg(CONV, { direction: "in", body: "¿hola?", at: new Date(), sentAt: new Date(until.getTime() - 1_000) });
+    await inbound(CONV, new Date(), q, later);
+    expect(q.jobs.size).toBe(0);
+    expect(await sweep.findOrphanConversations(new Date(Date.now() + 2 * 60_000))).toEqual([]);
+    // Uno escrito después del regreso sí.
+    const fresh = await msg(CONV, { direction: "in", body: "¿siguen?", at: new Date() });
+    await inbound(CONV, new Date(), q, fresh);
+    expect(q.jobs.has(CONV)).toBe(true);
+  });
+
+  it("si la cola falla justo al reactivar por un mensaje nuevo, el barrido de huérfanos lo rescata", async () => {
+    const q = fakeQueue();
+    const until = ago(20_000);
+    await pause.pauseAgentManually({ organizationId: ORG, conversationId: CONV, until, now: ago(HOUR) }, { queue: q.port });
+    const at = new Date();
+    const id = await msg(CONV, { direction: "in", body: "¿precio?", at });
+    const broken = { ...q.port, add: async () => { throw new Error("Redis caído"); } };
+    const quiet = console.error;
+    console.error = () => undefined;
+    try {
+      await hooks.onInboundCustomerMessage({ organizationId: ORG, conversationId: CONV, receivedAt: at, messageId: id }, { queue: broken, kv: q.kv, now: at });
+    } finally {
+      console.error = quiet;
+    }
+    expect(await conv()).toMatchObject({ agentState: "activo", agentStateChangedAt: until });
+    expect(q.jobs.size).toBe(0);
+    // 90 s después el barrido lo recoge (el mensaje es posterior al corte).
+    expect(await sweep.findOrphanConversations(new Date(at.getTime() + 2 * 60_000))).toEqual([{ conversationId: CONV, organizationId: ORG }]);
+  });
+
   it("si el cliente escribe DESPUÉS de la hora de regreso pero antes del barrido, sí contesta", async () => {
     const q = fakeQueue();
-    await pause.pauseAgentManually({ organizationId: ORG, conversationId: CONV, until: ago(10_000), now: ago(HOUR) }, { queue: q.port });
+    const until = ago(10_000);
+    await pause.pauseAgentManually({ organizationId: ORG, conversationId: CONV, until, now: ago(HOUR) }, { queue: q.port });
     const at = new Date();
-    await msg(CONV, { direction: "in", body: "¿precio?", at });
-    await inbound(CONV, at, q);
-    expect((await conv()).agentState).toBe("activo");
+    const id = await msg(CONV, { direction: "in", body: "¿precio?", at });
+    await inbound(CONV, at, q, id);
+    expect(await conv()).toMatchObject({ agentState: "activo", agentStateChangedAt: until });
     expect(q.jobs.has(CONV)).toBe(true);
     const { deps } = makeDeps();
     expect((await run.runAgent(job(), deps)).kind).toBe("sent");
@@ -301,6 +350,20 @@ describe.skipIf(!TEST_DATABASE_URL)("Apagar bot por conversación (Postgres real
     expect(await pause.reactivateDuePauses(new Date())).toBe(0);
   });
 
+  it("carrera: si otro vendedor eligió una hora justo antes, la pausa por respuesta humana no la borra", async () => {
+    const q = fakeQueue();
+    const until = new Date(Date.now() + 8 * HOUR);
+    // onHumanOutbound leyó "activo", pero antes de escribir alguien apagó el bot 8 h.
+    await pause.pauseAgentManually({ organizationId: ORG, conversationId: CONV, until, now: new Date() }, { queue: q.port });
+    expect(await pause.pauseForHumanReply(ORG, CONV, new Date())).toBe(false);
+    expect(await conv()).toMatchObject({ agentState: "pausado_humano", agentPausedUntil: until });
+    // Encendido (o con la hora cumplida) sí lo apaga sin tiempo; nunca en otra organización.
+    await manual.reactivateAgentInConversation(ORG, CONV, new Date());
+    expect(await pause.pauseForHumanReply("org_ajena", CONV, new Date())).toBe(false);
+    expect(await pause.pauseForHumanReply(ORG, CONV, new Date())).toBe(true);
+    expect(await conv()).toMatchObject({ agentState: "pausado_humano", agentPausedUntil: null });
+  });
+
   it("el vendedor contesta sin usar el botón: se apaga sin tiempo y solo vuelve con Reactivar", async () => {
     const q = fakeQueue();
     await msg(CONV, { direction: "out", body: "Hola", at: new Date() });
@@ -315,8 +378,8 @@ describe.skipIf(!TEST_DATABASE_URL)("Apagar bot por conversación (Postgres real
     expect(await pause.reactivateDuePauses(new Date())).toBe(0);
     await worker.sweepOnce(q.port, q.kv, new Date());
     const at = new Date();
-    await msg(CONV, { direction: "in", body: "hola", at });
-    await inbound(CONV, at, q);
+    const id = await msg(CONV, { direction: "in", body: "hola", at });
+    await inbound(CONV, at, q, id);
     expect(await conv()).toMatchObject({ agentState: "pausado_humano", agentPausedUntil: null });
     expect(q.jobs.size).toBe(0);
   });
@@ -329,8 +392,8 @@ describe.skipIf(!TEST_DATABASE_URL)("Apagar bot por conversación (Postgres real
     expect(await conv()).toMatchObject({ agentState: "activo", agentPausedUntil: null, agentStateChangedAt: now });
     expect(await pause.reactivateDuePauses(new Date(now.getTime() + 9 * HOUR))).toBe(0);
     const at = new Date(now.getTime() + 1_000);
-    await msg(CONV, { direction: "in", body: "¿precio?", at });
-    await inbound(CONV, at, q);
+    const id = await msg(CONV, { direction: "in", body: "¿precio?", at });
+    await inbound(CONV, at, q, id);
     expect(q.jobs.has(CONV)).toBe(true);
     expect((await run.runAgent(job(), makeDeps().deps)).kind).toBe("sent");
   });
@@ -347,10 +410,10 @@ describe.skipIf(!TEST_DATABASE_URL)("Apagar bot por conversación (Postgres real
     const q = fakeQueue();
     await pause.pauseAgentManually({ organizationId: ORG, conversationId: CONV, until: new Date(Date.now() + 8 * HOUR), now: new Date() }, { queue: q.port });
     const at = new Date();
-    await msg(CONV, { direction: "in", body: "¿precio?", at });
-    await msg(CONV2, { direction: "in", body: "¿precio?", at });
-    await inbound(CONV, at, q);
-    await inbound(CONV2, at, q);
+    const a = await msg(CONV, { direction: "in", body: "¿precio?", at });
+    const b = await msg(CONV2, { direction: "in", body: "¿precio?", at });
+    await inbound(CONV, at, q, a);
+    await inbound(CONV2, at, q, b);
     expect([...q.jobs.keys()]).toEqual([CONV2]);
     expect((await run.runAgent(job(CONV), makeDeps().deps)).kind).toBe("skipped");
     expect(await run.runAgent(job(CONV2), makeDeps().deps)).toEqual({ kind: "sent", bubbles: 1 });
