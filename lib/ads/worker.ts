@@ -1,17 +1,16 @@
 // Worker de anuncios (corre dentro del servicio `worker`). Nada de esto frena
 // un mensaje: el mensaje ya está guardado cuando llega aquí.
-// - media: copia la imagen/video/miniatura de la ficha al bucket (los links de
-//   Meta caducan en horas);
-// - meta: nombres de campaña/conjunto/anuncio y creativo (caché por anuncio);
-// - creative_media: copia la media del creativo (respaldo visual);
+// - thumb: UNA miniatura chica por anuncio al bucket (del link de la ficha, que
+//   caduca en horas, o del creativo de la API). Sin videos ni archivos por clic.
+// - meta: nombres de campaña/conjunto/anuncio, creativo y datos del video.
 // - fallback: mensaje que parecía de anuncio sin ficha → primer clic guardado
 //   por Zernio en la conversación;
 // - record: red de seguridad si el clic no se registró en la ingesta.
 // El barrido (cada minuto) re-encola lo pendiente desde la base.
 import { Worker } from "bullmq";
-import { and, gte, isNotNull, isNull, lte, or, sql } from "drizzle-orm";
+import { and, eq, isNotNull, isNull, lt, lte, or } from "drizzle-orm";
 import { db } from "@/lib/db";
-import { adClicks, metaAds } from "@/lib/db/schema";
+import { metaAds } from "@/lib/db/schema";
 import type { MessagingProvider } from "@/lib/messaging/provider";
 import { redisConnection } from "@/lib/queue/inbound";
 import { ADS_QUEUE, enqueueAdsJob, type AdsJob } from "@/lib/queue/ads";
@@ -24,13 +23,21 @@ import {
   type FallbackJob,
   type RecordedClick,
 } from "./attribution";
-import { AD_MEDIA_GIVE_UP_HOURS, downloadClickMedia, downloadCreativeMedia } from "./media";
 import { refreshMetaAd } from "./meta-cache";
+import { storeAdThumbnail, THUMB_MAX_ATTEMPTS, ThumbnailError } from "./thumbnail";
 
-/** Encola lo que sigue a un clic nuevo: su media y los nombres de Meta. */
+/** Encola lo que sigue a un clic nuevo: la miniatura del anuncio (si aún no tiene) y los nombres de Meta. */
 export async function enqueueAfterClick(click: RecordedClick): Promise<void> {
-  if (click.hasMedia) await enqueueAdsJob({ kind: "media", clickId: click.clickId });
-  if (click.adId) await enqueueAdsJob({ kind: "meta", organizationId: click.organizationId, adId: click.adId });
+  if (!click.adId) return;
+  if (click.thumbUrl) {
+    const [ad] = await db
+      .select({ thumbnailKey: metaAds.thumbnailKey })
+      .from(metaAds)
+      .where(and(eq(metaAds.organizationId, click.organizationId), eq(metaAds.adId, click.adId)))
+      .limit(1);
+    if (!ad?.thumbnailKey) await enqueueAdsJob({ kind: "thumb", organizationId: click.organizationId, adId: click.adId, url: click.thumbUrl });
+  }
+  await enqueueAdsJob({ kind: "meta", organizationId: click.organizationId, adId: click.adId });
 }
 
 /** Ganchos de la ingesta (lib/messaging/ingest.ts → IngestHooks). */
@@ -49,22 +56,30 @@ export function startAdsWorker({ provider, storage }: { provider: MessagingProvi
     async (job) => {
       const data = job.data;
       switch (data.kind) {
-        case "media": {
-          if (!storage) return "sin bucket: media pendiente";
-          const r = await downloadClickMedia(storage, data.clickId);
-          return `media del clic ${data.clickId}: ${r.stored} guardado(s), ${r.pending} pendiente(s)`;
+        case "thumb": {
+          if (!storage) return "sin bucket: miniatura pendiente";
+          try {
+            const r = await storeAdThumbnail(storage, data.organizationId, data.adId, data.url);
+            return `miniatura de ${data.adId}: ${r}`;
+          } catch (error) {
+            // El link de la ficha caducado (4xx) no se reintenta: la miniatura
+            // saldrá del creativo cuando llegue de Meta.
+            if (data.url && error instanceof ThumbnailError && error.httpStatus >= 400 && error.httpStatus < 500) {
+              return `miniatura de ${data.adId}: link de la ficha no sirve (${error.message}); se usará el del creativo`;
+            }
+            throw error;
+          }
         }
         case "meta": {
           const r = await refreshMetaAd(data.organizationId, data.adId);
-          if (r === "actualizado" && storage) await enqueueAdsJob({ kind: "creative_media", organizationId: data.organizationId, adId: data.adId });
+          if (r.status === "actualizado" && r.needsThumbnail && storage) {
+            await enqueueAdsJob({ kind: "thumb", organizationId: data.organizationId, adId: data.adId });
+          }
           // Un error de Meta NO lanza: ya quedó anotado con su espera y el
           // barrido lo retoma (reintentar aquí martillaría la API).
-          return typeof r === "string" ? `anuncio ${data.adId}: ${r}` : `anuncio ${data.adId}: error (${r.error}); reintento en ${Math.round(r.retryInMs / 60_000)} min`;
-        }
-        case "creative_media": {
-          if (!storage) return "sin bucket";
-          const r = await downloadCreativeMedia(storage, data.organizationId, data.adId);
-          return `creativo ${data.adId}: ${r.stored} guardado(s), ${r.pending} pendiente(s)`;
+          return r.status === "error"
+            ? `anuncio ${data.adId}: error (${r.error}); reintento en ${Math.round(r.retryInMs / 60_000)} min`
+            : `anuncio ${data.adId}: ${r.status}`;
         }
         case "fallback": {
           const { result, click } = await attributeFromProviderConversation(provider, data.job);
@@ -93,33 +108,19 @@ export function startAdsWorker({ provider, storage }: { provider: MessagingProvi
     // 1b) Respaldos pendientes o por reintentar (registro durable en el mensaje).
     for (const job of await messagesPendingFallback()) await enqueueAdsJob({ kind: "fallback", job });
     if (storage) {
-      // 2) Media de clics pendiente (los links caducan: solo las últimas 48 h).
-      const pendingMedia = await db
-        .select({ id: adClicks.id })
-        .from(adClicks)
-        .where(
-          and(
-            gte(adClicks.createdAt, sql`now() - make_interval(hours => ${AD_MEDIA_GIVE_UP_HOURS})`),
-            lte(adClicks.createdAt, sql`now() - interval '1 minute'`),
-            sql`exists (select 1 from jsonb_array_elements(${adClicks.media}) m
-                        where m->>'storageKey' is null and m->>'givenUpAt' is null)`,
-          ),
-        )
-        .limit(50);
-      for (const { id } of pendingMedia) await enqueueAdsJob({ kind: "media", clickId: id });
-      // 3) Media del creativo pendiente.
-      const pendingCreative = await db
+      // 2) Miniaturas pendientes con el link del creativo (hasta el tope de intentos).
+      const pendingThumbs = await db
         .select({ organizationId: metaAds.organizationId, adId: metaAds.adId })
         .from(metaAds)
         .where(
           and(
-            isNotNull(metaAds.fetchedAt),
-            sql`exists (select 1 from jsonb_array_elements(${metaAds.creativeMedia}) m
-                        where m->>'storageKey' is null and m->>'givenUpAt' is null)`,
+            isNull(metaAds.thumbnailKey),
+            isNotNull(metaAds.thumbnailUrl),
+            lt(metaAds.thumbnailAttempts, THUMB_MAX_ATTEMPTS),
           ),
         )
         .limit(20);
-      for (const a of pendingCreative) await enqueueAdsJob({ kind: "creative_media", ...a });
+      for (const a of pendingThumbs) await enqueueAdsJob({ kind: "thumb", ...a });
     }
     // 4) Nombres de Meta: nunca consultados, o fallidos cuya espera ya pasó.
     const due = await db

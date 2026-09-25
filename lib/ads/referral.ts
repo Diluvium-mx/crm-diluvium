@@ -152,13 +152,13 @@ export function normalizeReferral(raw: Json, platform: AdPlatform = "whatsapp"):
   };
 }
 
-/** Links de media de la ficha, en orden de descarga (video, imagen, miniatura). */
-export function referralMediaUrls(data: AdReferralData): { role: "video" | "image" | "thumbnail"; url: string }[] {
-  const out: { role: "video" | "image" | "thumbnail"; url: string }[] = [];
-  if (data.videoUrl) out.push({ role: "video", url: data.videoUrl });
-  if (data.imageUrl) out.push({ role: "image", url: data.imageUrl });
-  if (data.thumbnailUrl) out.push({ role: "thumbnail", url: data.thumbnailUrl });
-  return out;
+/**
+ * Link de la ficha para la miniatura del anuncio: la miniatura (anuncios de
+ * video) o, si no hay, la imagen (anuncios de imagen; se reduce al guardarla).
+ * El video nunca se descarga (decisión del dueño, 25-sep-2026).
+ */
+export function referralThumbUrl(data: AdReferralData): string | null {
+  return data.thumbnailUrl ?? data.imageUrl ?? null;
 }
 
 // ─── Respaldo: primer clic guardado por Zernio en la conversación ───────────

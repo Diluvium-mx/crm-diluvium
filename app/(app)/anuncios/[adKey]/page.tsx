@@ -4,9 +4,9 @@ import { requireActiveMembership } from "@/lib/auth/active-organization";
 import { getAd } from "@/lib/ads/queries";
 import { STAGE_LABELS, type Stage } from "../../contactos/_data/types";
 
-// Página de un anuncio: Campaña › Conjunto › Anuncio, su video o imagen, el
-// texto, cuántos clientes llegaron por él, cuántos compraron (etapa Compra) y
-// el enlace al anuncio en Meta. Todo desde la base (media en el bucket propio).
+// Página de un anuncio: Campaña › Conjunto › Anuncio, su miniatura (una sola
+// copia chica; el video se ve en Meta), el texto, la llamada a la acción, cuántos
+// clientes llegaron por él, cuántos compraron (etapa Compra) y los enlaces a Meta.
 const DATE = new Intl.DateTimeFormat("es-MX", { timeZone: "America/Mazatlan", day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" });
 
 export default async function AnuncioPage({ params }: PageProps<"/anuncios/[adKey]">) {
@@ -16,7 +16,7 @@ export default async function AnuncioPage({ params }: PageProps<"/anuncios/[adKe
   if (!ad) notFound();
 
   const trail = [ad.campaignName, ad.adsetName].filter(Boolean);
-  const still = ad.visual.imageUrl ?? ad.visual.thumbnailUrl;
+  const videoLength = ad.video?.lengthSeconds ? `${Math.round(ad.video.lengthSeconds)} s` : null;
   return (
     <>
       <div>
@@ -37,16 +37,21 @@ export default async function AnuncioPage({ params }: PageProps<"/anuncios/[adKe
       </div>
 
       <div className="grid gap-4 md:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
-        <div className="overflow-hidden rounded-lg border bg-card">
-          {ad.visual.videoUrl ? (
-            <video controls preload="metadata" poster={ad.visual.thumbnailUrl ?? undefined} src={ad.visual.videoUrl} className="max-h-[28rem] w-full bg-black object-contain" />
-          ) : still ? (
+        <div className="flex flex-col items-center gap-3 rounded-lg border bg-card p-4">
+          {ad.thumbnailUrl ? (
             // eslint-disable-next-line @next/next/no-img-element
-            <img src={still} alt={ad.name} className="max-h-[28rem] w-full object-contain" />
+            <img src={ad.thumbnailUrl} alt={ad.name} className="max-h-80 w-auto max-w-full rounded-md object-contain" />
           ) : (
-            <div className="flex h-48 items-center justify-center text-4xl" aria-hidden>
-              📣
+            <div className="flex h-40 w-40 items-center justify-center rounded-md bg-brand-orange/10 text-5xl" aria-hidden>
+              {ad.mediaType === "video" ? "🎬" : "📣"}
             </div>
+          )}
+          {ad.video && (
+            <p className="text-center text-xs text-muted-foreground">
+              🎬 Anuncio de video{ad.video.title ? ` · ${ad.video.title}` : ""}
+              {videoLength ? ` · ${videoLength}` : ""}
+              {ad.metaUrl ? " · se ve en Meta" : ""}
+            </p>
           )}
         </div>
 
@@ -62,10 +67,21 @@ export default async function AnuncioPage({ params }: PageProps<"/anuncios/[adKe
             </div>
           </div>
 
-          {(ad.title || ad.body) && (
+          {(ad.title || ad.body || ad.cta || ad.linkUrl) && (
             <div className="rounded-lg border bg-card p-4">
               {ad.title && <p className="text-sm font-semibold">{ad.title}</p>}
               {ad.body && <p className="mt-1 whitespace-pre-line text-sm text-muted-foreground">{ad.body}</p>}
+              {(ad.cta || ad.linkUrl) && (
+                <p className="mt-2 text-xs text-muted-foreground">
+                  {ad.cta && <span>Botón: {ad.cta}</span>}
+                  {ad.cta && ad.linkUrl && " · "}
+                  {ad.linkUrl && (
+                    <a href={ad.linkUrl} target="_blank" rel="noopener noreferrer" className="underline-offset-2 hover:underline">
+                      {ad.linkUrl.replace(/^https:\/\//, "").slice(0, 60)}
+                    </a>
+                  )}
+                </p>
+              )}
             </div>
           )}
 

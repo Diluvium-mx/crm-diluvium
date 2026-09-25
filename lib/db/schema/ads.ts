@@ -4,31 +4,17 @@
 //   Meta manda la ficha (`referral`) solo en el PRIMER mensaje tras el clic;
 //   por eso la atribución vive aquí, ligada al CONTACTO y a la CONVERSACIÓN (no
 //   solo al mensaje). Un cliente que vuelve por otro anuncio deja otro registro.
-//   `raw` guarda la ficha ORIGINAL completa; las columnas son lo que se entiende.
-// - `meta_ads`: caché por anuncio de lo que devuelve la API de Marketing de
-//   Meta (campaña, conjunto, nombre del anuncio y su creativo). Si Meta falla,
-//   la UI muestra lo que haya (la ficha del clic) y el worker reintenta.
+//   `raw` guarda la ficha ORIGINAL completa, sin recortar; las columnas son lo
+//   que se entiende. Sin archivos por clic (decisión del dueño, 25-sep-2026).
+// - `meta_ads`: por anuncio, lo que devuelve la API de Marketing de Meta
+//   (campaña, conjunto, anuncio, creativo, video) y UNA miniatura chica en el
+//   bucket. Si Meta falla, la UI muestra lo que haya (la ficha del clic) y el
+//   worker reintenta. El video del anuncio NO se guarda: se ve en Meta.
 import { sql } from "drizzle-orm";
-import { index, integer, jsonb, pgTable, primaryKey, text, timestamp, uniqueIndex } from "drizzle-orm/pg-core";
+import { doublePrecision, index, integer, jsonb, pgTable, primaryKey, text, timestamp, uniqueIndex } from "drizzle-orm/pg-core";
 import { organization } from "./auth";
 import { contacts } from "./contacts";
 import { conversations, messages } from "./messaging";
-
-/** Un archivo del anuncio (imagen, video o miniatura) y su copia en el bucket propio. */
-export type AdMediaItem = {
-  role: "image" | "video" | "thumbnail";
-  /** Link original de Meta (firmado; caduca en horas). */
-  url: string;
-  /** Llave en el bucket propio cuando ya se copió. */
-  storageKey?: string;
-  mimeType?: string;
-  sizeBytes?: number;
-  downloadedAt?: string;
-  attempts?: number;
-  error?: string;
-  /** Se dejó de intentar (link caducado o agotados los intentos). */
-  givenUpAt?: string;
-};
 
 export const adClicks = pgTable(
   "ad_clicks",
@@ -59,7 +45,6 @@ export const adClicks = pgTable(
     ctwaClid: text("ctwa_clid"),
     welcomeMessage: text("welcome_message"),
     raw: jsonb("raw").$type<Record<string, unknown>>().notNull(),
-    media: jsonb("media").$type<AdMediaItem[]>().notNull().default([]),
     // Hora del mensaje del clic según WhatsApp.
     clickedAt: timestamp("clicked_at").notNull(),
     createdAt: timestamp("created_at").defaultNow().notNull(),
@@ -95,11 +80,27 @@ export const metaAds = pgTable(
     creativeTitle: text("creative_title"),
     creativeBody: text("creative_body"),
     creativeObjectType: text("creative_object_type"),
+    // Llamada a la acción (p. ej. WHATSAPP_MESSAGE) y enlace del creativo.
+    ctaType: text("cta_type"),
+    linkUrl: text("link_url"),
+    // Video del anuncio: solo sus datos (el archivo se ve en Meta).
     videoId: text("video_id"),
+    videoTitle: text("video_title"),
+    videoLengthSeconds: doublePrecision("video_length_seconds"),
     // Publicación del anuncio (page_post): https://www.facebook.com/{story_id}.
     storyId: text("story_id"),
-    // Imagen/miniatura/video del creativo según la API (copiados al bucket).
-    creativeMedia: jsonb("creative_media").$type<AdMediaItem[]>().notNull().default([]),
+    // Enlaces "Ver en Meta" (Administrador de anuncios) y "Ver publicación".
+    adsManagerUrl: text("ads_manager_url"),
+    postUrl: text("post_url"),
+    // Respuestas de la API tal cual (anuncio, creativo y video): la info completa.
+    metaRaw: jsonb("meta_raw").$type<Record<string, unknown>>(),
+    // UNA miniatura chica (JPEG ≤ 320 px) por anuncio en el bucket propio.
+    // thumbnail_url = link de origen vigente (de Meta; caduca y se renueva al refrescar).
+    thumbnailKey: text("thumbnail_key"),
+    thumbnailUrl: text("thumbnail_url"),
+    thumbnailAttempts: integer("thumbnail_attempts").notNull().default(0),
+    thumbnailError: text("thumbnail_error"),
+    thumbnailStoredAt: timestamp("thumbnail_stored_at"),
     fetchedAt: timestamp("fetched_at"),
     fetchError: text("fetch_error"),
     fetchAttempts: integer("fetch_attempts").notNull().default(0),

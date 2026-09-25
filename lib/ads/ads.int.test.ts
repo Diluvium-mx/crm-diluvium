@@ -1,6 +1,6 @@
 // Anuncios de clic a WhatsApp contra Postgres REAL: la ingesta con ficha, sin
 // ficha (respaldo), duplicados, cliente existente, reentrada por otro anuncio,
-// dos clientes del mismo anuncio, media caducada y la red de seguridad. Solo
+// dos clientes del mismo anuncio, miniatura (una por anuncio; link caducado) y la red de seguridad. Solo
 // corre con TEST_DATABASE_URL apuntando a una base DESECHABLE con migraciones.
 import { randomUUID } from "node:crypto";
 import type { Readable } from "node:stream";
@@ -23,7 +23,7 @@ describe.skipIf(!TEST_DATABASE_URL)("anuncios de Meta (Postgres real)", () => {
   let s: Schema;
   let ingest: typeof import("@/lib/messaging/ingest");
   let attribution: typeof import("./attribution");
-  let media: typeof import("./media");
+  let thumbnail: typeof import("./thumbnail");
   let metaCache: typeof import("./meta-cache");
   let queries: typeof import("./queries");
   let d: typeof import("drizzle-orm");
@@ -35,7 +35,7 @@ describe.skipIf(!TEST_DATABASE_URL)("anuncios de Meta (Postgres real)", () => {
     s = await import("@/lib/db/schema");
     ingest = await import("@/lib/messaging/ingest");
     attribution = await import("./attribution");
-    media = await import("./media");
+    thumbnail = await import("./thumbnail");
     metaCache = await import("./meta-cache");
     queries = await import("./queries");
     d = await import("drizzle-orm");
@@ -146,11 +146,17 @@ describe.skipIf(!TEST_DATABASE_URL)("anuncios de Meta (Postgres real)", () => {
       headline: "Protege tu Casa 🏠",
       raw: videoFicha(),
     });
-    expect(click.media.map((m) => m.role)).toEqual(["video", "thumbnail"]);
+    // Sin archivos por clic (decisión del dueño): la ficha completa queda en raw.
+    expect(Object.keys(click)).not.toContain("media");
     expect(conv.adReferral).toEqual(videoFicha());
     expect(conv.adEntryAt?.toISOString()).toBe("2026-09-24T18:00:00.000Z");
     expect(await db.select().from(s.metaAds)).toHaveLength(1);
-    expect(hooksLog.clicks).toEqual([{ clickId: click.id, organizationId: ORG, adId: AD_VIDEO, hasMedia: true }]);
+    // Candidato a miniatura: la del video de la ficha (nunca el video).
+    expect(hooksLog.clicks).toEqual([
+      { clickId: click.id, organizationId: ORG, adId: AD_VIDEO, thumbUrl: "https://scontent.xx.fbcdn.net/v/thumb.jpg?oe=caduca" },
+    ]);
+    const [ad] = await db.select().from(s.metaAds);
+    expect(ad).toMatchObject({ adsManagerUrl: expect.stringContaining(AD_VIDEO), postUrl: "https://fb.me/video9" });
     expect(hooksLog.fallbacks).toEqual([]);
   });
 
@@ -344,7 +350,7 @@ describe.skipIf(!TEST_DATABASE_URL)("anuncios de Meta (Postgres real)", () => {
     expect(await attribution.messagesWithUnrecordedReferral()).toHaveLength(0);
   });
 
-  describe("media del anuncio al bucket", () => {
+  describe("miniatura: UNA copia chica por anuncio (sin videos ni archivos por clic)", () => {
     function memoryStorage() {
       const objects = new Map<string, { bytes: Buffer; contentType: string }>();
       return {
@@ -355,77 +361,56 @@ describe.skipIf(!TEST_DATABASE_URL)("anuncios de Meta (Postgres real)", () => {
             for await (const c of body) chunks.push(Buffer.from(c as Uint8Array));
             objects.set(key, { bytes: Buffer.concat(chunks), contentType });
           },
-          async exists(key: string) {
-            return objects.has(key);
-          },
-          async signedGetUrl(key: string) {
-            return `https://bucket.test/${key}`;
-          },
-          async getBytes(key: string) {
-            return new Uint8Array(objects.get(key)?.bytes ?? []);
-          },
         } as unknown as import("@/lib/storage/s3").ObjectStorage,
       };
     }
+    async function png(width: number, height: number): Promise<Buffer> {
+      const { createCanvas } = await import("@napi-rs/canvas");
+      const canvas = createCanvas(width, height);
+      const ctx = canvas.getContext("2d");
+      ctx.fillStyle = "#0A559A";
+      ctx.fillRect(0, 0, width, height);
+      return canvas.encode("png");
+    }
 
-    it("anuncio dinámico: otro archivo bajo el mismo id NO reusa la copia (cada cliente ve lo que él vio)", async () => {
-      const a = { ...imageFicha("c-dyn-a"), image_url: "https://scontent-a.xx.fbcdn.net/v/t45/imagen-uno.jpg?oe=1" };
-      const b = { ...imageFicha("c-dyn-b"), image_url: "https://scontent-b.xx.fbcdn.net/v/t45/imagen-dos.jpg?oe=2" };
-      const c = { ...imageFicha("c-dyn-c"), image_url: "https://scontent-c.xx.fbcdn.net/v/t45/imagen-uno.jpg?oe=3" };
-      await deliver(adEvent({ phone: "5216681000040", referral: a, sentAt: new Date().toISOString() }));
-      await deliver(adEvent({ phone: "5216681000041", referral: b, sentAt: new Date().toISOString() }));
-      await deliver(adEvent({ phone: "5216681000042", referral: c, sentAt: new Date().toISOString() }));
-      const { storage } = memoryStorage();
-      const fetched: string[] = [];
-      const fetchImpl = (async (url: URL | string) => {
-        fetched.push(new URL(String(url)).pathname);
-        return new Response("JPG", { status: 200, headers: { "content-type": "image/jpeg" } });
-      }) as typeof fetch;
-      const clicks = await db.select().from(s.adClicks).orderBy(s.adClicks.createdAt);
-      for (const cl of clicks) await media.downloadClickMedia(storage, cl.id, fetchImpl);
-      // imagen-dos se descarga aparte; el tercero (mismo archivo que el primero, otro nodo del CDN) reusa.
-      expect(fetched).toEqual(["/v/t45/imagen-uno.jpg", "/v/t45/imagen-dos.jpg"]);
-      const [r1, r2, r3] = await db.select().from(s.adClicks).orderBy(s.adClicks.createdAt);
-      expect(r3.media[0].storageKey).toBe(r1.media[0].storageKey);
-      expect(r2.media[0].storageKey).not.toBe(r1.media[0].storageKey);
-    });
-
-    it("copia video y miniatura; el segundo clic del mismo anuncio reusa la copia", async () => {
-      await deliver(adEvent({ phone: "5216681000013", referral: videoFicha("c-13"), sentAt: new Date().toISOString() }));
-      await deliver(adEvent({ phone: "5216681000014", referral: videoFicha("c-14"), sentAt: new Date().toISOString() }));
+    it("imagen grande de la ficha → JPEG ≤ 320 px, una sola por anuncio aunque lleguen dos clientes", async () => {
+      await deliver(adEvent({ phone: "5216681000013", referral: imageFicha("c-13"), sentAt: new Date().toISOString() }));
+      await deliver(adEvent({ phone: "5216681000014", referral: imageFicha("c-14"), sentAt: new Date().toISOString() }));
       const { objects, storage } = memoryStorage();
+      const big = await png(1024, 1024);
       let downloads = 0;
-      const fetchImpl = (async (url: URL | string) => {
+      const fetchImpl = (async () => {
         downloads++;
-        const video = String(url).includes(".mp4");
-        return new Response(video ? "VIDEO" : "JPG", { status: 200, headers: { "content-type": video ? "video/mp4" : "image/jpeg" } });
+        return new Response(new Uint8Array(big), { status: 200, headers: { "content-type": "image/png" } });
       }) as typeof fetch;
-      const [c1, c2] = await db.select().from(s.adClicks).orderBy(s.adClicks.createdAt);
-      await media.downloadClickMedia(storage, c1.id, fetchImpl);
-      await media.downloadClickMedia(storage, c2.id, fetchImpl);
-      expect(downloads).toBe(2); // solo las del primer clic
-      const [r1, r2] = await db.select().from(s.adClicks).orderBy(s.adClicks.createdAt);
-      expect(r1.media.every((m) => m.storageKey)).toBe(true);
-      expect(r2.media.map((m) => m.storageKey)).toEqual(r1.media.map((m) => m.storageKey));
-      expect(objects.get(r1.media[0].storageKey!)?.contentType).toBe("video/mp4");
+      const [c1, c2] = hooksLog.clicks;
+      expect(await thumbnail.storeAdThumbnail(storage, ORG, AD_IMAGE, c1.thumbUrl!, fetchImpl)).toBe("guardada");
+      expect(await thumbnail.storeAdThumbnail(storage, ORG, AD_IMAGE, c2.thumbUrl!, fetchImpl)).toBe("ya_existe");
+      expect(downloads).toBe(1);
+      expect([...objects.keys()]).toEqual([`org/${ORG}/ads/meta/${AD_IMAGE}/miniatura.jpg`]);
+      const stored = objects.get(`org/${ORG}/ads/meta/${AD_IMAGE}/miniatura.jpg`)!;
+      expect(stored.contentType).toBe("image/jpeg");
+      const { loadImage } = await import("@napi-rs/canvas");
+      const img = await loadImage(stored.bytes);
+      expect(Math.max(img.width, img.height)).toBe(320);
+      expect(stored.bytes.byteLength).toBeLessThan(big.byteLength);
+      const card = (await queries.adCardsForMessages(ORG, [(await db.select().from(s.messages))[0].id])).values().next().value;
+      expect(card?.thumbnailUrl).toBe(`/api/ads/thumbnail/${AD_IMAGE}`);
     });
 
-    it("media que ya caducó (403): se reintenta sin frenar y se abandona; la tarjeta usa el creativo", async () => {
+    it("link de la ficha caducado (403): se anota sin frenar nada; la miniatura sale del creativo de Meta", async () => {
       await deliver(adEvent({ phone: "5216681000015", referral: imageFicha("c-15"), sentAt: new Date().toISOString() }));
       const { storage } = memoryStorage();
       const expired = (async () => new Response("URL signature expired", { status: 403 })) as typeof fetch;
-      const [click] = await db.select().from(s.adClicks);
-      // Dos intentos fallidos lanzan (BullMQ reintenta con espera)…
-      for (let i = 0; i < 2; i++) await expect(media.downloadClickMedia(storage, click.id, expired)).rejects.toThrow();
-      // …al tercer 4xx se abandona: ya no lanza ni se reintenta.
-      await expect(media.downloadClickMedia(storage, click.id, expired)).resolves.toEqual({ stored: 0, pending: 0 });
-      const [after] = await db.select().from(s.adClicks);
-      expect(after.media[0]).toMatchObject({ attempts: 3, givenUpAt: expect.any(String) });
-      await expect(media.downloadClickMedia(storage, click.id, expired)).resolves.toEqual({ stored: 0, pending: 0 });
-      // El mensaje y el clic siguen intactos.
+      const err = await thumbnail.storeAdThumbnail(storage, ORG, AD_IMAGE, hooksLog.clicks[0].thumbUrl!, expired).catch((e: unknown) => e);
+      expect(err).toBeInstanceOf(thumbnail.ThumbnailError);
+      expect((err as InstanceType<typeof thumbnail.ThumbnailError>).httpStatus).toBe(403);
+      let [ad] = await db.select().from(s.metaAds);
+      expect(ad.thumbnailError).toContain("ficha");
+      expect(ad.thumbnailAttempts).toBe(0); // el link de la ficha no gasta intentos del creativo
       expect(await db.select().from(s.messages)).toHaveLength(1);
 
-      // Nombres y creativo desde la API de Marketing (stub de Meta).
+      // Nombres, creativo y datos del video desde la API de Marketing (stub de Meta).
       const graph = (async (url: URL | string) => {
         const u = String(url);
         if (u.includes(`/${AD_IMAGE}?`)) {
@@ -444,17 +429,50 @@ describe.skipIf(!TEST_DATABASE_URL)("anuncios de Meta (Postgres real)", () => {
           title: "⭐️⭐️⭐️⭐️⭐️",
           body: "Ya viste cómo protege",
           object_type: "SHARE",
+          call_to_action_type: "WHATSAPP_MESSAGE",
           image_url: "https://scontent.xx.fbcdn.net/creative.png",
           thumbnail_url: "https://scontent.xx.fbcdn.net/creative-thumb.jpg",
           effective_object_story_id: "114715000320568_1483425617140200",
         });
       }) as typeof fetch;
-      expect(await metaCache.refreshMetaAd(ORG, AD_IMAGE, { config: { token: "t", fetchImpl: graph } })).toBe("actualizado");
-      const okFetch = (async () => new Response("PNG", { status: 200, headers: { "content-type": "image/png" } })) as typeof fetch;
-      await media.downloadCreativeMedia(storage, ORG, AD_IMAGE, okFetch);
+      expect(await metaCache.refreshMetaAd(ORG, AD_IMAGE, { config: { token: "t", fetchImpl: graph } })).toEqual({
+        status: "actualizado",
+        needsThumbnail: true,
+      });
+      [ad] = await db.select().from(s.metaAds);
+      expect(ad).toMatchObject({
+        adName: "AC - IMG 14",
+        ctaType: "WHATSAPP_MESSAGE",
+        thumbnailUrl: "https://scontent.xx.fbcdn.net/creative-thumb.jpg",
+        postUrl: "https://www.facebook.com/114715000320568_1483425617140200",
+      });
+      expect((ad.metaRaw as { creative: { id: string } }).creative.id).toBe("1586953986127289");
+      const small = await png(160, 160);
+      const ok = (async () => new Response(new Uint8Array(small), { status: 200, headers: { "content-type": "image/png" } })) as typeof fetch;
+      expect(await thumbnail.storeAdThumbnail(storage, ORG, AD_IMAGE, undefined, ok)).toBe("guardada");
       const card = (await queries.adCardsForMessages(ORG, [(await db.select().from(s.messages))[0].id])).values().next().value;
-      expect(card).toMatchObject({ name: "AC - IMG 14", href: `/anuncios/${AD_IMAGE}` });
-      expect(card?.thumbnailUrl).toMatch(/^\/api\/ads\/media\/ad\//);
+      expect(card).toMatchObject({ name: "AC - IMG 14", href: `/anuncios/${AD_IMAGE}`, thumbnailUrl: `/api/ads/thumbnail/${AD_IMAGE}` });
+      const page = await queries.getAd(ORG, AD_IMAGE);
+      expect(page).toMatchObject({ cta: "Enviar mensaje de WhatsApp", video: null, thumbnailUrl: `/api/ads/thumbnail/${AD_IMAGE}` });
+    });
+
+    it("el link del creativo que falla gasta intentos hasta el tope; uno nuevo de Meta los reinicia", async () => {
+      await deliver(adEvent({ phone: "5216681000016", referral: imageFicha("c-16b"), sentAt: new Date().toISOString() }));
+      await db.update(s.metaAds).set({ thumbnailUrl: "https://scontent.xx.fbcdn.net/viejo.jpg" });
+      const { storage } = memoryStorage();
+      const bad = (async () => new Response("no", { status: 500 })) as typeof fetch;
+      for (let i = 0; i < thumbnail.THUMB_MAX_ATTEMPTS; i++) {
+        await expect(thumbnail.storeAdThumbnail(storage, ORG, AD_IMAGE, undefined, bad)).rejects.toThrow();
+      }
+      let [ad] = await db.select().from(s.metaAds);
+      expect(ad.thumbnailAttempts).toBe(thumbnail.THUMB_MAX_ATTEMPTS);
+      const graph = (async (url: URL | string) =>
+        String(url).includes(`/${AD_IMAGE}?`)
+          ? Response.json({ id: AD_IMAGE, name: "AC - IMG 14", creative: { id: "99" } })
+          : Response.json({ id: "99", thumbnail_url: "https://scontent.xx.fbcdn.net/nuevo.jpg" })) as typeof fetch;
+      await metaCache.refreshMetaAd(ORG, AD_IMAGE, { config: { token: "t", fetchImpl: graph }, force: true });
+      [ad] = await db.select().from(s.metaAds);
+      expect(ad).toMatchObject({ thumbnailUrl: "https://scontent.xx.fbcdn.net/nuevo.jpg", thumbnailAttempts: 0 });
     });
   });
 
@@ -462,7 +480,7 @@ describe.skipIf(!TEST_DATABASE_URL)("anuncios de Meta (Postgres real)", () => {
     await deliver(adEvent({ phone: "5216681000016", referral: imageFicha("c-16"), sentAt: "2026-09-24T18:00:00Z" }));
     const down = (async () => Response.json({ error: { message: "Service temporarily unavailable", code: 2 } }, { status: 503 })) as typeof fetch;
     const r = await metaCache.refreshMetaAd(ORG, AD_IMAGE, { config: { token: "t", fetchImpl: down } });
-    expect(typeof r === "object" && r.retryInMs).toBeGreaterThan(0);
+    expect(r.status === "error" && r.retryInMs).toBeGreaterThan(0);
     const [ad] = await db.select().from(s.metaAds);
     expect(ad.fetchError).toContain("503");
     expect(ad.fetchAttempts).toBe(1);

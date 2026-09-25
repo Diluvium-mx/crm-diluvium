@@ -5,7 +5,7 @@ import {
   extractReferral,
   looksLikeAdMessage,
   normalizeReferral,
-  referralMediaUrls,
+  referralThumbUrl,
   validAdId,
 } from "./referral";
 
@@ -59,7 +59,8 @@ describe("normalizeReferral", () => {
       ctwaClid: "ARAk",
       welcomeMessage: "¡Hola! ¿En qué te ayudamos?",
     });
-    expect(referralMediaUrls(data).map((m) => m.role)).toEqual(["video", "thumbnail"]);
+    // Miniatura del video (el video nunca se descarga).
+    expect(referralThumbUrl(data)).toBe("https://scontent.whatsapp.net/t.jpg");
   });
 
   it("sin ctwa_clid e incompleta: lo que venga, sin inventar", () => {
@@ -67,7 +68,7 @@ describe("normalizeReferral", () => {
     expect(data.adId).toBeNull();
     expect(data.ctwaClid).toBeNull();
     expect(data.headline).toBeNull();
-    expect(referralMediaUrls(data)).toEqual([]);
+    expect(referralThumbUrl(data)).toBeNull();
   });
 
   it("source_type post: source_id es la publicación, no un anuncio", () => {
