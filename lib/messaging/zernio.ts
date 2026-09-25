@@ -32,6 +32,8 @@ import { bodyHasUnsupportedPlaceholders, templateRequiresUnsupportedParams, temp
 import { clickFromZernioConversation, extractReferral, type ConversationClick } from "@/lib/ads/referral";
 
 const DEFAULT_BASE_URL = "https://zernio.com/api";
+/** Páginas (de 100) del listado de conversaciones que revisa el respaldo de anuncios. */
+const CONVERSATION_PAGES = 3;
 const SEND_TIMEOUT_MS = 15_000;
 
 export function verifyZernioSignature(rawBody: string, signature: string | null, secret: string): boolean {
@@ -521,17 +523,33 @@ export class ZernioProvider implements MessagingProvider {
     return normalizeZernioEvent(payload, context);
   }
 
-  // Anuncios (respaldo): GET /v1/inbox/conversations/{id}?accountId=… — el
-  // accountId es OBLIGATORIO (400 sin él) y un id inexistente responde 200 con
-  // datos vacíos (verificado en vivo, 24-sep-2026): la ausencia de clic se lee
-  // del contenido, nunca de un 404.
+  // Anuncios (respaldo): primer clic que Zernio guardó en la conversación.
+  // Documentación oficial (docs.zernio.com, 25-sep-2026):
+  // - "Get conversation" (GET /v1/inbox/conversations/{id}) "currently returns
+  //   only the `meta_ad_*` family" (Instagram/Messenger); los `ctwa_*` de
+  //   WhatsApp "are returned by `GET /v1/inbox/conversations` instead".
+  // - "Click-to-WhatsApp Ads" (/platforms/whatsapp/ctwa): el clic queda en la
+  //   conversación bajo `metadata` (ctwa_clid, ctwa_captured_at, ctwa_source_id,
+  //   ctwa_source_url, ctwa_headline, ctwa_source_type).
+  // Por eso se lista por cuenta (filtro `accountId`, verificado en vivo: solo
+  // devuelve esa cuenta) y se busca la conversación por id. Una conversación
+  // recién escrita está arriba (orden por actualización); se revisan hasta
+  // CONVERSATION_PAGES páginas. No encontrarla = sin datos (se reintenta).
   async conversationAdClick(providerAccountId: string, providerConversationId: string): Promise<ConversationClick | null> {
-    if (!/^[\w-]{1,128}$/.test(providerConversationId)) {
-      throw new ZernioApiError(0, `conversationId con formato inesperado: ${JSON.stringify(providerConversationId.slice(0, 60))}`);
+    let cursor: string | undefined;
+    for (let page = 0; page < CONVERSATION_PAGES; page++) {
+      const params = new URLSearchParams({ accountId: providerAccountId, limit: "100" });
+      if (cursor) params.set("cursor", cursor);
+      const json = await this.apiJson("GET", `/v1/inbox/conversations?${params.toString()}`);
+      const list = Array.isArray(json.data) ? json.data.map(asRecord) : null;
+      if (!list) throw new ZernioApiError(0, "Listado de conversaciones con formato no reconocido");
+      const found = list.find((c) => c.id === providerConversationId);
+      if (found) return clickFromZernioConversation({ data: found });
+      const pagination = asRecord(json.pagination);
+      cursor = asString(pagination.nextCursor);
+      if (pagination.hasMore !== true || !cursor) return null;
     }
-    const params = new URLSearchParams({ accountId: providerAccountId });
-    const json = await this.apiJson("GET", `/v1/inbox/conversations/${encodeURIComponent(providerConversationId)}?${params.toString()}`);
-    return clickFromZernioConversation(json);
+    return null;
   }
 
   // Media de WhatsApp vía Zernio: https://zernio.com/api/v1/whatsapp/media/{id}

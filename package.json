@@ -18,6 +18,7 @@
     "db:migrate": "drizzle-kit migrate",
     "db:check": "tsx scripts/check-migrations.ts",
     "db:deploy": "drizzle-kit migrate && tsx scripts/check-migrations.ts",
+    "ads:probe": "tsx scripts/ads-probe-zernio.ts",
     "db:studio": "drizzle-kit studio",
     "db:reset": "tsx scripts/reset-db.ts",
     "webhooks:replay": "tsx scripts/replay-webhook-events.ts",

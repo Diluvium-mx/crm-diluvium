@@ -171,11 +171,13 @@ export type ConversationClick = {
 };
 
 /**
- * Del GET /v1/inbox/conversations/{id}?accountId=… de Zernio. Verificado en
- * vivo (24-sep-2026): responde { data: { id, accountId, … } } y, para un id
- * que no existe, 200 con datos vacíos (no 404). Zernio documenta el clic en
- * `metadata.ctwa_*`. Sin ctwa_source_id NI ctwa_clid NI ctwa_source_url no hay
- * clic: null.
+ * Clic guardado por Zernio en una conversación de WhatsApp: `metadata.ctwa_*`
+ * de un elemento de GET /v1/inbox/conversations (forma exacta documentada en
+ * docs.zernio.com/platforms/whatsapp/ctwa, "Step 1: The click id is captured
+ * for you"). Recibe `{ data: conversación }`. Cada llave es opcional ("read
+ * defensively"). Sin ctwa_source_id NI ctwa_clid NI ctwa_source_url no hay
+ * clic: null. Ojo: `ctwa_captured_at` es cuándo Zernio GUARDÓ el valor (un
+ * evento automático de Meta puede refrescarlo), no la hora exacta del clic.
  */
 export function clickFromZernioConversation(response: unknown): ConversationClick | null {
   const root = asRecord(response) ?? {};
