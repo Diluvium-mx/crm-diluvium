@@ -3,6 +3,10 @@ import type { CatalogModel, ModelRole } from "./types";
 // Defaults de la Fase A (brief): filtro = GPT-5.6 Luna, cerebro = Claude Sonnet 5.
 export const DEFAULT_FILTER_MODEL = "gpt-5.6-luna";
 export const DEFAULT_BRAIN_MODEL = "claude-sonnet-5";
+// Fase E (25-sep-2026): el cerebro se divide por etapa del Embudo. Modelo 1 (Luna)
+// atiende las primeras etapas; Modelo 2 (= el cerebro de siempre, Sonnet 5) el resto.
+export const DEFAULT_MODEL_1 = "gpt-5.6-luna";
+export const DEFAULT_MODEL_2 = DEFAULT_BRAIN_MODEL;
 
 // Catálogo = fuente ÚNICA de qué modelos existen, cómo se llaman en cada API y
 // qué llave necesitan (vía provider). Los model-id se verificaron contra docs
@@ -17,7 +21,9 @@ export const MODEL_CATALOG = [
     providerModelId: "gpt-5.6-luna",
     tier: "economico",
     multimodal: true,
-    roles: ["filtro"],
+    pdf: true,
+    // Filtro (limpia el anuncio) y, desde la Fase E, Modelo 1 del cerebro.
+    roles: ["filtro", "cerebro"],
   },
   {
     id: "claude-sonnet-5",
@@ -26,6 +32,7 @@ export const MODEL_CATALOG = [
     providerModelId: "claude-sonnet-5",
     tier: "tope",
     multimodal: true,
+    pdf: true,
     roles: ["cerebro"],
   },
   {
@@ -35,6 +42,7 @@ export const MODEL_CATALOG = [
     providerModelId: "gpt-5.6-terra",
     tier: "balanceado",
     multimodal: true,
+    pdf: true,
     roles: ["cerebro"],
   },
   {
@@ -45,6 +53,7 @@ export const MODEL_CATALOG = [
     providerModelId: "gpt-5.6-sol",
     tier: "tope",
     multimodal: true,
+    pdf: true,
     roles: ["cerebro"],
     isNew: true,
   },
@@ -56,6 +65,7 @@ export const MODEL_CATALOG = [
     providerModelId: "claude-opus-5-5",
     tier: "tope",
     multimodal: true,
+    pdf: true,
     roles: ["cerebro"],
     isNew: true,
   },
@@ -66,6 +76,7 @@ export const MODEL_CATALOG = [
     providerModelId: "claude-haiku-4-5-20251001",
     tier: "economico",
     multimodal: true,
+    pdf: true,
     roles: ["cerebro"],
   },
   {
@@ -75,6 +86,7 @@ export const MODEL_CATALOG = [
     providerModelId: "gemini-3.8-flash",
     tier: "balanceado",
     multimodal: true,
+    pdf: true,
     roles: ["cerebro"],
   },
   {
@@ -84,6 +96,7 @@ export const MODEL_CATALOG = [
     providerModelId: "grok-4.6",
     tier: "tope",
     multimodal: true,
+    pdf: true,
     roles: ["cerebro"],
   },
   {
@@ -93,8 +106,9 @@ export const MODEL_CATALOG = [
     providerModelId: "qwen/qwen3.7-flash",
     tier: "economico",
     // Verificado: acepta imagen y video de entrada (modalidades de OpenRouter),
-    // no es solo texto.
+    // no es solo texto. PDF no (OpenRouter no lista "file" para este modelo).
     multimodal: true,
+    pdf: false,
     roles: ["cerebro"],
   },
 ] as const satisfies readonly CatalogModel[];

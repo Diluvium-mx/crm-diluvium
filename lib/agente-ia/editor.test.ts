@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { applyCustomValues, approxTokens, costTier, countWords, faqSchema, goalSchema, profileSchema } from "./editor";
+import { applyCustomValues, approxTokens, countWords, faqSchema, goalSchema, profileSchema } from "./editor";
 
 const values = { contacto: "Juan", vendedor: "Laura", empresa: "Diluvium", agente: "Ángela" };
 
@@ -19,16 +19,6 @@ describe("contadores del Goal", () => {
     expect(countWords("  Hola   mundo\nnuevo ")).toBe(3);
     expect(countWords("   ")).toBe(0);
     expect(approxTokens("x".repeat(380))).toBe(100);
-  });
-});
-
-describe("indicador de costo", () => {
-  it("$ a $$$$ por precio de salida; sin precio → null", () => {
-    expect(costTier(1.2)).toBe(1);
-    expect(costTier(5)).toBe(2);
-    expect(costTier(10)).toBe(3);
-    expect(costTier(20)).toBe(4);
-    expect(costTier(null)).toBeNull();
   });
 });
 

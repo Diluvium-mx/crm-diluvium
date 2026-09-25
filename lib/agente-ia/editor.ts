@@ -32,16 +32,6 @@ export function approxTokens(text: string): number {
   return Math.round(text.length / 3.8);
 }
 
-// Indicador de costo ($ a $$$$) por el precio de SALIDA en USD por millón de tokens
-// (lo que más pesa en una respuesta). null = sin precio conocido.
-export function costTier(outputPerMTok: number | null | undefined): 1 | 2 | 3 | 4 | null {
-  if (outputPerMTok === null || outputPerMTok === undefined) return null;
-  if (outputPerMTok <= 2) return 1;
-  if (outputPerMTok <= 6) return 2;
-  if (outputPerMTok <= 12) return 3;
-  return 4;
-}
-
 export const MAX_GOAL_CHARS = 100_000;
 
 export const goalSchema = z.string().trim().min(1, "El Goal no puede quedar vacío.").max(MAX_GOAL_CHARS, "El Goal es demasiado largo.");

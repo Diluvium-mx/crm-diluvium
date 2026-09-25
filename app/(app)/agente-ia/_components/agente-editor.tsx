@@ -1,16 +1,21 @@
 "use client";
 
 // Pestaña "Agente IA" como el editor de GHL: nombre del agente editable con lápiz y
-// dos secciones. "Crear": modelo cerebro, nombre de la empresa, Goal y base de
-// conocimiento (FAQs). "Implementar": los canales con su interruptor. Solo sirve
-// para personalizar al agente. Sin lógica de datos: solo llama a Server Actions.
+// dos secciones. "Crear": Modelo 1 y Modelo 2 con qué etapa atiende cada uno (Fase E;
+// costo aproximado y panel "APIs de IA"), Goal y FAQs. Sin sección "Empresa" (25-sep-2026): el Goal ya dice quién es
+// la empresa; {{empresa.nombre}} sigue saliendo del nombre guardado o, si no hay, del de
+// la organización. "Implementar": los canales con su interruptor. Solo sirve para personalizar al agente. Sin lógica de datos: solo
+// llama a Server Actions.
 import { useState, useTransition } from "react";
 import { updateAgentProfile } from "@/lib/actions/agente-ia-editor";
+import { COST_WINDOW_DAYS, MIN_REAL_CONVERSATIONS, MIN_REAL_RESPONSES } from "@/lib/agente-ia/model-cost";
 import type { AgentEditorView } from "@/lib/agente-ia/types";
-import { BrainModelPicker } from "./brain-model-picker";
+import { ApiStatusPanel } from "./api-status-panel";
+import { BrainModelPicker, Model1Picker } from "./brain-model-picker";
 import { ChannelSwitches } from "./channel-switches";
 import { FaqEditor } from "./faq-editor";
 import { GoalEditor } from "./goal-editor";
+import { StageModelAssignment } from "./stage-model-assignment";
 
 function Section({ title, hint, children }: { title: string; hint?: string; children: React.ReactNode }) {
   return (
@@ -24,10 +29,11 @@ function Section({ title, hint, children }: { title: string; hint?: string; chil
   );
 }
 
-function AgentName({ name }: { name: string }) {
+// El nombre que se muestra vive en AgenteEditor (lo usa también la confirmación
+// del cambio de modelo); aquí solo se edita.
+function AgentName({ shown, onSaved }: { shown: string; onSaved: (name: string) => void }) {
   const [editing, setEditing] = useState(false);
-  const [value, setValue] = useState(name);
-  const [shown, setShown] = useState(name);
+  const [value, setValue] = useState(shown);
   const [error, setError] = useState<string | null>(null);
   const [pending, start] = useTransition();
 
@@ -36,7 +42,7 @@ function AgentName({ name }: { name: string }) {
     start(async () => {
       const r = await updateAgentProfile({ agentName: value });
       if (r.ok) {
-        setShown(value.trim());
+        onSaved(value.trim());
         setEditing(false);
       } else setError(r.message);
     });
@@ -82,48 +88,29 @@ function AgentName({ name }: { name: string }) {
   );
 }
 
-function CompanyName({ value: initial }: { value: string }) {
-  const [value, setValue] = useState(initial);
-  const [saved, setSaved] = useState(initial);
-  const [error, setError] = useState<string | null>(null);
-  const [pending, start] = useTransition();
-
-  function save() {
-    if (value.trim() === saved.trim()) return;
-    setError(null);
-    start(async () => {
-      const r = await updateAgentProfile({ companyName: value });
-      if (r.ok) setSaved(value);
-      else setError(r.message);
-    });
-  }
-
+function SubTitle({ title, hint }: { title: string; hint?: string }) {
   return (
-    <label className="flex flex-col gap-1">
-      <span className="text-sm font-medium text-foreground">Nombre de la empresa</span>
-      <span className="text-xs text-foreground/70">Se usa en el valor personalizado {"{{empresa.nombre}}"}.</span>
-      <span className="flex items-center gap-2">
-        <input
-          value={value}
-          onChange={(e) => setValue(e.target.value)}
-          onBlur={save}
-          placeholder="Diluvium"
-          className="w-full max-w-sm rounded border border-black/15 bg-background px-3 py-2 text-sm text-foreground dark:border-white/15"
-        />
-        {pending && <span className="text-xs text-muted-foreground">Guardando…</span>}
-      </span>
-      {error && <span className="border-l-2 border-brand-orange pl-2 text-xs text-foreground">{error}</span>}
-    </label>
+    <div className="flex flex-col gap-0.5">
+      <h3 className="text-sm font-medium text-foreground">{title}</h3>
+      {hint && <p className="text-xs text-foreground/70">{hint}</p>}
+    </div>
   );
+}
+
+function costHint(basis: AgentEditorView["costBasis"]): string {
+  return basis.source === "real"
+    ? `Costo aproximado por cada 100 conversaciones, con el uso real de los últimos ${COST_WINDOW_DAYS} días (${basis.responses} respuestas en ${basis.conversations} conversaciones).`
+    : `Costo aproximado por cada 100 conversaciones, con un perfil fijo (el uso real cuenta desde ${MIN_REAL_RESPONSES} respuestas en ${MIN_REAL_CONVERSATIONS} conversaciones de los últimos ${COST_WINDOW_DAYS} días).`;
 }
 
 export function AgenteEditor({ data }: { data: AgentEditorView }) {
   const [tab, setTab] = useState<"crear" | "implementar">("crear");
+  const [agentName, setAgentName] = useState(data.agentName);
 
   return (
     <div className="mx-auto flex w-full max-w-4xl flex-col gap-4 p-4">
       <header className="flex flex-wrap items-center justify-between gap-3">
-        <AgentName name={data.agentName} />
+        <AgentName shown={agentName} onSaved={setAgentName} />
         <div role="tablist" aria-label="Secciones del agente" className="flex overflow-hidden rounded border border-black/15 dark:border-white/15">
           {(["crear", "implementar"] as const).map((t) => (
             <button
@@ -144,16 +131,26 @@ export function AgenteEditor({ data }: { data: AgentEditorView }) {
 
       {tab === "crear" ? (
         <>
-          <Section title="Modelo" hint="El modelo que piensa y redacta las respuestas. $ = costo relativo por respuesta.">
-            <BrainModelPicker options={data.brainOptions} value={data.modeloCerebro} />
-          </Section>
-          <Section title="Empresa">
-            <CompanyName value={data.companyName} />
+          <Section
+            title="Modelos"
+            hint={`Los modelos que piensan y redactan las respuestas: cada etapa del Embudo usa el Modelo 1 o el Modelo 2. ${costHint(data.costBasis)}`}
+          >
+            <SubTitle title="Modelo 1" hint="Por defecto GPT-5.6 Luna: el más económico, para las primeras preguntas." />
+            <Model1Picker options={data.model1Options} value={data.modelo1} agentName={agentName} />
+            <SubTitle title="Modelo 2" hint="Por defecto Claude Sonnet 5: el más capaz, para datos bancarios y comprobantes." />
+            <BrainModelPicker options={data.brainOptions} value={data.modeloCerebro} agentName={agentName} />
+            <SubTitle title="Qué modelo atiende cada etapa" hint="Se usa la etapa del contacto en el momento de responder." />
+            <StageModelAssignment
+              value={data.etapasModelo1}
+              model1Label={data.model1Options.find((o) => o.id === data.modelo1)?.label ?? data.modelo1}
+              model2Label={data.brainOptions.find((o) => o.id === data.modeloCerebro)?.label ?? data.modeloCerebro}
+            />
+            <ApiStatusPanel providers={data.apiProviders} />
           </Section>
           <Section title="Instrucciones (Goal)" hint="Cómo se comporta el agente: lo que dice aquí es lo único que sigue, junto con las preguntas frecuentes.">
             <GoalEditor goal={data.goal} versions={data.goalVersions} />
           </Section>
-          <Section title="Base de conocimiento" hint="Preguntas frecuentes que el agente usa para responder.">
+          <Section title="FAQs" hint="Preguntas frecuentes que el agente usa para responder.">
             <FaqEditor faqs={data.faqs} versions={data.faqVersions} />
           </Section>
         </>

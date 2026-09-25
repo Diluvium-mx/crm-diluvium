@@ -3,11 +3,16 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import type { AdReferral, AttachmentView, ConversationDetail, MessageView } from "@/lib/inbox/types";
 import { listMessages, retryMessage, sendMessage, sendTemplate } from "@/lib/inbox/actions";
+import { runWorkflowCommand } from "@/lib/actions/workflows";
 import { Composer } from "./composer";
+import { ArchivedComposer } from "./archived-composer";
+import { PruebaBadge } from "@/components/ui/prueba-badge";
 import { DocumentCard } from "./document-card";
 import { MediaViewer } from "./media-viewer";
 import { ScheduledInThread } from "./scheduled-in-thread";
 import { AgentNoticeLine, AgentPausedBanner, useConversationAgent } from "./agent-in-thread";
+import { AgentActivityPill } from "./agent-activity-pill";
+import { BotOffMenu } from "./bot-off-menu";
 import { interleaveNotices } from "@/lib/agente-ia/timeline";
 import { AdFreeWindowNote, AdReferralCard } from "./ad-referral-card";
 import {
@@ -18,6 +23,7 @@ import {
   windowHoursLeft,
 } from "./format";
 import { displayPhone } from "@/lib/phone-format";
+import { PhoneLocation } from "@/components/ui/phone-location";
 
 const PAGE_LIMIT = 30;
 // Distancia al tope (px) a la que se cargan solos los mensajes anteriores, y al
@@ -89,6 +95,22 @@ function Bubble({
 }) {
   const out = row.direction === "out";
   const opt = isOptimistic(row);
+  // Aviso interno (Fase D): nota para el vendedor, centrada y en ámbar. No es
+  // una burbuja de WhatsApp (nunca salió al cliente).
+  if (!opt && row.kind === "system_note") {
+    return (
+      <div className="my-2 flex justify-center">
+        <div
+          role="note"
+          className="max-w-[85%] rounded-lg border border-brand-orange/50 bg-brand-orange/10 px-3 py-2 text-xs text-foreground shadow-sm"
+        >
+          <span className="font-semibold text-brand-orange">📝 Aviso interno · </span>
+          <span className="whitespace-pre-wrap break-words">{row.body}</span>
+          <span className="ml-2 text-[10px] text-muted-foreground">{bubbleTime(row.sentAt)}</span>
+        </div>
+      </div>
+    );
+  }
   const mark = out ? statusMark(row.status) : null;
   // Una plantilla optimista fallida NO se reintenta como texto (fuera de la
   // ventana de 24 h el texto se rechaza): el vendedor vuelve a elegir plantilla.
@@ -129,7 +151,10 @@ function Bubble({
             href={`https://www.google.com/maps?q=${view.location.latitude},${view.location.longitude}`}
             target="_blank"
             rel="noopener noreferrer"
-            className="mb-1 block rounded-md border px-2 py-1 text-xs underline-offset-2 hover:underline"
+            // data-link="text" pinta navy: solo en burbujas entrantes (fondo claro).
+            // En las salientes (fondo navy) el enlace conserva el texto blanco.
+            data-link={out ? undefined : "text"}
+            className={`mb-1 block rounded-md border px-2 py-1 text-xs ${out ? "border-brand-white/40 underline-offset-2 hover:underline" : ""}`}
           >
             📍 {view.location.name ?? "Ubicación"}
             {view.location.address && <span className="block opacity-80">{view.location.address}</span>}
@@ -151,6 +176,7 @@ function Bubble({
         )}
         {row.body && <p className="whitespace-pre-wrap break-words">{row.body}</p>}
         <div className={`mt-1 flex items-center justify-end gap-1 text-[10px] ${out ? "text-brand-white/70" : "text-muted-foreground"}`}>
+          {view?.importedFromPhone && <span title="Copiado del historial del celular al conectar el número">Importado del celular ·</span>}
           {view?.editedAt && <span>editado</span>}
           <span>{bubbleTime(row.sentAt)}</span>
           {mark && mark.glyph && (
@@ -346,6 +372,24 @@ export function ChatThread({
     }
   }, [rows.length, lastKey, scheduledCount, conversationId, noticeCount]);
 
+  // "/tabla" y similares (Fase D): si el texto es un comando de workflow, se
+  // dispara la automatización; si no corresponde a ninguno, sale como texto.
+  const [commandNotice, setCommandNotice] = useState<string | null>(null);
+  async function doSendOrCommand(text: string) {
+    if (!/^\/[a-z0-9][a-z0-9-]{0,29}$/i.test(text.trim())) return doSend(text);
+    const result = await runWorkflowCommand({ conversationId, text });
+    if (!result.ok) {
+      if ("notCommand" in result) return doSend(text);
+      setCommandNotice(`⚠ ${result.error}`);
+      return;
+    }
+    setCommandNotice(
+      result.status === "queued"
+        ? `▶ ${result.name}: en marcha (los mensajes aparecen en el hilo).`
+        : `⚠ ${result.name}: no se ejecutó (${result.reason ?? "omitido"}).`,
+    );
+  }
+
   async function doSend(text: string) {
     forceBottomRef.current = true;
     const clientId = `opt-${Date.now()}-${Math.random().toString(36).slice(2)}`;
@@ -400,14 +444,22 @@ export function ChatThread({
 
   return (
     // Alto fijo (lo da el contenedor: Bandeja o pop-up del Embudo): encabezado y
-    // composer siempre visibles; solo el historial se desliza.
-    <div className="flex h-full min-h-0 flex-1 flex-col overflow-hidden bg-muted/40">
+    // composer siempre visibles; solo el historial se desliza. container-type:size:
+    // los selectores del composer miden su tope contra el alto del chat (cqh) y un
+    // texto largo no puede ensanchar la columna (sacaba de vista "Cerrar").
+    <div className="flex h-full min-h-0 min-w-0 flex-1 flex-col overflow-hidden bg-muted/40 [container-type:size]">
       {/* Encabezado */}
       <header className="flex shrink-0 items-center gap-3 border-b bg-card px-4 py-3">
         <div className="min-w-0 flex-1">
           <p className="truncate text-sm font-semibold">{detail.contact.name}</p>
           <p className="truncate text-xs text-muted-foreground">{displayPhone(detail.contact.phone) || "Sin teléfono"}</p>
+          <PhoneLocation phone={detail.contact.phone} />
         </div>
+        {detail.channel.isTest && <PruebaBadge />}
+        {/* "Apagar bot" solo en ESTE chat (con el agente encendido en el canal). */}
+        {agent?.channelMode === "auto" && !detail.channel.archived && (
+          <BotOffMenu conversationId={conversationId} paused={agent.agentState !== "activo"} onChanged={() => void reloadAgent()} />
+        )}
         <span className="shrink-0 rounded-full bg-brand-navy/10 px-2.5 py-1 text-xs font-medium text-brand-navy">
           {detail.contact.stage}
         </span>
@@ -424,7 +476,7 @@ export function ChatThread({
           : "Pasaron 24 h desde su último mensaje. Solo se puede enviar una plantilla."}
         <AdFreeWindowNote adEntry={detail.adEntry} nowMs={nowMs} />
       </div>
-      <AgentPausedBanner conversationId={conversationId} agent={agent} onChanged={() => void reloadAgent()} />
+      <AgentPausedBanner conversationId={conversationId} agent={agent} onChanged={() => void reloadAgent()} nowMs={nowMs} />
 
       {/* Hilo */}
       <div
@@ -483,18 +535,31 @@ export function ChatThread({
         />
       </div>
 
+      {/* Píldora "Agente IA leyendo/escribiendo/enviando" (flota sobre el fondo del historial). */}
+      <AgentActivityPill conversationId={conversationId} refreshToken={revalToken} detailKey={detail} />
+      {commandNotice && (
+        <div className="mx-4 mb-1 flex items-center justify-between rounded-md border border-brand-orange/40 bg-brand-orange/10 px-3 py-1.5 text-xs">
+          <span>{commandNotice}</span>
+          <button type="button" onClick={() => setCommandNotice(null)} className="ml-3 text-muted-foreground hover:text-foreground" aria-label="Cerrar aviso">
+            ✕
+          </button>
+        </div>
+      )}
       {/* Composer (composer.tsx): texto libre, fragmentos y plantillas con la
           ventana abierta; solo plantilla cuando está cerrada. key: al cambiar de
           conversación se reinicia el borrador y se cierran los selectores. */}
-      <Composer
+      {detail.channel.archived ? <ArchivedComposer /> : <Composer
         key={conversationId}
         conversationId={conversationId}
         windowOpen={windowOpen}
         windowExpiresAt={detail.windowExpiresAt}
-        onSendText={(text) => void doSend(text)}
+        onSendText={(text) => {
+          setCommandNotice(null);
+          void doSendOrCommand(text);
+        }}
         onSendTemplate={(templateId, values, preview) => void doSendTemplate(templateId, values, preview)}
         onScheduled={() => setScheduledRev((n) => n + 1)}
-      />
+      />}
       {viewing && <MediaViewer attachment={viewing} onClose={() => setViewing(null)} />}
     </div>
   );

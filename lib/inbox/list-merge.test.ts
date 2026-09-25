@@ -12,6 +12,7 @@ function item(id: string, at: string | null, unread = 0): ConversationListItem {
     temperature: null,
     awaitingReplySince: null,
     windowExpiresAt: null,
+    isTestChannel: false,
   };
 }
 

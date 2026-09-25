@@ -1015,6 +1015,13 @@ describe.skipIf(!TEST_DATABASE_URL)("ingesta de WhatsApp (Postgres real)", () =>
       async exists(key: string) {
         return this.objects.has(key);
       }
+      async head(key: string) {
+        const o = this.objects.get(key);
+        return o ? { bytes: o.body.byteLength, contentType: o.contentType } : null;
+      }
+      async deleteObject(key: string) {
+        this.objects.delete(key);
+      }
       async signedGetUrl(key: string) {
         return `https://bucket/${key}?firmado`;
       }

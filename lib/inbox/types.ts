@@ -4,7 +4,9 @@ import type { NormalizedMessageType } from "@/lib/messaging/provider";
 
 export type InboxFilter = "unread" | "all" | "starred";
 
-export type MessageKind = NormalizedMessageType;
+// "system_note" (Fase D): aviso interno para el vendedor (p. ej. "cotejar
+// depósito"); vive en el hilo, nunca se manda por WhatsApp.
+export type MessageKind = NormalizedMessageType | "system_note";
 
 export type InboxContact = {
   id: string;
@@ -40,6 +42,8 @@ export type ConversationListItem = {
   awaitingReplySince: Date | null;
   /** Fin de la ventana de 24 h (null = nunca escribió el cliente). */
   windowExpiresAt: Date | null;
+  /** El canal de la conversación es de PRUEBA (etiqueta "Prueba"). */
+  isTestChannel: boolean;
 };
 
 export type ConversationPage = { items: ConversationListItem[]; nextCursor: string | null };
@@ -69,6 +73,8 @@ export type ConversationDetail = {
    * respuesta del negocio dentro de 24 h). null = no llegó por anuncio.
    */
   adEntry: { entryAt: Date; firstReplyAt: Date | null } | null;
+  /** Canal de la conversación: de prueba (etiqueta) y archivado (sin envíos). */
+  channel: { isTest: boolean; archived: boolean };
 };
 
 export type AttachmentView = {
@@ -114,6 +120,8 @@ export type MessageView = {
   contactCards: string[];
   /** Mensaje citado (respuesta a otro), si está en el CRM. */
   quoted: { direction: "in" | "out"; preview: string } | null;
+  /** Copiado del historial del celular (coexistencia): marca "Importado del celular". */
+  importedFromPhone: boolean;
 };
 
 /** Página de mensajes en orden cronológico (viejo → nuevo); `hasMore` = hay más viejos. */
@@ -131,7 +139,9 @@ export type SendErrorCode =
   | "template_not_found"
   | "template_not_approved"
   | "template_unsupported"
-  | "template_params";
+  | "template_params"
+  | "media_not_found"
+  | "storage_unavailable";
 
 /** pending = resultado desconocido: el mensaje queda "enviando" mientras se verifica. */
 export type SendMessageResult =

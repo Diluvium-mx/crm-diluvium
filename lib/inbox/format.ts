@@ -41,6 +41,7 @@ const KIND_LABEL: Partial<Record<MessageKind, string>> = {
 /** Vista previa de una línea (sin "Tú:", lo agrega la UI según la dirección). */
 export function messagePreview(kind: MessageKind, body: string | null): string {
   const text = body?.replace(/\s+/g, " ").trim();
+  if (kind === "system_note") return `📝 ${text ?? "Aviso interno"}`.slice(0, 120);
   if (text) return text.length > 120 ? `${text.slice(0, 119)}…` : text;
   return KIND_LABEL[kind] ?? "Mensaje";
 }

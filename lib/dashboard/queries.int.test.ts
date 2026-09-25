@@ -40,6 +40,15 @@ describe.skipIf(!TEST_DATABASE_URL)("dashboard: conversaciones nuevas (Postgres 
         displayName: "Diluvium",
       });
     }
+    await db.insert(s.channels).values({
+      id: "ch_dash_a_test",
+      organizationId: ORG_A,
+      type: "whatsapp",
+      provider: "zernio",
+      providerAccountId: "zacc_ch_dash_a_test",
+      displayName: "Diluvium prueba",
+      isTest: true,
+    });
   });
 
   afterAll(async () => {
@@ -56,6 +65,9 @@ describe.skipIf(!TEST_DATABASE_URL)("dashboard: conversaciones nuevas (Postgres 
     adReferral?: boolean;
     /** Default true: el contacto escribió (conversación + mensaje entrante). */
     wrote?: boolean;
+    channelId?: string;
+    esPrueba?: boolean;
+    importedAt?: Date | null;
   }) {
     seq++;
     const id = `c_dash_${seq}`;
@@ -67,13 +79,14 @@ describe.skipIf(!TEST_DATABASE_URL)("dashboard: conversaciones nuevas (Postgres 
       source: opts.source === undefined ? "whatsapp" : opts.source,
       sourceChannel: opts.sourceChannel === undefined ? "whatsapp" : opts.sourceChannel,
       stage: opts.stage ?? "inbox",
+      esPrueba: opts.esPrueba ?? false,
       createdAt: new Date(opts.createdAtUtc),
     });
     await db.insert(s.conversations).values({
       id: `conv_dash_${seq}`,
       organizationId: org,
       contactId: id,
-      channelId: org === ORG_A ? "ch_dash_a" : "ch_dash_b",
+      channelId: opts.channelId ?? (org === ORG_A ? "ch_dash_a" : "ch_dash_b"),
       adReferral: opts.adReferral ? { headline: "Compuertas" } : null,
     });
     await db.insert(s.messages).values({
@@ -86,6 +99,7 @@ describe.skipIf(!TEST_DATABASE_URL)("dashboard: conversaciones nuevas (Postgres 
       body: "hola",
       status: opts.wrote === false ? "sent" : "received",
       sentAt: new Date(opts.createdAtUtc),
+      importedAt: opts.importedAt ?? null,
     });
     return id;
   }
@@ -172,6 +186,24 @@ describe.skipIf(!TEST_DATABASE_URL)("dashboard: conversaciones nuevas (Postgres 
       hoy: { actual: 1, anterior: 1 },
       semana: { actual: 3, anterior: 1 },
       mes: { actual: 4, anterior: 1 },
+    });
+  });
+
+  it("excluye canal de prueba, es_prueba, historial importado y source historial_celular en las tres métricas", async () => {
+    const createdAtUtc = "2026-09-22T16:00:00Z"; // 09:00 local, dentro de hoy.
+    await contact({ createdAtUtc, channelId: "ch_dash_a_test" });
+    await contact({ createdAtUtc, esPrueba: true });
+    await contact({ createdAtUtc, importedAt: new Date("2026-09-22T16:01:00Z") });
+    await contact({ createdAtUtc, source: "historial_celular" });
+    await contact({ createdAtUtc }); // control: contacto normal que sí cuenta.
+
+    const range = { desde: "2026-09-22", hasta: "2026-09-22" };
+    expect(await q.newConversationsByDay(db, ORG_A, range)).toEqual([{ dia: "2026-09-22", total: 1 }]);
+    expect(await q.newConversationsBreakdown(db, ORG_A, range)).toMatchObject({ total: 1 });
+    expect(await q.newConversationsCards(db, ORG_A, new Date("2026-09-22T18:00:00Z"))).toEqual({
+      hoy: { actual: 1, anterior: 0 },
+      semana: { actual: 1, anterior: 0 },
+      mes: { actual: 1, anterior: 0 },
     });
   });
 });

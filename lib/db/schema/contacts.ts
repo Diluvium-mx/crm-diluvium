@@ -1,5 +1,6 @@
 import { isNotNull, sql } from "drizzle-orm";
 import {
+  boolean,
   check,
   index,
   integer,
@@ -65,12 +66,21 @@ export const contacts = pgTable(
     // importador filtra las de sistema antes de guardar. text[] en vez de un
     // modelo normalizado tags/contact_tags: consultable y ampliable después.
     tags: text("tags").array().notNull().default([]),
+    // Fase D (24-sep-2026): workflows ya enviados a este contacto POR PALABRA
+    // CLAVE (ids). Como la etiqueta "medidas enviadas" de GHL: por palabra clave
+    // cada workflow sale una sola vez por contacto; por comando o por el agente,
+    // siempre. Invisible para el vendedor.
+    keywordWorkflowsSent: text("keyword_workflows_sent").array().notNull().default([]),
     // País del contacto (columna Country del export de GHL). Nullable; se
     // guarda para el mapa/segmentación futura, sin uso en la UI de v1.
     country: text("country"),
     ghlContactId: text("ghl_contact_id"),
     source: text("source"),
     sourceChannel: text("source_channel"),
+    // Contacto de PRUEBA (docs/numero-prueba.md): NACIÓ en un canal marcado
+    // `channels.is_test` (número de prueba o sandbox). Un contacto que ya existía
+    // nunca se marca. El Dashboard no lo cuenta y el Embudo lo marca "Prueba".
+    esPrueba: boolean("es_prueba").default(false).notNull(),
     stage: contactStageEnum("stage").default("inbox").notNull(),
     // Nullable a propósito: sin temperatura asignada hasta que el vendedor la fije.
     temperature: contactTemperatureEnum("temperature"),
@@ -86,6 +96,10 @@ export const contacts = pgTable(
     // cada cambio de etapa). El board ordena por esto DESC: el recién movido
     // sube al tope de su columna y ese orden persiste tras revalidar.
     stageChangedAt: timestamp("stage_changed_at").defaultNow().notNull(),
+    // Quién movió la etapa por última vez: "vendedor" (a mano), "agente" o
+    // "sistema" (regla del CRM, p. ej. /banco → Cerca de compra). null = histórico.
+    // La etapa puesta por un vendedor manda: el agente nunca la regresa.
+    stageChangedBy: text("stage_changed_by"),
   },
   (table) => [
     index("contacts_org_idx").on(table.organizationId),

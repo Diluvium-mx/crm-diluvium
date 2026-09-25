@@ -31,6 +31,8 @@ export type NormalizedAttachment = {
   providerMediaId?: string;
   /** sha256 del archivo (base64) según WhatsApp: verifica la descarga. */
   sha256?: string;
+  /** El proveedor no trae el archivo (p. ej. media vieja del historial): motivo. `url` va vacía. */
+  unavailable?: string;
 };
 
 // Mensaje entrante del contacto, o eco de uno saliente (enviado desde el CRM,
@@ -62,6 +64,12 @@ export type NormalizedMessageEvent = {
   sentAtFromReceipt?: boolean;
   // Contexto crudo del proveedor (cita, ubicación, tarjetas, pedido…).
   metadata?: Record<string, unknown>;
+  /**
+   * Copia del HISTORIAL del celular (coexistencia), no un mensaje en vivo: se
+   * importa sin agente, workflows, no leídos, ventana ni primera respuesta
+   * (lib/messaging/history.ts).
+   */
+  history?: boolean;
 };
 
 /** Reacción (agregada o quitada) sobre un mensaje ya existente. */
@@ -206,6 +214,24 @@ export type SendTemplateInput = {
   idempotencyKey: string;
 };
 
+/** Media saliente (Fase D): imagen, video o documento desde la biblioteca. */
+export type SendMediaInput = {
+  providerAccountId: string;
+  providerConversationId: string;
+  /**
+   * URL PÚBLICA y temporal del archivo (firmada, sin encabezados de auth): el
+   * proveedor la descarga para reenviarla a WhatsApp. Nunca la URL del bucket
+   * sin firmar.
+   */
+  url: string;
+  kind: "image" | "video" | "document";
+  /** Texto que acompaña al archivo (pie de foto). */
+  caption?: string;
+  /** Nombre visible del documento (WhatsApp lo muestra). */
+  fileName?: string;
+  idempotencyKey: string;
+};
+
 export type CreateTemplateInput = {
   providerAccountId: string;
   name: string;
@@ -242,6 +268,8 @@ export interface MessagingProvider {
    * (SendFailedError rechazado/desconocido): el envío es idempotente por clave.
    */
   sendTemplate(input: SendTemplateInput): Promise<SendResult>;
+  /** Envía un archivo por URL pública temporal. Mismo contrato de fallo e idempotencia que sendText. */
+  sendMedia(input: SendMediaInput): Promise<SendResult>;
   /** Lista las plantillas de la WABA (para sincronizarlas al CRM). */
   listTemplates(providerAccountId: string): Promise<ProviderTemplate[]>;
   /** Da de alta una plantilla en Meta; queda PENDING hasta que la revisen. */

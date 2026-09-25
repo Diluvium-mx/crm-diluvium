@@ -13,7 +13,11 @@ export type AgentMode = "off" | "borrador" | "auto";
 export type AgentState = "activo" | "pausado_humano" | "pausado_handover" | "pausado_antibucle";
 
 // Avisos del agente para el vendedor en la Bandeja (ver notices.ts).
-export type NoticeKind = "pasar_a_humano" | "envio";
+// pasar_a_humano queda por las filas viejas; desde el 24-sep los avisos del agente
+// son los tres motivos de aviso_vendedor (+ "envio" para fallos de envío del CRM).
+// "respuesta_cortada" (Fase E): la respuesta llegó al tope de tokens o una acción
+// traía argumentos inválidos; el vendedor revisa el hilo.
+export type NoticeKind = "pasar_a_humano" | "envio" | "cotejar_deposito" | "cliente_pide_humano" | "comprobante_dudoso" | "respuesta_cortada";
 
 // ── Debounce deslizante (interno y fijo, como Ángela en GHL) ─────────────────
 // Cada entrante reinicia la espera de 15 s, pero nunca más de 60 s desde el

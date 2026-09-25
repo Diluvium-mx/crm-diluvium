@@ -1,8 +1,8 @@
 import type { ModelMessage, ToolSet } from "ai";
 
-// Identidad de proveedor. openai/anthropic tienen adaptador en la Fase A;
-// google/xai/openrouter se agregan después (un archivo adaptador por proveedor,
-// sin tocar el resto).
+// Identidad de proveedor. Los cinco tienen adaptador (openai/anthropic desde la
+// Fase A; google/xai/openrouter desde la Fase E, 25-sep-2026): un archivo por
+// proveedor en lib/ai/providers/.
 export type ProviderId = "openai" | "anthropic" | "google" | "xai" | "openrouter";
 
 // Nivel: para que el admin elija con criterio de costo/capacidad. No cambia
@@ -22,6 +22,9 @@ export type CatalogModel = {
   providerModelId: string;
   tier: ModelTier;
   multimodal: boolean;
+  // ¿Acepta PDF como archivo? (un comprobante SPEI suele llegar en PDF). Si no,
+  // el runtime le manda al modelo una nota de texto en lugar del PDF.
+  pdf: boolean;
   roles: readonly ModelRole[];
   // Etiqueta "Nuevo" en el selector de la pestaña Agente IA.
   isNew?: boolean;
@@ -52,6 +55,12 @@ export type CallModelInput = {
 
 export const DEFAULT_MODEL_TIMEOUT_MS = 90_000;
 
+// Llamada a herramienta que pidió el modelo (Fase D). Las herramientas se declaran
+// sin `execute`: el modelo devuelve texto + llamadas en UNA vuelta y el runtime
+// decide qué corre. `input` ya pasó el esquema de la herramienta en el SDK; el
+// runtime lo re-valida.
+export type ToolCallOutput = { toolName: string; input: unknown };
+
 export type CallModelResult = {
   modelId: string;
   provider: ProviderId;
@@ -59,6 +68,7 @@ export type CallModelResult = {
   text: string;
   usage: ModelUsage;
   finishReason: string;
+  toolCalls?: ToolCallOutput[];
 };
 
 // Lo que devuelve el adaptador de un proveedor; callModel completa el resto.
@@ -66,4 +76,5 @@ export type ProviderGenerateOutput = {
   text: string;
   usage: ModelUsage;
   finishReason: string;
+  toolCalls?: ToolCallOutput[];
 };

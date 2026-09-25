@@ -32,13 +32,25 @@ export async function loadSnapshot(
   return row ?? null;
 }
 
+// Saliente que CUENTA como respuesta al cliente (cierra los pendientes): no
+// fallido, no aviso interno (system_note: solo lo ve el vendedor) y no mandado por
+// una corrida de workflow por PALABRA CLAVE o del AGENTE (Fase D, 24-sep-2026: el
+// workflow manda la media y el agente contesta el resto del mismo mensaje, como en
+// GHL; y lo que el cliente escriba durante la espera de 30 s de la tabla no queda
+// "atendido" por la imagen).
+const closesPending = sql`${messages.type} <> 'system_note' and not exists (
+  select 1 from workflow_runs r
+  where r.organization_id = ${messages.organizationId} and r.conversation_id = ${messages.conversationId}
+    and r.trigger in ('keyword', 'agent') and r.message_ids ? ${messages.id}
+)`;
+
 // Último saliente que salió o va en camino (un envío FALLIDO no le respondió al
 // cliente, así que no cierra los pendientes).
 export async function lastOutbound(organizationId: string, conversationId: string): Promise<MessageRow | null> {
   const [row] = await db
     .select()
     .from(messages)
-    .where(and(inConversation(organizationId, conversationId), eq(messages.direction, "out"), ne(messages.status, "failed")))
+    .where(and(inConversation(organizationId, conversationId), eq(messages.direction, "out"), ne(messages.status, "failed"), closesPending))
     .orderBy(desc(waAt), desc(messages.createdAt))
     .limit(1);
   return row ?? null;
@@ -61,7 +73,12 @@ export async function pendingInbound(organizationId: string, conversationId: str
         sql`${waAt} > coalesce((
           select max(coalesce(o.sent_at, o.created_at)) from messages o
           where o.organization_id = ${organizationId} and o.conversation_id = ${conversationId}
-            and o.direction = 'out' and o.status <> 'failed'
+            and o.direction = 'out' and o.status <> 'failed' and o.type <> 'system_note'
+            and not exists (
+              select 1 from workflow_runs r
+              where r.organization_id = o.organization_id and r.conversation_id = o.conversation_id
+                and r.trigger in ('keyword', 'agent') and r.message_ids ? o.id
+            )
         ), '-infinity'::timestamp)`,
       ),
     )
@@ -96,7 +113,9 @@ export async function loadHistory(
     const page = await db
       .select()
       .from(messages)
-      .where(and(inConversation(organizationId, conversationId), ne(messages.status, "failed"), before))
+      // Sin avisos internos: los lee el vendedor, no el cliente, y el modelo no
+      // debe tomarlos como frases suyas.
+      .where(and(inConversation(organizationId, conversationId), ne(messages.status, "failed"), ne(messages.type, "system_note"), before))
       .orderBy(desc(waAt), desc(messages.createdAt), desc(messages.id))
       .limit(pageRows);
     newestFirst.push(...page);
@@ -118,6 +137,7 @@ export async function humanOutboundCount(organizationId: string, conversationId:
         eq(messages.direction, "out"),
         inArray(messages.source, ["crm", "business_app"]),
         ne(messages.status, "failed"),
+        ne(messages.type, "system_note"),
       ),
     );
   return value;
@@ -149,6 +169,8 @@ export async function agentSendUnresolved(organizationId: string, conversationId
         eq(messages.direction, "out"),
         eq(messages.source, "ai_agent"),
         eq(messages.status, "queued"),
+        // Un archivo de un workflow por palabra clave en camino no frena al agente.
+        closesPending,
       ),
     )
     .limit(1);

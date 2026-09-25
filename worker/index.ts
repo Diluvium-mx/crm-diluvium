@@ -38,6 +38,8 @@ import { objectStorage, StorageNotConfiguredError, type ObjectStorage } from "@/
 import { inboundHealth, WORKER_HEARTBEAT_KEY } from "@/lib/monitoring/inbound-health";
 import { redis } from "@/lib/redis";
 import { startScheduledWorker } from "./scheduled";
+import { startWorkflowWorker } from "./workflows";
+import { onInboundKeyword } from "@/lib/workflows/triggers";
 import { agentIngestHooks } from "@/lib/ai/runtime/hooks";
 import { startAgentRuntime } from "@/lib/ai/runtime/worker";
 import { adsIngestHooks, startAdsWorker } from "@/lib/ads/worker";
@@ -70,6 +72,8 @@ function optionalStorage(): ObjectStorage | null {
 const storage = optionalStorage();
 // Agente IA (Fase B): cola de respuestas con debounce; arranca tras las migraciones.
 const agent = startAgentRuntime({ provider, storage });
+// Workflows (Fase D): corridas de acciones (media, etapa, humano, avisos).
+const workflowsRunner = startWorkflowWorker(provider, storage);
 // Anuncios de Meta: media del anuncio, nombres de Meta y respaldo sin ficha.
 const ads = startAdsWorker({ provider, storage });
 // Adjuntos pendientes que el barrido reintenta: hasta 30 días (antes de que
@@ -82,6 +86,12 @@ const worker = new Worker<InboundJob>(
       const outcome = await processWebhookEvent(provider, job.data.webhookEventId, {
         onMediaMessage: enqueueMediaDownload,
         ...agentIngestHooks,
+        // Fase D: palabra clave del cliente → workflow. Corre DESPUÉS del gancho
+        // del agente y aislado (nunca lanza): un fallo no re-encola la ingesta.
+        onInboundMessage: async (m) => {
+          await agentIngestHooks.onInboundMessage?.(m);
+          await onInboundKeyword(m);
+        },
         ...adsIngestHooks,
       });
       console.info(`[worker] ${job.data.webhookEventId}: ${outcome}`);
@@ -143,6 +153,7 @@ async function sweep() {
 
   // Mensajes programados (A6): vencidos sin job y envíos atorados.
   await scheduled.sweep().catch((error) => console.error("[scheduled] barrido falló", error));
+  await workflowsRunner.sweep().catch((error) => console.error("[workflows] barrido falló", error));
   // Anuncios: clics sin registrar, media pendiente y nombres de Meta.
   await ads.sweep().catch((error) => console.error("[anuncios] barrido falló", error));
 
@@ -298,7 +309,7 @@ async function shutdown(signal: string) {
   console.info(`[worker] ${signal}: cerrando`);
   clearInterval(sweepTimer);
   clearInterval(monitorTimer);
-  await Promise.all([worker.close(), mediaWorker?.close(), scheduled.close(), agent.close(), ads.close()]);
+  await Promise.all([worker.close(), mediaWorker?.close(), scheduled.close(), agent.close(), workflowsRunner.close(), ads.close()]);
   process.exit(0);
 }
 process.on("SIGTERM", () => void shutdown("SIGTERM"));
@@ -316,6 +327,7 @@ waitForMigrations()
     void mediaWorker?.run();
     scheduled.run();
     agent.run();
+    workflowsRunner.run();
     ads.run();
   })
   .catch((error: unknown) => {

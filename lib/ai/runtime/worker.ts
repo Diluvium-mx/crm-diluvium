@@ -6,6 +6,7 @@ import { callModel } from "@/lib/ai";
 import { redisConnection } from "@/lib/queue/inbound";
 import type { MessagingProvider } from "@/lib/messaging/provider";
 import { sendTextMessage } from "@/lib/messaging/send";
+import { startWorkflowRun } from "@/lib/workflows/executor";
 import type { ObjectStorage } from "@/lib/storage/s3";
 import { processAgentJob } from "./process";
 import {
@@ -19,6 +20,7 @@ import {
   type KvPort,
 } from "./queue";
 import { runAgent, type RunDeps, type RunResult } from "./run";
+import { reactivateDuePauses } from "./pause";
 import { debounceDelayFor } from "./schedule";
 import { findOrphanConversations, noticeFailedAgentSends, reconcileStuckDrafts } from "./sweep";
 
@@ -44,10 +46,16 @@ export function makeRunDeps(provider: MessagingProvider, storage: ObjectStorage 
       sendTextMessage(provider, { organizationId, conversationId, text, source: "ai_agent", sentByUserId: null }),
     sleep: (ms) => new Promise((r) => setTimeout(r, ms)),
     resolveImage: async (key) => (storage ? storage.signedGetUrl(key, 15 * 60) : null),
+    // Acciones del cerebro (Fase D): corridas de workflow con trigger "agent".
+    startWorkflow: startWorkflowRun,
   };
 }
 
 export async function sweepOnce(queue: AgentQueuePort, kv: KvPort, now: Date): Promise<void> {
+  // "Apagar bot" con hora cumplida → activo (corte = la hora de regreso). Va antes
+  // que los huérfanos: lo que el cliente escribió durante la pausa queda atrás del corte.
+  const back = await reactivateDuePauses(now);
+  if (back) console.info(`[agente] barrido: bot reactivado en ${back} conversación(es) (se cumplió la hora de regreso)`);
   const failedSends = await noticeFailedAgentSends(now);
   if (failedSends) console.info(`[agente] barrido: ${failedSends} aviso(s) de envío del agente fallido o sin confirmar`);
   const plans = await reconcileStuckDrafts(now);
@@ -85,8 +93,8 @@ export function startAgentRuntime(opts: { provider: MessagingProvider; storage: 
   });
   let timer: ReturnType<typeof setInterval> | undefined;
   return {
-    // Arranca el consumer y su barrido (planes atorados, avisos de envíos fallidos y
-    // conversaciones sin atender). Solo tras las migraciones.
+    // Arranca el consumer y su barrido (pausas con hora cumplida, planes atorados,
+    // avisos de envíos fallidos y conversaciones sin atender). Solo tras las migraciones.
     run: () => {
       void worker.run();
       timer = setInterval(() => {
