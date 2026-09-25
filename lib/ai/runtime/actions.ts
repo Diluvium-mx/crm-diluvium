@@ -11,7 +11,7 @@
 import { and, asc, eq, gte, inArray, sql } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { contacts, workflowRuns, workflows, workflowSteps } from "@/lib/db/schema";
-import { comprobantesDelContacto, referenciaRepetida, registrarComprobante, type ComprobanteLeido } from "@/lib/cobro/comprobantes";
+import { comprobantesDelContacto, conCandadoDeReferencia, montoNorm, referenciaRepetida, registrarComprobante, type ComprobanteLeido } from "@/lib/cobro/comprobantes";
 import { moveStageForward } from "@/lib/contacts/stage";
 import type { Stage } from "@/lib/contacts/stages";
 import type { StartRunInput, StartRunResult } from "@/lib/workflows/executor";
@@ -26,7 +26,17 @@ export async function loadAgentTools(organizationId: string): Promise<AgentTools
   const rows = await db
     .select({ id: workflows.id, slug: workflows.slug, name: workflows.name, description: workflows.agentDescription })
     .from(workflows)
-    .where(and(eq(workflows.organizationId, organizationId), eq(workflows.enabled, true), eq(workflows.triggerAgent, true)))
+    .where(
+      and(
+        eq(workflows.organizationId, organizationId),
+        eq(workflows.enabled, true),
+        eq(workflows.triggerAgent, true),
+        // Con un archivo sin elegir (o sin pasos) no se ofrece: el modelo prometería
+        // algo que la corrida saltaría y el cliente se quedaría esperando.
+        sql`exists (select 1 from workflow_steps s where s.workflow_id = ${workflows.id})`,
+        sql`not exists (select 1 from workflow_steps s where s.workflow_id = ${workflows.id} and s.kind = 'send_media' and s.payload->>'assetId' is null)`,
+      ),
+    )
     .orderBy(asc(workflows.position), asc(workflows.slug));
   return buildAgentTools(rows);
 }
@@ -185,59 +195,80 @@ export type ExecutedActions = { started: string[]; skipped: string[]; notes: str
  * lote) es la clave de idempotencia de los avisos; `receiptMessageId` es el
  * mensaje del cliente con la imagen o PDF del comprobante (o null).
  */
-export type ActionPhase = "avisos" | "resto";
+// "antes" = ANTES del texto: avisos (con registro del comprobante), cotización y
+// etapa — todo idempotente, así un reintento del job tras el texto no los pierde.
+// "despues" = DESPUÉS del texto: corridas de media (responder primero la duda).
+export type ActionPhase = "antes" | "despues";
 
 export async function executeActions(
   plan: ActionPlan,
-  ctx: { organizationId: string; conversationId: string; contactId: string; batchMessageId: string; receiptMessageId: string | null; now: Date },
+  ctx: { organizationId: string; conversationId: string; contactId: string; batchMessageId: string; receiptMessageId: string | null; now: Date; since: Date | null },
   startWorkflow: StartWorkflow,
   phase: ActionPhase,
 ): Promise<ExecutedActions> {
-  const out: ExecutedActions = { started: [], skipped: [], notes: phase === "resto" ? [...plan.notes] : [], avisos: 0, stageMoved: false };
-  const cotejarEnviado = plan.avisos.some((a) => a.motivo === "cotejar_deposito");
-  // Fase "avisos": ANTES del texto. El vendedor ve el aviso aunque el envío al
-  // cliente falle; el reintento no lo duplica (índice único message_id + kind).
-  if (phase === "avisos") {
-    for (const a of plan.avisos) {
-      let repetida: { contactName: string; fecha: Date } | null = null;
-      if (a.lectura) {
-        // Chequeo silencioso ANTES de registrar: misma referencia en la organización.
-        if (a.lectura.referencia) {
-          const rep = await referenciaRepetida(ctx.organizationId, ctx.contactId, a.lectura.referencia);
-          if (rep?.mismoContacto) {
-            // El mismo contacto reenvió la misma foto: no es repetida; ni registro ni aviso nuevo.
-            continue;
-          }
-          if (rep) repetida = rep;
-        }
-        if (a.lectura.monto || a.lectura.referencia) {
-          await registrarComprobante({
-            organizationId: ctx.organizationId,
-            contactId: ctx.contactId,
-            conversationId: ctx.conversationId,
-            messageId: ctx.receiptMessageId ?? ctx.batchMessageId,
-            lectura: a.lectura,
-          });
-        }
-      }
-      const added = await addNotice({
-        organizationId: ctx.organizationId,
-        conversationId: ctx.conversationId,
-        messageId: ctx.batchMessageId,
-        kind: a.motivo,
-        body: avisoBody(a, repetida),
-      });
-      if (added) out.avisos++;
+  const out: ExecutedActions = { started: [], skipped: [], notes: phase === "antes" ? [...plan.notes] : [], avisos: 0, stageMoved: false };
+  if (phase === "despues") {
+    for (const r of plan.runs) {
+      const res = await startWorkflow({ organizationId: ctx.organizationId, workflowId: r.workflowId, conversationId: ctx.conversationId, trigger: "agent", triggerMessageId: ctx.batchMessageId, now: ctx.now });
+      if (res.status === "queued") out.started.push(r.slug);
+      else out.skipped.push(`${r.slug}: ${res.reason ?? "omitido"}`);
     }
     return out;
   }
-  // Fase "resto": DESPUÉS del texto.
+  // Avisos al vendedor (idempotentes por mensaje del lote + motivo). Los tres
+  // motivos son estrictos: si la BD falla, se lanza y el job reintenta antes de
+  // decirle nada al cliente.
+  const cotejarEnviado = plan.avisos.some((a) => a.motivo === "cotejar_deposito");
+  for (const a of plan.avisos) {
+    const receiptId = ctx.receiptMessageId ?? ctx.batchMessageId;
+    const repetida = await conCandadoDeReferencia(ctx.organizationId, a.lectura?.referencia ?? null, async (tx) => {
+      let rep: { contactName: string; fecha: Date } | null = null;
+      if (a.lectura?.referencia) {
+        const r = await referenciaRepetida(ctx.organizationId, ctx.contactId, a.lectura.referencia, tx);
+        if (r?.mismoContacto && r.messageId !== receiptId && montoNorm(r.monto) === montoNorm(a.lectura.monto)) {
+          // El mismo contacto reenvió la misma foto (otro mensaje, mismo monto): no es
+          // repetida; ni registro ni aviso nuevo. Si es el MISMO mensaje es un reintento
+          // (registro y aviso son idempotentes); si el monto es otro, es un pago nuevo.
+          return "omitir" as const;
+        }
+        if (r && !r.mismoContacto) rep = r;
+      }
+      // Con imagen o PDF del cliente se guarda lo leído (aunque solo sea banco o
+      // fecha, o nada: el archivo fue ilegible). Sin adjunto no hay comprobante.
+      if (a.lectura && ctx.receiptMessageId !== null) {
+        await registrarComprobante(
+          { organizationId: ctx.organizationId, contactId: ctx.contactId, conversationId: ctx.conversationId, messageId: ctx.receiptMessageId, lectura: a.lectura },
+          tx,
+        );
+      }
+      return rep;
+    });
+    if (repetida === "omitir") continue;
+    const added = await addNotice({
+      organizationId: ctx.organizationId,
+      conversationId: ctx.conversationId,
+      messageId: ctx.batchMessageId,
+      kind: a.motivo,
+      body: avisoBody(a, repetida),
+      strict: true,
+    });
+    if (added) out.avisos++;
+  }
   if (plan.quote !== null) {
     const ok = await setQuoteByAgent(ctx.organizationId, ctx.contactId, plan.quote);
     if (!ok) out.notes.push("cotización no guardada: la fijó un vendedor");
   }
   if (plan.stage) {
-    const moved = await moveStageForward({ organizationId: ctx.organizationId, contactId: ctx.contactId, to: plan.stage, by: "agente", now: ctx.now });
+    const moved = await moveStageForward({
+      organizationId: ctx.organizationId,
+      contactId: ctx.contactId,
+      to: plan.stage,
+      by: "agente",
+      now: ctx.now,
+      since: ctx.since ?? undefined,
+      // Los workflows "al entrar a esta etapa" no repiten la media pedida en esta respuesta.
+      excludeWorkflowIds: plan.runs.map((r) => r.workflowId),
+    });
     out.stageMoved = moved !== null;
     // A Compra (o a Cerca de compra con comprobante) sin aviso de cotejar: el CRM lo deja igual.
     const necesitaCotejar = plan.stage === "compra" || (plan.stage === "cerca_compra" && ctx.receiptMessageId !== null);
@@ -248,14 +279,10 @@ export async function executeActions(
         messageId: ctx.batchMessageId,
         kind: "cotejar_deposito",
         body: `Cotejar depósito: el agente movió al contacto a ${plan.stage === "compra" ? "Compra" : "Cerca de compra"}. Revisa el comprobante en el hilo y el depósito en el banco antes de enviar.`,
+        strict: true,
       });
       if (added) out.avisos++;
     }
-  }
-  for (const r of plan.runs) {
-    const res = await startWorkflow({ organizationId: ctx.organizationId, workflowId: r.workflowId, conversationId: ctx.conversationId, trigger: "agent", now: ctx.now });
-    if (res.status === "queued") out.started.push(r.slug);
-    else out.skipped.push(`${r.slug}: ${res.reason ?? "omitido"}`);
   }
   return out;
 }
