@@ -237,6 +237,8 @@ Fuera de hoy: N2 está en otra cuenta de Meta ("Diluvium Pruebas"); se prueban c
 
 ## 8. Archivar N1 (solo con **LUZ VERDE: ARCHIVAR SANDBOX**)
 
+0. Apagar el agente de N1 (pestaña Agente IA) y esperar 1 minuto sin actividad en el sandbox: el
+   archivado no puede frenar un envío que ya iba en camino (ver lista teórica).
 1. Respaldo: `gh workflow run db-backup.yml --ref main` y esperar verde (`gh run watch`).
 2–4, 6. `npm run canal:archivar -- --cuenta 6a180a034c7f364ffded3c9c` (simula y cuenta) →
    `… --confirmar`: cuenta antes, cancela sin borrar programados y corridas pendientes, apaga el agente,
@@ -257,7 +259,9 @@ Fuera de hoy: N2 está en otra cuenta de Meta ("Diluvium Pruebas"); se prueban c
   recarga filas durante la importación.
 - Los adjuntos del historial de más de ~14 días no traen archivo (Meta): quedan "no disponible". Si una
   corrida posterior del importador sí trae la URL, no se enriquece el mensaje ya guardado.
-- Archivar N1 no puede frenar un envío que ya iba en curso al momento de archivar (se reporta y se espera).
+- Archivar N1 no puede frenar un envío que ya iba en camino en ese mismo instante (programado, workflow o
+  envío inmediato que ya leyó el canal activo): saldría UNA vez a un teléfono de prueba. Cerrarlo del todo
+  pide un candado compartido en todos los envíos (send.ts); no se hizo hoy. Mitigación: paso 0 del archivado.
 
 ## Estado y relevo
 
