@@ -135,12 +135,11 @@ describe.skipIf(!TEST_DATABASE_URL)("executor de workflows", () => {
   const contact = () => db.select().from(s.contacts).where(eq(s.contacts.id, CONTACT)).then((r) => r[0]);
   const conv = () => db.select().from(s.conversations).where(eq(s.conversations.id, CONV)).then((r) => r[0]);
 
-  it("comando del vendedor: texto con variables + imagen + etapa; sale como crm con el vendedor y queda el rastro", async () => {
+  it("comando del vendedor: texto con variables + imagen; sale como crm con el vendedor y queda el rastro", async () => {
     const a = await asset();
     const wf = await workflow([
       { kind: "send_text", text: "Hola {{nombre}}, soy {{vendedor}}. Te comparto la tabla." },
       { kind: "send_media", assetId: a.id, title: "Tabla", caption: "Tabla de tamaños" },
-      { kind: "set_stage", stage: "interesado" },
     ]);
     const start = await ex.startWorkflowRun({ organizationId: ORG, workflowId: wf, conversationId: CONV, trigger: "command", triggeredByUserId: "u_v" });
     expect(start.status).toBe("queued");
@@ -149,11 +148,10 @@ describe.skipIf(!TEST_DATABASE_URL)("executor de workflows", () => {
     expect((sent[0].input as SendTextInput).text).toBe("Hola Ana López, soy Paty. Te comparto la tabla.");
     expect((sent[1].input as SendMediaInput).url).toContain("firma=1");
     const r = await run(start.runId);
-    expect(r).toMatchObject({ status: "done", stepCursor: 3 });
+    expect(r).toMatchObject({ status: "done", stepCursor: 2 });
     expect(r.messageIds).toHaveLength(2);
     const outs = await db.select().from(s.messages).where(eq(s.messages.direction, "out"));
     expect(outs.every((m) => m.source === "crm" && m.sentByUserId === "u_v")).toBe(true);
-    expect((await contact()).stage).toBe("interesado");
     // Un segundo job del mismo run no lo vuelve a ejecutar (ya no está "queued").
     expect(await ex.executeWorkflowRun(start.runId, { provider, storage })).toBe("not_claimed");
     expect(sent).toHaveLength(2);
@@ -238,63 +236,6 @@ describe.skipIf(!TEST_DATABASE_URL)("executor de workflows", () => {
     expect(sent).toHaveLength(1);
   });
 
-  it("pasar a humano pausa al agente con etiqueta; el aviso interno queda en el hilo sin ir al proveedor; la etapa del argumento NO manda fuera de cambiar_etapa", async () => {
-    const wf = await workflow([
-      { kind: "internal_note", text: "Pago reportado: {{monto}} · ref. {{referencia}}. Cotejar." },
-      { kind: "add_tag", tag: "cotejar depósito" },
-      { kind: "set_stage", stage: "interesado" },
-      { kind: "handover" },
-    ]);
-    const start = await ex.startWorkflowRun({
-      organizationId: ORG,
-      workflowId: wf,
-      conversationId: CONV,
-      trigger: "agent",
-      payload: { monto: "$5,500", referencia: "1234", etapa: "compra" },
-    });
-    expect(await ex.executeWorkflowRun(start.runId, { provider, storage })).toBe("done");
-    expect(sent).toHaveLength(0);
-    const notes = await db.select().from(s.messages).where(eq(s.messages.type, "system_note"));
-    expect(notes).toHaveLength(1);
-    expect(notes[0]).toMatchObject({ body: "Pago reportado: $5,500 · ref. 1234. Cotejar.", source: "ai_agent", providerMessageId: null });
-    const c = await contact();
-    // "etapa" del argumento NO manda en un workflow que no sea cambiar_etapa: queda la del paso.
-    expect(c.stage).toBe("interesado");
-    // Sin etiqueta por defecto (Fase B 3: las internas ya no se crean ni se muestran).
-    expect(c.tags).toEqual(["cotejar depósito"]);
-    // Disparo del AGENTE: no lo pausa (sigue contestando hasta que un vendedor
-    // responda); deja el aviso de pase a humano en el hilo.
-    const cv = await conv();
-    expect(cv.agentState).toBe("activo");
-    expect(cv.agentPausedUntil).toBeNull();
-    const avisos = await db.select().from(s.aiAgentNotices).where(eq(s.aiAgentNotices.conversationId, CONV));
-    expect(avisos.map((a) => a.kind)).toEqual(["pasar_a_humano"]);
-    // cambiar_etapa sí toma la etapa del argumento.
-    const wfStage = await workflow([{ kind: "set_stage", stage: "interesado" }], { slug: "cambiar_etapa" });
-    const st = await ex.startWorkflowRun({ organizationId: ORG, workflowId: wfStage, conversationId: CONV, trigger: "agent", payload: { etapa: "compra" } });
-    expect(await ex.executeWorkflowRun(st.runId, { provider, storage })).toBe("done");
-    expect((await contact()).stage).toBe("compra");
-  });
-
-  it("pasar a humano desde un comando del vendedor pausa al agente (pausado_humano, sin fecha) y etiqueta solo si el paso lo pide", async () => {
-    const wf = await workflow([{ kind: "handover", tag: "revisar {{nombre}}" }]);
-    const start = await ex.startWorkflowRun({
-      organizationId: ORG,
-      workflowId: wf,
-      conversationId: CONV,
-      trigger: "command",
-      triggeredByUserId: "u_v",
-    });
-    expect(await ex.executeWorkflowRun(start.runId, { provider, storage })).toBe("done");
-    const cv = await conv();
-    expect(cv.agentState).toBe("pausado_humano");
-    expect(cv.agentPausedUntil).toBeNull();
-    expect((await contact()).tags.find((t) => t.startsWith("revisar "))).toBeDefined();
-    const avisos = await db.select().from(s.aiAgentNotices).where(eq(s.aiAgentNotices.conversationId, CONV));
-    expect(avisos).toHaveLength(1);
-    expect(avisos[0]?.body).toMatch(/pausa/);
-  });
-
   it("disparo por etapa: no marca leídos los mensajes del cliente y avisa en el hilo si falla por ventana cerrada", async () => {
     await db.insert(s.messages).values({ id: "m_in", organizationId: ORG, conversationId: CONV, direction: "in", source: "contact", type: "text", body: "¿aguanta 1 metro?", status: "received" });
     await db.update(s.conversations).set({ unreadCount: 1 }).where(eq(s.conversations.id, CONV));
@@ -319,11 +260,11 @@ describe.skipIf(!TEST_DATABASE_URL)("executor de workflows", () => {
     expect((await ex.startWorkflowRun({ organizationId: ORG, workflowId: wf, conversationId: CONV, trigger: "agent", allowDisabled: true })).status).toBe("skipped");
   });
 
-  it("envío sin confirmar (timeout del proveedor): la corrida se detiene, no mueve la etapa y avisa al vendedor", async () => {
+  it("envío sin confirmar (timeout del proveedor): la corrida se detiene y avisa al vendedor", async () => {
     const { ZernioSendError } = await import("@/lib/messaging/zernio");
     const wf = await workflow([
       { kind: "send_text", text: "datos" },
-      { kind: "set_stage", stage: "cerca_compra" },
+      { kind: "send_text", text: "segundo" },
     ]);
     const start = await ex.startWorkflowRun({ organizationId: ORG, workflowId: wf, conversationId: CONV, trigger: "command", triggeredByUserId: "u_v" });
     const orig = provider.sendText;
@@ -408,8 +349,8 @@ describe.skipIf(!TEST_DATABASE_URL)("executor de workflows", () => {
     expect(await ex.executeWorkflowRun(b.runId, { provider, storage })).toBe("done");
   });
 
-  it("deshabilitar el workflow o apagar el canal mientras la corrida espera: no se ejecuta ni un paso interno", async () => {
-    const wf = await workflow([{ kind: "add_tag", tag: "x" }, { kind: "set_stage", stage: "compra" }]);
+  it("deshabilitar el workflow o apagar el canal mientras la corrida espera: no se ejecuta ningún paso", async () => {
+    const wf = await workflow([{ kind: "send_text", text: "x" }]);
     const a = await ex.startWorkflowRun({ organizationId: ORG, workflowId: wf, conversationId: CONV, trigger: "keyword" });
     await db.update(s.workflows).set({ enabled: false }).where(eq(s.workflows.id, wf));
     expect(await ex.executeWorkflowRun(a.runId, { provider, storage })).toBe("cancelled");
@@ -418,17 +359,20 @@ describe.skipIf(!TEST_DATABASE_URL)("executor de workflows", () => {
     const b = await ex.startWorkflowRun({ organizationId: ORG, workflowId: wf, conversationId: CONV, trigger: "agent" });
     await db.update(s.channels).set({ aiAgentMode: "off" }).where(eq(s.channels.id, "ch_wf"));
     expect(await ex.executeWorkflowRun(b.runId, { provider, storage })).toBe("cancelled");
-    expect((await contact()).stage).toBe("prospecto");
-    expect((await contact()).tags).not.toContain("x");
+    expect(sent).toHaveLength(0);
   });
 
-  it("una corrida atrasada no regresa la etapa que un vendedor movió después", async () => {
-    const wf = await workflow([{ kind: "wait", seconds: 1 }, { kind: "set_stage", stage: "cerca_compra" }]);
-    const a = await ex.startWorkflowRun({ organizationId: ORG, workflowId: wf, conversationId: CONV, trigger: "command", now: new Date(Date.now() - 5_000) });
-    // El vendedor confirmó el pago y movió a Compra DESPUÉS de crearse la corrida.
-    await db.update(s.contacts).set({ stage: "compra", stageChangedAt: new Date() }).where(eq(s.contacts.id, CONTACT));
-    expect(await ex.executeWorkflowRun(a.runId, { provider, storage, sleep: async () => undefined })).toBe("done");
-    expect((await contact()).stage).toBe("compra");
+  it("regla del CRM: datos_bancarios (/banco o agente) deja al contacto en Cerca de compra, solo hacia adelante; la etapa del vendedor no se regresa", async () => {
+    const a = await asset();
+    const wf = await workflow([{ kind: "send_media", assetId: a.id, title: "Banco", caption: "Datos" }], { slug: "datos_bancarios" });
+    const c1 = await ex.startWorkflowRun({ organizationId: ORG, workflowId: wf, conversationId: CONV, trigger: "command", triggeredByUserId: "u_v" });
+    expect(await ex.executeWorkflowRun(c1.runId, { provider, storage })).toBe("done");
+    expect(await contact()).toMatchObject({ stage: "cerca_compra", stageChangedBy: "sistema" });
+    // El vendedor ya lo puso en Compra: /banco otra vez no lo regresa.
+    await db.update(s.contacts).set({ stage: "compra", stageChangedBy: "vendedor" }).where(eq(s.contacts.id, CONTACT));
+    const c2 = await ex.startWorkflowRun({ organizationId: ORG, workflowId: wf, conversationId: CONV, trigger: "agent" });
+    expect(await ex.executeWorkflowRun(c2.runId, { provider, storage })).toBe("done");
+    expect(await contact()).toMatchObject({ stage: "compra", stageChangedBy: "vendedor" });
   });
 
   it("otra organización no puede disparar ni ejecutar workflows ajenos", async () => {

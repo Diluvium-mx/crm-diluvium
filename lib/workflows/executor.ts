@@ -22,8 +22,8 @@ import { sendMediaMessage, sendTextMessage, SendRejectedError, type SendOutcome 
 import { SendFailedError, type MessagingProvider } from "@/lib/messaging/provider";
 import type { ObjectStorage } from "@/lib/storage/s3";
 import { enqueueWorkflowRun } from "@/lib/queue/workflows";
-import { notifyConversation, setAgentState } from "@/lib/ai/runtime/state";
-import { addNotice } from "@/lib/ai/runtime/notices";
+import { notifyConversation } from "@/lib/ai/runtime/state";
+import { moveStageForward } from "@/lib/contacts/stage";
 import { missingMedia, stripUnresolvedVariables } from "./steps";
 
 export type RunTrigger = "agent" | "keyword" | "command" | "stage";
@@ -53,6 +53,7 @@ export const SKIP_NO_STEPS = "sin_pasos";
 export const SKIP_ALREADY_SENT = "ya_enviado_a_este_contacto";
 export const FAIL_WINDOW = "ventana_24h";
 export const FAIL_STUCK = "atorado";
+export const SLUG_DATOS_BANCARIOS = "datos_bancarios";
 
 // Una corrida "running" más vieja que esto se da por atorada (el worker murió).
 export const RUN_STUCK_AFTER_MS = 10 * 60_000;
@@ -317,6 +318,15 @@ export async function executeWorkflowRun(runId: string, deps: ExecutorDeps): Pro
     await markRun(runId, { stepCursor: i + 1, messageIds, startedAt: now() });
   }
   await markRun(runId, { status: "done", finishedAt: now(), messageIds });
+  // Regla interna del CRM (24-sep-2026): recibir los datos bancarios deja al
+  // contacto en "Cerca de compra" (solo hacia adelante; la etapa de un vendedor
+  // no se regresa). No es un paso del workflow: vive aquí, sea cual sea el disparador.
+  if (loaded.wf.slug === SLUG_DATOS_BANCARIOS) {
+    await moveStageForward({ organizationId: run.organizationId, contactId: run.contactId, to: "cerca_compra", by: run.trigger === "agent" ? "agente" : "sistema", now: now() }).catch((error) =>
+      console.error(`[workflows] no se pudo mover a cerca_compra tras ${loaded.wf.slug}`, error),
+    );
+    await notifyConversation(db, run.organizationId, run.conversationId).catch(() => undefined);
+  }
   if (run.trigger === "keyword") {
     await db
       .update(contacts)
@@ -478,84 +488,10 @@ async function runStep(step: WorkflowStepPayload, ctx: StepCtx): Promise<SendOut
         now: deps.now(),
       });
     }
-    case "set_stage": {
-      // SOLO el workflow `cambiar_etapa` toma la etapa del argumento de la
-      // herramienta; en cualquier otro manda el paso (un argumento "etapa" no
-      // puede mover a "compra" desde datos_bancarios).
-      const fromPayload = ctx.workflowSlug === "cambiar_etapa" && typeof run.payload?.etapa === "string" ? run.payload.etapa : null;
-      const stage = isStage(fromPayload) ? fromPayload : step.stage;
-      // Si un humano movió la etapa DESPUÉS de crearse la corrida, manda el
-      // humano: una corrida atrasada no regresa a "Cerca de compra" a un
-      // contacto que un vendedor ya puso en "Compra".
-      // Una corrida del AGENTE nunca retrocede etapas (Compra → Cerca de compra):
-      // "no la uses para retroceder" deja de ser solo texto para el modelo.
-      const noRetroceder = isAgentTrigger(run)
-        ? sql`array_position(${STAGE_ORDER}, ${stage}::text) >= array_position(${STAGE_ORDER}, ${contacts.stage}::text)`
-        : sql`true`;
-      await db
-        .update(contacts)
-        .set({ stage, stageChangedAt: deps.now() })
-        .where(
-          and(
-            eq(contacts.id, run.contactId),
-            eq(contacts.organizationId, run.organizationId),
-            sql`${contacts.stage} <> ${stage}`,
-            lte(contacts.stageChangedAt, run.createdAt),
-            noRetroceder,
-          ),
-        );
-      await notifyConversation(db, run.organizationId, run.conversationId);
-      return null;
-    }
-    case "add_tag":
-      await addContactTag(run.organizationId, run.contactId, renderSnippet(step.tag, ctx.values).slice(0, 40));
-      return null;
-    case "handover": {
-      // Desde la Fase B 3 (23-sep-2026) la ÚNICA pausa del agente es un vendedor:
-      // un comando o "Probar" (source crm) lo deja en pausado_humano hasta que
-      // alguien pulse "Reactivar"; un disparo del propio agente NO lo pausa (sigue
-      // contestando hasta que un vendedor responda) y solo deja el aviso en el
-      // hilo, igual que el runtime. Sin etiqueta por defecto (las internas ya no
-      // se muestran); solo la que el admin configure en el paso.
-      const fromSeller = ctx.source === "crm";
-      if (fromSeller) {
-        await setAgentState(run.organizationId, run.conversationId, "pausado_humano", { now: deps.now() });
-      }
-      await addNotice({
-        organizationId: run.organizationId,
-        conversationId: run.conversationId,
-        kind: "pasar_a_humano",
-        body: fromSeller
-          ? "Un vendedor pasó la conversación a humano: el agente queda en pausa hasta que alguien pulse «Reactivar»."
-          : "El agente pasó la conversación a humano. Sigue contestando hasta que un vendedor responda.",
-      });
-      if (step.tag) await addContactTag(run.organizationId, run.contactId, renderSnippet(step.tag, ctx.values).slice(0, 40));
-      await notifyConversation(db, run.organizationId, run.conversationId);
-      return null;
-    }
-    case "internal_note": {
-      const id = await insertInternalNote(run, renderSnippet(step.text, ctx.values), ctx.source, ctx.sentBy, deps.now());
-      return { messageId: id, status: "sent" };
-    }
     case "wait":
       await deps.sleep(step.seconds * 1_000);
       return null;
   }
-}
-
-// Agrega una etiqueta al contacto si no la tiene (idempotente). Vivía en
-// lib/ai/runtime/state.ts hasta la Fase B 3; el agente ya no etiqueta.
-async function addContactTag(organizationId: string, contactId: string, tag: string): Promise<void> {
-  await db
-    .update(contacts)
-    .set({ tags: sql`case when ${tag} = any(${contacts.tags}) then ${contacts.tags} else array_append(${contacts.tags}, ${tag}) end` })
-    .where(and(eq(contacts.id, contactId), eq(contacts.organizationId, organizationId)));
-}
-
-const STAGES = new Set(["inbox", "prospecto", "interesado", "cerca_compra", "compra"]);
-const STAGE_ORDER = sql`array['inbox','prospecto','interesado','cerca_compra','compra']::text[]`;
-function isStage(v: string | null): v is "inbox" | "prospecto" | "interesado" | "cerca_compra" | "compra" {
-  return v !== null && STAGES.has(v);
 }
 
 /** Barrido: corridas "queued" viejas (perdieron su job) para re-encolar. */
