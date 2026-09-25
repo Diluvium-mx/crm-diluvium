@@ -5,6 +5,8 @@ import type { AdReferral, AttachmentView, ConversationDetail, MessageView } from
 import { listMessages, retryMessage, sendMessage, sendTemplate } from "@/lib/inbox/actions";
 import { runWorkflowCommand } from "@/lib/actions/workflows";
 import { Composer } from "./composer";
+import { ArchivedComposer } from "./archived-composer";
+import { PruebaBadge } from "@/components/ui/prueba-badge";
 import { DocumentCard } from "./document-card";
 import { MediaViewer } from "./media-viewer";
 import { ScheduledInThread } from "./scheduled-in-thread";
@@ -196,6 +198,7 @@ function Bubble({
         )}
         {row.body && <p className="whitespace-pre-wrap break-words">{row.body}</p>}
         <div className={`mt-1 flex items-center justify-end gap-1 text-[10px] ${out ? "text-brand-white/70" : "text-muted-foreground"}`}>
+          {view?.importedFromPhone && <span title="Copiado del historial del celular al conectar el número">Importado del celular ·</span>}
           {view?.editedAt && <span>editado</span>}
           <span>{bubbleTime(row.sentAt)}</span>
           {mark && mark.glyph && (
@@ -474,6 +477,7 @@ export function ChatThread({
           <p className="truncate text-xs text-muted-foreground">{displayPhone(detail.contact.phone) || "Sin teléfono"}</p>
           <PhoneLocation phone={detail.contact.phone} />
         </div>
+        {detail.channel.isTest && <PruebaBadge />}
         <span className="shrink-0 rounded-full bg-brand-navy/10 px-2.5 py-1 text-xs font-medium text-brand-navy">
           {detail.contact.stage}
         </span>
@@ -561,7 +565,7 @@ export function ChatThread({
       {/* Composer (composer.tsx): texto libre, fragmentos y plantillas con la
           ventana abierta; solo plantilla cuando está cerrada. key: al cambiar de
           conversación se reinicia el borrador y se cierran los selectores. */}
-      <Composer
+      {detail.channel.archived ? <ArchivedComposer /> : <Composer
         key={conversationId}
         conversationId={conversationId}
         windowOpen={windowOpen}
@@ -572,7 +576,7 @@ export function ChatThread({
         }}
         onSendTemplate={(templateId, values, preview) => void doSendTemplate(templateId, values, preview)}
         onScheduled={() => setScheduledRev((n) => n + 1)}
-      />
+      />}
       {viewing && <MediaViewer attachment={viewing} onClose={() => setViewing(null)} />}
     </div>
   );

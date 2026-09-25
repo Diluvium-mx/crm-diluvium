@@ -9,6 +9,11 @@
 // los que solo tienen salientes (p. ej. el vendedor escribió primero desde la
 // app del celular) hasta que el cliente conteste.
 //
+// Canales de PRUEBA (docs/numero-prueba.md): nada de lo que entra o sale por un
+// canal is_test cuenta, ni los contactos de prueba (es_prueba) ni lo copiado del
+// historial del celular (imported_at): un contacto cuenta solo si ESCRIBIÓ en vivo
+// por un canal real. Los que nacieron del historial (historial_celular) tampoco.
+//
 // Los días son LOCALES de America/Mazatlan. created_at es `timestamp` sin zona
 // guardado en UTC (defaultNow del servidor en UTC y los Date de JS llegan en
 // UTC), por eso se convierte UTC → local antes de agrupar por día.
@@ -18,7 +23,7 @@ import { DASHBOARD_TIME_ZONE, type DateRange } from "./range";
 
 type Database = typeof appDb;
 
-export const EXCLUDED_SOURCES = ["ghl_import", "seed"] as const;
+export const EXCLUDED_SOURCES = ["ghl_import", "seed", "historial_celular"] as const;
 
 export type DailyCount = { dia: string; total: number };
 export type Bucket = { clave: string; total: number };
@@ -37,11 +42,13 @@ export type PeriodCards = {
 
 const tz = DASHBOARD_TIME_ZONE;
 
-// El contacto escribió al menos una vez (en cualquiera de sus conversaciones).
-const wroteIn = sql`exists (
+// El contacto (no de prueba) escribió en vivo al menos una vez por un canal REAL.
+const wroteIn = sql`not c.es_prueba and exists (
   select 1 from conversations cv
+  join channels ch on ch.id = cv.channel_id and not ch.is_test
   join messages m on m.conversation_id = cv.id
   where cv.organization_id = c.organization_id and cv.contact_id = c.id and m.direction = 'in'
+    and m.imported_at is null
 )`;
 
 // created_at (UTC, sin zona) → hora local de Mazatlán (sin zona).
@@ -106,12 +113,13 @@ export async function newConversationsBreakdown(
       from contacts c where ${where}
       group by 1 order by 1
     `),
-    // Anuncio: alguna conversación del contacto trae el referral de clic a
-    // WhatsApp (conversations.ad_referral, lo guarda la ingesta).
+    // Anuncio: alguna conversación del contacto (canal real) trae el referral de
+    // clic a WhatsApp (conversations.ad_referral, lo guarda la ingesta).
     database.execute<{ total: number; por_anuncio: number }>(sql`
       select count(*)::int as total,
              count(*) filter (where exists (
                select 1 from conversations cv
+               join channels ch on ch.id = cv.channel_id and not ch.is_test
                where cv.organization_id = c.organization_id
                  and cv.contact_id = c.id
                  and cv.ad_referral is not null

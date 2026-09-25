@@ -8,7 +8,7 @@ import { and, desc, eq, inArray, like, or, sql, type SQL } from "drizzle-orm";
 import { nationalSearchPrefixes } from "@/lib/phone";
 import { normalizeSearch, SQL_SEARCH_FROM, SQL_SEARCH_TO } from "@/lib/text/search";
 import { db } from "@/lib/db";
-import { contacts, conversations, messages } from "@/lib/db/schema";
+import { channels, contacts, conversations, messages } from "@/lib/db/schema";
 import { latestInboundMessageId, unreadAfterCutoff } from "@/lib/messaging/ingest";
 import {
   attachmentView,
@@ -106,9 +106,9 @@ type ListRow = { conversation: typeof conversations.$inferSelect; contact: typeo
 /** Filas de la lista (último mensaje y semáforo en dos consultas por lote). */
 async function toListItems(organizationId: string, page: ListRow[]): Promise<ConversationListItem[]> {
   const ids = page.map((r) => r.conversation.id);
-  const [lastMessages, awaiting] = ids.length
-    ? await Promise.all([lastMessageOf(organizationId, ids), awaitingReplySince(organizationId, ids)])
-    : [new Map(), new Map()];
+  const [lastMessages, awaiting, testIds] = ids.length
+    ? await Promise.all([lastMessageOf(organizationId, ids), awaitingReplySince(organizationId, ids), testChannelConversations(organizationId, ids)])
+    : [new Map(), new Map(), new Set<string>()];
 
   return page.map(({ conversation, contact }) => {
     const last = lastMessages.get(conversation.id);
@@ -129,8 +129,19 @@ async function toListItems(organizationId: string, page: ListRow[]): Promise<Con
       awaitingReplySince: awaiting.get(conversation.id) ?? null,
       // Se manda la ventana tal cual; la UI decide "quedan X h" o si venció.
       windowExpiresAt: conversation.windowExpiresAt,
+      isTestChannel: testIds.has(conversation.id),
     };
   });
+}
+
+/** Conversaciones (de la página) cuyo canal es de prueba. */
+async function testChannelConversations(organizationId: string, conversationIds: string[]): Promise<Set<string>> {
+  const rows = await db
+    .select({ id: conversations.id })
+    .from(conversations)
+    .innerJoin(channels, eq(channels.id, conversations.channelId))
+    .where(and(eq(conversations.organizationId, organizationId), inArray(conversations.id, conversationIds), eq(channels.isTest, true)));
+  return new Set(rows.map((r) => r.id));
 }
 
 function listFilter(organizationId: string, filter: InboxFilter, search: string | undefined): SQL | undefined {
@@ -224,6 +235,8 @@ async function awaitingReplySince(organizationId: string, conversationIds: strin
         sql`pending.organization_id = ${organizationId}`,
         sql`pending.conversation_id in ${conversationIds}`,
         sql`pending.direction = 'in'`,
+        // Lo copiado del historial del celular no pone el semáforo en rojo.
+        sql`pending.imported_at is null`,
         sql`pending.sent_at > coalesce((${lastReply}), '-infinity'::timestamp)`,
       ),
     )
@@ -233,14 +246,19 @@ async function awaitingReplySince(organizationId: string, conversationIds: strin
 
 async function detail(where: SQL): Promise<ConversationDetail | null> {
   const [row] = await db
-    .select({ conversation: conversations, contact: contacts })
+    .select({
+      conversation: conversations,
+      contact: contacts,
+      channel: { isTest: channels.isTest, isActive: channels.isActive, archivedAt: channels.archivedAt },
+    })
     .from(conversations)
     .innerJoin(contacts, eq(contacts.id, conversations.contactId))
+    .innerJoin(channels, eq(channels.id, conversations.channelId))
     .where(where)
     .orderBy(desc(conversationSortKey))
     .limit(1);
   if (!row) return null;
-  const { conversation, contact } = row;
+  const { conversation, contact, channel } = row;
   return {
     id: conversation.id,
     contact: { ...toContact(contact), stage: contact.stage, temperature: contact.temperature },
@@ -248,6 +266,7 @@ async function detail(where: SQL): Promise<ConversationDetail | null> {
     isStarred: conversation.isStarred,
     unreadCount: conversation.unreadCount,
     adReferral: sanitizeReferral(conversation.adReferral),
+    channel: { isTest: channel.isTest, archived: channel.archivedAt !== null },
   };
 }
 
@@ -329,6 +348,7 @@ export async function listMessagesForOrg(
           const q = quotedByWamid.get(quotedIdFromMetadata(m.metadata) ?? "");
           return q ? { direction: q.direction, preview: messagePreview(q.type as MessageKind, q.body) } : null;
         })(),
+        importedFromPhone: m.importedAt !== null,
       }),
     ),
   };
