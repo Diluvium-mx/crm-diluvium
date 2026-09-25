@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { PanelRightClose, PanelRightOpen, X } from "lucide-react";
+import { usePersistentToggle } from "@/components/ui/use-persistent-toggle";
 import { getContactFullName, type Contact, type Stage, type Temperature } from "../_data/types";
 import { ContactChat } from "./contact-chat";
 import { ContactDetails } from "./contact-details";
@@ -28,8 +29,9 @@ export function ContactDetailPanel({
   // fade/zoom-out y, al terminar (~180ms), se avisa al padre que desmonte.
   const [isClosing, setIsClosing] = useState(false);
   const requestClose = () => setIsClosing(true);
-  // Detalle del contacto visible (como la Bandeja: se abre y se cierra con un botón).
-  const [detailsOpen, setDetailsOpen] = useState(true);
+  // Detalle del contacto visible (como la Bandeja). Se RECUERDA en esta
+  // computadora: oculto sigue oculto al cambiar de contacto, recargar o al día siguiente.
+  const [detailsOpen, setDetailsOpen] = usePersistentToggle("embudo.detalle");
 
   useEffect(() => {
     if (!isClosing) {

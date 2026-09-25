@@ -1,24 +1,33 @@
 // "Gasto de IA" (solo owner/admin): por proveedor, el gasto del mes y un saldo
-// ESTIMADO = recargas − gasto de producción desde la primera recarga. Ni OpenAI ni
-// Anthropic dan el saldo por API (docs/investigacion/gasto-ia-saldo.md). Sin lógica
-// de datos: recibe el resumen ya calculado (lib/dashboard/ai-spend.ts).
+// ESTIMADO = recargas − gasto de producción desde la primera recarga, con una barra
+// del % de créditos usados. Ni OpenAI ni Anthropic dan el saldo por API
+// (docs/investigacion/gasto-ia-saldo.md). Sin lógica de datos: recibe el resumen ya
+// calculado (lib/dashboard/ai-spend.ts); la barra sale de lib/dashboard/ai-spend-bar.ts.
 import type { AiSpendSummary, ProviderSpend } from "@/lib/dashboard/ai-spend";
+import { spendBar } from "@/lib/dashboard/ai-spend-bar";
+import { formatUsd } from "@/lib/usd-format";
+import { ProgressBar } from "@/components/ui/progress-bar";
 import { AiTopups } from "./ai-topups";
 
-const usd = new Intl.NumberFormat("es-MX", { style: "currency", currency: "USD", minimumFractionDigits: 2, maximumFractionDigits: 2 });
-
 function Balance({ p }: { p: ProviderSpend }) {
-  if (p.balanceUsd === null) {
-    return <span className="text-muted-foreground">Registra una recarga para ver el saldo estimado.</span>;
+  const bar = spendBar(p);
+  if (!bar) {
+    return <p className="mt-1 text-sm text-muted-foreground">Registra una recarga para ver el saldo estimado.</p>;
   }
   return (
-    <>
-      <span className="text-muted-foreground">Saldo estimado: </span>
-      <span className={`font-semibold tabular-nums ${p.balanceUsd <= 0 ? "text-brand-orange" : "text-foreground"}`}>{usd.format(p.balanceUsd)}</span>
-      <span className="block text-xs text-muted-foreground">
-        {usd.format(p.loadedUsd ?? 0)} cargados − {usd.format(p.spentSinceFirstUsd ?? 0)} gastados desde el {p.firstTopupOn}
+    <div className="mt-1 flex flex-col gap-1">
+      <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
+        <div className="min-w-24 flex-1">
+          <ProgressBar value={bar.widthPct} tone={bar.tone} label={`Créditos de ${p.label} usados`} />
+        </div>
+        <span className={`shrink-0 text-xs tabular-nums text-foreground ${bar.tone === "orange" ? "font-semibold" : "font-medium"}`}>
+          {bar.text}
+        </span>
+      </div>
+      <span className="text-xs text-muted-foreground">
+        {formatUsd(p.loadedUsd ?? 0)} cargados − {formatUsd(p.spentSinceFirstUsd ?? 0)} gastados desde el {p.firstTopupOn}
       </span>
-    </>
+    </div>
   );
 }
 
@@ -35,11 +44,9 @@ export function AiSpendCard({ summary, canRegister }: { summary: AiSpendSummary;
             <p className="text-xs font-medium text-foreground">{p.label}</p>
             <div className="flex items-baseline justify-between gap-2">
               <span className="text-xs text-muted-foreground">Gasto del mes</span>
-              <span className="text-lg font-semibold tabular-nums">{usd.format(p.monthUsd)}</span>
+              <span className="text-lg font-semibold tabular-nums">{formatUsd(p.monthUsd)}</span>
             </div>
-            <p className="mt-1 text-sm">
-              <Balance p={p} />
-            </p>
+            <Balance p={p} />
           </div>
         ))}
       </div>
