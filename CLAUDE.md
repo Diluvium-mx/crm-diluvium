@@ -218,7 +218,7 @@ scheduled_messages   id, org_id, conversation_id, created_by_user_id, kind (text
 
 -- Anuncios de Meta (24/25-sep-2026, 0030 reservada, entra tras la 0034; detalle en docs/anuncios.md)
 ad_clicks            id, org_id, contact_id, conversation_id, message_id, origin (webhook|zernio_conversation),
-                     ad_id, ctwa_clid, headline…, raw jsonb (ficha original), media jsonb, clicked_at
+                     ad_id, ctwa_clid, headline…, raw jsonb (ficha original completa), clicked_at
                      -- una fila por entrada desde un anuncio; la atribución vive aquí (contacto + conversación)
 meta_ads             org_id + ad_id, campaña/conjunto/anuncio, creativo (título, texto, CTA, enlace), datos del
                      video (sin archivo), enlaces a Meta, meta_raw y UNA miniatura chica (thumbnail_key)
