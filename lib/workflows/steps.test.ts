@@ -5,11 +5,10 @@ describe("stepPayloadSchema", () => {
   it("acepta cada tipo de paso", () => {
     expect(stepPayloadSchema.parse({ kind: "send_text", text: " hola " })).toEqual({ kind: "send_text", text: "hola" });
     expect(stepPayloadSchema.parse({ kind: "send_media", assetId: null, title: "Tabla" })).toMatchObject({ assetId: null });
-    expect(stepPayloadSchema.parse({ kind: "set_stage", stage: "compra" })).toEqual({ kind: "set_stage", stage: "compra" });
     expect(stepPayloadSchema.parse({ kind: "wait", seconds: 3 })).toEqual({ kind: "wait", seconds: 3 });
   });
   it("rechaza etapa desconocida, espera fuera de rango y texto vacío", () => {
-    expect(() => stepPayloadSchema.parse({ kind: "set_stage", stage: "ganado" })).toThrow();
+    expect(() => stepPayloadSchema.parse({ kind: "set_stage", stage: "interesado" })).toThrow(); // ya no existe como paso
     expect(() => stepPayloadSchema.parse({ kind: "wait", seconds: 0 })).toThrow();
     expect(() => stepPayloadSchema.parse({ kind: "wait", seconds: 61 })).toThrow();
     expect(() => stepPayloadSchema.parse({ kind: "send_text", text: "   " })).toThrow();
@@ -59,7 +58,7 @@ describe("comandos y palabras clave", () => {
     expect(matchesKeyword("video", ["video"])).toBe("video");
   });
   it("variables: solo las conocidas; las sin valor no salen al cliente", () => {
-    expect(unknownVariables("Hola {{nombre}}, total {{monto}} y {{ cosa }}")).toEqual(["cosa"]);
-    expect(stripUnresolvedVariables("Tu total es {{monto}} pesos")).toBe("Tu total es pesos");
+    expect(unknownVariables("Hola {{nombre}}, de {{vendedor}} y {{ cosa }}")).toEqual(["cosa"]);
+    expect(stripUnresolvedVariables("Te atiende {{vendedor}} hoy")).toBe("Te atiende hoy");
   });
 });

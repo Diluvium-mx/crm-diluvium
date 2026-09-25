@@ -49,7 +49,11 @@ Automatizaciones visuales, Instagram/Messenger, email, SMS, difusiones masivas, 
 formularios y landing pages, agente IA de calificación.
 
 > **Agente IA — Fase A (hecha):** mecanismo de modelo multi-proveedor + selector (`lib/ai/`, tabla
-> `ai_config`, pestaña "Agente IA"). Detalle: `docs/agente-ia.md`. **La Fase B (runtime del agente)
+> `ai_config`, pestaña "Agente IA"). Detalle: `docs/agente-ia.md`. **Fase D (24-sep-2026):** la pestaña
+> Automatización solo tiene envíos de media (texto, archivo con pie, espera) con disparadores agente /
+> comando / palabra clave / etapa; etapa, avisos al vendedor y comprobantes son **acciones internas del
+> agente** (`mover_etapa` solo hacia adelante, `aviso_vendedor`, `fijar_cotizacion`) decididas por el
+> Goal, no por código. Diseño: `docs/fase-d-diseno.md` §10. **La Fase B (runtime del agente)
 > debe PERSISTIR tokens/uso por mensaje procesado** (`callModel` ya devuelve `usage` normalizado) para
 > alimentar un panel de gasto futuro.
 
@@ -193,6 +197,10 @@ tallas_compuerta     id, org_id, linea, talla, min_cm, max_cm, posicion   -- edi
 contact_comentarios  id, org_id, contact_id, author_user_id (obligatorio), body, created_at, updated_at
                      -- 0022: las notas viejas (custom_fields.notas) se copian aquí con autor de
                      -- sistema "Importado" (sin login ni membresía; solo owner/admin las editan)
+comprobantes         id, org_id, contact_id, conversation_id, message_id (único), monto, referencia,
+                     referencia_norm, banco, fecha_comprobante, tipo (total|anticipo|resto), created_at
+                     -- Fase D (0031): lo que el agente leyó; sin reglas de monto en código
+contacts (+)         stage_changed_by (vendedor|agente|sistema): la etapa de un vendedor manda; el agente solo avanza
 scheduled_messages   id, org_id, conversation_id, created_by_user_id, kind (text|template), body,
                      template_id, template_params, send_at, programmed_at, cancel_if_inbound,
                      status (scheduled|sending|sent|failed|cancelled), error_code, message_id

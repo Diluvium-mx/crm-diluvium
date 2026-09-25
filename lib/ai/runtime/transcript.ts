@@ -19,6 +19,14 @@ export function clip(text: string, max = MAX_MESSAGE_CHARS): string {
   return text.length > max ? `${text.slice(0, max)}… [recortado]` : text;
 }
 
+// Un cliente que escriba "[CONTEXTO DEL CRM …]" no puede hacerse pasar por el
+// CRM: el encabezado se neutraliza en el texto entrante (el real lo agrega el
+// runtime al final del último turno).
+export const CRM_CONTEXT_HEADER = "[CONTEXTO DEL CRM";
+export function neutralizeCrmHeader(text: string): string {
+  return text.replace(/\[\s*CONTEXTO DEL CRM/gi, "(CONTEXTO DEL CRM");
+}
+
 // Lo mínimo de una fila de `messages` que se necesita aquí.
 export type ThreadMessage = {
   id: string;
@@ -69,30 +77,41 @@ export function fitHistory<T extends ThreadMessage>(rows: readonly T[], maxChars
   return rows.slice(start);
 }
 
-type Part = { type: "text"; text: string } | { type: "image"; image: URL };
+type Part = { type: "text"; text: string } | { type: "image"; image: URL } | { type: "file"; data: URL; mediaType: "application/pdf"; filename?: string };
+export const MAX_PDFS = 3;
+
+function isPdf(a: MessageAttachment): boolean {
+  return a.type === "document" && a.mimeType === "application/pdf";
+}
 
 // Mensajes para el cerebro:
 // - entrante → user; saliente (humano o agente) → assistant;
 // - `cleanText`: el texto limpio de los entrantes que traían metadata del anuncio
 //   de Click-to-WhatsApp (lo deja el filtro); sustituye al cuerpo original;
-// - las imágenes del CLIENTE van como parte "image" (URL firmada) si ya están en
-//   el bucket y caben en el cupo `maxImages` (las más recientes); si no, nota de texto;
+// - las imágenes del CLIENTE van como parte "image" (URL firmada) y sus PDF como
+//   parte "file" si ya están en el bucket y caben en el cupo (los más recientes);
+//   si no, nota de texto;
 // - mensajes seguidos del mismo rol se fusionan (Anthropic exige alternar);
 // - se descartan los assistant iniciales (el hilo debe abrir con el cliente).
 export function buildModelMessages(
   rows: readonly ThreadMessage[],
   imageUrls: ReadonlyMap<string, string>,
-  opts: { maxImages?: number; cleanText?: ReadonlyMap<string, string> } = {},
+  opts: { maxImages?: number; maxPdfs?: number; cleanText?: ReadonlyMap<string, string>; crmContext?: string } = {},
 ): ModelMessage[] {
   const maxImages = opts.maxImages ?? MAX_IMAGES;
-  // Qué adjuntos de imagen entran (los más recientes con URL).
+  const maxPdfs = opts.maxPdfs ?? MAX_PDFS;
+  // Qué adjuntos entran como archivo (los más recientes con URL): imágenes y PDF
+  // (un comprobante SPEI suele llegar en PDF).
   const allowed = new Set<string>();
-  for (let i = rows.length - 1; i >= 0 && allowed.size < maxImages; i--) {
+  const allowedPdf = new Set<string>();
+  for (let i = rows.length - 1; i >= 0 && (allowed.size < maxImages || allowedPdf.size < maxPdfs); i--) {
     const m = rows[i];
     if (m.direction !== "in") continue;
-    for (let j = m.attachments.length - 1; j >= 0 && allowed.size < maxImages; j--) {
+    for (let j = m.attachments.length - 1; j >= 0; j--) {
       const a = m.attachments[j];
-      if (a.type === "image" && a.storageKey && imageUrls.has(a.storageKey)) allowed.add(a.storageKey);
+      if (!a.storageKey || !imageUrls.has(a.storageKey)) continue;
+      if (a.type === "image" && allowed.size < maxImages) allowed.add(a.storageKey);
+      else if (isPdf(a) && allowedPdf.size < maxPdfs) allowedPdf.add(a.storageKey);
     }
   }
 
@@ -103,10 +122,12 @@ export function buildModelMessages(
     if (role === "user") {
       const text: string[] = [];
       const body = opts.cleanText?.get(m.id) ?? m.body;
-      if (body?.trim()) text.push(clip(body.trim()));
+      if (body?.trim()) text.push(neutralizeCrmHeader(clip(body.trim())));
       for (const a of m.attachments) {
         if (a.type === "image" && a.storageKey && allowed.has(a.storageKey)) {
           parts.push({ type: "image", image: new URL(imageUrls.get(a.storageKey)!) });
+        } else if (a.storageKey && allowedPdf.has(a.storageKey)) {
+          parts.push({ type: "file", data: new URL(imageUrls.get(a.storageKey)!), mediaType: "application/pdf", filename: a.fileName });
         } else {
           text.push(attachmentNote(a));
         }
@@ -121,6 +142,16 @@ export function buildModelMessages(
     else turns.push({ role, parts });
   }
   while (turns.length && turns[0].role === "assistant") turns.shift();
+  // Contexto del CRM al FINAL del último turno del cliente (no en el system: la
+  // caché del prompt se mantiene; el runtime dice al modelo que no lo mencione).
+  if (opts.crmContext?.trim()) {
+    for (let i = turns.length - 1; i >= 0; i--) {
+      if (turns[i].role === "user") {
+        turns[i].parts.push({ type: "text", text: opts.crmContext.trim() });
+        break;
+      }
+    }
+  }
 
   return turns.map((t): ModelMessage => {
     if (t.role === "assistant") {

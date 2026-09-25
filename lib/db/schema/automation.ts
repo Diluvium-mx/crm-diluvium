@@ -98,7 +98,7 @@ export const workflows = pgTable(
   ],
 );
 
-export type WorkflowStepKind = "send_text" | "send_media" | "set_stage" | "handover" | "add_tag" | "internal_note" | "wait";
+export type WorkflowStepKind = "send_text" | "send_media" | "wait";
 
 // Carga de cada tipo de paso (validada con Zod en lib/workflows/steps.ts).
 export type WorkflowStepPayload =
@@ -107,10 +107,6 @@ export type WorkflowStepPayload =
   // admin todavía no eligió el archivo en la biblioteca. `title` describe qué
   // archivo va ahí (lo muestra el editor) y no se envía al cliente.
   | { kind: "send_media"; assetId: string | null; title: string; caption?: string }
-  | { kind: "set_stage"; stage: (typeof contactStageEnum.enumValues)[number] }
-  | { kind: "handover"; tag?: string }
-  | { kind: "add_tag"; tag: string }
-  | { kind: "internal_note"; text: string }
   | { kind: "wait"; seconds: number };
 
 export const workflowSteps = pgTable(
@@ -151,6 +147,9 @@ export const workflowRuns = pgTable(
     trigger: workflowRunTriggerEnum("trigger").notNull(),
     // Vendedor que lo disparó (comando / cambio de etapa manual); null = agente o cliente.
     triggeredByUserId: text("triggered_by_user_id").references(() => user.id, { onDelete: "set null" }),
+    // Entrante del cliente que originó la corrida (agente): un reintento del job del
+    // agente reutiliza la corrida en vez de mandar el archivo dos veces.
+    triggerMessageId: text("trigger_message_id"),
     // Argumentos con los que se disparó (p. ej. lo que leyó el agente de un comprobante).
     payload: jsonb("payload").$type<Record<string, unknown>>(),
     status: workflowRunStatusEnum("status").notNull().default("queued"),
@@ -169,5 +168,8 @@ export const workflowRuns = pgTable(
     // Corridas por conversación (historial y exclusividad en el ejecutor).
     index("workflow_runs_conv_workflow_idx").on(table.conversationId, table.workflowId, table.status),
     index("workflow_runs_org_created_idx").on(table.organizationId, sql`${table.createdAt} desc`),
+    uniqueIndex("workflow_runs_agent_msg_uidx")
+      .on(table.organizationId, table.workflowId, table.triggerMessageId)
+      .where(sql`${table.triggerMessageId} is not null and ${table.trigger} = 'agent'`),
   ],
 );

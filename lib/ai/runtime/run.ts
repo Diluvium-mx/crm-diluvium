@@ -16,12 +16,23 @@ import type { CallModelInput, CallModelResult } from "@/lib/ai/types";
 import { getModel } from "@/lib/ai/catalog";
 import { cleanAdMessages } from "./ad-cleaner";
 import { buildBrainSystemWithRuntime, parseBrainOutput } from "./brain";
-import { commitPagoBeforeText, executeActions, loadAgentTools, prepareActions, runsThatSend, type StartWorkflow } from "./actions";
+import { crmContextFor, executeActions, loadAgentTools, prepareActions, runsThatSend, type ActionPhase, type ActionPlan, type StartWorkflow } from "./actions";
 
 // Textos de respaldo del CRM cuando el modelo solo devolvió acciones (sin texto)
-// y ninguna manda algo al cliente: el agente SIEMPRE contesta.
-export const PAGO_REGISTRADO_TEXT = "¡Gracias! Tu pago quedó registrado ✅ En un momento te confirmamos los siguientes pasos.";
+// y ninguna manda algo al cliente: el agente SIEMPRE contesta, y nunca con un
+// "Listo 👍" que suene a "pago aceptado" tras un comprobante dudoso.
 export const SOLO_ACCIONES_TEXT = "Listo 👍 ¿En qué más te ayudo?";
+export const FALLBACK_TEXT_BY_MOTIVO: Record<string, string> = {
+  comprobante_dudoso: "Recibí tu comprobante 🙏 Un asesor lo revisa y te confirmo en un momento.",
+  cotejar_deposito: "Gracias, recibí tu comprobante ✅ En cuanto se confirme te aviso.",
+  cliente_pide_humano: "Con gusto, en un momento te atiende un asesor.",
+};
+export function fallbackTextFor(plan: ActionPlan): string {
+  for (const motivo of ["comprobante_dudoso", "cotejar_deposito", "cliente_pide_humano"]) {
+    if (plan.avisos.some((a) => a.motivo === motivo)) return FALLBACK_TEXT_BY_MOTIVO[motivo];
+  }
+  return SOLO_ACCIONES_TEXT;
+}
 import { validateToolCalls } from "./tools";
 import { applyCustomValues } from "@/lib/agente-ia/editor";
 import { loadAgentConfig, loadCustomValues, loadEnabledFaqs } from "./config";
@@ -35,10 +46,9 @@ import {
   messageAt,
   agentSendUnresolved,
   pendingInbound,
-  recentInboundImage,
   type MessageRow,
 } from "./context";
-import { addNotice, ensureHandoverNotice } from "./notices";
+import { addNotice } from "./notices";
 import { decideGate, toBubbles } from "./policy";
 import { rescheduleDelayFor } from "./schedule";
 import { closePlan, markAgentReply, savePlan, setAgentState } from "./state";
@@ -91,17 +101,34 @@ function errorText(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
 }
 
-async function imageUrlsFor(rows: readonly MessageRow[], resolve: RunDeps["resolveImage"]) {
+// Un PDF más grande (catálogo de 40 páginas, archivo renombrado) no va al modelo:
+// el proveedor lo rechazaría y el agente se quedaría mudo en esa conversación.
+export const MAX_PDF_BYTES = 10 * 1024 * 1024;
+
+// URLs firmadas de las imágenes Y los PDF del cliente (un comprobante SPEI suele
+// llegar en PDF): el modelo los ve como archivo.
+async function mediaUrlsFor(rows: readonly MessageRow[], resolve: RunDeps["resolveImage"]) {
   const urls = new Map<string, string>();
   for (const m of rows) {
     if (m.direction !== "in") continue;
     for (const a of m.attachments) {
-      if (a.type !== "image" || !a.storageKey || urls.has(a.storageKey)) continue;
+      const isPdf = a.type === "document" && a.mimeType === "application/pdf" && a.sizeBytes != null && a.sizeBytes <= MAX_PDF_BYTES;
+      if ((a.type !== "image" && !isPdf) || !a.storageKey || urls.has(a.storageKey)) continue;
       const url = await resolve(a.storageKey).catch(() => null);
       if (url) urls.set(a.storageKey, url);
     }
   }
   return urls;
+}
+
+// Mensaje del cliente del lote que trae un comprobante (imagen o PDF), el más
+// reciente; null si no hay. Clave de idempotencia del registro de comprobantes.
+function receiptMessageId(pending: readonly MessageRow[]): string | null {
+  for (let i = pending.length - 1; i >= 0; i--) {
+    // Solo lo que el modelo pudo ver (un PDF gigante no cuenta como comprobante).
+    if (pending[i].attachments.some((a) => a.type === "image" || (a.type === "document" && a.mimeType === "application/pdf" && a.sizeBytes != null && a.sizeBytes <= MAX_PDF_BYTES))) return pending[i].id;
+  }
+  return null;
 }
 
 // ¿Sigue pudiendo enviar el agente? Estado FRESCO justo antes de una burbuja.
@@ -127,22 +154,36 @@ async function stopBeforeBubble(
 // Acciones del cerebro (Fase D): nunca lanzan hacia afuera; lo que no se pudo
 // ejecutar queda como aviso al vendedor.
 async function runActions(
-  plan: import("./actions").ActionPlan,
-  ctx: { organizationId: string; conversationId: string; contactId: string; now: Date },
+  plan: ActionPlan,
+  ctx: { organizationId: string; conversationId: string; contactId: string; batchMessageId: string; receiptMessageId: string | null; now: Date; since: Date | null },
   startWorkflow: StartWorkflow,
+  phase: ActionPhase,
 ): Promise<void> {
-  if (!plan.runs.length && plan.quote === null && !plan.notes.length) return;
+  if (phase === "antes" && !plan.avisos.length && plan.quote === null && !plan.stage && !plan.notes.length) return;
+  if (phase === "despues" && !plan.runs.length) return;
+  if (phase === "antes") {
+    // Estricto: un aviso de pago o de pase a humano que no se pudo guardar detiene
+    // la respuesta (el job reintenta); el cliente no recibe "pago recibido" a ciegas.
+    const done = await executeActions(plan, ctx, startWorkflow, phase);
+    if (done.avisos || done.stageMoved || done.notes.length) {
+      console.info(`[agente] ${ctx.conversationId}: acciones previas → ${[done.avisos ? `${done.avisos} aviso(s)` : "", done.stageMoved ? `etapa → ${plan.stage}` : "", ...done.notes].filter(Boolean).join("; ")}`);
+    }
+    if (done.notes.length) {
+      await addNotice({ organizationId: ctx.organizationId, conversationId: ctx.conversationId, messageId: ctx.batchMessageId, kind: "envio", body: `Acción del agente no ejecutada: ${done.notes.join("; ")}.` });
+    }
+    return;
+  }
   try {
-    const done = await executeActions(plan, ctx, startWorkflow);
-    if (done.started.length || done.skipped.length || done.notes.length) {
-      console.info(`[agente] ${ctx.conversationId}: acciones → ${[...done.started, ...done.skipped, ...done.notes].join("; ")}`);
+    const done = await executeActions(plan, ctx, startWorkflow, phase);
+    if (done.started.length || done.skipped.length || done.notes.length || done.avisos || done.stageMoved) {
+      console.info(`[agente] ${ctx.conversationId}: acciones → ${[...done.started, ...done.skipped, ...done.notes, done.avisos ? `${done.avisos} aviso(s)` : "", done.stageMoved ? `etapa → ${plan.stage}` : ""].filter(Boolean).join("; ")}`);
     }
     if (done.skipped.length || done.notes.length) {
-      await addNotice({ organizationId: ctx.organizationId, conversationId: ctx.conversationId, kind: "envio", body: `Acción del agente no ejecutada: ${[...done.skipped, ...done.notes].join("; ")}.` });
+      await addNotice({ organizationId: ctx.organizationId, conversationId: ctx.conversationId, messageId: ctx.batchMessageId, kind: "envio", body: `Acción del agente no ejecutada: ${[...done.skipped, ...done.notes].join("; ")}.` });
     }
   } catch (error) {
     console.error(`[agente] ${ctx.conversationId}: acciones fallaron`, error);
-    await addNotice({ organizationId: ctx.organizationId, conversationId: ctx.conversationId, kind: "envio", body: `Las acciones del agente (${plan.runs.map((r) => r.slug).join(", ") || "cotización/pago"}) no se ejecutaron: ${errorText(error)}. Revisa el hilo.` });
+    await addNotice({ organizationId: ctx.organizationId, conversationId: ctx.conversationId, messageId: ctx.batchMessageId, kind: "envio", body: `Las acciones del agente (${plan.runs.map((r) => r.slug).join(", ") || "etapa/aviso/cotización"}) no se ejecutaron: ${errorText(error)}. Revisa el hilo.` });
   }
 }
 
@@ -222,7 +263,9 @@ export async function runAgent(job: { organizationId: string; conversationId: st
       answer: applyCustomValues(f.answer, values),
     }));
     const system = buildBrainSystemWithRuntime(applyCustomValues(cfg.goal, values), faqs);
-    const modelMessages = buildModelMessages(history, await imageUrlsFor(history, deps.resolveImage), { cleanText });
+    // Contexto del CRM (etapa, cotización, comprobantes) en el último turno del cliente.
+    const crmContext = await crmContextFor(org, conv.contactId);
+    const modelMessages = buildModelMessages(history, await mediaUrlsFor(history, deps.resolveImage), { cleanText, crmContext });
     // Herramientas (Fase D): una por workflow habilitado con "agente" + fijar_cotizacion.
     const agentTools = await loadAgentTools(org);
     const t0 = Date.now();
@@ -296,33 +339,31 @@ export async function runAgent(job: { organizationId: string; conversationId: st
     // (cada reintento sería otra llamada pagada). Las acciones corren igual; para
     // un archivo el cliente recibe la media con su pie, y el entrante queda
     // atendido por la fila de uso.
-    const workflowsBySlug = new Map([...agentTools.byName.values()].map((w) => [w.slug, w] as const));
+    // La señal vieja [TRANSFERIR] del Goal cuenta como aviso_vendedor(cliente_pide_humano).
+    if (out.kind === "reply" && out.handover) {
+      toolCalls.push({ kind: "aviso", aviso: { motivo: "cliente_pide_humano", detalle: "El cliente pidió hablar con una persona (señal [TRANSFERIR] del Goal). El agente sigue atendiendo." } });
+    }
     const plan = await prepareActions({
       organizationId: org,
       conversationId: conv.id,
-      contactId: conv.contactId,
       calls: toolCalls,
-      workflowsBySlug,
-      inboundHasImage: pending.some((m) => m.attachments.some((a) => a.type === "image")) || (await recentInboundImage(org, conv.id)),
       modelText: out.kind === "reply" ? out.text : "",
       pendingSince: pending[0]?.createdAt ?? null,
     });
-    // Un pago verificado se registra ANTES de decirle nada al cliente (si falla o
-    // la referencia entró dos veces, el texto pasa a ser el amable).
-    await commitPagoBeforeText(plan, { organizationId: org, conversationId: conv.id, contactId: conv.contactId, now }, workflowsBySlug, deps.startWorkflow);
+    const actionCtx = { organizationId: org, conversationId: conv.id, contactId: conv.contactId, batchMessageId: lastRead.id, receiptMessageId: receiptMessageId(pending), now, since: pending[0]?.createdAt ?? null };
     // Sin texto del modelo y sin ninguna acción que mande algo al cliente (solo
     // etapa/cotización/aviso): el cliente no puede quedarse sin respuesta.
-    if (!plan.text.trim()) {
+    let text = out.kind === "reply" ? out.text : "";
+    if (!text.trim()) {
       const sending = await runsThatSend(org, plan.runs.map((r) => r.workflowId));
-      if (!plan.runs.some((r) => sending.has(r.workflowId))) plan.text = plan.pago ? PAGO_REGISTRADO_TEXT : SOLO_ACCIONES_TEXT;
+      if (!plan.runs.some((r) => sending.has(r.workflowId))) text = fallbackTextFor(plan);
     }
-    for (const w of plan.warnings) await addNotice({ organizationId: org, conversationId: conv.id, kind: "envio", body: w });
+    // Avisos, comprobante, cotización y etapa ANTES de enviar (idempotentes por el
+    // entrante): nunca se le dice al cliente "un asesor te atiende" o "pago recibido"
+    // sin que el vendedor lo vea, y un reintento tras el texto no los pierde.
+    await runActions(plan, actionCtx, deps.startWorkflow, "antes");
     // Mensajes para celular: información y pregunta por separado (máx. 2).
-    const bubbles = plan.text.trim() ? toBubbles(plan.text) : [];
-    // El cliente pidió a una persona: el aviso al vendedor se guarda ANTES de enviar
-    // (idempotente por el entrante): nunca se le dice al cliente que lo atenderán sin
-    // que un vendedor lo vea en la Bandeja. El agente sigue activo.
-    if (out.kind === "reply" && out.handover) await ensureHandoverNotice({ organizationId: org, conversationId: conv.id, triggerMessageId: lastRead.id });
+    const bubbles = text.trim() ? toBubbles(text) : [];
 
     // Mensajes con pausa corta. Antes de CADA uno se revisa el estado fresco: si un
     // vendedor respondió (desde el INICIO de la ronda), alguien apagó el canal o
@@ -394,7 +435,7 @@ export async function runAgent(job: { organizationId: string; conversationId: st
       await recordAiUsage({ ...brainUsage, outcome: "sent", error: `detenido tras ${sent} mensaje(s): ${stopped}` });
       // Las acciones no se pierden: el pago ya está registrado y su workflow (aviso
       // + etapa) debe correr; cada corrida relee el estado antes de cada paso.
-      await runActions(plan, { organizationId: org, conversationId: conv.id, contactId: conv.contactId, now }, deps.startWorkflow);
+      await runActions(plan, actionCtx, deps.startWorkflow, "despues");
       return { kind: "sent", bubbles: sent };
     }
     await markAgentReply(org, conv.id, deps.now());
@@ -404,7 +445,7 @@ export async function runAgent(job: { organizationId: string; conversationId: st
     // relee el estado del agente antes de cada paso). Un fallo aquí no quita la
     // respuesta ya enviada: queda un aviso al vendedor.
     // `now` de la ronda: si un humano movió la etapa DURANTE la generación, manda el humano.
-    await runActions(plan, { organizationId: org, conversationId: conv.id, contactId: conv.contactId, now }, deps.startWorkflow);
+    await runActions(plan, actionCtx, deps.startWorkflow, "despues");
     // Un mensaje sin confirmar queda en el outbox: si vence como "sin confirmar",
     // el barrido deja un aviso (nunca reenvía a ciegas).
     const omitted = bubbles.length - sent;

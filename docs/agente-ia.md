@@ -206,7 +206,14 @@ Dashboard ya muestra el gasto del mes y el saldo estimado (24-sep-2026).
       conversaciones no tienen asignado, así que hoy siempre sale "un asesor".
 - **Fase C:** follow-ups automáticos — "ocupado" a las 2h; "dejó de responder" a los
   4 días con plantilla fuera de la ventana de 24h; horario 8:00–17:00.
-- **Fase D:** acciones del Goal — datos bancarios, videos, tabla de tamaños, cambio de etapa.
+- **Fase D (hecha el 24-sep-2026, reestructurada):** el cerebro recibe herramientas en la misma llamada
+  (AI SDK `tools` sin `execute`, una vuelta): `wf_<slug>` por cada workflow de media habilitado
+  (Automatización), `fijar_cotizacion`, `mover_etapa` (solo hacia adelante; la etapa del vendedor manda) y
+  `aviso_vendedor` (cotejar_deposito | cliente_pide_humano | comprobante_dudoso → aviso 🤖 en la Bandeja,
+  nunca pausa). El CRM no verifica montos: el agente decide con su Goal y su lectura de la imagen o PDF;
+  el CRM guarda el comprobante leído (`comprobantes`) y avisa si la referencia ya se usó con otro
+  contacto. Contexto del CRM (etapa, cotización, comprobantes) al final del último turno del cliente.
+  Diseño y texto del Goal: `docs/fase-d-diseno.md` §10.
 - **Fase E:** panel de gasto (lee `ai_usage`) — la tarjeta del Dashboard con gasto del mes y
   saldo estimado ya existe (24-sep-2026); falta, si se quiere, conciliar contra las Cost API.
 
