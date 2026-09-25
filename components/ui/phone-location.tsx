@@ -11,7 +11,6 @@ export function PhoneLocation({ phone }: { phone: string | null | undefined }) {
     <span title={hint} className="block truncate text-[11px] leading-4 text-muted-foreground">
       <span aria-hidden="true">📍 </span>
       {location.label}
-      <span className="sr-only"> ({hint})</span>
     </span>
   );
 }

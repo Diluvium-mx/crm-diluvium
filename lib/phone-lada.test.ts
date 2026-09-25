@@ -26,6 +26,11 @@ describe("phoneLocation (México, por lada)", () => {
   });
   it.todo("668 → Los Mochis, Sin.; 667 → Culiacán, Sin.; 669 → Mazatlán, Sin. (pendiente: fuente con respaldo que traiga la ciudad)");
 
+  it("el código ambiguo QRO de la fuente: Querétaro vs. Quintana Roo (Cozumel)", () => {
+    expect(label("+524141234567")).toBe("Tequisquiapan, Qro.");
+    expect(label("+529871234567")).toBe("Cozumel, Q. Roo");
+  });
+
   it("el +521 heredado de WhatsApp cuenta igual", () => {
     expect(label("+5213312345678")).toBe("Guadalajara, Jal.");
   });
@@ -37,6 +42,7 @@ describe("phoneLocation (México, por lada)", () => {
     expect(phoneLocationHint(phoneLocation("+526682426364")!)).toBe("Según la lada 668 (dónde se contrató la línea)");
   });
 
+  // 56 (la segunda lada de CDMX) no viene en los datos de Google: sin dato, nada.
   it("lada sin dato en la fuente o número incompleto: nada", () => {
     expect(label("+525612345678")).toBeNull();
     expect(label("+52668242")).toBeNull();

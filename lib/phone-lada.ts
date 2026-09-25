@@ -55,15 +55,21 @@ const STATE_ABBR: Readonly<Record<string, string>> = {
   ZAC: "Zac.",
 };
 
+// Corrección del código de estado de la fuente cuando es ambiguo: Google usa "QRO"
+// tanto para Querétaro (Tequisquiapan, 414) como para Quintana Roo (Cozumel, 987).
+// Solo cambia la abreviatura del estado; la ciudad sigue siendo la de la fuente.
+const STATE_CODE_BY_PREFIX: Readonly<Record<string, string>> = { "52987": "QROO" };
+
 const TWO_DIGIT_LADAS = new Set(["55", "56", "33", "81"]);
 const PREFIX_LENGTHS = [...new Set(Object.keys(LADA_PLACES).map((k) => k.length))].sort((a, b) => b - a);
 
 /** "Tlapacoyan, VER" → "Tlapacoyan, Ver."; "Ciudad de México, CDMX" → "Ciudad de México". */
-export function formatLadaPlace(place: string): string {
+export function formatLadaPlace(place: string, prefix?: string): string {
   const m = place.match(/^(.*), ([A-Z]+)$/);
   if (!m) return place;
-  if (m[2] === "CDMX") return m[1];
-  return `${m[1]}, ${STATE_ABBR[m[2]] ?? m[2]}`;
+  const code = (prefix && STATE_CODE_BY_PREFIX[prefix]) || m[2];
+  if (code === "CDMX") return m[1];
+  return `${m[1]}, ${STATE_ABBR[code] ?? code}`;
 }
 
 /** Lada de un número nacional mexicano de 10 dígitos. */
@@ -74,8 +80,9 @@ export function mexicanLada(national: string): string {
 function mexicoLocation(national: string): PhoneLocation | null {
   const digits = `52${national}`;
   for (const len of PREFIX_LENGTHS) {
-    const place = LADA_PLACES[digits.slice(0, len)];
-    if (place) return { label: formatLadaPlace(place), code: mexicanLada(national), kind: "lada" };
+    const prefix = digits.slice(0, len);
+    const place = LADA_PLACES[prefix];
+    if (place) return { label: formatLadaPlace(place, prefix), code: mexicanLada(national), kind: "lada" };
   }
   return null;
 }

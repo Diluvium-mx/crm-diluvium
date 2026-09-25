@@ -45,18 +45,22 @@ export function ModelPicker({
               type="button"
               role="radio"
               aria-checked={active}
-              disabled={!o.available || change.pending}
+              // Mientras guarda no se deshabilitan (request() ignora el clic): así el
+              // foco puede regresar a la opción al cerrarse el pop-up.
+              disabled={!o.available}
+              aria-busy={change.pending && active ? true : undefined}
               onClick={() => change.request(o)}
-              className={`flex flex-col items-start gap-1 rounded-lg border px-3 py-2 text-left transition-colors disabled:cursor-not-allowed ${
+              className={`flex flex-col items-start gap-1 rounded-lg border px-3 py-2 text-left transition-colors disabled:cursor-not-allowed disabled:hover:bg-transparent ${
                 active ? "border-brand-navy bg-brand-navy/5" : "border-black/10 hover:bg-black/5 dark:border-white/10 dark:hover:bg-white/5"
               }`}
             >
-              <span className="flex w-full flex-wrap items-center gap-1.5">
-                <span className={`text-sm font-medium ${o.available ? "text-foreground" : "text-muted-foreground"}`}>{o.label}</span>
+              {/* En gris lo que no se puede elegir; el porqué queda legible abajo. */}
+              <span className={`flex w-full flex-wrap items-center gap-1.5 ${o.available ? "" : "opacity-50"}`}>
+                <span className="text-sm font-medium text-foreground">{o.label}</span>
                 {o.recommended && <Badge tone="navy">Recomendado</Badge>}
                 {o.isNew && <Badge tone="orange">Nuevo</Badge>}
               </span>
-              <span className="text-xs text-muted-foreground">
+              <span className={`text-xs text-muted-foreground ${o.available ? "" : "opacity-50"}`}>
                 {o.providerLabel} · <span title="aproximado, sin impuestos">{costPer100Label(o.costPer100Usd)}</span>
               </span>
               {!o.available && <span className="text-xs text-foreground/80">{o.disabledReason ?? "No disponible"}</span>}
