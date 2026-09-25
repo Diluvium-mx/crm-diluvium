@@ -184,6 +184,8 @@ describe.skipIf(!TEST_DATABASE_URL)("runtime del Agente IA (Postgres real)", () 
         return `https://bucket.test/${key}?sig=1`;
       },
       startWorkflow: (input) => executor.startWorkflowRun(input),
+      // Fase E: en los tests todos los modelos "tienen llave" salvo que el test diga otra cosa.
+      isModelAvailable: () => true,
     };
     return { deps, calls: models.calls, sleeps, images };
   }
@@ -1261,5 +1263,28 @@ describe.skipIf(!TEST_DATABASE_URL)("runtime del Agente IA (Postgres real)", () 
     expect(n[0].body).toContain(`${run.BRAIN_MAX_OUTPUT_TOKENS.toLocaleString("es-MX")} tokens`);
     expect(n[0].body).toContain("aviso_vendedor: argumentos inválidos");
     expect((await agentOuts()).map((m) => m.body)).toEqual(["Recibimos tus comprobantes ✅"]);
+  });
+
+  it("Fase E: sin llave del Modelo 1 contesta el Modelo 2 (el agente no se queda callado)", async () => {
+    await db.update(s.aiConfig).set({ modelo1: "gpt-5.6-luna", etapasModelo1: ["inbox"] }).where(eq(s.aiConfig.organizationId, ORG));
+    await msg({ direction: "in", body: "hola", at: ago(20_000) });
+    const { deps, calls } = makeDeps({ brain: ["¡Hola! ¿En qué te ayudo?"] });
+    expect((await run.runAgent(JOB, { ...deps, isModelAvailable: (id) => id !== "gpt-5.6-luna" })).kind).toBe("sent");
+    expect(calls.filter((c) => c.kind === "cerebro").map((c) => c.modelId)).toEqual(["claude-sonnet-5"]);
+  });
+
+  it("Fase E: un vendedor cambia la etapa durante la generación y con ella el modelo → esa respuesta no sale; se regenera con el correcto", async () => {
+    await db.update(s.aiConfig).set({ modelo1: "gpt-5.6-luna", etapasModelo1: ["inbox", "prospecto", "interesado"] }).where(eq(s.aiConfig.organizationId, ORG));
+    await msg({ direction: "in", body: "ya pagué", at: ago(20_000) });
+    const { deps, calls } = makeDeps({
+      brain: ["respuesta de Luna", "respuesta de Sonnet"],
+      onBrain: async (n) => {
+        if (n === 1) await db.update(s.contacts).set({ stage: "compra", stageChangedBy: "vendedor" }).where(eq(s.contacts.id, CONTACT));
+      },
+    });
+    expect((await run.runAgent(JOB, deps)).kind).toBe("sent");
+    expect(calls.filter((c) => c.kind === "cerebro").map((c) => c.modelId)).toEqual(["gpt-5.6-luna", "claude-sonnet-5"]);
+    expect((await agentOuts()).map((m) => m.body)).toEqual(["respuesta de Sonnet"]);
+    expect((await usage()).filter((u) => u.stage === "cerebro").map((u) => u.outcome)).toEqual(["discarded_stale", "sent"]);
   });
 });

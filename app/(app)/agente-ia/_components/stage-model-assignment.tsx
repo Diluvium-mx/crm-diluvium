@@ -1,8 +1,9 @@
 "use client";
 
 // Qué modelo atiende cada etapa del Embudo (Fase E): una fila por etapa con "1 | 2".
-// Guarda al tocar (sin confirmación: se regresa con otro toque). Sin lógica de
-// datos: guarda con la Server Action.
+// Guarda al tocar (sin confirmación: se regresa con otro toque). Un cambio a la vez:
+// mientras guarda, los botones esperan; si falla (o se cae la red), regresa a lo
+// que había. Sin lógica de datos: guarda con la Server Action.
 import { useState, useTransition } from "react";
 import { STAGE_LABELS, STAGES, type Stage } from "@/app/(app)/contactos/_data/types";
 import { updateModel1Stages } from "@/lib/actions/agente-ia-editor";
@@ -13,15 +14,21 @@ export function StageModelAssignment({ value, model1Label, model2Label }: { valu
   const [pending, start] = useTransition();
 
   function assign(stage: Stage, slot: 1 | 2) {
+    if (pending) return;
     const next = slot === 1 ? [...stages.filter((s) => s !== stage), stage] : stages.filter((s) => s !== stage);
     const previous = stages;
     setStages(next);
     setError(null);
     start(async () => {
-      const r = await updateModel1Stages({ stages: next });
-      if (!r.ok) {
+      try {
+        const r = await updateModel1Stages({ stages: next });
+        if (!r.ok) {
+          setStages(previous);
+          setError(r.message);
+        }
+      } catch {
         setStages(previous);
-        setError(r.message);
+        setError("No se pudo guardar; revisa tu conexión e inténtalo de nuevo.");
       }
     });
   }
@@ -41,9 +48,10 @@ export function StageModelAssignment({ value, model1Label, model2Label }: { valu
                     type="button"
                     role="radio"
                     aria-checked={slot === n}
+                    disabled={pending}
                     onClick={() => slot !== n && assign(stage, n)}
                     aria-label={`Modelo ${n} (${n === 1 ? model1Label : model2Label})`}
-                    className={`px-3 py-1 transition-colors ${
+                    className={`px-3 py-1 transition-colors disabled:cursor-wait ${
                       slot === n ? "bg-brand-navy text-white" : "bg-background text-foreground/70 hover:bg-black/5 dark:hover:bg-white/5"
                     }`}
                   >

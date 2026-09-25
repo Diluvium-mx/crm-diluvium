@@ -23,3 +23,16 @@ export function brainModelForStage(
   }
   return { modelId: cfg.modeloCerebro, slot: 2 };
 }
+
+// Como brainModelForStage, pero si el Modelo 1 no se puede usar en este entorno
+// (falta su llave o su adaptador) contesta el Modelo 2: el agente nunca se queda
+// callado por una llave faltante (revisión de Codex, 25-sep-2026).
+export function pickBrainModel(
+  cfg: { modelo1: string; modeloCerebro: string; etapasModelo1: readonly string[] },
+  stage: string | null,
+  isAvailable: (modelId: string) => boolean,
+): { modelId: string; slot: ModelSlot; fallback: boolean } {
+  const pick = brainModelForStage(cfg, stage);
+  if (pick.slot === 1 && !isAvailable(pick.modelId)) return { modelId: cfg.modeloCerebro, slot: 2, fallback: true };
+  return { ...pick, fallback: false };
+}
