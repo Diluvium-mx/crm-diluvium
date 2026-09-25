@@ -14,10 +14,12 @@
 // conteste; si el cliente pide a una persona, avisa al vendedor y sigue activo.
 import type { CallModelInput, CallModelResult } from "@/lib/ai/types";
 import { getModel } from "@/lib/ai/catalog";
-import { modelAvailability } from "@/lib/ai/provider";
+import { modelAvailability, PROVIDER_META } from "@/lib/ai/provider";
+import { hasUnresolvedAgentError, recordAgentError, supersedeAgentErrors } from "./agent-error";
+import { agentErrorBody, classifyModelError, EMPTY_RESPONSE_INFO } from "./model-errors";
 import { cleanAdMessages } from "./ad-cleaner";
 import { buildBrainSystemWithRuntime, parseBrainOutput } from "./brain";
-import { crmContextFor, executeActions, loadAgentTools, prepareActions, runsThatSend, type ActionPhase, type ActionPlan, type StartWorkflow } from "./actions";
+import { crmContextFor, executeActions, loadAgentTools, noteForVendor, prepareActions, runsThatSend, type ActionPhase, type ActionPlan, type StartWorkflow } from "./actions";
 
 // Textos de respaldo del CRM cuando el modelo solo devolvió acciones (sin texto)
 // y ninguna manda algo al cliente: el agente SIEMPRE contesta, y nunca con un
@@ -65,10 +67,15 @@ export const BUBBLE_PAUSE_MS = 1_500;
 // juntos) se cortó y su aviso al vendedor se perdió (docs/fase-d-diseno.md §11); desde
 // la Fase E son 4,096 (solo se paga lo que se usa) y si aun así se corta, aviso.
 export const BRAIN_MAX_OUTPUT_TOKENS = 4_096;
-// Timeouts por llamada: 3 rondas × (limpieza del anuncio + cerebro) = 4 min < candado
-// de 5 min (process.ts). La limpieza del anuncio (ad-cleaner.ts) usa 20 s.
+// Timeouts por llamada: 3 rondas × (limpieza del anuncio + cerebro) = 4 min, + el único
+// reintento por proveedor saturado (10 s + 60 s) ≈ 5 min 10 s < candado de 6 min
+// (process.ts). La limpieza del anuncio (ad-cleaner.ts) usa 20 s.
 export const FILTER_TIMEOUT_MS = 20_000;
 export const BRAIN_TIMEOUT_MS = 60_000;
+// Fase E ("reenvío seguro"): espera antes del ÚNICO reintento automático, y solo si
+// el proveedor está saturado (model-errors.ts). Uno por corrida, no por ronda: con
+// él, el peor caso cabe en el candado de 6 min (process.ts).
+export const SATURATED_RETRY_MS = 10_000;
 
 export type RunDeps = {
   now: () => Date;
@@ -91,7 +98,9 @@ export type RunResult =
   | { kind: "noop"; reason: string }
   | { kind: "skipped"; reason: string }
   | { kind: "sent"; bubbles: number }
-  | { kind: "reschedule"; delayMs: number; reason: string };
+  | { kind: "reschedule"; delayMs: number; reason: string }
+  // Fase E: el modelo falló; quedó la tarjeta "El agente no pudo responder" (sin reintento de la cola).
+  | { kind: "failed"; reason: string };
 
 const HUMAN_SOURCES = new Set(["crm", "business_app"]);
 
@@ -176,8 +185,9 @@ async function runActions(
     if (done.avisos || done.stageMoved || done.notes.length) {
       console.info(`[agente] ${ctx.conversationId}: acciones previas → ${[done.avisos ? `${done.avisos} aviso(s)` : "", done.stageMoved ? `etapa → ${plan.stage}` : "", ...done.notes].filter(Boolean).join("; ")}`);
     }
-    if (done.notes.length) {
-      await addNotice({ organizationId: ctx.organizationId, conversationId: ctx.conversationId, messageId: ctx.batchMessageId, kind: "envio", body: `Acción del agente no ejecutada: ${done.notes.join("; ")}.` });
+    const paraVendedor = done.notes.filter(noteForVendor);
+    if (paraVendedor.length) {
+      await addNotice({ organizationId: ctx.organizationId, conversationId: ctx.conversationId, messageId: ctx.batchMessageId, kind: "envio", body: `Acción del agente no ejecutada: ${paraVendedor.join("; ")}.` });
     }
     return;
   }
@@ -186,8 +196,9 @@ async function runActions(
     if (done.started.length || done.skipped.length || done.notes.length || done.avisos || done.stageMoved) {
       console.info(`[agente] ${ctx.conversationId}: acciones → ${[...done.started, ...done.skipped, ...done.notes, done.avisos ? `${done.avisos} aviso(s)` : "", done.stageMoved ? `etapa → ${plan.stage}` : ""].filter(Boolean).join("; ")}`);
     }
-    if (done.skipped.length || done.notes.length) {
-      await addNotice({ organizationId: ctx.organizationId, conversationId: ctx.conversationId, messageId: ctx.batchMessageId, kind: "envio", body: `Acción del agente no ejecutada: ${[...done.skipped, ...done.notes].join("; ")}.` });
+    const paraVendedor = [...done.skipped, ...done.notes].filter(noteForVendor);
+    if (paraVendedor.length) {
+      await addNotice({ organizationId: ctx.organizationId, conversationId: ctx.conversationId, messageId: ctx.batchMessageId, kind: "envio", body: `Acción del agente no ejecutada: ${paraVendedor.join("; ")}.` });
     }
   } catch (error) {
     console.error(`[agente] ${ctx.conversationId}: acciones fallaron`, error);
@@ -205,6 +216,7 @@ async function pauseForHuman(conversation: { id: string; organizationId: string 
 // escrituras (una conversación de otra organización no se encuentra: noop).
 export async function runAgent(job: { organizationId: string; conversationId: string }, deps: RunDeps): Promise<RunResult> {
   const { organizationId: org, conversationId } = job;
+  let saturatedRetryUsed = false; // Fase E: un solo reintento automático por corrida
   for (let round = 1; round <= MAX_ROUNDS; round++) {
     const now = deps.now();
     const snap = await loadSnapshot(org, conversationId);
@@ -246,6 +258,10 @@ export async function runAgent(job: { organizationId: string; conversationId: st
       return { kind: "skipped", reason: gate.reason };
     }
     if (!cfg.goal) return { kind: "skipped", reason: "sin_goal" };
+    // Fase E ("reenvío seguro"): con una tarjeta de error sin atender, el agente no
+    // vuelve a llamar al modelo en esta conversación (ni por mensajes nuevos) hasta
+    // que un vendedor elija "Reintentar" o "Apagar".
+    if (await hasUnresolvedAgentError(org, conv.id)) return { kind: "skipped", reason: "error_sin_atender" };
 
     const readCount = await inboundCount(org, conv.id);
     // TODA la conversación; si algún día no cabe en el modelo, lo más reciente.
@@ -288,28 +304,54 @@ export async function runAgent(job: { organizationId: string; conversationId: st
     });
     // Herramientas (Fase D): una por workflow habilitado con "agente" + fijar_cotizacion.
     const agentTools = await loadAgentTools(org);
-    const t0 = Date.now();
-    let brainRes: CallModelResult;
-    try {
-      brainRes = await deps.callModel(brainModel.id, {
-        system,
-        messages: modelMessages,
-        tools: agentTools.tools,
-        maxOutputTokens: BRAIN_MAX_OUTPUT_TOKENS,
-        timeoutMs: BRAIN_TIMEOUT_MS,
-      });
-    } catch (error) {
-      await recordAiUsage({
-        ...base,
-        stage: "cerebro",
-        modelId: brainModel.id,
-        provider: brainModel.provider,
-        usage: null,
-        latencyMs: Date.now() - t0,
-        outcome: "error",
-        error: errorText(error),
-      });
-      throw error;
+    // Fase E ("reenvío seguro"): si el modelo falla, solo un proveedor SATURADO se
+    // reintenta, una vez por corrida, tras SATURATED_RETRY_MS. Cualquier otra falla (o
+    // la segunda) deja la tarjeta "El agente no pudo responder" y la corrida termina
+    // SIN lanzar: ni la cola ni el barrido vuelven a llamar al modelo a ciegas.
+    // ¿Sigue el agente a cargo? Si durante la llamada un vendedor contestó, pausaron
+    // al agente o apagaron el canal, no hay tarjeta ni segundo intento (ya decidió alguien).
+    const stillInCharge = async (): Promise<boolean> => {
+      const f = await loadSnapshot(org, conv.id);
+      if (!f || f.channel.aiAgentMode !== "auto" || f.conversation.agentState !== "activo") return false;
+      return (await humanOutboundCount(org, conv.id)) === humansAtStart;
+    };
+    let t0 = Date.now();
+    let brainRes!: CallModelResult;
+    for (;;) {
+      try {
+        brainRes = await deps.callModel(brainModel.id, {
+          system,
+          messages: modelMessages,
+          tools: agentTools.tools,
+          maxOutputTokens: BRAIN_MAX_OUTPUT_TOKENS,
+          timeoutMs: BRAIN_TIMEOUT_MS,
+        });
+        break;
+      } catch (error) {
+        await recordAiUsage({
+          ...base,
+          stage: "cerebro",
+          modelId: brainModel.id,
+          provider: brainModel.provider,
+          usage: null,
+          latencyMs: Date.now() - t0,
+          outcome: "error",
+          error: errorText(error),
+        });
+        const info = classifyModelError(error, PROVIDER_META[brainModel.provider].label);
+        if (info.autoRetry && !saturatedRetryUsed) {
+          saturatedRetryUsed = true;
+          console.warn(`[agente] ${conv.id}: ${info.resumen} Reintento automático en ${SATURATED_RETRY_MS / 1000} s`);
+          await deps.sleep(SATURATED_RETRY_MS);
+          if (!(await stillInCharge())) return { kind: "skipped", reason: "cambio_durante_error" };
+          t0 = Date.now();
+          continue;
+        }
+        if (!(await stillInCharge())) return { kind: "skipped", reason: "cambio_durante_error" };
+        await recordAgentError({ organizationId: org, conversationId: conv.id, messageId: lastRead.id, body: agentErrorBody(info, brainModel.label, saturatedRetryUsed) });
+        console.warn(`[agente] ${conv.id}: el modelo falló (${info.kind}); tarjeta para el vendedor`);
+        return { kind: "failed", reason: info.kind };
+      }
     }
     const brainUsage = {
       ...base,
@@ -375,10 +417,12 @@ export async function runAgent(job: { organizationId: string; conversationId: st
       });
     }
     if (out.kind === "empty" && toolCalls.length === 0) {
-      // Sin texto (tokens agotados, filtro del proveedor…): NO es final. Se registra
-      // como error y la cola/el barrido reintentan: el cliente nunca queda sin respuesta.
+      // Sin texto ni acciones (tokens agotados, filtro del proveedor…): Fase E, sin
+      // reintento a ciegas (cada uno es otra llamada pagada): tarjeta para el vendedor.
       await recordAiUsage({ ...brainUsage, outcome: "error", error: `respuesta_vacia (${brainRes.finishReason})` });
-      throw new Error("el cerebro devolvió una respuesta vacía");
+      if (!(await stillInCharge())) return { kind: "skipped", reason: "cambio_durante_error" };
+      await recordAgentError({ organizationId: org, conversationId: conv.id, messageId: lastRead.id, body: agentErrorBody(EMPTY_RESPONSE_INFO, brainModel.label, saturatedRetryUsed) });
+      return { kind: "failed", reason: "vacia" };
     }
     // Solo llamadas, sin texto (algunos modelos lo hacen con tools): NO se lanza
     // (cada reintento sería otra llamada pagada). Las acciones corren igual; para
@@ -454,6 +498,7 @@ export async function runAgent(job: { organizationId: string; conversationId: st
       }
       // Salió una parte: el agente sigue activo; el resto queda en un aviso al vendedor.
       await markAgentReply(org, conv.id, deps.now());
+      await supersedeAgentErrors(org, conv.id); // Fase E: el agente volvió a contestar
       if (planId) await closePlan(org, planId, "enviado");
       await recordAiUsage({ ...brainUsage, outcome: "sent", error: `mensaje ${sent + 1} no salió: ${errorText(error)}` });
       await noticeRemainder(`Salieron ${sent} de ${bubbles.length} mensajes de la respuesta del agente y el siguiente falló.`);
@@ -477,6 +522,7 @@ export async function runAgent(job: { organizationId: string; conversationId: st
         return { kind: "skipped", reason: stopped };
       }
       await markAgentReply(org, conv.id, deps.now());
+      await supersedeAgentErrors(org, conv.id); // Fase E: el agente volvió a contestar
       await recordAiUsage({ ...brainUsage, outcome: "sent", error: `detenido tras ${sent} mensaje(s): ${stopped}` });
       // Las acciones no se pierden: el pago ya está registrado y su workflow (aviso
       // + etapa) debe correr; cada corrida relee el estado antes de cada paso.
@@ -484,6 +530,7 @@ export async function runAgent(job: { organizationId: string; conversationId: st
       return { kind: "sent", bubbles: sent };
     }
     await markAgentReply(org, conv.id, deps.now());
+    await supersedeAgentErrors(org, conv.id); // Fase E: el agente volvió a contestar
     if (planId) await closePlan(org, planId, "enviado");
     // Acciones (Fase D), después del texto y solo si el agente no fue detenido:
     // cotización, registro del pago verificado y corridas de workflow (cada corrida

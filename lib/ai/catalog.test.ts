@@ -76,9 +76,9 @@ describe("modelAvailability", () => {
   });
 
   it("Fase E: google/xai/openrouter ya tienen adaptador; disponibles con su llave y en gris sin ella", () => {
-    expect(modelAvailability("qwen-3.7-flash", { OPENROUTER_API_KEY: "sk-test" })).toEqual({ available: true, reason: "ok", envKey: "OPENROUTER_API_KEY" });
-    expect(modelAvailability("gemini-3.8-flash", {})).toEqual({ available: false, reason: "missing_key", envKey: "GOOGLE_GENERATIVE_AI_API_KEY" });
-    expect(modelAvailability("grok-4.6", { XAI_API_KEY: "xai-test" }).available).toBe(true);
+    expect(modelAvailability("qwen-3.7-flash", { QWEN_API_KEY: "sk-test" })).toEqual({ available: true, reason: "ok", envKey: "QWEN_API_KEY" });
+    expect(modelAvailability("gemini-3.8-flash", {})).toEqual({ available: false, reason: "missing_key", envKey: "GEMINI_API_KEY" });
+    expect(modelAvailability("grok-4.6", { GROK_API_KEY: "xai-test" }).available).toBe(true);
   });
 
   it("Fase E: Luna también es cerebro (Modelo 1); solo Qwen no lee PDF", () => {

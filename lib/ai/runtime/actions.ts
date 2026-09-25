@@ -3,20 +3,29 @@
 // - media: corridas de workflow `wf_<slug>` (trigger "agent");
 // - fijar_cotizacion: total cotizado en el contacto (un vendedor manda);
 // - mover_etapa: solo hacia adelante (lib/contacts/stage.ts);
-// - aviso_vendedor: aviso 🤖 en la Bandeja; con cotejar_deposito / comprobante_dudoso
-//   guarda el comprobante leído y hace el chequeo silencioso de referencia repetida.
+// - aviso_vendedor: aviso 🤖 en la Bandeja ("Depósito recibido", "Comprobante dudoso"
+//   o el cliente pide una persona). Desde la Fase E (25-sep-2026, decisión del dueño)
+//   el agente ya NO anota monto ni folio del comprobante y no hay chequeo de folio
+//   repetido: el aviso de pago solo dice "Depósito recibido".
 // El CRM NO decide por monto: las reglas viven en el Goal. Nada aquí pausa al agente.
 // Idempotente por lote de mensajes del cliente (avisos: índice único message_id+kind;
-// comprobante: índice único por mensaje; etapa: solo hacia adelante).
+// etapa: solo hacia adelante).
 import { and, asc, eq, gte, inArray, sql } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { contacts, workflowRuns, workflows, workflowSteps } from "@/lib/db/schema";
-import { comprobantesDelContacto, conCandadoDeReferencia, montoNorm, referenciaRepetida, registrarComprobante, type ComprobanteLeido } from "@/lib/cobro/comprobantes";
 import { moveStageForward } from "@/lib/contacts/stage";
 import type { Stage } from "@/lib/contacts/stages";
 import type { StartRunInput, StartRunResult } from "@/lib/workflows/executor";
 import { addNotice } from "./notices";
 import { buildAgentTools, type AgentTools, type AvisoMotivo, type ValidToolCall } from "./tools";
+
+// Nota que NO se muestra al vendedor (Fase E, pendiente F): la media ya salió por la
+// palabra clave del cliente y el agente la pidió otra vez; no le pide nada al vendedor.
+// Solo queda en el log del worker.
+export const YA_SALIO_POR_PALABRA_CLAVE = "ya salió por palabra clave para este mensaje";
+export function noteForVendor(note: string): boolean {
+  return !note.endsWith(YA_SALIO_POR_PALABRA_CLAVE);
+}
 
 export type StartWorkflow = (input: StartRunInput) => Promise<StartRunResult>;
 
@@ -44,7 +53,6 @@ export async function loadAgentTools(organizationId: string): Promise<AgentTools
 export type Aviso = {
   motivo: AvisoMotivo;
   detalle: string;
-  lectura: ComprobanteLeido | null;
 };
 
 export type ActionPlan = {
@@ -90,15 +98,9 @@ export async function prepareActions(input: {
         // Varias en una respuesta: gana la más adelantada (las demás serían retroceso o igual).
         plan.stage = plan.stage && stageIndex(plan.stage) >= stageIndex(c.etapa) ? plan.stage : c.etapa;
         break;
-      case "aviso": {
-        const a = c.aviso;
-        const lectura: ComprobanteLeido | null =
-          a.motivo === "cliente_pide_humano"
-            ? null
-            : { monto: str(a.monto), referencia: str(a.referencia), banco: str(a.banco), fecha: str(a.fecha), tipo: a.tipo ?? null };
-        plan.avisos.push({ motivo: a.motivo, detalle: a.detalle.trim(), lectura });
+      case "aviso":
+        plan.avisos.push({ motivo: c.aviso.motivo, detalle: (c.aviso.detalle ?? "").trim() });
         break;
-      }
       case "workflow":
         plan.runs.push({ slug: c.workflow.slug, workflowId: c.workflow.id });
         break;
@@ -122,7 +124,7 @@ export async function prepareActions(input: {
       );
     const dupIds = new Set(dup.map((d) => d.workflowId));
     if (dupIds.size) {
-      plan.notes.push(`${plan.runs.filter((r) => dupIds.has(r.workflowId)).map((r) => r.slug).join(", ")}: ya salió por palabra clave para este mensaje`);
+      plan.notes.push(`${plan.runs.filter((r) => dupIds.has(r.workflowId)).map((r) => r.slug).join(", ")}: ${YA_SALIO_POR_PALABRA_CLAVE}`);
       plan.runs = plan.runs.filter((r) => !dupIds.has(r.workflowId));
     }
   }
@@ -131,12 +133,6 @@ export async function prepareActions(input: {
 
 const STAGE_LIST: readonly Stage[] = ["inbox", "prospecto", "interesado", "cerca_compra", "compra"];
 const stageIndex = (s: Stage) => STAGE_LIST.indexOf(s);
-
-function str(v: unknown): string | null {
-  if (typeof v === "string") return v.trim() || null;
-  if (typeof v === "number") return String(v);
-  return null;
-}
 
 // Guarda el total cotizado por el AGENTE. Si un vendedor lo fijó a mano en el
 // detalle del contacto, manda el vendedor: el agente no lo pisa.
@@ -169,23 +165,19 @@ export async function runsThatSend(organizationId: string, workflowIds: readonly
 }
 
 export const MOTIVO_LABEL: Record<AvisoMotivo, string> = {
-  cotejar_deposito: "Cotejar depósito",
+  cotejar_deposito: "Depósito recibido",
   cliente_pide_humano: "El cliente pide hablar con una persona",
   comprobante_dudoso: "Comprobante dudoso",
 };
 
-const fmtFecha = (d: Date) => d.toLocaleDateString("es-MX", { day: "2-digit", month: "2-digit", year: "numeric", timeZone: "America/Mazatlan" });
+// "Depósito recibido" es FIJO (sin montos, folio ni texto del modelo: decisión del
+// dueño, 25-sep-2026); los otros motivos llevan el detalle que escribió el agente.
+export const DEPOSITO_RECIBIDO_BODY = "Depósito recibido. Revisa el comprobante en el hilo y el depósito en el banco antes de enviar.";
 
 // Texto del aviso 🤖 tal como lo ve el vendedor.
-export function avisoBody(a: Aviso, repetida: { contactName: string; fecha: Date } | null): string {
-  const parts = [`${MOTIVO_LABEL[a.motivo]}: ${a.detalle}`];
-  if (a.lectura) {
-    const l = a.lectura;
-    const datos = [l.monto && `monto ${l.monto}`, l.referencia && `ref. ${l.referencia}`, l.banco, l.fecha, l.tipo && `tipo ${l.tipo}`].filter(Boolean);
-    if (datos.length) parts.push(`(${datos.join(" · ")})`);
-  }
-  if (repetida) parts.push(`⚠ Referencia ya usada con ${repetida.contactName} el ${fmtFecha(repetida.fecha)}. Cotejar antes de entregar.`);
-  return parts.join(" ");
+export function avisoBody(a: Aviso): string {
+  if (a.motivo === "cotejar_deposito") return DEPOSITO_RECIBIDO_BODY;
+  return a.detalle ? `${MOTIVO_LABEL[a.motivo]}: ${a.detalle}` : `${MOTIVO_LABEL[a.motivo]}.`;
 }
 
 export type ExecutedActions = { started: string[]; skipped: string[]; notes: string[]; avisos: number; stageMoved: boolean };
@@ -220,36 +212,12 @@ export async function executeActions(
   // decirle nada al cliente.
   const cotejarEnviado = plan.avisos.some((a) => a.motivo === "cotejar_deposito");
   for (const a of plan.avisos) {
-    const receiptId = ctx.receiptMessageId ?? ctx.batchMessageId;
-    const repetida = await conCandadoDeReferencia(ctx.organizationId, a.lectura?.referencia ?? null, async (tx) => {
-      let rep: { contactName: string; fecha: Date } | null = null;
-      if (a.lectura?.referencia) {
-        const r = await referenciaRepetida(ctx.organizationId, ctx.contactId, a.lectura.referencia, tx);
-        if (r?.mismoContacto && r.messageId !== receiptId && montoNorm(r.monto) === montoNorm(a.lectura.monto)) {
-          // El mismo contacto reenvió la misma foto (otro mensaje, mismo monto): no es
-          // repetida; ni registro ni aviso nuevo. Si es el MISMO mensaje es un reintento
-          // (registro y aviso son idempotentes); si el monto es otro, es un pago nuevo.
-          return "omitir" as const;
-        }
-        if (r && !r.mismoContacto) rep = r;
-      }
-      // Con imagen o PDF del cliente se guarda lo leído (aunque solo sea banco o
-      // fecha, o nada: el archivo fue ilegible). Sin adjunto no hay comprobante.
-      if (a.lectura && ctx.receiptMessageId !== null) {
-        await registrarComprobante(
-          { organizationId: ctx.organizationId, contactId: ctx.contactId, conversationId: ctx.conversationId, messageId: ctx.receiptMessageId, lectura: a.lectura },
-          tx,
-        );
-      }
-      return rep;
-    });
-    if (repetida === "omitir") continue;
     const added = await addNotice({
       organizationId: ctx.organizationId,
       conversationId: ctx.conversationId,
       messageId: ctx.batchMessageId,
       kind: a.motivo,
-      body: avisoBody(a, repetida),
+      body: avisoBody(a),
       strict: true,
     });
     if (added) out.avisos++;
@@ -270,15 +238,22 @@ export async function executeActions(
       excludeWorkflowIds: plan.runs.map((r) => r.workflowId),
     });
     out.stageMoved = moved !== null;
-    // A Compra (o a Cerca de compra con comprobante) sin aviso de cotejar: el CRM lo deja igual.
+    // A Compra (o a Cerca de compra con comprobante) sin "Depósito recibido": el CRM deja
+    // un aviso igual. "Depósito recibido" solo si el cliente mandó imagen o PDF; sin
+    // adjunto, un aviso neutral. Con "Comprobante dudoso" en la misma respuesta no se
+    // agrega nada (el vendedor no debe ver "dudoso" y "recibido" juntos).
     const necesitaCotejar = plan.stage === "compra" || (plan.stage === "cerca_compra" && ctx.receiptMessageId !== null);
-    if (moved && necesitaCotejar && !cotejarEnviado) {
+    const dudoso = plan.avisos.some((a) => a.motivo === "comprobante_dudoso");
+    if (moved && necesitaCotejar && !cotejarEnviado && !dudoso) {
       const added = await addNotice({
         organizationId: ctx.organizationId,
         conversationId: ctx.conversationId,
         messageId: ctx.batchMessageId,
         kind: "cotejar_deposito",
-        body: `Cotejar depósito: el agente movió al contacto a ${plan.stage === "compra" ? "Compra" : "Cerca de compra"}. Revisa el comprobante en el hilo y el depósito en el banco antes de enviar.`,
+        body:
+          ctx.receiptMessageId !== null
+            ? DEPOSITO_RECIBIDO_BODY
+            : `El agente movió al contacto a ${plan.stage === "compra" ? "Compra" : "Cerca de compra"} sin comprobante en este mensaje. Revisa el hilo y el depósito en el banco antes de enviar.`,
         strict: true,
       });
       if (added) out.avisos++;
@@ -305,12 +280,6 @@ export async function crmContextFor(organizationId: string, contactId: string): 
       ? `Cotización guardada: $${Number(c.monto).toLocaleString("es-MX")} MXN${por === "vendedor" ? " (fijada por un vendedor; manda sobre la tuya)" : ""}.`
       : "Cotización guardada: ninguna todavía.",
   );
-  const pagos = await comprobantesDelContacto(organizationId, contactId);
-  if (pagos.length) {
-    lines.push(
-      `Comprobantes ya registrados de este contacto: ${pagos.map((p) => `${p.monto ?? "monto no legible"}${p.tipo ? ` (${p.tipo})` : ""}${p.fecha ? ` el ${p.fecha}` : ""}`).join("; ")}.`,
-    );
-  } else lines.push("Comprobantes ya registrados de este contacto: ninguno.");
   return `[CONTEXTO DEL CRM — no lo menciones literalmente]\n${lines.join("\n")}`;
 }
 

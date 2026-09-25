@@ -819,13 +819,17 @@ Etapa solo hacia adelante y agente activo en todo el guion. **Costo:** 9 llamada
   del cerebro de 1,024 a 4,096 tokens y **avisar si una respuesta se corta**, en vez de descartarla en
   silencio. *(Fase E, 25-sep: el tope de 4,096 y el aviso "respuesta cortada" ya están hechos en
   `feat/agente-ia-fase-e`; falta "Depósito recibido" y la frase del Goal.)*
-- **C.** Dos o más comprobantes en un mismo mensaje/lote: cada aviso del agente dice a qué imagen se
+- *(Fase E, 25-sep — estado: B hecho con "Depósito recibido" fijo; el dueño decidió quitar la lectura
+  de monto/folio y el chequeo de folio repetido, así que **C y D se cancelan**; E y F hechos; el
+  reenvío seguro quedó como tarjeta con "Reintentar"/"Apagar" — ver `docs/agente-ia.md`. A sigue por
+  verificar.)*
+- **C (cancelado).** Dos o más comprobantes en un mismo mensaje/lote: cada aviso del agente dice a qué imagen se
   refiere y el CRM registra una fila (y un aviso) por comprobante. Hoy solo cabe uno por lote.
-- **D.** Marcar cada fila de `comprobantes` como cotejar o dudoso (migración nueva) y que el contexto del
+- **D (cancelado).** Marcar cada fila de `comprobantes` como cotejar o dudoso (migración nueva) y que el contexto del
   agente solo cuente como pagados los de cotejar.
-- **E.** Caché también del historial (segundo punto de caché al final del turno anterior): en chats
+- **E (hecho).** Caché también del historial (segundo punto de caché al final del turno anterior): en chats
   largos bajaría de ~$0.15 a ~$0.03 por respuesta, sin cambiar lo que el agente lee.
-- **F.** El aviso "Acción del agente no ejecutada: … ya salió por palabra clave" no le pide nada al
+- **F (hecho).** El aviso "Acción del agente no ejecutada: … ya salió por palabra clave" no le pide nada al
   vendedor: que quede solo en el registro interno.
 - **Nota — tope diario de $20:** `ai_config.daily_budget_usd` vale 20.00 en producción, pero no se aplica
   (desde el cierre de la Fase B el agente va sin presupuesto diario por decisión del dueño) ni se muestra

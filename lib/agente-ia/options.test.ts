@@ -4,7 +4,7 @@ import { FIXED_PROFILE } from "./model-cost";
 
 describe("buildApiProviders (panel APIs de IA)", () => {
   it("tres estados por proveedor y nunca el valor de la llave", () => {
-    const view = buildApiProviders({ OPENAI_API_KEY: "sk-secreto", ANTHROPIC_API_KEY: "", GOOGLE_GENERATIVE_AI_API_KEY: "g-secreto" });
+    const view = buildApiProviders({ OPENAI_API_KEY: "sk-secreto", ANTHROPIC_API_KEY: "", GEMINI_API_KEY: "g-secreto" });
     expect(view.map((p) => [p.id, p.state])).toEqual([
       ["openai", "conectada"],
       ["anthropic", "falta_llave"],
