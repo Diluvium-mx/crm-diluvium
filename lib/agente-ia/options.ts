@@ -13,7 +13,7 @@ function reasonText(reason: string, envKey: string | null): string {
     case "missing_key":
       return `Falta la llave ${envKey ?? "?"} en Railway`;
     case "no_adapter":
-      return "Falta soporte en el CRM (llega con la parte (c) de Fase D)";
+      return "Falta soporte en el CRM";
     case "unknown_model":
       return "Modelo no reconocido";
     default:
@@ -29,9 +29,11 @@ export type ModelCostInputs = { profile: UsageProfile; overrides: Readonly<Recor
 // leyendo las llaves presentes en el entorno del SERVIDOR. Solo se llama en el
 // servidor (lee process.env vía modelAvailability); nunca se importa desde el
 // cliente. Las opciones sin llave/adaptador quedan `available: false` → gris.
+// `recommendedId`: la etiqueta "Recomendado" (Modelo 1 → Luna, Modelo 2 → Sonnet 5).
 export function buildModelOptions(
   role: ModelRole,
   cost: ModelCostInputs = { profile: FIXED_PROFILE, overrides: {} },
+  recommendedId: string = DEFAULT_BRAIN_MODEL,
 ): ModelOptionView[] {
   return modelsForRole(role).map((m) => {
     const availability = modelAvailability(m.id);
@@ -45,7 +47,7 @@ export function buildModelOptions(
       available: availability.available,
       disabledReason: availability.available ? null : reasonText(availability.reason, availability.envKey),
       costPer100Usd: costPer100Conversations(cost.profile, resolveModelPrice(m.id, m.provider, cost.overrides[m.id] ?? null)),
-      recommended: m.id === DEFAULT_BRAIN_MODEL,
+      recommended: m.id === recommendedId,
       isNew: m.isNew === true,
     };
   });

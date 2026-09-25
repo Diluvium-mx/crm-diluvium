@@ -14,9 +14,10 @@ export const PROVIDER_META: Record<ProviderId, ProviderMeta> = {
   openrouter: { id: "openrouter", label: "OpenRouter", envKey: "OPENROUTER_API_KEY" },
 };
 
-// Proveedores con adaptador implementado en la Fase A. MANTENER EN SINCRONÍA con
-// ADAPTERS en lib/ai/index.ts (index.ts valida la sincronía al cargar).
-export const IMPLEMENTED_PROVIDERS: readonly ProviderId[] = ["openai", "anthropic"];
+// Proveedores con adaptador implementado (openai/anthropic desde la Fase A;
+// google/xai/openrouter desde la Fase E). MANTENER EN SINCRONÍA con ADAPTERS en
+// lib/ai/index.ts (index.ts valida la sincronía al cargar).
+export const IMPLEMENTED_PROVIDERS: readonly ProviderId[] = ["openai", "anthropic", "google", "xai", "openrouter"];
 
 export function providerImplemented(provider: ProviderId): boolean {
   return IMPLEMENTED_PROVIDERS.includes(provider);

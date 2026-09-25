@@ -13,23 +13,29 @@ clientes** (eso llega en la Fase B y siguientes).
   - `catalog.ts`: registro de modelos (id, proveedor, model-id de API, nivel,
     multimodal, rol). **Fuente única**; agregar un modelo = una entrada aquí.
   - `provider.ts`: metadatos de proveedor + disponibilidad (`modelAvailability`).
-  - `providers/{openai,anthropic}.ts`: adaptadores. Agregar Google / xAI /
-    OpenRouter después = **un archivo adaptador nuevo + registrarlo**; nada más
-    cambia.
+  - `providers/{openai,anthropic,google,xai,openrouter}.ts`: adaptadores (Google, xAI y
+    OpenRouter desde la Fase E, 25-sep-2026; OpenRouter con el paquete oficial
+    `@ai-sdk/openai-compatible`). Agregar un proveedor = **un archivo adaptador nuevo +
+    registrarlo**; nada más cambia.
 - **Caché del system por proveedor**: OpenAI automática (prompts ≥1024 tokens);
   Anthropic explícita con `cacheControl: { type: 'ephemeral' }` en el bloque de
   sistema. Se reporta en `usage.inputTokenDetails.cacheReadTokens` /
   `cacheWriteTokens`. Con el system de prueba (corto) marca 0 hasta que el system
   real (largo) llegue en la Fase B; el cableado y el reporte ya están listos.
-- **`ai_config`** (una fila por organización): `modelo_filtro`,
-  `modelo_cerebro`. Default filtro = Luna, cerebro = Sonnet 5. Editable solo
+- **`ai_config`** (una fila por organización): `modelo_filtro`, `modelo_cerebro` (= Modelo 2
+  desde la Fase E), `modelo_1` y `etapas_modelo_1` (migración 0033). Default filtro = Luna,
+  Modelo 1 = Luna para Inbox, Prospecto e Interesado, Modelo 2 = Sonnet 5 para el resto. Editable solo
   owner/admin (ACL: recurso `aiConfig` en `lib/auth/permissions.ts`).
 - **Pestaña "Agente IA"** (`/agente-ia`, solo owner/admin) — desde el 24-sep-2026 es el
   **editor estilo GHL** (solo personaliza al agente):
   - Encabezado con el **nombre del agente** editable con lápiz (`ai_config.agent_name`).
-  - **Crear:** selector del modelo **cerebro** con indicador de costo ($ a $$$$ por precio
-    de salida) y etiquetas "Recomendado" (Sonnet 5) y "Nuevo" (en gris si falta su llave);
-    **Nombre de la empresa** (`ai_config.company_name`); editor grande del **Goal** con
+  - **Crear:** **Modelos** (Fase E, 25-sep-2026): selector del **Modelo 1** (recomendado
+    Luna) y del **Modelo 2** (recomendado Sonnet 5), cada opción con su costo aproximado por
+    cada 100 conversaciones y en gris si falta su llave, y **qué modelo atiende cada etapa**
+    del Embudo ("Modelo 1 | Modelo 2" por etapa; se usa la etapa del contacto al responder).
+    La sección **Empresa** se quitó el 25-sep (el Goal ya dice quién es la empresa;
+    `{{empresa.nombre}}` sale de `ai_config.company_name` o, si no hay, del nombre de la
+    organización). Editor grande del **Goal** con
     deshacer, contador de palabras, tokens aproximados y **Valores personalizados**
     (`{{contacto.nombre}}`, `{{vendedor.nombre}}` = asignado o "un asesor",
     `{{empresa.nombre}}`, `{{agente.nombre}}`; el runtime los sustituye por conversación);
@@ -49,12 +55,24 @@ clientes** (eso llega en la Fase B y siguientes).
   (`ai_credit_topups`, owner/admin las registran con monto y fecha). Aclara en pantalla
   que es un estimado (tokens del CRM × precios internos, sin impuestos).
 
-## Modelos (Fase A)
+## Modelos (Fase A → Fase E)
 
-Filtro: **GPT-5.6 Luna**. Cerebro (default **Claude Sonnet 5**) + opciones:
-GPT-5.6 Terra, Claude Haiku 4.5, Gemini 3.8 Flash, Grok 4.6, Qwen 3.7 Flash. Los
-tres últimos salen en gris hasta que llegue su adaptador (brief siguiente). Los
-model-id de API se verificaron contra docs oficiales / OpenRouter (2026-09).
+Filtro (limpia el anuncio): **GPT-5.6 Luna**. Desde la Fase E el cerebro son **dos
+modelos por etapa**: Modelo 1 (default **GPT-5.6 Luna**; Inbox, Prospecto, Interesado) y
+Modelo 2 (default **Claude Sonnet 5**; Cerca de compra y Compra). Cualquiera de los dos
+se elige entre: GPT-5.6 Luna, Claude Sonnet 5, GPT-5.6 Terra, GPT-5.6 Sol, Claude Opus 5.5,
+Claude Haiku 4.5, Gemini 3.8 Flash, Grok 4.6 y Qwen 3.7 Flash. Los tres últimos salen en
+gris hasta que su llave esté en Railway (y no se pueden guardar sin ella). Si el Modelo 1 no
+tiene llave en un entorno, contesta el Modelo 2; si un vendedor cambia la etapa mientras el
+agente escribe y eso cambia de modelo, la respuesta se descarta y se regenera con el correcto.
+Qwen no lee PDF: un comprobante en PDF le llega como nota de texto. Precios internos
+(`lib/ai/pricing.ts`, fuentes en el archivo): Gemini 3.8 Flash 0.75 / 3.75 USD por millón
+**hasta el 31-dic-2026** (se duplica en 2027), Grok 4.6 2 / 6 (desde 200 mil tokens de entrada
+4 / 12), Qwen 3.7 Flash 0.03 / 0.13 (desde 32 mil 0.10 / 0.40; desde 256 mil 0.20 / 0.80): el
+tramo se elige por la entrada de cada llamada. El tope de respuesta del cerebro es de 4,096 tokens; si
+una respuesta se corta o una acción llega incompleta, el vendedor ve el aviso 🤖 "respuesta
+cortada" (nunca se descarta en silencio). Los model-id de API se verificaron contra docs
+oficiales / OpenRouter (2026-09).
 
 ## Llaves (Railway)
 
@@ -82,6 +100,14 @@ railway variable set 'OPENAI_API_KEY=${{crm-diluvium.OPENAI_API_KEY}}' 'ANTHROPI
 Comillas **simples**:
 zsh trata `${{...}}` como *bad substitution* con comillas dobles. Una opción del
 selector cuya llave falte queda en gris automáticamente.
+
+**Fase E — llaves nuevas** (mismo patrón: el valor en el web, el worker lo referencia):
+`GOOGLE_GENERATIVE_AI_API_KEY` (Gemini), `XAI_API_KEY` (Grok) y `OPENROUTER_API_KEY` (Qwen).
+
+```bash
+railway variable set 'GOOGLE_GENERATIVE_AI_API_KEY=${{crm-diluvium.GOOGLE_GENERATIVE_AI_API_KEY}}' 'XAI_API_KEY=${{crm-diluvium.XAI_API_KEY}}' 'OPENROUTER_API_KEY=${{crm-diluvium.OPENROUTER_API_KEY}}' -s worker-production -e production
+railway variable set 'GOOGLE_GENERATIVE_AI_API_KEY=${{crm-diluvium.GOOGLE_GENERATIVE_AI_API_KEY}}' 'XAI_API_KEY=${{crm-diluvium.XAI_API_KEY}}' 'OPENROUTER_API_KEY=${{crm-diluvium.OPENROUTER_API_KEY}}' -s worker -e staging
+```
 
 ## Nota para la Fase B (panel de gasto)
 
@@ -217,7 +243,11 @@ Dashboard ya muestra el gasto del mes y el saldo estimado (24-sep-2026).
   los pasos 1, 3, 4 y 5; el 2 y el 6 con observaciones. El Goal de producción es la versión 2 del
   historial. Pendientes A–F (sin construir) y resultado completo: `docs/fase-d-diseno.md` §11.
 - **Fase E (definición del dueño, 25-sep-2026):** Modelo 1 (Luna) y Modelo 2 (Sonnet 5) por etapa,
-  cada uno con su selector en la pestaña Agente IA, más el reenvío seguro. El panel de gasto que antes
+  cada uno con su selector en la pestaña Agente IA, más el reenvío seguro. **Hecho en la rama
+  `feat/agente-ia-fase-e` (migración 0033):** los dos selectores y la asignación por etapa
+  (Modelo 1 = Inbox, Prospecto e Interesado, decisión del dueño), adaptadores de Google, xAI y
+  OpenRouter con sus precios, tope de 4,096 tokens con aviso si se corta (parte del pendiente B
+  de la Fase D), sin sección "Empresa" y favicon nuevo. Siguen: reenvío seguro y pendientes A–F. El panel de gasto que antes
   se anotaba aquí ya existe en el Dashboard (24-sep-2026); conciliar contra las Cost API queda como
   pendiente sin fase.
 

@@ -6,7 +6,9 @@
 import { and, asc, desc, eq, max, sql } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { aiConfig, aiKnowledge, aiKnowledgeVersions, user } from "@/lib/db/schema";
-import { DEFAULT_BRAIN_MODEL, DEFAULT_FILTER_MODEL } from "@/lib/ai/catalog";
+import { DEFAULT_BRAIN_MODEL, DEFAULT_FILTER_MODEL, DEFAULT_MODEL_1 } from "@/lib/ai/catalog";
+import { DEFAULT_MODEL_1_STAGES, normalizeModel1Stages } from "@/lib/ai/runtime/model-by-stage";
+import type { Stage } from "@/lib/contacts/stages";
 import { countWords } from "./editor";
 
 type Tx = Parameters<Parameters<typeof db.transaction>[0]>[0];
@@ -38,6 +40,8 @@ export async function loadEditor(organizationId: string) {
     agentName: cfg?.agentName ?? "Ángela",
     companyName: cfg?.companyName ?? "",
     modeloCerebro: cfg?.modeloCerebro ?? DEFAULT_BRAIN_MODEL,
+    modelo1: cfg?.modelo1 ?? DEFAULT_MODEL_1,
+    etapasModelo1: cfg ? normalizeModel1Stages(cfg.etapasModelo1) : [...DEFAULT_MODEL_1_STAGES],
     goal: cfg?.goal ?? "",
     faqs,
     goalVersions: await listVersions(organizationId, "goal"),
@@ -57,9 +61,24 @@ export async function saveProfile(organizationId: string, input: { agentName?: s
     .where(eq(aiConfig.organizationId, organizationId));
 }
 
+// Modelo 2 (Fase E) = el cerebro de siempre (modelo_cerebro).
 export async function saveBrainModel(organizationId: string, modelId: string): Promise<void> {
   await ensureConfig(db, organizationId);
   await db.update(aiConfig).set({ modeloCerebro: modelId, updatedAt: new Date() }).where(eq(aiConfig.organizationId, organizationId));
+}
+
+// Modelo 1 (Fase E) y las etapas que atiende (las demás van al Modelo 2).
+export async function saveModel1(organizationId: string, modelId: string): Promise<void> {
+  await ensureConfig(db, organizationId);
+  await db.update(aiConfig).set({ modelo1: modelId, updatedAt: new Date() }).where(eq(aiConfig.organizationId, organizationId));
+}
+
+export async function saveModel1Stages(organizationId: string, stages: readonly Stage[]): Promise<void> {
+  await ensureConfig(db, organizationId);
+  await db
+    .update(aiConfig)
+    .set({ etapasModelo1: normalizeModel1Stages(stages), updatedAt: new Date() })
+    .where(eq(aiConfig.organizationId, organizationId));
 }
 
 // ── Versiones ────────────────────────────────────────────────────────────────

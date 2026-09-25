@@ -4,9 +4,9 @@
 // cada 100 conversaciones y las etiquetas "Recomendado" y "Nuevo"; en gris si falta
 // su llave o su adaptador, diciendo por qué. Elegir otra opción pide confirmación
 // arriba (use-model-change.tsx) y solo entonces guarda. ModelPicker sirve para
-// cualquier modelo del agente (la parte (c) de Fase D lo divide en Modelo 1 y
-// Modelo 2); BrainModelPicker es el del cerebro. Sin lógica de datos.
-import { updateBrainModel } from "@/lib/actions/agente-ia-editor";
+// cualquier modelo del agente; desde la Fase E hay dos: Model1Picker (Modelo 1) y
+// BrainModelPicker (Modelo 2 = el cerebro de siempre). Sin lógica de datos.
+import { updateBrainModel, updateModel1 } from "@/lib/actions/agente-ia-editor";
 import { costPer100Label } from "@/lib/agente-ia/model-cost";
 import type { AgentActionResult, ModelOptionView } from "@/lib/agente-ia/types";
 import { useModelChange } from "./use-model-change";
@@ -79,7 +79,13 @@ async function saveBrain(modelId: string): Promise<AgentActionResult> {
 }
 
 export function BrainModelPicker({ options, value, agentName }: { options: ModelOptionView[]; value: string; agentName: string }) {
-  return (
-    <ModelPicker options={options} value={value} agentName={agentName} target="el cerebro" ariaLabel="Modelo del agente" save={saveBrain} />
-  );
+  return <ModelPicker options={options} value={value} agentName={agentName} target="el Modelo 2" ariaLabel="Modelo 2 del agente" save={saveBrain} />;
+}
+
+async function saveModel1(modelId: string): Promise<AgentActionResult> {
+  return updateModel1({ modelId });
+}
+
+export function Model1Picker({ options, value, agentName }: { options: ModelOptionView[]; value: string; agentName: string }) {
+  return <ModelPicker options={options} value={value} agentName={agentName} target="el Modelo 1" ariaLabel="Modelo 1 del agente" save={saveModel1} />;
 }

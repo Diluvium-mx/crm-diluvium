@@ -817,7 +817,8 @@ Etapa solo hacia adelante y agente activo en todo el guion. **Costo:** 9 llamada
 - **B (ajustada por el dueño).** El aviso de pago se llamará **"Depósito recibido"**, sin montos ni
   referencias (se ajustará también la frase del Goal que pide mandarlos). Queda subir el tope de respuesta
   del cerebro de 1,024 a 4,096 tokens y **avisar si una respuesta se corta**, en vez de descartarla en
-  silencio.
+  silencio. *(Fase E, 25-sep: el tope de 4,096 y el aviso "respuesta cortada" ya están hechos en
+  `feat/agente-ia-fase-e`; falta "Depósito recibido" y la frase del Goal.)*
 - **C.** Dos o más comprobantes en un mismo mensaje/lote: cada aviso del agente dice a qué imagen se
   refiere y el CRM registra una fila (y un aviso) por comprobante. Hoy solo cabe uno por lote.
 - **D.** Marcar cada fila de `comprobantes` como cotejar o dudoso (migración nueva) y que el contexto del

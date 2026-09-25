@@ -3,6 +3,9 @@ import { getModel } from "./catalog";
 import { IMPLEMENTED_PROVIDERS, PROVIDER_META, type ProviderAdapter } from "./provider";
 import { openaiAdapter } from "./providers/openai";
 import { anthropicAdapter } from "./providers/anthropic";
+import { googleAdapter } from "./providers/google";
+import { openrouterAdapter } from "./providers/openrouter";
+import { xaiAdapter } from "./providers/xai";
 
 // Re-exports útiles para consumidores (UI server, worker) sin tener que conocer
 // la estructura interna.
@@ -13,7 +16,7 @@ export {
   IMPLEMENTED_PROVIDERS,
 } from "./provider";
 export type { ModelAvailability } from "./provider";
-export { getModel, modelsForRole, MODEL_CATALOG, DEFAULT_FILTER_MODEL, DEFAULT_BRAIN_MODEL } from "./catalog";
+export { getModel, modelsForRole, MODEL_CATALOG, DEFAULT_FILTER_MODEL, DEFAULT_BRAIN_MODEL, DEFAULT_MODEL_1, DEFAULT_MODEL_2 } from "./catalog";
 export type { CallModelInput, CallModelResult, CatalogModel, ModelUsage, ProviderId } from "./types";
 
 // Modelo desconocido (no está en el catálogo).
@@ -24,7 +27,8 @@ export class ModelNotFoundError extends Error {
   }
 }
 
-// Proveedor sin adaptador todavía (google/xai/openrouter en la Fase A).
+// Proveedor sin adaptador (desde la Fase E los cinco lo tienen; queda por si se
+// agrega uno nuevo al catálogo antes que su adaptador).
 export class ProviderNotImplementedError extends Error {
   constructor(
     readonly provider: ProviderId,
@@ -49,6 +53,9 @@ export class ModelNotConfiguredError extends Error {
 const ADAPTERS: Partial<Record<ProviderId, ProviderAdapter>> = {
   openai: openaiAdapter,
   anthropic: anthropicAdapter,
+  google: googleAdapter,
+  xai: xaiAdapter,
+  openrouter: openrouterAdapter,
 };
 
 // Falla al cargar si el registro de adaptadores no coincide con

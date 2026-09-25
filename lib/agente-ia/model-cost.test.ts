@@ -65,7 +65,8 @@ describe("costPer100Conversations", () => {
   });
 
   it("modelo sin precio: null", () => {
-    expect(costPer100Conversations(FIXED_PROFILE, resolveModelPrice("gemini-3.8-flash", "google"))).toBeNull();
+    expect(costPer100Conversations(FIXED_PROFILE, null)).toBeNull();
+    expect(costPer100Conversations(FIXED_PROFILE, resolveModelPrice("no-existe", "google"))).toBeNull();
   });
 
   it("la sobrescritura de precio de la organización cuenta", () => {
