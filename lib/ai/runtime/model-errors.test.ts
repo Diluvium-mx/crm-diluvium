@@ -17,6 +17,8 @@ describe("errores del modelo en palabras simples", () => {
   it("llave faltante, llave inválida, modelo inexistente, tiempo y conversación rechazada", () => {
     expect(classifyModelError(Object.assign(new Error("x"), { name: "ModelNotConfiguredError", envKey: "GROK_API_KEY" }), "xAI").resumen).toBe("Falta la llave GROK_API_KEY en Railway.");
     expect(classifyModelError(api(401, "invalid x-api-key"), "Anthropic").kind).toBe("llave_invalida");
+    // xAI con una llave mal copiada: 400 "invalid-argument", no "rechazó la conversación".
+    expect(classifyModelError(api(400, "invalid-argument: Incorrect API key provided. You can obtain an API key from https://console.x.ai."), "xAI").kind).toBe("llave_invalida");
     expect(classifyModelError(api(404, "model not found"), "Google").kind).toBe("modelo_no_existe");
     expect(classifyModelError(Object.assign(new Error("The operation was aborted due to timeout"), { name: "TimeoutError" }), "OpenAI").kind).toBe("tiempo");
     const prefill = classifyModelError(api(400, "This model does not support assistant message prefill. The conversation must end with a user message."), "Anthropic");

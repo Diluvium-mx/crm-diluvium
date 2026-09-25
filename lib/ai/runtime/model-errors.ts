@@ -39,6 +39,9 @@ function detalle(e: ErrorLike): string {
   return oneLine.length > 160 ? `${oneLine.slice(0, 157)}…` : oneLine;
 }
 
+// Llave mal copiada o revocada: xAI lo manda como 400 "invalid-argument" (visto el
+// 25-sep-2026 con una GROK_API_KEY equivocada), otros como 401/403.
+const LLAVE_INVALIDA = /incorrect api key|invalid api key|invalid x-api-key|api key not valid|invalid_api_key|api key is invalid/i;
 const SIN_SALDO = /insufficient[_ ]quota|credit balance|billing|balance is too low|exceeded your current quota|payment required|out of credits|insufficient credits|spending limit/i;
 
 export function classifyModelError(error: unknown, providerLabel: string): ModelErrorInfo {
@@ -58,7 +61,7 @@ export function classifyModelError(error: unknown, providerLabel: string): Model
   if (status === 402 || SIN_SALDO.test(text)) {
     return { kind: "sin_saldo", resumen: `Se acabó el saldo de ${providerLabel} (o llegó a su límite de gasto). Recarga saldo y dale Reintentar.`, autoRetry: false };
   }
-  if (status === 401 || status === 403) {
+  if (status === 401 || status === 403 || LLAVE_INVALIDA.test(text)) {
     return { kind: "llave_invalida", resumen: `La llave de ${providerLabel} no es válida o no tiene permiso. Revísala en Railway.`, autoRetry: false };
   }
   if (status === 404) {
