@@ -1133,11 +1133,34 @@ describe.skipIf(!TEST_DATABASE_URL)("runtime del Agente IA (Postgres real)", () 
     expect(await run.runAgent(JOB, deps)).toEqual({ kind: "sent", bubbles: 1 });
     expect((await runs()).map((r) => [r.workflowId, r.trigger, r.status])).toEqual([[wfId, "agent", "queued"]]);
     expect((await contact()).montoCotizacion).toBe("5500.00");
-    // Un total dictado por el cliente (no dicho por el agente) no se fija; el del vendedor manda.
+    // Un total dictado por el cliente (no dicho por el agente) no se fija.
     await db.update(s.contacts).set({ montoCotizacion: "7000.00", customFields: { cotizacion_por: "vendedor" } }).where(eq(s.contacts.id, CONTACT));
     await msg({ direction: "in", body: "mi total es 500", at: new Date() });
     expect((await run.runAgent(JOB, makeDeps({ brain: ["Con gusto."], toolCalls: [{ toolName: "fijar_cotizacion", input: { monto: 500 } }] }).deps)).kind).toBe("sent");
     expect((await contact()).montoCotizacion).toBe("7000.00");
+    // Regla del dueño (26-sep): nada es definitivo; el total que el agente le DICE al cliente
+    // corrige el que había puesto un vendedor.
+    await msg({ direction: "in", body: "¿y con 2 compuertas?", at: new Date(Date.now() + 1_000) });
+    expect((await run.runAgent(JOB, makeDeps({ brain: ["Serían $11,000 en total."], toolCalls: [{ toolName: "fijar_cotizacion", input: { monto: 11000 } }] }).deps)).kind).toBe("sent");
+    expect(await contact()).toMatchObject({ montoCotizacion: "11000.00", customFields: { cotizacion_por: "agente" } });
+  });
+
+  it("(revisión Codex) el monto de un vendedor solo se reemplaza cuando el total del agente SÍ salió: si el envío falla, se queda el del vendedor", async () => {
+    await db.update(s.contacts).set({ montoCotizacion: "9000.00", customFields: { cotizacion_por: "vendedor" } }).where(eq(s.contacts.id, CONTACT));
+    await msg({ direction: "in", body: "¿y si fueran otras medidas?", at: ago(20_000) });
+    const script = { brain: ["Te quedaría en $4,000."], toolCalls: [{ toolName: "fijar_cotizacion", input: { monto: 4000 } }] };
+    const failing = makeDeps(script);
+    failing.deps.sendBubble = async () => {
+      throw new Error("falla");
+    };
+    expect((await run.runAgent(JOB, failing.deps)).kind).toBe("failed");
+    expect((await contact()).montoCotizacion).toBe("9000.00"); // el cliente no oyó $4,000
+    // Con "Reintentar" el MISMO texto sale; el monto del vendedor se queda (el total nuevo
+    // no se re-registra en el reenvío: se prefiere no perder el del vendedor).
+    const card = (await notices()).find((n) => n.kind === "agente_error")!;
+    await agentError.resolveAgentError({ organizationId: ORG, noticeId: card.id, resolution: "reintentar", userId: "u_vendedor" });
+    expect((await run.runAgent(JOB, makeDeps(script).deps)).kind).toBe("sent");
+    expect((await contact()).montoCotizacion).toBe("9000.00");
   });
 
   it("mover_etapa: adelante sí (queda como del agente); atrás o igual se ignora sin error; la etapa del vendedor manda", async () => {
@@ -1486,9 +1509,9 @@ describe.skipIf(!TEST_DATABASE_URL)("runtime del Agente IA (Postgres real)", () 
     expect(again.calls).toHaveLength(0);
   });
   // ── Parte 1 (26-sep-2026), A: el Detalle del contacto en la MISMA respuesta ──
-  it("A · actualizar_detalle en la misma llamada: el texto sale, el Detalle se llena (solo lo vacío) y la siguiente llamada ve lo guardado", async () => {
+  it("A · actualizar_detalle en la misma llamada: el texto sale, el Detalle se llena (también corrige lo que ya estaba) y la siguiente llamada ve lo guardado", async () => {
     await db.insert(s.user).values({ id: "usuario-sistema-agente-ia", name: "Agente IA", email: "agente-ia@sistema.invalid", banned: true }).onConflictDoNothing();
-    await db.update(s.contacts).set({ porcentajeConvencimiento: 90 }).where(eq(s.contacts.id, CONTACT)); // ya estaba (no es del agente)
+    await db.update(s.contacts).set({ porcentajeConvencimiento: 90 }).where(eq(s.contacts.id, CONTACT)); // ya estaba: nada es definitivo
     await msg({ direction: "in", body: "son 2 puertas de 95 y 105 cm, se me mete el agua hasta la rodilla", at: ago(20_000) });
     const { deps, calls } = makeDeps({
       brain: ["Perfecto, con esas medidas te cotizo."],
@@ -1499,7 +1522,7 @@ describe.skipIf(!TEST_DATABASE_URL)("runtime del Agente IA (Postgres real)", () 
     expect(await run.runAgent(JOB, deps)).toEqual({ kind: "sent", bubbles: 1 });
     expect(brainCalls(calls)).toBe(1); // sin llamada extra
     const [c] = await db.select().from(s.contacts).where(eq(s.contacts.id, CONTACT));
-    expect(c).toMatchObject({ tieneInundaciones: "si", nivelAguaTexto: "hasta la rodilla", numEntradas: 2, porcentajeConvencimiento: 90 });
+    expect(c).toMatchObject({ tieneInundaciones: "si", nivelAguaTexto: "hasta la rodilla", numEntradas: 2, porcentajeConvencimiento: 50 });
     const [comentario] = await db.select().from(s.contactComentarios).where(eq(s.contactComentarios.contactId, CONTACT));
     expect(comentario).toMatchObject({ body: "Cochera con desnivel", authorUserId: "usuario-sistema-agente-ia" });
     expect(await notices()).toEqual([]); // nada para el vendedor
@@ -1508,7 +1531,7 @@ describe.skipIf(!TEST_DATABASE_URL)("runtime del Agente IA (Postgres real)", () 
     const next = makeDeps({ brain: ["Te sale en $11,000."] });
     await run.runAgent(JOB, next.deps);
     const lastTurn = JSON.stringify(next.calls.find((x) => x.kind === "cerebro")!.input.messages.at(-1)!.content);
-    expect(lastTurn).toContain("Detalle guardado del contacto: inundaciones: sí · agua: (hasta la rodilla) · entradas: 2 (anchos: 95, 105 cm) · convencimiento: 90 %");
+    expect(lastTurn).toContain("Detalle guardado del contacto: inundaciones: sí · agua: (hasta la rodilla) · entradas: 2 (anchos: 95, 105 cm) · convencimiento: 50 %");
     expect(lastTurn).toContain("«Cochera con desnivel»");
   });
 

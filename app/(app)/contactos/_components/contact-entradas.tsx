@@ -60,6 +60,12 @@ function EntradaRow({
   // crear, se remonta limpia (sin anchos viejos en pantalla).
   const [pending, setPending] = useState<Partial<Values>>({});
   const [editedAncho, setEditedAncho] = useState(false);
+  // Si después el agente vuelve a corregir el ancho, su marca "IA" regresa.
+  const [seenIa, setSeenIa] = useState(iaAncho);
+  if (seenIa !== iaAncho) {
+    setSeenIa(iaAncho);
+    if (iaAncho) setEditedAncho(false);
+  }
   const latest = useRef(entrada);
   useEffect(() => {
     latest.current = entrada;
@@ -121,7 +127,11 @@ function EntradaRow({
       <div className="flex items-center gap-2">
         <span className="w-14 shrink-0 text-xs text-muted-foreground">
           Entrada {entrada.posicion}
-          {iaAncho && !editedAncho && <IaMark />}
+          {iaAncho && !editedAncho && (
+            <span className="ml-1">
+              <IaMark />
+            </span>
+          )}
         </span>
         <input
           aria-label={`Ancho de la entrada ${entrada.posicion} (cm)`}

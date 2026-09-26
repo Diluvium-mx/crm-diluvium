@@ -79,6 +79,7 @@ export function ContactPanel({
     <ContactDetails
       key={contact.id}
       contactId={contact.id}
+      conversationId={detail.id}
       name={contact.name}
       phone={contact.phone}
       stage={stage}

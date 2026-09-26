@@ -12,7 +12,7 @@ export const PAUSE_OPTION_LABELS: Record<PauseOption, string> = {
   "12h": "12 horas",
   "24h": "24 horas",
   exacta: "Hasta una fecha y hora…",
-  indefinido: "Hasta que lo reactive",
+  indefinido: "Pausar indefinidamente",
 };
 
 const HOUR_MS = 3_600_000;

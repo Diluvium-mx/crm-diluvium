@@ -19,7 +19,7 @@ import { hasUnresolvedAgentError, recordAgentError, supersedeAgentErrors } from 
 import { agentErrorBody, classifyModelError, EMPTY_RESPONSE_INFO, sendErrorBody, sendErrorMotive } from "./model-errors";
 import { cleanAdMessages } from "./ad-cleaner";
 import { buildBrainSystemWithRuntime, parseBrainOutput } from "./brain";
-import { crmContextFor, executeActions, loadAgentTools, noteForVendor, prepareActions, runsThatSend, type ActionPhase, type ActionPlan, type StartWorkflow } from "./actions";
+import { crmContextFor, executeActions, loadAgentTools, noteForVendor, prepareActions, quoteSetByVendor, runsThatSend, setQuoteByAgent, type ActionPhase, type ActionPlan, type StartWorkflow } from "./actions";
 
 // Textos de respaldo del CRM cuando el modelo solo devolvió acciones (sin texto)
 // y ninguna manda algo al cliente: el agente SIEMPRE contesta, y nunca con un
@@ -620,7 +620,7 @@ export async function runAgent(job: { organizationId: string; conversationId: st
       try {
         const r = await applyDetalleByAgent(org, conv.contactId, detalle);
         if (r.llenados.length || r.delVendedor.length) {
-          console.info(`[agente] ${conv.id}: detalle → ${r.llenados.join(", ") || "sin cambios"}${r.delVendedor.length ? ` (no se tocó, es del vendedor: ${r.delVendedor.join(", ")})` : ""}`);
+          console.info(`[agente] ${conv.id}: detalle → ${r.llenados.join(", ") || "sin cambios"}${r.delVendedor.length ? ` (corrigió lo que había puesto un vendedor: ${r.delVendedor.join(", ")})` : ""}`);
         }
       } catch (error) {
         console.error(`[agente] ${conv.id}: el Detalle del contacto no se pudo actualizar`, error);
@@ -629,6 +629,18 @@ export async function runAgent(job: { organizationId: string; conversationId: st
     // Avisos, comprobante, cotización y etapa ANTES de enviar (idempotentes por el
     // entrante): nunca se le dice al cliente "un asesor te atiende" o "pago recibido"
     // sin que el vendedor lo vea, y un reintento tras el texto no los pierde.
+    // El monto de un vendedor solo se reemplaza cuando el total del agente sí salió.
+    let deferredQuote: number | null = null;
+    if (plan.quote !== null && (await quoteSetByVendor(org, conv.contactId))) {
+      deferredQuote = plan.quote;
+      plan.quote = null;
+    }
+    const applyDeferredQuote = async (confirmed: number) => {
+      if (deferredQuote === null || confirmed <= 0) return;
+      await setQuoteByAgent(org, conv.contactId, deferredQuote).catch((error: unknown) =>
+        console.error(`[agente] ${conv.id}: la cotización no se guardó`, error),
+      );
+    };
     await runActions(plan, actionCtx, deps.startWorkflow, "antes");
     // Mensajes para celular: información y pregunta por separado (máx. 2).
     const bubbles = text.trim() ? toBubbles(text) : [];
@@ -684,6 +696,7 @@ export async function runAgent(job: { organizationId: string; conversationId: st
         return { kind: "failed", reason: "envio_fallido" };
       }
       // Salió una parte: el agente sigue activo; el resto queda en un aviso al vendedor.
+      await applyDeferredQuote(sent);
       await markAgentReply(org, conv.id, deps.now());
       await supersedeAgentErrors(org, conv.id); // Fase E: el agente volvió a contestar
       if (planId) await closePlan(org, planId, "enviado");
@@ -708,6 +721,7 @@ export async function runAgent(job: { organizationId: string; conversationId: st
         await recordAiUsage({ ...brainUsage, outcome: "skipped", error: `detenido antes de enviar: ${stopped}` });
         return { kind: "skipped", reason: stopped };
       }
+      await applyDeferredQuote(sent - unconfirmed);
       await markAgentReply(org, conv.id, deps.now());
       await supersedeAgentErrors(org, conv.id); // Fase E: el agente volvió a contestar
       await recordAiUsage({ ...brainUsage, outcome: "sent", error: `detenido tras ${sent} mensaje(s): ${stopped}` });
@@ -716,6 +730,7 @@ export async function runAgent(job: { organizationId: string; conversationId: st
       await runActions(plan, actionCtx, deps.startWorkflow, "despues");
       return { kind: "sent", bubbles: sent };
     }
+    await applyDeferredQuote(sent - unconfirmed);
     await markAgentReply(org, conv.id, deps.now());
     await supersedeAgentErrors(org, conv.id); // Fase E: el agente volvió a contestar
     if (planId) await closePlan(org, planId, "enviado");

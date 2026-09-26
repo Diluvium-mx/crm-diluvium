@@ -1,9 +1,11 @@
 // Autollenado del Detalle del contacto por el Agente IA (parte 1, 26-sep-2026).
 // Sale en la MISMA llamada que genera la respuesta (herramienta `actualizar_detalle`,
-// tools.ts), sin llamada extra. Reglas del dueño:
-// - el agente solo llena campos VACÍOS o que él mismo llenó antes; nunca borra ni
-//   cambia lo que escribió un vendedor (origen por campo en custom_fields.detalle_por,
-//   lib/contacts/qualification.ts). Un campo editado por un vendedor es suyo para siempre;
+// tools.ts), sin llamada extra. Reglas del dueño (26-sep-2026, tras probarlo):
+// - ningún dato es definitivo, ni el del vendedor ni el del agente: el agente sigue
+//   leyendo TODA la conversación y, si un dato guardado ya no cuadra con lo que dijo el
+//   cliente (p. ej. al final son 2 entradas y no 1), lo corrige. Una edición del vendedor
+//   es "una acción más". El origen por campo (custom_fields.detalle_por) solo dice quién
+//   escribió al último: pinta la marca "IA" y le avisa al modelo qué corrigió un vendedor;
 // - escribe SIEMPRE con las funciones de lib/contacts/qualification.ts (así el aviso
 //   "contacto actualizado" en vivo las cubre igual que a un vendedor);
 // - sus comentarios van firmados por "Agente IA" (usuario de sistema, 0037).
@@ -49,6 +51,7 @@ export function mergeDetalle(calls: readonly ValidToolCall[]): DetallePedido | n
   return any ? { campos, comentarios: comentarios.slice(0, MAX_COMENTARIOS_POR_RESPUESTA) } : null;
 }
 
+// `delVendedor`: campos que el agente corrigió sobre lo último que puso un vendedor (log).
 export type DetalleResultado = { llenados: string[]; delVendedor: string[] };
 
 export async function applyDetalleByAgent(organizationId: string, contactId: string, pedido: DetallePedido): Promise<DetalleResultado> {
@@ -71,29 +74,27 @@ export async function applyDetalleByAgent(organizationId: string, contactId: str
       .for("update");
     if (!c) return;
     const por = detallePorOf(c.customFields);
-    // ¿Puede escribir el agente? Vacío o suyo, y nunca si un vendedor lo tocó.
-    const can = (key: string, current: unknown) => {
-      if (por[key] === "vendedor" || (current !== null && por[key] !== "agente")) {
-        out.delVendedor.push(key);
-        return false;
-      }
-      return true;
+    // Registro (log): campos que corrige sobre lo que había puesto un vendedor.
+    const note = (key: string) => {
+      if (por[key] === "vendedor") out.delVendedor.push(key);
     };
     const d = pedido.campos;
     const patch: ContactQualificationPatch = {};
-    if (d.tieneInundaciones !== undefined && d.tieneInundaciones !== c.tieneInundaciones && can(DETALLE_KEY.tieneInundaciones, c.tieneInundaciones)) {
+    if (d.tieneInundaciones !== undefined && d.tieneInundaciones !== c.tieneInundaciones) {
       patch.tieneInundaciones = d.tieneInundaciones;
+      note(DETALLE_KEY.tieneInundaciones);
     }
-    if (d.nivelAguaCm !== undefined && d.nivelAguaCm !== c.nivelAguaCm && can(DETALLE_KEY.nivelAguaCm, c.nivelAguaCm)) patch.nivelAguaCm = d.nivelAguaCm;
-    if (d.nivelAguaTexto !== undefined && d.nivelAguaTexto !== c.nivelAguaTexto && can(DETALLE_KEY.nivelAguaTexto, c.nivelAguaTexto)) {
+    if (d.nivelAguaCm !== undefined && d.nivelAguaCm !== c.nivelAguaCm) {
+      patch.nivelAguaCm = d.nivelAguaCm;
+      note(DETALLE_KEY.nivelAguaCm);
+    }
+    if (d.nivelAguaTexto !== undefined && d.nivelAguaTexto !== c.nivelAguaTexto) {
       patch.nivelAguaTexto = d.nivelAguaTexto;
+      note(DETALLE_KEY.nivelAguaTexto);
     }
-    if (
-      d.porcentajeConvencimiento !== undefined &&
-      d.porcentajeConvencimiento !== c.porcentajeConvencimiento &&
-      can(DETALLE_KEY.porcentajeConvencimiento, c.porcentajeConvencimiento)
-    ) {
+    if (d.porcentajeConvencimiento !== undefined && d.porcentajeConvencimiento !== c.porcentajeConvencimiento) {
       patch.porcentajeConvencimiento = d.porcentajeConvencimiento;
+      note(DETALLE_KEY.porcentajeConvencimiento);
     }
     if (Object.keys(patch).length) {
       await updateContactQualification(tx, organizationId, contactId, patch, AGENTE_IA);
@@ -110,23 +111,12 @@ export async function applyDetalleByAgent(organizationId: string, contactId: str
         .orderBy(asc(contactEntradas.posicion));
     let n = c.numEntradas;
     const wantN = d.numEntradas ?? (d.anchosCm ? Math.max(d.anchosCm.length, n ?? 0) : undefined);
-    if (wantN !== undefined && wantN !== n && can(DETALLE_KEY.numEntradas, n)) {
-      // Bajar el número borra filas: solo si ninguna de las que se irían tiene algo que
-      // no sea del agente (un ancho o un tamaño que escribió un vendedor no se borra).
-      const leaving = (await readEntradas()).filter((e) => e.posicion > wantN);
-      const safe = leaving.every(
-        (e) =>
-          (e.anchoCm === null || por[entradaKey(e.posicion, "ancho")] === "agente") &&
-          e.tamanoManual === null &&
-          por[entradaKey(e.posicion, "linea")] !== "vendedor",
-      );
-      if (safe) {
-        await setNumEntradas(tx, organizationId, contactId, wantN, AGENTE_IA);
-        out.llenados.push(DETALLE_KEY.numEntradas);
-        n = wantN;
-      } else {
-        out.delVendedor.push(DETALLE_KEY.numEntradas);
-      }
+    if (wantN !== undefined && wantN !== n) {
+      // Bajar el número borra las entradas de más (el cliente cambió de idea).
+      note(DETALLE_KEY.numEntradas);
+      await setNumEntradas(tx, organizationId, contactId, wantN, AGENTE_IA);
+      out.llenados.push(DETALLE_KEY.numEntradas);
+      n = wantN;
     }
     if (d.anchosCm && n) {
       const rows = await readEntradas();
@@ -134,7 +124,7 @@ export async function applyDetalleByAgent(organizationId: string, contactId: str
         const posicion = i + 1;
         const row = rows.find((r) => r.posicion === posicion);
         if (!row || row.anchoCm === d.anchosCm[i]) continue;
-        if (!can(entradaKey(posicion, "ancho"), row.anchoCm)) continue;
+        note(entradaKey(posicion, "ancho"));
         await updateEntrada(tx, organizationId, contactId, posicion, { anchoCm: d.anchosCm[i] }, AGENTE_IA);
         out.llenados.push(entradaKey(posicion, "ancho"));
       }
@@ -178,11 +168,16 @@ export async function detalleContextFor(organizationId: string, contactId: strin
       nivelAguaTexto: contacts.nivelAguaTexto,
       numEntradas: contacts.numEntradas,
       porcentajeConvencimiento: contacts.porcentajeConvencimiento,
+      customFields: contacts.customFields,
     })
     .from(contacts)
     .where(and(eq(contacts.id, contactId), eq(contacts.organizationId, organizationId)))
     .limit(1);
   if (!c) return "";
+  // Lo que corrigió un vendedor al último se le dice al modelo: no es definitivo (si el
+  // cliente dice otra cosa, lo corrige), pero pudo saberlo por teléfono.
+  const por = detallePorOf(c.customFields);
+  const v = (...keys: string[]) => (keys.some((k) => por[k] === "vendedor") ? " (lo corrigió un vendedor)" : "");
   const [entradas, propios] = await Promise.all([
     db
       .select({ anchoCm: contactEntradas.anchoCm })
@@ -203,13 +198,16 @@ export async function detalleContextFor(organizationId: string, contactId: strin
       .limit(MAX_COMENTARIOS_EN_CONTEXTO),
   ]);
   const partes: string[] = [];
-  if (c.tieneInundaciones) partes.push(`inundaciones: ${INUNDACIONES_LABEL[c.tieneInundaciones]}`);
+  if (c.tieneInundaciones) partes.push(`inundaciones: ${INUNDACIONES_LABEL[c.tieneInundaciones]}${v(DETALLE_KEY.tieneInundaciones)}`);
   if (c.nivelAguaCm !== null || c.nivelAguaTexto) {
-    partes.push(`agua: ${[c.nivelAguaCm !== null ? `${c.nivelAguaCm} cm` : "", c.nivelAguaTexto ? `(${c.nivelAguaTexto})` : ""].filter(Boolean).join(" ")}`);
+    partes.push(
+      `agua: ${[c.nivelAguaCm !== null ? `${c.nivelAguaCm} cm` : "", c.nivelAguaTexto ? `(${c.nivelAguaTexto})` : ""].filter(Boolean).join(" ")}${v(DETALLE_KEY.nivelAguaCm, DETALLE_KEY.nivelAguaTexto)}`,
+    );
   }
   if (c.numEntradas !== null) {
     const anchos = entradas.map((e) => e.anchoCm).filter((a): a is number => a !== null);
-    partes.push(`entradas: ${c.numEntradas}${anchos.length ? ` (anchos: ${anchos.join(", ")} cm)` : ""}`);
+    const anchosVendedor = entradas.map((_, i) => entradaKey(i + 1, "ancho"));
+    partes.push(`entradas: ${c.numEntradas}${anchos.length ? ` (anchos: ${anchos.join(", ")} cm)` : ""}${v(DETALLE_KEY.numEntradas, ...anchosVendedor)}`);
   }
   if (c.porcentajeConvencimiento !== null) partes.push(`convencimiento: ${c.porcentajeConvencimiento} %`);
   const lines = [`Detalle guardado del contacto: ${partes.length ? partes.join(" · ") : "vacío"}.`];

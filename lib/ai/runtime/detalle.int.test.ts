@@ -91,46 +91,48 @@ describe.skipIf(!TEST_DATABASE_URL)("Detalle del contacto llenado por el Agente 
     );
   });
 
-  it("lo que escribió un vendedor no se toca; lo que el agente llenó y un vendedor editó es del vendedor para siempre", async () => {
+  it("regla del dueño (26-sep): nada es definitivo — el agente corrige lo que puso un vendedor si el cliente dice otra cosa; la marca \"IA\" es de quien escribió al último", async () => {
     await detalle.applyDetalleByAgent(ORG, CONTACT, pedido({ nivel_agua_cm: 40, porcentaje_convencimiento: 30 }));
-    // El vendedor corrige el nivel (Server Action → "vendedor").
-    await q.updateContactQualification(db, ORG, CONTACT, { nivelAguaCm: 55 }, POR_VENDEDOR);
-    // El vendedor llena las inundaciones antes que el agente.
-    await q.updateContactQualification(db, ORG, CONTACT, { tieneInundaciones: "no_sabe" }, POR_VENDEDOR);
+    // El vendedor corrige el nivel y llena las inundaciones (Server Action → "vendedor").
+    await q.updateContactQualification(db, ORG, CONTACT, { nivelAguaCm: 55, tieneInundaciones: "no_sabe" }, POR_VENDEDOR);
+    let dt = await details();
+    expect(dt.iaFields).toEqual(["porcentaje_convencimiento"]); // lo del vendedor, sin marca
+    // El cliente dice otra cosa en el chat: el agente lo vuelve a poner (y la marca regresa).
     const r = await detalle.applyDetalleByAgent(ORG, CONTACT, pedido({ nivel_agua_cm: 20, tiene_inundaciones: "si", porcentaje_convencimiento: 70 }));
-    expect(r.delVendedor.sort()).toEqual(["nivel_agua_cm", "tiene_inundaciones"]);
-    const dt = await details();
-    expect(dt).toMatchObject({ nivelAguaCm: 55, tieneInundaciones: "no_sabe", porcentajeConvencimiento: 70 });
-    expect(dt.iaFields).toEqual(["porcentaje_convencimiento"]);
-    // Aunque el vendedor lo vacíe, sigue siendo suyo: el agente no lo vuelve a llenar.
-    await q.updateContactQualification(db, ORG, CONTACT, { nivelAguaCm: null }, POR_VENDEDOR);
-    await detalle.applyDetalleByAgent(ORG, CONTACT, pedido({ nivel_agua_cm: 20 }));
-    expect((await details()).nivelAguaCm).toBeNull();
+    expect(r.delVendedor.sort()).toEqual(["nivel_agua_cm", "tiene_inundaciones"]); // solo para el log
+    dt = await details();
+    expect(dt).toMatchObject({ nivelAguaCm: 20, tieneInundaciones: "si", porcentajeConvencimiento: 70 });
+    expect([...dt.iaFields].sort()).toEqual(["nivel_agua_cm", "porcentaje_convencimiento", "tiene_inundaciones"]);
+    // Sin cambio, no escribe (la corrección del vendedor se queda si el agente no manda otro dato).
+    await q.updateContactQualification(db, ORG, CONTACT, { nivelAguaCm: 60 }, POR_VENDEDOR);
+    await detalle.applyDetalleByAgent(ORG, CONTACT, pedido({ porcentaje_convencimiento: 70 }));
+    expect((await details()).nivelAguaCm).toBe(60);
   });
 
-  it("un valor que ya estaba (sin origen: lo puso alguien antes de esta función o una importación) tampoco se toca", async () => {
+  it("un valor que ya estaba (sin origen: anterior a esta función o importado) también se corrige", async () => {
     await db.update(s.contacts).set({ porcentajeConvencimiento: 90, numEntradas: 1 }).where(d.eq(s.contacts.id, CONTACT));
     await detalle.applyDetalleByAgent(ORG, CONTACT, pedido({ porcentaje_convencimiento: 20, num_entradas: 3 }));
-    expect(await details()).toMatchObject({ porcentajeConvencimiento: 90, numEntradas: 1 });
+    expect(await details()).toMatchObject({ porcentajeConvencimiento: 20, numEntradas: 3 });
   });
 
-  it("entradas: con el número del vendedor, los anchos de más se ignoran; un ancho del vendedor no se pisa; bajar el número no borra lo del vendedor", async () => {
+  it("entradas: el cliente decide 2 compuertas en vez de 1 → se agrega la entrada; y si baja a 2 de 3, se quita la de más aunque la hubiera tocado un vendedor", async () => {
     await q.setNumEntradas(db, ORG, CONTACT, 1, POR_VENDEDOR);
     await detalle.applyDetalleByAgent(ORG, CONTACT, pedido({ anchos_cm: [90, 120] }));
     let dt = await details();
-    expect(dt.numEntradas).toBe(1);
-    expect(dt.entradas.map((e) => e.anchoCm)).toEqual([90]);
+    expect(dt.numEntradas).toBe(2);
+    expect(dt.entradas.map((e) => e.anchoCm)).toEqual([90, 120]);
 
-    // Otro contacto: el agente llena 3, el vendedor corrige el ancho de la 3.
-    await db.update(s.contacts).set({ numEntradas: null, customFields: {} }).where(d.eq(s.contacts.id, CONTACT));
-    await q.setNumEntradas(db, ORG, CONTACT, null);
     await detalle.applyDetalleByAgent(ORG, CONTACT, pedido({ num_entradas: 3, anchos_cm: [80, 85, 100] }));
     await q.updateEntrada(db, ORG, CONTACT, 3, { anchoCm: 110 }, POR_VENDEDOR);
+    expect((await details()).iaFields).not.toContain("entrada_3_ancho");
     await detalle.applyDetalleByAgent(ORG, CONTACT, pedido({ num_entradas: 2, anchos_cm: [81, 86] }));
     dt = await details();
-    expect(dt.numEntradas).toBe(3); // no borra la entrada 3 (su ancho es del vendedor)
-    expect(dt.entradas.map((e) => e.anchoCm)).toEqual([81, 86, 110]);
-    expect(dt.iaFields).not.toContain("entrada_3_ancho");
+    expect(dt.numEntradas).toBe(2);
+    expect(dt.entradas.map((e) => e.anchoCm)).toEqual([81, 86]);
+    // La marca de la entrada borrada se va con ella: si vuelve a crearse vacía, sin "IA".
+    expect(dt.iaFields.filter((k) => k.startsWith("entrada_3_"))).toEqual([]);
+    await q.setNumEntradas(db, ORG, CONTACT, 3, POR_VENDEDOR);
+    expect((await details()).iaFields).not.toContain("entrada_3_ancho");
   });
 
   it("el agente corrige lo SUYO cuando el cliente lo cambia (p. ej. el % conforme avanza la conversación, o 2 entradas en vez de 3)", async () => {
@@ -161,9 +163,14 @@ describe.skipIf(!TEST_DATABASE_URL)("Detalle del contacto llenado por el Agente 
     expect(await detalle.detalleContextFor(ORG, CONTACT)).toBe("Detalle guardado del contacto: vacío.");
     await detalle.applyDetalleByAgent(ORG, CONTACT, pedido({ tiene_inundaciones: "si", nivel_agua_cm: 40, anchos_cm: [95], porcentaje_convencimiento: 60, comentario: "Tiene cochera con desnivel" }));
     await q.addComment(db, ORG, CONTACT, VENDEDOR, "Nota interna: no darle descuento");
-    const ctx = await detalle.detalleContextFor(ORG, CONTACT);
+    let ctx = await detalle.detalleContextFor(ORG, CONTACT);
     expect(ctx).toContain("inundaciones: sí · agua: 40 cm · entradas: 1 (anchos: 95 cm) · convencimiento: 60 %");
     expect(ctx).toContain("«Tiene cochera con desnivel»");
     expect(ctx).not.toContain("descuento");
+    // Lo que corrigió un vendedor se le dice al modelo (pudo saberlo por teléfono).
+    await q.setNumEntradas(db, ORG, CONTACT, 2, POR_VENDEDOR);
+    ctx = await detalle.detalleContextFor(ORG, CONTACT);
+    expect(ctx).toContain("entradas: 2 (anchos: 95 cm) (lo corrigió un vendedor)");
+    expect(ctx).not.toContain("agua: 40 cm (lo corrigió");
   });
 });
