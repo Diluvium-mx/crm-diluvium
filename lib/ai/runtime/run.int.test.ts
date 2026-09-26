@@ -1145,6 +1145,24 @@ describe.skipIf(!TEST_DATABASE_URL)("runtime del Agente IA (Postgres real)", () 
     expect(await contact()).toMatchObject({ montoCotizacion: "11000.00", customFields: { cotizacion_por: "agente" } });
   });
 
+  it("(revisión Codex) el monto de un vendedor solo se reemplaza cuando el total del agente SÍ salió: si el envío falla, se queda el del vendedor", async () => {
+    await db.update(s.contacts).set({ montoCotizacion: "9000.00", customFields: { cotizacion_por: "vendedor" } }).where(eq(s.contacts.id, CONTACT));
+    await msg({ direction: "in", body: "¿y si fueran otras medidas?", at: ago(20_000) });
+    const script = { brain: ["Te quedaría en $4,000."], toolCalls: [{ toolName: "fijar_cotizacion", input: { monto: 4000 } }] };
+    const failing = makeDeps(script);
+    failing.deps.sendBubble = async () => {
+      throw new Error("falla");
+    };
+    expect((await run.runAgent(JOB, failing.deps)).kind).toBe("failed");
+    expect((await contact()).montoCotizacion).toBe("9000.00"); // el cliente no oyó $4,000
+    // Con "Reintentar" el MISMO texto sale; el monto del vendedor se queda (el total nuevo
+    // no se re-registra en el reenvío: se prefiere no perder el del vendedor).
+    const card = (await notices()).find((n) => n.kind === "agente_error")!;
+    await agentError.resolveAgentError({ organizationId: ORG, noticeId: card.id, resolution: "reintentar", userId: "u_vendedor" });
+    expect((await run.runAgent(JOB, makeDeps(script).deps)).kind).toBe("sent");
+    expect((await contact()).montoCotizacion).toBe("9000.00");
+  });
+
   it("mover_etapa: adelante sí (queda como del agente); atrás o igual se ignora sin error; la etapa del vendedor manda", async () => {
     await msg({ direction: "in", body: "cuánto cuesta", at: ago(20_000) });
     expect((await run.runAgent(JOB, makeDeps({ brain: ["$5,500."], toolCalls: [{ toolName: "mover_etapa", input: { etapa: "interesado" } }] }).deps)).kind).toBe("sent");

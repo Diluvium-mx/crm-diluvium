@@ -160,6 +160,20 @@ export async function setQuoteByAgent(organizationId: string, contactId: string,
   });
 }
 
+// ¿El monto guardado lo puso un vendedor (o ya estaba, sin origen)? Entonces el del
+// agente solo lo reemplaza cuando el mensaje con ese total SÍ salió (run.ts): si el
+// envío falla o pausan al agente, el cliente nunca oyó el total nuevo y el del vendedor
+// se queda (revisión de Codex, 26-sep-2026).
+export async function quoteSetByVendor(organizationId: string, contactId: string): Promise<boolean> {
+  const [c] = await db
+    .select({ monto: contacts.montoCotizacion, customFields: contacts.customFields })
+    .from(contacts)
+    .where(and(eq(contacts.id, contactId), eq(contacts.organizationId, organizationId)))
+    .limit(1);
+  if (!c || c.monto === null) return false;
+  return (c.customFields as Record<string, unknown> | null)?.cotizacion_por !== "agente";
+}
+
 // ¿Alguna de estas corridas manda algo al cliente (texto o archivo)?
 export async function runsThatSend(organizationId: string, workflowIds: readonly string[]): Promise<Set<string>> {
   if (workflowIds.length === 0) return new Set();
