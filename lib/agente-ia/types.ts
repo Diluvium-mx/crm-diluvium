@@ -24,7 +24,7 @@ export type ModelOptionView = {
   isNew: boolean;
 };
 
-// Estado de la API de un proveedor para el panel "APIs de IA" (solo owner/admin).
+// Estado de la API de un proveedor para el panel "APIs de IA" (todos los roles).
 // Solo dice si la variable de la llave EXISTE; nunca lleva su valor.
 export type ProviderApiState = "conectada" | "falta_llave" | "falta_soporte";
 export type ProviderApiView = { id: ProviderId; label: string; envKey: string; state: ProviderApiState };

@@ -4,11 +4,13 @@ import { revalidatePath } from "next/cache";
 import { and, desc, eq, inArray, ne } from "drizzle-orm";
 import { z } from "zod";
 import { requireActiveMembership } from "@/lib/auth/active-organization";
+import { roleAllows } from "@/lib/auth/permissions";
 import { db } from "@/lib/db";
 import { contacts, contactStageEnum, contactTemperatureEnum } from "@/lib/db/schema/contacts";
 import { countryFromPhone, normalizePhone, phoneColumns } from "@/lib/phone";
 import { parseGhlContactsCsv } from "@/lib/import/ghl-contacts-csv";
 import { onContactStageEntered } from "@/lib/workflows/triggers";
+import { funnelSignalsForOrg, MAX_SIGNAL_CONVERSATIONS, type FunnelSignal } from "@/lib/contacts/funnel-signals";
 import {
   importParsedContacts,
   type ImportContactsFromCsvResult,
@@ -45,6 +47,20 @@ export async function getContactsByIds(ids: string[]) {
     .from(contacts)
     .where(and(eq(contacts.organizationId, organizationId), inArray(contacts.id, wanted)))
     .orderBy(desc(contacts.stageChangedAt), desc(contacts.createdAt));
+}
+
+/**
+ * Señales de las tarjetas del Embudo (no vistos, por contestar, urgente). Sin ids:
+ * toda la organización (carga y `reload` del SSE). Con ids (máximo 200): los
+ * contactos de esas conversaciones, para el tiempo real. Ver lib/contacts/funnel-signals.ts.
+ */
+export async function getFunnelSignals(conversationIds?: string[]): Promise<Record<string, FunnelSignal>> {
+  const organizationId = await requireActiveOrganizationId();
+  const ids =
+    conversationIds === undefined
+      ? undefined
+      : z.array(z.string().min(1)).max(MAX_SIGNAL_CONVERSATIONS).parse(conversationIds);
+  return funnelSignalsForOrg(organizationId, ids);
 }
 
 const createContactSchema = z.object({
@@ -163,7 +179,11 @@ export async function updateContactTemperature(input: UpdateContactTemperatureIn
 export async function importContactsFromCsv(
   formData: FormData,
 ): Promise<ImportContactsFromCsvResult> {
-  const organizationId = await requireActiveOrganizationId();
+  // Importar en masa es de owner/admin (ACL `contact.import`); el vendedor no.
+  const { organizationId, role } = await requireActiveMembership();
+  if (!roleAllows(role, "contact", "import")) {
+    throw new Error("No tienes permiso para importar contactos; pídeselo a un administrador.");
+  }
 
   const file = formData.get("file");
 

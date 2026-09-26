@@ -1,12 +1,12 @@
 import { describe, expect, it } from "vitest";
-import { displayPhone, flagEmoji, formatPhone, phoneMatchesSearch } from "./phone-format";
+import { formatPhone, phoneMatchesSearch } from "./phone-format";
 
 describe("presentación de teléfonos", () => {
-  it("formato internacional legible con bandera", () => {
+  it("formato internacional legible, sin bandera", () => {
     expect(formatPhone("+526682426364")).toBe("+52 668 242 6364");
-    expect(displayPhone("+526682426364")).toBe("🇲🇽 +52 668 242 6364");
-    expect(flagEmoji("US")).toBe("🇺🇸");
-    expect(displayPhone(null)).toBe("");
+    expect(formatPhone("+14155552671")).toBe("+1 415 555 2671");
+    expect(formatPhone(null)).toBe("");
+    expect(formatPhone("+526682426364")).not.toMatch(/\p{Regional_Indicator}/u);
   });
 
   it("la búsqueda acepta 10 dígitos, con o sin +52, con separadores y el 521 heredado", () => {

@@ -1,7 +1,7 @@
 "use server";
 
 // Server Actions de la biblioteca de media (Fase D). La organización sale de la
-// SESIÓN; el ACL (`mediaAsset`) decide: owner/admin suben y borran, todos leen.
+// SESIÓN; el ACL (`mediaAsset`) decide: todos los roles leen, suben y borran.
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import { requireActiveMembership } from "@/lib/auth/active-organization";

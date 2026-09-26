@@ -15,8 +15,9 @@ import { DailyChart } from "./_components/daily-chart";
 import { PeriodCards } from "./_components/period-cards";
 import { RangeFilter } from "./_components/range-filter";
 
-// Dashboard (A2): destino al entrar. Todos lo ven; "Gasto de IA" solo
-// owner/admin y, desde la Fase E, hasta arriba. Los datos se calculan en el servidor para la organización de la
+// Dashboard (A2): destino al entrar. Todos lo ven completo, "Gasto de IA"
+// incluido (el vendedor prevé recargas; registrarlas es owner/admin) y, desde la
+// Fase E, hasta arriba. Los datos se calculan en el servidor para la organización de la
 // sesión (lib/dashboard/queries.ts).
 const CHANNEL_LABELS: Record<string, string> = {
   whatsapp: "WhatsApp",

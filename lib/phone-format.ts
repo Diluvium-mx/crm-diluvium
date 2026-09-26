@@ -1,4 +1,5 @@
-// Presentación de teléfonos en la UI (cliente): "+52 668 242 6364" + bandera.
+// Presentación de teléfonos en la UI (cliente): "+52 668 242 6364", sin bandera
+// (decisión del dueño, 25-sep-2026: junto al número solo va la ciudad por lada).
 // Usa la metadata "min" de libphonenumber-js (formatos de todos los países, más
 // liviana que "max"); la validación vive en lib/phone.ts (servidor).
 import { parsePhoneNumberFromString } from "libphonenumber-js/min";
@@ -8,25 +9,6 @@ export function formatPhone(e164: string | null | undefined): string {
   if (!e164) return "";
   const parsed = parsePhoneNumberFromString(e164);
   return parsed ? parsed.formatInternational() : e164;
-}
-
-/** País ISO (MX, US…) del teléfono, si se reconoce. */
-export function phoneCountry(e164: string | null | undefined): string | null {
-  if (!e164) return null;
-  return parsePhoneNumberFromString(e164)?.country ?? null;
-}
-
-/** Bandera emoji a partir del ISO de 2 letras (indicadores regionales Unicode). */
-export function flagEmoji(iso: string | null | undefined): string {
-  if (!iso || !/^[A-Za-z]{2}$/.test(iso)) return "";
-  return String.fromCodePoint(...[...iso.toUpperCase()].map((c) => 0x1f1e6 + c.charCodeAt(0) - 65));
-}
-
-/** "🇲🇽 +52 668 242 6364" (sin bandera si no se reconoce el país). */
-export function displayPhone(e164: string | null | undefined): string {
-  if (!e164) return "";
-  const flag = flagEmoji(phoneCountry(e164));
-  return flag ? `${flag} ${formatPhone(e164)}` : formatPhone(e164);
 }
 
 /**
