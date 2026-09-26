@@ -82,6 +82,15 @@ function withDetallePor(base: SQL, keys: readonly string[], origen: DetalleOrige
   return sql`jsonb_set(coalesce(${base}, '{}'::jsonb), '{${sql.raw(DETALLE_POR)}}', coalesce((${base})->'${sql.raw(DETALLE_POR)}', '{}'::jsonb) || ${marks}::jsonb)`;
 }
 
+// custom_fields sin las marcas de las entradas de posición > n.
+function prunedEntradaMarks(n: number): SQL {
+  return sql`jsonb_set(coalesce(${contacts.customFields}, '{}'::jsonb), '{${sql.raw(DETALLE_POR)}}', coalesce((
+    select jsonb_object_agg(e.key, e.value)
+    from jsonb_each(coalesce(${contacts.customFields}->'${sql.raw(DETALLE_POR)}', '{}'::jsonb)) e
+    where not (e.key ~ '^entrada_[0-9]+_' and split_part(e.key, '_', 2)::int > ${n})
+  ), '{}'::jsonb))`;
+}
+
 // El origen lo da QUIÉN escribe (`by`, el mismo del aviso en vivo): vendedor → "vendedor"
 // (el campo es suyo para siempre), Agente IA → "agente"; una automatización no marca.
 function origenOf(by: ContactActor): DetalleOrigen | undefined {
@@ -224,6 +233,8 @@ export async function getContactQualification(
         .filter(([, origen]) => origen === "agente")
         .map(([key]) => key),
       ...((contact.customFields as Record<string, unknown> | null)?.cotizacion_por === "agente" ? ["monto_cotizacion"] : []),
+      // La etapa la movió el Agente IA (mover_etapa); un vendedor que la cambie la hace suya.
+      ...(contact.stageChangedBy === "agente" ? ["etapa"] : []),
     ],
     entradas,
     comentarios: comentarios.map((comment) => ({
@@ -331,7 +342,9 @@ export async function setNumEntradas(
       .update(contacts)
       .set({
         numEntradas: n,
-        ...(origen ? { customFields: withDetallePor(sql`${contacts.customFields}`, [DETALLE_KEY.numEntradas], origen) } : {}),
+        // Las marcas de las entradas que se borran se van con ellas (una fila recreada
+        // vacía no debe verse como "IA").
+        customFields: origen ? withDetallePor(prunedEntradaMarks(n ?? 0), [DETALLE_KEY.numEntradas], origen) : prunedEntradaMarks(n ?? 0),
       })
       .where(and(eq(contacts.id, contactId), eq(contacts.organizationId, organizationId)));
     await notifyContactUpdated(tx, { organizationId, contactId, changes: ["detalle"], by });

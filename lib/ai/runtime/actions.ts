@@ -135,8 +135,9 @@ export async function prepareActions(input: {
 const STAGE_LIST: readonly Stage[] = ["inbox", "prospecto", "interesado", "cerca_compra", "compra"];
 const stageIndex = (s: Stage) => STAGE_LIST.indexOf(s);
 
-// Guarda el total cotizado por el AGENTE. Si un vendedor lo fijó a mano en el
-// detalle del contacto, manda el vendedor: el agente no lo pisa.
+// Guarda el total cotizado por el AGENTE. Desde el 26-sep-2026 (regla del dueño: ningún
+// dato del Detalle es definitivo) también corrige uno que puso un vendedor: el total que
+// el agente le acaba de decir al cliente es el vigente. Sin cambio si ya es ese monto.
 // El aviso en vivo (contact.updated) sale en la misma transacción que la escritura.
 export async function setQuoteByAgent(organizationId: string, contactId: string, monto: number): Promise<boolean> {
   return db.transaction(async (tx) => {
@@ -150,13 +151,27 @@ export async function setQuoteByAgent(organizationId: string, contactId: string,
         and(
           eq(contacts.id, contactId),
           eq(contacts.organizationId, organizationId),
-          sql`(${contacts.montoCotizacion} is null or ${contacts.customFields}->>'cotizacion_por' = 'agente')`,
+          sql`(${contacts.montoCotizacion} is distinct from ${monto.toFixed(2)}::numeric or ${contacts.customFields}->>'cotizacion_por' is distinct from 'agente')`,
         ),
       )
       .returning({ id: contacts.id });
     if (rows.length > 0) await notifyContactUpdated(tx, { organizationId, contactId, changes: ["cotizacion"], by: { kind: "agente" } });
     return rows.length > 0;
   });
+}
+
+// ¿El monto guardado lo puso un vendedor (o ya estaba, sin origen)? Entonces el del
+// agente solo lo reemplaza cuando el mensaje con ese total SÍ salió (run.ts): si el
+// envío falla o pausan al agente, el cliente nunca oyó el total nuevo y el del vendedor
+// se queda (revisión de Codex, 26-sep-2026).
+export async function quoteSetByVendor(organizationId: string, contactId: string): Promise<boolean> {
+  const [c] = await db
+    .select({ monto: contacts.montoCotizacion, customFields: contacts.customFields })
+    .from(contacts)
+    .where(and(eq(contacts.id, contactId), eq(contacts.organizationId, organizationId)))
+    .limit(1);
+  if (!c || c.monto === null) return false;
+  return (c.customFields as Record<string, unknown> | null)?.cotizacion_por !== "agente";
 }
 
 // ¿Alguna de estas corridas manda algo al cliente (texto o archivo)?
@@ -229,7 +244,7 @@ export async function executeActions(
   }
   if (plan.quote !== null) {
     const ok = await setQuoteByAgent(ctx.organizationId, ctx.contactId, plan.quote);
-    if (!ok) out.notes.push("cotización no guardada: la fijó un vendedor");
+    if (!ok) console.info(`[agente] ${ctx.conversationId}: la cotización ya era $${plan.quote}`);
   }
   if (plan.stage) {
     const moved = await moveStageForward({
@@ -282,7 +297,7 @@ export async function crmContextFor(organizationId: string, contactId: string): 
   const por = (c.customFields as Record<string, unknown> | null)?.cotizacion_por;
   lines.push(
     c.monto != null
-      ? `Cotización guardada: $${Number(c.monto).toLocaleString("es-MX")} MXN${por === "vendedor" ? " (fijada por un vendedor; manda sobre la tuya)" : ""}.`
+      ? `Cotización guardada: $${Number(c.monto).toLocaleString("es-MX")} MXN${por === "vendedor" ? " (la corrigió un vendedor)" : ""}.`
       : "Cotización guardada: ninguna todavía.",
   );
   return `[CONTEXTO DEL CRM — no lo menciones literalmente]\n${lines.join("\n")}`;

@@ -59,8 +59,9 @@ formularios y landing pages, agente IA de calificación.
 > sus selectores en la pestaña Agente IA, más el reenvío seguro; 5 proveedores activos (OpenAI, Anthropic,
 > Gemini, Grok, Qwen). Recargas de saldo: manuales en la página de cada proveedor. Revisión de Codex:
 > penúltima acción antes del número oficial. **Agente IA parte 1 (26-sep-2026, migración 0037):** acción
-> `actualizar_detalle` en la misma respuesta (llena el Detalle del contacto: solo lo vacío o lo suyo; lo que
-> edita un vendedor es suyo para siempre, origen en `custom_fields.detalle_por`; marca "IA"), notas de voz
+> `actualizar_detalle` en la misma respuesta (llena y corrige el Detalle del contacto; ningún dato es
+> definitivo, ni del vendedor ni del agente; `custom_fields.detalle_por` = quién escribió al último → marca
+> "IA"; % de convencimiento solo del agente; "Pausar agente"/"Activar" solo en el Detalle), notas de voz
 > transcritas con `gpt-4o-mini-transcribe` (el agente las lee; "Transcripción" en el chat), un error de
 > envío deja la respuesta guardada y "Reintentar" manda el MISMO texto (nunca otra llamada al modelo), y
 > `ai_config.daily_budget_usd` borrada. Detalle: `docs/agente-ia.md` › Parte 1. Fase E, parte 1: selectores, etapas (Modelo 1 = Inbox, Prospecto,
@@ -302,7 +303,7 @@ el menú del usuario (todos): "Mi cuenta" (`/mi-cuenta`: nombre y cambiar la pro
   una automatización u otro vendedor se ven sin refrescar (evento `contact.updated`, un solo helper
   `lib/contacts/notify-updated.ts` dentro de la transacción de cada escritura). Aviso emergente solo
   para cambios de ETAPA hechos por otro. Detalle: `docs/bandeja.md` › "Cambios en vivo".
-- **Apagar bot** (25-sep-2026): por conversación, 8/12/24 h, hora exacta (Mazatlán, ≤30 días) o hasta reactivarlo; vuelve solo con el barrido del worker y no contesta lo escrito mientras estuvo apagado. Detalle: `docs/bandeja.md`.
+- **Pausar agente** (25-sep-2026; "Apagar bot" hasta el 26-sep): por conversación, 8/12/24 h, hora exacta (Mazatlán, ≤30 días) o indefinidamente; "Activar" lo regresa; vuelve solo con el barrido del worker y no contesta lo escrito mientras estuvo pausado. Desde el 26-sep el control vive solo en "Detalle del contacto". Detalle: `docs/bandeja.md`.
 
 ```
 ┌─ Lista (se cierra) ─┬──── Chat ────────────────────────┬─ Contacto (se cierra) ─┐

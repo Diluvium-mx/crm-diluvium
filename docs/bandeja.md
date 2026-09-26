@@ -71,7 +71,12 @@ Van dentro del hilo, al final, como burbujas punteadas "🕒 Programado para …
 (fallidos: Reintentar/Descartar; cancelados solos: el cliente escribió antes o el autor ya no está
 activo). El composer tiene 🕒 junto a "Enviar" (y junto a "📄 Enviar plantilla" fuera de ventana).
 
-### Apagar bot (25-sep-2026)
+### Apagar bot (25-sep-2026) → "Pausar agente" (26-sep-2026)
+> **Desde el 26-sep-2026 (pedido del dueño):** el control vive SOLO en "Detalle del contacto": "Pausar
+> agente" (menú igual, con "Pausar indefinidamente" en vez de "Hasta que lo reactive") y, pausado,
+> "Activar" (antes "Reactivar"). Se quitó del encabezado del chat; el aviso del hilo solo informa.
+> Detalle: `docs/agente-ia.md` › Parte 1.
+
 Botón "🤖 Apagar bot" en el encabezado del chat (Bandeja y pop-up del Embudo, mismo componente) y
 en "Detalle del contacto", solo con el Agente IA encendido en el canal. Apaga al agente en ESA
 conversación; todas las demás siguen contestando. Menú: 8 horas · 12 horas · 24 horas · Hasta una

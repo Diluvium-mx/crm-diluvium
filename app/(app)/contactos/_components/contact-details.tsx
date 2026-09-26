@@ -11,6 +11,10 @@
 // En vivo (contact.updated del SSE): lo que cambie otro (Agente IA —incluido el
 // autollenado—, automatización u otro vendedor) aparece solo, sin pisar un campo
 // que el vendedor esté escribiendo ni uno con su guardado en curso.
+// Agente IA parte 1 (26-sep-2026): marca "IA" en todo lo que el agente escribió al
+// último (etapa, inundaciones, agua, entradas, monto y %); el campo que acaba de llenar
+// se ilumina con el orbe "actualizando"; el % de convencimiento es solo del agente
+// (sin selector) y el control del agente (Pausar agente / Activar) vive aquí.
 import Link from "next/link";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { getContactDetails, setNumEntradas, updateContactQualification } from "@/lib/actions/contact-qualification";
@@ -29,7 +33,7 @@ import {
 } from "../_data/types";
 import { ContactComments } from "./contact-comments";
 import { ContactEntradas, type Entrada } from "./contact-entradas";
-import { ConvencimientoPicker } from "./convencimiento-picker";
+import { ConvencimientoBar } from "./convencimiento-picker";
 import { useSaveStatus } from "./use-save-status";
 import { AgentContactSwitch } from "./agent-contact-switch";
 import { IaMark } from "./ia-mark";
@@ -73,17 +77,44 @@ const label = "text-xs text-muted-foreground";
 
 const money = new Intl.NumberFormat("es-MX", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
-function Field({ title, children, ia = false }: { title: string; children: React.ReactNode; ia?: boolean }) {
+// Un campo del Detalle: título a la izquierda y, a la derecha, la marca "IA" (si el
+// agente lo escribió al último). `flash` = lo acaba de llenar: se ilumina (globals.css).
+function Field({
+  title,
+  children,
+  ia = false,
+  flash = false,
+}: {
+  title: string;
+  children: React.ReactNode;
+  ia?: boolean;
+  flash?: boolean;
+}) {
   return (
-    <div className="space-y-1">
-      <p className={label}>
-        {title}
-        {ia && <IaMark />}
-      </p>
+    <div data-ia-flash={flash ? "" : undefined} className="-mx-1.5 space-y-1 px-1.5 py-1">
+      <div className="flex min-h-5 items-center justify-between gap-2">
+        <p className={label}>{title}</p>
+        {ia && <IaMark active={flash} />}
+      </div>
       {children}
     </div>
   );
 }
+
+// Encabezado de sección (Calificación, Agente IA, Comentarios).
+function Section({ title, children }: { title: string; children: React.ReactNode }) {
+  return (
+    <section className="space-y-2 border-t pt-3">
+      <h3 className="text-[11px] font-semibold tracking-wide text-muted-foreground uppercase">{title}</h3>
+      {children}
+    </section>
+  );
+}
+
+// Cuánto dura la animación del campo que el agente acaba de llenar (igual que en globals.css).
+const FLASH_MS = 2_400;
+// Autor de sistema de los comentarios del agente (migración 0037; lib/contacts/qualification.ts).
+const AGENT_AI_AUTHOR_ID = "usuario-sistema-agente-ia";
 
 // Campo de la calificación → su llave de origen (lib/contacts/qualification.ts).
 const IA_KEY: Record<QualField, string> = {
@@ -119,8 +150,11 @@ export function ContactDetails({
   busy = false,
   error,
   action,
+  conversationId,
 }: {
   contactId: string;
+  /** La conversación abierta (Bandeja): el control del agente es el de ESTA. */
+  conversationId?: string;
   name: string;
   phone: string | null;
   stage: Stage;
@@ -154,6 +188,23 @@ export function ContactDetails({
   // campo): el tiempo real no pisa su borrador; al salir, lo suyo se guarda.
   const typing = useRef(new Set<string>());
   const loaded = useRef(false);
+
+  // Animación "el agente acaba de llenar esto" (por llave de campo; ver IA_KEY).
+  const [flash, setFlash] = useState<ReadonlySet<string>>(new Set());
+  const flashTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+  useEffect(() => () => clearTimeout(flashTimer.current), []);
+  function flashKeys(keys: readonly string[]) {
+    if (keys.length === 0) return;
+    setFlash((prev) => new Set([...prev, ...keys]));
+    clearTimeout(flashTimer.current);
+    flashTimer.current = setTimeout(() => setFlash(new Set()), FLASH_MS);
+  }
+  const lit = (...keys: string[]) => keys.some((k) => flash.has(k));
+  const detailsRef = useRef<Details | null>(null);
+  const etapaByAgent = useRef(false);
+  useEffect(() => {
+    detailsRef.current = details;
+  }, [details]);
 
   const applyDetails = useCallback((next: Details) => {
     loaded.current = true;
@@ -291,7 +342,10 @@ export function ContactDetails({
       return;
     }
     if (event.type !== "contact.updated" || event.contactId !== contactId) return;
-    if (event.changes.some((change) => change === "cotizacion" || change === "detalle" || change === "comentarios")) scheduleLive();
+    // La etapa también: su marca "IA" depende de quién la movió al último.
+    if (event.changes.some((change) => change === "etapa" || change === "cotizacion" || change === "detalle" || change === "comentarios")) scheduleLive();
+    // El agente movió la etapa: se ilumina cuando llegue la lectura (con su marca "IA").
+    if (event.by.kind === "agente" && event.changes.includes("etapa")) etapaByAgent.current = true;
   });
 
   async function liveRefresh() {
@@ -317,6 +371,25 @@ export function ContactDetails({
       confirmed.current = next;
     }
     if (!busy.has("entradas")) confirmedNum.current = fresh.numEntradas;
+    // Lo que el agente acaba de cambiar (valor distinto y ahora con su marca): se ilumina.
+    const prev = detailsRef.current;
+    if (prev) {
+      const changed: string[] = [];
+      for (const field of QUAL_FIELDS) {
+        if (!busy.has(field) && prev[field] !== fresh[field] && fresh.iaFields.includes(IA_KEY[field])) changed.push(IA_KEY[field]);
+      }
+      if (!busy.has("entradas")) {
+        if (prev.numEntradas !== fresh.numEntradas && fresh.iaFields.includes("num_entradas")) changed.push("num_entradas");
+        const anchos = (d: Details) => d.entradas.map((e) => `${e.posicion}:${e.anchoCm ?? ""}`).join(",");
+        if (anchos(prev) !== anchos(fresh) && fresh.iaFields.some((k) => k.startsWith("entrada_"))) changed.push("entradas");
+      }
+      // Un comentario nuevo del Agente IA.
+      const seen = new Set(prev.comentarios.map((c) => c.id));
+      if (!busy.has("comentarios") && fresh.comentarios.some((c) => !seen.has(c.id) && c.author.id === AGENT_AI_AUTHOR_ID)) changed.push("comentarios");
+      if (etapaByAgent.current && fresh.iaFields.includes("etapa")) changed.push("etapa");
+      etapaByAgent.current = false;
+      flashKeys(changed);
+    }
     setDetails((d) => {
       if (!d) return d;
       const next: Details = { ...d, anuncio: fresh.anuncio, anuncios: fresh.anuncios, email: fresh.email, tags: fresh.tags };
@@ -410,9 +483,21 @@ export function ContactDetails({
         </div>
 
         <div className="grid grid-cols-2 gap-2">
-          <label className="space-y-1">
-            <span className={label}>Etapa</span>
-            <select value={stage} disabled={busy} onChange={(e) => onStageChange(e.target.value as Stage)} className={`${input} disabled:opacity-60`}>
+          <label data-ia-flash={lit("etapa") ? "" : undefined} className="-mx-1 space-y-1 px-1 py-0.5">
+            <span className="flex min-h-5 items-center justify-between gap-1">
+              <span className={label}>Etapa</span>
+              {details?.iaFields.includes("etapa") && <IaMark active={lit("etapa")} />}
+            </span>
+            <select
+              value={stage}
+              disabled={busy}
+              onChange={(e) => {
+                // La cambió un vendedor: deja de ser del agente (sin marca "IA").
+                setDetails((d) => (d ? { ...d, iaFields: d.iaFields.filter((k) => k !== "etapa") } : d));
+                onStageChange(e.target.value as Stage);
+              }}
+              className={`${input} disabled:opacity-60`}
+            >
               {STAGES.map((s) => (
                 <option key={s} value={s}>
                   {STAGE_LABELS[s]}
@@ -420,8 +505,10 @@ export function ContactDetails({
               ))}
             </select>
           </label>
-          <label className="space-y-1">
-            <span className={label}>Temperatura</span>
+          <label className="-mx-1 space-y-1 px-1 py-0.5">
+            <span className="flex min-h-5 items-center">
+              <span className={label}>Temperatura</span>
+            </span>
             <select
               value={temperature ?? ""}
               disabled={busy}
@@ -442,7 +529,8 @@ export function ContactDetails({
           <p className="text-xs text-muted-foreground">Cargando…</p>
         ) : (
           <>
-            <Field title="¿Tiene problemas de inundaciones?" ia={details.iaFields.includes("tiene_inundaciones")}>
+            <Section title="Calificación">
+            <Field title="¿Tiene problemas de inundaciones?" ia={details.iaFields.includes("tiene_inundaciones")} flash={lit("tiene_inundaciones")}>
               <div role="radiogroup" aria-label="¿Tiene problemas de inundaciones?" className="flex gap-1">
                 {INUNDACIONES.map((o) => {
                   const selected = details.tieneInundaciones === o.value;
@@ -464,7 +552,11 @@ export function ContactDetails({
               </div>
             </Field>
 
-            <Field title="¿Cuánta agua entra?" ia={details.iaFields.includes("nivel_agua_cm") || details.iaFields.includes("nivel_agua_texto")}>
+            <Field
+              title="¿Cuánta agua entra?"
+              ia={details.iaFields.includes("nivel_agua_cm") || details.iaFields.includes("nivel_agua_texto")}
+              flash={lit("nivel_agua_cm", "nivel_agua_texto")}
+            >
               <div className="flex gap-2">
                 <div className="relative w-24 shrink-0">
                   <input
@@ -509,7 +601,7 @@ export function ContactDetails({
               </div>
             </Field>
 
-            <Field title="¿Cuántas entradas?" ia={details.iaFields.includes("num_entradas")}>
+            <Field title="¿Cuántas entradas?" ia={details.iaFields.includes("num_entradas")} flash={lit("num_entradas")}>
               <input
                 aria-label="Número de entradas"
                 inputMode="numeric"
@@ -546,7 +638,7 @@ export function ContactDetails({
             </Field>
 
             {details.entradas.length > 0 && (
-              <Field title="Ancho de cada entrada y tamaño de compuerta sugerido">
+              <Field title="Ancho de cada entrada y tamaño de compuerta sugerido" flash={lit("entradas")}>
                 <ContactEntradas
                   contactId={contactId}
                   entradas={details.entradas as Entrada[]}
@@ -560,7 +652,7 @@ export function ContactDetails({
               </Field>
             )}
 
-            <Field title="Monto de cotización (MXN)" ia={details.iaFields.includes("monto_cotizacion")}>
+            <Field title="Monto de cotización (MXN)" ia={details.iaFields.includes("monto_cotizacion")} flash={lit("monto_cotizacion")}>
               <div className="relative w-40">
                 <span className="pointer-events-none absolute left-2 top-1/2 -translate-y-1/2 text-xs text-muted-foreground">$</span>
                 <input
@@ -587,13 +679,15 @@ export function ContactDetails({
               </div>
             </Field>
 
-            <Field title="% de convencimiento" ia={details.iaFields.includes("porcentaje_convencimiento")}>
-              <ConvencimientoPicker
-                value={details.porcentajeConvencimiento}
-                onChange={(next) => saveField("porcentajeConvencimiento", next)}
-                selectClassName={input}
-              />
+            {/* Solo lo decide el Agente IA conforme avanza la conversación (sin selector). */}
+            <Field
+              title="% de convencimiento"
+              ia={details.iaFields.includes("porcentaje_convencimiento")}
+              flash={lit("porcentaje_convencimiento")}
+            >
+              <ConvencimientoBar value={details.porcentajeConvencimiento} />
             </Field>
+            </Section>
 
             {(details.anuncios || details.anuncio) && (
               <Field title="Llegó por anuncio">
@@ -619,14 +713,18 @@ export function ContactDetails({
               </Field>
             )}
 
-            {/* Estado del Agente IA en esta conversación (Fase B). */}
-            <AgentContactSwitch contactId={contactId} />
+            {/* El ÚNICO control del agente en esta conversación (26-sep-2026). */}
+            <Section title="Agente IA">
+              <AgentContactSwitch contactId={contactId} conversationId={conversationId} />
+            </Section>
 
-            <Field title="Comentarios">
-              <ContactComments contactId={contactId} comments={details.comentarios} viewer={details.viewer} run={run} onChanged={refreshComments} />
-            </Field>
+            <Section title="Comentarios">
+              <div data-ia-flash={lit("comentarios") ? "" : undefined} className="-mx-1.5 px-1.5 py-1">
+                <ContactComments contactId={contactId} comments={details.comentarios} viewer={details.viewer} run={run} onChanged={refreshComments} />
+              </div>
+            </Section>
 
-            <div className="space-y-1 border-t pt-2 text-xs text-muted-foreground">
+            <div className="space-y-1 border-t pt-3 text-xs text-muted-foreground">
               <p className="truncate">
                 <span className="mr-1">Correo:</span>
                 <span className="text-foreground">{details.email || "—"}</span>
