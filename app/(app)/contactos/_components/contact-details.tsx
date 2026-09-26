@@ -153,14 +153,40 @@ export function ContactDetails({
     setMonto(next.montoCotizacion === null ? "" : money.format(next.montoCotizacion));
   }, []);
 
+  // Carga completa (al abrir). Si falla, se reintenta sola (5 s … 60 s) mientras
+  // el panel siga abierto, y también al reconectar el SSE o al llegar un cambio de
+  // este contacto: un fallo de red al abrirlo no deja el error pegado. Solo aplica
+  // la respuesta del último pedido.
+  const loadState = useRef<{ seq: number; failed: boolean; retryMs: number; timer?: ReturnType<typeof setTimeout> }>({
+    seq: 0,
+    failed: false,
+    retryMs: 0,
+  });
+  useEffect(() => () => clearTimeout(loadState.current.timer), []);
+  const reloadRef = useRef<() => Promise<void>>(async () => undefined);
   const reload = useCallback(async () => {
+    const state = loadState.current;
+    const seq = ++state.seq;
+    clearTimeout(state.timer);
+    state.timer = undefined;
     try {
-      applyDetails(await getContactDetails(contactId));
+      const next = await getContactDetails(contactId);
+      if (seq !== state.seq) return;
+      applyDetails(next);
+      state.failed = false;
+      state.retryMs = 0;
       setLoadError(false);
     } catch {
+      if (seq !== state.seq) return;
+      state.failed = true;
       setLoadError(true);
+      state.retryMs = Math.min(state.retryMs ? state.retryMs * 2 : 5_000, 60_000);
+      state.timer = setTimeout(() => void reloadRef.current(), state.retryMs);
     }
   }, [applyDetails, contactId]);
+  useEffect(() => {
+    reloadRef.current = reload;
+  }, [reload]);
 
   // Recargas PARCIALES (tras cambiar las entradas o los comentarios): solo esa
   // parte, sin pisar lo que el vendedor esté tecleando en otros campos. Cada una
@@ -242,6 +268,11 @@ export function ContactDetails({
     }, delayMs);
   }
   useInboxStream((event) => {
+    // Falló la carga al abrir: la reconexión o un cambio de este contacto la reintentan ya.
+    if (loadState.current.failed) {
+      if (event.type === "reload" || (event.type === "contact.updated" && event.contactId === contactId)) void reload();
+      return;
+    }
     if (event.type === "reload") {
       if (loaded.current) scheduleLive();
       return;
@@ -330,7 +361,7 @@ export function ContactDetails({
   }
 
   if (loadError) {
-    return <p className="p-4 text-sm text-brand-orange">No se pudo cargar el detalle del contacto.</p>;
+    return <p className="p-4 text-sm text-brand-orange">No se pudo cargar el detalle del contacto. Reintentando…</p>;
   }
 
   return (
