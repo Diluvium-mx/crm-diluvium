@@ -1,4 +1,4 @@
-import { and, asc, desc, eq, gt, isNotNull, or, sql } from "drizzle-orm";
+import { and, asc, desc, eq, gt, isNotNull, or, sql, type SQL } from "drizzle-orm";
 import { member, user } from "@/lib/db/schema/auth";
 import { contacts, contactInundacionesEnum } from "@/lib/db/schema/contacts";
 import {
@@ -47,6 +47,45 @@ export type CommentActor = {
 // el Detalle abierto en otra pantalla se pone al día solo. Las Server Actions del
 // vendedor pasan el suyo; sin `by` lo escribió el Agente IA (autollenado).
 const AGENTE: ContactActor = { kind: "agente" };
+
+// ── Origen por campo del Detalle (Agente IA parte 1, 26-sep-2026) ──────────────
+// contacts.custom_fields.detalle_por = { <campo>: "agente" | "vendedor" }. El agente
+// solo llena campos VACÍOS o que él mismo llenó; en cuanto un vendedor edita un campo,
+// ese campo queda "vendedor" para siempre y el agente ya no lo toca. Campos: los de
+// DETALLE_KEY y, por entrada, entrada_<n>_ancho | entrada_<n>_linea | entrada_<n>_tamano.
+// La escritura va en la MISMA sentencia que el valor (o antes, en updateEntrada).
+export type DetalleOrigen = "agente" | "vendedor";
+export const DETALLE_POR = "detalle_por";
+export const DETALLE_KEY = {
+  tieneInundaciones: "tiene_inundaciones",
+  nivelAguaCm: "nivel_agua_cm",
+  nivelAguaTexto: "nivel_agua_texto",
+  porcentajeConvencimiento: "porcentaje_convencimiento",
+  numEntradas: "num_entradas",
+} as const;
+export const entradaKey = (posicion: number, campo: "ancho" | "linea" | "tamano") => `entrada_${posicion}_${campo}`;
+// Autor de SISTEMA de los comentarios del agente (migración 0037): no es miembro.
+export const AGENT_AI_USER_ID = "usuario-sistema-agente-ia";
+
+export function detallePorOf(customFields: unknown): Record<string, DetalleOrigen> {
+  const raw = (customFields as Record<string, unknown> | null)?.[DETALLE_POR];
+  if (!raw || typeof raw !== "object") return {};
+  const out: Record<string, DetalleOrigen> = {};
+  for (const [k, v] of Object.entries(raw as Record<string, unknown>)) if (v === "agente" || v === "vendedor") out[k] = v;
+  return out;
+}
+
+// custom_fields con el origen de `keys` fijado (sobre la expresión `base`).
+function withDetallePor(base: SQL, keys: readonly string[], origen: DetalleOrigen): SQL {
+  const marks = JSON.stringify(Object.fromEntries(keys.map((k) => [k, origen])));
+  return sql`jsonb_set(coalesce(${base}, '{}'::jsonb), '{${sql.raw(DETALLE_POR)}}', coalesce((${base})->'${sql.raw(DETALLE_POR)}', '{}'::jsonb) || ${marks}::jsonb)`;
+}
+
+// El origen lo da QUIÉN escribe (`by`, el mismo del aviso en vivo): vendedor → "vendedor"
+// (el campo es suyo para siempre), Agente IA → "agente"; una automatización no marca.
+function origenOf(by: ContactActor): DetalleOrigen | undefined {
+  return by.kind === "vendedor" ? "vendedor" : by.kind === "agente" ? "agente" : undefined;
+}
 
 async function requireContact(
   database: Database,
@@ -176,6 +215,14 @@ export async function getContactQualification(
     montoCotizacion:
       contact.montoCotizacion === null ? null : Number(contact.montoCotizacion),
     porcentajeConvencimiento: contact.porcentajeConvencimiento,
+    // Campos que llenó el Agente IA y ningún vendedor ha editado (marca "IA" en el Detalle).
+    // El monto lo fija el agente con fijar_cotizacion (custom_fields.cotizacion_por).
+    iaFields: [
+      ...Object.entries(detallePorOf(contact.customFields))
+        .filter(([, origen]) => origen === "agente")
+        .map(([key]) => key),
+      ...((contact.customFields as Record<string, unknown> | null)?.cotizacion_por === "agente" ? ["monto_cotizacion"] : []),
+    ],
     entradas,
     comentarios: comentarios.map((comment) => ({
       id: comment.id,
@@ -195,6 +242,8 @@ export async function updateContactQualification(
   by: ContactActor = AGENTE,
 ): Promise<void> {
   const values: Partial<typeof contacts.$inferInsert> = {};
+  const origenKeys: string[] = [];
+  const origen = origenOf(by);
 
   if (Object.prototype.hasOwnProperty.call(patch, "tieneInundaciones")) {
     values.tieneInundaciones = patch.tieneInundaciones;
@@ -214,6 +263,18 @@ export async function updateContactQualification(
   }
   if (Object.prototype.hasOwnProperty.call(patch, "porcentajeConvencimiento")) {
     values.porcentajeConvencimiento = patch.porcentajeConvencimiento;
+  }
+  if (origen) {
+    for (const field of ["tieneInundaciones", "nivelAguaCm", "nivelAguaTexto", "porcentajeConvencimiento"] as const) {
+      if (Object.prototype.hasOwnProperty.call(patch, field)) origenKeys.push(DETALLE_KEY[field]);
+    }
+    if (origenKeys.length) {
+      values.customFields = withDetallePor(
+        (values.customFields as SQL | undefined) ?? sql`${contacts.customFields}`,
+        origenKeys,
+        origen,
+      );
+    }
   }
 
   if (Object.keys(values).length === 0) {
@@ -250,6 +311,7 @@ export async function setNumEntradas(
   if (n !== null && (!Number.isInteger(n) || n < 0 || n > 50)) {
     throw new Error("El número de entradas debe ser un entero entre 0 y 50.");
   }
+  const origen = origenOf(by);
 
   await database.transaction(async (tx) => {
     const [contact] = await tx
@@ -265,7 +327,10 @@ export async function setNumEntradas(
 
     await tx
       .update(contacts)
-      .set({ numEntradas: n })
+      .set({
+        numEntradas: n,
+        ...(origen ? { customFields: withDetallePor(sql`${contacts.customFields}`, [DETALLE_KEY.numEntradas], origen) } : {}),
+      })
       .where(and(eq(contacts.id, contactId), eq(contacts.organizationId, organizationId)));
     await notifyContactUpdated(tx, { organizationId, contactId, changes: ["detalle"], by });
 
@@ -329,6 +394,22 @@ export async function updateEntrada(
   by: ContactActor = AGENTE,
 ) {
   await requireContact(database, organizationId, contactId);
+  const origen = origenOf(by);
+  if (origen) {
+    // El origen va ANTES que el valor (y bloquea la fila del contacto, igual que el
+    // agente): si el valor falla, "vendedor" solo deja el campo fuera del agente.
+    const keys = [
+      ...(Object.prototype.hasOwnProperty.call(patch, "anchoCm") ? [entradaKey(posicion, "ancho")] : []),
+      ...(patch.linea !== undefined ? [entradaKey(posicion, "linea")] : []),
+      ...(Object.prototype.hasOwnProperty.call(patch, "tamanoManual") ? [entradaKey(posicion, "tamano")] : []),
+    ];
+    if (keys.length) {
+      await database
+        .update(contacts)
+        .set({ customFields: withDetallePor(sql`${contacts.customFields}`, keys, origen) })
+        .where(and(eq(contacts.id, contactId), eq(contacts.organizationId, organizationId)));
+    }
+  }
   const [entry] = await database
     .select()
     .from(contactEntradas)
@@ -471,14 +552,18 @@ export async function addComment(
   body: string,
 ) {
   await requireContact(database, organizationId, contactId);
-  const [author] = await database
-    .select({ id: user.id, name: user.name })
-    .from(member)
-    .innerJoin(user, eq(user.id, member.userId))
-    .where(
-      and(eq(member.organizationId, organizationId), eq(member.userId, authorUserId)),
-    )
-    .limit(1);
+  // El Agente IA firma con su usuario de SISTEMA (no es miembro de ninguna organización).
+  const [author] =
+    authorUserId === AGENT_AI_USER_ID
+      ? await database.select({ id: user.id, name: user.name }).from(user).where(eq(user.id, AGENT_AI_USER_ID)).limit(1)
+      : await database
+          .select({ id: user.id, name: user.name })
+          .from(member)
+          .innerJoin(user, eq(user.id, member.userId))
+          .where(
+            and(eq(member.organizationId, organizationId), eq(member.userId, authorUserId)),
+          )
+          .limit(1);
   if (!author) {
     throw new Error("El autor no pertenece a esta organización.");
   }
@@ -495,7 +580,9 @@ export async function addComment(
         body: cleaned,
       })
       .returning();
-    await notifyContactUpdated(tx, { organizationId, contactId, changes: ["comentarios"], by: { kind: "vendedor", userId: authorUserId } });
+    // El comentario del Agente IA (usuario de sistema) avisa como del agente, no de un vendedor.
+    const by: ContactActor = authorUserId === AGENT_AI_USER_ID ? AGENTE : { kind: "vendedor", userId: authorUserId };
+    await notifyContactUpdated(tx, { organizationId, contactId, changes: ["comentarios"], by });
     return row;
   });
 

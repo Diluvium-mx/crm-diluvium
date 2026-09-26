@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { buildAgentTools, TOOL_AVISO_VENDEDOR, TOOL_FIJAR_COTIZACION, TOOL_MOVER_ETAPA, validateToolCalls } from "./tools";
+import { buildAgentTools, parseDetalle, TOOL_ACTUALIZAR_DETALLE, TOOL_AVISO_VENDEDOR, TOOL_FIJAR_COTIZACION, TOOL_MOVER_ETAPA, validateToolCalls } from "./tools";
 
 const rows = [
   { id: "w1", slug: "tabla_tamanos_estandar", name: "Tabla", description: "Envía la tabla de tamaños." },
@@ -7,9 +7,9 @@ const rows = [
 ];
 
 describe("herramientas del cerebro (Fase D reestructurada)", () => {
-  it("una por workflow de media + fijar_cotizacion, mover_etapa y aviso_vendedor; ninguna de cobro/etapa/humano como workflow", () => {
+  it("una por workflow de media + fijar_cotizacion, mover_etapa, aviso_vendedor y (parte 1) actualizar_detalle al final; ninguna de cobro/etapa/humano como workflow", () => {
     const t = buildAgentTools(rows);
-    expect(Object.keys(t.tools)).toEqual(["wf_tabla_tamanos_estandar", "wf_datos_bancarios", TOOL_FIJAR_COTIZACION, TOOL_MOVER_ETAPA, TOOL_AVISO_VENDEDOR]);
+    expect(Object.keys(t.tools)).toEqual(["wf_tabla_tamanos_estandar", "wf_datos_bancarios", TOOL_FIJAR_COTIZACION, TOOL_MOVER_ETAPA, TOOL_AVISO_VENDEDOR, TOOL_ACTUALIZAR_DETALLE]);
     expect(Object.keys(t.tools)).not.toContain("wf_pago_confirmado");
     expect(Object.keys(t.tools)).not.toContain("wf_cambiar_etapa");
     expect(Object.keys(t.tools)).not.toContain("wf_transferir_humano");
@@ -35,5 +35,42 @@ describe("herramientas del cerebro (Fase D reestructurada)", () => {
       `${TOOL_MOVER_ETAPA}: argumentos inválidos`,
       `${TOOL_AVISO_VENDEDOR}: argumentos inválidos`,
     ]);
+  });
+
+  it("actualizar_detalle: valida campo por campo (un dato raro no tira los demás), redondea y nunca avisa al vendedor", () => {
+    expect(
+      parseDetalle({
+        tiene_inundaciones: "si",
+        nivel_agua_cm: 40.6,
+        nivel_agua_texto: "  le llega   a la rodilla ",
+        num_entradas: 2,
+        anchos_cm: [95.2, "105"],
+        porcentaje_convencimiento: "65%",
+        comentario: "Tiene cochera con desnivel",
+      }),
+    ).toEqual({
+      tieneInundaciones: "si",
+      nivelAguaCm: 41,
+      nivelAguaTexto: "le llega a la rodilla",
+      numEntradas: 2,
+      anchosCm: [95, 105],
+      porcentajeConvencimiento: 70,
+      comentario: "Tiene cochera con desnivel",
+    });
+    // Fuera de rango o raro → ese campo se descarta; los demás quedan.
+    expect(parseDetalle({ tiene_inundaciones: "tal vez", nivel_agua_cm: 5000, num_entradas: 1.5, anchos_cm: [90, 0], porcentaje_convencimiento: 30 })).toEqual({ porcentajeConvencimiento: 30 });
+    expect(parseDetalle({})).toBeNull();
+    expect(parseDetalle("basura")).toBeNull();
+    const t = buildAgentTools(rows);
+    const { valid, ignored } = validateToolCalls(
+      [
+        { toolName: TOOL_ACTUALIZAR_DETALLE, input: { num_entradas: 3 } },
+        { toolName: TOOL_ACTUALIZAR_DETALLE, input: { nivel_agua_cm: -4 } },
+      ],
+      t,
+    );
+    expect(valid).toEqual([{ kind: "detalle", detalle: { numEntradas: 3 } }]);
+    // Sin "argumentos inválidos": el runtime no le pone aviso al vendedor por esto.
+    expect(ignored).toEqual([`${TOOL_ACTUALIZAR_DETALLE}: sin datos válidos`]);
   });
 });
