@@ -125,12 +125,15 @@ automatización (`/banco` → Cerca de compra) o por otro vendedor se ve sin ref
 - **Embudo**: la tarjeta pasa sola a su nueva columna, arriba (por la hora del cambio), en lotes de
   500 ms. Si el vendedor la está arrastrando, el cambio espera a que la suelte; si la soltó en otra
   columna manda la etapa del vendedor. Mientras una escritura del propio vendedor sobre ese contacto
-  está en curso, no se aplica una lectura (al terminar se relee). Tras una reconexión del SSE el
-  tablero se recarga una vez (se pudieron perder cambios). La cotización NO se muestra en la
-  tarjeta (decisión del dueño).
+  está en curso, no se aplica una lectura (al terminar se relee). En cada `reload` del SSE (al
+  conectarse y al reconectar) se pone al día con `getContactsChangedSince` (lo que cambió de etapa
+  desde la carga o la vuelta anterior, en la misma fila de peticiones; con más de 200, recarga
+  completa). Si llega una recarga completa (importación), se releen los contactos cambiados en vivo
+  en los últimos 2 min. La cotización NO se muestra en la tarjeta (decisión del dueño).
 - **Detalle del contacto** (Bandeja y pop-up): se pone al día solo (500 ms), sin pisar el campo que
-  el vendedor está tecleando ni uno con su guardado en curso (`lib/autosave/tracked-saves.ts`); al
-  salir de ese campo, lo del vendedor se guarda (manda). La Bandeja relee etapa y temperatura del
+  el vendedor está tecleando ni uno con su guardado en curso (`lib/autosave/tracked-saves.ts`); lo
+  saltado se relee en cuanto ese guardado termina. Al salir del campo que tecleaba, lo del vendedor
+  se guarda (manda). La Bandeja relee etapa y temperatura del
   chat abierto y la temperatura de las filas de ese contacto.
 - **Aviso emergente** (`app/(app)/_components/stage-change-toasts.tsx`, en el layout: todas las
   secciones): baja debajo de la barra de arriba, 10 s, con X, `aria-live="polite"`. Solo cambios de
@@ -140,7 +143,12 @@ automatización (`/banco` → Cerca de compra) o por otro vendedor se ve sin ref
   (`/dashboard?contacto=<id>`; sin chat, su pop-up en `/embudo?contacto=<id>`); el grupo abre el
   Embudo. Temperatura, cotización y Detalle (autollenado incluido) van sin aviso.
 - La conexión del SSE queda abierta en todo el CRM (la usa el aviso). Un tablero que se suscribe con
-  ella ya abierta pide su propio `reload` (`useInboxStream(…, { reloadIfOpen: true })`).
+  ella ya abierta pide su propio `reload` (`useInboxStream(…, { reloadIfOpen: true })`). En cada
+  latido (25 s) el servidor revalida sesión, usuario activo y membresía (`lib/inbox/stream-access.ts`):
+  a un vendedor desactivado se le corta el stream.
+- Pendientes teóricos: la temperatura cambiada mientras el SSE estuvo caído no se recupera sola en la
+  tarjeta (no lleva hora; sí al abrir el contacto o recargar). Un aviso emergente que llegue justo
+  durante una reconexión se pierde (el tablero sí se pone al día).
 
 ### Lo que NO va (vs. GHL)
 Nueva conversación/Importar (requiere plantilla: llega con el número real), asignado/seguido/chat

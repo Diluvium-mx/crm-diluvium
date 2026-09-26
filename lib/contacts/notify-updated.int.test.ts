@@ -250,6 +250,27 @@ describe.skipIf(!TEST_DATABASE_URL)("aviso contact.updated (Postgres real)", () 
     }
   });
 
+  it("ponerse al día (Embudo al conectar/reconectar): solo lo movido desde esa hora y solo de su organización", async () => {
+    const before = new Date(Date.now() - 60_000).toISOString();
+    // Semilla vieja: fuera del margen de 5 s.
+    await db.update(s.contacts).set({ stageChangedAt: new Date(Date.now() - 120_000) }).where(d.inArray(s.contacts.id, [JUAN, OTRO]));
+    const empty = await contactActions.getContactsChangedSince(before);
+    expect(empty).toMatchObject({ contacts: [], tooMany: false });
+    await moveStageForward({ organizationId: ORG_A, contactId: JUAN, to: "interesado", by: "agente" });
+    await moveStageForward({ organizationId: ORG_B, contactId: OTRO, to: "interesado", by: "agente" });
+    const changed = await contactActions.getContactsChangedSince(before);
+    expect(changed.contacts.map((c) => [c.id, c.stage])).toEqual([[JUAN, "interesado"]]);
+    expect(Date.parse(changed.now)).toBeGreaterThan(Date.parse(before));
+    await expect(contactActions.getContactsChangedSince("no es fecha")).rejects.toThrow();
+    // Más de 200: se pide recargar completo.
+    // Hora explícita (como la escribe la app): el now() por defecto depende del TimeZone de la base.
+    await db
+      .insert(s.contacts)
+      .values(Array.from({ length: 201 }, (_, i) => ({ id: `c_live_many_${i}`, organizationId: ORG_A, firstName: `M${i}`, stageChangedAt: new Date() })));
+    const many = await contactActions.getContactsChangedSince(before);
+    expect(many).toMatchObject({ contacts: [], tooMany: true });
+  });
+
   it("importación masiva: UN contacts.bulk y ningún contact.updated (tampoco al reimportar)", async () => {
     const header = "Contact Id,First Name,Last Name,Phone,Email,Created,Last Activity,Tags,Country,Opportunities";
     const rows = Array.from(

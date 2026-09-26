@@ -214,11 +214,19 @@ export function ContactDetails({
   // cambios seguidos = una lectura. Las lecturas van en su carril: solo se aplica
   // la última. Se salta lo que el vendedor tiene en curso: un campo con guardado
   // pendiente (o que se guardó mientras la lectura iba en camino) y el borrador
-  // que está tecleando.
+  // que está tecleando. Lo saltado por un guardado se vuelve a leer en cuanto ese
+  // guardado termina (si otro lo cambió en esa ventana, no se pierde).
   const liveTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
-  useEffect(() => () => clearTimeout(liveTimer.current), []);
+  const alive = useRef(true);
+  useEffect(() => {
+    alive.current = true;
+    return () => {
+      alive.current = false;
+      clearTimeout(liveTimer.current);
+    };
+  }, []);
   function scheduleLive() {
-    if (liveTimer.current) return;
+    if (liveTimer.current || !alive.current) return;
     liveTimer.current = setTimeout(() => {
       liveTimer.current = undefined;
       void liveRefresh();
@@ -240,6 +248,7 @@ export function ContactDetails({
     if (outcome.status !== "saved" || !outcome.latest) return;
     const fresh = outcome.result;
     const busy = new Set([...QUAL_FIELDS, "entradas", "comentarios"].filter((lane) => tracker.touchedSince(lane, snap)));
+    if (busy.size > 0) void tracker.whenIdle([...busy]).then(scheduleLive);
     const freshQ = qualificationOf(fresh);
     if (confirmed.current) {
       const next = { ...confirmed.current };
