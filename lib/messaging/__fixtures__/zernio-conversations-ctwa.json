@@ -1,0 +1,40 @@
+{
+  "_fuente": "docs.zernio.com — 'Click-to-WhatsApp Ads' (/platforms/whatsapp/ctwa, Step 1) para metadata; 'List conversations' (GET /v1/inbox/conversations) para data[]/pagination. metadata copiado TAL CUAL del ejemplo oficial; el resto con los campos documentados y verificados en vivo (25-sep-2026).",
+  "data": [
+    {
+      "id": "6ab7aa11bb22cc33dd44ee55",
+      "platform": "whatsapp",
+      "accountId": "zacc_1",
+      "accountUsername": "+52 1 668 000 0000",
+      "participantId": "5216680000000",
+      "participantName": "Cliente",
+      "participantPicture": null,
+      "lastMessage": "Hola, quiero más información",
+      "updatedTime": "2027-01-01T08:18:45.000Z",
+      "status": "active",
+      "unreadCount": 1,
+      "metadata": {
+        "ctwa_clid": "AbCdEfGhIjKlMn0pQrStUvWxYz",
+        "ctwa_captured_at": "2027-01-01T08:18:44.991Z",
+        "ctwa_source_id": "120000000000000000",
+        "ctwa_source_url": "https://fb.me/...",
+        "ctwa_headline": "Chat with us on WhatsApp",
+        "ctwa_source_type": "ad"
+      }
+    },
+    {
+      "id": "6ab7aa11bb22cc33dd44ee66",
+      "platform": "whatsapp",
+      "accountId": "zacc_1",
+      "accountUsername": "+52 1 668 000 0000",
+      "participantId": "5216680000001",
+      "participantName": "Otro cliente",
+      "lastMessage": "Buenas tardes",
+      "updatedTime": "2027-01-01T08:10:00.000Z",
+      "status": "active",
+      "unreadCount": 0
+    }
+  ],
+  "pagination": { "hasMore": false, "nextCursor": null },
+  "meta": { "accountsQueried": 1, "accountsFailed": 0, "failedAccounts": [], "lastUpdated": "2027-01-01T08:19:00.000Z", "accountsSkipped": [] }
+}

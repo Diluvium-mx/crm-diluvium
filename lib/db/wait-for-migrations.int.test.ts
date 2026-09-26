@@ -40,6 +40,16 @@ describe.skipIf(!TEST_DATABASE_URL)("waitForMigrations", () => {
     expect(done).toBe(true);
   });
 
+  it("una migración VIEJA que drizzle saltó (no la última) también bloquea el arranque", async () => {
+    const [{ id }] = await db.execute<{ id: number }>(sql`select id from drizzle.__drizzle_migrations order by created_at asc limit 1 offset 5`);
+    await db.execute(sql`update drizzle.__drizzle_migrations set created_at = created_at - 1 where id = ${id}`);
+    try {
+      await expect(wait({ everyMs: 10, deadlineMs: 60, log: quiet })).rejects.toThrow(/sigue sin la migración 0005_/);
+    } finally {
+      await db.execute(sql`update drizzle.__drizzle_migrations set created_at = created_at + 1 where id = ${id}`);
+    }
+  });
+
   it("si el web nunca migra, vence el plazo y lanza (el deploy falla a la vista)", async () => {
     const [{ id }] = await db.execute<{ id: number }>(sql`select id from drizzle.__drizzle_migrations order by created_at desc limit 1`);
     await db.execute(sql`update drizzle.__drizzle_migrations set created_at = created_at - 1 where id = ${id}`);

@@ -15,6 +15,7 @@ import { AgentErrorCard } from "./agent-error-card";
 import { AgentActivityPill } from "./agent-activity-pill";
 import { BotOffMenu } from "./bot-off-menu";
 import { interleaveNotices } from "@/lib/agente-ia/timeline";
+import { AdFreeWindowNote, AdReferralCard } from "./ad-referral-card";
 import {
   bubbleTime,
   dayLabel,
@@ -49,30 +50,6 @@ type Row = (MessageView & { optimistic?: false }) | OptimisticMessage;
 
 function isOptimistic(row: Row): row is OptimisticMessage {
   return "optimistic" in row && row.optimistic === true;
-}
-
-function AdReferralCard({ referral }: { referral: AdReferral }) {
-  return (
-    <div className="mb-1 overflow-hidden rounded-lg border bg-card">
-      <div className="bg-brand-orange/10 px-2 py-1 text-[11px] font-medium text-brand-orange">
-        📣 Llegó por anuncio
-      </div>
-      <div className="flex gap-2 p-2">
-        {referral.thumbnailUrl && (
-          // eslint-disable-next-line @next/next/no-img-element
-          <img
-            src={referral.thumbnailUrl}
-            alt=""
-            className="h-12 w-12 shrink-0 rounded object-cover"
-          />
-        )}
-        <div className="min-w-0">
-          {referral.headline && <p className="truncate text-xs font-semibold">{referral.headline}</p>}
-          {referral.body && <p className="line-clamp-2 text-xs text-muted-foreground">{referral.body}</p>}
-        </div>
-      </div>
-    </div>
-  );
 }
 
 function Attachment({ attachment, onOpen }: { attachment: AttachmentView; onOpen: () => void }) {
@@ -143,7 +120,7 @@ function Bubble({
     : row.status === "failed" && (row as MessageView).canRetry;
   const errorMessage = opt ? row.errorMessage : (row as MessageView).errorMessage;
   const attachments = opt ? [] : (row as MessageView).attachments;
-  const adReferral = opt ? null : (row as MessageView).adReferral;
+  const adReferral: AdReferral | null = opt ? null : (row as MessageView).adReferral;
   const view = opt ? null : (row as MessageView);
   const reactions = view ? [view.reactions.contact, view.reactions.business].filter(Boolean) : [];
 
@@ -498,6 +475,7 @@ export function ChatThread({
         {windowOpen
           ? `Ventana abierta · quedan ${hoursLeft} h`
           : "Pasaron 24 h desde su último mensaje. Solo se puede enviar una plantilla."}
+        <AdFreeWindowNote adEntry={detail.adEntry} nowMs={nowMs} />
       </div>
       <AgentPausedBanner conversationId={conversationId} agent={agent} onChanged={() => void reloadAgent()} nowMs={nowMs} />
 

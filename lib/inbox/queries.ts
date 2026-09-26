@@ -19,8 +19,8 @@ import {
   locationFromMetadata,
   messagePreview,
   quotedIdFromMetadata,
-  sanitizeReferral,
 } from "./format";
+import { adCardFromRaw, adCardsForMessages, firstReplyAfter } from "@/lib/ads/queries";
 import type {
   ConversationDetail,
   ConversationListItem,
@@ -265,7 +265,12 @@ async function detail(where: SQL): Promise<ConversationDetail | null> {
     windowExpiresAt: conversation.windowExpiresAt,
     isStarred: conversation.isStarred,
     unreadCount: conversation.unreadCount,
-    adReferral: sanitizeReferral(conversation.adReferral),
+    adEntry: conversation.adEntryAt
+      ? {
+          entryAt: conversation.adEntryAt,
+          firstReplyAt: await firstReplyAfter(conversation.organizationId, conversation.id, conversation.adEntryAt),
+        }
+      : null,
     channel: { isTest: channel.isTest, archived: channel.archivedAt !== null },
   };
 }
@@ -321,6 +326,12 @@ export async function listMessagesForOrg(
         .where(and(eq(messages.organizationId, organizationId), inArray(messages.providerMessageId, quotedIds)))
     : [];
   const quotedByWamid = new Map(quotedRows.map((q) => [q.wamid, q]));
+  // Tarjeta "📣 Llegó por anuncio" del entrante que trajo la ficha (o al que se
+  // atribuyó el respaldo), con el nombre de Meta y la miniatura del bucket.
+  const adCards = await adCardsForMessages(
+    organizationId,
+    page.filter((m) => m.direction === "in").map((m) => m.id),
+  );
 
   return {
     hasMore: rows.length > size,
@@ -335,7 +346,7 @@ export async function listMessagesForOrg(
         errorMessage: m.status === "failed" || m.errorCode ? m.errorMessage : null,
         canRetry: canRetry(m),
         sentAt: m.sentAt ?? m.createdAt,
-        adReferral: sanitizeReferral(m.adReferral),
+        adReferral: adCards.get(m.id) ?? (m.direction === "in" ? adCardFromRaw(m.adReferral) : null),
         reactions: {
           ...(m.reactions.contact?.emoji ? { contact: m.reactions.contact.emoji } : {}),
           ...(m.reactions.business?.emoji ? { business: m.reactions.business.emoji } : {}),

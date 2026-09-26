@@ -14,3 +14,4 @@ export * from "./ai-runtime";
 export * from "./automation";
 export * from "./cobro";
 export * from "./ai-credit";
+export * from "./ads";
