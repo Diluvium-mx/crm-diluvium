@@ -25,6 +25,11 @@ export async function updateBotOptions(input: unknown): Promise<OptionsActionRes
     return { ok: true, options, lastChange: last ? { ...last, createdAt: last.createdAt.toISOString() } : null };
   } catch (error) {
     if (error instanceof ZodError) return { ok: false, message: error.issues[0]?.message ?? "Valor no válido." };
+    // Sesión vencida, usuario desactivado o sin membresía: se dice tal cual (no es una falla
+    // del servidor y no va al log de errores), igual que en el editor del agente.
+    if (error instanceof Error && /^(No autenticado|Usuario desactivado|No tienes permiso|El usuario no tiene membresía)/.test(error.message)) {
+      return { ok: false, message: error.message };
+    }
     console.error("[agente-ia] no se pudieron guardar las opciones del bot", error);
     return { ok: false, message: "No se pudo guardar la opción; inténtalo de nuevo." };
   }

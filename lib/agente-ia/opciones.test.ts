@@ -49,6 +49,9 @@ describe("botOptionsPatchSchema", () => {
     expect(botOptionsPatchSchema.safeParse({ humanReplyReactivateHours: 721 }).success).toBe(false);
     expect(botOptionsPatchSchema.safeParse({ responseLength: "larga" }).success).toBe(false);
     expect(botOptionsPatchSchema.safeParse({}).success).toBe(false);
+    // Una llave con undefined (React Flight la conserva) no cuenta como cambio.
+    expect(botOptionsPatchSchema.safeParse({ responseDelaySeconds: undefined }).success).toBe(false);
+    expect(botOptionsPatchSchema.parse({ responseDelaySeconds: undefined, maxBubbles: 1 })).toEqual({ maxBubbles: 1 });
     expect(botOptionsPatchSchema.safeParse({ otra: 1 }).success).toBe(false);
   });
 
