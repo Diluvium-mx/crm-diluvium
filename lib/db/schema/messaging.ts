@@ -205,6 +205,10 @@ export const conversations = pgTable(
     // `referral` recibido). Meta lo manda una sola vez: se guarda crudo y
     // completo; la UI solo recibe una versión saneada (lib/inbox).
     adReferral: jsonb("ad_referral").$type<Record<string, unknown>>(),
+    // Última entrada del cliente por un anuncio (clic a WhatsApp): de aquí
+    // sale la ventana GRATIS de 72 h (lib/ads/free-window.ts). El historial
+    // completo de anuncios vive en ad_clicks.
+    adEntryAt: timestamp("ad_entry_at"),
     createdAt: timestamp("created_at").defaultNow().notNull(),
   },
   (table) => [

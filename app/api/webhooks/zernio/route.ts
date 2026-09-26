@@ -73,7 +73,7 @@ export async function POST(req: Request): Promise<Response> {
   let envelope: WebhookEnvelope;
   try {
     payload = JSON.parse(rawBody);
-    envelope = provider.readEnvelope(rawBody);
+    envelope = provider.readEnvelope(rawBody, req.headers);
   } catch {
     // Firmado pero ilegible: reintentar no lo arreglaría.
     console.error("[webhook zernio] payload firmado pero inválido");

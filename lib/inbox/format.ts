@@ -3,7 +3,16 @@
 import type { MessageAttachment } from "@/lib/db/schema";
 import { MEDIA_MAX_ATTEMPTS, MEDIA_SWEEP_DAYS } from "@/lib/messaging/media-keys";
 import { isAmbiguousSendError } from "@/lib/messaging/rules";
-import type { AdReferral, AttachmentView, MessageKind, MessageView } from "./types";
+import type { AttachmentView, MessageKind, MessageView } from "./types";
+
+/** Lo legible de una ficha de anuncio cruda (resumen del Detalle del contacto). */
+export type ReferralSummary = {
+  headline: string | null;
+  body: string | null;
+  thumbnailUrl: string | null;
+  sourceUrl: string | null;
+  mediaType: string | null;
+};
 
 function firstLetter(value: string | null | undefined): string {
   return value?.match(/\p{L}/u)?.[0] ?? "";
@@ -59,9 +68,9 @@ function httpsUrl(value: string | null): string | null {
  * que la tarjeta muestra. Nunca ctwa_clid ni ids internos. Sin titular ni
  * miniatura no hay tarjeta que mostrar → null.
  */
-export function sanitizeReferral(raw: Record<string, unknown> | null | undefined): AdReferral | null {
+export function sanitizeReferral(raw: Record<string, unknown> | null | undefined): ReferralSummary | null {
   if (!raw || typeof raw !== "object") return null;
-  const referral: AdReferral = {
+  const referral: ReferralSummary = {
     headline: pick(raw, "headline", "title"),
     body: pick(raw, "body"),
     thumbnailUrl: httpsUrl(pick(raw, "thumbnail_url", "thumbnailUrl", "image_url", "imageUrl")),

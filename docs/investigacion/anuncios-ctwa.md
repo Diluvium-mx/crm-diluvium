@@ -1,6 +1,7 @@
 # Investigación: atribución de anuncios de clic a WhatsApp (CTWA)
 
-**Estado:** investigado el 18-sep-2026. **Evaluar la implementación después**: no es parte de la bandeja v1.
+**Estado:** investigado el 18-sep-2026. **Implementado el 24-sep-2026** (niveles 1 y 2, sin métricas de
+gasto ni Conversions API): ver `docs/anuncios.md`.
 Lo único que se hace YA es **guardar los datos del anuncio** de cada conversación, porque Meta
 los manda UNA sola vez (en el primer mensaje tras el clic) y no se pueden recuperar después.
 

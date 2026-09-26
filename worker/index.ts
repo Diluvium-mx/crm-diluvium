@@ -42,6 +42,7 @@ import { startWorkflowWorker } from "./workflows";
 import { onInboundKeyword } from "@/lib/workflows/triggers";
 import { agentIngestHooks } from "@/lib/ai/runtime/hooks";
 import { startAgentRuntime } from "@/lib/ai/runtime/worker";
+import { adsIngestHooks, startAdsWorker } from "@/lib/ads/worker";
 
 const SWEEP_EVERY_MS = 60_000;
 const SWEEP_MIN_AGE_MS = 60_000;
@@ -73,6 +74,8 @@ const storage = optionalStorage();
 const agent = startAgentRuntime({ provider, storage });
 // Workflows (Fase D): corridas de acciones (media, etapa, humano, avisos).
 const workflowsRunner = startWorkflowWorker(provider, storage);
+// Anuncios de Meta: media del anuncio, nombres de Meta y respaldo sin ficha.
+const ads = startAdsWorker({ provider, storage });
 // Adjuntos pendientes que el barrido reintenta: hasta 30 días (antes de que
 // Meta borre la media) y hasta MEDIA_MAX_ATTEMPTS intentos por adjunto.
 
@@ -89,6 +92,7 @@ const worker = new Worker<InboundJob>(
           await agentIngestHooks.onInboundMessage?.(m);
           await onInboundKeyword(m);
         },
+        ...adsIngestHooks,
       });
       console.info(`[worker] ${job.data.webhookEventId}: ${outcome}`);
       return outcome;
@@ -150,6 +154,8 @@ async function sweep() {
   // Mensajes programados (A6): vencidos sin job y envíos atorados.
   await scheduled.sweep().catch((error) => console.error("[scheduled] barrido falló", error));
   await workflowsRunner.sweep().catch((error) => console.error("[workflows] barrido falló", error));
+  // Anuncios: clics sin registrar, media pendiente y nombres de Meta.
+  await ads.sweep().catch((error) => console.error("[anuncios] barrido falló", error));
 
   const stale = await db
     .select({ id: webhookEvents.id })
@@ -303,7 +309,7 @@ async function shutdown(signal: string) {
   console.info(`[worker] ${signal}: cerrando`);
   clearInterval(sweepTimer);
   clearInterval(monitorTimer);
-  await Promise.all([worker.close(), mediaWorker?.close(), scheduled.close(), agent.close(), workflowsRunner.close()]);
+  await Promise.all([worker.close(), mediaWorker?.close(), scheduled.close(), agent.close(), workflowsRunner.close(), ads.close()]);
   process.exit(0);
 }
 process.on("SIGTERM", () => void shutdown("SIGTERM"));
@@ -322,6 +328,7 @@ waitForMigrations()
     scheduled.run();
     agent.run();
     workflowsRunner.run();
+    ads.run();
   })
   .catch((error: unknown) => {
     console.error("[worker] no se pudo verificar las migraciones", error);

@@ -29,8 +29,24 @@ import {
   type WebhookEnvelope,
 } from "./provider";
 import { bodyHasUnsupportedPlaceholders, templateRequiresUnsupportedParams, templateVariablesFromBody } from "./template-format";
+import { clickFromZernioConversation, extractReferral, type ConversationClick } from "@/lib/ads/referral";
 
 const DEFAULT_BASE_URL = "https://zernio.com/api";
+// Respaldo de anuncios por el listado de conversaciones (docs.zernio.com,
+// "List conversations", revisado el 25-sep-2026): `sortOrder` por "updated time",
+// `desc` por omisión; `limit` de 1 a 100 (50 por omisión); cursor opaco.
+const CONVERSATION_PAGE_SIZE = 100;
+/** Sin hora del mensaje (o sin `updatedTime` en la respuesta): páginas fijas, como antes. */
+const CONVERSATION_PAGES = 3;
+/**
+ * Con la hora del mensaje se sigue hasta PASAR esa hora (la conversación del
+ * mensaje se actualizó entonces: no puede estar más abajo). Tope de seguridad:
+ * 10 páginas = 1,000 conversaciones actualizadas desde el mensaje; a ~400
+ * clientes nuevos al día ni el último reintento (~40 min) se acerca.
+ */
+const CONVERSATION_MAX_PAGES = 10;
+/** Holgura contra desfase de relojes (hora de WhatsApp vs. `updatedTime` de Zernio). */
+const CONVERSATION_SKEW_MS = 5 * 60_000;
 const SEND_TIMEOUT_MS = 15_000;
 
 export function verifyZernioSignature(rawBody: string, signature: string | null, secret: string): boolean {
@@ -41,8 +57,10 @@ export function verifyZernioSignature(rawBody: string, signature: string | null,
   return given.length === expected.length && timingSafeEqual(given, expected);
 }
 
+// El id del evento puede faltar en el cuerpo (el ejemplo de CTWA que Zernio
+// mandó por escrito el 24-sep-2026 es "plano" y no lo trae): ver zernioEventId.
 const envelopeSchema = z.object({
-  id: z.string().min(1),
+  id: z.string().min(1).optional(),
   event: z.string().min(1),
 });
 
@@ -63,7 +81,7 @@ const conversationSchema = z
   .passthrough();
 
 const messageEventSchema = z.object({
-  id: z.string(),
+  id: z.string().optional(),
   event: z.enum(["message.received", "message.sent"]),
   timestamp: z.string().optional(),
   message: z
@@ -80,13 +98,14 @@ const messageEventSchema = z.object({
       // parseo del mensaje: la identidad cae a businessScopedUserId.
       sender: z
         .object({
-          id: z.string(),
+          id: z.string().nullish(),
           name: z.string().nullish(),
           phoneNumber: z.string().nullish(),
           businessScopedUserId: z.string().nullish(),
         })
         .passthrough(),
-      sentAt: z.string(),
+      // Puede faltar (formato plano): se usa la hora del sobre o la de recepción.
+      sentAt: z.string().nullish(),
       source: z.string().optional(),
     })
     .passthrough(),
@@ -246,14 +265,74 @@ function findStatusFields(payload: Record<string, unknown>) {
   };
 }
 
-export function normalizeZernioEvent(payload: unknown): NormalizedEvent {
+/**
+ * Id del evento (idempotencia del webhook): `id` del sobre → encabezado
+ * X-Zernio-Event-Id → DERIVADO del wamid (`message.received-wamid.…`). El
+ * derivado es estable: un reintento del mismo mensaje cae en la misma fila y
+ * no se procesa dos veces. Sin ninguno de los tres, undefined.
+ */
+export function zernioEventId(payload: unknown, headers?: Headers): string | undefined {
+  const root = asRecord(payload);
+  const explicit = asString(root.id) ?? asString(headers?.get("x-zernio-event-id") ?? undefined);
+  if (explicit) return explicit;
+  const event = asString(root.event);
+  const wamid = asString(asRecord(root.message).platformMessageId) ?? asString(root.platformMessageId);
+  return event && wamid ? `${event}-${wamid}` : undefined;
+}
+
+/**
+ * Hora que trae el id interno de Zernio: es un ObjectId de Mongo (24 hex; los
+ * primeros 8 = segundos Unix de su creación; visto: 6ab2d706… = 19:29:10Z para
+ * un sentAt de 19:29:09Z). Mejor respaldo que la hora de recepción cuando
+ * Zernio entrega tarde (reintentos). Solo si es verosímil: no después de la
+ * recepción ni más de 7 días antes.
+ */
+export function objectIdTime(id: string | undefined, receivedAt?: Date): Date | null {
+  if (!id || !/^[0-9a-f]{24}$/i.test(id)) return null;
+  const date = new Date(parseInt(id.slice(0, 8), 16) * 1000);
+  const ref = receivedAt?.getTime() ?? Date.now();
+  if (date.getTime() > ref + 60_000 || date.getTime() < ref - 7 * 86_400_000) return null;
+  return date;
+}
+
+/**
+ * Mensaje en formato PLANO (campos en la raíz: messageId, conversationId,
+ * platformMessageId, text, sender…, como el ejemplo de CTWA de Zernio) → la
+ * forma anidada (`message: {…}`) que reciben los webhooks reales. Si ya viene
+ * anidado, se devuelve igual.
+ */
+function nestFlatMessage(payload: unknown): unknown {
+  const root = asRecord(payload);
+  if (root.message && typeof root.message === "object") return payload;
+  const wamid = asString(root.platformMessageId);
+  if (!wamid) return payload;
+  return {
+    ...root,
+    message: {
+      id: asString(root.messageId) ?? wamid,
+      conversationId: asString(root.conversationId) ?? asString(asRecord(root.conversation).id),
+      platform: asString(root.platform) ?? asString(asRecord(root.account).platform),
+      platformMessageId: wamid,
+      direction: asString(root.direction) ?? (root.event === "message.sent" ? "outgoing" : "incoming"),
+      text: typeof root.text === "string" ? root.text : null,
+      attachments: Array.isArray(root.attachments) ? root.attachments : [],
+      sender: asRecord(root.sender),
+      sentAt: asString(root.sentAt),
+      source: asString(root.source),
+    },
+  };
+}
+
+export function normalizeZernioEvent(payload: unknown, context: { receivedAt?: Date } = {}): NormalizedEvent {
   const envelope = envelopeSchema.safeParse(payload);
-  if (!envelope.success) {
-    return { kind: "ignored", eventId: "", event: "", reason: "sobre inválido", malformed: true };
+  const eventId = zernioEventId(payload) ?? "";
+  if (!envelope.success || !eventId) {
+    return { kind: "ignored", eventId, event: envelope.data?.event ?? "", reason: "sobre inválido", malformed: true };
   }
-  const { id: eventId, event } = envelope.data;
+  const { event } = envelope.data;
 
   if (event === "message.received" || event === "message.sent") {
+    payload = nestFlatMessage(payload);
     const parsed = messageEventSchema.safeParse(payload);
     if (!parsed.success) {
       return { kind: "ignored", eventId, event, reason: `formato no reconocido: ${parsed.error.issues[0]?.message}`, malformed: true };
@@ -311,9 +390,20 @@ export function normalizeZernioEvent(payload: unknown): NormalizedEvent {
     // sentAt gobierna el orden del hilo, la ventana de 24 h y la primera
     // respuesta: un valor ilegible NO se sustituye por "ahora" (abriría una
     // ventana falsa y corrompería métricas). Se marca malformado → dead-letter.
-    const sentAt = validDate(message.sentAt);
-    if (!sentAt) {
-      return { kind: "ignored", eventId, event, reason: `sentAt inválido: ${message.sentAt}`, malformed: true };
+    // Si NO viene (formato plano), se usa la hora del sobre y, sin ella, la de
+    // RECEPCIÓN del webhook (guardada al llegar, no la del reproceso): un
+    // mensaje de anuncio nunca se queda fuera por no traer hora.
+    let sentAt: Date | null;
+    let sentAtFromReceipt = false;
+    if (message.sentAt) {
+      sentAt = validDate(message.sentAt);
+      if (!sentAt) {
+        return { kind: "ignored", eventId, event, reason: `sentAt inválido: ${message.sentAt}`, malformed: true };
+      }
+    } else {
+      sentAt = validDate(parsed.data.timestamp) ?? objectIdTime(message.id, context.receivedAt) ?? context.receivedAt ?? null;
+      sentAtFromReceipt = true;
+      if (!sentAt) return { kind: "ignored", eventId, event, reason: "mensaje sin hora", malformed: true };
     }
     return {
       kind: "message",
@@ -337,10 +427,10 @@ export function normalizeZernioEvent(payload: unknown): NormalizedEvent {
       body: message.text ?? null,
       attachments,
       sentAt,
-      referral:
-        metadata?.referral && typeof metadata.referral === "object"
-          ? (metadata.referral as Record<string, unknown>)
-          : undefined,
+      ...(sentAtFromReceipt ? { sentAtFromReceipt } : {}),
+      // Ficha del anuncio: raíz → metadata.referral (Zernio manda ambas). Solo
+      // en entrantes: es del cliente que tocó el anuncio.
+      referral: outgoing ? undefined : extractReferral(payload),
       metadata: metadata && Object.keys(metadata).length > 0 ? metadata : undefined,
       ...(history ? { history: true } : {}),
     };
@@ -434,14 +524,65 @@ export class ZernioProvider implements MessagingProvider {
     return verifyZernioSignature(rawBody, signature, this.config.webhookSecret);
   }
 
-  readEnvelope(rawBody: string): WebhookEnvelope {
+  readEnvelope(rawBody: string, headers?: Headers): WebhookEnvelope {
     const json: unknown = JSON.parse(rawBody);
     const parsed = envelopeSchema.parse(json);
-    return { eventId: parsed.id, event: parsed.event, providerAccountId: zernioAccountId(json) };
+    const eventId = zernioEventId(json, headers);
+    if (!eventId) throw new Error("evento sin id (ni en el cuerpo, ni en X-Zernio-Event-Id, ni wamid)");
+    return { eventId, event: parsed.event, providerAccountId: zernioAccountId(json) };
   }
 
-  normalize(payload: unknown): NormalizedEvent {
-    return normalizeZernioEvent(payload);
+  normalize(payload: unknown, context?: { receivedAt?: Date }): NormalizedEvent {
+    return normalizeZernioEvent(payload, context);
+  }
+
+  // Anuncios (respaldo): primer clic que Zernio guardó en la conversación.
+  // Documentación oficial (docs.zernio.com, 25-sep-2026):
+  // - "Get conversation" (GET /v1/inbox/conversations/{id}) "currently returns
+  //   only the `meta_ad_*` family" (Instagram/Messenger); los `ctwa_*` de
+  //   WhatsApp "are returned by `GET /v1/inbox/conversations` instead".
+  // - "Click-to-WhatsApp Ads" (/platforms/whatsapp/ctwa): el clic queda en la
+  //   conversación bajo `metadata` (ctwa_clid, ctwa_captured_at, ctwa_source_id,
+  //   ctwa_source_url, ctwa_headline, ctwa_source_type).
+  // Por eso se lista por cuenta (filtro `accountId`, verificado en vivo: solo
+  // devuelve esa cuenta) y se busca la conversación por id. El listado va de la
+  // más reciente a la más vieja (por actualización): con `updatedSince` (la hora
+  // del mensaje) se recorre hasta pasar esa hora, así el volumen del día no la
+  // saca de la ventana; no encontrarla ahí = sin datos (se reintenta). Si Zernio
+  // avisa que no pudo leer la cuenta (`meta.accountsFailed`), es un error, no "sin datos".
+  async conversationAdClick(
+    providerAccountId: string,
+    providerConversationId: string,
+    opts: { updatedSince?: Date } = {},
+  ): Promise<ConversationClick | null> {
+    const floor = opts.updatedSince ? opts.updatedSince.getTime() - CONVERSATION_SKEW_MS : null;
+    let cursor: string | undefined;
+    let bounded = floor !== null;
+    for (let page = 0; page < (bounded ? CONVERSATION_MAX_PAGES : CONVERSATION_PAGES); page++) {
+      const params = new URLSearchParams({ accountId: providerAccountId, limit: String(CONVERSATION_PAGE_SIZE) });
+      if (cursor) params.set("cursor", cursor);
+      const json = await this.apiJson("GET", `/v1/inbox/conversations?${params.toString()}`);
+      const list = Array.isArray(json.data) ? json.data.map(asRecord) : null;
+      if (!list) throw new ZernioApiError(0, "Listado de conversaciones con formato no reconocido");
+      const failed = Number(asRecord(json.meta).accountsFailed ?? 0);
+      if (failed > 0) throw new ZernioApiError(0, "Zernio no pudo leer la cuenta en el listado (meta.accountsFailed); se reintenta");
+      const found = list.find((c) => c.id === providerConversationId);
+      if (found) return clickFromZernioConversation({ data: found });
+      const pagination = asRecord(json.pagination);
+      cursor = asString(pagination.nextCursor);
+      if (pagination.hasMore !== true || !cursor) return null;
+      if (bounded) {
+        // Cualquier conversación de esta página ya es anterior a la hora del
+        // mensaje → todo lo que sigue también: la del mensaje no está más abajo.
+        const times = list.map((c) => Date.parse(String(c.updatedTime ?? "")));
+        if (times.some((t) => Number.isNaN(t))) bounded = false; // sin hora legible: páginas fijas
+        else if (Math.min(...times) < floor!) return null;
+      }
+    }
+    if (bounded) {
+      throw new ZernioApiError(0, `Más de ${CONVERSATION_MAX_PAGES} páginas de conversaciones actualizadas desde el mensaje; se reintenta`);
+    }
+    return null;
   }
 
   // Media de WhatsApp vía Zernio: https://zernio.com/api/v1/whatsapp/media/{id}

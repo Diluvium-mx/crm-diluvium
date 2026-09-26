@@ -1,0 +1,33 @@
+{
+  "event": "message.received",
+  "platform": "whatsapp",
+  "messageId": "6ab3a1b2c3d4e5f601234567",
+  "conversationId": "6ab3a1b2c3d4e5f607654321",
+  "platformMessageId": "wamid.HBgNNTIxNTUxMjM0NTY3OBUCABIYFkNUV0FFSkVNUExPWkVSTklPAA==",
+  "text": "Hola, quiero más información",
+  "sender": { "id": "5215512345678", "name": "Juan", "phoneNumber": "+5215512345678" },
+  "referral": {
+    "source_url": "https://fb.me/abc123",
+    "source_type": "ad",
+    "source_id": "120211234567890123",
+    "headline": "Promoción de septiembre",
+    "body": "Escríbenos y te cotizamos",
+    "media_type": "image",
+    "image_url": "https://scontent.whatsapp.net/v/t61/ejemplo.jpg?oh=firma&oe=caduca",
+    "ctwa_clid": "ARAkEjemploClid"
+  },
+  "metadata": {
+    "referral": {
+      "source_url": "https://fb.me/abc123",
+      "source_type": "ad",
+      "source_id": "120211234567890123",
+      "headline": "Promoción de septiembre",
+      "body": "Escríbenos y te cotizamos",
+      "media_type": "image",
+      "image_url": "https://scontent.whatsapp.net/v/t61/ejemplo.jpg?oh=firma&oe=caduca",
+      "ctwa_clid": "ARAkEjemploClid"
+    }
+  },
+  "conversation": { "id": "6ab3a1b2c3d4e5f607654321", "participantId": "5215512345678", "status": "active" },
+  "account": { "id": "zacc_ctwa", "platform": "whatsapp" }
+}
