@@ -332,11 +332,11 @@ sistema "Agente IA"). El Goal y las FAQs no se tocaron.
   entrada, casi todos en caché); **Sonnet 5 (Modelo 2)** US$0.0146 → US$0.0159 (**+US$0.0013, ~9 %**;
   +652 tokens de entrada en caché y ~110 de salida). La primera llamada de cada conversación escribe la
   caché una vez (igual que antes).
-- **Para "Cambios en vivo"** (`feat/cambios-en-vivo`, aún sin subir al escribir esto): esa rama agrega el
-  parámetro `by: ContactActor` en las mismas funciones donde esta agregó `origen?: DetalleOrigen`. Al
-  mezclar: un solo parámetro; `by.kind === "vendedor"` → origen `"vendedor"`, `"agente"` → `"agente"`,
-  `"automatizacion"` → sin origen. El Detalle abierto debe releer también `iaFields` para que la marca
-  "IA" aparezca sola.
+- **Con "Cambios en vivo"** (entró a main antes, 6e677fd; esta rama se rebasó encima): un solo parámetro
+  `by: ContactActor` en `qualification.ts`; el origen se deriva de él (vendedor → `"vendedor"`, Agente IA →
+  `"agente"`, automatización → sin marca). El comentario del usuario de sistema avisa como del agente. El
+  Detalle abierto relee también `iaFields`: probado en el navegador, los 7 campos y sus marcas "IA"
+  aparecen solos, sin refrescar.
 
 ### B. Notas de voz
 - Modelo: **`gpt-4o-mini-transcribe`** (OpenAI, llave `OPENAI_API_KEY` que ya existía): **US$0.003 por
@@ -371,6 +371,44 @@ sistema "Agente IA"). El Goal y las FAQs no se tocaron.
 
 ### D. Limpieza
 `ai_config.daily_budget_usd` borrada en la 0037 (no la leía ningún código).
+
+### Gate (26-sep-2026)
+- `npm run typecheck | test | lint` en verde (1,075 pruebas + 5 omitidas, con la base de pruebas).
+- **cyber-neo** (solo el delta): 0 hallazgos reales, 4 informativos (llave falsa en una prueba, audio a
+  OpenAI, inyección por voz hacia comentarios firmados "Agente IA", costo de transcripción sin tope por
+  conversación).
+- **Codex** (`adversarial-review --base origin/main`) y una **revisión independiente de Claude**: corregido
+  con prueba (1) un plan rechazado cuyo worker se reinició antes de la tarjeta ya no queda "enviado": queda
+  guardado con su tarjeta; (2) un "Reintentar" cuya corrida se pierde en Redis lo re-programa el barrido;
+  (3) una fila en cola de más de 15 min ya no se reenvía (pudo salir; la clave de Zernio vence a las 24 h);
+  (4) una transcripción que ya llamó a OpenAI no se vuelve a pagar; (5) lo que el cliente escribe mientras
+  espera la tarjeta sigue pendiente en la BD tras el reenvío (`metadata.respondeHasta`); (6) un envío sin
+  confirmar ya no da una tarjeta "Reintentar" sin salida (aviso para revisar el celular); (7) una respuesta
+  guardada de más de 24 h o con la ventana cerrada se descarta con aviso.
+- **Aceptado (instrucción del dueño: borrar la columna en la 0037):** entre el pre-deploy y el cambio de
+  contenedor (~1–2 min), la pestaña Agente IA del web anterior falla al abrir o guardar (`select()` de
+  `ai_config` con la columna ya borrada). El worker y los clientes no se afectan. Si el despliegue nuevo
+  fallara después de migrar, esa pestaña queda así hasta el siguiente despliegue.
+
+### Teóricos (sin escenario real hoy; no abren ronda)
+- `updateEntrada` escribe `linea`/`ancho` desde una lectura previa: un cambio de línea del vendedor en el
+  mismo milisegundo que el agente llena el ancho de ESA entrada podría revertirse.
+- Un vendedor tecleando un ancho mientras el agente baja el número de entradas ve un error al guardar esa fila.
+- `detalle_por` corrupto (no objeto) perdería las marcas; hoy solo lo escribe este código.
+- Las marcas por posición sobreviven al borrar filas (una fila recreada vacía puede mostrar "IA"; una
+  posición "vendedor" queda vetada al agente).
+- "¿Cuánta agua entra?" conserva la marca si el vendedor solo edita los cm (el texto sigue del agente).
+- Campos que se vaciaron antes de esta función no tienen origen: el agente los puede llenar.
+- Modelo que conteste SOLO con `actualizar_detalle`: sale el texto de respaldo (medido 0 de 30 con la
+  descripción actual).
+- `nivel_agua_texto` escrito por un vendedor llega al contexto del modelo (es un campo del Detalle, no nota).
+- Si la BD cae justo en `holdForRetry`, el plan queda "enviando" y a los 10 min el barrido podría volver a
+  atender el entrante con el modelo (doble falla).
+- Un OGG manipulado (página dañada) se mediría más corto que su duración real (tope de 25 MB igual).
+- Un reinicio entre `savePlan` y el primer envío bloquea al agente en esa conversación hasta 10 min.
+- `ALTER TABLE messages ADD COLUMN` pide un candado exclusivo breve; si coincide con el respaldo diario, el
+  pre-deploy falla por `lock_timeout` (5 s) sin tumbar nada y se reintenta.
+- Un spammer con muchas notas de voz largas: ~US$0.03 por audio, visible en el Gasto de IA.
 
 ## Fuera de alcance (próximos briefs)
 
