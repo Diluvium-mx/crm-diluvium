@@ -161,7 +161,7 @@ describe.skipIf(!TEST_DATABASE_URL)("importador del historial del número oficia
     const world: FakeWorld = {
       accountId: ACCOUNT,
       chats: [
-        chat("grupo", "120363000000000000", [msg("in", DAY, "hola grupo")], { isGroup: true }),
+        chat("grupo", "120363000000000000@g.us", [msg("in", DAY, "hola grupo")]),
         chat("sin_tel", "usuario.sin.telefono", [msg("in", DAY, "hola")]),
         chat("archivado", "5216683000003", [msg("in", 3 * DAY, "viejo archivado")], { archived: true }),
       ],
@@ -194,6 +194,116 @@ describe.skipIf(!TEST_DATABASE_URL)("importador del historial del número oficia
     expect(convs.map((c) => c.providerConversationId)).toEqual(["solo"]);
     // El miembro de GHL no recibió la conversación del grupo.
     expect(convs.some((c) => c.contactId === "miembro")).toBe(false);
+  });
+
+  it("--muestra: solo lee los N chats más recientes, no escribe NADA y su reporte coincide con la simulación completa de esos chats", async () => {
+    await ghl("m_ghl1", "+526683200001");
+    await ghl("m_ghl2", "+526683200002");
+    await ghl("m_dupA", "+526683200003");
+    await db.insert(s.contacts).values({ id: "m_dupB", organizationId: ORG, firstName: "Dup", phoneE164: "+5216683200003", source: "whatsapp" });
+    const img = (id: string, url: string | null) => ({ id, type: "image" as const, url, mimeType: "image/jpeg" });
+    // 12 chats; su "última actividad" decide cuáles son los más recientes.
+    const chats: FakeChat[] = [
+      chat("viejo1", "5216683200001", [msg("in", 150 * DAY, "hace mucho")]),
+      chat("viejo2", "5216683209001", [msg("in", 140 * DAY, "hace mucho 2")]),
+      chat("viejo3", "5216683209002", [msg("in", 130 * DAY, "hace mucho 3")]),
+      chat("viejo4", "usuario.raro", [msg("in", 120 * DAY, "sin teléfono")]),
+      chat("reciente_ghl", "+526683200002", [msg("in", 30 * DAY, "hola"), msg("out", 29 * DAY, "qué tal", { attachments: [img("mi1", "https://zernio.test/api/v1/whatsapp/media/mi1")] })]),
+      chat("reciente_amb", "5216683200003", [msg("in", 20 * DAY, "¿?")]),
+      chat("reciente_grupo", "120363040000000009@g.us", [msg("in", 15 * DAY, "grupo", { senderId: "5216683200001" })]),
+      chat("reciente_nuevo", "5216683209003", [msg("in", 10 * DAY, "info"), msg("in", 3 * DAY, null, { attachments: [img("mi2", "https://zernio.test/api/v1/whatsapp/media/mi2"), img("mi3", null)] })]),
+      chat("reciente_mismo", "+52 668 320 9003", [msg("in", 9 * DAY, "otro chat, mismo teléfono")]),
+      chat("reciente_sin_tel", "desconocido", [msg("in", 8 * DAY, "x")]),
+      chat("reciente_ya", "5216683209004", [msg("in", 5 * DAY, "ya importado 1"), msg("out", 5 * DAY - 60_000, "ya importado 2")]),
+      chat("reciente_vivo", "5216683209005", [msg("in", 2 * DAY, "del historial"), msg("in", DAY, "vivo", { history: false })]),
+    ];
+    // Uno de los recientes ya estaba importado: debe salir como "ya están en el CRM".
+    await importer.importPhoneHistory(clientFor({ accountId: ACCOUNT, chats: [chats[10]], contacts: [] }).client, ACCOUNT, { withContacts: false });
+    const world: FakeWorld = { accountId: ACCOUNT, chats, contacts: [{ name: "Agenda", platformIdentifier: "5216683209003" }] };
+
+    const before = await counts();
+    const listener = postgres(TEST_DATABASE_URL!, { max: 1 });
+    const events: unknown[] = [];
+    await listener.listen("inbox_events", (payload) => events.push(payload));
+    let sample: Awaited<ReturnType<typeof importer.importPhoneHistory>>;
+    const store = state.memoryStateStore();
+    try {
+      sample = await importer.importPhoneHistory(clientFor(world).client, ACCOUNT, { dryRun: true, sample: 8, state: store });
+      await new Promise((r) => setTimeout(r, 200));
+    } finally {
+      await listener.end();
+    }
+    // No escribe nada: ni contactos, ni conversaciones, ni mensajes, ni avisos, ni estado.
+    expect(await counts()).toEqual(before);
+    expect(events).toEqual([]);
+    expect(store.current).toBeNull();
+    expect(sample.muestraDeChats).toEqual({ chats: 8, de: 12 });
+    expect(sample.conversaciones).toBe(12);
+    expect(sample.procesadas).toBe(8);
+
+    // La simulación COMPLETA de esos mismos 8 chats da el mismo reporte.
+    const recent = chats.slice(4);
+    const full = await importer.importPhoneHistory(clientFor({ ...world, chats: recent }).client, ACCOUNT, { dryRun: true });
+    const chatFields = (r: typeof full) => ({
+      mensajesHistorial: r.mensajesHistorial,
+      importados: r.importados,
+      duplicados: r.duplicados,
+      noHistorial: r.noHistorial,
+      contactos: r.contactos,
+      ambiguos: r.ambiguos,
+      sinTelefono: r.sinTelefono,
+      grupos: r.grupos,
+      chatsMismoTelefono: r.chatsMismoTelefono,
+      duplicadosEnCrm: r.duplicadosEnCrm,
+      rango: r.rango,
+      adjuntos: r.adjuntos,
+      agenda: r.agenda,
+      omitidos: r.omitidos,
+    });
+    expect(chatFields(sample)).toEqual(chatFields(full));
+    expect(chatFields(sample)).toMatchObject({
+      contactos: { existentesGhl: 1, existentes: 0, nuevos: 2, conversacionExistente: 1 },
+      ambiguos: [{ conversacion: "reciente_amb" }],
+      grupos: 1,
+      chatsMismoTelefono: 1,
+      duplicados: 2,
+      noHistorial: 1,
+      adjuntos: { recientesConArchivo: 1, viejosConArchivo: 1, sinArchivo: 1 },
+    });
+    // El resumen de 10 líneas dice que es una muestra y extrapola la duración al total.
+    const lines = importer.simulationSummary(sample);
+    expect(lines).toHaveLength(10);
+    expect(lines[0]).toContain("MUESTRA: los 8 chats más recientes de 12");
+    expect(lines[9]).toContain("la importación completa (12 chats) tardaría");
+    expect(await counts()).toEqual(before);
+  });
+
+  it("--muestra nunca corre fuera de simulación", async () => {
+    const world: FakeWorld = { accountId: ACCOUNT, chats: [chat("a", "5216683300001", [msg("in", DAY, "hola")])], contacts: [] };
+    await expect(importer.importPhoneHistory(clientFor(world).client, ACCOUNT, { sample: 5 })).rejects.toThrow(/solo existe en simulación/);
+    expect((await counts()).messages).toBe(0);
+  });
+
+  it("si Zernio le rechaza por límite (429) un envío al CRM en vivo mientras importa, el importador baja su ritmo a la mitad (una vez por rechazo)", async () => {
+    await ghl("vivo", "+526683400001");
+    await db.insert(s.conversations).values({ id: "conv_vivo", organizationId: ORG, contactId: "vivo", channelId: CHANNEL, providerConversationId: "zvivo" });
+    // Rechazos de envíos vivos con hora de la BASE posterior al arranque (uno por límite, otro por otra causa).
+    await db.execute(sql`
+      insert into messages (id, organization_id, conversation_id, direction, source, type, body, status, error_code, error_message, created_at)
+      values ('m429', ${ORG}, 'conv_vivo', 'out', 'ai_agent', 'text', 'hola', 'failed', 'rate_limit_exceeded', 'Rate limit exceeded. Please retry after 3 seconds.', (now() at time zone 'UTC') + interval '1 minute'),
+             ('mOtro', ${ORG}, 'conv_vivo', 'out', 'crm', 'text', 'hola', 'failed', '131026', 'Message undeliverable', (now() at time zone 'UTC') + interval '1 minute')`);
+    const chats = Array.from({ length: 4 }, (_, i) => chat(`th${i}`, `52166834100${i}`, Array.from({ length: 150 }, (_, j) => msg("in", (300 - j) * 60_000, `th${i}-${j}`))));
+    const lines: string[] = [];
+    const c = new zh.ZernioHistoryClient(
+      { apiKey: "k", baseUrl: "https://zernio.test/api", pacing: { minIntervalMs: 1_500, sleep: async () => undefined } },
+      fakeZernioFetch({ accountId: ACCOUNT, chats, contacts: [] }),
+    );
+    expect(c.perMinute).toBe(40);
+    const report = await importer.importPhoneHistory(c, ACCOUNT, { withContacts: false, liveThrottleCheckMs: 0, log: (l) => lines.push(l) });
+    expect(report.importados).toBe(600);
+    expect(report.ritmoReducido).toBe(1);
+    expect(c.perMinute).toBe(20);
+    expect(lines.some((l) => l.includes("Zernio rechazó 1 envío(s) del CRM por límite: el importador baja a 20 peticiones/min"))).toBe(true);
   });
 
   it("la agenda solo rellena nombres vacíos de contactos existentes: no crea contactos ni cambia un nombre puesto", async () => {

@@ -131,7 +131,7 @@ function buildWorld(seeded: Seeded, now: number): { world: FakeWorld; historyMes
       participantId = formats[i % formats.length](national);
       if (i % 3 === 0) agenda.push({ name: `Agenda ${i}`, platformIdentifier: participantId }); // ya tienen nombre: no se pisa
     } else if (i === existingCount) {
-      participantId = "120363040000000001"; // grupo
+      participantId = "120363040000000001@g.us"; // grupo (Zernio no manda isGroup: se reconoce por el id)
       isGroup = true;
     } else if (i === existingCount + 1) {
       participantId = "usuario.sin.telefono";
@@ -174,7 +174,7 @@ function buildWorld(seeded: Seeded, now: number): { world: FakeWorld; historyMes
       });
       if (!live && !isGroup && participantId !== "usuario.sin.telefono") historyMessages++;
     }
-    chats.push({ id: `zconv_${i}`, participantId, participantName, isGroup, archived: i % 97 === 0, messages });
+    chats.push({ id: `zconv_${i}`, participantId, participantName, archived: i % 97 === 0, messages });
   }
   // 20 de la agenda SIN chat: 10 rellenan nombres vacíos de GHL, 10 no tienen contacto (no se crean).
   for (const national of seeded.placeholders) agenda.push({ name: `Agenda GHL ${national}`, platformIdentifier: `521${national}` });
@@ -272,6 +272,10 @@ async function main() {
     return report;
   };
 
+  const beforeSample = await db.execute<{ n: number }>(sql`select count(*)::int as n from messages`);
+  const sample = await run("0. muestra (--simular --muestra 50)", { dryRun: true, sample: 50 });
+  const afterSample = await db.execute<{ n: number }>(sql`select count(*)::int as n from messages`);
+  if (beforeSample[0].n !== afterSample[0].n) throw new Error("la muestra escribió mensajes");
   const simulation = await run("1. simulación (--simular)", { dryRun: true });
   const store = memoryStateStore();
   const controller = new AbortController();
@@ -347,6 +351,7 @@ async function main() {
       ]),
     ),
     resumenSimulacion: simulationSummary(simulation),
+    resumenMuestra: simulationSummary(sample),
     verificacion: check,
     tiempoReal: { avisosDuranteImportacion: noticesDuringImport },
     bandejaDuranteImportacion: {
@@ -369,11 +374,13 @@ async function main() {
     estimacionConZernioReal: {
       peticionesPorCorrida: runs["1. simulación (--simular)"].report.peticiones.requests,
       minutosA40PorMinuto: Math.round(runs["1. simulación (--simular)"].report.peticiones.requests / 40),
+      peticionesMuestra50: sample.peticiones.requests,
+      minutosMuestra50A40PorMinuto: Math.round((sample.peticiones.requests / 40) * 10) / 10,
     },
   };
-  mkdirSync(".historial", { recursive: true });
+  mkdirSync(".historial", { recursive: true, mode: 0o700 });
   const out = `.historial/prueba-carga-${results.fecha.replace(/[:.]/g, "-")}.json`;
-  writeFileSync(out, JSON.stringify(results, null, 2));
+  writeFileSync(out, JSON.stringify(results, null, 2), { mode: 0o600 });
   console.log("\n== resultados");
   console.log(JSON.stringify(results, null, 2));
   console.log(`\nguardado en ${out}`);
