@@ -59,7 +59,7 @@ export async function getFunnelSignals(conversationIds?: string[]): Promise<Reco
   const ids =
     conversationIds === undefined
       ? undefined
-      : z.array(z.string().min(1)).max(MAX_SIGNAL_CONVERSATIONS).parse(conversationIds);
+      : z.array(z.string().min(1).max(128)).max(MAX_SIGNAL_CONVERSATIONS).parse(conversationIds);
   return funnelSignalsForOrg(organizationId, ids);
 }
 
