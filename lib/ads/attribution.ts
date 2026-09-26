@@ -311,10 +311,12 @@ export async function attributeFromProviderConversation(
     return { result: "ya_registrado", click: null };
   }
 
+  const messageAt = m.sentAt ?? m.createdAt;
   let click;
   try {
+    // La conversación se actualizó con este mensaje: el listado se recorre hasta pasar esa hora.
     click = provider.conversationAdClick
-      ? await provider.conversationAdClick(job.providerAccountId, job.providerConversationId)
+      ? await provider.conversationAdClick(job.providerAccountId, job.providerConversationId, { updatedSince: messageAt })
       : null;
   } catch (error) {
     const detail = error instanceof Error ? error.message : String(error);
@@ -322,7 +324,6 @@ export async function attributeFromProviderConversation(
     log("error", `${detail} (intento ${attempts}; el barrido reintenta)`);
     return { result: "error", click: null };
   }
-  const messageAt = m.sentAt ?? m.createdAt;
   if (!click) {
     await note("sin_datos");
     log("sin_datos", `Zernio no tiene clic guardado en la conversación (intento ${attempts} de ${FALLBACK_MAX_EMPTY})`);
