@@ -12,7 +12,7 @@
 // Escala del número oficial (1,000+ chats, decenas de miles de mensajes):
 // - Límite de Zernio (docs.zernio.com/rate-limits): 60 peticiones/min con 0–2 cuentas
 //   conectadas, COMPARTIDAS con el CRM en vivo (envíos, media). El cliente va a su
-//   propio ritmo (40/min), lee X-RateLimit-Remaining/Reset y deja una reserva para el
+//   propio ritmo (40/min), lee X-RateLimit-Remaining/Reset y deja una reserva (20) para el
 //   CRM; con 429 espera Retry-After y repite la MISMA petición; con 5xx/red/timeout
 //   reintenta con espera creciente (2 s, 4 s, 8 s … 60 s).
 // - Paginación sin huecos: conversaciones en orden ASCENDENTE por actualización (una
@@ -32,12 +32,16 @@ const MAX_MESSAGE_PAGES = 5_000; // 500,000 mensajes en un solo chat
 const MAX_CONTACT_PAGES = 2_000; // 400,000 contactos
 /**
  * Ritmo propio por omisión: 1 petición cada 1.5 s = 40/min. El plan gratuito da 60/min
- * y un 429 en un envío del vendedor se marca fallido (no se reintenta solo): quedan
- * ~20/min para el CRM en vivo (envíos, descargas de media).
+ * y un 429 en un envío del vendedor o del bot se marca fallido (no se reintenta solo):
+ * quedan ~20/min para el CRM en vivo (envíos, descargas de media), que trabaja normal
+ * mientras la importación corre en segundo plano.
  */
 export const DEFAULT_MIN_INTERVAL_MS = 1_500;
-/** Si Zernio dice que quedan estas o menos en la ventana, el importador espera al reinicio. */
-export const DEFAULT_RATE_RESERVE = 15;
+/**
+ * Si Zernio dice que quedan estas o menos en la ventana, el importador espera al
+ * reinicio: cuando el bot o los vendedores usan más, el importador cede.
+ */
+export const DEFAULT_RATE_RESERVE = 20;
 const DEFAULT_MAX_ATTEMPTS = 8;
 const DEFAULT_MAX_THROTTLED = 40;
 const MAX_BACKOFF_MS = 60_000;
@@ -75,8 +79,10 @@ export type RestConversation = {
   id: string;
   participantId: string | null;
   participantName: string | null;
-  /** Grupo de WhatsApp: no tiene un teléfono de cliente (no se importa, se reporta). */
+  /** Grupo de WhatsApp: no tiene un teléfono de cliente (no se importa, se reporta). Zernio hoy NO lo manda (N2, 26-sep). */
   isGroup?: boolean;
+  /** Última actividad (Zernio `updatedTime`): la muestra toma los chats más recientes. */
+  updatedTime?: string | null;
 };
 export type RestMessage = z.infer<typeof restMessageSchema>;
 
@@ -209,7 +215,7 @@ function pageOf(json: Record<string, unknown>, keys: string[]): Page | null {
 /** Lecturas GET de la API de Zernio para el historial. Nunca imprime la API key. */
 export class ZernioHistoryClient {
   readonly stats: ZernioHistoryStats = { requests: 0, retries: 0, throttled: 0, waitedMs: 0 };
-  private readonly minIntervalMs: number;
+  private minIntervalMs: number;
   private readonly reserve: number;
   private readonly maxAttempts: number;
   private readonly maxThrottled: number;
@@ -230,6 +236,20 @@ export class ZernioHistoryClient {
     this.maxThrottled = p.maxThrottled ?? DEFAULT_MAX_THROTTLED;
     this.sleep = p.sleep ?? ((ms) => new Promise((resolve) => setTimeout(resolve, ms)));
     this.now = p.now ?? Date.now;
+  }
+
+  /** Peticiones por minuto a las que va hoy. */
+  get perMinute(): number {
+    return this.minIntervalMs > 0 ? Math.round(60_000 / this.minIntervalMs) : Infinity;
+  }
+
+  /**
+   * Baja el ritmo a la mitad (hasta 10/min): el CRM en vivo recibió un 429 de Zernio.
+   * Devuelve las peticiones por minuto nuevas.
+   */
+  slowDown(): number {
+    this.minIntervalMs = Math.min(6_000, Math.max(this.minIntervalMs * 2, 1_000));
+    return this.perMinute;
   }
 
   private async wait(ms: number, reason: string): Promise<void> {
@@ -375,6 +395,7 @@ export class ZernioHistoryClient {
             participantId: typeof raw.participantId === "string" ? raw.participantId : null,
             participantName: typeof raw.participantName === "string" ? raw.participantName : null,
             isGroup: raw.isGroup === true,
+            updatedTime: typeof raw.updatedTime === "string" ? raw.updatedTime : null,
           };
         }
       }

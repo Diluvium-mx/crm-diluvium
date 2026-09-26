@@ -82,9 +82,27 @@ export type HistoryImportReport = {
   muestra: { conversacion: string; fecha: string; direccion: "in" | "out"; tipo: string }[];
   peticiones: ZernioHistoryStats;
   duracionMs: number;
-  /** Solo simulación: cuánto tardaría la importación real. */
+  /** Solo simulación: cuánto tardaría la importación real (completa). */
   estimacionMs: number | null;
+  /** Simulación de MUESTRA: cuántos chats se revisaron de cuántos hay (los más recientes). */
+  muestraDeChats: { chats: number; de: number } | null;
+  /** Veces que el importador bajó su ritmo porque el CRM en vivo recibió un 429 de Zernio. */
+  ritmoReducido: number;
 };
+
+/**
+ * Envíos del CRM en vivo (bot, vendedores, workflows) que Zernio rechazó por límite
+ * después de `since` (hora de la BASE, UTC: el importador corre en otra máquina y su
+ * reloj no se compara con created_at). Devuelve cuántos y el created_at más nuevo.
+ */
+async function liveRateLimited(organizationId: string, since: string): Promise<{ n: number; last: string | null }> {
+  const [row] = await db.execute<{ n: number; last: string | null }>(sql`
+    select count(*)::int as n, max(created_at)::text as last from messages
+    where organization_id = ${organizationId} and direction = 'out' and status = 'failed' and imported_at is null
+      and created_at > ${since}::timestamp
+      and (error_code = '429' or error_code ilike '%rate%' or error_message ilike '%rate limit%' or error_message ilike '%429%')`);
+  return { n: Number(row?.n ?? 0), last: row?.last ?? null };
+}
 
 export type HistoryImportOptions = {
   dryRun?: boolean;
@@ -100,7 +118,26 @@ export type HistoryImportOptions = {
   now?: () => number;
   /** Cada cuántos chats se muestra el avance (además de cada 30 s). */
   progressEvery?: number;
+  /**
+   * Cada cuánto se revisa si Zernio le rechazó por límite (429) un envío al CRM en vivo
+   * (bot, vendedores, workflows); si pasó, el importador baja su ritmo a la mitad.
+   */
+  liveThrottleCheckMs?: number;
+  /**
+   * Solo con dryRun: revisa únicamente los N chats más recientes (reporte previo en ~2 min
+   * en vez de leer todo el historial). Mismo reporte; la duración se extrapola al total.
+   */
+  sample?: number;
 };
+
+/** Los N chats con actividad más reciente (sin fecha, al final), en orden ascendente como el listado. */
+export function mostRecentChats(all: readonly RestConversation[], n: number): RestConversation[] {
+  const key = (c: RestConversation) => c.updatedTime ?? "";
+  return [...all]
+    .sort((a, b) => key(b).localeCompare(key(a)) || b.id.localeCompare(a.id))
+    .slice(0, n)
+    .reverse();
+}
 
 const fmt = new Intl.NumberFormat("es-MX");
 
@@ -230,6 +267,10 @@ export async function importPhoneHistory(
   const now = opts.now ?? Date.now;
   const started = now();
   const dryRun = opts.dryRun === true;
+  if (opts.sample !== undefined) {
+    if (!dryRun) throw new Error("La muestra (--muestra) solo existe en simulación (--simular): nunca escribe");
+    if (!Number.isInteger(opts.sample) || opts.sample < 1) throw new Error("--muestra debe ser un número entero de chats (p. ej. 50)");
+  }
   const [channel] = await db
     .select()
     .from(channels)
@@ -269,6 +310,8 @@ export async function importPhoneHistory(
     peticiones: client.stats,
     duracionMs: 0,
     estimacionMs: null,
+    muestraDeChats: null,
+    ritmoReducido: 0,
   };
   const skipped = new Map<string, number>();
   const phonesSeen = new Set<string>();
@@ -350,15 +393,41 @@ export async function importPhoneHistory(
   const ticker = signal ? setInterval(() => void signal.tick(), 1_000) : null;
   ticker?.unref?.();
 
+  // Freno por el CRM en vivo: si Zernio le rechaza envíos por límite mientras importamos,
+  // el importador cede (baja a la mitad) sin esperar a que un vendedor lo note.
+  const throttleEvery = opts.liveThrottleCheckMs ?? 30_000;
+  let throttleCheckedAt = now();
+  const [dbNow] = await db.execute<{ t: string }>(sql`select (now() at time zone 'UTC')::text as t`);
+  let throttleSince = dbNow.t;
+  const checkLiveThrottle = async () => {
+    if (now() - throttleCheckedAt < throttleEvery) return;
+    throttleCheckedAt = now();
+    const { n, last } = await liveRateLimited(orgId, throttleSince);
+    if (n === 0 || !last) return;
+    throttleSince = last; // el mismo rechazo no vuelve a frenar
+    report.ritmoReducido++;
+    const perMinute = client.slowDown();
+    log(`Zernio rechazó ${n} envío(s) del CRM por límite: el importador baja a ${perMinute} peticiones/min para dejarle espacio al bot y a los vendedores`);
+  };
+
   let dbWriteMs = 0;
   let pagesWithHistory = 0;
+  let listedAt = started;
+  let chatsToRead = 0;
   try {
     // 1. Listado completo primero (barato: 100 por página) para saber el total.
     log("leyendo la lista de chats en Zernio…");
-    const all: RestConversation[] = [];
-    for await (const conversation of client.conversations(accountId)) all.push(conversation);
-    report.conversaciones = all.length;
-    log(`${fmt.format(all.length)} chat(s) en Zernio`);
+    const listed: RestConversation[] = [];
+    for await (const conversation of client.conversations(accountId)) listed.push(conversation);
+    report.conversaciones = listed.length;
+    log(`${fmt.format(listed.length)} chat(s) en Zernio`);
+    const all = opts.sample !== undefined ? mostRecentChats(listed, opts.sample) : listed;
+    if (opts.sample !== undefined) {
+      report.muestraDeChats = { chats: all.length, de: listed.length };
+      log(`muestra: los ${fmt.format(all.length)} chats más recientes de ${fmt.format(listed.length)}`);
+    }
+    listedAt = now();
+    chatsToRead = all.length;
 
     let lastLog = now();
     let workStarted: number | null = null;
@@ -466,6 +535,7 @@ export async function importPhoneHistory(
           aborted = true;
           break;
         }
+        await checkLiveThrottle();
       }
       if (aborted) {
         // El chat a medias NO se marca: la reanudación lo repite (el wamid evita duplicados).
@@ -518,8 +588,12 @@ export async function importPhoneHistory(
   report.omitidos = [...skipped.entries()].map(([motivo, total]) => ({ motivo, total }));
   report.duracionMs = now() - started;
   if (dryRun) {
-    // La importación real hace las MISMAS lecturas de Zernio más sus escrituras.
-    report.estimacionMs = report.duracionMs + pagesWithHistory * DB_ROUND_TRIPS_PER_PAGE * (await dbRoundTripMs());
+    // La importación real hace las MISMAS lecturas de Zernio más sus escrituras. Con
+    // muestra, lo leído por chat se extrapola a todos los chats (los recientes suelen ser
+    // más largos: la estimación sale holgada).
+    const scale = report.muestraDeChats && chatsToRead > 0 ? report.conversaciones / chatsToRead : 1;
+    const reading = (listedAt - started) + (now() - listedAt) * scale;
+    report.estimacionMs = Math.round(reading + pagesWithHistory * scale * DB_ROUND_TRIPS_PER_PAGE * (await dbRoundTripMs()));
   } else if (pagesWithHistory > 0) {
     log(`base: ${fmt.format(Math.round(dbWriteMs / 1000))} s escribiendo ${fmt.format(pagesWithHistory)} página(s)`);
   }
@@ -541,8 +615,11 @@ export function simulationSummary(r: HistoryImportReport): string[] {
   const n = (v: number) => fmt.format(v);
   const date = (iso: string | null) => (iso ? iso.slice(0, 10) : "—");
   const chats = r.contactos.existentesGhl + r.contactos.existentes + r.contactos.nuevos + r.contactos.conversacionExistente + r.chatsMismoTelefono;
+  const sample = r.muestraDeChats;
   return [
-    `1. Chats en Zernio: ${n(r.conversaciones)} (${n(r.grupos)} grupos, no se importan). Mensajes del historial: ${n(r.mensajesHistorial)}.`,
+    sample
+      ? `1. MUESTRA: los ${n(sample.chats)} chats más recientes de ${n(sample.de)} en Zernio (${n(r.grupos)} grupos, no se importan). Mensajes del historial en la muestra: ${n(r.mensajesHistorial)}.`
+      : `1. Chats en Zernio: ${n(r.conversaciones)} (${n(r.grupos)} grupos, no se importan). Mensajes del historial: ${n(r.mensajesHistorial)}.`,
     `2. Entrarían ${n(r.importados)} mensajes nuevos; ${n(r.duplicados)} ya están en el CRM (mismo wamid, no se duplican).`,
     `3. De ${n(chats)} chats con historial: ${n(r.contactos.existentesGhl)} se pegan a contactos de GHL; ${n(r.contactos.existentes)} a otros contactos existentes; ${n(r.contactos.conversacionExistente)} a una conversación que ya está en el CRM.`,
     `4. Contactos nuevos (nacen en Inbox, source historial_celular, sin marca Prueba): ${n(r.contactos.nuevos)}; más ${n(r.chatsMismoTelefono)} chat(s) con un teléfono ya visto en otro chat (van al mismo contacto).`,
@@ -550,7 +627,7 @@ export function simulationSummary(r: HistoryImportReport): string[] {
     `6. Posibles duplicados: ${n(r.duplicadosEnCrm.length)} teléfono(s) que YA comparten dos o más contactos del CRM; ${n(r.ambiguos.length)} chat(s) que coinciden con más de un contacto (NO se importan; se revisan a mano).`,
     `7. Rango de fechas del historial: ${date(r.rango.desde)} a ${date(r.rango.hasta)}.`,
     `8. Adjuntos: ${n(r.adjuntos.recientesConArchivo)} de las últimas 2 semanas con archivo (se descargan poco a poco); ${n(r.adjuntos.viejosConArchivo + r.adjuntos.sinArchivo)} quedan "no disponible" con su tipo (${n(r.adjuntos.viejosConArchivo)} viejos, ${n(r.adjuntos.sinArchivo)} sin archivo).`,
-    `9. Agenda del celular: ${n(r.agenda.leidos)} contactos; rellenarían ${n(r.agenda.rellenables)} nombre(s) vacío(s) (nunca cambian uno puesto); ${n(r.agenda.sinContacto)} sin chat ni contacto en el CRM (no se crean).`,
-    `10. Duración: la lectura tomó ${minutes(r.duracionMs)} (${n(r.peticiones.requests)} peticiones a Zernio, ${n(r.peticiones.throttled)} esperas por límite); la importación real tardaría ~${minutes(r.estimacionMs ?? r.duracionMs)}.`,
+    `9. Agenda del celular: ${n(r.agenda.leidos)} contactos; rellenarían ${n(r.agenda.rellenables)} nombre(s) vacío(s) (nunca cambian uno puesto); ${n(r.agenda.sinContacto)} sin ${sample ? "contacto en el CRM ni chat en la muestra" : "chat ni contacto en el CRM"} (no se crean).`,
+    `10. Duración: la lectura${sample ? " de la muestra" : ""} tomó ${minutes(r.duracionMs)} (${n(r.peticiones.requests)} peticiones a Zernio, ${n(r.peticiones.throttled)} esperas por límite); la importación ${sample ? `completa (${n(sample.de)} chats)` : "real"} tardaría ~${minutes(r.estimacionMs ?? r.duracionMs)}.`,
   ];
 }

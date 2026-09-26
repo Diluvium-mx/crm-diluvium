@@ -5,6 +5,8 @@
 //
 //   --simular        SOLO lectura: no escribe nada. Deja el reporte previo en .historial/
 //                    (JSON completo + resumen de 10 líneas) y lo muestra.
+//   --muestra <n>    con --simular: solo los n chats más recientes (reporte en ~2 min con 50;
+//                    la duración se extrapola al total).
 //   --sin-contactos  no lee la agenda del celular.
 //   --desde-cero     ignora una corrida anterior sin terminar (por omisión, REANUDA).
 //   --estado <ruta>  punto de reanudación (por omisión .historial/<cuenta>.estado.json).
@@ -14,6 +16,8 @@
 //
 // Ctrl+C una vez: termina la página en curso, guarda el avance y sale (código 3); el
 // MISMO comando sigue donde se quedó. Idempotente (wamid único): repetirlo no duplica.
+// La última línea de avance ("chat 350 de 1,200 · … · faltan ~N min") también queda en
+// .historial/<cuenta>.avance.txt para verla sin la terminal.
 // Necesita DATABASE_URL y ZERNIO_API_KEY (nunca se imprimen).
 import { mkdirSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
@@ -47,16 +51,34 @@ async function main(): Promise<number> {
       estado: { type: "string" },
       reporte: { type: "string" },
       ritmo: { type: "string" },
+      muestra: { type: "string" },
     },
   });
   const accountId = values.cuenta?.trim();
-  if (!accountId) throw new Error("--cuenta <accountId de Zernio> es obligatorio");
+  // Solo el formato de un accountId de Zernio: también nombra los archivos de .historial/.
+  if (!accountId || !/^[A-Za-z0-9_-]{6,64}$/.test(accountId)) throw new Error("--cuenta <accountId de Zernio> es obligatorio");
   const apiKey = process.env.ZERNIO_API_KEY;
   if (!apiKey) throw new Error("Falta ZERNIO_API_KEY");
   const perMinute = values.ritmo ? Number(values.ritmo) : 40;
   if (!Number.isFinite(perMinute) || perMinute < 1 || perMinute > 600) throw new Error("--ritmo debe ser de 1 a 600 peticiones por minuto");
 
-  const log = (line: string) => console.log(`[historial] ${line}`);
+  const sample = values.muestra !== undefined ? Number(values.muestra) : undefined;
+  if (sample !== undefined && (!values.simular || !Number.isInteger(sample) || sample < 1)) {
+    throw new Error("--muestra <n> va con --simular y n es un número entero de chats (p. ej. --simular --muestra 50)");
+  }
+
+  // Avance visible fuera de la terminal: la última línea, con la hora.
+  const progressPath = join(".historial", `${accountId}.avance.txt`);
+  mkdirSync(".historial", { recursive: true, mode: 0o700 });
+  const log = (line: string) => {
+    console.log(`[historial] ${line}`);
+    const stamp = new Date().toLocaleTimeString("es-MX", { timeZone: "America/Mazatlan", hour12: false });
+    try {
+      writeFileSync(progressPath, `${stamp} (hora de Mazatlán) · ${line}\n`, { mode: 0o600 });
+    } catch {
+      // el avance en archivo es opcional; la terminal ya lo mostró
+    }
+  };
   const client = new ZernioHistoryClient({
     apiKey,
     baseUrl: process.env.ZERNIO_BASE_URL,
@@ -75,7 +97,7 @@ async function main(): Promise<number> {
   });
 
   const stamp = new Date().toISOString().replace(/[:.]/g, "-");
-  const modo = values.simular ? "simulacion" : "importacion";
+  const modo = values.simular ? (sample !== undefined ? `muestra${sample}` : "simulacion") : "importacion";
   const reportPath = values.reporte ?? join(".historial", `${accountId}-${modo}-${stamp}.json`);
   const report = await importPhoneHistory(client, accountId, {
     dryRun: values.simular,
@@ -83,6 +105,7 @@ async function main(): Promise<number> {
     state: values.simular ? undefined : fileStateStore(values.estado ?? join(".historial", `${accountId}.estado.json`)),
     fromScratch: values["desde-cero"],
     signal: controller.signal,
+    sample,
     log,
   });
 

@@ -64,22 +64,39 @@ docs/numero-prueba.md › "Después del QR".
     cuentas (o que incluya al oficial); `POST /v1/webhooks/test` → 200. Luego
     `$PROD npm run webhooks:replay` (libera lo que llegó del oficial antes de permitirlo).
 
-### C. Importación del historial
+### C. Historial del celular (corre en SEGUNDO PLANO)
 
-14. **CODE** — Reporte previo, SOLO lectura:
-    `$PROD npm run historial:importar -- --cuenta <oficial> --simular`. Tarda lo mismo que
-    la importación (una petición a Zernio cada 1.5 s = 40/min, para dejarle ~20/min al CRM
-    en vivo; ver "Prueba de carga"). Deja el
-    reporte en `.historial/` y Code te lo pasa en 10 líneas: chats y mensajes, cuántos se
-    pegan a contactos de GHL, contactos nuevos, teléfonos que no se pudieron normalizar,
-    posibles duplicados, rango de fechas, adjuntos y duración estimada.
-15. **YO** — Revisar el reporte; abrir 2 o 3 chats en el celular y cotejar fechas y
+> Desde que el número queda conectado (paso 13), **el bot y los vendedores trabajan normal
+> con los mensajes nuevos**. La importación solo va agregando el historial viejo poco a
+> poco (unos 43 min para ~1,200 chats); nada de lo importado dispara al bot, ni suma no
+> leídos, ni abre la ventana de 24 h, ni cuenta en el Dashboard. La Bandeja y el Embudo se
+> ponen al día solos cada 5 s (una señal por lote, no una por mensaje).
+
+14. **CODE** — Reporte previo de una **MUESTRA**, SOLO lectura (no escribe nada):
+    `$PROD npm run historial:importar -- --cuenta <oficial> --simular --muestra 50`.
+    Revisa solo los **50 chats más recientes** y da el mismo reporte de 10 líneas (chats y
+    mensajes, cuántos se pegan a contactos de GHL, contactos nuevos, teléfonos que no se
+    pudieron normalizar, posibles duplicados, rango de fechas, adjuntos, agenda y la duración
+    estimada de la importación COMPLETA). Tarda **2 a 4 min** según qué tan largos sean esos
+    chats (≈ 1 petición a Zernio cada 1.5 s). Code te lo pasa en 10 líneas.
+15. **YO** — Revisar el reporte; abrir 2 o 3 de esos chats en el celular y cotejar fechas y
     últimos mensajes. Si todo cuadra, escribir **OK IMPORTAR**. (Si hay "ambiguos" —un
     teléfono con dos contactos— esos chats NO se importan; se revisan a mano después.)
-16. **CODE** — Conteos "antes" otra vez → importación real:
-    `$PROD npm run historial:importar -- --cuenta <oficial>`. Muestra "chat 350 de 1,200 ·
-    … · faltan ~N min". Si se corta (Ctrl+C, red, límite de Zernio): **el mismo comando
-    sigue donde se quedó**. Al terminar, conteos "después" y la revisión de cero duplicados:
+16. **CODE** — Conteos "antes" → arranca la importación **completa en segundo plano**:
+    `$PROD npm run historial:importar -- --cuenta <oficial>`. Code la corre en una pestaña de
+    la **Terminal del app, a la vista**, con la línea de avance:
+
+    `[historial] chat 350 de 1,200 · 14,210 mensajes nuevos · faltan ~29 min`
+
+    La última línea también queda en `.historial/<oficial>.avance.txt` (con la hora de
+    Mazatlán) y Code te la pasa cuando la pidas. Si se corta (Ctrl+C, red, límite de
+    Zernio): **el mismo comando sigue donde se quedó**. Va a 40 peticiones/min y cede
+    cuando el bot o los vendedores usan el límite de Zernio (deja ~20/min libres). Además,
+    cada 30 s revisa si Zernio le rechazó por límite (429) algún envío al bot, a los
+    vendedores o a un workflow; si pasa, **baja solo su ritmo a la mitad** y lo dice en la
+    línea de avance ("Zernio rechazó 1 envío(s) del CRM por límite: el importador baja a 20
+    peticiones/min"). Si aun así hubiera rechazos, Code la corta y la sigue con `--ritmo 15`.
+    Al terminar, conteos "después" y la revisión de cero duplicados:
     ```sql
     -- teléfonos repetidos (debe ser 0)
     select regexp_replace(phone_e164, '^\+521(\d{10})$', '+52\1') p, count(*) from contacts
@@ -97,7 +114,7 @@ docs/numero-prueba.md › "Después del QR".
     últimas 2 semanas los baja el worker poco a poco (5 por minuto); los más viejos
     quedan "no disponible" con su tipo.
 
-### D. Validación
+### D. Validación (en paralelo: no espera a que termine la importación)
 
 18. **YO** — Desde la **app** del celular del oficial, contestar a un cliente de confianza.
     **CODE** — el eco aparece en el CRM como "desde la app" (`source = business_app`) y
@@ -106,8 +123,8 @@ docs/numero-prueba.md › "Después del QR".
     Bandeja en segundos. Contestar desde el CRM → llega al celular con ✓✓.
 20. **CODE** — Agente en **AUTO** para el oficial (igual que el interruptor de la pestaña
     Agente IA: `ai_agent_mode = 'auto'`, `ai_agent_mode_changed_at = now()`). Lo copiado
-    antes nunca se contesta solo. **YO** — otro mensaje desde el número externo: el agente
-    contesta solo ese mensaje.
+    del celular nunca se contesta solo, aunque la importación siga corriendo. **YO** — otro
+    mensaje desde el número externo: el agente contesta solo ese mensaje.
 21. **CODE** — `$PROD npm run ads:probe` (anuncios; hoy Meta responde "API access blocked":
     se deja anotado, no frena el go-live).
 
@@ -119,10 +136,12 @@ docs/numero-prueba.md › "Después del QR".
     `$PROD npm run canal:archivar -- --cuenta 6ab6d4483eb3cfc2601c3902` (simula) →
     `… --confirmar` → quitar N2 de `ZERNIO_ALLOWED_ACCOUNT_IDS` conservando el oficial.
     **YO** — en Zernio (perfil "Diluvium Pruebas") desconectar N2.
-24. **CODE** — Sembrar los ~17 Fragmentos curados (con la lista que pase el dueño).
-25. **CODE** — Conteos finales y reporte del día. Borrar los reportes locales de `.historial/`
+24. **CODE** — Conteos finales y reporte del día. Borrar los reportes locales de `.historial/`
     (traen teléfonos de clientes; se escriben solo legibles por el dueño del archivo) cuando ya
     no hagan falta. Después: la revisión final de Codex.
+
+**Después del número oficial (no bloquea el día):** sembrar los ~17 Fragmentos curados con
+la lista que pase el dueño.
 
 ### Prueba de carga del importador (26-sep-2026, local)
 
@@ -267,6 +286,22 @@ Chat de Code "Preparar historial del oficial". Solo preparó y probó: **no cone
   (`lib/ai/runtime/context.ts`): un "gracias" viejo sin contestar no se responde junto con el
   primer mensaje vivo del cliente.
 - `npm run canal:oficial` da de alta el canal real (sin SQL a mano).
+- `--simular --muestra 50`: reporte previo de los 50 chats más recientes (2 a 4 min), mismo
+  reporte de 10 líneas; la duración se extrapola a la importación completa. Nunca escribe.
+- Avance visible: la última línea también queda en `.historial/<cuenta>.avance.txt`.
+- Freno automático: si mientras importa Zernio le rechaza por límite (429) un envío al CRM en
+  vivo, el importador baja su ritmo a la mitad (lo revisa cada 30 s con la hora de la base).
+
+**Lectura real de N2 en producción (26-sep, solo GET a Zernio y base en solo lectura):**
+paginación por cursor confirmada (conversaciones `updatedTime_cuenta_id` en orden
+ascendente, mensajes `db:<fecha>_<id>`; con límites de 1 y 2 se recorren los mismos ids que
+con 100), encabezados `X-RateLimit-Limit: 60` / `Remaining` / `Reset` (segundos Unix).
+**Zernio NO manda `isGroup`**: un grupo se reconoce por su participante (`…@g.us` o varios
+remitentes) y nunca se pega a un miembro. Fechas: los 6 mensajes del historial de N2 son
+del 19, 20 y 25 de septiembre, ANTES de la conexión (25-sep 20:06Z), con `createdAt` =
+`sentAt` = hora original de WhatsApp. `--simular` y `--simular --muestra 50` contra N2 dieron
+lo mismo: 6 chats, 6 mensajes del historial, los 6 ya en el CRM (0 nuevos, 0 duplicados),
+121 mensajes vivos saltados, 14 s y 9 peticiones.
 
 **Prueba de carga local (26-sep, `npm run historial:prueba-carga`)** — 1,500 chats, 50,000
 mensajes (49,979 del historial; el más grande de 2,498 = 25 páginas), 10,901 contactos tipo
@@ -287,7 +322,10 @@ cero avisos por fila** durante la importación (antes serían ~50,000). Bandeja 
 importación: lista p50 8 ms, p95 29 ms, máx 34 ms, 0 errores; después: primera página 13 ms, hilo
 de 2,498 mensajes 4 ms, señales del Embudo 14 ms. Memoria: heap pico 180 MB (incluye el Zernio
 falso con los 50,000 mensajes en memoria). **Con Zernio real** el límite manda: ~1,720
-peticiones a 40/min ≈ **43 min** la simulación y otros ~43 min la importación.
+peticiones a 40/min ≈ **43 min** la importación completa. La **muestra de 50** hizo 155
+peticiones (≈ 4 min a 40/min) porque en el mundo sintético esos 50 chats sumaban 10,881
+mensajes; con chats de tamaño normal (~40 mensajes) son ~80 peticiones ≈ 2 min. La
+muestra no escribió nada (mismo conteo antes y después).
 
 **Lista teórica (sin escenario real hoy):**
 - Si Zernio mandara el historial TAMBIÉN por webhook (con N2 no pasó: 0 webhooks), cada mensaje
@@ -304,4 +342,4 @@ peticiones a 40/min ≈ **43 min** la simulación y otros ~43 min la importació
   importador deja ~20 peticiones/min libres; si hubiera ráfagas mayores, bajar `--ritmo`.
 - La agenda del celular puede tener un nombre distinto al de GHL: nunca lo cambia (regla), así
   que no se "mejora" un nombre ya puesto.
-- Los ~17 Fragmentos curados: la lista no está en el repo; la pasa el dueño el día del go-live.
+- Los ~17 Fragmentos curados: no bloquean el día; se siembran después con la lista del dueño.
