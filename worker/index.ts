@@ -9,7 +9,7 @@
 //   envíos del CRM de resultado desconocido y re-encola media pendiente. La base es la
 //   fuente de verdad; la cola solo acelera.
 import { UnrecoverableError, Worker } from "bullmq";
-import { and, asc, count, gte, isNotNull, isNull, lt, sql } from "drizzle-orm";
+import { and, asc, count, desc, gte, isNotNull, isNull, lt, sql } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { waitForMigrations } from "@/lib/db/wait-for-migrations";
 import { messages, webhookEvents } from "@/lib/db/schema";
@@ -23,7 +23,7 @@ import {
 } from "@/lib/messaging/ingest";
 import { downloadMessageMedia } from "@/lib/messaging/media";
 import { generateMessageThumbnails, THUMBNAIL_MAX_ATTEMPTS } from "@/lib/messaging/thumbnails";
-import { MEDIA_MAX_ATTEMPTS, MEDIA_SWEEP_DAYS } from "@/lib/messaging/media-keys";
+import { HISTORY_MEDIA_PER_SWEEP, MEDIA_MAX_ATTEMPTS, MEDIA_SWEEP_DAYS } from "@/lib/messaging/media-keys";
 import { expireUnconfirmedSends } from "@/lib/messaging/send";
 import {
   enqueueMediaDownload,
@@ -253,22 +253,30 @@ async function sweep() {
     );
 
   if (!storage) return;
-  // Media pendiente: mensajes con algún adjunto sin storageKey.
+  // Media pendiente: mensajes con algún adjunto sin storageKey. Primero los vivos; el
+  // historial del celular va poco a poco (HISTORY_MEDIA_PER_SWEEP por minuto, lo más
+  // reciente primero) para no gastar el límite de Zernio que usan los envíos.
+  const pendingMediaWhere = and(
+    gte(messages.createdAt, new Date(Date.now() - MEDIA_SWEEP_DAYS * 86_400_000)),
+    lt(messages.createdAt, new Date(Date.now() - SWEEP_MIN_AGE_MS)),
+    sql`exists (select 1 from jsonb_array_elements(${messages.attachments}) a
+                where a->>'storageKey' is null
+                  and coalesce((a->>'downloadAttempts')::int, 0) < ${MEDIA_MAX_ATTEMPTS})`,
+  );
   const pendingMedia = await db
     .select({ id: messages.id })
     .from(messages)
-    .where(
-      and(
-        gte(messages.createdAt, new Date(Date.now() - MEDIA_SWEEP_DAYS * 86_400_000)),
-        lt(messages.createdAt, new Date(Date.now() - SWEEP_MIN_AGE_MS)),
-        sql`exists (select 1 from jsonb_array_elements(${messages.attachments}) a
-                    where a->>'storageKey' is null
-                      and coalesce((a->>'downloadAttempts')::int, 0) < ${MEDIA_MAX_ATTEMPTS})`,
-      ),
-    )
+    .where(and(pendingMediaWhere, isNull(messages.importedAt)))
     .limit(50);
-  for (const { id } of pendingMedia) await enqueueMediaDownload(id);
+  const pendingHistoryMedia = await db
+    .select({ id: messages.id })
+    .from(messages)
+    .where(and(pendingMediaWhere, isNotNull(messages.importedAt)))
+    .orderBy(desc(messages.sentAt))
+    .limit(HISTORY_MEDIA_PER_SWEEP);
+  for (const { id } of [...pendingMedia, ...pendingHistoryMedia]) await enqueueMediaDownload(id);
   if (pendingMedia.length) console.info(`[worker] barrido: ${pendingMedia.length} mensaje(s) con media pendiente`);
+  if (pendingHistoryMedia.length) console.info(`[worker] barrido: ${pendingHistoryMedia.length} adjunto(s) del historial del celular en cola`);
 
   // Miniaturas de PDF que faltan (ya descargados; pocos intentos por adjunto).
   const pendingThumbs = await db

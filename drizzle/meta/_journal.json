@@ -267,6 +267,13 @@
       "when": 1790450056951,
       "tag": "0038_opciones_bot",
       "breakpoints": true
+    },
+    {
+      "idx": 39,
+      "version": "7",
+      "when": 1790463529216,
+      "tag": "0039_historial_avisos_lote",
+      "breakpoints": true
     }
   ]
 }

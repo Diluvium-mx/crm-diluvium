@@ -14,19 +14,24 @@
 //   (wamid único) y con la marca "Importado del celular" (imported_at).
 // Los contactos que crea nacen en Inbox, con source `historial_celular` (el Dashboard
 // no los cuenta como conversaciones nuevas) y marcados Prueba si el canal es de prueba.
-import { and, eq, inArray, sql } from "drizzle-orm";
+import { and, asc, eq, inArray, or, sql } from "drizzle-orm";
 import { db } from "@/lib/db";
+import { contactsImportLockKey } from "@/lib/db/locks";
 import { withTxRetry } from "@/lib/db/retry";
 import { channels, contacts, conversations, messages, type MessageAttachment } from "@/lib/db/schema";
 import { MEDIA_MAX_ATTEMPTS } from "./media-keys";
-import { phoneLookupVariants } from "@/lib/phone";
+import { canonicalPhone, phoneLookupVariants } from "@/lib/phone";
 import {
+  AmbiguousContactError,
   DeadLetterIngestError,
   eventIdentity,
   resolveContact,
   type IngestHooks,
+  type Tx,
 } from "./ingest";
 import type { NormalizedMessageEvent, ProviderName } from "./provider";
+
+export { AmbiguousContactError };
 
 /**
  * ¿Es copia del historial del celular? Sí si trae la marca, o si su hora de WhatsApp
@@ -38,11 +43,22 @@ export function isPhoneHistory(channel: Pick<ChannelRow, "connectedAt">, event: 
   return event.history === true || (channel.connectedAt !== null && event.sentAt.getTime() < channel.connectedAt.getTime());
 }
 
-/** Adjunto del historial ya listo para guardar (uno sin URL queda como "no disponible"). */
-function storedAttachments(event: NormalizedMessageEvent): MessageAttachment[] {
-  return event.attachments.map((a) =>
-    a.unavailable ? { ...a, unavailable: undefined, downloadAttempts: MEDIA_MAX_ATTEMPTS, downloadError: a.unavailable } : a,
-  );
+/**
+ * Meta solo copia la media de las últimas ~2 semanas. Un adjunto más viejo queda
+ * "no disponible" con su tipo y nombre (sin descarga: no gasta peticiones de Zernio);
+ * los recientes quedan pendientes y el barrido del worker los baja poco a poco.
+ */
+export const HISTORY_MEDIA_MAX_AGE_DAYS = 14;
+export const OLD_HISTORY_MEDIA_REASON = "Adjunto del historial con más de 2 semanas: Meta ya no lo guarda";
+
+/** Adjuntos del historial listos para guardar (sin URL o viejos = "no disponible"). */
+export function storedAttachments(event: Pick<NormalizedMessageEvent, "attachments" | "sentAt">, now = new Date()): MessageAttachment[] {
+  const old = now.getTime() - event.sentAt.getTime() > HISTORY_MEDIA_MAX_AGE_DAYS * 86_400_000;
+  return event.attachments.map((a) => {
+    const { unavailable, ...rest } = a;
+    const reason = unavailable ?? (old ? OLD_HISTORY_MEDIA_REASON : undefined);
+    return reason ? { ...rest, downloadAttempts: MEDIA_MAX_ATTEMPTS, downloadError: reason } : rest;
+  });
 }
 
 /** source de los contactos que nacen del historial (el Dashboard los excluye). */
@@ -52,66 +68,122 @@ type ChannelRow = typeof channels.$inferSelect;
 
 export type HistoryOutcome = "importado" | "duplicado";
 
-export async function ingestHistoryMessage(
-  provider: ProviderName,
+/** Chat del historial: su conversación en el proveedor y la identidad del cliente. */
+export type HistoryChat = {
+  providerConversationId: string;
+  phone: string | null;
+  bsuid: string | null;
+  name?: string;
+};
+
+/** A quién se pegó el chat: contacto de GHL, otro existente, uno nuevo, o la conversación ya existía. */
+export type HistoryContactMatch = "existente_ghl" | "existente" | "nuevo" | "conversacion_existente";
+
+export type HistoryWriteResult = {
+  organizationId: string;
+  conversationId: string;
+  contactId: string;
+  contact: HistoryContactMatch;
+  /** ids de los mensajes nuevos (los repetidos por wamid no entran). */
+  inserted: string[];
+  duplicates: number;
+};
+
+/**
+ * Contactos candidatos por teléfono (todas sus formas) o BSUID, con los MISMOS
+ * candados y en el mismo orden que resolveContact (importación CSV compartida →
+ * identidad): entre contarlos y crear/usar el contacto nadie puede meter otro.
+ */
+async function lockedCandidates(tx: Tx, orgId: string, phone: string | null, bsuid: string | null) {
+  await tx.execute(sql`select pg_advisory_xact_lock_shared(hashtextextended(${contactsImportLockKey(orgId)}, 0))`);
+  const keys = [phone && `contact:${orgId}:phone:${phone}`, bsuid && `contact:${orgId}:bsuid:${bsuid}`]
+    .filter((k): k is string => Boolean(k))
+    .sort();
+  for (const key of keys) await tx.execute(sql`select pg_advisory_xact_lock(hashtextextended(${key}, 0))`);
+  const match = [phone ? inArray(contacts.phoneE164, phoneLookupVariants(phone)) : undefined, bsuid ? eq(contacts.waBsuid, bsuid) : undefined].filter(
+    (c) => c !== undefined,
+  );
+  if (match.length === 0) return [];
+  return tx
+    .select({ id: contacts.id, source: contacts.source, ghlContactId: contacts.ghlContactId })
+    .from(contacts)
+    .where(and(eq(contacts.organizationId, orgId), or(...match)))
+    .orderBy(asc(contacts.createdAt), asc(contacts.id));
+}
+
+/**
+ * Escribe mensajes del historial de UN chat en una sola transacción (un INSERT para
+ * todos). Solo toca el orden de la lista (last_message_at): NADA de no leídos,
+ * ventana, estado, primera respuesta, anuncio, etapa ni temperatura.
+ * `batchNotify`: la transacción apaga el aviso de tiempo real por fila (migración
+ * 0039); quien llama manda UN aviso `inbox.bulk` por lote.
+ */
+async function writeHistory(
+  tx: Tx,
   channel: ChannelRow,
-  event: NormalizedMessageEvent,
-  hooks: Pick<IngestHooks, "onMediaMessage"> = {},
-): Promise<{ outcome: string; organizationId: string; result: HistoryOutcome }> {
-  if (channel.provider !== provider) throw new Error(`canal ${channel.id} no es de ${provider}`);
+  chat: HistoryChat,
+  events: readonly NormalizedMessageEvent[],
+  opts: { now: Date; batchNotify: boolean },
+): Promise<HistoryWriteResult> {
   const orgId = channel.organizationId;
-  const { phone, bsuid } = eventIdentity(event);
-  const importedAt = new Date();
+  if (opts.batchNotify) await tx.execute(sql`select set_config('crm.avisos_en_lote', 'on', true)`);
 
-  const inserted = await withTxRetry(() =>
-    db.transaction(async (tx) => {
-      let conversation = event.providerConversationId
-        ? (
-            await tx
-              .select()
-              .from(conversations)
-              .where(and(eq(conversations.channelId, channel.id), eq(conversations.providerConversationId, event.providerConversationId)))
-              .limit(1)
-          )[0]
-        : undefined;
+  let conversation = chat.providerConversationId
+    ? (
+        await tx
+          .select()
+          .from(conversations)
+          .where(and(eq(conversations.channelId, channel.id), eq(conversations.providerConversationId, chat.providerConversationId)))
+          .limit(1)
+      )[0]
+    : undefined;
+  let contact: HistoryContactMatch = "conversacion_existente";
 
-      if (!conversation) {
-        if (!phone && !bsuid) {
-          throw new DeadLetterIngestError(
-            `historial sin teléfono, BSUID ni conversación conocida (conversación ${event.providerConversationId})`,
-          );
-        }
-        const contactId = await resolveContact(tx, orgId, { phone, bsuid, name: event.contactName }, undefined, {
-          source: HISTORY_CONTACT_SOURCE,
-          esPrueba: channel.isTest,
-        });
-        [conversation] = await tx
-          .insert(conversations)
-          .values({
-            id: crypto.randomUUID(),
-            organizationId: orgId,
-            contactId,
-            channelId: channel.id,
-            providerConversationId: event.providerConversationId || null,
-            lastMessageAt: event.sentAt,
-          })
-          .onConflictDoUpdate({
-            target: [conversations.channelId, conversations.contactId],
-            set: {
-              providerConversationId: sql`coalesce(${conversations.providerConversationId}, excluded.provider_conversation_id)`,
-            },
-          })
-          .returning();
-      }
+  if (!conversation) {
+    const { phone, bsuid } = chat;
+    if (!phone && !bsuid) {
+      throw new DeadLetterIngestError(`historial sin teléfono, BSUID ni conversación conocida (conversación ${chat.providerConversationId})`);
+    }
+    const candidates = await lockedCandidates(tx, orgId, phone, bsuid);
+    if (candidates.length > 1) throw new AmbiguousContactError(phone ?? bsuid ?? "", candidates.map((c) => c.id));
+    const contactId = await resolveContact(tx, orgId, { phone, bsuid, name: chat.name }, undefined, {
+      source: HISTORY_CONTACT_SOURCE,
+      esPrueba: channel.isTest,
+    });
+    const existing = candidates[0];
+    contact = !existing ? "nuevo" : existing.source === "ghl_import" || existing.ghlContactId ? "existente_ghl" : "existente";
+    [conversation] = await tx
+      .insert(conversations)
+      .values({
+        id: crypto.randomUUID(),
+        organizationId: orgId,
+        contactId,
+        channelId: channel.id,
+        providerConversationId: chat.providerConversationId || null,
+        lastMessageAt: events[0]?.sentAt ?? opts.now,
+      })
+      .onConflictDoUpdate({
+        target: [conversations.channelId, conversations.contactId],
+        set: {
+          providerConversationId: sql`coalesce(${conversations.providerConversationId}, excluded.provider_conversation_id)`,
+        },
+      })
+      .returning();
+  }
 
-      // Mismo orden de bloqueo que la ingesta en vivo: conversación → mensajes.
-      const [locked] = await tx.select().from(conversations).where(eq(conversations.id, conversation.id)).for("update");
+  // Mismo orden de bloqueo que la ingesta en vivo: conversación → mensajes.
+  const [locked] = await tx.select().from(conversations).where(eq(conversations.id, conversation.id)).for("update");
+  if (events.length === 0) {
+    return { organizationId: orgId, conversationId: locked.id, contactId: locked.contactId, contact, inserted: [], duplicates: 0 };
+  }
 
-      const attachments = storedAttachments(event);
-      const first = attachments[0];
-      const rows = await tx
-        .insert(messages)
-        .values({
+  const rows = await tx
+    .insert(messages)
+    .values(
+      events.map((event) => {
+        const attachments = storedAttachments(event, opts.now);
+        const first = attachments[0];
+        return {
           id: crypto.randomUUID(),
           organizationId: orgId,
           conversationId: locked.id,
@@ -126,30 +198,68 @@ export async function ingestHistoryMessage(
           // La API de Zernio no da su id interno en el historial (solo el wamid).
           providerInternalId: event.providerInternalId || null,
           metadata: event.metadata ?? null,
-          status: event.direction === "in" ? "received" : "sent",
+          status: event.direction === "in" ? ("received" as const) : ("sent" as const),
           sentAt: event.sentAt,
-          importedAt,
-        })
-        // Cualquier choque de unicidad (wamid, o id interno) = ya estaba: no se duplica.
-        .onConflictDoNothing()
-        .returning({ id: messages.id });
-      if (rows.length === 0) return null;
+          importedAt: opts.now,
+        };
+      }),
+    )
+    // Cualquier choque de unicidad (wamid, o id interno) = ya estaba: no se duplica.
+    .onConflictDoNothing()
+    .returning({ id: messages.id, sentAt: messages.sentAt });
 
-      // Solo el orden de la lista (último mensaje): NADA de no leídos, ventana,
-      // estado, primera respuesta ni anuncio.
-      if (!locked.lastMessageAt || locked.lastMessageAt < event.sentAt) {
-        await tx.update(conversations).set({ lastMessageAt: event.sentAt }).where(eq(conversations.id, locked.id));
-      }
-      return rows[0].id;
-    }),
+  // Solo el orden de la lista (último mensaje).
+  const newest = rows.reduce<Date | null>((max, r) => (r.sentAt && (!max || r.sentAt > max) ? r.sentAt : max), null);
+  if (newest && (!locked.lastMessageAt || locked.lastMessageAt < newest)) {
+    await tx.update(conversations).set({ lastMessageAt: newest }).where(eq(conversations.id, locked.id));
+  }
+  return {
+    organizationId: orgId,
+    conversationId: locked.id,
+    contactId: locked.contactId,
+    contact,
+    inserted: rows.map((r) => r.id),
+    duplicates: events.length - rows.length,
+  };
+}
+
+/**
+ * Una página de mensajes del historial de UN chat (importador). Todo o nada: si
+ * falla, se reintenta la página completa y el wamid único evita duplicados.
+ */
+export async function ingestHistoryPage(
+  channel: ChannelRow,
+  chat: HistoryChat,
+  events: readonly NormalizedMessageEvent[],
+  opts: { now?: Date; batchNotify?: boolean } = {},
+): Promise<HistoryWriteResult> {
+  const now = opts.now ?? new Date();
+  return withTxRetry(() => db.transaction((tx) => writeHistory(tx, channel, chat, events, { now, batchNotify: opts.batchNotify ?? false })));
+}
+
+/** Un mensaje del historial que llegó por webhook (un aviso de tiempo real por fila, como siempre). */
+export async function ingestHistoryMessage(
+  provider: ProviderName,
+  channel: ChannelRow,
+  event: NormalizedMessageEvent,
+  hooks: Pick<IngestHooks, "onMediaMessage"> = {},
+): Promise<{ outcome: string; organizationId: string; result: HistoryOutcome }> {
+  if (channel.provider !== provider) throw new Error(`canal ${channel.id} no es de ${provider}`);
+  const { phone, bsuid } = eventIdentity(event);
+  const now = new Date();
+  const result = await ingestHistoryPage(
+    channel,
+    { providerConversationId: event.providerConversationId, phone, bsuid, name: event.contactName },
+    [event],
+    { now },
   );
-
+  const inserted = result.inserted[0];
   // Después del commit: la descarga ya puede leer la fila (si no hay cola, el
   // barrido del worker recoge los adjuntos pendientes).
-  if (inserted && event.attachments.some((a) => a.url && !a.unavailable) && hooks.onMediaMessage) await hooks.onMediaMessage(inserted);
+  if (inserted && storedAttachments(event, now).some((a) => a.url && !a.downloadError) && hooks.onMediaMessage) await hooks.onMediaMessage(inserted);
   return inserted
-    ? { outcome: "historial del celular importado", organizationId: orgId, result: "importado" }
-    : { outcome: "historial del celular duplicado (wamid ya guardado)", organizationId: orgId, result: "duplicado" };
+    ? { outcome: "historial del celular importado", organizationId: result.organizationId, result: "importado" }
+    : { outcome: "historial del celular duplicado (wamid ya guardado)", organizationId: result.organizationId, result: "duplicado" };
 }
 
 /** Nombre de relleno que la ingesta pone cuando WhatsApp no trae nombre. */
@@ -178,29 +288,44 @@ export async function fillEmptyContactNames(
 ): Promise<{ filled: number; skipped: number }> {
   let filled = 0;
   let skipped = 0;
+  const valid: { phoneE164: string; name: string }[] = [];
   for (const entry of entries) {
     const name = entry.name.trim().slice(0, 200);
-    if (!name || /^\+?[\d\s()\-.]+$/.test(name)) {
-      skipped++;
-      continue;
-    }
+    if (!name || /^\+?[\d\s()\-.]+$/.test(name)) skipped++;
+    else valid.push({ phoneE164: canonicalPhone(entry.phoneE164), name });
+  }
+  // Por tandas (una lectura por cada 500 teléfonos): 1,000+ contactos de la agenda
+  // no son 1,000+ viajes a la base por el proxy.
+  for (let i = 0; i < valid.length; i += 500) {
+    const chunk = valid.slice(i, i + 500);
     const matches = await db
       .select({ id: contacts.id, firstName: contacts.firstName, lastName: contacts.lastName, phoneE164: contacts.phoneE164 })
       .from(contacts)
-      .where(and(eq(contacts.organizationId, organizationId), inArray(contacts.phoneE164, phoneLookupVariants(entry.phoneE164))));
-    let touched = false;
+      .where(and(eq(contacts.organizationId, organizationId), inArray(contacts.phoneE164, chunk.flatMap((e) => phoneLookupVariants(e.phoneE164)))));
+    const byPhone = new Map<string, typeof matches>();
     for (const c of matches) {
-      if (!isEmptyContactName(c.firstName, c.lastName, c.phoneE164)) continue;
-      // Condición repetida en el UPDATE: si alguien le puso nombre mientras tanto, no se pisa.
-      const updated = await db
-        .update(contacts)
-        .set({ firstName: name })
-        .where(and(eq(contacts.id, c.id), eq(contacts.organizationId, organizationId), eq(contacts.firstName, c.firstName)))
-        .returning({ id: contacts.id });
-      if (updated.length > 0) touched = true;
+      if (!c.phoneE164) continue;
+      const key = canonicalPhone(c.phoneE164);
+      byPhone.set(key, [...(byPhone.get(key) ?? []), c]);
     }
-    if (touched) filled++;
-    else skipped++;
+    for (const entry of chunk) {
+      let touched = false;
+      for (const c of byPhone.get(entry.phoneE164) ?? []) {
+        if (!isEmptyContactName(c.firstName, c.lastName, c.phoneE164)) continue;
+        // Condición repetida en el UPDATE: si alguien le puso nombre mientras tanto, no se pisa.
+        const updated = await db
+          .update(contacts)
+          .set({ firstName: entry.name })
+          .where(and(eq(contacts.id, c.id), eq(contacts.organizationId, organizationId), eq(contacts.firstName, c.firstName)))
+          .returning({ id: contacts.id });
+        if (updated.length > 0) {
+          touched = true;
+          c.firstName = entry.name; // un teléfono repetido en la agenda no lo vuelve a tocar
+        }
+      }
+      if (touched) filled++;
+      else skipped++;
+    }
   }
   return { filled, skipped };
 }

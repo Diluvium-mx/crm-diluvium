@@ -20,3 +20,7 @@ export function sha256Base64(data: Uint8Array): string {
 export const MEDIA_MAX_ATTEMPTS = 25;
 // Pasado este plazo Meta ya borró la media: lo pendiente se da por perdido.
 export const MEDIA_SWEEP_DAYS = 30;
+// Historial del celular (lo de las últimas ~2 semanas trae archivo): el barrido baja
+// a lo más estos mensajes por minuto, DESPUÉS de los vivos. Cada descarga es una
+// petición a Zernio y su límite (60/min) se comparte con los envíos del CRM.
+export const HISTORY_MEDIA_PER_SWEEP = 5;

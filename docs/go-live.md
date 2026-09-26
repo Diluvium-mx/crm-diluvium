@@ -11,6 +11,125 @@ no se pierden, pero tampoco aparecen en la Bandeja hasta liberarlos. Cada uno de
 Todo se valida primero en `staging` (CLAUDE.md §4). Los secretos los pega el dueño
 por portapapeles; nunca en el chat.
 
+## Día del número oficial — guion (en orden)
+
+**YO** = el dueño (celular, Meta, Zernio). **CODE** = Claude Code (comandos). Cada paso
+de CODE muestra el resultado antes de seguir; nada de producción se escribe sin el OK
+del paso. Comandos desde el worktree con la base de producción por el proxy público y la
+llave de Zernio del servicio `crm-diluvium` (nunca se imprimen); `$PROD` = el prefijo de
+docs/numero-prueba.md › "Después del QR".
+
+> Por qué el orden importa: Meta entrega la copia del historial **una sola vez** y hay
+> **24 h** para aceptarla en el celular. Zernio la guarda; el CRM la jala después con calma.
+
+### A. Antes (la víspera o esa mañana)
+
+1. **CODE** — Respaldo: `gh workflow run db-backup.yml --ref main` y esperar verde
+   (`gh run watch`). Anotar el número de corrida.
+2. **CODE** — Confirmar que N1 (sandbox) está archivado y fuera de la lista:
+   `select id, is_test, is_active, archived_at, ai_agent_mode from channels;` y
+   `ZERNIO_ALLOWED_ACCOUNT_IDS` de `crm-diluvium` (production) = solo N2
+   (`6ab6d4483eb3cfc2601c3902`).
+3. **CODE** — Cuentas conectadas en Zernio (`GET /v1/accounts`): hoy 1 (N2). Con el
+   oficial serán **2 = gratis**. Nunca 3 a la vez ($6 USD/mes cada una desde la 3.ª).
+4. **YO** — Meta Business Suite → portafolio **Grupo Diluvium** → Configuración →
+   Pagos → WhatsApp: revisar si la WABA tiene **método de pago**. Sin él, las plantillas
+   no salen (desde el 1-oct-2026 Meta cobra también dentro de la ventana de 24 h).
+5. **CODE** — Conteos "antes" (se guardan para comparar):
+   `select source, count(*) from contacts group by 1;` (hoy 10,901 `ghl_import` + 1
+   `whatsapp`), `select count(*) from conversations;`, `select count(*) from messages;`.
+6. **YO** — El celular del oficial a la mano, con batería y buena señal, **WhatsApp
+   Business actualizada** (2.24.17 o mayor) y abierta. Nadie más lo usa durante la conexión.
+
+### B. Conexión
+
+7. **YO** — En el celular del oficial: WhatsApp Business → Ajustes → **Dispositivos
+   vinculados** → tocar la sesión de **goghl** (GHL) → **Cerrar sesión**. Desde aquí GHL
+   deja de mandar; lo que mandó ya viene en la copia del celular (no se importa nada de GHL).
+8. **YO** — zernio.com → perfil **Default** (NO "Diluvium Pruebas") → Connections →
+   WhatsApp → **+ Connect** → **Use my own number** → entra con Facebook →
+   **Connect existing WhatsApp Business app account** → portafolio **Grupo Diluvium** →
+   número **+52 668 241 9579** → aparece un **QR**.
+9. **YO** — Escanear el QR con el celular del oficial (ícono de cámara arriba a la derecha,
+   o Ajustes → Dispositivos vinculados) y, **en ese momento, ACEPTAR compartir el historial
+   de chats y los contactos**. Volver al navegador, confirmar, y escribirle a Code **QR HECHO**.
+10. **CODE** — `GET /v1/accounts`: `accountId` del oficial y su hora de conexión.
+    Confirmar 2 cuentas conectadas (N2 y el oficial).
+11. **CODE** — Fila del canal ANTES de permitir la cuenta (así no hay hueco):
+    `$PROD npm run canal:oficial -- --cuenta <oficial> --conectado <hora ISO>` (simula) →
+    `… --confirmar`. Canal real (sin marca Prueba), activo, agente **apagado**.
+12. **CODE** — `ZERNIO_ALLOWED_ACCOUNT_IDS` de `crm-diluvium` (production): agregar el
+    oficial conservando N2 (mostrar antes y después). Solo la leen el webhook y el replay.
+13. **CODE** — Webhook: `GET /v1/webhooks/settings` → activo, `failureCount: 0`, sin filtro de
+    cuentas (o que incluya al oficial); `POST /v1/webhooks/test` → 200. Luego
+    `$PROD npm run webhooks:replay` (libera lo que llegó del oficial antes de permitirlo).
+
+### C. Importación del historial
+
+14. **CODE** — Reporte previo, SOLO lectura:
+    `$PROD npm run historial:importar -- --cuenta <oficial> --simular`. Tarda lo mismo que
+    la importación (una petición a Zernio cada 1.5 s = 40/min, para dejarle ~20/min al CRM
+    en vivo; ver "Prueba de carga"). Deja el
+    reporte en `.historial/` y Code te lo pasa en 10 líneas: chats y mensajes, cuántos se
+    pegan a contactos de GHL, contactos nuevos, teléfonos que no se pudieron normalizar,
+    posibles duplicados, rango de fechas, adjuntos y duración estimada.
+15. **YO** — Revisar el reporte; abrir 2 o 3 chats en el celular y cotejar fechas y
+    últimos mensajes. Si todo cuadra, escribir **OK IMPORTAR**. (Si hay "ambiguos" —un
+    teléfono con dos contactos— esos chats NO se importan; se revisan a mano después.)
+16. **CODE** — Conteos "antes" otra vez → importación real:
+    `$PROD npm run historial:importar -- --cuenta <oficial>`. Muestra "chat 350 de 1,200 ·
+    … · faltan ~N min". Si se corta (Ctrl+C, red, límite de Zernio): **el mismo comando
+    sigue donde se quedó**. Al terminar, conteos "después" y la revisión de cero duplicados:
+    ```sql
+    -- teléfonos repetidos (debe ser 0)
+    select regexp_replace(phone_e164, '^\+521(\d{10})$', '+52\1') p, count(*) from contacts
+    where phone_e164 is not null group by 1 having count(*) > 1;
+    -- wamid repetidos (debe ser 0)
+    select provider_message_id, count(*) from messages where provider_message_id is not null
+    group by 1 having count(*) > 1;
+    -- nada del historial tocó no leídos, ventana ni primera respuesta (debe ser 0)
+    select count(*) from conversations cv where cv.channel_id = '<canal oficial>'
+      and not exists (select 1 from messages m where m.conversation_id = cv.id and m.imported_at is null)
+      and (cv.unread_count > 0 or cv.window_expires_at is not null or cv.first_response_seconds is not null);
+    ```
+17. **CODE** — Repetir el paso 16 cada ~15 min durante unas 2 horas (Zernio puede seguir
+    copiando): cada pasada completa debe terminar en "0 nuevos". Los adjuntos de las
+    últimas 2 semanas los baja el worker poco a poco (5 por minuto); los más viejos
+    quedan "no disponible" con su tipo.
+
+### D. Validación
+
+18. **YO** — Desde la **app** del celular del oficial, contestar a un cliente de confianza.
+    **CODE** — el eco aparece en el CRM como "desde la app" (`source = business_app`) y
+    el agente queda en pausa en esa conversación; la ventana de 24 h no cambia.
+19. **YO** — Desde un número **externo** (no de prueba), escribir al oficial: aparece en la
+    Bandeja en segundos. Contestar desde el CRM → llega al celular con ✓✓.
+20. **CODE** — Agente en **AUTO** para el oficial (igual que el interruptor de la pestaña
+    Agente IA: `ai_agent_mode = 'auto'`, `ai_agent_mode_changed_at = now()`). Lo copiado
+    antes nunca se contesta solo. **YO** — otro mensaje desde el número externo: el agente
+    contesta solo ese mensaje.
+21. **CODE** — `$PROD npm run ads:probe` (anuncios; hoy Meta responde "API access blocked":
+    se deja anotado, no frena el go-live).
+
+### E. Cierre
+
+22. **CODE** — `MONITOR_SILENCE_MINUTES` del web de producción: **1440 → 60** (mostrar antes
+    y después), para que un silencio de 1 h en horario laboral vuelva a alertar.
+23. **CODE** (con **LUZ VERDE: ARCHIVAR N2**) — Archivar N2: apagar su agente → respaldo →
+    `$PROD npm run canal:archivar -- --cuenta 6ab6d4483eb3cfc2601c3902` (simula) →
+    `… --confirmar` → quitar N2 de `ZERNIO_ALLOWED_ACCOUNT_IDS` conservando el oficial.
+    **YO** — en Zernio (perfil "Diluvium Pruebas") desconectar N2.
+24. **CODE** — Sembrar los ~17 Fragmentos curados (con la lista que pase el dueño).
+25. **CODE** — Conteos finales y reporte del día. Borrar los reportes locales de `.historial/`
+    (traen teléfonos de clientes; se escriben solo legibles por el dueño del archivo) cuando ya
+    no hagan falta. Después: la revisión final de Codex.
+
+### Prueba de carga del importador (26-sep-2026, local)
+
+`npm run historial:prueba-carga` (solo en una base local cuyo nombre diga "carga"; la
+borra): 1,500 chats y 50,000 mensajes con la forma de la API de Zernio servidos por
+HTTP, contra 10,901 contactos tipo GHL. Resultados en "Estado y relevo" de este archivo.
+
 ## 1. Cuenta del número en Zernio
 
 1. Conectar el número en Zernio (coexistencia) y anotar su `accountId`:
@@ -28,15 +147,10 @@ por portapapeles; nunca en el chat.
 ## 3. Fila en `channels` (base de producción)
 
 La organización del mensaje sale del canal, nunca del payload. Sin fila activa, la
-ingesta reintenta y termina en dead-letter:
-
-```sql
-INSERT INTO channels (id, organization_id, type, provider, provider_account_id, display_name, is_active)
-VALUES ('ch_zernio_real', '<organization_id de Diluvium>', 'whatsapp', 'zernio',
-        '<accountId real>', 'WhatsApp Diluvium', true);
-```
-
-(Revisar columnas contra `lib/db/schema/messaging.ts` antes de correrlo.)
+ingesta reintenta y termina en dead-letter. Se crea con
+`npm run canal:oficial -- --cuenta <accountId> --conectado <hora ISO> [--confirmar]`
+(canal real sin marca Prueba, activo, agente apagado, `connected_at` = red de seguridad
+del historial; guion paso 11). Ya no se escribe el INSERT a mano.
 
 ## 4. Webhook de Zernio
 
@@ -126,3 +240,68 @@ la Action abre un issue, así que el paso 2 va antes que el merge a `main`.
 - Un solo teléfono por usuario de Zernio: para probar con otro hay que revocar el actual
   (`DELETE /v1/whatsapp/sandbox/sessions/{id}`) y crear el nuevo. Límite: 50 mensajes / 24 h.
 - Renovarla justo antes de la prueba en vivo del Agente IA (Fase B), no antes.
+
+## Historial del oficial: estado y relevo (feat/historial-oficial, 26-sep-2026)
+
+Chat de Code "Preparar historial del oficial". Solo preparó y probó: **no conectó ni escaneó nada**.
+
+**Qué cambió en el importador** (`npm run historial:importar`):
+- Recorre TODAS las páginas: chats activos y archivados en orden ascendente (un chat que se
+  mueve mientras se pagina se ve dos veces, nunca cero), mensajes de 100 en 100, agenda de 200
+  en 200. Cursor repetido, `hasMore` sin cursor o listado incompleto (`meta.accountsFailed`) =
+  se detiene en vez de saltarse páginas.
+- Ritmo propio 40 peticiones/min (`--ritmo`), respeta `X-RateLimit-Remaining/Reset` dejando 15
+  para el CRM, espera `Retry-After` en 429 y reintenta 5xx/red con espera creciente (2 s → 60 s).
+- Un INSERT por página (no uno por mensaje), avance "chat 350 de 1,200 · … · faltan ~N min",
+  punto de reanudación por chat en `.historial/<cuenta>.estado.json` (Ctrl+C = corte ordenado;
+  el mismo comando sigue). Terminada una corrida, la siguiente es una pasada completa.
+- Regla del dueño: un chat se pega al contacto con ese teléfono normalizado; si hay MÁS de uno,
+  no se importa y se reporta ("ambiguos"). Solo se crea contacto si no hay ninguno (Inbox,
+  `historial_celular`, sin marca Prueba en el oficial). La agenda solo rellena nombres vacíos.
+- Tiempo real: la migración **0039** deja que la transacción del importador apague el aviso por
+  fila; se manda UNA señal `inbox.bulk` cada 500 mensajes o 5 s. La Bandeja relee su lista una
+  vez por señal; el Embudo relee el tablero a lo más cada 30 s si nacieron contactos.
+- Adjuntos: los de más de 2 semanas quedan "no disponible" con su tipo al importar (no gastan
+  peticiones); los recientes los baja el worker a 5 por minuto, después de los vivos.
+- Agente: el historial ya no cuenta como "pendiente" ni como entrante nuevo
+  (`lib/ai/runtime/context.ts`): un "gracias" viejo sin contestar no se responde junto con el
+  primer mensaje vivo del cliente.
+- `npm run canal:oficial` da de alta el canal real (sin SQL a mano).
+
+**Prueba de carga local (26-sep, `npm run historial:prueba-carga`)** — 1,500 chats, 50,000
+mensajes (49,979 del historial; el más grande de 2,498 = 25 páginas), 10,901 contactos tipo
+GHL, 429 y 502 inyectados:
+
+| Corrida | Duración | Resultado |
+|---|---|---|
+| Simulación | 29 s | 1,721 peticiones; 900 chats → GHL, 598 nuevos, 1 grupo, 1 sin teléfono; 0 ambiguos |
+| Importación cortada a la mitad | 14 s | cortó en el chat 751; 3,167 mensajes |
+| Reanudación (mismo comando) | 25 s | saltó 750 chats; 46,812 nuevos; 10 repetidos del chat a medias (no duplicados) |
+| Segunda corrida completa | 35 s | 0 nuevos, 49,979 ya estaban |
+
+Verificación: 11,500 contactos = 10,902 + 598 nuevos; **0 teléfonos duplicados, 0
+conversaciones duplicadas, 0 wamid duplicados**, 0 nuevos con +521, 0 nuevos con marca Prueba o
+fuera de Inbox, 0 conversaciones con no leídos/ventana/primera respuesta, 96 nombres rellenados
+por la agenda, 0 contactos creados solo por la agenda. Tiempo real: **94 avisos `inbox.bulk` y
+cero avisos por fila** durante la importación (antes serían ~50,000). Bandeja DURANTE la
+importación: lista p50 8 ms, p95 29 ms, máx 34 ms, 0 errores; después: primera página 13 ms, hilo
+de 2,498 mensajes 4 ms, señales del Embudo 14 ms. Memoria: heap pico 180 MB (incluye el Zernio
+falso con los 50,000 mensajes en memoria). **Con Zernio real** el límite manda: ~1,720
+peticiones a 40/min ≈ **43 min** la simulación y otros ~43 min la importación.
+
+**Lista teórica (sin escenario real hoy):**
+- Si Zernio mandara el historial TAMBIÉN por webhook (con N2 no pasó: 0 webhooks), cada mensaje
+  avisaría por fila y la Bandeja recargaría filas; lo importado igual no se duplica.
+- Un contacto que hoy existe SOLO por BSUID (sin teléfono) no se reconoce por el teléfono del
+  chat: nacería otro contacto. En producción no hay contactos solo-BSUID del oficial (no está
+  conectado).
+- El modelo recibe el historial como contexto; si el último mensaje viejo del cliente quedó sin
+  contestar, va pegado al primer mensaje vivo en el mismo turno (sin hora) y el agente podría
+  mencionarlo. Ya NO cuenta como pendiente (ni comprobante, ni corte del lote).
+- El barrido de media del historial toma lo más reciente primero: 5 adjuntos que fallen siempre
+  ocupan su turno hasta agotar sus 25 intentos (~25 min) antes de pasar a otros.
+- Un 429 de Zernio en un envío del vendedor se marca fallido (no se reintenta solo). El
+  importador deja ~20 peticiones/min libres; si hubiera ráfagas mayores, bajar `--ritmo`.
+- La agenda del celular puede tener un nombre distinto al de GHL: nunca lo cambia (regla), así
+  que no se "mejora" un nombre ya puesto.
+- Los ~17 Fragmentos curados: la lista no está en el repo; la pasa el dueño el día del go-live.

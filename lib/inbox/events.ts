@@ -38,6 +38,11 @@ function payloadToEvent(raw: string): { organizationId: string; event: InboxEven
       return { organizationId: org, event: { type, contactId } };
     }
     if (type === "contacts.bulk") return { organizationId: org, event: { type } };
+    // Lote del historial del celular (lib/messaging/history-import.ts).
+    if (type === "inbox.bulk") {
+      const { contactos } = data as Record<string, unknown>;
+      return { organizationId: org, event: { type, contactos: typeof contactos === "number" && contactos > 0 ? contactos : 0 } };
+    }
     // Un contacto cambió (etapa, temperatura, cotización, Detalle): lib/contacts/notify-updated.ts.
     if (type === "contact.updated") {
       const event = parseContactUpdated(data as Record<string, unknown>);

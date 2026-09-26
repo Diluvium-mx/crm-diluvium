@@ -255,10 +255,11 @@ Fuera de hoy: N2 está en otra cuenta de Meta ("Diluvium Pruebas"); se prueban c
   apuntaría a la WABA "Diluvium Pruebas" (inofensivo; con N3 apuntará al oficial).
 - Un contacto nacido en un canal de prueba que después escribe al oficial conserva "Prueba" y no cuenta en
   el Dashboard (regla "ni los contactos creados por él").
-- Un historial muy grande (N3, 6 meses) genera un aviso de tiempo real por mensaje: la Bandeja abierta
-  recarga filas durante la importación.
-- Los adjuntos del historial de más de ~14 días no traen archivo (Meta): quedan "no disponible". Si una
-  corrida posterior del importador sí trae la URL, no se enriquece el mensaje ya guardado.
+- ~~Un historial muy grande genera un aviso de tiempo real por mensaje~~ **Resuelto (26-sep, feat/historial-oficial):**
+  el importador manda un aviso `inbox.bulk` cada 500 mensajes o 5 s (migración 0039).
+- Los adjuntos del historial de más de ~14 días quedan "no disponible" aunque traigan URL (Meta ya no los
+  guarda; no se gastan peticiones de Zernio en intentarlo). Si una corrida posterior del importador trae la
+  URL de uno sin archivo, no se enriquece el mensaje ya guardado.
 - Archivar N1 no puede frenar un envío que ya iba en camino en ese mismo instante (programado, workflow o
   envío inmediato que ya leyó el canal activo): saldría UNA vez a un teléfono de prueba. Cerrarlo del todo
   pide un candado compartido en todos los envíos (send.ts); no se hizo hoy. Mitigación: paso 0 del archivado.
