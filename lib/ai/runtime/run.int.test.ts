@@ -1577,6 +1577,7 @@ describe.skipIf(!TEST_DATABASE_URL)("runtime del Agente IA (Postgres real)", () 
   // guardada, la tarjeta es la misma "Reintentar / Apagar" y "Reintentar" manda el MISMO
   // texto (con la misma clave de idempotencia: nunca dos veces al cliente).
 
+  const pendingOf = async () => (await import("./context")).pendingInbound(ORG, CONV);
   async function openCard() {
     const card = (await notices()).find((n) => n.kind === "agente_error" && n.resolvedAt === null);
     return card ?? null;
@@ -1763,7 +1764,7 @@ describe.skipIf(!TEST_DATABASE_URL)("runtime del Agente IA (Postgres real)", () 
     expect(await sweep.findLostRetries(new Date())).toEqual([]);
   });
 
-  it("C · (revisión) una fila en cola de hace más de 15 min ya no se reenvía (pudo salir y la clave de Zernio vence): la tarjeta pide revisar el celular", async () => {
+  it("C · (revisión) una fila en cola de hace más de 15 min ya no se reenvía (pudo salir y la clave de Zernio vence): aviso para revisar el celular, sin tarjeta sin salida", async () => {
     await msg({ direction: "in", body: "¿precio?", at: ago(30 * 60_000) });
     const z = fakeZernio();
     const first = makeDeps({ brain: ["Cuesta $5,500 MXN."] }, z);
@@ -1774,8 +1775,93 @@ describe.skipIf(!TEST_DATABASE_URL)("runtime del Agente IA (Postgres real)", () 
     await run.runAgent(JOB, first.deps);
     await retryCard();
     const retry = makeDeps({}, z);
-    expect(await run.runAgent(JOB, retry.deps)).toEqual({ kind: "failed", reason: "envio_fallido" });
+    // Sin tarjeta sin salida (revisión): aviso para revisar el celular y el agente queda libre.
+    expect(await run.runAgent(JOB, retry.deps)).toEqual({ kind: "skipped", reason: "envio_sin_confirmar" });
     expect(z.calls()).toBe(0);
-    expect((await openCard())!.body).toContain("revísalo en el celular");
+    expect(await openCard()).toBeNull();
+    expect((await notices()).find((n) => n.kind === "envio")!.body).toContain("no confirmó");
+    expect((await db.select().from(s.aiAgentDrafts))[0].status).toBe("enviado");
+    // El barrido del worker da la fila por no confirmada y el cliente escribe otra vez:
+    // el agente le contesta (no se queda mudo).
+    await send.expireUnconfirmedSends();
+    await msg({ direction: "in", body: "¿hola?", at: new Date(Date.now() + 1_000) });
+    expect((await run.runAgent(JOB, makeDeps({ brain: ["¡Hola! Aquí estoy."] }, z).deps)).kind).toBe("sent");
+  });
+
+  it("C · (revisión H1) lo que el cliente escribió mientras la tarjeta esperaba sigue PENDIENTE en la BD tras el reenvío, aunque esa ronda se re-programe por su nota de voz", async () => {
+    await msg({ direction: "in", body: "¿precio?", at: ago(40_000) });
+    const failing = makeDeps({ brain: ["Cuesta $5,500 MXN."] });
+    failing.deps.sendBubble = async () => {
+      throw new Error("falla");
+    };
+    await run.runAgent(JOB, failing.deps);
+    const nota = await voiceNote(ago(5_000)); // "¿me atienden?" por voz, aún sin transcribir
+    await retryCard();
+    const z = fakeZernio();
+    const retry = makeDeps({ brain: ["NO DEBE SALIR AÚN"] }, z);
+    retry.deps.transcriptionEnabled = true;
+    expect(await run.runAgent(JOB, retry.deps)).toMatchObject({ kind: "reschedule", reason: "esperando_transcripcion" });
+    expect(z.delivered).toEqual(["Cuesta $5,500 MXN."]); // el MISMO texto salió
+    expect(retry.calls).toHaveLength(0);
+    // Durable: la nota sigue pendiente (antes quedaba "contestada" por el reenvío y se perdía).
+    expect((await pendingOf()).map((m) => m.id)).toEqual([nota]);
+    expect(await schedule.debounceDelayFor(ORG, CONV, new Date())).not.toBeNull();
+    // Llega la transcripción: se contesta.
+    await db.update(s.messages).set({ transcripcion: "¿me atienden?" }).where(eq(s.messages.id, nota));
+    const done = makeDeps({ brain: ["¡Claro! Aquí estoy."] }, z);
+    done.deps.transcriptionEnabled = true;
+    expect(await run.runAgent(JOB, done.deps)).toEqual({ kind: "sent", bubbles: 1 });
+    expect(z.delivered).toEqual(["Cuesta $5,500 MXN.", "¡Claro! Aquí estoy."]);
+    // Y si el job se perdiera, el barrido de huérfanos lo vería (la burbuja reenviada cuenta en la hora original).
+  });
+
+  it("C · (revisión H1) si la ronda para lo nuevo falla, \"Reintentar\" de esa tarjeta sí lo contesta (nada se pierde)", async () => {
+    await msg({ direction: "in", body: "¿precio?", at: ago(120_000) });
+    const failing = makeDeps({ brain: ["Cuesta $5,500 MXN."] });
+    failing.deps.sendBubble = async () => {
+      throw new Error("falla");
+    };
+    await run.runAgent(JOB, failing.deps);
+    await msg({ direction: "in", body: "¿hacen envíos?", at: ago(100_000) });
+    await retryCard();
+    const z = fakeZernio();
+    const retry = makeDeps({ brainErrors: [apiError(400, "bad request")] }, z);
+    expect(await run.runAgent(JOB, retry.deps)).toEqual({ kind: "failed", reason: "conversacion" });
+    expect(z.delivered).toEqual(["Cuesta $5,500 MXN."]);
+    expect(await sweep.findOrphanConversations(new Date())).toEqual([]); // tarjeta abierta: espera al vendedor
+    await retryCard();
+    const again = makeDeps({ brain: ["Sí, a todo México."] }, z);
+    expect(await run.runAgent(JOB, again.deps)).toEqual({ kind: "sent", bubbles: 1 });
+    expect(JSON.stringify(again.calls[0].input.messages.at(-1)!.content)).toContain("¿hacen envíos?");
+  });
+
+  it("C · (revisión H3) \"Reintentar\" con la ventana cerrada: la respuesta guardada se descarta con aviso y nunca sale días después", async () => {
+    await msg({ direction: "in", body: "¿precio?", at: ago(60_000) });
+    const failing = makeDeps({ brain: ["Cuesta $5,500 (viejo)."] });
+    failing.deps.sendBubble = async () => {
+      throw new Error("falla");
+    };
+    await run.runAgent(JOB, failing.deps);
+    await db.update(s.conversations).set({ windowExpiresAt: ago(1_000) }).where(eq(s.conversations.id, CONV));
+    await retryCard();
+    expect((await run.runAgent(JOB, makeDeps().deps)).kind).toBe("skipped");
+    expect((await db.select().from(s.aiAgentDrafts))[0].status).toBe("obsoleto");
+    expect((await notices()).find((n) => n.kind === "envio")!.body).toContain("la ventana de 24 h de WhatsApp cerró");
+    // Días después el cliente escribe: solo sale la respuesta nueva.
+    await db.update(s.conversations).set({ windowExpiresAt: new Date(Date.now() + 23 * 3_600_000) }).where(eq(s.conversations.id, CONV));
+    await msg({ direction: "in", body: "¿siguen vendiendo?", at: new Date(Date.now() + 1_000) });
+    const z = fakeZernio();
+    await run.runAgent(JOB, makeDeps({ brain: ["Sí, seguimos."] }, z).deps);
+    expect(z.delivered).toEqual(["Sí, seguimos."]);
+  });
+
+  it("C · (revisión H2) el barrido NO convierte en tarjeta un envío sin confirmar (pudo llegar): aviso para revisar el celular", async () => {
+    const { SEND_UNCONFIRMED } = await import("@/lib/messaging/rules");
+    const trigger = await msg({ direction: "in", body: "¿precio?", at: ago(15 * 60_000) });
+    await db.insert(s.aiAgentDrafts).values({ id: "plan_dudoso", organizationId: ORG, conversationId: CONV, bubbles: ["Cuesta $5,500."], triggerMessageId: trigger, status: "enviando", resolvedAt: ago(12 * 60_000) });
+    await agentMsg({ status: "failed", errorCode: SEND_UNCONFIRMED, at: ago(12 * 60_000 - 1_000) });
+    await sweep.reconcileStuckDrafts(new Date());
+    expect(await openCard()).toBeNull();
+    expect((await db.select().from(s.aiAgentDrafts))[0].status).toBe("enviado");
   });
 });

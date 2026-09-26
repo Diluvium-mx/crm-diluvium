@@ -5,14 +5,14 @@
 // 3. Deja un aviso al vendedor por cada respuesta del agente que WhatsApp rechazó o
 //    no confirmó (sin pausar: el agente siempre contesta, 23-sep-2026).
 // Es mantenimiento de sistema (todas las organizaciones), como el barrido de webhooks.
-import { and, eq, gte, lt, sql } from "drizzle-orm";
+import { and, eq, gte, inArray, lt, or, sql } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { aiAgentDrafts, messages } from "@/lib/db/schema";
-import { SEND_UNCONFIRMED, SEND_UNKNOWN } from "@/lib/messaging/rules";
+import { isAmbiguousSendError, SEND_UNCONFIRMED, SEND_UNKNOWN } from "@/lib/messaging/rules";
 import { addNotice } from "./notices";
 import { recordAgentError } from "./agent-error";
 import { sendErrorBody } from "./model-errors";
-import { holdForRetry } from "./saved-reply";
+import { bubbleMessageId, holdForRetry } from "./saved-reply";
 
 // Un entrante con este número de errores del agente ya no se reintenta solo
 // (los errores quedan en ai_usage como rastro).
@@ -37,7 +37,7 @@ export async function findOrphanConversations(now: Date, limit = 50): Promise<Or
     from conversations c
     join channels ch on ch.id = c.channel_id
     join lateral (
-      select m.id, m.direction, m.created_at, m.sent_at
+      select m.id, m.direction, m.created_at, m.sent_at, m.metadata
       from messages m
       where m.conversation_id = c.id and m.status <> 'failed'
         -- Igual que pendingInbound (Fase D): un aviso interno o la media de un
@@ -48,7 +48,10 @@ export async function findOrphanConversations(now: Date, limit = 50): Promise<Or
           where r.organization_id = m.organization_id and r.conversation_id = m.conversation_id
             and r.trigger in ('keyword', 'agent') and r.message_ids ? m.id
         )
-      order by coalesce(m.sent_at, m.created_at) desc, m.created_at desc
+      -- Parte 1: una burbuja reenviada cuenta en la hora del entrante que la originó
+      -- (respondeHasta): si el cliente escribió mientras la tarjeta esperaba, lo suyo
+      -- queda como lo último y el barrido lo rescata.
+      order by coalesce((m.metadata->>'respondeHasta')::timestamp, m.sent_at, m.created_at) desc, m.created_at desc
       limit 1
     ) last on true
     where ch.ai_agent_mode = 'auto'
@@ -120,7 +123,7 @@ export async function reconcileStuckDrafts(now: Date): Promise<number> {
     // eco del proveedor lo reemplaza con la hora de Zernio/WhatsApp.
     const since = d.resolvedAt ?? now;
     const outs = await db
-      .select({ status: messages.status })
+      .select({ status: messages.status, errorCode: messages.errorCode })
       .from(messages)
       .where(
         and(
@@ -128,7 +131,9 @@ export async function reconcileStuckDrafts(now: Date): Promise<number> {
           eq(messages.conversationId, d.conversationId),
           eq(messages.direction, "out"),
           eq(messages.source, "ai_agent"),
-          gte(messages.createdAt, since),
+          // Desde la parte 1 las burbujas tienen id determinista: cuentan aunque la fila
+          // sea anterior (un reenvío retoma la fila del primer intento).
+          or(gte(messages.createdAt, since), inArray(messages.id, d.bubbles.map((_, i) => bubbleMessageId(d.id, i)))),
           // Ni avisos internos ni media/texto de corridas de workflow: no son burbujas del plan.
           sql`${messages.type} <> 'system_note' and not exists (
             select 1 from workflow_runs r
@@ -142,7 +147,9 @@ export async function reconcileStuckDrafts(now: Date): Promise<number> {
     // guardar la respuesta y la tarjeta: queda guardada ("pendiente") con su tarjeta
     // "Reintentar / Apagar", igual que si no se hubiera reiniciado. Nunca "enviado"
     // (el cliente no recibió nada) ni otra llamada al modelo.
-    if (outs.length > 0 && outs.every((m) => m.status === "failed") && d.triggerMessageId) {
+    // Solo rechazos EXPLÍCITOS: uno "sin confirmar" pudo llegar (sigue el camino de abajo:
+    // aviso para revisar el celular, sin reenviar).
+    if (outs.length > 0 && outs.every((m) => m.status === "failed" && !isAmbiguousSendError(m.errorCode)) && d.triggerMessageId) {
       if (await holdForRetry(d.organizationId, d.id)) {
         await recordAgentError({
           organizationId: d.organizationId,
