@@ -1108,7 +1108,7 @@ describe.skipIf(!TEST_DATABASE_URL)("runtime del Agente IA (Postgres real)", () 
     await wf("donde_medir", [{ kind: "send_text", text: "video" }], { enabled: false });
     const { deps, calls } = makeDeps({ brain: ["Hola 👋"] });
     expect((await run.runAgent(JOB, deps)).kind).toBe("sent");
-    expect(Object.keys(calls[0].input.tools ?? {})).toEqual(["wf_tabla_tamanos_estandar", "fijar_cotizacion", "mover_etapa", "aviso_vendedor"]);
+    expect(Object.keys(calls[0].input.tools ?? {})).toEqual(["wf_tabla_tamanos_estandar", "fijar_cotizacion", "mover_etapa", "aviso_vendedor", "actualizar_detalle"]);
     expect(calls[0].input.system).toContain("mover_etapa");
     expect(calls[0].input.system).not.toContain("pago_confirmado");
   });
@@ -1485,6 +1485,33 @@ describe.skipIf(!TEST_DATABASE_URL)("runtime del Agente IA (Postgres real)", () 
     expect(await run.runAgent(JOB, again.deps)).toEqual({ kind: "skipped", reason: "error_sin_atender" });
     expect(again.calls).toHaveLength(0);
   });
+  // ── Parte 1 (26-sep-2026), A: el Detalle del contacto en la MISMA respuesta ──
+  it("A · actualizar_detalle en la misma llamada: el texto sale, el Detalle se llena (solo lo vacío) y la siguiente llamada ve lo guardado", async () => {
+    await db.insert(s.user).values({ id: "usuario-sistema-agente-ia", name: "Agente IA", email: "agente-ia@sistema.invalid", banned: true }).onConflictDoNothing();
+    await db.update(s.contacts).set({ porcentajeConvencimiento: 90 }).where(eq(s.contacts.id, CONTACT)); // ya estaba (no es del agente)
+    await msg({ direction: "in", body: "son 2 puertas de 95 y 105 cm, se me mete el agua hasta la rodilla", at: ago(20_000) });
+    const { deps, calls } = makeDeps({
+      brain: ["Perfecto, con esas medidas te cotizo."],
+      toolCalls: [
+        { toolName: "actualizar_detalle", input: { tiene_inundaciones: "si", nivel_agua_texto: "hasta la rodilla", num_entradas: 2, anchos_cm: [95, 105], porcentaje_convencimiento: 50, comentario: "Cochera con desnivel" } },
+      ],
+    });
+    expect(await run.runAgent(JOB, deps)).toEqual({ kind: "sent", bubbles: 1 });
+    expect(brainCalls(calls)).toBe(1); // sin llamada extra
+    const [c] = await db.select().from(s.contacts).where(eq(s.contacts.id, CONTACT));
+    expect(c).toMatchObject({ tieneInundaciones: "si", nivelAguaTexto: "hasta la rodilla", numEntradas: 2, porcentajeConvencimiento: 90 });
+    const [comentario] = await db.select().from(s.contactComentarios).where(eq(s.contactComentarios.contactId, CONTACT));
+    expect(comentario).toMatchObject({ body: "Cochera con desnivel", authorUserId: "usuario-sistema-agente-ia" });
+    expect(await notices()).toEqual([]); // nada para el vendedor
+    // La siguiente respuesta recibe el Detalle en el contexto del CRM.
+    await msg({ direction: "in", body: "¿y cuánto sale?", at: new Date(Date.now() + 1_000) });
+    const next = makeDeps({ brain: ["Te sale en $11,000."] });
+    await run.runAgent(JOB, next.deps);
+    const lastTurn = JSON.stringify(next.calls.find((x) => x.kind === "cerebro")!.input.messages.at(-1)!.content);
+    expect(lastTurn).toContain("Detalle guardado del contacto: inundaciones: sí · agua: (hasta la rodilla) · entradas: 2 (anchos: 95, 105 cm) · convencimiento: 90 %");
+    expect(lastTurn).toContain("«Cochera con desnivel»");
+  });
+
   // ── Parte 1 (26-sep-2026), C: un error de ENVÍO nunca vuelve a llamar al modelo ──
   // Un error simulado de cada tipo. En todos: la respuesta se genera UNA vez, queda
   // guardada, la tarjeta es la misma "Reintentar / Apagar" y "Reintentar" manda el MISMO

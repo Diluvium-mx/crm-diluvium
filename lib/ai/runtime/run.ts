@@ -37,6 +37,7 @@ export function fallbackTextFor(plan: ActionPlan): string {
   return SOLO_ACCIONES_TEXT;
 }
 import { validateToolCalls } from "./tools";
+import { applyDetalleByAgent, detalleContextFor, mergeDetalle } from "./detalle";
 import { applyCustomValues } from "@/lib/agente-ia/editor";
 import { loadAgentConfig, loadCustomValues, loadEnabledFaqs } from "./config";
 import { pickBrainModel } from "./model-by-stage";
@@ -408,8 +409,9 @@ export async function runAgent(job: { organizationId: string; conversationId: st
       answer: applyCustomValues(f.answer, values),
     }));
     const system = buildBrainSystemWithRuntime(applyCustomValues(cfg.goal, values), faqs);
-    // Contexto del CRM (etapa, cotización, comprobantes) en el último turno del cliente.
-    const crmContext = await crmContextFor(org, conv.contactId);
+    // Contexto del CRM (etapa, cotización y, desde la parte 1, el Detalle ya guardado)
+    // en el último turno del cliente.
+    const crmContext = [await crmContextFor(org, conv.contactId), await detalleContextFor(org, conv.contactId)].filter(Boolean).join("\n");
     // Un modelo sin lectura de PDF (p. ej. Qwen) recibe el PDF como nota de texto.
     const modelMessages = buildModelMessages(history, await mediaUrlsFor(history, deps.resolveImage), {
       cleanText,
@@ -560,6 +562,19 @@ export async function runAgent(job: { organizationId: string; conversationId: st
     if (!text.trim()) {
       const sending = await runsThatSend(org, plan.runs.map((r) => r.workflowId));
       if (!plan.runs.some((r) => sending.has(r.workflowId))) text = fallbackTextFor(plan);
+    }
+    // Parte 1: el Detalle del contacto con lo que dijo el cliente (misma llamada, nunca
+    // frena la respuesta; lo del vendedor no se toca).
+    const detalle = mergeDetalle(toolCalls);
+    if (detalle) {
+      try {
+        const r = await applyDetalleByAgent(org, conv.contactId, detalle);
+        if (r.llenados.length || r.delVendedor.length) {
+          console.info(`[agente] ${conv.id}: detalle → ${r.llenados.join(", ") || "sin cambios"}${r.delVendedor.length ? ` (no se tocó, es del vendedor: ${r.delVendedor.join(", ")})` : ""}`);
+        }
+      } catch (error) {
+        console.error(`[agente] ${conv.id}: el Detalle del contacto no se pudo actualizar`, error);
+      }
     }
     // Avisos, comprobante, cotización y etapa ANTES de enviar (idempotentes por el
     // entrante): nunca se le dice al cliente "un asesor te atiende" o "pago recibido"
