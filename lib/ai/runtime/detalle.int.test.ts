@@ -129,6 +129,10 @@ describe.skipIf(!TEST_DATABASE_URL)("Detalle del contacto llenado por el Agente 
     dt = await details();
     expect(dt.numEntradas).toBe(2);
     expect(dt.entradas.map((e) => e.anchoCm)).toEqual([81, 86]);
+    // La marca de la entrada borrada se va con ella: si vuelve a crearse vacía, sin "IA".
+    expect(dt.iaFields.filter((k) => k.startsWith("entrada_3_"))).toEqual([]);
+    await q.setNumEntradas(db, ORG, CONTACT, 3, POR_VENDEDOR);
+    expect((await details()).iaFields).not.toContain("entrada_3_ancho");
   });
 
   it("el agente corrige lo SUYO cuando el cliente lo cambia (p. ej. el % conforme avanza la conversación, o 2 entradas en vez de 3)", async () => {

@@ -51,15 +51,8 @@ const qualificationPatchSchema = z
     ).optional(),
     nivelAguaTexto: z.string().max(500, "La descripción del nivel no puede pasar de 500 caracteres.").nullable().optional(),
     montoCotizacion: moneySchema.optional(),
-    porcentajeConvencimiento: nullableInteger(
-      0,
-      100,
-      "El porcentaje debe ser un entero entre 0 y 100.",
-    )
-      .refine((value) => value === null || value % 10 === 0, {
-        message: "El porcentaje debe ser múltiplo de 10.",
-      })
-      .optional(),
+    // Sin porcentajeConvencimiento: desde el 26-sep-2026 lo decide SOLO el Agente IA
+    // (decisión del dueño); un vendedor ya no lo cambia ni desde una pestaña vieja.
   })
   .refine((patch) => Object.keys(patch).length > 0, {
     message: "Indica al menos un campo para actualizar.",
