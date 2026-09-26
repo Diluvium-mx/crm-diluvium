@@ -4,7 +4,9 @@
 // 25-sep-2026). Cualquier miembro de la organización (el vendedor de esa
 // conversación) los usa. "Reintentar": un intento más, ya, sobre lo que el cliente
 // dejó sin respuesta (si mientras tanto contestó un vendedor o se pausó, no hace
-// nada). "Apagar": pausa al agente solo en esa conversación; "Reactivar" lo regresa.
+// nada); si lo que falló fue el ENVÍO, se reenvía la respuesta guardada, sin volver a
+// llamar al modelo (parte 1, 26-sep-2026). "Apagar": pausa al agente solo en esa
+// conversación y descarta la respuesta guardada; "Reactivar" lo regresa.
 // Un doble clic no reintenta dos veces (resolveAgentError atiende la tarjeta una vez).
 import { revalidatePath } from "next/cache";
 import { ZodError } from "zod";
@@ -14,6 +16,7 @@ import type { AgentActionResult } from "@/lib/agente-ia/types";
 import { openAgentErrorConversation, reopenAgentError, resolveAgentError } from "@/lib/ai/runtime/agent-error";
 import { bullAgentQueuePort, cancelAgentRun, redisKvPort, scheduleAgentRun, withQueueTimeout } from "@/lib/ai/runtime/queue";
 import { setAgentState } from "@/lib/ai/runtime/state";
+import { discardSavedReplies } from "@/lib/ai/runtime/saved-reply";
 
 const YA_ATENDIDA = "Esta tarjeta ya se atendió.";
 
@@ -48,6 +51,8 @@ export async function pauseAgentAfterError(input: { noticeId: string }): Promise
     // PRIMERO la pausa (la misma que cuando un vendedor contesta; se reactiva con
     // "Reactivar") y DESPUÉS la tarjeta: nunca "Se apagó" con el agente todavía activo.
     await setAgentState(organizationId, conversationId, "pausado_humano", { now: new Date() });
+    // Una respuesta guardada cuyo envío falló (parte 1) ya no sale.
+    await discardSavedReplies(organizationId, conversationId);
     await withQueueTimeout(cancelAgentRun(bullAgentQueuePort(), conversationId), "apagar").catch(() => false);
     await resolveAgentError({ organizationId, noticeId, resolution: "apagar", userId });
     revalidatePath("/dashboard");

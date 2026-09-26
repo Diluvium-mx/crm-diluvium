@@ -89,36 +89,47 @@ export function agentErrorBody(info: ModelErrorInfo, modelLabel: string, retried
   return `El agente no pudo responder (${modelLabel}). ${info.resumen}${retried ? " Ya se reintentó una vez." : ""} El cliente sigue sin respuesta: elige "Reintentar" o "Apagar".`;
 }
 
-// ── Falla al ENVIAR la respuesta por WhatsApp (Fase E, 25-sep-2026) ─────────────
-// El modelo sí contestó, pero el primer mensaje no salió porque lo rechazaron de forma
-// DEFINITIVA: el CRM (ventana de 24 h cerrada, canal apagado, conversación sin enlazar,
-// texto inválido) o WhatsApp/Zernio (rechazo explícito). Antes la cola reintentaba 3
+// ── Falla al ENVIAR la respuesta por WhatsApp (Fase E, 25-sep; parte 1, 26-sep-2026) ───
+// El modelo sí contestó, pero el primer mensaje no salió. Antes la cola reintentaba 3
 // veces (y el barrido hasta 5): cada intento pagaba OTRA llamada al modelo y dejaba otra
-// burbuja fallida con distinto texto, y el cliente seguía sin respuesta. Ahora: tarjeta
-// con el motivo y "Reintentar"/"Apagar", como un error del modelo. Un resultado
-// DUDOSO (timeout, 5xx) no llega aquí: queda "pendiente" y el outbox lo concilia sin
-// reenviar. Devuelve null si no es un rechazo definitivo (p. ej. la BD falló: la cola
-// reintenta como siempre, nada salió).
+// burbuja fallida con distinto texto. Desde la parte 1 CUALQUIER falla del 1er mensaje
+// deja la respuesta GUARDADA (lib/ai/runtime/saved-reply.ts) y la tarjeta con el motivo
+// y "Reintentar" (reenvía el MISMO texto, sin volver a llamar al modelo) / "Apagar".
+// Un resultado DUDOSO (timeout, 5xx) no llega aquí: queda "pendiente" y el outbox lo
+// concilia sin reenviar.
 const SEND_REJECTED_TEXT: Record<string, string> = {
   window_closed: "La ventana de 24 h de WhatsApp ya cerró: solo se puede mandar una plantilla.",
   channel_unavailable: "El canal de WhatsApp de esta conversación no está disponible.",
   not_linked: "La conversación aún no está enlazada con el proveedor de WhatsApp.",
   empty: "La respuesta del agente no es válida para WhatsApp (vacía o demasiado larga).",
   not_found: "La conversación ya no existe.",
+  not_retryable: "WhatsApp no confirmó si la respuesta le llegó al cliente: revísalo en el celular antes de reintentar (podría llegarle dos veces).",
 };
 
+// Motivo en palabras simples de un rechazo CONOCIDO, o null. Por FORMA y no por nombre:
+// el rechazo real de Zernio llega como ZernioSendError (subclase de SendFailedError) y,
+// clasificado solo por nombre, caía como "no clasificado" y relanzaba el job (el 400 de
+// la simulación de Anuncios del 24-sep: 3 respuestas distintas).
 export function classifySendError(error: unknown): string | null {
   const e = asObj(error);
   const name = str(e.name);
   const code = str((e as { code?: unknown }).code);
   if (name === "SendRejectedError") return SEND_REJECTED_TEXT[code] ?? `El CRM no pudo enviar el mensaje (${detalle(e) || code}).`;
-  if (name === "SendFailedError" && (e as { outcome?: unknown }).outcome === "rejected") {
+  if ((e as { outcome?: unknown }).outcome === "rejected") {
     const d = detalle(e);
     return `WhatsApp rechazó el mensaje${d ? ` (${d})` : ""}.`;
   }
   return null;
 }
 
+// Cualquier otra falla del envío (la BD, un error raro del proveedor): mismo trato.
+export function sendErrorMotive(error: unknown): string {
+  const known = classifySendError(error);
+  if (known) return known;
+  const d = detalle(asObj(error));
+  return `Error inesperado al enviar${d ? `: ${d}` : ""}.`;
+}
+
 export function sendErrorBody(motivo: string): string {
-  return `El agente no pudo enviar su respuesta por WhatsApp. ${motivo} El cliente sigue sin respuesta: elige "Reintentar" o "Apagar".`;
+  return `El agente no pudo enviar su respuesta por WhatsApp. ${motivo} La respuesta quedó guardada y el cliente sigue sin ella: "Reintentar" le manda ese mismo texto; "Apagar" la descarta y apaga al agente en esta conversación.`;
 }

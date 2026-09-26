@@ -5,7 +5,7 @@ import { DelayedError, Worker } from "bullmq";
 import { callModel } from "@/lib/ai";
 import { redisConnection } from "@/lib/queue/inbound";
 import type { MessagingProvider } from "@/lib/messaging/provider";
-import { sendTextMessage } from "@/lib/messaging/send";
+import { sendAgentText } from "@/lib/messaging/send";
 import { startWorkflowRun } from "@/lib/workflows/executor";
 import type { ObjectStorage } from "@/lib/storage/s3";
 import { processAgentJob } from "./process";
@@ -42,8 +42,9 @@ export function makeRunDeps(provider: MessagingProvider, storage: ObjectStorage 
   return {
     now: () => new Date(),
     callModel,
-    sendBubble: ({ organizationId, conversationId, text }) =>
-      sendTextMessage(provider, { organizationId, conversationId, text, source: "ai_agent", sentByUserId: null }),
+    // Id determinista por burbuja: "Reintentar" reenvía la misma fila sin duplicar.
+    sendBubble: ({ organizationId, conversationId, text, messageId }) =>
+      sendAgentText(provider, { organizationId, conversationId, text, messageId }),
     sleep: (ms) => new Promise((r) => setTimeout(r, ms)),
     resolveImage: async (key) => (storage ? storage.signedGetUrl(key, 15 * 60) : null),
     // Acciones del cerebro (Fase D): corridas de workflow con trigger "agent".

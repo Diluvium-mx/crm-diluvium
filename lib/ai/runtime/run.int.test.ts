@@ -136,6 +136,30 @@ describe.skipIf(!TEST_DATABASE_URL)("runtime del Agente IA (Postgres real)", () 
     onSleep?: () => Promise<void>; // efecto durante la pausa entre burbujas
   };
 
+  // Zernio de mentira CON su clave de idempotencia: la misma clave tras un 2xx devuelve
+  // la respuesta guardada sin volver a mandar (así lo documenta Zernio, 24 h). `delivered`
+  // = lo que de verdad le llegó al cliente. `failures[n]` = error que lanza el envío n.
+  function fakeZernio(failures: (unknown | null)[] = []) {
+    const delivered: string[] = [];
+    const accepted = new Map<string, { providerInternalId: string; providerMessageId: string }>();
+    let calls = 0;
+    const provider = {
+      name: "zernio",
+      sendText: async ({ text, idempotencyKey }: { text: string; idempotencyKey: string }) => {
+        calls++;
+        const prev = accepted.get(idempotencyKey);
+        if (prev) return prev;
+        const err = failures[calls - 1];
+        if (err) throw err;
+        const res = { providerInternalId: `z_${crypto.randomUUID()}`, providerMessageId: `wamid.out.${crypto.randomUUID()}` };
+        accepted.set(idempotencyKey, res);
+        delivered.push(text);
+        return res;
+      },
+    } as unknown as import("@/lib/messaging/provider").MessagingProvider;
+    return { provider, delivered, calls: () => calls };
+  }
+
   function fakeModels(script: Script) {
     const calls: { kind: "filtro" | "cerebro"; modelId: string; input: CallModelInput }[] = [];
     let brainCalls = 0;
@@ -170,18 +194,15 @@ describe.skipIf(!TEST_DATABASE_URL)("runtime del Agente IA (Postgres real)", () 
     return { calls, callModel };
   }
 
-  function makeDeps(script: Script = {}) {
+  function makeDeps(script: Script = {}, zernio = fakeZernio()) {
     const models = fakeModels(script);
     const sleeps: number[] = [];
     const images: string[] = [];
-    const provider = {
-      name: "zernio",
-      sendText: async () => ({ providerInternalId: `z_${crypto.randomUUID()}`, providerMessageId: `wamid.out.${crypto.randomUUID()}` }),
-    } as unknown as import("@/lib/messaging/provider").MessagingProvider;
     const deps: import("./run").RunDeps = {
       now: () => new Date(),
       callModel: models.callModel,
-      sendBubble: (p) => send.sendTextMessage(provider, { ...p, source: "ai_agent", sentByUserId: null }),
+      // Igual que el worker: id determinista por burbuja (sendAgentText).
+      sendBubble: (p) => send.sendAgentText(zernio.provider, p),
       sleep: async (ms) => {
         sleeps.push(ms);
         if (script.onSleep) await script.onSleep();
@@ -488,10 +509,15 @@ describe.skipIf(!TEST_DATABASE_URL)("runtime del Agente IA (Postgres real)", () 
     failing.deps.sendBubble = async () => {
       throw new Error("se cayó el proveedor");
     };
-    await expect(run.runAgent(JOB, failing.deps)).rejects.toThrow("se cayó el proveedor");
-    expect((await notices()).map((n) => n.kind)).toEqual(["cliente_pide_humano"]); // ya lo ve el vendedor
-    expect(await run.runAgent(JOB, makeDeps(script).deps)).toEqual({ kind: "sent", bubbles: 1 });
-    expect((await notices()).map((n) => n.kind)).toEqual(["cliente_pide_humano"]); // sin duplicar
+    // Parte 1: sin relanzar; la respuesta queda guardada y sale la tarjeta.
+    expect(await run.runAgent(JOB, failing.deps)).toEqual({ kind: "failed", reason: "envio_fallido" });
+    expect((await notices()).map((n) => n.kind)).toEqual(["cliente_pide_humano", "agente_error"]); // ya lo ve el vendedor
+    const card = (await notices()).find((n) => n.kind === "agente_error")!;
+    await agentError.resolveAgentError({ organizationId: ORG, noticeId: card.id, resolution: "reintentar", userId: "u_vendedor" });
+    const retry = makeDeps(script);
+    expect(await run.runAgent(JOB, retry.deps)).toEqual({ kind: "sent", bubbles: 1 });
+    expect(retry.calls).toHaveLength(0); // el MISMO texto, sin llamar al modelo
+    expect((await notices()).filter((n) => n.kind === "cliente_pide_humano")).toHaveLength(1); // sin duplicar
   });
 
   it("anuncio con SOLO metadata y Luna caída: el cerebro nunca recibe la metadata", async () => {
@@ -784,7 +810,8 @@ describe.skipIf(!TEST_DATABASE_URL)("runtime del Agente IA (Postgres real)", () 
       return { status: "pending" as const };
     };
     expect(await run.runAgent(JOB, deps)).toEqual({ kind: "sent", bubbles: 1 });
-    expect(await db.select().from(s.aiAgentDrafts)).toEqual([]); // una burbuja: sin plan
+    // Parte 1: también una sola burbuja deja su plan (guardada por si el envío falla).
+    expect((await db.select().from(s.aiAgentDrafts)).map((d) => d.status)).toEqual(["enviado"]);
     // En camino: sin aviso, y el agente no responde encima de un envío sin resolver.
     expect(await sweep.noticeFailedAgentSends(new Date())).toBe(0);
     await msg({ direction: "in", body: "¿hola?", at: new Date(Date.now() + 1_000) });
@@ -849,15 +876,34 @@ describe.skipIf(!TEST_DATABASE_URL)("runtime del Agente IA (Postgres real)", () 
     expect((await conv()).agentState).toBe("activo");
   });
 
-  it("AUTO: si falla la 1ª burbuja, el plan queda obsoleto y el reintento de la cola sí responde", async () => {
+  it("AUTO: si falla la 1ª burbuja, la respuesta queda GUARDADA; ni la cola ni el barrido llaman al modelo y \"Reintentar\" manda el MISMO texto", async () => {
     await msg({ direction: "in", body: "¿precio?", at: ago(10_000) });
-    const { deps } = makeDeps();
+    const { deps, calls } = makeDeps();
     deps.sendBubble = async () => {
       throw new Error("se cayó el proveedor");
     };
-    await expect(run.runAgent(JOB, deps)).rejects.toThrow("se cayó el proveedor");
-    expect((await db.select().from(s.aiAgentDrafts))[0].status).toBe("obsoleto");
-    expect(await run.runAgent(JOB, makeDeps().deps)).toEqual({ kind: "sent", bubbles: 2 });
+    expect(await run.runAgent(JOB, deps)).toEqual({ kind: "failed", reason: "envio_fallido" });
+    expect(calls.filter((c) => c.kind === "cerebro")).toHaveLength(1);
+    const [plan] = await db.select().from(s.aiAgentDrafts);
+    expect(plan).toMatchObject({ status: "pendiente", bubbles: ["Claro, cuesta $5,500 MXN.", "¿Cuánto mide tu entrada?"] });
+    const card = (await notices()).find((n) => n.kind === "agente_error")!;
+    expect(card.body).toContain("Error inesperado al enviar: se cayó el proveedor.");
+    expect(card.body).toContain("La respuesta quedó guardada");
+    // Mientras nadie elija: ni el barrido ni otra corrida (ni un mensaje nuevo) llaman al modelo.
+    expect(await sweep.findOrphanConversations(new Date())).toEqual([]);
+    const blocked = makeDeps();
+    expect(await run.runAgent(JOB, blocked.deps)).toEqual({ kind: "skipped", reason: "error_sin_atender" });
+    expect(blocked.calls).toHaveLength(0);
+    // "Reintentar": el mismo texto, sin modelo.
+    await agentError.resolveAgentError({ organizationId: ORG, noticeId: card.id, resolution: "reintentar", userId: "u_vendedor" });
+    const z = fakeZernio();
+    const retry = makeDeps({ brain: ["OTRO TEXTO QUE NO DEBE SALIR"] }, z);
+    expect(await run.runAgent(JOB, retry.deps)).toEqual({ kind: "sent", bubbles: 2 });
+    expect(retry.calls).toHaveLength(0);
+    expect(z.delivered).toEqual(["Claro, cuesta $5,500 MXN.", "¿Cuánto mide tu entrada?"]);
+    expect((await db.select().from(s.aiAgentDrafts))[0].status).toBe("enviado");
+    // Ya atendido: otra corrida no hace nada.
+    expect((await run.runAgent(JOB, makeDeps().deps)).kind).toBe("noop");
   });
 
   it("barrido (reinicio del worker): un plan interrumpido a la mitad queda 'enviado' y lo que faltó en un AVISO", async () => {
@@ -1025,7 +1071,7 @@ describe.skipIf(!TEST_DATABASE_URL)("runtime del Agente IA (Postgres real)", () 
     expect(await run.runAgent(JOB, makeDeps({ brain: [text] }).deps)).toEqual({ kind: "sent", bubbles: 1 });
     expect((await agentOuts()).map((m) => m.body)).toEqual([text]);
     expect(await notices()).toEqual([]);
-    expect(await db.select().from(s.aiAgentDrafts)).toEqual([]);
+    expect((await db.select().from(s.aiAgentDrafts)).map((d) => d.status)).toEqual(["enviado"]);
     expect((await conv()).agentState).toBe("activo");
   });
 
@@ -1139,10 +1185,14 @@ describe.skipIf(!TEST_DATABASE_URL)("runtime del Agente IA (Postgres real)", () 
     failing.deps.sendBubble = async () => {
       throw new Error("se cayó el proveedor");
     };
-    await expect(run.runAgent(JOB, failing.deps)).rejects.toThrow("se cayó el proveedor");
-    expect((await notices()).map((n) => n.kind)).toEqual(["cotejar_deposito"]); // el vendedor ya lo ve
-    expect(await run.runAgent(JOB, makeDeps(script).deps)).toEqual({ kind: "sent", bubbles: 1 });
-    const ns = await notices();
+    expect(await run.runAgent(JOB, failing.deps)).toEqual({ kind: "failed", reason: "envio_fallido" });
+    expect((await notices()).map((n) => n.kind)).toEqual(["cotejar_deposito", "agente_error"]); // el vendedor ya lo ve
+    const card = (await notices()).find((n) => n.kind === "agente_error")!;
+    await agentError.resolveAgentError({ organizationId: ORG, noticeId: card.id, resolution: "reintentar", userId: "u_vendedor" });
+    const retry = makeDeps(script);
+    expect(await run.runAgent(JOB, retry.deps)).toEqual({ kind: "sent", bubbles: 1 });
+    expect(retry.calls).toHaveLength(0);
+    const ns = (await notices()).filter((n) => n.kind !== "agente_error");
     expect(ns.map((n) => n.kind)).toEqual(["cotejar_deposito"]);
     // Fase E: aunque el modelo mande monto y folio (Goal viejo), el aviso no los muestra y no se registran.
     expect(ns[0].body).toBe(actions.DEPOSITO_RECIBIDO_BODY);
@@ -1427,12 +1477,173 @@ describe.skipIf(!TEST_DATABASE_URL)("runtime del Agente IA (Postgres real)", () 
     failing.deps.sendBubble = async () => {
       throw new SendRejectedError("window_closed", "La ventana de 24 h está cerrada");
     };
-    expect(await run.runAgent(JOB, failing.deps)).toEqual({ kind: "failed", reason: "envio_rechazado" });
+    expect(await run.runAgent(JOB, failing.deps)).toEqual({ kind: "failed", reason: "envio_fallido" });
     const [card] = (await notices()).filter((n) => n.kind === "agente_error");
     expect(card.body).toContain("La ventana de 24 h de WhatsApp ya cerró");
     // Mientras nadie elija, no se vuelve a llamar al modelo.
     const again = makeDeps();
     expect(await run.runAgent(JOB, again.deps)).toEqual({ kind: "skipped", reason: "error_sin_atender" });
     expect(again.calls).toHaveLength(0);
+  });
+  // ── Parte 1 (26-sep-2026), C: un error de ENVÍO nunca vuelve a llamar al modelo ──
+  // Un error simulado de cada tipo. En todos: la respuesta se genera UNA vez, queda
+  // guardada, la tarjeta es la misma "Reintentar / Apagar" y "Reintentar" manda el MISMO
+  // texto (con la misma clave de idempotencia: nunca dos veces al cliente).
+
+  async function openCard() {
+    const card = (await notices()).find((n) => n.kind === "agente_error" && n.resolvedAt === null);
+    return card ?? null;
+  }
+  async function retryCard() {
+    const card = (await openCard())!;
+    await agentError.resolveAgentError({ organizationId: ORG, noticeId: card.id, resolution: "reintentar", userId: "u_vendedor" });
+    return card;
+  }
+  const brainCalls = (calls: { kind: string }[]) => calls.filter((c) => c.kind === "cerebro").length;
+
+  it("C · rechazo del CRM (la ventana de 24 h cerró durante la generación): tarjeta; \"Reintentar\" con la ventana abierta manda el MISMO texto y luego contesta lo nuevo", async () => {
+    await msg({ direction: "in", body: "¿precio?", at: ago(20_000) });
+    const first = makeDeps({
+      brain: ["Cuesta $5,500 MXN."],
+      onBrain: async () => {
+        await db.update(s.conversations).set({ windowExpiresAt: ago(1_000) }).where(eq(s.conversations.id, CONV));
+      },
+    });
+    expect(await run.runAgent(JOB, first.deps)).toEqual({ kind: "failed", reason: "envio_fallido" });
+    expect((await openCard())!.body).toContain("La ventana de 24 h de WhatsApp ya cerró");
+    expect((await db.select().from(s.aiAgentDrafts))[0].status).toBe("pendiente");
+    // El cliente vuelve a escribir (la ventana se reabre) mientras la tarjeta espera.
+    await db.update(s.conversations).set({ windowExpiresAt: new Date(Date.now() + 23 * 3_600_000) }).where(eq(s.conversations.id, CONV));
+    await msg({ direction: "in", body: "¿y hacen envíos a Culiacán?", at: new Date(Date.now() + 1_000) });
+    const stillBlocked = makeDeps();
+    expect(await run.runAgent(JOB, stillBlocked.deps)).toEqual({ kind: "skipped", reason: "error_sin_atender" });
+    expect(stillBlocked.calls).toHaveLength(0);
+    await retryCard();
+    const z = fakeZernio();
+    const retry = makeDeps({ brain: ["Sí, enviamos a todo México."] }, z);
+    expect(await run.runAgent(JOB, retry.deps)).toEqual({ kind: "sent", bubbles: 1 });
+    // Primero la respuesta guardada (sin modelo) y después UNA llamada para lo nuevo.
+    expect(z.delivered).toEqual(["Cuesta $5,500 MXN.", "Sí, enviamos a todo México."]);
+    expect(brainCalls(retry.calls)).toBe(1);
+    expect(JSON.stringify(retry.calls[0].input.messages.at(-1)!.content)).toContain("Culiacán");
+    expect(await openCard()).toBeNull();
+  });
+
+  it("C · WhatsApp/Zernio rechaza (400, ZernioSendError): se clasifica; \"Reintentar\" reenvía la MISMA fila y el cliente recibe UN mensaje", async () => {
+    const { ZernioSendError } = await import("@/lib/messaging/zernio");
+    await msg({ direction: "in", body: "hola", at: ago(20_000) });
+    const z = fakeZernio([new ZernioSendError(400, "131047", "Re-engagement message", "rejected")]);
+    const first = makeDeps({ brain: ["¡Hola! ¿En qué te ayudo?"] }, z);
+    expect(await run.runAgent(JOB, first.deps)).toEqual({ kind: "failed", reason: "envio_fallido" });
+    expect((await openCard())!.body).toContain("WhatsApp rechazó el mensaje (Re-engagement message).");
+    const [failedRow] = await agentOuts();
+    expect(failedRow).toMatchObject({ status: "failed", errorCode: "131047" });
+    // Antes: la cola relanzaba 3 veces con 3 textos distintos. Ahora: nada solo.
+    expect(await sweep.findOrphanConversations(new Date())).toEqual([]);
+    await retryCard();
+    const retry = makeDeps({ brain: ["NO DEBE SALIR"] }, z);
+    expect(await run.runAgent(JOB, retry.deps)).toEqual({ kind: "sent", bubbles: 1 });
+    expect(retry.calls).toHaveLength(0);
+    expect(z.delivered).toEqual(["¡Hola! ¿En qué te ayudo?"]);
+    const outs = await agentOuts();
+    expect(outs).toHaveLength(1); // la misma fila, ya enviada (sin burbujas fallidas repetidas)
+    expect(outs[0]).toMatchObject({ id: failedRow.id, status: "sent", errorCode: null });
+    expect(brainCalls(first.calls) + brainCalls(retry.calls)).toBe(1);
+  });
+
+  it("C · error NO clasificado después de que Zernio lo aceptó (se cae la BD al enlazar): tarjeta; \"Reintentar\" no duplica lo que ya salió", async () => {
+    await msg({ direction: "in", body: "¿precio?", at: ago(20_000) });
+    const z = fakeZernio();
+    const first = makeDeps({}, z);
+    const real = first.deps.sendBubble;
+    first.deps.sendBubble = async (p) => {
+      await real(p); // Zernio lo aceptó y le llegó al cliente…
+      throw new Error("Connection terminated unexpectedly"); // …y algo falló después
+    };
+    expect(await run.runAgent(JOB, first.deps)).toEqual({ kind: "failed", reason: "envio_fallido" });
+    expect((await openCard())!.body).toContain("Error inesperado al enviar: Connection terminated unexpectedly.");
+    expect(z.delivered).toEqual(["Claro, cuesta $5,500 MXN."]);
+    await retryCard();
+    const retry = makeDeps({ brain: ["NO DEBE SALIR"] }, z);
+    expect(await run.runAgent(JOB, retry.deps)).toEqual({ kind: "sent", bubbles: 2 });
+    expect(retry.calls).toHaveLength(0);
+    // La 1ª ya había salido (no se repite); sale solo la que faltaba.
+    expect(z.delivered).toEqual(["Claro, cuesta $5,500 MXN.", "¿Cuánto mide tu entrada?"]);
+  });
+
+  it("C · Zernio aceptó pero la fila quedó sin enlazar (queued): \"Reintentar\" usa la MISMA clave y Zernio devuelve la respuesta guardada, sin duplicar", async () => {
+    await msg({ direction: "in", body: "¿precio?", at: ago(20_000) });
+    const z = fakeZernio();
+    const first = makeDeps({ brain: ["Cuesta $5,500 MXN."] }, z);
+    first.deps.sendBubble = async (p) => {
+      // Zernio recibe el mensaje con la clave = id de la fila, pero el CRM se cae antes de enlazarlo.
+      await db.insert(s.messages).values({ id: p.messageId, organizationId: ORG, conversationId: CONV, direction: "out", source: "ai_agent", type: "text", body: p.text, status: "queued", sentAt: new Date() });
+      await z.provider.sendText({ providerAccountId: "zacc_rt", providerConversationId: "zconv_rt", text: p.text, idempotencyKey: p.messageId });
+      throw new Error("se reinició el proceso");
+    };
+    expect(await run.runAgent(JOB, first.deps)).toEqual({ kind: "failed", reason: "envio_fallido" });
+    await retryCard();
+    // La fila "queued" bloquea al agente como "envío en camino" hasta que se aclare; aquí
+    // se simula el caso que llega a "Reintentar": el barrido aún no la venció.
+    const retry = makeDeps({ brain: ["NO DEBE SALIR"] }, z);
+    const r = await run.runAgent(JOB, retry.deps);
+    expect(retry.calls).toHaveLength(0);
+    expect(z.delivered).toEqual(["Cuesta $5,500 MXN."]); // una sola vez al cliente
+    if (r.kind === "sent") expect((await agentOuts())[0]).toMatchObject({ status: "sent" });
+    else expect(r).toEqual({ kind: "skipped", reason: "envio_sin_confirmar" });
+  });
+
+  it("C · resultado AMBIGUO (Zernio 503 / sin respuesta): queda pendiente de confirmar, sin tarjeta y sin volver a generar", async () => {
+    const { ZernioSendError } = await import("@/lib/messaging/zernio");
+    await msg({ direction: "in", body: "hola", at: ago(20_000) });
+    const z = fakeZernio([new ZernioSendError(503, "503", "Service Unavailable")]);
+    const first = makeDeps({ brain: ["¡Hola!"] }, z);
+    expect(await run.runAgent(JOB, first.deps)).toEqual({ kind: "sent", bubbles: 1 });
+    expect(await openCard()).toBeNull();
+    const again = makeDeps();
+    expect((await run.runAgent(JOB, again.deps)).kind).not.toBe("sent");
+    expect(again.calls).toHaveLength(0);
+    expect(z.delivered).toEqual([]);
+  });
+
+  it("C · \"Reintentar\" que vuelve a fallar reabre la MISMA tarjeta y la respuesta sigue guardada; \"Apagar\" la descarta y tras \"Reactivar\" ya no sale", async () => {
+    const { ZernioSendError } = await import("@/lib/messaging/zernio");
+    await msg({ direction: "in", body: "hola", at: ago(20_000) });
+    const z = fakeZernio([new ZernioSendError(400, "131026", "Message undeliverable", "rejected"), new ZernioSendError(400, "131026", "Message undeliverable", "rejected")]);
+    expect((await run.runAgent(JOB, makeDeps({ brain: ["¡Hola!"] }, z).deps)).kind).toBe("failed");
+    const card = await retryCard();
+    const retry = makeDeps({}, z);
+    expect(await run.runAgent(JOB, retry.deps)).toEqual({ kind: "failed", reason: "envio_fallido" });
+    expect(retry.calls).toHaveLength(0);
+    expect((await openCard())!.id).toBe(card.id); // la misma tarjeta, reabierta
+    expect((await db.select().from(s.aiAgentDrafts))[0].status).toBe("pendiente");
+    // "Apagar" (como lib/actions/agente-error.ts): pausa y descarta lo guardado.
+    const saved = await import("./saved-reply");
+    await state.setAgentState(ORG, CONV, "pausado_humano", { now: new Date() });
+    await saved.discardSavedReplies(ORG, CONV);
+    await agentError.resolveAgentError({ organizationId: ORG, noticeId: card.id, resolution: "apagar", userId: "u_vendedor" });
+    expect((await db.select().from(s.aiAgentDrafts))[0].status).toBe("descartado");
+    // "Reactivar" y el cliente escribe: se contesta lo nuevo; lo descartado nunca sale.
+    await state.setAgentState(ORG, CONV, "activo", { now: new Date(Date.now() + 1_000) });
+    await msg({ direction: "in", body: "¿siguen ahí?", at: new Date(Date.now() + 2_000) });
+    const z2 = fakeZernio();
+    expect(await run.runAgent(JOB, makeDeps({ brain: ["¡Aquí estamos!"] }, z2).deps)).toEqual({ kind: "sent", bubbles: 1 });
+    expect(z2.delivered).toEqual(["¡Aquí estamos!"]);
+  });
+
+  it("C · respuesta guardada ANTERIOR a \"Reactivar\" (el vendedor contestó a mano y reactivó): ya no sale", async () => {
+    await msg({ direction: "in", body: "hola", at: ago(60_000) });
+    const failing = makeDeps({ brain: ["VIEJA"] });
+    failing.deps.sendBubble = async () => {
+      throw new Error("falla");
+    };
+    await run.runAgent(JOB, failing.deps);
+    await msg({ direction: "out", body: "Hola, te atiendo yo", at: ago(30_000), source: "crm" });
+    await state.setAgentState(ORG, CONV, "activo", { now: new Date(Date.now() + 1_000) });
+    await msg({ direction: "in", body: "gracias, ¿y el precio?", at: new Date(Date.now() + 2_000) });
+    const z = fakeZernio();
+    expect(await run.runAgent(JOB, makeDeps({ brain: ["Cuesta $5,500."] }, z).deps)).toEqual({ kind: "sent", bubbles: 1 });
+    expect(z.delivered).toEqual(["Cuesta $5,500."]);
+    expect((await db.select().from(s.aiAgentDrafts)).map((d) => d.status).sort()).toEqual(["enviado", "obsoleto"]);
   });
 });

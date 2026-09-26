@@ -277,6 +277,10 @@ export const messages = pgTable(
     // dispara agente ni workflows, no suma no leídos, no abre ventana y no cuenta
     // como primera respuesta ni en el Dashboard (lib/messaging/history.ts).
     importedAt: timestamp("imported_at"),
+    // Transcripción de una nota de voz del CLIENTE (Agente IA parte 1, 26-sep-2026):
+    // la escribe el worker (lib/ai/transcription) y la leen el agente y el chat. El
+    // estado del intento (pendiente, lista, fallida, omitida) va en metadata.transcripcion.
+    transcripcion: text("transcripcion"),
     createdAt: timestamp("created_at").defaultNow().notNull(),
   },
   (table) => [

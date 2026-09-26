@@ -16,7 +16,7 @@ import type { CallModelInput, CallModelResult } from "@/lib/ai/types";
 import { getModel } from "@/lib/ai/catalog";
 import { modelAvailability, PROVIDER_META } from "@/lib/ai/provider";
 import { hasUnresolvedAgentError, recordAgentError, supersedeAgentErrors } from "./agent-error";
-import { agentErrorBody, classifyModelError, classifySendError, EMPTY_RESPONSE_INFO, sendErrorBody } from "./model-errors";
+import { agentErrorBody, classifyModelError, EMPTY_RESPONSE_INFO, sendErrorBody, sendErrorMotive } from "./model-errors";
 import { cleanAdMessages } from "./ad-cleaner";
 import { buildBrainSystemWithRuntime, parseBrainOutput } from "./brain";
 import { crmContextFor, executeActions, loadAgentTools, noteForVendor, prepareActions, runsThatSend, type ActionPhase, type ActionPlan, type StartWorkflow } from "./actions";
@@ -57,6 +57,7 @@ import { addNotice } from "./notices";
 import { decideGate, toBubbles } from "./policy";
 import { rescheduleDelayFor } from "./schedule";
 import { closePlan, markAgentReply, savePlan, setAgentState } from "./state";
+import { bubbleMessageId, claimSavedReply, discardSavedReplies, holdForRetry, inboundAfter, loadSavedReply, type SavedReply } from "./saved-reply";
 import { buildModelMessages, fitHistory } from "./transcript";
 import { recordAiUsage } from "./usage";
 
@@ -80,10 +81,12 @@ export const SATURATED_RETRY_MS = 10_000;
 export type RunDeps = {
   now: () => Date;
   callModel: (modelId: string, input: CallModelInput) => Promise<CallModelResult>;
-  // Envía UNA burbuja como el agente (source "ai_agent", sin usuario).
+  // Envía UNA burbuja como el agente (source "ai_agent", sin usuario) con el id
+  // DETERMINISTA del plan (fila de messages = Idempotency-Key; sendAgentText): un
+  // "Reintentar" de la respuesta guardada reenvía la MISMA fila sin duplicar.
   // Devuelve el resultado del proveedor: "pending" = no confirmado (timeout, 5xx); el
   // outbox lo concilia y, si vence sin confirmar, el barrido deja un aviso al vendedor.
-  sendBubble: (p: { organizationId: string; conversationId: string; text: string }) => Promise<{ status: "sent" | "pending" }>;
+  sendBubble: (p: { organizationId: string; conversationId: string; text: string; messageId: string }) => Promise<{ status: "sent" | "pending" }>;
   sleep: (ms: number) => Promise<void>;
   // URL firmada de una imagen del bucket (o null si no se puede).
   resolveImage: (storageKey: string) => Promise<string | null>;
@@ -155,7 +158,7 @@ async function stopBeforeBubble(
   organizationId: string,
   conversationId: string,
   humansAtCheck: number,
-  inboundsAtCheck: number,
+  inboundsAtCheck: number | null,
 ): Promise<StopReason | null> {
   const snap = await loadSnapshot(organizationId, conversationId);
   if (!snap || snap.channel.aiAgentMode !== "auto" || snap.conversation.agentState !== "activo") {
@@ -164,7 +167,9 @@ async function stopBeforeBubble(
   if ((await humanOutboundCount(organizationId, conversationId)) > humansAtCheck) return "respuesta_humana";
   // El cliente escribió después de lo que leyó el modelo: esta respuesta ya no
   // contesta lo último (y, si saliera, dejaría su mensaje como "atendido").
-  if ((await inboundCount(organizationId, conversationId)) > inboundsAtCheck) return "entrante_nuevo";
+  // (null = no se revisa: el reenvío de una respuesta guardada sale igual y luego
+  // se atiende lo nuevo con inboundAfter.)
+  if (inboundsAtCheck !== null && (await inboundCount(organizationId, conversationId)) > inboundsAtCheck) return "entrante_nuevo";
   return null;
 }
 
@@ -212,11 +217,97 @@ async function pauseForHuman(conversation: { id: string; organizationId: string 
   console.info(`[agente] ${conversation.id}: pausado_humano`);
 }
 
+// "Reintentar" de una respuesta GUARDADA (parte 1, 26-sep-2026): manda el MISMO texto
+// con los MISMOS ids de mensaje (sendAgentText decide qué burbuja ya salió), después
+// la media que iba tras el texto, y NUNCA llama al modelo. Si el cliente escribió
+// mientras la tarjeta esperaba, devuelve esos mensajes para atenderlos en otra ronda.
+type ResendOutcome = { kind: "done"; result: RunResult } | { kind: "newer"; newer: MessageRow[] };
+
+async function resendSavedReply(
+  saved: SavedReply,
+  ctx: { org: string; conversationId: string; contactId: string; fallbackTriggerId: string | null; deps: RunDeps },
+): Promise<ResendOutcome> {
+  const { org, conversationId, deps } = ctx;
+  const triggerId = saved.triggerMessageId ?? ctx.fallbackTriggerId;
+  // Sin entrante de referencia (se borró) no hay a qué ligar la tarjeta ni la media.
+  if (!triggerId) {
+    await discardSavedReplies(org, conversationId, "obsoleto");
+    return { kind: "done", result: { kind: "noop", reason: "respuesta_guardada_sin_entrante" } };
+  }
+  if (!(await claimSavedReply(org, saved.id))) return { kind: "done", result: { kind: "noop", reason: "reintento_en_curso" } };
+  const humansAtStart = await humanOutboundCount(org, conversationId);
+  let sent = 0;
+  let unconfirmed = 0;
+  let stopped: StopReason | null = null;
+  try {
+    for (const [i, text] of saved.bubbles.entries()) {
+      if (sent > 0) await deps.sleep(BUBBLE_PAUSE_MS);
+      stopped = await stopBeforeBubble(org, conversationId, humansAtStart, null);
+      if (stopped) break;
+      const outcome = await deps.sendBubble({ organizationId: org, conversationId, text, messageId: bubbleMessageId(saved.id, i) });
+      sent++;
+      if (outcome.status !== "sent") {
+        unconfirmed++;
+        break;
+      }
+    }
+  } catch (error) {
+    if (sent === 0) {
+      // Vuelve a quedar guardada y la tarjeta se reabre con el motivo nuevo.
+      await holdForRetry(org, saved.id);
+      await recordAgentError({ organizationId: org, conversationId, messageId: triggerId, body: sendErrorBody(sendErrorMotive(error)) });
+      console.warn(`[agente] ${conversationId}: el reenvío de la respuesta guardada falló (${errorText(error)}); tarjeta otra vez`);
+      return { kind: "done", result: { kind: "failed", reason: "envio_fallido" } };
+    }
+    await closePlan(org, saved.id, "enviado");
+    await markAgentReply(org, conversationId, deps.now());
+    await supersedeAgentErrors(org, conversationId);
+    await addNotice({
+      organizationId: org,
+      conversationId,
+      kind: "envio",
+      body: `Salieron ${sent} de ${saved.bubbles.length} mensajes de la respuesta guardada del agente y el siguiente falló. No se envió: «${saved.bubbles.slice(sent).join(" / ")}». Revisa el hilo.`,
+    });
+    return { kind: "done", result: { kind: "sent", bubbles: sent } };
+  }
+  if (stopped && sent === 0) {
+    // Un vendedor contestó, pausaron al agente o apagaron el canal: la respuesta guardada
+    // ya no sale (decidió una persona).
+    await closePlan(org, saved.id, "obsoleto");
+    if (stopped === "respuesta_humana") await pauseForHuman({ id: conversationId, organizationId: org }, deps.now());
+    return { kind: "done", result: { kind: "skipped", reason: stopped } };
+  }
+  await closePlan(org, saved.id, "enviado");
+  await markAgentReply(org, conversationId, deps.now());
+  await supersedeAgentErrors(org, conversationId);
+  if (stopped === "respuesta_humana") await pauseForHuman({ id: conversationId, organizationId: org }, deps.now());
+  const omitted = saved.bubbles.length - sent;
+  if (omitted > 0) {
+    await addNotice({
+      organizationId: org,
+      conversationId,
+      kind: "envio",
+      body: `${unconfirmed ? "WhatsApp no confirmó una parte de la respuesta guardada del agente." : "El reenvío de la respuesta guardada del agente se detuvo."} No se envió: «${saved.bubbles.slice(sent).join(" / ")}». Revisa el hilo.`,
+    });
+  }
+  console.info(`[agente] ${conversationId}: respuesta guardada reenviada (${sent} mensaje/s), sin llamar al modelo`);
+  if (stopped) return { kind: "done", result: { kind: "sent", bubbles: sent } };
+  // La media que iba después del texto (idempotente por el entrante de la respuesta).
+  const media: ActionPlan = { runs: saved.runs, quote: null, stage: null, avisos: [], notes: [] };
+  await runActions(media, { organizationId: org, conversationId, contactId: ctx.contactId, batchMessageId: triggerId, receiptMessageId: null, now: deps.now(), since: null }, deps.startWorkflow, "despues");
+  const newer = await inboundAfter(org, conversationId, triggerId);
+  if (newer.length) return { kind: "newer", newer };
+  return { kind: "done", result: { kind: "sent", bubbles: sent } };
+}
+
 // `job` viene de la cola interna: la organización acota TODAS las lecturas y
 // escrituras (una conversación de otra organización no se encuentra: noop).
 export async function runAgent(job: { organizationId: string; conversationId: string }, deps: RunDeps): Promise<RunResult> {
   const { organizationId: org, conversationId } = job;
   let saturatedRetryUsed = false; // Fase E: un solo reintento automático por corrida
+  // Parte 1 (26-sep): tras reenviar una respuesta guardada, lo que el cliente escribió
+  // DESPUÉS se atiende en la ronda siguiente (pendingInbound ya lo vería "contestado").
+  let forcedPending: MessageRow[] | null = null;
   for (let round = 1; round <= MAX_ROUNDS; round++) {
     const now = deps.now();
     const snap = await loadSnapshot(org, conversationId);
@@ -226,7 +317,8 @@ export async function runAgent(job: { organizationId: string; conversationId: st
     if (channel.aiAgentMode !== "auto") return { kind: "skipped", reason: "canal_off" };
     const cfg = await loadAgentConfig(org);
 
-    const pending = await pendingInbound(org, conv.id);
+    const pending = forcedPending ?? (await pendingInbound(org, conv.id));
+    forcedPending = null;
     const lastOut = await lastOutbound(org, conv.id);
     // Línea base de salientes HUMANOS al INICIO de la ronda (antes del modelo): un
     // envío manual que entre en cualquier momento después detiene el envío del agente.
@@ -238,12 +330,26 @@ export async function runAgent(job: { organizationId: string; conversationId: st
     // celular) y es posterior al último corte.
     const humanTookOver = isHumanReply(lastOut) && (cut === null || messageAt(lastOut!) > cut);
 
-    if (pending.length === 0) {
+    // Parte 1 (26-sep): ¿hay una respuesta GUARDADA cuyo envío falló? Solo cuenta si es
+    // posterior al último corte ("Reactivar", encender el canal): una vieja ya no sale.
+    // Se revisa ANTES que los pendientes: si su 1er mensaje sí llegó y el error fue
+    // después, el entrante ya se ve "contestado" y aun así falta el resto.
+    let saved: SavedReply | null = await loadSavedReply(org, conv.id);
+    if (saved && cut !== null && saved.createdAt <= cut) {
+      await discardSavedReplies(org, conv.id, "obsoleto");
+      saved = null;
+    }
+    if (pending.length === 0 && !saved) {
       if (humanTookOver && conv.agentState === "activo") await pauseForHuman(conv, now);
       return { kind: "noop", reason: "sin_pendientes" };
     }
-    const lastRead = pending[pending.length - 1];
-    if (await alreadyHandled(org, lastRead.id)) return { kind: "noop", reason: "ya_atendido" };
+    const lastRead = pending.at(-1) ?? null;
+    // Con respuesta guardada, su entrante cuenta como "atendido" (el plan existe): igual
+    // se sigue para reenviarla.
+    if (!saved && lastRead && (await alreadyHandled(org, lastRead.id))) return { kind: "noop", reason: "ya_atendido" };
+    // Las burbujas de la respuesta guardada no cuentan como "envío en camino": el
+    // reenvío las retoma con su misma clave (sendAgentText).
+    const savedIds = saved ? saved.bubbles.map((_, i) => bubbleMessageId(saved!.id, i)) : [];
 
     const gate = decideGate({
       channelMode: channel.aiAgentMode,
@@ -251,17 +357,25 @@ export async function runAgent(job: { organizationId: string; conversationId: st
       now: now.getTime(),
       windowExpiresAt: conv.windowExpiresAt?.getTime() ?? null,
       humanRepliedSincePending: humanTookOver,
-      agentSendUnresolved: await agentSendUnresolved(org, conv.id),
+      agentSendUnresolved: await agentSendUnresolved(org, conv.id, savedIds),
     });
     if (gate.action === "skip") {
       if (gate.pauseTo) await pauseForHuman(conv, now);
       return { kind: "skipped", reason: gate.reason };
     }
-    if (!cfg.goal) return { kind: "skipped", reason: "sin_goal" };
     // Fase E ("reenvío seguro"): con una tarjeta de error sin atender, el agente no
     // vuelve a llamar al modelo en esta conversación (ni por mensajes nuevos) hasta
     // que un vendedor elija "Reintentar" o "Apagar".
     if (await hasUnresolvedAgentError(org, conv.id)) return { kind: "skipped", reason: "error_sin_atender" };
+    if (saved) {
+      // "Reintentar" tras una falla de ENVÍO: sale el MISMO texto, sin llamar al modelo.
+      const r = await resendSavedReply(saved, { org, conversationId: conv.id, contactId: conv.contactId, fallbackTriggerId: lastRead?.id ?? null, deps });
+      if (r.kind === "done") return r.result;
+      forcedPending = r.newer;
+      continue;
+    }
+    if (!cfg.goal) return { kind: "skipped", reason: "sin_goal" };
+    if (!lastRead) return { kind: "noop", reason: "sin_pendientes" };
 
     const readCount = await inboundCount(org, conv.id);
     // TODA la conversación; si algún día no cabe en el modelo, lo más reciente.
@@ -457,14 +571,15 @@ export async function runAgent(job: { organizationId: string; conversationId: st
     // Mensajes con pausa corta. Antes de CADA uno se revisa el estado fresco: si un
     // vendedor respondió (desde el INICIO de la ronda), alguien apagó el canal o
     // pausó al agente, o el cliente escribió, el agente se detiene ahí.
-    // Con varios mensajes, antes del primero se guarda un PLAN durable con todos
-    // ("enviando"): si el worker se reinicia a la mitad, el barrido lo concilia.
+    // Antes del primero se guarda un PLAN durable con todos ("enviando"): si el worker
+    // se reinicia a la mitad, el barrido lo concilia; si el 1er mensaje falla, queda
+    // GUARDADO para "Reintentar" (parte 1, 26-sep: nunca otra llamada al modelo).
     let sent = 0;
     let unconfirmed = 0;
     let stopped: StopReason | null = null;
     const planId =
-      bubbles.length > 1
-        ? await savePlan({ organizationId: org, conversationId: conv.id, bubbles, triggerMessageId: lastRead.id, now: deps.now() })
+      bubbles.length > 0
+        ? await savePlan({ organizationId: org, conversationId: conv.id, bubbles, runs: plan.runs, triggerMessageId: lastRead.id, now: deps.now() })
         : null;
     // Lo que no alcanzó a salir no se reenvía solo (podría duplicar): queda en un aviso.
     const noticeRemainder = async (why: string) => {
@@ -476,11 +591,11 @@ export async function runAgent(job: { organizationId: string; conversationId: st
       });
     };
     try {
-      for (const text of bubbles) {
+      for (const [i, text] of bubbles.entries()) {
         if (sent > 0) await deps.sleep(BUBBLE_PAUSE_MS);
         stopped = await stopBeforeBubble(org, conv.id, humansAtStart, readCount);
         if (stopped) break;
-        const outcome = await deps.sendBubble({ organizationId: org, conversationId: conv.id, text });
+        const outcome = await deps.sendBubble({ organizationId: org, conversationId: conv.id, text, messageId: bubbleMessageId(planId!, i) });
         sent++;
         // Sin confirmación no se manda el siguiente: el cliente no recibe media respuesta
         // encima de algo que quizá no le llegó (lo resuelve el outbox; si vence, aviso).
@@ -491,19 +606,17 @@ export async function runAgent(job: { organizationId: string; conversationId: st
       }
     } catch (error) {
       if (sent === 0) {
-        // Nada salió: el plan no cuenta (obsoleto).
-        if (planId) await closePlan(org, planId, "obsoleto");
+        // Nada salió. Parte 1 (26-sep): CUALQUIER falla (rechazo del CRM o de WhatsApp,
+        // un error raro de Zernio, la BD) deja la respuesta GUARDADA y la tarjeta; ni la
+        // cola ni el barrido vuelven a llamar al modelo ("pendiente" cuenta como atendido).
+        // "Reintentar" reenvía este mismo texto (resendSavedReply). Si ni la tarjeta se
+        // pudo guardar, se lanza: el reintento de la cola encuentra la respuesta guardada
+        // y la reenvía, sin generar otra.
         await recordAiUsage({ ...brainUsage, outcome: "error", error: `envío: ${errorText(error)}` });
-        // Fase E: un RECHAZO definitivo (ventana cerrada, canal apagado, WhatsApp lo
-        // rechazó) deja la tarjeta; sin reintentos que paguen otra llamada al modelo.
-        // Cualquier otra falla (p. ej. la BD) sigue a la cola como siempre.
-        const motivo = classifySendError(error);
-        if (motivo) {
-          await recordAgentError({ organizationId: org, conversationId: conv.id, messageId: lastRead.id, body: sendErrorBody(motivo) });
-          console.warn(`[agente] ${conv.id}: el envío fue rechazado (${errorText(error)}); tarjeta para el vendedor`);
-          return { kind: "failed", reason: "envio_rechazado" };
-        }
-        throw error;
+        await holdForRetry(org, planId!);
+        await recordAgentError({ organizationId: org, conversationId: conv.id, messageId: lastRead.id, body: sendErrorBody(sendErrorMotive(error)) });
+        console.warn(`[agente] ${conv.id}: el envío falló (${errorText(error)}); respuesta guardada y tarjeta para el vendedor`);
+        return { kind: "failed", reason: "envio_fallido" };
       }
       // Salió una parte: el agente sigue activo; el resto queda en un aviso al vendedor.
       await markAgentReply(org, conv.id, deps.now());
