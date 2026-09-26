@@ -57,9 +57,13 @@ formularios y landing pages, agente IA de calificación.
 > 057725c, migración 0031; prueba B5 en producción y pendientes A–F sin construir: §11 del mismo doc).
 > **Fase E CERRADA el 26-sep-2026 (main ebcd981).** Modelo 1 (Luna) y Modelo 2 (Sonnet 5) por etapa, con
 > sus selectores en la pestaña Agente IA, más el reenvío seguro; 5 proveedores activos (OpenAI, Anthropic,
-> Gemini, Grok, Qwen). Recargas de saldo: manuales en la página de cada proveedor. Único pendiente: borrar
-> `ai_config.daily_budget_usd` en la primera migración después de Anuncios. Revisión de Codex: penúltima acción
-> antes del número oficial. Parte 1: selectores, etapas (Modelo 1 = Inbox, Prospecto,
+> Gemini, Grok, Qwen). Recargas de saldo: manuales en la página de cada proveedor. Revisión de Codex:
+> penúltima acción antes del número oficial. **Agente IA parte 1 (26-sep-2026, migración 0037):** acción
+> `actualizar_detalle` en la misma respuesta (llena el Detalle del contacto: solo lo vacío o lo suyo; lo que
+> edita un vendedor es suyo para siempre, origen en `custom_fields.detalle_por`; marca "IA"), notas de voz
+> transcritas con `gpt-4o-mini-transcribe` (el agente las lee; "Transcripción" en el chat), un error de
+> envío deja la respuesta guardada y "Reintentar" manda el MISMO texto (nunca otra llamada al modelo), y
+> `ai_config.daily_budget_usd` borrada. Detalle: `docs/agente-ia.md` › Parte 1. Fase E, parte 1: selectores, etapas (Modelo 1 = Inbox, Prospecto,
 > Interesado), adaptadores de Google/xAI/OpenRouter y tope de 4,096 tokens (migración 0033). Parte 2
 > (migración 0034): **reenvío seguro** = si el modelo falla, tarjeta en el chat con el error explicado y
 > botones "Reintentar" / "Apagar" (pausa esa conversación); sin reintentos automáticos salvo UNO si el
@@ -223,6 +227,10 @@ comprobantes         id, org_id, contact_id, conversation_id, message_id (único
                      -- folio; la tabla se conserva con su historial (no se borra)
 ai_agent_notices (+) resolved_at, resolution (reintentar|apagar), resolved_by_user_id   -- 0034, tarjeta agente_error
 contacts (+)         stage_changed_by (vendedor|agente|sistema): la etapa de un vendedor manda; el agente solo avanza
+                     custom_fields.detalle_por { campo: agente|vendedor }  -- parte 1: el agente solo llena lo vacío o lo suyo
+messages (+)         transcripcion text   -- 0037: nota de voz del cliente (estado en metadata.transcripcion)
+ai_agent_drafts (+)  runs jsonb; status "pendiente" = respuesta guardada cuyo envío falló ("Reintentar" la reenvía igual)
+                     -- autor de sistema de comentarios "Agente IA" (usuario-sistema-agente-ia, 0037), como "Importado"
 scheduled_messages   id, org_id, conversation_id, created_by_user_id, kind (text|template), body,
                      template_id, template_params, send_at, programmed_at, cancel_if_inbound,
                      status (scheduled|sending|sent|failed|cancelled), error_code, message_id
