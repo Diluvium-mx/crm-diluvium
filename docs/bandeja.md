@@ -150,7 +150,11 @@ automatización (`/banco` → Cerca de compra) o por otro vendedor se ve sin ref
 - Pendientes teóricos: un aviso emergente que llegue justo durante una reconexión se pierde (el
   tablero sí se pone al día). Una temperatura recuperada por la puesta al día no queda anotada como
   "reciente": si en ese mismo instante llega una recarga completa (importación) leída antes, puede
-  volver a la vieja hasta el siguiente cambio.
+  volver a la vieja hasta el siguiente cambio. Si falla la recarga completa que dispara
+  `contacts.bulk` (importación de un admin; camino anterior a esta rama, `router.refresh` no avisa si
+  falló), los importados no aparecen en ese Embudo hasta la siguiente reconexión o recarga.
+- Fallos de red: las lecturas en vivo del Embudo (contactos nuevos, cambios, puesta al día) y del
+  Detalle (también la carga al abrirlo, con "Reintentando…") se reintentan solas, 5 s … 60 s.
 
 ### Lo que NO va (vs. GHL)
 Nueva conversación/Importar (requiere plantilla: llega con el número real), asignado/seguido/chat
