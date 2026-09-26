@@ -17,11 +17,13 @@ export type AgentState = "activo" | "pausado_humano" | "pausado_handover" | "pau
 // son los tres motivos de aviso_vendedor (+ "envio" para fallos de envío del CRM).
 // "respuesta_cortada" (Fase E): la respuesta llegó al tope de tokens o una acción
 // traía argumentos inválidos; el vendedor revisa el hilo.
-export type NoticeKind = "pasar_a_humano" | "envio" | "cotejar_deposito" | "cliente_pide_humano" | "comprobante_dudoso" | "respuesta_cortada" | "agente_error";
+// "tope_respuestas" (Opciones del bot, 26-sep-2026): llegó al máximo de respuestas por
+// conversación; el agente se pausó hasta "Activar" (tarjeta amarilla en el Embudo).
+export type NoticeKind = "pasar_a_humano" | "envio" | "cotejar_deposito" | "cliente_pide_humano" | "comprobante_dudoso" | "respuesta_cortada" | "agente_error" | "tope_respuestas";
 
-// ── Debounce deslizante (interno y fijo, como Ángela en GHL) ─────────────────
-// Cada entrante reinicia la espera de 15 s, pero nunca más de 60 s desde el
-// PRIMER entrante sin responder.
+// ── Debounce deslizante ──────────────────────────────────────────────────────
+// Cada entrante reinicia la espera (15 s de fábrica; 5–60 s desde Opciones del bot),
+// pero nunca más de 60 s desde el PRIMER entrante sin responder (o la espera, si es mayor).
 export const RESPONSE_DELAY_SECONDS = 15;
 export const MAX_WAIT_SECONDS = 60;
 
@@ -32,9 +34,9 @@ export type DebounceInput = {
 };
 
 // Delay (ms) desde `now` hasta que debe dispararse el job de respuesta.
-export function debounceDelayMs(i: DebounceInput): number {
-  const soft = i.lastInboundAt + RESPONSE_DELAY_SECONDS * 1000;
-  const hard = i.firstPendingAt + MAX_WAIT_SECONDS * 1000;
+export function debounceDelayMs(i: DebounceInput, delaySeconds: number = RESPONSE_DELAY_SECONDS): number {
+  const soft = i.lastInboundAt + delaySeconds * 1000;
+  const hard = i.firstPendingAt + Math.max(MAX_WAIT_SECONDS, delaySeconds) * 1000;
   const fireAt = Math.min(soft, hard);
   return Math.max(0, fireAt - i.now);
 }
@@ -57,8 +59,8 @@ export function debounceWindow(
 // Piso al volver al debounce tras descartar respuestas (el cliente siguió
 // escribiendo): nunca 0, así un cliente que no para de escribir no hace correr
 // el job en bucle; responde cuando haga una pausa.
-export function rescheduleDelayMs(i: DebounceInput): number {
-  return Math.max(RESPONSE_DELAY_SECONDS * 1000, debounceDelayMs(i));
+export function rescheduleDelayMs(i: DebounceInput, delaySeconds: number = RESPONSE_DELAY_SECONDS): number {
+  return Math.max(delaySeconds * 1000, debounceDelayMs(i, delaySeconds));
 }
 
 // ── Compuerta de decisión al dispararse el job ───────────────────────────────
@@ -71,6 +73,8 @@ export type GateInput = {
   // Hay un envío del agente en camino ("queued") o un plan de burbujas "enviando":
   // no se responde encima (lo concilian el outbox y el barrido).
   agentSendUnresolved: boolean;
+  // Opciones del bot: ¿estamos dentro del horario del bot? (sin horario: siempre).
+  withinSchedule?: boolean;
 };
 
 export type GateDecision =
@@ -85,6 +89,9 @@ export function decideGate(i: GateInput): GateDecision {
   if (i.agentState !== "activo") return { action: "skip", reason: i.agentState };
   // 3. Un vendedor respondió en el hilo → pausa hasta "Reactivar".
   if (i.humanRepliedSincePending) return { action: "skip", reason: "respuesta_humana", pauseTo: "pausado_humano" };
+  // 3b. Horario del bot (Opciones): fuera de horario no contesta; al abrir, el barrido
+  // atiende lo pendiente poco a poco (sweep.ts).
+  if (i.withinSchedule === false) return { action: "skip", reason: "fuera_de_horario" };
   // 4. Ventana de 24h: fuera de ella WhatsApp no deja mandar texto libre.
   if (i.windowExpiresAt === null || i.now > i.windowExpiresAt) return { action: "skip", reason: "fuera_de_ventana_24h" };
   // 5. Envío del agente todavía en camino: esperar (nunca contestar encima).
@@ -121,12 +128,14 @@ function splitLong(text: string): string[] {
   return a && b ? [a, b] : [text];
 }
 
-export function toBubbles(text: string): string[] {
+// `maxBubbles` (Opciones del bot): 2 de fábrica; con 1 todo va en un solo mensaje.
+export function toBubbles(text: string, maxBubbles: 1 | 2 = MAX_BUBBLES): string[] {
   const parts = text
     .split(/\n\s*\n/)
     .map((p) => p.trim())
     .filter(Boolean);
   if (parts.length === 0) return [];
+  if (maxBubbles === 1) return [parts.join("\n\n")];
   if (parts.length === 1) return splitLong(parts[0]);
   if (parts.length === MAX_BUBBLES) return parts;
   const last = parts[parts.length - 1];

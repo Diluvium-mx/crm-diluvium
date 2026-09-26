@@ -1,5 +1,6 @@
 import type { ModelTier, ProviderId } from "@/lib/ai/types";
 import type { CostBasis } from "./model-cost";
+import type { BotOptions } from "./opciones";
 import type { AgentModeValue } from "./settings";
 
 // Vistas seguras para el cliente (sin imports de servidor ni del SDK). El
@@ -60,7 +61,13 @@ export type AgentEditorView = {
   costBasis: CostBasis;
   apiProviders: ProviderApiView[];
   channels: ChannelAgentView[];
+  // Opciones del bot (26-sep-2026) y su último cambio (quién y cuándo, ISO).
+  options: BotOptions;
+  optionsLastChange: OptionsChangeView | null;
 };
+
+export type OptionsChangeView = { field: keyof BotOptions; oldValue: string | null; newValue: string | null; author: string | null; createdAt: string };
+export type OptionsActionResult = { ok: true; options: BotOptions; lastChange: OptionsChangeView | null } | { ok: false; message: string };
 
 // ── Fase B: el agente en una conversación (Bandeja y panel del contacto) ─────
 export type AgentStateValue = "activo" | "pausado_humano" | "pausado_handover" | "pausado_antibucle";

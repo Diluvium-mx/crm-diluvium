@@ -1,7 +1,10 @@
-// Cuánto esperar antes de responder una conversación (debounce deslizante fijo de
-// 15 s con tope de 60 s, como Ángela en GHL), calculado desde la BD: el primer y el último entrante pendientes
-// POSTERIORES al último corte (ver debounceWindow).
+// Cuánto esperar antes de responder una conversación (debounce deslizante de 15 s de
+// fábrica —5 a 60 s desde Opciones del bot— con tope de 60 s), calculado desde la BD:
+// el primer y el último entrante pendientes POSTERIORES al último corte (ver
+// debounceWindow). Fuera del horario del bot no se programa nada.
+import { isWithinSchedule } from "@/lib/agente-ia/opciones";
 import { lastHandledInboundAt, loadSnapshot, pendingInbound, type ChannelRow, type ConversationRow, type MessageRow } from "./context";
+import { loadBotOptions } from "./options";
 import { debounceDelayMs, debounceWindow, rescheduleDelayMs } from "./policy";
 
 // Ventana del debounce para estos pendientes (null si no hay ninguno).
@@ -28,9 +31,12 @@ export async function debounceDelayFor(organizationId: string, conversationId: s
   if (!snap || snap.channel.aiAgentMode !== "auto") return null;
   // Agente pausado (un vendedor contestó): no hay nada que programar hasta "Reactivar".
   if (snap.conversation.agentState !== "activo") return null;
+  const options = await loadBotOptions(organizationId, now);
+  // Fuera del horario del bot: lo atiende el barrido al abrir (findPendingAtOpening).
+  if (!isWithinSchedule(options.schedule, now)) return null;
   const win = await pendingWindow(snap, await pendingInbound(organizationId, conversationId));
   if (!win) return null;
-  return debounceDelayMs({ now: now.getTime(), ...win });
+  return debounceDelayMs({ now: now.getTime(), ...win }, options.responseDelaySeconds);
 }
 
 // Tras descartar respuestas en todas las rondas: de vuelta al debounce, nunca en 0.
@@ -39,5 +45,5 @@ export async function rescheduleDelayFor(organizationId: string, conversationId:
   if (!snap) return 0;
   const win = await pendingWindow(snap, await pendingInbound(organizationId, conversationId));
   if (!win) return 0;
-  return rescheduleDelayMs({ now: now.getTime(), ...win });
+  return rescheduleDelayMs({ now: now.getTime(), ...win }, (await loadBotOptions(organizationId, now)).responseDelaySeconds);
 }

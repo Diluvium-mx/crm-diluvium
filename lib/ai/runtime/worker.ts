@@ -20,10 +20,12 @@ import {
   type AgentQueuePort,
   type KvPort,
 } from "./queue";
+import { isWithinSchedule } from "@/lib/agente-ia/opciones";
+import { loadBotOptions } from "./options";
 import { runAgent, type RunDeps, type RunResult } from "./run";
 import { reactivateDuePauses } from "./pause";
 import { debounceDelayFor } from "./schedule";
-import { findLostRetries, findOrphanConversations, noticeFailedAgentSends, reconcileStuckDrafts } from "./sweep";
+import { findLostRetries, findOrphanConversations, findPendingAtOpening, noticeFailedAgentSends, OPENING_STAGGER_MS, reconcileStuckDrafts } from "./sweep";
 
 const SWEEP_EVERY_MS = 60_000;
 
@@ -71,6 +73,18 @@ export async function sweepOnce(queue: AgentQueuePort, kv: KvPort, now: Date): P
   const orphans = await findOrphanConversations(now);
   for (const o of orphans) await scheduleAgentRun(queue, kv, o, 0);
   if (orphans.length) console.info(`[agente] barrido: ${orphans.length} conversación(es) sin atender re-programada(s)`);
+  // Opciones del bot → horario: organizaciones con horario y ABIERTAS ahora: lo que quedó
+  // sin respuesta (hasta 24 h) se programa escalonado (una cada 5 s, 12 por minuto), solo
+  // si la conversación no tiene ya un job (así el barrido siguiente no lo empuja).
+  const opening = await findPendingAtOpening(now);
+  let scheduled = 0;
+  for (const o of opening) {
+    if (!isWithinSchedule((await loadBotOptions(o.organizationId, now)).schedule, now)) continue;
+    if (await queue.getJob(o.conversationId)) continue;
+    await scheduleAgentRun(queue, kv, o, scheduled * OPENING_STAGGER_MS);
+    scheduled++;
+  }
+  if (scheduled) console.info(`[agente] barrido: ${scheduled} conversación(es) pendiente(s) al abrir el horario, repartida(s) cada ${OPENING_STAGGER_MS / 1000} s`);
 }
 
 export function startAgentRuntime(opts: { provider: MessagingProvider; storage: ObjectStorage | null }) {

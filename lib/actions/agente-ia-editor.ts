@@ -27,6 +27,7 @@ import {
   updateFaq,
 } from "@/lib/agente-ia/editor-store";
 import { buildApiProviders, buildModelOptions } from "@/lib/agente-ia/options";
+import { loadBotOptionsRow, loadLastOptionsChange } from "@/lib/agente-ia/opciones-store";
 import { usageProfile } from "@/lib/agente-ia/model-cost";
 import { brainUsageTotals, priceOverrides } from "@/lib/agente-ia/model-cost-store";
 import { idSchema, toAgentMode } from "@/lib/agente-ia/settings";
@@ -49,7 +50,12 @@ export async function getAgentEditor(): Promise<AgentEditorView> {
   const data = await loadEditor(organizationId);
   const channelRows = await db.select().from(channels).where(eq(channels.organizationId, organizationId)).orderBy(channels.createdAt);
   // Costo aproximado por modelo: uso real del cerebro (30 días) o perfil fijo.
-  const [totals, overrides] = await Promise.all([brainUsageTotals(organizationId), priceOverrides(organizationId)]);
+  const [totals, overrides, options, lastChange] = await Promise.all([
+    brainUsageTotals(organizationId),
+    priceOverrides(organizationId),
+    loadBotOptionsRow(organizationId),
+    loadLastOptionsChange(organizationId),
+  ]);
   const { profile, basis } = usageProfile(totals);
   const version = (v: { id: string; createdAt: Date; author: string | null; summary: string }) => ({ ...v, createdAt: v.createdAt.toISOString() });
   return {
@@ -75,6 +81,8 @@ export async function getAgentEditor(): Promise<AgentEditorView> {
       isActive: c.isActive,
       mode: toAgentMode(c.aiAgentMode),
     })),
+    options,
+    optionsLastChange: lastChange ? { ...lastChange, createdAt: lastChange.createdAt.toISOString() } : null,
   };
 }
 

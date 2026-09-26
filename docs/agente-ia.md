@@ -423,6 +423,41 @@ sistema "Agente IA"). El Goal y las FAQs no se tocaron.
   pre-deploy falla por `lock_timeout` (5 s) sin tumbar nada y se reintenta.
 - Un spammer con muchas notas de voz largas: ~US$0.03 por audio, visible en el Gasto de IA.
 
+## Opciones del bot (26-sep-2026)
+
+Rama `feat/opciones-bot`, migración **`0038_opciones_bot`**. Sección **"Opciones"** en la pestaña Agente IA
+(al final de "Crear"; la editan vendedores, admin y owner: recurso `aiConfig`). Copia las opciones de Ángela
+en GHL. **Regla del dueño: los valores de fábrica son EXACTAMENTE el comportamiento anterior**; nada cambia
+hasta que alguien mueva una opción. Reglas puras en `lib/agente-ia/opciones.ts`; lectura con caché en
+`lib/ai/runtime/options.ts`; guardado y registro en `lib/agente-ia/opciones-store.ts`; UI en
+`app/(app)/agente-ia/_components/bot-options.tsx`.
+
+| # | Opción | Fábrica (= hoy) | En GHL | Columna de `ai_config` | Dónde aplica |
+|---|---|---|---|---|---|
+| 1 | Tiempo de espera antes de responder (5–60 s) | 15 s | 10 s | `response_delay_seconds` (reusada) | `debounceDelayFor` / `rescheduleDelayFor`; el tope de 60 s desde el primer mensaje nunca es menor que la espera |
+| 2 | Pausar el bot cuando un vendedor contesta | Sí | Sí | `pause_on_human_reply` (reusada) | `onHumanOutbound`, compuerta y paradas antes de cada burbuja (con "No" el vendedor no pausa; el agente contesta lo que el cliente escriba después) |
+| 2 | Reactivar solo después de | Nunca (a mano con «Activar») / 8 h / 24 h / N h | a mano | `human_reply_reactivate_hours` (nueva) | misma pausa que "Pausar agente": `agent_paused_until` + barrido del worker; el corte es la hora de regreso |
+| 3 | Cuando el cliente pide un asesor | Avisar y seguir contestando | avisa y pausa 8 h | `handover_reactivate_hours` (reusada; la 0038 la deja nula) | tras enviar la respuesta y encolar su media (`pauseAfterHandover`), condicional: una pausa de un vendedor manda |
+| 4 | Horario del bot (hora de Mazatlán) | 24/7 | 24/7 | `bot_schedule` jsonb `{days[1–7], from, to}` (nueva) | fuera de horario no se programa el job (`debounceDelayFor` → null) y la compuerta dice `fuera_de_horario` (sin pausa). **Apertura:** el barrido (`findPendingAtOpening`) toma los chats cuyo último mensaje es del cliente, sin respuesta, dentro de la ventana de 24 h y posteriores al corte, solo de organizaciones con horario y abiertas ahora, y los reparte **12 por minuto, uno cada 5 s**, sin tocar los que ya tienen job. Con horario, el barrido de huérfanos de 30 min no aplica (lo cubre el de apertura, hasta 24 h) |
+| 5 | Responder imágenes | Sí | Sí | `read_images` (nueva) | con "No" no se firma la URL y el modelo ve `[imagen]` (los PDF siguen) |
+| 5 | Responder notas de voz | Sí | Sí | `transcribe_audio` (nueva) | con "No" el worker deja la transcripción `omitida` (motivo visible en el chat, sin llamar a OpenAI), el agente no la espera y ve `[nota de voz]` |
+| 6 | Longitud de respuesta | Balanceada | Balanceada | `response_length` (nueva) | "corta"/"detallada" = UNA línea al final del sufijo del CRM (`LENGTH_LINES`); el Goal, las FAQs y la caché no cambian |
+| 6 | Máximo de mensajes por respuesta | 2 | 1 | `max_bubbles` (reusada) | `toBubbles(text, 1)` manda todo en un mensaje |
+| 7 | Máximo de respuestas del bot por conversación | Sin tope | 50 | `max_replies_per_contact` (reusada) | al llegar (respuestas `ai_usage` cerebro/sent desde el último corte «Activar»/encendido): pausa hasta «Activar» + aviso 🤖 `tope_respuestas` (idempotente por entrante; `URGENT_NOTICE_KINDS` → tarjeta amarilla). Cubre un bucle con otro bot |
+
+- **Sin redesplegar:** el worker lee `loadBotOptions` en cada trabajo con caché de **60 s** por
+  organización; el web borra su caché al guardar. Un valor imposible en la BD cae al de fábrica.
+- **Quién cambió qué:** cada guardado deja filas en `ai_config_changes` (organización, usuario, opción,
+  antes → después, hora); la sección muestra "Último cambio: Daniel, hoy 11:20 · Tiempo de espera…".
+- **Pruebas:** `lib/agente-ia/opciones.test.ts` (fábrica = constantes del runtime, validación, horario en
+  Mazatlán incluido cruce de medianoche, permisos por rol), `policy.test.ts`, `brain.test.ts` y
+  `lib/ai/runtime/opciones.int.test.ts` (regresión con fábrica, una prueba por opción, caché, apertura del
+  horario con reparto, tope con tarjeta amarilla y aislamiento por organización).
+- **Aceptado / teórico:** una pausa por "pedir asesor" deja "agente_pausado" la media que el agente pidió en
+  esa misma respuesta si su corrida corre después de la pausa (caso raro: al pasar a humano no se piden
+  archivos). Un vendedor que contesta otra vez durante una pausa con hora no la extiende (igual que
+  "Pausar agente"). El reparto de apertura es por worker (un solo worker en Railway).
+
 ## Fuera de alcance (próximos briefs)
 
 Follow-ups (Fase C), modelos por etapa y reenvío seguro (Fase E), y los pendientes A–F de la Fase D

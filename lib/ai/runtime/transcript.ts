@@ -48,6 +48,8 @@ export type ThreadMessage = {
 // 60 s, dura más de 10 min o es historia vieja) va la nota sin transcribir.
 export const VOICE_NOTE_PREFIX = "[nota de voz]";
 export const VOICE_NOTE_UNTRANSCRIBED = "[nota de voz sin transcribir]";
+// Opciones del bot → "Responder notas de voz: No": el bot solo ve que hubo una nota.
+export const VOICE_NOTE_OFF = "[nota de voz]";
 function voiceNote(m: ThreadMessage): string {
   const t = m.transcripcion?.trim();
   return t ? `${VOICE_NOTE_PREFIX} ${neutralizeCrmHeader(clip(t))}` : VOICE_NOTE_UNTRANSCRIBED;
@@ -112,7 +114,7 @@ function isPdf(a: MessageAttachment): boolean {
 export function buildModelMessages(
   rows: readonly ThreadMessage[],
   imageUrls: ReadonlyMap<string, string>,
-  opts: { maxImages?: number; maxPdfs?: number; cleanText?: ReadonlyMap<string, string>; crmContext?: string } = {},
+  opts: { maxImages?: number; maxPdfs?: number; cleanText?: ReadonlyMap<string, string>; crmContext?: string; voiceNotesOff?: boolean } = {},
 ): ModelMessage[] {
   const maxImages = opts.maxImages ?? MAX_IMAGES;
   const maxPdfs = opts.maxPdfs ?? MAX_PDFS;
@@ -145,7 +147,7 @@ export function buildModelMessages(
         } else if (a.storageKey && allowedPdf.has(a.storageKey)) {
           parts.push({ type: "file", data: new URL(imageUrls.get(a.storageKey)!), mediaType: "application/pdf", filename: a.fileName });
         } else {
-          text.push(a.type === "audio" ? voiceNote(m) : attachmentNote(a));
+          text.push(a.type === "audio" ? (opts.voiceNotesOff ? VOICE_NOTE_OFF : voiceNote(m)) : attachmentNote(a));
         }
       }
       if (text.length === 0 && parts.length === 0) text.push(`[mensaje ${m.type}]`);

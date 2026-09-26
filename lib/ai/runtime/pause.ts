@@ -63,14 +63,15 @@ export async function reactivateDuePause(organizationId: string, conversationId:
   return rows.length > 0;
 }
 
-// Un vendedor contestó (CRM, celular, programado o comando): apaga el bot sin
-// tiempo SOLO si estaba encendido (o su hora de regreso ya se cumplió). Un solo
-// UPDATE condicional: si otro vendedor acaba de elegir "Apagar bot 8 h", su hora
-// no se pisa. Devuelve si cambió algo.
-export async function pauseForHumanReply(organizationId: string, conversationId: string, now: Date): Promise<boolean> {
+// Un vendedor contestó (CRM, celular, programado o comando): apaga el bot SOLO si
+// estaba encendido (o su hora de regreso ya se cumplió). `until` = hora de regreso
+// (Opciones del bot: "Reactivar solo después de N h", o la pausa al pedir un asesor);
+// null = hasta "Activar" (fábrica). Un solo UPDATE condicional: si otro vendedor acaba
+// de elegir "Apagar bot 8 h", su hora no se pisa. Devuelve si cambió algo.
+export async function pauseForHumanReply(organizationId: string, conversationId: string, now: Date, until: Date | null = null): Promise<boolean> {
   const rows = await db
     .update(conversations)
-    .set({ agentState: "pausado_humano", agentPausedUntil: null, agentStateChangedAt: now })
+    .set({ agentState: "pausado_humano", agentPausedUntil: until, agentStateChangedAt: now })
     .where(and(ownConversation(organizationId, conversationId), or(eq(conversations.agentState, "activo"), pauseDue(now))))
     .returning({ id: conversations.id });
   return rows.length > 0;

@@ -24,6 +24,7 @@ export const URGENT_NOTICE_KINDS = [
   "comprobante_dudoso",
   "envio", // WhatsApp no confirmó o rechazó una respuesta del agente
   "agente_error",
+  "tope_respuestas", // Opciones del bot: llegó al máximo de respuestas; pausado hasta "Activar"
 ] as const satisfies readonly NoticeKind[];
 
 // Tope de conversaciones por lote en tiempo real (el cliente agrupa los eventos del SSE).

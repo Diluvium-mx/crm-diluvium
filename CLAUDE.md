@@ -303,6 +303,12 @@ el menú del usuario (todos): "Mi cuenta" (`/mi-cuenta`: nombre y cambiar la pro
   una automatización u otro vendedor se ven sin refrescar (evento `contact.updated`, un solo helper
   `lib/contacts/notify-updated.ts` dentro de la transacción de cada escritura). Aviso emergente solo
   para cambios de ETAPA hechos por otro. Detalle: `docs/bandeja.md` › "Cambios en vivo".
+- **Opciones del bot** (26-sep-2026, migración 0038): sección "Opciones" en la pestaña Agente IA, para
+  todos los roles, con las opciones de Ángela (espera 5–60 s, pausa por vendedor y reactivar tras N h,
+  pedir asesor que avisa o pausa X h, horario de Mazatlán con apertura escalonada, imágenes y notas de
+  voz, longitud, 1 o 2 mensajes, tope de respuestas con aviso amarillo). **Fábrica = comportamiento
+  anterior.** El worker las relee con caché de 60 s; `ai_config_changes` guarda quién cambió qué.
+  Detalle: `docs/agente-ia.md` → "Opciones del bot".
 - **Pausar agente** (25-sep-2026; "Apagar bot" hasta el 26-sep): por conversación, 8/12/24 h, hora exacta (Mazatlán, ≤30 días) o indefinidamente; "Activar" lo regresa; vuelve solo con el barrido del worker y no contesta lo escrito mientras estuvo pausado. Desde el 26-sep el control vive solo en "Detalle del contacto". Detalle: `docs/bandeja.md`.
 
 ```

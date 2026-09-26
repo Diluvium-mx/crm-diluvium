@@ -14,6 +14,8 @@ import {
   type AgentQueuePort,
   type KvPort,
 } from "./queue";
+import { humanPauseUntil } from "@/lib/agente-ia/opciones";
+import { loadBotOptions } from "./options";
 import { isPauseDue, pauseForHumanReply, reactivateDuePause } from "./pause";
 import { debounceDelayFor } from "./schedule";
 
@@ -93,9 +95,12 @@ export async function onHumanOutbound(
     // Canal apagado: nada que pausar.
     if (snap.channel.aiAgentMode !== "auto") return;
     const now = ports.now ?? new Date();
-    // Pausa sin tiempo (se reactiva a mano con "Reactivar"), solo si el bot estaba
-    // encendido o su hora de regreso ya se cumplió; condicional en la BD.
-    await pauseForHumanReply(input.organizationId, input.conversationId, now);
+    // Opciones del bot: "Pausar el bot cuando un vendedor contesta" (fábrica sí) y
+    // "Reactivar solo después de N h" (fábrica nunca: hasta "Activar").
+    const decision = humanPauseUntil(await loadBotOptions(input.organizationId, now), now);
+    if (!decision.pause) return;
+    // Solo si el bot estaba encendido o su hora de regreso ya se cumplió; condicional en la BD.
+    await pauseForHumanReply(input.organizationId, input.conversationId, now, decision.until);
     // La pausa ya quedó guardada: cancelar el job es solo optimización (acotada).
     await withQueueTimeout(cancelAgentRun(ports.queue ?? bullAgentQueuePort(), input.conversationId), "cancelar").catch(
       (error) => console.error(`[agente] no se pudo cancelar el job de ${input.conversationId}: ${String(error)}`),

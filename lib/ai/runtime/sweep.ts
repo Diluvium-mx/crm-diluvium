@@ -24,14 +24,34 @@ export const ORPHAN_MAX_AGE_MINUTES = 30;
 // Avisos de envíos fallidos: solo los recientes (no se avisa historia al desplegar).
 export const FAILED_SEND_NOTICE_HOURS = 24;
 
+// Opciones del bot → horario: al ABRIR, se atienden los chats cuyo último mensaje es del
+// cliente, sin respuesta y dentro de la ventana de 24 h (los que llegaron con el bot
+// cerrado). Solo organizaciones CON horario; se reparten poco a poco (worker.ts).
+export const OPENING_MAX_AGE_HOURS = 24;
+export const OPENING_BATCH = 12;
+export const OPENING_STAGGER_MS = 5_000;
+
 export type OrphanConversation = { conversationId: string; organizationId: string };
 
 // Fechas como ISO con cast: en SQL crudo el driver no serializa Date, y así se
 // comparan igual que las columnas timestamp que drizzle escribe (UTC).
 const ts = (d: Date) => sql`${d.toISOString()}::timestamp`;
 
+// Huérfanos de siempre: organizaciones SIN horario (con horario, lo pendiente lo
+// reparte findPendingAtOpening al abrir; fuera de horario no se contesta nada).
 export async function findOrphanConversations(now: Date, limit = 50): Promise<OrphanConversation[]> {
-  const since = new Date(now.getTime() - ORPHAN_MAX_AGE_MINUTES * 60_000);
+  return findUnanswered(now, { since: new Date(now.getTime() - ORPHAN_MAX_AGE_MINUTES * 60_000), withSchedule: false, limit });
+}
+
+export async function findPendingAtOpening(now: Date, limit = OPENING_BATCH): Promise<OrphanConversation[]> {
+  return findUnanswered(now, { since: new Date(now.getTime() - OPENING_MAX_AGE_HOURS * 3_600_000), withSchedule: true, limit });
+}
+
+async function findUnanswered(now: Date, opts: { since: Date; withSchedule: boolean; limit: number }): Promise<OrphanConversation[]> {
+  const { since, limit } = opts;
+  const scheduleFilter = opts.withSchedule
+    ? sql`and exists (select 1 from ai_config a where a.organization_id = c.organization_id and a.bot_schedule is not null)`
+    : sql`and not exists (select 1 from ai_config a where a.organization_id = c.organization_id and a.bot_schedule is not null)`;
   const rows = await db.execute<{ id: string; organization_id: string }>(sql`
     select c.id, c.organization_id
     from conversations c
@@ -58,6 +78,7 @@ export async function findOrphanConversations(now: Date, limit = 50): Promise<Or
       and c.agent_state = 'activo'
       and c.window_expires_at > ${ts(now)}
       and c.last_message_at > ${ts(since)}
+      ${scheduleFilter}
       and last.direction = 'in'
       and last.created_at < ${ts(new Date(now.getTime() - ORPHAN_MIN_AGE_SECONDS * 1000))}
       and last.created_at > ${ts(since)}

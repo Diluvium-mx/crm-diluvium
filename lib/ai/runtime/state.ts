@@ -24,8 +24,8 @@ export async function setAgentState(
   state: AgentState,
   opts: { now: Date; pausedUntil?: Date | null },
 ): Promise<void> {
-  if (state === "pausado_humano" && !opts.pausedUntil) {
-    await pauseForHumanReply(organizationId, conversationId, opts.now);
+  if (state === "pausado_humano") {
+    await pauseForHumanReply(organizationId, conversationId, opts.now, opts.pausedUntil ?? null);
     return;
   }
   await db
