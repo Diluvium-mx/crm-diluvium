@@ -17,6 +17,7 @@ const ACCOUNT = "zacc_ads";
 const AD_VIDEO = "120250108412580604"; // AC - Video 9 (real)
 const AD_IMAGE = "120251044855190604"; // AC - IMG 14 (real)
 const AD_OTHER = "120241916275220604"; // Video 5 (real)
+const SEPTIEMBRE = { desde: "2026-09-01", hasta: "2026-09-30" };
 
 describe.skipIf(!TEST_DATABASE_URL)("anuncios de Meta (Postgres real)", () => {
   let db: Db;
@@ -221,7 +222,7 @@ describe.skipIf(!TEST_DATABASE_URL)("anuncios de Meta (Postgres real)", () => {
     await deliver(adEvent({ phone: "5216681000009", referral: imageFicha("c-9"), sentAt: "2026-09-24T18:05:00Z" }));
     await db.update(s.contacts).set({ stage: "compra" }).where(d.eq(s.contacts.phoneE164, "+526681000009"));
     expect(await db.select().from(s.metaAds)).toHaveLength(1);
-    const list = await queries.listAds(ORG);
+    const list = await queries.listAdsForPeriod(ORG, SEPTIEMBRE);
     expect(list).toHaveLength(1);
     expect(list[0]).toMatchObject({ key: AD_IMAGE, clients: 2, bought: 1 });
     const detail = await queries.getAd(ORG, AD_IMAGE);
@@ -307,7 +308,7 @@ describe.skipIf(!TEST_DATABASE_URL)("anuncios de Meta (Postgres real)", () => {
     await deliver(adEvent({ phone: "5216681000032", referral: { source_type: "ad", headline: "Promo A" }, sentAt: "2026-09-24T18:02:00Z" }));
     await deliver(adEvent({ phone: "5216681000033", referral: { source_type: "ad" }, sentAt: "2026-09-24T18:03:00Z" }));
     await deliver(adEvent({ phone: "5216681000034", referral: { source_type: "ad" }, sentAt: "2026-09-24T18:04:00Z" }));
-    const list = await queries.listAds(ORG);
+    const list = await queries.listAdsForPeriod(ORG, SEPTIEMBRE);
     // Promo A (2 clientes), Promo B (1) y dos fichas vacías, cada una sola.
     expect(list.map((a) => a.clients).sort()).toEqual([1, 1, 1, 2]);
     const { adKeyOf, adKeySql } = await import("./ad-key");
@@ -486,7 +487,130 @@ describe.skipIf(!TEST_DATABASE_URL)("anuncios de Meta (Postgres real)", () => {
     expect(ad.fetchAttempts).toBe(1);
     expect(ad.nextFetchAt).not.toBeNull();
     // La lista muestra lo que haya (el titular de la ficha).
-    const list = await queries.listAds(ORG);
+    const list = await queries.listAdsForPeriod(ORG, SEPTIEMBRE);
     expect(list[0].name).toBe("⭐️⭐️⭐️⭐️⭐️");
+  });
+
+  // ─── Tabla de Anuncios (periodo, conversión, reglas de conteo) ─────────────
+  describe("tabla de anuncios por periodo", () => {
+    const table = (range: { desde: string; hasta: string }) => queries.listAdsForPeriod(ORG, range);
+    const row = (list: Awaited<ReturnType<typeof table>>, key: string) => list.find((r) => r.key === key);
+
+    it("periodo: cuenta a los clientes por la fecha de su clic (días locales de Mazatlán)", async () => {
+      // 2026-08-01T06:30Z = 31-jul 23:30 en Mazatlán (UTC-7) → julio; 07:30Z = 1-ago 00:30 → agosto.
+      // (Fechas pasadas: la ingesta no acepta horas futuras.)
+      await deliver(adEvent({ phone: "5216681000101", referral: imageFicha("p-1"), sentAt: "2026-08-01T06:30:00Z" }));
+      await deliver(adEvent({ phone: "5216681000102", referral: imageFicha("p-2"), sentAt: "2026-08-01T07:30:00Z" }));
+      await deliver(adEvent({ phone: "5216681000103", referral: imageFicha("p-3"), sentAt: "2026-09-01T07:30:00Z" }));
+      expect(row(await table({ desde: "2026-08-01", hasta: "2026-08-31" }), AD_IMAGE)?.clients).toBe(1);
+      expect(row(await table({ desde: "2026-07-31", hasta: "2026-07-31" }), AD_IMAGE)?.clients).toBe(1);
+      expect(row(await table(SEPTIEMBRE), AD_IMAGE)?.clients).toBe(1);
+      expect(row(await table({ desde: "2026-07-31", hasta: "2026-09-30" }), AD_IMAGE)?.clients).toBe(3);
+      // Sin clics en el periodo, el anuncio no aparece.
+      expect(await table({ desde: "2026-06-01", hasta: "2026-06-30" })).toEqual([]);
+    });
+
+    it("conversión: compraron = los que HOY están en Compra; conversión = compraron ÷ clientes", async () => {
+      for (const n of [1, 2, 3, 4]) {
+        await deliver(adEvent({ phone: `521668100020${n}`, referral: videoFicha(`v-${n}`), sentAt: `2026-09-1${n}T18:00:00Z` }));
+      }
+      await db.update(s.contacts).set({ stage: "compra" }).where(d.eq(s.contacts.phoneE164, "+526681000202"));
+      const r = row(await table(SEPTIEMBRE), AD_VIDEO)!;
+      expect(r).toMatchObject({ clients: 4, bought: 1 });
+      const { conversionOf } = await import("@/components/anuncios/ads-table");
+      expect(conversionOf({ ...r, adKey: r.key, adId: AD_VIDEO, campaignName: "", adsetName: "", linkClicks: null })).toBe(0.25);
+      // "Hoy": si sale de Compra, deja de contar como compra.
+      await db.update(s.contacts).set({ stage: "interesado" }).where(d.eq(s.contacts.phoneE164, "+526681000202"));
+      expect(row(await table(SEPTIEMBRE), AD_VIDEO)).toMatchObject({ clients: 4, bought: 0 });
+    });
+
+    it("contacto sin anuncio: no aparece ni infla a ningún anuncio", async () => {
+      await deliver(adEvent({ phone: "5216681000301", referral: imageFicha("s-1"), sentAt: "2026-09-10T18:00:00Z" }));
+      await deliver(adEvent({ phone: "5216681000302", sentAt: "2026-09-10T18:05:00Z" }));
+      await db.update(s.contacts).set({ stage: "compra" });
+      const list = await table(SEPTIEMBRE);
+      expect(list).toHaveLength(1);
+      expect(list[0]).toMatchObject({ key: AD_IMAGE, clients: 1, bought: 1 });
+    });
+
+    it("contacto que llegó por 2 anuncios cuenta en AMBOS; volver por el mismo anuncio cuenta una vez", async () => {
+      await deliver(adEvent({ phone: "5216681000401", referral: imageFicha("d-1"), sentAt: "2026-09-05T18:00:00Z" }));
+      await deliver(adEvent({ phone: "5216681000401", referral: { ...videoFicha("d-2"), source_id: AD_OTHER }, sentAt: "2026-09-06T18:00:00Z" }));
+      await deliver(adEvent({ phone: "5216681000401", referral: imageFicha("d-3"), sentAt: "2026-09-07T18:00:00Z" }));
+      await db.update(s.contacts).set({ stage: "compra" });
+      const list = await table(SEPTIEMBRE);
+      expect(row(list, AD_IMAGE)).toMatchObject({ clients: 1, bought: 1 });
+      expect(row(list, AD_OTHER)).toMatchObject({ clients: 1, bought: 1 });
+      expect(await db.select().from(s.contacts)).toHaveLength(1);
+    });
+
+    it("canal o contacto de PRUEBA no cuentan; la página del anuncio sigue abriendo", async () => {
+      await deliver(adEvent({ phone: "5216681000501", referral: imageFicha("t-1"), sentAt: "2026-09-10T18:00:00Z" }));
+      await deliver(adEvent({ phone: "5216681000502", referral: imageFicha("t-2"), sentAt: "2026-09-10T18:05:00Z" }));
+      await db.update(s.contacts).set({ esPrueba: true }).where(d.eq(s.contacts.phoneE164, "+526681000501"));
+      expect(row(await table(SEPTIEMBRE), AD_IMAGE)?.clients).toBe(1);
+      await db.update(s.channels).set({ isTest: true });
+      expect(await table(SEPTIEMBRE)).toEqual([]);
+      const detail = await queries.getAd(ORG, AD_IMAGE);
+      expect(detail).toMatchObject({ clients: 0, bought: 0, people: [] });
+    });
+
+    it("estado de Meta: Activa / Pausada; sin lectura o vieja (Meta falló) → desconocido", async () => {
+      await deliver(adEvent({ phone: "5216681000601", referral: imageFicha("e-1"), sentAt: "2026-09-10T18:00:00Z" }));
+      const now = new Date("2026-09-25T20:00:00Z");
+      const status = async () => row(await queries.listAdsForPeriod(ORG, SEPTIEMBRE, now), AD_IMAGE)?.status;
+      expect(await status()).toBe("unknown");
+      const set = (effectiveStatus: string, minutesAgo: number) =>
+        db.update(s.metaAds).set({ effectiveStatus, statusCheckedAt: new Date(now.getTime() - minutesAgo * 60_000) });
+      await set("ACTIVE", 5);
+      expect(await status()).toBe("active");
+      await set("CAMPAIGN_PAUSED", 5);
+      expect(await status()).toBe("paused");
+      await set("ACTIVE", 120);
+      expect(await status()).toBe("unknown");
+    });
+
+    it("estado cada hora: lee de Meta en lote; si Meta falla no toca nada", async () => {
+      await deliver(adEvent({ phone: "5216681000701", referral: imageFicha("h-1"), sentAt: "2026-09-10T18:00:00Z" }));
+      await deliver(adEvent({ phone: "5216681000702", referral: videoFicha("h-2"), sentAt: "2026-09-10T18:05:00Z" }));
+      const now = new Date("2026-09-25T20:00:00Z");
+      // Solo los anuncios ya identificados en Meta (fetched_at) se consultan.
+      await db.update(s.metaAds).set({ fetchedAt: new Date("2026-09-25T10:00:00Z") });
+      const urls: string[] = [];
+      const ok = (async (url: string | URL) => {
+        urls.push(String(url));
+        return Response.json({ [AD_IMAGE]: { id: AD_IMAGE, effective_status: "ACTIVE" }, [AD_VIDEO]: { id: AD_VIDEO, effective_status: "PAUSED" } });
+      }) as typeof fetch;
+      const { refreshAdStatuses } = await import("./meta-status");
+      expect(await refreshAdStatuses({ config: { token: "t", fetchImpl: ok }, now })).toMatchObject({ status: "actualizado", checked: 2, updated: 2 });
+      expect(urls).toHaveLength(1);
+      const byId = new Map((await db.select().from(s.metaAds)).map((a) => [a.adId, a]));
+      expect(byId.get(AD_IMAGE)).toMatchObject({ effectiveStatus: "ACTIVE", statusCheckedAt: now });
+      expect(byId.get(AD_VIDEO)).toMatchObject({ effectiveStatus: "PAUSED", statusCheckedAt: now });
+      // Recién leídos: la siguiente corrida no los vuelve a pedir.
+      expect(await refreshAdStatuses({ config: { token: "t", fetchImpl: ok }, now })).toEqual({ status: "sin_anuncios" });
+
+      const later = new Date(now.getTime() + 3_600_000);
+      const down = (async () => Response.json({ error: { message: "Service temporarily unavailable", code: 2 } }, { status: 503 })) as typeof fetch;
+      expect((await refreshAdStatuses({ config: { token: "t", fetchImpl: down }, now: later })).status).toBe("error");
+      expect((await db.select().from(s.metaAds)).every((a) => a.statusCheckedAt?.getTime() === now.getTime())).toBe(true);
+    });
+
+    it("página del anuncio: clientes por páginas de 50, el más reciente primero", async () => {
+      for (let i = 0; i < 53; i++) {
+        const n = String(i).padStart(3, "0");
+        await deliver(adEvent({ phone: `5216681008${n}`, referral: imageFicha(`g-${n}`), sentAt: new Date(Date.UTC(2026, 8, 10, 12, i)).toISOString(), name: `Cliente ${n}` }));
+      }
+      const p1 = await queries.getAd(ORG, AD_IMAGE);
+      expect(p1).toMatchObject({ clients: 53, page: 1, pageCount: 2 });
+      expect(p1?.people).toHaveLength(50);
+      expect(p1?.people[0].clickedAt.toISOString()).toBe("2026-09-10T12:52:00.000Z");
+      const p2 = await queries.getAd(ORG, AD_IMAGE, { page: 2 });
+      expect(p2?.people).toHaveLength(3);
+      expect(p2?.people.at(-1)?.clickedAt.toISOString()).toBe("2026-09-10T12:00:00.000Z");
+      // Página fuera de rango o basura → la última válida / la primera.
+      expect((await queries.getAd(ORG, AD_IMAGE, { page: 99 }))?.page).toBe(2);
+      expect((await queries.getAd(ORG, AD_IMAGE, { page: Number.NaN }))?.page).toBe(1);
+    });
   });
 });

@@ -1,7 +1,7 @@
 // Cola de anuncios (BullMQ): miniatura del anuncio al bucket, nombres de Meta,
-// respaldo con la conversación de Zernio y red de seguridad del registro del
-// clic. La base es la fuente de verdad: si encolar falla, el barrido del worker
-// lo recoge (lib/ads/worker.ts).
+// estado Activa/Pausada (cada hora), respaldo con la conversación de Zernio y
+// red de seguridad del registro del clic. La base es la fuente de verdad: si
+// encolar falla, el barrido del worker lo recoge (lib/ads/worker.ts).
 import { Queue } from "bullmq";
 import type { FallbackJob } from "@/lib/ads/attribution";
 import { redisConnection } from "./inbound";
@@ -12,6 +12,8 @@ export type AdsJob =
   /** Miniatura del anuncio; `url` = link de la ficha (sin él, el del creativo). */
   | { kind: "thumb"; organizationId: string; adId: string; url?: string }
   | { kind: "meta"; organizationId: string; adId: string }
+  /** Estado de TODOS los anuncios identificados (lib/ads/meta-status.ts), cada hora. */
+  | { kind: "status" }
   | { kind: "fallback"; job: FallbackJob }
   | { kind: "record"; organizationId: string; messageId: string };
 
@@ -46,6 +48,8 @@ function jobId(job: AdsJob): string {
         return `fallback_${job.job.messageId}`;
       case "record":
         return `record_${job.messageId}`;
+      case "status":
+        return "status";
     }
   })();
   return id.replace(/:/g, "_");
@@ -69,5 +73,25 @@ export async function enqueueAdsJob(job: AdsJob, delayMs = 0): Promise<boolean> 
     return false;
   } finally {
     clearTimeout(timer);
+  }
+}
+
+const STATUS_SCHEDULER_ID = "ads-status-hourly";
+
+/**
+ * Programa (idempotente) la consulta del estado de los anuncios cada hora. El
+ * worker la llama en su barrido hasta que Redis responda. Nunca lanza.
+ */
+export async function scheduleAdStatusRefresh(everyMs: number): Promise<boolean> {
+  try {
+    await adsQueue().upsertJobScheduler(
+      STATUS_SCHEDULER_ID,
+      { every: everyMs },
+      { name: "status", data: { kind: "status" }, opts: { attempts: 1, removeOnComplete: true, removeOnFail: true } },
+    );
+    return true;
+  } catch (error) {
+    console.error("[anuncios] no se pudo programar el estado de los anuncios; se reintenta en el barrido", error);
+    return false;
   }
 }
