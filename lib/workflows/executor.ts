@@ -25,6 +25,8 @@ import { enqueueWorkflowRun } from "@/lib/queue/workflows";
 import { notifyConversation } from "@/lib/ai/runtime/state";
 import { addNotice } from "@/lib/ai/runtime/notices";
 import { moveStageForward } from "@/lib/contacts/stage";
+import { listFunnelStages } from "@/lib/contacts/funnel-stages";
+import { roleKey } from "@/lib/contacts/stages";
 import { missingMedia, stripUnresolvedVariables } from "./steps";
 import { SLUG_DATOS_BANCARIOS } from "./defaults";
 
@@ -353,14 +355,18 @@ export async function executeWorkflowRun(runId: string, deps: ExecutorDeps): Pro
   }
   await markRun(runId, { status: "done", finishedAt: now(), messageIds });
   // Regla interna del CRM (24-sep-2026): recibir los datos bancarios deja al
-  // contacto en "Cerca de compra" (solo hacia adelante; la etapa de un vendedor
-  // no se regresa). No es un paso del workflow: vive aquí, sea cual sea el disparador.
+  // contacto en la etapa con papel "Cerca de compra" (sea cual sea su nombre u orden
+  // hoy; solo hacia adelante; la etapa de un vendedor no se regresa). No es un paso
+  // del workflow: vive aquí, sea cual sea el disparador.
   if (loaded.wf.slug === SLUG_DATOS_BANCARIOS) {
     // Sin disparar workflows por etapa (evita "datos bancarios → cerca_compra → datos bancarios otra vez").
     // actorUserId: quien escribió /banco (el aviso en vivo no le sale a él).
-    await moveStageForward({ organizationId: run.organizationId, contactId: run.contactId, to: "cerca_compra", by: run.trigger === "agent" ? "agente" : "sistema", now: now(), since: run.createdAt, fireStageTriggers: false, actorUserId: run.triggeredByUserId }).catch((error) =>
-      console.error(`[workflows] no se pudo mover a cerca_compra tras ${loaded.wf.slug}`, error),
-    );
+    await (async () => {
+      const stages = await listFunnelStages(run.organizationId);
+      const to = roleKey(stages, "cerca_compra");
+      if (!to) return;
+      await moveStageForward({ organizationId: run.organizationId, contactId: run.contactId, to, by: run.trigger === "agent" ? "agente" : "sistema", now: now(), since: run.createdAt, stages, fireStageTriggers: false, actorUserId: run.triggeredByUserId });
+    })().catch((error) => console.error(`[workflows] no se pudo mover a "Cerca de compra" tras ${loaded.wf.slug}`, error));
     await notifyConversation(db, run.organizationId, run.conversationId).catch(() => undefined);
   }
   if (run.trigger === "keyword") {

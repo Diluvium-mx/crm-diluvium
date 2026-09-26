@@ -2,8 +2,10 @@
 
 // Pestaña "Agente IA" como el editor de GHL: nombre del agente editable con lápiz y,
 // justo abajo, una barra de SUBPESTAÑAS fija al hacer scroll (27-sep-2026; antes el
-// conmutador «Crear | Implementar» y todo en una sola página larga): Modelos ·
-// Instrucciones (Goal) · FAQs · Opciones · Tallas y medidas · Canales. Cada subpestaña
+// conmutador «Crear | Implementar» y todo en una sola página larga): Modelos · Etapas ·
+// Instrucciones (Goal) · FAQs · Opciones · Tallas y medidas · Canales. "Etapas" (columnas
+// del Embudo, con la regla del bot y el modelo de cada una) es el mismo editor que abre el
+// lápiz del Embudo. Cada subpestaña
 // muestra solo su sección; TODOS los paneles siguen montados (ocultos con `hidden`) para
 // que un borrador sin guardar (Goal, Opciones, Tallas) no se pierda al cambiar, y la
 // subpestaña con cambios sin guardar lleva un punto naranja. La elegida va en la URL
@@ -25,7 +27,7 @@ import { ChannelSwitches } from "./channel-switches";
 import { FaqEditor } from "./faq-editor";
 import { GoalEditor } from "./goal-editor";
 import { SizeRangesSection } from "./size-ranges-section";
-import { StageModelAssignment } from "./stage-model-assignment";
+import { StagesEditor } from "../../_components/stages-editor";
 import { useConfirm } from "./use-confirm";
 import type { SizeRange } from "@/lib/contacts/sizes";
 
@@ -161,6 +163,7 @@ export function AgenteEditor({ data, sizeRanges, initialSection }: { data: Agent
   const goalDirty = useCallback((v: boolean) => markDirty("goal", v), [markDirty]);
   const optionsDirty = useCallback((v: boolean) => markDirty("opciones", v), [markDirty]);
   const sizesDirty = useCallback((v: boolean) => markDirty("tallas", v), [markDirty]);
+  const stagesDirty = useCallback((v: boolean) => markDirty("etapas", v), [markDirty]);
   const anyDirty = Object.values(dirty).some(Boolean);
 
   // Salir de la página (recargar, cerrar, otra URL) con cambios sin guardar pregunta.
@@ -278,13 +281,28 @@ export function AgenteEditor({ data, sizeRanges, initialSection }: { data: Agent
           <Model1Picker options={data.model1Options} value={data.modelo1} agentName={agentName} />
           <SubTitle title="Modelo 2" hint="Por defecto Claude Sonnet 5: el más capaz, para datos bancarios y comprobantes." />
           <BrainModelPicker options={data.brainOptions} value={data.modeloCerebro} agentName={agentName} />
-          <SubTitle title="Qué modelo atiende cada etapa" hint="Se usa la etapa del contacto en el momento de responder." />
-          <StageModelAssignment
-            value={data.etapasModelo1}
+          <SubTitle title="Qué modelo atiende cada etapa" hint="Se usa la etapa del contacto en el momento de responder. Se elige por etapa en la subpestaña Etapas." />
+          <button
+            type="button"
+            onClick={() => select("etapas")}
+            className="self-start rounded border border-black/15 px-3 py-1.5 text-sm text-foreground hover:bg-muted dark:border-white/15"
+          >
+            Ir a Etapas →
+          </button>
+          <ApiStatusPanel providers={data.apiProviders} />
+        </Section>,
+      )}
+      {panel(
+        "etapas",
+        <Section
+          title="Etapas del embudo"
+          hint="Las columnas del Embudo. El agente recibe esta lista (clave, nombre y regla, en este orden) en cada respuesta y solo avanza hacia adelante; el modelo de la etapa del contacto contesta."
+        >
+          <StagesEditor
             model1Label={data.model1Options.find((o) => o.id === data.modelo1)?.label ?? data.modelo1}
             model2Label={data.brainOptions.find((o) => o.id === data.modeloCerebro)?.label ?? data.modeloCerebro}
+            onDirtyChange={stagesDirty}
           />
-          <ApiStatusPanel providers={data.apiProviders} />
         </Section>,
       )}
       {panel(

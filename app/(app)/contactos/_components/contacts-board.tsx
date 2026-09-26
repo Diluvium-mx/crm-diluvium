@@ -15,7 +15,11 @@ import {
   type DragStartEvent,
   type Modifier,
 } from "@dnd-kit/core";
-import { STAGES, STAGE_LABELS, getContactFullName, type Contact, type Stage, type Temperature } from "../_data/types";
+import { Pencil, X } from "lucide-react";
+import { getContactFullName, type Contact, type Stage, type Temperature } from "../_data/types";
+import { useFunnelStages } from "../../_components/funnel-stages-provider";
+import { StagesEditor } from "../../_components/stages-editor";
+import type { FunnelStage } from "@/lib/contacts/stages";
 import {
   getContactsByIds,
   getContactsChangedSince,
@@ -32,12 +36,6 @@ import { funnelTone, type FunnelSignal } from "@/lib/contacts/funnel-tone";
 import { useInboxStream } from "../../dashboard/_components/use-inbox-stream";
 import { setContactUnread } from "@/lib/inbox/actions";
 import { applyTemperatures, mergeLiveContacts } from "./board-live";
-
-// Type guard: el id del droppable siempre es una etapa (solo las columnas
-// son zonas de destino), pero esto lo deja explícito para TypeScript.
-function isStage(value: string): value is Stage {
-  return (STAGES as string[]).includes(value);
-}
 
 // Una columna = una zona de destino (droppable). Se extrae a su propio
 // componente porque useDroppable es un hook y no puede llamarse dentro del
@@ -59,13 +57,13 @@ function StageColumn({
   onCardClick,
   onSetUnread,
 }: {
-  stage: Stage;
+  stage: FunnelStage;
   contacts: Contact[];
   signals: Signals;
   onCardClick: (contactId: string) => void;
   onSetUnread: (contactId: string, unread: boolean) => void;
 }) {
-  const { setNodeRef, isOver } = useDroppable({ id: stage });
+  const { setNodeRef, isOver } = useDroppable({ id: stage.key });
   const scrollRef = useRef<HTMLDivElement>(null);
 
   // El contenedor scrolleable ES el droppable (ref combinada): así el
@@ -104,8 +102,11 @@ function StageColumn({
         isOver ? "scale-[1.01] shadow-lg ring-2 ring-brand-orange ring-offset-2 ring-offset-background" : ""
       }`}
     >
-      <div className="flex items-center justify-between rounded-t-lg bg-brand-navy px-3 py-2 text-brand-white">
-        <span className="text-sm font-semibold">{STAGE_LABELS[stage]}</span>
+      <div className="flex items-center justify-between rounded-t-lg bg-brand-navy px-3 py-2 text-brand-white" style={{ boxShadow: `inset 0 3px 0 ${stage.color}` }}>
+        <span className="flex min-w-0 items-center gap-2">
+          <span aria-hidden className="size-2.5 shrink-0 rounded-full" style={{ backgroundColor: stage.color }} />
+          <span className="truncate text-sm font-semibold">{stage.name}</span>
+        </span>
         <span className="rounded-full bg-white/20 px-2 py-0.5 text-xs">{contacts.length}</span>
       </div>
 
@@ -163,6 +164,10 @@ export function ContactsBoard({
   openContactId?: string | null;
 }) {
   const [contacts, setContacts] = useState<Contact[]>(initialContacts);
+  // Columnas del Embudo (editables; llegan en vivo por el contexto).
+  const { stages, lastEvent: stagesEvent } = useFunnelStages();
+  const stageKeys = useMemo(() => new Set(stages.map((s) => s.key)), [stages]);
+  const [editingStages, setEditingStages] = useState(false);
   // Señales de cada tarjeta (no vistos, por contestar, urgente) por contacto. Van
   // aparte de los contactos: el SSE las cambia seguido y no reordenan nada.
   const [signals, setSignals] = useState<Signals>(initialSignals);
@@ -520,6 +525,16 @@ export function ContactsBoard({
     }
   }, [syncedInitialContacts, scheduleLive]);
 
+  // Cambió el juego de columnas (otra sesión renombró, reordenó o borró una): al
+  // borrar, sus contactos se movieron en un solo UPDATE; se ponen al día por
+  // stage_changed_at (≤200; más, recarga completa), sin un evento por contacto.
+  const lastStagesEventRef = useRef(stagesEvent);
+  useEffect(() => {
+    if (stagesEvent === lastStagesEventRef.current) return;
+    lastStagesEventRef.current = stagesEvent;
+    if (stagesEvent?.reason === "deleted") scheduleLive(null);
+  }, [stagesEvent, scheduleLive]);
+
   useInboxStream((event) => {
     if (event.type === "inbox.bulk") {
       if (event.contactos > 0) scheduleHistoryRefresh();
@@ -573,12 +588,12 @@ export function ContactsBoard({
   }, [contacts, normalizedSearch]);
 
   const columns = useMemo(() => {
-    const map = new Map<Stage, Contact[]>(STAGES.map((stage) => [stage, []]));
+    const map = new Map<Stage, Contact[]>(stages.map((stage) => [stage.key, []]));
     for (const contact of filteredContacts) {
       map.get(contact.stage)?.push(contact);
     }
     return map;
-  }, [filteredContacts]);
+  }, [filteredContacts, stages]);
 
   const selectedContact = contacts.find((contact) => contact.id === selectedContactId) ?? null;
   const activeContact = activeContactId
@@ -723,7 +738,7 @@ export function ContactsBoard({
     }, 0);
     const overId = over ? String(over.id) : null;
     const local = contacts.find((contact) => contact.id === contactId);
-    if (overId && isStage(overId) && local && local.stage !== overId) {
+    if (overId && stageKeys.has(overId) && local && local.stage !== overId) {
       // La soltó en otra columna: manda la etapa que puso el vendedor; lo demás
       // del cambio en espera (temperatura…) sí se aplica.
       if (held) {
@@ -764,7 +779,19 @@ export function ContactsBoard({
     // hijo overflow-y-auto acote de verdad el viewport del virtualizador.
     <div className="flex h-[calc(100dvh-4rem)] min-h-0 flex-col gap-4 p-4">
       <div className="flex items-center justify-between gap-4">
-        <h1 className="text-lg font-semibold">Embudo</h1>
+        <div className="flex items-center gap-2">
+          <h1 className="text-lg font-semibold">Embudo</h1>
+          {/* Lápiz: abre el editor de columnas (el mismo de Agente IA → Etapas del embudo). */}
+          <button
+            type="button"
+            onClick={() => setEditingStages(true)}
+            aria-label="Editar las columnas del Embudo"
+            title="Editar columnas"
+            className="rounded p-1 text-muted-foreground hover:bg-muted hover:text-foreground"
+          >
+            <Pencil className="size-4" />
+          </button>
+        </div>
         <div className="flex items-center gap-3">
           <input
             type="search"
@@ -786,11 +813,11 @@ export function ContactsBoard({
         onDragCancel={handleDragCancel}
       >
         <div ref={boardScrollRef} className="flex min-h-0 flex-1 gap-4 overflow-x-auto pb-2">
-          {STAGES.map((stage) => (
+          {stages.map((stage) => (
             <StageColumn
-              key={stage}
+              key={stage.key}
               stage={stage}
-              contacts={columns.get(stage) ?? []}
+              contacts={columns.get(stage.key) ?? []}
               signals={signals}
               onCardClick={handleCardClick}
               onSetUnread={handleSetUnread}
@@ -812,6 +839,20 @@ export function ContactsBoard({
           ) : null}
         </DragOverlay>
       </DndContext>
+
+      {editingStages && (
+        <div role="dialog" aria-modal="true" aria-labelledby="editar-columnas-titulo" className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" onClick={() => setEditingStages(false)}>
+          <div className="max-h-[90vh] w-full max-w-3xl overflow-y-auto rounded-lg bg-background p-4 shadow-xl" onClick={(e) => e.stopPropagation()}>
+            <div className="mb-3 flex items-center justify-between gap-3">
+              <h2 id="editar-columnas-titulo" className="text-sm font-semibold">Columnas del Embudo</h2>
+              <button type="button" onClick={() => setEditingStages(false)} aria-label="Cerrar" className="rounded p-1 text-muted-foreground hover:bg-muted">
+                <X className="size-4" />
+              </button>
+            </div>
+            <StagesEditor />
+          </div>
+        </div>
+      )}
 
       {selectedContact && (
         <ContactDetailPanel

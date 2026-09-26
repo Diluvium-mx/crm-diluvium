@@ -1,8 +1,8 @@
 "use server";
 
 // Server Actions del editor del agente (pestaña "Agente IA" estilo GHL): nombre del
-// agente y de la empresa, Modelo 1 (con sus etapas) y Modelo 2, Goal y FAQs con versiones (y su
-// nombre). Todos
+// agente y de la empresa, Modelo 1 y Modelo 2, Goal y FAQs con versiones (y su nombre); las
+// etapas y el modelo de cada una: lib/actions/funnel-stages.ts. Todos
 // los roles, vendedor incluido (ACL: recurso `aiConfig`). La organización sale de la SESIÓN.
 import { revalidatePath } from "next/cache";
 import { ZodError } from "zod";
@@ -10,8 +10,6 @@ import { requireActiveMembership } from "@/lib/auth/active-organization";
 import { roleAllows } from "@/lib/auth/permissions";
 import { DEFAULT_MODEL_1, modelsForRole } from "@/lib/ai/catalog";
 import { modelAvailability } from "@/lib/ai/provider";
-import { STAGES } from "@/lib/contacts/stages";
-import { z } from "zod";
 import { faqSchema, goalSchema, profileSchema, versionNameSchema } from "@/lib/agente-ia/editor";
 import {
   createFaq,
@@ -24,7 +22,6 @@ import {
   saveBrainModel,
   saveGoal,
   saveModel1,
-  saveModel1Stages,
   saveProfile,
   updateFaq,
 } from "@/lib/agente-ia/editor-store";
@@ -65,7 +62,7 @@ export async function getAgentEditor(): Promise<AgentEditorView> {
     companyName: data.companyName,
     modeloCerebro: data.modeloCerebro,
     modelo1: data.modelo1,
-    etapasModelo1: data.etapasModelo1,
+    stages: data.stages,
     goal: data.goal,
     faqs: data.faqs,
     goalVersions: data.goalVersions.map(version),
@@ -128,18 +125,10 @@ export async function updateBrainModel(input: { modelId: string }): Promise<Agen
   });
 }
 
-// Fase E: Modelo 1 (mismo catálogo que el Modelo 2) y las etapas que atiende.
+// Fase E: Modelo 1 (mismo catálogo que el Modelo 2).
 export async function updateModel1(input: { modelId: string }): Promise<AgentActionResult> {
   return run("No se pudo cambiar el Modelo 1.", async ({ organizationId }) => {
     await saveModel1(organizationId, usableBrainModel(input.modelId, "el Modelo 1"));
-  });
-}
-
-const model1StagesSchema = z.array(z.enum(STAGES)).max(STAGES.length, "Demasiadas etapas.");
-
-export async function updateModel1Stages(input: { stages: string[] }): Promise<AgentActionResult> {
-  return run("No se pudo guardar qué etapas atiende cada modelo.", async ({ organizationId }) => {
-    await saveModel1Stages(organizationId, model1StagesSchema.parse(input.stages));
   });
 }
 

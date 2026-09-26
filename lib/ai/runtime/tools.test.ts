@@ -1,5 +1,8 @@
 import { describe, expect, it } from "vitest";
+import { defaultStages } from "@/lib/contacts/stages";
 import { buildAgentTools, parseDetalle, TOOL_ACTUALIZAR_DETALLE, TOOL_AVISO_VENDEDOR, TOOL_FIJAR_COTIZACION, TOOL_MOVER_ETAPA, validateToolCalls } from "./tools";
+
+const stages = defaultStages();
 
 const rows = [
   { id: "w1", slug: "tabla_tamanos_estandar", name: "Tabla", description: "Envía la tabla de tamaños." },
@@ -8,14 +11,14 @@ const rows = [
 
 describe("herramientas del cerebro (Fase D reestructurada)", () => {
   it("una por workflow de media + fijar_cotizacion, mover_etapa, aviso_vendedor y (parte 1) actualizar_detalle al final; ninguna de cobro/etapa/humano como workflow", () => {
-    const t = buildAgentTools(rows);
+    const t = buildAgentTools(rows, stages);
     expect(Object.keys(t.tools)).toEqual(["wf_tabla_tamanos_estandar", "wf_datos_bancarios", TOOL_FIJAR_COTIZACION, TOOL_MOVER_ETAPA, TOOL_AVISO_VENDEDOR, TOOL_ACTUALIZAR_DETALLE]);
     expect(Object.keys(t.tools)).not.toContain("wf_pago_confirmado");
     expect(Object.keys(t.tools)).not.toContain("wf_cambiar_etapa");
     expect(Object.keys(t.tools)).not.toContain("wf_transferir_humano");
   });
   it("valida llamadas: argumentos con Zod, desconocida se ignora, la misma media una vez", () => {
-    const t = buildAgentTools(rows);
+    const t = buildAgentTools(rows, stages);
     const { valid, ignored } = validateToolCalls(
       [
         { toolName: "wf_tabla_tamanos_estandar", input: {} },
@@ -35,6 +38,23 @@ describe("herramientas del cerebro (Fase D reestructurada)", () => {
       `${TOOL_MOVER_ETAPA}: argumentos inválidos`,
       `${TOOL_AVISO_VENDEDOR}: argumentos inválidos`,
     ]);
+  });
+
+  it("mover_etapa acepta SOLO las claves vigentes de la organización: una etapa nueva sí, una borrada ya no", () => {
+    const custom = [...stages.filter((s) => s.key !== "interesado"), { id: "n", key: "seguimiento", name: "Seguimiento", position: 6, color: "#000000", role: null, botRule: "Cuando pide que le escriban después.", modelSlot: 1 as const }];
+    const t = buildAgentTools(rows, custom);
+    expect(t.stageKeys).toEqual(["inbox", "prospecto", "cerca_compra", "compra", "seguimiento"]);
+    const { valid, ignored } = validateToolCalls(
+      [
+        { toolName: TOOL_MOVER_ETAPA, input: { etapa: "seguimiento" } },
+        { toolName: TOOL_MOVER_ETAPA, input: { etapa: "interesado" } },
+      ],
+      t,
+    );
+    expect(valid).toEqual([{ kind: "etapa", etapa: "seguimiento" }]);
+    expect(ignored).toEqual([`${TOOL_MOVER_ETAPA}: argumentos inválidos`]);
+    // La descripción de la herramienta lleva el orden actual con clave y nombre.
+    expect((t.tools[TOOL_MOVER_ETAPA] as { description?: string }).description).toContain("compra (Compra) → seguimiento (Seguimiento)");
   });
 
   it("actualizar_detalle: valida campo por campo (un dato raro no tira los demás), redondea y nunca avisa al vendedor", () => {
@@ -61,7 +81,7 @@ describe("herramientas del cerebro (Fase D reestructurada)", () => {
     expect(parseDetalle({ tiene_inundaciones: "tal vez", nivel_agua_cm: 5000, num_entradas: 1.5, anchos_cm: [90, 0], porcentaje_convencimiento: 30 })).toEqual({ porcentajeConvencimiento: 30 });
     expect(parseDetalle({})).toBeNull();
     expect(parseDetalle("basura")).toBeNull();
-    const t = buildAgentTools(rows);
+    const t = buildAgentTools(rows, stages);
     const { valid, ignored } = validateToolCalls(
       [
         { toolName: TOOL_ACTUALIZAR_DETALLE, input: { num_entradas: 3 } },
