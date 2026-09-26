@@ -250,6 +250,7 @@ export function InboxBoard({ openContactId = null }: { openContactId?: string | 
       if (selectedIdRef.current) setRevalToken((n) => n + 1);
       return;
     }
+    if (event.type === "stages.updated") return; // los nombres de etapa vienen del contexto
     scheduleUpdate(event.conversationId);
     const id = selectedIdRef.current;
     if (!id || event.conversationId !== id) return;

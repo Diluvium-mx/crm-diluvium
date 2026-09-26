@@ -2,7 +2,8 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { requireActiveMembership } from "@/lib/auth/active-organization";
 import { AD_PEOPLE_PAGE_SIZE, getAd } from "@/lib/ads/queries";
-import { STAGE_LABELS, type Stage } from "../../contactos/_data/types";
+import { listFunnelStages } from "@/lib/contacts/funnel-stages";
+import { roleKey, stageLabel } from "@/lib/contacts/stages";
 
 // Página de un anuncio: Campaña › Conjunto › Anuncio, su miniatura (una sola
 // copia chica; el video se ve en Meta), el texto, la llamada a la acción, cuántos
@@ -15,8 +16,11 @@ export default async function AnuncioPage({ params, searchParams }: PageProps<"/
   const { adKey } = await params;
   const pagina = (await searchParams).pagina;
   const { organizationId } = await requireActiveMembership();
-  const ad = await getAd(organizationId, adKey, { page: typeof pagina === "string" ? Number(pagina) : 1 });
+  const [ad, stages] = await Promise.all([getAd(organizationId, adKey, { page: typeof pagina === "string" ? Number(pagina) : 1 }), listFunnelStages(organizationId)]);
   if (!ad) notFound();
+  // "Compraron" = la etapa con papel "Venta cerrada" (Compra, o como se llame hoy).
+  const ventaCerrada = roleKey(stages, "venta_cerrada");
+  const ventaName = ventaCerrada ? stageLabel(stages, ventaCerrada) : "Venta cerrada";
   const from = (ad.page - 1) * AD_PEOPLE_PAGE_SIZE + 1;
   const to = from + ad.people.length - 1;
   const pageHref = (n: number) => `/anuncios/${encodeURIComponent(ad.key)}${n > 1 ? `?pagina=${n}` : ""}`;
@@ -69,7 +73,7 @@ export default async function AnuncioPage({ params, searchParams }: PageProps<"/
             </div>
             <div className="rounded-lg border bg-card p-4">
               <p className="text-3xl font-semibold tabular-nums">{ad.bought}</p>
-              <p className="text-xs text-muted-foreground">{ad.bought === 1 ? "compró" : "compraron"} (etapa Compra)</p>
+              <p className="text-xs text-muted-foreground">{ad.bought === 1 ? "compró" : "compraron"} (etapa {ventaName})</p>
             </div>
           </div>
 
@@ -123,8 +127,8 @@ export default async function AnuncioPage({ params, searchParams }: PageProps<"/
               <li key={p.contactId} className="flex items-center justify-between gap-3 px-4 py-2 text-sm">
                 <span className="min-w-0 truncate">{p.name}</span>
                 <span className="flex shrink-0 items-center gap-3 text-xs text-muted-foreground">
-                  <span className={p.stage === "compra" ? "font-medium text-emerald-700 dark:text-emerald-300" : ""}>
-                    {STAGE_LABELS[p.stage as Stage] ?? p.stage}
+                  <span className={p.stage === ventaCerrada ? "font-medium text-emerald-700 dark:text-emerald-300" : ""}>
+                    {stageLabel(stages, p.stage)}
                   </span>
                   <span>{DATE.format(p.clickedAt)}</span>
                 </span>

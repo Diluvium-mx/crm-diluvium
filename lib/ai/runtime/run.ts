@@ -45,8 +45,8 @@ import { loadAgentConfig, loadCustomValues, loadEnabledFaqs } from "./config";
 import { loadBotOptions } from "./options";
 import { pauseForHumanReply } from "./pause";
 import { brainCandidates, brainModelForStage, handoffStage, impliedStage, type ModelSlot, type StageSignal } from "./model-by-stage";
-import type { Stage } from "@/lib/contacts/stages";
 import { loadContactStage } from "@/lib/contacts/stage";
+import { listFunnelStages } from "@/lib/contacts/funnel-stages";
 import {
   agentReplyCount,
   alreadyHandled,
@@ -517,9 +517,14 @@ export async function runAgent(job: { organizationId: string; conversationId: st
     // Modelo 1 lleva al contacto a una etapa del Modelo 2 (traspaso), esa misma respuesta
     // la escribe el Modelo 2. Un modelo sin llave en este entorno se salta.
     const isAvailable = deps.isModelAvailable ?? ((id: string) => modelAvailability(id).available);
+    // Columnas del Embudo vigentes: modelo por etapa, claves de mover_etapa y el bloque
+    // de etapas al final de las instrucciones.
+    const stages = await listFunnelStages(org);
     const stageAtStart = await loadContactStage(org, conv.contactId);
-    const candidates = brainCandidates(cfg, stageAtStart, isAvailable);
-    const planned = brainModelForStage(cfg, stageAtStart);
+    // El modelo de cada etapa sale de la tabla de columnas (funnel_stages.model_slot).
+    const modelCfg = { modelo1: cfg.modelo1, modeloCerebro: cfg.modeloCerebro, stages };
+    const candidates = brainCandidates(modelCfg, stageAtStart, isAvailable);
+    const planned = brainModelForStage(modelCfg, stageAtStart);
     if (candidates[0].modelId !== planned.modelId) {
       console.warn(`[agente] ${conv.id}: el Modelo ${planned.slot} (${planned.modelId}) no está disponible aquí; contesta el Modelo ${candidates[0].slot} (${candidates[0].modelId})`);
     }
@@ -530,23 +535,23 @@ export async function runAgent(job: { organizationId: string; conversationId: st
       question: applyCustomValues(f.question, values),
       answer: applyCustomValues(f.answer, values),
     }));
-    const system = buildBrainSystemWithRuntime(applyCustomValues(cfg.goal, values), faqs, options.responseLength);
+    const system = buildBrainSystemWithRuntime(applyCustomValues(cfg.goal, values), faqs, stages, options.responseLength);
     // Contexto del CRM (etapa, cotización y, desde la parte 1, el Detalle ya guardado)
     // en el último turno del cliente. En un traspaso lleva también la etapa a la que pasa.
     const mediaUrls = await mediaUrlsFor(history, deps.resolveImage, options.readImages);
     const detalleContext = await detalleContextFor(org, conv.contactId);
     // Un modelo sin lectura de PDF (p. ej. Qwen) recibe el PDF como nota de texto.
     // Opciones del bot: sin imágenes ("[imagen]") o sin notas de voz ("[nota de voz]").
-    const messagesFor = async (model: CatalogModel, avanzaA: Stage | null) =>
+    const messagesFor = async (model: CatalogModel, avanzaA: string | null) =>
       buildModelMessages(history, mediaUrls, {
         cleanText,
-        crmContext: [await crmContextFor(org, conv.contactId, avanzaA), detalleContext].filter(Boolean).join("\n"),
+        crmContext: [await crmContextFor(org, conv.contactId, stages, avanzaA), detalleContext].filter(Boolean).join("\n"),
         ...(model.pdf ? {} : { maxPdfs: 0 }),
         ...(options.readImages ? {} : { maxImages: 0 }),
         ...(options.transcribeAudio ? {} : { voiceNotesOff: true }),
       });
     // Herramientas (Fase D): una por workflow habilitado con "agente" + fijar_cotizacion.
-    const agentTools = await loadAgentTools(org);
+    const agentTools = await loadAgentTools(org, stages);
     // ¿Sigue el agente a cargo? Si durante la llamada un vendedor contestó, pausaron
     // al agente o apagaron el canal, no hay tarjeta ni otro intento (ya decidió alguien).
     const stillInCharge = async (): Promise<boolean> => {
@@ -556,7 +561,7 @@ export async function runAgent(job: { organizationId: string; conversationId: st
     };
     // Una llamada al cerebro. Un error del proveedor o una respuesta sin texto ni acciones
     // (tokens agotados, filtro del proveedor…) cuentan como falla; las dos dejan su fila.
-    const attempt = async (model: CatalogModel, avanzaA: Stage | null = null): Promise<BrainOk | BrainFail> => {
+    const attempt = async (model: CatalogModel, avanzaA: string | null = null): Promise<BrainOk | BrainFail> => {
       const messages = await messagesFor(model, avanzaA);
       const t0 = Date.now();
       let res: CallModelResult;
@@ -623,7 +628,7 @@ export async function runAgent(job: { organizationId: string; conversationId: st
     // que decidió el Modelo 1 se respeta aunque el Modelo 2 no la pida. Si el Modelo 2
     // falla, sale la respuesta del Modelo 1 (el cliente nunca se queda sin respuesta).
     if (usedSlot === 1) {
-      const target = handoffStage(cfg, stageAtStart, impliedStage(stageSignals(used.toolCalls)));
+      const target = handoffStage(modelCfg, stageAtStart, impliedStage(stages, stageSignals(used.toolCalls)));
       const model2 = target ? getModel(cfg.modeloCerebro) : undefined;
       if (target && model2 && model2.id !== used.model.id && isAvailable(model2.id)) {
         const second = await attempt(model2, target);
@@ -648,7 +653,7 @@ export async function runAgent(job: { organizationId: string; conversationId: st
     // Fase E: si un vendedor movió la etapa durante la generación y con ella cambió
     // el modelo que debe contestar, esta respuesta no sale: se regenera con el correcto.
     const stageNow = await loadContactStage(org, conv.contactId);
-    if (stageNow !== stageAtStart && brainCandidates(cfg, stageNow, isAvailable)[0].modelId !== candidates[0].modelId) {
+    if (stageNow !== stageAtStart && brainCandidates(modelCfg, stageNow, isAvailable)[0].modelId !== candidates[0].modelId) {
       await recordAiUsage({ ...brainUsage, outcome: "discarded_stale", error: "cambió la etapa y con ella el modelo" });
       console.info(`[agente] ${conv.id}: respuesta descartada (la etapa cambió a ${stageNow} durante la generación), ronda ${round}`);
       continue;
@@ -707,6 +712,7 @@ export async function runAgent(job: { organizationId: string; conversationId: st
       calls: toolCalls,
       modelText: out.kind === "reply" ? out.text : "",
       pendingSince: pending[0]?.createdAt ?? null,
+      stages,
     });
     const actionCtx = { organizationId: org, conversationId: conv.id, contactId: conv.contactId, batchMessageId: lastRead.id, receiptMessageId: receiptMessageId(pending), now, since: pending[0]?.createdAt ?? null };
     // Sin texto del modelo y sin ninguna acción que mande algo al cliente (solo

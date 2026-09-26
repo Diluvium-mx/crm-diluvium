@@ -2,6 +2,8 @@
 // seguro para el cliente: lo usan la página (lee ?seccion= de la URL) y el editor.
 export const AGENT_SECTIONS = [
   { id: "modelos", label: "Modelos" },
+  // Columnas del Embudo (26-sep-2026): nombre, orden, color, papel, regla del bot y modelo.
+  { id: "etapas", label: "Etapas" },
   { id: "goal", label: "Instrucciones (Goal)" },
   { id: "faqs", label: "FAQs" },
   { id: "opciones", label: "Opciones" },

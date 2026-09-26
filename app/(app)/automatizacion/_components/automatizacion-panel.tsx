@@ -18,7 +18,7 @@ import {
   type WorkflowView,
 } from "@/lib/actions/workflows";
 import type { MediaAssetView } from "@/lib/media-library/service";
-import { STAGE_LABELS } from "../../contactos/_data/types";
+import { useFunnelStages } from "../../_components/funnel-stages-provider";
 import { BibliotecaTab } from "./biblioteca-tab";
 import { RUN_STATUS_LABEL, SKIP_REASON_LABEL, STEP_ICON, stepSummary, TRIGGER_LABEL } from "./labels";
 import { toDraft, toInput, WorkflowEditor, type EditorDraft } from "./workflow-editor";
@@ -35,6 +35,7 @@ export function AutomatizacionPanel({
   initialRuns: WorkflowRunView[];
 }) {
   const [tab, setTab] = useState<Tab>("workflows");
+  const { labelOf } = useFunnelStages();
   const [items, setItems] = useState(initialWorkflows);
   const [assets, setAssets] = useState(initialAssets);
   const [runs, setRuns] = useState(initialRuns);
@@ -168,7 +169,7 @@ export function AutomatizacionPanel({
                         {w.triggerAgent && <Chip>🤖 agente</Chip>}
                         {w.triggerCommand && <Chip mono>{w.triggerCommand}</Chip>}
                         {w.triggerKeywords.length > 0 && <Chip>🔑 {w.triggerKeywords.slice(0, 3).join(", ")}{w.triggerKeywords.length > 3 ? "…" : ""}</Chip>}
-                        {w.triggerStage && <Chip>↗ {STAGE_LABELS[w.triggerStage]}</Chip>}
+                        {w.triggerStage && <Chip>↗ {labelOf(w.triggerStage)}</Chip>}
                         {w.missingMedia.length > 0 && <Chip warn>⚠ falta archivo</Chip>}
                         <span className="ml-auto text-[11px] text-muted-foreground">{w.runs7d} corridas · 7 días</span>
                         <div className="flex gap-0.5">

@@ -5,7 +5,7 @@
 // biblioteca (o sube ahí mismo). Sin lienzo visual: eso es v2.
 import { useState } from "react";
 import { ArrowDown, ArrowUp, Plus, Trash2 } from "lucide-react";
-import { STAGES, STAGE_LABELS } from "../../contactos/_data/types";
+import { useFunnelStages } from "../../_components/funnel-stages-provider";
 import type { WorkflowInput, WorkflowView } from "@/lib/actions/workflows";
 import type { MediaAssetView } from "@/lib/media-library/service";
 import { MAX_STEPS, MAX_WAIT_SECONDS, type StepPayload } from "@/lib/workflows/steps";
@@ -67,6 +67,7 @@ export function WorkflowEditor({
   onAssetsChanged: (next: MediaAssetView[]) => void;
   isSystem: boolean;
 }) {
+  const { stages } = useFunnelStages();
   const [picking, setPicking] = useState<number | null>(null);
   const set = (patch: Partial<EditorDraft>) => onChange({ ...draft, ...patch });
   const setStep = (i: number, step: StepPayload) => set({ steps: draft.steps.map((s, j) => (j === i ? step : s)) });
@@ -113,9 +114,9 @@ export function WorkflowEditor({
             <span className="text-xs font-medium text-muted-foreground">Al entrar a la etapa</span>
             <select value={draft.triggerStage ?? ""} onChange={(e) => set({ triggerStage: (e.target.value || null) as EditorDraft["triggerStage"] })} className={inputClass}>
               <option value="">— no —</option>
-              {STAGES.map((s) => (
-                <option key={s} value={s}>
-                  {STAGE_LABELS[s]}
+              {stages.map((s) => (
+                <option key={s.key} value={s.key}>
+                  {s.name}
                 </option>
               ))}
             </select>

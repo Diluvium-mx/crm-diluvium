@@ -43,6 +43,23 @@ function payloadToEvent(raw: string): { organizationId: string; event: InboxEven
       const { contactos } = data as Record<string, unknown>;
       return { organizationId: org, event: { type, contactos: typeof contactos === "number" && contactos > 0 ? contactos : 0 } };
     }
+    // Cambió el juego de etapas del Embudo (lib/contacts/funnel-stages.ts).
+    if (type === "stages.updated") {
+      const { reason, movedContacts, from, to } = data as Record<string, unknown>;
+      const reasons = ["created", "updated", "reordered", "role", "deleted"] as const;
+      const r = reasons.find((x) => x === reason);
+      if (!r) return null;
+      return {
+        organizationId: org,
+        event: {
+          type,
+          reason: r,
+          movedContacts: typeof movedContacts === "number" ? movedContacts : 0,
+          from: typeof from === "string" ? from : null,
+          to: typeof to === "string" ? to : null,
+        },
+      };
+    }
     // Un contacto cambió (etapa, temperatura, cotización, Detalle): lib/contacts/notify-updated.ts.
     if (type === "contact.updated") {
       const event = parseContactUpdated(data as Record<string, unknown>);

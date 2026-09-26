@@ -22,9 +22,8 @@ import { createSerialSaves } from "@/lib/autosave/serial-saves";
 import { trackSaves } from "@/lib/autosave/tracked-saves";
 import { useInboxStream } from "../../dashboard/_components/use-inbox-stream";
 import { formatPhone } from "@/lib/phone-format";
+import { useFunnelStages } from "../../_components/funnel-stages-provider";
 import {
-  STAGES,
-  STAGE_LABELS,
   TEMPERATURES,
   TEMPERATURE_EMOJI,
   TEMPERATURE_LABELS,
@@ -167,6 +166,8 @@ export function ContactDetails({
   action?: React.ReactNode;
 }) {
   const { status, run } = useSaveStatus();
+  // Columnas del Embudo vigentes (nombre y orden en vivo).
+  const { stages } = useFunnelStages();
   const [details, setDetails] = useState<Details | null>(null);
   const [loadError, setLoadError] = useState(false);
   // Borradores de los campos de texto (se guardan al salir del campo).
@@ -498,11 +499,13 @@ export function ContactDetails({
               }}
               className={`${input} disabled:opacity-60`}
             >
-              {STAGES.map((s) => (
-                <option key={s} value={s}>
-                  {STAGE_LABELS[s]}
+              {stages.map((s) => (
+                <option key={s.key} value={s.key}>
+                  {s.name}
                 </option>
               ))}
+              {/* La etapa del contacto ya no existe (se borró hace un instante): se ve hasta releer. */}
+              {!stages.some((s) => s.key === stage) && <option value={stage}>{stage}</option>}
             </select>
           </label>
           <label className="-mx-1 space-y-1 px-1 py-0.5">

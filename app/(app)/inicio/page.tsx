@@ -9,7 +9,7 @@ import {
 import { resolveRange } from "@/lib/dashboard/range";
 import { aiSpendSummary } from "@/lib/dashboard/ai-spend";
 import { loadWhatsappStatus } from "@/lib/monitoring/dashboard-status";
-import { STAGES, STAGE_LABELS } from "../contactos/_data/types";
+import { listFunnelStages } from "@/lib/contacts/funnel-stages";
 import { AiSpendCard } from "./_components/ai-spend-card";
 import { BreakdownList } from "./_components/breakdown-list";
 import { DailyChart } from "./_components/daily-chart";
@@ -38,13 +38,14 @@ export default async function InicioPage({ searchParams }: PageProps<"/inicio">)
   const range = resolveRange({ mes: param(params.mes), desde: param(params.desde), hasta: param(params.hasta) });
 
   const canSeeSpend = roleAllows(role, "aiSpend", "read");
-  const [cards, series, breakdown, spend, whatsapp] = await Promise.all([
+  const [cards, series, breakdown, spend, whatsapp, stages] = await Promise.all([
     newConversationsCards(db, organizationId),
     newConversationsByDay(db, organizationId, range),
     newConversationsBreakdown(db, organizationId, range),
     canSeeSpend ? aiSpendSummary(db, organizationId) : null,
     // Alarma de desconexión: lo último que guardó el monitoreo (no llama a Zernio).
     loadWhatsappStatus(db, organizationId),
+    listFunnelStages(organizationId),
   ]);
 
   const byStage = new Map(breakdown.porEtapa.map((b) => [b.clave, b.total]));
@@ -83,7 +84,7 @@ export default async function InicioPage({ searchParams }: PageProps<"/inicio">)
         <BreakdownList
           title="Por etapa (actual)"
           total={breakdown.total}
-          rows={STAGES.map((stage) => ({ label: STAGE_LABELS[stage], total: byStage.get(stage) ?? 0 }))}
+          rows={stages.map((stage) => ({ label: stage.name, total: byStage.get(stage.key) ?? 0 }))}
         />
         <div className="rounded-lg border bg-card p-4">
           <h2 className="text-sm font-semibold">Llegaron por anuncio</h2>

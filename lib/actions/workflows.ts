@@ -9,7 +9,8 @@ import { z } from "zod";
 import { requireActiveMembership } from "@/lib/auth/active-organization";
 import { roleAllows } from "@/lib/auth/permissions";
 import { db } from "@/lib/db";
-import { contactStageEnum } from "@/lib/db/schema/contacts";
+import { listFunnelStages } from "@/lib/contacts/funnel-stages";
+import { isStageKey } from "@/lib/contacts/stages";
 import { conversations, mediaAssets, workflowRuns, workflowSteps, workflows } from "@/lib/db/schema";
 import { listRecentRuns, startWorkflowRun, type StartRunResult } from "@/lib/workflows/executor";
 import { seedDefaultWorkflows } from "@/lib/workflows/seed";
@@ -30,7 +31,8 @@ export type WorkflowView = {
   triggerAgent: boolean;
   triggerKeywords: string[];
   triggerCommand: string | null;
-  triggerStage: (typeof contactStageEnum.enumValues)[number] | null;
+  /** Clave de la etapa (funnel_stages.key) que lo dispara al entrar, o null. */
+  triggerStage: string | null;
   position: number;
   steps: StepPayload[];
   /** Títulos de los archivos que faltan (el workflow no se puede habilitar). */
@@ -66,7 +68,8 @@ const workflowInputSchema = z.object({
   triggerAgent: z.boolean(),
   triggerKeywords: keywordsSchema,
   triggerCommand: commandSchema,
-  triggerStage: z.enum(contactStageEnum.enumValues).nullable(),
+  // Clave de una etapa vigente de la organización (se comprueba contra funnel_stages).
+  triggerStage: z.string().trim().min(1).max(40).nullable(),
   steps: stepsSchema,
 });
 export type WorkflowInput = z.infer<typeof workflowInputSchema>;
@@ -149,6 +152,9 @@ export async function saveWorkflow(raw: WorkflowInput): Promise<{ ok: true; id: 
   const parsed = workflowInputSchema.safeParse(raw);
   if (!parsed.success) return { ok: false, error: parsed.error.issues[0]?.message ?? "Datos inválidos." };
   const input = parsed.data;
+  if (input.triggerStage !== null && !isStageKey(await listFunnelStages(organizationId), input.triggerStage)) {
+    return { ok: false, error: "Esa etapa ya no existe en el Embudo; elige otra." };
+  }
   // Un archivo referenciado debe existir (vivo) en ESTA organización.
   const assetIds = input.steps.flatMap((s) => (s.kind === "send_media" && s.assetId ? [s.assetId] : []));
   if (assetIds.length) {
