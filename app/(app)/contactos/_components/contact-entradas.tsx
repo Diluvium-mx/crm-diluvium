@@ -61,6 +61,16 @@ function EntradaRow({
   }, [entrada]);
   const requested = <K extends keyof Values>(field: K): Values[K] =>
     field in pending ? (pending[field] as Values[K]) : entrada[field];
+  // En vivo: si la entrada cambia desde fuera (Agente IA, otro vendedor o la
+  // respuesta de un guardado), el borrador se pone al día, salvo el que el
+  // vendedor está tecleando o tiene su guardado pendiente.
+  const [typing, setTyping] = useState({ ancho: false, manual: false });
+  const [seen, setSeen] = useState(entrada);
+  if (seen !== entrada) {
+    setSeen(entrada);
+    if (!typing.ancho && !("anchoCm" in pending)) setAncho(entrada.anchoCm === null ? "" : String(entrada.anchoCm));
+    if (!typing.manual && !("tamanoManual" in pending)) setManual(entrada.tamanoManual ?? "");
+  }
   const showDraft: { [K in keyof Values]: (value: Values[K]) => void } = {
     anchoCm: (v) => setAncho(v === null ? "" : String(v)),
     linea: () => {},
@@ -107,8 +117,14 @@ function EntradaRow({
           inputMode="numeric"
           placeholder="cm"
           value={ancho}
-          onChange={(e) => setAncho(e.target.value)}
-          onBlur={saveAncho}
+          onChange={(e) => {
+            setTyping((t) => (t.ancho ? t : { ...t, ancho: true }));
+            setAncho(e.target.value);
+          }}
+          onBlur={() => {
+            setTyping((t) => ({ ...t, ancho: false }));
+            saveAncho();
+          }}
           className={`${field} w-16`}
         />
         <select
@@ -134,8 +150,12 @@ function EntradaRow({
           placeholder="Manual"
           value={manual}
           maxLength={50}
-          onChange={(e) => setManual(e.target.value)}
+          onChange={(e) => {
+            setTyping((t) => (t.manual ? t : { ...t, manual: true }));
+            setManual(e.target.value);
+          }}
           onBlur={() => {
+            setTyping((t) => ({ ...t, manual: false }));
             const next = manual.trim() || null;
             if (next !== requested("tamanoManual")) save("tamanoManual", next);
           }}

@@ -8,6 +8,7 @@ import { isTeamRole, ROLE_LABELS } from "@/lib/team/rules";
 import { NavItem } from "./_components/nav-item";
 import { SignOutButton } from "./_components/sign-out-button";
 import { UserMenu } from "./_components/user-menu";
+import { StageChangeToasts } from "./_components/stage-change-toasts";
 import { ThemeToggle } from "@/components/theme-toggle";
 
 // "Dashboard" va primero y es el destino al entrar (/inicio). La Bandeja
@@ -108,6 +109,10 @@ export default async function AppLayout({
         <main className="flex flex-1 flex-col bg-background">
           {children}
         </main>
+
+        {/* Aviso emergente de cambio de etapa (Agente IA, automatización u otro
+            vendedor), en todas las secciones. Solo con membresía: el SSE la exige. */}
+        {role && <StageChangeToasts viewerUserId={session.user.id} />}
       </div>
     </div>
   );

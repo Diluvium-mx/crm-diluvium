@@ -2,10 +2,14 @@
 
 // Suscripción ÚNICA por pestaña al tiempo real de la bandeja (GET
 // /api/inbox/stream, SSE sobre LISTEN/NOTIFY). La usan la Bandeja, el kanban de
-// Contactos y el chat de su pop-up: todos comparten UNA sola conexión
-// (EventSource de módulo con conteo de suscriptores) y reciben los mismos
-// eventos. Se abre con el primer suscriptor y se cierra con el último.
-// EventSource reconecta solo y el servidor manda `reload` en cada (re)conexión.
+// Contactos, el chat de su pop-up, el Detalle del contacto y los avisos de cambio
+// de etapa (en el layout: toda pantalla del CRM la tiene abierta). Todos
+// comparten UNA sola conexión (EventSource de módulo con conteo de suscriptores)
+// y reciben los mismos eventos. Se abre con el primer suscriptor y se cierra con
+// el último. EventSource reconecta solo y el servidor manda `reload` en cada
+// (re)conexión. Como los avisos del layout la dejan abierta al cambiar de
+// sección, un tablero (Bandeja, Embudo) que se suscribe con ella YA abierta pide
+// su propio `reload` (`reloadIfOpen`), como cuando él abría la conexión.
 import { useEffect, useRef } from "react";
 import type { InboxEvent } from "@/lib/inbox/types";
 
@@ -16,6 +20,7 @@ const EVENT_TYPES = [
   "message.deleted",
   "contact.created",
   "contacts.bulk",
+  "contact.updated",
 ] as const;
 
 type Listener = (event: InboxEvent) => void;
@@ -44,9 +49,17 @@ function open(): void {
   }
 }
 
-function subscribe(listener: Listener): () => void {
+function subscribe(listener: Listener, reloadIfOpen: boolean): () => void {
   listeners.add(listener);
+  const alreadyOpen = source?.readyState === EventSource.OPEN;
   open();
+  // Con la conexión abierta el servidor no vuelve a mandar `reload`: se le da a
+  // este suscriptor (lo escrito entre que cargó su pantalla y ahora no se pierde).
+  if (alreadyOpen && reloadIfOpen) {
+    queueMicrotask(() => {
+      if (listeners.has(listener)) listener({ type: "reload" });
+    });
+  }
   return () => {
     listeners.delete(listener);
     if (listeners.size === 0 && source) {
@@ -56,12 +69,17 @@ function subscribe(listener: Listener): () => void {
   };
 }
 
-/** Llama `onEvent` con cada evento de la organización activa. El handler puede cambiar sin re-suscribir. */
-export function useInboxStream(onEvent: (event: InboxEvent) => void): void {
+/**
+ * Llama `onEvent` con cada evento de la organización activa. El handler puede
+ * cambiar sin re-suscribir. `reloadIfOpen`: recibir `reload` al suscribirse
+ * aunque la conexión ya estuviera abierta (tableros de página).
+ */
+export function useInboxStream(onEvent: (event: InboxEvent) => void, { reloadIfOpen = false }: { reloadIfOpen?: boolean } = {}): void {
   const handler = useRef(onEvent);
   useEffect(() => {
     handler.current = onEvent;
   });
 
-  useEffect(() => subscribe((event) => handler.current(event)), []);
+  const reloadRef = useRef(reloadIfOpen);
+  useEffect(() => subscribe((event) => handler.current(event), reloadRef.current), []);
 }

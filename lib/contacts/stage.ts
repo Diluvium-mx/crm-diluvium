@@ -8,6 +8,7 @@ import { and, eq, or, lte, ne, isNull, sql } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { contacts } from "@/lib/db/schema";
 import { onContactStageEntered } from "@/lib/workflows/triggers";
+import { notifyContactUpdated, type ContactActor } from "./notify-updated";
 
 import { isForward, type Stage, type StageChangedBy } from "./stages";
 
@@ -36,6 +37,11 @@ export async function moveStageForward(input: {
   fireStageTriggers?: boolean;
   /** Workflows que ya salen en la misma respuesta: no se repiten por etapa. */
   excludeWorkflowIds?: readonly string[];
+  /**
+   * Vendedor detrás del cambio, si lo hubo (p. ej. el que escribió /banco): el
+   * aviso emergente de "cambió de etapa" no le sale a él.
+   */
+  actorUserId?: string | null;
 }): Promise<{ from: Stage } | null> {
   const now = input.now ?? new Date();
   // El CAS puede perder contra otro avance concurrente: se reintenta mientras el
@@ -60,11 +66,24 @@ async function tryMove(input: Parameters<typeof moveStageForward>[0], now: Date)
   const vendedorManda = input.since
     ? or(isNull(contacts.stageChangedBy), ne(contacts.stageChangedBy, "vendedor"), lte(contacts.stageChangedAt, input.since))
     : sql`true`;
-  const [row] = await db
-    .update(contacts)
-    .set({ stage: input.to, stageChangedAt: now, stageChangedBy: input.by })
-    .where(and(eq(contacts.id, input.contactId), eq(contacts.organizationId, input.organizationId), eq(contacts.stage, current.stage), vendedorManda))
-    .returning({ id: contacts.id });
+  // El aviso en vivo (contact.updated) sale en la MISMA transacción: al confirmar.
+  const row = await db.transaction(async (tx) => {
+    const [updated] = await tx
+      .update(contacts)
+      .set({ stage: input.to, stageChangedAt: now, stageChangedBy: input.by })
+      .where(and(eq(contacts.id, input.contactId), eq(contacts.organizationId, input.organizationId), eq(contacts.stage, current.stage), vendedorManda))
+      .returning({ id: contacts.id });
+    if (updated) {
+      await notifyContactUpdated(tx, {
+        organizationId: input.organizationId,
+        contactId: input.contactId,
+        changes: ["etapa"],
+        stage: { from: current.stage, to: input.to },
+        by: actorFor(input.by, input.actorUserId),
+      });
+    }
+    return updated;
+  });
   if (!row) return "retry";
   if (input.fireStageTriggers !== false) {
     await onContactStageEntered({
@@ -79,6 +98,15 @@ async function tryMove(input: Parameters<typeof moveStageForward>[0], now: Date)
     });
   }
   return { from: current.stage };
+}
+
+// Quién movió, para el aviso en vivo: el agente; una regla del CRM (automatización,
+// con el vendedor que la disparó por comando, si lo hubo); o un vendedor. Hoy
+// ningún vendedor mueve por aquí (su cambio va por updateContactStage).
+function actorFor(by: StageChangedBy, userId: string | null | undefined): ContactActor {
+  if (by === "agente") return { kind: "agente" };
+  if (by === "vendedor" && userId) return { kind: "vendedor", userId };
+  return { kind: "automatizacion", userId: userId ?? null };
 }
 
 // Etapa actual del contacto (o null si no existe). La usa el agente para elegir

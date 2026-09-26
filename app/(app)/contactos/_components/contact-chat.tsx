@@ -35,6 +35,8 @@ export function ContactChat({ contactId }: { contactId: string }) {
   const conversationIdRef = useRef<string | null>(null);
   const pendingLoadRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   useEffect(() => () => clearTimeout(pendingLoadRef.current), []);
+  const stageTimerRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+  useEffect(() => () => clearTimeout(stageTimerRef.current), []);
   // Conversación ya marcada como leída al abrirla (una vez; luego la marcan las
   // llegadas y el regreso a la pestaña).
   const markedOpenRef = useRef<string | null>(null);
@@ -91,6 +93,17 @@ export function ContactChat({ contactId }: { contactId: string }) {
   useInboxStream((event) => {
     if (event.type === "reload") return void load();
     if (event.type === "contact.created" || event.type === "contacts.bulk") return;
+    // Etapa cambiada por otro: el chip del encabezado se pone al día (500 ms,
+    // varios cambios seguidos = una lectura).
+    if (event.type === "contact.updated") {
+      if (event.contactId === contactId && event.changes.includes("etapa") && !stageTimerRef.current) {
+        stageTimerRef.current = setTimeout(() => {
+          stageTimerRef.current = undefined;
+          void load();
+        }, 500);
+      }
+      return;
+    }
     const id = conversationIdRef.current;
     if (!id) {
       // Con debounce: una ráfaga de mensajes de otros clientes = una búsqueda.

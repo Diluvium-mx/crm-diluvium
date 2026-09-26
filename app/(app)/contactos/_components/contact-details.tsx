@@ -8,10 +8,15 @@
 // Guardado automático al salir de cada campo (sin botón Guardar), con aviso
 // sutil. Etapa y temperatura las maneja el padre (cada vista las sincroniza a su
 // modo: el tablero con su estado optimista, la Bandeja con el suyo).
+// En vivo (contact.updated del SSE): lo que cambie otro (Agente IA —incluido el
+// autollenado—, automatización u otro vendedor) aparece solo, sin pisar un campo
+// que el vendedor esté escribiendo ni uno con su guardado en curso.
 import Link from "next/link";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { getContactDetails, setNumEntradas, updateContactQualification } from "@/lib/actions/contact-qualification";
 import { createSerialSaves } from "@/lib/autosave/serial-saves";
+import { trackSaves } from "@/lib/autosave/tracked-saves";
+import { useInboxStream } from "../../dashboard/_components/use-inbox-stream";
 import { formatPhone } from "@/lib/phone-format";
 import {
   STAGES,
@@ -32,6 +37,18 @@ type Details = Awaited<ReturnType<typeof getContactDetails>>;
 type Inundaciones = NonNullable<Details["tieneInundaciones"]>;
 type QualField = "tieneInundaciones" | "nivelAguaCm" | "nivelAguaTexto" | "montoCotizacion" | "porcentajeConvencimiento";
 type Qualification = Pick<Details, QualField>;
+
+const QUAL_FIELDS: readonly QualField[] = [
+  "tieneInundaciones",
+  "nivelAguaCm",
+  "nivelAguaTexto",
+  "montoCotizacion",
+  "porcentajeConvencimiento",
+];
+
+function copyField<K extends QualField>(target: Qualification, source: Qualification, field: K): void {
+  target[field] = source[field];
+}
 
 function qualificationOf(d: Details): Qualification {
   return {
@@ -114,11 +131,19 @@ export function ContactDetails({
   // del último pedido se muestra (lib/autosave/serial-saves.ts). `details`
   // muestra lo último PEDIDO; `confirmed`, lo último que el servidor guardó: a
   // eso vuelve un campo si su último guardado falla.
-  const [saves] = useState(createSerialSaves);
+  // Con la cuenta de lo que se está guardando por carril: el tiempo real no pisa
+  // un campo con su guardado en curso (lib/autosave/tracked-saves.ts).
+  const [tracker] = useState(() => trackSaves(createSerialSaves()));
+  const saves = tracker.saves;
   const confirmed = useRef<Qualification | null>(null);
   const confirmedNum = useRef<number | null>(null);
+  // Campos de texto que el vendedor está escribiendo (tecleó y aún no sale del
+  // campo): el tiempo real no pisa su borrador; al salir, lo suyo se guarda.
+  const typing = useRef(new Set<string>());
+  const loaded = useRef(false);
 
   const applyDetails = useCallback((next: Details) => {
+    loaded.current = true;
     confirmed.current = qualificationOf(next);
     confirmedNum.current = next.numEntradas;
     setDetails(next);
@@ -183,6 +208,62 @@ export function ContactDetails({
     const t = setTimeout(() => void reload(), 0);
     return () => clearTimeout(t);
   }, [reload]);
+
+  // Tiempo real: la cotización, los campos del Detalle o los comentarios de ESTE
+  // contacto cambiaron (o el SSE se reconectó). Ventana fija de 500 ms: varios
+  // cambios seguidos = una lectura. Las lecturas van en su carril: solo se aplica
+  // la última. Se salta lo que el vendedor tiene en curso: un campo con guardado
+  // pendiente (o que se guardó mientras la lectura iba en camino) y el borrador
+  // que está tecleando.
+  const liveTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+  useEffect(() => () => clearTimeout(liveTimer.current), []);
+  function scheduleLive() {
+    if (liveTimer.current) return;
+    liveTimer.current = setTimeout(() => {
+      liveTimer.current = undefined;
+      void liveRefresh();
+    }, 500);
+  }
+  useInboxStream((event) => {
+    if (event.type === "reload") {
+      if (loaded.current) scheduleLive();
+      return;
+    }
+    if (event.type !== "contact.updated" || event.contactId !== contactId) return;
+    if (event.changes.some((change) => change === "cotizacion" || change === "detalle" || change === "comentarios")) scheduleLive();
+  });
+
+  async function liveRefresh() {
+    const snap = tracker.snapshot();
+    const outcome = await saves.save("live", () => getContactDetails(contactId));
+    // Si falla, el siguiente cambio (o la reconexión) lo vuelve a intentar.
+    if (outcome.status !== "saved" || !outcome.latest) return;
+    const fresh = outcome.result;
+    const busy = new Set([...QUAL_FIELDS, "entradas", "comentarios"].filter((lane) => tracker.touchedSince(lane, snap)));
+    const freshQ = qualificationOf(fresh);
+    if (confirmed.current) {
+      const next = { ...confirmed.current };
+      for (const field of QUAL_FIELDS) if (!busy.has(field)) copyField(next, freshQ, field);
+      confirmed.current = next;
+    }
+    if (!busy.has("entradas")) confirmedNum.current = fresh.numEntradas;
+    setDetails((d) => {
+      if (!d) return d;
+      const next: Details = { ...d, anuncio: fresh.anuncio, anuncios: fresh.anuncios, email: fresh.email, tags: fresh.tags };
+      for (const field of QUAL_FIELDS) if (!busy.has(field)) copyField(next, freshQ, field);
+      if (!busy.has("entradas")) {
+        next.numEntradas = fresh.numEntradas;
+        next.entradas = fresh.entradas;
+      }
+      if (!busy.has("comentarios")) next.comentarios = fresh.comentarios;
+      return next;
+    });
+    const free = (lane: string, draft: string) => !busy.has(lane) && !typing.current.has(draft);
+    if (free("nivelAguaCm", "nivelCm")) setNivelCm(fresh.nivelAguaCm === null ? "" : String(fresh.nivelAguaCm));
+    if (free("nivelAguaTexto", "nivelTexto")) setNivelTexto(fresh.nivelAguaTexto ?? "");
+    if (free("montoCotizacion", "monto")) setMonto(fresh.montoCotizacion === null ? "" : money.format(fresh.montoCotizacion));
+    if (free("entradas", "numEntradas")) setNumEntradasDraft(fresh.numEntradas === null ? "" : String(fresh.numEntradas));
+  }
 
   // Guarda UN campo de la calificación. El valor se muestra al instante; si su
   // último guardado falla, el campo (y su borrador, vía `show`) vuelve a lo
@@ -314,8 +395,12 @@ export function ContactDetails({
                     aria-label="Nivel de agua (cm)"
                     inputMode="numeric"
                     value={nivelCm}
-                    onChange={(e) => setNivelCm(e.target.value)}
-                    onBlur={() =>
+                    onChange={(e) => {
+                      typing.current.add("nivelCm");
+                      setNivelCm(e.target.value);
+                    }}
+                    onBlur={() => {
+                      typing.current.delete("nivelCm");
                       onNumberBlur(
                         nivelCm,
                         details.nivelAguaCm,
@@ -323,8 +408,8 @@ export function ContactDetails({
                         "nivelAguaCm",
                         (v) => setNivelCm(v === null ? "" : String(v)),
                         "El nivel debe ser un entero de 0 a 1000 cm.",
-                      )
-                    }
+                      );
+                    }}
                     className={`${input} pr-8`}
                   />
                   <span className="pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 text-xs text-muted-foreground">cm</span>
@@ -334,8 +419,12 @@ export function ContactDetails({
                   placeholder="Descripción (opcional)"
                   value={nivelTexto}
                   maxLength={500}
-                  onChange={(e) => setNivelTexto(e.target.value)}
+                  onChange={(e) => {
+                    typing.current.add("nivelTexto");
+                    setNivelTexto(e.target.value);
+                  }}
                   onBlur={() => {
+                    typing.current.delete("nivelTexto");
                     const next = nivelTexto.trim() || null;
                     if (next !== details.nivelAguaTexto) saveField("nivelAguaTexto", next, (saved) => setNivelTexto(saved ?? ""));
                   }}
@@ -349,8 +438,12 @@ export function ContactDetails({
                 aria-label="Número de entradas"
                 inputMode="numeric"
                 value={numEntradas}
-                onChange={(e) => setNumEntradasDraft(e.target.value)}
+                onChange={(e) => {
+                  typing.current.add("numEntradas");
+                  setNumEntradasDraft(e.target.value);
+                }}
                 onBlur={() => {
+                  typing.current.delete("numEntradas");
                   const value = parseNumber(numEntradas, { integer: true, min: 0, max: 50 });
                   if (value === undefined) {
                     setNumEntradasDraft(details.numEntradas === null ? "" : String(details.numEntradas));
@@ -397,8 +490,12 @@ export function ContactDetails({
                   aria-label="Monto de cotización en MXN"
                   inputMode="decimal"
                   value={monto}
-                  onChange={(e) => setMonto(e.target.value)}
-                  onBlur={() =>
+                  onChange={(e) => {
+                    typing.current.add("monto");
+                    setMonto(e.target.value);
+                  }}
+                  onBlur={() => {
+                    typing.current.delete("monto");
                     onNumberBlur(
                       monto,
                       details.montoCotizacion,
@@ -406,8 +503,8 @@ export function ContactDetails({
                       "montoCotizacion",
                       (v) => setMonto(v === null ? "" : money.format(v)),
                       "El monto debe ser un número positivo.",
-                    )
-                  }
+                    );
+                  }}
                   className={`${input} pl-5`}
                 />
               </div>
