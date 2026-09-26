@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { mergeLiveContacts } from "./board-live";
+import { applyTemperatures, mergeLiveContacts } from "./board-live";
 
 type C = { id: string; stage: string; stageChangedAt: Date; temperature?: string | null };
 
@@ -48,5 +48,28 @@ describe("mergeLiveContacts", () => {
 
   it("sin cambios devuelve la misma lista", () => {
     expect(mergeLiveContacts(board, [])).toBe(board);
+  });
+});
+
+describe("applyTemperatures", () => {
+  const list = [
+    { id: "a", temperature: "caliente" as string | null },
+    { id: "b", temperature: null as string | null },
+    { id: "x", temperature: "frio" as string | null },
+  ];
+
+  it("pone al día solo las distintas, sin reordenar; sin par = sin temperatura", () => {
+    const next = applyTemperatures(list, [["a", "caliente"], ["b", "destacado"]], new Set());
+    expect(next.map((c) => [c.id, c.temperature])).toEqual([
+      ["a", "caliente"],
+      ["b", "destacado"],
+      ["x", null],
+    ]);
+    expect(next[0]).toBe(list[0]);
+  });
+
+  it("no toca las que están en escritura o en arrastre", () => {
+    const next = applyTemperatures(list, [], new Set(["a", "x"]));
+    expect(next).toBe(list);
   });
 });

@@ -261,6 +261,11 @@ describe.skipIf(!TEST_DATABASE_URL)("aviso contact.updated (Postgres real)", () 
     const changed = await contactActions.getContactsChangedSince(before);
     expect(changed.contacts.map((c) => [c.id, c.stage])).toEqual([[JUAN, "interesado"]]);
     expect(Date.parse(changed.now)).toBeGreaterThan(Date.parse(before));
+    // La temperatura (sin hora) viaja completa: la de su organización, no la de otra.
+    expect(changed.temperatures).toEqual([]);
+    await contactActions.updateContactTemperature({ contactId: JUAN, temperature: "caliente" });
+    await db.update(s.contacts).set({ temperature: "frio" }).where(d.eq(s.contacts.id, OTRO));
+    expect((await contactActions.getContactsChangedSince(changed.now)).temperatures).toEqual([[JUAN, "caliente"]]);
     await expect(contactActions.getContactsChangedSince("no es fecha")).rejects.toThrow();
     // Más de 200: se pide recargar completo.
     // Hora explícita (como la escribe la app): el now() por defecto depende del TimeZone de la base.

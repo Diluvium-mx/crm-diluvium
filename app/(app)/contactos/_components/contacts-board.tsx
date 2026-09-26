@@ -30,7 +30,7 @@ import { phoneMatchesSearch } from "@/lib/phone-format";
 import { normalizeSearch } from "@/lib/text/search";
 import { funnelTone, type FunnelSignal } from "@/lib/contacts/funnel-tone";
 import { useInboxStream } from "../../dashboard/_components/use-inbox-stream";
-import { mergeLiveContacts } from "./board-live";
+import { applyTemperatures, mergeLiveContacts } from "./board-live";
 
 // Type guard: el id del droppable siempre es una etapa (solo las columnas
 // son zonas de destino), pero esto lo deja explícito para TypeScript.
@@ -332,6 +332,9 @@ export function ContactsBoard({
   // Contactos aplicados en vivo hace poco: si después llega una recarga completa
   // (contacts.bulk, importación) con una foto leída antes, se releen.
   const recentLiveRef = useRef(new Map<string, number>());
+  // Tarjeta en arrastre a la que la puesta al día no le tocó la temperatura: se
+  // relee al soltarla.
+  const dragMissedRef = useRef(new Set<string>());
   const liveTimerRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   const draggingIdRef = useRef<string | null>(null);
   const heldRef = useRef(new Map<string, Contact>());
@@ -362,6 +365,15 @@ export function ContactsBoard({
               router.refresh();
               continue;
             }
+            // La temperatura no lleva hora: se compara completa. Sin tocar las que el
+            // vendedor está escribiendo o arrastrando (se releen al terminar).
+            const skip = new Set(writesRef.current.keys());
+            for (const id of skip) staleRef.current.add(id);
+            if (draggingIdRef.current) {
+              skip.add(draggingIdRef.current);
+              dragMissedRef.current.add(draggingIdRef.current);
+            }
+            setContacts((current) => applyTemperatures(current, changed.temperatures, skip));
             fresh = changed.contacts;
           } else {
             fresh = await getContactsByIds(ids);
@@ -378,8 +390,11 @@ export function ContactsBoard({
         if (!aliveRef.current) return;
         const apply: Contact[] = [];
         for (const contact of fresh) {
-          if (draggingIdRef.current === contact.id) heldRef.current.set(contact.id, contact);
-          else if (writesRef.current.has(contact.id)) staleRef.current.add(contact.id);
+          if (draggingIdRef.current === contact.id) {
+            heldRef.current.set(contact.id, contact);
+            // Si una recarga completa llega después de soltarla, se relee.
+            recentLiveRef.current.set(contact.id, Date.now());
+          } else if (writesRef.current.has(contact.id)) staleRef.current.add(contact.id);
           else apply.push(contact);
         }
         if (apply.length > 0) {
@@ -616,6 +631,8 @@ export function ContactsBoard({
     draggingIdRef.current = null;
     const held = heldRef.current.get(contactId);
     heldRef.current.delete(contactId);
+    if (held) recentLiveRef.current.set(contactId, Date.now());
+    if (dragMissedRef.current.delete(contactId)) scheduleLive(contactId);
     return held;
   }
 

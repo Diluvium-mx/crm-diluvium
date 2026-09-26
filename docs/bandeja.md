@@ -127,8 +127,9 @@ automatización (`/banco` → Cerca de compra) o por otro vendedor se ve sin ref
   columna manda la etapa del vendedor. Mientras una escritura del propio vendedor sobre ese contacto
   está en curso, no se aplica una lectura (al terminar se relee). En cada `reload` del SSE (al
   conectarse y al reconectar) se pone al día con `getContactsChangedSince` (lo que cambió de etapa
-  desde la carga o la vuelta anterior, en la misma fila de peticiones; con más de 200, recarga
-  completa). Si llega una recarga completa (importación), se releen los contactos cambiados en vivo
+  desde la carga o la vuelta anterior, más las temperaturas completas en pares id → temperatura,
+  porque la temperatura no lleva hora; en la misma fila de peticiones; con más de 200 cambios de
+  etapa, recarga completa). Si llega una recarga completa (importación), se releen los contactos cambiados en vivo
   en los últimos 2 min. La cotización NO se muestra en la tarjeta (decisión del dueño).
 - **Detalle del contacto** (Bandeja y pop-up): se pone al día solo (500 ms), sin pisar el campo que
   el vendedor está tecleando ni uno con su guardado en curso (`lib/autosave/tracked-saves.ts`); lo
@@ -146,9 +147,10 @@ automatización (`/banco` → Cerca de compra) o por otro vendedor se ve sin ref
   ella ya abierta pide su propio `reload` (`useInboxStream(…, { reloadIfOpen: true })`). En cada
   latido (25 s) el servidor revalida sesión, usuario activo y membresía (`lib/inbox/stream-access.ts`):
   a un vendedor desactivado se le corta el stream.
-- Pendientes teóricos: la temperatura cambiada mientras el SSE estuvo caído no se recupera sola en la
-  tarjeta (no lleva hora; sí al abrir el contacto o recargar). Un aviso emergente que llegue justo
-  durante una reconexión se pierde (el tablero sí se pone al día).
+- Pendientes teóricos: un aviso emergente que llegue justo durante una reconexión se pierde (el
+  tablero sí se pone al día). Una temperatura recuperada por la puesta al día no queda anotada como
+  "reciente": si en ese mismo instante llega una recarga completa (importación) leída antes, puede
+  volver a la vieja hasta el siguiente cambio.
 
 ### Lo que NO va (vs. GHL)
 Nueva conversación/Importar (requiere plantilla: llega con el número real), asignado/seguido/chat
