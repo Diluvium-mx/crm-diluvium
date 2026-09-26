@@ -2,9 +2,9 @@
 // contacto): "Reactivar" tras una pausa (un vendedor contestó o apagó el bot con
 // "Apagar bot", ver pause.ts). Filtra SIEMPRE por organización. La usan las
 // Server Actions de lib/actions/agente-conversacion.ts.
-import { desc, and, eq, ne } from "drizzle-orm";
+import { desc, and, eq, isNull, ne } from "drizzle-orm";
 import { db } from "@/lib/db";
-import { channels, conversations } from "@/lib/db/schema";
+import { aiAgentNotices, channels, conversations } from "@/lib/db/schema";
 import { loadNotices } from "./notices";
 
 // Vuelve a activar el agente. El corte (agent_state_changed_at = ahora) hace
@@ -26,6 +26,19 @@ export async function reactivateAgentInConversation(
       ),
     )
     .returning({ id: conversations.id });
+  // Opciones del bot: "Activar" atiende el aviso 🤖 "Llegó al máximo de respuestas" (la
+  // tarjeta del Embudo deja de estar amarilla; ya lo revisó una persona).
+  await db
+    .update(aiAgentNotices)
+    .set({ resolvedAt: now, resolution: "activar" })
+    .where(
+      and(
+        eq(aiAgentNotices.organizationId, organizationId),
+        eq(aiAgentNotices.conversationId, conversationId),
+        eq(aiAgentNotices.kind, "tope_respuestas"),
+        isNull(aiAgentNotices.resolvedAt),
+      ),
+    );
   return rows.length > 0;
 }
 
