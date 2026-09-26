@@ -35,3 +35,26 @@ export function mergeLiveContacts<T extends LiveContact>(current: readonly T[], 
   }
   return next;
 }
+
+/**
+ * Temperaturas de la puesta al día (pares id → temperatura de TODOS los que tienen
+ * una; sin par = sin temperatura). Cambia solo las tarjetas distintas, sin
+ * reordenar; `skip` = contactos que no se tocan ahora (escritura propia en curso o
+ * tarjeta en arrastre). Devuelve la misma lista si nada cambió.
+ */
+export function applyTemperatures<T extends { id: string; temperature: string | null }>(
+  current: readonly T[],
+  pairs: readonly (readonly [string, string])[],
+  skip: ReadonlySet<string>,
+): T[] {
+  const byId = new Map(pairs);
+  let changed = false;
+  const next = current.map((contact) => {
+    if (skip.has(contact.id)) return contact;
+    const temperature = byId.get(contact.id) ?? null;
+    if (contact.temperature === temperature) return contact;
+    changed = true;
+    return { ...contact, temperature };
+  });
+  return changed ? next : (current as T[]);
+}
