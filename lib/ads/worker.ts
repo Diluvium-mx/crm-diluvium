@@ -3,6 +3,7 @@
 // - thumb: UNA miniatura chica por anuncio al bucket (del link de la ficha, que
 //   caduca en horas, o del creativo de la API). Sin videos ni archivos por clic.
 // - meta: nombres de campaña/conjunto/anuncio, creativo y datos del video.
+// - status: estado Activa/Pausada de todos los anuncios, cada hora (lib/ads/meta-status.ts).
 // - fallback: mensaje que parecía de anuncio sin ficha → primer clic guardado
 //   por Zernio en la conversación;
 // - record: red de seguridad si el clic no se registró en la ingesta.
@@ -13,7 +14,7 @@ import { db } from "@/lib/db";
 import { metaAds } from "@/lib/db/schema";
 import type { MessagingProvider } from "@/lib/messaging/provider";
 import { redisConnection } from "@/lib/queue/inbound";
-import { ADS_QUEUE, enqueueAdsJob, type AdsJob } from "@/lib/queue/ads";
+import { ADS_QUEUE, enqueueAdsJob, scheduleAdStatusRefresh, type AdsJob } from "@/lib/queue/ads";
 import type { ObjectStorage } from "@/lib/storage/s3";
 import {
   attributeFromProviderConversation,
@@ -24,6 +25,8 @@ import {
   type RecordedClick,
 } from "./attribution";
 import { refreshMetaAd } from "./meta-cache";
+import { STATUS_REFRESH_MS } from "./ad-status";
+import { refreshAdStatuses } from "./meta-status";
 import { storeAdThumbnail, THUMB_MAX_ATTEMPTS, ThumbnailError } from "./thumbnail";
 
 /** Encola lo que sigue a un clic nuevo: la miniatura del anuncio (si aún no tiene) y los nombres de Meta. */
@@ -81,6 +84,14 @@ export function startAdsWorker({ provider, storage }: { provider: MessagingProvi
             ? `anuncio ${data.adId}: error (${r.error}); reintento en ${Math.round(r.retryInMs / 60_000)} min`
             : `anuncio ${data.adId}: ${r.status}`;
         }
+        case "status": {
+          const r = await refreshAdStatuses();
+          return r.status === "actualizado"
+            ? `estado de ${r.checked} anuncio(s) en Meta: ${r.updated} leído(s)`
+            : r.status === "error"
+              ? `estado de los anuncios: error (${r.error}); se reintenta en 1 h`
+              : "estado de los anuncios: ninguno identificado aún";
+        }
         case "fallback": {
           const { result, click } = await attributeFromProviderConversation(provider, data.job);
           if (click) await enqueueAfterClick(click);
@@ -100,7 +111,11 @@ export function startAdsWorker({ provider, storage }: { provider: MessagingProvi
     console.error(`[anuncios] falló ${job?.data.kind} (intento ${job?.attemptsMade}): ${error.message}`);
   });
 
+  // El programador de cada hora vive en Redis; se registra en el primer barrido que lo logre.
+  let statusScheduled = false;
+
   async function sweep(): Promise<void> {
+    if (!statusScheduled) statusScheduled = await scheduleAdStatusRefresh(STATUS_REFRESH_MS);
     // 1) Red de seguridad: fichas guardadas en el mensaje sin clic registrado.
     for (const m of await messagesWithUnrecordedReferral()) {
       await enqueueAdsJob({ kind: "record", organizationId: m.organizationId, messageId: m.id });

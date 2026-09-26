@@ -3,7 +3,8 @@
 // Tabla de anuncios de Meta: SOLO presentación (no lee la base; recibe filas
 // `AdRow`). Contrato en docs/ui-anuncios-tabla.md; los datos los conecta el
 // bloque "Anuncios de Meta". Buscador sin acentos (lib/text/search.ts), filtro
-// Activas/Todas, orden por cualquier encabezado (por defecto Clientes ↓),
+// Activas/Todas (Activas esconde solo las que Meta reporta pausadas: sin estado,
+// "—", siguen a la vista para que una falla de Meta no vacíe la tabla), orden por cualquier encabezado (por defecto Clientes ↓),
 // encabezado fijo con la tabla deslizándose por dentro (la página no), números a
 // la derecha con tabular-nums, filas como tarjeta-enlace (data-link="card") y
 // virtualizada (@tanstack/react-virtual) cuando pasa de 100 filas.
@@ -27,6 +28,7 @@ export type AdRow = {
   metaUrl: string | null;
   campaignName: string;
   adsetName: string;
+  /** Estado en Meta; "unknown" = Meta no respondió o aún no se consulta ("—"). */
   status: AdStatus;
   /** Clics en el enlace (Métricas de anuncios); null = todavía no llega. */
   linkClicks: number | null;
@@ -77,13 +79,20 @@ function compare(a: AdRow, b: AdRow, sort: Sort): number {
 
 export function sortAndFilterRows(rows: readonly AdRow[], opts: { query: string; onlyActive: boolean; sort: Sort }): AdRow[] {
   return rows
-    .filter((r) => (!opts.onlyActive || r.status === "active") && matchesSearch(`${r.name} ${r.campaignName} ${r.adsetName}`, opts.query))
+    .filter((r) => (!opts.onlyActive || r.status !== "paused") && matchesSearch(`${r.name} ${r.campaignName} ${r.adsetName}`, opts.query))
     .sort((a, b) => compare(a, b, opts.sort));
 }
 
 function StatusDot({ status }: { status: AdStatus }) {
-  const label = status === "active" ? "Activa" : status === "paused" ? "Pausada" : "Sin estado";
-  const color = status === "active" ? "bg-emerald-500" : status === "paused" ? "bg-muted-foreground/60" : "bg-muted-foreground/30";
+  if (status === "unknown") {
+    return (
+      <span className="text-[11px] text-muted-foreground" title="Estado de Meta no disponible">
+        —
+      </span>
+    );
+  }
+  const label = status === "active" ? "Activa" : "Pausada";
+  const color = status === "active" ? "bg-emerald-500" : "bg-muted-foreground/60";
   return (
     <span className="inline-flex items-center gap-1 text-[11px] text-muted-foreground">
       <span aria-hidden="true" className={`size-1.5 rounded-full ${color}`} />

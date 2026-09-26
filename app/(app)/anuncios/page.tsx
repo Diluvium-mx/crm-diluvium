@@ -1,60 +1,53 @@
-import Link from "next/link";
 import { requireActiveMembership } from "@/lib/auth/active-organization";
-import { listAds } from "@/lib/ads/queries";
-import { AdThumb } from "./_components/ad-thumb";
+import { listAdsForPeriod } from "@/lib/ads/queries";
+import { resolveRange } from "@/lib/dashboard/range";
+import { AdsTable, type AdRow } from "@/components/anuncios/ads-table";
+import { RangeFilter } from "../inicio/_components/range-filter";
 
-// Lista de anuncios que trajeron clientes (el más reciente arriba). Todos los
-// miembros la ven: la tarjeta del chat lleva aquí.
-const DATE = new Intl.DateTimeFormat("es-MX", { timeZone: "America/Mazatlan", day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" });
+// Sección "Anuncios": anuncios de Meta que trajeron clientes en el periodo
+// (tabla de components/anuncios, contrato en docs/ui-anuncios-tabla.md). Todos
+// los miembros la ven: la tarjeta del chat lleva aquí. El clic en la fila abre
+// la página del anuncio.
+export const dynamic = "force-dynamic";
 
-export default async function AnunciosPage() {
+function param(value: string | string[] | undefined): string | undefined {
+  return typeof value === "string" ? value : undefined;
+}
+
+export default async function AnunciosPage({ searchParams }: PageProps<"/anuncios">) {
   const { organizationId } = await requireActiveMembership();
-  const ads = await listAds(organizationId);
+  const params = await searchParams;
+  const range = resolveRange({ mes: param(params.mes), desde: param(params.desde), hasta: param(params.hasta) });
+  const ads = await listAdsForPeriod(organizationId, range);
+  const rows: AdRow[] = ads.map((ad) => ({
+    adKey: ad.key,
+    adId: ad.adId ?? "",
+    name: ad.name,
+    thumbnailUrl: ad.thumbnailUrl,
+    metaUrl: ad.metaUrl,
+    // Sin nombres de Meta aún (token, error o ficha sin id): "—".
+    campaignName: ad.campaignName ?? "—",
+    adsetName: ad.adsetName ?? "",
+    status: ad.status,
+    // Llega con "Métricas de anuncios" (Insights de Meta).
+    linkClicks: null,
+    clients: ad.clients,
+    bought: ad.bought,
+  }));
 
   return (
-    <>
-      <header>
-        <h1 className="text-lg font-semibold">Anuncios</h1>
-        <p className="text-xs text-muted-foreground">Anuncios de Meta por los que llegaron clientes a WhatsApp.</p>
-      </header>
-
-      {ads.length === 0 ? (
-        <div className="rounded-lg border bg-card p-6 text-center text-sm text-muted-foreground">
-          Aún no llega ningún cliente por un anuncio.
+    // Alto fijo (la barra mide 4rem): la tabla se desliza por dentro y la página no.
+    <div className="mx-auto flex h-[calc(100dvh-4rem)] w-full max-w-6xl flex-col gap-4 p-4">
+      <header className="flex shrink-0 flex-wrap items-end justify-between gap-3">
+        <div>
+          <h1 className="text-lg font-semibold">Anuncios</h1>
+          <p className="text-xs text-muted-foreground">
+            Anuncios de Meta por los que llegaron clientes a WhatsApp en el periodo (por la fecha de su clic).
+          </p>
         </div>
-      ) : (
-        <ul className="flex flex-col gap-2">
-          {ads.map((ad) => (
-            <li key={ad.key}>
-              <Link
-                href={`/anuncios/${ad.key}`}
-                className="flex items-center gap-3 rounded-lg border bg-card p-3 transition-colors hover:bg-muted"
-              >
-                <AdThumb src={ad.thumbnailUrl} mediaType={ad.mediaType} />
-                <div className="min-w-0 flex-1">
-                  <p className="truncate text-sm font-semibold">{ad.name}</p>
-                  {(ad.campaignName || ad.adsetName) && (
-                    <p className="truncate text-xs text-muted-foreground">
-                      {[ad.campaignName, ad.adsetName].filter(Boolean).join(" › ")}
-                    </p>
-                  )}
-                  <p className="text-[11px] text-muted-foreground">Último cliente: {DATE.format(ad.lastClickAt)}</p>
-                </div>
-                <div className="flex shrink-0 gap-4 text-right">
-                  <div>
-                    <p className="text-lg font-semibold tabular-nums">{ad.clients}</p>
-                    <p className="text-[11px] text-muted-foreground">{ad.clients === 1 ? "cliente" : "clientes"}</p>
-                  </div>
-                  <div>
-                    <p className="text-lg font-semibold tabular-nums">{ad.bought}</p>
-                    <p className="text-[11px] text-muted-foreground">{ad.bought === 1 ? "compró" : "compraron"}</p>
-                  </div>
-                </div>
-              </Link>
-            </li>
-          ))}
-        </ul>
-      )}
-    </>
+        <RangeFilter key={`${range.desde}_${range.hasta}`} mes={range.mes} desde={range.desde} hasta={range.hasta} basePath="/anuncios" />
+      </header>
+      <AdsTable rows={rows} emptyMessage="Ningún cliente llegó por un anuncio en este periodo." className="min-h-0 flex-1" />
+    </div>
   );
 }
