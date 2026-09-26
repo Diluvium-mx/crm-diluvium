@@ -16,7 +16,13 @@ import {
   type Modifier,
 } from "@dnd-kit/core";
 import { STAGES, STAGE_LABELS, getContactFullName, type Contact, type Stage, type Temperature } from "../_data/types";
-import { getContactsByIds, getFunnelSignals, updateContactStage, updateContactTemperature } from "@/lib/actions/contacts";
+import {
+  getContactsByIds,
+  getContactsChangedSince,
+  getFunnelSignals,
+  updateContactStage,
+  updateContactTemperature,
+} from "@/lib/actions/contacts";
 import { useVirtualizer } from "@tanstack/react-virtual";
 import { ContactCard, ContactCardContent } from "./contact-card";
 import { ContactDetailPanel } from "./contact-detail-panel";
@@ -24,6 +30,7 @@ import { phoneMatchesSearch } from "@/lib/phone-format";
 import { normalizeSearch } from "@/lib/text/search";
 import { funnelTone, type FunnelSignal } from "@/lib/contacts/funnel-tone";
 import { useInboxStream } from "../../dashboard/_components/use-inbox-stream";
+import { applyTemperatures, mergeLiveContacts } from "./board-live";
 
 // Type guard: el id del droppable siempre es una etapa (solo las columnas
 // son zonas de destino), pero esto lo deja explícito para TypeScript.
@@ -39,6 +46,8 @@ type Signals = Record<string, FunnelSignal>;
 // Tope de conversaciones por petición (el mismo que valida getFunnelSignals); con
 // más, se piden las señales de toda la organización de una vez.
 const MAX_SIGNAL_IDS = 200;
+// Tope de contactos por petición (el mismo que valida getContactsByIds).
+const MAX_LIVE_IDS = 200;
 
 function StageColumn({
   stage,
@@ -133,9 +142,15 @@ function StageColumn({
 export function ContactsBoard({
   initialContacts,
   initialSignals,
+  loadedAt,
+  openContactId = null,
 }: {
   initialContacts: Contact[];
   initialSignals: Signals;
+  /** Hora del servidor (ISO) ANTES de leer initialContacts: desde ahí se ponen al día. */
+  loadedAt: string;
+  /** /embudo?contacto=<id>: abre ese contacto al entrar (desde la Bandeja, si aún no tiene chat). */
+  openContactId?: string | null;
 }) {
   const [contacts, setContacts] = useState<Contact[]>(initialContacts);
   // Señales de cada tarjeta (no vistos, por contestar, urgente) por contacto. Van
@@ -148,7 +163,14 @@ export function ContactsBoard({
   const [liveAdded, setLiveAdded] = useState<Contact[]>([]);
   const [syncedInitialContacts, setSyncedInitialContacts] = useState(initialContacts);
   const [search, setSearch] = useState("");
-  const [selectedContactId, setSelectedContactId] = useState<string | null>(null);
+  const [selectedContactId, setSelectedContactId] = useState<string | null>(() =>
+    openContactId && initialContacts.some((contact) => contact.id === openContactId) ? openContactId : null,
+  );
+  // El ?contacto= ya se usó: se quita de la dirección sin recargar (así recargar
+  // la página no lo vuelve a abrir).
+  useEffect(() => {
+    if (openContactId) window.history.replaceState(null, "", "/embudo");
+  }, [openContactId]);
   const [activeContactId, setActiveContactId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [isPending, startTransition] = useTransition();
@@ -228,10 +250,51 @@ export function ContactsBoard({
   // desconocido) aparece arriba de su columna sin recargar. Se agrupan los
   // avisos (una importación manda miles): hasta 200 se piden por id; más que
   // eso, se recarga la página completa una vez.
+  // Si la petición falla, los ids vuelven a la espera y se reintenta sola (5 s …
+  // 60 s): un lead nuevo no se queda fuera del Embudo por un fallo de red.
+  // ¿Sigue montado el Embudo? (ningún reintento sobrevive a salir de él).
+  const aliveRef = useRef(true);
   const pendingNewRef = useRef(new Set<string>());
   const newTimerRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+  const newRetryMsRef = useRef(0);
   useEffect(() => () => clearTimeout(newTimerRef.current), []);
   const bulkRef = useRef(false);
+  const flushNewRef = useRef<() => Promise<void>>(async () => undefined);
+  const flushNew = useCallback(async () => {
+    newTimerRef.current = undefined;
+    const ids = [...pendingNewRef.current];
+    pendingNewRef.current.clear();
+    if (bulkRef.current || ids.length > 200) {
+      bulkRef.current = false;
+      router.refresh();
+      return;
+    }
+    let fresh: Contact[];
+    try {
+      fresh = await getContactsByIds(ids);
+    } catch {
+      for (const id of ids) pendingNewRef.current.add(id);
+      if (aliveRef.current && !newTimerRef.current) {
+        newRetryMsRef.current = Math.min(newRetryMsRef.current ? newRetryMsRef.current * 2 : 5_000, 60_000);
+        newTimerRef.current = setTimeout(() => void flushNewRef.current(), newRetryMsRef.current);
+      }
+      return;
+    }
+    newRetryMsRef.current = 0;
+    if (!aliveRef.current || fresh.length === 0) return;
+    setContacts((current) => {
+      const known = new Set(current.map((c) => c.id));
+      const added = fresh.filter((c) => !known.has(c.id));
+      return added.length ? [...added, ...current] : current;
+    });
+    setLiveAdded((current) => {
+      const known = new Set(current.map((c) => c.id));
+      return [...fresh.filter((c) => !known.has(c.id)), ...current];
+    });
+  }, [router]);
+  useEffect(() => {
+    flushNewRef.current = flushNew;
+  }, [flushNew]);
   // Señales en tiempo real: cada cambio de mensaje o conversación (entrante,
   // respuesta, leído, aviso del agente) marca su conversación; se piden en lote
   // (ventana de 500 ms) y UNA petición a la vez: lo que llega mientras tanto sale
@@ -243,7 +306,6 @@ export function ContactsBoard({
   const signalTimerRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   // Al salir del Embudo: nada queda pidiendo señales (ni un reintento programado
   // por una petición que falle DESPUÉS de desmontar).
-  const aliveRef = useRef(true);
   useEffect(() => {
     aliveRef.current = true;
     return () => {
@@ -291,7 +353,155 @@ export function ContactsBoard({
     flushSignalsRef.current = flushSignals;
   }, [flushSignals]);
 
+  // Cambios de contacto en vivo (contact.updated): la etapa o la temperatura que
+  // cambió el Agente IA, una automatización (/banco) u otro vendedor. Mismo patrón
+  // que las señales: lote de 500 ms (ventana fija), UNA petición a la vez (una
+  // respuesta vieja nunca pisa a una nueva) y reintento a los 5 s si falla.
+  // - La tarjeta que el vendedor está arrastrando no se le mueve de las manos: su
+  //   cambio espera a que la suelte; si la soltó en otra columna, manda la etapa
+  //   que puso el vendedor (regla de siempre) y lo demás del cambio sí entra.
+  // - Mientras una escritura del propio vendedor sobre ese contacto está en curso,
+  //   no se aplica una lectura (pudo salir antes de su escritura): al terminar se
+  //   vuelve a leer.
+  // - Cada `reload` del SSE (al conectarse y en cada reconexión) pide, en la MISMA
+  //   fila, los contactos que cambiaron de etapa desde la última vez (`sinceRef`,
+  //   hora del servidor): lo movido entre que cargó la página y que empezó a
+  //   escuchar, o con la conexión caída, no se pierde.
+  const liveQueueRef = useRef({ ids: new Set<string>(), catchUp: false, running: false, retryPending: false });
+  const sinceRef = useRef(loadedAt);
+  // Contactos aplicados en vivo hace poco: si después llega una recarga completa
+  // (contacts.bulk, importación) con una foto leída antes, se releen.
+  const recentLiveRef = useRef(new Map<string, number>());
+  // Tarjeta en arrastre a la que la puesta al día no le tocó la temperatura: se
+  // relee al soltarla.
+  const dragMissedRef = useRef(new Set<string>());
+  const liveTimerRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+  const draggingIdRef = useRef<string | null>(null);
+  const heldRef = useRef(new Map<string, Contact>());
+  const writesRef = useRef(new Map<string, number>());
+  const staleRef = useRef(new Set<string>());
+  useEffect(() => () => clearTimeout(liveTimerRef.current), []);
+  const flushLiveRef = useRef<() => Promise<void>>(async () => undefined);
+  const flushLive = useCallback(async () => {
+    liveTimerRef.current = undefined;
+    const queue = liveQueueRef.current;
+    queue.retryPending = false;
+    if (queue.running) return;
+    queue.running = true;
+    try {
+      while (queue.catchUp || queue.ids.size > 0) {
+        const catchUp = queue.catchUp;
+        const ids = catchUp ? [] : [...queue.ids].slice(0, MAX_LIVE_IDS);
+        queue.catchUp = false;
+        for (const id of ids) queue.ids.delete(id);
+        let fresh: Contact[];
+        try {
+          if (catchUp) {
+            const changed = await getContactsChangedSince(sinceRef.current);
+            if (!aliveRef.current) return;
+            sinceRef.current = changed.now;
+            // Demasiados (un cambio masivo): el tablero completo, una vez.
+            if (changed.tooMany) {
+              router.refresh();
+              continue;
+            }
+            // La temperatura no lleva hora: se compara completa. Sin tocar las que el
+            // vendedor está escribiendo o arrastrando (se releen al terminar).
+            const skip = new Set(writesRef.current.keys());
+            for (const id of skip) staleRef.current.add(id);
+            if (draggingIdRef.current) {
+              skip.add(draggingIdRef.current);
+              dragMissedRef.current.add(draggingIdRef.current);
+            }
+            setContacts((current) => applyTemperatures(current, changed.temperatures, skip));
+            fresh = changed.contacts;
+          } else {
+            fresh = await getContactsByIds(ids);
+          }
+        } catch {
+          if (catchUp) queue.catchUp = true;
+          for (const id of ids) queue.ids.add(id);
+          if (aliveRef.current && !liveTimerRef.current) {
+            queue.retryPending = true;
+            liveTimerRef.current = setTimeout(() => void flushLiveRef.current(), 5_000);
+          }
+          return;
+        }
+        if (!aliveRef.current) return;
+        const apply: Contact[] = [];
+        for (const contact of fresh) {
+          if (draggingIdRef.current === contact.id) {
+            heldRef.current.set(contact.id, contact);
+            // Si una recarga completa llega después de soltarla, se relee.
+            recentLiveRef.current.set(contact.id, Date.now());
+          } else if (writesRef.current.has(contact.id)) staleRef.current.add(contact.id);
+          else apply.push(contact);
+        }
+        if (apply.length > 0) {
+          const at = Date.now();
+          for (const contact of apply) recentLiveRef.current.set(contact.id, at);
+          setContacts((current) => mergeLiveContacts(current, apply));
+          const byId = new Map(apply.map((contact) => [contact.id, contact]));
+          setLiveAdded((current) => current.map((contact) => byId.get(contact.id) ?? contact));
+        }
+      }
+    } finally {
+      queue.running = false;
+    }
+  }, [router]);
+  useEffect(() => {
+    flushLiveRef.current = flushLive;
+  }, [flushLive]);
+  // `null` = ponerse al día (reload del SSE); un id = releer ese contacto.
+  const scheduleLive = useCallback(
+    (contactId: string | null) => {
+      const queue = liveQueueRef.current;
+      if (contactId === null) queue.catchUp = true;
+      else queue.ids.add(contactId);
+      if (queue.running) return;
+      // En espera de un reintento: un cambio nuevo lo adelanta.
+      if (queue.retryPending) {
+        clearTimeout(liveTimerRef.current);
+        liveTimerRef.current = undefined;
+        queue.retryPending = false;
+      }
+      if (!liveTimerRef.current) liveTimerRef.current = setTimeout(() => void flushLive(), 500);
+    },
+    [flushLive],
+  );
+  // Escrituras del vendedor (etapa o temperatura) en curso, por contacto.
+  function beginWrite(contactId: string) {
+    writesRef.current.set(contactId, (writesRef.current.get(contactId) ?? 0) + 1);
+  }
+  function endWrite(contactId: string, failed: boolean) {
+    const left = (writesRef.current.get(contactId) ?? 1) - 1;
+    if (left > 0) {
+      writesRef.current.set(contactId, left);
+      return;
+    }
+    writesRef.current.delete(contactId);
+    // Se saltó una lectura mientras escribía, o falló (el revert pudo quedar
+    // viejo): se relee lo que el servidor tiene.
+    if (staleRef.current.delete(contactId) || failed) scheduleLive(contactId);
+  }
+  // Llegó una recarga completa (contacts.bulk, importación): su foto pudo leerse
+  // ANTES de un cambio que ya se aplicó en vivo; esos contactos se releen.
+  useEffect(() => {
+    const cutoff = Date.now() - 120_000;
+    for (const [id, at] of recentLiveRef.current) {
+      recentLiveRef.current.delete(id);
+      if (at >= cutoff) scheduleLive(id);
+    }
+  }, [syncedInitialContacts, scheduleLive]);
+
   useInboxStream((event) => {
+    if (event.type === "contact.updated") {
+      // La cotización y el Detalle no se ven en la tarjeta (decisión del dueño):
+      // esos los pone al día el Detalle abierto.
+      if (event.changes.includes("etapa") || event.changes.includes("temperatura")) scheduleLive(event.contactId);
+      return;
+    }
+    if (event.type === "reload") scheduleLive(null);
     if (event.type === "reload" || event.type === "conversation.updated" || event.type === "message.upserted" || event.type === "message.deleted") {
       const queue = signalQueueRef.current;
       if (event.type === "reload") queue.full = true;
@@ -314,29 +524,8 @@ export function ContactsBoard({
     // Ventana fija (no se reinicia con cada aviso): con tráfico sostenido el
     // kanban igual se actualiza cada 500 ms.
     if (newTimerRef.current) return;
-    newTimerRef.current = setTimeout(() => {
-      newTimerRef.current = undefined;
-      const ids = [...pendingNewRef.current];
-      pendingNewRef.current.clear();
-      if (bulkRef.current || ids.length > 200) {
-        bulkRef.current = false;
-        router.refresh();
-        return;
-      }
-      void getContactsByIds(ids).then((fresh) => {
-        if (fresh.length === 0) return;
-        setContacts((current) => {
-          const known = new Set(current.map((c) => c.id));
-          const added = fresh.filter((c) => !known.has(c.id));
-          return added.length ? [...added, ...current] : current;
-        });
-        setLiveAdded((current) => {
-          const known = new Set(current.map((c) => c.id));
-          return [...fresh.filter((c) => !known.has(c.id)), ...current];
-        });
-      });
-    }, 500);
-  });
+    newTimerRef.current = setTimeout(() => void flushNew(), 500);
+  }, { reloadIfOpen: true });
 
   // Sin acentos ni mayúsculas (regla de todo buscador: lib/text/search.ts).
   const normalizedSearch = normalizeSearch(search);
@@ -383,19 +572,26 @@ export function ContactsBoard({
         return current;
       }
       const rest = current.filter((contact) => contact.id !== contactId);
-      return [{ ...found, stage: nextStage }, ...rest];
+      // La hora local ordena contra los cambios en vivo (board-live.ts) hasta que
+      // llegue la del servidor.
+      return [{ ...found, stage: nextStage, stageChangedAt: new Date() }, ...rest];
     });
 
+    beginWrite(contactId);
     startTransition(async () => {
+      let failed = false;
       try {
         await updateContactStage({ contactId, stage: nextStage });
       } catch {
+        failed = true;
         setContacts((current) =>
           current.map((contact) =>
             contact.id === contactId ? { ...contact, stage: previousStage } : contact,
           ),
         );
         setError("No se pudo actualizar la etapa. Intenta de nuevo.");
+      } finally {
+        endWrite(contactId, failed);
       }
     });
   }
@@ -416,16 +612,21 @@ export function ContactsBoard({
       ),
     );
 
+    beginWrite(contactId);
     startTransition(async () => {
+      let failed = false;
       try {
         await updateContactTemperature({ contactId, temperature: nextTemperature });
       } catch {
+        failed = true;
         setContacts((current) =>
           current.map((contact) =>
             contact.id === contactId ? { ...contact, temperature: previousTemperature } : contact,
           ),
         );
         setError("No se pudo actualizar la temperatura. Intenta de nuevo.");
+      } finally {
+        endWrite(contactId, failed);
       }
     });
   }
@@ -440,30 +641,58 @@ export function ContactsBoard({
 
   function handleDragStart(event: DragStartEvent) {
     justDraggedRef.current = true;
+    draggingIdRef.current = String(event.active.id);
     setActiveContactId(String(event.active.id));
+  }
+
+  // Cambio en vivo que llegó mientras se arrastraba esta tarjeta (o nada).
+  function takeHeld(contactId: string): Contact | undefined {
+    draggingIdRef.current = null;
+    const held = heldRef.current.get(contactId);
+    heldRef.current.delete(contactId);
+    if (held) recentLiveRef.current.set(contactId, Date.now());
+    if (dragMissedRef.current.delete(contactId)) scheduleLive(contactId);
+    return held;
   }
 
   function handleDragEnd(event: DragEndEvent) {
     const { active, over } = event;
+    const contactId = String(active.id);
+    const held = takeHeld(contactId);
     setActiveContactId(null);
     // Limpia la marca tras el click sintético que dispara el pointerup.
     setTimeout(() => {
       justDraggedRef.current = false;
     }, 0);
-    if (!over) {
+    const overId = over ? String(over.id) : null;
+    const local = contacts.find((contact) => contact.id === contactId);
+    if (overId && isStage(overId) && local && local.stage !== overId) {
+      // La soltó en otra columna: manda la etapa que puso el vendedor; lo demás
+      // del cambio en espera (temperatura…) sí se aplica.
+      if (held) {
+        setContacts((current) =>
+          current.map((contact) =>
+            contact.id === contactId
+              ? { ...held, stage: contact.stage, stageChangedAt: contact.stageChangedAt, stageChangedBy: contact.stageChangedBy }
+              : contact,
+          ),
+        );
+      }
+      handleStageChange(contactId, overId);
       return;
     }
-    const overId = String(over.id);
-    if (isStage(overId)) {
-      handleStageChange(String(active.id), overId);
-    }
+    // Sin columna nueva (la regresó o la soltó fuera): entra el cambio en espera.
+    if (held) setContacts((current) => mergeLiveContacts(current, [held]));
   }
 
   function handleDragCancel() {
+    const contactId = draggingIdRef.current;
+    const held = contactId ? takeHeld(contactId) : undefined;
     setActiveContactId(null);
     setTimeout(() => {
       justDraggedRef.current = false;
     }, 0);
+    if (held) setContacts((current) => mergeLiveContacts(current, [held]));
   }
 
   return (

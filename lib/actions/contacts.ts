@@ -1,7 +1,7 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import { and, desc, eq, inArray, ne } from "drizzle-orm";
+import { and, desc, eq, gt, inArray, isNotNull, ne } from "drizzle-orm";
 import { z } from "zod";
 import { requireActiveMembership } from "@/lib/auth/active-organization";
 import { roleAllows } from "@/lib/auth/permissions";
@@ -10,6 +10,7 @@ import { contacts, contactStageEnum, contactTemperatureEnum } from "@/lib/db/sch
 import { countryFromPhone, normalizePhone, phoneColumns } from "@/lib/phone";
 import { parseGhlContactsCsv } from "@/lib/import/ghl-contacts-csv";
 import { onContactStageEntered } from "@/lib/workflows/triggers";
+import { notifyContactUpdated } from "@/lib/contacts/notify-updated";
 import { funnelSignalsForOrg, MAX_SIGNAL_CONVERSATIONS, type FunnelSignal } from "@/lib/contacts/funnel-signals";
 import {
   importParsedContacts,
@@ -47,6 +48,41 @@ export async function getContactsByIds(ids: string[]) {
     .from(contacts)
     .where(and(eq(contacts.organizationId, organizationId), inArray(contacts.id, wanted)))
     .orderBy(desc(contacts.stageChangedAt), desc(contacts.createdAt));
+}
+
+// Margen para relojes y para escrituras que confirmaron justo en el corte.
+const CHANGED_SINCE_MARGIN_MS = 5_000;
+const MAX_CHANGED_SINCE = 200;
+
+/**
+ * Lo que el Embudo pudo perderse entre que cargó la página y que empezó a escuchar
+ * el SSE, o mientras la conexión estuvo caída: los contactos que cambiaron de
+ * etapa desde `since` (ISO, con 5 s de margen) y la temperatura de TODOS los que
+ * tienen una (la temperatura no lleva hora: se compara completa, en pares
+ * compactos id → temperatura; sin par = sin temperatura). `now` es el `since` de la
+ * siguiente vuelta (se toma ANTES de leer: nada se escapa entre dos lecturas). Con
+ * más de 200 cambios de etapa, `tooMany` (el tablero se recarga completo).
+ * Acotado a la organización activa.
+ */
+export async function getContactsChangedSince(since: string) {
+  const organizationId = await requireActiveOrganizationId();
+  const from = new Date(new Date(z.iso.datetime().parse(since)).getTime() - CHANGED_SINCE_MARGIN_MS);
+  const now = new Date().toISOString();
+  const [rows, withTemperature] = await Promise.all([
+    db
+      .select()
+      .from(contacts)
+      .where(and(eq(contacts.organizationId, organizationId), gt(contacts.stageChangedAt, from)))
+      .orderBy(desc(contacts.stageChangedAt), desc(contacts.createdAt))
+      .limit(MAX_CHANGED_SINCE + 1),
+    db
+      .select({ id: contacts.id, temperature: contacts.temperature })
+      .from(contacts)
+      .where(and(eq(contacts.organizationId, organizationId), isNotNull(contacts.temperature))),
+  ]);
+  const tooMany = rows.length > MAX_CHANGED_SINCE;
+  const temperatures = withTemperature.flatMap((row) => (row.temperature ? [[row.id, row.temperature] as const] : []));
+  return { contacts: tooMany ? [] : rows, temperatures, now, tooMany };
 }
 
 /**
@@ -109,18 +145,38 @@ export async function updateContactStage(input: UpdateContactStageInput) {
   const parsed = updateContactStageSchema.parse(input);
 
   // Solo cambia (y dispara) si la etapa es distinta: soltar la tarjeta en su
-  // misma columna no es "entrar" a la etapa.
-  const [updated] = await db
-    .update(contacts)
-    .set({ stage: parsed.stage, stageChangedAt: new Date(), stageChangedBy: "vendedor" })
-    .where(
-      and(
-        eq(contacts.id, parsed.contactId),
-        eq(contacts.organizationId, organizationId),
-        ne(contacts.stage, parsed.stage),
-      ),
-    )
-    .returning();
+  // misma columna no es "entrar" a la etapa. El aviso en vivo (contact.updated,
+  // con la etapa de → a) sale en la MISMA transacción: llega al confirmar.
+  const updated = await db.transaction(async (tx) => {
+    const [before] = await tx
+      .select({ stage: contacts.stage })
+      .from(contacts)
+      .where(and(eq(contacts.id, parsed.contactId), eq(contacts.organizationId, organizationId)))
+      .limit(1)
+      .for("update");
+    if (!before || before.stage === parsed.stage) return undefined;
+    const [row] = await tx
+      .update(contacts)
+      .set({ stage: parsed.stage, stageChangedAt: new Date(), stageChangedBy: "vendedor" })
+      .where(
+        and(
+          eq(contacts.id, parsed.contactId),
+          eq(contacts.organizationId, organizationId),
+          ne(contacts.stage, parsed.stage),
+        ),
+      )
+      .returning();
+    if (row) {
+      await notifyContactUpdated(tx, {
+        organizationId,
+        contactId: row.id,
+        changes: ["etapa"],
+        stage: { from: before.stage, to: row.stage },
+        by: { kind: "vendedor", userId },
+      });
+    }
+    return row;
+  });
 
   if (!updated) {
     const [same] = await db
@@ -149,19 +205,26 @@ const updateContactTemperatureSchema = z.object({
 export type UpdateContactTemperatureInput = z.infer<typeof updateContactTemperatureSchema>;
 
 export async function updateContactTemperature(input: UpdateContactTemperatureInput) {
-  const organizationId = await requireActiveOrganizationId();
+  const { organizationId, userId } = await requireActiveMembership();
   const parsed = updateContactTemperatureSchema.parse(input);
 
-  const [updated] = await db
-    .update(contacts)
-    .set({ temperature: parsed.temperature })
-    .where(
-      and(
-        eq(contacts.id, parsed.contactId),
-        eq(contacts.organizationId, organizationId),
-      ),
-    )
-    .returning();
+  // Aviso en vivo (sin aviso emergente) en la misma transacción.
+  const updated = await db.transaction(async (tx) => {
+    const [row] = await tx
+      .update(contacts)
+      .set({ temperature: parsed.temperature })
+      .where(
+        and(
+          eq(contacts.id, parsed.contactId),
+          eq(contacts.organizationId, organizationId),
+        ),
+      )
+      .returning();
+    if (row) {
+      await notifyContactUpdated(tx, { organizationId, contactId: row.id, changes: ["temperatura"], by: { kind: "vendedor", userId } });
+    }
+    return row;
+  });
 
   if (!updated) {
     throw new Error("Contacto no encontrado en esta organización.");
