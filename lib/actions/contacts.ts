@@ -1,7 +1,7 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import { and, desc, eq, inArray, ne } from "drizzle-orm";
+import { and, desc, eq, gt, inArray, ne } from "drizzle-orm";
 import { z } from "zod";
 import { requireActiveMembership } from "@/lib/auth/active-organization";
 import { roleAllows } from "@/lib/auth/permissions";
@@ -48,6 +48,31 @@ export async function getContactsByIds(ids: string[]) {
     .from(contacts)
     .where(and(eq(contacts.organizationId, organizationId), inArray(contacts.id, wanted)))
     .orderBy(desc(contacts.stageChangedAt), desc(contacts.createdAt));
+}
+
+// Margen para relojes y para escrituras que confirmaron justo en el corte.
+const CHANGED_SINCE_MARGIN_MS = 5_000;
+const MAX_CHANGED_SINCE = 200;
+
+/**
+ * Contactos que cambiaron de etapa desde `since` (ISO, con 5 s de margen): lo
+ * que el Embudo pudo perderse entre que cargó la página y que empezó a escuchar el
+ * SSE, o mientras la conexión estuvo caída. `now` es el `since` de la siguiente
+ * vuelta (se toma ANTES de leer: nada se escapa entre dos lecturas). Con más de
+ * 200, `tooMany` (el tablero se recarga completo). Acotado a la organización activa.
+ */
+export async function getContactsChangedSince(since: string) {
+  const organizationId = await requireActiveOrganizationId();
+  const from = new Date(new Date(z.iso.datetime().parse(since)).getTime() - CHANGED_SINCE_MARGIN_MS);
+  const now = new Date().toISOString();
+  const rows = await db
+    .select()
+    .from(contacts)
+    .where(and(eq(contacts.organizationId, organizationId), gt(contacts.stageChangedAt, from)))
+    .orderBy(desc(contacts.stageChangedAt), desc(contacts.createdAt))
+    .limit(MAX_CHANGED_SINCE + 1);
+  const tooMany = rows.length > MAX_CHANGED_SINCE;
+  return { contacts: tooMany ? [] : rows, now, tooMany };
 }
 
 /**

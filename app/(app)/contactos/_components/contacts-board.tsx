@@ -16,7 +16,13 @@ import {
   type Modifier,
 } from "@dnd-kit/core";
 import { STAGES, STAGE_LABELS, getContactFullName, type Contact, type Stage, type Temperature } from "../_data/types";
-import { getContactsByIds, getFunnelSignals, updateContactStage, updateContactTemperature } from "@/lib/actions/contacts";
+import {
+  getContactsByIds,
+  getContactsChangedSince,
+  getFunnelSignals,
+  updateContactStage,
+  updateContactTemperature,
+} from "@/lib/actions/contacts";
 import { useVirtualizer } from "@tanstack/react-virtual";
 import { ContactCard, ContactCardContent } from "./contact-card";
 import { ContactDetailPanel } from "./contact-detail-panel";
@@ -136,10 +142,13 @@ function StageColumn({
 export function ContactsBoard({
   initialContacts,
   initialSignals,
+  loadedAt,
   openContactId = null,
 }: {
   initialContacts: Contact[];
   initialSignals: Signals;
+  /** Hora del servidor (ISO) ANTES de leer initialContacts: desde ahí se ponen al día. */
+  loadedAt: string;
   /** /embudo?contacto=<id>: abre ese contacto al entrar (desde la Bandeja, si aún no tiene chat). */
   openContactId?: string | null;
 }) {
@@ -314,7 +323,15 @@ export function ContactsBoard({
   // - Mientras una escritura del propio vendedor sobre ese contacto está en curso,
   //   no se aplica una lectura (pudo salir antes de su escritura): al terminar se
   //   vuelve a leer.
-  const liveQueueRef = useRef({ ids: new Set<string>(), running: false, retryPending: false });
+  // - Cada `reload` del SSE (al conectarse y en cada reconexión) pide, en la MISMA
+  //   fila, los contactos que cambiaron de etapa desde la última vez (`sinceRef`,
+  //   hora del servidor): lo movido entre que cargó la página y que empezó a
+  //   escuchar, o con la conexión caída, no se pierde.
+  const liveQueueRef = useRef({ ids: new Set<string>(), catchUp: false, running: false, retryPending: false });
+  const sinceRef = useRef(loadedAt);
+  // Contactos aplicados en vivo hace poco: si después llega una recarga completa
+  // (contacts.bulk, importación) con una foto leída antes, se releen.
+  const recentLiveRef = useRef(new Map<string, number>());
   const liveTimerRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   const draggingIdRef = useRef<string | null>(null);
   const heldRef = useRef(new Map<string, Contact>());
@@ -329,13 +346,28 @@ export function ContactsBoard({
     if (queue.running) return;
     queue.running = true;
     try {
-      while (queue.ids.size > 0) {
-        const ids = [...queue.ids].slice(0, MAX_LIVE_IDS);
+      while (queue.catchUp || queue.ids.size > 0) {
+        const catchUp = queue.catchUp;
+        const ids = catchUp ? [] : [...queue.ids].slice(0, MAX_LIVE_IDS);
+        queue.catchUp = false;
         for (const id of ids) queue.ids.delete(id);
         let fresh: Contact[];
         try {
-          fresh = await getContactsByIds(ids);
+          if (catchUp) {
+            const changed = await getContactsChangedSince(sinceRef.current);
+            if (!aliveRef.current) return;
+            sinceRef.current = changed.now;
+            // Demasiados (un cambio masivo): el tablero completo, una vez.
+            if (changed.tooMany) {
+              router.refresh();
+              continue;
+            }
+            fresh = changed.contacts;
+          } else {
+            fresh = await getContactsByIds(ids);
+          }
         } catch {
+          if (catchUp) queue.catchUp = true;
           for (const id of ids) queue.ids.add(id);
           if (aliveRef.current && !liveTimerRef.current) {
             queue.retryPending = true;
@@ -351,6 +383,8 @@ export function ContactsBoard({
           else apply.push(contact);
         }
         if (apply.length > 0) {
+          const at = Date.now();
+          for (const contact of apply) recentLiveRef.current.set(contact.id, at);
           setContacts((current) => mergeLiveContacts(current, apply));
           const byId = new Map(apply.map((contact) => [contact.id, contact]));
           setLiveAdded((current) => current.map((contact) => byId.get(contact.id) ?? contact));
@@ -359,14 +393,16 @@ export function ContactsBoard({
     } finally {
       queue.running = false;
     }
-  }, []);
+  }, [router]);
   useEffect(() => {
     flushLiveRef.current = flushLive;
   }, [flushLive]);
+  // `null` = ponerse al día (reload del SSE); un id = releer ese contacto.
   const scheduleLive = useCallback(
-    (contactId: string) => {
+    (contactId: string | null) => {
       const queue = liveQueueRef.current;
-      queue.ids.add(contactId);
+      if (contactId === null) queue.catchUp = true;
+      else queue.ids.add(contactId);
       if (queue.running) return;
       // En espera de un reintento: un cambio nuevo lo adelanta.
       if (queue.retryPending) {
@@ -393,9 +429,15 @@ export function ContactsBoard({
     // viejo): se relee lo que el servidor tiene.
     if (staleRef.current.delete(contactId) || failed) scheduleLive(contactId);
   }
-  // El primer `reload` es el de la conexión (la página ya cargó los contactos);
-  // los siguientes son reconexiones: se pudieron perder cambios y se recarga.
-  const seenReloadRef = useRef(false);
+  // Llegó una recarga completa (contacts.bulk, importación): su foto pudo leerse
+  // ANTES de un cambio que ya se aplicó en vivo; esos contactos se releen.
+  useEffect(() => {
+    const cutoff = Date.now() - 120_000;
+    for (const [id, at] of recentLiveRef.current) {
+      recentLiveRef.current.delete(id);
+      if (at >= cutoff) scheduleLive(id);
+    }
+  }, [syncedInitialContacts, scheduleLive]);
 
   useInboxStream((event) => {
     if (event.type === "contact.updated") {
@@ -404,10 +446,7 @@ export function ContactsBoard({
       if (event.changes.includes("etapa") || event.changes.includes("temperatura")) scheduleLive(event.contactId);
       return;
     }
-    if (event.type === "reload") {
-      if (seenReloadRef.current) router.refresh();
-      seenReloadRef.current = true;
-    }
+    if (event.type === "reload") scheduleLive(null);
     if (event.type === "reload" || event.type === "conversation.updated" || event.type === "message.upserted" || event.type === "message.deleted") {
       const queue = signalQueueRef.current;
       if (event.type === "reload") queue.full = true;

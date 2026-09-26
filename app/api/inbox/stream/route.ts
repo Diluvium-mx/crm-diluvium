@@ -3,9 +3,13 @@
 // recibirlo, vuelve a pedir esa fila/mensaje; el payload es mínimo a propósito.
 //
 // Aislamiento: solo se envían eventos de la organización de la sesión
-// (subscribeToInbox filtra por org). Exige sesión; sin ella, 401.
+// (subscribeToInbox filtra por org). Exige sesión; sin ella, 401. En cada latido
+// se revalida (sesión viva, usuario activo, miembro de esa organización): a un
+// vendedor desactivado se le corta el stream en ≤25 s (lib/inbox/stream-access.ts).
+import { auth } from "@/lib/auth";
 import { requireActiveMembership } from "@/lib/auth/active-organization";
 import { subscribeToInbox } from "@/lib/inbox/events";
+import { streamStillAllowed } from "@/lib/inbox/stream-access";
 import type { InboxEvent } from "@/lib/inbox/types";
 
 // LISTEN vive mientras la conexión está abierta: este handler no puede ser
@@ -16,12 +20,16 @@ const HEARTBEAT_MS = 25_000;
 
 export async function GET(request: Request): Promise<Response> {
   let membership;
+  let sessionId: string;
   try {
     membership = await requireActiveMembership();
+    const current = await auth.api.getSession({ headers: request.headers });
+    if (!current) throw new Error("sin sesión");
+    sessionId = current.session.id;
   } catch {
     return new Response("no autenticado", { status: 401 });
   }
-  const { organizationId } = membership;
+  const { organizationId, userId } = membership;
 
   const encoder = new TextEncoder();
   let unsubscribe: (() => void) | undefined;
@@ -67,7 +75,21 @@ export async function GET(request: Request): Promise<Response> {
       // UI que revalide todo (cubre lo escrito antes de completar la suscripción
       // y también una reconexión del cliente).
       send(`: conectado\nretry: 3000\nevent: reload\ndata: {}\n\n`);
-      heartbeat = setInterval(() => send(`: keep-alive\n\n`), HEARTBEAT_MS);
+      heartbeat = setInterval(() => {
+        send(`: keep-alive\n\n`);
+        // Si la BD falla un momento, el stream sigue (no se corta a nadie por un blip).
+        void streamStillAllowed({ sessionId, userId, organizationId })
+          .then((allowed) => {
+            if (allowed || closed) return;
+            cleanup();
+            try {
+              controller.close();
+            } catch {
+              // el controller ya pudo cerrarse
+            }
+          })
+          .catch(() => undefined);
+      }, HEARTBEAT_MS);
     },
     cancel() {
       cleanup();
