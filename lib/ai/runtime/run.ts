@@ -16,7 +16,7 @@ import type { CallModelInput, CallModelResult } from "@/lib/ai/types";
 import { getModel } from "@/lib/ai/catalog";
 import { modelAvailability, PROVIDER_META } from "@/lib/ai/provider";
 import { hasUnresolvedAgentError, recordAgentError, supersedeAgentErrors } from "./agent-error";
-import { agentErrorBody, classifyModelError, EMPTY_RESPONSE_INFO } from "./model-errors";
+import { agentErrorBody, classifyModelError, classifySendError, EMPTY_RESPONSE_INFO, sendErrorBody } from "./model-errors";
 import { cleanAdMessages } from "./ad-cleaner";
 import { buildBrainSystemWithRuntime, parseBrainOutput } from "./brain";
 import { crmContextFor, executeActions, loadAgentTools, noteForVendor, prepareActions, runsThatSend, type ActionPhase, type ActionPlan, type StartWorkflow } from "./actions";
@@ -491,9 +491,18 @@ export async function runAgent(job: { organizationId: string; conversationId: st
       }
     } catch (error) {
       if (sent === 0) {
-        // Nada salió: el plan no cuenta (obsoleto) y la cola reintenta.
+        // Nada salió: el plan no cuenta (obsoleto).
         if (planId) await closePlan(org, planId, "obsoleto");
         await recordAiUsage({ ...brainUsage, outcome: "error", error: `envío: ${errorText(error)}` });
+        // Fase E: un RECHAZO definitivo (ventana cerrada, canal apagado, WhatsApp lo
+        // rechazó) deja la tarjeta; sin reintentos que paguen otra llamada al modelo.
+        // Cualquier otra falla (p. ej. la BD) sigue a la cola como siempre.
+        const motivo = classifySendError(error);
+        if (motivo) {
+          await recordAgentError({ organizationId: org, conversationId: conv.id, messageId: lastRead.id, body: sendErrorBody(motivo) });
+          console.warn(`[agente] ${conv.id}: el envío fue rechazado (${errorText(error)}); tarjeta para el vendedor`);
+          return { kind: "failed", reason: "envio_rechazado" };
+        }
         throw error;
       }
       // Salió una parte: el agente sigue activo; el resto queda en un aviso al vendedor.
