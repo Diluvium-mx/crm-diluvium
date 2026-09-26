@@ -55,7 +55,7 @@ export async function reactivateAgent(input: { conversationId: string }): Promis
     revalidatePath("/dashboard");
     return { ok: true };
   } catch (error) {
-    return fail(error, "No se pudo reactivar el agente.");
+    return fail(error, "No se pudo activar el agente.");
   }
 }
 
@@ -84,6 +84,6 @@ export async function pauseAgent(input: {
     revalidatePath("/dashboard");
     return { ok: true };
   } catch (error) {
-    return fail(error, "No se pudo apagar el bot.");
+    return fail(error, "No se pudo pausar el agente.");
   }
 }

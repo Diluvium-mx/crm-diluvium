@@ -136,7 +136,7 @@ describe.skipIf(!TEST_DATABASE_URL)("aviso contact.updated (Postgres real)", () 
     }
   });
 
-  it("el agente mueve la etapa y fija la cotización; si la fijó un vendedor, no escribe ni avisa", async () => {
+  it("el agente mueve la etapa y fija la cotización (también sobre la de un vendedor: nada es definitivo); sin cambio, no escribe ni avisa", async () => {
     const a = await listen(ORG_A);
     try {
       expect(await moveStageForward({ organizationId: ORG_A, contactId: JUAN, to: "interesado", by: "agente" })).toEqual({ from: "prospecto" });
@@ -148,9 +148,12 @@ describe.skipIf(!TEST_DATABASE_URL)("aviso contact.updated (Postgres real)", () 
       expect(await moveStageForward({ organizationId: ORG_A, contactId: JUAN, to: "prospecto", by: "agente" })).toBeNull();
       await q.updateContactQualification(db, ORG_A, JUAN, { montoCotizacion: 9000 }, { kind: "vendedor", userId: DANIEL });
       await a.wait(3);
-      expect(await setQuoteByAgent(ORG_A, JUAN, 4000)).toBe(false);
+      expect(await setQuoteByAgent(ORG_A, JUAN, 4000)).toBe(true);
+      await a.wait(4);
+      expect(a.updates()[3]).toMatchObject({ changes: ["cotizacion"], by: { kind: "agente" } });
+      expect(await setQuoteByAgent(ORG_A, JUAN, 4000)).toBe(false); // mismo monto: nada
       await settle();
-      expect(a.updates()).toHaveLength(3);
+      expect(a.updates()).toHaveLength(4);
     } finally {
       a.off();
     }

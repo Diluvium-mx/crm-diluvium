@@ -13,7 +13,6 @@ import { ScheduledInThread } from "./scheduled-in-thread";
 import { AgentNoticeLine, AgentPausedBanner, useConversationAgent } from "./agent-in-thread";
 import { AgentErrorCard } from "./agent-error-card";
 import { AgentActivityPill } from "./agent-activity-pill";
-import { BotOffMenu } from "./bot-off-menu";
 import { interleaveNotices } from "@/lib/agente-ia/timeline";
 import { AdFreeWindowNote, AdReferralCard } from "./ad-referral-card";
 import {
@@ -472,10 +471,7 @@ export function ChatThread({
           <PhoneLocation phone={detail.contact.phone} />
         </div>
         {detail.channel.isTest && <PruebaBadge />}
-        {/* "Apagar bot" solo en ESTE chat (con el agente encendido en el canal). */}
-        {agent?.channelMode === "auto" && !detail.channel.archived && (
-          <BotOffMenu conversationId={conversationId} paused={agent.agentState !== "activo"} onChanged={() => void reloadAgent()} />
-        )}
+        {/* "Pausar agente" / "Activar" viven SOLO en el Detalle del contacto (26-sep-2026). */}
         <span className="shrink-0 rounded-full bg-brand-navy/10 px-2.5 py-1 text-xs font-medium text-brand-navy">
           {detail.contact.stage}
         </span>
@@ -492,7 +488,7 @@ export function ChatThread({
           : "Pasaron 24 h desde su último mensaje. Solo se puede enviar una plantilla."}
         <AdFreeWindowNote adEntry={detail.adEntry} nowMs={nowMs} />
       </div>
-      <AgentPausedBanner conversationId={conversationId} agent={agent} onChanged={() => void reloadAgent()} nowMs={nowMs} />
+      <AgentPausedBanner agent={agent} nowMs={nowMs} />
 
       {/* Hilo */}
       <div
