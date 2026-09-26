@@ -62,6 +62,12 @@ export async function lastOutbound(organizationId: string, conversationId: strin
 // nunca hay saliente) no vuelve cuadrático el trabajo de cada entrante.
 export const MAX_PENDING = 50;
 
+// Parte 1 (26-sep-2026): una burbuja REENVIADA de una respuesta guardada solo contesta
+// hasta el entrante que la originó (messages.metadata.respondeHasta = su hora exacta,
+// escrita en SQL). Lo que el cliente escribió mientras la tarjeta esperaba sigue
+// pendiente aunque sea anterior al reenvío (antes quedaba "contestado" y se perdía).
+export const ANSWERS_UNTIL_KEY = "respondeHasta";
+
 export async function pendingInbound(organizationId: string, conversationId: string): Promise<MessageRow[]> {
   const rows = await db
     .select()
@@ -71,7 +77,7 @@ export async function pendingInbound(organizationId: string, conversationId: str
         inConversation(organizationId, conversationId),
         eq(messages.direction, "in"),
         sql`${waAt} > coalesce((
-          select max(coalesce(o.sent_at, o.created_at)) from messages o
+          select max(coalesce((o.metadata->>'respondeHasta')::timestamp, o.sent_at, o.created_at)) from messages o
           where o.organization_id = ${organizationId} and o.conversation_id = ${conversationId}
             and o.direction = 'out' and o.status <> 'failed' and o.type <> 'system_note'
             and not exists (

@@ -18,6 +18,9 @@ import { aiAgentDrafts, messages } from "@/lib/db/schema";
 import { MAX_PENDING, type MessageRow } from "./context";
 
 export type SavedRun = { slug: string; workflowId: string };
+// Una respuesta guardada no sale después de esto (la clave de idempotencia de Zernio
+// dura 24 h y la conversación ya cambió): se descarta con aviso al vendedor.
+export const SAVED_REPLY_TTL_MS = 24 * 3_600_000;
 export type SavedReply = {
   id: string;
   bubbles: string[];
@@ -88,9 +91,11 @@ export async function loadSavedReply(organizationId: string, conversationId: str
 // Toma la respuesta guardada para reenviarla ("pendiente" → "enviando"). false = ya
 // la tomó otra corrida o la descartaron.
 export async function claimSavedReply(organizationId: string, planId: string): Promise<boolean> {
+  // resolved_at = ahora: el barrido de planes atorados cuenta 10 min desde el reenvío,
+  // no desde la falla original (si no, podía tomarlo a la mitad del reenvío).
   const rows = await db
     .update(aiAgentDrafts)
-    .set({ status: "enviando" })
+    .set({ status: "enviando", resolvedAt: sql`now()` })
     .where(and(eq(aiAgentDrafts.id, planId), eq(aiAgentDrafts.organizationId, organizationId), eq(aiAgentDrafts.status, "pendiente")))
     .returning({ id: aiAgentDrafts.id });
   return rows.length > 0;
@@ -135,4 +140,15 @@ export async function inboundAfter(organizationId: string, conversationId: strin
     )
     .orderBy(asc(waAt), asc(messages.createdAt))
     .limit(MAX_PENDING);
+}
+
+// La burbuja reenviada contesta solo hasta el entrante que originó la respuesta (ver
+// ANSWERS_UNTIL_KEY en context.ts). La hora se copia en SQL, con microsegundos.
+export async function markAnswersUntil(organizationId: string, messageId: string, triggerMessageId: string): Promise<void> {
+  await db.execute(sql`
+    update messages set metadata = jsonb_set(coalesce(metadata, '{}'::jsonb), '{respondeHasta}',
+      to_jsonb((select coalesce(t.sent_at, t.created_at)::text from messages t where t.id = ${triggerMessageId} and t.organization_id = ${organizationId})))
+    where id = ${messageId} and organization_id = ${organizationId}
+      and exists (select 1 from messages t where t.id = ${triggerMessageId} and t.organization_id = ${organizationId})
+  `);
 }
