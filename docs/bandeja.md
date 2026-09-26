@@ -106,6 +106,56 @@ usan vendedores, admin y owner (Server Action `pauseAgent`, sin ACL, como "React
   servidor el modo del canal (solo la UI oculta el botón). Sin registro de quién apagó el bot. El
   barrido lee `conversations` completa cada minuto (sin índice; ~11 k filas).
 
+### Cambios en vivo (26-sep-2026)
+Un cambio de etapa, temperatura, cotización o campos del Detalle hecho por el Agente IA, por una
+automatización (`/banco` → Cerca de compra) o por otro vendedor se ve sin refrescar.
+- **Evento `contact.updated`** del SSE (mismo canal `inbox_events`, siempre filtrado por
+  organización): `contactId`, `contactName`, `changes` (`etapa`, `temperatura`, `cotizacion`,
+  `detalle`, `comentarios`), `stage {from, to}` si cambió la etapa, `by` (vendedor con `userId` y
+  nombre · `agente` · `automatizacion` con el `userId` de quien escribió el comando, o null si fue
+  una palabra clave del cliente) y `at`.
+- **Un solo helper**: `notifyContactUpdated` (`lib/contacts/notify-updated.ts`), llamado DENTRO de
+  la transacción de cada escritura (NOTIFY sale al confirmar; si se revierte, no sale). Lo llaman
+  `updateContactStage`/`updateContactTemperature` (`lib/actions/contacts.ts`), TODAS las escrituras
+  de `lib/contacts/qualification.ts` (sin `by` = Agente IA: así el autollenado queda cubierto),
+  `moveStageForward` (`lib/contacts/stage.ts`: agente y la regla de `/banco`) y `setQuoteByAgent`.
+  Las importaciones masivas NO: siguen mandando un solo `contacts.bulk`. `replaceSizeRanges`
+  (Tallas, de toda la organización) tampoco avisa por contacto: el Detalle abierto ve el tamaño
+  sugerido nuevo al reabrirlo.
+- **Embudo**: la tarjeta pasa sola a su nueva columna, arriba (por la hora del cambio), en lotes de
+  500 ms. Si el vendedor la está arrastrando, el cambio espera a que la suelte; si la soltó en otra
+  columna manda la etapa del vendedor. Mientras una escritura del propio vendedor sobre ese contacto
+  está en curso, no se aplica una lectura (al terminar se relee). En cada `reload` del SSE (al
+  conectarse y al reconectar) se pone al día con `getContactsChangedSince` (lo que cambió de etapa
+  desde la carga o la vuelta anterior, más las temperaturas completas en pares id → temperatura,
+  porque la temperatura no lleva hora; en la misma fila de peticiones; con más de 200 cambios de
+  etapa, recarga completa). Si llega una recarga completa (importación), se releen los contactos cambiados en vivo
+  en los últimos 2 min. La cotización NO se muestra en la tarjeta (decisión del dueño).
+- **Detalle del contacto** (Bandeja y pop-up): se pone al día solo (500 ms), sin pisar el campo que
+  el vendedor está tecleando ni uno con su guardado en curso (`lib/autosave/tracked-saves.ts`); lo
+  saltado se relee en cuanto ese guardado termina. Al salir del campo que tecleaba, lo del vendedor
+  se guarda (manda). La Bandeja relee etapa y temperatura del
+  chat abierto y la temperatura de las filas de ese contacto.
+- **Aviso emergente** (`app/(app)/_components/stage-change-toasts.tsx`, en el layout: todas las
+  secciones): baja debajo de la barra de arriba, 10 s, con X, `aria-live="polite"`. Solo cambios de
+  ETAPA hechos por otro ("🤖 Agente IA movió a Juan Pérez a Interesado", "⚙️ Automatización movió
+  a …", "Daniel movió a …"); nunca el del mismo usuario (tampoco su `/banco`). Máximo 3; con más en
+  esos 10 s se juntan en uno ("5 contactos cambiaron de etapa"). Clic: su chat en la Bandeja
+  (`/dashboard?contacto=<id>`; sin chat, su pop-up en `/embudo?contacto=<id>`); el grupo abre el
+  Embudo. Temperatura, cotización y Detalle (autollenado incluido) van sin aviso.
+- La conexión del SSE queda abierta en todo el CRM (la usa el aviso). Un tablero que se suscribe con
+  ella ya abierta pide su propio `reload` (`useInboxStream(…, { reloadIfOpen: true })`). En cada
+  latido (25 s) el servidor revalida sesión, usuario activo y membresía (`lib/inbox/stream-access.ts`):
+  a un vendedor desactivado se le corta el stream.
+- Pendientes teóricos: un aviso emergente que llegue justo durante una reconexión se pierde (el
+  tablero sí se pone al día). Una temperatura recuperada por la puesta al día no queda anotada como
+  "reciente": si en ese mismo instante llega una recarga completa (importación) leída antes, puede
+  volver a la vieja hasta el siguiente cambio. Si falla la recarga completa que dispara
+  `contacts.bulk` (importación de un admin; camino anterior a esta rama, `router.refresh` no avisa si
+  falló), los importados no aparecen en ese Embudo hasta la siguiente reconexión o recarga.
+- Fallos de red: las lecturas en vivo del Embudo (contactos nuevos, cambios, puesta al día) y del
+  Detalle (también la carga al abrirlo, con "Reintentando…") se reintentan solas, 5 s … 60 s.
+
 ### Lo que NO va (vs. GHL)
 Nueva conversación/Importar (requiere plantilla: llega con el número real), asignado/seguido/chat
 interno/visualizaciones, selección múltiple, íconos de llamar/carpeta/correo/borrar,
@@ -127,7 +177,7 @@ la sesión). Tipos exactos en `lib/inbox/types.ts`.
 | `markConversationRead(conversationId, upToMessageId?)` | Al abrir / al leer | `void`. `upToMessageId` = último mensaje a la vista (corte de lectura); sin él, marca hasta el último entrante. Lo posterior al corte sigue sin leer |
 | `setConversationStarred(conversationId, starred)` | Estrella | `void` |
 | etapa/temperatura | Panel | se reusan las acciones existentes de Contactos |
-| `GET /api/inbox/stream` (SSE) | Tiempo real | eventos con nombre (`event:`) y JSON en `data:` — `conversation.updated {conversationId}`, `message.upserted {conversationId, messageId}`, `message.deleted {conversationId, messageId}` (el eco ganó la carrera y se borró la fila en cola). Al (re)conectar manda `event: reload` → la UI revalida todo. La UI, ante cada evento, vuelve a pedir esa fila/mensaje. Solo llegan eventos de la organización de la sesión |
+| `GET /api/inbox/stream` (SSE) | Tiempo real | eventos con nombre (`event:`) y JSON en `data:` — `conversation.updated {conversationId}`, `message.upserted {conversationId, messageId}`, `message.deleted {conversationId, messageId}` (el eco ganó la carrera y se borró la fila en cola), `contact.created {contactId}`, `contacts.bulk`, `contact.updated {contactId, contactName, changes, stage?, by, at}` (ver "Cambios en vivo"). Al (re)conectar manda `event: reload` → la UI revalida todo. La UI, ante cada evento, vuelve a pedir esa fila/mensaje. Solo llegan eventos de la organización de la sesión |
 
 `listMessages` devuelve además `canRetry` por mensaje (si el botón Reintentar debe aparecer) y
 `attachments[].state` (`ready\|processing\|failed`).

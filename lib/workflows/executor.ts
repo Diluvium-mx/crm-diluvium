@@ -355,7 +355,8 @@ export async function executeWorkflowRun(runId: string, deps: ExecutorDeps): Pro
   // no se regresa). No es un paso del workflow: vive aquí, sea cual sea el disparador.
   if (loaded.wf.slug === SLUG_DATOS_BANCARIOS) {
     // Sin disparar workflows por etapa (evita "datos bancarios → cerca_compra → datos bancarios otra vez").
-    await moveStageForward({ organizationId: run.organizationId, contactId: run.contactId, to: "cerca_compra", by: run.trigger === "agent" ? "agente" : "sistema", now: now(), since: run.createdAt, fireStageTriggers: false }).catch((error) =>
+    // actorUserId: quien escribió /banco (el aviso en vivo no le sale a él).
+    await moveStageForward({ organizationId: run.organizationId, contactId: run.contactId, to: "cerca_compra", by: run.trigger === "agent" ? "agente" : "sistema", now: now(), since: run.createdAt, fireStageTriggers: false, actorUserId: run.triggeredByUserId }).catch((error) =>
       console.error(`[workflows] no se pudo mover a cerca_compra tras ${loaded.wf.slug}`, error),
     );
     await notifyConversation(db, run.organizationId, run.conversationId).catch(() => undefined);

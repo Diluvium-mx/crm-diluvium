@@ -143,6 +143,7 @@ export async function updateContactQualification(
     membership.organizationId,
     parsedContactId,
     parsedPatch,
+    { kind: "vendedor", userId: membership.userId },
   );
 }
 
@@ -155,7 +156,10 @@ export async function setNumEntradas(contactId: string, n: number | null) {
     50,
     "El número de entradas debe ser un entero entre 0 y 50.",
   ).parse(n);
-  return setNumEntradasData(db, membership.organizationId, parsedContactId, parsedN);
+  return setNumEntradasData(db, membership.organizationId, parsedContactId, parsedN, {
+    kind: "vendedor",
+    userId: membership.userId,
+  });
 }
 
 export async function updateEntrada(
@@ -174,6 +178,7 @@ export async function updateEntrada(
     parsedContactId,
     parsedPosition,
     parsedPatch,
+    { kind: "vendedor", userId: membership.userId },
   );
 }
 
