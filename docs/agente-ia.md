@@ -312,20 +312,33 @@ sistema "Agente IA"). El Goal y las FAQs no se tocaron.
   `updateEntrada`, `addComment`) dentro de una transacción con la fila del contacto bloqueada
   (`lib/ai/runtime/detalle.ts`). Validación campo por campo: un dato raro se descarta sin tirar los demás y
   sin avisar al vendedor.
-- **Regla del dueño:** origen por campo en `contacts.custom_fields.detalle_por`
-  (`{ campo: "agente" | "vendedor" }`, sin migración). El agente solo llena campos **vacíos** o que **él**
-  llenó; lo que edita un vendedor (las Server Actions pasan `"vendedor"`) queda suyo para siempre, aunque lo
-  vacíe. Un valor que ya estaba sin origen (anterior a esto o importado) tampoco se toca. Bajar el número de
-  entradas solo si las que se irían no tienen nada de un vendedor. Llaves: `tiene_inundaciones`,
-  `nivel_agua_cm`, `nivel_agua_texto`, `num_entradas`, `porcentaje_convencimiento`, `entrada_<n>_ancho`
-  (`_linea`, `_tamano` los marca solo el vendedor).
+- **Regla del dueño (cambiada el 26-sep por la tarde, tras probarlo desde el celular): ningún dato es
+  definitivo, ni para el vendedor ni para el agente.** El agente sigue leyendo toda la conversación y, si un
+  dato guardado ya no cuadra con lo que dijo el cliente (p. ej. al final son 2 compuertas y no 1), lo
+  corrige; una edición del vendedor es "una acción más". Vale también para el **monto** (el total que el
+  agente le dice al cliente corrige el de un vendedor). La **etapa** sigue igual (solo hacia adelante; la de
+  un vendedor se respeta). El origen por campo en `contacts.custom_fields.detalle_por`
+  (`{ campo: "agente" | "vendedor" }`, sin migración) solo dice quién escribió al último: pinta la marca
+  "IA" y el contexto del modelo avisa "(lo corrigió un vendedor)" (pudo saberlo por teléfono). Llaves:
+  `tiene_inundaciones`, `nivel_agua_cm`, `nivel_agua_texto`, `num_entradas`, `porcentaje_convencimiento`,
+  `entrada_<n>_ancho` (`_linea`, `_tamano` solo los escribe el vendedor).
 - Comentarios firmados por el usuario de sistema **"Agente IA"** (`usuario-sistema-agente-ia`, como
-  "Importado": no inicia sesión ni es miembro; sus comentarios los editan owner/admin). No repite uno ya
+  "Importado": no inicia sesión ni es miembro; desde el cambio de roles del 26-sep, cualquier rol que edite
+  contactos puede editarlos o borrarlos). No repite uno ya
   guardado (igual sin acentos ni mayúsculas); máximo 2 por respuesta.
 - El contexto del CRM del último turno trae el Detalle guardado y **solo los comentarios del propio agente**
   (las notas internas de los vendedores no van al modelo: podría repetírselas al cliente).
-- Marca **"IA"** junto a cada campo que llenó el agente (también el monto de `fijar_cotizacion`) en el
-  Detalle de la Bandeja y del pop-up del Embudo; desaparece en cuanto un vendedor edita ese campo.
+- **Detalle del contacto (rediseño del 26-sep, pedido del dueño; Bandeja y pop-up del Embudo, mismo
+  componente):** secciones Calificación · Agente IA · Comentarios; marca **"IA"** a la derecha de cada
+  campo que el agente escribió al último (Etapa, inundaciones, agua, entradas y anchos, monto, %); si un
+  vendedor lo edita se va, y si el agente lo vuelve a corregir regresa. El campo que el agente acaba de
+  llenar se ilumina ~2.4 s y su marca muestra el orbe del chat con "IA actualizando" (sin animación con
+  "reducir movimiento"). El **% de convencimiento** es de solo lectura (barra + número): lo decide el agente.
+- **Control del agente:** vive SOLO en el Detalle (se quitó "Apagar bot" del encabezado del chat). Una sola
+  fila, la de la conversación abierta (un contacto con chat en dos canales —sandbox y número de prueba—
+  mostraba dos): "🟢 Activo · [Pausar agente]" (8/12/24 h, fecha y hora o **Pausar indefinidamente**) o
+  "🟠 Pausado indefinidamente / Pausado · vuelve hoy 22:30 · [Activar]". El aviso del hilo solo informa
+  ("se activa en el Detalle del contacto").
 - **Costo medido** (26-sep, conversación de prueba con una nota de voz de medidas, Goal de
   `docs/agente-ia/angela-goal.md` + bloque §10.5 + 47 FAQs + 6 workflows; caché caliente, promedio por
   respuesta): **Luna (Modelo 1)** sin la acción US$0.00065 → con ella US$0.00064–0.0009 (+~300 tokens de

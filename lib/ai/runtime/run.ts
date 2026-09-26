@@ -620,7 +620,7 @@ export async function runAgent(job: { organizationId: string; conversationId: st
       try {
         const r = await applyDetalleByAgent(org, conv.contactId, detalle);
         if (r.llenados.length || r.delVendedor.length) {
-          console.info(`[agente] ${conv.id}: detalle → ${r.llenados.join(", ") || "sin cambios"}${r.delVendedor.length ? ` (no se tocó, es del vendedor: ${r.delVendedor.join(", ")})` : ""}`);
+          console.info(`[agente] ${conv.id}: detalle → ${r.llenados.join(", ") || "sin cambios"}${r.delVendedor.length ? ` (corrigió lo que había puesto un vendedor: ${r.delVendedor.join(", ")})` : ""}`);
         }
       } catch (error) {
         console.error(`[agente] ${conv.id}: el Detalle del contacto no se pudo actualizar`, error);

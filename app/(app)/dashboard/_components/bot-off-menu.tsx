@@ -1,11 +1,10 @@
 "use client";
 
-// Botón "Apagar bot" (25-sep-2026): el vendedor apaga al Agente IA en ESTA
-// conversación cuando toma a un buen prospecto; el agente sigue contestando todas
-// las demás. Menú: 8/12/24 h, hasta una fecha y hora (Mazatlán) o hasta que lo
-// reactive. Con el bot ya apagado, el mismo menú cambia la hora de regreso
-// ("Reactivar" vive en el aviso). Lo usan el encabezado del chat (Bandeja y pop-up
-// del Embudo) y "Detalle del contacto".
+// Botón "Pausar agente" (25-sep-2026; textos del 26-sep): el vendedor pausa al Agente IA
+// en ESTA conversación cuando toma a un buen prospecto; el agente sigue contestando
+// todas las demás. Menú: 8/12/24 h, hasta una fecha y hora (Mazatlán) o pausar
+// indefinidamente. Desde el 26-sep-2026 vive SOLO en "Detalle del contacto" (Bandeja y
+// pop-up del Embudo), junto al estado; pausado, ahí mismo sale "Activar".
 import { useRef, useState } from "react";
 import { X } from "lucide-react";
 import {
@@ -65,7 +64,7 @@ export function BotOffMenu({
       setPicking(false);
       onChanged();
     } catch {
-      setError("No se pudo apagar el bot. Intenta de nuevo.");
+      setError("No se pudo pausar el agente. Intenta de nuevo.");
     } finally {
       inFlight.current = false;
       setBusy(false);
@@ -85,14 +84,14 @@ export function BotOffMenu({
       <DropdownMenu>
         <DropdownMenuTrigger
           disabled={busy}
-          title={paused ? "Cambiar hasta cuándo está apagado el bot en este chat" : "Apagar el bot solo en este chat"}
+          title={paused ? "Cambiar hasta cuándo está pausado el agente en este chat" : "Pausar el agente solo en este chat"}
           className="rounded-md border px-2 py-1 text-xs font-medium text-foreground hover:bg-muted disabled:opacity-50"
         >
-          {busy ? "Guardando…" : paused ? "🤖 Cambiar hora" : "🤖 Apagar bot"}
+          {busy ? "Guardando…" : paused ? "Cambiar hora" : "Pausar agente"}
         </DropdownMenuTrigger>
         <DropdownMenuContent align={align} className="w-56">
           <DropdownMenuGroup>
-            <DropdownMenuLabel>{paused ? "Bot apagado hasta…" : "Apagar el bot en este chat"}</DropdownMenuLabel>
+            <DropdownMenuLabel>{paused ? "Pausado hasta…" : "Pausar el agente en este chat"}</DropdownMenuLabel>
             {PAUSE_OPTIONS.map((option) => (
               <DropdownMenuItem key={option} onClick={() => choose(option)}>
                 {PAUSE_OPTION_LABELS[option]}
@@ -109,7 +108,7 @@ export function BotOffMenu({
           }`}
         >
           <div className="mb-2 flex items-center justify-between">
-            <span className="font-semibold">{picking ? "🤖 Apagar bot hasta…" : "🤖 Apagar bot"}</span>
+            <span className="font-semibold">{picking ? "🤖 Pausar el agente hasta…" : "🤖 Pausar agente"}</span>
             <button
               type="button"
               onClick={() => {
@@ -141,7 +140,7 @@ export function BotOffMenu({
                 disabled={busy || !at}
                 className="rounded-md bg-brand-navy px-3 py-1.5 text-sm font-medium text-brand-white hover:bg-brand-navy-dark disabled:opacity-50"
               >
-                Apagar
+                Pausar
               </button>
             </div>
           )}

@@ -61,7 +61,7 @@ describe("returnLabel / pauseReason: texto del aviso", () => {
   it("pauseReason: con hora dice cuándo vuelve; sin hora, hasta que lo reactiven", () => {
     expect(pauseReason({ agentState: "activo", pausedUntil: null }, NOW)).toBe("");
     expect(pauseReason({ agentState: "pausado_humano", pausedUntil: "2026-09-26T05:30:00.000Z" }, NOW)).toBe("vuelve hoy 22:30");
-    expect(pauseReason({ agentState: "pausado_humano", pausedUntil: null }, NOW)).toBe("hasta que lo reactives");
+    expect(pauseReason({ agentState: "pausado_humano", pausedUntil: null }, NOW)).toBe("indefinidamente");
     expect(pauseReason({ agentState: "pausado_antibucle", pausedUntil: null }, NOW)).toBe("en pausa");
   });
 });

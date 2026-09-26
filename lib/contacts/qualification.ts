@@ -224,6 +224,8 @@ export async function getContactQualification(
         .filter(([, origen]) => origen === "agente")
         .map(([key]) => key),
       ...((contact.customFields as Record<string, unknown> | null)?.cotizacion_por === "agente" ? ["monto_cotizacion"] : []),
+      // La etapa la movió el Agente IA (mover_etapa); un vendedor que la cambie la hace suya.
+      ...(contact.stageChangedBy === "agente" ? ["etapa"] : []),
     ],
     entradas,
     comentarios: comentarios.map((comment) => ({
