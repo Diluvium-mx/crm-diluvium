@@ -223,41 +223,45 @@ export function AdsTable({
         <span className="text-xs text-muted-foreground">{shown.length} de {rows.length}</span>
       </div>
 
-      <div role="table" aria-label="Anuncios" aria-rowcount={shown.length} className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-lg border bg-card">
-        <div role="row" className={`${GRID} shrink-0 border-b bg-muted/60 px-5 py-2 text-xs font-medium text-muted-foreground`}>
-          {COLUMNS.map((c) => {
-            const active = sort.key === c.key;
-            const Arrow = sort.dir === "asc" ? ArrowUp : ArrowDown;
-            return (
-              <button
-                key={c.key}
-                type="button"
-                role="columnheader"
-                aria-sort={active ? (sort.dir === "asc" ? "ascending" : "descending") : "none"}
-                title={c.hint}
-                onClick={() => toggleSort(c.key)}
-                className={`flex items-center gap-1 rounded px-1 py-0.5 ${c.numeric ? "justify-end text-right" : "text-left"} ${active ? "text-foreground" : ""}`}
-              >
-                {c.label}
-                <Arrow className={`size-3 transition-opacity ${active ? "opacity-100" : "opacity-0"}`} aria-hidden="true" />
-              </button>
-            );
-          })}
-        </div>
-        <div ref={scrollRef} className="min-h-0 flex-1 overflow-y-auto overscroll-contain">
-          {loading ? (
-            <p className="px-4 py-10 text-center text-sm text-muted-foreground">Cargando anuncios…</p>
-          ) : rows.length === 0 ? (
-            <p className="px-4 py-10 text-center text-sm text-muted-foreground">{emptyMessage}</p>
-          ) : shown.length === 0 ? (
-            <p className="px-4 py-10 text-center text-sm text-muted-foreground">Ningún anuncio coincide con la búsqueda o el filtro.</p>
-          ) : (
-            <div role="rowgroup" className="relative" style={{ height: virtual ? virtualizer.getTotalSize() : totalHeight }}>
-              {items.map(({ row, top }) => (
-                <Row key={row.adKey} row={row} style={{ transform: `translateY(${top}px)` }} />
-              ))}
-            </div>
-          )}
+      {/* En pantallas angostas las 6 columnas no caben: la tabla se desliza de
+          lado POR DENTRO (ancho mínimo de sus columnas) y la página no. */}
+      <div role="table" aria-label="Anuncios" aria-rowcount={shown.length} className="flex min-h-0 flex-1 flex-col overflow-x-auto overflow-y-hidden rounded-lg border bg-card">
+        <div className="flex min-h-0 min-w-[56rem] flex-1 flex-col">
+          <div role="row" className={`${GRID} shrink-0 border-b bg-muted/60 px-5 py-2 text-xs font-medium text-muted-foreground`}>
+            {COLUMNS.map((c) => {
+              const active = sort.key === c.key;
+              const Arrow = sort.dir === "asc" ? ArrowUp : ArrowDown;
+              return (
+                <button
+                  key={c.key}
+                  type="button"
+                  role="columnheader"
+                  aria-sort={active ? (sort.dir === "asc" ? "ascending" : "descending") : "none"}
+                  title={c.hint}
+                  onClick={() => toggleSort(c.key)}
+                  className={`flex items-center gap-1 rounded px-1 py-0.5 ${c.numeric ? "justify-end text-right" : "text-left"} ${active ? "text-foreground" : ""}`}
+                >
+                  {c.label}
+                  <Arrow className={`size-3 transition-opacity ${active ? "opacity-100" : "opacity-0"}`} aria-hidden="true" />
+                </button>
+              );
+            })}
+          </div>
+          <div ref={scrollRef} className="min-h-0 flex-1 overflow-y-auto overscroll-contain">
+            {loading ? (
+              <p className="px-4 py-10 text-center text-sm text-muted-foreground">Cargando anuncios…</p>
+            ) : rows.length === 0 ? (
+              <p className="px-4 py-10 text-center text-sm text-muted-foreground">{emptyMessage}</p>
+            ) : shown.length === 0 ? (
+              <p className="px-4 py-10 text-center text-sm text-muted-foreground">Ningún anuncio coincide con la búsqueda o el filtro.</p>
+            ) : (
+              <div role="rowgroup" className="relative" style={{ height: virtual ? virtualizer.getTotalSize() : totalHeight }}>
+                {items.map(({ row, top }) => (
+                  <Row key={row.adKey} row={row} style={{ transform: `translateY(${top}px)` }} />
+                ))}
+              </div>
+            )}
+          </div>
         </div>
       </div>
     </div>
