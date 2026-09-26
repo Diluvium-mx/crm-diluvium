@@ -444,6 +444,8 @@ describe.skipIf(!TEST_DATABASE_URL)("Opciones del bot (Postgres real)", () => {
     expect((await notices()).filter((x) => x.kind === "tope_respuestas")).toHaveLength(1);
     // «Activar»: la cuenta empieza de cero desde el corte; el siguiente mensaje se contesta.
     await manual.reactivateAgentInConversation(ORG, CONV, new Date());
+    // …y la tarjeta del Embudo deja de estar amarilla (el aviso queda atendido).
+    expect((await signals.funnelSignalsForOrg(ORG))[CONTACT]?.urgent ?? false).toBe(false);
     await msg({ direction: "in", body: "pregunta 4", at: new Date(Date.now() + 5_000) });
     expect((await run.runAgent(JOB, makeDeps({ brain: ["respuesta 4"] }).deps)).kind).toBe("sent");
     expect((await conv()).agentState).toBe("activo");

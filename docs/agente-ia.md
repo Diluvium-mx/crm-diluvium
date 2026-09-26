@@ -453,6 +453,15 @@ hasta que alguien mueva una opción. Reglas puras en `lib/agente-ia/opciones.ts`
   Mazatlán incluido cruce de medianoche, permisos por rol), `policy.test.ts`, `brain.test.ts` y
   `lib/ai/runtime/opciones.int.test.ts` (regresión con fábrica, una prueba por opción, caché, apertura del
   horario con reparto, tope con tarjeta amarilla y aislamiento por organización).
+- **Revisión de Codex (26-sep, adversarial; a la lista de la revisión final, decisión del dueño):**
+  corregido ya: «Activar» atiende el aviso del tope (la tarjeta deja de estar amarilla). Pendientes:
+  (1) con varias organizaciones con horario, el `LIMIT 12` del barrido de apertura va antes de filtrar
+  "abierta ahora" (hoy hay una sola organización); (2) pasar de horario a 24/7 deja sin rescatar lo
+  pendiente de más de 30 min; (3) una segunda respuesta del vendedor no extiende la pausa con horas;
+  (4) "pedir asesor → pausar" puede dejar sin enviar la media pedida en esa misma respuesta; (5) un
+  «Reintentar» de respuesta guardada no cuenta para el tope; (6) si el aviso del tope falla al guardarse,
+  la pausa queda sin aviso; (7) re-aplicar a mano la 0038 regresaría "pedir asesor" a "avisar y seguir";
+  (8) teórico: el barrido no correlaciona `organization_id` en canal/mensajes.
 - **Aceptado / teórico:** una pausa por "pedir asesor" deja "agente_pausado" la media que el agente pidió en
   esa misma respuesta si su corrida corre después de la pausa (caso raro: al pasar a humano no se piden
   archivos). Un vendedor que contesta otra vez durante una pausa con hora no la extiende (igual que
