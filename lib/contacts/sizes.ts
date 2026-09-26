@@ -16,8 +16,14 @@ export const DEFAULT_SIZE_RANGES: readonly SizeRange[] = [
   { linea: "mini", talla: "G", minCm: 98, maxCm: 106, posicion: 5 },
   { linea: "mini", talla: "XG", minCm: 107, maxCm: 115, posicion: 6 },
   { linea: "mini", talla: "XXG", minCm: 116, maxCm: 123, posicion: 7 },
-  { linea: "estandar", talla: "Estándar", minCm: 69, maxCm: 120, posicion: 1 },
-  { linea: "estandar", talla: "A la medida", minCm: 121, maxCm: 250, posicion: 2 },
+  // Estándar: la tabla oficial "¿Qué tamaño necesito?" (60 cm de alto, $5,500 MXN);
+  // "A la medida" (121–250 cm, $7,000 MXN). Los precios viven en el Goal, no aquí.
+  { linea: "estandar", talla: "XCH", minCm: 69, maxCm: 78, posicion: 1 },
+  { linea: "estandar", talla: "CH", minCm: 79, maxCm: 90, posicion: 2 },
+  { linea: "estandar", talla: "M", minCm: 91, maxCm: 100, posicion: 3 },
+  { linea: "estandar", talla: "G", minCm: 101, maxCm: 110, posicion: 4 },
+  { linea: "estandar", talla: "XG", minCm: 111, maxCm: 120, posicion: 5 },
+  { linea: "estandar", talla: "A la medida", minCm: 121, maxCm: 250, posicion: 6 },
 ];
 
 export function suggestSize(

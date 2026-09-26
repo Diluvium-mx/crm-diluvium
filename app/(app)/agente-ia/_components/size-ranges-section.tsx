@@ -1,9 +1,10 @@
 "use client";
 
-// Rangos de tallas de compuerta por línea (A7), editables por owner/admin. La
-// sugerencia de talla de cada entrada busca SOLO dentro de su línea; fuera de
-// rango → sin sugerencia. Se valida aquí con la misma función del servidor
-// (lib/contacts/sizes.ts) para mostrar los errores antes de guardar.
+// Sección "Tallas y medidas" de la pestaña Agente IA (antes Configuración → Tallas,
+// hasta el 26-sep-2026): rangos de ancho (cm) por tamaño y línea, editables por
+// todos los roles. La sugerencia de tamaño de cada entrada del Detalle busca SOLO
+// dentro de su línea; fuera de rango → sin sugerencia. Se valida aquí con la misma
+// función del servidor (lib/contacts/sizes.ts) para mostrar los errores antes de guardar.
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { replaceSizeRanges } from "@/lib/actions/contact-qualification";
@@ -38,7 +39,7 @@ function toRanges(rows: Row[]): SizeRange[] {
 
 const cell = "w-full rounded border bg-background px-2 py-1 text-sm";
 
-export function SizeRangesPanel({ initial }: { initial: SizeRange[] }) {
+export function SizeRangesSection({ initial }: { initial: SizeRange[] }) {
   const router = useRouter();
   const [rows, setRows] = useState<Row[]>(() => toRows(initial));
   const [saving, setSaving] = useState(false);
@@ -69,8 +70,8 @@ export function SizeRangesPanel({ initial }: { initial: SizeRange[] }) {
   return (
     <div className="space-y-4">
       <p className="text-xs text-muted-foreground">
-        Rangos de ancho (cm) por talla. Dentro de una línea no se pueden encimar; entre líneas sí (por ejemplo, 90 cm
-        cabe en mini M y en estándar).
+        Rangos de ancho (cm) por tamaño. Dentro de una línea no se pueden encimar; entre líneas sí (por ejemplo, 90 cm
+        cabe en mini M y en estándar M). Los usa la sugerencia de tamaño de cada entrada en el Detalle del contacto.
       </p>
       <div className="grid gap-4 md:grid-cols-2">
         {LINEAS.map((linea) => (
@@ -79,7 +80,7 @@ export function SizeRangesPanel({ initial }: { initial: SizeRange[] }) {
             <table className="w-full text-left text-sm">
               <thead className="text-xs text-muted-foreground">
                 <tr>
-                  <th className="pb-1 font-medium">Talla</th>
+                  <th className="pb-1 font-medium">Tamaño</th>
                   <th className="pb-1 font-medium">Desde (cm)</th>
                   <th className="pb-1 font-medium">Hasta (cm)</th>
                   <th />
@@ -91,7 +92,7 @@ export function SizeRangesPanel({ initial }: { initial: SizeRange[] }) {
                   .map((r) => (
                     <tr key={r.key}>
                       <td className="py-0.5 pr-1">
-                        <input aria-label="Talla" value={r.talla} onChange={(e) => update(r.key, { talla: e.target.value })} className={cell} />
+                        <input aria-label="Tamaño" value={r.talla} onChange={(e) => update(r.key, { talla: e.target.value })} className={cell} />
                       </td>
                       <td className="py-0.5 pr-1">
                         <input aria-label="Desde (cm)" inputMode="numeric" value={r.minCm} onChange={(e) => update(r.key, { minCm: e.target.value })} className={cell} />
@@ -102,7 +103,7 @@ export function SizeRangesPanel({ initial }: { initial: SizeRange[] }) {
                       <td className="py-0.5">
                         <button
                           type="button"
-                          aria-label={`Quitar ${r.talla || "talla"}`}
+                          aria-label={`Quitar ${r.talla || "tamaño"}`}
                           onClick={() => setRows((current) => current.filter((x) => x.key !== r.key))}
                           className="rounded px-2 py-1 text-xs text-muted-foreground hover:bg-muted"
                         >
@@ -118,7 +119,7 @@ export function SizeRangesPanel({ initial }: { initial: SizeRange[] }) {
               onClick={() => setRows((current) => [...current, { key: newKey(), linea: linea.key, talla: "", minCm: "", maxCm: "" }])}
               className="mt-2 rounded px-2 py-1 text-xs text-brand-navy hover:bg-brand-navy/10 dark:text-sky-300"
             >
-              + Agregar talla
+              + Agregar tamaño
             </button>
           </div>
         ))}

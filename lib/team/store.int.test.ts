@@ -171,7 +171,8 @@ describe.skipIf(!TEST_DATABASE_URL)("vendedores (Postgres real + Better Auth)", 
   it("una organización nueva nace con los rangos de tallas por defecto", async () => {
     const created = await auth.api.createOrganization({ body: { name: "Nueva", slug: "nueva-org", userId: ownerId } });
     const rows = await db.select().from(s.tallasCompuerta).where(eq(s.tallasCompuerta.organizationId, created!.id));
-    expect(rows).toHaveLength(9);
+    const { DEFAULT_SIZE_RANGES } = await import("@/lib/contacts/sizes");
+    expect(rows).toHaveLength(DEFAULT_SIZE_RANGES.length);
   });
 
   it("la BD no deja desactivar al único owner activo (trigger), pero sí si hay otro", async () => {
