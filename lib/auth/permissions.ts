@@ -19,8 +19,8 @@ export const statement = {
   // versiones, canales, APIs). Desde el 25-sep-2026 TODOS los roles la ven
   // (`read`) y editan (`update`), incluido el vendedor.
   aiConfig: ["read", "update"],
-  // Rangos editables de tallas: todos los vendedores los consultan para las
-  // sugerencias; editarlos vive en Configuración → Tallas: solo owner/admin.
+  // Rangos editables de tallas ("Tallas y medidas" en la pestaña Agente IA desde
+  // el 26-sep-2026): todos los roles los consultan para las sugerencias y los editan.
   sizeRange: ["read", "update"],
   // Tarjeta "Gasto de IA" del Dashboard (A2): todos la ven y registran recargas.
   aiSpend: ["read", "update"],
@@ -28,8 +28,8 @@ export const statement = {
   // los leen, ejecutan (`run`: comandos tipo /tabla) y editan.
   workflow: ["read", "run", "create", "update", "delete"],
   mediaAsset: ["read", "create", "delete"],
-  // Sección "Configuración" (Vendedores, Tallas y lo que se agregue): solo
-  // owner/admin la ven y editan. "Mi cuenta" NO vive aquí (menú del usuario).
+  // Sección "Configuración" (Vendedores y lo que se agregue): solo owner/admin
+  // la ven y editan. "Mi cuenta" NO vive aquí (menú del usuario).
   settings: ["read"],
 } as const;
 
@@ -67,13 +67,13 @@ export const admin = ac.newRole({
 // (decisión del dueño, 26-sep-2026; amplía la del 25-sep): plantillas de Meta,
 // contactos en masa, recargas de IA y comentarios de otros, igual que el admin.
 // Lo único que NO tiene es lo que vive en Configuración: Vendedores (`member`,
-// sin grants) y Tallas (`sizeRange` solo lectura, para las sugerencias).
+// sin grants). Tallas pasó a la pestaña Agente IA (26-sep-2026): también las edita.
 export const agent = ac.newRole({
   contact: ["create", "read", "update", "delete", "import", "export"],
   tag: ["create", "read", "update", "delete"],
   snippet: ["create", "read", "update", "delete"],
   template: ["read", "create", "sync"],
-  sizeRange: ["read"],
+  sizeRange: ["read", "update"],
   aiConfig: ["read", "update"],
   aiSpend: ["read", "update"],
   workflow: ["read", "run", "create", "update", "delete"],

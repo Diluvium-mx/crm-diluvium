@@ -16,7 +16,9 @@ import { BrainModelPicker, Model1Picker } from "./brain-model-picker";
 import { ChannelSwitches } from "./channel-switches";
 import { FaqEditor } from "./faq-editor";
 import { GoalEditor } from "./goal-editor";
+import { SizeRangesSection } from "./size-ranges-section";
 import { StageModelAssignment } from "./stage-model-assignment";
+import type { SizeRange } from "@/lib/contacts/sizes";
 
 function Section({ title, hint, children }: { title: string; hint?: string; children: React.ReactNode }) {
   return (
@@ -104,7 +106,7 @@ function costHint(basis: AgentEditorView["costBasis"]): string {
     : `Costo aproximado por cada 100 conversaciones, con un perfil fijo (el uso real cuenta desde ${MIN_REAL_RESPONSES} respuestas en ${MIN_REAL_CONVERSATIONS} conversaciones de los últimos ${COST_WINDOW_DAYS} días).`;
 }
 
-export function AgenteEditor({ data }: { data: AgentEditorView }) {
+export function AgenteEditor({ data, sizeRanges }: { data: AgentEditorView; sizeRanges: SizeRange[] }) {
   const [tab, setTab] = useState<"crear" | "implementar">("crear");
   const [agentName, setAgentName] = useState(data.agentName);
 
@@ -156,6 +158,9 @@ export function AgenteEditor({ data }: { data: AgentEditorView }) {
           </Section>
           <Section title="Opciones" hint="Cómo se comporta el bot, como las opciones de Ángela en GHL. Los valores de fábrica son el comportamiento de siempre; un cambio aplica en menos de un minuto, sin redesplegar.">
             <BotOptionsSection options={data.options} lastChange={data.optionsLastChange} />
+          </Section>
+          <Section title="Tallas y medidas" hint="Qué tamaño corresponde a cada ancho de entrada, por línea (mini y estándar).">
+            <SizeRangesSection initial={sizeRanges} />
           </Section>
         </>
       ) : (

@@ -30,14 +30,14 @@ const policy = {
     settings: ["read"],
     member: ["create", "update", "delete"],
   },
-  // Vendedor = todo menos Configuración (Vendedores = member, Tallas = sizeRange.update).
+  // Vendedor = todo menos Configuración (Vendedores = member). Tallas vive en Agente IA: la edita.
   agent: {
     contact: ["create", "read", "update", "delete", "import", "export"],
     tag: ["create", "read", "update", "delete"],
     snippet: ["create", "read", "update", "delete"],
     template: ["read", "create", "sync"],
     aiConfig: ["read", "update"],
-    sizeRange: ["read"],
+    sizeRange: ["read", "update"],
     aiSpend: ["read", "update"],
     workflow: ["read", "run", "create", "update", "delete"],
     mediaAsset: ["read", "create", "delete"],
@@ -117,11 +117,11 @@ describe("admin y owner tienen TODO lo del vendedor (26-sep-2026)", () => {
     }
   });
 
-  it("al vendedor solo le falta Configuración (Vendedores y editar Tallas)", () => {
+  it("al vendedor solo le falta Configuración (Vendedores); Tallas ya la edita (26-sep-2026)", () => {
     const faltan: string[] = [];
     for (const [resource, actions] of Object.entries(actionsByResource) as [keyof typeof actionsByResource, readonly string[]][]) {
       for (const action of actions) if (roleAllows("admin", resource, action) && !roleAllows("agent", resource, action)) faltan.push(`${resource}.${action}`);
     }
-    expect(faltan.sort()).toEqual(["member.create", "member.delete", "member.update", "settings.read", "sizeRange.update"]);
+    expect(faltan.sort()).toEqual(["member.create", "member.delete", "member.update", "settings.read"]);
   });
 });

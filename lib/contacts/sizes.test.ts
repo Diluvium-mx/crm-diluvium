@@ -13,7 +13,11 @@ describe("suggestSize", () => {
     [71, "mini", "XCH"],
     [61, "mini", null],
     [90, "mini", "M"],
-    [90, "estandar", "Estándar"],
+    [69, "estandar", "XCH"],
+    [90, "estandar", "CH"],
+    [91, "estandar", "M"],
+    [120, "estandar", "XG"],
+    [68, "estandar", null],
     [121, "mini", "XXG"],
     [121, "estandar", "A la medida"],
     [124, "mini", null],
@@ -46,7 +50,7 @@ describe("validateSizeRanges", () => {
   it("acepta rangos encimados entre líneas distintas", () => {
     const ranges: SizeRange[] = [
       { linea: "mini", talla: "M", minCm: 89, maxCm: 97, posicion: 1 },
-      { linea: "estandar", talla: "Estándar", minCm: 69, maxCm: 120, posicion: 1 },
+      { linea: "estandar", talla: "M", minCm: 91, maxCm: 100, posicion: 1 },
     ];
     expect(validateSizeRanges(ranges)).toEqual([]);
   });

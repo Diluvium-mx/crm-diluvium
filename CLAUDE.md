@@ -178,8 +178,8 @@ lo del vendedor y que al vendedor solo le falte Configuración):**
 | Rol | Qué puede |
 |---|---|
 | Owner | Dueño de la cuenta: todo, incluido administrar a los admins (solo él asigna el rol owner). |
-| Admin | Todo lo del vendedor + Configuración (Vendedores, Tallas). |
-| Vendedor (`agent`) | Todas las herramientas del CRM menos la pestaña Configuración: Dashboard (incluido registrar recargas de IA), Bandeja, Embudo, Mensajes rápidos (fragmentos y crear/sincronizar plantillas de Meta), contactos en masa (importar/exportar/borrar), editar/borrar comentarios de otros, Anuncios, Agente IA y Automatización. |
+| Admin | Todo lo del vendedor + Configuración (Vendedores). |
+| Vendedor (`agent`) | Todas las herramientas del CRM menos la pestaña Configuración: Dashboard (incluido registrar recargas de IA), Bandeja, Embudo, Mensajes rápidos (fragmentos y crear/sincronizar plantillas de Meta), contactos en masa (importar/exportar/borrar), editar/borrar comentarios de otros, Anuncios, Agente IA (incluida la sección "Tallas y medidas", desde el 26-sep-2026) y Automatización. |
 
 ```
 contacts             id, org_id, name, phone_e164 (unique por org), email,
@@ -220,7 +220,7 @@ contacts (+)         tiene_inundaciones (si|no|no_sabe), nivel_agua_cm, nivel_ag
                      num_entradas, monto_cotizacion numeric(12,2) MXN, porcentaje_convencimiento (0-100, de 10 en 10)
 contact_entradas     id, org_id, contact_id, posicion, ancho_cm, linea (mini|estandar),
                      tamano_sugerido, tamano_manual   -- nunca más filas que num_entradas
-tallas_compuerta     id, org_id, linea, talla, min_cm, max_cm, posicion   -- editable owner/admin
+tallas_compuerta     id, org_id, linea, talla, min_cm, max_cm, posicion   -- editable por todos (Agente IA › Tallas y medidas)
 contact_comentarios  id, org_id, contact_id, author_user_id (obligatorio), body, created_at, updated_at
                      -- 0022: las notas viejas (custom_fields.notas) se copian aquí con autor de
                      -- sistema "Importado" (sin login ni membresía; las edita cualquier rol, 26-sep)
@@ -278,7 +278,8 @@ el mismo chat. Detalle de la bandeja y contrato de datos para el track UI: `docs
 Bandeja (`/dashboard`) · Embudo (`/embudo`; antes "Contactos", `/contactos` redirige) · Mensajes
 rápidos (`/mensajes-rapidos`; antes "Fragmentos y plantillas", `/snippets` redirige) · Anuncios (`/anuncios`,
 tabla de anuncios de Meta que trajeron clientes en el periodo) · Agente IA · Automatización ·
-Configuración (`/configuracion`, al final, solo owner/admin: Vendedores y Tallas). Abajo del sidebar,
+Configuración (`/configuracion`, al final, solo owner/admin: Vendedores; "Tallas" pasó a Agente IA › "Tallas y
+medidas" el 26-sep-2026, editable por todos los roles). Abajo del sidebar,
 el menú del usuario (todos): "Mi cuenta" (`/mi-cuenta`: nombre y cambiar la propia contraseña) y
 "Cerrar sesión".
 
