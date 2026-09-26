@@ -1,58 +1,106 @@
 import { describe, expect, it } from "vitest";
-import { roleAllows } from "./permissions";
+import { roleAllows, statement } from "./permissions";
 
-// Política de fragmentos: TODOS los roles (owner/admin/agent) los gestionan —
-// son la herramienta diaria del vendedor. El enforcement (lib/actions/snippets.ts)
-// se apoya en esto y falla cerrado ante un rol desconocido.
-describe("roleAllows (ACL de fragmentos)", () => {
-  it("todos los roles (incluido agent) crean/leen/editan/borran fragmentos", () => {
-    for (const role of ["owner", "admin", "agent"]) {
-      expect(roleAllows(role, "snippet", "create")).toBe(true);
-      expect(roleAllows(role, "snippet", "read")).toBe(true);
-      expect(roleAllows(role, "snippet", "update")).toBe(true);
-      expect(roleAllows(role, "snippet", "delete")).toBe(true);
+type Resource = keyof typeof statement;
+
+const policy = {
+  owner: {
+    contact: ["create", "read", "update", "delete", "import", "export"],
+    tag: ["create", "read", "update", "delete"],
+    snippet: ["create", "read", "update", "delete"],
+    template: ["read", "create", "sync"],
+    aiConfig: ["read", "update"],
+    sizeRange: ["read", "update"],
+    aiSpend: ["read", "update"],
+    workflow: ["read", "run", "create", "update", "delete"],
+    mediaAsset: ["read", "create", "delete"],
+    settings: ["read"],
+    member: ["create", "update", "delete"],
+  },
+  admin: {
+    contact: ["create", "read", "update", "delete", "import", "export"],
+    tag: ["create", "read", "update", "delete"],
+    snippet: ["create", "read", "update", "delete"],
+    template: ["read", "create", "sync"],
+    aiConfig: ["read", "update"],
+    sizeRange: ["read", "update"],
+    aiSpend: ["read", "update"],
+    workflow: ["read", "run", "create", "update", "delete"],
+    mediaAsset: ["read", "create", "delete"],
+    settings: ["read"],
+    member: ["create", "update", "delete"],
+  },
+  agent: {
+    contact: ["create", "read", "update"],
+    tag: ["create", "read", "update"],
+    snippet: ["create", "read", "update", "delete"],
+    template: ["read"],
+    aiConfig: ["read", "update"],
+    sizeRange: ["read"],
+    aiSpend: ["read"],
+    workflow: ["read", "run", "create", "update", "delete"],
+    mediaAsset: ["read", "create", "delete"],
+    settings: [],
+    member: [],
+  },
+  desconocido: {
+    contact: [],
+    tag: [],
+    snippet: [],
+    template: [],
+    aiConfig: [],
+    sizeRange: [],
+    aiSpend: [],
+    workflow: [],
+    mediaAsset: [],
+    settings: [],
+    member: [],
+  },
+} as const satisfies Record<string, Partial<Record<Resource, readonly string[]>>>;
+
+const actionsByResource = {
+  contact: ["create", "read", "update", "delete", "import", "export"],
+  tag: ["create", "read", "update", "delete"],
+  snippet: ["create", "read", "update", "delete"],
+  template: ["read", "create", "sync"],
+  aiConfig: ["read", "update"],
+  sizeRange: ["read", "update"],
+  aiSpend: ["read", "update"],
+  workflow: ["read", "run", "create", "update", "delete"],
+  mediaAsset: ["read", "create", "delete"],
+  settings: ["read"],
+  member: ["create", "update", "delete"],
+} as const satisfies Partial<Record<Resource, readonly string[]>>;
+
+describe.each(Object.entries(policy))("roleAllows: matriz de %s", (role, grants) => {
+  it("permite y deniega exactamente la política declarada", () => {
+    for (const [resource, actions] of Object.entries(actionsByResource) as [
+      keyof typeof actionsByResource,
+      readonly string[],
+    ][]) {
+      for (const action of actions) {
+        expect(
+          roleAllows(role, resource, action),
+          `${role}.${resource}.${action}`,
+        ).toBe(grants[resource].includes(action as never));
+      }
     }
-  });
-
-  it("un rol desconocido no permite nada (falla cerrado)", () => {
-    expect(roleAllows("desconocido", "snippet", "read")).toBe(false);
-    expect(roleAllows("", "snippet", "create")).toBe(false);
   });
 });
 
-// Gestionar plantillas (alta en Meta, sincronización) es owner/admin; el agente
-// solo LEE (para enviarlas desde el chat). Enviar no pasa por este ACL.
-describe("roleAllows (ACL de plantillas)", () => {
-  it("el agente lee plantillas pero NO las crea ni sincroniza", () => {
-    expect(roleAllows("agent", "template", "read")).toBe(true);
-    expect(roleAllows("agent", "template", "create")).toBe(false);
-    expect(roleAllows("agent", "template", "sync")).toBe(false);
+describe("roleAllows: fallo cerrado", () => {
+  it("deniega acciones inexistentes incluso en recursos permitidos", () => {
+    expect(roleAllows("owner", "aiSpend", "delete")).toBe(false);
+    expect(roleAllows("admin", "settings", "update")).toBe(false);
+    expect(roleAllows("agent", "contact", "publish")).toBe(false);
   });
 
-  it("owner y admin gestionan plantillas (read/create/sync)", () => {
-    for (const role of ["owner", "admin"]) {
-      expect(roleAllows(role, "template", "read")).toBe(true);
-      expect(roleAllows(role, "template", "create")).toBe(true);
-      expect(roleAllows(role, "template", "sync")).toBe(true);
+  it("deniega todo a roles desconocidos y al rol vacío", () => {
+    for (const resource of Object.keys(actionsByResource) as (keyof typeof actionsByResource)[]) {
+      for (const action of actionsByResource[resource]) {
+        expect(roleAllows("desconocido", resource, action)).toBe(false);
+        expect(roleAllows("", resource, action)).toBe(false);
+      }
     }
-  });
-});
-
-describe("roleAllows (ACL de rangos de tallas)", () => {
-  it("el agente puede leer rangos, pero no reemplazarlos", () => {
-    expect(roleAllows("agent", "sizeRange", "read")).toBe(true);
-    expect(roleAllows("agent", "sizeRange", "update")).toBe(false);
-  });
-
-  it("owner y admin pueden leer y reemplazar rangos", () => {
-    for (const role of ["owner", "admin"]) {
-      expect(roleAllows(role, "sizeRange", "read")).toBe(true);
-      expect(roleAllows(role, "sizeRange", "update")).toBe(true);
-    }
-  });
-
-  it("un rol desconocido no obtiene acceso a los rangos", () => {
-    expect(roleAllows("desconocido", "sizeRange", "read")).toBe(false);
-    expect(roleAllows("desconocido", "sizeRange", "update")).toBe(false);
   });
 });

@@ -1,7 +1,7 @@
 "use server";
 
-// Configuración (A4): "Mi cuenta" (cualquier usuario cambia SU contraseña) y
-// "Vendedores" (solo owner/admin). ACL en 3 capas: la UI esconde lo que no se
+// "Mi cuenta" (/mi-cuenta, menú del usuario: cualquier usuario cambia SU
+// contraseña) y Configuración → "Vendedores" (solo owner/admin). ACL en 3 capas: la UI esconde lo que no se
 // puede; aquí se exige el permiso del plugin organization (member:create /
 // member:update / member:delete, lib/auth/permissions.ts) y las reglas de
 // lib/team/rules.ts; y la BD garantiza que siempre quede un owner activo.

@@ -243,6 +243,44 @@
   100% { box-shadow: 0 0 0 6px rgb(var(--glow-rgb) / 0); }
 }
 
+/* ── Tarjeta del Embudo: fondo de estado (contact-card.tsx) ────────────────────
+   Solo el recuadro de ESA tarjeta: un tinte translúcido ENCIMA del fondo de la
+   tarjeta y DEBAJO de la luz del cursor y del contenido (el hover se sigue viendo
+   encima y el texto conserva contraste ≥ 4.5:1), más el borde del mismo color.
+   pending = azul, el tono del resaltado del cursor (--glow-surface + borde navy):
+   hay mensajes del cliente por contestar. urgent = amarillo claro con borde ámbar:
+   el vendedor tiene que atender (si aplican los dos, gana el amarillo; lo decide
+   la tarjeta). Claro y oscuro. */
+:root {
+  --funnel-pending: rgb(var(--glow-surface) / 0.11);
+  --funnel-pending-border: var(--brand-navy);
+  --funnel-urgent: rgb(250 204 21 / 0.2);
+  --funnel-urgent-border: rgb(217 164 6 / 0.6);
+}
+
+.dark {
+  --funnel-pending: rgb(var(--glow-surface) / 0.1);
+  --funnel-pending-border: rgb(var(--glow-surface) / 0.55);
+  --funnel-urgent: rgb(250 204 21 / 0.13);
+  --funnel-urgent-border: rgb(250 204 21 / 0.45);
+}
+
+[data-funnel="pending"] {
+  background-image: linear-gradient(var(--funnel-pending), var(--funnel-pending));
+
+  & > div {
+    border-color: var(--funnel-pending-border);
+  }
+}
+
+[data-funnel="urgent"] {
+  background-image: linear-gradient(var(--funnel-urgent), var(--funnel-urgent));
+
+  & > div {
+    border-color: var(--funnel-urgent-border);
+  }
+}
+
 /* ── Enlaces: estilo propio (SIN fondo iluminado; ese es de botones) ──────────
    Opt-in con data-link, para no tocar el sidebar ni enlaces con estilo propio:
      data-link="text" → subrayado que se dibuja de izquierda a derecha y navy más

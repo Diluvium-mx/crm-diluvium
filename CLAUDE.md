@@ -166,6 +166,14 @@ acción de vendedor, igual que enviar un mensaje. Las plantillas cuyas variables
 **encabezado o un botón** no se pueden armar desde el CRM en v1 (solo BODY posicional `{{1}}`): se
 marcan `templates.unsupported` al sincronizar y no se ofrecen para enviar.
 
+**Roles (25-sep-2026; ACL en `lib/auth/permissions.ts`, las páginas y Server Actions repiten la regla):**
+
+| Rol | Qué puede |
+|---|---|
+| Owner | Dueño de la cuenta: todo, incluido administrar a los admins (solo él asigna el rol owner). |
+| Admin | Todo: Configuración (Vendedores, Tallas), crear/sincronizar plantillas de Meta, importar/borrar contactos en masa, registrar recargas de IA. |
+| Vendedor (`agent`) | Todo menos Configuración: Dashboard completo (Gasto de IA sin registrar recargas), Bandeja, Embudo, Mensajes rápidos, y ve y edita Agente IA y Automatización. |
+
 ```
 contacts             id, org_id, name, phone_e164 (unique por org), email,
                      custom_fields jsonb, ghl_contact_id (nullable, oculto),
@@ -258,17 +266,21 @@ el mismo chat. Detalle de la bandeja y contrato de datos para el track UI: `docs
 **Sidebar desde el Bloque A (22-sep-2026):** Dashboard (`/inicio`, primero y destino al entrar) ·
 Bandeja (`/dashboard`) · Embudo (`/embudo`; antes "Contactos", `/contactos` redirige) · Mensajes
 rápidos (`/mensajes-rapidos`; antes "Fragmentos y plantillas", `/snippets` redirige) · Anuncios (`/anuncios`,
-tabla de anuncios de Meta que trajeron clientes en el periodo) · Agente IA
-(owner/admin) · Configuración (`/configuracion`, al final: Mi cuenta para todos; Vendedores y Tallas
-solo owner/admin).
+tabla de anuncios de Meta que trajeron clientes en el periodo) · Agente IA · Automatización ·
+Configuración (`/configuracion`, al final, solo owner/admin: Vendedores y Tallas). Abajo del sidebar,
+el menú del usuario (todos): "Mi cuenta" (`/mi-cuenta`: nombre y cambiar la propia contraseña) y
+"Cerrar sesión".
 
 - **Bandeja** (la sección que antes se llamaba "Bandeja / Embudo"; ruta actual `/dashboard`): la
   bandeja de entrada de TODOS los mensajes. Tres columnas: lista de conversaciones, chat y panel
   de contacto. La lista y el panel se abren y cierran con un botón; el chat se queda con el espacio.
 - **Embudo** (antes "Contactos"): el tablero kanban (el embudo vive SOLO aquí). Al hacer clic en una
   tarjeta se abre el mismo chat, con el historial completo, la temperatura y la etapa, sin salir del
-  tablero.
-- **Dashboard**: HASTA ARRIBA el "Gasto de IA" (solo owner/admin; decisión del dueño 25-sep: el saldo
+  tablero (abrirlo marca leído, como en la Bandeja). Tarjeta (25-sep): fondo amarillo si el Agente IA
+  pasó al cliente a un asesor o necesita al vendedor (aviso abierto sin respuesta humana posterior),
+  azul si el último mensaje es del cliente (gana el amarillo), círculo naranja con los no vistos; en
+  vivo por el SSE (`lib/contacts/funnel-signals.ts`). Sin bandera junto al número: solo ciudad por lada.
+- **Dashboard**: HASTA ARRIBA el "Gasto de IA" (todos lo ven; registrar recargas, owner/admin; decisión del dueño 25-sep: el saldo
   importa más que las métricas): total del mes y, por cada proveedor con llave, gasto del mes y saldo
   estimado en cifras grandes. Debajo, conversaciones nuevas (contactos creados, sin `ghl_import` ni
   `seed`) por día local de Mazatlán, desgloses por canal/etapa/anuncio y comparación contra el mismo

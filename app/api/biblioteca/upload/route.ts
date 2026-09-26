@@ -5,7 +5,7 @@
 //   Content-Type: <mime del archivo>
 //   X-File-Name: <nombre, URL-encoded>
 //   X-Title: <título opcional, URL-encoded>
-// Solo owner/admin (ACL `mediaAsset.create`); la organización sale de la sesión.
+// Todos los roles (ACL `mediaAsset.create`); la organización sale de la sesión.
 import { Readable } from "node:stream";
 import type { ReadableStream as WebReadableStream } from "node:stream/web";
 import { requireActiveMembership } from "@/lib/auth/active-organization";

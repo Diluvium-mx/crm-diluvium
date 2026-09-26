@@ -1,7 +1,7 @@
 "use server";
 
 // Server Actions de Automatización (Fase D). La organización sale de la SESIÓN.
-// ACL `workflow`: owner/admin crean/editan/borran; todos leen y EJECUTAN
+// ACL `workflow`: todos los roles (vendedor incluido) crean/editan/borran, leen y EJECUTAN
 // (comandos del composer). Los pasos se validan con Zod (lib/workflows/steps).
 import { revalidatePath } from "next/cache";
 import { and, asc, eq, gte, inArray, sql } from "drizzle-orm";
