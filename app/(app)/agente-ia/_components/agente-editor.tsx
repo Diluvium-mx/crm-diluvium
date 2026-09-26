@@ -11,6 +11,7 @@ import { updateAgentProfile } from "@/lib/actions/agente-ia-editor";
 import { COST_WINDOW_DAYS, MIN_REAL_CONVERSATIONS, MIN_REAL_RESPONSES } from "@/lib/agente-ia/model-cost";
 import type { AgentEditorView } from "@/lib/agente-ia/types";
 import { ApiStatusPanel } from "./api-status-panel";
+import { BotOptionsSection } from "./bot-options";
 import { BrainModelPicker, Model1Picker } from "./brain-model-picker";
 import { ChannelSwitches } from "./channel-switches";
 import { FaqEditor } from "./faq-editor";
@@ -152,6 +153,9 @@ export function AgenteEditor({ data }: { data: AgentEditorView }) {
           </Section>
           <Section title="FAQs" hint="Preguntas frecuentes que el agente usa para responder.">
             <FaqEditor faqs={data.faqs} versions={data.faqVersions} />
+          </Section>
+          <Section title="Opciones" hint="Cómo se comporta el bot, como las opciones de Ángela en GHL. Los valores de fábrica son el comportamiento de siempre; un cambio aplica en menos de un minuto, sin redesplegar.">
+            <BotOptionsSection options={data.options} lastChange={data.optionsLastChange} />
           </Section>
         </>
       ) : (

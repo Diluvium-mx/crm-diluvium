@@ -40,10 +40,14 @@ import { validateToolCalls } from "./tools";
 import { applyDetalleByAgent, detalleContextFor, mergeDetalle } from "./detalle";
 import { transcriptionWaitMs } from "@/lib/ai/transcription/rules";
 import { applyCustomValues } from "@/lib/agente-ia/editor";
+import { handoverPauseUntil, humanPauseUntil, isWithinSchedule, type BotOptions } from "@/lib/agente-ia/opciones";
 import { loadAgentConfig, loadCustomValues, loadEnabledFaqs } from "./config";
+import { loadBotOptions } from "./options";
+import { pauseForHumanReply } from "./pause";
 import { pickBrainModel } from "./model-by-stage";
 import { loadContactStage } from "@/lib/contacts/stage";
 import {
+  agentReplyCount,
   alreadyHandled,
   humanOutboundCount,
   inboundCount,
@@ -142,14 +146,16 @@ function errorText(error: unknown): string {
 export const MAX_PDF_BYTES = 10 * 1024 * 1024;
 
 // URLs firmadas de las imágenes Y los PDF del cliente (un comprobante SPEI suele
-// llegar en PDF): el modelo los ve como archivo.
-async function mediaUrlsFor(rows: readonly MessageRow[], resolve: RunDeps["resolveImage"]) {
+// llegar en PDF): el modelo los ve como archivo. Con "Responder imágenes: No"
+// (Opciones del bot) las imágenes ni se firman: el modelo ve "[imagen]".
+async function mediaUrlsFor(rows: readonly MessageRow[], resolve: RunDeps["resolveImage"], images = true) {
   const urls = new Map<string, string>();
   for (const m of rows) {
     if (m.direction !== "in") continue;
     for (const a of m.attachments) {
       const isPdf = a.type === "document" && a.mimeType === "application/pdf" && a.sizeBytes != null && a.sizeBytes <= MAX_PDF_BYTES;
       if ((a.type !== "image" && !isPdf) || !a.storageKey || urls.has(a.storageKey)) continue;
+      if (a.type === "image" && !images) continue;
       const url = await resolve(a.storageKey).catch(() => null);
       if (url) urls.set(a.storageKey, url);
     }
@@ -227,10 +233,36 @@ async function runActions(
   }
 }
 
-// La ÚNICA pausa del agente: un vendedor contestó en la conversación.
+// Un vendedor contestó en la conversación: pausa según Opciones del bot ("Pausar el
+// bot cuando un vendedor contesta", fábrica sí; "Reactivar solo después de N h",
+// fábrica nunca = hasta "Activar").
 async function pauseForHuman(conversation: { id: string; organizationId: string }, now: Date) {
-  await setAgentState(conversation.organizationId, conversation.id, "pausado_humano", { now });
-  console.info(`[agente] ${conversation.id}: pausado_humano`);
+  const decision = humanPauseUntil(await loadBotOptions(conversation.organizationId, now), now);
+  if (!decision.pause) {
+    console.info(`[agente] ${conversation.id}: un vendedor contestó; "Pausar el bot cuando un vendedor contesta" está en No, sigue activo`);
+    return;
+  }
+  await setAgentState(conversation.organizationId, conversation.id, "pausado_humano", { now, pausedUntil: decision.until });
+  console.info(`[agente] ${conversation.id}: pausado_humano${decision.until ? ` hasta ${decision.until.toISOString()}` : ""}`);
+}
+
+// Opciones del bot → "Cuando el cliente pide un asesor: avisar y pausar X horas": se
+// aplica DESPUÉS de mandarle al cliente que un asesor lo atenderá (y de encolar la
+// media de la respuesta). Condicional: si un vendedor ya lo pausó, su pausa manda.
+async function pauseAfterHandover(conv: { id: string; organizationId: string }, plan: ActionPlan, options: BotOptions, now: Date): Promise<void> {
+  if (!plan.avisos.some((a) => a.motivo === "cliente_pide_humano")) return;
+  const until = handoverPauseUntil(options, now);
+  if (!until) return;
+  if (await pauseForHumanReply(conv.organizationId, conv.id, now, until)) {
+    console.info(`[agente] ${conv.id}: el cliente pidió un asesor; pausado hasta ${until.toISOString()} (Opciones del bot)`);
+  }
+}
+
+// Opciones del bot → "Máximo de respuestas del bot por conversación": al llegar al tope
+// se pausa hasta "Activar" y deja el aviso 🤖 (tarjeta amarilla en el Embudo). Cubre un
+// bucle con otro bot. Se cuenta desde el último corte ("Activar" o encendido del canal).
+export function topeRespuestasBody(max: number): string {
+  return `Llegó al máximo de respuestas (${max.toLocaleString("es-MX")}). El agente se pausó en este chat; revísalo y, si debe seguir, elige «Activar» en el Detalle del contacto.`;
 }
 
 // "Reintentar" de una respuesta GUARDADA (parte 1, 26-sep-2026): manda el MISMO texto
@@ -349,6 +381,8 @@ export async function runAgent(job: { organizationId: string; conversationId: st
     // Solo "auto" (Encendido) responde; "borrador" ya no existe y cuenta como apagado.
     if (channel.aiAgentMode !== "auto") return { kind: "skipped", reason: "canal_off" };
     const cfg = await loadAgentConfig(org);
+    // Opciones del bot (caché ≤ 60 s): los cambios de la pestaña aplican sin redesplegar.
+    const options = await loadBotOptions(org, now);
 
     const pending = await pendingInbound(org, conv.id);
     const lastOut = await lastOutbound(org, conv.id);
@@ -401,8 +435,11 @@ export async function runAgent(job: { organizationId: string; conversationId: st
       agentState: conv.agentState,
       now: now.getTime(),
       windowExpiresAt: conv.windowExpiresAt?.getTime() ?? null,
-      humanRepliedSincePending: humanTookOver,
+      // Con "Pausar el bot cuando un vendedor contesta: No", una respuesta humana no
+      // pausa: el agente contesta lo que el cliente escribió después de ella.
+      humanRepliedSincePending: humanTookOver && options.pauseOnHumanReply,
       agentSendUnresolved: await agentSendUnresolved(org, conv.id, savedIds),
+      withinSchedule: isWithinSchedule(options.schedule, now),
     });
     if (gate.action === "skip") {
       if (gate.pauseTo) await pauseForHuman(conv, now);
@@ -420,10 +457,22 @@ export async function runAgent(job: { organizationId: string; conversationId: st
     }
     if (!cfg.goal) return { kind: "skipped", reason: "sin_goal" };
     if (!lastRead) return { kind: "noop", reason: "sin_pendientes" };
+    // Tope de respuestas por conversación (Opciones del bot): PRIMERO la pausa (nunca
+    // "se pausó" con el agente todavía activo) y luego el aviso, idempotente por entrante.
+    if (options.maxRepliesPerContact !== null) {
+      const replies = await agentReplyCount(org, conv.id, cut);
+      if (replies >= options.maxRepliesPerContact) {
+        await pauseForHumanReply(org, conv.id, now, null);
+        await addNotice({ organizationId: org, conversationId: conv.id, messageId: lastRead.id, kind: "tope_respuestas", body: topeRespuestasBody(options.maxRepliesPerContact) });
+        console.warn(`[agente] ${conv.id}: llegó al máximo de respuestas (${replies}/${options.maxRepliesPerContact}); pausado hasta "Activar"`);
+        return { kind: "skipped", reason: "tope_respuestas" };
+      }
+    }
     // Parte 1: una nota de voz del cliente aún sin transcribir → la espera sigue (hasta
     // 60 s desde que llegó); el worker la adelanta en cuanto termina. Si falla o tarda
     // más, el agente contesta con "[nota de voz sin transcribir]" y no se traba.
-    if (deps.transcriptionEnabled) {
+    // Con "Responder notas de voz: No" no hay nada que esperar.
+    if (deps.transcriptionEnabled && options.transcribeAudio) {
       const waitMs = transcriptionWaitMs(pending, now);
       if (waitMs > 0) return { kind: "reschedule", delayMs: waitMs, reason: "esperando_transcripcion" };
     }
@@ -458,15 +507,18 @@ export async function runAgent(job: { organizationId: string; conversationId: st
       question: applyCustomValues(f.question, values),
       answer: applyCustomValues(f.answer, values),
     }));
-    const system = buildBrainSystemWithRuntime(applyCustomValues(cfg.goal, values), faqs);
+    const system = buildBrainSystemWithRuntime(applyCustomValues(cfg.goal, values), faqs, options.responseLength);
     // Contexto del CRM (etapa, cotización y, desde la parte 1, el Detalle ya guardado)
     // en el último turno del cliente.
     const crmContext = [await crmContextFor(org, conv.contactId), await detalleContextFor(org, conv.contactId)].filter(Boolean).join("\n");
     // Un modelo sin lectura de PDF (p. ej. Qwen) recibe el PDF como nota de texto.
-    const modelMessages = buildModelMessages(history, await mediaUrlsFor(history, deps.resolveImage), {
+    // Opciones del bot: sin imágenes ("[imagen]") o sin notas de voz ("[nota de voz]").
+    const modelMessages = buildModelMessages(history, await mediaUrlsFor(history, deps.resolveImage, options.readImages), {
       cleanText,
       crmContext,
       ...(brainModel.pdf ? {} : { maxPdfs: 0 }),
+      ...(options.readImages ? {} : { maxImages: 0 }),
+      ...(options.transcribeAudio ? {} : { voiceNotesOff: true }),
     });
     // Herramientas (Fase D): una por workflow habilitado con "agente" + fijar_cotizacion.
     const agentTools = await loadAgentTools(org);
@@ -642,8 +694,8 @@ export async function runAgent(job: { organizationId: string; conversationId: st
       );
     };
     await runActions(plan, actionCtx, deps.startWorkflow, "antes");
-    // Mensajes para celular: información y pregunta por separado (máx. 2).
-    const bubbles = text.trim() ? toBubbles(text) : [];
+    // Mensajes para celular: información y pregunta por separado (máx. 2; Opciones del bot).
+    const bubbles = text.trim() ? toBubbles(text, options.maxBubbles) : [];
 
     // Mensajes con pausa corta. Antes de CADA uno se revisa el estado fresco: si un
     // vendedor respondió (desde el INICIO de la ronda), alguien apagó el canal o
@@ -702,6 +754,7 @@ export async function runAgent(job: { organizationId: string; conversationId: st
       if (planId) await closePlan(org, planId, "enviado");
       await recordAiUsage({ ...brainUsage, outcome: "sent", error: `mensaje ${sent + 1} no salió: ${errorText(error)}` });
       await noticeRemainder(`Salieron ${sent} de ${bubbles.length} mensajes de la respuesta del agente y el siguiente falló.`);
+      await pauseAfterHandover(conv, plan, options, deps.now());
       return { kind: "sent", bubbles: sent };
     }
     if (stopped === "entrante_nuevo" && sent === 0) {
@@ -728,6 +781,7 @@ export async function runAgent(job: { organizationId: string; conversationId: st
       // Las acciones no se pierden: el pago ya está registrado y su workflow (aviso
       // + etapa) debe correr; cada corrida relee el estado antes de cada paso.
       await runActions(plan, actionCtx, deps.startWorkflow, "despues");
+      await pauseAfterHandover(conv, plan, options, deps.now());
       return { kind: "sent", bubbles: sent };
     }
     await applyDeferredQuote(sent - unconfirmed);
@@ -746,6 +800,9 @@ export async function runAgent(job: { organizationId: string; conversationId: st
     const note = unconfirmed ? `${unconfirmed} mensaje(s) sin confirmar${omitted ? `; ${omitted} sin enviar (aviso)` : ""}` : null;
     await recordAiUsage({ ...brainUsage, outcome: "sent", error: note });
     if (unconfirmed && omitted > 0) await noticeRemainder("WhatsApp no confirmó una parte de la respuesta del agente.");
+    // "Avisar y pausar X horas" al pedir un asesor (Opciones del bot): al final, ya con
+    // el texto enviado y la media encolada.
+    await pauseAfterHandover(conv, plan, options, deps.now());
     return { kind: "sent", bubbles: sent };
   }
 

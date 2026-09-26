@@ -13,6 +13,7 @@ import { db } from "@/lib/db";
 import { messages } from "@/lib/db/schema";
 import { audioDurationSeconds } from "@/lib/audio/duration";
 import { PROVIDER_META } from "@/lib/ai/provider";
+import { loadBotOptions } from "@/lib/ai/runtime/options";
 import { recordAiUsage } from "@/lib/ai/runtime/usage";
 import type { ObjectStorage } from "@/lib/storage/s3";
 import {
@@ -73,6 +74,16 @@ export async function transcribeMessageAudio(
     if (!m || !transcriptionEnabled() || !shouldTranscribe(m, now())) return { kind: "no_aplica" };
     const audio = firstAudio(m.attachments)!;
     const own = and(eq(messages.id, m.id), eq(messages.organizationId, m.organizationId));
+    // Opciones del bot → "Responder notas de voz: No": ni se lee ni se paga; queda
+    // "omitida" con su motivo (el chat lo muestra) y el agente no la espera.
+    if (!(await loadBotOptions(m.organizationId, now())).transcribeAudio) {
+      const motivo = "las notas de voz están apagadas en Opciones del bot";
+      await db
+        .update(messages)
+        .set({ metadata: sql`jsonb_set(coalesce(${messages.metadata}, '{}'::jsonb), '{transcripcion}', ${metaJson({ estado: "omitida", at: now().toISOString(), motivo })})` })
+        .where(and(own, isNull(messages.transcripcion)));
+      return { kind: "terminada", organizationId: m.organizationId, conversationId: m.conversationId, estado: "omitida", motivo };
+    }
     // Reclamo atómico: dos jobs del mismo mensaje (reintento, barrido) no pagan dos veces.
     const stale = new Date(now().getTime() - TRANSCRIPTION_CLAIM_MS).toISOString();
     const claimed = await db

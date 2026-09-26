@@ -260,6 +260,13 @@
       "when": 1790438448716,
       "tag": "0037_agente_parte_1",
       "breakpoints": true
+    },
+    {
+      "idx": 38,
+      "version": "7",
+      "when": 1790450056951,
+      "tag": "0038_opciones_bot",
+      "breakpoints": true
     }
   ]
 }

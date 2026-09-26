@@ -5,6 +5,7 @@
 // como Ángela en GHL. El sufijo no agrega reglas de comportamiento, precios ni
 // formato: solo dice qué devolver y cómo se "activan" en este CRM las acciones del
 // Goal que aquí todavía no existen (así el cliente nunca espera algo que no llega).
+import type { ResponseLength } from "@/lib/agente-ia/opciones";
 import { buildBrainSystem, type Faq } from "./knowledge";
 
 // Señal vieja de "Transferencia a humano" (Goals anteriores al 24-sep-2026): si el
@@ -26,8 +27,17 @@ export const RUNTIME_SUFFIX = `INSTRUCCIONES DEL CRM
 - Si el último mensaje del cliente termina con "[Después de este mensaje ya se le envió al cliente: …]", eso ya lo recibió (p. ej. el video o la tabla por palabra clave): no lo repitas ni lo vuelvas a pedir con su herramienta; contesta lo que falte de su mensaje.
 - Sigues atendiendo siempre; el CRM nunca te pausa por estas acciones.`;
 
-export function buildBrainSystemWithRuntime(goal: string, faqs: readonly Faq[]): string {
-  return `${buildBrainSystem(goal, faqs)}\n\n${RUNTIME_SUFFIX}`;
+// Longitud de respuesta (Opciones del bot): una línea breve al final del sufijo.
+// "balanceada" (fábrica) no agrega nada: el system es idéntico al de antes.
+export const LENGTH_LINES: Record<ResponseLength, string | null> = {
+  corta: "- Longitud: responde lo más corto posible (una o dos frases), sin perder la pregunta que sigue.",
+  balanceada: null,
+  detallada: "- Longitud: responde con más detalle y contexto cuando le sirva al cliente, sin repetir lo ya dicho.",
+};
+
+export function buildBrainSystemWithRuntime(goal: string, faqs: readonly Faq[], length: ResponseLength = "balanceada"): string {
+  const line = LENGTH_LINES[length];
+  return `${buildBrainSystem(goal, faqs)}\n\n${RUNTIME_SUFFIX}${line ? `\n${line}` : ""}`;
 }
 
 // `handover` = el agente activó la transferencia (la señal ya no va en `text`).

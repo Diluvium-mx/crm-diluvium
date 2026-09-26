@@ -143,3 +143,41 @@ describe("toBubbles (mensajes para celular, máx 2)", () => {
     expect(toBubbles("   ")).toEqual([]);
   });
 });
+
+describe("Opciones del bot en la política (26-sep-2026)", () => {
+  it("la espera configurada reemplaza los 15 s y el tope nunca es menor que la espera", () => {
+    const i = { now: 4 * S, firstPendingAt: 0, lastInboundAt: 4 * S };
+    expect(debounceDelayMs(i)).toBe(15 * S); // fábrica, igual que antes
+    expect(debounceDelayMs(i, 5)).toBe(5 * S);
+    expect(debounceDelayMs(i, 60)).toBe(56 * S); // tope de 60 s desde el primero (t=0)
+    // Con espera de 60 s el tope de 60 s desde el primero no la recorta antes de tiempo.
+    expect(debounceDelayMs({ now: 30 * S, firstPendingAt: 0, lastInboundAt: 30 * S }, 60)).toBe(30 * S);
+    expect(rescheduleDelayMs({ now: 100 * S, firstPendingAt: 0, lastInboundAt: 100 * S }, 5)).toBe(5 * S);
+  });
+
+  it("máximo de mensajes 1: todo en un solo mensaje (con 2, igual que siempre)", () => {
+    const text = "Claro, cuesta $5,500 MXN.\n\n¿Cuánto mide tu entrada?";
+    expect(toBubbles(text)).toEqual(["Claro, cuesta $5,500 MXN.", "¿Cuánto mide tu entrada?"]);
+    expect(toBubbles(text, 2)).toEqual(["Claro, cuesta $5,500 MXN.", "¿Cuánto mide tu entrada?"]);
+    expect(toBubbles(text, 1)).toEqual([text]);
+    const long = "Una oración larga. ".repeat(30).trim();
+    expect(toBubbles(long, 1)).toEqual([long]); // ni un bloque largo se parte
+    expect(toBubbles(long, 2)).toHaveLength(2);
+  });
+
+  it("fuera del horario del bot: skip sin pausa; dentro (o sin horario) responde", () => {
+    const base: GateInput = {
+      channelMode: "auto",
+      agentState: "activo",
+      now: 10 * S,
+      windowExpiresAt: 1000 * S,
+      humanRepliedSincePending: false,
+      agentSendUnresolved: false,
+    };
+    expect(decideGate(base)).toEqual({ action: "respond" });
+    expect(decideGate({ ...base, withinSchedule: true })).toEqual({ action: "respond" });
+    expect(decideGate({ ...base, withinSchedule: false })).toEqual({ action: "skip", reason: "fuera_de_horario" });
+    // Un vendedor que contestó pausa aunque sea fuera de horario (decide una persona).
+    expect(decideGate({ ...base, withinSchedule: false, humanRepliedSincePending: true })).toEqual({ action: "skip", reason: "respuesta_humana", pauseTo: "pausado_humano" });
+  });
+});
