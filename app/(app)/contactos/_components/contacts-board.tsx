@@ -241,7 +241,17 @@ export function ContactsBoard({
   // (5 s … 60 s): un aviso urgente no se pierde aunque la conversación quede quieta.
   const signalQueueRef = useRef({ ids: new Set<string>(), full: false, running: false, retryMs: 0, retryPending: false });
   const signalTimerRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
-  useEffect(() => () => clearTimeout(signalTimerRef.current), []);
+  // Al salir del Embudo: nada queda pidiendo señales (ni un reintento programado
+  // por una petición que falle DESPUÉS de desmontar).
+  const aliveRef = useRef(true);
+  useEffect(() => {
+    aliveRef.current = true;
+    return () => {
+      aliveRef.current = false;
+      clearTimeout(signalTimerRef.current);
+      signalTimerRef.current = undefined;
+    };
+  }, []);
   // El reintento llama a la versión vigente sin que el callback se refiera a sí mismo.
   const flushSignalsRef = useRef<() => Promise<void>>(async () => undefined);
   const flushSignals = useCallback(async () => {
@@ -258,6 +268,7 @@ export function ContactsBoard({
         queue.ids.clear();
         try {
           const fresh = await getFunnelSignals(ids);
+          if (!aliveRef.current) return;
           setSignals((current) => (full ? fresh : { ...current, ...fresh }));
           queue.retryMs = 0;
         } catch {
@@ -270,7 +281,7 @@ export function ContactsBoard({
     } finally {
       queue.running = false;
     }
-    if (failed && !signalTimerRef.current) {
+    if (failed && aliveRef.current && !signalTimerRef.current) {
       queue.retryMs = Math.min(queue.retryMs ? queue.retryMs * 2 : 5_000, 60_000);
       queue.retryPending = true;
       signalTimerRef.current = setTimeout(() => void flushSignalsRef.current(), queue.retryMs);
