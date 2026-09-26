@@ -3,7 +3,7 @@
 // Multi-tenant (CLAUDE.md §7): TODA lectura filtra por organization_id, además
 // del id. Un id de otra organización no encuentra nada (defensa en profundidad:
 // los ids vienen de la cola interna, pero nunca se confía en ellos solos).
-import { and, count, desc, eq, inArray, ne, sql } from "drizzle-orm";
+import { and, count, desc, eq, inArray, ne, notInArray, sql } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { aiAgentDrafts, aiUsage, channels, conversations, messages } from "@/lib/db/schema";
 import { MAX_HISTORY_CHARS, messageText } from "./transcript";
@@ -147,7 +147,9 @@ export async function humanOutboundCount(organizationId: string, conversationId:
 // "enviando"? Entonces el agente no responde encima (y la conciliación del plan no
 // se mezcla con otra respuesta). Un envío FALLIDO ya no frena al agente: el barrido
 // deja un aviso al vendedor (23-sep-2026: el agente siempre contesta).
-export async function agentSendUnresolved(organizationId: string, conversationId: string): Promise<boolean> {
+// `exceptIds`: burbujas de la respuesta guardada que se va a reenviar (parte 1): su fila
+// "queued" no es un envío en camino, la retoma el reenvío con su misma clave.
+export async function agentSendUnresolved(organizationId: string, conversationId: string, exceptIds: readonly string[] = []): Promise<boolean> {
   const [plan] = await db
     .select({ id: aiAgentDrafts.id })
     .from(aiAgentDrafts)
@@ -171,6 +173,7 @@ export async function agentSendUnresolved(organizationId: string, conversationId
         eq(messages.status, "queued"),
         // Un archivo de un workflow por palabra clave en camino no frena al agente.
         closesPending,
+        exceptIds.length ? notInArray(messages.id, [...exceptIds]) : undefined,
       ),
     )
     .limit(1);

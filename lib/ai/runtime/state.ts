@@ -50,14 +50,16 @@ export async function notifyConversation(exec: Executor, organizationId: string,
   );
 }
 
-// Guarda el PLAN durable de una respuesta AUTO de varias burbujas ("enviando",
-// invisible en la bandeja) ANTES de mandar la 1ª: si el worker se reinicia a la
-// mitad, el barrido (reconcileStuckDrafts) lo concilia con el hilo. resolved_at
-// sale del reloj de Postgres, el mismo de messages.created_at.
+// Guarda el PLAN durable de una respuesta AUTO ("enviando", invisible en la bandeja)
+// ANTES de mandar el 1er mensaje: si el worker se reinicia a la mitad, el barrido
+// (reconcileStuckDrafts) lo concilia con el hilo; si el 1er mensaje falla, queda
+// guardado para "Reintentar" (saved-reply.ts) con la media que iba después (`runs`).
+// resolved_at sale del reloj de Postgres, el mismo de messages.created_at.
 export async function savePlan(input: {
   organizationId: string;
   conversationId: string;
   bubbles: string[];
+  runs?: { slug: string; workflowId: string }[];
   triggerMessageId: string | null;
   now: Date;
 }): Promise<string> {
@@ -74,6 +76,7 @@ export async function savePlan(input: {
     organizationId: input.organizationId,
     conversationId: input.conversationId,
     bubbles: input.bubbles,
+    runs: input.runs ?? [],
     triggerMessageId: input.triggerMessageId,
     status: "enviando",
     resolvedAt: sql`now()`,

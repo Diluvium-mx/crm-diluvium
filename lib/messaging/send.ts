@@ -426,6 +426,75 @@ export async function retryTextMessage(
   });
 }
 
+/**
+ * Una burbuja del Agente IA con id DETERMINISTA (Agente IA parte 1, 26-sep-2026):
+ * el id es la fila de `messages` y la Idempotency-Key. La 1ª vez es igual que
+ * sendTextMessage. En "Reintentar" (respuesta guardada, lib/ai/runtime/saved-reply.ts)
+ * la fila ya existe y se reenvía el MISMO texto con la MISMA clave:
+ * - ya salió (wamid, o sent/delivered/read) → no se vuelve a mandar;
+ * - rechazada, o nunca confirmada por un error NUESTRO (queued sin código) → se
+ *   reenvía: si Zernio sí la había aceptado, su clave (24 h) devuelve la respuesta
+ *   guardada en vez de mandar otro mensaje;
+ * - resultado AMBIGUO de Zernio (5xx/timeout, o nunca confirmado) → no se reenvía:
+ *   Zernio libera la clave al fallar y podría llegar dos veces.
+ */
+export async function sendAgentText(
+  provider: MessagingProvider,
+  params: { organizationId: string; conversationId: string; text: string; messageId: string; now?: Date },
+): Promise<SendOutcome> {
+  const now = params.now ?? new Date();
+  const where = and(eq(messages.id, params.messageId), eq(messages.organizationId, params.organizationId));
+  const [prior] = await db
+    .select({
+      conversationId: messages.conversationId,
+      direction: messages.direction,
+      source: messages.source,
+      status: messages.status,
+      errorCode: messages.errorCode,
+      providerMessageId: messages.providerMessageId,
+    })
+    .from(messages)
+    .where(where)
+    .limit(1);
+  if (!prior) {
+    return sendTextMessage(provider, { ...params, source: "ai_agent", sentByUserId: null, now });
+  }
+  if (prior.conversationId !== params.conversationId || prior.direction !== "out" || prior.source !== "ai_agent") {
+    throw new SendRejectedError("not_retryable", "El mensaje guardado no es una respuesta del agente en esta conversación.");
+  }
+  if (prior.providerMessageId || prior.status === "sent" || prior.status === "delivered" || prior.status === "read") {
+    return { messageId: params.messageId, status: "sent" };
+  }
+  if (isAmbiguousSendError(prior.errorCode)) {
+    throw new SendRejectedError("not_retryable", "WhatsApp no confirmó si la respuesta le llegó al cliente; reenviarla podría duplicarla.");
+  }
+  const text = validText(params.text);
+  // La ventana y el canal se revisan ANTES de reclamar la fila: fuera de la ventana
+  // la fila se queda como estaba y la tarjeta explica el motivo.
+  const { conversation, channel } = await loadConversation(provider, params.organizationId, params.conversationId, now);
+  const claimed = await db
+    .update(messages)
+    .set({ status: "queued", errorCode: null, errorMessage: null, body: text, sentAt: now })
+    .where(and(where, isNull(messages.providerMessageId), inArray(messages.status, ["failed", "queued"])))
+    .returning({ id: messages.id });
+  if (claimed.length === 0) throw new SendRejectedError("not_retryable", "La respuesta ya se envió o se está enviando.");
+  return deliver({
+    messageId: params.messageId,
+    send: () =>
+      provider.sendText({
+        providerAccountId: channel.providerAccountId,
+        providerConversationId: conversation.providerConversationId!,
+        text,
+        idempotencyKey: params.messageId,
+      }),
+    now,
+    conversation,
+    organizationId: params.organizationId,
+    sentByUserId: null,
+    markRead: false,
+  });
+}
+
 // Envía (texto o plantilla, vía la closure `send`) y clasifica el resultado
 // igual para ambos: enviado → enlaza el wamid; rechazado (4xx) → "failed" con su
 // código; desconocido (timeout/5xx/2xx sin id) → queda "queued" y se reconcilia.
