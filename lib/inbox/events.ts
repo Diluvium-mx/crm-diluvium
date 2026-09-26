@@ -12,6 +12,7 @@
 // evento a una organización distinta.
 import "server-only";
 import postgres from "postgres";
+import { parseContactUpdated } from "./contact-updated-payload";
 import type { InboxEvent } from "./types";
 
 type Subscriber = { organizationId: string; send: (event: InboxEvent) => void };
@@ -37,6 +38,11 @@ function payloadToEvent(raw: string): { organizationId: string; event: InboxEven
       return { organizationId: org, event: { type, contactId } };
     }
     if (type === "contacts.bulk") return { organizationId: org, event: { type } };
+    // Un contacto cambió (etapa, temperatura, cotización, Detalle): lib/contacts/notify-updated.ts.
+    if (type === "contact.updated") {
+      const event = parseContactUpdated(data as Record<string, unknown>);
+      return event ? { organizationId: org, event } : null;
+    }
     if (typeof conversationId !== "string") return null;
     if (type === "conversation.updated") {
       return { organizationId: org, event: { type, conversationId } };

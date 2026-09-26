@@ -14,6 +14,7 @@ import { and, asc, eq, gte, inArray, sql } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { contacts, workflowRuns, workflows, workflowSteps } from "@/lib/db/schema";
 import { moveStageForward } from "@/lib/contacts/stage";
+import { notifyContactUpdated } from "@/lib/contacts/notify-updated";
 import type { Stage } from "@/lib/contacts/stages";
 import type { StartRunInput, StartRunResult } from "@/lib/workflows/executor";
 import { addNotice } from "./notices";
@@ -136,22 +137,26 @@ const stageIndex = (s: Stage) => STAGE_LIST.indexOf(s);
 
 // Guarda el total cotizado por el AGENTE. Si un vendedor lo fijó a mano en el
 // detalle del contacto, manda el vendedor: el agente no lo pisa.
+// El aviso en vivo (contact.updated) sale en la misma transacción que la escritura.
 export async function setQuoteByAgent(organizationId: string, contactId: string, monto: number): Promise<boolean> {
-  const rows = await db
-    .update(contacts)
-    .set({
-      montoCotizacion: monto.toFixed(2),
-      customFields: sql`${contacts.customFields} || '{"cotizacion_por":"agente"}'::jsonb`,
-    })
-    .where(
-      and(
-        eq(contacts.id, contactId),
-        eq(contacts.organizationId, organizationId),
-        sql`(${contacts.montoCotizacion} is null or ${contacts.customFields}->>'cotizacion_por' = 'agente')`,
-      ),
-    )
-    .returning({ id: contacts.id });
-  return rows.length > 0;
+  return db.transaction(async (tx) => {
+    const rows = await tx
+      .update(contacts)
+      .set({
+        montoCotizacion: monto.toFixed(2),
+        customFields: sql`${contacts.customFields} || '{"cotizacion_por":"agente"}'::jsonb`,
+      })
+      .where(
+        and(
+          eq(contacts.id, contactId),
+          eq(contacts.organizationId, organizationId),
+          sql`(${contacts.montoCotizacion} is null or ${contacts.customFields}->>'cotizacion_por' = 'agente')`,
+        ),
+      )
+      .returning({ id: contacts.id });
+    if (rows.length > 0) await notifyContactUpdated(tx, { organizationId, contactId, changes: ["cotizacion"], by: { kind: "agente" } });
+    return rows.length > 0;
+  });
 }
 
 // ¿Alguna de estas corridas manda algo al cliente (texto o archivo)?

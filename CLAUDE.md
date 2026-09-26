@@ -288,6 +288,10 @@ el menú del usuario (todos): "Mi cuenta" (`/mi-cuenta`: nombre y cambiar la pro
 - **Composer**: "/" busca Fragmentos (`{{vendedor}}` = usuario logueado), ⚡ Fragmentos, 📄
   Plantillas y 🕒 Programar (hora de Mazatlán; fuera de la ventana de 24 h a esa hora, solo
   plantilla; "cancelar si el cliente escribe antes" lo decide el worker al disparar).
+- **Cambios en vivo** (26-sep-2026): etapa, temperatura, cotización y Detalle cambiados por el Agente IA,
+  una automatización u otro vendedor se ven sin refrescar (evento `contact.updated`, un solo helper
+  `lib/contacts/notify-updated.ts` dentro de la transacción de cada escritura). Aviso emergente solo
+  para cambios de ETAPA hechos por otro. Detalle: `docs/bandeja.md` › "Cambios en vivo".
 - **Apagar bot** (25-sep-2026): por conversación, 8/12/24 h, hora exacta (Mazatlán, ≤30 días) o hasta reactivarlo; vuelve solo con el barrido del worker y no contesta lo escrito mientras estuvo apagado. Detalle: `docs/bandeja.md`.
 
 ```

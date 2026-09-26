@@ -148,6 +148,32 @@ export type SendMessageResult =
   | { ok: true; messageId: string; pending: boolean }
   | { ok: false; code: SendErrorCode; message: string };
 
+/** Qué cambió de un contacto (evento `contact.updated`). */
+export type ContactChange = "etapa" | "temperatura" | "cotizacion" | "detalle" | "comentarios";
+
+/**
+ * Quién hizo el cambio. `userId` en automatización = el vendedor que la disparó
+ * con un comando (p. ej. /banco); sin él, la disparó el cliente (palabra clave).
+ */
+export type ContactChangeActor =
+  | { kind: "vendedor"; userId: string; name: string }
+  | { kind: "agente" }
+  | { kind: "automatizacion"; userId: string | null };
+
+/** Un contacto cambió (etapa, temperatura, cotización o campos del Detalle). */
+export type ContactUpdatedEvent = {
+  type: "contact.updated";
+  contactId: string;
+  /** Nombre como lo muestra el CRM (para el aviso emergente). */
+  contactName: string;
+  changes: ContactChange[];
+  /** Solo si cambió la etapa. */
+  stage?: { from: string; to: string };
+  by: ContactChangeActor;
+  /** Hora del cambio (ISO, UTC). */
+  at: string;
+};
+
 /**
  * Eventos del SSE /api/inbox/stream. La UI vuelve a pedir la fila o el mensaje.
  * `reload` (al conectar y tras una reconexión de la escucha) = revalida todo,
@@ -161,4 +187,6 @@ export type InboxEvent =
   | { type: "contact.created"; contactId: string }
   /** Muchos contactos nuevos en una sola sentencia (importación): el kanban se recarga una vez. */
   | { type: "contacts.bulk" }
+  /** Un contacto cambió: la UI vuelve a pedir ese contacto (lib/contacts/notify-updated.ts). */
+  | ContactUpdatedEvent
   | { type: "reload" };

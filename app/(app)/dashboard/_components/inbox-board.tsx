@@ -2,9 +2,11 @@
 
 import { PanelLeftClose, PanelLeftOpen, PanelRightClose, PanelRightOpen } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
+import { useRouter } from "next/navigation";
 import type { ConversationDetail, ConversationListItem, InboxFilter } from "@/lib/inbox/types";
 import {
   getConversation,
+  getConversationByContact,
   getConversationItems,
   listConversations,
   markConversationRead,
@@ -18,6 +20,7 @@ import { ContactPanel } from "./contact-panel";
 import { ConversationList } from "./conversation-list";
 import { useInboxStream } from "./use-inbox-stream";
 import { mergeItems } from "@/lib/inbox/list-merge";
+import { useOpenContactRequests } from "../../_components/open-contact";
 
 // ¿La pestaña está realmente a la vista? Solo entonces se marca leído por una
 // llegada en vivo (una pestaña en segundo plano no debe limpiar el contador
@@ -26,7 +29,8 @@ function tabVisible(): boolean {
   return typeof document !== "undefined" && document.visibilityState === "visible" && document.hasFocus();
 }
 
-export function InboxBoard() {
+export function InboxBoard({ openContactId = null }: { openContactId?: string | null }) {
+  const router = useRouter();
   const [conversations, setConversations] = useState<ConversationListItem[]>([]);
   const [nextCursor, setNextCursor] = useState<string | null>(null);
   const [loadingMore, setLoadingMore] = useState(false);
@@ -50,7 +54,11 @@ export function InboxBoard() {
   const nextCursorRef = useRef<string | null>(null);
   const loadingMoreRef = useRef(false);
   const loadedCountRef = useRef(0);
+  const conversationsRef = useRef<ConversationListItem[]>([]);
+  const detailRef = useRef<ConversationDetail | null>(null);
   useEffect(() => {
+    conversationsRef.current = conversations;
+    detailRef.current = detail;
     selectedIdRef.current = selectedId;
     filterRef.current = filter;
     searchRef.current = search;
@@ -194,8 +202,35 @@ export function InboxBoard() {
     return () => clearInterval(id);
   }, []);
 
+  // Etapa o temperatura del contacto abierto cambiadas por otro (Agente IA,
+  // automatización, otro vendedor): se relee el detalle (encabezado del chat y
+  // Detalle del contacto). Ventana fija de 500 ms: varios cambios seguidos = una lectura.
+  const detailTimerRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+  useEffect(() => () => clearTimeout(detailTimerRef.current), []);
+  function scheduleDetailRefresh() {
+    if (detailTimerRef.current) return;
+    detailTimerRef.current = setTimeout(() => {
+      detailTimerRef.current = undefined;
+      const id = selectedIdRef.current;
+      if (id) void refreshDetail(id).catch(() => undefined);
+    }, 500);
+  }
+
   // Tiempo real (el mismo hook que el chat del pop-up de Contactos).
   useInboxStream((event) => {
+    if (event.type === "contact.updated") {
+      // Temperatura en las filas de ese contacto (C1).
+      if (event.changes.includes("temperatura")) {
+        for (const item of conversationsRef.current) if (item.contact.id === event.contactId) scheduleUpdate(item.id);
+      }
+      if (
+        (event.changes.includes("etapa") || event.changes.includes("temperatura")) &&
+        detailRef.current?.contact.id === event.contactId
+      ) {
+        scheduleDetailRefresh();
+      }
+      return;
+    }
     if (event.type === "reload") {
       void refreshList(true);
       const id = selectedIdRef.current;
@@ -221,7 +256,7 @@ export function InboxBoard() {
         void markConversationRead(id, event.messageId).then(() => scheduleUpdate(id));
       }
     }
-  });
+  }, { reloadIfOpen: true });
 
   // Al volver a la pestaña con una conversación abierta, marcar leído lo que
   // haya llegado mientras estuvo en segundo plano (hasta el último entrante).
@@ -248,6 +283,36 @@ export function InboxBoard() {
     setConversations((current) => current.map((c) => (c.id === id ? { ...c, unreadCount: 0 } : c)));
     void markConversationRead(id).then(() => scheduleUpdate(id));
   }
+
+  // Abrir el chat de un contacto (clic en el aviso de cambio de etapa). Si aún no
+  // tiene conversación, se abre en el Embudo (su pop-up tiene el Detalle).
+  async function openContact(contactId: string) {
+    let found: ConversationDetail | null;
+    try {
+      found = await getConversationByContact(contactId);
+    } catch {
+      return;
+    }
+    if (found) selectConversation(found.id);
+    else router.push(`/embudo?contacto=${encodeURIComponent(contactId)}`);
+  }
+  useOpenContactRequests((contactId) => void openContact(contactId));
+  // /dashboard?contacto=<id> (el aviso desde otra sección): se abre una vez y se
+  // quita de la dirección sin recargar.
+  const openContactRef = useRef(openContact);
+  useEffect(() => {
+    openContactRef.current = openContact;
+  });
+  const openedFromUrlRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (!openContactId || openedFromUrlRef.current === openContactId) return;
+    const t = setTimeout(() => {
+      openedFromUrlRef.current = openContactId;
+      window.history.replaceState(null, "", "/dashboard");
+      void openContactRef.current(openContactId);
+    }, 0);
+    return () => clearTimeout(t);
+  }, [openContactId]);
 
   // Temperatura del contacto desde la lista (C1) o desde el panel: se refleja en
   // TODAS las filas de ese contacto y en el panel abierto; optimista + revert.

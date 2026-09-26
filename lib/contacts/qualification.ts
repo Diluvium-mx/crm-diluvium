@@ -16,6 +16,7 @@ import { isInternalAgentTag } from "@/lib/ai/runtime/tags";
 import { conversations, messages } from "@/lib/db/schema/messaging";
 import { sanitizeReferral } from "@/lib/inbox/format";
 import { contactAdAttribution } from "@/lib/ads/queries";
+import { notifyContactUpdated, type ContactActor, type ContactChange } from "./notify-updated";
 
 // La conexión principal y las transacciones comparten esta interfaz. Así estas
 // funciones sirven igual para Server Actions y para procesos futuros del agente IA.
@@ -40,6 +41,12 @@ export type CommentActor = {
   userId: string;
   role: string;
 };
+
+// Quién escribe en el Detalle. Toda escritura de aquí manda el aviso en vivo
+// (contact.updated, lib/contacts/notify-updated.ts) dentro de su transacción, así
+// el Detalle abierto en otra pantalla se pone al día solo. Las Server Actions del
+// vendedor pasan el suyo; sin `by` lo escribió el Agente IA (autollenado).
+const AGENTE: ContactActor = { kind: "agente" };
 
 async function requireContact(
   database: Database,
@@ -185,6 +192,7 @@ export async function updateContactQualification(
   organizationId: string,
   contactId: string,
   patch: ContactQualificationPatch,
+  by: ContactActor = AGENTE,
 ): Promise<void> {
   const values: Partial<typeof contacts.$inferInsert> = {};
 
@@ -213,11 +221,19 @@ export async function updateContactQualification(
     return;
   }
 
-  const [updated] = await database
-    .update(contacts)
-    .set(values)
-    .where(and(eq(contacts.id, contactId), eq(contacts.organizationId, organizationId)))
-    .returning({ id: contacts.id });
+  const changes: ContactChange[] = [];
+  if ("montoCotizacion" in values) changes.push("cotizacion");
+  if (Object.keys(values).some((key) => key !== "montoCotizacion" && key !== "customFields")) changes.push("detalle");
+
+  const updated = await database.transaction(async (tx) => {
+    const [row] = await tx
+      .update(contacts)
+      .set(values)
+      .where(and(eq(contacts.id, contactId), eq(contacts.organizationId, organizationId)))
+      .returning({ id: contacts.id });
+    if (row) await notifyContactUpdated(tx, { organizationId, contactId, changes, by });
+    return row;
+  });
 
   if (!updated) {
     throw new Error("Contacto no encontrado en esta organización.");
@@ -229,6 +245,7 @@ export async function setNumEntradas(
   organizationId: string,
   contactId: string,
   n: number | null,
+  by: ContactActor = AGENTE,
 ): Promise<void> {
   if (n !== null && (!Number.isInteger(n) || n < 0 || n > 50)) {
     throw new Error("El número de entradas debe ser un entero entre 0 y 50.");
@@ -250,6 +267,7 @@ export async function setNumEntradas(
       .update(contacts)
       .set({ numEntradas: n })
       .where(and(eq(contacts.id, contactId), eq(contacts.organizationId, organizationId)));
+    await notifyContactUpdated(tx, { organizationId, contactId, changes: ["detalle"], by });
 
     if (n === null || n === 0) {
       await tx
@@ -308,6 +326,7 @@ export async function updateEntrada(
   contactId: string,
   posicion: number,
   patch: EntradaPatch,
+  by: ContactActor = AGENTE,
 ) {
   await requireContact(database, organizationId, contactId);
   const [entry] = await database
@@ -342,17 +361,21 @@ export async function updateEntrada(
     values.tamanoManual = patch.tamanoManual?.trim() || null;
   }
 
-  const [updated] = await database
-    .update(contactEntradas)
-    .set(values)
-    .where(
-      and(
-        eq(contactEntradas.organizationId, organizationId),
-        eq(contactEntradas.contactId, contactId),
-        eq(contactEntradas.posicion, posicion),
-      ),
-    )
-    .returning();
+  const updated = await database.transaction(async (tx) => {
+    const [row] = await tx
+      .update(contactEntradas)
+      .set(values)
+      .where(
+        and(
+          eq(contactEntradas.organizationId, organizationId),
+          eq(contactEntradas.contactId, contactId),
+          eq(contactEntradas.posicion, posicion),
+        ),
+      )
+      .returning();
+    if (row) await notifyContactUpdated(tx, { organizationId, contactId, changes: ["detalle"], by });
+    return row;
+  });
 
   if (!updated) {
     throw new Error("La entrada indicada no existe para este contacto.");
@@ -460,16 +483,21 @@ export async function addComment(
     throw new Error("El autor no pertenece a esta organización.");
   }
 
-  const [created] = await database
-    .insert(contactComentarios)
-    .values({
-      id: crypto.randomUUID(),
-      organizationId,
-      contactId,
-      authorUserId,
-      body: cleanCommentBody(body),
-    })
-    .returning();
+  const cleaned = cleanCommentBody(body);
+  const created = await database.transaction(async (tx) => {
+    const [row] = await tx
+      .insert(contactComentarios)
+      .values({
+        id: crypto.randomUUID(),
+        organizationId,
+        contactId,
+        authorUserId,
+        body: cleaned,
+      })
+      .returning();
+    await notifyContactUpdated(tx, { organizationId, contactId, changes: ["comentarios"], by: { kind: "vendedor", userId: authorUserId } });
+    return row;
+  });
 
   return {
     id: created.id,
@@ -502,18 +530,28 @@ export async function updateComment(
     throw new Error("No puedes modificar este comentario.");
   }
 
-  const [updated] = await database
-    .update(contactComentarios)
-    .set({ body: cleanCommentBody(body), updatedAt: new Date() })
-    .where(
-      and(
-        eq(contactComentarios.id, commentId),
-        eq(contactComentarios.organizationId, organizationId),
-      ),
-    )
-    .returning();
-
-  return updated;
+  const cleaned = cleanCommentBody(body);
+  return database.transaction(async (tx) => {
+    const [updated] = await tx
+      .update(contactComentarios)
+      .set({ body: cleaned, updatedAt: new Date() })
+      .where(
+        and(
+          eq(contactComentarios.id, commentId),
+          eq(contactComentarios.organizationId, organizationId),
+        ),
+      )
+      .returning();
+    if (updated) {
+      await notifyContactUpdated(tx, {
+        organizationId,
+        contactId: updated.contactId,
+        changes: ["comentarios"],
+        by: { kind: "vendedor", userId: actor.userId },
+      });
+    }
+    return updated;
+  });
 }
 
 export async function deleteComment(
@@ -523,7 +561,7 @@ export async function deleteComment(
   actor: CommentActor,
 ): Promise<void> {
   const [comment] = await database
-    .select({ authorUserId: contactComentarios.authorUserId })
+    .select({ authorUserId: contactComentarios.authorUserId, contactId: contactComentarios.contactId })
     .from(contactComentarios)
     .where(
       and(
@@ -537,12 +575,23 @@ export async function deleteComment(
     throw new Error("No puedes modificar este comentario.");
   }
 
-  await database
-    .delete(contactComentarios)
-    .where(
-      and(
-        eq(contactComentarios.id, commentId),
-        eq(contactComentarios.organizationId, organizationId),
-      ),
-    );
+  await database.transaction(async (tx) => {
+    const deleted = await tx
+      .delete(contactComentarios)
+      .where(
+        and(
+          eq(contactComentarios.id, commentId),
+          eq(contactComentarios.organizationId, organizationId),
+        ),
+      )
+      .returning({ id: contactComentarios.id });
+    if (deleted.length > 0) {
+      await notifyContactUpdated(tx, {
+        organizationId,
+        contactId: comment.contactId,
+        changes: ["comentarios"],
+        by: { kind: "vendedor", userId: actor.userId },
+      });
+    }
+  });
 }
