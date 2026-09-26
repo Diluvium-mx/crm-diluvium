@@ -47,6 +47,8 @@ export async function refreshMetaAd(
         campaignName: info.campaignName,
         accountId: info.accountId,
         effectiveStatus: info.effectiveStatus,
+        // También es una lectura buena del estado (lib/ads/meta-status.ts).
+        ...(info.effectiveStatus ? { statusCheckedAt: now } : {}),
         creativeId: info.creativeId,
         creativeTitle: info.title,
         creativeBody: info.body,

@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   adsManagerUrl,
+  fetchAdStatuses,
   fetchMetaAd,
   MetaAdsNotConfiguredError,
   MetaApiError,
@@ -128,5 +129,57 @@ describe("configuración y enlaces", () => {
     );
     expect(storyUrl("114715000320568_1452532606896168")).toBe("https://www.facebook.com/114715000320568_1452532606896168");
     expect(storyUrl("javascript:x")).toBeNull();
+  });
+});
+
+describe("estado de los anuncios (cada hora)", () => {
+  function statusGraph(handler: (url: URL) => { status?: number; body: unknown }) {
+    const calls: URL[] = [];
+    const fetchImpl = (async (url: string | URL, init?: RequestInit) => {
+      const u = new URL(String(url));
+      calls.push(u);
+      expect(new Headers(init?.headers).get("authorization")).toBe("Bearer t");
+      const r = handler(u);
+      return Response.json(r.body, { status: r.status ?? 200 });
+    }) as typeof fetch;
+    return { calls, fetchImpl };
+  }
+
+  it("un solo llamado por cada 50 anuncios, a la raíz con ?ids=", async () => {
+    const ids = Array.from({ length: 51 }, (_, i) => `1202500000${String(i).padStart(2, "0")}`);
+    const { calls, fetchImpl } = statusGraph((u) => ({
+      body: Object.fromEntries(u.searchParams.get("ids")!.split(",").map((id) => [id, { id, effective_status: "PAUSED" }])),
+    }));
+    const out = await fetchAdStatuses(ids, { token: "t", fetchImpl });
+    expect(calls).toHaveLength(2);
+    expect(calls[0].pathname).toBe("/v26.0/");
+    expect(calls[0].searchParams.get("fields")).toBe("effective_status");
+    expect(calls[0].searchParams.get("ids")!.split(",")).toHaveLength(50);
+    expect(out.size).toBe(51);
+    expect(out.get(ids[0])).toBe("PAUSED");
+  });
+
+  it("si uno no existe (803), el lote se repite uno por uno y el que falla queda fuera", async () => {
+    const { calls, fetchImpl } = statusGraph((u) => {
+      if (u.searchParams.has("ids")) return { status: 404, body: { error: { message: "Some of the aliases you requested do not exist: 999", code: 803 } } };
+      const id = u.pathname.split("/").pop()!;
+      return id === "999"
+        ? { status: 400, body: { error: { message: "Unsupported get request", code: 100 } } }
+        : { body: { id, effective_status: "ACTIVE" } };
+    });
+    const out = await fetchAdStatuses(["111", "999"], { token: "t", fetchImpl });
+    expect(calls).toHaveLength(3);
+    expect([...out]).toEqual([["111", "ACTIVE"]]);
+  });
+
+  it("token o permisos: lanza (quien llama lo anota y reintenta a la hora siguiente)", async () => {
+    const { fetchImpl } = statusGraph(() => ({ status: 400, body: { error: { message: "Invalid OAuth access token", code: 190 } } }));
+    await expect(fetchAdStatuses(["111"], { token: "t", fetchImpl })).rejects.toBeInstanceOf(MetaApiError);
+  });
+
+  it("ids con forma rara no llegan a Meta", async () => {
+    const { calls, fetchImpl } = statusGraph(() => ({ body: {} }));
+    await expect(fetchAdStatuses(["12,34"], { token: "t", fetchImpl })).rejects.toThrow(/inválido/);
+    expect(calls).toHaveLength(0);
   });
 });

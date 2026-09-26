@@ -107,12 +107,21 @@ function https(value: unknown): string | null {
 
 const GRAPH_ID = /^\d{1,25}(?:_\d{1,25})?$/;
 
-async function graphGet(config: MetaApiConfig, id: string, params: Record<string, string>): Promise<Json> {
+function assertGraphId(id: string): void {
   if (!GRAPH_ID.test(id)) throw new MetaApiError(0, null, `id de Meta inválido: ${JSON.stringify(id.slice(0, 40))}`);
+}
+
+async function graphGet(config: MetaApiConfig, id: string, params: Record<string, string>): Promise<Json> {
+  assertGraphId(id);
+  return graphRequest(config, id, params);
+}
+
+/** `path` vacío = raíz de la Graph API (consulta de varios ids con `?ids=`). */
+async function graphRequest(config: MetaApiConfig, path: string, params: Record<string, string>): Promise<Json> {
   const search = new URLSearchParams(params);
   // appsecret_proof: solo si la app lo exige ("Requerir secreto de la app").
   if (config.appSecret) search.set("appsecret_proof", createHmac("sha256", config.appSecret).update(config.token).digest("hex"));
-  const url = `${GRAPH_HOST}/${config.version ?? META_GRAPH_VERSION_DEFAULT}/${id}?${search.toString()}`;
+  const url = `${GRAPH_HOST}/${config.version ?? META_GRAPH_VERSION_DEFAULT}/${path}?${search.toString()}`;
   let res: Response;
   try {
     res = await (config.fetchImpl ?? fetch)(url, {
@@ -219,6 +228,45 @@ export async function fetchMetaAd(adId: string, config: MetaApiConfig): Promise<
     }
   }
   return info;
+}
+
+// Graph API: hasta 50 ids por consulta con `?ids=`. Si UNO no existe o no se
+// puede leer, Meta rechaza la consulta entera (código 803 o 100): ese lote se
+// repite anuncio por anuncio y el que falle queda sin estado.
+const STATUS_BATCH = 50;
+const MISSING_ALIAS_CODES = new Set([100, 803]);
+
+/**
+ * Estado actual (`effective_status`: ACTIVE, PAUSED, CAMPAIGN_PAUSED…) de varios
+ * anuncios, con el mismo token de solo lectura. Un anuncio que Meta no
+ * devuelve no viene en el mapa. Token, permisos o límite de uso → lanza (quien
+ * llama lo anota y reintenta a la hora siguiente).
+ */
+export async function fetchAdStatuses(adIds: readonly string[], config: MetaApiConfig): Promise<Map<string, string>> {
+  const ids = [...new Set(adIds)];
+  ids.forEach(assertGraphId);
+  const out = new Map<string, string>();
+  for (let i = 0; i < ids.length; i += STATUS_BATCH) {
+    const batch = ids.slice(i, i + STATUS_BATCH);
+    try {
+      const json = await graphRequest(config, "", { ids: batch.join(","), fields: "effective_status" });
+      for (const id of batch) {
+        const status = str(rec(json[id]).effective_status);
+        if (status) out.set(id, status);
+      }
+    } catch (error) {
+      if (!(error instanceof MetaApiError) || error.code === null || !MISSING_ALIAS_CODES.has(error.code)) throw error;
+      for (const id of batch) {
+        try {
+          const status = str((await graphRequest(config, id, { fields: "effective_status" })).effective_status);
+          if (status) out.set(id, status);
+        } catch (one) {
+          if (!(one instanceof MetaApiError) || one.code === null || !MISSING_ALIAS_CODES.has(one.code)) throw one;
+        }
+      }
+    }
+  }
+  return out;
 }
 
 /** Enlace al anuncio en el Administrador de anuncios de Meta. */

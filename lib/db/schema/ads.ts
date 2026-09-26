@@ -76,6 +76,10 @@ export const metaAds = pgTable(
     campaignName: text("campaign_name"),
     accountId: text("account_id"),
     effectiveStatus: text("effective_status"),
+    // Última lectura BUENA del estado en Meta (cada hora, lib/ads/meta-status.ts;
+    // regla de qué se muestra en lib/ads/ad-status.ts).
+    // Si es vieja (Meta falló), la tabla muestra "—" en vez de un estado viejo.
+    statusCheckedAt: timestamp("status_checked_at"),
     creativeId: text("creative_id"),
     creativeTitle: text("creative_title"),
     creativeBody: text("creative_body"),

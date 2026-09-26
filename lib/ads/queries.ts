@@ -2,13 +2,16 @@
 // contacto. Toda consulta filtra por organización. La UI recibe el dato listo
 // (nombres ya resueltos: Meta → titular de la ficha → "Anuncio").
 //
-// Métricas completas (gasto contra ventas, conjuntos, activos…) son una fase
-// posterior ("Métricas de anuncios") que se monta sobre estas mismas tablas.
-import { and, asc, desc, eq, gte, inArray, sql } from "drizzle-orm";
+// Métricas completas (gasto contra ventas, conjuntos, clics en el enlace…) son
+// una fase posterior ("Métricas de anuncios") que se monta sobre estas mismas
+// tablas y con las MISMAS reglas de conteo (ver listAdsForPeriod).
+import { and, asc, eq, gte, inArray, sql, type SQL } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { adClicks, contacts, messages, metaAds } from "@/lib/db/schema";
+import { DASHBOARD_TIME_ZONE, type DateRange } from "@/lib/dashboard/range";
 import { adHrefOf, adKeyOf, adKeySql, isAdKey } from "./ad-key";
 import { adsManagerUrl, storyUrl } from "./meta-api";
+import { adStatusOf, type AdStatus } from "./ad-status";
 import { httpsUrl, normalizeReferral } from "./referral";
 
 type MetaRow = typeof metaAds.$inferSelect;
@@ -84,44 +87,76 @@ export function adCardFromRaw(raw: Record<string, unknown> | null | undefined): 
   };
 }
 
-// ─── Lista de anuncios ──────────────────────────────────────────────────────
+// ─── Qué cuenta en las métricas ─────────────────────────────────────────────
 
-export type AdListItem = {
+// Igual que el Dashboard (docs/numero-prueba.md): nada que entre por un canal de
+// PRUEBA ni de un contacto de prueba cuenta. `c` = ad_clicks, `ct` = contacts.
+const countedJoins = sql`
+  join ${contacts} ct on ct.id = c.contact_id and ct.organization_id = c.organization_id and not ct.es_prueba
+  join conversations cv on cv.id = c.conversation_id and cv.organization_id = c.organization_id
+  join channels ch on ch.id = cv.channel_id and not ch.is_test`;
+
+// Día local (America/Mazatlan) → instante UTC sin zona de su medianoche, para
+// comparar contra clicked_at crudo (la ingesta lo escribe desde JS en UTC).
+function localDayStartUtc(day: string, plusDays = 0): SQL {
+  return sql`(((${day}::date + ${plusDays}::int)::timestamp at time zone ${DASHBOARD_TIME_ZONE}) at time zone 'UTC')`;
+}
+
+function adKeyMatches(key: string): SQL {
+  // Con id de Meta usa el índice (organization_id, ad_id, clicked_at).
+  return /^\d+$/.test(key) ? sql`c.ad_id = ${key}` : sql`${adKeySql("c")} = ${key}`;
+}
+
+// ─── Tabla de anuncios (sección "Anuncios") ─────────────────────────────────
+
+/** Fila de la tabla (components/anuncios/ads-table.tsx, `AdRow`, la arma la página). */
+export type AdPeriodItem = {
   key: string;
   adId: string | null;
   name: string;
   campaignName: string | null;
   adsetName: string | null;
+  status: AdStatus;
+  thumbnailUrl: string | null;
+  metaUrl: string | null;
   clients: number;
   bought: number;
-  lastClickAt: Date;
-  thumbnailUrl: string | null;
-  mediaType: string | null;
 };
 
-export async function listAds(organizationId: string): Promise<AdListItem[]> {
+// Tope de filas por consulta: la tabla se virtualiza a partir de 100; una PyME
+// tiene decenas de anuncios con clientes por periodo.
+export const ADS_TABLE_LIMIT = 2_000;
+
+/**
+ * Anuncios con clientes en el periodo (días locales de Mazatlán, inclusivos).
+ * - Clientes = contactos DISTINTOS con al menos un clic de ese anuncio cuya
+ *   fecha cae en el periodo (un cliente que vuelve por el mismo anuncio cuenta una vez).
+ * - Compraron = de esos, los que HOY están en la etapa Compra.
+ * - Un contacto que llegó por 2 anuncios cuenta en AMBOS (cada anuncio lo trajo);
+ *   por eso la suma de la columna puede pasar del total de contactos del periodo.
+ * - Contacto sin anuncio: no aparece (no tiene clic).
+ */
+export async function listAdsForPeriod(organizationId: string, range: DateRange, now: Date = new Date()): Promise<AdPeriodItem[]> {
   const rows = await db.execute<{
     key: string;
     ad_id: string | null;
     clients: number;
     bought: number;
-    last_click_ms: string;
     headline: string | null;
-    media_type: string | null;
   }>(sql`
     select ${adKeySql("c")} as key,
            max(c.ad_id) as ad_id,
            count(distinct c.contact_id)::int as clients,
            count(distinct c.contact_id) filter (where ct.stage = 'compra')::int as bought,
-           -- clicked_at lo escribe la ingesta desde JS (UTC, sin zona): epoch sin conversión.
-           (extract(epoch from max(c.clicked_at)) * 1000)::bigint as last_click_ms,
-           (array_agg(c.headline order by c.clicked_at desc) filter (where c.headline is not null))[1] as headline,
-           (array_agg(c.media_type order by c.clicked_at desc) filter (where c.media_type is not null))[1] as media_type
+           (array_agg(c.headline order by c.clicked_at desc, c.id) filter (where c.headline is not null))[1] as headline
       from ${adClicks} c
-      join ${contacts} ct on ct.id = c.contact_id and ct.organization_id = c.organization_id
+      ${countedJoins}
      where c.organization_id = ${organizationId}
+       and c.clicked_at >= ${localDayStartUtc(range.desde)}
+       and c.clicked_at < ${localDayStartUtc(range.hasta, 1)}
      group by 1
-     order by max(c.clicked_at) desc`);
+     order by clients desc, key
+     limit ${ADS_TABLE_LIMIT}`);
   const adIds = rows.map((r) => r.ad_id).filter((id): id is string => id !== null);
   const metas = await metaFor(organizationId, adIds);
   return rows.map((r) => {
@@ -132,16 +167,19 @@ export async function listAds(organizationId: string): Promise<AdListItem[]> {
       name: adDisplayName(meta, r.headline, r.ad_id),
       campaignName: meta?.campaignName ?? null,
       adsetName: meta?.adsetName ?? null,
+      status: adStatusOf(meta, now),
+      thumbnailUrl: thumbnailOf(meta),
+      metaUrl: r.ad_id ? (meta?.adsManagerUrl ?? adsManagerUrl(r.ad_id, meta?.accountId ?? null)) : null,
       clients: Number(r.clients),
       bought: Number(r.bought),
-      lastClickAt: new Date(Number(r.last_click_ms)),
-      thumbnailUrl: thumbnailOf(meta),
-      mediaType: r.media_type,
     };
   });
 }
 
 // ─── Página del anuncio ─────────────────────────────────────────────────────
+
+/** Clientes por página en la lista de la página del anuncio. */
+export const AD_PEOPLE_PAGE_SIZE = 50;
 
 export type AdDetail = {
   key: string;
@@ -159,63 +197,92 @@ export type AdDetail = {
   video: { id: string; title: string | null; lengthSeconds: number | null } | null;
   mediaType: string | null;
   thumbnailUrl: string | null;
+  /** Totales de SIEMPRE (no del periodo de la tabla), sin canales ni contactos de prueba. */
   clients: number;
   bought: number;
   metaUrl: string | null;
   postUrl: string | null;
   /** Error de la última consulta a Meta (se muestra discreto: "nombres pendientes"). */
   metaPending: boolean;
+  /** Una página de clientes (el más reciente primero); `clients` es el total. */
   people: { contactId: string; name: string; stage: string; clickedAt: Date }[];
+  page: number;
+  pageCount: number;
 };
 
-export async function getAd(organizationId: string, key: string): Promise<AdDetail | null> {
+export async function getAd(organizationId: string, key: string, { page = 1 }: { page?: number } = {}): Promise<AdDetail | null> {
   if (!isAdKey(key)) return null;
   const adId = /^\d+$/.test(key) ? key : null;
-  const byAd = adId !== null ? eq(adClicks.adId, adId) : sql`${adKeySql()} = ${key}`;
-  const clicks = await db
-    .select({ click: adClicks, contact: { id: contacts.id, firstName: contacts.firstName, lastName: contacts.lastName, stage: contacts.stage } })
-    .from(adClicks)
-    .innerJoin(contacts, and(eq(contacts.id, adClicks.contactId), eq(contacts.organizationId, adClicks.organizationId)))
-    .where(and(eq(adClicks.organizationId, organizationId), byAd))
-    .orderBy(desc(adClicks.clickedAt));
-  if (clicks.length === 0) return null;
-  const meta = adId ? (await metaFor(organizationId, [adId])).get(adId) : undefined;
-  const withMediaType = clicks.find((c) => c.click.mediaType)?.click;
-  const withText = clicks.find((c) => c.click.headline || c.click.body)?.click;
-  const withUrl = clicks.find((c) => c.click.sourceUrl)?.click;
+  // Existencia y lo que se muestra del anuncio: con TODOS sus clics (también de
+  // prueba: la tarjeta del chat de una prueba abre esta página).
+  const [summary] = await db.execute<{
+    clicks: number;
+    media_type: string | null;
+    headline: string | null;
+    body: string | null;
+    source_url: string | null;
+  }>(sql`
+    select count(*)::int as clicks,
+           (array_agg(c.media_type order by c.clicked_at desc, c.id) filter (where c.media_type is not null))[1] as media_type,
+           (array_agg(c.headline order by c.clicked_at desc, c.id) filter (where c.headline is not null or c.body is not null))[1] as headline,
+           (array_agg(c.body order by c.clicked_at desc, c.id) filter (where c.headline is not null or c.body is not null))[1] as body,
+           (array_agg(c.source_url order by c.clicked_at desc, c.id) filter (where c.source_url is not null))[1] as source_url
+      from ${adClicks} c
+     where c.organization_id = ${organizationId} and ${adKeyMatches(key)}`);
+  if (!summary || Number(summary.clicks) === 0) return null;
 
-  // Una persona una vez (su entrada más reciente por este anuncio).
-  const people = new Map<string, AdDetail["people"][number]>();
-  for (const { click, contact } of clicks) {
-    if (people.has(contact.id)) continue;
-    people.set(contact.id, {
-      contactId: contact.id,
-      name: [contact.firstName, contact.lastName].filter(Boolean).join(" "),
-      stage: contact.stage,
-      clickedAt: click.clickedAt,
-    });
-  }
-  const list = [...people.values()];
+  const [totals] = await db.execute<{ clients: number; bought: number }>(sql`
+    select count(distinct c.contact_id)::int as clients,
+           count(distinct c.contact_id) filter (where ct.stage = 'compra')::int as bought
+      from ${adClicks} c
+      ${countedJoins}
+     where c.organization_id = ${organizationId} and ${adKeyMatches(key)}`);
+  const clients = Number(totals?.clients ?? 0);
+  const pageCount = Math.max(1, Math.ceil(clients / AD_PEOPLE_PAGE_SIZE));
+  const current = Math.min(Math.max(1, Math.floor(page) || 1), pageCount);
+
+  // Una persona una vez (su entrada más reciente por este anuncio), por páginas.
+  const people = await db.execute<{ contact_id: string; first_name: string | null; last_name: string | null; stage: string; clicked_ms: string }>(sql`
+    select p.contact_id, p.first_name, p.last_name, p.stage,
+           (extract(epoch from p.clicked_at) * 1000)::bigint as clicked_ms
+      from (
+        select distinct on (c.contact_id) c.contact_id, ct.first_name, ct.last_name, ct.stage, c.clicked_at
+          from ${adClicks} c
+          ${countedJoins}
+         where c.organization_id = ${organizationId} and ${adKeyMatches(key)}
+         order by c.contact_id, c.clicked_at desc
+      ) p
+     order by p.clicked_at desc, p.contact_id
+     limit ${AD_PEOPLE_PAGE_SIZE} offset ${(current - 1) * AD_PEOPLE_PAGE_SIZE}`);
+
+  const meta = adId ? (await metaFor(organizationId, [adId])).get(adId) : undefined;
   return {
     key,
     adId,
-    name: adDisplayName(meta, withText?.headline ?? null, adId),
+    name: adDisplayName(meta, summary.headline, adId),
     campaignName: meta?.campaignName ?? null,
     adsetName: meta?.adsetName ?? null,
     status: meta?.effectiveStatus ?? null,
-    title: meta?.creativeTitle ?? withText?.headline ?? null,
-    body: meta?.creativeBody ?? withText?.body ?? null,
+    title: meta?.creativeTitle ?? summary.headline ?? null,
+    body: meta?.creativeBody ?? summary.body ?? null,
     cta: ctaLabel(meta?.ctaType ?? null),
     linkUrl: httpsUrl(meta?.linkUrl ?? null),
     video: meta?.videoId ? { id: meta.videoId, title: meta.videoTitle, lengthSeconds: meta.videoLengthSeconds } : null,
-    mediaType: meta?.videoId ? "video" : (withMediaType?.mediaType ?? null),
+    mediaType: meta?.videoId ? "video" : (summary.media_type ?? null),
     thumbnailUrl: thumbnailOf(meta),
-    clients: list.length,
-    bought: list.filter((p) => p.stage === "compra").length,
+    clients,
+    bought: Number(totals?.bought ?? 0),
     metaUrl: adId ? (meta?.adsManagerUrl ?? adsManagerUrl(adId, meta?.accountId ?? null)) : null,
-    postUrl: storyUrl(meta?.storyId ?? null) ?? httpsUrl(meta?.postUrl ?? null) ?? httpsUrl(withUrl?.sourceUrl ?? null),
+    postUrl: storyUrl(meta?.storyId ?? null) ?? httpsUrl(meta?.postUrl ?? null) ?? httpsUrl(summary.source_url ?? null),
     metaPending: Boolean(adId && (!meta?.fetchedAt || meta.fetchError)),
-    people: list,
+    people: people.map((p) => ({
+      contactId: p.contact_id,
+      name: [p.first_name, p.last_name].filter(Boolean).join(" "),
+      stage: p.stage,
+      clickedAt: new Date(Number(p.clicked_ms)),
+    })),
+    page: current,
+    pageCount,
   };
 }
 
