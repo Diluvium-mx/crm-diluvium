@@ -215,8 +215,10 @@ export function ContactDetails({
   // la última. Se salta lo que el vendedor tiene en curso: un campo con guardado
   // pendiente (o que se guardó mientras la lectura iba en camino) y el borrador
   // que está tecleando. Lo saltado por un guardado se vuelve a leer en cuanto ese
-  // guardado termina (si otro lo cambió en esa ventana, no se pierde).
+  // guardado termina (si otro lo cambió en esa ventana, no se pierde). Si la
+  // lectura falla, se reintenta sola (5 s … 60 s); un cambio nuevo la adelanta.
   const liveTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+  const liveRetry = useRef({ ms: 0, pending: false });
   const alive = useRef(true);
   useEffect(() => {
     alive.current = true;
@@ -225,12 +227,19 @@ export function ContactDetails({
       clearTimeout(liveTimer.current);
     };
   }, []);
-  function scheduleLive() {
-    if (liveTimer.current || !alive.current) return;
+  function scheduleLive(delayMs = 500) {
+    if (!alive.current) return;
+    if (liveRetry.current.pending && delayMs === 500) {
+      clearTimeout(liveTimer.current);
+      liveTimer.current = undefined;
+      liveRetry.current.pending = false;
+    }
+    if (liveTimer.current) return;
     liveTimer.current = setTimeout(() => {
       liveTimer.current = undefined;
+      liveRetry.current.pending = false;
       void liveRefresh();
-    }, 500);
+    }, delayMs);
   }
   useInboxStream((event) => {
     if (event.type === "reload") {
@@ -244,11 +253,19 @@ export function ContactDetails({
   async function liveRefresh() {
     const snap = tracker.snapshot();
     const outcome = await saves.save("live", () => getContactDetails(contactId));
-    // Si falla, el siguiente cambio (o la reconexión) lo vuelve a intentar.
+    if (outcome.status === "failed" && outcome.latest) {
+      liveRetry.current.ms = Math.min(liveRetry.current.ms ? liveRetry.current.ms * 2 : 5_000, 60_000);
+      if (!liveTimer.current) {
+        scheduleLive(liveRetry.current.ms);
+        liveRetry.current.pending = true;
+      }
+      return;
+    }
     if (outcome.status !== "saved" || !outcome.latest) return;
+    liveRetry.current.ms = 0;
     const fresh = outcome.result;
     const busy = new Set([...QUAL_FIELDS, "entradas", "comentarios"].filter((lane) => tracker.touchedSince(lane, snap)));
-    if (busy.size > 0) void tracker.whenIdle([...busy]).then(scheduleLive);
+    if (busy.size > 0) void tracker.whenIdle([...busy]).then(() => scheduleLive());
     const freshQ = qualificationOf(fresh);
     if (confirmed.current) {
       const next = { ...confirmed.current };
