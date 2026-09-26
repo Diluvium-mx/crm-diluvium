@@ -16,6 +16,7 @@ import { isInternalAgentTag } from "@/lib/ai/runtime/tags";
 import { conversations, messages } from "@/lib/db/schema/messaging";
 import { sanitizeReferral } from "@/lib/inbox/format";
 import { contactAdAttribution } from "@/lib/ads/queries";
+import { roleAllows } from "@/lib/auth/permissions";
 import { notifyContactUpdated, type ContactActor, type ContactChange } from "./notify-updated";
 
 // La conexión principal y las transacciones comparten esta interfaz. Así estas
@@ -112,10 +113,11 @@ function cleanCommentBody(body: string): string {
   return cleaned;
 }
 
+// El autor, o cualquier rol con permiso de editar contactos (hoy owner, admin y
+// vendedor: el vendedor tiene todo menos Configuración, decisión del 26-sep-2026).
+// Un rol desconocido solo toca los suyos (falla cerrado).
 function canModifyComment(actor: CommentActor, authorUserId: string): boolean {
-  return (
-    actor.userId === authorUserId || actor.role === "owner" || actor.role === "admin"
-  );
+  return actor.userId === authorUserId || roleAllows(actor.role, "contact", "update");
 }
 
 // Resumen del anuncio por el que llegó el contacto: el del filtro (Luna) guardado en

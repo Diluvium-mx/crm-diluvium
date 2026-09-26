@@ -11,19 +11,18 @@ export const statement = {
   tag: ["create", "read", "update", "delete"],
   snippet: ["create", "read", "update", "delete"],
   // Plantillas de WhatsApp (aprobadas por Meta). `read` = ver/listar (para
-  // enviarlas desde el chat, todos). `create` = darlas de alta en Meta. `sync` =
-  // sincronizar el listado a la BD (puede marcar como eliminadas). Gestionarlas
-  // afecta a la cuenta de WhatsApp y la revisión de Meta: solo owner/admin.
+  // enviarlas desde el chat). `create` = darlas de alta en Meta. `sync` =
+  // sincronizar el listado a la BD (puede marcar como eliminadas). Todos los
+  // roles (decisión del dueño, 26-sep-2026).
   template: ["read", "create", "sync"],
   // Pestaña "Agente IA" completa (nombre, modelos por etapa, Goal, FAQs,
   // versiones, canales, APIs). Desde el 25-sep-2026 TODOS los roles la ven
   // (`read`) y editan (`update`), incluido el vendedor.
   aiConfig: ["read", "update"],
   // Rangos editables de tallas: todos los vendedores los consultan para las
-  // sugerencias; solo owner/admin cambian la configuración compartida.
+  // sugerencias; editarlos vive en Configuración → Tallas: solo owner/admin.
   sizeRange: ["read", "update"],
-  // Tarjeta "Gasto de IA" del Dashboard (A2): todos la ven (`read`, el vendedor
-  // también, para prever recargas); registrar recargas (`update`) es owner/admin.
+  // Tarjeta "Gasto de IA" del Dashboard (A2): todos la ven y registran recargas.
   aiSpend: ["read", "update"],
   // Automatización (Fase D): workflows y su biblioteca de media. Todos los roles
   // los leen, ejecutan (`run`: comandos tipo /tabla) y editan.
@@ -64,20 +63,19 @@ export const admin = ac.newRole({
   settings: ["read"],
 });
 
-// Vendedor: TODO el CRM menos Configuración (decisión del dueño, 25-sep-2026).
-// Se quedan en owner/admin: crear/sincronizar plantillas de Meta, importar y
-// borrar contactos en masa, registrar recargas de IA, Vendedores y Tallas.
+// Vendedor: TODAS las herramientas del CRM menos la pestaña Configuración
+// (decisión del dueño, 26-sep-2026; amplía la del 25-sep): plantillas de Meta,
+// contactos en masa, recargas de IA y comentarios de otros, igual que el admin.
+// Lo único que NO tiene es lo que vive en Configuración: Vendedores (`member`,
+// sin grants) y Tallas (`sizeRange` solo lectura, para las sugerencias).
 export const agent = ac.newRole({
-  contact: ["create", "read", "update"],
-  tag: ["create", "read", "update"],
-  // Los agentes (los vendedores) gestionan los Fragmentos: son su herramienta
-  // de trabajo diaria. En plantillas solo leen y ENVÍAN (crear/sincronizar,
-  // que tocan Meta y la WABA, quedan en owner/admin).
+  contact: ["create", "read", "update", "delete", "import", "export"],
+  tag: ["create", "read", "update", "delete"],
   snippet: ["create", "read", "update", "delete"],
-  template: ["read"],
+  template: ["read", "create", "sync"],
   sizeRange: ["read"],
   aiConfig: ["read", "update"],
-  aiSpend: ["read"],
+  aiSpend: ["read", "update"],
   workflow: ["read", "run", "create", "update", "delete"],
   mediaAsset: ["read", "create", "delete"],
   // Sin `settings`: roleAllows falla cerrado → sin la sección Configuración.

@@ -114,8 +114,8 @@ export async function getContactQualification(contactId: string) {
 /**
  * Lo que necesita el panel "Detalle del contacto" (B2): la calificación, correo y
  * etiquetas, y quién mira (para mostrar editar/borrar solo en los comentarios que
- * puede modificar: los suyos, o todos si es owner/admin; el servidor lo vuelve a
- * exigir al modificar).
+ * puede modificar: los suyos, o todos si su rol puede editar contactos —owner,
+ * admin y vendedor—; el servidor lo vuelve a exigir al modificar).
  */
 export async function getContactDetails(contactId: string) {
   const membership = await requireActiveMembership();
@@ -125,7 +125,8 @@ export async function getContactDetails(contactId: string) {
     ...data,
     viewer: {
       userId: membership.userId,
-      canModerate: membership.role === "owner" || membership.role === "admin",
+      // Editar/borrar comentarios de otros: la misma regla que exige el servidor.
+      canModerate: roleAllows(membership.role, "contact", "update"),
     },
   };
 }
