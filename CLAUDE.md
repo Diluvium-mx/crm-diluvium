@@ -163,20 +163,22 @@ ve y edita todos los contactos de su organización.
 **Roles y permisos de las features conversacionales (v1, 21-sep-2026; ACL en
 `lib/auth/permissions.ts` con `createAccessControl`):** el **agente** es el vendedor y hace el
 trabajo diario: gestiona **Fragmentos** (crear/editar/borrar; son su herramienta de respuesta
-rápida) y en WhatsApp ve, usa y **envía** todo —texto libre y **plantillas** aprobadas—. La
-**administración** de plantillas de Meta —darlas de alta o **sincronizarlas**, que tocan la WABA y
-su revisión— queda en **owner/admin**. **Enviar** una plantilla aprobada NO pasa por el ACL: es
+rápida) y en WhatsApp ve, usa y **envía** todo —texto libre y **plantillas** aprobadas—. Desde el
+26-sep-2026 también **administra** las plantillas de Meta (darlas de alta y **sincronizarlas**),
+como owner/admin (ver la tabla de roles). **Enviar** una plantilla aprobada NO pasa por el ACL: es
 acción de vendedor, igual que enviar un mensaje. Las plantillas cuyas variables van en el
 **encabezado o un botón** no se pueden armar desde el CRM en v1 (solo BODY posicional `{{1}}`): se
 marcan `templates.unsupported` al sincronizar y no se ofrecen para enviar.
 
-**Roles (25-sep-2026; ACL en `lib/auth/permissions.ts`, las páginas y Server Actions repiten la regla):**
+**Roles (26-sep-2026, decisión del dueño; amplía la del 25-sep. ACL en `lib/auth/permissions.ts`, las
+páginas y Server Actions repiten la regla; `lib/auth/permissions.test.ts` exige que admin/owner tengan TODO
+lo del vendedor y que al vendedor solo le falte Configuración):**
 
 | Rol | Qué puede |
 |---|---|
 | Owner | Dueño de la cuenta: todo, incluido administrar a los admins (solo él asigna el rol owner). |
-| Admin | Todo: Configuración (Vendedores, Tallas), crear/sincronizar plantillas de Meta, importar/borrar contactos en masa, registrar recargas de IA. |
-| Vendedor (`agent`) | Todo menos Configuración: Dashboard completo (Gasto de IA sin registrar recargas), Bandeja, Embudo, Mensajes rápidos, y ve y edita Agente IA y Automatización. |
+| Admin | Todo lo del vendedor + Configuración (Vendedores, Tallas). |
+| Vendedor (`agent`) | Todas las herramientas del CRM menos la pestaña Configuración: Dashboard (incluido registrar recargas de IA), Bandeja, Embudo, Mensajes rápidos (fragmentos y crear/sincronizar plantillas de Meta), contactos en masa (importar/exportar/borrar), editar/borrar comentarios de otros, Anuncios, Agente IA y Automatización. |
 
 ```
 contacts             id, org_id, name, phone_e164 (unique por org), email,
@@ -220,7 +222,7 @@ contact_entradas     id, org_id, contact_id, posicion, ancho_cm, linea (mini|est
 tallas_compuerta     id, org_id, linea, talla, min_cm, max_cm, posicion   -- editable owner/admin
 contact_comentarios  id, org_id, contact_id, author_user_id (obligatorio), body, created_at, updated_at
                      -- 0022: las notas viejas (custom_fields.notas) se copian aquí con autor de
-                     -- sistema "Importado" (sin login ni membresía; solo owner/admin las editan)
+                     -- sistema "Importado" (sin login ni membresía; las edita cualquier rol, 26-sep)
 comprobantes         id, org_id, contact_id, conversation_id, message_id (único), monto, referencia,
                      referencia_norm, banco, fecha_comprobante, tipo (total|anticipo|resto), created_at
                      -- Fase D (0031). SIN USO desde la Fase E (25-sep): el agente ya no anota monto ni

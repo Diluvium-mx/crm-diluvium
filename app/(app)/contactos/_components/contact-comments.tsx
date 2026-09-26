@@ -1,7 +1,8 @@
 "use client";
 
 // Comentarios del contacto (A7/B2; reemplazan a las "Notas"). Autor obligatorio
-// y fecha; editar/borrar solo el autor u owner/admin (el servidor lo exige).
+// y fecha; editar/borrar: el autor y cualquier rol que edite contactos (owner, admin y
+// vendedor; el servidor lo exige).
 import { useRef, useState } from "react";
 import { addComment, deleteComment, updateComment } from "@/lib/actions/contact-qualification";
 

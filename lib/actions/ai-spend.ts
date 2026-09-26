@@ -1,7 +1,8 @@
 "use server";
 
 // Recargas de crédito de los proveedores de IA (tarjeta "Gasto de IA" del Dashboard).
-// Solo owner/admin (ACL: recurso `aiSpend`, acción `update`). La organización sale
+// Todos los roles (ACL: recurso `aiSpend`, acción `update`; el vendedor también desde
+// el 26-sep-2026). La organización sale
 // de la SESIÓN. El saldo que se muestra es un ESTIMADO (lib/dashboard/ai-spend.ts).
 import { revalidatePath } from "next/cache";
 import { and, eq } from "drizzle-orm";
@@ -28,7 +29,7 @@ const topupSchema = z.object({
 async function run(fallback: string, fn: (m: { organizationId: string; userId: string }) => Promise<void>): Promise<AgentActionResult> {
   try {
     const m = await requireActiveMembership();
-    if (!roleAllows(m.role, "aiSpend", "update")) return { ok: false, message: "Solo un administrador registra recargas." };
+    if (!roleAllows(m.role, "aiSpend", "update")) return { ok: false, message: "No tienes permiso para registrar recargas." };
     await fn(m);
     revalidatePath("/inicio");
     return { ok: true };

@@ -63,7 +63,19 @@ describe("guardas de rol en Server Actions", () => {
     vi.clearAllMocks();
   });
 
-  it("importContactsFromCsv rechaza al agent antes de leer o validar el archivo", async () => {
+  it("importContactsFromCsv rechaza a un rol sin permiso antes de leer o validar el archivo", async () => {
+    doubles.requireActiveMembership.mockResolvedValue({
+      organizationId: "org_role_guard",
+      userId: "user_role_guard",
+      role: "desconocido",
+    });
+
+    await expect(importContactsFromCsv(new FormData())).rejects.toThrow(
+      "No tienes permiso para importar contactos",
+    );
+  });
+
+  it("importContactsFromCsv deja pasar al vendedor (agent) hasta la validación del archivo", async () => {
     doubles.requireActiveMembership.mockResolvedValue({
       organizationId: "org_role_guard",
       userId: "user_role_guard",
@@ -71,7 +83,7 @@ describe("guardas de rol en Server Actions", () => {
     });
 
     await expect(importContactsFromCsv(new FormData())).rejects.toThrow(
-      "No tienes permiso para importar contactos",
+      "Sube un archivo CSV.",
     );
   });
 
@@ -87,18 +99,18 @@ describe("guardas de rol en Server Actions", () => {
     );
   });
 
-  it("addAiTopup rechaza al agent sin intentar insertar", async () => {
+  it("addAiTopup rechaza a un rol sin permiso sin intentar insertar", async () => {
     doubles.requireActiveMembership.mockResolvedValue({
       organizationId: "org_role_guard",
       userId: "user_role_guard",
-      role: "agent",
+      role: "desconocido",
     });
 
     await expect(
       addAiTopup({ provider: "openai", amountUsd: 20, toppedUpOn: "2026-09-24" }),
     ).resolves.toEqual({
       ok: false,
-      message: "Solo un administrador registra recargas.",
+      message: "No tienes permiso para registrar recargas.",
     });
   });
 

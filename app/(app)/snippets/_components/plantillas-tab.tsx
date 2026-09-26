@@ -134,7 +134,7 @@ export function PlantillasTab({
               <strong>Sincronizar</strong> para traer las que ya existan en WhatsApp.
             </>
           ) : (
-            "No hay plantillas todavía. Un administrador las sincroniza; tú las enviarás desde el chat."
+            "No hay plantillas todavía."
           )}
         </div>
       ) : (
