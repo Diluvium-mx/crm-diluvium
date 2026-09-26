@@ -55,8 +55,11 @@ formularios y landing pages, agente IA de calificación.
 > agente** (`mover_etapa` solo hacia adelante, `aviso_vendedor`, `fijar_cotizacion`) decididas por el
 > Goal, no por código. Diseño: `docs/fase-d-diseno.md` §10. **Fase D CERRADA el 25-sep-2026** (main
 > 057725c, migración 0031; prueba B5 en producción y pendientes A–F sin construir: §11 del mismo doc).
-> **Fase E:** Modelo 1 (Luna) y Modelo 2 (Sonnet 5) por etapa, con sus selectores en la pestaña Agente IA,
-> más el reenvío seguro. En main desde el 25-sep: selectores, etapas (Modelo 1 = Inbox, Prospecto,
+> **Fase E CERRADA el 26-sep-2026 (main ebcd981).** Modelo 1 (Luna) y Modelo 2 (Sonnet 5) por etapa, con
+> sus selectores en la pestaña Agente IA, más el reenvío seguro; 5 proveedores activos (OpenAI, Anthropic,
+> Gemini, Grok, Qwen). Recargas de saldo: manuales en la página de cada proveedor. Único pendiente: borrar
+> `ai_config.daily_budget_usd` en la primera migración después de Anuncios. Revisión de Codex: penúltima acción
+> antes del número oficial. Parte 1: selectores, etapas (Modelo 1 = Inbox, Prospecto,
 > Interesado), adaptadores de Google/xAI/OpenRouter y tope de 4,096 tokens (migración 0033). Parte 2
 > (migración 0034): **reenvío seguro** = si el modelo falla, tarjeta en el chat con el error explicado y
 > botones "Reintentar" / "Apagar" (pausa esa conversación); sin reintentos automáticos salvo UNO si el
