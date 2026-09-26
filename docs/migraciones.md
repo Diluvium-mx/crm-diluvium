@@ -41,10 +41,13 @@ ANTES de arrancar el despliegue nuevo. Documentación oficial
 deployment will not proceed."* El despliegue nuevo nunca se activa → **el anterior sigue atendiendo,
 sin caída**.
 
-| Servicio | Pre-deploy | Arranque | Pre-deploy timeout |
-|---|---|---|---|
-| web `crm-diluvium` | `npm run db:deploy` | `npm run start` | 600 s |
-| worker (`worker-production` en prod, `worker` en staging) | `npm run db:check -- --wait 900` | `npx tsx worker/index.ts` (igual) | 1000 s |
+| Servicio | Pre-deploy | Arranque |
+|---|---|---|
+| web `crm-diluvium` | `npm run db:deploy` | `npm run start` |
+| worker (`worker-production` en prod, `worker` en staging) | `npm run db:check -- --wait 900` | `npx tsx worker/index.ts` (igual) |
+
+(Leído de la API de Railway el 25-sep-2026: staging tiene exactamente esto; no trae un tope de tiempo
+propio del pre-deploy configurado.)
 
 - Si falta una migración (saltada o fallida), el pre-deploy del web falla → no hay despliegue nuevo del
   web; el del worker espera y, al vencer, también falla → sigue el worker anterior. Nada se cae; el log
@@ -55,11 +58,34 @@ sin caída**.
 despliega):
 - **staging:** al subir esta rama a `staging` (misma vez).
 - **production:** al mezclar esta rama a `main`, con la luz verde del dueño (antes, cualquier despliegue
-  de main fallaría por no tener `db:check`).
+  de main fallaría por no tener `db:check`). **Preparado, SIN aplicar** (25-sep-2026):
+  `~/Documents/Diluvium CRM/notas/anuncios-predeploy-produccion/` (`patch-produccion.json` + `aplicar.py`;
+  sin `--confirmar` solo muestra el cambio). Se aplica DESPUÉS de que main ya tenga `db:deploy`/`db:check`.
+  Hoy production arranca el web con `npm run start:web` (migra + chequea + next start) y no tiene pre-deploy.
 
-Se configura por la API de Railway (el CLI no expone pre-deploy):
-`serviceInstanceUpdate(serviceId, environmentId, input: { preDeployCommand, startCommand, preDeployTimeoutSeconds })`
-(IDs en la memoria de infraestructura; los de production solo con luz verde).
+Se configura por la API de Railway (el CLI no expone pre-deploy) con
+`environmentPatchCommit(environmentId, patch: { services: { <serviceId>: { deploy: { preDeployCommand, startCommand } } } })`,
+que cambia SOLO ese entorno. **No usar `serviceInstanceUpdate`**: sin fork del entorno cambia TODOS.
+(IDs en la memoria de infraestructura; production solo con luz verde).
+
+**Revisión de production (25-sep-2026, solo lectura, conexión con `default_transaction_read_only=on`):**
+con el journal de main (ebcd981) → "Migraciones al día" (0000–0034 aplicadas). Aviso heredado, no
+bloquea: `0013_spooky_turbo` aplicada con un `.sql` distinto al del repo (se editó después de aplicarse).
+Con el journal de esta rama le faltan solo `0035_anuncios_meta` y `0036_anuncios_estado`, que su `when`
+(posterior a la 0034) hace que drizzle aplique al desplegar.
+
+## Numeración (idx = número del tag)
+
+`drizzle-kit generate` nombra la siguiente migración con **el idx de la ÚLTIMA entrada del journal + 1**
+y escribe `meta/<ese número>_snapshot.json` (node_modules/drizzle-kit/bin.cjs, `writeResult`); toma
+como base el último snapshot por nombre. El migrador de drizzle-orm NO usa idx (solo tag, `when` y hash).
+Regla (la cuida `lib/db/migrations-journal.test.ts`): **el idx de cada entrada es el número de su tag**,
+creciente; la última migración tiene su snapshot y es el último por nombre; el siguiente número no existe.
+La 0030 quedó vacía: se reservó para Anuncios, main siguió con 0031–0034 (con idx 30–33, y el siguiente
+generate en main habría pisado el `0034_snapshot`) y Anuncios entró como 0035. Prueba de aceptación
+(25-sep): sobre main + Anuncios, `drizzle-kit generate` creó `0037_…sql` + `0037_snapshot.json` sin tocar
+ningún archivo existente (solo agregó su entrada al journal), el test del journal pasó y `db:deploy` dejó
+"al día" una base tipo production (hasta 0034) y una tipo staging (con 0035/0036).
 
 ## Si el candado detiene un despliegue
 

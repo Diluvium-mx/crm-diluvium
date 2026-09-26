@@ -1,7 +1,9 @@
 # Anuncios de Meta (clic a WhatsApp)
 
-Bloque "ANUNCIOS DE META" (24/25-sep-2026, rama `feat/anuncios-meta`, migración `0030_anuncios_meta`,
-número reservado; entra DESPUÉS de la 0034 por `when`. La 0028 vieja de esta rama se retiró).
+Bloque "ANUNCIOS DE META" (24/25-sep-2026, rama `feat/anuncios-meta`, migraciones `0035_anuncios_meta`
+y `0036_anuncios_estado`, ambas idempotentes. La 0035 se llamaba `0030_anuncios_meta` —mismo contenido y
+mismo `when`— y se renumeró para que número, idx del journal y snapshot coincidan; la 0030 queda vacía.
+Ver docs/migraciones.md).
 La mayoría de los clientes llegan por anuncios Click-to-WhatsApp (CTWA) de la cuenta publicitaria
 "Diluvium" (1058203117932599, portafolio Grupo Diluvium). Objetivo: el día que se conecte el número
 oficial, cada mensaje que llegue desde un anuncio entra completo, ordenado y sin un solo error.
@@ -63,6 +65,24 @@ oficial, cada mensaje que llegue desde un anuncio entra completo, ordenado y sin
      1 h después del mensaje. **Durable:** nace "pendiente" en la base con el mensaje; la primera
      consulta es a los 30 s; `sin_datos` se reintenta 3 veces (cada 3 min) y `error` 8 (cada 5 min).
      Siempre deja registro en `messages.metadata.anuncioRespaldo` y en el log `[anuncios]`.
+   - **Cuántas páginas del listado se revisan** (25-sep-2026). Fuente: docs.zernio.com/messages/list-inbox-conversations
+     y el OpenAPI público (zernio.com/openapi.yaml, v1.96.0): `sortOrder` *"Sort order by updated time"*,
+     `desc` por omisión; `limit` de 1 a 100 (50 por omisión); paginación por `cursor` (`pagination.hasMore`,
+     `pagination.nextCursor`); cada elemento trae `updatedTime` (fecha-hora); solo filtros `profileId`,
+     `platform`, `status` y `accountId` (ni hora, ni teléfono, ni id); si una cuenta falla, sale en
+     `meta.failedAccounts`. Límite general: 60 solicitudes/min con 0–2 cuentas conectadas
+     (docs.zernio.com/guides/rate-limits).
+     Antes se revisaban 3 páginas fijas de 100. Con ~400 clientes nuevos al día más las conversaciones
+     activas (cada respuesta del vendedor o del agente también la sube), durante los reintentos (hasta
+     ~40 min en `error`) más de 300 conversaciones pueden actualizarse después del mensaje: **no estaba
+     garantizado**. Ahora el CRM pasa la hora del mensaje y sigue página por página hasta que una ya es
+     anterior a esa hora (−5 min de holgura): la conversación del mensaje se actualizó con él, así que no
+     puede estar más abajo. Casi siempre basta 1 llamada (antes 3 por intento sin datos). Tope: 10 páginas
+     (1,000 conversaciones); llegar al tope sin pasar la hora, o `meta.accountsFailed` > 0, es `error` (se
+     reintenta), nunca "sin datos". Sin `updatedTime` legible, vuelve a las 3 páginas fijas.
+     Supuesto (no documentado explícitamente por Zernio): un mensaje entrante actualiza `updatedTime` (la
+     conversación sube). Lo respalda su nota de que el historial reproducido conserva su `lastMessageAt` y
+     por eso "sort into date order". Se confirma con `npm run ads:probe` el día del número real.
    - Barrido cada minuto: clics sin registrar, respaldos pendientes, miniaturas pendientes y nombres
      de Meta vencidos.
 5. **Agente IA**: no cambia nada (no se tocó `lib/ai/runtime`). Luna limpia la ficha y el cerebro recibe
@@ -91,19 +111,38 @@ oficial, cada mensaje que llegue desde un anuncio entra completo, ordenado y sin
 - **Chat** (Bandeja y pop-up del Embudo): tarjeta compacta de 1–2 líneas (miniatura del bucket,
   "📣 Llegó por anuncio" y el nombre del anuncio), toda clicable → página del anuncio. Nunca la ficha.
   Junto al aviso de 24 h: "Responde antes de X: 72 h gratis" o "Gratis por anuncio hasta X".
-- **Sidebar "Anuncios"** (`/anuncios`, todos los miembros): anuncios que trajeron clientes, con
-  clientes y cuántos compraron (etapa Compra).
+- **Sidebar "Anuncios"** (`/anuncios`, todos los miembros): la tabla de `components/anuncios/ads-table.tsx`
+  (diseño de Pulido UI, contrato en docs/ui-anuncios-tabla.md) con datos de `listAdsForPeriod`
+  (`lib/ads/queries.ts`) y el filtro de periodo del Dashboard (por omisión, el mes en curso). Reglas de
+  conteo (las mismas que usará "Métricas de anuncios"):
+  - **Clientes** = contactos DISTINTOS con al menos un clic de ese anuncio cuya fecha (`ad_clicks.clicked_at`,
+    día local de Mazatlán) cae en el periodo. Volver por el mismo anuncio cuenta una vez.
+  - **Compraron** = de esos, los que HOY están en la etapa Compra. **Conversión** = compraron ÷ clientes
+    ("—" sin clientes). **Clics en el enlace** = "—" hasta Métricas de anuncios (Insights de Meta).
+  - **Un contacto que llegó por 2 anuncios cuenta en AMBOS** (cada anuncio lo trajo): la suma de la
+    columna Clientes puede pasar del total de contactos del periodo. Un contacto sin anuncio no aparece.
+  - Canales de prueba (`channels.is_test`) y contactos de prueba (`contacts.es_prueba`) no cuentan
+    (igual que el Dashboard).
+  - **Estado Activa/Pausada**: lo pide el worker a Meta **cada hora** (programador de BullMQ `ads-status-hourly`,
+    `GET /?ids=…&fields=effective_status` de a 50, mismo token `ads_read`; si un id no existe, ese lote va
+    uno por uno) y lo guarda en `meta_ads.effective_status` + `status_checked_at` (también la consulta
+    completa de cada 24 h). `ACTIVE` = Activa; cualquier otro estado = Pausada. Sin lectura buena en
+    90 min (Meta falló, sin token) → "—". El filtro "Activas" esconde solo las pausadas: las de "—" se
+    quedan a la vista, así una falla de Meta no vacía la tabla.
+  - Rendimiento: una consulta agregada por periodo (tope 2,000 anuncios); la tabla se virtualiza desde
+    100 filas.
 - **Página del anuncio** (`/anuncios/{id}`; una ficha sin id tiene su propia página por huella
   `f-…` o por clic `c-…`, nunca mezclada con otras): Campaña › Conjunto › Anuncio, **la miniatura** (sin
   reproductor de video: "🎬 Anuncio de video · título · duración · se ve en Meta"), texto, llamada a la
-  acción y enlace, conteos, "Ver en Meta" (Administrador de anuncios) y "Ver publicación", y la lista de
-  clientes que llegaron.
+  acción y enlace, conteos **en total** (no del periodo de la tabla; mismas reglas de conteo), "Ver en
+  Meta" (Administrador de anuncios) y "Ver publicación", y la lista de clientes que llegaron **por
+  páginas de 50** (`?pagina=`), el más reciente primero. Un anuncio con solo clics de prueba abre igual
+  (con 0 clientes): la tarjeta del chat de una prueba lleva ahí.
 - **Detalle del contacto**: anuncio por el que llegó (enlace), resumen de Luna y "También volvió por…".
 - Miniatura: `/api/ads/thumbnail/{adId}` (sesión + organización; URL firmada de 5 min). Nunca se
   muestran los links de Meta (caducan).
-- Pendiente de conectar: la tabla de `components/anuncios/ads-table.tsx` (vista previa con datos de
-  ejemplo en `/vista-previa/anuncios`, hecha en otro chat) está pensada para reemplazar la lista de
-  `/anuncios`; su contrato (`AdRow`) ya coincide con `listAds` salvo `status` y `linkClicks`.
+- La vista previa con datos de ejemplo (`/vista-previa/anuncios`) y la lista vieja de `/anuncios` se
+  quitaron al conectar la tabla (25-sep-2026).
 
 ## Ventana gratis de 72 h
 
@@ -116,7 +155,12 @@ salió (`lib/ads/free-window.ts`). Es distinta de la ventana de 24 h (texto libr
 
 Misma sección, otra pestaña (`app/(app)/anuncios/layout.tsx` → `SECTION_TABS`): conjuntos, anuncios
 activos, cuáles traen más clientes, gasto contra ventas (Insights de la API de Marketing sobre
-`meta_ads` + `ad_clicks` + etapa del contacto).
+`meta_ads` + `ad_clicks` + etapa del contacto). Llena la columna "Clics en el enlace" de la tabla.
+**Mantener las reglas de conteo de la tabla** (sección Interfaz): clientes por fecha del clic, un
+contacto con 2 anuncios cuenta en ambos (por eso NO se suman clientes entre anuncios para un total:
+el total del periodo es `count(distinct contact_id)` sobre todos los clics), compraron = etapa Compra hoy,
+sin prueba. Si se quiere "costo por cliente" por anuncio, el gasto de Insights se divide entre los
+clientes de ESE anuncio (con la doble cuenta), y el total entre los contactos distintos.
 
 ## Oportunidades anotadas (NO construidas)
 
@@ -157,6 +201,9 @@ de clientes), este es el mensaje (lo manda el dueño):
 1. `ZERNIO_ALLOWED_ACCOUNT_IDS` de production incluye el accountId del número real (sin él, los
    eventos quedan en cuarentena; nada se pierde, se liberan con el replay).
 2. `META_ADS_ACCESS_TOKEN` en el web de production y referenciado en `worker-production`.
+2b. Al entrar Anuncios a main: aplicar el candado de migraciones en production (preparado el 25-sep, SIN
+   aplicar: `~/Documents/Diluvium CRM/notas/anuncios-predeploy-produccion/aplicar.py`, ver
+   docs/migraciones.md).
 3. En WhatsApp Business (Meta), "atribución de anuncios" activada: sin eso Meta no manda el `referral`.
 4. Tras el primer clic real en un anuncio (solo lectura):
    - `select event, payload ? 'referral' en_raiz, payload->'metadata' ? 'referral' en_metadata,
