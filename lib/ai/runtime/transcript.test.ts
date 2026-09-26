@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { buildModelMessages, fitHistory, MAX_MESSAGE_CHARS, messageText, type ThreadMessage } from "./transcript";
+import { buildModelMessages, fitHistory, MAX_MESSAGE_CHARS, messageText, SENT_AFTER_HEADER, type ThreadMessage } from "./transcript";
 
 let n = 0;
 function msg(direction: "in" | "out", body: string | null, extra: Partial<ThreadMessage> = {}): ThreadMessage {
@@ -26,6 +26,26 @@ describe("buildModelMessages", () => {
       { type: "text", text: "precio?" },
     ]);
     expect(out[1].content).toBe("5,500");
+  });
+
+  it("SIEMPRE termina en el turno del cliente: lo que salió después (video por palabra clave) va como nota, antes del contexto del CRM", () => {
+    const out = buildModelMessages(
+      [
+        msg("in", "hola"),
+        msg("out", "¡Hola! ¿En qué te ayudo?"),
+        msg("in", "¿cómo se instalan y cuánto cuestan?"),
+        msg("out", "Aquí le comparto un video de la instalación 🙌", { type: "video", attachments: [{ type: "video", url: "u" }] }),
+      ],
+      new Map(),
+      { crmContext: "[CONTEXTO DEL CRM — no lo menciones literalmente]\nEtapa actual del contacto: Interesado." },
+    );
+    expect(out.map((m) => m.role)).toEqual(["user", "assistant", "user"]);
+    const last = out[2].content as { type: string; text: string }[];
+    expect(last.map((p) => p.text)).toEqual([
+      "¿cómo se instalan y cuánto cuestan?",
+      `${SENT_AFTER_HEADER} «Aquí le comparto un video de la instalación 🙌 [video]»]`,
+      "[CONTEXTO DEL CRM — no lo menciones literalmente]\nEtapa actual del contacto: Interesado.",
+    ]);
   });
 
   it("descarta los assistant iniciales (el hilo abre con el cliente)", () => {
