@@ -1,4 +1,4 @@
-// "Gasto de IA" (solo owner/admin; desde la Fase E va HASTA ARRIBA del Dashboard,
+// "Gasto de IA" (todos lo ven, registrar recargas es owner/admin; desde la Fase E va HASTA ARRIBA del Dashboard,
 // con cifras grandes: el saldo importa más que las métricas). Por proveedor
 // conectado (los cinco con llave), el gasto del mes y un saldo
 // ESTIMADO = recargas − gasto de producción desde la primera recarga, con una barra

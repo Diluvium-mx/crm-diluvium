@@ -12,7 +12,7 @@ import Link from "next/link";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { getContactDetails, setNumEntradas, updateContactQualification } from "@/lib/actions/contact-qualification";
 import { createSerialSaves } from "@/lib/autosave/serial-saves";
-import { displayPhone } from "@/lib/phone-format";
+import { formatPhone } from "@/lib/phone-format";
 import {
   STAGES,
   STAGE_LABELS,
@@ -249,7 +249,7 @@ export function ContactDetails({
 
         <div>
           <p className="font-medium break-words">{name}</p>
-          <p className="text-xs text-muted-foreground">{displayPhone(phone) || "Sin teléfono"}</p>
+          <p className="text-xs text-muted-foreground">{formatPhone(phone) || "Sin teléfono"}</p>
         </div>
 
         <div className="grid grid-cols-2 gap-2">

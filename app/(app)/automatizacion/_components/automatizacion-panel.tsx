@@ -1,7 +1,7 @@
 "use client";
 
 // Pestaña "Automatización" (Fase D): lista de workflows (habilitar, ordenar,
-// editar, probar), biblioteca de media y corridas recientes. Solo owner/admin.
+// editar, probar), biblioteca de media y corridas recientes. Todos los roles.
 import { useState } from "react";
 import { ArrowDown, ArrowUp, Pencil, Play, Plus, RotateCcw, Trash2 } from "lucide-react";
 import {

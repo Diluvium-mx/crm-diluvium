@@ -1,4 +1,4 @@
-// Panel compacto "APIs de IA" (sección Modelo, solo owner/admin): cada proveedor en
+// Panel compacto "APIs de IA" (sección Modelo, todos los roles): cada proveedor en
 // uno de tres estados — "Conectada", "Falta la llave en Railway" (con el nombre de
 // su variable) o "Falta soporte en el CRM" —, agrupados por estado para que quepa
 // en pocas líneas. Solo sabe si la variable EXISTE; nunca ve su valor. Sin lógica

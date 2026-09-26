@@ -1,4 +1,4 @@
-// Gasto de IA del Dashboard (solo owner/admin): por proveedor, el gasto del MES
+// Gasto de IA del Dashboard (todos los roles; recargas solo owner/admin): por proveedor, el gasto del MES
 // (días locales de Mazatlán) y un SALDO ESTIMADO = recargas − gasto de producción
 // desde la primera recarga. Ni OpenAI ni Anthropic dan el saldo por API
 // (docs/investigacion/gasto-ia-saldo.md): el gasto sale de ai_usage.cost_usd
