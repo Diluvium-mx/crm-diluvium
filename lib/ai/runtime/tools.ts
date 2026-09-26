@@ -6,6 +6,9 @@
 //   retrocesos sin error).
 // - `aviso_vendedor { motivo, detalle? }`: aviso interno 🤖 al vendedor; nunca llega
 //   al cliente ni pausa al agente. Desde la Fase E (25-sep-2026) sin monto ni folio.
+// - `actualizar_detalle { … }` (Agente IA parte 1, 26-sep-2026): llena el Detalle del
+//   contacto con lo que dijo el cliente (lib/ai/runtime/detalle.ts). Solo campos vacíos
+//   o que el propio agente llenó; lo del vendedor nunca se toca.
 // Sin `execute`: el modelo devuelve texto + llamadas en UNA vuelta y el runtime
 // decide qué corre. Las reglas de negocio viven en el Goal, no aquí.
 import { tool, type ToolSet } from "ai";
@@ -17,6 +20,7 @@ import type { ToolCallOutput } from "@/lib/ai/types";
 export const TOOL_FIJAR_COTIZACION = "fijar_cotizacion";
 export const TOOL_MOVER_ETAPA = "mover_etapa";
 export const TOOL_AVISO_VENDEDOR = "aviso_vendedor";
+export const TOOL_ACTUALIZAR_DETALLE = "actualizar_detalle";
 
 export const AVISO_MOTIVOS = ["cotejar_deposito", "cliente_pide_humano", "comprobante_dudoso"] as const;
 export type AvisoMotivo = (typeof AVISO_MOTIVOS)[number];
@@ -41,6 +45,65 @@ export const avisoVendedorSchema = z.object({
   detalle: z.string().max(500).optional().describe("Qué debe saber el vendedor, en una frase (no hace falta con cotejar_deposito)"),
 });
 
+// Lo que ve el MODELO (todo opcional). El runtime vuelve a validar CAMPO POR CAMPO
+// (parseDetalle): un campo raro se descarta sin tirar los demás.
+export const actualizarDetalleSchema = z.object({
+  tiene_inundaciones: z.enum(["si", "no", "no_sabe"]).optional().describe("Si el cliente dijo que se le mete el agua: si, no o no_sabe"),
+  nivel_agua_cm: z.number().optional().describe("Hasta dónde llega el agua, en centímetros (0.5 m = 50)"),
+  nivel_agua_texto: z.string().optional().describe("Cómo lo describió el cliente, corto (p. ej. \"le llega a la rodilla\")"),
+  num_entradas: z.number().optional().describe("Cuántas entradas quiere proteger"),
+  anchos_cm: z.array(z.number()).optional().describe("Ancho de cada entrada en centímetros, en orden (uno por entrada)"),
+  porcentaje_convencimiento: z.number().optional().describe("Qué tan convencido está de comprar: 0 a 100, de 10 en 10"),
+  comentario: z.string().optional().describe("Un dato útil NUEVO que dio el cliente, en una frase (p. ej. \"tiene cochera con desnivel\")"),
+});
+
+// "DESPUÉS de tu respuesta…": medido con Sonnet 5 real (26-sep-2026), sin esa frase 2 de
+// 19 respuestas salieron SOLO con acciones (el cliente habría recibido el texto de
+// respaldo en vez de su respuesta); con ella, 0 (detalle en docs/agente-ia.md).
+export const ACTUALIZAR_DETALLE_DESCRIPTION =
+  "Guarda en el Detalle del contacto (el cliente no lo ve) lo que el cliente dijo en el chat. Siempre va DESPUÉS de tu respuesta escrita al cliente, nunca en su lugar. Llena solo con lo que él dijo, sin adivinar ni suponer, y manda solo lo nuevo o lo que cambió. Actualiza el % de convencimiento conforme avance la conversación. El comentario no repite los ya guardados.";
+
+export type DetalleIa = {
+  tieneInundaciones?: "si" | "no" | "no_sabe";
+  nivelAguaCm?: number;
+  nivelAguaTexto?: string;
+  numEntradas?: number;
+  anchosCm?: number[];
+  porcentajeConvencimiento?: number;
+  comentario?: string;
+};
+
+// Validación CAMPO POR CAMPO con los mismos límites que el Detalle en la UI
+// (lib/actions/contact-qualification.ts): enteros en cm, 0–1000; entradas 1–50;
+// % de 10 en 10. Redondea lo que el modelo mandó con decimales. null = nada válido.
+export function parseDetalle(input: unknown): DetalleIa | null {
+  const raw = input && typeof input === "object" ? (input as Record<string, unknown>) : {};
+  const num = (v: unknown): number | null => (typeof v === "number" && Number.isFinite(v) ? v : typeof v === "string" && v.trim() !== "" && Number.isFinite(Number(v.replace(/[%\s]/g, ""))) ? Number(v.replace(/[%\s]/g, "")) : null);
+  const text = (v: unknown, max: number): string | null => {
+    if (typeof v !== "string") return null;
+    const t = v.replace(/\s+/g, " ").trim();
+    return t ? t.slice(0, max) : null;
+  };
+  const out: DetalleIa = {};
+  if (raw.tiene_inundaciones === "si" || raw.tiene_inundaciones === "no" || raw.tiene_inundaciones === "no_sabe") out.tieneInundaciones = raw.tiene_inundaciones;
+  const nivel = num(raw.nivel_agua_cm);
+  if (nivel !== null && nivel >= 0 && nivel <= 1000) out.nivelAguaCm = Math.round(nivel);
+  const nivelTexto = text(raw.nivel_agua_texto, 200);
+  if (nivelTexto) out.nivelAguaTexto = nivelTexto;
+  const entradas = num(raw.num_entradas);
+  if (entradas !== null && Number.isInteger(entradas) && entradas >= 1 && entradas <= 50) out.numEntradas = entradas;
+  if (Array.isArray(raw.anchos_cm)) {
+    const anchos = raw.anchos_cm.map(num).map((a) => (a === null ? null : Math.round(a)));
+    // Un ancho inválido invalida la lista (se perdería a qué entrada va cada uno).
+    if (anchos.length > 0 && anchos.length <= 50 && anchos.every((a): a is number => a !== null && a >= 1 && a <= 1000)) out.anchosCm = anchos;
+  }
+  const pct = num(raw.porcentaje_convencimiento);
+  if (pct !== null && pct >= 0 && pct <= 100) out.porcentajeConvencimiento = Math.round(pct / 10) * 10;
+  const comentario = text(raw.comentario, 500);
+  if (comentario) out.comentario = comentario;
+  return Object.keys(out).length ? out : null;
+}
+
 export const FIJAR_COTIZACION_DESCRIPTION =
   "Guarda el total de la COMPRA cotizada al cliente en pesos (el total que le dijiste: compuerta o compuertas más lo que incluya). No es para accesorios sueltos ni precios de referencia. Llámala cada vez que le des un total o el total cambie.";
 export const MOVER_ETAPA_DESCRIPTION =
@@ -62,6 +125,8 @@ export function buildAgentTools(rows: readonly { id: string; slug: string; name:
   tools[TOOL_FIJAR_COTIZACION] = tool({ description: FIJAR_COTIZACION_DESCRIPTION, inputSchema: fijarCotizacionSchema });
   tools[TOOL_MOVER_ETAPA] = tool({ description: MOVER_ETAPA_DESCRIPTION, inputSchema: moverEtapaSchema });
   tools[TOOL_AVISO_VENDEDOR] = tool({ description: AVISO_VENDEDOR_DESCRIPTION, inputSchema: avisoVendedorSchema });
+  // Al final (orden estable): la caché del prompt de las herramientas de arriba no cambia.
+  tools[TOOL_ACTUALIZAR_DETALLE] = tool({ description: ACTUALIZAR_DETALLE_DESCRIPTION, inputSchema: actualizarDetalleSchema });
   return { tools, byName };
 }
 
@@ -69,7 +134,8 @@ export type ValidToolCall =
   | { kind: "workflow"; workflow: AgentToolWorkflow }
   | { kind: "cotizacion"; monto: number }
   | { kind: "etapa"; etapa: (typeof STAGES)[number] }
-  | { kind: "aviso"; aviso: z.infer<typeof avisoVendedorSchema> };
+  | { kind: "aviso"; aviso: z.infer<typeof avisoVendedorSchema> }
+  | { kind: "detalle"; detalle: DetalleIa };
 
 // Valida lo que pidió el modelo contra las herramientas ofrecidas: una
 // desconocida (workflow deshabilitado entre la llamada y ahora, o nombre
@@ -95,6 +161,14 @@ export function validateToolCalls(calls: readonly ToolCallOutput[], tools: Agent
       const p = avisoVendedorSchema.safeParse(c.input);
       if (p.success) valid.push({ kind: "aviso", aviso: p.data });
       else ignored.push(`${c.toolName}: argumentos inválidos`);
+      continue;
+    }
+    if (c.toolName === TOOL_ACTUALIZAR_DETALLE) {
+      // Sin aviso al vendedor si no trae nada válido: el Detalle es de apoyo y un dato
+      // raro del modelo no debe molestar a nadie (queda en el log del worker).
+      const d = parseDetalle(c.input);
+      if (d) valid.push({ kind: "detalle", detalle: d });
+      else ignored.push(`${c.toolName}: sin datos válidos`);
       continue;
     }
     const wf = tools.byName.get(c.toolName);

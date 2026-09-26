@@ -17,8 +17,9 @@ import {
 import { organization, user } from "./auth";
 import { conversations, messages } from "./messaging";
 
-// Etapa del pipeline del agente que hizo la llamada al modelo.
-export const aiUsageStageEnum = pgEnum("ai_usage_stage", ["filtro", "cerebro"]);
+// Etapa del pipeline del agente que hizo la llamada al modelo. "transcripcion" (0037):
+// nota de voz del cliente → texto (lib/ai/transcription); su costo va por minuto.
+export const aiUsageStageEnum = pgEnum("ai_usage_stage", ["filtro", "cerebro", "transcripcion"]);
 
 // Uso y costo POR LLAMADA al modelo (PASO 4). Alimenta el panel de gasto (Fase E).
 // cost_usd se calcula al guardar con el precio efectivo de ese momento
@@ -80,10 +81,12 @@ export const aiModelPrices = pgTable(
   (t) => [primaryKey({ columns: [t.organizationId, t.modelId] })],
 );
 
-// PLANES de envío del agente (desde el 23-sep ya no hay modo "borrador"): una
-// respuesta de varias burbujas se guarda aquí como "enviando" antes de la 1ª para
-// que, si el worker se reinicia a la mitad, el barrido la concilie con el hilo.
-// "pendiente" y "descartado" quedan solo como historia de la etapa de borradores.
+// PLANES de envío del agente (desde el 23-sep ya no hay modo "borrador"): cada
+// respuesta se guarda aquí como "enviando" antes del 1er mensaje para que, si el
+// worker se reinicia a la mitad, el barrido la concilie con el hilo. Desde el 26-sep
+// (Agente IA parte 1) "pendiente" = respuesta GUARDADA cuyo envío falló: espera a que
+// un vendedor elija "Reintentar" (se reenvía el MISMO texto, sin volver a llamar al
+// modelo) o "Apagar" ("descartado"). Ver lib/ai/runtime/saved-reply.ts.
 export const aiDraftStatusEnum = pgEnum("ai_draft_status", ["pendiente", "enviando", "enviado", "descartado", "obsoleto"]);
 
 export const aiAgentDrafts = pgTable(
@@ -98,6 +101,9 @@ export const aiAgentDrafts = pgTable(
       .references(() => conversations.id, { onDelete: "cascade" }),
     // Burbujas propuestas (máx ai_config.max_bubbles), en orden de envío.
     bubbles: jsonb("bubbles").$type<string[]>().notNull(),
+    // Media que el agente pidió para DESPUÉS del texto (workflows `wf_<slug>`): si el
+    // envío falla, "Reintentar" la corre tras reenviar el texto guardado (0037).
+    runs: jsonb("runs").$type<{ slug: string; workflowId: string }[]>().notNull().default([]),
     // Último entrante que leyó el modelo al generar el borrador.
     triggerMessageId: text("trigger_message_id").references(() => messages.id, { onDelete: "set null" }),
     // Por qué NO se envió solo (guardia de salida del modo auto: monto o enlace

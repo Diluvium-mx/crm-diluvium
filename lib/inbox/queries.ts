@@ -21,6 +21,7 @@ import {
   quotedIdFromMetadata,
 } from "./format";
 import { adCardFromRaw, adCardsForMessages, firstReplyAfter } from "@/lib/ads/queries";
+import { transcripcionMeta } from "@/lib/ai/transcription/rules";
 import type {
   ConversationDetail,
   ConversationListItem,
@@ -158,6 +159,15 @@ function listFilter(organizationId: string, filter: InboxFilter, search: string 
  * lista (tiempo real: la UI actualiza solo las afectadas). Las que ya no pasan
  * el filtro no vuelven.
  */
+// "Transcripción" debajo de una nota de voz (Agente IA parte 1, 26-sep-2026).
+function transcriptionView(text: string | null, metadata: unknown): MessageView["transcription"] {
+  if (text?.trim()) return { state: "lista", text };
+  const meta = transcripcionMeta(metadata);
+  if (!meta) return null;
+  if (meta.estado === "pendiente") return { state: "pendiente" };
+  return { state: "sin", reason: meta.motivo ?? "no se pudo transcribir" };
+}
+
 export async function listConversationItemsByIdsForOrg(
   organizationId: string,
   conversationIds: string[],
@@ -360,6 +370,7 @@ export async function listMessagesForOrg(
           return q ? { direction: q.direction, preview: messagePreview(q.type as MessageKind, q.body) } : null;
         })(),
         importedFromPhone: m.importedAt !== null,
+        transcription: transcriptionView(m.transcripcion, m.metadata),
       }),
     ),
   };

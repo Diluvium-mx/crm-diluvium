@@ -40,7 +40,8 @@ import { redis } from "@/lib/redis";
 import { startScheduledWorker } from "./scheduled";
 import { startWorkflowWorker } from "./workflows";
 import { onInboundKeyword } from "@/lib/workflows/triggers";
-import { agentIngestHooks } from "@/lib/ai/runtime/hooks";
+import { agentIngestHooks, wakeAgentAfterTranscription } from "@/lib/ai/runtime/hooks";
+import { closeInterruptedTranscriptions, staleTranscriptionIds, transcribeMessageAudio } from "@/lib/ai/transcription/transcribe";
 import { startAgentRuntime } from "@/lib/ai/runtime/worker";
 import { adsIngestHooks, startAdsWorker } from "@/lib/ads/worker";
 
@@ -125,10 +126,20 @@ const mediaWorker = storage
         // sin afectar el resultado del job (generateMessageThumbnails no lanza).
         const thumbs = await generateMessageThumbnails(storage, job.data.messageId);
         if (thumbs) console.info(`[media] ${job.data.messageId}: ${thumbs} miniatura(s)`);
+        // Nota de voz del cliente (Agente IA parte 1): se transcribe en cuanto está en el
+        // bucket y se despierta al agente que la esperaba. Nunca lanza.
+        await transcribeAndWake(storage, job.data.messageId);
       },
       { connection: { ...redisConnection(), maxRetriesPerRequest: null }, concurrency: 2, autorun: false },
     )
   : null;
+async function transcribeAndWake(bucket: ObjectStorage, messageId: string): Promise<void> {
+  const t = await transcribeMessageAudio(bucket, messageId);
+  if (t.kind !== "terminada") return;
+  if (t.estado !== "lista") console.info(`[transcripcion] ${messageId}: ${t.estado}${t.motivo ? ` (${t.motivo})` : ""}`);
+  await wakeAgentAfterTranscription({ organizationId: t.organizationId, conversationId: t.conversationId });
+}
+
 mediaWorker?.on("failed", (job, error) => {
   console.error(`[media] falló ${job?.data.messageId} (intento ${job?.attemptsMade}): ${error.message}`);
 });
@@ -274,6 +285,12 @@ async function sweep() {
     )
     .limit(10);
   for (const { id } of pendingThumbs) await generateMessageThumbnails(storage, id);
+
+  // Transcripciones que quedaron a medias (worker reiniciado): solo audios nuevos.
+  for (const id of await staleTranscriptionIds(new Date())) await transcribeAndWake(storage, id);
+  // Las que ya habían llamado a OpenAI y se cortaron: "fallida", sin volver a pagar.
+  const cortadas = await closeInterruptedTranscriptions(new Date());
+  if (cortadas) console.warn(`[transcripcion] barrido: ${cortadas} transcripción(es) interrumpida(s) cerrada(s) sin volver a llamar`);
 }
 
 // Sin barridos solapados: si uno tarda más de un minuto, el siguiente espera.

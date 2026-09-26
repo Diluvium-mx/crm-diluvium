@@ -138,6 +138,8 @@ export async function updateContactQualification(
   requirePermission(membership.role, "contact", "update");
   const parsedContactId = contactIdSchema.parse(contactId);
   const parsedPatch = qualificationPatchSchema.parse(patch);
+  // Un vendedor: el campo queda fuera del Agente IA para siempre (origen "vendedor",
+  // parte 1, 26-sep-2026) y el aviso en vivo sale a su nombre.
   return updateContactQualificationData(
     db,
     membership.organizationId,

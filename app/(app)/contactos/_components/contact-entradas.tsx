@@ -6,6 +6,7 @@
 import { useEffect, useRef, useState } from "react";
 import { updateEntrada } from "@/lib/actions/contact-qualification";
 import type { SerialSaves } from "@/lib/autosave/serial-saves";
+import { IaMark } from "./ia-mark";
 
 export type Entrada = {
   /** Cambia si la fila se borra y se vuelve a crear: la fila se remonta limpia. */
@@ -33,12 +34,15 @@ const field =
 function EntradaRow({
   contactId,
   entrada,
+  iaAncho,
   onSaved,
   run,
   saves,
 }: {
   contactId: string;
   entrada: Entrada;
+  /** El ancho lo llenó el Agente IA (marca "IA" hasta que un vendedor lo edite). */
+  iaAncho: boolean;
   onSaved: (next: Entrada) => void;
   run: (action: () => Promise<unknown>, errorMessage?: string) => Promise<boolean>;
   saves: SerialSaves;
@@ -55,6 +59,7 @@ function EntradaRow({
   // releer las entradas. La fila va con key por id: si se borra y se vuelve a
   // crear, se remonta limpia (sin anchos viejos en pantalla).
   const [pending, setPending] = useState<Partial<Values>>({});
+  const [editedAncho, setEditedAncho] = useState(false);
   const latest = useRef(entrada);
   useEffect(() => {
     latest.current = entrada;
@@ -103,7 +108,10 @@ function EntradaRow({
       void run(() => Promise.reject(new Error("ancho")), "El ancho debe ser un entero de 1 a 1000 cm.");
       return;
     }
-    if (value !== requested("anchoCm")) save("anchoCm", value);
+    if (value !== requested("anchoCm")) {
+      setEditedAncho(true);
+      save("anchoCm", value);
+    }
   }
 
   const suggestion = entrada.tamanoSugerido ?? (entrada.anchoCm === null ? "—" : "Sin sugerencia");
@@ -111,7 +119,10 @@ function EntradaRow({
   return (
     <li className="rounded-md border px-2 py-1.5">
       <div className="flex items-center gap-2">
-        <span className="w-14 shrink-0 text-xs text-muted-foreground">Entrada {entrada.posicion}</span>
+        <span className="w-14 shrink-0 text-xs text-muted-foreground">
+          Entrada {entrada.posicion}
+          {iaAncho && !editedAncho && <IaMark />}
+        </span>
         <input
           aria-label={`Ancho de la entrada ${entrada.posicion} (cm)`}
           inputMode="numeric"
@@ -169,12 +180,14 @@ function EntradaRow({
 export function ContactEntradas({
   contactId,
   entradas,
+  iaFields = [],
   onSaved,
   run,
   saves,
 }: {
   contactId: string;
   entradas: Entrada[];
+  iaFields?: readonly string[];
   onSaved: (next: Entrada) => void;
   run: (action: () => Promise<unknown>, errorMessage?: string) => Promise<boolean>;
   saves: SerialSaves;
@@ -183,7 +196,15 @@ export function ContactEntradas({
   return (
     <ul className="space-y-1.5">
       {entradas.map((e) => (
-        <EntradaRow key={e.id} contactId={contactId} entrada={e} onSaved={onSaved} run={run} saves={saves} />
+        <EntradaRow
+          key={e.id}
+          contactId={contactId}
+          entrada={e}
+          iaAncho={iaFields.includes(`entrada_${e.posicion}_ancho`)}
+          onSaved={onSaved}
+          run={run}
+          saves={saves}
+        />
       ))}
     </ul>
   );

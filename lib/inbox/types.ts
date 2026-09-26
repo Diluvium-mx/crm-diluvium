@@ -122,6 +122,12 @@ export type MessageView = {
   quoted: { direction: "in" | "out"; preview: string } | null;
   /** Copiado del historial del celular (coexistencia): marca "Importado del celular". */
   importedFromPhone: boolean;
+  /**
+   * Nota de voz del cliente (Agente IA parte 1): "lista" con el texto, "pendiente"
+   * mientras se transcribe, "sin" con el motivo (dura más de 10 min, falló…). null =
+   * no aplica (no es audio del cliente o es historial viejo sin intento).
+   */
+  transcription: { state: "lista"; text: string } | { state: "pendiente" } | { state: "sin"; reason: string } | null;
 };
 
 /** Página de mensajes en orden cronológico (viejo → nuevo); `hasMore` = hay más viejos. */

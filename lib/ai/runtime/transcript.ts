@@ -39,14 +39,26 @@ export type ThreadMessage = {
   body: string | null;
   templateName: string | null;
   attachments: MessageAttachment[];
+  // Texto de la nota de voz (parte 1, 26-sep-2026; lib/ai/transcription).
+  transcripcion?: string | null;
 };
+
+// Parte 1 (26-sep-2026): el agente lee la nota de voz como texto; así también el
+// autollenado del Detalle toma las medidas dictadas. Sin texto (falló, tardó más de
+// 60 s, dura más de 10 min o es historia vieja) va la nota sin transcribir.
+export const VOICE_NOTE_PREFIX = "[nota de voz]";
+export const VOICE_NOTE_UNTRANSCRIBED = "[nota de voz sin transcribir]";
+function voiceNote(m: ThreadMessage): string {
+  const t = m.transcripcion?.trim();
+  return t ? `${VOICE_NOTE_PREFIX} ${neutralizeCrmHeader(clip(t))}` : VOICE_NOTE_UNTRANSCRIBED;
+}
 
 function attachmentNote(a: MessageAttachment): string {
   switch (a.type) {
     case "image":
       return "[imagen]";
     case "audio":
-      return "[audio]";
+      return VOICE_NOTE_UNTRANSCRIBED;
     case "video":
       return "[video]";
     case "sticker":
@@ -63,7 +75,7 @@ export function messageText(m: ThreadMessage): string {
   const parts: string[] = [];
   if (m.body?.trim()) parts.push(clip(m.body.trim()));
   if (!m.body?.trim() && m.templateName) parts.push(`[plantilla: ${m.templateName}]`);
-  for (const a of m.attachments) parts.push(attachmentNote(a));
+  for (const a of m.attachments) parts.push(a.type === "audio" ? voiceNote(m) : attachmentNote(a));
   if (parts.length === 0) parts.push(`[mensaje ${m.type}]`);
   return parts.join(" ");
 }
@@ -133,7 +145,7 @@ export function buildModelMessages(
         } else if (a.storageKey && allowedPdf.has(a.storageKey)) {
           parts.push({ type: "file", data: new URL(imageUrls.get(a.storageKey)!), mediaType: "application/pdf", filename: a.fileName });
         } else {
-          text.push(attachmentNote(a));
+          text.push(a.type === "audio" ? voiceNote(m) : attachmentNote(a));
         }
       }
       if (text.length === 0 && parts.length === 0) text.push(`[mensaje ${m.type}]`);

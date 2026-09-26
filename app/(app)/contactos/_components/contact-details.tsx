@@ -32,6 +32,7 @@ import { ContactEntradas, type Entrada } from "./contact-entradas";
 import { ConvencimientoPicker } from "./convencimiento-picker";
 import { useSaveStatus } from "./use-save-status";
 import { AgentContactSwitch } from "./agent-contact-switch";
+import { IaMark } from "./ia-mark";
 
 type Details = Awaited<ReturnType<typeof getContactDetails>>;
 type Inundaciones = NonNullable<Details["tieneInundaciones"]>;
@@ -72,14 +73,26 @@ const label = "text-xs text-muted-foreground";
 
 const money = new Intl.NumberFormat("es-MX", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
-function Field({ title, children }: { title: string; children: React.ReactNode }) {
+function Field({ title, children, ia = false }: { title: string; children: React.ReactNode; ia?: boolean }) {
   return (
     <div className="space-y-1">
-      <p className={label}>{title}</p>
+      <p className={label}>
+        {title}
+        {ia && <IaMark />}
+      </p>
       {children}
     </div>
   );
 }
+
+// Campo de la calificación → su llave de origen (lib/contacts/qualification.ts).
+const IA_KEY: Record<QualField, string> = {
+  tieneInundaciones: "tiene_inundaciones",
+  nivelAguaCm: "nivel_agua_cm",
+  nivelAguaTexto: "nivel_agua_texto",
+  montoCotizacion: "monto_cotizacion",
+  porcentajeConvencimiento: "porcentaje_convencimiento",
+};
 
 /**
  * Texto de un input numérico → número o null. undefined = inválido. Solo el
@@ -313,6 +326,11 @@ export function ContactDetails({
         next.entradas = fresh.entradas;
       }
       if (!busy.has("comentarios")) next.comentarios = fresh.comentarios;
+      // Marca "IA" (parte 1): la del servidor, salvo en lo que el vendedor está guardando
+      // ahí mismo (ahí manda lo local: al editarlo, el campo ya es suyo).
+      const busyKey = (k: string) =>
+        QUAL_FIELDS.some((f) => busy.has(f) && IA_KEY[f] === k) || (busy.has("entradas") && (k === "num_entradas" || k.startsWith("entrada_")));
+      next.iaFields = [...fresh.iaFields.filter((k) => !busyKey(k)), ...d.iaFields.filter(busyKey)];
       return next;
     });
     const free = (lane: string, draft: string) => !busy.has(lane) && !typing.current.has(draft);
@@ -326,7 +344,8 @@ export function ContactDetails({
   // último guardado falla, el campo (y su borrador, vía `show`) vuelve a lo
   // último que el servidor guardó, no a lo que había cuando se pidió.
   function saveField<K extends QualField>(field: K, value: Qualification[K], show?: (saved: Qualification[K]) => void) {
-    setDetails((d) => (d ? { ...d, [field]: value } : d));
+    // Lo editó un vendedor: deja de ser del Agente IA (sin marca "IA").
+    setDetails((d) => (d ? { ...d, [field]: value, iaFields: d.iaFields.filter((k) => k !== IA_KEY[field]) } : d));
     void run(async () => {
       const patch = { [field]: value } as Pick<Qualification, K>;
       const outcome = await saves.save(field, () => updateContactQualification(contactId, patch));
@@ -423,7 +442,7 @@ export function ContactDetails({
           <p className="text-xs text-muted-foreground">Cargando…</p>
         ) : (
           <>
-            <Field title="¿Tiene problemas de inundaciones?">
+            <Field title="¿Tiene problemas de inundaciones?" ia={details.iaFields.includes("tiene_inundaciones")}>
               <div role="radiogroup" aria-label="¿Tiene problemas de inundaciones?" className="flex gap-1">
                 {INUNDACIONES.map((o) => {
                   const selected = details.tieneInundaciones === o.value;
@@ -445,7 +464,7 @@ export function ContactDetails({
               </div>
             </Field>
 
-            <Field title="¿Cuánta agua entra?">
+            <Field title="¿Cuánta agua entra?" ia={details.iaFields.includes("nivel_agua_cm") || details.iaFields.includes("nivel_agua_texto")}>
               <div className="flex gap-2">
                 <div className="relative w-24 shrink-0">
                   <input
@@ -490,7 +509,7 @@ export function ContactDetails({
               </div>
             </Field>
 
-            <Field title="¿Cuántas entradas?">
+            <Field title="¿Cuántas entradas?" ia={details.iaFields.includes("num_entradas")}>
               <input
                 aria-label="Número de entradas"
                 inputMode="numeric"
@@ -519,7 +538,7 @@ export function ContactDetails({
                       return;
                     }
                   }
-                  setDetails((d) => (d ? { ...d, numEntradas: value } : d));
+                  setDetails((d) => (d ? { ...d, numEntradas: value, iaFields: d.iaFields.filter((k) => k !== "num_entradas") } : d));
                   void run(() => syncEntradas(() => setNumEntradas(contactId, value)));
                 }}
                 className={`${input} w-24`}
@@ -531,6 +550,7 @@ export function ContactDetails({
                 <ContactEntradas
                   contactId={contactId}
                   entradas={details.entradas as Entrada[]}
+                  iaFields={details.iaFields}
                   run={run}
                   saves={saves}
                   onSaved={(next) =>
@@ -540,7 +560,7 @@ export function ContactDetails({
               </Field>
             )}
 
-            <Field title="Monto de cotización (MXN)">
+            <Field title="Monto de cotización (MXN)" ia={details.iaFields.includes("monto_cotizacion")}>
               <div className="relative w-40">
                 <span className="pointer-events-none absolute left-2 top-1/2 -translate-y-1/2 text-xs text-muted-foreground">$</span>
                 <input
@@ -567,7 +587,7 @@ export function ContactDetails({
               </div>
             </Field>
 
-            <Field title="% de convencimiento">
+            <Field title="% de convencimiento" ia={details.iaFields.includes("porcentaje_convencimiento")}>
               <ConvencimientoPicker
                 value={details.porcentajeConvencimiento}
                 onChange={(next) => saveField("porcentajeConvencimiento", next)}
