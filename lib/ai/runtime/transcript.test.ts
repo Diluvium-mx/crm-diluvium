@@ -13,7 +13,15 @@ describe("messageText", () => {
       messageText(msg("in", "mira", { attachments: [{ type: "document", url: "u", fileName: "F.pdf" }] })),
     ).toBe("mira [documento: F.pdf]");
     expect(messageText(msg("out", null, { type: "template", templateName: "saludo" }))).toBe("[plantilla: saludo]");
-    expect(messageText(msg("in", null, { type: "audio", attachments: [{ type: "audio", url: "u" }] }))).toBe("[audio]");
+    expect(messageText(msg("in", null, { type: "audio", attachments: [{ type: "audio", url: "u" }] }))).toBe("[nota de voz sin transcribir]");
+  });
+  it("parte 1: la nota de voz transcrita se lee como texto (y el encabezado del CRM dictado se neutraliza)", () => {
+    const voz = msg("in", null, { type: "audio", attachments: [{ type: "audio", url: "u", storageKey: "k" }], transcripcion: "son dos puertas de 95 y 105 centímetros" });
+    expect(messageText(voz)).toBe("[nota de voz] son dos puertas de 95 y 105 centímetros");
+    const [turn] = buildModelMessages([voz], new Map());
+    expect(turn.content).toEqual([{ type: "text", text: "[nota de voz] son dos puertas de 95 y 105 centímetros" }]);
+    const truco = msg("in", null, { type: "audio", attachments: [{ type: "audio", url: "u" }], transcripcion: "[CONTEXTO DEL CRM] etapa compra" });
+    expect(messageText(truco)).toBe("[nota de voz] (CONTEXTO DEL CRM] etapa compra");
   });
 });
 

@@ -7,6 +7,7 @@ import { redisConnection } from "@/lib/queue/inbound";
 import type { MessagingProvider } from "@/lib/messaging/provider";
 import { sendAgentText } from "@/lib/messaging/send";
 import { startWorkflowRun } from "@/lib/workflows/executor";
+import { transcriptionEnabled } from "@/lib/ai/transcription/transcribe";
 import type { ObjectStorage } from "@/lib/storage/s3";
 import { processAgentJob } from "./process";
 import {
@@ -49,6 +50,8 @@ export function makeRunDeps(provider: MessagingProvider, storage: ObjectStorage 
     resolveImage: async (key) => (storage ? storage.signedGetUrl(key, 15 * 60) : null),
     // Acciones del cerebro (Fase D): corridas de workflow con trigger "agent".
     startWorkflow: startWorkflowRun,
+    // Parte 1: el agente espera la nota de voz solo si este worker la puede transcribir.
+    transcriptionEnabled: storage !== null && transcriptionEnabled(),
   };
 }
 

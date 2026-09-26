@@ -1512,6 +1512,66 @@ describe.skipIf(!TEST_DATABASE_URL)("runtime del Agente IA (Postgres real)", () 
     expect(lastTurn).toContain("«Cochera con desnivel»");
   });
 
+  // ── Parte 1 (26-sep-2026), B: notas de voz ──
+  async function voiceNote(at: Date, transcripcion: string | null = null) {
+    seq++;
+    const id = `m_${seq}`;
+    await db.insert(s.messages).values({
+      id,
+      organizationId: ORG,
+      conversationId: CONV,
+      direction: "in",
+      source: "contact",
+      type: "audio",
+      attachments: [{ type: "audio", url: "/api/media/x", mimeType: "audio/ogg", storageKey: `org/${id}.ogg` }],
+      providerMessageId: `wamid.rt.${seq}`,
+      status: "received",
+      sentAt: at,
+      createdAt: at,
+      transcripcion,
+    });
+    return id;
+  }
+
+  it("B · nota de voz recién llegada sin transcribir: el agente espera (hasta 60 s desde que llegó); ya transcrita, el cerebro la lee y el Detalle toma lo dictado", async () => {
+    const id = await voiceNote(ago(16_000));
+    const waiting = makeDeps();
+    waiting.deps.transcriptionEnabled = true;
+    const r = await run.runAgent(JOB, waiting.deps);
+    expect(r).toMatchObject({ kind: "reschedule", reason: "esperando_transcripcion" });
+    if (r.kind === "reschedule") {
+      expect(r.delayMs).toBeGreaterThan(40_000);
+      expect(r.delayMs).toBeLessThanOrEqual(44_000);
+    }
+    expect(waiting.calls).toHaveLength(0);
+    // Llega la transcripción (la escribe el worker).
+    await db.update(s.messages).set({ transcripcion: "son dos puertas de 95 y 105 centímetros" }).where(eq(s.messages.id, id));
+    const done = makeDeps({ brain: ["Perfecto, te cotizo dos compuertas."], toolCalls: [{ toolName: "actualizar_detalle", input: { num_entradas: 2, anchos_cm: [95, 105] } }] });
+    done.deps.transcriptionEnabled = true;
+    expect(await run.runAgent(JOB, done.deps)).toEqual({ kind: "sent", bubbles: 1 });
+    expect(JSON.stringify(done.calls[0].input.messages.at(-1)!.content)).toContain("[nota de voz] son dos puertas de 95 y 105 centímetros");
+    const entradas = await db.select().from(s.contactEntradas).where(eq(s.contactEntradas.contactId, CONTACT));
+    expect(entradas.map((e) => e.anchoCm).sort()).toEqual([105, 95]);
+  });
+
+  it("B · pasados 60 s sin transcripción (falló o tardó): contesta con \"[nota de voz sin transcribir]\" y no se traba", async () => {
+    await voiceNote(ago(61_000));
+    const { deps, calls } = makeDeps({ brain: ["No alcancé a escuchar tu audio, ¿me lo escribes?"] });
+    deps.transcriptionEnabled = true;
+    expect(await run.runAgent(JOB, deps)).toEqual({ kind: "sent", bubbles: 1 });
+    expect(JSON.stringify(calls[0].input.messages.at(-1)!.content)).toContain("[nota de voz sin transcribir]");
+  });
+
+  it("B · una transcripción FALLIDA no se espera; y un worker sin transcripción (sin bucket o sin llave) nunca espera", async () => {
+    const id = await voiceNote(ago(16_000));
+    await db.update(s.messages).set({ metadata: { transcripcion: { estado: "fallida", at: new Date().toISOString() } } }).where(eq(s.messages.id, id));
+    const a = makeDeps();
+    a.deps.transcriptionEnabled = true;
+    expect((await run.runAgent(JOB, a.deps)).kind).toBe("sent");
+    await voiceNote(new Date(Date.now() + 1_000));
+    expect((await run.runAgent(JOB, makeDeps().deps)).kind).toBe("sent"); // transcriptionEnabled sin poner
+  });
+
   // ── Parte 1 (26-sep-2026), C: un error de ENVÍO nunca vuelve a llamar al modelo ──
   // Un error simulado de cada tipo. En todos: la respuesta se genera UNA vez, queda
   // guardada, la tarjeta es la misma "Reintentar / Apagar" y "Reintentar" manda el MISMO
