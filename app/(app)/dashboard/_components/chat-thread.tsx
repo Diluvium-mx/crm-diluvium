@@ -85,6 +85,20 @@ function Attachment({ attachment, onOpen }: { attachment: AttachmentView; onOpen
   }
 }
 
+// "Transcripción" debajo de una nota de voz del cliente (Agente IA parte 1): el
+// texto que lee el agente; "Transcribiendo…" mientras tanto (el SSE lo rellena).
+function TranscriptionNote({ transcription, out }: { transcription: NonNullable<MessageView["transcription"]>; out: boolean }) {
+  const muted = out ? "text-brand-white/70" : "text-muted-foreground";
+  if (transcription.state === "pendiente") return <p className={`mb-1 text-[11px] italic ${muted}`}>Transcribiendo…</p>;
+  if (transcription.state === "sin") return <p className={`mb-1 text-[11px] italic ${muted}`}>Sin transcripción: {transcription.reason}.</p>;
+  return (
+    <div className={`mb-1 rounded-md border-l-4 px-2 py-1 text-xs ${out ? "border-brand-white/60 bg-brand-white/10" : "border-brand-navy/60 bg-muted"}`}>
+      <span className="font-medium">Transcripción</span>
+      <p className="whitespace-pre-wrap break-words opacity-90">{transcription.text}</p>
+    </div>
+  );
+}
+
 function Bubble({
   row,
   onRetry,
@@ -175,6 +189,7 @@ function Bubble({
             ))}
           </div>
         )}
+        {view?.transcription && <TranscriptionNote transcription={view.transcription} out={out} />}
         {row.body && <p className="whitespace-pre-wrap break-words">{row.body}</p>}
         <div className={`mt-1 flex items-center justify-end gap-1 text-[10px] ${out ? "text-brand-white/70" : "text-muted-foreground"}`}>
           {view?.importedFromPhone && <span title="Copiado del historial del celular al conectar el número">Importado del celular ·</span>}

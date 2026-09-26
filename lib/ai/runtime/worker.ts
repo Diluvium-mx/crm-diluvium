@@ -5,8 +5,9 @@ import { DelayedError, Worker } from "bullmq";
 import { callModel } from "@/lib/ai";
 import { redisConnection } from "@/lib/queue/inbound";
 import type { MessagingProvider } from "@/lib/messaging/provider";
-import { sendTextMessage } from "@/lib/messaging/send";
+import { sendAgentText } from "@/lib/messaging/send";
 import { startWorkflowRun } from "@/lib/workflows/executor";
+import { transcriptionEnabled } from "@/lib/ai/transcription/transcribe";
 import type { ObjectStorage } from "@/lib/storage/s3";
 import { processAgentJob } from "./process";
 import {
@@ -22,7 +23,7 @@ import {
 import { runAgent, type RunDeps, type RunResult } from "./run";
 import { reactivateDuePauses } from "./pause";
 import { debounceDelayFor } from "./schedule";
-import { findOrphanConversations, noticeFailedAgentSends, reconcileStuckDrafts } from "./sweep";
+import { findLostRetries, findOrphanConversations, noticeFailedAgentSends, reconcileStuckDrafts } from "./sweep";
 
 const SWEEP_EVERY_MS = 60_000;
 
@@ -42,12 +43,15 @@ export function makeRunDeps(provider: MessagingProvider, storage: ObjectStorage 
   return {
     now: () => new Date(),
     callModel,
-    sendBubble: ({ organizationId, conversationId, text }) =>
-      sendTextMessage(provider, { organizationId, conversationId, text, source: "ai_agent", sentByUserId: null }),
+    // Id determinista por burbuja: "Reintentar" reenvía la misma fila sin duplicar.
+    sendBubble: ({ organizationId, conversationId, text, messageId }) =>
+      sendAgentText(provider, { organizationId, conversationId, text, messageId }),
     sleep: (ms) => new Promise((r) => setTimeout(r, ms)),
     resolveImage: async (key) => (storage ? storage.signedGetUrl(key, 15 * 60) : null),
     // Acciones del cerebro (Fase D): corridas de workflow con trigger "agent".
     startWorkflow: startWorkflowRun,
+    // Parte 1: el agente espera la nota de voz solo si este worker la puede transcribir.
+    transcriptionEnabled: storage !== null && transcriptionEnabled(),
   };
 }
 
@@ -60,6 +64,10 @@ export async function sweepOnce(queue: AgentQueuePort, kv: KvPort, now: Date): P
   if (failedSends) console.info(`[agente] barrido: ${failedSends} aviso(s) de envío del agente fallido o sin confirmar`);
   const plans = await reconcileStuckDrafts(now);
   if (plans) console.info(`[agente] barrido: ${plans} plan(es) de burbujas atorado(s) en "enviando" conciliado(s)`);
+  // Parte 1: "Reintentar" cuya corrida se perdió → se vuelve a programar (sin modelo).
+  const lost = await findLostRetries(now);
+  for (const o of lost) await scheduleAgentRun(queue, kv, o, 0);
+  if (lost.length) console.info(`[agente] barrido: ${lost.length} reintento(s) de respuesta guardada re-programado(s)`);
   const orphans = await findOrphanConversations(now);
   for (const o of orphans) await scheduleAgentRun(queue, kv, o, 0);
   if (orphans.length) console.info(`[agente] barrido: ${orphans.length} conversación(es) sin atender re-programada(s)`);

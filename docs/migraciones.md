@@ -57,11 +57,10 @@ propio del pre-deploy configurado.)
 **Cuándo se aplica cada configuración** (el pre-deploy exige que `db:check` exista en el código que se
 despliega):
 - **staging:** al subir esta rama a `staging` (misma vez).
-- **production:** al mezclar esta rama a `main`, con la luz verde del dueño (antes, cualquier despliegue
-  de main fallaría por no tener `db:check`). **Preparado, SIN aplicar** (25-sep-2026):
-  `~/Documents/Diluvium CRM/notas/anuncios-predeploy-produccion/` (`patch-produccion.json` + `aplicar.py`;
-  sin `--confirmar` solo muestra el cambio). Se aplica DESPUÉS de que main ya tenga `db:deploy`/`db:check`.
-  Hoy production arranca el web con `npm run start:web` (migra + chequea + next start) y no tiene pre-deploy.
+- **production:** **APLICADO el 26-sep-2026** al mezclar Anuncios a `main` (abce8e6): web `crm-diluvium`
+  con pre-deploy `npm run db:deploy` y arranque `npm run start`; `worker-production` con pre-deploy
+  `npm run db:check -- --wait 900`. La primera migración que entró después con este candado fue la
+  `0037_agente_parte_1` (Agente IA parte 1).
 
 Se configura por la API de Railway (el CLI no expone pre-deploy) con
 `environmentPatchCommit(environmentId, patch: { services: { <serviceId>: { deploy: { preDeployCommand, startCommand } } } })`,

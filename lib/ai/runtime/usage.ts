@@ -7,9 +7,21 @@ import { aiModelPrices, aiUsage } from "@/lib/db/schema";
 import { computeCostUsd, resolveModelPrice } from "@/lib/ai/pricing";
 import type { ModelUsage, ProviderId } from "@/lib/ai/types";
 
-export type UsageStage = "filtro" | "cerebro";
-// Qué pasó con la llamada. "passed" = el filtro dejó pasar al cerebro.
-export type UsageOutcome = "passed" | "sent" | "draft" | "discarded_stale" | "skipped" | "handover" | "error";
+// "transcripcion" (parte 1, 26-sep-2026): nota de voz del cliente → texto (worker).
+export type UsageStage = "filtro" | "cerebro" | "transcripcion";
+// Qué pasó con la llamada. "passed" = el filtro dejó pasar al cerebro. Las de la
+// transcripción tienen sus propios resultados: no cuentan como respuesta ni como error
+// del agente sobre ese mensaje (alreadyHandled y el barrido no las ven).
+export type UsageOutcome =
+  | "passed"
+  | "sent"
+  | "draft"
+  | "discarded_stale"
+  | "skipped"
+  | "handover"
+  | "error"
+  | "transcrita"
+  | "transcripcion_fallida";
 // Resultados finales: si el último entrante ya tiene uno, no se vuelve a atender.
 export const FINAL_OUTCOMES: readonly UsageOutcome[] = ["sent", "draft", "skipped", "handover"];
 
@@ -25,6 +37,8 @@ export type UsageRecord = {
   filterDecision?: string | null;
   outcome: UsageOutcome;
   error?: string | null;
+  // Costo ya calculado (la transcripción se cobra por minuto, no por token).
+  costUsd?: number | null;
 };
 
 // Precio efectivo del modelo para la organización: la fila de ai_model_prices
@@ -68,7 +82,7 @@ export async function recordAiUsage(r: UsageRecord): Promise<void> {
       cacheReadTokens: usage.cacheReadTokens,
       cacheWriteTokens: usage.cacheWriteTokens,
       latencyMs: Math.round(r.latencyMs),
-      costUsd: computeCostUsd(usage, price),
+      costUsd: r.costUsd !== undefined ? r.costUsd : computeCostUsd(usage, price),
       filterDecision: r.filterDecision ?? null,
       outcome: r.outcome,
       error: r.error ? r.error.slice(0, 2000) : null,
