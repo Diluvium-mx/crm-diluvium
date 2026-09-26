@@ -145,3 +145,22 @@ export async function pauseAgentOnManualMessageId(organizationId: string, messag
     console.error(`[agente] no se pudo pausar tras el reintento ${messageId}`, error);
   }
 }
+
+// Parte 1 (26-sep-2026): terminó la transcripción de una nota de voz. Si el agente
+// estaba esperándola (corrida re-programada hasta 60 s), la adelanta: corre en cuanto
+// venza la espera normal de 15 s, ya con el texto. Nunca lanza.
+export async function wakeAgentAfterTranscription(
+  input: { organizationId: string; conversationId: string },
+  ports: Ports = {},
+): Promise<void> {
+  try {
+    const delay = await debounceDelayFor(input.organizationId, input.conversationId, ports.now ?? new Date());
+    if (delay === null) return; // canal apagado, agente pausado o nada pendiente
+    await withQueueTimeout(
+      scheduleAgentRun(ports.queue ?? bullAgentQueuePort(), ports.kv ?? redisKvPort(), input, delay),
+      "programar tras la transcripción",
+    );
+  } catch (error) {
+    console.error(`[agente] no se pudo adelantar ${input.conversationId} tras la transcripción; sigue su espera`, error);
+  }
+}

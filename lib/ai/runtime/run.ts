@@ -38,6 +38,7 @@ export function fallbackTextFor(plan: ActionPlan): string {
 }
 import { validateToolCalls } from "./tools";
 import { applyDetalleByAgent, detalleContextFor, mergeDetalle } from "./detalle";
+import { transcriptionWaitMs } from "@/lib/ai/transcription/rules";
 import { applyCustomValues } from "@/lib/agente-ia/editor";
 import { loadAgentConfig, loadCustomValues, loadEnabledFaqs } from "./config";
 import { pickBrainModel } from "./model-by-stage";
@@ -96,6 +97,9 @@ export type RunDeps = {
   // Fase E: ¿el modelo tiene llave y adaptador en este entorno? Por defecto,
   // modelAvailability (lee process.env). Los tests lo sustituyen.
   isModelAvailable?: (modelId: string) => boolean;
+  // Parte 1: ¿este worker transcribe notas de voz (bucket + llave de OpenAI)? Solo
+  // entonces el agente espera la transcripción (hasta 60 s desde que llegó el audio).
+  transcriptionEnabled?: boolean;
 };
 
 export type RunResult =
@@ -377,6 +381,13 @@ export async function runAgent(job: { organizationId: string; conversationId: st
     }
     if (!cfg.goal) return { kind: "skipped", reason: "sin_goal" };
     if (!lastRead) return { kind: "noop", reason: "sin_pendientes" };
+    // Parte 1: una nota de voz del cliente aún sin transcribir → la espera sigue (hasta
+    // 60 s desde que llegó); el worker la adelanta en cuanto termina. Si falla o tarda
+    // más, el agente contesta con "[nota de voz sin transcribir]" y no se traba.
+    if (deps.transcriptionEnabled) {
+      const waitMs = transcriptionWaitMs(pending, now);
+      if (waitMs > 0) return { kind: "reschedule", delayMs: waitMs, reason: "esperando_transcripcion" };
+    }
 
     const readCount = await inboundCount(org, conv.id);
     // TODA la conversación; si algún día no cabe en el modelo, lo más reciente.
