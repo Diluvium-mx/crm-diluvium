@@ -242,7 +242,7 @@ Dashboard ya muestra el gasto del mes y el saldo estimado (24-sep-2026).
   Diseño y texto del Goal: `docs/fase-d-diseno.md` §10. **Prueba B5 en producción (25-sep):** pasaron
   los pasos 1, 3, 4 y 5; el 2 y el 6 con observaciones. El Goal de producción es la versión 2 del
   historial. Pendientes A–F (sin construir) y resultado completo: `docs/fase-d-diseno.md` §11.
-- **Fase E (definición del dueño, 25-sep-2026):** Modelo 1 (Luna) y Modelo 2 (Sonnet 5) por etapa,
+- **Fase E (CERRADA el 26-sep-2026, main ebcd981; definición del dueño del 25-sep):** Modelo 1 (Luna) y Modelo 2 (Sonnet 5) por etapa,
   cada uno con su selector en la pestaña Agente IA, más el reenvío seguro. **Hecho en la rama
   `feat/agente-ia-fase-e` (migración 0033):** los dos selectores y la asignación por etapa
   (Modelo 1 = Inbox, Prospecto e Interesado, decisión del dueño), adaptadores de Google, xAI y
@@ -285,7 +285,12 @@ Dashboard ya muestra el gasto del mes y el saldo estimado (24-sep-2026).
     columna `ai_config.daily_budget_usd` se borra en la primera migración después de que Anuncios de
     Meta entre a main (su 0030 ya ocupa el siguiente lugar del journal en staging).
   - **Dashboard:** "Gasto de IA" hasta arriba con cifras grandes y los cinco proveedores con llave.
-  - Decidido NO hacer: indicador "agente con error" en la lista de la Bandeja (el dueño no lo ve probable). El panel de gasto que antes
+  - Decidido NO hacer: indicador "agente con error" en la lista de la Bandeja (el dueño no lo ve probable).
+  - **Cierre (26-sep):** Grok funciona (la llave había perdido el guion de `xai-`; tras corregirla en el web
+    hubo que volver a desplegar `worker-production`: una variable referenciada solo le llega al worker
+    cuando él se despliega). Recargas de saldo: **manuales** desde la página de cada proveedor, sin botón
+    en el CRM (xAI y OpenRouter lo permitirían por API; decisión del dueño). La revisión de Codex de las
+    tres partes va como penúltima acción antes de conectar el número oficial. El panel de gasto que antes
   se anotaba aquí ya existe en el Dashboard (24-sep-2026); conciliar contra las Cost API queda como
   pendiente sin fase.
 
