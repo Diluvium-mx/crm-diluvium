@@ -1,6 +1,6 @@
 "use client";
 
-// Recargas de crédito de los proveedores de IA: owner/admin registra cada una
+// Recargas de crédito de los proveedores de IA: cualquier rol registra cada una
 // (proveedor, monto en USD sin impuestos y fecha) y puede borrar una capturada
 // por error. Sin lógica de datos: solo llama a las Server Actions.
 import { useState, useTransition } from "react";

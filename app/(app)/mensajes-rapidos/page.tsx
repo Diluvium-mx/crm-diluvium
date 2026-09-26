@@ -12,9 +12,9 @@ import { FragmentosPlantillas } from "../snippets/_components/fragmentos-plantil
 // servidor (acotados a la organización de la sesión); la UI gestiona el resto.
 export default async function MensajesRapidosPage() {
   const { organizationId, role } = await requireActiveMembership();
-  // Solo owner/admin gestionan fragmentos y plantillas (ACL en
+  // Fragmentos y plantillas los gestionan todos los roles (ACL en
   // lib/auth/permissions.ts). El servidor lo vuelve a exigir en las acciones;
-  // esto solo oculta los controles a quien no puede.
+  // esto solo oculta los controles a quien no puede (un rol desconocido).
   const canManageSnippets = roleAllows(role, "snippet", "create");
   const canManageTemplates = roleAllows(role, "template", "create");
   const [snippets, templates, sandboxChannel] = await Promise.all([

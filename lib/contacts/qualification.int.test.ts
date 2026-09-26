@@ -210,18 +210,22 @@ describe.skipIf(!TEST_DATABASE_URL)("calificación del contacto (Postgres real)"
       { userId: AUTHOR, role: "agent" },
       "Editado por autora",
     );
+    // Un rol desconocido solo toca los suyos (falla cerrado).
     await expect(
       q.updateComment(
         db,
         ORG_A,
         comment.id,
-        { userId: OTHER, role: "agent" },
+        { userId: OTHER, role: "desconocido" },
         "Intento ajeno",
       ),
     ).rejects.toThrow("No puedes modificar este comentario.");
     await expect(
-      q.deleteComment(db, ORG_A, comment.id, { userId: OTHER, role: "agent" }),
+      q.deleteComment(db, ORG_A, comment.id, { userId: OTHER, role: "desconocido" }),
     ).rejects.toThrow("No puedes modificar este comentario.");
+    // Otro vendedor sí (el vendedor tiene todo menos Configuración, 26-sep-2026).
+    await q.updateComment(db, ORG_A, comment.id, { userId: OTHER, role: "agent" }, "Editado por otro vendedor");
+    expect((await q.getContactQualification(db, ORG_A, CONTACT_A)).comentarios[0].body).toBe("Editado por otro vendedor");
 
     await q.updateComment(
       db,

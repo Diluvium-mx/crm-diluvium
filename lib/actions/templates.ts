@@ -21,8 +21,8 @@ import { templateMaxIndex } from "@/lib/messaging/template-format";
 import { isForeignTemplateAccount } from "@/lib/messaging/template-sync";
 import type { TemplateView } from "@/lib/templates/types";
 
-// Gestionar plantillas afecta a la cuenta de WhatsApp y la revisión de Meta:
-// solo owner/admin (ACL en lib/auth/permissions.ts). Listar/enviar es de todos.
+// Gestionar plantillas (darlas de alta en Meta, sincronizarlas): todos los roles
+// desde el 26-sep-2026 (ACL en lib/auth/permissions.ts; un rol desconocido, no).
 function requireTemplateManage(role: string, action: "create" | "sync"): void {
   if (!roleAllows(role, "template", action)) {
     throw new Error("No tienes permiso para gestionar plantillas; pídeselo a un administrador.");
