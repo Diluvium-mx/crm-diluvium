@@ -1,8 +1,8 @@
 "use server";
 
 // Server Actions del editor del agente (pestaña "Agente IA" estilo GHL): nombre del
-// agente y de la empresa, Modelo 1 (con sus etapas) y Modelo 2, Goal y FAQs con versiones. Solo
-// owner/admin (ACL: recurso `aiConfig`). La organización sale de la SESIÓN.
+// agente y de la empresa, Modelo 1 (con sus etapas) y Modelo 2, Goal y FAQs con versiones. Todos
+// los roles, vendedor incluido (ACL: recurso `aiConfig`). La organización sale de la SESIÓN.
 import { revalidatePath } from "next/cache";
 import { ZodError } from "zod";
 import { requireActiveMembership } from "@/lib/auth/active-organization";
@@ -65,8 +65,8 @@ export async function getAgentEditor(): Promise<AgentEditorView> {
     brainOptions: buildModelOptions("cerebro", { profile, overrides }),
     model1Options: buildModelOptions("cerebro", { profile, overrides }, DEFAULT_MODEL_1),
     costBasis: basis,
-    // Solo si la variable de cada llave existe (nunca su valor). Esta vista ya es
-    // solo de owner/admin (aiConfig:read arriba).
+    // Solo si la variable de cada llave existe (nunca su valor): lo ve todo el
+    // que tenga aiConfig:read (arriba).
     apiProviders: buildApiProviders(),
     channels: channelRows.map((c) => ({
       id: c.id,

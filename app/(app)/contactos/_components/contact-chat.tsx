@@ -3,11 +3,22 @@
 // Chat de un contacto dentro del modal de Contactos: reusa el MISMO componente
 // de chat de la bandeja (ChatThread). Resuelve la conversación por contacto,
 // cubre carga / sin conversación / error, y se mantiene en vivo con el SSE.
+// Como en la Bandeja, abrir el chat lo marca como leído (solo con la pestaña a la
+// vista): así el círculo de no vistos de la tarjeta se apaga al leerlo aquí.
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { ConversationDetail } from "@/lib/inbox/types";
-import { getConversationByContact } from "@/lib/inbox/actions";
+import { getConversationByContact, markConversationRead } from "@/lib/inbox/actions";
 import { ChatThread } from "../../dashboard/_components/chat-thread";
 import { useInboxStream } from "../../dashboard/_components/use-inbox-stream";
+
+function tabVisible(): boolean {
+  return document.visibilityState === "visible";
+}
+
+// Marca leído sin romper el chat si falla (el contador se corrige en la próxima vuelta).
+function markRead(conversationId: string, upToMessageId?: string): void {
+  void markConversationRead(conversationId, upToMessageId).catch(() => undefined);
+}
 
 type State =
   | { status: "loading" }
@@ -24,12 +35,19 @@ export function ContactChat({ contactId }: { contactId: string }) {
   const conversationIdRef = useRef<string | null>(null);
   const pendingLoadRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   useEffect(() => () => clearTimeout(pendingLoadRef.current), []);
+  // Conversación ya marcada como leída al abrirla (una vez; luego la marcan las
+  // llegadas y el regreso a la pestaña).
+  const markedOpenRef = useRef<string | null>(null);
 
   const load = useCallback(async () => {
     try {
       const detail = await getConversationByContact(contactId);
       conversationIdRef.current = detail?.id ?? null;
       setState(detail ? { status: "ready", detail } : { status: "none" });
+      if (detail && markedOpenRef.current !== detail.id && tabVisible()) {
+        markedOpenRef.current = detail.id;
+        markRead(detail.id);
+      }
     } catch {
       setState({ status: "error" });
     }
@@ -40,6 +58,24 @@ export function ContactChat({ contactId }: { contactId: string }) {
     const t = setTimeout(() => void load(), 0);
     return () => clearTimeout(t);
   }, [load]);
+
+  // Al volver a la pestaña con el chat abierto: marcar leído lo que llegó mientras
+  // estuvo en segundo plano (hasta el último entrante).
+  useEffect(() => {
+    const onVisible = () => {
+      const id = conversationIdRef.current;
+      if (id && tabVisible()) {
+        markedOpenRef.current = id;
+        markRead(id);
+      }
+    };
+    document.addEventListener("visibilitychange", onVisible);
+    window.addEventListener("focus", onVisible);
+    return () => {
+      document.removeEventListener("visibilitychange", onVisible);
+      window.removeEventListener("focus", onVisible);
+    };
+  }, []);
 
   // Reloj para la ventana de 24 h.
   useEffect(() => {
@@ -66,7 +102,11 @@ export function ContactChat({ contactId }: { contactId: string }) {
     }
     if (event.conversationId !== id) return;
     if (event.type === "conversation.updated") void load();
-    else setRevalToken((n) => n + 1);
+    else {
+      setRevalToken((n) => n + 1);
+      // Llegó algo con el chat abierto y a la vista: leído solo hasta ese mensaje.
+      if (event.type === "message.upserted" && tabVisible()) markRead(id, event.messageId);
+    }
   });
 
   if (state.status === "loading") {

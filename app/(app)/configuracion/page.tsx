@@ -1,37 +1,29 @@
 import Link from "next/link";
-import { headers } from "next/headers";
-import { auth } from "@/lib/auth";
+import { redirect } from "next/navigation";
 import { requireActiveMembership } from "@/lib/auth/active-organization";
 import { roleAllows } from "@/lib/auth/permissions";
 import { listSellers } from "@/lib/actions/team";
 import { listSizeRanges } from "@/lib/actions/contact-qualification";
-import { MyAccountForm } from "./_components/my-account-form";
 import { SellersPanel } from "./_components/sellers-panel";
 import { SizeRangesPanel } from "./_components/size-ranges-panel";
 
-// Configuración (A4, al final del sidebar). "Mi cuenta" para todos;
-// "Vendedores" y "Tallas" (rangos de A7) solo owner/admin. La pestaña va en la
-// URL (?tab=); una pestaña sin permiso cae a "Mi cuenta".
-type Tab = "cuenta" | "vendedores" | "tallas";
+// Configuración (al final del sidebar): SOLO owner/admin (ACL `settings`), también
+// por URL directa: el vendedor vuelve al Dashboard. "Vendedores" y "Tallas" (rangos
+// de A7). La pestaña va en la URL (?tab=). "Mi cuenta" ahora es /mi-cuenta (menú del
+// usuario); el enlace viejo ?tab=cuenta lleva ahí.
+type Tab = "vendedores" | "tallas";
 
 export default async function ConfiguracionPage({ searchParams }: PageProps<"/configuracion">) {
-  const { role } = await requireActiveMembership();
-  const session = await auth.api.getSession({ headers: await headers() });
-  const canManageTeam = roleAllows(role, "member", "update");
-  const canManageSizes = roleAllows(role, "sizeRange", "update");
-
   const requested = (await searchParams).tab;
-  const tab: Tab =
-    requested === "vendedores" && canManageTeam
-      ? "vendedores"
-      : requested === "tallas" && canManageSizes
-        ? "tallas"
-        : "cuenta";
+  if (requested === "cuenta") redirect("/mi-cuenta");
 
+  const { role } = await requireActiveMembership();
+  if (!roleAllows(role, "settings", "read")) redirect("/inicio");
+
+  const tab: Tab = requested === "tallas" ? "tallas" : "vendedores";
   const tabs: { key: Tab; label: string }[] = [
-    { key: "cuenta", label: "Mi cuenta" },
-    ...(canManageTeam ? [{ key: "vendedores" as const, label: "Vendedores" }] : []),
-    ...(canManageSizes ? [{ key: "tallas" as const, label: "Tallas de compuerta" }] : []),
+    { key: "vendedores", label: "Vendedores" },
+    { key: "tallas", label: "Tallas de compuerta" },
   ];
 
   return (
@@ -53,7 +45,6 @@ export default async function ConfiguracionPage({ searchParams }: PageProps<"/co
         </nav>
       </header>
 
-      {tab === "cuenta" && <MyAccountForm name={session?.user.name ?? ""} email={session?.user.email ?? ""} />}
       {tab === "vendedores" && <SellersPanel {...await listSellers()} />}
       {tab === "tallas" && <SizeRangesPanel initial={await listSizeRanges()} />}
     </div>

@@ -16,12 +16,13 @@ import {
   type Modifier,
 } from "@dnd-kit/core";
 import { STAGES, STAGE_LABELS, getContactFullName, type Contact, type Stage, type Temperature } from "../_data/types";
-import { getContactsByIds, updateContactStage, updateContactTemperature } from "@/lib/actions/contacts";
+import { getContactsByIds, getFunnelSignals, updateContactStage, updateContactTemperature } from "@/lib/actions/contacts";
 import { useVirtualizer } from "@tanstack/react-virtual";
 import { ContactCard, ContactCardContent } from "./contact-card";
 import { ContactDetailPanel } from "./contact-detail-panel";
 import { phoneMatchesSearch } from "@/lib/phone-format";
 import { normalizeSearch } from "@/lib/text/search";
+import { funnelTone, type FunnelSignal } from "@/lib/contacts/funnel-tone";
 import { useInboxStream } from "../../dashboard/_components/use-inbox-stream";
 
 // Type guard: el id del droppable siempre es una etapa (solo las columnas
@@ -33,13 +34,21 @@ function isStage(value: string): value is Stage {
 // Una columna = una zona de destino (droppable). Se extrae a su propio
 // componente porque useDroppable es un hook y no puede llamarse dentro del
 // .map() de las etapas.
+type Signals = Record<string, FunnelSignal>;
+
+// Tope de conversaciones por petición (el mismo que valida getFunnelSignals); con
+// más, se piden las señales de toda la organización de una vez.
+const MAX_SIGNAL_IDS = 200;
+
 function StageColumn({
   stage,
   contacts,
+  signals,
   onCardClick,
 }: {
   stage: Stage;
   contacts: Contact[];
+  signals: Signals;
   onCardClick: (contactId: string) => void;
 }) {
   const { setNodeRef, isOver } = useDroppable({ id: stage });
@@ -110,7 +119,7 @@ function StageColumn({
                     transform: `translateY(${virtualRow.start}px)`,
                   }}
                 >
-                  <ContactCard contact={contact} onClick={() => onCardClick(contact.id)} />
+                  <ContactCard contact={contact} signal={signals[contact.id]} onClick={() => onCardClick(contact.id)} />
                 </div>
               );
             })}
@@ -121,8 +130,18 @@ function StageColumn({
   );
 }
 
-export function ContactsBoard({ initialContacts }: { initialContacts: Contact[] }) {
+export function ContactsBoard({
+  initialContacts,
+  initialSignals,
+}: {
+  initialContacts: Contact[];
+  initialSignals: Signals;
+}) {
   const [contacts, setContacts] = useState<Contact[]>(initialContacts);
+  // Señales de cada tarjeta (no vistos, por contestar, urgente) por contacto. Van
+  // aparte de los contactos: el SSE las cambia seguido y no reordenan nada.
+  const [signals, setSignals] = useState<Signals>(initialSignals);
+  const [syncedInitialSignals, setSyncedInitialSignals] = useState(initialSignals);
   const router = useRouter();
   // Contactos agregados por el SSE que el servidor aún no ha devuelto en una
   // recarga (ver la sincronización con initialContacts más abajo).
@@ -200,6 +219,10 @@ export function ContactsBoard({ initialContacts }: { initialContacts: Contact[] 
     setContacts(stillMissing.length ? [...stillMissing, ...initialContacts] : initialContacts);
     if (stillMissing.length !== liveAdded.length) setLiveAdded(stillMissing);
   }
+  if (initialSignals !== syncedInitialSignals) {
+    setSyncedInitialSignals(initialSignals);
+    setSignals(initialSignals);
+  }
 
   // Tiempo real: un contacto NUEVO (p. ej. el primer WhatsApp de un número
   // desconocido) aparece arriba de su columna sin recargar. Se agrupan los
@@ -209,7 +232,49 @@ export function ContactsBoard({ initialContacts }: { initialContacts: Contact[] 
   const newTimerRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   useEffect(() => () => clearTimeout(newTimerRef.current), []);
   const bulkRef = useRef(false);
+  // Señales en tiempo real: cada cambio de mensaje o conversación (entrante,
+  // respuesta, leído, aviso del agente) marca su conversación; se piden en lote
+  // (ventana de 500 ms) y UNA petición a la vez: lo que llega mientras tanto sale
+  // en la siguiente vuelta, así una respuesta vieja nunca pisa a una nueva.
+  // `reload` (reconexión del SSE) o más de 200 conversaciones → toda la
+  // organización. Si una petición falla, se reintenta con el siguiente evento.
+  const signalQueueRef = useRef({ ids: new Set<string>(), full: false, running: false });
+  const signalTimerRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+  useEffect(() => () => clearTimeout(signalTimerRef.current), []);
+  const flushSignals = useCallback(async () => {
+    signalTimerRef.current = undefined;
+    const queue = signalQueueRef.current;
+    queue.running = true;
+    try {
+      while (queue.full || queue.ids.size > 0) {
+        const full = queue.full || queue.ids.size > MAX_SIGNAL_IDS;
+        const ids = full ? undefined : [...queue.ids];
+        queue.full = false;
+        queue.ids.clear();
+        try {
+          const fresh = await getFunnelSignals(ids);
+          setSignals((current) => (full ? fresh : { ...current, ...fresh }));
+        } catch {
+          if (full) queue.full = true;
+          else for (const id of ids ?? []) queue.ids.add(id);
+          break;
+        }
+      }
+    } finally {
+      queue.running = false;
+    }
+  }, []);
+
   useInboxStream((event) => {
+    if (event.type === "reload" || event.type === "conversation.updated" || event.type === "message.upserted" || event.type === "message.deleted") {
+      const queue = signalQueueRef.current;
+      if (event.type === "reload") queue.full = true;
+      else queue.ids.add(event.conversationId);
+      if (!queue.running && !signalTimerRef.current) {
+        signalTimerRef.current = setTimeout(() => void flushSignals(), 500);
+      }
+      return;
+    }
     if (event.type === "contacts.bulk") bulkRef.current = true;
     else if (event.type === "contact.created") pendingNewRef.current.add(event.contactId);
     else return;
@@ -407,6 +472,7 @@ export function ContactsBoard({ initialContacts }: { initialContacts: Contact[] 
               key={stage}
               stage={stage}
               contacts={columns.get(stage) ?? []}
+              signals={signals}
               onCardClick={handleCardClick}
             />
           ))}
@@ -417,8 +483,11 @@ export function ContactsBoard({ initialContacts }: { initialContacts: Contact[] 
           modifiers={[restrictOverlayToBoard]}
         >
           {activeContact ? (
-            <div className="card-pickup w-72 cursor-grabbing shadow-2xl">
-              <ContactCardContent contact={activeContact} />
+            <div
+              data-funnel={funnelTone(signals[activeContact.id])}
+              className="card-pickup w-72 cursor-grabbing rounded-md bg-card shadow-2xl [&>div]:bg-transparent"
+            >
+              <ContactCardContent contact={activeContact} signal={signals[activeContact.id]} />
             </div>
           ) : null}
         </DragOverlay>

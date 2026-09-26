@@ -15,21 +15,23 @@ export const statement = {
   // sincronizar el listado a la BD (puede marcar como eliminadas). Gestionarlas
   // afecta a la cuenta de WhatsApp y la revisión de Meta: solo owner/admin.
   template: ["read", "create", "sync"],
-  // Configuración del Agente IA (modelo de filtro y modelo de cerebro). Es
-  // config del CRM: solo owner/admin la ven (`read`) y editan (`update`); el
-  // agente (vendedor) no tiene acceso a esta pestaña.
+  // Pestaña "Agente IA" completa (nombre, modelos por etapa, Goal, FAQs,
+  // versiones, canales, APIs). Desde el 25-sep-2026 TODOS los roles la ven
+  // (`read`) y editan (`update`), incluido el vendedor.
   aiConfig: ["read", "update"],
   // Rangos editables de tallas: todos los vendedores los consultan para las
   // sugerencias; solo owner/admin cambian la configuración compartida.
   sizeRange: ["read", "update"],
-  // Tarjeta "Gasto de IA" del Dashboard (A2): solo owner/admin la ven (`read`) y
-  // registran las recargas de crédito de los proveedores (`update`).
+  // Tarjeta "Gasto de IA" del Dashboard (A2): todos la ven (`read`, el vendedor
+  // también, para prever recargas); registrar recargas (`update`) es owner/admin.
   aiSpend: ["read", "update"],
-  // Automatización (Fase D). Editar workflows y su biblioteca de media es
-  // configuración del CRM (owner/admin); el vendedor los LEE y los EJECUTA
-  // desde el composer (`run`: comandos tipo /tabla).
+  // Automatización (Fase D): workflows y su biblioteca de media. Todos los roles
+  // los leen, ejecutan (`run`: comandos tipo /tabla) y editan.
   workflow: ["read", "run", "create", "update", "delete"],
   mediaAsset: ["read", "create", "delete"],
+  // Sección "Configuración" (Vendedores, Tallas y lo que se agregue): solo
+  // owner/admin la ven y editan. "Mi cuenta" NO vive aquí (menú del usuario).
+  settings: ["read"],
 } as const;
 
 export const ac = createAccessControl(statement);
@@ -45,6 +47,7 @@ export const owner = ac.newRole({
   aiSpend: ["read", "update"],
   workflow: ["read", "run", "create", "update", "delete"],
   mediaAsset: ["read", "create", "delete"],
+  settings: ["read"],
 });
 
 export const admin = ac.newRole({
@@ -58,8 +61,12 @@ export const admin = ac.newRole({
   aiSpend: ["read", "update"],
   workflow: ["read", "run", "create", "update", "delete"],
   mediaAsset: ["read", "create", "delete"],
+  settings: ["read"],
 });
 
+// Vendedor: TODO el CRM menos Configuración (decisión del dueño, 25-sep-2026).
+// Se quedan en owner/admin: crear/sincronizar plantillas de Meta, importar y
+// borrar contactos en masa, registrar recargas de IA, Vendedores y Tallas.
 export const agent = ac.newRole({
   contact: ["create", "read", "update"],
   tag: ["create", "read", "update"],
@@ -69,10 +76,11 @@ export const agent = ac.newRole({
   snippet: ["create", "read", "update", "delete"],
   template: ["read"],
   sizeRange: ["read"],
-  workflow: ["read", "run"],
-  mediaAsset: ["read"],
-  // El agente NO gestiona la config del Agente IA: `aiConfig` se omite a
-  // propósito (roleAllows falla cerrado → sin acceso a la pestaña ni a editar).
+  aiConfig: ["read", "update"],
+  aiSpend: ["read"],
+  workflow: ["read", "run", "create", "update", "delete"],
+  mediaAsset: ["read", "create", "delete"],
+  // Sin `settings`: roleAllows falla cerrado → sin la sección Configuración.
 });
 
 const roles = { owner, admin, agent } as const;

@@ -23,7 +23,7 @@ import {
   statusMark,
   windowHoursLeft,
 } from "./format";
-import { displayPhone } from "@/lib/phone-format";
+import { formatPhone } from "@/lib/phone-format";
 import { PhoneLocation } from "@/components/ui/phone-location";
 
 const PAGE_LIMIT = 30;
@@ -453,7 +453,7 @@ export function ChatThread({
       <header className="flex shrink-0 items-center gap-3 border-b bg-card px-4 py-3">
         <div className="min-w-0 flex-1">
           <p className="truncate text-sm font-semibold">{detail.contact.name}</p>
-          <p className="truncate text-xs text-muted-foreground">{displayPhone(detail.contact.phone) || "Sin teléfono"}</p>
+          <p className="truncate text-xs text-muted-foreground">{formatPhone(detail.contact.phone) || "Sin teléfono"}</p>
           <PhoneLocation phone={detail.contact.phone} />
         </div>
         {detail.channel.isTest && <PruebaBadge />}
