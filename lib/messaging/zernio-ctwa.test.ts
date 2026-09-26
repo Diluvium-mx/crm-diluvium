@@ -159,6 +159,64 @@ describe("ZernioProvider.conversationAdClick (respaldo, forma documentada por Ze
     expect(calls[1]).toContain("cursor=c1");
   });
 
+  // Página de `n` conversaciones "otras" actualizadas desde `from` hacia atrás, `stepMs` entre cada una.
+  const page = (from: string, n: number, cursor: string | null, stepMs = 60_000) => ({
+    data: Array.from({ length: n }, (_, i) => ({ id: `otra-${from}-${i}`, updatedTime: new Date(Date.parse(from) - i * stepMs).toISOString() })),
+    pagination: { hasMore: cursor !== null, nextCursor: cursor },
+    meta: { accountsQueried: 1, accountsFailed: 0, failedAccounts: [] },
+  });
+
+  it("con la hora del mensaje: se detiene en cuanto una página ya es anterior a esa hora (1 llamada)", async () => {
+    const calls: string[] = [];
+    const fetchImpl = (async (url: string | URL) => {
+      calls.push(String(url));
+      return json(page("2026-09-25T18:00:00Z", 100, "c1")); // de 18:00 a 16:21
+    }) as typeof fetch;
+    const provider = new ZernioProvider({ apiKey: "k", webhookSecret: "s" }, fetchImpl);
+    const since = new Date("2026-09-25T17:00:00Z");
+    expect(await provider.conversationAdClick("zacc_1", "la-del-mensaje", { updatedSince: since })).toBeNull();
+    expect(calls).toHaveLength(1);
+  });
+
+  it("con la hora del mensaje y MUCHO volumen: sigue más allá de 3 páginas hasta encontrarla", async () => {
+    const calls: string[] = [];
+    const fetchImpl = (async (url: string | URL) => {
+      calls.push(String(url));
+      const n = calls.length;
+      // 5 páginas de conversaciones más recientes que el mensaje (18:00), en la 6.ª está la del mensaje.
+      if (n <= 5) return json(page(`2026-09-25T18:${String(59 - n * 2).padStart(2, "0")}:00Z`, 100, `c${n}`, 1_000));
+      return json({ ...listing, data: [{ ...listing.data[0], id: "la-del-mensaje", updatedTime: "2026-09-25T18:00:30Z" }] });
+    }) as typeof fetch;
+    const provider = new ZernioProvider({ apiKey: "k", webhookSecret: "s" }, fetchImpl);
+    const click = await provider.conversationAdClick("zacc_1", "la-del-mensaje", { updatedSince: new Date("2026-09-25T18:00:00Z") });
+    expect(click?.referral.source_id).toBe("120000000000000000");
+    expect(calls).toHaveLength(6);
+  });
+
+  it("con la hora del mensaje, más de 10 páginas sin pasarla → error (se reintenta), no 'sin datos'", async () => {
+    const fetchImpl = (async () => json(page("2026-09-25T23:59:00Z", 100, "sigue", 1_000))) as typeof fetch;
+    const provider = new ZernioProvider({ apiKey: "k", webhookSecret: "s" }, fetchImpl);
+    await expect(provider.conversationAdClick("zacc_1", "x", { updatedSince: new Date("2026-09-25T18:00:00Z") })).rejects.toThrow(/páginas/);
+  });
+
+  it("sin updatedTime legible: vuelve a las 3 páginas fijas", async () => {
+    const calls: string[] = [];
+    const fetchImpl = (async (url: string | URL) => {
+      calls.push(String(url));
+      return json({ data: [{ id: "otra" }], pagination: { hasMore: true, nextCursor: `c${calls.length}` } });
+    }) as typeof fetch;
+    const provider = new ZernioProvider({ apiKey: "k", webhookSecret: "s" }, fetchImpl);
+    expect(await provider.conversationAdClick("zacc_1", "x", { updatedSince: new Date("2026-09-25T18:00:00Z") })).toBeNull();
+    expect(calls).toHaveLength(3);
+  });
+
+  it("Zernio no pudo leer la cuenta (meta.accountsFailed) → error, no 'sin datos'", async () => {
+    const fetchImpl = (async () =>
+      json({ data: [], pagination: { hasMore: false, nextCursor: null }, meta: { accountsQueried: 1, accountsFailed: 1, failedAccounts: [{ accountId: "zacc_1", retryAfter: 60 }] } })) as typeof fetch;
+    const provider = new ZernioProvider({ apiKey: "k", webhookSecret: "s" }, fetchImpl);
+    await expect(provider.conversationAdClick("zacc_1", "x")).rejects.toThrow(/accountsFailed/);
+  });
+
   it("formato desconocido o error de Zernio → lanza (el respaldo lo anota y reintenta)", async () => {
     const odd = new ZernioProvider({ apiKey: "k", webhookSecret: "s" }, (async () => json({ conversations: [] })) as typeof fetch);
     await expect(odd.conversationAdClick("zacc_1", "x")).rejects.toThrow(/formato/);

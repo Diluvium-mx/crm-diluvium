@@ -284,6 +284,12 @@ export interface MessagingProvider {
    * cuando un mensaje de anuncio llega sin ficha). null = no hay clic guardado.
    * Lanza si el proveedor no respondió (se reintenta). Opcional: un proveedor
    * que no guarda el clic (p. ej. la Cloud API directa) simplemente no lo tiene.
+   * `updatedSince` = hora del mensaje: la conversación se actualizó entonces
+   * (acota la búsqueda en un listado ordenado por actualización).
    */
-  conversationAdClick?(providerAccountId: string, providerConversationId: string): Promise<ConversationClick | null>;
+  conversationAdClick?(
+    providerAccountId: string,
+    providerConversationId: string,
+    opts?: { updatedSince?: Date },
+  ): Promise<ConversationClick | null>;
 }

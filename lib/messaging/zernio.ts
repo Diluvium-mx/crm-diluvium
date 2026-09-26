@@ -32,8 +32,21 @@ import { bodyHasUnsupportedPlaceholders, templateRequiresUnsupportedParams, temp
 import { clickFromZernioConversation, extractReferral, type ConversationClick } from "@/lib/ads/referral";
 
 const DEFAULT_BASE_URL = "https://zernio.com/api";
-/** Páginas (de 100) del listado de conversaciones que revisa el respaldo de anuncios. */
+// Respaldo de anuncios por el listado de conversaciones (docs.zernio.com,
+// "List conversations", revisado el 25-sep-2026): `sortOrder` por "updated time",
+// `desc` por omisión; `limit` de 1 a 100 (50 por omisión); cursor opaco.
+const CONVERSATION_PAGE_SIZE = 100;
+/** Sin hora del mensaje (o sin `updatedTime` en la respuesta): páginas fijas, como antes. */
 const CONVERSATION_PAGES = 3;
+/**
+ * Con la hora del mensaje se sigue hasta PASAR esa hora (la conversación del
+ * mensaje se actualizó entonces: no puede estar más abajo). Tope de seguridad:
+ * 10 páginas = 1,000 conversaciones actualizadas desde el mensaje; a ~400
+ * clientes nuevos al día ni el último reintento (~40 min) se acerca.
+ */
+const CONVERSATION_MAX_PAGES = 10;
+/** Holgura contra desfase de relojes (hora de WhatsApp vs. `updatedTime` de Zernio). */
+const CONVERSATION_SKEW_MS = 5 * 60_000;
 const SEND_TIMEOUT_MS = 15_000;
 
 export function verifyZernioSignature(rawBody: string, signature: string | null, secret: string): boolean {
@@ -532,22 +545,42 @@ export class ZernioProvider implements MessagingProvider {
   //   conversación bajo `metadata` (ctwa_clid, ctwa_captured_at, ctwa_source_id,
   //   ctwa_source_url, ctwa_headline, ctwa_source_type).
   // Por eso se lista por cuenta (filtro `accountId`, verificado en vivo: solo
-  // devuelve esa cuenta) y se busca la conversación por id. Una conversación
-  // recién escrita está arriba (orden por actualización); se revisan hasta
-  // CONVERSATION_PAGES páginas. No encontrarla = sin datos (se reintenta).
-  async conversationAdClick(providerAccountId: string, providerConversationId: string): Promise<ConversationClick | null> {
+  // devuelve esa cuenta) y se busca la conversación por id. El listado va de la
+  // más reciente a la más vieja (por actualización): con `updatedSince` (la hora
+  // del mensaje) se recorre hasta pasar esa hora, así el volumen del día no la
+  // saca de la ventana; no encontrarla ahí = sin datos (se reintenta). Si Zernio
+  // avisa que no pudo leer la cuenta (`meta.accountsFailed`), es un error, no "sin datos".
+  async conversationAdClick(
+    providerAccountId: string,
+    providerConversationId: string,
+    opts: { updatedSince?: Date } = {},
+  ): Promise<ConversationClick | null> {
+    const floor = opts.updatedSince ? opts.updatedSince.getTime() - CONVERSATION_SKEW_MS : null;
     let cursor: string | undefined;
-    for (let page = 0; page < CONVERSATION_PAGES; page++) {
-      const params = new URLSearchParams({ accountId: providerAccountId, limit: "100" });
+    let bounded = floor !== null;
+    for (let page = 0; page < (bounded ? CONVERSATION_MAX_PAGES : CONVERSATION_PAGES); page++) {
+      const params = new URLSearchParams({ accountId: providerAccountId, limit: String(CONVERSATION_PAGE_SIZE) });
       if (cursor) params.set("cursor", cursor);
       const json = await this.apiJson("GET", `/v1/inbox/conversations?${params.toString()}`);
       const list = Array.isArray(json.data) ? json.data.map(asRecord) : null;
       if (!list) throw new ZernioApiError(0, "Listado de conversaciones con formato no reconocido");
+      const failed = Number(asRecord(json.meta).accountsFailed ?? 0);
+      if (failed > 0) throw new ZernioApiError(0, "Zernio no pudo leer la cuenta en el listado (meta.accountsFailed); se reintenta");
       const found = list.find((c) => c.id === providerConversationId);
       if (found) return clickFromZernioConversation({ data: found });
       const pagination = asRecord(json.pagination);
       cursor = asString(pagination.nextCursor);
       if (pagination.hasMore !== true || !cursor) return null;
+      if (bounded) {
+        // Cualquier conversación de esta página ya es anterior a la hora del
+        // mensaje → todo lo que sigue también: la del mensaje no está más abajo.
+        const times = list.map((c) => Date.parse(String(c.updatedTime ?? "")));
+        if (times.some((t) => Number.isNaN(t))) bounded = false; // sin hora legible: páginas fijas
+        else if (Math.min(...times) < floor!) return null;
+      }
+    }
+    if (bounded) {
+      throw new ZernioApiError(0, `Más de ${CONVERSATION_MAX_PAGES} páginas de conversaciones actualizadas desde el mensaje; se reintenta`);
     }
     return null;
   }
