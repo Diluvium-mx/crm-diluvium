@@ -237,14 +237,19 @@ export function ContactsBoard({
   // (ventana de 500 ms) y UNA petición a la vez: lo que llega mientras tanto sale
   // en la siguiente vuelta, así una respuesta vieja nunca pisa a una nueva.
   // `reload` (reconexión del SSE) o más de 200 conversaciones → toda la
-  // organización. Si una petición falla, se reintenta con el siguiente evento.
-  const signalQueueRef = useRef({ ids: new Set<string>(), full: false, running: false });
+  // organización. Si una petición falla, se reintenta sola con espera creciente
+  // (5 s … 60 s): un aviso urgente no se pierde aunque la conversación quede quieta.
+  const signalQueueRef = useRef({ ids: new Set<string>(), full: false, running: false, retryMs: 0, retryPending: false });
   const signalTimerRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   useEffect(() => () => clearTimeout(signalTimerRef.current), []);
+  // El reintento llama a la versión vigente sin que el callback se refiera a sí mismo.
+  const flushSignalsRef = useRef<() => Promise<void>>(async () => undefined);
   const flushSignals = useCallback(async () => {
     signalTimerRef.current = undefined;
     const queue = signalQueueRef.current;
+    queue.retryPending = false;
     queue.running = true;
+    let failed = false;
     try {
       while (queue.full || queue.ids.size > 0) {
         const full = queue.full || queue.ids.size > MAX_SIGNAL_IDS;
@@ -254,23 +259,40 @@ export function ContactsBoard({
         try {
           const fresh = await getFunnelSignals(ids);
           setSignals((current) => (full ? fresh : { ...current, ...fresh }));
+          queue.retryMs = 0;
         } catch {
           if (full) queue.full = true;
           else for (const id of ids ?? []) queue.ids.add(id);
+          failed = true;
           break;
         }
       }
     } finally {
       queue.running = false;
     }
+    if (failed && !signalTimerRef.current) {
+      queue.retryMs = Math.min(queue.retryMs ? queue.retryMs * 2 : 5_000, 60_000);
+      queue.retryPending = true;
+      signalTimerRef.current = setTimeout(() => void flushSignalsRef.current(), queue.retryMs);
+    }
   }, []);
+  useEffect(() => {
+    flushSignalsRef.current = flushSignals;
+  }, [flushSignals]);
 
   useInboxStream((event) => {
     if (event.type === "reload" || event.type === "conversation.updated" || event.type === "message.upserted" || event.type === "message.deleted") {
       const queue = signalQueueRef.current;
       if (event.type === "reload") queue.full = true;
       else queue.ids.add(event.conversationId);
-      if (!queue.running && !signalTimerRef.current) {
+      if (queue.running) return;
+      // En espera de un reintento: un evento nuevo lo adelanta (no espera hasta 60 s).
+      if (queue.retryPending) {
+        clearTimeout(signalTimerRef.current);
+        signalTimerRef.current = undefined;
+        queue.retryPending = false;
+      }
+      if (!signalTimerRef.current) {
         signalTimerRef.current = setTimeout(() => void flushSignals(), 500);
       }
       return;

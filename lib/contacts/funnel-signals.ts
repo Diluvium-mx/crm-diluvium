@@ -2,8 +2,9 @@
 // que ya existen). Un contacto puede tener conversación en varios canales; se suman.
 //   - unread:  suma de conversations.unread_count (círculo naranja, como la Bandeja).
 //   - pending: alguna conversación cuyo ÚLTIMO mensaje es del cliente (fondo azul).
-//              No cuentan las notas internas ni lo copiado del historial del celular
-//              (misma regla que el semáforo de la Bandeja).
+//              No cuentan las notas internas, lo copiado del historial del celular
+//              (misma regla que el semáforo de la Bandeja) ni un saliente que no salió
+//              (en cola o rechazado): el cliente sigue sin respuesta.
 //   - urgent:  el Agente IA pasó al cliente a un asesor o necesita ayuda del vendedor
 //              (fondo amarillo): hay un aviso abierto de URGENT_NOTICE_KINDS sin una
 //              respuesta humana que haya salido DESPUÉS del aviso. agente_error además
@@ -66,6 +67,7 @@ export async function funnelSignalsForOrg(
         and m.organization_id = ${organizationId}
         and m.type <> 'system_note'
         and m.imported_at is null
+        and (m.direction = 'in' or m.status in ('sent', 'delivered', 'read'))
       order by coalesce(m.sent_at, m.created_at) desc, m.id desc
       limit 1
     ) last_msg on true

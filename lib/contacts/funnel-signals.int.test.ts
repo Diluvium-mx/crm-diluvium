@@ -206,6 +206,19 @@ describe.skipIf(!TEST_DATABASE_URL)("señales del Embudo (Postgres real)", () =>
     expect((await funnelSignalsForOrg(ORG, [CONVERSATION]))[CONTACT]?.pending).toBe(false);
   });
 
+  it("una respuesta que no salió (rechazada o en cola) no quita pending; al salir, sí", async () => {
+    await seedConversation();
+    await message({ direction: "in", createdAt: plus(1) });
+    await message({ direction: "out", source: "crm", status: "failed", sentByUserId: USER, createdAt: plus(2) });
+    expect((await funnelSignalsForOrg(ORG))[CONTACT]?.pending).toBe(true);
+
+    await message({ direction: "out", source: "crm", status: "queued", sentByUserId: USER, createdAt: plus(3) });
+    expect((await funnelSignalsForOrg(ORG))[CONTACT]?.pending).toBe(true);
+
+    await message({ direction: "out", source: "crm", status: "sent", sentByUserId: USER, createdAt: plus(4) });
+    expect((await funnelSignalsForOrg(ORG, [CONVERSATION]))[CONTACT]?.pending).toBe(false);
+  });
+
   it("una system_note posterior al entrante no quita pending", async () => {
     await seedConversation();
     await message({ direction: "in", createdAt: plus(1) });
