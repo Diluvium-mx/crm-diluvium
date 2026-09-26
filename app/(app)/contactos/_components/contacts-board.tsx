@@ -250,10 +250,51 @@ export function ContactsBoard({
   // desconocido) aparece arriba de su columna sin recargar. Se agrupan los
   // avisos (una importación manda miles): hasta 200 se piden por id; más que
   // eso, se recarga la página completa una vez.
+  // Si la petición falla, los ids vuelven a la espera y se reintenta sola (5 s …
+  // 60 s): un lead nuevo no se queda fuera del Embudo por un fallo de red.
+  // ¿Sigue montado el Embudo? (ningún reintento sobrevive a salir de él).
+  const aliveRef = useRef(true);
   const pendingNewRef = useRef(new Set<string>());
   const newTimerRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+  const newRetryMsRef = useRef(0);
   useEffect(() => () => clearTimeout(newTimerRef.current), []);
   const bulkRef = useRef(false);
+  const flushNewRef = useRef<() => Promise<void>>(async () => undefined);
+  const flushNew = useCallback(async () => {
+    newTimerRef.current = undefined;
+    const ids = [...pendingNewRef.current];
+    pendingNewRef.current.clear();
+    if (bulkRef.current || ids.length > 200) {
+      bulkRef.current = false;
+      router.refresh();
+      return;
+    }
+    let fresh: Contact[];
+    try {
+      fresh = await getContactsByIds(ids);
+    } catch {
+      for (const id of ids) pendingNewRef.current.add(id);
+      if (aliveRef.current && !newTimerRef.current) {
+        newRetryMsRef.current = Math.min(newRetryMsRef.current ? newRetryMsRef.current * 2 : 5_000, 60_000);
+        newTimerRef.current = setTimeout(() => void flushNewRef.current(), newRetryMsRef.current);
+      }
+      return;
+    }
+    newRetryMsRef.current = 0;
+    if (!aliveRef.current || fresh.length === 0) return;
+    setContacts((current) => {
+      const known = new Set(current.map((c) => c.id));
+      const added = fresh.filter((c) => !known.has(c.id));
+      return added.length ? [...added, ...current] : current;
+    });
+    setLiveAdded((current) => {
+      const known = new Set(current.map((c) => c.id));
+      return [...fresh.filter((c) => !known.has(c.id)), ...current];
+    });
+  }, [router]);
+  useEffect(() => {
+    flushNewRef.current = flushNew;
+  }, [flushNew]);
   // Señales en tiempo real: cada cambio de mensaje o conversación (entrante,
   // respuesta, leído, aviso del agente) marca su conversación; se piden en lote
   // (ventana de 500 ms) y UNA petición a la vez: lo que llega mientras tanto sale
@@ -265,7 +306,6 @@ export function ContactsBoard({
   const signalTimerRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   // Al salir del Embudo: nada queda pidiendo señales (ni un reintento programado
   // por una petición que falle DESPUÉS de desmontar).
-  const aliveRef = useRef(true);
   useEffect(() => {
     aliveRef.current = true;
     return () => {
@@ -484,28 +524,7 @@ export function ContactsBoard({
     // Ventana fija (no se reinicia con cada aviso): con tráfico sostenido el
     // kanban igual se actualiza cada 500 ms.
     if (newTimerRef.current) return;
-    newTimerRef.current = setTimeout(() => {
-      newTimerRef.current = undefined;
-      const ids = [...pendingNewRef.current];
-      pendingNewRef.current.clear();
-      if (bulkRef.current || ids.length > 200) {
-        bulkRef.current = false;
-        router.refresh();
-        return;
-      }
-      void getContactsByIds(ids).then((fresh) => {
-        if (fresh.length === 0) return;
-        setContacts((current) => {
-          const known = new Set(current.map((c) => c.id));
-          const added = fresh.filter((c) => !known.has(c.id));
-          return added.length ? [...added, ...current] : current;
-        });
-        setLiveAdded((current) => {
-          const known = new Set(current.map((c) => c.id));
-          return [...fresh.filter((c) => !known.has(c.id)), ...current];
-        });
-      });
-    }, 500);
+    newTimerRef.current = setTimeout(() => void flushNew(), 500);
   }, { reloadIfOpen: true });
 
   // Sin acentos ni mayúsculas (regla de todo buscador: lib/text/search.ts).
