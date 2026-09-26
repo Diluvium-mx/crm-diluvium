@@ -326,6 +326,11 @@ export function ContactDetails({
         next.entradas = fresh.entradas;
       }
       if (!busy.has("comentarios")) next.comentarios = fresh.comentarios;
+      // Marca "IA" (parte 1): la del servidor, salvo en lo que el vendedor está guardando
+      // ahí mismo (ahí manda lo local: al editarlo, el campo ya es suyo).
+      const busyKey = (k: string) =>
+        QUAL_FIELDS.some((f) => busy.has(f) && IA_KEY[f] === k) || (busy.has("entradas") && (k === "num_entradas" || k.startsWith("entrada_")));
+      next.iaFields = [...fresh.iaFields.filter((k) => !busyKey(k)), ...d.iaFields.filter(busyKey)];
       return next;
     });
     const free = (lane: string, draft: string) => !busy.has(lane) && !typing.current.has(draft);
