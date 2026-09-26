@@ -30,14 +30,15 @@ const policy = {
     settings: ["read"],
     member: ["create", "update", "delete"],
   },
+  // Vendedor = todo menos Configuración (Vendedores = member, Tallas = sizeRange.update).
   agent: {
-    contact: ["create", "read", "update"],
-    tag: ["create", "read", "update"],
+    contact: ["create", "read", "update", "delete", "import", "export"],
+    tag: ["create", "read", "update", "delete"],
     snippet: ["create", "read", "update", "delete"],
-    template: ["read"],
+    template: ["read", "create", "sync"],
     aiConfig: ["read", "update"],
     sizeRange: ["read"],
-    aiSpend: ["read"],
+    aiSpend: ["read", "update"],
     workflow: ["read", "run", "create", "update", "delete"],
     mediaAsset: ["read", "create", "delete"],
     settings: [],
@@ -102,5 +103,25 @@ describe("roleAllows: fallo cerrado", () => {
         expect(roleAllows("", resource, action)).toBe(false);
       }
     }
+  });
+});
+
+describe("admin y owner tienen TODO lo del vendedor (26-sep-2026)", () => {
+  it("cada permiso del vendedor lo tienen también admin y owner", () => {
+    for (const [resource, actions] of Object.entries(actionsByResource) as [keyof typeof actionsByResource, readonly string[]][]) {
+      for (const action of actions) {
+        if (!roleAllows("agent", resource, action)) continue;
+        expect(roleAllows("admin", resource, action), `admin ${resource}.${action}`).toBe(true);
+        expect(roleAllows("owner", resource, action), `owner ${resource}.${action}`).toBe(true);
+      }
+    }
+  });
+
+  it("al vendedor solo le falta Configuración (Vendedores y editar Tallas)", () => {
+    const faltan: string[] = [];
+    for (const [resource, actions] of Object.entries(actionsByResource) as [keyof typeof actionsByResource, readonly string[]][]) {
+      for (const action of actions) if (roleAllows("admin", resource, action) && !roleAllows("agent", resource, action)) faltan.push(`${resource}.${action}`);
+    }
+    expect(faltan.sort()).toEqual(["member.create", "member.delete", "member.update", "settings.read", "sizeRange.update"]);
   });
 });
