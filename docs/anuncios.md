@@ -196,6 +196,36 @@ de clientes), este es el mensaje (lo manda el dueño):
 > `meta_ad_*`) y (2) no hay forma de pedir esa `metadata` para un `conversationId` sin recorrer el listado.
 > Gracias.
 
+## Pendiente: revisión de Codex (antes del número oficial)
+
+**Anuncios entró a main SIN la revisión de Codex** (decisión del usuario, 25-sep-2026, por el hub). La
+revisión (`/codex:adversarial-review --base <commit de main anterior a Anuncios>`) de TODO el bloque
+—ingesta y atribución, respaldo por el listado de Zernio, tabla y conteos, estado de Meta cada hora,
+migraciones 0035/0036 y candado de migraciones— queda **pendiente** y se hace al final, como último paso
+antes de conectar el número oficial de Diluvium. Antes de merge se hizo una revisión enfocada con un
+agente limpio de Claude (hallazgos reales corregidos; lo teórico, abajo en "Riesgos teóricos").
+
+### Riesgos teóricos (revisión enfocada antes de main, 26-sep-2026; ninguno con escenario real hoy)
+
+Revisados con datos de production (solo lectura): los `message.received` reales no traen `metadata` del
+proveedor (0 de 93) y `messages` tiene 190 filas. Por orden de impacto, para la revisión de Codex:
+1. **Límite de Zernio (60/min con 0–2 cuentas) compartido** entre el respaldo por listado y los envíos; un
+   429 en un envío hoy cuenta como rechazo. Con atraso grande tras un deploy podría juntarse. Arreglo
+   propuesto: `limiter` en el Worker de `ads` y tratar 429 de envío como reintentable.
+2. `looksLikeAdMessage` (`lib/ads/referral.ts`) marca por el NOMBRE de la llave aunque el valor venga
+   vacío: si Zernio mandara `referral: null` en mensajes normales, cada entrante sería candidato.
+3. Si el mensaje CON ficha se procesa >30 s después de otro sin ficha (falla transitoria, cuarentena),
+   el respaldo liga el clic al segundo mensaje (tarjeta y fecha en ese mensaje; el conteo no se infla).
+4. `ctwa_captured_at` refrescado por `whatsapp.automatic_event` (hoy apagado) en un clic sin clid.
+5. Evento sin `id` en el cuerpo ni wamid (reacción/estado) con `X-Zernio-Event-Id`: termina en dead-letter
+   (antes, 400). No es regresión.
+6. Evento plano sin `sentAt`: si Zernio reescribe `timestamp` al reintentar, toma la hora del reintento.
+7. Día del número real: un mensaje de anuncio con hora anterior a `channels.connected_at` entra como
+   historial, sin clic ni respaldo.
+8. Rendimiento: el barrido de cada minuto recorre `messages` de 1–7 días sin índice por `created_at`
+   (irrelevante con 190 filas; índice parcial cuando crezca). `refreshAdStatuses` toma 1,000 anuncios sin
+   orden. La miniatura se decodifica antes del tope de píxeles (imagen enorme = memoria del worker).
+
 ## Checklist del día del número real (anuncios)
 
 1. `ZERNIO_ALLOWED_ACCOUNT_IDS` de production incluye el accountId del número real (sin él, los
