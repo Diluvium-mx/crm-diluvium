@@ -250,6 +250,12 @@ proveedor (0 de 93) y `messages` tiene 190 filas. Por orden de impacto, para la 
 
 ## Hallazgos para la revisión del agente (B, diagnóstico en solo lectura, 25-sep-2026)
 
+> **RESUELTO en la parte 1 del Agente IA (26-sep-2026, `docs/agente-ia.md` › Parte 1 › C).** La causa
+> exacta: el rechazo real de Zernio llega como `ZernioSendError` y `classifySendError` lo reconocía solo por
+> el nombre `SendFailedError`, así que un 400 de Zernio quedaba "no clasificado" y relanzaba el job. Ahora
+> cualquier falla del primer mensaje deja la respuesta GUARDADA y la tarjeta "Reintentar / Apagar";
+> "Reintentar" manda el MISMO texto con la MISMA clave de idempotencia y nunca vuelve a llamar al modelo.
+
 **Síntoma (simulación en staging, 24-sep):** con la cuenta ficticia, Zernio rechaza cada envío (400) y
 el agente generó **3 respuestas distintas por mensaje** (16:56:52, 16:57:10, 16:57:44): cada una es una
 llamada nueva al modelo y una fila más "fallida" en el hilo.

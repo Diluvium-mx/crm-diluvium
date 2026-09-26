@@ -57,8 +57,11 @@ export const actualizarDetalleSchema = z.object({
   comentario: z.string().optional().describe("Un dato útil NUEVO que dio el cliente, en una frase (p. ej. \"tiene cochera con desnivel\")"),
 });
 
+// "DESPUÉS de tu respuesta…": medido con Sonnet 5 real (26-sep-2026), sin esa frase 2 de
+// 19 respuestas salieron SOLO con acciones (el cliente habría recibido el texto de
+// respaldo en vez de su respuesta); con ella, 0 (detalle en docs/agente-ia.md).
 export const ACTUALIZAR_DETALLE_DESCRIPTION =
-  "Guarda en el Detalle del contacto (el cliente no lo ve) lo que el cliente dijo en el chat. Llena solo con lo que él dijo, sin adivinar ni suponer, y manda solo lo nuevo o lo que cambió. Actualiza el % de convencimiento conforme avance la conversación. El comentario no repite los ya guardados.";
+  "Guarda en el Detalle del contacto (el cliente no lo ve) lo que el cliente dijo en el chat. Siempre va DESPUÉS de tu respuesta escrita al cliente, nunca en su lugar. Llena solo con lo que él dijo, sin adivinar ni suponer, y manda solo lo nuevo o lo que cambió. Actualiza el % de convencimiento conforme avance la conversación. El comentario no repite los ya guardados.";
 
 export type DetalleIa = {
   tieneInundaciones?: "si" | "no" | "no_sabe";
