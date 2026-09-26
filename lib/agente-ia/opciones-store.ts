@@ -3,6 +3,7 @@
 // resuelve la organización y el permiso. Toda consulta filtra por organization_id.
 // Cada guardado deja en ai_config_changes quién cambió qué y cuándo (append-only) y
 // borra la caché del web; el worker relee en ≤ 60 s (lib/ai/runtime/options.ts).
+import "server-only";
 import { and, desc, eq } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { aiConfig, aiConfigChanges, user } from "@/lib/db/schema";
@@ -84,7 +85,7 @@ export async function saveBotOptions(
     const now = new Date();
     const changes: BotOptionsChange[] = [];
     for (const field of Object.keys(patch) as (keyof BotOptions)[]) {
-      if (sameValue(before[field], after[field])) continue;
+      if (patch[field] === undefined || sameValue(before[field], after[field])) continue;
       changes.push({
         field,
         oldValue: formatOptionValue(field, before[field]),

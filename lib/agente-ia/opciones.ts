@@ -90,6 +90,9 @@ export const botOptionsPatchSchema = z
     maxRepliesPerContact: z.number().int().min(1, "Mínimo 1 respuesta.").max(MAX_REPLIES_CAP, `Máximo ${MAX_REPLIES_CAP.toLocaleString("es-MX")}.`).nullable(),
   })
   .partial()
+  // Una llave presente con `undefined` (React Flight la conserva) no es un cambio: se quita
+  // antes de contar, así nunca queda "15 s → undefined s" en el registro.
+  .transform((p) => Object.fromEntries(Object.entries(p).filter(([, v]) => v !== undefined)) as typeof p)
   .refine((p) => Object.keys(p).length > 0, { message: "Nada que guardar." });
 
 export type BotOptionsPatch = z.infer<typeof botOptionsPatchSchema>;
@@ -181,7 +184,7 @@ export const OPTION_HELP: Record<BotOptionField, { help: string; ghl: string }> 
     ghl: "Sí (se duerme cuando un asesor escribe)",
   },
   humanReplyReactivateHours: {
-    help: "Cuánto tiempo después de la respuesta del vendedor el bot vuelve solo en ese chat. «Nunca» = solo con «Activar» en el Detalle del contacto.",
+    help: "Cuánto tiempo después de que un vendedor tomó el chat el bot vuelve solo (se cuenta desde su primera respuesta; una pausa puesta a mano con «Pausar agente» se respeta). «Nunca» = solo con «Activar» en el Detalle del contacto.",
     ghl: "se reactiva a mano",
   },
   handoverPauseHours: {
@@ -248,5 +251,5 @@ export function describeChange(c: BotOptionsChange, now: Date): string {
 }
 
 export function isBotOptionField(v: unknown): v is BotOptionField {
-  return typeof v === "string" && v in OPTION_LABELS;
+  return typeof v === "string" && Object.hasOwn(OPTION_LABELS, v);
 }
