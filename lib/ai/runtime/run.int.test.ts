@@ -1733,4 +1733,49 @@ describe.skipIf(!TEST_DATABASE_URL)("runtime del Agente IA (Postgres real)", () 
     expect(z.delivered).toEqual(["Cuesta $5,500."]);
     expect((await db.select().from(s.aiAgentDrafts)).map((d) => d.status).sort()).toEqual(["enviado", "obsoleto"]);
   });
+
+  it("C · (revisión) el worker se reinicia entre el rechazo y la tarjeta: el barrido deja la respuesta GUARDADA con su tarjeta, nunca \"enviado\"", async () => {
+    const trigger = await msg({ direction: "in", body: "¿precio?", at: ago(15 * 60_000) });
+    await db.insert(s.aiAgentDrafts).values({ id: "plan_rechazado", organizationId: ORG, conversationId: CONV, bubbles: ["Cuesta $5,500."], triggerMessageId: trigger, status: "enviando", resolvedAt: ago(12 * 60_000) });
+    await agentMsg({ status: "failed", errorCode: "131047", at: ago(12 * 60_000 - 1_000) });
+    expect(await sweep.reconcileStuckDrafts(new Date())).toBe(1);
+    expect((await db.select().from(s.aiAgentDrafts))[0].status).toBe("pendiente");
+    expect((await openCard())!.body).toContain("se interrumpió");
+    expect(await sweep.findOrphanConversations(new Date())).toEqual([]); // el modelo no se vuelve a llamar
+  });
+
+  it("C · (revisión) \"Reintentar\" cuya corrida se perdió (Redis): el barrido la vuelve a programar; recién pulsado o con tarjeta abierta, no", async () => {
+    await msg({ direction: "in", body: "hola", at: ago(20_000) });
+    const failing = makeDeps({ brain: ["¡Hola!"] });
+    failing.deps.sendBubble = async () => {
+      throw new Error("falla");
+    };
+    await run.runAgent(JOB, failing.deps);
+    expect(await sweep.findLostRetries(new Date())).toEqual([]); // tarjeta abierta: espera al vendedor
+    const card = await retryCard();
+    expect(await sweep.findLostRetries(new Date())).toEqual([]); // recién pulsado: la corrida va en camino
+    await db.update(s.aiAgentNotices).set({ resolvedAt: ago(5 * 60_000) }).where(eq(s.aiAgentNotices.id, card.id));
+    await db.update(s.aiAgentDrafts).set({ createdAt: ago(10 * 60_000) });
+    expect(await sweep.findLostRetries(new Date())).toEqual([{ conversationId: CONV, organizationId: ORG }]);
+    const z = fakeZernio();
+    expect(await run.runAgent(JOB, makeDeps({}, z).deps)).toEqual({ kind: "sent", bubbles: 1 });
+    expect(z.delivered).toEqual(["¡Hola!"]);
+    expect(await sweep.findLostRetries(new Date())).toEqual([]);
+  });
+
+  it("C · (revisión) una fila en cola de hace más de 15 min ya no se reenvía (pudo salir y la clave de Zernio vence): la tarjeta pide revisar el celular", async () => {
+    await msg({ direction: "in", body: "¿precio?", at: ago(30 * 60_000) });
+    const z = fakeZernio();
+    const first = makeDeps({ brain: ["Cuesta $5,500 MXN."] }, z);
+    first.deps.sendBubble = async (p) => {
+      await db.insert(s.messages).values({ id: p.messageId, organizationId: ORG, conversationId: CONV, direction: "out", source: "ai_agent", type: "text", body: p.text, status: "queued", sentAt: ago(20 * 60_000) });
+      throw new Error("se reinició el proceso");
+    };
+    await run.runAgent(JOB, first.deps);
+    await retryCard();
+    const retry = makeDeps({}, z);
+    expect(await run.runAgent(JOB, retry.deps)).toEqual({ kind: "failed", reason: "envio_fallido" });
+    expect(z.calls()).toBe(0);
+    expect((await openCard())!.body).toContain("revísalo en el celular");
+  });
 });

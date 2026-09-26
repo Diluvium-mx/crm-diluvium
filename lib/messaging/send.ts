@@ -452,6 +452,7 @@ export async function sendAgentText(
       status: messages.status,
       errorCode: messages.errorCode,
       providerMessageId: messages.providerMessageId,
+      sentAt: messages.sentAt,
     })
     .from(messages)
     .where(where)
@@ -465,7 +466,11 @@ export async function sendAgentText(
   if (prior.providerMessageId || prior.status === "sent" || prior.status === "delivered" || prior.status === "read") {
     return { messageId: params.messageId, status: "sent" };
   }
-  if (isAmbiguousSendError(prior.errorCode)) {
+  // Una fila en cola vieja ya no es "nuestro error de hace un momento": pudo salir y la
+  // clave de Zernio vence a las 24 h. Se trata igual que el barrido (expireUnconfirmedSends):
+  // sin confirmar, no se reenvía.
+  const staleQueued = prior.status === "queued" && (prior.sentAt ?? new Date(0)).getTime() < now.getTime() - SEND_UNCONFIRMED_AFTER_MS;
+  if (isAmbiguousSendError(prior.errorCode) || staleQueued) {
     throw new SendRejectedError("not_retryable", "WhatsApp no confirmó si la respuesta le llegó al cliente; reenviarla podría duplicarla.");
   }
   const text = validText(params.text);

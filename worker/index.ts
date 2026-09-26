@@ -41,7 +41,7 @@ import { startScheduledWorker } from "./scheduled";
 import { startWorkflowWorker } from "./workflows";
 import { onInboundKeyword } from "@/lib/workflows/triggers";
 import { agentIngestHooks, wakeAgentAfterTranscription } from "@/lib/ai/runtime/hooks";
-import { staleTranscriptionIds, transcribeMessageAudio } from "@/lib/ai/transcription/transcribe";
+import { closeInterruptedTranscriptions, staleTranscriptionIds, transcribeMessageAudio } from "@/lib/ai/transcription/transcribe";
 import { startAgentRuntime } from "@/lib/ai/runtime/worker";
 import { adsIngestHooks, startAdsWorker } from "@/lib/ads/worker";
 
@@ -288,6 +288,9 @@ async function sweep() {
 
   // Transcripciones que quedaron a medias (worker reiniciado): solo audios nuevos.
   for (const id of await staleTranscriptionIds(new Date())) await transcribeAndWake(storage, id);
+  // Las que ya habían llamado a OpenAI y se cortaron: "fallida", sin volver a pagar.
+  const cortadas = await closeInterruptedTranscriptions(new Date());
+  if (cortadas) console.warn(`[transcripcion] barrido: ${cortadas} transcripción(es) interrumpida(s) cerrada(s) sin volver a llamar`);
 }
 
 // Sin barridos solapados: si uno tarda más de un minuto, el siguiente espera.

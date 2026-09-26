@@ -161,4 +161,18 @@ describe.skipIf(!TEST_DATABASE_URL)("transcripción de notas de voz (Postgres re
     expect(ids).toContain(colgado);
     expect(ids).not.toContain(nuevo);
   });
+
+  it("(revisión) si ya se había llamado a OpenAI y se cortó: nunca se vuelve a pagar; el barrido la cierra como fallida", async () => {
+    const id = await audioMsg();
+    await db
+      .update(s.messages)
+      .set({ metadata: { transcripcion: { estado: "pendiente", fase: "llamada", at: new Date(Date.now() - 5 * 60_000).toISOString() } } })
+      .where(d.eq(s.messages.id, id));
+    const transcriber = vi.fn(async () => ({ text: "x" }));
+    expect(await t.staleTranscriptionIds(new Date())).not.toContain(id);
+    expect(await t.transcribeMessageAudio(storageWith(oggOpus(10)), id, { transcriber })).toEqual({ kind: "en_curso" });
+    expect(await t.closeInterruptedTranscriptions(new Date())).toBe(1);
+    expect((await row(id)).metadata).toMatchObject({ transcripcion: { estado: "fallida", motivo: "la transcripción se interrumpió" } });
+    expect(transcriber).not.toHaveBeenCalled();
+  });
 });

@@ -82,7 +82,7 @@ export async function transcribeMessageAudio(
         and(
           own,
           isNull(messages.transcripcion),
-          sql`(${messages.metadata}->'transcripcion' is null or (${messages.metadata}->'transcripcion'->>'estado' = 'pendiente' and ${messages.metadata}->'transcripcion'->>'at' < ${stale}))`,
+          sql`(${messages.metadata}->'transcripcion' is null or (${messages.metadata}->'transcripcion'->>'estado' = 'pendiente' and ${messages.metadata}->'transcripcion'->>'at' < ${stale} and coalesce(${messages.metadata}->'transcripcion'->>'fase', '') <> 'llamada'))`,
         ),
       )
       .returning({ id: messages.id });
@@ -117,6 +117,13 @@ export async function transcribeMessageAudio(
     if (seconds === null) return await finish("omitida", { motivo: "no se pudo leer la duración del audio" });
     if (seconds > MAX_AUDIO_SECONDS) return await finish("omitida", { motivo: "dura más de 10 minutos", segundos: seconds });
 
+    // Fase "llamada" ANTES de pagar: si algo falla después de que OpenAI cobró (o el
+    // proceso muere), un reclamo vencido NO vuelve a llamar (cerrarInterrumpidas lo da por
+    // fallido). Nunca se cobra dos veces el mismo audio.
+    await db
+      .update(messages)
+      .set({ metadata: sql`jsonb_set(${messages.metadata}, '{transcripcion,fase}', '"llamada"'::jsonb)` })
+      .where(own);
     const t0 = Date.now();
     const base = { organizationId: m.organizationId, conversationId: m.conversationId, messageId: m.id, stage: "transcripcion" as const, modelId: TRANSCRIPTION_MODEL_ID, provider: "openai" as const, usage: null };
     let text: string;
@@ -151,9 +158,31 @@ export async function staleTranscriptionIds(now: Date, limit = 10): Promise<stri
         isNull(messages.importedAt),
         sql`${messages.createdAt} > ${new Date(now.getTime() - TRANSCRIBE_MAX_AGE_MS).toISOString()}::timestamp`,
         sql`${messages.metadata}->'transcripcion'->>'estado' = 'pendiente'`,
+        sql`coalesce(${messages.metadata}->'transcripcion'->>'fase', '') <> 'llamada'`,
         sql`${messages.metadata}->'transcripcion'->>'at' < ${new Date(now.getTime() - TRANSCRIPTION_CLAIM_MS).toISOString()}`,
       ),
     )
     .limit(limit);
   return rows.map((r) => r.id);
+}
+
+// Intentos que ya habían llamado a OpenAI y quedaron a medias (se cayó la BD o el
+// proceso después de pagar): se cierran como "fallida" SIN volver a llamar. Devuelve
+// cuántos cerró.
+export async function closeInterruptedTranscriptions(now: Date): Promise<number> {
+  const meta: TranscripcionMeta = { estado: "fallida", at: now.toISOString(), motivo: "la transcripción se interrumpió" };
+  const rows = await db
+    .update(messages)
+    .set({ metadata: sql`jsonb_set(${messages.metadata}, '{transcripcion}', ${metaJson(meta)})` })
+    .where(
+      and(
+        isNull(messages.transcripcion),
+        sql`${messages.createdAt} > ${new Date(now.getTime() - 2 * TRANSCRIBE_MAX_AGE_MS).toISOString()}::timestamp`,
+        sql`${messages.metadata}->'transcripcion'->>'estado' = 'pendiente'`,
+        sql`${messages.metadata}->'transcripcion'->>'fase' = 'llamada'`,
+        sql`${messages.metadata}->'transcripcion'->>'at' < ${new Date(now.getTime() - TRANSCRIPTION_CLAIM_MS).toISOString()}`,
+      ),
+    )
+    .returning({ id: messages.id });
+  return rows.length;
 }

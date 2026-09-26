@@ -10,6 +10,9 @@ import { db } from "@/lib/db";
 import { aiAgentDrafts, messages } from "@/lib/db/schema";
 import { SEND_UNCONFIRMED, SEND_UNKNOWN } from "@/lib/messaging/rules";
 import { addNotice } from "./notices";
+import { recordAgentError } from "./agent-error";
+import { sendErrorBody } from "./model-errors";
+import { holdForRetry } from "./saved-reply";
 
 // Un entrante con este número de errores del agente ya no se reintenta solo
 // (los errores quedan en ai_usage como rastro).
@@ -104,6 +107,7 @@ export async function reconcileStuckDrafts(now: Date): Promise<number> {
       conversationId: aiAgentDrafts.conversationId,
       resolvedAt: aiAgentDrafts.resolvedAt,
       bubbles: aiAgentDrafts.bubbles,
+      triggerMessageId: aiAgentDrafts.triggerMessageId,
     })
     .from(aiAgentDrafts)
     .where(and(eq(aiAgentDrafts.status, "enviando"), lt(aiAgentDrafts.resolvedAt, new Date(now.getTime() - DRAFT_SENDING_STUCK_MS))))
@@ -134,6 +138,22 @@ export async function reconcileStuckDrafts(now: Date): Promise<number> {
         ),
       );
     if (outs.some((m) => m.status === "queued")) continue; // aún en camino
+    // Parte 1 (26-sep): el 1er mensaje se RECHAZÓ y el worker se reinició antes de
+    // guardar la respuesta y la tarjeta: queda guardada ("pendiente") con su tarjeta
+    // "Reintentar / Apagar", igual que si no se hubiera reiniciado. Nunca "enviado"
+    // (el cliente no recibió nada) ni otra llamada al modelo.
+    if (outs.length > 0 && outs.every((m) => m.status === "failed") && d.triggerMessageId) {
+      if (await holdForRetry(d.organizationId, d.id)) {
+        await recordAgentError({
+          organizationId: d.organizationId,
+          conversationId: d.conversationId,
+          messageId: d.triggerMessageId,
+          body: sendErrorBody("El envío se interrumpió (el servidor se reinició) y WhatsApp no recibió la respuesta."),
+        });
+        resolved++;
+      }
+      continue;
+    }
     const status = outs.length === 0 ? "obsoleto" : "enviado";
     const closed = await db
       .update(aiAgentDrafts)
@@ -176,4 +196,35 @@ export async function noticeFailedAgentSends(now: Date): Promise<number> {
     if (await addNotice({ organizationId: r.organization_id, conversationId: r.conversation_id, kind: "envio", body, messageId: r.id })) added++;
   }
   return added;
+}
+
+// Parte 1 (26-sep): "Reintentar" ya resolvió la tarjeta pero su corrida se perdió
+// (Redis se reinició, el job desapareció): la respuesta guardada sigue "pendiente" y el
+// barrido de huérfanos no la ve (un plan no obsoleto cuenta como atendido). Se vuelve a
+// programar la corrida (reenvía el MISMO texto, sin modelo). Solo las recientes.
+export const LOST_RETRY_MIN_AGE_SECONDS = 90;
+export const LOST_RETRY_MAX_AGE_HOURS = 24;
+
+export async function findLostRetries(now: Date, limit = 50): Promise<OrphanConversation[]> {
+  const rows = await db.execute<{ conversation_id: string; organization_id: string }>(sql`
+    select d.conversation_id, d.organization_id
+    from ai_agent_drafts d
+    join conversations c on c.id = d.conversation_id and c.organization_id = d.organization_id
+    where d.status = 'pendiente' and c.agent_state = 'activo'
+      and exists (
+        select 1 from ai_agent_notices n
+        where n.organization_id = d.organization_id and n.conversation_id = d.conversation_id
+          and n.kind = 'agente_error' and n.resolution = 'reintentar'
+          and n.resolved_at > d.created_at
+          and n.resolved_at < ${ts(new Date(now.getTime() - LOST_RETRY_MIN_AGE_SECONDS * 1000))}
+          and n.resolved_at > ${ts(new Date(now.getTime() - LOST_RETRY_MAX_AGE_HOURS * 3_600_000))}
+      )
+      and not exists (
+        select 1 from ai_agent_notices n
+        where n.organization_id = d.organization_id and n.conversation_id = d.conversation_id
+          and n.kind = 'agente_error' and n.resolved_at is null
+      )
+    limit ${limit}
+  `);
+  return rows.map((r) => ({ conversationId: r.conversation_id, organizationId: r.organization_id }));
 }
