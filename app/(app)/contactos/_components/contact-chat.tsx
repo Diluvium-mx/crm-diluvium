@@ -93,6 +93,16 @@ export function ContactChat({ contactId }: { contactId: string }) {
   useInboxStream((event) => {
     if (event.type === "reload") return void load();
     if (event.type === "contact.created" || event.type === "contacts.bulk") return;
+    // Lote del historial del celular: el hilo abierto se relee una vez por lote; si el
+    // contacto aún no tenía conversación, pudo nacer en este lote (búsqueda con debounce).
+    if (event.type === "inbox.bulk") {
+      if (conversationIdRef.current) setRevalToken((n) => n + 1);
+      else {
+        clearTimeout(pendingLoadRef.current);
+        pendingLoadRef.current = setTimeout(() => void load(), 1_000);
+      }
+      return;
+    }
     // Etapa cambiada por otro: el chip del encabezado se pone al día (500 ms,
     // varios cambios seguidos = una lectura).
     if (event.type === "contact.updated") {

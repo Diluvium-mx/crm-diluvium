@@ -241,6 +241,14 @@ export function InboxBoard({ openContactId = null }: { openContactId?: string | 
       return;
     }
     if (event.type === "contact.created" || event.type === "contacts.bulk") return; // sin conversación aún
+    if (event.type === "inbox.bulk") {
+      // Lote del historial del celular (cada 500 mensajes o 5 s): UNA relectura de la
+      // lista y del hilo abierto, no una por mensaje. No marca leído: el historial
+      // importado nunca cuenta como no leído.
+      void refreshList(true);
+      if (selectedIdRef.current) setRevalToken((n) => n + 1);
+      return;
+    }
     scheduleUpdate(event.conversationId);
     const id = selectedIdRef.current;
     if (!id || event.conversationId !== id) return;

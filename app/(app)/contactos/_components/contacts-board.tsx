@@ -48,6 +48,8 @@ type Signals = Record<string, FunnelSignal>;
 const MAX_SIGNAL_IDS = 200;
 // Tope de contactos por petición (el mismo que valida getContactsByIds).
 const MAX_LIVE_IDS = 200;
+// Durante la importación del historial del celular, el tablero se relee a lo más así.
+const HISTORY_REFRESH_MS = 30_000;
 
 function StageColumn({
   stage,
@@ -295,6 +297,22 @@ export function ContactsBoard({
   useEffect(() => {
     flushNewRef.current = flushNew;
   }, [flushNew]);
+  // Lote del historial del celular con contactos nuevos (`inbox.bulk`): el tablero se
+  // relee a lo más cada 30 s mientras dura la importación (con 10,000+ contactos,
+  // releerlo cada 5 s estorbaría al vendedor). El historial no cambia las señales de
+  // las tarjetas (no leídos, pendiente, aviso): no se piden.
+  const historyRefreshRef = useRef<{ last: number; timer?: ReturnType<typeof setTimeout> }>({ last: 0 });
+  useEffect(() => () => clearTimeout(historyRefreshRef.current.timer), []);
+  const scheduleHistoryRefresh = useCallback(() => {
+    const h = historyRefreshRef.current;
+    if (h.timer) return;
+    h.timer = setTimeout(() => {
+      h.timer = undefined;
+      h.last = Date.now();
+      bulkRef.current = true;
+      void flushNewRef.current();
+    }, Math.max(0, h.last + HISTORY_REFRESH_MS - Date.now()));
+  }, []);
   // Señales en tiempo real: cada cambio de mensaje o conversación (entrante,
   // respuesta, leído, aviso del agente) marca su conversación; se piden en lote
   // (ventana de 500 ms) y UNA petición a la vez: lo que llega mientras tanto sale
@@ -495,6 +513,10 @@ export function ContactsBoard({
   }, [syncedInitialContacts, scheduleLive]);
 
   useInboxStream((event) => {
+    if (event.type === "inbox.bulk") {
+      if (event.contactos > 0) scheduleHistoryRefresh();
+      return;
+    }
     if (event.type === "contact.updated") {
       // La cotización y el Detalle no se ven en la tarjeta (decisión del dueño):
       // esos los pone al día el Detalle abierto.

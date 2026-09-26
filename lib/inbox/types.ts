@@ -193,6 +193,11 @@ export type InboxEvent =
   | { type: "contact.created"; contactId: string }
   /** Muchos contactos nuevos en una sola sentencia (importación): el kanban se recarga una vez. */
   | { type: "contacts.bulk" }
+  /**
+   * Un lote del historial del celular (importador: cada 500 mensajes o 5 s). La Bandeja
+   * relee su lista una vez; el Embudo sus señales y, si nacieron contactos, el tablero.
+   */
+  | { type: "inbox.bulk"; contactos: number }
   /** Un contacto cambió: la UI vuelve a pedir ese contacto (lib/contacts/notify-updated.ts). */
   | ContactUpdatedEvent
   | { type: "reload" };

@@ -34,6 +34,25 @@ export class RetryableIngestError extends Error {}
  */
 export class DeadLetterIngestError extends Error {}
 
+/**
+ * Regla del dueño (NINGÚN contacto duplicado): el teléfono de un chat del historial
+ * del celular coincide con MÁS de un contacto. No se adivina a cuál pegarlo: el chat
+ * no se importa y se reporta (por webhook queda en dead-letter, visible en el
+ * monitoreo). Vive aquí y no en history.ts para no heredar de una clase a medio
+ * cargar (history.ts e ingest.ts se importan entre sí).
+ */
+export class AmbiguousContactError extends DeadLetterIngestError {
+  constructor(
+    /** Teléfono o BSUID completo: solo para el reporte local del importador (.historial/). */
+    readonly identity: string,
+    readonly contactIds: string[],
+  ) {
+    // El mensaje llega a los logs del worker y a Redis: sin el teléfono completo (los
+    // ids de los contactos bastan para encontrar el duplicado).
+    super(`historial: …${identity.slice(-4)} coincide con ${contactIds.length} contactos (${contactIds.join(", ")}); no se adivina, revisar para fusionar`);
+  }
+}
+
 /** Intentos a partir de los cuales un evento pendiente se considera dead-letter. */
 export const DEAD_LETTER_ATTEMPTS = 20;
 

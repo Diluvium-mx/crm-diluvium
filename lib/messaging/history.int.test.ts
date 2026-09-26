@@ -420,34 +420,33 @@ describe.skipIf(!TEST_DATABASE_URL)("historial del celular (Postgres real)", () 
 
   it("importPhoneHistory importa solo coexistence_history, simula dry-run, deduplica y rechaza canal archivado", async () => {
     const fakeClient = {
+      stats: { requests: 0, retries: 0, throttled: 0, waitedMs: 0 },
       async *conversations() {
         yield { id: "zconv_import", participantId: "+5216682410601", participantName: "Ana" };
       },
-      async *messages() {
-        yield {
+      async *messagePages() {
+        yield [{
           id: "wamid.IMPORT.1",
           platform: "whatsapp",
           message: "viejo 1",
           direction: "incoming",
           sentAt: "2026-01-01T10:00:00Z",
           metadata: { source: "coexistence_history" },
-        };
-        yield {
+        }, {
           id: "wamid.LIVE.IGNORED",
           platform: "whatsapp",
           message: "vivo",
           direction: "incoming",
           sentAt: "2026-01-01T10:01:00Z",
           metadata: { source: "live" },
-        };
-        yield {
+        }, {
           id: "wamid.IMPORT.2",
           platform: "whatsapp",
           message: "viejo 2",
           direction: "outgoing",
           createdAt: "2026-01-01T10:02:00Z",
           metadata: { source: "coexistence_history" },
-        };
+        }];
       },
       async *contacts() {
         yield { phoneE164: "+526682410601", name: "Ana Agenda" };

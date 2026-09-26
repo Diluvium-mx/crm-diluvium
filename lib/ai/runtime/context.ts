@@ -3,7 +3,7 @@
 // Multi-tenant (CLAUDE.md §7): TODA lectura filtra por organization_id, además
 // del id. Un id de otra organización no encuentra nada (defensa en profundidad:
 // los ids vienen de la cola interna, pero nunca se confía en ellos solos).
-import { and, count, desc, eq, inArray, ne, notInArray, sql } from "drizzle-orm";
+import { and, count, desc, eq, inArray, isNull, ne, notInArray, sql } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { aiAgentDrafts, aiUsage, channels, conversations, messages } from "@/lib/db/schema";
 import { MAX_HISTORY_CHARS, messageText } from "./transcript";
@@ -60,6 +60,8 @@ export async function lastOutbound(organizationId: string, conversationId: strin
 // orden cronológico. Se compara en SQL para no perder microsegundos en JS. Solo
 // los MAX_PENDING más recientes: un remitente que manda miles de mensajes (spam,
 // nunca hay saliente) no vuelve cuadrático el trabajo de cada entrante.
+// El historial copiado del celular (imported_at) NUNCA está pendiente: un "gracias"
+// sin contestar de hace meses no se responde junto con el primer mensaje vivo.
 export const MAX_PENDING = 50;
 
 // Parte 1 (26-sep-2026): una burbuja REENVIADA de una respuesta guardada solo contesta
@@ -76,6 +78,7 @@ export async function pendingInbound(organizationId: string, conversationId: str
       and(
         inConversation(organizationId, conversationId),
         eq(messages.direction, "in"),
+        isNull(messages.importedAt),
         sql`${waAt} > coalesce((
           select max(coalesce((o.metadata->>'respondeHasta')::timestamp, o.sent_at, o.created_at)) from messages o
           where o.organization_id = ${organizationId} and o.conversation_id = ${conversationId}
@@ -206,12 +209,13 @@ export async function agentReplyCount(organizationId: string, conversationId: st
 }
 
 // Total de entrantes: si crece entre leer y enviar, llegó algo nuevo (revisión
-// antes de enviar). Los mensajes no se borran, así que el conteo solo sube.
+// antes de enviar). Los mensajes no se borran, así que el conteo solo sube. El
+// historial que el importador copia en ese momento no es "algo nuevo" del cliente.
 export async function inboundCount(organizationId: string, conversationId: string): Promise<number> {
   const [{ value }] = await db
     .select({ value: count() })
     .from(messages)
-    .where(and(inConversation(organizationId, conversationId), eq(messages.direction, "in")));
+    .where(and(inConversation(organizationId, conversationId), eq(messages.direction, "in"), isNull(messages.importedAt)));
   return value;
 }
 
