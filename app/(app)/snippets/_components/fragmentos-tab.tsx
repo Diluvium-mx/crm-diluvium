@@ -76,8 +76,9 @@ export function FragmentosTab({ initial, canManage }: { initial: SnippetView[]; 
     <div className="mx-auto max-w-3xl space-y-4 p-4">
       <div className="flex items-center justify-between gap-3">
         <p className="text-sm text-muted-foreground">
-          Respuestas rápidas con variables <code className="text-brand-orange">{"{{nombre}}"}</code>, para
-          responder dentro de las 24 h.
+          En un chat, escribe <code className="text-brand-orange">/</code> y parte del nombre (ej.{" "}
+          <code className="text-brand-orange">/precio</code>) o toca ⚡. El texto se pone en la caja: lo revisas y le
+          das Enviar.
         </p>
         {canManage && !draft && (
           <button
