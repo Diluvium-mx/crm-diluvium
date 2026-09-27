@@ -219,6 +219,7 @@ export function mergeHandoffToolCalls(first: readonly ValidToolCall[], second: r
     } else if (c.kind === "aviso" && !motivos.has(c.aviso.motivo)) {
       motivos.add(c.aviso.motivo);
       out.push(c);
+    }
     // "cotizacion" y "etapa" del Modelo 1 no se arrastran (ver arriba); "detalle" ya va arriba.
   }
   out.push(...second);
