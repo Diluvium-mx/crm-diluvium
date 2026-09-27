@@ -241,7 +241,7 @@ scheduled_messages   id, org_id, conversation_id, created_by_user_id, kind (text
 -- Columnas del Embudo (27-sep-2026, migración 0041; detalle en docs/agente-ia.md). Las etapas ya NO son
 -- el enum contact_stage: son filas por organización. contacts.stage y workflows.trigger_stage guardan
 -- la CLAVE con llave foránea compuesta (organization_id, key): ningún contacto apunta a una etapa que no existe.
-funnel_stages        id, org_id, key (estable, a-z0-9_), name, position, color, role (entrada|cerca_compra|
+funnel_stages        id, org_id, key (estable, a-z0-9_), name, position, color (sin uso), role (entrada|cerca_compra|
                      venta_cerrada, cada uno en UNA etapa; entrada primero y cerca_compra antes que venta_cerrada),
                      bot_rule (cuándo mueve el agente ahí), model_slot (1|2; sustituye a ai_config.etapas_modelo_1)
 

@@ -1,7 +1,7 @@
 "use server";
 
 // Server Actions de las columnas del Embudo (etapas): leer, crear, editar (nombre,
-// color, regla del bot, modelo), reordenar, cambiar de papel y borrar reasignando
+// regla del bot, modelo), reordenar, cambiar de papel y borrar reasignando
 // contactos. Las editan vendedores, admin y owner (ACL `funnelStage`). La organización
 // sale de la SESIÓN; la lógica vive en lib/contacts/funnel-stages.ts.
 import { revalidatePath } from "next/cache";
@@ -18,13 +18,12 @@ import {
   setFunnelStageRole,
   updateFunnelStage,
 } from "@/lib/contacts/funnel-stages";
-import { MAX_STAGE_NAME, MAX_STAGE_RULE, STAGE_COLOR_PATTERN, STAGE_ROLES, type FunnelStage } from "@/lib/contacts/stages";
+import { MAX_STAGE_NAME, MAX_STAGE_RULE, STAGE_ROLES, type FunnelStage } from "@/lib/contacts/stages";
 
 export type StagesActionResult = { ok: true; stages: FunnelStage[]; moved?: number } | { ok: false; message: string };
 
 const idSchema = z.string().trim().min(1).max(128);
 const nameSchema = z.string().max(MAX_STAGE_NAME + 20);
-const colorSchema = z.string().regex(STAGE_COLOR_PATTERN, "Color inválido.");
 const ruleSchema = z.string().max(MAX_STAGE_RULE, `La regla no puede pasar de ${MAX_STAGE_RULE} caracteres.`);
 const slotSchema = z.union([z.literal(1), z.literal(2)]);
 
@@ -69,20 +68,22 @@ async function run(fallback: string, fn: (organizationId: string) => Promise<{ s
   }
 }
 
-export async function createStage(input: { name: string; color?: string; afterId?: string | null; botRule?: string; modelSlot?: 1 | 2 }): Promise<StagesActionResult> {
+// Sin color desde el 27-sep-2026 (decisión del dueño): la columna `color` de la base se
+// queda con su valor de fábrica y ninguna pantalla la usa.
+export async function createStage(input: { name: string; afterId?: string | null; botRule?: string; modelSlot?: 1 | 2 }): Promise<StagesActionResult> {
   return run("No se pudo agregar la etapa.", async (organizationId) => {
     const data = z
-      .object({ name: nameSchema, color: colorSchema.optional(), afterId: idSchema.nullable().optional(), botRule: ruleSchema.optional(), modelSlot: slotSchema.optional() })
+      .object({ name: nameSchema, afterId: idSchema.nullable().optional(), botRule: ruleSchema.optional(), modelSlot: slotSchema.optional() })
       .parse(input);
     await createFunnelStage(organizationId, data);
     return { stages: await listFunnelStages(organizationId) };
   });
 }
 
-export async function updateStage(input: { id: string; name?: string; color?: string; botRule?: string; modelSlot?: 1 | 2 }): Promise<StagesActionResult> {
+export async function updateStage(input: { id: string; name?: string; botRule?: string; modelSlot?: 1 | 2 }): Promise<StagesActionResult> {
   return run("No se pudo guardar la etapa.", async (organizationId) => {
     const data = z
-      .object({ id: idSchema, name: nameSchema.optional(), color: colorSchema.optional(), botRule: ruleSchema.optional(), modelSlot: slotSchema.optional() })
+      .object({ id: idSchema, name: nameSchema.optional(), botRule: ruleSchema.optional(), modelSlot: slotSchema.optional() })
       .parse(input);
     const { id, ...patch } = data;
     await updateFunnelStage(organizationId, id, patch);
