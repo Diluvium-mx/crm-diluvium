@@ -818,7 +818,11 @@ export function ContactsBoard({
         onDragEnd={handleDragEnd}
         onDragCancel={handleDragCancel}
       >
-        <div ref={boardScrollRef} className="flex min-h-0 flex-1 gap-4 overflow-x-auto pb-2">
+        {/* -m-3 p-3: margen interno para el resaltado de la columna bajo la tarjeta que se
+            arrastra (crece 1 % + marco naranja de 4 px por fuera). Un contenedor con scroll
+            horizontal recorta TODO lo que sale de su caja (también arriba): sin este margen se
+            comía el borde de arriba del marco. El -m-3 deja las columnas en el mismo lugar. */}
+        <div ref={boardScrollRef} className="-m-3 flex min-h-0 flex-1 gap-4 overflow-x-auto p-3">
           {stages.map((stage) => (
             <StageColumn
               key={stage.key}
