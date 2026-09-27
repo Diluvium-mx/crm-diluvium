@@ -217,6 +217,11 @@ export async function deleteFunnelStage(organizationId: string, id: string, move
     if (!target || target.id === stage.id) throw new FunnelStageError("Elige otra etapa a la que pasar sus contactos.");
     if (stage.role) throw new FunnelStageError(`"${stage.name}" tiene el papel "${STAGE_ROLE_LABELS[stage.role]}": pásalo a otra etapa antes de borrarla.`);
     if (current.length <= MIN_STAGES) throw new FunnelStageError(`El Embudo necesita al menos ${MIN_STAGES} etapas.`);
+    // Candado de la fila: un mover_etapa, un arrastre o una importación que apunte a esta
+    // etapa en este instante ESPERA (su llave foránea pide un candado que choca con este)
+    // y, al confirmar el borrado, falla limpio (su job o su pantalla lo reintenta). Sin
+    // esto, uno que entrara entre el UPDATE de abajo y el DELETE haría fallar el borrado.
+    await tx.execute(sql`select 1 from funnel_stages where id = ${stage.id} and organization_id = ${organizationId} for update`);
     const moved = await tx
       .update(contacts)
       .set({ stage: target.key, stageChangedAt: new Date(), stageChangedBy: "sistema" })

@@ -264,10 +264,14 @@ describe("parseGhlContactsCsv (formato real de GHL)", () => {
       const mapped = parseGhlContactsCsv(`${header}\n${line({ opps: `${PREFIX} Cotización enviada, ${PREFIX} Prospecto` })}`, custom);
       expectSuccess(mapped);
       expect(mapped.rows[0]).toMatchObject({ stage: "cotizacion_enviada", stageRecognized: true });
-      // "Cerca de compra" ya no existe con ese nombre: no se reconoce → etapa de entrada.
-      const gone = parseGhlContactsCsv(`${header}\n${line({ opps: `${PREFIX} Cerca de compra` })}`, custom);
+      // "Interesado" se borró en el CRM (ni su nombre ni su clave existen): no se reconoce → etapa de entrada.
+      const gone = parseGhlContactsCsv(`${header}\n${line({ opps: `${PREFIX} Interesado` })}`, custom);
       expectSuccess(gone);
       expect(gone.rows[0]).toMatchObject({ stage: "nuevos", stageRecognized: false });
+      // "Cerca de compra" se renombró a "Pago pendiente" pero su clave sigue: el nombre de siempre de GHL la encuentra.
+      const viaDefault = parseGhlContactsCsv(`${header}\n${line({ opps: `${PREFIX} Cerca de compra` })}`, custom);
+      expectSuccess(viaDefault);
+      expect(viaDefault.rows[0]).toMatchObject({ stage: "cerca_compra", stageRecognized: true });
       const empty = parseGhlContactsCsv(`${header}\n${line({ opps: "" })}`, custom);
       expectSuccess(empty);
       expect(empty.rows[0]).toMatchObject({ stage: "nuevos", stageRecognized: true });

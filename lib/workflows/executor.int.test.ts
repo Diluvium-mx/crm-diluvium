@@ -385,9 +385,10 @@ describe.skipIf(!TEST_DATABASE_URL)("executor de workflows", () => {
     const c1 = await ex.startWorkflowRun({ organizationId: ORG, workflowId: wf, conversationId: CONV, trigger: "command", triggeredByUserId: "u_v" });
     expect(await ex.executeWorkflowRun(c1.runId, { provider, storage })).toBe("done");
     expect((await contact()).stage).toBe("cerca_compra");
-    // El papel pasa a una etapa NUEVA al final: /banco (desde una etapa anterior) mueve a esa.
+    // El papel pasa a una etapa NUEVA (antes de Compra): /banco (desde una etapa anterior) mueve a esa.
     await db.update(s.contacts).set({ stage: "inbox", stageChangedBy: null }).where(eq(s.contacts.id, CONTACT));
-    const nueva = await fs.createFunnelStage(ORG, { name: "Esperando pago" });
+    const interesado = (await fs.listFunnelStages(ORG)).find((x) => x.key === "interesado")!;
+    const nueva = await fs.createFunnelStage(ORG, { name: "Esperando pago", afterId: interesado.id });
     await fs.setFunnelStageRole(ORG, nueva.id, "cerca_compra");
     const c2 = await ex.startWorkflowRun({ organizationId: ORG, workflowId: wf, conversationId: CONV, trigger: "command", triggeredByUserId: "u_v" });
     expect(await ex.executeWorkflowRun(c2.runId, { provider, storage })).toBe("done");

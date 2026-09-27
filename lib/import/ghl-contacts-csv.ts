@@ -1,6 +1,6 @@
 import Papa from "papaparse";
 import { normalizePhone } from "@/lib/phone";
-import { defaultStages, roleKey, sortStages, type FunnelStage } from "@/lib/contacts/stages";
+import { DEFAULT_STAGES, defaultStages, roleKey, sortStages, type FunnelStage } from "@/lib/contacts/stages";
 
 export type SourceChannel = "whatsapp" | "fb" | "instagram";
 /** Clave de una etapa del Embudo (funnel_stages.key). */
@@ -172,8 +172,15 @@ type StageMap = { byLabel: Map<string, ContactStage>; rank: Map<ContactStage, nu
 
 function stageMapOf(stages: readonly FunnelStage[]): StageMap {
   const ordered = sortStages(stages);
+  const byLabel = new Map(ordered.map((s) => [s.name.trim().toLowerCase(), s.key]));
+  // Respaldo: el export de GHL trae los nombres de siempre ("Compra", "Cerca de compra").
+  // Si esa etapa se renombró en el CRM pero su clave sigue, el nombre viejo la encuentra.
+  for (const d of DEFAULT_STAGES) {
+    const label = d.name.toLowerCase();
+    if (!byLabel.has(label) && ordered.some((s) => s.key === d.key)) byLabel.set(label, d.key);
+  }
   return {
-    byLabel: new Map(ordered.map((s) => [s.name.trim().toLowerCase(), s.key])),
+    byLabel,
     rank: new Map(ordered.map((s, index) => [s.key, index])),
     entry: roleKey(ordered, "entrada") ?? ordered[0]?.key ?? "inbox",
   };

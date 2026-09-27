@@ -59,6 +59,10 @@ async function run(fallback: string, fn: (organizationId: string) => Promise<{ s
   } catch (error) {
     if (error instanceof z.ZodError) return { ok: false, message: error.issues[0]?.message ?? fallback };
     if (error instanceof FunnelStageError) return { ok: false, message: error.message };
+    // Llave foránea: alguien movió un contacto a esa etapa justo en ese instante.
+    if (typeof error === "object" && error !== null && ((error as { code?: string }).code === "23503" || (error as { cause?: { code?: string } }).cause?.code === "23503")) {
+      return { ok: false, message: "Un contacto entró a esa etapa en este momento; inténtalo de nuevo." };
+    }
     if (error instanceof Error && error.message.startsWith("No tienes permiso")) return { ok: false, message: error.message };
     console.error(`[etapas] ${fallback}`, error);
     return { ok: false, message: fallback };

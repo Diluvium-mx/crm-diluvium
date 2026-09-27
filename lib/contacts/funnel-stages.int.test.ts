@@ -152,21 +152,59 @@ describe.skipIf(!TEST_DATABASE_URL)("columnas del Embudo (Postgres real)", () =>
     // Mover el papel "Venta cerrada" a Cerca de compra no se puede (ya tiene papel)…
     const cerca = await byId(ORG_A, "cerca_compra");
     await expect(fs.setFunnelStageRole(ORG_A, cerca.id, "venta_cerrada")).rejects.toThrow("ya tiene el papel");
-    // …pero sí a Interesado; entonces Compra queda sin papel y se puede borrar.
+    // …ni a Interesado (quedaría ANTES de Cerca de compra: /banco regresaría a un cliente de Venta cerrada)…
     const interesado = await byId(ORG_A, "interesado");
-    const after = await fs.setFunnelStageRole(ORG_A, interesado.id, "venta_cerrada");
-    expect(after.find((x) => x.key === "interesado")?.role).toBe("venta_cerrada");
+    await expect(fs.setFunnelStageRole(ORG_A, interesado.id, "venta_cerrada")).rejects.toThrow("debe ir antes que la de");
+    // …pero sí a una columna nueva al final; entonces Compra queda sin papel y se puede borrar.
+    const entregado = await fs.createFunnelStage(ORG_A, { name: "Entregado" });
+    const after = await fs.setFunnelStageRole(ORG_A, entregado.id, "venta_cerrada");
+    expect(after.find((x) => x.key === "entregado")?.role).toBe("venta_cerrada");
     expect(after.find((x) => x.key === "compra")?.role).toBeNull();
     expect(after.filter((x) => x.role === "venta_cerrada")).toHaveLength(1);
     await fs.deleteFunnelStage(ORG_A, compra.id, interesado.id);
     // Mínimo 3.
     const prospecto = await byId(ORG_A, "prospecto");
     await fs.deleteFunnelStage(ORG_A, prospecto.id, inbox.id);
+    await fs.deleteFunnelStage(ORG_A, interesado.id, inbox.id);
     expect((await keys()).length).toBe(3);
-    const cerca2 = await byId(ORG_A, "cerca_compra");
-    const int2 = await byId(ORG_A, "interesado");
-    await fs.setFunnelStageRole(ORG_A, int2.id, "cerca_compra").catch(() => undefined);
-    await expect(fs.deleteFunnelStage(ORG_A, cerca2.id, int2.id)).rejects.toThrow(/al menos 3|papel/);
+    await fs.createFunnelStage(ORG_A, { name: "Extra" });
+    const extra = await byId(ORG_A, "extra");
+    await fs.deleteFunnelStage(ORG_A, extra.id, inbox.id);
+    // Quedan 3, todas con papel: ninguna se puede borrar.
+    expect((await keys()).length).toBe(3);
+    await expect(fs.deleteFunnelStage(ORG_A, (await byId(ORG_A, "cerca_compra")).id, (await byId(ORG_A, "inbox")).id)).rejects.toThrow(/papel|al menos 3/);
+  });
+
+  it("el orden de los papeles se respeta: Entrada primero y Cerca de compra antes que Venta cerrada", async () => {
+    const st = await fs.listFunnelStages(ORG_A);
+    const id = (k: string) => st.find((x) => x.key === k)!.id;
+    // Compra arriba de Cerca de compra: rechazado (y nada cambia).
+    await expect(fs.reorderFunnelStages(ORG_A, [id("inbox"), id("prospecto"), id("interesado"), id("compra"), id("cerca_compra")])).rejects.toThrow("debe ir antes que la de");
+    // Inbox (Entrada) abajo: rechazado.
+    await expect(fs.reorderFunnelStages(ORG_A, [id("prospecto"), id("inbox"), id("interesado"), id("cerca_compra"), id("compra")])).rejects.toThrow("primera columna");
+    expect(await keys()).toEqual(["inbox", "prospecto", "interesado", "cerca_compra", "compra"]);
+    // Agregar al inicio (antes de Entrada) tampoco: se agrega "después de" otra etapa o al final.
+    // Pasar Entrada a otra columna que no es la primera: rechazado.
+    await expect(fs.setFunnelStageRole(ORG_A, id("prospecto"), "entrada")).rejects.toThrow("primera columna");
+  });
+
+  it("borrar mientras otro mueve un contacto a esa etapa: el borrado gana y el otro falla limpio (sin contactos huérfanos)", async () => {
+    const neg = await fs.createFunnelStage(ORG_A, { name: "Negociando" });
+    const inter = await byId(ORG_A, "interesado");
+    // Una transacción "de otro" mueve fs_c1 a Negociando y se queda abierta un momento.
+    const other = db.transaction(async (tx) => {
+      await tx.update(s.contacts).set({ stage: "negociando" }).where(d.eq(s.contacts.id, "fs_c1"));
+      await new Promise((r) => setTimeout(r, 300));
+    });
+    await new Promise((r) => setTimeout(r, 50));
+    const del = fs.deleteFunnelStage(ORG_A, neg.id, inter.id);
+    const [o, r] = await Promise.allSettled([other, del]);
+    // El otro confirmó primero (el borrado esperó su candado) y el borrado se lo llevó a Interesado.
+    expect(o.status).toBe("fulfilled");
+    expect(r.status).toBe("fulfilled");
+    expect((await stageOf("fs_c1")).stage).toBe("interesado");
+    const orphans = await db.execute(d.sql`select count(*)::int as n from contacts c where c.organization_id = ${ORG_A} and not exists (select 1 from funnel_stages f where f.organization_id = c.organization_id and f.key = c.stage)`);
+    expect(Number((orphans as unknown as { n: number }[])[0].n)).toBe(0);
   });
 
   it("aislamiento: los ids de otra organización no editan ni borran nada", async () => {
