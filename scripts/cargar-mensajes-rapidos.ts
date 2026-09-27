@@ -6,11 +6,12 @@
 // - si ya está igual, no lo toca. Correrlo dos veces no duplica nada.
 // Los demás mensajes rápidos de la organización NO se tocan ni se borran.
 // Sin --confirmar solo SIMULA: dice qué crearía, qué actualizaría y qué dejaría igual.
-// Sin --org toma la única organización con owner (si hay más de una, pide --org).
+// Sin --org toma la única organización que existe; si hay más de una, exige --org (no se
+// adivina por roles: un miembro puede tener varios, p. ej. "owner,admin").
 import { parseArgs } from "node:util";
 import { and, asc, eq } from "drizzle-orm";
 import { db } from "@/lib/db";
-import { member, organization, snippets } from "@/lib/db/schema";
+import { organization, snippets } from "@/lib/db/schema";
 import { planSnippetLoad, verifySnippetLoad, type ExistingSnippet, type SnippetLoadPlan } from "@/lib/snippets/carga";
 import { MENSAJES_RAPIDOS_DILUVIUM } from "@/lib/snippets/mensajes-rapidos-diluvium";
 
@@ -27,14 +28,10 @@ async function resolveOrganization(orgArg: string | undefined): Promise<{ id: st
     if (!org) throw new Error(`No existe la organización ${orgArg}`);
     return org;
   }
-  const orgs = await db
-    .selectDistinct({ id: organization.id, name: organization.name })
-    .from(member)
-    .innerJoin(organization, eq(organization.id, member.organizationId))
-    .where(eq(member.role, "owner"));
+  const orgs = await db.select({ id: organization.id, name: organization.name }).from(organization).orderBy(asc(organization.name));
   if (orgs.length !== 1) {
     const list = orgs.map((org) => `${org.id} ("${org.name}")`).join(", ");
-    throw new Error(`Hay ${orgs.length} organizaciones con owner: indica --org <id>. ${list}`);
+    throw new Error(`Hay ${orgs.length} organizaciones: indica --org <id>. ${list}`);
   }
   return orgs[0];
 }
@@ -100,7 +97,9 @@ async function main(): Promise<number> {
     console.log("\nNada que escribir: la organización ya tiene la lista tal cual.");
   } else {
     // Se vuelve a leer y planear DENTRO de la transacción, con las filas bloqueadas,
-    // por si alguien editó un mensaje rápido entre la simulación y la escritura.
+    // por si alguien editó un mensaje rápido entre la simulación y la escritura. Un
+    // nombre que alguien cree en ese mismo instante choca con el índice único
+    // (organización, nombre): la transacción se revierte entera y basta con repetir.
     const applied = await db.transaction(async (tx) => {
       const current = await snippetsOf(tx, org.id, true);
       const fresh = planSnippetLoad(current, MENSAJES_RAPIDOS_DILUVIUM);
