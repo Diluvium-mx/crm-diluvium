@@ -238,8 +238,8 @@ export function ChatThread({
   nowMs: number;
 }) {
   const conversationId = detail.id;
-  // Nombre y color de la etapa (columnas editables del Embudo; llega la clave).
-  const { labelOf, colorOf } = useFunnelStages();
+  // Nombre de la etapa (columnas editables del Embudo; llega la clave).
+  const { labelOf } = useFunnelStages();
   const [messages, setMessages] = useState<MessageView[]>([]);
   const [optimistic, setOptimistic] = useState<OptimisticMessage[]>([]);
   const [hasMore, setHasMore] = useState(false);
@@ -475,8 +475,7 @@ export function ChatThread({
         </div>
         {detail.channel.isTest && <PruebaBadge />}
         {/* "Pausar agente" / "Activar" viven SOLO en el Detalle del contacto (26-sep-2026). */}
-        <span className="flex shrink-0 items-center gap-1.5 rounded-full bg-brand-navy/10 px-2.5 py-1 text-xs font-medium text-brand-navy dark:text-brand-white">
-          <span aria-hidden className="inline-block size-2 rounded-full" style={{ backgroundColor: colorOf(detail.contact.stage) }} />
+        <span className="shrink-0 rounded-full bg-brand-navy/10 px-2.5 py-1 text-xs font-medium text-brand-navy">
           {labelOf(detail.contact.stage)}
         </span>
       </header>

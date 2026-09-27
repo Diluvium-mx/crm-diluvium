@@ -102,11 +102,8 @@ function StageColumn({
         isOver ? "scale-[1.01] shadow-lg ring-2 ring-brand-orange ring-offset-2 ring-offset-background" : ""
       }`}
     >
-      <div className="flex items-center justify-between rounded-t-lg bg-brand-navy px-3 py-2 text-brand-white" style={{ boxShadow: `inset 0 3px 0 ${stage.color}` }}>
-        <span className="flex min-w-0 items-center gap-2">
-          <span aria-hidden className="size-2.5 shrink-0 rounded-full" style={{ backgroundColor: stage.color }} />
-          <span className="truncate text-sm font-semibold">{stage.name}</span>
-        </span>
+      <div className="flex items-center justify-between rounded-t-lg bg-brand-navy px-3 py-2 text-brand-white">
+        <span className="truncate text-sm font-semibold">{stage.name}</span>
         <span className="rounded-full bg-white/20 px-2 py-0.5 text-xs">{contacts.length}</span>
       </div>
 
@@ -818,7 +815,11 @@ export function ContactsBoard({
         onDragEnd={handleDragEnd}
         onDragCancel={handleDragCancel}
       >
-        <div ref={boardScrollRef} className="flex min-h-0 flex-1 gap-4 overflow-x-auto pb-2">
+        {/* -m-3 p-3: margen interno para el resaltado de la columna bajo la tarjeta que se
+            arrastra (crece 1 % + marco naranja de 4 px por fuera). Un contenedor con scroll
+            horizontal recorta TODO lo que sale de su caja (también arriba): sin este margen se
+            comía el borde de arriba del marco. El -m-3 deja las columnas en el mismo lugar. */}
+        <div ref={boardScrollRef} className="-m-3 flex min-h-0 flex-1 gap-4 overflow-x-auto p-3">
           {stages.map((stage) => (
             <StageColumn
               key={stage.key}
