@@ -1,7 +1,8 @@
 "use server";
 
 // Server Actions del editor del agente (pestaña "Agente IA" estilo GHL): nombre del
-// agente y de la empresa, Modelo 1 (con sus etapas) y Modelo 2, Goal y FAQs con versiones. Todos
+// agente y de la empresa, Modelo 1 (con sus etapas) y Modelo 2, Goal y FAQs con versiones (y su
+// nombre). Todos
 // los roles, vendedor incluido (ACL: recurso `aiConfig`). La organización sale de la SESIÓN.
 import { revalidatePath } from "next/cache";
 import { ZodError } from "zod";
@@ -11,12 +12,13 @@ import { DEFAULT_MODEL_1, modelsForRole } from "@/lib/ai/catalog";
 import { modelAvailability } from "@/lib/ai/provider";
 import { STAGES } from "@/lib/contacts/stages";
 import { z } from "zod";
-import { faqSchema, goalSchema, profileSchema } from "@/lib/agente-ia/editor";
+import { faqSchema, goalSchema, profileSchema, versionNameSchema } from "@/lib/agente-ia/editor";
 import {
   createFaq,
   deleteFaq,
   EditorNotFoundError,
   loadEditor,
+  renameVersion,
   restoreFaqs,
   restoreGoal,
   saveBrainModel,
@@ -57,7 +59,7 @@ export async function getAgentEditor(): Promise<AgentEditorView> {
     loadLastOptionsChange(organizationId),
   ]);
   const { profile, basis } = usageProfile(totals);
-  const version = (v: { id: string; createdAt: Date; author: string | null; summary: string }) => ({ ...v, createdAt: v.createdAt.toISOString() });
+  const version = (v: { id: string; createdAt: Date; author: string | null; summary: string; name: string | null }) => ({ ...v, createdAt: v.createdAt.toISOString() });
   return {
     agentName: data.agentName,
     companyName: data.companyName,
@@ -174,5 +176,13 @@ export async function deleteAgentFaq(input: { id: string }): Promise<AgentAction
 export async function restoreAgentFaqs(input: { versionId: string }): Promise<AgentActionResult> {
   return run("No se pudieron restaurar las preguntas.", async ({ organizationId, userId }) => {
     await restoreFaqs(organizationId, userId, idSchema.parse(input.versionId));
+  });
+}
+
+// Nombre de una versión del Goal o de las FAQs (lápiz ✎). Vacío = sin nombre; máx. 80
+// caracteres. Solo versiones de la organización de la sesión (otra = "no existe").
+export async function renameAgentVersion(input: { versionId: string; name: string }): Promise<AgentActionResult> {
+  return run("No se pudo guardar el nombre de la versión.", async ({ organizationId }) => {
+    await renameVersion(organizationId, idSchema.parse(input.versionId), versionNameSchema.parse(input.name));
   });
 }

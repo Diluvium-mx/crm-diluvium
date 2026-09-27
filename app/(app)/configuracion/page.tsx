@@ -11,7 +11,7 @@ import { SellersPanel } from "./_components/sellers-panel";
 export default async function ConfiguracionPage({ searchParams }: PageProps<"/configuracion">) {
   const requested = (await searchParams).tab;
   if (requested === "cuenta") redirect("/mi-cuenta");
-  if (requested === "tallas") redirect("/agente-ia");
+  if (requested === "tallas") redirect("/agente-ia?seccion=tallas");
 
   const { role } = await requireActiveMembership();
   if (!roleAllows(role, "settings", "read")) redirect("/inicio");
