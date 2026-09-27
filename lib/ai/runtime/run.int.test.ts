@@ -1579,6 +1579,28 @@ describe.skipIf(!TEST_DATABASE_URL)("runtime del Agente IA (Postgres real)", () 
     expect(await brainOutcomes()).toEqual(["gpt-5.6-luna:traspaso", "claude-sonnet-5:sent"]);
   });
 
+  it("Columnas del Embudo: traspaso hacia una etapa NUEVA del Modelo 2 (creada en el editor, con su regla); una renombrada y con Modelo 1 ya no traspasa", async () => {
+    const fs = await import("@/lib/contacts/funnel-stages");
+    await dosModelos();
+    await setStage("interesado");
+    const interesado = (await fs.listFunnelStages(ORG)).find((x) => x.key === "interesado")!;
+    const nueva = await fs.createFunnelStage(ORG, { name: "Negociando", afterId: interesado.id, botRule: "Cuando pide descuento.", modelSlot: 2 });
+    await msg({ direction: "in", body: "¿me haces descuento?", at: ago(20_000) });
+    const a = makeDeps({ brain: ["respuesta de Luna", "respuesta de Sonnet"], brainToolCalls: [[{ toolName: "mover_etapa", input: { etapa: "negociando" } }], []] });
+    expect(await run.runAgent(JOB, a.deps)).toEqual({ kind: "sent", bubbles: 1 });
+    expect(brainIds(a.calls)).toEqual(["gpt-5.6-luna", "claude-sonnet-5"]);
+    expect(lastUserText(a.calls.filter((c) => c.kind === "cerebro")[1].input)).toContain("el contacto pasa a Negociando");
+    expect((await contact()).stage).toBe("negociando");
+    // Con Modelo 1 en esa etapa (y renombrada), mover ahí ya no es traspaso: contesta Luna sola.
+    await setStage("interesado");
+    await fs.updateFunnelStage(ORG, nueva.id, { name: "Regateando", modelSlot: 1 });
+    await msg({ direction: "in", body: "¿y si llevo dos?", at: new Date() });
+    const b = makeDeps({ brain: ["respuesta de Luna"], brainToolCalls: [[{ toolName: "mover_etapa", input: { etapa: "negociando" } }]] });
+    expect(await run.runAgent(JOB, b.deps)).toEqual({ kind: "sent", bubbles: 1 });
+    expect(brainIds(b.calls)).toEqual(["gpt-5.6-luna"]);
+    expect((await contact()).stage).toBe("negociando");
+  });
+
   it("traspaso: desde Inbox, saltándose etapas, Luna pide los datos bancarios → contesta Sonnet; la media sale UNA vez y el contacto queda en Cerca de compra", async () => {
     await dosModelos();
     const bank = await wf("datos_bancarios", [{ kind: "send_text", text: "CLABE 0123" }]);
