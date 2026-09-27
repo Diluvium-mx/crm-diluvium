@@ -357,6 +357,10 @@ Reglas de UI:
   `/anuncios` llevan `data-link="card"`, "Ver en Meta" lleva `data-link="text"`. La tabla de
   anuncios (`components/anuncios/ads-table.tsx`, contrato en `docs/ui-anuncios-tabla.md`)
   reemplaza la lista de `/anuncios` con luz verde del dueño.
+- **Mapa del CRM (26-sep-2026):** `docs/mapa-crm.md` es la guía del dueño (nombre y número de cada
+  elemento de cada pantalla). Todo cambio que toque la interfaz actualiza esa guía y su captura en
+  `docs/mapa-crm/` **en el mismo commit**, conservando los números existentes; lo nuevo toma el
+  siguiente número libre de su sección (nunca se renumera). Capturas solo con datos de ejemplo.
 
 ---
 
