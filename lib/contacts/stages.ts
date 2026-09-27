@@ -136,9 +136,13 @@ export function normalizeStageName(raw: string): { ok: true; name: string } | { 
 
 /**
  * Comprobación de un juego completo de etapas (lo que el editor y la BD exigen):
- * entre 3 y 10, claves y nombres únicos, cada papel en exactamente una etapa.
+ * entre 3 y 10, claves y nombres únicos, cada papel en exactamente una etapa, y el
+ * ORDEN de los papeles: la de Entrada es la primera columna y "Cerca de compra" va
+ * antes que "Venta cerrada" (si no, "solo hacia adelante" dejaría que /banco regrese a
+ * un cliente de Venta cerrada, o que los contactos nuevos nazcan en una columna desde
+ * la que el bot no puede avanzar a las de antes).
  */
-export function validateStageSet(stages: readonly Pick<FunnelStage, "key" | "name" | "role">[]): string[] {
+export function validateStageSet(stages: readonly Pick<FunnelStage, "key" | "name" | "role" | "position">[]): string[] {
   const errors: string[] = [];
   if (stages.length < MIN_STAGES) errors.push(`El Embudo necesita al menos ${MIN_STAGES} etapas.`);
   if (stages.length > MAX_STAGES) errors.push(`El Embudo no puede tener más de ${MAX_STAGES} etapas.`);
@@ -154,6 +158,12 @@ export function validateStageSet(stages: readonly Pick<FunnelStage, "key" | "nam
   for (const role of STAGE_ROLES) {
     const count = stages.filter((s) => s.role === role).length;
     if (count !== 1) errors.push(`El papel "${STAGE_ROLE_LABELS[role]}" debe estar en exactamente una etapa (hay ${count}).`);
+  }
+  const ordered = [...stages].sort((a, b) => a.position - b.position);
+  const at = (role: StageRole) => ordered.findIndex((s) => s.role === role);
+  if (at("entrada") > 0) errors.push(`La etapa con el papel "${STAGE_ROLE_LABELS.entrada}" debe ser la primera columna (ahí llegan los contactos nuevos).`);
+  if (at("cerca_compra") >= 0 && at("venta_cerrada") >= 0 && at("cerca_compra") > at("venta_cerrada")) {
+    errors.push(`La etapa con el papel "${STAGE_ROLE_LABELS.cerca_compra}" debe ir antes que la de "${STAGE_ROLE_LABELS.venta_cerrada}" (el bot y /banco solo avanzan).`);
   }
   return errors;
 }

@@ -165,7 +165,7 @@ export function ContactsBoard({
 }) {
   const [contacts, setContacts] = useState<Contact[]>(initialContacts);
   // Columnas del Embudo (editables; llegan en vivo por el contexto).
-  const { stages, lastEvent: stagesEvent } = useFunnelStages();
+  const { stages, lastEvent: stagesEvent, refresh: refreshStages } = useFunnelStages();
   const stageKeys = useMemo(() => new Set(stages.map((s) => s.key)), [stages]);
   const [editingStages, setEditingStages] = useState(false);
   // Señales de cada tarjeta (no vistos, por contestar, urgente) por contacto. Van
@@ -594,6 +594,12 @@ export function ContactsBoard({
     }
     return map;
   }, [filteredContacts, stages]);
+  // Un contacto en una etapa que esta pantalla aún no conoce (la crearon en otra sesión
+  // y el aviso se perdió): se releen las etapas en vez de esconder la tarjeta.
+  const unknownStage = useMemo(() => contacts.some((c) => !stageKeys.has(c.stage)), [contacts, stageKeys]);
+  useEffect(() => {
+    if (unknownStage) void refreshStages();
+  }, [unknownStage, refreshStages]);
 
   const selectedContact = contacts.find((contact) => contact.id === selectedContactId) ?? null;
   const activeContact = activeContactId

@@ -51,6 +51,9 @@ export function FunnelStagesProvider({ initial, children }: { initial: FunnelSta
       setLastEvent(event);
       void refresh();
     }
+    // Reconexión (laptop suspendida, red caída): pudo perderse un stages.updated; se
+    // releen las etapas (si no, las tarjetas de una columna nueva no tendrían dónde ir).
+    if (event.type === "reload") void refresh();
   });
 
   const value = useMemo<Ctx>(

@@ -60,6 +60,10 @@ describe("etapas del Embudo (puro)", () => {
     expect(validateStageSet(noEntry).some((e) => e.includes("Entrada"))).toBe(true);
     const twoWon = stages.map((s) => ({ ...s, role: s.key === "prospecto" ? ("venta_cerrada" as const) : s.role }));
     expect(validateStageSet(twoWon).some((e) => e.includes("Venta cerrada") && e.includes("hay 2"))).toBe(true);
+    const wonFirst = stages.map((s) => ({ ...s, position: s.key === "compra" ? 4 : s.key === "cerca_compra" ? 5 : s.position }));
+    expect(validateStageSet(wonFirst).some((e) => e.includes("debe ir antes que la de"))).toBe(true);
+    const entryLast = stages.map((s) => ({ ...s, position: s.key === "inbox" ? 9 : s.position }));
+    expect(validateStageSet(entryLast).some((e) => e.includes("primera columna"))).toBe(true);
     const dupName = stages.map((s) => ({ ...s, name: s.key === "prospecto" ? "compra" : s.name }));
     expect(validateStageSet(dupName)).toContain('Ya hay una etapa llamada "Compra".');
   });
