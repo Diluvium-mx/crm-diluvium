@@ -95,9 +95,10 @@ Interesado) y **Sonnet cierra** (Cerca de compra y Compra: datos bancarios, comp
   pasa a Cerca de compra: contesta como corresponde a esa etapa». La etapa que decidió el Modelo 1
   se aplica aunque el Modelo 2 no la pida. **Las acciones del Modelo 1 tampoco se pierden**
   (revisión completa, 27-sep-2026; `mergeHandoffToolCalls` en `lib/ai/runtime/tools.ts`): el
-  workflow que provocó el traspaso (datos bancarios), sus avisos al vendedor, su cotización (validada
-  contra el texto del Modelo 2) y su Detalle salen aunque el Modelo 2 no los repita; si los repite,
-  una sola vez. Antes se descartaban y el cliente leía «te paso los datos» sin recibirlos. La llamada
+  workflow que provocó el traspaso (datos bancarios), sus avisos al vendedor y su Detalle salen aunque
+  el Modelo 2 no los repita; si los repite, una sola vez. Su cotización no se arrastra (el cliente lee
+  el texto del Modelo 2; un monto que ese texto no dice no se fija). Antes todo se descartaba y el
+  cliente leía «te paso los datos» sin recibirlos. La llamada
   del Modelo 1 queda en `ai_usage` con resultado `traspaso` (se cobra, no se envía). Si el Modelo 2
   falla, sale la respuesta del Modelo 1.
 - **Media tras una burbuja rechazada** (misma revisión): si la 1.ª burbuja sale y WhatsApp rechaza la

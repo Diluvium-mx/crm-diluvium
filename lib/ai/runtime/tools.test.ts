@@ -108,9 +108,9 @@ describe("mergeHandoffToolCalls (traspaso Luna → Sonnet, 27-sep-2026)", async 
     expect(merged.filter((c) => c.kind === "aviso").map((c) => (c.kind === "aviso" ? c.aviso.motivo : ""))).toEqual(["cliente_pide_humano", "cotejar_deposito"]);
   });
 
-  it("la cotización de Luna solo entra si Sonnet no dio otra; la etapa de Luna se descarta (la pone el traspaso)", () => {
+  it("la cotización y la etapa de Luna no se arrastran (el cliente lee el texto de Sonnet; la etapa la pone el traspaso)", () => {
     expect(mergeHandoffToolCalls([quote(5500), { kind: "etapa", etapa: "cerca_compra" }], [quote(6000)])).toEqual([quote(6000)]);
-    expect(mergeHandoffToolCalls([quote(5500), { kind: "etapa", etapa: "cerca_compra" }], [])).toEqual([quote(5500)]);
+    expect(mergeHandoffToolCalls([quote(5500), { kind: "etapa", etapa: "cerca_compra" }], [])).toEqual([]);
   });
 
   it("el Detalle de Luna va antes que el de Sonnet (Sonnet gana campo por campo en mergeDetalle)", () => {
