@@ -32,7 +32,7 @@ Contenido: [1. Inicio](#1-inicio) · [2. Menú y barra de arriba](#2-menú-y-bar
 |---|---|---|---|
 | **Owner** | El dueño de la cuenta | Todo | Todo, incluida la pestaña **Configuración**. Es el único que puede dar el rol Owner; ningún Admin lo puede modificar. |
 | **Admin** | Encargado del equipo | Todo | Todo lo del vendedor + **Configuración** (dar de alta vendedores, cambiar roles, restablecer contraseñas, desactivar). No puede tocar al Owner. |
-| **Vendedor** | Quien atiende a los clientes | Todo **menos Configuración** | Todo lo demás: Dashboard (incluido registrar recargas), Bandeja, Embudo, Mensajes rápidos (fragmentos y plantillas), Anuncios, Agente IA (Goal, FAQs, modelos, opciones, tallas y canales) y Automatización. También edita o borra comentarios de otros. |
+| **Vendedor** | Quien atiende a los clientes | Todo **menos Configuración** | Todo lo demás: Dashboard (incluido registrar recargas), Bandeja, Embudo, Mensajes rápidos (crear, editar y borrar mensajes rápidos y plantillas), Anuncios, Agente IA (Goal, FAQs, modelos, opciones, tallas y canales) y Automatización. También edita o borra comentarios de otros. |
 
 Nadie es "dueño" de un contacto: **todos ven todos los contactos, siempre**.
 
@@ -47,7 +47,7 @@ Nadie es "dueño" de un contacto: **todos ven todos los contactos, siempre**.
 | **Ventana de 24 h** | Regla de WhatsApp: hasta 24 horas después del último mensaje del cliente se puede escribir libre. Pasadas las 24 h **solo se puede mandar una plantilla**. |
 | **Gratis por anuncio (72 h)** | Si el cliente llegó por un anuncio y se le contesta dentro de 24 h, por 72 h todos los mensajes (también plantillas) son gratis. El chat lo indica con 🎁. |
 | **Plantilla** | Mensaje fijo **aprobado por Meta** para escribir fuera de la ventana de 24 h. Sus huecos se llaman {{1}}, {{2}}… |
-| **Fragmento** | Respuesta rápida guardada por el equipo. Usa {{nombre}} (nombre del cliente) y {{vendedor}} (quien la manda). Se inserta con "/" o con ⚡. |
+| **Mensaje rápido** | Respuesta guardada por el equipo para contestar más rápido dentro de las 24 h (antes se llamaba "Fragmento"). Se inserta con "/" o con ⚡ y **no se manda sola**: la revisas y le das Enviar. Si lleva {{vendedor}}, se llena solo con tu nombre; {{nombre}} lo completas tú. Diluvium tiene 22 (Buenos días, Precio, Pagos…). |
 | **Workflow** | Secuencia de pasos (texto, archivo con pie, espera) que manda material: tabla de tamaños, datos bancarios, videos. Lo dispara el agente, un **comando** del vendedor, una **palabra clave** del cliente o la entrada a una etapa. |
 | **Comando** | Atajo que escribe el vendedor en el chat para mandar un workflow: /tabla, /banco, /video… |
 | **Corrida** | Cada vez que un workflow se ejecutó (Hecho, Omitido, Falló…). |
