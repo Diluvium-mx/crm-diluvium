@@ -41,8 +41,8 @@ infinito y varias oportunidades a lo largo del tiempo sin duplicarse.
    agentes ven todos los contactos, siempre.
 6. Notas, tareas con recordatorio y línea de tiempo por contacto
 7. 4 reportes: conversaciones nuevas, tiempo de primera respuesta, conversión por etapa, ganadas/perdidas
-8. Fragmentos (snippets a nivel organización, con variables tipo {{nombre}}):
-   respuestas reutilizables. Separados de las plantillas de WhatsApp (Fase 2).
+8. Mensajes rápidos (antes "Fragmentos"; tabla `snippets` a nivel organización, con variables tipo
+   {{nombre}}): respuestas reutilizables. Separados de las plantillas de WhatsApp (Fase 2).
 
 ### v2 (no tocar antes de terminar v1)
 Automatizaciones visuales, Instagram/Messenger, email, SMS, difusiones masivas, calendario y citas,
@@ -283,7 +283,8 @@ el mismo chat. Detalle de la bandeja y contrato de datos para el track UI: `docs
 
 **Sidebar desde el Bloque A (22-sep-2026):** Dashboard (`/inicio`, primero y destino al entrar) ·
 Bandeja (`/dashboard`) · Embudo (`/embudo`; antes "Contactos", `/contactos` redirige) · Mensajes
-rápidos (`/mensajes-rapidos`; antes "Fragmentos y plantillas", `/snippets` redirige) · Anuncios (`/anuncios`,
+rápidos (`/mensajes-rapidos`, pestañas "⚡ Mensajes rápidos · 📄 Plantillas"; antes "Fragmentos y plantillas",
+`/snippets` redirige) · Anuncios (`/anuncios`,
 tabla de anuncios de Meta que trajeron clientes en el periodo) · Agente IA · Automatización ·
 Configuración (`/configuracion`, al final, solo owner/admin: Vendedores; "Tallas" pasó a Agente IA › "Tallas y
 medidas" el 26-sep-2026, editable por todos los roles). Abajo del sidebar,
@@ -304,8 +305,8 @@ el menú del usuario (todos): "Mi cuenta" (`/mi-cuenta`: nombre y cambiar la pro
   estimado en cifras grandes. Debajo, conversaciones nuevas (contactos creados, sin `ghl_import` ni
   `seed`) por día local de Mazatlán, desgloses por canal/etapa/anuncio y comparación contra el mismo
   tramo del periodo anterior.
-- **Composer**: "/" busca Fragmentos (`{{vendedor}}` = usuario logueado), ⚡ Fragmentos, 📄
-  Plantillas y 🕒 Programar (hora de Mazatlán; fuera de la ventana de 24 h a esa hora, solo
+- **Composer**: "/" busca mensajes rápidos (sin importar acentos ni mayúsculas; `{{vendedor}}` = usuario
+  logueado), ⚡ Mensajes rápidos, 📄 Plantillas y 🕒 Programar (hora de Mazatlán; fuera de la ventana de 24 h a esa hora, solo
   plantilla; "cancelar si el cliente escribe antes" lo decide el worker al disparar).
 - **Cambios en vivo** (26-sep-2026): etapa, temperatura, cotización y Detalle cambiados por el Agente IA,
   una automatización u otro vendedor se ven sin refrescar (evento `contact.updated`, un solo helper

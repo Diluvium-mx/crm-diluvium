@@ -209,7 +209,7 @@ export function Composer({
       {slashOpen && (
         <div className="mb-2 overflow-hidden rounded-lg border bg-background shadow-sm">
           <div className="flex items-center justify-between border-b px-3 py-1.5 text-xs">
-            <span className="font-semibold text-brand-orange">⚡ Fragmentos</span>
+            <span className="font-semibold text-brand-orange">⚡ Mensajes rápidos</span>
             <span className="text-muted-foreground">↑↓ elegir · Enter insertar · Esc cerrar</span>
           </div>
           {commandMatches.length > 0 && (
@@ -233,15 +233,15 @@ export function Composer({
             </ul>
           )}
           {snippetsError ? (
-            <p className="px-3 py-3 text-sm text-brand-orange">No se pudieron cargar los fragmentos.</p>
+            <p className="px-3 py-3 text-sm text-brand-orange">No se pudieron cargar los mensajes rápidos.</p>
           ) : snippets === null ? (
-            <p className="px-3 py-3 text-sm text-muted-foreground">Cargando fragmentos…</p>
+            <p className="px-3 py-3 text-sm text-muted-foreground">Cargando mensajes rápidos…</p>
           ) : matches.length === 0 ? (
             <p className="px-3 py-3 text-sm text-muted-foreground">
-              {snippets.length === 0 ? "No hay fragmentos. Créalos en “Mensajes rápidos”." : "Sin coincidencias."}
+              {snippets.length === 0 ? "No hay mensajes rápidos. Créalos en la sección “Mensajes rápidos”." : "Sin coincidencias."}
             </p>
           ) : (
-            <ul role="listbox" aria-label="Fragmentos" className="max-h-56 overflow-y-auto py-1">
+            <ul role="listbox" aria-label="Mensajes rápidos" className="max-h-56 overflow-y-auto py-1">
               {matches.map((s, i) => (
                 <li key={s.id} role="option" aria-selected={i === active}>
                   <button
@@ -271,9 +271,9 @@ export function Composer({
             setSnippetOpen((open) => !open);
             setTemplateOpen(false);
           }}
-          aria-label="Insertar fragmento"
+          aria-label="Insertar mensaje rápido"
           aria-expanded={snippetOpen}
-          title="Fragmentos"
+          title="Mensajes rápidos"
           className={`rounded-md border px-2.5 py-2 transition-colors ${
             snippetOpen ? "border-brand-orange bg-brand-orange/10 text-brand-orange" : "text-brand-orange hover:bg-brand-orange/10"
           }`}
@@ -341,7 +341,7 @@ export function Composer({
           }}
           rows={1}
           aria-autocomplete="list"
-          placeholder="Escribe un mensaje… (/ busca fragmentos · Enter envía · Shift+Enter salto de línea)"
+          placeholder="Escribe un mensaje… (/ busca mensajes rápidos · Enter envía · Shift+Enter salto de línea)"
           className="max-h-32 min-h-[40px] flex-1 resize-y rounded-md border bg-background px-3 py-2 text-sm outline-none transition-colors placeholder:text-muted-foreground/60 focus:border-brand-navy focus:ring-2 focus:ring-brand-navy/30"
         />
         <button
