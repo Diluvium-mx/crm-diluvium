@@ -5,6 +5,8 @@
 import { timingSafeEqual } from "node:crypto";
 import { redis } from "@/lib/redis";
 import { inboundHealth, WORKER_HEARTBEAT_KEY } from "@/lib/monitoring/inbound-health";
+import { checkWhatsappAccounts, ZERNIO_WEBHOOK_KEY } from "@/lib/monitoring/account-health";
+import type { WebhookSnapshot } from "@/lib/monitoring/status-pill";
 
 export const dynamic = "force-dynamic";
 
@@ -24,6 +26,13 @@ export async function GET(req: Request): Promise<Response> {
       const value = await redis.get(WORKER_HEARTBEAT_KEY);
       return value ? Math.round((Date.now() - Number(value)) / 1000) : null;
     },
+    // La cuenta se revisa aquí también (no solo en el worker): la Action no depende de él.
+    whatsappAccounts: () => checkWhatsappAccounts({ source: "web" }),
+  });
+  // El Dashboard muestra el webhook de Zernio que revisó esta llamada (no llama a Zernio al cargar).
+  const webhook: WebhookSnapshot = { checkedAt: report.checkedAt, webhook: report.metrics.zernioWebhook };
+  await redis.set(ZERNIO_WEBHOOK_KEY, JSON.stringify(webhook)).catch((error: unknown) => {
+    console.error("[monitor] no se pudo guardar el estado del webhook en Redis", error);
   });
   return Response.json(report, { status: report.ok ? 200 : 503, headers: { "cache-control": "no-store" } });
 }
