@@ -267,6 +267,86 @@ describe.skipIf(!TEST_DATABASE_URL)("bandeja: lecturas y escrituras (Postgres re
     expect(conv.unreadCount).toBe(1);
   });
 
+  it("clic derecho: no leído pone al menos 1 (no baja lo que había), leído pone 0; aislado por organización", async () => {
+    const { convId } = await seedConversation({ lastMessageAt: "2026-09-18T10:00:00Z" });
+    const { convId: withUnread } = await seedConversation({ lastMessageAt: "2026-09-18T11:00:00Z", unread: 3 });
+    const unreadOf = async (id: string) =>
+      (await db.select().from(s.conversations).where(eq(s.conversations.id, id)))[0].unreadCount;
+
+    expect(await q.setConversationUnreadForOrg(ORG_A, convId, true)).toBe(true);
+    expect(await unreadOf(convId)).toBe(1);
+    // Idempotente: marcarla otra vez no suma.
+    await q.setConversationUnreadForOrg(ORG_A, convId, true);
+    expect(await unreadOf(convId)).toBe(1);
+    await q.setConversationUnreadForOrg(ORG_A, withUnread, true);
+    expect(await unreadOf(withUnread)).toBe(3);
+
+    expect(await q.setConversationUnreadForOrg(ORG_A, withUnread, false)).toBe(true);
+    expect(await unreadOf(withUnread)).toBe(0);
+
+    // Otra organización no la toca.
+    expect(await q.setConversationUnreadForOrg(ORG_B, convId, false)).toBe(false);
+    expect(await unreadOf(convId)).toBe(1);
+  });
+
+  it("el no leído puesto a mano se apaga al abrir el chat, aunque el cliente nunca haya escrito", async () => {
+    // Solo salientes (el vendedor escribió primero): no hay entrante que sirva de corte.
+    const { convId } = await seedConversation({ lastMessageAt: "2026-09-18T10:00:00Z" });
+    await addMessage({ convId, direction: "out", sentAt: "2026-09-18T10:00:00Z" });
+    await q.setConversationUnreadForOrg(ORG_A, convId, true);
+    const unreadOf = async () => (await db.select().from(s.conversations).where(eq(s.conversations.id, convId)))[0].unreadCount;
+
+    // Un corte que no es de esta conversación no apaga nada (nada a la vista).
+    await q.markConversationReadForOrg(ORG_A, convId, "otro_mensaje");
+    expect(await unreadOf()).toBe(1);
+    // Abrirla (sin corte) sí.
+    await q.markConversationReadForOrg(ORG_A, convId);
+    expect(await unreadOf()).toBe(0);
+
+    // Con entrantes: abrirla también lo apaga (corte = último entrante).
+    await addMessage({ convId, direction: "in", sentAt: "2026-09-18T10:05:00Z" });
+    await q.setConversationUnreadForOrg(ORG_A, convId, true);
+    await q.markConversationReadForOrg(ORG_A, convId);
+    expect(await unreadOf()).toBe(0);
+  });
+
+  it("desde el Embudo (contacto): no leído va a su chat más reciente, leído apaga todos; sin chat = false", async () => {
+    const { contactId, convId: older } = await seedConversation({ lastMessageAt: "2026-09-18T10:00:00Z", unread: 2 });
+    // El mismo contacto con chat en otro canal, más reciente.
+    await db.insert(s.channels).values({
+      id: "ch2_org_a",
+      organizationId: ORG_A,
+      type: "whatsapp",
+      provider: "zernio",
+      providerAccountId: "zacc2_org_a",
+      displayName: "Diluvium 2",
+    });
+    const newer = "conv_newer";
+    await db.insert(s.conversations).values({
+      id: newer,
+      organizationId: ORG_A,
+      contactId,
+      channelId: "ch2_org_a",
+      lastMessageAt: new Date("2026-09-18T12:00:00Z"),
+    });
+    const unreadOf = async (id: string) =>
+      (await db.select().from(s.conversations).where(eq(s.conversations.id, id)))[0].unreadCount;
+
+    expect(await q.setContactUnreadForOrg(ORG_A, contactId, true)).toBe(true);
+    expect(await unreadOf(newer)).toBe(1);
+    expect(await unreadOf(older)).toBe(2);
+
+    expect(await q.setContactUnreadForOrg(ORG_A, contactId, false)).toBe(true);
+    expect(await unreadOf(newer)).toBe(0);
+    expect(await unreadOf(older)).toBe(0);
+
+    // Contacto sin ningún chat, o de otra organización: nada que marcar.
+    await db.insert(s.contacts).values({ id: "c_sin_chat", organizationId: ORG_A, firstName: "Sin chat", phoneE164: "+526681111111" });
+    expect(await q.setContactUnreadForOrg(ORG_A, "c_sin_chat", true)).toBe(false);
+    expect(await q.setContactUnreadForOrg(ORG_B, contactId, true)).toBe(false);
+    expect(await unreadOf(newer)).toBe(0);
+  });
+
   it("setConversationStarred y getConversation con anuncio; aislamiento entre organizaciones", async () => {
     const { convId, contactId } = await seedConversation({ lastMessageAt: "2026-09-18T10:00:00Z" });
     await db
