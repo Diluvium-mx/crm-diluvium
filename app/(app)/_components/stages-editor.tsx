@@ -17,7 +17,8 @@ import { MAX_STAGES, MAX_STAGE_NAME, MAX_STAGE_RULE, MIN_STAGES, STAGE_ROLE_HINT
 import { useConfirm } from "../agente-ia/_components/use-confirm";
 import { useFunnelStages } from "./funnel-stages-provider";
 
-const input = "w-full rounded border border-black/15 bg-background px-2 py-1 text-sm text-foreground dark:border-white/15";
+const field = "rounded border border-black/15 bg-background px-2 py-1 text-sm text-foreground dark:border-white/15";
+const input = `w-full ${field}`;
 
 type Draft = { name: string; color: string; rule: string };
 const draftOf = (s: FunnelStage): Draft => ({ name: s.name, color: s.color.toUpperCase(), rule: s.botRule });
@@ -109,7 +110,7 @@ function StageRow({
               if (e.key === "Escape") setDraft(draftOf(stage));
             }}
             aria-label="Nombre de la etapa"
-            className={`${input} max-w-56 font-medium`}
+            className={`${field} w-56 max-w-full font-medium`}
           />
           <select
             value={stage.role ?? ""}
@@ -117,7 +118,7 @@ function StageRow({
             onChange={(e) => e.target.value && onRole(e.target.value as StageRole)}
             aria-label={`Papel de ${stage.name}`}
             title={stage.role ? STAGE_ROLE_HINTS[stage.role] : "Papel fijo que usa el CRM (cada uno en una sola etapa)"}
-            className={`${input} w-auto`}
+            className={`${field} w-auto`}
           >
             <option value="">Sin papel</option>
             {STAGE_ROLES.map((r) => (
@@ -134,8 +135,8 @@ function StageRow({
                 role="radio"
                 aria-checked={stage.modelSlot === n}
                 onClick={() => stage.modelSlot !== n && onSlot(n)}
-                title={n === 1 ? model1Label : model2Label}
-                aria-label={`Modelo ${n} (${n === 1 ? model1Label : model2Label})`}
+                title={(n === 1 ? model1Label : model2Label) || undefined}
+                aria-label={(n === 1 ? model1Label : model2Label) ? `Modelo ${n} (${n === 1 ? model1Label : model2Label})` : `Modelo ${n}`}
                 className={`px-2.5 py-1 transition-colors ${stage.modelSlot === n ? "bg-brand-navy text-white" : "bg-background text-foreground/70 hover:bg-black/5 dark:hover:bg-white/5"}`}
               >
                 Modelo {n}
@@ -181,7 +182,9 @@ function StageRow({
 
 // Borrar = pop-up propio: pide a qué columna pasan sus contactos (con cuántos tiene cada una).
 function DeleteDialog({ stage, others, onClose, onConfirm }: { stage: FunnelStage; others: FunnelStage[]; onClose: () => void; onConfirm: (moveToId: string) => Promise<void> }) {
-  const [target, setTarget] = useState(others[0]?.id ?? "");
+  // Por omisión, la columna de antes (la más parecida); si es la primera, la siguiente.
+  const before = [...others].reverse().find((s) => s.position < stage.position);
+  const [target, setTarget] = useState(before?.id ?? others[0]?.id ?? "");
   const [counts, setCounts] = useState<Record<string, number> | null>(null);
   const [pending, start] = useTransition();
   useEffect(() => {
@@ -240,8 +243,8 @@ function DeleteDialog({ stage, others, onClose, onConfirm }: { stage: FunnelStag
 }
 
 export function StagesEditor({
-  model1Label = "Modelo 1",
-  model2Label = "Modelo 2",
+  model1Label = "",
+  model2Label = "",
   onDirtyChange,
 }: {
   model1Label?: string;
@@ -275,7 +278,10 @@ export function StagesEditor({
   }, [dirtyRows, newName, onDirtyChange]);
 
   const name = (s: FunnelStage) => `«${s.name}»`;
-  const slotLabel = (n: 1 | 2) => `Modelo ${n} (${n === 1 ? model1Label : model2Label})`;
+  const slotLabel = (n: 1 | 2) => {
+    const label = n === 1 ? model1Label : model2Label;
+    return label ? `Modelo ${n} (${label})` : `Modelo ${n}`;
+  };
 
   function saveRow(stage: FunnelStage, draft: Draft, reset: () => void) {
     const patch: { id: string; name?: string; color?: string; botRule?: string } = { id: stage.id };
@@ -393,7 +399,8 @@ export function StagesEditor({
       <p className="text-xs text-foreground/70">
         Nombre, color, orden, papel, modelo del agente y su regla (cuándo mover al contacto aquí). Cada cambio pide confirmación y el agente lo usa en su siguiente respuesta. Entre {MIN_STAGES} y {MAX_STAGES} columnas.
       </p>
-      <DndContext sensors={sensors} collisionDetection={pointerWithin} onDragEnd={onDragEnd}>
+      {/* id fijo: sin él dnd-kit numera su descripción accesible distinto en el servidor y en el navegador (aviso de hidratación). */}
+      <DndContext id="editor-etapas" sensors={sensors} collisionDetection={pointerWithin} onDragEnd={onDragEnd}>
         <ul aria-busy={busy || undefined} aria-label="Etapas del embudo" className="rounded-md border border-black/10 dark:border-white/10">
           {stages.map((stage, index) => (
             <StageRow
