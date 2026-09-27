@@ -1,0 +1,52 @@
+{
+  "accountId": "0000000000000000000000a1",
+  "platform": "whatsapp",
+  "username": "<telefono>",
+  "displayName": "Diluvium",
+  "status": "healthy",
+  "tokenStatus": {
+    "valid": true,
+    "expiresIn": "Auto-refreshes",
+    "needsRefresh": false
+  },
+  "permissions": {
+    "posting": [],
+    "analytics": [],
+    "optional": [
+      {
+        "scope": "whatsapp_business_management",
+        "granted": true,
+        "required": false
+      },
+      {
+        "scope": "whatsapp_business_messaging",
+        "granted": true,
+        "required": false
+      },
+      {
+        "scope": "whatsapp_business_manage_events",
+        "granted": true,
+        "required": false
+      },
+      {
+        "scope": "business_management",
+        "granted": true,
+        "required": false
+      }
+    ],
+    "canPost": true,
+    "canFetchAnalytics": true,
+    "analyticsSupported": false,
+    "missingRequired": []
+  },
+  "issues": [],
+  "recommendations": [],
+  "platformConnection": {
+    "status": "connected",
+    "checkedAt": "2026-09-27T16:59:08.944Z",
+    "phoneStatus": "CONNECTED",
+    "metaError": null,
+    "inboundWebhookSubscribed": true
+  },
+  "messagingRestriction": null
+}

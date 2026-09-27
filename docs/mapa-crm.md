@@ -108,7 +108,7 @@ contacto y los avisos se explican dentro de la Bandeja porque son **los mismos**
 
 ### 3.1 Dashboard
 
-Resumen del mes: cuánto se gasta en IA y cuántas conversaciones nuevas llegan.
+Resumen del mes: cuánto se gasta en IA y cuántas conversaciones nuevas llegan, y si el número de WhatsApp está conectado.
 
 ![Dashboard](mapa-crm/01-dashboard.png)
 
@@ -133,8 +133,15 @@ Resumen del mes: cuánto se gasta en IA y cuántas conversaciones nuevas llegan.
 | 17 | **Por canal** | Por qué canal llegaron (WhatsApp, Facebook…). | Todos |
 | 18 | **Por etapa (actual)** | En qué etapa están hoy esas conversaciones. | Todos |
 | 19 | **Llegaron por anuncio** | Cuántas vinieron de un anuncio de Meta y qué porcentaje del periodo. | Todos |
+| 20 | **Pastilla de WhatsApp** (arriba a la derecha) | Estado del número según el monitoreo (cada 5 min): verde **"WhatsApp conectado"**, ámbar **"WhatsApp: revisar"**, rojo **"WhatsApp desconectado desde HH:MM"** (hora de Mazatlán) o gris **"Sin revisar desde HH:MM"** si la última revisión tiene más de 15 min. No consulta a Zernio al abrir la página. | Todos |
+| 21 | **Estado de WhatsApp** (recuadro al hacer clic en 20) | 4 líneas: **Número** (conectado o no), **Último mensaje de un cliente** (hace X min), **Worker** (activo o no) y **Webhook de Zernio** (activo y fallos). | Todos |
+
+![Pastilla y recuadro de WhatsApp](mapa-crm/01-dashboard-whatsapp.png)
 
 **Lo cambias tú desde la pantalla:** registrar y borrar recargas; el periodo de las conversaciones nuevas.
+
+**Si la pastilla (20) sale roja:** revisa Zernio y la app de WhatsApp Business del celular; el paso a paso está en
+`docs/go-live.md` › Alarma de desconexión. También llega el correo del issue `alerta-whatsapp`, a cualquier hora.
 
 **Pídeselo a Code:**
 - "En Dashboard › (14) tarjetas de nuevas, agrega una que diga cuántas contestó el agente hoy."
@@ -144,7 +151,7 @@ Resumen del mes: cuánto se gasta en IA y cuántas conversaciones nuevas llegan.
 **Agente IA aquí:** todo lo que gasta al contestar (y al transcribir notas de voz, que se cobra en OpenAI) se suma en
 **Gasto de IA**. Los chats que atiende cuentan en **Conversaciones nuevas** como cualquier otro.
 
-<sub>Para Code: ruta `/inicio`; `app/(app)/inicio/` (`ai-spend-card`, `ai-topups`, `period-cards`, `daily-chart`, `breakdown-list`, `range-filter`); datos en `lib/dashboard/`.</sub>
+<sub>Para Code: ruta `/inicio`; `app/(app)/inicio/` (`ai-spend-card`, `ai-topups`, `period-cards`, `daily-chart`, `breakdown-list`, `range-filter`, `whatsapp-status`); datos en `lib/dashboard/`; la pastilla (20–21) en `lib/monitoring/` (`status-pill`, `dashboard-status`) con lo que guarda el monitoreo en Redis.</sub>
 
 ---
 
