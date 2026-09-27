@@ -15,7 +15,6 @@ type Ctx = {
   stages: FunnelStage[];
   /** Nombre para mostrar (la clave si ya no existe). */
   labelOf: (key: string) => string;
-  colorOf: (key: string) => string;
   /** Vuelve a pedir las etapas al servidor (tras guardar en el editor). */
   refresh: () => Promise<void>;
   /** Pone en el contexto las etapas que devolvió una acción (sin esperar al SSE). */
@@ -60,7 +59,6 @@ export function FunnelStagesProvider({ initial, children }: { initial: FunnelSta
     () => ({
       stages,
       labelOf: (key) => stageByKey(stages, key)?.name ?? key,
-      colorOf: (key) => stageByKey(stages, key)?.color ?? "#64748B",
       refresh,
       apply: (next) => setStages(sortStages(next)),
       lastEvent,

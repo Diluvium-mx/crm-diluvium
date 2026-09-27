@@ -102,11 +102,8 @@ function StageColumn({
         isOver ? "scale-[1.01] shadow-lg ring-2 ring-brand-orange ring-offset-2 ring-offset-background" : ""
       }`}
     >
-      <div className="flex items-center justify-between rounded-t-lg bg-brand-navy px-3 py-2 text-brand-white" style={{ boxShadow: `inset 0 3px 0 ${stage.color}` }}>
-        <span className="flex min-w-0 items-center gap-2">
-          <span aria-hidden className="size-2.5 shrink-0 rounded-full" style={{ backgroundColor: stage.color }} />
-          <span className="truncate text-sm font-semibold">{stage.name}</span>
-        </span>
+      <div className="flex items-center justify-between rounded-t-lg bg-brand-navy px-3 py-2 text-brand-white">
+        <span className="truncate text-sm font-semibold">{stage.name}</span>
         <span className="rounded-full bg-white/20 px-2 py-0.5 text-xs">{contacts.length}</span>
       </div>
 

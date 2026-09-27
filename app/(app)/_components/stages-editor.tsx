@@ -1,13 +1,14 @@
 "use client";
 
 // Editor de las columnas del Embudo (Columnas del Embudo, 26-sep-2026): una tabla
-// simple con nombre, color, orden (arrastrar o flechas), papel, modelo del agente y
+// simple con nombre, orden (arrastrar o flechas), papel, modelo del agente y
 // regla del bot, más agregar y borrar (con pop-up para pasar los contactos a otra
 // columna). Vive en la subpestaña "Etapas" de Agente IA y en el lápiz del encabezado
 // del Embudo (mismo componente en un pop-up). Lo editan vendedores, admin y owner.
 // Regla del dueño (27-sep-2026, como toda la pestaña Agente IA): NADA se guarda con un
 // solo clic; cada cambio pide confirmación en el pop-up de arriba (use-confirm.tsx).
-// Nombre, color y regla se editan como borrador por fila y se guardan con «Guardar».
+// Nombre y regla se editan como borrador por fila y se guardan con «Guardar». Sin color
+// (decisión del dueño, 27-sep-2026: todas las columnas van en el azul de la marca).
 // Las demás sesiones se enteran por el SSE (stages.updated). Sin lógica de datos.
 import { useCallback, useEffect, useRef, useState, useTransition } from "react";
 import { DndContext, MouseSensor, TouchSensor, pointerWithin, useDraggable, useDroppable, useSensor, useSensors, type DragEndEvent } from "@dnd-kit/core";
@@ -20,9 +21,9 @@ import { useFunnelStages } from "./funnel-stages-provider";
 const field = "rounded border border-black/15 bg-background px-2 py-1 text-sm text-foreground dark:border-white/15";
 const input = `w-full ${field}`;
 
-type Draft = { name: string; color: string; rule: string };
-const draftOf = (s: FunnelStage): Draft => ({ name: s.name, color: s.color.toUpperCase(), rule: s.botRule });
-const sameDraft = (a: Draft, b: Draft) => a.name.trim() === b.name.trim() && a.color.toUpperCase() === b.color.toUpperCase() && a.rule.trim() === b.rule.trim();
+type Draft = { name: string; rule: string };
+const draftOf = (s: FunnelStage): Draft => ({ name: s.name, rule: s.botRule });
+const sameDraft = (a: Draft, b: Draft) => a.name.trim() === b.name.trim() && a.rule.trim() === b.rule.trim();
 
 function StageRow({
   stage,
@@ -72,7 +73,7 @@ function StageRow({
   return (
     <li
       ref={setDropRef}
-      className={`grid grid-cols-[auto_auto_1fr_auto] items-start gap-x-2 gap-y-1 border-b border-black/5 px-2 py-2 last:border-b-0 dark:border-white/5 ${isOver ? "bg-brand-navy/5" : ""} ${isDragging ? "opacity-50" : ""}`}
+      className={`grid grid-cols-[auto_1fr_auto] items-start gap-x-2 gap-y-1 border-b border-black/5 px-2 py-2 last:border-b-0 dark:border-white/5 ${isOver ? "bg-brand-navy/5" : ""} ${isDragging ? "opacity-50" : ""}`}
     >
       <div className="flex flex-col items-center gap-0.5 pt-1">
         <button
@@ -93,10 +94,6 @@ function StageRow({
           <ArrowDown className="size-3.5" />
         </button>
       </div>
-      <label className="pt-1" title="Color de la columna">
-        <span className="sr-only">Color de {stage.name}</span>
-        <input type="color" value={draft.color} disabled={busy} onChange={(e) => setDraft((d) => ({ ...d, color: e.target.value.toUpperCase() }))} className="size-7 cursor-pointer rounded border border-black/15 bg-transparent p-0 dark:border-white/15" />
-      </label>
       <div className="flex min-w-0 flex-col gap-1">
         <div className="flex flex-wrap items-center gap-2">
           <span className="w-5 shrink-0 text-xs tabular-nums text-muted-foreground">{index + 1}.</span>
@@ -249,7 +246,7 @@ export function StagesEditor({
 }: {
   model1Label?: string;
   model2Label?: string;
-  /** Hay nombres, colores o reglas sin guardar (punto naranja en la subpestaña). */
+  /** Hay nombres o reglas sin guardar (punto naranja en la subpestaña). */
   onDirtyChange?: (dirty: boolean) => void;
 }) {
   const { stages, apply } = useFunnelStages();
@@ -284,7 +281,7 @@ export function StagesEditor({
   };
 
   function saveRow(stage: FunnelStage, draft: Draft, reset: () => void) {
-    const patch: { id: string; name?: string; color?: string; botRule?: string } = { id: stage.id };
+    const patch: { id: string; name?: string; botRule?: string } = { id: stage.id };
     const changes: string[] = [];
     if (draft.name.trim() !== stage.name) {
       if (!draft.name.trim()) {
@@ -293,10 +290,6 @@ export function StagesEditor({
       }
       patch.name = draft.name;
       changes.push(`el nombre a «${draft.name.trim()}»`);
-    }
-    if (draft.color.toUpperCase() !== stage.color.toUpperCase()) {
-      patch.color = draft.color;
-      changes.push("el color");
     }
     if (draft.rule.trim() !== stage.botRule) {
       patch.botRule = draft.rule;
@@ -397,7 +390,7 @@ export function StagesEditor({
   return (
     <div className="flex flex-col gap-3">
       <p className="text-xs text-foreground/70">
-        Nombre, color, orden, papel, modelo del agente y su regla (cuándo mover al contacto aquí). Cada cambio pide confirmación y el agente lo usa en su siguiente respuesta. Entre {MIN_STAGES} y {MAX_STAGES} columnas.
+        Nombre, orden, papel, modelo del agente y su regla (cuándo mover al contacto aquí). Cada cambio pide confirmación y el agente lo usa en su siguiente respuesta. Entre {MIN_STAGES} y {MAX_STAGES} columnas.
       </p>
       {/* id fijo: sin él dnd-kit numera su descripción accesible distinto en el servidor y en el navegador (aviso de hidratación). */}
       <DndContext id="editor-etapas" sensors={sensors} collisionDetection={pointerWithin} onDragEnd={onDragEnd}>

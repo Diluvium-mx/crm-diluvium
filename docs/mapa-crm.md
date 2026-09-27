@@ -414,7 +414,7 @@ Clic derecho sobre una tarjeta: menú de ese contacto (16).
 | 14 | **✕ Cerrar** | Cierra el pop-up (también con Esc). | Todos |
 | 15 | **Fondo oscuro** | Clic afuera del pop-up también lo cierra. | Todos |
 | 17 | **✎ Editar columnas** (lápiz junto a «Embudo») | Abre el editor de columnas (18). | Todos |
-| 18 | **Columnas del Embudo** (pop-up) | El mismo editor de Agente IA › Etapas (62–71): nombre, color, orden, papel, modelo y regla del bot de cada columna. Todo cambio pide confirmar; las demás pantallas abiertas lo ven al momento. | Todos |
+| 18 | **Columnas del Embudo** (pop-up) | El mismo editor de Agente IA › Etapas (62–71): nombre, orden, papel, modelo y regla del bot de cada columna. Todo cambio pide confirmar; las demás pantallas abiertas lo ven al momento. | Todos |
 | 16 | **Menú del clic derecho** | Sobre una tarjeta: **Marcar como no leído** (círculo naranja, 6, en su chat más reciente) o **Marcar como leído** (lo quita de todos sus chats). Lo mismo que en la Bandeja y se ve en las dos. No cambia el color de la tarjeta (azul = falta contestar). En celular no hay pulsación larga: ahí es arrastrar. | Todos |
 
 **Lo cambias tú desde la pantalla:** la etapa (arrastrando la tarjeta), leído / no leído (clic derecho), las
@@ -611,12 +611,12 @@ una ventana arriba (59)**; nada se guarda con un solo clic.
 | 61 | **Cambios sin guardar** | Aviso junto a Guardar Goal, Guardar rangos y Guardar cambios. | Todos |
 | 62 | **Etapas** (subpestaña) | Las columnas del Embudo, una fila por etapa. El agente recibe esta lista (clave, nombre y regla, en este orden) en cada respuesta. Entre 3 y 10. | Todos |
 | 63 | **⠿ ↑ ↓ Orden** | Arrastrar o flechas: cambia el lugar de la columna (pide confirmar). El agente solo avanza según este orden. «Entrada» va primero y «Cerca de compra» antes que «Venta cerrada». | Todos |
-| 64 | **Color** | Color de la columna en el Embudo. Se guarda con **Guardar** (69). | Todos |
+| 64 | ~~Color~~ | Se quitó el 27-sep-2026 (decisión del dueño): todas las columnas van en el azul de la marca. | — |
 | 65 | **Nombre** | Cómo se llama la columna. Renombrar no cambia la clave interna: contactos, workflows y el agente la siguen reconociendo. | Todos |
 | 66 | **Papel** | Entrada (llegan los contactos nuevos) · Cerca de compra (datos bancarios y /banco) · Venta cerrada (comprobante que cuadra; Anuncios › Compraron). Cada papel en una sola columna; pasarlo a otra pide confirmar. | Todos |
 | 67 | **Modelo 1 · Modelo 2** (por etapa) | Qué modelo contesta a los contactos de esa columna. Pide confirmar. | Todos |
 | 68 | **Regla del bot** | Cuándo debe el agente mover al contacto a esa columna (texto libre). Vacía = el agente no mueve ahí por su cuenta. | Todos |
-| 69 | **Guardar · Deshacer** (por fila) | Aparecen al cambiar nombre, color o regla; Guardar pide confirmar. | Todos |
+| 69 | **Guardar · Deshacer** (por fila) | Aparecen al cambiar nombre o regla; Guardar pide confirmar. | Todos |
 | 70 | **🗑 Borrar** | Pop-up que pregunta a qué columna pasan sus contactos (con cuántos tiene cada una) y los mueve todos de una vez. Gris si la columna tiene papel o si quedan 3. | Todos |
 | 71 | **Nueva columna · Después de · Agregar** | Agrega una columna entre dos (o al final), con el Modelo 2 y sin regla. Pide confirmar. | Todos |
 
