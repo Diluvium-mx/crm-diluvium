@@ -220,8 +220,37 @@ Dos vigilantes independientes; ninguno depende de WhatsApp ni de Zernio para avi
 
 | Vigilante | Frecuencia | Qué revisa | Aviso |
 |---|---|---|---|
-| Worker (`worker/index.ts`) | cada 5 min | silencio de webhooks en horario laboral (lun–sáb 9–19 Mazatlán, `MONITOR_SILENCE_MINUTES`, 60 por omisión), eventos sin procesar > 5 min, dead-letter, cuarentena | log `[monitor] ALERTA: …` en Railway |
-| GitHub Action `inbound-monitor` | cada 15 min | lo mismo vía `GET /api/health/inbound` + latido del worker (Redis) + webhook de Zernio activo y sin fallos | issue `alerta-whatsapp` (llega por correo); se cierra solo al sanar. Si el CRM no responde, también abre issue |
+| Worker (`worker/index.ts`) | cada 5 min (y al arrancar) | silencio de webhooks en horario laboral (lun–sáb 9–19 Mazatlán, `MONITOR_SILENCE_MINUTES`, 60 por omisión), eventos sin procesar > 5 min, dead-letter, cuarentena **y la cuenta de WhatsApp en Zernio** (a cualquier hora) | log `[monitor] ALERTA: …` en Railway; si todo va bien, `[monitor] entrada de WhatsApp sana · cuentas de WhatsApp: 1 conectada(s)` |
+| GitHub Action `inbound-monitor` | cada 15 min | lo mismo vía `GET /api/health/inbound` + latido del worker (Redis) + webhook de Zernio activo y sin fallos. El endpoint revisa la cuenta en Zernio **por su cuenta** (no depende del worker) | issue `alerta-whatsapp` (llega por correo); se cierra solo al sanar. Si el CRM no responde, también abre issue |
+
+### Alarma de desconexión (cuenta de WhatsApp en Zernio, 27-sep-2026)
+
+Por cada canal de Zernio **activo y no archivado**, los dos vigilantes consultan (solo GET, 10 s de
+tiempo máximo) `GET /v1/accounts/{accountId}/health` y `GET /v1/whatsapp/account-events?accountId=`.
+Código: `lib/monitoring/zernio-account.ts` (reglas, puro), `account-health.ts` (Zernio/Redis),
+`status-pill.ts` (pastilla). Forma real de las respuestas: `lib/monitoring/__fixtures__/`.
+
+| Estado | Cuándo | ¿Alerta? |
+|---|---|---|
+| Rojo | `platformConnection.status` no es `connected` (incluye `unknown`), `inboundWebhookSubscribed` = false, `status` = `error`, o Zernio responde **404** (la cuenta ya no está conectada en Zernio) | en cada revisión, **a cualquier hora** |
+| Ámbar | `status` = `warning`, o `PRIMARY_INACTIVITY` (el celular lleva días sin abrir la app de WhatsApp Business: **abrirla**) | en cada revisión si lo dice health |
+| Ámbar | evento de desconexión **nuevo** (posterior a la primera revisión) y health ya conectado: "se desconectó a las HH:MM y ya volvió"; o evento `PRIMARY_INACTIVITY` | **una vez** por vigilante; la pastilla lo muestra 24 h |
+| — | Zernio no respondió, 5xx o respuesta rara | "no se pudo revisar" (alerta como tal, **nunca** como desconectado); se conserva la última revisión buena |
+
+- Los eventos anteriores a la **primera revisión** (guardada en Redis, `monitor:whatsapp-accounts:baseline`)
+  nunca alertan: el `ACCOUNT_OFFBOARDED` del 27-sep 01:27Z no abre issue. Sí sirven para el "desde HH:MM".
+- El resultado se guarda en Redis con la hora (`monitor:whatsapp-accounts`; el webhook de Zernio que
+  revisó el endpoint, en `monitor:zernio-webhook`). El **Dashboard** lo lee de ahí y **no llama a Zernio**
+  al cargar: pastilla verde "WhatsApp conectado", ámbar "WhatsApp: revisar", roja "WhatsApp desconectado
+  desde HH:MM" (Mazatlán) o gris "Sin revisar desde HH:MM" si la última revisión tiene más de 15 min
+  (p. ej. worker caído o Zernio sin responder). Al hacer clic: número, último mensaje de un cliente, worker
+  y webhook de Zernio.
+- El issue es público: solo lleva estados, conteos y horas (nada de números, nombres ni ids).
+- **Qué hacer si sale rojo:** abrir el Dashboard de Zernio (Accounts) y el WhatsApp Business del celular;
+  si Meta sacó la coexistencia (`ACCOUNT_OFFBOARDED`: el número se registró en otro dispositivo),
+  reconectar en Zernio con el mismo número (si aparece #3441061, ver Herramientas → Listas en la app).
+  En staging el canal es el sandbox compartido de Zernio, que no es una cuenta propia: su health da 404
+  y la pastilla de staging sale roja (esperado).
 
 Configurar una vez (el dueño pega el valor; nunca en el chat):
 

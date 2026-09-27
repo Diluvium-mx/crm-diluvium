@@ -36,6 +36,7 @@ import {
 } from "@/lib/queue/inbound";
 import { objectStorage, StorageNotConfiguredError, type ObjectStorage } from "@/lib/storage/s3";
 import { inboundHealth, WORKER_HEARTBEAT_KEY } from "@/lib/monitoring/inbound-health";
+import { checkWhatsappAccounts, describeSummary } from "@/lib/monitoring/account-health";
 import { redis } from "@/lib/redis";
 import { startScheduledWorker } from "./scheduled";
 import { startWorkflowWorker } from "./workflows";
@@ -322,9 +323,13 @@ async function monitor() {
   const report = await inboundHealth({
     heartbeatAgeSeconds: async () => 0, // este mismo proceso está vivo
     checkZernio: false, // lo revisa el web (/api/health/inbound), que tiene APP_URL
+    // Cuenta de WhatsApp en Zernio (desconexión): a cualquier hora; guarda el resultado en Redis.
+    whatsappAccounts: () => checkWhatsappAccounts({ source: "worker" }),
   });
-  if (report.ok) console.info("[monitor] entrada de WhatsApp sana");
-  else console.error(`[monitor] ALERTA: ${report.problems.join(" · ")}`);
+  const accounts = report.metrics.whatsappAccounts;
+  const summary = accounts ? ` · cuentas de WhatsApp: ${describeSummary(accounts)}` : "";
+  if (report.ok) console.info(`[monitor] entrada de WhatsApp sana${summary}`);
+  else console.error(`[monitor] ALERTA: ${report.problems.join(" · ")}${summary}`);
 }
 const monitorTimer = setInterval(() => {
   monitor().catch((error) => console.error("[monitor] la revisión falló", error));
@@ -348,6 +353,8 @@ waitForMigrations()
   .then(() => {
     migrationsReady = true;
     console.info("[worker] migraciones al día: arrancan las colas");
+    // Primera revisión del monitoreo ya, sin esperar 5 min (la pastilla del Dashboard sale al día tras un deploy).
+    monitor().catch((error) => console.error("[monitor] la revisión falló", error));
     void worker.run();
     void mediaWorker?.run();
     scheduled.run();

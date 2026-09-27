@@ -1,0 +1,13 @@
+{
+  "events": [
+    {
+      "id": "0000000000000000000000e1",
+      "accountId": "0000000000000000000000a1",
+      "type": "account_disconnected",
+      "severity": "warning",
+      "title": "WhatsApp disconnected",
+      "detail": "WhatsApp coexistence offboarded (ACCOUNT_OFFBOARDED)",
+      "createdAt": "2026-09-27T01:27:53.594Z"
+    }
+  ]
+}

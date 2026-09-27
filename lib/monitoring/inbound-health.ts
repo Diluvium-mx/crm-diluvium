@@ -7,6 +7,9 @@ import { sql } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { webhookEvents } from "@/lib/db/schema";
 import { isBusinessHours } from "./business-hours";
+import { silenceProblem } from "./alert-rules";
+import type { AccountsReport } from "./account-health";
+import type { AccountsSummary } from "./zernio-account";
 
 export const WORKER_HEARTBEAT_KEY = "monitor:worker-heartbeat";
 
@@ -21,6 +24,8 @@ export type InboundHealth = {
     quarantined: number;
     workerHeartbeatAgeSeconds: number | null;
     zernioWebhook: { isActive: boolean; failureCount: number } | null;
+    /** Cuentas de WhatsApp en Zernio (solo conteos: el issue es público). */
+    whatsappAccounts: AccountsSummary | null;
     businessHours: boolean;
   };
 };
@@ -53,15 +58,35 @@ async function zernioWebhookStatus(): Promise<{ isActive: boolean; failureCount:
   };
 }
 
+type Settled<T> = { ok: true; value: T } | { ok: false; error: unknown };
+
+/** Nunca rechaza: así una promesa que arranca antes no queda como rechazo sin atender. */
+function settle<T>(promise: Promise<T>): Promise<Settled<T>> {
+  return promise.then(
+    (value) => ({ ok: true as const, value }),
+    (error: unknown) => ({ ok: false as const, error }),
+  );
+}
+
+function errorText(error: unknown): string {
+  return error instanceof Error ? error.message : "error";
+}
+
 export async function inboundHealth(deps: {
   heartbeatAgeSeconds: () => Promise<number | null>;
   /** El web (que recibe los webhooks) revisa también Zernio; el worker no (no tiene APP_URL). */
   checkZernio: boolean;
+  /** Salud de la cuenta de WhatsApp en Zernio (./account-health.ts); alerta a cualquier hora. */
+  whatsappAccounts?: () => Promise<AccountsReport>;
   now?: Date;
 }): Promise<InboundHealth> {
   const now = deps.now ?? new Date();
   const silenceMinutes = Number(process.env.MONITOR_SILENCE_MINUTES ?? 60);
   const problems: string[] = [];
+  // Lo que va a Zernio arranca ya y en paralelo (cada llamada tiene 10 s de tope):
+  // así el endpoint responde antes de los 30 s que espera la Action.
+  const webhookCheck = deps.checkZernio ? settle(zernioWebhookStatus()) : null;
+  const accountsCheck = deps.whatsappAccounts ? settle(deps.whatsappAccounts()) : null;
 
   // Edades calculadas en SQL (received_at es timestamp sin zona escrito por la base).
   const [row] = await db
@@ -79,9 +104,8 @@ export async function inboundHealth(deps: {
     .from(webhookEvents);
 
   const businessHours = isBusinessHours(now);
-  if (businessHours && (row.minutesSinceLastEvent === null || row.minutesSinceLastEvent > silenceMinutes)) {
-    problems.push(`sin mensajes entrantes de WhatsApp hace más de ${silenceMinutes} min en horario laboral`);
-  }
+  const silence = silenceProblem({ now, minutesSinceLastEvent: row.minutesSinceLastEvent, silenceMinutes });
+  if (silence) problems.push(silence);
   if (row.stuckPending > 0) problems.push(`${row.stuckPending} evento(s) sin procesar hace más de 5 min`);
   if (row.deadLetters > 0) problems.push(`${row.deadLetters} evento(s) en dead-letter`);
   if (row.quarantined > 0) problems.push(`${row.quarantined} evento(s) en cuarentena (cuenta no permitida)`);
@@ -97,17 +121,29 @@ export async function inboundHealth(deps: {
   }
 
   let zernioWebhook: InboundHealth["metrics"]["zernioWebhook"] = null;
-  if (deps.checkZernio) {
-    try {
-      const status = await zernioWebhookStatus();
+  if (webhookCheck) {
+    const result = await webhookCheck;
+    if (result.ok) {
+      const status = result.value;
       zernioWebhook = { isActive: status.isActive, failureCount: status.failureCount };
       if (!status.isActive) problems.push("el webhook de Zernio está DESACTIVADO");
       if (status.failureCount > 0) problems.push(`el webhook de Zernio acumula ${status.failureCount} fallo(s) de entrega`);
       if (status.missingEvents.length > 0) {
         problems.push(`el webhook de Zernio no está suscrito a: ${status.missingEvents.join(", ")}`);
       }
-    } catch (error) {
-      problems.push(`no se pudo revisar el webhook de Zernio: ${error instanceof Error ? error.message : "error"}`);
+    } else {
+      problems.push(`no se pudo revisar el webhook de Zernio: ${errorText(result.error)}`);
+    }
+  }
+
+  let whatsappAccounts: AccountsSummary | null = null;
+  if (accountsCheck) {
+    const result = await accountsCheck;
+    if (result.ok) {
+      whatsappAccounts = result.value.summary;
+      problems.push(...result.value.problems);
+    } else {
+      problems.push(`no se pudo revisar la cuenta de WhatsApp: ${errorText(result.error)}`);
     }
   }
 
@@ -115,6 +151,6 @@ export async function inboundHealth(deps: {
     ok: problems.length === 0,
     checkedAt: now.toISOString(),
     problems,
-    metrics: { ...row, workerHeartbeatAgeSeconds, zernioWebhook, businessHours },
+    metrics: { ...row, workerHeartbeatAgeSeconds, zernioWebhook, whatsappAccounts, businessHours },
   };
 }
