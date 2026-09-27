@@ -2,26 +2,37 @@
 
 // Editor grande del Goal (instrucciones del agente), editable ahí mismo como en GHL:
 // deshacer, contador de palabras, tokens aproximados y "Valores personalizados"
-// (se insertan donde está el cursor). Al guardar queda una versión. Sin lógica de
-// datos: solo llama a las Server Actions del editor.
-import { useEffect, useRef, useState, useTransition } from "react";
+// (se insertan donde está el cursor). «Guardar Goal» y «Descartar cambios» piden
+// confirmación arriba (regla del dueño, 27-sep-2026; use-confirm.tsx). Al guardar queda
+// una versión (se puede nombrar con el lápiz). Avisa hacia arriba si hay cambios sin
+// guardar (punto naranja en la subpestaña). Sin lógica de datos: solo llama a las
+// Server Actions del editor.
+import { useEffect, useRef, useState } from "react";
 import { restoreAgentGoal, saveAgentGoal } from "@/lib/actions/agente-ia-editor";
 import { approxTokens, countWords, CUSTOM_VALUES } from "@/lib/agente-ia/editor";
 import type { VersionView } from "@/lib/agente-ia/types";
+import { useConfirm } from "./use-confirm";
 import { VersionsList } from "./versions-list";
 
 const HISTORY_LIMIT = 100;
 const HISTORY_IDLE_MS = 800;
 
-export function GoalEditor({ goal, versions }: { goal: string; versions: VersionView[] }) {
+export function GoalEditor({
+  goal,
+  versions,
+  onDirtyChange,
+}: {
+  goal: string;
+  versions: VersionView[];
+  onDirtyChange?: (dirty: boolean) => void;
+}) {
   const [text, setText] = useState(goal);
   const [saved, setSaved] = useState(goal);
   const [history, setHistory] = useState<string[]>([]);
   const [menu, setMenu] = useState(false);
-  const [message, setMessage] = useState<{ ok: boolean; text: string } | null>(null);
-  const [pending, start] = useTransition();
   const ref = useRef<HTMLTextAreaElement>(null);
   const lastPush = useRef(-Infinity);
+  const confirm = useConfirm();
 
   // Al restaurar una versión, el servidor manda otro Goal: se toma como el guardado.
   useEffect(() => {
@@ -32,6 +43,11 @@ export function GoalEditor({ goal, versions }: { goal: string; versions: Version
     }, 0);
     return () => clearTimeout(t);
   }, [goal]);
+
+  const dirty = text !== saved;
+  useEffect(() => {
+    onDirtyChange?.(dirty);
+  }, [dirty, onDirtyChange]);
 
   // Un punto de "deshacer" por ráfaga de escritura (`at` = hora del evento) o por
   // cada inserción (sin `at`).
@@ -68,17 +84,32 @@ export function GoalEditor({ goal, versions }: { goal: string; versions: Version
   }
 
   function save() {
-    setMessage(null);
-    start(async () => {
-      const r = await saveAgentGoal({ goal: text });
-      if (r.ok) {
-        setSaved(text);
-        setMessage({ ok: true, text: "Goal guardado (quedó una versión)." });
-      } else setMessage({ ok: false, text: r.message });
+    const goalToSave = text;
+    confirm.ask({
+      title: "¿Guardar las instrucciones del agente?",
+      body: "El agente las sigue desde el siguiente mensaje. Queda una versión que puedes nombrar con el lápiz.",
+      confirmLabel: "Sí, guardar",
+      pendingLabel: "Guardando…",
+      done: "Listo: Goal guardado (quedó una versión)",
+      run: () => saveAgentGoal({ goal: goalToSave }),
+      onDone: () => setSaved(goalToSave),
     });
   }
 
-  const dirty = text !== saved;
+  function discard() {
+    confirm.ask({
+      title: "¿Descartar los cambios del Goal?",
+      body: "El editor regresa a lo último guardado. Si te arrepientes, «↶ Deshacer» trae de vuelta lo que escribiste.",
+      confirmLabel: "Sí, descartar",
+      done: "Listo: se descartaron los cambios",
+      run: async () => ({ ok: true }),
+      onDone: () => {
+        remember(text);
+        lastPush.current = -Infinity;
+        setText(saved);
+      },
+    });
+  }
 
   return (
     <div className="flex flex-col gap-2">
@@ -129,23 +160,25 @@ export function GoalEditor({ goal, versions }: { goal: string; versions: Version
         <button
           type="button"
           onClick={save}
-          disabled={!dirty || pending}
+          disabled={!dirty || confirm.pending}
           className="rounded bg-brand-orange px-3 py-1.5 text-sm font-medium text-white disabled:opacity-50"
         >
-          {pending ? "Guardando…" : "Guardar Goal"}
+          {confirm.pending ? "Guardando…" : "Guardar Goal"}
         </button>
-        {dirty && !pending && (
-          <button type="button" onClick={() => setText(saved)} className="text-xs text-muted-foreground hover:underline">
+        {dirty && !confirm.pending && (
+          <button type="button" onClick={discard} className="text-xs text-muted-foreground hover:underline">
             Descartar cambios
           </button>
         )}
-        {message && (
-          <span className={`text-xs ${message.ok ? "text-muted-foreground" : "border-l-2 border-brand-orange pl-2 text-foreground"}`}>
-            {message.text}
-          </span>
-        )}
+        {dirty && !confirm.pending && <span className="text-xs text-muted-foreground">Cambios sin guardar.</span>}
+        {confirm.error && <span className="border-l-2 border-brand-orange pl-2 text-xs text-foreground">{confirm.error}</span>}
       </div>
-      <VersionsList versions={versions} onRestore={(versionId) => restoreAgentGoal({ versionId })} />
+      <VersionsList
+        versions={versions}
+        onRestore={(versionId) => restoreAgentGoal({ versionId })}
+        restoreWarning={dirty ? "Los cambios sin guardar del editor se reemplazan por la versión restaurada." : null}
+      />
+      {confirm.ui}
     </div>
   );
 }

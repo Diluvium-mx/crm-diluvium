@@ -1,6 +1,6 @@
 "use client";
 
-// Selector de modelo (sección "Crear"): cada opción con su costo aproximado por
+// Selector de modelo (subpestaña "Modelos"): cada opción con su costo aproximado por
 // cada 100 conversaciones y las etiquetas "Recomendado" y "Nuevo"; en gris si falta
 // su llave o su adaptador, diciendo por qué. Elegir otra opción pide confirmación
 // arriba (use-model-change.tsx) y solo entonces guarda. ModelPicker sirve para

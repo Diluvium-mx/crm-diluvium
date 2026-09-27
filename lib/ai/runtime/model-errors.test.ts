@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { agentErrorBody, classifyModelError, classifySendError, sendErrorBody, sendErrorMotive } from "./model-errors";
+import { agentErrorBody, bothModelsFailedBody, classifyModelError, classifySendError, EMPTY_RESPONSE_INFO, sendErrorBody, sendErrorMotive } from "./model-errors";
 
 const api = (statusCode: number, message: string, responseBody = "") => Object.assign(new Error(message), { name: "AI_APICallError", statusCode, responseBody });
 
@@ -54,5 +54,14 @@ describe("errores del modelo en palabras simples", () => {
     expect(classifySendError(Object.assign(new Error("Re-engagement message"), { name: "ZernioSendError", code: "131047", outcome: "rejected" }))).toBe("WhatsApp rechazó el mensaje (Re-engagement message).");
     expect(sendErrorMotive(new Error("Connection terminated unexpectedly"))).toBe("Error inesperado al enviar: Connection terminated unexpectedly.");
     expect(sendErrorMotive(Object.assign(new Error("x"), { name: "SendRejectedError", code: "not_retryable" }))).toContain("revísalo en el celular");
+  });
+
+  it("27-sep: si fallan los dos modelos, la tarjeta dice qué le pasó a cada uno", () => {
+    const body = bothModelsFailedBody([
+      { label: "GPT-5.6 Luna", info: classifyModelError(api(401, "Incorrect API key provided"), "OpenAI") },
+      { label: "Claude Sonnet 5", info: EMPTY_RESPONSE_INFO },
+    ]);
+    expect(body).toMatch(/^El agente no pudo responder: fallaron los dos modelos\. GPT-5\.6 Luna: .+ Claude Sonnet 5: El modelo contestó sin texto ni acciones\. /);
+    expect(body).toContain('elige "Reintentar" o "Apagar"');
   });
 });

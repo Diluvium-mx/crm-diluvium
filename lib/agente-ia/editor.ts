@@ -50,3 +50,19 @@ export const profileSchema = z
     companyName: z.string().trim().max(120, "Máximo 120 caracteres.").optional(),
   })
   .refine((v) => v.agentName !== undefined || v.companyName !== undefined, { message: "Nada que guardar." });
+
+// Nombre de una versión del Goal o de las FAQs (lápiz ✎, 27-sep-2026). Se recorta; vacío =
+// sin nombre (null, se ve solo la fecha). Máximo 80 caracteres.
+export const MAX_VERSION_NAME = 80;
+
+export const versionNameSchema = z
+  .string()
+  .trim()
+  .max(MAX_VERSION_NAME, `El nombre de la versión admite máximo ${MAX_VERSION_NAME} caracteres.`)
+  .transform((v) => (v === "" ? null : v));
+
+// «¿Restaurar la versión «Antes de la promo» del 26 sep 2026, 11:53 a.m.?» (sin nombre, solo la fecha).
+export function restoreVersionQuestion(name: string | null, when: string): string {
+  const named = name?.trim();
+  return named ? `¿Restaurar la versión «${named}» del ${when}?` : `¿Restaurar la versión del ${when}?`;
+}

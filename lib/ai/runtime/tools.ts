@@ -107,7 +107,7 @@ export function parseDetalle(input: unknown): DetalleIa | null {
 export const FIJAR_COTIZACION_DESCRIPTION =
   "Guarda el total de la COMPRA cotizada al cliente en pesos (el total que le dijiste: compuerta o compuertas más lo que incluya). No es para accesorios sueltos ni precios de referencia. Llámala cada vez que le des un total o el total cambie.";
 export const MOVER_ETAPA_DESCRIPTION =
-  "Avanza al contacto a una etapa del Embudo (inbox → prospecto → interesado → cerca_compra → compra). Úsala cuando el Goal lo indique. Solo avanza; un retroceso o la misma etapa se ignoran.";
+  "Avanza al contacto a una etapa del Embudo (inbox → prospecto → interesado → cerca_compra → compra). Úsala cuando el Goal lo indique. Llévalo directo a la etapa que corresponde aunque se salte las de en medio (p. ej. de inbox a cerca_compra si ya quiere pagar). Solo avanza; un retroceso o la misma etapa se ignoran.";
 export const AVISO_VENDEDOR_DESCRIPTION =
   "Deja un aviso interno al vendedor; el cliente no lo ve y tú sigues atendiendo. Motivos: cotejar_deposito (pago que confirmaste), cliente_pide_humano, comprobante_dudoso (en una frase, por qué). Cuándo usar cada uno lo dice el Goal.";
 

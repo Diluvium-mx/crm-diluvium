@@ -26,6 +26,7 @@ import { notifyConversation } from "@/lib/ai/runtime/state";
 import { addNotice } from "@/lib/ai/runtime/notices";
 import { moveStageForward } from "@/lib/contacts/stage";
 import { missingMedia, stripUnresolvedVariables } from "./steps";
+import { SLUG_DATOS_BANCARIOS } from "./defaults";
 
 export type RunTrigger = "agent" | "keyword" | "command" | "stage";
 
@@ -56,7 +57,8 @@ export const SKIP_NO_STEPS = "sin_pasos";
 export const SKIP_ALREADY_SENT = "ya_enviado_a_este_contacto";
 export const FAIL_WINDOW = "ventana_24h";
 export const FAIL_STUCK = "atorado";
-export const SLUG_DATOS_BANCARIOS = "datos_bancarios";
+// Vive en defaults.ts (puro): el runtime del agente también la usa para decidir qué modelo contesta.
+export { SLUG_DATOS_BANCARIOS };
 
 // Una corrida "running" más vieja que esto se da por atorada (el worker murió).
 export const RUN_STUCK_AFTER_MS = 10 * 60_000;

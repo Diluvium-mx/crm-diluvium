@@ -19,6 +19,9 @@ export type UsageOutcome =
   | "discarded_stale"
   | "skipped"
   | "handover"
+  // 27-sep-2026: el Modelo 1 contestó, pero con su respuesta el contacto pasa a una etapa
+  // del Modelo 2 y esa respuesta la escribe el Modelo 2 (la del Modelo 1 no se envía).
+  | "traspaso"
   | "error"
   | "transcrita"
   | "transcripcion_fallida";
