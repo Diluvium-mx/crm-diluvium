@@ -1,5 +1,15 @@
 import { describe, expect, it } from "vitest";
-import { applyCustomValues, approxTokens, countWords, faqSchema, goalSchema, profileSchema } from "./editor";
+import {
+  applyCustomValues,
+  approxTokens,
+  countWords,
+  faqSchema,
+  goalSchema,
+  MAX_VERSION_NAME,
+  profileSchema,
+  restoreVersionQuestion,
+  versionNameSchema,
+} from "./editor";
 
 const values = { contacto: "Juan", vendedor: "Laura", empresa: "Diluvium", agente: "Ángela" };
 
@@ -30,5 +40,25 @@ describe("validación", () => {
     expect(profileSchema.safeParse({ agentName: " ", companyName: "" }).success).toBe(false);
     expect(profileSchema.safeParse({}).success).toBe(false);
     expect(profileSchema.safeParse({ companyName: "Diluvium" }).success).toBe(true);
+  });
+});
+
+describe("nombre de una versión (lápiz ✎)", () => {
+  it("se recorta; vacío o solo espacios = sin nombre (null)", () => {
+    expect(versionNameSchema.parse("  Antes de la promo  ")).toBe("Antes de la promo");
+    expect(versionNameSchema.parse("")).toBeNull();
+    expect(versionNameSchema.parse("   ")).toBeNull();
+  });
+  it("máximo 80 caracteres (contados después de recortar)", () => {
+    expect(versionNameSchema.parse("x".repeat(MAX_VERSION_NAME))).toBe("x".repeat(MAX_VERSION_NAME));
+    expect(versionNameSchema.parse(` ${"x".repeat(MAX_VERSION_NAME)} `)).toBe("x".repeat(MAX_VERSION_NAME));
+    const r = versionNameSchema.safeParse("x".repeat(MAX_VERSION_NAME + 1));
+    expect(r.success).toBe(false);
+    expect(r.error?.issues[0]?.message).toMatch(/80 caracteres/);
+  });
+  it("la pregunta de «Restaurar» lleva el nombre solo si lo hay", () => {
+    expect(restoreVersionQuestion("Antes de la promo", "26 sep 2026, 11:53 a.m.")).toBe("¿Restaurar la versión «Antes de la promo» del 26 sep 2026, 11:53 a.m.?");
+    expect(restoreVersionQuestion(null, "26 sep 2026, 11:53 a.m.")).toBe("¿Restaurar la versión del 26 sep 2026, 11:53 a.m.?");
+    expect(restoreVersionQuestion("  ", "26 sep 2026, 11:53 a.m.")).toBe("¿Restaurar la versión del 26 sep 2026, 11:53 a.m.?");
   });
 });
