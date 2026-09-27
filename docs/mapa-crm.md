@@ -445,7 +445,7 @@ el 27-sep-2026; se editan aquí como cualquier otro.
 | # | Nombre oficial | Qué hace | Quién lo ve |
 |---|---|---|---|
 | 1 | **⚡ Mensajes rápidos · 📄 Plantillas** | Pestañas de la sección. | Todos |
-| 2 | **Descripción** | Recuerda que los mensajes rápidos pueden llevar variables como {{nombre}} y son para dentro de las 24 h. | Todos |
+| 2 | **Cómo se usan** | "En un chat, escribe / y parte del nombre (ej. /precio) o toca ⚡. El texto se pone en la caja: lo revisas y le das Enviar." | Todos |
 | 3 | **Nuevo mensaje rápido** | Abre el formulario (8–11). | Todos |
 | 4 | **Mensaje rápido** | Nombre y texto guardado. | Todos |
 | 5 | **Variables** | Las variables que usa ({{nombre}}, {{vendedor}}). Solo sale si las usa: los 22 de Diluvium no llevan (en la captura, "Asesor (ejemplo)" es de muestra). | Todos |
