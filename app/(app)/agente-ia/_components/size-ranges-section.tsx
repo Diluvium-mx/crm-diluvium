@@ -5,10 +5,14 @@
 // todos los roles. La sugerencia de tamaño de cada entrada del Detalle busca SOLO
 // dentro de su línea; fuera de rango → sin sugerencia. Se valida aquí con la misma
 // función del servidor (lib/contacts/sizes.ts) para mostrar los errores antes de guardar.
+// «Guardar rangos» pide confirmación arriba (regla del dueño, 27-sep-2026;
+// use-confirm.tsx) y avisa hacia arriba si hay cambios sin guardar.
 import { useRouter } from "next/navigation";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { replaceSizeRanges } from "@/lib/actions/contact-qualification";
 import { validateSizeRanges, type LineaCompuerta, type SizeRange } from "@/lib/contacts/sizes";
+import type { AgentActionResult } from "@/lib/agente-ia/types";
+import { useConfirm } from "./use-confirm";
 
 const LINEAS: { key: LineaCompuerta; label: string }[] = [
   { key: "mini", label: "Línea mini" },
@@ -39,32 +43,50 @@ function toRanges(rows: Row[]): SizeRange[] {
 
 const cell = "w-full rounded border bg-background px-2 py-1 text-sm";
 
-export function SizeRangesSection({ initial }: { initial: SizeRange[] }) {
+// La acción truena si algo falla; aquí se vuelve un resultado para el pop-up.
+async function saveRanges(ranges: SizeRange[]): Promise<AgentActionResult> {
+  try {
+    await replaceSizeRanges(ranges);
+    return { ok: true };
+  } catch {
+    return { ok: false, message: "No se pudieron guardar los rangos." };
+  }
+}
+
+export function SizeRangesSection({ initial, onDirtyChange }: { initial: SizeRange[]; onDirtyChange?: (dirty: boolean) => void }) {
   const router = useRouter();
   const [rows, setRows] = useState<Row[]>(() => toRows(initial));
-  const [saving, setSaving] = useState(false);
-  const [message, setMessage] = useState<{ ok: boolean; text: string } | null>(null);
+  // Lo último guardado, para saber si hay cambios sin guardar.
+  const [savedKey, setSavedKey] = useState(() => JSON.stringify(toRanges(toRows(initial))));
+  const confirm = useConfirm();
 
   const ranges = toRanges(rows);
   const numbersOk = rows.every((r) => /^\d+$/.test(r.minCm) && /^\d+$/.test(r.maxCm));
   const errors = numbersOk ? validateSizeRanges(ranges) : ["Mínimo y máximo deben ser números enteros de cm."];
+  const dirty = JSON.stringify(ranges) !== savedKey;
+
+  useEffect(() => {
+    onDirtyChange?.(dirty);
+  }, [dirty, onDirtyChange]);
 
   function update(key: string, patch: Partial<Row>) {
     setRows((current) => current.map((r) => (r.key === key ? { ...r, ...patch } : r)));
   }
 
-  async function save() {
-    setSaving(true);
-    setMessage(null);
-    try {
-      await replaceSizeRanges(ranges);
-      setMessage({ ok: true, text: "Rangos guardados. Las sugerencias de las entradas se recalcularon." });
-      router.refresh();
-    } catch {
-      setMessage({ ok: false, text: "No se pudieron guardar los rangos." });
-    } finally {
-      setSaving(false);
-    }
+  function save() {
+    const toSave = ranges;
+    confirm.ask({
+      title: "¿Guardar los rangos de tallas?",
+      body: "El tamaño sugerido de las entradas de todos los contactos se recalcula con estos rangos desde ahora.",
+      confirmLabel: "Sí, guardar",
+      pendingLabel: "Guardando…",
+      done: "Listo: rangos guardados; las sugerencias de las entradas se recalcularon",
+      run: () => saveRanges(toSave),
+      onDone: () => {
+        setSavedKey(JSON.stringify(toSave));
+        router.refresh();
+      },
+    });
   }
 
   return (
@@ -132,15 +154,19 @@ export function SizeRangesSection({ initial }: { initial: SizeRange[] }) {
           ))}
         </ul>
       )}
-      {message && <p className={`text-sm ${message.ok ? "text-emerald-700 dark:text-emerald-300" : "text-brand-orange"}`}>{message.text}</p>}
-      <button
-        type="button"
-        onClick={() => void save()}
-        disabled={saving || errors.length > 0}
-        className="rounded-md bg-brand-navy px-4 py-2 text-sm font-medium text-brand-white hover:bg-brand-navy-dark disabled:opacity-50"
-      >
-        {saving ? "Guardando…" : "Guardar rangos"}
-      </button>
+      {confirm.error && <p className="border-l-2 border-brand-orange pl-2 text-xs text-foreground">{confirm.error}</p>}
+      <div className="flex flex-wrap items-center gap-3">
+        <button
+          type="button"
+          onClick={save}
+          disabled={confirm.pending || errors.length > 0 || !dirty}
+          className="rounded-md bg-brand-navy px-4 py-2 text-sm font-medium text-brand-white hover:bg-brand-navy-dark disabled:opacity-50"
+        >
+          {confirm.pending ? "Guardando…" : "Guardar rangos"}
+        </button>
+        {dirty && <span className="text-xs text-muted-foreground">Cambios sin guardar.</span>}
+      </div>
+      {confirm.ui}
     </div>
   );
 }

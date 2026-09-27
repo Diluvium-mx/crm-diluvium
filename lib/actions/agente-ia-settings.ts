@@ -1,6 +1,6 @@
 "use server";
 
-// Server Actions del interruptor por canal del Agente IA (sección "Implementar"
+// Server Actions del interruptor por canal del Agente IA (subpestaña "Canales"
 // de la pestaña): Apagado / Encendido. Todos los roles (ACL: recurso `aiConfig`).
 // La organización sale de la SESIÓN. Los precios de los modelos son internos
 // (lib/ai/pricing.ts + ai_model_prices), solo para calcular el gasto.

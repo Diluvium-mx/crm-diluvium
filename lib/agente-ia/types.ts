@@ -42,7 +42,8 @@ export type ChannelAgentView = {
 
 // ── Editor del agente (pestaña "Agente IA" estilo GHL) ───────────────────────
 export type FaqView = { id: string; question: string; answer: string; enabled: boolean; position: number };
-export type VersionView = { id: string; createdAt: string; author: string | null; summary: string };
+// `name`: el que le puso el equipo con el lápiz ✎ (null = sin nombre, se ve solo la fecha).
+export type VersionView = { id: string; createdAt: string; author: string | null; summary: string; name: string | null };
 
 export type AgentEditorView = {
   agentName: string;

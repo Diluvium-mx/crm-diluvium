@@ -56,7 +56,7 @@ Nadie es "dueño" de un contacto: **todos ven todos los contactos, siempre**.
 | **Tarjeta "El agente no pudo responder"** | Aparece en el chat cuando falló el modelo o el envío. Tiene **Reintentar** y **Apagar**; mientras nadie elija, el agente no vuelve a intentar solo. |
 | **Marca "IA"** | Etiqueta junto a un dato del Detalle del contacto que **escribió el agente al último**. Si un vendedor lo edita, la marca se va. Mientras el agente lo llena se ve "IA actualizando". |
 | **Pausar agente / Activar** | Detiene al agente **solo en ese chat** (8, 12 o 24 horas, hasta una fecha y hora o indefinidamente). **Activar** lo regresa. También se pausa solo cuando un vendedor contesta (se ajusta en Opciones). |
-| **Canal Encendido / Apagado** | Interruptor general del agente por número de WhatsApp (Agente IA › Implementar). Apagado = no contesta a nadie en ese número. |
+| **Canal Encendido / Apagado** | Interruptor general del agente por número de WhatsApp (Agente IA › Canales). Apagado = no contesta a nadie en ese número. |
 | **Goal** | Las instrucciones de Ángela: cómo habla, qué ofrece, cuándo pasa a un asesor. Es lo único que sigue, junto con las FAQs. |
 | **FAQs** | Preguntas frecuentes con su respuesta que el agente usa para contestar. |
 | **Modelo 1 / Modelo 2** | Los dos "cerebros" del agente. Cada etapa usa uno (hoy: Modelo 1 en Inbox, Prospecto e Interesado; Modelo 2 en Cerca de compra y Compra). |
@@ -506,20 +506,26 @@ corto que se ve en el Detalle del contacto (Llegó por anuncio).
 
 ### 3.6 Agente IA
 
-Todo lo que define a Ángela. Arriba, su nombre y dos pestañas: **Crear** (cómo piensa y responde) e
-**Implementar** (en qué números contesta). La pestaña Crear es larga; aquí va en cinco partes.
+Todo lo que define a Ángela. Arriba, su nombre y una **barra de subpestañas (52)** que se queda fija al deslizar:
+**Modelos · Instrucciones (Goal) · FAQs · Opciones · Tallas y medidas · Canales**; cada una muestra solo su parte
+(desde el 27-sep-2026; antes eran dos pestañas, Crear e Implementar). **Todo cambio de esta pestaña pide confirmar en
+una ventana arriba (59)**; nada se guarda con un solo clic.
+
+> **Capturas pendientes:** las cinco de abajo son anteriores al 27-sep-2026 (todavía muestran «Crear · Implementar»,
+> todo en una sola página, sin nombres de versión ni «Guardar cambios» en Opciones). Los números 1–51 siguen valiendo;
+> 52–61 aún no aparecen en ninguna captura.
 
 ![Agente IA: nombre y modelos](mapa-crm/09-agente-modelos.png)
 ![Agente IA: Goal y FAQs](mapa-crm/09-agente-goal-faqs.png)
 ![Agente IA: Opciones](mapa-crm/09-agente-opciones.png)
 ![Agente IA: Tallas y medidas](mapa-crm/09-agente-tallas.png)
-![Agente IA: Implementar](mapa-crm/09-agente-implementar.png)
+![Agente IA: Canales (captura anterior, dice «Implementar»)](mapa-crm/09-agente-implementar.png)
 
 | # | Nombre oficial | Qué hace | Quién lo ve |
 |---|---|---|---|
 | 1 | **Nombre del agente** (Ángela) | Cómo se llama el agente. | Todos |
-| 2 | **✎ Editar el nombre del agente** | Cambia el nombre. | Todos |
-| 3 | **Crear · Implementar** | Pestañas de la sección. | Todos |
+| 2 | **✎ Editar el nombre del agente** | Cambia el nombre (Guardar pide confirmación). | Todos |
+| 3 | ~~Crear · Implementar~~ | Ya no existe (27-sep-2026): la reemplazan las subpestañas (52). | — |
 | 4 | **Modelos** | Los "cerebros" que piensan y redactan. | Todos |
 | 5 | **Modelo 1** | Por defecto GPT-5.6 Luna: el más económico, para las primeras preguntas. | Todos |
 | 6 | **Modelo elegido** | La tarjeta resaltada es la que está en uso. | Todos |
@@ -527,24 +533,24 @@ Todo lo que define a Ángela. Arriba, su nombre y dos pestañas: **Crear** (cóm
 | 8 | **Costo aproximado** | "≈ US$ por cada 100 conversaciones". Una opción en gris no tiene llave conectada. | Todos |
 | 9 | **Modelo 2** | Por defecto Claude Sonnet 5: el más capaz, para datos bancarios y comprobantes. | Todos |
 | 10 | **Qué modelo atiende cada etapa** | Qué modelo contesta según la etapa del contacto. | Todos |
-| 11 | **Modelo 1 · Modelo 2** (por etapa) | Selector de cada etapa. | Todos |
+| 11 | **Modelo 1 · Modelo 2** (por etapa) | Selector de cada etapa. Pide confirmar: «¿Cambiar la etapa Interesado al Modelo 2 (…)?». | Todos |
 | 12 | **APIs de IA** | Qué proveedores están conectados y cuáles no tienen llave. | Todos |
 | 13 | **Instrucciones (Goal)** | Lo que el agente sigue siempre. | Todos |
 | 14 | **↶ Deshacer** | Deshace lo último que escribiste en el Goal. | Todos |
 | 15 | **{ } Valores personalizados** | Inserta datos que se llenan solos: nombre del contacto, del vendedor, de la empresa, del agente. | Todos |
 | 16 | **Palabras · tokens** | Qué tan largo es el Goal (más largo = cada respuesta cuesta un poco más). | Todos |
 | 17 | **Editor del Goal** | Donde se escribe el Goal. | Todos |
-| 18 | **Guardar Goal** | Guarda y deja una versión. | Todos |
-| 19 | **Versiones / Ocultar versiones** | Historial de Goals guardados (fecha, palabras, quién). | Todos |
-| 20 | **Restaurar** | Regresa a una versión anterior (también deja versión). | Todos |
+| 18 | **Guardar Goal** | Guarda (con confirmación) y deja una versión. | Todos |
+| 19 | **Versiones / Ocultar versiones** | Historial de Goals guardados (nombre si tiene, fecha, palabras, quién). | Todos |
+| 20 | **Restaurar** | Regresa a una versión anterior (también deja versión). Pide confirmación con el nombre y la fecha. | Todos |
 | 21 | **FAQs** | Preguntas frecuentes del agente. | Todos |
 | 22 | **Buscar en preguntas y respuestas…** | Busca sin acentos ni mayúsculas. | Todos |
 | 23 | **Todas · Activas · Inactivas** | Filtro de FAQs. | Todos |
 | 24 | **+ Agregar pregunta** | Nueva FAQ. | Todos |
 | 25 | **Pregunta** | Clic muestra la respuesta. | Todos |
-| 26 | **Interruptor** | Activa o desactiva la FAQ (desactivada, el agente no la usa). | Todos |
-| 27 | **Editar · Borrar** (FAQ) | Cambia o elimina la FAQ. Cada cambio deja versión. | Todos |
-| 28 | **Opciones** | Cómo se comporta el bot. Un cambio aplica en menos de un minuto. | Todos |
+| 26 | **Interruptor** | Activa o desactiva la FAQ (desactivada, el agente no la usa). Pide confirmación. | Todos |
+| 27 | **Editar · Borrar** (FAQ) | Cambia o elimina la FAQ. Cada cambio deja versión. Agregar, guardar y borrar piden confirmación. | Todos |
+| 28 | **Opciones** | Cómo se comporta el bot. Los cambios se guardan juntos con «Guardar cambios» (56) y aplican en menos de un minuto. | Todos |
 | 29 | **Tiempo de espera antes de responder** | 5 a 60 s para juntar varios mensajes seguidos del cliente. | Todos |
 | 30 | **Pausar el bot cuando un vendedor contesta** | Sí / No. | Todos |
 | 31 | **Reactivar solo después de** | Nunca (a mano con «Activar») · 8 h · 24 h · Número de horas. | Todos |
@@ -562,12 +568,22 @@ Todo lo que define a Ángela. Arriba, su nombre y dos pestañas: **Crear** (cóm
 | 43 | **Fila de tamaño** | Tamaño · Desde (cm) · Hasta (cm). Dentro de una línea no se pueden encimar. | Todos |
 | 44 | **Quitar** | Borra ese tamaño. | Todos |
 | 45 | **+ Agregar tamaño** | Nueva fila. | Todos |
-| 46 | **Guardar rangos** | Guarda las tallas; el Detalle del contacto usa estos rangos para sugerir tamaño. | Todos |
-| 47 | **Implementar** | Pestaña de canales. | Todos |
+| 46 | **Guardar rangos** | Guarda las tallas (con confirmación); el Detalle del contacto usa estos rangos para sugerir tamaño. | Todos |
+| 47 | ~~Implementar~~ | Ya no existe (27-sep-2026): ahora es la subpestaña **Canales** (52). | — |
 | 48 | **Canales** | Números de WhatsApp conectados. | Todos |
 | 49 | **Canal** | Nombre y número (p. ej. WhatsApp Diluvium). | Todos |
-| 50 | **Apagado · Encendido** | Interruptor general del agente en ese número. | Todos |
+| 50 | **Apagado · Encendido** | Interruptor general del agente en ese número. Encender y apagar piden confirmación. | Todos |
 | 51 | **Número de prueba** | Canal de prueba, con su propio interruptor. | Todos |
+| 52 | **Subpestañas** | Modelos · Instrucciones (Goal) · FAQs · Opciones · Tallas y medidas · Canales. Fija arriba al deslizar; en celular se desliza de lado. La elegida queda en la dirección (`?seccion=opciones`), así un enlace abre directo esa parte. | Todos |
+| 53 | **Punto naranja** (en una subpestaña) | Esa parte tiene cambios sin guardar (Goal, Opciones o Tallas). Cambiar de subpestaña no los pierde; salir de la página pregunta antes. | Todos |
+| 54 | **✎ Nombre de la versión** | Lápiz en cada versión (Goal y FAQs, también la actual): ponerle o cambiarle nombre, p. ej. «Antes de la promo». Máx. 80 letras; vacío = sin nombre. Pide confirmación. | Todos |
+| 55 | **Nombre de la versión** (en la lista) | En negritas antes de la fecha: **Nombre** · 26 sep 2026, 10:15 p.m. · 3,226 palabras · Admin (actual). | Todos |
+| 56 | **Guardar cambios** (Opciones) | Aparece solo si cambiaste algo; guarda todo junto. La confirmación lista cada cambio (antes → después). | Todos |
+| 57 | **Descartar** (Opciones) | Regresa todas las Opciones a lo guardado (pide confirmación). | Todos |
+| 58 | **No se puede guardar: …** (Opciones) | Por qué «Guardar cambios» está gris (horas fuera de rango, horario sin días, inicio = fin). | Todos |
+| 59 | **Ventana de confirmación** | Arriba, bajo la barra azul: qué vas a cambiar, **Cancelar** y el botón naranja («Sí, guardar», «Sí, cambiar»…). Al terminar, «Listo: …» por 3 segundos. | Todos |
+| 60 | **Descartar cambios** (Goal) | Regresa el editor a lo último guardado (pide confirmación; «↶ Deshacer» lo trae de vuelta). | Todos |
+| 61 | **Cambios sin guardar** | Aviso junto a Guardar Goal, Guardar rangos y Guardar cambios. | Todos |
 
 **Lo cambias tú desde la pantalla:** todo lo de esta sección: nombre, modelos y etapas, Goal (con versiones), FAQs,
 Opciones, Tallas y medidas, y encender o apagar el agente por número.
@@ -580,7 +596,7 @@ Opciones, Tallas y medidas, y encender o apagar el agente por número.
 **Agente IA aquí:** esta es su configuración. El Goal y las FAQs mandan sobre lo que dice; las Opciones, sobre
 cuándo y cuánto contesta.
 
-<sub>Para Code: ruta `/agente-ia`; `app/(app)/agente-ia/_components/` (`agente-editor`, `brain-model-picker`, `stage-model-assignment`, `api-status-panel`, `goal-editor`, `versions-list`, `faq-editor`, `bot-options`, `size-ranges-section`, `channel-switches`); `lib/ai/catalog.ts`, `lib/agente-ia/opciones.ts`; detalle en `docs/agente-ia.md`.</sub>
+<sub>Para Code: ruta `/agente-ia?seccion=modelos|goal|faqs|opciones|tallas|canales` (`lib/agente-ia/sections.ts`); `app/(app)/agente-ia/_components/` (`agente-editor`, `use-confirm` (confirmación de todo cambio), `brain-model-picker`, `stage-model-assignment`, `api-status-panel`, `goal-editor`, `versions-list`, `faq-editor`, `bot-options`, `size-ranges-section`, `channel-switches`); `lib/ai/catalog.ts`, `lib/agente-ia/opciones.ts`, `lib/agente-ia/opciones-draft.ts` (borrador de Opciones); nombre de versiones en `ai_knowledge_versions.name` (migración 0040); detalle en `docs/agente-ia.md`.</sub>
 
 ---
 
@@ -733,7 +749,7 @@ Code sabe exactamente qué pieza tocar; no hace falta explicar nada más.
 ### 5 ejemplos reales
 
 1. "Bandeja › (10) chip de etapa › que diga «Cerca de compra» y no «cerca_compra»."
-2. "Agente IA › Implementar › (49) canal › cambiar «se reactiva con «Reactivar»» por «Activar»."
+2. "Agente IA › Canales › (49) canal › cambiar «se reactiva con «Reactivar»» por «Activar»."
 3. "Embudo › (2) columna de etapa › mostrar el total en pesos cotizado de esa columna."
 4. "Bandeja › Detalle del contacto › (24) menú de pausa › agregar «Pausar 2 horas»."
 5. "Dashboard › (3) tarjeta del proveedor › avisarme en naranja cuando el saldo baje de US$5."
