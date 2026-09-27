@@ -37,6 +37,7 @@ vi.mock("@/lib/agente-ia/editor-store", () => {
     createFaq: vi.fn(),
     deleteFaq: vi.fn(),
     loadEditor: vi.fn(),
+    renameVersion: vi.fn(),
     restoreFaqs: vi.fn(),
     restoreGoal: vi.fn(),
     saveBrainModel: vi.fn(),
