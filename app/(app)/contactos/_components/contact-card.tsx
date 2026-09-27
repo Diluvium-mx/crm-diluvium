@@ -1,6 +1,7 @@
 "use client";
 
 import { useDraggable } from "@dnd-kit/core";
+import { Mail, MailOpen } from "lucide-react";
 import type { Contact } from "../_data/types";
 import { TEMPERATURE_EMOJI, TEMPERATURE_LABELS, getContactFullName } from "../_data/types";
 import { ContactAvatar } from "./contact-avatar";
@@ -8,6 +9,7 @@ import { formatPhone } from "@/lib/phone-format";
 import { funnelTone, unreadBadge, type FunnelSignal } from "@/lib/contacts/funnel-tone";
 import { PhoneLocation } from "@/components/ui/phone-location";
 import { PruebaBadge } from "@/components/ui/prueba-badge";
+import { ContextMenu, ContextMenuContent, ContextMenuItem, ContextMenuTrigger } from "@/components/ui/context-menu";
 
 // Para lector de pantalla: el fondo de color solo se ve.
 const TONE_LABEL = {
@@ -65,10 +67,12 @@ export function ContactCard({
   contact,
   signal,
   onClick,
+  onSetUnread,
 }: {
   contact: Contact;
   signal?: FunnelSignal;
   onClick: () => void;
+  onSetUnread: (unread: boolean) => void;
 }) {
   const { attributes, listeners, setNodeRef, isDragging } = useDraggable({
     id: contact.id,
@@ -81,19 +85,36 @@ export function ContactCard({
   // El fondo lo lleva el botón y el contenido va transparente: así el "fondo
   // iluminado" (app/globals.css) se ve DETRÁS del contenido y ENCIMA del color
   // de la señal (data-funnel). La copia del DragOverlay hace lo mismo en el board.
+  // Clic derecho: menú de la tarjeta (el clic derecho no arrastra: dnd-kit solo
+  // toma el botón izquierdo). En táctil NO abre con pulsación larga: ahí la
+  // pulsación larga es arrastrar (TouchSensor del board).
+  const unread = (signal?.unread ?? 0) > 0;
   return (
-    <button
-      ref={setNodeRef}
-      type="button"
-      onClick={onClick}
-      {...attributes}
-      {...listeners}
-      data-funnel={funnelTone(signal)}
-      className={`w-full cursor-grab rounded-md bg-card text-left active:cursor-grabbing [&>div]:bg-transparent ${
-        isDragging ? "opacity-40" : ""
-      }`}
-    >
-      <ContactCardContent contact={contact} signal={signal} />
-    </button>
+    <ContextMenu>
+      <ContextMenuTrigger
+        onTouchStart={(event) => event.preventBaseUIHandler()}
+        className="data-popup-open:[&>button>div]:border-brand-navy"
+      >
+        <button
+          ref={setNodeRef}
+          type="button"
+          onClick={onClick}
+          {...attributes}
+          {...listeners}
+          data-funnel={funnelTone(signal)}
+          className={`w-full cursor-grab rounded-md bg-card text-left active:cursor-grabbing [&>div]:bg-transparent ${
+            isDragging ? "opacity-40" : ""
+          }`}
+        >
+          <ContactCardContent contact={contact} signal={signal} />
+        </button>
+      </ContextMenuTrigger>
+      <ContextMenuContent>
+        <ContextMenuItem onClick={() => onSetUnread(!unread)}>
+          {unread ? <MailOpen aria-hidden="true" /> : <Mail aria-hidden="true" />}
+          {unread ? "Marcar como leído" : "Marcar como no leído"}
+        </ContextMenuItem>
+      </ContextMenuContent>
+    </ContextMenu>
   );
 }

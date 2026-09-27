@@ -66,6 +66,28 @@ salir de cada campo (sin botón Guardar) con aviso "Guardado ✓". Ya no existe 
 Debajo de la estrella de cada fila va la temperatura del contacto (🔥/🧊/⏳/⭐; ○ sin asignar); un
 clic abre un menú para cambiarla sin abrir el chat. Lista y panel quedan sincronizados.
 
+### Clic derecho: leído / no leído (27-sep-2026)
+- **Menú del clic derecho** en la fila de la lista (Bandeja) y en la tarjeta (Embudo), en portal
+  (`components/ui/context-menu.tsx`, Base UI Context Menu). Por ahora una sola opción, que alterna:
+  **Marcar como no leído** / **Marcar como leído**. En táctil la fila abre con pulsación larga; la
+  tarjeta del Embudo no (ahí la pulsación larga es arrastrar).
+- **No leído = `unread_count` al menos 1** (sin columna nueva, como los avisos internos que ya suben
+  el contador): se ve el círculo naranja, entra al filtro "No leído" y al círculo de la tarjeta. Si
+  ya tenía no leídos se quedan. Se apaga como siempre: al abrir el chat, al contestar o con "Marcar
+  como leído". Si después llega un mensaje, el círculo suma (2).
+- **Leído = `unread_count` a 0**, también los avisos internos: lo pidió el vendedor a propósito.
+- Es del equipo (como Destacado); el trigger de `conversations` avisa al SSE y todos lo ven en vivo.
+- Marcar como no leído la conversación **abierta** la cierra (como WhatsApp Web): abierta, la
+  siguiente llegada la volvería a marcar leída.
+- **Embudo:** no leído va a la conversación más reciente del contacto (la que abre la tarjeta); leído
+  apaga todas. Contacto sin chat → aviso "Este contacto todavía no tiene chat.". No cambia el tono
+  de la tarjeta: el azul es "falta contestar", no "sin leer".
+- Abrir un chat SIN ningún entrante del cliente (solo salientes o avisos) ahora lo deja en 0; antes
+  el contador se quedaba (no había entrante que sirviera de corte).
+- **Luz del cursor de la fila:** es de la fila entera (`data-glow`) y no del área que abre el chat
+  (`data-no-glow`); antes se cortaba antes de la estrella y la temperatura. `glow-pointer.tsx`
+  salta los `data-no-glow` para que la luz siga al cursor en la fila.
+
 ### Programados (A6)
 Van dentro del hilo, al final, como burbujas punteadas "🕒 Programado para …" con Editar/Cancelar
 (fallidos: Reintentar/Descartar; cancelados solos: el cliente escribió antes o el autor ya no está

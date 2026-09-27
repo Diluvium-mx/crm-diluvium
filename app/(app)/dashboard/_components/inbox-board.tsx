@@ -11,6 +11,7 @@ import {
   listConversations,
   markConversationRead,
   setConversationStarred,
+  setConversationUnread,
 } from "@/lib/inbox/actions";
 import { updateContactTemperature } from "@/lib/actions/contacts";
 import type { Temperature } from "../../contactos/_data/types";
@@ -357,6 +358,24 @@ export function InboxBoard({ openContactId = null }: { openContactId?: string | 
     void setConversationStarred(id, starred).then(() => scheduleUpdate(id));
   }
 
+  // Clic derecho → "Marcar como no leído / leído". Optimista; al terminar (o si
+  // falla) se relee la fila del servidor. Marcar como no leída la conversación
+  // ABIERTA la cierra (como WhatsApp Web): abierta, la siguiente llegada la
+  // volvería a marcar leída.
+  function setUnread(item: ConversationListItem, unread: boolean) {
+    const id = item.id;
+    if (unread && selectedId === id) {
+      setSelectedId(null);
+      setDetail(null);
+    }
+    setConversations((current) =>
+      current.map((c) => (c.id === id ? { ...c, unreadCount: unread ? Math.max(1, c.unreadCount) : 0 } : c)),
+    );
+    void setConversationUnread(id, unread)
+      .catch(() => undefined)
+      .then(() => scheduleUpdate(id));
+  }
+
   return (
     // Alto FIJO (pantalla − encabezado de 4rem) y nada se sale: la página no se
     // desliza; cada columna desliza lo suyo (lista, historial del chat, detalle).
@@ -394,6 +413,7 @@ export function InboxBoard({ openContactId = null }: { openContactId?: string | 
               onSearchChange={setSearch}
               onToggleStar={toggleStar}
               onChangeTemperature={changeTemperature}
+              onSetUnread={setUnread}
             />
           </div>
         </aside>

@@ -7,9 +7,22 @@
 // queda centrada.
 import { useEffect } from "react";
 
-// Los mismos elementos que ilumina app/globals.css.
-const INTERACTIVE =
-  'button, [role="button"], [role="tab"], [role="radio"], [role="switch"], [role^="menuitem"], [role="option"], summary, [data-glow]';
+// Los mismos elementos que ilumina app/globals.css. Uno con data-no-glow no se
+// ilumina: la luz sigue al cursor en el de afuera que sí (p. ej. la fila entera de
+// la Bandeja, aunque el cursor esté sobre su área que abre el chat).
+const INTERACTIVE = [
+  "button",
+  '[role="button"]',
+  '[role="tab"]',
+  '[role="radio"]',
+  '[role="switch"]',
+  '[role^="menuitem"]',
+  '[role="option"]',
+  "summary",
+  "[data-glow]",
+]
+  .map((selector) => `${selector}:not([data-no-glow])`)
+  .join(", ");
 
 export function GlowPointer() {
   useEffect(() => {
