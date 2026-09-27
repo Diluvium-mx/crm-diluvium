@@ -504,8 +504,8 @@ hasta que alguien mueva una opción. Reglas puras en `lib/agente-ia/opciones.ts`
 
 Rama `feat/columnas-embudo`, migración **`0041_columnas_embudo`**.
 
-- **Datos.** Tabla `funnel_stages` por organización: clave estable, nombre, orden, color, papel, regla del bot y
-  modelo (1 o 2). `contacts.stage` y `workflows.trigger_stage` pasan de enum a texto con llave foránea compuesta. La
+- **Datos.** Tabla `funnel_stages` por organización: clave estable, nombre, orden, papel, regla del bot y modelo (1 o
+  2). La columna `color` existe pero no se usa: el dueño quitó el color el 27-sep (todas las columnas en azul). `contacts.stage` y `workflows.trigger_stage` pasan de enum a texto con llave foránea compuesta. La
   0041 siembra las 5 de siempre con las mismas claves y nombres; la regla de cada una es la del bloque "ETAPAS DEL
   EMBUDO" del Goal de producción y el modelo se copia de `ai_config.etapas_modelo_1` **vigente al migrar**. Toda
   organización nueva nace con las 5 (trigger `funnel_stages_seed_org`). `ai_config.etapas_modelo_1` queda sin uso
