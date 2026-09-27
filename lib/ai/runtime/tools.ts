@@ -3,7 +3,8 @@
 //   (descripción = "Cuándo usarlo", editable por el admin).
 // - `fijar_cotizacion { monto }`: guarda el total cotizado en el contacto.
 // - `mover_etapa { etapa }`: avanza la etapa (solo hacia adelante; el CRM ignora
-//   retrocesos sin error).
+//   retrocesos sin error). Acepta SOLO las claves vigentes de las columnas del Embudo
+//   de la organización (funnel_stages): una etapa borrada deja de existir para el modelo.
 // - `aviso_vendedor { motivo, detalle? }`: aviso interno 🤖 al vendedor; nunca llega
 //   al cliente ni pausa al agente. Desde la Fase E (25-sep-2026) sin monto ni folio.
 // - `actualizar_detalle { … }` (Agente IA parte 1, 26-sep-2026): llena el Detalle del
@@ -14,7 +15,7 @@
 import { tool, type ToolSet } from "ai";
 import { z } from "zod";
 import { toolNameFor } from "@/lib/workflows/defaults";
-import { STAGES } from "@/lib/contacts/stages";
+import { sortStages, type FunnelStage } from "@/lib/contacts/stages";
 import type { ToolCallOutput } from "@/lib/ai/types";
 
 export const TOOL_FIJAR_COTIZACION = "fijar_cotizacion";
@@ -30,15 +31,21 @@ export type AgentToolWorkflow = { id: string; slug: string; name: string };
 export type AgentTools = {
   tools: ToolSet;
   byName: ReadonlyMap<string, AgentToolWorkflow>;
+  /** Claves de etapa que acepta mover_etapa, en el orden del Embudo. */
+  stageKeys: readonly string[];
 };
 
 export const fijarCotizacionSchema = z.object({
   monto: z.number().positive().max(9_999_999).describe("Total cotizado al cliente en pesos mexicanos, p. ej. 5500"),
 });
 
-export const moverEtapaSchema = z.object({
-  etapa: z.enum(STAGES).describe("Etapa del Embudo a la que avanza el contacto (solo hacia adelante)"),
-});
+// Solo las claves vigentes (mínimo 1: z.enum exige una lista no vacía).
+export function moverEtapaSchemaFor(stageKeys: readonly string[]) {
+  const keys = stageKeys.length ? [...stageKeys] : ["inbox"];
+  return z.object({
+    etapa: z.enum(keys as [string, ...string[]]).describe("Clave de la etapa del Embudo a la que avanza el contacto (solo hacia adelante)"),
+  });
+}
 
 export const avisoVendedorSchema = z.object({
   motivo: z.enum(AVISO_MOTIVOS).describe("cotejar_deposito = el cliente pagó y el pago cuadra (el vendedor ve \"Depósito recibido\"); cliente_pide_humano = pidió hablar con una persona; comprobante_dudoso = el comprobante no cuadra o se ve dudoso"),
@@ -106,16 +113,21 @@ export function parseDetalle(input: unknown): DetalleIa | null {
 
 export const FIJAR_COTIZACION_DESCRIPTION =
   "Guarda el total de la COMPRA cotizada al cliente en pesos (el total que le dijiste: compuerta o compuertas más lo que incluya). No es para accesorios sueltos ni precios de referencia. Llámala cada vez que le des un total o el total cambie.";
-export const MOVER_ETAPA_DESCRIPTION =
-  "Avanza al contacto a una etapa del Embudo (inbox → prospecto → interesado → cerca_compra → compra). Úsala cuando el Goal lo indique. Llévalo directo a la etapa que corresponde aunque se salte las de en medio (p. ej. de inbox a cerca_compra si ya quiere pagar). Solo avanza; un retroceso o la misma etapa se ignoran.";
+export function moverEtapaDescription(stages: readonly FunnelStage[]): string {
+  const order = sortStages(stages)
+    .map((s) => `${s.key} (${s.name})`)
+    .join(" → ");
+  return `Avanza al contacto a una etapa del Embudo, por su clave: ${order}. Úsala cuando se cumpla la regla de esa etapa (sección ETAPAS DEL EMBUDO). Llévalo directo a la etapa que corresponde aunque se salte las de en medio (p. ej. si ya quiere pagar). Solo avanza; un retroceso o la misma etapa se ignoran.`;
+}
 export const AVISO_VENDEDOR_DESCRIPTION =
   "Deja un aviso interno al vendedor; el cliente no lo ve y tú sigues atendiendo. Motivos: cotejar_deposito (pago que confirmaste), cliente_pide_humano, comprobante_dudoso (en una frase, por qué). Cuándo usar cada uno lo dice el Goal.";
 
 // Puro: arma el ToolSet a partir de las filas de workflows (orden estable: la
 // consulta viene por position; fijas al final → la caché del prompt no se rompe).
-export function buildAgentTools(rows: readonly { id: string; slug: string; name: string; description: string }[]): AgentTools {
+export function buildAgentTools(rows: readonly { id: string; slug: string; name: string; description: string }[], stages: readonly FunnelStage[]): AgentTools {
   const tools: ToolSet = {};
   const byName = new Map<string, AgentToolWorkflow>();
+  const stageKeys = sortStages(stages).map((s) => s.key);
   for (const w of rows) {
     const name = toolNameFor(w.slug);
     if (byName.has(name)) continue;
@@ -123,17 +135,17 @@ export function buildAgentTools(rows: readonly { id: string; slug: string; name:
     byName.set(name, { id: w.id, slug: w.slug, name: w.name });
   }
   tools[TOOL_FIJAR_COTIZACION] = tool({ description: FIJAR_COTIZACION_DESCRIPTION, inputSchema: fijarCotizacionSchema });
-  tools[TOOL_MOVER_ETAPA] = tool({ description: MOVER_ETAPA_DESCRIPTION, inputSchema: moverEtapaSchema });
+  tools[TOOL_MOVER_ETAPA] = tool({ description: moverEtapaDescription(stages), inputSchema: moverEtapaSchemaFor(stageKeys) });
   tools[TOOL_AVISO_VENDEDOR] = tool({ description: AVISO_VENDEDOR_DESCRIPTION, inputSchema: avisoVendedorSchema });
   // Al final (orden estable): la caché del prompt de las herramientas de arriba no cambia.
   tools[TOOL_ACTUALIZAR_DETALLE] = tool({ description: ACTUALIZAR_DETALLE_DESCRIPTION, inputSchema: actualizarDetalleSchema });
-  return { tools, byName };
+  return { tools, byName, stageKeys };
 }
 
 export type ValidToolCall =
   | { kind: "workflow"; workflow: AgentToolWorkflow }
   | { kind: "cotizacion"; monto: number }
-  | { kind: "etapa"; etapa: (typeof STAGES)[number] }
+  | { kind: "etapa"; etapa: string }
   | { kind: "aviso"; aviso: z.infer<typeof avisoVendedorSchema> }
   | { kind: "detalle"; detalle: DetalleIa };
 
@@ -152,7 +164,7 @@ export function validateToolCalls(calls: readonly ToolCallOutput[], tools: Agent
       continue;
     }
     if (c.toolName === TOOL_MOVER_ETAPA) {
-      const p = moverEtapaSchema.safeParse(c.input);
+      const p = moverEtapaSchemaFor(tools.stageKeys).safeParse(c.input);
       if (p.success) valid.push({ kind: "etapa", etapa: p.data.etapa });
       else ignored.push(`${c.toolName}: argumentos inválidos`);
       continue;

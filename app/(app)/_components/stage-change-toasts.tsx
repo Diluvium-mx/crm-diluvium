@@ -10,6 +10,7 @@ import { usePathname, useRouter } from "next/navigation";
 import { X } from "lucide-react";
 import { useInboxStream } from "../dashboard/_components/use-inbox-stream";
 import { requestOpenContact } from "./open-contact";
+import { useFunnelStages } from "./funnel-stages-provider";
 import { groupText, nextExpiry, pushStageToast, stageToastFor, type StageToast } from "./stage-toasts";
 
 export function StageChangeToasts({ viewerUserId }: { viewerUserId: string }) {
@@ -17,10 +18,11 @@ export function StageChangeToasts({ viewerUserId }: { viewerUserId: string }) {
   const seq = useRef(0);
   const router = useRouter();
   const pathname = usePathname();
+  const { labelOf } = useFunnelStages();
 
   useInboxStream((event) => {
     if (event.type !== "contact.updated") return;
-    const info = stageToastFor(event, viewerUserId);
+    const info = stageToastFor(event, viewerUserId, labelOf);
     if (!info) return;
     const key = `aviso-${++seq.current}`;
     setToasts((current) => pushStageToast(current, info, Date.now(), key));

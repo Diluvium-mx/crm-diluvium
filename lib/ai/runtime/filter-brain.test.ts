@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { defaultStages } from "@/lib/contacts/stages";
 import { buildAdCleanerPrompt, needsAdCleaning, parseAdCleaner, stripAdMetadata } from "./filter";
 import { buildBrainSystemWithRuntime, HANDOVER_FALLBACK_TEXT, HANDOVER_TOKEN, parseBrainOutput, RUNTIME_SUFFIX } from "./brain";
 import { FAQ_SECTION_HEADER } from "./knowledge";
@@ -45,10 +46,11 @@ describe("filtro: solo limpia el anuncio de Click-to-WhatsApp", () => {
 });
 
 describe("cerebro: se rige solo por el Goal y las FAQs", () => {
-  it("el system es Goal completo + FAQs + sufijo fijo del CRM (el prefijo largo no cambia)", () => {
-    const sys = buildBrainSystemWithRuntime("GOAL", [{ position: 1, question: "q", answer: "a" }]);
+  it("el system es Goal completo + FAQs + sufijo fijo del CRM + las etapas vigentes al final (el prefijo largo no cambia)", () => {
+    const sys = buildBrainSystemWithRuntime("GOAL", [{ position: 1, question: "q", answer: "a" }], defaultStages());
     expect(sys.startsWith("GOAL\n\n" + FAQ_SECTION_HEADER)).toBe(true);
-    expect(sys.endsWith(RUNTIME_SUFFIX)).toBe(true);
+    expect(sys).toContain(RUNTIME_SUFFIX + "\n\nETAPAS DEL EMBUDO");
+    expect(sys).toContain("4. cerca_compra — \"Cerca de compra\": Cuando recibe los datos bancarios");
   });
 
   it("el runtime NO agrega reglas propias (precios, montos, desglose, formato, límites)", () => {

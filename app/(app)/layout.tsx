@@ -9,6 +9,9 @@ import { NavItem } from "./_components/nav-item";
 import { SignOutButton } from "./_components/sign-out-button";
 import { UserMenu } from "./_components/user-menu";
 import { StageChangeToasts } from "./_components/stage-change-toasts";
+import { FunnelStagesProvider } from "./_components/funnel-stages-provider";
+import { listFunnelStages } from "@/lib/contacts/funnel-stages";
+import type { FunnelStage } from "@/lib/contacts/stages";
 import { ThemeToggle } from "@/components/theme-toggle";
 
 // "Dashboard" va primero y es el destino al entrar (/inicio). La Bandeja
@@ -39,8 +42,13 @@ export default async function AppLayout({
   // resuelve el rol contra la membresía vigente; sin membresía, esas pestañas no
   // se muestran (falla cerrado). Las páginas y las Server Actions repiten la regla.
   let role: string | null = null;
+  // Columnas del Embudo de la organización: toda la UI las lee del contexto y el SSE
+  // las mantiene al día.
+  let stages: FunnelStage[] = [];
   try {
-    role = (await requireActiveMembership()).role;
+    const membership = await requireActiveMembership();
+    role = membership.role;
+    stages = await listFunnelStages(membership.organizationId);
   } catch {
     role = null;
   }
@@ -61,6 +69,7 @@ export default async function AppLayout({
   const roleLabel = role && isTeamRole(role) ? ROLE_LABELS[role] : "";
 
   return (
+    <FunnelStagesProvider initial={stages}>
     <div className="flex min-h-dvh w-full font-brand">
       {/* Capas: el sidebar va encima (z-20) y proyecta su sombra sobre la barra y
           el contenido; la barra (z-10) proyecta la suya sobre el contenido. Sin
@@ -115,5 +124,6 @@ export default async function AppLayout({
         {role && <StageChangeToasts viewerUserId={session.user.id} />}
       </div>
     </div>
+    </FunnelStagesProvider>
   );
 }

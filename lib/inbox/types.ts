@@ -200,4 +200,14 @@ export type InboxEvent =
   | { type: "inbox.bulk"; contactos: number }
   /** Un contacto cambió: la UI vuelve a pedir ese contacto (lib/contacts/notify-updated.ts). */
   | ContactUpdatedEvent
+  /** Las etapas del Embudo cambiaron (editor): la UI vuelve a pedir la lista. Al borrar una, cuántos contactos pasaron de `from` a `to`. */
+  | StagesUpdatedEvent
   | { type: "reload" };
+
+export type StagesUpdatedEvent = {
+  type: "stages.updated";
+  reason: "created" | "updated" | "reordered" | "role" | "deleted";
+  movedContacts: number;
+  from: string | null;
+  to: string | null;
+};

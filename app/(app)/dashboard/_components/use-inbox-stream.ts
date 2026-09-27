@@ -22,6 +22,7 @@ const EVENT_TYPES = [
   "contacts.bulk",
   "contact.updated",
   "inbox.bulk",
+  "stages.updated",
 ] as const;
 
 type Listener = (event: InboxEvent) => void;

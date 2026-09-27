@@ -524,6 +524,27 @@ describe.skipIf(!TEST_DATABASE_URL)("anuncios de Meta (Postgres real)", () => {
       expect(row(await table(SEPTIEMBRE), AD_VIDEO)).toMatchObject({ clients: 4, bought: 0 });
     });
 
+    it("Columnas del Embudo: 'Compraron' = la etapa con papel 'Venta cerrada', aunque el papel se mueva a otra columna", async () => {
+      const fs = await import("@/lib/contacts/funnel-stages");
+      await deliver(adEvent({ phone: "5216681000601", referral: videoFicha("r-1"), sentAt: "2026-09-12T18:00:00Z" }));
+      await deliver(adEvent({ phone: "5216681000602", referral: videoFicha("r-2"), sentAt: "2026-09-13T18:00:00Z" }));
+      await db.update(s.contacts).set({ stage: "compra" }).where(d.eq(s.contacts.phoneE164, "+526681000601"));
+      await db.update(s.contacts).set({ stage: "cerca_compra" }).where(d.eq(s.contacts.phoneE164, "+526681000602"));
+      expect(row(await table(SEPTIEMBRE), AD_VIDEO)).toMatchObject({ clients: 2, bought: 1 });
+      // Renombrar Compra no cambia nada (misma clave).
+      const compra = (await fs.listFunnelStages(ORG)).find((x) => x.key === "compra")!;
+      await fs.updateFunnelStage(ORG, compra.id, { name: "Venta cerrada" });
+      expect(row(await table(SEPTIEMBRE), AD_VIDEO)).toMatchObject({ clients: 2, bought: 1 });
+      // El papel "Venta cerrada" pasa a una columna nueva: ahora cuentan los de esa.
+      const nueva = await fs.createFunnelStage(ORG, { name: "Entregado" });
+      await fs.setFunnelStageRole(ORG, nueva.id, "venta_cerrada");
+      expect(row(await table(SEPTIEMBRE), AD_VIDEO)).toMatchObject({ clients: 2, bought: 0 });
+      await db.update(s.contacts).set({ stage: "entregado" }).where(d.eq(s.contacts.phoneE164, "+526681000602"));
+      expect(row(await table(SEPTIEMBRE), AD_VIDEO)).toMatchObject({ clients: 2, bought: 1 });
+      const page = await queries.getAd(ORG, AD_VIDEO);
+      expect(page?.bought).toBe(1);
+    });
+
     it("contacto sin anuncio: no aparece ni infla a ningún anuncio", async () => {
       await deliver(adEvent({ phone: "5216681000301", referral: imageFicha("s-1"), sentAt: "2026-09-10T18:00:00Z" }));
       await deliver(adEvent({ phone: "5216681000302", sentAt: "2026-09-10T18:05:00Z" }));

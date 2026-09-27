@@ -50,7 +50,7 @@ type ConvSpec = {
   lastName: string | null;
   phone: string;
   sourceChannel: string; // badge del avatar
-  stage: "inbox" | "prospecto" | "interesado" | "cerca_compra" | "compra";
+  stage: string; // clave de funnel_stages (las 5 por defecto)
   temperature: "caliente" | "frio" | "en_espera" | "destacado" | null;
   unread: number;
   starred?: boolean;

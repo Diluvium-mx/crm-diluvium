@@ -1,4 +1,5 @@
 import type { ModelTier, ProviderId } from "@/lib/ai/types";
+import type { FunnelStage } from "@/lib/contacts/stages";
 import type { CostBasis } from "./model-cost";
 import type { BotOptions } from "./opciones";
 import type { AgentModeValue } from "./settings";
@@ -48,10 +49,11 @@ export type VersionView = { id: string; createdAt: string; author: string | null
 export type AgentEditorView = {
   agentName: string;
   companyName: string;
-  // Fase E: Modelo 2 = modeloCerebro (brainOptions); Modelo 1 atiende etapasModelo1.
+  // Fase E: Modelo 2 = modeloCerebro (brainOptions); Modelo 1 = modelo1. Qué modelo
+  // atiende cada etapa vive en `stages[].modelSlot` (Columnas del Embudo).
   modeloCerebro: string;
   modelo1: string;
-  etapasModelo1: string[];
+  stages: FunnelStage[];
   goal: string;
   faqs: FaqView[];
   goalVersions: VersionView[];

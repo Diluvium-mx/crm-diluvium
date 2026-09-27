@@ -131,7 +131,7 @@ export const ADS_TABLE_LIMIT = 2_000;
  * Anuncios con clientes en el periodo (días locales de Mazatlán, inclusivos).
  * - Clientes = contactos DISTINTOS con al menos un clic de ese anuncio cuya
  *   fecha cae en el periodo (un cliente que vuelve por el mismo anuncio cuenta una vez).
- * - Compraron = de esos, los que HOY están en la etapa Compra.
+ * - Compraron = de esos, los que HOY están en la etapa con papel "Venta cerrada" (Compra, o como se llame hoy).
  * - Un contacto que llegó por 2 anuncios cuenta en AMBOS (cada anuncio lo trajo);
  *   por eso la suma de la columna puede pasar del total de contactos del periodo.
  * - Contacto sin anuncio: no aparece (no tiene clic).
@@ -147,7 +147,7 @@ export async function listAdsForPeriod(organizationId: string, range: DateRange,
     select ${adKeySql("c")} as key,
            max(c.ad_id) as ad_id,
            count(distinct c.contact_id)::int as clients,
-           count(distinct c.contact_id) filter (where ct.stage = 'compra')::int as bought,
+           count(distinct c.contact_id) filter (where ct.stage = (select fs.key from funnel_stages fs where fs.organization_id = ${organizationId} and fs.role = 'venta_cerrada'))::int as bought,
            (array_agg(c.headline order by c.clicked_at desc, c.id) filter (where c.headline is not null))[1] as headline
       from ${adClicks} c
       ${countedJoins}
@@ -233,7 +233,7 @@ export async function getAd(organizationId: string, key: string, { page = 1 }: {
 
   const [totals] = await db.execute<{ clients: number; bought: number }>(sql`
     select count(distinct c.contact_id)::int as clients,
-           count(distinct c.contact_id) filter (where ct.stage = 'compra')::int as bought
+           count(distinct c.contact_id) filter (where ct.stage = (select fs.key from funnel_stages fs where fs.organization_id = ${organizationId} and fs.role = 'venta_cerrada'))::int as bought
       from ${adClicks} c
       ${countedJoins}
      where c.organization_id = ${organizationId} and ${adKeyMatches(key)}`);

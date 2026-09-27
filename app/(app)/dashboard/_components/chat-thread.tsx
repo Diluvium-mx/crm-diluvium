@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import type { AdReferral, AttachmentView, ConversationDetail, MessageView } from "@/lib/inbox/types";
+import { useFunnelStages } from "../../_components/funnel-stages-provider";
 import { listMessages, retryMessage, sendMessage, sendTemplate } from "@/lib/inbox/actions";
 import { runWorkflowCommand } from "@/lib/actions/workflows";
 import { Composer } from "./composer";
@@ -237,6 +238,8 @@ export function ChatThread({
   nowMs: number;
 }) {
   const conversationId = detail.id;
+  // Nombre y color de la etapa (columnas editables del Embudo; llega la clave).
+  const { labelOf, colorOf } = useFunnelStages();
   const [messages, setMessages] = useState<MessageView[]>([]);
   const [optimistic, setOptimistic] = useState<OptimisticMessage[]>([]);
   const [hasMore, setHasMore] = useState(false);
@@ -472,8 +475,9 @@ export function ChatThread({
         </div>
         {detail.channel.isTest && <PruebaBadge />}
         {/* "Pausar agente" / "Activar" viven SOLO en el Detalle del contacto (26-sep-2026). */}
-        <span className="shrink-0 rounded-full bg-brand-navy/10 px-2.5 py-1 text-xs font-medium text-brand-navy">
-          {detail.contact.stage}
+        <span className="flex shrink-0 items-center gap-1.5 rounded-full bg-brand-navy/10 px-2.5 py-1 text-xs font-medium text-brand-navy dark:text-brand-white">
+          <span aria-hidden className="inline-block size-2 rounded-full" style={{ backgroundColor: colorOf(detail.contact.stage) }} />
+          {labelOf(detail.contact.stage)}
         </span>
       </header>
 

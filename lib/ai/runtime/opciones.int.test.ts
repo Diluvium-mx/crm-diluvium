@@ -6,6 +6,7 @@
 // la cola (doble) y el envío (sendAgentText) siguen el camino real. Solo con TEST_DATABASE_URL.
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import type { CallModelInput, CallModelResult } from "@/lib/ai/types";
+import { defaultStages } from "@/lib/contacts/stages";
 
 const TEST_DATABASE_URL = process.env.TEST_DATABASE_URL;
 if (TEST_DATABASE_URL) process.env.DATABASE_URL = TEST_DATABASE_URL;
@@ -104,7 +105,9 @@ describe.skipIf(!TEST_DATABASE_URL)("Opciones del bot (Postgres real)", () => {
         lastMessageAt: new Date(),
       });
     }
-    await db.insert(s.aiConfig).values({ organizationId: ORG, modeloFiltro: "gpt-5.6-luna", modeloCerebro: "claude-sonnet-5", etapasModelo1: [], goal: GOAL });
+    await db.insert(s.aiConfig).values({ organizationId: ORG, modeloFiltro: "gpt-5.6-luna", modeloCerebro: "claude-sonnet-5", goal: GOAL });
+    // Sin etapas para el Modelo 1 (Columnas del Embudo: el modelo vive en funnel_stages).
+    await db.update(s.funnelStages).set({ modelSlot: 2 }).where(eq(s.funnelStages.organizationId, ORG));
     await db.insert(s.aiKnowledge).values([{ id: "k1", organizationId: ORG, ghlId: "g1", question: "¿Precio?", answer: "$5,500 MXN", position: 1 }]);
   });
 
@@ -238,7 +241,7 @@ describe.skipIf(!TEST_DATABASE_URL)("Opciones del bot (Postgres real)", () => {
     const { deps, calls, delivered } = makeDeps({ toolCalls: [{ toolName: "aviso_vendedor", input: { motivo: "cliente_pide_humano", detalle: "Quiere una persona." } }] });
     expect(await run.runAgent(JOB, deps)).toEqual({ kind: "sent", bubbles: 2 });
     expect(delivered).toEqual(["Claro, cuesta $5,500 MXN.", "¿Cuánto mide tu entrada?"]);
-    expect(calls[0].input.system).toBe(brain.buildBrainSystemWithRuntime(GOAL, [{ question: "¿Precio?", answer: "$5,500 MXN", position: 1, enabled: true }]));
+    expect(calls[0].input.system).toBe(brain.buildBrainSystemWithRuntime(GOAL, [{ question: "¿Precio?", answer: "$5,500 MXN", position: 1, enabled: true }], defaultStages()));
     // Pedir asesor: aviso y sigue activo.
     expect((await notices()).map((n) => n.kind)).toEqual(["cliente_pide_humano"]);
     expect((await conv()).agentState).toBe("activo");
@@ -405,12 +408,12 @@ describe.skipIf(!TEST_DATABASE_URL)("Opciones del bot (Postgres real)", () => {
     const a = makeDeps();
     expect((await run.runAgent(JOB, a.deps)).kind).toBe("sent");
     const faqs = [{ question: "¿Precio?", answer: "$5,500 MXN", position: 1, enabled: true }];
-    expect(a.calls[0].input.system).toBe(`${brain.buildBrainSystemWithRuntime(GOAL, faqs)}\n${brain.LENGTH_LINES.detallada}`);
+    expect(a.calls[0].input.system).toBe(brain.buildBrainSystemWithRuntime(GOAL, faqs, defaultStages(), "detallada"));
     await set({ responseLength: "corta" });
     await msg({ direction: "in", body: "¿y el envío?", at: new Date(Date.now() + 1_000) });
     const b = makeDeps();
     expect((await run.runAgent(JOB, b.deps)).kind).toBe("sent");
-    expect(b.calls[0].input.system.endsWith(brain.LENGTH_LINES.corta!)).toBe(true);
+    expect(b.calls[0].input.system).toBe(brain.buildBrainSystemWithRuntime(GOAL, faqs, defaultStages(), "corta"));
   });
 
   it("mensajes: con 1, la información y la pregunta salen en un solo mensaje", async () => {

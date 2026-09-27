@@ -16,7 +16,8 @@
 import { and, eq } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { member, organization, user } from "@/lib/db/schema/auth";
-import { contacts, contactStageEnum } from "@/lib/db/schema/contacts";
+import { contacts } from "@/lib/db/schema/contacts";
+import { DEFAULT_STAGE_KEYS } from "@/lib/contacts/stages";
 import { normalizePhone } from "@/lib/phone";
 
 const SEED_SOURCE = "seed";
@@ -84,7 +85,7 @@ function randomMexicanPhone(usedPhones: Set<string>): string {
 }
 
 function generateFakeContact(
-  stage: (typeof contactStageEnum.enumValues)[number],
+  stage: string,
   usedPhones: Set<string>,
 ) {
   const firstName = pick(FIRST_NAMES);
@@ -157,7 +158,7 @@ async function main() {
     }
 
     const usedPhones = new Set<string>();
-    const rows = contactStageEnum.enumValues.flatMap((stage) =>
+    const rows = DEFAULT_STAGE_KEYS.flatMap((stage) =>
       Array.from({ length: CONTACTS_PER_STAGE }, () => ({
         ...generateFakeContact(stage, usedPhones),
         organizationId,

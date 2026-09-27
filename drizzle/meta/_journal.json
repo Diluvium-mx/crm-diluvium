@@ -281,6 +281,13 @@
       "when": 1790528015648,
       "tag": "0040_version_nombre",
       "breakpoints": true
+    },
+    {
+      "idx": 41,
+      "version": "7",
+      "when": 1790534023769,
+      "tag": "0041_columnas_embudo",
+      "breakpoints": true
     }
   ]
 }

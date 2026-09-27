@@ -88,18 +88,28 @@ describe.skipIf(!TEST_DATABASE_URL)("runtime del Agente IA (Postgres real)", () 
       modeloFiltro: "gpt-5.6-luna",
       modeloCerebro: "claude-sonnet-5",
       // Fase E: sin etapas para el Modelo 1 → todo lo atiende el Modelo 2 (Sonnet 5),
-      // como antes; el modelo por etapa tiene sus propios tests al final. Y el mismo
-      // modelo en los dos espacios (27-sep-2026): sin "otro modelo" de respaldo, las pruebas
-      // del cerebro de siempre siguen igual; el respaldo y el traspaso tienen las suyas.
+      // como antes (model1Stages([]) abajo); el modelo por etapa tiene sus propios tests al
+      // final. Y el mismo modelo en los dos espacios (27-sep-2026): sin "otro modelo" de
+      // respaldo, las pruebas del cerebro de siempre siguen igual; el respaldo y el traspaso
+      // tienen las suyas.
       modelo1: "claude-sonnet-5",
-      etapasModelo1: [],
       goal: GOAL,
     });
+    // Fase E / Columnas del Embudo: sin etapas para el Modelo 1 → todo lo atiende el
+    // Modelo 2 (Sonnet 5), como antes; el modelo por etapa tiene sus propios tests al final.
+    await model1Stages([]);
     await db.insert(s.aiKnowledge).values([
       { id: "k1", organizationId: ORG, ghlId: "g1", question: "¿Precio?", answer: "$5,500 MXN", position: 1 },
       { id: "k2", organizationId: ORG, ghlId: "g2", question: "¿Dónde?", answer: "Los Mochis", position: 2 },
     ]);
   });
+
+  // Qué etapas atiende el Modelo 1 (funnel_stages.model_slot; las demás, el Modelo 2).
+  async function model1Stages(keys: readonly string[]) {
+    const { and, inArray } = await import("drizzle-orm");
+    await db.update(s.funnelStages).set({ modelSlot: 2 }).where(eq(s.funnelStages.organizationId, ORG));
+    if (keys.length) await db.update(s.funnelStages).set({ modelSlot: 1 }).where(and(eq(s.funnelStages.organizationId, ORG), inArray(s.funnelStages.key, [...keys])));
+  }
 
   let seq = 0;
   async function msg(opts: {
@@ -1184,6 +1194,40 @@ describe.skipIf(!TEST_DATABASE_URL)("runtime del Agente IA (Postgres real)", () 
     expect(await contact()).toMatchObject({ stage: "compra", stageChangedBy: "vendedor" });
   });
 
+  it("Columnas del Embudo: el bot ve las etapas VIGENTES con su regla (sin tocar el Goal), mueve a una etapa nueva y una borrada ya no existe para él", async () => {
+    const fs = await import("@/lib/contacts/funnel-stages");
+    const interesado = (await fs.listFunnelStages(ORG)).find((x) => x.key === "interesado")!;
+    const nueva = await fs.createFunnelStage(ORG, { name: "Cotización enviada", afterId: interesado.id, botRule: "Cuando le mandas un total." });
+    expect(nueva.key).toBe("cotizacion_enviada");
+    await msg({ direction: "in", body: "cuánto cuesta", at: ago(20_000) });
+    const a = makeDeps({ brain: ["$5,500."], toolCalls: [{ toolName: "mover_etapa", input: { etapa: "cotizacion_enviada" } }] });
+    expect((await run.runAgent(JOB, a.deps)).kind).toBe("sent");
+    const brain = a.calls.find((c) => c.kind === "cerebro")!;
+    // El system lleva la lista actual (clave, nombre y regla) al final, después del sufijo fijo.
+    expect(brain.input.system).toContain("ETAPAS DEL EMBUDO (las define el CRM)");
+    expect(brain.input.system).toContain('4. cotizacion_enviada — "Cotización enviada": Cuando le mandas un total.');
+    expect(brain.input.system!.indexOf("INSTRUCCIONES DEL CRM")).toBeLessThan(brain.input.system!.indexOf("ETAPAS DEL EMBUDO (las define el CRM)"));
+    // mover_etapa ofrece la clave nueva.
+    expect((brain.input.tools?.mover_etapa as { description?: string }).description).toContain("cotizacion_enviada (Cotización enviada)");
+    expect(await contact()).toMatchObject({ stage: "cotizacion_enviada", stageChangedBy: "agente" });
+    // Renombrada: el bloque cambia en la siguiente respuesta; la clave sigue.
+    await fs.updateFunnelStage(ORG, nueva.id, { name: "Total enviado" });
+    await msg({ direction: "in", body: "ok", at: new Date() });
+    const b = makeDeps({ brain: ["Va."] });
+    expect((await run.runAgent(JOB, b.deps)).kind).toBe("sent");
+    expect(b.calls.find((c) => c.kind === "cerebro")!.input.system).toContain('4. cotizacion_enviada — "Total enviado": Cuando le mandas un total.');
+    // Borrada (sus contactos pasan a Interesado): la clave desaparece de la herramienta y una llamada con ella se ignora con aviso.
+    const { moved } = await fs.deleteFunnelStage(ORG, nueva.id, interesado.id);
+    expect(moved).toBe(1);
+    expect((await contact()).stage).toBe("interesado");
+    await msg({ direction: "in", body: "y en mini?", at: new Date() });
+    const c = makeDeps({ brain: ["Mini cuesta $4,000."], toolCalls: [{ toolName: "mover_etapa", input: { etapa: "cotizacion_enviada" } }] });
+    expect((await run.runAgent(JOB, c.deps)).kind).toBe("sent");
+    expect(c.calls.find((x) => x.kind === "cerebro")!.input.system).not.toContain("cotizacion_enviada");
+    expect((await contact()).stage).toBe("interesado");
+    expect((await notices()).some((n) => n.kind === "respuesta_cortada" && n.body.includes("mover_etapa: argumentos inválidos"))).toBe(true);
+  });
+
   it("aviso_vendedor: 🤖 en el hilo, no llega al cliente ni pausa; mover a Compra sin cotejar_deposito deja el aviso igual", async () => {
     await msg({ direction: "in", body: "", at: ago(20_000), attachments: [{ type: "image", url: "/api/media/x", storageKey: "org/x.jpg" }] });
     const { deps } = makeDeps({ brain: ["Perfecto, ya recibimos tu comprobante ✅\n\n¿A qué dirección lo enviamos?"], toolCalls: [{ toolName: "mover_etapa", input: { etapa: "compra" } }] });
@@ -1315,7 +1359,8 @@ describe.skipIf(!TEST_DATABASE_URL)("runtime del Agente IA (Postgres real)", () 
 
   // ── Fase E: Modelo 1 / Modelo 2 por etapa, PDF como nota y respuesta cortada ──
   it("Fase E: Inbox → Modelo 1 (Luna); Cerca de compra → Modelo 2 (Sonnet 5)", async () => {
-    await db.update(s.aiConfig).set({ modelo1: "gpt-5.6-luna", etapasModelo1: ["inbox", "prospecto", "interesado"] }).where(eq(s.aiConfig.organizationId, ORG));
+    await db.update(s.aiConfig).set({ modelo1: "gpt-5.6-luna" }).where(eq(s.aiConfig.organizationId, ORG));
+    await model1Stages(["inbox", "prospecto", "interesado"]);
     await msg({ direction: "in", body: "hola, precio?", at: ago(20_000) });
     const a = makeDeps({ brain: ["Cuesta $5,500 MXN."] });
     expect((await run.runAgent(JOB, a.deps)).kind).toBe("sent");
@@ -1329,7 +1374,8 @@ describe.skipIf(!TEST_DATABASE_URL)("runtime del Agente IA (Postgres real)", () 
   });
 
   it("Fase E: un modelo sin lectura de PDF (Qwen) recibe el PDF como nota de texto, no como archivo", async () => {
-    await db.update(s.aiConfig).set({ modelo1: "qwen-3.7-flash", etapasModelo1: ["inbox"] }).where(eq(s.aiConfig.organizationId, ORG));
+    await db.update(s.aiConfig).set({ modelo1: "qwen-3.7-flash" }).where(eq(s.aiConfig.organizationId, ORG));
+    await model1Stages(["inbox"]);
     await msg({ direction: "in", body: "mi comprobante", at: ago(20_000), attachments: [{ type: "document", url: "/api/media/p", storageKey: "org/spei.pdf", mimeType: "application/pdf", fileName: "spei.pdf", sizeBytes: 180_000 } as never] });
     const { deps, calls } = makeDeps({ brain: ["Gracias, lo reviso."] });
     expect((await run.runAgent(JOB, deps)).kind).toBe("sent");
@@ -1357,7 +1403,8 @@ describe.skipIf(!TEST_DATABASE_URL)("runtime del Agente IA (Postgres real)", () 
   });
 
   it("Fase E: sin llave del Modelo 1 contesta el Modelo 2 (el agente no se queda callado)", async () => {
-    await db.update(s.aiConfig).set({ modelo1: "gpt-5.6-luna", etapasModelo1: ["inbox"] }).where(eq(s.aiConfig.organizationId, ORG));
+    await db.update(s.aiConfig).set({ modelo1: "gpt-5.6-luna" }).where(eq(s.aiConfig.organizationId, ORG));
+    await model1Stages(["inbox"]);
     await msg({ direction: "in", body: "hola", at: ago(20_000) });
     const { deps, calls } = makeDeps({ brain: ["¡Hola! ¿En qué te ayudo?"] });
     expect((await run.runAgent(JOB, { ...deps, isModelAvailable: (id) => id !== "gpt-5.6-luna" })).kind).toBe("sent");
@@ -1365,7 +1412,8 @@ describe.skipIf(!TEST_DATABASE_URL)("runtime del Agente IA (Postgres real)", () 
   });
 
   it("Fase E: un vendedor cambia la etapa durante la generación y con ella el modelo → esa respuesta no sale; se regenera con el correcto", async () => {
-    await db.update(s.aiConfig).set({ modelo1: "gpt-5.6-luna", etapasModelo1: ["inbox", "prospecto", "interesado"] }).where(eq(s.aiConfig.organizationId, ORG));
+    await db.update(s.aiConfig).set({ modelo1: "gpt-5.6-luna" }).where(eq(s.aiConfig.organizationId, ORG));
+    await model1Stages(["inbox", "prospecto", "interesado"]);
     await msg({ direction: "in", body: "ya pagué", at: ago(20_000) });
     const { deps, calls } = makeDeps({
       brain: ["respuesta de Luna", "respuesta de Sonnet"],
@@ -1457,8 +1505,10 @@ describe.skipIf(!TEST_DATABASE_URL)("runtime del Agente IA (Postgres real)", () 
   });
 
   // ── 27-sep-2026 (dueño): respaldo entre modelos y traspaso Luna → Sonnet ─────
-  const dosModelos = () =>
-    db.update(s.aiConfig).set({ modelo1: "gpt-5.6-luna", etapasModelo1: ["inbox", "prospecto", "interesado"] }).where(eq(s.aiConfig.organizationId, ORG));
+  const dosModelos = async () => {
+    await db.update(s.aiConfig).set({ modelo1: "gpt-5.6-luna" }).where(eq(s.aiConfig.organizationId, ORG));
+    await model1Stages(["inbox", "prospecto", "interesado"]);
+  };
   const brainIds = (calls: { kind: string; modelId: string }[]) => calls.filter((c) => c.kind === "cerebro").map((c) => c.modelId);
   const brainOutcomes = async () =>
     (await db.select().from(s.aiUsage).orderBy(s.aiUsage.createdAt)).filter((u) => u.stage === "cerebro").map((u) => `${u.modelId}:${u.outcome}`);
@@ -1527,6 +1577,28 @@ describe.skipIf(!TEST_DATABASE_URL)("runtime del Agente IA (Postgres real)", () 
     // Sonnet no pidió la etapa: se respeta la que decidió Luna.
     expect((await contact()).stage).toBe("cerca_compra");
     expect(await brainOutcomes()).toEqual(["gpt-5.6-luna:traspaso", "claude-sonnet-5:sent"]);
+  });
+
+  it("Columnas del Embudo: traspaso hacia una etapa NUEVA del Modelo 2 (creada en el editor, con su regla); una renombrada y con Modelo 1 ya no traspasa", async () => {
+    const fs = await import("@/lib/contacts/funnel-stages");
+    await dosModelos();
+    await setStage("interesado");
+    const interesado = (await fs.listFunnelStages(ORG)).find((x) => x.key === "interesado")!;
+    const nueva = await fs.createFunnelStage(ORG, { name: "Negociando", afterId: interesado.id, botRule: "Cuando pide descuento.", modelSlot: 2 });
+    await msg({ direction: "in", body: "¿me haces descuento?", at: ago(20_000) });
+    const a = makeDeps({ brain: ["respuesta de Luna", "respuesta de Sonnet"], brainToolCalls: [[{ toolName: "mover_etapa", input: { etapa: "negociando" } }], []] });
+    expect(await run.runAgent(JOB, a.deps)).toEqual({ kind: "sent", bubbles: 1 });
+    expect(brainIds(a.calls)).toEqual(["gpt-5.6-luna", "claude-sonnet-5"]);
+    expect(lastUserText(a.calls.filter((c) => c.kind === "cerebro")[1].input)).toContain("el contacto pasa a Negociando");
+    expect((await contact()).stage).toBe("negociando");
+    // Con Modelo 1 en esa etapa (y renombrada), mover ahí ya no es traspaso: contesta Luna sola.
+    await setStage("interesado");
+    await fs.updateFunnelStage(ORG, nueva.id, { name: "Regateando", modelSlot: 1 });
+    await msg({ direction: "in", body: "¿y si llevo dos?", at: new Date() });
+    const b = makeDeps({ brain: ["respuesta de Luna"], brainToolCalls: [[{ toolName: "mover_etapa", input: { etapa: "negociando" } }]] });
+    expect(await run.runAgent(JOB, b.deps)).toEqual({ kind: "sent", bubbles: 1 });
+    expect(brainIds(b.calls)).toEqual(["gpt-5.6-luna"]);
+    expect((await contact()).stage).toBe("negociando");
   });
 
   it("traspaso: desde Inbox, saltándose etapas, Luna pide los datos bancarios → contesta Sonnet; la media sale UNA vez y el contacto queda en Cerca de compra", async () => {

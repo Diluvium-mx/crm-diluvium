@@ -2,6 +2,7 @@ import { isNotNull, sql } from "drizzle-orm";
 import {
   boolean,
   check,
+  foreignKey,
   index,
   integer,
   jsonb,
@@ -14,14 +15,12 @@ import {
   uniqueIndex,
 } from "drizzle-orm/pg-core";
 import { organization } from "./auth";
+import { funnelStages } from "./funnel-stages";
 
-export const contactStageEnum = pgEnum("contact_stage", [
-  "inbox",
-  "prospecto",
-  "interesado",
-  "cerca_compra",
-  "compra",
-]);
+// La etapa ya NO es un enum (hasta la 0040 era `contact_stage`): es la CLAVE de una
+// fila de `funnel_stages` de la misma organización (columnas editables del Embudo,
+// 26-sep-2026), con llave foránea compuesta (organization_id, stage). Ver
+// lib/db/schema/funnel-stages.ts y lib/contacts/stages.ts.
 
 // Temperatura del contacto (interés/urgencia), independiente de la etapa.
 // Valores semánticos; el emoji vive en la UI (ver _data/types.ts):
@@ -81,7 +80,10 @@ export const contacts = pgTable(
     // `channels.is_test` (número de prueba o sandbox). Un contacto que ya existía
     // nunca se marca. El Dashboard no lo cuenta y el Embudo lo marca "Prueba".
     esPrueba: boolean("es_prueba").default(false).notNull(),
-    stage: contactStageEnum("stage").default("inbox").notNull(),
+    // Clave de la etapa (funnel_stages.key). El código SIEMPRE la fija con la etapa de
+    // papel "entrada" de la organización; el default 'inbox' solo cubre inserciones
+    // sin etapa (pruebas) y falla por la llave foránea si esa clave ya no existe.
+    stage: text("stage").default("inbox").notNull(),
     // Nullable a propósito: sin temperatura asignada hasta que el vendedor la fije.
     temperature: contactTemperatureEnum("temperature"),
     tieneInundaciones: contactInundacionesEnum("tiene_inundaciones"),
@@ -102,7 +104,17 @@ export const contacts = pgTable(
     stageChangedBy: text("stage_changed_by"),
   },
   (table) => [
+    // Ningún contacto apunta a una etapa que no existe; borrar una etapa exige antes
+    // mover sus contactos (lib/contacts/funnel-stages.ts). NO ACTION (no RESTRICT): al
+    // borrar la organización, los cascades de contacts y funnel_stages corren en el
+    // mismo statement y la comprobación va al final.
+    foreignKey({
+      name: "contacts_stage_fk",
+      columns: [table.organizationId, table.stage],
+      foreignColumns: [funnelStages.organizationId, funnelStages.key],
+    }),
     index("contacts_org_idx").on(table.organizationId),
+    index("contacts_org_stage_idx").on(table.organizationId, table.stage),
     // No único a propósito: el import de GHL trae duplicados (fusión aparte).
     // Lo usa la ingesta en cada entrante (CLAUDE.md §5, índice obligatorio).
     index("contacts_org_phone_idx").on(table.organizationId, table.phoneE164),

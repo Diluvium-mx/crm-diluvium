@@ -1,10 +1,10 @@
 import Papa from "papaparse";
 import { normalizePhone } from "@/lib/phone";
-import { contactStageEnum } from "@/lib/db/schema/contacts";
-import { STAGE_LABELS } from "@/app/(app)/contactos/_data/types";
+import { DEFAULT_STAGES, defaultStages, roleKey, sortStages, type FunnelStage } from "@/lib/contacts/stages";
 
 export type SourceChannel = "whatsapp" | "fb" | "instagram";
-export type ContactStage = (typeof contactStageEnum.enumValues)[number];
+/** Clave de una etapa del Embudo (funnel_stages.key). */
+export type ContactStage = string;
 
 export interface ParsedGhlContactRow {
   ghlContactId: string;
@@ -163,53 +163,67 @@ const OPPORTUNITY_PATTERN = new RegExp(
     `${escapeRegExp(GHL_PIPELINE.toLowerCase())}\\s+(.+)$`,
 );
 
-// Etiqueta humana (STAGE_LABELS, única fuente de verdad; si el enum cambia,
-// Record<Stage,...> allá deja de compilar) → enum. Coincidencia EXACTA, así no
-// hay que ordenar por longitud: "cerca de compra" no colisiona con "compra".
-const STAGE_BY_LABEL = new Map<string, ContactStage>(
-  contactStageEnum.enumValues.map((value) => [STAGE_LABELS[value].toLowerCase(), value]),
-);
+// Las etapas del Embudo de la organización (nombre visible → clave, y orden). El
+// nombre de la oportunidad de GHL se compara EXACTO con el nombre de la columna
+// (en minúsculas), así "cerca de compra" no colisiona con "compra". Rango = orden
+// actual de las columnas: sirve para elegir la etapa MÁS AVANZADA cuando un
+// contacto trae varias oportunidades. La etapa por omisión es la de papel "entrada".
+type StageMap = { byLabel: Map<string, ContactStage>; rank: Map<ContactStage, number>; entry: ContactStage };
 
-// Rango en el embudo = orden de declaración del enum (inbox < prospecto <
-// interesado < cerca_compra < compra). Sirve para elegir la etapa MÁS AVANZADA
-// cuando un contacto trae varias oportunidades.
-const STAGE_RANK = new Map<ContactStage, number>(
-  contactStageEnum.enumValues.map((value, index) => [value, index]),
-);
+function stageMapOf(stages: readonly FunnelStage[]): StageMap {
+  const ordered = sortStages(stages);
+  const byLabel = new Map(ordered.map((s) => [s.name.trim().toLowerCase(), s.key]));
+  // Respaldo: el export de GHL trae los nombres de siempre ("Compra", "Cerca de compra").
+  // Si esa etapa se renombró en el CRM pero su clave sigue, el nombre viejo la encuentra.
+  for (const d of DEFAULT_STAGES) {
+    const label = d.name.toLowerCase();
+    if (!byLabel.has(label) && ordered.some((s) => s.key === d.key)) byLabel.set(label, d.key);
+  }
+  return {
+    byLabel,
+    rank: new Map(ordered.map((s, index) => [s.key, index])),
+    entry: roleKey(ordered, "entrada") ?? ordered[0]?.key ?? "inbox",
+  };
+}
 
-function stageFromOpportunitySegment(segment: string): ContactStage | null {
+function stageFromOpportunitySegment(segment: string, map: StageMap): ContactStage | null {
   const match = OPPORTUNITY_PATTERN.exec(segment.trim().toLowerCase());
   if (!match) return null;
-  return STAGE_BY_LABEL.get(match[1].trim()) ?? null;
+  return map.byLabel.get(match[1].trim()) ?? null;
 }
 
 // Resuelve la etapa desde la celda Opportunities. Varias oportunidades van
-// separadas por coma → se toma la MÁS AVANZADA. Vacía → inbox (default), no se
-// reporta. Con valor pero sin ninguna etapa reconocible → inbox y
+// separadas por coma → se toma la MÁS AVANZADA. Vacía → la etapa de entrada
+// (default), no se reporta. Con valor pero sin ninguna etapa reconocible → entrada y
 // recognized=false (para reportarla). hadValue distingue "vino vacía" de
 // "vino con algo".
-function contactStageFromOpportunities(raw: string): {
+function contactStageFromOpportunities(raw: string, map: StageMap): {
   stage: ContactStage;
   recognized: boolean;
   hadValue: boolean;
 } {
   const trimmed = raw.trim();
-  if (!trimmed) return { stage: "inbox", recognized: true, hadValue: false };
+  if (!trimmed) return { stage: map.entry, recognized: true, hadValue: false };
 
   let best: ContactStage | null = null;
   for (const segment of trimmed.split(",")) {
-    const stage = stageFromOpportunitySegment(segment);
+    const stage = stageFromOpportunitySegment(segment, map);
     if (stage === null) continue;
-    if (best === null || STAGE_RANK.get(stage)! > STAGE_RANK.get(best)!) {
+    if (best === null || map.rank.get(stage)! > map.rank.get(best)!) {
       best = stage;
     }
   }
 
-  if (best === null) return { stage: "inbox", recognized: false, hadValue: true };
+  if (best === null) return { stage: map.entry, recognized: false, hadValue: true };
   return { stage: best, recognized: true, hadValue: true };
 }
 
-export function parseGhlContactsCsv(csvText: string): ParseGhlContactsCsvResult {
+/**
+ * `stages`: las columnas del Embudo de la organización que importa (por omisión las
+ * 5 de siempre; en el CRM se pasan las vigentes, lib/contacts/funnel-stages.ts).
+ */
+export function parseGhlContactsCsv(csvText: string, stages: readonly FunnelStage[] = defaultStages()): ParseGhlContactsCsvResult {
+  const stageMap = stageMapOf(stages);
   const { data, errors, meta } = Papa.parse<Record<string, string | undefined>>(csvText, {
     // Evita errores de autodetección en archivos vacíos o de una sola columna.
     delimiter: ",",
@@ -264,7 +278,7 @@ export function parseGhlContactsCsv(csvText: string): ParseGhlContactsCsvResult 
 
     const rawTags = splitTags(row.tags ?? "");
     const opportunitiesRaw = row.opportunities?.trim() ?? "";
-    const { stage, recognized } = contactStageFromOpportunities(opportunitiesRaw);
+    const { stage, recognized } = contactStageFromOpportunities(opportunitiesRaw, stageMap);
 
     rows.push({
       ghlContactId,
