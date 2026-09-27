@@ -284,7 +284,9 @@ export async function executeActions(
 
 // Contexto del CRM que el agente recibe con cada llamada (va en el último turno
 // del cliente, no en el system: así la caché del prompt no se rompe).
-export async function crmContextFor(organizationId: string, contactId: string): Promise<string> {
+// `avanzaA` (27-sep-2026): traspaso del Modelo 1 al Modelo 2. El Modelo 1 ya decidió que
+// con este mensaje el contacto pasa a esa etapa; el Modelo 2 escribe la respuesta.
+export async function crmContextFor(organizationId: string, contactId: string, avanzaA: Stage | null = null): Promise<string> {
   const [c] = await db
     .select({ stage: contacts.stage, by: contacts.stageChangedBy, monto: contacts.montoCotizacion, customFields: contacts.customFields })
     .from(contacts)
@@ -294,6 +296,9 @@ export async function crmContextFor(organizationId: string, contactId: string): 
   const lines: string[] = [];
   const etapa = STAGE_LABEL[c.stage as Stage] ?? c.stage;
   lines.push(`Etapa actual del contacto: ${etapa}${c.by === "vendedor" ? " (la puso un vendedor: no la regreses)" : ""}.`);
+  if (avanzaA) {
+    lines.push(`Con lo que acaba de escribir el cliente, el contacto pasa a ${STAGE_LABEL[avanzaA]}: contesta este mensaje como corresponde a esa etapa, con las acciones que hagan falta.`);
+  }
   const por = (c.customFields as Record<string, unknown> | null)?.cotizacion_por;
   lines.push(
     c.monto != null
