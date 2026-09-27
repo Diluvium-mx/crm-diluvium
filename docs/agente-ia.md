@@ -74,6 +74,33 @@ una respuesta se corta o una acción llega incompleta, el vendedor ve el aviso �
 cortada" (nunca se descarta en silencio). Los model-id de API se verificaron contra docs
 oficiales / OpenRouter (2026-09).
 
+### Traspaso y respaldo entre modelos (27-sep-2026, decisión del dueño)
+
+Diagnóstico del 27-sep en producción: "solo contesta Sonnet" era la pestaña con Interesado en el
+Modelo 2 (el dueño ya la regresó al Modelo 1) y que Luna pasa al cliente a Interesado en su 1.ª
+respuesta. Luna sí contestaba (44 de 60 respuestas del oficial) y cuesta ~25× menos por respuesta,
+por eso el saldo de OpenAI casi no se movía. Regla del dueño: **Luna califica** (Inbox, Prospecto,
+Interesado) y **Sonnet cierra** (Cerca de compra y Compra: datos bancarios, comprobantes, cierre).
+
+- **Traspaso** (`handoffStage` en `lib/ai/runtime/model-by-stage.ts`): si el Modelo 1 contesta y
+  con su respuesta el contacto pasa a una etapa del Modelo 2 —por `mover_etapa` o porque pidió el
+  workflow `datos_bancarios` (el CRM lo mueve a Cerca de compra)—, aunque se salte etapas (Inbox →
+  Compra), esa **misma** respuesta la escribe el Modelo 2. Recibe en el contexto del CRM «el contacto
+  pasa a Cerca de compra: contesta como corresponde a esa etapa». La etapa que decidió el Modelo 1
+  se aplica aunque el Modelo 2 no la pida; lo demás que pidió el Modelo 1 (media, Detalle) se
+  descarta y el Modelo 2 decide lo suyo. La llamada del Modelo 1 queda en `ai_usage` con resultado
+  `traspaso` (se cobra, no se envía). Si el Modelo 2 falla, sale la respuesta del Modelo 1.
+- **Respaldo** (`brainCandidates`): si el modelo de la etapa falla (error del proveedor o respuesta
+  sin texto ni acciones) contesta el otro, sin esperar. La tarjeta «El agente no pudo responder» sale
+  solo si **fallan los dos**, y dice qué le pasó a cada uno. Un modelo sin llave se salta (en los
+  dos sentidos). Con un solo modelo (el mismo en los dos espacios) sigue el reintento único por
+  proveedor saturado de la Fase E.
+- Contactos de GHL que ya vienen en Cerca de compra o Compra los atiende Sonnet desde el primer
+  mensaje (la etapa manda; el agente solo avanza etapas, nunca regresa).
+- Tiempo: una ronda puede llamar al cerebro 2 veces; el candado de la corrida pasó de 6 a 8 min.
+- `mover_etapa` dice ahora que puede saltarse etapas. El Goal de producción ya define cuándo se
+  pasa a cada etapa (sección ETAPAS DEL EMBUDO); no se tocó.
+
 ## Llaves (Railway)
 
 `OPENAI_API_KEY` y `ANTHROPIC_API_KEY` van en el **servicio web** (`crm-diluvium`),
