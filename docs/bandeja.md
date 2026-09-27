@@ -52,6 +52,7 @@ El chat es un solo componente reutilizado en las dos secciones.
 - **Anuncio de clic a WhatsApp:** tarjeta compacta "📣 Llegó por anuncio" con titular y miniatura.
   NUNCA el volcado crudo (ctwaClid, mediaUrl, …). Ver `docs/investigacion/anuncios-ctwa.md`.
 - **Composer:** Enter envía, Shift+Enter salto de línea. Abrir la conversación la marca como leída.
+  ⚡ **Mensajes rápidos** y "/" ("/ busca mensajes rápidos"): ver abajo.
 
 ### Panel de contacto
 **Desde el Bloque B (22-sep-2026)** es el MISMO componente "Detalle del contacto" que el pop-up de
@@ -87,6 +88,18 @@ clic abre un menú para cambiarla sin abrir el chat. Lista y panel quedan sincro
 - **Luz del cursor de la fila:** es de la fila entera (`data-glow`) y no del área que abre el chat
   (`data-no-glow`); antes se cortaba antes de la estrella y la temperatura. `glow-pointer.tsx`
   salta los `data-no-glow` para que la luz siga al cursor en la fila.
+
+### Mensajes rápidos en el composer (27-sep-2026)
+- Antes se llamaban **Fragmentos**; desde el 27-sep todo texto visible dice **Mensajes rápidos**
+  (la sección, el botón ⚡ con su ventana, el menú del "/" y el texto de la caja: "/ busca mensajes
+  rápidos"). La tabla y el código siguen siendo `snippets` (sin migración).
+- **⚡** agrega el mensaje rápido al final del borrador; **"/"** lo busca mientras se escribe y lo pone
+  en el lugar del "/" (↑↓ elige, Enter inserta, Esc cierra). Debajo del menú del "/" van los
+  comandos de Automatización (/tabla, /banco…). Nada se manda solo: el vendedor revisa y envía.
+- El buscador ignora acentos y mayúsculas y busca en nombre y texto (`lib/snippets/slash.ts`):
+  "cuanta" encuentra "Cuánta agua entra". Solo `{{vendedor}}` se llena solo (con quien escribe).
+- Los 22 de Diluvium se cargan con `npm run mensajes-rapidos:cargar` (simula; escribe con
+  `--confirmar`; por nombre, sin duplicar ni tocar otros). Lista: `lib/snippets/mensajes-rapidos-diluvium.ts`.
 
 ### Programados (A6)
 Van dentro del hilo, al final, como burbujas punteadas "🕒 Programado para …" con Editar/Cancelar

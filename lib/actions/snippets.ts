@@ -11,14 +11,15 @@ import { requireActiveMembership } from "@/lib/auth/active-organization";
 import { roleAllows } from "@/lib/auth/permissions";
 import { db } from "@/lib/db";
 import { snippets } from "@/lib/db/schema/snippets";
+import { SNIPPET_BODY_MAX, SNIPPET_NAME_MAX } from "@/lib/snippets/limits";
 import { extractVariables } from "@/lib/snippets/variables";
 import type { SnippetView } from "@/lib/snippets/types";
 
-const NAME_MAX = 60;
-const BODY_MAX = 2000; // respuesta reutilizable, no un documento
+const NAME_MAX = SNIPPET_NAME_MAX;
+const BODY_MAX = SNIPPET_BODY_MAX;
 
 const nameSchema = z.string().trim().min(1, "El nombre es obligatorio.").max(NAME_MAX, `El nombre no puede pasar de ${NAME_MAX} caracteres.`);
-const bodySchema = z.string().trim().min(1, "El fragmento no puede estar vacío.").max(BODY_MAX, `El fragmento no puede pasar de ${BODY_MAX} caracteres.`);
+const bodySchema = z.string().trim().min(1, "El mensaje no puede estar vacío.").max(BODY_MAX, `El mensaje no puede pasar de ${BODY_MAX} caracteres.`);
 
 const createSnippetSchema = z.object({ name: nameSchema, body: bodySchema });
 const updateSnippetSchema = z.object({
@@ -40,7 +41,7 @@ function toView(row: typeof snippets.$inferSelect): SnippetView {
 // para fallar cerrado ante un rol desconocido.
 function requireSnippetManage(role: string, action: "create" | "update" | "delete"): void {
   if (!roleAllows(role, "snippet", action)) {
-    throw new Error("No tienes permiso para gestionar fragmentos.");
+    throw new Error("No tienes permiso para gestionar mensajes rápidos.");
   }
 }
 
@@ -77,7 +78,7 @@ export async function createSnippet(input: CreateSnippetInput): Promise<SnippetV
     revalidatePath("/mensajes-rapidos");
     return toView(created);
   } catch (error) {
-    if (isDuplicateName(error)) throw new Error(`Ya existe un fragmento llamado "${parsed.name}".`);
+    if (isDuplicateName(error)) throw new Error(`Ya existe un mensaje rápido llamado "${parsed.name}".`);
     throw error;
   }
 }
@@ -97,11 +98,11 @@ export async function updateSnippet(input: UpdateSnippetInput): Promise<SnippetV
       })
       .where(and(eq(snippets.id, parsed.id), eq(snippets.organizationId, organizationId)))
       .returning();
-    if (!updated) throw new Error("Fragmento no encontrado en esta organización.");
+    if (!updated) throw new Error("Mensaje rápido no encontrado en esta organización.");
     revalidatePath("/mensajes-rapidos");
     return toView(updated);
   } catch (error) {
-    if (isDuplicateName(error)) throw new Error(`Ya existe un fragmento llamado "${parsed.name}".`);
+    if (isDuplicateName(error)) throw new Error(`Ya existe un mensaje rápido llamado "${parsed.name}".`);
     throw error;
   }
 }
@@ -114,6 +115,6 @@ export async function deleteSnippet(id: string): Promise<void> {
     .delete(snippets)
     .where(and(eq(snippets.id, cleanId), eq(snippets.organizationId, organizationId)))
     .returning({ id: snippets.id });
-  if (!deleted) throw new Error("Fragmento no encontrado en esta organización.");
+  if (!deleted) throw new Error("Mensaje rápido no encontrado en esta organización.");
   revalidatePath("/mensajes-rapidos");
 }

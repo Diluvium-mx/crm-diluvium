@@ -34,7 +34,7 @@ export function FragmentosPlantillas({
     <div className="flex h-[calc(100dvh-4rem)] min-h-0 flex-col">
       <header className="flex flex-wrap items-center gap-3 border-b bg-card px-4 py-3">
         <h1 className="text-sm font-semibold">Mensajes rápidos</h1>
-        <div role="tablist" aria-label="Fragmentos o plantillas" className="ml-auto flex gap-1 rounded-lg bg-muted p-1">
+        <div role="tablist" aria-label="Mensajes rápidos o plantillas" className="ml-auto flex gap-1 rounded-lg bg-muted p-1">
           <button
             role="tab"
             aria-selected={tab === "fragmentos"}
@@ -45,7 +45,7 @@ export function FragmentosPlantillas({
                 : "text-muted-foreground hover:text-foreground"
             }`}
           >
-            ⚡ Fragmentos
+            ⚡ Mensajes rápidos
           </button>
           <button
             role="tab"
