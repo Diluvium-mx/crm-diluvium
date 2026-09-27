@@ -9,7 +9,7 @@
 // solo clic; cada cambio pide confirmación en el pop-up de arriba (use-confirm.tsx).
 // Nombre, color y regla se editan como borrador por fila y se guardan con «Guardar».
 // Las demás sesiones se enteran por el SSE (stages.updated). Sin lógica de datos.
-import { useEffect, useRef, useState, useTransition } from "react";
+import { useCallback, useEffect, useRef, useState, useTransition } from "react";
 import { DndContext, MouseSensor, TouchSensor, pointerWithin, useDraggable, useDroppable, useSensor, useSensors, type DragEndEvent } from "@dnd-kit/core";
 import { ArrowDown, ArrowUp, GripVertical, Plus, Trash2 } from "lucide-react";
 import { createStage, deleteStage, getContactCountsByStage, reorderStages, setStageRole, updateStage } from "@/lib/actions/funnel-stages";
@@ -261,7 +261,7 @@ export function StagesEditor({
 
   // Filas con borrador sin guardar.
   const [dirtyRows, setDirtyRows] = useState<ReadonlySet<string>>(new Set());
-  const onRowDirty = useRef((id: string, dirty: boolean) => {
+  const onRowDirty = useCallback((id: string, dirty: boolean) => {
     setDirtyRows((cur) => {
       if (cur.has(id) === dirty) return cur;
       const next = new Set(cur);
@@ -269,7 +269,7 @@ export function StagesEditor({
       else next.delete(id);
       return next;
     });
-  }).current;
+  }, []);
   useEffect(() => {
     onDirtyChange?.(dirtyRows.size > 0 || newName.trim() !== "");
   }, [dirtyRows, newName, onDirtyChange]);
