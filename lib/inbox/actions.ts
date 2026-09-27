@@ -4,6 +4,7 @@
 // organización activa desde la SESIÓN (nunca del cliente) y delegan en
 // queries.ts / send.ts. Toda escritura y lectura queda acotada a esa
 // organización (CLAUDE.md §7).
+import { z } from "zod";
 import { requireActiveMembership } from "@/lib/auth/active-organization";
 import { messagingProvider, MessagingNotConfiguredError } from "@/lib/messaging";
 import {
@@ -13,7 +14,9 @@ import {
   listConversationsForOrg,
   listMessagesForOrg,
   markConversationReadForOrg,
+  setContactUnreadForOrg,
   setConversationStarredForOrg,
+  setConversationUnreadForOrg,
 } from "./queries";
 import { retryTextMessage, SendRejectedError, sendTemplateMessage, sendTextMessage } from "@/lib/messaging/send";
 import { SendFailedError } from "@/lib/messaging/provider";
@@ -76,6 +79,22 @@ export async function markConversationRead(conversationId: string, upToMessageId
 export async function setConversationStarred(conversationId: string, starred: boolean): Promise<void> {
   const { organizationId } = await requireActiveMembership();
   await setConversationStarredForOrg(organizationId, conversationId, starred);
+}
+
+const unreadInput = z.object({ id: z.string().min(1).max(128), unread: z.boolean() });
+
+// Clic derecho → "Marcar como no leído / leído" en la Bandeja (una conversación).
+export async function setConversationUnread(conversationId: string, unread: boolean): Promise<void> {
+  const { organizationId } = await requireActiveMembership();
+  const input = unreadInput.parse({ id: conversationId, unread });
+  await setConversationUnreadForOrg(organizationId, input.id, input.unread);
+}
+
+// Lo mismo desde la tarjeta del Embudo (un contacto). false = aún no tiene chat.
+export async function setContactUnread(contactId: string, unread: boolean): Promise<boolean> {
+  const { organizationId } = await requireActiveMembership();
+  const input = unreadInput.parse({ id: contactId, unread });
+  return setContactUnreadForOrg(organizationId, input.id, input.unread);
 }
 
 // El código que la UI mapea a un mensaje amable; el texto es el respaldo.

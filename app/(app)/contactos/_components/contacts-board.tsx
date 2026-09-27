@@ -30,6 +30,7 @@ import { phoneMatchesSearch } from "@/lib/phone-format";
 import { normalizeSearch } from "@/lib/text/search";
 import { funnelTone, type FunnelSignal } from "@/lib/contacts/funnel-tone";
 import { useInboxStream } from "../../dashboard/_components/use-inbox-stream";
+import { setContactUnread } from "@/lib/inbox/actions";
 import { applyTemperatures, mergeLiveContacts } from "./board-live";
 
 // Type guard: el id del droppable siempre es una etapa (solo las columnas
@@ -56,11 +57,13 @@ function StageColumn({
   contacts,
   signals,
   onCardClick,
+  onSetUnread,
 }: {
   stage: Stage;
   contacts: Contact[];
   signals: Signals;
   onCardClick: (contactId: string) => void;
+  onSetUnread: (contactId: string, unread: boolean) => void;
 }) {
   const { setNodeRef, isOver } = useDroppable({ id: stage });
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -130,7 +133,12 @@ function StageColumn({
                     transform: `translateY(${virtualRow.start}px)`,
                   }}
                 >
-                  <ContactCard contact={contact} signal={signals[contact.id]} onClick={() => onCardClick(contact.id)} />
+                  <ContactCard
+                    contact={contact}
+                    signal={signals[contact.id]}
+                    onClick={() => onCardClick(contact.id)}
+                    onSetUnread={(unread) => onSetUnread(contact.id, unread)}
+                  />
                 </div>
               );
             })}
@@ -653,6 +661,33 @@ export function ContactsBoard({
     });
   }
 
+  // Clic derecho → "Marcar como no leído / leído". Optimista sobre el círculo de
+  // la tarjeta; el SSE (conversation.updated) trae después la señal del servidor.
+  // Si falla, vuelve al valor anterior (solo si nadie lo cambió mientras).
+  function handleSetUnread(contactId: string, unread: boolean) {
+    const previous: FunnelSignal | undefined = signals[contactId];
+    const unreadCount = unread ? Math.max(1, previous?.unread ?? 0) : 0;
+    const next: FunnelSignal = { pending: previous?.pending ?? false, urgent: previous?.urgent ?? false, unread: unreadCount };
+    setError(null);
+    setSignals((current) => ({ ...current, [contactId]: next }));
+    const revert = (message: string) => {
+      setSignals((current) => {
+        if (current[contactId] !== next) return current;
+        const rest = { ...current };
+        if (previous) rest[contactId] = previous;
+        else delete rest[contactId];
+        return rest;
+      });
+      setError(message);
+    };
+    setContactUnread(contactId, unread).then(
+      (found) => {
+        if (!found) revert("Este contacto todavía no tiene chat.");
+      },
+      () => revert("No se pudo cambiar a leído/no leído. Intenta de nuevo."),
+    );
+  }
+
   function handleCardClick(contactId: string) {
     if (justDraggedRef.current) {
       justDraggedRef.current = false;
@@ -758,6 +793,7 @@ export function ContactsBoard({
               contacts={columns.get(stage) ?? []}
               signals={signals}
               onCardClick={handleCardClick}
+              onSetUnread={handleSetUnread}
             />
           ))}
         </div>
