@@ -375,6 +375,26 @@ describe.skipIf(!TEST_DATABASE_URL)("executor de workflows", () => {
     expect(await contact()).toMatchObject({ stage: "compra", stageChangedBy: "vendedor" });
   });
 
+  it("Columnas del Embudo: /banco mueve a la etapa con papel 'Cerca de compra' aunque se renombre o el papel cambie de columna", async () => {
+    const fs = await import("@/lib/contacts/funnel-stages");
+    const a = await asset();
+    const wf = await workflow([{ kind: "send_media", assetId: a.id, title: "Banco", caption: "Datos" }], { slug: "datos_bancarios" });
+    // Renombrada: misma clave, /banco sigue llegando ahí.
+    const cerca = (await fs.listFunnelStages(ORG)).find((x) => x.key === "cerca_compra")!;
+    await fs.updateFunnelStage(ORG, cerca.id, { name: "Pago pendiente" });
+    const c1 = await ex.startWorkflowRun({ organizationId: ORG, workflowId: wf, conversationId: CONV, trigger: "command", triggeredByUserId: "u_v" });
+    expect(await ex.executeWorkflowRun(c1.runId, { provider, storage })).toBe("done");
+    expect((await contact()).stage).toBe("cerca_compra");
+    // El papel pasa a una etapa NUEVA (antes de Compra): /banco (desde una etapa anterior) mueve a esa.
+    await db.update(s.contacts).set({ stage: "inbox", stageChangedBy: null }).where(eq(s.contacts.id, CONTACT));
+    const interesado = (await fs.listFunnelStages(ORG)).find((x) => x.key === "interesado")!;
+    const nueva = await fs.createFunnelStage(ORG, { name: "Esperando pago", afterId: interesado.id });
+    await fs.setFunnelStageRole(ORG, nueva.id, "cerca_compra");
+    const c2 = await ex.startWorkflowRun({ organizationId: ORG, workflowId: wf, conversationId: CONV, trigger: "command", triggeredByUserId: "u_v" });
+    expect(await ex.executeWorkflowRun(c2.runId, { provider, storage })).toBe("done");
+    expect(await contact()).toMatchObject({ stage: "esperando_pago", stageChangedBy: "sistema" });
+  });
+
   it("la regla de /banco no re-dispara workflows 'al entrar a Cerca de compra' (sin CLABE doble); una etapa movida por el agente dispara corridas 'agent', no humanas", async () => {
     const a = await asset();
     const banco = await workflow([{ kind: "send_media", assetId: a.id, title: "Banco", caption: "Datos" }], { slug: "datos_bancarios", triggerStage: "cerca_compra" });

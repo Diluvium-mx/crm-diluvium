@@ -253,6 +253,30 @@ describe("parseGhlContactsCsv (formato real de GHL)", () => {
       expect(result.rows[0]).toMatchObject({ stage: "compra", stageRecognized: true });
     });
 
+    it("Columnas del Embudo: mapea contra las etapas VIGENTES de la organización (renombradas o nuevas), con su orden y su entrada", () => {
+      const custom = [
+        { id: "1", key: "nuevos", name: "Nuevos", position: 1, color: "#000000", role: "entrada" as const, botRule: "", modelSlot: 1 as const },
+        { id: "2", key: "prospecto", name: "Prospecto", position: 2, color: "#000000", role: null, botRule: "", modelSlot: 1 as const },
+        { id: "3", key: "cotizacion_enviada", name: "Cotización enviada", position: 3, color: "#000000", role: null, botRule: "", modelSlot: 1 as const },
+        { id: "4", key: "cerca_compra", name: "Pago pendiente", position: 4, color: "#000000", role: "cerca_compra" as const, botRule: "", modelSlot: 2 as const },
+        { id: "5", key: "compra", name: "Compra", position: 5, color: "#000000", role: "venta_cerrada" as const, botRule: "", modelSlot: 2 as const },
+      ];
+      const mapped = parseGhlContactsCsv(`${header}\n${line({ opps: `${PREFIX} Cotización enviada, ${PREFIX} Prospecto` })}`, custom);
+      expectSuccess(mapped);
+      expect(mapped.rows[0]).toMatchObject({ stage: "cotizacion_enviada", stageRecognized: true });
+      // "Interesado" se borró en el CRM (ni su nombre ni su clave existen): no se reconoce → etapa de entrada.
+      const gone = parseGhlContactsCsv(`${header}\n${line({ opps: `${PREFIX} Interesado` })}`, custom);
+      expectSuccess(gone);
+      expect(gone.rows[0]).toMatchObject({ stage: "nuevos", stageRecognized: false });
+      // "Cerca de compra" se renombró a "Pago pendiente" pero su clave sigue: el nombre de siempre de GHL la encuentra.
+      const viaDefault = parseGhlContactsCsv(`${header}\n${line({ opps: `${PREFIX} Cerca de compra` })}`, custom);
+      expectSuccess(viaDefault);
+      expect(viaDefault.rows[0]).toMatchObject({ stage: "cerca_compra", stageRecognized: true });
+      const empty = parseGhlContactsCsv(`${header}\n${line({ opps: "" })}`, custom);
+      expectSuccess(empty);
+      expect(empty.rows[0]).toMatchObject({ stage: "nuevos", stageRecognized: true });
+    });
+
     it("varias oportunidades todas Inbox → inbox", () => {
       const result = parseGhlContactsCsv(
         `${header}\n${line({ opps: `${PREFIX} Inbox, ${PREFIX} Inbox` })}`,

@@ -17,10 +17,12 @@ export const aiConfig = pgTable("ai_config", {
   // Modelo 2 desde la Fase E: atiende las etapas que NO están en etapas_modelo_1.
   modeloCerebro: text("modelo_cerebro").notNull(),
   // Fase E (25-sep-2026): el cerebro se elige por la etapa del contacto al
-  // responder. Modelo 1 (default Luna) atiende las etapas de `etapas_modelo_1`
-  // (default Inbox, Prospecto e Interesado, decisión del dueño); las demás, el
-  // Modelo 2 (`modelo_cerebro`). Ids del catálogo / de STAGES, validados al escribir.
+  // responder: Modelo 1 (default Luna) o Modelo 2 (`modelo_cerebro`).
   modelo1: text("modelo_1").default("gpt-5.6-luna").notNull(),
+  // SIN USO desde "Columnas del Embudo" (0041, 26-sep-2026): qué modelo atiende cada
+  // etapa vive en funnel_stages.model_slot (la 0041 copió lo configurado aquí). La
+  // columna se conserva para que el web y el worker anteriores sigan arrancando durante
+  // el despliegue; borrarla en una migración posterior.
   etapasModelo1: text("etapas_modelo_1").array().default(["inbox", "prospecto", "interesado"]).notNull(),
   // Goal (system prompt maestro) del "cerebro" (Fase B). Fuente versionada:
   // docs/agente-ia/angela-goal.md, sembrado con scripts/seed-ai-knowledge.ts.

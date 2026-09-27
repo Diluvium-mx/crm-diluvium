@@ -1,18 +1,18 @@
-// Etapas del Embudo y la ÚNICA forma de moverlas desde el CRM o el agente
-// (Fase D reestructurada, 24-sep-2026): Inbox → Prospecto → Interesado → Cerca de
-// compra → Compra. Solo hacia adelante; hacia atrás o a la misma etapa se ignora
-// sin error. La etapa puesta a mano por un vendedor manda: el agente nunca la
-// regresa; solo puede avanzarla después por algo nuevo del chat.
-// Multi-tenant: toda escritura filtra por organization_id.
+// Mover la etapa de un contacto: la ÚNICA forma de hacerlo desde el CRM o el agente
+// (Fase D reestructurada, 24-sep-2026). Solo hacia adelante según el ORDEN ACTUAL de
+// las columnas de la organización (lib/contacts/funnel-stages.ts); hacia atrás, a la
+// misma etapa o a una clave que ya no existe se ignora sin error. La etapa puesta a
+// mano por un vendedor manda: el agente nunca la regresa; solo puede avanzarla
+// después por algo nuevo del chat. Multi-tenant: toda escritura filtra por organization_id.
 import { and, eq, or, lte, ne, isNull, sql } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { contacts } from "@/lib/db/schema";
 import { onContactStageEntered } from "@/lib/workflows/triggers";
+import { listFunnelStages } from "./funnel-stages";
 import { notifyContactUpdated, type ContactActor } from "./notify-updated";
+import { isForward, type FunnelStage, type StageChangedBy } from "./stages";
 
-import { isForward, type Stage, type StageChangedBy } from "./stages";
-
-export { isForward, isStage, STAGES, type Stage, type StageChangedBy } from "./stages";
+export type { StageChangedBy } from "./stages";
 
 /**
  * Avanza la etapa del contacto si `to` está más adelante que la actual. Devuelve
@@ -24,8 +24,11 @@ export { isForward, isStage, STAGES, type Stage, type StageChangedBy } from "./s
 export async function moveStageForward(input: {
   organizationId: string;
   contactId: string;
-  to: Stage;
+  /** Clave de la etapa destino (funnel_stages.key). */
+  to: string;
   by: StageChangedBy;
+  /** Etapas de la organización ya leídas (si no, se leen aquí). */
+  stages?: readonly FunnelStage[];
   now?: Date;
   /**
    * Momento en que se basa la decisión (llegada del primer entrante del lote o
@@ -42,24 +45,25 @@ export async function moveStageForward(input: {
    * aviso emergente de "cambió de etapa" no le sale a él.
    */
   actorUserId?: string | null;
-}): Promise<{ from: Stage } | null> {
+}): Promise<{ from: string } | null> {
   const now = input.now ?? new Date();
+  const stages = input.stages ?? (await listFunnelStages(input.organizationId));
   // El CAS puede perder contra otro avance concurrente: se reintenta mientras el
   // destino siga siendo "hacia adelante".
   for (let attempt = 0; attempt < 3; attempt++) {
-    const moved = await tryMove(input, now);
+    const moved = await tryMove(input, stages, now);
     if (moved !== "retry") return moved;
   }
   return null;
 }
 
-async function tryMove(input: Parameters<typeof moveStageForward>[0], now: Date): Promise<{ from: Stage } | null | "retry"> {
+async function tryMove(input: Parameters<typeof moveStageForward>[0], stages: readonly FunnelStage[], now: Date): Promise<{ from: string } | null | "retry"> {
   const [current] = await db
     .select({ stage: contacts.stage, by: contacts.stageChangedBy, at: contacts.stageChangedAt })
     .from(contacts)
     .where(and(eq(contacts.id, input.contactId), eq(contacts.organizationId, input.organizationId)))
     .limit(1);
-  if (!current || !isForward(current.stage, input.to)) return null;
+  if (!current || !isForward(stages, current.stage, input.to)) return null;
   if (input.since && current.by === "vendedor" && current.at > input.since) return null;
   // Optimista: solo si nadie la movió entre la lectura y la escritura (y la
   // condición del vendedor se repite en SQL por si cambió justo ahora).
@@ -109,13 +113,13 @@ function actorFor(by: StageChangedBy, userId: string | null | undefined): Contac
   return { kind: "automatizacion", userId: userId ?? null };
 }
 
-// Etapa actual del contacto (o null si no existe). La usa el agente para elegir
-// el modelo de la respuesta (Fase E, lib/ai/runtime/model-by-stage.ts).
-export async function loadContactStage(organizationId: string, contactId: string): Promise<Stage | null> {
+// Etapa actual del contacto (clave, o null si no existe). La usa el agente para
+// elegir el modelo de la respuesta (Fase E, lib/ai/runtime/model-by-stage.ts).
+export async function loadContactStage(organizationId: string, contactId: string): Promise<string | null> {
   const [row] = await db
     .select({ stage: contacts.stage })
     .from(contacts)
     .where(and(eq(contacts.id, contactId), eq(contacts.organizationId, organizationId)))
     .limit(1);
-  return (row?.stage as Stage | undefined) ?? null;
+  return row?.stage ?? null;
 }

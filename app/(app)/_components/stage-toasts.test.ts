@@ -1,8 +1,12 @@
 import { describe, expect, it } from "vitest";
 import type { ContactUpdatedEvent } from "@/lib/inbox/types";
-import { groupText, MAX_TOASTS, nextExpiry, pushStageToast, stageToastFor, TOAST_MS, type StageToast } from "./stage-toasts";
+import { defaultStages, stageLabel } from "@/lib/contacts/stages";
+import { groupText, MAX_TOASTS, nextExpiry, pushStageToast, stageToastFor as stageToastForRaw, TOAST_MS, type StageToast } from "./stage-toasts";
 
 const ME = "u_yo";
+// El nombre de la etapa lo pone quien muestra el aviso (columnas editables); aquí, las 5 de siempre.
+const labelOf = (key: string) => stageLabel(defaultStages(), key);
+const stageToastFor = (event: ContactUpdatedEvent, viewer: string) => stageToastForRaw(event, viewer, labelOf);
 
 function event(overrides: Partial<ContactUpdatedEvent> = {}): ContactUpdatedEvent {
   return {

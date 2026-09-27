@@ -379,7 +379,8 @@ cambiaron de etapa". Nunca avisan lo que tú mismo hiciste.
 ### 3.3 Embudo
 
 El tablero con una columna por etapa. Cada tarjeta es un contacto. Arrastrar una tarjeta a otra columna le cambia
-la etapa. Todo se actualiza solo, sin recargar.
+la etapa. Todo se actualiza solo, sin recargar. Las columnas se editan con el **lápiz (17)** junto al título
+(desde el 27-sep-2026: renombrar, agregar, borrar, reordenar; captura pendiente).
 
 ![Embudo](mapa-crm/06-embudo.png)
 
@@ -403,26 +404,28 @@ Clic derecho sobre una tarjeta: menú de ese contacto (16).
 | 7 | **Temperatura** | La del contacto. | Todos |
 | 8 | **Ciudad por lada** | 📍 Ciudad calculada por la lada del teléfono. | Todos |
 | 9 | **PRUEBA** | Contacto del número de prueba. | Todos |
-| 10 | **Columna Compra** | Los que ya compraron (cuenta en Anuncios › Compraron). | Todos |
+| 10 | **Columna Compra** | Los que ya compraron (cuenta en Anuncios › Compraron). Es la columna con el papel «Venta cerrada» (70): si el papel pasa a otra, cuenta esa. | Todos |
 | 11 | **Chat** (pop-up) | El mismo chat de la Bandeja, con su caja para escribir. | Todos |
 | 12 | **Detalle del contacto** (pop-up) | El mismo Detalle de la Bandeja. | Todos |
 | 13 | **Ocultar detalle del contacto** | Esconde el Detalle en el pop-up; se recuerda en esa computadora. | Todos |
 | 14 | **✕ Cerrar** | Cierra el pop-up (también con Esc). | Todos |
 | 15 | **Fondo oscuro** | Clic afuera del pop-up también lo cierra. | Todos |
+| 17 | **✎ Editar columnas** (lápiz junto a «Embudo») | Abre el editor de columnas (18). | Todos |
+| 18 | **Columnas del Embudo** (pop-up) | El mismo editor de Agente IA › Etapas (62–71): nombre, color, orden, papel, modelo y regla del bot de cada columna. Todo cambio pide confirmar; las demás pantallas abiertas lo ven al momento. | Todos |
 | 16 | **Menú del clic derecho** | Sobre una tarjeta: **Marcar como no leído** (círculo naranja, 6, en su chat más reciente) o **Marcar como leído** (lo quita de todos sus chats). Lo mismo que en la Bandeja y se ve en las dos. No cambia el color de la tarjeta (azul = falta contestar). En celular no hay pulsación larga: ahí es arrastrar. | Todos |
 
-**Lo cambias tú desde la pantalla:** la etapa (arrastrando la tarjeta), leído / no leído (clic derecho) y todo lo
-del chat y el Detalle en el pop-up.
+**Lo cambias tú desde la pantalla:** la etapa (arrastrando la tarjeta), leído / no leído (clic derecho), las
+columnas (lápiz, 17) y todo lo del chat y el Detalle en el pop-up.
 
 **Pídeselo a Code:**
 - "En Embudo › (2) columna, agrega el total en pesos de las cotizaciones de esa etapa."
 - "En Embudo › (5) tarjeta, muestra cuánto tiempo lleva en esa etapa."
-- "En Embudo, agrega una columna «Perdido» después de Compra."
+- "En Embudo › (18) columnas, que la columna nueva nazca con el Modelo 1."
 
 **Agente IA aquí:** mueve tarjetas hacia adelante (sale el aviso emergente), pinta la tarjeta de amarillo cuando
 necesita al vendedor, y su chat y Detalle se ven igual que en la Bandeja.
 
-<sub>Para Code: ruta `/embudo` (`/contactos` redirige); `app/(app)/contactos/_components/` (`contacts-board`, `contact-card`, `contact-detail-panel`, `contact-chat`); colores `lib/contacts/funnel-signals.ts` y `funnel-tone.ts`, estilos `[data-funnel]` en `app/globals.css`.</sub>
+<sub>Para Code: ruta `/embudo` (`/contactos` redirige); `app/(app)/contactos/_components/` (`contacts-board`, `contact-card`, `contact-detail-panel`, `contact-chat`); colores `lib/contacts/funnel-signals.ts` y `funnel-tone.ts`, estilos `[data-funnel]` en `app/globals.css`. Columnas: tabla `funnel_stages` (migración 0041), editor `app/(app)/_components/stages-editor.tsx`, etapas en vivo `funnel-stages-provider.tsx` (evento SSE `stages.updated`).</sub>
 
 ---
 
@@ -523,7 +526,7 @@ corto que se ve en el Detalle del contacto (Llegó por anuncio).
 ### 3.6 Agente IA
 
 Todo lo que define a Ángela. Arriba, su nombre y una **barra de subpestañas (52)** que se queda fija al deslizar:
-**Modelos · Instrucciones (Goal) · FAQs · Opciones · Tallas y medidas · Canales**; cada una muestra solo su parte
+**Modelos · Etapas · Instrucciones (Goal) · FAQs · Opciones · Tallas y medidas · Canales**; cada una muestra solo su parte
 (desde el 27-sep-2026; antes eran dos pestañas, Crear e Implementar). **Todo cambio de esta pestaña pide confirmar en
 una ventana arriba (59)**; nada se guarda con un solo clic.
 
@@ -548,8 +551,8 @@ una ventana arriba (59)**; nada se guarda con un solo clic.
 | 7 | **Recomendado** | El que sugiere el CRM. | Todos |
 | 8 | **Costo aproximado** | "≈ US$ por cada 100 conversaciones". Una opción en gris no tiene llave conectada. | Todos |
 | 9 | **Modelo 2** | Por defecto Claude Sonnet 5: el más capaz, para datos bancarios y comprobantes. | Todos |
-| 10 | **Qué modelo atiende cada etapa** | Qué modelo contesta según la etapa del contacto. | Todos |
-| 11 | **Modelo 1 · Modelo 2** (por etapa) | Selector de cada etapa. Pide confirmar: «¿Cambiar la etapa Interesado al Modelo 2 (…)?». | Todos |
+| 10 | **Qué modelo atiende cada etapa** | Desde el 27-sep-2026 solo el botón **Ir a Etapas →**: el modelo de cada etapa se elige en la subpestaña Etapas (67). | Todos |
+| 11 | ~~Modelo 1 · Modelo 2 (por etapa)~~ | Se mudó a Etapas (67), sin perder lo configurado. | — |
 | 12 | **APIs de IA** | Qué proveedores están conectados y cuáles no tienen llave. | Todos |
 | 13 | **Instrucciones (Goal)** | Lo que el agente sigue siempre. | Todos |
 | 14 | **↶ Deshacer** | Deshace lo último que escribiste en el Goal. | Todos |
@@ -600,8 +603,18 @@ una ventana arriba (59)**; nada se guarda con un solo clic.
 | 59 | **Ventana de confirmación** | Arriba, bajo la barra azul: qué vas a cambiar, **Cancelar** y el botón naranja («Sí, guardar», «Sí, cambiar»…). Al terminar, «Listo: …» por 3 segundos. | Todos |
 | 60 | **Descartar cambios** (Goal) | Regresa el editor a lo último guardado (pide confirmación; «↶ Deshacer» lo trae de vuelta). | Todos |
 | 61 | **Cambios sin guardar** | Aviso junto a Guardar Goal, Guardar rangos y Guardar cambios. | Todos |
+| 62 | **Etapas** (subpestaña) | Las columnas del Embudo, una fila por etapa. El agente recibe esta lista (clave, nombre y regla, en este orden) en cada respuesta. Entre 3 y 10. | Todos |
+| 63 | **⠿ ↑ ↓ Orden** | Arrastrar o flechas: cambia el lugar de la columna (pide confirmar). El agente solo avanza según este orden. «Entrada» va primero y «Cerca de compra» antes que «Venta cerrada». | Todos |
+| 64 | **Color** | Color de la columna en el Embudo. Se guarda con **Guardar** (69). | Todos |
+| 65 | **Nombre** | Cómo se llama la columna. Renombrar no cambia la clave interna: contactos, workflows y el agente la siguen reconociendo. | Todos |
+| 66 | **Papel** | Entrada (llegan los contactos nuevos) · Cerca de compra (datos bancarios y /banco) · Venta cerrada (comprobante que cuadra; Anuncios › Compraron). Cada papel en una sola columna; pasarlo a otra pide confirmar. | Todos |
+| 67 | **Modelo 1 · Modelo 2** (por etapa) | Qué modelo contesta a los contactos de esa columna. Pide confirmar. | Todos |
+| 68 | **Regla del bot** | Cuándo debe el agente mover al contacto a esa columna (texto libre). Vacía = el agente no mueve ahí por su cuenta. | Todos |
+| 69 | **Guardar · Deshacer** (por fila) | Aparecen al cambiar nombre, color o regla; Guardar pide confirmar. | Todos |
+| 70 | **🗑 Borrar** | Pop-up que pregunta a qué columna pasan sus contactos (con cuántos tiene cada una) y los mueve todos de una vez. Gris si la columna tiene papel o si quedan 3. | Todos |
+| 71 | **Nueva columna · Después de · Agregar** | Agrega una columna entre dos (o al final), con el Modelo 2 y sin regla. Pide confirmar. | Todos |
 
-**Lo cambias tú desde la pantalla:** todo lo de esta sección: nombre, modelos y etapas, Goal (con versiones), FAQs,
+**Lo cambias tú desde la pantalla:** todo lo de esta sección: nombre, modelos, etapas (columnas del Embudo), Goal (con versiones), FAQs,
 Opciones, Tallas y medidas, y encender o apagar el agente por número.
 
 **Pídeselo a Code:**
@@ -612,7 +625,7 @@ Opciones, Tallas y medidas, y encender o apagar el agente por número.
 **Agente IA aquí:** esta es su configuración. El Goal y las FAQs mandan sobre lo que dice; las Opciones, sobre
 cuándo y cuánto contesta.
 
-<sub>Para Code: ruta `/agente-ia?seccion=modelos|goal|faqs|opciones|tallas|canales` (`lib/agente-ia/sections.ts`); `app/(app)/agente-ia/_components/` (`agente-editor`, `use-confirm` (confirmación de todo cambio), `brain-model-picker`, `stage-model-assignment`, `api-status-panel`, `goal-editor`, `versions-list`, `faq-editor`, `bot-options`, `size-ranges-section`, `channel-switches`); `lib/ai/catalog.ts`, `lib/agente-ia/opciones.ts`, `lib/agente-ia/opciones-draft.ts` (borrador de Opciones); nombre de versiones en `ai_knowledge_versions.name` (migración 0040); detalle en `docs/agente-ia.md`.</sub>
+<sub>Para Code: ruta `/agente-ia?seccion=modelos|etapas|goal|faqs|opciones|tallas|canales` (`lib/agente-ia/sections.ts`); editor de etapas `app/(app)/_components/stages-editor.tsx` (tabla `funnel_stages`, acciones `lib/actions/funnel-stages.ts`); `app/(app)/agente-ia/_components/` (`agente-editor`, `use-confirm` (confirmación de todo cambio), `brain-model-picker`, `api-status-panel`, `goal-editor`, `versions-list`, `faq-editor`, `bot-options`, `size-ranges-section`, `channel-switches`); `lib/ai/catalog.ts`, `lib/agente-ia/opciones.ts`, `lib/agente-ia/opciones-draft.ts` (borrador de Opciones); nombre de versiones en `ai_knowledge_versions.name` (migración 0040); detalle en `docs/agente-ia.md`.</sub>
 
 ---
 

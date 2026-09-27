@@ -6,7 +6,9 @@ import { z } from "zod";
 import { requireActiveMembership } from "@/lib/auth/active-organization";
 import { roleAllows } from "@/lib/auth/permissions";
 import { db } from "@/lib/db";
-import { contacts, contactStageEnum, contactTemperatureEnum } from "@/lib/db/schema/contacts";
+import { contacts, contactTemperatureEnum } from "@/lib/db/schema/contacts";
+import { listFunnelStages } from "@/lib/contacts/funnel-stages";
+import { isStageKey, roleKey } from "@/lib/contacts/stages";
 import { countryFromPhone, normalizePhone, phoneColumns } from "@/lib/phone";
 import { parseGhlContactsCsv } from "@/lib/import/ghl-contacts-csv";
 import { onContactStageEntered } from "@/lib/workflows/triggers";
@@ -104,7 +106,8 @@ const createContactSchema = z.object({
   lastName: z.string().trim().optional().or(z.literal("")),
   phone: z.string().trim().optional().or(z.literal("")),
   email: z.email("Email inválido.").optional().or(z.literal("")),
-  stage: z.enum(contactStageEnum.enumValues).optional(),
+  // Clave de una etapa vigente de la organización (se valida contra funnel_stages).
+  stage: z.string().trim().min(1).max(40).optional(),
 });
 
 export type CreateContactInput = z.infer<typeof createContactSchema>;
@@ -113,6 +116,10 @@ export async function createContact(input: CreateContactInput) {
   const organizationId = await requireActiveOrganizationId();
   const parsed = createContactSchema.parse(input);
   const phoneE164 = parsed.phone ? normalizePhone(parsed.phone) : null;
+  const stages = await listFunnelStages(organizationId);
+  if (parsed.stage !== undefined && !isStageKey(stages, parsed.stage)) throw new Error("Esa etapa ya no existe en el Embudo.");
+  const entry = roleKey(stages, "entrada");
+  if (!entry) throw new Error("El Embudo no tiene etapa de entrada; revísalo en Agente IA → Etapas del embudo.");
 
   const [created] = await db
     .insert(contacts)
@@ -124,7 +131,7 @@ export async function createContact(input: CreateContactInput) {
       ...phoneColumns(phoneE164),
       country: countryFromPhone(phoneE164),
       email: parsed.email || null,
-      stage: parsed.stage ?? "inbox",
+      stage: parsed.stage ?? entry,
     })
     .returning();
 
@@ -135,7 +142,8 @@ export async function createContact(input: CreateContactInput) {
 
 const updateContactStageSchema = z.object({
   contactId: z.string().trim().min(1, "contactId es obligatorio."),
-  stage: z.enum(contactStageEnum.enumValues),
+  // Clave de una etapa vigente (se valida contra funnel_stages de la organización).
+  stage: z.string().trim().min(1).max(40),
 });
 
 export type UpdateContactStageInput = z.infer<typeof updateContactStageSchema>;
@@ -143,6 +151,9 @@ export type UpdateContactStageInput = z.infer<typeof updateContactStageSchema>;
 export async function updateContactStage(input: UpdateContactStageInput) {
   const { organizationId, userId } = await requireActiveMembership();
   const parsed = updateContactStageSchema.parse(input);
+  if (!isStageKey(await listFunnelStages(organizationId), parsed.stage)) {
+    throw new Error("Esa etapa ya no existe en el Embudo; recarga la página.");
+  }
 
   // Solo cambia (y dispara) si la etapa es distinta: soltar la tarjeta en su
   // misma columna no es "entrar" a la etapa. El aviso en vivo (contact.updated,
@@ -269,7 +280,7 @@ export async function importContactsFromCsv(
   }
 
   const csvText = await file.text();
-  const parsed = parseGhlContactsCsv(csvText);
+  const parsed = parseGhlContactsCsv(csvText, await listFunnelStages(organizationId));
 
   if (!parsed.ok) {
     throw new Error(

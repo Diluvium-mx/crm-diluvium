@@ -7,9 +7,10 @@
 // - workflow_runs: cada corrida, con su rastro (mensajes enviados, error).
 // Multi-tenant: toda tabla lleva organization_id (CLAUDE.md §5).
 import { sql } from "drizzle-orm";
-import { boolean, index, integer, jsonb, pgEnum, pgTable, text, timestamp, uniqueIndex } from "drizzle-orm/pg-core";
+import { boolean, foreignKey, index, integer, jsonb, pgEnum, pgTable, text, timestamp, uniqueIndex } from "drizzle-orm/pg-core";
 import { organization, user } from "./auth";
-import { contacts, contactStageEnum } from "./contacts";
+import { contacts } from "./contacts";
+import { funnelStages } from "./funnel-stages";
 import { conversations } from "./messaging";
 
 export const mediaAssetKindEnum = pgEnum("media_asset_kind", ["image", "video", "document"]);
@@ -81,8 +82,9 @@ export const workflows = pgTable(
     triggerKeywords: jsonb("trigger_keywords").$type<string[]>().notNull().default([]),
     // Comando del VENDEDOR en el composer, p. ej. "/tabla" (único por organización).
     triggerCommand: text("trigger_command"),
-    // Se dispara cuando el contacto ENTRA a esta etapa.
-    triggerStage: contactStageEnum("trigger_stage"),
+    // Se dispara cuando el contacto ENTRA a esta etapa (clave de funnel_stages; al
+    // borrar la etapa, el CRM la deja en null en la misma transacción).
+    triggerStage: text("trigger_stage"),
     position: integer("position").notNull().default(0),
     createdByUserId: text("created_by_user_id").references(() => user.id, { onDelete: "set null" }),
     updatedByUserId: text("updated_by_user_id").references(() => user.id, { onDelete: "set null" }),
@@ -90,6 +92,11 @@ export const workflows = pgTable(
     updatedAt: timestamp("updated_at").defaultNow().notNull(),
   },
   (table) => [
+    foreignKey({
+      name: "workflows_trigger_stage_fk",
+      columns: [table.organizationId, table.triggerStage],
+      foreignColumns: [funnelStages.organizationId, funnelStages.key],
+    }),
     uniqueIndex("workflows_org_slug_uidx").on(table.organizationId, table.slug),
     uniqueIndex("workflows_org_command_uidx")
       .on(table.organizationId, table.triggerCommand)

@@ -3,6 +3,7 @@
 //   organization/member/invitation once the organization plugin lands in PR 1.2)
 // - contacts slice adds lib/db/schema/audit-log.ts next
 export * from "./auth";
+export * from "./funnel-stages";
 export * from "./contacts";
 export * from "./messaging";
 export * from "./snippets";

@@ -114,6 +114,8 @@ export function ContactChat({ contactId }: { contactId: string }) {
       }
       return;
     }
+    // Cambios de columnas del Embudo: el chip lee el nombre del contexto (nada que pedir).
+    if (event.type === "stages.updated") return;
     const id = conversationIdRef.current;
     if (!id) {
       // Con debounce: una ráfaga de mensajes de otros clientes = una búsqueda.

@@ -929,8 +929,10 @@ export async function resolveContact(
       source: newContact.source ?? "whatsapp",
       sourceChannel: "whatsapp",
       esPrueba: newContact.esPrueba ?? false,
-      // Arriba de su columna en el kanban (Contactos ordena por stage_changed_at).
-      stage: "inbox",
+      // Arriba de su columna en el kanban (Contactos ordena por stage_changed_at). La
+      // etapa es la que tenga el papel "entrada" en esta organización (funnel_stages),
+      // se llame como se llame hoy; sin ella (dato roto) cae en la clave 'inbox'.
+      stage: sql`coalesce((select fs.key from funnel_stages fs where fs.organization_id = ${orgId} and fs.role = 'entrada'), 'inbox')`,
       stageChangedAt: new Date(),
     });
     return id;

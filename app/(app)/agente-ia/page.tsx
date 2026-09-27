@@ -11,7 +11,7 @@ import { AgenteEditor } from "./_components/agente-editor";
 // Bandeja). Solo sirve para personalizar al agente: los precios de los modelos
 // son internos (gasto). "Tallas y medidas" (rangos de ancho por tamaño) vive aquí
 // desde el 26-sep-2026; antes estaba en Configuración. Desde el 27-sep-2026 va en
-// subpestañas; la elegida viene en ?seccion= (modelos | goal | faqs | opciones |
+// subpestañas; la elegida viene en ?seccion= (modelos | etapas | goal | faqs | opciones |
 // tallas | canales; por defecto modelos).
 export default async function AgenteIaPage({ searchParams }: PageProps<"/agente-ia">) {
   const { role } = await requireActiveMembership();

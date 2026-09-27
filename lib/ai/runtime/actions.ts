@@ -14,8 +14,9 @@ import { and, asc, eq, gte, inArray, sql } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { contacts, workflowRuns, workflows, workflowSteps } from "@/lib/db/schema";
 import { moveStageForward } from "@/lib/contacts/stage";
+import { listFunnelStages } from "@/lib/contacts/funnel-stages";
 import { notifyContactUpdated } from "@/lib/contacts/notify-updated";
-import type { Stage } from "@/lib/contacts/stages";
+import { furthestStage, roleKey, stageLabel, type FunnelStage } from "@/lib/contacts/stages";
 import type { StartRunInput, StartRunResult } from "@/lib/workflows/executor";
 import { addNotice } from "./notices";
 import { buildAgentTools, type AgentTools, type AvisoMotivo, type ValidToolCall } from "./tools";
@@ -31,8 +32,8 @@ export function noteForVendor(note: string): boolean {
 export type StartWorkflow = (input: StartRunInput) => Promise<StartRunResult>;
 
 // Herramientas de la organización en orden estable (position): workflows de
-// media habilitados con disparador "agente".
-export async function loadAgentTools(organizationId: string): Promise<AgentTools> {
+// media habilitados con disparador "agente", más mover_etapa con las etapas vigentes.
+export async function loadAgentTools(organizationId: string, stages: readonly FunnelStage[]): Promise<AgentTools> {
   const rows = await db
     .select({ id: workflows.id, slug: workflows.slug, name: workflows.name, description: workflows.agentDescription })
     .from(workflows)
@@ -48,7 +49,7 @@ export async function loadAgentTools(organizationId: string): Promise<AgentTools
       ),
     )
     .orderBy(asc(workflows.position), asc(workflows.slug));
-  return buildAgentTools(rows);
+  return buildAgentTools(rows, stages);
 }
 
 export type Aviso = {
@@ -59,7 +60,8 @@ export type Aviso = {
 export type ActionPlan = {
   runs: { slug: string; workflowId: string }[];
   quote: number | null;
-  stage: Stage | null;
+  /** Clave de la etapa destino (la más adelantada si el modelo pidió varias). */
+  stage: string | null;
   avisos: Aviso[];
   notes: string[];
 };
@@ -87,6 +89,8 @@ export async function prepareActions(input: {
   // Llegada del primer entrante que se está atendiendo: una corrida por palabra
   // clave del mismo workflow desde entonces ya mandó ese contenido (no se repite).
   pendingSince: Date | null;
+  /** Etapas vigentes de la organización (orden para "gana la más adelantada"). */
+  stages: readonly FunnelStage[];
 }): Promise<ActionPlan> {
   const plan: ActionPlan = { runs: [], quote: null, stage: null, avisos: [], notes: [] };
   for (const c of input.calls) {
@@ -97,7 +101,7 @@ export async function prepareActions(input: {
         break;
       case "etapa":
         // Varias en una respuesta: gana la más adelantada (las demás serían retroceso o igual).
-        plan.stage = plan.stage && stageIndex(plan.stage) >= stageIndex(c.etapa) ? plan.stage : c.etapa;
+        plan.stage = furthestStage(input.stages, plan.stage ? [plan.stage, c.etapa] : [c.etapa]);
         break;
       case "aviso":
         plan.avisos.push({ motivo: c.aviso.motivo, detalle: (c.aviso.detalle ?? "").trim() });
@@ -131,9 +135,6 @@ export async function prepareActions(input: {
   }
   return plan;
 }
-
-const STAGE_LIST: readonly Stage[] = ["inbox", "prospecto", "interesado", "cerca_compra", "compra"];
-const stageIndex = (s: Stage) => STAGE_LIST.indexOf(s);
 
 // Guarda el total cotizado por el AGENTE. Desde el 26-sep-2026 (regla del dueño: ningún
 // dato del Detalle es definitivo) también corrige uno que puso un vendedor: el total que
@@ -247,6 +248,9 @@ export async function executeActions(
     if (!ok) console.info(`[agente] ${ctx.conversationId}: la cotización ya era $${plan.quote}`);
   }
   if (plan.stage) {
+    // Las etapas se releen aquí (no del plan): si alguien borró o reordenó columnas
+    // entre la llamada al modelo y ahora, manda lo que hay en la base.
+    const stages = await listFunnelStages(ctx.organizationId);
     const moved = await moveStageForward({
       organizationId: ctx.organizationId,
       contactId: ctx.contactId,
@@ -254,15 +258,18 @@ export async function executeActions(
       by: "agente",
       now: ctx.now,
       since: ctx.since ?? undefined,
+      stages,
       // Los workflows "al entrar a esta etapa" no repiten la media pedida en esta respuesta.
       excludeWorkflowIds: plan.runs.map((r) => r.workflowId),
     });
     out.stageMoved = moved !== null;
-    // A Compra (o a Cerca de compra con comprobante) sin "Depósito recibido": el CRM deja
-    // un aviso igual. "Depósito recibido" solo si el cliente mandó imagen o PDF; sin
-    // adjunto, un aviso neutral. Con "Comprobante dudoso" en la misma respuesta no se
-    // agrega nada (el vendedor no debe ver "dudoso" y "recibido" juntos).
-    const necesitaCotejar = plan.stage === "compra" || (plan.stage === "cerca_compra" && ctx.receiptMessageId !== null);
+    // A la etapa de VENTA CERRADA (o a la de CERCA DE COMPRA con comprobante) sin "Depósito
+    // recibido": el CRM deja un aviso igual. "Depósito recibido" solo si el cliente mandó
+    // imagen o PDF; sin adjunto, un aviso neutral. Con "Comprobante dudoso" en la misma
+    // respuesta no se agrega nada (el vendedor no debe ver "dudoso" y "recibido" juntos).
+    const ventaCerrada = roleKey(stages, "venta_cerrada");
+    const cercaCompra = roleKey(stages, "cerca_compra");
+    const necesitaCotejar = plan.stage === ventaCerrada || (plan.stage === cercaCompra && ctx.receiptMessageId !== null);
     const dudoso = plan.avisos.some((a) => a.motivo === "comprobante_dudoso");
     if (moved && necesitaCotejar && !cotejarEnviado && !dudoso) {
       const added = await addNotice({
@@ -273,7 +280,7 @@ export async function executeActions(
         body:
           ctx.receiptMessageId !== null
             ? DEPOSITO_RECIBIDO_BODY
-            : `El agente movió al contacto a ${plan.stage === "compra" ? "Compra" : "Cerca de compra"} sin comprobante en este mensaje. Revisa el hilo y el depósito en el banco antes de enviar.`,
+            : `El agente movió al contacto a ${stageLabel(stages, plan.stage)} sin comprobante en este mensaje. Revisa el hilo y el depósito en el banco antes de enviar.`,
         strict: true,
       });
       if (added) out.avisos++;
@@ -284,9 +291,10 @@ export async function executeActions(
 
 // Contexto del CRM que el agente recibe con cada llamada (va en el último turno
 // del cliente, no en el system: así la caché del prompt no se rompe).
-// `avanzaA` (27-sep-2026): traspaso del Modelo 1 al Modelo 2. El Modelo 1 ya decidió que
-// con este mensaje el contacto pasa a esa etapa; el Modelo 2 escribe la respuesta.
-export async function crmContextFor(organizationId: string, contactId: string, avanzaA: Stage | null = null): Promise<string> {
+// `stages`: columnas vigentes (nombre de la etapa por su clave). `avanzaA` (27-sep-2026):
+// traspaso del Modelo 1 al Modelo 2. El Modelo 1 ya decidió que con este mensaje el
+// contacto pasa a esa etapa (clave); el Modelo 2 escribe la respuesta.
+export async function crmContextFor(organizationId: string, contactId: string, stages: readonly FunnelStage[], avanzaA: string | null = null): Promise<string> {
   const [c] = await db
     .select({ stage: contacts.stage, by: contacts.stageChangedBy, monto: contacts.montoCotizacion, customFields: contacts.customFields })
     .from(contacts)
@@ -294,10 +302,10 @@ export async function crmContextFor(organizationId: string, contactId: string, a
     .limit(1);
   if (!c) return "";
   const lines: string[] = [];
-  const etapa = STAGE_LABEL[c.stage as Stage] ?? c.stage;
+  const etapa = stageLabel(stages, c.stage);
   lines.push(`Etapa actual del contacto: ${etapa}${c.by === "vendedor" ? " (la puso un vendedor: no la regreses)" : ""}.`);
   if (avanzaA) {
-    lines.push(`Con lo que acaba de escribir el cliente, el contacto pasa a ${STAGE_LABEL[avanzaA]}: contesta este mensaje como corresponde a esa etapa, con las acciones que hagan falta.`);
+    lines.push(`Con lo que acaba de escribir el cliente, el contacto pasa a ${stageLabel(stages, avanzaA)}: contesta este mensaje como corresponde a esa etapa, con las acciones que hagan falta.`);
   }
   const por = (c.customFields as Record<string, unknown> | null)?.cotizacion_por;
   lines.push(
@@ -307,11 +315,3 @@ export async function crmContextFor(organizationId: string, contactId: string, a
   );
   return `[CONTEXTO DEL CRM — no lo menciones literalmente]\n${lines.join("\n")}`;
 }
-
-const STAGE_LABEL: Record<Stage, string> = {
-  inbox: "Inbox",
-  prospecto: "Prospecto",
-  interesado: "Interesado",
-  cerca_compra: "Cerca de compra",
-  compra: "Compra",
-};

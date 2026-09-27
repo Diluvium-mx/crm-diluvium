@@ -238,6 +238,13 @@ scheduled_messages   id, org_id, conversation_id, created_by_user_id, kind (text
                      template_id, template_params, send_at, programmed_at, cancel_if_inbound,
                      status (scheduled|sending|sent|failed|cancelled), error_code, message_id
 
+-- Columnas del Embudo (27-sep-2026, migración 0041; detalle en docs/agente-ia.md). Las etapas ya NO son
+-- el enum contact_stage: son filas por organización. contacts.stage y workflows.trigger_stage guardan
+-- la CLAVE con llave foránea compuesta (organization_id, key): ningún contacto apunta a una etapa que no existe.
+funnel_stages        id, org_id, key (estable, a-z0-9_), name, position, color, role (entrada|cerca_compra|
+                     venta_cerrada, cada uno en UNA etapa; entrada primero y cerca_compra antes que venta_cerrada),
+                     bot_rule (cuándo mueve el agente ahí), model_slot (1|2; sustituye a ai_config.etapas_modelo_1)
+
 -- Anuncios de Meta (24/25-sep-2026, migraciones 0035 + 0036; la 0030 quedó vacía; detalle en docs/anuncios.md)
 ad_clicks            id, org_id, contact_id, conversation_id, message_id, origin (webhook|zernio_conversation),
                      ad_id, ctwa_clid, headline…, raw jsonb (ficha original completa), clicked_at
