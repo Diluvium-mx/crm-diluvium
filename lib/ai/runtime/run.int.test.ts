@@ -798,6 +798,20 @@ describe.skipIf(!TEST_DATABASE_URL)("runtime del Agente IA (Postgres real)", () 
     return id;
   }
 
+  it("(revisión 27-sep) si la 2.ª burbuja la RECHAZA WhatsApp, la media que pidió el modelo sale igual (el cliente la esperaba)", async () => {
+    const { ZernioSendError } = await import("@/lib/messaging/zernio");
+    const tabla = await wf("tabla_tamanos", [{ kind: "send_text", text: "Tabla: 69–79 cm = S…" }]);
+    await msg({ direction: "in", body: "¿qué tamaños manejan?", at: ago(10_000) });
+    const z = fakeZernio([null, new ZernioSendError(400, "131026", "Message undeliverable", "rejected")]);
+    const { deps } = makeDeps({ brain: ["Manejamos varios tamaños.\n\n¿Cuánto mide tu entrada?"], toolCalls: [{ toolName: "wf_tabla_tamanos", input: {} }] }, z);
+    expect(await run.runAgent(JOB, deps)).toEqual({ kind: "sent", bubbles: 1 });
+    expect(z.delivered).toEqual(["Manejamos varios tamaños."]);
+    expect((await runs()).filter((r) => r.workflowId === tabla).map((r) => r.status)).toEqual(["queued"]);
+    const aviso = (await notices()).find((n) => n.kind === "envio")!;
+    expect(aviso.body).toContain("Salieron 1 de 2");
+    expect((await conv()).agentState).toBe("activo");
+  });
+
   it("AUTO → 1ª burbuja sin confirmar: la 2ª no sale, queda en un AVISO y el agente sigue activo", async () => {
     await msg({ direction: "in", body: "¿precio?", at: ago(10_000) });
     const { deps } = makeDeps();
@@ -1613,6 +1627,28 @@ describe.skipIf(!TEST_DATABASE_URL)("runtime del Agente IA (Postgres real)", () 
     expect(brainIds(calls)).toEqual(["gpt-5.6-luna", "claude-sonnet-5"]);
     expect((await agentOuts()).map((m) => m.body)).toEqual(["Sonnet: te paso los datos para tu depósito"]);
     expect((await runs()).filter((r) => r.workflowId === bank)).toHaveLength(1);
+    expect((await contact()).stage).toBe("cerca_compra");
+  });
+
+  it("traspaso (revisión 27-sep): si Sonnet NO repite el workflow ni el aviso que pidió Luna, salen igual (una sola vez) y la etapa es la del traspaso", async () => {
+    await dosModelos();
+    const bank = await wf("datos_bancarios", [{ kind: "send_text", text: "CLABE 0123" }]);
+    await msg({ direction: "in", body: "¿a dónde te deposito? y quiero hablar con alguien", at: ago(20_000) });
+    const { deps, calls } = makeDeps({
+      brain: ["Luna: aquí van los datos", "Sonnet: te paso los datos para tu depósito"],
+      brainToolCalls: [
+        [
+          { toolName: "wf_datos_bancarios", input: {} },
+          { toolName: "aviso_vendedor", input: { motivo: "cliente_pide_humano", detalle: "Quiere hablar con alguien." } },
+        ],
+        [],
+      ],
+    });
+    expect(await run.runAgent(JOB, deps)).toEqual({ kind: "sent", bubbles: 1 });
+    expect(brainIds(calls)).toEqual(["gpt-5.6-luna", "claude-sonnet-5"]);
+    expect((await agentOuts()).map((m) => m.body)).toEqual(["Sonnet: te paso los datos para tu depósito"]);
+    expect((await runs()).filter((r) => r.workflowId === bank)).toHaveLength(1);
+    expect((await notices()).filter((n) => n.kind === "cliente_pide_humano")).toHaveLength(1);
     expect((await contact()).stage).toBe("cerca_compra");
   });
 
