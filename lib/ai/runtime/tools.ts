@@ -201,16 +201,16 @@ export function validateToolCalls(calls: readonly ToolCallOutput[], tools: Agent
  * `wf_datos_bancarios` (y por eso hubo traspaso) y Sonnet contestó "te paso los datos" sin volver
  * a pedir la herramienta, los datos nunca salían y el contacto quedaba en Cerca de compra.
  * Regla: mandan las llamadas del Modelo 2; de las del Modelo 1 se conservan los workflows que el
- * Modelo 2 no repitió, los avisos con un motivo que no repitió, la cotización si el Modelo 2 no dio
- * otra (prepareActions la valida contra el TEXTO del Modelo 2) y el Detalle (antes del del Modelo 2,
- * que gana campo por campo). La etapa la pone quien llama (la del traspaso).
+ * Modelo 2 no repitió, los avisos con un motivo que no repitió y el Detalle (antes del del Modelo 2,
+ * que gana campo por campo). La cotización del Modelo 1 NO se arrastra: el cliente lee el texto del
+ * Modelo 2, y un monto que ese texto no dice no se fija (prepareActions lo rechazaría con aviso al
+ * vendedor). La etapa la pone quien llama (la del traspaso).
  */
 export function mergeHandoffToolCalls(first: readonly ValidToolCall[], second: readonly ValidToolCall[]): ValidToolCall[] {
   const out: ValidToolCall[] = [];
   const detalleFirst = first.filter((c) => c.kind === "detalle");
   const workflows = new Set(second.flatMap((c) => (c.kind === "workflow" ? [c.workflow.id] : [])));
   const motivos = new Set(second.flatMap((c) => (c.kind === "aviso" ? [c.aviso.motivo] : [])));
-  const hasQuote = second.some((c) => c.kind === "cotizacion");
   out.push(...detalleFirst);
   for (const c of first) {
     if (c.kind === "workflow" && !workflows.has(c.workflow.id)) {
@@ -219,8 +219,7 @@ export function mergeHandoffToolCalls(first: readonly ValidToolCall[], second: r
     } else if (c.kind === "aviso" && !motivos.has(c.aviso.motivo)) {
       motivos.add(c.aviso.motivo);
       out.push(c);
-    } else if (c.kind === "cotizacion" && !hasQuote) out.push(c);
-    // "etapa": la decide el traspaso (quien llama la agrega); "detalle": ya va arriba.
+    // "cotizacion" y "etapa" del Modelo 1 no se arrastran (ver arriba); "detalle" ya va arriba.
   }
   out.push(...second);
   return out;
