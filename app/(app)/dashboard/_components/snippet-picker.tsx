@@ -25,7 +25,7 @@ export function SnippetPicker({
         if (alive) setSnippets(all);
       })
       .catch(() => {
-        if (alive) setError("No se pudieron cargar los fragmentos.");
+        if (alive) setError("No se pudieron cargar los mensajes rápidos.");
       });
     return () => {
       alive = false;
@@ -43,11 +43,11 @@ export function SnippetPicker({
       className="mb-2 flex max-h-[min(24rem,50cqh)] min-w-0 flex-col overflow-hidden rounded-lg border bg-background shadow-md"
     >
       <div className="flex shrink-0 items-center justify-between border-b px-3 py-1.5">
-        <span className="text-sm font-semibold text-brand-orange">⚡ Fragmentos</span>
+        <span className="text-sm font-semibold text-brand-orange">⚡ Mensajes rápidos</span>
         <button
           type="button"
           onClick={onClose}
-          aria-label="Cerrar fragmentos"
+          aria-label="Cerrar mensajes rápidos"
           className="flex items-center gap-1 rounded-md px-2 py-1 text-xs font-medium text-muted-foreground hover:bg-muted hover:text-foreground"
         >
           <X className="size-4" aria-hidden="true" />
@@ -58,10 +58,10 @@ export function SnippetPicker({
         {error ? (
           <p className="py-4 text-center text-sm text-brand-orange">{error}</p>
         ) : snippets === null ? (
-          <p className="py-4 text-center text-sm text-muted-foreground">Cargando fragmentos…</p>
+          <p className="py-4 text-center text-sm text-muted-foreground">Cargando mensajes rápidos…</p>
         ) : snippets.length === 0 ? (
           <p className="py-4 text-center text-sm text-muted-foreground">
-            No hay fragmentos. Créalos en “Mensajes rápidos”.
+            No hay mensajes rápidos. Créalos en la sección “Mensajes rápidos”.
           </p>
         ) : (
           <ul className="space-y-1">

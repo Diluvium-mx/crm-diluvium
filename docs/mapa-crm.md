@@ -253,6 +253,7 @@ Donde el vendedor escribe. Con la ventana de 24 h abierta se escribe libre; cerr
 
 ![Caja para escribir](mapa-crm/04-composer.png)
 ![Menú al escribir "/"](mapa-crm/04-composer-slash.png)
+![Ventana del ⚡ Mensajes rápidos](mapa-crm/04-composer-rapidos.png)
 ![Elegir plantilla](mapa-crm/04-composer-plantillas-lista.png)
 ![Llenar y enviar una plantilla](mapa-crm/04-composer-plantillas.png)
 ![Programar mensaje](mapa-crm/04-composer-programar.png)
@@ -260,16 +261,16 @@ Donde el vendedor escribe. Con la ventana de 24 h abierta se escribe libre; cerr
 
 | # | Nombre oficial | Qué hace | Quién lo ve |
 |---|---|---|---|
-| 1 | **⚡ Fragmentos** | Abre la lista de fragmentos para insertar uno. | Todos |
+| 1 | **⚡ Mensajes rápidos** | Abre la ventana de mensajes rápidos (27–28) para insertar uno. | Todos |
 | 2 | **📄 Plantillas** | Abre las plantillas aprobadas por Meta. | Todos |
-| 3 | **Escribe un mensaje…** | Caja de texto. **Enter** envía, **Shift+Enter** hace salto de línea, **"/"** busca fragmentos. | Todos |
+| 3 | **Escribe un mensaje…** | Caja de texto. **Enter** envía, **Shift+Enter** hace salto de línea, **"/"** busca mensajes rápidos (el texto gris dice "/ busca mensajes rápidos"). | Todos |
 | 4 | **🕒 Programar mensaje** | Abre el formulario para programar. | Todos |
 | 5 | **Enviar** | Manda el mensaje. | Todos |
-| 6 | **⚡ Fragmentos** (menú del "/") | Menú que aparece al escribir "/". | Todos |
+| 6 | **⚡ Mensajes rápidos** (menú del "/") | Menú que aparece al escribir "/". | Todos |
 | 7 | **Automatizaciones** | Comandos de workflows (/tabla, /banco, /video…) con "▶ ejecutar": manda ese material en el chat. Cuenta como mensaje del vendedor. | Todos |
-| 8 | **Lista de fragmentos** | Nombre y texto. {{nombre}} se llena con el nombre del cliente y {{vendedor}} con el tuyo. | Todos |
+| 8 | **Lista de mensajes rápidos** | Nombre y texto; al elegir uno se pone en lugar del "/". Solo {{vendedor}} se llena solo (con tu nombre); {{nombre}} lo completas tú. | Todos |
 | 9 | **↑↓ elegir · Enter insertar · Esc cerrar** | Ayuda de teclas del menú. | Todos |
-| 10 | **"/" en la caja** | Lo que escribes después de "/" filtra la lista. | Todos |
+| 10 | **"/" en la caja** | Lo que escribes después de "/" filtra la lista por nombre y texto, sin importar acentos ni mayúsculas ("cuanta" encuentra "Cuánta agua entra"). | Todos |
 | 11 | **Elegir plantilla** | Lista de plantillas que se pueden mandar. | Todos |
 | 12 | **Plantilla** | Nombre, idioma y texto. Solo salen las aprobadas y que el CRM puede armar. | Todos |
 | 13 | **Cerrar** | Cierra la lista de plantillas. | Todos |
@@ -286,8 +287,10 @@ Donde el vendedor escribe. Con la ventana de 24 h abierta se escribe libre; cerr
 | 24 | **"Pasaron 24 h desde su último mensaje. Solo se puede enviar una plantilla."** | Aviso de ventana cerrada. | Todos |
 | 25 | **📄 Enviar plantilla** | Único botón para escribir con la ventana cerrada. | Todos |
 | 26 | **🕒 Programar plantilla** | Programa una plantilla para más tarde. | Todos |
+| 27 | **⚡ Mensajes rápidos** (ventana del ⚡) | Todos los mensajes rápidos; al elegir uno se agrega al final de lo que llevas escrito (no se manda solo). | Todos |
+| 28 | **✕ Cerrar** | Cierra la ventana del ⚡. | Todos |
 
-**Lo cambias tú desde la pantalla:** qué fragmentos y plantillas existen (en [Mensajes rápidos](#34-mensajes-rápidos))
+**Lo cambias tú desde la pantalla:** qué mensajes rápidos y plantillas existen (en [Mensajes rápidos](#34-mensajes-rápidos))
 y qué comandos hay (en [Automatización](#37-automatización)).
 
 **Pídeselo a Code:**
@@ -428,26 +431,27 @@ necesita al vendedor, y su chat y Detalle se ven igual que en la Bandeja.
 
 ### 3.4 Mensajes rápidos
 
-Dos pestañas: **Fragmentos** (respuestas guardadas para dentro de las 24 h) y **Plantillas** (mensajes aprobados
-por Meta para fuera de las 24 h).
+Dos pestañas: **Mensajes rápidos** (respuestas guardadas para dentro de las 24 h; antes se llamaban "Fragmentos") y
+**Plantillas** (mensajes aprobados por Meta para fuera de las 24 h). Los 22 mensajes rápidos de Diluvium se cargaron
+el 27-sep-2026; se editan aquí como cualquier otro.
 
-![Fragmentos](mapa-crm/08-fragmentos.png)
-![Nuevo fragmento](mapa-crm/08-fragmento-nuevo.png)
+![Mensajes rápidos](mapa-crm/08-mensajes-rapidos.png)
+![Nuevo mensaje rápido](mapa-crm/08-mensaje-rapido-nuevo.png)
 ![Plantillas](mapa-crm/08-plantillas.png)
 
 | # | Nombre oficial | Qué hace | Quién lo ve |
 |---|---|---|---|
-| 1 | **⚡ Fragmentos · 📄 Plantillas** | Pestañas de la sección. | Todos |
-| 2 | **Descripción** | Recuerda que los fragmentos usan {{nombre}} y son para dentro de las 24 h. | Todos |
-| 3 | **Nuevo fragmento** | Abre el formulario (8–11). | Todos |
-| 4 | **Fragmento** | Nombre y texto guardado. | Todos |
-| 5 | **Variables** | Las variables que usa ({{nombre}}, {{vendedor}}). | Todos |
-| 6 | **Editar** (lápiz) | Cambia el fragmento. | Todos |
+| 1 | **⚡ Mensajes rápidos · 📄 Plantillas** | Pestañas de la sección. | Todos |
+| 2 | **Descripción** | Recuerda que los mensajes rápidos pueden llevar variables como {{nombre}} y son para dentro de las 24 h. | Todos |
+| 3 | **Nuevo mensaje rápido** | Abre el formulario (8–11). | Todos |
+| 4 | **Mensaje rápido** | Nombre y texto guardado. | Todos |
+| 5 | **Variables** | Las variables que usa ({{nombre}}, {{vendedor}}). Solo sale si las usa: los 22 de Diluvium no llevan (en la captura, "Asesor (ejemplo)" es de muestra). | Todos |
+| 6 | **Editar** (lápiz) | Cambia el mensaje rápido. | Todos |
 | 7 | **Borrar** (bote) | Lo elimina. | Todos |
 | 8 | **Nombre** | Cómo se busca con "/" (p. ej. saludo). | Todos |
-| 9 | **Fragmento** (texto) | El mensaje. | Todos |
+| 9 | **Mensaje** (texto) | El mensaje. | Todos |
 | 10 | **Cancelar** | Cierra sin guardar. | Todos |
-| 11 | **Crear fragmento** | Guarda. | Todos |
+| 11 | **Crear mensaje rápido** | Guarda. | Todos |
 | 12 | **📄 Plantillas** | Pestaña de plantillas. | Todos |
 | 13 | **Sincronizar** | Trae de Meta las plantillas y su estado actual. | Todos |
 | 14 | **Crear plantilla** | Abre el formulario (15–19). | Todos |
@@ -462,15 +466,17 @@ por Meta para fuera de las 24 h).
 | 23 | **Ejemplos de variables** | Qué va en cada {{n}}. | Todos |
 | 24 | **Categoría** (etiqueta) | La categoría de esa plantilla. | Todos |
 
-**Lo cambias tú desde la pantalla:** crear, editar y borrar fragmentos; crear plantillas (van a revisión de Meta) y sincronizarlas.
+**Lo cambias tú desde la pantalla:** crear, editar y borrar mensajes rápidos; crear plantillas (van a revisión de Meta) y sincronizarlas.
 
 **Pídeselo a Code:**
-- "En Mensajes rápidos › (4) fragmento, agrega un buscador arriba de la lista."
+- "En Mensajes rápidos › (4) mensaje rápido, agrega un buscador arriba de la lista."
 - "En Mensajes rápidos › (22), que el CRM pueda mandar plantillas con imagen en el encabezado."
 
-**Agente IA aquí:** no usa fragmentos ni plantillas; son herramientas del vendedor.
+**Agente IA aquí:** no usa mensajes rápidos ni plantillas; son herramientas del vendedor.
 
-<sub>Para Code: ruta `/mensajes-rapidos` (`/snippets` redirige); `app/(app)/snippets/_components/` (`fragmentos-tab`, `plantillas-tab`); `lib/snippets/`, `lib/templates/`, `lib/messaging/template-sync.ts`.</sub>
+<sub>Para Code: ruta `/mensajes-rapidos` (`/snippets` redirige); `app/(app)/snippets/_components/` (`fragmentos-tab`, `plantillas-tab`); `lib/snippets/`, `lib/templates/`, `lib/messaging/template-sync.ts`. En código y base
+siguen llamándose `snippets`. Carga de los 22: `npm run mensajes-rapidos:cargar` (simula; `--confirmar` escribe) con la lista de
+`lib/snippets/mensajes-rapidos-diluvium.ts`.</sub>
 
 ---
 
