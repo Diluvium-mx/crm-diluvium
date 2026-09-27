@@ -174,6 +174,10 @@ export const DEFAULT_WORKFLOWS: readonly DefaultWorkflow[] = [
   },
 ];
 
+// El workflow de datos bancarios mueve al contacto a "Cerca de compra" (executor.ts) y,
+// con eso, el agente decide que la respuesta la escriba el Modelo 2 (model-by-stage.ts).
+export const SLUG_DATOS_BANCARIOS = "datos_bancarios";
+
 // Nombre de herramienta que verá el modelo (parte b). Estable y sin colisiones.
 export function toolNameFor(slug: string): string {
   return `wf_${slug}`;

@@ -1,15 +1,19 @@
 "use client";
 
-// FAQs del agente (sección "Crear"): las preguntas frecuentes en una
+// FAQs del agente (subpestaña "FAQs"): las preguntas frecuentes en una
 // lista compacta tipo acordeón (una línea por pregunta; al dar clic se despliega la
 // respuesta para verla o editarla), con buscador y filtro arriba. El panel se
 // desliza por dentro: la página no crece con las FAQs. Cada cambio deja una versión
-// de todas las FAQs (se puede regresar a una anterior). Sin lógica de datos.
+// de todas las FAQs (se puede regresar a una anterior). Agregar, guardar una edición,
+// borrar y activar/desactivar piden confirmación arriba antes de guardar (regla del
+// dueño, 27-sep-2026; use-confirm.tsx). Sin lógica de datos.
 import { useState } from "react";
 import { ChevronRight, Search } from "lucide-react";
 import { createAgentFaq, deleteAgentFaq, restoreAgentFaqs, updateAgentFaq } from "@/lib/actions/agente-ia-editor";
+import { faqSchema } from "@/lib/agente-ia/editor";
 import { matchesSearch } from "@/lib/text/search";
-import type { AgentActionResult, FaqView, VersionView } from "@/lib/agente-ia/types";
+import type { FaqView, VersionView } from "@/lib/agente-ia/types";
+import { useConfirm } from "./use-confirm";
 import { VersionsList } from "./versions-list";
 
 const input =
@@ -23,31 +27,28 @@ const FILTERS: { value: Filter; label: string }[] = [
   { value: "inactivas", label: "Inactivas" },
 ];
 
+type FaqValues = { question: string; answer: string; enabled: boolean };
+
+// Formulario de una FAQ (nueva o en edición). No guarda: «Agregar»/«Guardar» piden
+// confirmación a FaqEditor; el error de ese guardado llega por `error`.
 function FaqForm({
   initial,
   submitLabel,
+  pending,
+  error,
   onSubmit,
   onCancel,
 }: {
-  initial: { question: string; answer: string; enabled: boolean };
+  initial: FaqValues;
   submitLabel: string;
-  onSubmit: (v: { question: string; answer: string; enabled: boolean }) => Promise<AgentActionResult>;
+  pending: boolean;
+  error: string | null;
+  onSubmit: (v: FaqValues) => void;
   onCancel: () => void;
 }) {
   const [question, setQuestion] = useState(initial.question);
   const [answer, setAnswer] = useState(initial.answer);
   const [enabled, setEnabled] = useState(initial.enabled);
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-
-  async function submit() {
-    setBusy(true);
-    setError(null);
-    const r = await onSubmit({ question, answer, enabled });
-    setBusy(false);
-    if (r.ok) onCancel();
-    else setError(r.message);
-  }
 
   return (
     <div className="flex flex-col gap-2 rounded-md border border-brand-navy/30 bg-brand-navy/5 p-3">
@@ -58,10 +59,15 @@ function FaqForm({
         Activa (el agente la usa)
       </label>
       <div className="flex items-center gap-2">
-        <button type="button" disabled={busy} onClick={() => void submit()} className="rounded bg-brand-orange px-3 py-1 text-xs font-medium text-white disabled:opacity-50">
-          {busy ? "Guardando…" : submitLabel}
+        <button
+          type="button"
+          disabled={pending}
+          onClick={() => onSubmit({ question, answer, enabled })}
+          className="rounded bg-brand-orange px-3 py-1 text-xs font-medium text-white disabled:opacity-50"
+        >
+          {pending ? "Guardando…" : submitLabel}
         </button>
-        <button type="button" disabled={busy} onClick={onCancel} className="rounded px-2 py-1 text-xs text-muted-foreground hover:bg-muted">
+        <button type="button" disabled={pending} onClick={onCancel} className="rounded px-2 py-1 text-xs text-muted-foreground hover:bg-muted">
           Cancelar
         </button>
         {error && <span className="border-l-2 border-brand-orange pl-2 text-xs text-foreground">{error}</span>}
@@ -94,24 +100,87 @@ function EnabledSwitch({ faq, onToggle }: { faq: FaqView; onToggle: () => void }
   );
 }
 
+// «¿Agregar la pregunta «¿Precio?»?»: la pregunta va recortada (máx. 80 caracteres).
+function short(question: string): string {
+  const q = question.trim();
+  return q.length > 80 ? `${q.slice(0, 79)}…` : q;
+}
+
 export function FaqEditor({ faqs, versions }: { faqs: FaqView[]; versions: VersionView[] }) {
   const [openId, setOpenId] = useState<string | null>(null);
   const [editing, setEditing] = useState<string | "new" | null>(null);
   const [query, setQuery] = useState("");
   const [filter, setFilter] = useState<Filter>("todas");
-  const [error, setError] = useState<string | null>(null);
+  const confirm = useConfirm();
 
-  async function remove(f: FaqView) {
-    if (!window.confirm(`¿Borrar la pregunta «${f.question}»? Queda en las versiones por si hay que regresarla.`)) return;
-    setError(null);
-    const r = await deleteAgentFaq({ id: f.id });
-    if (!r.ok) setError(r.message);
+  // Lo mismo que valida el servidor: una pregunta sin texto ni siquiera abre el pop-up.
+  function invalid(v: FaqValues, scope: string): boolean {
+    const check = faqSchema.safeParse(v);
+    if (check.success) return false;
+    confirm.fail(check.error.issues[0]?.message ?? "Revisa la pregunta y la respuesta.", scope);
+    return true;
   }
 
-  async function toggle(f: FaqView) {
-    setError(null);
-    const r = await updateAgentFaq({ id: f.id, question: f.question, answer: f.answer, enabled: !f.enabled });
-    if (!r.ok) setError(r.message);
+  function add(v: FaqValues) {
+    if (invalid(v, "new")) return;
+    confirm.ask({
+      title: `¿Agregar la pregunta «${short(v.question)}»?`,
+      body: v.enabled
+        ? "El agente la usa desde el siguiente mensaje. Queda una versión de las FAQs."
+        : "Queda inactiva: el agente no la usa hasta que la actives. Queda una versión de las FAQs.",
+      confirmLabel: "Sí, agregar",
+      pendingLabel: "Agregando…",
+      done: "Listo: pregunta agregada",
+      scope: "new",
+      run: () => createAgentFaq(v),
+      onDone: () => setEditing(null),
+    });
+  }
+
+  function saveEdit(f: FaqView, v: FaqValues) {
+    if (invalid(v, f.id)) return;
+    if (v.question.trim() === f.question && v.answer.trim() === f.answer && v.enabled === f.enabled) {
+      setEditing(null);
+      return;
+    }
+    confirm.ask({
+      title: `¿Guardar los cambios de «${short(v.question)}»?`,
+      body: v.enabled
+        ? "El agente usa la pregunta así desde el siguiente mensaje. Queda una versión de las FAQs."
+        : "Queda inactiva: el agente no la usa. Queda una versión de las FAQs.",
+      confirmLabel: "Sí, guardar",
+      pendingLabel: "Guardando…",
+      done: "Listo: pregunta guardada",
+      scope: f.id,
+      run: () => updateAgentFaq({ id: f.id, ...v }),
+      onDone: () => setEditing(null),
+    });
+  }
+
+  function remove(f: FaqView) {
+    confirm.ask({
+      title: `¿Borrar la pregunta «${short(f.question)}»?`,
+      body: "El agente deja de usarla desde el siguiente mensaje. Queda en las versiones por si hay que regresarla.",
+      confirmLabel: "Sí, borrar",
+      pendingLabel: "Borrando…",
+      done: "Listo: pregunta borrada",
+      scope: "list",
+      run: () => deleteAgentFaq({ id: f.id }),
+    });
+  }
+
+  function toggle(f: FaqView) {
+    confirm.ask({
+      title: f.enabled ? `¿Desactivar «${short(f.question)}»?` : `¿Activar «${short(f.question)}»?`,
+      body: f.enabled
+        ? "El agente deja de usarla desde el siguiente mensaje (no se borra; se puede activar otra vez)."
+        : "El agente la usa desde el siguiente mensaje.",
+      confirmLabel: f.enabled ? "Sí, desactivar" : "Sí, activar",
+      pendingLabel: "Guardando…",
+      done: f.enabled ? "Listo: pregunta desactivada" : "Listo: pregunta activada",
+      scope: "list",
+      run: () => updateAgentFaq({ id: f.id, question: f.question, answer: f.answer, enabled: !f.enabled }),
+    });
   }
 
   const active = faqs.filter((f) => f.enabled).length;
@@ -165,11 +234,16 @@ export function FaqEditor({ faqs, versions }: { faqs: FaqView[]; versions: Versi
         <FaqForm
           initial={{ question: "", answer: "", enabled: true }}
           submitLabel="Agregar"
-          onSubmit={(v) => createAgentFaq(v)}
-          onCancel={() => setEditing(null)}
+          pending={confirm.pending}
+          error={confirm.errorFor("new")}
+          onSubmit={add}
+          onCancel={() => {
+            setEditing(null);
+            confirm.clearError();
+          }}
         />
       )}
-      {error && <p className="border-l-2 border-brand-orange pl-2 text-xs text-foreground">{error}</p>}
+      {confirm.errorFor("list") && <p className="border-l-2 border-brand-orange pl-2 text-xs text-foreground">{confirm.errorFor("list")}</p>}
 
       {/* Solo el panel se desliza (overscroll-contain: al llegar al final no arrastra la página). */}
       <div className="max-h-[min(60vh,34rem)] overflow-y-auto overscroll-contain rounded-md border border-black/10 dark:border-white/10">
@@ -204,12 +278,22 @@ export function FaqEditor({ faqs, versions }: { faqs: FaqView[]; versions: Versi
                         <span className="shrink-0 rounded-full bg-muted px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground">Inactiva</span>
                       )}
                     </button>
-                    <EnabledSwitch faq={f} onToggle={() => void toggle(f)} />
+                    <EnabledSwitch faq={f} onToggle={() => toggle(f)} />
                   </div>
                   {open && (
                     <div id={panelId} className="px-3 pb-3 pl-9">
                       {editing === f.id ? (
-                        <FaqForm initial={f} submitLabel="Guardar" onSubmit={(v) => updateAgentFaq({ id: f.id, ...v })} onCancel={() => setEditing(null)} />
+                        <FaqForm
+                          initial={f}
+                          submitLabel="Guardar"
+                          pending={confirm.pending}
+                          error={confirm.errorFor(f.id)}
+                          onSubmit={(v) => saveEdit(f, v)}
+                          onCancel={() => {
+                            setEditing(null);
+                            confirm.clearError();
+                          }}
+                        />
                       ) : (
                         <>
                           <p className="whitespace-pre-wrap text-sm text-foreground/80">{f.answer}</p>
@@ -217,7 +301,7 @@ export function FaqEditor({ faqs, versions }: { faqs: FaqView[]; versions: Versi
                             <button type="button" onClick={() => setEditing(f.id)} className="rounded px-2 py-0.5 font-medium text-brand-navy hover:bg-brand-navy/10 dark:text-sky-300">
                               Editar
                             </button>
-                            <button type="button" onClick={() => void remove(f)} className="rounded px-2 py-0.5 text-muted-foreground hover:bg-muted">
+                            <button type="button" onClick={() => remove(f)} className="rounded px-2 py-0.5 text-muted-foreground hover:bg-muted">
                               Borrar
                             </button>
                           </div>
@@ -233,6 +317,7 @@ export function FaqEditor({ faqs, versions }: { faqs: FaqView[]; versions: Versi
       </div>
 
       <VersionsList versions={versions} onRestore={(versionId) => restoreAgentFaqs({ versionId })} />
+      {confirm.ui}
     </div>
   );
 }

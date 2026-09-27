@@ -12,11 +12,11 @@
 // haya alguien respondiendo, como Ángela en GHL, y se rige SOLO por el Goal y las
 // FAQs. Responde todo, sin trabas. Lo único que lo pausa es que un vendedor
 // conteste; si el cliente pide a una persona, avisa al vendedor y sigue activo.
-import type { CallModelInput, CallModelResult } from "@/lib/ai/types";
+import type { CallModelInput, CallModelResult, CatalogModel } from "@/lib/ai/types";
 import { getModel } from "@/lib/ai/catalog";
 import { modelAvailability, PROVIDER_META } from "@/lib/ai/provider";
 import { hasUnresolvedAgentError, recordAgentError, supersedeAgentErrors } from "./agent-error";
-import { agentErrorBody, classifyModelError, EMPTY_RESPONSE_INFO, sendErrorBody, sendErrorMotive } from "./model-errors";
+import { agentErrorBody, bothModelsFailedBody, classifyModelError, EMPTY_RESPONSE_INFO, sendErrorBody, sendErrorMotive, type ModelErrorInfo } from "./model-errors";
 import { cleanAdMessages } from "./ad-cleaner";
 import { buildBrainSystemWithRuntime, parseBrainOutput } from "./brain";
 import { crmContextFor, executeActions, loadAgentTools, noteForVendor, prepareActions, quoteSetByVendor, runsThatSend, setQuoteByAgent, type ActionPhase, type ActionPlan, type StartWorkflow } from "./actions";
@@ -36,7 +36,7 @@ export function fallbackTextFor(plan: ActionPlan): string {
   }
   return SOLO_ACCIONES_TEXT;
 }
-import { validateToolCalls } from "./tools";
+import { validateToolCalls, type ValidToolCall } from "./tools";
 import { applyDetalleByAgent, detalleContextFor, mergeDetalle } from "./detalle";
 import { transcriptionWaitMs } from "@/lib/ai/transcription/rules";
 import { applyCustomValues } from "@/lib/agente-ia/editor";
@@ -44,7 +44,8 @@ import { handoverPauseUntil, humanPauseUntil, isWithinSchedule, type BotOptions 
 import { loadAgentConfig, loadCustomValues, loadEnabledFaqs } from "./config";
 import { loadBotOptions } from "./options";
 import { pauseForHumanReply } from "./pause";
-import { pickBrainModel } from "./model-by-stage";
+import { brainCandidates, brainModelForStage, handoffStage, impliedStage, type ModelSlot, type StageSignal } from "./model-by-stage";
+import type { Stage } from "@/lib/contacts/stages";
 import { loadContactStage } from "@/lib/contacts/stage";
 import {
   agentReplyCount,
@@ -85,14 +86,15 @@ export const BUBBLE_PAUSE_MS = 1_500;
 // juntos) se cortó y su aviso al vendedor se perdió (docs/fase-d-diseno.md §11); desde
 // la Fase E son 4,096 (solo se paga lo que se usa) y si aun así se corta, aviso.
 export const BRAIN_MAX_OUTPUT_TOKENS = 4_096;
-// Timeouts por llamada: 3 rondas × (limpieza del anuncio + cerebro) = 4 min, + el único
-// reintento por proveedor saturado (10 s + 60 s) ≈ 5 min 10 s < candado de 6 min
-// (process.ts). La limpieza del anuncio (ad-cleaner.ts) usa 20 s.
+// Timeouts por llamada. Desde el 27-sep-2026 una ronda llama al cerebro hasta 2 veces (el
+// otro modelo si el primero falla, o el Modelo 2 en un traspaso): 3 rondas × (limpieza del
+// anuncio 20 s + 2 × 60 s) = 7 min < candado de 8 min (process.ts). El único reintento por
+// proveedor saturado (10 s + 60 s) solo aplica con UN modelo, y cabe igual.
 export const FILTER_TIMEOUT_MS = 20_000;
 export const BRAIN_TIMEOUT_MS = 60_000;
 // Fase E ("reenvío seguro"): espera antes del ÚNICO reintento automático, y solo si
 // el proveedor está saturado (model-errors.ts). Uno por corrida, no por ronda: con
-// él, el peor caso cabe en el candado de 6 min (process.ts).
+// él, el peor caso cabe en el candado de 8 min (process.ts).
 export const SATURATED_RETRY_MS = 10_000;
 
 export type RunDeps = {
@@ -126,6 +128,25 @@ export type RunResult =
   | { kind: "failed"; reason: string };
 
 const HUMAN_SOURCES = new Set(["crm", "business_app"]);
+
+// Resultado de UNA llamada al cerebro (27-sep-2026: si falla, contesta el otro modelo).
+type BrainOk = {
+  ok: true;
+  model: CatalogModel;
+  res: CallModelResult;
+  out: ReturnType<typeof parseBrainOutput>;
+  toolCalls: ValidToolCall[];
+  ignored: string[];
+  latencyMs: number;
+};
+type BrainFail = { ok: false; model: CatalogModel; info: ModelErrorInfo };
+
+// Lo que importa de las acciones para saber a qué etapa lleva la respuesta (traspaso).
+function stageSignals(calls: readonly ValidToolCall[]): StageSignal[] {
+  return calls.flatMap((c): StageSignal[] =>
+    c.kind === "etapa" ? [{ kind: "etapa", etapa: c.etapa }] : c.kind === "workflow" ? [{ kind: "workflow", slug: c.workflow.slug }] : [],
+  );
+}
 
 function isHumanReply(m: MessageRow | null): boolean {
   return m !== null && m.direction === "out" && HUMAN_SOURCES.has(m.source);
@@ -491,15 +512,17 @@ export async function runAgent(job: { organizationId: string; conversationId: st
     });
 
     // ── CEREBRO ─────────────────────────────────────────────────────────────
-    // Fase E: Modelo 1 o Modelo 2 según la etapa del contacto AL RESPONDER (si el
-    // agente la mueve en esta misma respuesta, la siguiente usa el de la nueva). Sin
-    // llave del Modelo 1 en este entorno, contesta el Modelo 2.
+    // Fase E: Modelo 1 o Modelo 2 según la etapa del contacto AL RESPONDER. 27-sep-2026
+    // (dueño): si el que toca falla (error o respuesta vacía) contesta el otro, y si el
+    // Modelo 1 lleva al contacto a una etapa del Modelo 2 (traspaso), esa misma respuesta
+    // la escribe el Modelo 2. Un modelo sin llave en este entorno se salta.
     const isAvailable = deps.isModelAvailable ?? ((id: string) => modelAvailability(id).available);
     const stageAtStart = await loadContactStage(org, conv.contactId);
-    const pick = pickBrainModel(cfg, stageAtStart, isAvailable);
-    if (pick.fallback) console.warn(`[agente] ${conv.id}: el Modelo 1 (${cfg.modelo1}) no está disponible aquí; contesta el Modelo 2 (${pick.modelId})`);
-    const brainModel = getModel(pick.modelId);
-    if (!brainModel) throw new Error(`modelo ${pick.slot} desconocido: ${pick.modelId}`);
+    const candidates = brainCandidates(cfg, stageAtStart, isAvailable);
+    const planned = brainModelForStage(cfg, stageAtStart);
+    if (candidates[0].modelId !== planned.modelId) {
+      console.warn(`[agente] ${conv.id}: el Modelo ${planned.slot} (${planned.modelId}) no está disponible aquí; contesta el Modelo ${candidates[0].slot} (${candidates[0].modelId})`);
+    }
     // Goal y FAQs con los valores personalizados de esta conversación sustituidos.
     const values = await loadCustomValues(org, conv, cfg);
     const faqs = (await loadEnabledFaqs(org)).map((f) => ({
@@ -509,76 +532,112 @@ export async function runAgent(job: { organizationId: string; conversationId: st
     }));
     const system = buildBrainSystemWithRuntime(applyCustomValues(cfg.goal, values), faqs, options.responseLength);
     // Contexto del CRM (etapa, cotización y, desde la parte 1, el Detalle ya guardado)
-    // en el último turno del cliente.
-    const crmContext = [await crmContextFor(org, conv.contactId), await detalleContextFor(org, conv.contactId)].filter(Boolean).join("\n");
+    // en el último turno del cliente. En un traspaso lleva también la etapa a la que pasa.
+    const mediaUrls = await mediaUrlsFor(history, deps.resolveImage, options.readImages);
+    const detalleContext = await detalleContextFor(org, conv.contactId);
     // Un modelo sin lectura de PDF (p. ej. Qwen) recibe el PDF como nota de texto.
     // Opciones del bot: sin imágenes ("[imagen]") o sin notas de voz ("[nota de voz]").
-    const modelMessages = buildModelMessages(history, await mediaUrlsFor(history, deps.resolveImage, options.readImages), {
-      cleanText,
-      crmContext,
-      ...(brainModel.pdf ? {} : { maxPdfs: 0 }),
-      ...(options.readImages ? {} : { maxImages: 0 }),
-      ...(options.transcribeAudio ? {} : { voiceNotesOff: true }),
-    });
+    const messagesFor = async (model: CatalogModel, avanzaA: Stage | null) =>
+      buildModelMessages(history, mediaUrls, {
+        cleanText,
+        crmContext: [await crmContextFor(org, conv.contactId, avanzaA), detalleContext].filter(Boolean).join("\n"),
+        ...(model.pdf ? {} : { maxPdfs: 0 }),
+        ...(options.readImages ? {} : { maxImages: 0 }),
+        ...(options.transcribeAudio ? {} : { voiceNotesOff: true }),
+      });
     // Herramientas (Fase D): una por workflow habilitado con "agente" + fijar_cotizacion.
     const agentTools = await loadAgentTools(org);
-    // Fase E ("reenvío seguro"): si el modelo falla, solo un proveedor SATURADO se
-    // reintenta, una vez por corrida, tras SATURATED_RETRY_MS. Cualquier otra falla (o
-    // la segunda) deja la tarjeta "El agente no pudo responder" y la corrida termina
-    // SIN lanzar: ni la cola ni el barrido vuelven a llamar al modelo a ciegas.
     // ¿Sigue el agente a cargo? Si durante la llamada un vendedor contestó, pausaron
-    // al agente o apagaron el canal, no hay tarjeta ni segundo intento (ya decidió alguien).
+    // al agente o apagaron el canal, no hay tarjeta ni otro intento (ya decidió alguien).
     const stillInCharge = async (): Promise<boolean> => {
       const f = await loadSnapshot(org, conv.id);
       if (!f || f.channel.aiAgentMode !== "auto" || f.conversation.agentState !== "activo") return false;
       return (await humanOutboundCount(org, conv.id)) === humansAtStart;
     };
-    let t0 = Date.now();
-    let brainRes!: CallModelResult;
-    for (;;) {
+    // Una llamada al cerebro. Un error del proveedor o una respuesta sin texto ni acciones
+    // (tokens agotados, filtro del proveedor…) cuentan como falla; las dos dejan su fila.
+    const attempt = async (model: CatalogModel, avanzaA: Stage | null = null): Promise<BrainOk | BrainFail> => {
+      const messages = await messagesFor(model, avanzaA);
+      const t0 = Date.now();
+      let res: CallModelResult;
       try {
-        brainRes = await deps.callModel(brainModel.id, {
-          system,
-          messages: modelMessages,
-          tools: agentTools.tools,
-          maxOutputTokens: BRAIN_MAX_OUTPUT_TOKENS,
-          timeoutMs: BRAIN_TIMEOUT_MS,
-        });
-        break;
+        res = await deps.callModel(model.id, { system, messages, tools: agentTools.tools, maxOutputTokens: BRAIN_MAX_OUTPUT_TOKENS, timeoutMs: BRAIN_TIMEOUT_MS });
       } catch (error) {
-        await recordAiUsage({
-          ...base,
-          stage: "cerebro",
-          modelId: brainModel.id,
-          provider: brainModel.provider,
-          usage: null,
-          latencyMs: Date.now() - t0,
-          outcome: "error",
-          error: errorText(error),
-        });
-        const info = classifyModelError(error, PROVIDER_META[brainModel.provider].label);
-        if (info.autoRetry && !saturatedRetryUsed) {
-          saturatedRetryUsed = true;
-          console.warn(`[agente] ${conv.id}: ${info.resumen} Reintento automático en ${SATURATED_RETRY_MS / 1000} s`);
-          await deps.sleep(SATURATED_RETRY_MS);
-          if (!(await stillInCharge())) return { kind: "skipped", reason: "cambio_durante_error" };
-          t0 = Date.now();
-          continue;
-        }
+        await recordAiUsage({ ...base, stage: "cerebro", modelId: model.id, provider: model.provider, usage: null, latencyMs: Date.now() - t0, outcome: "error", error: errorText(error) });
+        return { ok: false, model, info: classifyModelError(error, PROVIDER_META[model.provider].label) };
+      }
+      const latencyMs = Date.now() - t0;
+      const out = parseBrainOutput(res.text);
+      const { valid, ignored } = validateToolCalls(res.toolCalls ?? [], agentTools);
+      if (out.kind === "empty" && valid.length === 0) {
+        await recordAiUsage({ ...base, stage: "cerebro", modelId: res.modelId, provider: res.provider, usage: res.usage, latencyMs, outcome: "error", error: `respuesta_vacia (${res.finishReason})` });
+        return { ok: false, model, info: EMPTY_RESPONSE_INFO };
+      }
+      return { ok: true, model, res, out, toolCalls: valid, ignored, latencyMs };
+    };
+    const usageOf = (r: BrainOk) => ({ ...base, stage: "cerebro" as const, modelId: r.res.modelId, provider: r.res.provider, usage: r.res.usage, latencyMs: r.latencyMs });
+
+    // Fase E ("reenvío seguro") + 27-sep-2026: si el modelo falla, contesta el otro. Con un
+    // solo modelo disponible, un proveedor SATURADO se reintenta una vez por corrida tras
+    // SATURATED_RETRY_MS. Si ya no queda quién conteste, la tarjeta "El agente no pudo
+    // responder" y la corrida termina SIN lanzar: ni la cola ni el barrido vuelven a llamar
+    // al modelo a ciegas.
+    let used: BrainOk | null = null;
+    let usedSlot: ModelSlot = candidates[0].slot;
+    const failures: BrainFail[] = [];
+    for (const [i, candidate] of candidates.entries()) {
+      const model = getModel(candidate.modelId);
+      if (!model) throw new Error(`modelo ${candidate.slot} desconocido: ${candidate.modelId}`);
+      let r = await attempt(model);
+      if (!r.ok && candidates.length === 1 && r.info.autoRetry && !saturatedRetryUsed) {
+        saturatedRetryUsed = true;
+        console.warn(`[agente] ${conv.id}: ${r.info.resumen} Reintento automático en ${SATURATED_RETRY_MS / 1000} s`);
+        await deps.sleep(SATURATED_RETRY_MS);
         if (!(await stillInCharge())) return { kind: "skipped", reason: "cambio_durante_error" };
-        await recordAgentError({ organizationId: org, conversationId: conv.id, messageId: lastRead.id, body: agentErrorBody(info, brainModel.label, saturatedRetryUsed) });
-        console.warn(`[agente] ${conv.id}: el modelo falló (${info.kind}); tarjeta para el vendedor`);
-        return { kind: "failed", reason: info.kind };
+        r = await attempt(model);
+      }
+      if (r.ok) {
+        used = r;
+        usedSlot = candidate.slot;
+        break;
+      }
+      failures.push(r);
+      if (!(await stillInCharge())) return { kind: "skipped", reason: "cambio_durante_error" };
+      const next = candidates[i + 1];
+      if (next) console.warn(`[agente] ${conv.id}: ${model.label} falló (${r.info.kind}): ${r.info.resumen} Contesta el Modelo ${next.slot} (${next.modelId})`);
+    }
+    if (!used) {
+      const last = failures[failures.length - 1];
+      const body =
+        failures.length > 1
+          ? bothModelsFailedBody(failures.map((f) => ({ label: f.model.label, info: f.info })))
+          : agentErrorBody(last.info, last.model.label, saturatedRetryUsed);
+      await recordAgentError({ organizationId: org, conversationId: conv.id, messageId: lastRead.id, body });
+      console.warn(`[agente] ${conv.id}: ${failures.length > 1 ? "fallaron los dos modelos" : "el modelo falló"} (${last.info.kind}); tarjeta para el vendedor`);
+      return { kind: "failed", reason: last.info.kind };
+    }
+
+    // Traspaso (27-sep-2026): el Modelo 1 contestó y, con su respuesta, el contacto pasa a
+    // una etapa del Modelo 2 (mover_etapa o datos bancarios), aunque se salte etapas → esa
+    // MISMA respuesta la escribe el Modelo 2, con la etapa nueva en el contexto. La etapa
+    // que decidió el Modelo 1 se respeta aunque el Modelo 2 no la pida. Si el Modelo 2
+    // falla, sale la respuesta del Modelo 1 (el cliente nunca se queda sin respuesta).
+    if (usedSlot === 1) {
+      const target = handoffStage(cfg, stageAtStart, impliedStage(stageSignals(used.toolCalls)));
+      const model2 = target ? getModel(cfg.modeloCerebro) : undefined;
+      if (target && model2 && model2.id !== used.model.id && isAvailable(model2.id)) {
+        const second = await attempt(model2, target);
+        if (second.ok) {
+          await recordAiUsage({ ...usageOf(used), outcome: "traspaso", error: `pasa a ${target}: contesta ${model2.id}` });
+          console.info(`[agente] ${conv.id}: ${used.model.label} lleva al contacto a ${target}; la respuesta la escribe ${model2.label}`);
+          second.toolCalls.push({ kind: "etapa", etapa: target });
+          used = second;
+        } else {
+          console.warn(`[agente] ${conv.id}: ${model2.label} falló en el traspaso (${second.info.kind}); sale la respuesta de ${used.model.label}`);
+        }
       }
     }
-    const brainUsage = {
-      ...base,
-      stage: "cerebro" as const,
-      modelId: brainRes.modelId,
-      provider: brainRes.provider,
-      usage: brainRes.usage,
-      latencyMs: Date.now() - t0,
-    };
+    const brainUsage = usageOf(used);
 
     // ── Revisión antes de enviar: ¿llegó algo después de lo que leyó? ────────
     if ((await inboundCount(org, conv.id)) > readCount) {
@@ -589,7 +648,7 @@ export async function runAgent(job: { organizationId: string; conversationId: st
     // Fase E: si un vendedor movió la etapa durante la generación y con ella cambió
     // el modelo que debe contestar, esta respuesta no sale: se regenera con el correcto.
     const stageNow = await loadContactStage(org, conv.contactId);
-    if (stageNow !== stageAtStart && pickBrainModel(cfg, stageNow, isAvailable).modelId !== brainModel.id) {
+    if (stageNow !== stageAtStart && brainCandidates(cfg, stageNow, isAvailable)[0].modelId !== candidates[0].modelId) {
       await recordAiUsage({ ...brainUsage, outcome: "discarded_stale", error: "cambió la etapa y con ella el modelo" });
       console.info(`[agente] ${conv.id}: respuesta descartada (la etapa cambió a ${stageNow} durante la generación), ronda ${round}`);
       continue;
@@ -609,13 +668,13 @@ export async function runAgent(job: { organizationId: string; conversationId: st
       return { kind: "skipped", reason: "respuesta_humana" };
     }
 
-    const out = parseBrainOutput(brainRes.text);
     // ── ACCIONES pedidas con herramientas (Fase D) ──────────────────────────
-    // Se validan contra las herramientas ofrecidas; un comprobante se verifica
-    // AQUÍ (monto contra lo cotizado + referencia): si no cuadra, el texto del
+    // Ya validadas contra las herramientas ofrecidas (attempt); un comprobante se
+    // verifica AQUÍ (monto contra lo cotizado + referencia): si no cuadra, el texto del
     // modelo se sustituye por uno amable con el motivo. Las corridas salen
     // DESPUÉS de las burbujas.
-    const { valid: toolCalls, ignored } = validateToolCalls(brainRes.toolCalls ?? [], agentTools);
+    const { res: brainRes, out, ignored } = used;
+    const toolCalls = [...used.toolCalls];
     if (ignored.length) console.warn(`[agente] ${conv.id}: herramientas ignoradas: ${ignored.join("; ")}`);
     // Respuesta cortada por el tope, o una acción descartada por argumentos inválidos
     // (lo que pasó en B5): NUNCA en silencio. Aviso al vendedor, uno por lote.
@@ -633,14 +692,6 @@ export async function runAgent(job: { organizationId: string; conversationId: st
           (invalid.length ? ` No se ejecutó: ${invalid.join("; ")}.` : "") +
           " Revisa el hilo.",
       });
-    }
-    if (out.kind === "empty" && toolCalls.length === 0) {
-      // Sin texto ni acciones (tokens agotados, filtro del proveedor…): Fase E, sin
-      // reintento a ciegas (cada uno es otra llamada pagada): tarjeta para el vendedor.
-      await recordAiUsage({ ...brainUsage, outcome: "error", error: `respuesta_vacia (${brainRes.finishReason})` });
-      if (!(await stillInCharge())) return { kind: "skipped", reason: "cambio_durante_error" };
-      await recordAgentError({ organizationId: org, conversationId: conv.id, messageId: lastRead.id, body: agentErrorBody(EMPTY_RESPONSE_INFO, brainModel.label, saturatedRetryUsed) });
-      return { kind: "failed", reason: "vacia" };
     }
     // Solo llamadas, sin texto (algunos modelos lo hacen con tools): NO se lanza
     // (cada reintento sería otra llamada pagada). Las acciones corren igual; para

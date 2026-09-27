@@ -53,6 +53,10 @@ export const aiKnowledgeVersions = pgTable(
       .references(() => organization.id, { onDelete: "cascade" }),
     kind: text("kind").notNull(),
     snapshot: jsonb("snapshot").$type<Record<string, unknown>>().notNull(),
+    // Nombre que le pone el equipo con el lápiz ✎ (27-sep-2026, migración 0040), p. ej.
+    // "Antes de la promo". NULL = sin nombre (se ve solo la fecha). Máx. 80 caracteres
+    // (lo valida la Server Action con versionNameSchema, lib/agente-ia/editor.ts).
+    name: text("name"),
     createdByUserId: text("created_by_user_id").references(() => user.id, { onDelete: "set null" }),
     createdAt: timestamp("created_at").defaultNow().notNull(),
   },

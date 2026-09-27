@@ -1,6 +1,7 @@
 // Lecturas y escrituras del editor del agente (pestaña "Agente IA", 24-sep-2026):
 // nombre del agente y de la empresa, modelo cerebro, Goal y FAQs con VERSIONES
-// (cada guardado deja una foto completa y se puede regresar a cualquiera). Sin
+// (cada guardado deja una foto completa y se puede regresar a cualquiera; desde el
+// 27-sep-2026 cada versión puede llevar un nombre). Sin
 // sesión: las Server Actions (lib/actions/agente-ia-editor.ts) resuelven la
 // organización y el permiso. Toda consulta filtra por organization_id.
 import { and, asc, desc, eq, max, sql } from "drizzle-orm";
@@ -17,7 +18,7 @@ type Exec = typeof db | Tx;
 export type FaqRow = { id: string; question: string; answer: string; position: number; enabled: boolean };
 type FaqSnapshot = { question: string; answer: string; position: number; enabled: boolean; ghlId: string | null };
 export type VersionKind = "goal" | "faqs";
-export type VersionRow = { id: string; createdAt: Date; author: string | null; summary: string };
+export type VersionRow = { id: string; createdAt: Date; author: string | null; summary: string; name: string | null };
 
 export class EditorNotFoundError extends Error {}
 
@@ -101,7 +102,13 @@ async function hasVersion(exec: Exec, organizationId: string, kind: VersionKind)
 
 export async function listVersions(organizationId: string, kind: VersionKind, limit = 20): Promise<VersionRow[]> {
   const rows = await db
-    .select({ id: aiKnowledgeVersions.id, createdAt: aiKnowledgeVersions.createdAt, snapshot: aiKnowledgeVersions.snapshot, author: user.name })
+    .select({
+      id: aiKnowledgeVersions.id,
+      createdAt: aiKnowledgeVersions.createdAt,
+      snapshot: aiKnowledgeVersions.snapshot,
+      name: aiKnowledgeVersions.name,
+      author: user.name,
+    })
     .from(aiKnowledgeVersions)
     .leftJoin(user, eq(user.id, aiKnowledgeVersions.createdByUserId))
     .where(and(eq(aiKnowledgeVersions.organizationId, organizationId), eq(aiKnowledgeVersions.kind, kind)))
@@ -111,11 +118,23 @@ export async function listVersions(organizationId: string, kind: VersionKind, li
     id: r.id,
     createdAt: r.createdAt,
     author: r.author,
+    name: r.name,
     summary:
       kind === "goal"
         ? `${countWords(String((r.snapshot as { goal?: unknown }).goal ?? "")).toLocaleString("es-MX")} palabras`
         : `${((r.snapshot as { faqs?: unknown[] }).faqs ?? []).length} preguntas`,
   }));
+}
+
+// Nombre de una versión (lápiz ✎). null = sin nombre. Filtra por organización Y id: una
+// versión de otra organización es "no existe". Renombrar no crea versión nueva.
+export async function renameVersion(organizationId: string, versionId: string, name: string | null): Promise<void> {
+  const rows = await db
+    .update(aiKnowledgeVersions)
+    .set({ name })
+    .where(and(eq(aiKnowledgeVersions.id, versionId), eq(aiKnowledgeVersions.organizationId, organizationId)))
+    .returning({ id: aiKnowledgeVersions.id });
+  if (rows.length === 0) throw new EditorNotFoundError("Esa versión no existe.");
 }
 
 // ── Goal ─────────────────────────────────────────────────────────────────────

@@ -89,6 +89,13 @@ export function agentErrorBody(info: ModelErrorInfo, modelLabel: string, retried
   return `El agente no pudo responder (${modelLabel}). ${info.resumen}${retried ? " Ya se reintentó una vez." : ""} El cliente sigue sin respuesta: elige "Reintentar" o "Apagar".`;
 }
 
+// 27-sep-2026: si un modelo falla contesta el otro; la tarjeta sale solo cuando fallaron
+// los dos, y dice qué le pasó a cada uno.
+export function bothModelsFailedBody(failures: readonly { label: string; info: ModelErrorInfo }[]): string {
+  const detail = failures.map((f) => `${f.label}: ${f.info.resumen}`).join(" ");
+  return `El agente no pudo responder: fallaron los dos modelos. ${detail} El cliente sigue sin respuesta: elige "Reintentar" o "Apagar".`;
+}
+
 // ── Falla al ENVIAR la respuesta por WhatsApp (Fase E, 25-sep; parte 1, 26-sep-2026) ───
 // El modelo sí contestó, pero el primer mensaje no salió. Antes la cola reintentaba 3
 // veces (y el barrido hasta 5): cada intento pagaba OTRA llamada al modelo y dejaba otra
