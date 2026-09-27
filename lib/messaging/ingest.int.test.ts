@@ -111,6 +111,69 @@ describe.skipIf(!TEST_DATABASE_URL)("ingesta de WhatsApp (Postgres real)", () =>
     expect(await db.select().from(s.messages)).toHaveLength(10);
   });
 
+  describe('aviso "no disponible" de Meta (131060) y luego el mensaje real con el MISMO wamid', () => {
+    const NOTICE = { code: 131060, title: "This message is unavailable.", details: "This message is currently unavailable." };
+    const REFERRAL = { source_id: "120250108412590604", source_type: "ad", headline: "Protege tu Casa", ctwa_clid: "clid_1" };
+
+    function notice(wamid: string) {
+      const e = msgEvent({ wamid, sentAt: "2026-09-27T01:37:23Z" });
+      e.message.text = "[Unsupported message]";
+      return { ...e, metadata: { unsupported: NOTICE } };
+    }
+    function real(wamid: string) {
+      const e = msgEvent({ wamid, sentAt: "2026-09-27T01:37:24Z" });
+      e.message.text = "Quiero más información";
+      return { ...e, metadata: { referral: REFERRAL } };
+    }
+    async function deliverWith(payload: { id: string; event: string }, calls: string[]) {
+      const id = `zernio_${payload.id}`;
+      await db.insert(s.webhookEvents).values({ id, provider: "zernio", event: payload.event, payload });
+      return ingest.processWebhookEvent(provider, id, { onInboundMessage: (m) => void calls.push(m.messageId) });
+    }
+
+    it("se completa la MISMA fila (texto y anuncio), 1 no leído, y solo el real despierta al agente", async () => {
+      const calls: string[] = [];
+      expect(await deliverWith(notice("wamid.nd1"), calls)).toBe("entrante guardado");
+      expect(calls).toEqual([]);
+      expect(await deliverWith(real("wamid.nd1"), calls)).toBe("entrante completado (antes no disponible)");
+
+      const rows = await db.select().from(s.messages);
+      expect(rows).toHaveLength(1);
+      expect(rows[0].body).toBe("Quiero más información");
+      expect(rows[0].metadata?.unsupported).toBeUndefined();
+      expect(rows[0].metadata?.noDisponibleAntes).toMatchObject({ code: 131060 });
+      expect(rows[0].adReferral).toMatchObject({ source_id: "120250108412590604" });
+      expect(calls).toEqual([rows[0].id]);
+
+      const [conv] = await db.select().from(s.conversations);
+      expect(conv.unreadCount).toBe(1);
+      expect(conv.adReferral).toMatchObject({ headline: "Protege tu Casa" });
+      expect(await db.select().from(s.adClicks)).toHaveLength(1);
+    });
+
+    it("reintentos: el aviso repetido no borra el contenido y el real repetido es duplicado", async () => {
+      const calls: string[] = [];
+      await deliverWith(notice("wamid.nd2"), calls);
+      await deliverWith(real("wamid.nd2"), calls);
+      expect(await deliverWith(notice("wamid.nd2"), calls)).toBe("mensaje duplicado (wamid ya guardado)");
+      expect(await deliverWith(real("wamid.nd2"), calls)).toBe("mensaje duplicado (wamid ya guardado)");
+      const rows = await db.select().from(s.messages);
+      expect(rows).toHaveLength(1);
+      expect(rows[0].body).toBe("Quiero más información");
+      expect(calls).toHaveLength(1);
+      expect(await db.select().from(s.adClicks)).toHaveLength(1);
+    });
+
+    it("si el mensaje real nunca llega, queda el aviso y no despierta al agente", async () => {
+      const calls: string[] = [];
+      await deliverWith(notice("wamid.nd3"), calls);
+      const [row] = await db.select().from(s.messages);
+      expect(row.body).toBe("[Unsupported message]");
+      expect(row.metadata?.unsupported).toMatchObject({ code: 131060 });
+      expect(calls).toEqual([]);
+    });
+  });
+
   it("México: un +521 del webhook encuentra al contacto guardado como +52 (no duplica)", async () => {
     await db.insert(s.contacts).values({
       id: "c_import",
