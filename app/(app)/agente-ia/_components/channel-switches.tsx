@@ -1,11 +1,14 @@
 "use client";
 
-// Sección "Implementar" de la pestaña Agente IA: los canales con su interruptor
-// Apagado / Encendido. Sin lógica de datos: solo llama a setChannelAgentMode.
-import { useState, useTransition } from "react";
+// Subpestaña "Canales" de la pestaña Agente IA: los canales con su interruptor
+// Apagado / Encendido. Encender Y apagar piden confirmación arriba antes de guardar
+// (regla del dueño, 27-sep-2026; use-confirm.tsx). Sin lógica de datos: solo llama a
+// setChannelAgentMode.
+import { useState } from "react";
 import { setChannelAgentMode } from "@/lib/actions/agente-ia-settings";
 import { AGENT_MODE_LABEL, type AgentModeValue } from "@/lib/agente-ia/settings";
-import type { ChannelAgentView } from "@/lib/agente-ia/types";
+import type { AgentActionResult, ChannelAgentView } from "@/lib/agente-ia/types";
+import { useConfirm } from "./use-confirm";
 
 const MODE_HINT: Record<AgentModeValue, string> = {
   off: "El agente no hace nada en este canal.",
@@ -16,26 +19,34 @@ function errorMessage(error: unknown, fallback: string): string {
   return error instanceof Error ? error.message : fallback;
 }
 
+// La acción truena si algo falla; aquí se vuelve un resultado para el pop-up.
+async function saveMode(channelId: string, mode: AgentModeValue): Promise<AgentActionResult> {
+  try {
+    await setChannelAgentMode({ channelId, mode });
+    return { ok: true };
+  } catch (e) {
+    return { ok: false, message: errorMessage(e, "No se pudo cambiar el modo.") };
+  }
+}
+
 function ChannelSwitch({ channel }: { channel: ChannelAgentView }) {
   const [mode, setMode] = useState<AgentModeValue>(channel.mode);
-  const [error, setError] = useState<string | null>(null);
-  const [pending, start] = useTransition();
+  const confirm = useConfirm();
 
   function choose(next: AgentModeValue) {
     if (next === mode) return;
-    if (next === "auto" && !window.confirm(`El agente responderá SOLO a los clientes de «${channel.displayName}». ¿Encenderlo?`)) {
-      return;
-    }
-    const previous = mode;
-    setMode(next);
-    setError(null);
-    start(async () => {
-      try {
-        await setChannelAgentMode({ channelId: channel.id, mode: next });
-      } catch (e) {
-        setMode(previous);
-        setError(errorMessage(e, "No se pudo cambiar el modo."));
-      }
+    const name = channel.displayName;
+    const on = next === "auto";
+    confirm.ask({
+      title: on ? `¿Encender el agente en ${name}?` : `¿Apagar el agente en ${name}?`,
+      body: on
+        ? `El agente responderá a los clientes de «${name}» desde el siguiente mensaje. Se pausa en una conversación solo cuando un vendedor contesta.`
+        : "Los clientes de ese canal dejarán de recibir respuestas automáticas. Para un solo cliente usa «Pausar agente» en el Detalle del contacto.",
+      confirmLabel: on ? "Sí, encender" : "Sí, apagar",
+      pendingLabel: on ? "Encendiendo…" : "Apagando…",
+      done: on ? `Listo: el agente está encendido en ${name}` : `Listo: el agente está apagado en ${name}`,
+      run: () => saveMode(channel.id, next),
+      onDone: () => setMode(next),
     });
   }
 
@@ -49,16 +60,22 @@ function ChannelSwitch({ channel }: { channel: ChannelAgentView }) {
             {!channel.isActive && " · canal desactivado"}
           </span>
         </div>
-        <div role="radiogroup" aria-label={`Modo del agente en ${channel.displayName}`} className="flex overflow-hidden rounded border border-black/15 dark:border-white/15">
+        <div
+          role="radiogroup"
+          aria-label={`Modo del agente en ${channel.displayName}`}
+          aria-busy={confirm.pending || undefined}
+          className="flex overflow-hidden rounded border border-black/15 dark:border-white/15"
+        >
           {(["off", "auto"] as const).map((m) => (
             <button
               key={m}
               type="button"
               role="radio"
               aria-checked={mode === m}
-              disabled={pending}
+              // Mientras guarda no se deshabilitan (ask() ignora el clic): así el foco
+              // puede regresar al botón al cerrarse el pop-up.
               onClick={() => choose(m)}
-              className={`px-3 py-1.5 text-sm transition-colors disabled:opacity-60 ${
+              className={`px-3 py-1.5 text-sm transition-colors ${
                 mode === m
                   ? m === "auto"
                     ? "bg-brand-orange text-white"
@@ -72,7 +89,8 @@ function ChannelSwitch({ channel }: { channel: ChannelAgentView }) {
         </div>
       </div>
       <span className="text-xs text-foreground/70">{MODE_HINT[mode]}</span>
-      {error && <span className="border-l-2 border-brand-orange pl-2 text-xs text-foreground">{error}</span>}
+      {confirm.error && <span className="border-l-2 border-brand-orange pl-2 text-xs text-foreground">{confirm.error}</span>}
+      {confirm.ui}
     </div>
   );
 }
