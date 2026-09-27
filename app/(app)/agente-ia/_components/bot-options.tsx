@@ -35,6 +35,8 @@ const ALL_DAYS = [1, 2, 3, 4, 5, 6, 7];
 const radioClass = (on: boolean) =>
   `px-3 py-1.5 text-sm transition-colors disabled:opacity-60 ${on ? "bg-brand-navy text-white" : "bg-background text-foreground/70 hover:bg-black/5 dark:hover:bg-white/5"}`;
 const inputClass = "w-20 rounded border border-black/15 bg-background px-2 py-1 text-sm text-foreground dark:border-white/15";
+// La hora se ve en formato de 12 h ("06:00 p.m."): necesita más ancho que un número.
+const timeClass = inputClass.replace("w-20", "w-32");
 
 function Radio<T extends string | number | boolean>({
   label,
@@ -268,11 +270,11 @@ export function BotOptionsSection({
             </div>
             <label className="flex items-center gap-1 text-xs text-foreground/70">
               de
-              <input type="time" value={draft.schedule.from} aria-label="Hora de inicio" disabled={busy} onChange={(e) => set({ schedule: { ...draft.schedule, from: e.target.value } })} className={inputClass} />
+              <input type="time" value={draft.schedule.from} aria-label="Hora de inicio" disabled={busy} onChange={(e) => set({ schedule: { ...draft.schedule, from: e.target.value } })} className={timeClass} />
             </label>
             <label className="flex items-center gap-1 text-xs text-foreground/70">
               a
-              <input type="time" value={draft.schedule.to} aria-label="Hora de fin" disabled={busy} onChange={(e) => set({ schedule: { ...draft.schedule, to: e.target.value } })} className={inputClass} />
+              <input type="time" value={draft.schedule.to} aria-label="Hora de fin" disabled={busy} onChange={(e) => set({ schedule: { ...draft.schedule, to: e.target.value } })} className={timeClass} />
             </label>
             <span className="text-xs text-foreground/70">hora de Mazatlán</span>
           </div>
