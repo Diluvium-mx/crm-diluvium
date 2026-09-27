@@ -36,7 +36,7 @@ export function FragmentosTab({ initial, canManage }: { initial: SnippetView[]; 
     const name = draft.name.trim();
     const body = draft.body.trim();
     if (!name || !body) {
-      setError("El nombre y el fragmento son obligatorios.");
+      setError("El nombre y el mensaje son obligatorios.");
       return;
     }
     setBusy(true);
@@ -51,14 +51,14 @@ export function FragmentosTab({ initial, canManage }: { initial: SnippetView[]; 
       }
       setDraft(null);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "No se pudo guardar el fragmento.");
+      setError(err instanceof Error ? err.message : "No se pudo guardar el mensaje rápido.");
     } finally {
       setBusy(false);
     }
   }
 
   async function remove(snippet: SnippetView) {
-    if (!window.confirm(`¿Borrar el fragmento "${snippet.name}"?`)) return;
+    if (!window.confirm(`¿Borrar el mensaje rápido "${snippet.name}"?`)) return;
     setBusy(true);
     setError(null);
     try {
@@ -66,7 +66,7 @@ export function FragmentosTab({ initial, canManage }: { initial: SnippetView[]; 
       setItems((current) => current.filter((s) => s.id !== snippet.id));
       if (draft?.id === snippet.id) setDraft(null);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "No se pudo borrar el fragmento.");
+      setError(err instanceof Error ? err.message : "No se pudo borrar el mensaje rápido.");
     } finally {
       setBusy(false);
     }
@@ -85,7 +85,7 @@ export function FragmentosTab({ initial, canManage }: { initial: SnippetView[]; 
             onClick={openNew}
             className="flex shrink-0 items-center gap-1.5 rounded-md bg-brand-orange px-3 py-2 text-sm font-medium text-brand-white transition-colors hover:bg-brand-orange-light"
           >
-            <Plus className="size-4" aria-hidden="true" /> Nuevo fragmento
+            <Plus className="size-4" aria-hidden="true" /> Nuevo mensaje rápido
           </button>
         )}
       </div>
@@ -113,7 +113,7 @@ export function FragmentosTab({ initial, canManage }: { initial: SnippetView[]; 
           </div>
           <div className="space-y-1">
             <label htmlFor="snippet-body" className="text-xs font-medium text-muted-foreground">
-              Fragmento
+              Mensaje
             </label>
             <textarea
               id="snippet-body"
@@ -148,7 +148,7 @@ export function FragmentosTab({ initial, canManage }: { initial: SnippetView[]; 
               disabled={busy || !draft.name.trim() || !draft.body.trim()}
               className="rounded-md bg-brand-orange px-3 py-1.5 text-sm font-medium text-brand-white hover:bg-brand-orange-light disabled:opacity-50"
             >
-              {busy ? "Guardando…" : draft.id ? "Guardar cambios" : "Crear fragmento"}
+              {busy ? "Guardando…" : draft.id ? "Guardar cambios" : "Crear mensaje rápido"}
             </button>
           </div>
         </div>
@@ -157,8 +157,8 @@ export function FragmentosTab({ initial, canManage }: { initial: SnippetView[]; 
       {items.length === 0 && !draft ? (
         <div className="rounded-lg border border-dashed bg-card/50 px-4 py-10 text-center text-sm text-muted-foreground">
           {canManage
-            ? "Aún no hay fragmentos. Crea el primero para responder más rápido."
-            : "Aún no hay fragmentos. Un administrador puede crearlos; tú los usarás desde el chat."}
+            ? "Aún no hay mensajes rápidos. Crea el primero para responder más rápido."
+            : "Aún no hay mensajes rápidos. Un administrador puede crearlos; tú los usarás desde el chat."}
         </div>
       ) : (
         <ul className="space-y-2">

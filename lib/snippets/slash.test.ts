@@ -47,6 +47,18 @@ describe("filterSnippets", () => {
     expect(normalizeForSearch("Envío")).toBe("envio");
   });
 
+  it("encuentra un mensaje rápido real escrito sin acento ni mayúscula", () => {
+    const rapidos = [
+      { name: "Buenas tardes 🌅", body: "Hola, buenas tardes. Aquí Daniel, de Diluvium 🌅" },
+      { name: "Cuánta agua entra", body: "Aproximadamente, ¿cuánta agua entra a su domicilio cuando llueve fuerte?" },
+      { name: "Ubicación", body: "Nos ubicamos en Los Mochis, Sinaloa." },
+    ];
+    expect(filterSnippets(rapidos, "cuanta").map((s) => s.name)).toEqual(["Cuánta agua entra"]);
+    expect(filterSnippets(rapidos, "CUÁNTA").map((s) => s.name)).toEqual(["Cuánta agua entra"]);
+    expect(filterSnippets(rapidos, "ubicacion").map((s) => s.name)).toEqual(["Ubicación"]);
+    expect(filterSnippets(rapidos, "buenas").map((s) => s.name)).toEqual(["Buenas tardes 🌅"]);
+  });
+
   it("prioriza nombre que empieza, luego nombre que contiene, luego cuerpo", () => {
     const list = [
       { name: "Hola precios", body: "" },
