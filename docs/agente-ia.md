@@ -29,7 +29,13 @@ clientes** (eso llega en la Fase B y siguientes).
 - **Pestaña "Agente IA"** (`/agente-ia`, solo owner/admin) — desde el 24-sep-2026 es el
   **editor estilo GHL** (solo personaliza al agente):
   - Encabezado con el **nombre del agente** editable con lápiz (`ai_config.agent_name`).
-  - **Crear:** **Modelos** (Fase E, 25-sep-2026): selector del **Modelo 1** (recomendado
+  - Desde el 27-sep-2026 va en **subpestañas fijas** arriba (`?seccion=`): Modelos ·
+    Instrucciones (Goal) · FAQs · Opciones · Tallas y medidas · Canales (antes «Crear |
+    Implementar»). **Todo cambio pide confirmación** en el pop-up de arriba (etapas, nombre del
+    agente, Goal, FAQs, versiones, Opciones, Tallas y Canales); cada versión del Goal y de las
+    FAQs se puede **nombrar con el lápiz ✎** (`ai_knowledge_versions.name`, migración 0040) y
+    Opciones se guarda con un solo **«Guardar cambios»** que lista «antes → después».
+  - **Modelos** (Fase E, 25-sep-2026): selector del **Modelo 1** (recomendado
     Luna) y del **Modelo 2** (recomendado Sonnet 5), cada opción con su costo aproximado por
     cada 100 conversaciones y en gris si falta su llave, y **qué modelo atiende cada etapa**
     del Embudo ("Modelo 1 | Modelo 2" por etapa; se usa la etapa del contacto al responder).
@@ -42,7 +48,7 @@ clientes** (eso llega en la Fase B y siguientes).
     **base de conocimiento** (FAQs: agregar, editar, activar/desactivar, borrar). Cada
     guardado del Goal o cambio de FAQs deja una **versión** (`ai_knowledge_versions`) y se
     puede **restaurar** cualquiera (la primera vez guarda también la anterior).
-  - **Implementar:** los canales con interruptor Encendido / Apagado.
+  - **Canales** (antes «Implementar»): los canales con interruptor Encendido / Apagado.
   - Ya no están: selector de filtro (queda Luna), "Probar modelo", tabla de precios (los
     precios siguen internos para el gasto), tiempos, pausas y límites.
   - Nota de costo: un Goal con `{{contacto.nombre}}`/`{{vendedor.nombre}}` cambia el
@@ -453,7 +459,7 @@ sistema "Agente IA"). El Goal y las FAQs no se tocaron.
 ## Opciones del bot (26-sep-2026)
 
 Rama `feat/opciones-bot`, migración **`0038_opciones_bot`**. Sección **"Opciones"** en la pestaña Agente IA
-(al final de "Crear"; la editan vendedores, admin y owner: recurso `aiConfig`). Copia las opciones de Ángela
+(hoy su propia subpestaña; la editan vendedores, admin y owner: recurso `aiConfig`). Copia las opciones de Ángela
 en GHL. **Regla del dueño: los valores de fábrica son EXACTAMENTE el comportamiento anterior**; nada cambia
 hasta que alguien mueva una opción. Reglas puras en `lib/agente-ia/opciones.ts`; lectura con caché en
 `lib/ai/runtime/options.ts`; guardado y registro en `lib/agente-ia/opciones-store.ts`; UI en
