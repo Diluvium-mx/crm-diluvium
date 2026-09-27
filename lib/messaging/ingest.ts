@@ -17,6 +17,7 @@ import type {
 } from "./provider";
 import { firstResponseSeconds, nextStatus, windowExpiresAt } from "./rules";
 import { ingestHistoryMessage, isPhoneHistory } from "./history";
+import { completedMetadata, isUnavailableNotice } from "./unavailable";
 import { pendingFallbackNote, recordAdClickSafely, type FallbackJob, type RecordedClick } from "@/lib/ads/attribution";
 import { looksLikeAdMessage } from "@/lib/ads/referral";
 
@@ -413,14 +414,48 @@ async function ingestMessage(
         })
         .onConflictDoNothing({ target: messages.providerMessageId })
         .returning({ id: messages.id });
-      if (inserted.length === 0) {
+      // Mismo wamid, pero el guardado era el aviso "no disponible" de Meta y
+      // este trae el mensaje real: se completa la fila (lib/messaging/unavailable.ts).
+      const completed =
+        inserted.length === 0 && event.direction === "in" && !isUnavailableNotice(event.metadata)
+          ? await completeUnavailableMessage(tx, orgId, event)
+          : null;
+      if (completed) {
+        if (event.attachments.length > 0) mediaMessageId = completed.id;
+        // Ahora sí: el agente y las palabras clave ven el mensaje real.
+        saved.value = { direction: "in", source: event.source, conversationId: completed.conversationId, messageId: completed.id };
+        outcome = COMPLETED_OUTCOME;
+        // Con ficha del anuncio se registra el clic (único por mensaje: si el
+        // respaldo ya lo atribuyó, no se duplica). Sin ficha, el aviso ya quedó
+        // como candidato al respaldo cuando se guardó.
+        if (event.referral) {
+          await attributeAd(tx, {
+            orgId,
+            contactId: upserted.contactId,
+            conversationId: completed.conversationId,
+            messageId: completed.id,
+            providerAccountId: event.providerAccountId,
+            providerConversationId: event.providerConversationId,
+            referral: event.referral,
+            body: event.body,
+            metadata: event.metadata,
+            sentAt: event.sentAt,
+            conversationChanged: false,
+            ad,
+          });
+        }
+      } else if (inserted.length === 0) {
         // Duplicado (reintento del proveedor, o eco de un envío ya enlazado):
         // no se inserta, pero la conversación SÍ se reconcilia abajo (último
         // mensaje, primera respuesta) por si quedó desactualizada.
         outcome = "mensaje duplicado (wamid ya guardado)";
       } else {
         if (event.attachments.length > 0) mediaMessageId = inserted[0].id;
-        saved.value = { direction: event.direction, source: event.source, conversationId: upserted.id, messageId: inserted[0].id };
+        // El aviso "no disponible" no despierta al agente ni a las palabras
+        // clave: no hay qué contestar hasta que llegue el mensaje real.
+        if (!(event.direction === "in" && isUnavailableNotice(event.metadata))) {
+          saved.value = { direction: event.direction, source: event.source, conversationId: upserted.id, messageId: inserted[0].id };
+        }
         outcome = event.direction === "in" ? "entrante guardado" : `saliente (${event.source}) guardado`;
         if (event.direction === "in") {
           await attributeAd(tx, {
@@ -457,6 +492,15 @@ async function ingestMessage(
       if (event.referral && !conversation.adReferral) updates.adReferral = event.referral;
       // Cada entrada por anuncio (también la de un cliente que vuelve por otro)
       // mueve la marca de la ventana gratis de 72 h.
+      if (ad.click) {
+        updates.adEntryAt =
+          conversation.adEntryAt && conversation.adEntryAt > event.sentAt ? conversation.adEntryAt : event.sentAt;
+      }
+    }
+    // Aviso completado: ya contó como no leído y abrió la ventana al guardarse;
+    // solo se suma el anuncio si el mensaje real lo trae.
+    if (outcome === COMPLETED_OUTCOME) {
+      if (event.referral && !conversation.adReferral) updates.adReferral = event.referral;
       if (ad.click) {
         updates.adEntryAt =
           conversation.adEntryAt && conversation.adEntryAt > event.sentAt ? conversation.adEntryAt : event.sentAt;
@@ -520,6 +564,50 @@ async function ingestMessage(
     console.error(`[ingest] gancho de anuncios falló para ${m?.conversationId}; el mensaje ya está guardado`, error);
   }
   return { outcome: result, organizationId: channel.organizationId };
+}
+
+const COMPLETED_OUTCOME = "entrante completado (antes no disponible)";
+
+/**
+ * Entrante guardado como aviso "no disponible" (mismo wamid) que ahora llega
+ * con su contenido real: se completa la MISMA fila (texto, tipo, adjuntos,
+ * anuncio) en lugar de descartar el mensaje real como duplicado. Devuelve la
+ * fila completada, o null si el wamid guardado no era un aviso (duplicado real).
+ */
+async function completeUnavailableMessage(
+  tx: Tx,
+  orgId: string,
+  event: NormalizedMessageEvent,
+): Promise<{ id: string; conversationId: string } | null> {
+  if (!event.providerMessageId) return null;
+  const [existing] = await tx
+    .select({
+      id: messages.id,
+      conversationId: messages.conversationId,
+      direction: messages.direction,
+      metadata: messages.metadata,
+      adReferral: messages.adReferral,
+    })
+    .from(messages)
+    .where(and(eq(messages.organizationId, orgId), eq(messages.providerMessageId, event.providerMessageId)))
+    .limit(1)
+    .for("update");
+  if (!existing || existing.direction !== "in" || !isUnavailableNotice(existing.metadata)) return null;
+  const first = event.attachments[0];
+  await tx
+    .update(messages)
+    .set({
+      type: event.type,
+      body: event.body,
+      attachments: event.attachments,
+      mediaUrl: first?.url ?? null,
+      mediaMimeType: first?.mimeType ?? null,
+      adReferral: existing.adReferral ?? event.referral ?? null,
+      metadata: completedMetadata(existing.metadata, event.metadata, new Date()),
+    })
+    .where(and(eq(messages.id, existing.id), eq(messages.organizationId, orgId)));
+  console.info(`[ingest] mensaje ${existing.id}: llegó primero como "no disponible" y se completó con el contenido real`);
+  return { id: existing.id, conversationId: existing.conversationId };
 }
 
 /**
