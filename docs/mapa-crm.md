@@ -136,8 +136,6 @@ Resumen del mes: cuánto se gasta en IA y cuántas conversaciones nuevas llegan,
 | 20 | **Pastilla de WhatsApp** (arriba a la derecha) | Estado del número según el monitoreo (cada 5 min): verde **"WhatsApp conectado"**, ámbar **"WhatsApp: revisar"**, rojo **"WhatsApp desconectado desde HH:MM"** (hora de Mazatlán) o gris **"Sin revisar desde HH:MM"** si la última revisión tiene más de 15 min. No consulta a Zernio al abrir la página. | Todos |
 | 21 | **Estado de WhatsApp** (recuadro al hacer clic en 20) | 4 líneas: **Número** (conectado o no), **Último mensaje de un cliente** (hace X min), **Worker** (activo o no) y **Webhook de Zernio** (activo y fallos). | Todos |
 
-![Pastilla y recuadro de WhatsApp](mapa-crm/01-dashboard-whatsapp.png)
-
 **Lo cambias tú desde la pantalla:** registrar y borrar recargas; el periodo de las conversaciones nuevas.
 
 **Si la pastilla (20) sale roja:** revisa Zernio y la app de WhatsApp Business del celular; el paso a paso está en
