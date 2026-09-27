@@ -404,12 +404,57 @@ export async function markConversationReadForOrg(
     } else {
       cutoff = await latestInboundMessageId(conversationId, tx);
     }
-    const unreadCount = await unreadAfterCutoff(tx, conversation, cutoff);
+    // Abrirla sin ningún entrante del cliente: lo que contaba eran avisos internos o
+    // un "no leído" puesto a mano, y al abrirla ya se vio todo.
+    const unreadCount =
+      !upToMessageId && cutoff === null ? 0 : await unreadAfterCutoff(tx, conversation, cutoff);
     if (unreadCount !== conversation.unreadCount) {
       await tx.update(conversations).set({ unreadCount }).where(eq(conversations.id, conversationId));
     }
     return true;
   });
+}
+
+/**
+ * Clic derecho → "Marcar como no leído" / "Marcar como leído" (Bandeja y Embudo).
+ * No leído = el círculo naranja con al menos 1 (si ya tenía no leídos, se quedan) y
+ * se apaga como siempre: al abrir el chat, al contestar o con "Marcar como leído".
+ * Leído = a cero, también los avisos internos: el vendedor lo pidió a propósito.
+ * Es del equipo, como Destacado (todos ven todo, §5); el trigger de `conversations`
+ * avisa al SSE. Idempotente.
+ */
+export async function setConversationUnreadForOrg(organizationId: string, conversationId: string, unread: boolean): Promise<boolean> {
+  const updated = await db
+    .update(conversations)
+    .set({ unreadCount: unread ? sql`greatest(${conversations.unreadCount}, 1)` : 0 })
+    .where(and(eq(conversations.id, conversationId), eq(conversations.organizationId, organizationId)))
+    .returning({ id: conversations.id });
+  return updated.length > 0;
+}
+
+/**
+ * Lo mismo desde la tarjeta del Embudo (un contacto, quizá con chat en varios
+ * canales): no leído va a su conversación más reciente —la que abre la tarjeta—;
+ * leído apaga todas (el círculo de la tarjeta es su suma). false = el contacto no
+ * tiene ningún chat.
+ */
+export async function setContactUnreadForOrg(organizationId: string, contactId: string, unread: boolean): Promise<boolean> {
+  const ofContact = and(eq(conversations.organizationId, organizationId), eq(conversations.contactId, contactId));
+  if (!unread) {
+    const updated = await db
+      .update(conversations)
+      .set({ unreadCount: 0 })
+      .where(ofContact)
+      .returning({ id: conversations.id });
+    return updated.length > 0;
+  }
+  const [latest] = await db
+    .select({ id: conversations.id })
+    .from(conversations)
+    .where(ofContact)
+    .orderBy(desc(conversationSortKey))
+    .limit(1);
+  return latest ? setConversationUnreadForOrg(organizationId, latest.id, true) : false;
 }
 
 export async function setConversationStarredForOrg(organizationId: string, conversationId: string, starred: boolean): Promise<boolean> {

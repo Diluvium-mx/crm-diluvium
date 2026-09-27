@@ -155,6 +155,10 @@ del contacto a la derecha. La lista y el Detalle se pueden ocultar para dar espa
 
 ![Bandeja](mapa-crm/02-bandeja.png)
 
+Clic derecho sobre una fila de la lista: menú de esa conversación (23).
+
+![Menú del clic derecho en la Bandeja](mapa-crm/02-bandeja-menu.png)
+
 | # | Nombre oficial | Qué hace | Quién lo ve |
 |---|---|---|---|
 | 1 | **Ocultar lista** | Esconde o muestra la lista de chats; se recuerda en esa computadora. | Todos |
@@ -179,9 +183,10 @@ del contacto a la derecha. La lista y el Detalle se pueden ocultar para dar espa
 | 20 | **Caja para escribir** | Ver [3.2.2 Caja para escribir](#322-caja-para-escribir-composer). | Todos |
 | 21 | **Detalle del contacto** | Ficha del cliente. Ver [3.2.3 Detalle del contacto](#323-detalle-del-contacto). | Todos |
 | 22 | **Ocultar panel de contacto** | Esconde o muestra el Detalle; se recuerda en esa computadora. | Todos |
+| 23 | **Menú del clic derecho** | Sobre una fila (en celular, dejándola presionada): **Marcar como no leído** (pone el círculo naranja, 6, para dejarla pendiente; si ese chat estaba abierto, se cierra) o **Marcar como leído** (lo quita). Es para todo el equipo; se quita solo al abrir el chat o al contestar. | Todos |
 
-**Lo cambias tú desde la pantalla:** temperatura, estrella, etapa y todo el Detalle; contestar, programar,
-mandar plantillas; pausar o activar al agente (en el Detalle).
+**Lo cambias tú desde la pantalla:** temperatura, estrella, leído / no leído (clic derecho), etapa y todo el
+Detalle; contestar, programar, mandar plantillas; pausar o activar al agente (en el Detalle).
 
 **Pídeselo a Code:**
 - "En Bandeja › (10) chip de etapa, muestra «Cerca de compra» en vez de «cerca_compra»."
@@ -192,7 +197,7 @@ mandar plantillas; pausar o activar al agente (en el Detalle).
 avisos 🤖 (17), avanza la etapa (10) y usa la transcripción (16) de las notas de voz. Cuando un vendedor contesta,
 se pausa en ese chat (según Opciones).
 
-<sub>Para Code: ruta `/dashboard`; `app/(app)/dashboard/_components/` (`inbox-board`, `conversation-list`, `chat-thread`, `temperature-picker`, `agent-activity-pill`, `scheduled-in-thread`); datos en `lib/inbox/`; tiempo real `/api/inbox/stream`.</sub>
+<sub>Para Code: ruta `/dashboard`; `app/(app)/dashboard/_components/` (`inbox-board`, `conversation-list`, `chat-thread`, `temperature-picker`, `agent-activity-pill`, `scheduled-in-thread`); menú del clic derecho `components/ui/context-menu.tsx`; datos en `lib/inbox/`; tiempo real `/api/inbox/stream`.</sub>
 
 #### 3.2.1 Chat: mensajes, avisos y tarjetas del agente
 
@@ -378,6 +383,10 @@ Abrirlo marca el chat como leído.
 
 ![Pop-up del contacto en el Embudo](mapa-crm/06-embudo-popup.png)
 
+Clic derecho sobre una tarjeta: menú de ese contacto (16).
+
+![Menú del clic derecho en el Embudo](mapa-crm/06-embudo-menu.png)
+
 | # | Nombre oficial | Qué hace | Quién lo ve |
 |---|---|---|---|
 | 1 | **Buscar por nombre o teléfono...** | Filtra las tarjetas de todas las columnas. | Todos |
@@ -395,8 +404,10 @@ Abrirlo marca el chat como leído.
 | 13 | **Ocultar detalle del contacto** | Esconde el Detalle en el pop-up; se recuerda en esa computadora. | Todos |
 | 14 | **✕ Cerrar** | Cierra el pop-up (también con Esc). | Todos |
 | 15 | **Fondo oscuro** | Clic afuera del pop-up también lo cierra. | Todos |
+| 16 | **Menú del clic derecho** | Sobre una tarjeta: **Marcar como no leído** (círculo naranja, 6, en su chat más reciente) o **Marcar como leído** (lo quita de todos sus chats). Lo mismo que en la Bandeja y se ve en las dos. No cambia el color de la tarjeta (azul = falta contestar). En celular no hay pulsación larga: ahí es arrastrar. | Todos |
 
-**Lo cambias tú desde la pantalla:** la etapa (arrastrando la tarjeta) y todo lo del chat y el Detalle en el pop-up.
+**Lo cambias tú desde la pantalla:** la etapa (arrastrando la tarjeta), leído / no leído (clic derecho) y todo lo
+del chat y el Detalle en el pop-up.
 
 **Pídeselo a Code:**
 - "En Embudo › (2) columna, agrega el total en pesos de las cotizaciones de esa etapa."

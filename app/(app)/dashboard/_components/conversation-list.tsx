@@ -1,13 +1,14 @@
 "use client";
 
 import { useVirtualizer } from "@tanstack/react-virtual";
-import { Star } from "lucide-react";
+import { Mail, MailOpen, Star } from "lucide-react";
 import { useEffect, useRef } from "react";
 import type { ConversationListItem, InboxFilter } from "@/lib/inbox/types";
 import { ContactAvatar } from "../../contactos/_components/contact-avatar";
 import type { Temperature } from "../../contactos/_data/types";
 import { TemperaturePicker } from "./temperature-picker";
 import { PruebaBadge } from "@/components/ui/prueba-badge";
+import { ContextMenu, ContextMenuContent, ContextMenuItem, ContextMenuTrigger } from "@/components/ui/context-menu";
 import {
   SEMAFORO_CLASS,
   SEMAFORO_LABEL,
@@ -41,6 +42,7 @@ function ConversationRow({
   onSelect,
   onToggleStar,
   onChangeTemperature,
+  onSetUnread,
 }: {
   item: ConversationListItem;
   selected: boolean;
@@ -48,58 +50,74 @@ function ConversationRow({
   onSelect: (id: string) => void;
   onToggleStar: (id: string, starred: boolean) => void;
   onChangeTemperature: (item: ConversationListItem, temperature: Temperature | null) => void;
+  onSetUnread: (item: ConversationListItem, unread: boolean) => void;
 }) {
   // La fila NO es un solo <button>: la estrella y la temperatura son botones
   // hermanos del área que abre la conversación (un botón dentro de otro es HTML
-  // inválido y rompía la hidratación).
+  // inválido y rompía la hidratación). Por eso la luz del cursor es de la FILA
+  // (data-glow) y no del área que abre el chat (data-no-glow): así ilumina de
+  // lado a lado, también detrás de la estrella y la temperatura.
+  // Clic derecho (o pulsación larga en táctil): menú de la conversación; la fila
+  // se queda resaltada mientras está abierto.
+  const unread = item.unreadCount > 0;
   return (
-    <div
-      className={`flex w-full items-start gap-2 border-b border-border/60 pr-2 transition-colors hover:bg-muted ${
-        selected ? "bg-muted" : ""
-      }`}
-    >
-      <button
-        type="button"
-        onClick={() => onSelect(item.id)}
-        aria-current={selected ? "true" : undefined}
-        className="flex min-w-0 flex-1 items-start gap-3 py-3 pl-3 text-left"
+    <ContextMenu>
+      <ContextMenuTrigger
+        data-glow
+        className={`flex w-full items-start gap-2 border-b border-border/60 pr-2 transition-colors hover:bg-muted data-popup-open:bg-muted ${
+          selected ? "bg-muted" : ""
+        }`}
       >
-        <ContactAvatar contact={item.contact} />
-        <div className="flex min-w-0 flex-1 flex-col gap-0.5">
-          <div className="flex items-center gap-2">
-            <span className="min-w-0 flex-1 truncate text-sm font-medium">{item.contact.name}</span>
-            {item.isTestChannel && <PruebaBadge />}
-            <span className="shrink-0 text-xs text-muted-foreground">
-              {item.lastMessage ? shortTime(item.lastMessage.at) : ""}
-            </span>
-          </div>
-          <div className="flex items-center gap-2">
-            <span className="min-w-0 flex-1 truncate text-xs text-muted-foreground">
-              {rowPreview(item.lastMessage)}
-            </span>
-            <SemaforoDot since={item.awaitingReplySince} nowMs={nowMs} />
-            {item.unreadCount > 0 && (
-              <span className="inline-flex h-5 min-w-5 shrink-0 items-center justify-center rounded-full bg-brand-orange px-1.5 text-[11px] font-semibold text-brand-white">
-                {item.unreadCount > 99 ? "99+" : item.unreadCount}
-              </span>
-            )}
-          </div>
-        </div>
-      </button>
-      <div className="flex shrink-0 flex-col items-center gap-0.5 pt-2.5">
         <button
           type="button"
-          onClick={() => onToggleStar(item.id, !item.isStarred)}
-          aria-label={item.isStarred ? "Quitar de destacados" : "Marcar como destacado"}
-          aria-pressed={item.isStarred}
-          title={item.isStarred ? "Quitar de destacados" : "Destacar"}
-          className="rounded p-1 text-muted-foreground transition-colors hover:text-brand-orange"
+          data-no-glow
+          onClick={() => onSelect(item.id)}
+          aria-current={selected ? "true" : undefined}
+          className="flex min-w-0 flex-1 items-start gap-3 py-3 pl-3 text-left"
         >
-          <Star className={`size-4 ${item.isStarred ? "fill-brand-orange text-brand-orange" : ""}`} aria-hidden="true" />
+          <ContactAvatar contact={item.contact} />
+          <div className="flex min-w-0 flex-1 flex-col gap-0.5">
+            <div className="flex items-center gap-2">
+              <span className="min-w-0 flex-1 truncate text-sm font-medium">{item.contact.name}</span>
+              {item.isTestChannel && <PruebaBadge />}
+              <span className="shrink-0 text-xs text-muted-foreground">
+                {item.lastMessage ? shortTime(item.lastMessage.at) : ""}
+              </span>
+            </div>
+            <div className="flex items-center gap-2">
+              <span className="min-w-0 flex-1 truncate text-xs text-muted-foreground">
+                {rowPreview(item.lastMessage)}
+              </span>
+              <SemaforoDot since={item.awaitingReplySince} nowMs={nowMs} />
+              {unread && (
+                <span className="inline-flex h-5 min-w-5 shrink-0 items-center justify-center rounded-full bg-brand-orange px-1.5 text-[11px] font-semibold text-brand-white">
+                  {item.unreadCount > 99 ? "99+" : item.unreadCount}
+                </span>
+              )}
+            </div>
+          </div>
         </button>
-        <TemperaturePicker value={item.temperature} onChange={(t) => onChangeTemperature(item, t)} />
-      </div>
-    </div>
+        <div className="flex shrink-0 flex-col items-center gap-0.5 pt-2.5">
+          <button
+            type="button"
+            onClick={() => onToggleStar(item.id, !item.isStarred)}
+            aria-label={item.isStarred ? "Quitar de destacados" : "Marcar como destacado"}
+            aria-pressed={item.isStarred}
+            title={item.isStarred ? "Quitar de destacados" : "Destacar"}
+            className="rounded p-1 text-muted-foreground transition-colors hover:text-brand-orange"
+          >
+            <Star className={`size-4 ${item.isStarred ? "fill-brand-orange text-brand-orange" : ""}`} aria-hidden="true" />
+          </button>
+          <TemperaturePicker value={item.temperature} onChange={(t) => onChangeTemperature(item, t)} />
+        </div>
+      </ContextMenuTrigger>
+      <ContextMenuContent>
+        <ContextMenuItem onClick={() => onSetUnread(item, !unread)}>
+          {unread ? <MailOpen aria-hidden="true" /> : <Mail aria-hidden="true" />}
+          {unread ? "Marcar como leído" : "Marcar como no leído"}
+        </ContextMenuItem>
+      </ContextMenuContent>
+    </ContextMenu>
   );
 }
 
@@ -118,6 +136,7 @@ export function ConversationList({
   onSearchChange,
   onToggleStar,
   onChangeTemperature,
+  onSetUnread,
 }: {
   items: ConversationListItem[];
   selectedId: string | null;
@@ -133,6 +152,7 @@ export function ConversationList({
   onSearchChange: (value: string) => void;
   onToggleStar: (id: string, starred: boolean) => void;
   onChangeTemperature: (item: ConversationListItem, temperature: Temperature | null) => void;
+  onSetUnread: (item: ConversationListItem, unread: boolean) => void;
 }) {
   // Lista virtualizada (misma técnica que el kanban de Contactos): solo se
   // montan las filas visibles aunque haya cientos cargadas. El contenedor
@@ -212,6 +232,7 @@ export function ConversationList({
                       onSelect={onSelect}
                       onToggleStar={onToggleStar}
                       onChangeTemperature={onChangeTemperature}
+                      onSetUnread={onSetUnread}
                     />
                   </div>
                 );
