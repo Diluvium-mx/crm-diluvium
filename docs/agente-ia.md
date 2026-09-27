@@ -93,9 +93,16 @@ Interesado) y **Sonnet cierra** (Cerca de compra y Compra: datos bancarios, comp
   workflow `datos_bancarios` (el CRM lo mueve a Cerca de compra)—, aunque se salte etapas (Inbox →
   Compra), esa **misma** respuesta la escribe el Modelo 2. Recibe en el contexto del CRM «el contacto
   pasa a Cerca de compra: contesta como corresponde a esa etapa». La etapa que decidió el Modelo 1
-  se aplica aunque el Modelo 2 no la pida; lo demás que pidió el Modelo 1 (media, Detalle) se
-  descarta y el Modelo 2 decide lo suyo. La llamada del Modelo 1 queda en `ai_usage` con resultado
-  `traspaso` (se cobra, no se envía). Si el Modelo 2 falla, sale la respuesta del Modelo 1.
+  se aplica aunque el Modelo 2 no la pida. **Las acciones del Modelo 1 tampoco se pierden**
+  (revisión completa, 27-sep-2026; `mergeHandoffToolCalls` en `lib/ai/runtime/tools.ts`): el
+  workflow que provocó el traspaso (datos bancarios), sus avisos al vendedor, su cotización (validada
+  contra el texto del Modelo 2) y su Detalle salen aunque el Modelo 2 no los repita; si los repite,
+  una sola vez. Antes se descartaban y el cliente leía «te paso los datos» sin recibirlos. La llamada
+  del Modelo 1 queda en `ai_usage` con resultado `traspaso` (se cobra, no se envía). Si el Modelo 2
+  falla, sale la respuesta del Modelo 1.
+- **Media tras una burbuja rechazada** (misma revisión): si la 1.ª burbuja sale y WhatsApp rechaza la
+  2.ª, la media que pidió el modelo (tabla, video) se encola igual; antes se perdía y solo quedaba el
+  aviso del texto omitido (`run.ts`, rama «salió una parte»).
 - **Respaldo** (`brainCandidates`): si el modelo de la etapa falla (error del proveedor o respuesta
   sin texto ni acciones) contesta el otro, sin esperar. La tarjeta «El agente no pudo responder» sale
   solo si **fallan los dos**, y dice qué le pasó a cada uno. Un modelo sin llave se salta (en los

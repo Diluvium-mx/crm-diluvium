@@ -194,3 +194,35 @@ export function validateToolCalls(calls: readonly ToolCallOutput[], tools: Agent
   }
   return { valid, ignored };
 }
+
+/**
+ * Traspaso Luna → Sonnet (revisión completa, 27-sep-2026): la respuesta la escribe el Modelo 2,
+ * pero las ACCIONES que ya decidió el Modelo 1 no se pierden. Sin esto, si Luna pidió
+ * `wf_datos_bancarios` (y por eso hubo traspaso) y Sonnet contestó "te paso los datos" sin volver
+ * a pedir la herramienta, los datos nunca salían y el contacto quedaba en Cerca de compra.
+ * Regla: mandan las llamadas del Modelo 2; de las del Modelo 1 se conservan los workflows que el
+ * Modelo 2 no repitió, los avisos con un motivo que no repitió, la cotización si el Modelo 2 no dio
+ * otra (prepareActions la valida contra el TEXTO del Modelo 2) y el Detalle (antes del del Modelo 2,
+ * que gana campo por campo). La etapa la pone quien llama (la del traspaso).
+ */
+export function mergeHandoffToolCalls(first: readonly ValidToolCall[], second: readonly ValidToolCall[]): ValidToolCall[] {
+  const out: ValidToolCall[] = [];
+  const detalleFirst = first.filter((c) => c.kind === "detalle");
+  const workflows = new Set(second.flatMap((c) => (c.kind === "workflow" ? [c.workflow.id] : [])));
+  const motivos = new Set(second.flatMap((c) => (c.kind === "aviso" ? [c.aviso.motivo] : [])));
+  const hasQuote = second.some((c) => c.kind === "cotizacion");
+  out.push(...detalleFirst);
+  for (const c of first) {
+    if (c.kind === "workflow" && !workflows.has(c.workflow.id)) {
+      workflows.add(c.workflow.id);
+      out.push(c);
+    } else if (c.kind === "aviso" && !motivos.has(c.aviso.motivo)) {
+      motivos.add(c.aviso.motivo);
+      out.push(c);
+    } else if (c.kind === "cotizacion" && !hasQuote) out.push(c);
+    // "etapa": la decide el traspaso (quien llama la agrega); "detalle": ya va arriba.
+  }
+  out.push(...second);
+  return out;
+}
+

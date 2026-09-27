@@ -36,7 +36,7 @@ export function fallbackTextFor(plan: ActionPlan): string {
   }
   return SOLO_ACCIONES_TEXT;
 }
-import { validateToolCalls, type ValidToolCall } from "./tools";
+import { mergeHandoffToolCalls, validateToolCalls, type ValidToolCall } from "./tools";
 import { applyDetalleByAgent, detalleContextFor, mergeDetalle } from "./detalle";
 import { transcriptionWaitMs } from "@/lib/ai/transcription/rules";
 import { applyCustomValues } from "@/lib/agente-ia/editor";
@@ -635,8 +635,11 @@ export async function runAgent(job: { organizationId: string; conversationId: st
         if (second.ok) {
           await recordAiUsage({ ...usageOf(used), outcome: "traspaso", error: `pasa a ${target}: contesta ${model2.id}` });
           console.info(`[agente] ${conv.id}: ${used.model.label} lleva al contacto a ${target}; la respuesta la escribe ${model2.label}`);
-          second.toolCalls.push({ kind: "etapa", etapa: target });
-          used = second;
+          // Las acciones que ya decidió el Modelo 1 (p. ej. el workflow que provocó el traspaso) no se
+          // pierden aunque el Modelo 2 no las repita (revisión completa, 27-sep-2026).
+          const toolCalls = mergeHandoffToolCalls(used.toolCalls, second.toolCalls);
+          toolCalls.push({ kind: "etapa", etapa: target });
+          used = { ...second, toolCalls, ignored: [...used.ignored, ...second.ignored] };
         } else {
           console.warn(`[agente] ${conv.id}: ${model2.label} falló en el traspaso (${second.info.kind}); sale la respuesta de ${used.model.label}`);
         }
@@ -811,6 +814,9 @@ export async function runAgent(job: { organizationId: string; conversationId: st
       if (planId) await closePlan(org, planId, "enviado");
       await recordAiUsage({ ...brainUsage, outcome: "sent", error: `mensaje ${sent + 1} no salió: ${errorText(error)}` });
       await noticeRemainder(`Salieron ${sent} de ${bubbles.length} mensajes de la respuesta del agente y el siguiente falló.`);
+      // La media que el modelo pidió (tabla, video) sale igual: el cliente ya recibió la primera parte y
+      // la esperaba; antes se perdía sin aviso (revisión completa, 27-sep-2026). Idempotente por entrante.
+      await runActions(plan, actionCtx, deps.startWorkflow, "despues");
       await pauseAfterHandover(conv, plan, options, deps.now());
       return { kind: "sent", bubbles: sent };
     }
