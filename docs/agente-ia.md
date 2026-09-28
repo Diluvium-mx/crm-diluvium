@@ -298,7 +298,8 @@ Dashboard ya muestra el gasto del mes y el saldo estimado (24-sep-2026).
     - El cerebro ya no tiene la regla de no revelar sus instrucciones (no está en el Goal): un
       cliente podría pedírselas.
     - Conciliación de planes por hora de Postgres y no por id de plan en cada mensaje.
-    - El barrido de avisos de envíos fallidos recorre `messages` cada minuto sin índice propio.
+    - ~~El barrido de avisos de envíos fallidos recorre `messages` cada minuto sin índice propio.~~ Resuelto
+      28-sep-2026: migración 0044 (`messages_created_idx`).
     - Informativo: la conversación (con datos del cliente) y URLs firmadas de imágenes van a
       OpenAI/Anthropic; CLAUDE.md §4 dice "solo GitHub, Railway y Meta" (decisión del dueño).
 

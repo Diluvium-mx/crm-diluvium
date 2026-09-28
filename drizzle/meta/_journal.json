@@ -302,6 +302,13 @@
       "when": 1790618165941,
       "tag": "0043_historial_detalle",
       "breakpoints": true
+    },
+    {
+      "idx": 44,
+      "version": "7",
+      "when": 1790623279597,
+      "tag": "0044_rendimiento_barridos",
+      "breakpoints": true
     }
   ]
 }
