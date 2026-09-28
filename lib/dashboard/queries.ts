@@ -23,7 +23,8 @@ import { DASHBOARD_TIME_ZONE, type DateRange } from "./range";
 
 type Database = typeof appDb;
 
-export const EXCLUDED_SOURCES = ["ghl_import", "seed", "historial_celular"] as const;
+// "manual" = alta a mano en el Embudo (28-sep-2026): no es alguien que escribió, no es conversación nueva.
+export const EXCLUDED_SOURCES = ["ghl_import", "seed", "historial_celular", "manual"] as const;
 
 export type DailyCount = { dia: string; total: number };
 export type Bucket = { clave: string; total: number };

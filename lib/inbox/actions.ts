@@ -19,6 +19,8 @@ import {
   setConversationUnreadForOrg,
 } from "./queries";
 import { retryTextMessage, SendRejectedError, sendTemplateMessage, sendTextMessage } from "@/lib/messaging/send";
+import { DuplicatePhoneError, startConversationWithTemplate } from "@/lib/messaging/start-conversation";
+import { submitNotice, type MetaNotice } from "@/lib/templates/meta-reasons";
 import { SendFailedError } from "@/lib/messaging/provider";
 import { enqueueOutboxSend } from "@/lib/queue/outbox";
 import { plainSendReason } from "@/lib/messaging/send-reasons";
@@ -157,6 +159,54 @@ export async function sendTemplate(
     await pauseAgentForManualSend(organizationId, conversationId);
     return { ok: true, messageId, pending: status === "pending" };
   } catch (error) {
+    const { code, message } = toSendError(error);
+    return { ok: false, code, message };
+  }
+}
+
+/** Primer mensaje a un contacto sin chat: cómo le fue (con el aviso grande si fue Meta). */
+export type StartChatResult =
+  | { ok: true; conversationId: string; pending: boolean }
+  | {
+      ok: false;
+      code: SendErrorCode;
+      message: string;
+      /** WhatsApp (Meta) lo rechazó: aviso grande (decisión del dueño, 28-sep-2026). */
+      notice?: MetaNotice;
+      /** duplicate_phone: el contacto más antiguo con ese número, para abrirlo. */
+      otherContactId?: string;
+    };
+
+// Primer mensaje a un contacto SIN chat (Embudo → pop-up del contacto): abre el
+// hilo en WhatsApp con una plantilla aprobada (lib/messaging/start-conversation.ts).
+export async function startChatWithTemplate(contactId: string, templateId: string, variableValues: string[]): Promise<StartChatResult> {
+  const { organizationId, userId } = await requireActiveMembership();
+  try {
+    const out = await startConversationWithTemplate(messagingProvider(), {
+      organizationId,
+      contactId,
+      templateId,
+      variableValues,
+      sentByUserId: userId,
+    });
+    // Mensaje del vendedor: pausa al Agente IA en ese chat, como cualquier envío manual.
+    await pauseAgentForManualSend(organizationId, out.conversationId);
+    return { ok: true, conversationId: out.conversationId, pending: out.status === "pending" };
+  } catch (error) {
+    if (error instanceof DuplicatePhoneError) {
+      return { ok: false, code: "duplicate_phone", message: error.message, otherContactId: error.otherContactId };
+    }
+    if (error instanceof SendFailedError && error.outcome === "rate_limited") {
+      return { ok: false, code: "provider_rejected", message: "WhatsApp está saturado en este momento: espera un minuto y vuelve a intentarlo." };
+    }
+    if (error instanceof SendFailedError && error.outcome === "rejected") {
+      return {
+        ok: false,
+        code: "provider_rejected",
+        message: `No salió: ${plainSendReason(error.code, error.message)}.`,
+        notice: submitNotice("enviar", error.message),
+      };
+    }
     const { code, message } = toSendError(error);
     return { ok: false, code, message };
   }

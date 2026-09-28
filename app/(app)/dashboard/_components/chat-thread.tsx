@@ -527,7 +527,10 @@ export function ChatThread({
       >
         {windowOpen
           ? `Ventana abierta · quedan ${hoursLeft} h`
-          : "Pasaron 24 h desde su último mensaje. Solo se puede enviar una plantilla."}
+          : detail.windowExpiresAt === null
+            ? // Chat abierto por nosotros (primer mensaje, 28-sep-2026): el cliente aún no escribe.
+              "El cliente todavía no escribe: mientras no conteste, solo se puede enviar una plantilla (o escríbele gratis desde WhatsApp Web)."
+            : "Pasaron 24 h desde su último mensaje. Solo se puede enviar una plantilla."}
         <AdFreeWindowNote adEntry={detail.adEntry} nowMs={nowMs} />
       </div>
       <AgentPausedBanner agent={agent} nowMs={nowMs} />

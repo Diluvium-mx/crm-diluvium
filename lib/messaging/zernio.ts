@@ -27,6 +27,9 @@ import {
   type SendMediaInput,
   type SendTemplateInput,
   type SendTextInput,
+  type StartConversationInput,
+  type StartConversationResult,
+  type TemplateReview,
   type UpdateTemplateInput,
   type UpdateTemplateResult,
   type WebhookEnvelope,
@@ -765,6 +768,19 @@ export class ZernioProvider implements MessagingProvider {
     return { status: asString(data.status) ?? "PENDING" };
   }
 
+  // GET /v1/whatsapp/templates/{name}?accountId=&language= (docs.zernio.com): lee en
+  // vivo de Meta el estado y `rejected_reason` (ABUSIVE_CONTENT, INVALID_FORMAT,
+  // PROMOTIONAL, TAG_CONTENT_MISMATCH, SCAM, NONE…) para el aviso de Plantillas.
+  async getTemplateReview({ providerAccountId, name, language }: DeleteTemplateInput): Promise<TemplateReview> {
+    const params = new URLSearchParams({ accountId: providerAccountId, language });
+    const json = await this.apiJson("GET", `/v1/whatsapp/templates/${encodeURIComponent(name)}?${params.toString()}`);
+    const template = asRecord(json.template ?? json.data);
+    const status = asString(template.status);
+    if (!status) throw new ZernioApiError(0, "Zernio no devolvió el estado de la plantilla");
+    const reason = asString(template.rejected_reason) ?? asString(template.rejectedReason) ?? null;
+    return { status, rejectedReason: reason && reason.toUpperCase() !== "NONE" ? reason : null };
+  }
+
   // DELETE /v1/whatsapp/templates/{name}?accountId=&language= (docs.zernio.com).
   // SIEMPRE con el idioma exacto: sin él, Meta borra todas las variantes del nombre.
   async deleteTemplate({ providerAccountId, name, language }: DeleteTemplateInput): Promise<void> {
@@ -780,9 +796,55 @@ export class ZernioProvider implements MessagingProvider {
     body: Record<string, unknown>,
     idempotencyKey: string,
   ): Promise<SendResult> {
+    const { data, status } = await this.postSend(
+      `/v1/inbox/conversations/${encodeURIComponent(providerConversationId)}/messages`,
+      body,
+      idempotencyKey,
+    );
+    return sendIds(data, status);
+  }
+
+  // Primer mensaje a un número que aún no tiene conversación (28-sep-2026):
+  // POST /v1/inbox/conversations con la plantilla (docs.zernio.com,
+  // create-inbox-conversation). participantId = teléfono en dígitos con lada de
+  // país. Si el número ya tenía hilo, Zernio manda la plantilla en ese hilo.
+  // Devuelve el id de la conversación de Zernio para enlazarla. Mismo contrato de
+  // fallo que sendText (rechazado / desconocido / saturado).
+  async startConversationWithTemplate({
+    providerAccountId,
+    phoneE164,
+    name,
+    language,
+    bodyParams,
+    idempotencyKey,
+  }: StartConversationInput): Promise<StartConversationResult> {
+    const body: Record<string, unknown> = {
+      accountId: providerAccountId,
+      participantId: phoneE164.replace(/\D/g, ""),
+      templateName: name,
+      templateLanguage: language,
+    };
+    if (bodyParams.length > 0) body.templateParams = bodyParams;
+    const { data, status } = await this.postSend("/v1/inbox/conversations", body, idempotencyKey);
+    const providerConversationId = asString(data.conversationId);
+    // 2xx sin conversación legible: salió, pero no se puede enlazar aún (lo enlaza el eco).
+    if (!providerConversationId) {
+      throw new ZernioSendError(status, "sin_conversation_id", "Zernio no devolvió conversationId", "unknown");
+    }
+    return { ...sendIds(data, status), providerConversationId };
+  }
+
+  // POST de un envío (texto, plantilla, media o conversación nueva) con
+  // Idempotency-Key y clasificación del fallo: rechazado (4xx: no salió),
+  // desconocido (timeout, 5xx: pudo salir) o saturado (429).
+  private async postSend(
+    path: string,
+    body: Record<string, unknown>,
+    idempotencyKey: string,
+  ): Promise<{ data: Record<string, unknown>; status: number }> {
     let res: Response;
     try {
-      res = await this.fetchImpl(this.apiUrl(`/v1/inbox/conversations/${encodeURIComponent(providerConversationId)}/messages`), {
+      res = await this.fetchImpl(this.apiUrl(path), {
         method: "POST",
         headers: {
           Authorization: `Bearer ${this.config.apiKey}`,
@@ -807,17 +869,7 @@ export class ZernioProvider implements MessagingProvider {
         res.status === 429 ? retryAfterMs(res.headers.get("retry-after"), asRecord(json?.details ?? err.details).retryAfterSeconds) : null,
       );
     }
-    const data = asRecord(json?.data ?? json);
-    const returned = asString(data.messageId) ?? asString(data.id);
-    // 2xx sin id legible: Zernio lo aceptó, pero no se puede enlazar aún.
-    if (!returned) throw new ZernioSendError(res.status, "sin_message_id", "Zernio no devolvió messageId", "unknown");
-    // Según el endpoint, Zernio devuelve su id interno o directamente el wamid
-    // de WhatsApp (visto en vivo: "wamid.HBg…").
-    const isWamid = returned.startsWith("wamid.");
-    return {
-      providerInternalId: isWamid ? (asString(data.id) ?? returned) : returned,
-      providerMessageId: asString(data.platformMessageId) ?? (isWamid ? returned : undefined),
-    };
+    return { data: asRecord(json?.data ?? json), status: res.status };
   }
 
   // GET/POST JSON a la API de Zernio (plantillas). Distinto de postToConversation:
@@ -855,6 +907,21 @@ export class ZernioProvider implements MessagingProvider {
     }
     return parsed as Record<string, unknown>;
   }
+}
+
+/**
+ * Ids de un envío aceptado. Según el endpoint, Zernio devuelve su id interno o
+ * directamente el wamid de WhatsApp (visto en vivo: "wamid.HBg…"). 2xx sin id
+ * legible = aceptado pero sin cómo enlazarlo aún (desconocido).
+ */
+function sendIds(data: Record<string, unknown>, status: number): SendResult {
+  const returned = asString(data.messageId) ?? asString(data.id);
+  if (!returned) throw new ZernioSendError(status, "sin_message_id", "Zernio no devolvió messageId", "unknown");
+  const isWamid = returned.startsWith("wamid.");
+  return {
+    providerInternalId: isWamid ? (asString(data.id) ?? returned) : returned,
+    providerMessageId: asString(data.platformMessageId) ?? (isWamid ? returned : undefined),
+  };
 }
 
 /** Componente BODY de una plantilla: su texto y los ejemplos de sus variables. */
