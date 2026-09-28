@@ -55,7 +55,8 @@ El chat es un solo componente reutilizado en las dos secciones.
 - **Anuncio de clic a WhatsApp:** tarjeta compacta "📣 Llegó por anuncio" con titular y miniatura.
   NUNCA el volcado crudo (ctwaClid, mediaUrl, …). Ver `docs/investigacion/anuncios-ctwa.md`.
 - **Composer:** Enter envía, Shift+Enter salto de línea. Abrir la conversación la marca como leída.
-  ⚡ **Mensajes rápidos** y "/" ("/ busca mensajes rápidos"): ver abajo.
+  ⚡ **Mensajes rápidos** y "/" ("/ busca mensajes rápidos"): ver abajo. **📎 Adjuntos** (arrastrar, 📎,
+  Cmd+V): ver "Adjuntos en el chat".
 
 ### Panel de contacto
 **Desde el Bloque B (22-sep-2026)** es el MISMO componente "Detalle del contacto" que el pop-up de
@@ -99,10 +100,53 @@ clic abre un menú para cambiarla sin abrir el chat. Lista y panel quedan sincro
 - **⚡** agrega el mensaje rápido al final del borrador; **"/"** lo busca mientras se escribe y lo pone
   en el lugar del "/" (↑↓ elige, Enter inserta, Esc cierra). Debajo del menú del "/" van los
   comandos de Automatización (/tabla, /banco…). Nada se manda solo: el vendedor revisa y envía.
+- **Un comando sale de inmediato (28-sep-2026):** el "/" del vendedor se salta los pasos "Esperar" del workflow
+  (el agente, las palabras clave y la etapa conservan sus esperas; "Probar" también sale de inmediato). Si Redis no
+  respondió al encolar, se reintenta al instante y, si no, el worker lo toma en ≤10 s (barrido rápido cada 5 s), no
+  en el barrido de cada minuto. Medido antes (7 días): /tabla tardaba 30 s por su "Esperar 30 s" + ~5 s de WhatsApp.
 - El buscador ignora acentos y mayúsculas y busca en nombre y texto (`lib/snippets/slash.ts`):
   "cuanta" encuentra "Cuánta agua entra". Solo `{{vendedor}}` se llena solo (con quien escribe).
 - Los 22 de Diluvium se cargan con `npm run mensajes-rapidos:cargar` (simula; escribe con
   `--confirmar`; por nombre, sin duplicar ni tocar otros). Lista: `lib/snippets/mensajes-rapidos-diluvium.ts`.
+
+### Adjuntos en el chat (28-sep-2026)
+El vendedor manda fotos, videos y documentos desde la Bandeja y el pop-up del Embudo (mismo `ChatThread`/`Composer`).
+- **Cómo entran:** arrastrándolos sobre el chat (una capa navy muy clara con borde punteado cubre historial y
+  caja, el historial se ve difuminado; "Seleccionar o arrastrar los archivos aquí" + tipos y límites), con **📎**
+  (a la izquierda de la caja) o pegando con **Cmd+V** una foto o captura. Con la ventana de 24 h cerrada o el canal
+  archivado no hay capa ni 📎 (queda el aviso de siempre) y soltar un archivo no lo abre en el navegador.
+- **Vista previa** arriba de la caja: miniatura (foto o primer cuadro del video) o ícono del tipo, nombre, peso,
+  barra de subida y ✕. Cada archivo **sube en cuanto entra**, mientras el vendedor escribe. La caja dice "Agrega un
+  mensaje (opcional)" con contador de 1,024. **Enviar** (naranja) se activa cuando todo terminó de subir.
+- **Enviar:** hasta **10** archivos, **uno por mensaje de WhatsApp en el orden de la vista previa**; el texto va como
+  **pie del primero** (sin texto, solo los archivos). Cuenta como envío del vendedor: pausa al agente según Opciones
+  del bot y cuenta para la primera respuesta. **Programar no lleva adjuntos** por ahora (🕒 se apaga).
+- **Tipos y límites** (los de WhatsApp; una sola fuente: `lib/chat-attachments/rules.ts`): fotos JPG/PNG hasta 5 MB,
+  video MP4 hasta 16 MB, PDF/Word/Excel/PowerPoint/TXT hasta 100 MB. HEIC, WebP o fotos de más de 5 MB se convierten
+  a **JPG de menos de 5 MB en el navegador** antes de subir (Safari decodifica HEIC solo; Chrome, Edge y Firefox con
+  la librería del proyecto `heic-to`, libheif en WebAssembly, que se descarga ~3 MB solo la primera vez que alguien
+  suelta un HEIC). **XML** (facturas) sale como documento de texto (`text/plain`) con su nombre `.xml`; la regla es
+  UNA línea (`XML_COMO_TEXTO`): en `false`, el XML pasa a "WhatsApp no acepta este archivo…" en todo el CRM. GIF,
+  ZIP, audio, .mov y lo demás: "WhatsApp no acepta este archivo desde el CRM (.zip). Mándalo desde el celular o
+  WhatsApp Web." Un video HEVC (H.265) se rechaza como en la Biblioteca.
+- **Subida** (`POST /api/inbox/adjuntos`, cuerpo crudo en streaming; `X-File-Name`, `X-Conversation-Id`): sesión
+  obligatoria, organización y usuario de la sesión, conversación de esa organización, límite por IP (200 en 10 min).
+  El servidor confirma el **tipo real por los primeros bytes** (`sniff.ts`: JPEG, PNG, MP4 sin HEIC/QuickTime, PDF,
+  Office OLE/OOXML, texto sin NUL, XML), cuenta los bytes (corta en el límite: no queda objeto) y guarda en la
+  carpeta propia del bucket `org/{org}/chat/{AAAA-MM-DD}/{id}-{nombre}` (NO en la Biblioteca). Responde un
+  **comprobante firmado** (HMAC con el secreto de la app: llave, organización, usuario, conversación, hora, tipo,
+  nombre y bytes). Sin tabla nueva (sin migración).
+- **Envío** (`sendAttachments` en `lib/inbox/attachment-actions.ts`): solo acepta comprobantes de ESA organización,
+  ESE usuario y ESA conversación, de hace **6 h o menos**, y revisa que el archivo siga en el bucket con su peso.
+  Deja una burbuja `queued` por archivo (id determinista por archivo: el mismo archivo no sale dos veces; marca
+  `metadata.adjuntoChat`) y encola el job `chat-uploads`; el **worker** (concurrencia 1) los manda uno por uno con el
+  outbox de siempre (`deliver`, sin cambios; su id es la Idempotency-Key) y una URL firmada de 15 min. En la burbuja
+  queda la ruta interna (`/api/media/{id}/0`). Un rechazo de WhatsApp/Zernio queda en SU burbuja (⚠ con motivo) y
+  los demás siguen. Si Redis no respondió al encolar, el barrido del worker (cada minuto) los recoge.
+- **Limpieza:** cada hora el worker borra del bucket lo subido y **nunca enviado** de más de 24 h (lo que usa alguna
+  burbuja, enviada o fallida, no se toca).
+- **Límite conocido:** si el vendedor escribe un texto mientras sus archivos aún salen, el texto puede llegar antes
+  que los últimos archivos (los archivos entre sí sí van en orden).
 
 ### Programados (A6)
 Van dentro del hilo, al final, como burbujas punteadas "🕒 Programado para …" con Editar/Cancelar
@@ -216,6 +260,7 @@ la sesión). Tipos exactos en `lib/inbox/types.ts`.
 | `getConversationByContact(contactId)` | Tarjeta del kanban → chat | lo mismo que `getConversation`, o `null` si ese contacto aún no tiene chat |
 | `listMessages(conversationId, { before?, limit? })` | Chat (paginado hacia atrás) | `id`, `direction`, `kind`, `body`, `attachments[{index,kind,fileName,mimeType,state:"ready"\|"processing"\|"failed",url}]`, `status`, `errorMessage?`, `sentAt`, `adReferral?` |
 | `sendMessage(conversationId, text)` | Composer | `{ ok:true, messageId, pending }` o `{ ok:false, code, message }`. `pending:true` = envío en fila de espera (429) o en curso sin confirmar: se muestra "enviando", **sin** botón de reintentar. Códigos: `empty\|window_closed\|not_found\|not_linked\|not_retryable\|channel_unavailable\|provider_rejected\|not_configured` |
+| `sendAttachments(conversationId, tokens[], caption)` | Composer con archivos | `{ ok:true, messageIds }` (burbujas en cola, en orden; el worker las manda) o `{ ok:false, message }`. `tokens` = comprobantes de `POST /api/inbox/adjuntos` (201: `{ token, fileName, kind, mime, bytes }`; 400: `{ error }`) |
 | `retryMessage(messageId)` | ⚠ Reintentar | igual que `sendMessage`. Solo tiene sentido cuando `message.canRetry` es `true` (rechazo definitivo del proveedor); un envío ambiguo NO se reintenta |
 | `markConversationRead(conversationId, upToMessageId?)` | Al abrir / al leer | `void`. `upToMessageId` = último mensaje a la vista (corte de lectura); sin él, marca hasta el último entrante. Lo posterior al corte sigue sin leer |
 | `setConversationStarred(conversationId, starred)` | Estrella | `void` |
