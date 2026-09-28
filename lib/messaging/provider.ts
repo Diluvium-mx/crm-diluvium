@@ -253,6 +253,27 @@ export type CreateTemplateInput = {
 
 export type CreateTemplateResult = { providerTemplateId: string | null; status: string };
 
+/**
+ * Editar una plantilla ya creada (28-sep-2026). Meta solo deja cambiar el TEXTO:
+ * nombre, idioma y categoría quedan fijos. Una aprobada se edita 1 vez cada 24 h
+ * y 10 cada 30 días, y vuelve a revisión (PENDING) hasta que Meta la apruebe.
+ */
+export type UpdateTemplateInput = {
+  providerAccountId: string;
+  name: string;
+  /** Idioma EXACTO de la variante (una misma plantilla puede existir en varios idiomas). */
+  language: string;
+  /** Texto nuevo del BODY con {{1}}, {{2}}, … */
+  bodyText: string;
+  /** Ejemplo para cada {{n}} del texto nuevo. */
+  bodyExample: string[];
+};
+
+export type UpdateTemplateResult = { status: string };
+
+/** Borrar UNA variante (nombre + idioma). El nombre no se puede volver a usar en 30 días (Meta). */
+export type DeleteTemplateInput = { providerAccountId: string; name: string; language: string };
+
 export interface MessagingProvider {
   readonly name: ProviderName;
   /** Valida la firma del webhook sobre el body CRUDO (antes de parsear). */
@@ -281,6 +302,13 @@ export interface MessagingProvider {
   listTemplates(providerAccountId: string): Promise<ProviderTemplate[]>;
   /** Da de alta una plantilla en Meta; queda PENDING hasta que la revisen. */
   createTemplate(input: CreateTemplateInput): Promise<CreateTemplateResult>;
+  /**
+   * Cambia el texto de una plantilla (vuelve a revisión de Meta). Opcional: el
+   * CRM avisa "no disponible" con un proveedor que no lo tenga.
+   */
+  updateTemplate?(input: UpdateTemplateInput): Promise<UpdateTemplateResult>;
+  /** Borra una variante (nombre + idioma) en Meta. Opcional, como updateTemplate. */
+  deleteTemplate?(input: DeleteTemplateInput): Promise<void>;
   /**
    * Descarga un adjunto recibido. El adaptador decide si la URL necesita sus
    * credenciales, y NUNCA las envía a un dominio que no sea el suyo.

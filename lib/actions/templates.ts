@@ -2,8 +2,14 @@
 
 // Server Actions de Plantillas (aprobadas por Meta). Resuelven la organización
 // activa desde la SESIÓN. Listar y sincronizar leen/escriben la tabla
-// `templates`; crear llama a Zernio (queda en revisión de Meta). El ENVÍO de
-// una plantilla vive en lib/inbox/actions.ts (sendTemplate), junto al composer.
+// `templates`; crear, editar y borrar llaman a Zernio (crear y editar quedan en
+// revisión de Meta). El ENVÍO de una plantilla vive en lib/inbox/actions.ts
+// (sendTemplate), junto al composer.
+//
+// Las que cambian algo DEVUELVEN { ok: false, message } en vez de lanzar
+// (28-sep-2026): en producción Next.js esconde el mensaje de un error lanzado
+// desde una Server Action, y el vendedor veía un aviso genérico en inglés en vez
+// de "Solo minúsculas…" o el rechazo de Meta.
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import { requireActiveMembership } from "@/lib/auth/active-organization";
@@ -11,24 +17,29 @@ import { roleAllows } from "@/lib/auth/permissions";
 import { messagingProvider, MessagingNotConfiguredError } from "@/lib/messaging";
 import {
   activeWhatsappChannel,
+  deleteTemplateForOrg,
   listTemplatesForOrg,
   syncTemplatesForOrg,
+  TemplateActionError,
   TemplatesChannelError,
   TemplatesSandboxError,
+  updateTemplateForOrg,
 } from "@/lib/messaging/templates";
 import { ZernioApiError } from "@/lib/messaging/zernio";
-import { templateMaxIndex } from "@/lib/messaging/template-format";
+import { TEMPLATE_NAME_MAX, TEMPLATE_NAME_RE, templateBodyProblem } from "@/lib/messaging/template-format";
 import { isForeignTemplateAccount } from "@/lib/messaging/template-sync";
 import type { TemplateView } from "@/lib/templates/types";
 import { db } from "@/lib/db";
 import { logChanges } from "@/lib/historial/log";
 import { templateStatusLabel } from "@/lib/historial/labels";
 
-// Gestionar plantillas (darlas de alta en Meta, sincronizarlas): todos los roles
-// desde el 26-sep-2026 (ACL en lib/auth/permissions.ts; un rol desconocido, no).
-function requireTemplateManage(role: string, action: "create" | "sync"): void {
+export type TemplateActionResult<T extends object = object> = ({ ok: true } & T) | { ok: false; message: string };
+
+// Gestionar plantillas (darlas de alta en Meta, editarlas, borrarlas, sincronizarlas):
+// todos los roles (ACL en lib/auth/permissions.ts; un rol desconocido, no).
+function requireTemplateManage(role: string, action: "create" | "update" | "delete" | "sync"): void {
   if (!roleAllows(role, "template", action)) {
-    throw new Error("No tienes permiso para gestionar plantillas; pídeselo a un administrador.");
+    throw new TemplateActionError("No tienes permiso para gestionar plantillas; pídeselo a un administrador.");
   }
 }
 
@@ -37,53 +48,50 @@ export async function listTemplates(): Promise<TemplateView[]> {
   return listTemplatesForOrg(organizationId);
 }
 
-export async function syncTemplates(): Promise<{ synced: number; removed: number }> {
-  const { organizationId, role, userId } = await requireActiveMembership();
-  requireTemplateManage(role, "sync");
+export async function syncTemplates(): Promise<TemplateActionResult<{ synced: number; removed: number }>> {
   try {
+    const { organizationId, role, userId } = await requireActiveMembership();
+    requireTemplateManage(role, "sync");
     const result = await syncTemplatesForOrg(organizationId, { userId });
     revalidatePath("/mensajes-rapidos");
-    return result;
+    return { ok: true, ...result };
   } catch (error) {
-    throw friendly(error);
+    return { ok: false, message: friendly(error, "No se pudo sincronizar.") };
   }
 }
+
+const bodyExampleSchema = z.array(z.string().max(1024)).max(50).default([]);
 
 const createTemplateSchema = z.object({
   name: z
     .string()
     .trim()
     .min(1, "El nombre es obligatorio.")
-    .max(512)
+    .max(TEMPLATE_NAME_MAX)
     // Meta exige nombres en minúsculas con guion bajo (sin espacios ni acentos).
-    .regex(/^[a-z0-9_]+$/, "Solo minúsculas, números y guion bajo (p. ej. confirmacion_pedido)."),
-  language: z.string().trim().min(2, "Indica el idioma (p. ej. es_MX).").max(15),
-  category: z.enum(["UTILITY", "MARKETING", "AUTHENTICATION"]),
-  bodyText: z.string().trim().min(1, "El cuerpo es obligatorio.").max(1024),
+    // El formulario ya lo convierte solo (templateNameFromLabel).
+    .regex(TEMPLATE_NAME_RE, "El nombre va en minúsculas, sin acentos ni espacios (p. ej. hola_buenas_tardes)."),
+  language: z.string().trim().regex(/^[a-z]{2}(_[A-Z]{2})?$/, "Idioma no válido (p. ej. es_MX)."),
+  // AUTENTICACIÓN (códigos) tiene una forma propia que este formulario no arma: no se ofrece.
+  category: z.enum(["UTILITY", "MARKETING"]),
+  bodyText: z.string().trim().min(1, "Escribe el texto de la plantilla."),
   // Un ejemplo por cada {{n}} del cuerpo (Meta lo exige para revisar).
-  bodyExample: z.array(z.string().trim().min(1)).default([]),
+  bodyExample: bodyExampleSchema,
 });
 
-export type CreateTemplateActionInput = z.infer<typeof createTemplateSchema>;
+export type CreateTemplateActionInput = z.input<typeof createTemplateSchema>;
 
 export async function createTemplate(
   input: CreateTemplateActionInput,
-): Promise<{ status: string; synced: number }> {
-  const { organizationId, role, userId } = await requireActiveMembership();
-  requireTemplateManage(role, "create");
-  const parsed = createTemplateSchema.parse(input);
-
-  // El ejemplo debe cubrir exactamente los {{1..N}} del cuerpo.
-  const expected = templateMaxIndex(parsed.bodyText);
-  if (parsed.bodyExample.length !== expected) {
-    throw new Error(
-      expected === 0
-        ? "El cuerpo no tiene variables: no mandes ejemplos."
-        : `El cuerpo tiene ${expected} variable(s): da un ejemplo para cada una.`,
-    );
-  }
-
+): Promise<TemplateActionResult<{ status: string; synced: number }>> {
   try {
+    const { organizationId, role, userId } = await requireActiveMembership();
+    requireTemplateManage(role, "create");
+    const parsed = createTemplateSchema.parse(input);
+    const bodyExample = parsed.bodyExample.map((e) => e.trim());
+    const problem = templateBodyProblem(parsed.bodyText, bodyExample);
+    if (problem) return { ok: false, message: problem };
+
     const channel = await activeWhatsappChannel(organizationId, messagingProvider().name);
     if (!channel) throw new TemplatesChannelError();
     // En el sandbox compartido de Zernio NO se da de alta nada: sería una plantilla
@@ -95,7 +103,7 @@ export async function createTemplate(
       language: parsed.language,
       category: parsed.category,
       bodyText: parsed.bodyText,
-      bodyExample: parsed.bodyExample,
+      bodyExample,
     });
     // Historial (Bloque E): el alta vive en Meta (no hay transacción nuestra que compartir),
     // así que su fila se escribe en cuanto Meta la acepta. Si esa fila fallara, el alta ya
@@ -119,20 +127,61 @@ export async function createTemplate(
       // se ignora: el alta fue exitosa; el listado se pondrá al día al sincronizar
     }
     revalidatePath("/mensajes-rapidos");
-    return { status: result.status, synced };
+    return { ok: true, status: result.status, synced };
   } catch (error) {
-    throw friendly(error);
+    return { ok: false, message: friendly(error, "No se pudo crear la plantilla.") };
   }
 }
 
-// Traduce errores del proveedor a un mensaje que el vendedor entienda.
-function friendly(error: unknown): Error {
-  if (error instanceof TemplatesChannelError || error instanceof TemplatesSandboxError) return new Error(error.message);
-  if (error instanceof MessagingNotConfiguredError) {
-    return new Error("El canal de WhatsApp no está configurado.");
+const updateTemplateSchema = z.object({
+  id: z.string().trim().min(1),
+  bodyText: z.string().trim().min(1, "Escribe el texto de la plantilla."),
+  bodyExample: bodyExampleSchema,
+});
+
+export async function updateTemplate(
+  input: z.input<typeof updateTemplateSchema>,
+): Promise<TemplateActionResult<{ status: string }>> {
+  try {
+    const { organizationId, role, userId } = await requireActiveMembership();
+    requireTemplateManage(role, "update");
+    const parsed = updateTemplateSchema.parse(input);
+    const result = await updateTemplateForOrg(organizationId, parsed.id, parsed, { userId });
+    revalidatePath("/mensajes-rapidos");
+    return { ok: true, status: result.status };
+  } catch (error) {
+    return { ok: false, message: friendly(error, "No se pudo editar la plantilla.") };
   }
+}
+
+export async function deleteTemplate(input: { id: string }): Promise<TemplateActionResult> {
+  try {
+    const { organizationId, role, userId } = await requireActiveMembership();
+    requireTemplateManage(role, "delete");
+    const id = z.string().trim().min(1).parse(input.id);
+    await deleteTemplateForOrg(organizationId, id, { userId });
+    revalidatePath("/mensajes-rapidos");
+    return { ok: true };
+  } catch (error) {
+    return { ok: false, message: friendly(error, "No se pudo borrar la plantilla.") };
+  }
+}
+
+// Traduce errores a un mensaje que el vendedor entienda. Lo inesperado se deja en
+// el log del servidor (con su detalle) y en pantalla sale el aviso genérico.
+function friendly(error: unknown, fallback: string): string {
+  if (error instanceof z.ZodError) return error.issues[0]?.message ?? fallback;
+  if (error instanceof TemplateActionError || error instanceof TemplatesChannelError || error instanceof TemplatesSandboxError) {
+    return error.message;
+  }
+  if (error instanceof MessagingNotConfiguredError) return "El canal de WhatsApp no está configurado.";
+  // httpStatus 0 = sin respuesta o respuesta ilegible (no es un rechazo de Meta).
   if (error instanceof ZernioApiError) {
-    return new Error(`WhatsApp rechazó la operación: ${error.message}`);
+    return error.httpStatus === 0
+      ? `No se pudo completar con WhatsApp (Zernio): ${error.message}. Inténtalo de nuevo.`
+      : `WhatsApp (Meta) lo rechazó: ${error.message}`;
   }
-  return error instanceof Error ? error : new Error(String(error));
+  if (error instanceof Error && error.message === "No autenticado.") return "Tu sesión se cerró; vuelve a entrar.";
+  console.error(`[plantillas] ${fallback}`, error);
+  return `${fallback} Inténtalo de nuevo.`;
 }

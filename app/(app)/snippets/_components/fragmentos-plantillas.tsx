@@ -4,8 +4,8 @@
 // - Fragmentos ⚡ (naranja de acción): texto libre editable, para DENTRO de la
 //   ventana de 24 h; se crean/editan/borran aquí, con variables {{nombre}}.
 // - Plantillas 📄 (azul estructural): aprobadas por Meta, para FUERA de la
-//   ventana; solo se listan y envían (el alta/edición vive en Meta o el alta por
-//   API queda en revisión). Ver docs/investigacion/plantillas-zernio.md.
+//   ventana; se sincronizan, crean, editan (solo el texto) y borran aquí; crear y
+//   editar quedan en revisión de Meta. Ver docs/investigacion/plantillas-zernio.md.
 import { useState } from "react";
 import type { SnippetView } from "@/lib/snippets/types";
 import type { TemplateView } from "@/lib/templates/types";
