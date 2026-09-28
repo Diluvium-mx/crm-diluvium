@@ -47,10 +47,13 @@ export async function getContactCountsByStage(): Promise<Record<string, number>>
   return countContactsByStage(organizationId);
 }
 
-async function run(fallback: string, fn: (organizationId: string) => Promise<{ stages: FunnelStage[]; moved?: number }>): Promise<StagesActionResult> {
+async function run(
+  fallback: string,
+  fn: (organizationId: string, userId: string) => Promise<{ stages: FunnelStage[]; moved?: number }>,
+): Promise<StagesActionResult> {
   try {
-    const { organizationId } = await requireEdit();
-    const out = await fn(organizationId);
+    const { organizationId, userId } = await requireEdit();
+    const out = await fn(organizationId, userId);
     // Toda pantalla que muestra etapas se pone al día por el SSE (stages.updated);
     // esto cubre la siguiente navegación por el servidor.
     for (const path of ["/embudo", "/agente-ia", "/inicio", "/anuncios", "/automatizacion", "/dashboard"]) revalidatePath(path);
@@ -71,43 +74,43 @@ async function run(fallback: string, fn: (organizationId: string) => Promise<{ s
 // Sin color desde el 27-sep-2026 (decisión del dueño): la columna `color` de la base se
 // queda con su valor de fábrica y ninguna pantalla la usa.
 export async function createStage(input: { name: string; afterId?: string | null; botRule?: string; modelSlot?: 1 | 2 }): Promise<StagesActionResult> {
-  return run("No se pudo agregar la etapa.", async (organizationId) => {
+  return run("No se pudo agregar la etapa.", async (organizationId, userId) => {
     const data = z
       .object({ name: nameSchema, afterId: idSchema.nullable().optional(), botRule: ruleSchema.optional(), modelSlot: slotSchema.optional() })
       .parse(input);
-    await createFunnelStage(organizationId, data);
+    await createFunnelStage(organizationId, data, userId);
     return { stages: await listFunnelStages(organizationId) };
   });
 }
 
 export async function updateStage(input: { id: string; name?: string; botRule?: string; modelSlot?: 1 | 2 }): Promise<StagesActionResult> {
-  return run("No se pudo guardar la etapa.", async (organizationId) => {
+  return run("No se pudo guardar la etapa.", async (organizationId, userId) => {
     const data = z
       .object({ id: idSchema, name: nameSchema.optional(), botRule: ruleSchema.optional(), modelSlot: slotSchema.optional() })
       .parse(input);
     const { id, ...patch } = data;
-    await updateFunnelStage(organizationId, id, patch);
+    await updateFunnelStage(organizationId, id, patch, userId);
     return { stages: await listFunnelStages(organizationId) };
   });
 }
 
 export async function reorderStages(input: { orderedIds: string[] }): Promise<StagesActionResult> {
-  return run("No se pudo reordenar.", async (organizationId) => {
+  return run("No se pudo reordenar.", async (organizationId, userId) => {
     const { orderedIds } = z.object({ orderedIds: z.array(idSchema).min(1).max(20) }).parse(input);
-    return { stages: await reorderFunnelStages(organizationId, orderedIds) };
+    return { stages: await reorderFunnelStages(organizationId, orderedIds, userId) };
   });
 }
 
 export async function setStageRole(input: { id: string; role: "entrada" | "cerca_compra" | "venta_cerrada" }): Promise<StagesActionResult> {
-  return run("No se pudo cambiar el papel.", async (organizationId) => {
+  return run("No se pudo cambiar el papel.", async (organizationId, userId) => {
     const { id, role } = z.object({ id: idSchema, role: z.enum(STAGE_ROLES) }).parse(input);
-    return { stages: await setFunnelStageRole(organizationId, id, role) };
+    return { stages: await setFunnelStageRole(organizationId, id, role, userId) };
   });
 }
 
 export async function deleteStage(input: { id: string; moveToId: string }): Promise<StagesActionResult> {
-  return run("No se pudo borrar la etapa.", async (organizationId) => {
+  return run("No se pudo borrar la etapa.", async (organizationId, userId) => {
     const { id, moveToId } = z.object({ id: idSchema, moveToId: idSchema }).parse(input);
-    return deleteFunnelStage(organizationId, id, moveToId);
+    return deleteFunnelStage(organizationId, id, moveToId, userId);
   });
 }

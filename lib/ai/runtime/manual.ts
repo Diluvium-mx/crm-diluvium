@@ -5,41 +5,59 @@
 import { desc, and, eq, isNull, ne } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { aiAgentNotices, channels, conversations } from "@/lib/db/schema";
+import { agentStateLabel } from "@/lib/historial/labels";
+import { chatSubject, logChanges } from "@/lib/historial/log";
 import { loadNotices } from "./notices";
 
 // Vuelve a activar el agente. El corte (agent_state_changed_at = ahora) hace
 // que lo que un vendedor respondió ANTES ya no lo vuelva a pausar. No responde
-// solo: espera al siguiente mensaje del cliente. Devuelve si cambió algo.
+// solo: espera al siguiente mensaje del cliente. Devuelve si cambió algo. Deja en el
+// historial de cambios quién lo activó (Bloque A), en la misma transacción.
 export async function reactivateAgentInConversation(
   organizationId: string,
   conversationId: string,
   now: Date,
+  userId: string | null = null,
 ): Promise<boolean> {
-  const rows = await db
-    .update(conversations)
-    .set({ agentState: "activo", agentPausedUntil: null, agentStateChangedAt: now })
-    .where(
-      and(
-        eq(conversations.id, conversationId),
-        eq(conversations.organizationId, organizationId),
-        ne(conversations.agentState, "activo"),
-      ),
-    )
-    .returning({ id: conversations.id });
-  // Opciones del bot: "Activar" atiende el aviso 🤖 "Llegó al máximo de respuestas" (la
-  // tarjeta del Embudo deja de estar amarilla; ya lo revisó una persona).
-  await db
-    .update(aiAgentNotices)
-    .set({ resolvedAt: now, resolution: "activar" })
-    .where(
-      and(
-        eq(aiAgentNotices.organizationId, organizationId),
-        eq(aiAgentNotices.conversationId, conversationId),
-        eq(aiAgentNotices.kind, "tope_respuestas"),
-        isNull(aiAgentNotices.resolvedAt),
-      ),
-    );
-  return rows.length > 0;
+  return db.transaction(async (tx) => {
+    const own = and(eq(conversations.id, conversationId), eq(conversations.organizationId, organizationId));
+    const [before] = await tx
+      .select({ state: conversations.agentState, until: conversations.agentPausedUntil })
+      .from(conversations)
+      .where(own)
+      .for("update");
+    const rows = await tx
+      .update(conversations)
+      .set({ agentState: "activo", agentPausedUntil: null, agentStateChangedAt: now })
+      .where(and(own, ne(conversations.agentState, "activo")))
+      .returning({ id: conversations.id });
+    if (before && rows.length > 0) {
+      await logChanges(tx, {
+        organizationId,
+        userId,
+        kind: "pausas",
+        action: "activar",
+        subject: chatSubject(organizationId, conversationId),
+        subjectId: conversationId,
+        oldValue: agentStateLabel(before.state, before.until),
+        newValue: agentStateLabel("activo", null),
+      });
+    }
+    // Opciones del bot: "Activar" atiende el aviso 🤖 "Llegó al máximo de respuestas" (la
+    // tarjeta del Embudo deja de estar amarilla; ya lo revisó una persona).
+    await tx
+      .update(aiAgentNotices)
+      .set({ resolvedAt: now, resolution: "activar" })
+      .where(
+        and(
+          eq(aiAgentNotices.organizationId, organizationId),
+          eq(aiAgentNotices.conversationId, conversationId),
+          eq(aiAgentNotices.kind, "tope_respuestas"),
+          isNull(aiAgentNotices.resolvedAt),
+        ),
+      );
+    return rows.length > 0;
+  });
 }
 
 // ── Lecturas para la UI (siempre por organización) ──────────────────────────

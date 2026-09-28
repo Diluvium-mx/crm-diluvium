@@ -12,9 +12,14 @@
 // corte es ESA hora (la que vio el vendedor), no la del barrido: un mensaje escrito
 // después siempre se puede rescatar, y uno escrito antes que llegó tarde (webhook
 // retrasado) no se contesta (se compara con la hora de WhatsApp del mensaje).
+//
+// Historial de cambios (Bloque A, 28-sep-2026): «Pausar agente» (con quién) y la pausa
+// automática "un vendedor contestó" dejan su fila en la MISMA transacción que la pausa.
 import { and, eq, isNotNull, lte, or, sql } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { conversations } from "@/lib/db/schema";
+import { agentStateLabel } from "@/lib/historial/labels";
+import { chatSubject, logChanges } from "@/lib/historial/log";
 import { bullAgentQueuePort, cancelAgentRun, withQueueTimeout, type AgentQueuePort } from "./queue";
 
 const ownConversation = (organizationId: string, conversationId: string) =>
@@ -34,15 +39,31 @@ export function isPauseDue(c: { agentState: string; agentPausedUntil: Date | nul
 // que llegó justo antes no debe contestarse cuando el bot vuelva. Devuelve false si
 // la conversación no es de la organización.
 export async function pauseAgentManually(
-  input: { organizationId: string; conversationId: string; until: Date | null; now: Date },
+  input: { organizationId: string; conversationId: string; until: Date | null; now: Date; userId?: string | null },
   ports: { queue?: AgentQueuePort } = {},
 ): Promise<boolean> {
-  const rows = await db
-    .update(conversations)
-    .set({ agentState: "pausado_humano", agentPausedUntil: input.until, agentStateChangedAt: input.now })
-    .where(ownConversation(input.organizationId, input.conversationId))
-    .returning({ id: conversations.id });
-  if (rows.length === 0) return false;
+  const own = ownConversation(input.organizationId, input.conversationId);
+  const done = await db.transaction(async (tx) => {
+    const [before] = await tx
+      .select({ state: conversations.agentState, until: conversations.agentPausedUntil })
+      .from(conversations)
+      .where(own)
+      .for("update");
+    if (!before) return false;
+    await tx.update(conversations).set({ agentState: "pausado_humano", agentPausedUntil: input.until, agentStateChangedAt: input.now }).where(own);
+    await logChanges(tx, {
+      organizationId: input.organizationId,
+      userId: input.userId ?? null,
+      kind: "pausas",
+      action: "pausar",
+      subject: chatSubject(input.organizationId, input.conversationId),
+      subjectId: input.conversationId,
+      oldValue: agentStateLabel(before.state, before.until),
+      newValue: agentStateLabel("pausado_humano", input.until),
+    });
+    return true;
+  });
+  if (!done) return false;
   // La pausa ya quedó guardada: cancelar el job es solo optimización (la corrida
   // revisa el estado antes de responder y antes de cada burbuja).
   await withQueueTimeout(cancelAgentRun(ports.queue ?? bullAgentQueuePort(), input.conversationId), "cancelar").catch(
@@ -63,18 +84,46 @@ export async function reactivateDuePause(organizationId: string, conversationId:
   return rows.length > 0;
 }
 
+/**
+ * Fila del historial que deja una pausa de pauseForHumanReply: `pausa_auto` = "un vendedor
+ * contestó" (sin autor); `pausar` = la eligió una persona (p. ej. «Apagar» en la tarjeta de
+ * error). Sin `log` no deja fila (tope de respuestas, pausa al pedir un asesor).
+ */
+export type PauseLog = { action: "pausa_auto" } | { action: "pausar"; userId: string | null };
+
 // Un vendedor contestó (CRM, celular, programado o comando): apaga el bot SOLO si
 // estaba encendido (o su hora de regreso ya se cumplió). `until` = hora de regreso
 // (Opciones del bot: "Reactivar solo después de N h", o la pausa al pedir un asesor);
 // null = hasta "Activar" (fábrica). Un solo UPDATE condicional: si otro vendedor acaba
 // de elegir "Apagar bot 8 h", su hora no se pisa. Devuelve si cambió algo.
-export async function pauseForHumanReply(organizationId: string, conversationId: string, now: Date, until: Date | null = null): Promise<boolean> {
-  const rows = await db
-    .update(conversations)
-    .set({ agentState: "pausado_humano", agentPausedUntil: until, agentStateChangedAt: now })
-    .where(and(ownConversation(organizationId, conversationId), or(eq(conversations.agentState, "activo"), pauseDue(now))))
-    .returning({ id: conversations.id });
-  return rows.length > 0;
+export async function pauseForHumanReply(
+  organizationId: string,
+  conversationId: string,
+  now: Date,
+  until: Date | null = null,
+  log?: PauseLog,
+): Promise<boolean> {
+  return db.transaction(async (tx) => {
+    const rows = await tx
+      .update(conversations)
+      .set({ agentState: "pausado_humano", agentPausedUntil: until, agentStateChangedAt: now })
+      .where(and(ownConversation(organizationId, conversationId), or(eq(conversations.agentState, "activo"), pauseDue(now))))
+      .returning({ id: conversations.id });
+    if (rows.length === 0) return false;
+    if (log) {
+      await logChanges(tx, {
+        organizationId,
+        userId: log.action === "pausar" ? log.userId : null,
+        kind: "pausas",
+        action: log.action,
+        subject: chatSubject(organizationId, conversationId),
+        subjectId: conversationId,
+        oldValue: agentStateLabel("activo", null),
+        newValue: agentStateLabel("pausado_humano", until),
+      });
+    }
+    return true;
+  });
 }
 
 // Barrido del worker (cada minuto): mantenimiento de sistema sobre todas las

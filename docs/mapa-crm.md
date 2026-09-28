@@ -32,7 +32,7 @@ Contenido: [1. Inicio](#1-inicio) · [2. Menú y barra de arriba](#2-menú-y-bar
 |---|---|---|---|
 | **Owner** | El dueño de la cuenta | Todo | Todo, incluida la pestaña **Configuración**. Es el único que puede dar el rol Owner; ningún Admin lo puede modificar. |
 | **Admin** | Encargado del equipo | Todo | Todo lo del vendedor + **Configuración** (dar de alta vendedores, cambiar roles, restablecer contraseñas, desactivar). No puede tocar al Owner. |
-| **Vendedor** | Quien atiende a los clientes | Todo **menos Configuración** | Todo lo demás: Dashboard (incluido registrar recargas), Bandeja, Embudo, Mensajes rápidos (crear, editar y borrar mensajes rápidos y plantillas), Anuncios, Agente IA (Goal, FAQs, modelos, opciones, tallas y canales) y Automatización. También edita o borra comentarios de otros. |
+| **Vendedor** | Quien atiende a los clientes | Todo **menos Configuración** | Todo lo demás: Dashboard (incluido registrar recargas), Bandeja, Embudo, Mensajes rápidos (crear, editar y borrar mensajes rápidos y plantillas), Anuncios, Agente IA (Goal, FAQs, modelos, opciones, tallas y canales; el **Historial** solo se consulta, igual para los tres roles) y Automatización. También edita o borra comentarios de otros. |
 
 Nadie es "dueño" de un contacto: **todos ven todos los contactos, siempre**.
 
@@ -55,12 +55,13 @@ Nadie es "dueño" de un contacto: **todos ven todos los contactos, siempre**.
 | **Aviso 🤖** | Nota del agente **para el vendedor** dentro del chat; el cliente nunca la ve. Ej.: "El cliente pide hablar con una persona", "Depósito recibido", "Comprobante dudoso", "Llegó al máximo de respuestas". |
 | **Tarjeta "El agente no pudo responder"** | Aparece en el chat cuando falló el modelo o el envío. Tiene **Reintentar** y **Apagar**; mientras nadie elija, el agente no vuelve a intentar solo. |
 | **Marca "IA"** | Etiqueta junto a un dato del Detalle del contacto que **escribió el agente al último**. Si un vendedor lo edita, la marca se va. Mientras el agente lo llena se ve "IA actualizando". |
-| **Pausar agente / Activar** | Detiene al agente **solo en ese chat** (8, 12 o 24 horas, hasta una fecha y hora o indefinidamente). **Activar** lo regresa. También se pausa solo cuando un vendedor contesta (se ajusta en Opciones). |
-| **Canal Encendido / Apagado** | Interruptor general del agente por número de WhatsApp (Agente IA › Canales). Apagado = no contesta a nadie en ese número. |
+| **Pausar agente / Activar** | Detiene al agente **solo en ese chat** (8, 12 o 24 horas, hasta una fecha y hora o indefinidamente). **Activar** lo regresa. También se pausa solo cuando un vendedor contesta (se ajusta en Opciones). Cada pausa y cada Activar quedan en **Agente IA › Historial** con quién lo hizo. |
+| **Canal Encendido / Apagado** | Interruptor general del agente por número de WhatsApp (Agente IA › Canales, que solo muestra los números **no archivados**: hoy WhatsApp Diluvium). Apagado = no contesta a nadie en ese número. |
+| **Historial de cambios** | Subpestaña de Agente IA: **quién** cambió **qué**, **antes → después** y **cuándo** (hora de Mazatlán): opciones, Goal y FAQs, modelos, etapas, canales, workflows y pausas del agente por chat. Lo ven todos; no se edita. |
 | **Goal** | Las instrucciones de Ángela: cómo habla, qué ofrece, cuándo pasa a un asesor. Es lo único que sigue, junto con las FAQs. |
 | **FAQs** | Preguntas frecuentes con su respuesta que el agente usa para contestar. |
 | **Modelo 1 / Modelo 2** | Los dos "cerebros" del agente. Cada etapa usa uno (hoy: Modelo 1 en Inbox, Prospecto e Interesado; Modelo 2 en Cerca de compra y Compra). |
-| **Número de prueba / PRUEBA** | Número de WhatsApp para probar. Sus chats llevan la etiqueta **PRUEBA** y **no cuentan en el Dashboard**. |
+| **Número de prueba / PRUEBA** | Número de WhatsApp para probar. Sus chats llevan la etiqueta **PRUEBA** y **no cuentan en el Dashboard**. Desde el 28-sep-2026 está **archivado** (igual que el Sandbox): ya no aparece en Agente IA › Canales, pero no se borró nada. |
 | **Importado del celular** | Mensaje viejo copiado del teléfono al conectar un número. El agente no lo contesta y no cuenta como nuevo. |
 | **Programado** | Mensaje que sale solo a la hora elegida (hora de Mazatlán). |
 | **Transcripción** | Texto de una nota de voz del cliente, escrito por el CRM; el agente lo lee para contestar. |
@@ -339,7 +340,7 @@ Ningún dato es definitivo: el agente corrige lo que el cliente aclare después.
 | 23 | **Ocultar panel** | Esconde el Detalle. | Todos |
 | 24 | **Pausar el agente en este chat** | 8 horas · 12 horas · 24 horas · Hasta una fecha y hora… · Pausar indefinidamente. | Todos |
 | 25 | **🤖 Pausado · vuelve hoy 22:30** | Estado cuando está en pausa (o "Pausado indefinidamente"). | Todos |
-| 26 | **Activar** | Regresa al agente a ese chat. Contesta a partir del siguiente mensaje del cliente. | Todos |
+| 26 | **Activar** | Regresa al agente a ese chat. Contesta a partir del siguiente mensaje del cliente. Queda en Agente IA › Historial con quién lo hizo (igual que Pausar agente). | Todos |
 
 **Lo cambias tú desde la pantalla:** todos los campos menos el % de convencimiento; comentarios; pausar y activar al agente.
 
@@ -418,7 +419,8 @@ Clic derecho sobre una tarjeta: menú de ese contacto (16).
 | 16 | **Menú del clic derecho** | Sobre una tarjeta: **Marcar como no leído** (círculo naranja, 6, en su chat más reciente) o **Marcar como leído** (lo quita de todos sus chats). Lo mismo que en la Bandeja y se ve en las dos. No cambia el color de la tarjeta (azul = falta contestar). En celular no hay pulsación larga: ahí es arrastrar. | Todos |
 
 **Lo cambias tú desde la pantalla:** la etapa (arrastrando la tarjeta), leído / no leído (clic derecho), las
-columnas (lápiz, 17) y todo lo del chat y el Detalle en el pop-up.
+columnas (lápiz, 17) y todo lo del chat y el Detalle en el pop-up. Los cambios a las columnas (crear, renombrar, borrar,
+ordenar, papel, modelo) quedan en **Agente IA › Historial**.
 
 **Pídeselo a Code:**
 - "En Embudo › (2) columna, agrega el total en pesos de las cotizaciones de esa etapa."
@@ -532,13 +534,13 @@ corto que se ve en el Detalle del contacto (Llegó por anuncio).
 ### 3.6 Agente IA
 
 Todo lo que define a Ángela. Arriba, su nombre y una **barra de subpestañas (52)** que se queda fija al deslizar:
-**Modelos · Etapas · Instrucciones (Goal) · FAQs · Opciones · Tallas y medidas · Canales**; cada una muestra solo su parte
-(desde el 27-sep-2026; antes eran dos pestañas, Crear e Implementar). **Todo cambio de esta pestaña pide confirmar en
+**Modelos · Etapas · Instrucciones (Goal) · FAQs · Opciones · Tallas y medidas · Canales · Historial**; cada una muestra solo
+su parte (desde el 27-sep-2026; antes eran dos pestañas, Crear e Implementar; Historial desde el 28-sep-2026). **Todo cambio de esta pestaña pide confirmar en
 una ventana arriba (59)**; nada se guarda con un solo clic.
 
 > **Capturas pendientes:** las cinco de abajo son anteriores al 27-sep-2026 (todavía muestran «Crear · Implementar»,
-> todo en una sola página, sin nombres de versión ni «Guardar cambios» en Opciones). Los números 1–51 siguen valiendo;
-> 52–61 aún no aparecen en ninguna captura.
+> todo en una sola página, sin nombres de versión ni «Guardar cambios» en Opciones; la de Canales aún muestra el número de
+> prueba). Los números 1–51 siguen valiendo; 52–76 aún no aparecen en ninguna captura.
 
 ![Agente IA: nombre y modelos](mapa-crm/09-agente-modelos.png)
 ![Agente IA: Goal y FAQs](mapa-crm/09-agente-goal-faqs.png)
@@ -586,7 +588,7 @@ una ventana arriba (59)**; nada se guarda con un solo clic.
 | 36 | **Longitud de respuesta** | Corta · Balanceada · Detallada. | Todos |
 | 37 | **Máximo de mensajes por respuesta** | 1 o 2 burbujas por respuesta. | Todos |
 | 38 | **Máximo de respuestas del bot por conversación** | Sin tope o Máximo; al llegar se pausa y deja aviso (tarjeta amarilla). | Todos |
-| 39 | **Último cambio** | Quién cambió qué y cuándo. | Todos |
+| 39 | **Último cambio** | Quién cambió qué y cuándo (solo el último; todos están en **Historial**, 72). | Todos |
 | 40 | **Tallas y medidas** | Qué tamaño de compuerta corresponde a cada ancho. | Todos |
 | 41 | **Línea mini** | Rangos de la mini compuerta. | Todos |
 | 42 | **Línea estándar** | Rangos de la compuerta estándar (incluye "A la medida"). | Todos |
@@ -595,11 +597,11 @@ una ventana arriba (59)**; nada se guarda con un solo clic.
 | 45 | **+ Agregar tamaño** | Nueva fila. | Todos |
 | 46 | **Guardar rangos** | Guarda las tallas (con confirmación); el Detalle del contacto usa estos rangos para sugerir tamaño. | Todos |
 | 47 | ~~Implementar~~ | Ya no existe (27-sep-2026): ahora es la subpestaña **Canales** (52). | — |
-| 48 | **Canales** | Números de WhatsApp conectados. | Todos |
+| 48 | **Canales** | Números de WhatsApp conectados, solo los **no archivados** (hoy solo WhatsApp Diluvium). | Todos |
 | 49 | **Canal** | Nombre y número (p. ej. WhatsApp Diluvium). | Todos |
 | 50 | **Apagado · Encendido** | Interruptor general del agente en ese número. Encender y apagar piden confirmación. | Todos |
-| 51 | **Número de prueba** | Canal de prueba, con su propio interruptor. | Todos |
-| 52 | **Subpestañas** | Modelos · Instrucciones (Goal) · FAQs · Opciones · Tallas y medidas · Canales. Fija arriba al deslizar; en celular se desliza de lado. La elegida queda en la dirección (`?seccion=opciones`), así un enlace abre directo esa parte. | Todos |
+| 51 | ~~Número de prueba~~ | Ya no aparece (28-sep-2026): el Número de prueba y el Sandbox están archivados y se ocultan de esta lista **sin borrarse** (sus chats siguen en la Bandeja). | — |
+| 52 | **Subpestañas** | Modelos · Etapas · Instrucciones (Goal) · FAQs · Opciones · Tallas y medidas · Canales · Historial. Fija arriba al deslizar; en celular se desliza de lado. La elegida queda en la dirección (`?seccion=opciones`), así un enlace abre directo esa parte. | Todos |
 | 53 | **Punto naranja** (en una subpestaña) | Esa parte tiene cambios sin guardar (Goal, Opciones o Tallas). Cambiar de subpestaña no los pierde; salir de la página pregunta antes. | Todos |
 | 54 | **✎ Nombre de la versión** | Lápiz en cada versión (Goal y FAQs, también la actual): ponerle o cambiarle nombre, p. ej. «Antes de la promo». Máx. 80 letras; vacío = sin nombre. Pide confirmación. | Todos |
 | 55 | **Nombre de la versión** (en la lista) | En negritas antes de la fecha: **Nombre** · 26 sep 2026, 10:15 p.m. · 3,226 palabras · Admin (actual). | Todos |
@@ -619,19 +621,24 @@ una ventana arriba (59)**; nada se guarda con un solo clic.
 | 69 | **Guardar · Deshacer** (por fila) | Aparecen al cambiar nombre o regla; Guardar pide confirmar. | Todos |
 | 70 | **🗑 Borrar** | Pop-up que pregunta a qué columna pasan sus contactos (con cuántos tiene cada una) y los mueve todos de una vez. Gris si la columna tiene papel o si quedan 3. | Todos |
 | 71 | **Nueva columna · Después de · Agregar** | Agrega una columna entre dos (o al final), con el Modelo 2 y sin regla. Pide confirmar. | Todos |
+| 72 | **Historial** (subpestaña) | Una fila por cambio, lo más nuevo arriba (hasta 200; con fechas ves más atrás): opciones del bot, Goal y FAQs, Modelo 1 y 2, etapas (crear, renombrar, borrar, reordenar, papel, modelo), canal encendido/apagado, workflows (crear, editar, encender, apagar, borrar) y, por chat, **Pausar agente** / **Activar** con quién lo hizo. Solo se consulta. | Todos |
+| 73 | **Tipo** | Filtra: Todos · Opciones del bot · Goal y FAQs · Modelos · Etapas · Canales · Workflows · Pausas por chat. | Todos |
+| 74 | **Desde · Hasta** | Días (hora de Mazatlán), los dos incluidos. Vacío = sin límite. | Todos |
+| 75 | **Mostrar pausas automáticas («un vendedor contestó»)** | Agrega las pausas que el agente se puso solo porque un vendedor contestó (quién = «Automático»). Apagado de fábrica. | Todos |
+| 76 | **Fila del historial** | Quién · fecha y hora · qué pasó · etiqueta del tipo · **antes → después** (p. ej. «GPT-5.6 Luna → GPT-5.6 Terra», «Activo → Pausado hasta «Activar»»). | Todos |
 
 **Lo cambias tú desde la pantalla:** todo lo de esta sección: nombre, modelos, etapas (columnas del Embudo), Goal (con versiones), FAQs,
-Opciones, Tallas y medidas, y encender o apagar el agente por número.
+Opciones, Tallas y medidas, y encender o apagar el agente por número. El **Historial** (72) solo se consulta: se llena solo con cada cambio.
 
 **Pídeselo a Code:**
-- "En Agente IA › (49) canal, cambia el texto «se reactiva con «Reactivar»» por «Activar», como el botón nuevo."
+- "En Agente IA › Historial › (75), muestra las pausas automáticas de fábrica."
 - "En Agente IA › (29) tiempo de espera, permite hasta 120 segundos."
 - "En Agente IA › (12) APIs de IA, agrega el saldo estimado de cada proveedor."
 
 **Agente IA aquí:** esta es su configuración. El Goal y las FAQs mandan sobre lo que dice; las Opciones, sobre
 cuándo y cuánto contesta.
 
-<sub>Para Code: ruta `/agente-ia?seccion=modelos|etapas|goal|faqs|opciones|tallas|canales` (`lib/agente-ia/sections.ts`); editor de etapas `app/(app)/_components/stages-editor.tsx` (tabla `funnel_stages`, acciones `lib/actions/funnel-stages.ts`); `app/(app)/agente-ia/_components/` (`agente-editor`, `use-confirm` (confirmación de todo cambio), `brain-model-picker`, `api-status-panel`, `goal-editor`, `versions-list`, `faq-editor`, `bot-options`, `size-ranges-section`, `channel-switches`); `lib/ai/catalog.ts`, `lib/agente-ia/opciones.ts`, `lib/agente-ia/opciones-draft.ts` (borrador de Opciones); nombre de versiones en `ai_knowledge_versions.name` (migración 0040); detalle en `docs/agente-ia.md`.</sub>
+<sub>Para Code: ruta `/agente-ia?seccion=modelos|etapas|goal|faqs|opciones|tallas|canales|historial` (`lib/agente-ia/sections.ts`); Historial: `app/(app)/agente-ia/_components/history-panel.tsx`, `lib/historial/` (`labels`, `log` = escritura en la misma transacción, `queries` = une `change_history` (0042) + `ai_config_changes` + `ai_knowledge_versions`), acción `lib/actions/historial.ts`; Canales filtra `channels.archived_at is null` (`lib/actions/agente-ia-editor.ts`); editor de etapas `app/(app)/_components/stages-editor.tsx` (tabla `funnel_stages`, acciones `lib/actions/funnel-stages.ts`); `app/(app)/agente-ia/_components/` (`agente-editor`, `use-confirm` (confirmación de todo cambio), `brain-model-picker`, `api-status-panel`, `goal-editor`, `versions-list`, `faq-editor`, `bot-options`, `size-ranges-section`, `channel-switches`); `lib/ai/catalog.ts`, `lib/agente-ia/opciones.ts`, `lib/agente-ia/opciones-draft.ts` (borrador de Opciones); nombre de versiones en `ai_knowledge_versions.name` (migración 0040); detalle en `docs/agente-ia.md`.</sub>
 
 ---
 
@@ -693,7 +700,8 @@ Los **workflows** (envíos de material), la **Biblioteca** de archivos y las **C
 | 45 | **Falló · código** | Error al mandar. | Todos |
 
 **Lo cambias tú desde la pantalla:** crear, editar, prender, apagar, ordenar y probar workflows; restaurar los
-predeterminados; subir, renombrar y borrar archivos.
+predeterminados; subir, renombrar y borrar archivos. Crear, editar, prender, apagar y borrar (y restaurar predeterminados)
+quedan en **Agente IA › Historial** con quién lo hizo.
 
 **Pídeselo a Code:**
 - "En Automatización › (31) pasos, agrega un paso «Mover etapa»."
@@ -784,7 +792,7 @@ Code sabe exactamente qué pieza tocar; no hace falta explicar nada más.
 ### 5 ejemplos reales
 
 1. "Bandeja › (10) chip de etapa › que diga «Cerca de compra» y no «cerca_compra»."
-2. "Agente IA › Canales › (49) canal › cambiar «se reactiva con «Reactivar»» por «Activar»."
+2. "Agente IA › Historial › (73) tipo › agregar «Tallas y medidas»."
 3. "Embudo › (2) columna de etapa › mostrar el total en pesos cotizado de esa columna."
 4. "Bandeja › Detalle del contacto › (24) menú de pausa › agregar «Pausar 2 horas»."
 5. "Dashboard › (3) tarjeta del proveedor › avisarme en naranja cuando el saldo baje de US$5."

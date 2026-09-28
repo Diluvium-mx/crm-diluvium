@@ -50,8 +50,8 @@ export async function getContactAgentStatus(contactId: string): Promise<ContactA
 
 export async function reactivateAgent(input: { conversationId: string }): Promise<AgentActionResult> {
   try {
-    const { organizationId } = await requireActiveMembership();
-    await reactivateAgentInConversation(organizationId, idSchema.parse(input.conversationId), new Date());
+    const { organizationId, userId } = await requireActiveMembership();
+    await reactivateAgentInConversation(organizationId, idSchema.parse(input.conversationId), new Date(), userId);
     revalidatePath("/dashboard");
     return { ok: true };
   } catch (error) {
@@ -74,12 +74,12 @@ export async function pauseAgent(input: {
   atLocal?: string | null;
 }): Promise<AgentActionResult> {
   try {
-    const { organizationId } = await requireActiveMembership();
+    const { organizationId, userId } = await requireActiveMembership();
     const parsed = pauseSchema.parse(input);
     const now = new Date();
     const until = pauseUntil(parsed.option, now, parsed.atLocal);
     if (!until.ok) return until;
-    const done = await pauseAgentManually({ organizationId, conversationId: parsed.conversationId, until: until.until, now });
+    const done = await pauseAgentManually({ organizationId, conversationId: parsed.conversationId, until: until.until, now, userId });
     if (!done) return { ok: false, message: "No se encontró la conversación." };
     revalidatePath("/dashboard");
     return { ok: true };

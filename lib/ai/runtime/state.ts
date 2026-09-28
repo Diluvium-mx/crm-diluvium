@@ -4,7 +4,7 @@
 import { and, eq, sql } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { aiAgentDrafts, conversations } from "@/lib/db/schema";
-import { pauseForHumanReply } from "./pause";
+import { pauseForHumanReply, type PauseLog } from "./pause";
 import type { AgentState } from "./policy";
 
 // Multi-tenant (CLAUDE.md §7): toda escritura filtra por organization_id además
@@ -22,10 +22,11 @@ export async function setAgentState(
   organizationId: string,
   conversationId: string,
   state: AgentState,
-  opts: { now: Date; pausedUntil?: Date | null },
+  // `log`: fila del historial de cambios de la pausa (solo pausado_humano; ver pause.ts).
+  opts: { now: Date; pausedUntil?: Date | null; log?: PauseLog },
 ): Promise<void> {
   if (state === "pausado_humano") {
-    await pauseForHumanReply(organizationId, conversationId, opts.now, opts.pausedUntil ?? null);
+    await pauseForHumanReply(organizationId, conversationId, opts.now, opts.pausedUntil ?? null, opts.log);
     return;
   }
   await db

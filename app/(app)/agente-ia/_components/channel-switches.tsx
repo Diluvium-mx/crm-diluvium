@@ -1,6 +1,7 @@
 "use client";
 
-// Subpestaña "Canales" de la pestaña Agente IA: los canales con su interruptor
+// Subpestaña "Canales" de la pestaña Agente IA: los canales NO archivados (28-sep-2026: el
+// sandbox y el número de prueba se ocultan, no se borran) con su interruptor
 // Apagado / Encendido. Encender Y apagar piden confirmación arriba antes de guardar
 // (regla del dueño, 27-sep-2026; use-confirm.tsx). Sin lógica de datos: solo llama a
 // setChannelAgentMode.
@@ -12,7 +13,7 @@ import { useConfirm } from "./use-confirm";
 
 const MODE_HINT: Record<AgentModeValue, string> = {
   off: "El agente no hace nada en este canal.",
-  auto: "Responde todo a los clientes. Se pausa en una conversación solo cuando un vendedor contesta (se reactiva con «Reactivar»).",
+  auto: "Responde todo a los clientes. Se pausa en una conversación solo cuando un vendedor contesta (se reactiva con «Activar»).",
 };
 
 function errorMessage(error: unknown, fallback: string): string {

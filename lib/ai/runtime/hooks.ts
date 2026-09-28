@@ -100,7 +100,7 @@ export async function onHumanOutbound(
     const decision = humanPauseUntil(await loadBotOptions(input.organizationId, now), now);
     if (!decision.pause) return;
     // Solo si el bot estaba encendido o su hora de regreso ya se cumplió; condicional en la BD.
-    await pauseForHumanReply(input.organizationId, input.conversationId, now, decision.until);
+    await pauseForHumanReply(input.organizationId, input.conversationId, now, decision.until, { action: "pausa_auto" });
     // La pausa ya quedó guardada: cancelar el job es solo optimización (acotada).
     await withQueueTimeout(cancelAgentRun(ports.queue ?? bullAgentQueuePort(), input.conversationId), "cancelar").catch(
       (error) => console.error(`[agente] no se pudo cancelar el job de ${input.conversationId}: ${String(error)}`),

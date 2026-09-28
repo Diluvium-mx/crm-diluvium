@@ -7,7 +7,8 @@
 import { and, asc, desc, eq, max, sql } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { aiConfig, aiKnowledge, aiKnowledgeVersions, user } from "@/lib/db/schema";
-import { DEFAULT_BRAIN_MODEL, DEFAULT_FILTER_MODEL, DEFAULT_MODEL_1 } from "@/lib/ai/catalog";
+import { DEFAULT_BRAIN_MODEL, DEFAULT_FILTER_MODEL, DEFAULT_MODEL_1, getModel } from "@/lib/ai/catalog";
+import { logChanges } from "@/lib/historial/log";
 import { listFunnelStages } from "@/lib/contacts/funnel-stages";
 import { countWords } from "./editor";
 
@@ -61,17 +62,39 @@ export async function saveProfile(organizationId: string, input: { agentName?: s
     .where(eq(aiConfig.organizationId, organizationId));
 }
 
-// Modelo 2 (Fase E) = el cerebro de siempre (modelo_cerebro).
-export async function saveBrainModel(organizationId: string, modelId: string): Promise<void> {
-  await ensureConfig(db, organizationId);
-  await db.update(aiConfig).set({ modeloCerebro: modelId, updatedAt: new Date() }).where(eq(aiConfig.organizationId, organizationId));
+// Modelo 2 (Fase E) = el cerebro de siempre (modelo_cerebro). Queda en el historial de
+// cambios (Bloque A) en la misma transacción, con el nombre de los modelos.
+export async function saveBrainModel(organizationId: string, modelId: string, userId: string | null = null): Promise<void> {
+  await saveModelSlot(organizationId, 2, modelId, userId);
 }
 
 // Modelo 1 (Fase E). Qué etapa atiende cada modelo se edita en las columnas del
 // Embudo (funnel_stages.model_slot, lib/contacts/funnel-stages.ts).
-export async function saveModel1(organizationId: string, modelId: string): Promise<void> {
-  await ensureConfig(db, organizationId);
-  await db.update(aiConfig).set({ modelo1: modelId, updatedAt: new Date() }).where(eq(aiConfig.organizationId, organizationId));
+export async function saveModel1(organizationId: string, modelId: string, userId: string | null = null): Promise<void> {
+  await saveModelSlot(organizationId, 1, modelId, userId);
+}
+
+const modelLabel = (id: string) => getModel(id)?.label ?? id;
+
+async function saveModelSlot(organizationId: string, slot: 1 | 2, modelId: string, userId: string | null): Promise<void> {
+  const column = slot === 1 ? aiConfig.modelo1 : aiConfig.modeloCerebro;
+  await db.transaction(async (tx) => {
+    await ensureConfig(tx, organizationId);
+    const [cfg] = await tx.select({ current: column }).from(aiConfig).where(eq(aiConfig.organizationId, organizationId)).for("update");
+    if (cfg?.current === modelId) return;
+    await tx
+      .update(aiConfig)
+      .set(slot === 1 ? { modelo1: modelId, updatedAt: new Date() } : { modeloCerebro: modelId, updatedAt: new Date() })
+      .where(eq(aiConfig.organizationId, organizationId));
+    await logChanges(tx, {
+      organizationId,
+      userId,
+      kind: "modelos",
+      action: slot === 1 ? "modelo_1" : "modelo_2",
+      oldValue: cfg ? modelLabel(cfg.current) : null,
+      newValue: modelLabel(modelId),
+    });
+  });
 }
 
 // ── Versiones ────────────────────────────────────────────────────────────────
