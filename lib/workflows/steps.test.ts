@@ -42,6 +42,17 @@ describe("comandos y palabras clave", () => {
     expect(parseCommand("/banco ahora")).toBeNull();
     expect(parseCommand("hola /banco")).toBeNull();
   });
+  it("comando con ñ (/tamaños): se acepta, en minúsculas y igual si la ñ llega descompuesta; acentos no", () => {
+    const decomposed = "/taman\u0303os"; // "n" + tilde combinada (texto pegado)
+    expect(commandSchema.parse(" /Tamaños ")).toBe("/tamaños");
+    expect(commandSchema.parse("/ÑANDU")).toBe("/ñandu");
+    expect(commandSchema.parse(decomposed)).toBe("/tamaños");
+    expect(() => commandSchema.parse("/tamaño-estándar")).toThrow(/la ñ sí/);
+    expect(() => commandSchema.parse("/-tamaños")).toThrow();
+    expect(parseCommand("/TAMAÑOS")).toBe("/tamaños");
+    expect(parseCommand(decomposed)).toBe("/tamaños");
+    expect(parseCommand("/tamaños por favor")).toBeNull();
+  });
   it("palabras clave: sin duplicados, coincidencia 'contiene' como GHL, sin mayúsculas ni acentos", () => {
     expect(keywordsSchema.parse(["Tabla", "tabla", "tamaños"])).toEqual(["tabla", "tamaños"]);
     expect(matchesKeyword("Me pasas la TABLA de tamanos?", ["tabla"])).toBe("tabla");

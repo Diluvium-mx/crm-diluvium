@@ -44,11 +44,19 @@ export function sendsToCustomer(step: StepPayload): boolean {
 }
 
 // Comando del vendedor: "/algo" en minúsculas, sin espacios; null = sin comando.
+// Letras sin acento y la ñ (28-sep-2026, pedido del dueño: "/tamaños"), números
+// y guiones. Única definición: el editor, el composer y el hilo pasan por aquí.
+const COMMAND_RE = /^\/[a-z0-9ñ][a-z0-9ñ-]{0,29}$/;
+
+// NFC: una "ñ" pegada como "n" + tilde combinada cuenta igual que la del teclado.
+function normalizeCommand(text: string): string {
+  return text.normalize("NFC").trim().toLowerCase();
+}
+
 export const commandSchema = z
   .string()
-  .trim()
-  .toLowerCase()
-  .regex(/^\/[a-z0-9][a-z0-9-]{0,29}$/, "Un comando es /palabra (letras, números y guiones).")
+  .transform(normalizeCommand)
+  .pipe(z.string().regex(COMMAND_RE, "Un comando es /palabra: letras sin acento (la ñ sí), números y guiones."))
   .nullable();
 
 // Palabras clave del cliente: 1–5 palabras cada una, sin repetir, máx. 20.
@@ -105,8 +113,8 @@ export function stripUnresolvedVariables(text: string): string {
 
 // Un comando del vendedor es el mensaje ENTERO ("/tabla"), sin texto extra.
 export function parseCommand(message: string): string | null {
-  const t = message.trim().toLowerCase();
-  return /^\/[a-z0-9][a-z0-9-]{0,29}$/.test(t) ? t : null;
+  const t = normalizeCommand(message);
+  return COMMAND_RE.test(t) ? t : null;
 }
 
 // Pasos "Esperar" (28-sep-2026, pedido del dueño): un "/" del VENDEDOR (trigger
