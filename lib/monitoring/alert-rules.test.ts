@@ -1,6 +1,6 @@
 // La desconexión alerta A CUALQUIER HORA; el silencio de entrantes, solo en horario laboral.
 import { describe, expect, it } from "vitest";
-import { silenceProblem } from "./alert-rules";
+import { silenceProblem, uncheckedAlert } from "./alert-rules";
 import { accountProblems, type AccountOutcome } from "./zernio-account";
 
 const down: AccountOutcome = {
@@ -41,5 +41,25 @@ describe("desconexión a cualquier hora contra silencio solo en horario", () => 
     expect(silenceProblem({ now, minutesSinceLastEvent: null, silenceMinutes: 60 })).not.toBeNull();
     expect(silenceProblem({ now, minutesSinceLastEvent: 60, silenceMinutes: 60 })).toBeNull();
     expect(accountProblems([down], now)).toHaveLength(1);
+  });
+});
+
+describe("'no se pudo revisar' solo alerta tras 2 revisiones seguidas (Bloque C)", () => {
+  const problem = "no se pudo revisar el webhook de Zernio: Zernio respondió 502";
+
+  it("1.ª falla: aviso al log, NO problema (no abre ni comenta el issue)", () => {
+    expect(uncheckedAlert(problem, 1)).toEqual({
+      problem: null,
+      notice: `${problem} (1.ª vez: se avisa si se repite en la siguiente revisión)`,
+    });
+  });
+
+  it("2.ª falla seguida (o más): problema", () => {
+    expect(uncheckedAlert(problem, 2)).toEqual({ problem: `${problem} (2 revisiones seguidas)`, notice: null });
+    expect(uncheckedAlert(problem, 5).problem).toMatch(/5 revisiones seguidas/);
+  });
+
+  it("revisó bien: nada", () => {
+    expect(uncheckedAlert(null, 0)).toEqual({ problem: null, notice: null });
   });
 });

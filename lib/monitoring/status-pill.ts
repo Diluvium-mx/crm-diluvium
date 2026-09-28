@@ -14,7 +14,9 @@ export const WEBHOOK_STALE_MS = 60 * 60_000;
 
 export type PillTone = "green" | "amber" | "red" | "gray";
 export type StatusLine = { label: string; value: string; tone: PillTone | "neutral" };
-export type WhatsappStatus = { tone: PillTone; label: string; lines: StatusLine[] };
+/** Forma común de las pastillas del Dashboard ("WhatsApp" y "Bot", ./bot-status.ts). */
+export type PillStatus = { tone: PillTone; label: string; lines: StatusLine[] };
+export type WhatsappStatus = PillStatus;
 
 /** Lo que guarda /api/health/inbound en Redis (ZERNIO_WEBHOOK_KEY). */
 export type WebhookSnapshot = {

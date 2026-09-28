@@ -61,7 +61,7 @@ const snapshot = () => parseSnapshot(store.get(ACCOUNTS_SNAPSHOT_KEY) ?? null);
 describe("checkWhatsappAccounts", () => {
   it("cuenta sana: sin problemas, consulta de solo lectura con timeout y guarda en Redis con la hora", async () => {
     const report = await checkWhatsappAccounts({ source: "worker", now: NOW });
-    expect(report).toEqual({ problems: [], summary: { checked: 1, ok: 1, warning: 0, down: 0, unchecked: 0 } });
+    expect(report).toEqual({ problems: [], unchecked: null, summary: { checked: 1, ok: 1, warning: 0, down: 0, unchecked: 0 } });
     expect(calls.map((c) => c.url).sort()).toEqual([
       "https://zernio.com/api/v1/accounts/acc_1/health",
       "https://zernio.com/api/v1/whatsapp/account-events?accountId=acc_1&limit=50",
@@ -91,7 +91,8 @@ describe("checkWhatsappAccounts", () => {
     await checkWhatsappAccounts({ source: "worker", now: new Date("2026-09-27T16:55:00Z") });
     health = route;
     const report = await checkWhatsappAccounts({ source: "worker", now: NOW });
-    expect(report.problems).toEqual([`no se pudo revisar 1 cuenta(s) de WhatsApp en Zernio: ${message}`]);
+    expect(report.problems).toEqual([]); // va aparte: alerta solo tras 2 revisiones seguidas
+    expect(report.unchecked).toBe(`no se pudo revisar 1 cuenta(s) de WhatsApp en Zernio: ${message}`);
     expect(report.summary).toMatchObject({ down: 0, unchecked: 1 });
     expect(snapshot()?.accounts[0]).toMatchObject({ level: "ok", checkedAt: "2026-09-27T16:55:00.000Z" });
     expect(snapshot()?.checkedAt).toBe(NOW.toISOString());
@@ -107,7 +108,7 @@ describe("checkWhatsappAccounts", () => {
   it("si fallan los eventos decide health", async () => {
     events = "timeout";
     const report = await checkWhatsappAccounts({ source: "worker", now: NOW });
-    expect(report).toEqual({ problems: [], summary: { checked: 1, ok: 1, warning: 0, down: 0, unchecked: 0 } });
+    expect(report).toEqual({ problems: [], unchecked: null, summary: { checked: 1, ok: 1, warning: 0, down: 0, unchecked: 0 } });
   });
 
   it("desconexión nueva entre revisiones: la avisa cada vigilante una sola vez", async () => {
@@ -126,6 +127,7 @@ describe("checkWhatsappAccounts", () => {
   it("sin ZERNIO_API_KEY: no se pudo revisar", async () => {
     delete process.env.ZERNIO_API_KEY;
     const report = await checkWhatsappAccounts({ source: "worker", now: NOW });
-    expect(report.problems).toEqual(["no se pudo revisar 1 cuenta(s) de WhatsApp en Zernio: falta ZERNIO_API_KEY en este servicio"]);
+    expect(report.problems).toEqual([]);
+    expect(report.unchecked).toBe("no se pudo revisar 1 cuenta(s) de WhatsApp en Zernio: falta ZERNIO_API_KEY en este servicio");
   });
 });
