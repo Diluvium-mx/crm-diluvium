@@ -35,7 +35,7 @@ import { normalizeSearch } from "@/lib/text/search";
 import { funnelTone, type FunnelSignal } from "@/lib/contacts/funnel-tone";
 import { useInboxStream } from "../../dashboard/_components/use-inbox-stream";
 import { setContactUnread } from "@/lib/inbox/actions";
-import { applyTemperatures, mergeLiveContacts } from "./board-live";
+import { applyTemperatures, columnsByStage, mergeLiveContacts } from "./board-live";
 
 // Una columna = una zona de destino (droppable). Se extrae a su propio
 // componente porque useDroppable es un hook y no puede llamarse dentro del
@@ -165,8 +165,9 @@ export function ContactsBoard({
   const { stages, lastEvent: stagesEvent, refresh: refreshStages } = useFunnelStages();
   const stageKeys = useMemo(() => new Set(stages.map((s) => s.key)), [stages]);
   const [editingStages, setEditingStages] = useState(false);
-  // Señales de cada tarjeta (no vistos, por contestar, urgente) por contacto. Van
-  // aparte de los contactos: el SSE las cambia seguido y no reordenan nada.
+  // Señales de cada tarjeta (no vistos, por contestar, urgente y hora del último
+  // mensaje del cliente) por contacto. Van aparte de los contactos: el SSE las cambia
+  // seguido; solo la hora del último mensaje reordena (sube la tarjeta en su columna).
   const [signals, setSignals] = useState<Signals>(initialSignals);
   const [syncedInitialSignals, setSyncedInitialSignals] = useState(initialSignals);
   const router = useRouter();
@@ -584,13 +585,12 @@ export function ContactsBoard({
     });
   }, [contacts, normalizedSearch]);
 
-  const columns = useMemo(() => {
-    const map = new Map<Stage, BoardContact[]>(stages.map((stage) => [stage.key, []]));
-    for (const contact of filteredContacts) {
-      map.get(contact.stage)?.push(contact);
-    }
-    return map;
-  }, [filteredContacts, stages]);
+  // Cada columna, de más reciente a más viejo: el que escribió al último (o entró a la
+  // etapa al último) va arriba, también en vivo con la hora que trae la señal del SSE.
+  const columns = useMemo(
+    () => columnsByStage(filteredContacts, stages.map((stage) => stage.key), (id) => signals[id]?.lastInboundAt),
+    [filteredContacts, stages, signals],
+  );
   // Un contacto en una etapa que esta pantalla aún no conoce (la crearon en otra sesión
   // y el aviso se perdió): se releen las etapas en vez de esconder la tarjeta.
   const unknownStage = useMemo(() => contacts.some((c) => !stageKeys.has(c.stage)), [contacts, stageKeys]);
@@ -679,13 +679,19 @@ export function ContactsBoard({
     });
   }
 
-  // Clic derecho → "Marcar como no leído / leído". Optimista sobre el círculo de
-  // la tarjeta; el SSE (conversation.updated) trae después la señal del servidor.
-  // Si falla, vuelve al valor anterior (solo si nadie lo cambió mientras).
+  // Clic derecho → "Marcar como no leído / leído", y el botón «Marcar como leído» del
+  // pop-up. Optimista: leído apaga el círculo y el azul (no el amarillo); no leído pone
+  // el círculo y el azul lo decide el servidor (regresa si el último es del cliente).
+  // El SSE (conversation.updated) trae después la señal del servidor. Si falla, vuelve
+  // al valor anterior (solo si nadie lo cambió mientras).
   function handleSetUnread(contactId: string, unread: boolean) {
     const previous: FunnelSignal | undefined = signals[contactId];
-    const unreadCount = unread ? Math.max(1, previous?.unread ?? 0) : 0;
-    const next: FunnelSignal = { pending: previous?.pending ?? false, urgent: previous?.urgent ?? false, unread: unreadCount };
+    const next: FunnelSignal = {
+      unread: unread ? Math.max(1, previous?.unread ?? 0) : 0,
+      pending: unread ? (previous?.pending ?? false) : false,
+      urgent: previous?.urgent ?? false,
+      lastInboundAt: previous?.lastInboundAt ?? null,
+    };
     setError(null);
     setSignals((current) => ({ ...current, [contactId]: next }));
     const revert = (message: string) => {
@@ -864,6 +870,8 @@ export function ContactsBoard({
       {selectedContact && (
         <ContactDetailPanel
           contact={selectedContact}
+          signal={signals[selectedContact.id]}
+          onMarkRead={() => handleSetUnread(selectedContact.id, false)}
           isSaving={isPending}
           onClose={() => setSelectedContactId(null)}
           onStageChange={(nextStage) => handleStageChange(selectedContact.id, nextStage)}

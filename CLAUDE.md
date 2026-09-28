@@ -199,7 +199,8 @@ channels             id, org_id, type(whatsapp|instagram|email|sms), display_nam
                      credentials jsonb, is_active
 conversations        id, org_id, contact_id, channel_id, assignee_user_id,
                      status(open|pending|closed), last_message_at, unread_count,
-                     window_expires_at, first_response_seconds
+                     window_expires_at, first_response_seconds,
+                     attended_at  -- 0045: «Marcar como leído» apaga el azul del Embudo sin contestar
 messages             id, org_id, conversation_id, opportunity_id (nullable),
                      direction(in|out), type(text|image|audio|video|document|template),
                      body, media_url, template_name, provider_message_id (unique),
@@ -332,6 +333,11 @@ el menú del usuario (todos): "Mi cuenta" (`/mi-cuenta`: nombre y cambiar la pro
 
 Reglas de UI:
 - Al hacer clic en una tarjeta del tablero se abre el chat **sin salir del tablero** (panel lateral).
+- **Colores de la tarjeta del Embudo (28-sep-2026):** azul = el cliente escribió y nadie le ha
+  contestado (se apaga con una respuesta que salió o con «Marcar como leído»; abrir el chat no);
+  amarillo (gana) = el Agente IA necesita al vendedor (se apaga contestando); círculo naranja = sin
+  ver. La luz del cursor en la tarjeta es gris. Cada columna va por actividad: arriba el último que
+  escribió o entró a la etapa, en vivo. Detalle: `docs/bandeja.md` › Colores y orden del Embudo.
 - Semáforo de tiempo sin respuesta (en la lista de la bandeja y en la tarjeta): verde <15 min,
   ámbar <1 h, rojo >1 h.
 - Menos datos es mejor: sin asignación, seguidores, etiquetas ni autor del mensaje en v1.

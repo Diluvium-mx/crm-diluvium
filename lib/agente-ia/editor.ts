@@ -42,6 +42,25 @@ export const faqSchema = z.object({
   enabled: z.boolean().default(true),
 });
 
+/**
+ * Botón «Copiar» de las FAQs (28-sep-2026, pedido del dueño para revisarlas afuera):
+ * TODAS, en el orden de la lista, cada una con un guion (sin números) y su respuesta
+ * debajo con sangría; una línea en blanco entre preguntas. Las inactivas llevan
+ * "(inactiva)" para saber que el agente no las usa.
+ */
+export function faqsAsText(faqs: readonly { question: string; answer: string; enabled: boolean }[]): string {
+  return faqs
+    .map((faq) => {
+      const answer = faq.answer
+        .trim()
+        .split(/\r?\n/u)
+        .map((line) => (line.trim() ? `  ${line.trimEnd()}` : ""))
+        .join("\n");
+      return `- ${faq.question.trim()}${faq.enabled ? "" : " (inactiva)"}\n${answer}`;
+    })
+    .join("\n\n");
+}
+
 // Cada campo se guarda por separado (el que no viene no se toca): así cambiar el
 // nombre del agente nunca regresa el de la empresa a un valor viejo, ni al revés.
 export const profileSchema = z

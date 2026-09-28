@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import type { AdReferral, AttachmentView, ConversationDetail, MessageView } from "@/lib/inbox/types";
 import { useFunnelStages } from "../../_components/funnel-stages-provider";
 import { listMessages, retryMessage, sendMessage, sendTemplate } from "@/lib/inbox/actions";
@@ -242,10 +242,13 @@ export function ChatThread({
   detail,
   revalToken,
   nowMs,
+  headerAction,
 }: {
   detail: ConversationDetail;
   revalToken: number;
   nowMs: number;
+  /** A la derecha del nombre en el encabezado (el pop-up del Embudo pone «Marcar como leído»). */
+  headerAction?: ReactNode;
 }) {
   const conversationId = detail.id;
   // Nombre de la etapa (columnas editables del Embudo; llega la clave).
@@ -508,6 +511,7 @@ export function ChatThread({
           <p className="truncate text-xs text-muted-foreground">{formatPhone(detail.contact.phone) || "Sin teléfono"}</p>
           <PhoneLocation phone={detail.contact.phone} />
         </div>
+        {headerAction}
         {detail.channel.isTest && <PruebaBadge />}
         {/* "Pausar agente" / "Activar" viven SOLO en el Detalle del contacto (26-sep-2026). */}
         <span className="shrink-0 rounded-full bg-brand-navy/10 px-2.5 py-1 text-xs font-medium text-brand-navy">

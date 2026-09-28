@@ -47,7 +47,11 @@ clientes** (eso llega en la Fase B y siguientes).
     `{{empresa.nombre}}`, `{{agente.nombre}}`; el runtime los sustituye por conversación);
     **base de conocimiento** (FAQs: agregar, editar, activar/desactivar, borrar). Cada
     guardado del Goal o cambio de FAQs deja una **versión** (`ai_knowledge_versions`) y se
-    puede **restaurar** cualquiera (la primera vez guarda también la anterior).
+    puede **restaurar** cualquiera (la primera vez guarda también la anterior). Desde el
+    28-sep-2026 (pedido del dueño, para revisarlas afuera): **Copiar** arriba a la derecha del
+    Goal (todo el texto del editor, con lo no guardado) y de las FAQs (todas, sin importar
+    búsqueda ni filtro: `- pregunta` + respuesta con sangría, sin números, «(inactiva)» en las
+    apagadas; `faqsAsText`), y cada FAQ se queda **abierta** hasta cerrarla a mano (varias a la vez).
   - **Canales** (antes «Implementar»): los canales con interruptor Encendido / Apagado. Desde el
     28-sep-2026 solo los **no archivados** (hoy solo «WhatsApp Diluvium»); el Sandbox y el Número
     de prueba archivados se **ocultan, no se borran** (sus chats, mensajes y contactos siguen igual).

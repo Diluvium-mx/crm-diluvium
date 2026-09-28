@@ -4,6 +4,7 @@ import {
   approxTokens,
   countWords,
   faqSchema,
+  faqsAsText,
   goalSchema,
   MAX_VERSION_NAME,
   profileSchema,
@@ -60,5 +61,20 @@ describe("nombre de una versión (lápiz ✎)", () => {
     expect(restoreVersionQuestion("Antes de la promo", "26 sep 2026, 11:53 a.m.")).toBe("¿Restaurar la versión «Antes de la promo» del 26 sep 2026, 11:53 a.m.?");
     expect(restoreVersionQuestion(null, "26 sep 2026, 11:53 a.m.")).toBe("¿Restaurar la versión del 26 sep 2026, 11:53 a.m.?");
     expect(restoreVersionQuestion("  ", "26 sep 2026, 11:53 a.m.")).toBe("¿Restaurar la versión del 26 sep 2026, 11:53 a.m.?");
+  });
+});
+
+describe("faqsAsText (botón Copiar de las FAQs)", () => {
+  it("todas con guion y sin números, la respuesta debajo con sangría y una línea en blanco entre preguntas", () => {
+    const text = faqsAsText([
+      { question: " ¿Cuánto cuesta? ", answer: "Desde $5,500.\n\nEl envío va incluido.  ", enabled: true },
+      { question: "¿Hacen factura?", answer: "Sí.", enabled: false },
+    ]);
+    expect(text).toBe("- ¿Cuánto cuesta?\n  Desde $5,500.\n\n  El envío va incluido.\n\n- ¿Hacen factura? (inactiva)\n  Sí.");
+    expect(text).not.toMatch(/^\d/mu);
+  });
+
+  it("sin FAQs no copia nada", () => {
+    expect(faqsAsText([])).toBe("");
   });
 });

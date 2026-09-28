@@ -5,12 +5,52 @@
 //   nuevo a más viejo (listContacts) y se inserta en su lugar por esa hora.
 // - Si no (temperatura, nombre…), se reemplaza en su lugar, sin reordenar.
 // - Uno que el tablero no tenía (se perdió su contact.created) entra igual.
-// Las columnas salen de filtrar esta lista por etapa: el orden y la
-// virtualización siguen igual.
+// Las columnas salen de agrupar esta lista por etapa y ordenar cada una por
+// actividad (columnsByStage, abajo).
 type LiveContact = { id: string; stage: string; stageChangedAt: Date | string };
 
 function time(value: Date | string): number {
   return new Date(value).getTime();
+}
+
+type SortableContact = {
+  id: string;
+  stage: string;
+  stageChangedAt: Date | string;
+  createdAt: Date | string;
+  lastInboundAt: number | null;
+};
+
+/**
+ * Hora que ordena la tarjeta en su columna (regla del dueño, 28-sep-2026): lo más
+ * reciente entre que entró a la etapa (a mano, por el Agente IA o al crearse) y el
+ * último mensaje del CLIENTE. `live` = la hora que trajo la señal en vivo (SSE), que
+ * puede ser más nueva que la de la carga. Un mensaje nuestro no la mueve.
+ */
+export function boardActivityAt(contact: SortableContact, live?: number | null): number {
+  return Math.max(time(contact.stageChangedAt), contact.lastInboundAt ?? 0, live ?? 0);
+}
+
+/**
+ * Columnas del tablero: cada etapa con sus contactos de más reciente a más viejo por
+ * actividad (empate: el contacto más nuevo, luego el id, para que no brinquen). Las
+ * etapas desconocidas se omiten. `liveInbound(id)` = hora del último entrante en vivo.
+ */
+export function columnsByStage<T extends SortableContact>(
+  contacts: readonly T[],
+  stageKeys: readonly string[],
+  liveInbound: (contactId: string) => number | null | undefined,
+): Map<string, T[]> {
+  const columns = new Map<string, { contact: T; at: number; created: number }[]>(stageKeys.map((key) => [key, []]));
+  for (const contact of contacts) {
+    columns.get(contact.stage)?.push({ contact, at: boardActivityAt(contact, liveInbound(contact.id)), created: time(contact.createdAt) });
+  }
+  const out = new Map<string, T[]>();
+  for (const [key, list] of columns) {
+    list.sort((a, b) => b.at - a.at || b.created - a.created || (a.contact.id < b.contact.id ? -1 : a.contact.id > b.contact.id ? 1 : 0));
+    out.set(key, list.map((entry) => entry.contact));
+  }
+  return out;
 }
 
 export function mergeLiveContacts<T extends LiveContact>(current: readonly T[], fresh: readonly T[]): T[] {
