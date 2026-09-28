@@ -1,11 +1,13 @@
-// Uso: npm run canal:archivar -- --cuenta <accountId> [--confirmar]
+// Uso: npm run canal:archivar -- --cuenta <accountId> [--confirmar] [--prueba]
 // Archiva un canal de WhatsApp SIN borrar su historial (docs/numero-prueba.md, paso 8):
 //   (2) cuenta conversaciones, mensajes y contactos del canal;
 //   (3) primero cierra el canal (ningún envío nuevo pasa) y luego cancela, sin borrar,
 //       los programados y corridas que nadie reclamó; apaga el agente en el canal y
 //       reporta lo que ya iba en curso (no se cancela ni se reenvía);
-//   (4) lo deja inactivo y archivado: historial visible, marcado Prueba, composer
-//       bloqueado con "Canal archivado", y sus webhooks se registran sin procesar;
+//   (4) lo deja inactivo y archivado: historial visible, composer bloqueado con
+//       "Canal archivado", y sus webhooks se registran sin procesar. Solo con --prueba
+//       se marca además como Prueba (is_test: su historial sale del Dashboard); sin
+//       ella queda como estaba, así un canal REAL archivado conserva sus números;
 //   (6) vuelve a contar y confirma que nada se perdió.
 // El respaldo (1) y quitar la cuenta de ZERNIO_ALLOWED_ACCOUNT_IDS (5) van aparte (guion).
 // Sin --confirmar solo cuenta y muestra lo que haría.
@@ -41,7 +43,9 @@ async function pendingWork(channelId: string) {
 }
 
 async function main() {
-  const { values } = parseArgs({ options: { cuenta: { type: "string" }, confirmar: { type: "boolean", default: false } } });
+  const { values } = parseArgs({
+    options: { cuenta: { type: "string" }, confirmar: { type: "boolean", default: false }, prueba: { type: "boolean", default: false } },
+  });
   const accountId = values.cuenta?.trim();
   if (!accountId) throw new Error("--cuenta <accountId de Zernio> es obligatorio");
   const [channel] = await db
@@ -59,6 +63,11 @@ async function main() {
       `(en ejecución: ${pending.running}) · agente: ${channel.aiAgentMode}`,
   );
   if (channel.archivedAt) console.log(`Ya estaba archivado desde ${channel.archivedAt.toISOString()}.`);
+  console.log(
+    values.prueba
+      ? "Se marcará como Prueba (--prueba): su historial deja de contar en el Dashboard."
+      : `Marca Prueba: queda como está (${channel.isTest ? "sí" : "no"}); para marcarlo, agrega --prueba.`,
+  );
   if (!values.confirmar) {
     console.log("Simulación: no se cambió nada. Repite con --confirmar para archivarlo.");
     process.exit(0);
@@ -75,7 +84,8 @@ async function main() {
       .update(channels)
       .set({
         isActive: false,
-        isTest: true,
+        // Solo con --prueba: un canal real archivado sigue contando en el Dashboard.
+        ...(values.prueba ? { isTest: true } : {}),
         archivedAt: channel.archivedAt ?? now,
         ...(channel.aiAgentMode !== "off" ? { aiAgentMode: "off" as const, aiAgentModeChangedAt: now } : {}),
       })

@@ -5,7 +5,7 @@
 // 3. Deja un aviso al vendedor por cada respuesta del agente que WhatsApp rechazó o
 //    no confirmó (sin pausar: el agente siempre contesta, 23-sep-2026).
 // Es mantenimiento de sistema (todas las organizaciones), como el barrido de webhooks.
-import { and, eq, gte, inArray, lt, or, sql } from "drizzle-orm";
+import { and, eq, gte, inArray, lt, or, sql, type SQL } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { aiAgentDrafts, messages } from "@/lib/db/schema";
 import { isAmbiguousSendError, SEND_UNCONFIRMED, SEND_UNKNOWN } from "@/lib/messaging/rules";
@@ -48,16 +48,52 @@ export async function findPendingAtOpening(now: Date, limit = OPENING_BATCH): Pr
 }
 
 async function findUnanswered(now: Date, opts: { since: Date; withSchedule: boolean; limit: number }): Promise<OrphanConversation[]> {
-  const { since, limit } = opts;
   const scheduleFilter = opts.withSchedule
     ? sql`and exists (select 1 from ai_config a where a.organization_id = c.organization_id and a.bot_schedule is not null)`
     : sql`and not exists (select 1 from ai_config a where a.organization_id = c.organization_id and a.bot_schedule is not null)`;
-  const rows = await db.execute<{ id: string; organization_id: string }>(sql`
-    select c.id, c.organization_id
+  const rows = await db.execute<UnansweredRow>(
+    unansweredSql(now, { since: opts.since, olderThan: new Date(now.getTime() - ORPHAN_MIN_AGE_SECONDS * 1000), extra: scheduleFilter, limit: opts.limit }),
+  );
+  return rows.map((r) => ({ conversationId: r.id, organizationId: r.organization_id }));
+}
+
+// Alarma "bot callado" (lib/monitoring/bot-silence.ts): lo que el bot tendría que haber
+// contestado y no contestó, con la hora del último entrante. MISMAS reglas que el barrido
+// (por construcción: la misma consulta) y además sin lo importado del celular. El horario
+// del bot lo evalúa quien llama (por organización).
+export type UnansweredForMonitor = { conversationId: string; organizationId: string; lastInboundAt: Date };
+
+export async function findUnansweredForMonitor(
+  now: Date,
+  opts: { olderThan: Date; organizationId?: string; limit?: number },
+): Promise<UnansweredForMonitor[]> {
+  const org = opts.organizationId ? sql`and c.organization_id = ${opts.organizationId}` : sql``;
+  const rows = await db.execute<UnansweredRow>(
+    unansweredSql(now, {
+      // La ventana de WhatsApp dura 24 h: nada más viejo se puede contestar.
+      since: new Date(now.getTime() - OPENING_MAX_AGE_HOURS * 3_600_000),
+      olderThan: opts.olderThan,
+      extra: sql`and last.imported_at is null ${org}`,
+      limit: opts.limit ?? 1_000,
+    }),
+  );
+  return rows.map((r) => ({ conversationId: r.id, organizationId: r.organization_id, lastInboundAt: new Date(Number(r.last_ms)) }));
+}
+
+type UnansweredRow = { id: string; organization_id: string; last_ms: number };
+
+// Conversaciones con el último mensaje del cliente SIN ATENDER según las reglas del bot:
+// canal Encendido, agente activo, ventana abierta, entrante posterior a los cortes
+// (encender el canal, "Reactivar"), sin respuesta/plan/decisión del agente y sin tarjeta
+// de error sin atender. `since` acota lo reciente; `olderThan`, lo que ya esperó.
+function unansweredSql(now: Date, opts: { since: Date; olderThan: Date; extra: SQL; limit: number }): SQL {
+  const { since, olderThan, extra, limit } = opts;
+  return sql`
+    select c.id, c.organization_id, (extract(epoch from last.created_at) * 1000)::float8 as last_ms
     from conversations c
     join channels ch on ch.id = c.channel_id
     join lateral (
-      select m.id, m.direction, m.created_at, m.sent_at, m.metadata
+      select m.id, m.direction, m.created_at, m.sent_at, m.metadata, m.imported_at
       from messages m
       where m.conversation_id = c.id and m.status <> 'failed'
         -- Igual que pendingInbound (Fase D): un aviso interno o la media de un
@@ -78,9 +114,9 @@ async function findUnanswered(now: Date, opts: { since: Date; withSchedule: bool
       and c.agent_state = 'activo'
       and c.window_expires_at > ${ts(now)}
       and c.last_message_at > ${ts(since)}
-      ${scheduleFilter}
+      ${extra}
       and last.direction = 'in'
-      and last.created_at < ${ts(new Date(now.getTime() - ORPHAN_MIN_AGE_SECONDS * 1000))}
+      and last.created_at < ${ts(olderThan)}
       and last.created_at > ${ts(since)}
       -- Lo escrito ANTES de encender el canal o de reactivar al agente no se
       -- contesta solo: espera al siguiente mensaje del cliente. Contra la
@@ -109,8 +145,7 @@ async function findUnanswered(now: Date, opts: { since: Date; withSchedule: bool
           and n.created_at > coalesce(ch.ai_agent_mode_changed_at, '-infinity'::timestamp)
       )
     limit ${limit}
-  `);
-  return rows.map((r) => ({ conversationId: r.id, organizationId: r.organization_id }));
+  `;
 }
 
 // Un PLAN de burbujas que quedó "enviando" (el worker se reinició a la mitad, o

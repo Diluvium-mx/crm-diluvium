@@ -124,9 +124,14 @@ export function isWithinSchedule(schedule: BotSchedule | null, now: Date): boole
 
 export const DAY_LABELS: Record<number, string> = { 1: "lun", 2: "mar", 3: "mié", 4: "jue", 5: "vie", 6: "sáb", 7: "dom" };
 
-// "lun–vie 8:00–18:00", "lun, mié y vie 9:00–14:00", "todos los días 8:00–20:00".
+// "lun–vie 8:00–18:00 (hora de Mazatlán)", "lun, mié y vie 9:00–14:00 (hora de Mazatlán)".
 export function describeSchedule(schedule: BotSchedule | null): string {
   if (!schedule) return "24/7";
+  return `${scheduleLabel(schedule)} (hora de Mazatlán)`;
+}
+
+// Sin la zona: "lun–vie 8:00–18:00", "todos los días 8:00–20:00" (franja de la Bandeja).
+export function scheduleLabel(schedule: BotSchedule): string {
   const hhmm = (t: string) => `${Number(t.slice(0, 2))}:${t.slice(3, 5)}`;
   const time = `${hhmm(schedule.from)}–${hhmm(schedule.to)}`;
   const days = [...new Set(schedule.days)].sort((a, b) => a - b);
@@ -135,7 +140,7 @@ export function describeSchedule(schedule: BotSchedule | null): string {
   else if (days.length > 1 && days[days.length - 1] - days[0] === days.length - 1) label = `${DAY_LABELS[days[0]]}–${DAY_LABELS[days[days.length - 1]]}`;
   else if (days.length === 1) label = DAY_LABELS[days[0]];
   else label = `${days.slice(0, -1).map((d) => DAY_LABELS[d]).join(", ")} y ${DAY_LABELS[days[days.length - 1]]}`;
-  return `${label} ${time} (hora de Mazatlán)`;
+  return `${label} ${time}`;
 }
 
 // ── Pausa tras respuesta de un vendedor ─────────────────────────────────────
