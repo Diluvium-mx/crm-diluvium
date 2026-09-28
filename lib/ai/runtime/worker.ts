@@ -61,7 +61,7 @@ export async function sweepOnce(queue: AgentQueuePort, kv: KvPort, now: Date): P
   // "Apagar bot" con hora cumplida → activo (corte = la hora de regreso). Va antes
   // que los huérfanos: lo que el cliente escribió durante la pausa queda atrás del corte.
   const back = await reactivateDuePauses(now);
-  if (back) console.info(`[agente] barrido: bot reactivado en ${back} conversación(es) (se cumplió la hora de regreso)`);
+  if (back) console.info(`[agente] barrido: Agente IA reactivado en ${back} conversación(es) (se cumplió la hora de regreso)`);
   const failedSends = await noticeFailedAgentSends(now);
   if (failedSends) console.info(`[agente] barrido: ${failedSends} aviso(s) de envío del agente fallido o sin confirmar`);
   const plans = await reconcileStuckDrafts(now);

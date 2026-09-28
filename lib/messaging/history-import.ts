@@ -411,7 +411,7 @@ export async function importPhoneHistory(
     throttleSince = last; // el mismo rechazo no vuelve a frenar
     report.ritmoReducido++;
     const perMinute = client.slowDown();
-    log(`Zernio frenó por límite (429) ${n} envío(s) del CRM: el importador baja a ${perMinute} peticiones/min para dejarle espacio al bot y a los vendedores`);
+    log(`Zernio frenó por límite (429) ${n} envío(s) del CRM: el importador baja a ${perMinute} peticiones/min para dejarle espacio al Agente IA y a los vendedores`);
   };
 
   let dbWriteMs = 0;

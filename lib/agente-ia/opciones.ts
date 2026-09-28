@@ -167,45 +167,45 @@ export const RESPONSE_LENGTH_LABELS: Record<ResponseLength, string> = {
 
 export const OPTION_LABELS: Record<BotOptionField, string> = {
   responseDelaySeconds: "Tiempo de espera antes de responder",
-  pauseOnHumanReply: "Pausar el bot cuando un vendedor contesta",
+  pauseOnHumanReply: "Pausar al Agente IA cuando un vendedor contesta",
   humanReplyReactivateHours: "Reactivar solo después de",
   handoverPauseHours: "Cuando el cliente pide un asesor",
-  schedule: "Horario del bot",
+  schedule: "Horario del Agente IA",
   readImages: "Responder imágenes",
   transcribeAudio: "Responder notas de voz",
   responseLength: "Longitud de respuesta",
   maxBubbles: "Máximo de mensajes por respuesta",
-  maxRepliesPerContact: "Máximo de respuestas del bot por conversación",
+  maxRepliesPerContact: "Máximo de respuestas del Agente IA por conversación",
 };
 
 // Ayuda en lenguaje simple + cómo está en GHL (Ángela), por opción.
 export const OPTION_HELP: Record<BotOptionField, { help: string; ghl: string }> = {
   responseDelaySeconds: {
-    help: "Cuando el cliente manda varios mensajes seguidos, el bot espera este tiempo desde el último para contestarlos todos juntos.",
+    help: "Cuando el cliente manda varios mensajes seguidos, el Agente IA espera este tiempo desde el último para contestarlos todos juntos.",
     ghl: "10 s",
   },
   pauseOnHumanReply: {
-    help: "Si un vendedor contesta en un chat (Bandeja, Embudo, programado o el celular), el bot se pausa ahí y deja de responder.",
+    help: "Si un vendedor contesta en un chat (Bandeja, Embudo, programado o el celular), el Agente IA se pausa ahí y deja de responder.",
     ghl: "Sí (se duerme cuando un asesor escribe)",
   },
   humanReplyReactivateHours: {
-    help: "Cuánto tiempo después de que un vendedor tomó el chat el bot vuelve solo (se cuenta desde su primera respuesta; una pausa puesta a mano con «Pausar agente» se respeta). «Nunca» = solo con «Activar» en el Detalle del contacto.",
+    help: "Cuánto tiempo después de que un vendedor tomó el chat el Agente IA vuelve solo (se cuenta desde su primera respuesta; una pausa puesta a mano con «Pausar agente» se respeta). «Nunca» = solo con «Activar» en el Detalle del contacto.",
     ghl: "se reactiva a mano",
   },
   handoverPauseHours: {
-    help: "Cuando el cliente pide hablar con una persona, el bot siempre deja el aviso 🤖 en la Bandeja. Aquí eliges si además se pausa en ese chat por un tiempo.",
+    help: "Cuando el cliente pide hablar con una persona, el Agente IA siempre deja el aviso 🤖 en la Bandeja. Aquí eliges si además se pausa en ese chat por un tiempo.",
     ghl: "avisa y se pausa 8 h",
   },
   schedule: {
-    help: "Fuera de este horario el bot no contesta. Al abrir, atiende poco a poco los chats que quedaron con un mensaje del cliente sin respuesta (dentro de la ventana de 24 h).",
+    help: "Fuera de este horario el Agente IA no contesta. Al abrir, atiende poco a poco los chats que quedaron con un mensaje del cliente sin respuesta (dentro de la ventana de 24 h).",
     ghl: "24/7",
   },
   readImages: {
-    help: "Con «No», el bot ve «[imagen]» sin el contenido y no gasta en leerla (los comprobantes tampoco).",
+    help: "Con «No», el Agente IA ve «[imagen]» sin el contenido y no gasta en leerla (los comprobantes tampoco).",
     ghl: "Sí",
   },
   transcribeAudio: {
-    help: "Con «No», el bot ve «[nota de voz]» sin el contenido y no gasta en transcribirla; el chat tampoco muestra la transcripción.",
+    help: "Con «No», el Agente IA ve «[nota de voz]» sin el contenido y no gasta en transcribirla; el chat tampoco muestra la transcripción.",
     ghl: "Sí",
   },
   responseLength: {
@@ -217,7 +217,7 @@ export const OPTION_HELP: Record<BotOptionField, { help: string; ghl: string }> 
     ghl: "1 (todo en un mensaje)",
   },
   maxRepliesPerContact: {
-    help: "Al llegar al tope, el bot se pausa en ese chat hasta «Activar» y deja el aviso 🤖 «Llegó al máximo de respuestas» (tarjeta amarilla en el Embudo). Protege de un bucle con otro bot. Se cuenta desde el último «Activar».",
+    help: "Al llegar al tope, el Agente IA se pausa en ese chat hasta «Activar» y deja el aviso 🤖 «Llegó al máximo de respuestas» (tarjeta amarilla en el Embudo). Protege de un bucle con otro contestador automático. Se cuenta desde el último «Activar».",
     ghl: "50",
   },
 };
@@ -234,7 +234,7 @@ export function formatOptionValue(field: BotOptionField, value: unknown): string
     case "humanReplyReactivateHours":
       return value === null ? "Nunca (a mano con «Activar»)" : `${value} h`;
     case "handoverPauseHours":
-      return value === null ? "Avisar al vendedor y seguir contestando" : `Avisar y pausar el bot ${value} h`;
+      return value === null ? "Avisar al vendedor y seguir contestando" : `Avisar y pausar al Agente IA ${value} h`;
     case "schedule":
       return describeSchedule((value as BotSchedule | null) ?? null);
     case "responseLength":

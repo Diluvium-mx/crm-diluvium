@@ -147,7 +147,7 @@ function StageRow({
           disabled={busy}
           rows={draft.rule.length > 90 ? 2 : 1}
           onChange={(e) => setDraft((d) => ({ ...d, rule: e.target.value }))}
-          aria-label={`Regla del bot para ${stage.name}`}
+          aria-label={`Regla del Agente IA para ${stage.name}`}
           placeholder={stage.role === "entrada" ? "Aquí llegan los contactos nuevos (sin regla)." : "Cuándo debe mover el agente al contacto aquí (p. ej. «Cuando pregunta precio o da medidas»)."}
           className={`${input} resize-y text-xs`}
         />
@@ -293,7 +293,7 @@ export function StagesEditor({
     }
     if (draft.rule.trim() !== stage.botRule) {
       patch.botRule = draft.rule;
-      changes.push(draft.rule.trim() ? "la regla del bot" : "la regla del bot (queda vacía: el agente no moverá aquí por su cuenta)");
+      changes.push(draft.rule.trim() ? "la regla del Agente IA" : "la regla del Agente IA (queda vacía: el agente no moverá aquí por su cuenta)");
     }
     if (!changes.length) {
       reset();
@@ -373,7 +373,7 @@ export function StagesEditor({
     const after = stages.find((s) => s.id === afterId);
     confirm.ask({
       title: `¿Agregar la columna «${trimmed}» ${after ? `después de ${name(after)}` : "al final"}?`,
-      body: "Nace sin regla del bot y con el Modelo 2: escribe su regla para que el agente sepa cuándo mover a un contacto ahí.",
+      body: "Nace sin regla del Agente IA y con el Modelo 2: escribe su regla para que el agente sepa cuándo mover a un contacto ahí.",
       confirmLabel: "Sí, agregar",
       pendingLabel: "Agregando…",
       done: `Listo: «${trimmed}» agregada`,

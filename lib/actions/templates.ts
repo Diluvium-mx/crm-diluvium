@@ -20,6 +20,9 @@ import { ZernioApiError } from "@/lib/messaging/zernio";
 import { templateMaxIndex } from "@/lib/messaging/template-format";
 import { isForeignTemplateAccount } from "@/lib/messaging/template-sync";
 import type { TemplateView } from "@/lib/templates/types";
+import { db } from "@/lib/db";
+import { logChanges } from "@/lib/historial/log";
+import { templateStatusLabel } from "@/lib/historial/labels";
 
 // Gestionar plantillas (darlas de alta en Meta, sincronizarlas): todos los roles
 // desde el 26-sep-2026 (ACL en lib/auth/permissions.ts; un rol desconocido, no).
@@ -35,10 +38,10 @@ export async function listTemplates(): Promise<TemplateView[]> {
 }
 
 export async function syncTemplates(): Promise<{ synced: number; removed: number }> {
-  const { organizationId, role } = await requireActiveMembership();
+  const { organizationId, role, userId } = await requireActiveMembership();
   requireTemplateManage(role, "sync");
   try {
-    const result = await syncTemplatesForOrg(organizationId);
+    const result = await syncTemplatesForOrg(organizationId, { userId });
     revalidatePath("/mensajes-rapidos");
     return result;
   } catch (error) {
@@ -66,7 +69,7 @@ export type CreateTemplateActionInput = z.infer<typeof createTemplateSchema>;
 export async function createTemplate(
   input: CreateTemplateActionInput,
 ): Promise<{ status: string; synced: number }> {
-  const { organizationId, role } = await requireActiveMembership();
+  const { organizationId, role, userId } = await requireActiveMembership();
   requireTemplateManage(role, "create");
   const parsed = createTemplateSchema.parse(input);
 
@@ -94,6 +97,18 @@ export async function createTemplate(
       bodyText: parsed.bodyText,
       bodyExample: parsed.bodyExample,
     });
+    // Historial (Bloque E): el alta vive en Meta (no hay transacción nuestra que compartir),
+    // así que su fila se escribe en cuanto Meta la acepta. Si esa fila fallara, el alta ya
+    // se hizo: se avisa en el log y no se reporta como error.
+    await logChanges(db, {
+      organizationId,
+      userId,
+      kind: "plantillas",
+      action: "alta",
+      subject: parsed.name,
+      newValue: `${parsed.category} · ${parsed.language} · ${templateStatusLabel(result.status)}`,
+      detail: { type: "texto", title: "Cuerpo", before: null, after: parsed.bodyText },
+    }).catch((error) => console.error(`[plantillas] no se pudo registrar el alta de ${parsed.name} en el historial`, error));
     // Re-sincroniza para reflejar la nueva plantilla (queda PENDING). Best-effort:
     // el alta ya se hizo, así que un fallo al sincronizar no la reporta como error
     // (la próxima sincronización la traerá).

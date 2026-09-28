@@ -7,6 +7,7 @@ import { and, asc, eq, sql } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { contacts, funnelStages, workflows } from "@/lib/db/schema";
 import { logChanges } from "@/lib/historial/log";
+import { preview } from "@/lib/historial/diff";
 import {
   MAX_STAGES,
   MIN_STAGES,
@@ -128,7 +129,17 @@ export async function createFunnelStage(
     });
     await renumber(tx, organizationId, order);
     const stages = await assertValid(tx, organizationId);
-    await logChanges(tx, { organizationId, userId, kind: "etapas", action: "crear", subject: named.name, subjectId: id, newValue: named.name });
+    const rule = (input.botRule ?? "").trim();
+    await logChanges(tx, {
+      organizationId,
+      userId,
+      kind: "etapas",
+      action: "crear",
+      subject: named.name,
+      subjectId: id,
+      newValue: named.name,
+      detail: rule ? { type: "texto", title: "Regla del Agente IA", before: null, after: rule } : null,
+    });
     await notifyStagesUpdated(tx, { organizationId, reason: "created" });
     return stages.find((s) => s.id === id)!;
   });
@@ -159,7 +170,7 @@ export async function updateFunnelStage(
       .returning({ id: funnelStages.id });
     if (rows.length === 0 || !before) throw new FunnelStageError("Esa etapa ya no existe.");
     const stages = await assertValid(tx, organizationId);
-    // Historial: nombre y modelo (la regla del bot y el color no se registran).
+    // Historial: nombre, modelo y regla del Agente IA (Bloque E; el color no se registra).
     const name = patch.name ?? before.name;
     const slot = (n: number) => `Modelo ${n}`;
     await logChanges(tx, [
@@ -168,6 +179,21 @@ export async function updateFunnelStage(
         : []),
       ...(patch.modelSlot !== undefined && patch.modelSlot !== before.modelSlot
         ? [{ organizationId, userId, kind: "etapas" as const, action: "modelo" as const, subject: name, subjectId: id, oldValue: slot(before.modelSlot), newValue: slot(patch.modelSlot) }]
+        : []),
+      ...(patch.botRule !== undefined && patch.botRule !== before.botRule
+        ? [
+            {
+              organizationId,
+              userId,
+              kind: "etapas" as const,
+              action: "regla" as const,
+              subject: name,
+              subjectId: id,
+              oldValue: preview(before.botRule),
+              newValue: preview(patch.botRule),
+              detail: { type: "texto" as const, title: "Regla del Agente IA", before: before.botRule, after: patch.botRule },
+            },
+          ]
         : []),
     ]);
     await notifyStagesUpdated(tx, { organizationId, reason: "updated" });

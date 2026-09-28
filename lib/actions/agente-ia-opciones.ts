@@ -15,11 +15,11 @@ export async function updateBotOptions(input: unknown): Promise<OptionsActionRes
   try {
     const { organizationId, userId, role } = await requireActiveMembership();
     if (!roleAllows(role, "aiConfig", "update")) {
-      return { ok: false, message: "No tienes permiso para cambiar las opciones del bot; pídeselo a un administrador." };
+      return { ok: false, message: "No tienes permiso para cambiar las opciones del Agente IA; pídeselo a un administrador." };
     }
     const patch = botOptionsPatchSchema.parse(input);
     const { options, changes } = await saveBotOptions(organizationId, userId, patch);
-    if (changes.length) console.info(`[agente-ia] opciones del bot: ${changes.map((c) => `${c.field}: ${c.oldValue} → ${c.newValue}`).join("; ")}`);
+    if (changes.length) console.info(`[agente-ia] opciones del Agente IA: ${changes.map((c) => `${c.field}: ${c.oldValue} → ${c.newValue}`).join("; ")}`);
     const last = await loadLastOptionsChange(organizationId);
     revalidatePath("/agente-ia");
     return { ok: true, options, lastChange: last ? { ...last, createdAt: last.createdAt.toISOString() } : null };
@@ -30,7 +30,7 @@ export async function updateBotOptions(input: unknown): Promise<OptionsActionRes
     if (error instanceof Error && /^(No autenticado|Usuario desactivado|No tienes permiso|El usuario no tiene membresía)/.test(error.message)) {
       return { ok: false, message: error.message };
     }
-    console.error("[agente-ia] no se pudieron guardar las opciones del bot", error);
+    console.error("[agente-ia] no se pudieron guardar las opciones del Agente IA", error);
     return { ok: false, message: "No se pudo guardar la opción; inténtalo de nuevo." };
   }
 }

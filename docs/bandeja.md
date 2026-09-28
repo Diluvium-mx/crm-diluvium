@@ -121,7 +121,7 @@ conversación; todas las demás siguen contestando. Menú: 8 horas · 12 horas �
 fecha y hora (hora de Mazatlán; rechaza horas pasadas y más de 30 días) · Hasta que lo reactive. Lo
 usan vendedores, admin y owner (Server Action `pauseAgent`, sin ACL, como "Reactivar").
 - **Estado:** `agent_state = pausado_humano` + `agent_paused_until` = hora de regreso (null = sin
-  tiempo). Sin migración. Con el bot apagado, el mismo botón dice "Cambiar hora".
+  tiempo). Sin migración. Con el Agente IA apagado, el mismo botón dice "Cambiar hora".
 - **Aviso:** "🤖 Bot apagado · vuelve hoy 22:30" (o "mañana 08:15", "sáb 26-sep 10:00", "hasta que
   lo reactives") + "Reactivar". Decisión del dueño: toda pausa es "bot apagado"; la que deja un
   vendedor al contestar desde el CRM (sin tiempo, como antes) dice "hasta que lo reactives".
@@ -131,22 +131,22 @@ usan vendedores, admin y owner (Server Action `pauseAgent`, sin ACL, como "React
   escrito entre la hora y el barrido no se podía rescatar si fallaba la cola). Si el cliente escribe
   después de la hora y antes del barrido, el gancho de entrante lo reactiva en ese momento (ese
   mensaje sí se contesta).
-- **Solo mensajes nuevos:** lo que el cliente ESCRIBIÓ con el bot apagado no se contesta al volver,
+- **Solo mensajes nuevos:** lo que el cliente ESCRIBIÓ con el Agente IA apagado no se contesta al volver,
   aunque el webhook llegue tarde (se compara la hora de WhatsApp, `sent_at`, con el corte; aplica
   también tras "Reactivar") ni tras un reinicio del worker (el barrido de huérfanos usa la misma
   regla). Responde a partir del siguiente mensaje del cliente; como hoy, el modelo lee TODO el historial.
-- **El temporizador se respeta:** si el vendedor escribe con el bot apagado por tiempo, la hora no
-  cambia. Si escribe con el bot encendido (o ya cumplida la hora), se apaga sin tiempo como siempre
+- **El temporizador se respeta:** si el vendedor escribe con el Agente IA apagado por tiempo, la hora no
+  cambia. Si escribe con el Agente IA encendido (o ya cumplida la hora), se apaga sin tiempo como siempre
   (un solo UPDATE condicional: no borra una hora que otro vendedor acaba de elegir).
 - Al apagarlo se cancela el job pendiente; si el agente ya estaba escribiendo, su respuesta no sale.
 - El interruptor general del canal (pestaña Agente IA) no cambia.
 - WhatsApp da la hora en segundos enteros: lo escrito en el MISMO segundo del corte cuenta como nuevo
   (nunca se ignora un mensaje nuevo; a lo más se contesta uno escrito <1 s antes).
 - Pendientes teóricos (sin escenario hoy): un eco TARDÍO del celular del vendedor (business_app)
-  escrito durante la pausa, si llega después de la hora de regreso, deja el bot apagado sin tiempo
+  escrito durante la pausa, si llega después de la hora de regreso, deja al Agente IA apagado sin tiempo
   (Zernio no reenvía hoy los ecos de coexistencia; igual pasaba con "Reactivar"). Carreras de
   milisegundos entre el gancho de entrante y "Reactivar"/barrido. `pauseAgent` no revisa en el
-  servidor el modo del canal (solo la UI oculta el botón). Sin registro de quién apagó el bot. El
+  servidor el modo del canal (solo la UI oculta el botón). Sin registro de quién apagó al Agente IA. El
   barrido lee `conversations` completa cada minuto (sin índice; ~11 k filas).
 
 ### Cambios en vivo (26-sep-2026)
@@ -232,7 +232,7 @@ la sesión). Tipos exactos en `lib/inbox/types.ts`.
   60 s por paso; tope 5 min) y se repite con la **misma** clave de idempotencia. Dentro de cada
   conversación salen en orden de llegada: cada envío deja su turno en `messages.metadata.envio`
   (`{estado: "enviando"|"espera", hasta, esperas}`, sin migración) y no llama a Zernio mientras haya
-  uno más viejo en fila. Vale para bot, vendedores, workflows y programados. Al cliente no le llega
+  uno más viejo en fila. Vale para el Agente IA, vendedores, workflows y programados. Al cliente no le llega
   nada y el vendedor ve 🕗. Una marca vencida (proceso muerto) deja de frenar a los 30 s.
 - **Web → worker:** la Server Action no espera en la petición (Next procesa las acciones una tras
   otra y la pantalla se trabaría): si hay que esperar más de 3 s responde `pending` y encola el envío
