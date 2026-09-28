@@ -134,7 +134,8 @@ docs/numero-prueba.md › "Después del QR".
     y después), para que un silencio de 1 h en horario laboral vuelva a alertar.
 23. **CODE** (con **LUZ VERDE: ARCHIVAR N2**) — Archivar N2: apagar su agente → respaldo →
     `$PROD npm run canal:archivar -- --cuenta 6ab6d4483eb3cfc2601c3902` (simula) →
-    `… --confirmar` → quitar N2 de `ZERNIO_ALLOWED_ACCOUNT_IDS` conservando el oficial.
+    `… --confirmar --prueba` (N2 es de prueba; sin `--prueba` no se marca Prueba) → quitar N2 de
+    `ZERNIO_ALLOWED_ACCOUNT_IDS` conservando el oficial.
     **YO** — en Zernio (perfil "Diluvium Pruebas") desconectar N2.
 24. **CODE** — Conteos finales y reporte del día. Borrar los reportes locales de `.historial/`
     (traen teléfonos de clientes; se escriben solo legibles por el dueño del archivo) cuando ya
@@ -186,7 +187,8 @@ del historial; guion paso 11). Ya no se escribe el INSERT a mano.
 ## 5. Datos
 
 - Backfill de teléfonos (partes por país, México +52 + 10, país vacío):
-  `npx tsx scripts/backfill-phone-parts.ts` (simulación) y luego `--apply`.
+  `npx tsx scripts/backfill-phone-parts.ts` (simulación: solo conteos) y luego `--confirmar` (el único que
+  escribe; el viejo `--apply` ya no escribe, avisa y se detiene).
   Staging primero; producción solo con OK del dueño.
 
 ## 5b. Monitoreo: umbral de silencio
@@ -220,8 +222,57 @@ Dos vigilantes independientes; ninguno depende de WhatsApp ni de Zernio para avi
 
 | Vigilante | Frecuencia | Qué revisa | Aviso |
 |---|---|---|---|
-| Worker (`worker/index.ts`) | cada 5 min (y al arrancar) | silencio de webhooks en horario laboral (lun–sáb 9–19 Mazatlán, `MONITOR_SILENCE_MINUTES`, 60 por omisión), eventos sin procesar > 5 min, dead-letter, cuarentena **y la cuenta de WhatsApp en Zernio** (a cualquier hora) | log `[monitor] ALERTA: …` en Railway; si todo va bien, `[monitor] entrada de WhatsApp sana · cuentas de WhatsApp: 1 conectada(s)` |
-| GitHub Action `inbound-monitor` | cada 15 min | lo mismo vía `GET /api/health/inbound` + latido del worker (Redis) + webhook de Zernio activo y sin fallos. El endpoint revisa la cuenta en Zernio **por su cuenta** (no depende del worker) | issue `alerta-whatsapp` (llega por correo); se cierra solo al sanar. Si el CRM no responde, también abre issue |
+| Worker (`worker/index.ts`) | cada 5 min (y al arrancar) | silencio de webhooks en horario laboral (lun–sáb 9–19 Mazatlán, `MONITOR_SILENCE_MINUTES`, 60 por omisión), eventos sin procesar > 5 min, dead-letter, cuarentena, **la cuenta de WhatsApp en Zernio** (a cualquier hora) y **que el bot conteste** ("bot callado", a cualquier hora dentro de su horario) | log `[monitor] ALERTA: …` en Railway; si todo va bien, `[monitor] entrada de WhatsApp sana · cuentas de WhatsApp: 1 conectada(s) · bot: 0 conversación(es) sin respuesta`. Una falla suelta de Zernio sale como `[monitor] aviso: …` (no es alerta) |
+| GitHub Action `inbound-monitor` | cada 15 min | lo mismo vía `GET /api/health/inbound` + latido del worker (Redis) + webhook de Zernio activo y sin fallos. El endpoint revisa la cuenta en Zernio y el bot **por su cuenta** (no depende del worker) | issue `alerta-whatsapp` (llega por correo); se cierra solo al sanar. Si el CRM no responde, también abre issue |
+
+### Alarma "bot callado" (Bloque C, 28-sep-2026)
+
+**Por qué:** el 27–28 sep el bot pasó 16 h sin contestar (133 mensajes de clientes en 88 chats) porque
+alguien le puso horario "mié–jue 20:00–06:00", y nada avisó: el monitoreo solo miraba que llegaran
+mensajes y que el número estuviera conectado.
+
+**Cuándo alerta** (los dos vigilantes, con datos de la base del CRM, sin Zernio): con el canal
+**Encendido** y **dentro del horario del bot** durante todo el tramo, hay **3 o más** conversaciones con el
+agente activo, dentro de la ventana de 24 h, cuyo último mensaje es del cliente (no importado del
+celular) de hace **más de 15 min**, y el bot **no mandó ninguna respuesta** (en ningún chat) en esos 15 min.
+Qué cuenta como "esperando al bot" sale de la **misma consulta** que el barrido del bot
+(`findUnansweredForMonitor` en `lib/ai/runtime/sweep.ts`): no cuentan los chats pausados, los que tienen
+una tarjeta de error sin atender, lo escrito antes de encender el canal o de "Activar", ni lo que el agente
+ya decidió (contestó, pasó a un vendedor o dejó sin respuesta, p. ej. un "gracias").
+
+- Umbrales por variable (web **y** worker): `MONITOR_BOT_SILENCE_MINUTES` (15) y
+  `MONITOR_BOT_SILENCE_CONVERSATIONS` (3). Un valor inválido cae al de fábrica.
+- Al abrir el horario el bot reparte poco a poco lo que llegó con el horario cerrado: por eso el horario
+  tiene que llevar abierto el tramo completo (15 min) antes de poder alertar.
+- Fuera de horario o con el canal **Apagado** no hay alerta: eso se ve en la **franja de la Bandeja** y en la
+  **pastilla "Bot"** del Dashboard (abajo).
+- Texto del issue (público): «el bot no está contestando: N conversación(es) esperan respuesta hace más de
+  15 min (la más antigua desde las HH:MM, Mazatlán); última respuesta del bot: a las HH:MM». Solo conteos y
+  horas; nunca nombres ni teléfonos. En `metrics.bot`: `waiting`, `silentOrganizations`, `lastReplyMinutesAgo`.
+- **Qué hacer:** Agente IA → revisar el interruptor del canal, Opciones del bot › horario y las tarjetas de
+  error; mirar el log del worker (`[agente]`). Lo que ya esperó lo atiende un vendedor (el bot solo contesta
+  cuando el cliente vuelve a escribir).
+- Código: `lib/monitoring/bot-status.ts` (reglas, puro) y `bot-silence.ts` (base).
+
+**Bot fuera de horario o apagado, a la vista** (sin llamar a Zernio al cargar):
+
+- **Franja en la Bandeja** (arriba, para todos): «El bot solo contesta mié–jue 20:00–6:00 (ahora está fuera
+  de horario)» en ámbar, o «(ahora sí está contestando)» en gris, si el bot tiene horario; «El bot está apagado
+  en WhatsApp Diluvium» en rojo si el canal está Apagado. Con 24/7 y Encendido no hay franja. Se recalcula
+  cada minuto sin recargar.
+- **Pastilla "Bot"** junto a la de WhatsApp en el Dashboard: verde "Bot contestando", ámbar "Bot fuera de
+  horario", roja "Bot apagado" o "Bot callado". Al hacer clic: canal Encendido/Apagado, horario, cuántas
+  conversaciones llevan más de 15 min sin respuesta y la última respuesta del bot.
+
+### Alarma con menos ruido: "no se pudo revisar" (Bloque C, 28-sep-2026)
+
+Si Zernio no contesta al revisar la **cuenta** o el **webhook**, la 1.ª vez es solo un aviso al log
+(`[monitor] aviso: … (1.ª vez: se avisa si se repite en la siguiente revisión)`) y el endpoint responde 200:
+la Action **no** abre ni comenta el issue. A la **2.ª revisión seguida** fallida **de ese vigilante** es
+alerta («… (2 revisiones seguidas)»). Cada vigilante lleva su racha en Redis
+(`monitor:sin-revisar:{worker|web}:{cuentas|webhook}`, vence a las 2 h); una revisión buena la borra. Si
+Redis no responde, se avisa a la primera, como antes. Una **desconexión real (rojo) sigue avisando de
+inmediato**; "el CRM no respondió" (la Action no alcanza el endpoint) también.
 
 ### Alarma de desconexión (cuenta de WhatsApp en Zernio, 27-sep-2026)
 
@@ -235,7 +286,7 @@ Código: `lib/monitoring/zernio-account.ts` (reglas, puro), `account-health.ts` 
 | Rojo | `platformConnection.status` no es `connected` (incluye `unknown`), `inboundWebhookSubscribed` = false, `status` = `error`, o Zernio responde **404** (la cuenta ya no está conectada en Zernio) | en cada revisión, **a cualquier hora** |
 | Ámbar | `status` = `warning`, o `PRIMARY_INACTIVITY` (el celular lleva días sin abrir la app de WhatsApp Business: **abrirla**) | en cada revisión si lo dice health |
 | Ámbar | evento de desconexión **nuevo** (posterior a la primera revisión) y health ya conectado: "se desconectó a las HH:MM y ya volvió"; o evento `PRIMARY_INACTIVITY` | **una vez** por vigilante; la pastilla lo muestra 24 h |
-| — | Zernio no respondió, 5xx o respuesta rara | "no se pudo revisar" (alerta como tal, **nunca** como desconectado); se conserva la última revisión buena |
+| — | Zernio no respondió, 5xx o respuesta rara | "no se pudo revisar" (**nunca** como desconectado; alerta solo tras **2 revisiones seguidas** del mismo vigilante, ver arriba); se conserva la última revisión buena |
 
 - Los eventos anteriores a la **primera revisión** (guardada en Redis, `monitor:whatsapp-accounts:baseline`)
   nunca alertan: el `ACCOUNT_OFFBOARDED` del 27-sep 01:27Z no abre issue. Sí sirven para el "desde HH:MM".

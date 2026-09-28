@@ -241,9 +241,10 @@ Fuera de hoy: N2 está en otra cuenta de Meta ("Diluvium Pruebas"); se prueban c
    archivado no puede frenar un envío que ya iba en camino (ver lista teórica).
 1. Respaldo: `gh workflow run db-backup.yml --ref main` y esperar verde (`gh run watch`).
 2–4, 6. `npm run canal:archivar -- --cuenta 6a180a034c7f364ffded3c9c` (simula y cuenta) →
-   `… --confirmar`: cuenta antes, cancela sin borrar programados y corridas pendientes, apaga el agente,
-   deja el canal inactivo + archivado + Prueba (historial visible, composer "Canal archivado"), cuenta
-   después y confirma que es igual.
+   `… --confirmar --prueba`: cuenta antes, cancela sin borrar programados y corridas pendientes, apaga el
+   agente, deja el canal inactivo + archivado + Prueba (historial visible, composer "Canal archivado"),
+   cuenta después y confirma que es igual. Desde el Bloque C (28-sep) la marca Prueba solo se pone con
+   `--prueba` (un número de prueba sí la lleva; un canal REAL archivado no, y su historial sigue en el Dashboard).
 5. Quitar `6a180a034c7f364ffded3c9c` de `ZERNIO_ALLOWED_ACCOUNT_IDS` de `crm-diluvium` (production)
    conservando los demás. El worker NO lee esa variable (solo el webhook y el replay).
 7. Reporte. Desconectarlo en Zernio lo hace el usuario (en el sandbox no hay "cuenta" que desconectar:
