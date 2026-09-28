@@ -4,6 +4,7 @@
 import { and, asc, desc, eq, notInArray } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { channels, templates } from "@/lib/db/schema";
+import { logChanges } from "@/lib/historial/log";
 import { isTemplateSendable, type TemplateView } from "@/lib/templates/types";
 import { messagingProvider } from "./index";
 import type { ProviderName } from "./provider";
@@ -11,6 +12,7 @@ import {
   FOREIGN_TEMPLATE_ACCOUNT_IDS,
   isForeignTemplateAccount,
   TEMPLATE_STATUS_REMOVED,
+  templateSyncLines,
   templatesToRemove,
 } from "./template-sync";
 
@@ -119,7 +121,12 @@ export async function listTemplatesForOrg(organizationId: string): Promise<Templ
  * Con el canal del sandbox de Zernio NO se importa nada (TemplatesSandboxError),
  * ni se toca lo ya guardado: sus plantillas no son de Diluvium.
  */
-export async function syncTemplatesForOrg(organizationId: string): Promise<{ synced: number; removed: number }> {
+export async function syncTemplatesForOrg(
+  organizationId: string,
+  // Bloque E: «Sincronizar» de una persona queda en el Historial en la misma transacción,
+  // con qué plantillas llegaron, cambiaron de estado o de texto, o se quitaron.
+  log?: { userId: string | null },
+): Promise<{ synced: number; removed: number }> {
   const provider = messagingProvider();
   const channel = await activeWhatsappChannel(organizationId, provider.name);
   if (!channel) throw new TemplatesChannelError();
@@ -129,6 +136,12 @@ export async function syncTemplatesForOrg(organizationId: string): Promise<{ syn
 
   const removed = await db.transaction(async (tx) => {
     const now = new Date();
+    const previous = log
+      ? await tx
+          .select({ name: templates.name, language: templates.language, status: templates.status, body: templates.body })
+          .from(templates)
+          .where(and(eq(templates.channelId, channel.id), eq(templates.organizationId, organizationId)))
+      : [];
     for (const t of remote) {
       await tx
         .insert(templates)
@@ -167,6 +180,21 @@ export async function syncTemplatesForOrg(organizationId: string): Promise<{ syn
     const removeIds = templatesToRemove(existing, remote);
     for (const id of removeIds) {
       await tx.update(templates).set({ status: TEMPLATE_STATUS_REMOVED, updatedAt: now }).where(eq(templates.id, id));
+    }
+    if (log) {
+      const lines = templateSyncLines(
+        previous,
+        remote.map((t) => ({ name: t.name, language: t.language, status: t.status, body: t.bodyText })),
+        existing.filter((e) => removeIds.includes(e.id)),
+      );
+      await logChanges(tx, {
+        organizationId,
+        userId: log.userId,
+        kind: "plantillas",
+        action: "sincronizar",
+        newValue: `${remote.length} en Meta · ${lines.length === 0 ? "sin cambios" : `${lines.length} ${lines.length === 1 ? "cambio" : "cambios"}`}`,
+        detail: lines.length ? { type: "lineas", lines } : null,
+      });
     }
     return removeIds.length;
   });

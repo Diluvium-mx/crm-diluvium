@@ -50,16 +50,35 @@ export async function loadEditor(organizationId: string) {
   };
 }
 
-export async function saveProfile(organizationId: string, input: { agentName?: string; companyName?: string }): Promise<void> {
-  await ensureConfig(db, organizationId);
-  await db
-    .update(aiConfig)
-    .set({
-      ...(input.agentName !== undefined ? { agentName: input.agentName } : {}),
-      ...(input.companyName !== undefined ? { companyName: input.companyName || null } : {}),
-      updatedAt: new Date(),
-    })
-    .where(eq(aiConfig.organizationId, organizationId));
+// El cambio del nombre del agente (Ángela ✎) queda en el historial (Bloque E) en la misma
+// transacción; el nombre de la empresa no se edita en la pantalla y no se registra.
+export async function saveProfile(
+  organizationId: string,
+  input: { agentName?: string; companyName?: string },
+  userId: string | null = null,
+): Promise<void> {
+  await db.transaction(async (tx) => {
+    await ensureConfig(tx, organizationId);
+    const [cfg] = await tx.select({ agentName: aiConfig.agentName }).from(aiConfig).where(eq(aiConfig.organizationId, organizationId)).for("update");
+    await tx
+      .update(aiConfig)
+      .set({
+        ...(input.agentName !== undefined ? { agentName: input.agentName } : {}),
+        ...(input.companyName !== undefined ? { companyName: input.companyName || null } : {}),
+        updatedAt: new Date(),
+      })
+      .where(eq(aiConfig.organizationId, organizationId));
+    if (input.agentName === undefined || cfg?.agentName === input.agentName) return;
+    await logChanges(tx, {
+      organizationId,
+      userId,
+      kind: "nombre",
+      action: "editar",
+      oldValue: cfg?.agentName ?? null,
+      newValue: input.agentName,
+      detail: { type: "texto", title: "Nombre del agente", before: cfg?.agentName ?? null, after: input.agentName },
+    });
+  });
 }
 
 // Modelo 2 (Fase E) = el cerebro de siempre (modelo_cerebro). Queda en el historial de

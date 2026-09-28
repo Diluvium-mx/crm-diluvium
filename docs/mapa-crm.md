@@ -30,9 +30,9 @@ Contenido: [1. Inicio](#1-inicio) · [2. Menú y barra de arriba](#2-menú-y-bar
 
 | Rol | Quién es | Qué ve | Qué puede editar |
 |---|---|---|---|
-| **Owner** | El dueño de la cuenta | Todo | Todo, incluida la pestaña **Configuración**. Es el único que puede dar el rol Owner; ningún Admin lo puede modificar. |
-| **Admin** | Encargado del equipo | Todo | Todo lo del vendedor + **Configuración** (dar de alta vendedores, cambiar roles, restablecer contraseñas, desactivar). No puede tocar al Owner. |
-| **Vendedor** | Quien atiende a los clientes | Todo **menos Configuración** | Todo lo demás: Dashboard (incluido registrar recargas), Bandeja (también **adjuntar** fotos, videos y documentos en el chat), Embudo, Mensajes rápidos (crear, editar y borrar mensajes rápidos y plantillas), Anuncios, Agente IA (Goal, FAQs, modelos, opciones, tallas y canales; el **Historial** solo se consulta, igual para los tres roles) y Automatización. También edita o borra comentarios de otros. |
+| **Owner** | El dueño de la cuenta | Todo (incluidas las filas de **Vendedores** en Agente IA › Historial) | Todo, incluida la pestaña **Configuración**. Es el único que puede dar el rol Owner; ningún Admin lo puede modificar. |
+| **Admin** | Encargado del equipo | Todo (incluidas las filas de **Vendedores** en Agente IA › Historial) | Todo lo del vendedor + **Configuración** (dar de alta vendedores, cambiar roles, restablecer contraseñas, desactivar). No puede tocar al Owner. |
+| **Vendedor** | Quien atiende a los clientes | Todo **menos Configuración** (y en Agente IA › Historial no ve las filas de **Vendedores**) | Todo lo demás: Dashboard (incluido registrar recargas), Bandeja (también **adjuntar** fotos, videos y documentos en el chat), Embudo, Mensajes rápidos (crear, editar y borrar mensajes rápidos y plantillas), Anuncios, Agente IA (Goal, FAQs, modelos, opciones, tallas y canales; el **Historial** solo se consulta) y Automatización. También edita o borra comentarios de otros. |
 
 Nadie es "dueño" de un contacto: **todos ven todos los contactos, siempre**.
 
@@ -58,15 +58,16 @@ Nadie es "dueño" de un contacto: **todos ven todos los contactos, siempre**.
 | **Fila de espera (🕗 Enviando…)** | Si WhatsApp (Zernio) pide esperar porque salieron muchos mensajes seguidos, el mensaje **espera su turno** con el reloj 🕗 y sale solo, en el orden en que se escribió. **No es error**: al cliente no le llega nada raro y no hay que volver a escribirlo. Vale para vendedores, agente, workflows y programados. |
 | **Tarjeta de envío (🤖)** | Aviso en el chat cuando un mensaje **no se pudo confirmar** o WhatsApp avisó **después** que no le llegó al cliente (p. ej. la imagen de Datos bancarios). Dice el motivo en palabras simples y cómo reenviarlo (p. ej. "Vuelve a mandarla con /banco"). |
 | **Marca "IA"** | Etiqueta junto a un dato del Detalle del contacto que **escribió el agente al último**. Si un vendedor lo edita, la marca se va. Mientras el agente lo llena se ve "IA actualizando". |
-| **Pausar agente / Activar** | Detiene al agente **solo en ese chat** (8, 12 o 24 horas, hasta una fecha y hora o indefinidamente). **Activar** lo regresa. También se pausa solo cuando un vendedor contesta (se ajusta en Opciones). Cada pausa y cada Activar quedan en **Agente IA › Historial** con quién lo hizo. |
-| **Canal Encendido / Apagado** | Interruptor general del agente por número de WhatsApp (Agente IA › Canales, que solo muestra los números **no archivados**: hoy WhatsApp Diluvium). Apagado = no contesta a nadie en ese número; la Bandeja lo avisa con una franja roja arriba y la pastilla **Bot** del Dashboard sale roja. |
-| **Horario del bot** | Días y horas en que el agente contesta (Agente IA › Opciones; de fábrica 24/7). Si tiene horario, la Bandeja muestra arriba una franja «El bot solo contesta … (ahora está fuera de horario / ahora sí está contestando)». |
-| **Bot callado** | Alarma: con el canal Encendido y dentro de su horario, 3 o más clientes llevan más de 15 min esperando y el agente no ha mandado nada en esos 15 min. Sale en la pastilla **Bot** (roja) y en el correo del issue `alerta-whatsapp`. |
-| **Historial de cambios** | Subpestaña de Agente IA: **quién** cambió **qué**, **antes → después** y **cuándo** (hora de Mazatlán): opciones, Goal y FAQs, modelos, etapas, canales, workflows y pausas del agente por chat. Lo ven todos; no se edita. |
+| **Pausar agente / Activar** | Detiene al agente **solo en ese chat** (8, 12 o 24 horas, hasta una fecha y hora o indefinidamente). **Activar** lo regresa. También se pausa solo cuando un vendedor contesta (se ajusta en Opciones). Cada pausa y cada Activar quedan en **Agente IA › Historial** con quién lo hizo; las automáticas (un vendedor contestó, tope de respuestas, el cliente pidió un asesor y la vuelta sola al cumplirse la hora) también, como «Automático». |
+| **Canal Encendido / Apagado** | Interruptor general del agente por número de WhatsApp (Agente IA › Canales, que solo muestra los números **no archivados**: hoy WhatsApp Diluvium). Apagado = no contesta a nadie en ese número; la Bandeja lo avisa con una franja roja arriba y la pastilla **Agente IA** del Dashboard sale roja. |
+| **Horario del Agente IA** | Días y horas en que el agente contesta (Agente IA › Opciones; de fábrica 24/7). Si tiene horario, la Bandeja muestra arriba una franja «El Agente IA solo contesta … (ahora está fuera de horario / ahora sí está contestando)». |
+| **Agente IA callado** | Alarma: con el canal Encendido y dentro de su horario, 3 o más clientes que escribieron en la **última hora** llevan más de 15 min esperando y el agente no ha mandado nada en esos 15 min. Sale en la pastilla **Agente IA** (roja) y en el correo del issue `alerta-whatsapp`. Lo atrasado (más de 1 hora) **no** la hace sonar. |
+| **Chats que esperan a un vendedor** | Los atrasados: el cliente escribió hace más de 1 hora y nadie le contestó. El Agente IA ya no los recupera solo (solo rescata lo de los últimos 30 min), así que los atiende un vendedor. Salen como dato en la pastilla **Agente IA** del Dashboard; no son alarma. |
+| **Historial de cambios** | Subpestaña de Agente IA: **quién** cambió **qué**, **antes → después** y **cuándo** (hora de Mazatlán): opciones, Goal y FAQs, nombre del agente, modelos, etapas (incluida la regla del Agente IA), canales (incluida la limpieza de chats de prueba), workflows, tallas y medidas, mensajes rápidos, plantillas, vendedores (solo owner y admin) y pausas del agente por chat. **Ver cambios** muestra lo quitado (tachado en rojo) y lo agregado (en verde). No entra el trabajo diario (mover contactos, mensajes, comentarios). Lo ven todos; no se edita. |
 | **Goal** | Las instrucciones de Ángela: cómo habla, qué ofrece, cuándo pasa a un asesor. Es lo único que sigue, junto con las FAQs. |
 | **FAQs** | Preguntas frecuentes con su respuesta que el agente usa para contestar. |
 | **Modelo 1 / Modelo 2** | Los dos "cerebros" del agente. Cada etapa usa uno (hoy: Modelo 1 en Inbox, Prospecto e Interesado; Modelo 2 en Cerca de compra y Compra). |
-| **Número de prueba / PRUEBA** | Número de WhatsApp para probar. Sus chats llevan la etiqueta **PRUEBA** y **no cuentan en el Dashboard**. Desde el 28-sep-2026 está **archivado** (igual que el Sandbox): ya no aparece en Agente IA › Canales, pero no se borró nada. |
+| **Número de prueba / PRUEBA** | Número de WhatsApp para probar. Sus chats llevan la etiqueta **PRUEBA** y **no cuentan en el Dashboard**. Desde el 28-sep-2026 está **archivado** (igual que el Sandbox): ya no aparece en Agente IA › Canales. Ese mismo día se **borraron sus chats de prueba** (eran celulares del negocio): los contactos se quedaron, sin la marca Prueba, y hoy ningún chat lleva la etiqueta PRUEBA. |
 | **Importado del celular** | Mensaje viejo copiado del teléfono al conectar un número. El agente no lo contesta y no cuenta como nuevo. |
 | **Programado** | Mensaje que sale solo a la hora elegida (hora de Mazatlán). |
 | **Transcripción** | Texto de una nota de voz del cliente, escrito por el CRM; el agente lo lee para contestar. |
@@ -114,7 +115,7 @@ contacto y los avisos se explican dentro de la Bandeja porque son **los mismos**
 
 ### 3.1 Dashboard
 
-Resumen del mes: cuánto se gasta en IA y cuántas conversaciones nuevas llegan, si el número de WhatsApp está conectado y si el bot está contestando.
+Resumen del mes: cuánto se gasta en IA y cuántas conversaciones nuevas llegan, si el número de WhatsApp está conectado y si el Agente IA está contestando.
 
 ![Dashboard](mapa-crm/01-dashboard.png)
 
@@ -141,17 +142,18 @@ Resumen del mes: cuánto se gasta en IA y cuántas conversaciones nuevas llegan,
 | 19 | **Llegaron por anuncio** | Cuántas vinieron de un anuncio de Meta y qué porcentaje del periodo. | Todos |
 | 20 | **Pastilla de WhatsApp** (arriba a la derecha) | Estado del número según el monitoreo (cada 5 min): verde **"WhatsApp conectado"**, ámbar **"WhatsApp: revisar"**, rojo **"WhatsApp desconectado desde HH:MM"** (hora de Mazatlán) o gris **"Sin revisar desde HH:MM"** si la última revisión tiene más de 15 min. No consulta a Zernio al abrir la página. | Todos |
 | 21 | **Estado de WhatsApp** (recuadro al hacer clic en 20) | 4 líneas: **Número** (conectado o no), **Último mensaje de un cliente** (hace X min), **Worker** (activo o no) y **Webhook de Zernio** (activo y fallos). | Todos |
-| 22 | **Pastilla Bot** (junto a la de WhatsApp) | ¿El agente está contestando? Verde **"Bot contestando"**, ámbar **"Bot fuera de horario"**, roja **"Bot apagado"** (canal Apagado) o **"Bot callado"** (3 o más clientes esperando más de 15 min y el bot sin mandar nada en 15 min, dentro de su horario). Sale de los datos del CRM; no consulta a Zernio. No está en la captura. | Todos |
-| 23 | **Estado del bot** (recuadro al hacer clic en 22) | 4 líneas: **Canal** (Encendido o Apagado), **Horario** (24/7 o días y horas, y si ahora está fuera), **Sin respuesta hace más de 15 min** (cuántas conversaciones) y **Última respuesta del bot** (hace X min). | Todos |
+| 22 | **Pastilla Agente IA** (junto a la de WhatsApp) | ¿El agente está contestando? Verde **"Agente IA contestando"**, ámbar **"Agente IA fuera de horario"**, roja **"Agente IA apagado"** (canal Apagado) o **"Agente IA callado"** (3 o más clientes de la última hora esperando más de 15 min y el agente sin mandar nada en 15 min, dentro de su horario). Sale de los datos del CRM; no consulta a Zernio. No está en la captura. | Todos |
+| 23 | **Estado del Agente IA** (recuadro al hacer clic en 22) | 5 líneas: **Canal** (Encendido o Apagado), **Horario** (24/7 o días y horas, y si ahora está fuera), **Sin respuesta hace más de 15 min (de la última hora)** (cuántas conversaciones; estas sí cuentan para la alarma), **Atrasados (más de 1 h)** («N chats esperan a un vendedor»: solo dato, no alarma) y **Última respuesta del Agente IA** (hace X min). | Todos |
 
 **Lo cambias tú desde la pantalla:** registrar y borrar recargas; el periodo de las conversaciones nuevas.
 
 **Si la pastilla (20) sale roja:** revisa Zernio y la app de WhatsApp Business del celular; el paso a paso está en
 `docs/go-live.md` › Alarma de desconexión. También llega el correo del issue `alerta-whatsapp`, a cualquier hora.
 
-**Si la pastilla Bot (22) sale ámbar o roja:** revisa en Agente IA el interruptor del canal (Apagado), el **Horario
-del bot** en Opciones y las tarjetas "El agente no pudo responder" de la Bandeja. "Bot callado" también llega por correo
-(issue `alerta-whatsapp`); el paso a paso está en `docs/go-live.md` › Alarma "bot callado". Una falla suelta al revisar
+**Si la pastilla Agente IA (22) sale ámbar o roja:** revisa en Agente IA el interruptor del canal (Apagado), el **Horario
+del Agente IA** en Opciones y las tarjetas "El agente no pudo responder" de la Bandeja. "Agente IA callado" también llega por correo
+(issue `alerta-whatsapp`); el paso a paso está en `docs/go-live.md` › Alarma "Agente IA callado". Si dice "N chats esperan a un
+vendedor", no es una falla: son clientes de hace más de 1 hora que un vendedor tiene que contestar. Una falla suelta al revisar
 Zernio ya no manda correo: solo si se repite en la siguiente revisión.
 
 **Pídeselo a Code:**
@@ -160,7 +162,7 @@ Zernio ya no manda correo: solo si se repite en la siguiente revisión.
 - "En Dashboard › (18) por etapa, agrega el total en pesos cotizado por etapa."
 
 **Agente IA aquí:** todo lo que gasta al contestar (y al transcribir notas de voz, que se cobra en OpenAI) se suma en
-**Gasto de IA**. Los chats que atiende cuentan en **Conversaciones nuevas** como cualquier otro. La pastilla **Bot** (22)
+**Gasto de IA**. Los chats que atiende cuentan en **Conversaciones nuevas** como cualquier otro. La pastilla **Agente IA** (22)
 dice si está contestando.
 
 <sub>Para Code: ruta `/inicio`; `app/(app)/inicio/` (`ai-spend-card`, `ai-topups`, `period-cards`, `daily-chart`, `breakdown-list`, `range-filter`, `whatsapp-status`); datos en `lib/dashboard/`; la pastilla (20–21) en `lib/monitoring/` (`status-pill`, `dashboard-status`) con lo que guarda el monitoreo en Redis; la pastilla Bot (22–23) en `lib/monitoring/` (`bot-status`, `bot-silence`) con datos de la base.</sub>
@@ -203,7 +205,7 @@ Clic derecho sobre una fila de la lista: menú de esa conversación (23).
 | 21 | **Detalle del contacto** | Ficha del cliente. Ver [3.2.3 Detalle del contacto](#323-detalle-del-contacto). | Todos |
 | 22 | **Ocultar panel de contacto** | Esconde o muestra el Detalle; se recuerda en esa computadora. | Todos |
 | 23 | **Menú del clic derecho** | Sobre una fila (en celular, dejándola presionada): **Marcar como no leído** (pone el círculo naranja, 6, para dejarla pendiente; si ese chat estaba abierto, se cierra) o **Marcar como leído** (lo quita). Es para todo el equipo; se quita solo al abrir el chat o al contestar. | Todos |
-| 24 | **Franja del bot** (arriba de todo, solo si aplica) | Si el bot tiene horario: «El bot solo contesta mié–jue 20:00–6:00 (ahora está fuera de horario)» en ámbar, o «(ahora sí está contestando)» en gris; se actualiza sola cada minuto. Si el canal está Apagado: «El bot está apagado en WhatsApp Diluvium» en rojo. Con 24/7 y Encendido no sale. No está en la captura. | Todos |
+| 24 | **Franja del Agente IA** (arriba de todo, solo si aplica) | Si el Agente IA tiene horario: «El Agente IA solo contesta mié–jue 20:00–6:00 (ahora está fuera de horario)» en ámbar, o «(ahora sí está contestando)» en gris; se actualiza sola cada minuto. Si el canal está Apagado: «El Agente IA está apagado en WhatsApp Diluvium» en rojo. Con 24/7 y Encendido no sale. No está en la captura. | Todos |
 
 **Lo cambias tú desde la pantalla:** temperatura, estrella, leído / no leído (clic derecho), etapa y todo el
 Detalle; contestar, programar, mandar plantillas; pausar o activar al agente (en el Detalle).
@@ -229,7 +231,7 @@ dentro de él.
 ![Tarjeta: el agente no pudo responder](mapa-crm/03-chat-error.png)
 ![Agente en pausa y depósito recibido](mapa-crm/03-chat-pausa.png)
 ![Mensaje que no se envió](mapa-crm/03-chat-fallido.png)
-![Chat del número de prueba](mapa-crm/03-chat-prueba.png)
+![Chat del número de prueba (captura anterior al 28-sep-2026; ese chat ya se borró)](mapa-crm/03-chat-prueba.png)
 
 | # | Nombre oficial | Qué hace | Quién lo ve |
 |---|---|---|---|
@@ -248,7 +250,7 @@ dentro de él.
 | 13 | **⚠ No se envió** | El mensaje no salió. | Todos |
 | 14 | **Motivo** | Por qué no salió, en palabras simples: ventana de 24 h cerrada, número que no recibe mensajes de WhatsApp, WhatsApp no pudo subir el archivo, tipo de archivo no permitido; cualquier otro: "WhatsApp no lo entregó (código N)". | Todos |
 | 15 | **Reintentar** (mensaje) | Vuelve a mandar ese mismo mensaje. | Todos |
-| 16 | **PRUEBA** | El chat es de un número de prueba; no cuenta en el Dashboard. | Todos |
+| 16 | **PRUEBA** | El chat es de un número de prueba; no cuenta en el Dashboard. Hoy no sale en ningún chat: los de prueba se borraron el 28-sep-2026. | Todos |
 | 17 | **Importado del celular** | Mensaje copiado del historial del teléfono al conectar el número. El agente no lo contesta. | Todos |
 | 18 | **Respuesta del agente en el número de prueba** | Así se prueba al agente sin tocar a clientes reales. | Todos |
 | 19 | **🤖 No le llegó al cliente la imagen de …** | Tarjeta de envío: WhatsApp aceptó el archivo de un workflow y después avisó que falló. Dice el motivo y el comando para reenviarlo (p. ej. /banco). La etapa no se regresa. | Todos |
@@ -439,7 +441,7 @@ Clic derecho sobre una tarjeta: menú de ese contacto (16).
 | 6 | **Círculo naranja** | Mensajes sin ver. | Todos |
 | 7 | **Temperatura** | La del contacto. | Todos |
 | 8 | **Ciudad por lada** | 📍 Ciudad calculada por la lada del teléfono. | Todos |
-| 9 | **PRUEBA** | Contacto del número de prueba. | Todos |
+| 9 | **PRUEBA** | Contacto del número de prueba. Hoy ninguno la lleva: se quitó el 28-sep-2026 al borrar los chats de prueba. | Todos |
 | 10 | **Columna Compra** | Los que ya compraron (cuenta en Anuncios › Compraron). Es la columna con el papel «Venta cerrada» (70): si el papel pasa a otra, cuenta esa. | Todos |
 | 11 | **Chat** (pop-up) | El mismo chat de la Bandeja, con su caja para escribir. | Todos |
 | 12 | **Detalle del contacto** (pop-up) | El mismo Detalle de la Bandeja. | Todos |
@@ -447,7 +449,7 @@ Clic derecho sobre una tarjeta: menú de ese contacto (16).
 | 14 | **✕ Cerrar** | Cierra el pop-up (también con Esc). | Todos |
 | 15 | **Fondo oscuro** | Clic afuera del pop-up también lo cierra. | Todos |
 | 17 | **✎ Editar columnas** (lápiz junto a «Embudo») | Abre el editor de columnas (18). | Todos |
-| 18 | **Columnas del Embudo** (pop-up) | El mismo editor de Agente IA › Etapas (62–71): nombre, orden, papel, modelo y regla del bot de cada columna. Todo cambio pide confirmar; las demás pantallas abiertas lo ven al momento. | Todos |
+| 18 | **Columnas del Embudo** (pop-up) | El mismo editor de Agente IA › Etapas (62–71): nombre, orden, papel, modelo y regla del Agente IA de cada columna. Todo cambio pide confirmar; las demás pantallas abiertas lo ven al momento. | Todos |
 | 16 | **Menú del clic derecho** | Sobre una tarjeta: **Marcar como no leído** (círculo naranja, 6, en su chat más reciente) o **Marcar como leído** (lo quita de todos sus chats). Lo mismo que en la Bandeja y se ve en las dos. No cambia el color de la tarjeta (azul = falta contestar). En celular no hay pulsación larga: ahí es arrastrar. | Todos |
 
 **Lo cambias tú desde la pantalla:** la etapa (arrastrando la tarjeta), leído / no leído (clic derecho), las
@@ -504,6 +506,7 @@ el 27-sep-2026; se editan aquí como cualquier otro.
 | 24 | **Categoría** (etiqueta) | La categoría de esa plantilla. | Todos |
 
 **Lo cambias tú desde la pantalla:** crear, editar y borrar mensajes rápidos; crear plantillas (van a revisión de Meta) y sincronizarlas.
+Cada uno de esos cambios queda en **Agente IA › Historial** (72) con quién lo hizo y su texto (**Ver cambios**, 77).
 
 **Pídeselo a Code:**
 - "En Mensajes rápidos › (4) mensaje rápido, agrega un buscador arriba de la lista."
@@ -609,17 +612,17 @@ una ventana arriba (59)**; nada se guarda con un solo clic.
 | 25 | **Pregunta** | Clic muestra la respuesta. | Todos |
 | 26 | **Interruptor** | Activa o desactiva la FAQ (desactivada, el agente no la usa). Pide confirmación. | Todos |
 | 27 | **Editar · Borrar** (FAQ) | Cambia o elimina la FAQ. Cada cambio deja versión. Agregar, guardar y borrar piden confirmación. | Todos |
-| 28 | **Opciones** | Cómo se comporta el bot. Los cambios se guardan juntos con «Guardar cambios» (56) y aplican en menos de un minuto. | Todos |
+| 28 | **Opciones** | Cómo se comporta el Agente IA. Los cambios se guardan juntos con «Guardar cambios» (56) y aplican en menos de un minuto. | Todos |
 | 29 | **Tiempo de espera antes de responder** | 5 a 60 s para juntar varios mensajes seguidos del cliente. | Todos |
-| 30 | **Pausar el bot cuando un vendedor contesta** | Sí / No. | Todos |
+| 30 | **Pausar al Agente IA cuando un vendedor contesta** | Sí / No. | Todos |
 | 31 | **Reactivar solo después de** | Nunca (a mano con «Activar») · 8 h · 24 h · Número de horas. | Todos |
-| 32 | **Cuando el cliente pide un asesor** | Avisar al vendedor y seguir contestando · o avisar y pausar el bot en ese chat por un tiempo. | Todos |
-| 33 | **Horario del bot** | 24/7 o Días y horas (hora de Mazatlán). Al abrir, atiende poco a poco lo pendiente. Con horario, la Bandeja lo avisa con la franja (Bandeja › 24) y la pastilla Bot del Dashboard sale ámbar fuera de horario. | Todos |
+| 32 | **Cuando el cliente pide un asesor** | Avisar al vendedor y seguir contestando · o avisar y pausar al Agente IA en ese chat por un tiempo. | Todos |
+| 33 | **Horario del Agente IA** | 24/7 o Días y horas (hora de Mazatlán). Al abrir, atiende poco a poco lo pendiente. Con horario, la Bandeja lo avisa con la franja (Bandeja › 24) y la pastilla Agente IA del Dashboard sale ámbar fuera de horario. | Todos |
 | 34 | **Responder imágenes** | Sí / No (con No tampoco lee comprobantes en imagen). | Todos |
 | 35 | **Responder notas de voz** | Sí / No (con No no se transcriben). | Todos |
 | 36 | **Longitud de respuesta** | Corta · Balanceada · Detallada. | Todos |
 | 37 | **Máximo de mensajes por respuesta** | 1 o 2 burbujas por respuesta. | Todos |
-| 38 | **Máximo de respuestas del bot por conversación** | Sin tope o Máximo; al llegar se pausa y deja aviso (tarjeta amarilla). | Todos |
+| 38 | **Máximo de respuestas del Agente IA por conversación** | Sin tope o Máximo; al llegar se pausa y deja aviso (tarjeta amarilla). | Todos |
 | 39 | **Último cambio** | Quién cambió qué y cuándo (solo el último; todos están en **Historial**, 72). | Todos |
 | 40 | **Tallas y medidas** | Qué tamaño de compuerta corresponde a cada ancho. | Todos |
 | 41 | **Línea mini** | Rangos de la mini compuerta. | Todos |
@@ -631,8 +634,8 @@ una ventana arriba (59)**; nada se guarda con un solo clic.
 | 47 | ~~Implementar~~ | Ya no existe (27-sep-2026): ahora es la subpestaña **Canales** (52). | — |
 | 48 | **Canales** | Números de WhatsApp conectados, solo los **no archivados** (hoy solo WhatsApp Diluvium). | Todos |
 | 49 | **Canal** | Nombre y número (p. ej. WhatsApp Diluvium). | Todos |
-| 50 | **Apagado · Encendido** | Interruptor general del agente en ese número. Encender y apagar piden confirmación. Apagado, la Bandeja muestra la franja roja (Bandeja › 24) y la pastilla Bot del Dashboard sale roja. | Todos |
-| 51 | ~~Número de prueba~~ | Ya no aparece (28-sep-2026): el Número de prueba y el Sandbox están archivados y se ocultan de esta lista **sin borrarse** (sus chats siguen en la Bandeja). | — |
+| 50 | **Apagado · Encendido** | Interruptor general del agente en ese número. Encender y apagar piden confirmación. Apagado, la Bandeja muestra la franja roja (Bandeja › 24) y la pastilla Agente IA del Dashboard sale roja. | Todos |
+| 51 | ~~Número de prueba~~ | Ya no aparece (28-sep-2026): el Número de prueba y el Sandbox están archivados y se ocultan de esta lista **sin borrarse**; sus chats de prueba se borraron ese mismo día (los contactos se quedaron). | — |
 | 52 | **Subpestañas** | Modelos · Etapas · Instrucciones (Goal) · FAQs · Opciones · Tallas y medidas · Canales · Historial. Fija arriba al deslizar; en celular se desliza de lado. La elegida queda en la dirección (`?seccion=opciones`), así un enlace abre directo esa parte. | Todos |
 | 53 | **Punto naranja** (en una subpestaña) | Esa parte tiene cambios sin guardar (Goal, Opciones o Tallas). Cambiar de subpestaña no los pierde; salir de la página pregunta antes. | Todos |
 | 54 | **✎ Nombre de la versión** | Lápiz en cada versión (Goal y FAQs, también la actual): ponerle o cambiarle nombre, p. ej. «Antes de la promo». Máx. 80 letras; vacío = sin nombre. Pide confirmación. | Todos |
@@ -649,28 +652,30 @@ una ventana arriba (59)**; nada se guarda con un solo clic.
 | 65 | **Nombre** | Cómo se llama la columna. Renombrar no cambia la clave interna: contactos, workflows y el agente la siguen reconociendo. | Todos |
 | 66 | **Papel** | Entrada (llegan los contactos nuevos) · Cerca de compra (datos bancarios y /banco) · Venta cerrada (comprobante que cuadra; Anuncios › Compraron). Cada papel en una sola columna; pasarlo a otra pide confirmar. | Todos |
 | 67 | **Modelo 1 · Modelo 2** (por etapa) | Qué modelo contesta a los contactos de esa columna. Pide confirmar. | Todos |
-| 68 | **Regla del bot** | Cuándo debe el agente mover al contacto a esa columna (texto libre). Vacía = el agente no mueve ahí por su cuenta. | Todos |
+| 68 | **Regla del Agente IA** | Cuándo debe el agente mover al contacto a esa columna (texto libre). Vacía = el agente no mueve ahí por su cuenta. | Todos |
 | 69 | **Guardar · Deshacer** (por fila) | Aparecen al cambiar nombre o regla; Guardar pide confirmar. | Todos |
 | 70 | **🗑 Borrar** | Pop-up que pregunta a qué columna pasan sus contactos (con cuántos tiene cada una) y los mueve todos de una vez. Gris si la columna tiene papel o si quedan 3. | Todos |
 | 71 | **Nueva columna · Después de · Agregar** | Agrega una columna entre dos (o al final), con el Modelo 2 y sin regla. Pide confirmar. | Todos |
-| 72 | **Historial** (subpestaña) | Una fila por cambio, lo más nuevo arriba (hasta 200; con fechas ves más atrás): opciones del bot, Goal y FAQs, Modelo 1 y 2, etapas (crear, renombrar, borrar, reordenar, papel, modelo), canal encendido/apagado, workflows (crear, editar, encender, apagar, borrar) y, por chat, **Pausar agente** / **Activar** con quién lo hizo. Solo se consulta. | Todos |
-| 73 | **Tipo** | Filtra: Todos · Opciones del bot · Goal y FAQs · Modelos · Etapas · Canales · Workflows · Pausas por chat. | Todos |
+| 72 | **Historial** (subpestaña) | Una fila por cambio, lo más nuevo arriba (hasta 200; con fechas ves más atrás): opciones del Agente IA, Goal y FAQs, nombre del agente (Ángela ✎), Modelo 1 y 2, etapas (crear, renombrar, borrar, reordenar, papel, modelo y **regla del Agente IA**), canal encendido/apagado (y la limpieza de chats de prueba: quién y cuántos, `npm run pruebas:limpiar`), workflows (crear, editar, encender, apagar, borrar), **tallas y medidas**, **mensajes rápidos** (crear, editar, borrar), **plantillas** (alta y sincronizar), **vendedores** (alta, cambio de rol, desactivar, reactivar y contraseña restablecida, sin mostrarla; solo las ven owner y admin) y, por chat, **Pausar agente** / **Activar** con quién lo hizo. No entra el trabajo diario (mover contactos de etapa, mensajes, comentarios). Solo se consulta. | Todos (Vendedores: solo Owner y Admin) |
+| 73 | **Tipo** | Filtra: Todos · Opciones del Agente IA · Goal y FAQs · Nombre del agente · Modelos · Etapas · Canales · Workflows · Tallas y medidas · Mensajes rápidos · Plantillas · Vendedores (solo Owner y Admin) · Pausas por chat. | Todos |
 | 74 | **Desde · Hasta** | Días (hora de Mazatlán), los dos incluidos. Vacío = sin límite. | Todos |
-| 75 | **Mostrar pausas automáticas («un vendedor contestó»)** | Agrega las pausas que el agente se puso solo porque un vendedor contestó (quién = «Automático»). Apagado de fábrica. | Todos |
+| 75 | **Mostrar pausas automáticas (un vendedor contestó, tope de respuestas, pidió un asesor y vuelta sola)** | Agrega las pausas que el agente se puso solo (un vendedor contestó, llegó al máximo de respuestas, el cliente pidió un asesor) y su **vuelta sola** al cumplirse la hora de regreso (quién = «Automático»). Apagado de fábrica. | Todos |
 | 76 | **Fila del historial** | Quién · fecha y hora · qué pasó · etiqueta del tipo · **antes → después** (p. ej. «GPT-5.6 Luna → GPT-5.6 Terra», «Activo → Pausado hasta «Activar»»). | Todos |
+| 77 | **Ver cambios** (en las filas que lo permiten) | Abre lo **quitado (tachado en rojo)** y lo **agregado (en verde)**: el Goal por párrafo, las FAQs por pregunta (agregada, borrada o editada), los workflows paso por paso (textos, archivo, espera, disparadores), la regla de etapa, el nombre del agente, el texto de un mensaje rápido o de una plantilla, y las tallas (rango antes → después). «Ocultar cambios» lo cierra. Las filas de antes del 28-sep-2026, las opciones, las pausas y los vendedores no lo tienen. | Todos |
 
 **Lo cambias tú desde la pantalla:** todo lo de esta sección: nombre, modelos, etapas (columnas del Embudo), Goal (con versiones), FAQs,
 Opciones, Tallas y medidas, y encender o apagar el agente por número. El **Historial** (72) solo se consulta: se llena solo con cada cambio.
 
 **Pídeselo a Code:**
 - "En Agente IA › Historial › (75), muestra las pausas automáticas de fábrica."
+- "En Agente IA › Historial › (77) Ver cambios, muestra también los párrafos del Goal que no cambiaron."
 - "En Agente IA › (29) tiempo de espera, permite hasta 120 segundos."
 - "En Agente IA › (12) APIs de IA, agrega el saldo estimado de cada proveedor."
 
 **Agente IA aquí:** esta es su configuración. El Goal y las FAQs mandan sobre lo que dice; las Opciones, sobre
 cuándo y cuánto contesta.
 
-<sub>Para Code: ruta `/agente-ia?seccion=modelos|etapas|goal|faqs|opciones|tallas|canales|historial` (`lib/agente-ia/sections.ts`); Historial: `app/(app)/agente-ia/_components/history-panel.tsx`, `lib/historial/` (`labels`, `log` = escritura en la misma transacción, `queries` = une `change_history` (0042) + `ai_config_changes` + `ai_knowledge_versions`), acción `lib/actions/historial.ts`; Canales filtra `channels.archived_at is null` (`lib/actions/agente-ia-editor.ts`); editor de etapas `app/(app)/_components/stages-editor.tsx` (tabla `funnel_stages`, acciones `lib/actions/funnel-stages.ts`); `app/(app)/agente-ia/_components/` (`agente-editor`, `use-confirm` (confirmación de todo cambio), `brain-model-picker`, `api-status-panel`, `goal-editor`, `versions-list`, `faq-editor`, `bot-options`, `size-ranges-section`, `channel-switches`); `lib/ai/catalog.ts`, `lib/agente-ia/opciones.ts`, `lib/agente-ia/opciones-draft.ts` (borrador de Opciones); nombre de versiones en `ai_knowledge_versions.name` (migración 0040); detalle en `docs/agente-ia.md`.</sub>
+<sub>Para Code: ruta `/agente-ia?seccion=modelos|etapas|goal|faqs|opciones|tallas|canales|historial` (`lib/agente-ia/sections.ts`); Historial: `app/(app)/agente-ia/_components/history-panel.tsx`, `lib/historial/` (`labels`, `log` = escritura en la misma transacción, `queries` = une `change_history` (0042; `detail` jsonb desde la 0043) + `ai_config_changes` + `ai_knowledge_versions`, y `loadChangeDiff` para Ver cambios; `diff` = motor puro de Ver cambios), acciones `lib/actions/historial.ts` (`getChangeHistory`, `getChangeDiff`), `history-diff.tsx` pinta Ver cambios; Canales filtra `channels.archived_at is null` (`lib/actions/agente-ia-editor.ts`); editor de etapas `app/(app)/_components/stages-editor.tsx` (tabla `funnel_stages`, acciones `lib/actions/funnel-stages.ts`); `app/(app)/agente-ia/_components/` (`agente-editor`, `use-confirm` (confirmación de todo cambio), `brain-model-picker`, `api-status-panel`, `goal-editor`, `versions-list`, `faq-editor`, `bot-options`, `size-ranges-section`, `channel-switches`); `lib/ai/catalog.ts`, `lib/agente-ia/opciones.ts`, `lib/agente-ia/opciones-draft.ts` (borrador de Opciones); nombre de versiones en `ai_knowledge_versions.name` (migración 0040); detalle en `docs/agente-ia.md`.</sub>
 
 ---
 
@@ -768,7 +773,9 @@ Solo **Owner y Admin**. Hoy tiene una pestaña: **Vendedores**.
 | 11 | **Rol** (del nuevo) | Con qué rol entra. | Owner y Admin |
 | 12 | **Agregar** | Crea la cuenta. | Owner y Admin |
 
-**Lo cambias tú desde la pantalla:** todo lo de esta sección. Siempre queda al menos un Owner activo.
+**Lo cambias tú desde la pantalla:** todo lo de esta sección. Siempre queda al menos un Owner activo. Alta, cambio de rol,
+desactivar, reactivar y restablecer contraseña quedan en **Agente IA › Historial** (72, tipo Vendedores) con quién lo hizo; la
+contraseña nunca se muestra y esas filas solo las ven Owner y Admin.
 
 **Pídeselo a Code:**
 - "En Configuración › (1), agrega una pestaña «Etapas» para renombrar las columnas del Embudo."
@@ -836,8 +843,8 @@ Code sabe exactamente qué pieza tocar; no hace falta explicar nada más.
 | **Cambiar el modelo** (Agente IA › 5–11) | Cambia cuánto cuesta cada respuesta y cómo contesta Ángela. Pruébalo primero con el número de prueba. |
 | **Apagar el canal** (Agente IA › 50) | El agente deja de contestar a **todos** en ese número. Para un solo cliente usa **Pausar agente** en el Detalle. |
 | **Editar o borrar el Goal o las FAQs** (Agente IA › 13–27) | Es lo único que sigue el agente. Si algo sale mal, **Restaurar** (20) regresa una versión anterior. |
-| **Pausar el bot cuando un vendedor contesta = No** (Agente IA › 30) | El agente seguiría contestando aunque un vendedor ya tomó el chat. |
-| **Máximo de respuestas** (Agente IA › 38) | Un tope bajo deja clientes sin respuesta; "Sin tope" quita la protección contra otro bot. |
+| **Pausar al Agente IA cuando un vendedor contesta = No** (Agente IA › 30) | El agente seguiría contestando aunque un vendedor ya tomó el chat. |
+| **Máximo de respuestas** (Agente IA › 38) | Un tope bajo deja clientes sin respuesta; "Sin tope" quita la protección contra otro contestador automático. |
 | **Tallas y medidas** (Agente IA › 40–46) | Cambia el tamaño sugerido en todos los contactos y lo que cotiza el agente. |
 | **Apagar o borrar un workflow o su archivo** (Automatización › 5, 38) | El agente deja de mandar ese material (tabla, datos bancarios, videos). |
 | **▷ Probar un workflow** (Automatización › 14) | Manda mensajes de verdad a la conversación elegida. |

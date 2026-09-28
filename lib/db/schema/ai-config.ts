@@ -1,6 +1,7 @@
 import { index, jsonb, pgTable, text, timestamp, integer, boolean } from "drizzle-orm/pg-core";
 import { organization, user } from "./auth";
 import type { BotSchedule } from "@/lib/agente-ia/opciones";
+import type { ChangeDetailData } from "@/lib/historial/diff";
 
 // Configuración del Agente IA por organización (Fase A: Fundación del modelo).
 // Una fila por organización: qué modelo filtra la bandeja (`modelo_filtro`) y
@@ -112,6 +113,9 @@ export const changeHistory = pgTable(
     subjectId: text("subject_id"),
     oldValue: text("old_value"),
     newValue: text("new_value"),
+    // Bloque E (0043): antes/después completo para "Ver cambios" (lib/historial/diff.ts);
+    // null = la fila no tiene detalle (las de antes de la 0043, pausas, vendedores…).
+    detail: jsonb("detail").$type<ChangeDetailData>(),
     createdAt: timestamp("created_at").defaultNow().notNull(),
   },
   (t) => [index("change_history_org_created_idx").on(t.organizationId, t.createdAt)],

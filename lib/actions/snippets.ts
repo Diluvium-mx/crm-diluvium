@@ -4,6 +4,8 @@
 // desde la SESIÓN (nunca del cliente) y acotan toda lectura/escritura a esa
 // organización (CLAUDE.md §7). Los fragmentos son a nivel organización: todos
 // los miembros ven y editan los mismos (igual criterio que Contactos, §5).
+// Bloque E (28-sep-2026): crear, editar y borrar quedan en el Historial (Agente IA) con su
+// texto, en la MISMA transacción que el cambio.
 import { revalidatePath } from "next/cache";
 import { and, asc, eq } from "drizzle-orm";
 import { z } from "zod";
@@ -11,6 +13,7 @@ import { requireActiveMembership } from "@/lib/auth/active-organization";
 import { roleAllows } from "@/lib/auth/permissions";
 import { db } from "@/lib/db";
 import { snippets } from "@/lib/db/schema/snippets";
+import { logChanges } from "@/lib/historial/log";
 import { SNIPPET_BODY_MAX, SNIPPET_NAME_MAX } from "@/lib/snippets/limits";
 import { extractVariables } from "@/lib/snippets/variables";
 import type { SnippetView } from "@/lib/snippets/types";
@@ -61,20 +64,32 @@ export async function listSnippets(): Promise<SnippetView[]> {
 }
 
 export async function createSnippet(input: CreateSnippetInput): Promise<SnippetView> {
-  const { organizationId, role } = await requireActiveMembership();
+  const { organizationId, role, userId } = await requireActiveMembership();
   requireSnippetManage(role, "create");
   const parsed = createSnippetSchema.parse(input);
   try {
-    const [created] = await db
-      .insert(snippets)
-      .values({
-        id: crypto.randomUUID(),
+    const created = await db.transaction(async (tx) => {
+      const [row] = await tx
+        .insert(snippets)
+        .values({
+          id: crypto.randomUUID(),
+          organizationId,
+          name: parsed.name,
+          body: parsed.body,
+          variables: extractVariables(parsed.body),
+        })
+        .returning();
+      await logChanges(tx, {
         organizationId,
-        name: parsed.name,
-        body: parsed.body,
-        variables: extractVariables(parsed.body),
-      })
-      .returning();
+        userId,
+        kind: "mensajes_rapidos",
+        action: "crear",
+        subject: row.name,
+        subjectId: row.id,
+        detail: { type: "texto", title: "Mensaje", before: null, after: row.body },
+      });
+      return row;
+    });
     revalidatePath("/mensajes-rapidos");
     return toView(created);
   } catch (error) {
@@ -84,20 +99,40 @@ export async function createSnippet(input: CreateSnippetInput): Promise<SnippetV
 }
 
 export async function updateSnippet(input: UpdateSnippetInput): Promise<SnippetView> {
-  const { organizationId, role } = await requireActiveMembership();
+  const { organizationId, role, userId } = await requireActiveMembership();
   requireSnippetManage(role, "update");
   const parsed = updateSnippetSchema.parse(input);
+  const own = and(eq(snippets.id, parsed.id), eq(snippets.organizationId, organizationId));
   try {
-    const [updated] = await db
-      .update(snippets)
-      .set({
-        name: parsed.name,
-        body: parsed.body,
-        variables: extractVariables(parsed.body),
-        updatedAt: new Date(),
-      })
-      .where(and(eq(snippets.id, parsed.id), eq(snippets.organizationId, organizationId)))
-      .returning();
+    const updated = await db.transaction(async (tx) => {
+      const [before] = await tx.select({ name: snippets.name, body: snippets.body }).from(snippets).where(own).for("update");
+      const [row] = await tx
+        .update(snippets)
+        .set({
+          name: parsed.name,
+          body: parsed.body,
+          variables: extractVariables(parsed.body),
+          updatedAt: new Date(),
+        })
+        .where(own)
+        .returning();
+      if (!before || !row) return null;
+      if (before.name !== row.name || before.body !== row.body) {
+        await logChanges(tx, {
+          organizationId,
+          userId,
+          kind: "mensajes_rapidos",
+          action: "editar",
+          subject: row.name,
+          subjectId: row.id,
+          // En la fila solo el nombre (si cambió); el texto va en "Ver cambios".
+          oldValue: before.name !== row.name ? `Nombre: «${before.name}»` : null,
+          newValue: before.name !== row.name ? `Nombre: «${row.name}»` : null,
+          detail: before.body !== row.body ? { type: "texto", title: "Mensaje", before: before.body, after: row.body } : null,
+        });
+      }
+      return row;
+    });
     if (!updated) throw new Error("Mensaje rápido no encontrado en esta organización.");
     revalidatePath("/mensajes-rapidos");
     return toView(updated);
@@ -108,13 +143,27 @@ export async function updateSnippet(input: UpdateSnippetInput): Promise<SnippetV
 }
 
 export async function deleteSnippet(id: string): Promise<void> {
-  const { organizationId, role } = await requireActiveMembership();
+  const { organizationId, role, userId } = await requireActiveMembership();
   requireSnippetManage(role, "delete");
   const cleanId = z.string().trim().min(1).parse(id);
-  const [deleted] = await db
-    .delete(snippets)
-    .where(and(eq(snippets.id, cleanId), eq(snippets.organizationId, organizationId)))
-    .returning({ id: snippets.id });
+  const deleted = await db.transaction(async (tx) => {
+    const [row] = await tx
+      .delete(snippets)
+      .where(and(eq(snippets.id, cleanId), eq(snippets.organizationId, organizationId)))
+      .returning({ id: snippets.id, name: snippets.name, body: snippets.body });
+    if (row) {
+      await logChanges(tx, {
+        organizationId,
+        userId,
+        kind: "mensajes_rapidos",
+        action: "borrar",
+        subject: row.name,
+        subjectId: row.id,
+        detail: { type: "texto", title: "Mensaje", before: row.body, after: null },
+      });
+    }
+    return row;
+  });
   if (!deleted) throw new Error("Mensaje rápido no encontrado en esta organización.");
   revalidatePath("/mensajes-rapidos");
 }
