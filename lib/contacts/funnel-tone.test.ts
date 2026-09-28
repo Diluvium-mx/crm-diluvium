@@ -1,18 +1,33 @@
 import { describe, expect, it } from "vitest";
-import { funnelTone, unreadBadge } from "./funnel-tone";
+import { canMarkRead, funnelTone, unreadBadge, type FunnelSignal } from "./funnel-tone";
+
+const signal = (s: Partial<FunnelSignal>): FunnelSignal => ({ unread: 0, pending: false, urgent: false, lastInboundAt: null, ...s });
 
 describe("funnelTone", () => {
   it("no asigna tono sin señal pendiente ni urgente", () => {
     expect(funnelTone(undefined)).toBeUndefined();
-    expect(funnelTone({ unread: 8, pending: false, urgent: false })).toBeUndefined();
+    expect(funnelTone(signal({ unread: 8 }))).toBeUndefined();
   });
 
   it("usa pending cuando hay un mensaje por contestar", () => {
-    expect(funnelTone({ unread: 0, pending: true, urgent: false })).toBe("pending");
+    expect(funnelTone(signal({ pending: true }))).toBe("pending");
   });
 
   it("da prioridad a urgent cuando urgent y pending coinciden", () => {
-    expect(funnelTone({ unread: 0, pending: true, urgent: true })).toBe("urgent");
+    expect(funnelTone(signal({ pending: true, urgent: true }))).toBe("urgent");
+  });
+});
+
+describe("canMarkRead", () => {
+  it("hay qué marcar con el círculo naranja o con el azul", () => {
+    expect(canMarkRead(signal({ unread: 2 }))).toBe(true);
+    expect(canMarkRead(signal({ pending: true }))).toBe(true);
+  });
+
+  it("sin señal, en blanco o solo en amarillo no hay nada que marcar", () => {
+    expect(canMarkRead(undefined)).toBe(false);
+    expect(canMarkRead(signal({}))).toBe(false);
+    expect(canMarkRead(signal({ urgent: true }))).toBe(false);
   });
 });
 

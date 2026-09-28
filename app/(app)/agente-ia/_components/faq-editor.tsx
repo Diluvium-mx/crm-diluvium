@@ -2,7 +2,9 @@
 
 // FAQs del agente (subpestaña "FAQs"): las preguntas frecuentes en una
 // lista compacta tipo acordeón (una línea por pregunta; al dar clic se despliega la
-// respuesta para verla o editarla), con buscador y filtro arriba. El panel se
+// respuesta para verla o editarla y se queda abierta hasta cerrarla a mano: se pueden
+// tener varias abiertas), con buscador, filtro y «Copiar» (todas, con su respuesta)
+// arriba. El panel se
 // desliza por dentro: la página no crece con las FAQs. Cada cambio deja una versión
 // de todas las FAQs (se puede regresar a una anterior). Agregar, guardar una edición,
 // borrar y activar/desactivar piden confirmación arriba antes de guardar (regla del
@@ -10,7 +12,8 @@
 import { useState } from "react";
 import { ChevronRight, Search } from "lucide-react";
 import { createAgentFaq, deleteAgentFaq, restoreAgentFaqs, updateAgentFaq } from "@/lib/actions/agente-ia-editor";
-import { faqSchema } from "@/lib/agente-ia/editor";
+import { faqSchema, faqsAsText } from "@/lib/agente-ia/editor";
+import { CopyButton } from "@/components/ui/copy-button";
 import { matchesSearch } from "@/lib/text/search";
 import type { FaqView, VersionView } from "@/lib/agente-ia/types";
 import { useConfirm } from "./use-confirm";
@@ -107,7 +110,8 @@ function short(question: string): string {
 }
 
 export function FaqEditor({ faqs, versions }: { faqs: FaqView[]; versions: VersionView[] }) {
-  const [openId, setOpenId] = useState<string | null>(null);
+  // Abiertas: cada una se queda así hasta cerrarla a mano (pedido del dueño, 28-sep-2026).
+  const [openIds, setOpenIds] = useState<ReadonlySet<string>>(() => new Set());
   const [editing, setEditing] = useState<string | "new" | null>(null);
   const [query, setQuery] = useState("");
   const [filter, setFilter] = useState<Filter>("todas");
@@ -228,6 +232,14 @@ export function FaqEditor({ faqs, versions }: { faqs: FaqView[]; versions: Versi
         >
           + Agregar pregunta
         </button>
+        {/* Esquina de arriba a la derecha: TODAS las FAQs (sin importar búsqueda ni filtro). */}
+        {faqs.length > 0 && (
+          <CopyButton
+            getText={() => faqsAsText(faqs)}
+            title={`Copiar las ${faqs.length} preguntas con su respuesta`}
+            className="ml-auto"
+          />
+        )}
       </div>
 
       {editing === "new" && (
@@ -254,7 +266,7 @@ export function FaqEditor({ faqs, versions }: { faqs: FaqView[]; versions: Versi
         ) : (
           <ul className="divide-y divide-black/10 dark:divide-white/10">
             {shown.map((f) => {
-              const open = openId === f.id;
+              const open = openIds.has(f.id);
               const panelId = `faq-${f.id}`;
               return (
                 <li key={f.id}>
@@ -264,8 +276,13 @@ export function FaqEditor({ faqs, versions }: { faqs: FaqView[]; versions: Versi
                       aria-expanded={open}
                       aria-controls={panelId}
                       onClick={() => {
-                        setOpenId(open ? null : f.id);
-                        if (editing === f.id) setEditing(null);
+                        setOpenIds((current) => {
+                          const next = new Set(current);
+                          if (open) next.delete(f.id);
+                          else next.add(f.id);
+                          return next;
+                        });
+                        if (open && editing === f.id) setEditing(null);
                       }}
                       className={`flex min-w-0 flex-1 items-center gap-2 px-3 py-2 text-left text-sm ${f.enabled ? "text-foreground" : "text-muted-foreground"}`}
                     >

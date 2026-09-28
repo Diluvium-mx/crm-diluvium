@@ -83,13 +83,31 @@ clic abre un menú para cambiarla sin abrir el chat. Lista y panel quedan sincro
   el contador): se ve el círculo naranja, entra al filtro "No leído" y al círculo de la tarjeta. Si
   ya tenía no leídos se quedan. Se apaga como siempre: al abrir el chat, al contestar o con "Marcar
   como leído". Si después llega un mensaje, el círculo suma (2).
-- **Leído = `unread_count` a 0**, también los avisos internos: lo pidió el vendedor a propósito.
+- **Leído = `unread_count` a 0**, también los avisos internos: lo pidió el vendedor a propósito. Desde
+  el 28-sep-2026 además pone `conversations.attended_at = now()` (migración 0045): lo que el cliente
+  escribió hasta ahí ya no pinta de azul la tarjeta del Embudo aunque nadie le haya contestado. No
+  leído la borra (si el último mensaje es del cliente, el azul regresa). Abrir el chat
+  (`markConversationRead`) NO la toca.
 - Es del equipo (como Destacado); el trigger de `conversations` avisa al SSE y todos lo ven en vivo.
 - Marcar como no leído la conversación **abierta** la cierra (como WhatsApp Web): abierta, la
   siguiente llegada la volvería a marcar leída.
 - **Embudo:** no leído va a la conversación más reciente del contacto (la que abre la tarjeta); leído
-  apaga todas. Contacto sin chat → aviso "Este contacto todavía no tiene chat.". No cambia el tono
-  de la tarjeta: el azul es "falta contestar", no "sin leer".
+  apaga todas. Contacto sin chat → aviso "Este contacto todavía no tiene chat.". En la tarjeta el
+  menú dice "Marcar como leído" si tiene círculo **o** está azul.
+
+### Colores y orden del Embudo (28-sep-2026, regla del dueño)
+- **Azul** = el cliente escribió y nadie le ha contestado: el último mensaje (sin notas internas, sin
+  lo importado del celular, sin salientes en cola o rechazados) es del cliente **y** llegó después de
+  `attended_at`. Se apaga con una respuesta que salió (vendedor desde el CRM o el celular, o el Agente
+  IA) o con "Marcar como leído" (clic derecho o el botón del pop-up, a la derecha del nombre). Abrir el
+  chat solo apaga el círculo. **Amarillo** (gana) = aviso del agente sin respuesta humana posterior;
+  "Marcar como leído" no lo apaga. Código: `lib/contacts/funnel-signals.ts`, `funnel-tone.ts`.
+- La luz del cursor sobre la tarjeta es **gris** (`[data-funnel-card]`): antes era el mismo azul del
+  "por contestar" y una tarjeta bajo el mouse parecía pendiente.
+- **Orden de cada columna:** de más reciente a más viejo por lo último entre "entró a la etapa"
+  (`stage_changed_at`) y "el cliente escribió" (max `window_expires_at` − 24 h de sus chats: la ventana
+  se mueve SOLO con entrantes). En vivo: la señal del SSE trae `lastInboundAt` y la tarjeta sube sin
+  recargar. Un mensaje nuestro no la mueve. `columnsByStage` en `board-live.ts`.
 - Abrir un chat SIN ningún entrante del cliente (solo salientes o avisos) ahora lo deja en 0; antes
   el contador se quedaba (no había entrante que sirviera de corte).
 - **Luz del cursor de la fila:** es de la fila entera (`data-glow`) y no del área que abre el chat

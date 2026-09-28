@@ -20,5 +20,11 @@ export const boardContactColumns = {
   stageChangedBy: contacts.stageChangedBy,
 };
 
-/** Un contacto como lo recibe el Embudo: las llaves salen de boardContactColumns. */
-export type BoardContact = Pick<InferSelectModel<typeof contacts>, keyof typeof boardContactColumns>;
+/**
+ * Un contacto como lo recibe el Embudo: las llaves salen de boardContactColumns, más
+ * `lastInboundAt` (epoch ms del último mensaje del cliente en cualquiera de sus chats;
+ * null = nunca escribió), que junto con stageChangedAt ordena la columna.
+ */
+export type BoardContact = Pick<InferSelectModel<typeof contacts>, keyof typeof boardContactColumns> & {
+  lastInboundAt: number | null;
+};

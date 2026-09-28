@@ -5,7 +5,7 @@
 // cubre carga / sin conversación / error, y se mantiene en vivo con el SSE.
 // Como en la Bandeja, abrir el chat lo marca como leído (solo con la pestaña a la
 // vista): así el círculo de no vistos de la tarjeta se apaga al leerlo aquí.
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import type { ConversationDetail } from "@/lib/inbox/types";
 import { getConversationByContact, markConversationRead } from "@/lib/inbox/actions";
 import { ChatThread } from "../../dashboard/_components/chat-thread";
@@ -26,7 +26,9 @@ type State =
   | { status: "none" }
   | { status: "ready"; detail: ConversationDetail };
 
-export function ContactChat({ contactId }: { contactId: string }) {
+// headerAction: botón a la derecha del nombre en el encabezado del chat (el pop-up pone
+// «Marcar como leído»).
+export function ContactChat({ contactId, headerAction }: { contactId: string; headerAction?: ReactNode }) {
   const [state, setState] = useState<State>({ status: "loading" });
   const [revalToken, setRevalToken] = useState(0);
   const [nowMs, setNowMs] = useState(() => Date.now());
@@ -158,5 +160,5 @@ export function ContactChat({ contactId }: { contactId: string }) {
       </div>
     );
   }
-  return <ChatThread detail={state.detail} revalToken={revalToken} nowMs={nowMs} />;
+  return <ChatThread detail={state.detail} revalToken={revalToken} nowMs={nowMs} headerAction={headerAction} />;
 }
