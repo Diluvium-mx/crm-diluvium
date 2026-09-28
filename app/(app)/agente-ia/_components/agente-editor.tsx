@@ -74,7 +74,8 @@ function AgentName({ shown, onSaved }: { shown: string; onSaved: (name: string) 
     setInvalid(null);
     confirm.ask({
       title: `¿Cambiar el nombre del agente de ${shown} a ${name}?`,
-      body: "Donde el Goal o las FAQs usan {{agente.nombre}}, el agente se presenta con el nuevo nombre desde el siguiente mensaje.",
+      // El nombre llega al modelo solo por {{agente.nombre}}; el Goal de hoy escribe el nombre tal cual.
+      body: "Es el nombre que se ve en el CRM. El agente se presenta como lo diga el Goal («Eres …»): si quieres que use el nuevo nombre, cámbialo también ahí.",
       confirmLabel: "Sí, cambiar",
       pendingLabel: "Guardando…",
       done: `Listo: el agente se llama ${name}`,

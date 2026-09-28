@@ -577,7 +577,7 @@ una ventana arriba (59)**; nada se guarda con un solo clic.
 
 > **Capturas pendientes:** las cinco de abajo son anteriores al 27-sep-2026 (todavía muestran «Crear · Implementar»,
 > todo en una sola página, sin nombres de versión ni «Guardar cambios» en Opciones; la de Canales aún muestra el número de
-> prueba). Los números 1–51 siguen valiendo; 52–79 aún no aparecen en ninguna captura.
+> prueba). Los números 1–51 siguen valiendo (salvo 15, que se quitó); 52–82 aún no aparecen en ninguna captura.
 
 ![Agente IA: nombre y modelos](mapa-crm/09-agente-modelos.png)
 ![Agente IA: Goal y FAQs](mapa-crm/09-agente-goal-faqs.png)
@@ -588,7 +588,7 @@ una ventana arriba (59)**; nada se guarda con un solo clic.
 | # | Nombre oficial | Qué hace | Quién lo ve |
 |---|---|---|---|
 | 1 | **Nombre del agente** (Ángela) | Cómo se llama el agente. | Todos |
-| 2 | **✎ Editar el nombre del agente** | Cambia el nombre (Guardar pide confirmación). | Todos |
+| 2 | **✎ Editar el nombre del agente** | Cambia el nombre que se ve en el CRM (Guardar pide confirmación). El agente se presenta como lo diga el Goal («Eres Angela…»): para que use otro nombre, cámbialo también ahí. | Todos |
 | 3 | ~~Crear · Implementar~~ | Ya no existe (27-sep-2026): la reemplazan las subpestañas (52). | — |
 | 4 | **Modelos** | Los "cerebros" que piensan y redactan. | Todos |
 | 5 | **Modelo 1** | Por defecto GPT-5.6 Luna: el más económico, para las primeras preguntas. | Todos |
@@ -601,7 +601,7 @@ una ventana arriba (59)**; nada se guarda con un solo clic.
 | 12 | **APIs de IA** | Qué proveedores están conectados y cuáles no tienen llave. | Todos |
 | 13 | **Instrucciones (Goal)** | Lo que el agente sigue siempre. | Todos |
 | 14 | **↶ Deshacer** | Deshace lo último que escribiste en el Goal. | Todos |
-| 15 | **{ } Valores personalizados** | Inserta datos que se llenan solos: nombre del contacto, del vendedor, de la empresa, del agente. | Todos |
+| 15 | ~~{ } Valores personalizados~~ | Se quitó el 28-sep-2026 (decisión del dueño): el Goal escribe los nombres tal cual y no usaba ninguno. Si alguien escribe a mano `{{contacto.nombre}}` (u otro), el agente lo sigue cambiando por el dato. | — |
 | 16 | **Palabras · tokens** | Qué tan largo es el Goal (más largo = cada respuesta cuesta un poco más). | Todos |
 | 17 | **Editor del Goal** | Donde se escribe el Goal. Arriba a la derecha, **Copiar** (78). | Todos |
 | 18 | **Guardar Goal** | Guarda (con confirmación) y deja una versión. | Todos |
@@ -613,7 +613,7 @@ una ventana arriba (59)**; nada se guarda con un solo clic.
 | 24 | **+ Agregar pregunta** | Nueva FAQ. | Todos |
 | 25 | **Pregunta** | Clic muestra la respuesta y **se queda abierta** hasta que le vuelves a dar clic; puedes tener varias abiertas a la vez. | Todos |
 | 26 | **Interruptor** | Activa o desactiva la FAQ (desactivada, el agente no la usa). Pide confirmación. | Todos |
-| 27 | **Editar · Borrar** (FAQ) | Cambia o elimina la FAQ. Cada cambio deja versión. Agregar, guardar y borrar piden confirmación. | Todos |
+| 27 | **Editar · Borrar** (FAQ) | Dentro de la pregunta abierta: cambia o elimina esa FAQ. Cada cambio deja versión. Agregar, guardar y borrar piden confirmación. Para borrar varias, las casillas (80–82). | Todos |
 | 28 | **Opciones** | Cómo se comporta el Agente IA. Los cambios se guardan juntos con «Guardar cambios» (56) y aplican en menos de un minuto. | Todos |
 | 29 | **Tiempo de espera antes de responder** | 5 a 60 s para juntar varios mensajes seguidos del cliente. | Todos |
 | 30 | **Pausar al Agente IA cuando un vendedor contesta** | Sí / No. | Todos |
@@ -666,6 +666,9 @@ una ventana arriba (59)**; nada se guarda con un solo clic.
 | 77 | **Ver cambios** (en las filas que lo permiten) | Abre lo **quitado (tachado en rojo)** y lo **agregado (en verde)**: el Goal por párrafo, las FAQs por pregunta (agregada, borrada o editada), los workflows paso por paso (textos, archivo, espera, disparadores), la regla de etapa, el nombre del agente, el texto de un mensaje rápido o de una plantilla, y las tallas (rango antes → después). «Ocultar cambios» lo cierra. Las filas de antes del 28-sep-2026, las opciones, las pausas y los vendedores no lo tienen. | Todos |
 | 78 | **Copiar** (Goal) | Esquina de arriba a la derecha del editor del Goal (17): copia **todo** el texto tal como se ve (también lo que no has guardado) para revisarlo o pegarlo en otro lado. Dice «Copiado» 2 segundos. | Todos |
 | 79 | **Copiar** (FAQs) | Arriba a la derecha de las FAQs (junto a + Agregar pregunta, 24): copia **todas** las preguntas con su respuesta, cada una con un guion y sin números, la respuesta debajo y una línea en blanco entre preguntas. No importa la búsqueda ni el filtro. Las inactivas llevan «(inactiva)». | Todos |
+| 80 | **Casilla de la pregunta** (FAQs) | A la izquierda de cada pregunta: la marca para borrarla junto con otras. La fila marcada se sombrea. | Todos |
+| 81 | **Seleccionar todas** (FAQs) | Barra arriba de la lista: marca **todas las de la lista a la vista** (respeta la búsqueda y el filtro; p. ej. filtro «Inactivas» + Seleccionar todas = todas las apagadas). Con algunas marcadas dice «N seleccionadas». Cambiar la búsqueda o el filtro quita la selección, para nunca borrar una que no se ve. | Todos |
+| 82 | **Borrar (N) · Quitar selección** (FAQs) | Aparecen al marcar alguna. **Borrar (N)** pide confirmar y borra todas las marcadas de una vez: deja **una** versión (Restaurar, 20, las regresa) y una fila en Historial (72). | Todos |
 
 **Lo cambias tú desde la pantalla:** todo lo de esta sección: nombre, modelos, etapas (columnas del Embudo), Goal (con versiones), FAQs,
 Opciones, Tallas y medidas, y encender o apagar el agente por número. El **Historial** (72) solo se consulta: se llena solo con cada cambio.
@@ -679,7 +682,7 @@ Opciones, Tallas y medidas, y encender o apagar el agente por número. El **Hist
 **Agente IA aquí:** esta es su configuración. El Goal y las FAQs mandan sobre lo que dice; las Opciones, sobre
 cuándo y cuánto contesta.
 
-<sub>Para Code: ruta `/agente-ia?seccion=modelos|etapas|goal|faqs|opciones|tallas|canales|historial` (`lib/agente-ia/sections.ts`); Historial: `app/(app)/agente-ia/_components/history-panel.tsx`, `lib/historial/` (`labels`, `log` = escritura en la misma transacción, `queries` = une `change_history` (0042; `detail` jsonb desde la 0043) + `ai_config_changes` + `ai_knowledge_versions`, y `loadChangeDiff` para Ver cambios; `diff` = motor puro de Ver cambios), acciones `lib/actions/historial.ts` (`getChangeHistory`, `getChangeDiff`), `history-diff.tsx` pinta Ver cambios; Canales filtra `channels.archived_at is null` (`lib/actions/agente-ia-editor.ts`); editor de etapas `app/(app)/_components/stages-editor.tsx` (tabla `funnel_stages`, acciones `lib/actions/funnel-stages.ts`); `app/(app)/agente-ia/_components/` (`agente-editor`, `use-confirm` (confirmación de todo cambio), `brain-model-picker`, `api-status-panel`, `goal-editor`, `versions-list`, `faq-editor`, `bot-options`, `size-ranges-section`, `channel-switches`); `lib/ai/catalog.ts`, `lib/agente-ia/opciones.ts`, `lib/agente-ia/opciones-draft.ts` (borrador de Opciones); nombre de versiones en `ai_knowledge_versions.name` (migración 0040); Copiar (78, 79) = `components/ui/copy-button.tsx` y `faqsAsText` en `lib/agente-ia/editor.ts`; detalle en `docs/agente-ia.md`.</sub>
+<sub>Para Code: ruta `/agente-ia?seccion=modelos|etapas|goal|faqs|opciones|tallas|canales|historial` (`lib/agente-ia/sections.ts`); Historial: `app/(app)/agente-ia/_components/history-panel.tsx`, `lib/historial/` (`labels`, `log` = escritura en la misma transacción, `queries` = une `change_history` (0042; `detail` jsonb desde la 0043) + `ai_config_changes` + `ai_knowledge_versions`, y `loadChangeDiff` para Ver cambios; `diff` = motor puro de Ver cambios), acciones `lib/actions/historial.ts` (`getChangeHistory`, `getChangeDiff`), `history-diff.tsx` pinta Ver cambios; Canales filtra `channels.archived_at is null` (`lib/actions/agente-ia-editor.ts`); editor de etapas `app/(app)/_components/stages-editor.tsx` (tabla `funnel_stages`, acciones `lib/actions/funnel-stages.ts`); `app/(app)/agente-ia/_components/` (`agente-editor`, `use-confirm` (confirmación de todo cambio), `brain-model-picker`, `api-status-panel`, `goal-editor`, `versions-list`, `faq-editor`, `bot-options`, `size-ranges-section`, `channel-switches`); `lib/ai/catalog.ts`, `lib/agente-ia/opciones.ts`, `lib/agente-ia/opciones-draft.ts` (borrador de Opciones); nombre de versiones en `ai_knowledge_versions.name` (migración 0040); Copiar (78, 79) = `components/ui/copy-button.tsx` y `faqsAsText` en `lib/agente-ia/editor.ts`; borrar varias (80–82) = `deleteAgentFaqs` → `deleteFaqs` en `lib/agente-ia/editor-store.ts`; detalle en `docs/agente-ia.md`.</sub>
 
 ---
 
