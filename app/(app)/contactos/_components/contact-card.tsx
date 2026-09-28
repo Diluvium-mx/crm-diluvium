@@ -2,7 +2,7 @@
 
 import { useDraggable } from "@dnd-kit/core";
 import { Mail, MailOpen } from "lucide-react";
-import type { Contact } from "../_data/types";
+import type { BoardContact } from "../_data/types";
 import { TEMPERATURE_EMOJI, TEMPERATURE_LABELS, getContactFullName } from "../_data/types";
 import { ContactAvatar } from "./contact-avatar";
 import { formatPhone } from "@/lib/phone-format";
@@ -22,7 +22,7 @@ const TONE_LABEL = {
 // mientras arrastras), para que la tarjeta arrastrada se vea idéntica.
 // El fondo de color (señal) lo pone quien la envuelve con data-funnel
 // (app/globals.css); aquí solo va el círculo de no vistos.
-export function ContactCardContent({ contact, signal }: { contact: Contact; signal?: FunnelSignal }) {
+export function ContactCardContent({ contact, signal }: { contact: BoardContact; signal?: FunnelSignal }) {
   const unread = unreadBadge(signal?.unread);
   const tone = funnelTone(signal);
   return (
@@ -69,7 +69,7 @@ export function ContactCard({
   onClick,
   onSetUnread,
 }: {
-  contact: Contact;
+  contact: BoardContact;
   signal?: FunnelSignal;
   onClick: () => void;
   onSetUnread: (unread: boolean) => void;

@@ -279,6 +279,21 @@ describe.skipIf(!TEST_DATABASE_URL)("aviso contact.updated (Postgres real)", () 
     expect(many).toMatchObject({ contacts: [], tooMany: true });
   });
 
+  it("el Embudo recibe solo las columnas de la tarjeta (B14): nada de campos personalizados ni calificación", async () => {
+    const { boardContactColumns } = await import("./board-contact");
+    await db.update(s.contacts).set({ customFields: { notas: "largo" }, montoCotizacion: "1000.00" }).where(d.eq(s.contacts.id, JUAN));
+    const board = Object.keys(boardContactColumns).sort();
+    const listed = await contactActions.listContacts();
+    expect(listed.map((c) => c.id)).toContain(JUAN);
+    expect(listed.map((c) => c.id)).not.toContain(OTRO);
+    for (const c of listed) expect(Object.keys(c).sort()).toEqual(board);
+    const byId = await contactActions.getContactsByIds([JUAN, OTRO]);
+    expect(byId.map((c) => [c.id, Object.keys(c).sort()])).toEqual([[JUAN, board]]);
+    await db.update(s.contacts).set({ stageChangedAt: new Date() }).where(d.eq(s.contacts.id, JUAN));
+    const changed = await contactActions.getContactsChangedSince(new Date(Date.now() - 60_000).toISOString());
+    expect(changed.contacts.map((c) => Object.keys(c).sort())).toEqual([board]);
+  });
+
   it("importación masiva: UN contacts.bulk y ningún contact.updated (tampoco al reimportar)", async () => {
     const header = "Contact Id,First Name,Last Name,Phone,Email,Created,Last Activity,Tags,Country,Opportunities";
     const rows = Array.from(

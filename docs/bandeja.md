@@ -248,6 +248,12 @@ automatización (`/banco` → Cerca de compra) o por otro vendedor se ve sin ref
   volver a la vieja hasta el siguiente cambio. Si falla la recarga completa que dispara
   `contacts.bulk` (importación de un admin; camino anterior a esta rama, `router.refresh` no avisa si
   falló), los importados no aparecen en ese Embudo hasta la siguiente reconexión o recarga.
+- Peso de la carga (28-sep-2026, revisión completa B14): el Embudo recibe de cada contacto solo lo de
+  la tarjeta (`boardContactColumns` en `lib/contacts/board-contact.ts`: nombre, teléfono, etapa,
+  temperatura, marca de prueba, canal de origen y horas); la carga inicial, los contactos nuevos y la
+  puesta al día usan las mismas columnas. El pop-up carga lo demás al abrirse (`getContactDetails`).
+  Con 11,132 contactos la carga bajó de ~8.3 MB a ~3 MB. Si crece mucho más, el siguiente paso es
+  paginar la columna Inbox (98 % de los contactos, casi todos importados de GHL).
 - Fallos de red: las lecturas en vivo del Embudo (contactos nuevos, cambios, puesta al día) y del
   Detalle (también la carga al abrirlo, con "Reintentando…") se reintentan solas, 5 s … 60 s.
 
