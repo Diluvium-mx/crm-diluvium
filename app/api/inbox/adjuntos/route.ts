@@ -10,6 +10,7 @@
 import { Readable } from "node:stream";
 import type { ReadableStream as WebReadableStream } from "node:stream/web";
 import { requireActiveMembership } from "@/lib/auth/active-organization";
+import { acquireUploadSlot } from "@/lib/chat-attachments/in-flight";
 import { ChatUploadRejectedError, storeChatUpload } from "@/lib/chat-attachments/upload";
 import { ipRateLimiter } from "@/lib/rate-limit";
 import { objectStorage, StorageNotConfiguredError } from "@/lib/storage/s3";
@@ -47,6 +48,9 @@ export async function POST(req: Request): Promise<Response> {
     }
     throw error;
   }
+  // Tope de subidas simultáneas por usuario (además del límite por IP).
+  const slot = await acquireUploadSlot(membership.userId);
+  if (!slot.ok) return Response.json({ error: "Hay demasiados archivos subiendo a la vez; espera a que terminen." }, { status: 429 });
   try {
     const upload = await storeChatUpload(storage, {
       organizationId: membership.organizationId,
@@ -61,5 +65,7 @@ export async function POST(req: Request): Promise<Response> {
     if (error instanceof ChatUploadRejectedError) return Response.json({ error: error.message }, { status: 400 });
     console.error("[adjuntos] subida falló:", error);
     return Response.json({ error: "No se pudo guardar el archivo. Intenta de nuevo." }, { status: 500 });
+  } finally {
+    await slot.release();
   }
 }

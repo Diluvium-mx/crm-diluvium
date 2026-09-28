@@ -147,6 +147,9 @@ describe.skipIf(!TEST_DATABASE_URL)("adjuntos del chat", () => {
     await expect(store("anim.gif", Buffer.from("GIF89a"))).rejects.toThrow("(.gif)");
     await expect(store("iphone.mp4", HEVC_MP4)).rejects.toThrow("HEVC");
     await expect(store("a.pdf", PDF, OTHER)).rejects.toThrow("Conversación no encontrada");
+    // Marcas de dirección (bidi) o invisibles en el nombre: el cliente vería otra extensión.
+    await expect(store("Factura_\u202Efdp.pdf", PDF)).rejects.toThrow("Nombre de archivo inválido");
+    await expect(store("foto\u200b.jpg", JPEG)).rejects.toThrow("Nombre de archivo inválido");
     expect(storage.objects.size).toBe(0);
   });
 

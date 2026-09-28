@@ -24,6 +24,10 @@ export class ChatUploadRejectedError extends Error {
 export type ChatUploadResult = { token: string; fileName: string; kind: ChatFileKind; mime: string; bytes: number };
 
 const LARGEST = Math.max(maxBytesFor("image"), maxBytesFor("video"), maxBytesFor("document"));
+/** Una subida que deja de mandar datos este tiempo se corta (no retiene memoria ni conexión). */
+export const UPLOAD_IDLE_MS = 60_000;
+// Controles, invisibles y marcas de dirección (bidi): un nombre como "Factura_\u202Efdp.exe" engañaría al cliente.
+const BAD_NAME_CHARS = /[\\/\u0000-\u001f\u007f-\u009f\u200b-\u200f\u202a-\u202e\u2060-\u2069\ufeff]/;
 const HEVC = HEVC_MARKERS.map((m) => Buffer.from(m));
 const H264 = Buffer.from(H264_MARKER);
 
@@ -57,8 +61,14 @@ function validatingStream(fileName: string) {
     tail = window.subarray(Math.max(0, window.length - 8));
   };
 
+  let idle: ReturnType<typeof setTimeout> | undefined;
+  const touch = () => {
+    clearTimeout(idle);
+    idle = setTimeout(() => stream.destroy(new ChatUploadRejectedError(`La subida de "${fileName}" se detuvo; vuelve a adjuntarlo.`)), UPLOAD_IDLE_MS);
+  };
   const stream = new Transform({
     transform(chunk: Buffer, _enc, cb) {
+      touch();
       size += chunk.byteLength;
       if (size > (decided ? maxBytesFor(decided.kind) : LARGEST)) return cb(decided ? tooBig(decided.kind) : new ChatUploadRejectedError(`"${fileName}" es demasiado grande.`));
       if (decided) {
@@ -71,6 +81,7 @@ function validatingStream(fileName: string) {
       cb(decide(this) ?? undefined);
     },
     flush(cb) {
+      clearTimeout(idle);
       if (!decided) {
         const error = decide(this);
         if (error) return cb(error);
@@ -78,6 +89,8 @@ function validatingStream(fileName: string) {
       cb();
     },
   });
+  stream.on("close", () => clearTimeout(idle));
+  touch();
   return {
     stream,
     size: () => size,
@@ -113,8 +126,8 @@ export async function storeChatUpload(
     now?: Date;
   },
 ): Promise<ChatUploadResult> {
-  const fileName = input.fileName.trim();
-  if (!fileName || fileName.length > 150 || /[\\/\u0000-\u001f]/.test(fileName)) throw new ChatUploadRejectedError("Nombre de archivo inválido.");
+  const fileName = input.fileName.normalize("NFC").trim();
+  if (!fileName || fileName.length > 150 || BAD_NAME_CHARS.test(fileName)) throw new ChatUploadRejectedError("Nombre de archivo inválido.");
   const type = acceptedType(fileName);
   if (!type) throw new ChatUploadRejectedError(notAcceptedMessage(fileName));
   if (input.declaredBytes > maxBytesFor(type.kind)) throw new ChatUploadRejectedError(`"${fileName}" pasa del límite de WhatsApp.`);
