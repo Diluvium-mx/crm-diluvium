@@ -16,6 +16,8 @@
 // Shape real confirmado en lib/db/schema/auth.ts: organization.createdAt y
 // member.createdAt son notNull SIN defaultNow() — hay que poblarlos
 // explícitamente si algún día se insertara a mano (el endpoint ya lo hace).
+// Datos FALSOS: solo contra una base local de desarrollo (nunca staging ni producción).
+import "./lib/solo-base-local";
 import { and, eq } from "drizzle-orm";
 import { auth } from "@/lib/auth";
 import { db } from "@/lib/db";

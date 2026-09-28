@@ -37,6 +37,7 @@ import {
 import { objectStorage, StorageNotConfiguredError, type ObjectStorage } from "@/lib/storage/s3";
 import { inboundHealth, WORKER_HEARTBEAT_KEY } from "@/lib/monitoring/inbound-health";
 import { checkWhatsappAccounts, describeSummary } from "@/lib/monitoring/account-health";
+import { recordUncheckedStreak } from "@/lib/monitoring/unchecked-streak";
 import { redis } from "@/lib/redis";
 import { startScheduledWorker } from "./scheduled";
 import { startWorkflowWorker } from "./workflows";
@@ -325,9 +326,15 @@ async function monitor() {
     checkZernio: false, // lo revisa el web (/api/health/inbound), que tiene APP_URL
     // Cuenta de WhatsApp en Zernio (desconexión): a cualquier hora; guarda el resultado en Redis.
     whatsappAccounts: () => checkWhatsappAccounts({ source: "worker" }),
+    // "No se pudo revisar" solo es ALERTA tras 2 revisiones seguidas de este vigilante.
+    uncheckedStreak: (check, failed) => recordUncheckedStreak("worker", check, failed),
   });
   const accounts = report.metrics.whatsappAccounts;
-  const summary = accounts ? ` · cuentas de WhatsApp: ${describeSummary(accounts)}` : "";
+  const bot = report.metrics.bot;
+  const summary =
+    (accounts ? ` · cuentas de WhatsApp: ${describeSummary(accounts)}` : "") +
+    (bot ? ` · bot: ${bot.waiting} conversación(es) sin respuesta` : "");
+  for (const notice of report.notices) console.warn(`[monitor] aviso: ${notice}`);
   if (report.ok) console.info(`[monitor] entrada de WhatsApp sana${summary}`);
   else console.error(`[monitor] ALERTA: ${report.problems.join(" · ")}${summary}`);
 }

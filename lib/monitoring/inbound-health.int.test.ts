@@ -88,4 +88,45 @@ describe.skipIf(!TEST_DATABASE_URL)("inboundHealth (Postgres real)", () => {
     expect(report.ok).toBe(false);
     expect(report.problems.join(" | ")).toMatch(/faltan ZERNIO_API_KEY o APP_URL/);
   });
+
+  it("'no se pudo revisar' Zernio: la 1.ª vez es aviso (no alerta); 2 revisiones seguidas del vigilante, alerta", async () => {
+    await db.insert(s.webhookEvents).values({ id: "in", provider: "zernio", event: "message.received", payload: {}, processedAt: new Date() });
+    const streaks: Record<string, number> = {};
+    const uncheckedStreak = async (check: "cuentas" | "webhook", failed: boolean) => (streaks[check] = failed ? (streaks[check] ?? 0) + 1 : 0);
+    const whatsappAccounts = async () => ({
+      problems: [],
+      unchecked: "no se pudo revisar 1 cuenta(s) de WhatsApp en Zernio: Zernio no respondió en 10 s",
+      summary: { checked: 1, ok: 0, warning: 0, down: 0, unchecked: 1 },
+    });
+    const run = () => health.inboundHealth({ heartbeatAgeSeconds: async () => 10, checkZernio: true, whatsappAccounts, uncheckedStreak, now: tuesday10am });
+
+    const first = await run();
+    expect(first.ok).toBe(true); // 200: la Action no abre ni comenta el issue
+    expect(first.problems).toEqual([]);
+    expect(first.notices).toHaveLength(2);
+    expect(first.notices.join(" | ")).toMatch(/webhook de Zernio.*1\.ª vez/);
+
+    const second = await run();
+    expect(second.ok).toBe(false);
+    expect(second.problems).toEqual([
+      "no se pudo revisar el webhook de Zernio: faltan ZERNIO_API_KEY o APP_URL en este servicio (2 revisiones seguidas)",
+      "no se pudo revisar 1 cuenta(s) de WhatsApp en Zernio: Zernio no respondió en 10 s (2 revisiones seguidas)",
+    ]);
+  });
+
+  it("una desconexión real (rojo) sigue avisando a la PRIMERA revisión", async () => {
+    await db.insert(s.webhookEvents).values({ id: "in", provider: "zernio", event: "message.received", payload: {}, processedAt: new Date() });
+    const report = await health.inboundHealth({
+      heartbeatAgeSeconds: async () => 10,
+      checkZernio: false,
+      whatsappAccounts: async () => ({
+        problems: ["WhatsApp DESCONECTADO: 1 número(s) sin conexión con Meta/Zernio"],
+        unchecked: null,
+        summary: { checked: 1, ok: 0, warning: 0, down: 1, unchecked: 0 },
+      }),
+      uncheckedStreak: async () => 0,
+      now: tuesday10am,
+    });
+    expect(report.problems).toEqual(["WhatsApp DESCONECTADO: 1 número(s) sin conexión con Meta/Zernio"]);
+  });
 });

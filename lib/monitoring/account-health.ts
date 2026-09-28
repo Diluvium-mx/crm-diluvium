@@ -16,6 +16,7 @@ import {
   parseAccountEvents,
   parseAccountHealth,
   summarizeAccounts,
+  uncheckedAccountsProblem,
   type AccountOutcome,
   type AccountRead,
   type AccountsSummary,
@@ -42,7 +43,8 @@ export type AccountsSnapshot = {
   accounts: AccountState[];
 };
 
-export type AccountsReport = { problems: string[]; summary: AccountsSummary };
+/** `unchecked` va aparte: alerta solo tras 2 revisiones seguidas fallidas (inbound-health.ts). */
+export type AccountsReport = { problems: string[]; unchecked: string | null; summary: AccountsSummary };
 
 class ZernioReadError extends Error {}
 
@@ -167,7 +169,7 @@ export async function checkWhatsappAccounts(input: { source: MonitorSource; now?
       });
   }
 
-  return { problems: accountProblems(outcomes, now), summary: summarizeAccounts(outcomes) };
+  return { problems: accountProblems(outcomes, now), unchecked: uncheckedAccountsProblem(outcomes), summary: summarizeAccounts(outcomes) };
 }
 
 /** Texto corto para el log del worker ("1 conectada · 0 por revisar …"). */

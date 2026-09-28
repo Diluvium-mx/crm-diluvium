@@ -15,6 +15,7 @@ import {
   type AccountHealth,
   type AccountOutcome,
   type AccountState,
+  uncheckedAccountsProblem,
 } from "./zernio-account";
 
 const NOW = new Date("2026-09-27T17:00:00Z"); // 27-sep 10:00 Mazatlán
@@ -219,11 +220,13 @@ describe("problemas para el log y el issue (repo público)", () => {
     expect(summarizeAccounts(outcomes)).toEqual({ checked: 1, ok: 1, warning: 0, down: 0, unchecked: 0 });
   });
 
-  it("Zernio no respondió → 'no se pudo revisar', nunca 'desconectado'", () => {
+  it("Zernio no respondió → 'no se pudo revisar' APARTE (alerta solo si se repite), nunca 'desconectado'", () => {
     const outcomes: AccountOutcome[] = [{ kind: "unchecked", error: "Zernio no respondió en 10 s" }];
-    const problems = accountProblems(outcomes, NOW);
-    expect(problems).toEqual(["no se pudo revisar 1 cuenta(s) de WhatsApp en Zernio: Zernio no respondió en 10 s"]);
-    expect(problems.join(" ")).not.toMatch(/DESCONECTADO/i);
+    expect(accountProblems(outcomes, NOW)).toEqual([]);
+    const unchecked = uncheckedAccountsProblem(outcomes);
+    expect(unchecked).toBe("no se pudo revisar 1 cuenta(s) de WhatsApp en Zernio: Zernio no respondió en 10 s");
+    expect(unchecked).not.toMatch(/DESCONECTADO/i);
+    expect(uncheckedAccountsProblem([])).toBeNull();
     expect(summarizeAccounts(outcomes)).toMatchObject({ down: 0, unchecked: 1 });
   });
 

@@ -378,11 +378,11 @@ export function InboxBoard({ openContactId = null }: { openContactId?: string | 
   }
 
   return (
-    // Alto FIJO (pantalla − encabezado de 4rem) y nada se sale: la página no se
-    // desliza; cada columna desliza lo suyo (lista, historial del chat, detalle).
-    // Sin flex-1: dentro del <main> en columna, flex-1 (base 0%) hacía que el alto
-    // saliera del contenido e ignorara este h-[…], y la página crecía con el chat.
-    <div className="flex h-[calc(100dvh-4rem)] min-h-0 shrink-0 overflow-hidden">
+    // El alto FIJO (pantalla − encabezado de 4rem) lo pone la página (page.tsx), que
+    // también muestra la franja del bot arriba: aquí el board toma el resto (flex-1
+    // dentro de un padre de alto fijo) y nada se sale: la página no se desliza; cada
+    // columna desliza lo suyo (lista, historial del chat, detalle).
+    <div className="flex min-h-0 flex-1 overflow-hidden">
       {/* Columna: lista (colapsable) */}
       {listOpen ? (
         <aside className="flex w-80 shrink-0 flex-col border-r bg-card">
