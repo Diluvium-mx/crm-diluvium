@@ -260,6 +260,36 @@ describe.skipIf(!TEST_DATABASE_URL)("executor de workflows", () => {
     expect((await ex.startWorkflowRun({ organizationId: ORG, workflowId: wf, conversationId: CONV, trigger: "agent", allowDisabled: true })).status).toBe("skipped");
   });
 
+  it("pasos Esperar: un / del vendedor no espera (sale de inmediato y en orden); agente y palabra clave sí esperan", async () => {
+    const wf = await workflow([{ kind: "wait", seconds: 30 }, { kind: "send_text", text: "tabla" }, { kind: "wait", seconds: 5 }, { kind: "send_text", text: "fin" }], {
+      triggerKeywords: ["medidas"],
+    });
+    const waits: number[] = [];
+    const sleep = async (ms: number) => {
+      waits.push(ms);
+    };
+    const cmd = await ex.startWorkflowRun({ organizationId: ORG, workflowId: wf, conversationId: CONV, trigger: "command", triggeredByUserId: "u_v" });
+    expect(await ex.executeWorkflowRun(cmd.runId, { provider, storage, sleep })).toBe("done");
+    expect(waits).toEqual([]);
+    expect(sent.map((x) => (x.input as SendTextInput).text)).toEqual(["tabla", "fin"]);
+
+    const kw = await ex.startWorkflowRun({ organizationId: ORG, workflowId: wf, conversationId: CONV, trigger: "keyword" });
+    expect(await ex.executeWorkflowRun(kw.runId, { provider, storage, sleep })).toBe("done");
+    const agent = await ex.startWorkflowRun({ organizationId: ORG, workflowId: wf, conversationId: CONV, trigger: "agent", triggerMessageId: "m_in_1" });
+    expect(await ex.executeWorkflowRun(agent.runId, { provider, storage, sleep })).toBe("done");
+    expect(waits).toEqual([30_000, 5_000, 30_000, 5_000]);
+  });
+
+  it("barrido rápido: una corrida queued de más de 5 s sin job se lista para re-encolar; la recién creada no", async () => {
+    const { QUICK_SWEEP_GRACE_MS } = await import("@/worker/workflows");
+    const wf = await workflow([{ kind: "send_text", text: "x" }]);
+    const old = await ex.startWorkflowRun({ organizationId: ORG, workflowId: wf, conversationId: CONV, trigger: "command", now: new Date(Date.now() - 6_000) });
+    const fresh = await ex.startWorkflowRun({ organizationId: ORG, workflowId: wf, conversationId: CONV, trigger: "command" });
+    const ids = await ex.staleQueuedRuns(new Date(), QUICK_SWEEP_GRACE_MS);
+    expect(ids).toContain(old.runId);
+    expect(ids).not.toContain(fresh.runId);
+  });
+
   it("envío sin confirmar (timeout del proveedor): la corrida se detiene y avisa al vendedor", async () => {
     const { ZernioSendError } = await import("@/lib/messaging/zernio");
     const wf = await workflow([
