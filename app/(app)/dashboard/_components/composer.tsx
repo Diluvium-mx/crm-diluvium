@@ -11,7 +11,9 @@
 // Adjuntos (28-sep-2026): 📎 abre el selector, Cmd+V pega una foto o captura y
 // arriba de la caja va la vista previa; el texto, si hay, sale como pie del
 // PRIMER archivo. Enviar espera a que todos terminen de subir.
-import { useEffect, useRef, useState } from "react";
+// La caja empieza con 2 renglones y crece sola desde el 3.º (28-sep-2026: lo
+// escrito se perdía arriba); pasado el tope (max-h) se desliza por dentro.
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { Clock, Paperclip, Zap } from "lucide-react";
 import { CHAT_CAPTION_MAX } from "@/lib/chat-attachments/rules";
 import { AttachmentTray } from "./attachment-tray";
@@ -19,12 +21,33 @@ import type { ChatAttachments } from "./use-chat-attachments";
 import { useSession } from "@/lib/auth/client";
 import { listSnippets } from "@/lib/actions/snippets";
 import { listWorkflowCommands } from "@/lib/actions/workflows";
-import { applySlashInsert, filterSnippets, findSlashQuery } from "@/lib/snippets/slash";
+import { applySlashInsert, filterSnippets, findSlashQuery, normalizeForSearch } from "@/lib/snippets/slash";
 import type { SnippetView } from "@/lib/snippets/types";
 import { renderSnippet } from "@/lib/snippets/variables";
+import { parseCommand } from "@/lib/workflows/steps";
 import { ScheduleForm } from "./schedule-form";
 import { SnippetPicker } from "./snippet-picker";
 import { TemplatePicker } from "./template-picker";
+
+// Alto justo para el texto, entre los 2 renglones de `rows` y el max-height de la clase.
+// Vacía se queda en 2 renglones: Chrome mide también el texto gris de ayuda, y
+// la caja daría un brinco al escribir la primera letra.
+function fitToContent(el: HTMLTextAreaElement) {
+  if (!el.value) {
+    el.style.height = "";
+    el.style.overflowY = "";
+    return;
+  }
+  const style = getComputedStyle(el);
+  const borders = parseFloat(style.borderTopWidth) + parseFloat(style.borderBottomWidth);
+  const max = parseFloat(style.maxHeight) || Number.POSITIVE_INFINITY;
+  const scrollTop = el.scrollTop;
+  el.style.height = "auto";
+  const wanted = el.scrollHeight + borders;
+  el.style.height = `${Math.min(wanted, max)}px`;
+  el.style.overflowY = wanted > max ? "auto" : "hidden";
+  el.scrollTop = scrollTop;
+}
 
 export function Composer({
   conversationId,
@@ -79,9 +102,11 @@ export function Composer({
   const slashOpen = slash !== null;
   const slashQuery = slash?.query ?? null;
   const matches = slashQuery !== null && snippets ? filterSnippets(snippets, slashQuery) : [];
+  // Sin acentos ni ñ para buscar: "/taman" también encuentra /tamaños.
+  const commandQuery = slashQuery !== null ? normalizeForSearch(slashQuery) : null;
   const commandMatches =
-    slashQuery !== null
-      ? commands.filter((c) => c.command.slice(1).startsWith(slashQuery.toLowerCase()) || c.name.toLowerCase().includes(slashQuery.toLowerCase()))
+    commandQuery !== null
+      ? commands.filter((c) => normalizeForSearch(c.command.slice(1)).startsWith(commandQuery) || normalizeForSearch(c.name).includes(commandQuery))
       : [];
 
   // Carga los fragmentos la primera vez que se abre el buscador con "/".
@@ -114,6 +139,26 @@ export function Composer({
       pendingCaret.current = null;
     }
   }, [draft]);
+
+  // Crece o encoge con cada cambio del texto (escribir, pegar, insertar, enviar).
+  useLayoutEffect(() => {
+    const el = textareaRef.current;
+    if (el) fitToContent(el);
+  }, [draft, windowOpen]);
+
+  // Y cuando cambia el ancho (abrir o cerrar la lista o el panel re-acomoda los renglones).
+  useEffect(() => {
+    const el = textareaRef.current;
+    if (!el || typeof ResizeObserver === "undefined") return;
+    let width = el.clientWidth;
+    const observer = new ResizeObserver(() => {
+      if (el.clientWidth === width) return;
+      width = el.clientWidth;
+      fitToContent(el);
+    });
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, [windowOpen]);
 
   function fill(body: string): string {
     return sellerName ? renderSnippet(body, { vendedor: sellerName }) : body;
@@ -393,7 +438,8 @@ export function Composer({
               event.preventDefault();
               // Solo si el texto es EXACTAMENTE el comando ("/tabla"), nunca por prefijo:
               // "/t" + Enter no debe mandar nada al cliente.
-              const exact = commands.find((c) => c.command === draft.trim().toLowerCase());
+              const typed = parseCommand(draft);
+              const exact = typed ? commands.find((c) => c.command === typed) : undefined;
               if (exact) runCommand(exact.command);
               return;
             }
@@ -424,12 +470,12 @@ export function Composer({
               submit();
             }
           }}
-          rows={1}
+          rows={2}
           aria-autocomplete="list"
           placeholder={
             hasFiles ? "Agrega un mensaje (opcional)" : "Escribe un mensaje… (/ busca mensajes rápidos · Enter envía · Shift+Enter salto de línea)"
           }
-          className="max-h-32 min-h-[40px] flex-1 resize-y rounded-md border bg-background px-3 py-2 text-sm outline-none transition-colors placeholder:text-muted-foreground/60 focus:border-brand-navy focus:ring-2 focus:ring-brand-navy/30"
+          className="max-h-[40vh] flex-1 resize-none overflow-y-hidden rounded-md border bg-background px-3 py-2 text-sm outline-none transition-colors placeholder:text-muted-foreground/60 focus:border-brand-navy focus:ring-2 focus:ring-brand-navy/30"
         />
         <button
           type="button"

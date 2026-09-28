@@ -5,6 +5,7 @@ import type { AdReferral, AttachmentView, ConversationDetail, MessageView } from
 import { useFunnelStages } from "../../_components/funnel-stages-provider";
 import { listMessages, retryMessage, sendMessage, sendTemplate } from "@/lib/inbox/actions";
 import { runWorkflowCommand } from "@/lib/actions/workflows";
+import { parseCommand } from "@/lib/workflows/steps";
 import { sendAttachments } from "@/lib/inbox/attachment-actions";
 import { attachmentAcceptAttr } from "@/lib/chat-attachments/rules";
 import { Composer } from "./composer";
@@ -403,11 +404,23 @@ export function ChatThread({
     }
   }, [rows.length, lastKey, scheduledCount, conversationId, noticeCount]);
 
+  // La caja para escribir crece con el texto (28-sep-2026) y encoge el
+  // historial: si el vendedor estaba abajo, el último mensaje sigue a la vista.
+  useEffect(() => {
+    const el = scrollRef.current;
+    if (!el || typeof ResizeObserver === "undefined") return;
+    const observer = new ResizeObserver(() => {
+      if (nearBottomRef.current) el.scrollTop = el.scrollHeight;
+    });
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, []);
+
   // "/tabla" y similares (Fase D): si el texto es un comando de workflow, se
   // dispara la automatización; si no corresponde a ninguno, sale como texto.
   const [commandNotice, setCommandNotice] = useState<string | null>(null);
   async function doSendOrCommand(text: string) {
-    if (!/^\/[a-z0-9][a-z0-9-]{0,29}$/i.test(text.trim())) return doSend(text);
+    if (!parseCommand(text)) return doSend(text);
     const result = await runWorkflowCommand({ conversationId, text });
     if (!result.ok) {
       if ("notCommand" in result) return doSend(text);

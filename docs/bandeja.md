@@ -55,6 +55,9 @@ El chat es un solo componente reutilizado en las dos secciones.
 - **Anuncio de clic a WhatsApp:** tarjeta compacta "📣 Llegó por anuncio" con titular y miniatura.
   NUNCA el volcado crudo (ctwaClid, mediaUrl, …). Ver `docs/investigacion/anuncios-ctwa.md`.
 - **Composer:** Enter envía, Shift+Enter salto de línea. Abrir la conversación la marca como leída.
+  La caja empieza con 2 renglones y crece sola desde el 3.º (28-sep-2026, pedido de un vendedor: lo escrito
+  se perdía arriba); tope 40 % de la pantalla, después se desliza por dentro. Si el vendedor estaba abajo en
+  el historial, el último mensaje sigue a la vista mientras la caja crece.
   ⚡ **Mensajes rápidos** y "/" ("/ busca mensajes rápidos"): ver abajo. **📎 Adjuntos** (arrastrar, 📎,
   Cmd+V): ver "Adjuntos en el chat".
 

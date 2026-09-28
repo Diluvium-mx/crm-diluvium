@@ -49,7 +49,7 @@ Nadie es "dueño" de un contacto: **todos ven todos los contactos, siempre**.
 | **Plantilla** | Mensaje fijo **aprobado por Meta** para escribir fuera de la ventana de 24 h. Sus huecos se llaman {{1}}, {{2}}… |
 | **Mensaje rápido** | Respuesta guardada por el equipo para contestar más rápido dentro de las 24 h (antes se llamaba "Fragmento"). Se inserta con "/" o con ⚡ y **no se manda sola**: la revisas y le das Enviar. Si lleva {{vendedor}}, se llena solo con tu nombre; {{nombre}} lo completas tú. Diluvium tiene 22 (Buenos días, Precio, Pagos…). |
 | **Workflow** | Secuencia de pasos (texto, archivo con pie, espera) que manda material: tabla de tamaños, datos bancarios, videos. Lo dispara el agente, un **comando** del vendedor, una **palabra clave** del cliente o la entrada a una etapa. Las **esperas** solo aplican al agente, a la palabra clave y a la etapa: con un comando del vendedor sale de inmediato. |
-| **Comando** | Atajo que escribe el vendedor en el chat para mandar un workflow: /tabla, /banco, /video… Sale **de inmediato** (se salta los pasos ⏱ Esperar); el cliente lo recibe en lo que tarda WhatsApp (~5 s). |
+| **Comando** | Atajo que escribe el vendedor en el chat para mandar un workflow: /tabla, /banco, /video… Se escribe con letras sin acento (la **ñ** sí: /tamaños), números y guiones. Sale **de inmediato** (se salta los pasos ⏱ Esperar); el cliente lo recibe en lo que tarda WhatsApp (~5 s). |
 | **Adjuntar (📎)** | Mandar fotos, videos o documentos desde el chat: se arrastran sobre el chat, se eligen con 📎 o se pegan con Cmd+V. Hasta **10 por envío**, uno por mensaje y en orden; el texto va como pie del primero. Fotos JPG/PNG (HEIC y WebP se pasan solas a JPG), video .mp4 hasta 16 MB, PDF/Word/Excel/PowerPoint/TXT/XML hasta 100 MB. GIF, ZIP o audio: se mandan desde el celular. |
 | **Corrida** | Cada vez que un workflow se ejecutó (Hecho, Omitido, Falló…). |
 | **Biblioteca** | Los archivos (imágenes y videos) que usan los workflows. |
@@ -273,6 +273,7 @@ Donde el vendedor escribe. Con la ventana de 24 h abierta se escribe libre y se 
 solo plantilla (y no se pueden adjuntar).
 
 ![Caja para escribir](mapa-crm/04-composer.png)
+![Mensaje largo: la caja crece para que se vea todo](mapa-crm/04-composer-largo.png)
 ![Capa al arrastrar archivos sobre el chat](mapa-crm/04-composer-capa.png)
 ![Archivos adjuntos antes de enviar](mapa-crm/04-composer-adjuntos.png)
 ![Menú al escribir "/"](mapa-crm/04-composer-slash.png)
@@ -286,11 +287,11 @@ solo plantilla (y no se pueden adjuntar).
 |---|---|---|---|
 | 1 | **⚡ Mensajes rápidos** | Abre la ventana de mensajes rápidos (27–28) para insertar uno. | Todos |
 | 2 | **📄 Plantillas** | Abre las plantillas aprobadas por Meta. | Todos |
-| 3 | **Escribe un mensaje…** | Caja de texto. **Enter** envía, **Shift+Enter** hace salto de línea, **"/"** busca mensajes rápidos (el texto gris dice "/ busca mensajes rápidos"). **Cmd+V** con una foto o captura de pantalla la adjunta. | Todos |
+| 3 | **Escribe un mensaje…** | Caja de texto. Empieza con 2 renglones y **crece sola** desde el 3.º para que se vea todo lo escrito (el historial se acomoda arriba); pasado el 40 % de la pantalla se desliza por dentro, y al enviar vuelve a 2 renglones. **Enter** envía, **Shift+Enter** hace salto de línea, **"/"** busca mensajes rápidos (el texto gris dice "/ busca mensajes rápidos"). **Cmd+V** con una foto o captura de pantalla la adjunta. | Todos |
 | 4 | **🕒 Programar mensaje** | Abre el formulario para programar. Con archivos adjuntos se apaga: programar no lleva archivos por ahora. | Todos |
 | 5 | **Enviar** (naranja) | Manda el mensaje. Con archivos, se activa cuando **todos terminaron de subir**; salen uno por mensaje en el orden de la vista previa y el texto va como pie del primero. | Todos |
 | 6 | **⚡ Mensajes rápidos** (menú del "/") | Menú que aparece al escribir "/". | Todos |
-| 7 | **Automatizaciones** | Comandos de workflows (/tabla, /banco, /video…) con "▶ ejecutar": manda ese material en el chat **de inmediato** (sin los pasos ⏱ Esperar del workflow). Cuenta como mensaje del vendedor. | Todos |
+| 7 | **Automatizaciones** | Comandos de workflows (/tabla, /banco, /video…) con "▶ ejecutar": manda ese material en el chat **de inmediato** (sin los pasos ⏱ Esperar del workflow). Cuenta como mensaje del vendedor. Se encuentran sin importar acentos ni la ñ ("/taman" encuentra /tamaños). | Todos |
 | 8 | **Lista de mensajes rápidos** | Nombre y texto; al elegir uno se pone en lugar del "/". Solo {{vendedor}} se llena solo (con tu nombre); {{nombre}} lo completas tú. | Todos |
 | 9 | **↑↓ elegir · Enter insertar · Esc cerrar** | Ayuda de teclas del menú. | Todos |
 | 10 | **"/" en la caja** | Lo que escribes después de "/" filtra la lista por nombre y texto, sin importar acentos ni mayúsculas ("cuanta" encuentra "Cuánta agua entra"). | Todos |
@@ -711,7 +712,7 @@ Los **workflows** (envíos de material), la **Biblioteca** de archivos y las **C
 | 19 | **Cuándo usarlo** | Texto que lee el agente para decidir si lo manda. | Todos |
 | 20 | **Disparadores** | Las formas de dispararlo (21–24). | Todos |
 | 21 | **El Agente IA puede dispararlo** | Casilla. | Todos |
-| 22 | **Comando del vendedor (en el chat)** | p. ej. /tabla. | Todos |
+| 22 | **Comando del vendedor (en el chat)** | p. ej. /tabla. Letras sin acento (la **ñ** sí: /tamaños), números y guiones; si lleva acento o espacio, no se guarda y lo avisa arriba. | Todos |
 | 23 | **Al entrar a la etapa** | Se manda solo cuando el contacto entra a esa etapa. | Todos |
 | 24 | **Palabras clave del cliente** | Separadas por coma; palabra completa, sin importar acentos. | Todos |
 | 25 | **Pasos (en orden)** | Lo que manda, de arriba a abajo. | Todos |
