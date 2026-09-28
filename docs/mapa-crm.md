@@ -479,6 +479,7 @@ el 27-sep-2026; se editan aquí como cualquier otro.
 ![Mensajes rápidos](mapa-crm/08-mensajes-rapidos.png)
 ![Nuevo mensaje rápido](mapa-crm/08-mensaje-rapido-nuevo.png)
 ![Plantillas](mapa-crm/08-plantillas.png)
+![Editar una plantilla](mapa-crm/08-plantilla-editar.png)
 
 | # | Nombre oficial | Qué hace | Quién lo ve |
 |---|---|---|---|
