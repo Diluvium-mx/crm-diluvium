@@ -8,7 +8,7 @@
 // 3. encolar (si falla, el barrido del worker lo recoge desde la base);
 // 4. 200. Solo se responde error si NO se pudo guardar: así Zernio reintenta
 //    en vez de dar el evento por entregado y perderlo.
-import { and, eq } from "drizzle-orm";
+import { and, eq, isNotNull } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { channels, messages, webhookEvents } from "@/lib/db/schema";
 import {
@@ -88,9 +88,33 @@ export async function POST(req: Request): Promise<Response> {
     // Un estado (entregado/leído/falló) sin cuenta se acepta SOLO si su wamid
     // ya está en esta base: eso prueba que el mensaje es de este entorno, sin
     // abrir la puerta a datos del número real.
+    let awaitingWamid: string | null = null;
     if (!envelope.providerAccountId) {
-      const org = await organizationOfKnownStatus(provider, payload);
-      if (org) return store(provider, rowId(provider, envelope), envelope, payload, org);
+      const known = await knownStatus(provider, payload);
+      if (known.organizationId) return store(provider, rowId(provider, envelope), envelope, payload, known.organizationId);
+      // Aún no está: puede llegar antes que su mensaje (P1). Queda en cuarentena CON el wamid
+      // que espera; el barrido lo libera en cuanto ese mensaje exista en esta base.
+      awaitingWamid = known.wamid;
+    } else {
+      // Cuenta de un canal de PRUEBA que esta base tiene archivado (p. ej. el Sandbox, que
+      // Zernio sigue avisando a producción cuando se prueba en staging): se registra como
+      // ignorado, sin cuarentena ni alarma. La ingesta hace lo mismo con los canales archivados.
+      const archivedTest = await archivedTestChannelOrg(provider, envelope.providerAccountId);
+      if (archivedTest) {
+        await db
+          .insert(webhookEvents)
+          .values({
+            id: rowId(provider, envelope),
+            provider: provider.name,
+            event: envelope.event,
+            payload,
+            organizationId: archivedTest,
+            processedAt: new Date(),
+            lastError: "ignorado: canal de prueba archivado (cuenta no permitida en este entorno)",
+          })
+          .onConflictDoNothing({ target: webhookEvents.id });
+        return Response.json({ ok: true, ignored: "canal de prueba archivado" });
+      }
     }
     // Cuenta ajena a este entorno (p. ej. el número real antes de agregarlo a
     // ZERNIO_ALLOWED_ACCOUNT_IDS), o evento sin cuenta. Se contesta 200 (Zernio
@@ -111,6 +135,7 @@ export async function POST(req: Request): Promise<Response> {
         payload,
         organizationId: null,
         quarantinedAt: new Date(),
+        orphanWamid: awaitingWamid,
       })
       .onConflictDoNothing({ target: webhookEvents.id });
     return Response.json({ ok: true, quarantined: "cuenta no permitida en este entorno" });
@@ -156,14 +181,37 @@ async function organizationOfAccount(provider: MessagingProvider, providerAccoun
   return channel?.organizationId ?? null;
 }
 
-/** Un estado sin cuenta se acepta solo si su wamid ya está en la base; devuelve la organización de ese mensaje. */
-async function organizationOfKnownStatus(provider: MessagingProvider, payload: unknown): Promise<string | null> {
+/**
+ * Un estado sin cuenta se acepta solo si su wamid ya está en la base: devuelve la organización de
+ * ese mensaje. Si no está (todavía), devuelve el wamid que espera para dejarlo en cuarentena con él.
+ */
+async function knownStatus(
+  provider: MessagingProvider,
+  payload: unknown,
+): Promise<{ organizationId: string | null; wamid: string | null }> {
   const event = provider.normalize(payload);
-  if (event.kind !== "status" || !event.providerMessageId) return null;
+  if (event.kind !== "status" || !event.providerMessageId) return { organizationId: null, wamid: null };
   const [known] = await db
     .select({ organizationId: messages.organizationId })
     .from(messages)
     .where(eq(messages.providerMessageId, event.providerMessageId))
     .limit(1);
-  return known?.organizationId ?? null;
+  return { organizationId: known?.organizationId ?? null, wamid: event.providerMessageId };
+}
+
+/** Organización de un canal de PRUEBA archivado con esa cuenta (si lo hay). */
+async function archivedTestChannelOrg(provider: MessagingProvider, providerAccountId: string): Promise<string | null> {
+  const [channel] = await db
+    .select({ organizationId: channels.organizationId })
+    .from(channels)
+    .where(
+      and(
+        eq(channels.provider, provider.name),
+        eq(channels.providerAccountId, providerAccountId),
+        eq(channels.isTest, true),
+        isNotNull(channels.archivedAt),
+      ),
+    )
+    .limit(1);
+  return channel?.organizationId ?? null;
 }

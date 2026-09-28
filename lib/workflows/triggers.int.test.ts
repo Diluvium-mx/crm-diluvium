@@ -63,6 +63,35 @@ describe.skipIf(!TEST_DATABASE_URL)("disparadores de workflows", () => {
     expect(all[0]).toMatchObject({ workflowId: "w_tabla", trigger: "keyword", conversationId: "cv_new" });
   });
 
+  it("B1: palabra clave durable — el barrido retoma la que un reinicio dejó 'pendiente', sin duplicar la corrida", async () => {
+    await wf("w_tabla", { triggerKeywords: ["tabla"], position: 0 });
+    const mark = async (id: string) =>
+      (await db.select({ m: s.messages.metadata }).from(s.messages).where(eq(s.messages.id, id)))[0].m as Record<string, unknown> | null;
+    const pending = (id: string, body: string, minutesAgo: number) =>
+      db.insert(s.messages).values({
+        id, organizationId: ORG, conversationId: "cv_new", direction: "in", source: "contact", type: "text", body, status: "received",
+        metadata: { palabraClave: "pendiente" }, createdAt: new Date(Date.now() - minutesAgo * 60_000),
+      });
+    // El worker se cayó entre el commit (marca "pendiente") y el gancho: nadie evaluó la palabra clave.
+    await pending("m_caido", "¿me pasas la tabla?", 2);
+    await pending("m_reciente", "la tabla porfa", 0); // < 1 min: todavía es del gancho normal
+    await pending("m_viejo", "tabla", 45); // > 30 min: ya no sirve mandarla
+    expect(await t.sweepPendingKeywords()).toBe(1);
+    const [run] = await runs();
+    expect(run).toMatchObject({ workflowId: "w_tabla", trigger: "keyword", triggerMessageId: "m_caido" });
+    expect((await mark("m_caido"))?.palabraClave).toBe("revisada");
+    expect((await mark("m_reciente"))?.palabraClave).toBe("pendiente");
+    // Se cayó DESPUÉS de crear la corrida y antes de marcar: el barrido la vuelve a evaluar sin duplicarla.
+    await db.update(s.messages).set({ metadata: { palabraClave: "pendiente" } }).where(eq(s.messages.id, "m_caido"));
+    expect(await t.sweepPendingKeywords()).toBe(1);
+    expect(await runs()).toHaveLength(1);
+    expect((await mark("m_caido"))?.palabraClave).toBe("revisada");
+    // El gancho normal también la cierra, con o sin coincidencia.
+    await db.insert(s.messages).values({ id: "m_nada", organizationId: ORG, conversationId: "cv_new", direction: "in", source: "contact", type: "text", body: "hola", status: "received", metadata: { palabraClave: "pendiente" } });
+    expect(await t.onInboundKeyword({ organizationId: ORG, conversationId: "cv_new", messageId: "m_nada" })).toBeNull();
+    expect((await mark("m_nada"))?.palabraClave).toBe("revisada");
+  });
+
   it("la frase más específica gana entre workflows: 'video a la medida' no manda el video estándar", async () => {
     await wf("w_video", { triggerKeywords: ["video"], position: 0 });
     await wf("w_medida", { triggerKeywords: ["video a la medida"], position: 1 });

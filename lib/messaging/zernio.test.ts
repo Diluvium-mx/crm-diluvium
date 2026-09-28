@@ -544,6 +544,52 @@ describe("validDate (horas de webhooks, estrictas)", () => {
   ])("rechaza %s", (_d, value) => expect(validDate(value, now)).toBeNull());
 });
 
+describe("ids de Zernio (revisión completa Z2/Z4)", () => {
+  const base = received();
+  it("acepta los ObjectId de producción y el wamid como id interno (formato plano de CTWA)", () => {
+    expect(normalizeZernioEvent(received({ message: { ...base.message, id: "6ab2d706aa11bb22cc33dd44" } })).kind).toBe("message");
+    expect(normalizeZernioEvent(received({ message: { ...base.message, id: "wamid.HBgMNTIxNjY4MjQxOTAwMBUCABIYFjNFQjA=" } })).kind).toBe("message");
+  });
+  it.each([
+    ["id de mensaje vacío (Z4)", { message: { ...base.message, id: "" } }],
+    ["id de mensaje con espacios", { message: { ...base.message, id: "zmsg 1" } }],
+    ["conversación vacía (Z2)", { message: { ...base.message, conversationId: "" } }],
+    ["conversación con '/' (iría a la URL de la API)", { conversation: { ...base.conversation, id: "zconv/../1" } }],
+  ])("rechaza %s como formato no reconocido (dead-letter, no se guarda vacío)", (_d, overrides) => {
+    expect(normalizeZernioEvent(received(overrides))).toMatchObject({ kind: "ignored", malformed: true });
+  });
+});
+
+describe("hora adelantada (revisión completa Z3)", () => {
+  const receivedAt = new Date("2026-09-18T20:00:00.000Z");
+  const at = (sentAt: string) => {
+    const e = normalizeZernioEvent(received({ message: { ...received().message, sentAt } }), { receivedAt });
+    return e.kind === "message" ? e.sentAt.toISOString() : e.kind;
+  };
+  it("hasta 5 min adelante respecto a la llegada se respeta (diferencia de relojes)", () => {
+    expect(at("2026-09-18T20:04:00.000Z")).toBe("2026-09-18T20:04:00.000Z");
+  });
+  it("más de 5 min adelante se sustituye por la hora de llegada (no abre una ventana de 24 h falsa)", () => {
+    expect(at("2026-09-18T23:00:00.000Z")).toBe("2026-09-18T20:00:00.000Z");
+  });
+  it("una hora pasada no se toca", () => {
+    expect(at("2026-09-18T19:59:58.000Z")).toBe("2026-09-18T19:59:58.000Z");
+  });
+  it("la reacción adelantada también toma la hora de llegada", () => {
+    const e = normalizeZernioEvent(
+      {
+        id: "evt_r1",
+        event: "reaction.received",
+        reaction: { emoji: "👍", action: "added", platformMessageId: "wamid.X", sender: { id: "5216682419000" }, reactedAt: "2026-09-18T22:00:00.000Z" },
+        conversation: received().conversation,
+        account: received().account,
+      },
+      { receivedAt },
+    );
+    expect(e.kind === "reaction" ? e.at.toISOString() : e.kind).toBe("2026-09-18T20:00:00.000Z");
+  });
+});
+
 describe("ZernioProvider.sendMedia", () => {
   it("manda attachmentUrl/attachmentType/message por el mismo endpoint (formato verificado en el sandbox)", async () => {
     const fetchImpl = vi.fn(async () => Response.json({ success: true, data: { messageId: "wamid.M1" } })) as unknown as typeof fetch;

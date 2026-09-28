@@ -103,14 +103,16 @@ async function insertRun(
       contactId,
       trigger: input.trigger,
       triggeredByUserId: input.triggeredByUserId ?? null,
-      triggerMessageId: input.trigger === "agent" ? (input.triggerMessageId ?? null) : null,
+      // Agente y palabra clave: el entrante que la originó (idempotencia entre reintentos y barridos).
+      triggerMessageId: input.trigger === "agent" || input.trigger === "keyword" ? (input.triggerMessageId ?? null) : null,
       payload: input.payload ?? null,
       status,
       errorCode: reason ?? null,
       createdAt: now,
       ...(status === "skipped" ? { finishedAt: now } : {}),
     })
-    // Reintento del job del agente para el mismo entrante: la corrida ya existe.
+    // Reintento del job del agente (o nueva evaluación de la palabra clave) para el mismo
+    // entrante: la corrida ya existe. Agente: una por workflow y mensaje; palabra clave: una por mensaje.
     .onConflictDoNothing()
     .returning({ id: workflowRuns.id });
   if (rows.length) return id;
@@ -120,8 +122,8 @@ async function insertRun(
     .where(
       and(
         eq(workflowRuns.organizationId, input.organizationId),
-        eq(workflowRuns.workflowId, input.workflowId),
-        eq(workflowRuns.trigger, "agent"),
+        input.trigger === "keyword" ? undefined : eq(workflowRuns.workflowId, input.workflowId),
+        eq(workflowRuns.trigger, input.trigger === "keyword" ? "keyword" : "agent"),
         eq(workflowRuns.triggerMessageId, input.triggerMessageId ?? ""),
       ),
     )
