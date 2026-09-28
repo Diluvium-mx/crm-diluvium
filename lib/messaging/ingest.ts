@@ -18,6 +18,7 @@ import type {
 import { firstResponseSeconds, nextStatus, windowExpiresAt } from "./rules";
 import { noticeWorkflowSendFailed, type FailedOutbound } from "@/lib/workflows/delivery-notice";
 import { ingestHistoryMessage, isPhoneHistory } from "./history";
+import { markKeywordPending } from "@/lib/workflows/keyword-pending";
 import { completedMetadata, isUnavailableNotice } from "./unavailable";
 import { pendingFallbackNote, recordAdClickSafely, type FallbackJob, type RecordedClick } from "@/lib/ads/attribution";
 import { looksLikeAdMessage } from "@/lib/ads/referral";
@@ -65,6 +66,16 @@ export const DEAD_LETTER_ATTEMPTS = 20;
  * mensaje que nunca pasó por el CRM (p. ej. anterior a conectar el número).
  */
 export const ORPHAN_GRACE_MS = 10 * 60_000;
+
+/**
+ * Eco de un envío que aún no se puede atribuir: sin teléfono ni BSUID, con una conversación de
+ * Zernio que el CRM no conoce y sin la fila propia enlazada todavía (el eco llegó antes de que la
+ * respuesta del POST guardara los ids). Se REINTENTA: en segundos la fila ya tiene sus ids y el eco
+ * se atribuye. Pasado ECHO_LINK_GRACE_MS desde que se recibió, dead-letter como antes (revisión
+ * completa Z1, 28-sep-2026).
+ */
+export class UnattributedEchoError extends RetryableIngestError {}
+export const ECHO_LINK_GRACE_MS = ORPHAN_GRACE_MS;
 
 /**
  * El mensaje al que apunta el evento no existe (todavía). `awaiting` = el wamid
@@ -166,6 +177,10 @@ export async function processWebhookEvent(
       } else if (event.malformed) throw new DeadLetterIngestError(`formato no reconocido (${event.event}): ${event.reason}`);
       else outcome = `ignorado: ${event.reason}`;
     } catch (error) {
+      // Eco sin atribuir que ya agotó su margen: dead-letter (visible y reprocesable).
+      if (error instanceof UnattributedEchoError && (await receivedBefore(webhookEventId, ECHO_LINK_GRACE_MS))) {
+        throw new DeadLetterIngestError(error.message);
+      }
       // Huérfano viejo: se cierra como ignorado (queda la nota en last_error).
       if (!(error instanceof OrphanEventError) || !(await receivedBefore(webhookEventId, ORPHAN_GRACE_MS))) throw error;
       // No se pierde: queda marcado con el wamid que espera y el barrido del
@@ -297,11 +312,13 @@ async function ingestMessage(
       if (!phone && !bsuid) {
         // Sin teléfono, sin BSUID y sin conversación conocida no hay a quién
         // atribuirlo. NUNCA se descarta: dead-letter (queda en la BD, visible
-        // y reprocesable con scripts/replay-webhook-events.ts).
-        throw new DeadLetterIngestError(
+        // y reprocesable con scripts/replay-webhook-events.ts). Un eco saliente
+        // antes se reintenta: su fila puede estar por enlazar los ids (Z1).
+        const reason =
           `${event.direction === "in" ? "entrante" : "eco saliente"} sin teléfono, BSUID ni conversación conocida ` +
-            `(teléfono recibido: ${event.contactPhone ?? "ninguno"}, conversación ${event.providerConversationId})`,
-        );
+          `(teléfono recibido: ${event.contactPhone ?? "ninguno"}, conversación ${event.providerConversationId})`;
+        if (event.direction === "out") throw new UnattributedEchoError(reason);
+        throw new DeadLetterIngestError(reason);
       }
       const contactId = await resolveContact(tx, orgId, { phone, bsuid, name: event.contactName }, undefined, {
         esPrueba: channel.isTest,
@@ -532,6 +549,11 @@ async function ingestMessage(
     ) {
       const seconds = await reconcileFirstResponse(tx, conversation.id);
       if (seconds !== null) updates.firstResponseSeconds = seconds;
+    }
+    // Palabra clave durable (B1): la marca "pendiente" entra en la MISMA transacción que el
+    // mensaje; el gancho la cierra y el barrido retoma lo que un reinicio dejó a medias.
+    if (saved.value?.direction === "in" && event.type === "text" && event.body) {
+      await markKeywordPending(tx, saved.value.messageId);
     }
     await tx.update(conversations).set(updates).where(eq(conversations.id, conversation.id));
     return outcome;
@@ -1160,6 +1182,27 @@ async function ingestMessageUpdate(
     return "mensaje eliminado por su autor";
   }));
   return { outcome, organizationId: orgId };
+}
+
+/**
+ * Barrido del worker (revisión completa P1, 28-sep-2026): un estado SIN cuenta que llegó antes que
+ * su mensaje quedó en cuarentena con el wamid que espera (orphan_wamid). En cuanto ese mensaje existe
+ * en esta base —lo que prueba que es de este entorno—, se libera: toma la organización del mensaje y
+ * vuelve a pendientes (el barrido lo procesa). Las filas de cuentas ajenas nunca traen orphan_wamid y
+ * siguen en cuarentena. Devuelve cuántos.
+ */
+export async function releaseQuarantinedStatuses(): Promise<number> {
+  const released = await db.execute<{ id: string }>(sql`
+    update ${webhookEvents} w
+       set quarantined_at = null, processed_at = null, attempts = 0, last_error = null,
+           orphan_wamid = null, organization_id = m.organization_id
+      from ${messages} m
+     where w.quarantined_at is not null
+       and w.processed_at is null
+       and w.orphan_wamid is not null
+       and m.provider_message_id = w.orphan_wamid
+    returning w.id`);
+  return released.length;
 }
 
 /**

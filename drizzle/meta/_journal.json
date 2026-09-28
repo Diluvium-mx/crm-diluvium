@@ -316,6 +316,13 @@
       "when": 1790627364237,
       "tag": "0045_embudo_atendido",
       "breakpoints": true
+    },
+    {
+      "idx": 46,
+      "version": "7",
+      "when": 1790631806461,
+      "tag": "0046_palabra_clave_durable",
+      "breakpoints": true
     }
   ]
 }
