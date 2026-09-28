@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { commandSchema, keywordsSchema, matchesKeyword, missingMedia, parseCommand, stepPayloadSchema, stepsSchema, stripUnresolvedVariables, unknownVariables } from "./steps";
+import { commandSchema, keywordsSchema, matchesKeyword, missingMedia, parseCommand, stepPayloadSchema, stepsSchema, stripUnresolvedVariables, unknownVariables, waitMs } from "./steps";
 
 describe("stepPayloadSchema", () => {
   it("acepta cada tipo de paso", () => {
@@ -60,5 +60,15 @@ describe("comandos y palabras clave", () => {
   it("variables: solo las conocidas; las sin valor no salen al cliente", () => {
     expect(unknownVariables("Hola {{nombre}}, de {{vendedor}} y {{ cosa }}")).toEqual(["cosa"]);
     expect(stripUnresolvedVariables("Te atiende {{vendedor}} hoy")).toBe("Te atiende hoy");
+  });
+});
+
+describe("waitMs (pasos Esperar)", () => {
+  it("se salta SOLO con un / del vendedor (trigger command); agente, palabra clave y etapa esperan", () => {
+    const step = { kind: "wait" as const, seconds: 30 };
+    expect(waitMs(step, "command")).toBe(0);
+    expect(waitMs(step, "agent")).toBe(30_000);
+    expect(waitMs(step, "keyword")).toBe(30_000);
+    expect(waitMs(step, "stage")).toBe(30_000);
   });
 });
