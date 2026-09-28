@@ -1,29 +1,62 @@
 "use client";
 
-// Plantillas 📄: aprobadas por Meta, para responder FUERA de la ventana de 24 h.
-// Aquí solo se LISTAN y SINCRONIZAN (son inmutables: la edición vive en Meta).
-// El alta por API es opcional y queda en revisión de Meta (PENDING) hasta que la
-// aprueben. El ENVÍO se hace desde el chat. Ver docs/investigacion/plantillas-zernio.md.
+// Plantillas 📄: aprobadas por Meta, para escribir FUERA de la ventana de 24 h.
+// Aquí se SINCRONIZAN, se CREAN (van a revisión de Meta), se EDITAN (solo el
+// texto; vuelven a revisión) y se BORRAN (el nombre queda bloqueado 30 días en
+// Meta). El ENVÍO se hace desde el chat. Ver docs/investigacion/plantillas-zernio.md.
 import { useMemo, useState } from "react";
-import { Plus, RefreshCw } from "lucide-react";
-import { createTemplate, listTemplates, syncTemplates } from "@/lib/actions/templates";
-import { templateMaxIndex } from "@/lib/messaging/template-format";
+import { Pencil, Plus, RefreshCw, Trash2 } from "lucide-react";
+import { createTemplate, deleteTemplate, listTemplates, syncTemplates, updateTemplate } from "@/lib/actions/templates";
+import {
+  isTemplateEditable,
+  TEMPLATE_BODY_MAX,
+  templateBodyProblem,
+  templateMaxIndex,
+  templateNameFromLabel,
+} from "@/lib/messaging/template-format";
 import type { TemplateView } from "@/lib/templates/types";
 import { HighlightBody } from "./highlight";
 
 const TOKEN_CLASS = "rounded bg-brand-navy/15 px-1 font-medium text-brand-navy";
+const INPUT_CLASS =
+  "w-full rounded-md border bg-background px-3 py-2 text-sm outline-none focus:border-brand-navy focus:ring-2 focus:ring-brand-navy/30";
 
-const CATEGORIES = ["UTILITY", "MARKETING", "AUTHENTICATION"] as const;
-type Category = (typeof CATEGORIES)[number];
+// Autenticación (códigos) no se ofrece: tiene una forma propia que este formulario no arma.
+const CATEGORIES = [
+  { value: "MARKETING", label: "Marketing: saludos, seguimientos y promociones" },
+  { value: "UTILITY", label: "Utilidad: avisos de un pedido ya hecho" },
+] as const;
+type Category = (typeof CATEGORIES)[number]["value"];
+
+const LANGUAGES = [
+  { value: "es_MX", label: "Español (México)" },
+  { value: "es", label: "Español" },
+  { value: "en_US", label: "Inglés (EE. UU.)" },
+] as const;
+
+// Borradas (por el CRM, por Meta o en camino de borrarse): no se muestran.
+const HIDDEN_STATUSES = new Set(["REMOVED", "PENDING_DELETION"]);
+
+function categoryLabel(category: string | null): string | null {
+  if (!category) return null;
+  const c = category.toUpperCase();
+  if (c === "MARKETING") return "Marketing";
+  if (c === "UTILITY") return "Utilidad";
+  if (c === "AUTHENTICATION") return "Autenticación";
+  return category;
+}
 
 function statusStyle(status: string): { label: string; className: string } {
   const s = status.toUpperCase();
   if (s === "APPROVED") return { label: "Aprobada", className: "bg-emerald-500/10 text-emerald-700 dark:text-emerald-300" };
   if (s === "PENDING" || s === "IN_APPEAL") return { label: s === "PENDING" ? "En revisión" : "En apelación", className: "bg-amber-500/10 text-amber-700 dark:text-amber-300" };
   if (s === "REJECTED") return { label: "Rechazada", className: "bg-red-500/10 text-red-700 dark:text-red-300" };
-  if (s === "REMOVED") return { label: "Eliminada en Meta", className: "bg-muted text-muted-foreground line-through" };
+  if (s === "PAUSED") return { label: "Pausada por Meta", className: "bg-amber-500/10 text-amber-700 dark:text-amber-300" };
+  if (s === "DISABLED") return { label: "Desactivada por Meta", className: "bg-red-500/10 text-red-700 dark:text-red-300" };
   return { label: status, className: "bg-muted text-muted-foreground" };
 }
+
+type FormMode = { type: "new" } | { type: "edit"; template: TemplateView };
 
 export function PlantillasTab({
   initial,
@@ -37,38 +70,68 @@ export function PlantillasTab({
 }) {
   const [items, setItems] = useState<TemplateView[]>(initial);
   const [syncing, setSyncing] = useState(false);
+  const [deletingId, setDeletingId] = useState<string | null>(null);
   const [note, setNote] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [creating, setCreating] = useState(false);
+  const [form, setForm] = useState<FormMode | null>(null);
+
+  const visible = useMemo(() => items.filter((t) => !HIDDEN_STATUSES.has(t.status.toUpperCase())), [items]);
+
+  function clearMessages() {
+    setError(null);
+    setNote(null);
+  }
 
   async function refresh() {
-    setItems(await listTemplates());
+    try {
+      setItems(await listTemplates());
+    } catch {
+      setError("No se pudo recargar la lista; recarga la página.");
+    }
   }
 
   async function sync() {
     setSyncing(true);
-    setError(null);
-    setNote(null);
-    try {
-      const { synced, removed } = await syncTemplates();
+    clearMessages();
+    const result = await syncTemplates().catch(() => null);
+    if (!result) setError("No se pudo sincronizar. Revisa tu conexión y vuelve a intentarlo.");
+    else if (!result.ok) setError(result.message);
+    else {
       await refresh();
       setNote(
-        `Sincronizado: ${synced} plantilla(s) desde WhatsApp` +
-          (removed > 0 ? `; ${removed} marcada(s) como eliminada(s) en Meta.` : "."),
+        `Sincronizado: ${result.synced} plantilla(s) desde WhatsApp` +
+          (result.removed > 0 ? `; ${result.removed} ya no existe(n) en Meta.` : "."),
       );
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "No se pudo sincronizar.");
-    } finally {
-      setSyncing(false);
     }
+    setSyncing(false);
+  }
+
+  async function remove(template: TemplateView) {
+    if (
+      !window.confirm(
+        `¿Borrar la plantilla "${template.name}" (${template.language}) en Meta?\n\n` +
+          `Ya no se podrá mandar, y Meta no deja volver a usar el nombre "${template.name}" durante 30 días.`,
+      )
+    ) {
+      return;
+    }
+    setDeletingId(template.id);
+    clearMessages();
+    const result = await deleteTemplate({ id: template.id }).catch(() => null);
+    if (!result) setError("No se pudo borrar. Revisa tu conexión y vuelve a intentarlo.");
+    else if (!result.ok) setError(result.message);
+    else {
+      setItems((current) => current.filter((t) => t.id !== template.id));
+      setNote(`Plantilla "${template.name}" borrada.`);
+    }
+    setDeletingId(null);
   }
 
   return (
     <div className="mx-auto max-w-3xl space-y-4 p-4">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <p className="text-sm text-muted-foreground">
-          Aprobadas por Meta, con variables <code className="text-brand-navy">{"{{1}}"}</code>. Para escribir
-          fuera de las 24 h. Se envían desde el chat.
+          Aprobadas por Meta, para escribir fuera de las 24 h. Se envían desde el chat (📄).
         </p>
         {canManage && (
           <div className="flex shrink-0 gap-2">
@@ -84,9 +147,8 @@ export function PlantillasTab({
             <button
               type="button"
               onClick={() => {
-                setError(null);
-                setNote(null);
-                setCreating((c) => !c);
+                clearMessages();
+                setForm((current) => (current?.type === "new" ? null : { type: "new" }));
               }}
               disabled={sandboxChannel}
               className="flex items-center gap-1.5 rounded-md bg-brand-navy px-3 py-2 text-sm font-medium text-brand-white transition-colors hover:bg-brand-navy-dark disabled:opacity-50"
@@ -104,29 +166,31 @@ export function PlantillasTab({
         </div>
       )}
       {note && (
-        <div className="rounded-md border border-emerald-300 bg-emerald-50 px-3 py-2 text-sm text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-300">
+        <div role="status" className="rounded-md border border-emerald-300 bg-emerald-50 px-3 py-2 text-sm text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-300">
           {note}
         </div>
       )}
       {error && (
-        <div className="rounded-md border border-red-300 bg-red-50 px-3 py-2 text-sm text-red-700 dark:bg-red-950/40 dark:text-red-300">
+        <div role="alert" className="rounded-md border border-red-300 bg-red-50 px-3 py-2 text-sm text-red-700 dark:bg-red-950/40 dark:text-red-300">
           {error}
         </div>
       )}
 
-      {creating && (
-        <CreateTemplateForm
-          onClose={() => setCreating(false)}
-          onCreated={async (msg) => {
-            setCreating(false);
+      {form && (
+        <TemplateForm
+          key={form.type === "edit" ? form.template.id : "new"}
+          mode={form}
+          onClose={() => setForm(null)}
+          onDone={async (msg) => {
+            setForm(null);
+            setError(null);
             setNote(msg);
             await refresh();
           }}
-          onError={setError}
         />
       )}
 
-      {items.length === 0 ? (
+      {visible.length === 0 ? (
         <div className="rounded-lg border border-dashed bg-card/50 px-4 py-10 text-center text-sm text-muted-foreground">
           {canManage ? (
             <>
@@ -139,23 +203,46 @@ export function PlantillasTab({
         </div>
       ) : (
         <ul className="space-y-2">
-          {items.map((t) => {
+          {visible.map((t) => {
             const badge = statusStyle(t.status);
+            const category = categoryLabel(t.category);
+            const pending = t.status.toUpperCase() === "PENDING";
             return (
               <li key={t.id} className="rounded-lg border bg-card p-3 shadow-sm">
                 <div className="flex flex-wrap items-center gap-2">
                   <span className="text-sm font-semibold">{t.name}</span>
                   <span className={`rounded-full px-2 py-0.5 text-[11px] font-medium ${badge.className}`}>{badge.label}</span>
                   <span className="rounded-full bg-brand-navy/10 px-2 py-0.5 text-[11px] font-medium text-brand-navy">{t.language}</span>
-                  {t.category && (
-                    <span className="rounded-full bg-muted px-2 py-0.5 text-[11px] font-medium text-muted-foreground">{t.category}</span>
+                  {category && (
+                    <span className="rounded-full bg-muted px-2 py-0.5 text-[11px] font-medium text-muted-foreground">{category}</span>
                   )}
-                  {!t.sendable && (
-                    <span className="ml-auto text-[11px] text-muted-foreground">
-                      {t.unsupported
-                        ? "Encabezado/botón con variables: no enviable desde el CRM aún"
-                        : "No enviable hasta que Meta la apruebe"}
-                    </span>
+                  {canManage && !sandboxChannel && (
+                    <div className="ml-auto flex gap-1">
+                      {isTemplateEditable(t.status) && (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            clearMessages();
+                            setForm({ type: "edit", template: t });
+                          }}
+                          aria-label={`Editar ${t.name}`}
+                          title="Editar el texto"
+                          className="rounded-md p-1.5 text-muted-foreground hover:bg-muted hover:text-foreground"
+                        >
+                          <Pencil className="size-4" aria-hidden="true" />
+                        </button>
+                      )}
+                      <button
+                        type="button"
+                        onClick={() => void remove(t)}
+                        disabled={deletingId !== null}
+                        aria-label={`Borrar ${t.name}`}
+                        title="Borrar en Meta"
+                        className="rounded-md p-1.5 text-muted-foreground hover:bg-red-50 hover:text-red-600 disabled:opacity-50 dark:hover:bg-red-950/40"
+                      >
+                        <Trash2 className={`size-4 ${deletingId === t.id ? "animate-pulse" : ""}`} aria-hidden="true" />
+                      </button>
+                    </div>
                   )}
                 </div>
                 {t.bodyText && (
@@ -173,6 +260,15 @@ export function PlantillasTab({
                     ))}
                   </div>
                 )}
+                {!t.sendable && (
+                  <p className="mt-2 text-[11px] text-muted-foreground">
+                    {t.unsupported
+                      ? "Encabezado o botón con variables: todavía no se puede mandar desde el CRM."
+                      : pending
+                        ? "Meta la está revisando (de minutos a 24 h). Pulsa Sincronizar para ver si ya la aprobó."
+                        : "No se puede mandar hasta que Meta la apruebe."}
+                  </p>
+                )}
               </li>
             );
           })}
@@ -182,110 +278,131 @@ export function PlantillasTab({
   );
 }
 
-function CreateTemplateForm({
+function TemplateForm({
+  mode,
   onClose,
-  onCreated,
-  onError,
+  onDone,
 }: {
+  mode: FormMode;
   onClose: () => void;
-  onCreated: (message: string) => void | Promise<void>;
-  onError: (message: string) => void;
+  onDone: (message: string) => void | Promise<void>;
 }) {
-  const [name, setName] = useState("");
-  const [language, setLanguage] = useState("es_MX");
-  const [category, setCategory] = useState<Category>("UTILITY");
-  const [body, setBody] = useState("");
-  const [examples, setExamples] = useState<string[]>([]);
+  const editing = mode.type === "edit" ? mode.template : null;
+  const [label, setLabel] = useState("");
+  const [language, setLanguage] = useState<string>("es_MX");
+  const [category, setCategory] = useState<Category>("MARKETING");
+  const [body, setBody] = useState(editing?.bodyText ?? "");
+  const [examples, setExamples] = useState<string[]>(editing ? editing.variables.map((v) => v.example ?? "") : []);
   const [busy, setBusy] = useState(false);
+  const [formError, setFormError] = useState<string | null>(null);
 
+  const name = editing ? editing.name : templateNameFromLabel(label);
   const varCount = useMemo(() => templateMaxIndex(body), [body]);
   // Ajusta la cantidad de ejemplos a las variables del cuerpo.
   const exampleValues = useMemo(() => Array.from({ length: varCount }, (_, i) => examples[i] ?? ""), [varCount, examples]);
+  const problem = body.trim() ? templateBodyProblem(body, exampleValues) : null;
+  const unchanged = editing !== null && body.trim() === (editing.bodyText ?? "").trim();
+  const canSubmit = !busy && Boolean(name) && Boolean(body.trim()) && !problem && !unchanged;
 
   async function submit() {
-    const cleanName = name.trim();
-    const cleanBody = body.trim();
-    if (!cleanName || !cleanBody) {
-      onError("El nombre y el cuerpo son obligatorios.");
-      return;
-    }
-    if (exampleValues.some((v) => !v.trim())) {
-      onError("Da un ejemplo para cada variable del cuerpo.");
-      return;
-    }
+    if (!canSubmit) return;
     setBusy(true);
-    try {
-      const { status } = await createTemplate({
-        name: cleanName,
-        language: language.trim(),
-        category,
-        bodyText: cleanBody,
-        bodyExample: exampleValues.map((v) => v.trim()),
-      });
-      await onCreated(`Plantilla "${cleanName}" enviada a Meta (estado: ${status}).`);
-    } catch (err) {
-      onError(err instanceof Error ? err.message : "No se pudo crear la plantilla.");
-    } finally {
-      setBusy(false);
+    setFormError(null);
+    const clean = exampleValues.map((v) => v.trim());
+    const result = editing
+      ? await updateTemplate({ id: editing.id, bodyText: body.trim(), bodyExample: clean }).catch(() => null)
+      : await createTemplate({ name, language, category, bodyText: body.trim(), bodyExample: clean }).catch(() => null);
+    setBusy(false);
+    if (!result) {
+      setFormError("No se pudo mandar a Meta. Revisa tu conexión y vuelve a intentarlo.");
+      return;
     }
+    if (!result.ok) {
+      setFormError(result.message);
+      return;
+    }
+    await onDone(
+      editing
+        ? `Plantilla "${name}" editada: Meta la vuelve a revisar (de minutos a 24 h). Mientras tanto no se puede mandar.`
+        : `Plantilla "${name}" enviada a Meta. Queda "En revisión" (de minutos a 24 h); pulsa Sincronizar para ver si ya la aprobó.`,
+    );
   }
 
   return (
     <div className="space-y-3 rounded-lg border bg-card p-4 shadow-sm">
-      <p className="text-xs text-muted-foreground">
-        La plantilla se envía a Meta para revisión y queda <strong>PENDING</strong> hasta que la aprueben.
-        Variables posicionales <code className="text-brand-navy">{"{{1}}"}</code>, <code className="text-brand-navy">{"{{2}}"}</code>…
-      </p>
-      <div className="grid gap-3 sm:grid-cols-3">
-        <div className="space-y-1 sm:col-span-1">
-          <label htmlFor="tpl-name" className="text-xs font-medium text-muted-foreground">Nombre</label>
-          <input
-            id="tpl-name"
-            value={name}
-            onChange={(e) => setName(e.target.value)}
-            placeholder="confirmacion_pedido"
-            className="w-full rounded-md border bg-background px-3 py-2 text-sm outline-none focus:border-brand-navy focus:ring-2 focus:ring-brand-navy/30"
-          />
+      {editing ? (
+        <p className="text-xs text-muted-foreground">
+          Editando <strong className="text-foreground">{editing.name}</strong> · {editing.language}
+          {categoryLabel(editing.category) ? ` · ${categoryLabel(editing.category)}` : ""}. Meta solo deja cambiar el texto
+          (el nombre, el idioma y la categoría quedan igual). Al guardar vuelve a revisión y mientras tanto no se puede
+          mandar. Una plantilla aprobada se puede editar <strong>1 vez al día</strong> y <strong>10 veces al mes</strong>.
+        </p>
+      ) : (
+        <p className="text-xs text-muted-foreground">
+          La plantilla se manda a Meta para revisión y queda <strong>En revisión</strong> hasta que la aprueben. Si quieres
+          huecos que se llenan en cada envío, usa <code className="text-brand-navy">{"{{1}}"}</code>,{" "}
+          <code className="text-brand-navy">{"{{2}}"}</code>… (nunca al inicio ni al final del texto).
+        </p>
+      )}
+
+      {!editing && (
+        <div className="grid gap-3 sm:grid-cols-3">
+          <div className="space-y-1 sm:col-span-3">
+            <label htmlFor="tpl-name" className="text-xs font-medium text-muted-foreground">Nombre</label>
+            <input
+              id="tpl-name"
+              value={label}
+              onChange={(e) => setLabel(e.target.value)}
+              placeholder="Hola buenas tardes"
+              className={INPUT_CLASS}
+            />
+            <p className="text-[11px] text-muted-foreground">
+              {name ? (
+                <>
+                  Así se guarda en Meta: <code className="font-medium text-brand-navy">{name}</code>
+                </>
+              ) : (
+                "Escríbelo como quieras: el CRM lo pasa a minúsculas, sin acentos y con guion bajo."
+              )}
+            </p>
+          </div>
+          <div className="space-y-1">
+            <label htmlFor="tpl-lang" className="text-xs font-medium text-muted-foreground">Idioma</label>
+            <select id="tpl-lang" value={language} onChange={(e) => setLanguage(e.target.value)} className={INPUT_CLASS}>
+              {LANGUAGES.map((l) => (
+                <option key={l.value} value={l.value}>{l.label}</option>
+              ))}
+            </select>
+          </div>
+          <div className="space-y-1 sm:col-span-2">
+            <label htmlFor="tpl-cat" className="text-xs font-medium text-muted-foreground">Categoría</label>
+            <select id="tpl-cat" value={category} onChange={(e) => setCategory(e.target.value as Category)} className={INPUT_CLASS}>
+              {CATEGORIES.map((c) => (
+                <option key={c.value} value={c.value}>{c.label}</option>
+              ))}
+            </select>
+          </div>
         </div>
-        <div className="space-y-1">
-          <label htmlFor="tpl-lang" className="text-xs font-medium text-muted-foreground">Idioma</label>
-          <input
-            id="tpl-lang"
-            value={language}
-            onChange={(e) => setLanguage(e.target.value)}
-            placeholder="es_MX"
-            className="w-full rounded-md border bg-background px-3 py-2 text-sm outline-none focus:border-brand-navy focus:ring-2 focus:ring-brand-navy/30"
-          />
-        </div>
-        <div className="space-y-1">
-          <label htmlFor="tpl-cat" className="text-xs font-medium text-muted-foreground">Categoría</label>
-          <select
-            id="tpl-cat"
-            value={category}
-            onChange={(e) => setCategory(e.target.value as Category)}
-            className="w-full rounded-md border bg-background px-3 py-2 text-sm outline-none focus:border-brand-navy focus:ring-2 focus:ring-brand-navy/30"
-          >
-            {CATEGORIES.map((c) => (
-              <option key={c} value={c}>{c}</option>
-            ))}
-          </select>
-        </div>
-      </div>
+      )}
+
       <div className="space-y-1">
-        <label htmlFor="tpl-body" className="text-xs font-medium text-muted-foreground">Cuerpo</label>
+        <label htmlFor="tpl-body" className="text-xs font-medium text-muted-foreground">Texto</label>
         <textarea
           id="tpl-body"
           value={body}
           onChange={(e) => setBody(e.target.value)}
-          placeholder="Hola {{1}}, tu pedido {{2}} está confirmado."
+          placeholder="Hola, buenas tardes."
           rows={3}
-          maxLength={1024}
-          className="min-h-[80px] w-full resize-y rounded-md border bg-background px-3 py-2 text-sm outline-none focus:border-brand-navy focus:ring-2 focus:ring-brand-navy/30"
+          maxLength={TEMPLATE_BODY_MAX}
+          className={`min-h-[80px] resize-y ${INPUT_CLASS}`}
         />
+        <p className="text-right text-[11px] text-muted-foreground">
+          {body.trim().length.toLocaleString("es-MX")} / {TEMPLATE_BODY_MAX.toLocaleString("es-MX")}
+        </p>
       </div>
       {varCount > 0 && (
         <div className="space-y-2">
-          <p className="text-xs font-medium text-muted-foreground">Ejemplo de cada variable (para la revisión de Meta):</p>
+          <p className="text-xs font-medium text-muted-foreground">Ejemplo de cada hueco (Meta lo pide para revisarla):</p>
           {exampleValues.map((value, i) => (
             <div key={i} className="flex items-center gap-2">
               <span className={`${TOKEN_CLASS} shrink-0`}>{`{{${i + 1}}}`}</span>
@@ -296,13 +413,20 @@ function CreateTemplateForm({
                   next[i] = e.target.value;
                   setExamples(next);
                 }}
-                placeholder={`Ejemplo para {{${i + 1}}}`}
-                className="w-full rounded-md border bg-background px-3 py-1.5 text-sm outline-none focus:border-brand-navy focus:ring-2 focus:ring-brand-navy/30"
+                placeholder={i === 0 ? "Ana" : `Ejemplo para {{${i + 1}}}`}
+                className={`py-1.5 ${INPUT_CLASS}`}
               />
             </div>
           ))}
         </div>
       )}
+
+      {(problem || formError) && (
+        <p role="alert" className="rounded-md border border-brand-orange/40 bg-brand-orange/10 px-3 py-1.5 text-xs">
+          ⚠ {formError ?? problem}
+        </p>
+      )}
+
       <div className="flex justify-end gap-2">
         <button type="button" onClick={onClose} disabled={busy} className="rounded-md border px-3 py-1.5 text-sm hover:bg-muted disabled:opacity-50">
           Cancelar
@@ -310,10 +434,10 @@ function CreateTemplateForm({
         <button
           type="button"
           onClick={() => void submit()}
-          disabled={busy || !name.trim() || !body.trim()}
+          disabled={!canSubmit}
           className="rounded-md bg-brand-navy px-3 py-1.5 text-sm font-medium text-brand-white hover:bg-brand-navy-dark disabled:opacity-50"
         >
-          {busy ? "Enviando a Meta…" : "Crear y enviar a revisión"}
+          {busy ? "Enviando a Meta…" : editing ? "Guardar y mandar a revisión" : "Crear y mandar a revisión"}
         </button>
       </div>
     </div>

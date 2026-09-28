@@ -479,6 +479,7 @@ el 27-sep-2026; se editan aquí como cualquier otro.
 ![Mensajes rápidos](mapa-crm/08-mensajes-rapidos.png)
 ![Nuevo mensaje rápido](mapa-crm/08-mensaje-rapido-nuevo.png)
 ![Plantillas](mapa-crm/08-plantillas.png)
+![Editar una plantilla](mapa-crm/08-plantilla-editar.png)
 
 | # | Nombre oficial | Qué hace | Quién lo ve |
 |---|---|---|---|
@@ -496,18 +497,23 @@ el 27-sep-2026; se editan aquí como cualquier otro.
 | 12 | **📄 Plantillas** | Pestaña de plantillas. | Todos |
 | 13 | **Sincronizar** | Trae de Meta las plantillas y su estado actual. | Todos |
 | 14 | **Crear plantilla** | Abre el formulario (15–19). | Todos |
-| 15 | **Nombre** | Nombre de la plantilla (minúsculas y guion bajo). | Todos |
-| 16 | **Idioma** | es_MX. | Todos |
-| 17 | **Categoría** | UTILITY (servicio), MARKETING (promoción) o AUTHENTICATION. Meta cobra distinto por categoría. | Todos |
-| 18 | **Cuerpo** | El texto, con {{1}}, {{2}}… | Todos |
-| 19 | **Crear y enviar a revisión** | La manda a Meta; queda "En revisión" hasta que la aprueben. | Todos |
+| 15 | **Nombre** | Escríbelo como quieras (p. ej. "Hola buenas tardes"): el CRM lo pasa a minúsculas, sin acentos y con guion bajo, y debajo dice **"Así se guarda en Meta: hola_buenas_tardes"**. | Todos |
+| 16 | **Idioma** | Español (México) de fábrica (es_MX); también Español o Inglés. | Todos |
+| 17 | **Categoría** | **Marketing** (saludos, seguimientos y promociones; de fábrica) o **Utilidad** (avisos de un pedido ya hecho). Meta cobra distinto por categoría y puede pasar una de Utilidad a Marketing. | Todos |
+| 18 | **Texto** | El mensaje, hasta 1,024 caracteres (contador abajo). Huecos {{1}}, {{2}}… seguidos y **nunca al inicio ni al final** (regla de Meta); cada hueco pide un ejemplo. Si algo no va, sale un aviso ⚠ y el botón no se activa. | Todos |
+| 19 | **Crear y mandar a revisión** | La manda a Meta; queda "En revisión" (de minutos a 24 h). Si Meta la rechaza al recibirla, el motivo sale ahí mismo. | Todos |
 | 20 | **Aprobada** | Ya se puede mandar desde el chat. | Todos |
 | 21 | **En revisión** | Meta aún no la aprueba; no se puede mandar. | Todos |
-| 22 | **"Encabezado/botón con variables: no enviable desde el CRM aún"** | Aprobada, pero el CRM todavía no puede armarla. | Todos |
+| 22 | **"Encabezado o botón con variables: todavía no se puede mandar desde el CRM."** | Aprobada, pero el CRM todavía no puede armarla. | Todos |
 | 23 | **Ejemplos de variables** | Qué va en cada {{n}}. | Todos |
-| 24 | **Categoría** (etiqueta) | La categoría de esa plantilla. | Todos |
+| 24 | **Categoría** (etiqueta) | La categoría de esa plantilla (Marketing o Utilidad). | Todos |
+| 25 | **Editar** (lápiz de la plantilla) | Cambia **solo el texto** (nombre, idioma y categoría quedan fijos). Solo en aprobadas, rechazadas o pausadas. Vuelve a revisión y mientras tanto no se puede mandar; una aprobada se edita **1 vez al día y 10 al mes** (Meta). | Todos |
+| 26 | **Guardar y mandar a revisión** | Guarda la edición (25) y la manda a Meta. | Todos |
+| 27 | **Borrar** (bote de la plantilla) | Pide confirmación y la **borra en Meta** y del CRM. Meta no deja volver a usar ese nombre en 30 días. No se deja si hay mensajes programados con ella (primero se cancelan). | Todos |
+| 28 | **"Meta la está revisando (de minutos a 24 h)…"** | Aviso de una plantilla En revisión: pulsa Sincronizar (13) para ver si ya la aprobó. | Todos |
+| 29 | **Rechazada · Pausada por Meta · Desactivada por Meta** | Otros estados que pone Meta; ninguno se puede mandar. Las borradas ya no se muestran. | Todos |
 
-**Lo cambias tú desde la pantalla:** crear, editar y borrar mensajes rápidos; crear plantillas (van a revisión de Meta) y sincronizarlas.
+**Lo cambias tú desde la pantalla:** crear, editar y borrar mensajes rápidos; crear, editar (van a revisión de Meta), borrar y sincronizar plantillas.
 Cada uno de esos cambios queda en **Agente IA › Historial** (72) con quién lo hizo y su texto (**Ver cambios**, 77).
 
 **Pídeselo a Code:**
@@ -516,7 +522,7 @@ Cada uno de esos cambios queda en **Agente IA › Historial** (72) con quién lo
 
 **Agente IA aquí:** no usa mensajes rápidos ni plantillas; son herramientas del vendedor.
 
-<sub>Para Code: ruta `/mensajes-rapidos` (`/snippets` redirige); `app/(app)/snippets/_components/` (`fragmentos-tab`, `plantillas-tab`); `lib/snippets/`, `lib/templates/`, `lib/messaging/template-sync.ts`. En código y base
+<sub>Para Code: ruta `/mensajes-rapidos` (`/snippets` redirige); `app/(app)/snippets/_components/` (`fragmentos-tab`, `plantillas-tab`); `lib/snippets/`, `lib/templates/`, `lib/messaging/template-sync.ts`; plantillas: `lib/actions/templates.ts` (devuelven `{ ok, message }`: en producción Next.js esconde el mensaje de un error lanzado), `lib/messaging/templates.ts` (`updateTemplateForOrg`, `deleteTemplateForOrg`), reglas puras en `lib/messaging/template-format.ts` (`templateNameFromLabel`, `templateBodyProblem`), Zernio `PATCH`/`DELETE /v1/whatsapp/templates/{name}`. En código y base
 siguen llamándose `snippets`. Carga de los 22: `npm run mensajes-rapidos:cargar` (simula; `--confirmar` escribe) con la lista de
 `lib/snippets/mensajes-rapidos-diluvium.ts`.</sub>
 
@@ -658,12 +664,12 @@ una ventana arriba (59)**; nada se guarda con un solo clic.
 | 69 | **Guardar · Deshacer** (por fila) | Aparecen al cambiar nombre o regla; Guardar pide confirmar. | Todos |
 | 70 | **🗑 Borrar** | Pop-up que pregunta a qué columna pasan sus contactos (con cuántos tiene cada una) y los mueve todos de una vez. Gris si la columna tiene papel o si quedan 3. | Todos |
 | 71 | **Nueva columna · Después de · Agregar** | Agrega una columna entre dos (o al final), con el Modelo 2 y sin regla. Pide confirmar. | Todos |
-| 72 | **Historial** (subpestaña) | Una fila por cambio, lo más nuevo arriba (hasta 200; con fechas ves más atrás): opciones del Agente IA, Goal y FAQs, nombre del agente (Ángela ✎), Modelo 1 y 2, etapas (crear, renombrar, borrar, reordenar, papel, modelo y **regla del Agente IA**), canal encendido/apagado (y la limpieza de chats de prueba: quién y cuántos, `npm run pruebas:limpiar`), workflows (crear, editar, encender, apagar, borrar), **tallas y medidas**, **mensajes rápidos** (crear, editar, borrar), **plantillas** (alta y sincronizar), **vendedores** (alta, cambio de rol, desactivar, reactivar y contraseña restablecida, sin mostrarla; solo las ven owner y admin) y, por chat, **Pausar agente** / **Activar** con quién lo hizo. No entra el trabajo diario (mover contactos de etapa, mensajes, comentarios). Solo se consulta. | Todos (Vendedores: solo Owner y Admin) |
+| 72 | **Historial** (subpestaña) | Una fila por cambio, lo más nuevo arriba (hasta 200; con fechas ves más atrás): opciones del Agente IA, Goal y FAQs, nombre del agente (Ángela ✎), Modelo 1 y 2, etapas (crear, renombrar, borrar, reordenar, papel, modelo y **regla del Agente IA**), canal encendido/apagado (y la limpieza de chats de prueba: quién y cuántos, `npm run pruebas:limpiar`), workflows (crear, editar, encender, apagar, borrar), **tallas y medidas**, **mensajes rápidos** (crear, editar, borrar), **plantillas** (alta, editar, borrar y sincronizar), **vendedores** (alta, cambio de rol, desactivar, reactivar y contraseña restablecida, sin mostrarla; solo las ven owner y admin) y, por chat, **Pausar agente** / **Activar** con quién lo hizo. No entra el trabajo diario (mover contactos de etapa, mensajes, comentarios). Solo se consulta. | Todos (Vendedores: solo Owner y Admin) |
 | 73 | **Tipo** | Filtra: Todos · Opciones del Agente IA · Goal y FAQs · Nombre del agente · Modelos · Etapas · Canales · Workflows · Tallas y medidas · Mensajes rápidos · Plantillas · Vendedores (solo Owner y Admin) · Pausas por chat. | Todos |
 | 74 | **Desde · Hasta** | Días (hora de Mazatlán), los dos incluidos. Vacío = sin límite. | Todos |
 | 75 | **Mostrar pausas automáticas (un vendedor contestó, tope de respuestas, pidió un asesor y vuelta sola)** | Agrega las pausas que el agente se puso solo (un vendedor contestó, llegó al máximo de respuestas, el cliente pidió un asesor) y su **vuelta sola** al cumplirse la hora de regreso (quién = «Automático»). Apagado de fábrica. | Todos |
 | 76 | **Fila del historial** | Quién · fecha y hora · qué pasó · etiqueta del tipo · **antes → después** (p. ej. «GPT-5.6 Luna → GPT-5.6 Terra», «Activo → Pausado hasta «Activar»»). | Todos |
-| 77 | **Ver cambios** (en las filas que lo permiten) | Abre lo **quitado (tachado en rojo)** y lo **agregado (en verde)**: el Goal por párrafo, las FAQs por pregunta (agregada, borrada o editada), los workflows paso por paso (textos, archivo, espera, disparadores), la regla de etapa, el nombre del agente, el texto de un mensaje rápido o de una plantilla, y las tallas (rango antes → después). «Ocultar cambios» lo cierra. Las filas de antes del 28-sep-2026, las opciones, las pausas y los vendedores no lo tienen. | Todos |
+| 77 | **Ver cambios** (en las filas que lo permiten) | Abre lo **quitado (tachado en rojo)** y lo **agregado (en verde)**: el Goal por párrafo, las FAQs por pregunta (agregada, borrada o editada), los workflows paso por paso (textos, archivo, espera, disparadores), la regla de etapa, el nombre del agente, el texto de un mensaje rápido o de una plantilla (alta, edición o borrado), y las tallas (rango antes → después). «Ocultar cambios» lo cierra. Las filas de antes del 28-sep-2026, las opciones, las pausas y los vendedores no lo tienen. | Todos |
 | 78 | **Copiar** (Goal) | Esquina de arriba a la derecha del editor del Goal (17): copia **todo** el texto tal como se ve (también lo que no has guardado) para revisarlo o pegarlo en otro lado. Dice «Copiado» 2 segundos. | Todos |
 | 79 | **Copiar** (FAQs) | Arriba a la derecha de las FAQs (junto a + Agregar pregunta, 24): copia **todas** las preguntas con su respuesta, cada una con un guion y sin números, la respuesta debajo y una línea en blanco entre preguntas. No importa la búsqueda ni el filtro. Las inactivas llevan «(inactiva)». | Todos |
 | 80 | **Casilla de la pregunta** (FAQs) | A la izquierda de cada pregunta: la marca para borrarla junto con otras. La fila marcada se sombrea. | Todos |
@@ -855,7 +861,8 @@ Code sabe exactamente qué pieza tocar; no hace falta explicar nada más.
 | **Tallas y medidas** (Agente IA › 40–46) | Cambia el tamaño sugerido en todos los contactos y lo que cotiza el agente. |
 | **Apagar o borrar un workflow o su archivo** (Automatización › 5, 38) | El agente deja de mandar ese material (tabla, datos bancarios, videos). |
 | **▷ Probar un workflow** (Automatización › 14) | Manda mensajes de verdad a la conversación elegida. |
-| **Crear o sincronizar plantillas** (Mensajes rápidos › 13, 19) | Van a revisión de Meta; la categoría cambia lo que cobra Meta. |
+| **Crear, editar o sincronizar plantillas** (Mensajes rápidos › 13, 19, 25) | Van a revisión de Meta y, mientras tanto, no se pueden mandar; la categoría cambia lo que cobra Meta. |
+| **Borrar una plantilla** (Mensajes rápidos › 27) | Se borra en Meta; el nombre no se puede volver a usar en 30 días. |
 | **Borrar una recarga** (Dashboard › 9) | Cambia el saldo estimado. |
 | **Desactivar o cambiar el rol de alguien** (Configuración › 4, 7) | Le cambia lo que puede ver o hacer de inmediato. |
 
