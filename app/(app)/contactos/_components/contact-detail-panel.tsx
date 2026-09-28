@@ -17,6 +17,7 @@ export function ContactDetailPanel({
   onClose,
   onStageChange,
   onTemperatureChange,
+  onOpenContact,
 }: {
   contact: BoardContact;
   /** Señal de la tarjeta (en vivo): decide si «Marcar como leído» tiene algo que apagar. */
@@ -26,6 +27,8 @@ export function ContactDetailPanel({
   onClose: () => void;
   onStageChange: (stage: Stage) => void;
   onTemperatureChange: (temperature: Temperature | null) => void;
+  /** Abrir otro contacto (primer mensaje: el número ya es de otro contacto). */
+  onOpenContact?: (contactId: string) => void;
 }) {
   // a11y del modal: cerrar con Escape, enfocar el panel al abrir y devolver el
   // foco al elemento disparador al cerrar. (Trap de foco completo queda como
@@ -104,7 +107,12 @@ export function ContactDetailPanel({
           <h2 id="contact-detail-title" className="sr-only">
             Conversación con {getContactFullName(contact)}
           </h2>
-          <ContactChat contactId={contact.id} headerAction={<MarkReadButton signal={signal} onMarkRead={onMarkRead} />} />
+          <ContactChat
+            contactId={contact.id}
+            phoneE164={contact.phoneE164}
+            headerAction={<MarkReadButton signal={signal} onMarkRead={onMarkRead} />}
+            onOpenContact={onOpenContact}
+          />
         </section>
 
         {/* Panel derecho: el MISMO "Detalle del contacto" de la Bandeja (B2), que se

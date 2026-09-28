@@ -274,6 +274,26 @@ export type UpdateTemplateResult = { status: string };
 /** Borrar UNA variante (nombre + idioma). El nombre no se puede volver a usar en 30 días (Meta). */
 export type DeleteTemplateInput = { providerAccountId: string; name: string; language: string };
 
+/**
+ * Primer mensaje a un contacto SIN conversación (28-sep-2026): abre el hilo con una
+ * plantilla aprobada (fuera de la ventana de 24 h es lo único que Meta deja).
+ */
+export type StartConversationInput = {
+  providerAccountId: string;
+  /** Teléfono del contacto en E.164 (+52…). */
+  phoneE164: string;
+  name: string;
+  language: string;
+  bodyParams: string[];
+  /** Id de NUESTRO mensaje (igual que en sendText). */
+  idempotencyKey: string;
+};
+
+export type StartConversationResult = SendResult & { providerConversationId: string };
+
+/** Estado de revisión de UNA variante en Meta, con el motivo si la rechazó (`rejected_reason`). */
+export type TemplateReview = { status: string; rejectedReason: string | null };
+
 export interface MessagingProvider {
   readonly name: ProviderName;
   /** Valida la firma del webhook sobre el body CRUDO (antes de parsear). */
@@ -309,6 +329,13 @@ export interface MessagingProvider {
   updateTemplate?(input: UpdateTemplateInput): Promise<UpdateTemplateResult>;
   /** Borra una variante (nombre + idioma) en Meta. Opcional, como updateTemplate. */
   deleteTemplate?(input: DeleteTemplateInput): Promise<void>;
+  /**
+   * Abre una conversación nueva con una plantilla (contacto sin chat). Mismo
+   * contrato de fallo que sendText. Opcional: sin él, la UI solo ofrece WhatsApp Web.
+   */
+  startConversationWithTemplate?(input: StartConversationInput): Promise<StartConversationResult>;
+  /** Lee en vivo el estado y el motivo de rechazo de una variante. Opcional, como updateTemplate. */
+  getTemplateReview?(input: DeleteTemplateInput): Promise<TemplateReview>;
   /**
    * Descarga un adjunto recibido. El adaptador decide si la URL necesita sus
    * credenciales, y NUNCA las envía a un dominio que no sea el suyo.

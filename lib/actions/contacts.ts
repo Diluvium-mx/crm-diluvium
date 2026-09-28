@@ -10,10 +10,10 @@ import { contacts, contactTemperatureEnum } from "@/lib/db/schema/contacts";
 import { conversations } from "@/lib/db/schema/messaging";
 import { listFunnelStages } from "@/lib/contacts/funnel-stages";
 import { boardContactColumns, type BoardContact } from "@/lib/contacts/board-contact";
-import { isStageKey, roleKey } from "@/lib/contacts/stages";
-import { countryFromPhone, normalizePhone, phoneColumns } from "@/lib/phone";
+import { isStageKey } from "@/lib/contacts/stages";
 import { parseGhlContactsCsv } from "@/lib/import/ghl-contacts-csv";
 import { onContactStageEntered } from "@/lib/workflows/triggers";
+import { createManualContact, type ManualContactInput } from "@/lib/contacts/create-manual";
 import { notifyContactUpdated } from "@/lib/contacts/notify-updated";
 import {
   funnelSignalsForOrg,
@@ -124,43 +124,26 @@ export async function getFunnelSignals(conversationIds?: string[]): Promise<Reco
   return funnelSignalsForOrg(organizationId, ids);
 }
 
-const createContactSchema = z.object({
-  firstName: z.string().trim().min(1, "El nombre es obligatorio."),
-  lastName: z.string().trim().optional().or(z.literal("")),
-  phone: z.string().trim().optional().or(z.literal("")),
-  email: z.email("Email inválido.").optional().or(z.literal("")),
-  // Clave de una etapa vigente de la organización (se valida contra funnel_stages).
-  stage: z.string().trim().min(1).max(40).optional(),
-});
+/** Alta a mano ("＋ Nuevo contacto" del Embudo): el contacto listo para la tarjeta, o por qué no. */
+export type CreateContactResult =
+  | { ok: true; contact: BoardContact }
+  | { ok: false; message: string; duplicate?: { id: string; name: string } };
 
-export type CreateContactInput = z.infer<typeof createContactSchema>;
-
-export async function createContact(input: CreateContactInput) {
-  const organizationId = await requireActiveOrganizationId();
-  const parsed = createContactSchema.parse(input);
-  const phoneE164 = parsed.phone ? normalizePhone(parsed.phone) : null;
-  const stages = await listFunnelStages(organizationId);
-  if (parsed.stage !== undefined && !isStageKey(stages, parsed.stage)) throw new Error("Esa etapa ya no existe en el Embudo.");
-  const entry = roleKey(stages, "entrada");
-  if (!entry) throw new Error("El Embudo no tiene etapa de entrada; revísalo en Agente IA → Etapas del embudo.");
-
-  const [created] = await db
-    .insert(contacts)
-    .values({
-      id: crypto.randomUUID(),
-      organizationId,
-      firstName: parsed.firstName,
-      lastName: parsed.lastName || null,
-      ...phoneColumns(phoneE164),
-      country: countryFromPhone(phoneE164),
-      email: parsed.email || null,
-      stage: parsed.stage ?? entry,
-    })
-    .returning();
-
-  revalidatePath("/embudo");
-
-  return created;
+// Devuelve el resultado en vez de lanzar: en producción Next.js esconde el mensaje
+// de un error lanzado desde una Server Action (lección de Plantillas, 28-sep-2026).
+export async function createContact(input: ManualContactInput): Promise<CreateContactResult> {
+  try {
+    const organizationId = await requireActiveOrganizationId();
+    const result = await createManualContact(organizationId, input);
+    if (!result.ok) return result;
+    const [contact] = await selectBoardContacts(organizationId, eq(contacts.id, result.contactId), 1);
+    revalidatePath("/embudo");
+    return contact ? { ok: true, contact } : { ok: false, message: "Se creó, pero no se pudo cargar: recarga la página." };
+  } catch (error) {
+    if (error instanceof z.ZodError) return { ok: false, message: error.issues[0]?.message ?? "Revisa los datos." };
+    console.error("[contactos] no se pudo crear el contacto", error);
+    return { ok: false, message: "No se pudo crear el contacto. Inténtalo de nuevo." };
+  }
 }
 
 const updateContactStageSchema = z.object({

@@ -10,6 +10,7 @@ import type { ConversationDetail } from "@/lib/inbox/types";
 import { getConversationByContact, markConversationRead } from "@/lib/inbox/actions";
 import { ChatThread } from "../../dashboard/_components/chat-thread";
 import { useInboxStream } from "../../dashboard/_components/use-inbox-stream";
+import { FirstMessage } from "./first-message";
 
 function tabVisible(): boolean {
   return document.visibilityState === "visible";
@@ -27,8 +28,19 @@ type State =
   | { status: "ready"; detail: ConversationDetail };
 
 // headerAction: botón a la derecha del nombre en el encabezado del chat (el pop-up pone
-// «Marcar como leído»).
-export function ContactChat({ contactId, headerAction }: { contactId: string; headerAction?: ReactNode }) {
+// «Marcar como leído»). Sin chat todavía: FirstMessage (escribirle primero, 28-sep-2026),
+// que necesita su teléfono y, si el número es de otro contacto, cómo abrir ese.
+export function ContactChat({
+  contactId,
+  phoneE164 = null,
+  headerAction,
+  onOpenContact,
+}: {
+  contactId: string;
+  phoneE164?: string | null;
+  headerAction?: ReactNode;
+  onOpenContact?: (contactId: string) => void;
+}) {
   const [state, setState] = useState<State>({ status: "loading" });
   const [revalToken, setRevalToken] = useState(0);
   const [nowMs, setNowMs] = useState(() => Date.now());
@@ -150,15 +162,7 @@ export function ContactChat({ contactId, headerAction }: { contactId: string; he
     );
   }
   if (state.status === "none") {
-    return (
-      <div className="flex flex-1 flex-col items-center justify-center gap-2 p-6 text-center">
-        <span className="text-3xl" role="img" aria-label="Chat">💬</span>
-        <p className="text-sm font-medium">Aún no hay conversación</p>
-        <p className="max-w-xs text-xs text-muted-foreground">
-          Cuando este contacto escriba por WhatsApp, el historial aparecerá aquí.
-        </p>
-      </div>
-    );
+    return <FirstMessage contactId={contactId} phoneE164={phoneE164} onStarted={() => void load()} onOpenContact={onOpenContact} />;
   }
   return <ChatThread detail={state.detail} revalToken={revalToken} nowMs={nowMs} headerAction={headerAction} />;
 }

@@ -32,7 +32,7 @@ Contenido: [1. Inicio](#1-inicio) · [2. Menú y barra de arriba](#2-menú-y-bar
 |---|---|---|---|
 | **Owner** | El dueño de la cuenta | Todo (incluidas las filas de **Vendedores** en Agente IA › Historial) | Todo, incluida la pestaña **Configuración**. Es el único que puede dar el rol Owner; ningún Admin lo puede modificar. |
 | **Admin** | Encargado del equipo | Todo (incluidas las filas de **Vendedores** en Agente IA › Historial) | Todo lo del vendedor + **Configuración** (dar de alta vendedores, cambiar roles, restablecer contraseñas, desactivar). No puede tocar al Owner. |
-| **Vendedor** | Quien atiende a los clientes | Todo **menos Configuración** (y en Agente IA › Historial no ve las filas de **Vendedores**) | Todo lo demás: Dashboard (incluido registrar recargas), Bandeja (también **adjuntar** fotos, videos y documentos en el chat), Embudo, Mensajes rápidos (crear, editar y borrar mensajes rápidos y plantillas), Anuncios, Agente IA (Goal, FAQs, modelos, opciones, tallas y canales; el **Historial** solo se consulta) y Automatización. También edita o borra comentarios de otros. |
+| **Vendedor** | Quien atiende a los clientes | Todo **menos Configuración** (y en Agente IA › Historial no ve las filas de **Vendedores**) | Todo lo demás: Dashboard (incluido registrar recargas), Bandeja (también **adjuntar** fotos, videos y documentos en el chat), Embudo (también dar de alta contactos y escribirles primero), Mensajes rápidos (crear, editar y borrar mensajes rápidos y plantillas), Anuncios, Agente IA (Goal, FAQs, modelos, opciones, tallas y canales; el **Historial** solo se consulta) y Automatización. También edita o borra comentarios de otros. |
 
 Nadie es "dueño" de un contacto: **todos ven todos los contactos, siempre**.
 
@@ -47,6 +47,8 @@ Nadie es "dueño" de un contacto: **todos ven todos los contactos, siempre**.
 | **Ventana de 24 h** | Regla de WhatsApp: hasta 24 horas después del último mensaje del cliente se puede escribir libre. Pasadas las 24 h **solo se puede mandar una plantilla**. |
 | **Gratis por anuncio (72 h)** | Si el cliente llegó por un anuncio y se le contesta dentro de 24 h, por 72 h todos los mensajes (también plantillas) son gratis. El chat lo indica con 🎁. |
 | **Plantilla** | Mensaje fijo **aprobado por Meta** para escribir fuera de la ventana de 24 h. Sus huecos se llaman {{1}}, {{2}}… |
+| **Contacto sin chat** | Contacto que nunca ha escrito (alta a mano en Embudo › Nuevo contacto, o importado de GHL). Se le escribe primero **gratis desde WhatsApp Web** o con una **plantilla** desde el CRM; con plantilla, en el CRM solo se escribe libre cuando el cliente conteste. |
+| **Aviso de Meta** | Pop-up grande que sale cuando WhatsApp (Meta) no acepta algo de una plantilla: por qué pasó y qué hacer. |
 | **Mensaje rápido** | Respuesta guardada por el equipo para contestar más rápido dentro de las 24 h (antes se llamaba "Fragmento"). Se inserta con "/" o con ⚡ y **no se manda sola**: la revisas y le das Enviar. Si lleva {{vendedor}}, se llena solo con tu nombre; {{nombre}} lo completas tú. Diluvium tiene 22 (Buenos días, Precio, Pagos…). |
 | **Workflow** | Secuencia de pasos (texto, archivo con pie, espera) que manda material: tabla de tamaños, datos bancarios, videos. Lo dispara el agente, un **comando** del vendedor, una **palabra clave** del cliente o la entrada a una etapa. Las **esperas** solo aplican al agente, a la palabra clave y a la etapa: con un comando del vendedor sale de inmediato. |
 | **Comando** | Atajo que escribe el vendedor en el chat para mandar un workflow: /tabla, /banco, /video… Se escribe con letras sin acento (la **ñ** sí: /tamaños), números y guiones. Sale **de inmediato** (se salta los pasos ⏱ Esperar); el cliente lo recibe en lo que tarda WhatsApp (~5 s). |
@@ -130,7 +132,7 @@ Resumen del mes: cuánto se gasta en IA y cuántas conversaciones nuevas llegan,
 | 7 | **Recargas registradas** | Lista de recargas: fecha · proveedor · monto · quién la anotó. | Todos |
 | 8 | **+ Registrar recarga** | Anota una recarga que hiciste en la página del proveedor (proveedor, monto y fecha). | Todos |
 | 9 | **Borrar** (recarga) | Quita una recarga mal capturada. | Todos |
-| 10 | **Conversaciones nuevas** | Contactos nuevos que escribieron. No cuenta los importados de GHL ni los del número de prueba. | Todos |
+| 10 | **Conversaciones nuevas** | Contactos nuevos que escribieron. No cuenta los importados de GHL, los del número de prueba ni los dados de alta a mano (Embudo › Nuevo contacto, 20). | Todos |
 | 11 | **Hoy · 7 días · 30 días · Este mes** | Atajos para elegir el periodo. | Todos |
 | 12 | **Mes / Desde / Hasta** | Periodo a mano (un mes o un rango de fechas). | Todos |
 | 13 | **Aplicar** | Aplica las fechas elegidas. | Todos |
@@ -308,7 +310,7 @@ solo plantilla (y no se pueden adjuntar).
 | 21 | **Mensaje a enviar** | El texto del programado. | Todos |
 | 22 | **Programar** | Guarda el programado; aparece al final del chat. | Todos |
 | 23 | **✕ Cerrar** | Cierra sin programar. | Todos |
-| 24 | **"Pasaron 24 h desde su último mensaje. Solo se puede enviar una plantilla."** | Aviso de ventana cerrada. | Todos |
+| 24 | **"Pasaron 24 h desde su último mensaje. Solo se puede enviar una plantilla."** | Aviso de ventana cerrada. Si el chat lo abrimos nosotros y el cliente aún no escribe, dice **"El cliente todavía no escribe: mientras no conteste, solo se puede enviar una plantilla (o escríbele gratis desde WhatsApp Web)."** | Todos |
 | 25 | **📄 Enviar plantilla** | Único botón para escribir con la ventana cerrada. | Todos |
 | 26 | **🕒 Programar plantilla** | Programa una plantilla para más tarde. | Todos |
 | 27 | **⚡ Mensajes rápidos** (ventana del ⚡) | Todos los mensajes rápidos; al elegir uno se agrega al final de lo que llevas escrito (no se manda solo). | Todos |
@@ -432,6 +434,13 @@ Clic derecho sobre una tarjeta: menú de ese contacto (16).
 
 ![Menú del clic derecho en el Embudo](mapa-crm/06-embudo-menu.png)
 
+**＋ Nuevo contacto (20)** (desde el 28-sep-2026): alta a mano, como la pestaña Contactos de GHL. Al crearlo se abre su
+pop-up. Un contacto **sin chat** (nuevo o importado de GHL) muestra cómo escribirle primero (24–26): gratis desde
+WhatsApp Web, o con una plantilla desde el CRM.
+
+![Nuevo contacto](mapa-crm/06-embudo-nuevo-contacto.png)
+![Escribirle primero a un contacto sin chat](mapa-crm/06-embudo-primer-mensaje.png)
+
 | # | Nombre oficial | Qué hace | Quién lo ve |
 |---|---|---|---|
 | 1 | **Buscar por nombre o teléfono...** | Filtra las tarjetas de todas las columnas. | Todos |
@@ -453,8 +462,17 @@ Clic derecho sobre una tarjeta: menú de ese contacto (16).
 | 18 | **Columnas del Embudo** (pop-up) | El mismo editor de Agente IA › Etapas (62–71): nombre, orden, papel, modelo y regla del Agente IA de cada columna. Todo cambio pide confirmar; las demás pantallas abiertas lo ven al momento. | Todos |
 | 16 | **Menú del clic derecho** | Sobre una tarjeta: **Marcar como leído** si tiene círculo naranja (6) o está azul (4): quita los dos en todos sus chats, igual que (19). Si no, **Marcar como no leído**: pone el círculo en su chat más reciente y, si el último mensaje es del cliente, regresa el azul. Lo mismo que en la Bandeja y se ve en las dos. No quita el amarillo. En celular no hay pulsación larga: ahí es arrastrar. | Todos |
 | 19 | **Marcar como leído** (pop-up) | A la derecha del nombre y el teléfono del chat. Quita el azul (4) y el círculo (6) aunque nadie le haya contestado al cliente (p. ej. solo dijo «gracias»); la tarjeta queda blanca. Sin nada que quitar dice **✓ Leído**. No quita el amarillo. Solo en el Embudo. | Todos |
+| 20 | **＋ Nuevo contacto** | Abre el alta (21–23). | Todos |
+| 21 | **Nuevo contacto** (pop-up) | **Nombre** y **Teléfono (WhatsApp)** obligatorios; Apellido, Correo y **Etapa** (de fábrica, la de entrada). El teléfono se escribe como sea: 10 dígitos = México; de otro país, con + y la lada. Sin zona horaria: la ciudad sale de la lada (8). No cuenta en Dashboard › Conversaciones nuevas. | Todos |
+| 22 | **"Ese teléfono ya es del contacto «…»"** · **Abrir «…»** | El número ya existe (también si se guardó como +521): no se duplica; abre ese contacto. | Todos |
+| 23 | **Crear contacto** | Lo crea arriba de su columna y abre su pop-up (24). | Todos |
+| 24 | **"Este contacto aún no tiene chat"** (pop-up) | Sale en vez del chat cuando el contacto nunca ha escrito (nuevo o importado de GHL). | Todos |
+| 25 | **Escribir desde WhatsApp Web** (**Gratis**) | Mensaje opcional + **Abrir en WhatsApp Web** (o **en el celular**): abre su chat con el texto ya escrito y tú das Enviar. Sin plantilla ni límite de 24 h. Lo mandado llega solo al CRM y crea el chat. Debe estar abierto WhatsApp Web con el número de Diluvium. | Todos |
+| 26 | **📄 Enviar plantilla desde el CRM** (**Con costo**) | **Elegir plantilla** → **Enviar plantilla**: abre el chat por WhatsApp con una plantilla aprobada (Marketing ≈ $0.73). Después, en el CRM solo se puede mandar otra plantilla hasta que el cliente conteste (Bandeja › 24). | Todos |
+| 27 | **"Este número también está en el contacto «…»"** · **Abrir ese contacto** | Hay otro contacto (más antiguo) con ese número: el chat quedaría en ese, así que se manda desde ahí. | Todos |
+| 28 | **Aviso de Meta** (pop-up grande) | Si WhatsApp (Meta) rechaza la plantilla: título, **Por qué pasó**, **Qué hacer** y **Entendido** (el mismo de Mensajes rápidos › 31). | Todos |
 
-**Lo cambias tú desde la pantalla:** la etapa (arrastrando la tarjeta), leído / no leído (clic derecho o **Marcar como leído**, 19), las
+**Lo cambias tú desde la pantalla:** contactos nuevos (20) y el primer mensaje a quien no tiene chat (25–26), la etapa (arrastrando la tarjeta), leído / no leído (clic derecho o **Marcar como leído**, 19), las
 columnas (lápiz, 17) y todo lo del chat y el Detalle en el pop-up. Los cambios a las columnas (crear, renombrar, borrar,
 ordenar, papel, modelo) quedan en **Agente IA › Historial**.
 
@@ -466,7 +484,7 @@ ordenar, papel, modelo) quedan en **Agente IA › Historial**.
 **Agente IA aquí:** mueve tarjetas hacia adelante (sale el aviso emergente), pinta la tarjeta de amarillo cuando
 necesita al vendedor, y su chat y Detalle se ven igual que en la Bandeja.
 
-<sub>Para Code: ruta `/embudo` (`/contactos` redirige); `app/(app)/contactos/_components/` (`contacts-board`, `contact-card`, `contact-detail-panel`, `contact-chat`); colores `lib/contacts/funnel-signals.ts` y `funnel-tone.ts`, estilos `[data-funnel]` y `[data-funnel-card]` (luz gris) en `app/globals.css`; «Marcar como leído» = `mark-read-button.tsx` + `conversations.attended_at` (migración 0045); orden de la columna = `board-live.ts` (`columnsByStage`: etapa o último entrante, que sale de `window_expires_at` − 24 h). Columnas: tabla `funnel_stages` (migración 0041), editor `app/(app)/_components/stages-editor.tsx`, etapas en vivo `funnel-stages-provider.tsx` (evento SSE `stages.updated`).</sub>
+<sub>Para Code: ruta `/embudo` (`/contactos` redirige); `app/(app)/contactos/_components/` (`contacts-board`, `contact-card`, `contact-detail-panel`, `contact-chat`); colores `lib/contacts/funnel-signals.ts` y `funnel-tone.ts`, estilos `[data-funnel]` y `[data-funnel-card]` (luz gris) en `app/globals.css`; «Marcar como leído» = `mark-read-button.tsx` + `conversations.attended_at` (migración 0045); orden de la columna = `board-live.ts` (`columnsByStage`: etapa o último entrante, que sale de `window_expires_at` − 24 h). Columnas: tabla `funnel_stages` (migración 0041), editor `app/(app)/_components/stages-editor.tsx`, etapas en vivo `funnel-stages-provider.tsx` (evento SSE `stages.updated`). Nuevo contacto: `new-contact-dialog.tsx` → `createContact` (lib/actions/contacts.ts) → `lib/contacts/create-manual.ts` (source `manual`, candado por teléfono como la entrada, fuera de Conversaciones nuevas en `lib/dashboard/queries.ts`); teléfono `lib/contacts/manual-phone.ts`. Sin chat: `first-message.tsx`; WhatsApp Web `lib/contacts/whatsapp-link.ts`; plantilla `startChatWithTemplate` (lib/inbox/actions.ts) → `lib/messaging/start-conversation.ts` → Zernio `POST /v1/inbox/conversations`.</sub>
 
 ---
 
@@ -480,6 +498,7 @@ el 27-sep-2026; se editan aquí como cualquier otro.
 ![Nuevo mensaje rápido](mapa-crm/08-mensaje-rapido-nuevo.png)
 ![Plantillas](mapa-crm/08-plantillas.png)
 ![Editar una plantilla](mapa-crm/08-plantilla-editar.png)
+![Aviso de Meta](mapa-crm/08-aviso-meta.png)
 
 | # | Nombre oficial | Qué hace | Quién lo ve |
 |---|---|---|---|
@@ -512,6 +531,8 @@ el 27-sep-2026; se editan aquí como cualquier otro.
 | 27 | **Borrar** (bote de la plantilla) | Pide confirmación y la **borra en Meta** y del CRM. Meta no deja volver a usar ese nombre en 30 días. No se deja si hay mensajes programados con ella (primero se cancelan). | Todos |
 | 28 | **"Meta la está revisando (de minutos a 24 h)…"** | Aviso de una plantilla En revisión: pulsa Sincronizar (13) para ver si ya la aprobó. | Todos |
 | 29 | **Rechazada · Pausada por Meta · Desactivada por Meta** | Otros estados que pone Meta; ninguno se puede mandar. Las borradas ya no se muestran. | Todos |
+| 30 | **¿Por qué?** (naranja, junto a la plantilla) | En rechazadas, pausadas o desactivadas: pregunta a Meta el motivo y abre el aviso grande (31). | Todos |
+| 31 | **Aviso de Meta** (pop-up grande) | Sale solo cuando Meta no acepta algo de una plantilla (al crear, editar, borrar, al Sincronizar si alguna quedó rechazada o pausada, o con 30): título, que lo decide Meta y no el CRM, **Por qué pasó** (el motivo de Meta en palabras simples), **Qué hacer** y **Entendido**. | Todos |
 
 **Lo cambias tú desde la pantalla:** crear, editar y borrar mensajes rápidos; crear, editar (van a revisión de Meta), borrar y sincronizar plantillas.
 Cada uno de esos cambios queda en **Agente IA › Historial** (72) con quién lo hizo y su texto (**Ver cambios**, 77).
