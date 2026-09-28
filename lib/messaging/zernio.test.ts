@@ -592,6 +592,90 @@ describe("ZernioProvider.updateTemplate", () => {
   });
 });
 
+describe("ZernioProvider.startConversationWithTemplate", () => {
+  const input = {
+    providerAccountId: "zacc_1",
+    phoneE164: "+526681234567",
+    name: "hola_buenas_tardes",
+    language: "es_MX",
+    bodyParams: [] as string[],
+    idempotencyKey: "msg_1",
+  };
+
+  it("POST /v1/inbox/conversations con participantId en dígitos, la plantilla y la clave de idempotencia", async () => {
+    const fetchImpl = vi.fn(async () =>
+      Response.json({ success: true, data: { messageId: "wamid.ABC", conversationId: "zconv_9", participantId: "526681234567" } }, { status: 201 }),
+    ) as unknown as typeof fetch;
+    const p = new ZernioProvider({ apiKey: "k", webhookSecret: SECRET }, fetchImpl);
+    await expect(p.startConversationWithTemplate({ ...input, bodyParams: ["Ana"] })).resolves.toEqual({
+      providerConversationId: "zconv_9",
+      providerInternalId: "wamid.ABC",
+      providerMessageId: "wamid.ABC",
+    });
+    const [url, init] = (fetchImpl as unknown as ReturnType<typeof vi.fn>).mock.calls[0];
+    expect(url).toBe("https://zernio.com/api/v1/inbox/conversations");
+    expect(init.headers["Idempotency-Key"]).toBe("msg_1");
+    expect(JSON.parse(init.body)).toEqual({
+      accountId: "zacc_1",
+      participantId: "526681234567",
+      templateName: "hola_buenas_tardes",
+      templateLanguage: "es_MX",
+      templateParams: ["Ana"],
+    });
+  });
+
+  it("sin variables no manda templateParams", async () => {
+    const fetchImpl = vi.fn(async () => Response.json({ data: { messageId: "m1", conversationId: "c1" } })) as unknown as typeof fetch;
+    await new ZernioProvider({ apiKey: "k", webhookSecret: SECRET }, fetchImpl).startConversationWithTemplate(input);
+    const body = JSON.parse((fetchImpl as unknown as ReturnType<typeof vi.fn>).mock.calls[0][1].body);
+    expect(body).not.toHaveProperty("templateParams");
+  });
+
+  it("4xx = rechazado (no salió); 5xx y 2xx sin conversación = desconocido; 429 = saturado", async () => {
+    const reply = (res: Response) => new ZernioProvider({ apiKey: "k", webhookSecret: SECRET }, (async () => res) as unknown as typeof fetch);
+    await expect(reply(Response.json({ error: { message: "Template not approved" } }, { status: 400 })).startConversationWithTemplate(input)).rejects.toMatchObject({
+      outcome: "rejected",
+      message: "Template not approved",
+    });
+    await expect(reply(Response.json({ error: { message: "boom" } }, { status: 502 })).startConversationWithTemplate(input)).rejects.toMatchObject({
+      outcome: "unknown",
+    });
+    await expect(reply(Response.json({ data: { messageId: "m1" } })).startConversationWithTemplate(input)).rejects.toMatchObject({
+      outcome: "unknown",
+      code: "sin_conversation_id",
+    });
+    await expect(reply(Response.json({ error: { message: "slow down" } }, { status: 429 })).startConversationWithTemplate(input)).rejects.toMatchObject({
+      outcome: "rate_limited",
+    });
+  });
+});
+
+describe("ZernioProvider.getTemplateReview", () => {
+  it("lee estado y rejected_reason de la variante exacta", async () => {
+    const fetchImpl = vi.fn(async () =>
+      Response.json({ success: true, template: { name: "hola", language: "es_MX", status: "REJECTED", rejected_reason: "INVALID_FORMAT" } }),
+    ) as unknown as typeof fetch;
+    const p = new ZernioProvider({ apiKey: "k", webhookSecret: SECRET }, fetchImpl);
+    await expect(p.getTemplateReview({ providerAccountId: "zacc_1", name: "hola", language: "es_MX" })).resolves.toEqual({
+      status: "REJECTED",
+      rejectedReason: "INVALID_FORMAT",
+    });
+    const [url] = (fetchImpl as unknown as ReturnType<typeof vi.fn>).mock.calls[0];
+    expect(url).toBe("https://zernio.com/api/v1/whatsapp/templates/hola?accountId=zacc_1&language=es_MX");
+  });
+
+  it("NONE o sin motivo = null; sin estado lanza", async () => {
+    const none = vi.fn(async () => Response.json({ template: { status: "APPROVED", rejected_reason: "NONE" } })) as unknown as typeof fetch;
+    await expect(
+      new ZernioProvider({ apiKey: "k", webhookSecret: SECRET }, none).getTemplateReview({ providerAccountId: "a", name: "x", language: "es_MX" }),
+    ).resolves.toEqual({ status: "APPROVED", rejectedReason: null });
+    const empty = vi.fn(async () => Response.json({ template: {} })) as unknown as typeof fetch;
+    await expect(
+      new ZernioProvider({ apiKey: "k", webhookSecret: SECRET }, empty).getTemplateReview({ providerAccountId: "a", name: "x", language: "es_MX" }),
+    ).rejects.toMatchObject({ name: "ZernioApiError" });
+  });
+});
+
 describe("ZernioProvider.deleteTemplate", () => {
   it("DELETE con accountId y el idioma EXACTO (sin idioma borraría todas las variantes)", async () => {
     const fetchImpl = vi.fn(async () => Response.json({ success: true, scope: "language", language: "es_MX" })) as unknown as typeof fetch;

@@ -333,3 +333,21 @@ export async function deleteTemplateForOrg(
     });
   });
 }
+
+/**
+ * Estado y motivo de rechazo EN VIVO de una plantilla (para el aviso grande de
+ * Plantillas). Si el estado de Meta ya no es el guardado, la fila se pone al día.
+ */
+export async function templateReviewForOrg(
+  organizationId: string,
+  templateId: string,
+): Promise<{ name: string; status: string; rejectedReason: string | null }> {
+  const { template, providerAccountId } = await loadOwnTemplate(organizationId, templateId);
+  const provider = messagingProvider();
+  if (!provider.getTemplateReview) throw new TemplateActionError("Consultar el motivo no está disponible con este proveedor.");
+  const review = await provider.getTemplateReview({ providerAccountId, name: template.name, language: template.language });
+  if (review.status !== template.status) {
+    await db.update(templates).set({ status: review.status, updatedAt: new Date() }).where(eq(templates.id, template.id));
+  }
+  return { name: template.name, ...review };
+}

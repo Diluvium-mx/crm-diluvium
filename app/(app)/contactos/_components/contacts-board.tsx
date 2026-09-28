@@ -15,10 +15,11 @@ import {
   type DragStartEvent,
   type Modifier,
 } from "@dnd-kit/core";
-import { Pencil, X } from "lucide-react";
+import { Pencil, Plus, X } from "lucide-react";
 import { getContactFullName, type BoardContact, type Stage, type Temperature } from "../_data/types";
 import { useFunnelStages } from "../../_components/funnel-stages-provider";
 import { StagesEditor } from "../../_components/stages-editor";
+import { NewContactDialog } from "./new-contact-dialog";
 import type { FunnelStage } from "@/lib/contacts/stages";
 import {
   getContactsByIds,
@@ -598,6 +599,32 @@ export function ContactsBoard({
     if (unknownStage) void refreshStages();
   }, [unknownStage, refreshStages]);
 
+  // "＋ Nuevo contacto" (28-sep-2026): el alta se pone arriba de su columna y se abre
+  // su pop-up para escribirle primero. Mismo camino que un contacto que llega en vivo
+  // (liveAdded), para que una recarga del servidor no lo quite antes de tiempo.
+  const [creatingContact, setCreatingContact] = useState(false);
+  const addAndOpen = useCallback((contact: BoardContact) => {
+    setContacts((current) => (current.some((c) => c.id === contact.id) ? current : [contact, ...current]));
+    setLiveAdded((current) => (current.some((c) => c.id === contact.id) ? current : [contact, ...current]));
+    setSelectedContactId(contact.id);
+  }, []);
+  // Abrir otro contacto por id (el que ya tiene ese teléfono): si no está en el tablero, se trae.
+  const openContactById = useCallback(
+    async (contactId: string) => {
+      if (contacts.some((c) => c.id === contactId)) {
+        setSelectedContactId(contactId);
+        return;
+      }
+      try {
+        const [found] = await getContactsByIds([contactId]);
+        if (found) addAndOpen(found);
+      } catch {
+        setError("No se pudo abrir ese contacto; búscalo por su teléfono.");
+      }
+    },
+    [contacts, addAndOpen],
+  );
+
   const selectedContact = contacts.find((contact) => contact.id === selectedContactId) ?? null;
   const activeContact = activeContactId
     ? contacts.find((contact) => contact.id === activeContactId) ?? null
@@ -802,6 +829,13 @@ export function ContactsBoard({
           </button>
         </div>
         <div className="flex items-center gap-3">
+          <button
+            type="button"
+            onClick={() => setCreatingContact(true)}
+            className="flex shrink-0 items-center gap-1.5 rounded-md bg-brand-orange px-3 py-2 text-sm font-medium text-brand-white transition-colors hover:bg-brand-orange-light"
+          >
+            <Plus className="size-4" aria-hidden="true" /> Nuevo contacto
+          </button>
           <input
             type="search"
             placeholder="Buscar por nombre o teléfono..."
@@ -878,8 +912,23 @@ export function ContactsBoard({
           onTemperatureChange={(nextTemperature) =>
             handleTemperatureChange(selectedContact.id, nextTemperature)
           }
+          onOpenContact={(contactId) => void openContactById(contactId)}
         />
       )}
+
+      <NewContactDialog
+        open={creatingContact}
+        stages={stages}
+        onClose={() => setCreatingContact(false)}
+        onCreated={(contact) => {
+          setCreatingContact(false);
+          addAndOpen(contact);
+        }}
+        onOpenExisting={(contactId) => {
+          setCreatingContact(false);
+          void openContactById(contactId);
+        }}
+      />
     </div>
   );
 }

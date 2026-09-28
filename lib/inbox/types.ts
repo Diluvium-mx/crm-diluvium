@@ -147,7 +147,9 @@ export type SendErrorCode =
   | "template_unsupported"
   | "template_params"
   | "media_not_found"
-  | "storage_unavailable";
+  | "storage_unavailable"
+  | "no_phone"
+  | "duplicate_phone";
 
 /** pending = resultado desconocido: el mensaje queda "enviando" mientras se verifica. */
 export type SendMessageResult =
