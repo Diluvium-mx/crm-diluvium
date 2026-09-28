@@ -250,6 +250,36 @@ Fuera de hoy: N2 está en otra cuenta de Meta ("Diluvium Pruebas"); se prueban c
 7. Reporte. Desconectarlo en Zernio lo hace el usuario (en el sandbox no hay "cuenta" que desconectar:
    basta con no renovar la sesión).
 
+## 9. Limpieza de los chats de prueba (Bloque D, hecha el 28-sep-2026)
+
+Los chats de los dos canales archivados (Número de prueba y Sandbox) eran de **celulares del negocio**
+usados para probar, no de clientes. Se borró su historial y los contactos se quedaron.
+
+- Comando: `npm run pruebas:limpiar -- --canal <id> [--canal <id>…] [--usuario <email>] [--confirmar]`
+  (`scripts/limpiar-chats-prueba.ts`; con el prefijo `$PROD` de arriba, solo la parte de Postgres). Sin
+  `--confirmar` solo simula: conteos por tabla y contactos por sus últimos 4 dígitos. Se niega si un canal no
+  está archivado, está activo o no es de prueba, o si hay trabajo en curso en esos chats (programado por enviar,
+  corrida en cola o plan pendiente). Todo va en UNA transacción *repeatable read*: si los chats, mensajes y
+  contactos de los demás canales (el oficial), el total de contactos o el Gasto de IA no quedan iguales, se deshace.
+- Qué hace: borra los chats y lo que cuelga solo de ellos (mensajes, avisos y planes del agente, corridas de
+  workflow, programados y clics de anuncio, por la cascada de la llave foránea) y el **comprobante** de pago de
+  prueba; **desliga** el Gasto de IA (`ai_usage.conversation_id`/`message_id` en null: el Gasto de IA no cambia;
+  la estimación de costo por modelo cuenta 6 conversaciones menos); quita la marca **Prueba** (`contacts.es_prueba`)
+  a sus contactos; deja una fila en Agente IA › Historial (Canales · «Limpieza de chats de prueba»).
+- Qué NO toca: los contactos (nunca se borran), sus chats con el oficial, sus marcas de workflows ya enviados
+  (`keyword_workflows_sent`), los canales (siguen archivados y ocultos), los archivos del bucket (15 propios de
+  esos mensajes, 0.5 MB, se quedaron para que un restore del respaldo los encuentre; los 5 de la Biblioteca nunca)
+  y la bitácora cruda `webhook_events` (los webhooks de canales archivados no se procesan).
+- Dashboard y Anuncios: sin cambio (el …6364 no tenía mensajes en vivo con el oficial ni clics; los otros 5 son
+  `ghl_import`). Si algún día el …6364 le escribe al oficial, contará como conversación nueva del 21-sep (su alta).
+
+**Corrida en producción (28-sep-2026 18:15Z, desde main b224d58, "OK BORRAR" del dueño):** respaldo antes
+db-backup run 36462287789 (restore de prueba OK). Borrados: 7 chats (Número de prueba 6 · Sandbox 1), 225
+mensajes, 15 avisos, 24 planes, 18 corridas, 2 programados, 0 clics, 1 comprobante; conservados 73 registros de
+Gasto de IA (US$1.9607; total US$2.6683 igual); marca Prueba quitada a 1 contacto (…6364); 6 contactos intactos
+(…3736, …5828, …4018, …3118, …3462, …6364). WhatsApp Diluvium antes = después: 237 chats · 1,043 mensajes ·
+237 contactos; 11,122 contactos en la organización. Bandeja: 0 chats con PRUEBA.
+
 ## Lista teórica (sin escenario real hoy)
 
 - La pestaña Plantillas toma el canal activo más nuevo: mientras N1 y N2 estén activos, "Sincronizar"
@@ -272,3 +302,4 @@ Fuera de hoy: N2 está en otra cuenta de Meta ("Diluvium Pruebas"); se prueban c
 - [ ] LISTO PARA ESCANEAR enviado → QR HECHO → pasos "Después del QR".
 - [ ] PRUEBA BÁSICA → resto del guion.
 - [ ] LUZ VERDE: ARCHIVAR SANDBOX → paso 8.
+- [x] Limpieza de los chats de prueba (paso 9, 28-sep-2026): 0 chats en los canales archivados; contactos intactos.
