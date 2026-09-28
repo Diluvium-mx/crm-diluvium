@@ -36,7 +36,8 @@ export type ChangeAction = {
   nombre: "editar";
   modelos: "modelo_1" | "modelo_2";
   etapas: "crear" | "renombrar" | "borrar" | "reordenar" | "papel" | "modelo" | "regla";
-  canales: "encender" | "apagar";
+  // limpiar_pruebas = borró los chats de canales de prueba archivados (npm run pruebas:limpiar).
+  canales: "encender" | "apagar" | "limpiar_pruebas";
   workflows: "crear" | "editar" | "encender" | "apagar" | "borrar";
   tallas: "editar";
   mensajes_rapidos: "crear" | "editar" | "borrar";
@@ -130,6 +131,8 @@ export function describeAction(kind: string, action: string, subject: string | n
       return `Encendió el agente en ${subject ?? "un canal"}`;
     case "canales.apagar":
       return `Apagó el agente en ${subject ?? "un canal"}`;
+    case "canales.limpiar_pruebas":
+      return `Limpieza de chats de prueba: borró los chats de ${s}`;
     case "workflows.crear":
       return `Creó el workflow ${s}`;
     case "workflows.editar":
