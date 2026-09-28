@@ -8,6 +8,7 @@ import { roleAllows } from "@/lib/auth/permissions";
 import { db } from "@/lib/db";
 import { contacts, contactTemperatureEnum } from "@/lib/db/schema/contacts";
 import { listFunnelStages } from "@/lib/contacts/funnel-stages";
+import { boardContactColumns, type BoardContact } from "@/lib/contacts/board-contact";
 import { isStageKey, roleKey } from "@/lib/contacts/stages";
 import { countryFromPhone, normalizePhone, phoneColumns } from "@/lib/phone";
 import { parseGhlContactsCsv } from "@/lib/import/ghl-contacts-csv";
@@ -27,11 +28,11 @@ async function requireActiveOrganizationId(): Promise<string> {
 
 // Todos los agentes ven todos los contactos de su organización (CLAUDE.md §5):
 // sin filtro por dueño/asignado.
-export async function listContacts() {
+export async function listContacts(): Promise<BoardContact[]> {
   const organizationId = await requireActiveOrganizationId();
 
   return db
-    .select()
+    .select(boardContactColumns)
     .from(contacts)
     .where(eq(contacts.organizationId, organizationId))
     .orderBy(desc(contacts.stageChangedAt), desc(contacts.createdAt));
@@ -41,12 +42,12 @@ export async function listContacts() {
  * Contactos por id (tiempo real del kanban: `contact.created` del SSE). Máximo
  * 200 por llamada; siempre acotado a la organización activa.
  */
-export async function getContactsByIds(ids: string[]) {
+export async function getContactsByIds(ids: string[]): Promise<BoardContact[]> {
   const organizationId = await requireActiveOrganizationId();
   const wanted = z.array(z.string().min(1)).max(200).parse(ids);
   if (wanted.length === 0) return [];
   return db
-    .select()
+    .select(boardContactColumns)
     .from(contacts)
     .where(and(eq(contacts.organizationId, organizationId), inArray(contacts.id, wanted)))
     .orderBy(desc(contacts.stageChangedAt), desc(contacts.createdAt));
@@ -72,7 +73,7 @@ export async function getContactsChangedSince(since: string) {
   const now = new Date().toISOString();
   const [rows, withTemperature] = await Promise.all([
     db
-      .select()
+      .select(boardContactColumns)
       .from(contacts)
       .where(and(eq(contacts.organizationId, organizationId), gt(contacts.stageChangedAt, from)))
       .orderBy(desc(contacts.stageChangedAt), desc(contacts.createdAt))

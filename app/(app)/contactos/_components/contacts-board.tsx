@@ -16,7 +16,7 @@ import {
   type Modifier,
 } from "@dnd-kit/core";
 import { Pencil, X } from "lucide-react";
-import { getContactFullName, type Contact, type Stage, type Temperature } from "../_data/types";
+import { getContactFullName, type BoardContact, type Stage, type Temperature } from "../_data/types";
 import { useFunnelStages } from "../../_components/funnel-stages-provider";
 import { StagesEditor } from "../../_components/stages-editor";
 import type { FunnelStage } from "@/lib/contacts/stages";
@@ -58,7 +58,7 @@ function StageColumn({
   onSetUnread,
 }: {
   stage: FunnelStage;
-  contacts: Contact[];
+  contacts: BoardContact[];
   signals: Signals;
   onCardClick: (contactId: string) => void;
   onSetUnread: (contactId: string, unread: boolean) => void;
@@ -153,14 +153,14 @@ export function ContactsBoard({
   loadedAt,
   openContactId = null,
 }: {
-  initialContacts: Contact[];
+  initialContacts: BoardContact[];
   initialSignals: Signals;
   /** Hora del servidor (ISO) ANTES de leer initialContacts: desde ahí se ponen al día. */
   loadedAt: string;
   /** /embudo?contacto=<id>: abre ese contacto al entrar (desde la Bandeja, si aún no tiene chat). */
   openContactId?: string | null;
 }) {
-  const [contacts, setContacts] = useState<Contact[]>(initialContacts);
+  const [contacts, setContacts] = useState<BoardContact[]>(initialContacts);
   // Columnas del Embudo (editables; llegan en vivo por el contexto).
   const { stages, lastEvent: stagesEvent, refresh: refreshStages } = useFunnelStages();
   const stageKeys = useMemo(() => new Set(stages.map((s) => s.key)), [stages]);
@@ -172,7 +172,7 @@ export function ContactsBoard({
   const router = useRouter();
   // Contactos agregados por el SSE que el servidor aún no ha devuelto en una
   // recarga (ver la sincronización con initialContacts más abajo).
-  const [liveAdded, setLiveAdded] = useState<Contact[]>([]);
+  const [liveAdded, setLiveAdded] = useState<BoardContact[]>([]);
   const [syncedInitialContacts, setSyncedInitialContacts] = useState(initialContacts);
   const [search, setSearch] = useState("");
   const [selectedContactId, setSelectedContactId] = useState<string | null>(() =>
@@ -281,7 +281,7 @@ export function ContactsBoard({
       router.refresh();
       return;
     }
-    let fresh: Contact[];
+    let fresh: BoardContact[];
     try {
       fresh = await getContactsByIds(ids);
     } catch {
@@ -405,7 +405,7 @@ export function ContactsBoard({
   const dragMissedRef = useRef(new Set<string>());
   const liveTimerRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   const draggingIdRef = useRef<string | null>(null);
-  const heldRef = useRef(new Map<string, Contact>());
+  const heldRef = useRef(new Map<string, BoardContact>());
   const writesRef = useRef(new Map<string, number>());
   const staleRef = useRef(new Set<string>());
   useEffect(() => () => clearTimeout(liveTimerRef.current), []);
@@ -422,7 +422,7 @@ export function ContactsBoard({
         const ids = catchUp ? [] : [...queue.ids].slice(0, MAX_LIVE_IDS);
         queue.catchUp = false;
         for (const id of ids) queue.ids.delete(id);
-        let fresh: Contact[];
+        let fresh: BoardContact[];
         try {
           if (catchUp) {
             const changed = await getContactsChangedSince(sinceRef.current);
@@ -456,7 +456,7 @@ export function ContactsBoard({
           return;
         }
         if (!aliveRef.current) return;
-        const apply: Contact[] = [];
+        const apply: BoardContact[] = [];
         for (const contact of fresh) {
           if (draggingIdRef.current === contact.id) {
             heldRef.current.set(contact.id, contact);
@@ -585,7 +585,7 @@ export function ContactsBoard({
   }, [contacts, normalizedSearch]);
 
   const columns = useMemo(() => {
-    const map = new Map<Stage, Contact[]>(stages.map((stage) => [stage.key, []]));
+    const map = new Map<Stage, BoardContact[]>(stages.map((stage) => [stage.key, []]));
     for (const contact of filteredContacts) {
       map.get(contact.stage)?.push(contact);
     }
@@ -721,7 +721,7 @@ export function ContactsBoard({
   }
 
   // Cambio en vivo que llegó mientras se arrastraba esta tarjeta (o nada).
-  function takeHeld(contactId: string): Contact | undefined {
+  function takeHeld(contactId: string): BoardContact | undefined {
     draggingIdRef.current = null;
     const held = heldRef.current.get(contactId);
     heldRef.current.delete(contactId);

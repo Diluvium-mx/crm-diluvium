@@ -222,8 +222,9 @@ proveedor (0 de 93) y `messages` tiene 190 filas. Por orden de impacto, para la 
 6. Evento plano sin `sentAt`: si Zernio reescribe `timestamp` al reintentar, toma la hora del reintento.
 7. Día del número real: un mensaje de anuncio con hora anterior a `channels.connected_at` entra como
    historial, sin clic ni respaldo.
-8. Rendimiento: el barrido de cada minuto recorre `messages` de 1–7 días sin índice por `created_at`
-   (irrelevante con 190 filas; índice parcial cuando crezca). `refreshAdStatuses` toma 1,000 anuncios sin
+8. Rendimiento: el barrido de cada minuto recorría `messages` de 1–7 días sin índice por `created_at`.
+   **Resuelto 28-sep-2026 (migración 0044, `messages_created_idx`):** con 200 mil mensajes de prueba
+   el barrido baja de ~6 ms (tabla completa) a ~0.3 ms. `refreshAdStatuses` toma 1,000 anuncios sin
    orden. La miniatura se decodifica antes del tope de píxeles (imagen enorme = memoria del worker).
 
 ## Checklist del día del número real (anuncios)

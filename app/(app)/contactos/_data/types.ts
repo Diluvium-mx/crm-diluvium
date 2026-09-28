@@ -6,6 +6,10 @@ import type { contacts, contactTemperatureEnum } from "@/lib/db/schema/contacts"
 // drizzle-orm ni el schema de servidor a su bundle.
 export type Contact = InferSelectModel<typeof contacts>;
 
+// Lo que el Embudo recibe de cada contacto (solo tipo: no arrastra drizzle al bundle).
+// El pop-up carga el resto al abrirse.
+export type { BoardContact } from "@/lib/contacts/board-contact";
+
 // Clave de una etapa del Embudo (funnel_stages.key). Desde "Columnas del Embudo"
 // (26-sep-2026) las etapas son editables por organización: nombre, orden y color
 // salen de `useFunnelStages()` (app/(app)/_components/funnel-stages-provider.tsx) en la
