@@ -42,9 +42,10 @@ clientes** (eso llega en la Fase B y siguientes).
     La sección **Empresa** se quitó el 25-sep (el Goal ya dice quién es la empresa;
     `{{empresa.nombre}}` sale de `ai_config.company_name` o, si no hay, del nombre de la
     organización). Editor grande del **Goal** con
-    deshacer, contador de palabras, tokens aproximados y **Valores personalizados**
-    (`{{contacto.nombre}}`, `{{vendedor.nombre}}` = asignado o "un asesor",
-    `{{empresa.nombre}}`, `{{agente.nombre}}`; el runtime los sustituye por conversación);
+    deshacer, contador de palabras y tokens aproximados (el botón **Valores personalizados**
+    se quitó el 28-sep-2026, decisión del dueño: el Goal escribe "Angela" y "Diluvium" tal
+    cual; `{{contacto.nombre}}`, `{{vendedor.nombre}}`, `{{empresa.nombre}}` y
+    `{{agente.nombre}}` escritos a mano los sigue sustituyendo el runtime);
     **base de conocimiento** (FAQs: agregar, editar, activar/desactivar, borrar). Cada
     guardado del Goal o cambio de FAQs deja una **versión** (`ai_knowledge_versions`) y se
     puede **restaurar** cualquiera (la primera vez guarda también la anterior). Desde el
@@ -52,6 +53,11 @@ clientes** (eso llega en la Fase B y siguientes).
     Goal (todo el texto del editor, con lo no guardado) y de las FAQs (todas, sin importar
     búsqueda ni filtro: `- pregunta` + respuesta con sangría, sin números, «(inactiva)» en las
     apagadas; `faqsAsText`), y cada FAQ se queda **abierta** hasta cerrarla a mano (varias a la vez).
+    **Borrar varias** (28-sep-2026): casilla por pregunta, barra fija arriba de la lista con
+    «Seleccionar todas» (las de la lista a la vista: respeta búsqueda y filtro; cambiarlos vacía
+    la selección) y «Borrar (N)» → `deleteAgentFaqs` → `deleteFaqs`: UNA transacción, UNA
+    versión y una fila de Historial; las que otro ya borró se ignoran. Sigue el «Borrar» de
+    cada pregunta abierta.
   - **Canales** (antes «Implementar»): los canales con interruptor Encendido / Apagado. Desde el
     28-sep-2026 solo los **no archivados** (hoy solo «WhatsApp Diluvium»); el Sandbox y el Número
     de prueba archivados se **ocultan, no se borran** (sus chats, mensajes y contactos siguen igual).
@@ -322,8 +328,10 @@ Dashboard ya muestra el gasto del mes y el saldo estimado (24-sep-2026).
   - **Valores personalizados:** el runtime sustituye `{{contacto.nombre}}`,
     `{{vendedor.nombre}}`, `{{empresa.nombre}}` y `{{agente.nombre}}` en el Goal y en las
     FAQs por conversación, antes de llamar al cerebro. El Goal y las 47 FAQs de producción
-    no tenían llaves `{{…}}` al 24-sep-2026: el cerebro recibe exactamente lo mismo que antes
-    hasta que alguien inserte un valor desde el editor.
+    no tenían llaves `{{…}}` al 24-sep-2026 (ni las copias del Goal del 27-sep): el cerebro
+    recibe exactamente lo mismo que antes. Desde el 28-sep-2026 ya no hay botón para
+    insertarlas (solo a mano). Ojo: el nombre del agente (✎) solo llega al modelo por
+    `{{agente.nombre}}`; con el Goal de hoy, cambiarlo no cambia cómo se presenta.
   - **Versiones:** cada guardado del Goal y cada cambio de FAQs (agregar, editar,
     activar/desactivar, borrar, restaurar) deja una foto completa en `ai_knowledge_versions`;
     la primera vez guarda también la anterior. "Restaurar" deja, a su vez, otra versión.

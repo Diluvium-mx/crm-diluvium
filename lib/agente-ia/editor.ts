@@ -1,17 +1,13 @@
 // Editor del agente (pestaña "Agente IA" estilo GHL, 24-sep-2026). PURO y seguro
-// para el cliente: valores personalizados, contadores del Goal, indicador de costo
+// para el cliente: valores personalizados (sustitución), contadores del Goal, indicador de costo
 // de los modelos y validación de lo que se guarda.
 import { z } from "zod";
 
-// Valores personalizados que se insertan en el Goal o en las FAQs. El runtime los
-// sustituye por los datos de cada conversación antes de llamar al cerebro.
-export const CUSTOM_VALUES = [
-  { token: "{{contacto.nombre}}", label: "Nombre del contacto" },
-  { token: "{{vendedor.nombre}}", label: "Nombre del vendedor" },
-  { token: "{{empresa.nombre}}", label: "Nombre de la empresa" },
-  { token: "{{agente.nombre}}", label: "Nombre del agente" },
-] as const;
-
+// Valores personalizados ({{contacto.nombre}}, {{vendedor.nombre}}, {{empresa.nombre}},
+// {{agente.nombre}}) escritos a mano en el Goal o en las FAQs: el runtime los sustituye por
+// los datos de cada conversación antes de llamar al cerebro. El botón que los insertaba se
+// quitó el 28-sep-2026 (las copias del Goal de producción no usan ninguno); la sustitución se queda
+// para que uno escrito a mano nunca le llegue al modelo con las llaves.
 export type CustomValues = { contacto: string; vendedor: string; empresa: string; agente: string };
 
 // Sustituye los valores (tolera espacios y mayúsculas dentro de las llaves).

@@ -76,6 +76,22 @@ describe.skipIf(!TEST_DATABASE_URL)("editor del agente (Postgres real)", () => {
     ]);
   });
 
+  it("borrar varias FAQs a la vez deja UNA versión, ignora las que ya no existen y se puede regresar", async () => {
+    await store.createFaq(ORG, "u_owner", { question: "¿Garantía?", answer: "5 años", enabled: false });
+    const before = (await store.listVersions(ORG, "faqs")).length;
+    const ids = (await store.loadEditor(ORG)).faqs.map((f) => f.id);
+    expect(await store.deleteFaqs(ORG, "u_owner", [...ids, "ya_no_existe"])).toBe(3);
+    expect(await faqs()).toEqual([]);
+    const versions = await store.listVersions(ORG, "faqs");
+    expect(versions).toHaveLength(before + 1);
+    await expect(store.deleteFaqs(ORG, "u_owner", ["k1"])).rejects.toBeInstanceOf(store.EditorNotFoundError);
+    await store.restoreFaqs(ORG, "u_owner", versions[1].id);
+    expect(await faqs()).toEqual(["¿Precio?", "¿Dónde?", "¿Garantía?"]);
+    // Otra organización no borra las de ésta.
+    await expect(store.deleteFaqs(OTRA, "u_owner", ids)).rejects.toBeInstanceOf(store.EditorNotFoundError);
+    expect(await faqs()).toHaveLength(3);
+  });
+
   it("nada cruza organizaciones: otra org no edita, no borra ni restaura versiones ajenas", async () => {
     await store.saveGoal(ORG, "u_owner", "GOAL NUEVO");
     const [v] = await store.listVersions(ORG, "goal");

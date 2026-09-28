@@ -5,7 +5,7 @@
 // etapas y el modelo de cada una: lib/actions/funnel-stages.ts. Todos
 // los roles, vendedor incluido (ACL: recurso `aiConfig`). La organización sale de la SESIÓN.
 import { revalidatePath } from "next/cache";
-import { ZodError } from "zod";
+import { z, ZodError } from "zod";
 import { requireActiveMembership } from "@/lib/auth/active-organization";
 import { roleAllows } from "@/lib/auth/permissions";
 import { DEFAULT_MODEL_1, modelsForRole } from "@/lib/ai/catalog";
@@ -14,6 +14,7 @@ import { faqSchema, goalSchema, profileSchema, versionNameSchema } from "@/lib/a
 import {
   createFaq,
   deleteFaq,
+  deleteFaqs,
   EditorNotFoundError,
   loadEditor,
   renameVersion,
@@ -164,6 +165,15 @@ export async function updateAgentFaq(input: { id: string; question: string; answ
 export async function deleteAgentFaq(input: { id: string }): Promise<AgentActionResult> {
   return run("No se pudo borrar la pregunta.", async ({ organizationId, userId }) => {
     await deleteFaq(organizationId, userId, idSchema.parse(input.id));
+  });
+}
+
+// Borrar varias FAQs a la vez (casillas + «Seleccionar todas»): una sola versión.
+const faqIdsSchema = z.array(idSchema).min(1, "Selecciona al menos una pregunta.").max(1_000, "Son demasiadas a la vez.");
+
+export async function deleteAgentFaqs(input: { ids: string[] }): Promise<AgentActionResult> {
+  return run("No se pudieron borrar las preguntas.", async ({ organizationId, userId }) => {
+    await deleteFaqs(organizationId, userId, [...new Set(faqIdsSchema.parse(input.ids))]);
   });
 }
 
