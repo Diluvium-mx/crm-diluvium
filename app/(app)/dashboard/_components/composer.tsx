@@ -8,8 +8,14 @@
 // - Ventana CERRADA: solo plantilla (docs/investigacion/plantillas-zernio.md).
 // Al insertar un fragmento, {{vendedor}} se rellena con el nombre del usuario
 // logueado; las demás variables las completa el vendedor a mano.
+// Adjuntos (28-sep-2026): 📎 abre el selector, Cmd+V pega una foto o captura y
+// arriba de la caja va la vista previa; el texto, si hay, sale como pie del
+// PRIMER archivo. Enviar espera a que todos terminen de subir.
 import { useEffect, useRef, useState } from "react";
-import { Clock, Zap } from "lucide-react";
+import { Clock, Paperclip, Zap } from "lucide-react";
+import { CHAT_CAPTION_MAX } from "@/lib/chat-attachments/rules";
+import { AttachmentTray } from "./attachment-tray";
+import type { ChatAttachments } from "./use-chat-attachments";
 import { useSession } from "@/lib/auth/client";
 import { listSnippets } from "@/lib/actions/snippets";
 import { listWorkflowCommands } from "@/lib/actions/workflows";
@@ -27,6 +33,9 @@ export function Composer({
   onSendText,
   onSendTemplate,
   onScheduled,
+  attachments,
+  onPickFiles,
+  onSendAttachments,
 }: {
   conversationId: string;
   windowOpen: boolean;
@@ -35,6 +44,11 @@ export function Composer({
   onSendTemplate: (templateId: string, values: string[], preview: string) => void;
   /** Se programó un mensaje (A6): la franja de programados se recarga. */
   onScheduled: () => void;
+  /** Adjuntos del chat (estado compartido con la capa de soltar del hilo). */
+  attachments: ChatAttachments;
+  /** Abre el selector de archivos (📎). */
+  onPickFiles: () => void;
+  onSendAttachments: (tokens: string[], caption: string) => Promise<{ ok: true } | { ok: false; message: string }>;
 }) {
   const { data: session } = useSession();
   const sellerName = session?.user.name?.trim() ?? "";
@@ -54,6 +68,11 @@ export function Composer({
   const [dismissedAt, setDismissedAt] = useState<number | null>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const pendingCaret = useRef<number | null>(null);
+  const [sendingFiles, setSendingFiles] = useState(false);
+  const [sendError, setSendError] = useState<string | null>(null);
+  const hasFiles = attachments.items.length > 0;
+  const captionTooLong = draft.trim().length > CHAT_CAPTION_MAX;
+  const canSend = hasFiles ? attachments.allReady && !captionTooLong && !sendingFiles : Boolean(draft.trim());
 
   const found = windowOpen ? findSlashQuery(draft, caret) : null;
   const slash = found && found.start !== dismissedAt ? found : null;
@@ -125,10 +144,37 @@ export function Composer({
   }
 
   function submit() {
+    if (!windowOpen) return;
+    if (hasFiles) {
+      void submitFiles();
+      return;
+    }
     const text = draft.trim();
-    if (!text || !windowOpen) return;
+    if (!text) return;
     updateDraft("", 0);
     onSendText(text);
+  }
+
+  // Con archivos: salen uno por mensaje, en el orden de la vista previa; el texto va como pie del primero.
+  async function submitFiles() {
+    if (!canSend) return;
+    const tokens = attachments.items.flatMap((it) => (it.token ? [it.token] : []));
+    setSendingFiles(true);
+    setSendError(null);
+    try {
+      const result = await onSendAttachments(tokens, draft);
+      if (!result.ok) {
+        setSendError(result.message);
+        return;
+      }
+      attachments.clear();
+      updateDraft("", 0);
+    } catch {
+      // Sesión vencida, red caída o un deploy a la mitad: el botón no se queda trabado.
+      setSendError("No se pudieron enviar los archivos. Revisa tu conexión y vuelve a intentarlo.");
+    } finally {
+      setSendingFiles(false);
+    }
   }
 
   // Elegir un comando en "/": se manda tal cual; el hilo lo dispara.
@@ -205,6 +251,29 @@ export function Composer({
           />
         </div>
       )}
+
+      {(attachments.notices.length > 0 || sendError) && (
+        <div role="alert" className="mb-2 flex items-start justify-between gap-3 rounded-md border border-brand-orange/40 bg-brand-orange/10 px-3 py-1.5 text-xs">
+          <ul className="space-y-0.5">
+            {attachments.notices.map((n, i) => (
+              <li key={i}>⚠ {n}</li>
+            ))}
+            {sendError && <li>⚠ {sendError}</li>}
+          </ul>
+          <button
+            type="button"
+            onClick={() => {
+              attachments.dismissNotices();
+              setSendError(null);
+            }}
+            className="text-muted-foreground hover:text-foreground"
+            aria-label="Cerrar aviso"
+          >
+            ✕
+          </button>
+        </div>
+      )}
+      <AttachmentTray items={attachments.items} onRemove={attachments.remove} />
 
       {slashOpen && (
         <div className="mb-2 overflow-hidden rounded-lg border bg-background shadow-sm">
@@ -295,11 +364,27 @@ export function Composer({
         >
           <span aria-hidden="true">📄</span>
         </button>
+        <button
+          type="button"
+          onClick={onPickFiles}
+          aria-label="Adjuntar archivos"
+          title="Adjuntar fotos, videos o documentos"
+          className="rounded-md border px-2.5 py-2 text-brand-navy transition-colors hover:bg-brand-navy/10 dark:text-sky-300"
+        >
+          <Paperclip className="size-4" aria-hidden="true" />
+        </button>
         <textarea
           ref={textareaRef}
           value={draft}
           onChange={(event) => updateDraft(event.target.value, event.target.selectionStart)}
           onSelect={(event) => setCaret(event.currentTarget.selectionStart)}
+          // Cmd+V con una foto o captura de pantalla: se adjunta (el texto se pega normal).
+          onPaste={(event) => {
+            const files = Array.from(event.clipboardData.files);
+            if (files.length === 0) return;
+            event.preventDefault();
+            attachments.addFiles(files);
+          }}
           onKeyDown={(event) => {
             // Con el buscador abierto, Enter NUNCA envía: inserta si hay
             // coincidencia; si no (cargando, sin resultados o error), no hace
@@ -341,7 +426,9 @@ export function Composer({
           }}
           rows={1}
           aria-autocomplete="list"
-          placeholder="Escribe un mensaje… (/ busca mensajes rápidos · Enter envía · Shift+Enter salto de línea)"
+          placeholder={
+            hasFiles ? "Agrega un mensaje (opcional)" : "Escribe un mensaje… (/ busca mensajes rápidos · Enter envía · Shift+Enter salto de línea)"
+          }
           className="max-h-32 min-h-[40px] flex-1 resize-y rounded-md border bg-background px-3 py-2 text-sm outline-none transition-colors placeholder:text-muted-foreground/60 focus:border-brand-navy focus:ring-2 focus:ring-brand-navy/30"
         />
         <button
@@ -351,10 +438,12 @@ export function Composer({
             setSnippetOpen(false);
             setTemplateOpen(false);
           }}
+          // Programar no lleva adjuntos por ahora (28-sep-2026).
+          disabled={hasFiles}
           aria-label="Programar mensaje"
           aria-expanded={scheduleOpen}
-          title="Programar mensaje"
-          className={`rounded-md border px-2.5 py-2 text-brand-navy transition-colors dark:text-sky-300 ${
+          title={hasFiles ? "Programar no lleva archivos por ahora" : "Programar mensaje"}
+          className={`rounded-md border px-2.5 py-2 text-brand-navy transition-colors disabled:opacity-40 dark:text-sky-300 ${
             scheduleOpen ? "border-brand-navy bg-brand-navy/10" : "hover:bg-brand-navy/10"
           }`}
         >
@@ -363,12 +452,18 @@ export function Composer({
         <button
           type="button"
           onClick={submit}
-          disabled={!draft.trim()}
-          className="rounded-md bg-brand-navy px-4 py-2 text-sm font-medium text-brand-white transition-colors hover:bg-brand-navy-dark disabled:opacity-50"
+          disabled={!canSend}
+          title={hasFiles && !attachments.allReady ? "Espera a que terminen de subir los archivos" : undefined}
+          className="rounded-md bg-brand-orange px-4 py-2 text-sm font-medium text-brand-white transition-colors hover:bg-brand-orange-light disabled:opacity-50"
         >
-          Enviar
+          {sendingFiles ? "Enviando…" : "Enviar"}
         </button>
       </div>
+      {hasFiles && (
+        <p className={`mt-1 text-right text-[11px] ${captionTooLong ? "font-medium text-red-600 dark:text-red-400" : "text-muted-foreground"}`}>
+          {draft.trim().length.toLocaleString("es-MX")} / {CHAT_CAPTION_MAX.toLocaleString("es-MX")}
+        </p>
+      )}
     </div>
   );
 }

@@ -28,7 +28,7 @@ import { addNotice } from "@/lib/ai/runtime/notices";
 import { moveStageForward } from "@/lib/contacts/stage";
 import { listFunnelStages } from "@/lib/contacts/funnel-stages";
 import { roleKey } from "@/lib/contacts/stages";
-import { missingMedia, stripUnresolvedVariables } from "./steps";
+import { missingMedia, stripUnresolvedVariables, waitMs } from "./steps";
 import { SLUG_DATOS_BANCARIOS } from "./defaults";
 
 export type RunTrigger = "agent" | "keyword" | "command" | "stage";
@@ -538,9 +538,12 @@ async function runStep(step: WorkflowStepPayload, ctx: StepCtx): Promise<SendOut
         now: deps.now(),
       });
     }
-    case "wait":
-      await deps.sleep(step.seconds * 1_000);
+    case "wait": {
+      // Un "/" del vendedor no espera (waitMs); agente y palabra clave sí.
+      const ms = waitMs(step, run.trigger);
+      if (ms > 0) await deps.sleep(ms);
       return null;
+    }
   }
 }
 

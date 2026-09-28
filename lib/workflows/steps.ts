@@ -108,3 +108,11 @@ export function parseCommand(message: string): string | null {
   const t = message.trim().toLowerCase();
   return /^\/[a-z0-9][a-z0-9-]{0,29}$/.test(t) ? t : null;
 }
+
+// Pasos "Esperar" (28-sep-2026, pedido del dueño): un "/" del VENDEDOR (trigger
+// "command", también "Probar") sale de inmediato; el agente y las palabras
+// clave conservan sus esperas (GHL espera 30 s antes de la tabla). El orden de
+// los pasos no cambia: solo se omite la pausa.
+export function waitMs(step: { kind: "wait"; seconds: number }, trigger: string): number {
+  return trigger === "command" ? 0 : step.seconds * 1_000;
+}

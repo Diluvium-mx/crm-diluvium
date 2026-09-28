@@ -1,6 +1,6 @@
 // Cola de corridas de workflows (Fase D): un job por `workflow_runs.id`. La
 // base es la fuente de verdad: si Redis no responde al encolar, la fila queda
-// "queued" y el barrido del worker la recoge (mismo patrón que scheduled).
+// "queued" y el barrido rápido del worker (cada 5 s) la recoge.
 import { Queue } from "bullmq";
 import { redisConnection } from "./inbound";
 
@@ -47,15 +47,27 @@ async function withTimeout<T>(promise: Promise<T>): Promise<T> {
   }
 }
 
-/** Encola la corrida. Nunca lanza: false = el barrido la recogerá. */
+// Un fallo al encolar suele ser un parpadeo de la conexión: se reintenta de
+// inmediato una vez (28-sep-2026: un "/" del vendedor no debe esperar al barrido).
+const ENQUEUE_ATTEMPTS = 2;
+const ENQUEUE_RETRY_MS = 200;
+
+/** Encola la corrida. Nunca lanza: false = la toma el barrido rápido del worker (segundos). */
 export async function enqueueWorkflowRun(runId: string): Promise<boolean> {
-  try {
-    await withTimeout(workflowQueue().add("run", { runId }, { jobId: workflowJobId(runId) }));
-    return true;
-  } catch (error) {
-    console.error("[workflows] no se pudo encolar; lo recogerá el barrido", runId, error);
-    return false;
+  for (let attempt = 1; attempt <= ENQUEUE_ATTEMPTS; attempt++) {
+    try {
+      // Mismo jobId: si el 1.er intento sí llegó a Redis, el 2.º no duplica el job.
+      await withTimeout(workflowQueue().add("run", { runId }, { jobId: workflowJobId(runId) }));
+      return true;
+    } catch (error) {
+      if (attempt < ENQUEUE_ATTEMPTS) {
+        await new Promise((resolve) => setTimeout(resolve, ENQUEUE_RETRY_MS));
+        continue;
+      }
+      console.error("[workflows] no se pudo encolar; lo toma el barrido rápido del worker", runId, error);
+    }
   }
+  return false;
 }
 
 /** Barrido: una corrida "queued" vieja perdió su job (o falló): se revisa y reintenta. */

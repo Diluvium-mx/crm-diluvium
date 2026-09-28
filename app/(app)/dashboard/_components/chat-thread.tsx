@@ -5,7 +5,11 @@ import type { AdReferral, AttachmentView, ConversationDetail, MessageView } from
 import { useFunnelStages } from "../../_components/funnel-stages-provider";
 import { listMessages, retryMessage, sendMessage, sendTemplate } from "@/lib/inbox/actions";
 import { runWorkflowCommand } from "@/lib/actions/workflows";
+import { sendAttachments } from "@/lib/inbox/attachment-actions";
+import { attachmentAcceptAttr } from "@/lib/chat-attachments/rules";
 import { Composer } from "./composer";
+import { ChatDropZone } from "./chat-drop-zone";
+import { useChatAttachments } from "./use-chat-attachments";
 import { ArchivedComposer } from "./archived-composer";
 import { PruebaBadge } from "@/components/ui/prueba-badge";
 import { DocumentCard } from "./document-card";
@@ -271,6 +275,10 @@ export function ChatThread({
 
   const windowOpen = isWindowOpen(detail.windowExpiresAt, nowMs);
   const hoursLeft = windowHoursLeft(detail.windowExpiresAt, nowMs);
+  // Adjuntos (28-sep-2026): solo con la ventana abierta y el canal sin archivar.
+  const canAttach = windowOpen && !detail.channel.archived;
+  const attachments = useChatAttachments(conversationId);
+  const pickerRef = useRef<HTMLInputElement>(null);
 
   // Descarta optimistas (texto o plantilla) cuyo cuerpo ya llegó como saliente
   // real, sin importar si estaban "queued" o "failed": así no queda un duplicado
@@ -448,6 +456,15 @@ export function ChatThread({
     }
   }
 
+  // Los archivos ya subieron; la acción deja las burbujas en cola y el worker las manda en orden.
+  async function doSendAttachments(tokens: string[], caption: string): Promise<{ ok: true } | { ok: false; message: string }> {
+    forceBottomRef.current = true;
+    const result = await sendAttachments(conversationId, tokens, caption);
+    if (!result.ok) return result;
+    void load();
+    return { ok: true };
+  }
+
   async function handleRetry(row: Row) {
     if (isOptimistic(row)) {
       // Optimista fallido: reintentar = volver a enviar el mismo texto.
@@ -498,95 +515,112 @@ export function ChatThread({
       </div>
       <AgentPausedBanner agent={agent} nowMs={nowMs} />
 
-      {/* Hilo */}
-      <div
-        ref={scrollRef}
-        onScroll={onHistoryScroll}
-        className="chat-wallpaper min-h-0 flex-1 space-y-2 overflow-y-auto overscroll-contain p-4"
-      >
-        {loading && messages.length === 0 ? (
-          <p className="py-8 text-center text-sm text-muted-foreground">Cargando mensajes…</p>
-        ) : loadError ? (
-          <p className="py-8 text-center text-sm text-brand-orange">{loadError}</p>
-        ) : rows.length === 0 ? (
-          <p className="py-8 text-center text-sm text-muted-foreground">Aún no hay mensajes.</p>
-        ) : (
-          <>
-            {hasMore && (
-              <div className="flex justify-center">
-                <button
-                  type="button"
-                  onClick={() => void loadOlder()}
-                  className="rounded-full border bg-card px-3 py-1 text-xs text-muted-foreground hover:bg-muted"
-                >
-                  Cargar mensajes anteriores
-                </button>
-              </div>
-            )}
-            {timeline.map((item) => {
-              if (item.kind === "notice") {
-                // Fase E: el error del modelo lleva botones ("Reintentar" / "Apagar").
-                if (item.notice.kind === "agente_error") {
-                  // La clave lleva la fecha: una tarjeta reabierta (mismo id) empieza limpia.
-                  return <AgentErrorCard key={`aviso-${item.notice.id}-${item.notice.createdAt}`} notice={item.notice} onChanged={() => void reloadAgent()} />;
-                }
-                return <AgentNoticeLine key={`aviso-${item.notice.id}`} notice={item.notice} />;
-              }
-              const row = item.row;
-              const key = isOptimistic(row) ? row.clientId : row.id;
-              const prev = rows[(rowIndex.get(row) ?? 0) - 1];
-              const showDay =
-                !prev || dayLabel(new Date(prev.sentAt)) !== dayLabel(new Date(row.sentAt));
-              return (
-                <div key={key}>
-                  {showDay && (
-                    <div className="my-3 flex justify-center">
-                      <span className="rounded-full bg-card px-3 py-0.5 text-[11px] text-muted-foreground shadow-sm">
-                        {dayLabel(new Date(row.sentAt))}
-                      </span>
-                    </div>
-                  )}
-                  <Bubble row={row} onRetry={handleRetry} onOpenAttachment={setViewing} />
+      {/* Historial + caja de escribir: la capa para soltar archivos los cubre a los dos. */}
+      <ChatDropZone enabled={canAttach} onFiles={attachments.addFiles} onBrowse={() => pickerRef.current?.click()}>
+        {/* Hilo */}
+        <div
+          ref={scrollRef}
+          onScroll={onHistoryScroll}
+          className="chat-wallpaper min-h-0 flex-1 space-y-2 overflow-y-auto overscroll-contain p-4"
+        >
+          {loading && messages.length === 0 ? (
+            <p className="py-8 text-center text-sm text-muted-foreground">Cargando mensajes…</p>
+          ) : loadError ? (
+            <p className="py-8 text-center text-sm text-brand-orange">{loadError}</p>
+          ) : rows.length === 0 ? (
+            <p className="py-8 text-center text-sm text-muted-foreground">Aún no hay mensajes.</p>
+          ) : (
+            <>
+              {hasMore && (
+                <div className="flex justify-center">
+                  <button
+                    type="button"
+                    onClick={() => void loadOlder()}
+                    className="rounded-full border bg-card px-3 py-1 text-xs text-muted-foreground hover:bg-muted"
+                  >
+                    Cargar mensajes anteriores
+                  </button>
                 </div>
-              );
-            })}
-          </>
-        )}
-        {/* Programados (A6) al final del hilo: van después de lo ya enviado. */}
-        <ScheduledInThread
-          key={`sched-${conversationId}`}
-          conversationId={conversationId}
-          windowExpiresAt={detail.windowExpiresAt}
-          refreshToken={revalToken + scheduledRev}
-          onCountChange={setScheduledCount}
-        />
-      </div>
-
-      {/* Píldora "Agente IA leyendo/escribiendo/enviando" (flota sobre el fondo del historial). */}
-      <AgentActivityPill conversationId={conversationId} refreshToken={revalToken} detailKey={detail} />
-      {commandNotice && (
-        <div className="mx-4 mb-1 flex items-center justify-between rounded-md border border-brand-orange/40 bg-brand-orange/10 px-3 py-1.5 text-xs">
-          <span>{commandNotice}</span>
-          <button type="button" onClick={() => setCommandNotice(null)} className="ml-3 text-muted-foreground hover:text-foreground" aria-label="Cerrar aviso">
-            ✕
-          </button>
+              )}
+              {timeline.map((item) => {
+                if (item.kind === "notice") {
+                  // Fase E: el error del modelo lleva botones ("Reintentar" / "Apagar").
+                  if (item.notice.kind === "agente_error") {
+                    // La clave lleva la fecha: una tarjeta reabierta (mismo id) empieza limpia.
+                    return <AgentErrorCard key={`aviso-${item.notice.id}-${item.notice.createdAt}`} notice={item.notice} onChanged={() => void reloadAgent()} />;
+                  }
+                  return <AgentNoticeLine key={`aviso-${item.notice.id}`} notice={item.notice} />;
+                }
+                const row = item.row;
+                const key = isOptimistic(row) ? row.clientId : row.id;
+                const prev = rows[(rowIndex.get(row) ?? 0) - 1];
+                const showDay =
+                  !prev || dayLabel(new Date(prev.sentAt)) !== dayLabel(new Date(row.sentAt));
+                return (
+                  <div key={key}>
+                    {showDay && (
+                      <div className="my-3 flex justify-center">
+                        <span className="rounded-full bg-card px-3 py-0.5 text-[11px] text-muted-foreground shadow-sm">
+                          {dayLabel(new Date(row.sentAt))}
+                        </span>
+                      </div>
+                    )}
+                    <Bubble row={row} onRetry={handleRetry} onOpenAttachment={setViewing} />
+                  </div>
+                );
+              })}
+            </>
+          )}
+          {/* Programados (A6) al final del hilo: van después de lo ya enviado. */}
+          <ScheduledInThread
+            key={`sched-${conversationId}`}
+            conversationId={conversationId}
+            windowExpiresAt={detail.windowExpiresAt}
+            refreshToken={revalToken + scheduledRev}
+            onCountChange={setScheduledCount}
+          />
         </div>
-      )}
-      {/* Composer (composer.tsx): texto libre, fragmentos y plantillas con la
-          ventana abierta; solo plantilla cuando está cerrada. key: al cambiar de
-          conversación se reinicia el borrador y se cierran los selectores. */}
-      {detail.channel.archived ? <ArchivedComposer /> : <Composer
-        key={conversationId}
-        conversationId={conversationId}
-        windowOpen={windowOpen}
-        windowExpiresAt={detail.windowExpiresAt}
-        onSendText={(text) => {
-          setCommandNotice(null);
-          void doSendOrCommand(text);
+
+        {/* Píldora "Agente IA leyendo/escribiendo/enviando" (flota sobre el fondo del historial). */}
+        <AgentActivityPill conversationId={conversationId} refreshToken={revalToken} detailKey={detail} />
+        {commandNotice && (
+          <div className="mx-4 mb-1 flex items-center justify-between rounded-md border border-brand-orange/40 bg-brand-orange/10 px-3 py-1.5 text-xs">
+            <span>{commandNotice}</span>
+            <button type="button" onClick={() => setCommandNotice(null)} className="ml-3 text-muted-foreground hover:text-foreground" aria-label="Cerrar aviso">
+              ✕
+            </button>
+          </div>
+        )}
+        {/* Composer (composer.tsx): texto libre, fragmentos y plantillas con la
+            ventana abierta; solo plantilla cuando está cerrada. key: al cambiar de
+            conversación se reinicia el borrador y se cierran los selectores. */}
+        {detail.channel.archived ? <ArchivedComposer /> : <Composer
+          key={conversationId}
+          conversationId={conversationId}
+          windowOpen={windowOpen}
+          windowExpiresAt={detail.windowExpiresAt}
+          onSendText={(text) => {
+            setCommandNotice(null);
+            void doSendOrCommand(text);
+          }}
+          onSendTemplate={(templateId, values, preview) => void doSendTemplate(templateId, values, preview)}
+          onScheduled={() => setScheduledRev((n) => n + 1)}
+          attachments={attachments}
+          onPickFiles={() => pickerRef.current?.click()}
+          onSendAttachments={doSendAttachments}
+        />}
+      </ChatDropZone>
+      <input
+        ref={pickerRef}
+        type="file"
+        multiple
+        hidden
+        accept={attachmentAcceptAttr()}
+        onChange={(event) => {
+          if (canAttach) attachments.addFiles(Array.from(event.target.files ?? []));
+          event.target.value = "";
         }}
-        onSendTemplate={(templateId, values, preview) => void doSendTemplate(templateId, values, preview)}
-        onScheduled={() => setScheduledRev((n) => n + 1)}
-      />}
+      />
       {viewing && <MediaViewer attachment={viewing} onClose={() => setViewing(null)} />}
     </div>
   );
