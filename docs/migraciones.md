@@ -20,7 +20,7 @@ Además, en Railway hoy (antes de este cambio):
 |---|---|---|
 | web `crm-diluvium` (production) | `npm run start:web` = `drizzle-kit migrate && next start` | el contenedor nuevo muere; sin healthcheck ni pre-deploy, el despliegue nuevo ya reemplazó al anterior → **caída** |
 | web `crm-diluvium` (staging) | `npx drizzle-kit migrate && next start` | igual |
-| `worker-production` / `worker` (staging) | `npx tsx worker/index.ts` | espera a que el web migre comparando solo la ÚLTIMA migración: una saltada no se nota |
+| `worker-production` / `worker` (staging) | `node --import tsx worker/index.ts` | espera a que el web migre comparando solo la ÚLTIMA migración: una saltada no se nota |
 
 ## La solución
 
@@ -44,7 +44,7 @@ sin caída**.
 | Servicio | Pre-deploy | Arranque |
 |---|---|---|
 | web `crm-diluvium` | `npm run db:deploy` | `npm run start` |
-| worker (`worker-production` en prod, `worker` en staging) | `npm run db:check -- --wait 900` | `npx tsx worker/index.ts` (igual) |
+| worker (`worker-production` en prod, `worker` en staging) | `npm run db:check -- --wait 900` | `node --import tsx worker/index.ts` + Draining 60 s (desde 28-sep-2026; antes `npx tsx worker/index.ts`) |
 
 (Leído de la API de Railway el 25-sep-2026: staging tiene exactamente esto; no trae un tope de tiempo
 propio del pre-deploy configurado.)
