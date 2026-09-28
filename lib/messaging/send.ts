@@ -38,6 +38,7 @@ import { isForeignTemplateAccount } from "./template-sync";
 import { loadMediaAsset, mediaAssetSignedUrl } from "@/lib/media-library/service";
 import type { ObjectStorage } from "@/lib/storage/s3";
 import { isTemplateSendable } from "@/lib/templates/types";
+import { chatUploadMessageId } from "@/lib/chat-attachments/keys";
 
 export class SendRejectedError extends Error {
   constructor(
@@ -300,6 +301,129 @@ export async function sendMediaMessage(provider: MessagingProvider, storage: Obj
     organizationId: params.organizationId,
     sentByUserId,
     markRead: params.markRead ?? source === "crm",
+  });
+}
+
+/** Un archivo que el vendedor adjuntó en el chat (ya en el bucket, comprobante verificado). */
+export type ChatUploadToSend = { storageKey: string; kind: "image" | "video" | "document"; mime: string; fileName: string; bytes: number };
+
+/** Marca de los adjuntos del chat en `messages.metadata`: pendiente → enviando (una sola vez). */
+export const CHAT_UPLOAD_META = "adjuntoChat";
+
+/**
+ * Adjuntos del chat (28-sep-2026), paso 1 (web): valida la conversación y la
+ * ventana de 24 h y deja UNA burbuja "queued" por archivo, en el orden en que
+ * se ven (sent_at + i ms); el pie va solo en la primera. Nada sale aquí: el
+ * worker los manda en orden (sendQueuedChatUpload), así la acción del vendedor
+ * responde al instante aunque sean 10 archivos. Id determinista por archivo:
+ * mandar dos veces el mismo archivo no crea otra burbuja.
+ */
+export async function queueChatUploads(
+  provider: MessagingProvider,
+  params: { organizationId: string; conversationId: string; sentByUserId: string; files: readonly ChatUploadToSend[]; captions: readonly (string | null)[]; now?: Date },
+): Promise<string[]> {
+  const now = params.now ?? new Date();
+  const captions = params.captions.map((c) => (c?.trim() ? validText(c) : null));
+  const { conversation } = await loadConversation(provider, params.organizationId, params.conversationId, now);
+  const ids = params.files.map((f) => chatUploadMessageId(f.storageKey));
+  await db.transaction(async (tx) => {
+    for (const [i, file] of params.files.entries()) {
+      const at = new Date(now.getTime() + i);
+      const url = `/api/media/${ids[i]}/0`;
+      await tx
+        .insert(messages)
+        .values({
+          id: ids[i],
+          organizationId: params.organizationId,
+          conversationId: conversation.id,
+          direction: "out",
+          source: "crm",
+          type: file.kind,
+          body: captions[i] ?? null,
+          attachments: [
+            { type: file.kind, url, mimeType: file.mime, fileName: file.fileName, storageKey: file.storageKey, sizeBytes: file.bytes, downloadedAt: now.toISOString() },
+          ],
+          mediaUrl: url,
+          mediaMimeType: file.mime,
+          status: "queued",
+          sentByUserId: params.sentByUserId,
+          metadata: { [CHAT_UPLOAD_META]: { estado: "pendiente" } },
+          sentAt: at,
+          createdAt: at,
+        })
+        .onConflictDoNothing();
+    }
+  });
+  return ids;
+}
+
+/**
+ * Adjuntos del chat, paso 2 (worker): manda UN archivo en cola con el mismo
+ * patrón outbox (`deliver`: su id es la Idempotency-Key; enviado / rechazado /
+ * desconocido). Lo reclama de "pendiente" a "enviando" de forma atómica: un
+ * reintento del job nunca lo manda dos veces (si quedó a medias, lo resuelve la
+ * conciliación de siempre). Al proveedor le llega una URL firmada corta; en la
+ * burbuja queda la ruta interna. Los errores quedan en el mensaje (§7).
+ * Devuelve null si no había nada que mandar (ya reclamado o fallido antes de salir).
+ */
+export async function sendQueuedChatUpload(
+  provider: MessagingProvider,
+  storage: ObjectStorage,
+  params: { organizationId: string; messageId: string; now?: Date },
+): Promise<SendOutcome | null> {
+  const where = and(eq(messages.id, params.messageId), eq(messages.organizationId, params.organizationId));
+  const [row] = await db
+    .update(messages)
+    .set({ metadata: sql`coalesce(${messages.metadata}, '{}'::jsonb) || jsonb_build_object(${CHAT_UPLOAD_META}::text, jsonb_build_object('estado', 'enviando'))` })
+    .where(and(where, eq(messages.status, "queued"), isNull(messages.providerMessageId), sql`${messages.metadata}->${CHAT_UPLOAD_META}->>'estado' = 'pendiente'`))
+    .returning();
+  if (!row) return null;
+  const attachment = row.attachments[0];
+  const fail = async (code: string, message: string) => {
+    await db.update(messages).set({ status: "failed", errorCode: code, errorMessage: message }).where(where);
+    return null;
+  };
+  if (!attachment?.storageKey || (row.type !== "image" && row.type !== "video" && row.type !== "document")) {
+    return fail("media_not_found", "El archivo adjunto no está disponible.");
+  }
+  let loaded: Awaited<ReturnType<typeof loadConversation>>;
+  try {
+    loaded = await loadConversation(provider, params.organizationId, row.conversationId, params.now ?? new Date());
+  } catch (error) {
+    if (error instanceof SendRejectedError) return fail(error.code, error.message);
+    // Falla de infraestructura ANTES de llamar al proveedor: se devuelve a
+    // "pendiente" para que el reintento del job sí lo mande (no salió nada).
+    await db
+      .update(messages)
+      .set({ metadata: sql`${messages.metadata} || jsonb_build_object(${CHAT_UPLOAD_META}::text, jsonb_build_object('estado', 'pendiente'))` })
+      .where(where)
+      .catch(() => undefined);
+    throw error;
+  }
+  let url: string;
+  try {
+    url = await storage.signedGetUrl(attachment.storageKey, MEDIA_SEND_URL_SECONDS, attachment.fileName, "inline");
+  } catch (error) {
+    return fail("storage_unavailable", `No se pudo firmar el archivo: ${error instanceof Error ? error.message : String(error)}`);
+  }
+  const { conversation, channel } = loaded;
+  const kind = row.type;
+  return deliver({
+    messageId: row.id,
+    send: () =>
+      provider.sendMedia({
+        providerAccountId: channel.providerAccountId,
+        providerConversationId: conversation.providerConversationId!,
+        url,
+        kind,
+        caption: row.body ?? undefined,
+        fileName: attachment.fileName,
+        idempotencyKey: row.id,
+      }),
+    now: row.sentAt ?? row.createdAt,
+    conversation,
+    organizationId: params.organizationId,
+    sentByUserId: row.sentByUserId,
   });
 }
 

@@ -42,6 +42,7 @@ import { redis } from "@/lib/redis";
 import { startScheduledWorker } from "./scheduled";
 import { startWorkflowWorker } from "./workflows";
 import { startOutboxWorker } from "./outbox";
+import { startChatUploadWorker } from "./chat-uploads";
 import { onInboundKeyword } from "@/lib/workflows/triggers";
 import { agentIngestHooks, wakeAgentAfterTranscription } from "@/lib/ai/runtime/hooks";
 import { closeInterruptedTranscriptions, staleTranscriptionIds, transcribeMessageAudio } from "@/lib/ai/transcription/transcribe";
@@ -82,6 +83,8 @@ const workflowsRunner = startWorkflowWorker(provider, storage);
 const outbox = startOutboxWorker(provider);
 // Anuncios de Meta: media del anuncio, nombres de Meta y respaldo sin ficha.
 const ads = startAdsWorker({ provider, storage });
+// Adjuntos del chat (28-sep-2026): solo con bucket (los archivos viven ahí).
+const chatUploads = storage ? startChatUploadWorker(provider, storage) : null;
 // Adjuntos pendientes que el barrido reintenta: hasta 30 días (antes de que
 // Meta borre la media) y hasta MEDIA_MAX_ATTEMPTS intentos por adjunto.
 
@@ -173,6 +176,7 @@ async function sweep() {
   await outbox.sweep().catch((error) => console.error("[outbox] barrido falló", error));
   // Anuncios: clics sin registrar, media pendiente y nombres de Meta.
   await ads.sweep().catch((error) => console.error("[anuncios] barrido falló", error));
+  await chatUploads?.sweep().catch((error) => console.error("[adjuntos] barrido falló", error));
 
   const stale = await db
     .select({ id: webhookEvents.id })
@@ -351,7 +355,7 @@ async function shutdown(signal: string) {
   console.info(`[worker] ${signal}: cerrando`);
   clearInterval(sweepTimer);
   clearInterval(monitorTimer);
-  await Promise.all([worker.close(), mediaWorker?.close(), scheduled.close(), agent.close(), workflowsRunner.close(), outbox.close(), ads.close()]);
+  await Promise.all([worker.close(), mediaWorker?.close(), scheduled.close(), agent.close(), workflowsRunner.close(), outbox.close(), ads.close(), chatUploads?.close()]);
   process.exit(0);
 }
 process.on("SIGTERM", () => void shutdown("SIGTERM"));
@@ -374,6 +378,7 @@ waitForMigrations()
     workflowsRunner.run();
     outbox.run();
     ads.run();
+    chatUploads?.run();
   })
   .catch((error: unknown) => {
     console.error("[worker] no se pudo verificar las migraciones", error);
