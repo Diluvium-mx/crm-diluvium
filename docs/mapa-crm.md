@@ -613,7 +613,7 @@ una ventana arriba (59)**; nada se guarda con un solo clic.
 | 24 | **+ Agregar pregunta** | Nueva FAQ. | Todos |
 | 25 | **Pregunta** | Clic muestra la respuesta y **se queda abierta** hasta que le vuelves a dar clic; puedes tener varias abiertas a la vez. | Todos |
 | 26 | **Interruptor** | Activa o desactiva la FAQ (desactivada, el agente no la usa). Pide confirmación. | Todos |
-| 27 | **Editar · Borrar** (FAQ) | Dentro de la pregunta abierta: cambia o elimina esa FAQ. Cada cambio deja versión. Agregar, guardar y borrar piden confirmación. Para borrar varias, las casillas (80–82). | Todos |
+| 27 | **Editar · Borrar** (FAQ) | Dentro de la pregunta abierta: cambia o elimina esa FAQ. Cada cambio deja versión. Agregar, guardar y borrar piden confirmación. Para borrar varias, **Seleccionar** (81). | Todos |
 | 28 | **Opciones** | Cómo se comporta el Agente IA. Los cambios se guardan juntos con «Guardar cambios» (56) y aplican en menos de un minuto. | Todos |
 | 29 | **Tiempo de espera antes de responder** | 5 a 60 s para juntar varios mensajes seguidos del cliente. | Todos |
 | 30 | **Pausar al Agente IA cuando un vendedor contesta** | Sí / No. | Todos |
@@ -666,9 +666,9 @@ una ventana arriba (59)**; nada se guarda con un solo clic.
 | 77 | **Ver cambios** (en las filas que lo permiten) | Abre lo **quitado (tachado en rojo)** y lo **agregado (en verde)**: el Goal por párrafo, las FAQs por pregunta (agregada, borrada o editada), los workflows paso por paso (textos, archivo, espera, disparadores), la regla de etapa, el nombre del agente, el texto de un mensaje rápido o de una plantilla, y las tallas (rango antes → después). «Ocultar cambios» lo cierra. Las filas de antes del 28-sep-2026, las opciones, las pausas y los vendedores no lo tienen. | Todos |
 | 78 | **Copiar** (Goal) | Esquina de arriba a la derecha del editor del Goal (17): copia **todo** el texto tal como se ve (también lo que no has guardado) para revisarlo o pegarlo en otro lado. Dice «Copiado» 2 segundos. | Todos |
 | 79 | **Copiar** (FAQs) | Arriba a la derecha de las FAQs (junto a + Agregar pregunta, 24): copia **todas** las preguntas con su respuesta, cada una con un guion y sin números, la respuesta debajo y una línea en blanco entre preguntas. No importa la búsqueda ni el filtro. Las inactivas llevan «(inactiva)». | Todos |
-| 80 | **Casilla de la pregunta** (FAQs) | A la izquierda de cada pregunta: la marca para borrarla junto con otras. La fila marcada se sombrea. | Todos |
-| 81 | **Seleccionar todas** (FAQs) | Barra arriba de la lista: marca **todas las de la lista a la vista** (respeta la búsqueda y el filtro; p. ej. filtro «Inactivas» + Seleccionar todas = todas las apagadas). Con algunas marcadas dice «N seleccionadas». Cambiar la búsqueda o el filtro quita la selección, para nunca borrar una que no se ve. | Todos |
-| 82 | **Borrar (N) · Quitar selección** (FAQs) | Aparecen al marcar alguna. **Borrar (N)** pide confirmar y borra todas las marcadas de una vez: deja **una** versión (Restaurar, 20, las regresa) y una fila en Historial (72). | Todos |
+| 80 | **Casilla de la pregunta** (FAQs) | Solo aparece después de pulsar **Seleccionar** (81), a la izquierda de cada pregunta: la marca para borrarla junto con otras. La fila marcada se sombrea. | Todos |
+| 81 | **Seleccionar** → **Seleccionar todas** (FAQs) | Botón arriba de la lista (sin pulsarlo no hay casillas). Al pulsarlo aparecen las casillas (80) y en su lugar **Seleccionar todas**: marca **todas las de la lista a la vista** (respeta la búsqueda y el filtro; p. ej. filtro «Inactivas» + Seleccionar todas = todas las apagadas). Con algunas marcadas dice «N seleccionadas». Cambiar la búsqueda o el filtro quita la selección, para nunca borrar una que no se ve. | Todos |
+| 82 | **Cancelar · Borrar (N)** (FAQs) | En modo selección. **Cancelar** quita las casillas y la selección. **Borrar (N)** (sin marcar ninguna, apagado) pide confirmar y borra todas las marcadas de una vez: deja **una** versión (Restaurar, 20, las regresa), una fila en Historial (72) y regresa al botón Seleccionar. | Todos |
 
 **Lo cambias tú desde la pantalla:** todo lo de esta sección: nombre, modelos, etapas (columnas del Embudo), Goal (con versiones), FAQs,
 Opciones, Tallas y medidas, y encender o apagar el agente por número. El **Historial** (72) solo se consulta: se llena solo con cada cambio.
