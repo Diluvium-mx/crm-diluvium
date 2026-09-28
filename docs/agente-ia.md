@@ -30,8 +30,8 @@ clientes** (eso llega en la Fase B y siguientes).
   **editor estilo GHL** (solo personaliza al agente):
   - Encabezado con el **nombre del agente** editable con lápiz (`ai_config.agent_name`).
   - Desde el 27-sep-2026 va en **subpestañas fijas** arriba (`?seccion=`): Modelos ·
-    Instrucciones (Goal) · FAQs · Opciones · Tallas y medidas · Canales (antes «Crear |
-    Implementar»). **Todo cambio pide confirmación** en el pop-up de arriba (etapas, nombre del
+    Instrucciones (Goal) · FAQs · Opciones · Tallas y medidas · Canales · **Historial** (antes
+    «Crear | Implementar»). **Todo cambio pide confirmación** en el pop-up de arriba (etapas, nombre del
     agente, Goal, FAQs, versiones, Opciones, Tallas y Canales); cada versión del Goal y de las
     FAQs se puede **nombrar con el lápiz ✎** (`ai_knowledge_versions.name`, migración 0040) y
     Opciones se guarda con un solo **«Guardar cambios»** que lista «antes → después».
@@ -48,7 +48,30 @@ clientes** (eso llega en la Fase B y siguientes).
     **base de conocimiento** (FAQs: agregar, editar, activar/desactivar, borrar). Cada
     guardado del Goal o cambio de FAQs deja una **versión** (`ai_knowledge_versions`) y se
     puede **restaurar** cualquiera (la primera vez guarda también la anterior).
-  - **Canales** (antes «Implementar»): los canales con interruptor Encendido / Apagado.
+  - **Canales** (antes «Implementar»): los canales con interruptor Encendido / Apagado. Desde el
+    28-sep-2026 solo los **no archivados** (hoy solo «WhatsApp Diluvium»); el Sandbox y el Número
+    de prueba archivados se **ocultan, no se borran** (sus chats, mensajes y contactos siguen igual).
+    El texto de ayuda dice «se reactiva con «Activar»» (el botón del Detalle).
+  - **Historial** (Bloque A, 28-sep-2026; `?seccion=historial`, todos los roles): una fila por
+    cambio con **quién**, **qué**, **antes → después** y **fecha y hora de Mazatlán**, lo más nuevo
+    arriba (200 filas; con fechas se ve más atrás). Filtros: **Tipo** (Opciones del bot · Goal y
+    FAQs · Modelos · Etapas · Canales · Workflows · Pausas por chat), **Desde / Hasta** (días de
+    Mazatlán) y **«Mostrar pausas automáticas («un vendedor contestó»)»** (ocultas de fábrica).
+    Fuentes (`lib/historial/queries.ts`): **Opciones** = `ai_config_changes` (ya existía);
+    **Goal y FAQs** = `ai_knowledge_versions` (antes → después = palabras del Goal o número de
+    preguntas contra la versión anterior; sin autor = «Versión … guardada por el sistema»); lo demás
+    = tabla nueva **`change_history`** (migración **0042**, append-only, con `organization_id`),
+    escrita en la **misma transacción** que el cambio (`lib/historial/log.ts`):
+    Modelo 1 y 2 (nombre del modelo) · etapas: crear, renombrar, borrar (a qué etapa pasaron sus
+    contactos), reordenar (orden completo antes → después), papel y modelo (la regla del bot y el
+    color **no** se registran) · canal encendido/apagado · workflows: crear (también «Restaurar
+    predeterminados»), editar (solo lo que cambió: nombre, encendido, pasos, palabras clave,
+    comando, etapa, «lo usa el agente», descripción), encender, apagar y borrar · por chat:
+    «Pausar agente» (y «Apagar» de la tarjeta de error) y «Activar» **con quién**, y la pausa
+    automática **«un vendedor contestó»** (quién = «Automático»). La pausa por **tope de
+    respuestas** o por **pedir un asesor** y el regreso solo al vencer la hora **no** dejan fila.
+    `subject` guarda el nombre del contacto / etapa / canal / workflow en ese momento y
+    `subject_id` no tiene llave foránea: la fila sobrevive aunque se borre lo que nombra.
   - Ya no están: selector de filtro (queda Luna), "Probar modelo", tabla de precios (los
     precios siguen internos para el gasto), tiempos, pausas y límites.
   - Nota de costo: un Goal con `{{contacto.nombre}}`/`{{vendedor.nombre}}` cambia el

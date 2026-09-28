@@ -50,7 +50,7 @@ export async function pauseAgentAfterError(input: { noticeId: string }): Promise
     if (!conversationId) return { ok: false, message: YA_ATENDIDA };
     // PRIMERO la pausa (la misma que cuando un vendedor contesta; se reactiva con
     // "Reactivar") y DESPUÉS la tarjeta: nunca "Se apagó" con el agente todavía activo.
-    await setAgentState(organizationId, conversationId, "pausado_humano", { now: new Date() });
+    await setAgentState(organizationId, conversationId, "pausado_humano", { now: new Date(), log: { action: "pausar", userId } });
     // Una respuesta guardada cuyo envío falló (parte 1) ya no sale.
     await discardSavedReplies(organizationId, conversationId);
     await withQueueTimeout(cancelAgentRun(bullAgentQueuePort(), conversationId), "apagar").catch(() => false);

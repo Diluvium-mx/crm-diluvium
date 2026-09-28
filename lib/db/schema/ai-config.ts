@@ -89,3 +89,30 @@ export const aiConfigChanges = pgTable(
   },
   (t) => [index("ai_config_changes_org_created_idx").on(t.organizationId, t.createdAt)],
 );
+
+// Historial de cambios (Bloque A, 28-sep-2026; subpestaña "Historial" de la pestaña Agente
+// IA). Append-only y SIEMPRE en la misma transacción que el cambio (lib/historial/log.ts):
+// Modelo 1 y 2, etapas, canal encendido/apagado, workflows y pausas del agente por chat.
+// Las Opciones del bot (ai_config_changes) y el Goal/FAQs (ai_knowledge_versions) ya tenían
+// su registro con autor y se leen de ahí. `kind`/`action`: lib/historial/labels.ts. user_id
+// null = automático ("un vendedor contestó") o usuario borrado. `subject` = nombre del objeto
+// en ese momento (etapa, canal, workflow o contacto del chat); `subject_id` sin llave
+// foránea: la fila sobrevive aunque se borre lo que nombra. Valores ya como texto.
+export const changeHistory = pgTable(
+  "change_history",
+  {
+    id: text("id").primaryKey(),
+    organizationId: text("organization_id")
+      .notNull()
+      .references(() => organization.id, { onDelete: "cascade" }),
+    userId: text("user_id").references(() => user.id, { onDelete: "set null" }),
+    kind: text("kind").notNull(),
+    action: text("action").notNull(),
+    subject: text("subject"),
+    subjectId: text("subject_id"),
+    oldValue: text("old_value"),
+    newValue: text("new_value"),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+  },
+  (t) => [index("change_history_org_created_idx").on(t.organizationId, t.createdAt)],
+);

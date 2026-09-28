@@ -33,7 +33,7 @@ import { idSchema, toAgentMode } from "@/lib/agente-ia/settings";
 import type { AgentActionResult, AgentEditorView } from "@/lib/agente-ia/types";
 import { db } from "@/lib/db";
 import { channels } from "@/lib/db/schema";
-import { eq } from "drizzle-orm";
+import { and, eq, isNull } from "drizzle-orm";
 
 async function requireManage() {
   const membership = await requireActiveMembership();
@@ -47,7 +47,12 @@ export async function getAgentEditor(): Promise<AgentEditorView> {
   const { organizationId, role } = await requireActiveMembership();
   if (!roleAllows(role, "aiConfig", "read")) throw new Error("No tienes permiso para ver el Agente IA.");
   const data = await loadEditor(organizationId);
-  const channelRows = await db.select().from(channels).where(eq(channels.organizationId, organizationId)).orderBy(channels.createdAt);
+  // Canales: solo los NO archivados (sandbox y número de prueba se ocultan, no se borran).
+  const channelRows = await db
+    .select()
+    .from(channels)
+    .where(and(eq(channels.organizationId, organizationId), isNull(channels.archivedAt)))
+    .orderBy(channels.createdAt);
   // Costo aproximado por modelo: uso real del cerebro (30 días) o perfil fijo.
   const [totals, overrides, options, lastChange] = await Promise.all([
     brainUsageTotals(organizationId),
@@ -120,15 +125,15 @@ function usableBrainModel(modelId: string, slot: string): string {
 }
 
 export async function updateBrainModel(input: { modelId: string }): Promise<AgentActionResult> {
-  return run("No se pudo cambiar el modelo.", async ({ organizationId }) => {
-    await saveBrainModel(organizationId, usableBrainModel(input.modelId, "el Modelo 2"));
+  return run("No se pudo cambiar el modelo.", async ({ organizationId, userId }) => {
+    await saveBrainModel(organizationId, usableBrainModel(input.modelId, "el Modelo 2"), userId);
   });
 }
 
 // Fase E: Modelo 1 (mismo catálogo que el Modelo 2).
 export async function updateModel1(input: { modelId: string }): Promise<AgentActionResult> {
-  return run("No se pudo cambiar el Modelo 1.", async ({ organizationId }) => {
-    await saveModel1(organizationId, usableBrainModel(input.modelId, "el Modelo 1"));
+  return run("No se pudo cambiar el Modelo 1.", async ({ organizationId, userId }) => {
+    await saveModel1(organizationId, usableBrainModel(input.modelId, "el Modelo 1"), userId);
   });
 }
 
