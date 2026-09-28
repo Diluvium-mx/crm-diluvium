@@ -12,7 +12,8 @@ import { AgenteEditor } from "./_components/agente-editor";
 // son internos (gasto). "Tallas y medidas" (rangos de ancho por tamaño) vive aquí
 // desde el 26-sep-2026; antes estaba en Configuración. Desde el 27-sep-2026 va en
 // subpestañas; la elegida viene en ?seccion= (modelos | etapas | goal | faqs | opciones |
-// tallas | canales; por defecto modelos).
+// tallas | canales | historial; por defecto modelos). "Historial" (28-sep-2026) = quién
+// cambió qué y cuándo; se carga al abrir la subpestaña.
 export default async function AgenteIaPage({ searchParams }: PageProps<"/agente-ia">) {
   const { role } = await requireActiveMembership();
   if (!roleAllows(role, "aiConfig", "read")) {

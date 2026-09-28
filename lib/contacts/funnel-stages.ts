@@ -1,11 +1,12 @@
 // Columnas del Embudo (etapas) de UNA organización: lectura y las escrituras del editor
 // (crear, renombrar/editar, reordenar, cambiar de papel, borrar reasignando contactos).
 // Cada escritura va en una transacción con candado por organización, valida el juego
-// completo (lib/contacts/stages.ts) y manda UN solo aviso `stages.updated` por el SSE
-// (NOTIFY al confirmar). Multi-tenant: toda consulta filtra por organization_id.
+// completo (lib/contacts/stages.ts), deja su fila en el historial de cambios (Bloque A;
+// `userId` = quién) y manda UN solo aviso `stages.updated` por el SSE (NOTIFY al confirmar). Multi-tenant: toda consulta filtra por organization_id.
 import { and, asc, eq, sql } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { contacts, funnelStages, workflows } from "@/lib/db/schema";
+import { logChanges } from "@/lib/historial/log";
 import {
   MAX_STAGES,
   MIN_STAGES,
@@ -98,6 +99,7 @@ function checkColor(color: string): string {
 export async function createFunnelStage(
   organizationId: string,
   input: { name: string; color?: string; afterId?: string | null; botRule?: string; modelSlot?: ModelSlot },
+  userId: string | null = null,
 ): Promise<FunnelStage> {
   const named = normalizeStageName(input.name);
   if (!named.ok) throw new FunnelStageError(named.error);
@@ -126,6 +128,7 @@ export async function createFunnelStage(
     });
     await renumber(tx, organizationId, order);
     const stages = await assertValid(tx, organizationId);
+    await logChanges(tx, { organizationId, userId, kind: "etapas", action: "crear", subject: named.name, subjectId: id, newValue: named.name });
     await notifyStagesUpdated(tx, { organizationId, reason: "created" });
     return stages.find((s) => s.id === id)!;
   });
@@ -135,6 +138,7 @@ export async function updateFunnelStage(
   organizationId: string,
   id: string,
   input: { name?: string; color?: string; botRule?: string; modelSlot?: ModelSlot },
+  userId: string | null = null,
 ): Promise<FunnelStage> {
   const patch: Partial<typeof funnelStages.$inferInsert> = { updatedAt: new Date() };
   if (input.name !== undefined) {
@@ -147,20 +151,32 @@ export async function updateFunnelStage(
   if (input.modelSlot !== undefined) patch.modelSlot = input.modelSlot;
   return db.transaction(async (tx) => {
     await lockOrg(tx, organizationId);
+    const before = (await listFunnelStages(organizationId, tx)).find((s) => s.id === id);
     const rows = await tx
       .update(funnelStages)
       .set(patch)
       .where(and(eq(funnelStages.id, id), eq(funnelStages.organizationId, organizationId)))
       .returning({ id: funnelStages.id });
-    if (rows.length === 0) throw new FunnelStageError("Esa etapa ya no existe.");
+    if (rows.length === 0 || !before) throw new FunnelStageError("Esa etapa ya no existe.");
     const stages = await assertValid(tx, organizationId);
+    // Historial: nombre y modelo (la regla del bot y el color no se registran).
+    const name = patch.name ?? before.name;
+    const slot = (n: number) => `Modelo ${n}`;
+    await logChanges(tx, [
+      ...(patch.name !== undefined && patch.name !== before.name
+        ? [{ organizationId, userId, kind: "etapas" as const, action: "renombrar" as const, subject: name, subjectId: id, oldValue: before.name, newValue: patch.name }]
+        : []),
+      ...(patch.modelSlot !== undefined && patch.modelSlot !== before.modelSlot
+        ? [{ organizationId, userId, kind: "etapas" as const, action: "modelo" as const, subject: name, subjectId: id, oldValue: slot(before.modelSlot), newValue: slot(patch.modelSlot) }]
+        : []),
+    ]);
     await notifyStagesUpdated(tx, { organizationId, reason: "updated" });
     return stages.find((s) => s.id === id)!;
   });
 }
 
 /** Nuevo orden completo (todas las etapas de la organización, sin faltar ni sobrar). */
-export async function reorderFunnelStages(organizationId: string, orderedIds: readonly string[]): Promise<FunnelStage[]> {
+export async function reorderFunnelStages(organizationId: string, orderedIds: readonly string[], userId: string | null = null): Promise<FunnelStage[]> {
   return db.transaction(async (tx) => {
     await lockOrg(tx, organizationId);
     const current = await listFunnelStages(organizationId, tx);
@@ -170,13 +186,18 @@ export async function reorderFunnelStages(organizationId: string, orderedIds: re
     }
     await renumber(tx, organizationId, orderedIds);
     const stages = await assertValid(tx, organizationId);
+    const oldOrder = current.map((s) => s.name).join(", ");
+    const newOrder = stages.map((s) => s.name).join(", ");
+    if (oldOrder !== newOrder) {
+      await logChanges(tx, { organizationId, userId, kind: "etapas", action: "reordenar", oldValue: oldOrder, newValue: newOrder });
+    }
     await notifyStagesUpdated(tx, { organizationId, reason: "reordered" });
     return stages;
   });
 }
 
 /** Pasa un papel (entrada, cerca de compra, venta cerrada) a otra etapa. */
-export async function setFunnelStageRole(organizationId: string, id: string, role: StageRole): Promise<FunnelStage[]> {
+export async function setFunnelStageRole(organizationId: string, id: string, role: StageRole, userId: string | null = null): Promise<FunnelStage[]> {
   return db.transaction(async (tx) => {
     await lockOrg(tx, organizationId);
     const current = await listFunnelStages(organizationId, tx);
@@ -196,6 +217,16 @@ export async function setFunnelStageRole(organizationId: string, id: string, rol
       .set({ role, updatedAt: new Date() })
       .where(and(eq(funnelStages.id, id), eq(funnelStages.organizationId, organizationId)));
     const stages = await assertValid(tx, organizationId);
+    await logChanges(tx, {
+      organizationId,
+      userId,
+      kind: "etapas",
+      action: "papel",
+      subject: STAGE_ROLE_LABELS[role],
+      subjectId: id,
+      oldValue: previous?.name ?? null,
+      newValue: target.name,
+    });
     await notifyStagesUpdated(tx, { organizationId, reason: "role" });
     return stages;
   });
@@ -207,7 +238,12 @@ export async function setFunnelStageRole(organizationId: string, id: string, rol
  * se disparaban "al entrar" a ella quedan sin etapa. No dispara workflows por etapa ni
  * un aviso por contacto: un solo `stages.updated` con cuántos se movieron.
  */
-export async function deleteFunnelStage(organizationId: string, id: string, moveToId: string): Promise<{ moved: number; stages: FunnelStage[] }> {
+export async function deleteFunnelStage(
+  organizationId: string,
+  id: string,
+  moveToId: string,
+  userId: string | null = null,
+): Promise<{ moved: number; stages: FunnelStage[] }> {
   return db.transaction(async (tx) => {
     await lockOrg(tx, organizationId);
     const current = await listFunnelStages(organizationId, tx);
@@ -238,6 +274,17 @@ export async function deleteFunnelStage(organizationId: string, id: string, move
       current.filter((s) => s.id !== id).map((s) => s.id),
     );
     const stages = await assertValid(tx, organizationId);
+    const n = moved.length;
+    await logChanges(tx, {
+      organizationId,
+      userId,
+      kind: "etapas",
+      action: "borrar",
+      subject: stage.name,
+      subjectId: stage.id,
+      oldValue: stage.name,
+      newValue: `Borrada · ${n === 1 ? "1 contacto pasó" : `${n} contactos pasaron`} a «${target.name}»`,
+    });
     await notifyStagesUpdated(tx, { organizationId, reason: "deleted", movedContacts: moved.length, from: stage.key, to: target.key });
     return { moved: moved.length, stages };
   });

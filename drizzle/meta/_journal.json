@@ -288,6 +288,13 @@
       "when": 1790534023769,
       "tag": "0041_columnas_embudo",
       "breakpoints": true
+    },
+    {
+      "idx": 42,
+      "version": "7",
+      "when": 1790612323038,
+      "tag": "0042_historial_cambios",
+      "breakpoints": true
     }
   ]
 }
