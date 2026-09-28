@@ -242,6 +242,16 @@ Dashboard ya muestra el gasto del mes y el saldo estimado (24-sep-2026).
     `created_at` ≥ `resolved_at` (los dos con el reloj de Postgres): nada salió → el entrante se
     vuelve a atender; salió una parte → aviso con lo que faltó (nunca se reenvía: podría
     duplicar). Un envío fallido o sin confirmar deja un aviso por mensaje.
+  - **Límite de Zernio (429; Bloque B, 28-sep-2026):** no es un fallo. La burbuja o el archivo del
+    workflow espera su turno (lo que diga Zernio, tope 5 min) y sale con la misma clave; no hay
+    tarjeta "El agente no pudo responder" ni corrida fallida por eso. Las burbujas y los archivos
+    salen en orden dentro de la conversación (`lib/messaging/send-turn.ts`, `docs/bandeja.md`).
+  - **Datos bancarios (/banco o agente) que no llegan (Bloque B):** si el worker se reinicia a la
+    mitad, al retomar solo cuenta como enviado lo que WhatsApp confirmó (enviado/entregado/leído); un
+    archivo fallido detiene la corrida, **no** mueve a Cerca de compra y deja la tarjeta con el
+    motivo. Si WhatsApp lo acepta y minutos después avisa que falló (p. ej. 131053), queda la tarjeta
+    «No le llegó al cliente la imagen de Datos bancarios: <motivo>. Vuelve a mandarla con /banco.»
+    (`lib/workflows/delivery-notice.ts`); la etapa no se regresa.
   - **AUTO con clientes reales (número real):** bloqueado hasta el approve de Codex del agente
     completo. En el sandbox (solo el teléfono del dueño) está autorizado.
   - **Antes de clientes reales** (no dañan a un cliente hoy; no abren ronda):

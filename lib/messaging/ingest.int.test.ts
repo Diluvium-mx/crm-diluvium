@@ -506,6 +506,110 @@ describe.skipIf(!TEST_DATABASE_URL)("ingesta de WhatsApp (Postgres real)", () =>
       expect((await outs()).find((m) => m.providerMessageId === "wamid.LOST")).toMatchObject({ direction: "out", status: "sent" });
     });
 
+    it("Bloque B 1: un 429 al vendedor NO es error: el web lo pasa a la fila del worker, el siguiente no se adelanta y salen en orden con la MISMA clave", async () => {
+      const c = await openConversation();
+      const send = await import("./send");
+      const { ZernioSendError } = await import("./zernio");
+      const { canRetry } = await import("@/lib/inbox/format");
+      const keys: string[] = [];
+      const texts: string[] = [];
+      let limited = true;
+      const p = withProvider({
+        sendText: async (input) => {
+          keys.push(input.idempotencyKey);
+          if (limited) throw new ZernioSendError(429, "429", "Too many requests", undefined, 10_000);
+          texts.push(input.text);
+          return { providerInternalId: `zmsg_Q${texts.length}`, providerMessageId: `wamid.Q${texts.length}` };
+        },
+      });
+      const deferred: Array<{ messageId: string; delayMs: number; readCutoffMessageId: string | null }> = [];
+      const deferTo = async (job: { messageId: string; delayMs: number; readCutoffMessageId: string | null }) => void deferred.push(job);
+      const a = await send.sendTextMessage(p, { organizationId: ORG_A, conversationId: c.id, sentByUserId: "u_vendedor", text: "uno", deferTo });
+      expect(a.status).toBe("pending");
+      expect(deferred).toMatchObject([{ messageId: a.messageId, delayMs: 10_000 }]);
+      const [m] = await outs();
+      // Sin error visible: el vendedor ve "enviando".
+      expect(m).toMatchObject({ status: "queued", errorCode: null, errorMessage: null });
+      expect(canRetry(m)).toBe(false);
+      // Mientras "uno" espera, el vendedor escribe "dos": va detrás, no llama a Zernio.
+      const b = await send.sendTextMessage(p, { organizationId: ORG_A, conversationId: c.id, sentByUserId: "u_vendedor", text: "dos", deferTo });
+      expect(b.status).toBe("pending");
+      expect(keys).toEqual([a.messageId]);
+      expect(deferred.map((d) => d.messageId)).toEqual([a.messageId, b.messageId]);
+      // Zernio vuelve a aceptar: el worker los manda en orden, con la misma clave.
+      limited = false;
+      const noWait = async () => undefined;
+      for (const job of deferred) {
+        await expect(send.resumeDeferredSend(p, { organizationId: ORG_A, messageId: job.messageId, readCutoffMessageId: job.readCutoffMessageId, sleep: noWait })).resolves.toMatchObject({ status: "sent" });
+      }
+      expect(texts).toEqual(["uno", "dos"]);
+      expect(keys).toEqual([a.messageId, a.messageId, b.messageId]);
+      expect((await outs()).map((x) => x.status)).toEqual(["sent", "sent"]);
+      expect((await conv()).unreadCount).toBe(0);
+      // Un job repetido no reenvía lo que ya salió.
+      await expect(send.resumeDeferredSend(p, { organizationId: ORG_A, messageId: a.messageId, readCutoffMessageId: null })).resolves.toBeNull();
+      expect(texts).toHaveLength(2);
+    });
+
+    it("Bloque B 2: Zernio ACEPTÓ y falló la base al guardar: «enviando» sin error ni Reintentar; «entregado» lo confirma solo; si nunca se confirma, tarjeta explicada", async () => {
+      const c = await openConversation();
+      const send = await import("./send");
+      const { sql } = await import("drizzle-orm");
+      let n = 0;
+      const p = withProvider({ sendText: async () => ({ providerInternalId: `zmsg_A${++n}`, providerMessageId: `wamid.A${n}` }) });
+      // La base falla justo en la parte que guarda la confirmación (conversación).
+      await db.execute(sql`create or replace function test_falla_conv() returns trigger as $$ begin raise exception 'base caída (prueba)'; end $$ language plpgsql`);
+      await db.execute(sql`create trigger test_falla_conv before update on conversations for each row execute function test_falla_conv()`);
+      let first: Awaited<ReturnType<typeof send.sendTextMessage>>;
+      let second: Awaited<ReturnType<typeof send.sendTextMessage>>;
+      try {
+        first = await send.sendTextMessage(p, { organizationId: ORG_A, conversationId: c.id, sentByUserId: "u_vendedor", text: "Son $3,200" });
+        second = await send.sendTextMessage(p, { organizationId: ORG_A, conversationId: c.id, sentByUserId: "u_vendedor", text: "¿Se lo aparto?" });
+      } finally {
+        await db.execute(sql`drop trigger test_falla_conv on conversations`);
+      }
+      expect(first.status).toBe("pending");
+      const byId = async (id: string) => (await outs()).find((x) => x.id === id)!;
+      expect(await byId(first.messageId)).toMatchObject({ status: "queued", errorCode: send.SEND_ACCEPTED, providerMessageId: "wamid.A1", providerInternalId: "zmsg_A1" });
+      // Nunca se reenvía: podría llegarle dos veces.
+      await expect(send.retryTextMessage(p, { organizationId: ORG_A, messageId: first.messageId, sentByUserId: "u_vendedor" })).rejects.toMatchObject({ code: "not_retryable" });
+      expect(n).toBe(2);
+      // WhatsApp avisa que lo entregó: confirmado, sin error, con primera respuesta.
+      await deliver({ id: `st_${randomUUID()}`, event: "message.delivered", message: { platformMessageId: "wamid.A1" }, account: { id: "zacc_1", platform: "whatsapp" } } as { id: string; event: string });
+      expect(await byId(first.messageId)).toMatchObject({ status: "delivered", errorCode: null, errorMessage: null });
+      expect((await conv()).firstResponseSeconds).not.toBeNull();
+      // El segundo nunca se confirma: a los 15 min, fallido SIN Reintentar y tarjeta en el chat.
+      await send.expireUnconfirmedSends(later(16 * 60_000));
+      expect(await byId(second.messageId)).toMatchObject({ status: "failed", errorCode: send.SEND_ACCEPTED });
+      const notices = await db.select().from(s.aiAgentNotices).where(eq(s.aiAgentNotices.messageId, second.messageId));
+      expect(notices).toHaveLength(1);
+      expect(notices[0].body).toMatch(/^WhatsApp sí recibió el mensaje «¿Se lo aparto\?»/);
+      expect(n).toBe(2);
+    });
+
+    it("Bloque B 4: «entregado» gana sobre «fallido» en cualquier orden, borra el error y vuelve a fijar la primera respuesta", async () => {
+      const c = await openConversation();
+      const { sendTextMessage } = await import("./send");
+      await sendTextMessage(withProvider({ sendText: async () => ({ providerInternalId: "zmsg_F", providerMessageId: "wamid.F" }) }), {
+        organizationId: ORG_A,
+        conversationId: c.id,
+        sentByUserId: "u_vendedor",
+        text: "Sí aguanta 1 metro",
+      });
+      const status = (event: string, extra: Record<string, unknown> = {}) =>
+        ({ id: `st_${randomUUID()}`, event, message: { platformMessageId: "wamid.F", ...extra }, account: { id: "zacc_1", platform: "whatsapp" } }) as { id: string; event: string };
+      await deliver(status("message.failed", { error: { code: 131000, message: "Something went wrong" } }));
+      expect((await outs())[0]).toMatchObject({ status: "failed", errorCode: "131000" });
+      expect((await conv()).firstResponseSeconds).toBeNull();
+      await deliver(status("message.delivered"));
+      expect((await outs())[0]).toMatchObject({ status: "delivered", errorCode: null, errorMessage: null });
+      expect((await conv()).firstResponseSeconds).not.toBeNull();
+      // Un "fallido" tardío no pisa la prueba de entrega.
+      await deliver(status("message.failed", { error: { code: 131000, message: "Something went wrong" } }));
+      expect((await outs())[0]).toMatchObject({ status: "delivered", errorCode: null });
+      expect((await conv()).firstResponseSeconds).not.toBeNull();
+    });
+
     it("sin confirmar tras 15 min → failed (send_unconfirmed) y NO se reintenta", async () => {
       const c = await openConversation();
       const { sendTextMessage, expireUnconfirmedSends, retryTextMessage, SEND_UNCONFIRMED } = await import("./send");
@@ -1159,6 +1263,47 @@ describe.skipIf(!TEST_DATABASE_URL)("ingesta de WhatsApp (Postgres real)", () =>
       [after] = await db.select().from(s.messages);
       expect(after.attachments.every((a) => a.storageKey && !a.downloadError)).toBe(true);
       expect(after.attachments[0].downloadAttempts).toBe(2);
+    });
+
+    it("Bloque B 5: una copia VACÍA (200 sin contenido, sin sha256 que la delate) no cuenta como guardada: se reintenta y, agotados los intentos, «no se pudo descargar»", async () => {
+      const m = await messageWithAttachments();
+      // Adjuntos sin sha256: el hash no puede delatar el archivo vacío.
+      const noSha = m.attachments.map((a) => {
+        const copy = { ...a };
+        delete copy.sha256;
+        return copy;
+      });
+      await db.update(s.messages).set({ attachments: noSha }).where(eq(s.messages.id, m.id));
+      const storage = new MemoryStorage();
+      const { downloadMessageMedia } = await import("./media");
+      const { attachmentView } = await import("@/lib/inbox/format");
+      const { MEDIA_MAX_ATTEMPTS } = await import("./media-keys");
+      await expect(downloadMessageMedia(providerServing({ "1": new Uint8Array(0), "2": xml }), storage, m.id)).rejects.toThrow(/vacío/);
+      let [after] = await db.select().from(s.messages);
+      expect(after.attachments[0].storageKey).toBeUndefined();
+      expect(after.attachments[0].downloadAttempts).toBe(1);
+      expect(after.attachments[1].sizeBytes).toBe(xml.byteLength);
+      expect(storage.objects.has(`org/${ORG_A}/messages/${m.id}/0-F-1.pdf`)).toBe(false);
+      expect(attachmentView(m.id, 0, after.attachments[0], after.createdAt).state).toBe("processing");
+      expect(attachmentView(m.id, 0, { ...after.attachments[0], downloadAttempts: MEDIA_MAX_ATTEMPTS }, after.createdAt).state).toBe("failed");
+
+      // Copia vacía guardada ANTES del arreglo: no se muestra como lista y se vuelve a bajar.
+      const legacy = { ...after.attachments[0], storageKey: "k-vacio", sizeBytes: 0 };
+      await db.update(s.messages).set({ attachments: [legacy, after.attachments[1]] }).where(eq(s.messages.id, m.id));
+      expect(attachmentView(m.id, 0, legacy, after.createdAt).state).toBe("processing");
+      await expect(downloadMessageMedia(providerServing({ "1": pdf }), storage, m.id)).resolves.toEqual({ stored: 2, pending: 0 });
+      [after] = await db.select().from(s.messages);
+      expect(after.attachments[0]).toMatchObject({ storageKey: `org/${ORG_A}/messages/${m.id}/0-F-1.pdf`, sizeBytes: pdf.byteLength });
+    });
+
+    it("Bloque B 5: una subida previa que dejó el objeto VACÍO en el bucket no se reutiliza", async () => {
+      const m = await messageWithAttachments();
+      const storage = new MemoryStorage();
+      storage.objects.set(`org/${ORG_A}/messages/${m.id}/0-F-1.pdf`, { body: new Uint8Array(0), contentType: "application/pdf" });
+      const { downloadMessageMedia } = await import("./media");
+      await expect(downloadMessageMedia(providerServing({ "1": 500, "2": xml }), storage, m.id)).rejects.toThrow(/500/);
+      const [after] = await db.select().from(s.messages);
+      expect(after.attachments[0].storageKey).toBeUndefined();
     });
 
     it("streaming: un archivo que excede el límite a media descarga se corta y no queda en el bucket", async () => {

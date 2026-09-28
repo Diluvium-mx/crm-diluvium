@@ -85,7 +85,7 @@ describe.skipIf(!TEST_DATABASE_URL)("executor de workflows", () => {
     rejectNext = null;
     const { sql } = await import("drizzle-orm");
     await db.execute(
-      sql`truncate workflow_runs, workflow_steps, workflows, media_assets, ai_config, messages, conversations, channels, contacts, organization, "user" cascade`,
+      sql`truncate workflow_runs, workflow_steps, workflows, media_assets, ai_config, ai_agent_notices, webhook_events, messages, conversations, channels, contacts, organization, "user" cascade`,
     );
     await db.insert(s.organization).values({ id: ORG, name: "Org", slug: "org", createdAt: new Date() });
     await db.insert(s.user).values({ id: "u_v", name: "Paty", email: "p@x.mx" });
@@ -315,6 +315,64 @@ describe.skipIf(!TEST_DATABASE_URL)("executor de workflows", () => {
     expect(await ex.executeWorkflowRun(start.runId, { provider, storage })).toBe("done");
     expect(sent).toHaveLength(2);
     expect((await db.select().from(s.messages).where(eq(s.messages.conversationId, CONV))).filter((m) => m.direction === "out")).toHaveLength(2);
+  });
+
+  it("Bloque B 3a: reinicio tras una imagen de /banco que quedó FALLIDA: al retomar no cuenta como enviada; se detiene, la etapa no pasa a Cerca de compra y queda el motivo", async () => {
+    const a = await asset();
+    const wf = await workflow([{ kind: "send_media", assetId: a.id, title: "Banco", caption: "Datos" }], { slug: "datos_bancarios", name: "Datos bancarios", triggerCommand: "/banco" });
+    const start = await ex.startWorkflowRun({ organizationId: ORG, workflowId: wf, conversationId: CONV, trigger: "command", triggeredByUserId: "u_v" });
+    // El worker murió después de que la imagen (id determinista del paso 0) quedó fallida.
+    const imgId = ex.stepMessageId(start.runId, 0);
+    await db.insert(s.messages).values({ id: imgId, organizationId: ORG, conversationId: CONV, direction: "out", source: "crm", type: "image", status: "failed", errorCode: "131053", errorMessage: "Media upload error", sentByUserId: "u_v" });
+    await db.update(s.workflowRuns).set({ status: "running", stepCursor: 0, messageIds: [imgId], startedAt: new Date(Date.now() - 3 * 60_000), attempts: 1 }).where(eq(s.workflowRuns.id, start.runId));
+    expect(await ex.executeWorkflowRun(start.runId, { provider, storage })).toBe("failed");
+    expect(await run(start.runId)).toMatchObject({ status: "failed", errorCode: "131053" });
+    expect((await contact()).stage).toBe("prospecto");
+    expect(sent).toHaveLength(0);
+    const notes = (await db.select().from(s.messages).where(eq(s.messages.conversationId, CONV))).filter((m) => m.type === "system_note");
+    expect(notes.map((n) => n.body)).toEqual(['No se envió "Datos bancarios": WhatsApp no pudo subir el archivo.']);
+  });
+
+  it("Bloque B 3b: WhatsApp acepta la imagen de /banco y luego avisa que falló (131053): tarjeta con el motivo y el comando; la etapa no se regresa", async () => {
+    const a = await asset();
+    const wf = await workflow([{ kind: "send_media", assetId: a.id, title: "Banco", caption: "Datos" }], { slug: "datos_bancarios", name: "Datos bancarios", triggerCommand: "/banco" });
+    const start = await ex.startWorkflowRun({ organizationId: ORG, workflowId: wf, conversationId: CONV, trigger: "command", triggeredByUserId: "u_v" });
+    expect(await ex.executeWorkflowRun(start.runId, { provider, storage })).toBe("done");
+    expect((await contact()).stage).toBe("cerca_compra");
+    const { ZernioProvider } = await import("@/lib/messaging/zernio");
+    const ingest = await import("@/lib/messaging/ingest");
+    const payload = { id: `st_${crypto.randomUUID()}`, event: "message.failed", message: { platformMessageId: "wamid.1", error: { code: 131053, message: "Media upload error" } }, account: { id: "zacc", platform: "whatsapp" } };
+    await db.insert(s.webhookEvents).values({ id: `zernio_${payload.id}`, provider: "zernio", event: payload.event, payload });
+    await ingest.processWebhookEvent(new ZernioProvider({ apiKey: "k", webhookSecret: "s" }), `zernio_${payload.id}`);
+    const notices = await db.select().from(s.aiAgentNotices).where(eq(s.aiAgentNotices.conversationId, CONV));
+    expect(notices.map((n) => n.body)).toEqual(["No le llegó al cliente la imagen de Datos bancarios: WhatsApp no pudo subir el archivo. Vuelve a mandarla con /banco."]);
+    expect(notices[0].messageId).toBe(ex.stepMessageId(start.runId, 0));
+    expect((await contact()).stage).toBe("cerca_compra");
+  });
+
+  it("Bloque B 1: un 429 de Zernio en la imagen NO falla la corrida: espera y la manda con la MISMA clave", async () => {
+    const { ZernioSendError } = await import("@/lib/messaging/zernio");
+    const a = await asset();
+    const wf = await workflow([{ kind: "send_media", assetId: a.id, title: "Banco", caption: "Datos" }], { slug: "datos_bancarios" });
+    const start = await ex.startWorkflowRun({ organizationId: ORG, workflowId: wf, conversationId: CONV, trigger: "agent" });
+    const orig = provider.sendMedia;
+    const keys: string[] = [];
+    provider.sendMedia = async (input) => {
+      keys.push(input.idempotencyKey);
+      if (keys.length === 1) throw new ZernioSendError(429, "429", "Too many requests", undefined, 1);
+      return orig(input);
+    };
+    try {
+      expect(await ex.executeWorkflowRun(start.runId, { provider, storage })).toBe("done");
+    } finally {
+      provider.sendMedia = orig;
+    }
+    expect(keys).toEqual([ex.stepMessageId(start.runId, 0), ex.stepMessageId(start.runId, 0)]);
+    expect(sent).toHaveLength(1);
+    expect((await contact()).stage).toBe("cerca_compra");
+    const [img] = await db.select().from(s.messages).where(eq(s.messages.id, ex.stepMessageId(start.runId, 0)));
+    expect(img).toMatchObject({ status: "sent", errorCode: null });
+    expect((img.metadata as { envio?: { esperas?: number } }).envio?.esperas).toBe(1);
   });
 
   it("palabra clave: una sola vez por contacto (marca invisible); por comando se manda siempre", async () => {

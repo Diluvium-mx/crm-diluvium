@@ -741,6 +741,7 @@ export class ZernioProvider implements MessagingProvider {
         asString(err.code) ?? String(res.status),
         asString(err.message) ?? asString(json?.message) ?? `Zernio respondió ${res.status}`,
         sendOutcomeForStatus(res.status),
+        res.status === 429 ? retryAfterMs(res.headers.get("retry-after"), asRecord(json?.details ?? err.details).retryAfterSeconds) : null,
       );
     }
     const data = asRecord(json?.data ?? json);
@@ -851,11 +852,27 @@ export class ZernioApiError extends Error {
 
 /**
  * 4xx = Zernio/WhatsApp rechazó el mensaje: no salió. Excepciones ambiguas:
- * 408 (timeout), 409 (la misma clave sigue en vuelo) y 5xx.
+ * 408 (timeout), 409 (la misma clave sigue en vuelo) y 5xx. 429 = límite de
+ * Zernio (60/min por cuenta): NO lo procesó y pide esperar; no es un rechazo
+ * (Bloque B, 28-sep-2026).
  */
-export function sendOutcomeForStatus(status: number): "rejected" | "unknown" {
+export function sendOutcomeForStatus(status: number): "rejected" | "unknown" | "rate_limited" {
+  if (status === 429) return "rate_limited";
   if (status === 408 || status === 409 || status >= 500) return "unknown";
   return "rejected";
+}
+
+/** Espera pedida por Zernio: encabezado Retry-After (segundos o fecha) o details.retryAfterSeconds. */
+export function retryAfterMs(header: string | null, detailsSeconds?: unknown, now = Date.now()): number | null {
+  const value = header?.trim();
+  if (value) {
+    const seconds = Number(value);
+    if (Number.isFinite(seconds) && seconds >= 0) return Math.round(seconds * 1000);
+    const at = Date.parse(value);
+    if (Number.isFinite(at)) return Math.max(0, at - now);
+  }
+  const seconds = typeof detailsSeconds === "string" ? Number(detailsSeconds) : detailsSeconds;
+  return typeof seconds === "number" && Number.isFinite(seconds) && seconds >= 0 ? Math.round(seconds * 1000) : null;
 }
 
 export class ZernioSendError extends SendFailedError {
@@ -863,9 +880,10 @@ export class ZernioSendError extends SendFailedError {
     readonly httpStatus: number,
     code: string,
     message: string,
-    outcome: "rejected" | "unknown" = sendOutcomeForStatus(httpStatus),
+    outcome: "rejected" | "unknown" | "rate_limited" = sendOutcomeForStatus(httpStatus),
+    retryAfter: number | null = null,
   ) {
-    super(code, message, outcome);
+    super(code, message, outcome, retryAfter);
     this.name = "ZernioSendError";
   }
 }

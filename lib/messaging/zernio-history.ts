@@ -32,7 +32,7 @@ const MAX_MESSAGE_PAGES = 5_000; // 500,000 mensajes en un solo chat
 const MAX_CONTACT_PAGES = 2_000; // 400,000 contactos
 /**
  * Ritmo propio por omisión: 1 petición cada 1.5 s = 40/min. El plan gratuito da 60/min
- * y un 429 en un envío del vendedor o del bot se marca fallido (no se reintenta solo):
+ * y un 429 en un envío del vendedor o del bot lo retrasa (espera su turno; Bloque B):
  * quedan ~20/min para el CRM en vivo (envíos, descargas de media), que trabaja normal
  * mientras la importación corre en segundo plano.
  */

@@ -53,8 +53,13 @@ function isOptimistic(row: Row): row is OptimisticMessage {
 }
 
 function Attachment({ attachment, onOpen }: { attachment: AttachmentView; onOpen: () => void }) {
+  // Agotó sus intentos de descarga (o llegó vacío; Bloque B): nunca un archivo en blanco.
   if (attachment.state === "failed") {
-    return <div className="rounded-md bg-black/5 px-3 py-2 text-xs text-muted-foreground">Adjunto no disponible</div>;
+    return (
+      <div className="rounded-md bg-black/5 px-3 py-2 text-xs text-muted-foreground">
+        {attachment.kind === "document" && attachment.fileName ? `📄 ${attachment.fileName} · ` : ""}No se pudo descargar
+      </div>
+    );
   }
   // Mientras se copia al bucket el mensaje ya se ve: "Procesando…" y el SSE lo
   // rellena al terminar (message.upserted).
