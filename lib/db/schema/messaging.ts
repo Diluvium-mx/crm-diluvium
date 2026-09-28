@@ -301,6 +301,14 @@ export const messages = pgTable(
     uniqueIndex("messages_org_provider_internal_uidx")
       .on(table.organizationId, table.providerInternalId)
       .where(sql`${table.providerInternalId} is not null`),
+    // Barridos de cada minuto del worker que miran solo una ventana reciente
+    // (anuncios 24 h/7 d, media y miniaturas 30 d, transcripciones, avisos de
+    // envíos fallidos del agente): sin esto recorren la tabla completa (0044).
+    index("messages_created_idx").on(table.createdAt),
+    // Envíos "en cola" (sin confirmar, adjuntos pendientes): son pocos a la vez.
+    index("messages_out_queued_idx")
+      .on(table.createdAt)
+      .where(sql`${table.direction} = 'out' and ${table.status} = 'queued'`),
   ],
 );
 

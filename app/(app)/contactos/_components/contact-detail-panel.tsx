@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import { PanelRightClose, PanelRightOpen, X } from "lucide-react";
 import { usePersistentToggle } from "@/components/ui/use-persistent-toggle";
-import { getContactFullName, type Contact, type Stage, type Temperature } from "../_data/types";
+import { getContactFullName, type BoardContact, type Stage, type Temperature } from "../_data/types";
 import { ContactChat } from "./contact-chat";
 import { ContactDetails } from "./contact-details";
 
@@ -14,7 +14,7 @@ export function ContactDetailPanel({
   onStageChange,
   onTemperatureChange,
 }: {
-  contact: Contact;
+  contact: BoardContact;
   isSaving: boolean;
   onClose: () => void;
   onStageChange: (stage: Stage) => void;
