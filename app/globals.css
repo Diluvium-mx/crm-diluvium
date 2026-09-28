@@ -247,15 +247,17 @@
    Solo el recuadro de ESA tarjeta: un tinte translúcido ENCIMA del fondo de la
    tarjeta y DEBAJO de la luz del cursor y del contenido (el hover se sigue viendo
    encima y el texto conserva contraste ≥ 4.5:1), más el borde del mismo color.
-   pending = azul, el tono del resaltado del cursor (--glow-surface + borde navy):
-   hay mensajes del cliente por contestar. urgent = amarillo claro con borde ámbar:
-   el vendedor tiene que atender (si aplican los dos, gana el amarillo; lo decide
-   la tarjeta). Claro y oscuro. */
+   pending = azul claro con borde navy: el cliente escribió y nadie le ha contestado
+   ni lo marcó como leído. urgent = amarillo claro con borde ámbar: el vendedor tiene
+   que atender (si aplican los dos, gana el amarillo; lo decide la tarjeta). La luz
+   del cursor de la tarjeta (data-funnel-card) es GRIS, no navy: así una tarjeta bajo
+   el cursor nunca parece "por contestar" (regla del dueño, 28-sep-2026). Claro y oscuro. */
 :root {
   --funnel-pending: rgb(var(--glow-surface) / 0.11);
   --funnel-pending-border: var(--brand-navy);
   --funnel-urgent: rgb(250 204 21 / 0.2);
   --funnel-urgent-border: rgb(217 164 6 / 0.6);
+  --funnel-hover-glow: 100 116 139;
 }
 
 .dark {
@@ -263,6 +265,11 @@
   --funnel-pending-border: rgb(var(--glow-surface) / 0.55);
   --funnel-urgent: rgb(250 204 21 / 0.13);
   --funnel-urgent-border: rgb(250 204 21 / 0.45);
+  --funnel-hover-glow: 203 213 225;
+}
+
+[data-funnel-card] {
+  --glow-rgb: var(--funnel-hover-glow);
 }
 
 [data-funnel="pending"] {

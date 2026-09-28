@@ -417,18 +417,30 @@ export async function markConversationReadForOrg(
   });
 }
 
+// Columnas de «Marcar como leído / no leído». attended_at con now() de la base: se
+// compara con messages.created_at, que también es now() de la base.
+function markReadSet(unread: boolean) {
+  return unread
+    ? { unreadCount: sql`greatest(${conversations.unreadCount}, 1)`, attendedAt: null }
+    : { unreadCount: 0, attendedAt: sql`now()` };
+}
+
 /**
- * Clic derecho → "Marcar como no leído" / "Marcar como leído" (Bandeja y Embudo).
+ * Clic derecho → "Marcar como no leído" / "Marcar como leído" (Bandeja y Embudo), y el
+ * botón «Marcar como leído» del pop-up del Embudo.
  * No leído = el círculo naranja con al menos 1 (si ya tenía no leídos, se quedan) y
  * se apaga como siempre: al abrir el chat, al contestar o con "Marcar como leído".
- * Leído = a cero, también los avisos internos: el vendedor lo pidió a propósito.
+ * Leído = a cero, también los avisos internos: el vendedor lo pidió a propósito; y
+ * además da por atendido lo que escribió el cliente (attended_at): la tarjeta del
+ * Embudo deja el azul aunque nadie le haya contestado. No leído borra esa marca (si el
+ * último mensaje es del cliente, el azul regresa). Abrir el chat NO pasa por aquí.
  * Es del equipo, como Destacado (todos ven todo, §5); el trigger de `conversations`
  * avisa al SSE. Idempotente.
  */
 export async function setConversationUnreadForOrg(organizationId: string, conversationId: string, unread: boolean): Promise<boolean> {
   const updated = await db
     .update(conversations)
-    .set({ unreadCount: unread ? sql`greatest(${conversations.unreadCount}, 1)` : 0 })
+    .set(markReadSet(unread))
     .where(and(eq(conversations.id, conversationId), eq(conversations.organizationId, organizationId)))
     .returning({ id: conversations.id });
   return updated.length > 0;
@@ -445,7 +457,7 @@ export async function setContactUnreadForOrg(organizationId: string, contactId: 
   if (!unread) {
     const updated = await db
       .update(conversations)
-      .set({ unreadCount: 0 })
+      .set(markReadSet(false))
       .where(ofContact)
       .returning({ id: conversations.id });
     return updated.length > 0;

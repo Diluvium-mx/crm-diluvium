@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { applyTemperatures, mergeLiveContacts } from "./board-live";
+import { applyTemperatures, boardActivityAt, columnsByStage, mergeLiveContacts } from "./board-live";
 
 type C = { id: string; stage: string; stageChangedAt: Date; temperature?: string | null };
 
@@ -48,6 +48,48 @@ describe("mergeLiveContacts", () => {
 
   it("sin cambios devuelve la misma lista", () => {
     expect(mergeLiveContacts(board, [])).toBe(board);
+  });
+});
+
+describe("columnsByStage (orden de cada columna)", () => {
+  type S = { id: string; stage: string; stageChangedAt: Date; createdAt: Date; lastInboundAt: number | null };
+  const s = (id: string, stage: string, stageMinute: number, inboundMinute: number | null = null, createdMinute = 0): S => ({
+    id,
+    stage,
+    stageChangedAt: at(stageMinute),
+    createdAt: at(createdMinute),
+    lastInboundAt: inboundMinute === null ? null : at(inboundMinute).getTime(),
+  });
+  const ids = (map: Map<string, S[]>, stage: string) => (map.get(stage) ?? []).map((k) => k.id);
+  const none = () => undefined;
+
+  it("el que escribió al último sube arriba de su columna aunque haya entrado antes a la etapa", () => {
+    const list = [s("jaime", "cerca", 50), s("rene", "cerca", 10, 55), s("adrian", "cerca", 40)];
+    expect(ids(columnsByStage(list, ["cerca"], none), "cerca")).toEqual(["rene", "jaime", "adrian"]);
+  });
+
+  it("un cambio de etapa más nuevo que el último mensaje gana", () => {
+    const list = [s("rene", "cerca", 10, 55), s("nuevo", "cerca", 58)];
+    expect(ids(columnsByStage(list, ["cerca"], none), "cerca")).toEqual(["nuevo", "rene"]);
+  });
+
+  it("la hora en vivo (SSE) sube la tarjeta sin recargar; una hora vieja no la baja", () => {
+    const list = [s("jaime", "cerca", 50), s("rene", "cerca", 10, 20)];
+    const live = (id: string) => (id === "rene" ? at(59).getTime() : id === "jaime" ? at(1).getTime() : null);
+    expect(ids(columnsByStage(list, ["cerca"], live), "cerca")).toEqual(["rene", "jaime"]);
+  });
+
+  it("empates: primero el contacto más nuevo y luego el id; agrupa por etapa y omite etapas desconocidas", () => {
+    const list = [s("b", "inbox", 30, null, 1), s("a", "inbox", 30, null, 1), s("c", "inbox", 30, null, 5), s("z", "borrada", 59)];
+    const map = columnsByStage(list, ["inbox", "compra"], none);
+    expect(ids(map, "inbox")).toEqual(["c", "a", "b"]);
+    expect(ids(map, "compra")).toEqual([]);
+    expect(map.has("borrada")).toBe(false);
+  });
+
+  it("boardActivityAt toma lo más reciente de etapa, carga y vivo", () => {
+    expect(boardActivityAt(s("x", "inbox", 10, 20), at(30).getTime())).toBe(at(30).getTime());
+    expect(boardActivityAt(s("x", "inbox", 40, 20), null)).toBe(at(40).getTime());
   });
 });
 

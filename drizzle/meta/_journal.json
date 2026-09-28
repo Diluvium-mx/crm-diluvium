@@ -309,6 +309,13 @@
       "when": 1790623279597,
       "tag": "0044_rendimiento_barridos",
       "breakpoints": true
+    },
+    {
+      "idx": 45,
+      "version": "7",
+      "when": 1790627364237,
+      "tag": "0045_embudo_atendido",
+      "breakpoints": true
     }
   ]
 }

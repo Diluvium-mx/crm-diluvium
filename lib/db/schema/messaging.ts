@@ -201,6 +201,11 @@ export const conversations = pgTable(
     agentStateChangedAt: timestamp("agent_state_changed_at"),
     // Destacado: marca compartida por el equipo (todos ven todo, §5).
     isStarred: boolean("is_starred").default(false).notNull(),
+    // "Marcar como leído" a mano (pop-up del Embudo o clic derecho): lo que el cliente
+    // escribió hasta esta hora ya no pinta de azul la tarjeta del Embudo aunque nadie le
+    // haya contestado (p. ej. un "gracias"). El siguiente entrante la vuelve a pintar y
+    // "Marcar como no leído" la borra. Abrir el chat NO la mueve. Del equipo (§5).
+    attendedAt: timestamp("attended_at"),
     // Anuncio de clic a WhatsApp que ORIGINÓ la conversación (el primer
     // `referral` recibido). Meta lo manda una sola vez: se guarda crudo y
     // completo; la UI solo recibe una versión saneada (lib/inbox).

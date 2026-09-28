@@ -3,18 +3,25 @@
 import { useEffect, useRef, useState } from "react";
 import { PanelRightClose, PanelRightOpen, X } from "lucide-react";
 import { usePersistentToggle } from "@/components/ui/use-persistent-toggle";
+import type { FunnelSignal } from "@/lib/contacts/funnel-tone";
 import { getContactFullName, type BoardContact, type Stage, type Temperature } from "../_data/types";
 import { ContactChat } from "./contact-chat";
 import { ContactDetails } from "./contact-details";
+import { MarkReadButton } from "./mark-read-button";
 
 export function ContactDetailPanel({
   contact,
+  signal,
+  onMarkRead,
   isSaving,
   onClose,
   onStageChange,
   onTemperatureChange,
 }: {
   contact: BoardContact;
+  /** Señal de la tarjeta (en vivo): decide si «Marcar como leído» tiene algo que apagar. */
+  signal: FunnelSignal | undefined;
+  onMarkRead: () => void;
   isSaving: boolean;
   onClose: () => void;
   onStageChange: (stage: Stage) => void;
@@ -89,14 +96,15 @@ export function ContactDetailPanel({
         }`}
       >
         {/* Panel izquierdo: el MISMO chat de la bandeja, resuelto por contacto.
-            Su encabezado (nombre/teléfono/etapa) lo pone ChatThread; el título
+            Su encabezado (nombre/teléfono/etapa) lo pone ChatThread, con «Marcar como
+            leído» a la derecha del nombre (solo aquí, no en la Bandeja); el título
             accesible del diálogo va oculto para lectores de pantalla. min-w-0: un
             texto largo no ensancha el chat ni empuja fuera el detalle. */}
         <section className="flex min-h-0 min-w-0 flex-1 flex-col border-b md:border-b-0 md:border-r">
           <h2 id="contact-detail-title" className="sr-only">
             Conversación con {getContactFullName(contact)}
           </h2>
-          <ContactChat contactId={contact.id} />
+          <ContactChat contactId={contact.id} headerAction={<MarkReadButton signal={signal} onMarkRead={onMarkRead} />} />
         </section>
 
         {/* Panel derecho: el MISMO "Detalle del contacto" de la Bandeja (B2), que se

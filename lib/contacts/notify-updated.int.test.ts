@@ -282,7 +282,8 @@ describe.skipIf(!TEST_DATABASE_URL)("aviso contact.updated (Postgres real)", () 
   it("el Embudo recibe solo las columnas de la tarjeta (B14): nada de campos personalizados ni calificación", async () => {
     const { boardContactColumns } = await import("./board-contact");
     await db.update(s.contacts).set({ customFields: { notas: "largo" }, montoCotizacion: "1000.00" }).where(d.eq(s.contacts.id, JUAN));
-    const board = Object.keys(boardContactColumns).sort();
+    // + lastInboundAt: la hora del último mensaje del cliente (ordena la columna).
+    const board = [...Object.keys(boardContactColumns), "lastInboundAt"].sort();
     const listed = await contactActions.listContacts();
     expect(listed.map((c) => c.id)).toContain(JUAN);
     expect(listed.map((c) => c.id)).not.toContain(OTRO);
@@ -292,6 +293,30 @@ describe.skipIf(!TEST_DATABASE_URL)("aviso contact.updated (Postgres real)", () 
     await db.update(s.contacts).set({ stageChangedAt: new Date() }).where(d.eq(s.contacts.id, JUAN));
     const changed = await contactActions.getContactsChangedSince(new Date(Date.now() - 60_000).toISOString());
     expect(changed.contacts.map((c) => Object.keys(c).sort())).toEqual([board]);
+  });
+
+  it("lastInboundAt del Embudo = último mensaje del cliente en cualquiera de sus chats (ventana − 24 h); null si nunca escribió", async () => {
+    const { SERVICE_WINDOW_MS } = await import("@/lib/messaging/rules");
+    const wrote = new Date("2026-09-27T15:30:00.000Z");
+    await db.insert(s.channels).values({
+      id: "ch_board_inbound",
+      organizationId: ORG_A,
+      type: "whatsapp",
+      provider: "zernio",
+      providerAccountId: "acc_board_inbound",
+      displayName: "Canal",
+    });
+    await db.insert(s.conversations).values({
+      id: "conv_board_inbound",
+      organizationId: ORG_A,
+      contactId: JUAN,
+      channelId: "ch_board_inbound",
+      windowExpiresAt: new Date(wrote.getTime() + SERVICE_WINDOW_MS),
+    });
+    const listed = await contactActions.listContacts();
+    expect(listed.find((c) => c.id === JUAN)?.lastInboundAt).toBe(wrote.getTime());
+    expect(listed.filter((c) => c.id !== JUAN).every((c) => c.lastInboundAt === null)).toBe(true);
+    expect((await contactActions.getContactsByIds([JUAN]))[0]?.lastInboundAt).toBe(wrote.getTime());
   });
 
   it("importación masiva: UN contacts.bulk y ningún contact.updated (tampoco al reimportar)", async () => {
