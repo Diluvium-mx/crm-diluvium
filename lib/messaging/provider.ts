@@ -161,11 +161,18 @@ export type SendTextInput = {
  * - "unknown": no se sabe si salió (timeout, corte, 5xx, respuesta ilegible):
  *   no se ofrece reintentar hasta confirmarlo o darlo por no confirmado.
  */
+/**
+ * - "rejected": el proveedor dijo que NO salió (4xx); se puede reintentar.
+ * - "unknown": no se sabe si salió (timeout, 5xx); nunca se reenvía solo.
+ * - "rate_limited": el proveedor pidió esperar (429) y NO lo procesó; el envío
+ *   espera `retryAfterMs` y se repite con la MISMA clave (lib/messaging/send-turn.ts).
+ */
 export class SendFailedError extends Error {
   constructor(
     readonly code: string,
     message: string,
-    readonly outcome: "rejected" | "unknown",
+    readonly outcome: "rejected" | "unknown" | "rate_limited",
+    readonly retryAfterMs: number | null = null,
   ) {
     super(message);
     this.name = "SendFailedError";

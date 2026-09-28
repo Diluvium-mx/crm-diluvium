@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { firstResponseSeconds, isWindowOpen, nextStatus, windowExpiresAt } from "./rules";
+import { firstResponseSeconds, isAmbiguousSendError, isWindowOpen, nextStatus, SEND_ACCEPTED, SEND_RATE_LIMITED, windowExpiresAt } from "./rules";
 
 const at = (iso: string) => new Date(iso);
 
@@ -41,9 +41,26 @@ describe("nextStatus", () => {
     expect(nextStatus("delivered", "sent")).toBe("delivered");
   });
 
-  it("failed gana, salvo que ya se haya leído; y no se sale de failed", () => {
+  it("failed gana sobre en cola/enviado; un fallido real se queda fallido", () => {
+    expect(nextStatus("queued", "failed")).toBe("failed");
     expect(nextStatus("sent", "failed")).toBe("failed");
+    expect(nextStatus("failed", "sent")).toBe("failed");
+    expect(nextStatus("failed", "queued")).toBe("failed");
+  });
+
+  it("entregado o leído gana SIEMPRE sobre failed, en cualquier orden (Bloque B)", () => {
+    // failed primero y luego la prueba de entrega
+    expect(nextStatus("failed", "delivered")).toBe("delivered");
+    expect(nextStatus("failed", "read")).toBe("read");
+    // la prueba de entrega primero y luego un failed tardío
+    expect(nextStatus("delivered", "failed")).toBe("delivered");
     expect(nextStatus("read", "failed")).toBe("read");
-    expect(nextStatus("failed", "delivered")).toBe("failed");
+  });
+});
+
+describe("isAmbiguousSendError", () => {
+  it("aceptado por Zernio sin confirmar en la base: nunca se reenvía; 429 agotado sí", () => {
+    expect(isAmbiguousSendError(SEND_ACCEPTED)).toBe(true);
+    expect(isAmbiguousSendError(SEND_RATE_LIMITED)).toBe(false);
   });
 });

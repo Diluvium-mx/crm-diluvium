@@ -19,7 +19,7 @@ import { and, eq } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { messages, type MessageAttachment } from "@/lib/db/schema";
 import type { ObjectStorage } from "@/lib/storage/s3";
-import { storageKeyFor } from "./media-keys";
+import { isStoredAttachment, storageKeyFor } from "./media-keys";
 import type { MessagingProvider } from "./provider";
 
 export { sha256Base64, storageKeyFor } from "./media-keys";
@@ -47,6 +47,9 @@ function verifyingStream(maxBytes: number, expectedSha256: string | undefined) {
       callback(null, chunk);
     },
     flush(callback) {
+      // Un 200 sin contenido NO es un archivo (Bloque B): si se guardara, el vendedor
+      // vería el PDF/audio "descargado" pero en blanco. Se aborta y se reintenta.
+      if (size === 0) return callback(new MediaDownloadError("el archivo llegó vacío (0 bytes)"));
       if (expectedSha256 && hash.digest("base64") !== expectedSha256) {
         return callback(new MediaDownloadError("el sha256 no coincide: archivo incompleto o alterado"));
       }
@@ -67,6 +70,10 @@ async function downloadOne(
   const res = await provider.fetchMedia(attachment.url, signal);
   if (!res.ok) throw new MediaDownloadError(`descarga respondió ${res.status}`);
   const declared = Number(res.headers.get("content-length") ?? 0);
+  if (res.headers.get("content-length") === "0") {
+    await res.body?.cancel();
+    throw new MediaDownloadError("el archivo llegó vacío (0 bytes)");
+  }
   if (declared > maxBytes) {
     await res.body?.cancel();
     throw new MediaDownloadError(`archivo de ${declared} bytes excede ${maxBytes}`);
@@ -98,16 +105,18 @@ export async function downloadMessageMedia(
   const results = new Map<number, Partial<MessageAttachment>>();
   const errors: string[] = [];
   for (const [index, attachment] of message.attachments.entries()) {
-    if (attachment.storageKey) continue;
+    if (isStoredAttachment(attachment)) continue;
     const key = storageKeyFor(message.organizationId, message.id, index, attachment);
     try {
       const { sizeBytes } = await downloadOne(provider, storage, key, attachment, maxBytes);
       results.set(index, { storageKey: key, sizeBytes, downloadedAt: new Date().toISOString(), downloadError: undefined });
     } catch (error) {
       const reason = error instanceof Error ? error.message : String(error);
-      // Si ya se había subido en un intento previo que no alcanzó a anotarlo, se reutiliza.
-      if (await storage.exists(key).catch(() => false)) {
-        results.set(index, { storageKey: key, downloadedAt: new Date().toISOString(), downloadError: undefined });
+      // Si ya se había subido en un intento previo que no alcanzó a anotarlo, se
+      // reutiliza, pero solo si tiene contenido (una copia vacía no cuenta).
+      const previous = await storage.head(key).catch(() => null);
+      if (previous && previous.bytes > 0) {
+        results.set(index, { storageKey: key, sizeBytes: previous.bytes, downloadedAt: new Date().toISOString(), downloadError: undefined });
       } else {
         results.set(index, { downloadError: reason });
         errors.push(`adjunto ${index}: ${reason}`);
@@ -126,7 +135,7 @@ export async function downloadMessageMedia(
       .for("update");
     const merged = current.attachments.map((attachment, index) => {
       const update = results.get(index);
-      if (!update || attachment.storageKey) return attachment; // otro intento ya lo guardó
+      if (!update || isStoredAttachment(attachment)) return attachment; // otro intento ya lo guardó
       const next: MessageAttachment = {
         ...attachment,
         ...update,
@@ -135,7 +144,7 @@ export async function downloadMessageMedia(
       if (!update.downloadError) delete next.downloadError;
       return next;
     });
-    stored = merged.filter((a) => a.storageKey).length;
+    stored = merged.filter(isStoredAttachment).length;
     pending = merged.length - stored;
     await tx
       .update(messages)

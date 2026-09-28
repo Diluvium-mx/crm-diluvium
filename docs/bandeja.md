@@ -45,10 +45,13 @@ El chat es un solo componente reutilizado en las dos secciones.
   "Pasaron 24 h desde su último mensaje. Solo se puede enviar una plantilla." (plantillas: con el
   número real).
 - **Burbujas:** cliente a la izquierda, nuestras a la derecha, separador por día.
-- **Estado del saliente:** ✓ enviado · ✓✓ entregado · ✓✓ azul leído · ⚠ falló (motivo + Reintentar).
+- **Estado del saliente:** 🕗 enviando · ✓ enviado · ✓✓ entregado · ✓✓ azul leído · ⚠ falló (motivo
+  en palabras simples + Reintentar si es seguro). Ver "Envíos sin pérdidas ni duplicados" abajo.
 - **Sin autor del mensaje en v1** (no mostrar quién lo envió ni "desde el celular").
 - **Adjuntos:** foto (miniatura → grande), audio (reproductor), video, documento PDF/XML (tarjeta con
-  nombre + descargar). Mientras se guarda en el bucket: "procesando…".
+  nombre + descargar). Mientras se guarda en el bucket: "procesando…". Una copia VACÍA (200 sin
+  contenido) no cuenta como guardada: se reintenta y, agotados los intentos, "No se pudo descargar"
+  (`isStoredAttachment`, `lib/messaging/media-keys.ts`; las copias vacías viejas se vuelven a bajar).
 - **Anuncio de clic a WhatsApp:** tarjeta compacta "📣 Llegó por anuncio" con titular y miniatura.
   NUNCA el volcado crudo (ctwaClid, mediaUrl, …). Ver `docs/investigacion/anuncios-ctwa.md`.
 - **Composer:** Enter envía, Shift+Enter salto de línea. Abrir la conversación la marca como leída.
@@ -212,7 +215,7 @@ la sesión). Tipos exactos en `lib/inbox/types.ts`.
 | `getConversation(conversationId)` | Encabezado + panel | `contact{…, stage, temperature}`, `windowExpiresAt`, `adReferral?` |
 | `getConversationByContact(contactId)` | Tarjeta del kanban → chat | lo mismo que `getConversation`, o `null` si ese contacto aún no tiene chat |
 | `listMessages(conversationId, { before?, limit? })` | Chat (paginado hacia atrás) | `id`, `direction`, `kind`, `body`, `attachments[{index,kind,fileName,mimeType,state:"ready"\|"processing"\|"failed",url}]`, `status`, `errorMessage?`, `sentAt`, `adReferral?` |
-| `sendMessage(conversationId, text)` | Composer | `{ ok:true, messageId, pending }` o `{ ok:false, code, message }`. `pending:true` = envío en curso sin confirmar: se muestra "enviando", **sin** botón de reintentar. Códigos: `empty\|window_closed\|not_found\|not_linked\|not_retryable\|channel_unavailable\|provider_rejected\|not_configured` |
+| `sendMessage(conversationId, text)` | Composer | `{ ok:true, messageId, pending }` o `{ ok:false, code, message }`. `pending:true` = envío en fila de espera (429) o en curso sin confirmar: se muestra "enviando", **sin** botón de reintentar. Códigos: `empty\|window_closed\|not_found\|not_linked\|not_retryable\|channel_unavailable\|provider_rejected\|not_configured` |
 | `retryMessage(messageId)` | ⚠ Reintentar | igual que `sendMessage`. Solo tiene sentido cuando `message.canRetry` es `true` (rechazo definitivo del proveedor); un envío ambiguo NO se reintenta |
 | `markConversationRead(conversationId, upToMessageId?)` | Al abrir / al leer | `void`. `upToMessageId` = último mensaje a la vista (corte de lectura); sin él, marca hasta el último entrante. Lo posterior al corte sigue sin leer |
 | `setConversationStarred(conversationId, starred)` | Estrella | `void` |
@@ -221,6 +224,34 @@ la sesión). Tipos exactos en `lib/inbox/types.ts`.
 
 `listMessages` devuelve además `canRetry` por mensaje (si el botón Reintentar debe aparecer) y
 `attachments[].state` (`ready\|processing\|failed`).
+
+### Envíos sin pérdidas ni duplicados (Bloque B, 28-sep-2026)
+
+- **429 de Zernio = fila de espera, no error** (`lib/messaging/send-turn.ts`). Zernio limita a 60/min
+  por cuenta. Ante un 429 el envío espera lo que diga Zernio (`Retry-After` o 5 s, 10 s, 20 s… hasta
+  60 s por paso; tope 5 min) y se repite con la **misma** clave de idempotencia. Dentro de cada
+  conversación salen en orden de llegada: cada envío deja su turno en `messages.metadata.envio`
+  (`{estado: "enviando"|"espera", hasta, esperas}`, sin migración) y no llama a Zernio mientras haya
+  uno más viejo en fila. Vale para bot, vendedores, workflows y programados. Al cliente no le llega
+  nada y el vendedor ve 🕗. Una marca vencida (proceso muerto) deja de frenar a los 30 s.
+- **Web → worker:** la Server Action no espera en la petición (Next procesa las acciones una tras
+  otra y la pantalla se trabaría): si hay que esperar más de 3 s responde `pending` y encola el envío
+  en `outbox-sends` (`lib/queue/outbox.ts`, `worker/outbox.ts`, `resumeDeferredSend`). El barrido
+  re-encola los diferidos sin job. Si pasan 5 min sin salir: fallido `rate_limited`, **con**
+  Reintentar (nunca llegó a Zernio). Tras un reinicio a mitad de una espera, el barrido de 15 min
+  hace lo mismo.
+- **Zernio aceptó y falló la base al guardar la confirmación:** nunca es error para el vendedor
+  (`pending`, se pausa al agente como un envío normal) ni se reenvía. Se guardan los ids si se puede
+  y `error_code = send_accepted` (ambiguo: sin Reintentar). El eco o "entregado/leído" lo confirman
+  solos; si a los 15 min sigue sin confirmar, fallido + tarjeta 🤖 "WhatsApp sí recibió el mensaje…
+  revísalo en el celular antes de volver a escribirlo".
+- **Entregado/leído gana siempre sobre fallido**, en cualquier orden (`nextStatus`), borra el error
+  y recalcula la primera respuesta y el último mensaje. Un fallido real (sin prueba de entrega) sigue
+  fallido y visible.
+- **Motivo en palabras simples** (`lib/messaging/send-reasons.ts`): 131047/470 ventana de 24 h
+  cerrada, 131026 número que no recibe mensajes, 131052/131053 archivo que no se pudo subir, 131051
+  tipo no permitido; los demás "WhatsApp no lo entregó (código N)". Lo usan la burbuja fallida, la
+  respuesta de `sendMessage` y las tarjetas de workflows.
 
 Los adjuntos se muestran con `url` = `/api/media/{messageId}/{index}` (ya existe; exige sesión;
 302 a una URL firmada cuando está listo; 202 mientras está "processing"; 404 si no es de tu

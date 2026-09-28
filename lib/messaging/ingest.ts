@@ -16,6 +16,7 @@ import type {
   ProviderName,
 } from "./provider";
 import { firstResponseSeconds, nextStatus, windowExpiresAt } from "./rules";
+import { noticeWorkflowSendFailed, type FailedOutbound } from "@/lib/workflows/delivery-notice";
 import { ingestHistoryMessage, isPhoneHistory } from "./history";
 import { completedMetadata, isUnavailableNotice } from "./unavailable";
 import { pendingFallbackNote, recordAdClickSafely, type FallbackJob, type RecordedClick } from "@/lib/ads/attribution";
@@ -993,6 +994,8 @@ async function ingestStatus(
   }
 
   let revokeReplyOf: string | undefined;
+  let confirmed: { conversationId: string; sentAt: Date } | undefined;
+  let newlyFailed: FailedOutbound | undefined;
   let resolvedOrgId: string | null = orgId ?? null;
   const outcome = await withTxRetry(() => db.transaction(async (tx) => {
     // FOR UPDATE: dos estados del mismo mensaje procesándose a la vez (p. ej.
@@ -1015,21 +1018,65 @@ async function ingestStatus(
     // al de la ingesta).
     if (status === "failed" && message.status !== "failed" && message.direction === "out") {
       revokeReplyOf = message.conversationId;
+      newlyFailed = {
+        organizationId: message.organizationId,
+        conversationId: message.conversationId,
+        messageId: message.id,
+        type: message.type,
+        errorCode: event.errorCode ?? message.errorCode,
+        errorMessage: event.errorMessage ?? message.errorMessage,
+      };
     }
+    // Prueba de que salió (Bloque B): un saliente "fallido" que WhatsApp marca
+    // entregado/leído, o uno "en cola" que Zernio aceptó sin que el CRM alcanzara
+    // a guardarlo (SEND_ACCEPTED), queda confirmado y SIN error; la conversación y
+    // la primera respuesta se recalculan después del commit.
+    const nowConfirmed =
+      message.direction === "out" && status !== "failed" && status !== message.status && (message.status === "failed" || message.status === "queued");
+    if (nowConfirmed) confirmed = { conversationId: message.conversationId, sentAt: message.sentAt ?? message.createdAt };
     await tx
       .update(messages)
       .set({
         status,
         ...(status === "failed"
           ? { errorCode: event.errorCode ?? message.errorCode, errorMessage: event.errorMessage ?? message.errorMessage }
-          : {}),
+          : nowConfirmed
+            ? { errorCode: null, errorMessage: null }
+            : {}),
         ...(event.providerMessageId && !message.providerMessageId ? { providerMessageId: event.providerMessageId } : {}),
       })
       .where(and(eq(messages.id, message.id), eq(messages.organizationId, message.organizationId)));
     return `estado ${message.status} → ${status}`;
   }));
   if (revokeReplyOf) await recomputeFirstResponse(revokeReplyOf);
+  if (confirmed) await refreshAfterConfirmedOutbound(confirmed.conversationId, confirmed.sentAt);
+  // Un archivo de un workflow que WhatsApp aceptó y luego rechazó: tarjeta en el chat.
+  if (newlyFailed) await noticeWorkflowSendFailed(newlyFailed);
   return { outcome, organizationId: resolvedOrgId };
+}
+
+/**
+ * Un saliente que quedó confirmado por un estado (antes fallido, o aceptado sin
+ * guardar): último mensaje de la conversación y primera respuesta desde la base
+ * (converge sin importar el orden de los avisos). Su propia transacción, con la
+ * conversación bloqueada primero (mismo orden que la ingesta).
+ */
+async function refreshAfterConfirmedOutbound(conversationId: string, sentAt: Date): Promise<void> {
+  await db.transaction(async (tx) => {
+    const [conversation] = await tx
+      .select({ lastMessageAt: conversations.lastMessageAt })
+      .from(conversations)
+      .where(eq(conversations.id, conversationId))
+      .for("update");
+    if (!conversation) return;
+    await tx
+      .update(conversations)
+      .set({
+        lastMessageAt: conversation.lastMessageAt && conversation.lastMessageAt > sentAt ? conversation.lastMessageAt : sentAt,
+        firstResponseSeconds: await reconcileFirstResponse(tx, conversationId),
+      })
+      .where(eq(conversations.id, conversationId));
+  });
 }
 
 async function recomputeFirstResponse(conversationId: string): Promise<void> {

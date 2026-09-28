@@ -91,16 +91,20 @@ export type HistoryImportReport = {
 };
 
 /**
- * Envíos del CRM en vivo (bot, vendedores, workflows) que Zernio rechazó por límite
+ * Envíos del CRM en vivo (bot, vendedores, workflows) que Zernio frenó por límite (429)
  * después de `since` (hora de la BASE, UTC: el importador corre en otra máquina y su
  * reloj no se compara con created_at). Devuelve cuántos y el created_at más nuevo.
  */
 async function liveRateLimited(organizationId: string, since: string): Promise<{ n: number; last: string | null }> {
   const [row] = await db.execute<{ n: number; last: string | null }>(sql`
     select count(*)::int as n, max(created_at)::text as last from messages
-    where organization_id = ${organizationId} and direction = 'out' and status = 'failed' and imported_at is null
+    where organization_id = ${organizationId} and direction = 'out' and imported_at is null
       and created_at > ${since}::timestamp
-      and (error_code = '429' or error_code ilike '%rate%' or error_message ilike '%rate limit%' or error_message ilike '%429%')`);
+      and (
+        -- Desde el Bloque B un 429 ya no falla el envío: espera en fila y lo anota en metadata.envio.esperas.
+        coalesce((metadata->'envio'->>'esperas')::int, 0) > 0
+        or (status = 'failed' and (error_code = '429' or error_code ilike '%rate%' or error_message ilike '%rate limit%' or error_message ilike '%429%'))
+      )`);
   return { n: Number(row?.n ?? 0), last: row?.last ?? null };
 }
 
@@ -407,7 +411,7 @@ export async function importPhoneHistory(
     throttleSince = last; // el mismo rechazo no vuelve a frenar
     report.ritmoReducido++;
     const perMinute = client.slowDown();
-    log(`Zernio rechazó ${n} envío(s) del CRM por límite: el importador baja a ${perMinute} peticiones/min para dejarle espacio al bot y a los vendedores`);
+    log(`Zernio frenó por límite (429) ${n} envío(s) del CRM: el importador baja a ${perMinute} peticiones/min para dejarle espacio al bot y a los vendedores`);
   };
 
   let dbWriteMs = 0;

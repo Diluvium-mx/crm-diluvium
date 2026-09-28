@@ -10,6 +10,7 @@ import { normalizeSearch, SQL_SEARCH_FROM, SQL_SEARCH_TO } from "@/lib/text/sear
 import { db } from "@/lib/db";
 import { channels, contacts, conversations, messages } from "@/lib/db/schema";
 import { latestInboundMessageId, unreadAfterCutoff } from "@/lib/messaging/ingest";
+import { plainSendReason } from "@/lib/messaging/send-reasons";
 import {
   attachmentView,
   avatarInitials,
@@ -353,7 +354,8 @@ export async function listMessagesForOrg(
         body: m.body,
         attachments: m.attachments.map((a, i) => attachmentView(m.id, i, a, m.createdAt, now)),
         status: m.status,
-        errorMessage: m.status === "failed" || m.errorCode ? m.errorMessage : null,
+        // Fallido: el motivo en español claro (Bloque B), no el texto crudo de WhatsApp.
+        errorMessage: m.status === "failed" ? plainSendReason(m.errorCode, m.errorMessage) : m.errorCode ? m.errorMessage : null,
         canRetry: canRetry(m),
         sentAt: m.sentAt ?? m.createdAt,
         adReferral: adCards.get(m.id) ?? (m.direction === "in" ? adCardFromRaw(m.adReferral) : null),

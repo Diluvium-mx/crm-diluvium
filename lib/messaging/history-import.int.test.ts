@@ -292,6 +292,10 @@ describe.skipIf(!TEST_DATABASE_URL)("importador del historial del número oficia
       insert into messages (id, organization_id, conversation_id, direction, source, type, body, status, error_code, error_message, created_at)
       values ('m429', ${ORG}, 'conv_vivo', 'out', 'ai_agent', 'text', 'hola', 'failed', 'rate_limit_exceeded', 'Rate limit exceeded. Please retry after 3 seconds.', (now() at time zone 'UTC') + interval '1 minute'),
              ('mOtro', ${ORG}, 'conv_vivo', 'out', 'crm', 'text', 'hola', 'failed', '131026', 'Message undeliverable', (now() at time zone 'UTC') + interval '1 minute')`);
+    // Bloque B: un 429 ya no falla el envío (espera en fila y sale); también frena al importador.
+    await db.execute(sql`
+      insert into messages (id, organization_id, conversation_id, direction, source, type, body, status, metadata, created_at)
+      values ('mEspera', ${ORG}, 'conv_vivo', 'out', 'crm', 'text', 'hola', 'sent', '{"envio":{"estado":"enviando","hasta":0,"esperas":1}}'::jsonb, (now() at time zone 'UTC') + interval '1 minute')`);
     const chats = Array.from({ length: 4 }, (_, i) => chat(`th${i}`, `52166834100${i}`, Array.from({ length: 150 }, (_, j) => msg("in", (300 - j) * 60_000, `th${i}-${j}`))));
     const lines: string[] = [];
     const c = new zh.ZernioHistoryClient(
@@ -303,7 +307,7 @@ describe.skipIf(!TEST_DATABASE_URL)("importador del historial del número oficia
     expect(report.importados).toBe(600);
     expect(report.ritmoReducido).toBe(1);
     expect(c.perMinute).toBe(20);
-    expect(lines.some((l) => l.includes("Zernio rechazó 1 envío(s) del CRM por límite: el importador baja a 20 peticiones/min"))).toBe(true);
+    expect(lines.some((l) => l.includes("Zernio frenó por límite (429) 2 envío(s) del CRM: el importador baja a 20 peticiones/min"))).toBe(true);
   });
 
   it("la agenda solo rellena nombres vacíos de contactos existentes: no crea contactos ni cambia un nombre puesto", async () => {

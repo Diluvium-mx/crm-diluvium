@@ -25,20 +25,33 @@ export function firstResponseSeconds(firstInboundAt: Date | null, replyAt: Date)
 type Status = "queued" | "sent" | "delivered" | "read" | "failed" | "received";
 const RANK: Record<Status, number> = { queued: 0, sent: 1, delivered: 2, read: 3, received: 3, failed: 4 };
 
+/** "Entregado" o "leído": prueba de que el mensaje le llegó al cliente. */
+export function isDeliveredStatus(status: Status): boolean {
+  return status === "delivered" || status === "read";
+}
+
 /**
  * Los estados pueden llegar desordenados (reintentos): nunca se retrocede
- * (un "delivered" tardío no pisa un "read"). "failed" gana siempre, salvo
- * que el mensaje ya se haya leído (entonces el fallo es de un reintento).
+ * (un "delivered" tardío no pisa un "read"). "Entregado" o "leído" es PRUEBA de
+ * que el mensaje llegó: gana siempre sobre "failed", llegue antes o después
+ * (el fallo era de un reintento; Bloque B, 28-sep-2026). Un "failed" sin esa
+ * prueba gana sobre "queued"/"sent" y queda visible.
  */
 export function nextStatus(current: Status, incoming: Status): Status {
-  if (incoming === "failed") return current === "read" ? current : "failed";
-  if (current === "failed") return current;
+  if (incoming === "failed") return isDeliveredStatus(current) ? current : "failed";
+  if (current === "failed") return isDeliveredStatus(incoming) ? incoming : current;
   return RANK[incoming] > RANK[current] ? incoming : current;
 }
 
 // Códigos de un envío del CRM de resultado ambiguo (lib/messaging/send.ts).
 export const SEND_UNKNOWN = "send_unknown";
 export const SEND_UNCONFIRMED = "send_unconfirmed";
+// Zernio ACEPTÓ el envío (2xx) y después falló la base al guardar la confirmación:
+// el mensaje casi seguro salió. Nunca se reenvía solo (Bloque B, 28-sep-2026).
+export const SEND_ACCEPTED = "send_accepted";
+// Zernio pidió esperar (429) y el envío no se completó: NO salió (429 = no lo
+// procesó), así que sí se puede reintentar.
+export const SEND_RATE_LIMITED = "rate_limited";
 
 /**
  * ¿El fallo de este envío es AMBIGUO (no se sabe si llegó al cliente)?
@@ -48,5 +61,5 @@ export const SEND_UNCONFIRMED = "send_unconfirmed";
  * reintenta desde el CRM. Un rechazo definitivo (4xx: no salió) sí.
  */
 export function isAmbiguousSendError(errorCode: string | null | undefined): boolean {
-  return errorCode === SEND_UNCONFIRMED || (errorCode?.startsWith(SEND_UNKNOWN) ?? false);
+  return errorCode === SEND_UNCONFIRMED || errorCode === SEND_ACCEPTED || (errorCode?.startsWith(SEND_UNKNOWN) ?? false);
 }
