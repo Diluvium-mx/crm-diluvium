@@ -58,6 +58,7 @@ describe.skipIf(!TEST_DATABASE_URL)("adjuntos del chat", () => {
   const CONV = "conv_adj";
   let storage: MemoryStorage;
   let sent: SendMediaInput[];
+  let order: string[];
   let rejectFileName: string | null;
 
   const provider = {
@@ -66,8 +67,9 @@ describe.skipIf(!TEST_DATABASE_URL)("adjuntos del chat", () => {
     readEnvelope: () => ({ eventId: "x", event: "x" }),
     normalize: () => ({ kind: "ignored", eventId: "x", event: "x", reason: "test" }),
     fetchMedia: async () => new Response(null),
-    sendText: async () => {
-      throw new Error("no se esperaba sendText");
+    sendText: async (input: { text: string }) => {
+      order.push(`texto:${input.text}`);
+      return { providerInternalId: `zt${order.length}`, providerMessageId: `wamid.txt.${randomUUID()}` };
     },
     sendMedia: async (input: SendMediaInput) => {
       if (input.fileName === rejectFileName) {
@@ -75,6 +77,7 @@ describe.skipIf(!TEST_DATABASE_URL)("adjuntos del chat", () => {
         throw new SendFailedError("131053", "Media upload error", "rejected");
       }
       sent.push(input);
+      order.push(`archivo:${input.fileName}`);
       return { providerInternalId: `z${sent.length}`, providerMessageId: `wamid.adj.${sent.length}.${randomUUID()}` };
     },
     sendTemplate: async () => {
@@ -96,6 +99,7 @@ describe.skipIf(!TEST_DATABASE_URL)("adjuntos del chat", () => {
 
   beforeEach(async () => {
     sent = [];
+    order = [];
     rejectFileName = null;
     storage = new MemoryStorage();
     const { sql } = await import("drizzle-orm");
@@ -227,5 +231,67 @@ describe.skipIf(!TEST_DATABASE_URL)("adjuntos del chat", () => {
     expect(storage.objects.has(keyOf(huerfano.token))).toBe(false);
     expect(storage.objects.has(u.storageKey)).toBe(true);
     expect(storage.objects.has(toSend(reciente.token).storageKey)).toBe(true);
+  });
+
+  it("revisión: un pendiente NO es 'sin confirmar'; si en 30 min no salió queda fallido con motivo claro", async () => {
+    const files = [toSend((await store("uno.jpg", JPEG)).token)];
+    const old = new Date(Date.now() - 20 * 60_000);
+    const [id] = await send.queueChatUploads(provider, { organizationId: ORG, conversationId: CONV, sentByUserId: "u_v", files, captions: [null], now: old });
+    expect(await send.expireUnconfirmedSends()).toBe(0);
+    expect((await outs()).find((m) => m.id === id)?.status).toBe("queued");
+    expect(await maint.expireStuckChatUploads(new Date(Date.now() + 15 * 60_000))).toBe(1);
+    const row = (await outs()).find((m) => m.id === id)!;
+    expect(row).toMatchObject({ status: "failed", errorCode: maint.CHAT_UPLOAD_NOT_SENT });
+    // Ya fallido: el worker no lo manda.
+    expect(await send.sendQueuedChatUpload(provider, storage, { organizationId: ORG, messageId: id })).toBeNull();
+    expect(sent).toHaveLength(0);
+  });
+
+  it("revisión: el corte de leídos es el del clic; lo que el cliente escribe mientras salen los archivos sigue sin leer", async () => {
+    await db.update(s.conversations).set({ unreadCount: 1 }).where(eq(s.conversations.id, CONV));
+    const files = [toSend((await store("uno.jpg", JPEG)).token)];
+    const [id] = await send.queueChatUploads(provider, { organizationId: ORG, conversationId: CONV, sentByUserId: "u_v", files, captions: [null] });
+    await db.insert(s.messages).values({ id: "in_2", organizationId: ORG, conversationId: CONV, direction: "in", source: "contact", type: "text", body: "¿y el precio?", status: "delivered", sentAt: new Date(), providerMessageId: `wamid.in.${randomUUID()}` });
+    await db.update(s.conversations).set({ unreadCount: 2 }).where(eq(s.conversations.id, CONV));
+    await send.sendQueuedChatUpload(provider, storage, { organizationId: ORG, messageId: id });
+    const [conv] = await db.select().from(s.conversations).where(eq(s.conversations.id, CONV));
+    expect(conv.unreadCount).toBe(1);
+  });
+
+  it("revisión: un texto que el vendedor manda DESPUÉS de los archivos le llega después de ellos", async () => {
+    const files = [await store("uno.jpg", JPEG), await store("dos.jpg", JPEG)].map((u) => toSend(u.token));
+    const ids = await send.queueChatUploads(provider, { organizationId: ORG, conversationId: CONV, sentByUserId: "u_v", files, captions: [null, null] });
+    const texto = send.sendTextMessage(provider, { organizationId: ORG, conversationId: CONV, sentByUserId: "u_v", text: "¿Le late?" });
+    await new Promise((r) => setTimeout(r, 300));
+    for (const id of ids) await send.sendQueuedChatUpload(provider, storage, { organizationId: ORG, messageId: id });
+    await texto;
+    expect(order).toEqual(["archivo:uno.jpg", "archivo:dos.jpg", "texto:¿Le late?"]);
+  }, 15_000);
+
+  it("revisión: reenviar los mismos comprobantes tras la fusión con el eco no manda el archivo otra vez", async () => {
+    const files = [toSend((await store("uno.jpg", JPEG)).token)];
+    const [id] = await send.queueChatUploads(provider, { organizationId: ORG, conversationId: CONV, sentByUserId: "u_v", files, captions: [null] });
+    await send.sendQueuedChatUpload(provider, storage, { organizationId: ORG, messageId: id });
+    // El eco de WhatsApp se quedó con la burbuja (otra fila, mismo archivo) y la de la cola se borró.
+    const [row] = await db.select().from(s.messages).where(eq(s.messages.id, id));
+    await db.delete(s.messages).where(eq(s.messages.id, id));
+    await db.insert(s.messages).values({ ...row, id: "eco_1", providerMessageId: `wamid.eco.${randomUUID()}`, providerInternalId: null });
+    await send.queueChatUploads(provider, { organizationId: ORG, conversationId: CONV, sentByUserId: "u_v", files, captions: [null] });
+    expect(await send.sendQueuedChatUpload(provider, storage, { organizationId: ORG, messageId: id })).toBeNull();
+    expect(sent).toHaveLength(1);
+  });
+
+  it("revisión: la limpieza conserva la miniatura del PDF enviado", async () => {
+    const old = new Date(Date.now() - 2 * 86_400_000);
+    const pdf = await up.storeChatUpload(storage, { organizationId: ORG, userId: "u_v", conversationId: CONV, fileName: "cotizacion.pdf", declaredBytes: PDF.byteLength, body: Readable.from([PDF]), now: old });
+    const u = token.verifyChatUpload(pdf.token, { organizationId: ORG, userId: "u_v", conversationId: CONV, now: old.getTime() + 1000 });
+    storage.objects.get(u.storageKey)!.lastModified = old;
+    const thumb = `${u.storageKey}.thumb.png`;
+    storage.objects.set(thumb, { bytes: 10, contentType: "image/png", lastModified: new Date(old.getTime() + 120_000) });
+    const [id] = await send.queueChatUploads(provider, { organizationId: ORG, conversationId: CONV, sentByUserId: "u_v", files: [{ storageKey: u.storageKey, kind: u.kind, mime: u.mime, fileName: u.fileName, bytes: u.bytes }], captions: [null], now: new Date(old.getTime() + 60_000) });
+    const [row] = await db.select().from(s.messages).where(eq(s.messages.id, id));
+    await db.update(s.messages).set({ attachments: [{ ...row.attachments[0], thumbnailKey: thumb }] }).where(eq(s.messages.id, id));
+    expect(await maint.cleanupUnsentChatUploads(storage)).toBe(0);
+    expect(storage.objects.has(thumb)).toBe(true);
   });
 });

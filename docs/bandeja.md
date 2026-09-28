@@ -143,10 +143,15 @@ El vendedor manda fotos, videos y documentos desde la Bandeja y el pop-up del Em
   outbox de siempre (`deliver`, sin cambios; su id es la Idempotency-Key) y una URL firmada de 15 min. En la burbuja
   queda la ruta interna (`/api/media/{id}/0`). Un rechazo de WhatsApp/Zernio queda en SU burbuja (⚠ con motivo) y
   los demás siguen. Si Redis no respondió al encolar, el barrido del worker (cada minuto) los recoge.
+  El barrido general de "sin confirmar" (15 min) no toca los que aún esperan al worker.
 - **Limpieza:** cada hora el worker borra del bucket lo subido y **nunca enviado** de más de 24 h (lo que usa alguna
-  burbuja, enviada o fallida, no se toca).
-- **Límite conocido:** si el vendedor escribe un texto mientras sus archivos aún salen, el texto puede llegar antes
-  que los últimos archivos (los archivos entre sí sí van en orden).
+  burbuja, enviada o fallida, no se toca; tampoco la miniatura de un PDF enviado).
+- **Orden con lo que sigue:** mientras esperan al worker, los archivos ocupan su lugar en la fila de la conversación
+  (marca de turno de `send-turn.ts`): un texto o un "/" que el vendedor mande después sale **después** de ellos. El
+  corte de "leído" es el del clic: lo que el cliente escriba mientras salen sigue sin leer.
+- **Si el worker está caído:** lo que no salió en 30 min queda ⚠ "No salió: el envío del archivo no se completó.
+  Vuelve a adjuntarlo." (nunca llegó a WhatsApp; no es "sin confirmar"). Un archivo que ya está en una burbuja de la
+  conversación no se vuelve a mandar aunque se reenvíen sus comprobantes.
 
 ### Programados (A6)
 Van dentro del hilo, al final, como burbujas punteadas "🕒 Programado para …" con Editar/Cancelar

@@ -30,7 +30,7 @@ import { channels, conversations, messages, templates } from "@/lib/db/schema";
 import { applyOutboundToConversation, latestInboundMessageId } from "./ingest";
 import { SendFailedError, type MessagingProvider, type SendResult } from "./provider";
 import { isAmbiguousSendError, isWindowOpen, nextStatus, SEND_ACCEPTED, SEND_RATE_LIMITED, SEND_UNCONFIRMED, SEND_UNKNOWN } from "./rules";
-import { sendInTurn } from "./send-turn";
+import { sendInTurn, type TurnMark } from "./send-turn";
 import { plainSendReason } from "./send-reasons";
 import { addNotice } from "@/lib/ai/runtime/notices";
 import { renderTemplateBody, templateMaxIndex } from "./template-format";
@@ -309,6 +309,15 @@ export type ChatUploadToSend = { storageKey: string; kind: "image" | "video" | "
 
 /** Marca de los adjuntos del chat en `messages.metadata`: pendiente → enviando (una sola vez). */
 export const CHAT_UPLOAD_META = "adjuntoChat";
+/**
+ * Mientras esperan al worker, los archivos ocupan su lugar en la fila de la
+ * conversación (turno de send-turn.ts): un texto o un "/" que el vendedor mande
+ * DESPUÉS sale después de ellos. La marca vence sola (worker caído: no frena
+ * para siempre); al reclamar cada archivo, sendInTurn pone la suya.
+ */
+const CHAT_UPLOAD_TURN_BASE_MS = 60_000;
+const CHAT_UPLOAD_TURN_PER_FILE_MS = 15_000;
+type ChatUploadMeta = { estado: "pendiente" | "enviando"; corte?: string | null };
 
 /**
  * Adjuntos del chat (28-sep-2026), paso 1 (web): valida la conversación y la
@@ -326,9 +335,26 @@ export async function queueChatUploads(
   const captions = params.captions.map((c) => (c?.trim() ? validText(c) : null));
   const { conversation } = await loadConversation(provider, params.organizationId, params.conversationId, now);
   const ids = params.files.map((f) => chatUploadMessageId(f.storageKey));
+  // Corte de lectura AL HACER CLIC (no cuando el worker manda): lo que el
+  // cliente escriba mientras salen los archivos sigue sin leer.
+  const corte = await latestInboundMessageId(conversation.id);
+  // Un archivo que ya está en una burbuja de esta conversación no se vuelve a
+  // mandar aunque su fila en cola ya no exista (el eco de WhatsApp la sustituyó).
+  const sent = await db.execute<{ k: string }>(sql`
+    select a->>'storageKey' as k from ${messages} m cross join lateral jsonb_array_elements(m.attachments) a
+    where m.organization_id = ${params.organizationId} and m.conversation_id = ${conversation.id}
+      and m.created_at > ${new Date(now.getTime() - 24 * 3_600_000).toISOString()}::timestamp
+      and a->>'storageKey' in (${sql.join(
+        params.files.map((f) => sql`${f.storageKey}`),
+        sql`, `,
+      )})`);
+  const already = new Set(sent.map((r) => r.k));
   await db.transaction(async (tx) => {
     for (const [i, file] of params.files.entries()) {
+      if (already.has(file.storageKey)) continue;
       const at = new Date(now.getTime() + i);
+      const meta: ChatUploadMeta = { estado: "pendiente", corte };
+      const turn: TurnMark = { estado: "espera", hasta: now.getTime() + CHAT_UPLOAD_TURN_BASE_MS + i * CHAT_UPLOAD_TURN_PER_FILE_MS, esperas: 0 };
       const url = `/api/media/${ids[i]}/0`;
       await tx
         .insert(messages)
@@ -347,7 +373,7 @@ export async function queueChatUploads(
           mediaMimeType: file.mime,
           status: "queued",
           sentByUserId: params.sentByUserId,
-          metadata: { [CHAT_UPLOAD_META]: { estado: "pendiente" } },
+          metadata: { [CHAT_UPLOAD_META]: meta, envio: turn },
           sentAt: at,
           createdAt: at,
         })
@@ -374,7 +400,8 @@ export async function sendQueuedChatUpload(
   const where = and(eq(messages.id, params.messageId), eq(messages.organizationId, params.organizationId));
   const [row] = await db
     .update(messages)
-    .set({ metadata: sql`coalesce(${messages.metadata}, '{}'::jsonb) || jsonb_build_object(${CHAT_UPLOAD_META}::text, jsonb_build_object('estado', 'enviando'))` })
+    // Solo cambia `estado` (conserva el corte de lectura guardado al hacer clic).
+    .set({ metadata: sql`jsonb_set(${messages.metadata}, array[${CHAT_UPLOAD_META}::text, 'estado'], '"enviando"'::jsonb)` })
     .where(and(where, eq(messages.status, "queued"), isNull(messages.providerMessageId), sql`${messages.metadata}->${CHAT_UPLOAD_META}->>'estado' = 'pendiente'`))
     .returning();
   if (!row) return null;
@@ -395,7 +422,7 @@ export async function sendQueuedChatUpload(
     // "pendiente" para que el reintento del job sí lo mande (no salió nada).
     await db
       .update(messages)
-      .set({ metadata: sql`${messages.metadata} || jsonb_build_object(${CHAT_UPLOAD_META}::text, jsonb_build_object('estado', 'pendiente'))` })
+      .set({ metadata: sql`jsonb_set(${messages.metadata}, array[${CHAT_UPLOAD_META}::text, 'estado'], '"pendiente"'::jsonb)` })
       .where(where)
       .catch(() => undefined);
     throw error;
@@ -410,6 +437,7 @@ export async function sendQueuedChatUpload(
   }
   const { conversation, channel } = loaded;
   const kind = row.type;
+  const corte = (row.metadata?.[CHAT_UPLOAD_META] as ChatUploadMeta | undefined)?.corte;
   return deliver({
     messageId: row.id,
     send: () =>
@@ -426,6 +454,8 @@ export async function sendQueuedChatUpload(
     conversation,
     organizationId: params.organizationId,
     sentByUserId: row.sentByUserId,
+    // Undefined (filas viejas sin corte) = deliver lo calcula como siempre.
+    readCutoffMessageId: corte,
   });
 }
 
@@ -966,6 +996,9 @@ export async function expireUnconfirmedSends(now = new Date()): Promise<number> 
     eq(messages.status, "queued"),
     // sent_at = último intento (un reintento lo renueva), no la creación.
     lt(messages.sentAt, new Date(now.getTime() - SEND_UNCONFIRMED_AFTER_MS)),
+    // Un adjunto del chat que aún espera al worker nunca se intentó: no es "sin
+    // confirmar" (lo resuelve expireStuckChatUploads con su propio motivo).
+    sql`coalesce(${messages.metadata}->${CHAT_UPLOAD_META}->>'estado', '') <> 'pendiente'`,
   );
   const accepted = await db
     .update(messages)
