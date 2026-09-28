@@ -20,6 +20,7 @@ import type { WorkflowStepPayload } from "@/lib/db/schema/automation";
 import { renderSnippet } from "@/lib/snippets/variables";
 import { sendMediaMessage, sendTextMessage, SendRejectedError, type SendOutcome } from "@/lib/messaging/send";
 import { SendFailedError, type MessagingProvider } from "@/lib/messaging/provider";
+import { plainSendReason } from "@/lib/messaging/send-reasons";
 import type { ObjectStorage } from "@/lib/storage/s3";
 import { enqueueWorkflowRun } from "@/lib/queue/workflows";
 import { notifyConversation } from "@/lib/ai/runtime/state";
@@ -346,7 +347,8 @@ export async function executeWorkflowRun(runId: string, deps: ExecutorDeps): Pro
     } catch (error) {
       if (error instanceof SendRejectedError && error.code === "window_closed") return fail(FAIL_WINDOW, error.message);
       if (error instanceof SendRejectedError) return fail(error.code, error.message);
-      if (error instanceof SendFailedError) return fail(error.code, error.message);
+      // Motivo del proveedor en palabras simples (tarjeta del vendedor; Bloque B).
+      if (error instanceof SendFailedError) return fail(error.code, plainSendReason(error.code, error.message));
       return fail("error", error instanceof Error ? error.message : String(error));
     }
     // Avanza el cursor y RENUEVA el lease: una corrida larga (esperas + envíos
@@ -484,11 +486,17 @@ export function stepMessageId(runId: string, stepIndex: number): string {
 
 async function alreadySent(organizationId: string, messageId: string): Promise<SendOutcome | null> {
   const [row] = await db
-    .select({ status: messages.status })
+    .select({ status: messages.status, errorCode: messages.errorCode, errorMessage: messages.errorMessage })
     .from(messages)
     .where(and(eq(messages.id, messageId), eq(messages.organizationId, organizationId)))
     .limit(1);
   if (!row) return null;
+  // Al retomar solo cuenta como enviado lo que WhatsApp confirmó (enviado,
+  // entregado o leído; Bloque B). Un fallido detiene la corrida con su motivo:
+  // la etapa NO pasa a "Cerca de compra" sin que el cliente tenga la CLABE.
+  if (row.status === "failed") {
+    throw new SendFailedError(row.errorCode ?? "failed", row.errorMessage ?? "WhatsApp no lo entregó", "rejected");
+  }
   // "queued" = el envío anterior quedó sin confirmar; lo concilia el outbox, no se reenvía.
   return { messageId, status: row.status === "queued" ? "pending" : "sent" };
 }

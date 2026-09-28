@@ -54,6 +54,8 @@ Nadie es "dueño" de un contacto: **todos ven todos los contactos, siempre**.
 | **Biblioteca** | Los archivos (imágenes y videos) que usan los workflows. |
 | **Aviso 🤖** | Nota del agente **para el vendedor** dentro del chat; el cliente nunca la ve. Ej.: "El cliente pide hablar con una persona", "Depósito recibido", "Comprobante dudoso", "Llegó al máximo de respuestas". |
 | **Tarjeta "El agente no pudo responder"** | Aparece en el chat cuando falló el modelo o el envío. Tiene **Reintentar** y **Apagar**; mientras nadie elija, el agente no vuelve a intentar solo. |
+| **Fila de espera (🕗 Enviando…)** | Si WhatsApp (Zernio) pide esperar porque salieron muchos mensajes seguidos, el mensaje **espera su turno** con el reloj 🕗 y sale solo, en el orden en que se escribió. **No es error**: al cliente no le llega nada raro y no hay que volver a escribirlo. Vale para vendedores, agente, workflows y programados. |
+| **Tarjeta de envío (🤖)** | Aviso en el chat cuando un mensaje **no se pudo confirmar** o WhatsApp avisó **después** que no le llegó al cliente (p. ej. la imagen de Datos bancarios). Dice el motivo en palabras simples y cómo reenviarlo (p. ej. "Vuelve a mandarla con /banco"). |
 | **Marca "IA"** | Etiqueta junto a un dato del Detalle del contacto que **escribió el agente al último**. Si un vendedor lo edita, la marca se va. Mientras el agente lo llena se ve "IA actualizando". |
 | **Pausar agente / Activar** | Detiene al agente **solo en ese chat** (8, 12 o 24 horas, hasta una fecha y hora o indefinidamente). **Activar** lo regresa. También se pausa solo cuando un vendedor contesta (se ajusta en Opciones). Cada pausa y cada Activar quedan en **Agente IA › Historial** con quién lo hizo. |
 | **Canal Encendido / Apagado** | Interruptor general del agente por número de WhatsApp (Agente IA › Canales, que solo muestra los números **no archivados**: hoy WhatsApp Diluvium). Apagado = no contesta a nadie en ese número. |
@@ -180,7 +182,7 @@ Clic derecho sobre una fila de la lista: menú de esa conversación (23).
 | 11 | **Aviso de ventana de 24 h** | "Ventana abierta · quedan X h" (verde) o, vencida, "Pasaron 24 h…" (ámbar). | Todos |
 | 12 | **Gratis por anuncio** | "🎁 Gratis por anuncio hasta…" o "📣 Responde antes de…: 72 h gratis". | Todos |
 | 13 | **Burbuja del cliente** | Mensaje del cliente (izquierda, blanca). | Todos |
-| 14 | **Burbuja nuestra** | Mensaje del vendedor o del agente (derecha, azul; a propósito no dice quién). Palomitas: ✓ enviado · ✓✓ entregado · ✓✓ azul leído. | Todos |
+| 14 | **Burbuja nuestra** | Mensaje del vendedor o del agente (derecha, azul; a propósito no dice quién). 🕗 enviando (también mientras espera su turno si WhatsApp pidió esperar) · ✓ enviado · ✓✓ entregado · ✓✓ azul leído. Si WhatsApp dice "entregado" o "leído", el mensaje **nunca** queda como "No se envió". | Todos |
 | 15 | **Nota de voz** | Reproductor del audio. | Todos |
 | 16 | **Transcripción** | Lo que dijo el cliente en la nota de voz, en texto. | Todos |
 | 17 | **Aviso 🤖** | Nota del agente para el vendedor (el cliente no la ve). | Todos |
@@ -226,16 +228,18 @@ dentro de él.
 | 6 | **Reintentar** (tarjeta del agente) | Le pide al agente un intento más, ya. | Todos |
 | 7 | **Apagar** (tarjeta del agente) | Pausa al agente solo en ese chat; vuelve con **Activar** en el Detalle. | Todos |
 | 8 | **🤖 Pausado · vuelve hoy 22:30** | Solo informa que el agente está en pausa en este chat y hasta cuándo. Se activa en el Detalle. | Todos |
-| 9 | **Documento** | PDF con miniatura de la primera página, nombre, páginas y peso. Clic lo abre. | Todos |
+| 9 | **Documento** | PDF con miniatura de la primera página, nombre, páginas y peso. Clic lo abre. Mientras se copia dice "Procesando…"; si no se pudo bajar (o llegó vacío) tras varios intentos, dice **"No se pudo descargar"** (nunca un archivo en blanco). Igual para audio, imagen, video y XML. | Todos |
 | 10 | **🤖 Depósito recibido** | El agente vio un comprobante: revisar el depósito en el banco antes de enviar. | Todos |
 | 11 | **Respuesta del agente al comprobante** | Confirma al cliente y pide sus datos de envío. | Todos |
 | 12 | **Respuesta de un vendedor** | Al contestar un vendedor, el agente se pausa en ese chat (según Opciones). | Todos |
 | 13 | **⚠ No se envió** | El mensaje no salió. | Todos |
-| 14 | **Motivo** | Por qué no salió (lo dice WhatsApp o el CRM). | Todos |
+| 14 | **Motivo** | Por qué no salió, en palabras simples: ventana de 24 h cerrada, número que no recibe mensajes de WhatsApp, WhatsApp no pudo subir el archivo, tipo de archivo no permitido; cualquier otro: "WhatsApp no lo entregó (código N)". | Todos |
 | 15 | **Reintentar** (mensaje) | Vuelve a mandar ese mismo mensaje. | Todos |
 | 16 | **PRUEBA** | El chat es de un número de prueba; no cuenta en el Dashboard. | Todos |
 | 17 | **Importado del celular** | Mensaje copiado del historial del teléfono al conectar el número. El agente no lo contesta. | Todos |
 | 18 | **Respuesta del agente en el número de prueba** | Así se prueba al agente sin tocar a clientes reales. | Todos |
+| 19 | **🤖 No le llegó al cliente la imagen de …** | Tarjeta de envío: WhatsApp aceptó el archivo de un workflow y después avisó que falló. Dice el motivo y el comando para reenviarlo (p. ej. /banco). La etapa no se regresa. | Todos |
+| 20 | **🤖 WhatsApp sí recibió el mensaje…** | Tarjeta de envío: WhatsApp aceptó el mensaje pero el CRM no pudo guardar la confirmación. Revisar en el celular antes de escribirlo otra vez (sin Reintentar, para no duplicar). | Todos |
 
 **Lo cambias tú desde la pantalla:** Reintentar o Apagar en la tarjeta del agente; Reintentar un mensaje que no salió.
 
@@ -697,7 +701,7 @@ Los **workflows** (envíos de material), la **Biblioteca** de archivos y las **C
 | 42 | **Ejecutando** | Se está mandando. | Todos |
 | 43 | **Hecho** | Salió completo. | Todos |
 | 44 | **Omitido · motivo** | No salió y por qué (p. ej. agente pausado). | Todos |
-| 45 | **Falló · código** | Error al mandar. | Todos |
+| 45 | **Falló · código** | Error al mandar, con el motivo en palabras simples. Si WhatsApp pidió esperar, la corrida **no falla**: espera su turno y sigue. Si el worker se reinició y el archivo había quedado fallido, la corrida se detiene y **no** mueve la etapa. | Todos |
 
 **Lo cambias tú desde la pantalla:** crear, editar, prender, apagar, ordenar y probar workflows; restaurar los
 predeterminados; subir, renombrar y borrar archivos. Crear, editar, prender, apagar y borrar (y restaurar predeterminados)

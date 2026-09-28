@@ -1,6 +1,6 @@
 import { createHmac } from "node:crypto";
 import { describe, expect, it, vi } from "vitest";
-import { normalizeZernioEvent, validDate, verifyZernioSignature, zernioAccountId, ZernioProvider, ZernioSendError } from "./zernio";
+import { normalizeZernioEvent, retryAfterMs, validDate, verifyZernioSignature, zernioAccountId, ZernioProvider, ZernioSendError } from "./zernio";
 
 const SECRET = "whsec_test";
 const sign = (body: string, secret = SECRET) => createHmac("sha256", secret).update(body).digest("hex");
@@ -242,7 +242,6 @@ describe("ZernioProvider.sendText", () => {
     const status = (code: number) => (async () => Response.json({}, { status: code })) as unknown as typeof fetch;
     await expect(send(status(502))).rejects.toMatchObject({ outcome: "unknown" });
     await expect(send(status(409))).rejects.toMatchObject({ outcome: "unknown" });
-    await expect(send(status(429))).rejects.toMatchObject({ outcome: "rejected" });
     await expect(send(status(422))).rejects.toMatchObject({ outcome: "rejected" });
     const timeout = (async () => {
       throw new DOMException("The operation was aborted due to timeout", "TimeoutError");
@@ -253,6 +252,37 @@ describe("ZernioProvider.sendText", () => {
       code: "sin_message_id",
     });
     await expect(send(status(400))).rejects.toBeInstanceOf(ZernioSendError);
+  });
+});
+
+describe("429 de Zernio: fila de espera, no rechazo (Bloque B)", () => {
+  const send = (fetchImpl: typeof fetch) =>
+    new ZernioProvider({ apiKey: "k", webhookSecret: SECRET }, fetchImpl).sendText({
+      providerAccountId: "a",
+      providerConversationId: "c",
+      text: "x",
+      idempotencyKey: "k1",
+    });
+
+  it("un 429 sale como rate_limited con la espera del encabezado Retry-After", async () => {
+    const fetchImpl = (async () =>
+      Response.json({ error: { message: "Too many requests" } }, { status: 429, headers: { "Retry-After": "7" } })) as unknown as typeof fetch;
+    await expect(send(fetchImpl)).rejects.toMatchObject({ outcome: "rate_limited", retryAfterMs: 7_000 });
+  });
+
+  it("sin encabezado usa details.retryAfterSeconds; sin nada, null (el envío decide la espera)", async () => {
+    const withDetails = (async () =>
+      Response.json({ error: { message: "rate" }, details: { retryAfterSeconds: 3 } }, { status: 429 })) as unknown as typeof fetch;
+    await expect(send(withDetails)).rejects.toMatchObject({ outcome: "rate_limited", retryAfterMs: 3_000 });
+    const bare = (async () => Response.json({}, { status: 429 })) as unknown as typeof fetch;
+    await expect(send(bare)).rejects.toMatchObject({ outcome: "rate_limited", retryAfterMs: null });
+  });
+
+  it("Retry-After como fecha HTTP", () => {
+    const now = Date.parse("2026-09-28T12:00:00Z");
+    expect(retryAfterMs("Mon, 28 Sep 2026 12:00:05 GMT", undefined, now)).toBe(5_000);
+    expect(retryAfterMs(null, "2")).toBe(2_000);
+    expect(retryAfterMs("basura", undefined)).toBeNull();
   });
 });
 

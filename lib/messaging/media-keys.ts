@@ -24,3 +24,13 @@ export const MEDIA_SWEEP_DAYS = 30;
 // a lo más estos mensajes por minuto, DESPUÉS de los vivos. Cada descarga es una
 // petición a Zernio y su límite (60/min) se comparte con los envíos del CRM.
 export const HISTORY_MEDIA_PER_SWEEP = 5;
+
+/**
+ * ¿El adjunto ya tiene su copia CON contenido? Una copia de 0 bytes (guardada
+ * antes del Bloque B, 28-sep-2026) cuenta como pendiente: se vuelve a bajar y,
+ * si se agotan los intentos, la bandeja muestra "no se pudo descargar" en vez de
+ * un archivo en blanco (lib/inbox/format.ts).
+ */
+export function isStoredAttachment(attachment: { storageKey?: string; sizeBytes?: number }): boolean {
+  return !!attachment.storageKey && attachment.sizeBytes !== 0;
+}

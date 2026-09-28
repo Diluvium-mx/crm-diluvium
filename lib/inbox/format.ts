@@ -1,7 +1,7 @@
 // Reglas puras de presentación de la bandeja (sin base de datos), para
 // testearlas solas. La UI recibe ya el dato listo; no decide nada de esto.
 import type { MessageAttachment } from "@/lib/db/schema";
-import { MEDIA_MAX_ATTEMPTS, MEDIA_SWEEP_DAYS } from "@/lib/messaging/media-keys";
+import { isStoredAttachment, MEDIA_MAX_ATTEMPTS, MEDIA_SWEEP_DAYS } from "@/lib/messaging/media-keys";
 import { isAmbiguousSendError } from "@/lib/messaging/rules";
 import type { AttachmentView, MessageKind, MessageView } from "./types";
 
@@ -88,7 +88,7 @@ export function attachmentView(
   now = new Date(),
 ): AttachmentView {
   const expired = now.getTime() - messageCreatedAt.getTime() > MEDIA_SWEEP_DAYS * 86_400_000;
-  const state = attachment.storageKey
+  const state = isStoredAttachment(attachment)
     ? "ready"
     : (attachment.downloadAttempts ?? 0) >= MEDIA_MAX_ATTEMPTS || expired
       ? "failed"
