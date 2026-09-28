@@ -53,11 +53,12 @@ clientes** (eso llega en la Fase B y siguientes).
     Goal (todo el texto del editor, con lo no guardado) y de las FAQs (todas, sin importar
     búsqueda ni filtro: `- pregunta` + respuesta con sangría, sin números, «(inactiva)» en las
     apagadas; `faqsAsText`), y cada FAQ se queda **abierta** hasta cerrarla a mano (varias a la vez).
-    **Borrar varias** (28-sep-2026): casilla por pregunta, barra fija arriba de la lista con
-    «Seleccionar todas» (las de la lista a la vista: respeta búsqueda y filtro; cambiarlos vacía
-    la selección) y «Borrar (N)» → `deleteAgentFaqs` → `deleteFaqs`: UNA transacción, UNA
-    versión y una fila de Historial; las que otro ya borró se ignoran. Sigue el «Borrar» de
-    cada pregunta abierta.
+    **Borrar varias** (28-sep-2026): barra fija arriba de la lista con el botón «Seleccionar»
+    (sin él no hay casillas, ajuste del dueño). Al pulsarlo: casilla por pregunta, «Seleccionar
+    todas» (las de la lista a la vista: respeta búsqueda y filtro; cambiarlos vacía la selección),
+    «Cancelar» (sale del modo) y «Borrar (N)» → `deleteAgentFaqs` → `deleteFaqs`: UNA
+    transacción, UNA versión y una fila de Historial; las que otro ya borró se ignoran; al
+    terminar sale del modo. Sigue el «Borrar» de cada pregunta abierta.
   - **Canales** (antes «Implementar»): los canales con interruptor Encendido / Apagado. Desde el
     28-sep-2026 solo los **no archivados** (hoy solo «WhatsApp Diluvium»); el Sandbox y el Número
     de prueba archivados se **ocultan, no se borran** (sus chats, mensajes y contactos siguen igual).

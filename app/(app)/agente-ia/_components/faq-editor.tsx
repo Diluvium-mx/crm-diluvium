@@ -4,14 +4,15 @@
 // lista compacta tipo acordeón (una línea por pregunta; al dar clic se despliega la
 // respuesta para verla o editarla y se queda abierta hasta cerrarla a mano: se pueden
 // tener varias abiertas), con buscador, filtro y «Copiar» (todas, con su respuesta)
-// arriba. Cada pregunta tiene su casilla y arriba de la lista va «Seleccionar todas» con
-// «Borrar (N)»: se borran varias a la vez (28-sep-2026, pedido del dueño). El panel se
+// arriba. Arriba de la lista, el botón «Seleccionar» muestra las casillas (sin él no se
+// ven): «Seleccionar todas», «Cancelar» y «Borrar (N)» borran varias a la vez (28-sep-2026,
+// pedido del dueño). El panel se
 // desliza por dentro: la página no crece con las FAQs. Cada cambio deja una versión
 // de todas las FAQs (se puede regresar a una anterior). Agregar, guardar una edición,
 // borrar y activar/desactivar piden confirmación arriba antes de guardar (regla del
 // dueño, 27-sep-2026; use-confirm.tsx). Sin lógica de datos.
 import { useState } from "react";
-import { ChevronRight, Search, Trash2 } from "lucide-react";
+import { ChevronRight, ListChecks, Search, Trash2 } from "lucide-react";
 import { createAgentFaq, deleteAgentFaq, deleteAgentFaqs, restoreAgentFaqs, updateAgentFaq } from "@/lib/actions/agente-ia-editor";
 import { faqSchema, faqsAsText } from "@/lib/agente-ia/editor";
 import { CopyButton } from "@/components/ui/copy-button";
@@ -116,9 +117,16 @@ export function FaqEditor({ faqs, versions }: { faqs: FaqView[]; versions: Versi
   const [editing, setEditing] = useState<string | "new" | null>(null);
   const [query, setQuery] = useState("");
   const [filter, setFilter] = useState<Filter>("todas");
-  // Seleccionadas para «Borrar (N)». Cambiar la búsqueda o el filtro la vacía: así nunca se
-  // borra una pregunta que no está a la vista.
+  // Modo selección: las casillas solo se ven después de pulsar «Seleccionar»; «Cancelar» o
+  // terminar de borrar las quitan. Seleccionadas para «Borrar (N)»: cambiar la búsqueda o el
+  // filtro las vacía, así nunca se borra una pregunta que no está a la vista.
+  const [selecting, setSelecting] = useState(false);
   const [selected, setSelected] = useState<ReadonlySet<string>>(() => new Set());
+
+  function stopSelecting() {
+    setSelecting(false);
+    setSelected(new Set());
+  }
   const confirm = useConfirm();
 
   function toggleSelected(id: string) {
@@ -213,7 +221,10 @@ export function FaqEditor({ faqs, versions }: { faqs: FaqView[]; versions: Versi
       done: n === 1 ? "Listo: pregunta borrada" : `Listo: ${n} preguntas borradas`,
       scope: "list",
       run: () => deleteAgentFaqs({ ids }),
-      onDone: () => forget(ids),
+      onDone: () => {
+        forget(ids);
+        setSelecting(false);
+      },
     });
   }
 
@@ -318,45 +329,57 @@ export function FaqEditor({ faqs, versions }: { faqs: FaqView[]; versions: Versi
           </p>
         ) : (
           <>
-            {/* Barra de selección, fija arriba del panel: «Seleccionar todas» (las de la lista a la
-                vista) y, con alguna marcada, «Quitar selección» y «Borrar (N)». */}
-            <div className="sticky top-0 z-10 flex min-h-9 items-center gap-2 border-b border-black/10 bg-card px-3 py-1.5 text-xs dark:border-white/10">
-              <label className="flex cursor-pointer items-center gap-2 text-muted-foreground">
-                <input
-                  type="checkbox"
-                  checked={allSelected}
-                  ref={(el) => {
-                    if (el) el.indeterminate = someSelected;
-                  }}
-                  onChange={() => setSelected(allSelected ? new Set() : new Set(shown.map((f) => f.id)))}
-                  aria-label={allSelected ? "Quitar la selección" : `Seleccionar las ${shown.length} preguntas de la lista`}
-                  className="size-4 accent-[var(--brand-navy)]"
-                />
-                {selectedShown.length > 0 ? (
-                  <span className="font-medium text-foreground">
-                    {selectedShown.length} {selectedShown.length === 1 ? "seleccionada" : "seleccionadas"}
-                  </span>
-                ) : (
-                  <span>
-                    Seleccionar todas <span className="tabular-nums opacity-70">{shown.length}</span>
-                  </span>
-                )}
-              </label>
-              {selectedShown.length > 0 && (
-                <div className="ml-auto flex items-center gap-1">
-                  <button type="button" onClick={() => setSelected(new Set())} className="rounded px-2 py-1 text-muted-foreground hover:bg-muted">
-                    Quitar selección
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => removeSelected(selectedShown)}
-                    disabled={confirm.pending}
-                    className="inline-flex items-center gap-1.5 rounded border border-red-300 px-2 py-1 font-medium text-red-700 hover:bg-red-50 disabled:opacity-50 dark:border-red-900 dark:text-red-400 dark:hover:bg-red-950/40"
-                  >
-                    <Trash2 className="size-3.5" aria-hidden="true" />
-                    Borrar ({selectedShown.length})
-                  </button>
-                </div>
+            {/* Barra fija arriba del panel. Sin modo selección: solo «Seleccionar». Con él:
+                «Seleccionar todas» (las de la lista a la vista), «Cancelar» y «Borrar (N)». */}
+            <div className="sticky top-0 z-10 flex min-h-10 items-center gap-2 border-b border-black/10 bg-card px-3 py-1.5 text-xs dark:border-white/10">
+              {!selecting ? (
+                <button
+                  type="button"
+                  onClick={() => setSelecting(true)}
+                  className="inline-flex items-center gap-1.5 rounded border border-black/15 px-2 py-1 font-medium text-foreground hover:bg-muted dark:border-white/15"
+                >
+                  <ListChecks className="size-3.5" aria-hidden="true" />
+                  Seleccionar
+                </button>
+              ) : (
+                <>
+                  <label className="flex cursor-pointer items-center gap-2 text-muted-foreground">
+                    <input
+                      type="checkbox"
+                      checked={allSelected}
+                      ref={(el) => {
+                        if (el) el.indeterminate = someSelected;
+                      }}
+                      onChange={() => setSelected(allSelected ? new Set() : new Set(shown.map((f) => f.id)))}
+                      aria-label={allSelected ? "Quitar la selección" : `Seleccionar las ${shown.length} preguntas de la lista`}
+                      className="size-4 accent-[var(--brand-navy)]"
+                    />
+                    {selectedShown.length > 0 ? (
+                      <span className="font-medium text-foreground">
+                        {selectedShown.length} {selectedShown.length === 1 ? "seleccionada" : "seleccionadas"}
+                      </span>
+                    ) : (
+                      <span>
+                        Seleccionar todas <span className="tabular-nums opacity-70">{shown.length}</span>
+                      </span>
+                    )}
+                  </label>
+                  <div className="ml-auto flex items-center gap-1">
+                    <button type="button" onClick={stopSelecting} className="rounded px-2 py-1 text-muted-foreground hover:bg-muted">
+                      Cancelar
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => removeSelected(selectedShown)}
+                      disabled={confirm.pending || selectedShown.length === 0}
+                      title={selectedShown.length === 0 ? "Marca al menos una pregunta" : undefined}
+                      className="inline-flex items-center gap-1.5 rounded border border-red-300 px-2 py-1 font-medium text-red-700 hover:bg-red-50 disabled:opacity-40 disabled:hover:bg-transparent dark:border-red-900 dark:text-red-400 dark:hover:bg-red-950/40"
+                    >
+                      <Trash2 className="size-3.5" aria-hidden="true" />
+                      Borrar ({selectedShown.length})
+                    </button>
+                  </div>
+                </>
               )}
             </div>
             <ul className="divide-y divide-black/10 dark:divide-white/10">
@@ -364,15 +387,17 @@ export function FaqEditor({ faqs, versions }: { faqs: FaqView[]; versions: Versi
                 const open = openIds.has(f.id);
                 const panelId = `faq-${f.id}`;
                 return (
-                  <li key={f.id} className={selected.has(f.id) ? "bg-brand-navy/5 dark:bg-white/5" : undefined}>
+                  <li key={f.id} className={selecting && selected.has(f.id) ? "bg-brand-navy/5 dark:bg-white/5" : undefined}>
                     <div className="flex items-center gap-2 pr-2">
-                      <input
-                        type="checkbox"
-                        checked={selected.has(f.id)}
-                        onChange={() => toggleSelected(f.id)}
-                        aria-label={`Seleccionar «${short(f.question)}»`}
-                        className="ml-3 size-4 shrink-0 cursor-pointer accent-[var(--brand-navy)]"
-                      />
+                      {selecting && (
+                        <input
+                          type="checkbox"
+                          checked={selected.has(f.id)}
+                          onChange={() => toggleSelected(f.id)}
+                          aria-label={`Seleccionar «${short(f.question)}»`}
+                          className="ml-3 size-4 shrink-0 cursor-pointer accent-[var(--brand-navy)]"
+                        />
+                      )}
                       <button
                         type="button"
                         aria-expanded={open}
@@ -386,7 +411,7 @@ export function FaqEditor({ faqs, versions }: { faqs: FaqView[]; versions: Versi
                           });
                           if (open && editing === f.id) setEditing(null);
                         }}
-                        className={`flex min-w-0 flex-1 items-center gap-2 py-2 pr-3 text-left text-sm ${f.enabled ? "text-foreground" : "text-muted-foreground"}`}
+                        className={`flex min-w-0 flex-1 items-center gap-2 py-2 pr-3 text-left text-sm ${selecting ? "" : "pl-3"} ${f.enabled ? "text-foreground" : "text-muted-foreground"}`}
                       >
                         <ChevronRight
                           className={`size-4 shrink-0 text-muted-foreground transition-transform motion-reduce:transition-none ${open ? "rotate-90" : ""}`}
@@ -400,7 +425,7 @@ export function FaqEditor({ faqs, versions }: { faqs: FaqView[]; versions: Versi
                       <EnabledSwitch faq={f} onToggle={() => toggle(f)} />
                     </div>
                     {open && (
-                      <div id={panelId} className="px-3 pb-3 pl-[3.25rem]">
+                      <div id={panelId} className={`px-3 pb-3 ${selecting ? "pl-[3.25rem]" : "pl-9"}`}>
                         {editing === f.id ? (
                           <FaqForm
                             initial={f}
