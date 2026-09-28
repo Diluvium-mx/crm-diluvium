@@ -356,11 +356,23 @@ const monitorTimer = setInterval(() => {
   monitor().catch((error) => console.error("[monitor] la revisión falló", error));
 }, MONITOR_EVERY_MS);
 
+// Apagado ORDENADO (28-sep-2026, revisión completa B8/B9): en cada despliegue Railway manda SIGTERM al
+// worker viejo y, pasado RAILWAY_DEPLOYMENT_DRAINING_SECONDS (variable del servicio; sin ella son 0 s),
+// SIGKILL. Aquí se deja de tomar trabajo nuevo y se espera a que termine lo que está en curso (una
+// respuesta del Agente IA a medias, una corrida, una descarga). Para que la señal llegue sin
+// intermediarios, start:worker arranca con `exec node --import tsx` (sin `sh` ni el proceso de tsx
+// en medio); el candado `shuttingDown` evita cerrar dos veces si llega por dos caminos.
+// Lo que no alcance a terminar lo retoman, como siempre, la cola y los barridos.
+let shuttingDown = false;
 async function shutdown(signal: string) {
-  console.info(`[worker] ${signal}: cerrando`);
+  if (shuttingDown) return;
+  shuttingDown = true;
+  const t0 = Date.now();
+  console.info(`[worker] ${signal}: cerrando (se termina lo que está en curso; no se toma trabajo nuevo)`);
   clearInterval(sweepTimer);
   clearInterval(monitorTimer);
   await Promise.all([worker.close(), mediaWorker?.close(), scheduled.close(), agent.close(), workflowsRunner.close(), outbox.close(), ads.close(), chatUploads?.close()]);
+  console.info(`[worker] cerrado en orden en ${((Date.now() - t0) / 1000).toFixed(1)} s`);
   process.exit(0);
 }
 process.on("SIGTERM", () => void shutdown("SIGTERM"));
