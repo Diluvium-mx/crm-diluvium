@@ -10,6 +10,7 @@ import { redisConnection } from "@/lib/queue/inbound";
 import { reviveWorkflowRun, WORKFLOW_QUEUE, type WorkflowJob } from "@/lib/queue/workflows";
 import type { ObjectStorage } from "@/lib/storage/s3";
 import { executeWorkflowRun, failStuckRuns, staleQueuedRuns, staleRunningRuns } from "@/lib/workflows/executor";
+import { sweepPendingKeywords } from "@/lib/workflows/triggers";
 
 export const QUICK_SWEEP_EVERY_MS = 5_000;
 // Una "queued" más joven que esto está recién encolada: su job la toma solo.
@@ -46,6 +47,9 @@ export function startWorkflowWorker(provider: MessagingProvider, storage: Object
     if (revived) console.info(`[workflows] barrido: ${revived} corrida(s) re-encoladas`);
     const stuck = await failStuckRuns();
     if (stuck) console.warn(`[workflows] barrido: ${stuck} corrida(s) atoradas marcadas como fallidas`);
+    // Palabras clave que un reinicio dejó sin evaluar (B1).
+    const keywords = await sweepPendingKeywords();
+    if (keywords) console.warn(`[workflows] barrido: ${keywords} palabra(s) clave pendiente(s) evaluada(s) de nuevo`);
   }
 
   // Solo re-encola corridas "queued" SIN job vivo (reviveWorkflowRun deja en paz

@@ -19,6 +19,7 @@ describe.skipIf(!TEST_DATABASE_URL)("ingesta de WhatsApp (Postgres real)", () =>
   let eq: typeof import("drizzle-orm").eq;
   let isNull: typeof import("drizzle-orm").isNull;
   let isNotNull: typeof import("drizzle-orm").isNotNull;
+  let sql: typeof import("drizzle-orm").sql;
   let provider: import("./provider").MessagingProvider;
   const ORG_A = "org_a";
   const ORG_B = "org_b";
@@ -27,7 +28,7 @@ describe.skipIf(!TEST_DATABASE_URL)("ingesta de WhatsApp (Postgres real)", () =>
     ({ db } = await import("@/lib/db"));
     s = await import("@/lib/db/schema");
     ingest = await import("./ingest");
-    ({ eq, isNull, isNotNull } = await import("drizzle-orm"));
+    ({ eq, isNull, isNotNull, sql } = await import("drizzle-orm"));
     const { ZernioProvider } = await import("./zernio");
     provider = new ZernioProvider({ apiKey: "k", webhookSecret: "s" });
   });
@@ -199,6 +200,15 @@ describe.skipIf(!TEST_DATABASE_URL)("ingesta de WhatsApp (Postgres real)", () =>
       { type: "document", url: "https://cdn/f.xml", mimeType: "application/xml", fileName: "F-1.xml" },
     ]);
     expect(m.mediaUrl).toBe("https://cdn/f.pdf");
+  });
+
+  it("B1: el entrante de texto nace con la palabra clave 'pendiente' en la misma transacción; el eco saliente no", async () => {
+    await deliver(msgEvent({ wamid: "wamid.PC_IN", sentAt: "2026-09-18T10:00:00Z" }));
+    await deliver(msgEvent({ direction: "outgoing", source: "whatsapp_business_app", wamid: "wamid.PC_OUT", sentAt: "2026-09-18T10:01:00Z" }));
+    const meta = async (wamid: string) =>
+      ((await db.select().from(s.messages).where(eq(s.messages.providerMessageId, wamid)))[0].metadata ?? {}) as Record<string, unknown>;
+    expect((await meta("wamid.PC_IN")).palabraClave).toBe("pendiente");
+    expect((await meta("wamid.PC_OUT")).palabraClave).toBeUndefined();
   });
 
   it("el mismo evento (o el mismo wamid) dos veces no duplica el mensaje", async () => {
@@ -824,8 +834,8 @@ describe.skipIf(!TEST_DATABASE_URL)("ingesta de WhatsApp (Postgres real)", () =>
       expect(rows[0]).toMatchObject({ source: "crm", sentByUserId: "u_vendedor", providerMessageId: "wamid.ECHO", providerInternalId: "zmsg_INT" });
     });
 
-    it("eco saliente sin participantId ni teléfono: dead-letter hasta que exista la conversación", async () => {
-      const { DeadLetterIngestError } = ingest;
+    it("eco saliente sin participantId ni teléfono: se reintenta 10 min (Z1), luego dead-letter hasta que exista la conversación", async () => {
+      const { DeadLetterIngestError, UnattributedEchoError } = ingest;
       const outNoPhone = {
         id: `evt_np_${randomUUID()}`,
         event: "message.sent",
@@ -845,8 +855,14 @@ describe.skipIf(!TEST_DATABASE_URL)("ingesta de WhatsApp (Postgres real)", () =>
         conversation: { id: "zconv_desconocida" }, // sin participantId
         account: { id: "zacc_1", platform: "whatsapp" },
       };
-      // No hay conversación ni teléfono → dead-letter (no se pierde, replay).
-      await expect(deliver(outNoPhone as { id: string; event: string })).rejects.toBeInstanceOf(DeadLetterIngestError);
+      const rowId = `zernio_${outNoPhone.id}`;
+      // Recién llegado: reintentable (la fila del envío puede estar por enlazar sus ids), SIN dead-letter.
+      await expect(deliver(outNoPhone as { id: string; event: string })).rejects.toBeInstanceOf(UnattributedEchoError);
+      expect((await db.select().from(s.webhookEvents).where(eq(s.webhookEvents.id, rowId)))[0].deadLetteredAt).toBeNull();
+      // Pasados 10 min sin conversación ni teléfono → dead-letter (no se pierde, replay).
+      await db.update(s.webhookEvents).set({ receivedAt: sql`localtimestamp - interval '11 minutes'` }).where(eq(s.webhookEvents.id, rowId));
+      await expect(ingest.processWebhookEvent(provider, rowId)).rejects.toBeInstanceOf(DeadLetterIngestError);
+      expect((await db.select().from(s.webhookEvents).where(eq(s.webhookEvents.id, rowId)))[0].deadLetteredAt).not.toBeNull();
       expect(await outs()).toHaveLength(0);
 
       // Nace la conversación por un entrante del cliente…
@@ -1167,6 +1183,52 @@ describe.skipIf(!TEST_DATABASE_URL)("ingesta de WhatsApp (Postgres real)", () =>
       await ingest.processWebhookEvent(provider, `zernio_${known.id}`);
       const [m] = await db.select().from(s.messages).where(eq(s.messages.providerMessageId, "wamid.KNOWN"));
       expect(m).toMatchObject({ status: "failed", errorCode: "131047" });
+    });
+
+    it("P1: estado sin cuenta que llega ANTES que su mensaje → cuarentena con el wamid; se libera y aplica cuando el mensaje existe", async () => {
+      const env = { ZERNIO_ALLOWED_ACCOUNT_IDS: "zacc_1" };
+      const failed = { id: `st_${randomUUID()}`, event: "message.failed", message: { platformMessageId: "wamid.TARDE", error: { code: 131053, message: "x" } } };
+      expect((await post(failed, env)).status).toBe(200);
+      const rowId = `zernio_${failed.id}`;
+      const read = async () => (await db.select().from(s.webhookEvents).where(eq(s.webhookEvents.id, rowId)))[0];
+      expect(await read()).toMatchObject({ orphanWamid: "wamid.TARDE", organizationId: null, processedAt: null });
+      expect((await read()).quarantinedAt).not.toBeNull();
+      // Sin su mensaje no se libera (nunca abre la puerta a datos de otro entorno).
+      expect(await ingest.releaseQuarantinedStatuses()).toBe(0);
+      // Llega el eco del mensaje: el barrido lo libera con la organización del mensaje.
+      await deliver(msgEvent({ direction: "outgoing", source: "cloud_api", wamid: "wamid.TARDE", sentAt: "2026-09-18T10:00:00Z" }));
+      expect(await ingest.releaseQuarantinedStatuses()).toBe(1);
+      expect(await read()).toMatchObject({ quarantinedAt: null, orphanWamid: null, organizationId: ORG_A, processedAt: null, attempts: 0 });
+      await ingest.processWebhookEvent(provider, rowId);
+      const [m] = await db.select().from(s.messages).where(eq(s.messages.providerMessageId, "wamid.TARDE"));
+      expect(m).toMatchObject({ status: "failed", errorCode: "131053" });
+      // Un evento de una CUENTA ajena nunca trae wamid de espera: sigue en cuarentena.
+      await post(msgEvent({ account: "zacc_real", sentAt: "2026-09-18T10:00:00Z" }), env);
+      expect(await ingest.releaseQuarantinedStatuses()).toBe(0);
+      expect(await quarantined()).toBe(1);
+    });
+
+    it("(a) cuenta de un canal de PRUEBA archivado → ignorado sin cuarentena ni alarma; archivado sin marca de prueba sigue en cuarentena", async () => {
+      const env = { ZERNIO_ALLOWED_ACCOUNT_IDS: "zacc_1" };
+      await db.insert(s.channels).values([
+        { id: "ch_sandbox", organizationId: ORG_A, type: "whatsapp", provider: "zernio", providerAccountId: "zacc_sandbox", displayName: "Sandbox", isTest: true, archivedAt: new Date() },
+        { id: "ch_viejo", organizationId: ORG_A, type: "whatsapp", provider: "zernio", providerAccountId: "zacc_viejo", displayName: "Viejo", archivedAt: new Date() },
+      ]);
+      const sandbox = msgEvent({ account: "zacc_sandbox", sentAt: "2026-09-18T10:00:00Z" });
+      const res = await post(sandbox, env);
+      expect(await res.json()).toMatchObject({ ok: true, ignored: "canal de prueba archivado" });
+      const [row] = await db.select().from(s.webhookEvents).where(eq(s.webhookEvents.id, `zernio_${sandbox.id}`));
+      expect(row).toMatchObject({ quarantinedAt: null, organizationId: ORG_A });
+      expect(row.processedAt).not.toBeNull();
+      expect(row.lastError).toContain("canal de prueba archivado");
+      expect(await quarantined()).toBe(0);
+      // El reintento de Zernio del mismo evento no duplica.
+      await post(sandbox, env);
+      expect((await db.select().from(s.webhookEvents)).length).toBe(1);
+      // Archivado pero NO de prueba (p. ej. un número real que se dejó de usar): cuarentena como siempre.
+      await post(msgEvent({ account: "zacc_viejo", sentAt: "2026-09-18T10:00:00Z" }), env);
+      expect(await quarantined()).toBe(1);
+      expect(await db.select().from(s.messages)).toHaveLength(0);
     });
   });
 

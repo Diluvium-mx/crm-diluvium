@@ -127,7 +127,10 @@ export async function inboundHealth(deps: {
         and ${webhookEvents.quarantinedAt} is null and ${webhookEvents.deadLetteredAt} is null
         and ${webhookEvents.receivedAt} < localtimestamp - interval '5 minutes')::int`,
       deadLetters: sql<number>`count(*) filter (where ${webhookEvents.processedAt} is null and ${webhookEvents.deadLetteredAt} is not null)::int`,
-      quarantined: sql<number>`count(*) filter (where ${webhookEvents.processedAt} is null and ${webhookEvents.quarantinedAt} is not null)::int`,
+      // Un estado sin cuenta que espera su mensaje (orphan_wamid) suele liberarse en segundos (P1):
+      // solo cuenta como problema si pasó el margen de huérfanos sin liberarse.
+      quarantined: sql<number>`count(*) filter (where ${webhookEvents.processedAt} is null and ${webhookEvents.quarantinedAt} is not null
+        and (${webhookEvents.orphanWamid} is null or ${webhookEvents.receivedAt} < localtimestamp - interval '10 minutes'))::int`,
     })
     .from(webhookEvents);
 

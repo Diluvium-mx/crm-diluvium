@@ -366,7 +366,10 @@ Decisiones que no estaban en el diseño original:
   desempata) para no inundar; solo mensajes de texto, nunca imágenes. **Igual que GHL (24-sep):** coincidencia
   "contiene", sin mayúsculas ni acentos, sin tope de palabras; por palabra clave cada workflow se manda **una
   sola vez por contacto** (`contacts.keyword_workflows_sent`, migración 0028; invisible al vendedor); por
-  comando del vendedor y por petición del agente se manda siempre. Textos y palabras clave de los
+  comando del vendedor y por petición del agente se manda siempre. **Durable (28-sep-2026, revisión
+  completa B1):** el entrante de texto nace con `messages.metadata.palabraClave = "pendiente"` en la misma
+  transacción; el gancho la cierra ("revisada") y el barrido de workflows retoma las pendientes de 1 a 30 min
+  (reinicio del worker entre el commit y el gancho). Una corrida por mensaje (índice único 0046). Textos y palabras clave de los
   predeterminados copiados de la auditoría de GHL; "Cliente entrante inbox", "Leads redes sociales" y "Cambio
   de etapa cliente" no se replican (el CRM ya crea el contacto en Inbox y la etapa la mueve el agente).
   **Pie del adjunto (24-sep):** como en GHL, el texto de cada paso de imagen/video va como pie del archivo

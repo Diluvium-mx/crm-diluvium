@@ -8,6 +8,19 @@ no se pierden, pero tampoco aparecen en la Bandeja hasta liberarlos. Cada uno de
 (`[worker] CUARENTENA: …`). Liberarlos tras corregir la allowlist y el canal:
 `npx tsx scripts/replay-webhook-events.ts` (la cuarentena caduca a los 30 días).
 
+Excepciones (revisión completa F2, 28-sep-2026):
+- **Canal de prueba archivado** (`channels.is_test` y `archived_at`, p. ej. el Sandbox que Zernio sigue
+  avisando a producción cuando se prueba en staging): sus eventos se guardan como procesados con
+  «ignorado: canal de prueba archivado», **sin cuarentena ni alarma**. Un canal archivado que NO es de
+  prueba sigue yendo a cuarentena.
+- **Estado sin cuenta que llega antes que su mensaje** (P1): queda en cuarentena con el wamid que espera
+  (`orphan_wamid`) y el barrido del worker lo libera solo en cuanto ese mensaje existe en esta base
+  (`releaseQuarantinedStatuses`). La alarma no lo cuenta en sus primeros 10 min.
+- **Eco de un envío que aún no se puede atribuir** (Z1): se reintenta 10 min (la fila del envío puede
+  estar por guardar sus ids) y solo después va a dead-letter.
+- Ids de Zernio vacíos o con formato raro (Z2/Z4) y horas más de 5 min adelantadas a la llegada (Z3):
+  lo primero es formato no reconocido (dead-letter); lo segundo toma la hora de llegada del webhook.
+
 Todo se valida primero en `staging` (CLAUDE.md §4). Los secretos los pega el dueño
 por portapapeles; nunca en el chat.
 

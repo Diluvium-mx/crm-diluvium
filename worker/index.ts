@@ -19,6 +19,7 @@ import {
   DeadLetterIngestError,
   PermanentIngestError,
   processWebhookEvent,
+  releaseQuarantinedStatuses,
   reopenResolvedOrphans,
 } from "@/lib/messaging/ingest";
 import { downloadMessageMedia } from "@/lib/messaging/media";
@@ -170,6 +171,9 @@ async function sweep() {
   // vuelven a pendientes y se procesan en este mismo barrido.
   const reopened = await reopenResolvedOrphans();
   if (reopened) console.info(`[worker] barrido: ${reopened} evento(s) huérfanos reabiertos (su mensaje ya existe)`);
+  // Estados sin cuenta que llegaron antes que su mensaje (cuarentena con wamid): ya tienen mensaje.
+  const released = await releaseQuarantinedStatuses();
+  if (released) console.info(`[worker] barrido: ${released} estado(s) liberados de cuarentena (su mensaje ya existe)`);
 
   // Mensajes programados (A6): vencidos sin job y envíos atorados.
   await scheduled.sweep().catch((error) => console.error("[scheduled] barrido falló", error));

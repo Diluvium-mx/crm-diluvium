@@ -178,5 +178,10 @@ export const workflowRuns = pgTable(
     uniqueIndex("workflow_runs_agent_msg_uidx")
       .on(table.organizationId, table.workflowId, table.triggerMessageId)
       .where(sql`${table.triggerMessageId} is not null and ${table.trigger} = 'agent'`),
+    // Palabra clave: un mensaje dispara como máximo UNA corrida, aunque el barrido lo vuelva a
+    // evaluar tras un reinicio (revisión completa B1, 0046).
+    uniqueIndex("workflow_runs_keyword_msg_uidx")
+      .on(table.organizationId, table.triggerMessageId)
+      .where(sql`${table.triggerMessageId} is not null and ${table.trigger} = 'keyword'`),
   ],
 );
