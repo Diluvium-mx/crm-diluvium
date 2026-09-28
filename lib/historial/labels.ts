@@ -26,7 +26,8 @@ export type ChangeKind = Exclude<HistoryType, "opciones" | "goal_faqs">;
 export type ChangeAction = {
   modelos: "modelo_1" | "modelo_2";
   etapas: "crear" | "renombrar" | "borrar" | "reordenar" | "papel" | "modelo";
-  canales: "encender" | "apagar";
+  // limpiar_pruebas = borró los chats de canales de prueba archivados (npm run pruebas:limpiar).
+  canales: "encender" | "apagar" | "limpiar_pruebas";
   workflows: "crear" | "editar" | "encender" | "apagar" | "borrar";
   // pausa_auto = "un vendedor contestó" (sin autor; se oculta o muestra con el filtro).
   pausas: "pausar" | "activar" | "pausa_auto";
@@ -76,6 +77,8 @@ export function describeAction(kind: string, action: string, subject: string | n
       return `Encendió el agente en ${subject ?? "un canal"}`;
     case "canales.apagar":
       return `Apagó el agente en ${subject ?? "un canal"}`;
+    case "canales.limpiar_pruebas":
+      return `Limpieza de chats de prueba: borró los chats de ${s}`;
     case "workflows.crear":
       return `Creó el workflow ${s}`;
     case "workflows.editar":
