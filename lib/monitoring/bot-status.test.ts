@@ -71,6 +71,11 @@ describe("bot callado", () => {
     expect(isBotSilent(input({ schedule: desdeLas1140 }))).toBe(true);
   });
 
+  it("horario recién cambiado (p. ej. de horario a 24/7): espera el tramo completo; después sí alerta", () => {
+    expect(isBotSilent(input({ scheduleChangedAt: ago(10) }))).toBe(false);
+    expect(isBotSilent(input({ scheduleChangedAt: ago(16) }))).toBe(true);
+  });
+
   it("el texto del problema lleva solo conteos y horas (el issue es público)", () => {
     expect(botSilenceProblem(input())).toBe(
       "el bot no está contestando: 3 conversación(es) esperan respuesta hace más de 15 min " +

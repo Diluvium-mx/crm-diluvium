@@ -49,15 +49,20 @@ export type BotSilenceInput = {
   waiting: { lastInboundAt: Date }[];
   /** Última respuesta del bot (cualquier conversación de la organización) en las últimas 24 h. */
   lastBotReplyAt: Date | null;
+  /** Último cambio del horario en Opciones del bot (ai_config_changes), si hubo. */
+  scheduleChangedAt?: Date | null;
 };
 
 /** Callado = horario abierto todo el tramo, ≥ N esperando y el bot sin mandar nada en el tramo. */
 export function isBotSilent(input: BotSilenceInput): boolean {
   const { now, thresholds } = input;
+  const span = thresholds.minutes * 60_000;
   if (!openThroughout(input.schedule, now, thresholds.minutes)) return false;
+  // Horario recién cambiado (se abrió otro, o de horario a 24/7): el bot reparte lo
+  // pendiente en 1–2 min; se espera el tramo completo antes de llamarlo "callado".
+  if (input.scheduleChangedAt && now.getTime() - input.scheduleChangedAt.getTime() < span) return false;
   if (input.waiting.length < thresholds.conversations) return false;
-  const quiet = input.lastBotReplyAt === null || now.getTime() - input.lastBotReplyAt.getTime() > thresholds.minutes * 60_000;
-  return quiet;
+  return input.lastBotReplyAt === null || now.getTime() - input.lastBotReplyAt.getTime() > span;
 }
 
 /** Texto del problema para el log y el issue (público): solo conteos y horas. */
