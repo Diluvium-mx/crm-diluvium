@@ -21,6 +21,7 @@ import {
   listTemplatesForOrg,
   syncTemplatesForOrg,
   TemplateActionError,
+  templateReviewForOrg,
   TemplatesChannelError,
   TemplatesSandboxError,
   updateTemplateForOrg,
@@ -28,12 +29,16 @@ import {
 import { ZernioApiError } from "@/lib/messaging/zernio";
 import { TEMPLATE_NAME_MAX, TEMPLATE_NAME_RE, templateBodyProblem } from "@/lib/messaging/template-format";
 import { isForeignTemplateAccount } from "@/lib/messaging/template-sync";
+import { submitNotice, type MetaNotice } from "@/lib/templates/meta-reasons";
 import type { TemplateView } from "@/lib/templates/types";
 import { db } from "@/lib/db";
 import { logChanges } from "@/lib/historial/log";
 import { templateStatusLabel } from "@/lib/historial/labels";
 
-export type TemplateActionResult<T extends object = object> = ({ ok: true } & T) | { ok: false; message: string };
+// `notice`: el rechazo vino de WhatsApp (Meta): la pantalla lo muestra como aviso grande (pop-up).
+export type TemplateActionResult<T extends object = object> =
+  | ({ ok: true } & T)
+  | { ok: false; message: string; notice?: MetaNotice };
 
 // Gestionar plantillas (darlas de alta en Meta, editarlas, borrarlas, sincronizarlas):
 // todos los roles (ACL en lib/auth/permissions.ts; un rol desconocido, no).
@@ -56,7 +61,7 @@ export async function syncTemplates(): Promise<TemplateActionResult<{ synced: nu
     revalidatePath("/mensajes-rapidos");
     return { ok: true, ...result };
   } catch (error) {
-    return { ok: false, message: friendly(error, "No se pudo sincronizar.") };
+    return fail(error, "No se pudo sincronizar.", "sincronizar");
   }
 }
 
@@ -129,7 +134,7 @@ export async function createTemplate(
     revalidatePath("/mensajes-rapidos");
     return { ok: true, status: result.status, synced };
   } catch (error) {
-    return { ok: false, message: friendly(error, "No se pudo crear la plantilla.") };
+    return fail(error, "No se pudo crear la plantilla.", "crear");
   }
 }
 
@@ -150,7 +155,7 @@ export async function updateTemplate(
     revalidatePath("/mensajes-rapidos");
     return { ok: true, status: result.status };
   } catch (error) {
-    return { ok: false, message: friendly(error, "No se pudo editar la plantilla.") };
+    return fail(error, "No se pudo editar la plantilla.", "editar");
   }
 }
 
@@ -163,8 +168,37 @@ export async function deleteTemplate(input: { id: string }): Promise<TemplateAct
     revalidatePath("/mensajes-rapidos");
     return { ok: true };
   } catch (error) {
-    return { ok: false, message: friendly(error, "No se pudo borrar la plantilla.") };
+    return fail(error, "No se pudo borrar la plantilla.", "borrar");
   }
+}
+
+/**
+ * Estado y motivo de rechazo en vivo (para el aviso grande de una plantilla
+ * rechazada, pausada o desactivada). Solo lectura; si Meta cambió el estado, la
+ * fila se pone al día.
+ */
+export async function reviewTemplate(input: {
+  id: string;
+}): Promise<TemplateActionResult<{ name: string; status: string; rejectedReason: string | null }>> {
+  try {
+    const { organizationId } = await requireActiveMembership();
+    const id = z.string().trim().min(1).parse(input.id);
+    const review = await templateReviewForOrg(organizationId, id);
+    return { ok: true, ...review };
+  } catch (error) {
+    return fail(error, "No se pudo consultar a Meta.", "sincronizar");
+  }
+}
+
+type NoticeAction = Parameters<typeof submitNotice>[0];
+
+// Falla con mensaje para el vendedor; si la rechazó WhatsApp (Meta), además el aviso grande.
+function fail(error: unknown, fallback: string, action: NoticeAction): { ok: false; message: string; notice?: MetaNotice } {
+  const message = friendly(error, fallback);
+  if (error instanceof ZernioApiError && error.httpStatus >= 400 && error.httpStatus < 500) {
+    return { ok: false, message, notice: submitNotice(action, error.message) };
+  }
+  return { ok: false, message };
 }
 
 // Traduce errores a un mensaje que el vendedor entienda. Lo inesperado se deja en

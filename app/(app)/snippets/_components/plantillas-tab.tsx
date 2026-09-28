@@ -6,7 +6,8 @@
 // Meta). El ENVÍO se hace desde el chat. Ver docs/investigacion/plantillas-zernio.md.
 import { useMemo, useState } from "react";
 import { Pencil, Plus, RefreshCw, Trash2 } from "lucide-react";
-import { createTemplate, deleteTemplate, listTemplates, syncTemplates, updateTemplate } from "@/lib/actions/templates";
+import { MetaNoticeDialog } from "@/app/(app)/_components/meta-notice-dialog";
+import { createTemplate, deleteTemplate, listTemplates, reviewTemplate, syncTemplates, updateTemplate } from "@/lib/actions/templates";
 import {
   isTemplateEditable,
   TEMPLATE_BODY_MAX,
@@ -14,6 +15,7 @@ import {
   templateMaxIndex,
   templateNameFromLabel,
 } from "@/lib/messaging/template-format";
+import { rejectionNotice, statusNotice, type MetaNotice } from "@/lib/templates/meta-reasons";
 import type { TemplateView } from "@/lib/templates/types";
 import { HighlightBody } from "./highlight";
 
@@ -36,6 +38,8 @@ const LANGUAGES = [
 
 // Borradas (por el CRM, por Meta o en camino de borrarse): no se muestran.
 const HIDDEN_STATUSES = new Set(["REMOVED", "PENDING_DELETION"]);
+// Estados en los que Meta no deja mandarla y hay que explicar por qué (aviso grande).
+const PROBLEM_STATUSES = new Set(["REJECTED", "PAUSED", "DISABLED"]);
 
 function categoryLabel(category: string | null): string | null {
   if (!category) return null;
@@ -74,6 +78,9 @@ export function PlantillasTab({
   const [note, setNote] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [form, setForm] = useState<FormMode | null>(null);
+  // Avisos grandes de Meta en fila: se muestran de uno en uno (decisión del dueño, 28-sep).
+  const [notices, setNotices] = useState<MetaNotice[]>([]);
+  const [explainingId, setExplainingId] = useState<string | null>(null);
 
   const visible = useMemo(() => items.filter((t) => !HIDDEN_STATUSES.has(t.status.toUpperCase())), [items]);
 
@@ -82,26 +89,58 @@ export function PlantillasTab({
     setNote(null);
   }
 
-  async function refresh() {
+  function pushNotices(list: MetaNotice[]) {
+    if (list.length > 0) setNotices((current) => [...current, ...list]);
+  }
+
+  async function refresh(): Promise<TemplateView[] | null> {
     try {
-      setItems(await listTemplates());
+      const next = await listTemplates();
+      setItems(next);
+      return next;
     } catch {
       setError("No se pudo recargar la lista; recarga la página.");
+      return null;
     }
+  }
+
+  // Aviso de una plantilla con problema: rechazada (pide el motivo en vivo a Meta), pausada o desactivada.
+  async function noticeFor(template: { id: string; name: string; status: string }): Promise<MetaNotice | null> {
+    const status = template.status.toUpperCase();
+    if (status !== "REJECTED") return statusNotice(template.name, status);
+    const review = await reviewTemplate({ id: template.id }).catch(() => null);
+    return rejectionNotice(template.name, review?.ok ? review.rejectedReason : null);
+  }
+
+  async function explain(template: TemplateView) {
+    setExplainingId(template.id);
+    const notice = await noticeFor(template);
+    setExplainingId(null);
+    if (notice) pushNotices([notice]);
   }
 
   async function sync() {
     setSyncing(true);
     clearMessages();
+    const before = new Map(items.map((t) => [t.id, t.status.toUpperCase()]));
     const result = await syncTemplates().catch(() => null);
     if (!result) setError("No se pudo sincronizar. Revisa tu conexión y vuelve a intentarlo.");
-    else if (!result.ok) setError(result.message);
-    else {
-      await refresh();
+    else if (!result.ok) {
+      setError(result.message);
+      if (result.notice) pushNotices([result.notice]);
+    } else {
+      const next = await refresh();
       setNote(
         `Sincronizado: ${result.synced} plantilla(s) desde WhatsApp` +
           (result.removed > 0 ? `; ${result.removed} ya no existe(n) en Meta.` : "."),
       );
+      // Las que Meta acaba de rechazar, pausar o desactivar: aviso grande de cada una.
+      const changed = (next ?? []).filter((t) => {
+        const status = t.status.toUpperCase();
+        return PROBLEM_STATUSES.has(status) && before.get(t.id) !== status;
+      });
+      const found = await Promise.all(changed.map((t) => noticeFor(t)));
+      pushNotices(found.filter((n): n is MetaNotice => n !== null));
     }
     setSyncing(false);
   }
@@ -119,8 +158,10 @@ export function PlantillasTab({
     clearMessages();
     const result = await deleteTemplate({ id: template.id }).catch(() => null);
     if (!result) setError("No se pudo borrar. Revisa tu conexión y vuelve a intentarlo.");
-    else if (!result.ok) setError(result.message);
-    else {
+    else if (!result.ok) {
+      setError(result.message);
+      if (result.notice) pushNotices([result.notice]);
+    } else {
       setItems((current) => current.filter((t) => t.id !== template.id));
       setNote(`Plantilla "${template.name}" borrada.`);
     }
@@ -129,6 +170,7 @@ export function PlantillasTab({
 
   return (
     <div className="mx-auto max-w-3xl space-y-4 p-4">
+      <MetaNoticeDialog notice={notices[0] ?? null} onClose={() => setNotices((current) => current.slice(1))} />
       <div className="flex flex-wrap items-center justify-between gap-3">
         <p className="text-sm text-muted-foreground">
           Aprobadas por Meta, para escribir fuera de las 24 h. Se envían desde el chat (📄).
@@ -181,6 +223,7 @@ export function PlantillasTab({
           key={form.type === "edit" ? form.template.id : "new"}
           mode={form}
           onClose={() => setForm(null)}
+          onNotice={(notice) => pushNotices([notice])}
           onDone={async (msg) => {
             setForm(null);
             setError(null);
@@ -207,6 +250,7 @@ export function PlantillasTab({
             const badge = statusStyle(t.status);
             const category = categoryLabel(t.category);
             const pending = t.status.toUpperCase() === "PENDING";
+            const problem = PROBLEM_STATUSES.has(t.status.toUpperCase());
             return (
               <li key={t.id} className="rounded-lg border bg-card p-3 shadow-sm">
                 <div className="flex flex-wrap items-center gap-2">
@@ -215,6 +259,16 @@ export function PlantillasTab({
                   <span className="rounded-full bg-brand-navy/10 px-2 py-0.5 text-[11px] font-medium text-brand-navy">{t.language}</span>
                   {category && (
                     <span className="rounded-full bg-muted px-2 py-0.5 text-[11px] font-medium text-muted-foreground">{category}</span>
+                  )}
+                  {problem && !sandboxChannel && (
+                    <button
+                      type="button"
+                      onClick={() => void explain(t)}
+                      disabled={explainingId !== null}
+                      className="rounded-full border border-brand-orange/50 px-2 py-0.5 text-[11px] font-semibold text-brand-orange hover:bg-brand-orange/10 disabled:opacity-50"
+                    >
+                      {explainingId === t.id ? "Preguntando a Meta…" : "¿Por qué?"}
+                    </button>
                   )}
                   {canManage && !sandboxChannel && (
                     <div className="ml-auto flex gap-1">
@@ -266,7 +320,9 @@ export function PlantillasTab({
                       ? "Encabezado o botón con variables: todavía no se puede mandar desde el CRM."
                       : pending
                         ? "Meta la está revisando (de minutos a 24 h). Pulsa Sincronizar para ver si ya la aprobó."
-                        : "No se puede mandar hasta que Meta la apruebe."}
+                        : problem
+                          ? "Meta no deja mandarla. Toca «¿Por qué?» para ver el motivo y qué hacer."
+                          : "No se puede mandar hasta que Meta la apruebe."}
                   </p>
                 )}
               </li>
@@ -282,10 +338,13 @@ function TemplateForm({
   mode,
   onClose,
   onDone,
+  onNotice,
 }: {
   mode: FormMode;
   onClose: () => void;
   onDone: (message: string) => void | Promise<void>;
+  /** Meta (vía Zernio) no aceptó el alta o la edición: aviso grande. */
+  onNotice: (notice: MetaNotice) => void;
 }) {
   const editing = mode.type === "edit" ? mode.template : null;
   const [label, setLabel] = useState("");
@@ -319,6 +378,7 @@ function TemplateForm({
     }
     if (!result.ok) {
       setFormError(result.message);
+      if (result.notice) onNotice(result.notice);
       return;
     }
     await onDone(

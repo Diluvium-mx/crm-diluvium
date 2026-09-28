@@ -54,7 +54,10 @@ export class SendRejectedError extends Error {
       | "template_unsupported"
       | "template_params"
       | "media_not_found"
-      | "storage_unavailable",
+      | "storage_unavailable"
+      // Primer mensaje a un contacto sin chat (lib/messaging/start-conversation.ts).
+      | "no_phone"
+      | "duplicate_phone",
     message: string,
   ) {
     super(message);
@@ -142,7 +145,7 @@ async function loadConversation(
 // La plantilla debe existir en la organización, pertenecer al canal de la
 // conversación y estar APROBADA por Meta. Las del sandbox de Zernio (cuenta ajena)
 // no se envían: están ocultas en el CRM (lib/messaging/template-sync.ts).
-async function loadSendableTemplate(
+export async function loadSendableTemplate(
   organizationId: string,
   channel: { id: string; providerAccountId: string },
   templateId: string,
@@ -167,6 +170,22 @@ async function loadSendableTemplate(
     );
   }
   return row;
+}
+
+/**
+ * Valores de una plantilla listos para mandar: exactamente los {{1..N}} del
+ * cuerpo, todos con texto, y la vista previa para la burbuja del hilo.
+ */
+export function templateSendValues(body: string | null, raw: string[]): { values: string[]; preview: string | null } {
+  const expected = templateMaxIndex(body);
+  const values = raw.map((value) => value.trim());
+  if (values.length !== expected || values.some((value) => value.length === 0)) {
+    throw new SendRejectedError(
+      "template_params",
+      expected === 0 ? "Esta plantilla no lleva variables." : `La plantilla necesita ${expected} variable(s), todas con valor.`,
+    );
+  }
+  return { values, preview: body ? renderTemplateBody(body, values) : null };
 }
 
 function validText(raw: string): string {
@@ -488,19 +507,7 @@ export async function sendTemplateMessage(provider: MessagingProvider, params: S
     false,
   );
   const template = await loadSendableTemplate(params.organizationId, channel, params.templateId);
-
-  // Los valores deben ser exactamente los {{1..N}} del cuerpo, todos con texto.
-  const expected = templateMaxIndex(template.body);
-  const values = params.variableValues.map((value) => value.trim());
-  if (values.length !== expected || values.some((value) => value.length === 0)) {
-    throw new SendRejectedError(
-      "template_params",
-      expected === 0
-        ? "Esta plantilla no lleva variables."
-        : `La plantilla necesita ${expected} variable(s), todas con valor.`,
-    );
-  }
-  const preview = template.body ? renderTemplateBody(template.body, values) : null;
+  const { values, preview } = templateSendValues(template.body, params.variableValues);
 
   const messageId = crypto.randomUUID();
   await db.insert(messages).values({
@@ -834,7 +841,7 @@ async function deliver(
  * de la base suele durar poco. Si ni así se pudo, la fila queda "enviando" sin
  * marca y el barrido la resuelve como cualquier envío sin confirmar.
  */
-async function saveAcceptedSend(messageId: string, organizationId: string, result: SendResult, reason: string): Promise<void> {
+export async function saveAcceptedSend(messageId: string, organizationId: string, result: SendResult, reason: string): Promise<void> {
   const where = and(eq(messages.id, messageId), eq(messages.organizationId, organizationId), eq(messages.status, "queued"));
   const errorMessage = `Zernio aceptó el envío, pero el CRM no pudo guardar la confirmación: ${reason}`.slice(0, 500);
   for (let attempt = 0; attempt < 3; attempt++) {
