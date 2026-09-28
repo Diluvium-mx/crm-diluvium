@@ -7,7 +7,7 @@
 // Sin "server-only": lo importa el worker (Node puro).
 import { and, eq, inArray, isNull, sql } from "drizzle-orm";
 import { db } from "@/lib/db";
-import { aiConfig, channels, messages } from "@/lib/db/schema";
+import { aiConfig, aiConfigChanges, channels, messages } from "@/lib/db/schema";
 import { botScheduleSchema, type BotSchedule } from "@/lib/agente-ia/opciones";
 import { findUnansweredForMonitor, type UnansweredForMonitor } from "@/lib/ai/runtime/sweep";
 import {
@@ -80,21 +80,37 @@ async function lastBotReplies(now: Date, orgIds: string[]): Promise<Map<string, 
   return new Map(rows.flatMap((r) => (r.ms != null ? [[r.organizationId, new Date(r.ms)] as const] : [])));
 }
 
+/** Último cambio del horario del bot (Opciones) por organización. */
+async function lastScheduleChanges(orgIds: string[]): Promise<Map<string, Date>> {
+  if (orgIds.length === 0) return new Map();
+  const rows = await db
+    .select({
+      organizationId: aiConfigChanges.organizationId,
+      ms: sql<number | null>`(extract(epoch from max(${aiConfigChanges.createdAt})) * 1000)::float8`,
+    })
+    .from(aiConfigChanges)
+    .where(and(inArray(aiConfigChanges.organizationId, orgIds), eq(aiConfigChanges.field, "schedule")))
+    .groupBy(aiConfigChanges.organizationId);
+  return new Map(rows.flatMap((r) => (r.ms != null ? [[r.organizationId, new Date(r.ms)] as const] : [])));
+}
+
 type OrgSnapshot = {
   organizationId: string;
   channels: OrgChannel[];
   schedule: BotSchedule | null;
   waiting: UnansweredForMonitor[];
   lastBotReplyAt: Date | null;
+  scheduleChangedAt: Date | null;
 };
 
 async function snapshots(now: Date, thresholds: BotSilenceThresholds, organizationId?: string): Promise<OrgSnapshot[]> {
   const list = await watchedChannels(organizationId);
   const orgIds = [...new Set(list.map((c) => c.organizationId))];
   if (orgIds.length === 0) return [];
-  const [schedules, replies, waiting] = await Promise.all([
+  const [schedules, replies, changes, waiting] = await Promise.all([
     schedulesOf(orgIds),
     lastBotReplies(now, orgIds),
+    lastScheduleChanges(orgIds),
     findUnansweredForMonitor(now, { olderThan: new Date(now.getTime() - thresholds.minutes * 60_000), organizationId }),
   ]);
   return orgIds.map((org) => ({
@@ -103,6 +119,7 @@ async function snapshots(now: Date, thresholds: BotSilenceThresholds, organizati
     schedule: schedules.get(org) ?? null,
     waiting: waiting.filter((w) => w.organizationId === org),
     lastBotReplyAt: replies.get(org) ?? null,
+    scheduleChangedAt: changes.get(org) ?? null,
   }));
 }
 
@@ -123,7 +140,7 @@ export async function checkBotSilence(input: { now?: Date; env?: Record<string, 
   for (const org of await snapshots(now, thresholds)) {
     // Canal Apagado: el bot no tiene que contestar ahí (lo muestran la pastilla y la franja).
     if (!org.channels.some((c) => c.on)) continue;
-    const input = { now, thresholds, schedule: org.schedule, waiting: org.waiting, lastBotReplyAt: org.lastBotReplyAt };
+    const input = { now, thresholds, schedule: org.schedule, waiting: org.waiting, lastBotReplyAt: org.lastBotReplyAt, scheduleChangedAt: org.scheduleChangedAt };
     waiting += org.waiting.length;
     if (org.lastBotReplyAt && (!lastReply || org.lastBotReplyAt > lastReply)) lastReply = org.lastBotReplyAt;
     const problem = botSilenceProblem(input);
@@ -147,7 +164,7 @@ export async function loadBotStatus(organizationId: string, now = new Date()): P
   const thresholds = botSilenceThresholds(process.env);
   const [org] = await snapshots(now, thresholds, organizationId);
   if (!org) return null;
-  return botStatus({ now, thresholds, channels: org.channels, schedule: org.schedule, waiting: org.waiting, lastBotReplyAt: org.lastBotReplyAt });
+  return botStatus({ now, thresholds, ...org });
 }
 
 /** Lo que necesita la franja de la Bandeja (se recalcula en el navegador cada minuto). */

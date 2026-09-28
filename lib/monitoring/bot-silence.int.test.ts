@@ -91,7 +91,7 @@ describe.skipIf(!TEST_DATABASE_URL)("bot callado (Postgres real)", () => {
 
   beforeEach(async () => {
     await db.execute(
-      sql`truncate ai_usage, ai_agent_drafts, ai_agent_notices, ai_config, webhook_events, messages, conversations, channels, contacts, organization cascade`,
+      sql`truncate ai_usage, ai_agent_drafts, ai_agent_notices, ai_config_changes, ai_config, webhook_events, messages, conversations, channels, contacts, organization cascade`,
     );
     await seedOrg(ORG, "ch_bc");
     // Los 3 que esperan de verdad (40, 25 y 18 min sin respuesta).
@@ -169,6 +169,14 @@ describe.skipIf(!TEST_DATABASE_URL)("bot callado (Postgres real)", () => {
   it("fuera del horario del bot (mié–jue 20:00–06:00, martes al mediodía): no alerta 'callado'", async () => {
     await db.update(s.aiConfig).set({ botSchedule: MIE_JUE_NOCHE }).where(eq(s.aiConfig.organizationId, ORG));
     expect((await check()).problems).toEqual([]);
+  });
+
+  it("horario cambiado hace 5 min en Opciones (el bot está repartiendo lo pendiente): todavía no alerta", async () => {
+    await db.insert(s.aiConfigChanges).values({ id: "chg_bc", organizationId: ORG, field: "schedule", oldValue: "mié–jue", newValue: "24/7", createdAt: ago(5) });
+    expect((await check()).problems).toEqual([]);
+    // Otra opción cambiada no cuenta.
+    await db.update(s.aiConfigChanges).set({ field: "responseDelaySeconds" }).where(eq(s.aiConfigChanges.id, "chg_bc"));
+    expect((await check()).problems).toHaveLength(1);
   });
 
   it("canal Apagado: no alerta 'callado' (lo muestran la pastilla y la franja)", async () => {
