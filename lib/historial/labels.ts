@@ -1,0 +1,209 @@
+// Historial de cambios (Bloque A, 28-sep-2026; subpestaña "Historial" de la pestaña Agente
+// IA): tipos, acciones, textos, filtros y hora de Mazatlán. PURO y seguro para el cliente.
+// Lo que se guarda en change_history (lib/historial/log.ts) usa estos `kind`/`action`; las
+// Opciones del bot y el Goal/FAQs se leen de sus propias tablas (lib/historial/queries.ts).
+import { z } from "zod";
+import { instantToLocal, localToInstant } from "@/lib/scheduled/rules";
+
+// Filtro "Tipo" de la subpestaña, en este orden.
+export const HISTORY_TYPES = [
+  { id: "opciones", label: "Opciones del bot" },
+  { id: "goal_faqs", label: "Goal y FAQs" },
+  { id: "modelos", label: "Modelos" },
+  { id: "etapas", label: "Etapas" },
+  { id: "canales", label: "Canales" },
+  { id: "workflows", label: "Workflows" },
+  { id: "pausas", label: "Pausas por chat" },
+] as const;
+
+export type HistoryType = (typeof HISTORY_TYPES)[number]["id"];
+
+export const HISTORY_TYPE_LABEL = Object.fromEntries(HISTORY_TYPES.map((t) => [t.id, t.label])) as Record<HistoryType, string>;
+
+// Lo que vive en change_history (las otras dos fuentes ya tenían tabla).
+export type ChangeKind = Exclude<HistoryType, "opciones" | "goal_faqs">;
+
+export type ChangeAction = {
+  modelos: "modelo_1" | "modelo_2";
+  etapas: "crear" | "renombrar" | "borrar" | "reordenar" | "papel" | "modelo";
+  canales: "encender" | "apagar";
+  workflows: "crear" | "editar" | "encender" | "apagar" | "borrar";
+  // pausa_auto = "un vendedor contestó" (sin autor; se oculta o muestra con el filtro).
+  pausas: "pausar" | "activar" | "pausa_auto";
+};
+
+/** Una fila de la subpestaña, ya con textos. `at` en ISO (UTC). */
+export type HistoryRow = {
+  id: string;
+  type: HistoryType;
+  who: string;
+  what: string;
+  before: string | null;
+  after: string | null;
+  at: string;
+  automatic: boolean;
+};
+
+/** Filas por consulta (lo más nuevo); con fechas se ve más atrás. */
+export const HISTORY_LIMIT = 200;
+
+export const AUTOMATIC_WHO = "Automático";
+export const SYSTEM_WHO = "Sistema";
+
+const q = (s: string | null) => `«${s ?? "—"}»`;
+
+/** "Qué" de una fila de change_history. */
+export function describeAction(kind: string, action: string, subject: string | null): string {
+  const s = q(subject);
+  switch (`${kind}.${action}`) {
+    case "modelos.modelo_1":
+      return "Cambió el Modelo 1";
+    case "modelos.modelo_2":
+      return "Cambió el Modelo 2";
+    case "etapas.crear":
+      return `Creó la etapa ${s}`;
+    case "etapas.renombrar":
+      return "Renombró una etapa";
+    case "etapas.borrar":
+      return `Borró la etapa ${s}`;
+    case "etapas.reordenar":
+      return "Cambió el orden de las etapas";
+    case "etapas.papel":
+      return `Pasó el papel ${s} a otra etapa`;
+    case "etapas.modelo":
+      return `Cambió el modelo de la etapa ${s}`;
+    case "canales.encender":
+      return `Encendió el agente en ${subject ?? "un canal"}`;
+    case "canales.apagar":
+      return `Apagó el agente en ${subject ?? "un canal"}`;
+    case "workflows.crear":
+      return `Creó el workflow ${s}`;
+    case "workflows.editar":
+      return `Editó el workflow ${s}`;
+    case "workflows.encender":
+      return `Encendió el workflow ${s}`;
+    case "workflows.apagar":
+      return `Apagó el workflow ${s}`;
+    case "workflows.borrar":
+      return `Borró el workflow ${s}`;
+    case "pausas.pausar":
+      return `Pausó el agente en el chat de ${subject ?? "un contacto"}`;
+    case "pausas.activar":
+      return `Activó el agente en el chat de ${subject ?? "un contacto"}`;
+    case "pausas.pausa_auto":
+      return `Un vendedor contestó: el agente se pausó en el chat de ${subject ?? "un contacto"}`;
+    default:
+      return `${kind} · ${action}`;
+  }
+}
+
+const MONTHS = ["ene", "feb", "mar", "abr", "may", "jun", "jul", "ago", "sep", "oct", "nov", "dic"];
+
+/** Instante → "28-sep-2026 14:05" en hora de Mazatlán. */
+export function formatMazatlan(at: Date): string {
+  const local = instantToLocal(at); // "2026-09-28T14:05"
+  const [y, m, d] = local.slice(0, 10).split("-").map(Number);
+  return `${d}-${MONTHS[m - 1]}-${y} ${local.slice(11, 16)}`;
+}
+
+/** Estado del agente en un chat, como texto del historial. */
+export function agentStateLabel(state: string, pausedUntil: Date | null): string {
+  if (state === "activo") return "Activo";
+  return pausedUntil ? `Pausado hasta ${formatMazatlan(pausedUntil)}` : "Pausado hasta «Activar»";
+}
+
+// ── Filtros ──────────────────────────────────────────────────────────────────
+const dateSchema = z
+  .string()
+  .regex(/^\d{4}-\d{2}-\d{2}$/)
+  .nullish();
+
+export const historyFilterSchema = z.object({
+  type: z.enum(HISTORY_TYPES.map((t) => t.id) as [HistoryType, ...HistoryType[]]).nullish(),
+  from: dateSchema,
+  to: dateSchema,
+  // Pausas automáticas "un vendedor contestó": ocultas salvo que se pidan.
+  includeAuto: z.boolean().default(false),
+});
+
+export type HistoryFilter = z.input<typeof historyFilterSchema>;
+
+// Día de calendario siguiente a "2026-09-28" (sin zona).
+function nextDay(date: string): string {
+  const [y, m, d] = date.split("-").map(Number);
+  return new Date(Date.UTC(y, m - 1, d + 1)).toISOString().slice(0, 10);
+}
+
+/**
+ * Días "Desde"/"Hasta" (hora de Mazatlán, ambos incluidos) → [start, end) en UTC.
+ * null = sin límite. Una fecha inválida también cuenta como sin límite.
+ */
+export function historyRange(from?: string | null, to?: string | null): { start: Date | null; end: Date | null } {
+  const start = from ? localToInstant(`${from}T00:00`) : null;
+  const end = to && localToInstant(`${to}T00:00`) ? localToInstant(`${nextDay(to)}T00:00`) : null;
+  return { start, end };
+}
+
+// ── Workflows: qué cambió al editar ──────────────────────────────────────────
+export type WorkflowSnapshot = {
+  name: string;
+  enabled: boolean;
+  agentDescription: string;
+  triggerAgent: boolean;
+  triggerKeywords: string[];
+  triggerCommand: string | null;
+  // Nombre de la etapa (no la clave).
+  triggerStage: string | null;
+  steps: unknown[];
+};
+
+// JSON con las llaves ordenadas: jsonb de Postgres reordena las llaves de los pasos guardados.
+function stableJson(value: unknown): string {
+  return JSON.stringify(value, (_key, v: unknown) =>
+    v && typeof v === "object" && !Array.isArray(v)
+      ? Object.fromEntries(Object.entries(v as Record<string, unknown>).sort(([x], [y]) => (x < y ? -1 : x > y ? 1 : 0)))
+      : v,
+  );
+}
+
+const onOff = (v: boolean) => (v ? "Encendido" : "Apagado");
+const pasos = (n: number) => (n === 1 ? "1 paso" : `${n} pasos`);
+
+/** Resumen de un workflow nuevo: "Apagado · 3 pasos". */
+export function workflowSummary(w: Pick<WorkflowSnapshot, "enabled" | "steps">): string {
+  return `${onOff(w.enabled)} · ${pasos(w.steps.length)}`;
+}
+
+/**
+ * Antes → después de una edición, solo con lo que cambió ("Nombre: «A»" → "Nombre: «B»",
+ * "3 pasos" → "4 pasos"…). null si no cambió nada.
+ */
+export function describeWorkflowEdit(before: WorkflowSnapshot, after: WorkflowSnapshot): { before: string; after: string } | null {
+  const parts: [string, string][] = [];
+  const same = (a: unknown, b: unknown) => stableJson(a) === stableJson(b);
+  if (before.name !== after.name) parts.push([`Nombre: ${q(before.name)}`, `Nombre: ${q(after.name)}`]);
+  if (before.enabled !== after.enabled) parts.push([onOff(before.enabled), onOff(after.enabled)]);
+  if (!same(before.steps, after.steps)) {
+    parts.push(
+      before.steps.length === after.steps.length
+        ? [pasos(before.steps.length), `${pasos(after.steps.length)} (editados)`]
+        : [pasos(before.steps.length), pasos(after.steps.length)],
+    );
+  }
+  if (!same(before.triggerKeywords, after.triggerKeywords)) {
+    const kw = (k: string[]) => `Palabras clave: ${k.length ? k.join(", ") : "ninguna"}`;
+    parts.push([kw(before.triggerKeywords), kw(after.triggerKeywords)]);
+  }
+  if (before.triggerCommand !== after.triggerCommand) {
+    parts.push([`Comando: ${before.triggerCommand ?? "ninguno"}`, `Comando: ${after.triggerCommand ?? "ninguno"}`]);
+  }
+  if (before.triggerStage !== after.triggerStage) {
+    parts.push([`Al entrar a: ${before.triggerStage ?? "ninguna"}`, `Al entrar a: ${after.triggerStage ?? "ninguna"}`]);
+  }
+  if (before.triggerAgent !== after.triggerAgent) {
+    parts.push([`Lo usa el agente: ${before.triggerAgent ? "Sí" : "No"}`, `Lo usa el agente: ${after.triggerAgent ? "Sí" : "No"}`]);
+  }
+  if (before.agentDescription !== after.agentDescription) parts.push(["Descripción para el agente", "Descripción para el agente (editada)"]);
+  if (parts.length === 0) return null;
+  return { before: parts.map((p) => p[0]).join(" · "), after: parts.map((p) => p[1]).join(" · ") };
+}

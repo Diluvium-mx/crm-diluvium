@@ -3,7 +3,8 @@
 // Pestaña "Agente IA" como el editor de GHL: nombre del agente editable con lápiz y,
 // justo abajo, una barra de SUBPESTAÑAS fija al hacer scroll (27-sep-2026; antes el
 // conmutador «Crear | Implementar» y todo en una sola página larga): Modelos · Etapas ·
-// Instrucciones (Goal) · FAQs · Opciones · Tallas y medidas · Canales. "Etapas" (columnas
+// Instrucciones (Goal) · FAQs · Opciones · Tallas y medidas · Canales · Historial (quién
+// cambió qué y cuándo, 28-sep-2026). "Etapas" (columnas
 // del Embudo, con la regla del bot y el modelo de cada una) es el mismo editor que abre el
 // lápiz del Embudo. Cada subpestaña
 // muestra solo su sección; TODOS los paneles siguen montados (ocultos con `hidden`) para
@@ -26,6 +27,7 @@ import { BrainModelPicker, Model1Picker } from "./brain-model-picker";
 import { ChannelSwitches } from "./channel-switches";
 import { FaqEditor } from "./faq-editor";
 import { GoalEditor } from "./goal-editor";
+import { HistoryPanel } from "./history-panel";
 import { SizeRangesSection } from "./size-ranges-section";
 import { StagesEditor } from "../../_components/stages-editor";
 import { useConfirm } from "./use-confirm";
@@ -333,6 +335,12 @@ export function AgenteEditor({ data, sizeRanges, initialSection }: { data: Agent
         "canales",
         <Section title="Canales" hint="Encendido = el agente responde todo en ese canal; se pausa en una conversación solo cuando un vendedor contesta.">
           <ChannelSwitches channels={data.channels} />
+        </Section>,
+      )}
+      {panel(
+        "historial",
+        <Section title="Historial" hint="Quién cambió qué y cuándo (hora de Mazatlán), lo más nuevo arriba: opciones, Goal y FAQs, modelos, etapas, canales, workflows y pausas del agente por chat.">
+          <HistoryPanel active={section === "historial"} />
         </Section>,
       )}
     </div>

@@ -9,6 +9,8 @@ export const AGENT_SECTIONS = [
   { id: "opciones", label: "Opciones" },
   { id: "tallas", label: "Tallas y medidas" },
   { id: "canales", label: "Canales" },
+  // Historial de cambios (Bloque A, 28-sep-2026): quién cambió qué y cuándo.
+  { id: "historial", label: "Historial" },
 ] as const;
 
 export type AgentSection = (typeof AGENT_SECTIONS)[number]["id"];

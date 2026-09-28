@@ -18,6 +18,9 @@ import { commandSchema, keywordsSchema, missingMedia, stepsSchema, unknownVariab
 import { pauseAgentForManualSend } from "@/lib/ai/runtime/hooks";
 import { findWorkflowByCommand } from "@/lib/workflows/triggers";
 import { isUniqueViolation } from "@/lib/db/errors";
+import { logChanges } from "@/lib/historial/log";
+import { describeWorkflowEdit, workflowSummary, type WorkflowSnapshot } from "@/lib/historial/labels";
+import { DEFAULT_WORKFLOWS } from "@/lib/workflows/defaults";
 
 const idSchema = z.string().trim().min(1).max(200);
 
@@ -152,7 +155,8 @@ export async function saveWorkflow(raw: WorkflowInput): Promise<{ ok: true; id: 
   const parsed = workflowInputSchema.safeParse(raw);
   if (!parsed.success) return { ok: false, error: parsed.error.issues[0]?.message ?? "Datos inválidos." };
   const input = parsed.data;
-  if (input.triggerStage !== null && !isStageKey(await listFunnelStages(organizationId), input.triggerStage)) {
+  const stages = await listFunnelStages(organizationId);
+  if (input.triggerStage !== null && !isStageKey(stages, input.triggerStage)) {
     return { ok: false, error: "Esa etapa ya no existe en el Embudo; elige otra." };
   }
   // Un archivo referenciado debe existir (vivo) en ESTA organización.
@@ -190,7 +194,24 @@ export async function saveWorkflow(raw: WorkflowInput): Promise<{ ok: true; id: 
         updatedByUserId: userId,
         updatedAt: now,
       };
+      // Historial de cambios (Bloque A): cómo estaba antes de editar, en la misma transacción.
+      const stageName = (key: string | null) => (key ? (stages.find((st) => st.key === key)?.name ?? key) : null);
+      const after: WorkflowSnapshot = { ...input, triggerStage: stageName(input.triggerStage), steps: input.steps };
+      let before: WorkflowSnapshot | null = null;
       if (id) {
+        const [old] = await tx
+          .select()
+          .from(workflows)
+          .where(and(eq(workflows.id, id), eq(workflows.organizationId, organizationId)))
+          .for("update");
+        if (old) {
+          const oldSteps = await tx
+            .select({ payload: workflowSteps.payload })
+            .from(workflowSteps)
+            .where(and(eq(workflowSteps.workflowId, id), eq(workflowSteps.organizationId, organizationId)))
+            .orderBy(asc(workflowSteps.position));
+          before = { ...old, triggerStage: stageName(old.triggerStage), steps: oldSteps.map((r) => r.payload) };
+        }
         const rows = await tx
           .update(workflows)
           .set(fields)
@@ -216,6 +237,12 @@ export async function saveWorkflow(raw: WorkflowInput): Promise<{ ok: true; id: 
           input.steps.map((payload, position) => ({ id: crypto.randomUUID(), organizationId, workflowId: id!, position, kind: payload.kind, payload })),
         );
       }
+      if (!before) {
+        await logChanges(tx, { organizationId, userId, kind: "workflows", action: "crear", subject: input.name, subjectId: id, newValue: workflowSummary(after) });
+      } else {
+        const edit = describeWorkflowEdit(before, after);
+        if (edit) await logChanges(tx, { organizationId, userId, kind: "workflows", action: "editar", subject: input.name, subjectId: id, oldValue: edit.before, newValue: edit.after });
+      }
       return id!;
     });
     revalidatePath("/automatizacion");
@@ -238,27 +265,47 @@ export async function toggleWorkflow(input: { id: string; enabled: boolean }): P
     if (view.steps.length === 0) return { ok: false, error: "Agrega al menos un paso antes de habilitarlo." };
     if (view.missingMedia.length) return { ok: false, error: `Falta el archivo: ${view.missingMedia.join(", ")}.` };
   }
-  await db
-    .update(workflows)
-    .set({ enabled: parsed.data.enabled, updatedByUserId: userId, updatedAt: new Date() })
-    .where(and(eq(workflows.id, parsed.data.id), eq(workflows.organizationId, organizationId)));
+  const own = and(eq(workflows.id, parsed.data.id), eq(workflows.organizationId, organizationId));
+  await db.transaction(async (tx) => {
+    const [old] = await tx.select({ name: workflows.name, enabled: workflows.enabled }).from(workflows).where(own).for("update");
+    if (!old) return;
+    await tx.update(workflows).set({ enabled: parsed.data.enabled, updatedByUserId: userId, updatedAt: new Date() }).where(own);
+    if (old.enabled === parsed.data.enabled) return;
+    await logChanges(tx, {
+      organizationId,
+      userId,
+      kind: "workflows",
+      action: parsed.data.enabled ? "encender" : "apagar",
+      subject: old.name,
+      subjectId: parsed.data.id,
+      oldValue: old.enabled ? "Encendido" : "Apagado",
+      newValue: parsed.data.enabled ? "Encendido" : "Apagado",
+    });
+  });
   revalidatePath("/automatizacion");
   return { ok: true };
 }
 
 export async function deleteWorkflow(input: { id: string }): Promise<Result> {
-  const { organizationId, role } = await requireActiveMembership();
+  const { organizationId, role, userId } = await requireActiveMembership();
   requireWorkflow(role, "delete");
   const parsed = z.object({ id: idSchema }).safeParse(input);
   if (!parsed.success) return { ok: false, error: "Datos inválidos." };
   const [wf] = await db
-    .select({ isSystem: workflows.isSystem })
+    .select({ isSystem: workflows.isSystem, name: workflows.name })
     .from(workflows)
     .where(and(eq(workflows.id, parsed.data.id), eq(workflows.organizationId, organizationId)))
     .limit(1);
   if (!wf) return { ok: false, error: "Workflow no encontrado." };
   if (wf.isSystem) return { ok: false, error: "Los predeterminados no se borran; deshabilítalo." };
-  await db.delete(workflows).where(and(eq(workflows.id, parsed.data.id), eq(workflows.organizationId, organizationId)));
+  await db.transaction(async (tx) => {
+    const gone = await tx
+      .delete(workflows)
+      .where(and(eq(workflows.id, parsed.data.id), eq(workflows.organizationId, organizationId)))
+      .returning({ id: workflows.id });
+    if (gone.length === 0) return;
+    await logChanges(tx, { organizationId, userId, kind: "workflows", action: "borrar", subject: wf.name, subjectId: parsed.data.id, oldValue: wf.name, newValue: "Borrado" });
+  });
   revalidatePath("/automatizacion");
   return { ok: true };
 }
@@ -279,9 +326,27 @@ export async function reorderWorkflows(input: { ids: string[] }): Promise<Result
 
 /** Vuelve a crear los predeterminados que falten (no toca los existentes). */
 export async function restoreDefaultWorkflows(): Promise<{ ok: true; created: number } | { ok: false; error: string }> {
-  const { organizationId, role } = await requireActiveMembership();
+  const { organizationId, role, userId } = await requireActiveMembership();
   requireWorkflow(role, "create");
-  const { created } = await seedDefaultWorkflows(db, organizationId);
+  // Los que se vuelven a crear quedan en el historial (nacen apagados), en la misma transacción.
+  const { created } = await db.transaction(async (tx) => {
+    const out = await seedDefaultWorkflows(tx, organizationId);
+    await logChanges(
+      tx,
+      out.created.map((slug) => {
+        const def = DEFAULT_WORKFLOWS.find((d) => d.slug === slug);
+        return {
+          organizationId,
+          userId,
+          kind: "workflows" as const,
+          action: "crear" as const,
+          subject: def?.name ?? slug,
+          newValue: `${workflowSummary({ enabled: false, steps: def?.steps ?? [] })} (predeterminado)`,
+        };
+      }),
+    );
+    return out;
+  });
   revalidatePath("/automatizacion");
   return { ok: true, created: created.length };
 }

@@ -263,7 +263,7 @@ async function pauseForHuman(conversation: { id: string; organizationId: string 
     console.info(`[agente] ${conversation.id}: un vendedor contestó; "Pausar el bot cuando un vendedor contesta" está en No, sigue activo`);
     return;
   }
-  await setAgentState(conversation.organizationId, conversation.id, "pausado_humano", { now, pausedUntil: decision.until });
+  await setAgentState(conversation.organizationId, conversation.id, "pausado_humano", { now, pausedUntil: decision.until, log: { action: "pausa_auto" } });
   console.info(`[agente] ${conversation.id}: pausado_humano${decision.until ? ` hasta ${decision.until.toISOString()}` : ""}`);
 }
 
