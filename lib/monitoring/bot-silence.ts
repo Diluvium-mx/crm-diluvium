@@ -1,7 +1,7 @@
-// Datos de "¿el bot está contestando?" desde la BASE del CRM (sin Zernio): la alarma
-// "bot callado" de los dos vigilantes (worker cada 5 min y /api/health/inbound para la
-// Action), la pastilla "Bot" del Dashboard y la franja de la Bandeja. Reglas: ./bot-status.ts.
-// Lo que el bot tendría que haber contestado sale de la MISMA consulta que su barrido
+// Datos de "¿el Agente IA está contestando?" desde la BASE del CRM (sin Zernio): la alarma
+// "Agente IA callado" de los dos vigilantes (worker cada 5 min y /api/health/inbound para la
+// Action), la pastilla "Agente IA" del Dashboard y la franja de la Bandeja. Reglas: ./bot-status.ts.
+// Lo que el Agente IA tendría que haber contestado sale de la MISMA consulta que su barrido
 // (findUnansweredForMonitor): mismas exclusiones (pausado, tarjeta de error sin atender,
 // lo escrito antes de encender o reactivar, lo ya decidido por el agente).
 // Sin "server-only": lo importa el worker (Node puro).
@@ -14,6 +14,7 @@ import {
   botSilenceProblem,
   botSilenceThresholds,
   botStatus,
+  splitWaiting,
   type BotBannerData,
   type BotChannel,
   type BotSilenceThresholds,
@@ -42,7 +43,7 @@ async function watchedChannels(organizationId?: string): Promise<OrgChannel[]> {
   return rows.map((r) => ({ organizationId: r.organizationId, displayName: r.displayName, on: r.mode === "auto" }));
 }
 
-/** Horario del bot por organización, con la MISMA lectura que el runtime (un valor inválido = 24/7). */
+/** Horario del Agente IA por organización, con la MISMA lectura que el runtime (un valor inválido = 24/7). */
 async function schedulesOf(orgIds: string[]): Promise<Map<string, BotSchedule | null>> {
   if (orgIds.length === 0) return new Map();
   const rows = await db
@@ -57,7 +58,7 @@ async function schedulesOf(orgIds: string[]): Promise<Map<string, BotSchedule | 
   );
 }
 
-/** Última respuesta del bot (saliente del agente que no falló) por organización, en 24 h. */
+/** Última respuesta del Agente IA (saliente del agente que no falló) por organización, en 24 h. */
 async function lastBotReplies(now: Date, orgIds: string[]): Promise<Map<string, Date>> {
   if (orgIds.length === 0) return new Map();
   const rows = await db
@@ -80,7 +81,7 @@ async function lastBotReplies(now: Date, orgIds: string[]): Promise<Map<string, 
   return new Map(rows.flatMap((r) => (r.ms != null ? [[r.organizationId, new Date(r.ms)] as const] : [])));
 }
 
-/** Último cambio del horario del bot (Opciones) por organización. */
+/** Último cambio del horario del Agente IA (Opciones) por organización. */
 async function lastScheduleChanges(orgIds: string[]): Promise<Map<string, Date>> {
   if (orgIds.length === 0) return new Map();
   const rows = await db
@@ -125,8 +126,11 @@ async function snapshots(now: Date, thresholds: BotSilenceThresholds, organizati
 
 export type BotSilenceReport = {
   problems: string[];
-  /** Solo conteos (el issue es público). */
-  metrics: { waiting: number; silentOrganizations: number; lastReplyMinutesAgo: number | null };
+  /**
+   * Solo conteos (el issue es público). `waiting` = recientes (escribieron en la última hora;
+   * son las que alarman); `backlog` = atrasadas (más de 1 h: esperan a un vendedor, no alarman).
+   */
+  metrics: { waiting: number; backlog: number; silentOrganizations: number; lastReplyMinutesAgo: number | null };
 };
 
 /** Revisión de los vigilantes (todas las organizaciones). */
@@ -135,13 +139,16 @@ export async function checkBotSilence(input: { now?: Date; env?: Record<string, 
   const thresholds = botSilenceThresholds(input.env ?? process.env);
   const problems: string[] = [];
   let waiting = 0;
+  let backlog = 0;
   let silentOrganizations = 0;
   let lastReply: Date | null = null;
   for (const org of await snapshots(now, thresholds)) {
-    // Canal Apagado: el bot no tiene que contestar ahí (lo muestran la pastilla y la franja).
+    // Canal Apagado: el Agente IA no tiene que contestar ahí (lo muestran la pastilla y la franja).
     if (!org.channels.some((c) => c.on)) continue;
     const input = { now, thresholds, schedule: org.schedule, waiting: org.waiting, lastBotReplyAt: org.lastBotReplyAt, scheduleChangedAt: org.scheduleChangedAt };
-    waiting += org.waiting.length;
+    const split = splitWaiting(org.waiting, now, thresholds);
+    waiting += split.recent.length;
+    backlog += split.backlog.length;
     if (org.lastBotReplyAt && (!lastReply || org.lastBotReplyAt > lastReply)) lastReply = org.lastBotReplyAt;
     const problem = botSilenceProblem(input);
     if (problem) {
@@ -153,13 +160,14 @@ export async function checkBotSilence(input: { now?: Date; env?: Record<string, 
     problems,
     metrics: {
       waiting,
+      backlog,
       silentOrganizations,
       lastReplyMinutesAgo: lastReply ? Math.floor((now.getTime() - lastReply.getTime()) / 60_000) : null,
     },
   };
 }
 
-/** Pastilla "Bot" del Dashboard para UNA organización (la de la sesión). */
+/** Pastilla "Agente IA" del Dashboard para UNA organización (la de la sesión). */
 export async function loadBotStatus(organizationId: string, now = new Date()): Promise<PillStatus | null> {
   const thresholds = botSilenceThresholds(process.env);
   const [org] = await snapshots(now, thresholds, organizationId);

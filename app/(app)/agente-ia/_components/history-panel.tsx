@@ -2,18 +2,41 @@
 
 // Subpestaña "Historial" de la pestaña Agente IA (Bloque A, 28-sep-2026): quién cambió qué,
 // antes → después y cuándo (hora de Mazatlán), lo más nuevo arriba. Filtros: tipo, fechas y
-// las pausas automáticas "un vendedor contestó" (ocultas de fábrica). Se carga la primera
-// vez que se abre la subpestaña y con cada filtro. Sin lógica de datos: solo llama a
-// getChangeHistory.
+// las pausas automáticas (vendedor contestó, tope, asesor, vuelta sola; ocultas de fábrica).
+// Se carga la primera vez que se abre la subpestaña y con cada filtro. "Ver cambios"
+// (Bloque E) pide el detalle de UNA fila al abrirlo. Sin lógica de datos: solo llama a
+// getChangeHistory y getChangeDiff.
 import { useEffect, useState } from "react";
-import { getChangeHistory, type HistoryResult } from "@/lib/actions/historial";
-import { formatMazatlan, HISTORY_LIMIT, HISTORY_TYPE_LABEL, HISTORY_TYPES, type HistoryRow, type HistoryType } from "@/lib/historial/labels";
+import { getChangeDiff, getChangeHistory, type ChangeDiffResult, type HistoryResult } from "@/lib/actions/historial";
+import {
+  formatMazatlan,
+  HISTORY_LIMIT,
+  HISTORY_TYPE_LABEL,
+  HISTORY_TYPES,
+  MANAGER_ONLY_TYPES,
+  type HistoryRow,
+  type HistoryType,
+} from "@/lib/historial/labels";
+import { HistoryDiff } from "./history-diff";
 
 const fieldClass = "rounded border border-black/15 bg-background px-2 py-1 text-sm text-foreground dark:border-white/15";
 
 type Filters = { type: HistoryType | ""; from: string; to: string; includeAuto: boolean };
 
 function Row({ row }: { row: HistoryRow }) {
+  const [open, setOpen] = useState(false);
+  const [detail, setDetail] = useState<ChangeDiffResult | null>(null);
+
+  const toggle = () => {
+    const next = !open;
+    setOpen(next);
+    if (next && !detail) {
+      getChangeDiff(row.id)
+        .catch((): ChangeDiffResult => ({ ok: false, message: "No se pudieron cargar los cambios." }))
+        .then(setDetail);
+    }
+  };
+
   return (
     <li className="flex flex-col gap-0.5 border-b border-black/5 py-2 last:border-0 dark:border-white/5">
       <div className="flex flex-wrap items-center justify-between gap-x-3 text-xs text-foreground/70">
@@ -32,11 +55,32 @@ function Row({ row }: { row: HistoryRow }) {
           <span className="text-foreground">{row.after ?? "—"}</span>
         </p>
       )}
+      {row.hasDetail && (
+        <div className="flex flex-col gap-2 pt-1">
+          <button
+            type="button"
+            onClick={toggle}
+            aria-expanded={open}
+            className="self-start rounded text-xs font-medium text-brand-navy underline-offset-2 hover:underline dark:text-sky-300"
+          >
+            {open ? "Ocultar cambios" : "Ver cambios"}
+          </button>
+          {open &&
+            (!detail ? (
+              <p className="text-xs text-foreground/70">Cargando cambios…</p>
+            ) : !detail.ok ? (
+              <p className="border-l-2 border-brand-orange pl-2 text-xs text-foreground">{detail.message}</p>
+            ) : (
+              <HistoryDiff diff={detail.diff} />
+            ))}
+        </div>
+      )}
     </li>
   );
 }
 
-export function HistoryPanel({ active }: { active: boolean }) {
+export function HistoryPanel({ active, canSeeSellers }: { active: boolean; canSeeSellers: boolean }) {
+  const types = HISTORY_TYPES.filter((t) => canSeeSellers || !MANAGER_ONLY_TYPES.includes(t.id));
   const [filters, setFilters] = useState<Filters>({ type: "", from: "", to: "", includeAuto: false });
   const [loaded, setLoaded] = useState<{ key: string; result: HistoryResult } | null>(null);
   const key = JSON.stringify(filters);
@@ -68,7 +112,7 @@ export function HistoryPanel({ active }: { active: boolean }) {
           Tipo
           <select value={filters.type} onChange={(e) => set({ type: e.target.value as HistoryType | "" })} className={fieldClass}>
             <option value="">Todos</option>
-            {HISTORY_TYPES.map((t) => (
+            {types.map((t) => (
               <option key={t.id} value={t.id}>
                 {t.label}
               </option>
@@ -86,7 +130,7 @@ export function HistoryPanel({ active }: { active: boolean }) {
         {(filters.type === "" || filters.type === "pausas") && (
           <label className="flex items-center gap-2 py-1 text-sm text-foreground">
             <input type="checkbox" checked={filters.includeAuto} onChange={(e) => set({ includeAuto: e.target.checked })} />
-            Mostrar pausas automáticas («un vendedor contestó»)
+            Mostrar pausas automáticas (un vendedor contestó, tope de respuestas, pidió un asesor y vuelta sola)
           </label>
         )}
       </div>

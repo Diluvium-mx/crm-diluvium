@@ -21,5 +21,7 @@ export default async function AgenteIaPage({ searchParams }: PageProps<"/agente-
   }
   const initialSection = parseAgentSection((await searchParams).seccion);
   const [data, sizeRanges] = await Promise.all([getAgentEditor(), listSizeRanges()]);
-  return <AgenteEditor data={data} sizeRanges={sizeRanges} initialSection={initialSection} />;
+  // Historial → Vendedores: solo owner/admin (la acción lo vuelve a revisar).
+  const canSeeSellers = roleAllows(role, "member", "update");
+  return <AgenteEditor data={data} sizeRanges={sizeRanges} initialSection={initialSection} canSeeSellers={canSeeSellers} />;
 }

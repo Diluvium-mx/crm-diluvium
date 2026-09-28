@@ -126,9 +126,12 @@ describe("guardas de rol en Server Actions", () => {
     await expect(updateAgentProfile({ agentName: "  Ángela  " })).resolves.toEqual({
       ok: true,
     });
-    expect(doubles.saveProfile).toHaveBeenCalledWith("org_role_guard", {
-      agentName: "Ángela",
-    });
+    // El autor va al historial (Bloque E: cambio del nombre del agente).
+    expect(doubles.saveProfile).toHaveBeenCalledWith(
+      "org_role_guard",
+      { agentName: "Ángela" },
+      "user_role_guard",
+    );
     expect(doubles.revalidatePath).toHaveBeenCalledWith("/agente-ia");
   });
 });

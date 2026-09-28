@@ -19,7 +19,7 @@ import { pauseAgentForManualSend } from "@/lib/ai/runtime/hooks";
 import { findWorkflowByCommand } from "@/lib/workflows/triggers";
 import { isUniqueViolation } from "@/lib/db/errors";
 import { logChanges } from "@/lib/historial/log";
-import { describeWorkflowEdit, workflowSummary, type WorkflowSnapshot } from "@/lib/historial/labels";
+import { describeWorkflowEdit, workflowAssetIds, workflowDetail, workflowSummary, type WorkflowSnapshot } from "@/lib/historial/labels";
 import { DEFAULT_WORKFLOWS } from "@/lib/workflows/defaults";
 
 const idSchema = z.string().trim().min(1).max(200);
@@ -148,6 +148,19 @@ function slugFrom(name: string): string {
 }
 
 
+type Tx = Parameters<Parameters<typeof db.transaction>[0]>[0];
+
+/** Nombre de cada archivo (aunque ya esté borrado de la biblioteca), solo de esta organización. */
+async function assetNames(tx: Tx, organizationId: string, ids: string[]): Promise<(assetId: string) => string | null> {
+  if (ids.length === 0) return () => null;
+  const rows = await tx
+    .select({ id: mediaAssets.id, title: mediaAssets.title, fileName: mediaAssets.fileName })
+    .from(mediaAssets)
+    .where(and(eq(mediaAssets.organizationId, organizationId), inArray(mediaAssets.id, ids)));
+  const map = new Map(rows.map((r) => [r.id, r.title || r.fileName]));
+  return (id) => map.get(id) ?? null;
+}
+
 /** Crea o actualiza un workflow con sus pasos (todo o nada). */
 export async function saveWorkflow(raw: WorkflowInput): Promise<{ ok: true; id: string } | { ok: false; error: string }> {
   const { organizationId, role, userId } = await requireActiveMembership();
@@ -237,11 +250,34 @@ export async function saveWorkflow(raw: WorkflowInput): Promise<{ ok: true; id: 
           input.steps.map((payload, position) => ({ id: crypto.randomUUID(), organizationId, workflowId: id!, position, kind: payload.kind, payload })),
         );
       }
+      // "Ver cambios" (Bloque E): antes/después paso por paso, con el nombre de cada archivo.
+      const names = await assetNames(tx, organizationId, workflowAssetIds(before?.steps ?? [], after.steps));
       if (!before) {
-        await logChanges(tx, { organizationId, userId, kind: "workflows", action: "crear", subject: input.name, subjectId: id, newValue: workflowSummary(after) });
+        await logChanges(tx, {
+          organizationId,
+          userId,
+          kind: "workflows",
+          action: "crear",
+          subject: input.name,
+          subjectId: id,
+          newValue: workflowSummary(after),
+          detail: { type: "workflow", before: null, after: workflowDetail(after, names) },
+        });
       } else {
         const edit = describeWorkflowEdit(before, after);
-        if (edit) await logChanges(tx, { organizationId, userId, kind: "workflows", action: "editar", subject: input.name, subjectId: id, oldValue: edit.before, newValue: edit.after });
+        if (edit) {
+          await logChanges(tx, {
+            organizationId,
+            userId,
+            kind: "workflows",
+            action: "editar",
+            subject: input.name,
+            subjectId: id,
+            oldValue: edit.before,
+            newValue: edit.after,
+            detail: { type: "workflow", before: workflowDetail(before, names), after: workflowDetail(after, names) },
+          });
+        }
       }
       return id!;
     });
@@ -299,12 +335,36 @@ export async function deleteWorkflow(input: { id: string }): Promise<Result> {
   if (!wf) return { ok: false, error: "Workflow no encontrado." };
   if (wf.isSystem) return { ok: false, error: "Los predeterminados no se borran; deshabilítalo." };
   await db.transaction(async (tx) => {
+    // Cómo estaba (con sus pasos) para "Ver cambios": se lee antes de borrar.
+    const stages = await listFunnelStages(organizationId, tx);
+    const steps = await tx
+      .select({ payload: workflowSteps.payload })
+      .from(workflowSteps)
+      .where(and(eq(workflowSteps.workflowId, parsed.data.id), eq(workflowSteps.organizationId, organizationId)))
+      .orderBy(asc(workflowSteps.position));
     const gone = await tx
       .delete(workflows)
       .where(and(eq(workflows.id, parsed.data.id), eq(workflows.organizationId, organizationId)))
-      .returning({ id: workflows.id });
+      .returning();
     if (gone.length === 0) return;
-    await logChanges(tx, { organizationId, userId, kind: "workflows", action: "borrar", subject: wf.name, subjectId: parsed.data.id, oldValue: wf.name, newValue: "Borrado" });
+    const [old] = gone;
+    const before: WorkflowSnapshot = {
+      ...old,
+      triggerStage: old.triggerStage ? (stages.find((st) => st.key === old.triggerStage)?.name ?? old.triggerStage) : null,
+      steps: steps.map((r) => r.payload),
+    };
+    const names = await assetNames(tx, organizationId, workflowAssetIds(before.steps));
+    await logChanges(tx, {
+      organizationId,
+      userId,
+      kind: "workflows",
+      action: "borrar",
+      subject: wf.name,
+      subjectId: parsed.data.id,
+      oldValue: wf.name,
+      newValue: "Borrado",
+      detail: { type: "workflow", before: workflowDetail(before, names), after: null },
+    });
   });
   revalidatePath("/automatizacion");
   return { ok: true };
@@ -342,6 +402,9 @@ export async function restoreDefaultWorkflows(): Promise<{ ok: true; created: nu
           action: "crear" as const,
           subject: def?.name ?? slug,
           newValue: `${workflowSummary({ enabled: false, steps: def?.steps ?? [] })} (predeterminado)`,
+          detail: def
+            ? { type: "workflow" as const, before: null, after: workflowDetail({ ...def, enabled: false, triggerStage: null }, () => null) }
+            : null,
         };
       }),
     );

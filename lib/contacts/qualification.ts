@@ -16,6 +16,8 @@ import { isInternalAgentTag } from "@/lib/ai/runtime/tags";
 import { conversations, messages } from "@/lib/db/schema/messaging";
 import { sanitizeReferral } from "@/lib/inbox/format";
 import { contactAdAttribution } from "@/lib/ads/queries";
+import { logChanges } from "@/lib/historial/log";
+import { sizeRangesSummary } from "@/lib/historial/diff";
 import { roleAllows } from "@/lib/auth/permissions";
 import { notifyContactUpdated, type ContactActor, type ContactChange } from "./notify-updated";
 
@@ -504,10 +506,13 @@ export async function listSizeRanges(
     .orderBy(asc(tallasCompuerta.linea), asc(tallasCompuerta.posicion));
 }
 
+// Bloque E: el cambio queda en el historial (tallas y medidas) en la misma transacción,
+// con el antes/después de cada talla para "Ver cambios". Guardar sin cambios no deja fila.
 export async function replaceSizeRanges(
   database: Database,
   organizationId: string,
   ranges: readonly SizeRange[],
+  userId: string | null = null,
 ): Promise<SizeRange[]> {
   const errors = validateSizeRanges(ranges);
   if (errors.length > 0) {
@@ -517,6 +522,7 @@ export async function replaceSizeRanges(
   const cleaned = ranges.map((range) => ({ ...range, talla: range.talla.trim() }));
 
   await database.transaction(async (tx) => {
+    const previous = await listSizeRanges(tx, organizationId);
     await tx
       .delete(tallasCompuerta)
       .where(eq(tallasCompuerta.organizationId, organizationId));
@@ -553,6 +559,20 @@ export async function replaceSizeRanges(
             eq(contactEntradas.organizationId, organizationId),
           ),
         );
+    }
+
+    const lite = (list: readonly SizeRange[]) => list.map(({ linea, talla, minCm, maxCm }) => ({ linea, talla, minCm, maxCm }));
+    const summary = sizeRangesSummary(lite(previous), lite(cleaned));
+    if (summary) {
+      await logChanges(tx, {
+        organizationId,
+        userId,
+        kind: "tallas",
+        action: "editar",
+        oldValue: summary.before,
+        newValue: summary.after,
+        detail: { type: "tallas", before: lite(previous), after: lite(cleaned) },
+      });
     }
   });
 

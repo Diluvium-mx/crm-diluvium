@@ -152,7 +152,17 @@ const panelId = (s: AgentSection) => `agente-panel-${s}`;
 
 type Dirty = Partial<Record<AgentSection, boolean>>;
 
-export function AgenteEditor({ data, sizeRanges, initialSection }: { data: AgentEditorView; sizeRanges: SizeRange[]; initialSection: AgentSection }) {
+export function AgenteEditor({
+  data,
+  sizeRanges,
+  initialSection,
+  canSeeSellers,
+}: {
+  data: AgentEditorView;
+  sizeRanges: SizeRange[];
+  initialSection: AgentSection;
+  canSeeSellers: boolean;
+}) {
   const [section, setSection] = useState<AgentSection>(initialSection);
   const [agentName, setAgentName] = useState(data.agentName);
   const [dirty, setDirty] = useState<Dirty>({});
@@ -321,7 +331,7 @@ export function AgenteEditor({ data, sizeRanges, initialSection }: { data: Agent
       )}
       {panel(
         "opciones",
-        <Section title="Opciones" hint="Cómo se comporta el bot, como las opciones de Ángela en GHL. Los valores de fábrica son el comportamiento de siempre; los cambios se guardan juntos con «Guardar cambios» y aplican en menos de un minuto, sin redesplegar.">
+        <Section title="Opciones" hint="Cómo se comporta el Agente IA, como las opciones de Ángela en GHL. Los valores de fábrica son el comportamiento de siempre; los cambios se guardan juntos con «Guardar cambios» y aplican en menos de un minuto, sin redesplegar.">
           <BotOptionsSection options={data.options} lastChange={data.optionsLastChange} onDirtyChange={optionsDirty} />
         </Section>,
       )}
@@ -340,7 +350,7 @@ export function AgenteEditor({ data, sizeRanges, initialSection }: { data: Agent
       {panel(
         "historial",
         <Section title="Historial" hint="Quién cambió qué y cuándo (hora de Mazatlán), lo más nuevo arriba: opciones, Goal y FAQs, modelos, etapas, canales, workflows y pausas del agente por chat.">
-          <HistoryPanel active={section === "historial"} />
+          <HistoryPanel active={section === "historial"} canSeeSellers={canSeeSellers} />
         </Section>,
       )}
     </div>

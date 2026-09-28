@@ -219,7 +219,7 @@ export function BotOptionsSection({
               value={draft.handoverMode}
               options={[
                 { value: "avisar", label: "Avisar al vendedor y seguir contestando" },
-                { value: "pausar", label: "Avisar y pausar el bot en ese chat por" },
+                { value: "pausar", label: "Avisar y pausar al Agente IA en ese chat por" },
               ]}
               disabled={busy}
               onChange={(m) => set({ handoverMode: m })}
@@ -249,7 +249,7 @@ export function BotOptionsSection({
       >
         {draft.scheduleMode === "horario" && (
           <div className="flex flex-wrap items-center gap-2">
-            <div className="flex overflow-hidden rounded border border-black/15 dark:border-white/15" role="group" aria-label="Días en que contesta el bot">
+            <div className="flex overflow-hidden rounded border border-black/15 dark:border-white/15" role="group" aria-label="Días en que contesta el Agente IA">
               {ALL_DAYS.map((d) => {
                 const on = draft.schedule.days.includes(d);
                 return (

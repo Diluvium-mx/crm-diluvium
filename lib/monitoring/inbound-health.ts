@@ -1,4 +1,4 @@
-// Salud de la entrada de WhatsApp (Fase 3, go-live) y de que el bot conteste
+// Salud de la entrada de WhatsApp (Fase 3, go-live) y de que el Agente IA conteste
 // (Bloque C, 28-sep-2026). La usan DOS vigilantes
 // independientes: el worker (cada 5 min, al log) y una GitHub Action (cada
 // 15 min, vía GET /api/health/inbound) que abre un issue si algo falla — así
@@ -180,15 +180,15 @@ export async function inboundHealth(deps: {
     await gateUnchecked("cuentas", unchecked);
   }
 
-  // Bot callado: con el canal Encendido y dentro de su horario, clientes esperando y el
-  // bot sin mandar nada (./bot-status.ts). A cualquier hora del día.
+  // Agente IA callado: con el canal Encendido y dentro de su horario, clientes de la última
+  // hora esperando y el Agente IA sin mandar nada (./bot-status.ts). A cualquier hora del día.
   let bot: InboundHealth["metrics"]["bot"] = null;
   const botResult = await botCheck;
   if (botResult.ok) {
     bot = botResult.value.metrics;
     problems.push(...botResult.value.problems);
   } else {
-    problems.push(`no se pudo revisar si el bot contesta: ${errorText(botResult.error)}`);
+    problems.push(`no se pudo revisar si el Agente IA contesta: ${errorText(botResult.error)}`);
   }
 
   return {

@@ -4,6 +4,7 @@
 import { sql, type SQL } from "drizzle-orm";
 import type { db } from "@/lib/db";
 import { changeHistory } from "@/lib/db/schema";
+import type { ChangeDetailData } from "./diff";
 import type { ChangeAction, ChangeKind } from "./labels";
 
 type Database = Omit<typeof db, "$client">;
@@ -18,6 +19,8 @@ type Entry<K extends ChangeKind> = {
   subjectId?: string | null;
   oldValue?: string | null;
   newValue?: string | null;
+  /** Antes/después completo para "Ver cambios" (Bloque E, 0043). */
+  detail?: ChangeDetailData | null;
 };
 
 export type ChangeEntry = { [K in ChangeKind]: Entry<K> }[ChangeKind];
@@ -36,6 +39,7 @@ export async function logChanges(exec: HistoryExec, entries: ChangeEntry | Chang
       subjectId: e.subjectId ?? null,
       oldValue: e.oldValue ?? null,
       newValue: e.newValue ?? null,
+      detail: e.detail ?? null,
       // clock_timestamp(): dos filas de la misma transacción quedan ordenadas.
       createdAt: sql`clock_timestamp()`,
     })),

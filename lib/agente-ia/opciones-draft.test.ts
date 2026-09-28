@@ -58,11 +58,11 @@ describe("borrador de las Opciones → lo que se guarda", () => {
     expect(draftToPatch(saved, draft({ maxRepliesMode: "tope", maxReplies: "2.5" })).errors[0]).toMatch(/entre 1 y 1,000/);
 
     const noDays = draftToPatch(saved, draft({ scheduleMode: "horario", schedule: { days: [], from: "08:00", to: "18:00" } }));
-    expect(noDays.errors).toEqual(["Horario del bot: elige al menos un día."]);
+    expect(noDays.errors).toEqual(["Horario del Agente IA: elige al menos un día."]);
     const sameHour = draftToPatch(saved, draft({ scheduleMode: "horario", schedule: { days: [1], from: "09:00", to: "09:00" } }));
-    expect(sameHour.errors).toEqual(["Horario del bot: la hora de inicio y la de fin no pueden ser iguales."]);
+    expect(sameHour.errors).toEqual(["Horario del Agente IA: la hora de inicio y la de fin no pueden ser iguales."]);
     const empty = draftToPatch(saved, draft({ scheduleMode: "horario", schedule: { days: [1], from: "", to: "18:00" } }));
-    expect(empty.errors).toEqual(["Horario del bot: escribe la hora de inicio y la de fin."]);
+    expect(empty.errors).toEqual(["Horario del Agente IA: escribe la hora de inicio y la de fin."]);
   });
 
   it("los días del horario se comparan ordenados (el orden en que se tocaron no es un cambio)", () => {
@@ -76,14 +76,14 @@ describe("lista de cambios del pop-up", () => {
     const { patch } = draftToPatch(saved, draft({ maxRepliesMode: "tope", maxReplies: "40", responseDelaySeconds: 30, scheduleMode: "horario" }));
     expect(describePatch(saved, patch)).toEqual([
       "Tiempo de espera antes de responder: 15 s → 30 s",
-      "Horario del bot: 24/7 → lun–sáb 8:00–18:00 (hora de Mazatlán)",
-      "Máximo de respuestas del bot por conversación: Sin tope → 40",
+      "Horario del Agente IA: 24/7 → lun–sáb 8:00–18:00 (hora de Mazatlán)",
+      "Máximo de respuestas del Agente IA por conversación: Sin tope → 40",
     ]);
   });
 
   it("sí/no y «Nunca»", () => {
     const { patch } = draftToPatch(saved, draft({ pauseOnHumanReply: false, transcribeAudio: false }));
-    expect(describePatch(saved, patch)).toEqual(["Pausar el bot cuando un vendedor contesta: Sí → No", "Responder notas de voz: Sí → No"]);
+    expect(describePatch(saved, patch)).toEqual(["Pausar al Agente IA cuando un vendedor contesta: Sí → No", "Responder notas de voz: Sí → No"]);
     const withHours = { ...saved, humanReplyReactivateHours: 24 };
     expect(describePatch(withHours, { humanReplyReactivateHours: null })).toEqual(["Reactivar solo después de: 24 h → Nunca (a mano con «Activar»)"]);
   });
