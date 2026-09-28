@@ -13,6 +13,8 @@
 // (lectura) y contacts (escritura) basta con el mismo `db` de Drizzle que
 // usa lib/actions/contacts.ts, así que este script se conecta igual que
 // esas Server Actions: import { db } from "@/lib/db".
+// Datos FALSOS: solo contra una base local de desarrollo (nunca staging ni producción).
+import "./lib/solo-base-local";
 import { and, eq } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { member, organization, user } from "@/lib/db/schema/auth";

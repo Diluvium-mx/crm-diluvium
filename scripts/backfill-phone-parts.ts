@@ -1,5 +1,5 @@
-// Uso: npx tsx scripts/backfill-phone-parts.ts            (simulación: solo cuenta)
-//      npx tsx scripts/backfill-phone-parts.ts --apply    (escribe)
+// Uso: npx tsx scripts/backfill-phone-parts.ts               (simulación: solo cuenta)
+//      npx tsx scripts/backfill-phone-parts.ts --confirmar   (escribe)
 //
 // Re-normaliza los teléfonos de `contacts` con lib/phone.ts (libphonenumber-js)
 // y llena phone_country_code / phone_national / phone_country_iso. Reglas:
@@ -10,14 +10,18 @@
 //   igual; solo se llenan las partes que se puedan deducir.
 // - `country` vacío → se deduce del teléfono ("Mexico"); nunca se sobrescribe.
 // Idempotente: una segunda corrida no encuentra nada que cambiar.
-// Primero staging; en producción solo con OK del dueño.
+// Primero staging; en producción solo con OK del dueño. Sin --confirmar NUNCA escribe
+// (igual que canal:archivar); el viejo --apply ya no escribe: avisa y se detiene.
 import { eq } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { contacts } from "@/lib/db/schema";
 import { countryFromPhone, normalizePhone, phoneParts } from "@/lib/phone";
 
 async function main() {
-  const apply = process.argv.includes("--apply");
+  if (process.argv.includes("--apply")) {
+    throw new Error("--apply ya no existe: primero corre sin banderas (simulación) y luego con --confirmar para escribir.");
+  }
+  const apply = process.argv.includes("--confirmar");
   const rows = await db
     .select({
       id: contacts.id,
@@ -83,7 +87,7 @@ async function main() {
   for (const line of collisions) console.warn(`CHOQUE: ${line}`);
 
   if (!apply) {
-    console.log(`Simulación: ${updates.length} contacto(s) cambiarían. Corre con --apply para escribir.`);
+    console.log(`Simulación: ${updates.length} contacto(s) cambiarían. No se escribió nada; repite con --confirmar para escribir.`);
     process.exit(0);
   }
   await db.transaction(async (tx) => {

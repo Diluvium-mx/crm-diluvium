@@ -6,6 +6,7 @@ import { timingSafeEqual } from "node:crypto";
 import { redis } from "@/lib/redis";
 import { inboundHealth, WORKER_HEARTBEAT_KEY } from "@/lib/monitoring/inbound-health";
 import { checkWhatsappAccounts, ZERNIO_WEBHOOK_KEY } from "@/lib/monitoring/account-health";
+import { recordUncheckedStreak } from "@/lib/monitoring/unchecked-streak";
 import type { WebhookSnapshot } from "@/lib/monitoring/status-pill";
 
 export const dynamic = "force-dynamic";
@@ -28,6 +29,8 @@ export async function GET(req: Request): Promise<Response> {
     },
     // La cuenta se revisa aquí también (no solo en el worker): la Action no depende de él.
     whatsappAccounts: () => checkWhatsappAccounts({ source: "web" }),
+    // Una falla suelta de Zernio no abre el issue: solo 2 revisiones seguidas de la Action.
+    uncheckedStreak: (check, failed) => recordUncheckedStreak("web", check, failed),
   });
   // El Dashboard muestra el webhook de Zernio que revisó esta llamada (no llama a Zernio al cargar).
   const webhook: WebhookSnapshot = { checkedAt: report.checkedAt, webhook: report.metrics.zernioWebhook };

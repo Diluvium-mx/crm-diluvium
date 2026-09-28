@@ -25,6 +25,8 @@
 // Idempotente por credential account, no por fila de usuario: si el usuario
 // ya existe pero un corte a medias dejó la cuenta sin linkAccount, este
 // script completa el linkAccount en vez de darlo por hecho.
+// Datos FALSOS: solo contra una base local de desarrollo (nunca staging ni producción).
+import "./lib/solo-base-local";
 import { auth } from "@/lib/auth";
 import { runWithTransaction } from "@better-auth/core/context";
 

@@ -44,7 +44,13 @@ Si los hashes de production y staging coinciden, **staging apunta a producción*
 
 ## Usuario semilla de staging
 
-Staging arranca vacío. Para crear el usuario y la organización, corre esto desde la raíz del repo.
+> **Desde el Bloque C (28-sep-2026) esto ya NO corre contra staging:** `seed-user`, `seed-org`,
+> `seed-inbox` y `seed-contactos` solo aceptan una base LOCAL de desarrollo (guarda de
+> `scripts/lib/base-local.ts`, la misma de `reset-db`), porque ya se corrieron por error en producción.
+> Staging ya está sembrado; los usuarios nuevos se crean en Configuración › Vendedores. Si algún día
+> hay que arrancar un staging vacío, se decide aparte. Lo de abajo queda como registro.
+
+Staging arrancó vacío. Para crear el usuario y la organización se corrió esto desde la raíz del repo.
 La base de staging se alcanza por su TCP proxy público, y el script pide email y password sin mostrarlos:
 
 ```bash

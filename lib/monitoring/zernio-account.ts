@@ -269,10 +269,16 @@ export function accountProblems(outcomes: AccountOutcome[], now: Date): string[]
     }
   }
 
-  const unchecked = outcomes.filter((o) => o.kind === "unchecked");
-  if (unchecked.length > 0) {
-    const reasons = [...new Set(unchecked.map((o) => (o.kind === "unchecked" ? o.error : "")))].join("; ");
-    problems.push(`no se pudo revisar ${unchecked.length} cuenta(s) de WhatsApp en Zernio: ${reasons}`);
-  }
   return problems;
+}
+
+/**
+ * "No se pudo revisar" va APARTE de los problemas: solo alerta tras 2 revisiones seguidas
+ * del mismo vigilante (uncheckedAlert en ./alert-rules.ts). Nunca es "desconectado".
+ */
+export function uncheckedAccountsProblem(outcomes: AccountOutcome[]): string | null {
+  const unchecked = outcomes.filter((o) => o.kind === "unchecked");
+  if (unchecked.length === 0) return null;
+  const reasons = [...new Set(unchecked.map((o) => (o.kind === "unchecked" ? o.error : "")))].join("; ");
+  return `no se pudo revisar ${unchecked.length} cuenta(s) de WhatsApp en Zernio: ${reasons}`;
 }

@@ -9,6 +9,8 @@
 // Idempotente: antes de sembrar borra su propio canal ("seed-inbox-account",
 // que en cascada se lleva conversaciones y mensajes) y sus contactos
 // (source = "seed-inbox"). Se puede correr varias veces sin romper.
+// Datos FALSOS: solo contra una base local de desarrollo (nunca staging ni producción).
+import "./lib/solo-base-local";
 import { and, eq } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { member, organization } from "@/lib/db/schema/auth";
