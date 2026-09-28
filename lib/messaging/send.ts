@@ -23,13 +23,16 @@
 //    Agente IA manda "ai_agent" sin usuario; esos envíos NO marcan como leídos
 //    los entrantes (el vendedor sigue viéndolos) y no cuentan como primera
 //    respuesta humana (reconcileFirstResponse ya los excluye).
-import { and, eq, inArray, isNull, lt, or } from "drizzle-orm";
+import { and, eq, inArray, isNull, lt, or, sql } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { withTxRetry } from "@/lib/db/retry";
 import { channels, conversations, messages, templates } from "@/lib/db/schema";
 import { applyOutboundToConversation, latestInboundMessageId } from "./ingest";
 import { SendFailedError, type MessagingProvider, type SendResult } from "./provider";
-import { isAmbiguousSendError, isWindowOpen, nextStatus, SEND_UNCONFIRMED, SEND_UNKNOWN } from "./rules";
+import { isAmbiguousSendError, isWindowOpen, nextStatus, SEND_ACCEPTED, SEND_RATE_LIMITED, SEND_UNCONFIRMED, SEND_UNKNOWN } from "./rules";
+import { sendInTurn } from "./send-turn";
+import { plainSendReason } from "./send-reasons";
+import { addNotice } from "@/lib/ai/runtime/notices";
 import { renderTemplateBody, templateMaxIndex } from "./template-format";
 import { isForeignTemplateAccount } from "./template-sync";
 import { loadMediaAsset, mediaAssetSignedUrl } from "@/lib/media-library/service";
@@ -83,13 +86,24 @@ export type SendTextParams = {
    * pregunta del cliente desaparece de "No leído" sin que nadie la lea.
    */
   markRead?: boolean;
+  /** Solo el web: si hay que esperar (429 o turno), el envío pasa al worker. */
+  deferTo?: DeferToWorker;
 };
 
-/** "sent": confirmado. "pending": resultado desconocido, en reconciliación (sin reintento). */
+/** "sent": confirmado. "pending": en fila, o resultado desconocido en reconciliación (sin reintento). */
 export type SendOutcome = { messageId: string; status: "sent" | "pending" };
 
-export { isAmbiguousSendError, SEND_UNCONFIRMED, SEND_UNKNOWN } from "./rules";
+export { isAmbiguousSendError, SEND_ACCEPTED, SEND_RATE_LIMITED, SEND_UNCONFIRMED, SEND_UNKNOWN } from "./rules";
 const MAX_TEXT = 4096; // límite de WhatsApp para texto
+
+/**
+ * Pasa al worker un envío que debe esperar (429 de Zernio o turno de la
+ * conversación). Lo usa el web: la Server Action responde "enviando" al
+ * instante y el worker lo manda en su turno (lib/queue/outbox.ts).
+ */
+export type DeferToWorker = (job: { messageId: string; organizationId: string; readCutoffMessageId: string | null; delayMs: number }) => Promise<void>;
+/** Lo que el web espera dentro de la petición antes de pasarle el envío al worker. */
+export const WEB_WAIT_BUDGET_MS = 3_000;
 
 type ConversationRow = typeof conversations.$inferSelect;
 
@@ -196,6 +210,7 @@ export async function sendTextMessage(provider: MessagingProvider, params: SendT
     sentByUserId,
     // El agente no "lee" por el vendedor: sus envíos no descuentan no leídos.
     markRead: params.markRead ?? source === "crm",
+    deferTo: params.deferTo,
   });
 }
 
@@ -296,6 +311,7 @@ export type SendTemplateParams = {
   /** Valores de las variables del BODY en orden ({{1}}, {{2}}, …). */
   variableValues: string[];
   now?: Date;
+  deferTo?: DeferToWorker;
 };
 
 /**
@@ -340,6 +356,9 @@ export async function sendTemplateMessage(provider: MessagingProvider, params: S
     type: "template",
     body: preview,
     templateName: template.name,
+    // Lo que hace falta para mandarla de nuevo con la misma clave si el envío
+    // pasa a la fila de espera del worker (resumeDeferredSend).
+    metadata: { plantilla: { name: template.name, language: template.language, bodyParams: values } },
     status: "queued",
     sentByUserId: params.sentByUserId,
     sentAt: now,
@@ -359,6 +378,7 @@ export async function sendTemplateMessage(provider: MessagingProvider, params: S
     conversation,
     organizationId: params.organizationId,
     sentByUserId: params.sentByUserId,
+    deferTo: params.deferTo,
   });
 }
 
@@ -371,7 +391,7 @@ export async function sendTemplateMessage(provider: MessagingProvider, params: S
  */
 export async function retryTextMessage(
   provider: MessagingProvider,
-  params: { organizationId: string; messageId: string; sentByUserId: string; now?: Date },
+  params: { organizationId: string; messageId: string; sentByUserId: string; now?: Date; deferTo?: DeferToWorker },
 ): Promise<SendOutcome> {
   const now = params.now ?? new Date();
   const [message] = await db
@@ -423,6 +443,65 @@ export async function retryTextMessage(
     conversation,
     organizationId: params.organizationId,
     sentByUserId: params.sentByUserId,
+    deferTo: params.deferTo,
+  });
+}
+
+/**
+ * Worker: manda un envío que el web pasó a la fila de espera (429 de Zernio o
+ * turno de la conversación). Misma fila y MISMA clave de idempotencia: un 429
+ * garantiza que Zernio no lo procesó, así que no puede duplicar. Si la fila ya
+ * se resolvió (salió, falló o es ambigua) no hace nada. Solo texto y plantilla:
+ * el web no manda archivos.
+ */
+export async function resumeDeferredSend(
+  provider: MessagingProvider,
+  params: { organizationId: string; messageId: string; readCutoffMessageId: string | null; sleep?: (ms: number) => Promise<void> },
+): Promise<SendOutcome | null> {
+  const where = and(eq(messages.id, params.messageId), eq(messages.organizationId, params.organizationId));
+  const [row] = await db.select().from(messages).where(where).limit(1);
+  // Solo una fila en "espera" (su último intento fue un 429 o aún no salía): una
+  // en "enviando" se cortó a la mitad de la llamada a Zernio y es ambigua.
+  const envio = row?.metadata?.envio as { estado?: string } | undefined;
+  if (
+    !row ||
+    row.direction !== "out" ||
+    row.status !== "queued" ||
+    row.providerMessageId ||
+    row.providerInternalId ||
+    row.errorCode ||
+    envio?.estado !== "espera"
+  ) {
+    return null;
+  }
+  const plantilla = row.metadata?.plantilla as { name?: string; language?: string; bodyParams?: string[] } | undefined;
+  if (row.type !== "text" && !(row.type === "template" && plantilla?.name && plantilla.language)) {
+    await db.update(messages).set({ status: "failed", errorCode: SEND_RATE_LIMITED, errorMessage: "No se pudo retomar el envío en espera." }).where(where);
+    return null;
+  }
+  let loaded: Awaited<ReturnType<typeof loadConversation>>;
+  try {
+    // Sin revisar la ventana: se revisó al escribirlo; si cerró mientras esperaba, WhatsApp lo dirá.
+    loaded = await loadConversation(provider, params.organizationId, row.conversationId, new Date(), false);
+  } catch (error) {
+    if (!(error instanceof SendRejectedError)) throw error;
+    await db.update(messages).set({ status: "failed", errorCode: error.code, errorMessage: error.message }).where(where);
+    return null;
+  }
+  const { conversation, channel } = loaded;
+  const target = { providerAccountId: channel.providerAccountId, providerConversationId: conversation.providerConversationId!, idempotencyKey: row.id };
+  return deliver({
+    messageId: row.id,
+    send: () =>
+      row.type === "text"
+        ? provider.sendText({ ...target, text: row.body ?? "" })
+        : provider.sendTemplate({ ...target, name: plantilla!.name!, language: plantilla!.language!, bodyParams: plantilla!.bodyParams ?? [] }),
+    now: row.sentAt ?? row.createdAt,
+    conversation,
+    organizationId: params.organizationId,
+    sentByUserId: row.sentByUserId,
+    readCutoffMessageId: params.readCutoffMessageId,
+    sleep: params.sleep,
   });
 }
 
@@ -503,6 +582,8 @@ export async function sendAgentText(
 // Envía (texto o plantilla, vía la closure `send`) y clasifica el resultado
 // igual para ambos: enviado → enlaza el wamid; rechazado (4xx) → "failed" con su
 // código; desconocido (timeout/5xx/2xx sin id) → queda "queued" y se reconcilia.
+// Un 429 no es ninguno de los tres: el envío espera su turno y se repite con la
+// misma clave (send-turn.ts). En el web, si hay que esperar, pasa al worker.
 async function deliver(
   ctx: {
     messageId: string;
@@ -513,15 +594,43 @@ async function deliver(
     sentByUserId: string | null;
     /** Default true. false = no marca como leídos los entrantes (envío del agente). */
     markRead?: boolean;
+    /** Corte de lectura ya decidido (envío retomado por el worker). */
+    readCutoffMessageId?: string | null;
+    /** Web: si hay que esperar (429 o turno), el envío pasa al worker. */
+    deferTo?: DeferToWorker;
+    sleep?: (ms: number) => Promise<void>;
   },
 ): Promise<SendOutcome> {
   const where = and(eq(messages.id, ctx.messageId), eq(messages.organizationId, ctx.organizationId));
   // Corte de lectura: el último entrante que el vendedor tenía a la vista al
   // enviar. Lo que entre después sigue sin leer (aunque haya otros envíos).
-  const readCutoffMessageId = ctx.markRead === false ? null : await latestInboundMessageId(ctx.conversation.id);
+  const readCutoffMessageId =
+    ctx.readCutoffMessageId !== undefined
+      ? ctx.readCutoffMessageId
+      : ctx.markRead === false
+        ? null
+        : await latestInboundMessageId(ctx.conversation.id);
+  const deferTo = ctx.deferTo;
   let result: SendResult;
   try {
-    result = await ctx.send();
+    const turn = await sendInTurn({
+      messageId: ctx.messageId,
+      organizationId: ctx.organizationId,
+      conversationId: ctx.conversation.id,
+      send: ctx.send,
+      sleep: ctx.sleep,
+      defer: deferTo && {
+        budgetMs: WEB_WAIT_BUDGET_MS,
+        enqueue: (delayMs) =>
+          deferTo({ messageId: ctx.messageId, organizationId: ctx.organizationId, readCutoffMessageId, delayMs }).catch((error: unknown) =>
+            // El barrido del worker recoge los diferidos sin job (expireUnconfirmedSends no los toca antes).
+            console.error(`[send] no se pudo pasar ${ctx.messageId} al worker; lo recoge el barrido`, error),
+          ),
+      },
+    });
+    // El vendedor ve "enviando"; el worker lo manda en su turno con la misma clave.
+    if (turn.kind === "deferred") return { messageId: ctx.messageId, status: "pending" };
+    result = turn.result;
   } catch (error) {
     const reason = error instanceof Error ? error.message : String(error);
     // Cualquier error que no sea un rechazo EXPLÍCITO del proveedor se trata
@@ -536,18 +645,56 @@ async function deliver(
     return { messageId: ctx.messageId, status: "pending" };
   }
 
-  const finalId = await linkSentMessage({
-    queuedId: ctx.messageId,
-    conversationId: ctx.conversation.id,
-    organizationId: ctx.organizationId,
-    sentByUserId: ctx.sentByUserId,
-    providerMessageId: result.providerMessageId,
-    providerInternalId: result.providerInternalId,
-    status: "sent",
-    sentAt: ctx.now,
-    readCutoffMessageId,
-  });
-  return { messageId: finalId, status: "sent" };
+  // Desde aquí Zernio YA ACEPTÓ el envío: nada de lo que falle después puede
+  // volverlo "error" (el vendedor lo escribiría otra vez y el cliente lo
+  // recibiría dos veces). Si guardar la confirmación falla, queda "enviando" con
+  // los ids que se puedan guardar; nunca se reenvía solo, y si no se confirma,
+  // el barrido deja la tarjeta explicada (expireUnconfirmedSends).
+  try {
+    const finalId = await linkSentMessage({
+      queuedId: ctx.messageId,
+      conversationId: ctx.conversation.id,
+      organizationId: ctx.organizationId,
+      sentByUserId: ctx.sentByUserId,
+      providerMessageId: result.providerMessageId,
+      providerInternalId: result.providerInternalId,
+      status: "sent",
+      sentAt: ctx.now,
+      readCutoffMessageId,
+    });
+    return { messageId: finalId, status: "sent" };
+  } catch (error) {
+    const reason = error instanceof Error ? error.message : String(error);
+    console.error(`[send] Zernio aceptó ${ctx.messageId} pero no se pudo guardar la confirmación; queda "enviando": ${reason}`);
+    await saveAcceptedSend(ctx.messageId, ctx.organizationId, result, reason);
+    return { messageId: ctx.messageId, status: "pending" };
+  }
+}
+
+/**
+ * Zernio aceptó y falló la base al enlazar: se guardan los ids (si se puede) y
+ * la marca SEND_ACCEPTED (ambiguo: sin "Reintentar"). Con los ids, el eco y los
+ * estados de WhatsApp lo confirman solos (ingest.ts). Varios intentos: una caída
+ * de la base suele durar poco. Si ni así se pudo, la fila queda "enviando" sin
+ * marca y el barrido la resuelve como cualquier envío sin confirmar.
+ */
+async function saveAcceptedSend(messageId: string, organizationId: string, result: SendResult, reason: string): Promise<void> {
+  const where = and(eq(messages.id, messageId), eq(messages.organizationId, organizationId), eq(messages.status, "queued"));
+  const errorMessage = `Zernio aceptó el envío, pero el CRM no pudo guardar la confirmación: ${reason}`.slice(0, 500);
+  for (let attempt = 0; attempt < 3; attempt++) {
+    try {
+      // Con los ids primero; si chocan (el eco ya los tiene en otra fila), sin ellos.
+      const ids =
+        attempt === 0
+          ? { providerMessageId: result.providerMessageId ?? null, providerInternalId: result.providerInternalId }
+          : {};
+      await db.update(messages).set({ errorCode: SEND_ACCEPTED, errorMessage, ...ids }).where(where);
+      return;
+    } catch (error) {
+      console.error(`[send] no se pudo marcar ${messageId} como aceptado (intento ${attempt + 1})`, error);
+      await new Promise((resolve) => setTimeout(resolve, 300 * (attempt + 1)));
+    }
+  }
 }
 
 export class SendConflictError extends Error {}
@@ -668,10 +815,16 @@ export async function linkSentMessage(input: {
 export const SEND_UNCONFIRMED_AFTER_MS = 15 * 60_000;
 
 /**
- * Barrido del worker: envíos del CRM que siguen "queued" sin wamid tras
- * SEND_UNCONFIRMED_AFTER_MS desde su último intento (resultado desconocido, o
- * el proceso murió tras el POST) pasan a "failed" con error_code
- * send_unconfirmed.
+ * Barrido del worker: envíos del CRM que siguen "queued" sin confirmar tras
+ * SEND_UNCONFIRMED_AFTER_MS desde su último intento pasan a "failed":
+ * - SEND_ACCEPTED (Zernio lo aceptó y falló la base al guardar la confirmación):
+ *   casi seguro salió. Se queda sin "Reintentar" y deja una TARJETA en el chat
+ *   que explica qué pasó (Bloque B). Si después llega "entregado"/"leído", el
+ *   mensaje se corrige solo (ingest.ts).
+ * - en "espera" (su último intento fue un 429 y el proceso se reinició antes de
+ *   repetirlo): no salió; SEND_RATE_LIMITED, sí se puede reintentar.
+ * - el resto (resultado desconocido, o el proceso murió tras el POST):
+ *   send_unconfirmed, sin "Reintentar".
  *
  * NO se intenta adivinar cuál saliente del proveedor es: Zernio no acepta un
  * id de correlación propio, y emparejar por texto y hora podría atribuirle al
@@ -681,6 +834,40 @@ export const SEND_UNCONFIRMED_AFTER_MS = 15 * 60_000;
  * vendedor revisa el chat y, si no llegó, lo escribe de nuevo.
  */
 export async function expireUnconfirmedSends(now = new Date()): Promise<number> {
+  const stale = and(
+    eq(messages.direction, "out"),
+    inArray(messages.source, ["crm", "ai_agent"]),
+    eq(messages.status, "queued"),
+    // sent_at = último intento (un reintento lo renueva), no la creación.
+    lt(messages.sentAt, new Date(now.getTime() - SEND_UNCONFIRMED_AFTER_MS)),
+  );
+  const accepted = await db
+    .update(messages)
+    .set({ status: "failed", errorMessage: plainSendReason(SEND_ACCEPTED) })
+    .where(and(stale, eq(messages.errorCode, SEND_ACCEPTED)))
+    .returning({ id: messages.id, organizationId: messages.organizationId, conversationId: messages.conversationId, body: messages.body });
+  for (const row of accepted) {
+    await addNotice({
+      organizationId: row.organizationId,
+      conversationId: row.conversationId,
+      messageId: row.id,
+      kind: "envio",
+      body: `WhatsApp sí recibió el mensaje${row.body ? ` «${row.body.slice(0, 120)}»` : ""}, pero el CRM no pudo confirmar que le llegó al cliente. Revísalo en el celular antes de volver a escribirlo: si ya le llegó, no lo mandes otra vez.`,
+    });
+  }
+  const waiting = await db
+    .update(messages)
+    .set({ status: "failed", errorCode: SEND_RATE_LIMITED, errorMessage: "No salió: WhatsApp pidió esperar y el envío no se completó." })
+    .where(
+      and(
+        stale,
+        isNull(messages.providerMessageId),
+        isNull(messages.providerInternalId),
+        isNull(messages.errorCode),
+        sql`${messages.metadata}->'envio'->>'estado' = 'espera'`,
+      ),
+    )
+    .returning({ id: messages.id });
   const expired = await db
     .update(messages)
     .set({
@@ -688,16 +875,7 @@ export async function expireUnconfirmedSends(now = new Date()): Promise<number> 
       errorCode: SEND_UNCONFIRMED,
       errorMessage: "WhatsApp no confirmó el envío. Revisa el chat antes de reintentar.",
     })
-    .where(
-      and(
-        eq(messages.direction, "out"),
-        inArray(messages.source, ["crm", "ai_agent"]),
-        eq(messages.status, "queued"),
-        isNull(messages.providerMessageId),
-        // sent_at = último intento (un reintento lo renueva), no la creación.
-        lt(messages.sentAt, new Date(now.getTime() - SEND_UNCONFIRMED_AFTER_MS)),
-      ),
-    )
+    .where(and(stale, isNull(messages.providerMessageId)))
     .returning({ id: messages.id });
-  return expired.length;
+  return accepted.length + waiting.length + expired.length;
 }

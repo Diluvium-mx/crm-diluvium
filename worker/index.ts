@@ -40,6 +40,7 @@ import { checkWhatsappAccounts, describeSummary } from "@/lib/monitoring/account
 import { redis } from "@/lib/redis";
 import { startScheduledWorker } from "./scheduled";
 import { startWorkflowWorker } from "./workflows";
+import { startOutboxWorker } from "./outbox";
 import { onInboundKeyword } from "@/lib/workflows/triggers";
 import { agentIngestHooks, wakeAgentAfterTranscription } from "@/lib/ai/runtime/hooks";
 import { closeInterruptedTranscriptions, staleTranscriptionIds, transcribeMessageAudio } from "@/lib/ai/transcription/transcribe";
@@ -76,6 +77,8 @@ const storage = optionalStorage();
 const agent = startAgentRuntime({ provider, storage });
 // Workflows (Fase D): corridas de acciones (media, etapa, humano, avisos).
 const workflowsRunner = startWorkflowWorker(provider, storage);
+// Envíos del web en fila de espera (Bloque B): 429 de Zernio o turno de la conversación.
+const outbox = startOutboxWorker(provider);
 // Anuncios de Meta: media del anuncio, nombres de Meta y respaldo sin ficha.
 const ads = startAdsWorker({ provider, storage });
 // Adjuntos pendientes que el barrido reintenta: hasta 30 días (antes de que
@@ -166,6 +169,7 @@ async function sweep() {
   // Mensajes programados (A6): vencidos sin job y envíos atorados.
   await scheduled.sweep().catch((error) => console.error("[scheduled] barrido falló", error));
   await workflowsRunner.sweep().catch((error) => console.error("[workflows] barrido falló", error));
+  await outbox.sweep().catch((error) => console.error("[outbox] barrido falló", error));
   // Anuncios: clics sin registrar, media pendiente y nombres de Meta.
   await ads.sweep().catch((error) => console.error("[anuncios] barrido falló", error));
 
@@ -260,8 +264,9 @@ async function sweep() {
   const pendingMediaWhere = and(
     gte(messages.createdAt, new Date(Date.now() - MEDIA_SWEEP_DAYS * 86_400_000)),
     lt(messages.createdAt, new Date(Date.now() - SWEEP_MIN_AGE_MS)),
+    // Sin copia, o con una copia VACÍA (0 bytes; Bloque B): se vuelve a bajar.
     sql`exists (select 1 from jsonb_array_elements(${messages.attachments}) a
-                where a->>'storageKey' is null
+                where (a->>'storageKey' is null or a->>'sizeBytes' = '0')
                   and coalesce((a->>'downloadAttempts')::int, 0) < ${MEDIA_MAX_ATTEMPTS})`,
   );
   const pendingMedia = await db
@@ -339,7 +344,7 @@ async function shutdown(signal: string) {
   console.info(`[worker] ${signal}: cerrando`);
   clearInterval(sweepTimer);
   clearInterval(monitorTimer);
-  await Promise.all([worker.close(), mediaWorker?.close(), scheduled.close(), agent.close(), workflowsRunner.close(), ads.close()]);
+  await Promise.all([worker.close(), mediaWorker?.close(), scheduled.close(), agent.close(), workflowsRunner.close(), outbox.close(), ads.close()]);
   process.exit(0);
 }
 process.on("SIGTERM", () => void shutdown("SIGTERM"));
@@ -360,6 +365,7 @@ waitForMigrations()
     scheduled.run();
     agent.run();
     workflowsRunner.run();
+    outbox.run();
     ads.run();
   })
   .catch((error: unknown) => {

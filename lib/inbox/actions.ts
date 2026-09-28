@@ -20,6 +20,8 @@ import {
 } from "./queries";
 import { retryTextMessage, SendRejectedError, sendTemplateMessage, sendTextMessage } from "@/lib/messaging/send";
 import { SendFailedError } from "@/lib/messaging/provider";
+import { enqueueOutboxSend } from "@/lib/queue/outbox";
+import { plainSendReason } from "@/lib/messaging/send-reasons";
 import { pauseAgentForManualSend, pauseAgentOnManualMessageId } from "@/lib/ai/runtime/hooks";
 import type {
   ConversationDetail,
@@ -108,7 +110,7 @@ function toSendError(error: unknown): { code: SendErrorCode; message: string } {
   }
   // Rechazo explícito del proveedor (4xx): no salió y se puede reintentar.
   if (error instanceof SendFailedError && error.outcome === "rejected") {
-    return { code: "provider_rejected", message: "WhatsApp rechazó el mensaje. Puedes reintentarlo." };
+    return { code: "provider_rejected", message: `No salió: ${plainSendReason(error.code, error.message)}.` };
   }
   // Resultado desconocido: el mensaje queda "enviando" y se resuelve solo. No
   // es un error que el vendedor deba ver como fallo.
@@ -123,6 +125,8 @@ export async function sendMessage(conversationId: string, text: string): Promise
       conversationId,
       sentByUserId: userId,
       text,
+      // Si Zernio pide esperar (429), la pantalla no se traba: lo manda el worker.
+      deferTo: enqueueOutboxSend,
     });
     // Un mensaje manual del vendedor pausa al Agente IA en esta conversación.
     await pauseAgentForManualSend(organizationId, conversationId);
@@ -148,6 +152,7 @@ export async function sendTemplate(
       sentByUserId: userId,
       templateId,
       variableValues,
+      deferTo: enqueueOutboxSend,
     });
     await pauseAgentForManualSend(organizationId, conversationId);
     return { ok: true, messageId, pending: status === "pending" };
@@ -164,6 +169,7 @@ export async function retryMessage(messageId: string): Promise<SendMessageResult
       organizationId,
       messageId,
       sentByUserId: userId,
+      deferTo: enqueueOutboxSend,
     });
     await pauseAgentOnManualMessageId(organizationId, id);
     return { ok: true, messageId: id, pending: status === "pending" };

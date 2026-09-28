@@ -92,10 +92,11 @@ docs/numero-prueba.md › "Después del QR".
     Mazatlán) y Code te la pasa cuando la pidas. Si se corta (Ctrl+C, red, límite de
     Zernio): **el mismo comando sigue donde se quedó**. Va a 40 peticiones/min y cede
     cuando el bot o los vendedores usan el límite de Zernio (deja ~20/min libres). Además,
-    cada 30 s revisa si Zernio le rechazó por límite (429) algún envío al bot, a los
-    vendedores o a un workflow; si pasa, **baja solo su ritmo a la mitad** y lo dice en la
-    línea de avance ("Zernio rechazó 1 envío(s) del CRM por límite: el importador baja a 20
-    peticiones/min"). Si aun así hubiera rechazos, Code la corta y la sigue con `--ritmo 15`.
+    cada 30 s revisa si Zernio frenó por límite (429) algún envío al bot, a los
+    vendedores o a un workflow (desde el Bloque B esos envíos esperan su turno y salen solos); si
+    pasa, **baja solo su ritmo a la mitad** y lo dice en la línea de avance ("Zernio frenó por límite
+    (429) 1 envío(s) del CRM: el importador baja a 20 peticiones/min"). Si aun así siguiera
+    frenando, Code la corta y la sigue con `--ritmo 15`.
     Al terminar, conteos "después" y la revisión de cero duplicados:
     ```sql
     -- teléfonos repetidos (debe ser 0)
@@ -367,8 +368,9 @@ muestra no escribió nada (mismo conteo antes y después).
   mencionarlo. Ya NO cuenta como pendiente (ni comprobante, ni corte del lote).
 - El barrido de media del historial toma lo más reciente primero: 5 adjuntos que fallen siempre
   ocupan su turno hasta agotar sus 25 intentos (~25 min) antes de pasar a otros.
-- Un 429 de Zernio en un envío del vendedor se marca fallido (no se reintenta solo). El
-  importador deja ~20 peticiones/min libres; si hubiera ráfagas mayores, bajar `--ritmo`.
+- Un 429 de Zernio en un envío del vendedor, del bot o de un workflow ya no falla (Bloque B,
+  28-sep-2026): espera su turno y sale solo con la misma clave (tope 5 min). El importador deja ~20
+  peticiones/min libres; si hubiera ráfagas mayores, bajar `--ritmo`.
 - La agenda del celular puede tener un nombre distinto al de GHL: nunca lo cambia (regla), así
   que no se "mejora" un nombre ya puesto.
 - Los ~17 Fragmentos curados: no bloquean el día; se siembran después con la lista del dueño.
