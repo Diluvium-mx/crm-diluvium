@@ -1,15 +1,17 @@
 "use client";
 
 // Editor grande del Goal (instrucciones del agente), editable ahí mismo como en GHL:
-// deshacer, contador de palabras, tokens aproximados, "Valores personalizados"
-// (se insertan donde está el cursor) y «Copiar» todo el texto. «Guardar Goal» y «Descartar cambios» piden
+// deshacer, contador de palabras, tokens aproximados y «Copiar» todo el texto. Sin
+// "Valores personalizados" desde el 28-sep-2026 (el dueño lo pidió: el Goal escribe
+// "Angela" y "Diluvium" tal cual; un {{…}} escrito a mano lo sigue sustituyendo el
+// runtime, lib/agente-ia/editor.ts). «Guardar Goal» y «Descartar cambios» piden
 // confirmación arriba (regla del dueño, 27-sep-2026; use-confirm.tsx). Al guardar queda
 // una versión (se puede nombrar con el lápiz). Avisa hacia arriba si hay cambios sin
 // guardar (punto naranja en la subpestaña). Sin lógica de datos: solo llama a las
 // Server Actions del editor.
 import { useEffect, useRef, useState } from "react";
 import { restoreAgentGoal, saveAgentGoal } from "@/lib/actions/agente-ia-editor";
-import { approxTokens, countWords, CUSTOM_VALUES } from "@/lib/agente-ia/editor";
+import { approxTokens, countWords } from "@/lib/agente-ia/editor";
 import type { VersionView } from "@/lib/agente-ia/types";
 import { CopyButton } from "@/components/ui/copy-button";
 import { useConfirm } from "./use-confirm";
@@ -30,8 +32,6 @@ export function GoalEditor({
   const [text, setText] = useState(goal);
   const [saved, setSaved] = useState(goal);
   const [history, setHistory] = useState<string[]>([]);
-  const [menu, setMenu] = useState(false);
-  const ref = useRef<HTMLTextAreaElement>(null);
   const lastPush = useRef(-Infinity);
   const confirm = useConfirm();
 
@@ -51,7 +51,7 @@ export function GoalEditor({
   }, [dirty, onDirtyChange]);
 
   // Un punto de "deshacer" por ráfaga de escritura (`at` = hora del evento) o por
-  // cada inserción (sin `at`).
+  // cada cambio de un golpe (sin `at`: descartar).
   function remember(previous: string, at?: number) {
     if (at !== undefined && at - lastPush.current < HISTORY_IDLE_MS) return;
     if (at !== undefined) lastPush.current = at;
@@ -68,20 +68,6 @@ export function GoalEditor({
     setText(history[history.length - 1]);
     setHistory(history.slice(0, -1));
     lastPush.current = -Infinity;
-  }
-
-  function insert(token: string) {
-    const el = ref.current;
-    const start = el?.selectionStart ?? text.length;
-    const end = el?.selectionEnd ?? text.length;
-    remember(text);
-    const next = `${text.slice(0, start)}${token}${text.slice(end)}`;
-    setText(next);
-    setMenu(false);
-    requestAnimationFrame(() => {
-      el?.focus();
-      el?.setSelectionRange(start + token.length, start + token.length);
-    });
   }
 
   function save() {
@@ -123,28 +109,6 @@ export function GoalEditor({
         >
           ↶ Deshacer
         </button>
-        <div className="relative">
-          <button
-            type="button"
-            onClick={() => setMenu((m) => !m)}
-            aria-expanded={menu}
-            className="rounded border border-black/15 px-2 py-1 text-xs text-foreground hover:bg-black/5 dark:border-white/15 dark:hover:bg-white/5"
-          >
-            {"{ }"} Valores personalizados
-          </button>
-          {menu && (
-            <ul className="absolute left-0 z-10 mt-1 w-64 rounded-md border bg-card py-1 text-xs shadow-md">
-              {CUSTOM_VALUES.map((v) => (
-                <li key={v.token}>
-                  <button type="button" onClick={() => insert(v.token)} className="flex w-full justify-between gap-2 px-3 py-1.5 text-left hover:bg-muted">
-                    <span className="text-foreground">{v.label}</span>
-                    <code className="text-muted-foreground">{v.token}</code>
-                  </button>
-                </li>
-              ))}
-            </ul>
-          )}
-        </div>
         <span className="ml-auto text-xs tabular-nums text-muted-foreground">
           {countWords(text).toLocaleString("es-MX")} palabras · ≈ {approxTokens(text).toLocaleString("es-MX")} tokens
         </span>
@@ -154,7 +118,6 @@ export function GoalEditor({
           pr-24: ningún renglón queda debajo del botón. */}
       <div className="relative">
         <textarea
-          ref={ref}
           value={text}
           onChange={(e) => edit(e.target.value, e.timeStamp)}
           spellCheck={false}

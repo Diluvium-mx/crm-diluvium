@@ -4,7 +4,7 @@
 // 27-sep-2026 cada versión puede llevar un nombre). Sin
 // sesión: las Server Actions (lib/actions/agente-ia-editor.ts) resuelven la
 // organización y el permiso. Toda consulta filtra por organization_id.
-import { and, asc, desc, eq, max, sql } from "drizzle-orm";
+import { and, asc, desc, eq, inArray, max, sql } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { aiConfig, aiKnowledge, aiKnowledgeVersions, user } from "@/lib/db/schema";
 import { DEFAULT_BRAIN_MODEL, DEFAULT_FILTER_MODEL, DEFAULT_MODEL_1, getModel } from "@/lib/ai/catalog";
@@ -265,6 +265,22 @@ export async function deleteFaq(organizationId: string, userId: string | null, f
       .returning({ id: aiKnowledge.id });
     if (rows.length === 0) throw new EditorNotFoundError("Esa pregunta ya no existe.");
   });
+}
+
+// Borrar varias a la vez (casillas + «Seleccionar todas», 28-sep-2026): UNA versión y una
+// fila de Historial para todo el lote. Las que otro ya borró se ignoran; si no queda
+// ninguna, "ya no existen". Devuelve cuántas borró.
+export async function deleteFaqs(organizationId: string, userId: string | null, faqIds: readonly string[]): Promise<number> {
+  let deleted = 0;
+  await changeFaqs(organizationId, userId, async (tx) => {
+    const rows = await tx
+      .delete(aiKnowledge)
+      .where(and(inArray(aiKnowledge.id, [...faqIds]), eq(aiKnowledge.organizationId, organizationId)))
+      .returning({ id: aiKnowledge.id });
+    if (rows.length === 0) throw new EditorNotFoundError("Esas preguntas ya no existen.");
+    deleted = rows.length;
+  });
+  return deleted;
 }
 
 // Regresa las FAQs a una versión: reemplaza todas (conservando el ancla de GHL).
