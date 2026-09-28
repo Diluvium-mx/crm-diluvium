@@ -52,26 +52,64 @@ clientes** (eso llega en la Fase B y siguientes).
     28-sep-2026 solo los **no archivados** (hoy solo «WhatsApp Diluvium»); el Sandbox y el Número
     de prueba archivados se **ocultan, no se borran** (sus chats, mensajes y contactos siguen igual).
     El texto de ayuda dice «se reactiva con «Activar»» (el botón del Detalle).
-  - **Historial** (Bloque A, 28-sep-2026; `?seccion=historial`, todos los roles): una fila por
-    cambio con **quién**, **qué**, **antes → después** y **fecha y hora de Mazatlán**, lo más nuevo
-    arriba (200 filas; con fechas se ve más atrás). Filtros: **Tipo** (Opciones del bot · Goal y
-    FAQs · Modelos · Etapas · Canales · Workflows · Pausas por chat), **Desde / Hasta** (días de
-    Mazatlán) y **«Mostrar pausas automáticas («un vendedor contestó»)»** (ocultas de fábrica).
+  - **Historial** (Bloque A, 28-sep-2026; completado en el Bloque E; `?seccion=historial`, todos los
+    roles): una fila por cambio con **quién**, **qué**, **antes → después** y **fecha y hora de
+    Mazatlán**, lo más nuevo arriba (200 filas; con fechas se ve más atrás). Filtros: **Tipo**
+    (Opciones del Agente IA · Goal y FAQs · Nombre del agente · Modelos · Etapas · Canales · Workflows ·
+    Tallas y medidas · Mensajes rápidos · Plantillas · Vendedores · Pausas por chat), **Desde / Hasta**
+    (días de Mazatlán) y **«Mostrar pausas automáticas (un vendedor contestó, tope de respuestas, pidió
+    un asesor y vuelta sola)»** (ocultas de fábrica). **Vendedores** solo lo ven **owner y admin** (ni la
+    opción del filtro ni sus filas le llegan a un vendedor; lo revisa el servidor con `member:update`).
     Fuentes (`lib/historial/queries.ts`): **Opciones** = `ai_config_changes` (ya existía);
     **Goal y FAQs** = `ai_knowledge_versions` (antes → después = palabras del Goal o número de
     preguntas contra la versión anterior; sin autor = «Versión … guardada por el sistema»); lo demás
-    = tabla nueva **`change_history`** (migración **0042**, append-only, con `organization_id`),
-    escrita en la **misma transacción** que el cambio (`lib/historial/log.ts`):
-    Modelo 1 y 2 (nombre del modelo) · etapas: crear, renombrar, borrar (a qué etapa pasaron sus
-    contactos), reordenar (orden completo antes → después), papel y modelo (la regla del bot y el
-    color **no** se registran) · canal encendido/apagado · workflows: crear (también «Restaurar
-    predeterminados»), editar (solo lo que cambió: nombre, encendido, pasos, palabras clave,
-    comando, etapa, «lo usa el agente», descripción), encender, apagar y borrar · por chat:
-    «Pausar agente» (y «Apagar» de la tarjeta de error) y «Activar» **con quién**, y la pausa
-    automática **«un vendedor contestó»** (quién = «Automático»). La pausa por **tope de
-    respuestas** o por **pedir un asesor** y el regreso solo al vencer la hora **no** dejan fila.
-    `subject` guarda el nombre del contacto / etapa / canal / workflow en ese momento y
+    = tabla **`change_history`** (migración **0042**, append-only, con `organization_id`), escrita en la
+    **misma transacción** que el cambio (`lib/historial/log.ts`):
+    - Modelo 1 y 2 (nombre del modelo) · **nombre del agente** (Ángela ✎, antes → después).
+    - Etapas: crear, renombrar, borrar (a qué etapa pasaron sus contactos), reordenar (orden completo
+      antes → después), papel, modelo y **regla del Agente IA** (la fila muestra el inicio del texto; el
+      color **no** se registra).
+    - Canal encendido/apagado · workflows: crear (también «Restaurar predeterminados»), editar (solo lo
+      que cambió), encender, apagar y borrar.
+    - **Tallas y medidas** (guardar sin cambios no deja fila; con un solo cambio la fila lo dice completo,
+      p. ej. «Estándar · 1: 60–90 cm → 60–95 cm»).
+    - **Mensajes rápidos**: crear, editar (la fila dice el cambio de nombre; el texto va en «Ver
+      cambios») y borrar, con su texto. Los usa y edita cualquier rol, así que todos lo ven.
+    - **Plantillas**: «Sincronizar» (cuántas hay en Meta y cuántos cambios: nuevas, cambio de estado,
+      cambio de texto, quitadas en Meta) en la misma transacción que la sincronización; el **alta** vive
+      en Meta (no hay transacción nuestra que compartir): su fila se escribe en cuanto Meta la acepta.
+    - **Vendedores** (solo owner/admin): alta (rol), cambio de rol, desactivar, reactivar y **contraseña
+      restablecida sin mostrarla** (la contraseña nunca llega al historial). Desactivar, reactivar y la
+      contraseña se escriben con drizzle en **una transacción** con su fila (las mismas columnas que tocaba
+      el `internalAdapter` y el borrado de sesiones; el trigger «≥1 owner activo» sigue mandando: si
+      truena, no queda fila). El **alta** y el **cambio de rol** los hace Better Auth con sus reglas y su
+      transacción: la fila se escribe en cuanto Better Auth confirma (`logTeamChange`).
+    - Por chat: «Pausar agente» (y «Apagar» de la tarjeta de error) y «Activar» **con quién**, y las
+      **automáticas** (quién = «Automático»): «un vendedor contestó», **tope de respuestas**, **el cliente
+      pidió un asesor** y la **vuelta sola** al cumplirse la hora de regreso (`reactivateDuePause`, que ahora
+      bloquea la fila, reactiva y escribe en una transacción).
+    `subject` guarda el nombre del contacto / etapa / canal / workflow / vendedor en ese momento y
     `subject_id` no tiene llave foránea: la fila sobrevive aunque se borre lo que nombra.
+    **No entra** (es trabajo diario y ya se ve en cada contacto): mover contactos de etapa, mandar
+    mensajes y los comentarios.
+  - **«Ver cambios»** (Bloque E, migración **0043**: columna `change_history.detail` jsonb, nula): en cada
+    fila que lo permite, un botón abre lo **quitado (tachado en rojo)** y lo **agregado (en verde)**. Se
+    pide al abrirlo (`getChangeDiff`, una fila a la vez; la lista sigue ligera). Motor puro:
+    `lib/historial/diff.ts`.
+    - **Goal por párrafo**, comparando dos versiones seguidas de `ai_knowledge_versions` (ya guardan el
+      texto completo): párrafo agregado, quitado o **editado** (si se parece ≥ 40 % al que reemplaza, se
+      resalta por palabras); lo igual solo se cuenta («12 párrafos sin cambios»).
+    - **FAQs por pregunta**: agregada, borrada o editada (pregunta/respuesta antes → después; apagar una
+      pregunta sale como «Estado»). Se emparejan por id de GHL, por la misma pregunta y, lo que sobre, por
+      la misma posición.
+    - **Workflows paso por paso**: nombre, estado, descripción, disparadores (palabras clave, comando,
+      etapa, «lo usa el agente») y cada paso (texto, archivo por su nombre, pie, espera); un paso agregado
+      al inicio no marca todos los demás.
+    - **Regla de etapa, nombre del agente, mensajes rápidos, alta de plantilla**: texto antes → después.
+    - **Tallas**: por talla (rango antes → después, agregada, quitada). **Sincronizar plantillas**: una línea
+      por plantilla que cambió.
+    - Las filas de antes de la 0043, las Opciones (ya dicen antes → después), las pausas y los vendedores
+      no tienen «Ver cambios».
   - Ya no están: selector de filtro (queda Luna), "Probar modelo", tabla de precios (los
     precios siguen internos para el gasto), tiempos, pausas y límites.
   - Nota de costo: un Goal con `{{contacto.nombre}}`/`{{vendedor.nombre}}` cambia el
@@ -255,7 +293,7 @@ Dashboard ya muestra el gasto del mes y el saldo estimado (24-sep-2026).
   - **AUTO con clientes reales (número real):** bloqueado hasta el approve de Codex del agente
     completo. En el sandbox (solo el teléfono del dueño) está autorizado.
   - **Antes de clientes reales** (no dañan a un cliente hoy; no abren ronda):
-    - Sin frenos, un bucle con otro bot (dos agentes contestándose) gastaría sin límite hasta
+    - Sin frenos, un bucle con otro contestador automático (dos agentes contestándose) gastaría sin límite hasta
       que alguien lo note en el Dashboard; el cliente escribiendo sin parar solo retrasa.
     - El cerebro ya no tiene la regla de no revelar sus instrucciones (no está en el Goal): un
       cliente podría pedírselas.
@@ -497,7 +535,7 @@ sistema "Agente IA"). El Goal y las FAQs no se tocaron.
   pre-deploy falla por `lock_timeout` (5 s) sin tumbar nada y se reintenta.
 - Un spammer con muchas notas de voz largas: ~US$0.03 por audio, visible en el Gasto de IA.
 
-## Opciones del bot (26-sep-2026)
+## Opciones del Agente IA (26-sep-2026)
 
 Rama `feat/opciones-bot`, migración **`0038_opciones_bot`**. Sección **"Opciones"** en la pestaña Agente IA
 (hoy su propia subpestaña; la editan vendedores, admin y owner: recurso `aiConfig`). Copia las opciones de Ángela
@@ -509,28 +547,31 @@ hasta que alguien mueva una opción. Reglas puras en `lib/agente-ia/opciones.ts`
 | # | Opción | Fábrica (= hoy) | En GHL | Columna de `ai_config` | Dónde aplica |
 |---|---|---|---|---|---|
 | 1 | Tiempo de espera antes de responder (5–60 s) | 15 s | 10 s | `response_delay_seconds` (reusada) | `debounceDelayFor` / `rescheduleDelayFor`; el tope de 60 s desde el primer mensaje nunca es menor que la espera |
-| 2 | Pausar el bot cuando un vendedor contesta | Sí | Sí | `pause_on_human_reply` (reusada) | `onHumanOutbound`, compuerta y paradas antes de cada burbuja (con "No" el vendedor no pausa; el agente contesta lo que el cliente escriba después) |
+| 2 | Pausar al Agente IA cuando un vendedor contesta | Sí | Sí | `pause_on_human_reply` (reusada) | `onHumanOutbound`, compuerta y paradas antes de cada burbuja (con "No" el vendedor no pausa; el agente contesta lo que el cliente escriba después) |
 | 2 | Reactivar solo después de | Nunca (a mano con «Activar») / 8 h / 24 h / N h | a mano | `human_reply_reactivate_hours` (nueva) | misma pausa que "Pausar agente": `agent_paused_until` + barrido del worker; el corte es la hora de regreso |
 | 3 | Cuando el cliente pide un asesor | Avisar y seguir contestando | avisa y pausa 8 h | `handover_reactivate_hours` (reusada; la 0038 la deja nula) | tras enviar la respuesta y encolar su media (`pauseAfterHandover`), condicional: una pausa de un vendedor manda |
-| 4 | Horario del bot (hora de Mazatlán) | 24/7 | 24/7 | `bot_schedule` jsonb `{days[1–7], from, to}` (nueva) | fuera de horario no se programa el job (`debounceDelayFor` → null) y la compuerta dice `fuera_de_horario` (sin pausa). **Apertura:** el barrido (`findPendingAtOpening`) toma los chats cuyo último mensaje es del cliente, sin respuesta, dentro de la ventana de 24 h y posteriores al corte, solo de organizaciones con horario y abiertas ahora, y los reparte **12 por minuto, uno cada 5 s**, sin tocar los que ya tienen job. Con horario, el barrido de huérfanos de 30 min no aplica (lo cubre el de apertura, hasta 24 h) |
+| 4 | Horario del Agente IA (hora de Mazatlán) | 24/7 | 24/7 | `bot_schedule` jsonb `{days[1–7], from, to}` (nueva) | fuera de horario no se programa el job (`debounceDelayFor` → null) y la compuerta dice `fuera_de_horario` (sin pausa). **Apertura:** el barrido (`findPendingAtOpening`) toma los chats cuyo último mensaje es del cliente, sin respuesta, dentro de la ventana de 24 h y posteriores al corte, solo de organizaciones con horario y abiertas ahora, y los reparte **12 por minuto, uno cada 5 s**, sin tocar los que ya tienen job. Con horario, el barrido de huérfanos de 30 min no aplica (lo cubre el de apertura, hasta 24 h) |
 | 5 | Responder imágenes | Sí | Sí | `read_images` (nueva) | con "No" no se firma la URL y el modelo ve `[imagen]` (los PDF siguen) |
 | 5 | Responder notas de voz | Sí | Sí | `transcribe_audio` (nueva) | con "No" el worker deja la transcripción `omitida` (motivo visible en el chat, sin llamar a OpenAI), el agente no la espera y ve `[nota de voz]` |
 | 6 | Longitud de respuesta | Balanceada | Balanceada | `response_length` (nueva) | "corta"/"detallada" = UNA línea al final del sufijo del CRM (`LENGTH_LINES`); el Goal, las FAQs y la caché no cambian |
 | 6 | Máximo de mensajes por respuesta | 2 | 1 | `max_bubbles` (reusada) | `toBubbles(text, 1)` manda todo en un mensaje |
-| 7 | Máximo de respuestas del bot por conversación | Sin tope | 50 | `max_replies_per_contact` (reusada) | al llegar (respuestas `ai_usage` cerebro/sent desde el último corte «Activar»/encendido): pausa hasta «Activar» + aviso 🤖 `tope_respuestas` (idempotente por entrante; `URGENT_NOTICE_KINDS` → tarjeta amarilla). Cubre un bucle con otro bot |
+| 7 | Máximo de respuestas del Agente IA por conversación | Sin tope | 50 | `max_replies_per_contact` (reusada) | al llegar (respuestas `ai_usage` cerebro/sent desde el último corte «Activar»/encendido): pausa hasta «Activar» + aviso 🤖 `tope_respuestas` (idempotente por entrante; `URGENT_NOTICE_KINDS` → tarjeta amarilla). Cubre un bucle con otro contestador automático |
 
-- **Horario a la vista (Bloque C, 28-sep-2026):** si el bot tiene horario (no 24/7), la **Bandeja** muestra
-  arriba una franja «El bot solo contesta mié–jue 20:00–6:00 (ahora está fuera de horario)» (ámbar) o
-  «(ahora sí está contestando)» (gris), recalculada cada minuto; si el canal está **Apagado**, «El bot está
-  apagado en WhatsApp Diluvium» (roja). En el **Dashboard**, la pastilla **"Bot"** junto a la de WhatsApp:
-  verde contestando, ámbar fuera de horario, roja apagado o **callado**. Todo sale de la base del CRM
-  (`lib/monitoring/bot-status.ts` y `bot-silence.ts`), sin Zernio. Motivo: el 27–28 sep un horario
-  "mié–jue 20:00–06:00" dejó al bot 16 h sin contestar sin que nadie lo notara.
-- **Alarma "bot callado"** (mismo bloque): dentro del horario y con el canal Encendido, 3+ chats cuyo
-  último mensaje es del cliente hace más de 15 min y el bot sin mandar nada en 15 min → `[monitor] ALERTA`
-  del worker e issue `alerta-whatsapp`. Lo que cuenta sale de la misma consulta que el barrido
-  (`findUnansweredForMonitor`); el horario tiene que llevar abierto los 15 min (la apertura reparte lo
-  acumulado). Detalle y variables: `docs/go-live.md` › Monitoreo.
+- **Horario a la vista (Bloque C, 28-sep-2026):** si el Agente IA tiene horario (no 24/7), la **Bandeja**
+  muestra arriba una franja «El Agente IA solo contesta mié–jue 20:00–6:00 (ahora está fuera de horario)»
+  (ámbar) o «(ahora sí está contestando)» (gris), recalculada cada minuto; si el canal está **Apagado**,
+  «El Agente IA está apagado en WhatsApp Diluvium» (roja). En el **Dashboard**, la pastilla **"Agente IA"**
+  junto a la de WhatsApp: verde contestando, ámbar fuera de horario, roja apagado o **callado**; al abrirla
+  dice también **«N chats esperan a un vendedor»** (los atrasados de más de 1 h, Bloque E). Todo sale de la
+  base del CRM (`lib/monitoring/bot-status.ts` y `bot-silence.ts`), sin Zernio. Motivo: el 27–28 sep un
+  horario "mié–jue 20:00–06:00" dejó al Agente IA 16 h sin contestar sin que nadie lo notara.
+- **Alarma "Agente IA callado"** (mismo bloque; ajustada en el Bloque E): dentro del horario y con el canal
+  Encendido, 3+ clientes que escribieron en la **última hora** y esperan respuesta hace más de 15 min, y el
+  Agente IA sin mandar nada en 15 min → `[monitor] ALERTA` del worker e issue `alerta-whatsapp`. Lo atrasado
+  (más de 1 h) **no alarma**: el Agente IA solo rescata por su cuenta lo de los últimos 30 min, así que eso
+  lo atiende un vendedor (sale como dato en la pastilla). Lo que cuenta sale de la misma consulta que el
+  barrido (`findUnansweredForMonitor`); el horario tiene que llevar abierto los 15 min (la apertura reparte
+  lo acumulado). Detalle y variables: `docs/go-live.md` › Monitoreo.
 - **Sin redesplegar:** el worker lee `loadBotOptions` en cada trabajo con caché de **60 s** por
   organización; el web borra su caché al guardar. Un valor imposible en la BD cae al de fábrica.
 - **Quién cambió qué:** cada guardado deja filas en `ai_config_changes` (organización, usuario, opción,
@@ -557,7 +598,7 @@ hasta que alguien mueva una opción. Reglas puras en `lib/agente-ia/opciones.ts`
 
 Rama `feat/columnas-embudo`, migración **`0041_columnas_embudo`**.
 
-- **Datos.** Tabla `funnel_stages` por organización: clave estable, nombre, orden, papel, regla del bot y modelo (1 o
+- **Datos.** Tabla `funnel_stages` por organización: clave estable, nombre, orden, papel, regla del Agente IA y modelo (1 o
   2). La columna `color` existe pero no se usa: el dueño quitó el color el 27-sep (todas las columnas en azul). `contacts.stage` y `workflows.trigger_stage` pasan de enum a texto con llave foránea compuesta. La
   0041 siembra las 5 de siempre con las mismas claves y nombres; la regla de cada una es la del bloque "ETAPAS DEL
   EMBUDO" del Goal de producción y el modelo se copia de `ai_config.etapas_modelo_1` **vigente al migrar**. Toda

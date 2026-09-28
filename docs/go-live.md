@@ -66,9 +66,9 @@ docs/numero-prueba.md › "Después del QR".
 
 ### C. Historial del celular (corre en SEGUNDO PLANO)
 
-> Desde que el número queda conectado (paso 13), **el bot y los vendedores trabajan normal
+> Desde que el número queda conectado (paso 13), **el Agente IA y los vendedores trabajan normal
 > con los mensajes nuevos**. La importación solo va agregando el historial viejo poco a
-> poco (unos 43 min para ~1,200 chats); nada de lo importado dispara al bot, ni suma no
+> poco (unos 43 min para ~1,200 chats); nada de lo importado dispara al Agente IA, ni suma no
 > leídos, ni abre la ventana de 24 h, ni cuenta en el Dashboard. La Bandeja y el Embudo se
 > ponen al día solos cada 5 s (una señal por lote, no una por mensaje).
 
@@ -91,8 +91,8 @@ docs/numero-prueba.md › "Después del QR".
     La última línea también queda en `.historial/<oficial>.avance.txt` (con la hora de
     Mazatlán) y Code te la pasa cuando la pidas. Si se corta (Ctrl+C, red, límite de
     Zernio): **el mismo comando sigue donde se quedó**. Va a 40 peticiones/min y cede
-    cuando el bot o los vendedores usan el límite de Zernio (deja ~20/min libres). Además,
-    cada 30 s revisa si Zernio frenó por límite (429) algún envío al bot, a los
+    cuando el Agente IA o los vendedores usan el límite de Zernio (deja ~20/min libres). Además,
+    cada 30 s revisa si Zernio frenó por límite (429) algún envío del Agente IA, de los
     vendedores o a un workflow (desde el Bloque B esos envíos esperan su turno y salen solos); si
     pasa, **baja solo su ritmo a la mitad** y lo dice en la línea de avance ("Zernio frenó por límite
     (429) 1 envío(s) del CRM: el importador baja a 20 peticiones/min"). Si aun así siguiera
@@ -223,47 +223,63 @@ Dos vigilantes independientes; ninguno depende de WhatsApp ni de Zernio para avi
 
 | Vigilante | Frecuencia | Qué revisa | Aviso |
 |---|---|---|---|
-| Worker (`worker/index.ts`) | cada 5 min (y al arrancar) | silencio de webhooks en horario laboral (lun–sáb 9–19 Mazatlán, `MONITOR_SILENCE_MINUTES`, 60 por omisión), eventos sin procesar > 5 min, dead-letter, cuarentena, **la cuenta de WhatsApp en Zernio** (a cualquier hora) y **que el bot conteste** ("bot callado", a cualquier hora dentro de su horario) | log `[monitor] ALERTA: …` en Railway; si todo va bien, `[monitor] entrada de WhatsApp sana · cuentas de WhatsApp: 1 conectada(s) · bot: 0 conversación(es) sin respuesta`. Una falla suelta de Zernio sale como `[monitor] aviso: …` (no es alerta) |
-| GitHub Action `inbound-monitor` | cada 15 min | lo mismo vía `GET /api/health/inbound` + latido del worker (Redis) + webhook de Zernio activo y sin fallos. El endpoint revisa la cuenta en Zernio y el bot **por su cuenta** (no depende del worker) | issue `alerta-whatsapp` (llega por correo); se cierra solo al sanar. Si el CRM no responde, también abre issue |
+| Worker (`worker/index.ts`) | cada 5 min (y al arrancar) | silencio de webhooks en horario laboral (lun–sáb 9–19 Mazatlán, `MONITOR_SILENCE_MINUTES`, 60 por omisión), eventos sin procesar > 5 min, dead-letter, cuarentena, **la cuenta de WhatsApp en Zernio** (a cualquier hora) y **que el Agente IA conteste** ("Agente IA callado", a cualquier hora dentro de su horario; solo clientes de la última hora) | log `[monitor] ALERTA: …` en Railway; si todo va bien, `[monitor] entrada de WhatsApp sana · cuentas de WhatsApp: 1 conectada(s) · Agente IA: 0 conversación(es) de la última hora sin respuesta · 0 chats esperan a un vendedor`. Una falla suelta de Zernio sale como `[monitor] aviso: …` (no es alerta) |
+| GitHub Action `inbound-monitor` | cada 15 min | lo mismo vía `GET /api/health/inbound` + latido del worker (Redis) + webhook de Zernio activo y sin fallos. El endpoint revisa la cuenta en Zernio y al Agente IA **por su cuenta** (no depende del worker) | issue `alerta-whatsapp` (llega por correo); se cierra solo al sanar. Si el CRM no responde, también abre issue |
 
-### Alarma "bot callado" (Bloque C, 28-sep-2026)
+### Alarma "Agente IA callado" (Bloque C, 28-sep-2026; sin falsas alarmas desde el Bloque E)
 
-**Por qué:** el 27–28 sep el bot pasó 16 h sin contestar (133 mensajes de clientes en 88 chats) porque
-alguien le puso horario "mié–jue 20:00–06:00", y nada avisó: el monitoreo solo miraba que llegaran
+**Por qué:** el 27–28 sep el Agente IA pasó 16 h sin contestar (133 mensajes de clientes en 88 chats)
+porque alguien le puso horario "mié–jue 20:00–06:00", y nada avisó: el monitoreo solo miraba que llegaran
 mensajes y que el número estuviera conectado.
 
 **Cuándo alerta** (los dos vigilantes, con datos de la base del CRM, sin Zernio): con el canal
-**Encendido** y **dentro del horario del bot** durante todo el tramo, hay **3 o más** conversaciones con el
-agente activo, dentro de la ventana de 24 h, cuyo último mensaje es del cliente (no importado del
-celular) de hace **más de 15 min**, y el bot **no mandó ninguna respuesta** (en ningún chat) en esos 15 min.
-Qué cuenta como "esperando al bot" sale de la **misma consulta** que el barrido del bot
+**Encendido** y **dentro del horario del Agente IA** durante todo el tramo, hay **3 o más** clientes que
+escribieron en la **última hora** y llevan **más de 15 min** sin respuesta (conversaciones con el agente
+activo, dentro de la ventana de 24 h, cuyo último mensaje es del cliente y no se importó del celular), y el
+Agente IA **no mandó ninguna respuesta** (en ningún chat) en esos 15 min.
+Qué cuenta como "esperando al Agente IA" sale de la **misma consulta** que su barrido
 (`findUnansweredForMonitor` en `lib/ai/runtime/sweep.ts`): no cuentan los chats pausados, los que tienen
 una tarjeta de error sin atender, lo escrito antes de encender el canal o de "Activar", ni lo que el agente
 ya decidió (contestó, pasó a un vendedor o dejó sin respuesta, p. ej. un "gracias").
 
-- Umbrales por variable (web **y** worker): `MONITOR_BOT_SILENCE_MINUTES` (15) y
-  `MONITOR_BOT_SILENCE_CONVERSATIONS` (3). Un valor inválido cae al de fábrica.
-- Al abrir el horario el bot reparte poco a poco lo que llegó con el horario cerrado: por eso el horario
-  tiene que llevar abierto el tramo completo (15 min) antes de poder alertar.
+**Lo atrasado NO alarma (Bloque E, 28-sep-2026).** El Agente IA solo rescata por su cuenta lo de los
+últimos 30 min; un chat que espera desde hace más de 1 hora ya no lo va a contestar solo (lo atiende un
+vendedor, o el Agente IA cuando el cliente vuelva a escribir). Antes la alarma contaba todo lo de las 24 h y
+los 74 chats atrasados del horario mié–jue la hacían sonar de noche aunque nada estuviera roto. Ahora esos
+chats salen como **dato** en la pastilla del Dashboard: «N chats esperan a un vendedor».
+Pruebas del caso: `lib/monitoring/bot-status.test.ts` y `bot-silence.int.test.ts` (74 chats viejos + noche
+sin mensajes = no suena; 3 clientes nuevos sin respuesta 15 min = suena).
+
+- Umbrales por variable (web **y** worker): `MONITOR_BOT_SILENCE_MINUTES` (15, la espera),
+  `MONITOR_BOT_SILENCE_CONVERSATIONS` (3) y `MONITOR_BOT_SILENCE_RECENT_MINUTES` (60, qué tan reciente
+  tiene que ser el mensaje del cliente). Un valor inválido cae al de fábrica; si la ventana de "reciente" no
+  es mayor que la espera, se usa 4 veces la espera.
+- Al abrir el horario el Agente IA reparte poco a poco lo que llegó con el horario cerrado: por eso el
+  horario tiene que llevar abierto el tramo completo (15 min) antes de poder alertar.
 - Fuera de horario o con el canal **Apagado** no hay alerta: eso se ve en la **franja de la Bandeja** y en la
-  **pastilla "Bot"** del Dashboard (abajo).
-- Texto del issue (público): «el bot no está contestando: N conversación(es) esperan respuesta hace más de
-  15 min (la más antigua desde las HH:MM, Mazatlán); última respuesta del bot: a las HH:MM». Solo conteos y
-  horas; nunca nombres ni teléfonos. En `metrics.bot`: `waiting`, `silentOrganizations`, `lastReplyMinutesAgo`.
-- **Qué hacer:** Agente IA → revisar el interruptor del canal, Opciones del bot › horario y las tarjetas de
-  error; mirar el log del worker (`[agente]`). Lo que ya esperó lo atiende un vendedor (el bot solo contesta
-  cuando el cliente vuelve a escribir).
-- Código: `lib/monitoring/bot-status.ts` (reglas, puro) y `bot-silence.ts` (base).
+  **pastilla "Agente IA"** del Dashboard (abajo).
+- Texto del issue (público): «el Agente IA no está contestando: N cliente(s) escribieron en la última hora y
+  esperan respuesta hace más de 15 min (el más antiguo desde las HH:MM, Mazatlán); última respuesta del
+  Agente IA: a las HH:MM». Solo conteos y horas; nunca nombres ni teléfonos. En `metrics.bot`: `waiting`
+  (recientes, las que alarman), `backlog` (atrasadas), `silentOrganizations`, `lastReplyMinutesAgo`.
+- Log del worker si todo va bien: `[monitor] entrada de WhatsApp sana · cuentas de WhatsApp: 1 conectada(s) ·
+  Agente IA: 0 conversación(es) de la última hora sin respuesta · 74 chats esperan a un vendedor`.
+- **Qué hacer:** Agente IA → revisar el interruptor del canal, Opciones del Agente IA › horario y las
+  tarjetas de error; mirar el log del worker (`[agente]`). Lo atrasado lo atiende un vendedor (el Agente IA
+  solo contesta cuando el cliente vuelve a escribir).
+- Código: `lib/monitoring/bot-status.ts` (reglas, puro: `splitWaiting` parte recientes y atrasados) y
+  `bot-silence.ts` (base).
 
-**Bot fuera de horario o apagado, a la vista** (sin llamar a Zernio al cargar):
+**Agente IA fuera de horario o apagado, a la vista** (sin llamar a Zernio al cargar):
 
-- **Franja en la Bandeja** (arriba, para todos): «El bot solo contesta mié–jue 20:00–6:00 (ahora está fuera
-  de horario)» en ámbar, o «(ahora sí está contestando)» en gris, si el bot tiene horario; «El bot está apagado
-  en WhatsApp Diluvium» en rojo si el canal está Apagado. Con 24/7 y Encendido no hay franja. Se recalcula
-  cada minuto sin recargar.
-- **Pastilla "Bot"** junto a la de WhatsApp en el Dashboard: verde "Bot contestando", ámbar "Bot fuera de
-  horario", roja "Bot apagado" o "Bot callado". Al hacer clic: canal Encendido/Apagado, horario, cuántas
-  conversaciones llevan más de 15 min sin respuesta y la última respuesta del bot.
+- **Franja en la Bandeja** (arriba, para todos): «El Agente IA solo contesta mié–jue 20:00–6:00 (ahora está
+  fuera de horario)» en ámbar, o «(ahora sí está contestando)» en gris, si el Agente IA tiene horario; «El
+  Agente IA está apagado en WhatsApp Diluvium» en rojo si el canal está Apagado. Con 24/7 y Encendido no hay
+  franja. Se recalcula cada minuto sin recargar.
+- **Pastilla "Agente IA"** junto a la de WhatsApp en el Dashboard: verde "Agente IA contestando", ámbar
+  "Agente IA fuera de horario", roja "Agente IA apagado" o "Agente IA callado". Al hacer clic: canal
+  Encendido/Apagado, horario, cuántos clientes de la última hora llevan más de 15 min sin respuesta, los
+  **atrasados** («N chats esperan a un vendedor», solo dato) y la última respuesta del Agente IA.
 
 ### Alarma con menos ruido: "no se pudo revisar" (Bloque C, 28-sep-2026)
 
@@ -419,7 +435,7 @@ muestra no escribió nada (mismo conteo antes y después).
   mencionarlo. Ya NO cuenta como pendiente (ni comprobante, ni corte del lote).
 - El barrido de media del historial toma lo más reciente primero: 5 adjuntos que fallen siempre
   ocupan su turno hasta agotar sus 25 intentos (~25 min) antes de pasar a otros.
-- Un 429 de Zernio en un envío del vendedor, del bot o de un workflow ya no falla (Bloque B,
+- Un 429 de Zernio en un envío del vendedor, del Agente IA o de un workflow ya no falla (Bloque B,
   28-sep-2026): espera su turno y sale solo con la misma clave (tope 5 min). El importador deja ~20
   peticiones/min libres; si hubiera ráfagas mayores, bajar `--ritmo`.
 - La agenda del celular puede tener un nombre distinto al de GHL: nunca lo cambia (regla), así

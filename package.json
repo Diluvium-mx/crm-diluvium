@@ -25,6 +25,7 @@
     "canal:prueba": "tsx scripts/canal-prueba.ts",
     "canal:oficial": "tsx scripts/canal-oficial.ts",
     "canal:archivar": "tsx scripts/archivar-canal.ts",
+    "pruebas:limpiar": "tsx scripts/limpiar-chats-prueba.ts",
     "historial:importar": "tsx scripts/importar-historial.ts",
     "historial:prueba-carga": "tsx scripts/prueba-carga-historial.ts",
     "seed:ai-knowledge": "tsx scripts/seed-ai-knowledge.ts",

@@ -163,7 +163,7 @@ export function validateStageSet(stages: readonly Pick<FunnelStage, "key" | "nam
   const at = (role: StageRole) => ordered.findIndex((s) => s.role === role);
   if (at("entrada") > 0) errors.push(`La etapa con el papel "${STAGE_ROLE_LABELS.entrada}" debe ser la primera columna (ahí llegan los contactos nuevos).`);
   if (at("cerca_compra") >= 0 && at("venta_cerrada") >= 0 && at("cerca_compra") > at("venta_cerrada")) {
-    errors.push(`La etapa con el papel "${STAGE_ROLE_LABELS.cerca_compra}" debe ir antes que la de "${STAGE_ROLE_LABELS.venta_cerrada}" (el bot y /banco solo avanzan).`);
+    errors.push(`La etapa con el papel "${STAGE_ROLE_LABELS.cerca_compra}" debe ir antes que la de "${STAGE_ROLE_LABELS.venta_cerrada}" (el Agente IA y /banco solo avanzan).`);
   }
   return errors;
 }

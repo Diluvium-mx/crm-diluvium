@@ -38,6 +38,7 @@ import { objectStorage, StorageNotConfiguredError, type ObjectStorage } from "@/
 import { inboundHealth, WORKER_HEARTBEAT_KEY } from "@/lib/monitoring/inbound-health";
 import { checkWhatsappAccounts, describeSummary } from "@/lib/monitoring/account-health";
 import { recordUncheckedStreak } from "@/lib/monitoring/unchecked-streak";
+import { backlogText } from "@/lib/monitoring/bot-status";
 import { redis } from "@/lib/redis";
 import { startScheduledWorker } from "./scheduled";
 import { startWorkflowWorker } from "./workflows";
@@ -342,7 +343,7 @@ async function monitor() {
   const bot = report.metrics.bot;
   const summary =
     (accounts ? ` · cuentas de WhatsApp: ${describeSummary(accounts)}` : "") +
-    (bot ? ` · bot: ${bot.waiting} conversación(es) sin respuesta` : "");
+    (bot ? ` · Agente IA: ${bot.waiting} conversación(es) de la última hora sin respuesta · ${backlogText(bot.backlog)}` : "");
   for (const notice of report.notices) console.warn(`[monitor] aviso: ${notice}`);
   if (report.ok) console.info(`[monitor] entrada de WhatsApp sana${summary}`);
   else console.error(`[monitor] ALERTA: ${report.problems.join(" · ")}${summary}`);

@@ -1,15 +1,30 @@
 // Lectura de la subpestaña "Historial" (Agente IA, Bloque A 28-sep-2026). Une tres fuentes,
-// siempre de UNA organización: change_history (modelos, etapas, canales, workflows, pausas),
-// ai_config_changes (Opciones del bot) y ai_knowledge_versions (Goal y FAQs). Lo más nuevo
-// arriba; a lo más HISTORY_LIMIT filas (con fechas se ve más atrás).
+// siempre de UNA organización: change_history (modelos, etapas, canales, workflows, pausas y,
+// desde el Bloque E, nombre del agente, tallas, mensajes rápidos, plantillas y vendedores),
+// ai_config_changes (Opciones del Agente IA) y ai_knowledge_versions (Goal y FAQs). Lo más
+// nuevo arriba; a lo más HISTORY_LIMIT filas (con fechas se ve más atrás). "Ver cambios"
+// (Bloque E) se carga aparte, fila por fila: loadChangeDiff.
 import "server-only";
-import { and, desc, eq, gte, lt, ne, sql, type SQL } from "drizzle-orm";
+import { and, desc, eq, gte, lt, notInArray, sql, type SQL } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { aiConfigChanges, aiKnowledgeVersions, changeHistory, user } from "@/lib/db/schema";
 import { isBotOptionField, OPTION_LABELS } from "@/lib/agente-ia/opciones";
-import { AUTOMATIC_WHO, describeAction, HISTORY_LIMIT, SYSTEM_WHO, type ChangeKind, type HistoryRow, type HistoryType } from "./labels";
+import { buildChangeDiff, diffFaqs, diffGoal, type ChangeDiff, type FaqDetail } from "./diff";
+import {
+  AUTOMATIC_ACTIONS,
+  AUTOMATIC_WHO,
+  describeAction,
+  HISTORY_LIMIT,
+  isAutomaticAction,
+  MANAGER_ONLY_TYPES,
+  SYSTEM_WHO,
+  type ChangeKind,
+  type HistoryRow,
+  type HistoryType,
+} from "./labels";
 
-export type HistoryQuery = { type: HistoryType | null; start: Date | null; end: Date | null; includeAuto: boolean };
+/** `canSeeManagerOnly`: owner/admin (ven también Vendedores). */
+export type HistoryQuery = { type: HistoryType | null; start: Date | null; end: Date | null; includeAuto: boolean; canSeeManagerOnly: boolean };
 
 function inRange(column: typeof changeHistory.createdAt | typeof aiConfigChanges.createdAt, q: HistoryQuery): SQL[] {
   return [...(q.start ? [gte(column, q.start)] : []), ...(q.end ? [lt(column, q.end)] : [])];
@@ -19,6 +34,7 @@ const wants = (q: HistoryQuery, type: HistoryType) => q.type === null || q.type 
 
 async function fromChangeHistory(organizationId: string, q: HistoryQuery): Promise<HistoryRow[]> {
   if (q.type === "opciones" || q.type === "goal_faqs") return [];
+  if (q.type && !q.canSeeManagerOnly && MANAGER_ONLY_TYPES.includes(q.type)) return [];
   const rows = await db
     .select({
       id: changeHistory.id,
@@ -27,6 +43,7 @@ async function fromChangeHistory(organizationId: string, q: HistoryQuery): Promi
       subject: changeHistory.subject,
       oldValue: changeHistory.oldValue,
       newValue: changeHistory.newValue,
+      hasDetail: sql<boolean>`${changeHistory.detail} is not null`,
       createdAt: changeHistory.createdAt,
       author: user.name,
     })
@@ -36,14 +53,15 @@ async function fromChangeHistory(organizationId: string, q: HistoryQuery): Promi
       and(
         eq(changeHistory.organizationId, organizationId),
         ...(q.type ? [eq(changeHistory.kind, q.type satisfies ChangeKind)] : []),
-        ...(q.includeAuto ? [] : [ne(changeHistory.action, "pausa_auto")]),
+        ...(q.includeAuto ? [] : [notInArray(changeHistory.action, [...AUTOMATIC_ACTIONS])]),
+        ...(q.canSeeManagerOnly ? [] : [notInArray(changeHistory.kind, [...MANAGER_ONLY_TYPES])]),
         ...inRange(changeHistory.createdAt, q),
       ),
     )
     .orderBy(desc(changeHistory.createdAt), desc(changeHistory.id))
     .limit(HISTORY_LIMIT + 1);
   return rows.map((r) => {
-    const automatic = r.action === "pausa_auto";
+    const automatic = isAutomaticAction(r.action);
     return {
       id: `c:${r.id}`,
       type: r.kind as ChangeKind,
@@ -53,6 +71,7 @@ async function fromChangeHistory(organizationId: string, q: HistoryQuery): Promi
       after: r.newValue,
       at: r.createdAt.toISOString(),
       automatic,
+      hasDetail: r.hasDetail,
     };
   });
 }
@@ -82,6 +101,7 @@ async function fromBotOptions(organizationId: string, q: HistoryQuery): Promise<
     after: r.newValue,
     at: r.createdAt.toISOString(),
     automatic: false,
+    hasDetail: false,
   }));
 }
 
@@ -127,6 +147,8 @@ async function fromVersions(organizationId: string, q: HistoryQuery): Promise<Hi
       after: `${unit(r.size)}${edited}`,
       at: r.createdAt.toISOString(),
       automatic: false,
+      // Contra la versión anterior del mismo tipo (la primera no tiene con qué compararse).
+      hasDetail: before !== undefined,
     });
   }
   return out.reverse(); // lo más nuevo arriba, como las otras fuentes
@@ -138,4 +160,69 @@ export async function loadHistory(organizationId: string, q: HistoryQuery): Prom
   // la nueva del Goal, misma transacción) conservan el orden de su fuente (ya viene de la base).
   const all = parts.flat().sort((a, b) => (a.at === b.at ? 0 : a.at < b.at ? 1 : -1));
   return { rows: all.slice(0, HISTORY_LIMIT), truncated: all.length > HISTORY_LIMIT };
+}
+
+// ── "Ver cambios" (Bloque E) ─────────────────────────────────────────────────
+// Id de la fila: "c:<id>" (change_history) o "v:<id>" (versión del Goal o de las FAQs,
+// comparada con la anterior del mismo tipo). Siempre de UNA organización; Vendedores solo
+// para owner/admin. null = no existe, no es de esta organización o no tiene detalle.
+export async function loadChangeDiff(organizationId: string, rowId: string, canSeeManagerOnly: boolean): Promise<ChangeDiff | null> {
+  const [source, id] = [rowId.slice(0, 2), rowId.slice(2)];
+  if (!id) return null;
+  if (source === "c:") {
+    const [row] = await db
+      .select({ kind: changeHistory.kind, detail: changeHistory.detail })
+      .from(changeHistory)
+      .where(and(eq(changeHistory.id, id), eq(changeHistory.organizationId, organizationId)))
+      .limit(1);
+    if (!row?.detail) return null;
+    if (!canSeeManagerOnly && (MANAGER_ONLY_TYPES as readonly string[]).includes(row.kind)) return null;
+    return buildChangeDiff(row.detail);
+  }
+  if (source !== "v:") return null;
+  const v = aiKnowledgeVersions;
+  const [current] = await db
+    .select({ id: v.id, kind: v.kind, snapshot: v.snapshot })
+    .from(v)
+    .where(and(eq(v.id, id), eq(v.organizationId, organizationId)))
+    .limit(1);
+  if (!current) return null;
+  // La anterior del mismo tipo, con el MISMO orden que la lista (hora y luego id). La hora se
+  // compara en la base (microsegundos): la versión anterior y la nueva de una misma
+  // transacción pueden caer en el mismo milisegundo.
+  const [previous] = await db
+    .select({ snapshot: v.snapshot })
+    .from(v)
+    .where(
+      and(
+        eq(v.organizationId, organizationId),
+        eq(v.kind, current.kind),
+        sql`(${v.createdAt}, ${v.id}) < (select c.created_at, c.id from ai_knowledge_versions c where c.id = ${current.id} and c.organization_id = ${organizationId})`,
+      ),
+    )
+    .orderBy(desc(v.createdAt), desc(v.id))
+    .limit(1);
+  if (!previous) return null;
+  if (current.kind === "goal") return diffGoal(goalOf(previous.snapshot), goalOf(current.snapshot));
+  return diffFaqs(faqsOf(previous.snapshot), faqsOf(current.snapshot));
+}
+
+const goalOf = (snapshot: unknown) => String((snapshot as { goal?: unknown } | null)?.goal ?? "");
+
+function faqsOf(snapshot: unknown): FaqDetail[] {
+  const list = (snapshot as { faqs?: unknown } | null)?.faqs;
+  if (!Array.isArray(list)) return [];
+  return list.flatMap((f) => {
+    if (!f || typeof f !== "object") return [];
+    const x = f as Record<string, unknown>;
+    return [
+      {
+        question: String(x.question ?? ""),
+        answer: String(x.answer ?? ""),
+        position: typeof x.position === "number" ? x.position : undefined,
+        enabled: typeof x.enabled === "boolean" ? x.enabled : undefined,
+        ghlId: typeof x.ghlId === "string" ? x.ghlId : null,
+      },
+    ];
+  });
 }

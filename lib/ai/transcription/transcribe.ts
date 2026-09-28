@@ -77,7 +77,7 @@ export async function transcribeMessageAudio(
     // Opciones del bot → "Responder notas de voz: No": ni se lee ni se paga; queda
     // "omitida" con su motivo (el chat lo muestra) y el agente no la espera.
     if (!(await loadBotOptions(m.organizationId, now())).transcribeAudio) {
-      const motivo = "las notas de voz están apagadas en Opciones del bot";
+      const motivo = "las notas de voz están apagadas en Opciones del Agente IA";
       await db
         .update(messages)
         .set({ metadata: sql`jsonb_set(coalesce(${messages.metadata}, '{}'::jsonb), '{transcripcion}', ${metaJson({ estado: "omitida", at: now().toISOString(), motivo })})` })

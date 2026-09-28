@@ -1,12 +1,13 @@
-// Alarma "bot callado" contra Postgres REAL (Bloque C): qué cuenta como "esperando al
-// bot" (mismas exclusiones que el barrido del bot), que llegue a los dos vigilantes
-// (inboundHealth) y la pastilla/franja con datos del CRM. Solo con TEST_DATABASE_URL.
+// Alarma "Agente IA callado" contra Postgres REAL (Bloque C): qué cuenta como "esperando al
+// Agente IA" (mismas exclusiones que su barrido), que llegue a los dos vigilantes
+// (inboundHealth) y la pastilla/franja con datos del CRM. Bloque E: solo alarma lo de la
+// última hora; lo atrasado es un dato. Solo con TEST_DATABASE_URL.
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 
 const TEST_DATABASE_URL = process.env.TEST_DATABASE_URL;
 if (TEST_DATABASE_URL) process.env.DATABASE_URL = TEST_DATABASE_URL;
 
-describe.skipIf(!TEST_DATABASE_URL)("bot callado (Postgres real)", () => {
+describe.skipIf(!TEST_DATABASE_URL)("Agente IA callado (Postgres real)", () => {
   let db: typeof import("@/lib/db").db;
   let s: typeof import("@/lib/db/schema");
   let sql: typeof import("drizzle-orm").sql;
@@ -105,10 +106,32 @@ describe.skipIf(!TEST_DATABASE_URL)("bot callado (Postgres real)", () => {
   it("24/7, canal Encendido, 3 clientes esperando más de 15 min y el bot sin mandar nada → ALERTA (solo conteos y horas)", async () => {
     const report = await check();
     expect(report.problems).toEqual([
-      "el bot no está contestando: 3 conversación(es) esperan respuesta hace más de 15 min " +
-        "(la más antigua desde las 11:20, Mazatlán); última respuesta del bot: ninguna en 24 h",
+      "el Agente IA no está contestando: 3 cliente(s) escribieron en la última hora y esperan respuesta hace más de 15 min " +
+        "(el más antiguo desde las 11:20, Mazatlán); última respuesta del Agente IA: ninguna en 24 h",
     ]);
-    expect(report.metrics).toEqual({ waiting: 3, silentOrganizations: 1, lastReplyMinutesAgo: null });
+    expect(report.metrics).toEqual({ waiting: 3, backlog: 0, silentOrganizations: 1, lastReplyMinutesAgo: null });
+  });
+
+  it("Bloque E: 74 chats atrasados (de 2 a 20 h) + noche sin que el Agente IA mande nada → NO suena; son un dato", async () => {
+    await db.execute(sql`truncate messages, conversations, contacts cascade`);
+    for (let i = 0; i < 74; i++) await waiting(`viejo${i}`, 120 + i * 15);
+    const report = await check();
+    expect(report.problems).toEqual([]);
+    expect(report.metrics).toEqual({ waiting: 0, backlog: 74, silentOrganizations: 0, lastReplyMinutesAgo: null });
+    expect((await silence.loadBotStatus(ORG, NOW))?.lines).toContainEqual({
+      label: "Atrasados (más de 1 h)",
+      value: "74 chats esperan a un vendedor",
+      tone: "neutral",
+    });
+
+    // Llegan 3 clientes nuevos y nadie les contesta en más de 15 min → SUENA (cuenta solo los 3).
+    await waiting("nuevo1", 16);
+    await waiting("nuevo2", 30);
+    await waiting("nuevo3", 59);
+    const again = await check();
+    expect(again.problems).toHaveLength(1);
+    expect(again.problems[0]).toMatch(/^el Agente IA no está contestando: 3 cliente\(s\) escribieron en la última hora/);
+    expect(again.metrics).toMatchObject({ waiting: 3, backlog: 74, silentOrganizations: 1 });
   });
 
   it("mismas exclusiones que el bot: pausado, tarjeta de error, importado, ya decidido, reciente, contestado, ventana cerrada, antes de encender", async () => {
@@ -187,29 +210,29 @@ describe.skipIf(!TEST_DATABASE_URL)("bot callado (Postgres real)", () => {
   it("llega a los DOS vigilantes: inboundHealth (worker y /api/health/inbound) lo reporta", async () => {
     const report = await health.inboundHealth({ heartbeatAgeSeconds: async () => 10, checkZernio: false, now: NOW });
     expect(report.ok).toBe(false);
-    expect(report.problems.join(" | ")).toMatch(/el bot no está contestando: 3 conversación\(es\)/);
-    expect(report.metrics.bot).toEqual({ waiting: 3, silentOrganizations: 1, lastReplyMinutesAgo: null });
+    expect(report.problems.join(" | ")).toMatch(/el Agente IA no está contestando: 3 cliente\(s\)/);
+    expect(report.metrics.bot).toEqual({ waiting: 3, backlog: 0, silentOrganizations: 1, lastReplyMinutesAgo: null });
   });
 
-  describe("pastilla 'Bot' y franja (datos del CRM, sin Zernio)", () => {
+  describe("pastilla 'Agente IA' y franja (datos del CRM, sin Zernio)", () => {
     it("callado → rojo; otra organización no se mezcla", async () => {
       await seedOrg(OTRA, "ch_bc_otra");
       for (const id of ["o1", "o2", "o3", "o4"]) await waiting(id, 30, { org: OTRA, channel: "ch_bc_otra" });
-      await msg("o1", { direction: "out", minutes: 1, org: OTRA }); // el bot de la otra sí contesta
+      await msg("o1", { direction: "out", minutes: 1, org: OTRA }); // el Agente IA de la otra sí contesta
       const mine = await silence.loadBotStatus(ORG, NOW);
-      expect(mine).toMatchObject({ tone: "red", label: "Bot callado" });
-      expect(mine?.lines).toContainEqual({ label: "Sin respuesta hace más de 15 min", value: "3 conversación(es)", tone: "red" });
+      expect(mine).toMatchObject({ tone: "red", label: "Agente IA callado" });
+      expect(mine?.lines).toContainEqual({ label: "Sin respuesta hace más de 15 min (de la última hora)", value: "3 conversación(es)", tone: "red" });
       const other = await silence.loadBotStatus(OTRA, NOW);
-      expect(other).toMatchObject({ tone: "green", label: "Bot contestando" });
+      expect(other).toMatchObject({ tone: "green", label: "Agente IA contestando" });
     });
 
     it("fuera de horario → ámbar y franja; apagado → rojo y franja; 24/7 sin nadie esperando → verde y sin franja", async () => {
       await db.update(s.aiConfig).set({ botSchedule: MIE_JUE_NOCHE }).where(eq(s.aiConfig.organizationId, ORG));
-      expect(await silence.loadBotStatus(ORG, NOW)).toMatchObject({ tone: "amber", label: "Bot fuera de horario" });
+      expect(await silence.loadBotStatus(ORG, NOW)).toMatchObject({ tone: "amber", label: "Agente IA fuera de horario" });
       expect(await silence.loadBotBanner(ORG)).toEqual({ channels: [{ displayName: "WhatsApp Diluvium", on: true }], schedule: MIE_JUE_NOCHE });
 
       await db.update(s.channels).set({ aiAgentMode: "off" }).where(eq(s.channels.id, "ch_bc"));
-      expect(await silence.loadBotStatus(ORG, NOW)).toMatchObject({ tone: "red", label: "Bot apagado" });
+      expect(await silence.loadBotStatus(ORG, NOW)).toMatchObject({ tone: "red", label: "Agente IA apagado" });
 
       await db.update(s.aiConfig).set({ botSchedule: null }).where(eq(s.aiConfig.organizationId, ORG));
       expect(await silence.loadBotBanner(ORG)).toEqual({ channels: [{ displayName: "WhatsApp Diluvium", on: false }], schedule: null });
@@ -217,7 +240,7 @@ describe.skipIf(!TEST_DATABASE_URL)("bot callado (Postgres real)", () => {
       await db.update(s.channels).set({ aiAgentMode: "auto" }).where(eq(s.channels.id, "ch_bc"));
       await db.execute(sql`truncate messages, conversations cascade`);
       expect(await silence.loadBotBanner(ORG)).toBeNull();
-      expect(await silence.loadBotStatus(ORG, NOW)).toMatchObject({ tone: "green", label: "Bot contestando" });
+      expect(await silence.loadBotStatus(ORG, NOW)).toMatchObject({ tone: "green", label: "Agente IA contestando" });
     });
   });
 });

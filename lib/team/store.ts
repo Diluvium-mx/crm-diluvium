@@ -14,10 +14,19 @@ import "server-only";
 //   usa (el rol vive solo en member.role), así que se hace lo mismo que ellos
 //   (routes.mjs:506-556 y 802-866) con el `internalAdapter` de Better Auth,
 //   detrás de nuestras reglas (lib/team/rules.ts).
+//
+// Historial (Bloque E, 28-sep-2026; filas que solo ven owner/admin): desactivar, reactivar y
+// restablecer la contraseña se escriben aquí mismo, con drizzle, en UNA transacción con su
+// fila (lo mismo que hacía el internalAdapter: columnas de `user`/`account` y borrar sesiones).
+// El alta y el cambio de rol los hace Better Auth (sus reglas y su transacción): su fila se
+// escribe en cuanto Better Auth confirma (logTeamChange). La contraseña NUNCA se guarda ahí.
 import { and, asc, eq, sql } from "drizzle-orm";
 import { auth } from "@/lib/auth";
 import { db } from "@/lib/db";
-import { member, user } from "@/lib/db/schema";
+import { account, member, session, user } from "@/lib/db/schema";
+import { logChanges } from "@/lib/historial/log";
+import type { ChangeAction } from "@/lib/historial/labels";
+import { ROLE_LABELS, isTeamRole } from "./rules";
 
 // Autor de sistema de las notas importadas (migraciones 0022/0023): no inicia
 // sesión ni es miembro de ninguna organización. Nunca se "adopta" como vendedor,
@@ -114,14 +123,14 @@ async function checkPasswordLength(password: string) {
   }
 }
 
-/** Crea el usuario (correo + contraseña inicial) y lo agrega a la organización con su rol. */
+/** Crea el usuario (correo + contraseña inicial) y lo agrega a la organización con su rol. Devuelve su id. */
 export async function createSeller(params: {
   organizationId: string;
   name: string;
   email: string;
   password: string;
   role: string;
-}): Promise<void> {
+}): Promise<string> {
   await checkPasswordLength(params.password);
   const email = params.email.trim().toLowerCase();
   if (email.endsWith(".invalid")) throw new TeamError("Ese correo está reservado por el sistema.");
@@ -138,7 +147,7 @@ export async function createSeller(params: {
     await auth.api.addMember({
       body: { userId: existing.id, organizationId: params.organizationId, role: params.role as "agent" },
     });
-    return;
+    return existing.id;
   }
 
   // Sin headers = llamada de servidor (ver arriba). No se manda `role`: el rol
@@ -156,34 +165,75 @@ export async function createSeller(params: {
     await ctx.internalAdapter.deleteUser(created.id);
     throw error;
   }
+  return created.id;
 }
 
-/** Nueva contraseña asignada por owner/admin; cierra las sesiones del usuario. */
-export async function setPassword(userId: string, password: string): Promise<void> {
+/** Quién hizo el cambio y a quién, para la fila del historial. */
+export type TeamLog = { organizationId: string; actorId: string; targetName: string };
+
+export const roleLabel = (role: string) => role.split(",").map((r) => (isTeamRole(r.trim()) ? ROLE_LABELS[r.trim() as keyof typeof ROLE_LABELS] : r.trim())).join(", ");
+
+function teamEntry(log: TeamLog, userId: string, action: ChangeAction["vendedores"], oldValue: string | null, newValue: string | null) {
+  return { organizationId: log.organizationId, userId: log.actorId, kind: "vendedores" as const, action, subject: log.targetName, subjectId: userId, oldValue, newValue };
+}
+
+/** Alta o cambio de rol (los hace Better Auth): fila del historial en cuanto confirma. */
+export async function logTeamChange(
+  log: TeamLog,
+  userId: string,
+  change: { action: "alta"; role: string } | { action: "rol"; from: string; to: string },
+): Promise<void> {
+  await logChanges(
+    db,
+    change.action === "alta"
+      ? teamEntry(log, userId, "alta", null, `Rol: ${roleLabel(change.role)}`)
+      : teamEntry(log, userId, "rol", roleLabel(change.from), roleLabel(change.to)),
+  );
+}
+
+/**
+ * Nueva contraseña asignada por owner/admin; cierra las sesiones del usuario. Con `log`
+ * (restablecer desde Vendedores) deja la fila en la misma transacción, SIN la contraseña.
+ */
+export async function setPassword(userId: string, password: string, log?: TeamLog): Promise<void> {
   await checkPasswordLength(password);
   const ctx = await auth.$context;
   const hash = await ctx.password.hash(password);
-  if (await ctx.internalAdapter.findCredentialAccount(userId)) {
-    await ctx.internalAdapter.updatePassword(userId, hash);
-  } else {
-    await ctx.internalAdapter.createAccount({ userId, providerId: "credential", accountId: userId, password: hash });
-  }
-  await ctx.internalAdapter.deleteUserSessions(userId);
+  await db.transaction(async (tx) => {
+    const now = new Date();
+    const updated = await tx
+      .update(account)
+      .set({ password: hash, updatedAt: now })
+      .where(and(eq(account.userId, userId), eq(account.providerId, "credential")))
+      .returning({ id: account.id });
+    if (updated.length === 0) {
+      await tx.insert(account).values({ id: crypto.randomUUID(), userId, providerId: "credential", accountId: userId, password: hash, createdAt: now, updatedAt: now });
+    }
+    await tx.delete(session).where(eq(session.userId, userId));
+    if (log) await logChanges(tx, teamEntry(log, userId, "contrasena", null, null));
+  });
 }
 
 /** Desactiva (no borra: sus mensajes conservan el autor) y revoca sus sesiones; o lo reactiva. */
-export async function setDeactivated(userId: string, deactivated: boolean): Promise<void> {
-  const ctx = await auth.$context;
+export async function setDeactivated(userId: string, deactivated: boolean, log?: TeamLog): Promise<void> {
   try {
-    await ctx.internalAdapter.updateUser(userId, {
-      banned: deactivated,
-      banReason: deactivated ? "Desactivado desde Configuración" : null,
-      banExpires: null,
+    await db.transaction(async (tx) => {
+      await tx
+        .update(user)
+        .set({ banned: deactivated, banReason: deactivated ? "Desactivado desde Configuración" : null, banExpires: null, updatedAt: new Date() })
+        .where(eq(user.id, userId));
+      if (deactivated) await tx.delete(session).where(eq(session.userId, userId));
+      if (log) {
+        await logChanges(
+          tx,
+          teamEntry(log, userId, deactivated ? "desactivar" : "reactivar", deactivated ? "Activo" : "Desactivado", deactivated ? "Desactivado" : "Activo"),
+        );
+      }
     });
   } catch (error) {
+    // El trigger "≥1 owner activo" (diferido) truena al confirmar: mismo mensaje de siempre.
     mapDbError(error);
   }
-  if (deactivated) await ctx.internalAdapter.deleteUserSessions(userId);
 }
 
 export { mapDbError as mapTeamDbError };
