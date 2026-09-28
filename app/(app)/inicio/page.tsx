@@ -61,7 +61,7 @@ export default async function InicioPage({ searchParams }: PageProps<"/inicio">)
         {(whatsapp || bot) && (
           <div className="flex flex-wrap items-center gap-2">
             {whatsapp && <StatusPill status={whatsapp} title="Estado de WhatsApp" />}
-            {bot && <StatusPill status={bot} title="Estado del bot" />}
+            {bot && <StatusPill status={bot} title="Estado del Agente IA" />}
           </div>
         )}
       </div>

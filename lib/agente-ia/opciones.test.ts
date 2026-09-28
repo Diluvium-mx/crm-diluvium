@@ -110,7 +110,7 @@ describe("textos", () => {
     expect(describeSchedule({ days: [1, 2, 3, 4, 5, 6, 7], from: "08:00", to: "20:00" })).toBe("todos los días 8:00–20:00 (hora de Mazatlán)");
     expect(formatOptionValue("responseDelaySeconds", 5)).toBe("5 s");
     expect(formatOptionValue("humanReplyReactivateHours", null)).toBe("Nunca (a mano con «Activar»)");
-    expect(formatOptionValue("handoverPauseHours", 8)).toBe("Avisar y pausar el bot 8 h");
+    expect(formatOptionValue("handoverPauseHours", 8)).toBe("Avisar y pausar al Agente IA 8 h");
     expect(formatOptionValue("maxRepliesPerContact", null)).toBe("Sin tope");
     expect(formatOptionValue("readImages", false)).toBe("No");
     expect(formatOptionValue("responseLength", "corta")).toBe("Corta");

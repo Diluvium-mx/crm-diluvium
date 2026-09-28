@@ -20,6 +20,7 @@ import {
   createSeller,
   listTeam,
   loadTeamMember,
+  logTeamChange,
   mapTeamDbError,
   setDeactivated,
   setPassword,
@@ -110,6 +111,13 @@ async function guard(memberId: string, action: TeamAction, permission: "update" 
   return { actor, target };
 }
 
+// Historial (Bloque E): quién lo hizo y a quién (solo lo ven owner/admin).
+const teamLog = (actor: { organizationId: string; userId: string }, target: TeamMember) => ({
+  organizationId: actor.organizationId,
+  actorId: actor.userId,
+  targetName: target.name,
+});
+
 export async function listSellers(): Promise<{ members: TeamMember[]; me: string; myRole: string }> {
   const actor = await requireActiveMembership();
   if (!roleAllows(actor.role, "member", "update")) return { members: [], me: actor.userId, myRole: actor.role };
@@ -130,13 +138,16 @@ export async function addSeller(input: z.input<typeof addSellerSchema>): Promise
     if (!isTeamRole(parsed.role) || !assignableRoles(actor.role).includes(parsed.role)) {
       throw new TeamError("No puedes asignar ese rol.");
     }
-    await createSeller({ organizationId: actor.organizationId, ...parsed });
+    const userId = await createSeller({ organizationId: actor.organizationId, ...parsed });
+    await logTeamChange({ organizationId: actor.organizationId, actorId: actor.userId, targetName: parsed.name.trim() }, userId, { action: "alta", role: parsed.role }).catch(
+      (error) => console.error("[vendedores] no se pudo registrar el alta en el historial", error),
+    );
   });
 }
 
 export async function changeSellerRole(memberId: string, newRole: string): Promise<TeamResult> {
   return run(async () => {
-    const { actor } = await guard(z.string().min(1).parse(memberId), { type: "change_role", newRole }, "update");
+    const { actor, target } = await guard(z.string().min(1).parse(memberId), { type: "change_role", newRole }, "update");
     // Lo aplica Better Auth, que además repite sus propias reglas de owner
     // (dist/plugins/organization/routes/crud-members.mjs:236).
     try {
@@ -148,6 +159,14 @@ export async function changeSellerRole(memberId: string, newRole: string): Promi
       if (error instanceof APIError) throw error;
       mapTeamDbError(error);
     }
+    // Better Auth ya lo guardó (en su transacción): la fila va en cuanto confirma.
+    if (target.role !== newRole) {
+      await logTeamChange({ organizationId: actor.organizationId, actorId: actor.userId, targetName: target.name }, target.userId, {
+        action: "rol",
+        from: target.role,
+        to: newRole,
+      }).catch((error) => console.error("[vendedores] no se pudo registrar el cambio de rol en el historial", error));
+    }
   });
 }
 
@@ -155,21 +174,21 @@ const passwordSchema = z.string().min(12, "La contraseña debe tener al menos 12
 
 export async function resetSellerPassword(memberId: string, newPassword: string): Promise<TeamResult> {
   return run(async () => {
-    const { target } = await guard(z.string().min(1).parse(memberId), { type: "reset_password" }, "update");
-    await setPassword(target.userId, passwordSchema.parse(newPassword));
+    const { actor, target } = await guard(z.string().min(1).parse(memberId), { type: "reset_password" }, "update");
+    await setPassword(target.userId, passwordSchema.parse(newPassword), teamLog(actor, target));
   });
 }
 
 export async function deactivateSeller(memberId: string): Promise<TeamResult> {
   return run(async () => {
-    const { target } = await guard(z.string().min(1).parse(memberId), { type: "deactivate" }, "delete");
-    await setDeactivated(target.userId, true);
+    const { actor, target } = await guard(z.string().min(1).parse(memberId), { type: "deactivate" }, "delete");
+    await setDeactivated(target.userId, true, teamLog(actor, target));
   });
 }
 
 export async function reactivateSeller(memberId: string): Promise<TeamResult> {
   return run(async () => {
-    const { target } = await guard(z.string().min(1).parse(memberId), { type: "reactivate" }, "delete");
-    await setDeactivated(target.userId, false);
+    const { actor, target } = await guard(z.string().min(1).parse(memberId), { type: "reactivate" }, "delete");
+    await setDeactivated(target.userId, false, teamLog(actor, target));
   });
 }

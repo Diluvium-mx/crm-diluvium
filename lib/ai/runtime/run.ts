@@ -260,7 +260,7 @@ async function runActions(
 async function pauseForHuman(conversation: { id: string; organizationId: string }, now: Date) {
   const decision = humanPauseUntil(await loadBotOptions(conversation.organizationId, now), now);
   if (!decision.pause) {
-    console.info(`[agente] ${conversation.id}: un vendedor contestó; "Pausar el bot cuando un vendedor contesta" está en No, sigue activo`);
+    console.info(`[agente] ${conversation.id}: un vendedor contestó; "Pausar al Agente IA cuando un vendedor contesta" está en No, sigue activo`);
     return;
   }
   await setAgentState(conversation.organizationId, conversation.id, "pausado_humano", { now, pausedUntil: decision.until, log: { action: "pausa_auto" } });
@@ -274,8 +274,8 @@ async function pauseAfterHandover(conv: { id: string; organizationId: string }, 
   if (!plan.avisos.some((a) => a.motivo === "cliente_pide_humano")) return;
   const until = handoverPauseUntil(options, now);
   if (!until) return;
-  if (await pauseForHumanReply(conv.organizationId, conv.id, now, until)) {
-    console.info(`[agente] ${conv.id}: el cliente pidió un asesor; pausado hasta ${until.toISOString()} (Opciones del bot)`);
+  if (await pauseForHumanReply(conv.organizationId, conv.id, now, until, { action: "pausa_asesor" })) {
+    console.info(`[agente] ${conv.id}: el cliente pidió un asesor; pausado hasta ${until.toISOString()} (Opciones del Agente IA)`);
   }
 }
 
@@ -483,7 +483,7 @@ export async function runAgent(job: { organizationId: string; conversationId: st
     if (options.maxRepliesPerContact !== null) {
       const replies = await agentReplyCount(org, conv.id, cut);
       if (replies >= options.maxRepliesPerContact) {
-        await pauseForHumanReply(org, conv.id, now, null);
+        await pauseForHumanReply(org, conv.id, now, null, { action: "pausa_tope" });
         await addNotice({ organizationId: org, conversationId: conv.id, messageId: lastRead.id, kind: "tope_respuestas", body: topeRespuestasBody(options.maxRepliesPerContact) });
         console.warn(`[agente] ${conv.id}: llegó al máximo de respuestas (${replies}/${options.maxRepliesPerContact}); pausado hasta "Activar"`);
         return { kind: "skipped", reason: "tope_respuestas" };
