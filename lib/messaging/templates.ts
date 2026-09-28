@@ -1,13 +1,15 @@
 // Plantillas de WhatsApp (aprobadas por Meta): sincronización desde el
 // proveedor a la tabla `templates` y lectura para la UI. Toda consulta filtra
 // por organización (CLAUDE.md §7). Ver docs/investigacion/plantillas-zernio.md.
-import { and, asc, desc, eq, notInArray } from "drizzle-orm";
+import { and, asc, count, desc, eq, inArray, notInArray } from "drizzle-orm";
 import { db } from "@/lib/db";
-import { channels, templates } from "@/lib/db/schema";
+import { channels, scheduledMessages, templates } from "@/lib/db/schema";
 import { logChanges } from "@/lib/historial/log";
 import { isTemplateSendable, type TemplateView } from "@/lib/templates/types";
 import { messagingProvider } from "./index";
 import type { ProviderName } from "./provider";
+import { isTemplateEditable, templateBodyProblem, templateVariablesFromBody } from "./template-format";
+import { ZernioApiError } from "./zernio";
 import {
   FOREIGN_TEMPLATE_ACCOUNT_IDS,
   isForeignTemplateAccount,
@@ -200,4 +202,134 @@ export async function syncTemplatesForOrg(
   });
 
   return { synced: remote.length, removed };
+}
+
+// ─── Editar y borrar (28-sep-2026) ──────────────────────────────────────────
+
+/** Algo del pedido impide editar/borrar (mensaje listo para el vendedor). */
+export class TemplateActionError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "TemplateActionError";
+  }
+}
+
+/** Plantilla de la organización con el canal al que pertenece (debe ser de Diluvium). */
+async function loadOwnTemplate(organizationId: string, templateId: string) {
+  const [row] = await db
+    .select({ template: templates, providerAccountId: channels.providerAccountId })
+    .from(templates)
+    .innerJoin(channels, eq(channels.id, templates.channelId))
+    .where(and(eq(templates.id, templateId), eq(templates.organizationId, organizationId), eq(channels.organizationId, organizationId)))
+    .limit(1);
+  if (!row) throw new TemplateActionError("Esa plantilla ya no existe; pulsa Sincronizar.");
+  if (isForeignTemplateAccount(row.providerAccountId)) throw new TemplatesSandboxError();
+  return row;
+}
+
+/**
+ * Cambia el TEXTO de una plantilla en Meta (nombre, idioma y categoría quedan
+ * fijos) y lo refleja en la tabla: vuelve a revisión (normalmente PENDING), así
+ * que mientras Meta la revisa no se puede mandar. Meta solo deja editar
+ * aprobadas, rechazadas o pausadas; una aprobada, 1 vez cada 24 h y 10 cada 30 días
+ * (si se pasa, el rechazo de Meta llega tal cual).
+ */
+export async function updateTemplateForOrg(
+  organizationId: string,
+  templateId: string,
+  input: { bodyText: string; bodyExample: string[] },
+  log: { userId: string | null },
+): Promise<{ status: string }> {
+  const { template, providerAccountId } = await loadOwnTemplate(organizationId, templateId);
+  if (!isTemplateEditable(template.status)) {
+    throw new TemplateActionError("Meta solo deja editar plantillas aprobadas, rechazadas o pausadas. Espera a que termine la revisión.");
+  }
+  const bodyText = input.bodyText.trim();
+  const bodyExample = input.bodyExample.map((e) => e.trim());
+  const problem = templateBodyProblem(bodyText, bodyExample);
+  if (problem) throw new TemplateActionError(problem);
+  if (bodyText === (template.body ?? "").trim()) throw new TemplateActionError("El texto es el mismo: no hay nada que mandar a Meta.");
+
+  const provider = messagingProvider();
+  if (!provider.updateTemplate) throw new TemplateActionError("Editar plantillas no está disponible con este proveedor.");
+  const { status } = await provider.updateTemplate({
+    providerAccountId,
+    name: template.name,
+    language: template.language,
+    bodyText,
+    bodyExample,
+  });
+
+  // Meta ya aceptó el cambio: la tabla se pone al día en la misma transacción que su Historial.
+  await db.transaction(async (tx) => {
+    await tx
+      .update(templates)
+      .set({ body: bodyText, variables: templateVariablesFromBody(bodyText, bodyExample), status, updatedAt: new Date() })
+      .where(eq(templates.id, template.id));
+    await logChanges(tx, {
+      organizationId,
+      userId: log.userId,
+      kind: "plantillas",
+      action: "editar",
+      subject: template.name,
+      subjectId: template.id,
+      newValue: `Vuelve a revisión de Meta · ${template.language}`,
+      detail: { type: "texto", title: "Texto", before: template.body, after: bodyText },
+    });
+  });
+  return { status };
+}
+
+/**
+ * Borra UNA plantilla (nombre + idioma) en Meta y la quita del CRM. No se borra
+ * si hay mensajes programados que la usan (saldrían fallidos): primero se
+ * cancelan. Si Meta ya no la tenía (404), igual se quita de aquí. El nombre no se
+ * puede volver a usar en Meta durante 30 días.
+ */
+export async function deleteTemplateForOrg(
+  organizationId: string,
+  templateId: string,
+  log: { userId: string | null },
+): Promise<void> {
+  const { template, providerAccountId } = await loadOwnTemplate(organizationId, templateId);
+  const [pending] = await db
+    .select({ n: count() })
+    .from(scheduledMessages)
+    .where(
+      and(
+        eq(scheduledMessages.organizationId, organizationId),
+        eq(scheduledMessages.templateId, template.id),
+        inArray(scheduledMessages.status, ["scheduled", "sending"]),
+      ),
+    );
+  if (pending && pending.n > 0) {
+    throw new TemplateActionError(
+      pending.n === 1
+        ? "Hay 1 mensaje programado con esta plantilla: cancélalo en su chat antes de borrarla."
+        : `Hay ${pending.n} mensajes programados con esta plantilla: cancélalos en sus chats antes de borrarla.`,
+    );
+  }
+
+  const provider = messagingProvider();
+  if (!provider.deleteTemplate) throw new TemplateActionError("Borrar plantillas no está disponible con este proveedor.");
+  try {
+    await provider.deleteTemplate({ providerAccountId, name: template.name, language: template.language });
+  } catch (error) {
+    // Meta ya no la tiene (la borraron en WhatsApp Manager, p. ej.): se quita de aquí igual.
+    if (!(error instanceof ZernioApiError && error.httpStatus === 404)) throw error;
+  }
+
+  await db.transaction(async (tx) => {
+    await tx.delete(templates).where(and(eq(templates.id, template.id), eq(templates.organizationId, organizationId)));
+    await logChanges(tx, {
+      organizationId,
+      userId: log.userId,
+      kind: "plantillas",
+      action: "borrar",
+      subject: template.name,
+      subjectId: template.id,
+      oldValue: `${template.category ?? "—"} · ${template.language}`,
+      detail: template.body ? { type: "texto", title: "Texto", before: template.body, after: null } : null,
+    });
+  });
 }

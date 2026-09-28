@@ -41,7 +41,7 @@ export type ChangeAction = {
   workflows: "crear" | "editar" | "encender" | "apagar" | "borrar";
   tallas: "editar";
   mensajes_rapidos: "crear" | "editar" | "borrar";
-  plantillas: "alta" | "sincronizar";
+  plantillas: "alta" | "editar" | "borrar" | "sincronizar";
   vendedores: "alta" | "rol" | "desactivar" | "reactivar" | "contrasena";
   // Automáticas (sin autor; se ocultan o muestran con el filtro): pausa_auto = "un vendedor
   // contestó", pausa_tope = llegó al máximo de respuestas, pausa_asesor = el cliente pidió
@@ -115,6 +115,10 @@ export function describeAction(kind: string, action: string, subject: string | n
       return `Borró el mensaje rápido ${s}`;
     case "plantillas.alta":
       return `Dio de alta la plantilla ${s} (va a revisión de Meta)`;
+    case "plantillas.editar":
+      return `Editó el texto de la plantilla ${s} (vuelve a revisión de Meta)`;
+    case "plantillas.borrar":
+      return `Borró la plantilla ${s} en Meta`;
     case "plantillas.sincronizar":
       return "Sincronizó las plantillas con Meta";
     case "vendedores.alta":

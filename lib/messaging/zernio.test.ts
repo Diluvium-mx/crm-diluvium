@@ -528,6 +528,87 @@ describe("ZernioProvider.createTemplate", () => {
   });
 });
 
+describe("ZernioProvider.updateTemplate", () => {
+  it("lee la variante exacta, cambia solo el BODY y hace PATCH con accountId y language", async () => {
+    const fetchImpl = vi.fn(async (_url: string, init?: RequestInit) =>
+      init?.method === "GET"
+        ? Response.json({
+            success: true,
+            template: {
+              name: "seguimiento_libre",
+              language: "es_MX",
+              status: "APPROVED",
+              components: [
+                { type: "BODY", text: "Hola {{1}}.", example: { body_text: [["Ana"]] } },
+                { type: "FOOTER", text: "Diluvium" },
+              ],
+            },
+          })
+        : Response.json({ success: true, template: { id: "9", name: "seguimiento_libre", language: "es_MX", status: "PENDING" } }),
+    ) as unknown as typeof fetch;
+    const p = new ZernioProvider({ apiKey: "k", webhookSecret: SECRET }, fetchImpl);
+    const out = await p.updateTemplate({
+      providerAccountId: "zacc_1",
+      name: "seguimiento_libre",
+      language: "es_MX",
+      bodyText: "Hola {{1}}, soy Daniel.",
+      bodyExample: ["Ana"],
+    });
+    expect(out).toEqual({ status: "PENDING" });
+    const calls = (fetchImpl as unknown as ReturnType<typeof vi.fn>).mock.calls;
+    expect(calls[0][0]).toBe("https://zernio.com/api/v1/whatsapp/templates/seguimiento_libre?accountId=zacc_1&language=es_MX");
+    expect(calls[0][1].method).toBe("GET");
+    expect(calls[1][0]).toBe("https://zernio.com/api/v1/whatsapp/templates/seguimiento_libre");
+    expect(calls[1][1].method).toBe("PATCH");
+    expect(JSON.parse(calls[1][1].body)).toEqual({
+      accountId: "zacc_1",
+      language: "es_MX",
+      components: [
+        { type: "BODY", text: "Hola {{1}}, soy Daniel.", example: { body_text: [["Ana"]] } },
+        { type: "FOOTER", text: "Diluvium" },
+      ],
+    });
+  });
+
+  it("sin componentes en la lectura NO edita (no manda un PATCH que borraría el resto)", async () => {
+    const fetchImpl = vi.fn(async () => Response.json({ success: true, template: { name: "x" } })) as unknown as typeof fetch;
+    const p = new ZernioProvider({ apiKey: "k", webhookSecret: SECRET }, fetchImpl);
+    await expect(
+      p.updateTemplate({ providerAccountId: "a", name: "x", language: "es_MX", bodyText: "Hola.", bodyExample: [] }),
+    ).rejects.toMatchObject({ name: "ZernioApiError" });
+    expect((fetchImpl as unknown as ReturnType<typeof vi.fn>).mock.calls).toHaveLength(1);
+  });
+
+  it("un rechazo de Meta (p. ej. límite de ediciones) lanza ZernioApiError con su mensaje", async () => {
+    const fetchImpl = vi.fn(async (_url: string, init?: RequestInit) =>
+      init?.method === "GET"
+        ? Response.json({ template: { components: [{ type: "BODY", text: "Hola." }] } })
+        : Response.json({ error: { message: "edit limit reached" } }, { status: 400 }),
+    ) as unknown as typeof fetch;
+    const p = new ZernioProvider({ apiKey: "k", webhookSecret: SECRET }, fetchImpl);
+    await expect(
+      p.updateTemplate({ providerAccountId: "a", name: "x", language: "es_MX", bodyText: "Hola, ¿qué tal?", bodyExample: [] }),
+    ).rejects.toMatchObject({ name: "ZernioApiError", httpStatus: 400, message: "edit limit reached" });
+  });
+});
+
+describe("ZernioProvider.deleteTemplate", () => {
+  it("DELETE con accountId y el idioma EXACTO (sin idioma borraría todas las variantes)", async () => {
+    const fetchImpl = vi.fn(async () => Response.json({ success: true, scope: "language", language: "es_MX" })) as unknown as typeof fetch;
+    const p = new ZernioProvider({ apiKey: "k", webhookSecret: SECRET }, fetchImpl);
+    await p.deleteTemplate({ providerAccountId: "zacc_1", name: "prueba uno", language: "es_MX" });
+    const [url, init] = (fetchImpl as unknown as ReturnType<typeof vi.fn>).mock.calls[0];
+    expect(url).toBe("https://zernio.com/api/v1/whatsapp/templates/prueba%20uno?accountId=zacc_1&language=es_MX");
+    expect(init.method).toBe("DELETE");
+  });
+
+  it("404 lanza ZernioApiError con httpStatus 404 (el CRM lo trata como ya borrada)", async () => {
+    const fetchImpl = (async () => Response.json({ error: { message: "not found" } }, { status: 404 })) as unknown as typeof fetch;
+    const p = new ZernioProvider({ apiKey: "k", webhookSecret: SECRET }, fetchImpl);
+    await expect(p.deleteTemplate({ providerAccountId: "a", name: "x", language: "es_MX" })).rejects.toMatchObject({ httpStatus: 404 });
+  });
+});
+
 describe("validDate (horas de webhooks, estrictas)", () => {
   const now = Date.parse("2026-09-22T12:00:00Z");
   it("acepta ISO con zona", () => {

@@ -45,6 +45,8 @@ describe("historial de cambios: textos y filtros", () => {
     expect(describeAction("mensajes_rapidos", "borrar", "Saludo")).toBe("Borró el mensaje rápido «Saludo»");
     expect(describeAction("plantillas", "alta", "bienvenida")).toBe("Dio de alta la plantilla «bienvenida» (va a revisión de Meta)");
     expect(describeAction("plantillas", "sincronizar", null)).toBe("Sincronizó las plantillas con Meta");
+    expect(describeAction("plantillas", "editar", "saludo")).toBe("Editó el texto de la plantilla «saludo» (vuelve a revisión de Meta)");
+    expect(describeAction("plantillas", "borrar", "prueba")).toBe("Borró la plantilla «prueba» en Meta");
     expect(describeAction("vendedores", "contrasena", "Ana")).toBe("Restableció la contraseña de «Ana»");
     expect(describeAction("vendedores", "rol", "Ana")).toBe("Cambió el rol de «Ana»");
     expect(describeAction("pausas", "pausa_tope", "Juan")).toBe("Llegó al máximo de respuestas: el agente se pausó en el chat de Juan");

@@ -11,10 +11,11 @@ export const statement = {
   tag: ["create", "read", "update", "delete"],
   snippet: ["create", "read", "update", "delete"],
   // Plantillas de WhatsApp (aprobadas por Meta). `read` = ver/listar (para
-  // enviarlas desde el chat). `create` = darlas de alta en Meta. `sync` =
-  // sincronizar el listado a la BD (puede marcar como eliminadas). Todos los
-  // roles (decisión del dueño, 26-sep-2026).
-  template: ["read", "create", "sync"],
+  // enviarlas desde el chat). `create` = darlas de alta en Meta. `update` =
+  // cambiarles el texto (vuelven a revisión). `delete` = borrarlas en Meta.
+  // `sync` = sincronizar el listado a la BD (puede marcar como eliminadas).
+  // Todos los roles (decisión del dueño, 26-sep-2026; editar/borrar, 28-sep).
+  template: ["read", "create", "update", "delete", "sync"],
   // Pestaña "Agente IA" completa (nombre, modelos por etapa, Goal, FAQs,
   // versiones, canales, APIs). Desde el 25-sep-2026 TODOS los roles la ven
   // (`read`) y editan (`update`), incluido el vendedor.
@@ -43,7 +44,7 @@ export const owner = ac.newRole({
   contact: ["create", "read", "update", "delete", "import", "export"],
   tag: ["create", "read", "update", "delete"],
   snippet: ["create", "read", "update", "delete"],
-  template: ["read", "create", "sync"],
+  template: ["read", "create", "update", "delete", "sync"],
   aiConfig: ["read", "update"],
   sizeRange: ["read", "update"],
   aiSpend: ["read", "update"],
@@ -58,7 +59,7 @@ export const admin = ac.newRole({
   contact: ["create", "read", "update", "delete", "import", "export"],
   tag: ["create", "read", "update", "delete"],
   snippet: ["create", "read", "update", "delete"],
-  template: ["read", "create", "sync"],
+  template: ["read", "create", "update", "delete", "sync"],
   aiConfig: ["read", "update"],
   sizeRange: ["read", "update"],
   aiSpend: ["read", "update"],
@@ -77,7 +78,7 @@ export const agent = ac.newRole({
   contact: ["create", "read", "update", "delete", "import", "export"],
   tag: ["create", "read", "update", "delete"],
   snippet: ["create", "read", "update", "delete"],
-  template: ["read", "create", "sync"],
+  template: ["read", "create", "update", "delete", "sync"],
   sizeRange: ["read", "update"],
   aiConfig: ["read", "update"],
   aiSpend: ["read", "update"],
