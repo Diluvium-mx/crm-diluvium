@@ -53,7 +53,7 @@ export async function sendAttachments(conversationId: string, tokens: string[], 
       captions: plan.map((p) => p.caption),
     });
     await enqueueChatUploads({ organizationId, conversationId: parsed.data.conversationId, messageIds });
-    // Igual que un texto del vendedor: pausa al Agente IA según Opciones del bot.
+    // Igual que un texto del vendedor: pausa al Agente IA según sus Opciones.
     await pauseAgentForManualSend(organizationId, parsed.data.conversationId);
     return { ok: true, messageIds };
   } catch (error) {

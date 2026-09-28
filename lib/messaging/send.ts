@@ -404,7 +404,9 @@ export async function sendQueuedChatUpload(
   try {
     url = await storage.signedGetUrl(attachment.storageKey, MEDIA_SEND_URL_SECONDS, attachment.fileName, "inline");
   } catch (error) {
-    return fail("storage_unavailable", `No se pudo firmar el archivo: ${error instanceof Error ? error.message : String(error)}`);
+    // El detalle (endpoint, bucket) va al log; en la burbuja, un motivo simple.
+    console.error(`[adjuntos] no se pudo firmar ${row.id}`, error);
+    return fail("storage_unavailable", "El almacenamiento de archivos no respondió; vuelve a adjuntarlo.");
   }
   const { conversation, channel } = loaded;
   const kind = row.type;

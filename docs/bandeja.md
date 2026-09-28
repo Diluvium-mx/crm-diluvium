@@ -119,8 +119,8 @@ El vendedor manda fotos, videos y documentos desde la Bandeja y el pop-up del Em
   barra de subida y ✕. Cada archivo **sube en cuanto entra**, mientras el vendedor escribe. La caja dice "Agrega un
   mensaje (opcional)" con contador de 1,024. **Enviar** (naranja) se activa cuando todo terminó de subir.
 - **Enviar:** hasta **10** archivos, **uno por mensaje de WhatsApp en el orden de la vista previa**; el texto va como
-  **pie del primero** (sin texto, solo los archivos). Cuenta como envío del vendedor: pausa al agente según Opciones
-  del bot y cuenta para la primera respuesta. **Programar no lleva adjuntos** por ahora (🕒 se apaga).
+  **pie del primero** (sin texto, solo los archivos). Cuenta como envío del vendedor: pausa al Agente IA según sus Opciones
+  (Agente IA › Opciones) y cuenta para la primera respuesta. **Programar no lleva adjuntos** por ahora (🕒 se apaga).
 - **Tipos y límites** (los de WhatsApp; una sola fuente: `lib/chat-attachments/rules.ts`): fotos JPG/PNG hasta 5 MB,
   video MP4 hasta 16 MB, PDF/Word/Excel/PowerPoint/TXT hasta 100 MB. HEIC, WebP o fotos de más de 5 MB se convierten
   a **JPG de menos de 5 MB en el navegador** antes de subir (Safari decodifica HEIC solo; Chrome, Edge y Firefox con
