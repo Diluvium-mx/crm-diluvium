@@ -17,6 +17,9 @@ describe("historial de cambios: textos y filtros", () => {
     expect(describeAction("modelos", "modelo_1", null)).toBe("Cambió el Modelo 1");
     expect(describeAction("etapas", "borrar", "Prospecto")).toBe("Borró la etapa «Prospecto»");
     expect(describeAction("canales", "apagar", "WhatsApp Diluvium")).toBe("Apagó el agente en WhatsApp Diluvium");
+    expect(describeAction("canales", "limpiar_pruebas", "Número de prueba, Sandbox")).toBe(
+      "Limpieza de chats de prueba: borró los chats de «Número de prueba, Sandbox»",
+    );
     expect(describeAction("workflows", "encender", "Banco")).toBe("Encendió el workflow «Banco»");
     expect(describeAction("pausas", "pausa_auto", "Juan Pérez")).toBe("Un vendedor contestó: el agente se pausó en el chat de Juan Pérez");
     expect(describeAction("pausas", "activar", null)).toBe("Activó el agente en el chat de un contacto");
