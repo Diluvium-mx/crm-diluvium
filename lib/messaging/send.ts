@@ -30,7 +30,7 @@ import { channels, conversations, messages, templates } from "@/lib/db/schema";
 import { applyOutboundToConversation, latestInboundMessageId } from "./ingest";
 import { SendFailedError, type MessagingProvider, type SendResult } from "./provider";
 import { isAmbiguousSendError, isWindowOpen, nextStatus, SEND_ACCEPTED, SEND_RATE_LIMITED, SEND_UNCONFIRMED, SEND_UNKNOWN } from "./rules";
-import { sendInTurn } from "./send-turn";
+import { sendInTurn, type TurnMark } from "./send-turn";
 import { plainSendReason } from "./send-reasons";
 import { addNotice } from "@/lib/ai/runtime/notices";
 import { renderTemplateBody, templateMaxIndex } from "./template-format";
@@ -38,6 +38,7 @@ import { isForeignTemplateAccount } from "./template-sync";
 import { loadMediaAsset, mediaAssetSignedUrl } from "@/lib/media-library/service";
 import type { ObjectStorage } from "@/lib/storage/s3";
 import { isTemplateSendable } from "@/lib/templates/types";
+import { chatUploadMessageId } from "@/lib/chat-attachments/keys";
 
 export class SendRejectedError extends Error {
   constructor(
@@ -300,6 +301,161 @@ export async function sendMediaMessage(provider: MessagingProvider, storage: Obj
     organizationId: params.organizationId,
     sentByUserId,
     markRead: params.markRead ?? source === "crm",
+  });
+}
+
+/** Un archivo que el vendedor adjuntó en el chat (ya en el bucket, comprobante verificado). */
+export type ChatUploadToSend = { storageKey: string; kind: "image" | "video" | "document"; mime: string; fileName: string; bytes: number };
+
+/** Marca de los adjuntos del chat en `messages.metadata`: pendiente → enviando (una sola vez). */
+export const CHAT_UPLOAD_META = "adjuntoChat";
+/**
+ * Mientras esperan al worker, los archivos ocupan su lugar en la fila de la
+ * conversación (turno de send-turn.ts): un texto o un "/" que el vendedor mande
+ * DESPUÉS sale después de ellos. La marca vence sola (worker caído: no frena
+ * para siempre); al reclamar cada archivo, sendInTurn pone la suya.
+ */
+const CHAT_UPLOAD_TURN_BASE_MS = 60_000;
+const CHAT_UPLOAD_TURN_PER_FILE_MS = 15_000;
+type ChatUploadMeta = { estado: "pendiente" | "enviando"; corte?: string | null };
+
+/**
+ * Adjuntos del chat (28-sep-2026), paso 1 (web): valida la conversación y la
+ * ventana de 24 h y deja UNA burbuja "queued" por archivo, en el orden en que
+ * se ven (sent_at + i ms); el pie va solo en la primera. Nada sale aquí: el
+ * worker los manda en orden (sendQueuedChatUpload), así la acción del vendedor
+ * responde al instante aunque sean 10 archivos. Id determinista por archivo:
+ * mandar dos veces el mismo archivo no crea otra burbuja.
+ */
+export async function queueChatUploads(
+  provider: MessagingProvider,
+  params: { organizationId: string; conversationId: string; sentByUserId: string; files: readonly ChatUploadToSend[]; captions: readonly (string | null)[]; now?: Date },
+): Promise<string[]> {
+  const now = params.now ?? new Date();
+  const captions = params.captions.map((c) => (c?.trim() ? validText(c) : null));
+  const { conversation } = await loadConversation(provider, params.organizationId, params.conversationId, now);
+  const ids = params.files.map((f) => chatUploadMessageId(f.storageKey));
+  // Corte de lectura AL HACER CLIC (no cuando el worker manda): lo que el
+  // cliente escriba mientras salen los archivos sigue sin leer.
+  const corte = await latestInboundMessageId(conversation.id);
+  // Un archivo que ya está en una burbuja de esta conversación no se vuelve a
+  // mandar aunque su fila en cola ya no exista (el eco de WhatsApp la sustituyó).
+  const sent = await db.execute<{ k: string }>(sql`
+    select a->>'storageKey' as k from ${messages} m cross join lateral jsonb_array_elements(m.attachments) a
+    where m.organization_id = ${params.organizationId} and m.conversation_id = ${conversation.id}
+      and m.created_at > ${new Date(now.getTime() - 24 * 3_600_000).toISOString()}::timestamp
+      and a->>'storageKey' in (${sql.join(
+        params.files.map((f) => sql`${f.storageKey}`),
+        sql`, `,
+      )})`);
+  const already = new Set(sent.map((r) => r.k));
+  await db.transaction(async (tx) => {
+    for (const [i, file] of params.files.entries()) {
+      if (already.has(file.storageKey)) continue;
+      const at = new Date(now.getTime() + i);
+      const meta: ChatUploadMeta = { estado: "pendiente", corte };
+      const turn: TurnMark = { estado: "espera", hasta: now.getTime() + CHAT_UPLOAD_TURN_BASE_MS + i * CHAT_UPLOAD_TURN_PER_FILE_MS, esperas: 0 };
+      const url = `/api/media/${ids[i]}/0`;
+      await tx
+        .insert(messages)
+        .values({
+          id: ids[i],
+          organizationId: params.organizationId,
+          conversationId: conversation.id,
+          direction: "out",
+          source: "crm",
+          type: file.kind,
+          body: captions[i] ?? null,
+          attachments: [
+            { type: file.kind, url, mimeType: file.mime, fileName: file.fileName, storageKey: file.storageKey, sizeBytes: file.bytes, downloadedAt: now.toISOString() },
+          ],
+          mediaUrl: url,
+          mediaMimeType: file.mime,
+          status: "queued",
+          sentByUserId: params.sentByUserId,
+          metadata: { [CHAT_UPLOAD_META]: meta, envio: turn },
+          sentAt: at,
+          createdAt: at,
+        })
+        .onConflictDoNothing();
+    }
+  });
+  return ids;
+}
+
+/**
+ * Adjuntos del chat, paso 2 (worker): manda UN archivo en cola con el mismo
+ * patrón outbox (`deliver`: su id es la Idempotency-Key; enviado / rechazado /
+ * desconocido). Lo reclama de "pendiente" a "enviando" de forma atómica: un
+ * reintento del job nunca lo manda dos veces (si quedó a medias, lo resuelve la
+ * conciliación de siempre). Al proveedor le llega una URL firmada corta; en la
+ * burbuja queda la ruta interna. Los errores quedan en el mensaje (§7).
+ * Devuelve null si no había nada que mandar (ya reclamado o fallido antes de salir).
+ */
+export async function sendQueuedChatUpload(
+  provider: MessagingProvider,
+  storage: ObjectStorage,
+  params: { organizationId: string; messageId: string; now?: Date },
+): Promise<SendOutcome | null> {
+  const where = and(eq(messages.id, params.messageId), eq(messages.organizationId, params.organizationId));
+  const [row] = await db
+    .update(messages)
+    // Solo cambia `estado` (conserva el corte de lectura guardado al hacer clic).
+    .set({ metadata: sql`jsonb_set(${messages.metadata}, array[${CHAT_UPLOAD_META}::text, 'estado'], '"enviando"'::jsonb)` })
+    .where(and(where, eq(messages.status, "queued"), isNull(messages.providerMessageId), sql`${messages.metadata}->${CHAT_UPLOAD_META}->>'estado' = 'pendiente'`))
+    .returning();
+  if (!row) return null;
+  const attachment = row.attachments[0];
+  const fail = async (code: string, message: string) => {
+    await db.update(messages).set({ status: "failed", errorCode: code, errorMessage: message }).where(where);
+    return null;
+  };
+  if (!attachment?.storageKey || (row.type !== "image" && row.type !== "video" && row.type !== "document")) {
+    return fail("media_not_found", "El archivo adjunto no está disponible.");
+  }
+  let loaded: Awaited<ReturnType<typeof loadConversation>>;
+  try {
+    loaded = await loadConversation(provider, params.organizationId, row.conversationId, params.now ?? new Date());
+  } catch (error) {
+    if (error instanceof SendRejectedError) return fail(error.code, error.message);
+    // Falla de infraestructura ANTES de llamar al proveedor: se devuelve a
+    // "pendiente" para que el reintento del job sí lo mande (no salió nada).
+    await db
+      .update(messages)
+      .set({ metadata: sql`jsonb_set(${messages.metadata}, array[${CHAT_UPLOAD_META}::text, 'estado'], '"pendiente"'::jsonb)` })
+      .where(where)
+      .catch(() => undefined);
+    throw error;
+  }
+  let url: string;
+  try {
+    url = await storage.signedGetUrl(attachment.storageKey, MEDIA_SEND_URL_SECONDS, attachment.fileName, "inline");
+  } catch (error) {
+    // El detalle (endpoint, bucket) va al log; en la burbuja, un motivo simple.
+    console.error(`[adjuntos] no se pudo firmar ${row.id}`, error);
+    return fail("storage_unavailable", "El almacenamiento de archivos no respondió; vuelve a adjuntarlo.");
+  }
+  const { conversation, channel } = loaded;
+  const kind = row.type;
+  const corte = (row.metadata?.[CHAT_UPLOAD_META] as ChatUploadMeta | undefined)?.corte;
+  return deliver({
+    messageId: row.id,
+    send: () =>
+      provider.sendMedia({
+        providerAccountId: channel.providerAccountId,
+        providerConversationId: conversation.providerConversationId!,
+        url,
+        kind,
+        caption: row.body ?? undefined,
+        fileName: attachment.fileName,
+        idempotencyKey: row.id,
+      }),
+    now: row.sentAt ?? row.createdAt,
+    conversation,
+    organizationId: params.organizationId,
+    sentByUserId: row.sentByUserId,
+    // Undefined (filas viejas sin corte) = deliver lo calcula como siempre.
+    readCutoffMessageId: corte,
   });
 }
 
@@ -840,6 +996,9 @@ export async function expireUnconfirmedSends(now = new Date()): Promise<number> 
     eq(messages.status, "queued"),
     // sent_at = último intento (un reintento lo renueva), no la creación.
     lt(messages.sentAt, new Date(now.getTime() - SEND_UNCONFIRMED_AFTER_MS)),
+    // Un adjunto del chat que aún espera al worker nunca se intentó: no es "sin
+    // confirmar" (lo resuelve expireStuckChatUploads con su propio motivo).
+    sql`coalesce(${messages.metadata}->${CHAT_UPLOAD_META}->>'estado', '') <> 'pendiente'`,
   );
   const accepted = await db
     .update(messages)

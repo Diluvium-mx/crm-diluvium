@@ -3,7 +3,7 @@
 // Variables (referencias al bucket en Railway): S3_BUCKET, S3_ENDPOINT,
 // S3_REGION, S3_ACCESS_KEY_ID, S3_SECRET_ACCESS_KEY.
 import type { Readable } from "node:stream";
-import { DeleteObjectCommand, GetObjectCommand, HeadObjectCommand, S3Client } from "@aws-sdk/client-s3";
+import { DeleteObjectCommand, GetObjectCommand, HeadObjectCommand, ListObjectsV2Command, S3Client } from "@aws-sdk/client-s3";
 import { Upload } from "@aws-sdk/lib-storage";
 import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
 
@@ -31,6 +31,11 @@ export interface ObjectStorage {
   ): Promise<string>;
   /** Lee un objeto completo en memoria (solo archivos chicos: falla si pasa `maxBytes`). */
   getBytes(key: string, maxBytes: number): Promise<Uint8Array>;
+  /**
+   * Objetos bajo un prefijo (por páginas de 1,000). Opcional: solo lo usa la
+   * limpieza de adjuntos del chat no enviados (lib/chat-attachments/cleanup.ts).
+   */
+  listObjects?(prefix: string): AsyncIterable<{ key: string; lastModified: Date }>;
 }
 
 export class StorageNotConfiguredError extends Error {}
@@ -99,6 +104,14 @@ export function objectStorage(): ObjectStorage {
       } finally {
         body.destroy();
       }
+    },
+    async *listObjects(prefix) {
+      let token: string | undefined;
+      do {
+        const res = await client.send(new ListObjectsV2Command({ Bucket: S3_BUCKET, Prefix: prefix, ContinuationToken: token }));
+        for (const o of res.Contents ?? []) if (o.Key && o.LastModified) yield { key: o.Key, lastModified: o.LastModified };
+        token = res.IsTruncated ? res.NextContinuationToken : undefined;
+      } while (token);
     },
     signedGetUrl(key, expiresInSeconds, downloadName, disposition = "inline") {
       return getSignedUrl(
