@@ -72,9 +72,17 @@ const attachmentSchema = z
   })
   .passthrough();
 
+// Ids de Zernio (revisión completa Z2/Z4, 28-sep-2026). La conversación va en URLs de la API y cruza
+// ecos con su contacto: no vacía y sin "/", "?", "#", "%" ni espacios (en producción, 1,351/1,351
+// eventos traen un ObjectId de 24 hex). El id interno del mensaje puede ser el wamid en el formato plano de CTWA
+// ("wamid.…="): basta con que no venga vacío ni con espacios. Un evento que no cumple queda como
+// formato no reconocido (dead-letter, visible y reprocesable), nunca con un id vacío en la base.
+const zernioConversationId = z.string().regex(/^[A-Za-z0-9_.:+=-]{1,128}$/, "id de conversación de Zernio inválido");
+const zernioMessageId = z.string().regex(/^[\x21-\x7E]{1,256}$/, "id de mensaje de Zernio vacío o inválido");
+
 const conversationSchema = z
   .object({
-    id: z.string(),
+    id: zernioConversationId,
     participantId: z.string().nullish(),
     participantName: z.string().nullish(),
   })
@@ -86,8 +94,8 @@ const messageEventSchema = z.object({
   timestamp: z.string().optional(),
   message: z
     .object({
-      id: z.string(),
-      conversationId: z.string(),
+      id: zernioMessageId,
+      conversationId: zernioConversationId,
       platform: z.string(),
       platformMessageId: z.string().min(1),
       direction: z.enum(["incoming", "outgoing"]),
@@ -215,6 +223,21 @@ export function validDate(value: string | null | undefined, now = Date.now()): D
   const date = new Date(value);
   if (Number.isNaN(date.getTime()) || date.getTime() > now + MAX_FUTURE_SKEW_MS) return null;
   return date;
+}
+
+/** Adelanto máximo que se acepta respecto a la llegada del webhook (diferencia de relojes). */
+export const MAX_AHEAD_OF_RECEIPT_MS = 5 * 60_000;
+
+/**
+ * Una hora que viene más de 5 min ADELANTE de la llegada del webhook (reloj del proveedor mal
+ * o dato corrupto) se sustituye por la hora de llegada: adelantada, el mensaje saltaría al
+ * final del hilo, "ganaría" como el más reciente y la ventana de 24 h quedaría abierta de más
+ * (revisión completa Z3, 28-sep-2026). Más de 24 h adelante sigue siendo malformado (validDate).
+ * `receivedAt` es la hora de RECEPCIÓN guardada (no la del reproceso); sin ella, la de ahora.
+ */
+export function notAheadOfReceipt(date: Date, receivedAt: Date | undefined, now = Date.now()): { at: Date; clamped: boolean } {
+  const reference = receivedAt?.getTime() ?? now;
+  return date.getTime() > reference + MAX_AHEAD_OF_RECEIPT_MS ? { at: new Date(reference), clamped: true } : { at: date, clamped: false };
 }
 
 /** ¿Alguna de las marcas de origen dice "coexistence_history"? (sin separadores ni mayúsculas) */
@@ -405,6 +428,11 @@ export function normalizeZernioEvent(payload: unknown, context: { receivedAt?: D
       sentAtFromReceipt = true;
       if (!sentAt) return { kind: "ignored", eventId, event, reason: "mensaje sin hora", malformed: true };
     }
+    const ahead = notAheadOfReceipt(sentAt, context.receivedAt);
+    if (ahead.clamped) {
+      sentAt = ahead.at;
+      sentAtFromReceipt = true;
+    }
     return {
       kind: "message",
       eventId,
@@ -455,8 +483,9 @@ export function normalizeZernioEvent(payload: unknown, context: { receivedAt?: D
         (digits(reaction.sender.id) === digits(participant) || digits(reaction.sender.phoneNumber) === digits(participant)));
     // Hora confiable o nada: sin ella no se puede ordenar (una reacción vieja
     // reprocesada con la hora de "ahora" pisaría a una posterior) → dead-letter.
-    const at = validDate(reaction.reactedAt) ?? validDate(parsed.data.timestamp);
-    if (!at) return { kind: "ignored", eventId, event, reason: "reacción sin hora válida", malformed: true };
+    const reactedAt = validDate(reaction.reactedAt) ?? validDate(parsed.data.timestamp);
+    if (!reactedAt) return { kind: "ignored", eventId, event, reason: "reacción sin hora válida", malformed: true };
+    const at = notAheadOfReceipt(reactedAt, context.receivedAt).at;
     return {
       kind: "reaction",
       eventId,
@@ -478,8 +507,9 @@ export function normalizeZernioEvent(payload: unknown, context: { receivedAt?: D
     if (data.account.platform !== "whatsapp") return { kind: "ignored", eventId, event, reason: `plataforma ${data.account.platform}` };
     const providerAccountId = zernioAccountId(payload);
     if (!providerAccountId) return { kind: "ignored", eventId, event, reason: "cuenta ausente o contradictoria", malformed: true };
-    const at = validDate(event === "message.edited" ? data.editedAt : data.deletedAt) ?? validDate(data.timestamp);
-    if (!at) return { kind: "ignored", eventId, event, reason: "cambio de mensaje sin hora válida", malformed: true };
+    const changedAt = validDate(event === "message.edited" ? data.editedAt : data.deletedAt) ?? validDate(data.timestamp);
+    if (!changedAt) return { kind: "ignored", eventId, event, reason: "cambio de mensaje sin hora válida", malformed: true };
+    const at = notAheadOfReceipt(changedAt, context.receivedAt).at;
     return {
       kind: "message_change",
       eventId,

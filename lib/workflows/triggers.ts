@@ -6,6 +6,7 @@ import { db } from "@/lib/db";
 import { conversations, messages, workflows } from "@/lib/db/schema";
 import { startWorkflowRun, type StartRunResult } from "./executor";
 import { matchesKeyword, parseCommand } from "./steps";
+import { markKeywordChecked, pendingKeywordMessages } from "./keyword-pending";
 
 /**
  * Entrante NUEVO del cliente (después del commit de la ingesta): si es texto y
@@ -19,7 +20,10 @@ export async function onInboundKeyword(m: { organizationId: string; conversation
       .from(messages)
       .where(and(eq(messages.id, m.messageId), eq(messages.organizationId, m.organizationId)))
       .limit(1);
-    if (!msg || msg.direction !== "in" || msg.type !== "text" || !msg.body) return null;
+    if (!msg || msg.direction !== "in" || msg.type !== "text" || !msg.body) {
+      if (msg) await markKeywordChecked(m);
+      return null;
+    }
     const rows = await db
       .select({ id: workflows.id, keywords: workflows.triggerKeywords, position: workflows.position })
       .from(workflows)
@@ -33,18 +37,36 @@ export async function onInboundKeyword(m: { organizationId: string; conversation
       const hit = matchesKeyword(msg.body, wf.keywords);
       if (hit && (!best || hit.length > best.len)) best = { id: wf.id, len: hit.length };
     }
-    if (!best) return null;
-    return await startWorkflowRun({
+    if (!best) {
+      await markKeywordChecked(m);
+      return null;
+    }
+    // Con el id del mensaje: si el barrido lo vuelve a evaluar, la corrida no se duplica (0046).
+    const result = await startWorkflowRun({
       organizationId: m.organizationId,
       workflowId: best.id,
       conversationId: m.conversationId,
       trigger: "keyword",
       payload: { mensaje: msg.body.slice(0, 200) },
+      triggerMessageId: m.messageId,
     });
+    await markKeywordChecked(m);
+    return result;
   } catch (error) {
+    // Sin marcar "revisada": el barrido lo retoma (1–30 min).
     console.error(`[workflows] disparador por palabra clave falló (${m.conversationId}); el mensaje ya está guardado`, error);
     return null;
   }
+}
+
+/**
+ * Barrido (B1): palabras clave que quedaron "pendiente" porque el worker se reinició entre el
+ * commit del mensaje y el gancho. Devuelve cuántos mensajes se volvieron a evaluar.
+ */
+export async function sweepPendingKeywords(now = new Date()): Promise<number> {
+  const pending = await pendingKeywordMessages(now);
+  for (const m of pending) await onInboundKeyword(m);
+  return pending.length;
 }
 
 /**
