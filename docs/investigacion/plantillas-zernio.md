@@ -130,6 +130,24 @@ window" del adaptador es impreciso; no lo seguimos.
 Queda `PENDING` hasta que Meta la revise. El resultado de la revisión llega por el webhook
 `whatsapp.template.status_updated` (o se ve al volver a sincronizar).
 
+## Editar y borrar (verificado el 28-sep-2026)
+
+| Acción | Método + ruta | Notas |
+|---|---|---|
+| Leer una variante | `GET /v1/whatsapp/templates/{name}?accountId=…&language=…` | Devuelve `{ template: { components, status, rejected_reason, … } }` |
+| Editar | `PATCH /v1/whatsapp/templates/{name}` con `{ accountId, language, components }` | Meta **reemplaza todos** los componentes: el CRM lee los actuales y solo cambia el BODY. Nombre, idioma y categoría fijos. Solo APPROVED, REJECTED o PAUSED; una aprobada, 1 vez cada 24 h y 10 cada 30 días. Vuelve a `PENDING`; una en `PENDING` no se puede volver a editar hasta que Meta termine. |
+| Borrar | `DELETE /v1/whatsapp/templates/{name}?accountId=…&language=…` | **Siempre con el idioma exacto**: sin él se borran todas las variantes del nombre. El nombre no se reusa en 30 días; la aprobada queda un tiempo en `PENDING_DELETION` (el CRM la oculta). |
+
+Fuentes: docs.zernio.com/whatsapp/update-whatsapp-template.mdx, delete-whatsapp-template.mdx,
+get-whatsapp-template.mdx; Meta, *Template management* (límites de edición y los 30 días del nombre).
+
+**Lección del 28-sep:** crear una plantilla "no hacía nada" en producción. Los logs de Railway
+mostraban `ZodError: Solo minúsculas, números y guion bajo` (el nombre llevaba espacios), pero
+Next.js esconde en producción el mensaje de un error **lanzado** por una Server Action y el
+vendedor solo veía un aviso genérico en inglés. Desde entonces las acciones de plantillas
+**devuelven** `{ ok: false, message }` y el formulario convierte el nombre solo
+(`templateNameFromLabel`) y revisa el texto antes de mandarlo (`templateBodyProblem`).
+
 ## Cómo lo implementa el CRM (decisiones)
 
 1. **Interfaz de proveedor** (`lib/messaging/provider.ts`): se agregan `listTemplates`,

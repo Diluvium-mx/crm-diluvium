@@ -17,6 +17,7 @@ import {
   SendFailedError,
   type CreateTemplateInput,
   type CreateTemplateResult,
+  type DeleteTemplateInput,
   type MessagingProvider,
   type NormalizedAttachment,
   type NormalizedEvent,
@@ -26,9 +27,16 @@ import {
   type SendMediaInput,
   type SendTemplateInput,
   type SendTextInput,
+  type UpdateTemplateInput,
+  type UpdateTemplateResult,
   type WebhookEnvelope,
 } from "./provider";
-import { bodyHasUnsupportedPlaceholders, templateRequiresUnsupportedParams, templateVariablesFromBody } from "./template-format";
+import {
+  bodyHasUnsupportedPlaceholders,
+  replaceBodyComponent,
+  templateRequiresUnsupportedParams,
+  templateVariablesFromBody,
+} from "./template-format";
 import { clickFromZernioConversation, extractReferral, type ConversationClick } from "@/lib/ads/referral";
 
 const DEFAULT_BASE_URL = "https://zernio.com/api";
@@ -737,6 +745,31 @@ export class ZernioProvider implements MessagingProvider {
       providerTemplateId: asString(data.id) ?? asString(data.templateId) ?? null,
       status: asString(data.status) ?? "PENDING",
     };
+  }
+
+  // PATCH /v1/whatsapp/templates/{name} (docs.zernio.com, update-whatsapp-template).
+  // Meta REEMPLAZA todos los componentes de una vez: por eso primero se leen los
+  // actuales de la variante exacta (GET con language) y solo se cambia el BODY;
+  // encabezado, pie y botones (p. ej. creados en WhatsApp Manager) quedan igual.
+  // Nombre, idioma y categoría no se tocan (Meta no deja). Vuelve PENDING.
+  async updateTemplate({ providerAccountId, name, language, bodyText, bodyExample }: UpdateTemplateInput): Promise<UpdateTemplateResult> {
+    const path = `/v1/whatsapp/templates/${encodeURIComponent(name)}`;
+    const current = await this.apiJson("GET", `${path}?${new URLSearchParams({ accountId: providerAccountId, language }).toString()}`);
+    const template = asRecord(current.template ?? current.data);
+    if (!Array.isArray(template.components)) {
+      throw new ZernioApiError(0, "Zernio no devolvió el contenido actual de la plantilla; no se editó");
+    }
+    const components = replaceBodyComponent(template.components, bodyText, bodyExample);
+    const json = await this.apiJson("PATCH", path, { accountId: providerAccountId, language, components });
+    const data = asRecord(json.template ?? json.data ?? json);
+    return { status: asString(data.status) ?? "PENDING" };
+  }
+
+  // DELETE /v1/whatsapp/templates/{name}?accountId=&language= (docs.zernio.com).
+  // SIEMPRE con el idioma exacto: sin él, Meta borra todas las variantes del nombre.
+  async deleteTemplate({ providerAccountId, name, language }: DeleteTemplateInput): Promise<void> {
+    const params = new URLSearchParams({ accountId: providerAccountId, language });
+    await this.apiJson("DELETE", `/v1/whatsapp/templates/${encodeURIComponent(name)}?${params.toString()}`);
   }
 
   // POST al endpoint de mensajes de la conversación con clasificación de
