@@ -76,6 +76,8 @@ export function useChatAttachments(conversationId: string): ChatAttachments {
   const urls = useRef(new Map<string, string>());
   // Archivos que siguen en la vista previa (uno quitado a media conversión no se sube).
   const live = useRef(new Set<string>());
+  // Cupo real (no el del último render): soltar y pegar muy seguido no pasa de 10.
+  const countRef = useRef(0);
   const convRef = useRef(conversationId);
   useEffect(() => {
     convRef.current = conversationId;
@@ -95,7 +97,7 @@ export function useChatAttachments(conversationId: string): ChatAttachments {
   );
 
   const release = useCallback((id: string) => {
-    live.current.delete(id);
+    if (live.current.delete(id)) countRef.current = Math.max(0, countRef.current - 1);
     xhrs.current.get(id)?.abort();
     xhrs.current.delete(id);
     const url = urls.current.get(id);
@@ -143,7 +145,7 @@ export function useChatAttachments(conversationId: string): ChatAttachments {
   const addFiles = useCallback(
     (files: readonly File[]) => {
       if (files.length === 0) return;
-      const room = CHAT_MAX_FILES - current.items.length;
+      const room = CHAT_MAX_FILES - countRef.current;
       const notices: string[] = [];
       const accepted: { item: AttachmentItem; file: File; convert: boolean }[] = [];
       let overflow = 0;
@@ -163,6 +165,7 @@ export function useChatAttachments(conversationId: string): ChatAttachments {
         const previewUrl = canPreview ? URL.createObjectURL(file) : null;
         if (previewUrl) urls.current.set(id, previewUrl);
         live.current.add(id);
+        countRef.current += 1;
         const convert = plan.action === "convert";
         accepted.push({
           item: { id, name: file.name, size: file.size, kind: plan.kind, previewUrl, state: convert ? "converting" : "uploading", progress: 0 },
@@ -174,7 +177,7 @@ export function useChatAttachments(conversationId: string): ChatAttachments {
       patch((s) => ({ items: [...s.items, ...accepted.map((a) => a.item)], notices: [...s.notices, ...notices] }));
       for (const a of accepted) void process(a.item.id, a.file, a.convert, conversationId);
     },
-    [conversationId, current.items.length, patch, process],
+    [conversationId, patch, process],
   );
 
   const remove = useCallback(

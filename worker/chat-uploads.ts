@@ -7,7 +7,7 @@ import { Worker } from "bullmq";
 import type { MessagingProvider } from "@/lib/messaging/provider";
 import { SendFailedError } from "@/lib/messaging/provider";
 import { SendRejectedError, sendQueuedChatUpload } from "@/lib/messaging/send";
-import { cleanupUnsentChatUploads, pendingChatUploadJobs } from "@/lib/chat-attachments/maintenance";
+import { cleanupUnsentChatUploads, expireStuckChatUploads, pendingChatUploadJobs } from "@/lib/chat-attachments/maintenance";
 import { redisConnection } from "@/lib/queue/inbound";
 import { CHAT_UPLOAD_QUEUE, reviveChatUploads, type ChatUploadJob } from "@/lib/queue/chat-uploads";
 import type { ObjectStorage } from "@/lib/storage/s3";
@@ -48,6 +48,8 @@ export function startChatUploadWorker(provider: MessagingProvider, storage: Obje
       if (r === "added" || r === "retried") revived++;
     }
     if (revived) console.info(`[adjuntos] barrido: ${revived} envío(s) re-encolados`);
+    const stuck = await expireStuckChatUploads();
+    if (stuck) console.warn(`[adjuntos] barrido: ${stuck} archivo(s) no salieron en 30 min → fallidos (vuelve a adjuntarlos)`);
     if (Date.now() - lastCleanup < CLEANUP_EVERY_MS) return;
     lastCleanup = Date.now();
     const deleted = await cleanupUnsentChatUploads(storage);

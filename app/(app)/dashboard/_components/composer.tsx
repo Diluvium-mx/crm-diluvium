@@ -161,14 +161,20 @@ export function Composer({
     const tokens = attachments.items.flatMap((it) => (it.token ? [it.token] : []));
     setSendingFiles(true);
     setSendError(null);
-    const result = await onSendAttachments(tokens, draft);
-    setSendingFiles(false);
-    if (!result.ok) {
-      setSendError(result.message);
-      return;
+    try {
+      const result = await onSendAttachments(tokens, draft);
+      if (!result.ok) {
+        setSendError(result.message);
+        return;
+      }
+      attachments.clear();
+      updateDraft("", 0);
+    } catch {
+      // Sesión vencida, red caída o un deploy a la mitad: el botón no se queda trabado.
+      setSendError("No se pudieron enviar los archivos. Revisa tu conexión y vuelve a intentarlo.");
+    } finally {
+      setSendingFiles(false);
     }
-    attachments.clear();
-    updateDraft("", 0);
   }
 
   // Elegir un comando en "/": se manda tal cual; el hilo lo dispara.
