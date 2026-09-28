@@ -61,11 +61,11 @@ Nadie es "dueño" de un contacto: **todos ven todos los contactos, siempre**.
 | **Canal Encendido / Apagado** | Interruptor general del agente por número de WhatsApp (Agente IA › Canales, que solo muestra los números **no archivados**: hoy WhatsApp Diluvium). Apagado = no contesta a nadie en ese número; la Bandeja lo avisa con una franja roja arriba y la pastilla **Bot** del Dashboard sale roja. |
 | **Horario del bot** | Días y horas en que el agente contesta (Agente IA › Opciones; de fábrica 24/7). Si tiene horario, la Bandeja muestra arriba una franja «El bot solo contesta … (ahora está fuera de horario / ahora sí está contestando)». |
 | **Bot callado** | Alarma: con el canal Encendido y dentro de su horario, 3 o más clientes llevan más de 15 min esperando y el agente no ha mandado nada en esos 15 min. Sale en la pastilla **Bot** (roja) y en el correo del issue `alerta-whatsapp`. |
-| **Historial de cambios** | Subpestaña de Agente IA: **quién** cambió **qué**, **antes → después** y **cuándo** (hora de Mazatlán): opciones, Goal y FAQs, modelos, etapas, canales, workflows y pausas del agente por chat. Lo ven todos; no se edita. |
+| **Historial de cambios** | Subpestaña de Agente IA: **quién** cambió **qué**, **antes → después** y **cuándo** (hora de Mazatlán): opciones, Goal y FAQs, modelos, etapas, canales (incluida la limpieza de chats de prueba), workflows y pausas del agente por chat. Lo ven todos; no se edita. |
 | **Goal** | Las instrucciones de Ángela: cómo habla, qué ofrece, cuándo pasa a un asesor. Es lo único que sigue, junto con las FAQs. |
 | **FAQs** | Preguntas frecuentes con su respuesta que el agente usa para contestar. |
 | **Modelo 1 / Modelo 2** | Los dos "cerebros" del agente. Cada etapa usa uno (hoy: Modelo 1 en Inbox, Prospecto e Interesado; Modelo 2 en Cerca de compra y Compra). |
-| **Número de prueba / PRUEBA** | Número de WhatsApp para probar. Sus chats llevan la etiqueta **PRUEBA** y **no cuentan en el Dashboard**. Desde el 28-sep-2026 está **archivado** (igual que el Sandbox): ya no aparece en Agente IA › Canales, pero no se borró nada. |
+| **Número de prueba / PRUEBA** | Número de WhatsApp para probar. Sus chats llevan la etiqueta **PRUEBA** y **no cuentan en el Dashboard**. Desde el 28-sep-2026 está **archivado** (igual que el Sandbox): ya no aparece en Agente IA › Canales. Ese mismo día se **borraron sus chats de prueba** (eran celulares del negocio): los contactos se quedaron, sin la marca Prueba, y hoy ningún chat lleva la etiqueta PRUEBA. |
 | **Importado del celular** | Mensaje viejo copiado del teléfono al conectar un número. El agente no lo contesta y no cuenta como nuevo. |
 | **Programado** | Mensaje que sale solo a la hora elegida (hora de Mazatlán). |
 | **Transcripción** | Texto de una nota de voz del cliente, escrito por el CRM; el agente lo lee para contestar. |
@@ -228,7 +228,7 @@ dentro de él.
 ![Tarjeta: el agente no pudo responder](mapa-crm/03-chat-error.png)
 ![Agente en pausa y depósito recibido](mapa-crm/03-chat-pausa.png)
 ![Mensaje que no se envió](mapa-crm/03-chat-fallido.png)
-![Chat del número de prueba](mapa-crm/03-chat-prueba.png)
+![Chat del número de prueba (captura anterior al 28-sep-2026; ese chat ya se borró)](mapa-crm/03-chat-prueba.png)
 
 | # | Nombre oficial | Qué hace | Quién lo ve |
 |---|---|---|---|
@@ -247,7 +247,7 @@ dentro de él.
 | 13 | **⚠ No se envió** | El mensaje no salió. | Todos |
 | 14 | **Motivo** | Por qué no salió, en palabras simples: ventana de 24 h cerrada, número que no recibe mensajes de WhatsApp, WhatsApp no pudo subir el archivo, tipo de archivo no permitido; cualquier otro: "WhatsApp no lo entregó (código N)". | Todos |
 | 15 | **Reintentar** (mensaje) | Vuelve a mandar ese mismo mensaje. | Todos |
-| 16 | **PRUEBA** | El chat es de un número de prueba; no cuenta en el Dashboard. | Todos |
+| 16 | **PRUEBA** | El chat es de un número de prueba; no cuenta en el Dashboard. Hoy no sale en ningún chat: los de prueba se borraron el 28-sep-2026. | Todos |
 | 17 | **Importado del celular** | Mensaje copiado del historial del teléfono al conectar el número. El agente no lo contesta. | Todos |
 | 18 | **Respuesta del agente en el número de prueba** | Así se prueba al agente sin tocar a clientes reales. | Todos |
 | 19 | **🤖 No le llegó al cliente la imagen de …** | Tarjeta de envío: WhatsApp aceptó el archivo de un workflow y después avisó que falló. Dice el motivo y el comando para reenviarlo (p. ej. /banco). La etapa no se regresa. | Todos |
@@ -423,7 +423,7 @@ Clic derecho sobre una tarjeta: menú de ese contacto (16).
 | 6 | **Círculo naranja** | Mensajes sin ver. | Todos |
 | 7 | **Temperatura** | La del contacto. | Todos |
 | 8 | **Ciudad por lada** | 📍 Ciudad calculada por la lada del teléfono. | Todos |
-| 9 | **PRUEBA** | Contacto del número de prueba. | Todos |
+| 9 | **PRUEBA** | Contacto del número de prueba. Hoy ninguno la lleva: se quitó el 28-sep-2026 al borrar los chats de prueba. | Todos |
 | 10 | **Columna Compra** | Los que ya compraron (cuenta en Anuncios › Compraron). Es la columna con el papel «Venta cerrada» (70): si el papel pasa a otra, cuenta esa. | Todos |
 | 11 | **Chat** (pop-up) | El mismo chat de la Bandeja, con su caja para escribir. | Todos |
 | 12 | **Detalle del contacto** (pop-up) | El mismo Detalle de la Bandeja. | Todos |
@@ -616,7 +616,7 @@ una ventana arriba (59)**; nada se guarda con un solo clic.
 | 48 | **Canales** | Números de WhatsApp conectados, solo los **no archivados** (hoy solo WhatsApp Diluvium). | Todos |
 | 49 | **Canal** | Nombre y número (p. ej. WhatsApp Diluvium). | Todos |
 | 50 | **Apagado · Encendido** | Interruptor general del agente en ese número. Encender y apagar piden confirmación. Apagado, la Bandeja muestra la franja roja (Bandeja › 24) y la pastilla Bot del Dashboard sale roja. | Todos |
-| 51 | ~~Número de prueba~~ | Ya no aparece (28-sep-2026): el Número de prueba y el Sandbox están archivados y se ocultan de esta lista **sin borrarse** (sus chats siguen en la Bandeja). | — |
+| 51 | ~~Número de prueba~~ | Ya no aparece (28-sep-2026): el Número de prueba y el Sandbox están archivados y se ocultan de esta lista **sin borrarse**; sus chats de prueba se borraron ese mismo día (los contactos se quedaron). | — |
 | 52 | **Subpestañas** | Modelos · Etapas · Instrucciones (Goal) · FAQs · Opciones · Tallas y medidas · Canales · Historial. Fija arriba al deslizar; en celular se desliza de lado. La elegida queda en la dirección (`?seccion=opciones`), así un enlace abre directo esa parte. | Todos |
 | 53 | **Punto naranja** (en una subpestaña) | Esa parte tiene cambios sin guardar (Goal, Opciones o Tallas). Cambiar de subpestaña no los pierde; salir de la página pregunta antes. | Todos |
 | 54 | **✎ Nombre de la versión** | Lápiz en cada versión (Goal y FAQs, también la actual): ponerle o cambiarle nombre, p. ej. «Antes de la promo». Máx. 80 letras; vacío = sin nombre. Pide confirmación. | Todos |
@@ -637,7 +637,7 @@ una ventana arriba (59)**; nada se guarda con un solo clic.
 | 69 | **Guardar · Deshacer** (por fila) | Aparecen al cambiar nombre o regla; Guardar pide confirmar. | Todos |
 | 70 | **🗑 Borrar** | Pop-up que pregunta a qué columna pasan sus contactos (con cuántos tiene cada una) y los mueve todos de una vez. Gris si la columna tiene papel o si quedan 3. | Todos |
 | 71 | **Nueva columna · Después de · Agregar** | Agrega una columna entre dos (o al final), con el Modelo 2 y sin regla. Pide confirmar. | Todos |
-| 72 | **Historial** (subpestaña) | Una fila por cambio, lo más nuevo arriba (hasta 200; con fechas ves más atrás): opciones del bot, Goal y FAQs, Modelo 1 y 2, etapas (crear, renombrar, borrar, reordenar, papel, modelo), canal encendido/apagado, workflows (crear, editar, encender, apagar, borrar) y, por chat, **Pausar agente** / **Activar** con quién lo hizo. Solo se consulta. | Todos |
+| 72 | **Historial** (subpestaña) | Una fila por cambio, lo más nuevo arriba (hasta 200; con fechas ves más atrás): opciones del bot, Goal y FAQs, Modelo 1 y 2, etapas (crear, renombrar, borrar, reordenar, papel, modelo), canal encendido/apagado, limpieza de chats de prueba (quién y cuántos), workflows (crear, editar, encender, apagar, borrar) y, por chat, **Pausar agente** / **Activar** con quién lo hizo. Solo se consulta. | Todos |
 | 73 | **Tipo** | Filtra: Todos · Opciones del bot · Goal y FAQs · Modelos · Etapas · Canales · Workflows · Pausas por chat. | Todos |
 | 74 | **Desde · Hasta** | Días (hora de Mazatlán), los dos incluidos. Vacío = sin límite. | Todos |
 | 75 | **Mostrar pausas automáticas («un vendedor contestó»)** | Agrega las pausas que el agente se puso solo porque un vendedor contestó (quién = «Automático»). Apagado de fábrica. | Todos |
