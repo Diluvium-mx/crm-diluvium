@@ -94,3 +94,31 @@ describe("herramientas del cerebro (Fase D reestructurada)", () => {
     expect(ignored).toEqual([`${TOOL_ACTUALIZAR_DETALLE}: sin datos válidos`]);
   });
 });
+
+describe("mergeHandoffToolCalls (traspaso Luna → Sonnet, 27-sep-2026)", async () => {
+  const { mergeHandoffToolCalls } = await import("./tools");
+  const wf = (id: string): import("./tools").ValidToolCall => ({ kind: "workflow", workflow: { id, slug: id, name: id } });
+  const aviso = (motivo: "cliente_pide_humano" | "cotejar_deposito"): import("./tools").ValidToolCall => ({ kind: "aviso", aviso: { motivo, detalle: motivo } });
+  const quote = (monto: number): import("./tools").ValidToolCall => ({ kind: "cotizacion", monto });
+  const detalle = (n: number): import("./tools").ValidToolCall => ({ kind: "detalle", detalle: { numEntradas: n } });
+
+  it("conserva el workflow y el aviso de Luna que Sonnet no repitió; los repetidos salen una vez", () => {
+    const merged = mergeHandoffToolCalls([wf("datos_bancarios"), aviso("cliente_pide_humano"), wf("tabla")], [wf("tabla"), aviso("cotejar_deposito")]);
+    expect(merged.filter((c) => c.kind === "workflow").map((c) => (c.kind === "workflow" ? c.workflow.id : ""))).toEqual(["datos_bancarios", "tabla"]);
+    expect(merged.filter((c) => c.kind === "aviso").map((c) => (c.kind === "aviso" ? c.aviso.motivo : ""))).toEqual(["cliente_pide_humano", "cotejar_deposito"]);
+  });
+
+  it("la cotización y la etapa de Luna no se arrastran (el cliente lee el texto de Sonnet; la etapa la pone el traspaso)", () => {
+    expect(mergeHandoffToolCalls([quote(5500), { kind: "etapa", etapa: "cerca_compra" }], [quote(6000)])).toEqual([quote(6000)]);
+    expect(mergeHandoffToolCalls([quote(5500), { kind: "etapa", etapa: "cerca_compra" }], [])).toEqual([]);
+  });
+
+  it("el Detalle de Luna va antes que el de Sonnet (Sonnet gana campo por campo en mergeDetalle)", () => {
+    expect(mergeHandoffToolCalls([detalle(1)], [detalle(2)])).toEqual([detalle(1), detalle(2)]);
+  });
+
+  it("sin llamadas de Luna, salen las de Sonnet tal cual", () => {
+    expect(mergeHandoffToolCalls([], [wf("tabla")])).toEqual([wf("tabla")]);
+  });
+});
+
