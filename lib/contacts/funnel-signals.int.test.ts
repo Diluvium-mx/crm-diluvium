@@ -175,7 +175,7 @@ describe.skipIf(!TEST_DATABASE_URL)("señales del Embudo (Postgres real)", () =>
 
     expect(await funnelSignalsForOrg(ORG)).toEqual({});
     expect(await funnelSignalsForOrg(ORG, [CONVERSATION])).toEqual({
-      [CONTACT]: { unread: 0, pending: false, urgent: false },
+      [CONTACT]: { unread: 0, pending: false, urgent: false, lastInboundAt: null },
     });
     expect(await funnelSignalsForOrg(ORG, [])).toEqual({});
   });
@@ -184,7 +184,7 @@ describe.skipIf(!TEST_DATABASE_URL)("señales del Embudo (Postgres real)", () =>
     await seedConversation({ unreadCount: 2 });
     await seedSecondConversation({ unreadCount: 5 });
 
-    const expected = { [CONTACT]: { unread: 7, pending: false, urgent: false } };
+    const expected = { [CONTACT]: { unread: 7, pending: false, urgent: false, lastInboundAt: null } };
     expect(await funnelSignalsForOrg(ORG)).toEqual(expected);
     expect(await funnelSignalsForOrg(ORG, [CONVERSATION])).toEqual(expected);
   });
@@ -377,7 +377,79 @@ describe.skipIf(!TEST_DATABASE_URL)("señales del Embudo (Postgres real)", () =>
       unread: 0,
       pending: true,
       urgent: true,
+      lastInboundAt: null,
     });
+  });
+
+  it("«Marcar como leído» apaga el azul sin contestar; abrir el chat no; un entrante nuevo lo vuelve a prender", async () => {
+    const q = await import("@/lib/inbox/queries");
+    await seedConversation({ unreadCount: 1 });
+    await message({ direction: "out", source: "ai_agent", createdAt: plus(1) });
+    await message({ direction: "in", createdAt: plus(2) }); // "gracias"
+    expect((await funnelSignalsForOrg(ORG))[CONTACT]?.pending).toBe(true);
+
+    // Abrir el chat apaga el círculo, NO el azul.
+    await q.markConversationReadForOrg(ORG, CONVERSATION);
+    expect((await funnelSignalsForOrg(ORG))[CONTACT]).toMatchObject({ unread: 0, pending: true });
+
+    // «Marcar como leído»: blanco (y el modo completo ya no lo trae).
+    expect(await q.setContactUnreadForOrg(ORG, CONTACT, false)).toBe(true);
+    expect(await funnelSignalsForOrg(ORG)).toEqual({});
+    expect((await funnelSignalsForOrg(ORG, [CONVERSATION]))[CONTACT]).toMatchObject({ unread: 0, pending: false });
+
+    // El cliente vuelve a escribir DESPUÉS: azul otra vez.
+    await message({ direction: "in", createdAt: new Date(Date.now() + 2_000) });
+    expect((await funnelSignalsForOrg(ORG))[CONTACT]?.pending).toBe(true);
+  });
+
+  it("«Marcar como no leído» borra la marca: si el último es del cliente, el azul regresa", async () => {
+    const q = await import("@/lib/inbox/queries");
+    await seedConversation();
+    await message({ direction: "in", createdAt: plus(1) });
+    await q.setConversationUnreadForOrg(ORG, CONVERSATION, false);
+    expect((await funnelSignalsForOrg(ORG, [CONVERSATION]))[CONTACT]?.pending).toBe(false);
+
+    await q.setConversationUnreadForOrg(ORG, CONVERSATION, true);
+    expect((await funnelSignalsForOrg(ORG))[CONTACT]).toMatchObject({ unread: 1, pending: true });
+  });
+
+  it("«Marcar como leído» no apaga el amarillo (ese se apaga contestando)", async () => {
+    const q = await import("@/lib/inbox/queries");
+    await seedConversation();
+    await notice({ kind: "pasar_a_humano", createdAt: plus(1) });
+    await message({ direction: "in", createdAt: plus(2) });
+    await q.setContactUnreadForOrg(ORG, CONTACT, false);
+
+    expect((await funnelSignalsForOrg(ORG))[CONTACT]).toMatchObject({ pending: false, urgent: true });
+  });
+
+  it("lastInboundAt = el último mensaje del cliente en cualquiera de sus chats (ventana − 24 h); el modo completo trae a quien escribió en las últimas 24 h", async () => {
+    const { SERVICE_WINDOW_MS } = await import("@/lib/messaging/rules");
+    const { eq } = await import("drizzle-orm");
+    await seedConversation();
+    await seedSecondConversation();
+    const recent = new Date(Date.now() - 60_000); // escribió hace 1 min y ya le contestaron
+    const older = new Date(Date.now() - 3 * 60 * 60_000);
+    await db
+      .update(s.conversations)
+      .set({ windowExpiresAt: new Date(older.getTime() + SERVICE_WINDOW_MS) })
+      .where(eq(s.conversations.id, CONVERSATION));
+    await db
+      .update(s.conversations)
+      .set({ windowExpiresAt: new Date(recent.getTime() + SERVICE_WINDOW_MS) })
+      .where(eq(s.conversations.id, `${CONVERSATION}_2`));
+
+    const full = await funnelSignalsForOrg(ORG);
+    expect(full[CONTACT]).toMatchObject({ unread: 0, pending: false, urgent: false });
+    expect(full[CONTACT]?.lastInboundAt).toBe(recent.getTime());
+    expect((await funnelSignalsForOrg(ORG, [CONVERSATION]))[CONTACT]?.lastInboundAt).toBe(recent.getTime());
+
+    // Hace más de 24 h y sin otra señal: el modo completo ya no lo trae (la hora sale de listContacts).
+    await db
+      .update(s.conversations)
+      .set({ windowExpiresAt: new Date(Date.now() - 60_000) })
+      .where(eq(s.conversations.contactId, CONTACT));
+    expect(await funnelSignalsForOrg(ORG)).toEqual({});
   });
 
   it("rechaza ids de otra organización y nunca mezcla sus señales", async () => {
@@ -400,7 +472,7 @@ describe.skipIf(!TEST_DATABASE_URL)("señales del Embudo (Postgres real)", () =>
     expect(await funnelSignalsForOrg(ORG, ["conversation_funnel_other"])).toEqual({});
     expect(await funnelSignalsForOrg(ORG)).toEqual({});
     expect(await funnelSignalsForOrg(OTHER_ORG)).toEqual({
-      contact_funnel_other: { unread: 9, pending: false, urgent: true },
+      contact_funnel_other: { unread: 9, pending: false, urgent: true, lastInboundAt: null },
     });
   });
 });

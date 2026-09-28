@@ -1,12 +1,13 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import { and, desc, eq, gt, inArray, isNotNull, ne } from "drizzle-orm";
+import { and, desc, eq, gt, inArray, isNotNull, ne, sql, type SQL } from "drizzle-orm";
 import { z } from "zod";
 import { requireActiveMembership } from "@/lib/auth/active-organization";
 import { roleAllows } from "@/lib/auth/permissions";
 import { db } from "@/lib/db";
 import { contacts, contactTemperatureEnum } from "@/lib/db/schema/contacts";
+import { conversations } from "@/lib/db/schema/messaging";
 import { listFunnelStages } from "@/lib/contacts/funnel-stages";
 import { boardContactColumns, type BoardContact } from "@/lib/contacts/board-contact";
 import { isStageKey, roleKey } from "@/lib/contacts/stages";
@@ -14,7 +15,12 @@ import { countryFromPhone, normalizePhone, phoneColumns } from "@/lib/phone";
 import { parseGhlContactsCsv } from "@/lib/import/ghl-contacts-csv";
 import { onContactStageEntered } from "@/lib/workflows/triggers";
 import { notifyContactUpdated } from "@/lib/contacts/notify-updated";
-import { funnelSignalsForOrg, MAX_SIGNAL_CONVERSATIONS, type FunnelSignal } from "@/lib/contacts/funnel-signals";
+import {
+  funnelSignalsForOrg,
+  lastInboundFromWindow,
+  MAX_SIGNAL_CONVERSATIONS,
+  type FunnelSignal,
+} from "@/lib/contacts/funnel-signals";
 import {
   importParsedContacts,
   type ImportContactsFromCsvResult,
@@ -26,16 +32,41 @@ async function requireActiveOrganizationId(): Promise<string> {
   return (await requireActiveMembership()).organizationId;
 }
 
+/**
+ * Contactos del Embudo con la hora del último mensaje del cliente (ordena la columna
+ * junto con stageChangedAt): max(window_expires_at) de sus chats en un solo agrupado
+ * de `conversations` (hash join, sin subconsulta por contacto; ver
+ * lastInboundFromWindow). `where` acota los contactos, siempre dentro de la organización.
+ */
+async function selectBoardContacts(
+  organizationId: string,
+  where: SQL | undefined,
+  limit?: number,
+): Promise<BoardContact[]> {
+  const lastWindow = db
+    .select({
+      contactId: conversations.contactId,
+      windowMs: sql<number | string | null>`(extract(epoch from max(${conversations.windowExpiresAt})) * 1000)::float8`.as("window_ms"),
+    })
+    .from(conversations)
+    .where(eq(conversations.organizationId, organizationId))
+    .groupBy(conversations.contactId)
+    .as("last_window");
+  const query = db
+    .select({ ...boardContactColumns, windowMs: lastWindow.windowMs })
+    .from(contacts)
+    .leftJoin(lastWindow, eq(lastWindow.contactId, contacts.id))
+    .where(and(eq(contacts.organizationId, organizationId), where))
+    .orderBy(desc(contacts.stageChangedAt), desc(contacts.createdAt));
+  const rows = limit === undefined ? await query : await query.limit(limit);
+  return rows.map(({ windowMs, ...contact }) => ({ ...contact, lastInboundAt: lastInboundFromWindow(windowMs) }));
+}
+
 // Todos los agentes ven todos los contactos de su organización (CLAUDE.md §5):
 // sin filtro por dueño/asignado.
 export async function listContacts(): Promise<BoardContact[]> {
   const organizationId = await requireActiveOrganizationId();
-
-  return db
-    .select(boardContactColumns)
-    .from(contacts)
-    .where(eq(contacts.organizationId, organizationId))
-    .orderBy(desc(contacts.stageChangedAt), desc(contacts.createdAt));
+  return selectBoardContacts(organizationId, undefined);
 }
 
 /**
@@ -46,11 +77,7 @@ export async function getContactsByIds(ids: string[]): Promise<BoardContact[]> {
   const organizationId = await requireActiveOrganizationId();
   const wanted = z.array(z.string().min(1)).max(200).parse(ids);
   if (wanted.length === 0) return [];
-  return db
-    .select(boardContactColumns)
-    .from(contacts)
-    .where(and(eq(contacts.organizationId, organizationId), inArray(contacts.id, wanted)))
-    .orderBy(desc(contacts.stageChangedAt), desc(contacts.createdAt));
+  return selectBoardContacts(organizationId, inArray(contacts.id, wanted));
 }
 
 // Margen para relojes y para escrituras que confirmaron justo en el corte.
@@ -72,12 +99,7 @@ export async function getContactsChangedSince(since: string) {
   const from = new Date(new Date(z.iso.datetime().parse(since)).getTime() - CHANGED_SINCE_MARGIN_MS);
   const now = new Date().toISOString();
   const [rows, withTemperature] = await Promise.all([
-    db
-      .select(boardContactColumns)
-      .from(contacts)
-      .where(and(eq(contacts.organizationId, organizationId), gt(contacts.stageChangedAt, from)))
-      .orderBy(desc(contacts.stageChangedAt), desc(contacts.createdAt))
-      .limit(MAX_CHANGED_SINCE + 1),
+    selectBoardContacts(organizationId, gt(contacts.stageChangedAt, from), MAX_CHANGED_SINCE + 1),
     db
       .select({ id: contacts.id, temperature: contacts.temperature })
       .from(contacts)

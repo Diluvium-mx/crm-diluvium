@@ -6,7 +6,7 @@ import type { BoardContact } from "../_data/types";
 import { TEMPERATURE_EMOJI, TEMPERATURE_LABELS, getContactFullName } from "../_data/types";
 import { ContactAvatar } from "./contact-avatar";
 import { formatPhone } from "@/lib/phone-format";
-import { funnelTone, unreadBadge, type FunnelSignal } from "@/lib/contacts/funnel-tone";
+import { canMarkRead, funnelTone, unreadBadge, type FunnelSignal } from "@/lib/contacts/funnel-tone";
 import { PhoneLocation } from "@/components/ui/phone-location";
 import { PruebaBadge } from "@/components/ui/prueba-badge";
 import { ContextMenu, ContextMenuContent, ContextMenuItem, ContextMenuTrigger } from "@/components/ui/context-menu";
@@ -21,12 +21,13 @@ const TONE_LABEL = {
 // cual dentro del DragOverlay del board (la "copia" que sigue al cursor
 // mientras arrastras), para que la tarjeta arrastrada se vea idéntica.
 // El fondo de color (señal) lo pone quien la envuelve con data-funnel
-// (app/globals.css); aquí solo va el círculo de no vistos.
+// (app/globals.css); aquí solo va el círculo de no vistos. Al pasar el cursor el
+// borde y la luz son GRISES: el azul queda solo para "por contestar".
 export function ContactCardContent({ contact, signal }: { contact: BoardContact; signal?: FunnelSignal }) {
   const unread = unreadBadge(signal?.unread);
   const tone = funnelTone(signal);
   return (
-    <div className="flex w-full items-center gap-3 rounded-md border bg-card p-3 text-left text-sm shadow-sm transition-colors hover:border-brand-navy">
+    <div className="flex w-full items-center gap-3 rounded-md border bg-card p-3 text-left text-sm shadow-sm transition-colors hover:border-foreground/30">
       <ContactAvatar contact={contact} />
       <div className="flex min-w-0 flex-1 flex-col gap-0.5">
         <span className="flex min-w-0 items-center gap-1.5">
@@ -88,12 +89,13 @@ export function ContactCard({
   // Clic derecho: menú de la tarjeta (el clic derecho no arrastra: dnd-kit solo
   // toma el botón izquierdo). En táctil NO abre con pulsación larga: ahí la
   // pulsación larga es arrastrar (TouchSensor del board).
-  const unread = (signal?.unread ?? 0) > 0;
+  // "Marcar como leído" si hay círculo o azul; si no, "Marcar como no leído".
+  const markable = canMarkRead(signal);
   return (
     <ContextMenu>
       <ContextMenuTrigger
         onTouchStart={(event) => event.preventBaseUIHandler()}
-        className="data-popup-open:[&>button>div]:border-brand-navy"
+        className="data-popup-open:[&>button>div]:border-foreground/30"
       >
         <button
           ref={setNodeRef}
@@ -102,6 +104,7 @@ export function ContactCard({
           {...attributes}
           {...listeners}
           data-funnel={funnelTone(signal)}
+          data-funnel-card
           className={`w-full cursor-grab rounded-md bg-card text-left active:cursor-grabbing [&>div]:bg-transparent ${
             isDragging ? "opacity-40" : ""
           }`}
@@ -110,9 +113,9 @@ export function ContactCard({
         </button>
       </ContextMenuTrigger>
       <ContextMenuContent>
-        <ContextMenuItem onClick={() => onSetUnread(!unread)}>
-          {unread ? <MailOpen aria-hidden="true" /> : <Mail aria-hidden="true" />}
-          {unread ? "Marcar como leído" : "Marcar como no leído"}
+        <ContextMenuItem onClick={() => onSetUnread(!markable)}>
+          {markable ? <MailOpen aria-hidden="true" /> : <Mail aria-hidden="true" />}
+          {markable ? "Marcar como leído" : "Marcar como no leído"}
         </ContextMenuItem>
       </ContextMenuContent>
     </ContextMenu>

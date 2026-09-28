@@ -1,8 +1,8 @@
 "use client";
 
 // Editor grande del Goal (instrucciones del agente), editable ahí mismo como en GHL:
-// deshacer, contador de palabras, tokens aproximados y "Valores personalizados"
-// (se insertan donde está el cursor). «Guardar Goal» y «Descartar cambios» piden
+// deshacer, contador de palabras, tokens aproximados, "Valores personalizados"
+// (se insertan donde está el cursor) y «Copiar» todo el texto. «Guardar Goal» y «Descartar cambios» piden
 // confirmación arriba (regla del dueño, 27-sep-2026; use-confirm.tsx). Al guardar queda
 // una versión (se puede nombrar con el lápiz). Avisa hacia arriba si hay cambios sin
 // guardar (punto naranja en la subpestaña). Sin lógica de datos: solo llama a las
@@ -11,6 +11,7 @@ import { useEffect, useRef, useState } from "react";
 import { restoreAgentGoal, saveAgentGoal } from "@/lib/actions/agente-ia-editor";
 import { approxTokens, countWords, CUSTOM_VALUES } from "@/lib/agente-ia/editor";
 import type { VersionView } from "@/lib/agente-ia/types";
+import { CopyButton } from "@/components/ui/copy-button";
 import { useConfirm } from "./use-confirm";
 import { VersionsList } from "./versions-list";
 
@@ -148,14 +149,20 @@ export function GoalEditor({
           {countWords(text).toLocaleString("es-MX")} palabras · ≈ {approxTokens(text).toLocaleString("es-MX")} tokens
         </span>
       </div>
-      <textarea
-        ref={ref}
-        value={text}
-        onChange={(e) => edit(e.target.value, e.timeStamp)}
-        spellCheck={false}
-        aria-label="Instrucciones del agente (Goal)"
-        className="min-h-[28rem] w-full resize-y rounded-md border border-black/15 bg-background p-3 font-mono text-[13px] leading-relaxed text-foreground dark:border-white/15"
-      />
+      {/* «Copiar» en la esquina de arriba a la derecha del texto (pedido del dueño,
+          28-sep-2026): copia lo que se ve en el editor, con los cambios sin guardar.
+          pr-24: ningún renglón queda debajo del botón. */}
+      <div className="relative">
+        <textarea
+          ref={ref}
+          value={text}
+          onChange={(e) => edit(e.target.value, e.timeStamp)}
+          spellCheck={false}
+          aria-label="Instrucciones del agente (Goal)"
+          className="block min-h-[28rem] w-full resize-y rounded-md border border-black/15 bg-background p-3 pr-24 font-mono text-[13px] leading-relaxed text-foreground dark:border-white/15"
+        />
+        <CopyButton getText={() => text} title="Copiar todas las instrucciones" className="absolute top-2 right-2" />
+      </div>
       <div className="flex flex-wrap items-center gap-3">
         <button
           type="button"
