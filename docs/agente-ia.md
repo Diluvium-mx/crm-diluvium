@@ -486,6 +486,18 @@ hasta que alguien mueva una opción. Reglas puras en `lib/agente-ia/opciones.ts`
 | 6 | Máximo de mensajes por respuesta | 2 | 1 | `max_bubbles` (reusada) | `toBubbles(text, 1)` manda todo en un mensaje |
 | 7 | Máximo de respuestas del bot por conversación | Sin tope | 50 | `max_replies_per_contact` (reusada) | al llegar (respuestas `ai_usage` cerebro/sent desde el último corte «Activar»/encendido): pausa hasta «Activar» + aviso 🤖 `tope_respuestas` (idempotente por entrante; `URGENT_NOTICE_KINDS` → tarjeta amarilla). Cubre un bucle con otro bot |
 
+- **Horario a la vista (Bloque C, 28-sep-2026):** si el bot tiene horario (no 24/7), la **Bandeja** muestra
+  arriba una franja «El bot solo contesta mié–jue 20:00–6:00 (ahora está fuera de horario)» (ámbar) o
+  «(ahora sí está contestando)» (gris), recalculada cada minuto; si el canal está **Apagado**, «El bot está
+  apagado en WhatsApp Diluvium» (roja). En el **Dashboard**, la pastilla **"Bot"** junto a la de WhatsApp:
+  verde contestando, ámbar fuera de horario, roja apagado o **callado**. Todo sale de la base del CRM
+  (`lib/monitoring/bot-status.ts` y `bot-silence.ts`), sin Zernio. Motivo: el 27–28 sep un horario
+  "mié–jue 20:00–06:00" dejó al bot 16 h sin contestar sin que nadie lo notara.
+- **Alarma "bot callado"** (mismo bloque): dentro del horario y con el canal Encendido, 3+ chats cuyo
+  último mensaje es del cliente hace más de 15 min y el bot sin mandar nada en 15 min → `[monitor] ALERTA`
+  del worker e issue `alerta-whatsapp`. Lo que cuenta sale de la misma consulta que el barrido
+  (`findUnansweredForMonitor`); el horario tiene que llevar abierto los 15 min (la apertura reparte lo
+  acumulado). Detalle y variables: `docs/go-live.md` › Monitoreo.
 - **Sin redesplegar:** el worker lee `loadBotOptions` en cada trabajo con caché de **60 s** por
   organización; el web borra su caché al guardar. Un valor imposible en la BD cae al de fábrica.
 - **Quién cambió qué:** cada guardado deja filas en `ai_config_changes` (organización, usuario, opción,

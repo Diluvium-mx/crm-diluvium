@@ -56,7 +56,9 @@ Nadie es "dueño" de un contacto: **todos ven todos los contactos, siempre**.
 | **Tarjeta "El agente no pudo responder"** | Aparece en el chat cuando falló el modelo o el envío. Tiene **Reintentar** y **Apagar**; mientras nadie elija, el agente no vuelve a intentar solo. |
 | **Marca "IA"** | Etiqueta junto a un dato del Detalle del contacto que **escribió el agente al último**. Si un vendedor lo edita, la marca se va. Mientras el agente lo llena se ve "IA actualizando". |
 | **Pausar agente / Activar** | Detiene al agente **solo en ese chat** (8, 12 o 24 horas, hasta una fecha y hora o indefinidamente). **Activar** lo regresa. También se pausa solo cuando un vendedor contesta (se ajusta en Opciones). |
-| **Canal Encendido / Apagado** | Interruptor general del agente por número de WhatsApp (Agente IA › Canales). Apagado = no contesta a nadie en ese número. |
+| **Canal Encendido / Apagado** | Interruptor general del agente por número de WhatsApp (Agente IA › Canales). Apagado = no contesta a nadie en ese número; la Bandeja lo avisa con una franja roja arriba y la pastilla **Bot** del Dashboard sale roja. |
+| **Horario del bot** | Días y horas en que el agente contesta (Agente IA › Opciones; de fábrica 24/7). Si tiene horario, la Bandeja muestra arriba una franja «El bot solo contesta … (ahora está fuera de horario / ahora sí está contestando)». |
+| **Bot callado** | Alarma: con el canal Encendido y dentro de su horario, 3 o más clientes llevan más de 15 min esperando y el agente no ha mandado nada en esos 15 min. Sale en la pastilla **Bot** (roja) y en el correo del issue `alerta-whatsapp`. |
 | **Goal** | Las instrucciones de Ángela: cómo habla, qué ofrece, cuándo pasa a un asesor. Es lo único que sigue, junto con las FAQs. |
 | **FAQs** | Preguntas frecuentes con su respuesta que el agente usa para contestar. |
 | **Modelo 1 / Modelo 2** | Los dos "cerebros" del agente. Cada etapa usa uno (hoy: Modelo 1 en Inbox, Prospecto e Interesado; Modelo 2 en Cerca de compra y Compra). |
@@ -108,7 +110,7 @@ contacto y los avisos se explican dentro de la Bandeja porque son **los mismos**
 
 ### 3.1 Dashboard
 
-Resumen del mes: cuánto se gasta en IA y cuántas conversaciones nuevas llegan, y si el número de WhatsApp está conectado.
+Resumen del mes: cuánto se gasta en IA y cuántas conversaciones nuevas llegan, si el número de WhatsApp está conectado y si el bot está contestando.
 
 ![Dashboard](mapa-crm/01-dashboard.png)
 
@@ -135,11 +137,18 @@ Resumen del mes: cuánto se gasta en IA y cuántas conversaciones nuevas llegan,
 | 19 | **Llegaron por anuncio** | Cuántas vinieron de un anuncio de Meta y qué porcentaje del periodo. | Todos |
 | 20 | **Pastilla de WhatsApp** (arriba a la derecha) | Estado del número según el monitoreo (cada 5 min): verde **"WhatsApp conectado"**, ámbar **"WhatsApp: revisar"**, rojo **"WhatsApp desconectado desde HH:MM"** (hora de Mazatlán) o gris **"Sin revisar desde HH:MM"** si la última revisión tiene más de 15 min. No consulta a Zernio al abrir la página. | Todos |
 | 21 | **Estado de WhatsApp** (recuadro al hacer clic en 20) | 4 líneas: **Número** (conectado o no), **Último mensaje de un cliente** (hace X min), **Worker** (activo o no) y **Webhook de Zernio** (activo y fallos). | Todos |
+| 22 | **Pastilla Bot** (junto a la de WhatsApp) | ¿El agente está contestando? Verde **"Bot contestando"**, ámbar **"Bot fuera de horario"**, roja **"Bot apagado"** (canal Apagado) o **"Bot callado"** (3 o más clientes esperando más de 15 min y el bot sin mandar nada en 15 min, dentro de su horario). Sale de los datos del CRM; no consulta a Zernio. No está en la captura. | Todos |
+| 23 | **Estado del bot** (recuadro al hacer clic en 22) | 4 líneas: **Canal** (Encendido o Apagado), **Horario** (24/7 o días y horas, y si ahora está fuera), **Sin respuesta hace más de 15 min** (cuántas conversaciones) y **Última respuesta del bot** (hace X min). | Todos |
 
 **Lo cambias tú desde la pantalla:** registrar y borrar recargas; el periodo de las conversaciones nuevas.
 
 **Si la pastilla (20) sale roja:** revisa Zernio y la app de WhatsApp Business del celular; el paso a paso está en
 `docs/go-live.md` › Alarma de desconexión. También llega el correo del issue `alerta-whatsapp`, a cualquier hora.
+
+**Si la pastilla Bot (22) sale ámbar o roja:** revisa en Agente IA el interruptor del canal (Apagado), el **Horario
+del bot** en Opciones y las tarjetas "El agente no pudo responder" de la Bandeja. "Bot callado" también llega por correo
+(issue `alerta-whatsapp`); el paso a paso está en `docs/go-live.md` › Alarma "bot callado". Una falla suelta al revisar
+Zernio ya no manda correo: solo si se repite en la siguiente revisión.
 
 **Pídeselo a Code:**
 - "En Dashboard › (14) tarjetas de nuevas, agrega una que diga cuántas contestó el agente hoy."
@@ -147,9 +156,10 @@ Resumen del mes: cuánto se gasta en IA y cuántas conversaciones nuevas llegan,
 - "En Dashboard › (18) por etapa, agrega el total en pesos cotizado por etapa."
 
 **Agente IA aquí:** todo lo que gasta al contestar (y al transcribir notas de voz, que se cobra en OpenAI) se suma en
-**Gasto de IA**. Los chats que atiende cuentan en **Conversaciones nuevas** como cualquier otro.
+**Gasto de IA**. Los chats que atiende cuentan en **Conversaciones nuevas** como cualquier otro. La pastilla **Bot** (22)
+dice si está contestando.
 
-<sub>Para Code: ruta `/inicio`; `app/(app)/inicio/` (`ai-spend-card`, `ai-topups`, `period-cards`, `daily-chart`, `breakdown-list`, `range-filter`, `whatsapp-status`); datos en `lib/dashboard/`; la pastilla (20–21) en `lib/monitoring/` (`status-pill`, `dashboard-status`) con lo que guarda el monitoreo en Redis.</sub>
+<sub>Para Code: ruta `/inicio`; `app/(app)/inicio/` (`ai-spend-card`, `ai-topups`, `period-cards`, `daily-chart`, `breakdown-list`, `range-filter`, `whatsapp-status`); datos en `lib/dashboard/`; la pastilla (20–21) en `lib/monitoring/` (`status-pill`, `dashboard-status`) con lo que guarda el monitoreo en Redis; la pastilla Bot (22–23) en `lib/monitoring/` (`bot-status`, `bot-silence`) con datos de la base.</sub>
 
 ---
 
@@ -189,6 +199,7 @@ Clic derecho sobre una fila de la lista: menú de esa conversación (23).
 | 21 | **Detalle del contacto** | Ficha del cliente. Ver [3.2.3 Detalle del contacto](#323-detalle-del-contacto). | Todos |
 | 22 | **Ocultar panel de contacto** | Esconde o muestra el Detalle; se recuerda en esa computadora. | Todos |
 | 23 | **Menú del clic derecho** | Sobre una fila (en celular, dejándola presionada): **Marcar como no leído** (pone el círculo naranja, 6, para dejarla pendiente; si ese chat estaba abierto, se cierra) o **Marcar como leído** (lo quita). Es para todo el equipo; se quita solo al abrir el chat o al contestar. | Todos |
+| 24 | **Franja del bot** (arriba de todo, solo si aplica) | Si el bot tiene horario: «El bot solo contesta mié–jue 20:00–6:00 (ahora está fuera de horario)» en ámbar, o «(ahora sí está contestando)» en gris; se actualiza sola cada minuto. Si el canal está Apagado: «El bot está apagado en WhatsApp Diluvium» en rojo. Con 24/7 y Encendido no sale. No está en la captura. | Todos |
 
 **Lo cambias tú desde la pantalla:** temperatura, estrella, leído / no leído (clic derecho), etapa y todo el
 Detalle; contestar, programar, mandar plantillas; pausar o activar al agente (en el Detalle).
@@ -200,9 +211,10 @@ Detalle; contestar, programar, mandar plantillas; pausar o activar al agente (en
 
 **Agente IA aquí:** contesta en el chat (burbujas azules), muestra la píldora (19) mientras lee o escribe, deja
 avisos 🤖 (17), avanza la etapa (10) y usa la transcripción (16) de las notas de voz. Cuando un vendedor contesta,
-se pausa en ese chat (según Opciones).
+se pausa en ese chat (según Opciones). Si no contesta todo (tiene horario o el canal está Apagado), lo dice la
+franja (24).
 
-<sub>Para Code: ruta `/dashboard`; `app/(app)/dashboard/_components/` (`inbox-board`, `conversation-list`, `chat-thread`, `temperature-picker`, `agent-activity-pill`, `scheduled-in-thread`); menú del clic derecho `components/ui/context-menu.tsx`; datos en `lib/inbox/`; tiempo real `/api/inbox/stream`.</sub>
+<sub>Para Code: ruta `/dashboard`; `app/(app)/dashboard/_components/` (`inbox-board`, `conversation-list`, `chat-thread`, `temperature-picker`, `agent-activity-pill`, `scheduled-in-thread`, `bot-banner`); franja (24) con `lib/monitoring/bot-silence.ts` (`loadBotBanner`); menú del clic derecho `components/ui/context-menu.tsx`; datos en `lib/inbox/`; tiempo real `/api/inbox/stream`.</sub>
 
 #### 3.2.1 Chat: mensajes, avisos y tarjetas del agente
 
@@ -580,7 +592,7 @@ una ventana arriba (59)**; nada se guarda con un solo clic.
 | 30 | **Pausar el bot cuando un vendedor contesta** | Sí / No. | Todos |
 | 31 | **Reactivar solo después de** | Nunca (a mano con «Activar») · 8 h · 24 h · Número de horas. | Todos |
 | 32 | **Cuando el cliente pide un asesor** | Avisar al vendedor y seguir contestando · o avisar y pausar el bot en ese chat por un tiempo. | Todos |
-| 33 | **Horario del bot** | 24/7 o Días y horas (hora de Mazatlán). Al abrir, atiende poco a poco lo pendiente. | Todos |
+| 33 | **Horario del bot** | 24/7 o Días y horas (hora de Mazatlán). Al abrir, atiende poco a poco lo pendiente. Con horario, la Bandeja lo avisa con la franja (Bandeja › 24) y la pastilla Bot del Dashboard sale ámbar fuera de horario. | Todos |
 | 34 | **Responder imágenes** | Sí / No (con No tampoco lee comprobantes en imagen). | Todos |
 | 35 | **Responder notas de voz** | Sí / No (con No no se transcriben). | Todos |
 | 36 | **Longitud de respuesta** | Corta · Balanceada · Detallada. | Todos |
@@ -597,7 +609,7 @@ una ventana arriba (59)**; nada se guarda con un solo clic.
 | 47 | ~~Implementar~~ | Ya no existe (27-sep-2026): ahora es la subpestaña **Canales** (52). | — |
 | 48 | **Canales** | Números de WhatsApp conectados. | Todos |
 | 49 | **Canal** | Nombre y número (p. ej. WhatsApp Diluvium). | Todos |
-| 50 | **Apagado · Encendido** | Interruptor general del agente en ese número. Encender y apagar piden confirmación. | Todos |
+| 50 | **Apagado · Encendido** | Interruptor general del agente en ese número. Encender y apagar piden confirmación. Apagado, la Bandeja muestra la franja roja (Bandeja › 24) y la pastilla Bot del Dashboard sale roja. | Todos |
 | 51 | **Número de prueba** | Canal de prueba, con su propio interruptor. | Todos |
 | 52 | **Subpestañas** | Modelos · Instrucciones (Goal) · FAQs · Opciones · Tallas y medidas · Canales. Fija arriba al deslizar; en celular se desliza de lado. La elegida queda en la dirección (`?seccion=opciones`), así un enlace abre directo esa parte. | Todos |
 | 53 | **Punto naranja** (en una subpestaña) | Esa parte tiene cambios sin guardar (Goal, Opciones o Tallas). Cambiar de subpestaña no los pierde; salir de la página pregunta antes. | Todos |
