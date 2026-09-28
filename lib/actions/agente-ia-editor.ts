@@ -105,8 +105,8 @@ async function run(fallback: string, fn: (m: { organizationId: string; userId: s
 }
 
 export async function updateAgentProfile(input: { agentName?: string; companyName?: string }): Promise<AgentActionResult> {
-  return run("No se pudo guardar el nombre.", async ({ organizationId }) => {
-    await saveProfile(organizationId, profileSchema.parse(input));
+  return run("No se pudo guardar el nombre.", async ({ organizationId, userId }) => {
+    await saveProfile(organizationId, profileSchema.parse(input), userId);
   });
 }
 

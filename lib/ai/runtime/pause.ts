@@ -15,6 +15,8 @@
 //
 // Historial de cambios (Bloque A, 28-sep-2026): «Pausar agente» (con quién) y la pausa
 // automática "un vendedor contestó" dejan su fila en la MISMA transacción que la pausa.
+// Bloque E: también las automáticas por tope de respuestas y por pedir un asesor, y la
+// vuelta sola al cumplirse la hora de regreso.
 import { and, eq, isNotNull, lte, or, sql } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { conversations } from "@/lib/db/schema";
@@ -75,21 +77,42 @@ export async function pauseAgentManually(
 // Vuelve a "activo" una pausa con hora cumplida; el corte es la hora de regreso
 // (en el UPDATE, la columna vale lo de ANTES de ponerla en null). Condicional: si
 // otro vendedor la cambió o la reactivó en medio, no se pisa. Devuelve si cambió algo.
+// Deja la fila "vuelta_sola" del historial (automática) en la misma transacción.
 export async function reactivateDuePause(organizationId: string, conversationId: string, now: Date): Promise<boolean> {
-  const rows = await db
-    .update(conversations)
-    .set({ agentState: "activo", agentPausedUntil: null, agentStateChangedAt: sql`${conversations.agentPausedUntil}` })
-    .where(and(ownConversation(organizationId, conversationId), pauseDue(now)))
-    .returning({ id: conversations.id });
-  return rows.length > 0;
+  return db.transaction(async (tx) => {
+    const [due] = await tx
+      .select({ until: conversations.agentPausedUntil })
+      .from(conversations)
+      .where(and(ownConversation(organizationId, conversationId), pauseDue(now)))
+      .for("update");
+    if (!due) return false;
+    const rows = await tx
+      .update(conversations)
+      .set({ agentState: "activo", agentPausedUntil: null, agentStateChangedAt: sql`${conversations.agentPausedUntil}` })
+      .where(and(ownConversation(organizationId, conversationId), pauseDue(now)))
+      .returning({ id: conversations.id });
+    if (rows.length === 0) return false;
+    await logChanges(tx, {
+      organizationId,
+      userId: null,
+      kind: "pausas",
+      action: "vuelta_sola",
+      subject: chatSubject(organizationId, conversationId),
+      subjectId: conversationId,
+      oldValue: agentStateLabel("pausado_humano", due.until),
+      newValue: agentStateLabel("activo", null),
+    });
+    return true;
+  });
 }
 
 /**
- * Fila del historial que deja una pausa de pauseForHumanReply: `pausa_auto` = "un vendedor
- * contestó" (sin autor); `pausar` = la eligió una persona (p. ej. «Apagar» en la tarjeta de
- * error). Sin `log` no deja fila (tope de respuestas, pausa al pedir un asesor).
+ * Fila del historial que deja una pausa de pauseForHumanReply. Automáticas (sin autor):
+ * `pausa_auto` = "un vendedor contestó", `pausa_tope` = llegó al máximo de respuestas,
+ * `pausa_asesor` = el cliente pidió un asesor. `pausar` = la eligió una persona (p. ej.
+ * «Apagar» en la tarjeta de error). Sin `log` no deja fila.
  */
-export type PauseLog = { action: "pausa_auto" } | { action: "pausar"; userId: string | null };
+export type PauseLog = { action: "pausa_auto" | "pausa_tope" | "pausa_asesor" } | { action: "pausar"; userId: string | null };
 
 // Un vendedor contestó (CRM, celular, programado o comando): apaga el bot SOLO si
 // estaba encendido (o su hora de regreso ya se cumplió). `until` = hora de regreso

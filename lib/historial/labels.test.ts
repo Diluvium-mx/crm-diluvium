@@ -1,5 +1,18 @@
 import { describe, expect, it } from "vitest";
-import { agentStateLabel, describeAction, describeWorkflowEdit, formatMazatlan, historyFilterSchema, historyRange, type WorkflowSnapshot } from "./labels";
+import {
+  agentStateLabel,
+  describeAction,
+  describeWorkflowEdit,
+  formatMazatlan,
+  HISTORY_TYPES,
+  historyFilterSchema,
+  historyRange,
+  isAutomaticAction,
+  templateStatusLabel,
+  workflowAssetIds,
+  workflowDetail,
+  type WorkflowSnapshot,
+} from "./labels";
 
 describe("historial de cambios: textos y filtros", () => {
   it("fecha y hora de Mazatlán (UTC−7)", () => {
@@ -20,6 +33,63 @@ describe("historial de cambios: textos y filtros", () => {
     expect(describeAction("workflows", "encender", "Banco")).toBe("Encendió el workflow «Banco»");
     expect(describeAction("pausas", "pausa_auto", "Juan Pérez")).toBe("Un vendedor contestó: el agente se pausó en el chat de Juan Pérez");
     expect(describeAction("pausas", "activar", null)).toBe("Activó el agente en el chat de un contacto");
+  });
+
+  it("Bloque E: frases de los tipos nuevos (regla, nombre, tallas, mensajes rápidos, plantillas, vendedores, pausas automáticas)", () => {
+    expect(describeAction("etapas", "regla", "Cotizado")).toBe("Cambió la regla del Agente IA de la etapa «Cotizado»");
+    expect(describeAction("nombre", "editar", null)).toBe("Cambió el nombre del agente");
+    expect(describeAction("tallas", "editar", null)).toBe("Cambió las tallas y medidas");
+    expect(describeAction("mensajes_rapidos", "borrar", "Saludo")).toBe("Borró el mensaje rápido «Saludo»");
+    expect(describeAction("plantillas", "alta", "bienvenida")).toBe("Dio de alta la plantilla «bienvenida» (va a revisión de Meta)");
+    expect(describeAction("plantillas", "sincronizar", null)).toBe("Sincronizó las plantillas con Meta");
+    expect(describeAction("vendedores", "contrasena", "Ana")).toBe("Restableció la contraseña de «Ana»");
+    expect(describeAction("vendedores", "rol", "Ana")).toBe("Cambió el rol de «Ana»");
+    expect(describeAction("pausas", "pausa_tope", "Juan")).toBe("Llegó al máximo de respuestas: el agente se pausó en el chat de Juan");
+    expect(describeAction("pausas", "pausa_asesor", "Juan")).toBe("El cliente pidió un asesor: el agente se pausó en el chat de Juan");
+    expect(describeAction("pausas", "vuelta_sola", "Juan")).toBe("Se cumplió la hora de regreso: el agente volvió solo en el chat de Juan");
+    expect(["pausa_auto", "pausa_tope", "pausa_asesor", "vuelta_sola"].every(isAutomaticAction)).toBe(true);
+    expect(isAutomaticAction("pausar")).toBe(false);
+    expect(templateStatusLabel("approved")).toBe("Aprobada");
+    expect(templateStatusLabel("PAUSED")).toBe("PAUSED");
+    expect(HISTORY_TYPES.map((t) => t.label)).toEqual([
+      "Opciones del Agente IA",
+      "Goal y FAQs",
+      "Nombre del agente",
+      "Modelos",
+      "Etapas",
+      "Canales",
+      "Workflows",
+      "Tallas y medidas",
+      "Mensajes rápidos",
+      "Plantillas",
+      "Vendedores",
+      "Pausas por chat",
+    ]);
+  });
+
+  it("foto de un workflow para 'Ver cambios': archivo por su nombre (o 'archivo borrado')", () => {
+    const w: WorkflowSnapshot = {
+      name: "Banco",
+      enabled: true,
+      agentDescription: "",
+      triggerAgent: false,
+      triggerKeywords: [],
+      triggerCommand: null,
+      triggerStage: null,
+      steps: [
+        { kind: "send_media", assetId: "a1", title: "BBVA", caption: "" },
+        { kind: "send_media", assetId: "a2", title: "Santander" },
+        { kind: "send_media", assetId: null, title: "Pendiente" },
+        { kind: "wait", seconds: 5 },
+      ],
+    };
+    expect(workflowAssetIds(w.steps, [{ kind: "send_media", assetId: "a1" }])).toEqual(["a1", "a2"]);
+    expect(workflowDetail(w, (id) => (id === "a1" ? "bbva.jpg" : null)).steps).toEqual([
+      { kind: "send_media", title: "BBVA", file: "bbva.jpg", caption: null },
+      { kind: "send_media", title: "Santander", file: "archivo borrado", caption: null },
+      { kind: "send_media", title: "Pendiente", file: null, caption: null },
+      { kind: "wait", seconds: 5 },
+    ]);
   });
 
   it("fechas Desde/Hasta en hora de Mazatlán, ambos días incluidos", () => {

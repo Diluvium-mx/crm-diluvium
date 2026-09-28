@@ -188,7 +188,7 @@ export async function replaceSizeRanges(ranges: z.input<typeof sizeRangesSchema>
   const membership = await requireActiveMembership();
   requirePermission(membership.role, "sizeRange", "update");
   const parsed = sizeRangesSchema.parse(ranges);
-  return replaceSizeRangesData(db, membership.organizationId, parsed);
+  return replaceSizeRangesData(db, membership.organizationId, parsed, membership.userId);
 }
 
 export async function addComment(contactId: string, body: string) {
