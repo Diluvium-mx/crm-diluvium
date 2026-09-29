@@ -885,12 +885,12 @@ números dibujados: el número de la tabla nombra la pieza.
 | 3 | **Bandeja: lista** | Mientras no hay un chat abierto, la lista ocupa toda la pantalla (buscador, No leído/Todo/Destacado y las filas, igual que en escritorio). | Todos |
 | 4 | **← Volver a la lista** | En el encabezado del chat, a la izquierda del nombre: regresa a la lista (3). | Todos |
 | 5 | **(i) Detalle del contacto** | En el encabezado del chat: abre el mismo Detalle del contacto (3.2.3) encima del chat, a pantalla completa. ✕ lo cierra. En escritorio el detalle es el panel de la derecha, como siempre. | Todos |
-| 6 | **Caja para escribir (móvil)** | Dos renglones: ⚡ 📄 📎 🕒 arriba y la caja con **Enviar** abajo. Todo funciona igual que en 3.2.2. | Todos |
+| 6 | **Caja para escribir (móvil)** | Dos renglones: ⚡ 📄 📎 ▶ 🕒 arriba y la caja con **Enviar** abajo. En el celular **Enter baja de renglón** (el texto conserva sus saltos) y **solo el botón Enviar manda**; en escritorio Enter sigue enviando. | Todos |
 | 7 | **Embudo: columnas** | Cada columna ocupa la pantalla; el tablero se desliza de lado columna por columna. Para arrastrar una tarjeta a otra etapa: dejarla presionada un momento y moverla (el clic derecho no existe en celular). | Todos |
-| 8 | **Pop-up del Embudo (móvil)** | Al tocar una tarjeta, el pop-up ocupa toda la pantalla: chat arriba y Detalle abajo; **Ocultar detalle** deja el chat completo y ✕ cierra el pop-up. | Todos |
+| 8 | **Pop-up del Embudo (móvil)** | Al tocar una tarjeta, el pop-up ocupa toda la pantalla **igual que la Bandeja**: el chat completo y, en su encabezado, el sobre (Marcar como leído), el **(i)** que abre el Detalle del contacto encima y la ✕ roja que cierra el pop-up. | Todos |
 | 9 | **Demás pantallas** | Dashboard, Mensajes rápidos, Anuncios, Agente IA, Automatización y Configuración se acomodan en una sola columna. **Nada se desliza de lado** (solo el Embudo, 7): las tablas de Anuncios, Vendedores y Corridas se apilan como tarjetas y las subpestañas de Agente IA se acomodan en varios renglones. | Todos |
 | 10 | **✕ roja (cerrar)** | En el celular todo lo que se abre encima se cierra con una ✕ blanca en círculo rojo: el menú ☰, el Detalle del contacto (5), el pop-up del Embudo (8), los selectores del chat (⚡ mensajes rápidos, 📄 plantillas, 🕒 programar y el buscador "/"), el visor de fotos, Nuevo contacto, Columnas del Embudo y el formulario de Mensajes rápidos. En escritorio no cambia nada (Esc, "Cerrar" o la ✕ chica de siempre). | Todos |
-| 11 | **Automatizaciones en ⚡** | En el celular, ⚡ lista primero los comandos de Automatización (/tabla, /banco, /video…): al tocar uno se envía el material, igual que escribir el comando. Solo aparecen los workflows encendidos (con su archivo). En escritorio siguen con "/". | Todos |
+| 11 | **▶ Automatizaciones** | Botón nuevo en la caja del chat (Bandeja y pop-up del Embudo), solo en el celular. Abre una lista como la de ⚡ con los workflows **encendidos** de Automatización: miniatura cuadrada de la imagen o el video (con el ícono de imagen/video a media opacidad encima; documento con su ícono), nombre, comando y el mensaje predeterminado. Tocar uno manda exactamente lo mismo que escribir su comando (el mensaje y el archivo, en su orden). En escritorio siguen con "/". | Todos |
 
 **Lo cambias tú desde la pantalla:** nada nuevo; el tema claro/oscuro sigue en la barra.
 
@@ -905,8 +905,8 @@ números dibujados: el número de la tabla nombra la pieza.
 <sub>Para Code: corte en `md` (768 px); `app/(app)/layout.tsx` y `_components/mobile-nav.tsx` (☰), `app/layout.tsx`
 (viewport), `dashboard/_components/inbox-board.tsx` (una columna, detalle encima), `chat-thread.tsx` (`onBack`),
 `composer.tsx` (dos renglones, corte `sm`), `contactos/_components/contacts-board.tsx` (columnas de una pantalla,
-corte `sm`), `contact-detail-panel.tsx` (pop-up a pantalla completa), `components/ui/use-media-query.ts`, `components/ui/close-x.tsx` (✕ roja), `snippet-picker.tsx`
-(comandos en ⚡), tablas apiladas con `max-md:block` en `sellers-panel.tsx` y `automatizacion-panel.tsx`, tarjetas en
+corte `sm`), `contact-detail-panel.tsx` (pop-up a pantalla completa), `components/ui/use-media-query.ts`, `components/ui/close-x.tsx` (✕ roja), `workflow-picker.tsx` + `listWorkflowQuickSends`
+en `lib/actions/workflows.ts` (▶ Automatizaciones), tablas apiladas con `max-md:block` en `sellers-panel.tsx` y `automatizacion-panel.tsx`, tarjetas en
 `components/anuncios/ads-table.tsx`.</sub>
 
 ---
