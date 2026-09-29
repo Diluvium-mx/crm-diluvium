@@ -60,6 +60,33 @@ export const MODEL_CATALOG = [
     multimodal: true,
     pdf: true,
     roles: ["cerebro"],
+  },
+  {
+    // Salió el 29-sep-2026 (DevDay). Casi al nivel de GPT-6 Astra por la mitad del
+    // precio de GPT-5.6 Sol. Acepta imagen (y PDF como archivo, igual que la 5.6).
+    id: "gpt-6.1-sol",
+    label: "GPT-6.1 Sol",
+    provider: "openai",
+    providerModelId: "gpt-6.1-sol",
+    logo: "openai",
+    tier: "tope",
+    multimodal: true,
+    pdf: true,
+    roles: ["cerebro"],
+    isNew: true,
+  },
+  {
+    // Salió el 28-sep-2026: >30 % más rápido que Sonnet 5 al mismo precio. Rechaza
+    // tool_choice forzado y temperatura (el adaptador no manda ninguno de los dos).
+    id: "claude-sonnet-5-5",
+    label: "Claude Sonnet 5.5",
+    provider: "anthropic",
+    providerModelId: "claude-sonnet-5-5",
+    logo: "claude",
+    tier: "tope",
+    multimodal: true,
+    pdf: true,
+    roles: ["cerebro"],
     isNew: true,
   },
   {
@@ -73,7 +100,6 @@ export const MODEL_CATALOG = [
     multimodal: true,
     pdf: true,
     roles: ["cerebro"],
-    isNew: true,
   },
   {
     id: "claude-haiku-4-5",

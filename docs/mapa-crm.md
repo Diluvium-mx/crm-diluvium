@@ -636,7 +636,7 @@ Todo lo que define a Ángela. Arriba, su nombre y una **barra de subpestañas (5
 su parte (desde el 27-sep-2026; antes eran dos pestañas, Crear e Implementar; Historial desde el 28-sep-2026). **Todo cambio de esta pestaña pide confirmar en
 una ventana arriba (59)**; nada se guarda con un solo clic.
 
-> **Capturas:** la de Modelos es del 28-sep-2026 (subpestañas, logos y «Ir a Etapas →»). **Pendientes** las otras
+> **Capturas:** la de Modelos es del 29-sep-2026 (subpestañas, logos, «Ir a Etapas →» y los modelos nuevos GPT-6.1 Sol y Claude Sonnet 5.5). **Pendientes** las otras
 > cuatro, anteriores al 27-sep-2026 (todavía muestran «Crear · Implementar», todo en una sola página, sin nombres de
 > versión ni «Guardar cambios» en Opciones; la de Canales aún muestra el número de prueba). Los números 1–51 siguen
 > valiendo (salvo 3, 11 y 15, que se quitaron); de 52–83 solo 52 y 83 aparecen en una captura (la de Modelos).
@@ -655,7 +655,7 @@ una ventana arriba (59)**; nada se guarda con un solo clic.
 | 4 | **Modelos** | Los "cerebros" que piensan y redactan. | Todos |
 | 5 | **Modelo 1** | Por defecto GPT-5.6 Luna: el más económico, para las primeras preguntas. | Todos |
 | 6 | **Modelo elegido** | La tarjeta resaltada es la que está en uso. | Todos |
-| 7 | **Recomendado** | El que sugiere el CRM. | Todos |
+| 7 | **Recomendado** | El que sugiere el CRM. La etiqueta naranja **Nuevo** marca los modelos recién salidos (desde el 29-sep-2026: **GPT-6.1 Sol** y **Claude Sonnet 5.5**). | Todos |
 | 8 | **Costo aproximado** | "≈ US$ por cada 100 conversaciones". Una opción en gris no tiene llave conectada. Abajo a la izquierda de cada tarjeta, antes del costo, va el proveedor **por donde se conecta** (OpenAI, Anthropic, Google, xAI, OpenRouter). | Todos |
 | 9 | **Modelo 2** | Por defecto Claude Sonnet 5: el más capaz, para datos bancarios y comprobantes. | Todos |
 | 10 | **Qué modelo atiende cada etapa** | Desde el 27-sep-2026 solo el botón **Ir a Etapas →**: el modelo de cada etapa se elige en la subpestaña Etapas (67). | Todos |
