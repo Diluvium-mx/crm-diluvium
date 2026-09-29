@@ -12,13 +12,11 @@ import { sql } from "drizzle-orm";
 import { db } from "@/lib/db";
 import type { LectorDeps, LectorOutcome } from "./lector";
 import { runLector } from "./lector";
+import { LECTOR_EVERY_MS, LECTOR_LOOKBACK_DAYS, LECTOR_MAX_WAIT_MS, LECTOR_QUIET_MS } from "./lector-core";
 
-export const LECTOR_QUIET_MS = 3 * 60_000;
-export const LECTOR_MAX_WAIT_MS = 15 * 60_000;
-export const LECTOR_LOOKBACK_DAYS = 3;
+export { LECTOR_EVERY_MS, LECTOR_LOOKBACK_DAYS, LECTOR_MAX_WAIT_MS, LECTOR_QUIET_MS };
 export const LECTOR_BATCH = 20;
 export const LECTOR_CONCURRENCY = 3;
-export const LECTOR_EVERY_MS = 60_000;
 // Tras 3 fallas seguidas en el mismo chat se deja de intentar hasta el siguiente mensaje.
 export const LECTOR_MAX_FAILURES = 3;
 
