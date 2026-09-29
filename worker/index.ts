@@ -49,6 +49,9 @@ import { onInboundKeyword } from "@/lib/workflows/triggers";
 import { agentIngestHooks, wakeAgentAfterTranscription } from "@/lib/ai/runtime/hooks";
 import { closeInterruptedTranscriptions, staleTranscriptionIds, transcribeMessageAudio } from "@/lib/ai/transcription/transcribe";
 import { startAgentRuntime } from "@/lib/ai/runtime/worker";
+import { startLectorRuntime } from "@/lib/ai/runtime/lector-worker";
+import { redisKvPort } from "@/lib/ai/runtime/queue";
+import { callModel } from "@/lib/ai";
 import { adsIngestHooks, startAdsWorker } from "@/lib/ads/worker";
 
 const SWEEP_EVERY_MS = 60_000;
@@ -79,6 +82,14 @@ function optionalStorage(): ObjectStorage | null {
 const storage = optionalStorage();
 // Agente IA (Fase B): cola de respuestas con debounce; arranca tras las migraciones.
 const agent = startAgentRuntime({ provider, storage });
+// Lector en segundo plano (28-sep-2026): etapa y Detalle del contacto al día aunque el
+// Agente IA esté apagado o pausado; nunca le escribe al cliente. Arranca tras las migraciones.
+const lector = startLectorRuntime({
+  now: () => new Date(),
+  callModel,
+  resolveImage: async (key) => (storage ? storage.signedGetUrl(key, 15 * 60) : null),
+  kv: redisKvPort(),
+});
 // Workflows (Fase D): corridas de acciones (media, etapa, humano, avisos).
 const workflowsRunner = startWorkflowWorker(provider, storage);
 // Envíos del web en fila de espera (Bloque B): 429 de Zernio o turno de la conversación.
@@ -371,7 +382,7 @@ async function shutdown(signal: string) {
   console.info(`[worker] ${signal}: cerrando (se termina lo que está en curso; no se toma trabajo nuevo)`);
   clearInterval(sweepTimer);
   clearInterval(monitorTimer);
-  await Promise.all([worker.close(), mediaWorker?.close(), scheduled.close(), agent.close(), workflowsRunner.close(), outbox.close(), ads.close(), chatUploads?.close()]);
+  await Promise.all([worker.close(), mediaWorker?.close(), scheduled.close(), agent.close(), lector.close(), workflowsRunner.close(), outbox.close(), ads.close(), chatUploads?.close()]);
   console.info(`[worker] cerrado en orden en ${((Date.now() - t0) / 1000).toFixed(1)} s`);
   process.exit(0);
 }
@@ -392,6 +403,7 @@ waitForMigrations()
     void mediaWorker?.run();
     scheduled.run();
     agent.run();
+    lector.run();
     workflowsRunner.run();
     outbox.run();
     ads.run();

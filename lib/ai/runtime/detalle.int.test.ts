@@ -152,6 +152,17 @@ describe.skipIf(!TEST_DATABASE_URL)("Detalle del contacto llenado por el Agente 
     expect(bodies).toEqual(["Agente IA: Vive frente a un canal", "Vendedora: Tiene cochera con desnivel"]);
   });
 
+  it("\"no sabe\" nunca borra un sí/no que ya dijo el cliente (relleno del modelo); sí llena uno vacío", async () => {
+    await detalle.applyDetalleByAgent(ORG, CONTACT, pedido({ tiene_inundaciones: "si" }));
+    await detalle.applyDetalleByAgent(ORG, CONTACT, pedido({ tiene_inundaciones: "no_sabe" }));
+    expect((await details()).tieneInundaciones).toBe("si");
+    await detalle.applyDetalleByAgent(ORG, CONTACT, pedido({ tiene_inundaciones: "no" }));
+    expect((await details()).tieneInundaciones).toBe("no");
+    await db.update(s.contacts).set({ tieneInundaciones: null }).where(d.eq(s.contacts.id, CONTACT));
+    await detalle.applyDetalleByAgent(ORG, CONTACT, pedido({ tiene_inundaciones: "no_sabe" }));
+    expect((await details()).tieneInundaciones).toBe("no_sabe");
+  });
+
   it("organización: un contacto de otra organización no se toca", async () => {
     const r = await detalle.applyDetalleByAgent(ORG, OTHER_CONTACT, pedido({ num_entradas: 2, comentario: "x" }));
     expect(r).toEqual({ llenados: [], delVendedor: [] });

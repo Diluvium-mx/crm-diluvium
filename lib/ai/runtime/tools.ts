@@ -54,14 +54,18 @@ export const avisoVendedorSchema = z.object({
 
 // Lo que ve el MODELO (todo opcional). El runtime vuelve a validar CAMPO POR CAMPO
 // (parseDetalle): un campo raro se descarta sin tirar los demás.
+// Cada campo acepta null = "el cliente no lo dijo" (28-sep-2026): Luna manda SIEMPRE todos
+// los campos y, sin null, los rellenaba con 0, "" o "no_sabe" (en producción, 46 de 50
+// niveles de agua del agente eran "0 cm"). parseDetalle ignora los null.
+const SIN_DATO = " (null si el cliente no lo dijo)";
 export const actualizarDetalleSchema = z.object({
-  tiene_inundaciones: z.enum(["si", "no", "no_sabe"]).optional().describe("Si el cliente dijo que se le mete el agua: si, no o no_sabe"),
-  nivel_agua_cm: z.number().optional().describe("Hasta dónde llega el agua, en centímetros (0.5 m = 50)"),
-  nivel_agua_texto: z.string().optional().describe("Cómo lo describió el cliente, corto (p. ej. \"le llega a la rodilla\")"),
-  num_entradas: z.number().optional().describe("Cuántas entradas quiere proteger"),
-  anchos_cm: z.array(z.number()).optional().describe("Ancho de cada entrada en centímetros, en orden (uno por entrada)"),
-  porcentaje_convencimiento: z.number().optional().describe("Qué tan convencido está de comprar: 0 a 100, de 10 en 10"),
-  comentario: z.string().optional().describe("Un dato útil NUEVO que dio el cliente, en una frase (p. ej. \"tiene cochera con desnivel\")"),
+  tiene_inundaciones: z.enum(["si", "no", "no_sabe"]).nullable().optional().describe(`Si el cliente dijo que se le mete el agua: si, no o no_sabe (solo si dijo que no sabe)${SIN_DATO}`),
+  nivel_agua_cm: z.number().nullable().optional().describe(`Hasta dónde llega el agua, en centímetros (0.5 m = 50)${SIN_DATO}`),
+  nivel_agua_texto: z.string().nullable().optional().describe(`Cómo lo describió el cliente, corto (p. ej. "le llega a la rodilla")${SIN_DATO}`),
+  num_entradas: z.number().nullable().optional().describe(`Cuántas entradas quiere proteger${SIN_DATO}`),
+  anchos_cm: z.array(z.number()).nullable().optional().describe(`Ancho de cada entrada en centímetros, en orden (uno por entrada)${SIN_DATO}`),
+  porcentaje_convencimiento: z.number().nullable().optional().describe("Qué tan convencido está de comprar: 0 a 100, de 10 en 10"),
+  comentario: z.string().nullable().optional().describe(`Un dato útil NUEVO que dio el cliente, en una frase (p. ej. "tiene cochera con desnivel")${SIN_DATO}`),
 });
 
 // "DESPUÉS de tu respuesta…": medido con Sonnet 5 real (26-sep-2026), sin esa frase 2 de
@@ -94,7 +98,8 @@ export function parseDetalle(input: unknown): DetalleIa | null {
   const out: DetalleIa = {};
   if (raw.tiene_inundaciones === "si" || raw.tiene_inundaciones === "no" || raw.tiene_inundaciones === "no_sabe") out.tieneInundaciones = raw.tiene_inundaciones;
   const nivel = num(raw.nivel_agua_cm);
-  if (nivel !== null && nivel >= 0 && nivel <= 1000) out.nivelAguaCm = Math.round(nivel);
+  // 0 cm no es un nivel de agua (sin agua es tiene_inundaciones = no): es relleno del modelo.
+  if (nivel !== null && nivel > 0 && nivel <= 1000) out.nivelAguaCm = Math.round(nivel);
   const nivelTexto = text(raw.nivel_agua_texto, 200);
   if (nivelTexto) out.nivelAguaTexto = nivelTexto;
   const entradas = num(raw.num_entradas);
@@ -111,8 +116,11 @@ export function parseDetalle(input: unknown): DetalleIa | null {
   return Object.keys(out).length ? out : null;
 }
 
+// Regla del dueño (28-sep-2026): el monto es el total de lo que el CLIENTE eligió, no lo
+// primero que se le cotizó (si se cotizaron 2 y eligió 1, es el total de 1). El lector en
+// segundo plano (lector.ts) lo corrige igual si el chat cambia después.
 export const FIJAR_COTIZACION_DESCRIPTION =
-  "Guarda el total de la COMPRA cotizada al cliente en pesos (el total que le dijiste: compuerta o compuertas más lo que incluya). No es para accesorios sueltos ni precios de referencia. Llámala cada vez que le des un total o el total cambie.";
+  "Guarda el total de lo que el CLIENTE eligió comprar, en pesos (el total que le dijiste por lo que pidió: compuerta o compuertas más lo que incluya). No es para accesorios sueltos ni precios de referencia. Llámala cada vez que le des un total o el total cambie; si el cliente cambia lo que quiere (p. ej. de 2 compuertas a 1), llámala con el total nuevo cuando se lo digas.";
 export function moverEtapaDescription(stages: readonly FunnelStage[]): string {
   const order = sortStages(stages)
     .map((s) => `${s.key} (${s.name})`)

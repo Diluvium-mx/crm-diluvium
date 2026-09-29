@@ -206,6 +206,11 @@ export const conversations = pgTable(
     // haya contestado (p. ej. un "gracias"). El siguiente entrante la vuelve a pintar y
     // "Marcar como no leído" la borra. Abrir el chat NO la mueve. Del equipo (§5).
     attendedAt: timestamp("attended_at"),
+    // Lector en segundo plano (0047): hasta qué mensaje (last_message_at) ya dejó al día
+    // la etapa y el Detalle del contacto. Hay algo nuevo que leer si last_message_at es
+    // mayor. La migración la pone en last_message_at para lo que ya existía (la pasada
+    // única de scripts/lector-detalle.ts cubre lo que el dueño eligió).
+    detalleLeidoHasta: timestamp("detalle_leido_hasta"),
     // Anuncio de clic a WhatsApp que ORIGINÓ la conversación (el primer
     // `referral` recibido). Meta lo manda una sola vez: se guarda crudo y
     // completo; la UI solo recibe una versión saneada (lib/inbox).

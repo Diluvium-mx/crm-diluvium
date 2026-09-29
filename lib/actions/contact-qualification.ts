@@ -51,6 +51,8 @@ const qualificationPatchSchema = z
     ).optional(),
     nivelAguaTexto: z.string().max(500, "La descripción del nivel no puede pasar de 500 caracteres.").nullable().optional(),
     montoCotizacion: moneySchema.optional(),
+    // Pago total (0047): lo que el cliente ya pagó. Lo llena el Agente IA y el vendedor lo corrige.
+    pagoTotal: moneySchema.optional(),
     // Sin porcentajeConvencimiento: desde el 26-sep-2026 lo decide SOLO el Agente IA
     // (decisión del dueño); un vendedor ya no lo cambia ni desde una pestaña vieja.
   })

@@ -3,7 +3,7 @@
 // Panel "Detalle del contacto" (B2): el MISMO componente a la derecha de la
 // Bandeja y en el pop-up de la tarjeta del Embudo. Orden acordado: nombre,
 // teléfono, (etapa y temperatura), ¿inundaciones?, ¿cuánta agua?, ¿cuántas
-// entradas?, ancho y tamaño por entrada, monto, % de convencimiento, [interruptor
+// entradas?, ancho y tamaño por entrada, monto y pago, % de convencimiento, [interruptor
 // del bot → Fase B], comentarios y, al final compactos, correo y etiquetas.
 // Guardado automático al salir de cada campo (sin botón Guardar), con aviso
 // sutil. Etapa y temperatura las maneja el padre (cada vista las sincroniza a su
@@ -39,7 +39,7 @@ import { IaMark } from "./ia-mark";
 
 type Details = Awaited<ReturnType<typeof getContactDetails>>;
 type Inundaciones = NonNullable<Details["tieneInundaciones"]>;
-type QualField = "tieneInundaciones" | "nivelAguaCm" | "nivelAguaTexto" | "montoCotizacion" | "porcentajeConvencimiento";
+type QualField = "tieneInundaciones" | "nivelAguaCm" | "nivelAguaTexto" | "montoCotizacion" | "pagoTotal" | "porcentajeConvencimiento";
 type Qualification = Pick<Details, QualField>;
 
 const QUAL_FIELDS: readonly QualField[] = [
@@ -47,6 +47,7 @@ const QUAL_FIELDS: readonly QualField[] = [
   "nivelAguaCm",
   "nivelAguaTexto",
   "montoCotizacion",
+  "pagoTotal",
   "porcentajeConvencimiento",
 ];
 
@@ -60,6 +61,7 @@ function qualificationOf(d: Details): Qualification {
     nivelAguaCm: d.nivelAguaCm,
     nivelAguaTexto: d.nivelAguaTexto,
     montoCotizacion: d.montoCotizacion,
+    pagoTotal: d.pagoTotal,
     porcentajeConvencimiento: d.porcentajeConvencimiento,
   };
 }
@@ -121,6 +123,7 @@ const IA_KEY: Record<QualField, string> = {
   nivelAguaCm: "nivel_agua_cm",
   nivelAguaTexto: "nivel_agua_texto",
   montoCotizacion: "monto_cotizacion",
+  pagoTotal: "pago_total",
   porcentajeConvencimiento: "porcentaje_convencimiento",
 };
 
@@ -175,6 +178,7 @@ export function ContactDetails({
   const [nivelTexto, setNivelTexto] = useState("");
   const [numEntradas, setNumEntradasDraft] = useState("");
   const [monto, setMonto] = useState("");
+  const [pago, setPago] = useState("");
   // Hallazgo 4: los guardados de cada campo salen en serie y solo la respuesta
   // del último pedido se muestra (lib/autosave/serial-saves.ts). `details`
   // muestra lo último PEDIDO; `confirmed`, lo último que el servidor guardó: a
@@ -216,6 +220,7 @@ export function ContactDetails({
     setNivelTexto(next.nivelAguaTexto ?? "");
     setNumEntradasDraft(next.numEntradas === null ? "" : String(next.numEntradas));
     setMonto(next.montoCotizacion === null ? "" : money.format(next.montoCotizacion));
+    setPago(next.pagoTotal === null ? "" : money.format(next.pagoTotal));
   }, []);
 
   // Carga completa (al abrir). Si falla, se reintenta sola (5 s … 60 s) mientras
@@ -411,6 +416,7 @@ export function ContactDetails({
     if (free("nivelAguaCm", "nivelCm")) setNivelCm(fresh.nivelAguaCm === null ? "" : String(fresh.nivelAguaCm));
     if (free("nivelAguaTexto", "nivelTexto")) setNivelTexto(fresh.nivelAguaTexto ?? "");
     if (free("montoCotizacion", "monto")) setMonto(fresh.montoCotizacion === null ? "" : money.format(fresh.montoCotizacion));
+    if (free("pagoTotal", "pago")) setPago(fresh.pagoTotal === null ? "" : money.format(fresh.pagoTotal));
     if (free("entradas", "numEntradas")) setNumEntradasDraft(fresh.numEntradas === null ? "" : String(fresh.numEntradas));
   }
 
@@ -438,7 +444,7 @@ export function ContactDetails({
     text: string,
     current: number | null,
     opts: { integer: boolean; min: number; max: number },
-    field: "nivelAguaCm" | "montoCotizacion",
+    field: "nivelAguaCm" | "montoCotizacion" | "pagoTotal",
     show: (value: number | null) => void,
     message: string,
   ) {
@@ -665,32 +671,62 @@ export function ContactDetails({
               </Field>
             )}
 
-            <Field title="Monto de cotización (MXN)" ia={details.iaFields.includes("monto_cotizacion")} flash={lit("monto_cotizacion")}>
-              <div className="relative w-40">
-                <span className="pointer-events-none absolute left-2 top-1/2 -translate-y-1/2 text-xs text-muted-foreground">$</span>
-                <input
-                  aria-label="Monto de cotización en MXN"
-                  inputMode="decimal"
-                  value={monto}
-                  onChange={(e) => {
-                    typing.current.add("monto");
-                    setMonto(e.target.value);
-                  }}
-                  onBlur={() => {
-                    typing.current.delete("monto");
-                    onNumberBlur(
-                      monto,
-                      details.montoCotizacion,
-                      { integer: false, min: 0, max: 9_999_999_999.99 },
-                      "montoCotizacion",
-                      (v) => setMonto(v === null ? "" : money.format(v)),
-                      "El monto debe ser un número positivo.",
-                    );
-                  }}
-                  className={`${input} pl-5`}
-                />
-              </div>
-            </Field>
+            {/* Monto de cotización = total de lo que el cliente eligió al final; Pago total = lo que
+                ya pagó (regla del dueño, 28-sep-2026). Lado a lado: se ve si cotizó mucho y no compró. */}
+            <div className="grid grid-cols-2 items-end gap-2">
+              <Field title="Monto de cotización (MXN)" ia={details.iaFields.includes("monto_cotizacion")} flash={lit("monto_cotizacion")}>
+                <div className="relative">
+                  <span className="pointer-events-none absolute left-2 top-1/2 -translate-y-1/2 text-xs text-muted-foreground">$</span>
+                  <input
+                    aria-label="Monto de cotización en MXN"
+                    inputMode="decimal"
+                    value={monto}
+                    onChange={(e) => {
+                      typing.current.add("monto");
+                      setMonto(e.target.value);
+                    }}
+                    onBlur={() => {
+                      typing.current.delete("monto");
+                      onNumberBlur(
+                        monto,
+                        details.montoCotizacion,
+                        { integer: false, min: 0, max: 9_999_999_999.99 },
+                        "montoCotizacion",
+                        (v) => setMonto(v === null ? "" : money.format(v)),
+                        "El monto debe ser un número positivo.",
+                      );
+                    }}
+                    className={`${input} pl-5`}
+                  />
+                </div>
+              </Field>
+              <Field title="Pago total (MXN)" ia={details.iaFields.includes("pago_total")} flash={lit("pago_total")}>
+                <div className="relative">
+                  <span className="pointer-events-none absolute left-2 top-1/2 -translate-y-1/2 text-xs text-muted-foreground">$</span>
+                  <input
+                    aria-label="Pago total en MXN"
+                    inputMode="decimal"
+                    value={pago}
+                    onChange={(e) => {
+                      typing.current.add("pago");
+                      setPago(e.target.value);
+                    }}
+                    onBlur={() => {
+                      typing.current.delete("pago");
+                      onNumberBlur(
+                        pago,
+                        details.pagoTotal,
+                        { integer: false, min: 0, max: 9_999_999_999.99 },
+                        "pagoTotal",
+                        (v) => setPago(v === null ? "" : money.format(v)),
+                        "El pago debe ser un número positivo.",
+                      );
+                    }}
+                    className={`${input} pl-5`}
+                  />
+                </div>
+              </Field>
+            </div>
 
             {/* Solo lo decide el Agente IA conforme avanza la conversación (sin selector). */}
             <Field

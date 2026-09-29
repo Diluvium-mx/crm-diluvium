@@ -230,6 +230,10 @@ comprobantes         id, org_id, contact_id, conversation_id, message_id (único
                      -- Fase D (0031). SIN USO desde la Fase E (25-sep): el agente ya no anota monto ni
                      -- folio; la tabla se conserva con su historial (no se borra)
 ai_agent_notices (+) resolved_at, resolution (reintentar|apagar), resolved_by_user_id   -- 0034, tarjeta agente_error
+contacts (+)         pago_total numeric(12,2) MXN  -- 0047: lo que el cliente ya pagó. monto_cotizacion = total de lo
+                     que el CLIENTE eligió al final (regla del dueño, 28-sep-2026), no lo primero que se cotizó
+conversations (+)    detalle_leido_hasta  -- 0047: el Agente IA lee en SEGUNDO PLANO (lib/ai/runtime/lector.ts)
+                     y deja al día etapa y Detalle aunque esté apagado o pausado; nunca le escribe al cliente
 contacts (+)         stage_changed_by (vendedor|agente|sistema): la etapa de un vendedor manda; el agente solo avanza
                      custom_fields.detalle_por { campo: agente|vendedor }  -- parte 1: el agente solo llena lo vacío o lo suyo
 messages (+)         transcripcion text   -- 0037: nota de voz del cliente (estado en metadata.transcripcion)
