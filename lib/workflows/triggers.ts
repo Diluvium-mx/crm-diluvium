@@ -3,20 +3,13 @@
 // ejecutor decide (modo del canal, una vez por conversación) y deja rastro.
 import { and, desc, eq } from "drizzle-orm";
 import { db } from "@/lib/db";
-import { conversations, messages, workflows } from "@/lib/db/schema";
+import { contacts, conversations, messages, workflows } from "@/lib/db/schema";
 import { startWorkflowRun, type StartRunResult } from "./executor";
 import { matchesKeyword, parseCommand } from "./steps";
 import { markKeywordChecked, pendingKeywordMessages } from "./keyword-pending";
 import { startOnlyEligible } from "./start-only";
-
-async function startOnlyEligibleFor(organizationId: string, conversationId: string, workflowIds: string[]): Promise<Set<string>> {
-  const [conv] = await db
-    .select({ contactId: conversations.contactId })
-    .from(conversations)
-    .where(and(eq(conversations.id, conversationId), eq(conversations.organizationId, organizationId)))
-    .limit(1);
-  return conv ? startOnlyEligible(organizationId, conversationId, conv.contactId, workflowIds) : new Set();
-}
+import { atMaxPerChat } from "./max-per-chat";
+import { fixedRuleWinner, PRECIO_Y_MEDIDAS } from "./fixed-rules";
 
 /**
  * Entrante NUEVO del cliente (después del commit de la ingesta): si es texto y
@@ -35,25 +28,53 @@ export async function onInboundKeyword(m: { organizationId: string; conversation
       return null;
     }
     const rows = await db
-      .select({ id: workflows.id, keywords: workflows.triggerKeywords, position: workflows.position, startOnly: workflows.triggerStartOnly })
+      .select({
+        id: workflows.id,
+        slug: workflows.slug,
+        keywords: workflows.triggerKeywords,
+        position: workflows.position,
+        startOnly: workflows.triggerStartOnly,
+        maxSendsPerChat: workflows.maxSendsPerChat,
+      })
       .from(workflows)
       .where(and(eq(workflows.organizationId, m.organizationId), eq(workflows.enabled, true)))
       .orderBy(workflows.position);
     const body = msg.body;
     const hits = rows.flatMap((wf) => {
       const hit = wf.keywords.length ? matchesKeyword(body, wf.keywords) : null;
-      return hit ? [{ id: wf.id, len: hit.length, startOnly: wf.startOnly }] : [];
+      return hit ? [{ ...wf, len: hit.length }] : [];
     });
-    // «Solo al inicio»: uno que ya no aplica (ya le contestaron o ya le salió a este contacto) no
-    // compite; así el mensaje puede disparar otro workflow que también coincida.
-    const startOnly = hits.filter((h) => h.startOnly).map((h) => h.id);
-    const eligible = startOnly.length ? await startOnlyEligibleFor(m.organizationId, m.conversationId, startOnly) : new Set<string>();
+    const [conv] = await db
+      .select({ contactId: conversations.contactId, keywordSent: contacts.keywordWorkflowsSent })
+      .from(conversations)
+      .innerJoin(contacts, eq(contacts.id, conversations.contactId))
+      .where(and(eq(conversations.id, m.conversationId), eq(conversations.organizationId, m.organizationId)))
+      .limit(1);
+    // Regla fija «precio y medidas» (lib/workflows/fixed-rules.ts): «Información» puede ganar sin
+    // tener la palabra clave, así que también se revisa si puede salir.
+    const ruleWinner = rows.find((w) => w.slug === PRECIO_Y_MEDIDAS.gana) ?? null;
+    // «Solo al inicio» (las dos opciones: por palabra clave siempre aplica): uno que ya no aplica
+    // (ya le contestaron o ya le salió a este contacto) no compite; así el mensaje puede disparar
+    // otro workflow que también coincida. Igual uno que ya llegó a su «Máximo de envíos por chat».
+    const startOnly = [...hits, ...(ruleWinner ? [ruleWinner] : [])].filter((h) => h.startOnly).map((h) => h.id);
+    const eligible = startOnly.length && conv ? await startOnlyEligible(m.organizationId, m.conversationId, conv.contactId, startOnly) : new Set<string>();
+    const canFire = async (w: { id: string; startOnly: boolean; maxSendsPerChat: number | null }) =>
+      !(w.startOnly && !eligible.has(w.id)) && !(await atMaxPerChat(m.organizationId, m.conversationId, w, { includeLive: true }));
+    const competing: typeof hits = [];
+    for (const h of hits) if (await canFire(h)) competing.push(h);
     // La frase MÁS específica gana entre TODOS los workflows ("video a la
     // medida" del especial le gana a "video" del estándar); `position` desempata.
     let best: { id: string; len: number } | null = null;
-    for (const h of hits) {
-      if (h.startOnly && !eligible.has(h.id)) continue;
+    for (const h of competing) {
       if (!best || h.len > best.len) best = { id: h.id, len: h.len };
+    }
+    // Regla fija del dueño: si este mensaje dispararía «Precio 2» y la Tabla a la vez, sale «Información».
+    const sent = new Set(conv?.keywordSent ?? []);
+    const firing = new Set(competing.filter((h) => !sent.has(h.id)).map((h) => h.slug));
+    const ruleOk = Boolean(ruleWinner && firing.size > 1 && !sent.has(ruleWinner.id) && (await canFire(ruleWinner)));
+    if (ruleWinner && fixedRuleWinner(firing, () => ruleOk)) {
+      console.info(`[workflows] ${m.conversationId}: el mensaje dispararía «Precio 2» y la Tabla; sale «Información» (regla fija)`);
+      best = { id: ruleWinner.id, len: 0 };
     }
     if (!best) {
       await markKeywordChecked(m);
@@ -147,7 +168,7 @@ export async function onContactStageEntered(input: {
 }
 
 /**
- * Comando del vendedor en el composer ("/tabla"). Devuelve null si el texto no
+ * Comando del vendedor en el composer ("/tamaños"). Devuelve null si el texto no
  * es un comando o no corresponde a un workflow de la organización (entonces
  * el composer lo manda como texto normal). Lanza si el workflow existe pero la
  * corrida no procede (el vendedor debe verlo).

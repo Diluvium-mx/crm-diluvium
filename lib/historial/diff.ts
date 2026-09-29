@@ -8,7 +8,7 @@
 // - Regla de etapa, nombre del agente, mensajes rápidos, plantillas: texto antes → después.
 // - Tallas: por talla (rango antes → después).
 
-import { startOnlyLabel } from "@/lib/workflows/steps";
+import { maxSendsLabel, START_SCOPE_LABEL, startScopeOf } from "@/lib/workflows/steps";
 
 export type DiffOp = "same" | "removed" | "added";
 export type DiffSegment = { op: DiffOp; text: string };
@@ -36,6 +36,12 @@ export type WorkflowDetail = {
   triggerStage: string | null;
   /** «Solo al inicio» (29-sep-2026). Ausente en el historial anterior = En cualquier momento. */
   triggerStartOnly?: boolean;
+  /** Tercera opción (29-sep-2026): false = solo la palabra clave es al inicio. Ausente = estricto. */
+  triggerStartOnlyAgent?: boolean;
+  /** «Máximo de envíos por chat» (29-sep-2026). Ausente o null = sin límite. */
+  maxSendsPerChat?: number | null;
+  /** «El workflow es la respuesta» (29-sep-2026). Ausente = No. */
+  isAnswer?: boolean;
   steps: WorkflowDetailStep[];
 };
 
@@ -296,8 +302,12 @@ export function diffWorkflow(before: WorkflowDetail | null, after: WorkflowDetai
   if (stage(b) !== stage(a)) triggers.push(valueLine("Al entrar a la etapa", stage(b), stage(a)));
   const agent = (w: WorkflowDetail | null) => (w ? yesNo(w.triggerAgent) : null);
   if (agent(b) !== agent(a)) triggers.push(valueLine("Lo usa el agente", agent(b), agent(a)));
-  const when = (w: WorkflowDetail | null) => (w ? startOnlyLabel(w.triggerStartOnly) : null);
+  const when = (w: WorkflowDetail | null) => (w ? START_SCOPE_LABEL[startScopeOf(w)] : null);
   if (when(b) !== when(a)) triggers.push(valueLine("Cuándo se dispara", when(b), when(a)));
+  const max = (w: WorkflowDetail | null) => (w ? maxSendsLabel(w.maxSendsPerChat) : null);
+  if (max(b) !== max(a)) triggers.push(valueLine("Máximo por chat", max(b), max(a)));
+  const answer = (w: WorkflowDetail | null) => (w ? yesNo(Boolean(w.isAnswer)) : null);
+  if (answer(b) !== answer(a)) triggers.push(valueLine("El workflow es la respuesta", answer(b), answer(a)));
   if (triggers.length) blocks.push({ title: "Disparadores", tag: tagOf(b, a), lines: triggers });
 
   // Pasos: alineados por contenido; un quitado seguido de un agregado del MISMO tipo es

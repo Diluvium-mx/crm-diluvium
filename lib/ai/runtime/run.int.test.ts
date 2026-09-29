@@ -1120,10 +1120,31 @@ describe.skipIf(!TEST_DATABASE_URL)("runtime del Agente IA (Postgres real)", () 
   });
 
   // ── Fase D reestructurada (24-sep-2026): el agente decide solo; acciones internas ──
-  async function wf(slug: string, steps: Record<string, unknown>[], opts: { enabled?: boolean } = {}) {
+  async function wf(
+    slug: string,
+    steps: Record<string, unknown>[],
+    opts: { enabled?: boolean; isAnswer?: boolean; triggerStartOnly?: boolean; triggerStartOnlyAgent?: boolean; maxSendsPerChat?: number | null } = {},
+  ) {
     const id = `wf_${slug}`;
     type Step = import("@/lib/db/schema/automation").WorkflowStepPayload;
-    await db.insert(s.workflows).values({ id, organizationId: ORG, slug, name: slug, agentDescription: `Cuándo usar ${slug}.`, enabled: opts.enabled ?? true, isSystem: true, triggerAgent: true, triggerKeywords: [], triggerCommand: null, triggerStage: null, position: 0 });
+    await db.insert(s.workflows).values({
+      id,
+      organizationId: ORG,
+      slug,
+      name: slug,
+      agentDescription: `Cuándo usar ${slug}.`,
+      enabled: opts.enabled ?? true,
+      isSystem: true,
+      triggerAgent: true,
+      triggerKeywords: [],
+      triggerCommand: null,
+      triggerStage: null,
+      position: 0,
+      isAnswer: opts.isAnswer ?? false,
+      triggerStartOnly: opts.triggerStartOnly ?? false,
+      triggerStartOnlyAgent: opts.triggerStartOnlyAgent ?? true,
+      maxSendsPerChat: opts.maxSendsPerChat ?? null,
+    });
     await db.insert(s.workflowSteps).values(steps.map((payload, position) => ({ id: `${id}_${position}`, organizationId: ORG, workflowId: id, position, kind: (payload as Step).kind, payload: payload as unknown as Step })));
     return id;
   }
@@ -1163,24 +1184,28 @@ describe.skipIf(!TEST_DATABASE_URL)("runtime del Agente IA (Postgres real)", () 
     await db.insert(s.workflowRuns).values({ id, organizationId: ORG, workflowId, conversationId: CONV, contactId: CONTACT, trigger, status: "queued", triggerMessageId: trigger === "command" ? null : triggerMessageId, attempts: 0 });
   }
 
-  it("pregunta duplicada: el workflow por palabra clave que TERMINA EN PREGUNTA contesta el mensaje; el agente espera a que termine y no contesta encima", async () => {
+  it("«El workflow es la respuesta» por palabra clave: su último mensaje contesta el mensaje; el agente espera a que termine y no contesta encima", async () => {
     const m1 = await msg({ direction: "in", body: "Quiero más información", at: ago(40_000) });
-    const wfId = await wf("informacion", [
-      { kind: "send_text", text: "Claro, es una barrera que se coloca en 10 minutos." },
-      { kind: "send_text", text: "Ahorita tenemos cualquier tamaño en $5,500 con envío gratis" },
-      { kind: "send_text", text: PREGUNTA },
-    ]);
+    const wfId = await wf(
+      "informacion",
+      [
+        { kind: "send_text", text: "Claro, es una barrera que se coloca en 10 minutos." },
+        { kind: "send_text", text: "Ahorita tenemos cualquier tamaño en $5,500 con envío gratis" },
+        { kind: "send_text", text: PREGUNTA },
+      ],
+      { isAnswer: true },
+    );
     await keywordRun("run_info", wfId, m1);
     // Corrida en camino: el agente no llama al modelo, vuelve a mirar en 5 s.
     const early = makeDeps({ brain: [PREGUNTA] });
-    expect(await run.runAgent(JOB, early.deps)).toEqual({ kind: "reschedule", delayMs: run.KEYWORD_QUESTION_POLL_MS, reason: "esperando_workflow_con_pregunta" });
+    expect(await run.runAgent(JOB, early.deps)).toEqual({ kind: "reschedule", delayMs: run.ANSWER_RUN_POLL_MS, reason: "esperando_workflow_respuesta" });
     expect(early.calls).toHaveLength(0);
-    // Sale el workflow completo; su pregunta queda como respuesta hasta "Quiero más información".
+    // Sale el workflow completo; su pregunta contesta SOLO "Quiero más información".
     const zernio = fakeZernio();
     expect(await executor.executeWorkflowRun("run_info", execDeps(zernio))).toBe("done");
     expect(zernio.delivered).toEqual(["Claro, es una barrera que se coloca en 10 minutos.", "Ahorita tenemos cualquier tamaño en $5,500 con envío gratis", PREGUNTA]);
     const pregunta = (await agentOuts()).find((m) => m.body === PREGUNTA)!;
-    expect(pregunta.metadata).toMatchObject({ respondeHasta: expect.any(String) });
+    expect(pregunta.metadata).toMatchObject({ contestaA: m1 });
     // Nada pendiente: el agente no contesta (ni repite ni parafrasea la pregunta).
     const late = makeDeps({ brain: [PREGUNTA] });
     expect(await run.runAgent(JOB, late.deps)).toEqual({ kind: "noop", reason: "sin_pendientes" });
@@ -1193,10 +1218,14 @@ describe.skipIf(!TEST_DATABASE_URL)("runtime del Agente IA (Postgres real)", () 
   it("pregunta duplicada: lo que el cliente escribió DESPUÉS del mensaje que disparó el workflow sigue pendiente y el agente lo contesta", async () => {
     const m1 = await msg({ direction: "in", body: "Precio", at: ago(40_000) });
     await msg({ direction: "in", body: "¿hacen envíos a Monterrey?", at: ago(35_000) });
-    const wfId = await wf("precio_2", [
-      { kind: "send_text", text: "Ahorita tenemos cualquier tamaño en $5,500 con envío gratis." },
-      { kind: "send_text", text: PREGUNTA },
-    ]);
+    const wfId = await wf(
+      "precio_2",
+      [
+        { kind: "send_text", text: "Ahorita tenemos cualquier tamaño en $5,500 con envío gratis." },
+        { kind: "send_text", text: PREGUNTA },
+      ],
+      { isAnswer: true },
+    );
     await keywordRun("run_precio", wfId, m1);
     const zernio = fakeZernio();
     expect(await executor.executeWorkflowRun("run_precio", execDeps(zernio))).toBe("done");
@@ -1270,13 +1299,132 @@ describe.skipIf(!TEST_DATABASE_URL)("runtime del Agente IA (Postgres real)", () 
     expect(Object.keys(second.calls.find((c) => c.kind === "cerebro")!.input.tools ?? {})).not.toContain("wf_precio_2");
   });
 
-  it("pregunta duplicada: un workflow por palabra clave que NO termina en pregunta sigue como antes: el agente no la espera y contesta el resto", async () => {
+  it("sin «El workflow es la respuesta» el agente no espera a la corrida por palabra clave y contesta el mismo mensaje, AUNQUE termine en pregunta (la casilla reemplazó a la regla automática)", async () => {
     const m1 = await msg({ direction: "in", body: "me pasas la tabla y el precio?", at: ago(40_000) });
-    const wfId = await wf("tabla_sin_pregunta", [{ kind: "send_text", text: "¿Le mando la tabla? Aquí está 🙌" }]);
+    const wfId = await wf("tabla_con_pregunta", [{ kind: "send_text", text: "Aquí está la tabla. ¿Cuánto mide su entrada?" }]);
     await keywordRun("run_tabla", wfId, m1);
-    // No termina en pregunta: el agente no espera a la corrida.
     const { deps } = makeDeps({ brain: ["Cuesta $5,500 MXN."] });
     expect(await run.runAgent(JOB, deps)).toEqual({ kind: "sent", bubbles: 1 });
+    // Y al terminar, su último mensaje no queda marcado como respuesta.
+    const zernio = fakeZernio();
+    expect(await executor.executeWorkflowRun("run_tabla", execDeps(zernio))).toBe("done");
+    expect((await agentOuts()).find((m) => m.body === "Aquí está la tabla. ¿Cuánto mide su entrada?")?.metadata ?? {}).not.toHaveProperty("contestaA");
+  });
+
+  it("«El workflow es la respuesta» AUNQUE no termine en pregunta (la Tabla): el agente espera y después no contesta encima", async () => {
+    const m1 = await msg({ direction: "in", body: "¿Qué medidas manejan?", at: ago(40_000) });
+    const wfId = await wf("tabla_tamanos_estandar", [{ kind: "wait", seconds: 18 }, { kind: "send_text", text: "Aquí le comparto una foto de los tamaños" }], { isAnswer: true });
+    await keywordRun("run_tabla", wfId, m1);
+    expect((await run.runAgent(JOB, makeDeps({ brain: ["Tenemos de 69 a 120 cm."] }).deps)).kind).toBe("reschedule");
+    expect(await executor.executeWorkflowRun("run_tabla", execDeps(fakeZernio()))).toBe("done");
+    const late = makeDeps({ brain: ["Tenemos de 69 a 120 cm."] });
+    expect(await run.runAgent(JOB, late.deps)).toEqual({ kind: "noop", reason: "sin_pendientes" });
+    expect(late.calls).toHaveLength(0);
+  });
+
+  it("bug de la ráfaga (29-sep): «¿Cuánto tarda el envío?» + «Precio» → «Precio 2» contesta SOLO «Precio»; el agente contesta lo del envío", async () => {
+    const m1 = await msg({ direction: "in", body: "¿Cuánto tarda el envío?", at: ago(42_000) });
+    const m2 = await msg({ direction: "in", body: "Precio", at: ago(40_000) });
+    const wfId = await wf(
+      "precio_2",
+      [
+        { kind: "send_text", text: "Ahorita tenemos cualquier tamaño en $5,500 con envío gratis." },
+        { kind: "send_text", text: PREGUNTA },
+      ],
+      { isAnswer: true },
+    );
+    await keywordRun("run_precio", wfId, m2);
+    // Mientras corre, el agente espera (el disparador está entre los pendientes).
+    expect((await run.runAgent(JOB, makeDeps({ brain: ["x"] }).deps)).kind).toBe("reschedule");
+    expect(await executor.executeWorkflowRun("run_precio", execDeps(fakeZernio()))).toBe("done");
+    // Lo anterior de la ráfaga sigue pendiente: el barrido lo ve y el agente lo contesta.
+    expect((await sweep.findOrphanConversations(new Date(Date.now() + 2 * 60_000))).map((c) => c.conversationId)).toContain(CONV);
+    const { deps } = makeDeps({ brain: ["El envío tarda de 3 a 5 días hábiles."] });
+    expect(await run.runAgent(JOB, deps)).toEqual({ kind: "sent", bubbles: 1 });
+    // Lo que atendió el agente fue "¿Cuánto tarda el envío?" (el último pendiente), no "Precio".
+    expect((await usage()).find((u) => u.stage === "cerebro")?.messageId).toBe(m1);
+    expect((await agentOuts()).map((m) => m.body)).toEqual(["Ahorita tenemos cualquier tamaño en $5,500 con envío gratis.", PREGUNTA, "El envío tarda de 3 a 5 días hábiles."]);
+  });
+
+  it("solo al inicio POR PALABRA CLAVE (la Tabla): el Agente IA conserva la herramienta después de contestar", async () => {
+    await msg({ direction: "in", body: "hola", at: ago(40_000) });
+    await wf("tabla_tamanos_estandar", [{ kind: "send_text", text: "tabla" }], { triggerStartOnly: true, triggerStartOnlyAgent: false });
+    expect((await run.runAgent(JOB, makeDeps({ brain: ["¡Hola! ¿En qué le ayudo?"] }).deps)).kind).toBe("sent");
+    await msg({ direction: "in", body: "¿qué medidas manejan?", at: new Date() });
+    const second = makeDeps({ brain: ["Se la comparto."] });
+    expect((await run.runAgent(JOB, second.deps)).kind).toBe("sent");
+    expect(Object.keys(second.calls.find((c) => c.kind === "cerebro")!.input.tools ?? {})).toContain("wf_tabla_tamanos_estandar");
+  });
+
+  // ── «El workflow es la respuesta» como herramienta (29-sep-2026, dueño: «Depende») ──
+  it("herramienta «es la respuesta» que trae TEXTOS: el texto del modelo no sale; sale el workflow y su último mensaje contesta lo que el agente leyó", async () => {
+    const m1 = await msg({ direction: "in", body: "hola, ¿qué precio tiene?", at: ago(40_000) });
+    const wfId = await wf(
+      "precio_2",
+      [
+        { kind: "send_text", text: "Ahorita tenemos cualquier tamaño en $5,500 con envío gratis." },
+        { kind: "send_text", text: PREGUNTA },
+      ],
+      { isAnswer: true },
+    );
+    const zernio = fakeZernio();
+    const { deps } = makeDeps({ brain: ["Cuesta $5,500 MXN con envío gratis."], toolCalls: [{ toolName: "wf_precio_2", input: {} }] }, zernio);
+    expect(await run.runAgent(JOB, deps)).toEqual({ kind: "sent", bubbles: 0 });
+    expect(zernio.delivered).toEqual([]);
+    const [r] = await runs();
+    expect(r).toMatchObject({ workflowId: wfId, trigger: "agent", status: "queued", triggerMessageId: m1 });
+    expect((await usage()).find((u) => u.stage === "cerebro")?.error).toContain("el workflow es la respuesta");
+    // Mientras la corrida va en camino, un mensaje nuevo espera (lo leído aún no queda contestado).
+    await msg({ direction: "in", body: "¿y hacen envíos?", at: ago(5_000) });
+    expect((await run.runAgent(JOB, makeDeps({ brain: ["x"] }).deps)).kind).toBe("reschedule");
+    expect(await executor.executeWorkflowRun(r.id, execDeps(zernio))).toBe("done");
+    expect(zernio.delivered).toEqual(["Ahorita tenemos cualquier tamaño en $5,500 con envío gratis.", PREGUNTA]);
+    expect((await agentOuts()).find((m) => m.body === PREGUNTA)!.metadata).toMatchObject({ respondeHasta: expect.any(String) });
+    // Ya solo queda pendiente lo nuevo.
+    const after = makeDeps({ brain: ["Sí, a todo México."] }, zernio);
+    expect(await run.runAgent(JOB, after.deps)).toEqual({ kind: "sent", bubbles: 1 });
+    expect(zernio.delivered.at(-1)).toBe("Sí, a todo México.");
+  });
+
+  it("herramienta «es la respuesta» que solo manda ARCHIVOS (la Tabla): el Agente IA sí escribe su frase y después sale la imagen", async () => {
+    await msg({ direction: "in", body: "¿me pasa otra vez la tabla?", at: ago(40_000) });
+    const wfId = await wf("tabla_tamanos_estandar", [{ kind: "send_media", assetId: "a_tabla", title: "Tabla" }], { isAnswer: true });
+    const zernio = fakeZernio();
+    const { deps } = makeDeps({ brain: ["Claro, aquí se la comparto de nuevo."], toolCalls: [{ toolName: "wf_tabla_tamanos_estandar", input: {} }] }, zernio);
+    expect(await run.runAgent(JOB, deps)).toEqual({ kind: "sent", bubbles: 1 });
+    expect(zernio.delivered).toEqual(["Claro, aquí se la comparto de nuevo."]);
+    expect((await runs()).map((r) => [r.workflowId, r.trigger, r.status])).toEqual([[wfId, "agent", "queued"]]);
+  });
+
+  it("herramienta «es la respuesta» cuyo workflow NO arranca: el vendedor ve el texto que no salió", async () => {
+    await msg({ direction: "in", body: "¿precio?", at: ago(40_000) });
+    await wf("precio_2", [{ kind: "send_text", text: "Ahorita tenemos cualquier tamaño en $5,500." }], { isAnswer: true });
+    const { deps } = makeDeps({ brain: ["Cuesta $5,500 MXN."], toolCalls: [{ toolName: "wf_precio_2", input: {} }] });
+    deps.startWorkflow = async () => ({ runId: "r_x", status: "skipped", reason: "workflow_deshabilitado" });
+    expect(await run.runAgent(JOB, deps)).toEqual({ kind: "sent", bubbles: 0 });
+    expect((await notices()).map((n) => n.body).join("\n")).toContain("«Cuesta $5,500 MXN.»");
+  });
+
+  // ── «Máximo de envíos por chat» (29-sep-2026) ───────────────────────────────
+  it("máximo por chat: el agente sabe cuántas veces ya salió la foto (1 de 2) y, al llegar a 2, la herramienta ya no se ofrece", async () => {
+    const KEY = "org/rt/library/a_tabla-tabla.png";
+    await db.insert(s.mediaAssets).values({ id: "a_tabla", organizationId: ORG, kind: "image", title: "Tabla", fileName: "tabla.png", mimeType: "image/png", bytes: 3, storageKey: KEY });
+    await wf("tabla_tamanos_estandar", [{ kind: "send_media", assetId: "a_tabla", title: "Tabla" }], { maxSendsPerChat: 2 });
+    const photo = (at: Date) => msg({ direction: "out", body: "Estos son los tamaños que manejamos", at, source: "ai_agent", attachments: [{ type: "image", url: "https://x", storageKey: KEY }] });
+    await photo(ago(60_000)); // dentro de «Precio 2»: la foto cuenta igual
+    await msg({ direction: "in", body: "¿me explica las medidas?", at: ago(40_000) });
+    const first = makeDeps({ brain: ["Claro."] });
+    expect((await run.runAgent(JOB, first.deps)).kind).toBe("sent");
+    const c1 = first.calls.find((c) => c.kind === "cerebro")!;
+    expect(Object.keys(c1.input.tools ?? {})).toContain("wf_tabla_tamanos_estandar");
+    expect(JSON.stringify(c1.input.messages)).toContain("se ha enviado 1 de 2 veces en este chat");
+    await photo(ago(20_000));
+    await msg({ direction: "in", body: "¿me la pasa otra vez?", at: new Date() });
+    const second = makeDeps({ brain: ["Es la foto de arriba."] });
+    expect((await run.runAgent(JOB, second.deps)).kind).toBe("sent");
+    const c2 = second.calls.find((c) => c.kind === "cerebro")!;
+    expect(Object.keys(c2.input.tools ?? {})).not.toContain("wf_tabla_tamanos_estandar");
+    expect(JSON.stringify(c2.input.messages)).toContain("ya se envió 2 de 2 veces en este chat: ya no se puede volver a mandar");
   });
 
   it("media por herramienta: corrida 'agent' DESPUÉS del texto; palabra clave + herramienta del mismo workflow no se duplica; fijar_cotizacion solo con el total dicho por el agente", async () => {
