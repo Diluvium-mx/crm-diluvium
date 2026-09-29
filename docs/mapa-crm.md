@@ -195,6 +195,11 @@ Filtro de temperatura (25) abierto, con 🔥 elegido: la lista deja solo los cal
 
 ![Filtro de temperatura de la Bandeja](mapa-crm/02-bandeja-filtro.png)
 
+Lupa (26) prendida con «factura»: solo quedan los chats con la palabra, cada uno con su círculo amarillo (27) junto al
+naranja, y el chat abierto la resalta y salta a la coincidencia más reciente con la barra «1 de 2» (28).
+
+![Lupa: buscar en los chats de la Bandeja](mapa-crm/02-bandeja-lupa.png)
+
 | # | Nombre oficial | Qué hace | Quién lo ve |
 |---|---|---|---|
 | 1 | **Ocultar lista** | Esconde o muestra la lista de chats; se recuerda en esa computadora. | Todos |
@@ -221,9 +226,9 @@ Filtro de temperatura (25) abierto, con 🔥 elegido: la lista deja solo los cal
 | 22 | **Ocultar panel de contacto** | Esconde o muestra el Detalle; se recuerda en esa computadora. | Todos |
 | 23 | **Menú del clic derecho** | Sobre una fila (en celular, dejándola presionada): **Marcar como no leído** (pone el círculo naranja, 6, para dejarla pendiente; si ese chat estaba abierto, se cierra) o **Marcar como leído** (lo quita, y en el Embudo también quita el azul de la tarjeta). Es para todo el equipo; el círculo se quita solo al abrir el chat o al contestar. | Todos |
 | 25 | **Filtro de temperatura** (ícono a la derecha del buscador) | Menú corto: **Todas · 🔥 Caliente · 🧊 Frío · ⏳ En espera · ○ Sin asignar**, una a la vez. Con algo elegido el ícono se pinta naranja y muestra el emoji; la **×** de al lado lo quita. Se suma a la pestaña (3) y a la búsqueda. No se recuerda al recargar. Desde el 28-sep-2026. | Todos |
-| 26 | **Lupa: buscar en los chats** (entre el buscador y el filtro) | Prendida se pinta de amarillo (y el borde del buscador): el buscador (2) busca una palabra **dentro de los chats** de todos los contactos, sin acentos, desde 3 letras (con menos: «Escribe al menos 3 letras»). Solo quedan los chats con la palabra y la vista previa (4) muestra el pedazo donde aparece, resaltado. Se suma a la pestaña (3) y al filtro (25). Otro clic la apaga y vuelve a buscar por nombre o teléfono. No se recuerda al recargar. No está en la captura. Desde el 29-sep-2026. | Todos |
-| 27 | **Círculo amarillo** | Con la lupa (26): en cuántos mensajes de ese chat aparece la palabra. Va junto al círculo naranja (6), que no cambia. No está en la captura. | Todos |
-| 28 | **Palabra resaltada y «1 de N»** (en el chat) | Con la lupa (26): la palabra va resaltada en amarillo en las burbujas y transcripciones, el chat salta a la coincidencia **más reciente** (burbuja con borde amarillo; si es vieja, carga los mensajes anteriores hasta llegar) y la barra de arriba del chat dice «palabra · 1 de 3» con **↑** (anterior) y **↓** (siguiente). No está en la captura. | Todos |
+| 26 | **Lupa: buscar en los chats** (entre el buscador y el filtro) | Prendida se pinta de amarillo (y el borde del buscador): el buscador (2) busca una palabra **dentro de los chats** de todos los contactos, sin acentos, desde 3 letras (con menos: «Escribe al menos 3 letras»). Solo quedan los chats con la palabra y la vista previa (4) muestra el pedazo donde aparece, resaltado. Se suma a la pestaña (3) y al filtro (25). Otro clic la apaga y vuelve a buscar por nombre o teléfono. No se recuerda al recargar. Apagada en la primera captura; prendida en la de la lupa. Desde el 29-sep-2026. | Todos |
+| 27 | **Círculo amarillo** | Con la lupa (26): en cuántos mensajes de ese chat aparece la palabra. Va junto al círculo naranja (6), que no cambia. En la captura de la lupa. | Todos |
+| 28 | **Palabra resaltada y «1 de N»** (en el chat) | Con la lupa (26): la palabra va resaltada en amarillo en las burbujas y transcripciones, el chat salta a la coincidencia **más reciente** (burbuja con borde amarillo; si es vieja, carga los mensajes anteriores hasta llegar) y la barra de arriba del chat dice «palabra · 1 de 3» con **↑** (anterior) y **↓** (siguiente). En la captura de la lupa. | Todos |
 | 24 | **Franja del Agente IA** (arriba de todo, solo si aplica) | Si el Agente IA tiene horario: «El Agente IA solo contesta mié–jue 20:00–6:00 (ahora está fuera de horario)» en ámbar, o «(ahora sí está contestando)» en gris; se actualiza sola cada minuto. Si el canal está Apagado: «El Agente IA está apagado en WhatsApp Diluvium» en rojo. Con 24/7 y Encendido no sale. No está en la captura. | Todos |
 
 **Lo cambias tú desde la pantalla:** temperatura, estrella, leído / no leído (clic derecho), etapa y todo el
@@ -481,6 +486,16 @@ Filtro (29) abierto con 🔥 y ⭐ Destacado: cada columna deja solo las tarjeta
 
 ![Filtro del Embudo](mapa-crm/06-embudo-filtro.png)
 
+Lupa (30) prendida con «factura»: cada columna deja solo las tarjetas cuyo chat tiene la palabra, con el círculo amarillo
+(31) junto al naranja; la tarjeta amarilla de Sofía muestra que el círculo (sólido, con borde) no se confunde con su fondo.
+La columna sin coincidencias dice «Ninguno con esta búsqueda».
+
+![Lupa: buscar en los chats del Embudo](mapa-crm/06-embudo-lupa.png)
+
+Pop-up abierto desde esa tarjeta con la lupa prendida (32): la palabra resaltada y la barra «1 de 2».
+
+![Palabra resaltada en el pop-up del Embudo](mapa-crm/06-embudo-popup-lupa.png)
+
 Temperatura en el pop-up (Detalle › 4): arriba la temperatura, abajo de la línea ⭐ Destacado, cada una por su lado.
 
 ![Temperatura y Destacado en el pop-up del Embudo](mapa-crm/06-embudo-temperatura.png)
@@ -523,9 +538,9 @@ WhatsApp Web, o con una plantilla desde el CRM.
 | 27 | **"Este número también está en el contacto «…»"** · **Abrir ese contacto** | Hay otro contacto (más antiguo) con ese número: el chat quedaría en ese, así que se manda desde ahí. | Todos |
 | 28 | **Aviso de Meta** (pop-up grande) | Si WhatsApp (Meta) rechaza la plantilla: título, **Por qué pasó**, **Qué hacer** y **Entendido** (el mismo de Mensajes rápidos › 31). | Todos |
 | 29 | **Filtro** (ícono a la derecha del buscador) | Menú corto: **Temperatura** (Todas · 🔥 · 🧊 · ⏳ · ○ Sin asignar, una a la vez) y, aparte, **⭐ Destacado** (la marca del contacto). Se pueden combinar (🔥 + Destacado) y se suman a la búsqueda. Con algo elegido el ícono se pinta naranja y muestra los emojis; la **×** lo quita. **Las columnas no cambian:** mismas etapas, orden, colores y arrastre; solo quedan las tarjetas que cumplen, cada columna cuenta las suyas y la vacía dice «Ninguno con este filtro». Una tarjeta que deja de cumplir (p. ej. le cambias la temperatura en el pop-up) se va del tablero. No se recuerda al recargar. Desde el 28-sep-2026. | Todos |
-| 30 | **Lupa: buscar en los chats** (entre el buscador y el filtro) | La misma de la Bandeja (26): prendida y amarilla, el buscador (1) busca una palabra **dentro de los chats** de todos los contactos, desde 3 letras. **Las columnas no cambian:** solo quedan las tarjetas cuyo chat tiene la palabra (cada columna cuenta las suyas; la vacía dice «Ninguno con esta búsqueda») y se suma al filtro (29). Mientras busca, junto al título dice «Buscando en los chats…». No se recuerda al recargar. No está en la captura. Desde el 29-sep-2026. | Todos |
-| 31 | **Círculo amarillo** (tarjeta) | Con la lupa (30): en cuántos mensajes de sus chats aparece la palabra, junto al círculo naranja (6). Es amarillo **sólido con borde**, distinto del fondo claro de la tarjeta amarilla (3). No está en la captura. | Todos |
-| 32 | **Palabra resaltada y «1 de N»** (pop-up) | Al abrir la tarjeta con la lupa prendida, el chat del pop-up resalta la palabra en amarillo, salta a la coincidencia más reciente y la recorre con ↑ ↓, igual que la Bandeja (28). No está en la captura. | Todos |
+| 30 | **Lupa: buscar en los chats** (entre el buscador y el filtro) | La misma de la Bandeja (26): prendida y amarilla, el buscador (1) busca una palabra **dentro de los chats** de todos los contactos, desde 3 letras. **Las columnas no cambian:** solo quedan las tarjetas cuyo chat tiene la palabra (cada columna cuenta las suyas; la vacía dice «Ninguno con esta búsqueda») y se suma al filtro (29). Mientras busca, junto al título dice «Buscando en los chats…». No se recuerda al recargar. Apagada en la primera captura; prendida en la de la lupa. Desde el 29-sep-2026. | Todos |
+| 31 | **Círculo amarillo** (tarjeta) | Con la lupa (30): en cuántos mensajes de sus chats aparece la palabra, junto al círculo naranja (6). Es amarillo **sólido con borde**, distinto del fondo claro de la tarjeta amarilla (3). En la captura de la lupa. | Todos |
+| 32 | **Palabra resaltada y «1 de N»** (pop-up) | Al abrir la tarjeta con la lupa prendida, el chat del pop-up resalta la palabra en amarillo, salta a la coincidencia más reciente y la recorre con ↑ ↓, igual que la Bandeja (28). En la captura del pop-up con la lupa. | Todos |
 
 **Lo cambias tú desde la pantalla:** contactos nuevos (20) y el primer mensaje a quien no tiene chat (25–26), la etapa (arrastrando la tarjeta), leído / no leído (clic derecho o **Marcar como leído**, 19), las
 columnas (lápiz, 17) y todo lo del chat y el Detalle en el pop-up. Los cambios a las columnas (crear, renombrar, borrar,
