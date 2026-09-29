@@ -74,6 +74,7 @@ describe.skipIf(!TEST_DATABASE_URL)("bandeja: lecturas y escrituras (Postgres re
       lastName: opts.lastName ?? null,
       phoneE164: opts.phone ?? `+52166800000${seq}`,
       sourceChannel: opts.sourceChannel ?? "whatsapp",
+      destacado: opts.starred ?? false,
     });
     await db.insert(s.conversations).values({
       id: convId,
@@ -82,7 +83,6 @@ describe.skipIf(!TEST_DATABASE_URL)("bandeja: lecturas y escrituras (Postgres re
       channelId: `ch_${org}`,
       lastMessageAt: new Date(opts.lastMessageAt),
       unreadCount: opts.unread ?? 0,
-      isStarred: opts.starred ?? false,
       windowExpiresAt: opts.windowExpiresAt === undefined ? new Date(Date.now() + 3600_000) : opts.windowExpiresAt ? new Date(opts.windowExpiresAt) : null,
     });
     return { contactId, convId };
@@ -347,16 +347,17 @@ describe.skipIf(!TEST_DATABASE_URL)("bandeja: lecturas y escrituras (Postgres re
     expect(await unreadOf(newer)).toBe(0);
   });
 
-  it("setConversationStarred y getConversation con anuncio; aislamiento entre organizaciones", async () => {
+  it("Destacado del contacto en la fila y el detalle; getConversation con anuncio; aislamiento entre organizaciones", async () => {
     const { convId, contactId } = await seedConversation({ lastMessageAt: "2026-09-18T10:00:00Z" });
     await db
       .update(s.conversations)
       .set({ adReferral: { headline: "Anuncio", source_url: "https://fb.com/a" }, adEntryAt: new Date("2026-09-24T18:00:00Z") })
       .where(eq(s.conversations.id, convId));
 
-    expect(await q.setConversationStarredForOrg(ORG_A, convId, true)).toBe(true);
-    // Otra organización no puede tocar ni ver la conversación.
-    expect(await q.setConversationStarredForOrg(ORG_B, convId, true)).toBe(false);
+    // Destacado vive en el contacto (0048): la fila y el detalle lo leen de ahí.
+    await db.update(s.contacts).set({ destacado: true }).where(eq(s.contacts.id, contactId));
+    expect((await q.listConversationsForOrg(ORG_A, { filter: "starred" })).items.map((i) => [i.id, i.isStarred])).toEqual([[convId, true]]);
+    // Otra organización no puede ver la conversación.
     expect(await q.getConversationForOrg(ORG_B, convId)).toBeNull();
     expect(await q.listMessagesForOrg(ORG_B, convId)).toBeNull();
 

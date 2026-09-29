@@ -1,9 +1,9 @@
 "use client";
 
 import { useDraggable } from "@dnd-kit/core";
-import { Mail, MailOpen, Star } from "lucide-react";
+import { Mail, MailOpen } from "lucide-react";
 import type { BoardContact } from "../_data/types";
-import { TEMPERATURE_EMOJI, TEMPERATURE_LABELS, getContactFullName } from "../_data/types";
+import { DESTACADO_EMOJI, TEMPERATURES, TEMPERATURE_EMOJI, TEMPERATURE_LABELS, getContactFullName } from "../_data/types";
 import { ContactAvatar } from "./contact-avatar";
 import { formatPhone } from "@/lib/phone-format";
 import { canMarkRead, funnelTone, unreadBadge, type FunnelSignal } from "@/lib/contacts/funnel-tone";
@@ -26,6 +26,8 @@ const TONE_LABEL = {
 export function ContactCardContent({ contact, signal }: { contact: BoardContact; signal?: FunnelSignal }) {
   const unread = unreadBadge(signal?.unread);
   const tone = funnelTone(signal);
+  // ⭐ ya no es temperatura (0048): un valor viejo no se pinta; Destacado va aparte, al lado.
+  const temperature = contact.temperature && TEMPERATURES.includes(contact.temperature) ? contact.temperature : null;
   return (
     <div className="flex w-full items-center gap-3 rounded-md border bg-card p-3 text-left text-sm shadow-sm transition-colors hover:border-foreground/30">
       <ContactAvatar contact={contact} />
@@ -38,7 +40,7 @@ export function ContactCardContent({ contact, signal }: { contact: BoardContact;
         <PhoneLocation phone={contact.phoneE164} />
         {tone && <span className="sr-only">{TONE_LABEL[tone]}</span>}
       </div>
-      {(unread || contact.temperature || signal?.starred) && (
+      {(unread || temperature || contact.destacado) && (
         <div className="flex shrink-0 items-center gap-2">
           {unread && (
             <span
@@ -48,22 +50,20 @@ export function ContactCardContent({ contact, signal }: { contact: BoardContact;
               {unread}
             </span>
           )}
-          {/* Estrella de la Bandeja (Destacado del chat), chica; con temperatura ⭐ no se repite. */}
-          {signal?.starred && contact.temperature !== "destacado" && (
-            <Star
-              role="img"
-              aria-label="Destacado (estrella del chat)"
-              className="size-4 fill-brand-orange text-brand-orange"
-            />
-          )}
-          {contact.temperature && (
+          {temperature && (
             <span
               role="img"
-              aria-label={TEMPERATURE_LABELS[contact.temperature]}
-              title={TEMPERATURE_LABELS[contact.temperature]}
+              aria-label={TEMPERATURE_LABELS[temperature]}
+              title={TEMPERATURE_LABELS[temperature]}
               className="text-xl leading-none"
             >
-              {TEMPERATURE_EMOJI[contact.temperature]}
+              {TEMPERATURE_EMOJI[temperature]}
+            </span>
+          )}
+          {/* Destacado: marca aparte, al lado de la temperatura y del mismo tamaño. */}
+          {contact.destacado && (
+            <span role="img" aria-label="Destacado" title="Destacado" className="text-xl leading-none">
+              {DESTACADO_EMOJI}
             </span>
           )}
         </div>

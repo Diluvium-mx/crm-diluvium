@@ -37,7 +37,13 @@ export const TEMPERATURE_LABELS: Record<Temperature, string> = {
   destacado: "Destacado",
 };
 
-export const TEMPERATURES = Object.keys(TEMPERATURE_LABELS) as Temperature[];
+// Las que se pueden ASIGNAR (menús de la Bandeja y del Embudo). ⭐ ya no es temperatura
+// desde la 0048 (29-sep-2026): Destacado es la marca aparte `contacts.destacado`. El emoji
+// y la etiqueta de 'destacado' siguen arriba solo para que el tipo cubra todo el enum.
+export const TEMPERATURES: Temperature[] = ["caliente", "frio", "en_espera"];
+
+// Destacado (marca del contacto, combinable con la temperatura).
+export const DESTACADO_EMOJI = "⭐";
 
 export function getContactFullName(contact: Pick<Contact, "firstName" | "lastName">): string {
   return contact.lastName ? `${contact.firstName} ${contact.lastName}` : contact.firstName;

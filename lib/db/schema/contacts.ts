@@ -24,7 +24,9 @@ import { funnelStages } from "./funnel-stages";
 
 // Temperatura del contacto (interés/urgencia), independiente de la etapa.
 // Valores semánticos; el emoji vive en la UI (ver _data/types.ts):
-// caliente 🔥 · frio 🧊 · en_espera ⏳ · destacado ⭐
+// caliente 🔥 · frio 🧊 · en_espera ⏳. 'destacado' ya NO se asigna (0048, 29-sep-2026):
+// Destacado es la marca aparte `contacts.destacado`; el valor queda en el tipo de
+// Postgres solo porque un valor de enum no se puede quitar sin reescribir la tabla.
 export const contactTemperatureEnum = pgEnum("contact_temperature", [
   "caliente",
   "frio",
@@ -86,6 +88,10 @@ export const contacts = pgTable(
     stage: text("stage").default("inbox").notNull(),
     // Nullable a propósito: sin temperatura asignada hasta que el vendedor la fije.
     temperature: contactTemperatureEnum("temperature"),
+    // Destacado ⭐ (0048, 29-sep-2026, regla del dueño): marca del CONTACTO, aparte de la
+    // temperatura y combinable con ella (🔥 + ⭐). Es la estrella de la lista de la Bandeja y
+    // el ⭐ del Embudo: un solo dato para las dos pantallas.
+    destacado: boolean("destacado").default(false).notNull(),
     tieneInundaciones: contactInundacionesEnum("tiene_inundaciones"),
     nivelAguaCm: integer("nivel_agua_cm"),
     nivelAguaTexto: text("nivel_agua_texto"),
