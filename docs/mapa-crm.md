@@ -773,6 +773,7 @@ Los **workflows** (envíos de material), la **Biblioteca** de archivos y las **C
 | 43 | **Hecho** | Salió completo. | Todos |
 | 44 | **Omitido · motivo** | No salió y por qué (p. ej. agente pausado). | Todos |
 | 45 | **Falló · código** | Error al mandar, con el motivo en palabras simples. Si WhatsApp pidió esperar, la corrida **no falla**: espera su turno y sigue. Si el worker se reinició y el archivo había quedado fallido, la corrida se detiene y **no** mueve la etapa. | Todos |
+| 46 | **⧉ Copiar** (ícono junto a Restaurar predeterminados, 3) | Copia **todos** los workflows para pegarlos en una IA y pedir mejoras, igual que las FAQs: cada uno con un guion (sin números), si está encendido o apagado (y si le falta archivo), con qué se dispara (Agente IA, comando, palabras clave, etapa), **Cuándo lo usa el Agente IA** y sus pasos en orden con los textos completos. Al copiar, el ícono cambia a ✓ unos segundos. | Todos |
 
 **Lo cambias tú desde la pantalla:** crear, editar, prender, apagar, ordenar y probar workflows; restaurar los
 predeterminados; subir, renombrar y borrar archivos. Crear, editar, prender, apagar y borrar (y restaurar predeterminados)
@@ -786,7 +787,7 @@ quedan en **Agente IA › Historial** con quién lo hizo.
 **Agente IA aquí:** dispara los workflows que tienen 🤖 agente cuando la conversación coincide con **Cuándo usarlo**;
 en Corridas aparecen con disparador "Agente". Mientras manda uno, en el chat se ve "Agente IA enviando…".
 
-<sub>Para Code: ruta `/automatizacion`; `app/(app)/automatizacion/_components/` (`automatizacion-panel`, `workflow-editor`, `biblioteca-tab`, `labels`); `lib/workflows/`, `lib/actions/workflows.ts`, `lib/media-library/`; diseño `docs/fase-d-diseno.md` §10.</sub>
+<sub>Para Code: ruta `/automatizacion`; `app/(app)/automatizacion/_components/` (`automatizacion-panel`, `workflow-editor`, `biblioteca-tab`, `labels`); `lib/workflows/` (Copiar, 46 = `as-text.ts`), `lib/actions/workflows.ts`, `lib/media-library/`; diseño `docs/fase-d-diseno.md` §10.</sub>
 
 ---
 

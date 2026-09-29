@@ -18,6 +18,8 @@ import {
   type WorkflowView,
 } from "@/lib/actions/workflows";
 import type { MediaAssetView } from "@/lib/media-library/service";
+import { CopyButton } from "@/components/ui/copy-button";
+import { workflowsAsText } from "@/lib/workflows/as-text";
 import { useFunnelStages } from "../../_components/funnel-stages-provider";
 import { BibliotecaTab } from "./biblioteca-tab";
 import { RUN_STATUS_LABEL, SKIP_REASON_LABEL, STEP_ICON, stepSummary, TRIGGER_LABEL } from "./labels";
@@ -149,6 +151,15 @@ export function AutomatizacionPanel({
                     Secuencias de pasos que dispara el Agente IA, un comando del vendedor (<code className="text-brand-orange">/tabla</code>), una palabra clave del cliente o un cambio de etapa.
                   </p>
                   <div className="flex gap-2">
+                    {/* Solo el ícono (no estorba): copia TODOS los workflows, igual que las FAQs,
+                        para pegarlos en una IA (pedido del dueño, 28-sep-2026). */}
+                    {items.length > 0 && (
+                      <CopyButton
+                        iconOnly
+                        getText={() => workflowsAsText(items, labelOf)}
+                        title={`Copiar los ${items.length} workflows (pasos, textos y disparadores)`}
+                      />
+                    )}
                     <button type="button" onClick={() => void restore()} className="flex items-center gap-1.5 rounded-md border px-3 py-2 text-sm hover:bg-muted" title="Vuelve a crear los predeterminados que falten">
                       <RotateCcw className="size-4" aria-hidden="true" /> Restaurar predeterminados
                     </button>
