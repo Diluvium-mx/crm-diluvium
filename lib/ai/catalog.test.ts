@@ -44,6 +44,8 @@ describe("catálogo de modelos", () => {
     for (const id of [
       "claude-sonnet-5",
       "gpt-5.6-terra",
+      "gpt-6.1-sol",
+      "claude-sonnet-5-5",
       "claude-haiku-4-5",
       "gemini-3.8-flash",
       "grok-4.6",
@@ -51,6 +53,12 @@ describe("catálogo de modelos", () => {
     ]) {
       expect(cerebro).toContain(id);
     }
+  });
+
+  it("«Nuevo» solo en los modelos del 28/29-sep-2026 (Sonnet 5.5 y GPT-6.1 Sol)", () => {
+    expect(MODEL_CATALOG.filter((m) => "isNew" in m && m.isNew).map((m) => m.id)).toEqual(["gpt-6.1-sol", "claude-sonnet-5-5"]);
+    expect(getModel("claude-sonnet-5-5")?.providerModelId).toBe("claude-sonnet-5-5");
+    expect(getModel("gpt-6.1-sol")?.providerModelId).toBe("gpt-6.1-sol");
   });
 
   it("Qwen 3.7 Flash está marcado multimodal (verificado)", () => {
