@@ -38,9 +38,44 @@ export function missingMedia(steps: readonly StepPayload[]): string[] {
   return steps.flatMap((s) => (s.kind === "send_media" && !s.assetId ? [s.title] : []));
 }
 
-// «Solo al inicio» (29-sep-2026): el mismo texto en el editor, el historial y «Copiar».
-export function startOnlyLabel(startOnly: boolean | undefined): string {
-  return startOnly ? "Solo al inicio" : "En cualquier momento";
+// «¿Cuándo se dispara por palabra clave o por el Agente IA?» (29-sep-2026): tres opciones,
+// guardadas en dos columnas (trigger_start_only + trigger_start_only_agent).
+// - "siempre": en cualquier momento.
+// - "inicio": «Solo al inicio», regla estricta (palabra clave Y Agente IA; «Precio 2»).
+// - "inicio_palabra_clave": la palabra clave solo al inicio; el Agente IA cuando haga falta (Tabla).
+export const START_SCOPES = ["siempre", "inicio", "inicio_palabra_clave"] as const;
+export type StartScope = (typeof START_SCOPES)[number];
+
+// El historial anterior al 29-sep no trae la segunda columna: sin ella, «Solo al inicio» era estricto.
+export function startScopeOf(w: { triggerStartOnly?: boolean; triggerStartOnlyAgent?: boolean }): StartScope {
+  if (!w.triggerStartOnly) return "siempre";
+  return w.triggerStartOnlyAgent === false ? "inicio_palabra_clave" : "inicio";
+}
+
+export function startScopeFields(scope: StartScope): { triggerStartOnly: boolean; triggerStartOnlyAgent: boolean } {
+  return { triggerStartOnly: scope !== "siempre", triggerStartOnlyAgent: scope !== "inicio_palabra_clave" };
+}
+
+// El mismo texto en el editor, el historial y «Copiar».
+export const START_SCOPE_LABEL: Record<StartScope, string> = {
+  siempre: "En cualquier momento",
+  inicio: "Solo al inicio",
+  inicio_palabra_clave: "Solo al inicio por palabra clave; el Agente IA cuando haga falta",
+};
+
+// ¿«Solo al inicio» aplica a este disparador? El comando y la etapa de un vendedor salen siempre.
+export function startOnlyApplies(w: { triggerStartOnly: boolean; triggerStartOnlyAgent: boolean }, trigger: "agent" | "keyword" | "command" | "stage"): boolean {
+  if (!w.triggerStartOnly) return false;
+  if (trigger === "keyword") return true;
+  return trigger === "agent" && w.triggerStartOnlyAgent;
+}
+
+// «Máximo de envíos por chat» (29-sep-2026): 1–20; vacío = sin límite.
+export const MAX_SENDS_PER_CHAT = 20;
+export const maxSendsSchema = z.number().int().min(1, "El máximo por chat es de 1 en adelante.").max(MAX_SENDS_PER_CHAT, `El máximo por chat es ${MAX_SENDS_PER_CHAT}.`).nullable();
+export function maxSendsLabel(max: number | null | undefined): string {
+  if (!max) return "sin límite";
+  return max === 1 ? "1 vez" : `${max} veces`;
 }
 
 // ¿El paso manda algo al cliente por WhatsApp? (Los demás son internos.)
@@ -56,9 +91,9 @@ export function endsWithQuestion(text: string | null | undefined): boolean {
   return QUESTION_END_RE.test((text ?? "").trim());
 }
 
-// 28-sep-2026 (pregunta duplicada): un workflow por palabra clave cuyo ÚLTIMO paso le
-// pregunta algo al cliente (texto, o pie de la imagen/video) contesta el mensaje que lo
-// disparó; el Agente IA no contesta encima y espera la respuesta del cliente.
+// ¿El ÚLTIMO paso le pregunta algo al cliente (texto, o pie de la imagen/video)? Desde el
+// 29-sep-2026 ya no decide nada solo: el editor avisa si un workflow así no tiene marcada
+// «El workflow es la respuesta» (la casilla reemplazó a esta regla automática del 28-sep).
 export function endsWithQuestionStep(steps: readonly WorkflowStepPayload[]): boolean {
   const last = steps.at(-1);
   if (!last) return false;
@@ -147,4 +182,11 @@ export function parseCommand(message: string): string | null {
 // los pasos no cambia: solo se omite la pausa.
 export function waitMs(step: { kind: "wait"; seconds: number }, trigger: string): number {
   return trigger === "command" ? 0 : step.seconds * 1_000;
+}
+
+// Índice del ÚLTIMO paso que le manda algo al cliente (-1 si ninguno). «El workflow es la
+// respuesta»: ese mensaje es el que contesta (una espera al final no cuenta).
+export function lastSendIndex(steps: readonly WorkflowStepPayload[]): number {
+  for (let i = steps.length - 1; i >= 0; i--) if (steps[i].kind === "send_text" || steps[i].kind === "send_media") return i;
+  return -1;
 }

@@ -15,6 +15,9 @@ export type WorkflowFields = {
   triggerCommand: string | null;
   triggerStage: string | null;
   triggerStartOnly: boolean;
+  triggerStartOnlyAgent: boolean;
+  maxSendsPerChat: number | null;
+  isAnswer: boolean;
   steps: StepPayload[];
 };
 
