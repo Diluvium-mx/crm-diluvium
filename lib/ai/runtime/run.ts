@@ -79,7 +79,7 @@ import {
   type SavedReply,
 } from "./saved-reply";
 import { isWindowOpen } from "@/lib/messaging/rules";
-import { noDisponibleEstado, UNAVAILABLE_REPLY_TEXT } from "@/lib/messaging/unavailable";
+import { completedAfterConfirmation, noDisponibleEstado, UNAVAILABLE_REPLY_TEXT } from "@/lib/messaging/unavailable";
 import { buildModelMessages, fitHistory } from "./transcript";
 import { recordAiUsage } from "./usage";
 
@@ -453,7 +453,11 @@ export async function runAgent(job: { organizationId: string; conversationId: st
     const lastRead = pending.at(-1) ?? null;
     // Con respuesta guardada, su entrante cuenta como "atendido" (el plan existe): igual
     // se sigue para reenviarla.
-    if (!saved && lastRead && (await alreadyHandled(org, lastRead.id))) return { kind: "noop", reason: "ya_atendido" };
+    // El texto fijo del mensaje no disponible se guardó con el id de ESTA fila: si después
+    // llegó su contenido real, está pendiente (pendingInbound) y se contesta lo que dice.
+    if (!saved && lastRead && !completedAfterConfirmation(lastRead.metadata) && (await alreadyHandled(org, lastRead.id))) {
+      return { kind: "noop", reason: "ya_atendido" };
+    }
     // Las burbujas de la respuesta guardada no cuentan como "envío en camino": el
     // reenvío las retoma con su misma clave (sendAgentText).
     const savedIds = saved ? saved.bubbles.map((_, i) => bubbleMessageId(saved!.id, i)) : [];

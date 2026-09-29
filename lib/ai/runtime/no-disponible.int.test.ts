@@ -160,6 +160,27 @@ describe.skipIf(!TEST_DATABASE_URL)("Agente IA: primer mensaje no disponible (Po
     expect(delivered).toHaveLength(1);
   });
 
+  it("si el contenido real llega DESPUÉS del texto fijo, el Agente IA contesta lo que dice (sin repetir el texto fijo)", async () => {
+    const id = await inbound({ body: "[Unsupported message]", at: ago(90_000), estado: "sin_contenido" });
+    const { deps, delivered, brain } = makeDeps();
+    expect(await run.runAgent(JOB, deps)).toEqual({ kind: "sent", bubbles: 1 });
+    await new Promise((r) => setTimeout(r, 50));
+    // Lo que hace la ingesta al llegar el real con el mismo wamid (completeUnavailableMessage).
+    const [row] = await db.select().from(s.messages).where(eq(s.messages.id, id));
+    await db
+      .update(s.messages)
+      .set({ body: "¿Cuánto cuesta la compuerta para 90 cm?", metadata: rules.completedMetadata(row.metadata, {}, new Date()) })
+      .where(eq(s.messages.id, id));
+    expect(await run.runAgent(JOB, deps)).toMatchObject({ kind: "sent" });
+    expect(brain).toHaveLength(1);
+    const seen = JSON.stringify(brain[0].messages);
+    expect(seen).toContain("¿Cuánto cuesta la compuerta para 90 cm?");
+    expect(seen).toContain("Tuvimos una falla técnica"); // sabe que ya se le mandó el texto fijo
+    expect(delivered).toEqual([rules.UNAVAILABLE_REPLY_TEXT, "¡Hola! Claro, ¿en qué te ayudo?"]);
+    // Ya contestado: no se repite.
+    expect(await run.runAgent(JOB, deps)).toEqual({ kind: "noop", reason: "sin_pendientes" });
+  });
+
   it("en verificación: el Agente IA no lo contesta y el barrido no lo toma (antes improvisaba a los 90 s)", async () => {
     await inbound({ body: "[Unsupported message]", at: ago(120_000), estado: "verificando" });
     const { deps, delivered, brain } = makeDeps();
