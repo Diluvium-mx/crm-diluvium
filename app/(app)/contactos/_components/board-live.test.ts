@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { applyTemperatures, boardActivityAt, columnsByStage, mergeLiveContacts } from "./board-live";
+import { applyMarks, boardActivityAt, columnsByStage, mergeLiveContacts } from "./board-live";
 
 type C = { id: string; stage: string; stageChangedAt: Date; temperature?: string | null };
 
@@ -93,25 +93,34 @@ describe("columnsByStage (orden de cada columna)", () => {
   });
 });
 
-describe("applyTemperatures", () => {
+describe("applyMarks", () => {
   const list = [
-    { id: "a", temperature: "caliente" as string | null },
-    { id: "b", temperature: null as string | null },
-    { id: "x", temperature: "frio" as string | null },
+    { id: "a", temperature: "caliente" as string | null, destacado: true },
+    { id: "b", temperature: null as string | null, destacado: false },
+    { id: "x", temperature: "frio" as string | null, destacado: false },
   ];
 
-  it("pone al día solo las distintas, sin reordenar; sin par = sin temperatura", () => {
-    const next = applyTemperatures(list, [["a", "caliente"], ["b", "destacado"]], new Set());
-    expect(next.map((c) => [c.id, c.temperature])).toEqual([
-      ["a", "caliente"],
-      ["b", "destacado"],
-      ["x", null],
+  it("pone al día solo las distintas, sin reordenar; sin par = sin temperatura, sin id = no destacado", () => {
+    const next = applyMarks(list, [["a", "caliente"], ["b", "en_espera"]], ["a", "x"], new Set());
+    expect(next.map((c) => [c.id, c.temperature, c.destacado])).toEqual([
+      ["a", "caliente", true],
+      ["b", "en_espera", false],
+      ["x", null, true],
     ]);
     expect(next[0]).toBe(list[0]);
   });
 
-  it("no toca las que están en escritura o en arrastre", () => {
-    const next = applyTemperatures(list, [], new Set(["a", "x"]));
-    expect(next).toBe(list);
+  it("Destacado y temperatura conviven: quitar la marca no toca la temperatura", () => {
+    const next = applyMarks(list, [["a", "caliente"], ["x", "frio"]], [], new Set());
+    expect(next.map((c) => [c.id, c.temperature, c.destacado])).toEqual([
+      ["a", "caliente", false],
+      ["b", null, false],
+      ["x", "frio", false],
+    ]);
+  });
+
+  it("no toca las que están en escritura o en arrastre; sin cambios devuelve la misma lista", () => {
+    expect(applyMarks(list, [], [], new Set(["a", "x"]))).toBe(list);
+    expect(applyMarks(list, [["a", "caliente"], ["x", "frio"]], ["a"], new Set())).toBe(list);
   });
 });

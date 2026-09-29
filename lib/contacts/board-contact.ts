@@ -13,6 +13,7 @@ export const boardContactColumns = {
   phoneE164: contacts.phoneE164,
   stage: contacts.stage,
   temperature: contacts.temperature,
+  destacado: contacts.destacado,
   esPrueba: contacts.esPrueba,
   sourceChannel: contacts.sourceChannel,
   createdAt: contacts.createdAt,
