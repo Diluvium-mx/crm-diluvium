@@ -1,7 +1,18 @@
 import { describe, expect, it } from "vitest";
 import type { ContactUpdatedEvent } from "@/lib/inbox/types";
 import { defaultStages, stageLabel } from "@/lib/contacts/stages";
-import { groupText, MAX_TOASTS, nextExpiry, pushStageToast, stageToastFor as stageToastForRaw, TOAST_MS, type StageToast } from "./stage-toasts";
+import {
+  groupText,
+  MAX_TOASTS,
+  MOBILE_TOAST_MS,
+  nextExpiry,
+  pruneExpired,
+  pushStageToast,
+  renewToast,
+  stageToastFor as stageToastForRaw,
+  TOAST_MS,
+  type StageToast,
+} from "./stage-toasts";
 
 const ME = "u_yo";
 // El nombre de la etapa lo pone quien muestra el aviso (columnas editables); aquí, las 5 de siempre.
@@ -33,6 +44,16 @@ describe("stageToastFor", () => {
     ).toBe("Daniel movió a Juan Pérez a Compra");
   });
 
+  it("en el celular el vendedor lleva 👨🏽‍💻; el Agente IA y la automatización, lo de siempre", () => {
+    expect(stageToastFor(event(), ME)?.mobileText).toBe("🤖 Agente IA movió a Juan Pérez a Interesado");
+    expect(stageToastFor(event({ by: { kind: "automatizacion", userId: null } }), ME)?.mobileText).toBe(
+      "⚙️ Automatización movió a Juan Pérez a Interesado",
+    );
+    expect(stageToastFor(event({ by: { kind: "vendedor", userId: "u_daniel", name: "Daniel López" } }), ME)?.mobileText).toBe(
+      "👨🏽‍💻 Daniel movió a Juan Pérez a Interesado",
+    );
+  });
+
   it("nunca avisa un cambio del mismo usuario (a mano o por su /banco)", () => {
     expect(stageToastFor(event({ by: { kind: "vendedor", userId: ME, name: "Yo" } }), ME)).toBeNull();
     expect(stageToastFor(event({ by: { kind: "automatizacion", userId: ME } }), ME)).toBeNull();
@@ -54,14 +75,16 @@ describe("stageToastFor", () => {
 });
 
 describe("pushStageToast", () => {
-  const info = (contactId: string) => ({ contactId, text: `movió ${contactId}` });
+  const info = (contactId: string) => ({ contactId, text: `movió ${contactId}`, mobileText: `📱 movió ${contactId}` });
 
   it("apila hasta 3 y el cuarto los junta en uno", () => {
     let toasts: StageToast[] = [];
     for (let i = 1; i <= MAX_TOASTS; i++) toasts = pushStageToast(toasts, info(`c${i}`), 1_000 + i, `k${i}`);
     expect(toasts).toHaveLength(3);
     toasts = pushStageToast(toasts, info("c4"), 2_000, "k4");
-    expect(toasts).toEqual([{ kind: "group", key: "k4", contactIds: ["c1", "c2", "c3", "c4"], expiresAt: 2_000 + TOAST_MS }]);
+    expect(toasts).toEqual([
+      { kind: "group", key: "k4", contactIds: ["c1", "c2", "c3", "c4"], items: ["c1", "c2", "c3", "c4"].map(info), expiresAt: 2_000 + TOAST_MS },
+    ]);
     // Los que siguen se suman al grupo (sin repetir contactos) y renuevan sus 10 s.
     toasts = pushStageToast(toasts, info("c5"), 3_000, "k5");
     toasts = pushStageToast(toasts, info("c1"), 4_000, "k6");
@@ -71,17 +94,55 @@ describe("pushStageToast", () => {
   });
 
   it("el mismo contacto actualiza su aviso en vez de apilar otro", () => {
-    let toasts = pushStageToast([], { contactId: "c1", text: "a Interesado" }, 1_000, "k1");
-    toasts = pushStageToast(toasts, { contactId: "c1", text: "a Cerca de compra" }, 2_000, "k2");
-    expect(toasts).toEqual([{ kind: "single", key: "k1", contactId: "c1", text: "a Cerca de compra", expiresAt: 2_000 + TOAST_MS }]);
+    let toasts = pushStageToast([], { contactId: "c1", text: "a Interesado", mobileText: "m Interesado" }, 1_000, "k1");
+    toasts = pushStageToast(toasts, { contactId: "c1", text: "a Cerca de compra", mobileText: "m Cerca de compra" }, 2_000, "k2");
+    expect(toasts).toEqual([
+      { kind: "single", key: "k1", contactId: "c1", text: "a Cerca de compra", mobileText: "m Cerca de compra", expiresAt: 2_000 + TOAST_MS },
+    ]);
   });
 
   it("los vencidos ya no cuentan para el tope", () => {
     let toasts: StageToast[] = [];
     for (let i = 1; i <= 3; i++) toasts = pushStageToast(toasts, info(`c${i}`), 0, `k${i}`);
     toasts = pushStageToast(toasts, info("c4"), TOAST_MS + 1, "k4");
-    expect(toasts).toEqual([{ kind: "single", key: "k4", contactId: "c4", text: "movió c4", expiresAt: 2 * TOAST_MS + 1 }]);
+    expect(toasts).toEqual([{ kind: "single", key: "k4", contactId: "c4", text: "movió c4", mobileText: "📱 movió c4", expiresAt: 2 * TOAST_MS + 1 }]);
     expect(nextExpiry(toasts)).toBe(2 * TOAST_MS + 1);
     expect(nextExpiry([])).toBeNull();
+  });
+});
+
+describe("versión móvil", () => {
+  const info = (contactId: string) => ({ contactId, text: `movió ${contactId}`, mobileText: `📱 movió ${contactId}` });
+
+  it("dura 4 s en el celular", () => {
+    const toasts = pushStageToast([], info("c1"), 1_000, "k1", MOBILE_TOAST_MS);
+    expect(MOBILE_TOAST_MS).toBe(4_000);
+    expect(toasts[0].expiresAt).toBe(1_000 + 4_000);
+  });
+
+  it("el agrupado guarda cada cambio (el último de cada contacto) para desplegarse", () => {
+    let toasts: StageToast[] = [];
+    for (let i = 1; i <= 4; i++) toasts = pushStageToast(toasts, info(`c${i}`), i, `k${i}`, MOBILE_TOAST_MS);
+    toasts = pushStageToast(toasts, { contactId: "c2", text: "otra vez c2", mobileText: "📱 otra vez c2" }, 10, "k5", MOBILE_TOAST_MS);
+    expect(toasts).toHaveLength(1);
+    const group = toasts[0];
+    expect(group.kind).toBe("group");
+    if (group.kind !== "group") return;
+    expect(group.items.map((i) => i.mobileText)).toEqual(["📱 movió c1", "📱 movió c3", "📱 movió c4", "📱 otra vez c2"]);
+    expect(group.contactIds).toEqual(["c1", "c2", "c3", "c4"]);
+  });
+
+  it("el agrupado desplegado no vence; al plegarlo vuelve a contar 4 s", () => {
+    let toasts: StageToast[] = [];
+    for (let i = 1; i <= 4; i++) toasts = pushStageToast(toasts, info(`c${i}`), 0, `k${i}`, MOBILE_TOAST_MS);
+    const key = toasts[0].key;
+    expect(pruneExpired(toasts, 60_000, key)).toHaveLength(1);
+    expect(nextExpiry(toasts, key)).toBeNull();
+    expect(pruneExpired(toasts, 60_000)).toHaveLength(0);
+    // Un cambio nuevo mientras está desplegado se suma a él (no lo pierde por vencido).
+    toasts = pushStageToast(toasts, info("c5"), 60_000, "k5", MOBILE_TOAST_MS, key);
+    expect(toasts).toHaveLength(1);
+    toasts = renewToast(toasts, key, 70_000, MOBILE_TOAST_MS);
+    expect(nextExpiry(toasts)).toBe(74_000);
   });
 });
