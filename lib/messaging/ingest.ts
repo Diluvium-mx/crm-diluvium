@@ -20,6 +20,7 @@ import { noticeWorkflowSendFailed, type FailedOutbound } from "@/lib/workflows/d
 import { ingestHistoryMessage, isPhoneHistory } from "./history";
 import { markKeywordPending } from "@/lib/workflows/keyword-pending";
 import { completedMetadata, isUnavailableNotice } from "./unavailable";
+import { adoptLateEcho } from "./late-echo";
 import { pendingFallbackNote, recordAdClickSafely, type FallbackJob, type RecordedClick } from "@/lib/ads/attribution";
 import { looksLikeAdMessage } from "@/lib/ads/referral";
 
@@ -404,6 +405,10 @@ async function ingestMessage(
           })
           .where(and(eq(messages.id, pending.id), eq(messages.organizationId, orgId)));
         outcome = "eco de envío del CRM enlazado";
+      } else if (await adoptLateEcho(tx, orgId, conversation.id, event)) {
+        // Eco tardío de un envío del CRM que quedó en duda (timeout): se une a su fila en
+        // vez de guardarse como otro mensaje de "otra API" (lib/messaging/late-echo.ts).
+        outcome = LATE_ECHO_OUTCOME;
       }
     }
 
@@ -590,6 +595,7 @@ async function ingestMessage(
 }
 
 const COMPLETED_OUTCOME = "entrante completado (antes no disponible)";
+export const LATE_ECHO_OUTCOME = "eco tardío enlazado a su envío sin confirmar";
 
 /**
  * Entrante guardado como aviso "no disponible" (mismo wamid) que ahora llega
