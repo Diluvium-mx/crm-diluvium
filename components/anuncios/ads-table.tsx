@@ -101,6 +101,45 @@ function StatusDot({ status }: { status: AdStatus }) {
   );
 }
 
+/** Tarjeta de un anuncio en móvil: toda la tarjeta abre su detalle. */
+function MobileCard({ row }: { row: AdRow }) {
+  const conversion = row.clients > 0 ? row.bought / row.clients : null;
+  return (
+    <li data-link="card" className="relative rounded-lg border bg-card p-3 text-sm">
+      <Link href={`/anuncios/${encodeURIComponent(row.adKey)}`} aria-label={`Abrir el anuncio «${row.name}»`} className="absolute inset-0 rounded-lg" />
+      <div className="flex items-center gap-2">
+        {row.thumbnailUrl ? (
+          // eslint-disable-next-line @next/next/no-img-element
+          <img src={row.thumbnailUrl} alt="" className="size-10 shrink-0 rounded object-cover" />
+        ) : (
+          <span aria-hidden="true" className="flex size-10 shrink-0 items-center justify-center rounded bg-muted text-muted-foreground">
+            <ImageOff className="size-4" />
+          </span>
+        )}
+        <span className="min-w-0 flex-1">
+          <span className="block truncate font-medium">{row.name}</span>
+          <span className="block truncate text-xs text-muted-foreground">{row.campaignName}{row.adsetName ? ` · ${row.adsetName}` : ""}</span>
+        </span>
+        <ChevronRight data-link-arrow="" className="size-4 shrink-0 text-muted-foreground" aria-hidden="true" />
+      </div>
+      <dl className="mt-2 grid grid-cols-3 gap-2 text-center tabular-nums">
+        <div className="rounded-md bg-muted/60 py-1">
+          <dt className="text-[11px] text-muted-foreground">Clientes</dt>
+          <dd className="font-medium">{num.format(row.clients)}</dd>
+        </div>
+        <div className="rounded-md bg-muted/60 py-1">
+          <dt className="text-[11px] text-muted-foreground">Compraron</dt>
+          <dd className="font-medium">{num.format(row.bought)}</dd>
+        </div>
+        <div className="rounded-md bg-muted/60 py-1">
+          <dt className="text-[11px] text-muted-foreground">Conversión</dt>
+          <dd className="font-medium">{conversion === null ? "—" : pct.format(conversion)}</dd>
+        </div>
+      </dl>
+    </li>
+  );
+}
+
 function Row({ row, style }: { row: AdRow; style?: React.CSSProperties }) {
   const conversion = conversionOf(row);
   return (
@@ -223,9 +262,21 @@ export function AdsTable({
         <span className="text-xs text-muted-foreground">{shown.length} de {rows.length}</span>
       </div>
 
-      {/* En pantallas angostas las 6 columnas no caben: la tabla se desliza de
-          lado POR DENTRO (ancho mínimo de sus columnas) y la página no. */}
-      <div role="table" aria-label="Anuncios" aria-rowcount={shown.length} className="flex min-h-0 flex-1 flex-col overflow-x-auto overflow-y-hidden rounded-lg border bg-card">
+      {/* Móvil (< md): cada anuncio es una tarjeta apilada (nombre, campaña y los tres
+          números); nada se desliza de lado. Desde md, la tabla de 6 columnas de siempre,
+          que en ventanas angostas se desliza POR DENTRO (ancho mínimo) y la página no. */}
+      <ul aria-label="Anuncios" className="min-h-0 flex-1 space-y-2 overflow-y-auto overscroll-contain md:hidden">
+        {loading ? (
+          <li className="px-4 py-10 text-center text-sm text-muted-foreground">Cargando anuncios…</li>
+        ) : rows.length === 0 ? (
+          <li className="rounded-lg border bg-card px-4 py-10 text-center text-sm text-muted-foreground">{emptyMessage}</li>
+        ) : shown.length === 0 ? (
+          <li className="rounded-lg border bg-card px-4 py-10 text-center text-sm text-muted-foreground">Ningún anuncio coincide con la búsqueda o el filtro.</li>
+        ) : (
+          shown.map((row) => <MobileCard key={row.adKey} row={row} />)
+        )}
+      </ul>
+      <div role="table" aria-label="Anuncios" aria-rowcount={shown.length} className="hidden min-h-0 flex-1 flex-col overflow-x-auto overflow-y-hidden rounded-lg border bg-card md:flex">
         <div className="flex min-h-0 min-w-[56rem] flex-1 flex-col">
           <div role="row" className={`${GRID} shrink-0 border-b bg-muted/60 px-5 py-2 text-xs font-medium text-muted-foreground`}>
             {COLUMNS.map((c) => {

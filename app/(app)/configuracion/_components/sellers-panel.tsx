@@ -64,9 +64,11 @@ export function SellersPanel({ members, me, myRole }: { members: TeamMember[]; m
         <p className={`text-sm ${error ? "text-brand-orange" : "text-emerald-700 dark:text-emerald-300"}`}>{error ?? notice}</p>
       )}
 
-      <div className="overflow-x-auto rounded-lg border bg-card">
-        <table className="w-full text-left text-sm">
-          <thead className="border-b text-xs text-muted-foreground">
+      {/* Móvil: la tabla se apila (cada vendedor es una tarjeta: nombre, correo, rol,
+          estado y acciones); nada se desliza de lado. Desde md, la tabla de siempre. */}
+      <div className="rounded-lg border bg-card md:overflow-x-auto">
+        <table className="w-full text-left text-sm max-md:block">
+          <thead className="border-b text-xs text-muted-foreground max-md:hidden">
             <tr>
               <th className="px-3 py-2 font-medium">Nombre</th>
               <th className="px-3 py-2 font-medium">Correo</th>
@@ -75,7 +77,7 @@ export function SellersPanel({ members, me, myRole }: { members: TeamMember[]; m
               <th className="px-3 py-2 font-medium" />
             </tr>
           </thead>
-          <tbody>
+          <tbody className="max-md:block">
             {members.map((m) => {
               const can = (type: "reset_password" | "deactivate" | "reactivate") =>
                 teamActionError(actor, m, { type }, activeOwners) === null;
@@ -84,13 +86,13 @@ export function SellersPanel({ members, me, myRole }: { members: TeamMember[]; m
               );
               const canChangeRole = roleOptions.some((r) => r !== m.role);
               return (
-                <tr key={m.memberId} className="border-b last:border-0 align-top">
-                  <td className="px-3 py-2">
+                <tr key={m.memberId} className="border-b align-top last:border-0 max-md:block max-md:px-3 max-md:py-3">
+                  <td className="px-3 py-2 max-md:block max-md:p-0 max-md:font-medium">
                     {m.name}
                     {m.userId === me && <span className="ml-1 text-xs text-muted-foreground">(tú)</span>}
                   </td>
-                  <td className="px-3 py-2 text-muted-foreground">{m.email}</td>
-                  <td className="px-3 py-2">
+                  <td className="px-3 py-2 text-muted-foreground max-md:block max-md:p-0 max-md:text-xs">{m.email}</td>
+                  <td className="px-3 py-2 max-md:block max-md:p-0 max-md:pt-1">
                     {canChangeRole ? (
                       <select
                         value={m.role}
@@ -109,10 +111,10 @@ export function SellersPanel({ members, me, myRole }: { members: TeamMember[]; m
                       roleLabel(m.role)
                     )}
                   </td>
-                  <td className="px-3 py-2">
+                  <td className="px-3 py-2 max-md:block max-md:p-0 max-md:pt-1 max-md:text-xs">
                     {m.banned ? <span className="text-muted-foreground">Desactivado</span> : "Activo"}
                   </td>
-                  <td className="space-x-1 whitespace-nowrap px-3 py-2 text-right">
+                  <td className="space-x-1 whitespace-nowrap px-3 py-2 text-right max-md:block max-md:whitespace-normal max-md:p-0 max-md:pt-2 max-md:text-left">
                     {can("reset_password") && (
                       <button type="button" disabled={busy} onClick={() => { setResettingId(m.memberId); setNewPassword(""); }} className="rounded px-2 py-1 text-xs text-brand-navy hover:bg-brand-navy/10 dark:text-sky-300">
                         Restablecer contraseña

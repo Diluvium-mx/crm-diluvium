@@ -39,6 +39,7 @@ import { funnelTone, type FunnelSignal } from "@/lib/contacts/funnel-tone";
 import { useInboxStream } from "../../dashboard/_components/use-inbox-stream";
 import { setContactUnread } from "@/lib/inbox/actions";
 import { applyTemperatures, columnsByStage, mergeLiveContacts } from "./board-live";
+import { CloseX } from "@/components/ui/close-x";
 
 // Una columna = una zona de destino (droppable). Se extrae a su propio
 // componente porque useDroppable es un hook y no puede llamarse dentro del
@@ -929,9 +930,10 @@ export function ContactsBoard({
           <div className="max-h-[90vh] w-full max-w-3xl overflow-y-auto rounded-lg bg-background p-4 shadow-xl" onClick={(e) => e.stopPropagation()}>
             <div className="mb-3 flex items-center justify-between gap-3">
               <h2 id="editar-columnas-titulo" className="text-sm font-semibold">Columnas del Embudo</h2>
-              <button type="button" onClick={() => setEditingStages(false)} aria-label="Cerrar" className="rounded p-1 text-muted-foreground hover:bg-muted">
+              <button type="button" onClick={() => setEditingStages(false)} aria-label="Cerrar" className="hidden rounded p-1 text-muted-foreground hover:bg-muted md:block">
                 <X className="size-4" />
               </button>
+              <CloseX size="sm" onClick={() => setEditingStages(false)} />
             </div>
             <StagesEditor />
           </div>

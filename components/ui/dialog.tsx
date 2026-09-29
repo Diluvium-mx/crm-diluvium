@@ -60,20 +60,32 @@ function DialogContent({
       >
         {children}
         {showCloseButton && (
-          <DialogPrimitive.Close
-            data-slot="dialog-close"
-            render={
-              <Button
-                variant="ghost"
-                className="absolute top-2 right-2"
-                size="icon-sm"
+          <>
+            <DialogPrimitive.Close
+              data-slot="dialog-close"
+              render={
+                <Button
+                  variant="ghost"
+                  className="absolute top-2 right-2 hidden md:inline-flex"
+                  size="icon-sm"
+                />
+              }
+            >
+              <XIcon
               />
-            }
-          >
-            <XIcon
-            />
-            <span className="sr-only">Close</span>
-          </DialogPrimitive.Close>
+              <span className="sr-only">Close</span>
+            </DialogPrimitive.Close>
+            {/* Móvil: ✕ blanca en círculo rojo, grande para el dedo (components/ui/close-x.tsx). */}
+            <DialogPrimitive.Close
+              data-slot="dialog-close-mobile"
+              aria-label="Cerrar"
+              data-no-glow=""
+              className="absolute top-2 right-2 flex size-10 items-center justify-center rounded-full bg-red-600 text-white shadow-md md:hidden"
+            >
+              <XIcon className="size-5" strokeWidth={2.5} />
+              <span className="sr-only">Cerrar</span>
+            </DialogPrimitive.Close>
+          </>
         )}
       </DialogPrimitive.Popup>
     </DialogPortal>
