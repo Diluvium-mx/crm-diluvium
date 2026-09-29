@@ -7,8 +7,12 @@ import type { TemperatureFilter } from "@/lib/contacts/filters";
 /** Pestañas de la lista. "starred" = Destacado: la marca ⭐ del contacto (0048). */
 export type InboxFilter = "unread" | "all" | "starred";
 
-/** Parámetros de la lista: pestaña, temperatura (una a la vez; se suma a la pestaña) y búsqueda. */
-export type InboxListParams = { filter?: InboxFilter; temperature?: TemperatureFilter | null; search?: string };
+/**
+ * Parámetros de la lista: pestaña, temperatura (una a la vez; se suma a la pestaña) y búsqueda.
+ * `searchChats` = la lupa amarilla prendida: `search` busca DENTRO de los chats (mínimo 3
+ * letras) en vez de por nombre o teléfono.
+ */
+export type InboxListParams = { filter?: InboxFilter; temperature?: TemperatureFilter | null; search?: string; searchChats?: boolean };
 
 // "system_note" (Fase D): aviso interno para el vendedor (p. ej. "cotejar
 // depósito"); vive en el hilo, nunca se manda por WhatsApp.
@@ -51,6 +55,11 @@ export type ConversationListItem = {
   windowExpiresAt: Date | null;
   /** El canal de la conversación es de PRUEBA (etiqueta "Prueba"). */
   isTestChannel: boolean;
+  /**
+   * Búsqueda en los chats (lupa amarilla): cuántos mensajes tienen la palabra (círculo
+   * amarillo) y el texto de la coincidencia más reciente (vista previa). null = sin búsqueda.
+   */
+  chatMatch: { count: number; text: string } | null;
 };
 
 export type ConversationPage = { items: ConversationListItem[]; nextCursor: string | null };

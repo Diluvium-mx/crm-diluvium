@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { matchesSearch, normalizeSearch, SQL_SEARCH_FROM, SQL_SEARCH_TO } from "./search";
+import { chatSearchTerm, escapeLike, matchesSearch, normalizeSearch, SQL_SEARCH_FROM, SQL_SEARCH_TO } from "./search";
 
 describe("normalizeSearch", () => {
   it("quita acentos, ñ y mayúsculas", () => {
@@ -37,5 +37,27 @@ describe("tabla SQL", () => {
     [...SQL_SEARCH_FROM].forEach((ch, i) => {
       expect(normalizeSearch(ch)).toBe([...SQL_SEARCH_TO][i]);
     });
+  });
+});
+
+describe("chatSearchTerm (búsqueda dentro de los chats)", () => {
+  it("normaliza como todo buscador y pide al menos 3 letras", () => {
+    expect(chatSearchTerm("  Culiacán ")).toBe("culiacan");
+    expect(chatSearchTerm("PEÑA")).toBe("pena");
+    expect(chatSearchTerm("de")).toBeNull();
+    expect(chatSearchTerm("  a  b ")).toBe("a b");
+    expect(chatSearchTerm("")).toBeNull();
+    expect(chatSearchTerm(null)).toBeNull();
+  });
+
+  it("recorta a 100 letras", () => {
+    expect(chatSearchTerm("x".repeat(150))).toHaveLength(100);
+  });
+});
+
+describe("escapeLike", () => {
+  it("escapa comodines de LIKE y la diagonal invertida", () => {
+    expect(escapeLike("50%_a\\b")).toBe("50\\%\\_a\\\\b");
+    expect(escapeLike("factura")).toBe("factura");
   });
 });

@@ -33,12 +33,13 @@ import { useVirtualizer } from "@tanstack/react-virtual";
 import { ContactCard, ContactCardContent } from "./contact-card";
 import { ContactDetailPanel } from "./contact-detail-panel";
 import { phoneMatchesSearch } from "@/lib/phone-format";
-import { normalizeSearch } from "@/lib/text/search";
+import { chatSearchTerm, normalizeSearch } from "@/lib/text/search";
 import { hasCardFilter, matchesCardFilter, type TemperatureFilter } from "@/lib/contacts/filters";
 import { CardFilterButton } from "../../_components/card-filter-button";
+import { CHAT_SEARCH_INPUT_ACTIVE, CHAT_SEARCH_PLACEHOLDER, ChatSearchButton } from "../../_components/chat-search-button";
 import { funnelTone, type FunnelSignal } from "@/lib/contacts/funnel-tone";
 import { useInboxStream } from "../../dashboard/_components/use-inbox-stream";
-import { setContactUnread } from "@/lib/inbox/actions";
+import { searchChatsByContact, setContactUnread } from "@/lib/inbox/actions";
 import { applyMarks, columnsByStage, mergeLiveContacts } from "./board-live";
 import { CloseX } from "@/components/ui/close-x";
 
@@ -54,20 +55,24 @@ const MAX_SIGNAL_IDS = 200;
 const MAX_LIVE_IDS = 200;
 // Durante la importación del historial del celular, el tablero se relee a lo más así.
 const HISTORY_REFRESH_MS = 30_000;
+const CHAT_SEARCH_ERROR = "No se pudo buscar en los chats. Intenta de nuevo.";
 
 function StageColumn({
   stage,
   contacts,
   signals,
-  filtered,
+  chatHits,
+  emptyText,
   onCardClick,
   onSetUnread,
 }: {
   stage: FunnelStage;
   contacts: BoardContact[];
   signals: Signals;
-  /** Hay filtro de temperatura/Destacado activo: la columna vacía lo dice. */
-  filtered: boolean;
+  /** Lupa amarilla: por contacto, cuántos mensajes tienen la palabra (círculo amarillo). */
+  chatHits: Map<string, number> | null;
+  /** Qué dice la columna vacía ("Sin contactos", "Ninguno con este filtro"…). */
+  emptyText: string;
   onCardClick: (contactId: string) => void;
   onSetUnread: (contactId: string, unread: boolean) => void;
 }) {
@@ -119,7 +124,7 @@ function StageColumn({
 
       <div ref={setColumnRef} className="min-h-0 flex-1 overflow-y-auto p-2">
         {contacts.length === 0 ? (
-          <p className="p-2 text-center text-xs text-muted-foreground">{filtered ? "Ninguno con este filtro" : "Sin contactos"}</p>
+          <p className="p-2 text-center text-xs text-muted-foreground">{emptyText}</p>
         ) : (
           <div style={{ height: rowVirtualizer.getTotalSize(), position: "relative", width: "100%" }}>
             {virtualItems.map((virtualRow) => {
@@ -144,6 +149,7 @@ function StageColumn({
                   <ContactCard
                     contact={contact}
                     signal={signals[contact.id]}
+                    chatHits={chatHits?.get(contact.id)}
                     onClick={() => onCardClick(contact.id)}
                     onSetUnread={(unread) => onSetUnread(contact.id, unread)}
                   />
@@ -191,6 +197,11 @@ export function ContactsBoard({
   // colores; solo quedan las tarjetas que cumplen. No se recuerda entre recargas.
   const [temperatureFilter, setTemperatureFilter] = useState<TemperatureFilter | null>(null);
   const [destacadoOnly, setDestacadoOnly] = useState(false);
+  // Lupa amarilla (29-sep-2026): el mismo buscador busca una palabra DENTRO de los chats;
+  // solo quedan las tarjetas con la palabra, con su círculo amarillo. No se recuerda al
+  // recargar. `chatHits` = el último resultado (contacto → cuántos mensajes) y su palabra.
+  const [searchChats, setSearchChats] = useState(false);
+  const [chatHits, setChatHits] = useState<{ term: string; counts: Map<string, number> } | null>(null);
   const [selectedContactId, setSelectedContactId] = useState<string | null>(() =>
     openContactId && initialContacts.some((contact) => contact.id === openContactId) ? openContactId : null,
   );
@@ -548,7 +559,46 @@ export function ContactsBoard({
     if (stagesEvent?.reason === "deleted") scheduleLive(null);
   }, [stagesEvent, scheduleLive]);
 
+  // Búsqueda en los chats: la pide el servidor (el tablero no tiene los mensajes). Una
+  // respuesta vieja nunca pisa a una nueva (seq). Con la lupa prendida, lo que llega por el
+  // SSE (mensajes nuevos o borrados) vuelve a buscar, a lo más cada 1.5 s.
+  const chatTerm = searchChats ? chatSearchTerm(search) : null;
+  const chatTermRef = useRef(chatTerm);
+  useEffect(() => {
+    chatTermRef.current = chatTerm;
+  });
+  const chatSeqRef = useRef(0);
+  const runChatSearch = useCallback(async (term: string) => {
+    const seq = ++chatSeqRef.current;
+    try {
+      const rows = await searchChatsByContact(term);
+      if (!aliveRef.current || seq !== chatSeqRef.current) return;
+      setChatHits({ term, counts: new Map(rows) });
+      setError((current) => (current === CHAT_SEARCH_ERROR ? null : current));
+    } catch {
+      if (aliveRef.current && seq === chatSeqRef.current) setError(CHAT_SEARCH_ERROR);
+    }
+  }, []);
+  useEffect(() => {
+    if (!chatTerm) return;
+    const t = setTimeout(() => void runChatSearch(chatTerm), 300);
+    return () => clearTimeout(t);
+  }, [chatTerm, runChatSearch]);
+  const chatRefreshTimerRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+  useEffect(() => () => clearTimeout(chatRefreshTimerRef.current), []);
+  function scheduleChatRefresh() {
+    if (!chatTermRef.current || chatRefreshTimerRef.current) return;
+    chatRefreshTimerRef.current = setTimeout(() => {
+      chatRefreshTimerRef.current = undefined;
+      const term = chatTermRef.current;
+      if (term) void runChatSearch(term);
+    }, 1_500);
+  }
+
   useInboxStream((event) => {
+    if (event.type === "reload" || event.type === "inbox.bulk" || event.type === "message.upserted" || event.type === "message.deleted") {
+      scheduleChatRefresh();
+    }
     if (event.type === "inbox.bulk") {
       if (event.contactos > 0) scheduleHistoryRefresh();
       return;
@@ -593,20 +643,34 @@ export function ContactsBoard({
     [temperatureFilter, destacadoOnly],
   );
   const filtering = hasCardFilter(cardFilter);
+  // Con la lupa el buscador ya no busca por nombre: busca en los chats (con menos de 3
+  // letras aún no filtra). Mientras llega un resultado nuevo se ve el anterior.
+  const nameSearch = searchChats ? "" : normalizedSearch;
+  const chatCounts = chatTerm ? (chatHits?.counts ?? null) : null;
+  const chatSearching = chatTerm !== null && chatHits?.term !== chatTerm;
 
   const filteredContacts = useMemo(() => {
-    if (!normalizedSearch && !filtering) {
+    if (!nameSearch && !filtering && !chatTerm) {
       return contacts;
     }
 
     return contacts.filter((contact) => {
       if (filtering && !matchesCardFilter(contact, cardFilter)) return false;
-      if (!normalizedSearch) return true;
-      const nameMatches = normalizeSearch(getContactFullName(contact)).includes(normalizedSearch);
-      const phoneMatches = phoneMatchesSearch(contact.phoneE164, normalizedSearch);
+      if (chatTerm) return (chatCounts?.get(contact.id) ?? 0) > 0;
+      if (!nameSearch) return true;
+      const nameMatches = normalizeSearch(getContactFullName(contact)).includes(nameSearch);
+      const phoneMatches = phoneMatchesSearch(contact.phoneE164, nameSearch);
       return nameMatches || phoneMatches;
     });
-  }, [contacts, normalizedSearch, filtering, cardFilter]);
+  }, [contacts, nameSearch, filtering, cardFilter, chatTerm, chatCounts]);
+  const emptyText =
+    chatTerm && !chatCounts
+      ? "Buscando…"
+      : chatTerm
+        ? "Ninguno con esta búsqueda"
+        : filtering
+          ? "Ninguno con este filtro"
+          : "Sin contactos";
 
   // Cada columna, de más reciente a más viejo: el que escribió al último (o entró a la
   // etapa al último) va arriba, también en vivo con la hora que trae la señal del SSE.
@@ -874,9 +938,16 @@ export function ContactsBoard({
           >
             <Pencil className="size-4" />
           </button>
+          {/* Lupa amarilla: avisos cortos, junto al título (no mueven el tablero). */}
+          {searchChats && search.trim() !== "" && !chatTerm && (
+            <span className="text-xs text-muted-foreground">Escribe al menos 3 letras</span>
+          )}
+          {chatSearching && <span className="text-xs text-muted-foreground">Buscando en los chats…</span>}
         </div>
-        {/* Móvil: el buscador toma el ancho que queda (baja de renglón si hace falta). */}
-        <div className="flex flex-1 items-center gap-3 sm:flex-none">
+        {/* Móvil: la barra va en su propio renglón (w-full) y el buscador toma el ancho que
+            queda. Con la lupa son cuatro piezas: el buscador nace en ancho 0 (w-0) y se
+            estira, así nunca empuja la barra fuera de la pantalla. */}
+        <div className="flex w-full items-center gap-2 sm:w-auto sm:gap-3">
           <button
             type="button"
             onClick={() => setCreatingContact(true)}
@@ -886,11 +957,13 @@ export function ContactsBoard({
           </button>
           <input
             type="search"
-            placeholder="Buscar por nombre o teléfono..."
+            placeholder={searchChats ? CHAT_SEARCH_PLACEHOLDER : "Buscar por nombre o teléfono..."}
             value={search}
             onChange={(event) => setSearch(event.target.value)}
-            className="min-w-0 flex-1 rounded border px-3 py-2 text-sm sm:w-72 sm:flex-none"
+            className={`w-0 min-w-0 flex-1 rounded border px-3 py-2 text-sm outline-none sm:w-72 sm:flex-none ${searchChats ? CHAT_SEARCH_INPUT_ACTIVE : ""}`}
           />
+          {/* La lupa va entre el buscador y el filtro (decisión del dueño, 29-sep-2026). */}
+          <ChatSearchButton active={searchChats} onChange={setSearchChats} />
           <CardFilterButton
             temperature={temperatureFilter}
             onTemperatureChange={setTemperatureFilter}
@@ -925,7 +998,8 @@ export function ContactsBoard({
               stage={stage}
               contacts={columns.get(stage.key) ?? []}
               signals={signals}
-              filtered={filtering}
+              chatHits={chatCounts}
+              emptyText={emptyText}
               onCardClick={handleCardClick}
               onSetUnread={handleSetUnread}
             />
@@ -941,7 +1015,11 @@ export function ContactsBoard({
               data-funnel={funnelTone(signals[activeContact.id])}
               className="card-pickup w-[calc(100vw-2.5rem)] cursor-grabbing rounded-md bg-card shadow-2xl sm:w-72 [&>div]:bg-transparent"
             >
-              <ContactCardContent contact={activeContact} signal={signals[activeContact.id]} />
+              <ContactCardContent
+                contact={activeContact}
+                signal={signals[activeContact.id]}
+                chatHits={chatCounts?.get(activeContact.id)}
+              />
             </div>
           ) : null}
         </DragOverlay>
@@ -975,6 +1053,7 @@ export function ContactsBoard({
           }
           onDestacadoChange={(next) => handleDestacadoChange(selectedContact.id, next)}
           onOpenContact={(contactId) => void openContactById(contactId)}
+          searchTerm={chatTerm}
         />
       )}
 
