@@ -36,6 +36,8 @@ export type WorkflowView = {
   triggerCommand: string | null;
   /** Clave de la etapa (funnel_stages.key) que lo dispara al entrar, o null. */
   triggerStage: string | null;
+  /** «Solo al inicio» (lib/workflows/start-only.ts). */
+  triggerStartOnly: boolean;
   position: number;
   steps: StepPayload[];
   /** Títulos de los archivos que faltan (el workflow no se puede habilitar). */
@@ -73,6 +75,8 @@ const workflowInputSchema = z.object({
   triggerCommand: commandSchema,
   // Clave de una etapa vigente de la organización (se comprueba contra funnel_stages).
   triggerStage: z.string().trim().min(1).max(40).nullable(),
+  // «Solo al inicio»: por palabra clave o por el Agente IA, solo antes de que le contesten y una vez por contacto.
+  triggerStartOnly: z.boolean(),
   steps: stepsSchema,
 });
 export type WorkflowInput = z.infer<typeof workflowInputSchema>;
@@ -122,6 +126,7 @@ async function loadViews(organizationId: string): Promise<WorkflowView[]> {
       triggerKeywords: w.triggerKeywords,
       triggerCommand: w.triggerCommand,
       triggerStage: w.triggerStage,
+      triggerStartOnly: w.triggerStartOnly,
       position: w.position,
       steps: own,
       missingMedia: missingMedia(own),
@@ -204,6 +209,7 @@ export async function saveWorkflow(raw: WorkflowInput): Promise<{ ok: true; id: 
         triggerKeywords: input.triggerKeywords,
         triggerCommand: input.triggerCommand,
         triggerStage: input.triggerStage,
+        triggerStartOnly: input.triggerStartOnly,
         updatedByUserId: userId,
         updatedAt: now,
       };
@@ -403,7 +409,7 @@ export async function restoreDefaultWorkflows(): Promise<{ ok: true; created: nu
           subject: def?.name ?? slug,
           newValue: `${workflowSummary({ enabled: false, steps: def?.steps ?? [] })} (predeterminado)`,
           detail: def
-            ? { type: "workflow" as const, before: null, after: workflowDetail({ ...def, enabled: false, triggerStage: null }, () => null) }
+            ? { type: "workflow" as const, before: null, after: workflowDetail({ ...def, enabled: false, triggerStage: null, triggerStartOnly: false }, () => null) }
             : null,
         };
       }),

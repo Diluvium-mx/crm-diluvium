@@ -8,6 +8,8 @@
 // - Regla de etapa, nombre del agente, mensajes rápidos, plantillas: texto antes → después.
 // - Tallas: por talla (rango antes → después).
 
+import { startOnlyLabel } from "@/lib/workflows/steps";
+
 export type DiffOp = "same" | "removed" | "added";
 export type DiffSegment = { op: DiffOp; text: string };
 /** Una línea de un bloque; `label` = "Pregunta", "Respuesta", "Archivo"… (null = sin etiqueta). */
@@ -32,6 +34,8 @@ export type WorkflowDetail = {
   triggerCommand: string | null;
   /** Nombre de la etapa (no la clave). */
   triggerStage: string | null;
+  /** «Solo al inicio» (29-sep-2026). Ausente en el historial anterior = En cualquier momento. */
+  triggerStartOnly?: boolean;
   steps: WorkflowDetailStep[];
 };
 
@@ -292,6 +296,8 @@ export function diffWorkflow(before: WorkflowDetail | null, after: WorkflowDetai
   if (stage(b) !== stage(a)) triggers.push(valueLine("Al entrar a la etapa", stage(b), stage(a)));
   const agent = (w: WorkflowDetail | null) => (w ? yesNo(w.triggerAgent) : null);
   if (agent(b) !== agent(a)) triggers.push(valueLine("Lo usa el agente", agent(b), agent(a)));
+  const when = (w: WorkflowDetail | null) => (w ? startOnlyLabel(w.triggerStartOnly) : null);
+  if (when(b) !== when(a)) triggers.push(valueLine("Cuándo se dispara", when(b), when(a)));
   if (triggers.length) blocks.push({ title: "Disparadores", tag: tagOf(b, a), lines: triggers });
 
   // Pasos: alineados por contenido; un quitado seguido de un agregado del MISMO tipo es
