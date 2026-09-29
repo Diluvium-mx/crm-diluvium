@@ -13,6 +13,7 @@ function item(id: string, at: string | null, unread = 0): ConversationListItem {
     awaitingReplySince: null,
     windowExpiresAt: null,
     isTestChannel: false,
+    chatMatch: null,
   };
 }
 
