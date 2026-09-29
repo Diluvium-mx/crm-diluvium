@@ -31,7 +31,7 @@ import {
 } from "./format";
 import { formatPhone } from "@/lib/phone-format";
 import { PhoneLocation } from "@/components/ui/phone-location";
-import { SearchHighlight } from "@/components/ui/search-highlight";
+import { LinkedText } from "@/components/ui/linked-text";
 
 const PAGE_LIMIT = 30;
 // Distancia al tope (px) a la que se cargan solos los mensajes anteriores, y al
@@ -119,7 +119,7 @@ function TranscriptionNote({
     <div className={`mb-1 rounded-md border-l-4 px-2 py-1 text-xs ${out ? "border-brand-white/60 bg-brand-white/10" : "border-brand-navy/60 bg-muted"}`}>
       <span className="font-medium">Transcripción</span>
       <p className="whitespace-pre-wrap break-words opacity-90">
-        <SearchHighlight text={transcription.text} term={searchTerm} />
+        <LinkedText text={transcription.text} searchTerm={searchTerm} />
       </p>
     </div>
   );
@@ -152,7 +152,7 @@ function Bubble({
           className="max-w-[85%] rounded-lg border border-brand-orange/50 bg-brand-orange/10 px-3 py-2 text-xs text-foreground shadow-sm"
         >
           <span className="font-semibold text-brand-orange">📝 Aviso interno · </span>
-          <span className="whitespace-pre-wrap break-words">{row.body}</span>
+          <span className="whitespace-pre-wrap break-words">{row.body && <LinkedText text={row.body} />}</span>
           <span className="ml-2 text-[10px] text-muted-foreground">{bubbleTime(row.sentAt)}</span>
         </div>
       </div>
@@ -247,7 +247,7 @@ function Bubble({
         {notice === "verificando" && row.body && <p className="italic">{row.body}</p>}
         {!notice && row.body && (
           <p className="whitespace-pre-wrap break-words">
-            <SearchHighlight text={row.body} term={term} />
+            <LinkedText text={row.body} searchTerm={term} />
           </p>
         )}
         <div className={`mt-1 flex items-center justify-end gap-1 text-[10px] ${out ? "text-brand-white/70" : "text-muted-foreground"}`}>
