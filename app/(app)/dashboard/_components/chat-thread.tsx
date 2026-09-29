@@ -148,13 +148,23 @@ function Bubble({
   const adReferral: AdReferral | null = opt ? null : (row as MessageView).adReferral;
   const view = opt ? null : (row as MessageView);
   const reactions = view ? [view.reactions.contact, view.reactions.business].filter(Boolean) : [];
+  // Primer mensaje que WhatsApp no pasó al CRM (Meta 131060, caso SDA): tarjeta de
+  // aviso en lugar de "[Unsupported message]"; mientras se verifica, "Recibiendo mensaje…".
+  const notice = view?.noDisponible ?? null;
 
   return (
     <div className={`flex ${out ? "justify-end" : "justify-start"} ${reactions.length ? "mb-3" : ""}`}>
       <div
         className={`relative max-w-[78%] rounded-2xl px-3 py-2 text-sm shadow-sm ${
-          out ? "bg-brand-navy text-brand-white" : "bg-card text-foreground border"
+          out
+            ? "bg-brand-navy text-brand-white"
+            : notice === "sin_contenido"
+              ? "border border-dashed border-brand-orange/60 bg-brand-orange/5 text-foreground"
+              : notice === "verificando"
+                ? "border border-dashed bg-card text-muted-foreground"
+                : "bg-card text-foreground border"
         }`}
+        {...(notice ? { role: "note" } : {})}
       >
         {view?.quoted && (
           <div
@@ -201,7 +211,14 @@ function Bubble({
           </div>
         )}
         {view?.transcription && <TranscriptionNote transcription={view.transcription} out={out} />}
-        {row.body && <p className="whitespace-pre-wrap break-words">{row.body}</p>}
+        {notice === "sin_contenido" && row.body && (
+          <p className="whitespace-pre-wrap break-words">
+            <span aria-hidden="true">⚠️ </span>
+            {row.body}
+          </p>
+        )}
+        {notice === "verificando" && row.body && <p className="italic">{row.body}</p>}
+        {!notice && row.body && <p className="whitespace-pre-wrap break-words">{row.body}</p>}
         <div className={`mt-1 flex items-center justify-end gap-1 text-[10px] ${out ? "text-brand-white/70" : "text-muted-foreground"}`}>
           {view?.importedFromPhone && <span title="Copiado del historial del celular al conectar el número">Importado del celular ·</span>}
           {view?.editedAt && <span>editado</span>}
