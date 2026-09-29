@@ -19,6 +19,7 @@ import { notifyContactUpdated } from "@/lib/contacts/notify-updated";
 import { furthestStage, roleKey, stageLabel, type FunnelStage } from "@/lib/contacts/stages";
 import type { StartRunInput, StartRunResult } from "@/lib/workflows/executor";
 import { startOnlyEligible } from "@/lib/workflows/start-only";
+import { sendsByWorkflow } from "@/lib/workflows/max-per-chat";
 import { addNotice } from "./notices";
 import { buildAgentTools, type AgentTools, type AvisoMotivo, type ValidToolCall } from "./tools";
 
@@ -34,15 +35,25 @@ export type StartWorkflow = (input: StartRunInput) => Promise<StartRunResult>;
 
 // Herramientas de la organización en orden estable (position): workflows de
 // media habilitados con disparador "agente", más mover_etapa con las etapas vigentes.
-// Con la conversación: un workflow «solo al inicio» que ya no aplica (ya le contestaron o
-// ya le salió a este contacto) no se ofrece; el modelo no promete algo que no saldría.
+// Con la conversación, no se ofrece (el modelo no promete algo que no saldría):
+// - un workflow «Solo al inicio» ESTRICTO que ya no aplica (ya le contestaron o ya le salió a
+//   este contacto); el de «solo al inicio por palabra clave» (la Tabla) sí se ofrece;
+// - uno que ya llegó a su «Máximo de envíos por chat» (29-sep-2026).
 export async function loadAgentTools(
   organizationId: string,
   stages: readonly FunnelStage[],
   conversation?: { id: string; contactId: string },
 ): Promise<AgentTools> {
   const all = await db
-    .select({ id: workflows.id, slug: workflows.slug, name: workflows.name, description: workflows.agentDescription, startOnly: workflows.triggerStartOnly })
+    .select({
+      id: workflows.id,
+      slug: workflows.slug,
+      name: workflows.name,
+      description: workflows.agentDescription,
+      startOnly: workflows.triggerStartOnly,
+      startOnlyAgent: workflows.triggerStartOnlyAgent,
+      maxSendsPerChat: workflows.maxSendsPerChat,
+    })
     .from(workflows)
     .where(
       and(
@@ -56,10 +67,13 @@ export async function loadAgentTools(
       ),
     )
     .orderBy(asc(workflows.position), asc(workflows.slug));
-  const startOnly = all.filter((w) => w.startOnly).map((w) => w.id);
+  const startOnly = all.filter((w) => w.startOnly && w.startOnlyAgent).map((w) => w.id);
   const eligible =
     conversation && startOnly.length ? await startOnlyEligible(organizationId, conversation.id, conversation.contactId, startOnly) : new Set<string>();
-  const rows = all.filter((w) => !w.startOnly || eligible.has(w.id));
+  const sent = conversation ? await sendsByWorkflow(organizationId, conversation.id, all) : new Map<string, number>();
+  const rows = all.filter(
+    (w) => (!(w.startOnly && w.startOnlyAgent) || eligible.has(w.id)) && !(w.maxSendsPerChat && (sent.get(w.id) ?? 0) >= w.maxSendsPerChat),
+  );
   return buildAgentTools(rows, stages);
 }
 
@@ -184,6 +198,20 @@ export async function quoteSetByVendor(organizationId: string, contactId: string
     .limit(1);
   if (!c || c.monto === null) return false;
   return (c.customFields as Record<string, unknown> | null)?.cotizacion_por !== "agente";
+}
+
+// «El workflow es la respuesta» como herramienta (29-sep-2026, dueño: «Depende»): de estos
+// workflows, los marcados que traen TEXTOS. Con uno así, su último mensaje es la respuesta y el
+// texto del modelo no sale (no se le dice lo mismo dos veces); uno que solo manda archivos (la
+// Tabla) deja que el agente escriba su frase.
+export async function answerRunsWithText(organizationId: string, workflowIds: readonly string[]): Promise<Set<string>> {
+  if (workflowIds.length === 0) return new Set();
+  const rows = await db
+    .selectDistinct({ workflowId: workflowSteps.workflowId })
+    .from(workflowSteps)
+    .innerJoin(workflows, and(eq(workflows.id, workflowSteps.workflowId), eq(workflows.organizationId, organizationId)))
+    .where(and(eq(workflowSteps.organizationId, organizationId), inArray(workflowSteps.workflowId, [...workflowIds]), eq(workflowSteps.kind, "send_text"), eq(workflows.isAnswer, true)));
+  return new Set(rows.map((r) => r.workflowId));
 }
 
 // ¿Alguna de estas corridas manda algo al cliente (texto o archivo)?

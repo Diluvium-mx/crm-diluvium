@@ -5,8 +5,7 @@
 // los ids vienen de la cola interna, pero nunca se confía en ellos solos).
 import { and, count, desc, eq, gt, inArray, isNotNull, isNull, ne, not, notInArray, sql, type SQL } from "drizzle-orm";
 import { db } from "@/lib/db";
-import { aiAgentDrafts, aiUsage, channels, conversations, messages, workflowRuns, workflowSteps } from "@/lib/db/schema";
-import { endsWithQuestionStep } from "@/lib/workflows/steps";
+import { aiAgentDrafts, aiUsage, channels, conversations, messages, workflowRuns, workflows } from "@/lib/db/schema";
 import { MAX_HISTORY_CHARS, messageText } from "./transcript";
 import { FINAL_OUTCOMES } from "./usage";
 import { hiddenNoticeSql, lateContentAtSql, noDisponibleEstado, UNAVAILABLE_HISTORY_NOTE } from "@/lib/messaging/unavailable";
@@ -38,10 +37,13 @@ export async function loadSnapshot(
 // contesta al cliente (Fase D, 24-sep-2026: el workflow manda la media y el agente
 // contesta el resto del mismo mensaje, como en GHL; y lo que el cliente escriba durante
 // la espera de 30 s de la tabla no queda "atendido" por la imagen).
-// EXCEPCIÓN (28-sep-2026, pregunta duplicada): la PREGUNTA con la que termina una corrida
-// por palabra clave sí contesta, hasta el mensaje que la disparó; el ejecutor la marca con
-// `respondeHasta` (ANSWERS_UNTIL_KEY) al enviarla. `alias`: la fila de `messages`
-// evaluada (constante del código, nunca un dato).
+// EXCEPCIÓN (28-sep-2026, pregunta duplicada): el último mensaje de un workflow del AGENTE con
+// «El workflow es la respuesta» y textos (su texto propio no salió) contesta hasta el último
+// mensaje que el agente leyó: el ejecutor lo marca con `respondeHasta` (ANSWERS_UNTIL_KEY).
+// Por PALABRA CLAVE (29-sep-2026, bug de la ráfaga) el último mensaje contesta SOLO su
+// disparador (`contestaA`, ANSWERS_ONLY_KEY): sigue siendo relleno aquí (no cierra lo anterior)
+// y pendingInbound excluye ese único mensaje. `alias`: la fila de `messages` evaluada
+// (constante del código, nunca un dato).
 export function workflowFillerSql(alias: "messages" | "o" | "m"): SQL {
   const m = sql.raw(alias);
   return sql`(not coalesce(${m}.metadata ? 'respondeHasta', false) and exists (
@@ -81,6 +83,19 @@ export const MAX_PENDING = 50;
 // escrita en SQL). Lo que el cliente escribió mientras la tarjeta esperaba sigue
 // pendiente aunque sea anterior al reenvío (antes quedaba "contestado" y se perdía).
 export const ANSWERS_UNTIL_KEY = "respondeHasta";
+// 29-sep-2026 («El workflow es la respuesta» por palabra clave): el último mensaje de la corrida
+// contesta SOLO el entrante cuyo id guarda (lib/ai/runtime/saved-reply.ts, markAnswersOnly).
+export const ANSWERS_ONLY_KEY = "contestaA";
+// Entrante contestado uno por uno por un workflow (ANSWERS_ONLY_KEY) con un saliente que no falló.
+// `alias`: la fila de `messages` evaluada (constante del código, nunca un dato).
+export function answeredOnlySql(alias: "messages" | "m"): SQL {
+  const m = sql.raw(alias);
+  return sql`exists (
+    select 1 from messages a
+    where a.organization_id = ${m}.organization_id and a.conversation_id = ${m}.conversation_id
+      and a.direction = 'out' and a.status <> 'failed' and a.metadata->>'contestaA' = ${m}.id
+  )`;
+}
 
 export async function pendingInbound(organizationId: string, conversationId: string): Promise<MessageRow[]> {
   const rows = await db
@@ -102,6 +117,8 @@ export async function pendingInbound(organizationId: string, conversationId: str
             and o.direction = 'out' and o.status <> 'failed' and o.type <> 'system_note'
             and not ${workflowFillerSql("o")}
         ), '-infinity'::timestamp)`,
+        // Contestado por el último mensaje de un workflow «es la respuesta» (solo ese mensaje).
+        not(answeredOnlySql("messages")),
       ),
     )
     .orderBy(desc(waAt), desc(messages.createdAt))
@@ -109,40 +126,36 @@ export async function pendingInbound(organizationId: string, conversationId: str
   return rows.reverse();
 }
 
-// Tope de la espera del agente a una corrida por palabra clave en curso (worker
-// reiniciado, cola lenta): pasado esto contesta igual; el cliente no se queda sin respuesta.
-export const KEYWORD_QUESTION_WAIT_MAX_MS = 3 * 60_000;
+// Tope de la espera del agente a un workflow «es la respuesta» en curso (worker reiniciado,
+// cola lenta): pasado esto contesta igual; el cliente no se queda sin respuesta.
+export const ANSWER_RUN_WAIT_MAX_MS = 3 * 60_000;
 
 /**
- * 28-sep-2026 (pregunta duplicada): ¿va en camino (queued/running) una corrida por
- * palabra clave, disparada por uno de estos entrantes pendientes, cuyo workflow TERMINA
- * EN PREGUNTA? Esa pregunta contesta el mensaje: el agente espera a que termine en vez
- * de contestar encima (al terminar, lo que el cliente escribió después sigue pendiente).
+ * ¿Va en camino (queued/running) una corrida con «El workflow es la respuesta» (29-sep-2026;
+ * antes, 28-sep: "termina en pregunta"), disparada por uno de estos entrantes pendientes? Su
+ * último mensaje contesta ese entrante: el agente espera a que termine en vez de contestar
+ * encima (al terminar, lo demás de la ráfaga sigue pendiente). Por palabra clave, y también la
+ * del propio Agente IA cuando su texto no salió (workflow con textos; run.ts).
  */
-export async function keywordQuestionInFlight(organizationId: string, conversationId: string, triggerIds: readonly string[], now: Date): Promise<boolean> {
+export async function answerRunInFlight(organizationId: string, conversationId: string, triggerIds: readonly string[], now: Date): Promise<boolean> {
   if (triggerIds.length === 0) return false;
-  const runs = await db
-    .select({ workflowId: workflowRuns.workflowId })
+  const [run] = await db
+    .select({ id: workflowRuns.id })
     .from(workflowRuns)
+    .innerJoin(workflows, and(eq(workflows.id, workflowRuns.workflowId), eq(workflows.organizationId, organizationId)))
     .where(
       and(
         eq(workflowRuns.organizationId, organizationId),
         eq(workflowRuns.conversationId, conversationId),
-        eq(workflowRuns.trigger, "keyword"),
+        inArray(workflowRuns.trigger, ["keyword", "agent"]),
         inArray(workflowRuns.status, ["queued", "running"]),
         inArray(workflowRuns.triggerMessageId, [...triggerIds]),
-        gt(workflowRuns.createdAt, new Date(now.getTime() - KEYWORD_QUESTION_WAIT_MAX_MS)),
+        gt(workflowRuns.createdAt, new Date(now.getTime() - ANSWER_RUN_WAIT_MAX_MS)),
+        eq(workflows.isAnswer, true),
       ),
-    );
-  for (const workflowId of new Set(runs.map((r) => r.workflowId))) {
-    const steps = await db
-      .select({ payload: workflowSteps.payload })
-      .from(workflowSteps)
-      .where(and(eq(workflowSteps.organizationId, organizationId), eq(workflowSteps.workflowId, workflowId)))
-      .orderBy(workflowSteps.position);
-    if (endsWithQuestionStep(steps.map((s) => s.payload))) return true;
-  }
-  return false;
+    )
+    .limit(1);
+  return Boolean(run);
 }
 
 /**
@@ -270,8 +283,9 @@ export async function agentSendUnresolved(organizationId: string, conversationId
         eq(messages.direction, "out"),
         eq(messages.source, "ai_agent"),
         eq(messages.status, "queued"),
-        // Un archivo de un workflow por palabra clave en camino no frena al agente.
-        closesPending,
+        // Un archivo de un workflow por palabra clave en camino no frena al agente; el último
+        // mensaje de uno «es la respuesta» (contesta su disparador) sí.
+        sql`(${closesPending} or coalesce(${messages.metadata} ? 'contestaA', false))`,
         exceptIds.length ? notInArray(messages.id, [...exceptIds]) : undefined,
       ),
     )

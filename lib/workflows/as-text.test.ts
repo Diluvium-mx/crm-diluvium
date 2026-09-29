@@ -10,6 +10,9 @@ const base: WorkflowForText = {
   triggerKeywords: ["tamaños", "medidas"],
   triggerStage: null,
   triggerStartOnly: false,
+  triggerStartOnlyAgent: true,
+  maxSendsPerChat: null,
+  isAnswer: false,
   steps: [
     { kind: "wait", seconds: 18 },
     { kind: "send_media", assetId: "a1", title: "tabla-tamanos-estandar.png", caption: "Aquí le comparto una foto.\nCon los tamaños." },
@@ -75,5 +78,14 @@ describe("workflowsAsText (botón Copiar de Workflows)", () => {
     );
     const soloComando: WorkflowForText = { ...precio, triggerAgent: false, triggerKeywords: [] };
     expect(workflowsAsText([soloComando], labels)).not.toContain("Solo al inicio");
+  });
+
+  it("tercera opción, máximo por chat y «El workflow es la respuesta» se anotan debajo de los disparadores", () => {
+    const tabla: WorkflowForText = { ...base, triggerStartOnly: true, triggerStartOnlyAgent: false, maxSendsPerChat: 2, isAnswer: true, triggerKeywords: ["medidas"] };
+    const text = workflowsAsText([tabla], labels);
+    expect(text).toContain(
+      "  Solo al inicio por palabra clave; el Agente IA cuando haga falta: la palabra clave solo antes de que el Agente IA o un vendedor le contesten, una sola vez por cliente\n  Máximo por chat: 2 veces\n  El workflow es la respuesta: el Agente IA no agrega nada y espera a que el cliente conteste\n",
+    );
+    expect(workflowsAsText([base], labels)).not.toMatch(/Máximo por chat|es la respuesta/u);
   });
 });
