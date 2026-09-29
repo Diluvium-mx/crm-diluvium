@@ -4,10 +4,7 @@ import type { NormalizedMessageType } from "@/lib/messaging/provider";
 
 import type { TemperatureFilter } from "@/lib/contacts/filters";
 
-/**
- * Pestañas de la lista. "starred" = Destacado: la estrella del chat O la temperatura ⭐
- * del contacto (lib/contacts/filters.ts, 28-sep-2026).
- */
+/** Pestañas de la lista. "starred" = Destacado: la marca ⭐ del contacto (0048). */
 export type InboxFilter = "unread" | "all" | "starred";
 
 /** Parámetros de la lista: pestaña, temperatura (una a la vez; se suma a la pestaña) y búsqueda. */
@@ -40,8 +37,9 @@ export type ConversationListItem = {
    */
   lastMessage: { preview: string; direction: "in" | "out"; kind: MessageKind; at: Date } | null;
   unreadCount: number;
+  /** Destacado ⭐ del CONTACTO (contacts.destacado, 0048): la estrella de la fila. */
   isStarred: boolean;
-  /** Temperatura del CONTACTO (🔥🧊⏳⭐), editable desde la lista (C1). */
+  /** Temperatura del CONTACTO (🔥🧊⏳), editable desde la lista (C1). */
   temperature: string | null;
   /**
    * Semáforo: desde cuándo espera respuesta el cliente (su mensaje más viejo

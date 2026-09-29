@@ -92,7 +92,6 @@ describe.skipIf(!TEST_DATABASE_URL)("señales del Embudo (Postgres real)", () =>
     organizationId?: string;
     channelId?: string;
     unreadCount?: number;
-    isStarred?: boolean;
   } = {}) {
     const organizationId = input.organizationId ?? ORG;
     const contactId = input.contactId ?? CONTACT;
@@ -110,7 +109,6 @@ describe.skipIf(!TEST_DATABASE_URL)("señales del Embudo (Postgres real)", () =>
         input.channelId ??
         (organizationId === ORG ? "channel_funnel_1" : "channel_funnel_other"),
       unreadCount: input.unreadCount ?? 0,
-      isStarred: input.isStarred ?? false,
       lastMessageAt: BASE,
     });
   }
@@ -119,7 +117,6 @@ describe.skipIf(!TEST_DATABASE_URL)("señales del Embudo (Postgres real)", () =>
     contactId?: string;
     conversationId?: string;
     unreadCount?: number;
-    isStarred?: boolean;
   } = {}) {
     await db.insert(s.conversations).values({
       id: input.conversationId ?? `${CONVERSATION}_2`,
@@ -127,7 +124,6 @@ describe.skipIf(!TEST_DATABASE_URL)("señales del Embudo (Postgres real)", () =>
       contactId: input.contactId ?? CONTACT,
       channelId: "channel_funnel_2",
       unreadCount: input.unreadCount ?? 0,
-      isStarred: input.isStarred ?? false,
       lastMessageAt: BASE,
     });
   }
@@ -179,25 +175,16 @@ describe.skipIf(!TEST_DATABASE_URL)("señales del Embudo (Postgres real)", () =>
 
     expect(await funnelSignalsForOrg(ORG)).toEqual({});
     expect(await funnelSignalsForOrg(ORG, [CONVERSATION])).toEqual({
-      [CONTACT]: { unread: 0, pending: false, urgent: false, lastInboundAt: null, starred: false },
+      [CONTACT]: { unread: 0, pending: false, urgent: false, lastInboundAt: null },
     });
     expect(await funnelSignalsForOrg(ORG, [])).toEqual({});
-  });
-
-  it("la estrella de la Bandeja en cualquiera de sus chats = starred, y trae al contacto aunque no tenga otra señal", async () => {
-    await seedConversation();
-    await seedSecondConversation({ isStarred: true });
-
-    const expected = { [CONTACT]: { unread: 0, pending: false, urgent: false, lastInboundAt: null, starred: true } };
-    expect(await funnelSignalsForOrg(ORG)).toEqual(expected);
-    expect(await funnelSignalsForOrg(ORG, [CONVERSATION])).toEqual(expected);
   });
 
   it("suma los no leídos de todos los canales del contacto, incluso al apuntar a una sola conversación", async () => {
     await seedConversation({ unreadCount: 2 });
     await seedSecondConversation({ unreadCount: 5 });
 
-    const expected = { [CONTACT]: { unread: 7, pending: false, urgent: false, lastInboundAt: null, starred: false } };
+    const expected = { [CONTACT]: { unread: 7, pending: false, urgent: false, lastInboundAt: null } };
     expect(await funnelSignalsForOrg(ORG)).toEqual(expected);
     expect(await funnelSignalsForOrg(ORG, [CONVERSATION])).toEqual(expected);
   });
@@ -391,7 +378,6 @@ describe.skipIf(!TEST_DATABASE_URL)("señales del Embudo (Postgres real)", () =>
       pending: true,
       urgent: true,
       lastInboundAt: null,
-      starred: false,
     });
   });
 
@@ -486,7 +472,7 @@ describe.skipIf(!TEST_DATABASE_URL)("señales del Embudo (Postgres real)", () =>
     expect(await funnelSignalsForOrg(ORG, ["conversation_funnel_other"])).toEqual({});
     expect(await funnelSignalsForOrg(ORG)).toEqual({});
     expect(await funnelSignalsForOrg(OTHER_ORG)).toEqual({
-      contact_funnel_other: { unread: 9, pending: false, urgent: true, lastInboundAt: null, starred: false },
+      contact_funnel_other: { unread: 9, pending: false, urgent: true, lastInboundAt: null },
     });
   });
 });

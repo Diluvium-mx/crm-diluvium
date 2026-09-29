@@ -30,11 +30,11 @@ El chat es un solo componente reutilizado en las dos secciones.
 ### Lista de conversaciones
 - **Buscar** por nombre o teléfono.
 - **Filtros (pestañas): No leído · Todo · Destacado.** "Reciente" no existe: la lista SIEMPRE va del
-  último mensaje (arriba) al más antiguo. **Destacado** = estrella del chat O temperatura ⭐ del
-  contacto (28-sep-2026, `lib/contacts/filters.ts`).
+  último mensaje (arriba) al más antiguo. **Destacado** = la marca ⭐ del contacto
+  (`contacts.destacado`, migración 0048, 29-sep-2026): la estrella de la fila es ese dato.
 - **Filtro por temperatura** (28-sep-2026): ícono a la derecha del buscador (`card-filter-button.tsx`),
   una temperatura a la vez (🔥/🧊/⏳/○ sin asignar; Todas = sin filtro). Se SUMA a la pestaña y a la
-  búsqueda (única mezcla permitida por el dueño: una temperatura + Destacado). Va al servidor como
+  búsqueda (una temperatura + Destacado conviven). Va al servidor como
   `temperature` de `listConversations` (la lista es paginada) y al tiempo real con los mismos
   parámetros, así que una fila que deja de cumplir se va sola. No se recuerda al recargar.
 - **Fila:** avatar (iniciales + badge de WhatsApp, reusar `contact-avatar`), nombre, hora del último
@@ -42,7 +42,10 @@ El chat es un solo componente reutilizado en las dos secciones.
   - Vista previa: si el último fue saliente, "Tú: …"; si fue adjunto, "📎 Foto / 📄 Documento / 🎤 Audio / 🎬 Video".
   - **Semáforo** (se deja para evaluar su utilidad): punto verde <15 min, ámbar <1 h, rojo >1 h,
     medido desde el mensaje del cliente que sigue SIN respuesta. Sin punto si no hay nada pendiente.
-- **Destacado:** marca compartida por el equipo (todos ven todo, CLAUDE.md §5).
+- **Destacado:** marca ⭐ del CONTACTO compartida por el equipo (todos ven todo, CLAUDE.md §5). Desde el
+  29-sep-2026 no es una temperatura ni una marca del chat: prender la estrella de una fila la prende en
+  todos los chats del contacto, en su tarjeta del Embudo y en el pop-up (ahí se asigna junto con la
+  temperatura). Convive con cualquier temperatura.
 - Tiempo real: un mensaje nuevo sube la conversación y actualiza no leídos sin recargar.
 
 ### Chat
@@ -77,7 +80,8 @@ comentarios (autor y fecha) y, al final compactos, correo y etiquetas. Guardado 
 salir de cada campo (sin botón Guardar) con aviso "Guardado ✓". Ya no existe "Ver ficha completa".
 
 ### Lista: temperatura (C1)
-Debajo de la estrella de cada fila va la temperatura del contacto (🔥/🧊/⏳/⭐; ○ sin asignar); un
+Debajo de la estrella de cada fila va la temperatura del contacto (🔥/🧊/⏳; ○ sin asignar; ⭐ no es
+temperatura, es la estrella); un
 clic abre un menú para cambiarla sin abrir el chat. Lista y panel quedan sincronizados.
 
 ### Clic derecho: leído / no leído (27-sep-2026)
@@ -301,7 +305,7 @@ la sesión). Tipos exactos en `lib/inbox/types.ts`.
 | `sendAttachments(conversationId, tokens[], caption)` | Composer con archivos | `{ ok:true, messageIds }` (burbujas en cola, en orden; el worker las manda) o `{ ok:false, message }`. `tokens` = comprobantes de `POST /api/inbox/adjuntos` (201: `{ token, fileName, kind, mime, bytes }`; 400: `{ error }`) |
 | `retryMessage(messageId)` | ⚠ Reintentar | igual que `sendMessage`. Solo tiene sentido cuando `message.canRetry` es `true` (rechazo definitivo del proveedor); un envío ambiguo NO se reintenta |
 | `markConversationRead(conversationId, upToMessageId?)` | Al abrir / al leer | `void`. `upToMessageId` = último mensaje a la vista (corte de lectura); sin él, marca hasta el último entrante. Lo posterior al corte sigue sin leer |
-| `setConversationStarred(conversationId, starred)` | Estrella | `void` |
+| `setContactDestacado({ contactId, destacado })` (lib/actions/contacts.ts) | Estrella = Destacado del contacto | contacto |
 | etapa/temperatura | Panel | se reusan las acciones existentes de Contactos |
 | `GET /api/inbox/stream` (SSE) | Tiempo real | eventos con nombre (`event:`) y JSON en `data:` — `conversation.updated {conversationId}`, `message.upserted {conversationId, messageId}`, `message.deleted {conversationId, messageId}` (el eco ganó la carrera y se borró la fila en cola), `contact.created {contactId}`, `contacts.bulk`, `contact.updated {contactId, contactName, changes, stage?, by, at}` (ver "Cambios en vivo"), `stages.updated {reason, movedContacts, from, to}` (cambiaron las columnas del Embudo en el editor; UNA señal por cambio, también al borrar una columna con miles de contactos; la UI relee las etapas y, si se borró una, el Embudo se pone al día), `inbox.bulk {contactos}` (lote del historial del celular: el importador apaga el aviso por fila en su transacción —migración 0039— y manda uno cada 500 mensajes o 5 s; la Bandeja relee su lista y el hilo abierto una vez, el Embudo relee el tablero a lo más cada 30 s si nacieron contactos; docs/go-live.md). Al (re)conectar manda `event: reload` → la UI revalida todo. La UI, ante cada evento, vuelve a pedir esa fila/mensaje. Solo llegan eventos de la organización de la sesión |
 
