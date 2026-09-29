@@ -46,3 +46,19 @@ next-env.d.ts
 
 # Estado y reportes locales del importador del historial (npm run historial:importar)
 .historial/
+
+# Datos de clientes y respaldos: nunca al repo (revisión de seguridad, 28-sep-2026).
+# Exports de GHL, dumps de Postgres, respaldos cifrados y la carpeta del ensayo de restore.
+*.csv
+*.dump
+*.sql.gz
+*.gpg
+/restore/
+
+# Llaves y credenciales locales
+*.key
+*.p12
+*.pfx
+id_rsa*
+id_ed25519*
+.npmrc
