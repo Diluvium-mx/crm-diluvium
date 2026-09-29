@@ -1,7 +1,7 @@
 "use client";
 
 import { useDraggable } from "@dnd-kit/core";
-import { Mail, MailOpen } from "lucide-react";
+import { Mail, MailOpen, Star } from "lucide-react";
 import type { BoardContact } from "../_data/types";
 import { TEMPERATURE_EMOJI, TEMPERATURE_LABELS, getContactFullName } from "../_data/types";
 import { ContactAvatar } from "./contact-avatar";
@@ -38,7 +38,7 @@ export function ContactCardContent({ contact, signal }: { contact: BoardContact;
         <PhoneLocation phone={contact.phoneE164} />
         {tone && <span className="sr-only">{TONE_LABEL[tone]}</span>}
       </div>
-      {(unread || contact.temperature) && (
+      {(unread || contact.temperature || signal?.starred) && (
         <div className="flex shrink-0 items-center gap-2">
           {unread && (
             <span
@@ -47,6 +47,14 @@ export function ContactCardContent({ contact, signal }: { contact: BoardContact;
             >
               {unread}
             </span>
+          )}
+          {/* Estrella de la Bandeja (Destacado del chat), chica; con temperatura ⭐ no se repite. */}
+          {signal?.starred && contact.temperature !== "destacado" && (
+            <Star
+              role="img"
+              aria-label="Destacado (estrella del chat)"
+              className="size-4 fill-brand-orange text-brand-orange"
+            />
           )}
           {contact.temperature && (
             <span

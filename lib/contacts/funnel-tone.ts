@@ -3,7 +3,9 @@
 
 // lastInboundAt: hora (epoch ms) del último mensaje del cliente en cualquiera de sus
 // chats; con ella la tarjeta sube arriba de su columna en vivo. null = nunca escribió.
-export type FunnelSignal = { unread: number; pending: boolean; urgent: boolean; lastInboundAt: number | null };
+// starred: alguno de sus chats tiene la estrella de la Bandeja (filtro «Destacado» del
+// Embudo, lib/contacts/filters.ts; estrella chica en la tarjeta).
+export type FunnelSignal = { unread: number; pending: boolean; urgent: boolean; lastInboundAt: number | null; starred: boolean };
 
 // Fondo de la tarjeta: amarillo si el Agente IA necesita al vendedor (gana), azul si
 // el cliente escribió y nadie le ha contestado ni lo marcó como leído; sin señal, el
