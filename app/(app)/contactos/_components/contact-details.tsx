@@ -454,7 +454,17 @@ export function ContactDetails({
   }
 
   if (loadError) {
-    return <p className="p-4 text-sm text-brand-orange">No se pudo cargar el detalle del contacto. Reintentando…</p>;
+    // Con el encabezado y su botón (`action`): en móvil el detalle cubre la pantalla y
+    // sin la ✕ no habría cómo cerrarlo mientras reintenta.
+    return (
+      <div className="flex h-full min-h-0 flex-col">
+        <div className="flex items-center justify-between gap-2 border-b px-4 py-2.5">
+          <h2 className="text-sm font-semibold">Detalle del contacto</h2>
+          {action}
+        </div>
+        <p className="p-4 text-sm text-brand-orange">No se pudo cargar el detalle del contacto. Reintentando…</p>
+      </div>
+    );
   }
 
   return (

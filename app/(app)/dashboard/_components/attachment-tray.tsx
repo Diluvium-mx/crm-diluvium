@@ -44,7 +44,7 @@ function statusLine(item: AttachmentItem): string {
 export function AttachmentTray({ items, onRemove }: { items: AttachmentItem[]; onRemove: (id: string) => void }) {
   if (items.length === 0) return null;
   return (
-    <ul aria-label="Archivos adjuntos" className="mb-2 flex gap-2 overflow-x-auto pb-1">
+    <ul aria-label="Archivos adjuntos" className="mb-2 flex flex-wrap gap-2 pb-1 md:flex-nowrap md:overflow-x-auto">
       {items.map((item) => (
         <li
           key={item.id}

@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { ArrowLeft } from "lucide-react";
 import type { AdReferral, AttachmentView, ConversationDetail, MessageView } from "@/lib/inbox/types";
 import { useFunnelStages } from "../../_components/funnel-stages-provider";
 import { listMessages, retryMessage, sendMessage, sendTemplate } from "@/lib/inbox/actions";
@@ -243,12 +244,15 @@ export function ChatThread({
   revalToken,
   nowMs,
   headerAction,
+  onBack,
 }: {
   detail: ConversationDetail;
   revalToken: number;
   nowMs: number;
   /** A la derecha del nombre en el encabezado (el pop-up del Embudo pone «Marcar como leído»). */
   headerAction?: ReactNode;
+  /** Móvil: flecha ← a la izquierda del nombre para volver a la lista (la Bandeja la pasa). */
+  onBack?: () => void;
 }) {
   const conversationId = detail.id;
   // Nombre de la etapa (columnas editables del Embudo; llega la clave).
@@ -505,7 +509,18 @@ export function ChatThread({
     // texto largo no puede ensanchar la columna (sacaba de vista "Cerrar").
     <div className="flex h-full min-h-0 min-w-0 flex-1 flex-col overflow-hidden bg-muted/40 [container-type:size]">
       {/* Encabezado */}
-      <header className="flex shrink-0 items-center gap-3 border-b bg-card px-4 py-3">
+      <header className="flex shrink-0 items-center gap-2 border-b bg-card px-3 py-3 md:gap-3 md:px-4">
+        {onBack && (
+          <button
+            type="button"
+            onClick={onBack}
+            aria-label="Volver a la lista"
+            title="Volver a la lista"
+            className="-ml-1 flex size-9 shrink-0 items-center justify-center rounded-md text-muted-foreground hover:bg-muted hover:text-foreground md:hidden"
+          >
+            <ArrowLeft className="size-5" aria-hidden="true" />
+          </button>
+        )}
         <div className="min-w-0 flex-1">
           <p className="truncate text-sm font-semibold">{detail.contact.name}</p>
           <p className="truncate text-xs text-muted-foreground">{formatPhone(detail.contact.phone) || "Sin teléfono"}</p>

@@ -8,6 +8,7 @@ import { isTeamRole, ROLE_LABELS } from "@/lib/team/rules";
 import { NavItem } from "./_components/nav-item";
 import { SignOutButton } from "./_components/sign-out-button";
 import { UserMenu } from "./_components/user-menu";
+import { MobileNav } from "./_components/mobile-nav";
 import { StageChangeToasts } from "./_components/stage-change-toasts";
 import { FunnelStagesProvider } from "./_components/funnel-stages-provider";
 import { listFunnelStages } from "@/lib/contacts/funnel-stages";
@@ -74,7 +75,9 @@ export default async function AppLayout({
       {/* Capas: el sidebar va encima (z-20) y proyecta su sombra sobre la barra y
           el contenido; la barra (z-10) proyecta la suya sobre el contenido. Sin
           z-index en <main>: los pop-ups (fixed z-50) siguen tapando todo. */}
-      <aside className="relative z-20 flex w-56 shrink-0 flex-col border-r border-white/5 bg-brand-navy bg-linear-to-b from-brand-navy to-[#08477f] shadow-[6px_0_24px_-10px_rgb(4_30_60/0.6)] dark:to-[#073763]">
+      {/* Móvil (< md): el sidebar se esconde y el ☰ de la barra abre el mismo menú
+          en un cajón (mobile-nav.tsx). */}
+      <aside className="relative z-20 hidden w-56 shrink-0 flex-col border-r border-white/5 bg-brand-navy bg-linear-to-b from-brand-navy to-[#08477f] shadow-[6px_0_24px_-10px_rgb(4_30_60/0.6)] md:flex dark:to-[#073763]">
         {/* Fijo a la altura de la ventana: en páginas largas (Dashboard, Agente IA)
             el menú del usuario sigue a la vista abajo del sidebar. */}
         <div className="sticky top-0 flex h-dvh flex-col">
@@ -98,20 +101,30 @@ export default async function AppLayout({
             (h-[calc(100dvh-4rem)]); si el header pudiera crecer (email largo,
             zoom, ventana angosta) ese cálculo dejaría de cuadrar. El email se
             trunca para no desbordar ni forzar más alto. */}
-        <header className="relative z-10 flex h-16 shrink-0 items-center justify-between border-b border-white/10 bg-brand-navy-dark px-4 py-3 shadow-[0_6px_18px_-8px_rgb(4_30_60/0.55)]">
-          <div className="flex shrink-0 items-center rounded-md bg-white px-2.5 py-1.5 shadow-sm ring-1 ring-black/5">
-            <Image
-              src="/logo-diluvium.png"
-              alt="Diluvium — Control de inundaciones"
-              width={115}
-              height={28}
-              priority
+        <header className="relative z-10 flex h-16 shrink-0 items-center justify-between gap-2 border-b border-white/10 bg-brand-navy-dark px-3 py-3 shadow-[0_6px_18px_-8px_rgb(4_30_60/0.55)] md:px-4">
+          <div className="flex min-w-0 items-center gap-2">
+            <MobileNav
+              items={navItems}
+              user={{ name: session.user.name, email: session.user.email, roleLabel }}
             />
+            <div className="flex shrink-0 items-center rounded-md bg-white px-2.5 py-1.5 shadow-sm ring-1 ring-black/5">
+              <Image
+                src="/logo-diluvium.png"
+                alt="Diluvium — Control de inundaciones"
+                width={115}
+                height={28}
+                priority
+              />
+            </div>
           </div>
+          {/* En móvil el correo y "Cerrar sesión" viven en el menú del usuario (cajón ☰):
+              la barra solo deja el tema. */}
           <div className="flex min-w-0 items-center gap-3">
-            <span className="min-w-0 truncate text-sm text-brand-white">{session.user.email}</span>
+            <span className="hidden min-w-0 truncate text-sm text-brand-white sm:inline">{session.user.email}</span>
             <ThemeToggle />
-            <SignOutButton />
+            <div className="hidden md:block">
+              <SignOutButton />
+            </div>
           </div>
         </header>
 

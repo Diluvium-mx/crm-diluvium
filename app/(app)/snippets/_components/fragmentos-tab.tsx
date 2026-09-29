@@ -9,6 +9,7 @@ import { createSnippet, deleteSnippet, updateSnippet } from "@/lib/actions/snipp
 import { extractVariables } from "@/lib/snippets/variables";
 import type { SnippetView } from "@/lib/snippets/types";
 import { HighlightBody } from "./highlight";
+import { CloseX } from "@/components/ui/close-x";
 
 type Draft = { id?: string; name: string; body: string };
 
@@ -99,6 +100,11 @@ export function FragmentosTab({ initial, canManage }: { initial: SnippetView[]; 
 
       {draft && (
         <div className="space-y-3 rounded-lg border bg-card p-4 shadow-sm">
+          {/* Móvil: título del formulario y ✕ roja para cerrarlo (abajo sigue Cancelar). */}
+          <div className="flex items-center justify-between gap-2 md:hidden">
+            <h2 className="text-sm font-semibold">{draft.id ? "Editar mensaje rápido" : "Nuevo mensaje rápido"}</h2>
+            <CloseX always size="sm" label="Cerrar formulario" onClick={() => setDraft(null)} />
+          </div>
           <div className="space-y-1">
             <label htmlFor="snippet-name" className="text-xs font-medium text-muted-foreground">
               Nombre

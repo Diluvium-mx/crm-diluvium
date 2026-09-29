@@ -39,6 +39,7 @@ import { funnelTone, type FunnelSignal } from "@/lib/contacts/funnel-tone";
 import { useInboxStream } from "../../dashboard/_components/use-inbox-stream";
 import { setContactUnread } from "@/lib/inbox/actions";
 import { applyTemperatures, columnsByStage, mergeLiveContacts } from "./board-live";
+import { CloseX } from "@/components/ui/close-x";
 
 // Una columna = una zona de destino (droppable). Se extrae a su propio
 // componente porque useDroppable es un hook y no puede llamarse dentro del
@@ -104,7 +105,9 @@ function StageColumn({
 
   return (
     <div
-      className={`flex min-h-0 w-72 shrink-0 flex-col rounded-lg border bg-muted transition-all duration-150 ${
+      // Móvil (< sm): cada columna ocupa la pantalla (menos el margen) y el tablero
+      // se desliza de lado columna por columna (snap); desde sm, el ancho fijo de siempre.
+      className={`flex min-h-0 w-[calc(100vw-2.5rem)] shrink-0 snap-center flex-col rounded-lg border bg-muted transition-all duration-150 sm:w-72 sm:snap-align-none ${
         isOver ? "scale-[1.01] shadow-lg ring-2 ring-brand-orange ring-offset-2 ring-offset-background" : ""
       }`}
     >
@@ -836,7 +839,7 @@ export function ContactsBoard({
     // contenedor de columnas (flex-1) encoja por debajo de su contenido y su
     // hijo overflow-y-auto acote de verdad el viewport del virtualizador.
     <div className="flex h-[calc(100dvh-4rem)] min-h-0 flex-col gap-4 p-4">
-      <div className="flex items-center justify-between gap-4">
+      <div className="flex flex-wrap items-center justify-between gap-3 sm:gap-4">
         <div className="flex items-center gap-2">
           <h1 className="text-lg font-semibold">Embudo</h1>
           {/* Lápiz: abre el editor de columnas (el mismo de Agente IA → Etapas del embudo). */}
@@ -850,7 +853,8 @@ export function ContactsBoard({
             <Pencil className="size-4" />
           </button>
         </div>
-        <div className="flex items-center gap-3">
+        {/* Móvil: el buscador toma el ancho que queda (baja de renglón si hace falta). */}
+        <div className="flex flex-1 items-center gap-3 sm:flex-none">
           <button
             type="button"
             onClick={() => setCreatingContact(true)}
@@ -863,7 +867,7 @@ export function ContactsBoard({
             placeholder="Buscar por nombre o teléfono..."
             value={search}
             onChange={(event) => setSearch(event.target.value)}
-            className="w-72 rounded border px-3 py-2 text-sm"
+            className="min-w-0 flex-1 rounded border px-3 py-2 text-sm sm:w-72 sm:flex-none"
           />
           <CardFilterButton
             temperature={temperatureFilter}
@@ -887,7 +891,12 @@ export function ContactsBoard({
             arrastra (crece 1 % + marco naranja de 4 px por fuera). Un contenedor con scroll
             horizontal recorta TODO lo que sale de su caja (también arriba): sin este margen se
             comía el borde de arriba del marco. El -m-3 deja las columnas en el mismo lugar. */}
-        <div ref={boardScrollRef} className="-m-3 flex min-h-0 flex-1 gap-4 overflow-x-auto p-3">
+        <div
+          ref={boardScrollRef}
+          // El snap de móvil se apaga mientras se arrastra una tarjeta: el auto-scroll de
+          // dnd-kit y el snap se pelearían por la posición.
+          className={`-m-3 flex min-h-0 flex-1 gap-4 overflow-x-auto p-3 ${activeContact ? "" : "max-sm:snap-x max-sm:snap-mandatory"}`}
+        >
           {stages.map((stage) => (
             <StageColumn
               key={stage.key}
@@ -908,7 +917,7 @@ export function ContactsBoard({
           {activeContact ? (
             <div
               data-funnel={funnelTone(signals[activeContact.id])}
-              className="card-pickup w-72 cursor-grabbing rounded-md bg-card shadow-2xl [&>div]:bg-transparent"
+              className="card-pickup w-[calc(100vw-2.5rem)] cursor-grabbing rounded-md bg-card shadow-2xl sm:w-72 [&>div]:bg-transparent"
             >
               <ContactCardContent contact={activeContact} signal={signals[activeContact.id]} />
             </div>
@@ -921,9 +930,10 @@ export function ContactsBoard({
           <div className="max-h-[90vh] w-full max-w-3xl overflow-y-auto rounded-lg bg-background p-4 shadow-xl" onClick={(e) => e.stopPropagation()}>
             <div className="mb-3 flex items-center justify-between gap-3">
               <h2 id="editar-columnas-titulo" className="text-sm font-semibold">Columnas del Embudo</h2>
-              <button type="button" onClick={() => setEditingStages(false)} aria-label="Cerrar" className="rounded p-1 text-muted-foreground hover:bg-muted">
+              <button type="button" onClick={() => setEditingStages(false)} aria-label="Cerrar" className="hidden rounded p-1 text-muted-foreground hover:bg-muted md:block">
                 <X className="size-4" />
               </button>
+              <CloseX size="sm" onClick={() => setEditingStages(false)} />
             </div>
             <StagesEditor />
           </div>

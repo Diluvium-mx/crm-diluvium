@@ -1,6 +1,6 @@
 "use client";
 
-import { PanelLeftClose, PanelLeftOpen, PanelRightClose, PanelRightOpen } from "lucide-react";
+import { Info, PanelLeftClose, PanelLeftOpen, PanelRightClose, PanelRightOpen } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import type { ConversationDetail, ConversationListItem, InboxFilter } from "@/lib/inbox/types";
@@ -23,6 +23,7 @@ import { ConversationList } from "./conversation-list";
 import { useInboxStream } from "./use-inbox-stream";
 import { mergeItems } from "@/lib/inbox/list-merge";
 import { useOpenContactRequests } from "../../_components/open-contact";
+import { CloseX } from "@/components/ui/close-x";
 
 // ¿La pestaña está realmente a la vista? Solo entonces se marca leído por una
 // llegada en vivo (una pestaña en segundo plano no debe limpiar el contador
@@ -48,6 +49,9 @@ export function InboxBoard({ openContactId = null }: { openContactId?: string | 
   // cambiar de conversación, recargar o al día siguiente).
   const [listOpen, setListOpen] = usePersistentToggle("bandeja.lista");
   const [contactOpen, setContactOpen] = usePersistentToggle("bandeja.detalle");
+  // Móvil (< md): el Detalle del contacto se abre ENCIMA del chat con (i) y se cierra
+  // con ✕; no se recuerda (en el celular siempre se entra al chat).
+  const [mobileDetailOpen, setMobileDetailOpen] = useState(false);
   const [nowMs, setNowMs] = useState(() => Date.now());
   const [revalToken, setRevalToken] = useState(0);
 
@@ -298,6 +302,7 @@ export function InboxBoard({ openContactId = null }: { openContactId?: string | 
   function selectConversation(id: string) {
     setSelectedId(id);
     setDetail(null);
+    setMobileDetailOpen(false);
     void refreshDetail(id);
     // Abrir la conversación la marca como leída; limpia el contador optimista.
     setConversations((current) => current.map((c) => (c.id === id ? { ...c, unreadCount: 0 } : c)));
@@ -378,6 +383,7 @@ export function InboxBoard({ openContactId = null }: { openContactId?: string | 
     if (unread && selectedId === id) {
       setSelectedId(null);
       setDetail(null);
+      setMobileDetailOpen(false);
     }
     setConversations((current) =>
       current.map((c) => (c.id === id ? { ...c, unreadCount: unread ? Math.max(1, c.unreadCount) : 0 } : c)),
@@ -392,60 +398,89 @@ export function InboxBoard({ openContactId = null }: { openContactId?: string | 
     // también muestra la franja del bot arriba: aquí el board toma el resto (flex-1
     // dentro de un padre de alto fijo) y nada se sale: la página no se desliza; cada
     // columna desliza lo suyo (lista, historial del chat, detalle).
+    // Móvil (< md): UNA columna a la vez. Sin chat abierto se ve la lista a todo lo ancho;
+    // al abrir un chat, el chat ocupa la pantalla (← en su encabezado regresa a la lista)
+    // y el Detalle del contacto se abre encima con (i). Desde md, las tres columnas de
+    // siempre (lista y detalle colapsables, recordadas en esta computadora). Todo se
+    // decide con clases (hidden/md:flex), no con JS: el servidor y el cliente pintan lo
+    // mismo y no hay salto al cargar.
     <div className="flex min-h-0 flex-1 overflow-hidden">
-      {/* Columna: lista (colapsable) */}
-      {listOpen ? (
-        <aside className="flex w-80 shrink-0 flex-col border-r bg-card">
-          <div className="flex items-center justify-between border-b px-3 py-2">
-            <h1 className="text-sm font-semibold">Bandeja</h1>
-            <button
-              type="button"
-              onClick={() => setListOpen(false)}
-              aria-label="Ocultar lista"
-              title="Ocultar lista"
-              className="rounded p-1 text-muted-foreground hover:bg-muted hover:text-foreground"
-            >
-              <PanelLeftClose className="size-4" aria-hidden="true" />
-            </button>
-          </div>
-          <div className="min-h-0 flex-1">
-            <ConversationList
-              items={conversations}
-              selectedId={selectedId}
-              filter={filter}
-              temperature={temperature}
-              search={search}
-              loading={loadingList}
-              nowMs={nowMs}
-              hasMore={nextCursor !== null}
-              loadingMore={loadingMore}
-              onLoadMore={() => void loadMore()}
-              onSelect={selectConversation}
-              onFilterChange={setFilter}
-              onTemperatureFilterChange={setTemperature}
-              onSearchChange={setSearch}
-              onToggleStar={toggleStar}
-              onChangeTemperature={changeTemperature}
-              onSetUnread={setUnread}
-            />
-          </div>
-        </aside>
-      ) : (
+      {/* Columna: lista (colapsable en escritorio; en móvil se ve si no hay chat abierto) */}
+      <aside
+        className={`${selectedId ? "hidden" : "flex"} w-full shrink-0 flex-col border-r bg-card md:w-80 ${
+          listOpen ? "md:flex" : "md:hidden"
+        }`}
+      >
+        <div className="flex items-center justify-between border-b px-3 py-2">
+          <h1 className="text-sm font-semibold">Bandeja</h1>
+          <button
+            type="button"
+            onClick={() => setListOpen(false)}
+            aria-label="Ocultar lista"
+            title="Ocultar lista"
+            className="hidden rounded p-1 text-muted-foreground hover:bg-muted hover:text-foreground md:block"
+          >
+            <PanelLeftClose className="size-4" aria-hidden="true" />
+          </button>
+        </div>
+        <div className="min-h-0 flex-1">
+          <ConversationList
+            items={conversations}
+            selectedId={selectedId}
+            filter={filter}
+            temperature={temperature}
+            search={search}
+            loading={loadingList}
+            nowMs={nowMs}
+            hasMore={nextCursor !== null}
+            loadingMore={loadingMore}
+            onLoadMore={() => void loadMore()}
+            onSelect={selectConversation}
+            onFilterChange={setFilter}
+            onTemperatureFilterChange={setTemperature}
+            onSearchChange={setSearch}
+            onToggleStar={toggleStar}
+            onChangeTemperature={changeTemperature}
+            onSetUnread={setUnread}
+          />
+        </div>
+      </aside>
+      {!listOpen && (
         <button
           type="button"
           onClick={() => setListOpen(true)}
           aria-label="Mostrar lista"
           title="Mostrar lista"
-          className="flex w-10 shrink-0 items-start justify-center border-r bg-card pt-3 text-muted-foreground hover:text-foreground"
+          className="hidden w-10 shrink-0 items-start justify-center border-r bg-card pt-3 text-muted-foreground hover:text-foreground md:flex"
         >
           <PanelLeftOpen className="size-4" aria-hidden="true" />
         </button>
       )}
 
-      {/* Columna: chat */}
-      <section className="flex min-h-0 min-w-0 flex-1 flex-col">
+      {/* Columna: chat (en móvil solo con un chat abierto) */}
+      <section className={`${selectedId ? "flex" : "hidden"} min-h-0 min-w-0 flex-1 flex-col md:flex`}>
         {detail ? (
-          <ChatThread detail={detail} revalToken={revalToken} nowMs={nowMs} />
+          <ChatThread
+            detail={detail}
+            revalToken={revalToken}
+            nowMs={nowMs}
+            onBack={() => {
+              setSelectedId(null);
+              setDetail(null);
+              setMobileDetailOpen(false);
+            }}
+            headerAction={
+              <button
+                type="button"
+                onClick={() => setMobileDetailOpen(true)}
+                aria-label="Ver detalle del contacto"
+                title="Detalle del contacto"
+                className="flex size-9 shrink-0 items-center justify-center rounded-md text-muted-foreground hover:bg-muted hover:text-foreground md:hidden"
+              >
+                <Info className="size-5" aria-hidden="true" />
+              </button>
+            }
+          />
         ) : selectedId ? (
           <div className="flex flex-1 items-center justify-center text-sm text-muted-foreground">Cargando…</div>
         ) : (
@@ -456,10 +491,10 @@ export function InboxBoard({ openContactId = null }: { openContactId?: string | 
         )}
       </section>
 
-      {/* Columna: panel de contacto (colapsable) */}
+      {/* Columna: panel de contacto (colapsable; solo escritorio) */}
       {detail &&
         (contactOpen ? (
-          <aside className="flex w-80 shrink-0 flex-col border-l bg-card">
+          <aside className="hidden w-80 shrink-0 flex-col border-l bg-card md:flex">
             {/* Un solo encabezado: el del "Detalle del contacto", con el botón
                 para ocultar el panel (B2: compacto). */}
             <ContactPanel
@@ -485,11 +520,28 @@ export function InboxBoard({ openContactId = null }: { openContactId?: string | 
             onClick={() => setContactOpen(true)}
             aria-label="Mostrar panel de contacto"
             title="Mostrar panel"
-            className="flex w-10 shrink-0 items-start justify-center border-l bg-card pt-3 text-muted-foreground hover:text-foreground"
+            className="hidden w-10 shrink-0 items-start justify-center border-l bg-card pt-3 text-muted-foreground hover:text-foreground md:flex"
           >
             <PanelRightOpen className="size-4" aria-hidden="true" />
           </button>
         ))}
+
+      {/* Móvil: el MISMO Detalle del contacto, encima del chat, a pantalla completa. */}
+      {detail && mobileDetailOpen && (
+        <div
+          role="dialog"
+          aria-modal="true"
+          aria-label="Detalle del contacto"
+          className="fixed inset-0 z-40 flex flex-col bg-card md:hidden"
+        >
+          <ContactPanel
+            detail={detail}
+            onTemperatureChanged={applyTemperature}
+            onStageChanged={applyStage}
+            action={<CloseX always label="Cerrar detalle del contacto" onClick={() => setMobileDetailOpen(false)} />}
+          />
+        </div>
+      )}
     </div>
   );
 }
