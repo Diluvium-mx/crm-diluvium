@@ -250,7 +250,9 @@ export function AgenteEditor({
           ref={listRef}
           role="tablist"
           aria-label="Secciones del agente"
-          className="relative flex min-w-0 gap-1 overflow-x-auto overscroll-x-contain [scrollbar-width:thin]"
+          // Móvil: las subpestañas se acomodan en varios renglones (nada se desliza de
+          // lado, solo el Embudo); desde md, un renglón que se desliza como siempre.
+          className="relative flex min-w-0 flex-wrap gap-1 md:flex-nowrap md:overflow-x-auto md:overscroll-x-contain md:[scrollbar-width:thin]"
         >
           {AGENT_SECTIONS.map((s, i) => {
             const selected = section === s.id;

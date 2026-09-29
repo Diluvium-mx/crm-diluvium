@@ -9,6 +9,7 @@ import { scheduleMessage, updateScheduledMessage } from "@/lib/actions/scheduled
 import { instantToLocal, localToInstant, textAllowedAt } from "@/lib/scheduled/rules";
 import type { ScheduledView } from "@/lib/scheduled/types";
 import { TemplatePicker } from "./template-picker";
+import { CloseX } from "@/components/ui/close-x";
 
 type Mode = { type: "new"; initialText: string; templateOnly: boolean } | { type: "edit"; item: ScheduledView };
 
@@ -85,9 +86,10 @@ export function ScheduleForm({
     <div className="mb-2 max-h-[min(32rem,65cqh)] overflow-y-auto overscroll-contain rounded-lg border bg-background p-3 shadow-md">
       <div className="mb-2 flex items-center justify-between">
         <span className="text-sm font-semibold">🕒 {editing ? "Editar mensaje programado" : "Programar mensaje"}</span>
-        <button type="button" onClick={onCancel} aria-label="Cerrar" className="rounded p-1 text-muted-foreground hover:bg-muted hover:text-foreground">
+        <button type="button" onClick={onCancel} aria-label="Cerrar" className="hidden rounded p-1 text-muted-foreground hover:bg-muted hover:text-foreground md:block">
           <X className="size-4" aria-hidden="true" />
         </button>
+        <CloseX size="sm" onClick={onCancel} />
       </div>
 
       <div className="flex flex-wrap items-end gap-3 text-xs">

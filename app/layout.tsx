@@ -1,4 +1,4 @@
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
 import { ThemeProvider } from "@/components/theme-provider";
 import { GlowPointer } from "@/components/ui/glow-pointer";
 import "./globals.css";
@@ -6,6 +6,18 @@ import "./globals.css";
 export const metadata: Metadata = {
   title: "CRM Diluvium",
   description: "CRM conversacional de Diluvium",
+};
+
+// Versión móvil: ancho del dispositivo, sin zoom raro al enfocar un campo, la
+// pantalla ocupa hasta los bordes (safe areas con env()) y el teclado en Android
+// ENCOGE la vista (interactiveWidget) en vez de taparla: así la caja para escribir
+// del chat (abajo de un alto 100dvh) queda a la vista mientras se escribe.
+export const viewport: Viewport = {
+  width: "device-width",
+  initialScale: 1,
+  viewportFit: "cover",
+  interactiveWidget: "resizes-content",
+  themeColor: "#245595",
 };
 
 // Tipografía de marca (Helvetica → Arial/Helvetica Neue como respaldo) vía el

@@ -1,13 +1,14 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { PanelRightClose, PanelRightOpen, X } from "lucide-react";
+import { Info, PanelRightClose, PanelRightOpen, X } from "lucide-react";
 import { usePersistentToggle } from "@/components/ui/use-persistent-toggle";
 import type { FunnelSignal } from "@/lib/contacts/funnel-tone";
 import { getContactFullName, type BoardContact, type Stage, type Temperature } from "../_data/types";
 import { ContactChat } from "./contact-chat";
 import { ContactDetails } from "./contact-details";
 import { MarkReadButton } from "./mark-read-button";
+import { CloseX } from "@/components/ui/close-x";
 
 export function ContactDetailPanel({
   contact,
@@ -42,6 +43,9 @@ export function ContactDetailPanel({
   // Detalle del contacto visible (como la Bandeja). Se RECUERDA en esta
   // computadora: oculto sigue oculto al cambiar de contacto, recargar o al día siguiente.
   const [detailsOpen, setDetailsOpen] = usePersistentToggle("embudo.detalle");
+  // Móvil (< md): como la Bandeja. El chat ocupa todo el pop-up y el Detalle del contacto
+  // se abre ENCIMA, a pantalla completa, con (i) en el encabezado del chat; ✕ roja lo cierra.
+  const [mobileDetailOpen, setMobileDetailOpen] = useState(false);
 
   useEffect(() => {
     if (!isClosing) {
@@ -78,7 +82,9 @@ export function ContactDetailPanel({
   }, []);
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+    // Móvil (< md): el pop-up ocupa TODA la pantalla (sin margen ni esquinas); desde md,
+    // la ventana centrada de siempre.
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-0 md:p-4">
       <button
         type="button"
         aria-label="Cerrar detalle del contacto"
@@ -94,7 +100,7 @@ export function ContactDetailPanel({
         aria-modal="true"
         aria-labelledby="contact-detail-title"
         tabIndex={-1}
-        className={`relative flex h-[80vh] w-full max-w-4xl flex-col overflow-hidden rounded-lg bg-background shadow-xl outline-none duration-200 ease-out motion-reduce:animate-none md:flex-row ${
+        className={`relative flex h-full w-full max-w-4xl flex-col overflow-hidden bg-background shadow-xl outline-none duration-200 ease-out motion-reduce:animate-none md:h-[80vh] md:flex-row md:rounded-lg ${
           isClosing ? "animate-out fade-out-0 zoom-out-95" : "animate-in fade-in-0 zoom-in-95"
         }`}
       >
@@ -110,7 +116,22 @@ export function ContactDetailPanel({
           <ContactChat
             contactId={contact.id}
             phoneE164={contact.phoneE164}
-            headerAction={<MarkReadButton signal={signal} onMarkRead={onMarkRead} />}
+            headerAction={
+              <>
+                <MarkReadButton signal={signal} onMarkRead={onMarkRead} />
+                {/* Móvil: (i) abre el Detalle encima; ✕ roja cierra el pop-up. */}
+                <button
+                  type="button"
+                  onClick={() => setMobileDetailOpen(true)}
+                  aria-label="Ver detalle del contacto"
+                  title="Detalle del contacto"
+                  className="flex size-9 shrink-0 items-center justify-center rounded-md text-muted-foreground hover:bg-muted hover:text-foreground md:hidden"
+                >
+                  <Info className="size-5" aria-hidden="true" />
+                </button>
+                <CloseX size="sm" label="Cerrar" onClick={requestClose} />
+              </>
+            }
             onOpenContact={onOpenContact}
           />
         </section>
@@ -119,7 +140,7 @@ export function ContactDetailPanel({
             oculta y se muestra con el mismo botón que en la Bandeja. "Cerrar" (el
             pop-up) se ve siempre: en el encabezado del detalle o en la franja. */}
         {detailsOpen ? (
-          <aside className="flex h-1/2 min-h-0 w-full shrink-0 flex-col md:h-auto md:w-80">
+          <aside className="hidden min-h-0 w-80 shrink-0 flex-col md:flex">
             <ContactDetails
               key={contact.id}
               contactId={contact.id}
@@ -155,7 +176,7 @@ export function ContactDetailPanel({
             />
           </aside>
         ) : (
-          <div className="flex shrink-0 items-center justify-end gap-1 bg-card p-1.5 md:w-10 md:flex-col md:items-center md:justify-start md:gap-2 md:pt-2.5">
+          <div className="hidden w-10 shrink-0 flex-col items-center gap-2 bg-card pt-2.5 md:flex">
             <button
               type="button"
               onClick={requestClose}
@@ -174,6 +195,24 @@ export function ContactDetailPanel({
             >
               <PanelRightOpen className="size-4" aria-hidden="true" />
             </button>
+          </div>
+        )}
+
+        {/* Móvil: el MISMO Detalle del contacto, encima del chat, a pantalla completa (como la Bandeja). */}
+        {mobileDetailOpen && (
+          <div role="dialog" aria-modal="true" aria-label="Detalle del contacto" className="fixed inset-0 z-[60] flex flex-col bg-card md:hidden">
+            <ContactDetails
+              key={`movil-${contact.id}`}
+              contactId={contact.id}
+              name={getContactFullName(contact)}
+              phone={contact.phoneE164}
+              stage={contact.stage}
+              temperature={contact.temperature}
+              onStageChange={onStageChange}
+              onTemperatureChange={onTemperatureChange}
+              busy={isSaving}
+              action={<CloseX always label="Cerrar detalle del contacto" onClick={() => setMobileDetailOpen(false)} />}
+            />
           </div>
         )}
       </div>

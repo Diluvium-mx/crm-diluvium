@@ -7,6 +7,7 @@ import { useEffect, useState } from "react";
 import { X } from "lucide-react";
 import { listSnippets } from "@/lib/actions/snippets";
 import type { SnippetView } from "@/lib/snippets/types";
+import { CloseX } from "@/components/ui/close-x";
 
 export function SnippetPicker({
   onInsert,
@@ -48,11 +49,12 @@ export function SnippetPicker({
           type="button"
           onClick={onClose}
           aria-label="Cerrar mensajes rápidos"
-          className="flex items-center gap-1 rounded-md px-2 py-1 text-xs font-medium text-muted-foreground hover:bg-muted hover:text-foreground"
+          className="hidden items-center gap-1 rounded-md px-2 py-1 text-xs font-medium text-muted-foreground hover:bg-muted hover:text-foreground md:flex"
         >
           <X className="size-4" aria-hidden="true" />
           Cerrar
         </button>
+        <CloseX size="sm" label="Cerrar mensajes rápidos" onClick={onClose} />
       </div>
       <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain p-3">
         {error ? (
