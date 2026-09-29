@@ -25,10 +25,13 @@ import type { ObjectStorage } from "@/lib/storage/s3";
 import { enqueueWorkflowRun } from "@/lib/queue/workflows";
 import { notifyConversation } from "@/lib/ai/runtime/state";
 import { addNotice } from "@/lib/ai/runtime/notices";
+import { outboundTextsSinceLastInbound } from "@/lib/ai/runtime/context";
+import { markAnswersUntil } from "@/lib/ai/runtime/saved-reply";
+import { splitRepeated } from "@/lib/messaging/repeat";
 import { moveStageForward } from "@/lib/contacts/stage";
 import { listFunnelStages } from "@/lib/contacts/funnel-stages";
 import { roleKey } from "@/lib/contacts/stages";
-import { missingMedia, stripUnresolvedVariables, waitMs } from "./steps";
+import { endsWithQuestionStep, missingMedia, stripUnresolvedVariables, waitMs } from "./steps";
 import { SLUG_DATOS_BANCARIOS } from "./defaults";
 
 export type RunTrigger = "agent" | "keyword" | "command" | "stage";
@@ -338,6 +341,16 @@ export async function executeWorkflowRun(runId: string, deps: ExecutorDeps): Pro
         deps: { ...deps, now, sleep },
       });
       if (sent && !messageIds.includes(sent.messageId)) messageIds.push(sent.messageId);
+      // 28-sep-2026 (pregunta duplicada): la PREGUNTA con la que termina una corrida por
+      // palabra clave contesta el mensaje que la disparó (solo hasta ese mensaje: lo que el
+      // cliente escribió después lo atiende el agente). Se marca aunque WhatsApp no haya
+      // confirmado: si al final falla, la fila queda "failed" y deja de contar. Si la marca
+      // no se guarda, el agente contesta como antes (y el candado anti-repetición sigue).
+      if (sent && run.trigger === "keyword" && run.triggerMessageId && i === loaded.steps.length - 1 && endsWithQuestionStep(loaded.steps.map((st) => st.payload))) {
+        await markAnswersUntil(run.organizationId, sent.messageId, run.triggerMessageId).catch((error: unknown) =>
+          console.error(`[workflows] ${run.id}: no se pudo marcar la pregunta final como respuesta`, error),
+        );
+      }
       // Resultado DESCONOCIDO del proveedor (timeout): no se sabe si el cliente
       // recibió el archivo. No se avanza (moverlo a "Cerca de compra" sin la
       // CLABE sería mentir): la corrida queda fallida con motivo y el mensaje se
@@ -510,10 +523,19 @@ async function runStep(step: WorkflowStepPayload, ctx: StepCtx): Promise<SendOut
       const messageId = stepMessageId(run.id, ctx.stepIndex);
       const prior = await alreadySent(run.organizationId, messageId);
       if (prior) return prior;
+      const text = stripUnresolvedVariables(renderSnippet(step.text, ctx.values));
+      // Candado anti-repetición (28-sep-2026): lo que sale a nombre del agente (corrida del
+      // agente o por palabra clave) no repite un texto IDÉNTICO que ya salió después del
+      // último mensaje del cliente (p. ej. la pregunta que el agente ya hizo). El comando o
+      // la etapa de un vendedor salen siempre: los pidió él.
+      if (isAgentTrigger(run) && splitRepeated([text], await outboundTextsSinceLastInbound(run.organizationId, run.conversationId)).dropped.length) {
+        console.info(`[workflows] ${run.id}: paso ${ctx.stepIndex + 1} omitido; ya salió igual: «${text.slice(0, 120)}»`);
+        return null;
+      }
       return sendTextMessage(deps.provider, {
         organizationId: run.organizationId,
         conversationId: run.conversationId,
-        text: stripUnresolvedVariables(renderSnippet(step.text, ctx.values)),
+        text,
         source: ctx.source,
         sentByUserId: ctx.sentBy,
         // Solo un comando (el vendedor está viendo el chat) marca leídos.

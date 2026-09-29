@@ -43,6 +43,25 @@ export function sendsToCustomer(step: StepPayload): boolean {
   return step.kind === "send_text" || step.kind === "send_media";
 }
 
+// ¿El texto le hace una PREGUNTA al cliente? "?" al final, seguido si acaso de espacios,
+// emojis o signos, nunca de letras o números: "¿Usted tiene problemas de inundaciones? 🙌"
+// sí; "¿Le interesa? Aquí está el video" no.
+const QUESTION_END_RE = /\?[^\p{L}\p{N}]*$/u;
+export function endsWithQuestion(text: string | null | undefined): boolean {
+  return QUESTION_END_RE.test((text ?? "").trim());
+}
+
+// 28-sep-2026 (pregunta duplicada): un workflow por palabra clave cuyo ÚLTIMO paso le
+// pregunta algo al cliente (texto, o pie de la imagen/video) contesta el mensaje que lo
+// disparó; el Agente IA no contesta encima y espera la respuesta del cliente.
+export function endsWithQuestionStep(steps: readonly WorkflowStepPayload[]): boolean {
+  const last = steps.at(-1);
+  if (!last) return false;
+  if (last.kind === "send_text") return endsWithQuestion(last.text);
+  if (last.kind === "send_media") return endsWithQuestion(last.caption);
+  return false;
+}
+
 // Comando del vendedor: "/algo" en minúsculas, sin espacios; null = sin comando.
 // Letras sin acento y la ñ (28-sep-2026, pedido del dueño: "/tamaños"), números
 // y guiones. Única definición: el editor, el composer y el hilo pasan por aquí.

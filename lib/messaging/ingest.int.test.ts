@@ -66,6 +66,8 @@ describe.skipIf(!TEST_DATABASE_URL)("ingesta de WhatsApp (Postgres real)", () =>
     account?: string;
     /** conversationId de Zernio (por omisión, uno fijo por teléfono). */
     conv?: string;
+    /** Texto del mensaje (por omisión "mensaje N"). */
+    text?: string;
   }) {
     seq++;
     const phone = opts.phone ?? "5216682410001";
@@ -81,7 +83,7 @@ describe.skipIf(!TEST_DATABASE_URL)("ingesta de WhatsApp (Postgres real)", () =>
         platform: "whatsapp",
         platformMessageId: opts.wamid ?? `wamid.${seq}.${randomUUID()}`,
         direction: opts.direction ?? "incoming",
-        text: `mensaje ${seq}`,
+        text: opts.text ?? `mensaje ${seq}`,
         attachments: [],
         sender: outgoing ? { id: "zacc_1" } : { id: phone, name: "Cliente", phoneNumber: phone },
         sentAt: opts.sentAt,
@@ -489,7 +491,7 @@ describe.skipIf(!TEST_DATABASE_URL)("ingesta de WhatsApp (Postgres real)", () =>
       );
     });
 
-    it("ambiguo con eco por webhook: no se adivina, no se reintenta; el eco es el mensaje que sí salió", async () => {
+    it("ambiguo con eco de OTRO texto: no se adivina, no se reintenta; el eco es el mensaje que sí salió", async () => {
       const c = await openConversation();
       const { sendTextMessage, expireUnconfirmedSends, retryTextMessage, SEND_UNCONFIRMED } = await import("./send");
       const { ZernioSendError } = await import("./zernio");
@@ -514,6 +516,90 @@ describe.skipIf(!TEST_DATABASE_URL)("ingesta de WhatsApp (Postgres real)", () =>
       });
       // El eco (lo que de verdad se envió) sigue en el hilo como saliente.
       expect((await outs()).find((m) => m.providerMessageId === "wamid.LOST")).toMatchObject({ direction: "out", status: "sent" });
+    });
+
+    // ── Eco de un envío en duda con el MISMO texto (28-sep-2026, chat de Ana Mayda) ──
+    const PREGUNTA = "¿Usted tiene problemas de inundaciones?";
+    async function timeoutProvider(before?: () => Promise<unknown>) {
+      const { ZernioSendError } = await import("./zernio");
+      return withProvider({
+        sendText: async () => {
+          if (before) await before();
+          throw new ZernioSendError(0, "network", "The operation was aborted due to timeout", "unknown");
+        },
+      });
+    }
+
+    it("eco TARDÍO con el mismo texto: se une a su envío en duda (una sola burbuja, enviada, con los ids y la hora del eco)", async () => {
+      const c = await openConversation();
+      const send = await import("./send");
+      const out = await send.sendTextMessage(await timeoutProvider(), { organizationId: ORG_A, conversationId: c.id, sentByUserId: "u_vendedor", text: PREGUNTA });
+      expect(out.status).toBe("pending");
+      const echoAt = later(30_000);
+      expect(await deliver(msgEvent({ direction: "outgoing", source: "cloud_api", wamid: "wamid.TARDE", text: ` ${PREGUNTA} `, sentAt: echoAt.toISOString() }))).toBe(
+        ingest.LATE_ECHO_OUTCOME,
+      );
+      const rows = await outs();
+      expect(rows).toHaveLength(1);
+      expect(rows[0]).toMatchObject({ id: out.messageId, source: "crm", sentByUserId: "u_vendedor", status: "sent", errorCode: null, providerMessageId: "wamid.TARDE" });
+      expect(rows[0].sentAt?.toISOString()).toBe(echoAt.toISOString());
+      expect(rows[0].metadata).toMatchObject({ respondeHasta: expect.any(String) });
+      // Ya no está en duda: el barrido no la da por fallida.
+      expect(await send.expireUnconfirmedSends(later(16 * 60_000))).toBe(0);
+    });
+
+    it("eco tardío DESPUÉS del barrido (Agente IA, send_unconfirmed): queda enviada, sin aviso, el agente se destraba y lo que el cliente escribió mientras sigue pendiente", async () => {
+      const c = await openConversation(); // el cliente preguntó algo (hace 60 s)
+      const send = await import("./send");
+      const ctx = await import("@/lib/ai/runtime/context");
+      const out = await send.sendTextMessage(await timeoutProvider(), { organizationId: ORG_A, conversationId: c.id, text: PREGUNTA, source: "ai_agent" });
+      // Mientras la respuesta sigue en duda, el cliente escribe otra cosa; el agente está frenado.
+      await deliver(msgEvent({ text: "¿dónde están?", sentAt: later(5_000).toISOString() }));
+      expect(await ctx.agentSendUnresolved(ORG_A, c.id)).toBe(true);
+      // 15 min: el barrido la da por fallida y el vendedor ve el aviso.
+      expect(await send.expireUnconfirmedSends(later(16 * 60_000))).toBe(1);
+      await db.insert(s.aiAgentNotices).values({ id: "n_envio", organizationId: ORG_A, conversationId: c.id, messageId: out.messageId, kind: "envio", body: "WhatsApp no confirmó…" });
+      // Llega el eco (Zernio sí la mandó, tarde): el mismo mensaje, no otro de "otra API".
+      expect(await deliver(msgEvent({ direction: "outgoing", source: "cloud_api", wamid: "wamid.TARDE2", text: PREGUNTA, sentAt: later(20_000).toISOString() }))).toBe(
+        ingest.LATE_ECHO_OUTCOME,
+      );
+      const rows = await outs();
+      expect(rows).toHaveLength(1);
+      expect(rows[0]).toMatchObject({ id: out.messageId, source: "ai_agent", status: "sent", errorCode: null, providerMessageId: "wamid.TARDE2" });
+      expect(await db.select().from(s.aiAgentNotices)).toHaveLength(0);
+      expect(await ctx.agentSendUnresolved(ORG_A, c.id)).toBe(false);
+      // La pregunta contestaba lo anterior a ella; "¿dónde están?" (escrito mientras seguía en duda) sigue pendiente.
+      expect((await ctx.pendingInbound(ORG_A, c.id)).map((m) => m.body)).toEqual(["¿dónde están?"]);
+    });
+
+    it("eco TEMPRANO (llega mientras el POST sigue colgado): al marcar la duda se fusiona; una sola burbuja con la autoría del vendedor", async () => {
+      const c = await openConversation();
+      const send = await import("./send");
+      const p = await timeoutProvider(() =>
+        deliver(msgEvent({ direction: "outgoing", source: "cloud_api", wamid: "wamid.TEMPRANO", text: "Sí hay envío", sentAt: new Date().toISOString() })),
+      );
+      const out = await send.sendTextMessage(p, { organizationId: ORG_A, conversationId: c.id, sentByUserId: "u_vendedor", text: "Sí hay envío" });
+      expect(out.status).toBe("sent");
+      const rows = await outs();
+      expect(rows).toHaveLength(1);
+      expect(rows[0]).toMatchObject({ id: out.messageId, source: "crm", sentByUserId: "u_vendedor", providerMessageId: "wamid.TEMPRANO", errorCode: null });
+    });
+
+    it("no se adivina fuera de la regla: otra conversación o fuera de la ventana de 2 h quedan como otra API", async () => {
+      const c = await openConversation();
+      const send = await import("./send");
+      const out = await send.sendTextMessage(await timeoutProvider(), { organizationId: ORG_A, conversationId: c.id, sentByUserId: "u_vendedor", text: PREGUNTA });
+      // Mismo texto a OTRO cliente.
+      expect(await deliver(msgEvent({ direction: "outgoing", source: "cloud_api", phone: "5216682419999", text: PREGUNTA, sentAt: later(10_000).toISOString() }))).not.toBe(
+        ingest.LATE_ECHO_OUTCOME,
+      );
+      // Mismo cliente, pero el envío en duda es de hace 3 h (fuera de la ventana).
+      await db.update(s.messages).set({ createdAt: later(-3 * 3_600_000) }).where(eq(s.messages.id, out.messageId));
+      expect(await deliver(msgEvent({ direction: "outgoing", source: "cloud_api", text: PREGUNTA, sentAt: new Date().toISOString() }))).not.toBe(
+        ingest.LATE_ECHO_OUTCOME,
+      );
+      expect((await outs()).find((m) => m.id === out.messageId)).toMatchObject({ status: "queued", errorCode: "send_unknown:network", providerMessageId: null });
+      expect((await outs()).filter((m) => m.source === "other_api")).toHaveLength(2);
     });
 
     it("Bloque B 1: un 429 al vendedor NO es error: el web lo pasa a la fila del worker, el siguiente no se adelanta y salen en orden con la MISMA clave", async () => {

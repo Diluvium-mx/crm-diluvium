@@ -52,14 +52,17 @@ import {
   alreadyHandled,
   humanOutboundCount,
   inboundCount,
+  keywordQuestionInFlight,
   lastOutbound,
   loadHistory,
   loadSnapshot,
   messageAt,
   agentSendUnresolved,
+  outboundTextsSinceLastInbound,
   pendingInbound,
   type MessageRow,
 } from "./context";
+import { splitRepeated } from "@/lib/messaging/repeat";
 import { addNotice } from "./notices";
 import { decideGate, toBubbles } from "./policy";
 import { rescheduleDelayFor } from "./schedule";
@@ -96,6 +99,9 @@ export const BRAIN_TIMEOUT_MS = 60_000;
 // el proveedor está saturado (model-errors.ts). Uno por corrida, no por ronda: con
 // él, el peor caso cabe en el candado de 8 min (process.ts).
 export const SATURATED_RETRY_MS = 10_000;
+// Cada cuánto vuelve a mirar el agente mientras corre un workflow por palabra clave que
+// termina en pregunta (keywordQuestionInFlight; tope de la espera en context.ts).
+export const KEYWORD_QUESTION_POLL_MS = 5_000;
 
 export type RunDeps = {
   now: () => Date;
@@ -489,6 +495,13 @@ export async function runAgent(job: { organizationId: string; conversationId: st
         return { kind: "skipped", reason: "tope_respuestas" };
       }
     }
+    // 28-sep-2026 (pregunta duplicada): un workflow por palabra clave que TERMINA EN
+    // PREGUNTA contesta el mensaje que lo disparó. Mientras esa corrida va en camino, el
+    // agente espera; al terminar, su pregunta cierra ese mensaje y solo queda pendiente
+    // lo que el cliente escribió después.
+    if (await keywordQuestionInFlight(org, conv.id, pending.map((p) => p.id), now)) {
+      return { kind: "reschedule", delayMs: KEYWORD_QUESTION_POLL_MS, reason: "esperando_workflow_con_pregunta" };
+    }
     // Parte 1: una nota de voz del cliente aún sin transcribir → la espera sigue (hasta
     // 60 s desde que llegó); el worker la adelanta en cuanto termina. Si falla o tarda
     // más, el agente contesta con "[nota de voz sin transcribir]" y no se traba.
@@ -755,7 +768,14 @@ export async function runAgent(job: { organizationId: string; conversationId: st
     };
     await runActions(plan, actionCtx, deps.startWorkflow, "antes");
     // Mensajes para celular: información y pregunta por separado (máx. 2; Opciones del bot).
-    const bubbles = text.trim() ? toBubbles(text, options.maxBubbles) : [];
+    // Candado anti-repetición (28-sep-2026): una burbuja IDÉNTICA a algo que ya salió
+    // después del último mensaje del cliente (p. ej. la pregunta de un workflow) no sale
+    // otra vez; si no queda ninguna, es como una respuesta de solo acciones.
+    const drafted = text.trim() ? toBubbles(text, options.maxBubbles) : [];
+    const { keep: bubbles, dropped: repeated } = drafted.length
+      ? splitRepeated(drafted, await outboundTextsSinceLastInbound(org, conv.id))
+      : { keep: [], dropped: [] };
+    if (repeated.length) console.info(`[agente] ${conv.id}: no se repite lo que ya salió: «${repeated.join(" / ")}»`);
 
     // Mensajes con pausa corta. Antes de CADA uno se revisa el estado fresco: si un
     // vendedor respondió (desde el INICIO de la ronda), alguien apagó el canal o
@@ -860,8 +880,13 @@ export async function runAgent(job: { organizationId: string; conversationId: st
     // Un mensaje sin confirmar queda en el outbox: si vence como "sin confirmar",
     // el barrido deja un aviso (nunca reenvía a ciegas).
     const omitted = bubbles.length - sent;
-    const note = unconfirmed ? `${unconfirmed} mensaje(s) sin confirmar${omitted ? `; ${omitted} sin enviar (aviso)` : ""}` : null;
-    await recordAiUsage({ ...brainUsage, outcome: "sent", error: note });
+    const note = [
+      unconfirmed ? `${unconfirmed} mensaje(s) sin confirmar${omitted ? `; ${omitted} sin enviar (aviso)` : ""}` : null,
+      repeated.length ? `no se repitió lo que ya salió: «${repeated.join(" / ")}»` : null,
+    ]
+      .filter(Boolean)
+      .join("; ");
+    await recordAiUsage({ ...brainUsage, outcome: "sent", error: note || null });
     if (unconfirmed && omitted > 0) await noticeRemainder("WhatsApp no confirmó una parte de la respuesta del agente.");
     // "Avisar y pausar X horas" al pedir un asesor (Opciones del bot): al final, ya con
     // el texto enviado y la media encolada.
