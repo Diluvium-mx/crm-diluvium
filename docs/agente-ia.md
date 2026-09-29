@@ -141,8 +141,11 @@ clientes** (eso llega en la Fase B y siguientes).
 Filtro (limpia el anuncio): **GPT-5.6 Luna**. Desde la Fase E el cerebro son **dos
 modelos por etapa**: Modelo 1 (default **GPT-5.6 Luna**; Inbox, Prospecto, Interesado) y
 Modelo 2 (default **Claude Sonnet 5**; Cerca de compra y Compra). Cualquiera de los dos
-se elige entre: GPT-5.6 Luna, Claude Sonnet 5, GPT-5.6 Terra, GPT-5.6 Sol, Claude Opus 5.5,
-Claude Haiku 4.5, Gemini 3.8 Flash, Grok 4.6 y Qwen 3.7 Flash. Los tres últimos salen en
+se elige entre: GPT-5.6 Luna, Claude Sonnet 5, GPT-5.6 Terra, GPT-5.6 Sol, GPT-6.1 Sol,
+Claude Sonnet 5.5, Claude Opus 5.5, Claude Haiku 4.5, Gemini 3.8 Flash, Grok 4.6 y Qwen 3.7
+Flash (GPT-6.1 Sol y Claude Sonnet 5.5 desde el 29-sep-2026, con la etiqueta «Nuevo»; se probaron
+con las llaves de staging: id de API, texto al cliente junto con las acciones y lectura de PDF).
+Los tres últimos salen en
 gris hasta que su llave esté en Railway (y no se pueden guardar sin ella). Si el Modelo 1 no
 tiene llave en un entorno, contesta el Modelo 2; si un vendedor cambia la etapa mientras el
 agente escribe y eso cambia de modelo, la respuesta se descarta y se regenera con el correcto.
@@ -150,7 +153,9 @@ Qwen no lee PDF: un comprobante en PDF le llega como nota de texto. Precios inte
 (`lib/ai/pricing.ts`, fuentes en el archivo): Gemini 3.8 Flash 0.75 / 3.75 USD por millón
 **hasta el 31-dic-2026** (se duplica en 2027), Grok 4.6 2 / 6 (desde 200 mil tokens de entrada
 4 / 12), Qwen 3.7 Flash 0.03 / 0.13 (desde 32 mil 0.10 / 0.40; desde 256 mil 0.20 / 0.80): el
-tramo se elige por la entrada de cada llamada. El tope de respuesta del cerebro es de 4,096 tokens; si
+tramo se elige por la entrada de cada llamada. GPT-6.1 Sol 2 / 10 (caché 0.10; desde 272 mil tokens de
+entrada 4 / 15), Claude Sonnet 5.5 2 / 10 (como Sonnet 5) y Claude Opus 5.5 4 / 20 con lectura de caché
+de 0.20 (el 5 %, no el 10 %; corregido el 29-sep-2026). El tope de respuesta del cerebro es de 4,096 tokens; si
 una respuesta se corta o una acción llega incompleta, el vendedor ve el aviso 🤖 "respuesta
 cortada" (nunca se descarta en silencio). Los model-id de API se verificaron contra docs
 oficiales / OpenRouter (2026-09).
