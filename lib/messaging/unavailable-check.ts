@@ -168,8 +168,8 @@ export async function noticesToVerify(now = new Date()): Promise<{ organizationI
     .orderBy(messages.createdAt)
     .limit(50);
 }
-/** El job diferido corre a los 20 s; el barrido solo toma los que pasaron de 45 s… */
-export const SWEEP_MIN_AGE_MS = 45_000;
+/** El job diferido corre a los VERIFY_AFTER_MS; el barrido solo toma los que ya pasaron de eso + 30 s… */
+export const SWEEP_MIN_AGE_MS = VERIFY_AFTER_MS + 30_000;
 /** …y hasta 7 días (un worker caído por días no deja avisos ocultos para siempre). */
 export const SWEEP_MAX_AGE_MS = 7 * 24 * 3_600_000;
 
