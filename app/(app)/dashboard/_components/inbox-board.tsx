@@ -11,10 +11,9 @@ import {
   getConversationItems,
   listConversations,
   markConversationRead,
-  setConversationStarred,
   setConversationUnread,
 } from "@/lib/inbox/actions";
-import { updateContactTemperature } from "@/lib/actions/contacts";
+import { setContactDestacado, updateContactTemperature } from "@/lib/actions/contacts";
 import type { Temperature } from "../../contactos/_data/types";
 import { usePersistentToggle } from "@/components/ui/use-persistent-toggle";
 import { ChatThread } from "./chat-thread";
@@ -369,9 +368,21 @@ export function InboxBoard({ openContactId = null }: { openContactId?: string | 
     setDetail((d) => (d && d.contact.id === contactId ? { ...d, contact: { ...d.contact, stage } } : d));
   }
 
+  // Estrella = Destacado ⭐ del CONTACTO (0048): se prende en todas sus filas y en el
+  // Detalle abierto; el Embudo lo ve en vivo. Si falla, se releen sus filas del servidor.
   function toggleStar(id: string, starred: boolean) {
-    setConversations((current) => current.map((c) => (c.id === id ? { ...c, isStarred: starred } : c)));
-    void setConversationStarred(id, starred).then(() => scheduleUpdate(id));
+    const contactId = conversationsRef.current.find((c) => c.id === id)?.contact.id;
+    if (!contactId) return;
+    const rowsOfContact = () => conversationsRef.current.filter((c) => c.contact.id === contactId).map((c) => c.id);
+    setConversations((current) => current.map((c) => (c.contact.id === contactId ? { ...c, isStarred: starred } : c)));
+    setDetail((d) => (d && d.contact.id === contactId ? { ...d, isStarred: starred } : d));
+    setContactDestacado({ contactId, destacado: starred })
+      .catch(() => {
+        setDetail((d) => (d && d.contact.id === contactId && d.isStarred === starred ? { ...d, isStarred: !starred } : d));
+      })
+      .finally(() => {
+        for (const rowId of rowsOfContact()) scheduleUpdate(rowId);
+      });
   }
 
   // Clic derecho → "Marcar como no leído / leído". Optimista; al terminar (o si

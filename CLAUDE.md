@@ -236,6 +236,9 @@ conversations (+)    detalle_leido_hasta  -- 0047: el Agente IA lee en SEGUNDO P
                      y deja al día etapa y Detalle aunque esté apagado o pausado; nunca le escribe al cliente
 contacts (+)         stage_changed_by (vendedor|agente|sistema): la etapa de un vendedor manda; el agente solo avanza
                      custom_fields.detalle_por { campo: agente|vendedor }  -- parte 1: el agente solo llena lo vacío o lo suyo
+contacts (+)         destacado bool -- 0048 (29-sep-2026): Destacado ⭐ del contacto, aparte de la temperatura y
+                     combinable (🔥 + ⭐). Es la estrella de la Bandeja y el ⭐ del Embudo. `conversations.is_starred` y
+                     el valor 'destacado' de contact_temperature quedan sin uso.
 messages (+)         transcripcion text   -- 0037: nota de voz del cliente (estado en metadata.transcripcion)
 ai_agent_drafts (+)  runs jsonb; status "pendiente" = respuesta guardada cuyo envío falló ("Reintentar" la reenvía igual)
                      -- autor de sistema de comentarios "Agente IA" (usuario-sistema-agente-ia, 0037), como "Importado"

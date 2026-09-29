@@ -1,7 +1,7 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import { and, desc, eq, gt, inArray, isNotNull, ne, sql, type SQL } from "drizzle-orm";
+import { and, desc, eq, gt, inArray, isNotNull, ne, or, sql, type SQL } from "drizzle-orm";
 import { z } from "zod";
 import { requireActiveMembership } from "@/lib/auth/active-organization";
 import { roleAllows } from "@/lib/auth/permissions";
@@ -98,16 +98,18 @@ export async function getContactsChangedSince(since: string) {
   const organizationId = await requireActiveOrganizationId();
   const from = new Date(new Date(z.iso.datetime().parse(since)).getTime() - CHANGED_SINCE_MARGIN_MS);
   const now = new Date().toISOString();
-  const [rows, withTemperature] = await Promise.all([
+  const [rows, withMarks] = await Promise.all([
     selectBoardContacts(organizationId, gt(contacts.stageChangedAt, from), MAX_CHANGED_SINCE + 1),
     db
-      .select({ id: contacts.id, temperature: contacts.temperature })
+      .select({ id: contacts.id, temperature: contacts.temperature, destacado: contacts.destacado })
       .from(contacts)
-      .where(and(eq(contacts.organizationId, organizationId), isNotNull(contacts.temperature))),
+      .where(and(eq(contacts.organizationId, organizationId), or(isNotNull(contacts.temperature), eq(contacts.destacado, true)))),
   ]);
   const tooMany = rows.length > MAX_CHANGED_SINCE;
-  const temperatures = withTemperature.flatMap((row) => (row.temperature ? [[row.id, row.temperature] as const] : []));
-  return { contacts: tooMany ? [] : rows, temperatures, now, tooMany };
+  const temperatures = withMarks.flatMap((row) => (row.temperature ? [[row.id, row.temperature] as const] : []));
+  // Destacado tampoco lleva hora: la lista completa de ids marcados (sin id = no destacado).
+  const destacados = withMarks.flatMap((row) => (row.destacado ? [row.id] : []));
+  return { contacts: tooMany ? [] : rows, temperatures, destacados, now, tooMany };
 }
 
 /**
@@ -215,8 +217,12 @@ export async function updateContactStage(input: UpdateContactStageInput) {
 
 const updateContactTemperatureSchema = z.object({
   contactId: z.string().trim().min(1, "contactId es obligatorio."),
-  // Nullable: pasar null limpia la temperatura ("Sin asignar").
-  temperature: z.enum(contactTemperatureEnum.enumValues).nullable(),
+  // Nullable: pasar null limpia la temperatura ("Sin asignar"). ⭐ ya no es temperatura
+  // (0048): Destacado se marca con setContactDestacado.
+  temperature: z
+    .enum(contactTemperatureEnum.enumValues)
+    .nullable()
+    .refine((value): boolean => value !== "destacado", "Destacado ya no es temperatura: se marca aparte."),
 });
 
 export type UpdateContactTemperatureInput = z.infer<typeof updateContactTemperatureSchema>;
@@ -249,6 +255,38 @@ export async function updateContactTemperature(input: UpdateContactTemperatureIn
 
   revalidatePath("/embudo");
 
+  return updated;
+}
+
+const setContactDestacadoSchema = z.object({
+  contactId: z.string().trim().min(1, "contactId es obligatorio."),
+  destacado: z.boolean(),
+});
+
+/**
+ * Destacado ⭐ del contacto (0048, 29-sep-2026): la estrella de la lista de la Bandeja y
+ * el ⭐ del pop-up del Embudo. Aparte de la temperatura y combinable con ella. El aviso en
+ * vivo va como cambio de "temperatura": las dos pantallas ya releen la fila, la tarjeta y
+ * el Detalle con ese cambio, y se muestran juntos.
+ */
+export async function setContactDestacado(input: z.infer<typeof setContactDestacadoSchema>) {
+  const { organizationId, userId } = await requireActiveMembership();
+  const parsed = setContactDestacadoSchema.parse(input);
+  const updated = await db.transaction(async (tx) => {
+    const [row] = await tx
+      .update(contacts)
+      .set({ destacado: parsed.destacado })
+      .where(and(eq(contacts.id, parsed.contactId), eq(contacts.organizationId, organizationId)))
+      .returning({ id: contacts.id, destacado: contacts.destacado });
+    if (row) {
+      await notifyContactUpdated(tx, { organizationId, contactId: row.id, changes: ["temperatura"], by: { kind: "vendedor", userId } });
+    }
+    return row;
+  });
+  if (!updated) {
+    throw new Error("Contacto no encontrado en esta organización.");
+  }
+  revalidatePath("/embudo");
   return updated;
 }
 
