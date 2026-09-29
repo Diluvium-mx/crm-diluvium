@@ -79,6 +79,9 @@ describe("historial de cambios: textos y filtros", () => {
       agentDescription: "",
       triggerAgent: false,
       triggerStartOnly: false,
+      triggerStartOnlyAgent: true,
+      maxSendsPerChat: null,
+      isAnswer: false,
       triggerKeywords: [],
       triggerCommand: null,
       triggerStage: null,
@@ -118,6 +121,9 @@ describe("historial de cambios: textos y filtros", () => {
       agentDescription: "Datos bancarios",
       triggerAgent: true,
       triggerStartOnly: false,
+      triggerStartOnlyAgent: true,
+      maxSendsPerChat: null,
+      isAnswer: false,
       triggerKeywords: ["banco"],
       triggerCommand: "/banco",
       triggerStage: null,
@@ -141,6 +147,15 @@ describe("historial de cambios: textos y filtros", () => {
         before: "Cuándo: En cualquier momento",
         after: "Cuándo: Solo al inicio",
       });
+    });
+
+    it("tercera opción, máximo por chat y «es la respuesta» (29-sep-2026)", () => {
+      expect(describeWorkflowEdit(base, { ...base, triggerStartOnly: true, triggerStartOnlyAgent: false, maxSendsPerChat: 2, isAnswer: true })).toEqual({
+        before: "Cuándo: En cualquier momento · Máximo por chat: sin límite · Es la respuesta: No",
+        after: "Cuándo: Solo al inicio por palabra clave; el Agente IA cuando haga falta · Máximo por chat: 2 veces · Es la respuesta: Sí",
+      });
+      // Sin «Solo al inicio», la segunda columna no cuenta como cambio.
+      expect(describeWorkflowEdit(base, { ...base, triggerStartOnlyAgent: false })).toBeNull();
     });
 
     it("mismo número de pasos pero distintos, comando, etapa y descripción", () => {

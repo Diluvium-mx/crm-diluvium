@@ -2,7 +2,7 @@
 // una IA para mejorarlos). PURO. Igual que las FAQs (faqsAsText): cada workflow con un
 // guion, sin números, su detalle debajo con sangría y una línea en blanco entre workflows.
 // Los pasos van en su orden, también con guion, y los textos COMPLETOS (no recortados).
-import type { StepPayload } from "./steps";
+import { maxSendsLabel, START_SCOPE_LABEL, startScopeOf, type StepPayload } from "./steps";
 
 export type WorkflowForText = {
   name: string;
@@ -13,6 +13,9 @@ export type WorkflowForText = {
   triggerKeywords: readonly string[];
   triggerStage: string | null;
   triggerStartOnly: boolean;
+  triggerStartOnlyAgent: boolean;
+  maxSendsPerChat: number | null;
+  isAnswer: boolean;
   steps: readonly StepPayload[];
   missingMedia: readonly string[];
 };
@@ -54,9 +57,14 @@ export function workflowsAsText(workflows: readonly WorkflowForText[], stageLabe
         `  Se dispara con: ${triggers.length > 0 ? triggers.join(" · ") : "nada (no se dispara solo)"}`,
       ];
       // «Solo al inicio» solo se anota cuando aplica (palabra clave o Agente IA).
-      if (w.triggerStartOnly && (w.triggerAgent || w.triggerKeywords.length > 0)) {
+      const scope = startScopeOf(w);
+      if (scope === "inicio" && (w.triggerAgent || w.triggerKeywords.length > 0)) {
         lines.push("  Solo al inicio: antes de que el Agente IA o un vendedor le contesten, una sola vez por cliente");
+      } else if (scope === "inicio_palabra_clave" && w.triggerKeywords.length > 0) {
+        lines.push(`  ${START_SCOPE_LABEL.inicio_palabra_clave}: la palabra clave solo antes de que el Agente IA o un vendedor le contesten, una sola vez por cliente`);
       }
+      if (w.maxSendsPerChat) lines.push(`  Máximo por chat: ${maxSendsLabel(w.maxSendsPerChat)}`);
+      if (w.isAnswer) lines.push("  El workflow es la respuesta: el Agente IA no agrega nada y espera a que el cliente conteste");
       if (w.triggerAgent && w.agentDescription.trim()) lines.push(block("  Cuándo lo usa el Agente IA: ", w.agentDescription, "    "));
       lines.push(w.steps.length > 0 ? "  Pasos:" : "  Pasos: ninguno");
       for (const step of w.steps) lines.push(stepText(step));

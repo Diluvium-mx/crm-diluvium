@@ -244,7 +244,7 @@ export function AutomatizacionPanel({
               <>
                 <div className="flex flex-wrap items-center justify-between gap-3">
                   <p className="text-sm text-muted-foreground">
-                    Secuencias de pasos que dispara el Agente IA, un comando del vendedor (<code className="text-brand-orange">/tabla</code>), una palabra clave del cliente o un cambio de etapa.
+                    Secuencias de pasos que dispara el Agente IA, un comando del vendedor (<code className="text-brand-orange">/tamaños</code>), una palabra clave del cliente o un cambio de etapa.
                   </p>
                   <div className="flex gap-2">
                     {/* Solo el ícono (no estorba): copia TODOS los workflows, igual que las FAQs,

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { commandSchema, endsWithQuestion, endsWithQuestionStep, keywordsSchema, matchesKeyword, missingMedia, parseCommand, stepPayloadSchema, stepsSchema, stripUnresolvedVariables, unknownVariables, waitMs } from "./steps";
+import { commandSchema, endsWithQuestion, endsWithQuestionStep, keywordsSchema, lastSendIndex, maxSendsLabel, maxSendsSchema, START_SCOPE_LABEL, startOnlyApplies, startScopeFields, startScopeOf, matchesKeyword, missingMedia, parseCommand, stepPayloadSchema, stepsSchema, stripUnresolvedVariables, unknownVariables, waitMs } from "./steps";
 
 describe("stepPayloadSchema", () => {
   it("acepta cada tipo de paso", () => {
@@ -102,5 +102,44 @@ describe("endsWithQuestion / endsWithQuestionStep (pregunta duplicada, 28-sep-20
     expect(endsWithQuestionStep([{ ...tabla, caption: "¿Cuál le queda a su entrada?" }])).toBe(true);
     expect(endsWithQuestionStep([{ kind: "send_text", text: "¿Tiene inundaciones?" }, { kind: "wait", seconds: 5 }])).toBe(false);
     expect(endsWithQuestionStep([])).toBe(false);
+  });
+});
+
+describe("«¿Cuándo se dispara…?»: tres opciones (29-sep-2026)", () => {
+  it("dos columnas ↔ tres opciones; el historial anterior (sin la segunda columna) es la regla estricta", () => {
+    expect(startScopeOf({ triggerStartOnly: false, triggerStartOnlyAgent: true })).toBe("siempre");
+    expect(startScopeOf({ triggerStartOnly: false, triggerStartOnlyAgent: false })).toBe("siempre");
+    expect(startScopeOf({ triggerStartOnly: true, triggerStartOnlyAgent: true })).toBe("inicio");
+    expect(startScopeOf({ triggerStartOnly: true, triggerStartOnlyAgent: false })).toBe("inicio_palabra_clave");
+    expect(startScopeOf({ triggerStartOnly: true })).toBe("inicio");
+    expect(startScopeOf({})).toBe("siempre");
+    for (const scope of ["siempre", "inicio", "inicio_palabra_clave"] as const) expect(startScopeOf(startScopeFields(scope))).toBe(scope);
+    expect(START_SCOPE_LABEL.inicio_palabra_clave).toBe("Solo al inicio por palabra clave; el Agente IA cuando haga falta");
+  });
+
+  it("a qué disparador aplica: la palabra clave siempre; el Agente IA solo en la regla estricta; comando y etapa nunca", () => {
+    const estricto = { triggerStartOnly: true, triggerStartOnlyAgent: true };
+    const tabla = { triggerStartOnly: true, triggerStartOnlyAgent: false };
+    expect([startOnlyApplies(estricto, "keyword"), startOnlyApplies(estricto, "agent"), startOnlyApplies(estricto, "command"), startOnlyApplies(estricto, "stage")]).toEqual([true, true, false, false]);
+    expect([startOnlyApplies(tabla, "keyword"), startOnlyApplies(tabla, "agent")]).toEqual([true, false]);
+    expect(startOnlyApplies({ triggerStartOnly: false, triggerStartOnlyAgent: true }, "keyword")).toBe(false);
+  });
+});
+
+describe("«Máximo de envíos por chat» y «El workflow es la respuesta» (29-sep-2026)", () => {
+  it("máximo: 1–20 o vacío (sin límite)", () => {
+    expect(maxSendsSchema.parse(2)).toBe(2);
+    expect(maxSendsSchema.parse(null)).toBeNull();
+    expect(maxSendsSchema.safeParse(0).success).toBe(false);
+    expect(maxSendsSchema.safeParse(21).success).toBe(false);
+    expect(maxSendsSchema.safeParse(1.5).success).toBe(false);
+    expect([maxSendsLabel(null), maxSendsLabel(1), maxSendsLabel(2)]).toEqual(["sin límite", "1 vez", "2 veces"]);
+  });
+
+  it("el último paso que le llega al cliente (una espera al final no cuenta)", () => {
+    expect(lastSendIndex([{ kind: "wait", seconds: 18 }, { kind: "send_media", assetId: "a", title: "Tabla" }])).toBe(1);
+    expect(lastSendIndex([{ kind: "send_text", text: "hola" }, { kind: "wait", seconds: 2 }])).toBe(0);
+    expect(lastSendIndex([{ kind: "wait", seconds: 2 }])).toBe(-1);
+    expect(lastSendIndex([])).toBe(-1);
   });
 });

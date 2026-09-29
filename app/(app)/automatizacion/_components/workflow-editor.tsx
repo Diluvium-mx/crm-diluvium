@@ -8,7 +8,7 @@ import { ArrowDown, ArrowUp, Plus, Trash2 } from "lucide-react";
 import { useFunnelStages } from "../../_components/funnel-stages-provider";
 import type { WorkflowInput, WorkflowView } from "@/lib/actions/workflows";
 import type { MediaAssetView } from "@/lib/media-library/service";
-import { MAX_STEPS, MAX_WAIT_SECONDS, startOnlyLabel, type StepPayload } from "@/lib/workflows/steps";
+import { endsWithQuestionStep, MAX_SENDS_PER_CHAT, MAX_STEPS, MAX_WAIT_SECONDS, START_SCOPE_LABEL, START_SCOPES, startScopeFields, startScopeOf, type StartScope, type StepPayload } from "@/lib/workflows/steps";
 import { AssetPreview, uploadAsset } from "./biblioteca-tab";
 import { STEP_ICON, STEP_LABEL } from "./labels";
 
@@ -25,6 +25,9 @@ export function toDraft(w: WorkflowView | null): EditorDraft {
     triggerCommand: w?.triggerCommand ?? null,
     triggerStage: w?.triggerStage ?? null,
     triggerStartOnly: w?.triggerStartOnly ?? false,
+    triggerStartOnlyAgent: w?.triggerStartOnlyAgent ?? true,
+    maxSendsPerChat: w?.maxSendsPerChat ?? null,
+    isAnswer: w?.isAnswer ?? false,
     steps: w?.steps ?? [],
   };
 }
@@ -43,6 +46,10 @@ export function toInput(d: EditorDraft): WorkflowInput {
     triggerCommand: d.triggerCommand?.trim() ? d.triggerCommand.trim().toLowerCase() : null,
     triggerStage: d.triggerStage,
     triggerStartOnly: d.triggerStartOnly,
+    // Sin «Solo al inicio» la segunda opción no aplica (así «Salir sin guardar» no ve un cambio falso).
+    triggerStartOnlyAgent: d.triggerStartOnly ? d.triggerStartOnlyAgent : true,
+    maxSendsPerChat: d.maxSendsPerChat,
+    isAnswer: d.isAnswer,
     steps: d.steps,
   };
 }
@@ -51,6 +58,14 @@ const NEW_STEP: Record<StepPayload["kind"], () => StepPayload> = {
   send_text: () => ({ kind: "send_text", text: "" }),
   send_media: () => ({ kind: "send_media", assetId: null, title: "Archivo" }),
   wait: () => ({ kind: "wait", seconds: 2 }),
+};
+
+// Ayuda debajo de «¿Cuándo se dispara…?», según la opción elegida.
+const SCOPE_HELP: Record<StartScope, string> = {
+  siempre: "Por palabra clave, una vez por cliente; el Agente IA puede usarlo en cualquier momento de la conversación.",
+  inicio: "Solo antes de que el Agente IA o un vendedor le contesten al cliente, y una sola vez por cliente: nunca se repite. El comando del vendedor sale siempre.",
+  inicio_palabra_clave:
+    "La palabra clave solo antes de que el Agente IA o un vendedor le contesten al cliente, una sola vez por cliente. Después lo manda el Agente IA cuando haga falta. El comando del vendedor sale siempre.",
 };
 
 const inputClass =
@@ -110,7 +125,7 @@ export function WorkflowEditor({
           </label>
           <label className="space-y-1">
             <span className="text-xs font-medium text-muted-foreground">Comando del vendedor (en el chat)</span>
-            <input value={draft.triggerCommand ?? ""} onChange={(e) => set({ triggerCommand: e.target.value || null })} className={inputClass} placeholder="/tabla" />
+            <input value={draft.triggerCommand ?? ""} onChange={(e) => set({ triggerCommand: e.target.value || null })} className={inputClass} placeholder="/tamaños" />
           </label>
           <label className="space-y-1">
             <span className="text-xs font-medium text-muted-foreground">Al entrar a la etapa</span>
@@ -125,24 +140,53 @@ export function WorkflowEditor({
           </label>
           <label className="space-y-1 sm:col-span-2">
             <span className="text-xs font-medium text-muted-foreground">Palabras clave del cliente (separadas por coma; palabra completa, sin importar acentos)</span>
-            <input value={draft.keywordsText} onChange={(e) => set({ keywordsText: e.target.value })} className={inputClass} placeholder="tabla, tamaños" />
+            <input value={draft.keywordsText} onChange={(e) => set({ keywordsText: e.target.value })} className={inputClass} placeholder="tamaños, medidas" />
           </label>
           <fieldset className="space-y-1 sm:col-span-2">
             <legend className="text-xs font-medium text-muted-foreground">¿Cuándo se dispara por palabra clave o por el Agente IA?</legend>
-            <div className="flex flex-wrap gap-x-5 gap-y-1">
-              {([false, true] as const).map((startOnly) => (
-                <label key={String(startOnly)} className="flex items-center gap-2 text-sm">
-                  <input type="radio" name={`cuando-${draft.id ?? "nuevo"}`} checked={draft.triggerStartOnly === startOnly} onChange={() => set({ triggerStartOnly: startOnly })} />
-                  {startOnlyLabel(startOnly)}
+            <div className="flex flex-col gap-y-1">
+              {START_SCOPES.map((scope) => (
+                <label key={scope} className="flex items-start gap-2 text-sm">
+                  <input type="radio" className="mt-1" name={`cuando-${draft.id ?? "nuevo"}`} checked={startScopeOf(draft) === scope} onChange={() => set(startScopeFields(scope))} />
+                  {START_SCOPE_LABEL[scope]}
                 </label>
               ))}
             </div>
-            <p className="text-[11px] text-muted-foreground">
-              {draft.triggerStartOnly
-                ? "Solo antes de que el Agente IA o un vendedor le contesten al cliente, y una sola vez por cliente: nunca se repite. El comando del vendedor sale siempre."
-                : "Por palabra clave, una vez por cliente; el Agente IA puede usarlo en cualquier momento de la conversación."}
-            </p>
+            <p className="text-[11px] text-muted-foreground">{SCOPE_HELP[startScopeOf(draft)]}</p>
           </fieldset>
+          <label className="space-y-1">
+            <span className="text-xs font-medium text-muted-foreground">Máximo de envíos por chat</span>
+            <input
+              type="number"
+              inputMode="numeric"
+              min={1}
+              max={MAX_SENDS_PER_CHAT}
+              value={draft.maxSendsPerChat ?? ""}
+              onChange={(e) => {
+                const n = Number.parseInt(e.target.value, 10);
+                set({ maxSendsPerChat: Number.isFinite(n) && n > 0 ? Math.min(n, MAX_SENDS_PER_CHAT) : null });
+              }}
+              className={inputClass}
+              placeholder="Sin límite"
+            />
+            <span className="block text-[11px] text-muted-foreground">
+              Por palabra clave o por el Agente IA. Cuenta su archivo aunque haya salido dentro de otro workflow; el comando del vendedor sí puede pasarlo.
+            </span>
+          </label>
+          <div className="space-y-1">
+            <label className="flex items-center gap-2 pt-5 text-sm">
+              <input type="checkbox" checked={draft.isAnswer} onChange={(e) => set({ isAnswer: e.target.checked })} />
+              El workflow es la respuesta
+            </label>
+            <span className="block text-[11px] text-muted-foreground">
+              Por palabra clave, el Agente IA no agrega nada a ese mensaje y espera a que el cliente conteste. Si lo usa el Agente IA y trae textos, su propio texto no sale.
+            </span>
+            {!draft.isAnswer && endsWithQuestionStep(draft.steps) ? (
+              <span className="block text-[11px] text-brand-orange">
+                Termina en pregunta: normalmente conviene marcarla para que el Agente IA no conteste encima.
+              </span>
+            ) : null}
+          </div>
         </div>
       </section>
 

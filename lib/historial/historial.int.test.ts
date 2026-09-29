@@ -125,7 +125,7 @@ describe.skipIf(!TEST_DATABASE_URL)("historial de cambios (Postgres real)", () =
   });
 
   it("workflows: crear, editar (solo lo que cambió), encender, apagar y borrar", async () => {
-    const input = { id: null, name: "Banco", agentDescription: "", enabled: false, triggerAgent: false, triggerKeywords: [], triggerCommand: null, triggerStage: null, triggerStartOnly: false, steps: [{ kind: "send_text" as const, text: "Hola" }] };
+    const input = { id: null, name: "Banco", agentDescription: "", enabled: false, triggerAgent: false, triggerKeywords: [], triggerCommand: null, triggerStage: null, triggerStartOnly: false, triggerStartOnlyAgent: true, maxSendsPerChat: null, isAnswer: false, steps: [{ kind: "send_text" as const, text: "Hola" }] };
     const created = await wf.saveWorkflow(input);
     if (!created.ok) throw new Error(created.error);
     await wf.saveWorkflow({ ...input, id: created.id });
@@ -266,7 +266,7 @@ describe.skipIf(!TEST_DATABASE_URL)("historial de cambios (Postgres real)", () =
   it("'Ver cambios': Goal por párrafo contra la versión anterior y workflow paso por paso; de otra organización, nada", async () => {
     await editor.saveGoal(ORG, USER, "Eres Ángela.\n\nPrecio $5,500.");
     await editor.saveGoal(ORG, USER, "Eres Ángela.\n\nPrecio $6,000.");
-    const input = { id: null, name: "Banco", agentDescription: "", enabled: false, triggerAgent: false, triggerKeywords: [], triggerCommand: null, triggerStage: null, triggerStartOnly: false, steps: [{ kind: "send_text" as const, text: "Datos de pago" }] };
+    const input = { id: null, name: "Banco", agentDescription: "", enabled: false, triggerAgent: false, triggerKeywords: [], triggerCommand: null, triggerStage: null, triggerStartOnly: false, triggerStartOnlyAgent: true, maxSendsPerChat: null, isAnswer: false, steps: [{ kind: "send_text" as const, text: "Datos de pago" }] };
     const created = await wf.saveWorkflow(input);
     if (!created.ok) throw new Error(created.error);
     await wf.saveWorkflow({ ...input, id: created.id, steps: [{ kind: "send_text", text: "Datos de pago actualizados" }, { kind: "wait", seconds: 10 }] });
