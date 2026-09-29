@@ -52,11 +52,26 @@ describe("stageToastFor", () => {
     expect(stageToastFor(event({ by: { kind: "vendedor", userId: "u_daniel", name: "Daniel López" } }), ME)?.mobileText).toBe(
       "👨🏽‍💻 Daniel movió a Juan Pérez a Interesado",
     );
+    expect(stageToastFor(event({ by: { kind: "vendedor", userId: "u_daniel", name: "Daniel López", role: "agent" } }), ME)?.mobileText).toBe(
+      "👨🏽‍💻 Daniel movió a Juan Pérez a Interesado",
+    );
+  });
+
+  it("en el celular owner y admin llevan 🌎 (también con varios roles)", () => {
+    for (const role of ["owner", "admin", "owner,admin", "agent, admin"]) {
+      expect(stageToastFor(event({ by: { kind: "vendedor", userId: "u_luis", name: "Luis René", role } }), ME)?.mobileText).toBe(
+        "🌎 Luis movió a Juan Pérez a Interesado",
+      );
+    }
+    // En escritorio el texto no cambia.
+    expect(stageToastFor(event({ by: { kind: "vendedor", userId: "u_luis", name: "Luis René", role: "owner" } }), ME)?.text).toBe(
+      "Luis movió a Juan Pérez a Interesado",
+    );
   });
 
   it("también avisa a quien hizo el cambio (a mano o por su /banco): todos ven el mismo aviso", () => {
-    expect(stageToastFor(event({ by: { kind: "vendedor", userId: ME, name: "Luis Admin" } }), ME)?.mobileText).toBe(
-      "👨🏽‍💻 Luis movió a Juan Pérez a Interesado",
+    expect(stageToastFor(event({ by: { kind: "vendedor", userId: ME, name: "Luis Admin", role: "owner" } }), ME)?.mobileText).toBe(
+      "🌎 Luis movió a Juan Pérez a Interesado",
     );
     expect(stageToastFor(event({ by: { kind: "automatizacion", userId: ME } }), ME)).not.toBeNull();
     expect(stageToastFor(event({ by: { kind: "automatizacion", userId: "u_otro" } }), ME)).not.toBeNull();

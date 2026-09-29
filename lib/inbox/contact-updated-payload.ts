@@ -11,11 +11,14 @@ function isChange(value: unknown): value is ContactChange {
 }
 
 function actorOf(data: Record<string, unknown>): ContactChangeActor | null {
-  const { by, byUserId, byName } = data;
+  const { by, byUserId, byName, byRole } = data;
   const userId = typeof byUserId === "string" && byUserId ? byUserId : null;
   if (by === "agente") return { kind: "agente" };
   if (by === "automatizacion") return { kind: "automatizacion", userId };
-  if (by === "vendedor" && userId) return { kind: "vendedor", userId, name: typeof byName === "string" ? byName : "" };
+  if (by === "vendedor" && userId) {
+    const name = typeof byName === "string" ? byName : "";
+    return typeof byRole === "string" && byRole ? { kind: "vendedor", userId, name, role: byRole } : { kind: "vendedor", userId, name };
+  }
   return null;
 }
 

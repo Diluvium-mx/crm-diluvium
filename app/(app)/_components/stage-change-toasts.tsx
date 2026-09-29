@@ -7,8 +7,8 @@
 // Clic: abre el chat de ese contacto en la Bandeja; el grupo abre el Embudo.
 //
 // Versión móvil (< md, decisión del dueño, 29-sep-2026): tarjetas delgadas, centradas
-// y arriba (no tapan el chat), texto completo con 🤖/👨🏽‍💻/⚙️, 4 s con una barra naranja
-// abajo que se vacía, halo oscuro suave SOLO alrededor de cada tarjeta (el resto de
+// y arriba (no tapan el chat), texto completo con 🤖/🌎/👨🏽‍💻/⚙️, 4 s con una barra naranja
+// abajo que se vacía, halo oscuro difuminado SOLO alrededor de cada tarjeta (el resto de
 // la pantalla no se oscurece) y la ✕ blanca de siempre. El agrupado (desde el 4.º) se
 // despliega con cada cambio y no vence mientras está abierto. Escritorio: igual que antes.
 import { useEffect, useRef, useState } from "react";
@@ -112,7 +112,7 @@ export function StageChangeToasts({ viewerUserId }: { viewerUserId: string }) {
           return (
             <div
               key={toast.key}
-              className="pointer-events-auto w-full max-w-md overflow-hidden rounded-lg bg-brand-navy text-brand-white shadow-[0_0_0_6px_rgb(0_0_0/0.14),0_0_28px_10px_rgb(0_0_0/0.3)] ring-1 ring-white/15 duration-200 ease-out animate-in fade-in-0 slide-in-from-top-2 motion-reduce:animate-none"
+              className="pointer-events-auto w-full max-w-md overflow-hidden rounded-lg bg-brand-navy text-brand-white shadow-[0_6px_30px_6px_rgb(0_0_0/0.35)] duration-200 ease-out animate-in fade-in-0 slide-in-from-top-2 motion-reduce:animate-none"
             >
               <div className="flex items-start">
                 <button

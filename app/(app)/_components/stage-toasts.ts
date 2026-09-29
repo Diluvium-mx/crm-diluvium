@@ -7,8 +7,8 @@
 // - Cada aviso dura 10 s. Máximo 3 a la vez; si llega otro con 3 a la vista, se
 //   juntan en uno ("5 contactos cambiaron de etapa") y los siguientes se suman a él.
 // - El mismo contacto otra vez: se actualiza su aviso (no se apila).
-// Versión móvil (decisión del dueño, 29-sep-2026): dura 4 s, el vendedor lleva 👨🏽‍💻
-// antes de su nombre (`mobileText`) y el aviso agrupado se despliega con cada cambio
+// Versión móvil (decisión del dueño, 29-sep-2026): dura 4 s, la persona lleva 🌎 (owner
+// o admin) o 👨🏽‍💻 (vendedor) antes de su nombre (`mobileText`) y el aviso agrupado se despliega con cada cambio
 // (`items`); mientras está desplegado no vence (`heldKey`).
 import type { ContactUpdatedEvent } from "@/lib/inbox/types";
 
@@ -40,11 +40,17 @@ export function stageToastFor(event: ContactUpdatedEvent, _viewerUserId: string,
   const by = event.by;
   const who =
     by.kind === "agente" ? "🤖 Agente IA" : by.kind === "automatizacion" ? "⚙️ Automatización" : firstName(by.name) || "Un vendedor";
-  // En el celular el vendedor (humano) lleva 👨🏽‍💻, como el 🤖 del Agente IA.
-  const mobileWho = by.kind === "vendedor" ? `👨🏽‍💻 ${who}` : who;
+  // En el celular la persona lleva su emoji, como el 🤖 del Agente IA: 🌎 owner o admin
+  // (decisión del dueño, 29-sep-2026) y 👨🏽‍💻 vendedor.
+  const mobileWho = by.kind === "vendedor" ? `${isAdminRole(by.role) ? "🌎" : "👨🏽‍💻"} ${who}` : who;
   const contact = event.contactName.trim() || "un contacto";
   const rest = `movió a ${contact} a ${labelOf(event.stage.to)}`;
   return { contactId: event.contactId, text: `${who} ${rest}`, mobileText: `${mobileWho} ${rest}` };
+}
+
+// member.role puede traer varios ("owner,admin"): basta con uno de administrador.
+function isAdminRole(role: string | undefined): boolean {
+  return (role ?? "").split(",").some((r) => ["owner", "admin"].includes(r.trim()));
 }
 
 export function groupText(count: number): string {
