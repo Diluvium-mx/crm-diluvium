@@ -702,6 +702,22 @@ nadie leía el chat. Migración **`0047_lector_detalle`** (siguiente libre: 0048
 - **UI:** Detalle › "Monto de cotización (MXN)" y "Pago total (MXN)" lado a lado, los dos con marca "IA"
   y editables por el vendedor (`pagoTotal` en `updateContactQualification`).
 
+### Indicador en el Detalle (29-sep-2026, pedido del dueño)
+Una línea bajo "Calificación" (Bandeja y pop-up del Embudo) muestra en vivo qué hace el lector:
+**⏳ leerá el chat en ~N min** (hay mensajes sin leer; misma cuenta del barrido: 3 min quieto o 15 min desde el
+primero sin leer, más medio paso del barrido), **leyendo el chat…** (orbe), **actualizó N datos** (6 s, mientras
+brillan los campos con la marca IA), **✓ Al día · leído 10:42** y **No pudo leer el chat · se reintenta solo**.
+- **Sin sondeo ni costo de IA:** el lector avisa `lector.status` (fase `leyendo` antes de llamar a Luna y, en un
+  `finally`, `listo` con cuántos datos cambió o `error`) por el mismo NOTIFY `inbox_events` del tiempo real
+  (`lib/inbox/lector-status-payload.ts`, `events.ts`, `use-inbox-stream.ts`). Al abrir el contacto hay UNA consulta
+  de solo lectura (`lib/actions/agente-lector.ts` → `lib/agente-ia/lector-status-store.ts` → `lector-status.ts`,
+  puro): chats del contacto en la organización de la sesión, candado Redis `lector-lock:<id>` (tope 1.5 s; si Redis
+  falla, "no está leyendo") y última fila de `ai_usage` etapa `detalle`. Se vuelve a consultar solo con eventos
+  (aviso del lector, mensaje de sus chats, reconexión) o al volver a la pestaña.
+- **Si un aviso se pierde** (worker reiniciado a media lectura), "leyendo" se apaga solo a los 90 s y la espera
+  vuelve a consultar cuando ya debió leerse. Nunca rompe el Detalle: si algo falla, no se muestra nada.
+- UI: `app/(app)/contactos/_components/lector-status.tsx`; mapa › Detalle (28).
+
 ## Pregunta duplicada: workflow por palabra clave + Agente IA (28-sep-2026)
 
 - **Incidente (prod, 28-sep 6:27–6:49 p.m. Mazatlán):** «Información» y «Precio 2» (igual que GHL) terminaban con
