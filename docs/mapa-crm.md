@@ -41,8 +41,8 @@ Nadie es "dueño" de un contacto: **todos ven todos los contactos, siempre**.
 | Palabra | Qué significa |
 |---|---|
 | **Etapa** | En qué punto de la venta va el cliente: **Inbox → Prospecto → Interesado → Cerca de compra → Compra**. Son las columnas del Embudo. El agente solo la **avanza**; la que pone un vendedor manda. |
-| **Temperatura** | Etiqueta rápida que pone el equipo: 🔥 Caliente · 🧊 Frío · ⏳ En espera · ⭐ Destacado · ○ sin asignar. |
-| **Destacado (estrella)** | Estrella de la lista de la Bandeja para marcar un chat; la ve todo el equipo y tiene su filtro. Es distinta de la temperatura "⭐ Destacado". |
+| **Temperatura** | Etiqueta rápida que pone el equipo: 🔥 Caliente · 🧊 Frío · ⏳ En espera · ⭐ Destacado · ○ sin asignar. Se filtra por ella (una a la vez) con el ícono junto al buscador de la Bandeja y del Embudo. |
+| **Destacado** | Marca para todo el equipo. Se pone de dos formas: la **estrella** de la lista de la Bandeja (marca el chat) o la temperatura **⭐ Destacado** (marca el contacto). Para filtrar cuentan las dos: la pestaña Destacado de la Bandeja y ⭐ Destacado en el filtro del Embudo. No es una temperatura: se puede combinar con una (🔥 + Destacado = calientes con estrella). |
 | **Semáforo** | Punto de color en la Bandeja: cuánto lleva el cliente esperando respuesta **de una persona**. Verde menos de 15 min, ámbar menos de 1 h, rojo más de 1 h. |
 | **Ventana de 24 h** | Regla de WhatsApp: hasta 24 horas después del último mensaje del cliente se puede escribir libre. Pasadas las 24 h **solo se puede mandar una plantilla**. |
 | **Gratis por anuncio (72 h)** | Si el cliente llegó por un anuncio y se le contesta dentro de 24 h, por 72 h todos los mensajes (también plantillas) son gratis. El chat lo indica con 🎁. |
@@ -186,7 +186,7 @@ Clic derecho sobre una fila de la lista: menú de esa conversación (23).
 |---|---|---|---|
 | 1 | **Ocultar lista** | Esconde o muestra la lista de chats; se recuerda en esa computadora. | Todos |
 | 2 | **Buscar por nombre o teléfono…** | Busca chats sin importar acentos ni mayúsculas. | Todos |
-| 3 | **No leído · Todo · Destacado** | Filtros de la lista. La lista siempre va del mensaje más reciente al más viejo. | Todos |
+| 3 | **No leído · Todo · Destacado** | Filtros de la lista. **Destacado** = chats con estrella (7) o cuyo contacto tiene la temperatura ⭐. Se combinan con el filtro de temperatura (25): «Destacado + 🔥» = calientes con estrella. La lista siempre va del mensaje más reciente al más viejo. | Todos |
 | 4 | **Fila de conversación** | Iniciales con el logo del canal, nombre, hora del último mensaje y vista previa ("Tú:" si el último fue nuestro, también si lo mandó el agente). Clic abre el chat y lo marca como leído. | Todos |
 | 5 | **Semáforo** | Verde menos de 15 min, ámbar menos de 1 h, rojo más de 1 h desde el mensaje del cliente sin respuesta de una persona. | Todos |
 | 6 | **Círculo naranja** | Mensajes sin leer. | Todos |
@@ -207,6 +207,7 @@ Clic derecho sobre una fila de la lista: menú de esa conversación (23).
 | 21 | **Detalle del contacto** | Ficha del cliente. Ver [3.2.3 Detalle del contacto](#323-detalle-del-contacto). | Todos |
 | 22 | **Ocultar panel de contacto** | Esconde o muestra el Detalle; se recuerda en esa computadora. | Todos |
 | 23 | **Menú del clic derecho** | Sobre una fila (en celular, dejándola presionada): **Marcar como no leído** (pone el círculo naranja, 6, para dejarla pendiente; si ese chat estaba abierto, se cierra) o **Marcar como leído** (lo quita, y en el Embudo también quita el azul de la tarjeta). Es para todo el equipo; el círculo se quita solo al abrir el chat o al contestar. | Todos |
+| 25 | **Filtro de temperatura** (ícono a la derecha del buscador) | Menú corto: **Todas · 🔥 Caliente · 🧊 Frío · ⏳ En espera · ○ Sin asignar**, una a la vez. Con algo elegido el ícono se pinta naranja y muestra el emoji; la **×** de al lado lo quita. Se suma a la pestaña (3) y a la búsqueda. No se recuerda al recargar. Desde el 28-sep-2026; captura pendiente. | Todos |
 | 24 | **Franja del Agente IA** (arriba de todo, solo si aplica) | Si el Agente IA tiene horario: «El Agente IA solo contesta mié–jue 20:00–6:00 (ahora está fuera de horario)» en ámbar, o «(ahora sí está contestando)» en gris; se actualiza sola cada minuto. Si el canal está Apagado: «El Agente IA está apagado en WhatsApp Diluvium» en rojo. Con 24/7 y Encendido no sale. No está en la captura. | Todos |
 
 **Lo cambias tú desde la pantalla:** temperatura, estrella, leído / no leído (clic derecho), etapa y todo el
@@ -222,7 +223,7 @@ avisos 🤖 (17), avanza la etapa (10) y usa la transcripción (16) de las notas
 se pausa en ese chat (según Opciones). Si no contesta todo (tiene horario o el canal está Apagado), lo dice la
 franja (24).
 
-<sub>Para Code: ruta `/dashboard`; `app/(app)/dashboard/_components/` (`inbox-board`, `conversation-list`, `chat-thread`, `temperature-picker`, `agent-activity-pill`, `scheduled-in-thread`, `bot-banner`); franja (24) con `lib/monitoring/bot-silence.ts` (`loadBotBanner`); menú del clic derecho `components/ui/context-menu.tsx`; datos en `lib/inbox/`; tiempo real `/api/inbox/stream`.</sub>
+<sub>Para Code: ruta `/dashboard`; `app/(app)/dashboard/_components/` (`inbox-board`, `conversation-list`, `chat-thread`, `temperature-picker`, `agent-activity-pill`, `scheduled-in-thread`, `bot-banner`); franja (24) con `lib/monitoring/bot-silence.ts` (`loadBotBanner`); menú del clic derecho `components/ui/context-menu.tsx`; datos en `lib/inbox/`; tiempo real `/api/inbox/stream`. Filtro de temperatura: `app/(app)/_components/card-filter-button.tsx` → `listConversations({ temperature })` (lib/inbox/actions.ts, validado) → `listFilter` en lib/inbox/queries.ts; reglas en `lib/contacts/filters.ts` (Destacado = `is_starred` o `temperature = 'destacado'`).</sub>
 
 #### 3.2.1 Chat: mensajes, avisos y tarjetas del agente
 
@@ -449,7 +450,7 @@ WhatsApp Web, o con una plantilla desde el CRM.
 | 4 | **Tarjeta azul** | El cliente escribió y nadie le ha contestado. Se quita cuando sale una respuesta (vendedor desde el CRM o el celular, o el agente) o con **Marcar como leído** (19 o el clic derecho, 16); abrir el chat **no** la quita. Vuelve con el siguiente mensaje del cliente. Si también aplica amarilla, gana la amarilla. | Todos |
 | 5 | **Tarjeta blanca** | Nada pendiente. Al pasar el mouse se ilumina en gris (el azul es solo para 4). | Todos |
 | 6 | **Círculo naranja** | Mensajes sin ver. Se quita al abrir el chat o con Marcar como leído. | Todos |
-| 7 | **Temperatura** | La del contacto. | Todos |
+| 7 | **Temperatura** | La del contacto. Si alguno de sus chats tiene la estrella de la Bandeja, la tarjeta muestra además una estrella naranja chica (Destacado del chat); con temperatura ⭐ no se repite. | Todos |
 | 8 | **Ciudad por lada** | 📍 Ciudad calculada por la lada del teléfono. | Todos |
 | 9 | **PRUEBA** | Contacto del número de prueba. Hoy ninguno la lleva: se quitó el 28-sep-2026 al borrar los chats de prueba. | Todos |
 | 10 | **Columna Compra** | Los que ya compraron (cuenta en Anuncios › Compraron). Es la columna con el papel «Venta cerrada» (70): si el papel pasa a otra, cuenta esa. | Todos |
@@ -471,6 +472,7 @@ WhatsApp Web, o con una plantilla desde el CRM.
 | 26 | **📄 Enviar plantilla desde el CRM** (**Con costo**) | **Elegir plantilla** → **Enviar plantilla**: abre el chat por WhatsApp con una plantilla aprobada (Marketing ≈ $0.73). Después, en el CRM solo se puede mandar otra plantilla hasta que el cliente conteste (Bandeja › 24). | Todos |
 | 27 | **"Este número también está en el contacto «…»"** · **Abrir ese contacto** | Hay otro contacto (más antiguo) con ese número: el chat quedaría en ese, así que se manda desde ahí. | Todos |
 | 28 | **Aviso de Meta** (pop-up grande) | Si WhatsApp (Meta) rechaza la plantilla: título, **Por qué pasó**, **Qué hacer** y **Entendido** (el mismo de Mensajes rápidos › 31). | Todos |
+| 29 | **Filtro** (ícono a la derecha del buscador) | Menú corto: **Temperatura** (Todas · 🔥 · 🧊 · ⏳ · ○ Sin asignar, una a la vez) y, aparte, **⭐ Destacado** (estrella del chat o temperatura ⭐). Se pueden combinar (🔥 + Destacado) y se suman a la búsqueda. Con algo elegido el ícono se pinta naranja y muestra los emojis; la **×** lo quita. **Las columnas no cambian:** mismas etapas, orden, colores y arrastre; solo quedan las tarjetas que cumplen, cada columna cuenta las suyas y la vacía dice «Ninguno con este filtro». Una tarjeta que deja de cumplir (p. ej. le cambias la temperatura en el pop-up) se va del tablero. No se recuerda al recargar. Desde el 28-sep-2026; captura pendiente. | Todos |
 
 **Lo cambias tú desde la pantalla:** contactos nuevos (20) y el primer mensaje a quien no tiene chat (25–26), la etapa (arrastrando la tarjeta), leído / no leído (clic derecho o **Marcar como leído**, 19), las
 columnas (lápiz, 17) y todo lo del chat y el Detalle en el pop-up. Los cambios a las columnas (crear, renombrar, borrar,
@@ -484,7 +486,7 @@ ordenar, papel, modelo) quedan en **Agente IA › Historial**.
 **Agente IA aquí:** mueve tarjetas hacia adelante (sale el aviso emergente), pinta la tarjeta de amarillo cuando
 necesita al vendedor, y su chat y Detalle se ven igual que en la Bandeja.
 
-<sub>Para Code: ruta `/embudo` (`/contactos` redirige); `app/(app)/contactos/_components/` (`contacts-board`, `contact-card`, `contact-detail-panel`, `contact-chat`); colores `lib/contacts/funnel-signals.ts` y `funnel-tone.ts`, estilos `[data-funnel]` y `[data-funnel-card]` (luz gris) en `app/globals.css`; «Marcar como leído» = `mark-read-button.tsx` + `conversations.attended_at` (migración 0045); orden de la columna = `board-live.ts` (`columnsByStage`: etapa o último entrante, que sale de `window_expires_at` − 24 h). Columnas: tabla `funnel_stages` (migración 0041), editor `app/(app)/_components/stages-editor.tsx`, etapas en vivo `funnel-stages-provider.tsx` (evento SSE `stages.updated`). Nuevo contacto: `new-contact-dialog.tsx` → `createContact` (lib/actions/contacts.ts) → `lib/contacts/create-manual.ts` (source `manual`, candado por teléfono como la entrada, fuera de Conversaciones nuevas en `lib/dashboard/queries.ts`); teléfono `lib/contacts/manual-phone.ts`. Sin chat: `first-message.tsx`; WhatsApp Web `lib/contacts/whatsapp-link.ts`; plantilla `startChatWithTemplate` (lib/inbox/actions.ts) → `lib/messaging/start-conversation.ts` → Zernio `POST /v1/inbox/conversations`.</sub>
+<sub>Para Code: ruta `/embudo` (`/contactos` redirige); `app/(app)/contactos/_components/` (`contacts-board`, `contact-card`, `contact-detail-panel`, `contact-chat`); colores `lib/contacts/funnel-signals.ts` y `funnel-tone.ts`, estilos `[data-funnel]` y `[data-funnel-card]` (luz gris) en `app/globals.css`; «Marcar como leído» = `mark-read-button.tsx` + `conversations.attended_at` (migración 0045); orden de la columna = `board-live.ts` (`columnsByStage`: etapa o último entrante, que sale de `window_expires_at` − 24 h). Columnas: tabla `funnel_stages` (migración 0041), editor `app/(app)/_components/stages-editor.tsx`, etapas en vivo `funnel-stages-provider.tsx` (evento SSE `stages.updated`). Nuevo contacto: `new-contact-dialog.tsx` → `createContact` (lib/actions/contacts.ts) → `lib/contacts/create-manual.ts` (source `manual`, candado por teléfono como la entrada, fuera de Conversaciones nuevas en `lib/dashboard/queries.ts`); teléfono `lib/contacts/manual-phone.ts`. Sin chat: `first-message.tsx`; WhatsApp Web `lib/contacts/whatsapp-link.ts`; plantilla `startChatWithTemplate` (lib/inbox/actions.ts) → `lib/messaging/start-conversation.ts` → Zernio `POST /v1/inbox/conversations`. Filtro (29): mismo `card-filter-button.tsx`, en el navegador sobre las tarjetas ya cargadas (`matchesCardFilter` de `lib/contacts/filters.ts`); la estrella del chat llega en la señal (`FunnelSignal.starred`, `bool_or(is_starred)` en funnel-signals.ts, también en vivo).</sub>
 
 ---
 
