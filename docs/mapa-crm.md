@@ -49,6 +49,7 @@ Nadie es "dueño" de un contacto: **todos ven todos los contactos, siempre**.
 | **Ventana de 24 h** | Regla de WhatsApp: hasta 24 horas después del último mensaje del cliente se puede escribir libre. Pasadas las 24 h **solo se puede mandar una plantilla**. |
 | **Gratis por anuncio (72 h)** | Si el cliente llegó por un anuncio y se le contesta dentro de 24 h, por 72 h todos los mensajes (también plantillas) son gratis. El chat lo indica con 🎁. |
 | **Plantilla** | Mensaje fijo **aprobado por Meta** para escribir fuera de la ventana de 24 h. Sus huecos se llaman {{1}}, {{2}}… |
+| **Link** | Dirección de una página (https://…, www.…, diluvium.com.mx, amzn.to/…) escrita en un texto. En todo el CRM sale **azul y subrayada**, como en WhatsApp, y un clic la abre en otra pestaña (ver Bandeja › Chat › 23): chat de la Bandeja y del pop-up del Embudo (en la burbuja nuestra, azul claro), comentarios, mensajes rápidos, plantillas, FAQs, programados y anuncios. Un correo (ventas@…) no es link. Desde el 29-sep-2026. |
 | **Contacto sin chat** | Contacto que nunca ha escrito (alta a mano en Embudo › Nuevo contacto, o importado de GHL). Se le escribe primero **gratis desde WhatsApp Web** o con una **plantilla** desde el CRM; con plantilla, en el CRM solo se escribe libre cuando el cliente conteste. |
 | **Aviso de Meta** | Pop-up grande que sale cuando WhatsApp (Meta) no acepta algo de una plantilla: por qué pasó y qué hacer. |
 | **Mensaje rápido** | Respuesta guardada por el equipo para contestar más rápido dentro de las 24 h (antes se llamaba "Fragmento"). Se inserta con "/" o con ⚡ y **no se manda sola**: la revisas y le das Enviar. Si lleva {{vendedor}}, se llena solo con tu nombre; {{nombre}} lo completas tú. Diluvium tiene 22 (Buenos días, Precio, Pagos…). |
@@ -208,8 +209,8 @@ Filtro de temperatura (25) abierto, con 🔥 elegido: la lista deja solo los cal
 | 10 | **Chip de etapa** | Etapa actual del contacto. | Todos |
 | 11 | **Aviso de ventana de 24 h** | "Ventana abierta · quedan X h" (verde) o, vencida, "Pasaron 24 h…" (ámbar). | Todos |
 | 12 | **Gratis por anuncio** | "🎁 Gratis por anuncio hasta…" o "📣 Responde antes de…: 72 h gratis". | Todos |
-| 13 | **Burbuja del cliente** | Mensaje del cliente (izquierda, blanca). | Todos |
-| 14 | **Burbuja nuestra** | Mensaje del vendedor o del agente (derecha, azul; a propósito no dice quién). 🕗 enviando (también mientras espera su turno si WhatsApp pidió esperar) · ✓ enviado · ✓✓ entregado · ✓✓ azul leído. Si WhatsApp dice "entregado" o "leído", el mensaje **nunca** queda como "No se envió". | Todos |
+| 13 | **Burbuja del cliente** | Mensaje del cliente (izquierda, blanca). Los **links** salen azules y subrayados; clic los abre en otra pestaña (Chat › 23). | Todos |
+| 14 | **Burbuja nuestra** | Mensaje del vendedor o del agente (derecha, azul; a propósito no dice quién). Los **links** salen en azul claro y subrayados; clic los abre en otra pestaña (Chat › 23). 🕗 enviando (también mientras espera su turno si WhatsApp pidió esperar) · ✓ enviado · ✓✓ entregado · ✓✓ azul leído. Si WhatsApp dice "entregado" o "leído", el mensaje **nunca** queda como "No se envió". | Todos |
 | 15 | **Nota de voz** | Reproductor del audio. | Todos |
 | 16 | **Transcripción** | Lo que dijo el cliente en la nota de voz, en texto. | Todos |
 | 17 | **Aviso 🤖** | Nota del agente para el vendedor (el cliente no la ve). | Todos |
@@ -239,7 +240,7 @@ se pausa en ese chat (según Opciones). Si no contesta todo (tiene horario o el 
 franja (24). Pausado o apagado solo deja de contestar: en **segundo plano** sigue leyendo el chat y dejando al día la
 etapa y el Detalle; lo que está haciendo se ve en el Detalle (3.2.3 › 28). La píldora (19) es solo de cuando **contesta**.
 
-<sub>Para Code: ruta `/dashboard`; `app/(app)/dashboard/_components/` (`inbox-board`, `conversation-list`, `chat-thread`, `temperature-picker`, `agent-activity-pill`, `scheduled-in-thread`, `bot-banner`); franja (24) con `lib/monitoring/bot-silence.ts` (`loadBotBanner`); menú del clic derecho `components/ui/context-menu.tsx`; datos en `lib/inbox/`; tiempo real `/api/inbox/stream`. Filtro de temperatura: `app/(app)/_components/card-filter-button.tsx` → `listConversations({ temperature })` (lib/inbox/actions.ts, validado) → `listFilter` en lib/inbox/queries.ts; reglas en `lib/contacts/filters.ts`. Lupa (26–28): `app/(app)/_components/chat-search-button.tsx` y `chat-search-badge.tsx` → `listConversations({ searchChats })` → `lib/inbox/chat-search.ts` (índice `pg_trgm` de la migración 0050); resaltado `components/ui/search-highlight.tsx` + `lib/text/highlight.ts`; barra y salto en `chat-thread.tsx` (`searchTerm`, `listChatMatches`); colores `--busqueda*` en `app/globals.css`. Destacado = `contacts.destacado` (migración 0048; `conversations.is_starred` y el valor de temperatura 'destacado' quedan sin uso); estrella → `setContactDestacado` (lib/actions/contacts.ts), aviso en vivo como cambio de «temperatura».</sub>
+<sub>Para Code: ruta `/dashboard`; `app/(app)/dashboard/_components/` (`inbox-board`, `conversation-list`, `chat-thread`, `temperature-picker`, `agent-activity-pill`, `scheduled-in-thread`, `bot-banner`); franja (24) con `lib/monitoring/bot-silence.ts` (`loadBotBanner`); menú del clic derecho `components/ui/context-menu.tsx`; datos en `lib/inbox/`; tiempo real `/api/inbox/stream`. Filtro de temperatura: `app/(app)/_components/card-filter-button.tsx` → `listConversations({ temperature })` (lib/inbox/actions.ts, validado) → `listFilter` en lib/inbox/queries.ts; reglas en `lib/contacts/filters.ts`. Lupa (26–28): `app/(app)/_components/chat-search-button.tsx` y `chat-search-badge.tsx` → `listConversations({ searchChats })` → `lib/inbox/chat-search.ts` (índice `pg_trgm` de la migración 0050); resaltado `components/ui/search-highlight.tsx` + `lib/text/highlight.ts` (dentro de `LinkedText`, también en los links); barra y salto en `chat-thread.tsx` (`searchTerm`, `listChatMatches`); colores `--busqueda*` en `app/globals.css`. Destacado = `contacts.destacado` (migración 0048; `conversations.is_starred` y el valor de temperatura 'destacado' quedan sin uso); estrella → `setContactDestacado` (lib/actions/contacts.ts), aviso en vivo como cambio de «temperatura». Links azules (13, 14 y en todo el CRM): `components/ui/linked-text.tsx` + detección pura `lib/text/links.ts` (con pruebas), estilo `[data-link="inline"]` en `app/globals.css` (azul claro sobre fondos navy).</sub>
 
 #### 3.2.1 Chat: mensajes, avisos y tarjetas del agente
 
@@ -251,6 +252,7 @@ dentro de él.
 ![Agente en pausa y depósito recibido](mapa-crm/03-chat-pausa.png)
 ![Mensaje que no se envió](mapa-crm/03-chat-fallido.png)
 ![Chat del número de prueba (captura anterior al 28-sep-2026; ese chat ya se borró)](mapa-crm/03-chat-prueba.png)
+![Links en el chat: azules y subrayados](mapa-crm/03-chat-links.png)
 
 | # | Nombre oficial | Qué hace | Quién lo ve |
 |---|---|---|---|
@@ -276,6 +278,7 @@ dentro de él.
 | 20 | **🤖 WhatsApp sí recibió el mensaje…** | Tarjeta de envío: WhatsApp aceptó el mensaje pero el CRM no pudo guardar la confirmación. Revisar en el celular antes de escribirlo otra vez (sin Reintentar, para no duplicar). | Todos |
 | 21 | **Recibiendo mensaje…** | Burbuja del cliente con borde punteado, hasta 1 minuto: WhatsApp avisó que el cliente escribió pero aún no pasa el contenido; el CRM lo está verificando. Casi siempre se convierte sola en el mensaje real. Captura pendiente. | Todos |
 | 22 | **⚠️ El cliente escribió, pero WhatsApp no pasó el mensaje al CRM. Míralo en el celular.** | Burbuja del cliente con borde naranja punteado (en lugar del antiguo «[Unsupported message]»): se confirmó que el primer mensaje no llegó. El texto solo está en la app del celular. Si trae la tarjeta 📣 (1), el cliente llegó por ese anuncio. Si el mensaje llega después, la tarjeta se reemplaza sola. Captura pendiente. | Todos |
+| 23 | **Link** | Cualquier link del mensaje (https://…, www.…, diluvium.com.mx, amzn.to/…) sale **subrayado**: azul en la burbuja del cliente y azul claro en la nuestra, para que se lea sobre el fondo azul. Clic lo abre en otra pestaña. El punto o la coma del final no entran en el link, y un correo (ventas@…) no es link. Igual en el pop-up del Embudo. Desde el 29-sep-2026. | Todos |
 
 **Lo cambias tú desde la pantalla:** Reintentar o Apagar en la tarjeta del agente; Reintentar un mensaje que no salió.
 
@@ -290,7 +293,7 @@ técnica y su mensaje no nos llegó. ¿Nos ayudas escribiéndolo de nuevo para s
 modelo, sin gasto de IA) solo si no hay nada que leer; si el cliente ya escribió otra cosa, o el mensaje real llega
 después, contesta lo que dice. Mientras dice «Recibiendo mensaje…» (21) no contesta nada.
 
-<sub>Para Code: `chat-thread.tsx`, `ad-referral-card.tsx`, `agent-in-thread.tsx` (aviso de pausa y avisos 🤖), `agent-error-card.tsx`, `document-card.tsx`; tipos de aviso en `lib/ai/runtime/policy.ts` (`NoticeKind`). Mensaje no disponible (21–22): `messages.metadata.noDisponible` (sin migración), reglas y textos en `lib/messaging/unavailable.ts`, doble verificación en `lib/messaging/unavailable-check.ts` (cola `no-disponible`, `worker/unavailable.ts`), texto fijo del agente en `lib/ai/runtime/run.ts`.</sub>
+<sub>Para Code: `chat-thread.tsx` (Link, 23: `components/ui/linked-text.tsx` + `lib/text/links.ts`), `ad-referral-card.tsx`, `agent-in-thread.tsx` (aviso de pausa y avisos 🤖), `agent-error-card.tsx`, `document-card.tsx`; tipos de aviso en `lib/ai/runtime/policy.ts` (`NoticeKind`). Mensaje no disponible (21–22): `messages.metadata.noDisponible` (sin migración), reglas y textos en `lib/messaging/unavailable.ts`, doble verificación en `lib/messaging/unavailable-check.ts` (cola `no-disponible`, `worker/unavailable.ts`), texto fijo del agente en `lib/ai/runtime/run.ts`.</sub>
 
 #### 3.2.2 Caja para escribir (composer)
 
@@ -373,6 +376,7 @@ Ningún dato es definitivo: el agente corrige lo que el cliente aclare después.
 ![Agente IA leyendo el chat en segundo plano](mapa-crm/05-detalle-lector.png)
 ![Menú Pausar agente](mapa-crm/05-detalle-pausar.png)
 ![Agente en pausa y botón Activar](mapa-crm/05-detalle-activar.png)
+![Comentario con un link](mapa-crm/05-detalle-comentario-link.png)
 
 | # | Nombre oficial | Qué hace | Quién lo ve |
 |---|---|---|---|
@@ -395,7 +399,7 @@ Ningún dato es definitivo: el agente corrige lo que el cliente aclare después.
 | 17 | **Pausar agente** | Abre el menú de pausa (24). | Todos |
 | 18 | **Escribe un comentario…** | Nota interna del equipo (Enter agrega). El cliente no la ve y el agente no la lee. | Todos |
 | 19 | **Agregar** | Guarda el comentario. | Todos |
-| 20 | **Comentario** | Autor y fecha. "Agente IA" = lo escribió el agente; "Importado" = nota vieja de GHL. | Todos |
+| 20 | **Comentario** | Autor y fecha. "Agente IA" = lo escribió el agente; "Importado" = nota vieja de GHL. Si el texto trae un link, sale azul y subrayado (clic lo abre en otra pestaña). | Todos |
 | 21 | **Editar · Borrar** (comentario) | Cualquier rol puede editar o borrar, también los de otros. | Todos |
 | 22 | **Correo** (y etiquetas) | Datos compactos al final. | Todos |
 | 23 | **Ocultar panel** | Esconde el Detalle. | Todos |
@@ -463,6 +467,10 @@ Pop-up del contacto (clic en una tarjeta): el mismo chat y el mismo Detalle de l
 Abrirlo quita el círculo naranja (6); el azul (4) se quita al contestar o con **Marcar como leído (19)**.
 
 ![Pop-up del contacto en el Embudo](mapa-crm/06-embudo-popup.png)
+
+Links en el chat del pop-up: salen azules y subrayados, igual que en la Bandeja (el 23 es el de Bandeja › Chat).
+
+![Links en el chat del pop-up del Embudo](mapa-crm/06-embudo-popup-links.png)
 
 Clic derecho sobre una tarjeta: menú de ese contacto (16).
 
