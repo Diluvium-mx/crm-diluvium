@@ -756,6 +756,9 @@ Los **workflows** (envíos de material), la **Biblioteca** de archivos y las **C
 
 ![Workflows](mapa-crm/10-auto-workflows.png)
 ![Editar workflow](mapa-crm/10-auto-editor.png)
+![Aviso al salir sin guardar](mapa-crm/10-auto-aviso-salir.png)
+![Aviso al guardar](mapa-crm/10-auto-aviso-guardar.png)
+![Workflow guardado](mapa-crm/10-auto-aviso-guardado.png)
 ![Biblioteca](mapa-crm/10-auto-biblioteca.png)
 ![Corridas](mapa-crm/10-auto-corridas.png)
 
@@ -763,7 +766,6 @@ Los **workflows** (envíos de material), la **Biblioteca** de archivos y las **C
 |---|---|---|---|
 | 1 | **Workflows · Biblioteca · Corridas** | Pestañas de la sección. | Todos |
 | 2 | **Descripción** | Quién puede disparar un workflow. | Todos |
-| 3 | **Restaurar predeterminados** | Vuelve a crear los predeterminados que falten (no toca los que existen). | Todos |
 | 4 | **+ Nuevo** | Crea un workflow. | Todos |
 | 5 | **Casilla habilitado** | Prende o apaga el workflow. | Todos |
 | 6 | **Nombre del workflow** | Tabla de tamaños, Datos bancarios, Video de instalación… | Todos |
@@ -775,7 +777,7 @@ Los **workflows** (envíos de material), la **Biblioteca** de archivos y las **C
 | 12 | **Corridas · 7 días** | Cuántas veces salió en la última semana. | Todos |
 | 13 | **Subir · Bajar** | Cambia el orden de la lista. | Todos |
 | 14 | **▷ Probar** | Lo manda en una conversación que eliges. **Sale de verdad**: úsalo con el número de prueba. | Todos |
-| 15 | **✎ Editar** | Abre el editor (17–32 y 47). | Todos |
+| 15 | **✎ Editar** | Abre el editor (17–32 y 47–51). Si solo lo abres para ver cómo está hecho, **← Workflows** (48) te regresa sin preguntar. | Todos |
 | 16 | **Tarjeta con borde ámbar** | Workflow apagado porque le falta archivo. | Todos |
 | 17 | **Habilitado** | Prende o apaga desde el editor. | Todos |
 | 18 | **Nombre** | Nombre del workflow. | Todos |
@@ -792,26 +794,32 @@ Los **workflows** (envíos de material), la **Biblioteca** de archivos y las **C
 | 29 | **Texto del archivo** | Pie que va con la imagen o video, en el mismo mensaje. | Todos |
 | 30 | **Subir · Bajar · Quitar paso** | Ordena o borra un paso. | Todos |
 | 31 | **+ 💬 Texto · + 📎 Archivo · + ⏱ Esperar** | Agrega un paso. | Todos |
-| 32 | **Guardar** (y Cancelar) | Guarda el workflow. Los predeterminados se pueden editar y apagar, pero no borrar. | Todos |
+| 32 | **Guardar** (barra fija de arriba) | Más grande y siempre a la vista, aunque bajes por los pasos. Todos los cambios del editor se hacen libres y se guardan **juntos**: al presionarlo sale **un solo aviso** (50) con lo de antes y lo de después. Apagado mientras no cambies nada. Los predeterminados se pueden editar y apagar, pero no borrar. | Todos |
 | 33 | **Límites de WhatsApp** | Imagen JPEG/PNG hasta 5 MB · Video MP4 hasta 16 MB · PDF hasta 100 MB. | Todos |
 | 34 | **Subir archivos** | Agrega imágenes, videos o PDF. | Todos |
 | 35 | **Tarjeta de imagen** | Vista previa del archivo. | Todos |
 | 36 | **Nombre** (clic para renombrar) | Cómo se ve en el editor. | Todos |
 | 37 | **Tipo · peso · archivo** | Datos del archivo. | Todos |
-| 38 | **Borrar** (archivo) | Quita el archivo (no se puede si un paso lo usa). | Todos |
+| 38 | **Borrar** (archivo) | Quita el archivo (no se puede si un paso lo usa). Pide confirmar con el aviso de arriba. | Todos |
 | 39 | **Tarjeta de video** | Video con reproductor. | Todos |
 | 40 | **Actualizar** | Recarga las corridas. | Todos |
 | 41 | **Cuándo · Workflow · Contacto · Disparador · Estado** | Columnas de las últimas 100 corridas. | Todos |
 | 42 | **Ejecutando** | Se está mandando. | Todos |
 | 43 | **Hecho** | Salió completo. | Todos |
 | 44 | **Omitido · motivo** | No salió y por qué (p. ej. agente pausado, «ya se envió a este contacto» o «ya no es el inicio» de **Solo al inicio**, 47). | Todos |
+| 48 | **← Workflows** (barra fija de arriba, junto al título «Editar «nombre»») | Regresa a la lista de workflows. **Cancelar** hace exactamente lo mismo. Si no cambiaste nada, sales directo; si cambiaste algo, sale el aviso (49). En la barra también dice «Cambios sin guardar» mientras los haya. Si cierras o recargas el navegador con cambios, el navegador también avisa. En el celular la flecha va sola. | Todos |
+| 49 | **Aviso «Estás por salir de Editar workflow»** | «Los cambios de edición se perderán.» **Seguir editando** te deja donde estabas con tus cambios; **Salir sin guardar** regresa a la lista y los descarta. Solo sale si hubo cambios. | Todos |
+| 50 | **Aviso «¿Guardar los cambios de «nombre»?»** | Muestra **Antes** y **Después** de todo lo que cambiaste (el mismo texto que queda en Agente IA › Historial) y guarda todo junto con **Guardar**. Para uno nuevo dice «¿Crear el workflow…?» con su resumen (encendido o apagado y cuántos pasos). | Todos |
+| 51 | **✓ Workflow guardado** | Aviso breve arriba al guardar (o al borrar un workflow). Se quita solo a los 3 segundos o con cualquier clic (Biblioteca, Corridas, ← Workflows…). | Todos |
 | 45 | **Falló · código** | Error al mandar, con el motivo en palabras simples. Si WhatsApp pidió esperar, la corrida **no falla**: espera su turno y sigue. Si el worker se reinició y el archivo había quedado fallido, la corrida se detiene y **no** mueve la etapa. | Todos |
-| 46 | **⧉ Copiar** (ícono junto a Restaurar predeterminados, 3) | Copia **todos** los workflows para pegarlos en una IA y pedir mejoras, igual que las FAQs: cada uno con un guion (sin números), si está encendido o apagado (y si le falta archivo), con qué se dispara (Agente IA, comando, palabras clave, etapa), **Cuándo lo usa el Agente IA** y sus pasos en orden con los textos completos. Al copiar, el ícono cambia a ✓ unos segundos. También dice si es **Solo al inicio** (47). | Todos |
+| 46 | **⧉ Copiar** (ícono junto a **+ Nuevo**, 4) | Copia **todos** los workflows para pegarlos en una IA y pedir mejoras, igual que las FAQs: cada uno con un guion (sin números), si está encendido o apagado (y si le falta archivo), con qué se dispara (Agente IA, comando, palabras clave, etapa), **Cuándo lo usa el Agente IA** y sus pasos en orden con los textos completos. Al copiar, el ícono cambia a ✓ unos segundos. También dice si es **Solo al inicio** (47). | Todos |
 | 47 | **¿Cuándo se dispara por palabra clave o por el Agente IA?** (En cualquier momento · Solo al inicio) | **En cualquier momento**: como siempre (por palabra clave, una vez por cliente; el agente lo usa cuando quiera). **Solo al inicio**: regla estricta para respuestas ya definidas de primer contacto (p. ej. «Precio 2»): por palabra clave o por el agente solo sale **antes de que el Agente IA (con su propio texto) o un vendedor le contesten al cliente**, y **una sola vez por cliente**, nunca se repite. Lo que mandan otros workflows no cuenta (tras «Información», un «Precio» sí dispara «Precio 2»); el historial copiado del celular sí cuenta. Si ya no aplica, el mensaje puede disparar otro workflow que coincida y el agente ya no lo tiene a la mano. El **comando del vendedor** sale siempre. En Corridas, lo que no salió queda como Omitido con motivo «ya no es el inicio» o «ya enviado a este contacto». | Todos |
 
-**Lo cambias tú desde la pantalla:** crear, editar, prender, apagar, ordenar y probar workflows; restaurar los
-predeterminados; subir, renombrar y borrar archivos. Crear, editar, prender, apagar y borrar (y restaurar predeterminados)
-quedan en **Agente IA › Historial** con quién lo hizo.
+**Lo cambias tú desde la pantalla:** crear, editar, prender, apagar, ordenar y probar workflows; subir, renombrar y
+borrar archivos. En el editor los cambios son libres y se guardan juntos con un solo aviso (50); borrar un workflow o un
+archivo pide confirmar (no se puede deshacer). Crear, editar, prender, apagar y borrar quedan en **Agente IA › Historial**
+con quién lo hizo. «Restaurar predeterminados» ya no está en la pantalla (29-sep-2026): los predeterminados se crean
+solos al abrir la cuenta y no se pueden borrar.
 
 **Pídeselo a Code:**
 - "En Automatización › (31) pasos, agrega un paso «Mover etapa»."
