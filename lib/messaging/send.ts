@@ -32,6 +32,7 @@ import { SendFailedError, type MessagingProvider, type SendResult } from "./prov
 import { isAmbiguousSendError, isWindowOpen, nextStatus, SEND_ACCEPTED, SEND_RATE_LIMITED, SEND_UNCONFIRMED, SEND_UNKNOWN } from "./rules";
 import { sendInTurn, type TurnMark } from "./send-turn";
 import { plainSendReason } from "./send-reasons";
+import { findEarlyEcho } from "./late-echo";
 import { addNotice } from "@/lib/ai/runtime/notices";
 import { renderTemplateBody, templateMaxIndex } from "./template-format";
 import { isForeignTemplateAccount } from "./template-sync";
@@ -805,6 +806,29 @@ async function deliver(
     const code = error instanceof SendFailedError ? `${SEND_UNKNOWN}:${error.code}` : SEND_UNKNOWN;
     await db.update(messages).set({ errorCode: code, errorMessage: reason }).where(where);
     console.error(`[send] resultado desconocido para ${ctx.messageId}; se reconciliará: ${reason}`);
+    // El eco pudo llegar MIENTRAS el POST seguía colgado (Zernio sí lo mandó): se fusiona
+    // como cualquier "eco primero" (lib/messaging/late-echo.ts). Si llega después, lo une
+    // la ingesta (adoptLateEcho).
+    try {
+      const early = await findEarlyEcho(db, ctx.organizationId, ctx.messageId);
+      if (early) {
+        const finalId = await linkSentMessage({
+          queuedId: ctx.messageId,
+          conversationId: ctx.conversation.id,
+          organizationId: ctx.organizationId,
+          sentByUserId: ctx.sentByUserId,
+          providerMessageId: early.providerMessageId,
+          providerInternalId: early.providerInternalId ?? undefined,
+          status: "sent",
+          sentAt: early.sentAt,
+          readCutoffMessageId,
+        });
+        console.info(`[send] ${ctx.messageId}: su eco ya había llegado; queda enviado (${finalId})`);
+        return { messageId: finalId, status: "sent" };
+      }
+    } catch (linkError) {
+      console.error(`[send] ${ctx.messageId}: no se pudo unir con su eco; se reconciliará`, linkError);
+    }
     return { messageId: ctx.messageId, status: "pending" };
   }
 
