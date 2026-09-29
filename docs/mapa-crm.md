@@ -74,6 +74,7 @@ Nadie es "dueño" de un contacto: **todos ven todos los contactos, siempre**.
 | **Modelo 1 / Modelo 2** | Los dos "cerebros" del agente. Cada etapa usa uno (hoy: Modelo 1 en Inbox, Prospecto e Interesado; Modelo 2 en Cerca de compra y Compra). |
 | **Número de prueba / PRUEBA** | Número de WhatsApp para probar. Sus chats llevan la etiqueta **PRUEBA** y **no cuentan en el Dashboard**. Desde el 28-sep-2026 está **archivado** (igual que el Sandbox): ya no aparece en Agente IA › Canales. Ese mismo día se **borraron sus chats de prueba** (eran celulares del negocio): los contactos se quedaron, sin la marca Prueba, y hoy ningún chat lleva la etiqueta PRUEBA. |
 | **Importado del celular** | Mensaje viejo copiado del teléfono al conectar un número. El agente no lo contesta y no cuenta como nuevo. |
+| **Mensaje no disponible** | A veces WhatsApp **no pasa al CRM el primer mensaje** de un cliente nuevo (Meta, código 131060; pasa sobre todo con iPhone y al llegar por anuncio: ~1 de cada 70 clientes nuevos). El CRM espera unos 20 s con «Recibiendo mensaje…» y hace una **doble verificación**: si el mensaje llegó por otro lado lo muestra normal (el aviso desaparece), si Zernio lo tiene lo recupera, y si de verdad no llegó deja la tarjeta **«El cliente escribió, pero WhatsApp no pasó el mensaje al CRM. Míralo en el celular.»** y el Agente IA (en su horario) le escribe: «¡Hola! Gracias por escribirnos 😊 Tuvimos una falla técnica y su mensaje no nos llegó. ¿Nos ayudas escribiéndolo de nuevo para seguir con tu atención?». Si el mensaje llega más tarde, reemplaza a la tarjeta solo. Lo que el cliente escribe después sí llega. Desde el 29-sep-2026. |
 | **Programado** | Mensaje que sale solo a la hora elegida (hora de Mazatlán). |
 | **Transcripción** | Texto de una nota de voz del cliente, escrito por el CRM; el agente lo lee para contestar. |
 | **Tarjeta amarilla / azul** | Colores de la tarjeta en el Embudo (regla del 28-sep-2026): **amarilla** = el agente necesita al vendedor (se quita contestando); **azul** = el cliente escribió y nadie le ha contestado (se quita contestando —vendedor o agente— o con **Marcar como leído**; abrir el chat no lo quita); **blanca** = nada pendiente. Al pasar el mouse la tarjeta se ilumina en **gris**, nunca en azul. |
@@ -197,7 +198,7 @@ Filtro de temperatura (25) abierto, con 🔥 elegido: la lista deja solo los cal
 | 1 | **Ocultar lista** | Esconde o muestra la lista de chats; se recuerda en esa computadora. | Todos |
 | 2 | **Buscar por nombre o teléfono…** | Busca chats sin importar acentos ni mayúsculas. | Todos |
 | 3 | **No leído · Todo · Destacado** | Filtros de la lista. **Destacado** = chats cuyo contacto tiene la estrella (7). Se combinan con el filtro de temperatura (25): «Destacado + 🔥» = calientes y destacados. La lista siempre va del mensaje más reciente al más viejo. | Todos |
-| 4 | **Fila de conversación** | Iniciales con el logo del canal, nombre, hora del último mensaje y vista previa ("Tú:" si el último fue nuestro, también si lo mandó el agente). Clic abre el chat y lo marca como leído. | Todos |
+| 4 | **Fila de conversación** | Iniciales con el logo del canal, nombre, hora del último mensaje y vista previa ("Tú:" si el último fue nuestro, también si lo mandó el agente). Si el primer mensaje del cliente no llegó al CRM, la vista previa dice «Recibiendo mensaje…» y luego «El cliente escribió, pero WhatsApp no pasó el mensaje al CRM…» (ver **Mensaje no disponible** en el Glosario). Clic abre el chat y lo marca como leído. | Todos |
 | 5 | **Semáforo** | Verde menos de 15 min, ámbar menos de 1 h, rojo más de 1 h desde el mensaje del cliente sin respuesta de una persona. | Todos |
 | 6 | **Círculo naranja** | Mensajes sin leer. | Todos |
 | 7 | **Estrella (Destacado)** | Marca al **contacto** como Destacado ⭐ para todo el equipo: se prende en todos sus chats, en su tarjeta del Embudo y en el pop-up. Convive con la temperatura (8). Aparece en el filtro Destacado. | Todos |
@@ -269,6 +270,8 @@ dentro de él.
 | 18 | **Respuesta del agente en el número de prueba** | Así se prueba al agente sin tocar a clientes reales. | Todos |
 | 19 | **🤖 No le llegó al cliente la imagen de …** | Tarjeta de envío: WhatsApp aceptó el archivo de un workflow y después avisó que falló. Dice el motivo y el comando para reenviarlo (p. ej. /banco). La etapa no se regresa. | Todos |
 | 20 | **🤖 WhatsApp sí recibió el mensaje…** | Tarjeta de envío: WhatsApp aceptó el mensaje pero el CRM no pudo guardar la confirmación. Revisar en el celular antes de escribirlo otra vez (sin Reintentar, para no duplicar). | Todos |
+| 21 | **Recibiendo mensaje…** | Burbuja del cliente con borde punteado, unos 20 s: WhatsApp avisó que el cliente escribió pero aún no pasa el contenido; el CRM lo está verificando. Casi siempre se convierte sola en el mensaje real. Captura pendiente. | Todos |
+| 22 | **⚠️ El cliente escribió, pero WhatsApp no pasó el mensaje al CRM. Míralo en el celular.** | Burbuja del cliente con borde naranja punteado (en lugar del antiguo «[Unsupported message]»): se confirmó que el primer mensaje no llegó. El texto solo está en la app del celular. Si trae la tarjeta 📣 (1), el cliente llegó por ese anuncio. Si el mensaje llega después, la tarjeta se reemplaza sola. Captura pendiente. | Todos |
 
 **Lo cambias tú desde la pantalla:** Reintentar o Apagar en la tarjeta del agente; Reintentar un mensaje que no salió.
 
@@ -277,9 +280,12 @@ dentro de él.
 - "En Bandeja › Chat › (10) Depósito recibido, que se vea en naranja como la tarjeta de error."
 
 **Agente IA aquí:** es el protagonista de esta parte: sus respuestas (3, 11, 18), sus avisos (10) y su tarjeta
-de error (5–7). El aviso de pausa (8) sale cuando alguien lo pausó o cuando un vendedor contestó.
+de error (5–7). El aviso de pausa (8) sale cuando alguien lo pausó o cuando un vendedor contestó. Ante la tarjeta
+(22) le escribe al cliente, dentro de su horario, el texto fijo «¡Hola! Gracias por escribirnos 😊 Tuvimos una falla
+técnica y su mensaje no nos llegó. ¿Nos ayudas escribiéndolo de nuevo para seguir con tu atención?» (sin usar el
+modelo, sin gasto de IA); mientras dice «Recibiendo mensaje…» (21) no contesta nada.
 
-<sub>Para Code: `chat-thread.tsx`, `ad-referral-card.tsx`, `agent-in-thread.tsx` (aviso de pausa y avisos 🤖), `agent-error-card.tsx`, `document-card.tsx`; tipos de aviso en `lib/ai/runtime/policy.ts` (`NoticeKind`).</sub>
+<sub>Para Code: `chat-thread.tsx`, `ad-referral-card.tsx`, `agent-in-thread.tsx` (aviso de pausa y avisos 🤖), `agent-error-card.tsx`, `document-card.tsx`; tipos de aviso en `lib/ai/runtime/policy.ts` (`NoticeKind`). Mensaje no disponible (21–22): `messages.metadata.noDisponible` (sin migración), reglas y textos en `lib/messaging/unavailable.ts`, doble verificación en `lib/messaging/unavailable-check.ts` (cola `no-disponible`, `worker/unavailable.ts`), texto fijo del agente en `lib/ai/runtime/run.ts`.</sub>
 
 #### 3.2.2 Caja para escribir (composer)
 

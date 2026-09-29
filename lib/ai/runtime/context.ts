@@ -3,12 +3,13 @@
 // Multi-tenant (CLAUDE.md §7): TODA lectura filtra por organization_id, además
 // del id. Un id de otra organización no encuentra nada (defensa en profundidad:
 // los ids vienen de la cola interna, pero nunca se confía en ellos solos).
-import { and, count, desc, eq, gt, inArray, isNotNull, isNull, ne, notInArray, sql, type SQL } from "drizzle-orm";
+import { and, count, desc, eq, gt, inArray, isNotNull, isNull, ne, not, notInArray, sql, type SQL } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { aiAgentDrafts, aiUsage, channels, conversations, messages, workflowRuns, workflowSteps } from "@/lib/db/schema";
 import { endsWithQuestionStep } from "@/lib/workflows/steps";
 import { MAX_HISTORY_CHARS, messageText } from "./transcript";
 import { FINAL_OUTCOMES } from "./usage";
+import { hiddenNoticeSql, noDisponibleEstado, UNAVAILABLE_HISTORY_NOTE } from "@/lib/messaging/unavailable";
 
 export type ConversationRow = typeof conversations.$inferSelect;
 export type ChannelRow = typeof channels.$inferSelect;
@@ -90,6 +91,9 @@ export async function pendingInbound(organizationId: string, conversationId: str
         inConversation(organizationId, conversationId),
         eq(messages.direction, "in"),
         isNull(messages.importedAt),
+        // Aviso "no disponible" en verificación o sombra de un real que llegó aparte:
+        // no se atiende (lib/messaging/unavailable.ts). El confirmado sin contenido sí.
+        not(hiddenNoticeSql(messages.metadata)),
         sql`${waAt} > coalesce((
           select max(coalesce((o.metadata->>'respondeHasta')::timestamp, o.sent_at, o.created_at)) from messages o
           where o.organization_id = ${organizationId} and o.conversation_id = ${conversationId}
@@ -197,9 +201,20 @@ export async function loadHistory(
       .from(messages)
       // Sin avisos internos: los lee el vendedor, no el cliente, y el modelo no
       // debe tomarlos como frases suyas.
-      .where(and(inConversation(organizationId, conversationId), ne(messages.status, "failed"), ne(messages.type, "system_note"), before))
+      .where(
+        and(
+          inConversation(organizationId, conversationId),
+          ne(messages.status, "failed"),
+          ne(messages.type, "system_note"),
+          // Avisos "no disponible" ocultos (en verificación o sombra): no son mensajes.
+          not(hiddenNoticeSql(messages.metadata)),
+          before,
+        ),
+      )
       .orderBy(desc(waAt), desc(messages.createdAt), desc(messages.id))
       .limit(pageRows);
+    // El confirmado sin contenido se lee como lo que es, no como "[Unsupported message]".
+    for (const m of page) if (noDisponibleEstado(m.metadata) === "sin_contenido") m.body = UNAVAILABLE_HISTORY_NOTE;
     newestFirst.push(...page);
     for (const m of page) chars += messageText(m).length;
     if (page.length < pageRows || chars > maxChars) break;

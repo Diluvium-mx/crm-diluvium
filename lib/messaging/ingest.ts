@@ -1,7 +1,7 @@
 // Aplica un evento normalizado a la base (lo usa el worker). Toda consulta
 // filtra por organización: la organización sale del CANAL (el número de
 // WhatsApp conectado), nunca del payload.
-import { and, asc, count, desc, eq, gte, inArray, isNotNull, isNull, or, sql } from "drizzle-orm";
+import { and, asc, count, desc, eq, gt, gte, inArray, isNotNull, isNull, lt, lte, not, or, sql } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { contactsImportLockKey } from "@/lib/db/locks";
 import { withTxRetry } from "@/lib/db/retry";
@@ -19,7 +19,19 @@ import { firstResponseSeconds, nextStatus, windowExpiresAt } from "./rules";
 import { noticeWorkflowSendFailed, type FailedOutbound } from "@/lib/workflows/delivery-notice";
 import { ingestHistoryMessage, isPhoneHistory } from "./history";
 import { markKeywordPending } from "@/lib/workflows/keyword-pending";
-import { completedMetadata, isUnavailableNotice } from "./unavailable";
+import {
+  completedMetadata,
+  hiddenNoticeSql,
+  isUnavailableNotice,
+  NO_DISPONIBLE_KEY,
+  noDisponibleEstado,
+  resolvedMetadata,
+  SHADOW_AFTER_MS,
+  SHADOW_BEFORE_MS,
+  UNAVAILABLE_CODE,
+  unavailableCode,
+  verifyingMetadata,
+} from "./unavailable";
 import { adoptLateEcho } from "./late-echo";
 import { pendingFallbackNote, recordAdClickSafely, type FallbackJob, type RecordedClick } from "@/lib/ads/attribution";
 import { looksLikeAdMessage } from "@/lib/ads/referral";
@@ -115,6 +127,8 @@ export type IngestHooks = {
   onAdClick?: (click: RecordedClick) => Promise<void> | void;
   /** Anuncios: (después del commit) entrante SIN ficha que pudo venir de un anuncio (respaldo con la conversación del proveedor). */
   onAdFallbackCandidate?: (job: FallbackJob) => Promise<void> | void;
+  /** Doble verificación (después del commit): aviso 131060 del primer entrante, nacido "verificando". */
+  onUnavailableNotice?: (m: { organizationId: string; messageId: string }) => Promise<void> | void;
 };
 
 export async function processWebhookEvent(
@@ -278,10 +292,15 @@ async function ingestMessage(
   };
   // Anuncios (mismo patrón: se reinicia en cada intento de la transacción).
   const ad: { click: RecordedClick | null; fallback: FallbackJob | null } = { click: null, fallback: null };
+  // Aviso 131060 del primer entrante que nació "verificando" (mismo patrón).
+  const verifying: { messageId: string | null } = { messageId: null };
   const result = await withTxRetry(() => db.transaction(async (tx) => {
     saved.value = null;
     ad.click = null;
     ad.fallback = null;
+    verifying.messageId = null;
+    // Avisos que este mensaje real dejó como sombra (se descuentan de los no leídos).
+    let shadowed = 0;
     const orgId = channel.organizationId;
 
     // Conversación ya existente del proveedor (canal + providerConversationId):
@@ -414,6 +433,17 @@ async function ingestMessage(
 
     if (!outcome) {
       const first = event.attachments[0];
+      // Doble verificación (caso SDA, lib/messaging/unavailable.ts): el aviso 131060 del
+      // PRIMER entrante del chat nace "verificando" (ni burbuja ni Agente IA hasta
+      // decidir); si su mensaje real ya llegó al lado (webhooks desordenados), nace
+      // directamente como su sombra.
+      const firstNotice =
+        event.direction === "in" &&
+        unavailableCode(event.metadata) === UNAVAILABLE_CODE &&
+        !(await hasInboundApart(tx, orgId, upserted.id, event.sentAt));
+      const realBeside = firstNotice ? await realInboundBeside(tx, orgId, upserted.id, event.sentAt) : null;
+      const verify = firstNotice && !realBeside;
+      const now = new Date();
       const inserted = await tx
         .insert(messages)
         .values({
@@ -431,7 +461,11 @@ async function ingestMessage(
           providerInternalId: event.providerInternalId,
           // Meta manda el anuncio UNA sola vez (primer mensaje tras el clic).
           adReferral: event.referral ?? null,
-          metadata: event.metadata ?? null,
+          metadata: realBeside
+            ? resolvedMetadata(verifyingMetadata(event.metadata, now), "sombra", now, { mensajeReal: realBeside })
+            : verify
+              ? verifyingMetadata(event.metadata, now)
+              : (event.metadata ?? null),
           status: event.direction === "in" ? "received" : "sent",
           sentAt: event.sentAt,
         })
@@ -480,6 +514,14 @@ async function ingestMessage(
           saved.value = { direction: event.direction, source: event.source, conversationId: upserted.id, messageId: inserted[0].id };
         }
         outcome = event.direction === "in" ? "entrante guardado" : `saliente (${event.source}) guardado`;
+        if (verify) verifying.messageId = inserted[0].id;
+        // Nació como sombra: el cliente escribió UN mensaje (el real ya contó).
+        if (realBeside) shadowed = 1;
+        // El mensaje real que llegó con OTRO wamid junto a un aviso en verificación:
+        // el aviso era su sombra y se oculta.
+        if (event.direction === "in" && !isUnavailableNotice(event.metadata)) {
+          shadowed = await shadowNoticesOf(tx, orgId, upserted.id, { id: inserted[0].id, sentAt: event.sentAt });
+        }
         if (event.direction === "in") {
           await attributeAd(tx, {
             orgId,
@@ -508,7 +550,8 @@ async function ingestMessage(
           : event.sentAt,
     };
     if (event.direction === "in" && outcome === "entrante guardado") {
-      updates.unreadCount = conversation.unreadCount + 1;
+      // Una sombra ya había contado como no leído: el cliente escribió UN mensaje.
+      updates.unreadCount = Math.max(0, conversation.unreadCount + 1 - shadowed);
       updates.windowExpiresAt = windowExpiresAt(event.sentAt, conversation.windowExpiresAt);
       updates.status = "open";
       // El anuncio que ORIGINÓ la conversación: el primero, no se pisa.
@@ -583,6 +626,14 @@ async function ingestMessage(
   } catch (error) {
     console.error(`[ingest] gancho del Agente IA falló para ${m?.conversationId}; el mensaje ya está guardado`, error);
   }
+  // Doble verificación (después del commit, aislado): si encolar falla, el barrido la recoge.
+  try {
+    if (verifying.messageId && hooks.onUnavailableNotice) {
+      await hooks.onUnavailableNotice({ organizationId: channel.organizationId, messageId: verifying.messageId });
+    }
+  } catch (error) {
+    console.error(`[ingest] no se pudo programar la verificación de ${verifying.messageId}; la recoge el barrido`, error);
+  }
   // Anuncios (después del commit, aislado): media, nombres de Meta y respaldo.
   // Si encolar falla, el barrido del worker lo recoge desde la base.
   try {
@@ -597,18 +648,26 @@ async function ingestMessage(
 const COMPLETED_OUTCOME = "entrante completado (antes no disponible)";
 export const LATE_ECHO_OUTCOME = "eco tardío enlazado a su envío sin confirmar";
 
+/** Contenido real con el que se completa un aviso (del webhook, o de la copia de Zernio). */
+export type UnavailableContent = Pick<
+  NormalizedMessageEvent,
+  "providerMessageId" | "type" | "body" | "attachments" | "referral" | "metadata"
+>;
+
 /**
  * Entrante guardado como aviso "no disponible" (mismo wamid) que ahora llega
  * con su contenido real: se completa la MISMA fila (texto, tipo, adjuntos,
  * anuncio) en lugar de descartar el mensaje real como duplicado. Devuelve la
- * fila completada, o null si el wamid guardado no era un aviso (duplicado real).
+ * fila completada, o null si el wamid guardado no era un aviso (duplicado real)
+ * o si el aviso ya quedó como sombra de un mensaje real que llegó aparte (su
+ * contenido ya está a la vista: completarlo lo duplicaría).
  */
-async function completeUnavailableMessage(
+export async function completeUnavailableMessage(
   tx: Tx,
   orgId: string,
-  event: NormalizedMessageEvent,
+  content: UnavailableContent,
 ): Promise<{ id: string; conversationId: string } | null> {
-  if (!event.providerMessageId) return null;
+  if (!content.providerMessageId) return null;
   const [existing] = await tx
     .select({
       id: messages.id,
@@ -618,25 +677,107 @@ async function completeUnavailableMessage(
       adReferral: messages.adReferral,
     })
     .from(messages)
-    .where(and(eq(messages.organizationId, orgId), eq(messages.providerMessageId, event.providerMessageId)))
+    .where(and(eq(messages.organizationId, orgId), eq(messages.providerMessageId, content.providerMessageId)))
     .limit(1)
     .for("update");
   if (!existing || existing.direction !== "in" || !isUnavailableNotice(existing.metadata)) return null;
-  const first = event.attachments[0];
+  if (noDisponibleEstado(existing.metadata) === "sombra") return null;
+  const first = content.attachments[0];
   await tx
     .update(messages)
     .set({
-      type: event.type,
-      body: event.body,
-      attachments: event.attachments,
+      type: content.type,
+      body: content.body,
+      attachments: content.attachments,
       mediaUrl: first?.url ?? null,
       mediaMimeType: first?.mimeType ?? null,
-      adReferral: existing.adReferral ?? event.referral ?? null,
-      metadata: completedMetadata(existing.metadata, event.metadata, new Date()),
+      adReferral: existing.adReferral ?? content.referral ?? null,
+      metadata: completedMetadata(existing.metadata, content.metadata, new Date()),
     })
     .where(and(eq(messages.id, existing.id), eq(messages.organizationId, orgId)));
   console.info(`[ingest] mensaje ${existing.id}: llegó primero como "no disponible" y se completó con el contenido real`);
   return { id: existing.id, conversationId: existing.conversationId };
+}
+
+/**
+ * ¿El chat ya tenía entrantes (vivos o del historial) FUERA de la ventana del aviso? El
+ * caso SDA es el primer mensaje; su propio mensaje real (al lado) no cuenta.
+ */
+async function hasInboundApart(tx: Tx, orgId: string, conversationId: string, sentAt: Date): Promise<boolean> {
+  const [row] = await tx
+    .select({ id: messages.id })
+    .from(messages)
+    .where(
+      and(
+        eq(messages.organizationId, orgId),
+        eq(messages.conversationId, conversationId),
+        eq(messages.direction, "in"),
+        or(
+          lt(messages.sentAt, new Date(sentAt.getTime() - SHADOW_BEFORE_MS)),
+          gt(messages.sentAt, new Date(sentAt.getTime() + SHADOW_AFTER_MS)),
+          isNull(messages.sentAt),
+        ),
+      ),
+    )
+    .limit(1);
+  return Boolean(row);
+}
+
+/** Entrante REAL (no aviso) junto al aviso: el real llegó antes que su sombra. */
+async function realInboundBeside(tx: Tx, orgId: string, conversationId: string, sentAt: Date): Promise<string | null> {
+  const [row] = await tx
+    .select({ id: messages.id })
+    .from(messages)
+    .where(
+      and(
+        eq(messages.organizationId, orgId),
+        eq(messages.conversationId, conversationId),
+        eq(messages.direction, "in"),
+        sql`not (coalesce(${messages.metadata}, '{}'::jsonb) ? 'unsupported')`,
+        gte(messages.sentAt, new Date(sentAt.getTime() - SHADOW_BEFORE_MS)),
+        lte(messages.sentAt, new Date(sentAt.getTime() + SHADOW_AFTER_MS)),
+      ),
+    )
+    .orderBy(messages.sentAt)
+    .limit(1);
+  return row?.id ?? null;
+}
+
+/**
+ * Avisos "verificando" del mismo chat cuya hora de WhatsApp cae junto a la del
+ * mensaje real (el real llegó con OTRO wamid 0–5 s después; medido 29-sep-2026):
+ * quedan como "sombra" (ocultos, con el id del real). Devuelve cuántos, para
+ * descontar el no leído que ya habían sumado. La conversación ya está bloqueada.
+ */
+export async function shadowNoticesOf(
+  tx: Tx,
+  orgId: string,
+  conversationId: string,
+  real: { id: string; sentAt: Date },
+  now = new Date(),
+): Promise<number> {
+  const notices = await tx
+    .select({ id: messages.id, metadata: messages.metadata })
+    .from(messages)
+    .where(
+      and(
+        eq(messages.organizationId, orgId),
+        eq(messages.conversationId, conversationId),
+        eq(messages.direction, "in"),
+        sql`${messages.metadata}->${NO_DISPONIBLE_KEY}->>'estado' = 'verificando'`,
+        gte(messages.sentAt, new Date(real.sentAt.getTime() - SHADOW_AFTER_MS)),
+        lte(messages.sentAt, new Date(real.sentAt.getTime() + SHADOW_BEFORE_MS)),
+      ),
+    )
+    .for("update");
+  for (const n of notices) {
+    await tx
+      .update(messages)
+      .set({ metadata: resolvedMetadata(n.metadata, "sombra", now, { mensajeReal: real.id }) })
+      .where(and(eq(messages.id, n.id), eq(messages.organizationId, orgId)));
+    console.info(`[ingest] aviso ${n.id}: el mensaje real llegó aparte (${real.id}); el aviso se oculta`);
+  }
+  return notices.length;
 }
 
 /**
@@ -824,6 +965,8 @@ export async function unreadAfterCutoff(
         eq(messages.direction, "in"),
         // El historial importado no cuenta como no leído.
         isNull(messages.importedAt),
+        // Un aviso oculto (sombra o en verificación) tampoco: el real ya cuenta.
+        not(hiddenNoticeSql(messages.metadata)),
         sql`${messages.createdAt} > (select created_at from messages where id = ${cutoffMessageId})`,
       ),
     );

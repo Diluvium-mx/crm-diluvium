@@ -1,6 +1,6 @@
 import { createHmac } from "node:crypto";
 import { describe, expect, it, vi } from "vitest";
-import { normalizeZernioEvent, retryAfterMs, validDate, verifyZernioSignature, zernioAccountId, ZernioProvider, ZernioSendError } from "./zernio";
+import { normalizeZernioEvent, retryAfterMs, storedInboundFromRest, validDate, verifyZernioSignature, zernioAccountId, ZernioProvider, ZernioSendError } from "./zernio";
 
 const SECRET = "whsec_test";
 const sign = (body: string, secret = SECRET) => createHmac("sha256", secret).update(body).digest("hex");
@@ -794,5 +794,59 @@ describe("ZernioProvider.sendMedia", () => {
       p.sendMedia({ providerAccountId: "a", providerConversationId: "c", url: "http://x/y.png", kind: "image", idempotencyKey: "k" }),
     ).rejects.toMatchObject({ code: "media_url_insegura", outcome: "rejected" });
     expect(fetchImpl).not.toHaveBeenCalled();
+  });
+});
+
+// Doble verificación del aviso "no disponible" (29-sep-2026): formas reales del
+// GET /v1/inbox/conversations/{id}/messages en producción (sin teléfonos).
+describe("copia de Zernio de un entrante (doble verificación)", () => {
+  const NOTICE = { code: 131060, title: "This message is unavailable.", details: "This message is currently unavailable." };
+
+  it("el aviso que nunca se completó: sin contenido", () => {
+    expect(storedInboundFromRest({ id: "wamid.x", message: "[Unsupported message]", attachments: [], metadata: { unsupported: NOTICE } })).toEqual({
+      available: false,
+    });
+    expect(storedInboundFromRest({ id: "wamid.x", message: "[Unsupported message]", metadata: {} })).toEqual({ available: false });
+    expect(storedInboundFromRest({ id: "wamid.x", message: "", metadata: {} })).toEqual({ available: false });
+  });
+
+  it("el que Meta sí entregó: texto, adjuntos y anuncio", () => {
+    expect(storedInboundFromRest({ id: "wamid.x", message: "Quiero más información", attachments: [], metadata: {} })).toEqual({
+      available: true,
+      type: "text",
+      body: "Quiero más información",
+      attachments: [],
+    });
+    const withPhoto = storedInboundFromRest({
+      id: "wamid.y",
+      message: null,
+      attachments: [{ id: "media1", type: "image", url: "https://zernio.com/api/v1/whatsapp/media/media1", mimeType: "image/jpeg" }],
+      metadata: { referral: { source_id: "120250108412590604", source_type: "ad" } },
+    });
+    expect(withPhoto).toMatchObject({
+      available: true,
+      type: "image",
+      body: null,
+      attachments: [{ type: "image", url: "https://zernio.com/api/v1/whatsapp/media/media1", mimeType: "image/jpeg", providerMediaId: "media1" }],
+      referral: { source_id: "120250108412590604" },
+    });
+  });
+
+  it("busca el wamid en la conversación con la cuenta y su llave; null si no está", async () => {
+    const fetchImpl = vi.fn(async () =>
+      new Response(JSON.stringify({ messages: [{ id: "wamid.otro", message: "hola" }], pagination: { hasMore: false } }), { status: 200 }),
+    );
+    const p = new ZernioProvider({ apiKey: "k", webhookSecret: "s", baseUrl: "https://zernio.test/api" }, fetchImpl as unknown as typeof fetch);
+    expect(await p.storedInboundMessage("acc1", "conv1", "wamid.x")).toBeNull();
+    const [url, init] = fetchImpl.mock.calls[0] as unknown as [URL | string, RequestInit];
+    expect(String(url)).toBe("https://zernio.test/api/v1/inbox/conversations/conv1/messages?accountId=acc1&limit=100");
+    expect((init.headers as Record<string, string>).Authorization).toBe("Bearer k");
+  });
+
+  it("si Zernio no responde, lanza (la verificación reintenta)", async () => {
+    const p = new ZernioProvider({ apiKey: "k", webhookSecret: "s" }, (async () => {
+      throw new Error("ECONNRESET");
+    }) as unknown as typeof fetch);
+    await expect(p.storedInboundMessage("acc1", "conv1", "wamid.x")).rejects.toThrow();
   });
 });
