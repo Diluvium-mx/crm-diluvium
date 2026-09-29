@@ -6,6 +6,11 @@ import { useEffect, useRef } from "react";
 import type { ConversationListItem, InboxFilter } from "@/lib/inbox/types";
 import type { TemperatureFilter } from "@/lib/contacts/filters";
 import { CardFilterButton } from "../../_components/card-filter-button";
+import { ChatSearchBadge } from "../../_components/chat-search-badge";
+import { CHAT_SEARCH_INPUT_ACTIVE, CHAT_SEARCH_PLACEHOLDER, ChatSearchButton } from "../../_components/chat-search-button";
+import { SearchHighlight } from "@/components/ui/search-highlight";
+import { snippetAround } from "@/lib/text/highlight";
+import { chatSearchTerm } from "@/lib/text/search";
 import { ContactAvatar } from "../../contactos/_components/contact-avatar";
 import type { Temperature } from "../../contactos/_data/types";
 import { TemperaturePicker } from "./temperature-picker";
@@ -41,6 +46,7 @@ function ConversationRow({
   item,
   selected,
   nowMs,
+  chatTerm,
   onSelect,
   onToggleStar,
   onChangeTemperature,
@@ -49,6 +55,8 @@ function ConversationRow({
   item: ConversationListItem;
   selected: boolean;
   nowMs: number;
+  /** Búsqueda en los chats (lupa amarilla) ya normalizada; null = apagada o sin 3 letras. */
+  chatTerm: string | null;
   onSelect: (id: string) => void;
   onToggleStar: (id: string, starred: boolean) => void;
   onChangeTemperature: (item: ConversationListItem, temperature: Temperature | null) => void;
@@ -62,6 +70,8 @@ function ConversationRow({
   // Clic derecho (o pulsación larga en táctil): menú de la conversación; la fila
   // se queda resaltada mientras está abierto.
   const unread = item.unreadCount > 0;
+  // Con la lupa: la vista previa es el pedazo donde aparece la palabra (resaltada).
+  const match = chatTerm ? item.chatMatch : null;
   return (
     <ContextMenu>
       <ContextMenuTrigger
@@ -88,7 +98,11 @@ function ConversationRow({
             </div>
             <div className="flex items-center gap-2">
               <span className="min-w-0 flex-1 truncate text-xs text-muted-foreground">
-                {rowPreview(item.lastMessage)}
+                {match && chatTerm ? (
+                  <SearchHighlight text={snippetAround(match.text, chatTerm)} term={chatTerm} />
+                ) : (
+                  rowPreview(item.lastMessage)
+                )}
               </span>
               <SemaforoDot since={item.awaitingReplySince} nowMs={nowMs} />
               {unread && (
@@ -96,6 +110,7 @@ function ConversationRow({
                   {item.unreadCount > 99 ? "99+" : item.unreadCount}
                 </span>
               )}
+              {match && <ChatSearchBadge count={match.count} />}
             </div>
           </div>
         </button>
@@ -129,6 +144,8 @@ export function ConversationList({
   filter,
   temperature,
   search,
+  searchChats,
+  chatTerm,
   loading,
   nowMs,
   hasMore,
@@ -138,6 +155,7 @@ export function ConversationList({
   onFilterChange,
   onTemperatureFilterChange,
   onSearchChange,
+  onSearchChatsChange,
   onToggleStar,
   onChangeTemperature,
   onSetUnread,
@@ -148,6 +166,10 @@ export function ConversationList({
   /** Filtro por temperatura (una a la vez; null = todas). Se suma a la pestaña. */
   temperature: TemperatureFilter | null;
   search: string;
+  /** Lupa amarilla: el buscador busca DENTRO de los chats. */
+  searchChats: boolean;
+  /** Término con el que se pidió la lista (normalizado), para resaltar la vista previa. */
+  chatTerm: string | null;
   loading: boolean;
   nowMs: number;
   hasMore: boolean;
@@ -157,6 +179,7 @@ export function ConversationList({
   onFilterChange: (filter: InboxFilter) => void;
   onTemperatureFilterChange: (temperature: TemperatureFilter | null) => void;
   onSearchChange: (value: string) => void;
+  onSearchChatsChange: (value: boolean) => void;
   onToggleStar: (id: string, starred: boolean) => void;
   onChangeTemperature: (item: ConversationListItem, temperature: Temperature | null) => void;
   onSetUnread: (item: ConversationListItem, unread: boolean) => void;
@@ -186,17 +209,24 @@ export function ConversationList({
   return (
     <div className="flex h-full min-h-0 flex-col">
       <div className="border-b p-3">
-        {/* Buscador + filtro por temperatura (Destacado ya es la pestaña de abajo). */}
+        {/* Buscador + lupa (buscar DENTRO de los chats) + filtro por temperatura (Destacado
+            ya es la pestaña de abajo). */}
         <div className="flex items-center gap-2">
           <input
             type="search"
             value={search}
             onChange={(event) => onSearchChange(event.target.value)}
-            placeholder="Buscar por nombre o teléfono…"
-            className="min-w-0 flex-1 rounded-md border bg-background px-3 py-2 text-sm outline-none transition-colors placeholder:text-muted-foreground/60 focus:border-brand-navy focus:ring-2 focus:ring-brand-navy/30"
+            placeholder={searchChats ? CHAT_SEARCH_PLACEHOLDER : "Buscar por nombre o teléfono…"}
+            className={`min-w-0 flex-1 rounded-md border bg-background px-3 py-2 text-sm outline-none transition-colors placeholder:text-muted-foreground/60 ${
+              searchChats ? CHAT_SEARCH_INPUT_ACTIVE : "focus:border-brand-navy focus:ring-2 focus:ring-brand-navy/30"
+            }`}
           />
+          <ChatSearchButton active={searchChats} onChange={onSearchChatsChange} />
           <CardFilterButton temperature={temperature} onTemperatureChange={onTemperatureFilterChange} />
         </div>
+        {searchChats && search.trim() !== "" && !chatSearchTerm(search) && (
+          <p className="mt-1.5 text-xs text-muted-foreground">Escribe al menos 3 letras</p>
+        )}
         <div className="mt-3 flex gap-1 rounded-lg bg-muted p-1">
           {FILTERS.map((tab) => (
             <button
@@ -240,6 +270,7 @@ export function ConversationList({
                       item={item}
                       selected={item.id === selectedId}
                       nowMs={nowMs}
+                      chatTerm={chatTerm}
                       onSelect={onSelect}
                       onToggleStar={onToggleStar}
                       onChangeTemperature={onChangeTemperature}

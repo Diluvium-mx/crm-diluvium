@@ -344,6 +344,13 @@
       "when": 1790705297068,
       "tag": "0049_solo_al_inicio",
       "breakpoints": true
+    },
+    {
+      "idx": 50,
+      "version": "7",
+      "when": 1790720971291,
+      "tag": "0050_busqueda_chats",
+      "breakpoints": true
     }
   ]
 }

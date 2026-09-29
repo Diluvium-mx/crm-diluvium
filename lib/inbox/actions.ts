@@ -7,6 +7,7 @@
 import { z } from "zod";
 import { requireActiveMembership } from "@/lib/auth/active-organization";
 import { isTemperatureFilter } from "@/lib/contacts/filters";
+import { chatSearchTerm } from "@/lib/text/search";
 import { messagingProvider, MessagingNotConfiguredError } from "@/lib/messaging";
 import {
   getConversationByContactForOrg,
@@ -18,6 +19,7 @@ import {
   setContactUnreadForOrg,
   setConversationUnreadForOrg,
 } from "./queries";
+import { listChatMatchIdsForOrg, searchChatsByContactForOrg } from "./chat-search";
 import { retryTextMessage, SendRejectedError, sendTemplateMessage, sendTextMessage } from "@/lib/messaging/send";
 import { DuplicatePhoneError, startConversationWithTemplate } from "@/lib/messaging/start-conversation";
 import { submitNotice, type MetaNotice } from "@/lib/templates/meta-reasons";
@@ -42,6 +44,7 @@ function listParams(params: InboxListParams): InboxListParams {
     filter: params.filter === "unread" || params.filter === "starred" ? params.filter : "all",
     temperature: isTemperatureFilter(params.temperature) ? params.temperature : null,
     search: typeof params.search === "string" ? params.search : undefined,
+    searchChats: params.searchChats === true,
   };
 }
 
@@ -79,6 +82,27 @@ export async function listMessages(
 ): Promise<MessagePage | null> {
   const { organizationId } = await requireActiveMembership();
   return listMessagesForOrg(organizationId, conversationId, params);
+}
+
+const chatSearchInput = z.string().max(500);
+const conversationIdInput = z.string().min(1).max(128);
+
+/**
+ * Embudo con la lupa amarilla: por contacto, cuántos mensajes de sus chats tienen la
+ * palabra ([contactId, cuántos]). Con menos de 3 letras no busca (lista vacía).
+ */
+export async function searchChatsByContact(search: string): Promise<Array<[string, number]>> {
+  const { organizationId } = await requireActiveMembership();
+  const term = chatSearchTerm(chatSearchInput.parse(search));
+  return term ? searchChatsByContactForOrg(organizationId, term) : [];
+}
+
+/** Chat abierto con la lupa amarilla: ids de los mensajes con la palabra, del más reciente al más viejo. */
+export async function listChatMatches(conversationId: string, search: string): Promise<string[]> {
+  const { organizationId } = await requireActiveMembership();
+  const id = conversationIdInput.parse(conversationId);
+  const term = chatSearchTerm(chatSearchInput.parse(search));
+  return term ? listChatMatchIdsForOrg(organizationId, id, term) : [];
 }
 
 export async function markConversationRead(conversationId: string, upToMessageId?: string | null): Promise<void> {
