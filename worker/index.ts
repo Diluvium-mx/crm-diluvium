@@ -53,6 +53,8 @@ import { startLectorRuntime } from "@/lib/ai/runtime/lector-worker";
 import { redisKvPort } from "@/lib/ai/runtime/queue";
 import { callModel } from "@/lib/ai";
 import { adsIngestHooks, startAdsWorker } from "@/lib/ads/worker";
+import { enqueueUnavailableCheck } from "@/lib/queue/unavailable";
+import { startUnavailableWorker } from "./unavailable";
 
 const SWEEP_EVERY_MS = 60_000;
 const SWEEP_MIN_AGE_MS = 60_000;
@@ -96,6 +98,19 @@ const workflowsRunner = startWorkflowWorker(provider, storage);
 const outbox = startOutboxWorker(provider);
 // Anuncios de Meta: media del anuncio, nombres de Meta y respaldo sin ficha.
 const ads = startAdsWorker({ provider, storage });
+// Doble verificación del aviso "no disponible" (caso SDA, 29-sep-2026): recuperado de
+// Zernio = entrante nuevo (Agente IA y palabras clave); confirmado sin contenido = solo
+// el Agente IA (responde con el texto fijo; ninguna palabra clave puede venir de un aviso).
+const unavailable = startUnavailableWorker(provider, {
+  onMediaMessage: enqueueMediaDownload,
+  onRecovered: async (m) => {
+    await agentIngestHooks.onInboundMessage?.(m);
+    await onInboundKeyword(m);
+  },
+  onConfirmedUnavailable: async (m) => {
+    await agentIngestHooks.onInboundMessage?.(m);
+  },
+});
 // Adjuntos del chat (28-sep-2026): solo con bucket (los archivos viven ahí).
 const chatUploads = storage ? startChatUploadWorker(provider, storage) : null;
 // Adjuntos pendientes que el barrido reintenta: hasta 30 días (antes de que
@@ -115,6 +130,7 @@ const worker = new Worker<InboundJob>(
           await onInboundKeyword(m);
         },
         ...adsIngestHooks,
+        onUnavailableNotice: enqueueUnavailableCheck,
       });
       console.info(`[worker] ${job.data.webhookEventId}: ${outcome}`);
       return outcome;
@@ -192,6 +208,7 @@ async function sweep() {
   await outbox.sweep().catch((error) => console.error("[outbox] barrido falló", error));
   // Anuncios: clics sin registrar, media pendiente y nombres de Meta.
   await ads.sweep().catch((error) => console.error("[anuncios] barrido falló", error));
+  await unavailable.sweep().catch((error) => console.error("[no-disponible] barrido falló", error));
   await chatUploads?.sweep().catch((error) => console.error("[adjuntos] barrido falló", error));
 
   const stale = await db
@@ -382,7 +399,7 @@ async function shutdown(signal: string) {
   console.info(`[worker] ${signal}: cerrando (se termina lo que está en curso; no se toma trabajo nuevo)`);
   clearInterval(sweepTimer);
   clearInterval(monitorTimer);
-  await Promise.all([worker.close(), mediaWorker?.close(), scheduled.close(), agent.close(), lector.close(), workflowsRunner.close(), outbox.close(), ads.close(), chatUploads?.close()]);
+  await Promise.all([worker.close(), mediaWorker?.close(), scheduled.close(), agent.close(), lector.close(), workflowsRunner.close(), outbox.close(), ads.close(), unavailable.close(), chatUploads?.close()]);
   console.info(`[worker] cerrado en orden en ${((Date.now() - t0) / 1000).toFixed(1)} s`);
   process.exit(0);
 }
@@ -407,6 +424,7 @@ waitForMigrations()
     workflowsRunner.run();
     outbox.run();
     ads.run();
+    unavailable.run();
     chatUploads?.run();
   })
   .catch((error: unknown) => {

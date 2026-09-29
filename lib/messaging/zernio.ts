@@ -27,6 +27,7 @@ import {
   type SendMediaInput,
   type SendTemplateInput,
   type SendTextInput,
+  type StoredInbound,
   type StartConversationInput,
   type StartConversationResult,
   type TemplateReview,
@@ -59,6 +60,37 @@ const CONVERSATION_MAX_PAGES = 10;
 /** Holgura contra desfase de relojes (hora de WhatsApp vs. `updatedTime` de Zernio). */
 const CONVERSATION_SKEW_MS = 5 * 60_000;
 const SEND_TIMEOUT_MS = 15_000;
+/** Doble verificación del aviso: el chat de un contacto nuevo cabe en la 1.ª página; tope por seguridad. */
+const STORED_MESSAGE_PAGES = 3;
+/** Texto con el que Zernio guarda el aviso vacío de Meta. */
+const UNSUPPORTED_TEXT = "[Unsupported message]";
+
+/**
+ * Copia de Zernio de un entrante (API REST) → contenido para completar el aviso.
+ * Sigue siendo el aviso (metadata.unsupported, o solo "[Unsupported message]" sin
+ * adjuntos) → `available: false`.
+ */
+export function storedInboundFromRest(m: Record<string, unknown>): StoredInbound {
+  const metadata = asRecord(m.metadata);
+  if (Object.keys(asRecord(metadata.unsupported)).length > 0) return { available: false };
+  const text = asString(m.message) ?? asString(m.text) ?? null;
+  const attachments: NormalizedAttachment[] = (Array.isArray(m.attachments) ? m.attachments : [])
+    .map(asRecord)
+    .filter((a) => asString(a.url))
+    .map((a) => ({
+      type: attachmentType(asString(a.type) ?? ""),
+      url: asString(a.url)!,
+      mimeType: asString(a.mimeType) ?? asString(asRecord(a.payload).mimeType),
+      fileName: asString(a.filename) ?? asString(asRecord(a.payload).filename),
+      providerMediaId: asString(a.id) ?? asString(asRecord(a.payload).id),
+    }));
+  if (attachments.length === 0 && (!text || text === UNSUPPORTED_TEXT)) return { available: false };
+  const meta = Object.keys(metadata).length > 0 ? metadata : undefined;
+  const type: NormalizedMessageType =
+    attachments[0]?.type ?? (meta?.location ? "location" : meta?.contacts ? "contact" : text ? "text" : "unknown");
+  const referral = extractReferral({ metadata: meta });
+  return { available: true, type, body: text, attachments, ...(referral ? { referral } : {}), ...(meta ? { metadata: meta } : {}) };
+}
 
 export function verifyZernioSignature(rawBody: string, signature: string | null, secret: string): boolean {
   if (!signature || !secret) return false;
@@ -622,6 +654,35 @@ export class ZernioProvider implements MessagingProvider {
     }
     if (bounded) {
       throw new ZernioApiError(0, `Más de ${CONVERSATION_MAX_PAGES} páginas de conversaciones actualizadas desde el mensaje; se reintenta`);
+    }
+    return null;
+  }
+
+  // Doble verificación del aviso "no disponible" (29-sep-2026). Zernio ACTUALIZA su
+  // copia cuando Meta le entrega el contenido real: verificado en producción con
+  // GET /v1/inbox/conversations/{id}/messages (los avisos que sí se completaron
+  // muestran el texto; los que nunca llegaron siguen con metadata.unsupported). En
+  // esta API el id de cada mensaje es el wamid. null = no está en las páginas leídas.
+  async storedInboundMessage(
+    providerAccountId: string,
+    providerConversationId: string,
+    providerMessageId: string,
+  ): Promise<StoredInbound | null> {
+    let cursor: string | undefined;
+    for (let page = 0; page < STORED_MESSAGE_PAGES; page++) {
+      const params = new URLSearchParams({ accountId: providerAccountId, limit: "100" });
+      if (cursor) params.set("cursor", cursor);
+      const json = await this.apiJson(
+        "GET",
+        `/v1/inbox/conversations/${encodeURIComponent(providerConversationId)}/messages?${params.toString()}`,
+      );
+      const list = Array.isArray(json.messages) ? json.messages : Array.isArray(json.data) ? json.data : null;
+      if (!list) throw new ZernioApiError(0, "Listado de mensajes con formato no reconocido");
+      const found = list.map(asRecord).find((m) => m.id === providerMessageId || m.platformMessageId === providerMessageId);
+      if (found) return storedInboundFromRest(found);
+      const pagination = asRecord(json.pagination);
+      cursor = asString(pagination.nextCursor);
+      if (pagination.hasMore !== true || !cursor) return null;
     }
     return null;
   }

@@ -79,6 +79,7 @@ import {
   type SavedReply,
 } from "./saved-reply";
 import { isWindowOpen } from "@/lib/messaging/rules";
+import { completedAfterConfirmation, noDisponibleEstado, UNAVAILABLE_REPLY_TEXT } from "@/lib/messaging/unavailable";
 import { buildModelMessages, fitHistory } from "./transcript";
 import { recordAiUsage } from "./usage";
 
@@ -452,7 +453,11 @@ export async function runAgent(job: { organizationId: string; conversationId: st
     const lastRead = pending.at(-1) ?? null;
     // Con respuesta guardada, su entrante cuenta como "atendido" (el plan existe): igual
     // se sigue para reenviarla.
-    if (!saved && lastRead && (await alreadyHandled(org, lastRead.id))) return { kind: "noop", reason: "ya_atendido" };
+    // El texto fijo del mensaje no disponible se guardó con el id de ESTA fila: si después
+    // llegó su contenido real, está pendiente (pendingInbound) y se contesta lo que dice.
+    if (!saved && lastRead && !completedAfterConfirmation(lastRead.metadata) && (await alreadyHandled(org, lastRead.id))) {
+      return { kind: "noop", reason: "ya_atendido" };
+    }
     // Las burbujas de la respuesta guardada no cuentan como "envío en camino": el
     // reenvío las retoma con su misma clave (sendAgentText).
     const savedIds = saved ? saved.bubbles.map((_, i) => bubbleMessageId(saved!.id, i)) : [];
@@ -501,6 +506,35 @@ export async function runAgent(job: { organizationId: string; conversationId: st
     // lo que el cliente escribió después.
     if (await keywordQuestionInFlight(org, conv.id, pending.map((p) => p.id), now)) {
       return { kind: "reschedule", delayMs: KEYWORD_QUESTION_POLL_MS, reason: "esperando_workflow_con_pregunta" };
+    }
+    // Caso SDA (29-sep-2026, lib/messaging/unavailable.ts): el PRIMER mensaje del
+    // cliente no llegó (Meta 131060, confirmado por la doble verificación). Sale el
+    // texto fijo del dueño, sin llamar al modelo, con las mismas reglas que cualquier
+    // respuesta (horario, pausa, ventana, humano). Lo que el cliente escriba después
+    // lo contesta el modelo como siempre.
+    if (pending.every((p) => noDisponibleEstado(p.metadata) === "sin_contenido")) {
+      const planId = await savePlan({ organizationId: org, conversationId: conv.id, bubbles: [UNAVAILABLE_REPLY_TEXT], triggerMessageId: lastRead.id, now: deps.now() });
+      const stopped = await stopBeforeBubble(org, conv.id, humansAtStart, await inboundCount(org, conv.id));
+      if (stopped) {
+        await closePlan(org, planId, "obsoleto");
+        if (stopped === "respuesta_humana") await pauseForHuman(conv, deps.now());
+        if (stopped === "entrante_nuevo") continue; // el cliente ya escribió: lo contesta el modelo
+        return { kind: "skipped", reason: stopped };
+      }
+      try {
+        await deps.sendBubble({ organizationId: org, conversationId: conv.id, text: UNAVAILABLE_REPLY_TEXT, messageId: bubbleMessageId(planId, 0) });
+      } catch (error) {
+        // Igual que una respuesta normal: queda GUARDADA para "Reintentar" y la tarjeta al vendedor.
+        await holdForRetry(org, planId);
+        await recordAgentError({ organizationId: org, conversationId: conv.id, messageId: lastRead.id, body: sendErrorBody(sendErrorMotive(error)) });
+        console.warn(`[agente] ${conv.id}: el aviso de mensaje no recibido no salió (${errorText(error)}); guardado y tarjeta para el vendedor`);
+        return { kind: "failed", reason: "envio_fallido" };
+      }
+      await markAgentReply(org, conv.id, deps.now());
+      await supersedeAgentErrors(org, conv.id);
+      await closePlan(org, planId, "enviado");
+      console.info(`[agente] ${conv.id}: el primer mensaje no llegó (Meta 131060); se le pidió al cliente que lo repita`);
+      return { kind: "sent", bubbles: 1 };
     }
     // Parte 1: una nota de voz del cliente aún sin transcribir → la espera sigue (hasta
     // 60 s desde que llegó); el worker la adelanta en cuanto termina. Si falla o tarda
