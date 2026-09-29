@@ -64,6 +64,19 @@ describe("resolveModelPrice", () => {
     ).toBe(0.3);
   });
 
+  it("28/29-sep-2026: Sonnet 5.5 como Sonnet 5; GPT-6.1 Sol con su caché al 5 %; Opus 5.5 lee caché al 5 %", () => {
+    expect(resolveModelPrice("claude-sonnet-5-5", "anthropic")).toEqual({ inputPerMTok: 2, outputPerMTok: 10, cacheReadPerMTok: 0.2, cacheWritePerMTok: 2.5 });
+    expect(resolveModelPrice("gpt-6.1-sol", "openai")).toMatchObject({ inputPerMTok: 2, outputPerMTok: 10, cacheReadPerMTok: 0.1, cacheWritePerMTok: 2.5 });
+    expect(resolveModelPrice("claude-opus-5-5", "anthropic")).toEqual({ inputPerMTok: 4, outputPerMTok: 20, cacheReadPerMTok: 0.2, cacheWritePerMTok: 5 });
+  });
+
+  it("GPT-6.1 Sol: más de 272 mil tokens de entrada = 2× entrada y 1.5× salida", () => {
+    const sol = resolveModelPrice("gpt-6.1-sol", "openai");
+    const u = (inputTokens: number) => ({ inputTokens, outputTokens: 1_000_000, cacheReadTokens: 0, cacheWriteTokens: 0 });
+    expect(computeCostUsd(u(272_000), sol)).toBeCloseTo(272_000 * 2 / 1e6 + 10, 8);
+    expect(computeCostUsd(u(272_001), sol)).toBeCloseTo(272_001 * 4 / 1e6 + 15, 8);
+  });
+
   it("todo modelo del catálogo tiene entrada de precio (número o null explícito)", () => {
     for (const m of MODEL_CATALOG) expect(m.id in DEFAULT_MODEL_PRICES).toBe(true);
   });

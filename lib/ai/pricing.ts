@@ -20,6 +20,14 @@
 //     0.13, caché 0.006 / escritura 0.038; desde 32 mil tokens de entrada 0.10 / 0.40
 //     / 0.02 / 0.125; desde 256 mil 0.20 / 0.80 / 0.04 / 0.25).
 //   Los TRAMOS se eligen por la entrada total de cada llamada (computeCostUsd).
+// - Modelos del 28/29-sep-2026:
+//   · Claude Sonnet 5.5: https://platform.claude.com/docs/en/about-claude/pricing
+//     (2 / 10, igual que Sonnet 5; caché con la regla de Anthropic).
+//   · GPT-6.1 Sol: https://developers.openai.com/api/docs/models/gpt-6.1-sol (2 / 10,
+//     cached 0.10 = 5 %, cache writes 2.50; desde 272 mil tokens de entrada, 2× entrada
+//     y caché y 1.5× salida).
+//   · Claude Opus 5.5 (corrección, misma fuente de Anthropic): su lectura de caché es
+//     el 5 % de la entrada (0.20), no el 10 % de la regla.
 // - Overrides sin caché de xAI / Google / OpenRouter: sin descuento (los tokens de
 //   caché se cobran como entrada normal).
 import type { ModelUsage, ProviderId } from "./types";
@@ -51,6 +59,14 @@ export const DEFAULT_MODEL_PRICES: Readonly<Record<string, BasePrice | null>> = 
   "claude-sonnet-5": { input: 2, output: 10 },
   "gpt-5.6-terra": { input: 2, output: 12 },
   "gpt-5.6-sol": { input: 4, output: 20 },
+  "gpt-6.1-sol": {
+    input: 2,
+    output: 10,
+    cacheRead: 0.1,
+    cacheWrite: 2.5,
+    tiers: [{ minInputTokens: 272_001, input: 4, output: 15, cacheRead: 0.2, cacheWrite: 5 }],
+  },
+  "claude-sonnet-5-5": { input: 2, output: 10 },
   "claude-haiku-4-5": { input: 1, output: 5 },
   "grok-4.6": {
     input: 2,
@@ -59,7 +75,7 @@ export const DEFAULT_MODEL_PRICES: Readonly<Record<string, BasePrice | null>> = 
     cacheWrite: 2,
     tiers: [{ minInputTokens: 200_000, input: 4, output: 12, cacheRead: 1, cacheWrite: 4 }],
   },
-  "claude-opus-5-5": { input: 4, output: 20 },
+  "claude-opus-5-5": { input: 4, output: 20, cacheRead: 0.2 },
   "gemini-3.8-flash": { input: 0.75, output: 3.75, cacheRead: 0.075, cacheWrite: 0.75 },
   "qwen-3.7-flash": {
     input: 0.03,
