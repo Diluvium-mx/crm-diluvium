@@ -1242,6 +1242,34 @@ describe.skipIf(!TEST_DATABASE_URL)("runtime del Agente IA (Postgres real)", () 
     expect(z2.delivered).toEqual(["Estos son los tamaños que manejamos", PREGUNTA]);
   });
 
+  // ── «Solo al inicio» (29-sep-2026) ─────────────────────────────────────────
+  it("solo al inicio: palabra clave y Agente IA piden el mismo workflow para el mismo cliente → sale UNA vez (gana la primera que arranca)", async () => {
+    const m1 = await msg({ direction: "in", body: "cuánto ??", at: ago(40_000) });
+    const wfId = await wf("precio_2", [{ kind: "send_text", text: "Ahorita tenemos cualquier tamaño en $5,500 con envío gratis." }]);
+    await db.update(s.workflows).set({ triggerStartOnly: true }).where(eq(s.workflows.id, wfId));
+    await keywordRun("run_kw_p", wfId, m1);
+    await keywordRun("run_ag_p", wfId, m1, "agent");
+    const zernio = fakeZernio();
+    expect(await executor.executeWorkflowRun("run_kw_p", execDeps(zernio))).toBe("done");
+    expect(await executor.executeWorkflowRun("run_ag_p", execDeps(zernio))).toBe("cancelled");
+    expect(zernio.delivered).toEqual(["Ahorita tenemos cualquier tamaño en $5,500 con envío gratis."]);
+    expect((await runs()).find((r) => r.id === "run_ag_p")).toMatchObject({ status: "skipped", errorCode: executor.SKIP_ALREADY_SENT });
+  });
+
+  it("solo al inicio: el Agente IA solo tiene la herramienta mientras nadie le ha contestado al cliente", async () => {
+    await msg({ direction: "in", body: "hola", at: ago(40_000) });
+    const wfId = await wf("precio_2", [{ kind: "send_text", text: "Ahorita tenemos cualquier tamaño en $5,500." }]);
+    await db.update(s.workflows).set({ triggerStartOnly: true }).where(eq(s.workflows.id, wfId));
+    const first = makeDeps({ brain: ["¡Hola! ¿En qué le ayudo?"] });
+    expect((await run.runAgent(JOB, first.deps)).kind).toBe("sent");
+    expect(Object.keys(first.calls.find((c) => c.kind === "cerebro")!.input.tools ?? {})).toContain("wf_precio_2");
+    // Ya contestó el Agente IA con texto propio: la herramienta ya no se ofrece.
+    await msg({ direction: "in", body: "¿y el precio?", at: new Date() });
+    const second = makeDeps({ brain: ["Cuesta $5,500 MXN."] });
+    expect((await run.runAgent(JOB, second.deps)).kind).toBe("sent");
+    expect(Object.keys(second.calls.find((c) => c.kind === "cerebro")!.input.tools ?? {})).not.toContain("wf_precio_2");
+  });
+
   it("pregunta duplicada: un workflow por palabra clave que NO termina en pregunta sigue como antes: el agente no la espera y contesta el resto", async () => {
     const m1 = await msg({ direction: "in", body: "me pasas la tabla y el precio?", at: ago(40_000) });
     const wfId = await wf("tabla_sin_pregunta", [{ kind: "send_text", text: "¿Le mando la tabla? Aquí está 🙌" }]);

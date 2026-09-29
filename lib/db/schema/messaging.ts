@@ -199,7 +199,8 @@ export const conversations = pgTable(
     // corte para "un vendedor respondió a mano": lo anterior a una reactivación
     // manual ya no vuelve a pausar al agente.
     agentStateChangedAt: timestamp("agent_state_changed_at"),
-    // Destacado: marca compartida por el equipo (todos ven todo, §5).
+    // SIN USO desde la 0048 (29-sep-2026): Destacado pasó al contacto (contacts.destacado).
+    // La columna se queda para no arriesgar datos; nada la lee ni la escribe.
     isStarred: boolean("is_starred").default(false).notNull(),
     // "Marcar como leído" a mano (pop-up del Embudo o clic derecho): lo que el cliente
     // escribió hasta esta hora ya no pinta de azul la tarjeta del Embudo aunque nadie le

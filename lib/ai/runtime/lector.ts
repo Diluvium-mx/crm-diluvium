@@ -29,6 +29,7 @@ import {
   LECTOR_MAX_OUTPUT_TOKENS,
   LECTOR_MODEL_ID,
   LECTOR_TIMEOUT_MS,
+  lectorLockKey,
   parseLectorCalls,
   type LectorMessage,
 } from "./lector-core";
@@ -53,7 +54,7 @@ export type LectorOutcome =
   | { kind: "error"; reason: string; usage: ModelUsage | null; costUsd: number | null }
   | { kind: "leido"; cambios: string[]; ignored: string[]; usage: ModelUsage; costUsd: number | null };
 
-export const lectorLockKey = (conversationId: string) => `lector-lock:${conversationId}`;
+export { lectorLockKey };
 const LOCK_MS = 3 * 60_000;
 
 function errorText(error: unknown): string {
@@ -91,6 +92,19 @@ export async function runLector(organizationId: string, conversationId: string, 
     return await readConversation(organizationId, conversationId, deps, opts.force ?? false);
   } finally {
     await deps.kv.delIfEquals(lectorLockKey(conversationId), token).catch(() => undefined);
+  }
+}
+
+// Aviso "lector.status" por el canal del tiempo real (lib/inbox/events.ts). Solo informa:
+// nunca lanza ni frena la lectura.
+async function announceLector(organizationId: string, contactId: string, conversationId: string, phase: "leyendo" | "listo" | "error", cambios: number): Promise<void> {
+  try {
+    await db.execute(sql`select pg_notify('inbox_events', json_build_object(
+      'org', ${organizationId}::text, 'type', 'lector.status', 'contactId', ${contactId}::text,
+      'conversationId', ${conversationId}::text, 'phase', ${phase}::text, 'cambios', ${cambios}::int
+    )::text)`);
+  } catch (error) {
+    console.error(`[lector] no se pudo avisar "${phase}" de ${conversationId}`, error);
   }
 }
 
@@ -152,67 +166,76 @@ async function readConversation(organizationId: string, conversationId: string, 
   const { tools, stageKeys } = buildLectorTools(stages);
   const base = { organizationId, conversationId, messageId: null, stage: "detalle" as const, modelId: model.id, provider: model.provider };
 
-  const t0 = Date.now();
-  let res: CallModelResult;
+  // Indicador del Detalle: "leyendo" justo antes de la llamada y, pase lo que pase, "listo"
+  // (con cuántos datos cambió) o "error" al terminar. Si el proceso muere a la mitad, la UI
+  // lo apaga sola a los 90 s (lector-status.tsx).
+  await announceLector(organizationId, conv.contactId, conversationId, "leyendo", 0);
+  let done: LectorOutcome | null = null;
   try {
-    res = await deps.callModel(model.id, { system: buildLectorSystem(stages), messages, tools, maxOutputTokens: LECTOR_MAX_OUTPUT_TOKENS, timeoutMs: LECTOR_TIMEOUT_MS });
-  } catch (error) {
-    await recordAiUsage({ ...base, usage: null, latencyMs: Date.now() - t0, outcome: "error", error: errorText(error) });
-    return { kind: "error", reason: errorText(error), usage: null, costUsd: null };
-  }
-  const latencyMs = Date.now() - t0;
-  const costUsd = computeCostUsd(res.usage, await effectivePrice(organizationId, res.modelId, res.provider));
+    const t0 = Date.now();
+    let res: CallModelResult;
+    try {
+      res = await deps.callModel(model.id, { system: buildLectorSystem(stages), messages, tools, maxOutputTokens: LECTOR_MAX_OUTPUT_TOKENS, timeoutMs: LECTOR_TIMEOUT_MS });
+    } catch (error) {
+      await recordAiUsage({ ...base, usage: null, latencyMs: Date.now() - t0, outcome: "error", error: errorText(error) });
+      return (done = { kind: "error", reason: errorText(error), usage: null, costUsd: null });
+    }
+    const latencyMs = Date.now() - t0;
+    const costUsd = computeCostUsd(res.usage, await effectivePrice(organizationId, res.modelId, res.provider));
 
-  const parsed = parseLectorCalls(res.toolCalls ?? [], stageKeys, evidenceFrom(rows, sawClientMedia));
-  const cambios: string[] = [];
-  try {
-    if (parsed.detalle) {
-      const { comentario, ...campos } = parsed.detalle;
-      const r = await applyDetalleByAgent(organizationId, conv.contactId, { campos, comentarios: comentario ? [comentario] : [] });
-      cambios.push(...r.llenados);
-    }
-    if (parsed.monto !== null && (contact.monto == null || Number(contact.monto) !== parsed.monto || cf.cotizacion_por !== "agente")) {
-      if (await setQuoteByAgent(organizationId, conv.contactId, parsed.monto)) cambios.push("monto_cotizacion");
-    }
-    if (parsed.pago !== null && (contact.pago == null || Number(contact.pago) !== parsed.pago)) {
-      await updateContactQualification(db, organizationId, conv.contactId, { pagoTotal: parsed.pago }, { kind: "agente" });
-      cambios.push("pago_total");
-    }
-    if (parsed.etapa) {
-      // La etapa que puso un vendedor manda: sin nada en el chat DESPUÉS de su cambio,
-      // el lector no tiene con qué avanzarla (lo de antes ya lo vio el vendedor).
-      const nadaDespues = vendorStage !== null && !rows.some((m) => m.at > vendorStage.at);
-      if (nadaDespues) parsed.ignored.push(`etapa ${parsed.etapa}: un vendedor la puso a mano y no hay nada nuevo después`);
-      else {
-        const moved = await moveStageForward({
-          organizationId,
-          contactId: conv.contactId,
-          to: parsed.etapa,
-          by: "agente",
-          stages,
-          now: deps.now(),
-          // Si un vendedor la mueve mientras el lector lee, manda el vendedor.
-          since: startedAt,
-          // En segundo plano nunca se le manda nada al cliente.
-          fireStageTriggers: false,
-        });
-        if (moved) cambios.push(`etapa ${moved.from} → ${parsed.etapa}`);
+    const parsed = parseLectorCalls(res.toolCalls ?? [], stageKeys, evidenceFrom(rows, sawClientMedia));
+    const cambios: string[] = [];
+    try {
+      if (parsed.detalle) {
+        const { comentario, ...campos } = parsed.detalle;
+        const r = await applyDetalleByAgent(organizationId, conv.contactId, { campos, comentarios: comentario ? [comentario] : [] });
+        cambios.push(...r.llenados);
       }
+      if (parsed.monto !== null && (contact.monto == null || Number(contact.monto) !== parsed.monto || cf.cotizacion_por !== "agente")) {
+        if (await setQuoteByAgent(organizationId, conv.contactId, parsed.monto)) cambios.push("monto_cotizacion");
+      }
+      if (parsed.pago !== null && (contact.pago == null || Number(contact.pago) !== parsed.pago)) {
+        await updateContactQualification(db, organizationId, conv.contactId, { pagoTotal: parsed.pago }, { kind: "agente" });
+        cambios.push("pago_total");
+      }
+      if (parsed.etapa) {
+        // La etapa que puso un vendedor manda: sin nada en el chat DESPUÉS de su cambio,
+        // el lector no tiene con qué avanzarla (lo de antes ya lo vio el vendedor).
+        const nadaDespues = vendorStage !== null && !rows.some((m) => m.at > vendorStage.at);
+        if (nadaDespues) parsed.ignored.push(`etapa ${parsed.etapa}: un vendedor la puso a mano y no hay nada nuevo después`);
+        else {
+          const moved = await moveStageForward({
+            organizationId,
+            contactId: conv.contactId,
+            to: parsed.etapa,
+            by: "agente",
+            stages,
+            now: deps.now(),
+            // Si un vendedor la mueve mientras el lector lee, manda el vendedor.
+            since: startedAt,
+            // En segundo plano nunca se le manda nada al cliente.
+            fireStageTriggers: false,
+          });
+          if (moved) cambios.push(`etapa ${moved.from} → ${parsed.etapa}`);
+        }
+      }
+    } catch (error) {
+      // Lo que alcanzó a guardarse se queda; la lectura se registra como error y se repite.
+      await recordAiUsage({ ...base, usage: res.usage, latencyMs, outcome: "error", error: `al guardar: ${errorText(error)}` });
+      return (done = { kind: "error", reason: `al guardar: ${errorText(error)}`, usage: res.usage, costUsd });
     }
-  } catch (error) {
-    // Lo que alcanzó a guardarse se queda; la lectura se registra como error y se repite.
-    await recordAiUsage({ ...base, usage: res.usage, latencyMs, outcome: "error", error: `al guardar: ${errorText(error)}` });
-    return { kind: "error", reason: `al guardar: ${errorText(error)}`, usage: res.usage, costUsd };
+    await recordAiUsage({
+      ...base,
+      modelId: res.modelId,
+      provider: res.provider,
+      usage: res.usage,
+      latencyMs,
+      outcome: cambios.length ? "detalle_aplicado" : "detalle_sin_cambios",
+      error: [cambios.length ? `cambios: ${cambios.join(", ")}` : "", parsed.ignored.length ? `descartado: ${parsed.ignored.join("; ")}` : ""].filter(Boolean).join(" · ") || null,
+    });
+    await markRead(organizationId, conversationId, upTo);
+    return (done = { kind: "leido", cambios, ignored: parsed.ignored, usage: res.usage, costUsd });
+  } finally {
+    await announceLector(organizationId, conv.contactId, conversationId, done?.kind === "leido" ? "listo" : "error", done?.kind === "leido" ? done.cambios.length : 0);
   }
-  await recordAiUsage({
-    ...base,
-    modelId: res.modelId,
-    provider: res.provider,
-    usage: res.usage,
-    latencyMs,
-    outcome: cambios.length ? "detalle_aplicado" : "detalle_sin_cambios",
-    error: [cambios.length ? `cambios: ${cambios.join(", ")}` : "", parsed.ignored.length ? `descartado: ${parsed.ignored.join("; ")}` : ""].filter(Boolean).join(" · ") || null,
-  });
-  await markRead(organizationId, conversationId, upTo);
-  return { kind: "leido", cambios, ignored: parsed.ignored, usage: res.usage, costUsd };
 }

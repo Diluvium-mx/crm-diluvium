@@ -178,6 +178,40 @@ describe.skipIf(!TEST_DATABASE_URL)("Lector en segundo plano (Postgres real)", (
     expect((await conv()).detalleLeidoHasta).toBeNull();
   });
 
+  it("indicador del Detalle: avisa «leyendo» y luego «listo» con cuántos datos cambió; si el modelo falla, «error»", async () => {
+    const { subscribeToInbox, __resetInboxHubForTests } = await import("@/lib/inbox/events");
+    const got: { phase: string; contactId: string; conversationId: string; cambios: number }[] = [];
+    const off = await subscribeToInbox(ORG, (e) => {
+      if (e.type === "lector.status") got.push(e);
+    });
+    const until = async (n: number) => {
+      for (let i = 0; i < 100 && got.length < n; i++) await new Promise((r) => setTimeout(r, 20));
+    };
+    try {
+      await msg("in", "Son 2 entradas y se mete el agua", ago(10 * MIN));
+      await lector.runLector(ORG, CONV, deps({ tiene_inundaciones: "si", num_entradas: 2 }).deps);
+      await until(2);
+      expect(got).toEqual([
+        { type: "lector.status", contactId: CONTACT, conversationId: CONV, phase: "leyendo", cambios: 0 },
+        { type: "lector.status", contactId: CONTACT, conversationId: CONV, phase: "listo", cambios: 2 },
+      ]);
+      got.length = 0;
+      await msg("in", "¿Sigues?", ago(5 * MIN));
+      await lector.runLector(ORG, CONV, deps(new Error("saturado")).deps);
+      await until(2);
+      expect(got.map((e) => e.phase)).toEqual(["leyendo", "error"]);
+      // Sin nada nuevo no hay lectura ni aviso.
+      got.length = 0;
+      await db.update(s.conversations).set({ detalleLeidoHasta: (await conv()).lastMessageAt }).where(d.eq(s.conversations.id, CONV));
+      expect((await lector.runLector(ORG, CONV, deps({}).deps)).kind).toBe("nada_nuevo");
+      await new Promise((r) => setTimeout(r, 150));
+      expect(got).toEqual([]);
+    } finally {
+      off();
+      await __resetInboxHubForTests();
+    }
+  });
+
   it("barrido: toma el chat cuando se calmó (3 min) o tras 15 min sin leer; no el que sigue activo ni el ya leído", async () => {
     await msg("in", "Hola", ago(2 * MIN)); // activo hace 2 min: todavía no
     expect(await lectorWorker.findDueConversations(new Date())).toEqual([]);

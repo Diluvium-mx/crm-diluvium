@@ -53,7 +53,7 @@ type ConvSpec = {
   phone: string;
   sourceChannel: string; // badge del avatar
   stage: string; // clave de funnel_stages (las 5 por defecto)
-  temperature: "caliente" | "frio" | "en_espera" | "destacado" | null;
+  temperature: "caliente" | "frio" | "en_espera" | null;
   unread: number;
   starred?: boolean;
   windowExpiresAt: Date | null;
@@ -106,7 +106,7 @@ const CONVS: ConvSpec[] = [
   },
   {
     firstName: "Roger", lastName: "López", phone: "+525512340004", sourceChannel: "whatsapp",
-    stage: "cerca_compra", temperature: "destacado", unread: 0, starred: true, windowExpiresAt: inHrs(18),
+    stage: "cerca_compra", temperature: null, unread: 0, starred: true, windowExpiresAt: inHrs(18),
     msgs: [
       { dir: "in", body: "Quiero avanzar con el pedido.", at: hrs(2) },
       { dir: "out", body: "Excelente Roger, le preparo la orden.", at: hrs(1), fromUser: true },
@@ -139,7 +139,7 @@ const CONVS: ConvSpec[] = [
   },
   {
     firstName: "Daniela", lastName: "Reyes", phone: "+525512340008", sourceChannel: "whatsapp",
-    stage: "cerca_compra", temperature: "destacado", unread: 0, starred: true, windowExpiresAt: hrs(2),
+    stage: "cerca_compra", temperature: null, unread: 0, starred: true, windowExpiresAt: hrs(2),
     msgs: [
       { dir: "in", body: "¿Me pueden llamar mañana?", at: hrs(26) },
     ],
@@ -213,6 +213,8 @@ async function main() {
       sourceChannel: spec.sourceChannel,
       stage: spec.stage,
       temperature: spec.temperature,
+      // Destacado ⭐ es del contacto desde la 0048 (la estrella de la Bandeja).
+      destacado: spec.starred ?? false,
     });
 
     const conversationId = id();
@@ -224,7 +226,6 @@ async function main() {
       channelId,
       status: "open",
       unreadCount: spec.unread,
-      isStarred: spec.starred ?? false,
       windowExpiresAt: spec.windowExpiresAt,
       adReferral: spec.adReferral ?? null,
       lastMessageAt: lastAt,

@@ -16,7 +16,6 @@ import {
   listMessagesForOrg,
   markConversationReadForOrg,
   setContactUnreadForOrg,
-  setConversationStarredForOrg,
   setConversationUnreadForOrg,
 } from "./queries";
 import { retryTextMessage, SendRejectedError, sendTemplateMessage, sendTextMessage } from "@/lib/messaging/send";
@@ -85,11 +84,6 @@ export async function listMessages(
 export async function markConversationRead(conversationId: string, upToMessageId?: string | null): Promise<void> {
   const { organizationId } = await requireActiveMembership();
   await markConversationReadForOrg(organizationId, conversationId, upToMessageId);
-}
-
-export async function setConversationStarred(conversationId: string, starred: boolean): Promise<void> {
-  const { organizationId } = await requireActiveMembership();
-  await setConversationStarredForOrg(organizationId, conversationId, starred);
 }
 
 const unreadInput = z.object({ id: z.string().min(1).max(128), unread: z.boolean() });

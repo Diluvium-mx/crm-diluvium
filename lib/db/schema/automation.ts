@@ -85,6 +85,11 @@ export const workflows = pgTable(
     // Se dispara cuando el contacto ENTRA a esta etapa (clave de funnel_stages; al
     // borrar la etapa, el CRM la deja en null en la misma transacción).
     triggerStage: text("trigger_stage"),
+    // «Solo al inicio» (29-sep-2026, regla estricta del dueño): por palabra clave o por el
+    // Agente IA solo se dispara mientras ni el Agente IA (con texto propio) ni un vendedor le
+    // han contestado al cliente, y a lo mucho UNA vez por contacto (lib/workflows/start-only.ts).
+    // El comando del vendedor y la etapa que mueve un vendedor salen siempre.
+    triggerStartOnly: boolean("trigger_start_only").notNull().default(false),
     position: integer("position").notNull().default(0),
     createdByUserId: text("created_by_user_id").references(() => user.id, { onDelete: "set null" }),
     updatedByUserId: text("updated_by_user_id").references(() => user.id, { onDelete: "set null" }),

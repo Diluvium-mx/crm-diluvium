@@ -78,6 +78,7 @@ describe("historial de cambios: textos y filtros", () => {
       enabled: true,
       agentDescription: "",
       triggerAgent: false,
+      triggerStartOnly: false,
       triggerKeywords: [],
       triggerCommand: null,
       triggerStage: null,
@@ -116,6 +117,7 @@ describe("historial de cambios: textos y filtros", () => {
       enabled: false,
       agentDescription: "Datos bancarios",
       triggerAgent: true,
+      triggerStartOnly: false,
       triggerKeywords: ["banco"],
       triggerCommand: "/banco",
       triggerStage: null,
@@ -131,6 +133,13 @@ describe("historial de cambios: textos y filtros", () => {
       expect(describeWorkflowEdit(base, after)).toEqual({
         before: "Nombre: «Banco» · Apagado · 1 paso · Palabras clave: banco",
         after: "Nombre: «Datos bancarios» · Encendido · 2 pasos · Palabras clave: banco, cuenta",
+      });
+    });
+
+    it("«Solo al inicio» encendido y apagado", () => {
+      expect(describeWorkflowEdit(base, { ...base, triggerStartOnly: true })).toEqual({
+        before: "Cuándo: En cualquier momento",
+        after: "Cuándo: Solo al inicio",
       });
     });
 

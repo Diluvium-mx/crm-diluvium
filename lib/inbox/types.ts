@@ -4,10 +4,7 @@ import type { NormalizedMessageType } from "@/lib/messaging/provider";
 
 import type { TemperatureFilter } from "@/lib/contacts/filters";
 
-/**
- * Pestañas de la lista. "starred" = Destacado: la estrella del chat O la temperatura ⭐
- * del contacto (lib/contacts/filters.ts, 28-sep-2026).
- */
+/** Pestañas de la lista. "starred" = Destacado: la marca ⭐ del contacto (0048). */
 export type InboxFilter = "unread" | "all" | "starred";
 
 /** Parámetros de la lista: pestaña, temperatura (una a la vez; se suma a la pestaña) y búsqueda. */
@@ -40,8 +37,9 @@ export type ConversationListItem = {
    */
   lastMessage: { preview: string; direction: "in" | "out"; kind: MessageKind; at: Date } | null;
   unreadCount: number;
+  /** Destacado ⭐ del CONTACTO (contacts.destacado, 0048): la estrella de la fila. */
   isStarred: boolean;
-  /** Temperatura del CONTACTO (🔥🧊⏳⭐), editable desde la lista (C1). */
+  /** Temperatura del CONTACTO (🔥🧊⏳), editable desde la lista (C1). */
   temperature: string | null;
   /**
    * Semáforo: desde cuándo espera respuesta el cliente (su mensaje más viejo
@@ -180,6 +178,20 @@ export type ContactChangeActor =
   | { kind: "automatizacion"; userId: string | null };
 
 /** Un contacto cambió (etapa, temperatura, cotización o campos del Detalle). */
+/**
+ * Indicador del Detalle (29-sep-2026): el lector en segundo plano avisa cuando EMPIEZA a leer
+ * el chat de un contacto ("leyendo") y cuando termina ("listo", con cuántos datos cambió, o
+ * "error"). Solo informa: el Detalle en sí se actualiza con contact.updated.
+ */
+export type LectorStatusEvent = {
+  type: "lector.status";
+  contactId: string;
+  conversationId: string;
+  phase: "leyendo" | "listo" | "error";
+  /** Cuántos datos cambió (solo en "listo"). */
+  cambios: number;
+};
+
 export type ContactUpdatedEvent = {
   type: "contact.updated";
   contactId: string;
@@ -213,6 +225,8 @@ export type InboxEvent =
   | { type: "inbox.bulk"; contactos: number }
   /** Un contacto cambió: la UI vuelve a pedir ese contacto (lib/contacts/notify-updated.ts). */
   | ContactUpdatedEvent
+  /** El Agente IA empezó o terminó de leer en segundo plano el chat de un contacto (lector.ts). */
+  | LectorStatusEvent
   /** Las etapas del Embudo cambiaron (editor): la UI vuelve a pedir la lista. Al borrar una, cuántos contactos pasaron de `from` a `to`. */
   | StagesUpdatedEvent
   | { type: "reload" };

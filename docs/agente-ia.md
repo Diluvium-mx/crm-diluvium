@@ -702,6 +702,22 @@ nadie leía el chat. Migración **`0047_lector_detalle`** (siguiente libre: 0048
 - **UI:** Detalle › "Monto de cotización (MXN)" y "Pago total (MXN)" lado a lado, los dos con marca "IA"
   y editables por el vendedor (`pagoTotal` en `updateContactQualification`).
 
+### Indicador en el Detalle (29-sep-2026, pedido del dueño)
+Una línea bajo "Calificación" (Bandeja y pop-up del Embudo) muestra en vivo qué hace el lector:
+**⏳ leerá el chat en ~N min** (hay mensajes sin leer; misma cuenta del barrido: 3 min quieto o 15 min desde el
+primero sin leer, más medio paso del barrido), **leyendo el chat…** (orbe), **actualizó N datos** (6 s, mientras
+brillan los campos con la marca IA), **✓ Al día · leído 10:42** y **No pudo leer el chat · se reintenta solo**.
+- **Sin sondeo ni costo de IA:** el lector avisa `lector.status` (fase `leyendo` antes de llamar a Luna y, en un
+  `finally`, `listo` con cuántos datos cambió o `error`) por el mismo NOTIFY `inbox_events` del tiempo real
+  (`lib/inbox/lector-status-payload.ts`, `events.ts`, `use-inbox-stream.ts`). Al abrir el contacto hay UNA consulta
+  de solo lectura (`lib/actions/agente-lector.ts` → `lib/agente-ia/lector-status-store.ts` → `lector-status.ts`,
+  puro): chats del contacto en la organización de la sesión, candado Redis `lector-lock:<id>` (tope 1.5 s; si Redis
+  falla, "no está leyendo") y última fila de `ai_usage` etapa `detalle`. Se vuelve a consultar solo con eventos
+  (aviso del lector, mensaje de sus chats, reconexión) o al volver a la pestaña.
+- **Si un aviso se pierde** (worker reiniciado a media lectura), "leyendo" se apaga solo a los 90 s y la espera
+  vuelve a consultar cuando ya debió leerse. Nunca rompe el Detalle: si algo falla, no se muestra nada.
+- UI: `app/(app)/contactos/_components/lector-status.tsx`; mapa › Detalle (28).
+
 ## Pregunta duplicada: workflow por palabra clave + Agente IA (28-sep-2026)
 
 - **Incidente (prod, 28-sep 6:27–6:49 p.m. Mazatlán):** «Información» y «Precio 2» (igual que GHL) terminaban con
@@ -722,6 +738,28 @@ nadie leía el chat. Migración **`0047_lector_detalle`** (siguiente libre: 0048
   `ai_usage.error` ("no se repitió lo que ya salió"). El comando o la etapa de un vendedor salen siempre.
 - **Costo aceptado:** si el cliente pregunta dos cosas en el MISMO mensaje ("precio y envían a Monterrey?") y el
   workflow que dispara termina en pregunta, lo segundo espera a que el cliente conteste (como en GHL).
+
+## «Solo al inicio» (29-sep-2026, migración 0048)
+
+- **Pedido del dueño:** «Precio 2» es la respuesta ya definida para quien llega de un anuncio y su primer mensaje
+  es "precio"/"costo". Datos de prod (26–29 sep): de 24 disparos por palabra clave, 14 fueron al inicio (bien) y el
+  resto a media conversación ("Cada una cuesta 5.500 pesos", "La mediana que precio tiene"): ahí el guion no encaja.
+- **Regla ESTRICTA** (`workflows.trigger_start_only`, `lib/workflows/start-only.ts`), opción del editor
+  «¿Cuándo se dispara por palabra clave o por el Agente IA?» → «En cualquier momento» (como antes) o «Solo al inicio»:
+  - Solo sale **al inicio**: mientras no haya un saliente que cuente como respuesta: de un vendedor (`crm`,
+    `business_app`, incluido el historial copiado del celular) o del Agente IA con **texto propio** (`ai_agent` que no
+    es de una corrida de workflow). Lo que mandan otros workflows no cuenta: «Información» y luego "Precio" sí dispara.
+  - **Una sola vez por contacto**, por cualquier camino y en cualquier conversación (corrida en cola/corriendo/hecha
+    o que ya mandó algo). Nunca se repite.
+  - Se aplica a palabra clave y Agente IA (herramienta y etapa movida por el agente). El **comando del vendedor** y
+    la etapa que mueve un vendedor salen siempre.
+- **Dónde se revisa:** al elegir la palabra clave (`onInboundKeyword`: el que ya no aplica no compite y el mensaje
+  puede disparar otro que coincida), al ofrecer herramientas al Agente IA (`loadAgentTools` con la conversación: solo
+  se ofrece mientras aplica), al crear la corrida (`startWorkflowRun`, omitida con `ya_no_es_el_inicio` o
+  `ya_enviado_a_este_contacto`) y otra vez al arrancar (`executeWorkflowRun`, paso 0: si dos corridas del mismo
+  workflow llegan juntas —palabra clave y agente— gana la primera que arrancó).
+- **Pendiente (otro chat, análisis del flujo del Agente IA):** «El workflow es la respuesta» — qué hace el agente con
+  su propio texto cuando usa un workflow así como herramienta (hoy salen los dos).
 
 ## Fuera de alcance (próximos briefs)
 

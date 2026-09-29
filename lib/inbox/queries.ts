@@ -128,7 +128,7 @@ async function toListItems(organizationId: string, page: ListRow[]): Promise<Con
         : null,
       unreadCount: conversation.unreadCount,
       temperature: contact.temperature,
-      isStarred: conversation.isStarred,
+      isStarred: contact.destacado,
       awaitingReplySince: awaiting.get(conversation.id) ?? null,
       // Se manda la ventana tal cual; la UI decide "quedan X h" o si venció.
       windowExpiresAt: conversation.windowExpiresAt,
@@ -159,8 +159,8 @@ function listFilter(organizationId: string, { filter = "all", temperature, searc
   return and(
     eq(conversations.organizationId, organizationId),
     filter === "unread" ? sql`${conversations.unreadCount} > 0` : undefined,
-    // Destacado = estrella del chat o temperatura ⭐ (regla del dueño, 28-sep-2026).
-    filter === "starred" ? or(eq(conversations.isStarred, true), eq(contacts.temperature, "destacado")) : undefined,
+    // Destacado = la marca del contacto (0048, 29-sep-2026).
+    filter === "starred" ? eq(contacts.destacado, true) : undefined,
     temperatureCondition(temperature),
     searchCondition(search),
   );
@@ -285,7 +285,7 @@ async function detail(where: SQL): Promise<ConversationDetail | null> {
     id: conversation.id,
     contact: { ...toContact(contact), stage: contact.stage, temperature: contact.temperature },
     windowExpiresAt: conversation.windowExpiresAt,
-    isStarred: conversation.isStarred,
+    isStarred: contact.destacado,
     unreadCount: conversation.unreadCount,
     adEntry: conversation.adEntryAt
       ? {
@@ -480,15 +480,6 @@ export async function setContactUnreadForOrg(organizationId: string, contactId: 
     .orderBy(desc(conversationSortKey))
     .limit(1);
   return latest ? setConversationUnreadForOrg(organizationId, latest.id, true) : false;
-}
-
-export async function setConversationStarredForOrg(organizationId: string, conversationId: string, starred: boolean): Promise<boolean> {
-  const updated = await db
-    .update(conversations)
-    .set({ isStarred: starred })
-    .where(and(eq(conversations.id, conversationId), eq(conversations.organizationId, organizationId)))
-    .returning({ id: conversations.id });
-  return updated.length > 0;
 }
 
 export type { ConversationListItem };
