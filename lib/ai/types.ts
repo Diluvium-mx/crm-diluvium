@@ -12,6 +12,11 @@ export type ModelTier = "tope" | "balanceado" | "economico";
 // Para qué sirve el modelo en el pipeline del agente.
 export type ModelRole = "filtro" | "cerebro";
 
+// Logo de la MARCA del modelo en su tarjeta (lib/ai/logos.ts). Es la marca del
+// modelo, no la del proveedor por donde se conecta: Qwen va por OpenRouter y
+// lleva el logo de Qwen.
+export type ModelLogo = "openai" | "claude" | "gemini" | "grok" | "qwen";
+
 // Una entrada del catálogo (lib/ai/catalog.ts). `id` es estable e interno (lo
 // que se guarda en ai_config); `providerModelId` es el string exacto que se le
 // pasa al SDK del proveedor.
@@ -20,6 +25,7 @@ export type CatalogModel = {
   label: string;
   provider: ProviderId;
   providerModelId: string;
+  logo: ModelLogo;
   tier: ModelTier;
   multimodal: boolean;
   // ¿Acepta PDF como archivo? (un comprobante SPEI suele llegar en PDF). Si no,
