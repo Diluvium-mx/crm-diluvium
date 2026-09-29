@@ -2,7 +2,16 @@
 // tipos: la UI (Client Components) puede importarlo sin arrastrar el servidor.
 import type { NormalizedMessageType } from "@/lib/messaging/provider";
 
+import type { TemperatureFilter } from "@/lib/contacts/filters";
+
+/**
+ * Pestañas de la lista. "starred" = Destacado: la estrella del chat O la temperatura ⭐
+ * del contacto (lib/contacts/filters.ts, 28-sep-2026).
+ */
 export type InboxFilter = "unread" | "all" | "starred";
+
+/** Parámetros de la lista: pestaña, temperatura (una a la vez; se suma a la pestaña) y búsqueda. */
+export type InboxListParams = { filter?: InboxFilter; temperature?: TemperatureFilter | null; search?: string };
 
 // "system_note" (Fase D): aviso interno para el vendedor (p. ej. "cotejar
 // depósito"); vive en el hilo, nunca se manda por WhatsApp.

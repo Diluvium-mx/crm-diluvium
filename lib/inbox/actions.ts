@@ -6,6 +6,7 @@
 // organización (CLAUDE.md §7).
 import { z } from "zod";
 import { requireActiveMembership } from "@/lib/auth/active-organization";
+import { isTemperatureFilter } from "@/lib/contacts/filters";
 import { messagingProvider, MessagingNotConfiguredError } from "@/lib/messaging";
 import {
   getConversationByContactForOrg,
@@ -29,19 +30,25 @@ import type {
   ConversationDetail,
   ConversationListItem,
   ConversationPage,
-  InboxFilter,
+  InboxListParams,
   MessagePage,
   SendErrorCode,
   SendMessageResult,
 } from "./types";
 
-export async function listConversations(params: {
-  filter?: InboxFilter;
-  search?: string;
-  cursor?: string | null;
-} = {}): Promise<ConversationPage> {
+// Lo que llega del navegador: la pestaña y la temperatura se validan (un valor raro
+// cae al valor por defecto); búsqueda y cursor los sanean las consultas.
+function listParams(params: InboxListParams): InboxListParams {
+  return {
+    filter: params.filter === "unread" || params.filter === "starred" ? params.filter : "all",
+    temperature: isTemperatureFilter(params.temperature) ? params.temperature : null,
+    search: typeof params.search === "string" ? params.search : undefined,
+  };
+}
+
+export async function listConversations(params: InboxListParams & { cursor?: string | null } = {}): Promise<ConversationPage> {
   const { organizationId } = await requireActiveMembership();
-  return listConversationsForOrg(organizationId, params);
+  return listConversationsForOrg(organizationId, { ...listParams(params), cursor: params.cursor });
 }
 
 /**
@@ -51,10 +58,10 @@ export async function listConversations(params: {
  */
 export async function getConversationItems(
   conversationIds: string[],
-  params: { filter?: InboxFilter; search?: string } = {},
+  params: InboxListParams = {},
 ): Promise<ConversationListItem[]> {
   const { organizationId } = await requireActiveMembership();
-  return listConversationItemsByIdsForOrg(organizationId, conversationIds.slice(0, 100), params);
+  return listConversationItemsByIdsForOrg(organizationId, conversationIds.slice(0, 100), listParams(params));
 }
 
 export async function getConversation(conversationId: string): Promise<ConversationDetail | null> {
