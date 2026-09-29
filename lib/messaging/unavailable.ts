@@ -27,8 +27,14 @@ export const UNAVAILABLE_CODE = 131060;
 export const NO_DISPONIBLE_KEY = "noDisponible";
 export type NoDisponibleEstado = "verificando" | "sombra" | "sin_contenido";
 
-/** Espera antes de decidir: el real más tardío medido llegó a los 5 s. */
-export const VERIFY_AFTER_MS = 20_000;
+/**
+ * Espera antes de decidir. Medido en producción (27–29 sep, 20 avisos): de los 15 reales
+ * que sí llegaron, el más tardío llegó a los 4.9 s (mismo wamid: 0.1–2.3 s; otro wamid:
+ * 0.6–4.9 s) y ninguno de los 5 perdidos llegó después (días). 60 s = más de 12 veces lo
+ * más tardío. Solo retrasa la respuesta cuando de verdad no llegó nada: el real, cuando
+ * llega, despierta al Agente IA en ese momento sin esperar esto (dueño, 29-sep-2026).
+ */
+export const VERIFY_AFTER_MS = 60_000;
 /** Ventana (según la hora de WhatsApp) en la que otro entrante es el real de la sombra: medido 0–3 s; 19 s ya fue otro mensaje. */
 export const SHADOW_BEFORE_MS = 5_000;
 export const SHADOW_AFTER_MS = 10_000;
@@ -37,11 +43,26 @@ export const VERIFY_GIVE_UP_MS = 3 * 60_000;
 
 /** Tarjeta del chat y vista previa de la lista (texto aprobado por el dueño, 29-sep-2026). */
 export const NOTICE_CARD_TEXT = "El cliente escribió, pero WhatsApp no pasó el mensaje al CRM. Míralo en el celular.";
-/** Mientras se verifica (≤ ~20 s). */
+/** Mientras se verifica (hasta VERIFY_AFTER_MS). */
 export const NOTICE_RECEIVING_TEXT = "Recibiendo mensaje…";
 /** Respuesta del Agente IA, EXACTA como la escribió el dueño (29-sep-2026). */
 export const UNAVAILABLE_REPLY_TEXT =
   "¡Hola! Gracias por escribirnos 😊 Tuvimos una falla técnica y su mensaje no nos llegó. ¿Nos ayudas escribiéndolo de nuevo para seguir con su atención?";
+/**
+ * ¿Se completó con el contenido real DESPUÉS de confirmarse sin contenido (el Agente IA
+ * ya pudo mandar el texto fijo)? Entonces ese contenido cuenta como nuevo para el Agente
+ * IA: lo contesta según lo que dice (lib/ai/runtime/context.ts, pendingInbound).
+ */
+export function completedAfterConfirmation(metadata: Metadata): boolean {
+  return asRecord(metadata?.noDisponibleAntes)?.verificacion === "sin_contenido";
+}
+
+/** La misma regla en SQL: hora en que "llegó" para el Agente IA (la del completado), o null. */
+export function lateContentAtSql(metadata: AnyColumn | SQL): SQL {
+  return sql`case when ${metadata}->'noDisponibleAntes'->>'verificacion' = 'sin_contenido'
+    then ((${metadata}->'noDisponibleAntes'->>'completadoEn')::timestamptz at time zone 'UTC') end`;
+}
+
 /** Cómo lo leen el Agente IA y el lector en el historial (en vez del texto crudo). */
 export const UNAVAILABLE_HISTORY_NOTE =
   "[Primer mensaje del cliente: no llegó por una falla técnica de WhatsApp; no se sabe qué decía]";
