@@ -564,7 +564,7 @@ export async function runAgent(job: { organizationId: string; conversationId: st
         ...(options.transcribeAudio ? {} : { voiceNotesOff: true }),
       });
     // Herramientas (Fase D): una por workflow habilitado con "agente" + fijar_cotizacion.
-    const agentTools = await loadAgentTools(org, stages);
+    const agentTools = await loadAgentTools(org, stages, { id: conv.id, contactId: conv.contactId });
     // ¿Sigue el agente a cargo? Si durante la llamada un vendedor contestó, pausaron
     // al agente o apagaron el canal, no hay tarjeta ni otro intento (ya decidió alguien).
     const stillInCharge = async (): Promise<boolean> => {

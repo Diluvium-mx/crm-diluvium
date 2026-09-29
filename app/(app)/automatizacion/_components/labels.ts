@@ -34,7 +34,9 @@ export const SKIP_REASON_LABEL: Record<string, string> = {
   falta_archivo: "falta un archivo",
   canal_apagado: "el canal no está en automático",
   sin_pasos: "sin pasos",
-  ya_enviado_a_este_contacto: "ya se envió a este contacto por palabra clave",
+  // Por palabra clave, o un workflow «Solo al inicio» que ya le salió por cualquier camino.
+  ya_enviado_a_este_contacto: "ya se envió a este contacto",
+  ya_no_es_el_inicio: "ya no es el inicio (ya le contestaron)",
   ventana_24h: "ventana de 24 h cerrada",
   atorado: "se atoró (worker)",
   respuesta_humana: "un vendedor respondió",

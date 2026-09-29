@@ -330,6 +330,13 @@
       "when": 1790645071459,
       "tag": "0047_lector_detalle",
       "breakpoints": true
+    },
+    {
+      "idx": 48,
+      "version": "7",
+      "when": 1790704131710,
+      "tag": "0048_solo_al_inicio",
+      "breakpoints": true
     }
   ]
 }

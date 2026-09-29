@@ -191,7 +191,16 @@ describe("workflows paso por paso", () => {
     expect(d.blocks[0].lines.map((l) => l.label)).toEqual(["Nombre", "Estado"]);
   });
 
-  it("creado y borrado: todo agregado o todo quitado", () => {
+  it("«Solo al inicio»: línea «Cuándo se dispara»; el historial anterior (sin el campo) cuenta como En cualquier momento", () => {
+    const d = diffWorkflow(base, { ...base, triggerStartOnly: true });
+    expect(d.blocks.map((b) => [b.title, b.tag])).toEqual([["Disparadores", "editado"]]);
+    expect(d.blocks[0].lines.map((l) => l.label)).toEqual(["Cuándo se dispara"]);
+    expect(text(d.blocks[0].lines[0].segments, "removed")).toBe("En cualquier momento");
+    expect(text(d.blocks[0].lines[0].segments, "added")).toBe("Solo al inicio");
+    expect(diffWorkflow(base, { ...base, triggerStartOnly: false }).blocks).toEqual([]);
+  });
+
+    it("creado y borrado: todo agregado o todo quitado", () => {
     expect(diffWorkflow(null, base).blocks.every((b) => b.tag === "agregado")).toBe(true);
     const gone = diffWorkflow(base, null);
     expect(gone.blocks.every((b) => b.tag === "quitado")).toBe(true);

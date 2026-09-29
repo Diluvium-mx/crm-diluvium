@@ -8,7 +8,7 @@ import { ArrowDown, ArrowUp, Plus, Trash2 } from "lucide-react";
 import { useFunnelStages } from "../../_components/funnel-stages-provider";
 import type { WorkflowInput, WorkflowView } from "@/lib/actions/workflows";
 import type { MediaAssetView } from "@/lib/media-library/service";
-import { MAX_STEPS, MAX_WAIT_SECONDS, type StepPayload } from "@/lib/workflows/steps";
+import { MAX_STEPS, MAX_WAIT_SECONDS, startOnlyLabel, type StepPayload } from "@/lib/workflows/steps";
 import { AssetPreview, uploadAsset } from "./biblioteca-tab";
 import { STEP_ICON, STEP_LABEL } from "./labels";
 
@@ -24,6 +24,7 @@ export function toDraft(w: WorkflowView | null): EditorDraft {
     keywordsText: (w?.triggerKeywords ?? []).join(", "),
     triggerCommand: w?.triggerCommand ?? null,
     triggerStage: w?.triggerStage ?? null,
+    triggerStartOnly: w?.triggerStartOnly ?? false,
     steps: w?.steps ?? [],
   };
 }
@@ -41,6 +42,7 @@ export function toInput(d: EditorDraft): WorkflowInput {
       .filter(Boolean),
     triggerCommand: d.triggerCommand?.trim() ? d.triggerCommand.trim().toLowerCase() : null,
     triggerStage: d.triggerStage,
+    triggerStartOnly: d.triggerStartOnly,
     steps: d.steps,
   };
 }
@@ -125,6 +127,22 @@ export function WorkflowEditor({
             <span className="text-xs font-medium text-muted-foreground">Palabras clave del cliente (separadas por coma; palabra completa, sin importar acentos)</span>
             <input value={draft.keywordsText} onChange={(e) => set({ keywordsText: e.target.value })} className={inputClass} placeholder="tabla, tamaños" />
           </label>
+          <fieldset className="space-y-1 sm:col-span-2">
+            <legend className="text-xs font-medium text-muted-foreground">¿Cuándo se dispara por palabra clave o por el Agente IA?</legend>
+            <div className="flex flex-wrap gap-x-5 gap-y-1">
+              {([false, true] as const).map((startOnly) => (
+                <label key={String(startOnly)} className="flex items-center gap-2 text-sm">
+                  <input type="radio" name={`cuando-${draft.id ?? "nuevo"}`} checked={draft.triggerStartOnly === startOnly} onChange={() => set({ triggerStartOnly: startOnly })} />
+                  {startOnlyLabel(startOnly)}
+                </label>
+              ))}
+            </div>
+            <p className="text-[11px] text-muted-foreground">
+              {draft.triggerStartOnly
+                ? "Solo antes de que el Agente IA o un vendedor le contesten al cliente, y una sola vez por cliente: nunca se repite. El comando del vendedor sale siempre."
+                : "Por palabra clave, una vez por cliente; el Agente IA puede usarlo en cualquier momento de la conversación."}
+            </p>
+          </fieldset>
         </div>
       </section>
 
