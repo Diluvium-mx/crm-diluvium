@@ -1,6 +1,6 @@
 "use client";
 
-import { Info, PanelLeftClose, PanelLeftOpen, PanelRightClose, PanelRightOpen, X } from "lucide-react";
+import { Info, PanelLeftClose, PanelLeftOpen, PanelRightClose, PanelRightOpen } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import type { ConversationDetail, ConversationListItem, InboxFilter } from "@/lib/inbox/types";
@@ -23,6 +23,7 @@ import { ConversationList } from "./conversation-list";
 import { useInboxStream } from "./use-inbox-stream";
 import { mergeItems } from "@/lib/inbox/list-merge";
 import { useOpenContactRequests } from "../../_components/open-contact";
+import { CloseX } from "@/components/ui/close-x";
 
 // ¿La pestaña está realmente a la vista? Solo entonces se marca leído por una
 // llegada en vivo (una pestaña en segundo plano no debe limpiar el contador
@@ -537,17 +538,7 @@ export function InboxBoard({ openContactId = null }: { openContactId?: string | 
             detail={detail}
             onTemperatureChanged={applyTemperature}
             onStageChanged={applyStage}
-            action={
-              <button
-                type="button"
-                onClick={() => setMobileDetailOpen(false)}
-                aria-label="Cerrar detalle del contacto"
-                title="Cerrar"
-                className="flex size-9 items-center justify-center rounded-md text-muted-foreground hover:bg-muted hover:text-foreground"
-              >
-                <X className="size-5" aria-hidden="true" />
-              </button>
-            }
+            action={<CloseX always label="Cerrar detalle del contacto" onClick={() => setMobileDetailOpen(false)} />}
           />
         </div>
       )}

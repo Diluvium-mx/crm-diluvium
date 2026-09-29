@@ -8,9 +8,10 @@
 import { useEffect, useState } from "react";
 import { createPortal } from "react-dom";
 import { usePathname } from "next/navigation";
-import { Menu, X } from "lucide-react";
+import { Menu } from "lucide-react";
 import { NavItem } from "./nav-item";
 import { UserMenu } from "./user-menu";
+import { CloseX } from "@/components/ui/close-x";
 
 export function MobileNav({
   items,
@@ -69,14 +70,7 @@ export function MobileNav({
             >
               <div className="flex h-16 shrink-0 items-center justify-between border-b border-white/10 pr-2 pl-4">
                 <span className="text-sm font-semibold text-white">Menú</span>
-                <button
-                  type="button"
-                  onClick={() => setOpen(false)}
-                  aria-label="Cerrar menú"
-                  className="flex size-10 items-center justify-center rounded-md text-brand-white transition-colors hover:bg-white/10"
-                >
-                  <X className="size-5" aria-hidden="true" />
-                </button>
+                <CloseX always label="Cerrar menú" onClick={() => setOpen(false)} />
               </div>
               <div className="flex min-h-0 flex-1 flex-col gap-1 overflow-y-auto p-3">
                 {items.map((item) => (

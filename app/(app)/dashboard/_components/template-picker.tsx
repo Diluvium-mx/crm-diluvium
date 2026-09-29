@@ -9,6 +9,7 @@ import { ArrowLeft, X } from "lucide-react";
 import { listTemplates } from "@/lib/actions/templates";
 import { renderTemplateBody } from "@/lib/messaging/template-format";
 import type { TemplateView } from "@/lib/templates/types";
+import { CloseX } from "@/components/ui/close-x";
 
 const TOKEN_CLASS = "rounded bg-brand-navy/15 px-1 font-medium text-brand-navy";
 
@@ -89,11 +90,12 @@ export function TemplatePicker({
           type="button"
           onClick={onClose}
           aria-label="Cerrar plantillas"
-          className="flex shrink-0 items-center gap-1 rounded-md px-2 py-1 text-xs font-medium text-muted-foreground hover:bg-muted hover:text-foreground"
+          className="hidden shrink-0 items-center gap-1 rounded-md px-2 py-1 text-xs font-medium text-muted-foreground hover:bg-muted hover:text-foreground md:flex"
         >
           <X className="size-4" aria-hidden="true" />
           Cerrar
         </button>
+        <CloseX size="sm" label="Cerrar plantillas" onClick={onClose} />
       </div>
 
       <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain p-3">

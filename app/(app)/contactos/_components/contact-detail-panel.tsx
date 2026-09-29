@@ -8,6 +8,7 @@ import { getContactFullName, type BoardContact, type Stage, type Temperature } f
 import { ContactChat } from "./contact-chat";
 import { ContactDetails } from "./contact-details";
 import { MarkReadButton } from "./mark-read-button";
+import { CloseX } from "@/components/ui/close-x";
 
 export function ContactDetailPanel({
   contact,
@@ -148,10 +149,11 @@ export function ContactDetailPanel({
                     onClick={requestClose}
                     aria-label="Cerrar"
                     title="Cerrar"
-                    className="rounded p-1 text-muted-foreground hover:bg-muted hover:text-foreground"
+                    className="hidden rounded p-1 text-muted-foreground hover:bg-muted hover:text-foreground md:block"
                   >
                     <X className="size-4" aria-hidden="true" />
                   </button>
+                  <CloseX size="sm" onClick={requestClose} />
                 </>
               }
             />
@@ -163,10 +165,11 @@ export function ContactDetailPanel({
               onClick={requestClose}
               aria-label="Cerrar"
               title="Cerrar"
-              className="rounded p-1 text-muted-foreground hover:bg-muted hover:text-foreground"
+              className="hidden rounded p-1 text-muted-foreground hover:bg-muted hover:text-foreground md:block"
             >
               <X className="size-4" aria-hidden="true" />
             </button>
+            <CloseX size="sm" onClick={requestClose} />
             <button
               type="button"
               onClick={() => setDetailsOpen(true)}

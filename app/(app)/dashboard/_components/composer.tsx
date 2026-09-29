@@ -29,6 +29,7 @@ import { ScheduleForm } from "./schedule-form";
 import { SnippetPicker } from "./snippet-picker";
 import { TemplatePicker } from "./template-picker";
 import { useIsMobile } from "@/components/ui/use-media-query";
+import { CloseX } from "@/components/ui/close-x";
 
 // Alto justo para el texto, entre los 2 renglones de `rows` y el max-height de la clase.
 // Vacía se queda en 2 renglones: Chrome mide también el texto gris de ayuda, y
@@ -112,9 +113,10 @@ export function Composer({
       ? commands.filter((c) => normalizeForSearch(c.command.slice(1)).startsWith(commandQuery) || normalizeForSearch(c.name).includes(commandQuery))
       : [];
 
-  // Carga los fragmentos la primera vez que se abre el buscador con "/".
+  // Carga los fragmentos (y los comandos) la primera vez que se abre el buscador con
+  // "/" o el selector ⚡ (en móvil ⚡ también lista los comandos de Automatización).
   useEffect(() => {
-    if (!slashOpen || snippets !== null || snippetsError) return;
+    if (!(slashOpen || snippetOpen) || snippets !== null || snippetsError) return;
     let alive = true;
     listWorkflowCommands()
       .then((list) => {
@@ -131,7 +133,7 @@ export function Composer({
     return () => {
       alive = false;
     };
-  }, [slashOpen, snippets, snippetsError]);
+  }, [slashOpen, snippetOpen, snippets, snippetsError]);
 
   // Coloca el cursor después de insertar (tras el render del nuevo borrador).
   useEffect(() => {
@@ -287,7 +289,17 @@ export function Composer({
   return (
     <div className="border-t bg-card p-3 pb-[max(0.75rem,env(safe-area-inset-bottom))]">
       {scheduleForm}
-      {snippetOpen && <SnippetPicker onInsert={appendFragment} onClose={() => setSnippetOpen(false)} />}
+      {snippetOpen && (
+        <SnippetPicker
+          onInsert={appendFragment}
+          onClose={() => setSnippetOpen(false)}
+          commands={commands}
+          onRunCommand={(command) => {
+            setSnippetOpen(false);
+            runCommand(command);
+          }}
+        />
+      )}
       {templateOpen && (
         <div className="mb-2">
           <TemplatePicker
@@ -325,9 +337,17 @@ export function Composer({
 
       {slashOpen && (
         <div className="mb-2 overflow-hidden rounded-lg border bg-background shadow-sm">
-          <div className="flex items-center justify-between border-b px-3 py-1.5 text-xs">
+          <div className="flex items-center justify-between gap-2 border-b px-3 py-1.5 text-xs">
             <span className="font-semibold text-brand-orange">⚡ Mensajes rápidos</span>
-            <span className="text-muted-foreground">↑↓ elegir · Enter insertar · Esc cerrar</span>
+            <span className="hidden text-muted-foreground md:inline">↑↓ elegir · Enter insertar · Esc cerrar</span>
+            {/* Móvil: sin Esc; la ✕ roja cierra el buscador (el "/" se queda escrito). */}
+            <CloseX
+              size="sm"
+              label="Cerrar mensajes rápidos"
+              onClick={() => {
+                if (slash) setDismissedAt(slash.start);
+              }}
+            />
           </div>
           {commandMatches.length > 0 && (
             <ul aria-label="Automatizaciones" className="border-b py-1">
@@ -336,6 +356,10 @@ export function Composer({
                   <button
                     type="button"
                     onMouseDown={(event) => {
+                      event.preventDefault();
+                      runCommand(c.command);
+                    }}
+                    onTouchEnd={(event) => {
                       event.preventDefault();
                       runCommand(c.command);
                     }}
@@ -365,6 +389,10 @@ export function Composer({
                     type="button"
                     // mousedown: que el textarea no pierda el foco antes de insertar.
                     onMouseDown={(event) => {
+                      event.preventDefault();
+                      insertFromSlash(s);
+                    }}
+                    onTouchEnd={(event) => {
                       event.preventDefault();
                       insertFromSlash(s);
                     }}

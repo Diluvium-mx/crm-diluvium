@@ -295,8 +295,9 @@ function CorridasTab({ runs, onRefresh }: { runs: WorkflowRunView[]; onRefresh: 
       {runs.length === 0 ? (
         <p className="rounded-lg border border-dashed p-8 text-center text-sm text-muted-foreground">Sin corridas todavía.</p>
       ) : (
-        <table className="w-full text-sm">
-          <thead className="text-left text-[11px] uppercase tracking-wide text-muted-foreground">
+        // Móvil: cada corrida es una tarjeta apilada (sin deslizar de lado); desde md, la tabla.
+        <table className="w-full text-sm max-md:block">
+          <thead className="text-left text-[11px] uppercase tracking-wide text-muted-foreground max-md:hidden">
             <tr>
               <th className="py-1 pr-2">Cuándo</th>
               <th className="py-1 pr-2">Workflow</th>
@@ -305,14 +306,14 @@ function CorridasTab({ runs, onRefresh }: { runs: WorkflowRunView[]; onRefresh: 
               <th className="py-1 pr-2">Estado</th>
             </tr>
           </thead>
-          <tbody>
+          <tbody className="max-md:block">
             {runs.map((r) => (
-              <tr key={r.id} className="border-t">
-                <td className="py-1.5 pr-2 text-xs text-muted-foreground">{new Date(r.createdAt).toLocaleString("es-MX", { timeZone: "America/Mazatlan", dateStyle: "short", timeStyle: "short" })}</td>
-                <td className="py-1.5 pr-2">{r.workflowName}</td>
-                <td className="py-1.5 pr-2">{r.contactName}</td>
-                <td className="py-1.5 pr-2 text-xs">{TRIGGER_LABEL[r.trigger]}</td>
-                <td className="py-1.5 pr-2 text-xs">
+              <tr key={r.id} className="border-t max-md:block max-md:py-2">
+                <td className="py-1.5 pr-2 text-xs text-muted-foreground max-md:block max-md:p-0">{new Date(r.createdAt).toLocaleString("es-MX", { timeZone: "America/Mazatlan", dateStyle: "short", timeStyle: "short" })}</td>
+                <td className="py-1.5 pr-2 max-md:block max-md:p-0 max-md:font-medium">{r.workflowName}</td>
+                <td className="py-1.5 pr-2 max-md:block max-md:p-0"><span className="hidden text-xs text-muted-foreground max-md:inline">Contacto: </span>{r.contactName}</td>
+                <td className="py-1.5 pr-2 text-xs max-md:block max-md:p-0"><span className="hidden text-muted-foreground max-md:inline">Disparador: </span>{TRIGGER_LABEL[r.trigger]}</td>
+                <td className="py-1.5 pr-2 text-xs max-md:block max-md:p-0">
                   <span className={r.status === "done" ? "text-green-700" : r.status === "failed" ? "text-red-600" : r.status === "skipped" || r.status === "cancelled" ? "text-brand-orange" : ""}>
                     {RUN_STATUS_LABEL[r.status]}
                   </span>

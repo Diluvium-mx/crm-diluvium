@@ -7,6 +7,7 @@ import { Download, Minus, Plus, X } from "lucide-react";
 import { useEffect, useState } from "react";
 import type { AttachmentView } from "@/lib/inbox/types";
 import { fileExtension } from "./format";
+import { CloseX } from "@/components/ui/close-x";
 
 const ZOOM_STEPS = [1, 1.5, 2, 3, 4];
 
@@ -78,9 +79,10 @@ export function MediaViewer({ attachment, onClose }: { attachment: AttachmentVie
         >
           <Download className="size-4" aria-hidden="true" />
         </a>
-        <button type="button" onClick={onClose} aria-label="Cerrar" title="Cerrar (Esc)" className="rounded p-2 hover:bg-white/10">
+        <button type="button" onClick={onClose} aria-label="Cerrar" title="Cerrar (Esc)" className="hidden rounded p-2 hover:bg-white/10 md:block">
           <X className="size-5" aria-hidden="true" />
         </button>
+        <CloseX onClick={onClose} />
       </div>
 
       <div className="flex min-h-0 flex-1 items-center justify-center overflow-auto p-4" onClick={(event) => event.stopPropagation()}>

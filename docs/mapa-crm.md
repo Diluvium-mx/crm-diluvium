@@ -888,7 +888,9 @@ números dibujados: el número de la tabla nombra la pieza.
 | 6 | **Caja para escribir (móvil)** | Dos renglones: ⚡ 📄 📎 🕒 arriba y la caja con **Enviar** abajo. Todo funciona igual que en 3.2.2. | Todos |
 | 7 | **Embudo: columnas** | Cada columna ocupa la pantalla; el tablero se desliza de lado columna por columna. Para arrastrar una tarjeta a otra etapa: dejarla presionada un momento y moverla (el clic derecho no existe en celular). | Todos |
 | 8 | **Pop-up del Embudo (móvil)** | Al tocar una tarjeta, el pop-up ocupa toda la pantalla: chat arriba y Detalle abajo; **Ocultar detalle** deja el chat completo y ✕ cierra el pop-up. | Todos |
-| 9 | **Demás pantallas** | Dashboard, Mensajes rápidos, Anuncios, Agente IA, Automatización y Configuración se acomodan en una sola columna. Las tablas anchas (Anuncios, Vendedores) se deslizan de lado. | Todos |
+| 9 | **Demás pantallas** | Dashboard, Mensajes rápidos, Anuncios, Agente IA, Automatización y Configuración se acomodan en una sola columna. **Nada se desliza de lado** (solo el Embudo, 7): las tablas de Anuncios, Vendedores y Corridas se apilan como tarjetas y las subpestañas de Agente IA se acomodan en varios renglones. | Todos |
+| 10 | **✕ roja (cerrar)** | En el celular todo lo que se abre encima se cierra con una ✕ blanca en círculo rojo: el menú ☰, el Detalle del contacto (5), el pop-up del Embudo (8), los selectores del chat (⚡ mensajes rápidos, 📄 plantillas, 🕒 programar y el buscador "/"), el visor de fotos, Nuevo contacto, Columnas del Embudo y el formulario de Mensajes rápidos. En escritorio no cambia nada (Esc, "Cerrar" o la ✕ chica de siempre). | Todos |
+| 11 | **Automatizaciones en ⚡** | En el celular, ⚡ lista primero los comandos de Automatización (/tabla, /banco, /video…): al tocar uno se envía el material, igual que escribir el comando. Solo aparecen los workflows encendidos (con su archivo). En escritorio siguen con "/". | Todos |
 
 **Lo cambias tú desde la pantalla:** nada nuevo; el tema claro/oscuro sigue en la barra.
 
@@ -898,13 +900,14 @@ números dibujados: el número de la tabla nombra la pieza.
 
 **Agente IA aquí:** nada.
 
-**Qué falta (segunda pasada):** probarlo en un celular real desde staging (gestos, teclado, bordes con muesca), botones
-más grandes para el dedo, el menú del clic derecho de la Bandeja con pulsación larga, y el modo oscuro en móvil.
+**Qué falta:** el menú del clic derecho de la Bandeja con pulsación larga y el modo oscuro en móvil.
 
 <sub>Para Code: corte en `md` (768 px); `app/(app)/layout.tsx` y `_components/mobile-nav.tsx` (☰), `app/layout.tsx`
 (viewport), `dashboard/_components/inbox-board.tsx` (una columna, detalle encima), `chat-thread.tsx` (`onBack`),
 `composer.tsx` (dos renglones, corte `sm`), `contactos/_components/contacts-board.tsx` (columnas de una pantalla,
-corte `sm`), `contact-detail-panel.tsx` (pop-up a pantalla completa), `components/ui/use-media-query.ts`.</sub>
+corte `sm`), `contact-detail-panel.tsx` (pop-up a pantalla completa), `components/ui/use-media-query.ts`, `components/ui/close-x.tsx` (✕ roja), `snippet-picker.tsx`
+(comandos en ⚡), tablas apiladas con `max-md:block` en `sellers-panel.tsx` y `automatizacion-panel.tsx`, tarjetas en
+`components/anuncios/ads-table.tsx`.</sub>
 
 ---
 
