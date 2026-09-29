@@ -10,6 +10,7 @@ import { canMarkRead, funnelTone, unreadBadge, type FunnelSignal } from "@/lib/c
 import { PhoneLocation } from "@/components/ui/phone-location";
 import { PruebaBadge } from "@/components/ui/prueba-badge";
 import { ContextMenu, ContextMenuContent, ContextMenuItem, ContextMenuTrigger } from "@/components/ui/context-menu";
+import { ChatSearchBadge } from "../../_components/chat-search-badge";
 
 // Para lector de pantalla: el fondo de color solo se ve.
 const TONE_LABEL = {
@@ -23,7 +24,9 @@ const TONE_LABEL = {
 // El fondo de color (señal) lo pone quien la envuelve con data-funnel
 // (app/globals.css); aquí solo va el círculo de no vistos. Al pasar el cursor el
 // borde y la luz son GRISES: el azul queda solo para "por contestar".
-export function ContactCardContent({ contact, signal }: { contact: BoardContact; signal?: FunnelSignal }) {
+// chatHits: con la lupa amarilla, cuántos mensajes de sus chats tienen la palabra buscada
+// (círculo amarillo junto al naranja de no vistos).
+export function ContactCardContent({ contact, signal, chatHits = 0 }: { contact: BoardContact; signal?: FunnelSignal; chatHits?: number }) {
   const unread = unreadBadge(signal?.unread);
   const tone = funnelTone(signal);
   // ⭐ ya no es temperatura (0048): un valor viejo no se pinta; Destacado va aparte, al lado.
@@ -40,7 +43,7 @@ export function ContactCardContent({ contact, signal }: { contact: BoardContact;
         <PhoneLocation phone={contact.phoneE164} />
         {tone && <span className="sr-only">{TONE_LABEL[tone]}</span>}
       </div>
-      {(unread || temperature || contact.destacado) && (
+      {(unread || chatHits > 0 || temperature || contact.destacado) && (
         <div className="flex shrink-0 items-center gap-2">
           {unread && (
             <span
@@ -50,6 +53,7 @@ export function ContactCardContent({ contact, signal }: { contact: BoardContact;
               {unread}
             </span>
           )}
+          <ChatSearchBadge count={chatHits} />
           {temperature && (
             <span
               role="img"
@@ -75,11 +79,13 @@ export function ContactCardContent({ contact, signal }: { contact: BoardContact;
 export function ContactCard({
   contact,
   signal,
+  chatHits,
   onClick,
   onSetUnread,
 }: {
   contact: BoardContact;
   signal?: FunnelSignal;
+  chatHits?: number;
   onClick: () => void;
   onSetUnread: (unread: boolean) => void;
 }) {
@@ -117,7 +123,7 @@ export function ContactCard({
             isDragging ? "opacity-40" : ""
           }`}
         >
-          <ContactCardContent contact={contact} signal={signal} />
+          <ContactCardContent contact={contact} signal={signal} chatHits={chatHits} />
         </button>
       </ContextMenuTrigger>
       <ContextMenuContent>

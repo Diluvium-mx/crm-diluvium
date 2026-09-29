@@ -24,6 +24,22 @@ export function matchesSearch(text: string, query: string): boolean {
   return normalizeSearch(text).includes(q);
 }
 
+// Búsqueda DENTRO de los chats (la lupa amarilla de la Bandeja y el Embudo, 29-sep-2026):
+// mínimo 3 letras para que "de" no marque todos los chats, y un tope de largo.
+export const CHAT_SEARCH_MIN_LENGTH = 3;
+const CHAT_SEARCH_MAX_LENGTH = 100;
+
+/** Término normalizado de la búsqueda en los chats; null = aún no alcanza el mínimo. */
+export function chatSearchTerm(raw: string | null | undefined): string | null {
+  const term = normalizeSearch(raw ?? "").slice(0, CHAT_SEARCH_MAX_LENGTH).trim();
+  return term.length >= CHAT_SEARCH_MIN_LENGTH ? term : null;
+}
+
+/** Escapa %, _ y \ para usar un texto del usuario dentro de un LIKE '%…%'. */
+export function escapeLike(text: string): string {
+  return text.replace(/[\\%_]/g, (c) => `\\${c}`);
+}
+
 /**
  * Expresión SQL (texto) que normaliza una columna igual que normalizeSearch:
  * translate() quita acentos y ñ en mayúsculas y minúsculas ANTES de lower(),

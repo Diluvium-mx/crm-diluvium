@@ -359,6 +359,16 @@ Reglas de UI:
   `toLowerCase().includes` o `ilike` directo. La prueba guardiana
   `lib/text/search-guard.test.ts` falla si aparece uno; la única excepción anotada es el filtro de
   comandos del composer (Fase D).
+- **Búsqueda en los chats (29-sep-2026, decisión del dueño):** una **lupa** entre el buscador y el
+  filtro (Bandeja y Embudo). Prendida se pinta de amarillo y el MISMO campo busca una palabra dentro
+  de los mensajes de todos los chats (cliente, vendedor, Agente IA, historial importado, pies de foto
+  y transcripciones; fuera los avisos internos 📝 y los comentarios del contacto), mínimo 3 letras.
+  Solo quedan los contactos con la palabra, con un **círculo amarillo** (cuántos mensajes) junto al
+  naranja de no leídos; en el chat la palabra va resaltada en amarillo, con la barra «1 de N» ↑ ↓
+  y salto a la coincidencia más reciente. Amarillos = los de la tarjeta amarilla, pero sólidos, con
+  el texto `#1e2a35`, iguales en claro y oscuro (tokens `--busqueda*` en `app/globals.css`). SQL en
+  `lib/inbox/chat-search.ts`, índice de trigramas (`pg_trgm`) de la migración 0050. Detalle:
+  `docs/bandeja.md` › "Búsqueda en los chats".
 - **Paneles que se ocultan** (lista y Detalle de la Bandeja, Detalle del pop-up del Embudo):
   se recuerdan por computadora con `components/ui/use-persistent-toggle.ts` (localStorage con
   try/catch; sin almacenamiento, abierto por defecto; sin parpadeo). Cualquier panel nuevo que se

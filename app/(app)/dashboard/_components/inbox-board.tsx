@@ -23,6 +23,7 @@ import { useInboxStream } from "./use-inbox-stream";
 import { mergeItems } from "@/lib/inbox/list-merge";
 import { useOpenContactRequests } from "../../_components/open-contact";
 import { CloseX } from "@/components/ui/close-x";
+import { chatSearchTerm } from "@/lib/text/search";
 
 // ¿La pestaña está realmente a la vista? Solo entonces se marca leído por una
 // llegada en vivo (una pestaña en segundo plano no debe limpiar el contador
@@ -41,6 +42,11 @@ export function InboxBoard({ openContactId = null }: { openContactId?: string | 
   // recuerda entre recargas, igual que la búsqueda.
   const [temperature, setTemperature] = useState<TemperatureFilter | null>(null);
   const [search, setSearch] = useState("");
+  // Lupa amarilla (29-sep-2026): el mismo buscador busca DENTRO de los chats. No se
+  // recuerda entre recargas, igual que la búsqueda. `chatTerm` = el término con el que se
+  // pidió la lista que se ve (resalta su vista previa y el chat abierto).
+  const [searchChats, setSearchChats] = useState(false);
+  const [chatTerm, setChatTerm] = useState<string | null>(null);
   const [loadingList, setLoadingList] = useState(true);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [detail, setDetail] = useState<ConversationDetail | null>(null);
@@ -60,6 +66,7 @@ export function InboxBoard({ openContactId = null }: { openContactId?: string | 
   const filterRef = useRef(filter);
   const temperatureRef = useRef(temperature);
   const searchRef = useRef(search);
+  const searchChatsRef = useRef(searchChats);
   const nextCursorRef = useRef<string | null>(null);
   const loadingMoreRef = useRef(false);
   const loadedCountRef = useRef(0);
@@ -72,6 +79,7 @@ export function InboxBoard({ openContactId = null }: { openContactId?: string | 
     filterRef.current = filter;
     temperatureRef.current = temperature;
     searchRef.current = search;
+    searchChatsRef.current = searchChats;
     nextCursorRef.current = nextCursor;
     loadingMoreRef.current = loadingMore;
     loadedCountRef.current = conversations.length;
@@ -94,6 +102,7 @@ export function InboxBoard({ openContactId = null }: { openContactId?: string | 
     filter: filterRef.current,
     temperature: temperatureRef.current,
     search: searchRef.current.trim() || undefined,
+    searchChats: searchChatsRef.current,
   });
 
   /**
@@ -107,6 +116,7 @@ export function InboxBoard({ openContactId = null }: { openContactId?: string | 
     // vuelve a pedir al terminar: la foto completa, más vieja, no lo pisa.
     touchedDuringRefreshRef.current = new Set();
     const want = keepLoaded ? loadedCountRef.current : 0;
+    const term = searchChatsRef.current ? chatSearchTerm(searchRef.current) : null;
     let page = await listConversations(params());
     let items = page.items;
     while (page.nextCursor && items.length < want && generation === generationRef.current) {
@@ -116,6 +126,7 @@ export function InboxBoard({ openContactId = null }: { openContactId?: string | 
     }
     if (generation !== generationRef.current) return;
     setConversations(items);
+    setChatTerm(term);
     setNextCursor(page.nextCursor);
     setLoadingList(false);
     const touched = touchedDuringRefreshRef.current;
@@ -202,11 +213,11 @@ export function InboxBoard({ openContactId = null }: { openContactId?: string | 
     if (selectedIdRef.current === id) setDetail(next);
   }, []);
 
-  // Lista: recarga al cambiar filtro; búsqueda con debounce.
+  // Lista: recarga al cambiar filtro, la lupa o la búsqueda (con debounce).
   useEffect(() => {
     const t = setTimeout(() => void refreshList(), 250);
     return () => clearTimeout(t);
-  }, [filter, temperature, search, refreshList]);
+  }, [filter, temperature, search, searchChats, refreshList]);
 
   useEffect(() => () => clearTimeout(flushTimerRef.current), []);
 
@@ -442,6 +453,8 @@ export function InboxBoard({ openContactId = null }: { openContactId?: string | 
             filter={filter}
             temperature={temperature}
             search={search}
+            searchChats={searchChats}
+            chatTerm={chatTerm}
             loading={loadingList}
             nowMs={nowMs}
             hasMore={nextCursor !== null}
@@ -451,6 +464,7 @@ export function InboxBoard({ openContactId = null }: { openContactId?: string | 
             onFilterChange={setFilter}
             onTemperatureFilterChange={setTemperature}
             onSearchChange={setSearch}
+            onSearchChatsChange={setSearchChats}
             onToggleStar={toggleStar}
             onChangeTemperature={changeTemperature}
             onSetUnread={setUnread}
@@ -476,6 +490,7 @@ export function InboxBoard({ openContactId = null }: { openContactId?: string | 
             detail={detail}
             revalToken={revalToken}
             nowMs={nowMs}
+            searchTerm={chatTerm}
             onBack={() => {
               setSelectedId(null);
               setDetail(null);
