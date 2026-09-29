@@ -15,7 +15,10 @@ feature/*  →  staging (se valida en https://crm-diluvium-staging.up.railway.ap
   rechaza `railwayConfigFile`). Los comandos están versionados en `package.json`:
   - web: `npm run start:web` (= `drizzle-kit migrate && next start`): cada deploy migra antes de
     arrancar, así que una migración nueva se prueba en staging antes de llegar a producción;
-  - worker: `npm run start:worker` (= `tsx worker/index.ts`), build sin `next build`.
+  - worker: Custom Start Command `node --import tsx worker/index.ts` (igual que `npm run start:worker`,
+    que hace `exec` de lo mismo) y **Draining 60 s**, build sin `next build`. Sin `npx`/`npm` en medio para
+    que el aviso de apagado (SIGTERM) llegue al código y el worker termine lo que está en curso antes de
+    cada despliegue (antes se cortaba de golpe: 0 s por defecto; revisión completa B8/B9, 28-sep-2026).
   El *Custom Start Command* de cada servicio en Railway debe ser exactamente ese script; al
   crear un servicio o un environment nuevo, es lo primero que se revisa.
 - Para validar una rama, mérgala a `staging` y haz push. Cuando esté validada, abre el PR a `main`.
