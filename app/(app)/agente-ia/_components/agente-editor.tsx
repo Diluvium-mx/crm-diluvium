@@ -31,6 +31,7 @@ import { HistoryPanel } from "./history-panel";
 import { SizeRangesSection } from "./size-ranges-section";
 import { StagesEditor } from "../../_components/stages-editor";
 import { useConfirm } from "./use-confirm";
+import { useLogoMotions } from "./use-logo-motions";
 import type { SizeRange } from "@/lib/contacts/sizes";
 
 function Section({ title, hint, children }: { title: string; hint?: string; children: React.ReactNode }) {
@@ -167,6 +168,8 @@ export function AgenteEditor({
   const [section, setSection] = useState<AgentSection>(initialSection);
   const [agentName, setAgentName] = useState(data.agentName);
   const [dirty, setDirty] = useState<Dirty>({});
+  // Un solo sorteo por página para Modelo 1 y Modelo 2: la misma marca se mueve igual en los dos.
+  const logoMotions = useLogoMotions();
   const sentinelRef = useRef<HTMLDivElement>(null);
   const listRef = useRef<HTMLDivElement>(null);
   const tabRefs = useRef<Partial<Record<AgentSection, HTMLButtonElement | null>>>({});
@@ -291,9 +294,9 @@ export function AgenteEditor({
           hint={`Los modelos que piensan y redactan las respuestas: cada etapa del Embudo usa el Modelo 1 o el Modelo 2. ${costHint(data.costBasis)}`}
         >
           <SubTitle title="Modelo 1" hint="Por defecto GPT-5.6 Luna: el más económico, para las primeras preguntas." />
-          <Model1Picker options={data.model1Options} value={data.modelo1} agentName={agentName} />
+          <Model1Picker options={data.model1Options} value={data.modelo1} agentName={agentName} motions={logoMotions} />
           <SubTitle title="Modelo 2" hint="Por defecto Claude Sonnet 5: el más capaz, para datos bancarios y comprobantes." />
-          <BrainModelPicker options={data.brainOptions} value={data.modeloCerebro} agentName={agentName} />
+          <BrainModelPicker options={data.brainOptions} value={data.modeloCerebro} agentName={agentName} motions={logoMotions} />
           <SubTitle title="Qué modelo atiende cada etapa" hint="Se usa la etapa del contacto en el momento de responder. Se elige por etapa en la subpestaña Etapas." />
           <button
             type="button"

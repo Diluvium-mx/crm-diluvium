@@ -38,7 +38,8 @@ clientes** (eso llega en la Fase B y siguientes).
   - **Modelos** (Fase E, 25-sep-2026): selector del **Modelo 1** (recomendado
     Luna) y del **Modelo 2** (recomendado Sonnet 5), cada opción con su costo aproximado por
     cada 100 conversaciones, el **logo de la marca del modelo** a la derecha (desde el 28-sep-2026;
-    SVG en `public/logos-ia/`, mapa en `lib/ai/logos.ts`, campo `logo` del catálogo) y en gris si
+    SVG en `public/logos-ia/`, mapa en `lib/ai/logos.ts`, campo `logo` del catálogo; al pasar el
+    mouse se mueve con un movimiento sorteado por visita, `lib/ai/logo-motions.ts`) y en gris si
     falta su llave, y **qué modelo atiende cada etapa**
     del Embudo ("Modelo 1 | Modelo 2" por etapa; se usa la etapa del contacto al responder).
     La sección **Empresa** se quitó el 25-sep (el Goal ya dice quién es la empresa;

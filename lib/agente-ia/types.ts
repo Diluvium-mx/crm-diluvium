@@ -1,4 +1,4 @@
-import type { ModelTier, ProviderId } from "@/lib/ai/types";
+import type { ModelLogo, ModelTier, ProviderId } from "@/lib/ai/types";
 import type { FunnelStage } from "@/lib/contacts/stages";
 import type { CostBasis } from "./model-cost";
 import type { BotOptions } from "./opciones";
@@ -16,7 +16,9 @@ export type ModelOptionView = {
   provider: ProviderId;
   providerLabel: string;
   // Logo de la marca a la derecha de la tarjeta (lib/ai/logos.ts); `logoMono` =
-  // negro de un color, se invierte en modo oscuro.
+  // negro de un color, se invierte en modo oscuro. `logo` = la marca (su movimiento al
+  // pasar el mouse sale de lib/ai/logo-motions.ts).
+  logo: ModelLogo;
   logoSrc: string;
   logoMono: boolean;
   tier: ModelTier;

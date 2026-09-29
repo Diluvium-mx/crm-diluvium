@@ -15,6 +15,8 @@
 //              además se apaga al atender la tarjeta (resolved_at). «Marcar como leído»
 //              no lo apaga.
 //   - lastInboundAt: último mensaje del cliente (ordena la columna en vivo).
+//   - starred:  alguno de sus chats tiene la estrella de la Bandeja (is_starred): cuenta
+//              como «Destacado» en el filtro del Embudo (lib/contacts/filters.ts).
 // Multi-tenant (CLAUDE.md §7): toda lectura filtra por organization_id.
 import { sql } from "drizzle-orm";
 import { db } from "@/lib/db";
@@ -84,16 +86,19 @@ export async function funnelSignalsForOrg(
     pending: boolean;
     urgent: boolean;
     last_window_ms: number | string | null;
+    starred: boolean;
   }>(sql`
     select contact_id,
            coalesce(sum(unread_count), 0)::int as unread,
            coalesce(bool_or(pending), false) as pending,
            coalesce(bool_or(urgent), false) as urgent,
-           (extract(epoch from max(window_expires_at)) * 1000)::float8 as last_window_ms
+           (extract(epoch from max(window_expires_at)) * 1000)::float8 as last_window_ms,
+           coalesce(bool_or(is_starred), false) as starred
     from (
       select c.contact_id,
              c.unread_count,
              c.window_expires_at,
+             c.is_starred,
              -- Azul: el último mensaje es del cliente y llegó después de «Marcar como
              -- leído» (misma hora de la base en las dos: created_at y attended_at).
              last_msg.direction = 'in' and (c.attended_at is null or last_msg.created_at > c.attended_at) as pending,
@@ -138,7 +143,7 @@ export async function funnelSignalsForOrg(
         ${scope}
     ) per_conversation
     group by contact_id
-    ${targeted ? sql`` : sql`having sum(unread_count) > 0 or bool_or(pending) or bool_or(urgent) or max(window_expires_at) > ${now}`}
+    ${targeted ? sql`` : sql`having sum(unread_count) > 0 or bool_or(pending) or bool_or(urgent) or bool_or(is_starred) or max(window_expires_at) > ${now}`}
   `);
 
   const out: Record<string, FunnelSignal> = {};
@@ -148,6 +153,7 @@ export async function funnelSignalsForOrg(
       pending: r.pending === true,
       urgent: r.urgent === true,
       lastInboundAt: lastInboundFromWindow(r.last_window_ms),
+      starred: r.starred === true,
     };
   }
   return out;

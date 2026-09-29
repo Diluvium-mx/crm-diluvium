@@ -33,6 +33,8 @@ import { ContactCard, ContactCardContent } from "./contact-card";
 import { ContactDetailPanel } from "./contact-detail-panel";
 import { phoneMatchesSearch } from "@/lib/phone-format";
 import { normalizeSearch } from "@/lib/text/search";
+import { hasCardFilter, matchesCardFilter, type TemperatureFilter } from "@/lib/contacts/filters";
+import { CardFilterButton } from "../../_components/card-filter-button";
 import { funnelTone, type FunnelSignal } from "@/lib/contacts/funnel-tone";
 import { useInboxStream } from "../../dashboard/_components/use-inbox-stream";
 import { setContactUnread } from "@/lib/inbox/actions";
@@ -55,12 +57,15 @@ function StageColumn({
   stage,
   contacts,
   signals,
+  filtered,
   onCardClick,
   onSetUnread,
 }: {
   stage: FunnelStage;
   contacts: BoardContact[];
   signals: Signals;
+  /** Hay filtro de temperatura/Destacado activo: la columna vacía lo dice. */
+  filtered: boolean;
   onCardClick: (contactId: string) => void;
   onSetUnread: (contactId: string, unread: boolean) => void;
 }) {
@@ -112,7 +117,7 @@ function StageColumn({
 
       <div ref={setColumnRef} className="min-h-0 flex-1 overflow-y-auto p-2">
         {contacts.length === 0 ? (
-          <p className="p-2 text-center text-xs text-muted-foreground">Sin contactos</p>
+          <p className="p-2 text-center text-xs text-muted-foreground">{filtered ? "Ninguno con este filtro" : "Sin contactos"}</p>
         ) : (
           <div style={{ height: rowVirtualizer.getTotalSize(), position: "relative", width: "100%" }}>
             {virtualItems.map((virtualRow) => {
@@ -179,6 +184,11 @@ export function ContactsBoard({
   const [liveAdded, setLiveAdded] = useState<BoardContact[]>([]);
   const [syncedInitialContacts, setSyncedInitialContacts] = useState(initialContacts);
   const [search, setSearch] = useState("");
+  // Filtro por temperatura (una a la vez) y ⭐ Destacado (estrella del chat o temperatura
+  // ⭐), combinables; se suman al buscador. Las columnas no cambian: mismas etapas, orden y
+  // colores; solo quedan las tarjetas que cumplen. No se recuerda entre recargas.
+  const [temperatureFilter, setTemperatureFilter] = useState<TemperatureFilter | null>(null);
+  const [destacadoOnly, setDestacadoOnly] = useState(false);
   const [selectedContactId, setSelectedContactId] = useState<string | null>(() =>
     openContactId && initialContacts.some((contact) => contact.id === openContactId) ? openContactId : null,
   );
@@ -576,17 +586,28 @@ export function ContactsBoard({
   // Sin acentos ni mayúsculas (regla de todo buscador: lib/text/search.ts).
   const normalizedSearch = normalizeSearch(search);
 
+  const cardFilter = useMemo(
+    () => ({ temperature: temperatureFilter, destacado: destacadoOnly }),
+    [temperatureFilter, destacadoOnly],
+  );
+  const filtering = hasCardFilter(cardFilter);
+  // Solo el filtro Destacado lee las señales (estrella del chat): sin él, un cambio de
+  // señal no vuelve a filtrar las ~11k tarjetas.
+  const signalsForFilter = destacadoOnly ? signals : null;
+
   const filteredContacts = useMemo(() => {
-    if (!normalizedSearch) {
+    if (!normalizedSearch && !filtering) {
       return contacts;
     }
 
     return contacts.filter((contact) => {
+      if (filtering && !matchesCardFilter(contact, signalsForFilter?.[contact.id]?.starred, cardFilter)) return false;
+      if (!normalizedSearch) return true;
       const nameMatches = normalizeSearch(getContactFullName(contact)).includes(normalizedSearch);
       const phoneMatches = phoneMatchesSearch(contact.phoneE164, normalizedSearch);
       return nameMatches || phoneMatches;
     });
-  }, [contacts, normalizedSearch]);
+  }, [contacts, normalizedSearch, filtering, cardFilter, signalsForFilter]);
 
   // Cada columna, de más reciente a más viejo: el que escribió al último (o entró a la
   // etapa al último) va arriba, también en vivo con la hora que trae la señal del SSE.
@@ -720,6 +741,7 @@ export function ContactsBoard({
       pending: unread ? (previous?.pending ?? false) : false,
       urgent: previous?.urgent ?? false,
       lastInboundAt: previous?.lastInboundAt ?? null,
+      starred: previous?.starred ?? false,
     };
     setError(null);
     setSignals((current) => ({ ...current, [contactId]: next }));
@@ -846,6 +868,12 @@ export function ContactsBoard({
             onChange={(event) => setSearch(event.target.value)}
             className="min-w-0 flex-1 rounded border px-3 py-2 text-sm sm:w-72 sm:flex-none"
           />
+          <CardFilterButton
+            temperature={temperatureFilter}
+            onTemperatureChange={setTemperatureFilter}
+            destacado={destacadoOnly}
+            onDestacadoChange={setDestacadoOnly}
+          />
         </div>
       </div>
 
@@ -874,6 +902,7 @@ export function ContactsBoard({
               stage={stage}
               contacts={columns.get(stage.key) ?? []}
               signals={signals}
+              filtered={filtering}
               onCardClick={handleCardClick}
               onSetUnread={handleSetUnread}
             />
