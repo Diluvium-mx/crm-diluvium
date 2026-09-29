@@ -41,7 +41,7 @@ export const NOTICE_CARD_TEXT = "El cliente escribió, pero WhatsApp no pasó el
 export const NOTICE_RECEIVING_TEXT = "Recibiendo mensaje…";
 /** Respuesta del Agente IA, EXACTA como la escribió el dueño (29-sep-2026). */
 export const UNAVAILABLE_REPLY_TEXT =
-  "¡Hola! Gracias por escribirnos 😊 Tuvimos una falla técnica y su mensaje no nos llegó. ¿Nos ayudas escribiéndolo de nuevo para seguir con tu atención?";
+  "¡Hola! Gracias por escribirnos 😊 Tuvimos una falla técnica y su mensaje no nos llegó. ¿Nos ayudas escribiéndolo de nuevo para seguir con su atención?";
 /** Cómo lo leen el Agente IA y el lector en el historial (en vez del texto crudo). */
 export const UNAVAILABLE_HISTORY_NOTE =
   "[Primer mensaje del cliente: no llegó por una falla técnica de WhatsApp; no se sabe qué decía]";
