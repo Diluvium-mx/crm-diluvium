@@ -54,10 +54,11 @@ describe("stageToastFor", () => {
     );
   });
 
-  it("nunca avisa un cambio del mismo usuario (a mano o por su /banco)", () => {
-    expect(stageToastFor(event({ by: { kind: "vendedor", userId: ME, name: "Yo" } }), ME)).toBeNull();
-    expect(stageToastFor(event({ by: { kind: "automatizacion", userId: ME } }), ME)).toBeNull();
-    // El /banco de OTRO vendedor sí.
+  it("también avisa a quien hizo el cambio (a mano o por su /banco): todos ven el mismo aviso", () => {
+    expect(stageToastFor(event({ by: { kind: "vendedor", userId: ME, name: "Luis Admin" } }), ME)?.mobileText).toBe(
+      "👨🏽‍💻 Luis movió a Juan Pérez a Interesado",
+    );
+    expect(stageToastFor(event({ by: { kind: "automatizacion", userId: ME } }), ME)).not.toBeNull();
     expect(stageToastFor(event({ by: { kind: "automatizacion", userId: "u_otro" } }), ME)).not.toBeNull();
   });
 

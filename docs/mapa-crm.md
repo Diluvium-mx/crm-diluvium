@@ -404,9 +404,10 @@ en el chat después).
 
 #### 3.2.4 Avisos emergentes
 
-Cuadros que bajan debajo de la barra de arriba, en cualquier pantalla, cuando **otra persona o el agente**
+Cuadros que bajan debajo de la barra de arriba, en cualquier pantalla, cuando **alguien o el agente**
 cambia la etapa de un contacto. Duran 10 segundos; si llegan más de 3 juntos se agrupan en "N contactos
-cambiaron de etapa". Nunca avisan lo que tú mismo hiciste. **En el celular** son distintos (4 segundos, centrados
+cambiaron de etapa". Desde el 29-sep-2026 también te salen tus propios cambios: todos los que tienen el CRM
+abierto ven el mismo aviso. **En el celular** son distintos (4 segundos, centrados
 arriba, 👨🏽‍💻 para el vendedor y grupo que se despliega): ver [Versión móvil](#310-versión-móvil-celular), punto 12.
 
 ![Avisos emergentes](mapa-crm/03-aviso-emergente.png)
@@ -414,7 +415,7 @@ arriba, 👨🏽‍💻 para el vendedor y grupo que se despliega): ver [Versió
 | # | Nombre oficial | Qué hace | Quién lo ve |
 |---|---|---|---|
 | 1 | **🤖 Agente IA movió a … a …** | El agente avanzó la etapa. Clic abre su chat en la Bandeja. | Todos |
-| 2 | **"Adriana movió a … a …"** | Otro vendedor (o una automatización, "⚙️ Automatización movió…") cambió la etapa. | Todos |
+| 2 | **"Adriana movió a … a …"** | Una persona (vendedor, admin u owner, tú incluido) o una automatización ("⚙️ Automatización movió…") cambió la etapa. | Todos |
 | 3 | **✕ Cerrar aviso** | Lo quita antes de los 10 segundos. | Todos |
 
 **Lo cambias tú desde la pantalla:** nada; solo cerrarlos.

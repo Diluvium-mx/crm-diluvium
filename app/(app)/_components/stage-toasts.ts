@@ -1,8 +1,9 @@
 // Avisos emergentes de "cambió de etapa" (decisión del dueño, 26-sep-2026). PURO
 // (sin React): qué aviso sale por cada evento `contact.updated` y cómo se apilan.
 // Reglas:
-// - Solo cambios de ETAPA hechos por otro: el Agente IA, una automatización u otro
-//   vendedor. Nunca el del mismo usuario que lo ve (tampoco su /banco).
+// - Solo cambios de ETAPA: del Agente IA, de una automatización o de una persona
+//   (vendedor, admin u owner). Desde el 29-sep-2026 (pedido del dueño) también le sale a
+//   QUIEN hizo el cambio: todos los que tienen el CRM abierto ven el mismo aviso.
 // - Cada aviso dura 10 s. Máximo 3 a la vez; si llega otro con 3 a la vista, se
 //   juntan en uno ("5 contactos cambiaron de etapa") y los siguientes se suman a él.
 // - El mismo contacto otra vez: se actualiza su aviso (no se apila).
@@ -32,10 +33,11 @@ function firstName(name: string): string {
  * de la etapa por su clave (las columnas del Embudo son editables; la clave viaja
  * en el evento y el nombre lo pone quien lo muestra).
  */
-export function stageToastFor(event: ContactUpdatedEvent, viewerUserId: string, labelOf: (key: string) => string = (k) => k): StageToastInfo | null {
+// `_viewerUserId` se conserva en la firma: antes excluía los cambios propios (regla
+// quitada el 29-sep-2026) y así los llamadores no cambian si vuelve a hacer falta.
+export function stageToastFor(event: ContactUpdatedEvent, _viewerUserId: string, labelOf: (key: string) => string = (k) => k): StageToastInfo | null {
   if (!event.stage || !event.changes.includes("etapa")) return null;
   const by = event.by;
-  if (by.kind !== "agente" && by.userId === viewerUserId) return null;
   const who =
     by.kind === "agente" ? "🤖 Agente IA" : by.kind === "automatizacion" ? "⚙️ Automatización" : firstName(by.name) || "Un vendedor";
   // En el celular el vendedor (humano) lleva 👨🏽‍💻, como el 🤖 del Agente IA.
