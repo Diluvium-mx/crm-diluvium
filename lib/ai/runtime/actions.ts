@@ -18,6 +18,7 @@ import { listFunnelStages } from "@/lib/contacts/funnel-stages";
 import { notifyContactUpdated } from "@/lib/contacts/notify-updated";
 import { furthestStage, roleKey, stageLabel, type FunnelStage } from "@/lib/contacts/stages";
 import type { StartRunInput, StartRunResult } from "@/lib/workflows/executor";
+import { startOnlyEligible } from "@/lib/workflows/start-only";
 import { addNotice } from "./notices";
 import { buildAgentTools, type AgentTools, type AvisoMotivo, type ValidToolCall } from "./tools";
 
@@ -33,9 +34,15 @@ export type StartWorkflow = (input: StartRunInput) => Promise<StartRunResult>;
 
 // Herramientas de la organización en orden estable (position): workflows de
 // media habilitados con disparador "agente", más mover_etapa con las etapas vigentes.
-export async function loadAgentTools(organizationId: string, stages: readonly FunnelStage[]): Promise<AgentTools> {
-  const rows = await db
-    .select({ id: workflows.id, slug: workflows.slug, name: workflows.name, description: workflows.agentDescription })
+// Con la conversación: un workflow «solo al inicio» que ya no aplica (ya le contestaron o
+// ya le salió a este contacto) no se ofrece; el modelo no promete algo que no saldría.
+export async function loadAgentTools(
+  organizationId: string,
+  stages: readonly FunnelStage[],
+  conversation?: { id: string; contactId: string },
+): Promise<AgentTools> {
+  const all = await db
+    .select({ id: workflows.id, slug: workflows.slug, name: workflows.name, description: workflows.agentDescription, startOnly: workflows.triggerStartOnly })
     .from(workflows)
     .where(
       and(
@@ -49,6 +56,10 @@ export async function loadAgentTools(organizationId: string, stages: readonly Fu
       ),
     )
     .orderBy(asc(workflows.position), asc(workflows.slug));
+  const startOnly = all.filter((w) => w.startOnly).map((w) => w.id);
+  const eligible =
+    conversation && startOnly.length ? await startOnlyEligible(organizationId, conversation.id, conversation.contactId, startOnly) : new Set<string>();
+  const rows = all.filter((w) => !w.startOnly || eligible.has(w.id));
   return buildAgentTools(rows, stages);
 }
 
