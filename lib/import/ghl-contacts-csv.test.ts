@@ -90,8 +90,8 @@ describe("parseGhlContactsCsv (formato real de GHL)", () => {
     const csv = `${header}\n${line({
       id: "id-1",
       first: "Adrian",
-      phone: "+526680000004",
-      email: "cliente3@example.com",
+      phone: "+526151510099",
+      email: "cliente.cerca@example.com",
       tags: "inbound whatsapp, fb-ad-lead-whatsapp, wa: 5216682419579, video-instalacion-enviado, another-device-replied-whatsapp",
       country: "Mexico",
       opps: "open Embudo de ventas Diluvium Cerca de compra",
@@ -103,9 +103,9 @@ describe("parseGhlContactsCsv (formato real de GHL)", () => {
         row({
           ghlContactId: "id-1",
           firstName: "Adrian",
-          phoneE164: "+526680000004",
+          phoneE164: "+526151510099",
           phoneMissing: false,
-          email: "cliente3@example.com",
+          email: "cliente.cerca@example.com",
           country: "Mexico",
           sourceChannel: "fb",
           tags: ["video-instalacion-enviado"],
@@ -374,18 +374,20 @@ describe("parseGhlContactsCsv (formato real de GHL)", () => {
     expect(empty.rows[0].email).toBeNull();
   });
 
-  // Las 8 filas reales de referencia (una por etapa + casos borde).
+  // 8 filas SINTÉTICAS con la forma exacta del export de GHL (una por etapa + casos borde:
+  // multi-oportunidad, Opportunities vacía, sin teléfono, tags de sistema). Sin datos de
+  // clientes reales: teléfonos y correos inventados (revisión de seguridad, 28-sep-2026).
   const sampleReal = `${header}
-PRUEBAGHL00000000001,Nombre1,Apellido1,+526680000001,cliente1@example.com,2026-06-08T10:28:39-07:00,Jul 22 2026 02:09 PM,"inbound whatsapp, wa: 5216682419579, transferencia a humano, another-device-replied-whatsapp",Mexico,open Embudo de ventas Diluvium Prospecto
-PRUEBAGHL00000000002,Nombre2,,+526680000002,cliente2@example.com,2026-06-02T14:28:05-07:00,Jun 03 2026 12:59 PM,"inbound whatsapp, wa: 5216682419579, another-device-replied-whatsapp",Mexico,open Embudo de ventas Diluvium Compra
-PRUEBAGHL00000000003,Nombre3,Apellido2,+526680000003,,2026-07-15T11:48:17-07:00,Jul 16 2026 12:31 PM,"inbound whatsapp, wa: 5216682419579, medidas enviadas, another-device-replied-whatsapp",Mexico,open Embudo de ventas Diluvium Interesado
-PRUEBAGHL00000000004,Nombre4,,+526680000004,cliente3@example.com,2026-09-03T15:11:09-07:00,Sep 17 2026 12:03 PM,"inbound whatsapp, fb-ad-lead-whatsapp, wa: 5216682419579, video-instalacion-enviado, another-device-replied-whatsapp",Mexico,open Embudo de ventas Diluvium Cerca de compra
-PRUEBAGHL00000000005,Nombre5,,+526680000005,,2026-09-19T12:46:25-07:00,Sep 19 2026 12:46 PM,"inbound whatsapp, instagram-ad-lead-whatsapp, wa: 5216682419579",Mexico,open Embudo de ventas Diluvium Inbox
-PRUEBAGHL00000000006,Nombre6,Apellido3,,,2026-08-25T13:43:50-07:00,Aug 25 2026 03:49 PM,,Mexico,"open Embudo de ventas Diluvium Inbox, open Embudo de ventas Diluvium Inbox"
-PRUEBAGHL00000000007,Nombre7,,+526680000006,,2026-09-14T09:20:28-07:00,Sep 14 2026 09:20 AM,"wa: 5216682419579, another-device-replied-whatsapp",Mexico,
-PRUEBAGHL00000000008,Nombre8,Apellido4,,,2026-09-18T21:36:17-07:00,Sep 18 2026 09:37 PM,,Mexico,open Embudo de ventas Diluvium Inbox`;
+PRUEBA0000PROSPECTO1,Constructora,Ejemplo,+525540010001,constructora.ejemplo@example.com,2026-06-08T10:28:39-07:00,Jul 22 2026 02:09 PM,"inbound whatsapp, wa: 5216682419579, transferencia a humano, another-device-replied-whatsapp",Mexico,open Embudo de ventas Diluvium Prospecto
+PRUEBA00000000COMPRA,Enrique - prueba (3 compuertas),,+523228810002,cliente.compra@example.com,2026-06-02T14:28:05-07:00,Jun 03 2026 12:59 PM,"inbound whatsapp, wa: 5216682419579, another-device-replied-whatsapp",Mexico,open Embudo de ventas Diluvium Compra
+PRUEBA000INTERESADO1,Alma,Prueba,+527771010003,,2026-07-15T11:48:17-07:00,Jul 16 2026 12:31 PM,"inbound whatsapp, wa: 5216682419579, medidas enviadas, another-device-replied-whatsapp",Mexico,open Embudo de ventas Diluvium Interesado
+PRUEBA0000CERCACOMPR,Aarón,,+526151510004,cliente.cerca@example.com,2026-09-03T15:11:09-07:00,Sep 17 2026 12:03 PM,"inbound whatsapp, fb-ad-lead-whatsapp, wa: 5216682419579, video-instalacion-enviado, another-device-replied-whatsapp",Mexico,open Embudo de ventas Diluvium Cerca de compra
+PRUEBA0000000INBOXIG,Usuaria83,,+526671010005,,2026-09-19T12:46:25-07:00,Sep 19 2026 12:46 PM,"inbound whatsapp, instagram-ad-lead-whatsapp, wa: 5216682419579",Mexico,open Embudo de ventas Diluvium Inbox
+PRUEBA00000MULTIOPP1,Dante,Prueba,,,2026-08-25T13:43:50-07:00,Aug 25 2026 03:49 PM,,Mexico,"open Embudo de ventas Diluvium Inbox, open Embudo de ventas Diluvium Inbox"
+PRUEBA000000SINOPP01,User,,+524521010007,,2026-09-14T09:20:28-07:00,Sep 14 2026 09:20 AM,"wa: 5216682419579, another-device-replied-whatsapp",Mexico,
+PRUEBA0000000SINTEL1,Marisol,Prueba Apellido,,,2026-09-18T21:36:17-07:00,Sep 18 2026 09:37 PM,,Mexico,open Embudo de ventas Diluvium Inbox`;
 
-  it("procesa las 8 filas reales: canal, tags, etapa (incl. multi/vacía) y sin-teléfono", () => {
+  it("procesa las 8 filas de muestra: canal, tags, etapa (incl. multi/vacía) y sin-teléfono", () => {
     const result = parseGhlContactsCsv(sampleReal);
     expectSuccess(result);
     expect(result.totalRows).toBe(8);
@@ -394,41 +396,41 @@ PRUEBAGHL00000000008,Nombre8,Apellido4,,,2026-09-18T21:36:17-07:00,Sep 18 2026 0
 
     const byId = Object.fromEntries(result.rows.map((r) => [r.ghlContactId, r]));
 
-    expect(byId["PRUEBAGHL00000000001"]).toMatchObject({
+    expect(byId["PRUEBA0000PROSPECTO1"]).toMatchObject({
       sourceChannel: "whatsapp",
       tags: ["transferencia a humano"],
       stage: "prospecto",
       country: "Mexico",
-      email: "cliente1@example.com",
+      email: "constructora.ejemplo@example.com",
     });
-    expect(byId["PRUEBAGHL00000000002"]).toMatchObject({ stage: "compra", tags: [] });
-    expect(byId["PRUEBAGHL00000000003"]).toMatchObject({
+    expect(byId["PRUEBA00000000COMPRA"]).toMatchObject({ stage: "compra", tags: [] });
+    expect(byId["PRUEBA000INTERESADO1"]).toMatchObject({
       stage: "interesado",
       tags: ["medidas enviadas"],
     });
-    expect(byId["PRUEBAGHL00000000004"]).toMatchObject({
+    expect(byId["PRUEBA0000CERCACOMPR"]).toMatchObject({
       sourceChannel: "fb",
       tags: ["video-instalacion-enviado"],
       stage: "cerca_compra",
     });
-    expect(byId["PRUEBAGHL00000000005"]).toMatchObject({
+    expect(byId["PRUEBA0000000INBOXIG"]).toMatchObject({
       sourceChannel: "instagram",
       stage: "inbox",
     });
     // Multi-oportunidad (Inbox, Inbox) → inbox.
-    expect(byId["PRUEBAGHL00000000006"]).toMatchObject({
+    expect(byId["PRUEBA00000MULTIOPP1"]).toMatchObject({
       stage: "inbox",
       phoneMissing: true,
     });
     // Opportunities vacía → inbox default, recognized.
-    expect(byId["PRUEBAGHL00000000007"]).toMatchObject({
+    expect(byId["PRUEBA000000SINOPP01"]).toMatchObject({
       stage: "inbox",
       stageRecognized: true,
       pipelineStage: null,
     });
-    // Marissa: sin teléfono, entra igual.
-    expect(byId["PRUEBAGHL00000000008"]).toMatchObject({
-      firstName: "Marissa",
+    // Marisol: sin teléfono, entra igual.
+    expect(byId["PRUEBA0000000SINTEL1"]).toMatchObject({
+      firstName: "Marisol",
       phoneMissing: true,
       stage: "inbox",
     });

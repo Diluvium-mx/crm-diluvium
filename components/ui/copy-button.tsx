@@ -1,6 +1,7 @@
 "use client";
 
-// Botón «Copiar» (Agente IA › Instrucciones y FAQs, 28-sep-2026): copia al portapapeles
+// Botón «Copiar» (Agente IA › Instrucciones y FAQs; Automatización › Workflows con
+// `iconOnly`, solo el ícono, 28-sep-2026): copia al portapapeles
 // el texto que da `getText` al momento del clic y confirma con "Copiado" 2 s. Si el
 // navegador no deja usar el portapapeles moderno, usa el método viejo; si tampoco,
 // avisa "No se pudo copiar".
@@ -37,11 +38,14 @@ async function writeClipboard(text: string): Promise<boolean> {
 export function CopyButton({
   getText,
   title,
+  iconOnly = false,
   className = "",
 }: {
   getText: () => string;
   /** Qué copia (tooltip y lector de pantalla), p. ej. "Copiar todas las FAQs". */
   title: string;
+  /** Solo el ícono (el texto queda para el lector de pantalla y el tooltip). */
+  iconOnly?: boolean;
   className?: string;
 }) {
   const [state, setState] = useState<"idle" | "copied" | "failed">("idle");
@@ -55,20 +59,28 @@ export function CopyButton({
     timer.current = setTimeout(() => setState("idle"), FEEDBACK_MS);
   }
 
+  const label = state === "copied" ? "Copiado" : state === "failed" ? "No se pudo copiar" : "Copiar";
+  const icon = iconOnly ? "size-4" : "size-3.5";
   return (
     <button
       type="button"
       onClick={() => void copy()}
-      title={title}
+      title={state === "idle" ? title : label}
       aria-label={title}
-      className={`inline-flex shrink-0 items-center gap-1.5 rounded border border-black/15 bg-card px-2 py-1 text-xs font-medium text-foreground shadow-sm hover:bg-muted dark:border-white/15 ${className}`}
+      className={`inline-flex shrink-0 items-center text-foreground hover:bg-muted ${
+        iconOnly
+          ? "justify-center rounded-md border p-2.5"
+          : "gap-1.5 rounded border border-black/15 bg-card px-2 py-1 text-xs font-medium shadow-sm dark:border-white/15"
+      } ${className}`}
     >
       {state === "copied" ? (
-        <Check className="size-3.5 text-emerald-600 dark:text-emerald-400" aria-hidden="true" />
+        <Check className={`${icon} text-emerald-600 dark:text-emerald-400`} aria-hidden="true" />
       ) : (
-        <Copy className="size-3.5" aria-hidden="true" />
+        <Copy className={`${icon} ${state === "failed" ? "text-red-600" : ""}`} aria-hidden="true" />
       )}
-      <span aria-live="polite">{state === "copied" ? "Copiado" : state === "failed" ? "No se pudo copiar" : "Copiar"}</span>
+      <span aria-live="polite" className={iconOnly ? "sr-only" : undefined}>
+        {label}
+      </span>
     </button>
   );
 }
