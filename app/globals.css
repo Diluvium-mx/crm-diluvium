@@ -518,3 +518,10 @@
     animation: logo-latido 650ms ease-in-out;
   }
 }
+
+/* Barra de tiempo del aviso emergente en el celular (stage-change-toasts.tsx): se vacía
+   de lado a lado en lo que le queda al aviso. */
+@keyframes toast-drain {
+  from { width: 100%; }
+  to { width: 0%; }
+}

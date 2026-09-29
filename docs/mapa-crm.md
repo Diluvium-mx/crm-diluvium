@@ -406,7 +406,8 @@ en el chat después).
 
 Cuadros que bajan debajo de la barra de arriba, en cualquier pantalla, cuando **otra persona o el agente**
 cambia la etapa de un contacto. Duran 10 segundos; si llegan más de 3 juntos se agrupan en "N contactos
-cambiaron de etapa". Nunca avisan lo que tú mismo hiciste.
+cambiaron de etapa". Nunca avisan lo que tú mismo hiciste. **En el celular** son distintos (4 segundos, centrados
+arriba, 👨🏽‍💻 para el vendedor y grupo que se despliega): ver [Versión móvil](#310-versión-móvil-celular), punto 12.
 
 ![Avisos emergentes](mapa-crm/03-aviso-emergente.png)
 
@@ -900,6 +901,7 @@ números dibujados: el número de la tabla nombra la pieza.
 | 9 | **Demás pantallas** | Dashboard, Mensajes rápidos, Anuncios, Agente IA, Automatización y Configuración se acomodan en una sola columna. **Nada se desliza de lado** (solo el Embudo, 7): las tablas de Anuncios, Vendedores y Corridas se apilan como tarjetas y las subpestañas de Agente IA se acomodan en varios renglones. | Todos |
 | 10 | **✕ roja (cerrar)** | En el celular todo lo que se abre encima se cierra con una ✕ blanca en círculo rojo: el menú ☰, el Detalle del contacto (5), el pop-up del Embudo (8), los selectores del chat (⚡ mensajes rápidos, 📄 plantillas, 🕒 programar y el buscador "/"), el visor de fotos, Nuevo contacto, Columnas del Embudo y el formulario de Mensajes rápidos. En escritorio no cambia nada (Esc, "Cerrar" o la ✕ chica de siempre). | Todos |
 | 11 | **▶ Automatizaciones** | Botón nuevo en la caja del chat (Bandeja y pop-up del Embudo), solo en el celular. Abre una lista como la de ⚡ con los workflows **encendidos** de Automatización: miniatura cuadrada de la imagen o el video (con el ícono de imagen/video a media opacidad encima; documento con su ícono), nombre, comando y el mensaje predeterminado. Tocar uno manda exactamente lo mismo que escribir su comando (el mensaje y el archivo, en su orden). En escritorio siguen con "/". | Todos |
+| 12 | **Avisos emergentes (móvil)** | Tarjetas azules delgadas, **centradas arriba** debajo de la barra; no llegan al centro ni tapan el chat. Texto completo de quién hizo el cambio: "🤖 Agente IA movió a … a …", "👨🏽‍💻 Daniel movió a … a …" (vendedor) o "⚙️ Automatización movió…". Duran **4 segundos**, con una barra naranja delgada abajo que se vacía, y un halo oscuro suave solo alrededor de cada tarjeta. Máximo 3; desde el 4.º se juntan en "N contactos cambiaron de etapa ▾", que al tocarlo despliega cada cambio (tocar uno abre su chat) y "Ver todo en el Embudo"; desplegado no se va solo y al plegarlo vuelve a contar 4 segundos. ✕ blanca para quitarlo. En escritorio siguen como en 3.2.4 (10 segundos). | Todos |
 
 **Lo cambias tú desde la pantalla:** nada nuevo; el tema claro/oscuro sigue en la barra.
 
@@ -915,7 +917,7 @@ números dibujados: el número de la tabla nombra la pieza.
 (viewport), `dashboard/_components/inbox-board.tsx` (una columna, detalle encima), `chat-thread.tsx` (`onBack`),
 `composer.tsx` (dos renglones, corte `sm`), `contactos/_components/contacts-board.tsx` (columnas de una pantalla,
 corte `sm`), `contact-detail-panel.tsx` (pop-up a pantalla completa), `components/ui/use-media-query.ts`, `components/ui/close-x.tsx` (✕ roja), `workflow-picker.tsx` + `listWorkflowQuickSends`
-en `lib/actions/workflows.ts` (▶ Automatizaciones), tablas apiladas con `max-md:block` en `sellers-panel.tsx` y `automatizacion-panel.tsx`, tarjetas en
+en `lib/actions/workflows.ts` (▶ Automatizaciones), `stage-change-toasts.tsx` + `stage-toasts.ts` (avisos móviles), tablas apiladas con `max-md:block` en `sellers-panel.tsx` y `automatizacion-panel.tsx`, tarjetas en
 `components/anuncios/ads-table.tsx`.</sub>
 
 ---
