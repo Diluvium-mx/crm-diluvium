@@ -2,15 +2,19 @@
 
 // Pestaña "Automatización" (Fase D): lista de workflows (habilitar, ordenar,
 // editar, probar), biblioteca de media y corridas recientes. Todos los roles.
-import { useState } from "react";
-import { ArrowDown, ArrowUp, Pencil, Play, Plus, RotateCcw, Trash2 } from "lucide-react";
+// 29-sep-2026 (dueño): el editor tiene una barra fija arriba (← Workflows, Cancelar,
+// Guardar); los cambios se hacen libres y UN solo aviso al guardar los confirma todos
+// juntos; salir con cambios sin guardar pide confirmar (sin cambios, sale directo); el
+// aviso de "guardado" se quita solo (3 s) o con cualquier clic. Sin «Restaurar
+// predeterminados»: se crean solos al abrir la cuenta y no se pueden borrar.
+import { useEffect, useState } from "react";
+import { ArrowDown, ArrowLeft, ArrowUp, Pencil, Play, Plus, Trash2 } from "lucide-react";
 import {
   deleteWorkflow,
   listConversationsForTest,
   listWorkflowRuns,
   listWorkflows,
   reorderWorkflows,
-  restoreDefaultWorkflows,
   runWorkflowTest,
   saveWorkflow,
   toggleWorkflow,
@@ -19,13 +23,22 @@ import {
 } from "@/lib/actions/workflows";
 import type { MediaAssetView } from "@/lib/media-library/service";
 import { CopyButton } from "@/components/ui/copy-button";
+import { TopConfirm, TopNotice } from "@/components/ui/top-confirm";
 import { workflowsAsText } from "@/lib/workflows/as-text";
+import { saveSummary } from "@/lib/workflows/edit-summary";
 import { useFunnelStages } from "../../_components/funnel-stages-provider";
 import { BibliotecaTab } from "./biblioteca-tab";
 import { RUN_STATUS_LABEL, SKIP_REASON_LABEL, STEP_ICON, stepSummary, TRIGGER_LABEL } from "./labels";
 import { toDraft, toInput, WorkflowEditor, type EditorDraft } from "./workflow-editor";
 
 type Tab = "workflows" | "biblioteca" | "corridas";
+// Lo que se está editando: el borrador, cómo estaba al abrirlo (para saber si hay cambios)
+// y el workflow original (null = nuevo).
+type Editing = { draft: EditorDraft; baseline: string; original: WorkflowView | null };
+type Asking = { kind: "salir" } | { kind: "guardar" } | { kind: "borrar"; workflow: WorkflowView };
+
+const DONE_MS = 3_000;
+const draftKey = (d: EditorDraft) => JSON.stringify(toInput(d));
 
 export function AutomatizacionPanel({
   initialWorkflows,
@@ -41,68 +54,119 @@ export function AutomatizacionPanel({
   const [items, setItems] = useState(initialWorkflows);
   const [assets, setAssets] = useState(initialAssets);
   const [runs, setRuns] = useState(initialRuns);
-  const [draft, setDraft] = useState<EditorDraft | null>(null);
+  const [editing, setEditing] = useState<Editing | null>(null);
+  const [asking, setAsking] = useState<Asking | null>(null);
   const [busy, setBusy] = useState(false);
-  const [notice, setNotice] = useState<{ kind: "ok" | "error"; text: string } | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [done, setDone] = useState<{ text: string; ms: number } | null>(null);
   const [testing, setTesting] = useState<WorkflowView | null>(null);
+
+  const dirty = editing !== null && draftKey(editing.draft) !== editing.baseline;
+
+  // El aviso de "listo" se quita solo o con el primer clic en cualquier parte.
+  useEffect(() => {
+    if (!done) return;
+    const timer = setTimeout(() => setDone(null), done.ms);
+    const onPointer = () => setDone(null);
+    document.addEventListener("pointerdown", onPointer);
+    return () => {
+      clearTimeout(timer);
+      document.removeEventListener("pointerdown", onPointer);
+    };
+  }, [done]);
+
+  // Cerrar o recargar la pestaña del navegador con cambios sin guardar: el navegador avisa.
+  useEffect(() => {
+    if (!dirty) return;
+    const onBeforeUnload = (event: BeforeUnloadEvent) => event.preventDefault();
+    window.addEventListener("beforeunload", onBeforeUnload);
+    return () => window.removeEventListener("beforeunload", onBeforeUnload);
+  }, [dirty]);
 
   async function reload() {
     setItems(await listWorkflows());
   }
 
-  async function save() {
-    if (!draft) return;
+  function openEditor(w: WorkflowView | null) {
+    const draft = toDraft(w);
+    setError(null);
+    setEditing({ draft, baseline: draftKey(draft), original: w });
+  }
+
+  function closeEditor() {
+    setEditing(null);
+    setAsking(null);
+    setError(null);
+  }
+
+  // "← Workflows" y "Cancelar" hacen lo mismo: sin cambios sale directo; con cambios, pregunta.
+  function requestExit() {
+    if (dirty) setAsking({ kind: "salir" });
+    else closeEditor();
+  }
+
+  async function confirmSave() {
+    if (!editing) return;
     setBusy(true);
-    setNotice(null);
-    const r = await saveWorkflow(toInput(draft));
+    setError(null);
+    const r = await saveWorkflow(toInput(editing.draft));
     setBusy(false);
-    if (!r.ok) return setNotice({ kind: "error", text: r.error });
+    setAsking(null);
+    if (!r.ok) return setError(r.error);
     await reload();
-    setDraft(null);
-    setNotice({ kind: "ok", text: "Workflow guardado." });
+    closeEditor();
+    setDone({ text: "Workflow guardado.", ms: DONE_MS });
   }
 
   async function toggle(w: WorkflowView) {
-    setNotice(null);
+    setError(null);
     const r = await toggleWorkflow({ id: w.id, enabled: !w.enabled });
-    if (!r.ok) return setNotice({ kind: "error", text: r.error });
+    if (!r.ok) return setError(r.error);
     setItems((cur) => cur.map((x) => (x.id === w.id ? { ...x, enabled: !w.enabled } : x)));
   }
 
-  async function remove(w: WorkflowView) {
-    if (!window.confirm(`¿Borrar el workflow "${w.name}"?`)) return;
+  async function confirmRemove(w: WorkflowView) {
+    setBusy(true);
     const r = await deleteWorkflow({ id: w.id });
-    if (!r.ok) return setNotice({ kind: "error", text: r.error });
+    setBusy(false);
+    setAsking(null);
+    if (!r.ok) return setError(r.error);
     setItems((cur) => cur.filter((x) => x.id !== w.id));
+    setDone({ text: `Workflow «${w.name}» borrado.`, ms: DONE_MS });
   }
 
   async function move(i: number, dir: -1 | 1) {
     const j = i + dir;
     if (j < 0 || j >= items.length) return;
+    setError(null);
     const next = [...items];
     [next[i], next[j]] = [next[j], next[i]];
     setItems(next);
     const r = await reorderWorkflows({ ids: next.map((w) => w.id) });
-    if (!r.ok) setNotice({ kind: "error", text: r.error });
+    if (!r.ok) setError(r.error);
   }
 
-  async function restore() {
-    const r = await restoreDefaultWorkflows();
-    if (!r.ok) return setNotice({ kind: "error", text: r.error });
-    await reload();
-    setNotice({ kind: "ok", text: r.created ? `${r.created} predeterminado(s) restaurados (apagados).` : "No faltaba ningún predeterminado." });
+  function changeTab(t: Tab) {
+    setError(null);
+    setTab(t);
   }
 
   const tabButton = (t: Tab, label: string) => (
     <button
       role="tab"
       aria-selected={tab === t}
-      onClick={() => setTab(t)}
+      onClick={() => changeTab(t)}
       className={`rounded-md px-3 py-1.5 text-sm font-medium transition-colors ${tab === t ? "bg-brand-orange text-brand-white shadow-sm" : "text-muted-foreground hover:text-foreground"}`}
     >
       {label}
     </button>
   );
+
+  const editorTitle = editing ? (editing.original ? `Editar «${editing.original.name}»` : "Nuevo workflow") : "";
+  const summary = editing
+    ? saveSummary(editing.original ? { ...toInput(toDraft(editing.original)) } : null, toInput(editing.draft), labelOf)
+    : null;
+  const canSave = editing !== null && !busy && (editing.original === null || dirty);
 
   return (
     <div className="flex h-[calc(100dvh-4rem)] min-h-0 flex-col">
@@ -115,34 +179,66 @@ export function AutomatizacionPanel({
         </div>
       </header>
 
-      {notice && (
-        <div className={`mx-4 mt-3 rounded-md border px-3 py-2 text-sm ${notice.kind === "ok" ? "border-green-300 bg-green-50 text-green-800 dark:bg-green-950/40 dark:text-green-300" : "border-red-300 bg-red-50 text-red-700 dark:bg-red-950/40 dark:text-red-300"}`}>
-          {notice.text}
-        </div>
-      )}
-
       <div className="min-h-0 flex-1 overflow-y-auto">
+        {tab === "workflows" && editing && (
+          // Barra fija del editor: se queda arriba al bajar por los pasos.
+          <div className="sticky top-0 z-20 border-b bg-card/95 backdrop-blur-sm">
+            <div className="mx-auto flex max-w-4xl items-center gap-2 px-4 py-2.5 sm:gap-3">
+              <button
+                type="button"
+                onClick={requestExit}
+                disabled={busy}
+                aria-label="Regresar a Workflows"
+                title="Regresar a Workflows"
+                className="flex shrink-0 items-center gap-1.5 rounded-md border px-3 py-2 text-sm font-medium hover:bg-muted disabled:opacity-60"
+              >
+                <ArrowLeft className="size-4" aria-hidden="true" />
+                <span className="max-sm:hidden">Workflows</span>
+              </button>
+              <div className="min-w-0 flex-1">
+                <h2 className="truncate text-sm font-semibold">{editorTitle}</h2>
+                {dirty && <p className="truncate text-[11px] text-brand-orange">Cambios sin guardar</p>}
+              </div>
+              <button type="button" onClick={requestExit} disabled={busy} className="shrink-0 rounded-md border px-3 py-2 text-sm hover:bg-muted disabled:opacity-60">
+                Cancelar
+              </button>
+              <button
+                type="button"
+                onClick={() => setAsking({ kind: "guardar" })}
+                disabled={!canSave}
+                title={canSave ? "Guardar todos los cambios" : "No hay cambios que guardar"}
+                className="shrink-0 rounded-md bg-brand-orange px-5 py-2.5 text-base font-semibold text-brand-white shadow-sm hover:bg-brand-orange-light disabled:opacity-50 sm:px-7"
+              >
+                Guardar
+              </button>
+            </div>
+          </div>
+        )}
+
+        {error && (
+          <div className="mx-auto max-w-4xl px-4 pt-3">
+            <div className="rounded-md border border-red-300 bg-red-50 px-3 py-2 text-sm text-red-700 dark:bg-red-950/40 dark:text-red-300">{error}</div>
+          </div>
+        )}
+
         {tab === "biblioteca" && <BibliotecaTab assets={assets} onChanged={setAssets} />}
         {tab === "corridas" && <CorridasTab runs={runs} onRefresh={async () => setRuns(await listWorkflowRuns())} />}
         {tab === "workflows" && (
           <div className="mx-auto max-w-4xl space-y-4 p-4">
-            {draft ? (
+            {editing ? (
               <div className="space-y-4 rounded-lg border bg-card p-4 shadow-sm">
-                <div className="flex items-center justify-between">
-                  <h2 className="text-sm font-semibold">{draft.id ? "Editar workflow" : "Nuevo workflow"}</h2>
+                <div className="flex items-center justify-end">
                   <label className="flex items-center gap-2 text-sm">
-                    <input type="checkbox" checked={draft.enabled} onChange={(e) => setDraft({ ...draft, enabled: e.target.checked })} /> Habilitado
+                    <input type="checkbox" checked={editing.draft.enabled} onChange={(e) => setEditing({ ...editing, draft: { ...editing.draft, enabled: e.target.checked } })} /> Habilitado
                   </label>
                 </div>
-                <WorkflowEditor draft={draft} onChange={setDraft} assets={assets} onAssetsChanged={setAssets} isSystem={items.find((w) => w.id === draft.id)?.isSystem ?? false} />
-                <div className="flex justify-end gap-2">
-                  <button type="button" onClick={() => setDraft(null)} disabled={busy} className="rounded-md border px-3 py-2 text-sm hover:bg-muted">
-                    Cancelar
-                  </button>
-                  <button type="button" onClick={() => void save()} disabled={busy} className="rounded-md bg-brand-orange px-3 py-2 text-sm font-medium text-brand-white hover:bg-brand-orange-light disabled:opacity-60">
-                    {busy ? "Guardando…" : "Guardar"}
-                  </button>
-                </div>
+                <WorkflowEditor
+                  draft={editing.draft}
+                  onChange={(draft) => setEditing({ ...editing, draft })}
+                  assets={assets}
+                  onAssetsChanged={setAssets}
+                  isSystem={editing.original?.isSystem ?? false}
+                />
               </div>
             ) : (
               <>
@@ -160,15 +256,12 @@ export function AutomatizacionPanel({
                         title={`Copiar los ${items.length} workflows (pasos, textos y disparadores)`}
                       />
                     )}
-                    <button type="button" onClick={() => void restore()} className="flex items-center gap-1.5 rounded-md border px-3 py-2 text-sm hover:bg-muted" title="Vuelve a crear los predeterminados que falten">
-                      <RotateCcw className="size-4" aria-hidden="true" /> Restaurar predeterminados
-                    </button>
-                    <button type="button" onClick={() => setDraft(toDraft(null))} className="flex items-center gap-1.5 rounded-md bg-brand-orange px-3 py-2 text-sm font-medium text-brand-white hover:bg-brand-orange-light">
+                    <button type="button" onClick={() => openEditor(null)} className="flex items-center gap-1.5 rounded-md bg-brand-orange px-3 py-2 text-sm font-medium text-brand-white hover:bg-brand-orange-light">
                       <Plus className="size-4" aria-hidden="true" /> Nuevo
                     </button>
                   </div>
                 </div>
-                {items.length === 0 && <p className="rounded-lg border border-dashed p-8 text-center text-sm text-muted-foreground">No hay workflows. Restaura los predeterminados o crea uno.</p>}
+                {items.length === 0 && <p className="rounded-lg border border-dashed p-8 text-center text-sm text-muted-foreground">No hay workflows. Crea uno con «+ Nuevo».</p>}
                 <ul className="space-y-2">
                   {items.map((w, i) => (
                     <li key={w.id} className={`rounded-lg border bg-card p-3 shadow-sm ${w.missingMedia.length ? "border-brand-orange/60" : ""}`}>
@@ -193,11 +286,11 @@ export function AutomatizacionPanel({
                           <IconBtn label="Probar" onClick={() => setTesting(w)} disabled={w.steps.length === 0 || w.missingMedia.length > 0}>
                             <Play className="size-4" />
                           </IconBtn>
-                          <IconBtn label="Editar" onClick={() => setDraft(toDraft(w))}>
+                          <IconBtn label="Editar" onClick={() => openEditor(w)}>
                             <Pencil className="size-4" />
                           </IconBtn>
                           {!w.isSystem && (
-                            <IconBtn label="Borrar" onClick={() => void remove(w)} danger>
+                            <IconBtn label="Borrar" onClick={() => setAsking({ kind: "borrar", workflow: w })} danger>
                               <Trash2 className="size-4" />
                             </IconBtn>
                           )}
@@ -220,12 +313,62 @@ export function AutomatizacionPanel({
         )}
       </div>
 
+      {asking?.kind === "salir" && editing && (
+        <TopConfirm
+          title={`Estás por salir de ${editing.original ? "Editar workflow" : "Nuevo workflow"}`}
+          confirmLabel="Salir sin guardar"
+          cancelLabel="Seguir editando"
+          onConfirm={closeEditor}
+          onCancel={() => setAsking(null)}
+        >
+          Los cambios de edición se perderán.
+        </TopConfirm>
+      )}
+      {asking?.kind === "guardar" && editing && summary && (
+        <TopConfirm
+          title={editing.original ? `¿Guardar los cambios de «${editing.original.name}»?` : `¿Crear el workflow «${editing.draft.name.trim() || "sin nombre"}»?`}
+          confirmLabel="Guardar"
+          pendingLabel="Guardando…"
+          pending={busy}
+          onConfirm={() => void confirmSave()}
+          onCancel={() => setAsking(null)}
+        >
+          {summary.kind === "editar" ? (
+            <div className="space-y-1">
+              <p>
+                <span className="font-medium text-foreground">Antes:</span> {summary.antes}
+              </p>
+              <p>
+                <span className="font-medium text-foreground">Después:</span> {summary.despues}
+              </p>
+            </div>
+          ) : summary.kind === "crear" ? (
+            <p>{summary.resumen}</p>
+          ) : (
+            <p>Se guardan todos los cambios juntos.</p>
+          )}
+        </TopConfirm>
+      )}
+      {asking?.kind === "borrar" && (
+        <TopConfirm
+          title={`¿Borrar el workflow «${asking.workflow.name}»?`}
+          confirmLabel="Borrar"
+          pendingLabel="Borrando…"
+          pending={busy}
+          onConfirm={() => void confirmRemove(asking.workflow)}
+          onCancel={() => setAsking(null)}
+        >
+          Se borra para siempre, junto con sus corridas. Si solo quieres que deje de salir, apágalo con su casilla.
+        </TopConfirm>
+      )}
+      <TopNotice message={asking ? null : (done?.text ?? null)} />
+
       {testing && (
         <TestDialog
           workflow={testing}
           onClose={() => setTesting(null)}
           onDone={(text) => {
-            setNotice({ kind: "ok", text });
+            setDone({ text, ms: 6_000 });
             setTesting(null);
             void listWorkflowRuns().then(setRuns);
           }}
