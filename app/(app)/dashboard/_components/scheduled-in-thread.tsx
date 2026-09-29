@@ -13,6 +13,7 @@ import {
 import { SCHEDULE_TIME_ZONE } from "@/lib/scheduled/rules";
 import type { ScheduledView } from "@/lib/scheduled/types";
 import { ScheduleForm } from "./schedule-form";
+import { LinkedText } from "@/components/ui/linked-text";
 
 const POLL_MS = 30_000;
 
@@ -114,7 +115,9 @@ export function ScheduledInThread({
                       ? "🕒 Enviando…"
                       : `🕒 Programado para ${whenFormat.format(new Date(item.sendAt))}${item.kind === "template" ? " · 📄 plantilla" : ""}`}
               </p>
-              <p className={`mt-0.5 whitespace-pre-wrap break-words ${item.status === "cancelled" ? "line-through" : ""}`}>{item.body}</p>
+              <p className={`mt-0.5 whitespace-pre-wrap break-words ${item.status === "cancelled" ? "line-through" : ""}`}>
+                <LinkedText text={item.body} />
+              </p>
               {item.status === "failed" && item.errorMessage && (
                 <p className="mt-1 text-[11px] text-brand-orange">{item.errorMessage}</p>
               )}
