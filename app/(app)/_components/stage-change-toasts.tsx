@@ -2,8 +2,8 @@
 
 // Aviso emergente de "cambió de etapa" (decisión del dueño, 26-sep-2026): baja
 // debajo de la barra de arriba, en TODAS las secciones del CRM (va en el layout),
-// dura 10 s, se cierra solo o con la X. Solo cambios de etapa hechos por otro
-// (Agente IA, automatización u otro vendedor); reglas y textos en ./stage-toasts.ts.
+// dura 10 s, se cierra solo o con la X. Solo cambios de etapa (Agente IA, automatización
+// o una persona, también quien lo hizo); reglas y textos en ./stage-toasts.ts.
 // Clic: abre el chat de ese contacto en la Bandeja; el grupo abre el Embudo.
 //
 // Versión móvil (< md, decisión del dueño, 29-sep-2026): tarjetas delgadas, centradas
