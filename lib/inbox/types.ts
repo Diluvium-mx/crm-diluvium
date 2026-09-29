@@ -178,6 +178,20 @@ export type ContactChangeActor =
   | { kind: "automatizacion"; userId: string | null };
 
 /** Un contacto cambió (etapa, temperatura, cotización o campos del Detalle). */
+/**
+ * Indicador del Detalle (29-sep-2026): el lector en segundo plano avisa cuando EMPIEZA a leer
+ * el chat de un contacto ("leyendo") y cuando termina ("listo", con cuántos datos cambió, o
+ * "error"). Solo informa: el Detalle en sí se actualiza con contact.updated.
+ */
+export type LectorStatusEvent = {
+  type: "lector.status";
+  contactId: string;
+  conversationId: string;
+  phase: "leyendo" | "listo" | "error";
+  /** Cuántos datos cambió (solo en "listo"). */
+  cambios: number;
+};
+
 export type ContactUpdatedEvent = {
   type: "contact.updated";
   contactId: string;
@@ -211,6 +225,8 @@ export type InboxEvent =
   | { type: "inbox.bulk"; contactos: number }
   /** Un contacto cambió: la UI vuelve a pedir ese contacto (lib/contacts/notify-updated.ts). */
   | ContactUpdatedEvent
+  /** El Agente IA empezó o terminó de leer en segundo plano el chat de un contacto (lector.ts). */
+  | LectorStatusEvent
   /** Las etapas del Embudo cambiaron (editor): la UI vuelve a pedir la lista. Al borrar una, cuántos contactos pasaron de `from` a `to`. */
   | StagesUpdatedEvent
   | { type: "reload" };

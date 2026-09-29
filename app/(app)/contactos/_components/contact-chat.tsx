@@ -130,6 +130,8 @@ export function ContactChat({
     }
     // Cambios de columnas del Embudo: el chip lee el nombre del contexto (nada que pedir).
     if (event.type === "stages.updated") return;
+    // El Agente IA leyendo en segundo plano: solo el indicador del Detalle (el hilo no cambia).
+    if (event.type === "lector.status") return;
     const id = conversationIdRef.current;
     if (!id) {
       // Con debounce: una ráfaga de mensajes de otros clientes = una búsqueda.

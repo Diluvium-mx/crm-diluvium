@@ -36,6 +36,7 @@ import { ConvencimientoBar } from "./convencimiento-picker";
 import { useSaveStatus } from "./use-save-status";
 import { AgentContactSwitch } from "./agent-contact-switch";
 import { IaMark } from "./ia-mark";
+import { LectorStatusLine } from "./lector-status";
 
 type Details = Awaited<ReturnType<typeof getContactDetails>>;
 type Inundaciones = NonNullable<Details["tieneInundaciones"]>;
@@ -549,6 +550,8 @@ export function ContactDetails({
         ) : (
           <>
             <Section title="Calificación">
+            {/* El Agente IA en segundo plano: en espera, leyendo, actualizó o al día. */}
+            <LectorStatusLine contactId={contactId} />
             <Field title="¿Tiene problemas de inundaciones?" ia={details.iaFields.includes("tiene_inundaciones")} flash={lit("tiene_inundaciones")}>
               <div role="radiogroup" aria-label="¿Tiene problemas de inundaciones?" className="flex gap-1">
                 {INUNDACIONES.map((o) => {

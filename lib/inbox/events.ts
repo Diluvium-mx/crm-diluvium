@@ -13,6 +13,7 @@
 import "server-only";
 import postgres from "postgres";
 import { parseContactUpdated } from "./contact-updated-payload";
+import { parseLectorStatus } from "./lector-status-payload";
 import type { InboxEvent } from "./types";
 
 type Subscriber = { organizationId: string; send: (event: InboxEvent) => void };
@@ -63,6 +64,11 @@ function payloadToEvent(raw: string): { organizationId: string; event: InboxEven
     // Un contacto cambió (etapa, temperatura, cotización, Detalle): lib/contacts/notify-updated.ts.
     if (type === "contact.updated") {
       const event = parseContactUpdated(data as Record<string, unknown>);
+      return event ? { organizationId: org, event } : null;
+    }
+    // El Agente IA empezó o terminó de leer en segundo plano (lib/ai/runtime/lector.ts).
+    if (type === "lector.status") {
+      const event = parseLectorStatus(data as Record<string, unknown>);
       return event ? { organizationId: org, event } : null;
     }
     if (typeof conversationId !== "string") return null;
