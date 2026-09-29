@@ -31,6 +31,7 @@ export type ContactQualificationPatch = Partial<{
   nivelAguaCm: number | null;
   nivelAguaTexto: string | null;
   montoCotizacion: number | null;
+  pagoTotal: number | null;
   porcentajeConvencimiento: number | null;
 }>;
 
@@ -65,6 +66,9 @@ export const DETALLE_KEY = {
   nivelAguaTexto: "nivel_agua_texto",
   porcentajeConvencimiento: "porcentaje_convencimiento",
   numEntradas: "num_entradas",
+  // Pago total (0047): lo que el cliente ya pagó. El monto de cotización guarda su origen
+  // aparte (custom_fields.cotizacion_por, desde la Fase D).
+  pagoTotal: "pago_total",
 } as const;
 export const entradaKey = (posicion: number, campo: "ancho" | "linea" | "tamano") => `entrada_${posicion}_${campo}`;
 // Autor de SISTEMA de los comentarios del agente (migración 0037): no es miembro.
@@ -227,6 +231,7 @@ export async function getContactQualification(
     numEntradas: contact.numEntradas,
     montoCotizacion:
       contact.montoCotizacion === null ? null : Number(contact.montoCotizacion),
+    pagoTotal: contact.pagoTotal === null ? null : Number(contact.pagoTotal),
     porcentajeConvencimiento: contact.porcentajeConvencimiento,
     // Campos que llenó el Agente IA y ningún vendedor ha editado (marca "IA" en el Detalle).
     // El monto lo fija el agente con fijar_cotizacion (custom_fields.cotizacion_por).
@@ -276,11 +281,14 @@ export async function updateContactQualification(
     // solo escribe si está vacío o lo puso el propio agente).
     values.customFields = sql`${contacts.customFields} || '{"cotizacion_por":"vendedor"}'::jsonb`;
   }
+  if (Object.prototype.hasOwnProperty.call(patch, "pagoTotal")) {
+    values.pagoTotal = patch.pagoTotal === null || patch.pagoTotal === undefined ? null : String(patch.pagoTotal);
+  }
   if (Object.prototype.hasOwnProperty.call(patch, "porcentajeConvencimiento")) {
     values.porcentajeConvencimiento = patch.porcentajeConvencimiento;
   }
   if (origen) {
-    for (const field of ["tieneInundaciones", "nivelAguaCm", "nivelAguaTexto", "porcentajeConvencimiento"] as const) {
+    for (const field of ["tieneInundaciones", "nivelAguaCm", "nivelAguaTexto", "porcentajeConvencimiento", "pagoTotal"] as const) {
       if (Object.prototype.hasOwnProperty.call(patch, field)) origenKeys.push(DETALLE_KEY[field]);
     }
     if (origenKeys.length) {
@@ -298,8 +306,8 @@ export async function updateContactQualification(
   }
 
   const changes: ContactChange[] = [];
-  if ("montoCotizacion" in values) changes.push("cotizacion");
-  if (Object.keys(values).some((key) => key !== "montoCotizacion" && key !== "customFields")) changes.push("detalle");
+  if ("montoCotizacion" in values || "pagoTotal" in values) changes.push("cotizacion");
+  if (Object.keys(values).some((key) => key !== "montoCotizacion" && key !== "pagoTotal" && key !== "customFields")) changes.push("detalle");
 
   const updated = await database.transaction(async (tx) => {
     const [row] = await tx

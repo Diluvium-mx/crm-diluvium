@@ -60,6 +60,8 @@ Nadie es "dueño" de un contacto: **todos ven todos los contactos, siempre**.
 | **Fila de espera (🕗 Enviando…)** | Si WhatsApp (Zernio) pide esperar porque salieron muchos mensajes seguidos, el mensaje **espera su turno** con el reloj 🕗 y sale solo, en el orden en que se escribió. **No es error**: al cliente no le llega nada raro y no hay que volver a escribirlo. Vale para vendedores, agente, workflows y programados. |
 | **Tarjeta de envío (🤖)** | Aviso en el chat cuando un mensaje **no se pudo confirmar** o WhatsApp avisó **después** que no le llegó al cliente (p. ej. la imagen de Datos bancarios). Dice el motivo en palabras simples y cómo reenviarlo (p. ej. "Vuelve a mandarla con /banco"). |
 | **Marca "IA"** | Etiqueta junto a un dato del Detalle del contacto que **escribió el agente al último**. Si un vendedor lo edita, la marca se va. Mientras el agente lo llena se ve "IA actualizando". |
+| **Agente IA en segundo plano** | Aunque el Agente IA esté apagado o pausado en un chat, lo **lee** unos 3 minutos después de que se calma (o cada 15 min si no para) y deja al día la **etapa** y el **Detalle**: datos, monto de cotización, pago total, % y un comentario. Lee todo en orden y vale lo último que confirmó el cliente, aun después de la compra. Nunca le escribe al cliente, no avisa al vendedor ni dispara workflows. Usa Luna (~US$0.0005 por lectura); su gasto va aparte, como «Detalle». |
+| **Monto de cotización / Pago total** | **Monto**: total de lo que el cliente eligió comprar al final (no lo primero que se le cotizó). **Pago**: lo que ya pagó (anticipo + resto o completo). Juntos muestran quién cotizó mucho y no compró. |
 | **Pausar agente / Activar** | Detiene al agente **solo en ese chat** (8, 12 o 24 horas, hasta una fecha y hora o indefinidamente). **Activar** lo regresa. También se pausa solo cuando un vendedor contesta (se ajusta en Opciones). Cada pausa y cada Activar quedan en **Agente IA › Historial** con quién lo hizo; las automáticas (un vendedor contestó, tope de respuestas, el cliente pidió un asesor y la vuelta sola al cumplirse la hora) también, como «Automático». |
 | **Canal Encendido / Apagado** | Interruptor general del agente por número de WhatsApp (Agente IA › Canales, que solo muestra los números **no archivados**: hoy WhatsApp Diluvium). Apagado = no contesta a nadie en ese número; la Bandeja lo avisa con una franja roja arriba y la pastilla **Agente IA** del Dashboard sale roja. |
 | **Horario del Agente IA** | Días y horas en que el agente contesta (Agente IA › Opciones; de fábrica 24/7). Si tiene horario, la Bandeja muestra arriba una franja «El Agente IA solo contesta … (ahora está fuera de horario / ahora sí está contestando)». |
@@ -365,7 +367,7 @@ Ningún dato es definitivo: el agente corrige lo que el cliente aclare después.
 | 10 | **Línea** | Mini o Estándar. | Todos |
 | 11 | **Tamaño sugerido** | Lo calcula el CRM con [Tallas y medidas](#36-agente-ia). | Todos |
 | 12 | **Manual** | Tamaño escrito a mano; manda sobre el sugerido. | Todos |
-| 13 | **Monto de cotización (MXN)** | Total cotizado. | Todos |
+| 13 | **Monto de cotización (MXN)** | Total de lo que el cliente **eligió comprar al final** (si se le cotizaron 2 y eligió 1, es el total de 1). Lo deja al día el Agente IA en segundo plano; puede cambiar aun después de la compra. A la derecha, (27). | Todos |
 | 14 | **% de convencimiento** | Barra de qué tan cerca está de comprar. Solo lo decide el agente (no se edita). | Todos |
 | 15 | **Llegó por anuncio** | El anuncio que lo trajo (enlace), el resumen que hizo el agente y "También volvió por…". | Todos |
 | 16 | **Agente IA (estado)** | 🟢 Activo · 🟠 Pausado · vuelve… · o "Apagado en «canal»". | Todos |
@@ -379,16 +381,21 @@ Ningún dato es definitivo: el agente corrige lo que el cliente aclare después.
 | 24 | **Pausar el agente en este chat** | 8 horas · 12 horas · 24 horas · Hasta una fecha y hora… · Pausar indefinidamente. | Todos |
 | 25 | **🤖 Pausado · vuelve hoy 22:30** | Estado cuando está en pausa (o "Pausado indefinidamente"). | Todos |
 | 26 | **Activar** | Regresa al agente a ese chat. Contesta a partir del siguiente mensaje del cliente. Queda en Agente IA › Historial con quién lo hizo (igual que Pausar agente). | Todos |
+| 27 | **Pago total (MXN)** | Lo que el cliente **ya pagó** (anticipo + resto, o el pago completo), junto al monto (13): así se ve quién cotizó mucho y no compró. Lo llena el Agente IA en segundo plano con los comprobantes y los pagos confirmados en el chat; se corrige a mano. | Todos |
 
 **Lo cambias tú desde la pantalla:** todos los campos menos el % de convencimiento; comentarios; pausar y activar al agente.
 
 **Pídeselo a Code:**
-- "En Bandeja › Detalle › (13) monto, agrega un campo «Anticipo recibido»."
+- "En Bandeja › Detalle › (27) pago total, separa anticipo y liquidación."
 - "En Bandeja › Detalle › (24) menú de pausa, agrega la opción «2 horas»."
 - "En Bandeja › Detalle › (14) % de convencimiento, déjame corregirlo a mano."
 
 **Agente IA aquí:** llena y corrige los campos con lo que dice el cliente (marca "IA"), decide el % de
 convencimiento, escribe comentarios firmados "Agente IA", avanza la etapa y resume el anuncio en (15).
+Lo hace **siempre en segundo plano**, aunque esté apagado o pausado en el chat: unos 3 minutos después de que
+el chat se calma lee todo en orden y deja al día etapa, datos, monto (13) y pago (27). Nunca le escribe al
+cliente. Solo avanza la etapa, y la que puso un vendedor a mano la respeta (solo la avanza por algo que pase
+en el chat después).
 
 <sub>Para Code: `app/(app)/contactos/_components/contact-details.tsx` (+ `contact-entradas`, `contact-comments`, `convencimiento-picker`, `ia-mark`, `agent-contact-switch`), `dashboard/_components/bot-off-menu.tsx`; datos `lib/contacts/qualification.ts`, `lib/actions/contact-qualification.ts`.</sub>
 
@@ -412,7 +419,8 @@ cambiaron de etapa". Nunca avisan lo que tú mismo hiciste.
 - "En Avisos emergentes › (1), que duren 20 segundos."
 - "En Avisos emergentes, avísame también cuando el agente deje «Depósito recibido»."
 
-**Agente IA aquí:** cada vez que mueve a alguien de etapa sale el aviso (1).
+**Agente IA aquí:** cada vez que mueve a alguien de etapa sale el aviso (1), también cuando lo hace en
+segundo plano con el agente apagado o pausado.
 
 <sub>Para Code: `app/(app)/_components/stage-change-toasts.tsx` y `stage-toasts.ts`; evento `contact.updated` (`lib/contacts/notify-updated.ts`).</sub>
 
