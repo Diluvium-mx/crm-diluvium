@@ -13,3 +13,5 @@ export const MODEL_LOGOS = {
   grok: { src: "/logos-ia/grok.svg", mono: true },
   qwen: { src: "/logos-ia/qwen.svg", mono: false },
 } as const satisfies Record<ModelLogo, { src: string; mono: boolean }>;
+
+export const MODEL_LOGO_IDS = Object.keys(MODEL_LOGOS) as ModelLogo[];
