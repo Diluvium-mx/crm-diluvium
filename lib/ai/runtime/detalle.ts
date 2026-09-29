@@ -80,7 +80,9 @@ export async function applyDetalleByAgent(organizationId: string, contactId: str
     };
     const d = pedido.campos;
     const patch: ContactQualificationPatch = {};
-    if (d.tieneInundaciones !== undefined && d.tieneInundaciones !== c.tieneInundaciones) {
+    // "No sabe" nunca borra un sí/no que ya dijo el cliente (el modelo lo usaba de relleno).
+    const bajaANoSabe = d.tieneInundaciones === "no_sabe" && (c.tieneInundaciones === "si" || c.tieneInundaciones === "no");
+    if (d.tieneInundaciones !== undefined && d.tieneInundaciones !== c.tieneInundaciones && !bajaANoSabe) {
       patch.tieneInundaciones = d.tieneInundaciones;
       note(DETALLE_KEY.tieneInundaciones);
     }

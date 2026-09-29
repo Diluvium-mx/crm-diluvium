@@ -91,7 +91,11 @@ export const contacts = pgTable(
     nivelAguaTexto: text("nivel_agua_texto"),
     numEntradas: integer("num_entradas"),
     // Todas las cotizaciones se expresan en MXN; no se necesita columna de moneda.
+    // Monto de cotización = total de lo que el CLIENTE eligió al final (regla del dueño,
+    // 28-sep-2026), no lo primero que se le cotizó. Pago total (0047) = lo que el cliente
+    // ya pagó (anticipo + resto, o el pago completo). Los dos pueden cambiar aun tras la compra.
     montoCotizacion: numeric("monto_cotizacion", { precision: 12, scale: 2 }),
+    pagoTotal: numeric("pago_total", { precision: 12, scale: 2 }),
     porcentajeConvencimiento: smallint("porcentaje_convencimiento"),
     createdAt: timestamp("created_at").defaultNow().notNull(),
     // Marca cuándo se colocó la tarjeta en su etapa actual (al crear y en
@@ -143,6 +147,7 @@ export const contacts = pgTable(
       "contacts_monto_cotizacion_check",
       sql`${table.montoCotizacion} is null or ${table.montoCotizacion} >= 0`,
     ),
+    check("contacts_pago_total_check", sql`${table.pagoTotal} is null or ${table.pagoTotal} >= 0`),
     check(
       "contacts_porcentaje_convencimiento_check",
       sql`${table.porcentajeConvencimiento} is null or (${table.porcentajeConvencimiento} between 0 and 100 and ${table.porcentajeConvencimiento} % 10 = 0)`,

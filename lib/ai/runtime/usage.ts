@@ -8,7 +8,8 @@ import { computeCostUsd, resolveModelPrice } from "@/lib/ai/pricing";
 import type { ModelUsage, ProviderId } from "@/lib/ai/types";
 
 // "transcripcion" (parte 1, 26-sep-2026): nota de voz del cliente → texto (worker).
-export type UsageStage = "filtro" | "cerebro" | "transcripcion";
+// "detalle" (0047): el lector en segundo plano (lector.ts) deja al día etapa y Detalle.
+export type UsageStage = "filtro" | "cerebro" | "transcripcion" | "detalle";
 // Qué pasó con la llamada. "passed" = el filtro dejó pasar al cerebro. Las de la
 // transcripción tienen sus propios resultados: no cuentan como respuesta ni como error
 // del agente sobre ese mensaje (alreadyHandled y el barrido no las ven).
@@ -24,7 +25,11 @@ export type UsageOutcome =
   | "traspaso"
   | "error"
   | "transcrita"
-  | "transcripcion_fallida";
+  | "transcripcion_fallida"
+  // Lector en segundo plano: cambió algo de la ficha, o la leyó y ya estaba al día. Van
+  // SIN message_id (no cuentan como respuesta ni como error del agente sobre un mensaje).
+  | "detalle_aplicado"
+  | "detalle_sin_cambios";
 // Resultados finales: si el último entrante ya tiene uno, no se vuelve a atender.
 export const FINAL_OUTCOMES: readonly UsageOutcome[] = ["sent", "draft", "skipped", "handover"];
 

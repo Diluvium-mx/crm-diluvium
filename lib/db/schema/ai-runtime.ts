@@ -19,7 +19,9 @@ import { conversations, messages } from "./messaging";
 
 // Etapa del pipeline del agente que hizo la llamada al modelo. "transcripcion" (0037):
 // nota de voz del cliente → texto (lib/ai/transcription); su costo va por minuto.
-export const aiUsageStageEnum = pgEnum("ai_usage_stage", ["filtro", "cerebro", "transcripcion"]);
+// "detalle" (0047): el lector en segundo plano deja al día etapa y Detalle del contacto
+// (lib/ai/runtime/lector.ts); nunca le escribe al cliente.
+export const aiUsageStageEnum = pgEnum("ai_usage_stage", ["filtro", "cerebro", "transcripcion", "detalle"]);
 
 // Uso y costo POR LLAMADA al modelo (PASO 4). Alimenta el panel de gasto (Fase E).
 // cost_usd se calcula al guardar con el precio efectivo de ese momento
