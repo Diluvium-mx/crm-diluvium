@@ -78,7 +78,9 @@ export function ContactDetailPanel({
   }, []);
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+    // Móvil (< md): el pop-up ocupa TODA la pantalla (sin margen ni esquinas); desde md,
+    // la ventana centrada de siempre.
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-0 md:p-4">
       <button
         type="button"
         aria-label="Cerrar detalle del contacto"
@@ -94,7 +96,7 @@ export function ContactDetailPanel({
         aria-modal="true"
         aria-labelledby="contact-detail-title"
         tabIndex={-1}
-        className={`relative flex h-[80vh] w-full max-w-4xl flex-col overflow-hidden rounded-lg bg-background shadow-xl outline-none duration-200 ease-out motion-reduce:animate-none md:flex-row ${
+        className={`relative flex h-full w-full max-w-4xl flex-col overflow-hidden bg-background shadow-xl outline-none duration-200 ease-out motion-reduce:animate-none md:h-[80vh] md:flex-row md:rounded-lg ${
           isClosing ? "animate-out fade-out-0 zoom-out-95" : "animate-in fade-in-0 zoom-in-95"
         }`}
       >

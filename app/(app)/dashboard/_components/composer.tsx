@@ -28,6 +28,7 @@ import { parseCommand } from "@/lib/workflows/steps";
 import { ScheduleForm } from "./schedule-form";
 import { SnippetPicker } from "./snippet-picker";
 import { TemplatePicker } from "./template-picker";
+import { useIsMobile } from "@/components/ui/use-media-query";
 
 // Alto justo para el texto, entre los 2 renglones de `rows` y el max-height de la clase.
 // Vacía se queda en 2 renglones: Chrome mide también el texto gris de ayuda, y
@@ -73,6 +74,8 @@ export function Composer({
   onPickFiles: () => void;
   onSendAttachments: (tokens: string[], caption: string) => Promise<{ ok: true } | { ok: false; message: string }>;
 }) {
+  // Móvil: placeholder corto (en el celular no hay Shift+Enter que explicar).
+  const isMobile = useIsMobile();
   const { data: session } = useSession();
   const sellerName = session?.user.name?.trim() ?? "";
 
@@ -246,7 +249,7 @@ export function Composer({
 
   if (!windowOpen) {
     return (
-      <div className="border-t bg-card p-3">
+      <div className="border-t bg-card p-3 pb-[max(0.75rem,env(safe-area-inset-bottom))]">
         {scheduleOpen ? (
           scheduleForm
         ) : templateOpen ? (
@@ -282,7 +285,7 @@ export function Composer({
   }
 
   return (
-    <div className="border-t bg-card p-3">
+    <div className="border-t bg-card p-3 pb-[max(0.75rem,env(safe-area-inset-bottom))]">
       {scheduleForm}
       {snippetOpen && <SnippetPicker onInsert={appendFragment} onClose={() => setSnippetOpen(false)} />}
       {templateOpen && (
@@ -378,7 +381,10 @@ export function Composer({
         </div>
       )}
 
-      <div className="flex items-end gap-2">
+      {/* Móvil (< sm): dos renglones —⚡ 📄 📎 🕒 arriba; caja + Enviar abajo— con
+          `order` y un corte de renglón (basis-full). Desde sm, el renglón único de
+          siempre en el orden del DOM (sm:order-none). */}
+      <div className="flex flex-wrap items-end gap-2 sm:flex-nowrap">
         <button
           type="button"
           onClick={() => {
@@ -388,7 +394,7 @@ export function Composer({
           aria-label="Insertar mensaje rápido"
           aria-expanded={snippetOpen}
           title="Mensajes rápidos"
-          className={`rounded-md border px-2.5 py-2 transition-colors ${
+          className={`order-1 rounded-md border px-2.5 py-2 transition-colors sm:order-none ${
             snippetOpen ? "border-brand-orange bg-brand-orange/10 text-brand-orange" : "text-brand-orange hover:bg-brand-orange/10"
           }`}
         >
@@ -403,7 +409,7 @@ export function Composer({
           aria-label="Enviar plantilla"
           aria-expanded={templateOpen}
           title="Plantillas (aprobadas por Meta)"
-          className={`rounded-md border px-2.5 py-2 text-sm leading-4 transition-colors ${
+          className={`order-1 rounded-md border px-2.5 py-2 text-sm leading-4 transition-colors sm:order-none ${
             templateOpen ? "border-brand-navy bg-brand-navy/10" : "hover:bg-brand-navy/10"
           }`}
         >
@@ -414,10 +420,11 @@ export function Composer({
           onClick={onPickFiles}
           aria-label="Adjuntar archivos"
           title="Adjuntar fotos, videos o documentos"
-          className="rounded-md border px-2.5 py-2 text-brand-navy transition-colors hover:bg-brand-navy/10 dark:text-sky-300"
+          className="order-1 rounded-md border px-2.5 py-2 text-brand-navy transition-colors hover:bg-brand-navy/10 sm:order-none dark:text-sky-300"
         >
           <Paperclip className="size-4" aria-hidden="true" />
         </button>
+        <div aria-hidden="true" className="order-2 h-0 basis-full sm:hidden" />
         <textarea
           ref={textareaRef}
           value={draft}
@@ -473,9 +480,13 @@ export function Composer({
           rows={2}
           aria-autocomplete="list"
           placeholder={
-            hasFiles ? "Agrega un mensaje (opcional)" : "Escribe un mensaje… (/ busca mensajes rápidos · Enter envía · Shift+Enter salto de línea)"
+            hasFiles
+              ? "Agrega un mensaje (opcional)"
+              : isMobile
+                ? "Escribe un mensaje… (/ busca mensajes rápidos)"
+                : "Escribe un mensaje… (/ busca mensajes rápidos · Enter envía · Shift+Enter salto de línea)"
           }
-          className="max-h-[40vh] flex-1 resize-none overflow-y-hidden rounded-md border bg-background px-3 py-2 text-sm outline-none transition-colors placeholder:text-muted-foreground/60 focus:border-brand-navy focus:ring-2 focus:ring-brand-navy/30"
+          className="order-3 max-h-[40vh] min-w-0 flex-1 resize-none overflow-y-hidden rounded-md border bg-background px-3 py-2 text-sm outline-none transition-colors placeholder:text-muted-foreground/60 focus:border-brand-navy focus:ring-2 focus:ring-brand-navy/30 sm:order-none"
         />
         <button
           type="button"
@@ -489,7 +500,7 @@ export function Composer({
           aria-label="Programar mensaje"
           aria-expanded={scheduleOpen}
           title={hasFiles ? "Programar no lleva archivos por ahora" : "Programar mensaje"}
-          className={`rounded-md border px-2.5 py-2 text-brand-navy transition-colors disabled:opacity-40 dark:text-sky-300 ${
+          className={`order-1 rounded-md border px-2.5 py-2 text-brand-navy transition-colors disabled:opacity-40 sm:order-none dark:text-sky-300 ${
             scheduleOpen ? "border-brand-navy bg-brand-navy/10" : "hover:bg-brand-navy/10"
           }`}
         >
@@ -500,7 +511,7 @@ export function Composer({
           onClick={submit}
           disabled={!canSend}
           title={hasFiles && !attachments.allReady ? "Espera a que terminen de subir los archivos" : undefined}
-          className="rounded-md bg-brand-orange px-4 py-2 text-sm font-medium text-brand-white transition-colors hover:bg-brand-orange-light disabled:opacity-50"
+          className="order-3 rounded-md bg-brand-orange px-4 py-2 text-sm font-medium text-brand-white transition-colors hover:bg-brand-orange-light disabled:opacity-50 sm:order-none"
         >
           {sendingFiles ? "Enviando…" : "Enviar"}
         </button>
