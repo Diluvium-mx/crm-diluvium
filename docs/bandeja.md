@@ -262,7 +262,7 @@ automatización (`/banco` → Cerca de compra) o por otro vendedor se ve sin ref
 - **Aviso emergente** (`app/(app)/_components/stage-change-toasts.tsx`, en el layout: todas las
   secciones): baja debajo de la barra de arriba, 10 s, con X, `aria-live="polite"`. Solo cambios de
   ETAPA hechos por otro ("🤖 Agente IA movió a Juan Pérez a Interesado", "⚙️ Automatización movió
-  a …", "Daniel movió a …"); nunca el del mismo usuario (tampoco su `/banco`). Máximo 3; con más en
+  a …", "Daniel movió a …"); también a quien hizo el cambio (desde el 29-sep-2026; antes se excluía). Máximo 3; con más en
   esos 10 s se juntan en uno ("5 contactos cambiaron de etapa"). Clic: su chat en la Bandeja
   (`/dashboard?contacto=<id>`; sin chat, su pop-up en `/embudo?contacto=<id>`); el grupo abre el
   Embudo. Temperatura, cotización y Detalle (autollenado incluido) van sin aviso.

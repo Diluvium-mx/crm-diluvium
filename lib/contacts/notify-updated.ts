@@ -53,6 +53,7 @@ export async function notifyContactUpdated(database: NotifyExecutor, input: Noti
       'by', ${input.by.kind}::text,
       'byUserId', ${userId}::text,
       'byName', left(u.name, 80),
+      'byRole', (select m.role from member m where m.user_id = ${userId}::text and m.organization_id = c.organization_id limit 1),
       'at', to_char(clock_timestamp() at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"')
     )::text)
     from contacts c
