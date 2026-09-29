@@ -5,6 +5,7 @@
 // vendedor; el servidor lo exige).
 import { useRef, useState } from "react";
 import { addComment, deleteComment, updateComment } from "@/lib/actions/contact-qualification";
+import { LinkedText } from "@/components/ui/linked-text";
 
 export type Comment = {
   id: string;
@@ -156,7 +157,9 @@ export function ContactComments({
                     className="mt-1 w-full resize-y rounded-md border bg-background px-2 py-1 text-sm outline-none focus:border-brand-navy"
                   />
                 ) : (
-                  <p className="mt-0.5 whitespace-pre-wrap break-words">{c.body}</p>
+                  <p className="mt-0.5 whitespace-pre-wrap break-words">
+                    <LinkedText text={c.body} />
+                  </p>
                 )}
               </li>
             );
