@@ -200,6 +200,17 @@ describe("workflows paso por paso", () => {
     expect(diffWorkflow(base, { ...base, triggerStartOnly: false }).blocks).toEqual([]);
   });
 
+  it("tercera opción, máximo por chat y «El workflow es la respuesta»: líneas en «Disparadores»; el historial anterior cuenta como estricto / sin límite / No", () => {
+    const d = diffWorkflow({ ...base, triggerStartOnly: true }, { ...base, triggerStartOnly: true, triggerStartOnlyAgent: false, maxSendsPerChat: 2, isAnswer: true });
+    expect(d.blocks.map((b) => [b.title, b.tag])).toEqual([["Disparadores", "editado"]]);
+    expect(d.blocks[0].lines.map((l) => l.label)).toEqual(["Cuándo se dispara", "Máximo por chat", "El workflow es la respuesta"]);
+    expect(d.blocks[0].lines.map((l) => [text(l.segments, "removed"), text(l.segments, "added")])).toEqual([
+      ["Solo al inicio", "Solo al inicio por palabra clave; el Agente IA cuando haga falta"],
+      ["sin límite", "2 veces"],
+      ["No", "Sí"],
+    ]);
+  });
+
     it("creado y borrado: todo agregado o todo quitado", () => {
     expect(diffWorkflow(null, base).blocks.every((b) => b.tag === "agregado")).toBe(true);
     const gone = diffWorkflow(base, null);

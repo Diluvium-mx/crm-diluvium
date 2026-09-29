@@ -90,6 +90,19 @@ export const workflows = pgTable(
     // han contestado al cliente, y a lo mucho UNA vez por contacto (lib/workflows/start-only.ts).
     // El comando del vendedor y la etapa que mueve un vendedor salen siempre.
     triggerStartOnly: boolean("trigger_start_only").notNull().default(false),
+    // 29-sep-2026 (Tabla): con «Solo al inicio», ¿también el Agente IA queda limitado? true =
+    // regla estricta de arriba («Precio 2», «Información»); false = solo la palabra clave es
+    // acción inicial y el Agente IA lo usa cuando haga falta (lib/workflows/steps.ts, startScopeOf).
+    triggerStartOnlyAgent: boolean("trigger_start_only_agent").notNull().default(true),
+    // «Máximo de envíos por chat» (29-sep-2026; null = sin límite). Cuenta lo que YA SALIÓ en la
+    // conversación: sus archivos (la misma foto dentro de otro workflow también cuenta) o, sin
+    // archivos, sus corridas. Frena a la palabra clave y al Agente IA; el comando del vendedor
+    // suma pero puede pasarlo (lib/workflows/max-per-chat.ts).
+    maxSendsPerChat: integer("max_sends_per_chat"),
+    // «El workflow es la respuesta» (29-sep-2026): por palabra clave, el Agente IA no agrega nada
+    // a ese mensaje y espera al cliente (aunque no termine en pregunta). Como herramienta: si el
+    // workflow trae textos, el texto del modelo no sale; si solo manda archivos, sí.
+    isAnswer: boolean("is_answer").notNull().default(false),
     position: integer("position").notNull().default(0),
     createdByUserId: text("created_by_user_id").references(() => user.id, { onDelete: "set null" }),
     updatedByUserId: text("updated_by_user_id").references(() => user.id, { onDelete: "set null" }),

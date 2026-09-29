@@ -58,6 +58,10 @@ export function BibliotecaTab({
   // Borrar un archivo pide confirmar (no se puede deshacer), con el aviso del CRM.
   const [deleting, setDeleting] = useState<MediaAssetView | null>(null);
   const [removing, setRemoving] = useState(false);
+  // Renombrar también con el aviso del CRM (29-sep-2026; antes la ventana gris del navegador),
+  // con el campo del nombre adentro.
+  const [renaming, setRenaming] = useState<{ asset: MediaAssetView; title: string } | null>(null);
+  const [savingName, setSavingName] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
 
   async function onFiles(files: FileList | null) {
@@ -77,12 +81,16 @@ export function BibliotecaTab({
     if (fileRef.current) fileRef.current.value = "";
   }
 
-  async function rename(asset: MediaAssetView) {
-    const title = window.prompt("Nuevo nombre del archivo:", asset.title);
-    if (title === null || title.trim() === asset.title) return;
+  async function rename(asset: MediaAssetView, raw: string) {
+    const title = raw.trim();
+    if (!title) return;
+    if (title === asset.title) return setRenaming(null);
+    setSavingName(true);
     const r = await renameMediaAssetAction({ assetId: asset.id, title });
+    setSavingName(false);
+    setRenaming(null);
     if (!r.ok) return setError(r.error);
-    onChanged(assets.map((a) => (a.id === asset.id ? { ...a, title: title.trim() } : a)));
+    onChanged(assets.map((a) => (a.id === asset.id ? { ...a, title } : a)));
   }
 
   async function remove(asset: MediaAssetView) {
@@ -124,7 +132,7 @@ export function BibliotecaTab({
             <li key={a.id} className="overflow-hidden rounded-lg border bg-card shadow-sm">
               <AssetPreview asset={a} className="h-36 w-full" />
               <div className="space-y-1 p-2">
-                <button type="button" onClick={() => void rename(a)} className="block w-full truncate text-left text-sm font-medium hover:underline" title="Renombrar">
+                <button type="button" onClick={() => setRenaming({ asset: a, title: a.title })} className="block w-full truncate text-left text-sm font-medium hover:underline" title="Renombrar">
                   {a.title}
                 </button>
                 <p className="truncate text-[11px] text-muted-foreground">
@@ -139,6 +147,38 @@ export function BibliotecaTab({
             </li>
           ))}
         </ul>
+      )}
+      {renaming && (
+        <TopConfirm
+          title="Renombrar archivo"
+          confirmLabel="Guardar"
+          pendingLabel="Guardando…"
+          pending={savingName}
+          confirmDisabled={!renaming.title.trim()}
+          focusCancel={false}
+          onConfirm={() => void rename(renaming.asset, renaming.title)}
+          onCancel={() => setRenaming(null)}
+        >
+          <label className="flex flex-col gap-1">
+            <span>Nombre con el que lo encuentras en la biblioteca (el cliente no lo ve).</span>
+            <input
+              autoFocus
+              value={renaming.title}
+              maxLength={120}
+              disabled={savingName}
+              onChange={(e) => setRenaming({ ...renaming, title: e.target.value })}
+              onFocus={(e) => e.currentTarget.select()}
+              onKeyDown={(e) => {
+                if (e.key === "Enter" && renaming.title.trim()) {
+                  e.preventDefault();
+                  void rename(renaming.asset, renaming.title);
+                }
+              }}
+              aria-label="Nombre del archivo"
+              className="w-full rounded-md border bg-background px-3 py-2 text-sm text-foreground outline-none focus:border-brand-orange focus:ring-2 focus:ring-brand-orange/30"
+            />
+          </label>
+        </TopConfirm>
       )}
       {deleting && (
         <TopConfirm

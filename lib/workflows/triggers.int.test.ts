@@ -208,4 +208,71 @@ describe.skipIf(!TEST_DATABASE_URL)("disparadores de workflows", () => {
     await db.update(s.workflows).set({ triggerStartOnly: false }).where(eq(s.workflows.id, "w_precio"));
     expect(await exec.startWorkflowRun({ organizationId: ORG, workflowId: "w_precio", conversationId: "cv_new", trigger: "agent", triggerMessageId: "m1" })).toMatchObject({ status: "queued" });
   });
+
+  // ── Tabla de tamaños (29-sep-2026, decisiones del dueño) ───────────────────────
+  it("«solo al inicio por palabra clave»: la palabra clave solo al inicio ('Checare medidas' a media conversación no dispara); el Agente IA sí la puede mandar después", async () => {
+    await wf("w_tabla", { triggerKeywords: ["medidas", "tamaños"], triggerStartOnly: true, triggerStartOnlyAgent: false });
+    const exec = await import("./executor");
+    expect(await inbound("m1", "¿Qué medidas manejan?")).toMatchObject({ status: "queued" });
+    await db.update(s.contacts).set({ keywordWorkflowsSent: [] }).where(eq(s.contacts.id, "c1"));
+    await db.delete(s.workflowRuns);
+    await out("o1", "ai_agent"); // ya contestó el Agente IA con texto propio
+    expect(await inbound("m2", "Checare medidas")).toBeNull();
+    expect(await runs()).toHaveLength(0);
+    // El Agente IA no queda limitado por «Solo al inicio» (con la regla estricta, sí).
+    expect(await exec.startWorkflowRun({ organizationId: ORG, workflowId: "w_tabla", conversationId: "cv_new", trigger: "agent", triggerMessageId: "m2" })).toMatchObject({ status: "queued" });
+    await db.delete(s.workflowRuns);
+    await db.update(s.workflows).set({ triggerStartOnlyAgent: true }).where(eq(s.workflows.id, "w_tabla"));
+    expect(await exec.startWorkflowRun({ organizationId: ORG, workflowId: "w_tabla", conversationId: "cv_new", trigger: "agent", triggerMessageId: "m1" })).toMatchObject({
+      status: "skipped",
+      reason: exec.SKIP_NOT_START,
+    });
+  });
+
+  const precioTablaInfo = async () => {
+    await wf("precio_2_6100", { triggerKeywords: ["cuesta", "costo", "precio"], triggerStartOnly: true, position: 9 });
+    await wf("tabla_tamanos_estandar", { triggerKeywords: ["tamaños", "medidas", "tallas"], triggerStartOnly: true, triggerStartOnlyAgent: false, position: 0 });
+    await wf("informacion_8b3c", { triggerKeywords: ["información", "info"], triggerStartOnly: true, position: 11 });
+  };
+
+  it("regla fija: al inicio, un mensaje que dispararía «Precio 2» y la Tabla a la vez manda «Información»", async () => {
+    await precioTablaInfo();
+    expect(await inbound("m1", "Hola buen día q precio tiene y q medidas son")).toMatchObject({ status: "queued" });
+    expect((await runs()).map((r) => [r.workflowId, r.trigger, r.triggerMessageId])).toEqual([["informacion_8b3c", "keyword", "m1"]]);
+  });
+
+  it("regla fija: si «Información» ya no puede salir (ya le salió a este contacto), se decide como siempre (gana la frase más larga: la Tabla)", async () => {
+    await precioTablaInfo();
+    await db.update(s.contacts).set({ keywordWorkflowsSent: ["informacion_8b3c"] }).where(eq(s.contacts.id, "c1"));
+    await db.insert(s.workflowRuns).values({ id: "r_info", organizationId: ORG, workflowId: "informacion_8b3c", conversationId: "cv_old", contactId: "c1", trigger: "keyword", status: "done", stepCursor: 1, messageIds: [], attempts: 1 });
+    expect(await inbound("m1", "Precio y medidas ?")).toMatchObject({ status: "queued" });
+    expect((await runs()).filter((r) => r.id !== "r_info").map((r) => r.workflowId)).toEqual(["tabla_tamanos_estandar"]);
+  });
+
+  it("regla fija: solo con los DOS; 'precio' solo manda «Precio 2» y 'medidas' sola manda la Tabla", async () => {
+    await precioTablaInfo();
+    expect(await inbound("m1", "Precio")).toMatchObject({ status: "queued" });
+    expect((await runs()).map((r) => r.workflowId)).toEqual(["precio_2_6100"]);
+    await db.delete(s.workflowRuns);
+    await db.update(s.contacts).set({ keywordWorkflowsSent: [] }).where(eq(s.contacts.id, "c1"));
+    expect(await inbound("m2", "¿Qué medidas manejan?")).toMatchObject({ status: "queued" });
+    expect((await runs()).map((r) => r.workflowId)).toEqual(["tabla_tamanos_estandar"]);
+  });
+
+  it("regla fija: a media conversación no aplica (ni «Precio 2» ni la Tabla saldrían por palabra clave)", async () => {
+    await precioTablaInfo();
+    await out("o1", "crm");
+    expect(await inbound("m1", "¿Qué precio y qué medidas?")).toBeNull();
+    expect(await runs()).toHaveLength(0);
+  });
+
+  it("máximo por chat: un workflow que ya llegó a su máximo no compite por la palabra clave", async () => {
+    await wf("w_tabla", { triggerKeywords: ["medidas"], maxSendsPerChat: 1, position: 0 });
+    await wf("w_medir", { triggerKeywords: ["medir"], position: 1 });
+    // Ya salió una vez en este chat (su corrida mandó algo).
+    await out("o1", "ai_agent");
+    await db.insert(s.workflowRuns).values({ id: "r_t", organizationId: ORG, workflowId: "w_tabla", conversationId: "cv_new", contactId: "c1", trigger: "agent", status: "done", stepCursor: 1, messageIds: ["o1"], attempts: 1 });
+    expect(await inbound("m1", "¿cómo medir? ¿qué medidas?")).toMatchObject({ status: "queued" });
+    expect((await runs()).filter((r) => r.id !== "r_t").map((r) => r.workflowId)).toEqual(["w_medir"]);
+  });
 });

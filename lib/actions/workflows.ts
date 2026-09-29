@@ -14,7 +14,7 @@ import { isStageKey } from "@/lib/contacts/stages";
 import { conversations, mediaAssets, workflowRuns, workflowSteps, workflows } from "@/lib/db/schema";
 import { listRecentRuns, startWorkflowRun, type StartRunResult } from "@/lib/workflows/executor";
 import { seedDefaultWorkflows } from "@/lib/workflows/seed";
-import { commandSchema, keywordsSchema, missingMedia, stepsSchema, unknownVariables, type StepPayload } from "@/lib/workflows/steps";
+import { commandSchema, keywordsSchema, maxSendsSchema, missingMedia, stepsSchema, unknownVariables, type StepPayload } from "@/lib/workflows/steps";
 import { pauseAgentForManualSend } from "@/lib/ai/runtime/hooks";
 import { findWorkflowByCommand } from "@/lib/workflows/triggers";
 import { isUniqueViolation } from "@/lib/db/errors";
@@ -38,6 +38,12 @@ export type WorkflowView = {
   triggerStage: string | null;
   /** «Solo al inicio» (lib/workflows/start-only.ts). */
   triggerStartOnly: boolean;
+  /** Con «Solo al inicio»: false = solo la palabra clave (el Agente IA cuando haga falta). */
+  triggerStartOnlyAgent: boolean;
+  /** «Máximo de envíos por chat» (null = sin límite; lib/workflows/max-per-chat.ts). */
+  maxSendsPerChat: number | null;
+  /** «El workflow es la respuesta». */
+  isAnswer: boolean;
   position: number;
   steps: StepPayload[];
   /** Títulos de los archivos que faltan (el workflow no se puede habilitar). */
@@ -77,6 +83,12 @@ const workflowInputSchema = z.object({
   triggerStage: z.string().trim().min(1).max(40).nullable(),
   // «Solo al inicio»: por palabra clave o por el Agente IA, solo antes de que le contesten y una vez por contacto.
   triggerStartOnly: z.boolean(),
+  // Con «Solo al inicio»: ¿también el Agente IA? false = solo la palabra clave (la Tabla).
+  triggerStartOnlyAgent: z.boolean(),
+  // «Máximo de envíos por chat» (1–20; null = sin límite).
+  maxSendsPerChat: maxSendsSchema,
+  // «El workflow es la respuesta»: por palabra clave, el Agente IA no agrega nada y espera al cliente.
+  isAnswer: z.boolean(),
   steps: stepsSchema,
 });
 export type WorkflowInput = z.infer<typeof workflowInputSchema>;
@@ -127,6 +139,9 @@ async function loadViews(organizationId: string): Promise<WorkflowView[]> {
       triggerCommand: w.triggerCommand,
       triggerStage: w.triggerStage,
       triggerStartOnly: w.triggerStartOnly,
+      triggerStartOnlyAgent: w.triggerStartOnlyAgent,
+      maxSendsPerChat: w.maxSendsPerChat,
+      isAnswer: w.isAnswer,
       position: w.position,
       steps: own,
       missingMedia: missingMedia(own),
@@ -172,7 +187,8 @@ export async function saveWorkflow(raw: WorkflowInput): Promise<{ ok: true; id: 
   requireWorkflow(role, raw.id ? "update" : "create");
   const parsed = workflowInputSchema.safeParse(raw);
   if (!parsed.success) return { ok: false, error: parsed.error.issues[0]?.message ?? "Datos inválidos." };
-  const input = parsed.data;
+  // Sin «Solo al inicio», la segunda opción no aplica: se guarda en su valor de fábrica.
+  const input = { ...parsed.data, triggerStartOnlyAgent: parsed.data.triggerStartOnly ? parsed.data.triggerStartOnlyAgent : true };
   const stages = await listFunnelStages(organizationId);
   if (input.triggerStage !== null && !isStageKey(stages, input.triggerStage)) {
     return { ok: false, error: "Esa etapa ya no existe en el Embudo; elige otra." };
@@ -210,6 +226,9 @@ export async function saveWorkflow(raw: WorkflowInput): Promise<{ ok: true; id: 
         triggerCommand: input.triggerCommand,
         triggerStage: input.triggerStage,
         triggerStartOnly: input.triggerStartOnly,
+        triggerStartOnlyAgent: input.triggerStartOnlyAgent,
+        maxSendsPerChat: input.maxSendsPerChat,
+        isAnswer: input.isAnswer,
         updatedByUserId: userId,
         updatedAt: now,
       };
@@ -409,7 +428,7 @@ export async function restoreDefaultWorkflows(): Promise<{ ok: true; created: nu
           subject: def?.name ?? slug,
           newValue: `${workflowSummary({ enabled: false, steps: def?.steps ?? [] })} (predeterminado)`,
           detail: def
-            ? { type: "workflow" as const, before: null, after: workflowDetail({ ...def, enabled: false, triggerStage: null, triggerStartOnly: false }, () => null) }
+            ? { type: "workflow" as const, before: null, after: workflowDetail({ ...def, enabled: false, triggerStage: null, triggerStartOnly: false, triggerStartOnlyAgent: true, maxSendsPerChat: null, isAnswer: false }, () => null) }
             : null,
         };
       }),

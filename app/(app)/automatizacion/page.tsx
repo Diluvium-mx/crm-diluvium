@@ -7,7 +7,7 @@ import { AutomatizacionPanel } from "./_components/automatizacion-panel";
 
 // Pestaña "Automatización" (Fase D). Todos los roles editan workflows y su
 // biblioteca de media, vendedor incluido (ACL `workflow` y `mediaAsset`), y los
-// usan desde el composer ("/tabla"). Los datos iniciales se cargan en el
+// usan desde el composer ("/tamaños"). Los datos iniciales se cargan en el
 // servidor, acotados a la organización de la sesión.
 export default async function AutomatizacionPage() {
   const { role } = await requireActiveMembership();

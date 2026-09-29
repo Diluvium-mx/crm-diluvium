@@ -4,13 +4,13 @@
 // contenido (a la derecha del sidebar w-56 desde md; en celular no hay sidebar y va a todo lo ancho; la barra mide h-16, ver
 // app/(app)/layout.tsx). Dos piezas en el MISMO lugar:
 // - TopConfirm: pregunta con "Cancelar" y la acción primaria en naranja. Esc o clic
-//   fuera cancelan (salvo mientras guarda). Enfoca "Cancelar" al abrir y devuelve el
-//   foco al cerrar.
+//   fuera cancelan (salvo mientras guarda). Enfoca "Cancelar" al abrir (o, con un campo
+//   adentro —renombrar un archivo—, deja el foco en el campo) y devuelve el foco al cerrar.
 // - TopNotice: aviso breve de que ya quedó (quien lo muestra decide cuánto dura).
 //   Va siempre montado: su región para lectores de pantalla existe antes de que
 //   llegue el texto, así el aviso sí se anuncia.
 // Sin lógica de datos. Respeta "reducir movimiento" (la animación es motion-safe).
-import { useEffect, useId, useLayoutEffect, useRef } from "react";
+import { useEffect, useId, useLayoutEffect, useRef, useState } from "react";
 
 function TopLayer({ children }: { children: React.ReactNode }) {
   return (
@@ -29,6 +29,8 @@ export function TopConfirm({
   cancelLabel = "Cancelar",
   pendingLabel,
   pending = false,
+  confirmDisabled = false,
+  focusCancel = true,
   onConfirm,
   onCancel,
 }: {
@@ -39,6 +41,10 @@ export function TopConfirm({
   cancelLabel?: string;
   pendingLabel?: string;
   pending?: boolean;
+  // La acción primaria no aplica todavía (p. ej. el nombre nuevo está vacío).
+  confirmDisabled?: boolean;
+  // false = no se enfoca "Cancelar" al abrir: el campo de adentro trae su propio autoFocus.
+  focusCancel?: boolean;
   onConfirm: () => void;
   onCancel: () => void;
 }) {
@@ -51,10 +57,14 @@ export function TopConfirm({
   useLayoutEffect(() => {
     latest.current = { pending, onCancel };
   });
+  // Quién tenía el foco al abrir (se lee al primer render: con un campo adentro, su autoFocus
+  // ya se llevó el foco cuando corre el efecto). Ahí vuelve al cerrar.
+  const [opener] = useState(() => (typeof document !== "undefined" && document.activeElement instanceof HTMLElement ? document.activeElement : null));
+  const [focusCancelAtOpen] = useState(focusCancel);
 
   useEffect(() => {
-    const previous = document.activeElement instanceof HTMLElement ? document.activeElement : null;
-    cancelRef.current?.focus();
+    const previous = opener;
+    if (focusCancelAtOpen) cancelRef.current?.focus();
     function cancel() {
       if (!latest.current.pending) latest.current.onCancel();
     }
@@ -74,7 +84,7 @@ export function TopConfirm({
       document.removeEventListener("pointerdown", onPointer);
       if (previous?.isConnected) previous.focus();
     };
-  }, []);
+  }, [opener, focusCancelAtOpen]);
 
   return (
     <TopLayer>
@@ -107,7 +117,7 @@ export function TopConfirm({
           </button>
           <button
             type="button"
-            disabled={pending}
+            disabled={pending || confirmDisabled}
             onClick={onConfirm}
             className="rounded bg-brand-orange px-3 py-1.5 text-sm font-medium text-white disabled:opacity-60"
           >
