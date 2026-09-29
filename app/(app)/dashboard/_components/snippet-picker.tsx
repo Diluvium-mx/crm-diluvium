@@ -12,14 +12,9 @@ import { CloseX } from "@/components/ui/close-x";
 export function SnippetPicker({
   onInsert,
   onClose,
-  commands = [],
-  onRunCommand,
 }: {
   onInsert: (body: string) => void;
   onClose: () => void;
-  /** Comandos de Automatización ("/tabla"…): en móvil se listan aquí, porque escribir "/" en el celular es incómodo. */
-  commands?: { id: string; name: string; command: string }[];
-  onRunCommand?: (command: string) => void;
 }) {
   const [snippets, setSnippets] = useState<SnippetView[] | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -62,30 +57,6 @@ export function SnippetPicker({
         <CloseX size="sm" label="Cerrar mensajes rápidos" onClick={onClose} />
       </div>
       <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain p-3">
-        {/* Móvil: los comandos de Automatización (tabla, videos, banco…) van primero; al
-            tocar uno se ENVÍA el comando y el workflow manda su material. En escritorio
-            se siguen usando con "/" (md:hidden). */}
-        {commands.length > 0 && onRunCommand && (
-          <div className="mb-3 md:hidden">
-            <p className="mb-1 text-[11px] font-semibold tracking-wide text-muted-foreground uppercase">Automatizaciones · ▶ envía el material</p>
-            <ul className="space-y-1">
-              {commands.map((c) => (
-                <li key={c.id} className="min-w-0">
-                  <button
-                    type="button"
-                    onClick={() => onRunCommand(c.command)}
-                    className="flex w-full min-w-0 items-center gap-2 rounded-md border px-3 py-2 text-left text-sm hover:border-brand-navy hover:bg-brand-navy/5"
-                  >
-                    <span className="shrink-0 rounded bg-brand-navy px-1.5 py-0.5 font-mono text-[11px] text-brand-white">{c.command}</span>
-                    <span className="min-w-0 flex-1 truncate font-medium">{c.name}</span>
-                    <span className="shrink-0 text-[11px] text-muted-foreground">▶</span>
-                  </button>
-                </li>
-              ))}
-            </ul>
-            <p className="mt-2 text-[11px] font-semibold tracking-wide text-muted-foreground uppercase">Mensajes rápidos</p>
-          </div>
-        )}
         {error ? (
           <p className="py-4 text-center text-sm text-brand-orange">{error}</p>
         ) : snippets === null ? (

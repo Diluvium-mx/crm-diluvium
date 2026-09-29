@@ -14,7 +14,7 @@
 // La caja empieza con 2 renglones y crece sola desde el 3.º (28-sep-2026: lo
 // escrito se perdía arriba); pasado el tope (max-h) se desliza por dentro.
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
-import { Clock, Paperclip, Zap } from "lucide-react";
+import { Clock, Paperclip, Play, Zap } from "lucide-react";
 import { CHAT_CAPTION_MAX } from "@/lib/chat-attachments/rules";
 import { AttachmentTray } from "./attachment-tray";
 import type { ChatAttachments } from "./use-chat-attachments";
@@ -30,6 +30,7 @@ import { SnippetPicker } from "./snippet-picker";
 import { TemplatePicker } from "./template-picker";
 import { useIsMobile } from "@/components/ui/use-media-query";
 import { CloseX } from "@/components/ui/close-x";
+import { WorkflowPicker } from "./workflow-picker";
 
 // Alto justo para el texto, entre los 2 renglones de `rows` y el max-height de la clase.
 // Vacía se queda en 2 renglones: Chrome mide también el texto gris de ayuda, y
@@ -85,6 +86,8 @@ export function Composer({
   const [snippetOpen, setSnippetOpen] = useState(false);
   const [templateOpen, setTemplateOpen] = useState(false);
   const [scheduleOpen, setScheduleOpen] = useState(false);
+  // ▶ Automatizaciones (solo móvil): lista de workflows para mandar con un toque.
+  const [workflowsOpen, setWorkflowsOpen] = useState(false);
   const [snippets, setSnippets] = useState<SnippetView[] | null>(null);
   const [snippetsError, setSnippetsError] = useState(false);
   // Comandos de Automatización (Fase D): "/tabla", "/banco"… se listan bajo los
@@ -116,7 +119,7 @@ export function Composer({
   // Carga los fragmentos (y los comandos) la primera vez que se abre el buscador con
   // "/" o el selector ⚡ (en móvil ⚡ también lista los comandos de Automatización).
   useEffect(() => {
-    if (!(slashOpen || snippetOpen) || snippets !== null || snippetsError) return;
+    if (!slashOpen || snippets !== null || snippetsError) return;
     let alive = true;
     listWorkflowCommands()
       .then((list) => {
@@ -133,7 +136,7 @@ export function Composer({
     return () => {
       alive = false;
     };
-  }, [slashOpen, snippetOpen, snippets, snippetsError]);
+  }, [slashOpen, snippets, snippetsError]);
 
   // Coloca el cursor después de insertar (tras el render del nuevo borrador).
   useEffect(() => {
@@ -289,17 +292,8 @@ export function Composer({
   return (
     <div className="border-t bg-card p-3 pb-[max(0.75rem,env(safe-area-inset-bottom))]">
       {scheduleForm}
-      {snippetOpen && (
-        <SnippetPicker
-          onInsert={appendFragment}
-          onClose={() => setSnippetOpen(false)}
-          commands={commands}
-          onRunCommand={(command) => {
-            setSnippetOpen(false);
-            runCommand(command);
-          }}
-        />
-      )}
+      {snippetOpen && <SnippetPicker onInsert={appendFragment} onClose={() => setSnippetOpen(false)} />}
+      {workflowsOpen && <WorkflowPicker onRun={runCommand} onClose={() => setWorkflowsOpen(false)} />}
       {templateOpen && (
         <div className="mb-2">
           <TemplatePicker
@@ -418,6 +412,7 @@ export function Composer({
           onClick={() => {
             setSnippetOpen((open) => !open);
             setTemplateOpen(false);
+            setWorkflowsOpen(false);
           }}
           aria-label="Insertar mensaje rápido"
           aria-expanded={snippetOpen}
@@ -433,6 +428,7 @@ export function Composer({
           onClick={() => {
             setTemplateOpen((open) => !open);
             setSnippetOpen(false);
+            setWorkflowsOpen(false);
           }}
           aria-label="Enviar plantilla"
           aria-expanded={templateOpen}
@@ -452,6 +448,24 @@ export function Composer({
         >
           <Paperclip className="size-4" aria-hidden="true" />
         </button>
+        {/* ▶ Automatizaciones: SOLO móvil (md:hidden). Manda un workflow con un toque; en
+            escritorio se escribe su comando con "/". */}
+        <button
+          type="button"
+          onClick={() => {
+            setWorkflowsOpen((open) => !open);
+            setSnippetOpen(false);
+            setTemplateOpen(false);
+          }}
+          aria-label="Automatizaciones"
+          aria-expanded={workflowsOpen}
+          title="Automatizaciones (mandar tabla, videos, datos bancarios…)"
+          className={`order-1 rounded-md border px-2.5 py-2 text-brand-navy transition-colors md:hidden dark:text-sky-300 ${
+            workflowsOpen ? "border-brand-navy bg-brand-navy/10" : "hover:bg-brand-navy/10"
+          }`}
+        >
+          <Play className="size-4" aria-hidden="true" />
+        </button>
         <div aria-hidden="true" className="order-2 h-0 basis-full sm:hidden" />
         <textarea
           ref={textareaRef}
@@ -466,6 +480,10 @@ export function Composer({
             attachments.addFiles(files);
           }}
           onKeyDown={(event) => {
+            // Móvil (decisión del dueño, 29-sep-2026): Enter SIEMPRE baja de renglón y el
+            // texto conserva sus saltos; lo único que manda es el botón Enviar. Los
+            // atajos de Enter (enviar, insertar del buscador "/") son de escritorio.
+            if (isMobile && event.key === "Enter") return;
             // Con el buscador abierto, Enter NUNCA envía: inserta si hay
             // coincidencia; si no (cargando, sin resultados o error), no hace
             // nada. Para mandar un texto que empiece con "/", Esc y luego Enter.
@@ -522,6 +540,7 @@ export function Composer({
             setScheduleOpen((open) => !open);
             setSnippetOpen(false);
             setTemplateOpen(false);
+            setWorkflowsOpen(false);
           }}
           // Programar no lleva adjuntos por ahora (28-sep-2026).
           disabled={hasFiles}

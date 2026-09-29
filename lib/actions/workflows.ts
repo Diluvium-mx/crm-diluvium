@@ -437,6 +437,65 @@ export async function listWorkflowCommands(): Promise<{ id: string; name: string
   return rows.flatMap((r) => (r.command ? [{ id: r.id, name: r.name, command: r.command }] : []));
 }
 
+/** Un workflow listo para mandarse con un toque desde el chat (botón ▶ de la versión móvil). */
+export type WorkflowQuickSend = {
+  id: string;
+  name: string;
+  command: string;
+  /** Mensaje predeterminado: el primer texto del workflow o el pie del primer archivo. */
+  message: string;
+  /** Primer archivo que manda (miniatura en la lista), o null si solo manda texto. */
+  media: { assetId: string; kind: "image" | "video" | "document"; title: string } | null;
+};
+
+/**
+ * Workflows ENCENDIDOS con comando, con su mensaje predeterminado y su primer archivo,
+ * para la lista ▶ Automatizaciones del chat en el celular. Tocar uno envía lo mismo que
+ * escribir el comando (runWorkflowCommand).
+ */
+export async function listWorkflowQuickSends(): Promise<WorkflowQuickSend[]> {
+  const { organizationId, role } = await requireActiveMembership();
+  requireWorkflow(role, "run");
+  const rows = await db
+    .select({ id: workflows.id, name: workflows.name, command: workflows.triggerCommand })
+    .from(workflows)
+    .where(and(eq(workflows.organizationId, organizationId), eq(workflows.enabled, true), sql`${workflows.triggerCommand} is not null`))
+    .orderBy(asc(workflows.position));
+  if (rows.length === 0) return [];
+  const steps = await db
+    .select({ workflowId: workflowSteps.workflowId, payload: workflowSteps.payload })
+    .from(workflowSteps)
+    .where(and(eq(workflowSteps.organizationId, organizationId), inArray(workflowSteps.workflowId, rows.map((r) => r.id))))
+    .orderBy(asc(workflowSteps.position));
+  const assetIds = steps.flatMap((s) => (s.payload.kind === "send_media" && s.payload.assetId ? [s.payload.assetId] : []));
+  const assets = assetIds.length
+    ? await db
+        .select({ id: mediaAssets.id, kind: mediaAssets.kind, title: mediaAssets.title, fileName: mediaAssets.fileName })
+        .from(mediaAssets)
+        .where(and(eq(mediaAssets.organizationId, organizationId), inArray(mediaAssets.id, assetIds), sql`${mediaAssets.deletedAt} is null`))
+    : [];
+  const assetById = new Map(assets.map((a) => [a.id, a]));
+  return rows.flatMap((r) => {
+    if (!r.command) return [];
+    const own = steps.filter((s) => s.workflowId === r.id).map((s) => s.payload);
+    const firstText = own.find((s) => s.kind === "send_text");
+    const firstMedia = own.find((s) => s.kind === "send_media" && s.assetId && assetById.has(s.assetId));
+    const asset = firstMedia && firstMedia.kind === "send_media" && firstMedia.assetId ? assetById.get(firstMedia.assetId) : undefined;
+    const message =
+      (firstText && firstText.kind === "send_text" ? firstText.text : "") ||
+      (firstMedia && firstMedia.kind === "send_media" ? (firstMedia.caption ?? "") : "");
+    return [
+      {
+        id: r.id,
+        name: r.name,
+        command: r.command,
+        message,
+        media: asset ? { assetId: asset.id, kind: asset.kind, title: asset.title || asset.fileName } : null,
+      },
+    ];
+  });
+}
+
 export type RunCommandResult =
   | { ok: true; runId: string; status: "queued" | "skipped"; reason?: string; name: string }
   | { ok: false; error: string }
