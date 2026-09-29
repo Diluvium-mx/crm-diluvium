@@ -7,7 +7,7 @@
 import { and, desc, eq, inArray, isNull, like, not, or, sql, type SQL } from "drizzle-orm";
 import type { TemperatureFilter } from "@/lib/contacts/filters";
 import { nationalSearchPrefixes } from "@/lib/phone";
-import { normalizeSearch, SQL_SEARCH_FROM, SQL_SEARCH_TO } from "@/lib/text/search";
+import { chatSearchTerm, escapeLike, normalizeSearch, SQL_SEARCH_FROM, SQL_SEARCH_TO } from "@/lib/text/search";
 import { db } from "@/lib/db";
 import { channels, contacts, conversations, messages } from "@/lib/db/schema";
 import { latestInboundMessageId, unreadAfterCutoff } from "@/lib/messaging/ingest";
@@ -25,6 +25,7 @@ import {
 } from "./format";
 import { adCardFromRaw, adCardsForMessages, firstReplyAfter } from "@/lib/ads/queries";
 import { transcripcionMeta } from "@/lib/ai/transcription/rules";
+import { chatMatchesForConversations, conversationsWithChatMatch, type ChatMatch } from "./chat-search";
 import type {
   ConversationDetail,
   ConversationListItem,
@@ -82,10 +83,6 @@ function decodeCursor(cursor: string): [string, string] | null {
   return null;
 }
 
-function escapeLike(text: string): string {
-  return text.replace(/[\\%_]/g, (c) => `\\${c}`);
-}
-
 function searchCondition(search: string | undefined): SQL | undefined {
   const term = search?.trim();
   if (!term) return undefined;
@@ -107,12 +104,20 @@ function searchCondition(search: string | undefined): SQL | undefined {
 
 type ListRow = { conversation: typeof conversations.$inferSelect; contact: typeof contacts.$inferSelect };
 
-/** Filas de la lista (último mensaje y semáforo en dos consultas por lote). */
-async function toListItems(organizationId: string, page: ListRow[]): Promise<ConversationListItem[]> {
+/**
+ * Filas de la lista (último mensaje y semáforo en dos consultas por lote). Con `chatTerm`
+ * (búsqueda en los chats) también sus coincidencias.
+ */
+async function toListItems(organizationId: string, page: ListRow[], chatTerm: string | null): Promise<ConversationListItem[]> {
   const ids = page.map((r) => r.conversation.id);
-  const [lastMessages, awaiting, testIds] = ids.length
-    ? await Promise.all([lastMessageOf(organizationId, ids), awaitingReplySince(organizationId, ids), testChannelConversations(organizationId, ids)])
-    : [new Map(), new Map(), new Set<string>()];
+  const [lastMessages, awaiting, testIds, chatMatches] = ids.length
+    ? await Promise.all([
+        lastMessageOf(organizationId, ids),
+        awaitingReplySince(organizationId, ids),
+        testChannelConversations(organizationId, ids),
+        chatTerm ? chatMatchesForConversations(organizationId, ids, chatTerm) : new Map<string, ChatMatch>(),
+      ])
+    : [new Map(), new Map(), new Set<string>(), new Map<string, ChatMatch>()];
 
   return page.map(({ conversation, contact }) => {
     const last = lastMessages.get(conversation.id);
@@ -134,6 +139,7 @@ async function toListItems(organizationId: string, page: ListRow[]): Promise<Con
       // Se manda la ventana tal cual; la UI decide "quedan X h" o si venció.
       windowExpiresAt: conversation.windowExpiresAt,
       isTestChannel: testIds.has(conversation.id),
+      chatMatch: chatMatches.get(conversation.id) ?? null,
     };
   });
 }
@@ -154,16 +160,25 @@ function temperatureCondition(temperature: TemperatureFilter | null | undefined)
   return temperature === "none" ? isNull(contacts.temperature) : eq(contacts.temperature, temperature);
 }
 
+// Término de la búsqueda en los chats (lupa amarilla prendida y al menos 3 letras); null = no aplica.
+function chatTermOf({ search, searchChats }: InboxListParams): string | null {
+  return searchChats ? chatSearchTerm(search) : null;
+}
+
 // Las condiciones sobre `contacts` valen porque las dos consultas de la lista hacen
 // el mismo innerJoin con contacts (mismo org).
-function listFilter(organizationId: string, { filter = "all", temperature, search }: InboxListParams): SQL | undefined {
+function listFilter(organizationId: string, params: InboxListParams): SQL | undefined {
+  const { filter = "all", temperature, search, searchChats } = params;
+  const chatTerm = chatTermOf(params);
   return and(
     eq(conversations.organizationId, organizationId),
     filter === "unread" ? sql`${conversations.unreadCount} > 0` : undefined,
     // Destacado = la marca del contacto (0048, 29-sep-2026).
     filter === "starred" ? eq(contacts.destacado, true) : undefined,
     temperatureCondition(temperature),
-    searchCondition(search),
+    // Lupa prendida: el mismo campo busca DENTRO de los chats (con menos de 3 letras, aún
+    // no filtra); apagada, por nombre o teléfono como siempre.
+    searchChats ? (chatTerm ? conversationsWithChatMatch(organizationId, chatTerm) : undefined) : searchCondition(search),
   );
 }
 
@@ -192,7 +207,7 @@ export async function listConversationItemsByIdsForOrg(
     .from(conversations)
     .innerJoin(contacts, and(eq(contacts.id, conversations.contactId), eq(contacts.organizationId, organizationId)))
     .where(and(listFilter(organizationId, params), inArray(conversations.id, conversationIds)));
-  return toListItems(organizationId, rows);
+  return toListItems(organizationId, rows, chatTermOf(params));
 }
 
 export async function listConversationsForOrg(
@@ -214,7 +229,7 @@ export async function listConversationsForOrg(
     .limit(PAGE_SIZE + 1);
 
   const page = rows.slice(0, PAGE_SIZE);
-  const items = await toListItems(organizationId, page);
+  const items = await toListItems(organizationId, page, chatTermOf(params));
   const lastRow = page.at(-1);
   return {
     items,

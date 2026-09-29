@@ -28,7 +28,8 @@ El chat es un solo componente reutilizado en las dos secciones.
   El chat se queda con el espacio.
 
 ### Lista de conversaciones
-- **Buscar** por nombre o teléfono.
+- **Buscar** por nombre o teléfono; con la **lupa** prendida, dentro de los chats (ver
+  "Búsqueda en los chats" abajo).
 - **Filtros (pestañas): No leído · Todo · Destacado.** "Reciente" no existe: la lista SIEMPRE va del
   último mensaje (arriba) al más antiguo. **Destacado** = la marca ⭐ del contacto
   (`contacts.destacado`, migración 0048, 29-sep-2026): la estrella de la fila es ese dato.
@@ -83,6 +84,42 @@ salir de cada campo (sin botón Guardar) con aviso "Guardado ✓". Ya no existe 
 Debajo de la estrella de cada fila va la temperatura del contacto (🔥/🧊/⏳; ○ sin asignar; ⭐ no es
 temperatura, es la estrella); un
 clic abre un menú para cambiarla sin abrir el chat. Lista y panel quedan sincronizados.
+
+### Búsqueda en los chats (29-sep-2026, decisión del dueño)
+- **Dónde:** una **lupa** entre el buscador y el filtro, en la Bandeja y en el Embudo
+  (`app/(app)/_components/chat-search-button.tsx`). No hay buscador aparte: prendida, se pinta de
+  amarillo (también el borde del campo) y el MISMO campo busca una palabra **dentro de los chats**
+  («Buscar en los chats…»); apagada, busca por nombre o teléfono como siempre. Lo escrito se queda
+  al prender o apagar. Cada pantalla tiene la suya y no se recuerda al recargar (igual que el filtro).
+- **Qué busca:** todo lo que se ve del chat — mensajes del cliente, del vendedor y del Agente IA,
+  historial importado, pies de foto y transcripciones de notas de voz. **Fuera:** los avisos internos
+  📝 (no son parte de la conversación con el cliente), la sombra del aviso "no disponible" y los
+  comentarios del contacto. Sin acentos, ñ ni mayúsculas ("culiacan" encuentra "Culiacán"), y
+  **mínimo 3 letras** (con menos, aviso «Escribe al menos 3 letras» y aún no filtra).
+- **Resultado:** solo quedan los contactos donde aparece la palabra, con un **círculo amarillo** =
+  cuántos mensajes la tienen (tope 99+), junto al naranja de no leídos (que no cambia). Se suma a la
+  pestaña y al filtro de temperatura/Destacado. **Bandeja:** la vista previa de la fila es el pedazo
+  del mensaje donde aparece, resaltado; el orden no cambia. **Embudo:** mismas columnas, orden y
+  arrastre; el círculo del contacto suma todos sus chats (como el naranja) y la columna vacía dice
+  «Ninguno con esta búsqueda».
+- **Chat (Bandeja y pop-up del Embudo):** la palabra resaltada en amarillo, una barra «palabra · 1
+  de N» con ↑ (anterior, más vieja) ↓ (siguiente) que dan la vuelta, y el chat salta a la
+  coincidencia **más reciente** con borde amarillo en su burbuja. Si es vieja, carga las páginas
+  anteriores hasta llegar (de 100 en 100).
+- **En vivo:** Bandeja con los mismos parámetros del tiempo real (una fila que ya no cumple se va);
+  Embudo vuelve a buscar con cada mensaje nuevo o borrado (a lo más cada 1.5 s); la barra del chat
+  se relee con cada evento de ese chat y se queda en la misma coincidencia.
+- **Colores (aprobados por el dueño):** los mismos amarillos de la tarjeta amarilla
+  (`rgb(250 204 21)` y borde `rgb(217 164 6)`) pero SÓLIDOS, con el texto del CRM `#1e2a35`
+  encima; iguales en claro y oscuro (tokens `--busqueda`, `--busqueda-borde`, `--busqueda-tinta`).
+  El círculo lleva borde para no confundirse con el fondo claro de la tarjeta amarilla.
+- **Código:** reglas puras `chatSearchTerm`/`escapeLike` (`lib/text/search.ts`) y
+  `searchRanges`/`highlightParts`/`snippetAround` (`lib/text/highlight.ts`); SQL
+  `lib/inbox/chat-search.ts` (`listConversations({ searchChats })`, `searchChatsByContact`,
+  `listChatMatches` en `lib/inbox/actions.ts`); índice GIN de trigramas `messages_busqueda_idx`
+  (migración 0050, `pg_trgm`) sobre la MISMA expresión que `messageSearchText` (la prueba
+  `chat-search.int.test.ts` revisa que Postgres lo use). UI: `chat-search-badge.tsx`,
+  `components/ui/search-highlight.tsx`, `ChatThread` (`searchTerm`).
 
 ### Clic derecho: leído / no leído (27-sep-2026)
 - **Menú del clic derecho** en la fila de la lista (Bandeja) y en la tarjeta (Embudo), en portal

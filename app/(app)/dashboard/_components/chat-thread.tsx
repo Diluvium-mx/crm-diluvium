@@ -1,10 +1,10 @@
 "use client";
 
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
-import { ArrowLeft } from "lucide-react";
+import { ArrowLeft, ChevronDown, ChevronUp, Search } from "lucide-react";
 import type { AdReferral, AttachmentView, ConversationDetail, MessageView } from "@/lib/inbox/types";
 import { useFunnelStages } from "../../_components/funnel-stages-provider";
-import { listMessages, retryMessage, sendMessage, sendTemplate } from "@/lib/inbox/actions";
+import { listChatMatches, listMessages, retryMessage, sendMessage, sendTemplate } from "@/lib/inbox/actions";
 import { runWorkflowCommand } from "@/lib/actions/workflows";
 import { parseCommand } from "@/lib/workflows/steps";
 import { sendAttachments } from "@/lib/inbox/attachment-actions";
@@ -38,6 +38,10 @@ const PAGE_LIMIT = 30;
 // fondo para considerar que el vendedor "está abajo" (los nuevos lo siguen).
 const LOAD_OLDER_AT_PX = 120;
 const NEAR_BOTTOM_PX = 120;
+// Para llegar a una coincidencia vieja de la búsqueda se cargan páginas grandes (el tope
+// del servidor) y a lo más estas vueltas.
+const JUMP_PAGE_LIMIT = 100;
+const JUMP_MAX_PAGES = 50;
 
 // Mensaje pintado de forma optimista (aún sin id del servidor). Se reconcilia
 // con el `message.upserted` del SSE: al re-pedir el hilo, se descarta el
@@ -99,24 +103,40 @@ function Attachment({ attachment, onOpen }: { attachment: AttachmentView; onOpen
 
 // "Transcripción" debajo de una nota de voz del cliente (Agente IA parte 1): el
 // texto que lee el agente; "Transcribiendo…" mientras tanto (el SSE lo rellena).
-function TranscriptionNote({ transcription, out }: { transcription: NonNullable<MessageView["transcription"]>; out: boolean }) {
+function TranscriptionNote({
+  transcription,
+  out,
+  searchTerm,
+}: {
+  transcription: NonNullable<MessageView["transcription"]>;
+  out: boolean;
+  searchTerm: string | null;
+}) {
   const muted = out ? "text-brand-white/70" : "text-muted-foreground";
   if (transcription.state === "pendiente") return <p className={`mb-1 text-[11px] italic ${muted}`}>Transcribiendo…</p>;
   if (transcription.state === "sin") return <p className={`mb-1 text-[11px] italic ${muted}`}>Sin transcripción: {transcription.reason}.</p>;
   return (
     <div className={`mb-1 rounded-md border-l-4 px-2 py-1 text-xs ${out ? "border-brand-white/60 bg-brand-white/10" : "border-brand-navy/60 bg-muted"}`}>
       <span className="font-medium">Transcripción</span>
-      <p className="whitespace-pre-wrap break-words opacity-90"><LinkedText text={transcription.text} /></p>
+      <p className="whitespace-pre-wrap break-words opacity-90">
+        <LinkedText text={transcription.text} searchTerm={searchTerm} />
+      </p>
     </div>
   );
 }
 
 function Bubble({
   row,
+  searchTerm,
+  currentMatch,
   onRetry,
   onOpenAttachment,
 }: {
   row: Row;
+  /** Búsqueda en los chats (lupa amarilla): la palabra se resalta en amarillo. */
+  searchTerm: string | null;
+  /** Es la coincidencia que se está viendo («1 de N»): borde amarillo. */
+  currentMatch: boolean;
   onRetry: (row: Row) => void;
   onOpenAttachment: (attachment: AttachmentView) => void;
 }) {
@@ -153,10 +173,16 @@ function Bubble({
   // aviso en lugar de "[Unsupported message]"; mientras se verifica, "Recibiendo mensaje…".
   const notice = view?.noDisponible ?? null;
 
+  // Los avisos internos no entran en la búsqueda (decisión del dueño): arriba ya salieron.
+  const term = opt ? null : searchTerm;
+
   return (
-    <div className={`flex ${out ? "justify-end" : "justify-start"} ${reactions.length ? "mb-3" : ""}`}>
+    <div
+      data-message-id={opt ? undefined : row.id}
+      className={`flex ${out ? "justify-end" : "justify-start"} ${reactions.length ? "mb-3" : ""}`}
+    >
       <div
-        className={`relative max-w-[78%] rounded-2xl px-3 py-2 text-sm shadow-sm ${
+        className={`relative max-w-[78%] rounded-2xl px-3 py-2 text-sm shadow-sm ${currentMatch ? "outline-2 outline-offset-2 outline-busqueda " : ""}${
           out
             ? "bg-brand-navy text-brand-white"
             : notice === "sin_contenido"
@@ -211,7 +237,7 @@ function Bubble({
             ))}
           </div>
         )}
-        {view?.transcription && <TranscriptionNote transcription={view.transcription} out={out} />}
+        {view?.transcription && <TranscriptionNote transcription={view.transcription} out={out} searchTerm={term} />}
         {notice === "sin_contenido" && row.body && (
           <p className="whitespace-pre-wrap break-words">
             <span aria-hidden="true">⚠️ </span>
@@ -221,7 +247,7 @@ function Bubble({
         {notice === "verificando" && row.body && <p className="italic">{row.body}</p>}
         {!notice && row.body && (
           <p className="whitespace-pre-wrap break-words">
-            <LinkedText text={row.body} />
+            <LinkedText text={row.body} searchTerm={term} />
           </p>
         )}
         <div className={`mt-1 flex items-center justify-end gap-1 text-[10px] ${out ? "text-brand-white/70" : "text-muted-foreground"}`}>
@@ -267,10 +293,17 @@ export function ChatThread({
   nowMs,
   headerAction,
   onBack,
+  searchTerm = null,
 }: {
   detail: ConversationDetail;
   revalToken: number;
   nowMs: number;
+  /**
+   * Lupa amarilla (Bandeja y pop-up del Embudo): palabra buscada, ya normalizada
+   * (chatSearchTerm). Se resalta, el chat salta a la coincidencia más reciente y la barra
+   * «1 de N» recorre las demás. null = sin búsqueda.
+   */
+  searchTerm?: string | null;
   /** A la derecha del nombre en el encabezado (el pop-up del Embudo pone «Marcar como leído»). */
   headerAction?: ReactNode;
   /** Móvil: flecha ← a la izquierda del nombre para volver a la lista (la Bandeja la pasa). */
@@ -364,6 +397,14 @@ export function ChatThread({
     return () => clearTimeout(t);
   }, [load, revalToken]);
 
+  // Búsqueda en los chats: ids de los mensajes con la palabra (del más reciente al más
+  // viejo) y cuál se ve (0 = el más reciente). `key` = conversación + palabra: una búsqueda
+  // de otro chat u otra palabra no se muestra mientras llega la nueva.
+  const [search, setSearch] = useState<{ key: string; ids: string[]; index: number } | null>(null);
+  const searchKey = searchTerm ? `${conversationId}|${searchTerm}` : null;
+  const activeSearch = search && search.key === searchKey ? search : null;
+  const currentMatchId = activeSearch?.ids[activeSearch.index] ?? null;
+
   // Scroll del historial: SOLO se desliza el historial (la página y el composer
   // quedan fijos). Al cargar anteriores se conserva el lugar; los mensajes nuevos
   // bajan al fondo solo si el vendedor ya estaba abajo, cambió de conversación o
@@ -444,6 +485,124 @@ export function ChatThread({
     observer.observe(el);
     return () => observer.disconnect();
   }, []);
+
+  // Salto a una coincidencia de la búsqueda: si el mensaje es viejo se cargan páginas
+  // anteriores hasta tenerlo y luego se centra en el historial. Espera a que haya llegado
+  // la primera página de ESTA conversación (al abrir el chat llegan juntas).
+  const pendingJumpRef = useRef<string | null>(null);
+  const jumpingRef = useRef(false);
+  const scrollTargetRef = useRef<string | null>(null);
+  const [jumpTick, setJumpTick] = useState(0);
+  const runJump = useCallback(async () => {
+    const id = pendingJumpRef.current;
+    if (!id || jumpingRef.current || loadingOlderRef.current) return;
+    if (loadedRef.current.conversationId !== conversationId) return;
+    jumpingRef.current = true;
+    loadingOlderRef.current = true;
+    try {
+      for (let round = 0; round < JUMP_MAX_PAGES; round++) {
+        const loaded = loadedRef.current;
+        const oldest = loaded.messages[0];
+        if (!oldest || !loaded.hasMore || loaded.messages.some((m) => m.id === id)) break;
+        const page = await listMessages(conversationId, { before: oldest.id, limit: JUMP_PAGE_LIMIT });
+        if (!page || openConversationRef.current !== conversationId || loadedRef.current.conversationId !== conversationId) return;
+        const known = new Set(loadedRef.current.messages.map((m) => m.id));
+        const next = [...page.messages.filter((m) => !known.has(m.id)), ...loadedRef.current.messages];
+        loadedRef.current = { conversationId, messages: next, hasMore: page.hasMore };
+        // Lo agregado arriba no debe bajar el historial al fondo: el salto lo acomoda.
+        nearBottomRef.current = false;
+        setMessages(next);
+        setHasMore(page.hasMore);
+      }
+      // Mientras cargaba pidieron otra coincidencia: esa se atiende al terminar.
+      if (pendingJumpRef.current !== id) return;
+      pendingJumpRef.current = null;
+      scrollTargetRef.current = id;
+      setJumpTick((n) => n + 1);
+    } catch {
+      // Falla de red: la barra «1 de N» sigue ahí para volver a intentarlo.
+      if (pendingJumpRef.current === id) pendingJumpRef.current = null;
+    } finally {
+      jumpingRef.current = false;
+      loadingOlderRef.current = false;
+      if (pendingJumpRef.current && pendingJumpRef.current !== id) setTimeout(() => void runJumpRef.current(), 0);
+    }
+  }, [conversationId]);
+  const runJumpRef = useRef(runJump);
+  useEffect(() => {
+    runJumpRef.current = runJump;
+  }, [runJump]);
+  function requestJump(messageId: string) {
+    pendingJumpRef.current = messageId;
+    void runJumpRef.current();
+  }
+  // Un salto pedido antes de que llegara la primera página se hace en cuanto llega.
+  useEffect(() => {
+    if (!pendingJumpRef.current || loading) return;
+    const t = setTimeout(() => void runJumpRef.current(), 0);
+    return () => clearTimeout(t);
+  }, [messages, loading]);
+  // Centra la coincidencia (después del auto-scroll de arriba, en su propio render).
+  useLayoutEffect(() => {
+    const id = scrollTargetRef.current;
+    const el = scrollRef.current;
+    if (!id || !el) return;
+    const node = el.querySelector<HTMLElement>(`[data-message-id="${CSS.escape(id)}"]`);
+    if (!node) return;
+    scrollTargetRef.current = null;
+    prependRef.current = null;
+    forceBottomRef.current = false;
+    const box = el.getBoundingClientRect();
+    const target = node.getBoundingClientRect();
+    el.scrollTop += target.top - box.top - Math.max(0, (el.clientHeight - target.height) / 2);
+    nearBottomRef.current = el.scrollHeight - el.scrollTop - el.clientHeight < NEAR_BOTTOM_PX;
+  }, [jumpTick]);
+
+  // Coincidencias de la palabra en este chat: se piden al abrirlo, al cambiar la palabra y
+  // con cada evento del chat (revalToken: pudo llegar un mensaje con la palabra). Una
+  // búsqueda NUEVA salta a la coincidencia más reciente; una recarga se queda donde está.
+  const jumpedKeyRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (!searchTerm) {
+      jumpedKeyRef.current = null;
+      pendingJumpRef.current = null;
+      return;
+    }
+    const key = `${conversationId}|${searchTerm}`;
+    let cancelled = false;
+    const t = setTimeout(() => {
+      listChatMatches(conversationId, searchTerm).then(
+        (ids) => {
+          if (cancelled) return;
+          setSearch((prev) => {
+            if (prev && prev.key === key) {
+              const still = ids.indexOf(prev.ids[prev.index] ?? "");
+              return { key, ids, index: still >= 0 ? still : Math.min(prev.index, Math.max(ids.length - 1, 0)) };
+            }
+            return { key, ids, index: 0 };
+          });
+          if (jumpedKeyRef.current !== key) {
+            jumpedKeyRef.current = key;
+            if (ids[0]) requestJump(ids[0]);
+          }
+        },
+        () => undefined,
+      );
+    }, 0);
+    return () => {
+      cancelled = true;
+      clearTimeout(t);
+    };
+  }, [conversationId, searchTerm, revalToken]);
+
+  // ↑ = coincidencia anterior (más vieja), ↓ = siguiente (más reciente); dan la vuelta.
+  function goToMatch(step: 1 | -1) {
+    if (!activeSearch || activeSearch.ids.length === 0) return;
+    const count = activeSearch.ids.length;
+    const index = (activeSearch.index + step + count) % count;
+    setSearch({ ...activeSearch, index });
+    requestJump(activeSearch.ids[index]);
+  }
 
   // "/tabla" y similares (Fase D): si el texto es un comando de workflow, se
   // dispara la automatización; si no corresponde a ninguno, sale como texto.
@@ -571,6 +730,42 @@ export function ChatThread({
         <AdFreeWindowNote adEntry={detail.adEntry} nowMs={nowMs} />
       </div>
       <AgentPausedBanner agent={agent} nowMs={nowMs} />
+      {/* Búsqueda en los chats (lupa amarilla): la palabra y «1 de N» para recorrerla. */}
+      {searchTerm && (
+        <div className="flex shrink-0 items-center gap-2 border-b border-busqueda-borde/50 bg-busqueda/15 px-3 py-1 text-xs md:px-4">
+          <Search className="size-3.5 shrink-0" aria-hidden="true" />
+          <span className="min-w-0 flex-1 truncate" aria-live="polite">
+            «{searchTerm}» ·{" "}
+            {!activeSearch
+              ? "buscando…"
+              : activeSearch.ids.length === 0
+                ? "no aparece en este chat"
+                : `${activeSearch.index + 1} de ${activeSearch.ids.length}`}
+          </span>
+          {activeSearch && activeSearch.ids.length > 1 && (
+            <>
+              <button
+                type="button"
+                onClick={() => goToMatch(1)}
+                aria-label="Coincidencia anterior"
+                title="Anterior (más vieja)"
+                className="flex size-7 items-center justify-center rounded-md hover:bg-busqueda/30"
+              >
+                <ChevronUp className="size-4" aria-hidden="true" />
+              </button>
+              <button
+                type="button"
+                onClick={() => goToMatch(-1)}
+                aria-label="Coincidencia siguiente"
+                title="Siguiente (más reciente)"
+                className="flex size-7 items-center justify-center rounded-md hover:bg-busqueda/30"
+              >
+                <ChevronDown className="size-4" aria-hidden="true" />
+              </button>
+            </>
+          )}
+        </div>
+      )}
 
       {/* Historial + caja de escribir: la capa para soltar archivos los cubre a los dos. */}
       <ChatDropZone enabled={canAttach} onFiles={attachments.addFiles} onBrowse={() => pickerRef.current?.click()}>
@@ -622,7 +817,13 @@ export function ChatThread({
                         </span>
                       </div>
                     )}
-                    <Bubble row={row} onRetry={handleRetry} onOpenAttachment={setViewing} />
+                    <Bubble
+                      row={row}
+                      searchTerm={searchTerm}
+                      currentMatch={!isOptimistic(row) && row.id === currentMatchId}
+                      onRetry={handleRetry}
+                      onOpenAttachment={setViewing}
+                    />
                   </div>
                 );
               })}
