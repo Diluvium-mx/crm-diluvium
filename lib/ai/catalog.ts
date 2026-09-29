@@ -11,14 +11,16 @@ export const DEFAULT_MODEL_2 = DEFAULT_BRAIN_MODEL;
 // Catálogo = fuente ÚNICA de qué modelos existen, cómo se llaman en cada API y
 // qué llave necesitan (vía provider). Los model-id se verificaron contra docs
 // oficiales / OpenRouter (2026-09). Agregar un modelo = una entrada aquí (y su
-// adaptador en lib/ai/providers/ si es un proveedor nuevo). `tier` es
-// clasificación editable; no cambia comportamiento.
+// adaptador en lib/ai/providers/ si es un proveedor nuevo; si es una marca nueva,
+// su logo en public/logos-ia/ y lib/ai/logos.ts). `tier` es clasificación
+// editable; no cambia comportamiento.
 export const MODEL_CATALOG = [
   {
     id: "gpt-5.6-luna",
     label: "GPT-5.6 Luna",
     provider: "openai",
     providerModelId: "gpt-5.6-luna",
+    logo: "openai",
     tier: "economico",
     multimodal: true,
     pdf: true,
@@ -30,6 +32,7 @@ export const MODEL_CATALOG = [
     label: "Claude Sonnet 5",
     provider: "anthropic",
     providerModelId: "claude-sonnet-5",
+    logo: "claude",
     tier: "tope",
     multimodal: true,
     pdf: true,
@@ -40,6 +43,7 @@ export const MODEL_CATALOG = [
     label: "GPT-5.6 Terra",
     provider: "openai",
     providerModelId: "gpt-5.6-terra",
+    logo: "openai",
     tier: "balanceado",
     multimodal: true,
     pdf: true,
@@ -51,6 +55,7 @@ export const MODEL_CATALOG = [
     label: "GPT-5.6 Sol",
     provider: "openai",
     providerModelId: "gpt-5.6-sol",
+    logo: "openai",
     tier: "tope",
     multimodal: true,
     pdf: true,
@@ -63,6 +68,7 @@ export const MODEL_CATALOG = [
     label: "Claude Opus 5.5",
     provider: "anthropic",
     providerModelId: "claude-opus-5-5",
+    logo: "claude",
     tier: "tope",
     multimodal: true,
     pdf: true,
@@ -74,6 +80,7 @@ export const MODEL_CATALOG = [
     label: "Claude Haiku 4.5",
     provider: "anthropic",
     providerModelId: "claude-haiku-4-5-20251001",
+    logo: "claude",
     tier: "economico",
     multimodal: true,
     pdf: true,
@@ -84,6 +91,7 @@ export const MODEL_CATALOG = [
     label: "Gemini 3.8 Flash",
     provider: "google",
     providerModelId: "gemini-3.8-flash",
+    logo: "gemini",
     tier: "balanceado",
     multimodal: true,
     pdf: true,
@@ -94,6 +102,7 @@ export const MODEL_CATALOG = [
     label: "Grok 4.6",
     provider: "xai",
     providerModelId: "grok-4.6",
+    logo: "grok",
     tier: "tope",
     multimodal: true,
     pdf: true,
@@ -104,6 +113,7 @@ export const MODEL_CATALOG = [
     label: "Qwen 3.7 Flash",
     provider: "openrouter",
     providerModelId: "qwen/qwen3.7-flash",
+    logo: "qwen",
     tier: "economico",
     // Verificado: acepta imagen y video de entrada (modalidades de OpenRouter),
     // no es solo texto. PDF no (OpenRouter no lista "file" para este modelo).

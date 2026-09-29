@@ -15,6 +15,10 @@ export type ModelOptionView = {
   label: string;
   provider: ProviderId;
   providerLabel: string;
+  // Logo de la marca a la derecha de la tarjeta (lib/ai/logos.ts); `logoMono` =
+  // negro de un color, se invierte en modo oscuro.
+  logoSrc: string;
+  logoMono: boolean;
   tier: ModelTier;
   multimodal: boolean;
   available: boolean;
