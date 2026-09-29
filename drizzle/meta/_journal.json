@@ -323,6 +323,13 @@
       "when": 1790631806461,
       "tag": "0046_palabra_clave_durable",
       "breakpoints": true
+    },
+    {
+      "idx": 47,
+      "version": "7",
+      "when": 1790645071459,
+      "tag": "0047_lector_detalle",
+      "breakpoints": true
     }
   ]
 }

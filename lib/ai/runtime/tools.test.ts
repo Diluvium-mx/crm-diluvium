@@ -57,6 +57,13 @@ describe("herramientas del cerebro (Fase D reestructurada)", () => {
     expect((t.tools[TOOL_MOVER_ETAPA] as { description?: string }).description).toContain("compra (Compra) → seguimiento (Seguimiento)");
   });
 
+  it("actualizar_detalle (28-sep): null = sin dato y 0 cm es relleno; ninguno llega al Detalle", () => {
+    // Así contestaba Luna antes del null: todos los campos, con 0, "" o "no_sabe" de relleno.
+    expect(parseDetalle({ tiene_inundaciones: null, nivel_agua_cm: null, nivel_agua_texto: null, num_entradas: null, anchos_cm: null, porcentaje_convencimiento: 30, comentario: null })).toEqual({ porcentajeConvencimiento: 30 });
+    expect(parseDetalle({ nivel_agua_cm: 0, nivel_agua_texto: "", num_entradas: 0, anchos_cm: [] })).toBeNull();
+    expect(parseDetalle({ nivel_agua_cm: 35 })).toEqual({ nivelAguaCm: 35 });
+  });
+
   it("actualizar_detalle: valida campo por campo (un dato raro no tira los demás), redondea y nunca avisa al vendedor", () => {
     expect(
       parseDetalle({
