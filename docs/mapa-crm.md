@@ -188,6 +188,10 @@ Clic derecho sobre una fila de la lista: menú de esa conversación (23).
 
 ![Menú del clic derecho en la Bandeja](mapa-crm/02-bandeja-menu.png)
 
+Filtro de temperatura (25) abierto, con 🔥 elegido: la lista deja solo los calientes y la **×** quita el filtro.
+
+![Filtro de temperatura de la Bandeja](mapa-crm/02-bandeja-filtro.png)
+
 | # | Nombre oficial | Qué hace | Quién lo ve |
 |---|---|---|---|
 | 1 | **Ocultar lista** | Esconde o muestra la lista de chats; se recuerda en esa computadora. | Todos |
@@ -213,7 +217,7 @@ Clic derecho sobre una fila de la lista: menú de esa conversación (23).
 | 21 | **Detalle del contacto** | Ficha del cliente. Ver [3.2.3 Detalle del contacto](#323-detalle-del-contacto). | Todos |
 | 22 | **Ocultar panel de contacto** | Esconde o muestra el Detalle; se recuerda en esa computadora. | Todos |
 | 23 | **Menú del clic derecho** | Sobre una fila (en celular, dejándola presionada): **Marcar como no leído** (pone el círculo naranja, 6, para dejarla pendiente; si ese chat estaba abierto, se cierra) o **Marcar como leído** (lo quita, y en el Embudo también quita el azul de la tarjeta). Es para todo el equipo; el círculo se quita solo al abrir el chat o al contestar. | Todos |
-| 25 | **Filtro de temperatura** (ícono a la derecha del buscador) | Menú corto: **Todas · 🔥 Caliente · 🧊 Frío · ⏳ En espera · ○ Sin asignar**, una a la vez. Con algo elegido el ícono se pinta naranja y muestra el emoji; la **×** de al lado lo quita. Se suma a la pestaña (3) y a la búsqueda. No se recuerda al recargar. Desde el 28-sep-2026; captura pendiente. | Todos |
+| 25 | **Filtro de temperatura** (ícono a la derecha del buscador) | Menú corto: **Todas · 🔥 Caliente · 🧊 Frío · ⏳ En espera · ○ Sin asignar**, una a la vez. Con algo elegido el ícono se pinta naranja y muestra el emoji; la **×** de al lado lo quita. Se suma a la pestaña (3) y a la búsqueda. No se recuerda al recargar. Desde el 28-sep-2026. | Todos |
 | 24 | **Franja del Agente IA** (arriba de todo, solo si aplica) | Si el Agente IA tiene horario: «El Agente IA solo contesta mié–jue 20:00–6:00 (ahora está fuera de horario)» en ámbar, o «(ahora sí está contestando)» en gris; se actualiza sola cada minuto. Si el canal está Apagado: «El Agente IA está apagado en WhatsApp Diluvium» en rojo. Con 24/7 y Encendido no sale. No está en la captura. | Todos |
 
 **Lo cambias tú desde la pantalla:** temperatura, estrella, leído / no leído (clic derecho), etapa y todo el
@@ -440,7 +444,7 @@ segundo plano con el agente apagado o pausado.
 
 El tablero con una columna por etapa. Cada tarjeta es un contacto. Arrastrar una tarjeta a otra columna le cambia
 la etapa. Todo se actualiza solo, sin recargar. Las columnas se editan con el **lápiz (17)** junto al título
-(desde el 27-sep-2026: renombrar, agregar, borrar, reordenar; captura pendiente).
+(desde el 27-sep-2026: renombrar, agregar, borrar, reordenar).
 
 ![Embudo](mapa-crm/06-embudo.png)
 
@@ -452,6 +456,15 @@ Abrirlo quita el círculo naranja (6); el azul (4) se quita al contestar o con *
 Clic derecho sobre una tarjeta: menú de ese contacto (16).
 
 ![Menú del clic derecho en el Embudo](mapa-crm/06-embudo-menu.png)
+
+Filtro (29) abierto con 🔥 y ⭐ Destacado: cada columna deja solo las tarjetas calientes y destacadas, y las vacías dicen
+«Ninguno con este filtro».
+
+![Filtro del Embudo](mapa-crm/06-embudo-filtro.png)
+
+Temperatura en el pop-up (Detalle › 4): arriba la temperatura, abajo de la línea ⭐ Destacado, cada una por su lado.
+
+![Temperatura y Destacado en el pop-up del Embudo](mapa-crm/06-embudo-temperatura.png)
 
 **＋ Nuevo contacto (20)** (desde el 28-sep-2026): alta a mano, como la pestaña Contactos de GHL. Al crearlo se abre su
 pop-up. Un contacto **sin chat** (nuevo o importado de GHL) muestra cómo escribirle primero (24–26): gratis desde
@@ -470,7 +483,7 @@ WhatsApp Web, o con una plantilla desde el CRM.
 | 6 | **Círculo naranja** | Mensajes sin ver. Se quita al abrir el chat o con Marcar como leído. | Todos |
 | 7 | **Temperatura** y **⭐ Destacado** | La temperatura del contacto y, al lado y del mismo tamaño, ⭐ si es Destacado (la estrella de la Bandeja). Pueden ir juntas: 🔥 ⭐. | Todos |
 | 8 | **Ciudad por lada** | 📍 Ciudad calculada por la lada del teléfono. | Todos |
-| 9 | **PRUEBA** | Contacto del número de prueba. Hoy ninguno la lleva: se quitó el 28-sep-2026 al borrar los chats de prueba. | Todos |
+| 9 | **PRUEBA** | Contacto del número de prueba. Hoy ninguno la lleva: se quitó el 28-sep-2026 al borrar los chats de prueba (la captura muestra uno de ejemplo). | Todos |
 | 10 | **Columna Compra** | Los que ya compraron (cuenta en Anuncios › Compraron). Es la columna con el papel «Venta cerrada» (70): si el papel pasa a otra, cuenta esa. | Todos |
 | 11 | **Chat** (pop-up) | El mismo chat de la Bandeja, con su caja para escribir. | Todos |
 | 12 | **Detalle del contacto** (pop-up) | El mismo Detalle de la Bandeja. | Todos |
@@ -490,7 +503,7 @@ WhatsApp Web, o con una plantilla desde el CRM.
 | 26 | **📄 Enviar plantilla desde el CRM** (**Con costo**) | **Elegir plantilla** → **Enviar plantilla**: abre el chat por WhatsApp con una plantilla aprobada (Marketing ≈ $0.73). Después, en el CRM solo se puede mandar otra plantilla hasta que el cliente conteste (Bandeja › 24). | Todos |
 | 27 | **"Este número también está en el contacto «…»"** · **Abrir ese contacto** | Hay otro contacto (más antiguo) con ese número: el chat quedaría en ese, así que se manda desde ahí. | Todos |
 | 28 | **Aviso de Meta** (pop-up grande) | Si WhatsApp (Meta) rechaza la plantilla: título, **Por qué pasó**, **Qué hacer** y **Entendido** (el mismo de Mensajes rápidos › 31). | Todos |
-| 29 | **Filtro** (ícono a la derecha del buscador) | Menú corto: **Temperatura** (Todas · 🔥 · 🧊 · ⏳ · ○ Sin asignar, una a la vez) y, aparte, **⭐ Destacado** (la marca del contacto). Se pueden combinar (🔥 + Destacado) y se suman a la búsqueda. Con algo elegido el ícono se pinta naranja y muestra los emojis; la **×** lo quita. **Las columnas no cambian:** mismas etapas, orden, colores y arrastre; solo quedan las tarjetas que cumplen, cada columna cuenta las suyas y la vacía dice «Ninguno con este filtro». Una tarjeta que deja de cumplir (p. ej. le cambias la temperatura en el pop-up) se va del tablero. No se recuerda al recargar. Desde el 28-sep-2026; captura pendiente. | Todos |
+| 29 | **Filtro** (ícono a la derecha del buscador) | Menú corto: **Temperatura** (Todas · 🔥 · 🧊 · ⏳ · ○ Sin asignar, una a la vez) y, aparte, **⭐ Destacado** (la marca del contacto). Se pueden combinar (🔥 + Destacado) y se suman a la búsqueda. Con algo elegido el ícono se pinta naranja y muestra los emojis; la **×** lo quita. **Las columnas no cambian:** mismas etapas, orden, colores y arrastre; solo quedan las tarjetas que cumplen, cada columna cuenta las suyas y la vacía dice «Ninguno con este filtro». Una tarjeta que deja de cumplir (p. ej. le cambias la temperatura en el pop-up) se va del tablero. No se recuerda al recargar. Desde el 28-sep-2026. | Todos |
 
 **Lo cambias tú desde la pantalla:** contactos nuevos (20) y el primer mensaje a quien no tiene chat (25–26), la etapa (arrastrando la tarjeta), leído / no leído (clic derecho o **Marcar como leído**, 19), las
 columnas (lápiz, 17) y todo lo del chat y el Detalle en el pop-up. Los cambios a las columnas (crear, renombrar, borrar,
@@ -902,7 +915,7 @@ números dibujados: el número de la tabla nombra la pieza.
 |---|---|---|---|
 | 1 | **Botón ☰ (menú)** | En la barra de arriba, a la izquierda del logo. Abre un cajón con las mismas pestañas del menú lateral y, abajo, el **menú del usuario** (Mi cuenta, Cerrar sesión). Se cierra al elegir una pestaña, con ✕, tocando fuera o con Esc. | Todos |
 | 2 | **Barra de arriba (móvil)** | Solo ☰, el logo y el tema claro/oscuro. El correo y "Cerrar sesión" viven en el menú del usuario (1). | Todos |
-| 3 | **Bandeja: lista** | Mientras no hay un chat abierto, la lista ocupa toda la pantalla (buscador, No leído/Todo/Destacado y las filas, igual que en escritorio). | Todos |
+| 3 | **Bandeja: lista** | Mientras no hay un chat abierto, la lista ocupa toda la pantalla (buscador con su filtro de temperatura, No leído/Todo/Destacado y las filas, igual que en escritorio). | Todos |
 | 4 | **← Volver a la lista** | En el encabezado del chat, a la izquierda del nombre: regresa a la lista (3). | Todos |
 | 5 | **(i) Detalle del contacto** | En el encabezado del chat: abre el mismo Detalle del contacto (3.2.3) encima del chat, a pantalla completa. ✕ lo cierra. En escritorio el detalle es el panel de la derecha, como siempre. | Todos |
 | 6 | **Caja para escribir (móvil)** | Dos renglones: ⚡ 📄 📎 ▶ 🕒 arriba y la caja con **Enviar** abajo. En el celular **Enter baja de renglón** (el texto conserva sus saltos) y **solo el botón Enviar manda**; en escritorio Enter sigue enviando. | Todos |
