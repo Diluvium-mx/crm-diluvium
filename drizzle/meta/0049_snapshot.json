@@ -1,6 +1,6 @@
 {
-  "id": "b2f0701e-11bc-4df9-934c-27605d09e8ec",
-  "prevId": "b7fc155e-c73f-471c-bf1c-31c0559396e3",
+  "id": "39419445-d3c5-404f-88ea-2fa123a99db1",
+  "prevId": "fca20517-027e-41ba-a44b-3bbdf8ea886d",
   "version": "7",
   "dialect": "postgresql",
   "tables": {
@@ -1053,6 +1053,13 @@
           "typeSchema": "public",
           "primaryKey": false,
           "notNull": false
+        },
+        "destacado": {
+          "name": "destacado",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": true,
+          "default": false
         },
         "tiene_inundaciones": {
           "name": "tiene_inundaciones",

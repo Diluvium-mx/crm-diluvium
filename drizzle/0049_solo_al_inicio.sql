@@ -1,4 +1,5 @@
--- «Solo al inicio» (29-sep-2026, decisión del dueño): opción por workflow. Por palabra clave o por el
+-- «Solo al inicio» (29-sep-2026, decisión del dueño): opción por workflow. Es la 0049: la 0048 es «Destacado»
+-- (otra rama); en main debe entrar DESPUÉS de ella para que drizzle no la salte (orden por `when`). Por palabra clave o por el
 -- Agente IA, un workflow con esta opción solo se dispara mientras ni el Agente IA (con texto propio)
 -- ni un vendedor le han contestado al cliente, y a lo mucho UNA vez por contacto
 -- (lib/workflows/start-only.ts). Nace apagada en todos: nada cambia hasta que el dueño la encienda.
