@@ -130,4 +130,82 @@ describe.skipIf(!TEST_DATABASE_URL)("disparadores de workflows", () => {
     expect(await t.findWorkflowByCommand(ORG, "tabla")).toBeNull();
     expect(await t.findWorkflowByCommand("otra_org", "/tabla")).toBeNull();
   });
+
+  // ── «Solo al inicio» (29-sep-2026, regla estricta del dueño) ──────────────────
+  async function out(id: string, source: "ai_agent" | "crm" | "business_app", opts: { importedAt?: Date; conversationId?: string } = {}) {
+    await db.insert(s.messages).values({
+      id,
+      organizationId: ORG,
+      conversationId: opts.conversationId ?? "cv_new",
+      direction: "out",
+      source,
+      type: "text",
+      body: "respuesta",
+      status: "sent",
+      importedAt: opts.importedAt ?? null,
+    });
+  }
+  const precioYInfo = async () => {
+    await wf("w_precio", { triggerKeywords: ["precio"], triggerStartOnly: true, position: 0 });
+    await wf("w_info", { triggerKeywords: ["info"], position: 1 });
+  };
+
+  it("solo al inicio: 'Precio' como primer mensaje dispara; una segunda vez NUNCA (aunque siga sin contestarle nadie)", async () => {
+    await precioYInfo();
+    expect(await inbound("m1", "Precio")).toMatchObject({ status: "queued" });
+    expect(await inbound("m2", "precio por favor")).toBeNull(); // ya le salió a este contacto: no compite
+    expect((await runs()).map((r) => r.workflowId)).toEqual(["w_precio"]);
+  });
+
+  it("solo al inicio: si ya contestó el Agente IA con texto propio, no dispara y el mensaje puede disparar otro workflow que coincida", async () => {
+    await precioYInfo();
+    await out("o1", "ai_agent");
+    expect(await inbound("m1", "precio e info")).toMatchObject({ status: "queued" });
+    expect((await runs()).map((r) => r.workflowId)).toEqual(["w_info"]);
+  });
+
+  it("solo al inicio: un vendedor (CRM o celular) o el historial copiado del celular cuentan como 'ya le contestaron'", async () => {
+    await precioYInfo();
+    await out("o1", "crm");
+    expect(await inbound("m1", "Precio")).toBeNull();
+    await db.delete(s.messages).where(eq(s.messages.id, "o1"));
+    await out("o2", "business_app", { importedAt: new Date(Date.now() - 30 * 86_400_000) });
+    expect(await inbound("m2", "Precio")).toBeNull();
+    expect(await runs()).toHaveLength(0);
+  });
+
+  it("solo al inicio: lo que mandó OTRO workflow automático no cuenta ('Quiero más información' → «Información», luego 'Precio' → «Precio 2»)", async () => {
+    await precioYInfo();
+    expect(await inbound("m1", "Quiero más info")).toMatchObject({ status: "queued" });
+    const [infoRun] = await runs();
+    await out("o1", "ai_agent"); // el texto de «Información», de esa corrida
+    await db.update(s.workflowRuns).set({ status: "done", messageIds: ["o1"] }).where(eq(s.workflowRuns.id, infoRun.id));
+    expect(await inbound("m2", "Precio")).toMatchObject({ status: "queued" });
+    expect((await runs()).map((r) => r.workflowId).sort()).toEqual(["w_info", "w_precio"]);
+  });
+
+  it("solo al inicio: una vez por CONTACTO (también si le salió en otra conversación); el comando del vendedor sale siempre", async () => {
+    await precioYInfo();
+    const exec = await import("./executor");
+    await db.insert(s.workflowRuns).values({ id: "r_old", organizationId: ORG, workflowId: "w_precio", conversationId: "cv_old", contactId: "c1", trigger: "keyword", status: "done", stepCursor: 1, messageIds: [], attempts: 1 });
+    expect(await inbound("m1", "Precio")).toBeNull();
+    expect(await exec.startWorkflowRun({ organizationId: ORG, workflowId: "w_precio", conversationId: "cv_new", trigger: "agent", triggerMessageId: "m1" })).toMatchObject({
+      status: "skipped",
+      reason: exec.SKIP_ALREADY_SENT,
+    });
+    expect(await exec.startWorkflowRun({ organizationId: ORG, workflowId: "w_precio", conversationId: "cv_new", trigger: "command", triggeredByUserId: "u1" })).toMatchObject({ status: "queued" });
+  });
+
+  it("solo al inicio: por el Agente IA a media conversación se salta con motivo 'ya_no_es_el_inicio'; sin la opción, sale", async () => {
+    await precioYInfo();
+    const exec = await import("./executor");
+    await inbound("m1", "hola");
+    await out("o1", "ai_agent");
+    expect(await exec.startWorkflowRun({ organizationId: ORG, workflowId: "w_precio", conversationId: "cv_new", trigger: "agent", triggerMessageId: "m1" })).toMatchObject({
+      status: "skipped",
+      reason: exec.SKIP_NOT_START,
+    });
+    await db.update(s.workflows).set({ triggerStartOnly: false }).where(eq(s.workflows.id, "w_precio"));
+    expect(await exec.startWorkflowRun({ organizationId: ORG, workflowId: "w_precio", conversationId: "cv_new", trigger: "agent", triggerMessageId: "m1" })).toMatchObject({ status: "queued" });
+  });
 });

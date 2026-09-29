@@ -32,6 +32,7 @@ import { moveStageForward } from "@/lib/contacts/stage";
 import { listFunnelStages } from "@/lib/contacts/funnel-stages";
 import { roleKey } from "@/lib/contacts/stages";
 import { endsWithQuestionStep, missingMedia, stripUnresolvedVariables, waitMs } from "./steps";
+import { startOnlyBlock, type StartOnlyBlock } from "./start-only";
 import { SLUG_DATOS_BANCARIOS } from "./defaults";
 
 export type RunTrigger = "agent" | "keyword" | "command" | "stage";
@@ -59,8 +60,12 @@ export const SKIP_DISABLED = "workflow_deshabilitado";
 export const SKIP_MISSING_MEDIA = "falta_archivo";
 export const SKIP_CHANNEL_OFF = "canal_apagado";
 export const SKIP_NO_STEPS = "sin_pasos";
-// Por palabra clave, un workflow se manda UNA vez por contacto (como GHL).
+// Por palabra clave, un workflow se manda UNA vez por contacto (como GHL). También un
+// workflow «solo al inicio» que ya le salió al contacto por cualquier camino.
 export const SKIP_ALREADY_SENT = "ya_enviado_a_este_contacto";
+// «Solo al inicio»: el Agente IA (con texto propio) o un vendedor ya le contestaron.
+export const SKIP_NOT_START = "ya_no_es_el_inicio";
+const START_ONLY_SKIP: Record<StartOnlyBlock, string> = { ya_enviado: SKIP_ALREADY_SENT, no_inicio: SKIP_NOT_START };
 export const FAIL_WINDOW = "ventana_24h";
 export const FAIL_STUCK = "atorado";
 // Vive en defaults.ts (puro): el runtime del agente también la usa para decidir qué modelo contesta.
@@ -167,6 +172,12 @@ export async function startWorkflowRun(input: StartRunInput): Promise<StartRunRe
   if (!HUMAN_TRIGGERS.has(input.trigger) && conv.aiAgentMode !== "auto") return skip(SKIP_CHANNEL_OFF);
   // Palabra clave: una sola vez por contacto (marca invisible, como GHL).
   if (input.trigger === "keyword" && conv.keywordSent.includes(input.workflowId)) return skip(SKIP_ALREADY_SENT);
+  // «Solo al inicio» (regla estricta): por palabra clave o por el Agente IA, solo mientras nadie
+  // le ha contestado y una sola vez por contacto (lib/workflows/start-only.ts).
+  if (!HUMAN_TRIGGERS.has(input.trigger) && wf.triggerStartOnly) {
+    const block = await startOnlyBlock({ organizationId: input.organizationId, conversationId: input.conversationId, contactId: conv.contactId, workflowId: input.workflowId });
+    if (block) return skip(START_ONLY_SKIP[block]);
+  }
   const runId = await insertRun(input, conv.contactId, "queued");
   await enqueueWorkflowRun(runId);
   return { runId, status: "queued" };
@@ -275,6 +286,22 @@ export async function executeWorkflowRun(runId: string, deps: ExecutorDeps): Pro
   if (run.trigger === "keyword" && run.stepCursor === 0 && contact.keywordSent.includes(run.workflowId)) {
     await markRun(runId, { status: "skipped", errorCode: SKIP_ALREADY_SENT, finishedAt: now() });
     return "cancelled";
+  }
+  // «Solo al inicio», otra vez al arrancar: dos corridas del mismo workflow (palabra clave y
+  // Agente IA) o una respuesta que salió mientras esperaba en cola. Gana la primera que arrancó.
+  if (isAgentTrigger(run) && run.stepCursor === 0 && loaded.wf.triggerStartOnly) {
+    const block = await startOnlyBlock({
+      organizationId: run.organizationId,
+      conversationId: run.conversationId,
+      contactId: run.contactId,
+      workflowId: run.workflowId,
+      exceptRunId: run.id,
+      includeQueued: false,
+    });
+    if (block) {
+      await markRun(runId, { status: "skipped", errorCode: START_ONLY_SKIP[block], finishedAt: now() });
+      return "cancelled";
+    }
   }
   const seller = run.triggeredByUserId
     ? (await db.select({ name: user.name }).from(user).where(eq(user.id, run.triggeredByUserId)).limit(1))[0]?.name ?? null

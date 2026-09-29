@@ -9,6 +9,7 @@ const base: WorkflowForText = {
   triggerCommand: "/tamaños",
   triggerKeywords: ["tamaños", "medidas"],
   triggerStage: null,
+  triggerStartOnly: false,
   steps: [
     { kind: "wait", seconds: 18 },
     { kind: "send_media", assetId: "a1", title: "tabla-tamanos-estandar.png", caption: "Aquí le comparto una foto.\nCon los tamaños." },
@@ -65,5 +66,14 @@ describe("workflowsAsText (botón Copiar de Workflows)", () => {
       "- Tabla de tamaños (estándar) — apagado\n  Se dispara con: nada (no se dispara solo)\n  Pasos: ninguno",
     );
     expect(workflowsAsText([], labels)).toBe("");
+  });
+
+  it("«Solo al inicio» se anota debajo de los disparadores (solo si hay palabra clave o Agente IA)", () => {
+    const precio: WorkflowForText = { ...base, name: "Precio 2", triggerStartOnly: true, triggerCommand: "/precio2", triggerKeywords: ["precio", "costo"] };
+    expect(workflowsAsText([precio], labels)).toContain(
+      "  Se dispara con: el Agente IA · comando del vendedor /precio2 · palabras clave del cliente: precio, costo\n  Solo al inicio: antes de que el Agente IA o un vendedor le contesten, una sola vez por cliente\n",
+    );
+    const soloComando: WorkflowForText = { ...precio, triggerAgent: false, triggerKeywords: [] };
+    expect(workflowsAsText([soloComando], labels)).not.toContain("Solo al inicio");
   });
 });

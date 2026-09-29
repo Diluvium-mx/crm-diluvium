@@ -7,6 +7,16 @@ import { conversations, messages, workflows } from "@/lib/db/schema";
 import { startWorkflowRun, type StartRunResult } from "./executor";
 import { matchesKeyword, parseCommand } from "./steps";
 import { markKeywordChecked, pendingKeywordMessages } from "./keyword-pending";
+import { startOnlyEligible } from "./start-only";
+
+async function startOnlyEligibleFor(organizationId: string, conversationId: string, workflowIds: string[]): Promise<Set<string>> {
+  const [conv] = await db
+    .select({ contactId: conversations.contactId })
+    .from(conversations)
+    .where(and(eq(conversations.id, conversationId), eq(conversations.organizationId, organizationId)))
+    .limit(1);
+  return conv ? startOnlyEligible(organizationId, conversationId, conv.contactId, workflowIds) : new Set();
+}
 
 /**
  * Entrante NUEVO del cliente (después del commit de la ingesta): si es texto y
@@ -25,17 +35,25 @@ export async function onInboundKeyword(m: { organizationId: string; conversation
       return null;
     }
     const rows = await db
-      .select({ id: workflows.id, keywords: workflows.triggerKeywords, position: workflows.position })
+      .select({ id: workflows.id, keywords: workflows.triggerKeywords, position: workflows.position, startOnly: workflows.triggerStartOnly })
       .from(workflows)
       .where(and(eq(workflows.organizationId, m.organizationId), eq(workflows.enabled, true)))
       .orderBy(workflows.position);
+    const body = msg.body;
+    const hits = rows.flatMap((wf) => {
+      const hit = wf.keywords.length ? matchesKeyword(body, wf.keywords) : null;
+      return hit ? [{ id: wf.id, len: hit.length, startOnly: wf.startOnly }] : [];
+    });
+    // «Solo al inicio»: uno que ya no aplica (ya le contestaron o ya le salió a este contacto) no
+    // compite; así el mensaje puede disparar otro workflow que también coincida.
+    const startOnly = hits.filter((h) => h.startOnly).map((h) => h.id);
+    const eligible = startOnly.length ? await startOnlyEligibleFor(m.organizationId, m.conversationId, startOnly) : new Set<string>();
     // La frase MÁS específica gana entre TODOS los workflows ("video a la
     // medida" del especial le gana a "video" del estándar); `position` desempata.
     let best: { id: string; len: number } | null = null;
-    for (const wf of rows) {
-      if (wf.keywords.length === 0) continue;
-      const hit = matchesKeyword(msg.body, wf.keywords);
-      if (hit && (!best || hit.length > best.len)) best = { id: wf.id, len: hit.length };
+    for (const h of hits) {
+      if (h.startOnly && !eligible.has(h.id)) continue;
+      if (!best || h.len > best.len) best = { id: h.id, len: h.len };
     }
     if (!best) {
       await markKeywordChecked(m);

@@ -38,6 +38,11 @@ export function missingMedia(steps: readonly StepPayload[]): string[] {
   return steps.flatMap((s) => (s.kind === "send_media" && !s.assetId ? [s.title] : []));
 }
 
+// «Solo al inicio» (29-sep-2026): el mismo texto en el editor, el historial y «Copiar».
+export function startOnlyLabel(startOnly: boolean | undefined): string {
+  return startOnly ? "Solo al inicio" : "En cualquier momento";
+}
+
 // ¿El paso manda algo al cliente por WhatsApp? (Los demás son internos.)
 export function sendsToCustomer(step: StepPayload): boolean {
   return step.kind === "send_text" || step.kind === "send_media";
