@@ -433,6 +433,8 @@ Para la **parte (b)** (tocan `lib/ai/runtime`, prohibido hasta el cierre de la F
   manda la media y Ángela contesta el mismo mensaje con normalidad: hay que corregirlo para que **ambos**
   salgan (p. ej. `pendingInbound` ignora los salientes cuyo id esté en `workflow_runs.message_ids` de
   corridas `keyword`, o el ejecutor no cierra el pendiente). Los workflows NUNCA pausan al agente.
+  **Excepción (28-sep-2026):** si la corrida por palabra clave TERMINA EN PREGUNTA, esa pregunta sí contesta el
+  mensaje que la disparó y el agente no contesta encima (`docs/agente-ia.md`, "Pregunta duplicada").
 - Excluir `type = system_note` de `lastOutbound` / `humanOutboundCount` / `recentMessages`
   (`context.ts`, `run.ts`, `transcript.ts`): hoy una nota contaría como "respuesta humana" (pausa
   indefinida) y entraría al transcript del modelo como frase propia.

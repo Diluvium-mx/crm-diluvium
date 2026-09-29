@@ -11,6 +11,7 @@ import { aiAgentDrafts, messages } from "@/lib/db/schema";
 import { isAmbiguousSendError, SEND_UNCONFIRMED, SEND_UNKNOWN } from "@/lib/messaging/rules";
 import { addNotice } from "./notices";
 import { recordAgentError } from "./agent-error";
+import { workflowFillerSql } from "./context";
 import { sendErrorBody } from "./model-errors";
 import { bubbleMessageId, holdForRetry } from "./saved-reply";
 
@@ -97,13 +98,10 @@ function unansweredSql(now: Date, opts: { since: Date; olderThan: Date; extra: S
       from messages m
       where m.conversation_id = c.id and m.status <> 'failed'
         -- Igual que pendingInbound (Fase D): un aviso interno o la media de un
-        -- workflow por palabra clave no cuentan como respuesta al cliente.
+        -- workflow por palabra clave no cuentan como respuesta al cliente (salvo la
+        -- pregunta final de la palabra clave: workflowFillerSql).
         and m.type <> 'system_note'
-        and not exists (
-          select 1 from workflow_runs r
-          where r.organization_id = m.organization_id and r.conversation_id = m.conversation_id
-            and r.trigger in ('keyword', 'agent') and r.message_ids ? m.id
-        )
+        and not ${workflowFillerSql("m")}
       -- Parte 1: una burbuja reenviada cuenta en la hora del entrante que la originó
       -- (respondeHasta): si el cliente escribió mientras la tarjeta esperaba, lo suyo
       -- queda como lo último y el barrido lo rescata.
