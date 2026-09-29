@@ -294,6 +294,22 @@ export type StartConversationResult = SendResult & { providerConversationId: str
 /** Estado de revisión de UNA variante en Meta, con el motivo si la rechazó (`rejected_reason`). */
 export type TemplateReview = { status: string; rejectedReason: string | null };
 
+/**
+ * Copia que el proveedor guardó de UN entrante (doble verificación del aviso 131060,
+ * lib/messaging/unavailable-check.ts). `available: false` = el proveedor también
+ * tiene solo el aviso vacío.
+ */
+export type StoredInbound =
+  | { available: false }
+  | {
+      available: true;
+      type: NormalizedMessageType;
+      body: string | null;
+      attachments: NormalizedAttachment[];
+      referral?: Record<string, unknown>;
+      metadata?: Record<string, unknown>;
+    };
+
 export interface MessagingProvider {
   readonly name: ProviderName;
   /** Valida la firma del webhook sobre el body CRUDO (antes de parsear). */
@@ -354,4 +370,14 @@ export interface MessagingProvider {
     providerConversationId: string,
     opts?: { updatedSince?: Date },
   ): Promise<ConversationClick | null>;
+  /**
+   * Doble verificación del aviso "no disponible": lo que el proveedor tiene guardado
+   * de ESE mensaje (por wamid). null = no lo encontró. Lanza si no respondió (se
+   * reintenta). Opcional: sin él, la verificación decide solo con la base.
+   */
+  storedInboundMessage?(
+    providerAccountId: string,
+    providerConversationId: string,
+    providerMessageId: string,
+  ): Promise<StoredInbound | null>;
 }
