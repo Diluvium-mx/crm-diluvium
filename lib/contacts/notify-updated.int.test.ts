@@ -110,7 +110,8 @@ describe.skipIf(!TEST_DATABASE_URL)("aviso contact.updated (Postgres real)", () 
         contactName: "Juan Pérez",
         changes: ["etapa"],
         stage: { from: "prospecto", to: "interesado" },
-        by: { kind: "vendedor", userId: DANIEL, name: "Daniel López" },
+        // role = member.role en esa organización (🌎 owner/admin, 👨🏽‍💻 vendedor en el celular).
+        by: { kind: "vendedor", userId: DANIEL, name: "Daniel López", role: "agent" },
       });
       expect(Number.isNaN(Date.parse(a.updates()[0].at))).toBe(false);
       // Soltarla en la misma columna no es un cambio: sin aviso.
@@ -209,7 +210,7 @@ describe.skipIf(!TEST_DATABASE_URL)("aviso contact.updated (Postgres real)", () 
       await qualificationActions.setNumEntradas(JUAN, 1);
       await qualificationActions.updateEntrada(JUAN, 1, { linea: "mini" });
       await a.wait(3);
-      for (const event of a.updates()) expect(event.by).toEqual({ kind: "vendedor", userId: DANIEL, name: "Daniel López" });
+      for (const event of a.updates()) expect(event.by).toEqual({ kind: "vendedor", userId: DANIEL, name: "Daniel López", role: "agent" });
     } finally {
       a.off();
     }
