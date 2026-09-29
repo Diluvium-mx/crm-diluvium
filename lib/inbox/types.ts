@@ -173,7 +173,9 @@ export type ContactChange = "etapa" | "temperatura" | "cotizacion" | "detalle" |
  * con un comando (p. ej. /banco); sin él, la disparó el cliente (palabra clave).
  */
 export type ContactChangeActor =
-  | { kind: "vendedor"; userId: string; name: string }
+  // `role`: su rol en la organización (member.role: owner | admin | agent), para el
+  // emoji del aviso en el celular (🌎 owner/admin, 👨🏽‍💻 vendedor). Falta si no se supo.
+  | { kind: "vendedor"; userId: string; name: string; role?: string }
   | { kind: "agente" }
   | { kind: "automatizacion"; userId: string | null };
 

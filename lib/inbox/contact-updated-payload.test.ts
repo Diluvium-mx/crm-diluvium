@@ -32,6 +32,12 @@ describe("parseContactUpdated", () => {
       userId: "u1",
       name: "Daniel",
     });
+    expect(parseContactUpdated({ ...base, by: "vendedor", byUserId: "u1", byName: "Luis", byRole: "owner" })?.by).toEqual({
+      kind: "vendedor",
+      userId: "u1",
+      name: "Luis",
+      role: "owner",
+    });
     expect(parseContactUpdated({ ...base, by: "automatizacion", byUserId: "u2" })?.by).toEqual({ kind: "automatizacion", userId: "u2" });
     expect(parseContactUpdated({ ...base, by: "automatizacion" })?.by).toEqual({ kind: "automatizacion", userId: null });
   });
