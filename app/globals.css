@@ -16,6 +16,9 @@
   --color-brand-orange: var(--brand-orange);
   --color-brand-orange-light: var(--brand-orange-light);
   --color-brand-white: var(--brand-white);
+  --color-busqueda: var(--busqueda);
+  --color-busqueda-borde: var(--busqueda-borde);
+  --color-busqueda-tinta: var(--busqueda-tinta);
   --color-sidebar-ring: var(--sidebar-ring);
   --color-sidebar-border: var(--sidebar-border);
   --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
@@ -63,6 +66,12 @@
   --brand-orange-light: #fe9f29;
   --brand-white: #ffffff;
   --brand-font: Helvetica, "Helvetica Neue", Arial, sans-serif;
+  /* Búsqueda en los chats (lupa, círculo y resaltado; 29-sep-2026): los MISMOS amarillos de
+     la tarjeta "el Agente IA necesita al vendedor" (--funnel-urgent), pero SÓLIDOS, y el
+     texto del CRM encima. Iguales en claro y oscuro (así lo aprobó el dueño). */
+  --busqueda: rgb(250 204 21);
+  --busqueda-borde: rgb(217 164 6);
+  --busqueda-tinta: #1e2a35;
   --background: #ffffff;
   --foreground: #1e2a35;
   --card: #ffffff;

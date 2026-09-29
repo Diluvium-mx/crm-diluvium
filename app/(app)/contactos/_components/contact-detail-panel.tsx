@@ -20,6 +20,7 @@ export function ContactDetailPanel({
   onTemperatureChange,
   onDestacadoChange,
   onOpenContact,
+  searchTerm = null,
 }: {
   contact: BoardContact;
   /** Señal de la tarjeta (en vivo): decide si «Marcar como leído» tiene algo que apagar. */
@@ -32,6 +33,8 @@ export function ContactDetailPanel({
   onDestacadoChange: (destacado: boolean) => void;
   /** Abrir otro contacto (primer mensaje: el número ya es de otro contacto). */
   onOpenContact?: (contactId: string) => void;
+  /** Lupa amarilla del Embudo: la palabra buscada se resalta en el chat (null = sin búsqueda). */
+  searchTerm?: string | null;
 }) {
   // a11y del modal: cerrar con Escape, enfocar el panel al abrir y devolver el
   // foco al elemento disparador al cerrar. (Trap de foco completo queda como
@@ -118,6 +121,7 @@ export function ContactDetailPanel({
           <ContactChat
             contactId={contact.id}
             phoneE164={contact.phoneE164}
+            searchTerm={searchTerm}
             headerAction={
               <>
                 <MarkReadButton signal={signal} onMarkRead={onMarkRead} />
