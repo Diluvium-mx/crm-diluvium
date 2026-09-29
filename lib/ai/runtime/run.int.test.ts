@@ -1156,6 +1156,101 @@ describe.skipIf(!TEST_DATABASE_URL)("runtime del Agente IA (Postgres real)", () 
     expect((await conv()).agentState).toBe("activo");
   });
 
+  // ── Pregunta duplicada (Caba Decor, 28-sep-2026) ─────────────────────────────
+  const PREGUNTA = "¿Usted tiene problemas de inundaciones?";
+  const execDeps = (zernio: ReturnType<typeof fakeZernio>) => ({ provider: zernio.provider, storage: null, sleep: async () => {} });
+  async function keywordRun(id: string, workflowId: string, triggerMessageId: string, trigger: "keyword" | "agent" | "command" = "keyword") {
+    await db.insert(s.workflowRuns).values({ id, organizationId: ORG, workflowId, conversationId: CONV, contactId: CONTACT, trigger, status: "queued", triggerMessageId: trigger === "command" ? null : triggerMessageId, attempts: 0 });
+  }
+
+  it("pregunta duplicada: el workflow por palabra clave que TERMINA EN PREGUNTA contesta el mensaje; el agente espera a que termine y no contesta encima", async () => {
+    const m1 = await msg({ direction: "in", body: "Quiero más información", at: ago(40_000) });
+    const wfId = await wf("informacion", [
+      { kind: "send_text", text: "Claro, es una barrera que se coloca en 10 minutos." },
+      { kind: "send_text", text: "Ahorita tenemos cualquier tamaño en $5,500 con envío gratis" },
+      { kind: "send_text", text: PREGUNTA },
+    ]);
+    await keywordRun("run_info", wfId, m1);
+    // Corrida en camino: el agente no llama al modelo, vuelve a mirar en 5 s.
+    const early = makeDeps({ brain: [PREGUNTA] });
+    expect(await run.runAgent(JOB, early.deps)).toEqual({ kind: "reschedule", delayMs: run.KEYWORD_QUESTION_POLL_MS, reason: "esperando_workflow_con_pregunta" });
+    expect(early.calls).toHaveLength(0);
+    // Sale el workflow completo; su pregunta queda como respuesta hasta "Quiero más información".
+    const zernio = fakeZernio();
+    expect(await executor.executeWorkflowRun("run_info", execDeps(zernio))).toBe("done");
+    expect(zernio.delivered).toEqual(["Claro, es una barrera que se coloca en 10 minutos.", "Ahorita tenemos cualquier tamaño en $5,500 con envío gratis", PREGUNTA]);
+    const pregunta = (await agentOuts()).find((m) => m.body === PREGUNTA)!;
+    expect(pregunta.metadata).toMatchObject({ respondeHasta: expect.any(String) });
+    // Nada pendiente: el agente no contesta (ni repite ni parafrasea la pregunta).
+    const late = makeDeps({ brain: [PREGUNTA] });
+    expect(await run.runAgent(JOB, late.deps)).toEqual({ kind: "noop", reason: "sin_pendientes" });
+    expect(late.calls).toHaveLength(0);
+    expect((await agentOuts()).filter((m) => m.body === PREGUNTA)).toHaveLength(1);
+    // El barrido tampoco lo ve "sin atender".
+    expect((await sweep.findOrphanConversations(new Date(Date.now() + 2 * 60_000))).map((c) => c.conversationId)).not.toContain(CONV);
+  });
+
+  it("pregunta duplicada: lo que el cliente escribió DESPUÉS del mensaje que disparó el workflow sigue pendiente y el agente lo contesta", async () => {
+    const m1 = await msg({ direction: "in", body: "Precio", at: ago(40_000) });
+    await msg({ direction: "in", body: "¿hacen envíos a Monterrey?", at: ago(35_000) });
+    const wfId = await wf("precio_2", [
+      { kind: "send_text", text: "Ahorita tenemos cualquier tamaño en $5,500 con envío gratis." },
+      { kind: "send_text", text: PREGUNTA },
+    ]);
+    await keywordRun("run_precio", wfId, m1);
+    const zernio = fakeZernio();
+    expect(await executor.executeWorkflowRun("run_precio", execDeps(zernio))).toBe("done");
+    const { deps, calls } = makeDeps({ brain: [`Sí, enviamos a todo México sin costo.\n\n${PREGUNTA}`] });
+    // La pregunta que el modelo repite no sale otra vez (candado anti-repetición).
+    expect(await run.runAgent(JOB, deps)).toEqual({ kind: "sent", bubbles: 1 });
+    expect(calls.filter((c) => c.kind === "cerebro")).toHaveLength(1);
+    expect((await agentOuts()).map((m) => m.body)).toEqual(["Ahorita tenemos cualquier tamaño en $5,500 con envío gratis.", PREGUNTA, "Sí, enviamos a todo México sin costo."]);
+    expect((await usage()).find((u) => u.stage === "cerebro")?.error).toContain("no se repitió lo que ya salió");
+  });
+
+  it("candado anti-repetición: una burbuja del agente IDÉNTICA a lo que ya salió después del último mensaje del cliente no sale (corrida vieja, sin marca)", async () => {
+    const m1 = await msg({ direction: "in", body: "Precio", at: ago(40_000) });
+    const wfId = await wf("precio_viejo", [{ kind: "send_text", text: PREGUNTA }]);
+    // Como antes del arreglo: la pregunta salió por palabra clave SIN la marca respondeHasta.
+    const outId = await msg({ direction: "out", body: PREGUNTA, at: ago(30_000), source: "ai_agent" });
+    await db.insert(s.workflowRuns).values({ id: "run_viejo", organizationId: ORG, workflowId: wfId, conversationId: CONV, contactId: CONTACT, trigger: "keyword", status: "done", stepCursor: 1, messageIds: [outId], triggerMessageId: m1, attempts: 1 });
+    const zernio = fakeZernio();
+    const { deps } = makeDeps({ brain: [`  ¿usted tiene problemas de INUNDACIONES?`] }, zernio);
+    // Todo lo que iba a decir ya salió: nada se manda y el entrante queda atendido.
+    expect(await run.runAgent(JOB, deps)).toEqual({ kind: "sent", bubbles: 0 });
+    expect(zernio.delivered).toEqual([]);
+    expect(await run.runAgent(JOB, makeDeps({ brain: [PREGUNTA] }, zernio).deps)).toEqual({ kind: "noop", reason: "ya_atendido" });
+    expect(zernio.delivered).toEqual([]);
+  });
+
+  it("candado anti-repetición en el ejecutor: la corrida del AGENTE o por palabra clave no repite un texto idéntico; el comando del vendedor sí sale", async () => {
+    const m1 = await msg({ direction: "in", body: "¿qué tamaños tienen?", at: ago(40_000) });
+    // El agente ya hizo la pregunta en su respuesta.
+    await msg({ direction: "out", body: PREGUNTA, at: ago(20_000), source: "ai_agent" });
+    const wfId = await wf("tabla_con_pregunta", [
+      { kind: "send_text", text: "Estos son los tamaños que manejamos" },
+      { kind: "send_text", text: PREGUNTA },
+    ]);
+    await keywordRun("run_agente", wfId, m1, "agent");
+    const zernio = fakeZernio();
+    expect(await executor.executeWorkflowRun("run_agente", execDeps(zernio))).toBe("done");
+    expect(zernio.delivered).toEqual(["Estos son los tamaños que manejamos"]);
+    // "/tabla" del vendedor: lo pidió él, sale completo aunque se repita.
+    await keywordRun("run_cmd", wfId, m1, "command");
+    const z2 = fakeZernio();
+    expect(await executor.executeWorkflowRun("run_cmd", execDeps(z2))).toBe("done");
+    expect(z2.delivered).toEqual(["Estos son los tamaños que manejamos", PREGUNTA]);
+  });
+
+  it("pregunta duplicada: un workflow por palabra clave que NO termina en pregunta sigue como antes: el agente no la espera y contesta el resto", async () => {
+    const m1 = await msg({ direction: "in", body: "me pasas la tabla y el precio?", at: ago(40_000) });
+    const wfId = await wf("tabla_sin_pregunta", [{ kind: "send_text", text: "¿Le mando la tabla? Aquí está 🙌" }]);
+    await keywordRun("run_tabla", wfId, m1);
+    // No termina en pregunta: el agente no espera a la corrida.
+    const { deps } = makeDeps({ brain: ["Cuesta $5,500 MXN."] });
+    expect(await run.runAgent(JOB, deps)).toEqual({ kind: "sent", bubbles: 1 });
+  });
+
   it("media por herramienta: corrida 'agent' DESPUÉS del texto; palabra clave + herramienta del mismo workflow no se duplica; fijar_cotizacion solo con el total dicho por el agente", async () => {
     await msg({ direction: "in", body: "¿me mandas la tabla?", at: ago(20_000) });
     const wfId = await wf("tabla_tamanos_estandar", [{ kind: "send_text", text: "tabla" }]);

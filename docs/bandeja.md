@@ -328,6 +328,15 @@ la sesión). Tipos exactos en `lib/inbox/types.ts`.
   y `error_code = send_accepted` (ambiguo: sin Reintentar). El eco o "entregado/leído" lo confirman
   solos; si a los 15 min sigue sin confirmar, fallido + tarjeta 🤖 "WhatsApp sí recibió el mensaje…
   revísalo en el celular antes de volver a escribirlo".
+- **Timeout de Zernio y su eco (28-sep-2026, chat de Ana Mayda; `lib/messaging/late-echo.ts`):** si
+  el POST no contesta a tiempo (`send_unknown`) pero Zernio SÍ lo manda, su eco (otra API) se **une a la
+  fila en duda** cuando es de la misma conversación, del mismo tipo, con el mismo texto y dentro de 2 h:
+  queda "enviado" con los ids y la hora del eco (aunque el barrido ya la hubiera dado por fallida; su
+  aviso se borra) y `respondeHasta` = el entrante anterior a ella, así lo que el cliente escribió
+  mientras seguía en duda queda pendiente para el Agente IA. Antes: la misma burbuja dos veces, la fila
+  "enviando" frenaba al agente 15 min y el eco "contestaba" al cliente. Si el eco llega ANTES del
+  timeout, al marcar la duda se fusiona como cualquier "eco primero" (`linkSentMessage`). Texto distinto,
+  otra conversación o más de 2 h: no se adivina, queda como otra API.
 - **Entregado/leído gana siempre sobre fallido**, en cualquier orden (`nextStatus`), borra el error
   y recalcula la primera respuesta y el último mensaje. Un fallido real (sin prueba de entrega) sigue
   fallido y visible.
