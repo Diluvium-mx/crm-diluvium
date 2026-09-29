@@ -12,6 +12,7 @@ import { isAmbiguousSendError, SEND_UNCONFIRMED, SEND_UNKNOWN } from "@/lib/mess
 import { addNotice } from "./notices";
 import { recordAgentError } from "./agent-error";
 import { workflowFillerSql } from "./context";
+import { hiddenNoticeSql } from "@/lib/messaging/unavailable";
 import { sendErrorBody } from "./model-errors";
 import { bubbleMessageId, holdForRetry } from "./saved-reply";
 
@@ -102,6 +103,9 @@ function unansweredSql(now: Date, opts: { since: Date; olderThan: Date; extra: S
         -- pregunta final de la palabra clave: workflowFillerSql).
         and m.type <> 'system_note'
         and not ${workflowFillerSql("m")}
+        -- Aviso "no disponible" en verificación o sombra (lib/messaging/unavailable.ts): no se
+        -- contesta (antes el barrido lo tomaba a los 90 s y el modelo improvisaba).
+        and not ${hiddenNoticeSql(sql.raw("m.metadata"))}
       -- Parte 1: una burbuja reenviada cuenta en la hora del entrante que la originó
       -- (respondeHasta): si el cliente escribió mientras la tarjeta esperaba, lo suyo
       -- queda como lo último y el barrido lo rescata.
