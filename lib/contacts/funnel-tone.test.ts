@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { canMarkRead, funnelTone, unreadBadge, type FunnelSignal } from "./funnel-tone";
 
-const signal = (s: Partial<FunnelSignal>): FunnelSignal => ({ unread: 0, pending: false, urgent: false, lastInboundAt: null, starred: false, ...s });
+const signal = (s: Partial<FunnelSignal>): FunnelSignal => ({ unread: 0, pending: false, urgent: false, lastInboundAt: null, ...s });
 
 describe("funnelTone", () => {
   it("no asigna tono sin señal pendiente ni urgente", () => {

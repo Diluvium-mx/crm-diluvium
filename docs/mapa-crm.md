@@ -41,8 +41,8 @@ Nadie es "dueño" de un contacto: **todos ven todos los contactos, siempre**.
 | Palabra | Qué significa |
 |---|---|
 | **Etapa** | En qué punto de la venta va el cliente: **Inbox → Prospecto → Interesado → Cerca de compra → Compra**. Son las columnas del Embudo. El agente solo la **avanza**; la que pone un vendedor manda. |
-| **Temperatura** | Etiqueta rápida que pone el equipo: 🔥 Caliente · 🧊 Frío · ⏳ En espera · ⭐ Destacado · ○ sin asignar. Se filtra por ella (una a la vez) con el ícono junto al buscador de la Bandeja y del Embudo. |
-| **Destacado** | Marca para todo el equipo. Se pone de dos formas: la **estrella** de la lista de la Bandeja (marca el chat) o la temperatura **⭐ Destacado** (marca el contacto). Para filtrar cuentan las dos: la pestaña Destacado de la Bandeja y ⭐ Destacado en el filtro del Embudo. No es una temperatura: se puede combinar con una (🔥 + Destacado = calientes con estrella). |
+| **Temperatura** | Etiqueta rápida que pone el equipo: 🔥 Caliente · 🧊 Frío · ⏳ En espera · ○ sin asignar. Se filtra por ella (una a la vez) con el ícono junto al buscador de la Bandeja y del Embudo. ⭐ Destacado ya **no** es temperatura (desde el 29-sep-2026). |
+| **Destacado** | Marca ⭐ del **contacto** para todo el equipo, aparte de la temperatura y combinable con ella (🔥 + ⭐). Es **un solo dato**: la **estrella** de la lista de la Bandeja y el ⭐ del Embudo (tarjeta y pop-up) son lo mismo y se ven en vivo en las dos pantallas. Se filtra con la pestaña Destacado de la Bandeja y con ⭐ Destacado del filtro del Embudo. Desde el 29-sep-2026. |
 | **Semáforo** | Punto de color en la Bandeja: cuánto lleva el cliente esperando respuesta **de una persona**. Verde menos de 15 min, ámbar menos de 1 h, rojo más de 1 h. |
 | **Ventana de 24 h** | Regla de WhatsApp: hasta 24 horas después del último mensaje del cliente se puede escribir libre. Pasadas las 24 h **solo se puede mandar una plantilla**. |
 | **Gratis por anuncio (72 h)** | Si el cliente llegó por un anuncio y se le contesta dentro de 24 h, por 72 h todos los mensajes (también plantillas) son gratis. El chat lo indica con 🎁. |
@@ -50,7 +50,7 @@ Nadie es "dueño" de un contacto: **todos ven todos los contactos, siempre**.
 | **Contacto sin chat** | Contacto que nunca ha escrito (alta a mano en Embudo › Nuevo contacto, o importado de GHL). Se le escribe primero **gratis desde WhatsApp Web** o con una **plantilla** desde el CRM; con plantilla, en el CRM solo se escribe libre cuando el cliente conteste. |
 | **Aviso de Meta** | Pop-up grande que sale cuando WhatsApp (Meta) no acepta algo de una plantilla: por qué pasó y qué hacer. |
 | **Mensaje rápido** | Respuesta guardada por el equipo para contestar más rápido dentro de las 24 h (antes se llamaba "Fragmento"). Se inserta con "/" o con ⚡ y **no se manda sola**: la revisas y le das Enviar. Si lleva {{vendedor}}, se llena solo con tu nombre; {{nombre}} lo completas tú. Diluvium tiene 22 (Buenos días, Precio, Pagos…). |
-| **Workflow** | Secuencia de pasos (texto, archivo con pie, espera) que manda material: tabla de tamaños, datos bancarios, videos. Lo dispara el agente, un **comando** del vendedor, una **palabra clave** del cliente o la entrada a una etapa. Las **esperas** solo aplican al agente, a la palabra clave y a la etapa: con un comando del vendedor sale de inmediato. |
+| **Workflow** | Secuencia de pasos (texto, archivo con pie, espera) que manda material: tabla de tamaños, datos bancarios, videos. Lo dispara el agente, un **comando** del vendedor, una **palabra clave** del cliente o la entrada a una etapa. Con **Solo al inicio**, por palabra clave o por el agente solo sale antes de que el Agente IA o un vendedor le contesten al cliente, y **una sola vez** por cliente (p. ej. «Precio 2» para quien llega del anuncio preguntando el precio). Las **esperas** solo aplican al agente, a la palabra clave y a la etapa: con un comando del vendedor sale de inmediato. |
 | **Comando** | Atajo que escribe el vendedor en el chat para mandar un workflow: /tabla, /banco, /video… Se escribe con letras sin acento (la **ñ** sí: /tamaños), números y guiones. Sale **de inmediato** (se salta los pasos ⏱ Esperar); el cliente lo recibe en lo que tarda WhatsApp (~5 s). |
 | **Adjuntar (📎)** | Mandar fotos, videos o documentos desde el chat: se arrastran sobre el chat, se eligen con 📎 o se pegan con Cmd+V. Hasta **10 por envío**, uno por mensaje y en orden; el texto va como pie del primero. Fotos JPG/PNG (HEIC y WebP se pasan solas a JPG), video .mp4 hasta 16 MB, PDF/Word/Excel/PowerPoint/TXT/XML hasta 100 MB. GIF, ZIP o audio: se mandan desde el celular. |
 | **Corrida** | Cada vez que un workflow se ejecutó (Hecho, Omitido, Falló…). |
@@ -60,7 +60,7 @@ Nadie es "dueño" de un contacto: **todos ven todos los contactos, siempre**.
 | **Fila de espera (🕗 Enviando…)** | Si WhatsApp (Zernio) pide esperar porque salieron muchos mensajes seguidos, el mensaje **espera su turno** con el reloj 🕗 y sale solo, en el orden en que se escribió. **No es error**: al cliente no le llega nada raro y no hay que volver a escribirlo. Vale para vendedores, agente, workflows y programados. |
 | **Tarjeta de envío (🤖)** | Aviso en el chat cuando un mensaje **no se pudo confirmar** o WhatsApp avisó **después** que no le llegó al cliente (p. ej. la imagen de Datos bancarios). Dice el motivo en palabras simples y cómo reenviarlo (p. ej. "Vuelve a mandarla con /banco"). |
 | **Marca "IA"** | Etiqueta junto a un dato del Detalle del contacto que **escribió el agente al último**. Si un vendedor lo edita, la marca se va. Mientras el agente lo llena se ve "IA actualizando". |
-| **Agente IA en segundo plano** | Aunque el Agente IA esté apagado o pausado en un chat, lo **lee** unos 3 minutos después de que se calma (o cada 15 min si no para) y deja al día la **etapa** y el **Detalle**: datos, monto de cotización, pago total, % y un comentario. Lee todo en orden y vale lo último que confirmó el cliente, aun después de la compra. Nunca le escribe al cliente, no avisa al vendedor ni dispara workflows. Usa Luna (~US$0.0005 por lectura); su gasto va aparte, como «Detalle». |
+| **Agente IA en segundo plano** | Aunque el Agente IA esté apagado o pausado en un chat, lo **lee** unos 3 minutos después de que se calma (o cada 15 min si no para) y deja al día la **etapa** y el **Detalle**: datos, monto de cotización, pago total, % y un comentario. Lee todo en orden y vale lo último que confirmó el cliente, aun después de la compra. Nunca le escribe al cliente, no avisa al vendedor ni dispara workflows. Usa Luna (~US$0.0005 por lectura); su gasto va aparte, como «Detalle». En el Detalle, bajo Calificación, se ve en vivo: en espera, leyendo, actualizó o al día. |
 | **Monto de cotización / Pago total** | **Monto**: total de lo que el cliente eligió comprar al final (no lo primero que se le cotizó). **Pago**: lo que ya pagó (anticipo + resto o completo). Juntos muestran quién cotizó mucho y no compró. |
 | **Pausar agente / Activar** | Detiene al agente **solo en ese chat** (8, 12 o 24 horas, hasta una fecha y hora o indefinidamente). **Activar** lo regresa. También se pausa solo cuando un vendedor contesta (se ajusta en Opciones). Cada pausa y cada Activar quedan en **Agente IA › Historial** con quién lo hizo; las automáticas (un vendedor contestó, tope de respuestas, el cliente pidió un asesor y la vuelta sola al cumplirse la hora) también, como «Automático». |
 | **Canal Encendido / Apagado** | Interruptor general del agente por número de WhatsApp (Agente IA › Canales, que solo muestra los números **no archivados**: hoy WhatsApp Diluvium). Apagado = no contesta a nadie en ese número; la Bandeja lo avisa con una franja roja arriba y la pastilla **Agente IA** del Dashboard sale roja. |
@@ -191,12 +191,12 @@ Clic derecho sobre una fila de la lista: menú de esa conversación (23).
 |---|---|---|---|
 | 1 | **Ocultar lista** | Esconde o muestra la lista de chats; se recuerda en esa computadora. | Todos |
 | 2 | **Buscar por nombre o teléfono…** | Busca chats sin importar acentos ni mayúsculas. | Todos |
-| 3 | **No leído · Todo · Destacado** | Filtros de la lista. **Destacado** = chats con estrella (7) o cuyo contacto tiene la temperatura ⭐. Se combinan con el filtro de temperatura (25): «Destacado + 🔥» = calientes con estrella. La lista siempre va del mensaje más reciente al más viejo. | Todos |
+| 3 | **No leído · Todo · Destacado** | Filtros de la lista. **Destacado** = chats cuyo contacto tiene la estrella (7). Se combinan con el filtro de temperatura (25): «Destacado + 🔥» = calientes y destacados. La lista siempre va del mensaje más reciente al más viejo. | Todos |
 | 4 | **Fila de conversación** | Iniciales con el logo del canal, nombre, hora del último mensaje y vista previa ("Tú:" si el último fue nuestro, también si lo mandó el agente). Clic abre el chat y lo marca como leído. | Todos |
 | 5 | **Semáforo** | Verde menos de 15 min, ámbar menos de 1 h, rojo más de 1 h desde el mensaje del cliente sin respuesta de una persona. | Todos |
 | 6 | **Círculo naranja** | Mensajes sin leer. | Todos |
-| 7 | **Estrella (Destacado)** | Marca el chat para todo el equipo; aparece en el filtro Destacado. | Todos |
-| 8 | **Temperatura** | 🔥 🧊 ⏳ ⭐ o ○. Clic para cambiarla sin abrir el chat. | Todos |
+| 7 | **Estrella (Destacado)** | Marca al **contacto** como Destacado ⭐ para todo el equipo: se prende en todos sus chats, en su tarjeta del Embudo y en el pop-up. Convive con la temperatura (8). Aparece en el filtro Destacado. | Todos |
+| 8 | **Temperatura** | 🔥 🧊 ⏳ o ○. Clic para cambiarla sin abrir el chat. Aquí no hay ⭐: Destacado es la estrella (7). | Todos |
 | 9 | **Encabezado del chat** | Nombre, teléfono y ciudad (por la lada). | Todos |
 | 10 | **Chip de etapa** | Etapa actual del contacto. | Todos |
 | 11 | **Aviso de ventana de 24 h** | "Ventana abierta · quedan X h" (verde) o, vencida, "Pasaron 24 h…" (ámbar). | Todos |
@@ -228,7 +228,7 @@ avisos 🤖 (17), avanza la etapa (10) y usa la transcripción (16) de las notas
 se pausa en ese chat (según Opciones). Si no contesta todo (tiene horario o el canal está Apagado), lo dice la
 franja (24).
 
-<sub>Para Code: ruta `/dashboard`; `app/(app)/dashboard/_components/` (`inbox-board`, `conversation-list`, `chat-thread`, `temperature-picker`, `agent-activity-pill`, `scheduled-in-thread`, `bot-banner`); franja (24) con `lib/monitoring/bot-silence.ts` (`loadBotBanner`); menú del clic derecho `components/ui/context-menu.tsx`; datos en `lib/inbox/`; tiempo real `/api/inbox/stream`. Filtro de temperatura: `app/(app)/_components/card-filter-button.tsx` → `listConversations({ temperature })` (lib/inbox/actions.ts, validado) → `listFilter` en lib/inbox/queries.ts; reglas en `lib/contacts/filters.ts` (Destacado = `is_starred` o `temperature = 'destacado'`).</sub>
+<sub>Para Code: ruta `/dashboard`; `app/(app)/dashboard/_components/` (`inbox-board`, `conversation-list`, `chat-thread`, `temperature-picker`, `agent-activity-pill`, `scheduled-in-thread`, `bot-banner`); franja (24) con `lib/monitoring/bot-silence.ts` (`loadBotBanner`); menú del clic derecho `components/ui/context-menu.tsx`; datos en `lib/inbox/`; tiempo real `/api/inbox/stream`. Filtro de temperatura: `app/(app)/_components/card-filter-button.tsx` → `listConversations({ temperature })` (lib/inbox/actions.ts, validado) → `listFilter` en lib/inbox/queries.ts; reglas en `lib/contacts/filters.ts`. Destacado = `contacts.destacado` (migración 0048; `conversations.is_starred` y el valor de temperatura 'destacado' quedan sin uso); estrella → `setContactDestacado` (lib/actions/contacts.ts), aviso en vivo como cambio de «temperatura».</sub>
 
 #### 3.2.1 Chat: mensajes, avisos y tarjetas del agente
 
@@ -353,6 +353,7 @@ salir de cada campo: junto al título aparece **"Guardando…"** y luego **"Guar
 Ningún dato es definitivo: el agente corrige lo que el cliente aclare después.
 
 ![Detalle del contacto](mapa-crm/05-detalle.png)
+![Agente IA leyendo el chat en segundo plano](mapa-crm/05-detalle-lector.png)
 ![Menú Pausar agente](mapa-crm/05-detalle-pausar.png)
 ![Agente en pausa y botón Activar](mapa-crm/05-detalle-activar.png)
 
@@ -361,7 +362,7 @@ Ningún dato es definitivo: el agente corrige lo que el cliente aclare después.
 | 1 | **Nombre y teléfono** | Datos del contacto. | Todos |
 | 2 | **Etapa** | Cambiarla aquí la mueve también en el Embudo. La que pone un vendedor manda; el agente solo avanza. | Todos |
 | 3 | **Marca "IA"** | Ese dato lo escribió el agente al último. Si lo editas, se quita. Cuando lo acaba de llenar dice "IA actualizando" y el campo brilla. | Todos |
-| 4 | **Temperatura** | 🔥 Caliente, 🧊 Frío, ⏳ En espera, ⭐ Destacado o Sin asignar. | Todos |
+| 4 | **Temperatura** | En la **Bandeja**: 🔥 Caliente, 🧊 Frío, ⏳ En espera o Sin asignar (Destacado es la estrella de la lista). En el **pop-up del Embudo** el mismo campo es un menú de dos partes: arriba la temperatura (una) y, abajo de la línea, **⭐ Destacado** (se prende o apaga aparte); el campo muestra las dos, p. ej. «🔥 Caliente ⭐». | Todos |
 | 5 | **Calificación** | Sección con las preguntas de la venta. | Todos |
 | 6 | **¿Tiene problemas de inundaciones?** | Sí · No · No sabe. | Todos |
 | 7 | **¿Cuánta agua entra?** | Centímetros y una descripción opcional. | Todos |
@@ -384,6 +385,7 @@ Ningún dato es definitivo: el agente corrige lo que el cliente aclare después.
 | 24 | **Pausar el agente en este chat** | 8 horas · 12 horas · 24 horas · Hasta una fecha y hora… · Pausar indefinidamente. | Todos |
 | 25 | **🤖 Pausado · vuelve hoy 22:30** | Estado cuando está en pausa (o "Pausado indefinidamente"). | Todos |
 | 26 | **Activar** | Regresa al agente a ese chat. Contesta a partir del siguiente mensaje del cliente. Queda en Agente IA › Historial con quién lo hizo (igual que Pausar agente). | Todos |
+| 28 | **Agente IA en segundo plano** (bajo Calificación) | Qué está haciendo el Agente IA con el Detalle, en vivo: «⏳ Agente IA leerá el chat en ~3 min» (llegó algo nuevo y espera a que el chat se calme), «Agente IA leyendo el chat…» (lo está leyendo ahora; segunda captura), «Agente IA actualizó 2 datos» (unos segundos, mientras brillan los campos) y «✓ Al día · leído 10:42». Si una lectura falla: «No pudo leer el chat · se reintenta solo». Sale aunque el Agente IA esté apagado o pausado; nunca le escribe al cliente. Si nunca ha leído ese chat, no se muestra. | Todos |
 | 27 | **Pago total (MXN)** | Lo que el cliente **ya pagó** (anticipo + resto, o el pago completo), junto al monto (13): así se ve quién cotizó mucho y no compró. Lo llena el Agente IA en segundo plano con los comprobantes y los pagos confirmados en el chat; se corrige a mano. | Todos |
 
 **Lo cambias tú desde la pantalla:** todos los campos menos el % de convencimiento; comentarios; pausar y activar al agente.
@@ -396,7 +398,8 @@ Ningún dato es definitivo: el agente corrige lo que el cliente aclare después.
 **Agente IA aquí:** llena y corrige los campos con lo que dice el cliente (marca "IA"), decide el % de
 convencimiento, escribe comentarios firmados "Agente IA", avanza la etapa y resume el anuncio en (15).
 Lo hace **siempre en segundo plano**, aunque esté apagado o pausado en el chat: unos 3 minutos después de que
-el chat se calma lee todo en orden y deja al día etapa, datos, monto (13) y pago (27). Nunca le escribe al
+el chat se calma lee todo en orden y deja al día etapa, datos, monto (13) y pago (27); lo que está haciendo se ve
+en vivo en (28). Nunca le escribe al
 cliente. Solo avanza la etapa, y la que puso un vendedor a mano la respeta (solo la avanza por algo que pase
 en el chat después).
 
@@ -463,7 +466,7 @@ WhatsApp Web, o con una plantilla desde el CRM.
 | 4 | **Tarjeta azul** | El cliente escribió y nadie le ha contestado. Se quita cuando sale una respuesta (vendedor desde el CRM o el celular, o el agente) o con **Marcar como leído** (19 o el clic derecho, 16); abrir el chat **no** la quita. Vuelve con el siguiente mensaje del cliente. Si también aplica amarilla, gana la amarilla. | Todos |
 | 5 | **Tarjeta blanca** | Nada pendiente. Al pasar el mouse se ilumina en gris (el azul es solo para 4). | Todos |
 | 6 | **Círculo naranja** | Mensajes sin ver. Se quita al abrir el chat o con Marcar como leído. | Todos |
-| 7 | **Temperatura** | La del contacto. Si alguno de sus chats tiene la estrella de la Bandeja, la tarjeta muestra además una estrella naranja chica (Destacado del chat); con temperatura ⭐ no se repite. | Todos |
+| 7 | **Temperatura** y **⭐ Destacado** | La temperatura del contacto y, al lado y del mismo tamaño, ⭐ si es Destacado (la estrella de la Bandeja). Pueden ir juntas: 🔥 ⭐. | Todos |
 | 8 | **Ciudad por lada** | 📍 Ciudad calculada por la lada del teléfono. | Todos |
 | 9 | **PRUEBA** | Contacto del número de prueba. Hoy ninguno la lleva: se quitó el 28-sep-2026 al borrar los chats de prueba. | Todos |
 | 10 | **Columna Compra** | Los que ya compraron (cuenta en Anuncios › Compraron). Es la columna con el papel «Venta cerrada» (70): si el papel pasa a otra, cuenta esa. | Todos |
@@ -485,7 +488,7 @@ WhatsApp Web, o con una plantilla desde el CRM.
 | 26 | **📄 Enviar plantilla desde el CRM** (**Con costo**) | **Elegir plantilla** → **Enviar plantilla**: abre el chat por WhatsApp con una plantilla aprobada (Marketing ≈ $0.73). Después, en el CRM solo se puede mandar otra plantilla hasta que el cliente conteste (Bandeja › 24). | Todos |
 | 27 | **"Este número también está en el contacto «…»"** · **Abrir ese contacto** | Hay otro contacto (más antiguo) con ese número: el chat quedaría en ese, así que se manda desde ahí. | Todos |
 | 28 | **Aviso de Meta** (pop-up grande) | Si WhatsApp (Meta) rechaza la plantilla: título, **Por qué pasó**, **Qué hacer** y **Entendido** (el mismo de Mensajes rápidos › 31). | Todos |
-| 29 | **Filtro** (ícono a la derecha del buscador) | Menú corto: **Temperatura** (Todas · 🔥 · 🧊 · ⏳ · ○ Sin asignar, una a la vez) y, aparte, **⭐ Destacado** (estrella del chat o temperatura ⭐). Se pueden combinar (🔥 + Destacado) y se suman a la búsqueda. Con algo elegido el ícono se pinta naranja y muestra los emojis; la **×** lo quita. **Las columnas no cambian:** mismas etapas, orden, colores y arrastre; solo quedan las tarjetas que cumplen, cada columna cuenta las suyas y la vacía dice «Ninguno con este filtro». Una tarjeta que deja de cumplir (p. ej. le cambias la temperatura en el pop-up) se va del tablero. No se recuerda al recargar. Desde el 28-sep-2026; captura pendiente. | Todos |
+| 29 | **Filtro** (ícono a la derecha del buscador) | Menú corto: **Temperatura** (Todas · 🔥 · 🧊 · ⏳ · ○ Sin asignar, una a la vez) y, aparte, **⭐ Destacado** (la marca del contacto). Se pueden combinar (🔥 + Destacado) y se suman a la búsqueda. Con algo elegido el ícono se pinta naranja y muestra los emojis; la **×** lo quita. **Las columnas no cambian:** mismas etapas, orden, colores y arrastre; solo quedan las tarjetas que cumplen, cada columna cuenta las suyas y la vacía dice «Ninguno con este filtro». Una tarjeta que deja de cumplir (p. ej. le cambias la temperatura en el pop-up) se va del tablero. No se recuerda al recargar. Desde el 28-sep-2026; captura pendiente. | Todos |
 
 **Lo cambias tú desde la pantalla:** contactos nuevos (20) y el primer mensaje a quien no tiene chat (25–26), la etapa (arrastrando la tarjeta), leído / no leído (clic derecho o **Marcar como leído**, 19), las
 columnas (lápiz, 17) y todo lo del chat y el Detalle en el pop-up. Los cambios a las columnas (crear, renombrar, borrar,
@@ -499,7 +502,7 @@ ordenar, papel, modelo) quedan en **Agente IA › Historial**.
 **Agente IA aquí:** mueve tarjetas hacia adelante (sale el aviso emergente), pinta la tarjeta de amarillo cuando
 necesita al vendedor, y su chat y Detalle se ven igual que en la Bandeja.
 
-<sub>Para Code: ruta `/embudo` (`/contactos` redirige); `app/(app)/contactos/_components/` (`contacts-board`, `contact-card`, `contact-detail-panel`, `contact-chat`); colores `lib/contacts/funnel-signals.ts` y `funnel-tone.ts`, estilos `[data-funnel]` y `[data-funnel-card]` (luz gris) en `app/globals.css`; «Marcar como leído» = `mark-read-button.tsx` + `conversations.attended_at` (migración 0045); orden de la columna = `board-live.ts` (`columnsByStage`: etapa o último entrante, que sale de `window_expires_at` − 24 h). Columnas: tabla `funnel_stages` (migración 0041), editor `app/(app)/_components/stages-editor.tsx`, etapas en vivo `funnel-stages-provider.tsx` (evento SSE `stages.updated`). Nuevo contacto: `new-contact-dialog.tsx` → `createContact` (lib/actions/contacts.ts) → `lib/contacts/create-manual.ts` (source `manual`, candado por teléfono como la entrada, fuera de Conversaciones nuevas en `lib/dashboard/queries.ts`); teléfono `lib/contacts/manual-phone.ts`. Sin chat: `first-message.tsx`; WhatsApp Web `lib/contacts/whatsapp-link.ts`; plantilla `startChatWithTemplate` (lib/inbox/actions.ts) → `lib/messaging/start-conversation.ts` → Zernio `POST /v1/inbox/conversations`. Filtro (29): mismo `card-filter-button.tsx`, en el navegador sobre las tarjetas ya cargadas (`matchesCardFilter` de `lib/contacts/filters.ts`); la estrella del chat llega en la señal (`FunnelSignal.starred`, `bool_or(is_starred)` en funnel-signals.ts, también en vivo).</sub>
+<sub>Para Code: ruta `/embudo` (`/contactos` redirige); `app/(app)/contactos/_components/` (`contacts-board`, `contact-card`, `contact-detail-panel`, `contact-chat`); colores `lib/contacts/funnel-signals.ts` y `funnel-tone.ts`, estilos `[data-funnel]` y `[data-funnel-card]` (luz gris) en `app/globals.css`; «Marcar como leído» = `mark-read-button.tsx` + `conversations.attended_at` (migración 0045); orden de la columna = `board-live.ts` (`columnsByStage`: etapa o último entrante, que sale de `window_expires_at` − 24 h). Columnas: tabla `funnel_stages` (migración 0041), editor `app/(app)/_components/stages-editor.tsx`, etapas en vivo `funnel-stages-provider.tsx` (evento SSE `stages.updated`). Nuevo contacto: `new-contact-dialog.tsx` → `createContact` (lib/actions/contacts.ts) → `lib/contacts/create-manual.ts` (source `manual`, candado por teléfono como la entrada, fuera de Conversaciones nuevas en `lib/dashboard/queries.ts`); teléfono `lib/contacts/manual-phone.ts`. Sin chat: `first-message.tsx`; WhatsApp Web `lib/contacts/whatsapp-link.ts`; plantilla `startChatWithTemplate` (lib/inbox/actions.ts) → `lib/messaging/start-conversation.ts` → Zernio `POST /v1/inbox/conversations`. Filtro (29): mismo `card-filter-button.tsx`, en el navegador sobre las tarjetas ya cargadas (`matchesCardFilter` de `lib/contacts/filters.ts`, lee `destacado` del contacto). Temperatura + ⭐ del pop-up: `temperature-destacado-menu.tsx` (solo si `ContactDetails` recibe `onDestacadoChange`); puesta al día en vivo `applyMarks` (board-live.ts).</sub>
 
 ---
 
@@ -755,12 +758,12 @@ Los **workflows** (envíos de material), la **Biblioteca** de archivos y las **C
 | 12 | **Corridas · 7 días** | Cuántas veces salió en la última semana. | Todos |
 | 13 | **Subir · Bajar** | Cambia el orden de la lista. | Todos |
 | 14 | **▷ Probar** | Lo manda en una conversación que eliges. **Sale de verdad**: úsalo con el número de prueba. | Todos |
-| 15 | **✎ Editar** | Abre el editor (17–32). | Todos |
+| 15 | **✎ Editar** | Abre el editor (17–32 y 47). | Todos |
 | 16 | **Tarjeta con borde ámbar** | Workflow apagado porque le falta archivo. | Todos |
 | 17 | **Habilitado** | Prende o apaga desde el editor. | Todos |
 | 18 | **Nombre** | Nombre del workflow. | Todos |
 | 19 | **Cuándo usarlo** | Texto que lee el agente para decidir si lo manda. | Todos |
-| 20 | **Disparadores** | Las formas de dispararlo (21–24). | Todos |
+| 20 | **Disparadores** | Las formas de dispararlo (21–24) y cuándo (47). | Todos |
 | 21 | **El Agente IA puede dispararlo** | Casilla. | Todos |
 | 22 | **Comando del vendedor (en el chat)** | p. ej. /tabla. Letras sin acento (la **ñ** sí: /tamaños), números y guiones; si lleva acento o espacio, no se guarda y lo avisa arriba. | Todos |
 | 23 | **Al entrar a la etapa** | Se manda solo cuando el contacto entra a esa etapa. | Todos |
@@ -784,9 +787,10 @@ Los **workflows** (envíos de material), la **Biblioteca** de archivos y las **C
 | 41 | **Cuándo · Workflow · Contacto · Disparador · Estado** | Columnas de las últimas 100 corridas. | Todos |
 | 42 | **Ejecutando** | Se está mandando. | Todos |
 | 43 | **Hecho** | Salió completo. | Todos |
-| 44 | **Omitido · motivo** | No salió y por qué (p. ej. agente pausado). | Todos |
+| 44 | **Omitido · motivo** | No salió y por qué (p. ej. agente pausado, «ya se envió a este contacto» o «ya no es el inicio» de **Solo al inicio**, 47). | Todos |
 | 45 | **Falló · código** | Error al mandar, con el motivo en palabras simples. Si WhatsApp pidió esperar, la corrida **no falla**: espera su turno y sigue. Si el worker se reinició y el archivo había quedado fallido, la corrida se detiene y **no** mueve la etapa. | Todos |
-| 46 | **⧉ Copiar** (ícono junto a Restaurar predeterminados, 3) | Copia **todos** los workflows para pegarlos en una IA y pedir mejoras, igual que las FAQs: cada uno con un guion (sin números), si está encendido o apagado (y si le falta archivo), con qué se dispara (Agente IA, comando, palabras clave, etapa), **Cuándo lo usa el Agente IA** y sus pasos en orden con los textos completos. Al copiar, el ícono cambia a ✓ unos segundos. | Todos |
+| 46 | **⧉ Copiar** (ícono junto a Restaurar predeterminados, 3) | Copia **todos** los workflows para pegarlos en una IA y pedir mejoras, igual que las FAQs: cada uno con un guion (sin números), si está encendido o apagado (y si le falta archivo), con qué se dispara (Agente IA, comando, palabras clave, etapa), **Cuándo lo usa el Agente IA** y sus pasos en orden con los textos completos. Al copiar, el ícono cambia a ✓ unos segundos. También dice si es **Solo al inicio** (47). | Todos |
+| 47 | **¿Cuándo se dispara por palabra clave o por el Agente IA?** (En cualquier momento · Solo al inicio) | **En cualquier momento**: como siempre (por palabra clave, una vez por cliente; el agente lo usa cuando quiera). **Solo al inicio**: regla estricta para respuestas ya definidas de primer contacto (p. ej. «Precio 2»): por palabra clave o por el agente solo sale **antes de que el Agente IA (con su propio texto) o un vendedor le contesten al cliente**, y **una sola vez por cliente**, nunca se repite. Lo que mandan otros workflows no cuenta (tras «Información», un «Precio» sí dispara «Precio 2»); el historial copiado del celular sí cuenta. Si ya no aplica, el mensaje puede disparar otro workflow que coincida y el agente ya no lo tiene a la mano. El **comando del vendedor** sale siempre. En Corridas, lo que no salió queda como Omitido con motivo «ya no es el inicio» o «ya enviado a este contacto». | Todos |
 
 **Lo cambias tú desde la pantalla:** crear, editar, prender, apagar, ordenar y probar workflows; restaurar los
 predeterminados; subir, renombrar y borrar archivos. Crear, editar, prender, apagar y borrar (y restaurar predeterminados)
@@ -797,7 +801,8 @@ quedan en **Agente IA › Historial** con quién lo hizo.
 - "En Automatización › (41) corridas, agrega un filtro por contacto."
 - "En Automatización › (9) palabras clave, que se puedan mandar más de una vez por contacto."
 
-**Agente IA aquí:** dispara los workflows que tienen 🤖 agente cuando la conversación coincide con **Cuándo usarlo**;
+**Agente IA aquí:** dispara los workflows que tienen 🤖 agente cuando la conversación coincide con **Cuándo usarlo**
+(los de **Solo al inicio**, 47, solo mientras nadie le ha contestado al cliente y si aún no le salieron);
 en Corridas aparecen con disparador "Agente". Mientras manda uno, en el chat se ve "Agente IA enviando…".
 
 <sub>Para Code: ruta `/automatizacion`; `app/(app)/automatizacion/_components/` (`automatizacion-panel`, `workflow-editor`, `biblioteca-tab`, `labels`); `lib/workflows/` (Copiar, 46 = `as-text.ts`), `lib/actions/workflows.ts`, `lib/media-library/`; diseño `docs/fase-d-diseno.md` §10.</sub>

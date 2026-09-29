@@ -25,6 +25,7 @@ import {
   getContactsByIds,
   getContactsChangedSince,
   getFunnelSignals,
+  setContactDestacado,
   updateContactStage,
   updateContactTemperature,
 } from "@/lib/actions/contacts";
@@ -38,7 +39,7 @@ import { CardFilterButton } from "../../_components/card-filter-button";
 import { funnelTone, type FunnelSignal } from "@/lib/contacts/funnel-tone";
 import { useInboxStream } from "../../dashboard/_components/use-inbox-stream";
 import { setContactUnread } from "@/lib/inbox/actions";
-import { applyTemperatures, columnsByStage, mergeLiveContacts } from "./board-live";
+import { applyMarks, columnsByStage, mergeLiveContacts } from "./board-live";
 import { CloseX } from "@/components/ui/close-x";
 
 // Una columna = una zona de destino (droppable). Se extrae a su propio
@@ -185,8 +186,8 @@ export function ContactsBoard({
   const [liveAdded, setLiveAdded] = useState<BoardContact[]>([]);
   const [syncedInitialContacts, setSyncedInitialContacts] = useState(initialContacts);
   const [search, setSearch] = useState("");
-  // Filtro por temperatura (una a la vez) y ⭐ Destacado (estrella del chat o temperatura
-  // ⭐), combinables; se suman al buscador. Las columnas no cambian: mismas etapas, orden y
+  // Filtro por temperatura (una a la vez) y ⭐ Destacado (la marca del contacto),
+  // combinables; se suman al buscador. Las columnas no cambian: mismas etapas, orden y
   // colores; solo quedan las tarjetas que cumplen. No se recuerda entre recargas.
   const [temperatureFilter, setTemperatureFilter] = useState<TemperatureFilter | null>(null);
   const [destacadoOnly, setDestacadoOnly] = useState(false);
@@ -456,7 +457,7 @@ export function ContactsBoard({
               skip.add(draggingIdRef.current);
               dragMissedRef.current.add(draggingIdRef.current);
             }
-            setContacts((current) => applyTemperatures(current, changed.temperatures, skip));
+            setContacts((current) => applyMarks(current, changed.temperatures, changed.destacados, skip));
             fresh = changed.contacts;
           } else {
             fresh = await getContactsByIds(ids);
@@ -592,9 +593,6 @@ export function ContactsBoard({
     [temperatureFilter, destacadoOnly],
   );
   const filtering = hasCardFilter(cardFilter);
-  // Solo el filtro Destacado lee las señales (estrella del chat): sin él, un cambio de
-  // señal no vuelve a filtrar las ~11k tarjetas.
-  const signalsForFilter = destacadoOnly ? signals : null;
 
   const filteredContacts = useMemo(() => {
     if (!normalizedSearch && !filtering) {
@@ -602,13 +600,13 @@ export function ContactsBoard({
     }
 
     return contacts.filter((contact) => {
-      if (filtering && !matchesCardFilter(contact, signalsForFilter?.[contact.id]?.starred, cardFilter)) return false;
+      if (filtering && !matchesCardFilter(contact, cardFilter)) return false;
       if (!normalizedSearch) return true;
       const nameMatches = normalizeSearch(getContactFullName(contact)).includes(normalizedSearch);
       const phoneMatches = phoneMatchesSearch(contact.phoneE164, normalizedSearch);
       return nameMatches || phoneMatches;
     });
-  }, [contacts, normalizedSearch, filtering, cardFilter, signalsForFilter]);
+  }, [contacts, normalizedSearch, filtering, cardFilter]);
 
   // Cada columna, de más reciente a más viejo: el que escribió al último (o entró a la
   // etapa al último) va arriba, también en vivo con la hora que trae la señal del SSE.
@@ -729,6 +727,31 @@ export function ContactsBoard({
       }
     });
   }
+  // ⭐ Destacado desde el pop-up (misma marca que la estrella de la Bandeja). Optimista y
+  // sin reordenar, como la temperatura; revierte solo esta tarjeta si falla.
+  function handleDestacadoChange(contactId: string, next: boolean) {
+    const target = contacts.find((contact) => contact.id === contactId);
+    if (!target || target.destacado === next) {
+      return;
+    }
+    setError(null);
+    setContacts((current) => current.map((contact) => (contact.id === contactId ? { ...contact, destacado: next } : contact)));
+
+    beginWrite(contactId);
+    startTransition(async () => {
+      let failed = false;
+      try {
+        await setContactDestacado({ contactId, destacado: next });
+      } catch {
+        failed = true;
+        setContacts((current) => current.map((contact) => (contact.id === contactId ? { ...contact, destacado: !next } : contact)));
+        setError("No se pudo actualizar Destacado. Intenta de nuevo.");
+      } finally {
+        endWrite(contactId, failed);
+      }
+    });
+  }
+
 
   // Clic derecho → "Marcar como no leído / leído", y el botón «Marcar como leído» del
   // pop-up. Optimista: leído apaga el círculo y el azul (no el amarillo); no leído pone
@@ -742,7 +765,6 @@ export function ContactsBoard({
       pending: unread ? (previous?.pending ?? false) : false,
       urgent: previous?.urgent ?? false,
       lastInboundAt: previous?.lastInboundAt ?? null,
-      starred: previous?.starred ?? false,
     };
     setError(null);
     setSignals((current) => ({ ...current, [contactId]: next }));
@@ -951,6 +973,7 @@ export function ContactsBoard({
           onTemperatureChange={(nextTemperature) =>
             handleTemperatureChange(selectedContact.id, nextTemperature)
           }
+          onDestacadoChange={(next) => handleDestacadoChange(selectedContact.id, next)}
           onOpenContact={(contactId) => void openContactById(contactId)}
         />
       )}

@@ -36,6 +36,8 @@ import { ConvencimientoBar } from "./convencimiento-picker";
 import { useSaveStatus } from "./use-save-status";
 import { AgentContactSwitch } from "./agent-contact-switch";
 import { IaMark } from "./ia-mark";
+import { TemperatureDestacadoMenu } from "./temperature-destacado-menu";
+import { LectorStatusLine } from "./lector-status";
 
 type Details = Awaited<ReturnType<typeof getContactDetails>>;
 type Inundaciones = NonNullable<Details["tieneInundaciones"]>;
@@ -147,8 +149,10 @@ export function ContactDetails({
   phone,
   stage,
   temperature,
+  destacado,
   onStageChange,
   onTemperatureChange,
+  onDestacadoChange,
   busy = false,
   error,
   action,
@@ -161,8 +165,14 @@ export function ContactDetails({
   phone: string | null;
   stage: Stage;
   temperature: Temperature | null;
+  /**
+   * Destacado ⭐ del contacto. Solo el pop-up del Embudo lo pasa (con onDestacadoChange):
+   * ahí la sección Temperatura asigna las dos cosas. La Bandeja no: su estrella está en la lista.
+   */
+  destacado?: boolean;
   onStageChange: (next: Stage) => void;
   onTemperatureChange: (next: Temperature | null) => void;
+  onDestacadoChange?: (next: boolean) => void;
   busy?: boolean;
   error?: string | null;
   /** Botón extra en el encabezado (p. ej. "Cerrar" en el pop-up del Embudo). */
@@ -528,19 +538,30 @@ export function ContactDetails({
             <span className="flex min-h-5 items-center">
               <span className={label}>Temperatura</span>
             </span>
-            <select
-              value={temperature ?? ""}
-              disabled={busy}
-              onChange={(e) => onTemperatureChange(e.target.value === "" ? null : (e.target.value as Temperature))}
-              className={`${input} disabled:opacity-60`}
-            >
-              <option value="">Sin asignar</option>
-              {TEMPERATURES.map((t) => (
-                <option key={t} value={t}>
-                  {TEMPERATURE_EMOJI[t]} {TEMPERATURE_LABELS[t]}
-                </option>
-              ))}
-            </select>
+            {onDestacadoChange ? (
+              <TemperatureDestacadoMenu
+                temperature={temperature}
+                destacado={destacado === true}
+                disabled={busy}
+                onTemperatureChange={onTemperatureChange}
+                onDestacadoChange={onDestacadoChange}
+                className={input}
+              />
+            ) : (
+              <select
+                value={temperature && TEMPERATURES.includes(temperature) ? temperature : ""}
+                disabled={busy}
+                onChange={(e) => onTemperatureChange(e.target.value === "" ? null : (e.target.value as Temperature))}
+                className={`${input} disabled:opacity-60`}
+              >
+                <option value="">Sin asignar</option>
+                {TEMPERATURES.map((t) => (
+                  <option key={t} value={t}>
+                    {TEMPERATURE_EMOJI[t]} {TEMPERATURE_LABELS[t]}
+                  </option>
+                ))}
+              </select>
+            )}
           </label>
         </div>
 
@@ -549,6 +570,8 @@ export function ContactDetails({
         ) : (
           <>
             <Section title="Calificación">
+            {/* El Agente IA en segundo plano: en espera, leyendo, actualizó o al día. */}
+            <LectorStatusLine contactId={contactId} />
             <Field title="¿Tiene problemas de inundaciones?" ia={details.iaFields.includes("tiene_inundaciones")} flash={lit("tiene_inundaciones")}>
               <div role="radiogroup" aria-label="¿Tiene problemas de inundaciones?" className="flex gap-1">
                 {INUNDACIONES.map((o) => {

@@ -18,6 +18,7 @@ export function ContactDetailPanel({
   onClose,
   onStageChange,
   onTemperatureChange,
+  onDestacadoChange,
   onOpenContact,
 }: {
   contact: BoardContact;
@@ -28,6 +29,7 @@ export function ContactDetailPanel({
   onClose: () => void;
   onStageChange: (stage: Stage) => void;
   onTemperatureChange: (temperature: Temperature | null) => void;
+  onDestacadoChange: (destacado: boolean) => void;
   /** Abrir otro contacto (primer mensaje: el número ya es de otro contacto). */
   onOpenContact?: (contactId: string) => void;
 }) {
@@ -148,8 +150,10 @@ export function ContactDetailPanel({
               phone={contact.phoneE164}
               stage={contact.stage}
               temperature={contact.temperature}
+              destacado={contact.destacado}
               onStageChange={onStageChange}
               onTemperatureChange={onTemperatureChange}
+              onDestacadoChange={onDestacadoChange}
               busy={isSaving}
               action={
                 <>
@@ -208,8 +212,10 @@ export function ContactDetailPanel({
               phone={contact.phoneE164}
               stage={contact.stage}
               temperature={contact.temperature}
+              destacado={contact.destacado}
               onStageChange={onStageChange}
               onTemperatureChange={onTemperatureChange}
+              onDestacadoChange={onDestacadoChange}
               busy={isSaving}
               action={<CloseX always label="Cerrar detalle del contacto" onClick={() => setMobileDetailOpen(false)} />}
             />

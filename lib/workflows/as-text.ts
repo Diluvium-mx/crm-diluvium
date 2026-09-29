@@ -12,6 +12,7 @@ export type WorkflowForText = {
   triggerCommand: string | null;
   triggerKeywords: readonly string[];
   triggerStage: string | null;
+  triggerStartOnly: boolean;
   steps: readonly StepPayload[];
   missingMedia: readonly string[];
 };
@@ -52,6 +53,10 @@ export function workflowsAsText(workflows: readonly WorkflowForText[], stageLabe
         `- ${w.name.trim()} — ${state}`,
         `  Se dispara con: ${triggers.length > 0 ? triggers.join(" · ") : "nada (no se dispara solo)"}`,
       ];
+      // «Solo al inicio» solo se anota cuando aplica (palabra clave o Agente IA).
+      if (w.triggerStartOnly && (w.triggerAgent || w.triggerKeywords.length > 0)) {
+        lines.push("  Solo al inicio: antes de que el Agente IA o un vendedor le contesten, una sola vez por cliente");
+      }
       if (w.triggerAgent && w.agentDescription.trim()) lines.push(block("  Cuándo lo usa el Agente IA: ", w.agentDescription, "    "));
       lines.push(w.steps.length > 0 ? "  Pasos:" : "  Pasos: ninguno");
       for (const step of w.steps) lines.push(stepText(step));
