@@ -295,6 +295,10 @@
      data-link="card" → tarjeta-enlace: borde navy, sombra leve, sube 1 px; si
                         trae una flecha [data-link-arrow], esta avanza 2 px;
      data-link="tab"  → pestaña-enlace: fondo navy tenue al pasar el cursor.
+     data-link="inline" → link dentro de un texto que escribe la gente (chat de
+                        la Bandeja y del Embudo, comentarios, mensajes rápidos…;
+                        components/ui/linked-text): azul y SIEMPRE subrayado,
+                        como en WhatsApp. En la burbuja navy, azul claro.
    Un enlace con forma de botón sólido lleva data-glow (se comporta como botón).
    Claro y oscuro; con "reducir movimiento" sin transiciones; nunca naranja. */
 :root {
@@ -319,6 +323,29 @@
 [data-link="text"]:focus-visible {
   color: var(--link-strong);
   background-size: 100% 1.5px;
+}
+
+[data-link="inline"] {
+  color: var(--link-inline, var(--link));
+  text-decoration-line: underline;
+  text-decoration-thickness: 1px;
+  text-underline-offset: 2px;
+  transition: color 160ms ease-out;
+}
+[data-link="inline"]:hover,
+[data-link="inline"]:focus-visible {
+  color: var(--link-inline-strong, var(--link-strong));
+  text-decoration-thickness: 2px;
+}
+/* Sobre fondos sólidos navy (burbuja saliente) el link va en azul claro
+   (contraste 5:1); una superficie clara adentro vuelve al azul de siempre. */
+:where([class~="bg-brand-navy"], [class~="bg-brand-navy-dark"], [class~="bg-primary"]) {
+  --link-inline: #a9d6ff;
+  --link-inline-strong: #ffffff;
+}
+:where([class~="bg-card"], [class~="bg-background"], [class~="bg-popover"], [class~="bg-muted"], [class~="bg-white"], [class~="bg-brand-white"]) {
+  --link-inline: initial;
+  --link-inline-strong: initial;
 }
 
 [data-link="card"] {

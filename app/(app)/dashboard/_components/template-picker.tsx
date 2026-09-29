@@ -10,6 +10,7 @@ import { listTemplates } from "@/lib/actions/templates";
 import { renderTemplateBody } from "@/lib/messaging/template-format";
 import type { TemplateView } from "@/lib/templates/types";
 import { CloseX } from "@/components/ui/close-x";
+import { LinkedText } from "@/components/ui/linked-text";
 
 const TOKEN_CLASS = "rounded bg-brand-navy/15 px-1 font-medium text-brand-navy";
 
@@ -121,7 +122,9 @@ export function TemplatePicker({
             ))}
             <div className="rounded-md bg-muted/60 p-2 text-sm">
               <p className="mb-1 text-[11px] font-medium text-muted-foreground">Vista previa</p>
-              <p className="whitespace-pre-wrap break-words">{preview}</p>
+              <p className="whitespace-pre-wrap break-words">
+                <LinkedText text={preview} />
+              </p>
             </div>
           </div>
         ) : templates.length === 0 ? (

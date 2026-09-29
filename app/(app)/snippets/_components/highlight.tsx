@@ -1,5 +1,8 @@
 // Resalta los tokens {{…}} dentro de un cuerpo de texto. Fragmentos usan el
 // naranja de acción; Plantillas el azul estructural (se pasa por className).
+// Los links del texto salen como hipervínculo azul (LinkedText).
+import { LinkedText } from "@/components/ui/linked-text";
+
 export function HighlightBody({ body, tokenClassName }: { body: string; tokenClassName: string }) {
   const parts = body.split(/(\{\{[^{}]+\}\})/g);
   return (
@@ -10,7 +13,9 @@ export function HighlightBody({ body, tokenClassName }: { body: string; tokenCla
             {part}
           </span>
         ) : (
-          <span key={index}>{part}</span>
+          <span key={index}>
+            <LinkedText text={part} />
+          </span>
         ),
       )}
     </>

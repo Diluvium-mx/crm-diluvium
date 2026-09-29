@@ -20,6 +20,7 @@ import { matchesSearch } from "@/lib/text/search";
 import type { FaqView, VersionView } from "@/lib/agente-ia/types";
 import { useConfirm } from "./use-confirm";
 import { VersionsList } from "./versions-list";
+import { LinkedText } from "@/components/ui/linked-text";
 
 const input =
   "w-full rounded border border-black/15 bg-background px-2 py-1.5 text-sm text-foreground dark:border-white/15";
@@ -440,7 +441,9 @@ export function FaqEditor({ faqs, versions }: { faqs: FaqView[]; versions: Versi
                           />
                         ) : (
                           <>
-                            <p className="whitespace-pre-wrap text-sm text-foreground/80">{f.answer}</p>
+                            <p className="whitespace-pre-wrap text-sm text-foreground/80">
+                              <LinkedText text={f.answer} />
+                            </p>
                             <div className="mt-2 flex gap-1 text-xs">
                               <button type="button" onClick={() => setEditing(f.id)} className="rounded px-2 py-0.5 font-medium text-brand-navy hover:bg-brand-navy/10 dark:text-sky-300">
                                 Editar

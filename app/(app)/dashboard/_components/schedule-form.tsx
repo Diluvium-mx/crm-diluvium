@@ -10,6 +10,7 @@ import { instantToLocal, localToInstant, textAllowedAt } from "@/lib/scheduled/r
 import type { ScheduledView } from "@/lib/scheduled/types";
 import { TemplatePicker } from "./template-picker";
 import { CloseX } from "@/components/ui/close-x";
+import { LinkedText } from "@/components/ui/linked-text";
 
 type Mode = { type: "new"; initialText: string; templateOnly: boolean } | { type: "edit"; item: ScheduledView };
 
@@ -152,7 +153,9 @@ export function ScheduleForm({
         </div>
       ) : editing ? (
         <div className="mt-2 space-y-2">
-          <p className="rounded-md bg-muted/60 p-2 text-sm whitespace-pre-wrap">{text}</p>
+          <p className="rounded-md bg-muted/60 p-2 text-sm whitespace-pre-wrap">
+            <LinkedText text={text} />
+          </p>
           <div className="flex justify-end">
             <button
               type="button"
