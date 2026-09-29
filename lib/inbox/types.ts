@@ -135,6 +135,12 @@ export type MessageView = {
    * no aplica (no es audio del cliente o es historial viejo sin intento).
    */
   transcription: { state: "lista"; text: string } | { state: "pendiente" } | { state: "sin"; reason: string } | null;
+  /**
+   * Primer mensaje que WhatsApp no pasó al CRM (Meta 131060, caso SDA): "verificando"
+   * los primeros segundos, "sin_contenido" si se confirmó. `body` ya trae el texto de
+   * la tarjeta. null = mensaje normal.
+   */
+  noDisponible: "verificando" | "sin_contenido" | null;
 };
 
 /** Página de mensajes en orden cronológico (viejo → nuevo); `hasMore` = hay más viejos. */

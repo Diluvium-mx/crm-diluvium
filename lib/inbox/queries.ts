@@ -4,7 +4,7 @@
 //
 // Las horas que viajan en cursores se comparan en SQL (con microsegundos), no
 // ida y vuelta por JS, que solo tiene milisegundos.
-import { and, desc, eq, inArray, isNull, like, or, sql, type SQL } from "drizzle-orm";
+import { and, desc, eq, inArray, isNull, like, not, or, sql, type SQL } from "drizzle-orm";
 import type { TemperatureFilter } from "@/lib/contacts/filters";
 import { nationalSearchPrefixes } from "@/lib/phone";
 import { normalizeSearch, SQL_SEARCH_FROM, SQL_SEARCH_TO } from "@/lib/text/search";
@@ -12,6 +12,7 @@ import { db } from "@/lib/db";
 import { channels, contacts, conversations, messages } from "@/lib/db/schema";
 import { latestInboundMessageId, unreadAfterCutoff } from "@/lib/messaging/ingest";
 import { plainSendReason } from "@/lib/messaging/send-reasons";
+import { noDisponibleEstado, noticeDisplayText, shadowNoticeSql } from "@/lib/messaging/unavailable";
 import {
   attachmentView,
   avatarInitials,
@@ -120,7 +121,7 @@ async function toListItems(organizationId: string, page: ListRow[]): Promise<Con
       contact: toContact(contact),
       lastMessage: last
         ? {
-            preview: messagePreview(last.type as MessageKind, last.body),
+            preview: noticeDisplayText(last.metadata) ?? messagePreview(last.type as MessageKind, last.body),
             direction: last.direction,
             kind: last.type as MessageKind,
             at: last.at,
@@ -228,10 +229,12 @@ async function lastMessageOf(organizationId: string, conversationIds: string[]) 
       direction: messages.direction,
       type: messages.type,
       body: messages.body,
+      metadata: messages.metadata,
       at: sql<Date>`${messageSortKey}`.mapWith(messages.sentAt),
     })
     .from(messages)
-    .where(and(eq(messages.organizationId, organizationId), inArray(messages.conversationId, conversationIds)))
+    // La sombra de un aviso "no disponible" no es un mensaje (el real ya está en el hilo).
+    .where(and(eq(messages.organizationId, organizationId), inArray(messages.conversationId, conversationIds), not(shadowNoticeSql(messages.metadata))))
     .orderBy(messages.conversationId, desc(messageSortKey), desc(messages.id));
   return new Map(rows.map((r) => [r.conversationId, r]));
 }
@@ -327,6 +330,7 @@ export async function listMessagesForOrg(
       and(
         eq(messages.organizationId, organizationId),
         eq(messages.conversationId, conversationId),
+        not(shadowNoticeSql(messages.metadata)),
         before
           ? sql`(${messageSortKey}, ${messages.id}) < (
               select coalesce(b.sent_at, b.created_at), b.id from ${messages} b
@@ -362,7 +366,7 @@ export async function listMessagesForOrg(
         id: m.id,
         direction: m.direction,
         kind: m.type as MessageKind,
-        body: m.body,
+        body: noticeDisplayText(m.metadata) ?? m.body,
         attachments: m.attachments.map((a, i) => attachmentView(m.id, i, a, m.createdAt, now)),
         status: m.status,
         // Fallido: el motivo en español claro (Bloque B), no el texto crudo de WhatsApp.
@@ -384,6 +388,10 @@ export async function listMessagesForOrg(
         })(),
         importedFromPhone: m.importedAt !== null,
         transcription: transcriptionView(m.transcripcion, m.metadata),
+        noDisponible: (() => {
+          const estado = noDisponibleEstado(m.metadata);
+          return estado === "verificando" || estado === "sin_contenido" ? estado : null;
+        })(),
       }),
     ),
   };
