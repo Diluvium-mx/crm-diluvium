@@ -9,7 +9,7 @@ import { aiAgentDrafts, aiUsage, channels, conversations, messages, workflowRuns
 import { endsWithQuestionStep } from "@/lib/workflows/steps";
 import { MAX_HISTORY_CHARS, messageText } from "./transcript";
 import { FINAL_OUTCOMES } from "./usage";
-import { hiddenNoticeSql, noDisponibleEstado, UNAVAILABLE_HISTORY_NOTE } from "@/lib/messaging/unavailable";
+import { hiddenNoticeSql, lateContentAtSql, noDisponibleEstado, UNAVAILABLE_HISTORY_NOTE } from "@/lib/messaging/unavailable";
 
 export type ConversationRow = typeof conversations.$inferSelect;
 export type ChannelRow = typeof channels.$inferSelect;
@@ -94,7 +94,9 @@ export async function pendingInbound(organizationId: string, conversationId: str
         // Aviso "no disponible" en verificación o sombra de un real que llegó aparte:
         // no se atiende (lib/messaging/unavailable.ts). El confirmado sin contenido sí.
         not(hiddenNoticeSql(messages.metadata)),
-        sql`${waAt} > coalesce((
+        // Contenido real que llegó DESPUÉS de confirmarse "no disponible" (el Agente IA ya
+        // pudo mandar el texto fijo): cuenta desde que llegó, para contestar lo que dice.
+        sql`coalesce(${lateContentAtSql(messages.metadata)}, ${waAt}) > coalesce((
           select max(coalesce((o.metadata->>'respondeHasta')::timestamp, o.sent_at, o.created_at)) from messages o
           where o.organization_id = ${organizationId} and o.conversation_id = ${conversationId}
             and o.direction = 'out' and o.status <> 'failed' and o.type <> 'system_note'

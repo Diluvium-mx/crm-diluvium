@@ -141,10 +141,10 @@ describe.skipIf(!TEST_DATABASE_URL)('doble verificación del aviso "no disponibl
     expect(list.items[0].lastMessage?.preview).toBe(rules.NOTICE_RECEIVING_TEXT);
   });
 
-  it("antes de 20 s no se decide (el real llega en 0–5 s)", async () => {
+  it("antes de 60 s no se decide (el real más tardío medido llegó a los 4.9 s)", async () => {
     await deliver(notice("2026-09-29T00:16:36Z"));
     const [row] = await rows();
-    expect(await check.verifyUnavailableNotice(provider(), { organizationId: ORG, messageId: row.id }, {}, later(5_000))).toBe("esperando");
+    expect(await check.verifyUnavailableNotice(provider(), { organizationId: ORG, messageId: row.id }, {}, later(30_000))).toBe("esperando");
     expect(rules.noDisponibleEstado((await rows())[0].metadata)).toBe("verificando");
   });
 
@@ -152,7 +152,7 @@ describe.skipIf(!TEST_DATABASE_URL)('doble verificación del aviso "no disponibl
     await deliver(notice("2026-09-29T00:16:36Z"));
     const [row] = await rows();
     const { h, woke } = hooks();
-    expect(await check.verifyUnavailableNotice(provider(), { organizationId: ORG, messageId: row.id }, h, later(25_000))).toBe("sin_contenido");
+    expect(await check.verifyUnavailableNotice(provider(), { organizationId: ORG, messageId: row.id }, h, later(65_000))).toBe("sin_contenido");
     expect(requests.at(-1)).toContain("/v1/inbox/conversations/zconv_5216680000101/messages?accountId=zacc_nd");
     expect(woke.confirmed).toEqual([row.id]);
     expect(woke.recovered).toEqual([]);
@@ -184,7 +184,7 @@ describe.skipIf(!TEST_DATABASE_URL)('doble verificación del aviso "no disponibl
     expect(page?.messages.map((m) => m.body)).toEqual(["Quiero más información"]);
     expect((await inbox.listConversationsForOrg(ORG)).items[0].lastMessage?.preview).toBe("Quiero más información");
     expect((await context.pendingInbound(ORG, c.id)).map((m) => m.id)).toEqual([realRow.id]);
-    expect(await check.verifyUnavailableNotice(provider(), { organizationId: ORG, messageId: shadow.id }, {}, later(25_000))).toBe("no_aplica");
+    expect(await check.verifyUnavailableNotice(provider(), { organizationId: ORG, messageId: shadow.id }, {}, later(65_000))).toBe("no_aplica");
   });
 
   it("webhooks desordenados: el real se procesó ANTES que su aviso → el aviso nace como sombra", async () => {
@@ -202,7 +202,7 @@ describe.skipIf(!TEST_DATABASE_URL)('doble verificación del aviso "no disponibl
     await deliver(real("2026-09-27T22:31:20Z", "Es la misma medida"));
     const [first] = await rows();
     expect(rules.noDisponibleEstado(first.metadata)).toBe("verificando");
-    expect(await check.verifyUnavailableNotice(provider(), { organizationId: ORG, messageId: first.id }, {}, later(25_000))).toBe("sin_contenido");
+    expect(await check.verifyUnavailableNotice(provider(), { organizationId: ORG, messageId: first.id }, {}, later(65_000))).toBe("sin_contenido");
     expect((await conversation()).unreadCount).toBe(2);
   });
 
@@ -211,7 +211,7 @@ describe.skipIf(!TEST_DATABASE_URL)('doble verificación del aviso "no disponibl
     const [row] = await rows();
     zernio = { mode: "contenido", text: "Quiero más información" };
     const { h, woke } = hooks();
-    expect(await check.verifyUnavailableNotice(provider(), { organizationId: ORG, messageId: row.id }, h, later(25_000))).toBe("recuperado");
+    expect(await check.verifyUnavailableNotice(provider(), { organizationId: ORG, messageId: row.id }, h, later(65_000))).toBe("recuperado");
     const [done] = await rows();
     expect(done.body).toBe("Quiero más información");
     expect(done.metadata?.unsupported).toBeUndefined();
@@ -225,10 +225,11 @@ describe.skipIf(!TEST_DATABASE_URL)('doble verificación del aviso "no disponibl
     await deliver(notice("2026-09-29T00:16:36Z"));
     const [row] = await rows();
     zernio = { mode: "falla" };
-    expect(await check.verifyUnavailableNotice(provider(), { organizationId: ORG, messageId: row.id }, {}, later(25_000))).toBe("reintentar");
+    expect(await check.verifyUnavailableNotice(provider(), { organizationId: ORG, messageId: row.id }, {}, later(65_000))).toBe("reintentar");
     expect(rules.noDisponibleEstado((await rows())[0].metadata)).toBe("verificando");
-    // El barrido lo recoge (más de 45 s).
-    expect((await check.noticesToVerify(later(60_000))).map((n) => n.messageId)).toEqual([row.id]);
+    // El barrido lo recoge (más de 90 s).
+    expect((await check.noticesToVerify(later(60_000)))).toEqual([]);
+    expect((await check.noticesToVerify(later(100_000))).map((n) => n.messageId)).toEqual([row.id]);
     expect(await check.verifyUnavailableNotice(provider(), { organizationId: ORG, messageId: row.id }, {}, later(4 * 60_000))).toBe("sin_contenido");
   });
 
@@ -236,7 +237,7 @@ describe.skipIf(!TEST_DATABASE_URL)('doble verificación del aviso "no disponibl
     const calls: Calls = { verify: [], inbound: [] };
     await deliver(notice("2026-09-29T00:16:36Z", "wamid.sda"), calls);
     const [row] = await rows();
-    await check.verifyUnavailableNotice(provider(), { organizationId: ORG, messageId: row.id }, {}, later(25_000));
+    await check.verifyUnavailableNotice(provider(), { organizationId: ORG, messageId: row.id }, {}, later(65_000));
     expect(await deliver(real("2026-09-29T00:16:37Z", "Quiero más información", "wamid.sda"), calls)).toBe(
       "entrante completado (antes no disponible)",
     );
