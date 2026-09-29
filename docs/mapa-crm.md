@@ -53,8 +53,10 @@ Nadie es "dueño" de un contacto: **todos ven todos los contactos, siempre**.
 | **Contacto sin chat** | Contacto que nunca ha escrito (alta a mano en Embudo › Nuevo contacto, o importado de GHL). Se le escribe primero **gratis desde WhatsApp Web** o con una **plantilla** desde el CRM; con plantilla, en el CRM solo se escribe libre cuando el cliente conteste. |
 | **Aviso de Meta** | Pop-up grande que sale cuando WhatsApp (Meta) no acepta algo de una plantilla: por qué pasó y qué hacer. |
 | **Mensaje rápido** | Respuesta guardada por el equipo para contestar más rápido dentro de las 24 h (antes se llamaba "Fragmento"). Se inserta con "/" o con ⚡ y **no se manda sola**: la revisas y le das Enviar. Si lleva {{vendedor}}, se llena solo con tu nombre; {{nombre}} lo completas tú. Diluvium tiene 22 (Buenos días, Precio, Pagos…). |
-| **Workflow** | Secuencia de pasos (texto, archivo con pie, espera) que manda material: tabla de tamaños, datos bancarios, videos. Lo dispara el agente, un **comando** del vendedor, una **palabra clave** del cliente o la entrada a una etapa. Con **Solo al inicio**, por palabra clave o por el agente solo sale antes de que el Agente IA o un vendedor le contesten al cliente, y **una sola vez** por cliente (p. ej. «Precio 2» para quien llega del anuncio preguntando el precio). Las **esperas** solo aplican al agente, a la palabra clave y a la etapa: con un comando del vendedor sale de inmediato. |
-| **Comando** | Atajo que escribe el vendedor en el chat para mandar un workflow: /tabla, /banco, /video… Se escribe con letras sin acento (la **ñ** sí: /tamaños), números y guiones. Sale **de inmediato** (se salta los pasos ⏱ Esperar); el cliente lo recibe en lo que tarda WhatsApp (~5 s). |
+| **Workflow** | Secuencia de pasos (texto, archivo con pie, espera) que manda material: tabla de tamaños, datos bancarios, videos. Lo dispara el agente, un **comando** del vendedor, una **palabra clave** del cliente o la entrada a una etapa. Con **Solo al inicio**, por palabra clave o por el agente solo sale antes de que el Agente IA o un vendedor le contesten al cliente, y **una sola vez** por cliente (p. ej. «Precio 2» para quien llega del anuncio preguntando el precio); con **Solo al inicio por palabra clave** (la Tabla) la palabra clave es solo acción inicial y después el Agente IA la manda cuando haga falta. Puede tener un **Máximo de envíos por chat** (la Tabla: 2) y la casilla **El workflow es la respuesta**. Las **esperas** solo aplican al agente, a la palabra clave y a la etapa: con un comando del vendedor sale de inmediato. |
+| **El workflow es la respuesta** | Casilla de un workflow (29-sep-2026). Cuando sale por **palabra clave**, el Agente IA no agrega nada a ese mensaje y **espera a que el cliente conteste**, aunque el workflow termine en una imagen (la Tabla). Si el cliente había escrito otra cosa antes en la misma ráfaga («¿Cuánto tarda el envío?» + «Precio»), eso sí lo contesta el Agente IA. Si el **Agente IA** lo usa por su cuenta y el workflow trae textos («Precio 2»), su propio texto no sale (no se repite); si solo manda una imagen o video, sí escribe su frase. |
+| **Máximo de envíos por chat** | Cuántas veces puede salir un workflow en un mismo chat por palabra clave o por el Agente IA (vacío = sin límite). Cuenta su archivo aunque haya salido dentro de otro workflow (la foto de la tabla en «Precio 2» o «Información» cuenta para la Tabla). El **comando del vendedor** suma, pero sí puede pasarlo. |
+| **Comando** | Atajo que escribe el vendedor en el chat para mandar un workflow: /tamaños, /banco, /video-estandar… Se escribe con letras sin acento (la **ñ** sí: /tamaños), números y guiones. Sale **de inmediato** (se salta los pasos ⏱ Esperar); el cliente lo recibe en lo que tarda WhatsApp (~5 s). |
 | **Adjuntar (📎)** | Mandar fotos, videos o documentos desde el chat: se arrastran sobre el chat, se eligen con 📎 o se pegan con Cmd+V. Hasta **10 por envío**, uno por mensaje y en orden; el texto va como pie del primero. Fotos JPG/PNG (HEIC y WebP se pasan solas a JPG), video .mp4 hasta 16 MB, PDF/Word/Excel/PowerPoint/TXT/XML hasta 100 MB. GIF, ZIP o audio: se mandan desde el celular. |
 | **Corrida** | Cada vez que un workflow se ejecutó (Hecho, Omitido, Falló…). |
 | **Biblioteca** | Los archivos (imágenes y videos) que usan los workflows. |
@@ -319,7 +321,7 @@ solo plantilla (y no se pueden adjuntar).
 | 4 | **🕒 Programar mensaje** | Abre el formulario para programar. Con archivos adjuntos se apaga: programar no lleva archivos por ahora. | Todos |
 | 5 | **Enviar** (naranja) | Manda el mensaje. Con archivos, se activa cuando **todos terminaron de subir**; salen uno por mensaje en el orden de la vista previa y el texto va como pie del primero. | Todos |
 | 6 | **⚡ Mensajes rápidos** (menú del "/") | Menú que aparece al escribir "/". | Todos |
-| 7 | **Automatizaciones** | Comandos de workflows (/tabla, /banco, /video…) con "▶ ejecutar": manda ese material en el chat **de inmediato** (sin los pasos ⏱ Esperar del workflow). Cuenta como mensaje del vendedor. Se encuentran sin importar acentos ni la ñ ("/taman" encuentra /tamaños). | Todos |
+| 7 | **Automatizaciones** | Comandos de workflows (/tamaños, /banco, /video-estandar, /video-me, /video-mini…) con "▶ ejecutar": manda ese material en el chat **de inmediato** (sin los pasos ⏱ Esperar del workflow). Cuenta como mensaje del vendedor. Se encuentran sin importar acentos ni la ñ ("/taman" encuentra /tamaños). | Todos |
 | 8 | **Lista de mensajes rápidos** | Nombre y texto; al elegir uno se pone en lugar del "/". Solo {{vendedor}} se llena solo (con tu nombre); {{nombre}} lo completas tú. | Todos |
 | 9 | **↑↓ elegir · Enter insertar · Esc cerrar** | Ayuda de teclas del menú. | Todos |
 | 10 | **"/" en la caja** | Lo que escribes después de "/" filtra la lista por nombre y texto, sin importar acentos ni mayúsculas ("cuanta" encuentra "Cuánta agua entra"). | Todos |
@@ -782,6 +784,7 @@ Los **workflows** (envíos de material), la **Biblioteca** de archivos y las **C
 ![Aviso al guardar](mapa-crm/10-auto-aviso-guardar.png)
 ![Workflow guardado](mapa-crm/10-auto-aviso-guardado.png)
 ![Biblioteca](mapa-crm/10-auto-biblioteca.png)
+![Renombrar archivo](mapa-crm/10-auto-renombrar.png)
 ![Corridas](mapa-crm/10-auto-corridas.png)
 
 | # | Nombre oficial | Qué hace | Quién lo ve |
@@ -792,7 +795,7 @@ Los **workflows** (envíos de material), la **Biblioteca** de archivos y las **C
 | 5 | **Casilla habilitado** | Prende o apaga el workflow. | Todos |
 | 6 | **Nombre del workflow** | Tabla de tamaños, Datos bancarios, Video de instalación… | Todos |
 | 7 | **🤖 agente** | El agente puede dispararlo solo. | Todos |
-| 8 | **Comando** (/tabla) | Atajo del vendedor en el chat. | Todos |
+| 8 | **Comando** (/tamaños) | Atajo del vendedor en el chat. | Todos |
 | 9 | **🔑 Palabras clave** | Palabras del cliente que lo disparan (una sola vez por contacto). | Todos |
 | 10 | **⚠ falta archivo** | Le falta su imagen o video; queda apagado hasta que se elija. | Todos |
 | 11 | **Resumen de pasos** | ⏱ espera · 📎 archivo · 💬 texto, en orden. | Todos |
@@ -804,9 +807,9 @@ Los **workflows** (envíos de material), la **Biblioteca** de archivos y las **C
 | 17 | **Habilitado** | Prende o apaga desde el editor. | Todos |
 | 18 | **Nombre** | Nombre del workflow. | Todos |
 | 19 | **Cuándo usarlo** | Texto que lee el agente para decidir si lo manda. | Todos |
-| 20 | **Disparadores** | Las formas de dispararlo (21–24) y cuándo (47). | Todos |
+| 20 | **Disparadores** | Las formas de dispararlo (21–24), cuándo (47), cuántas veces por chat (52) y si es la respuesta (53). | Todos |
 | 21 | **El Agente IA puede dispararlo** | Casilla. | Todos |
-| 22 | **Comando del vendedor (en el chat)** | p. ej. /tabla. Letras sin acento (la **ñ** sí: /tamaños), números y guiones; si lleva acento o espacio, no se guarda y lo avisa arriba. | Todos |
+| 22 | **Comando del vendedor (en el chat)** | p. ej. /tamaños. Letras sin acento (la **ñ** sí: /tamaños), números y guiones; si lleva acento o espacio, no se guarda y lo avisa arriba. | Todos |
 | 23 | **Al entrar a la etapa** | Se manda solo cuando el contacto entra a esa etapa. | Todos |
 | 24 | **Palabras clave del cliente** | Separadas por coma; palabra completa, sin importar acentos. | Todos |
 | 25 | **Pasos (en orden)** | Lo que manda, de arriba a abajo. | Todos |
@@ -820,7 +823,7 @@ Los **workflows** (envíos de material), la **Biblioteca** de archivos y las **C
 | 33 | **Límites de WhatsApp** | Imagen JPEG/PNG hasta 5 MB · Video MP4 hasta 16 MB · PDF hasta 100 MB. | Todos |
 | 34 | **Subir archivos** | Agrega imágenes, videos o PDF. | Todos |
 | 35 | **Tarjeta de imagen** | Vista previa del archivo. | Todos |
-| 36 | **Nombre** (clic para renombrar) | Cómo se ve en el editor. | Todos |
+| 36 | **Nombre** (clic para renombrar) | Cómo se ve en el editor. Al darle clic sale el aviso de arriba con el nombre para cambiarlo (54). | Todos |
 | 37 | **Tipo · peso · archivo** | Datos del archivo. | Todos |
 | 38 | **Borrar** (archivo) | Quita el archivo (no se puede si un paso lo usa). Pide confirmar con el aviso de arriba. | Todos |
 | 39 | **Tarjeta de video** | Video con reproductor. | Todos |
@@ -828,14 +831,17 @@ Los **workflows** (envíos de material), la **Biblioteca** de archivos y las **C
 | 41 | **Cuándo · Workflow · Contacto · Disparador · Estado** | Columnas de las últimas 100 corridas. | Todos |
 | 42 | **Ejecutando** | Se está mandando. | Todos |
 | 43 | **Hecho** | Salió completo. | Todos |
-| 44 | **Omitido · motivo** | No salió y por qué (p. ej. agente pausado, «ya se envió a este contacto» o «ya no es el inicio» de **Solo al inicio**, 47). | Todos |
+| 44 | **Omitido · motivo** | No salió y por qué (p. ej. agente pausado, «ya se envió a este contacto» o «ya no es el inicio» de **Solo al inicio**, 47, o «ya salió el máximo de veces en este chat», 52). | Todos |
 | 48 | **← Workflows** (barra fija de arriba, junto al título «Editar «nombre»») | Regresa a la lista de workflows. **Cancelar** hace exactamente lo mismo. Si no cambiaste nada, sales directo; si cambiaste algo, sale el aviso (49). En la barra también dice «Cambios sin guardar» mientras los haya. Si cierras o recargas el navegador con cambios, el navegador también avisa. En el celular la flecha va sola. | Todos |
 | 49 | **Aviso «Estás por salir de Editar workflow»** | «Los cambios de edición se perderán.» **Seguir editando** te deja donde estabas con tus cambios; **Salir sin guardar** regresa a la lista y los descarta. Solo sale si hubo cambios. | Todos |
 | 50 | **Aviso «¿Guardar los cambios de «nombre»?»** | Muestra **Antes** y **Después** de todo lo que cambiaste (el mismo texto que queda en Agente IA › Historial) y guarda todo junto con **Guardar**. Para uno nuevo dice «¿Crear el workflow…?» con su resumen (encendido o apagado y cuántos pasos). | Todos |
 | 51 | **✓ Workflow guardado** | Aviso breve arriba al guardar (o al borrar un workflow). Se quita solo a los 3 segundos o con cualquier clic (Biblioteca, Corridas, ← Workflows…). | Todos |
 | 45 | **Falló · código** | Error al mandar, con el motivo en palabras simples. Si WhatsApp pidió esperar, la corrida **no falla**: espera su turno y sigue. Si el worker se reinició y el archivo había quedado fallido, la corrida se detiene y **no** mueve la etapa. | Todos |
-| 46 | **⧉ Copiar** (ícono junto a **+ Nuevo**, 4) | Copia **todos** los workflows para pegarlos en una IA y pedir mejoras, igual que las FAQs: cada uno con un guion (sin números), si está encendido o apagado (y si le falta archivo), con qué se dispara (Agente IA, comando, palabras clave, etapa), **Cuándo lo usa el Agente IA** y sus pasos en orden con los textos completos. Al copiar, el ícono cambia a ✓ unos segundos. También dice si es **Solo al inicio** (47). | Todos |
-| 47 | **¿Cuándo se dispara por palabra clave o por el Agente IA?** (En cualquier momento · Solo al inicio) | **En cualquier momento**: como siempre (por palabra clave, una vez por cliente; el agente lo usa cuando quiera). **Solo al inicio**: regla estricta para respuestas ya definidas de primer contacto (p. ej. «Precio 2»): por palabra clave o por el agente solo sale **antes de que el Agente IA (con su propio texto) o un vendedor le contesten al cliente**, y **una sola vez por cliente**, nunca se repite. Lo que mandan otros workflows no cuenta (tras «Información», un «Precio» sí dispara «Precio 2»); el historial copiado del celular sí cuenta. Si ya no aplica, el mensaje puede disparar otro workflow que coincida y el agente ya no lo tiene a la mano. El **comando del vendedor** sale siempre. En Corridas, lo que no salió queda como Omitido con motivo «ya no es el inicio» o «ya enviado a este contacto». | Todos |
+| 46 | **⧉ Copiar** (ícono junto a **+ Nuevo**, 4) | Copia **todos** los workflows para pegarlos en una IA y pedir mejoras, igual que las FAQs: cada uno con un guion (sin números), si está encendido o apagado (y si le falta archivo), con qué se dispara (Agente IA, comando, palabras clave, etapa), **Cuándo lo usa el Agente IA** y sus pasos en orden con los textos completos. Al copiar, el ícono cambia a ✓ unos segundos. También dice si es **Solo al inicio** (47), su **Máximo por chat** (52) y si **El workflow es la respuesta** (53). | Todos |
+| 47 | **¿Cuándo se dispara por palabra clave o por el Agente IA?** (En cualquier momento · Solo al inicio · Solo al inicio por palabra clave; el Agente IA cuando haga falta) | **En cualquier momento**: como siempre (por palabra clave, una vez por cliente; el agente lo usa cuando quiera). **Solo al inicio por palabra clave; el Agente IA cuando haga falta** (la Tabla): la palabra clave es solo **acción inicial** (misma regla de abajo: antes de que le contesten y una vez por cliente; «Checare medidas» a media conversación ya no la dispara) y después el **Agente IA** la manda cuando el cliente la pide. **Solo al inicio**: regla estricta para respuestas ya definidas de primer contacto (p. ej. «Precio 2»): por palabra clave o por el agente solo sale **antes de que el Agente IA (con su propio texto) o un vendedor le contesten al cliente**, y **una sola vez por cliente**, nunca se repite. Lo que mandan otros workflows no cuenta (tras «Información», un «Precio» sí dispara «Precio 2»); el historial copiado del celular sí cuenta. Si ya no aplica, el mensaje puede disparar otro workflow que coincida y el agente ya no lo tiene a la mano. El **comando del vendedor** sale siempre. En Corridas, lo que no salió queda como Omitido con motivo «ya no es el inicio» o «ya enviado a este contacto». **Regla fija** (no se ve en el editor): si el primer mensaje trae «precio» y «medidas» (dispararía «Precio 2» y la Tabla a la vez), sale **«Información»**, que trae la explicación, la foto, el precio y la pregunta. | Todos |
+| 52 | **Máximo de envíos por chat** (vacío = Sin límite) | Cuántas veces puede salir en un mismo chat por palabra clave o por el Agente IA (la Tabla: 2). Cuenta su archivo **aunque haya salido dentro de otro workflow** (la foto de la tabla en «Precio 2» o «Información» cuenta). Al llegar al máximo, la palabra clave ya no lo dispara, el Agente IA ya no lo tiene a la mano (sabe cuántas veces salió: «1 de 2») y en Corridas queda Omitido con «ya salió el máximo de veces en este chat». El **comando del vendedor** suma, pero sí puede pasarlo. | Todos |
+| 53 | **El workflow es la respuesta** (casilla) | Cuando sale por **palabra clave**, el Agente IA no agrega nada a ese mensaje y **espera a que el cliente conteste**, aunque el workflow termine en una imagen (la Tabla). Solo cuenta como contestado el mensaje que lo disparó: si el cliente escribió otra cosa antes («¿Cuánto tarda el envío?» + «Precio»), eso lo contesta el Agente IA. Si el **Agente IA** lo usa por su cuenta: con textos («Precio 2») su propio texto no sale; solo con imagen o video, sí escribe su frase. Nace marcada en los que terminan en pregunta («Precio 2», «Información», «Tenemos»); si un workflow termina en «?» sin marcarla, abajo sale un aviso naranja. | Todos |
+| 54 | **Aviso «Renombrar archivo»** | Sale arriba al darle clic al nombre de un archivo (36), con el nombre adentro ya seleccionado para escribir el nuevo. **Guardar** (o Enter) lo cambia; **Cancelar**, Esc o clic fuera lo cierran sin cambiar. Si el nombre queda vacío, **Guardar** se apaga. El cliente nunca ve este nombre. | Todos |
 
 **Lo cambias tú desde la pantalla:** crear, editar, prender, apagar, ordenar y probar workflows; subir, renombrar y
 borrar archivos. En el editor los cambios son libres y se guardan juntos con un solo aviso (50); borrar un workflow o un
@@ -849,10 +855,11 @@ solos al abrir la cuenta y no se pueden borrar.
 - "En Automatización › (9) palabras clave, que se puedan mandar más de una vez por contacto."
 
 **Agente IA aquí:** dispara los workflows que tienen 🤖 agente cuando la conversación coincide con **Cuándo usarlo**
-(los de **Solo al inicio**, 47, solo mientras nadie le ha contestado al cliente y si aún no le salieron);
+(los de **Solo al inicio**, 47, solo mientras nadie le ha contestado al cliente y si aún no le salieron; los que llegaron
+a su **Máximo por chat**, 52, ya no); espera a que termine uno por palabra clave con **El workflow es la respuesta** (53);
 en Corridas aparecen con disparador "Agente". Mientras manda uno, en el chat se ve "Agente IA enviando…".
 
-<sub>Para Code: ruta `/automatizacion`; `app/(app)/automatizacion/_components/` (`automatizacion-panel`, `workflow-editor`, `biblioteca-tab`, `labels`); `lib/workflows/` (Copiar, 46 = `as-text.ts`), `lib/actions/workflows.ts`, `lib/media-library/`; diseño `docs/fase-d-diseno.md` §10.</sub>
+<sub>Para Code: ruta `/automatizacion`; `app/(app)/automatizacion/_components/` (`automatizacion-panel`, `workflow-editor`, `biblioteca-tab`, `labels`); `lib/workflows/` (Copiar, 46 = `as-text.ts`; 52 = `max-per-chat.ts`; regla fija de 47 = `fixed-rules.ts`), `lib/actions/workflows.ts`, `lib/media-library/`; diseño `docs/fase-d-diseno.md` §10.</sub>
 
 ---
 
