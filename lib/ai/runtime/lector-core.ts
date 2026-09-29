@@ -30,6 +30,17 @@ export const LECTOR_TIMEOUT_MS = 60_000;
 // Imágenes y PDF del cliente que ve (los más recientes): comprobantes y fotos con medidas.
 export const LECTOR_MAX_MEDIA = 6;
 export const MAX_MONTO = 9_999_999;
+// Cuándo lee el barrido (lector-worker.ts). Aquí (puro) para que el indicador del Detalle
+// calcule "leerá el chat en ~N min" con las mismas reglas: cuando el chat lleva
+// LECTOR_QUIET_MS sin mensajes, o LECTOR_MAX_WAIT_MS después del primero sin leer; solo
+// actividad de los últimos LECTOR_LOOKBACK_DAYS días.
+export const LECTOR_QUIET_MS = 3 * 60_000;
+export const LECTOR_MAX_WAIT_MS = 15 * 60_000;
+export const LECTOR_LOOKBACK_DAYS = 3;
+export const LECTOR_EVERY_MS = 60_000;
+// Candado Redis por chat mientras el lector lo lee (lector.ts); el indicador del Detalle
+// lo mira para mostrar "leyendo".
+export const lectorLockKey = (conversationId: string) => `lector-lock:${conversationId}`;
 
 export type LectorMessage = ThreadMessage & { source: string; at: Date };
 

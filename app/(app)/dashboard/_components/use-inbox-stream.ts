@@ -21,6 +21,7 @@ const EVENT_TYPES = [
   "contact.created",
   "contacts.bulk",
   "contact.updated",
+  "lector.status",
   "inbox.bulk",
   "stages.updated",
 ] as const;
