@@ -4,6 +4,7 @@ import { requireActiveMembership } from "@/lib/auth/active-organization";
 import { AD_PEOPLE_PAGE_SIZE, getAd } from "@/lib/ads/queries";
 import { listFunnelStages } from "@/lib/contacts/funnel-stages";
 import { roleKey, stageLabel } from "@/lib/contacts/stages";
+import { LinkedText } from "@/components/ui/linked-text";
 
 // Página de un anuncio: Campaña › Conjunto › Anuncio, su miniatura (una sola
 // copia chica; el video se ve en Meta), el texto, la llamada a la acción, cuántos
@@ -80,13 +81,17 @@ export default async function AnuncioPage({ params, searchParams }: PageProps<"/
           {(ad.title || ad.body || ad.cta || ad.linkUrl) && (
             <div className="rounded-lg border bg-card p-4">
               {ad.title && <p className="text-sm font-semibold">{ad.title}</p>}
-              {ad.body && <p className="mt-1 whitespace-pre-line text-sm text-muted-foreground">{ad.body}</p>}
+              {ad.body && (
+                <p className="mt-1 whitespace-pre-line text-sm text-muted-foreground">
+                  <LinkedText text={ad.body} />
+                </p>
+              )}
               {(ad.cta || ad.linkUrl) && (
                 <p className="mt-2 text-xs text-muted-foreground">
                   {ad.cta && <span>Botón: {ad.cta}</span>}
                   {ad.cta && ad.linkUrl && " · "}
                   {ad.linkUrl && (
-                    <a href={ad.linkUrl} target="_blank" rel="noopener noreferrer" className="underline-offset-2 hover:underline">
+                    <a href={ad.linkUrl} target="_blank" rel="noopener noreferrer" data-link="inline">
                       {ad.linkUrl.replace(/^https:\/\//, "").slice(0, 60)}
                     </a>
                   )}
