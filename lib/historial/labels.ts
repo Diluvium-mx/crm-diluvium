@@ -8,7 +8,7 @@
 import { z } from "zod";
 import { instantToLocal, localToInstant } from "@/lib/scheduled/rules";
 import type { WorkflowDetail, WorkflowDetailStep } from "./diff";
-import { startOnlyLabel } from "@/lib/workflows/steps";
+import { maxSendsLabel, START_SCOPE_LABEL, startScopeOf } from "@/lib/workflows/steps";
 
 // Filtro "Tipo" de la subpestaña, en este orden.
 export const HISTORY_TYPES = [
@@ -236,6 +236,9 @@ export type WorkflowSnapshot = {
   // Nombre de la etapa (no la clave).
   triggerStage: string | null;
   triggerStartOnly: boolean;
+  triggerStartOnlyAgent: boolean;
+  maxSendsPerChat: number | null;
+  isAnswer: boolean;
   steps: unknown[];
 };
 
@@ -253,6 +256,9 @@ export function workflowDetail(w: WorkflowSnapshot, fileName: (assetId: string) 
     triggerCommand: w.triggerCommand,
     triggerStage: w.triggerStage,
     triggerStartOnly: w.triggerStartOnly,
+    triggerStartOnlyAgent: w.triggerStartOnlyAgent,
+    maxSendsPerChat: w.maxSendsPerChat,
+    isAnswer: w.isAnswer,
     steps: w.steps.flatMap((raw): WorkflowDetailStep[] => {
       const st = raw as { kind?: unknown; text?: unknown; seconds?: unknown; title?: unknown; assetId?: unknown; caption?: unknown };
       if (st.kind === "send_text") return [{ kind: "send_text", text: String(st.text ?? "") }];
@@ -321,8 +327,14 @@ export function describeWorkflowEdit(before: WorkflowSnapshot, after: WorkflowSn
   if (before.triggerAgent !== after.triggerAgent) {
     parts.push([`Lo usa el agente: ${before.triggerAgent ? "Sí" : "No"}`, `Lo usa el agente: ${after.triggerAgent ? "Sí" : "No"}`]);
   }
-  if (before.triggerStartOnly !== after.triggerStartOnly) {
-    parts.push([`Cuándo: ${startOnlyLabel(before.triggerStartOnly)}`, `Cuándo: ${startOnlyLabel(after.triggerStartOnly)}`]);
+  if (startScopeOf(before) !== startScopeOf(after)) {
+    parts.push([`Cuándo: ${START_SCOPE_LABEL[startScopeOf(before)]}`, `Cuándo: ${START_SCOPE_LABEL[startScopeOf(after)]}`]);
+  }
+  if ((before.maxSendsPerChat ?? null) !== (after.maxSendsPerChat ?? null)) {
+    parts.push([`Máximo por chat: ${maxSendsLabel(before.maxSendsPerChat)}`, `Máximo por chat: ${maxSendsLabel(after.maxSendsPerChat)}`]);
+  }
+  if (before.isAnswer !== after.isAnswer) {
+    parts.push([`Es la respuesta: ${before.isAnswer ? "Sí" : "No"}`, `Es la respuesta: ${after.isAnswer ? "Sí" : "No"}`]);
   }
   if (before.agentDescription !== after.agentDescription) parts.push(["Descripción para el agente", "Descripción para el agente (editada)"]);
   if (parts.length === 0) return null;

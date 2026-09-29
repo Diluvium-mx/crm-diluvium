@@ -19,7 +19,8 @@ import { hasUnresolvedAgentError, recordAgentError, supersedeAgentErrors } from 
 import { agentErrorBody, bothModelsFailedBody, classifyModelError, EMPTY_RESPONSE_INFO, sendErrorBody, sendErrorMotive, type ModelErrorInfo } from "./model-errors";
 import { cleanAdMessages } from "./ad-cleaner";
 import { buildBrainSystemWithRuntime, parseBrainOutput } from "./brain";
-import { crmContextFor, executeActions, loadAgentTools, noteForVendor, prepareActions, quoteSetByVendor, runsThatSend, setQuoteByAgent, type ActionPhase, type ActionPlan, type StartWorkflow } from "./actions";
+import { answerRunsWithText, crmContextFor, executeActions, loadAgentTools, noteForVendor, prepareActions, quoteSetByVendor, runsThatSend, setQuoteByAgent, type ActionPhase, type ActionPlan, type ExecutedActions, type StartWorkflow } from "./actions";
+import { maxPerChatContextFor } from "@/lib/workflows/max-per-chat";
 
 // Textos de respaldo del CRM cuando el modelo solo devolvió acciones (sin texto)
 // y ninguna manda algo al cliente: el agente SIEMPRE contesta, y nunca con un
@@ -52,7 +53,7 @@ import {
   alreadyHandled,
   humanOutboundCount,
   inboundCount,
-  keywordQuestionInFlight,
+  answerRunInFlight,
   lastOutbound,
   loadHistory,
   loadSnapshot,
@@ -100,9 +101,9 @@ export const BRAIN_TIMEOUT_MS = 60_000;
 // el proveedor está saturado (model-errors.ts). Uno por corrida, no por ronda: con
 // él, el peor caso cabe en el candado de 8 min (process.ts).
 export const SATURATED_RETRY_MS = 10_000;
-// Cada cuánto vuelve a mirar el agente mientras corre un workflow por palabra clave que
-// termina en pregunta (keywordQuestionInFlight; tope de la espera en context.ts).
-export const KEYWORD_QUESTION_POLL_MS = 5_000;
+// Cada cuánto vuelve a mirar el agente mientras corre un workflow «El workflow es la respuesta»
+// (answerRunInFlight; tope de la espera en context.ts).
+export const ANSWER_RUN_POLL_MS = 5_000;
 
 export type RunDeps = {
   now: () => Date;
@@ -230,9 +231,9 @@ async function runActions(
   ctx: { organizationId: string; conversationId: string; contactId: string; batchMessageId: string; receiptMessageId: string | null; now: Date; since: Date | null },
   startWorkflow: StartWorkflow,
   phase: ActionPhase,
-): Promise<void> {
-  if (phase === "antes" && !plan.avisos.length && plan.quote === null && !plan.stage && !plan.notes.length) return;
-  if (phase === "despues" && !plan.runs.length) return;
+): Promise<ExecutedActions | null> {
+  if (phase === "antes" && !plan.avisos.length && plan.quote === null && !plan.stage && !plan.notes.length) return null;
+  if (phase === "despues" && !plan.runs.length) return null;
   if (phase === "antes") {
     // Estricto: un aviso de pago o de pase a humano que no se pudo guardar detiene
     // la respuesta (el job reintenta); el cliente no recibe "pago recibido" a ciegas.
@@ -244,7 +245,7 @@ async function runActions(
     if (paraVendedor.length) {
       await addNotice({ organizationId: ctx.organizationId, conversationId: ctx.conversationId, messageId: ctx.batchMessageId, kind: "envio", body: `Acción del agente no ejecutada: ${paraVendedor.join("; ")}.` });
     }
-    return;
+    return done;
   }
   try {
     const done = await executeActions(plan, ctx, startWorkflow, phase);
@@ -255,9 +256,11 @@ async function runActions(
     if (paraVendedor.length) {
       await addNotice({ organizationId: ctx.organizationId, conversationId: ctx.conversationId, messageId: ctx.batchMessageId, kind: "envio", body: `Acción del agente no ejecutada: ${paraVendedor.join("; ")}.` });
     }
+    return done;
   } catch (error) {
     console.error(`[agente] ${ctx.conversationId}: acciones fallaron`, error);
     await addNotice({ organizationId: ctx.organizationId, conversationId: ctx.conversationId, messageId: ctx.batchMessageId, kind: "envio", body: `Las acciones del agente (${plan.runs.map((r) => r.slug).join(", ") || "etapa/aviso/cotización"}) no se ejecutaron: ${errorText(error)}. Revisa el hilo.` });
+    return null;
   }
 }
 
@@ -500,12 +503,12 @@ export async function runAgent(job: { organizationId: string; conversationId: st
         return { kind: "skipped", reason: "tope_respuestas" };
       }
     }
-    // 28-sep-2026 (pregunta duplicada): un workflow por palabra clave que TERMINA EN
-    // PREGUNTA contesta el mensaje que lo disparó. Mientras esa corrida va en camino, el
-    // agente espera; al terminar, su pregunta cierra ese mensaje y solo queda pendiente
-    // lo que el cliente escribió después.
-    if (await keywordQuestionInFlight(org, conv.id, pending.map((p) => p.id), now)) {
-      return { kind: "reschedule", delayMs: KEYWORD_QUESTION_POLL_MS, reason: "esperando_workflow_con_pregunta" };
+    // «El workflow es la respuesta» (29-sep-2026; antes, 28-sep, "termina en pregunta"): el
+    // workflow por palabra clave contesta el mensaje que lo disparó. Mientras esa corrida va en
+    // camino, el agente espera; al terminar, su último mensaje cierra SOLO ese mensaje y queda
+    // pendiente lo demás que el cliente escribió (antes o después).
+    if (await answerRunInFlight(org, conv.id, pending.map((p) => p.id), now)) {
+      return { kind: "reschedule", delayMs: ANSWER_RUN_POLL_MS, reason: "esperando_workflow_respuesta" };
     }
     // Caso SDA (29-sep-2026, lib/messaging/unavailable.ts): el PRIMER mensaje del
     // cliente no llegó (Meta 131060, confirmado por la doble verificación). Sale el
@@ -587,12 +590,14 @@ export async function runAgent(job: { organizationId: string; conversationId: st
     // en el último turno del cliente. En un traspaso lleva también la etapa a la que pasa.
     const mediaUrls = await mediaUrlsFor(history, deps.resolveImage, options.readImages);
     const detalleContext = await detalleContextFor(org, conv.contactId);
+    // «Máximo de envíos por chat» (29-sep-2026): cuántas veces ya salió, p. ej. la tabla (1 de 2).
+    const maxPerChatContext = await maxPerChatContextFor(org, conv.id);
     // Un modelo sin lectura de PDF (p. ej. Qwen) recibe el PDF como nota de texto.
     // Opciones del bot: sin imágenes ("[imagen]") o sin notas de voz ("[nota de voz]").
     const messagesFor = async (model: CatalogModel, avanzaA: string | null) =>
       buildModelMessages(history, mediaUrls, {
         cleanText,
-        crmContext: [await crmContextFor(org, conv.contactId, stages, avanzaA), detalleContext].filter(Boolean).join("\n"),
+        crmContext: [await crmContextFor(org, conv.contactId, stages, avanzaA), detalleContext, maxPerChatContext].filter(Boolean).join("\n"),
         ...(model.pdf ? {} : { maxPdfs: 0 }),
         ...(options.readImages ? {} : { maxImages: 0 }),
         ...(options.transcribeAudio ? {} : { voiceNotesOff: true }),
@@ -768,6 +773,12 @@ export async function runAgent(job: { organizationId: string; conversationId: st
     // Sin texto del modelo y sin ninguna acción que mande algo al cliente (solo
     // etapa/cotización/aviso): el cliente no puede quedarse sin respuesta.
     let text = out.kind === "reply" ? out.text : "";
+    // «El workflow es la respuesta» como herramienta (29-sep-2026, dueño: «Depende»): si pidió un
+    // workflow marcado que trae TEXTOS, ese workflow es la respuesta y el texto del modelo no sale
+    // (no se le dice lo mismo dos veces); si el workflow solo manda archivos (la Tabla), sí sale.
+    const answerRuns = await answerRunsWithText(org, plan.runs.map((r) => r.workflowId));
+    const withheld = answerRuns.size && text.trim() ? text.trim() : null;
+    if (withheld) text = "";
     if (!text.trim()) {
       const sending = await runsThatSend(org, plan.runs.map((r) => r.workflowId));
       if (!plan.runs.some((r) => sending.has(r.workflowId))) text = fallbackTextFor(plan);
@@ -910,13 +921,25 @@ export async function runAgent(job: { organizationId: string; conversationId: st
     // relee el estado del agente antes de cada paso). Un fallo aquí no quita la
     // respuesta ya enviada: queda un aviso al vendedor.
     // `now` de la ronda: si un humano movió la etapa DURANTE la generación, manda el humano.
-    await runActions(plan, actionCtx, deps.startWorkflow, "despues");
+    const after = await runActions(plan, actionCtx, deps.startWorkflow, "despues");
+    // El texto del modelo se guardó porque un workflow «es la respuesta» iba a contestar; si ese
+    // workflow no arrancó, el cliente se quedaría sin nada: el vendedor ve el texto que no salió.
+    const answerSlugs = plan.runs.filter((r) => answerRuns.has(r.workflowId)).map((r) => r.slug);
+    if (withheld && !answerSlugs.some((slug) => after?.started.includes(slug))) {
+      await addNotice({
+        organizationId: org,
+        conversationId: conv.id,
+        kind: "envio",
+        body: `El Agente IA iba a contestar con un workflow (${answerSlugs.join(", ")}) que no salió, y su propio texto tampoco: «${withheld}». Revisa el hilo y contesta tú.`,
+      });
+    }
     // Un mensaje sin confirmar queda en el outbox: si vence como "sin confirmar",
     // el barrido deja un aviso (nunca reenvía a ciegas).
     const omitted = bubbles.length - sent;
     const note = [
       unconfirmed ? `${unconfirmed} mensaje(s) sin confirmar${omitted ? `; ${omitted} sin enviar (aviso)` : ""}` : null,
       repeated.length ? `no se repitió lo que ya salió: «${repeated.join(" / ")}»` : null,
+      withheld ? `el workflow es la respuesta; no salió el texto del modelo: «${withheld.slice(0, 300)}»` : null,
     ]
       .filter(Boolean)
       .join("; ");

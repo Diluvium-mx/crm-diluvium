@@ -142,6 +142,18 @@ export async function inboundAfter(organizationId: string, conversationId: strin
     .limit(MAX_PENDING);
 }
 
+// «El workflow es la respuesta» por palabra clave (29-sep-2026, bug de la ráfaga): su último
+// mensaje contesta SOLO el entrante que lo disparó (ANSWERS_ONLY_KEY en context.ts). Lo que el
+// cliente escribió antes en la misma ráfaga ("¿Cuánto tarda el envío?" + "Precio") sigue
+// pendiente para el Agente IA.
+export async function markAnswersOnly(organizationId: string, messageId: string, triggerMessageId: string): Promise<void> {
+  await db.execute(sql`
+    update messages set metadata = jsonb_set(coalesce(metadata, '{}'::jsonb), '{contestaA}', to_jsonb(${triggerMessageId}::text))
+    where id = ${messageId} and organization_id = ${organizationId}
+      and exists (select 1 from messages t where t.id = ${triggerMessageId} and t.organization_id = ${organizationId})
+  `);
+}
+
 // La burbuja reenviada contesta solo hasta el entrante que originó la respuesta (ver
 // ANSWERS_UNTIL_KEY en context.ts). La hora se copia en SQL, con microsegundos.
 export async function markAnswersUntil(organizationId: string, messageId: string, triggerMessageId: string): Promise<void> {

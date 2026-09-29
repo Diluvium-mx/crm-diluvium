@@ -513,4 +513,66 @@ describe.skipIf(!TEST_DATABASE_URL)("executor de workflows", () => {
     const b = await ex.startWorkflowRun({ organizationId: ORG, workflowId: wf, conversationId: CONV, trigger: "command", now: new Date(Date.now() - 60_000) });
     expect(await ex.staleQueuedRuns()).toContain(b.runId);
   });
+  // ── «Máximo de envíos por chat» (29-sep-2026, decisiones del dueño) ─────────────
+  it("máximo por chat: cuenta la FOTO aunque salga dentro de otro workflow; palabra clave y Agente IA no lo pasan; el comando del vendedor sí", async () => {
+    const maxChat = await import("./max-per-chat");
+    const a = await asset();
+    const precio = await workflow([
+      { kind: "send_text", text: "Tenemos varios tamaños" },
+      { kind: "send_media", assetId: a.id, title: "Tabla", caption: "Estos son los tamaños que manejamos" },
+    ]);
+    const tabla = await workflow([{ kind: "send_media", assetId: a.id, title: "Tabla", caption: "Aquí le comparto una foto de los tamaños" }], { maxSendsPerChat: 2 });
+    await db.insert(s.messages).values({ id: "in_1", organizationId: ORG, conversationId: CONV, direction: "in", source: "contact", type: "text", body: "precio", status: "received" });
+    // 1.ª foto: dentro de «Precio 2» (palabra clave).
+    const p1 = await ex.startWorkflowRun({ organizationId: ORG, workflowId: precio, conversationId: CONV, trigger: "keyword", triggerMessageId: "in_1" });
+    expect(await ex.executeWorkflowRun(p1.runId, { provider, storage })).toBe("done");
+    expect(await maxChat.sendsInChat(ORG, CONV, tabla)).toBe(1);
+    // 2.ª foto: la Tabla por el Agente IA.
+    const t1 = await ex.startWorkflowRun({ organizationId: ORG, workflowId: tabla, conversationId: CONV, trigger: "agent", triggerMessageId: "in_1" });
+    expect(t1.status).toBe("queued");
+    expect(await ex.executeWorkflowRun(t1.runId, { provider, storage })).toBe("done");
+    expect(await maxChat.sendsInChat(ORG, CONV, tabla)).toBe(2);
+    // Ya van 2: ni el Agente IA ni la palabra clave la vuelven a mandar.
+    await db.insert(s.messages).values({ id: "in_2", organizationId: ORG, conversationId: CONV, direction: "in", source: "contact", type: "text", body: "¿me la pasa otra vez?", status: "received" });
+    expect(await ex.startWorkflowRun({ organizationId: ORG, workflowId: tabla, conversationId: CONV, trigger: "agent", triggerMessageId: "in_2" })).toMatchObject({ status: "skipped", reason: ex.SKIP_MAX_PER_CHAT });
+    expect(await ex.startWorkflowRun({ organizationId: ORG, workflowId: tabla, conversationId: CONV, trigger: "keyword", triggerMessageId: "in_2" })).toMatchObject({ status: "skipped", reason: ex.SKIP_MAX_PER_CHAT });
+    // El comando del vendedor (/tamaños) sí la manda, y suma.
+    const cmd = await ex.startWorkflowRun({ organizationId: ORG, workflowId: tabla, conversationId: CONV, trigger: "command", triggeredByUserId: "u_v" });
+    expect(await ex.executeWorkflowRun(cmd.runId, { provider, storage })).toBe("done");
+    expect(await maxChat.sendsInChat(ORG, CONV, tabla)).toBe(3);
+    expect(sent.filter((x) => x.kind === "media")).toHaveLength(3);
+    // Un envío que falló no cuenta.
+    const { and, sql } = await import("drizzle-orm");
+    await db.update(s.messages).set({ status: "failed" }).where(and(eq(s.messages.conversationId, CONV), sql`jsonb_array_length(${s.messages.attachments}) > 0`));
+    expect(await maxChat.sendsInChat(ORG, CONV, tabla)).toBe(0);
+  });
+
+  it("máximo por chat: se revisa también al ARRANCAR (dos corridas en cola con la misma foto: la segunda se salta)", async () => {
+    const a = await asset();
+    const tabla = await workflow([{ kind: "send_media", assetId: a.id, title: "Tabla" }]);
+    await db.insert(s.messages).values({ id: "in_1", organizationId: ORG, conversationId: CONV, direction: "in", source: "contact", type: "text", body: "medidas", status: "received" });
+    const r1 = await ex.startWorkflowRun({ organizationId: ORG, workflowId: tabla, conversationId: CONV, trigger: "keyword", triggerMessageId: "in_1" });
+    const r2 = await ex.startWorkflowRun({ organizationId: ORG, workflowId: tabla, conversationId: CONV, trigger: "agent", triggerMessageId: "in_1" });
+    expect([r1.status, r2.status]).toEqual(["queued", "queued"]);
+    await db.update(s.workflows).set({ maxSendsPerChat: 1 }).where(eq(s.workflows.id, tabla));
+    expect(await ex.executeWorkflowRun(r1.runId, { provider, storage })).toBe("done");
+    expect(await ex.executeWorkflowRun(r2.runId, { provider, storage })).toBe("cancelled");
+    expect(await run(r2.runId)).toMatchObject({ status: "skipped", errorCode: ex.SKIP_MAX_PER_CHAT });
+    expect(sent.filter((x) => x.kind === "media")).toHaveLength(1);
+  });
+
+  it("máximo por chat sin archivos: cuenta sus corridas que mandaron algo; con una en cola ya no se crea otra", async () => {
+    const maxChat = await import("./max-per-chat");
+    const wf = await workflow([{ kind: "send_text", text: "Hacemos envíos a todo México" }], { maxSendsPerChat: 1 });
+    await db.insert(s.messages).values({ id: "in_1", organizationId: ORG, conversationId: CONV, direction: "in", source: "contact", type: "text", body: "envíos?", status: "received" });
+    const r1 = await ex.startWorkflowRun({ organizationId: ORG, workflowId: wf, conversationId: CONV, trigger: "agent", triggerMessageId: "in_1" });
+    expect(r1.status).toBe("queued");
+    expect(await maxChat.sendsInChat(ORG, CONV, wf)).toBe(0);
+    expect(await maxChat.sendsInChat(ORG, CONV, wf, { includeLive: true })).toBe(1);
+    await db.insert(s.messages).values({ id: "in_2", organizationId: ORG, conversationId: CONV, direction: "in", source: "contact", type: "text", body: "¿y envíos?", status: "received" });
+    expect(await ex.startWorkflowRun({ organizationId: ORG, workflowId: wf, conversationId: CONV, trigger: "agent", triggerMessageId: "in_2" })).toMatchObject({ status: "skipped", reason: ex.SKIP_MAX_PER_CHAT });
+    expect(await ex.executeWorkflowRun(r1.runId, { provider, storage })).toBe("done");
+    expect(await maxChat.sendsInChat(ORG, CONV, wf)).toBe(1);
+  });
+
 });

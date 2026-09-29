@@ -26,13 +26,14 @@ import { enqueueWorkflowRun } from "@/lib/queue/workflows";
 import { notifyConversation } from "@/lib/ai/runtime/state";
 import { addNotice } from "@/lib/ai/runtime/notices";
 import { outboundTextsSinceLastInbound } from "@/lib/ai/runtime/context";
-import { markAnswersUntil } from "@/lib/ai/runtime/saved-reply";
+import { markAnswersOnly, markAnswersUntil } from "@/lib/ai/runtime/saved-reply";
 import { splitRepeated } from "@/lib/messaging/repeat";
 import { moveStageForward } from "@/lib/contacts/stage";
 import { listFunnelStages } from "@/lib/contacts/funnel-stages";
 import { roleKey } from "@/lib/contacts/stages";
-import { endsWithQuestionStep, missingMedia, stripUnresolvedVariables, waitMs } from "./steps";
+import { lastSendIndex, missingMedia, startOnlyApplies, stripUnresolvedVariables, waitMs } from "./steps";
 import { startOnlyBlock, type StartOnlyBlock } from "./start-only";
+import { atMaxPerChat, maxPerChatApplies } from "./max-per-chat";
 import { SLUG_DATOS_BANCARIOS } from "./defaults";
 
 export type RunTrigger = "agent" | "keyword" | "command" | "stage";
@@ -65,6 +66,8 @@ export const SKIP_NO_STEPS = "sin_pasos";
 export const SKIP_ALREADY_SENT = "ya_enviado_a_este_contacto";
 // «Solo al inicio»: el Agente IA (con texto propio) o un vendedor ya le contestaron.
 export const SKIP_NOT_START = "ya_no_es_el_inicio";
+// «Máximo de envíos por chat» (29-sep-2026): ya salió las veces que permite este chat.
+export const SKIP_MAX_PER_CHAT = "maximo_por_chat";
 const START_ONLY_SKIP: Record<StartOnlyBlock, string> = { ya_enviado: SKIP_ALREADY_SENT, no_inicio: SKIP_NOT_START };
 export const FAIL_WINDOW = "ventana_24h";
 export const FAIL_STUCK = "atorado";
@@ -172,11 +175,16 @@ export async function startWorkflowRun(input: StartRunInput): Promise<StartRunRe
   if (!HUMAN_TRIGGERS.has(input.trigger) && conv.aiAgentMode !== "auto") return skip(SKIP_CHANNEL_OFF);
   // Palabra clave: una sola vez por contacto (marca invisible, como GHL).
   if (input.trigger === "keyword" && conv.keywordSent.includes(input.workflowId)) return skip(SKIP_ALREADY_SENT);
-  // «Solo al inicio» (regla estricta): por palabra clave o por el Agente IA, solo mientras nadie
-  // le ha contestado y una sola vez por contacto (lib/workflows/start-only.ts).
-  if (!HUMAN_TRIGGERS.has(input.trigger) && wf.triggerStartOnly) {
+  // «Solo al inicio»: por palabra clave (y, en la regla estricta, por el Agente IA), solo
+  // mientras nadie le ha contestado y una sola vez por contacto (lib/workflows/start-only.ts).
+  if (startOnlyApplies(wf, input.trigger)) {
     const block = await startOnlyBlock({ organizationId: input.organizationId, conversationId: input.conversationId, contactId: conv.contactId, workflowId: input.workflowId });
     if (block) return skip(START_ONLY_SKIP[block]);
+  }
+  // «Máximo de envíos por chat»: la palabra clave y el Agente IA no lo pasan (el comando del
+  // vendedor sí: lo decide él). Cuenta también lo que va en camino.
+  if (maxPerChatApplies(input.trigger) && (await atMaxPerChat(input.organizationId, input.conversationId, wf, { includeLive: true }))) {
+    return skip(SKIP_MAX_PER_CHAT);
   }
   const runId = await insertRun(input, conv.contactId, "queued");
   await enqueueWorkflowRun(runId);
@@ -289,7 +297,7 @@ export async function executeWorkflowRun(runId: string, deps: ExecutorDeps): Pro
   }
   // «Solo al inicio», otra vez al arrancar: dos corridas del mismo workflow (palabra clave y
   // Agente IA) o una respuesta que salió mientras esperaba en cola. Gana la primera que arrancó.
-  if (isAgentTrigger(run) && run.stepCursor === 0 && loaded.wf.triggerStartOnly) {
+  if (run.stepCursor === 0 && startOnlyApplies(loaded.wf, run.trigger)) {
     const block = await startOnlyBlock({
       organizationId: run.organizationId,
       conversationId: run.conversationId,
@@ -303,6 +311,12 @@ export async function executeWorkflowRun(runId: string, deps: ExecutorDeps): Pro
       return "cancelled";
     }
   }
+  // «Máximo de envíos por chat», otra vez al arrancar: otra corrida con la misma foto (p. ej.
+  // «Precio 2» y la Tabla en la misma ráfaga) ya la mandó mientras esta esperaba.
+  if (run.stepCursor === 0 && maxPerChatApplies(run.trigger) && (await atMaxPerChat(run.organizationId, run.conversationId, loaded.wf, { exceptRunId: run.id }))) {
+    await markRun(runId, { status: "skipped", errorCode: SKIP_MAX_PER_CHAT, finishedAt: now() });
+    return "cancelled";
+  }
   const seller = run.triggeredByUserId
     ? (await db.select({ name: user.name }).from(user).where(eq(user.id, run.triggeredByUserId)).limit(1))[0]?.name ?? null
     : null;
@@ -310,6 +324,8 @@ export async function executeWorkflowRun(runId: string, deps: ExecutorDeps): Pro
   const source = ctxSource(run);
   const sentBy = source === "crm" ? (run.triggeredByUserId ?? null) : null;
   const messageIds = [...run.messageIds];
+  // «El workflow es la respuesta»: el último mensaje que le llega al cliente es el que contesta.
+  const answerIndex = loaded.wf.isAnswer ? lastSendIndex(loaded.steps.map((st) => st.payload)) : -1;
 
   const fail = async (code: string, message: string): Promise<ExecuteOutcome> => {
     await markRun(runId, { status: "failed", errorCode: code, errorMessage: message.slice(0, 500), messageIds, finishedAt: now() });
@@ -368,15 +384,23 @@ export async function executeWorkflowRun(runId: string, deps: ExecutorDeps): Pro
         deps: { ...deps, now, sleep },
       });
       if (sent && !messageIds.includes(sent.messageId)) messageIds.push(sent.messageId);
-      // 28-sep-2026 (pregunta duplicada): la PREGUNTA con la que termina una corrida por
-      // palabra clave contesta el mensaje que la disparó (solo hasta ese mensaje: lo que el
-      // cliente escribió después lo atiende el agente). Se marca aunque WhatsApp no haya
-      // confirmado: si al final falla, la fila queda "failed" y deja de contar. Si la marca
-      // no se guarda, el agente contesta como antes (y el candado anti-repetición sigue).
-      if (sent && run.trigger === "keyword" && run.triggerMessageId && i === loaded.steps.length - 1 && endsWithQuestionStep(loaded.steps.map((st) => st.payload))) {
-        await markAnswersUntil(run.organizationId, sent.messageId, run.triggerMessageId).catch((error: unknown) =>
-          console.error(`[workflows] ${run.id}: no se pudo marcar la pregunta final como respuesta`, error),
-        );
+      // «El workflow es la respuesta» (29-sep-2026; antes, 28-sep, solo si terminaba en
+      // pregunta): su último mensaje contesta al cliente. Se marca aunque WhatsApp no haya
+      // confirmado: si al final falla, la fila queda "failed" y deja de contar. Si la marca no se
+      // guarda, el agente contesta como antes (y el candado anti-repetición sigue).
+      // - Palabra clave: contesta SOLO el mensaje que lo disparó (bug de la ráfaga, 29-sep: con la
+      //   hora del disparador cerraba también lo anterior, p. ej. "¿Cuánto tarda el envío?" +
+      //   "Precio"); lo demás lo atiende el agente.
+      // - Agente IA con un workflow que trae textos (su propio texto no salió, run.ts): contesta
+      //   todo lo que el agente leyó, hasta el último mensaje del lote.
+      if (sent && run.triggerMessageId && i === answerIndex) {
+        const mark =
+          run.trigger === "keyword"
+            ? markAnswersOnly(run.organizationId, sent.messageId, run.triggerMessageId)
+            : run.trigger === "agent" && loaded.steps.some((st) => st.payload.kind === "send_text")
+              ? markAnswersUntil(run.organizationId, sent.messageId, run.triggerMessageId)
+              : null;
+        await mark?.catch((error: unknown) => console.error(`[workflows] ${run.id}: no se pudo marcar el último mensaje como la respuesta`, error));
       }
       // Resultado DESCONOCIDO del proveedor (timeout): no se sabe si el cliente
       // recibió el archivo. No se avanza (moverlo a "Cerca de compra" sin la

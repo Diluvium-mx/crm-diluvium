@@ -10,6 +10,9 @@ const precio: WorkflowFields = {
   triggerCommand: "/precio2",
   triggerStage: null,
   triggerStartOnly: false,
+  triggerStartOnlyAgent: true,
+  maxSendsPerChat: null,
+  isAnswer: false,
   steps: [
     { kind: "send_text", text: "Tenemos varios tamaños…" },
     { kind: "send_text", text: "¿Usted tiene problemas de inundaciones?" },

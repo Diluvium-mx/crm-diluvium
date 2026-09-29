@@ -11,7 +11,7 @@ import { aiAgentDrafts, messages } from "@/lib/db/schema";
 import { isAmbiguousSendError, SEND_UNCONFIRMED, SEND_UNKNOWN } from "@/lib/messaging/rules";
 import { addNotice } from "./notices";
 import { recordAgentError } from "./agent-error";
-import { workflowFillerSql } from "./context";
+import { answeredOnlySql, workflowFillerSql } from "./context";
 import { hiddenNoticeSql } from "@/lib/messaging/unavailable";
 import { sendErrorBody } from "./model-errors";
 import { bubbleMessageId, holdForRetry } from "./saved-reply";
@@ -99,10 +99,13 @@ function unansweredSql(now: Date, opts: { since: Date; olderThan: Date; extra: S
       from messages m
       where m.conversation_id = c.id and m.status <> 'failed'
         -- Igual que pendingInbound (Fase D): un aviso interno o la media de un
-        -- workflow por palabra clave no cuentan como respuesta al cliente (salvo la
-        -- pregunta final de la palabra clave: workflowFillerSql).
+        -- workflow por palabra clave no cuentan como respuesta al cliente (salvo el último
+        -- mensaje de un workflow «es la respuesta» del agente: workflowFillerSql).
         and m.type <> 'system_note'
         and not ${workflowFillerSql("m")}
+        -- Un entrante que ya contestó el último mensaje de un workflow «es la respuesta» por
+        -- palabra clave (contestaA) tampoco cuenta: lo pendiente es lo demás de la ráfaga.
+        and not ${answeredOnlySql("m")}
         -- Aviso "no disponible" en verificación o sombra (lib/messaging/unavailable.ts): no se
         -- contesta (antes el barrido lo tomaba a los 90 s y el modelo improvisaba).
         and not ${hiddenNoticeSql(sql.raw("m.metadata"))}
