@@ -3,9 +3,10 @@
 // Multi-tenant (CLAUDE.md §7): TODA lectura filtra por organization_id, además
 // del id. Un id de otra organización no encuentra nada (defensa en profundidad:
 // los ids vienen de la cola interna, pero nunca se confía en ellos solos).
-import { and, count, desc, eq, inArray, isNull, ne, notInArray, sql } from "drizzle-orm";
+import { and, count, desc, eq, gt, inArray, isNotNull, isNull, ne, notInArray, sql, type SQL } from "drizzle-orm";
 import { db } from "@/lib/db";
-import { aiAgentDrafts, aiUsage, channels, conversations, messages } from "@/lib/db/schema";
+import { aiAgentDrafts, aiUsage, channels, conversations, messages, workflowRuns, workflowSteps } from "@/lib/db/schema";
+import { endsWithQuestionStep } from "@/lib/workflows/steps";
 import { MAX_HISTORY_CHARS, messageText } from "./transcript";
 import { FINAL_OUTCOMES } from "./usage";
 
@@ -32,17 +33,27 @@ export async function loadSnapshot(
   return row ?? null;
 }
 
+// Saliente mandado por una corrida de workflow por PALABRA CLAVE o del AGENTE: NO
+// contesta al cliente (Fase D, 24-sep-2026: el workflow manda la media y el agente
+// contesta el resto del mismo mensaje, como en GHL; y lo que el cliente escriba durante
+// la espera de 30 s de la tabla no queda "atendido" por la imagen).
+// EXCEPCIÓN (28-sep-2026, pregunta duplicada): la PREGUNTA con la que termina una corrida
+// por palabra clave sí contesta, hasta el mensaje que la disparó; el ejecutor la marca con
+// `respondeHasta` (ANSWERS_UNTIL_KEY) al enviarla. `alias`: la fila de `messages`
+// evaluada (constante del código, nunca un dato).
+export function workflowFillerSql(alias: "messages" | "o" | "m"): SQL {
+  const m = sql.raw(alias);
+  return sql`(not coalesce(${m}.metadata ? 'respondeHasta', false) and exists (
+    select 1 from workflow_runs r
+    where r.organization_id = ${m}.organization_id and r.conversation_id = ${m}.conversation_id
+      and r.trigger in ('keyword', 'agent') and r.message_ids ? ${m}.id
+  ))`;
+}
+
 // Saliente que CUENTA como respuesta al cliente (cierra los pendientes): no
-// fallido, no aviso interno (system_note: solo lo ve el vendedor) y no mandado por
-// una corrida de workflow por PALABRA CLAVE o del AGENTE (Fase D, 24-sep-2026: el
-// workflow manda la media y el agente contesta el resto del mismo mensaje, como en
-// GHL; y lo que el cliente escriba durante la espera de 30 s de la tabla no queda
-// "atendido" por la imagen).
-const closesPending = sql`${messages.type} <> 'system_note' and not exists (
-  select 1 from workflow_runs r
-  where r.organization_id = ${messages.organizationId} and r.conversation_id = ${messages.conversationId}
-    and r.trigger in ('keyword', 'agent') and r.message_ids ? ${messages.id}
-)`;
+// fallido, no aviso interno (system_note: solo lo ve el vendedor) y no relleno de
+// un workflow (workflowFillerSql).
+const closesPending = sql`${messages.type} <> 'system_note' and not ${workflowFillerSql("messages")}`;
 
 // Último saliente que salió o va en camino (un envío FALLIDO no le respondió al
 // cliente, así que no cierra los pendientes).
@@ -83,17 +94,79 @@ export async function pendingInbound(organizationId: string, conversationId: str
           select max(coalesce((o.metadata->>'respondeHasta')::timestamp, o.sent_at, o.created_at)) from messages o
           where o.organization_id = ${organizationId} and o.conversation_id = ${conversationId}
             and o.direction = 'out' and o.status <> 'failed' and o.type <> 'system_note'
-            and not exists (
-              select 1 from workflow_runs r
-              where r.organization_id = o.organization_id and r.conversation_id = o.conversation_id
-                and r.trigger in ('keyword', 'agent') and r.message_ids ? o.id
-            )
+            and not ${workflowFillerSql("o")}
         ), '-infinity'::timestamp)`,
       ),
     )
     .orderBy(desc(waAt), desc(messages.createdAt))
     .limit(MAX_PENDING);
   return rows.reverse();
+}
+
+// Tope de la espera del agente a una corrida por palabra clave en curso (worker
+// reiniciado, cola lenta): pasado esto contesta igual; el cliente no se queda sin respuesta.
+export const KEYWORD_QUESTION_WAIT_MAX_MS = 3 * 60_000;
+
+/**
+ * 28-sep-2026 (pregunta duplicada): ¿va en camino (queued/running) una corrida por
+ * palabra clave, disparada por uno de estos entrantes pendientes, cuyo workflow TERMINA
+ * EN PREGUNTA? Esa pregunta contesta el mensaje: el agente espera a que termine en vez
+ * de contestar encima (al terminar, lo que el cliente escribió después sigue pendiente).
+ */
+export async function keywordQuestionInFlight(organizationId: string, conversationId: string, triggerIds: readonly string[], now: Date): Promise<boolean> {
+  if (triggerIds.length === 0) return false;
+  const runs = await db
+    .select({ workflowId: workflowRuns.workflowId })
+    .from(workflowRuns)
+    .where(
+      and(
+        eq(workflowRuns.organizationId, organizationId),
+        eq(workflowRuns.conversationId, conversationId),
+        eq(workflowRuns.trigger, "keyword"),
+        inArray(workflowRuns.status, ["queued", "running"]),
+        inArray(workflowRuns.triggerMessageId, [...triggerIds]),
+        gt(workflowRuns.createdAt, new Date(now.getTime() - KEYWORD_QUESTION_WAIT_MAX_MS)),
+      ),
+    );
+  for (const workflowId of new Set(runs.map((r) => r.workflowId))) {
+    const steps = await db
+      .select({ payload: workflowSteps.payload })
+      .from(workflowSteps)
+      .where(and(eq(workflowSteps.organizationId, organizationId), eq(workflowSteps.workflowId, workflowId)))
+      .orderBy(workflowSteps.position);
+    if (endsWithQuestionStep(steps.map((s) => s.payload))) return true;
+  }
+  return false;
+}
+
+/**
+ * Textos que ya salieron al cliente DESPUÉS de su último mensaje (candado
+ * anti-repetición, 28-sep-2026, lib/messaging/repeat): salientes que no fallaron (en
+ * camino también), sin avisos internos, incluidos los de los workflows. El historial
+ * copiado del celular no cuenta como "último mensaje".
+ */
+export const REPEAT_LOOKBACK_ROWS = 50;
+export async function outboundTextsSinceLastInbound(organizationId: string, conversationId: string): Promise<string[]> {
+  const rows = await db
+    .select({ body: messages.body })
+    .from(messages)
+    .where(
+      and(
+        inConversation(organizationId, conversationId),
+        eq(messages.direction, "out"),
+        ne(messages.status, "failed"),
+        ne(messages.type, "system_note"),
+        isNotNull(messages.body),
+        sql`${waAt} > coalesce((
+          select max(coalesce(i.sent_at, i.created_at)) from messages i
+          where i.organization_id = ${organizationId} and i.conversation_id = ${conversationId}
+            and i.direction = 'in' and i.imported_at is null
+        ), '-infinity'::timestamp)`,
+      ),
+    )
+    .orderBy(desc(waAt))
+    .limit(REPEAT_LOOKBACK_ROWS);
+  return rows.flatMap((r) => (r.body ? [r.body] : []));
 }
 
 // TODA la conversación en orden cronológico (historial del cerebro), sin tope de

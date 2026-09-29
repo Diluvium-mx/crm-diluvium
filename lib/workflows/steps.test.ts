@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { commandSchema, keywordsSchema, matchesKeyword, missingMedia, parseCommand, stepPayloadSchema, stepsSchema, stripUnresolvedVariables, unknownVariables, waitMs } from "./steps";
+import { commandSchema, endsWithQuestion, endsWithQuestionStep, keywordsSchema, matchesKeyword, missingMedia, parseCommand, stepPayloadSchema, stepsSchema, stripUnresolvedVariables, unknownVariables, waitMs } from "./steps";
 
 describe("stepPayloadSchema", () => {
   it("acepta cada tipo de paso", () => {
@@ -81,5 +81,26 @@ describe("waitMs (pasos Esperar)", () => {
     expect(waitMs(step, "agent")).toBe(30_000);
     expect(waitMs(step, "keyword")).toBe(30_000);
     expect(waitMs(step, "stage")).toBe(30_000);
+  });
+});
+
+describe("endsWithQuestion / endsWithQuestionStep (pregunta duplicada, 28-sep-2026)", () => {
+  it("pregunta = '?' al final, seguido si acaso de espacios, emojis o signos; nunca de letras o números", () => {
+    expect(endsWithQuestion("¿Usted tiene problemas de inundaciones?")).toBe(true);
+    expect(endsWithQuestion("  ¿Usted tiene problemas de inundaciones? 🙌 \n")).toBe(true);
+    expect(endsWithQuestion("¿De qué medida es su entrada?!")).toBe(true);
+    expect(endsWithQuestion("¿Le interesa? Aquí está el video")).toBe(false);
+    expect(endsWithQuestion("Ahorita tenemos cualquier tamaño en $5,500 con envío gratis")).toBe(false);
+    expect(endsWithQuestion("¿Cuántas entradas? 2")).toBe(false);
+    expect(endsWithQuestion("")).toBe(false);
+    expect(endsWithQuestion(null)).toBe(false);
+  });
+  it("solo cuenta el ÚLTIMO paso (texto o pie de la imagen/video); una espera al final no es pregunta", () => {
+    const tabla = { kind: "send_media" as const, assetId: "a1", title: "Tabla", caption: "Estos son los tamaños que manejamos" };
+    expect(endsWithQuestionStep([tabla, { kind: "send_text", text: "¿Usted tiene problemas de inundaciones?" }])).toBe(true);
+    expect(endsWithQuestionStep([{ kind: "send_text", text: "¿Le mando la tabla?" }, tabla])).toBe(false);
+    expect(endsWithQuestionStep([{ ...tabla, caption: "¿Cuál le queda a su entrada?" }])).toBe(true);
+    expect(endsWithQuestionStep([{ kind: "send_text", text: "¿Tiene inundaciones?" }, { kind: "wait", seconds: 5 }])).toBe(false);
+    expect(endsWithQuestionStep([])).toBe(false);
   });
 });
