@@ -1,5 +1,6 @@
 import "server-only";
 import { DEFAULT_BRAIN_MODEL, modelsForRole } from "@/lib/ai/catalog";
+import { MODEL_LOGOS } from "@/lib/ai/logos";
 import { resolveModelPrice, type PriceOverride } from "@/lib/ai/pricing";
 import { modelAvailability, PROVIDER_META, providerImplemented } from "@/lib/ai/provider";
 import type { ModelRole } from "@/lib/ai/types";
@@ -42,6 +43,8 @@ export function buildModelOptions(
       label: m.label,
       provider: m.provider,
       providerLabel: PROVIDER_META[m.provider].label,
+      logoSrc: MODEL_LOGOS[m.logo].src,
+      logoMono: MODEL_LOGOS[m.logo].mono,
       tier: m.tier,
       multimodal: m.multimodal,
       available: availability.available,

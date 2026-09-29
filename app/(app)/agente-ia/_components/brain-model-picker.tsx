@@ -5,7 +5,9 @@
 // su llave o su adaptador, diciendo por qué. Elegir otra opción pide confirmación
 // arriba (use-model-change.tsx) y solo entonces guarda. ModelPicker sirve para
 // cualquier modelo del agente; desde la Fase E hay dos: Model1Picker (Modelo 1) y
-// BrainModelPicker (Modelo 2 = el cerebro de siempre). Sin lógica de datos.
+// BrainModelPicker (Modelo 2 = el cerebro de siempre). A la derecha de cada
+// tarjeta, el logo de la marca del modelo (lib/ai/logos.ts). Sin lógica de datos.
+import Image from "next/image";
 import { updateBrainModel, updateModel1 } from "@/lib/actions/agente-ia-editor";
 import { costPer100Label } from "@/lib/agente-ia/model-cost";
 import type { AgentActionResult, ModelOptionView } from "@/lib/agente-ia/types";
@@ -50,20 +52,31 @@ export function ModelPicker({
               disabled={!o.available}
               aria-busy={change.pending && active ? true : undefined}
               onClick={() => change.request(o)}
-              className={`flex flex-col items-start gap-1 rounded-lg border px-3 py-2 text-left transition-colors disabled:cursor-not-allowed disabled:hover:bg-transparent ${
+              className={`flex items-center gap-3 rounded-lg border px-3 py-2 text-left transition-colors disabled:cursor-not-allowed disabled:hover:bg-transparent ${
                 active ? "border-brand-navy bg-brand-navy/5" : "border-black/10 hover:bg-black/5 dark:border-white/10 dark:hover:bg-white/5"
               }`}
             >
-              {/* En gris lo que no se puede elegir; el porqué queda legible abajo. */}
-              <span className={`flex w-full flex-wrap items-center gap-1.5 ${o.available ? "" : "opacity-50"}`}>
-                <span className="text-sm font-medium text-foreground">{o.label}</span>
-                {o.recommended && <Badge tone="navy">Recomendado</Badge>}
-                {o.isNew && <Badge tone="orange">Nuevo</Badge>}
+              <span className="flex min-w-0 flex-1 flex-col items-start gap-1">
+                {/* En gris lo que no se puede elegir; el porqué queda legible abajo. */}
+                <span className={`flex w-full flex-wrap items-center gap-1.5 ${o.available ? "" : "opacity-50"}`}>
+                  <span className="text-sm font-medium text-foreground">{o.label}</span>
+                  {o.recommended && <Badge tone="navy">Recomendado</Badge>}
+                  {o.isNew && <Badge tone="orange">Nuevo</Badge>}
+                </span>
+                <span className={`text-xs text-muted-foreground ${o.available ? "" : "opacity-50"}`}>
+                  {o.providerLabel} · <span title="aproximado, sin impuestos">{costPer100Label(o.costPer100Usd)}</span>
+                </span>
+                {!o.available && <span className="text-xs text-foreground/80">{o.disabledReason ?? "No disponible"}</span>}
               </span>
-              <span className={`text-xs text-muted-foreground ${o.available ? "" : "opacity-50"}`}>
-                {o.providerLabel} · <span title="aproximado, sin impuestos">{costPer100Label(o.costPer100Usd)}</span>
-              </span>
-              {!o.available && <span className="text-xs text-foreground/80">{o.disabledReason ?? "No disponible"}</span>}
+              {/* Decorativo: el nombre del modelo ya está escrito a la izquierda. */}
+              <Image
+                src={o.logoSrc}
+                alt=""
+                width={28}
+                height={28}
+                unoptimized
+                className={`h-7 w-7 shrink-0 ${o.logoMono ? "dark:invert" : ""} ${o.available ? "" : "opacity-50 grayscale"}`}
+              />
             </button>
           );
         })}
