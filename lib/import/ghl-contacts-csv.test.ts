@@ -90,8 +90,8 @@ describe("parseGhlContactsCsv (formato real de GHL)", () => {
     const csv = `${header}\n${line({
       id: "id-1",
       first: "Adrian",
-      phone: "+526151557244",
-      email: "leydeamper08@gmail.com",
+      phone: "+526151510099",
+      email: "cliente.cerca@example.com",
       tags: "inbound whatsapp, fb-ad-lead-whatsapp, wa: 5216682419579, video-instalacion-enviado, another-device-replied-whatsapp",
       country: "Mexico",
       opps: "open Embudo de ventas Diluvium Cerca de compra",
@@ -103,9 +103,9 @@ describe("parseGhlContactsCsv (formato real de GHL)", () => {
         row({
           ghlContactId: "id-1",
           firstName: "Adrian",
-          phoneE164: "+526151557244",
+          phoneE164: "+526151510099",
           phoneMissing: false,
-          email: "leydeamper08@gmail.com",
+          email: "cliente.cerca@example.com",
           country: "Mexico",
           sourceChannel: "fb",
           tags: ["video-instalacion-enviado"],
@@ -374,18 +374,20 @@ describe("parseGhlContactsCsv (formato real de GHL)", () => {
     expect(empty.rows[0].email).toBeNull();
   });
 
-  // Las 8 filas reales de referencia (una por etapa + casos borde).
+  // 8 filas SINTÉTICAS con la forma exacta del export de GHL (una por etapa + casos borde:
+  // multi-oportunidad, Opportunities vacía, sin teléfono, tags de sistema). Sin datos de
+  // clientes reales: teléfonos y correos inventados (revisión de seguridad, 28-sep-2026).
   const sampleReal = `${header}
-aBxgRqvijWmQ8Vgi2lgV,Ingeniería,Empresarial,+525540432914,carlos_hdez_m@hotmail.com,2026-06-08T10:28:39-07:00,Jul 22 2026 02:09 PM,"inbound whatsapp, wa: 5216682419579, transferencia a humano, another-device-replied-whatsapp",Mexico,open Embudo de ventas Diluvium Prospecto
-5OMR029hnaKCj5bHDl6i,Enrique - griselda (3 compuertas),,+523228886578,arquikeco_72@hotmail.com,2026-06-02T14:28:05-07:00,Jun 03 2026 12:59 PM,"inbound whatsapp, wa: 5216682419579, another-device-replied-whatsapp",Mexico,open Embudo de ventas Diluvium Compra
-PFE9k83NAkdatplYtNRh,Ana,Dacasa,+527771091114,,2026-07-15T11:48:17-07:00,Jul 16 2026 12:31 PM,"inbound whatsapp, wa: 5216682419579, medidas enviadas, another-device-replied-whatsapp",Mexico,open Embudo de ventas Diluvium Interesado
-LSURQKckw3gIEhnoN5v3,Adrian,,+526151557244,leydeamper08@gmail.com,2026-09-03T15:11:09-07:00,Sep 17 2026 12:03 PM,"inbound whatsapp, fb-ad-lead-whatsapp, wa: 5216682419579, video-instalacion-enviado, another-device-replied-whatsapp",Mexico,open Embudo de ventas Diluvium Cerca de compra
-BbEJNSEtefAqziLSmtgG,Marianalr83,,+526671045171,,2026-09-19T12:46:25-07:00,Sep 19 2026 12:46 PM,"inbound whatsapp, instagram-ad-lead-whatsapp, wa: 5216682419579",Mexico,open Embudo de ventas Diluvium Inbox
-dH4gmbAyjfj4f6TzNbvU,Diego,Stevenot,,,2026-08-25T13:43:50-07:00,Aug 25 2026 03:49 PM,,Mexico,"open Embudo de ventas Diluvium Inbox, open Embudo de ventas Diluvium Inbox"
-bH97HvG4GpQn8Dcreah5,User,,+524521178694,,2026-09-14T09:20:28-07:00,Sep 14 2026 09:20 AM,"wa: 5216682419579, another-device-replied-whatsapp",Mexico,
-DkjVSookyfaDLUPRb6wk,Marissa,Orduña rovirosa,,,2026-09-18T21:36:17-07:00,Sep 18 2026 09:37 PM,,Mexico,open Embudo de ventas Diluvium Inbox`;
+PRUEBA0000PROSPECTO1,Constructora,Ejemplo,+525540010001,constructora.ejemplo@example.com,2026-06-08T10:28:39-07:00,Jul 22 2026 02:09 PM,"inbound whatsapp, wa: 5216682419579, transferencia a humano, another-device-replied-whatsapp",Mexico,open Embudo de ventas Diluvium Prospecto
+PRUEBA00000000COMPRA,Enrique - prueba (3 compuertas),,+523228810002,cliente.compra@example.com,2026-06-02T14:28:05-07:00,Jun 03 2026 12:59 PM,"inbound whatsapp, wa: 5216682419579, another-device-replied-whatsapp",Mexico,open Embudo de ventas Diluvium Compra
+PRUEBA000INTERESADO1,Alma,Prueba,+527771010003,,2026-07-15T11:48:17-07:00,Jul 16 2026 12:31 PM,"inbound whatsapp, wa: 5216682419579, medidas enviadas, another-device-replied-whatsapp",Mexico,open Embudo de ventas Diluvium Interesado
+PRUEBA0000CERCACOMPR,Aarón,,+526151510004,cliente.cerca@example.com,2026-09-03T15:11:09-07:00,Sep 17 2026 12:03 PM,"inbound whatsapp, fb-ad-lead-whatsapp, wa: 5216682419579, video-instalacion-enviado, another-device-replied-whatsapp",Mexico,open Embudo de ventas Diluvium Cerca de compra
+PRUEBA0000000INBOXIG,Usuaria83,,+526671010005,,2026-09-19T12:46:25-07:00,Sep 19 2026 12:46 PM,"inbound whatsapp, instagram-ad-lead-whatsapp, wa: 5216682419579",Mexico,open Embudo de ventas Diluvium Inbox
+PRUEBA00000MULTIOPP1,Dante,Prueba,,,2026-08-25T13:43:50-07:00,Aug 25 2026 03:49 PM,,Mexico,"open Embudo de ventas Diluvium Inbox, open Embudo de ventas Diluvium Inbox"
+PRUEBA000000SINOPP01,User,,+524521010007,,2026-09-14T09:20:28-07:00,Sep 14 2026 09:20 AM,"wa: 5216682419579, another-device-replied-whatsapp",Mexico,
+PRUEBA0000000SINTEL1,Marisol,Prueba Apellido,,,2026-09-18T21:36:17-07:00,Sep 18 2026 09:37 PM,,Mexico,open Embudo de ventas Diluvium Inbox`;
 
-  it("procesa las 8 filas reales: canal, tags, etapa (incl. multi/vacía) y sin-teléfono", () => {
+  it("procesa las 8 filas de muestra: canal, tags, etapa (incl. multi/vacía) y sin-teléfono", () => {
     const result = parseGhlContactsCsv(sampleReal);
     expectSuccess(result);
     expect(result.totalRows).toBe(8);
@@ -394,41 +396,41 @@ DkjVSookyfaDLUPRb6wk,Marissa,Orduña rovirosa,,,2026-09-18T21:36:17-07:00,Sep 18
 
     const byId = Object.fromEntries(result.rows.map((r) => [r.ghlContactId, r]));
 
-    expect(byId["aBxgRqvijWmQ8Vgi2lgV"]).toMatchObject({
+    expect(byId["PRUEBA0000PROSPECTO1"]).toMatchObject({
       sourceChannel: "whatsapp",
       tags: ["transferencia a humano"],
       stage: "prospecto",
       country: "Mexico",
-      email: "carlos_hdez_m@hotmail.com",
+      email: "constructora.ejemplo@example.com",
     });
-    expect(byId["5OMR029hnaKCj5bHDl6i"]).toMatchObject({ stage: "compra", tags: [] });
-    expect(byId["PFE9k83NAkdatplYtNRh"]).toMatchObject({
+    expect(byId["PRUEBA00000000COMPRA"]).toMatchObject({ stage: "compra", tags: [] });
+    expect(byId["PRUEBA000INTERESADO1"]).toMatchObject({
       stage: "interesado",
       tags: ["medidas enviadas"],
     });
-    expect(byId["LSURQKckw3gIEhnoN5v3"]).toMatchObject({
+    expect(byId["PRUEBA0000CERCACOMPR"]).toMatchObject({
       sourceChannel: "fb",
       tags: ["video-instalacion-enviado"],
       stage: "cerca_compra",
     });
-    expect(byId["BbEJNSEtefAqziLSmtgG"]).toMatchObject({
+    expect(byId["PRUEBA0000000INBOXIG"]).toMatchObject({
       sourceChannel: "instagram",
       stage: "inbox",
     });
     // Multi-oportunidad (Inbox, Inbox) → inbox.
-    expect(byId["dH4gmbAyjfj4f6TzNbvU"]).toMatchObject({
+    expect(byId["PRUEBA00000MULTIOPP1"]).toMatchObject({
       stage: "inbox",
       phoneMissing: true,
     });
     // Opportunities vacía → inbox default, recognized.
-    expect(byId["bH97HvG4GpQn8Dcreah5"]).toMatchObject({
+    expect(byId["PRUEBA000000SINOPP01"]).toMatchObject({
       stage: "inbox",
       stageRecognized: true,
       pipelineStage: null,
     });
-    // Marissa: sin teléfono, entra igual.
-    expect(byId["DkjVSookyfaDLUPRb6wk"]).toMatchObject({
-      firstName: "Marissa",
+    // Marisol: sin teléfono, entra igual.
+    expect(byId["PRUEBA0000000SINTEL1"]).toMatchObject({
+      firstName: "Marisol",
       phoneMissing: true,
       stage: "inbox",
     });
