@@ -16,7 +16,7 @@ El chat es un solo componente reutilizado en las dos secciones.
 
 ```
 ┌─ Lista (se cierra) ─┬──── Chat ────────────────────────┬─ Contacto (se cierra) ─┐
-│ Buscar              │ Nombre · teléfono · etapa         │ Nombre, teléfono       │
+│ Buscar        [⊽🔥] │ Nombre · teléfono · etapa         │ Nombre, teléfono       │
 │ No leído│Todo│Dest. │ Aviso ventana 24 h                │ Etapa ▾  Temperatura ▾ │
 │ fila: avatar,nombre,│ burbujas + adjuntos + estado ✓✓   │ calificación, coment.  │
 │ hora,vista previa,  │ tarjeta "Llegó por anuncio"       │                        │
@@ -30,7 +30,13 @@ El chat es un solo componente reutilizado en las dos secciones.
 ### Lista de conversaciones
 - **Buscar** por nombre o teléfono.
 - **Filtros (pestañas): No leído · Todo · Destacado.** "Reciente" no existe: la lista SIEMPRE va del
-  último mensaje (arriba) al más antiguo.
+  último mensaje (arriba) al más antiguo. **Destacado** = estrella del chat O temperatura ⭐ del
+  contacto (28-sep-2026, `lib/contacts/filters.ts`).
+- **Filtro por temperatura** (28-sep-2026): ícono a la derecha del buscador (`card-filter-button.tsx`),
+  una temperatura a la vez (🔥/🧊/⏳/○ sin asignar; Todas = sin filtro). Se SUMA a la pestaña y a la
+  búsqueda (única mezcla permitida por el dueño: una temperatura + Destacado). Va al servidor como
+  `temperature` de `listConversations` (la lista es paginada) y al tiempo real con los mismos
+  parámetros, así que una fila que deja de cumplir se va sola. No se recuerda al recargar.
 - **Fila:** avatar (iniciales + badge de WhatsApp, reusar `contact-avatar`), nombre, hora del último
   mensaje, vista previa de una línea, número de no leídos, estrella de destacado.
   - Vista previa: si el último fue saliente, "Tú: …"; si fue adjunto, "📎 Foto / 📄 Documento / 🎤 Audio / 🎬 Video".

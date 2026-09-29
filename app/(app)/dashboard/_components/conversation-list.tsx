@@ -4,6 +4,8 @@ import { useVirtualizer } from "@tanstack/react-virtual";
 import { Mail, MailOpen, Star } from "lucide-react";
 import { useEffect, useRef } from "react";
 import type { ConversationListItem, InboxFilter } from "@/lib/inbox/types";
+import type { TemperatureFilter } from "@/lib/contacts/filters";
+import { CardFilterButton } from "../../_components/card-filter-button";
 import { ContactAvatar } from "../../contactos/_components/contact-avatar";
 import type { Temperature } from "../../contactos/_data/types";
 import { TemperaturePicker } from "./temperature-picker";
@@ -125,6 +127,7 @@ export function ConversationList({
   items,
   selectedId,
   filter,
+  temperature,
   search,
   loading,
   nowMs,
@@ -133,6 +136,7 @@ export function ConversationList({
   onLoadMore,
   onSelect,
   onFilterChange,
+  onTemperatureFilterChange,
   onSearchChange,
   onToggleStar,
   onChangeTemperature,
@@ -141,6 +145,8 @@ export function ConversationList({
   items: ConversationListItem[];
   selectedId: string | null;
   filter: InboxFilter;
+  /** Filtro por temperatura (una a la vez; null = todas). Se suma a la pestaña. */
+  temperature: TemperatureFilter | null;
   search: string;
   loading: boolean;
   nowMs: number;
@@ -149,6 +155,7 @@ export function ConversationList({
   onLoadMore: () => void;
   onSelect: (id: string) => void;
   onFilterChange: (filter: InboxFilter) => void;
+  onTemperatureFilterChange: (temperature: TemperatureFilter | null) => void;
   onSearchChange: (value: string) => void;
   onToggleStar: (id: string, starred: boolean) => void;
   onChangeTemperature: (item: ConversationListItem, temperature: Temperature | null) => void;
@@ -179,13 +186,17 @@ export function ConversationList({
   return (
     <div className="flex h-full min-h-0 flex-col">
       <div className="border-b p-3">
-        <input
-          type="search"
-          value={search}
-          onChange={(event) => onSearchChange(event.target.value)}
-          placeholder="Buscar por nombre o teléfono…"
-          className="w-full rounded-md border bg-background px-3 py-2 text-sm outline-none transition-colors placeholder:text-muted-foreground/60 focus:border-brand-navy focus:ring-2 focus:ring-brand-navy/30"
-        />
+        {/* Buscador + filtro por temperatura (Destacado ya es la pestaña de abajo). */}
+        <div className="flex items-center gap-2">
+          <input
+            type="search"
+            value={search}
+            onChange={(event) => onSearchChange(event.target.value)}
+            placeholder="Buscar por nombre o teléfono…"
+            className="min-w-0 flex-1 rounded-md border bg-background px-3 py-2 text-sm outline-none transition-colors placeholder:text-muted-foreground/60 focus:border-brand-navy focus:ring-2 focus:ring-brand-navy/30"
+          />
+          <CardFilterButton temperature={temperature} onTemperatureChange={onTemperatureFilterChange} />
+        </div>
         <div className="mt-3 flex gap-1 rounded-lg bg-muted p-1">
           {FILTERS.map((tab) => (
             <button

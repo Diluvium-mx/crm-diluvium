@@ -4,7 +4,8 @@
 //
 // Las horas que viajan en cursores se comparan en SQL (con microsegundos), no
 // ida y vuelta por JS, que solo tiene milisegundos.
-import { and, desc, eq, inArray, like, or, sql, type SQL } from "drizzle-orm";
+import { and, desc, eq, inArray, isNull, like, or, sql, type SQL } from "drizzle-orm";
+import type { TemperatureFilter } from "@/lib/contacts/filters";
 import { nationalSearchPrefixes } from "@/lib/phone";
 import { normalizeSearch, SQL_SEARCH_FROM, SQL_SEARCH_TO } from "@/lib/text/search";
 import { db } from "@/lib/db";
@@ -28,7 +29,7 @@ import type {
   ConversationListItem,
   ConversationPage,
   InboxContact,
-  InboxFilter,
+  InboxListParams,
   MessageKind,
   MessagePage,
   MessageView,
@@ -146,11 +147,21 @@ async function testChannelConversations(organizationId: string, conversationIds:
   return new Set(rows.map((r) => r.id));
 }
 
-function listFilter(organizationId: string, filter: InboxFilter, search: string | undefined): SQL | undefined {
+// Temperatura del filtro (lib/contacts/filters.ts): una a la vez; "none" = sin asignar.
+function temperatureCondition(temperature: TemperatureFilter | null | undefined): SQL | undefined {
+  if (!temperature) return undefined;
+  return temperature === "none" ? isNull(contacts.temperature) : eq(contacts.temperature, temperature);
+}
+
+// Las condiciones sobre `contacts` valen porque las dos consultas de la lista hacen
+// el mismo innerJoin con contacts (mismo org).
+function listFilter(organizationId: string, { filter = "all", temperature, search }: InboxListParams): SQL | undefined {
   return and(
     eq(conversations.organizationId, organizationId),
     filter === "unread" ? sql`${conversations.unreadCount} > 0` : undefined,
-    filter === "starred" ? eq(conversations.isStarred, true) : undefined,
+    // Destacado = estrella del chat o temperatura ⭐ (regla del dueño, 28-sep-2026).
+    filter === "starred" ? or(eq(conversations.isStarred, true), eq(contacts.temperature, "destacado")) : undefined,
+    temperatureCondition(temperature),
     searchCondition(search),
   );
 }
@@ -172,20 +183,20 @@ function transcriptionView(text: string | null, metadata: unknown): MessageView[
 export async function listConversationItemsByIdsForOrg(
   organizationId: string,
   conversationIds: string[],
-  { filter = "all", search }: { filter?: InboxFilter; search?: string } = {},
+  params: InboxListParams = {},
 ): Promise<ConversationListItem[]> {
   if (conversationIds.length === 0) return [];
   const rows = await db
     .select({ conversation: conversations, contact: contacts })
     .from(conversations)
     .innerJoin(contacts, and(eq(contacts.id, conversations.contactId), eq(contacts.organizationId, organizationId)))
-    .where(and(listFilter(organizationId, filter, search), inArray(conversations.id, conversationIds)));
+    .where(and(listFilter(organizationId, params), inArray(conversations.id, conversationIds)));
   return toListItems(organizationId, rows);
 }
 
 export async function listConversationsForOrg(
   organizationId: string,
-  { filter = "all", search, cursor }: { filter?: InboxFilter; search?: string; cursor?: string | null } = {},
+  { cursor, ...params }: InboxListParams & { cursor?: string | null } = {},
 ): Promise<ConversationPage> {
   const after = cursor ? decodeCursor(cursor) : null;
   const rows = await db
@@ -194,7 +205,7 @@ export async function listConversationsForOrg(
     .innerJoin(contacts, and(eq(contacts.id, conversations.contactId), eq(contacts.organizationId, organizationId)))
     .where(
       and(
-        listFilter(organizationId, filter, search),
+        listFilter(organizationId, params),
         after ? sql`(${conversationSortKey}, ${conversations.id}) < (${after[0]}::timestamp, ${after[1]})` : undefined,
       ),
     )
