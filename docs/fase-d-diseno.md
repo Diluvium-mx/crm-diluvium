@@ -367,7 +367,9 @@ Decisiones que no estaban en el diseño original:
   "contiene", sin mayúsculas ni acentos, sin tope de palabras; por palabra clave cada workflow se manda **una
   sola vez por contacto** (`contacts.keyword_workflows_sent`, migración 0028; invisible al vendedor); por
   comando del vendedor y por petición del agente se manda siempre (salvo «Solo al inicio», 29-sep-2026: por
-  palabra clave o agente solo antes de que le contesten y una vez por contacto; `docs/agente-ia.md`). **Durable (28-sep-2026, revisión
+  palabra clave o agente solo antes de que le contesten y una vez por contacto —o solo la palabra clave, la
+  Tabla—, y salvo el «Máximo de envíos por chat»; `docs/agente-ia.md`). Regla fija: al inicio, «precio» y
+  «medidas» en el mismo mensaje mandan «Información» (`lib/workflows/fixed-rules.ts`). **Durable (28-sep-2026, revisión
   completa B1):** el entrante de texto nace con `messages.metadata.palabraClave = "pendiente"` en la misma
   transacción; el gancho la cierra ("revisada") y el barrido de workflows retoma las pendientes de 1 a 30 min
   (reinicio del worker entre el commit y el gancho). Una corrida por mensaje (índice único 0046). Textos y palabras clave de los
