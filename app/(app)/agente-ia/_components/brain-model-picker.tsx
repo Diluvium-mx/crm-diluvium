@@ -6,9 +6,12 @@
 // arriba (use-model-change.tsx) y solo entonces guarda. ModelPicker sirve para
 // cualquier modelo del agente; desde la Fase E hay dos: Model1Picker (Modelo 1) y
 // BrainModelPicker (Modelo 2 = el cerebro de siempre). A la derecha de cada
-// tarjeta, el logo de la marca del modelo (lib/ai/logos.ts). Sin lógica de datos.
+// tarjeta, el logo de la marca del modelo (lib/ai/logos.ts); al pasar el mouse por la
+// tarjeta (o llegar con Tab) el logo hace el movimiento que le tocó al azar
+// (`motions`, use-logo-motions.ts; CSS en app/globals.css). Sin lógica de datos.
 import Image from "next/image";
 import { updateBrainModel, updateModel1 } from "@/lib/actions/agente-ia-editor";
+import type { LogoMotions } from "@/lib/ai/logo-motions";
 import { costPer100Label } from "@/lib/agente-ia/model-cost";
 import type { AgentActionResult, ModelOptionView } from "@/lib/agente-ia/types";
 import { useModelChange } from "./use-model-change";
@@ -25,10 +28,13 @@ export function ModelPicker({
   target,
   ariaLabel,
   save,
+  motions,
 }: {
   options: ModelOptionView[];
   value: string;
   agentName: string;
+  // Movimiento de cada logo en esta carga; null mientras se sortea (sin movimiento).
+  motions: LogoMotions | null;
   // "el cerebro", "el Modelo 1"…: va en la pregunta de confirmación.
   target: string;
   ariaLabel: string;
@@ -52,6 +58,7 @@ export function ModelPicker({
               disabled={!o.available}
               aria-busy={change.pending && active ? true : undefined}
               onClick={() => change.request(o)}
+              data-logo-card=""
               className={`flex items-center gap-3 rounded-lg border px-3 py-2 text-left transition-colors disabled:cursor-not-allowed disabled:hover:bg-transparent ${
                 active ? "border-brand-navy bg-brand-navy/5" : "border-black/10 hover:bg-black/5 dark:border-white/10 dark:hover:bg-white/5"
               }`}
@@ -68,8 +75,10 @@ export function ModelPicker({
                 </span>
                 {!o.available && <span className="text-xs text-foreground/80">{o.disabledReason ?? "No disponible"}</span>}
               </span>
-              {/* Decorativo: el nombre del modelo ya está escrito a la izquierda. */}
+              {/* Decorativo: el nombre del modelo ya está escrito a la izquierda. En gris
+                  (no se puede elegir) no se mueve. */}
               <Image
+                data-motion={o.available ? motions?.[o.logo] : undefined}
                 src={o.logoSrc}
                 alt=""
                 width={28}
@@ -91,14 +100,16 @@ async function saveBrain(modelId: string): Promise<AgentActionResult> {
   return updateBrainModel({ modelId });
 }
 
-export function BrainModelPicker({ options, value, agentName }: { options: ModelOptionView[]; value: string; agentName: string }) {
-  return <ModelPicker options={options} value={value} agentName={agentName} target="el Modelo 2" ariaLabel="Modelo 2 del agente" save={saveBrain} />;
+type PickerProps = { options: ModelOptionView[]; value: string; agentName: string; motions: LogoMotions | null };
+
+export function BrainModelPicker(props: PickerProps) {
+  return <ModelPicker {...props} target="el Modelo 2" ariaLabel="Modelo 2 del agente" save={saveBrain} />;
 }
 
 async function saveModel1(modelId: string): Promise<AgentActionResult> {
   return updateModel1({ modelId });
 }
 
-export function Model1Picker({ options, value, agentName }: { options: ModelOptionView[]; value: string; agentName: string }) {
-  return <ModelPicker options={options} value={value} agentName={agentName} target="el Modelo 1" ariaLabel="Modelo 1 del agente" save={saveModel1} />;
+export function Model1Picker(props: PickerProps) {
+  return <ModelPicker {...props} target="el Modelo 1" ariaLabel="Modelo 1 del agente" save={saveModel1} />;
 }
