@@ -13,16 +13,18 @@ if (TEST_DATABASE_URL) process.env.DATABASE_URL = TEST_DATABASE_URL;
 const header =
   "Contact Id,First Name,Last Name,Phone,Email,Created,Last Activity,Tags,Country,Opportunities";
 const P = "open Embudo de ventas Diluvium";
-// 8 filas reales de referencia (una por etapa + multi-opp + Opportunities vacía).
+// 8 filas SINTÉTICAS con la forma exacta del export de GHL (una por etapa + casos borde:
+// multi-oportunidad, Opportunities vacía, sin teléfono, tags de sistema). Sin datos de
+// clientes reales: teléfonos y correos inventados (revisión de seguridad, 28-sep-2026).
 const sampleReal = `${header}
-aBxgRqvijWmQ8Vgi2lgV,Ingeniería,Empresarial,+525540432914,carlos_hdez_m@hotmail.com,2026-06-08T10:28:39-07:00,Jul 22 2026 02:09 PM,"inbound whatsapp, wa: 5216682419579, transferencia a humano, another-device-replied-whatsapp",Mexico,${P} Prospecto
-5OMR029hnaKCj5bHDl6i,Enrique - griselda (3 compuertas),,+523228886578,arquikeco_72@hotmail.com,2026-06-02T14:28:05-07:00,Jun 03 2026 12:59 PM,"inbound whatsapp, wa: 5216682419579, another-device-replied-whatsapp",Mexico,${P} Compra
-PFE9k83NAkdatplYtNRh,Ana,Dacasa,+527771091114,,2026-07-15T11:48:17-07:00,Jul 16 2026 12:31 PM,"inbound whatsapp, wa: 5216682419579, medidas enviadas, another-device-replied-whatsapp",Mexico,${P} Interesado
-LSURQKckw3gIEhnoN5v3,Adrian,,+526151557244,leydeamper08@gmail.com,2026-09-03T15:11:09-07:00,Sep 17 2026 12:03 PM,"inbound whatsapp, fb-ad-lead-whatsapp, wa: 5216682419579, video-instalacion-enviado, another-device-replied-whatsapp",Mexico,${P} Cerca de compra
-BbEJNSEtefAqziLSmtgG,Marianalr83,,+526671045171,,2026-09-19T12:46:25-07:00,Sep 19 2026 12:46 PM,"inbound whatsapp, instagram-ad-lead-whatsapp, wa: 5216682419579",Mexico,${P} Inbox
-dH4gmbAyjfj4f6TzNbvU,Diego,Stevenot,,,2026-08-25T13:43:50-07:00,Aug 25 2026 03:49 PM,,Mexico,"${P} Inbox, ${P} Inbox"
-bH97HvG4GpQn8Dcreah5,User,,+524521178694,,2026-09-14T09:20:28-07:00,Sep 14 2026 09:20 AM,"wa: 5216682419579, another-device-replied-whatsapp",Mexico,
-DkjVSookyfaDLUPRb6wk,Marissa,Orduña rovirosa,,,2026-09-18T21:36:17-07:00,Sep 18 2026 09:37 PM,,Mexico,${P} Inbox`;
+PRUEBA0000PROSPECTO1,Constructora,Ejemplo,+525540010001,constructora.ejemplo@example.com,2026-06-08T10:28:39-07:00,Jul 22 2026 02:09 PM,"inbound whatsapp, wa: 5216682419579, transferencia a humano, another-device-replied-whatsapp",Mexico,${P} Prospecto
+PRUEBA00000000COMPRA,Enrique - prueba (3 compuertas),,+523228810002,cliente.compra@example.com,2026-06-02T14:28:05-07:00,Jun 03 2026 12:59 PM,"inbound whatsapp, wa: 5216682419579, another-device-replied-whatsapp",Mexico,${P} Compra
+PRUEBA000INTERESADO1,Alma,Prueba,+527771010003,,2026-07-15T11:48:17-07:00,Jul 16 2026 12:31 PM,"inbound whatsapp, wa: 5216682419579, medidas enviadas, another-device-replied-whatsapp",Mexico,${P} Interesado
+PRUEBA0000CERCACOMPR,Aarón,,+526151510004,cliente.cerca@example.com,2026-09-03T15:11:09-07:00,Sep 17 2026 12:03 PM,"inbound whatsapp, fb-ad-lead-whatsapp, wa: 5216682419579, video-instalacion-enviado, another-device-replied-whatsapp",Mexico,${P} Cerca de compra
+PRUEBA0000000INBOXIG,Usuaria83,,+526671010005,,2026-09-19T12:46:25-07:00,Sep 19 2026 12:46 PM,"inbound whatsapp, instagram-ad-lead-whatsapp, wa: 5216682419579",Mexico,${P} Inbox
+PRUEBA00000MULTIOPP1,Dante,Prueba,,,2026-08-25T13:43:50-07:00,Aug 25 2026 03:49 PM,,Mexico,"${P} Inbox, ${P} Inbox"
+PRUEBA000000SINOPP01,User,,+524521010007,,2026-09-14T09:20:28-07:00,Sep 14 2026 09:20 AM,"wa: 5216682419579, another-device-replied-whatsapp",Mexico,
+PRUEBA0000000SINTEL1,Marisol,Prueba Apellido,,,2026-09-18T21:36:17-07:00,Sep 18 2026 09:37 PM,,Mexico,${P} Inbox`;
 
 describe.skipIf(!TEST_DATABASE_URL)("import de contactos GHL (Postgres real)", () => {
   type Db = typeof import("@/lib/db").db;
@@ -77,7 +79,7 @@ describe.skipIf(!TEST_DATABASE_URL)("import de contactos GHL (Postgres real)", (
     return c;
   }
 
-  it("importa las 8 filas reales con canal, tags, etapa, país y sin-teléfono", async () => {
+  it("importa las 8 filas de muestra con canal, tags, etapa, país y sin-teléfono", async () => {
     const result = await importParsedContacts(db, ORG_A, parse());
     expect(result).toEqual({
       imported: 8,
@@ -94,32 +96,32 @@ describe.skipIf(!TEST_DATABASE_URL)("import de contactos GHL (Postgres real)", (
     expect(all.every((r) => r.country === "Mexico")).toBe(true);
 
     // Etapa desde Opportunities (una por cada valor).
-    expect((await findBy(ORG_A, "aBxgRqvijWmQ8Vgi2lgV"))?.stage).toBe("prospecto");
-    expect((await findBy(ORG_A, "5OMR029hnaKCj5bHDl6i"))?.stage).toBe("compra");
-    expect((await findBy(ORG_A, "PFE9k83NAkdatplYtNRh"))?.stage).toBe("interesado");
-    expect((await findBy(ORG_A, "LSURQKckw3gIEhnoN5v3"))?.stage).toBe("cerca_compra");
-    expect((await findBy(ORG_A, "BbEJNSEtefAqziLSmtgG"))?.stage).toBe("inbox");
+    expect((await findBy(ORG_A, "PRUEBA0000PROSPECTO1"))?.stage).toBe("prospecto");
+    expect((await findBy(ORG_A, "PRUEBA00000000COMPRA"))?.stage).toBe("compra");
+    expect((await findBy(ORG_A, "PRUEBA000INTERESADO1"))?.stage).toBe("interesado");
+    expect((await findBy(ORG_A, "PRUEBA0000CERCACOMPR"))?.stage).toBe("cerca_compra");
+    expect((await findBy(ORG_A, "PRUEBA0000000INBOXIG"))?.stage).toBe("inbox");
 
     // Canal y tags de negocio.
-    expect(await findBy(ORG_A, "LSURQKckw3gIEhnoN5v3")).toMatchObject({
+    expect(await findBy(ORG_A, "PRUEBA0000CERCACOMPR")).toMatchObject({
       sourceChannel: "fb",
       tags: ["video-instalacion-enviado"],
     });
-    expect(await findBy(ORG_A, "BbEJNSEtefAqziLSmtgG")).toMatchObject({
+    expect(await findBy(ORG_A, "PRUEBA0000000INBOXIG")).toMatchObject({
       sourceChannel: "instagram",
     });
-    expect(await findBy(ORG_A, "aBxgRqvijWmQ8Vgi2lgV")).toMatchObject({
+    expect(await findBy(ORG_A, "PRUEBA0000PROSPECTO1")).toMatchObject({
       sourceChannel: "whatsapp",
       tags: ["transferencia a humano"],
     });
 
     // Multi-opp (Inbox, Inbox) → inbox; sin teléfono entra igual.
-    expect(await findBy(ORG_A, "dH4gmbAyjfj4f6TzNbvU")).toMatchObject({
+    expect(await findBy(ORG_A, "PRUEBA00000MULTIOPP1")).toMatchObject({
       stage: "inbox",
       phoneE164: null,
     });
     // Marissa sin teléfono.
-    expect((await findBy(ORG_A, "DkjVSookyfaDLUPRb6wk"))?.phoneE164).toBeNull();
+    expect((await findBy(ORG_A, "PRUEBA0000000SINTEL1"))?.phoneE164).toBeNull();
 
     // Ninguna etiqueta de sistema llegó a la BD.
     const leaked = all.flatMap((r) => r.tags).filter(
@@ -141,18 +143,18 @@ describe.skipIf(!TEST_DATABASE_URL)("import de contactos GHL (Postgres real)", (
 
   it("un re-sync NO resetea la etapa que el equipo ya movió en el kanban", async () => {
     await importParsedContacts(db, ORG_A, parse());
-    // Marianalr83 estaba en inbox; el equipo la mueve a 'compra'.
+    // Usuaria83 estaba en inbox; el equipo la mueve a 'compra'.
     await db
       .update(s.contacts)
       .set({ stage: "compra" })
       .where(
         and(
           eq(s.contacts.organizationId, ORG_A),
-          eq(s.contacts.ghlContactId, "BbEJNSEtefAqziLSmtgG"),
+          eq(s.contacts.ghlContactId, "PRUEBA0000000INBOXIG"),
         ),
       );
     await importParsedContacts(db, ORG_A, parse());
-    expect((await findBy(ORG_A, "BbEJNSEtefAqziLSmtgG"))?.stage).toBe("compra");
+    expect((await findBy(ORG_A, "PRUEBA0000000INBOXIG"))?.stage).toBe("compra");
   });
 
   it("un re-sync con teléfono inválido/ausente NO borra el número válido guardado", async () => {
