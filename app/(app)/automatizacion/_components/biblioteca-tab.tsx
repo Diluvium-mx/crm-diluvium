@@ -5,6 +5,7 @@
 // privado); la vista previa pasa por /api/biblioteca/{id} (URL firmada).
 import { useRef, useState } from "react";
 import { Trash2, Upload } from "lucide-react";
+import { TopConfirm } from "@/components/ui/top-confirm";
 import { deleteMediaAssetAction, renameMediaAssetAction } from "@/lib/actions/media-library";
 import type { MediaAssetView } from "@/lib/media-library/service";
 import { MEDIA_LIMITS, validateUpload } from "@/lib/media-library/rules";
@@ -54,6 +55,9 @@ export function BibliotecaTab({
 }) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // Borrar un archivo pide confirmar (no se puede deshacer), con el aviso del CRM.
+  const [deleting, setDeleting] = useState<MediaAssetView | null>(null);
+  const [removing, setRemoving] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
 
   async function onFiles(files: FileList | null) {
@@ -82,8 +86,10 @@ export function BibliotecaTab({
   }
 
   async function remove(asset: MediaAssetView) {
-    if (!window.confirm(`¿Borrar "${asset.title}" de la biblioteca?`)) return;
+    setRemoving(true);
     const r = await deleteMediaAssetAction({ assetId: asset.id });
+    setRemoving(false);
+    setDeleting(null);
     if (!r.ok) return setError(r.error);
     onChanged(assets.filter((a) => a.id !== asset.id));
   }
@@ -125,7 +131,7 @@ export function BibliotecaTab({
                   {a.kind === "image" ? "Imagen" : a.kind === "video" ? "Video" : "Documento"} · {formatBytes(a.bytes)} · {a.fileName}
                 </p>
                 <div className="flex justify-end">
-                  <button type="button" onClick={() => void remove(a)} className="rounded p-1 text-muted-foreground hover:bg-red-50 hover:text-red-600" aria-label={`Borrar ${a.title}`}>
+                  <button type="button" onClick={() => setDeleting(a)} className="rounded p-1 text-muted-foreground hover:bg-red-50 hover:text-red-600" aria-label={`Borrar ${a.title}`}>
                     <Trash2 className="size-4" aria-hidden="true" />
                   </button>
                 </div>
@@ -133,6 +139,18 @@ export function BibliotecaTab({
             </li>
           ))}
         </ul>
+      )}
+      {deleting && (
+        <TopConfirm
+          title={`¿Borrar «${deleting.title}» de la biblioteca?`}
+          confirmLabel="Borrar"
+          pendingLabel="Borrando…"
+          pending={removing}
+          onConfirm={() => void remove(deleting)}
+          onCancel={() => setDeleting(null)}
+        >
+          No se puede borrar si algún paso de un workflow lo usa.
+        </TopConfirm>
       )}
     </div>
   );
