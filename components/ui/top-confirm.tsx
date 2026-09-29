@@ -1,7 +1,7 @@
 "use client";
 
 // Pop-up compacto justo abajo de la barra azul de arriba, centrado en el área de
-// contenido (a la derecha del sidebar w-56; la barra mide h-16, ver
+// contenido (a la derecha del sidebar w-56 desde md; en celular no hay sidebar y va a todo lo ancho; la barra mide h-16, ver
 // app/(app)/layout.tsx). Dos piezas en el MISMO lugar:
 // - TopConfirm: pregunta con "Cancelar" y la acción primaria en naranja. Esc o clic
 //   fuera cancelan (salvo mientras guarda). Enfoca "Cancelar" al abrir y devuelve el
@@ -14,7 +14,7 @@ import { useEffect, useId, useLayoutEffect, useRef } from "react";
 
 function TopLayer({ children }: { children: React.ReactNode }) {
   return (
-    <div className="pointer-events-none fixed top-[4.5rem] right-0 left-56 z-50 flex justify-center px-4">
+    <div className="pointer-events-none fixed top-[4.5rem] right-0 left-0 z-50 flex justify-center px-4 md:left-56">
       <div className="pointer-events-auto w-full max-w-md motion-safe:animate-in motion-safe:fade-in-0 motion-safe:slide-in-from-top-2">
         {children}
       </div>
@@ -26,6 +26,7 @@ export function TopConfirm({
   title,
   children,
   confirmLabel,
+  cancelLabel = "Cancelar",
   pendingLabel,
   pending = false,
   onConfirm,
@@ -34,6 +35,8 @@ export function TopConfirm({
   title: string;
   children?: React.ReactNode;
   confirmLabel: string;
+  // Texto del botón que no hace nada (p. ej. "Seguir editando"); por omisión "Cancelar".
+  cancelLabel?: string;
   pendingLabel?: string;
   pending?: boolean;
   onConfirm: () => void;
@@ -100,7 +103,7 @@ export function TopConfirm({
             onClick={onCancel}
             className="rounded border border-black/15 px-3 py-1.5 text-sm text-foreground disabled:opacity-50 dark:border-white/15"
           >
-            Cancelar
+            {cancelLabel}
           </button>
           <button
             type="button"
