@@ -10,7 +10,7 @@
     "build": "next build",
     "start": "next start",
     "start:web": "drizzle-kit migrate && tsx scripts/check-migrations.ts && next start",
-    "start:worker": "tsx worker/index.ts",
+    "start:worker": "exec node --import tsx worker/index.ts",
     "lint": "eslint",
     "typecheck": "tsc --noEmit --incremental false",
     "test": "vitest run",
