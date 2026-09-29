@@ -43,6 +43,7 @@ export function buildModelOptions(
       label: m.label,
       provider: m.provider,
       providerLabel: PROVIDER_META[m.provider].label,
+      logo: m.logo,
       logoSrc: MODEL_LOGOS[m.logo].src,
       logoMono: MODEL_LOGOS[m.logo].mono,
       tier: m.tier,

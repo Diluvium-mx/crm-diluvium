@@ -4,6 +4,7 @@ import { Info, PanelLeftClose, PanelLeftOpen, PanelRightClose, PanelRightOpen, X
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import type { ConversationDetail, ConversationListItem, InboxFilter } from "@/lib/inbox/types";
+import type { TemperatureFilter } from "@/lib/contacts/filters";
 import {
   getConversation,
   getConversationByContact,
@@ -36,6 +37,9 @@ export function InboxBoard({ openContactId = null }: { openContactId?: string | 
   const [nextCursor, setNextCursor] = useState<string | null>(null);
   const [loadingMore, setLoadingMore] = useState(false);
   const [filter, setFilter] = useState<InboxFilter>("all");
+  // Filtro por temperatura (ícono junto al buscador): se suma a la pestaña; no se
+  // recuerda entre recargas, igual que la búsqueda.
+  const [temperature, setTemperature] = useState<TemperatureFilter | null>(null);
   const [search, setSearch] = useState("");
   const [loadingList, setLoadingList] = useState(true);
   const [selectedId, setSelectedId] = useState<string | null>(null);
@@ -54,6 +58,7 @@ export function InboxBoard({ openContactId = null }: { openContactId?: string | 
   // actual sin re-suscribirse en cada cambio.
   const selectedIdRef = useRef<string | null>(null);
   const filterRef = useRef(filter);
+  const temperatureRef = useRef(temperature);
   const searchRef = useRef(search);
   const nextCursorRef = useRef<string | null>(null);
   const loadingMoreRef = useRef(false);
@@ -65,6 +70,7 @@ export function InboxBoard({ openContactId = null }: { openContactId?: string | 
     detailRef.current = detail;
     selectedIdRef.current = selectedId;
     filterRef.current = filter;
+    temperatureRef.current = temperature;
     searchRef.current = search;
     nextCursorRef.current = nextCursor;
     loadingMoreRef.current = loadingMore;
@@ -84,7 +90,11 @@ export function InboxBoard({ openContactId = null }: { openContactId?: string | 
   const touchedDuringRefreshRef = useRef<Set<string> | null>(null);
   const scheduleUpdateRef = useRef<(id: string) => void>(() => {});
 
-  const params = () => ({ filter: filterRef.current, search: searchRef.current.trim() || undefined });
+  const params = () => ({
+    filter: filterRef.current,
+    temperature: temperatureRef.current,
+    search: searchRef.current.trim() || undefined,
+  });
 
   /**
    * Recarga completa (al cambiar filtro/búsqueda, o `reload` del SSE tras una
@@ -196,7 +206,7 @@ export function InboxBoard({ openContactId = null }: { openContactId?: string | 
   useEffect(() => {
     const t = setTimeout(() => void refreshList(), 250);
     return () => clearTimeout(t);
-  }, [filter, search, refreshList]);
+  }, [filter, temperature, search, refreshList]);
 
   useEffect(() => () => clearTimeout(flushTimerRef.current), []);
 
@@ -417,6 +427,7 @@ export function InboxBoard({ openContactId = null }: { openContactId?: string | 
             items={conversations}
             selectedId={selectedId}
             filter={filter}
+            temperature={temperature}
             search={search}
             loading={loadingList}
             nowMs={nowMs}
@@ -425,6 +436,7 @@ export function InboxBoard({ openContactId = null }: { openContactId?: string | 
             onLoadMore={() => void loadMore()}
             onSelect={selectConversation}
             onFilterChange={setFilter}
+            onTemperatureFilterChange={setTemperature}
             onSearchChange={setSearch}
             onToggleStar={toggleStar}
             onChangeTemperature={changeTemperature}

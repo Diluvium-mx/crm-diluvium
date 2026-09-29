@@ -323,7 +323,7 @@ el menú del usuario (todos): "Mi cuenta" (`/mi-cuenta`: nombre y cambiar la pro
 
 ```
 ┌─ Lista (se cierra) ─┬──── Chat ────────────────────────┬─ Contacto (se cierra) ─┐
-│ Buscar              │ Nombre · teléfono · etapa         │ Nombre, teléfono       │
+│ Buscar        [⊽🔥] │ Nombre · teléfono · etapa         │ Nombre, teléfono       │
 │ No leído│Todo│Dest. │ Aviso ventana 24 h                │ Etapa ▾  Temperatura ▾ │
 │ fila: avatar,nombre,│ burbujas + adjuntos + estado ✓✓   │ Ver ficha completa     │
 │ hora,vista previa,  │ tarjeta "Llegó por anuncio"       │                        │
