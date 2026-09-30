@@ -7,7 +7,11 @@
 // doble clic sobre la imagen), el video llena la pantalla y empieza a reproducirse.
 // Para no repetirla, «Pantalla completa» sale del menú ⋮ y de la barra de Chrome
 // (controlsList="nofullscreen"); ya en pantalla completa vuelve su botón para
-// salir, y Esc también sale.
+// salir, y Esc también sale. «Silenciar» tampoco se ofrece (decisión del dueño): el
+// video mide al menos 208 px de ancho, con franjas negras si es angosto, porque así
+// Chrome lo deja en la barra (y no en ⋮), donde app/globals.css lo esconde. Con menos
+// ancho Chrome lo manda a ⋮, y entre 176 y 192 px además vuelve a poner ahí
+// «Pantalla completa» aunque tenga nofullscreen (probado en Chrome 154).
 import { Maximize } from "lucide-react";
 import { useEffect, useRef, useState, type MouseEvent } from "react";
 
@@ -63,14 +67,15 @@ export function VideoAttachment({ src }: { src: string }) {
         ref={videoRef}
         controls
         controlsList={fullscreen ? undefined : "nofullscreen"}
-        // Esconde el botón en gris que deja nofullscreen en la barra (app/globals.css).
+        // Esconden en la barra el botón en gris que deja nofullscreen y el de silenciar (app/globals.css).
         data-sin-pantalla-completa={fullscreen ? undefined : ""}
+        data-video-chat=""
         src={src}
         onPlay={() => setPlaying(true)}
         onPause={() => setPlaying(false)}
         onEnded={() => setPlaying(false)}
         onDoubleClick={onDoubleClick}
-        className="block max-h-64 max-w-full rounded-md"
+        className="block max-h-64 max-w-full min-w-52 rounded-md bg-black"
       />
       {!playing && (
         <button
