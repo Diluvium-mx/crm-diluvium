@@ -8,6 +8,8 @@
 //   (archivo íntegro o se reintenta);
 // - llave determinista org/{org}/messages/{msg}/{i}-{nombre}: reintentar no
 //   duplica; si el objeto ya existe (subida previa sin anotar), se reutiliza;
+// - el Content-Type con el que se guarda sale de los primeros bytes, no de lo
+//   que declara el celular del cliente (S2, media-type.ts → verifiedMime);
 // - anota storageKey por adjunto, con la fila bloqueada (FOR UPDATE) para no
 //   pisar el trabajo de otro intento concurrente;
 // - si un adjunto falla, anota el error y lanza para que BullMQ reintente; el
@@ -20,6 +22,8 @@ import { db } from "@/lib/db";
 import { messages, type MessageAttachment } from "@/lib/db/schema";
 import type { ObjectStorage } from "@/lib/storage/s3";
 import { isStoredAttachment, storageKeyFor } from "./media-keys";
+import { peekHead } from "@/lib/storage/peek";
+import { MEDIA_SNIFF_BYTES, verifiedMediaMime } from "./media-type";
 import type { MessagingProvider } from "./provider";
 
 export { sha256Base64, storageKeyFor } from "./media-keys";
@@ -65,7 +69,7 @@ async function downloadOne(
   key: string,
   attachment: MessageAttachment,
   maxBytes: number,
-): Promise<{ sizeBytes: number }> {
+): Promise<{ sizeBytes: number; verifiedMime: string }> {
   const signal = AbortSignal.timeout(DOWNLOAD_TIMEOUT_MS);
   const res = await provider.fetchMedia(attachment.url, signal);
   if (!res.ok) throw new MediaDownloadError(`descarga respondió ${res.status}`);
@@ -82,14 +86,29 @@ async function downloadOne(
   const verifier = verifyingStream(maxBytes, attachment.sha256);
   // Un error de la descarga (corte, timeout) también rompe el stream que se sube.
   source.on("error", (error) => verifier.stream.destroy(error));
-  verifier.stream.on("error", () => source.destroy());
-  const contentType = attachment.mimeType ?? res.headers.get("content-type") ?? "application/octet-stream";
+  // S2: el tipo con el que se guarda sale de los BYTES, no de lo que declara el
+  // celular del cliente (un "PDF" que en realidad es HTML queda como descarga).
+  const { head, whole } = await peekHead(source, MEDIA_SNIFF_BYTES);
+  const verifiedMime = verifiedMediaMime(head, attachment.type);
+  whole.on("error", (error) => verifier.stream.destroy(error));
+  verifier.stream.on("error", () => {
+    whole.destroy();
+    source.destroy();
+  });
   try {
-    await storage.putStream(key, source.pipe(verifier.stream), contentType);
+    await storage.putStream(key, whole.pipe(verifier.stream), verifiedMime);
   } finally {
+    whole.destroy();
     source.destroy(); // si el bucket falló a la mitad, se corta también la descarga
   }
-  return { sizeBytes: verifier.size() };
+  return { sizeBytes: verifier.size(), verifiedMime };
+}
+
+/** Tipo real de un objeto que ya estaba en el bucket (sin él queda "sin revisar": solo descarga). */
+async function verifiedMimeOfStored(storage: ObjectStorage, key: string, kind: string): Promise<string | undefined> {
+  if (!storage.getHead) return undefined;
+  const head = await storage.getHead(key, MEDIA_SNIFF_BYTES).catch(() => null);
+  return head ? verifiedMediaMime(head, kind) : undefined;
 }
 
 /** Descarga los adjuntos pendientes de un mensaje. Devuelve cuántos guardó. */
@@ -108,15 +127,16 @@ export async function downloadMessageMedia(
     if (isStoredAttachment(attachment)) continue;
     const key = storageKeyFor(message.organizationId, message.id, index, attachment);
     try {
-      const { sizeBytes } = await downloadOne(provider, storage, key, attachment, maxBytes);
-      results.set(index, { storageKey: key, sizeBytes, downloadedAt: new Date().toISOString(), downloadError: undefined });
+      const { sizeBytes, verifiedMime } = await downloadOne(provider, storage, key, attachment, maxBytes);
+      results.set(index, { storageKey: key, sizeBytes, verifiedMime, downloadedAt: new Date().toISOString(), downloadError: undefined });
     } catch (error) {
       const reason = error instanceof Error ? error.message : String(error);
       // Si ya se había subido en un intento previo que no alcanzó a anotarlo, se
       // reutiliza, pero solo si tiene contenido (una copia vacía no cuenta).
       const previous = await storage.head(key).catch(() => null);
       if (previous && previous.bytes > 0) {
-        results.set(index, { storageKey: key, sizeBytes: previous.bytes, downloadedAt: new Date().toISOString(), downloadError: undefined });
+        const verifiedMime = await verifiedMimeOfStored(storage, key, attachment.type);
+        results.set(index, { storageKey: key, sizeBytes: previous.bytes, verifiedMime, downloadedAt: new Date().toISOString(), downloadError: undefined });
       } else {
         results.set(index, { downloadError: reason });
         errors.push(`adjunto ${index}: ${reason}`);

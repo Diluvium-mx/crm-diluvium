@@ -10,6 +10,7 @@ import { headers } from "next/headers";
 import { auth } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { member, messages } from "@/lib/db/schema";
+import { OCTET, previewOf } from "@/lib/messaging/media-type";
 import { objectStorage, StorageNotConfiguredError } from "@/lib/storage/s3";
 
 const SIGNED_URL_SECONDS = 300;
@@ -48,13 +49,18 @@ export async function GET(req: Request, { params }: RouteContext<"/api/media/[me
   const wantsThumb = search.get("thumb") === "1";
   if (wantsThumb && !attachment.thumbnailKey) return new Response("sin miniatura", { status: 404 });
   const key = wantsThumb && attachment.thumbnailKey ? attachment.thumbnailKey : attachment.storageKey;
-  const disposition = search.get("download") === "1" ? "attachment" : "inline";
+  // S2 (CN-005): el bucket lo sirve SIEMPRE con el tipo verificado por sus bytes,
+  // nunca con el que declaró el celular. Lo no verificado (o sin revisar) solo se
+  // descarga, como archivo genérico: nunca se abre dentro del navegador.
+  const verified = previewOf(attachment.verifiedMime) ? attachment.verifiedMime : undefined;
+  const contentType = wantsThumb ? "image/png" : (verified ?? OCTET);
+  const disposition = wantsThumb || (verified && search.get("download") !== "1") ? "inline" : "attachment";
 
   let url: string;
   try {
     // Para forzar la descarga hace falta un nombre (una foto no trae fileName).
     const name = wantsThumb ? undefined : (attachment.fileName ?? (disposition === "attachment" ? `adjunto-${index + 1}` : undefined));
-    url = await objectStorage().signedGetUrl(key, SIGNED_URL_SECONDS, name, disposition);
+    url = await objectStorage().signedGetUrl(key, SIGNED_URL_SECONDS, name, disposition, contentType);
   } catch (error) {
     if (!(error instanceof StorageNotConfiguredError)) throw error;
     console.error("[media] bucket no configurado:", error.message);

@@ -1,6 +1,7 @@
 // Contrato de datos backend → UI de la bandeja (docs/bandeja.md). Solo
 // tipos: la UI (Client Components) puede importarlo sin arrastrar el servidor.
 import type { NormalizedMessageType } from "@/lib/messaging/provider";
+import type { MediaPreview } from "@/lib/messaging/media-type";
 
 import type { TemperatureFilter } from "@/lib/contacts/filters";
 
@@ -108,6 +109,11 @@ export type AttachmentView = {
   thumbnailUrl: string | null;
   sizeBytes: number | null;
   pageCount: number | null;
+  /**
+   * Cómo se muestra, según su tipo REAL por bytes (S2): imagen, audio, video o
+   * PDF; null = solo descarga (no verificado o aún sin revisar).
+   */
+  preview: MediaPreview | null;
 };
 
 export type MessageView = {

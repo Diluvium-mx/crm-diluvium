@@ -6,15 +6,16 @@
 import { Download, Minus, Plus, X } from "lucide-react";
 import { useEffect, useState } from "react";
 import type { AttachmentView } from "@/lib/inbox/types";
-import { fileExtension } from "./format";
 import { CloseX } from "@/components/ui/close-x";
 
 const ZOOM_STEPS = [1, 1.5, 2, 3, 4];
 
 export function MediaViewer({ attachment, onClose }: { attachment: AttachmentView; onClose: () => void }) {
   const [zoom, setZoom] = useState(0);
-  const isImage = attachment.kind === "image" || attachment.kind === "sticker";
-  const isPdf = fileExtension(attachment.fileName, attachment.mimeType) === "pdf";
+  // S2 (CN-005): se decide por el tipo REAL por bytes, no por la extensión ni por
+  // lo que declaró el celular. Lo demás solo se descarga.
+  const isImage = attachment.preview === "image";
+  const isPdf = attachment.preview === "pdf";
   const title = attachment.fileName ?? (isImage ? "Imagen" : "Documento");
 
   // En CAPTURA sobre window y consumiendo el evento: el visor está encima de
@@ -96,6 +97,10 @@ export function MediaViewer({ attachment, onClose }: { attachment: AttachmentVie
             className={`max-h-full max-w-full object-contain transition-transform ${zoom === 0 ? "cursor-zoom-in" : "cursor-zoom-out"}`}
           />
         ) : isPdf ? (
+          // Sin `sandbox` a propósito (decisión del dueño, 30-sep-2026): Chrome no muestra su visor
+          // de PDF en un iframe con sandbox (probado: queda en blanco con cualquier valor). La
+          // protección es que solo llegan aquí PDFs verificados por sus bytes y el bucket los sirve
+          // siempre como application/pdf (nunca como HTML).
           <iframe src={attachment.url} title={title} className="h-full w-full max-w-4xl rounded bg-white" />
         ) : (
           <div className="flex flex-col items-center gap-3 text-center">
