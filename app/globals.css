@@ -561,3 +561,10 @@
   from { width: 100%; }
   to { width: 0%; }
 }
+
+/* Video del chat (video-attachment.tsx): con controlsList="nofullscreen" Chrome deja su botón de
+   pantalla completa en gris en la barra de los videos horizontales; se esconde porque el ícono
+   blanco lo reemplaza. Ya en pantalla completa el atributo se quita y vuelve el botón para salir. */
+video[data-sin-pantalla-completa]::-webkit-media-controls-fullscreen-button {
+  display: none;
+}
