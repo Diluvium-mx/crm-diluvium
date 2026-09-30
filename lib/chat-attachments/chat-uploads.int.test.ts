@@ -52,6 +52,7 @@ describe.skipIf(!TEST_DATABASE_URL)("adjuntos del chat", () => {
   let send: typeof import("@/lib/messaging/send");
   let maint: typeof import("./maintenance");
   let token: typeof import("./token");
+  let mm: typeof import("./multimedia");
   let eq: typeof import("drizzle-orm").eq;
   const ORG = "org_adj";
   const OTHER = "org_adj_otra";
@@ -94,6 +95,7 @@ describe.skipIf(!TEST_DATABASE_URL)("adjuntos del chat", () => {
     send = await import("@/lib/messaging/send");
     maint = await import("./maintenance");
     token = await import("./token");
+    mm = await import("./multimedia");
     ({ eq } = await import("drizzle-orm"));
   });
 
@@ -279,6 +281,68 @@ describe.skipIf(!TEST_DATABASE_URL)("adjuntos del chat", () => {
     await send.queueChatUploads(provider, { organizationId: ORG, conversationId: CONV, sentByUserId: "u_v", files, captions: [null] });
     expect(await send.sendQueuedChatUpload(provider, storage, { organizationId: ORG, messageId: id })).toBeNull();
     expect(sent).toHaveLength(1);
+  });
+
+  // Multimedia (30-sep-2026): archivo de la Biblioteca, ya en el bucket (5 días de viejo).
+  const asset = async (id: string, kind: "image" | "video" | "document", org = ORG, deletedAt: Date | null = null) => {
+    const ext = kind === "image" ? "png" : kind === "video" ? "mp4" : "pdf";
+    const mimeType = kind === "image" ? "image/png" : kind === "video" ? "video/mp4" : "application/pdf";
+    const storageKey = `org/${org}/library/${id}-${id}.${ext}`;
+    storage.objects.set(storageKey, { bytes: 100, contentType: mimeType, lastModified: new Date(Date.now() - 5 * 86_400_000) });
+    await db.insert(s.mediaAssets).values({ id, organizationId: org, kind, title: id, fileName: `${id}.${ext}`, mimeType, bytes: 100, storageKey, deletedAt });
+    return storageKey;
+  };
+  const queue = (files: Awaited<ReturnType<typeof mm.multimediaToSend>>[], captions: (string | null)[]) =>
+    send.queueChatUploads(provider, { organizationId: ORG, conversationId: CONV, sentByUserId: "u_v", files, captions });
+
+  it("Multimedia: solo fotos y videos de ESTA organización que siguen en la Biblioteca", async () => {
+    await asset("tabla", "image");
+    await asset("catalogo", "document");
+    await asset("ajeno", "image", OTHER);
+    await asset("borrado", "video", ORG, new Date());
+    await expect(mm.multimediaToSend(ORG, "tabla", "envio-1")).resolves.toMatchObject({ kind: "image", mime: "image/png", fileName: "tabla.png", storageKey: `org/${ORG}/library/tabla-tabla.png` });
+    for (const id of ["catalogo", "ajeno", "borrado", "no-existe"]) {
+      await expect(mm.multimediaToSend(ORG, id, "envio-1")).rejects.toBeInstanceOf(mm.MultimediaError);
+    }
+  });
+
+  it("Multimedia: el mismo archivo sale en cada envío; repetir el MISMO envío (doble clic, reintento tras el eco) no lo duplica", async () => {
+    await asset("instalacion", "video");
+    const first = [await mm.multimediaToSend(ORG, "instalacion", "envio-1")];
+    const [a] = await queue(first, ["Así se instala"]);
+    await queue(first, ["Así se instala"]);
+    expect(await outs()).toHaveLength(1);
+    await send.sendQueuedChatUpload(provider, storage, { organizationId: ORG, messageId: a });
+    // El eco de WhatsApp se quedó con la burbuja (otra fila con el adjunto de la cola) y la de la cola se borró.
+    const [row] = await db.select().from(s.messages).where(eq(s.messages.id, a));
+    await db.delete(s.messages).where(eq(s.messages.id, a));
+    await db.insert(s.messages).values({ ...row, id: "eco_mm", providerMessageId: `wamid.eco.${randomUUID()}`, providerInternalId: null });
+    await queue(first, ["Así se instala"]);
+    expect(await send.sendQueuedChatUpload(provider, storage, { organizationId: ORG, messageId: a })).toBeNull();
+    // Otro envío del vendedor con el mismo video: sí sale otra vez.
+    const [b] = await queue([await mm.multimediaToSend(ORG, "instalacion", "envio-2")], [null]);
+    expect(b).not.toBe(a);
+    await send.sendQueuedChatUpload(provider, storage, { organizationId: ORG, messageId: b });
+    expect(sent.map((x) => [x.kind, x.fileName, x.caption ?? null])).toEqual([
+      ["video", "instalacion.mp4", "Así se instala"],
+      ["video", "instalacion.mp4", null],
+    ]);
+    // Zernio lo baja de la Biblioteca (URL firmada); nada se copió al chat.
+    expect(sent[0].url).toContain(`org/${ORG}/library/`);
+    expect([...storage.objects.keys()].some((k) => k.includes("/chat/"))).toBe(false);
+    const rows = await outs();
+    expect(rows.every((m) => m.status === "sent" && m.source === "crm" && m.sentByUserId === "u_v")).toBe(true);
+  });
+
+  it("Multimedia + Adjunta + en un envío: salen en el orden de la vista previa; la limpieza nunca toca la Biblioteca", async () => {
+    const key = await asset("tabla", "image");
+    const files = [await mm.multimediaToSend(ORG, "tabla", "envio-3"), toSend((await store("cotizacion.pdf", PDF)).token)];
+    const ids = await queue(files, ["Te mando la tabla", null]);
+    for (const id of ids) await send.sendQueuedChatUpload(provider, storage, { organizationId: ORG, messageId: id });
+    expect(order).toEqual(["archivo:tabla.png", "archivo:cotizacion.pdf"]);
+    expect(sent[0].caption).toBe("Te mando la tabla");
+    await maint.cleanupUnsentChatUploads(storage);
+    expect(storage.objects.has(key)).toBe(true);
   });
 
   it("revisión: la limpieza conserva la miniatura del PDF enviado", async () => {

@@ -24,6 +24,15 @@ export const MEDIA_LIMITS: Record<MediaKind, { maxBytes: number; mimeTypes: read
   },
 };
 
+/**
+ * Multimedia (📎 del chat, 30-sep-2026): el vendedor manda desde el chat las
+ * fotos y los videos de esta misma Biblioteca. Los documentos se quedan fuera
+ * (decisión del dueño): solo se usan en los workflows.
+ */
+export function isMultimedia(kind: MediaKind): kind is "image" | "video" {
+  return kind === "image" || kind === "video";
+}
+
 export class MediaRejectedError extends Error {
   constructor(
     readonly code: "mime" | "size" | "empty" | "name",
