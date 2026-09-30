@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { defaultStages } from "@/lib/contacts/stages";
 import { buildAdCleanerPrompt, needsAdCleaning, parseAdCleaner, stripAdMetadata } from "./filter";
-import { buildBrainSystemWithRuntime, HANDOVER_FALLBACK_TEXT, HANDOVER_TOKEN, parseBrainOutput, RUNTIME_SUFFIX } from "./brain";
+import { buildBrainSystemWithRuntime, HANDOVER_TOKEN, parseBrainOutput, RUNTIME_SUFFIX } from "./brain";
 import { FAQ_SECTION_HEADER } from "./knowledge";
 import { isInternalAgentTag } from "./tags";
 
@@ -67,8 +67,8 @@ describe("cerebro: se rige solo por el Goal y las FAQs", () => {
     });
   });
 
-  it("pase a humano sin texto: el cliente recibe el texto de respaldo (el agente siempre contesta)", () => {
-    expect(parseBrainOutput(` ${HANDOVER_TOKEN} `)).toEqual({ kind: "reply", text: HANDOVER_FALLBACK_TEXT, handover: true });
+  it("pase a humano sin texto: sin texto fijo; la red contra el silencio decide (run.ts)", () => {
+    expect(parseBrainOutput(` ${HANDOVER_TOKEN} `)).toEqual({ kind: "reply", text: "", handover: true });
   });
 
   it("vacío → empty; texto → reply", () => {

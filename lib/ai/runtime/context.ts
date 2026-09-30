@@ -159,6 +159,49 @@ export async function answerRunInFlight(organizationId: string, conversationId: 
 }
 
 /**
+ * Red contra el silencio (29-sep-2026, dueño): ¿ya le salió algo al cliente DESPUÉS de su
+ * último mensaje (un workflow por palabra clave, media, texto), o está por salirle una corrida
+ * por palabra clave de estos entrantes? Si sí, que el Agente IA no escriba nada es correcto
+ * (p. ej. «Precio 2» ya contestó y terminó con su pregunta). Mismos salientes que el candado
+ * anti-repetición (sin fallidos ni notas internas), pero con o sin texto.
+ */
+export async function sentToClientSinceLastInbound(organizationId: string, conversationId: string, triggerIds: readonly string[]): Promise<boolean> {
+  const [out] = await db
+    .select({ id: messages.id })
+    .from(messages)
+    .where(
+      and(
+        inConversation(organizationId, conversationId),
+        eq(messages.direction, "out"),
+        ne(messages.status, "failed"),
+        ne(messages.type, "system_note"),
+        sql`${waAt} > coalesce((
+          select max(coalesce(i.sent_at, i.created_at)) from messages i
+          where i.organization_id = ${organizationId} and i.conversation_id = ${conversationId}
+            and i.direction = 'in' and i.imported_at is null
+        ), '-infinity'::timestamp)`,
+      ),
+    )
+    .limit(1);
+  if (out) return true;
+  if (triggerIds.length === 0) return false;
+  const [run] = await db
+    .select({ id: workflowRuns.id })
+    .from(workflowRuns)
+    .where(
+      and(
+        eq(workflowRuns.organizationId, organizationId),
+        eq(workflowRuns.conversationId, conversationId),
+        eq(workflowRuns.trigger, "keyword"),
+        inArray(workflowRuns.status, ["queued", "running", "done"]),
+        inArray(workflowRuns.triggerMessageId, [...triggerIds]),
+      ),
+    )
+    .limit(1);
+  return Boolean(run);
+}
+
+/**
  * Textos que ya salieron al cliente DESPUÉS de su último mensaje (candado
  * anti-repetición, 28-sep-2026, lib/messaging/repeat): salientes que no fallaron (en
  * camino también), sin avisos internos, incluidos los de los workflows. El historial
