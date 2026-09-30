@@ -125,6 +125,25 @@ describe.skipIf(!TEST_DATABASE_URL)("biblioteca de media", () => {
     expect(ok.kind).toBe("video");
   });
 
+  it("miniatura: se guarda una sola vez, solo en la organización dueña y en archivos vivos; llega en la lista", async () => {
+    const jpeg = Buffer.from([0xff, 0xd8, 0xff, 0xe0, 0, 0x10, 0x4a, 0x46, 0x49, 0x46]).toString("base64");
+    const otra = Buffer.from([0xff, 0xd8, 0xff, 0xdb, 1, 2, 3]).toString("base64");
+    const asset = await upload(1_000);
+    expect(asset.thumbUrl).toBeNull();
+    expect(await svc.saveMediaThumbnail(otherOrg, asset.id, jpeg)).toBe(false);
+    expect(await svc.saveMediaThumbnail(org, asset.id, jpeg)).toBe(true);
+    // Dos navegadores a la vez: la segunda no pisa la primera.
+    expect(await svc.saveMediaThumbnail(org, asset.id, otra)).toBe(false);
+    const [listed] = await svc.listMediaAssets(org);
+    expect(listed.thumbUrl).toBe(`data:image/jpeg;base64,${jpeg}`);
+    const borrado = await upload(500, "image/png", "otra.png");
+    await svc.deleteMediaAsset(org, borrado.id);
+    expect(await svc.saveMediaThumbnail(org, borrado.id, jpeg)).toBe(false);
+    // Lo que no es un JPEG chico no se guarda.
+    const nuevo = await upload(200, "image/png", "nueva.png");
+    await expect(svc.saveMediaThumbnail(org, nuevo.id, Buffer.from("<svg/>").toString("base64"))).rejects.toBeInstanceOf(rules.MediaRejectedError);
+  });
+
   it("la URL firmada sale del storage con el nombre del archivo", async () => {
     const asset = await upload(10);
     const row = await svc.loadMediaAsset(org, asset.id);

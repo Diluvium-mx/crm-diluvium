@@ -5,12 +5,14 @@
 // renombra o borra allá se ve aquí la próxima vez que se abre—. Tocar uno lo
 // agrega a la vista previa de la caja (o lo quita); el número es el orden en
 // que sale. No se sube nada: sale del bucket igual que en un workflow.
-import { useEffect, useState } from "react";
+// Sin espera (30-sep-2026): la lista sale de memoria (use-multimedia-assets.ts) y cada cuadro usa la
+// miniatura chica que viene en la ficha; solo sin miniatura se carga el archivo como antes.
+import { useState } from "react";
 import { ImagePlay, Image as ImageIcon, Video, X } from "lucide-react";
-import { getMultimediaAssets } from "@/lib/actions/media-library";
 import type { MediaAssetView } from "@/lib/media-library/service";
 import { normalizeForSearch } from "@/lib/snippets/slash";
 import { CloseX } from "@/components/ui/close-x";
+import { useMultimediaAssets } from "./use-multimedia-assets";
 
 type Filter = "todo" | "image" | "video";
 
@@ -19,8 +21,11 @@ function Thumb({ asset }: { asset: MediaAssetView }) {
   const Icon = asset.kind === "video" ? Video : ImageIcon;
   return (
     <span aria-hidden="true" className="relative block aspect-square w-full overflow-hidden bg-muted">
-      {/* <img>/<video> a propósito: la ruta redirige a una URL firmada del bucket privado. */}
-      {asset.kind === "image" ? (
+      {/* <img>/<video> a propósito: la miniatura es un data URL; sin ella, la ruta redirige a una URL firmada del bucket privado. */}
+      {asset.thumbUrl ? (
+        // eslint-disable-next-line @next/next/no-img-element
+        <img src={asset.thumbUrl} alt="" className="size-full object-cover" />
+      ) : asset.kind === "image" ? (
         // eslint-disable-next-line @next/next/no-img-element
         <img src={src} alt="" loading="lazy" className="size-full object-cover" />
       ) : (
@@ -44,24 +49,9 @@ export function MultimediaPicker({
   onToggle: (asset: MediaAssetView) => void;
   onClose: () => void;
 }) {
-  const [assets, setAssets] = useState<MediaAssetView[] | null>(null);
-  const [error, setError] = useState<string | null>(null);
+  const { assets, error } = useMultimediaAssets();
   const [query, setQuery] = useState("");
   const [filter, setFilter] = useState<Filter>("todo");
-
-  useEffect(() => {
-    let alive = true;
-    getMultimediaAssets()
-      .then((list) => {
-        if (alive) setAssets(list);
-      })
-      .catch(() => {
-        if (alive) setError("No se pudo abrir la Biblioteca.");
-      });
-    return () => {
-      alive = false;
-    };
-  }, []);
 
   const q = normalizeForSearch(query.trim());
   const visible = (assets ?? []).filter((a) => (filter === "todo" || a.kind === filter) && (!q || normalizeForSearch(a.title).includes(q)));
