@@ -6,7 +6,8 @@
 import { useRef, useState } from "react";
 import { Trash2, Upload } from "lucide-react";
 import { TopConfirm } from "@/components/ui/top-confirm";
-import { deleteMediaAssetAction, renameMediaAssetAction } from "@/lib/actions/media-library";
+import { deleteMediaAssetAction, renameMediaAssetAction, saveMediaThumbnailAction } from "@/lib/actions/media-library";
+import { makeThumbnail } from "@/lib/media-library/make-thumbnail";
 import type { MediaAssetView } from "@/lib/media-library/service";
 import { MEDIA_LIMITS, validateUpload } from "@/lib/media-library/rules";
 import { formatBytes } from "./labels";
@@ -29,7 +30,16 @@ export async function uploadAsset(file: File, title: string): Promise<{ ok: true
   });
   const json = (await res.json().catch(() => null)) as { asset?: MediaAssetView; error?: string } | null;
   if (!res.ok || !json?.asset) return { ok: false, error: json?.error ?? `No se pudo subir (${res.status}).` };
-  return { ok: true, asset: json.asset };
+  const asset = json.asset;
+  // Miniatura para Multimedia (30-sep-2026), sola y con el archivo que ya está en el equipo: no se
+  // descarga nada. Si falla, la hace Multimedia la primera vez que se abra.
+  if (asset.kind !== "document") {
+    const thumb = await makeThumbnail(file, asset.kind);
+    if (thumb && (await saveMediaThumbnailAction({ assetId: asset.id, jpegBase64: thumb }).catch(() => ({ ok: false }))).ok) {
+      return { ok: true, asset: { ...asset, thumbUrl: `data:image/jpeg;base64,${thumb}` } };
+    }
+  }
+  return { ok: true, asset };
 }
 
 export function AssetPreview({ asset, className = "" }: { asset: MediaAssetView; className?: string }) {
