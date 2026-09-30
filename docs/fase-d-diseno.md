@@ -542,7 +542,8 @@ Corregido de inmediato (escenario real):
 - **Silencio del agente**: la media de una corrida del AGENTE (espera de 30 s de la tabla) cerraba los
   pendientes y lo que el cliente escribía mientras tanto quedaba sin respuesta; el id del mensaje se
   anota en la corrida ANTES de mandarlo (ventana de 1 s); solo llamadas sin texto ya no lanza (cada
-  reintento era otra llamada pagada) y, si ninguna acción manda nada, sale un texto de respaldo del CRM.
+  reintento era otra llamada pagada) y, si ninguna acción manda nada, sale un texto de respaldo del CRM
+  (**ya no desde el 30-sep-2026**: red contra el silencio, `docs/agente-ia.md`).
 - **Comprobante**: sin foto reciente (desde el último pago, tope 24 h) se pide la foto en vez de mandar
   el "pago recibido" del modelo; la misma referencia reenviada en la MISMA conversación responde "ya lo
   tenemos registrado" sin acusar; un anticipo cuyo workflow está deshabilitado no se registra; argumento
@@ -685,6 +686,8 @@ conservan `fijar_cotizacion` y las `wf_<slug>` de los 9 workflows de media.
   del agente son idempotentes por entrante (`workflow_runs.trigger_message_id`, índice único). Si el
   modelo solo devolvió acciones y ninguna manda nada al cliente, sale un texto de respaldo por motivo
   (comprobante dudoso → "un asesor lo revisa"; pase a humano → "en un momento te atiende un asesor").
+  **Reemplazado el 30-sep-2026** por la red contra el silencio (`docs/agente-ia.md`): el CRM ya no escribe
+  textos fijos; escribe el otro modelo o el vendedor recibe el aviso `sin_respuesta`.
 - **Sin cadenas:** la regla `/banco → Cerca de compra` no dispara workflows "al entrar a la etapa";
   una etapa movida por el agente dispara corridas `agent` (releen su estado) y excluye la media que
   ya salió en esa misma respuesta. Un vendedor que mueve la etapa a mano después del entrante que

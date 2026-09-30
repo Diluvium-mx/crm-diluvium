@@ -23,6 +23,10 @@ export type UsageOutcome =
   // 27-sep-2026: el Modelo 1 contestó, pero con su respuesta el contacto pasa a una etapa
   // del Modelo 2 y esa respuesta la escribe el Modelo 2 (la del Modelo 1 no se envía).
   | "traspaso"
+  // 29-sep-2026 (red contra el silencio): el modelo contestó solo con acciones, sin texto para
+  // el cliente, y nadie le había contestado: escribe otro modelo (o, si ninguno, aviso al
+  // vendedor). No es resultado final: el final lo deja la respuesta que sí se usó.
+  | "sin_texto"
   | "error"
   | "transcrita"
   | "transcripcion_fallida"
