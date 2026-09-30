@@ -149,6 +149,14 @@ clic abre un menú para cambiarla sin abrir el chat. Lista y panel quedan sincro
   IA) o con "Marcar como leído" (clic derecho o el botón del pop-up, a la derecha del nombre). Abrir el
   chat solo apaga el círculo. **Amarillo** (gana) = aviso del agente sin respuesta humana posterior;
   "Marcar como leído" no lo apaga. Código: `lib/contacts/funnel-signals.ts`, `funnel-tone.ts`.
+- **No leído por columna (30-sep-2026, dueño):** píldora con un sobre junto al contador de cada columna
+  (mismo alto que el contador, sin texto). Prendida (naranja) la columna deja solo las tarjetas con
+  algo pendiente: círculo naranja, azul **o** amarilla (`needsAttention` en `funnel-tone.ts`: "cualquier
+  mensaje no leído o no contestado"); el contador cuenta solo esas. Más amplio que la pestaña "No
+  leído" de la Bandeja (solo `unread_count > 0`). Cada columna por su lado, se suma a buscador, lupa y
+  filtro, no se recuerda al recargar. Tenue = la columna no tiene pendientes. Todo en el navegador con
+  las señales en vivo (sin consulta nueva); la tarjeta abierta desde el tablero se queda hasta cerrar
+  el pop-up (`keptContactId`), aunque abrirla o «Marcar como leído» la apague.
 - La luz del cursor sobre la tarjeta es **gris** (`[data-funnel-card]`): antes era el mismo azul del
   "por contestar" y una tarjeta bajo el mouse parecía pendiente.
 - **Orden de cada columna:** de más reciente a más viejo por lo último entre "entró a la etapa"
