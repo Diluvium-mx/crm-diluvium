@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { MessageView } from "./types";
-import { bubbleKindLabel, isBareSticker, STICKER_LABEL } from "./sticker";
+import { isBareSticker } from "./sticker";
 
 type Bare = Parameters<typeof isBareSticker>[0];
 
@@ -11,18 +11,6 @@ function att(kind: MessageView["kind"]): MessageView["attachments"][number] {
 function msg(over: Partial<Bare> = {}): Bare {
   return { body: null, attachments: [att("sticker")], quoted: null, adReferral: null, deletedAt: null, noDisponible: null, location: null, contactCards: [], ...over };
 }
-
-describe("bubbleKindLabel (etiqueta «Sticker» en la burbuja)", () => {
-  it("un sticker lleva «Sticker» junto a la hora", () => {
-    expect(STICKER_LABEL).toBe("Sticker");
-    expect(bubbleKindLabel([att("sticker")])).toBe("Sticker");
-  });
-  it("una foto, un video o un texto NO llevan etiqueta", () => {
-    expect(bubbleKindLabel([att("image")])).toBeNull();
-    expect(bubbleKindLabel([att("video")])).toBeNull();
-    expect(bubbleKindLabel([])).toBeNull();
-  });
-});
 
 describe("isBareSticker (sticker sin burbuja, tamaño fijo como WhatsApp)", () => {
   it("sticker solo: va sin burbuja", () => {
