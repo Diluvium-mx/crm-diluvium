@@ -11,12 +11,17 @@
 // Adjuntos (28-sep-2026): 📎 abre el selector, Cmd+V pega una foto o captura y
 // arriba de la caja va la vista previa; el texto, si hay, sale como pie del
 // PRIMER archivo. Enviar espera a que todos terminen de subir.
+// 📎 con menú (30-sep-2026): «Adjunta +» (archivos del equipo) y «Multimedia»
+// (fotos y videos de la Biblioteca; entran a la misma vista previa ya listos).
 // La caja empieza con 2 renglones y crece sola desde el 3.º (28-sep-2026: lo
 // escrito se perdía arriba); pasado el tope (max-h) se desliza por dentro.
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
-import { Clock, Paperclip, Play, Zap } from "lucide-react";
+import { Clock, Play, Zap } from "lucide-react";
 import { CHAT_CAPTION_MAX } from "@/lib/chat-attachments/rules";
+import type { ChatSendItem } from "@/lib/inbox/attachment-actions";
+import { AttachMenu } from "./attach-menu";
 import { AttachmentTray } from "./attachment-tray";
+import { MultimediaPicker } from "./multimedia-picker";
 import type { ChatAttachments } from "./use-chat-attachments";
 import { useSession } from "@/lib/auth/client";
 import { listSnippets } from "@/lib/actions/snippets";
@@ -74,7 +79,7 @@ export function Composer({
   attachments: ChatAttachments;
   /** Abre el selector de archivos (📎). */
   onPickFiles: () => void;
-  onSendAttachments: (tokens: string[], caption: string) => Promise<{ ok: true } | { ok: false; message: string }>;
+  onSendAttachments: (items: ChatSendItem[], caption: string, sendId: string) => Promise<{ ok: true } | { ok: false; message: string }>;
 }) {
   // Móvil: placeholder corto (en el celular no hay Shift+Enter que explicar).
   const isMobile = useIsMobile();
@@ -88,6 +93,9 @@ export function Composer({
   const [scheduleOpen, setScheduleOpen] = useState(false);
   // ▶ Automatizaciones (solo móvil): lista de workflows para mandar con un toque.
   const [workflowsOpen, setWorkflowsOpen] = useState(false);
+  // 📎: menú de dos opciones y, de ahí, Multimedia (la Biblioteca).
+  const [attachMenuOpen, setAttachMenuOpen] = useState(false);
+  const [multimediaOpen, setMultimediaOpen] = useState(false);
   const [snippets, setSnippets] = useState<SnippetView[] | null>(null);
   const [snippetsError, setSnippetsError] = useState(false);
   // Comandos de Automatización (Fase D): "/tabla", "/banco"… se listan bajo los
@@ -168,6 +176,13 @@ export function Composer({
     return () => observer.disconnect();
   }, [windowOpen]);
 
+  const closeAttachMenu = () => setAttachMenuOpen(false);
+  // Lugar de cada archivo de la Biblioteca en la vista previa (el número que se ve en Multimedia).
+  const selectedAssets = new Map<string, number>();
+  attachments.items.forEach((it, i) => {
+    if (it.assetId) selectedAssets.set(it.assetId, i + 1);
+  });
+
   function fill(body: string): string {
     return sellerName ? renderSnippet(body, { vendedor: sellerName }) : body;
   }
@@ -211,16 +226,17 @@ export function Composer({
   // Con archivos: salen uno por mensaje, en el orden de la vista previa; el texto va como pie del primero.
   async function submitFiles() {
     if (!canSend) return;
-    const tokens = attachments.items.flatMap((it) => (it.token ? [it.token] : []));
+    const items = attachments.items.flatMap((it): ChatSendItem[] => (it.assetId ? [{ assetId: it.assetId }] : it.token ? [{ token: it.token }] : []));
     setSendingFiles(true);
     setSendError(null);
     try {
-      const result = await onSendAttachments(tokens, draft);
+      const result = await onSendAttachments(items, draft, attachments.sendId());
       if (!result.ok) {
         setSendError(result.message);
         return;
       }
       attachments.clear();
+      setMultimediaOpen(false);
       updateDraft("", 0);
     } catch {
       // Sesión vencida, red caída o un deploy a la mitad: el botón no se queda trabado.
@@ -294,6 +310,7 @@ export function Composer({
       {scheduleForm}
       {snippetOpen && <SnippetPicker onInsert={appendFragment} onClose={() => setSnippetOpen(false)} />}
       {workflowsOpen && <WorkflowPicker onRun={runCommand} onClose={() => setWorkflowsOpen(false)} />}
+      {multimediaOpen && <MultimediaPicker selected={selectedAssets} onToggle={attachments.toggleLibrary} onClose={() => setMultimediaOpen(false)} />}
       {templateOpen && (
         <div className="mb-2">
           <TemplatePicker
@@ -413,6 +430,7 @@ export function Composer({
             setSnippetOpen((open) => !open);
             setTemplateOpen(false);
             setWorkflowsOpen(false);
+            setMultimediaOpen(false);
           }}
           aria-label="Insertar mensaje rápido"
           aria-expanded={snippetOpen}
@@ -429,6 +447,7 @@ export function Composer({
             setTemplateOpen((open) => !open);
             setSnippetOpen(false);
             setWorkflowsOpen(false);
+            setMultimediaOpen(false);
           }}
           aria-label="Enviar plantilla"
           aria-expanded={templateOpen}
@@ -439,15 +458,20 @@ export function Composer({
         >
           <span aria-hidden="true">📄</span>
         </button>
-        <button
-          type="button"
-          onClick={onPickFiles}
-          aria-label="Adjuntar archivos"
-          title="Adjuntar fotos, videos o documentos"
-          className="order-1 rounded-md border px-2.5 py-2 text-brand-navy transition-colors hover:bg-brand-navy/10 sm:order-none dark:text-sky-300"
-        >
-          <Paperclip className="size-4" aria-hidden="true" />
-        </button>
+        <AttachMenu
+          open={attachMenuOpen}
+          onToggle={() => setAttachMenuOpen((open) => !open)}
+          onClose={closeAttachMenu}
+          onPickFiles={onPickFiles}
+          onMultimedia={() => {
+            setMultimediaOpen(true);
+            setSnippetOpen(false);
+            setTemplateOpen(false);
+            setWorkflowsOpen(false);
+            setScheduleOpen(false);
+          }}
+          className="order-1 sm:order-none"
+        />
         {/* ▶ Automatizaciones: SOLO móvil (md:hidden). Manda un workflow con un toque; en
             escritorio se escribe su comando con "/". */}
         <button
@@ -456,6 +480,7 @@ export function Composer({
             setWorkflowsOpen((open) => !open);
             setSnippetOpen(false);
             setTemplateOpen(false);
+            setMultimediaOpen(false);
           }}
           aria-label="Automatizaciones"
           aria-expanded={workflowsOpen}
@@ -541,6 +566,7 @@ export function Composer({
             setSnippetOpen(false);
             setTemplateOpen(false);
             setWorkflowsOpen(false);
+            setMultimediaOpen(false);
           }}
           // Programar no lleva adjuntos por ahora (28-sep-2026).
           disabled={hasFiles}

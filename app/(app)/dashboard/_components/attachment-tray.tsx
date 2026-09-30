@@ -3,7 +3,8 @@
 // Vista previa de los adjuntos arriba de la caja de escribir (28-sep-2026): por
 // archivo, miniatura (foto o primer cuadro del video) o ícono del tipo, nombre,
 // peso, barra de subida y ✕ para quitarlo. Solo muestra: la lógica vive en
-// use-chat-attachments.ts.
+// use-chat-attachments.ts. Los de la Biblioteca (Multimedia) no se suben: sin
+// barra, con su número de orden (el mismo que se ve en Multimedia).
 import { FileSpreadsheet, FileText, Presentation, X } from "lucide-react";
 import { extensionOf, formatBytes } from "@/lib/chat-attachments/rules";
 import type { AttachmentItem } from "./use-chat-attachments";
@@ -35,6 +36,7 @@ function Thumb({ item }: { item: AttachmentItem }) {
 }
 
 function statusLine(item: AttachmentItem): string {
+  if (item.assetId) return `Biblioteca · ${formatBytes(item.size)}`;
   if (item.state === "converting") return "Convirtiendo a JPG…";
   if (item.state === "uploading") return `Subiendo… ${Math.round(item.progress * 100)}%`;
   if (item.state === "ready") return formatBytes(item.size);
@@ -44,16 +46,26 @@ function statusLine(item: AttachmentItem): string {
 export function AttachmentTray({ items, onRemove }: { items: AttachmentItem[]; onRemove: (id: string) => void }) {
   if (items.length === 0) return null;
   return (
-    <ul aria-label="Archivos adjuntos" className="mb-2 flex flex-wrap gap-2 pb-1 md:flex-nowrap md:overflow-x-auto">
-      {items.map((item) => (
+    // Celular: hacia abajo, con tope de dos renglones (se desliza por dentro, nunca de lado): con
+    // varios archivos, la caja para escribir y Enviar no se salen de la pantalla.
+    <ul aria-label="Archivos adjuntos" className="mb-2 flex max-h-32 flex-wrap gap-2 overflow-y-auto pb-1 md:max-h-none md:flex-nowrap md:overflow-x-auto">
+      {items.map((item, index) => (
         <li
           key={item.id}
           className={`relative flex w-60 shrink-0 items-center gap-2 rounded-lg border bg-background p-1.5 pr-7 ${
             item.state === "error" ? "border-red-400/70" : ""
           }`}
         >
-          <div className="size-12 shrink-0 overflow-hidden rounded-md border">
+          <div className="relative size-12 shrink-0 overflow-hidden rounded-md border">
             <Thumb item={item} />
+            {items.length > 1 && (
+              <span
+                aria-label={`Sale en el lugar ${index + 1}`}
+                className="absolute top-0.5 left-0.5 flex size-4 items-center justify-center rounded-full bg-brand-orange text-[10px] font-semibold text-brand-white"
+              >
+                {index + 1}
+              </span>
+            )}
           </div>
           <div className="min-w-0 flex-1">
             <p className="truncate text-xs font-medium" title={item.name}>
@@ -62,7 +74,7 @@ export function AttachmentTray({ items, onRemove }: { items: AttachmentItem[]; o
             <p className={`text-[11px] ${item.state === "error" ? "line-clamp-3 text-red-600 dark:text-red-400" : "truncate text-muted-foreground"}`} title={statusLine(item)}>
               {item.state === "ready" || item.state === "error" ? statusLine(item) : `${formatBytes(item.size)} · ${statusLine(item)}`}
             </p>
-            {item.state !== "error" && (
+            {item.state !== "error" && !item.assetId && (
               <div
                 className="mt-1 h-1 overflow-hidden rounded-full bg-muted"
                 role="progressbar"
