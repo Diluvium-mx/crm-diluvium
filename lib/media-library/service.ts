@@ -8,7 +8,7 @@ import { and, desc, eq, isNull } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { mediaAssets, workflowSteps } from "@/lib/db/schema/automation";
 import type { ObjectStorage } from "@/lib/storage/s3";
-import { assetStorageKey, MEDIA_LIMITS, MediaRejectedError, validateUpload } from "./rules";
+import { assetStorageKey, MEDIA_LIMITS, MediaRejectedError, validateThumbnail, validateUpload } from "./rules";
 
 export type MediaAssetView = {
   id: string;
@@ -18,6 +18,8 @@ export type MediaAssetView = {
   mimeType: string;
   bytes: number;
   createdAt: string;
+  /** Miniatura chica (data URL JPEG) o null si aún no hay: Multimedia la muestra sin descargar el archivo. */
+  thumbUrl: string | null;
 };
 
 export const ASSET_URL_SECONDS = 300;
@@ -31,6 +33,7 @@ function toView(row: typeof mediaAssets.$inferSelect): MediaAssetView {
     mimeType: row.mimeType,
     bytes: row.bytes,
     createdAt: row.createdAt.toISOString(),
+    thumbUrl: row.thumbnail ? `data:image/jpeg;base64,${row.thumbnail}` : null,
   };
 }
 
@@ -144,6 +147,21 @@ export async function renameMediaAsset(organizationId: string, assetId: string, 
     .where(and(eq(mediaAssets.id, assetId), eq(mediaAssets.organizationId, organizationId), isNull(mediaAssets.deletedAt)))
     .returning({ id: mediaAssets.id });
   if (rows.length === 0) throw new Error("Archivo no encontrado en esta organización.");
+}
+
+/**
+ * Guarda la miniatura que hizo el navegador (al subir, o la primera vez que se abre Multimedia).
+ * Solo si el archivo es de ESTA organización, sigue vivo y aún no tiene: dos navegadores que la
+ * hagan a la vez no se pisan. Devuelve si quedó guardada.
+ */
+export async function saveMediaThumbnail(organizationId: string, assetId: string, base64: string): Promise<boolean> {
+  const thumbnail = validateThumbnail(base64);
+  const rows = await db
+    .update(mediaAssets)
+    .set({ thumbnail })
+    .where(and(eq(mediaAssets.id, assetId), eq(mediaAssets.organizationId, organizationId), isNull(mediaAssets.deletedAt), isNull(mediaAssets.thumbnail)))
+    .returning({ id: mediaAssets.id });
+  return rows.length > 0;
 }
 
 export class MediaInUseError extends Error {}

@@ -240,6 +240,17 @@ siempre) y **Multimedia** (`multimedia-picker.tsx`). Soltar archivos y Cmd+V sig
   por vista previa, cambia al enviar o al cambiar de chat), no del archivo: la tabla o el video se pueden mandar
   cuantas veces haga falta, pero un doble clic o un reintento del mismo envío no manda doble (tampoco después de que
   el eco de WhatsApp se quedó con la burbuja: se revisa por la ruta de la burbuja, que lleva ese id).
+- **Sin espera (30-sep-2026):** antes cada cuadro bajaba el archivo completo por `/api/biblioteca/{id}` (redirección
+  a una URL firmada que cambia cada vez: nada se reusaba) y los videos de instalación tienen su índice (`moov`) al
+  final, así que el navegador pedía cada video 3 veces para pintar un cuadro. Ahora cada archivo tiene una
+  **miniatura** JPEG 240×240 (~3–15 KB, `media_assets.thumbnail`, migración 0052) que llega CON la lista; la lista se
+  pide al abrir el 📎 y se guarda en memoria mientras la página esté abierta (`use-multimedia-assets.ts`): reabrir
+  Multimedia tarda ~60 ms y no descarga ningún archivo. La miniatura la hace el **navegador** (`make-thumbnail.ts`,
+  canvas; video: segundo 2, porque los de instalación empiezan en blanco) **sola al subir** el archivo a la
+  Biblioteca; a los que ya estaban se les hace la primera vez que alguien abre Multimedia (una sola vez, de uno en
+  uno, con el archivo servido por el mismo origen en `/api/biblioteca/{id}/original`: un canvas no puede leer un
+  archivo que viene directo del bucket). Se guarda solo si el archivo es de la organización, está vivo y aún no
+  tiene (`saveMediaThumbnail`); el servidor solo acepta un JPEG de hasta 64 KB.
 - **Celular:** Multimedia ocupa menos alto (36 % del chat) y la vista previa tiene tope de dos renglones (se desliza
   hacia abajo, nunca de lado): la caja y Enviar no se salen de la pantalla.
 
