@@ -74,7 +74,7 @@ describe("workflowsAsText (botón Copiar de Workflows)", () => {
   it("«Solo al inicio» se anota debajo de los disparadores (solo si hay palabra clave o Agente IA)", () => {
     const precio: WorkflowForText = { ...base, name: "Precio 2", triggerStartOnly: true, triggerCommand: "/precio2", triggerKeywords: ["precio", "costo"] };
     expect(workflowsAsText([precio], labels)).toContain(
-      "  Se dispara con: el Agente IA · comando del vendedor /precio2 · palabras clave del cliente: precio, costo\n  Solo al inicio: antes de que el Agente IA o un vendedor le contesten, una sola vez por cliente\n",
+      "  Se dispara con: el Agente IA · comando del vendedor /precio2 · palabras clave del cliente: precio, costo\n  Solo al inicio: antes de que el Agente IA o un vendedor le contesten, una sola vez por cliente y si no le salió otra respuesta de inicio\n",
     );
     const soloComando: WorkflowForText = { ...precio, triggerAgent: false, triggerKeywords: [] };
     expect(workflowsAsText([soloComando], labels)).not.toContain("Solo al inicio");
@@ -84,7 +84,7 @@ describe("workflowsAsText (botón Copiar de Workflows)", () => {
     const tabla: WorkflowForText = { ...base, triggerStartOnly: true, triggerStartOnlyAgent: false, maxSendsPerChat: 2, isAnswer: true, triggerKeywords: ["medidas"] };
     const text = workflowsAsText([tabla], labels);
     expect(text).toContain(
-      "  Solo al inicio por palabra clave; el Agente IA cuando haga falta: la palabra clave solo antes de que el Agente IA o un vendedor le contesten, una sola vez por cliente\n  Máximo por chat: 2 veces\n  El workflow es la respuesta: el Agente IA no agrega nada y espera a que el cliente conteste\n",
+      "  Solo al inicio por palabra clave; el Agente IA cuando haga falta: la palabra clave solo antes de que el Agente IA o un vendedor le contesten, una sola vez por cliente y si no le salió otra respuesta de inicio\n  Máximo por chat: 2 veces\n  El workflow es la respuesta: el Agente IA no agrega nada y espera a que el cliente conteste\n",
     );
     expect(workflowsAsText([base], labels)).not.toMatch(/Máximo por chat|es la respuesta/u);
   });

@@ -63,9 +63,10 @@ const NEW_STEP: Record<StepPayload["kind"], () => StepPayload> = {
 // Ayuda debajo de «¿Cuándo se dispara…?», según la opción elegida.
 const SCOPE_HELP: Record<StartScope, string> = {
   siempre: "Por palabra clave, una vez por cliente; el Agente IA puede usarlo en cualquier momento de la conversación.",
-  inicio: "Solo antes de que el Agente IA o un vendedor le contesten al cliente, y una sola vez por cliente: nunca se repite. El comando del vendedor sale siempre.",
+  inicio:
+    "Solo antes de que el Agente IA o un vendedor le contesten al cliente, y una sola vez por cliente: nunca se repite. Tampoco sale si al cliente ya le salió otra respuesta de inicio (otro workflow «Solo al inicio»). El comando del vendedor sale siempre.",
   inicio_palabra_clave:
-    "La palabra clave solo antes de que el Agente IA o un vendedor le contesten al cliente, una sola vez por cliente. Después lo manda el Agente IA cuando haga falta. El comando del vendedor sale siempre.",
+    "La palabra clave solo antes de que el Agente IA o un vendedor le contesten al cliente, una sola vez por cliente y si no le salió otra respuesta de inicio (otro workflow «Solo al inicio»). Después lo manda el Agente IA cuando haga falta. El comando del vendedor sale siempre.",
 };
 
 const inputClass =
