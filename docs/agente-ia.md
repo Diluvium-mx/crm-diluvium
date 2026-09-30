@@ -833,6 +833,21 @@ Decisiones del dueño:
   (`informacion_8b3c`: explicación + foto + precio + pregunta). Si «Información» no puede salir (ya salió, ya no es el
   inicio, llegó a su máximo), se decide como siempre. **Alternativa acordada si falla:** «palabras combinadas» en el
   editor (p. ej. «precio + medidas»).
+- **Una sola respuesta de inicio por cliente (30-sep-2026, decisión del dueño):** revisión de las corridas reales del
+  29–30 sep: en 7 chats salieron dos workflows de inicio seguidos porque «Solo al inicio» no contaba lo que manda otro
+  workflow (5 Tabla → «Precio 2» con la misma foto; «Información» → «Precio 2» a 2 s; «Información» → Tabla por «…checo
+  las medidas»). Ahora, si a un contacto ya le salió un workflow «Solo al inicio» (cualquiera de las dos opciones), los
+  demás «Solo al inicio» ya no salen por palabra clave (ni por el Agente IA en la opción estricta); lo siguiente lo
+  contesta el Agente IA, que sigue teniendo la Tabla como herramienta. Cuenta en cualquier conversación y aunque la otra
+  esté en cola. Motivo en Corridas: `ya_salio_otra_de_inicio` («ya le salió otra respuesta de inicio»). Se revisa al
+  elegir la palabra clave, al ofrecer herramientas, al crear la corrida y al arrancarla (`start-only.ts`,
+  `startOnlyEligible` / `startOnlyBlock`). Los workflows sin «Solo al inicio» ni cuentan ni se frenan; el comando del
+  vendedor sale siempre.
+- **Bug de la marca (arreglado el 30-sep):** si el candado anti-repetición quitaba la pregunta final de un workflow «es
+  la respuesta» (porque otro workflow de la misma ráfaga ya la había mandado igual), la marca `contestaA` se perdía: el
+  mensaje quedaba sin contestar y el Agente IA preguntaba encima (30-sep 12:31, «Hola costos»). Causa: la marca dependía
+  de que el ÚLTIMO paso saliera. Ahora marca el último mensaje que la corrida SÍ mandó (`lastSentMessageOf` en el
+  ejecutor); si no mandó nada, no hay marca y lo atiende el Agente IA.
 - Textos del dueño (aprobados, se ponen en prod con Historial): «Cuándo usarlo» de la Tabla (no escribir la lista de
   tamaños: la imagen es la referencia; con la medida del cliente, decir qué tamaño le queda) y una excepción en el Goal
   (si vuelve a pedir la tabla, mandarla con su herramienta).

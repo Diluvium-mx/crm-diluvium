@@ -59,9 +59,9 @@ export function workflowsAsText(workflows: readonly WorkflowForText[], stageLabe
       // «Solo al inicio» solo se anota cuando aplica (palabra clave o Agente IA).
       const scope = startScopeOf(w);
       if (scope === "inicio" && (w.triggerAgent || w.triggerKeywords.length > 0)) {
-        lines.push("  Solo al inicio: antes de que el Agente IA o un vendedor le contesten, una sola vez por cliente");
+        lines.push("  Solo al inicio: antes de que el Agente IA o un vendedor le contesten, una sola vez por cliente y si no le salió otra respuesta de inicio");
       } else if (scope === "inicio_palabra_clave" && w.triggerKeywords.length > 0) {
-        lines.push(`  ${START_SCOPE_LABEL.inicio_palabra_clave}: la palabra clave solo antes de que el Agente IA o un vendedor le contesten, una sola vez por cliente`);
+        lines.push(`  ${START_SCOPE_LABEL.inicio_palabra_clave}: la palabra clave solo antes de que el Agente IA o un vendedor le contesten, una sola vez por cliente y si no le salió otra respuesta de inicio`);
       }
       if (w.maxSendsPerChat) lines.push(`  Máximo por chat: ${maxSendsLabel(w.maxSendsPerChat)}`);
       if (w.isAnswer) lines.push("  El workflow es la respuesta: el Agente IA no agrega nada y espera a que el cliente conteste");
