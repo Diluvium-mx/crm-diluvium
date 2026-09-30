@@ -48,7 +48,8 @@ export const aiUsage = pgTable(
     costUsd: numeric("cost_usd", { precision: 14, scale: 8, mode: "number" }),
     // Decisión del filtro: spam | lead_no_sigue | necesita_cerebro | pasar_a_humano.
     filterDecision: text("filter_decision"),
-    // Qué pasó con la llamada: sent | draft | discarded_stale | skipped | handover | error.
+    // Qué pasó con la llamada: sent | draft | discarded_stale | skipped | handover | error
+    // | traspaso | sin_texto (29-sep-2026: solo acciones, sin texto; ver UsageOutcome).
     outcome: text("outcome"),
     error: text("error"),
     createdAt: timestamp("created_at").defaultNow().notNull(),
@@ -146,6 +147,7 @@ export const aiAgentNotices = pgTable(
     // guardia | pasar_a_humano | anti_bucle | presupuesto | tope_contacto | envio
     // | cotejar_deposito | cliente_pide_humano | comprobante_dudoso | respuesta_cortada
     // | agente_error (Fase E: el modelo falló; tarjeta con "Reintentar" y "Apagar")
+    // | sin_respuesta (29-sep-2026: ningún modelo le escribió al cliente; no pausa)
     kind: text("kind").notNull(),
     body: text("body").notNull(),
     createdAt: timestamp("created_at").defaultNow().notNull(),

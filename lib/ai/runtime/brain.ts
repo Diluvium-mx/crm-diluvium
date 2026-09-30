@@ -14,10 +14,6 @@ import { buildBrainSystem, type Faq } from "./knowledge";
 // aviso_vendedor(cliente_pide_humano). El agente sigue activo.
 export const HANDOVER_TOKEN = "[TRANSFERIR]";
 
-// Si el modelo solo devolvió la señal (sin texto para el cliente), el cliente
-// igual recibe respuesta: el agente SIEMPRE contesta.
-export const HANDOVER_FALLBACK_TEXT = "Con gusto, en un momento te atiende un asesor.";
-
 // Sufijo fijo: va DESPUÉS del Goal y las FAQs, así el prefijo largo es idéntico
 // entre llamadas y la caché del proveedor lo reutiliza. Las etapas vigentes van al
 // FINAL (solo cambian cuando alguien edita las columnas del Embudo).
@@ -47,12 +43,13 @@ export function buildBrainSystemWithRuntime(goal: string, faqs: readonly Faq[], 
 // `handover` = el agente activó la transferencia (la señal ya no va en `text`).
 export type BrainOutput = { kind: "reply"; text: string; handover: boolean } | { kind: "empty" };
 
-// Interpreta la salida del cerebro. La señal de pase a humano se quita del texto;
-// si solo venía la señal, el cliente recibe el texto de respaldo.
+// Interpreta la salida del cerebro. La señal de pase a humano se quita del texto. Si solo
+// venía la señal, el texto queda vacío: sin textos fijos del CRM (29-sep-2026, dueño), la red
+// contra el silencio de run.ts decide (otro modelo escribe o aviso al vendedor).
 export function parseBrainOutput(raw: string): BrainOutput {
   const handover = raw.includes(HANDOVER_TOKEN);
   const text = raw.split(HANDOVER_TOKEN).join("").replace(/\n{3,}/g, "\n\n").trim();
-  if (handover) return { kind: "reply", text: text || HANDOVER_FALLBACK_TEXT, handover: true };
+  if (handover) return { kind: "reply", text, handover: true };
   if (!text) return { kind: "empty" };
   return { kind: "reply", text, handover: false };
 }
