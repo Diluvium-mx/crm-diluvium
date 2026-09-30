@@ -1,5 +1,5 @@
 import { beforeAll, describe, expect, it } from "vitest";
-import { chatUploadKey, chatUploadMessageId, isChatUploadKey, safeFileName } from "./keys";
+import { chatUploadKey, chatUploadMessageId, isChatUploadKey, multimediaMessageId, safeFileName } from "./keys";
 import { CHAT_UPLOAD_MAX_AGE_MS, ChatUploadTokenError, signChatUpload, verifyChatUpload, type ChatUpload } from "./token";
 
 beforeAll(() => {
@@ -59,5 +59,11 @@ describe("llaves del bucket", () => {
     expect(chatUploadMessageId(upload.storageKey)).toBe(chatUploadMessageId(upload.storageKey));
     expect(chatUploadMessageId(upload.storageKey)).not.toBe(chatUploadMessageId(`${upload.storageKey}2`));
     expect(chatUploadMessageId(upload.storageKey)).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-5[0-9a-f]{3}-b[0-9a-f]{3}-[0-9a-f]{12}$/);
+  });
+  it("Multimedia: id por envío y archivo — el mismo envío no duplica, otro envío sí vuelve a mandar", () => {
+    expect(multimediaMessageId("envio-1", "asset_tabla")).toBe(multimediaMessageId("envio-1", "asset_tabla"));
+    expect(multimediaMessageId("envio-2", "asset_tabla")).not.toBe(multimediaMessageId("envio-1", "asset_tabla"));
+    expect(multimediaMessageId("envio-1", "asset_video")).not.toBe(multimediaMessageId("envio-1", "asset_tabla"));
+    expect(multimediaMessageId("envio-1", "asset_tabla")).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-5[0-9a-f]{3}-a[0-9a-f]{3}-[0-9a-f]{12}$/);
   });
 });
