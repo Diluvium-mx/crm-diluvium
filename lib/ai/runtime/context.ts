@@ -86,15 +86,48 @@ export const ANSWERS_UNTIL_KEY = "respondeHasta";
 // 29-sep-2026 («El workflow es la respuesta» por palabra clave): el último mensaje de la corrida
 // contesta SOLO el entrante cuyo id guarda (lib/ai/runtime/saved-reply.ts, markAnswersOnly).
 export const ANSWERS_ONLY_KEY = "contestaA";
-// Entrante contestado uno por uno por un workflow (ANSWERS_ONLY_KEY) con un saliente que no falló.
-// `alias`: la fila de `messages` evaluada (constante del código, nunca un dato).
+// 30-sep-2026 (caso «De que cd son y que precio tienen» → «Precio 2» contestó el precio y
+// nadie contestó lo de la ciudad): el workflow contesta SU parte del mensaje, no todo. Junto a
+// `contestaA` va esta marca: el entrante sigue pendiente hasta que el Agente IA lo revise y
+// conteste lo que el workflow no cubrió (o decida que no falta nada). Las marcas anteriores (sin
+// ella) siguen como antes: el workflow contestó todo.
+export const ANSWERS_ONLY_REVIEW_KEY = "revisaAgente";
+// Entrante contestado uno por uno por un workflow (ANSWERS_ONLY_KEY) con un saliente que no falló
+// y, si lleva la marca de revisión, que el Agente IA ya revisó (resultado final en ai_usage: lo
+// contestó, decidió que no faltaba nada o lo tomó un vendedor). `alias`: la fila de `messages`
+// evaluada (constante del código, nunca un dato).
 export function answeredOnlySql(alias: "messages" | "m"): SQL {
   const m = sql.raw(alias);
   return sql`exists (
     select 1 from messages a
     where a.organization_id = ${m}.organization_id and a.conversation_id = ${m}.conversation_id
       and a.direction = 'out' and a.status <> 'failed' and a.metadata->>'contestaA' = ${m}.id
+      and (not coalesce(a.metadata ? 'revisaAgente', false) or exists (
+        select 1 from ai_usage u
+        where u.organization_id = ${m}.organization_id and u.message_id = ${m}.id
+          and u.outcome in (${sql.join(FINAL_OUTCOMES.map((o) => sql`${o}`), sql`, `)})
+      ))
   )`;
+}
+
+/**
+ * Entrantes pendientes que un workflow «El workflow es la respuesta» por palabra clave ya contestó
+ * en parte y que el Agente IA todavía debe revisar (ANSWERS_ONLY_REVIEW_KEY): id del entrante →
+ * nombre del workflow. El agente contesta lo que falte del mensaje (run.ts, modo complemento).
+ */
+export async function answeredByWorkflow(organizationId: string, conversationId: string, ids: readonly string[]): Promise<Map<string, string>> {
+  if (ids.length === 0) return new Map();
+  const rows = await db.execute<{ trigger_id: string; name: string }>(sql`
+    select a.metadata->>'contestaA' as trigger_id, w.name
+    from messages a
+    join workflow_runs r on r.organization_id = a.organization_id and r.conversation_id = a.conversation_id and r.message_ids ? a.id
+    join workflows w on w.id = r.workflow_id and w.organization_id = r.organization_id
+    where a.organization_id = ${organizationId} and a.conversation_id = ${conversationId}
+      and a.direction = 'out' and a.status <> 'failed'
+      and coalesce(a.metadata ? 'revisaAgente', false)
+      and a.metadata->>'contestaA' in (${sql.join(ids.map((id) => sql`${id}`), sql`, `)})
+  `);
+  return new Map(rows.map((r) => [r.trigger_id, r.name]));
 }
 
 export async function pendingInbound(organizationId: string, conversationId: string): Promise<MessageRow[]> {
