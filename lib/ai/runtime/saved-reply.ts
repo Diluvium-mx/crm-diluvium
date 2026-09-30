@@ -145,10 +145,12 @@ export async function inboundAfter(organizationId: string, conversationId: strin
 // «El workflow es la respuesta» por palabra clave (29-sep-2026, bug de la ráfaga): su último
 // mensaje contesta SOLO el entrante que lo disparó (ANSWERS_ONLY_KEY en context.ts). Lo que el
 // cliente escribió antes en la misma ráfaga ("¿Cuánto tarda el envío?" + "Precio") sigue
-// pendiente para el Agente IA.
+// pendiente para el Agente IA. Desde el 30-sep-2026 con la marca de revisión
+// (ANSWERS_ONLY_REVIEW_KEY): el Agente IA revisa ese mismo mensaje y contesta lo que el workflow
+// no cubrió («De que cd son y que precio tienen»).
 export async function markAnswersOnly(organizationId: string, messageId: string, triggerMessageId: string): Promise<void> {
   await db.execute(sql`
-    update messages set metadata = jsonb_set(coalesce(metadata, '{}'::jsonb), '{contestaA}', to_jsonb(${triggerMessageId}::text))
+    update messages set metadata = coalesce(metadata, '{}'::jsonb) || jsonb_build_object('contestaA', ${triggerMessageId}::text, 'revisaAgente', true)
     where id = ${messageId} and organization_id = ${organizationId}
       and exists (select 1 from messages t where t.id = ${triggerMessageId} and t.organization_id = ${organizationId})
   `);
