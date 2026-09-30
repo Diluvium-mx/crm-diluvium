@@ -43,9 +43,11 @@ import { pauseForHumanReply } from "./pause";
 import { brainCandidates, brainModelForStage, handoffStage, impliedStage, type ModelSlot, type StageSignal } from "./model-by-stage";
 import { loadContactStage } from "@/lib/contacts/stage";
 import { listFunnelStages } from "@/lib/contacts/funnel-stages";
+import { complementNote, partialNote, withoutClosingQuestions } from "./complement";
 import {
   agentReplyCount,
   alreadyHandled,
+  answeredByWorkflow,
   humanOutboundCount,
   inboundCount,
   answerRunInFlight,
@@ -506,6 +508,13 @@ export async function runAgent(job: { organizationId: string; conversationId: st
     if (await answerRunInFlight(org, conv.id, pending.map((p) => p.id), now)) {
       return { kind: "reschedule", delayMs: ANSWER_RUN_POLL_MS, reason: "esperando_workflow_respuesta" };
     }
+    // Complemento (30-sep-2026, caso «De que cd son»): ese mensaje sigue pendiente hasta que el agente lo
+    // revise, porque el workflow contesta solo SU tema. Si es el último del cliente, el agente
+    // contesta lo que falte, sin repetir al workflow y sin preguntar, o no escribe nada
+    // (NOTHING_TOKEN). Si el cliente ya siguió escribiendo, se contesta como siempre.
+    const byWorkflow = await answeredByWorkflow(org, conv.id, pending.map((p) => p.id));
+    const complementOf = byWorkflow.get(lastRead.id) ?? null;
+    const workflowNote = complementOf ? complementNote(complementOf) : byWorkflow.size ? partialNote([...byWorkflow.values()][0]) : null;
     // Caso SDA (29-sep-2026, lib/messaging/unavailable.ts): el PRIMER mensaje del
     // cliente no llegó (Meta 131060, confirmado por la doble verificación). Sale el
     // texto fijo del dueño, sin llamar al modelo, con las mismas reglas que cualquier
@@ -593,7 +602,7 @@ export async function runAgent(job: { organizationId: string; conversationId: st
     const messagesFor = async (model: CatalogModel, avanzaA: string | null, nota: string | null = null) =>
       buildModelMessages(history, mediaUrls, {
         cleanText,
-        crmContext: [await crmContextFor(org, conv.contactId, stages, avanzaA), detalleContext, maxPerChatContext, nota].filter(Boolean).join("\n"),
+        crmContext: [await crmContextFor(org, conv.contactId, stages, avanzaA), detalleContext, maxPerChatContext, workflowNote, nota].filter(Boolean).join("\n"),
         ...(model.pdf ? {} : { maxPdfs: 0 }),
         ...(options.readImages ? {} : { maxImages: 0 }),
         ...(options.transcribeAudio ? {} : { voiceNotesOff: true }),
@@ -625,7 +634,10 @@ export async function runAgent(job: { organizationId: string; conversationId: st
       const latencyMs = Date.now() - t0;
       const out = parseBrainOutput(res.text);
       const { valid, ignored } = validateToolCalls(res.toolCalls ?? [], agentTools);
-      if (out.kind === "empty" && valid.length === 0) {
+      // "Nada que agregar" solo vale como complemento de un workflow; fuera de eso es respuesta vacía.
+      // En el complemento, una respuesta en blanco también (con el Goal real de staging, Luna y
+      // Sonnet a veces contestan vacío en vez de escribir la señal): el workflow ya contestó.
+      if (out.kind !== "reply" && !complementOf && valid.length === 0) {
         await recordAiUsage({ ...base, stage: "cerebro", modelId: res.modelId, provider: res.provider, usage: res.usage, latencyMs, outcome: "error", error: `respuesta_vacia (${res.finishReason})` });
         return { ok: false, model, info: EMPTY_RESPONSE_INFO };
       }
@@ -872,7 +884,14 @@ export async function runAgent(job: { organizationId: string; conversationId: st
     // Candado anti-repetición (28-sep-2026): una burbuja IDÉNTICA a algo que ya salió
     // después del último mensaje del cliente (p. ej. la pregunta de un workflow) no sale
     // otra vez; si no queda ninguna, es como una respuesta de solo acciones.
-    const drafted = text.trim() ? toBubbles(text, options.maxBubbles) : [];
+    // Complemento de un workflow (30-sep-2026): sin preguntas; ahora le toca contestar al cliente
+    // (la pregunta del workflow, si la hizo, queda como la última).
+    const { keep: drafted, dropped: questions } = text.trim()
+      ? complementOf
+        ? withoutClosingQuestions(toBubbles(text, options.maxBubbles))
+        : { keep: toBubbles(text, options.maxBubbles), dropped: [] }
+      : { keep: [], dropped: [] };
+    if (questions.length) console.info(`[agente] ${conv.id}: complemento de «${complementOf}» sin preguntas; no sale: «${questions.join(" / ")}»`);
     const { keep: bubbles, dropped: repeated } = drafted.length
       ? splitRepeated(drafted, await outboundTextsSinceLastInbound(org, conv.id))
       : { keep: [], dropped: [] };
@@ -994,6 +1013,8 @@ export async function runAgent(job: { organizationId: string; conversationId: st
     const omitted = bubbles.length - sent;
     const note = [
       unconfirmed ? `${unconfirmed} mensaje(s) sin confirmar${omitted ? `; ${omitted} sin enviar (aviso)` : ""}` : null,
+      complementOf ? `complemento de «${complementOf}»${out.kind !== "reply" ? ": nada que agregar" : ""}` : null,
+      questions.length ? `sin preguntas en el complemento; no salió: «${questions.join(" / ")}»` : null,
       repeated.length ? `no se repitió lo que ya salió: «${repeated.join(" / ")}»` : null,
       withheld ? `el workflow es la respuesta; no salió el texto del modelo: «${withheld.slice(0, 300)}»` : null,
       silencio === "contestado" ? "sin texto: ya le había salido algo al cliente después de su último mensaje" : null,
