@@ -41,3 +41,16 @@ export function chatUploadMessageId(storageKey: string): string {
   const h = createHash("sha256").update(`chat-upload:${storageKey}`).digest("hex");
   return `${h.slice(0, 8)}-${h.slice(8, 12)}-5${h.slice(13, 16)}-b${h.slice(17, 20)}-${h.slice(20, 32)}`;
 }
+
+/**
+ * Id del mensaje de un archivo de la Biblioteca mandado desde Multimedia
+ * (30-sep-2026). El archivo de la Biblioteca es el MISMO en cada envío (la
+ * tabla o el video se mandan muchas veces), así que el id no puede salir del
+ * archivo como arriba: sale del envío (`sendId`, uno por cada vez que el
+ * vendedor arma la vista previa) y del archivo. Un doble clic o un reintento
+ * del mismo envío no crea otra burbuja; el siguiente envío sí manda de nuevo.
+ */
+export function multimediaMessageId(sendId: string, assetId: string): string {
+  const h = createHash("sha256").update(`multimedia:${sendId}:${assetId}`).digest("hex");
+  return `${h.slice(0, 8)}-${h.slice(8, 12)}-5${h.slice(13, 16)}-a${h.slice(17, 20)}-${h.slice(20, 32)}`;
+}

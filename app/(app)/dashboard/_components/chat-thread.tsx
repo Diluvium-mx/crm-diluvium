@@ -7,7 +7,7 @@ import { useFunnelStages } from "../../_components/funnel-stages-provider";
 import { listChatMatches, listMessages, retryMessage, sendMessage, sendTemplate } from "@/lib/inbox/actions";
 import { runWorkflowCommand } from "@/lib/actions/workflows";
 import { parseCommand } from "@/lib/workflows/steps";
-import { sendAttachments } from "@/lib/inbox/attachment-actions";
+import { sendAttachments, type ChatSendItem } from "@/lib/inbox/attachment-actions";
 import { attachmentAcceptAttr } from "@/lib/chat-attachments/rules";
 import { Composer } from "./composer";
 import { ChatDropZone } from "./chat-drop-zone";
@@ -657,10 +657,10 @@ export function ChatThread({
     }
   }
 
-  // Los archivos ya subieron; la acción deja las burbujas en cola y el worker las manda en orden.
-  async function doSendAttachments(tokens: string[], caption: string): Promise<{ ok: true } | { ok: false; message: string }> {
+  // Los archivos ya subieron (o son de la Biblioteca); la acción deja las burbujas en cola y el worker las manda en orden.
+  async function doSendAttachments(items: ChatSendItem[], caption: string, sendId: string): Promise<{ ok: true } | { ok: false; message: string }> {
     forceBottomRef.current = true;
-    const result = await sendAttachments(conversationId, tokens, caption);
+    const result = await sendAttachments(conversationId, items, caption, sendId);
     if (!result.ok) return result;
     void load();
     return { ok: true };

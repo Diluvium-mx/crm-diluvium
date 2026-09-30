@@ -324,8 +324,19 @@ export async function sendMediaMessage(provider: MessagingProvider, storage: Obj
   });
 }
 
-/** Un archivo que el vendedor adjuntó en el chat (ya en el bucket, comprobante verificado). */
-export type ChatUploadToSend = { storageKey: string; kind: "image" | "video" | "document"; mime: string; fileName: string; bytes: number };
+/**
+ * Un archivo que el vendedor manda desde el chat, ya en el bucket: uno que
+ * adjuntó (comprobante verificado) o uno de la Biblioteca elegido en
+ * Multimedia (30-sep-2026), que trae `messageId` (id por envío, keys.ts).
+ */
+export type ChatUploadToSend = {
+  storageKey: string;
+  kind: "image" | "video" | "document";
+  mime: string;
+  fileName: string;
+  bytes: number;
+  messageId?: string;
+};
 
 /** Marca de los adjuntos del chat en `messages.metadata`: pendiente → enviando (una sola vez). */
 export const CHAT_UPLOAD_META = "adjuntoChat";
@@ -345,7 +356,9 @@ type ChatUploadMeta = { estado: "pendiente" | "enviando"; corte?: string | null 
  * se ven (sent_at + i ms); el pie va solo en la primera. Nada sale aquí: el
  * worker los manda en orden (sendQueuedChatUpload), así la acción del vendedor
  * responde al instante aunque sean 10 archivos. Id determinista por archivo:
- * mandar dos veces el mismo archivo no crea otra burbuja.
+ * mandar dos veces el mismo archivo no crea otra burbuja. Los de la
+ * Biblioteca (Multimedia) traen su id por envío: el mismo archivo sí se puede
+ * volver a mandar en otro envío.
  */
 export async function queueChatUploads(
   provider: MessagingProvider,
@@ -354,28 +367,33 @@ export async function queueChatUploads(
   const now = params.now ?? new Date();
   const captions = params.captions.map((c) => (c?.trim() ? validText(c) : null));
   const { conversation } = await loadConversation(provider, params.organizationId, params.conversationId, now);
-  const ids = params.files.map((f) => chatUploadMessageId(f.storageKey));
+  const ids = params.files.map((f) => f.messageId ?? chatUploadMessageId(f.storageKey));
+  const urls = ids.map((id) => `/api/media/${id}/0`);
   // Corte de lectura AL HACER CLIC (no cuando el worker manda): lo que el
   // cliente escriba mientras salen los archivos sigue sin leer.
   const corte = await latestInboundMessageId(conversation.id);
   // Un archivo que ya está en una burbuja de esta conversación no se vuelve a
-  // mandar aunque su fila en cola ya no exista (el eco de WhatsApp la sustituyó).
-  const sent = await db.execute<{ k: string }>(sql`
-    select a->>'storageKey' as k from ${messages} m cross join lateral jsonb_array_elements(m.attachments) a
+  // mandar aunque su fila en cola ya no exista (el eco de WhatsApp la sustituyó
+  // y se quedó con el adjunto de la cola). Adjunto subido: por su llave (es
+  // única). Biblioteca: por la ruta de su burbuja, que lleva el id del envío
+  // (la llave es la misma en todos los envíos de ese archivo).
+  const uploadKeys = params.files.filter((f) => !f.messageId).map((f) => sql`${f.storageKey}`);
+  const libraryUrls = params.files.flatMap((f, i) => (f.messageId ? [sql`${urls[i]}`] : []));
+  const sent = await db.execute<{ k: string | null; u: string | null }>(sql`
+    select a->>'storageKey' as k, a->>'url' as u from ${messages} m cross join lateral jsonb_array_elements(m.attachments) a
     where m.organization_id = ${params.organizationId} and m.conversation_id = ${conversation.id}
       and m.created_at > ${new Date(now.getTime() - 24 * 3_600_000).toISOString()}::timestamp
-      and a->>'storageKey' in (${sql.join(
-        params.files.map((f) => sql`${f.storageKey}`),
-        sql`, `,
-      )})`);
-  const already = new Set(sent.map((r) => r.k));
+      and (${uploadKeys.length ? sql`a->>'storageKey' in (${sql.join(uploadKeys, sql`, `)})` : sql`false`}
+        or ${libraryUrls.length ? sql`a->>'url' in (${sql.join(libraryUrls, sql`, `)})` : sql`false`})`);
+  const alreadyKeys = new Set(sent.map((r) => r.k));
+  const alreadyUrls = new Set(sent.map((r) => r.u));
   await db.transaction(async (tx) => {
     for (const [i, file] of params.files.entries()) {
-      if (already.has(file.storageKey)) continue;
+      if (file.messageId ? alreadyUrls.has(urls[i]) : alreadyKeys.has(file.storageKey)) continue;
       const at = new Date(now.getTime() + i);
       const meta: ChatUploadMeta = { estado: "pendiente", corte };
       const turn: TurnMark = { estado: "espera", hasta: now.getTime() + CHAT_UPLOAD_TURN_BASE_MS + i * CHAT_UPLOAD_TURN_PER_FILE_MS, esperas: 0 };
-      const url = `/api/media/${ids[i]}/0`;
+      const url = urls[i];
       await tx
         .insert(messages)
         .values({
