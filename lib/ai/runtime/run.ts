@@ -635,7 +635,9 @@ export async function runAgent(job: { organizationId: string; conversationId: st
       const out = parseBrainOutput(res.text);
       const { valid, ignored } = validateToolCalls(res.toolCalls ?? [], agentTools);
       // "Nada que agregar" solo vale como complemento de un workflow; fuera de eso es respuesta vacía.
-      if ((out.kind === "empty" || (out.kind === "nothing" && !complementOf)) && valid.length === 0) {
+      // En el complemento, una respuesta en blanco también (con el Goal real de staging, Luna y
+      // Sonnet a veces contestan vacío en vez de escribir la señal): el workflow ya contestó.
+      if (out.kind !== "reply" && !complementOf && valid.length === 0) {
         await recordAiUsage({ ...base, stage: "cerebro", modelId: res.modelId, provider: res.provider, usage: res.usage, latencyMs, outcome: "error", error: `respuesta_vacia (${res.finishReason})` });
         return { ok: false, model, info: EMPTY_RESPONSE_INFO };
       }
@@ -1011,7 +1013,7 @@ export async function runAgent(job: { organizationId: string; conversationId: st
     const omitted = bubbles.length - sent;
     const note = [
       unconfirmed ? `${unconfirmed} mensaje(s) sin confirmar${omitted ? `; ${omitted} sin enviar (aviso)` : ""}` : null,
-      complementOf ? `complemento de «${complementOf}»${out.kind === "nothing" ? ": nada que agregar" : ""}` : null,
+      complementOf ? `complemento de «${complementOf}»${out.kind !== "reply" ? ": nada que agregar" : ""}` : null,
       questions.length ? `sin preguntas en el complemento; no salió: «${questions.join(" / ")}»` : null,
       repeated.length ? `no se repitió lo que ya salió: «${repeated.join(" / ")}»` : null,
       withheld ? `el workflow es la respuesta; no salió el texto del modelo: «${withheld.slice(0, 300)}»` : null,

@@ -1284,6 +1284,21 @@ describe.skipIf(!TEST_DATABASE_URL)("runtime del Agente IA (Postgres real)", () 
     expect((await notices()).map((n) => n.kind)).toEqual(["agente_error"]);
   });
 
+  it("complemento: una respuesta EN BLANCO (sin señal ni acciones) cuenta como «nada que agregar»: sin tarjeta ni otro intento", async () => {
+    const m1 = await msg({ direction: "in", body: "Hola buenas tardes, qué precio tienen?", at: ago(40_000) });
+    const wfId = await wf("precio_2", [{ kind: "send_text", text: "Ahorita tenemos cualquier tamaño en $5,500 con envío gratis." }, { kind: "send_text", text: PREGUNTA }], { isAnswer: true });
+    await keywordRun("run_precio", wfId, m1);
+    const zernio = fakeZernio();
+    expect(await executor.executeWorkflowRun("run_precio", execDeps(zernio))).toBe("done");
+    const { deps, calls } = makeDeps({ brain: [""] }, zernio);
+    expect(await run.runAgent(JOB, deps)).toEqual({ kind: "sent", bubbles: 0 });
+    expect(calls.filter((c) => c.kind === "cerebro")).toHaveLength(1);
+    expect(zernio.delivered).toHaveLength(2);
+    expect(await notices()).toEqual([]);
+    expect((await usage()).find((u) => u.stage === "cerebro")).toMatchObject({ messageId: m1, outcome: "sent", error: expect.stringContaining("nada que agregar") });
+    expect(await run.runAgent(JOB, makeDeps({ brain: ["x"] }, zernio).deps)).toEqual({ kind: "noop", reason: "sin_pendientes" });
+  });
+
   it("complemento: una marca VIEJA (sin revisión, antes del 30-sep) sigue contando como contestado; no se revisa historia al desplegar", async () => {
     const m1 = await msg({ direction: "in", body: "Precio", at: ago(40_000) });
     const wfId = await wf("precio_2", [{ kind: "send_text", text: PREGUNTA }], { isAnswer: true });
