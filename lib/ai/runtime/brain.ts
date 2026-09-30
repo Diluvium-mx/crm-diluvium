@@ -40,16 +40,25 @@ export function buildBrainSystemWithRuntime(goal: string, faqs: readonly Faq[], 
   return `${buildBrainSystem(goal, faqs)}\n\n${RUNTIME_SUFFIX}${line ? `\n${line}` : ""}\n\n${stagesInstructions(stages)}`;
 }
 
-// `handover` = el agente activó la transferencia (la señal ya no va en `text`).
-export type BrainOutput = { kind: "reply"; text: string; handover: boolean } | { kind: "empty" };
+// Complemento de un workflow «El workflow es la respuesta» (30-sep-2026, run.ts): el workflow ya
+// contestó el mensaje del cliente y el Agente IA revisa si falta algo. Si no falta nada, el
+// modelo escribe SOLO esta señal (el CRM no manda nada). Fuera de ese caso no se le ofrece y, si
+// apareciera sola, cuenta como respuesta vacía.
+export const NOTHING_TOKEN = "[NADA_QUE_AGREGAR]";
 
-// Interpreta la salida del cerebro. La señal de pase a humano se quita del texto. Si solo
-// venía la señal, el texto queda vacío: sin textos fijos del CRM (29-sep-2026, dueño), la red
-// contra el silencio de run.ts decide (otro modelo escribe o aviso al vendedor).
+// `handover` = el agente activó la transferencia (la señal ya no va en `text`).
+// "nothing" = el modelo dijo, con NOTHING_TOKEN, que no hay nada que agregar.
+export type BrainOutput = { kind: "reply"; text: string; handover: boolean } | { kind: "empty" } | { kind: "nothing" };
+
+// Interpreta la salida del cerebro. Las señales de pase a humano y de "nada que agregar" se
+// quitan del texto. Si solo venía la señal de pase a humano, el texto queda vacío: sin textos
+// fijos del CRM (29-sep-2026, dueño), la red contra el silencio de run.ts decide (otro modelo
+// escribe o aviso al vendedor).
 export function parseBrainOutput(raw: string): BrainOutput {
   const handover = raw.includes(HANDOVER_TOKEN);
-  const text = raw.split(HANDOVER_TOKEN).join("").replace(/\n{3,}/g, "\n\n").trim();
+  const nothing = raw.includes(NOTHING_TOKEN);
+  const text = raw.split(HANDOVER_TOKEN).join("").split(NOTHING_TOKEN).join("").replace(/\n{3,}/g, "\n\n").trim();
   if (handover) return { kind: "reply", text, handover: true };
-  if (!text) return { kind: "empty" };
+  if (!text) return nothing ? { kind: "nothing" } : { kind: "empty" };
   return { kind: "reply", text, handover: false };
 }
