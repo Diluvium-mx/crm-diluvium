@@ -27,7 +27,8 @@ export function isBareSticker(
 ): boolean {
   return (
     message.attachments.length > 0 &&
-    message.attachments.every((a) => a.kind === "sticker") &&
+    // S2: un sticker que sus bytes no confirman se ve como archivo para descargar, en burbuja normal.
+    message.attachments.every((a) => a.kind === "sticker" && (a.state !== "ready" || a.preview === "image")) &&
     !message.body?.trim() &&
     !message.quoted &&
     !message.adReferral &&

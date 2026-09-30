@@ -85,6 +85,12 @@ function Attachment({ attachment, onOpen }: { attachment: AttachmentView; onOpen
       <div className="rounded-md bg-black/5 px-3 py-2 text-xs text-muted-foreground">Procesando…</div>
     );
   }
+  // S2: foto, audio y video se muestran solo si sus bytes lo confirman
+  // (attachment.preview); si no, quedan como tarjeta para descargar.
+  const shown = attachment.kind === "sticker" ? "image" : attachment.kind;
+  if (["image", "audio", "video"].includes(shown) && attachment.preview !== shown) {
+    return <DocumentCard attachment={attachment} onOpen={onOpen} />;
+  }
   switch (attachment.kind) {
     // Sticker: cuadro fijo como en WhatsApp (512×512 transparentes, nunca recortados),
     // más chico que una foto para que no se confundan (lib/inbox/sticker.ts).

@@ -164,6 +164,16 @@ export async function sendMessage(conversationId: string, text: string): Promise
   }
 }
 
+// S2 (CN-014, "Zod en todo borde"): ids acotados y variables solo texto, con tope
+// por valor y por cantidad (un valor no texto tronaba como error genérico; uno
+// enorme se guardaba y se mandaba a Zernio).
+const templateSendInput = z.object({
+  id: z.string().min(1).max(128),
+  templateId: z.string().min(1).max(128),
+  variableValues: z.array(z.string().max(1_024)).max(50),
+});
+const TEMPLATE_INPUT_ERROR = "Los datos de la plantilla no son válidos (cada variable es texto de hasta 1,024 caracteres).";
+
 // Envía una plantilla aprobada en la conversación (para FUERA de la ventana de
 // 24 h). `variableValues` van en orden ({{1}}, {{2}}, …).
 export async function sendTemplate(
@@ -172,6 +182,9 @@ export async function sendTemplate(
   variableValues: string[],
 ): Promise<SendMessageResult> {
   const { organizationId, userId } = await requireActiveMembership();
+  const input = templateSendInput.safeParse({ id: conversationId, templateId, variableValues });
+  if (!input.success) return { ok: false, code: "template_params", message: TEMPLATE_INPUT_ERROR };
+  ({ id: conversationId, templateId, variableValues } = input.data);
   try {
     const { messageId, status } = await sendTemplateMessage(messagingProvider(), {
       organizationId,
@@ -206,6 +219,9 @@ export type StartChatResult =
 // hilo en WhatsApp con una plantilla aprobada (lib/messaging/start-conversation.ts).
 export async function startChatWithTemplate(contactId: string, templateId: string, variableValues: string[]): Promise<StartChatResult> {
   const { organizationId, userId } = await requireActiveMembership();
+  const input = templateSendInput.safeParse({ id: contactId, templateId, variableValues });
+  if (!input.success) return { ok: false, code: "template_params", message: TEMPLATE_INPUT_ERROR };
+  ({ id: contactId, templateId, variableValues } = input.data);
   try {
     const out = await startConversationWithTemplate(messagingProvider(), {
       organizationId,

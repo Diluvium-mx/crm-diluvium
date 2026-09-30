@@ -2,6 +2,7 @@
 // testearlas solas. La UI recibe ya el dato listo; no decide nada de esto.
 import type { MessageAttachment } from "@/lib/db/schema";
 import { isStoredAttachment, MEDIA_MAX_ATTEMPTS, MEDIA_SWEEP_DAYS } from "@/lib/messaging/media-keys";
+import { previewOf } from "@/lib/messaging/media-type";
 import { isAmbiguousSendError } from "@/lib/messaging/rules";
 import type { AttachmentView, MessageKind, MessageView } from "./types";
 
@@ -104,6 +105,7 @@ export function attachmentView(
     thumbnailUrl: attachment.thumbnailKey ? `/api/media/${encodeURIComponent(messageId)}/${index}?thumb=1` : null,
     sizeBytes: attachment.sizeBytes ?? null,
     pageCount: attachment.pageCount ?? null,
+    preview: state === "ready" ? previewOf(attachment.verifiedMime) : null,
   };
 }
 

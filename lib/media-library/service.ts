@@ -8,7 +8,9 @@ import { and, desc, eq, isNull } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { mediaAssets, workflowSteps } from "@/lib/db/schema/automation";
 import type { ObjectStorage } from "@/lib/storage/s3";
-import { assetStorageKey, MEDIA_LIMITS, MediaRejectedError, validateThumbnail, validateUpload } from "./rules";
+import { SNIFF_BYTES } from "@/lib/chat-attachments/sniff";
+import { peekHead } from "@/lib/storage/peek";
+import { assetStorageKey, bytesMatchMime, kindForMime, MEDIA_LIMITS, MediaRejectedError, validateThumbnail, validateUpload } from "./rules";
 
 export type MediaAssetView = {
   id: string;
@@ -99,12 +101,26 @@ export async function storeUploadedAsset(
   const title = input.title.trim().slice(0, 120) || fileName;
   const id = crypto.randomUUID();
   const key = assetStorageKey(input.organizationId, id, fileName);
+  const mimeType = input.mimeType.toLowerCase().split(";")[0].trim();
   const counter = countingStream(MEDIA_LIMITS[kind].maxBytes, kind === "video");
   input.body.on("error", (e) => counter.stream.destroy(e));
-  counter.stream.on("error", () => input.body.destroy());
+  // S2 (CN-013): antes de que el primer byte llegue al bucket, el contenido debe
+  // coincidir con el tipo declarado (el navegador puede mentir).
+  const { head, whole } = await peekHead(input.body, SNIFF_BYTES);
+  if (head.length > 0 && !bytesMatchMime(head, mimeType)) {
+    whole.destroy();
+    input.body.destroy();
+    throw new MediaRejectedError("mime", `"${fileName}" no es un archivo válido: su contenido no coincide con el tipo (${MEDIA_LIMITS[kind].label}).`);
+  }
+  whole.on("error", (e) => counter.stream.destroy(e));
+  counter.stream.on("error", () => {
+    whole.destroy();
+    input.body.destroy();
+  });
   try {
-    await storage.putStream(key, input.body.pipe(counter.stream), input.mimeType);
+    await storage.putStream(key, whole.pipe(counter.stream), mimeType);
   } finally {
+    whole.destroy();
     input.body.destroy();
   }
   if (counter.size() === 0) {
@@ -124,7 +140,7 @@ export async function storeUploadedAsset(
         kind,
         title,
         fileName,
-        mimeType: input.mimeType.toLowerCase().split(";")[0].trim(),
+        mimeType,
         bytes: counter.size(),
         sha256: counter.sha256(),
         storageKey: key,
@@ -197,8 +213,16 @@ export async function loadMediaAsset(organizationId: string, assetId: string) {
 // descargue al enviarlo. Corta vida: la firma se genera en cada uso.
 export async function mediaAssetSignedUrl(
   storage: ObjectStorage,
-  asset: { storageKey: string; fileName: string },
+  asset: { storageKey: string; fileName: string; mimeType: string },
   seconds = ASSET_URL_SECONDS,
 ): Promise<string> {
-  return storage.signedGetUrl(asset.storageKey, seconds, asset.fileName, "inline");
+  // S2: siempre con su tipo de la lista permitida (nunca el que traiga el objeto).
+  const known = kindForMime(asset.mimeType) !== null;
+  return storage.signedGetUrl(
+    asset.storageKey,
+    seconds,
+    asset.fileName,
+    known ? "inline" : "attachment",
+    known ? asset.mimeType.toLowerCase().split(";")[0].trim() : "application/octet-stream",
+  );
 }

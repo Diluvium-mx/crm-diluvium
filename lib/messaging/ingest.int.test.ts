@@ -1389,9 +1389,32 @@ describe.skipIf(!TEST_DATABASE_URL)("ingesta de WhatsApp (Postgres real)", () =>
         [`org/${ORG_A}/messages/${m.id}/0-F-1.pdf`, pdf.byteLength, undefined],
         [`org/${ORG_A}/messages/${m.id}/1-F-1.xml`, xml.byteLength, undefined],
       ]);
-      expect(storage.objects.get(`org/${ORG_A}/messages/${m.id}/1-F-1.xml`)?.contentType).toBe("application/xml");
+      // S2: el tipo sale de los bytes. El PDF se muestra; el XML queda como descarga.
+      expect(storage.objects.get(`org/${ORG_A}/messages/${m.id}/0-F-1.pdf`)?.contentType).toBe("application/pdf");
+      expect(storage.objects.get(`org/${ORG_A}/messages/${m.id}/1-F-1.xml`)?.contentType).toBe("application/octet-stream");
+      expect(after.attachments.map((a) => a.verifiedMime)).toEqual(["application/pdf", "application/octet-stream"]);
       // Idempotente: una segunda pasada no vuelve a descargar.
       await expect(downloadMessageMedia(providerServing({}), storage, m.id)).resolves.toEqual({ stored: 0, pending: 0 });
+    });
+
+    it("S2: un «PDF» que en realidad es HTML se guarda como descarga (nunca se muestra)", async () => {
+      const html = new TextEncoder().encode("<html><script>alert(1)</script></html>");
+      const e = msgEvent({ sentAt: "2026-09-18T10:00:00Z" });
+      (e.message as Record<string, unknown>).attachments = [
+        { type: "file", url: "https://zernio.com/api/v1/whatsapp/media/9", payload: { id: "9", sha256: await sha(html), mimeType: "application/pdf", filename: "cotizacion.pdf" } },
+      ];
+      const id = `zernio_${e.id}`;
+      await db.insert(s.webhookEvents).values({ id, provider: "zernio", event: e.event, payload: e });
+      await ingest.processWebhookEvent(provider, id);
+      const [m] = await db.select().from(s.messages);
+      const storage = new MemoryStorage();
+      const { downloadMessageMedia } = await import("./media");
+      await expect(downloadMessageMedia(providerServing({ "9": html }), storage, m.id)).resolves.toEqual({ stored: 1, pending: 0 });
+      const [after] = await db.select().from(s.messages);
+      expect(after.attachments[0].verifiedMime).toBe("application/octet-stream");
+      expect(storage.objects.get(`org/${ORG_A}/messages/${m.id}/0-cotizacion.pdf`)?.contentType).toBe("application/octet-stream");
+      // El archivo se guarda completo (el vendedor lo puede descargar).
+      expect(storage.objects.get(`org/${ORG_A}/messages/${m.id}/0-cotizacion.pdf`)?.body).toEqual(html);
     });
 
     it("sha256 que no coincide o error del proveedor: se anota, se lanza, y un reintento posterior lo completa", async () => {
