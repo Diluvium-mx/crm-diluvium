@@ -66,9 +66,11 @@ export const SKIP_NO_STEPS = "sin_pasos";
 export const SKIP_ALREADY_SENT = "ya_enviado_a_este_contacto";
 // «Solo al inicio»: el Agente IA (con texto propio) o un vendedor ya le contestaron.
 export const SKIP_NOT_START = "ya_no_es_el_inicio";
+// «Solo al inicio» (30-sep-2026): a este cliente ya le salió otra respuesta de inicio.
+export const SKIP_OTHER_START = "ya_salio_otra_de_inicio";
 // «Máximo de envíos por chat» (29-sep-2026): ya salió las veces que permite este chat.
 export const SKIP_MAX_PER_CHAT = "maximo_por_chat";
-const START_ONLY_SKIP: Record<StartOnlyBlock, string> = { ya_enviado: SKIP_ALREADY_SENT, no_inicio: SKIP_NOT_START };
+const START_ONLY_SKIP: Record<StartOnlyBlock, string> = { ya_enviado: SKIP_ALREADY_SENT, no_inicio: SKIP_NOT_START, otra_de_inicio: SKIP_OTHER_START };
 export const FAIL_WINDOW = "ventana_24h";
 export const FAIL_STUCK = "atorado";
 // Vive en defaults.ts (puro): el runtime del agente también la usa para decidir qué modelo contesta.
@@ -218,6 +220,19 @@ function variablesFor(run: { payload: Record<string, unknown> | null }, contact:
   values.nombre = [contact.firstName, contact.lastName].filter(Boolean).join(" ").trim();
   values.vendedor = sellerName ?? "";
   return values;
+}
+
+// El último mensaje que la corrida SÍ mandó (no fallido). Los ids se anotan en la corrida antes de
+// mandar: un paso que el candado anti-repetición quitó tiene id pero no fila en `messages`.
+async function lastSentMessageOf(organizationId: string, messageIds: readonly string[]): Promise<string | null> {
+  if (messageIds.length === 0) return null;
+  const [row] = await db
+    .select({ id: messages.id })
+    .from(messages)
+    .where(and(eq(messages.organizationId, organizationId), inArray(messages.id, [...messageIds]), eq(messages.direction, "out"), sql`${messages.status} <> 'failed'`))
+    .orderBy(desc(messages.createdAt))
+    .limit(1);
+  return row?.id ?? null;
 }
 
 async function markRun(runId: string, patch: Partial<typeof workflowRuns.$inferInsert>): Promise<void> {
@@ -393,12 +408,19 @@ export async function executeWorkflowRun(runId: string, deps: ExecutorDeps): Pro
       //   "Precio"); lo demás lo atiende el agente.
       // - Agente IA con un workflow que trae textos (su propio texto no salió, run.ts): contesta
       //   todo lo que el agente leyó, hasta el último mensaje del lote.
-      if (sent && run.triggerMessageId && i === answerIndex) {
-        const mark =
-          run.trigger === "keyword"
-            ? markAnswersOnly(run.organizationId, sent.messageId, run.triggerMessageId)
+      // 30-sep-2026 (bug, caso 12:31 «Quiero más información» + «Hola costos»): el último paso puede
+      // NO salir porque el candado anti-repetición lo quita (la misma pregunta ya la mandó otro
+      // workflow de la ráfaga). Antes la marca dependía de ese paso y se perdía: el mensaje quedaba
+      // sin contestar y el Agente IA preguntaba encima. Ahora contesta el último mensaje que esta
+      // corrida SÍ mandó (si no mandó nada, no hay marca y lo atiende el agente).
+      if (run.triggerMessageId && i === answerIndex) {
+        const answerId = sent?.messageId ?? (await lastSentMessageOf(run.organizationId, messageIds));
+        const mark = !answerId
+          ? null
+          : run.trigger === "keyword"
+            ? markAnswersOnly(run.organizationId, answerId, run.triggerMessageId)
             : run.trigger === "agent" && loaded.steps.some((st) => st.payload.kind === "send_text")
-              ? markAnswersUntil(run.organizationId, sent.messageId, run.triggerMessageId)
+              ? markAnswersUntil(run.organizationId, answerId, run.triggerMessageId)
               : null;
         await mark?.catch((error: unknown) => console.error(`[workflows] ${run.id}: no se pudo marcar el último mensaje como la respuesta`, error));
       }

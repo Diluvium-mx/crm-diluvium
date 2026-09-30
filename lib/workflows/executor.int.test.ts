@@ -575,4 +575,22 @@ describe.skipIf(!TEST_DATABASE_URL)("executor de workflows", () => {
     expect(await maxChat.sendsInChat(ORG, CONV, wf)).toBe(1);
   });
 
+  it("una sola respuesta de inicio (30-sep-2026): se revisa también al ARRANCAR — dos respuestas de inicio en cola, la segunda se omite", async () => {
+    const info = await workflow([{ kind: "send_text", text: "Claro, es una barrera…" }]);
+    const precio = await workflow([{ kind: "send_text", text: "Ahorita tenemos cualquier tamaño en $5,500." }]);
+    await db.insert(s.messages).values([
+      { id: "in_1", organizationId: ORG, conversationId: CONV, direction: "in", source: "contact", type: "text", body: "Quiero más información", status: "received" },
+      { id: "in_2", organizationId: ORG, conversationId: CONV, direction: "in", source: "contact", type: "text", body: "Hola costos", status: "received" },
+    ]);
+    const r1 = await ex.startWorkflowRun({ organizationId: ORG, workflowId: info, conversationId: CONV, trigger: "keyword", triggerMessageId: "in_1" });
+    const r2 = await ex.startWorkflowRun({ organizationId: ORG, workflowId: precio, conversationId: CONV, trigger: "keyword", triggerMessageId: "in_2" });
+    expect([r1.status, r2.status]).toEqual(["queued", "queued"]);
+    const { inArray } = await import("drizzle-orm");
+    await db.update(s.workflows).set({ triggerStartOnly: true }).where(inArray(s.workflows.id, [info, precio]));
+    expect(await ex.executeWorkflowRun(r1.runId, { provider, storage })).toBe("done");
+    expect(await ex.executeWorkflowRun(r2.runId, { provider, storage })).toBe("cancelled");
+    expect(await run(r2.runId)).toMatchObject({ status: "skipped", errorCode: ex.SKIP_OTHER_START });
+    expect(sent.map((x) => (x.input as SendTextInput).text)).toEqual(["Claro, es una barrera…"]);
+  });
+
 });

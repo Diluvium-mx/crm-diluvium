@@ -4,16 +4,29 @@
 // anuncio y su primer mensaje es "precio"). Por palabra clave o por el Agente IA, un workflow con
 // esta opción:
 // - solo se dispara AL INICIO: mientras ni el Agente IA (con texto propio) ni un vendedor (desde el
-//   CRM o el celular) le han contestado al cliente. Lo que mandan otros workflows automáticos no
-//   cuenta ("Quiero más información" → «Información», luego "Precio" → «Precio 2» sí sale). El
-//   historial copiado del celular sí cuenta: ese cliente ya habló con un vendedor.
+//   CRM o el celular) le han contestado al cliente. El historial copiado del celular sí cuenta: ese
+//   cliente ya habló con un vendedor.
 // - sale a lo mucho UNA vez por contacto, por cualquier camino: nunca se repite.
+// - UNA SOLA respuesta de inicio por cliente (30-sep-2026, decisión del dueño): si ya le salió OTRO
+//   workflow «Solo al inicio» (cualquiera de las dos opciones: «Información», «Precio 2», la Tabla),
+//   este ya no sale; lo siguiente lo contesta el Agente IA. Antes lo de otros workflows no contaba
+//   y en 7 chats del 29–30 sep salieron dos seguidos (Tabla → «Precio 2» con la misma foto;
+//   «Información» → «Precio 2» a 2 s; «Información» → Tabla por «…checo las medidas»).
 // El comando del vendedor ("/precio2") y la etapa que mueve un vendedor salen siempre: los pidió él.
 import { and, eq, inArray, ne, sql } from "drizzle-orm";
 import { db } from "@/lib/db";
-import { messages, workflowRuns } from "@/lib/db/schema";
+import { messages, workflowRuns, workflows } from "@/lib/db/schema";
 
-export type StartOnlyBlock = "ya_enviado" | "no_inicio";
+export type StartOnlyBlock = "ya_enviado" | "no_inicio" | "otra_de_inicio";
+
+// Workflows «Solo al inicio» de la organización (las respuestas de inicio), sin `exceptId`.
+async function startOnlyWorkflowIds(organizationId: string, exceptId?: string): Promise<string[]> {
+  const rows = await db
+    .select({ id: workflows.id })
+    .from(workflows)
+    .where(and(eq(workflows.organizationId, organizationId), eq(workflows.triggerStartOnly, true), exceptId ? ne(workflows.id, exceptId) : undefined));
+  return rows.map((r) => r.id);
+}
 
 /**
  * ¿La conversación sigue al inicio? Ningún saliente que cuente como respuesta: de un vendedor
@@ -85,13 +98,19 @@ export async function startOnlyBlock(input: {
 }): Promise<StartOnlyBlock | null> {
   const sent = await startOnlyAlreadySent(input.organizationId, input.contactId, [input.workflowId], input);
   if (sent.has(input.workflowId)) return "ya_enviado";
-  return (await conversationAtStart(input.organizationId, input.conversationId)) ? null : "no_inicio";
+  if (!(await conversationAtStart(input.organizationId, input.conversationId))) return "no_inicio";
+  const others = await startOnlyWorkflowIds(input.organizationId, input.workflowId);
+  return (await startOnlyAlreadySent(input.organizationId, input.contactId, others, input)).size > 0 ? "otra_de_inicio" : null;
 }
 
-/** De estos workflows «solo al inicio», los que SÍ pueden dispararse ahora en esta conversación. */
+/**
+ * De estos workflows «solo al inicio», los que SÍ pueden dispararse ahora en esta conversación: al
+ * inicio y solo si a este contacto no le ha salido NINGUNA respuesta de inicio (ni ese mismo ni otro).
+ */
 export async function startOnlyEligible(organizationId: string, conversationId: string, contactId: string, workflowIds: readonly string[]): Promise<Set<string>> {
   if (workflowIds.length === 0) return new Set();
   if (!(await conversationAtStart(organizationId, conversationId))) return new Set();
-  const sent = await startOnlyAlreadySent(organizationId, contactId, workflowIds);
-  return new Set(workflowIds.filter((id) => !sent.has(id)));
+  const all = [...new Set([...workflowIds, ...(await startOnlyWorkflowIds(organizationId))])];
+  if ((await startOnlyAlreadySent(organizationId, contactId, all)).size > 0) return new Set();
+  return new Set(workflowIds);
 }

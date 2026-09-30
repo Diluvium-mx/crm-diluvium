@@ -241,12 +241,12 @@ describe.skipIf(!TEST_DATABASE_URL)("disparadores de workflows", () => {
     expect((await runs()).map((r) => [r.workflowId, r.trigger, r.triggerMessageId])).toEqual([["informacion_8b3c", "keyword", "m1"]]);
   });
 
-  it("regla fija: si «Información» ya no puede salir (ya le salió a este contacto), se decide como siempre (gana la frase más larga: la Tabla)", async () => {
+  it("regla fija: si «Información» ya le salió a este contacto, ya no sale NINGUNA respuesta de inicio por palabra clave (una sola por cliente, 30-sep): contesta el Agente IA", async () => {
     await precioTablaInfo();
     await db.update(s.contacts).set({ keywordWorkflowsSent: ["informacion_8b3c"] }).where(eq(s.contacts.id, "c1"));
     await db.insert(s.workflowRuns).values({ id: "r_info", organizationId: ORG, workflowId: "informacion_8b3c", conversationId: "cv_old", contactId: "c1", trigger: "keyword", status: "done", stepCursor: 1, messageIds: [], attempts: 1 });
-    expect(await inbound("m1", "Precio y medidas ?")).toMatchObject({ status: "queued" });
-    expect((await runs()).filter((r) => r.id !== "r_info").map((r) => r.workflowId)).toEqual(["tabla_tamanos_estandar"]);
+    expect(await inbound("m1", "Precio y medidas ?")).toBeNull();
+    expect((await runs()).filter((r) => r.id !== "r_info")).toEqual([]);
   });
 
   it("regla fija: solo con los DOS; 'precio' solo manda «Precio 2» y 'medidas' sola manda la Tabla", async () => {
@@ -274,5 +274,43 @@ describe.skipIf(!TEST_DATABASE_URL)("disparadores de workflows", () => {
     await db.insert(s.workflowRuns).values({ id: "r_t", organizationId: ORG, workflowId: "w_tabla", conversationId: "cv_new", contactId: "c1", trigger: "agent", status: "done", stepCursor: 1, messageIds: ["o1"], attempts: 1 });
     expect(await inbound("m1", "¿cómo medir? ¿qué medidas?")).toMatchObject({ status: "queued" });
     expect((await runs()).filter((r) => r.id !== "r_t").map((r) => r.workflowId)).toEqual(["w_medir"]);
+  });
+
+  // ── Una sola respuesta de inicio por cliente (30-sep-2026, decisión del dueño) ────────────
+  it("una sola respuesta de inicio: tras la Tabla («¿Qué medidas manejan?»), «que precio tiene» ya no manda «Precio 2» (caso 30-sep 13:29)", async () => {
+    await precioTablaInfo();
+    expect(await inbound("m1", "¿Qué medidas manejan?")).toMatchObject({ status: "queued" });
+    expect(await inbound("m2", "que precio tiene")).toBeNull();
+    expect((await runs()).map((r) => r.workflowId)).toEqual(["tabla_tamanos_estandar"]);
+  });
+
+  it("una sola respuesta de inicio: ráfaga a 2 s «Quiero más información» + «Hola costos» → solo «Información» (la de «Precio 2» ni se crea); por el Agente IA, «Precio 2» se omite con motivo", async () => {
+    await precioTablaInfo();
+    const exec = await import("./executor");
+    expect(await inbound("m1", "Quiero más información")).toMatchObject({ status: "queued" });
+    expect(await inbound("m2", "Hola costos")).toBeNull();
+    expect((await runs()).map((r) => r.workflowId)).toEqual(["informacion_8b3c"]);
+    expect(await exec.startWorkflowRun({ organizationId: ORG, workflowId: "precio_2_6100", conversationId: "cv_new", trigger: "agent", triggerMessageId: "m2" })).toMatchObject({
+      status: "skipped",
+      reason: exec.SKIP_OTHER_START,
+    });
+  });
+
+  it("una sola respuesta de inicio: tras «Información», «Gracias llegando a mi casa checo las medidas» ya no manda la Tabla; el Agente IA sí puede mandarla", async () => {
+    await precioTablaInfo();
+    const exec = await import("./executor");
+    expect(await inbound("m1", "Quiero más información")).toMatchObject({ status: "queued" });
+    expect(await inbound("m2", "Gracias llegando a mi casa checo las medidas")).toBeNull();
+    expect(await exec.startWorkflowRun({ organizationId: ORG, workflowId: "tabla_tamanos_estandar", conversationId: "cv_new", trigger: "agent", triggerMessageId: "m2" })).toMatchObject({ status: "queued" });
+  });
+
+  it("una sola respuesta de inicio: cuenta aunque la otra le haya salido en OTRA conversación; los workflows sin «Solo al inicio» no cuentan ni se frenan; el comando sale siempre", async () => {
+    await precioTablaInfo();
+    await wf("w_tapones", { triggerKeywords: ["tapones"], position: 6 });
+    const exec = await import("./executor");
+    await db.insert(s.workflowRuns).values({ id: "r_old", organizationId: ORG, workflowId: "informacion_8b3c", conversationId: "cv_old", contactId: "c1", trigger: "keyword", status: "done", stepCursor: 1, messageIds: [], attempts: 1 });
+    expect(await inbound("m1", "Precio")).toBeNull();
+    expect(await inbound("m2", "¿y los tapones?")).toMatchObject({ status: "queued" });
+    expect(await exec.startWorkflowRun({ organizationId: ORG, workflowId: "precio_2_6100", conversationId: "cv_new", trigger: "command", triggeredByUserId: "u1" })).toMatchObject({ status: "queued" });
   });
 });
