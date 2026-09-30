@@ -29,7 +29,9 @@ const CHILD_MAX_OLD_SPACE_MB = 256;
 /** Un reclamo más viejo que esto se da por muerto (el proceso cayó a medias) y se puede retomar. */
 const CLAIM_LEASE_MS = 2 * 60_000;
 
-export function isPdf(attachment: Pick<MessageAttachment, "mimeType" | "fileName">): boolean {
+export function isPdf(attachment: Pick<MessageAttachment, "mimeType" | "fileName" | "verifiedMime">): boolean {
+  // S2: si ya se revisaron sus bytes, manda eso (un «PDF» falso nunca pasa por pdf.js).
+  if (attachment.verifiedMime) return attachment.verifiedMime === "application/pdf";
   return attachment.mimeType === "application/pdf" || /\.pdf$/i.test(attachment.fileName ?? "");
 }
 

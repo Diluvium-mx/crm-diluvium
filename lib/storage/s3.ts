@@ -22,15 +22,20 @@ export interface ObjectStorage {
   /**
    * URL firmada y temporal de un objeto privado. `disposition`: "inline" para
    * verlo en el navegador (visor), "attachment" para forzar la descarga.
+   * `contentType` (S2): el tipo con el que el bucket lo sirve, ignorando el que
+   * se guardó (así un archivo nunca se abre como HTML).
    */
   signedGetUrl(
     key: string,
     expiresInSeconds: number,
     downloadName?: string,
     disposition?: "inline" | "attachment",
+    contentType?: string,
   ): Promise<string>;
   /** Lee un objeto completo en memoria (solo archivos chicos: falla si pasa `maxBytes`). */
   getBytes(key: string, maxBytes: number): Promise<Uint8Array>;
+  /** Primeros `bytes` de un objeto (para revisar su tipo real). Opcional: los dobles de prueba no lo necesitan. */
+  getHead?(key: string, bytes: number): Promise<Uint8Array>;
   /**
    * Objetos bajo un prefijo (por páginas de 1,000). Opcional: solo lo usa la
    * limpieza de adjuntos del chat no enviados (lib/chat-attachments/cleanup.ts).
@@ -113,7 +118,25 @@ export function objectStorage(): ObjectStorage {
         token = res.IsTruncated ? res.NextContinuationToken : undefined;
       } while (token);
     },
-    signedGetUrl(key, expiresInSeconds, downloadName, disposition = "inline") {
+    async getHead(key, bytes) {
+      const res = await client.send(new GetObjectCommand({ Bucket: S3_BUCKET, Key: key, Range: `bytes=0-${bytes - 1}` }));
+      const body = res.Body as Readable | undefined;
+      if (!body) return new Uint8Array();
+      const chunks: Buffer[] = [];
+      let total = 0;
+      try {
+        for await (const chunk of body) {
+          const buf = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk as Uint8Array);
+          chunks.push(buf);
+          total += buf.byteLength;
+          if (total >= bytes) break; // por si el bucket ignora el Range
+        }
+      } finally {
+        body.destroy();
+      }
+      return new Uint8Array(Buffer.concat(chunks).subarray(0, bytes));
+    },
+    signedGetUrl(key, expiresInSeconds, downloadName, disposition = "inline", contentType) {
       return getSignedUrl(
         client,
         new GetObjectCommand({
@@ -121,7 +144,10 @@ export function objectStorage(): ObjectStorage {
           Key: key,
           ...(downloadName
             ? { ResponseContentDisposition: `${disposition}; filename*=UTF-8''${encodeURIComponent(downloadName)}` }
-            : {}),
+            : disposition === "attachment"
+              ? { ResponseContentDisposition: "attachment" }
+              : {}),
+          ...(contentType ? { ResponseContentType: contentType } : {}),
         }),
         { expiresIn: expiresInSeconds },
       );

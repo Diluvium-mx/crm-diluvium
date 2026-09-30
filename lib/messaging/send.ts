@@ -33,6 +33,7 @@ import { isAmbiguousSendError, isWindowOpen, nextStatus, SEND_ACCEPTED, SEND_RAT
 import { sendInTurn, type TurnMark } from "./send-turn";
 import { plainSendReason } from "./send-reasons";
 import { findEarlyEcho } from "./late-echo";
+import { trustedMediaMime } from "./media-type";
 import { addNotice } from "@/lib/ai/runtime/notices";
 import { renderTemplateBody, templateMaxIndex } from "./template-format";
 import { isForeignTemplateAccount } from "./template-sync";
@@ -295,6 +296,7 @@ export async function sendMediaMessage(provider: MessagingProvider, storage: Obj
         fileName: asset.fileName,
         storageKey: asset.storageKey,
         sizeBytes: asset.bytes,
+        verifiedMime: trustedMediaMime(asset.kind, asset.mimeType),
         downloadedAt: now.toISOString(),
       },
     ],
@@ -405,7 +407,16 @@ export async function queueChatUploads(
           type: file.kind,
           body: captions[i] ?? null,
           attachments: [
-            { type: file.kind, url, mimeType: file.mime, fileName: file.fileName, storageKey: file.storageKey, sizeBytes: file.bytes, downloadedAt: now.toISOString() },
+            {
+              type: file.kind,
+              url,
+              mimeType: file.mime,
+              fileName: file.fileName,
+              storageKey: file.storageKey,
+              sizeBytes: file.bytes,
+              verifiedMime: trustedMediaMime(file.kind, file.mime),
+              downloadedAt: now.toISOString(),
+            },
           ],
           mediaUrl: url,
           mediaMimeType: file.mime,

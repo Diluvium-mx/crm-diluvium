@@ -1,7 +1,9 @@
 // Reglas puras de la biblioteca de media (Fase D): qué archivos se aceptan,
 // con qué límites (los de WhatsApp vía Zernio, docs/fase-d-diseno.md §5) y
 // cómo se nombran en el bucket. Sin DB ni red, para testear solas.
+import { detectMagic, looksLikePlainText, type MagicType } from "@/lib/chat-attachments/sniff";
 import type { WorkflowStepPayload } from "@/lib/db/schema/automation";
+import { BAD_NAME_CHARS } from "@/lib/text/file-name";
 
 export type MediaKind = "image" | "video" | "document";
 
@@ -75,7 +77,8 @@ export function kindForMime(mimeType: string): MediaKind | null {
 // contar bytes durante la subida (la UI puede mentir).
 export function validateUpload(input: { fileName: string; mimeType: string; bytes: number }): { kind: MediaKind; fileName: string } {
   const fileName = input.fileName.trim();
-  if (!fileName || fileName.length > 150) throw new MediaRejectedError("name", "Nombre de archivo inválido.");
+  // S2 (CN-013): sin controles, invisibles ni marcas bidi (el nombre llega al cliente en WhatsApp).
+  if (!fileName || fileName.length > 150 || BAD_NAME_CHARS.test(fileName)) throw new MediaRejectedError("name", "Nombre de archivo inválido.");
   const kind = kindForMime(input.mimeType);
   if (!kind) throw new MediaRejectedError("mime", `Tipo de archivo no permitido (${input.mimeType}). Imagen JPEG/PNG, video MP4 o documento PDF.`);
   if (!Number.isFinite(input.bytes) || input.bytes <= 0) throw new MediaRejectedError("empty", "El archivo está vacío.");
@@ -83,6 +86,32 @@ export function validateUpload(input: { fileName: string; mimeType: string; byte
     throw new MediaRejectedError("size", `El archivo pesa más de lo que WhatsApp acepta: ${MEDIA_LIMITS[kind].label}.`);
   }
   return { kind, fileName };
+}
+
+// Formato real (por los primeros bytes) que corresponde a cada tipo permitido.
+const MAGIC_FOR_MIME: Record<string, readonly MagicType[]> = {
+  "image/jpeg": ["jpeg"],
+  "image/png": ["png"],
+  "video/mp4": ["mp4"],
+  "video/3gpp": ["3gp", "mp4"],
+  "application/pdf": ["pdf"],
+  "application/msword": ["ole"],
+  "application/vnd.ms-excel": ["ole"],
+  "application/vnd.ms-powerpoint": ["ole"],
+  "application/vnd.openxmlformats-officedocument.wordprocessingml.document": ["ooxml"],
+  "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet": ["ooxml"],
+  "application/vnd.openxmlformats-officedocument.presentationml.presentation": ["ooxml"],
+};
+
+/**
+ * S2 (CN-013): el contenido coincide con el tipo que declaró el navegador
+ * (un "PDF" que en realidad es HTML, o un .exe renombrado, no pasa).
+ */
+export function bytesMatchMime(head: Uint8Array, mimeType: string): boolean {
+  const mime = mimeType.toLowerCase().split(";")[0].trim();
+  if (mime === "text/plain") return looksLikePlainText(head);
+  const magic = detectMagic(head);
+  return magic !== null && (MAGIC_FOR_MIME[mime] ?? []).includes(magic);
 }
 
 // Llave en el bucket: org/{org}/library/{assetId}-{nombre-seguro}. El id al
