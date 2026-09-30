@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { canMarkRead, funnelTone, unreadBadge, type FunnelSignal } from "./funnel-tone";
+import { canMarkRead, funnelTone, needsAttention, unreadBadge, type FunnelSignal } from "./funnel-tone";
 
 const signal = (s: Partial<FunnelSignal>): FunnelSignal => ({ unread: 0, pending: false, urgent: false, lastInboundAt: null, ...s });
 
@@ -28,6 +28,20 @@ describe("canMarkRead", () => {
     expect(canMarkRead(undefined)).toBe(false);
     expect(canMarkRead(signal({}))).toBe(false);
     expect(canMarkRead(signal({ urgent: true }))).toBe(false);
+  });
+});
+
+describe("needsAttention", () => {
+  it("queda con el círculo naranja, el azul o el amarillo", () => {
+    expect(needsAttention(signal({ unread: 1 }))).toBe(true);
+    expect(needsAttention(signal({ pending: true }))).toBe(true);
+    expect(needsAttention(signal({ urgent: true }))).toBe(true);
+  });
+
+  it("sin señal o en blanco sin círculo no queda (aunque haya escrito hoy)", () => {
+    expect(needsAttention(undefined)).toBe(false);
+    expect(needsAttention(signal({}))).toBe(false);
+    expect(needsAttention(signal({ lastInboundAt: Date.now() }))).toBe(false);
   });
 });
 
