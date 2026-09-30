@@ -345,6 +345,9 @@ Reglas de UI:
   amarillo (gana) = el Agente IA necesita al vendedor (se apaga contestando); círculo naranja = sin
   ver. La luz del cursor en la tarjeta es gris. Cada columna va por actividad: arriba el último que
   escribió o entró a la etapa, en vivo. Detalle: `docs/bandeja.md` › Colores y orden del Embudo.
+- **No leído por columna del Embudo (30-sep-2026):** sobre en una píldora junto al contador de cada
+  columna (mismo alto, sin texto). Prendido (naranja) deja solo las tarjetas con círculo naranja, azul
+  o amarilla (`needsAttention`); cada columna por su lado; no se recuerda al recargar.
 - Semáforo de tiempo sin respuesta (en la lista de la bandeja y en la tarjeta): verde <15 min,
   ámbar <1 h, rojo >1 h.
 - Menos datos es mejor: sin asignación, seguidores, etiquetas ni autor del mensaje en v1.
