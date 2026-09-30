@@ -22,6 +22,14 @@ export function canMarkRead(signal: FunnelSignal | undefined): boolean {
   return (signal?.unread ?? 0) > 0 || signal?.pending === true;
 }
 
+// Botón «No leído» de cada columna del Embudo (30-sep-2026, dueño): quedan las tarjetas
+// con algo pendiente, cualquiera de las tres señales: círculo naranja (sin ver), azul
+// (el cliente escribió y nadie le ha contestado) o amarilla (el Agente IA necesita al
+// vendedor). Blanca sin círculo = nada pendiente.
+export function needsAttention(signal: FunnelSignal | undefined): boolean {
+  return (signal?.unread ?? 0) > 0 || signal?.pending === true || signal?.urgent === true;
+}
+
 // Texto del círculo de no vistos (mismo tope que la lista de la Bandeja). "" = sin círculo.
 export function unreadBadge(count: number | undefined): string {
   if (!count || count < 1) return "";
