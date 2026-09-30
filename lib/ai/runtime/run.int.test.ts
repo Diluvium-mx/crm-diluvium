@@ -1278,6 +1278,29 @@ describe.skipIf(!TEST_DATABASE_URL)("runtime del Agente IA (Postgres real)", () 
     expect(await run.runAgent(JOB, makeDeps({ brain: ["x"] }, zernio).deps)).toEqual({ kind: "noop", reason: "sin_pendientes" });
   });
 
+  it("bug 30-sep 12:31: si el candado anti-repetición quita la pregunta final (ya la mandó otro workflow de la ráfaga), el último mensaje que SÍ salió contesta y el Agente IA no pregunta encima", async () => {
+    const m1 = await msg({ direction: "in", body: "Quiero más información", at: ago(42_000) });
+    const m2 = await msg({ direction: "in", body: "Hola costos", at: ago(40_000) });
+    const info = await wf("informacion", [{ kind: "send_text", text: "Claro, es una barrera que se coloca en 10 minutos." }, { kind: "send_text", text: PREGUNTA }], { isAnswer: true });
+    const precio = await wf("precio_2", [{ kind: "send_text", text: "Ahorita tenemos cualquier tamaño en $5,500 con envío gratis." }, { kind: "send_text", text: PREGUNTA }], { isAnswer: true });
+    await keywordRun("run_info", info, m1);
+    await keywordRun("run_precio", precio, m2);
+    const zernio = fakeZernio();
+    expect(await executor.executeWorkflowRun("run_info", execDeps(zernio))).toBe("done");
+    expect(await executor.executeWorkflowRun("run_precio", execDeps(zernio))).toBe("done");
+    // La pregunta de «Precio 2» no se repite…
+    expect(zernio.delivered).toEqual(["Claro, es una barrera que se coloca en 10 minutos.", PREGUNTA, "Ahorita tenemos cualquier tamaño en $5,500 con envío gratis."]);
+    // …y aun así su último mensaje que salió contesta «Hola costos».
+    const precioMsg = (await agentOuts()).find((m) => m.body === "Ahorita tenemos cualquier tamaño en $5,500 con envío gratis.")!;
+    expect(precioMsg.metadata).toMatchObject({ contestaA: m2 });
+    // El Agente IA revisa en modo complemento: su pregunta no sale.
+    const { deps, calls } = makeDeps({ brain: ["Para orientarle bien, ¿qué situación quiere prevenir en su entrada?"] }, zernio);
+    await run.runAgent(JOB, deps);
+    expect(lastUserText(calls.find((c) => c.kind === "cerebro")!.input)).toContain("ya le contestó al cliente su último mensaje");
+    expect(zernio.delivered).not.toContain("Para orientarle bien, ¿qué situación quiere prevenir en su entrada?");
+    expect(zernio.delivered.filter((t) => t === PREGUNTA)).toHaveLength(1);
+  });
+
   it("complemento: «nada que agregar» fuera del complemento es respuesta vacía (tarjeta), nunca silencio", async () => {
     await msg({ direction: "in", body: "¿precio?", at: ago(120_000) });
     expect(await run.runAgent(JOB, makeDeps({ brain: [brainMod.NOTHING_TOKEN] }).deps)).toEqual({ kind: "failed", reason: "vacia" });
