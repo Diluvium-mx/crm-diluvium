@@ -189,6 +189,27 @@ Interesado) y **Sonnet cierra** (Cerca de compra y Compra: datos bancarios, comp
   solo si **fallan los dos**, y dice qué le pasó a cada uno. Un modelo sin llave se salta (en los
   dos sentidos). Con un solo modelo (el mismo en los dos espacios) sigue el reintento único por
   proveedor saturado de la Fase E.
+- **Red contra el silencio (30-sep-2026, dueño)** (`run.ts`, después del traspaso): el CRM **nunca** escribe
+  un texto fijo por su cuenta. Antes, si el modelo contestaba solo con acciones (sin texto) y ninguna le
+  mandaba algo al cliente, salía «Listo 👍 ¿En qué más te ayudo?» (o uno por motivo: comprobante, asesor,
+  y el de la señal vieja «[TRANSFERIR]»). En producción salió 10 veces (27–29 sep) y ninguna era correcta:
+  5 tapaban la pregunta de un workflow por palabra clave que ya había contestado, 3–4 dejaban una pregunta sin
+  responder y 1 era un «gracias». Ahora, cuando la respuesta no le manda nada al cliente:
+  1. si **ya le salió algo** después de su último mensaje (un workflow por palabra clave, aunque siga en
+     camino), callar es correcto: no sale nada más (`sentToClientSinceLastInbound`, `context.ts`);
+  2. si no, **escribe el otro modelo** (uno que no se haya usado ni fallado en esa ronda), con la nota «El
+     cliente todavía no tiene respuesta a su último mensaje…» en el contexto del CRM. Las acciones de la
+     primera respuesta (Detalle, avisos, workflows, etapa y el pase a humano) no se pierden. En el traspaso,
+     si el Modelo 2 no escribe y nadie le ha contestado, sale lo que escribió el Modelo 1 (como si fallara);
+  3. si **nadie escribe**, no sale nada y el vendedor recibe el aviso 🤖 `sin_respuesta` («El Agente IA no le
+     escribió nada al cliente…»): tarjeta amarilla en el Embudo hasta que un vendedor conteste; **no** pausa
+     al agente (la tarjeta roja de error sí lo haría).
+  Una ronda sigue llamando al cerebro 2 veces como máximo (no se le vuelve a preguntar a un modelo ya usado).
+  La primera respuesta queda en `ai_usage` con resultado `sin_texto` (se cobra, no se envía); el resultado
+  final (`sent`) lo deja la que sí se usó, así el barrido no vuelve a intentar ese mensaje. Límites: si un
+  workflow por palabra clave contesta una cosa y el cliente preguntó otra en el mismo mensaje, el paso 1 da
+  todo por contestado; y un workflow pedido que al final no sale («Solo al inicio», máximo por chat) no se
+  detecta aquí (hallazgo 1).
 - Contactos de GHL que ya vienen en Cerca de compra o Compra los atiende Sonnet desde el primer
   mensaje (la etapa manda; el agente solo avanza etapas, nunca regresa).
 - Tiempo: una ronda puede llamar al cerebro 2 veces; el candado de la corrida pasó de 6 a 8 min.
@@ -441,7 +462,7 @@ sistema "Agente IA"). El Goal y las FAQs no se tocaron.
 - Instrucción mínima solo en la descripción de la acción: llenar solo con lo que dijo el cliente, sin
   adivinar, actualizar el % conforme avance, y ir **después** de la respuesta escrita (sin esa frase, Sonnet 5
   contestó SOLO con acciones en 2 de 19 pruebas: el cliente habría recibido el texto de respaldo en vez de
-  su respuesta; con ella, 0 de 30).
+  su respuesta; con ella, 0 de 30. Desde el 30-sep-2026 ya no hay texto de respaldo: red contra el silencio).
 - Escribe con `lib/contacts/qualification.ts` (`updateContactQualification`, `setNumEntradas`,
   `updateEntrada`, `addComment`) dentro de una transacción con la fila del contacto bloqueada
   (`lib/ai/runtime/detalle.ts`). Validación campo por campo: un dato raro se descarta sin tirar los demás y
@@ -546,8 +567,8 @@ sistema "Agente IA"). El Goal y las FAQs no se tocaron.
   posición "vendedor" queda vetada al agente).
 - "¿Cuánta agua entra?" conserva la marca si el vendedor solo edita los cm (el texto sigue del agente).
 - Campos que se vaciaron antes de esta función no tienen origen: el agente los puede llenar.
-- Modelo que conteste SOLO con `actualizar_detalle`: sale el texto de respaldo (medido 0 de 30 con la
-  descripción actual).
+- Modelo que conteste SOLO con `actualizar_detalle`: lo resuelve la red contra el silencio (otro modelo
+  escribe o aviso `sin_respuesta`; medido 0 de 30 con la descripción actual).
 - `nivel_agua_texto` escrito por un vendedor llega al contexto del modelo (es un campo del Detalle, no nota).
 - Si la BD cae justo en `holdForRetry`, el plan queda "enviando" y a los 10 min el barrido podría volver a
   atender el entrante con el modelo (doble falla).
