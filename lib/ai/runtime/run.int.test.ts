@@ -611,11 +611,12 @@ describe.skipIf(!TEST_DATABASE_URL)("runtime del Agente IA (Postgres real)", () 
     expect((await conv()).agentState).toBe("activo");
   });
 
-  it("[TRANSFERIR] sin texto: el cliente igual recibe respuesta (el agente siempre contesta)", async () => {
-    const { HANDOVER_FALLBACK_TEXT } = await import("./brain");
+  it("[TRANSFERIR] sin texto y sin otro modelo: ningún texto fijo; aviso de pase a humano y aviso sin_respuesta (29-sep-2026)", async () => {
     await msg({ direction: "in", body: "quiero una persona", at: ago(10_000) });
-    expect(await run.runAgent(JOB, makeDeps({ brain: ["[TRANSFERIR]"] }).deps)).toEqual({ kind: "sent", bubbles: 1 });
-    expect((await agentOuts()).map((m) => m.body)).toEqual([HANDOVER_FALLBACK_TEXT]);
+    expect(await run.runAgent(JOB, makeDeps({ brain: ["[TRANSFERIR]"] }).deps)).toEqual({ kind: "sent", bubbles: 0 });
+    expect(await agentOuts()).toHaveLength(0);
+    expect((await notices()).map((n) => n.kind).sort()).toEqual(["cliente_pide_humano", "sin_respuesta"]);
+    expect((await conv()).agentState).toBe("activo");
   });
 
   it("idempotencia: un entrante ya atendido no se vuelve a procesar", async () => {
@@ -1587,14 +1588,16 @@ describe.skipIf(!TEST_DATABASE_URL)("runtime del Agente IA (Postgres real)", () 
     expect(images).toContain("org/spei.pdf");
   });
 
-  it("solo llamadas y texto vacío: no se lanza ni se reintenta (gasto); si ninguna acción manda nada, sale el texto de respaldo", async () => {
+  it("solo llamadas y texto vacío: no se lanza; si ninguna acción manda nada y no hay otro modelo, nada al cliente y aviso sin_respuesta (sin texto fijo)", async () => {
     await msg({ direction: "in", body: "tabla", at: ago(20_000) });
     const wfId = await wf("tabla_tamanos_estandar", [{ kind: "send_text", text: "tabla" }]);
     expect(await run.runAgent(JOB, makeDeps({ brain: [""], toolCalls: [{ toolName: "wf_tabla_tamanos_estandar", input: {} }] }).deps)).toEqual({ kind: "sent", bubbles: 0 });
     expect((await runs()).map((r) => [r.workflowId, r.status])).toEqual([[wfId, "queued"]]);
     await msg({ direction: "in", body: "ok", at: new Date() });
-    expect(await run.runAgent(JOB, makeDeps({ brain: [""], toolCalls: [{ toolName: "mover_etapa", input: { etapa: "prospecto" } }] }).deps)).toEqual({ kind: "sent", bubbles: 1 });
-    expect((await agentOuts()).at(-1)?.body).toBe(run.SOLO_ACCIONES_TEXT);
+    expect(await run.runAgent(JOB, makeDeps({ brain: [""], toolCalls: [{ toolName: "mover_etapa", input: { etapa: "prospecto" } }] }).deps)).toEqual({ kind: "sent", bubbles: 0 });
+    expect(await agentOuts()).toHaveLength(0);
+    expect((await notices()).filter((n) => n.kind === "sin_respuesta").map((n) => n.body)).toEqual([run.SIN_RESPUESTA_BODY]);
+    expect((await contact()).stage).toBe("prospecto");
     await msg({ direction: "in", body: "hola", at: new Date() });
     expect(await run.runAgent(JOB, makeDeps({ brain: [""] }).deps)).toEqual({ kind: "failed", reason: "vacia" });
   });
@@ -1938,6 +1941,119 @@ describe.skipIf(!TEST_DATABASE_URL)("runtime del Agente IA (Postgres real)", () 
     expect((await contact()).stage).toBe("cerca_compra");
     expect(await brainOutcomes()).toEqual(["claude-sonnet-5:error", "gpt-5.6-luna:sent"]);
     expect((await notices()).filter((n) => n.kind === "agente_error")).toHaveLength(0);
+  });
+
+  // ── 29-sep-2026 (dueño): red contra el silencio; el CRM nunca escribe un texto fijo ──
+  const sinRespuesta = async () => (await notices()).filter((n) => n.kind === "sin_respuesta");
+
+  it("red contra el silencio: Luna contesta solo con acciones y nadie le ha contestado → escribe Sonnet (con la nota); la etapa de Luna se respeta", async () => {
+    await dosModelos();
+    await msg({ direction: "in", body: "¿De qué material es?", at: ago(20_000) });
+    const { deps, calls } = makeDeps({
+      brain: ["", "Es de acero con funda impermeable de neopreno."],
+      brainToolCalls: [[{ toolName: "mover_etapa", input: { etapa: "prospecto" } }], []],
+    });
+    expect(await run.runAgent(JOB, deps)).toEqual({ kind: "sent", bubbles: 1 });
+    const brain = calls.filter((c) => c.kind === "cerebro");
+    expect(brain.map((c) => c.modelId)).toEqual(["gpt-5.6-luna", "claude-sonnet-5"]);
+    expect(lastUserText(brain[0].input)).not.toContain(run.SIN_RESPUESTA_NOTE);
+    expect(lastUserText(brain[1].input)).toContain(run.SIN_RESPUESTA_NOTE);
+    expect((await agentOuts()).map((m) => m.body)).toEqual(["Es de acero con funda impermeable de neopreno."]);
+    expect((await contact()).stage).toBe("prospecto");
+    expect(await brainOutcomes()).toEqual(["gpt-5.6-luna:sin_texto", "claude-sonnet-5:sent"]);
+    expect(await sinRespuesta()).toHaveLength(0);
+  });
+
+  it("red contra el silencio: si ya le salió algo al cliente después de su último mensaje (workflow por palabra clave), no sale nada más ni se llama a otro modelo", async () => {
+    await dosModelos();
+    const inbound = await msg({ direction: "in", body: "tamaños", at: ago(20_000) });
+    const wfId = await wf("tabla_tamanos_estandar", [{ kind: "send_text", text: "tabla" }]);
+    const outId = await msg({ direction: "out", body: "Aquí le comparto una foto de los tamaños disponibles", at: ago(15_000), source: "ai_agent" });
+    // Como en producción: lo manda una corrida por palabra clave (no cierra el pendiente, B0).
+    await db.insert(s.workflowRuns).values({ id: "run_kw", organizationId: ORG, workflowId: wfId, conversationId: CONV, contactId: CONTACT, trigger: "keyword", triggerMessageId: inbound, status: "done", stepCursor: 1, messageIds: [outId], attempts: 1 });
+    const { deps, calls } = makeDeps({ brain: [""], toolCalls: [{ toolName: "mover_etapa", input: { etapa: "prospecto" } }] });
+    expect(await run.runAgent(JOB, deps)).toEqual({ kind: "sent", bubbles: 0 });
+    expect(brainIds(calls)).toEqual(["gpt-5.6-luna"]);
+    expect((await agentOuts()).map((m) => m.body)).toEqual(["Aquí le comparto una foto de los tamaños disponibles"]);
+    expect((await contact()).stage).toBe("prospecto");
+    expect(await brainOutcomes()).toEqual(["gpt-5.6-luna:sent"]);
+    expect(await sinRespuesta()).toHaveLength(0);
+  });
+
+  it("red contra el silencio: una corrida por palabra clave de este mensaje (en camino) también cuenta como contestado", async () => {
+    await dosModelos();
+    const inbound = await msg({ direction: "in", body: "tamaños", at: ago(20_000) });
+    const wfId = await wf("tabla_tamanos_estandar", [{ kind: "send_text", text: "tabla" }]);
+    await db.insert(s.workflowRuns).values({ id: "run_kw", organizationId: ORG, workflowId: wfId, conversationId: CONV, contactId: CONTACT, trigger: "keyword", triggerMessageId: inbound, status: "queued" });
+    const { deps, calls } = makeDeps({ brain: [""], toolCalls: [{ toolName: "mover_etapa", input: { etapa: "prospecto" } }] });
+    expect(await run.runAgent(JOB, deps)).toEqual({ kind: "sent", bubbles: 0 });
+    expect(brainIds(calls)).toEqual(["gpt-5.6-luna"]);
+    expect(await sinRespuesta()).toHaveLength(0);
+  });
+
+  it("red contra el silencio: si ninguno escribe, nada al cliente y aviso sin_respuesta (no pausa); el mensaje queda atendido (sin llamadas de más)", async () => {
+    await dosModelos();
+    await msg({ direction: "in", body: "muchas gracias", at: ago(20_000) });
+    const { deps, calls } = makeDeps({ brain: ["", ""], toolCalls: [{ toolName: "mover_etapa", input: { etapa: "prospecto" } }] });
+    expect(await run.runAgent(JOB, deps)).toEqual({ kind: "sent", bubbles: 0 });
+    expect(brainIds(calls)).toEqual(["gpt-5.6-luna", "claude-sonnet-5"]);
+    expect(await agentOuts()).toHaveLength(0);
+    expect((await sinRespuesta()).map((n) => n.body)).toEqual([run.SIN_RESPUESTA_BODY]);
+    expect((await conv()).agentState).toBe("activo");
+    expect(await brainOutcomes()).toEqual(["claude-sonnet-5:sin_texto", "gpt-5.6-luna:sent"]);
+    // El barrido no lo vuelve a intentar: el entrante ya tiene su resultado final.
+    expect(await run.runAgent(JOB, makeDeps().deps)).toEqual({ kind: "noop", reason: "ya_atendido" });
+  });
+
+  it("red contra el silencio: [TRANSFERIR] sin texto → escribe el otro modelo y el aviso de pase a humano no se pierde", async () => {
+    await dosModelos();
+    await msg({ direction: "in", body: "quiero hablar con una persona", at: ago(20_000) });
+    const { deps } = makeDeps({ brain: ["[TRANSFERIR]", "Claro, en un momento le atiende un asesor."] });
+    expect(await run.runAgent(JOB, deps)).toEqual({ kind: "sent", bubbles: 1 });
+    expect((await agentOuts()).map((m) => m.body)).toEqual(["Claro, en un momento le atiende un asesor."]);
+    expect((await notices()).map((n) => n.kind)).toEqual(["cliente_pide_humano"]);
+  });
+
+  it("traspaso + red contra el silencio: si Sonnet contesta solo con acciones y nadie le ha contestado, sale lo que escribió Luna con su etapa", async () => {
+    await dosModelos();
+    await setStage("interesado");
+    await msg({ direction: "in", body: "ok, ¿cómo te pago?", at: ago(20_000) });
+    const { deps, calls } = makeDeps({
+      brain: ["respuesta de Luna", ""],
+      brainToolCalls: [
+        [{ toolName: "mover_etapa", input: { etapa: "cerca_compra" } }],
+        [{ toolName: "aviso_vendedor", input: { motivo: "cliente_pide_humano", detalle: "quiere hablar con alguien" } }],
+      ],
+    });
+    expect(await run.runAgent(JOB, deps)).toEqual({ kind: "sent", bubbles: 1 });
+    expect(brainIds(calls)).toEqual(["gpt-5.6-luna", "claude-sonnet-5"]);
+    expect((await agentOuts()).map((m) => m.body)).toEqual(["respuesta de Luna"]);
+    // El aviso que dejó Sonnet sin escribir no se pierde.
+    expect((await notices()).map((n) => n.kind)).toEqual(["cliente_pide_humano"]);
+    expect((await contact()).stage).toBe("cerca_compra");
+    expect(await brainOutcomes()).toEqual(["claude-sonnet-5:sin_texto", "gpt-5.6-luna:sent"]);
+    expect(await sinRespuesta()).toHaveLength(0);
+  });
+
+  it("traspaso + red contra el silencio (caso de producción): «Precio 2» ya contestó y Sonnet no repite → no sale nada más, sin texto fijo", async () => {
+    await db.update(s.aiConfig).set({ modelo1: "gpt-5.6-luna" }).where(eq(s.aiConfig.organizationId, ORG));
+    await model1Stages(["inbox", "prospecto"]);
+    await setStage("prospecto");
+    const inbound = await msg({ direction: "in", body: "que precio tiene", at: ago(20_000) });
+    const wfId = await wf("precio_2", [{ kind: "send_text", text: "Ahorita tenemos cualquier tamaño en $5,500 con envío gratis." }, { kind: "send_text", text: "¿Usted tiene problemas de inundaciones?" }]);
+    const o1 = await msg({ direction: "out", body: "Ahorita tenemos cualquier tamaño en $5,500 con envío gratis.", at: ago(16_000), source: "ai_agent" });
+    const o2 = await msg({ direction: "out", body: "¿Usted tiene problemas de inundaciones?", at: ago(15_000), source: "ai_agent" });
+    await db.insert(s.workflowRuns).values({ id: "run_precio", organizationId: ORG, workflowId: wfId, conversationId: CONV, contactId: CONTACT, trigger: "keyword", triggerMessageId: inbound, status: "done", stepCursor: 2, messageIds: [o1, o2], attempts: 1 });
+    const { deps, calls } = makeDeps({
+      brain: ["Cuesta $5,500 MXN.", ""],
+      brainToolCalls: [[{ toolName: "mover_etapa", input: { etapa: "interesado" } }], [{ toolName: "mover_etapa", input: { etapa: "interesado" } }]],
+    });
+    expect(await run.runAgent(JOB, deps)).toEqual({ kind: "sent", bubbles: 0 });
+    expect(brainIds(calls)).toEqual(["gpt-5.6-luna", "claude-sonnet-5"]);
+    expect((await agentOuts()).at(-1)?.body).toBe("¿Usted tiene problemas de inundaciones?");
+    expect((await contact()).stage).toBe("interesado");
+    expect(await brainOutcomes()).toEqual(["gpt-5.6-luna:traspaso", "claude-sonnet-5:sent"]);
+    expect(await sinRespuesta()).toHaveLength(0);
   });
 
   it("sin traspaso: Luna mueve de Inbox a Interesado (etapa del Modelo 1) → contesta solo Luna", async () => {
