@@ -853,7 +853,13 @@ Agente IA es porque debe ser inteligente».
   «El workflow «X» ya le contestó…: contesta solo lo que el workflow no cubrió, sin repetirlo y **sin hacer preguntas**
   (ahora le toca contestar al cliente); si no falta nada, escribe exactamente `[NADA_QUE_AGREGAR]`». Esa señal
   (`NOTHING_TOKEN`, `parseBrainOutput` → `nothing`) no manda nada al cliente y no deja aviso: la red contra el silencio
-  la ve como «ya le salió algo al cliente» (`contestado`). Fuera del complemento, la señal sola es respuesta vacía.
+  la ve como «ya le salió algo al cliente» (`contestado`). En el complemento, una respuesta **en blanco** cuenta igual
+  (con el Goal real de staging, Luna y Sonnet a veces contestan vacío en vez de la señal); fuera del complemento, la
+  señal sola o el blanco son respuesta vacía (tarjeta, como siempre).
+- **Prueba con modelos reales (30-sep, Goal y FAQs de staging, sin enviar):** 6 mensajes × Luna y Sonnet, 12 de 12
+  bien: «De que cd son y que precio tienen» → «Somos de Los Mochis, Sinaloa»; «Cuánto cuesta y en cuántos días llega a
+  Monterrey?» → «3 a 5 días hábiles»; «Precio? se puede pagar a meses?» → «6 meses sin intereses»; «Precio», «Quiero
+  información» y «Hola buenas tardes, qué precio tienen?» → nada.
 - **Sin preguntas** (`withoutClosingQuestions`): del complemento se quita la pregunta final de cada mensaje y los que
   solo eran pregunta, para que la del workflow siga siendo la última («Somos de Los Mochis… ¿De dónde nos escribe?» →
   sale solo la primera parte; lo que no sale queda en `ai_usage.error`).
