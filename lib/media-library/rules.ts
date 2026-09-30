@@ -33,6 +33,25 @@ export function isMultimedia(kind: MediaKind): kind is "image" | "video" {
   return kind === "image" || kind === "video";
 }
 
+/**
+ * Miniatura de la Biblioteca (30-sep-2026): la hace el navegador (240×240 JPEG, ~10–20 KB) y la
+ * manda en base64. El servidor solo acepta un JPEG chico: base64 limpio, que empiece como JPEG
+ * (FF D8 FF) y de hasta 64 KB. Devuelve el base64 tal cual para guardarlo.
+ */
+export const THUMBNAIL_MAX_BYTES = 64 * 1024;
+
+export function validateThumbnail(base64: string): string {
+  const clean = base64.trim();
+  if (!clean || clean.length > Math.ceil((THUMBNAIL_MAX_BYTES * 4) / 3) + 4 || !/^[A-Za-z0-9+/]+={0,2}$/.test(clean)) {
+    throw new MediaRejectedError("mime", "Miniatura inválida.");
+  }
+  const bytes = Buffer.from(clean, "base64");
+  if (bytes.byteLength > THUMBNAIL_MAX_BYTES || bytes[0] !== 0xff || bytes[1] !== 0xd8 || bytes[2] !== 0xff) {
+    throw new MediaRejectedError("mime", "Miniatura inválida.");
+  }
+  return clean;
+}
+
 export class MediaRejectedError extends Error {
   constructor(
     readonly code: "mime" | "size" | "empty" | "name",

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { assetStorageKey, isMultimedia, kindForMime, MediaRejectedError, stepsUsingAsset, validateUpload } from "./rules";
+import { assetStorageKey, isMultimedia, kindForMime, MediaRejectedError, stepsUsingAsset, THUMBNAIL_MAX_BYTES, validateThumbnail, validateUpload } from "./rules";
 
 describe("validateUpload", () => {
   it("acepta imagen, video y documento dentro de los límites de WhatsApp", () => {
@@ -44,5 +44,18 @@ describe("isMultimedia", () => {
     expect(isMultimedia("image")).toBe(true);
     expect(isMultimedia("video")).toBe(true);
     expect(isMultimedia("document")).toBe(false);
+  });
+});
+
+describe("validateThumbnail", () => {
+  const jpeg = (n: number) => Buffer.concat([Buffer.from([0xff, 0xd8, 0xff, 0xe0]), Buffer.alloc(n)]).toString("base64");
+  it("acepta un JPEG chico en base64", () => {
+    expect(validateThumbnail(` ${jpeg(10_000)} `)).toBe(jpeg(10_000));
+  });
+  it("rechaza lo que no es JPEG, lo que no es base64 y lo que pasa de 64 KB", () => {
+    expect(() => validateThumbnail(Buffer.from("\x89PNG....").toString("base64"))).toThrow(MediaRejectedError);
+    expect(() => validateThumbnail("no es base64!")).toThrow(MediaRejectedError);
+    expect(() => validateThumbnail("")).toThrow(MediaRejectedError);
+    expect(() => validateThumbnail(jpeg(THUMBNAIL_MAX_BYTES))).toThrow(MediaRejectedError);
   });
 });

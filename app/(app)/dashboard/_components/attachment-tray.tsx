@@ -23,6 +23,11 @@ function DocIcon({ name }: { name: string }) {
 function Thumb({ item }: { item: AttachmentItem }) {
   // Rechazado (p. ej. un PDF renombrado a .jpg): sin miniatura rota.
   if (item.state === "error") return <div className="flex size-full items-center justify-center bg-red-500/10 text-lg text-red-600">⚠</div>;
+  if (item.posterUrl) {
+    // Miniatura de la Biblioteca (foto o primer cuadro del video): sin descargar el archivo.
+    // eslint-disable-next-line @next/next/no-img-element
+    return <img src={item.posterUrl} alt="" className="size-full object-cover" />;
+  }
   if (item.previewUrl && item.kind === "image") {
     // eslint-disable-next-line @next/next/no-img-element
     return <img src={item.previewUrl} alt="" className="size-full object-cover" />;
