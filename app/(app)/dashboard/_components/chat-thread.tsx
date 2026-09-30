@@ -33,7 +33,7 @@ import {
 import { formatPhone } from "@/lib/phone-format";
 import { PhoneLocation } from "@/components/ui/phone-location";
 import { LinkedText } from "@/components/ui/linked-text";
-import { bubbleKindLabel, isBareSticker, STICKER_LABEL, STICKER_SIZE_PX } from "@/lib/inbox/sticker";
+import { isBareSticker, STICKER_LABEL, STICKER_SIZE_PX } from "@/lib/inbox/sticker";
 
 const PAGE_LIMIT = 30;
 // Distancia al tope (px) a la que se cargan solos los mensajes anteriores, y al
@@ -189,9 +189,8 @@ function Bubble({
   // Primer mensaje que WhatsApp no pasó al CRM (Meta 131060, caso SDA): tarjeta de
   // aviso en lugar de "[Unsupported message]"; mientras se verifica, "Recibiendo mensaje…".
   const notice = view?.noDisponible ?? null;
-  // Sticker (30-sep-2026): «Sticker» junto a la hora; si viene solo, sin burbuja y con la
-  // hora en una píldora oscura, como en WhatsApp (lib/inbox/sticker.ts).
-  const kindLabel = view ? bubbleKindLabel(view.attachments) : null;
+  // Sticker suelto (30-sep-2026): sin burbuja y solo la hora abajo, como en WhatsApp, en una
+  // píldora con el color de su lado (blanca del cliente, azul nuestra) (lib/inbox/sticker.ts).
   const bare = view ? isBareSticker(view) : false;
   const bubbleSkin = bare
     ? ""
@@ -277,7 +276,7 @@ function Bubble({
         <div
           className={`mt-1 flex items-center justify-end gap-1 text-[10px] ${
             bare
-              ? `w-fit rounded-full bg-black/55 px-2 py-0.5 text-white ${out ? "ml-auto" : ""}`
+              ? `w-fit rounded-full px-2 py-0.5 shadow-sm ${out ? "ml-auto bg-brand-navy text-brand-white/70" : "border bg-card text-muted-foreground"}`
               : out
                 ? "text-brand-white/70"
                 : "text-muted-foreground"
@@ -285,7 +284,6 @@ function Bubble({
         >
           {view?.importedFromPhone && <span title="Copiado del historial del celular al conectar el número">Importado del celular ·</span>}
           {view?.editedAt && <span>editado</span>}
-          {kindLabel && <span>{kindLabel} ·</span>}
           <span>{bubbleTime(row.sentAt)}</span>
           {mark && mark.glyph && (
             <span className={mark.className} title={mark.label} aria-label={mark.label}>
