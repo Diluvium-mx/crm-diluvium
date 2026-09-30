@@ -837,6 +837,36 @@ Decisiones del dueño:
   tamaños: la imagen es la referencia; con la medida del cliente, decir qué tamaño le queda) y una excepción en el Goal
   (si vuelve a pedir la tabla, mandarla con su herramienta).
 
+## El workflow contesta SU tema; el Agente IA, lo que falte (30-sep-2026, sin migración)
+
+Caso del 29-sep (6:22 p.m. Mazatlán): «De que cd son y que precio tienen» disparó «Precio 2» por "precio". El
+workflow contestó el precio y terminó con su pregunta; su marca `contestaA` dejó el mensaje **entero** como contestado y
+nadie le dijo de qué ciudad somos (el agente, después, solo preguntó el nivel del agua). Pedido del dueño: «si tenemos un
+Agente IA es porque debe ser inteligente».
+
+- El último mensaje de una corrida por **palabra clave** con «El workflow es la respuesta» lleva, junto a `contestaA`, la
+  marca **`revisaAgente`** (`markAnswersOnly`, `ANSWERS_ONLY_REVIEW_KEY`). Con ella, `answeredOnlySql` (pendientes y
+  barrido) solo da el mensaje por contestado cuando el **Agente IA ya lo revisó** (resultado final en `ai_usage` para ese
+  mensaje). Las marcas viejas (sin `revisaAgente`) siguen como antes: al desplegar no se revisa historia.
+- **Modo complemento** (`lib/ai/runtime/complement.ts`, `run.ts`): el agente sigue esperando a que termine la corrida
+  (`answerRunInFlight`); luego, si ese mensaje es el **último** del cliente, recibe en el contexto del CRM la nota
+  «El workflow «X» ya le contestó…: contesta solo lo que el workflow no cubrió, sin repetirlo y **sin hacer preguntas**
+  (ahora le toca contestar al cliente); si no falta nada, escribe exactamente `[NADA_QUE_AGREGAR]`». Esa señal
+  (`NOTHING_TOKEN`, `parseBrainOutput` → `nothing`) no manda nada al cliente y no deja aviso: la red contra el silencio
+  la ve como «ya le salió algo al cliente» (`contestado`). Fuera del complemento, la señal sola es respuesta vacía.
+- **Sin preguntas** (`withoutClosingQuestions`): del complemento se quita la pregunta final de cada mensaje y los que
+  solo eran pregunta, para que la del workflow siga siendo la última («Somos de Los Mochis… ¿De dónde nos escribe?» →
+  sale solo la primera parte; lo que no sale queda en `ai_usage.error`).
+- Si el cliente ya **siguió escribiendo** (p. ej. contestó «Sí» antes de la revisión), el agente contesta todo junto
+  como siempre (con pregunta), con la nota de no repetir lo que ya dijo el workflow (`partialNote`).
+- Ráfaga («¿Cuánto tarda el envío?» + «Precio»): ahora el agente lee los dos en modo complemento y contesta lo del
+  envío sin repetir el precio; el uso queda ligado al disparador.
+- Costo: una llamada más al modelo por cada workflow «es la respuesta» por palabra clave (casi siempre al inicio, con el
+  Modelo 1). Orden: la aclaración del agente sale **después** de la pregunta del workflow (~15–20 s, la espera normal del
+  agente); que salga antes quedaría como mejora aparte (la pregunta esperaría al agente).
+- Pendiente aparte: como **herramienta** del Agente IA con textos («Depende»), su propio texto sigue sin salir; hoy
+  ningún workflow con textos tiene «El Agente IA puede dispararlo».
+
 ## Fuera de alcance (próximos briefs)
 
 Follow-ups (Fase C), modelos por etapa y reenvío seguro (Fase E), y los pendientes A–F de la Fase D
