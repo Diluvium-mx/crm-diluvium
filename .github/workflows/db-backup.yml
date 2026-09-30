@@ -2,16 +2,24 @@
 #
 # - Dump en formato custom (-Fc), probado con un restore real en un
 #   Postgres desechable del propio job antes de guardarlo.
-# - Cifrado simétrico con GPG (AES256) ANTES de subirlo: el repo es público y
-#   los artifacts de un repo público los descarga cualquier cuenta de GitHub.
-# - Se guarda como artifact con retención de 90 días (máximo en repo público).
+# - Cifrado con LLAVE PÚBLICA (GPG, .github/backup/respaldos-public.asc):
+#   este job solo puede cifrar; descifra únicamente quien tenga la llave
+#   privada (el dueño, en su gestor de contraseñas). Ni el CI ni un secret
+#   filtrado sirven para leer un respaldo.
+# - Se guarda en el bucket PRIVADO `crm-respaldos` de Railway (carpeta
+#   respaldos/), no como artifact: el repo es público y los artifacts de un
+#   repo público los descarga cualquier cuenta de GitHub. Retención: el
+#   propio job borra los de más de 90 días.
 #
 # Secrets del environment `production-backup` (solo se entregan a jobs que
 # corren desde `main`; una rama con un workflow modificado no los recibe):
-#   PROD_DATABASE_URL       URL PÚBLICA (TCP proxy) de producción, con un rol
-#                           de solo lectura (backup_ro)
-#   BACKUP_GPG_PASSPHRASE   passphrase de cifrado; guardarla también fuera de
-#                           GitHub (sin ella no hay restore)
+#   PROD_DATABASE_URL              URL PÚBLICA (TCP proxy) de producción con
+#                                  el rol de solo lectura backup_ro. Se
+#                                  desarma en variables PG*: la contraseña no
+#                                  viaja como argumento de ningún comando.
+#   RESPALDOS_S3_BUCKET            nombre S3 del bucket crm-respaldos
+#   RESPALDOS_S3_ACCESS_KEY_ID     credenciales de ESE bucket (no del de media)
+#   RESPALDOS_S3_SECRET_ACCESS_KEY
 #
 # Restore y monitoreo: docs/backups.md
 name: db-backup
@@ -32,6 +40,9 @@ env:
   # Debe coincidir con la versión mayor del servidor (se verifica abajo).
   # pg_dump no puede respaldar un servidor más nuevo que él.
   PG_MAJOR: "18"
+  # Huella de la llave de firma del repositorio apt de PostgreSQL (PGDG):
+  # se comprueba antes de confiar en la llave descargada.
+  PGDG_KEY_FPR: B97B0AFCAA1A47F044F244A07FCC7D46ACCC4CF8
   # TLS AUTENTICADO contra producción. sslmode=require solo cifra: no valida
   # el certificado, así que un MITM (DNS/red) recibiría la credencial y el
   # dump en claro. Railway firma el certificado con una CA propia de la
@@ -39,8 +50,23 @@ env:
   # postgres.railway.internal, no para el dominio del proxy, así que
   # verify-full no aplica): se FIJA esa CA con verify-ca. Rotación y
   # re-fijado: docs/backups.md.
-  PROD_PGSSLMODE: verify-ca
-  PROD_PGSSLROOTCERT: .github/backup/prod-postgres-root-ca.pem
+  PGSSLMODE: verify-ca
+  PGSSLROOTCERT: .github/backup/prod-postgres-root-ca.pem
+  # Llave pública de cifrado y su huella (la privada NO está en ningún lado
+  # de GitHub ni Railway). Si alguien cambiara el archivo, la huella no coincide
+  # y el job falla en vez de cifrar para un desconocido.
+  RESPALDOS_PUBLIC_KEY: .github/backup/respaldos-public.asc
+  RESPALDOS_FPR: 56FD42935662F3658B6BB1D99DE79FB8CE0F5C3A
+  # Bucket de Railway (S3 compatible). El nombre S3 y las credenciales van en secrets.
+  RESPALDOS_S3_ENDPOINT: https://t3.storageapi.dev
+  RESPALDOS_PREFIX: respaldos/
+  RESPALDOS_RETENTION_DAYS: "90"
+  AWS_DEFAULT_REGION: auto
+  AWS_EC2_METADATA_DISABLED: "true"
+  # El aws CLI reciente manda sumas de verificación nuevas que no todo S3
+  # compatible acepta: solo cuando el servicio las pida.
+  AWS_REQUEST_CHECKSUM_CALCULATION: when_required
+  AWS_RESPONSE_CHECKSUM_VALIDATION: when_required
 
 jobs:
   backup:
@@ -49,9 +75,11 @@ jobs:
     environment: production-backup
 
     services:
-      # Postgres desechable para probar que el dump se restaura.
+      # Postgres desechable para probar que el dump se restaura. Fijado por
+      # digest (postgres:18 del 24-sep-2026): una etiqueta puede cambiar de
+      # contenido sin aviso; el digest no.
       restore-check:
-        image: postgres:18
+        image: postgres:18@sha256:5a5a84b19854a9ffaa54082c166ff4ec27473a361e496e5ea167f298f2da9722
         env:
           POSTGRES_PASSWORD: restore-check
         ports:
@@ -61,7 +89,7 @@ jobs:
           --health-interval 5s --health-timeout 5s --health-retries 10
 
     steps:
-      - name: Checkout (solo la CA fijada)
+      - name: Checkout (solo la CA fijada y la llave pública)
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           sparse-checkout: .github/backup
@@ -70,17 +98,52 @@ jobs:
       - name: Verificar secrets
         env:
           PROD_DATABASE_URL: ${{ secrets.PROD_DATABASE_URL }}
-          BACKUP_GPG_PASSPHRASE: ${{ secrets.BACKUP_GPG_PASSPHRASE }}
+          RESPALDOS_S3_BUCKET: ${{ secrets.RESPALDOS_S3_BUCKET }}
+          RESPALDOS_S3_ACCESS_KEY_ID: ${{ secrets.RESPALDOS_S3_ACCESS_KEY_ID }}
+          RESPALDOS_S3_SECRET_ACCESS_KEY: ${{ secrets.RESPALDOS_S3_SECRET_ACCESS_KEY }}
         run: |
-          [ -n "$PROD_DATABASE_URL" ] || { echo "::error::Falta el secret PROD_DATABASE_URL"; exit 1; }
-          [ -n "$BACKUP_GPG_PASSPHRASE" ] || { echo "::error::Falta el secret BACKUP_GPG_PASSPHRASE"; exit 1; }
-          [ ${#BACKUP_GPG_PASSPHRASE} -ge 32 ] || { echo "::error::BACKUP_GPG_PASSPHRASE debe tener al menos 32 caracteres"; exit 1; }
+          for v in PROD_DATABASE_URL RESPALDOS_S3_BUCKET RESPALDOS_S3_ACCESS_KEY_ID RESPALDOS_S3_SECRET_ACCESS_KEY; do
+            [ -n "${!v}" ] || { echo "::error::Falta el secret $v"; exit 1; }
+          done
 
-      - name: Instalar cliente de Postgres ${{ env.PG_MAJOR }} (PGDG)
+      - name: Verificar la llave pública de cifrado
+        run: |
+          gpg --batch --import "$RESPALDOS_PUBLIC_KEY"
+          fpr=$(gpg --batch --with-colons --list-keys | awk -F: '$1=="fpr"{print $10; exit}')
+          if [ "$fpr" != "$RESPALDOS_FPR" ]; then
+            echo "::error::La llave pública del repo ($fpr) no es la esperada ($RESPALDOS_FPR)"
+            exit 1
+          fi
+          echo "Llave de cifrado: $fpr"
+
+      - name: Conexión a producción por variables (la contraseña no va en argumentos)
+        env:
+          PROD_DATABASE_URL: ${{ secrets.PROD_DATABASE_URL }}
+        run: |
+          # Se desarma la URL en PGHOST/PGPORT/PGUSER/PGPASSWORD/PGDATABASE. La query
+          # de la URL (p. ej. ?sslmode=require) se ignora: manda PGSSLMODE=verify-ca.
+          python3 - <<'PY'
+          import os, urllib.parse as u
+          p = u.urlsplit(os.environ["PROD_DATABASE_URL"])
+          pw = u.unquote(p.password or "")
+          # La máscara va a la SALIDA (así la lee GitHub); las variables, al archivo de entorno.
+          print("::add-mask::" + pw, flush=True)
+          with open(os.environ["GITHUB_ENV"], "a") as env:
+              for k, v in (("PGHOST", p.hostname or ""), ("PGPORT", str(p.port or 5432)), ("PGUSER", u.unquote(p.username or "")), ("PGPASSWORD", pw), ("PGDATABASE", u.unquote(p.path.lstrip("/")))):
+                  assert v and "\n" not in v, k
+                  env.write(f"{k}={v}\n")
+          PY
+
+      - name: Instalar cliente de Postgres ${{ env.PG_MAJOR }} (PGDG, llave verificada)
         run: |
           sudo install -d /usr/share/postgresql-common/pgdg
-          sudo curl -fsSLo /usr/share/postgresql-common/pgdg/apt.postgresql.org.asc \
-            https://www.postgresql.org/media/keys/ACCC4CF8.asc
+          curl -fsSLo /tmp/pgdg.asc https://www.postgresql.org/media/keys/ACCC4CF8.asc
+          got=$(gpg --batch --with-colons --show-keys /tmp/pgdg.asc | awk -F: '$1=="fpr"{print $10; exit}')
+          if [ "$got" != "$PGDG_KEY_FPR" ]; then
+            echo "::error::La llave de PGDG descargada ($got) no es la esperada ($PGDG_KEY_FPR)"
+            exit 1
+          fi
+          sudo install -m 0644 /tmp/pgdg.asc /usr/share/postgresql-common/pgdg/apt.postgresql.org.asc
           echo "deb [signed-by=/usr/share/postgresql-common/pgdg/apt.postgresql.org.asc] https://apt.postgresql.org/pub/repos/apt $(lsb_release -cs)-pgdg main" \
             | sudo tee /etc/apt/sources.list.d/pgdg.list >/dev/null
           sudo apt-get update -qq
@@ -88,14 +151,8 @@ jobs:
           echo "/usr/lib/postgresql/${PG_MAJOR}/bin" >> "$GITHUB_PATH"
 
       - name: Verificar versión del servidor
-        env:
-          PGSSLMODE: ${{ env.PROD_PGSSLMODE }}
-          PGSSLROOTCERT: ${{ env.PROD_PGSSLROOTCERT }}
-          PROD_DATABASE_URL: ${{ secrets.PROD_DATABASE_URL }}
         run: |
-          # Sin la query de la URL: un ?sslmode=require ahí ganaría sobre PGSSLMODE.
-          prod_url="${PROD_DATABASE_URL%%\?*}"
-          server_major=$(psql "$prod_url" -XAtc "select current_setting('server_version_num')::int / 10000")
+          server_major=$(psql -XAtc "select current_setting('server_version_num')::int / 10000")
           echo "Servidor: Postgres $server_major · cliente: $(pg_dump --version)"
           if [ "$server_major" != "$PG_MAJOR" ]; then
             echo "::error::El servidor es Postgres $server_major y el workflow usa $PG_MAJOR. Actualiza PG_MAJOR y la imagen del service."
@@ -103,53 +160,76 @@ jobs:
           fi
 
       - name: pg_dump
-        env:
-          PGSSLMODE: ${{ env.PROD_PGSSLMODE }}
-          PGSSLROOTCERT: ${{ env.PROD_PGSSLROOTCERT }}
-          PROD_DATABASE_URL: ${{ secrets.PROD_DATABASE_URL }}
         run: |
           umask 077
-          prod_url="${PROD_DATABASE_URL%%\?*}"
           stamp=$(date -u +%Y%m%dT%H%MZ)
           echo "DUMP=crm-diluvium-prod-${stamp}.dump" >> "$GITHUB_ENV"
-          pg_dump "$prod_url" -Fc -Z 9 -f "crm-diluvium-prod-${stamp}.dump"
+          pg_dump -Fc -Z 9 -f "crm-diluvium-prod-${stamp}.dump"
           ls -l "crm-diluvium-prod-${stamp}.dump"
 
       - name: Probar restore en Postgres desechable
         env:
-          PGSSLMODE: ${{ env.PROD_PGSSLMODE }}
-          PGSSLROOTCERT: ${{ env.PROD_PGSSLROOTCERT }}
-          PROD_DATABASE_URL: ${{ secrets.PROD_DATABASE_URL }}
-          CHECK_URL: postgresql://postgres:restore-check@localhost:5432/postgres?sslmode=disable
+          # El Postgres del job, sin TLS: se sobreescriben solo aquí las PG* de producción.
+          CHECK: PGHOST=localhost PGPORT=5432 PGUSER=postgres PGPASSWORD=restore-check PGDATABASE=postgres PGSSLMODE=disable
         run: |
           pg_restore --list "$DUMP" > /dev/null
-          pg_restore --no-owner --no-acl --exit-on-error -d "$CHECK_URL" "$DUMP"
+          env $CHECK pg_restore --no-owner --no-acl --exit-on-error -d postgres "$DUMP"
 
           count_tables='select count(*) from information_schema.tables where table_schema not in ($$pg_catalog$$, $$information_schema$$)'
-          prod=$(psql "${PROD_DATABASE_URL%%\?*}" -XAtc "$count_tables")
-          restored=$(PGSSLMODE=disable psql "$CHECK_URL" -XAtc "$count_tables")
+          prod=$(psql -XAtc "$count_tables")
+          restored=$(env $CHECK psql -XAtc "$count_tables")
           echo "Tablas en producción: $prod · restauradas: $restored"
           if [ "$restored" -eq 0 ] || [ "$restored" != "$prod" ]; then
             echo "::error::El restore de prueba no coincide con producción"
             exit 1
           fi
 
-      - name: Cifrar con GPG (AES256)
-        env:
-          BACKUP_GPG_PASSPHRASE: ${{ secrets.BACKUP_GPG_PASSPHRASE }}
+      - name: Cifrar con la llave pública
         run: |
           umask 077
-          gpg --batch --yes --pinentry-mode loopback --passphrase-fd 3 \
-            --symmetric --cipher-algo AES256 --compress-algo none \
-            -o "$DUMP.gpg" "$DUMP" 3<<< "$BACKUP_GPG_PASSPHRASE"
+          gpg --batch --yes --trust-model always --encrypt --recipient "$RESPALDOS_FPR" \
+            --compress-algo none -o "$DUMP.gpg" "$DUMP"
           shred -u "$DUMP"
           ls -l "$DUMP.gpg"
 
-      - name: Subir artifact cifrado
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
-        with:
-          name: ${{ env.DUMP }}.gpg
-          path: ${{ env.DUMP }}.gpg
-          retention-days: 90
-          compression-level: 0
-          if-no-files-found: error
+      - name: Subir al bucket crm-respaldos
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.RESPALDOS_S3_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.RESPALDOS_S3_SECRET_ACCESS_KEY }}
+          RESPALDOS_S3_BUCKET: ${{ secrets.RESPALDOS_S3_BUCKET }}
+        run: |
+          key="${RESPALDOS_PREFIX}${DUMP}.gpg"
+          aws --endpoint-url "$RESPALDOS_S3_ENDPOINT" s3 cp "$DUMP.gpg" "s3://${RESPALDOS_S3_BUCKET}/${key}" --only-show-errors
+          # Se confirma que llegó completo antes de dar el respaldo por hecho.
+          local_size=$(stat -c %s "$DUMP.gpg")
+          remote_size=$(aws --endpoint-url "$RESPALDOS_S3_ENDPOINT" s3api head-object --bucket "$RESPALDOS_S3_BUCKET" --key "$key" --query ContentLength --output text)
+          echo "Subido: $key · $remote_size bytes"
+          if [ "$remote_size" != "$local_size" ]; then
+            echo "::error::El tamaño en el bucket ($remote_size) no coincide con el local ($local_size)"
+            exit 1
+          fi
+          shred -u "$DUMP.gpg"
+
+      - name: Retención (borrar respaldos de más de ${{ env.RESPALDOS_RETENTION_DAYS }} días)
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.RESPALDOS_S3_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.RESPALDOS_S3_SECRET_ACCESS_KEY }}
+          RESPALDOS_S3_BUCKET: ${{ secrets.RESPALDOS_S3_BUCKET }}
+        run: |
+          aws --endpoint-url "$RESPALDOS_S3_ENDPOINT" s3api list-objects-v2 --bucket "$RESPALDOS_S3_BUCKET" --prefix "$RESPALDOS_PREFIX" --output json > /tmp/objetos.json
+          python3 - <<'PY' > /tmp/viejos.txt
+          import json, os, datetime as dt
+          limite = dt.datetime.now(dt.timezone.utc) - dt.timedelta(days=int(os.environ["RESPALDOS_RETENTION_DAYS"]))
+          objetos = json.load(open("/tmp/objetos.json")).get("Contents", [])
+          print(f"# {len(objetos)} respaldo(s) en el bucket", flush=True)
+          for o in objetos:
+              if dt.datetime.fromisoformat(o["LastModified"].replace("Z", "+00:00")) < limite:
+                  print(o["Key"])
+          PY
+          grep '^#' /tmp/viejos.txt
+          # Sin viejos, grep -v no encuentra nada (código 1): no es error (el shell corre con pipefail).
+          { grep -v '^#' /tmp/viejos.txt || true; } | while read -r key; do
+            [ -n "$key" ] || continue
+            aws --endpoint-url "$RESPALDOS_S3_ENDPOINT" s3api delete-object --bucket "$RESPALDOS_S3_BUCKET" --key "$key"
+            echo "Borrado por retención: $key"
+          done
