@@ -22,21 +22,16 @@ import { buildBrainSystemWithRuntime, parseBrainOutput } from "./brain";
 import { answerRunsWithText, crmContextFor, executeActions, loadAgentTools, noteForVendor, prepareActions, quoteSetByVendor, runsThatSend, setQuoteByAgent, type ActionPhase, type ActionPlan, type ExecutedActions, type StartWorkflow } from "./actions";
 import { maxPerChatContextFor } from "@/lib/workflows/max-per-chat";
 
-// Textos de respaldo del CRM cuando el modelo solo devolvió acciones (sin texto)
-// y ninguna manda algo al cliente: el agente SIEMPRE contesta, y nunca con un
-// "Listo 👍" que suene a "pago aceptado" tras un comprobante dudoso.
-export const SOLO_ACCIONES_TEXT = "Listo 👍 ¿En qué más te ayudo?";
-export const FALLBACK_TEXT_BY_MOTIVO: Record<string, string> = {
-  comprobante_dudoso: "Recibí tu comprobante 🙏 Un asesor lo revisa y te confirmo en un momento.",
-  cotejar_deposito: "Gracias, recibí tu comprobante ✅ En cuanto se confirme te aviso.",
-  cliente_pide_humano: "Con gusto, en un momento te atiende un asesor.",
-};
-export function fallbackTextFor(plan: ActionPlan): string {
-  for (const motivo of ["comprobante_dudoso", "cotejar_deposito", "cliente_pide_humano"]) {
-    if (plan.avisos.some((a) => a.motivo === motivo)) return FALLBACK_TEXT_BY_MOTIVO[motivo];
-  }
-  return SOLO_ACCIONES_TEXT;
-}
+// Red contra el silencio (29-sep-2026, dueño). Antes, si el modelo contestaba solo con
+// acciones (sin texto) y ninguna le mandaba algo al cliente, el CRM mandaba un texto fijo
+// («Listo 👍 ¿En qué más te ayudo?» o uno por motivo). En producción salió 10 veces y
+// ninguna era correcta: 5 tapaban la pregunta de un workflow que ya había contestado. Ahora
+// el CRM NUNCA escribe por su cuenta: (1) si ya le salió algo al cliente después de su
+// último mensaje, no se manda nada más; (2) si no, escribe el otro modelo; (3) si nadie
+// escribe, no sale nada y el vendedor recibe el aviso "sin_respuesta" (amarillo, no pausa).
+export const SIN_RESPUESTA_NOTE =
+  "El cliente todavía no tiene respuesta a su último mensaje: contéstale con texto (además de las acciones que hagan falta).";
+export const SIN_RESPUESTA_BODY = "El Agente IA no le escribió nada al cliente (los modelos contestaron solo con acciones). Revisa si hacía falta contestar.";
 import { mergeHandoffToolCalls, validateToolCalls, type ValidToolCall } from "./tools";
 import { applyDetalleByAgent, detalleContextFor, mergeDetalle } from "./detalle";
 import { transcriptionWaitMs } from "@/lib/ai/transcription/rules";
@@ -61,6 +56,7 @@ import {
   agentSendUnresolved,
   outboundTextsSinceLastInbound,
   pendingInbound,
+  sentToClientSinceLastInbound,
   type MessageRow,
 } from "./context";
 import { splitRepeated } from "@/lib/messaging/repeat";
@@ -594,10 +590,10 @@ export async function runAgent(job: { organizationId: string; conversationId: st
     const maxPerChatContext = await maxPerChatContextFor(org, conv.id);
     // Un modelo sin lectura de PDF (p. ej. Qwen) recibe el PDF como nota de texto.
     // Opciones del bot: sin imágenes ("[imagen]") o sin notas de voz ("[nota de voz]").
-    const messagesFor = async (model: CatalogModel, avanzaA: string | null) =>
+    const messagesFor = async (model: CatalogModel, avanzaA: string | null, nota: string | null = null) =>
       buildModelMessages(history, mediaUrls, {
         cleanText,
-        crmContext: [await crmContextFor(org, conv.contactId, stages, avanzaA), detalleContext, maxPerChatContext].filter(Boolean).join("\n"),
+        crmContext: [await crmContextFor(org, conv.contactId, stages, avanzaA), detalleContext, maxPerChatContext, nota].filter(Boolean).join("\n"),
         ...(model.pdf ? {} : { maxPdfs: 0 }),
         ...(options.readImages ? {} : { maxImages: 0 }),
         ...(options.transcribeAudio ? {} : { voiceNotesOff: true }),
@@ -613,8 +609,11 @@ export async function runAgent(job: { organizationId: string; conversationId: st
     };
     // Una llamada al cerebro. Un error del proveedor o una respuesta sin texto ni acciones
     // (tokens agotados, filtro del proveedor…) cuentan como falla; las dos dejan su fila.
-    const attempt = async (model: CatalogModel, avanzaA: string | null = null): Promise<BrainOk | BrainFail> => {
-      const messages = await messagesFor(model, avanzaA);
+    // Modelos ya llamados en esta ronda (la red contra el silencio no le vuelve a preguntar a ninguno).
+    const tried = new Set<string>();
+    const attempt = async (model: CatalogModel, avanzaA: string | null = null, nota: string | null = null): Promise<BrainOk | BrainFail> => {
+      tried.add(model.id);
+      const messages = await messagesFor(model, avanzaA, nota);
       const t0 = Date.now();
       let res: CallModelResult;
       try {
@@ -633,6 +632,24 @@ export async function runAgent(job: { organizationId: string; conversationId: st
       return { ok: true, model, res, out, toolCalls: valid, ignored, latencyMs };
     };
     const usageOf = (r: BrainOk) => ({ ...base, stage: "cerebro" as const, modelId: r.res.modelId, provider: r.res.provider, usage: r.res.usage, latencyMs: r.latencyMs });
+    // Red contra el silencio (29-sep-2026, dueño): ¿esta respuesta no le manda NADA al cliente?
+    // Sin texto y sin un workflow que mande algo (el que ya salió por palabra clave no cuenta:
+    // prepareActions lo quita, igual que al ejecutar). Solo lectura.
+    const isSilent = async (r: BrainOk): Promise<boolean> => {
+      if (r.out.kind === "reply" && r.out.text.trim()) return false;
+      const draft = await prepareActions({ organizationId: org, conversationId: conv.id, calls: r.toolCalls, modelText: "", pendingSince: pending[0]?.createdAt ?? null, stages });
+      const sending = await runsThatSend(org, draft.runs.map((run) => run.workflowId));
+      return !draft.runs.some((run) => sending.has(run.workflowId));
+    };
+    // ¿Ya le salió algo al cliente después de su último mensaje? Entonces callar es correcto.
+    let answered: boolean | null = null;
+    const alreadyAnswered = async (): Promise<boolean> =>
+      (answered ??= await sentToClientSinceLastInbound(org, conv.id, pending.map((m) => m.id)));
+    // La señal vieja [TRANSFERIR] viaja como aviso para no perderla al cambiar de respuesta.
+    const callsOf = (r: BrainOk): ValidToolCall[] =>
+      r.out.kind === "reply" && r.out.handover && !r.toolCalls.some((c) => c.kind === "aviso" && c.aviso.motivo === "cliente_pide_humano")
+        ? [...r.toolCalls, { kind: "aviso", aviso: { motivo: "cliente_pide_humano", detalle: "El cliente pidió hablar con una persona (señal [TRANSFERIR] del Goal). El agente sigue atendiendo." } }]
+        : r.toolCalls;
 
     // Fase E ("reenvío seguro") + 27-sep-2026: si el modelo falla, contesta el otro. Con un
     // solo modelo disponible, un proveedor SATURADO se reintenta una vez por corrida tras
@@ -684,7 +701,15 @@ export async function runAgent(job: { organizationId: string; conversationId: st
       const model2 = target ? getModel(cfg.modeloCerebro) : undefined;
       if (target && model2 && model2.id !== used.model.id && isAvailable(model2.id)) {
         const second = await attempt(model2, target);
-        if (second.ok) {
+        // Red contra el silencio: el Modelo 2 no escribió nada, nadie le ha contestado al cliente
+        // y el Modelo 1 sí escribió → sale la del Modelo 1 (igual que si el Modelo 2 fallara).
+        const secondMute = second.ok && (await isSilent(second)) && !(await isSilent(used)) && !(await alreadyAnswered());
+        if (second.ok && secondMute) {
+          await recordAiUsage({ ...usageOf(second), outcome: "sin_texto", error: `traspaso sin texto; sale la respuesta de ${used.model.id}` });
+          console.warn(`[agente] ${conv.id}: ${model2.label} contestó sin texto en el traspaso; sale la respuesta de ${used.model.label}`);
+          // Sus avisos y su Detalle no se pierden (mandan los del Modelo 1, que sí escribió).
+          used = { ...used, toolCalls: mergeHandoffToolCalls(callsOf(second), used.toolCalls), ignored: [...used.ignored, ...second.ignored] };
+        } else if (second.ok) {
           await recordAiUsage({ ...usageOf(used), outcome: "traspaso", error: `pasa a ${target}: contesta ${model2.id}` });
           console.info(`[agente] ${conv.id}: ${used.model.label} lleva al contacto a ${target}; la respuesta la escribe ${model2.label}`);
           // Las acciones que ya decidió el Modelo 1 (p. ej. el workflow que provocó el traspaso) no se
@@ -694,6 +719,36 @@ export async function runAgent(job: { organizationId: string; conversationId: st
           used = { ...second, toolCalls, ignored: [...used.ignored, ...second.ignored] };
         } else {
           console.warn(`[agente] ${conv.id}: ${model2.label} falló en el traspaso (${second.info.kind}); sale la respuesta de ${used.model.label}`);
+        }
+      }
+    }
+
+    // ── Red contra el silencio (29-sep-2026, dueño) ─────────────────────────
+    // La respuesta no le manda nada al cliente. (1) Si ya le salió algo después de su último
+    // mensaje (p. ej. «Precio 2» por palabra clave, que termina con su pregunta), callar es
+    // correcto: no se manda nada más. (2) Si no, escribe el otro modelo (uno que no se haya
+    // usado ni fallado en esta ronda), con una nota de que el cliente sigue sin respuesta; las
+    // acciones de la primera respuesta (Detalle, avisos, workflows, etapa) no se pierden. (3)
+    // Si nadie escribe, no sale nada y el vendedor recibe el aviso "sin_respuesta" (abajo, ya
+    // con la respuesta confirmada). Nunca un texto fijo del CRM.
+    let silencio: "contestado" | "sin_respuesta" | null = null;
+    if (await isSilent(used)) {
+      if (await alreadyAnswered()) {
+        silencio = "contestado";
+      } else {
+        const other = candidates.map((c) => getModel(c.modelId)).find((m): m is CatalogModel => m !== undefined && !tried.has(m.id));
+        const rescue = other ? await attempt(other, null, SIN_RESPUESTA_NOTE) : null;
+        if (rescue?.ok && !(await isSilent(rescue))) {
+          await recordAiUsage({ ...usageOf(used), outcome: "sin_texto", error: `sin texto; contesta ${rescue.model.id}` });
+          console.warn(`[agente] ${conv.id}: ${used.model.label} contestó solo con acciones; escribe ${rescue.model.label}`);
+          const toolCalls = mergeHandoffToolCalls(callsOf(used), callsOf(rescue));
+          // La etapa que decidió la primera respuesta se respeta (solo avanza; gana la más adelantada).
+          toolCalls.push(...used.toolCalls.filter((c) => c.kind === "etapa"));
+          used = { ...rescue, toolCalls, ignored: [...used.ignored, ...rescue.ignored] };
+        } else {
+          if (rescue?.ok) await recordAiUsage({ ...usageOf(rescue), outcome: "sin_texto", error: `tampoco escribió; sin respuesta (${used.model.id})` });
+          silencio = "sin_respuesta";
+          console.warn(`[agente] ${conv.id}: ningún modelo le escribió al cliente${other ? "" : " (no hay otro modelo disponible)"}; aviso al vendedor`);
         }
       }
     }
@@ -753,10 +808,10 @@ export async function runAgent(job: { organizationId: string; conversationId: st
           " Revisa el hilo.",
       });
     }
-    // Solo llamadas, sin texto (algunos modelos lo hacen con tools): NO se lanza
-    // (cada reintento sería otra llamada pagada). Las acciones corren igual; para
-    // un archivo el cliente recibe la media con su pie, y el entrante queda
-    // atendido por la fila de uso.
+    // Solo llamadas, sin texto (algunos modelos lo hacen con tools): NO se lanza. Las
+    // acciones corren igual; para un archivo el cliente recibe la media con su pie, y el
+    // entrante queda atendido por la fila de uso. Si nada le llega al cliente, la red contra
+    // el silencio (arriba) ya pidió otra respuesta o dejó el aviso al vendedor.
     // La señal vieja [TRANSFERIR] del Goal cuenta como aviso_vendedor(cliente_pide_humano).
     if (out.kind === "reply" && out.handover) {
       toolCalls.push({ kind: "aviso", aviso: { motivo: "cliente_pide_humano", detalle: "El cliente pidió hablar con una persona (señal [TRANSFERIR] del Goal). El agente sigue atendiendo." } });
@@ -770,8 +825,8 @@ export async function runAgent(job: { organizationId: string; conversationId: st
       stages,
     });
     const actionCtx = { organizationId: org, conversationId: conv.id, contactId: conv.contactId, batchMessageId: lastRead.id, receiptMessageId: receiptMessageId(pending), now, since: pending[0]?.createdAt ?? null };
-    // Sin texto del modelo y sin ninguna acción que mande algo al cliente (solo
-    // etapa/cotización/aviso): el cliente no puede quedarse sin respuesta.
+    // Sin texto del modelo: sale solo lo que manden sus workflows. Si no mandan nada, ya lo
+    // resolvió la red contra el silencio (arriba): el CRM nunca escribe un texto fijo.
     let text = out.kind === "reply" ? out.text : "";
     // «El workflow es la respuesta» como herramienta (29-sep-2026, dueño: «Depende»): si pidió un
     // workflow marcado que trae TEXTOS, ese workflow es la respuesta y el texto del modelo no sale
@@ -779,9 +834,10 @@ export async function runAgent(job: { organizationId: string; conversationId: st
     const answerRuns = await answerRunsWithText(org, plan.runs.map((r) => r.workflowId));
     const withheld = answerRuns.size && text.trim() ? text.trim() : null;
     if (withheld) text = "";
-    if (!text.trim()) {
-      const sending = await runsThatSend(org, plan.runs.map((r) => r.workflowId));
-      if (!plan.runs.some((r) => sending.has(r.workflowId))) text = fallbackTextFor(plan);
+    // Red contra el silencio, paso 3: nadie le escribió al cliente → aviso al vendedor
+    // (amarillo en el Embudo; no pausa al agente). Uno por entrante.
+    if (silencio === "sin_respuesta") {
+      await addNotice({ organizationId: org, conversationId: conv.id, messageId: lastRead.id, kind: "sin_respuesta", body: SIN_RESPUESTA_BODY });
     }
     // Parte 1: el Detalle del contacto con lo que dijo el cliente (misma llamada, nunca
     // frena la respuesta; lo del vendedor no se toca).
@@ -940,6 +996,8 @@ export async function runAgent(job: { organizationId: string; conversationId: st
       unconfirmed ? `${unconfirmed} mensaje(s) sin confirmar${omitted ? `; ${omitted} sin enviar (aviso)` : ""}` : null,
       repeated.length ? `no se repitió lo que ya salió: «${repeated.join(" / ")}»` : null,
       withheld ? `el workflow es la respuesta; no salió el texto del modelo: «${withheld.slice(0, 300)}»` : null,
+      silencio === "contestado" ? "sin texto: ya le había salido algo al cliente después de su último mensaje" : null,
+      silencio === "sin_respuesta" ? "sin texto: ningún modelo le escribió al cliente (aviso sin_respuesta)" : null,
     ]
       .filter(Boolean)
       .join("; ");
