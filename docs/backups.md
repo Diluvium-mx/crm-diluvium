@@ -13,9 +13,19 @@ la BD de producción se respalda con `pg_dump` desde GitHub Actions
   *TLS: CA fijada*).
 - Antes de guardar el dump se **restaura de prueba** en un Postgres 18 desechable del mismo job
   y se compara el número de tablas con producción. Si no coincide, el job falla.
-- El dump se cifra con GPG (AES256, simétrico) y se sube como artifact. **El repo es público:**
-  cualquier cuenta de GitHub puede descargar el artifact, así que sin la passphrase no sirve de nada.
-- Retención: 90 días, el máximo de GitHub para repos públicos.
+- El dump se cifra con **llave pública** (GPG, `.github/backup/respaldos-public.asc`, huella
+  `56FD 4293 5662 F365 8B6B B1D9 9DE7 9FB8 CE0F 5C3A`). El job solo puede cifrar: descifra únicamente
+  quien tenga la **llave privada**, que vive en el gestor de contraseñas del dueño y en ningún lado de
+  GitHub ni Railway. Si el archivo o los secrets del CI se filtraran, nadie podría leer el respaldo.
+- Se guarda en el bucket **privado** `crm-respaldos` de Railway (production, carpeta `respaldos/`), con
+  credenciales propias de ese bucket (no las del bucket de media). **El repo es público:** por eso ya NO
+  se sube como artifact (los artifacts de un repo público los descarga cualquier cuenta de GitHub).
+- Retención: el propio job borra del bucket los respaldos con más de 90 días.
+
+**Cambio del 29-sep-2026:** hasta esa fecha el respaldo iba cifrado con passphrase (AES256, simétrico) a
+un artifact público. Esos artifacts viejos caducan solos a los 90 días y se descifran con
+`BACKUP_GPG_PASSPHRASE` (sigue en el gestor de contraseñas); el secret del environment se puede borrar
+cuando caduque el último.
 
 ## Monitoreo: que el respaldo no se apague en silencio
 
@@ -49,8 +59,22 @@ and tags** con solo `main`. Verificado el 18-sep-2026.
 
 | Secret | Qué es |
 |---|---|
-| `PROD_DATABASE_URL` | URL pública de producción con el rol `backup_ro`: `postgresql://backup_ro:PASS@<RAILWAY_TCP_PROXY_DOMAIN>:<RAILWAY_TCP_PROXY_PORT>/<PGDATABASE>?sslmode=require` |
-| `BACKUP_GPG_PASSPHRASE` | Mínimo 32 caracteres. **Guárdala en tu gestor de contraseñas:** GitHub no deja leer un secret, así que si solo existe ahí no hay restore. |
+| `PROD_DATABASE_URL` | URL pública de producción con el rol `backup_ro`: `postgresql://backup_ro:PASS@<RAILWAY_TCP_PROXY_DOMAIN>:<RAILWAY_TCP_PROXY_PORT>/<PGDATABASE>?sslmode=require`. El job la desarma en variables `PG*`: la contraseña nunca va como argumento de un comando. |
+| `RESPALDOS_S3_BUCKET` | Nombre S3 del bucket `crm-respaldos` (lo da `railway bucket credentials --bucket crm-respaldos -e production --json`, campo `bucketName`). |
+| `RESPALDOS_S3_ACCESS_KEY_ID` / `RESPALDOS_S3_SECRET_ACCESS_KEY` | Credenciales de ESE bucket (mismo comando). Se cargan con `gh secret set … --env production-backup` directo desde la salida del comando, sin pasar por pantalla. |
+| `BACKUP_GPG_PASSPHRASE` | Ya no se usa desde el 29-sep-2026. Solo sirve para descifrar los artifacts anteriores a esa fecha. |
+
+### Llave de cifrado
+
+- **Pública** (`.github/backup/respaldos-public.asc`): versionada. El workflow comprueba su huella
+  (`RESPALDOS_FPR`) antes de cifrar: si alguien cambiara el archivo, el job falla en vez de cifrar para
+  un desconocido.
+- **Privada**: SOLO en el gestor de contraseñas del dueño (se generó el 29-sep-2026 en su Mac y se le
+  entregó como archivo `CRM-Diluvium-llave-privada-respaldos.asc` para guardarla ahí y borrar el archivo).
+  Sin ella no hay restore. No lleva contraseña propia: el gestor es su protección.
+- **Rotación** (si la privada se pierde o se filtra): generar otro par, sustituir la pública en el repo y
+  la huella en el workflow, y mezclar a `main`. Los respaldos anteriores siguen cifrados con la llave
+  vieja: consérvala mientras existan.
 
 ### Rol de solo lectura `backup_ro`
 
@@ -85,20 +109,21 @@ ni modificar.
    railway variable list -s Postgres -e production --json | BACKUP_PW="$(pbpaste)" python3 -c 'import json,os,sys,urllib.parse as u; v=json.load(sys.stdin); sys.stdout.write("postgresql://backup_ro:%s@%s:%s/%s?sslmode=require" % (u.quote(os.environ["BACKUP_PW"], safe=""), v["RAILWAY_TCP_PROXY_DOMAIN"], v["RAILWAY_TCP_PROXY_PORT"], u.quote(v["PGDATABASE"], safe="")))' | gh secret set PROD_DATABASE_URL --env production-backup
    ```
 
-4. Pasa la passphrase al environment, **la misma** que ya tienes guardada (no generes otra, o los
-   respaldos existentes quedan sin poder descifrarse). El comando la pide; pégala desde tu gestor:
+4. Carga las credenciales del bucket de respaldos en el environment, directo desde Railway (sin que
+   pasen por pantalla ni por el portapapeles):
 
    ```bash
-   gh secret set BACKUP_GPG_PASSPHRASE --env production-backup
+   railway bucket credentials --bucket crm-respaldos -e production --json > /tmp/rb.json && gh secret set RESPALDOS_S3_BUCKET --env production-backup --body "$(jq -r .bucketName /tmp/rb.json)" && gh secret set RESPALDOS_S3_ACCESS_KEY_ID --env production-backup --body "$(jq -r .accessKeyId /tmp/rb.json)" && gh secret set RESPALDOS_S3_SECRET_ACCESS_KEY --env production-backup --body "$(jq -r .secretAccessKey /tmp/rb.json)" && rm -P /tmp/rb.json
    ```
 
-5. Borra las copias a nivel de repo y limpia el portapapeles:
+5. Borra las copias a nivel de repo (si las hubiera) y limpia el portapapeles:
 
    ```bash
-   gh secret delete PROD_DATABASE_URL && gh secret delete BACKUP_GPG_PASSPHRASE && echo -n | pbcopy
+   gh secret delete PROD_DATABASE_URL 2>/dev/null; echo -n | pbcopy
    ```
 
-6. Lanza el workflow a mano (*Run workflow*) y confirma que pasa.
+6. Lanza el workflow a mano (*Run workflow*) y confirma que pasa y que el archivo aparece en el bucket
+   (*Railway → production → crm-respaldos*).
 
 ### TLS: CA fijada
 
@@ -132,52 +157,65 @@ con el schema real. Por eso el restore va **a una base nueva y limpia**, se vali
 intercambia por la actual.
 
 > **Ensaya primero en staging** (mismo procedimiento con `-e staging`). En producción la app
-> queda caída durante el intercambio (paso 6).
+> queda caída durante el intercambio (paso 7).
 
-Requisitos: `gh`, `gpg` y el cliente de Postgres 18 (`brew install gnupg postgresql@18`).
+Requisitos: `gpg`, el cliente de Postgres 18 y el cliente de S3 (`brew install gnupg postgresql@18 awscli`).
+La carpeta `restore/` está en `.gitignore`: el dump en claro nunca debe llegar al repo.
 
-1. Descarga el respaldo. Toma el `run-id` de *Actions → db-backup*, o del listado:
+1. Importa tu llave privada (una sola vez por Mac) desde el gestor de contraseñas: pega su contenido en
+   un archivo temporal, impórtalo y bórralo:
 
    ```bash
-   gh run list --workflow db-backup.yml --limit 10
+   gpg --import ~/Desktop/CRM-Diluvium-llave-privada-respaldos.asc && rm -P ~/Desktop/CRM-Diluvium-llave-privada-respaldos.asc
+   ```
+
+2. Lista los respaldos del bucket y descarga el que quieras. Las credenciales salen de Railway y solo
+   viven en esa terminal:
+
+   ```bash
+   eval "$(railway bucket credentials --bucket crm-respaldos -e production --json | jq -r '"export AWS_ACCESS_KEY_ID=\(.accessKeyId) AWS_SECRET_ACCESS_KEY=\(.secretAccessKey) RB=\(.bucketName) AWS_DEFAULT_REGION=auto AWS_REQUEST_CHECKSUM_CALCULATION=when_required AWS_RESPONSE_CHECKSUM_VALIDATION=when_required"')" && aws --endpoint-url https://t3.storageapi.dev s3 ls "s3://$RB/respaldos/"
    ```
 
    ```bash
-   gh run download <run-id> --dir restore/
+   mkdir -p restore && aws --endpoint-url https://t3.storageapi.dev s3 cp "s3://$RB/respaldos/crm-diluvium-prod-<fecha>.dump.gpg" restore/
    ```
 
-2. Descifra (pide la passphrase) y revisa el contenido:
+3. Descifra con tu llave privada y revisa el contenido:
 
    ```bash
-   gpg --decrypt -o restore/backup.dump restore/*/crm-diluvium-prod-*.dump.gpg
+   gpg --decrypt -o restore/backup.dump restore/crm-diluvium-prod-*.dump.gpg
    ```
 
    ```bash
    pg_restore --list restore/backup.dump | head -40
    ```
 
-3. Toma la URL de administración del environment destino (usuario `postgres`, **no** `backup_ro`)
-   apuntando a la base de mantenimiento `postgres`:
+4. Toma la URL de administración del environment destino (usuario `postgres`, **no** `backup_ro`)
+   apuntando a la base de mantenimiento `postgres`. Con TLS **autenticado** (`verify-ca` contra la CA
+   fijada; `require` solo cifra y un MITM recibiría la credencial del superusuario):
 
    ```bash
-   export ADMIN_URL="$(railway variable list -s Postgres -e staging --json | python3 -c 'import json,sys,urllib.parse as u; v=json.load(sys.stdin); q=lambda k: u.quote(v[k], safe=""); sys.stdout.write("postgresql://%s:%s@%s:%s/postgres?sslmode=require" % (q("PGUSER"), q("PGPASSWORD"), v["RAILWAY_TCP_PROXY_DOMAIN"], v["RAILWAY_TCP_PROXY_PORT"]))')"
+   export PGSSLMODE=verify-ca PGSSLROOTCERT="$PWD/.github/backup/prod-postgres-root-ca.pem" ADMIN_URL="$(railway variable list -s Postgres -e staging --json | python3 -c 'import json,sys,urllib.parse as u; v=json.load(sys.stdin); q=lambda k: u.quote(v[k], safe=""); sys.stdout.write("postgresql://%s:%s@%s:%s/postgres" % (q("PGUSER"), q("PGPASSWORD"), v["RAILWAY_TCP_PROXY_DOMAIN"], v["RAILWAY_TCP_PROXY_PORT"]))')"
    ```
 
-4. Crea una base **limpia** desde `template0` y restaura ahí:
+   (La CA fijada es la de **producción**; para staging fija la suya con el comando de *TLS: CA fijada*
+   sobre `-e staging`, o usa `railway connect Postgres -e staging`, que va por la red privada.)
+
+5. Crea una base **limpia** desde `template0` y restaura ahí:
 
    ```bash
    psql "$ADMIN_URL" -c 'CREATE DATABASE railway_restore TEMPLATE template0'
    ```
 
    ```bash
-   pg_restore --no-owner --no-acl --single-transaction --exit-on-error -d "${ADMIN_URL%/postgres*}/railway_restore?sslmode=require" restore/backup.dump
+   pg_restore --no-owner --no-acl --single-transaction --exit-on-error -d "${ADMIN_URL%/postgres*}/railway_restore" restore/backup.dump
    ```
 
-5. Valida la base restaurada: tablas, conteos de filas de `contacts`, `user`, `organization` y la
+6. Valida la base restaurada: tablas, conteos de filas de `contacts`, `user`, `organization` y la
    última migración en `drizzle.__drizzle_migrations`. Si algo no cuadra, bórrala
    (`DROP DATABASE railway_restore`) y no sigas.
 
-6. Intercambio. Detén el web primero, para que no escriba durante el cambio:
+7. Intercambio. Detén el web primero, para que no escriba durante el cambio:
 
    ```bash
    railway down -s crm-diluvium -e staging
@@ -217,11 +255,11 @@ Requisitos: `gh`, `gpg` y el cliente de Postgres 18 (`brew install gnupg postgre
    psql "$ADMIN_URL" --single-transaction -v ON_ERROR_STOP=1 -c "SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE datname IN ('railway', 'railway_pre_restore') AND pid <> pg_backend_pid()" -c "ALTER DATABASE railway RENAME TO railway_restore_fallido" -c "ALTER DATABASE railway_pre_restore RENAME TO railway"
    ```
 
-7. Verifica la app. Conserva `railway_pre_restore` unos días como vuelta atrás; después bórrala
+8. Verifica la app. Conserva `railway_pre_restore` unos días como vuelta atrás; después bórrala
    (`DROP DATABASE railway_pre_restore`). Borra los archivos locales:
 
    ```bash
-   rm -rf restore/ && unset ADMIN_URL
+   rm -rf restore/ && unset ADMIN_URL AWS_ACCESS_KEY_ID AWS_SECRET_ACCESS_KEY RB
    ```
 
 El rol `backup_ro` (`pg_read_all_data`) es del servidor, no de la base, así que los respaldos
