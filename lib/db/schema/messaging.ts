@@ -35,6 +35,12 @@ export type MessageAttachment = {
   downloadedAt?: string;
   downloadAttempts?: number;
   downloadError?: string;
+  /**
+   * Tipo REAL por sus bytes (S2, lib/messaging/media-type.ts): imagen, audio,
+   * video o PDF que se muestra en el CRM, o "application/octet-stream" = solo
+   * descarga. Ausente = aún sin revisar (solo descarga).
+   */
+  verifiedMime?: string;
   /** Miniatura de la 1ª página (PDF) en el bucket; se genera una vez, después de la descarga. */
   thumbnailKey?: string;
   /** Páginas del documento (PDF). */

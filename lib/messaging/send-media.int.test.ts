@@ -133,8 +133,9 @@ describe.skipIf(!TEST_DATABASE_URL)("sendMediaMessage", () => {
       title: "Tabla",
       fileName: "tabla.png",
       mimeType: "image/png",
-      declaredBytes: 3,
-      body: Readable.from([Buffer.from("abc")]),
+      declaredBytes: 11,
+      // Un PNG de verdad (firma + relleno): la Biblioteca revisa los bytes (S2).
+      body: Readable.from([Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 1, 2, 3])]),
     });
   const outs = () => db.select().from(s.messages).where(eq(s.messages.direction, "out"));
 

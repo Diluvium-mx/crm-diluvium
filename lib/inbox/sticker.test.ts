@@ -5,7 +5,7 @@ import { isBareSticker } from "./sticker";
 type Bare = Parameters<typeof isBareSticker>[0];
 
 function att(kind: MessageView["kind"]): MessageView["attachments"][number] {
-  return { index: 0, kind, fileName: null, mimeType: null, state: "ready", url: "/api/media/m/0", downloadUrl: "/api/media/m/0?download=1", thumbnailUrl: null, sizeBytes: null, pageCount: null };
+  return { index: 0, kind, fileName: null, mimeType: null, state: "ready", url: "/api/media/m/0", downloadUrl: "/api/media/m/0?download=1", thumbnailUrl: null, sizeBytes: null, pageCount: null, preview: kind === "sticker" || kind === "image" ? "image" : null };
 }
 
 function msg(over: Partial<Bare> = {}): Bare {
@@ -16,6 +16,10 @@ describe("isBareSticker (sticker sin burbuja, tamaño fijo como WhatsApp)", () =
   it("sticker solo: va sin burbuja", () => {
     expect(isBareSticker(msg())).toBe(true);
     expect(isBareSticker(msg({ body: "   " }))).toBe(true);
+  });
+  it("S2: un sticker que sus bytes no confirman va en burbuja normal (como archivo)", () => {
+    expect(isBareSticker(msg({ attachments: [{ ...att("sticker"), preview: null }] }))).toBe(false);
+    expect(isBareSticker(msg({ attachments: [{ ...att("sticker"), preview: null, state: "processing" }] }))).toBe(true);
   });
   it("una foto nunca se pinta como sticker", () => {
     expect(isBareSticker(msg({ attachments: [att("image")] }))).toBe(false);

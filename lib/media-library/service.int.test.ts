@@ -60,6 +60,8 @@ describe.skipIf(!TEST_DATABASE_URL)("biblioteca de media", () => {
     await db.execute(sql`truncate workflow_runs, workflow_steps, workflows, media_assets, organization cascade`);
   });
 
+  // Un PNG de verdad (firma + relleno): la subida revisa los bytes (S2).
+  const pngOf = (n: number) => Buffer.concat([Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]), Buffer.alloc(Math.max(0, n - 8), 1)]).subarray(0, n);
   const upload = (bytes: number, mime = "image/png", name = "tabla.png", declared = bytes) =>
     svc.storeUploadedAsset(storage, {
       organizationId: org,
@@ -68,8 +70,16 @@ describe.skipIf(!TEST_DATABASE_URL)("biblioteca de media", () => {
       fileName: name,
       mimeType: mime,
       declaredBytes: declared,
-      body: Readable.from([Buffer.alloc(bytes, 1)]),
+      body: Readable.from([pngOf(bytes)]),
     });
+
+  it("S2: un «PNG» que en realidad es HTML se rechaza antes de llegar al bucket", async () => {
+    const html = Buffer.from("<html><script>alert(1)</script></html>");
+    await expect(
+      svc.storeUploadedAsset(storage, { organizationId: org, userId: null, title: "x", fileName: "tabla.png", mimeType: "image/png", declaredBytes: html.length, body: Readable.from([html]) }),
+    ).rejects.toThrow(/no coincide/);
+    expect(storage.objects.size).toBe(0);
+  });
 
   it("guarda el archivo en el bucket bajo la organización y lo lista solo para ella", async () => {
     const asset = await upload(1_000);

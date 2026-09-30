@@ -22,10 +22,10 @@ la BD de producción se respalda con `pg_dump` desde GitHub Actions
   se sube como artifact (los artifacts de un repo público los descarga cualquier cuenta de GitHub).
 - Retención: el propio job borra del bucket los respaldos con más de 90 días.
 
-**Cambio del 29-sep-2026:** hasta esa fecha el respaldo iba cifrado con passphrase (AES256, simétrico) a
-un artifact público. Esos artifacts viejos caducan solos a los 90 días y se descifran con
-`BACKUP_GPG_PASSPHRASE` (sigue en el gestor de contraseñas); el secret del environment se puede borrar
-cuando caduque el último.
+**Cambio del 29-sep-2026 (en producción desde el 30-sep, main 6161a15):** hasta esa fecha el respaldo iba
+cifrado con passphrase (AES256, simétrico) a un artifact del repo público. El 30-sep se borraron los 46
+artifacts viejos y el secret `BACKUP_GPG_PASSPHRASE` (decisión del dueño): hoy los respaldos existen solo
+en el bucket y se abren solo con la llave privada.
 
 ## Monitoreo: que el respaldo no se apague en silencio
 
@@ -62,7 +62,6 @@ and tags** con solo `main`. Verificado el 18-sep-2026.
 | `PROD_DATABASE_URL` | URL pública de producción con el rol `backup_ro`: `postgresql://backup_ro:PASS@<RAILWAY_TCP_PROXY_DOMAIN>:<RAILWAY_TCP_PROXY_PORT>/<PGDATABASE>?sslmode=require`. El job la desarma en variables `PG*`: la contraseña nunca va como argumento de un comando. |
 | `RESPALDOS_S3_BUCKET` | Nombre S3 del bucket `crm-respaldos` (lo da `railway bucket credentials --bucket crm-respaldos -e production --json`, campo `bucketName`). |
 | `RESPALDOS_S3_ACCESS_KEY_ID` / `RESPALDOS_S3_SECRET_ACCESS_KEY` | Credenciales de ESE bucket (mismo comando). Se cargan con `gh secret set … --env production-backup` directo desde la salida del comando, sin pasar por pantalla. |
-| `BACKUP_GPG_PASSPHRASE` | Ya no se usa desde el 29-sep-2026. Solo sirve para descifrar los artifacts anteriores a esa fecha. |
 
 ### Llave de cifrado
 

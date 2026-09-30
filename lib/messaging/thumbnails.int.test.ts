@@ -114,6 +114,11 @@ describe.skipIf(!TEST_DATABASE_URL)("miniaturas de PDF (Postgres real)", () => {
     expect(att.thumbnailAttempts).toBe(thumbs.THUMBNAIL_MAX_ATTEMPTS);
   });
 
+  it("S2: un «PDF» cuyos bytes no son PDF (verifiedMime de descarga) no pasa por pdf.js", async () => {
+    await message([{ type: "document", url: "u", mimeType: "application/pdf", fileName: "F.pdf", storageKey: "k/F.pdf", verifiedMime: "application/octet-stream" }]);
+    expect(await thumbs.generateMessageThumbnails(new MemoryStorage(), "m_t")).toBe(0);
+    expect((await read())[0].thumbnailAttempts).toBeUndefined();
+  });
   it("sin descargar aún (sin storageKey) no se intenta", async () => {
     await message([{ type: "document", url: "u", mimeType: "application/pdf", fileName: "F.pdf" }]);
     expect(await thumbs.generateMessageThumbnails(new MemoryStorage(), "m_t")).toBe(0);
