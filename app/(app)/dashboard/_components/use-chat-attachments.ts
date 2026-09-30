@@ -7,9 +7,12 @@
 // de más de 5 MB se convierte a JPG en el navegador, y se sube por la ruta
 // /api/inbox/adjuntos (XHR: da el avance de la subida). Al cambiar de
 // conversación se cancela y se olvida todo.
+// Multimedia (30-sep-2026): las fotos y videos de la Biblioteca entran a la
+// misma vista previa YA listos: no se suben, ya están en el bucket.
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { convertToWhatsappJpeg } from "@/lib/chat-attachments/convert";
 import { CHAT_MAX_FILES, planFile, type ChatFileKind } from "@/lib/chat-attachments/rules";
+import type { MediaAssetView } from "@/lib/media-library/service";
 
 export type AttachmentItem = {
   id: string;
@@ -23,18 +26,34 @@ export type AttachmentItem = {
   progress: number;
   token?: string;
   error?: string;
+  /** Archivo de la Biblioteca (Multimedia): se manda por su id, sin subirlo. */
+  assetId?: string;
 };
 
 export type ChatAttachments = {
   items: AttachmentItem[];
   notices: string[];
   addFiles: (files: readonly File[]) => void;
+  /** Multimedia: agrega el archivo de la Biblioteca o, si ya está, lo quita. */
+  toggleLibrary: (asset: MediaAssetView) => void;
   remove: (id: string) => void;
   clear: () => void;
   dismissNotices: () => void;
   /** Hay archivos y todos terminaron de subir sin error. */
   allReady: boolean;
+  /**
+   * Id de ESTE envío (uno por vista previa; cambia al vaciarla o al cambiar de
+   * conversación). Repetir el envío tras un error no duplica los de la Biblioteca.
+   */
+  sendId: () => string;
 };
+
+function newSendId(): string {
+  // randomUUID solo existe en https/localhost; el respaldo basta para no repetir.
+  return typeof crypto !== "undefined" && typeof crypto.randomUUID === "function"
+    ? crypto.randomUUID()
+    : `${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`;
+}
 
 type UploadResponse = { token: string; fileName: string; kind: ChatFileKind; mime: string; bytes: number } | { error?: string };
 
@@ -78,6 +97,9 @@ export function useChatAttachments(conversationId: string): ChatAttachments {
   const live = useRef(new Set<string>());
   // Cupo real (no el del último render): soltar y pegar muy seguido no pasa de 10.
   const countRef = useRef(0);
+  // Archivo de la Biblioteca → su renglón en la vista previa (no se agrega dos veces).
+  const library = useRef(new Map<string, string>());
+  const sendIdRef = useRef<string | null>(null);
   const convRef = useRef(conversationId);
   useEffect(() => {
     convRef.current = conversationId;
@@ -98,6 +120,7 @@ export function useChatAttachments(conversationId: string): ChatAttachments {
 
   const release = useCallback((id: string) => {
     if (live.current.delete(id)) countRef.current = Math.max(0, countRef.current - 1);
+    for (const [assetId, itemId] of library.current) if (itemId === id) library.current.delete(assetId);
     xhrs.current.get(id)?.abort();
     xhrs.current.delete(id);
     const url = urls.current.get(id);
@@ -106,6 +129,7 @@ export function useChatAttachments(conversationId: string): ChatAttachments {
   }, []);
   const releaseAll = useCallback(() => {
     for (const id of [...live.current, ...xhrs.current.keys(), ...urls.current.keys()]) release(id);
+    sendIdRef.current = null;
   }, [release]);
 
   // Cambio de conversación o salir del chat: se cancelan las subidas y se sueltan las miniaturas.
@@ -180,6 +204,39 @@ export function useChatAttachments(conversationId: string): ChatAttachments {
     [conversationId, patch, process],
   );
 
+  const toggleLibrary = useCallback(
+    (asset: MediaAssetView) => {
+      const existing = library.current.get(asset.id);
+      if (existing) {
+        release(existing);
+        patch((s) => ({ ...s, items: s.items.filter((it) => it.id !== existing) }));
+        return;
+      }
+      if (asset.kind === "document") return;
+      if (countRef.current >= CHAT_MAX_FILES) {
+        patch((s) => ({ ...s, notices: [...s.notices, `Máximo ${CHAT_MAX_FILES} archivos por envío.`] }));
+        return;
+      }
+      const id = `bib-${asset.id}-${Date.now()}`;
+      live.current.add(id);
+      countRef.current += 1;
+      library.current.set(asset.id, id);
+      const item: AttachmentItem = {
+        id,
+        name: asset.title,
+        size: asset.bytes,
+        kind: asset.kind,
+        // La miniatura sale de la misma Biblioteca (redirige a una URL firmada).
+        previewUrl: `/api/biblioteca/${asset.id}`,
+        state: "ready",
+        progress: 1,
+        assetId: asset.id,
+      };
+      patch((s) => ({ ...s, items: [...s.items, item] }));
+    },
+    [patch, release],
+  );
+
   const remove = useCallback(
     (id: string) => {
       release(id);
@@ -192,10 +249,11 @@ export function useChatAttachments(conversationId: string): ChatAttachments {
     patch(() => ({ items: [], notices: [] }));
   }, [patch, releaseAll]);
   const dismissNotices = useCallback(() => patch((s) => ({ ...s, notices: [] })), [patch]);
+  const sendId = useCallback(() => (sendIdRef.current ??= newSendId()), []);
 
   const allReady = current.items.length > 0 && current.items.every((it) => it.state === "ready");
   return useMemo(
-    () => ({ items: current.items, notices: current.notices, addFiles, remove, clear, dismissNotices, allReady }),
-    [current.items, current.notices, addFiles, remove, clear, dismissNotices, allReady],
+    () => ({ items: current.items, notices: current.notices, addFiles, toggleLibrary, remove, clear, dismissNotices, allReady, sendId }),
+    [current.items, current.notices, addFiles, toggleLibrary, remove, clear, dismissNotices, allReady, sendId],
   );
 }

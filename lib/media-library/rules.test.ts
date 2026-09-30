@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { assetStorageKey, kindForMime, MediaRejectedError, stepsUsingAsset, validateUpload } from "./rules";
+import { assetStorageKey, isMultimedia, kindForMime, MediaRejectedError, stepsUsingAsset, validateUpload } from "./rules";
 
 describe("validateUpload", () => {
   it("acepta imagen, video y documento dentro de los límites de WhatsApp", () => {
@@ -36,5 +36,13 @@ describe("stepsUsingAsset", () => {
     ];
     expect(stepsUsingAsset(steps, "a1")).toBe(1);
     expect(stepsUsingAsset(steps, "zzz")).toBe(0);
+  });
+});
+
+describe("isMultimedia", () => {
+  it("Multimedia del chat: fotos y videos de la Biblioteca; los documentos no", () => {
+    expect(isMultimedia("image")).toBe(true);
+    expect(isMultimedia("video")).toBe(true);
+    expect(isMultimedia("document")).toBe(false);
   });
 });
