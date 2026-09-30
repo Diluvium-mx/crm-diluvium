@@ -33,6 +33,7 @@ import {
 import { formatPhone } from "@/lib/phone-format";
 import { PhoneLocation } from "@/components/ui/phone-location";
 import { LinkedText } from "@/components/ui/linked-text";
+import { bubbleKindLabel, isBareSticker, STICKER_LABEL, STICKER_SIZE_PX } from "@/lib/inbox/sticker";
 
 const PAGE_LIMIT = 30;
 // Distancia al tope (px) a la que se cargan solos los mensajes anteriores, y al
@@ -85,8 +86,23 @@ function Attachment({ attachment, onOpen }: { attachment: AttachmentView; onOpen
     );
   }
   switch (attachment.kind) {
-    case "image":
+    // Sticker: cuadro fijo como en WhatsApp (512×512 transparentes, nunca recortados),
+    // más chico que una foto para que no se confundan (lib/inbox/sticker.ts).
     case "sticker":
+      return (
+        <button type="button" onClick={onOpen} className="block cursor-zoom-in" aria-label="Ver sticker">
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img
+            src={attachment.url}
+            alt={STICKER_LABEL}
+            width={STICKER_SIZE_PX}
+            height={STICKER_SIZE_PX}
+            style={{ width: STICKER_SIZE_PX, height: STICKER_SIZE_PX }}
+            className="object-contain"
+          />
+        </button>
+      );
+    case "image":
       return (
         <button type="button" onClick={onOpen} className="block cursor-zoom-in" aria-label="Ver imagen">
           {/* eslint-disable-next-line @next/next/no-img-element */}
@@ -173,6 +189,21 @@ function Bubble({
   // Primer mensaje que WhatsApp no pasó al CRM (Meta 131060, caso SDA): tarjeta de
   // aviso en lugar de "[Unsupported message]"; mientras se verifica, "Recibiendo mensaje…".
   const notice = view?.noDisponible ?? null;
+  // Sticker (30-sep-2026): «Sticker» junto a la hora; si viene solo, sin burbuja y con la
+  // hora en una píldora oscura, como en WhatsApp (lib/inbox/sticker.ts).
+  const kindLabel = view ? bubbleKindLabel(view.attachments) : null;
+  const bare = view ? isBareSticker(view) : false;
+  const bubbleSkin = bare
+    ? ""
+    : `rounded-2xl px-3 py-2 shadow-sm ${
+        out
+          ? "bg-brand-navy text-brand-white"
+          : notice === "sin_contenido"
+            ? "border border-dashed border-brand-orange/60 bg-brand-orange/5 text-foreground"
+            : notice === "verificando"
+              ? "border border-dashed bg-card text-muted-foreground"
+              : "bg-card text-foreground border"
+      }`;
 
   // Los avisos internos no entran en la búsqueda (decisión del dueño): arriba ya salieron.
   const term = opt ? null : searchTerm;
@@ -183,15 +214,7 @@ function Bubble({
       className={`flex ${out ? "justify-end" : "justify-start"} ${reactions.length ? "mb-3" : ""}`}
     >
       <div
-        className={`relative max-w-[78%] rounded-2xl px-3 py-2 text-sm shadow-sm ${currentMatch ? "outline-2 outline-offset-2 outline-busqueda " : ""}${
-          out
-            ? "bg-brand-navy text-brand-white"
-            : notice === "sin_contenido"
-              ? "border border-dashed border-brand-orange/60 bg-brand-orange/5 text-foreground"
-              : notice === "verificando"
-                ? "border border-dashed bg-card text-muted-foreground"
-                : "bg-card text-foreground border"
-        }`}
+        className={`relative max-w-[78%] text-sm ${currentMatch ? "outline-2 outline-offset-2 outline-busqueda " : ""}${bubbleSkin}`}
         {...(notice ? { role: "note" } : {})}
       >
         {view?.quoted && (
@@ -251,9 +274,18 @@ function Bubble({
             <LinkedText text={row.body} searchTerm={term} />
           </p>
         )}
-        <div className={`mt-1 flex items-center justify-end gap-1 text-[10px] ${out ? "text-brand-white/70" : "text-muted-foreground"}`}>
+        <div
+          className={`mt-1 flex items-center justify-end gap-1 text-[10px] ${
+            bare
+              ? `w-fit rounded-full bg-black/55 px-2 py-0.5 text-white ${out ? "ml-auto" : ""}`
+              : out
+                ? "text-brand-white/70"
+                : "text-muted-foreground"
+          }`}
+        >
           {view?.importedFromPhone && <span title="Copiado del historial del celular al conectar el número">Importado del celular ·</span>}
           {view?.editedAt && <span>editado</span>}
+          {kindLabel && <span>{kindLabel} ·</span>}
           <span>{bubbleTime(row.sentAt)}</span>
           {mark && mark.glyph && (
             <span className={mark.className} title={mark.label} aria-label={mark.label}>
