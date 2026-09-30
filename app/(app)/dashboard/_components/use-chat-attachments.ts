@@ -28,6 +28,8 @@ export type AttachmentItem = {
   error?: string;
   /** Archivo de la Biblioteca (Multimedia): se manda por su id, sin subirlo. */
   assetId?: string;
+  /** Miniatura chica (data URL) del archivo de la Biblioteca: se ve sin descargar el archivo. */
+  posterUrl?: string;
 };
 
 export type ChatAttachments = {
@@ -231,6 +233,7 @@ export function useChatAttachments(conversationId: string): ChatAttachments {
         state: "ready",
         progress: 1,
         assetId: asset.id,
+        posterUrl: asset.thumbUrl ?? undefined,
       };
       patch((s) => ({ ...s, items: [...s.items, item] }));
     },

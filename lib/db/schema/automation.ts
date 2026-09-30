@@ -36,6 +36,10 @@ export const mediaAssets = pgTable(
     width: integer("width"),
     height: integer("height"),
     durationSeconds: integer("duration_seconds"),
+    // Miniatura (30-sep-2026): JPEG chico (240×240, recorte al centro; video: su segundo 2) en base64, hecho por el
+    // navegador al subir el archivo (o la primera vez que se abre Multimedia). Llega con la lista:
+    // Multimedia no descarga ningún archivo para mostrarse. null = aún no hay.
+    thumbnail: text("thumbnail"),
     createdByUserId: text("created_by_user_id").references(() => user.id, { onDelete: "set null" }),
     createdAt: timestamp("created_at").defaultNow().notNull(),
     // Borrado lógico: un paso que lo referencia deja de poder enviarse, pero

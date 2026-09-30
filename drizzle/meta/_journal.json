@@ -358,6 +358,13 @@
       "when": 1790723126953,
       "tag": "0051_tabla_y_es_la_respuesta",
       "breakpoints": true
+    },
+    {
+      "idx": 52,
+      "version": "7",
+      "when": 1790793343375,
+      "tag": "0052_miniaturas_biblioteca",
+      "breakpoints": true
     }
   ]
 }

@@ -22,6 +22,7 @@ import type { ChatSendItem } from "@/lib/inbox/attachment-actions";
 import { AttachMenu } from "./attach-menu";
 import { AttachmentTray } from "./attachment-tray";
 import { MultimediaPicker } from "./multimedia-picker";
+import { prefetchMultimedia } from "./use-multimedia-assets";
 import type { ChatAttachments } from "./use-chat-attachments";
 import { useSession } from "@/lib/auth/client";
 import { listSnippets } from "@/lib/actions/snippets";
@@ -460,7 +461,11 @@ export function Composer({
         </button>
         <AttachMenu
           open={attachMenuOpen}
-          onToggle={() => setAttachMenuOpen((open) => !open)}
+          onToggle={() => {
+            // Al abrir el menú ya se pide la lista de Multimedia: cuando se toca, ya está.
+            if (!attachMenuOpen) void prefetchMultimedia().catch(() => undefined);
+            setAttachMenuOpen((open) => !open);
+          }}
           onClose={closeAttachMenu}
           onPickFiles={onPickFiles}
           onMultimedia={() => {
