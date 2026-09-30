@@ -568,3 +568,9 @@
 video[data-sin-pantalla-completa]::-webkit-media-controls-fullscreen-button {
   display: none;
 }
+
+/* «Silenciar» no se ofrece en los videos del chat (decisión del dueño). El video mide al menos 208 px
+   (min-w-52) para que Chrome deje el botón en la barra y no en el menú ⋮, que no se puede tocar. */
+video[data-video-chat]::-webkit-media-controls-mute-button {
+  display: none;
+}
