@@ -16,6 +16,7 @@ import { ArchivedComposer } from "./archived-composer";
 import { PruebaBadge } from "@/components/ui/prueba-badge";
 import { DocumentCard } from "./document-card";
 import { MediaViewer } from "./media-viewer";
+import { VideoAttachment } from "./video-attachment";
 import { ScheduledInThread } from "./scheduled-in-thread";
 import { AgentNoticeLine, AgentPausedBanner, useConversationAgent } from "./agent-in-thread";
 import { AgentErrorCard } from "./agent-error-card";
@@ -95,7 +96,7 @@ function Attachment({ attachment, onOpen }: { attachment: AttachmentView; onOpen
     case "audio":
       return <audio controls src={attachment.url} className="w-56" />;
     case "video":
-      return <video controls src={attachment.url} className="max-h-64 rounded-md" />;
+      return <VideoAttachment src={attachment.url} />;
     default:
       return <DocumentCard attachment={attachment} onOpen={onOpen} />;
   }
