@@ -87,6 +87,7 @@ Nadie es "dueño" de un contacto: **todos ven todos los contactos, siempre**.
 | **Tarjeta amarilla / azul** | Colores de la tarjeta en el Embudo (regla del 28-sep-2026): **amarilla** = el agente necesita al vendedor (se quita contestando); **azul** = el cliente escribió y nadie le ha contestado (se quita contestando —vendedor o agente— o con **Marcar como leído**; abrir el chat no lo quita); **blanca** = nada pendiente. Al pasar el mouse la tarjeta se ilumina en **gris**, nunca en azul. |
 | **Aviso emergente** | Cuadro que baja arriba de la pantalla cuando el agente u otra persona **cambió la etapa** de un contacto (también cuando el agente la mueve en segundo plano). |
 | **Recarga / saldo estimado** | Lo que se cargó en la página de cada proveedor de IA y lo que queda, calculado por el CRM (es un estimado). |
+| **Archivo verificado** | Foto, audio, video o PDF cuyo **contenido** confirma lo que dice ser (el CRM lee el archivo, no se fía del nombre ni del tipo que manda el celular). Solo esos se ven dentro del CRM; cualquier otro archivo sale como tarjeta de documento y **solo se descarga**. Desde el 30-sep-2026 (revisión de seguridad). |
 
 ---
 
@@ -275,7 +276,7 @@ dentro de él.
 | 6 | **Reintentar** (tarjeta del agente) | Le pide al agente un intento más, ya. | Todos |
 | 7 | **Apagar** (tarjeta del agente) | Pausa al agente solo en ese chat; vuelve con **Activar** en el Detalle. | Todos |
 | 8 | **🤖 Pausado · vuelve hoy 22:30** | Solo informa que el agente está en pausa en este chat y hasta cuándo. Se activa en el Detalle. | Todos |
-| 9 | **Documento** | PDF con miniatura de la primera página, nombre, páginas y peso. Clic lo abre. Mientras se copia dice "Procesando…"; si no se pudo bajar (o llegó vacío) tras varios intentos, dice **"No se pudo descargar"** (nunca un archivo en blanco). Igual para audio, imagen, video y XML. Los archivos que adjunta el vendedor (foto, video, documento) se ven igual que los del cliente, con ✓/✓✓ como cualquier mensaje. | Todos |
+| 9 | **Documento** | PDF con miniatura de la primera página, nombre, páginas y peso. Clic lo abre. Mientras se copia dice "Procesando…"; si no se pudo bajar (o llegó vacío) tras varios intentos, dice **"No se pudo descargar"** (nunca un archivo en blanco). Igual para audio, imagen, video y XML. Los archivos que adjunta el vendedor (foto, video, documento) se ven igual que los del cliente, con ✓/✓✓ como cualquier mensaje. **Solo se abren dentro del CRM los archivos verificados** (Glosario): si el contenido no coincide —p. ej. un «PDF» que por dentro es otra cosa, o una «foto» que no es foto— sale como esta tarjeta y el visor solo ofrece **Descargar**. Desde el 30-sep-2026. | Todos |
 | 10 | **🤖 Depósito recibido** | El agente vio un comprobante: revisar el depósito en el banco antes de enviar. | Todos |
 | 11 | **Respuesta del agente al comprobante** | Confirma al cliente y pide sus datos de envío. | Todos |
 | 12 | **Respuesta de un vendedor** | Al contestar un vendedor, el agente se pausa en ese chat (según Opciones). | Todos |
@@ -860,7 +861,7 @@ chat con 📎 › Multimedia) y las **Corridas** (historial).
 | 31 | **+ 💬 Texto · + 📎 Archivo · + ⏱ Esperar** | Agrega un paso. | Todos |
 | 32 | **Guardar** (barra fija de arriba) | Más grande y siempre a la vista, aunque bajes por los pasos. Todos los cambios del editor se hacen libres y se guardan **juntos**: al presionarlo sale **un solo aviso** (50) con lo de antes y lo de después. Apagado mientras no cambies nada. Los predeterminados se pueden editar y apagar, pero no borrar. | Todos |
 | 33 | **Límites de WhatsApp** | Imagen JPEG/PNG hasta 5 MB · Video MP4 hasta 16 MB · PDF hasta 100 MB. | Todos |
-| 34 | **Subir archivos** | Agrega imágenes, videos o PDF. | Todos |
+| 34 | **Subir archivos** | Agrega imágenes, videos o PDF. El CRM revisa que el **contenido** coincida con el tipo (un archivo renombrado se rechaza con aviso) y que el nombre no traiga caracteres ocultos; hasta 60 subidas cada 10 minutos. Desde el 30-sep-2026. | Todos |
 | 35 | **Tarjeta de imagen** | Vista previa del archivo. | Todos |
 | 36 | **Nombre** (clic para renombrar) | Cómo se ve en el editor. Al darle clic sale el aviso de arriba con el nombre para cambiarlo (54). | Todos |
 | 37 | **Tipo · peso · archivo** | Datos del archivo. | Todos |
