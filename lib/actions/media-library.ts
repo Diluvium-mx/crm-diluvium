@@ -7,7 +7,7 @@ import { z } from "zod";
 import { requireActiveMembership } from "@/lib/auth/active-organization";
 import { roleAllows } from "@/lib/auth/permissions";
 import { deleteMediaAsset, listMediaAssets, MediaInUseError, renameMediaAsset, type MediaAssetView } from "@/lib/media-library/service";
-import { MediaRejectedError } from "@/lib/media-library/rules";
+import { isMultimedia, MediaRejectedError } from "@/lib/media-library/rules";
 
 const idSchema = z.string().trim().min(1).max(200);
 
@@ -19,6 +19,11 @@ export async function getMediaAssets(): Promise<MediaAssetView[]> {
   const { organizationId, role } = await requireActiveMembership();
   requireMedia(role, "read");
   return listMediaAssets(organizationId);
+}
+
+/** Multimedia del chat (30-sep-2026): las fotos y los videos de la misma Biblioteca, sin documentos. */
+export async function getMultimediaAssets(): Promise<MediaAssetView[]> {
+  return (await getMediaAssets()).filter((a) => isMultimedia(a.kind));
 }
 
 export async function renameMediaAssetAction(input: { assetId: string; title: string }): Promise<{ ok: true } | { ok: false; error: string }> {

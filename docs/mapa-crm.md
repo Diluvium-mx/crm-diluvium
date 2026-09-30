@@ -33,7 +33,7 @@ Contenido: [1. Inicio](#1-inicio) · [2. Menú y barra de arriba](#2-menú-y-bar
 |---|---|---|---|
 | **Owner** | El dueño de la cuenta | Todo (incluidas las filas de **Vendedores** en Agente IA › Historial) | Todo, incluida la pestaña **Configuración**. Es el único que puede dar el rol Owner; ningún Admin lo puede modificar. |
 | **Admin** | Encargado del equipo | Todo (incluidas las filas de **Vendedores** en Agente IA › Historial) | Todo lo del vendedor + **Configuración** (dar de alta vendedores, cambiar roles, restablecer contraseñas, desactivar). No puede tocar al Owner. |
-| **Vendedor** | Quien atiende a los clientes | Todo **menos Configuración** (y en Agente IA › Historial no ve las filas de **Vendedores**) | Todo lo demás: Dashboard (incluido registrar recargas), Bandeja (también **adjuntar** fotos, videos y documentos en el chat), Embudo (también dar de alta contactos y escribirles primero), Mensajes rápidos (crear, editar y borrar mensajes rápidos y plantillas), Anuncios, Agente IA (Goal, FAQs, modelos, opciones, tallas y canales; el **Historial** solo se consulta) y Automatización. También edita o borra comentarios de otros. |
+| **Vendedor** | Quien atiende a los clientes | Todo **menos Configuración** (y en Agente IA › Historial no ve las filas de **Vendedores**) | Todo lo demás: Dashboard (incluido registrar recargas), Bandeja (también **adjuntar** fotos, videos y documentos en el chat y mandar fotos y videos de la Biblioteca con **Multimedia**), Embudo (también dar de alta contactos y escribirles primero), Mensajes rápidos (crear, editar y borrar mensajes rápidos y plantillas), Anuncios, Agente IA (Goal, FAQs, modelos, opciones, tallas y canales; el **Historial** solo se consulta) y Automatización. También edita o borra comentarios de otros. |
 
 Nadie es "dueño" de un contacto: **todos ven todos los contactos, siempre**.
 
@@ -57,9 +57,10 @@ Nadie es "dueño" de un contacto: **todos ven todos los contactos, siempre**.
 | **El workflow es la respuesta** | Casilla de un workflow (29-sep-2026). Cuando sale por **palabra clave**, el Agente IA no agrega nada a ese mensaje y **espera a que el cliente conteste**, aunque el workflow termine en una imagen (la Tabla). Si el cliente había escrito otra cosa antes en la misma ráfaga («¿Cuánto tarda el envío?» + «Precio»), eso sí lo contesta el Agente IA. Si el **Agente IA** lo usa por su cuenta y el workflow trae textos («Precio 2»), su propio texto no sale (no se repite); si solo manda una imagen o video, sí escribe su frase. |
 | **Máximo de envíos por chat** | Cuántas veces puede salir un workflow en un mismo chat por palabra clave o por el Agente IA (vacío = sin límite). Cuenta su archivo aunque haya salido dentro de otro workflow (la foto de la tabla en «Precio 2» o «Información» cuenta para la Tabla). El **comando del vendedor** suma, pero sí puede pasarlo. |
 | **Comando** | Atajo que escribe el vendedor en el chat para mandar un workflow: /tamaños, /banco, /video-estandar… Se escribe con letras sin acento (la **ñ** sí: /tamaños), números y guiones. Sale **de inmediato** (se salta los pasos ⏱ Esperar); el cliente lo recibe en lo que tarda WhatsApp (~5 s). |
-| **Adjuntar (📎)** | Mandar fotos, videos o documentos desde el chat: se arrastran sobre el chat, se eligen con 📎 o se pegan con Cmd+V. Hasta **10 por envío**, uno por mensaje y en orden; el texto va como pie del primero. Fotos JPG/PNG (HEIC y WebP se pasan solas a JPG), video .mp4 hasta 16 MB, PDF/Word/Excel/PowerPoint/TXT/XML hasta 100 MB. GIF, ZIP o audio: se mandan desde el celular. |
+| **Adjuntar (📎)** | Mandar fotos, videos o documentos desde el chat: se arrastran sobre el chat, se eligen con 📎 › **Adjunta +** o se pegan con Cmd+V. Hasta **10 por envío**, uno por mensaje y en orden; el texto va como pie del primero. Fotos JPG/PNG (HEIC y WebP se pasan solas a JPG), video .mp4 hasta 16 MB, PDF/Word/Excel/PowerPoint/TXT/XML hasta 100 MB. GIF, ZIP o audio: se mandan desde el celular. |
+| **Multimedia** | 📎 › **Multimedia** en el chat (30-sep-2026): las **fotos y videos de la Biblioteca** (los mismos archivos, sin copia: lo que se sube, renombra o borra en la Biblioteca se ve igual aquí; los documentos no salen). Se tocan en el orden en que deben salir y se mandan con Enviar, con las mismas reglas que Adjuntar. No se vuelven a subir: salen como en un workflow, en lo que tarda WhatsApp (~5 s). |
 | **Corrida** | Cada vez que un workflow se ejecutó (Hecho, Omitido, Falló…). |
-| **Biblioteca** | Los archivos (imágenes y videos) que usan los workflows. |
+| **Biblioteca** | Los archivos (imágenes y videos) que usan los workflows. Sus fotos y videos son los que salen en **Multimedia** del chat. |
 | **Aviso 🤖** | Nota del agente **para el vendedor** dentro del chat; el cliente nunca la ve. Ej.: "El cliente pide hablar con una persona", "Depósito recibido", "Comprobante dudoso", "Llegó al máximo de respuestas", "El Agente IA no le escribió nada al cliente" (desde el 30-sep-2026: los modelos contestaron solo con acciones y nadie le escribió; el CRM ya **nunca** manda un texto fijo como «Listo 👍 ¿En qué más te ayudo?»). |
 | **Tarjeta "El agente no pudo responder"** | Aparece en el chat cuando falló el modelo o el envío. Tiene **Reintentar** y **Apagar**; mientras nadie elija, el agente no vuelve a intentar solo. |
 | **Fila de espera (🕗 Enviando…)** | Si WhatsApp (Zernio) pide esperar porque salieron muchos mensajes seguidos, el mensaje **espera su turno** con el reloj 🕗 y sale solo, en el orden en que se escribió. **No es error**: al cliente no le llega nada raro y no hay que volver a escribirlo. Vale para vendedores, agente, workflows y programados. |
@@ -304,13 +305,15 @@ después, contesta lo que dice. Mientras dice «Recibiendo mensaje…» (21) no 
 
 #### 3.2.2 Caja para escribir (composer)
 
-Donde el vendedor escribe. Con la ventana de 24 h abierta se escribe libre y se **adjuntan archivos**; cerrada,
-solo plantilla (y no se pueden adjuntar).
+Donde el vendedor escribe. Con la ventana de 24 h abierta se escribe libre, se **adjuntan archivos** (📎 › Adjunta +)
+y se mandan fotos y videos de la Biblioteca (📎 › Multimedia); cerrada, solo plantilla (y no se pueden adjuntar).
 
 ![Caja para escribir](mapa-crm/04-composer.png)
 ![Mensaje largo: la caja crece para que se vea todo](mapa-crm/04-composer-largo.png)
 ![Capa al arrastrar archivos sobre el chat](mapa-crm/04-composer-capa.png)
 ![Archivos adjuntos antes de enviar](mapa-crm/04-composer-adjuntos.png)
+![Menú del 📎: Adjunta + y Multimedia](mapa-crm/04-composer-clip-menu.png)
+![Multimedia: fotos y videos de la Biblioteca](mapa-crm/04-composer-multimedia.png)
 ![Menú al escribir "/"](mapa-crm/04-composer-slash.png)
 ![Ventana del ⚡ Mensajes rápidos](mapa-crm/04-composer-rapidos.png)
 ![Elegir plantilla](mapa-crm/04-composer-plantillas-lista.png)
@@ -348,18 +351,25 @@ solo plantilla (y no se pueden adjuntar).
 | 26 | **🕒 Programar plantilla** | Programa una plantilla para más tarde. | Todos |
 | 27 | **⚡ Mensajes rápidos** (ventana del ⚡) | Todos los mensajes rápidos; al elegir uno se agrega al final de lo que llevas escrito (no se manda solo). | Todos |
 | 28 | **✕ Cerrar** | Cierra la ventana del ⚡. | Todos |
-| 29 | **📎 Adjuntar archivos** | Abre el selector de archivos (se pueden elegir varios). | Todos |
+| 29 | **📎 Adjuntar** | Abre un menú con dos opciones: **Adjunta +** (41) y **Multimedia** (42). Se cierra con Esc o tocando fuera. | Todos |
 | 30 | **Capa para soltar** | Aparece al arrastrar archivos sobre el chat (historial y caja); se quita al soltar o al salir. No aparece con la ventana cerrada ni en un canal archivado. | Todos |
-| 31 | **Seleccionar** | Abre el selector de archivos, igual que 📎. | Todos |
+| 31 | **Seleccionar** | Abre el selector de archivos, igual que 📎 › Adjunta +. | Todos |
 | 32 | **Tipos y límites** | Fotos (.jpg, .jpeg, .png, .heic), videos .mp4 de hasta 16 MB y documentos (.pdf, Word, Excel, PowerPoint, .txt, .xml) de hasta 100 MB. Máximo 10 archivos. | Todos |
-| 33 | **Vista previa del archivo** | Un cuadro por archivo, en el orden en que saldrán. El archivo empieza a subir en cuanto entra. | Todos |
+| 33 | **Vista previa del archivo** | Un cuadro por archivo, en el orden en que saldrán (con dos o más, cada uno lleva su número naranja). El archivo empieza a subir en cuanto entra; los de **Multimedia** dicen «Biblioteca · peso» y ya están listos (no se suben). | Todos |
 | 34 | **Miniatura** | Foto o primer cuadro del video; en documentos, el ícono y el tipo (PDF, DOCX, XML…). | Todos |
 | 35 | **Nombre y peso** | Nombre del archivo y cuánto pesa. Una foto HEIC o de más de 5 MB aparece ya como .jpg ("Convirtiendo a JPG…" mientras tanto). | Todos |
-| 36 | **Barra de subida** | Avance de la subida ("Subiendo… 18%"); verde = listo. Si el archivo no es válido, en su lugar sale el motivo en rojo. | Todos |
+| 36 | **Barra de subida** | Avance de la subida ("Subiendo… 18%"); verde = listo. Si el archivo no es válido, en su lugar sale el motivo en rojo. Los de Multimedia no la tienen. | Todos |
 | 37 | **✕ Quitar** | Quita ese archivo antes de enviar. | Todos |
 | 38 | **Agrega un mensaje (opcional)** | Con archivos, la caja se vuelve el pie del **primer** archivo. Sin texto salen solo los archivos. | Todos |
 | 39 | **Contador 0 / 1,024** | Largo del pie; WhatsApp acepta hasta 1,024 caracteres (en rojo si se pasa). | Todos |
 | 40 | **Aviso de archivo no aceptado** | "WhatsApp no acepta este archivo desde el CRM (.zip). Mándalo desde el celular o WhatsApp Web." También avisa si pasa de 10 archivos. ✕ lo cierra. | Todos |
+| 41 | **Adjunta +** | Abre el selector de archivos de tu equipo (se pueden elegir varios). | Todos |
+| 42 | **Multimedia** | Abre las fotos y videos de la [Biblioteca](#37-automatización) para mandarlos sin volver a subirlos. | Todos |
+| 43 | **Buscar por nombre** | Filtra por el nombre con que está en la Biblioteca, sin importar acentos ni mayúsculas. | Todos |
+| 44 | **Todo · Fotos · Videos** | Filtro, con cuántos hay de cada uno. | Todos |
+| 45 | **Archivo de Multimedia** | Miniatura (foto o primer cuadro del video), nombre y tipo. Tocarlo lo agrega a la vista previa (33); tocarlo otra vez lo quita. | Todos |
+| 46 | **Número de orden** | En qué lugar sale (1, 2, 3…); es el mismo número de la vista previa. El texto de la caja va como pie del 1. | Todos |
+| 47 | **Cerrar** | Cierra Multimedia; lo elegido se queda en la vista previa. Al enviar se cierra solo. | Todos |
 
 **Lo cambias tú desde la pantalla:** qué mensajes rápidos y plantillas existen (en [Mensajes rápidos](#34-mensajes-rápidos))
 y qué comandos hay (en [Automatización](#37-automatización)).
@@ -367,11 +377,12 @@ y qué comandos hay (en [Automatización](#37-automatización)).
 **Pídeselo a Code:**
 - "En Bandeja › Caja para escribir › (3), que Enter haga salto de línea y Ctrl+Enter envíe."
 - "En Bandeja › Caja para escribir › (19), que la casilla venga desmarcada."
+- "En Bandeja › Caja para escribir › (44), agrega el filtro «Recientes»."
 
 **Agente IA aquí:** no usa esta caja. Lo que escribe **o adjunta** un vendedor aquí cuenta como su respuesta (y como
 primera respuesta) y pausa al agente en ese chat si así está en Opciones.
 
-<sub>Para Code: `composer.tsx`, `snippet-picker.tsx`, `template-picker.tsx`, `schedule-form.tsx`, `archived-composer.tsx`; comandos `lib/actions/workflows.ts` (`runWorkflowCommand`); adjuntos `chat-drop-zone.tsx`, `attachment-tray.tsx`, `use-chat-attachments.ts`, reglas `lib/chat-attachments/rules.ts` (XML: `XML_COMO_TEXTO`), subida `app/api/inbox/adjuntos`, envío `lib/inbox/attachment-actions.ts` + `worker/chat-uploads.ts`.</sub>
+<sub>Para Code: `composer.tsx`, `snippet-picker.tsx`, `template-picker.tsx`, `schedule-form.tsx`, `archived-composer.tsx`; comandos `lib/actions/workflows.ts` (`runWorkflowCommand`); adjuntos `chat-drop-zone.tsx`, `attachment-tray.tsx`, `use-chat-attachments.ts`, reglas `lib/chat-attachments/rules.ts` (XML: `XML_COMO_TEXTO`), subida `app/api/inbox/adjuntos`, envío `lib/inbox/attachment-actions.ts` + `worker/chat-uploads.ts`; menú del 📎 `attach-menu.tsx`, Multimedia `multimedia-picker.tsx` + `lib/chat-attachments/multimedia.ts` (id por envío: `multimediaMessageId` en `keys.ts`).</sub>
 
 #### 3.2.3 Detalle del contacto
 
@@ -791,7 +802,8 @@ Detalle): siempre está encendido, usa Luna y no depende del canal, del horario 
 
 ### 3.7 Automatización
 
-Los **workflows** (envíos de material), la **Biblioteca** de archivos y las **Corridas** (historial).
+Los **workflows** (envíos de material), la **Biblioteca** de archivos (sus fotos y videos también se mandan desde el
+chat con 📎 › Multimedia) y las **Corridas** (historial).
 
 ![Workflows](mapa-crm/10-auto-workflows.png)
 ![Editar workflow](mapa-crm/10-auto-editor.png)

@@ -68,8 +68,8 @@ El chat es un solo componente reutilizado en las dos secciones.
   La caja empieza con 2 renglones y crece sola desde el 3.º (28-sep-2026, pedido de un vendedor: lo escrito
   se perdía arriba); tope 40 % de la pantalla, después se desliza por dentro. Si el vendedor estaba abajo en
   el historial, el último mensaje sigue a la vista mientras la caja crece.
-  ⚡ **Mensajes rápidos** y "/" ("/ busca mensajes rápidos"): ver abajo. **📎 Adjuntos** (arrastrar, 📎,
-  Cmd+V): ver "Adjuntos en el chat".
+  ⚡ **Mensajes rápidos** y "/" ("/ busca mensajes rápidos"): ver abajo. **📎 Adjuntos** (arrastrar, 📎 › Adjunta +,
+  Cmd+V): ver "Adjuntos en el chat"; 📎 › **Multimedia** (fotos y videos de la Biblioteca): ver "Multimedia".
 
 ### Panel de contacto
 **Desde el Bloque B (22-sep-2026)** es el MISMO componente "Detalle del contacto" que el pop-up de
@@ -220,6 +220,28 @@ El vendedor manda fotos, videos y documentos desde la Bandeja y el pop-up del Em
 - **Si el worker está caído:** lo que no salió en 30 min queda ⚠ "No salió: el envío del archivo no se completó.
   Vuelve a adjuntarlo." (nunca llegó a WhatsApp; no es "sin confirmar"). Un archivo que ya está en una burbuja de la
   conversación no se vuelve a mandar aunque se reenvíen sus comprobantes.
+
+### Multimedia (30-sep-2026)
+📎 ya no abre directo el selector: abre un menú (`attach-menu.tsx`) con **Adjunta +** (el selector de archivos de
+siempre) y **Multimedia** (`multimedia-picker.tsx`). Soltar archivos y Cmd+V siguen yendo directo.
+- **Qué muestra:** las **fotos y videos de la Biblioteca** de Automatización (`getMultimediaAssets`: los mismos
+  `media_assets`, sin copia; los documentos se quedan fuera, decisión del dueño). Buscador sin acentos, filtro
+  Todo · Fotos · Videos con conteo, cuadrícula que se ajusta al ancho del chat. Sin botón para subir: se sube en
+  Automatización › Biblioteca. Se abre en el lugar de ⚡/📄 (cierra los demás) y se lee de nuevo cada vez.
+- **Elegir:** tocar un archivo lo agrega a la **misma vista previa** de los adjuntos, ya listo (sin subida, «Biblioteca ·
+  peso»); tocar otra vez lo quita. El número naranja es el orden de salida (igual en la vista previa, que numera todo
+  cuando hay dos o más). Se pueden mezclar con archivos de Adjunta + (hasta 10 en total).
+- **Enviar:** la misma acción `sendAttachments` recibe la lista en orden (`{ token }` o `{ assetId }`) y las mismas
+  reglas: pie en el primero, ventana de 24 h, pausa al Agente IA, primera respuesta, turno de `send-turn.ts`, cola
+  `chat-uploads` y worker. El archivo **no se sube ni se copia**: la burbuja apunta a la llave de la Biblioteca y
+  Zernio lo baja de ahí con URL firmada, como en un workflow (~5 s hasta "enviado"). La limpieza de 24 h solo mira
+  `org/{org}/chat/`: nunca toca la Biblioteca.
+- **Repetir sin duplicar:** el id de la burbuja sale del envío (`multimediaMessageId(sendId, assetId)`; `sendId` uno
+  por vista previa, cambia al enviar o al cambiar de chat), no del archivo: la tabla o el video se pueden mandar
+  cuantas veces haga falta, pero un doble clic o un reintento del mismo envío no manda doble (tampoco después de que
+  el eco de WhatsApp se quedó con la burbuja: se revisa por la ruta de la burbuja, que lleva ese id).
+- **Celular:** Multimedia ocupa menos alto (36 % del chat) y la vista previa tiene tope de dos renglones (se desliza
+  hacia abajo, nunca de lado): la caja y Enviar no se salen de la pantalla.
 
 ### Programados (A6)
 Van dentro del hilo, al final, como burbujas punteadas "🕒 Programado para …" con Editar/Cancelar
