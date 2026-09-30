@@ -83,6 +83,14 @@ describe("attachmentView (estado de la media)", () => {
   it("la url apunta a /api/media con el índice", () => {
     expect(attachmentView("m1", 3, base, recent, now).url).toBe("/api/media/m1/3");
   });
+  it("S2: solo se muestra lo verificado por sus bytes; lo demás es descarga", () => {
+    const ready = { ...base, storageKey: "k" };
+    expect(attachmentView("m1", 0, { ...ready, verifiedMime: "image/jpeg" }, recent, now).preview).toBe("image");
+    expect(attachmentView("m1", 0, { ...ready, verifiedMime: "application/pdf" }, recent, now).preview).toBe("pdf");
+    expect(attachmentView("m1", 0, { ...ready, verifiedMime: "application/octet-stream" }, recent, now).preview).toBeNull();
+    expect(attachmentView("m1", 0, ready, recent, now).preview).toBeNull(); // aún sin revisar
+    expect(attachmentView("m1", 0, { ...base, verifiedMime: "image/jpeg" }, recent, now).preview).toBeNull(); // aún no está en el bucket
+  });
 });
 
 describe("canRetry", () => {

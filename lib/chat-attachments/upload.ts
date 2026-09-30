@@ -10,6 +10,7 @@ import { db } from "@/lib/db";
 import { conversations } from "@/lib/db/schema";
 import type { ObjectStorage } from "@/lib/storage/s3";
 import { chatUploadKey } from "./keys";
+import { BAD_NAME_CHARS } from "@/lib/text/file-name";
 import { acceptedType, maxBytesFor, notAcceptedMessage, type ChatFileKind } from "./rules";
 import { H264_MARKER, HEVC_MARKERS, SNIFF_BYTES, sniffChatFile } from "./sniff";
 import { signChatUpload } from "./token";
@@ -26,8 +27,6 @@ export type ChatUploadResult = { token: string; fileName: string; kind: ChatFile
 const LARGEST = Math.max(maxBytesFor("image"), maxBytesFor("video"), maxBytesFor("document"));
 /** Una subida que deja de mandar datos este tiempo se corta (no retiene memoria ni conexión). */
 export const UPLOAD_IDLE_MS = 60_000;
-// Controles, invisibles y marcas de dirección (bidi): un nombre como "Factura_\u202Efdp.exe" engañaría al cliente.
-const BAD_NAME_CHARS = /[\\/\u0000-\u001f\u007f-\u009f\u200b-\u200f\u202a-\u202e\u2060-\u2069\ufeff]/;
 const HEVC = HEVC_MARKERS.map((m) => Buffer.from(m));
 const H264 = Buffer.from(H264_MARKER);
 
