@@ -15,7 +15,7 @@ import {
   type DragStartEvent,
   type Modifier,
 } from "@dnd-kit/core";
-import { Pencil, Plus, X } from "lucide-react";
+import { Mail, Pencil, Plus, X } from "lucide-react";
 import { getContactFullName, type BoardContact, type Stage, type Temperature } from "../_data/types";
 import { useFunnelStages } from "../../_components/funnel-stages-provider";
 import { StagesEditor } from "../../_components/stages-editor";
@@ -37,7 +37,7 @@ import { chatSearchTerm, normalizeSearch } from "@/lib/text/search";
 import { hasCardFilter, matchesCardFilter, type TemperatureFilter } from "@/lib/contacts/filters";
 import { CardFilterButton } from "../../_components/card-filter-button";
 import { CHAT_SEARCH_INPUT_ACTIVE, CHAT_SEARCH_PLACEHOLDER, ChatSearchButton } from "../../_components/chat-search-button";
-import { funnelTone, type FunnelSignal } from "@/lib/contacts/funnel-tone";
+import { funnelTone, needsAttention, type FunnelSignal } from "@/lib/contacts/funnel-tone";
 import { useInboxStream } from "../../dashboard/_components/use-inbox-stream";
 import { searchChatsByContact, setContactUnread } from "@/lib/inbox/actions";
 import { applyMarks, columnsByStage, mergeLiveContacts } from "./board-live";
@@ -63,6 +63,9 @@ function StageColumn({
   signals,
   chatHits,
   emptyText,
+  onlyUnread,
+  hasUnread,
+  onToggleUnread,
   onCardClick,
   onSetUnread,
 }: {
@@ -73,6 +76,11 @@ function StageColumn({
   chatHits: Map<string, number> | null;
   /** Qué dice la columna vacía ("Sin contactos", "Ninguno con este filtro"…). */
   emptyText: string;
+  /** Botón «No leído» prendido en esta columna: solo quedan las tarjetas con algo pendiente. */
+  onlyUnread: boolean;
+  /** ¿La columna tiene alguna tarjeta con algo pendiente? (apagado, el sobre sale tenue si no). */
+  hasUnread: boolean;
+  onToggleUnread: () => void;
   onCardClick: (contactId: string) => void;
   onSetUnread: (contactId: string, unread: boolean) => void;
 }) {
@@ -119,7 +127,27 @@ function StageColumn({
     >
       <div className="flex items-center justify-between rounded-t-lg bg-brand-navy px-3 py-2 text-brand-white">
         <span className="truncate text-sm font-semibold">{stage.name}</span>
-        <span className="rounded-full bg-white/20 px-2 py-0.5 text-xs">{contacts.length}</span>
+        <div className="flex shrink-0 items-center gap-1.5">
+          {/* «No leído» (30-sep-2026): píldora del mismo alto que el contador, solo el sobre.
+              Naranja = prendido; tenue = la columna no tiene nada pendiente. */}
+          <button
+            type="button"
+            onClick={onToggleUnread}
+            aria-pressed={onlyUnread}
+            aria-label="Solo no leídos y sin contestar"
+            title={onlyUnread ? "Mostrar todas" : hasUnread ? "Solo no leídos y sin contestar" : "Nada sin leer ni sin contestar"}
+            className={`flex h-5 items-center justify-center rounded-full px-2 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/70 ${
+              onlyUnread
+                ? "bg-brand-orange text-brand-white hover:bg-brand-orange-light"
+                : hasUnread
+                  ? "bg-white/20 text-brand-white hover:bg-white/30"
+                  : "bg-white/10 text-white/40 hover:bg-white/20 hover:text-white/70"
+            }`}
+          >
+            <Mail className="size-3.5" aria-hidden="true" />
+          </button>
+          <span className="rounded-full bg-white/20 px-2 py-0.5 text-xs">{contacts.length}</span>
+        </div>
       </div>
 
       <div ref={setColumnRef} className="min-h-0 flex-1 overflow-y-auto p-2">
@@ -197,6 +225,13 @@ export function ContactsBoard({
   // colores; solo quedan las tarjetas que cumplen. No se recuerda entre recargas.
   const [temperatureFilter, setTemperatureFilter] = useState<TemperatureFilter | null>(null);
   const [destacadoOnly, setDestacadoOnly] = useState(false);
+  // Botón «No leído» de cada columna (30-sep-2026): etapas con el sobre prendido. Cada
+  // columna va por su lado y se suma al buscador, la lupa y el filtro. No se recuerda al
+  // recargar. Qué cuenta como pendiente: `needsAttention` (naranja, azul o amarilla).
+  const [unreadStages, setUnreadStages] = useState<ReadonlySet<string>>(() => new Set());
+  // Tarjeta abierta desde el tablero: aunque abrirla la marque leída, no se va de su
+  // columna con «No leído» mientras el pop-up siga abierto (se va al cerrarlo).
+  const [keptContactId, setKeptContactId] = useState<string | null>(null);
   // Lupa amarilla (29-sep-2026): el mismo buscador busca una palabra DENTRO de los chats;
   // solo quedan las tarjetas con la palabra, con su círculo amarillo. No se recuerda al
   // recargar. `chatHits` = el último resultado (contacto → cuántos mensajes) y su palabra.
@@ -678,6 +713,25 @@ export function ContactsBoard({
     () => columnsByStage(filteredContacts, stages.map((stage) => stage.key), (id) => signals[id]?.lastInboundAt),
     [filteredContacts, stages, signals],
   );
+  // «No leído»: lo que muestra cada columna y si le queda algo pendiente (el sobre tenue
+  // avisa que no). En vivo: una tarjeta que se vuelve pendiente aparece sola.
+  const unreadColumns = useMemo(() => {
+    const pending = (contact: BoardContact) => needsAttention(signals[contact.id]);
+    const out = new Map<string, { contacts: BoardContact[]; hasUnread: boolean }>();
+    for (const [key, list] of columns) {
+      const shown = unreadStages.has(key) ? list.filter((c) => c.id === keptContactId || pending(c)) : list;
+      out.set(key, { contacts: shown, hasUnread: shown.some(pending) });
+    }
+    return out;
+  }, [columns, signals, unreadStages, keptContactId]);
+  const unreadEmptyText = chatTerm && !chatCounts ? "Buscando…" : "Nada sin leer ni sin contestar";
+  function toggleUnreadStage(stageKey: string) {
+    setUnreadStages((current) => {
+      const next = new Set(current);
+      if (!next.delete(stageKey)) next.add(stageKey);
+      return next;
+    });
+  }
   // Un contacto en una etapa que esta pantalla aún no conoce (la crearon en otra sesión
   // y el aviso se perdió): se releen las etapas en vez de esconder la tarjeta.
   const unknownStage = useMemo(() => contacts.some((c) => !stageKeys.has(c.stage)), [contacts, stageKeys]);
@@ -856,6 +910,7 @@ export function ContactsBoard({
       return;
     }
     setSelectedContactId(contactId);
+    setKeptContactId(contactId);
   }
 
   function handleDragStart(event: DragStartEvent) {
@@ -992,18 +1047,25 @@ export function ContactsBoard({
           // dnd-kit y el snap se pelearían por la posición.
           className={`-m-3 flex min-h-0 flex-1 gap-4 overflow-x-auto p-3 ${activeContact ? "" : "max-sm:snap-x max-sm:snap-mandatory"}`}
         >
-          {stages.map((stage) => (
-            <StageColumn
-              key={stage.key}
-              stage={stage}
-              contacts={columns.get(stage.key) ?? []}
-              signals={signals}
-              chatHits={chatCounts}
-              emptyText={emptyText}
-              onCardClick={handleCardClick}
-              onSetUnread={handleSetUnread}
-            />
-          ))}
+          {stages.map((stage) => {
+            const column = unreadColumns.get(stage.key);
+            const onlyUnread = unreadStages.has(stage.key);
+            return (
+              <StageColumn
+                key={stage.key}
+                stage={stage}
+                contacts={column?.contacts ?? []}
+                signals={signals}
+                chatHits={chatCounts}
+                emptyText={onlyUnread ? unreadEmptyText : emptyText}
+                onlyUnread={onlyUnread}
+                hasUnread={column?.hasUnread ?? false}
+                onToggleUnread={() => toggleUnreadStage(stage.key)}
+                onCardClick={handleCardClick}
+                onSetUnread={handleSetUnread}
+              />
+            );
+          })}
         </div>
 
         <DragOverlay
@@ -1046,7 +1108,10 @@ export function ContactsBoard({
           signal={signals[selectedContact.id]}
           onMarkRead={() => handleSetUnread(selectedContact.id, false)}
           isSaving={isPending}
-          onClose={() => setSelectedContactId(null)}
+          onClose={() => {
+            setSelectedContactId(null);
+            setKeptContactId(null);
+          }}
           onStageChange={(nextStage) => handleStageChange(selectedContact.id, nextStage)}
           onTemperatureChange={(nextTemperature) =>
             handleTemperatureChange(selectedContact.id, nextTemperature)
