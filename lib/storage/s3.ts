@@ -37,6 +37,11 @@ export interface ObjectStorage {
   /** Primeros `bytes` de un objeto (para revisar su tipo real). Opcional: los dobles de prueba no lo necesitan. */
   getHead?(key: string, bytes: number): Promise<Uint8Array>;
   /**
+   * El objeto completo como stream web, sin cargarlo en memoria (lo sirve /api/media
+   * desde el mismo dominio para el visor). Opcional: los dobles de prueba no lo necesitan.
+   */
+  getStream?(key: string): Promise<{ body: ReadableStream<Uint8Array>; bytes: number | null }>;
+  /**
    * Objetos bajo un prefijo (por páginas de 1,000). Opcional: solo lo usa la
    * limpieza de adjuntos del chat no enviados (lib/chat-attachments/cleanup.ts).
    */
@@ -117,6 +122,11 @@ export function objectStorage(): ObjectStorage {
         for (const o of res.Contents ?? []) if (o.Key && o.LastModified) yield { key: o.Key, lastModified: o.LastModified };
         token = res.IsTruncated ? res.NextContinuationToken : undefined;
       } while (token);
+    },
+    async getStream(key) {
+      const res = await client.send(new GetObjectCommand({ Bucket: S3_BUCKET, Key: key }));
+      if (!res.Body) throw new Error("objeto vacío");
+      return { body: res.Body.transformToWebStream(), bytes: res.ContentLength ?? null };
     },
     async getHead(key, bytes) {
       const res = await client.send(new GetObjectCommand({ Bucket: S3_BUCKET, Key: key, Range: `bytes=0-${bytes - 1}` }));
