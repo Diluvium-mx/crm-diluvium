@@ -7,6 +7,7 @@ import { useMemo, useState } from "react";
 import { Pencil, Plus, Trash2 } from "lucide-react";
 import { createSnippet, deleteSnippet, updateSnippet } from "@/lib/actions/snippets";
 import { extractVariables } from "@/lib/snippets/variables";
+import { mensajeDeFalla } from "@/lib/version/client";
 import type { SnippetView } from "@/lib/snippets/types";
 import { HighlightBody } from "./highlight";
 import { CloseX } from "@/components/ui/close-x";
@@ -52,7 +53,7 @@ export function FragmentosTab({ initial, canManage }: { initial: SnippetView[]; 
       }
       setDraft(null);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "No se pudo guardar el mensaje rápido.");
+      setError(await mensajeDeFalla(err, err instanceof Error ? err.message : "No se pudo guardar el mensaje rápido."));
     } finally {
       setBusy(false);
     }
@@ -67,7 +68,7 @@ export function FragmentosTab({ initial, canManage }: { initial: SnippetView[]; 
       setItems((current) => current.filter((s) => s.id !== snippet.id));
       if (draft?.id === snippet.id) setDraft(null);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "No se pudo borrar el mensaje rápido.");
+      setError(await mensajeDeFalla(err, err instanceof Error ? err.message : "No se pudo borrar el mensaje rápido."));
     } finally {
       setBusy(false);
     }
