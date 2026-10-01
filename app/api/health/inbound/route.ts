@@ -3,6 +3,7 @@
 // Bearer MONITOR_TOKEN; responde solo conteos (sin datos de clientes).
 // 200 = sano · 503 = hay problemas (el cuerpo dice cuáles).
 import { timingSafeEqual } from "node:crypto";
+import { lockoutsLastHour } from "@/lib/auth/auth-events";
 import { redis } from "@/lib/redis";
 import { inboundHealth, WORKER_HEARTBEAT_KEY } from "@/lib/monitoring/inbound-health";
 import { checkWhatsappAccounts, ZERNIO_WEBHOOK_KEY } from "@/lib/monitoring/account-health";
@@ -31,6 +32,8 @@ export async function GET(req: Request): Promise<Response> {
     whatsappAccounts: () => checkWhatsappAccounts({ source: "web" }),
     // Una falla suelta de Zernio no abre el issue: solo 2 revisiones seguidas de la Action.
     uncheckedStreak: (check, failed) => recordUncheckedStreak("web", check, failed),
+    // S3: bloqueos de inicio de sesión (solo el web los ve: el login vive aquí).
+    authLockouts: () => lockoutsLastHour(),
   });
   // El Dashboard muestra el webhook de Zernio que revisó esta llamada (no llama a Zernio al cargar).
   const webhook: WebhookSnapshot = { checkedAt: report.checkedAt, webhook: report.metrics.zernioWebhook };

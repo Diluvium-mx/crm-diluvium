@@ -6,6 +6,7 @@ import { z } from "zod";
 import { requireActiveMembership } from "@/lib/auth/active-organization";
 import { roleAllows } from "@/lib/auth/permissions";
 import { db } from "@/lib/db";
+import { logError } from "@/lib/log/safe-error";
 import { contacts, contactTemperatureEnum } from "@/lib/db/schema/contacts";
 import { conversations } from "@/lib/db/schema/messaging";
 import { listFunnelStages } from "@/lib/contacts/funnel-stages";
@@ -143,7 +144,7 @@ export async function createContact(input: ManualContactInput): Promise<CreateCo
     return contact ? { ok: true, contact } : { ok: false, message: "Se creó, pero no se pudo cargar: recarga la página." };
   } catch (error) {
     if (error instanceof z.ZodError) return { ok: false, message: error.issues[0]?.message ?? "Revisa los datos." };
-    console.error("[contactos] no se pudo crear el contacto", error);
+    logError("[contactos] no se pudo crear el contacto", error);
     return { ok: false, message: "No se pudo crear el contacto. Inténtalo de nuevo." };
   }
 }

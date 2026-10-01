@@ -45,7 +45,8 @@ async function fromChangeHistory(organizationId: string, q: HistoryQuery): Promi
       newValue: changeHistory.newValue,
       hasDetail: sql<boolean>`${changeHistory.detail} is not null`,
       createdAt: changeHistory.createdAt,
-      author: user.name,
+      // S3 (0053): el nombre de ESE momento; el actual solo si la fila no lo tiene.
+      author: sql<string | null>`coalesce(${changeHistory.authorName}, ${user.name})`,
     })
     .from(changeHistory)
     .leftJoin(user, eq(user.id, changeHistory.userId))
@@ -85,7 +86,8 @@ async function fromBotOptions(organizationId: string, q: HistoryQuery): Promise<
       oldValue: aiConfigChanges.oldValue,
       newValue: aiConfigChanges.newValue,
       createdAt: aiConfigChanges.createdAt,
-      author: user.name,
+      // S3 (0053): el nombre de ESE momento; el actual solo si la fila no lo tiene.
+      author: sql<string | null>`coalesce(${aiConfigChanges.authorName}, ${user.name})`,
     })
     .from(aiConfigChanges)
     .leftJoin(user, eq(user.id, aiConfigChanges.userId))
@@ -117,7 +119,7 @@ async function fromVersions(organizationId: string, q: HistoryQuery): Promise<Hi
       kind: v.kind,
       name: v.name,
       createdAt: v.createdAt,
-      author: user.name,
+      author: sql<string | null>`coalesce(${v.authorName}, ${user.name})`,
       size: sql<number>`case
         when ${v.kind} = 'goal' then coalesce(array_length(regexp_split_to_array(nullif(btrim(coalesce(${v.snapshot}->>'goal', '')), ''), '[[:space:]]+'), 1), 0)
         when jsonb_typeof(${v.snapshot}->'faqs') = 'array' then jsonb_array_length(${v.snapshot}->'faqs')

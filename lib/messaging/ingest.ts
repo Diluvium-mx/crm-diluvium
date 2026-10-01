@@ -3,6 +3,7 @@
 // WhatsApp conectado), nunca del payload.
 import { and, asc, count, desc, eq, gt, gte, inArray, isNotNull, isNull, lt, lte, not, or, sql } from "drizzle-orm";
 import { db } from "@/lib/db";
+import { logError, safeErrorMessage } from "@/lib/log/safe-error";
 import { contactsImportLockKey } from "@/lib/db/locks";
 import { withTxRetry } from "@/lib/db/retry";
 import { channels, contacts, conversations, messages, webhookEvents } from "@/lib/db/schema";
@@ -216,7 +217,8 @@ export async function processWebhookEvent(
       .where(eq(webhookEvents.id, webhookEventId));
     return outcome;
   } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
+    // S3 (CN-011): sin los parámetros de la consulta (teléfonos, textos) en last_error.
+    const message = safeErrorMessage(error);
     await db
       .update(webhookEvents)
       .set({
@@ -624,7 +626,7 @@ async function ingestMessage(
       await hooks.onHumanOutbound({ organizationId: channel.organizationId, conversationId: m.conversationId });
     }
   } catch (error) {
-    console.error(`[ingest] gancho del Agente IA falló para ${m?.conversationId}; el mensaje ya está guardado`, error);
+    logError(`[ingest] gancho del Agente IA falló para ${m?.conversationId}; el mensaje ya está guardado`, error);
   }
   // Doble verificación (después del commit, aislado): si encolar falla, el barrido la recoge.
   try {
@@ -632,7 +634,7 @@ async function ingestMessage(
       await hooks.onUnavailableNotice({ organizationId: channel.organizationId, messageId: verifying.messageId });
     }
   } catch (error) {
-    console.error(`[ingest] no se pudo programar la verificación de ${verifying.messageId}; la recoge el barrido`, error);
+    logError(`[ingest] no se pudo programar la verificación de ${verifying.messageId}; la recoge el barrido`, error);
   }
   // Anuncios (después del commit, aislado): media, nombres de Meta y respaldo.
   // Si encolar falla, el barrido del worker lo recoge desde la base.
@@ -640,7 +642,7 @@ async function ingestMessage(
     if (ad.click && hooks.onAdClick) await hooks.onAdClick(ad.click);
     if (ad.fallback && hooks.onAdFallbackCandidate) await hooks.onAdFallbackCandidate(ad.fallback);
   } catch (error) {
-    console.error(`[ingest] gancho de anuncios falló para ${m?.conversationId}; el mensaje ya está guardado`, error);
+    logError(`[ingest] gancho de anuncios falló para ${m?.conversationId}; el mensaje ya está guardado`, error);
   }
   return { outcome: result, organizationId: channel.organizationId };
 }

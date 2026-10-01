@@ -5,7 +5,9 @@
 // se avisa aunque el worker o Zernio estén caídos (no depende de WhatsApp).
 // Solo conteos y edades: nunca datos de clientes (el repo es público).
 import { sql } from "drizzle-orm";
+import { AUTH_LOCKOUT_ALERT } from "@/lib/auth/auth-events";
 import { db } from "@/lib/db";
+import { safeErrorMessage } from "@/lib/log/safe-error";
 import { webhookEvents } from "@/lib/db/schema";
 import { isBusinessHours } from "./business-hours";
 import { silenceProblem, uncheckedAlert, UNCHECKED_ALERT_AFTER } from "./alert-rules";
@@ -33,6 +35,8 @@ export type InboundHealth = {
     whatsappAccounts: AccountsSummary | null;
     /** Alarma "bot callado" (./bot-silence.ts); null si no se pudo revisar. */
     bot: BotSilenceReport["metrics"] | null;
+    /** Bloqueos de inicio de sesión de la última hora (S3); null si no se revisó o falló Redis. */
+    authLockoutsLastHour: number | null;
     businessHours: boolean;
   };
 };
@@ -75,8 +79,9 @@ function settle<T>(promise: Promise<T>): Promise<Settled<T>> {
   );
 }
 
+// S3 (CN-011): el texto va al issue PÚBLICO del monitor: nunca los parámetros de una consulta.
 function errorText(error: unknown): string {
-  return error instanceof Error ? error.message : "error";
+  return error instanceof Error ? safeErrorMessage(error) : "error";
 }
 
 export async function inboundHealth(deps: {
@@ -90,6 +95,8 @@ export async function inboundHealth(deps: {
    * (./unchecked-streak.ts). Sin ella (o si Redis falla), se avisa a la primera.
    */
   uncheckedStreak?: (check: UncheckedCheck, failed: boolean) => Promise<number>;
+  /** Bloqueos de inicio de sesión de la última hora (lib/auth/auth-events.ts); solo el web. */
+  authLockouts?: () => Promise<number>;
   now?: Date;
 }): Promise<InboundHealth> {
   const now = deps.now ?? new Date();
@@ -194,11 +201,27 @@ export async function inboundHealth(deps: {
     problems.push(`no se pudo revisar si el Agente IA contesta: ${errorText(botResult.error)}`);
   }
 
+  // S3 (CN-007): 3 o más bloqueos de inicio de sesión en una hora = alguien prueba contraseñas
+  // (decisión del dueño). Solo el conteo: el issue es público.
+  let authLockoutsLastHour: number | null = null;
+  if (deps.authLockouts) {
+    try {
+      authLockoutsLastHour = await deps.authLockouts();
+      if (authLockoutsLastHour >= AUTH_LOCKOUT_ALERT) {
+        problems.push(
+          `${authLockoutsLastHour} bloqueos de inicio de sesión en la última hora (alguien prueba contraseñas equivocadas; ver "auth_locked" en los logs de Railway)`,
+        );
+      }
+    } catch {
+      notices.push("no se pudieron revisar los bloqueos de inicio de sesión (Redis)");
+    }
+  }
+
   return {
     ok: problems.length === 0,
     checkedAt: now.toISOString(),
     problems,
     notices,
-    metrics: { ...row, workerHeartbeatAgeSeconds, zernioWebhook, whatsappAccounts, bot, businessHours },
+    metrics: { ...row, workerHeartbeatAgeSeconds, zernioWebhook, whatsappAccounts, bot, authLockoutsLastHour, businessHours },
   };
 }

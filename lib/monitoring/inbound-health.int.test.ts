@@ -62,6 +62,21 @@ describe.skipIf(!TEST_DATABASE_URL)("inboundHealth (Postgres real)", () => {
     expect(report.problems.join(" | ")).toMatch(/latido/);
   });
 
+  it("S3: 3 o más bloqueos de inicio de sesión en una hora abren la alerta (solo el conteo); 2 no", async () => {
+    await db.insert(s.webhookEvents).values({ id: "e3", provider: "zernio", event: "message.received", payload: {}, processedAt: new Date() });
+    const base = { heartbeatAgeSeconds: async () => 30, checkZernio: false, now: tuesday10am };
+    const two = await health.inboundHealth({ ...base, authLockouts: async () => 2 });
+    expect(two.ok).toBe(true);
+    expect(two.metrics.authLockoutsLastHour).toBe(2);
+    const three = await health.inboundHealth({ ...base, authLockouts: async () => 3 });
+    expect(three.ok).toBe(false);
+    expect(three.problems.join(" | ")).toMatch(/3 bloqueos de inicio de sesión/);
+    // Sin Redis: aviso suelto, no alerta.
+    const down = await health.inboundHealth({ ...base, authLockouts: async () => { throw new Error("redis caído"); } });
+    expect(down.ok).toBe(true);
+    expect(down.notices.join(" ")).toMatch(/bloqueos de inicio de sesión/);
+  });
+
   it("fuera de horario el silencio no es alerta", async () => {
     await db.insert(s.webhookEvents).values({
       id: "old2", provider: "zernio", event: "message.received", payload: {}, processedAt: new Date(),
