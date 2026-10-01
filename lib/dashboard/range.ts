@@ -12,11 +12,11 @@ export type RangeInput = { mes?: string; desde?: string; hasta?: string };
 const DAY_RE = /^\d{4}-\d{2}-\d{2}$/;
 const MONTH_RE = /^\d{4}-\d{2}$/;
 
-/** Fecha local (YYYY-MM-DD) de `now` en la zona del Dashboard. */
-export function localToday(now: Date = new Date()): string {
+/** Fecha local (YYYY-MM-DD) de `now` en la zona del Dashboard (o en `timeZone`). */
+export function localToday(now: Date = new Date(), timeZone: string = DASHBOARD_TIME_ZONE): string {
   // en-CA formatea como YYYY-MM-DD.
   return new Intl.DateTimeFormat("en-CA", {
-    timeZone: DASHBOARD_TIME_ZONE,
+    timeZone,
     year: "numeric",
     month: "2-digit",
     day: "2-digit",
@@ -47,7 +47,13 @@ function monthRange(month: string): DateRange {
  * en curso. Un rango invertido, de más de MAX_RANGE_DAYS o mal formado se
  * ignora (no se "corrige" a medias).
  */
-export function resolveRange(input: RangeInput, now: Date = new Date()): DateRange & { mes: string | null } {
+// `timeZone`: la del "mes en curso" por defecto. El historial del Gasto de IA usa "UTC" (sus días
+// son los de la consola de cada proveedor).
+export function resolveRange(
+  input: RangeInput,
+  now: Date = new Date(),
+  timeZone: string = DASHBOARD_TIME_ZONE,
+): DateRange & { mes: string | null } {
   const { desde, hasta, mes } = input;
   if (desde && hasta && isValidDay(desde) && isValidDay(hasta)) {
     const days = daysBetween(desde, hasta);
@@ -56,6 +62,6 @@ export function resolveRange(input: RangeInput, now: Date = new Date()): DateRan
   if (mes && MONTH_RE.test(mes) && isValidDay(`${mes}-01`)) {
     return { ...monthRange(mes), mes };
   }
-  const current = localToday(now).slice(0, 7);
+  const current = localToday(now, timeZone).slice(0, 7);
   return { ...monthRange(current), mes: current };
 }
