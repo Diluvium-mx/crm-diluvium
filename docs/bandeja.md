@@ -201,7 +201,7 @@ El vendedor manda fotos, videos y documentos desde la Bandeja y el pop-up del Em
   video MP4 hasta 16 MB, PDF/Word/Excel/PowerPoint/TXT hasta 100 MB. HEIC, WebP o fotos de más de 5 MB se convierten
   a **JPG de menos de 5 MB en el navegador** antes de subir (Safari decodifica HEIC solo; Chrome, Edge y Firefox con
   la librería del proyecto `heic-to`, libheif en WebAssembly, que se descarga ~3 MB solo la primera vez que alguien
-  suelta un HEIC). **XML** (facturas) sale como documento de texto (`text/plain`) con su nombre `.xml`; la regla es
+  suelta un HEIC; variante `heic-to/csp`, que no evalúa código, porque la CSP no permite `'unsafe-eval'`). **XML** (facturas) sale como documento de texto (`text/plain`) con su nombre `.xml`; la regla es
   UNA línea (`XML_COMO_TEXTO`): en `false`, el XML pasa a "WhatsApp no acepta este archivo…" en todo el CRM. GIF,
   ZIP, audio, .mov y lo demás: "WhatsApp no acepta este archivo desde el CRM (.zip). Mándalo desde el celular o
   WhatsApp Web." Un video HEVC (H.265) se rechaza como en la Biblioteca.
