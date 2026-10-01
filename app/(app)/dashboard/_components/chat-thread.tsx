@@ -34,6 +34,7 @@ import { formatPhone } from "@/lib/phone-format";
 import { PhoneLocation } from "@/components/ui/phone-location";
 import { LinkedText } from "@/components/ui/linked-text";
 import { isBareSticker, STICKER_LABEL, STICKER_SIZE_PX } from "@/lib/inbox/sticker";
+import { isViewerOpenable } from "@/lib/inbox/viewer";
 
 const PAGE_LIMIT = 30;
 // Distancia al tope (px) a la que se cargan solos los mensajes anteriores, y al
@@ -481,6 +482,8 @@ export function ChatThread({
 
   // Auto-scroll al fondo cuando cambia la cantidad de mensajes/optimistas.
   const rows: Row[] = useMemo(() => [...messages, ...optimistic], [messages, optimistic]);
+  // Los archivos del chat que recorre el visor con ← → o deslizando (del más viejo al más nuevo).
+  const viewerAttachments = useMemo(() => messages.flatMap((m) => m.attachments.filter(isViewerOpenable)), [messages]);
   // Avisos del agente intercalados por hora con los mensajes.
   const timeline = useMemo(() => interleaveNotices(rows, agent?.notices ?? [], hasMore), [rows, agent?.notices, hasMore]);
   const rowIndex = useMemo(() => new Map(rows.map((r, i) => [r, i])), [rows]);
@@ -916,7 +919,7 @@ export function ChatThread({
           event.target.value = "";
         }}
       />
-      {viewing && <MediaViewer attachment={viewing} onClose={() => setViewing(null)} />}
+      {viewing && <MediaViewer attachments={viewerAttachments} start={viewing} onClose={() => setViewing(null)} />}
     </div>
   );
 }
