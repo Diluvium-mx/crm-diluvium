@@ -3,6 +3,7 @@
 // Recargas de crédito de los proveedores de IA: cualquier rol registra cada una
 // (proveedor, monto en USD sin impuestos y fecha) y puede borrar una capturada
 // por error. Sin lógica de datos: solo llama a las Server Actions.
+import Link from "next/link";
 import { useState, useTransition } from "react";
 import { addAiTopup, deleteAiTopup } from "@/lib/actions/ai-spend";
 import type { TopupRow } from "@/lib/dashboard/ai-spend";
@@ -53,11 +54,17 @@ export function AiTopups({ topups, canRegister }: { topups: TopupRow[]; canRegis
     <div className="mt-3 border-t pt-3">
       <div className="flex flex-wrap items-center justify-between gap-2">
         <h3 className="text-xs font-semibold text-foreground">Recargas registradas</h3>
-        {canRegister && !open && (
-          <button type="button" onClick={() => setOpen(true)} className="rounded bg-brand-orange px-2 py-1 text-xs font-medium text-white">
-            + Registrar recarga
-          </button>
-        )}
+        <div className="flex flex-wrap items-center gap-2">
+          {/* 1-oct-2026 (dueño): el gasto y las recargas de cada mes o periodo, en su propia página. */}
+          <Link href="/inicio/gasto-ia" className="rounded border px-2 py-1 text-xs font-medium text-foreground hover:bg-muted">
+            Ver historial
+          </Link>
+          {canRegister && !open && (
+            <button type="button" onClick={() => setOpen(true)} className="rounded bg-brand-orange px-2 py-1 text-xs font-medium text-white">
+              + Registrar recarga
+            </button>
+          )}
+        </div>
       </div>
       {open && (
         <div className="mt-2 flex flex-wrap items-end gap-2">
