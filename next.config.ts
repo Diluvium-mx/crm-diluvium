@@ -35,8 +35,14 @@ const SECURITY_HEADERS = [
   { key: "Content-Security-Policy-Report-Only", value: CSP_REPORT_ONLY },
 ];
 
+// Versión del CRM (aviso «Hay una nueva actualización del CRM», 1-oct-2026): el commit que
+// construye Railway; en local, la hora del build. Queda fija dentro de cada build (navegador
+// y servidor) y /api/version la devuelve.
+const CRM_VERSION = process.env.RAILWAY_GIT_COMMIT_SHA?.slice(0, 12) || `local-${Date.now().toString(36)}`;
+
 const nextConfig: NextConfig = {
   output: "standalone",
+  env: { NEXT_PUBLIC_CRM_VERSION: CRM_VERSION },
   // No anunciar "x-powered-by: Next.js".
   poweredByHeader: false,
   async headers() {
