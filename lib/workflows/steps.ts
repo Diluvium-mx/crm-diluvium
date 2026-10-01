@@ -190,3 +190,22 @@ export function lastSendIndex(steps: readonly WorkflowStepPayload[]): number {
   for (let i = steps.length - 1; i >= 0; i--) if (steps[i].kind === "send_text" || steps[i].kind === "send_media") return i;
   return -1;
 }
+
+// Texto del Agente IA como pie del archivo (1-oct-2026, dueño). Cuando el agente pide un workflow
+// que solo manda archivos (video, Tabla), su texto viaja como pie del PRIMER archivo, en lugar del
+// pie del workflow: antes salían su frase y luego el archivo con su propio pie, que decía lo mismo.
+// La llave vive en `workflow_runs.payload` (durable entre reintentos); no es una variable {{…}}.
+export const AGENT_CAPTION_KEY = "pieDelAgente";
+
+// ¿El texto del agente puede ir como pie? Solo si el workflow EMPIEZA con un archivo y no manda
+// textos. Si no, sale aparte como siempre: con textos (si es «la respuesta», el texto del modelo
+// no sale) o con una espera antes del archivo (el texto no se retrasa: la espera era para que el
+// cliente lo leyera primero).
+export function takesAgentCaption(steps: readonly WorkflowStepPayload[]): boolean {
+  return steps[0]?.kind === "send_media" && !steps.some((s) => s.kind === "send_text");
+}
+
+export function agentCaptionOf(payload: Record<string, unknown> | null | undefined): string | null {
+  const v = payload?.[AGENT_CAPTION_KEY];
+  return typeof v === "string" && v.trim() ? v.trim() : null;
+}

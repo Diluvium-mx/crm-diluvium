@@ -19,8 +19,9 @@ import { hasUnresolvedAgentError, recordAgentError, supersedeAgentErrors } from 
 import { agentErrorBody, bothModelsFailedBody, classifyModelError, EMPTY_RESPONSE_INFO, sendErrorBody, sendErrorMotive, type ModelErrorInfo } from "./model-errors";
 import { cleanAdMessages } from "./ad-cleaner";
 import { buildBrainSystemWithRuntime, parseBrainOutput } from "./brain";
-import { answerRunsWithText, crmContextFor, executeActions, loadAgentTools, noteForVendor, prepareActions, quoteSetByVendor, runsThatSend, setQuoteByAgent, type ActionPhase, type ActionPlan, type ExecutedActions, type StartWorkflow } from "./actions";
+import { answerRunsWithText, captionRunOf, crmContextFor, executeActions, loadAgentTools, noteForVendor, prepareActions, quoteSetByVendor, runsThatSend, setQuoteByAgent, type ActionPhase, type ActionPlan, type ExecutedActions, type StartWorkflow } from "./actions";
 import { maxPerChatContextFor } from "@/lib/workflows/max-per-chat";
+import { AGENT_CAPTION_KEY, MAX_CAPTION } from "@/lib/workflows/steps";
 
 // Red contra el silencio (29-sep-2026, dueño). Antes, si el modelo contestaba solo con
 // acciones (sin texto) y ninguna le mandaba algo al cliente, el CRM mandaba un texto fijo
@@ -892,10 +893,36 @@ export async function runAgent(job: { organizationId: string; conversationId: st
         : { keep: toBubbles(text, options.maxBubbles), dropped: [] }
       : { keep: [], dropped: [] };
     if (questions.length) console.info(`[agente] ${conv.id}: complemento de «${complementOf}» sin preguntas; no sale: «${questions.join(" / ")}»`);
-    const { keep: bubbles, dropped: repeated } = drafted.length
+    const { keep: unique, dropped: repeated } = drafted.length
       ? splitRepeated(drafted, await outboundTextsSinceLastInbound(org, conv.id))
       : { keep: [], dropped: [] };
     if (repeated.length) console.info(`[agente] ${conv.id}: no se repite lo que ya salió: «${repeated.join(" / ")}»`);
+    let bubbles = unique;
+    let stopped: StopReason | null = null;
+
+    // Texto del Agente IA como pie del archivo (1-oct-2026, dueño: «lo puede mandar como texto
+    // adjunto al video y ya»). Si su PRIMERA corrida empieza con un archivo y no manda textos (un
+    // video, la Tabla), el texto va como pie de ese archivo en UN solo mensaje: antes salían su frase
+    // y luego el archivo con el pie del workflow, que decía lo mismo. Si no cabe en el pie (1,024
+    // caracteres de WhatsApp) o la corrida no arranca, el texto sale aparte como siempre.
+    let captionedBy: string | null = null;
+    const caption = bubbles.join("\n\n");
+    const captionRun = bubbles.length && caption.length <= MAX_CAPTION ? await captionRunOf(org, plan.runs) : null;
+    if (captionRun) {
+      stopped = await stopBeforeBubble(org, conv.id, humansAtStart, readCount);
+      if (stopped) {
+        bubbles = []; // se resuelve abajo igual que si se detuviera antes del 1er mensaje
+      } else {
+        const res = await deps.startWorkflow({ organizationId: org, workflowId: captionRun.workflowId, conversationId: conv.id, trigger: "agent", triggerMessageId: lastRead.id, payload: { [AGENT_CAPTION_KEY]: caption }, now: actionCtx.now });
+        plan.runs = plan.runs.filter((r) => r !== captionRun);
+        if (res.status === "queued") {
+          captionedBy = captionRun.slug;
+          bubbles = [];
+        } else {
+          console.info(`[agente] ${conv.id}: «${captionRun.slug}» no salió (${res.reason ?? "omitido"}); su texto sale aparte`);
+        }
+      }
+    }
 
     // Mensajes con pausa corta. Antes de CADA uno se revisa el estado fresco: si un
     // vendedor respondió (desde el INICIO de la ronda), alguien apagó el canal o
@@ -905,7 +932,6 @@ export async function runAgent(job: { organizationId: string; conversationId: st
     // GUARDADO para "Reintentar" (parte 1, 26-sep: nunca otra llamada al modelo).
     let sent = 0;
     let unconfirmed = 0;
-    let stopped: StopReason | null = null;
     const planId =
       bubbles.length > 0
         ? await savePlan({ organizationId: org, conversationId: conv.id, bubbles, runs: plan.runs, triggerMessageId: lastRead.id, now: deps.now() })
@@ -1017,6 +1043,7 @@ export async function runAgent(job: { organizationId: string; conversationId: st
       questions.length ? `sin preguntas en el complemento; no salió: «${questions.join(" / ")}»` : null,
       repeated.length ? `no se repitió lo que ya salió: «${repeated.join(" / ")}»` : null,
       withheld ? `el workflow es la respuesta; no salió el texto del modelo: «${withheld.slice(0, 300)}»` : null,
+      captionedBy ? `el texto va como pie del archivo de «${captionedBy}»` : null,
       silencio === "contestado" ? "sin texto: ya le había salido algo al cliente después de su último mensaje" : null,
       silencio === "sin_respuesta" ? "sin texto: ningún modelo le escribió al cliente (aviso sin_respuesta)" : null,
     ]
