@@ -365,6 +365,13 @@
       "when": 1790793343375,
       "tag": "0052_miniaturas_biblioteca",
       "breakpoints": true
+    },
+    {
+      "idx": 53,
+      "version": "7",
+      "when": 1790813723705,
+      "tag": "0053_autor_en_historial",
+      "breakpoints": true
     }
   ]
 }

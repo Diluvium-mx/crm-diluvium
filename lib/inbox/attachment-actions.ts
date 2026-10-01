@@ -10,6 +10,7 @@
 // Multimedia (30-sep-2026): en la misma lista pueden venir archivos de la
 // Biblioteca (por su id); no se suben, ya están en el bucket.
 import { z } from "zod";
+import { logError } from "@/lib/log/safe-error";
 import { requireActiveMembership } from "@/lib/auth/active-organization";
 import { messagingProvider, MessagingNotConfiguredError } from "@/lib/messaging";
 import { queueChatUploads, SendRejectedError, type ChatUploadToSend } from "@/lib/messaging/send";
@@ -88,7 +89,7 @@ export async function sendAttachments(conversationId: string, items: ChatSendIte
     }
     if (error instanceof MessagingNotConfiguredError) return { ok: false, message: "El canal de WhatsApp no está configurado." };
     if (error instanceof StorageNotConfiguredError) return { ok: false, message: "El almacenamiento de archivos no está configurado." };
-    console.error("[adjuntos] envío falló", error);
+    logError("[adjuntos] envío falló", error);
     return { ok: false, message: "No se pudieron enviar los archivos. Intenta de nuevo." };
   }
 }

@@ -83,6 +83,8 @@ export const aiConfigChanges = pgTable(
       .notNull()
       .references(() => organization.id, { onDelete: "cascade" }),
     userId: text("user_id").references(() => user.id, { onDelete: "set null" }),
+    // S3 (0053): nombre del autor EN ESE MOMENTO (trigger de la base); el Historial ya no cambia si luego se renombra.
+    authorName: text("author_name"),
     field: text("field").notNull(),
     oldValue: text("old_value"),
     newValue: text("new_value"),
@@ -107,6 +109,8 @@ export const changeHistory = pgTable(
       .notNull()
       .references(() => organization.id, { onDelete: "cascade" }),
     userId: text("user_id").references(() => user.id, { onDelete: "set null" }),
+    // S3 (0053): nombre del autor EN ESE MOMENTO (trigger de la base); el Historial ya no cambia si luego se renombra.
+    authorName: text("author_name"),
     kind: text("kind").notNull(),
     action: text("action").notNull(),
     subject: text("subject"),
