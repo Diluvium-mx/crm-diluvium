@@ -68,6 +68,7 @@ export function Composer({
   attachments,
   onPickFiles,
   onSendAttachments,
+  contactFirstName = "",
 }: {
   conversationId: string;
   windowOpen: boolean;
@@ -81,6 +82,8 @@ export function Composer({
   /** Abre el selector de archivos (📎). */
   onPickFiles: () => void;
   onSendAttachments: (items: ChatSendItem[], caption: string, sendId: string) => Promise<{ ok: true } | { ok: false; message: string }>;
+  /** Primer nombre del contacto: llena solo el {{1}} de las plantillas (📄 y 🕒). */
+  contactFirstName?: string;
 }) {
   // Móvil: placeholder corto (en el celular no hay Shift+Enter que explicar).
   const isMobile = useIsMobile();
@@ -256,6 +259,7 @@ export function Composer({
 
   const scheduleForm = scheduleOpen && (
     <ScheduleForm
+      firstName={contactFirstName}
       mode={{ type: "new", initialText: draft, templateOnly: !windowOpen }}
       conversationId={conversationId}
       windowExpiresAt={windowExpiresAt}
@@ -276,6 +280,7 @@ export function Composer({
           scheduleForm
         ) : templateOpen ? (
           <TemplatePicker
+            firstName={contactFirstName}
             onSubmit={(templateId, values, preview) => {
               setTemplateOpen(false);
               onSendTemplate(templateId, values, preview);
@@ -315,6 +320,7 @@ export function Composer({
       {templateOpen && (
         <div className="mb-2">
           <TemplatePicker
+            firstName={contactFirstName}
             onSubmit={(templateId, values, preview) => {
               setTemplateOpen(false);
               onSendTemplate(templateId, values, preview);

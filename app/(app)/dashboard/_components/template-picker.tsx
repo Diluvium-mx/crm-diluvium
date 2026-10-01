@@ -19,6 +19,7 @@ export function TemplatePicker({
   onClose,
   submitLabel = "Enviar plantilla",
   busy = false,
+  firstName = "",
 }: {
   onSubmit: (templateId: string, values: string[], preview: string) => void;
   onClose: () => void;
@@ -26,6 +27,8 @@ export function TemplatePicker({
   submitLabel?: string;
   /** Hay un envío en curso: el botón final queda deshabilitado (sin doble envío). */
   busy?: boolean;
+  /** Primer nombre del contacto: llena solo el hueco {{1}} al elegir la plantilla (se puede cambiar). */
+  firstName?: string;
 }) {
   const [templates, setTemplates] = useState<TemplateView[] | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -53,7 +56,7 @@ export function TemplatePicker({
 
   function select(template: TemplateView) {
     setSelectedId(template.id);
-    setValues(template.variables.map(() => ""));
+    setValues(template.variables.map((_, i) => (i === 0 ? firstName : "")));
   }
 
   const preview = selected?.bodyText ? renderTemplateBody(selected.bodyText, values) : selected?.bodyText ?? "";
