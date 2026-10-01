@@ -1,5 +1,5 @@
-// Gasto de IA del Dashboard contra Postgres REAL: gasto del mes (días de Mazatlán)
-// por proveedor y saldo estimado = recargas − gasto desde la primera recarga.
+// Gasto de IA del Dashboard contra Postgres REAL: gasto del mes en UTC por proveedor,
+// lecturas reales de cobro y saldo desde la primera recarga.
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 
 const TEST_DATABASE_URL = process.env.TEST_DATABASE_URL;
@@ -13,7 +13,7 @@ describe.skipIf(!TEST_DATABASE_URL)("gasto de IA (Postgres real)", () => {
   let s: Schema;
   let spend: typeof import("./ai-spend");
   const ORG = "org_gasto";
-  // 24-sep-2026 12:00 en Mazatlán (UTC-7).
+  // 24-sep-2026 12:00 en Mazatlán (UTC-7), pero el cobro se agrupa en UTC.
   const NOW = new Date("2026-09-24T19:00:00Z");
 
   beforeAll(async () => {
@@ -28,7 +28,7 @@ describe.skipIf(!TEST_DATABASE_URL)("gasto de IA (Postgres real)", () => {
 
   beforeEach(async () => {
     const { sql } = await import("drizzle-orm");
-    await db.execute(sql`truncate ai_credit_topups, ai_usage, organization, "user" cascade`);
+    await db.execute(sql`truncate ai_provider_billing, ai_credit_topups, ai_usage, organization, "user" cascade`);
     await db.insert(s.organization).values([
       { id: ORG, name: "Org", slug: "gasto", createdAt: new Date() },
       { id: "org_otra_gasto", name: "Otra", slug: "otra-gasto", createdAt: new Date() },
@@ -49,17 +49,19 @@ describe.skipIf(!TEST_DATABASE_URL)("gasto de IA (Postgres real)", () => {
       use("u1", "anthropic", 2.5, "2026-09-10T18:00:00Z"),
       use("u2", "anthropic", 1.5, "2026-09-20T18:00:00Z"),
       use("u3", "openai", 0.25, "2026-09-20T18:00:00Z"),
-      // 31-ago 20:00 en Mazatlán = 1-sep 03:00 UTC: es de AGOSTO (día local).
+      // 31-ago 20:00 en Mazatlán = 1-sep 03:00 UTC: ahora pertenece a SEPTIEMBRE.
       use("u4", "anthropic", 100, "2026-09-01T03:00:00Z"),
       use("u5", "anthropic", 50, "2026-09-10T18:00:00Z", "org_otra_gasto"),
     ]);
   });
 
-  it("gasto del mes por proveedor, con días locales de Mazatlán y solo de la organización", async () => {
+  it("gasto del mes por proveedor, con días UTC y solo de la organización", async () => {
     const r = await spend.aiSpendSummary(db, ORG, { now: NOW });
     expect(r.monthLabel).toBe("septiembre de 2026");
     const by = Object.fromEntries(r.providers.map((p) => [p.provider, p]));
-    expect(by.anthropic.monthUsd).toBeCloseTo(4, 6);
+    expect(by.anthropic.monthUsd).toBeCloseTo(104, 6);
+    expect(by.anthropic.monthProdUsd).toBeCloseTo(104, 6);
+    expect(by.anthropic.monthTestsUsd).toBe(0);
     expect(by.openai.monthUsd).toBeCloseTo(0.25, 6);
     expect(by.anthropic.balanceUsd).toBeNull(); // sin recargas no hay saldo que estimar
   });
@@ -84,21 +86,57 @@ describe.skipIf(!TEST_DATABASE_URL)("gasto de IA (Postgres real)", () => {
     await db.insert(s.aiCreditTopups).values({ id: "t1", organizationId: ORG, provider: "anthropic", amountUsd: 20, toppedUpOn: "2026-08-01", createdByUserId: "u_admin" });
     const r = await spend.aiSpendSummary(db, ORG, { now: NOW });
     const anthropic = r.providers.find((p) => p.provider === "anthropic")!;
-    // Desde el 1-ago: u4 (100, 31-ago local) + u1 (2.5) + u2 (1.5); el mes solo u1 + u2.
-    expect(anthropic).toMatchObject({ monthUsd: 4, spentSinceFirstUsd: 104, balanceUsd: -84 });
+    // Desde el 1-ago y en septiembre UTC: u4 (100) + u1 (2.5) + u2 (1.5).
+    expect(anthropic).toMatchObject({ monthUsd: 104, spentSinceFirstUsd: 104, balanceUsd: -84 });
     // Solo gasto de producción: la tarjeta ya no trae nada de staging.
     expect(Object.keys(r).sort()).toEqual(["monthLabel", "providers", "topups"]);
     expect(Object.keys(anthropic)).not.toContain("stagingMonthUsd");
   });
 
-  it("spendByDay suma por día LOCAL y solo de la organización", async () => {
+  it("spendByDay suma por día UTC y solo de la organización", async () => {
     expect(await spend.spendByDay(db, ORG, "2026-08-31")).toEqual([
-      { day: "2026-08-31", provider: "anthropic", usd: 100 },
+      { day: "2026-09-01", provider: "anthropic", usd: 100 },
       { day: "2026-09-10", provider: "anthropic", usd: 2.5 },
       { day: "2026-09-20", provider: "anthropic", usd: 1.5 },
       { day: "2026-09-20", provider: "openai", usd: 0.25 },
     ]);
     expect(await spend.spendByDay(db, ORG, "2026-09-10")).toHaveLength(3);
+  });
+
+  it("integra el snapshot real de Anthropic en producción, pruebas y saldo", async () => {
+    const now = new Date("2026-10-03T12:34:56Z");
+    await db.insert(s.aiCreditTopups).values({
+      id: "t_real",
+      organizationId: ORG,
+      provider: "anthropic",
+      amountUsd: 20,
+      toppedUpOn: "2026-09-15",
+      createdByUserId: "u_admin",
+    });
+    await db.insert(s.aiProviderBilling).values({
+      organizationId: ORG,
+      provider: "anthropic",
+      days: {
+        "2026-09-20": { todo: 3, prod: 2, pruebas: 1 },
+        "2026-10-01": { todo: 5, prod: 2, pruebas: 3 },
+      },
+      fetchedAt: new Date("2026-10-03T12:30:00Z"),
+      attemptedAt: new Date("2026-10-03T12:30:00Z"),
+    });
+
+    const r = await spend.aiSpendSummary(db, ORG, { now });
+    const anthropic = r.providers.find((provider) => provider.provider === "anthropic")!;
+    expect(r.monthLabel).toBe("octubre de 2026");
+    expect(anthropic).toMatchObject({
+      monthUsd: 5,
+      monthProdUsd: 2,
+      monthTestsUsd: 3,
+      spentSinceFirstUsd: 8,
+      balanceUsd: 12,
+      source: "proveedor",
+      updatedMinutesAgo: 4,
+      lastError: null,
+    });
   });
 
   it("estimateBalance redondea a centavos", () => {

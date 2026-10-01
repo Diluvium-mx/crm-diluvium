@@ -6,3 +6,9 @@ export function formatUsd(usd: number): string {
   const sign = usd < 0 ? "−" : "";
   return `${sign}US$${amount.format(Math.abs(usd))}`;
 }
+
+// "$6.16": la línea "En producción: $6.16 · Pruebas: $2.90" del Gasto de IA (pedido del dueño).
+export function formatDollars(usd: number): string {
+  const sign = usd < 0 ? "−" : "";
+  return `${sign}$${amount.format(Math.abs(usd))}`;
+}

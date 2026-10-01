@@ -56,6 +56,7 @@ import { callModel } from "@/lib/ai";
 import { adsIngestHooks, startAdsWorker } from "@/lib/ads/worker";
 import { enqueueUnavailableCheck } from "@/lib/queue/unavailable";
 import { startUnavailableWorker } from "./unavailable";
+import { syncAiBilling } from "@/lib/ai/billing/sync";
 
 const SWEEP_EVERY_MS = 60_000;
 const SWEEP_MIN_AGE_MS = 60_000;
@@ -385,6 +386,22 @@ const monitorTimer = setInterval(() => {
   monitor().catch((error) => logError("[monitor] la revisión falló", error));
 }, MONITOR_EVERY_MS);
 
+// Gasto de IA REAL (1-oct-2026): cada 5 min se leen los reportes de cobro de los proveedores con
+// llave de administración (lib/ai/billing/sync.ts). Solo lee reportes: no gasta saldo. Sin
+// lecturas solapadas: si una tarda más de 5 min, la siguiente espera.
+const BILLING_EVERY_MS = 5 * 60_000;
+let billingRunning = false;
+function billing() {
+  if (!migrationsReady || billingRunning) return;
+  billingRunning = true;
+  syncAiBilling()
+    .catch((error) => logError("[gasto-ia] la lectura del cobro real falló", error))
+    .finally(() => {
+      billingRunning = false;
+    });
+}
+const billingTimer = setInterval(billing, BILLING_EVERY_MS);
+
 // Apagado ORDENADO (28-sep-2026, revisión completa B8/B9): en cada despliegue Railway manda SIGTERM al
 // worker viejo y, pasado RAILWAY_DEPLOYMENT_DRAINING_SECONDS (variable del servicio; sin ella son 0 s),
 // SIGKILL. Aquí se deja de tomar trabajo nuevo y se espera a que termine lo que está en curso (una
@@ -400,6 +417,7 @@ async function shutdown(signal: string) {
   console.info(`[worker] ${signal}: cerrando (se termina lo que está en curso; no se toma trabajo nuevo)`);
   clearInterval(sweepTimer);
   clearInterval(monitorTimer);
+  clearInterval(billingTimer);
   await Promise.all([worker.close(), mediaWorker?.close(), scheduled.close(), agent.close(), lector.close(), workflowsRunner.close(), outbox.close(), ads.close(), unavailable.close(), chatUploads?.close()]);
   console.info(`[worker] cerrado en orden en ${((Date.now() - t0) / 1000).toFixed(1)} s`);
   process.exit(0);
@@ -417,6 +435,8 @@ waitForMigrations()
     console.info("[worker] migraciones al día: arrancan las colas");
     // Primera revisión del monitoreo ya, sin esperar 5 min (la pastilla del Dashboard sale al día tras un deploy).
     monitor().catch((error) => logError("[monitor] la revisión falló", error));
+    // Y la primera lectura del gasto real (la tarjeta del Dashboard sale al día tras un deploy).
+    billing();
     void worker.run();
     void mediaWorker?.run();
     scheduled.run();
