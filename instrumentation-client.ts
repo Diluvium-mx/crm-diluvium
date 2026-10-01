@@ -7,5 +7,10 @@
 // (1-oct-2026). jitless: sin prueba ni compilación; mismas validaciones y mismos
 // mensajes. El servidor y el worker no cargan este archivo: siguen con JIT.
 import { config } from "zod/v4/core";
+import { vigilarFallas } from "@/lib/version/client";
 
 config({ jitless: true });
+
+// Aviso «Hay una nueva actualización del CRM» (1-oct-2026): vigila desde el arranque las
+// fallas que pueden venir de una pestaña vieja (lib/version/client.ts).
+vigilarFallas();

@@ -7,6 +7,7 @@
 // de su Worker y la CSP no permite 'unsafe-eval'; esta no evalúa código y se llama
 // igual (`type: "bitmap"`). La prueba heic-csp.test.ts exige que siga siendo esta.
 // Solo navegador: usa createImageBitmap y canvas.
+import { mensajeDeFalla } from "@/lib/version/client";
 import { jpgName } from "./rules";
 
 // Margen bajo los 5 MB de WhatsApp.
@@ -43,8 +44,11 @@ export async function convertToWhatsappJpeg(file: File): Promise<File> {
   let bitmap: ImageBitmap;
   try {
     bitmap = await decode(file);
-  } catch {
-    throw new ImageConvertError(`No se pudo leer "${file.name}" en este navegador. Conviértela a JPG y vuelve a adjuntarla.`);
+  } catch (error) {
+    // Pestaña de antes de una actualización: la librería de HEIC de su versión ya no existe.
+    throw new ImageConvertError(
+      await mensajeDeFalla(error, `No se pudo leer "${file.name}" en este navegador. Conviértela a JPG y vuelve a adjuntarla.`),
+    );
   }
   try {
     const canvas = document.createElement("canvas");

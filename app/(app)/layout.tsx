@@ -10,6 +10,7 @@ import { SignOutButton } from "./_components/sign-out-button";
 import { UserMenu } from "./_components/user-menu";
 import { MobileNav } from "./_components/mobile-nav";
 import { StageChangeToasts } from "./_components/stage-change-toasts";
+import { UpdateNotice } from "./_components/update-notice";
 import { FunnelStagesProvider } from "./_components/funnel-stages-provider";
 import { listFunnelStages } from "@/lib/contacts/funnel-stages";
 import type { FunnelStage } from "@/lib/contacts/stages";
@@ -117,6 +118,9 @@ export default async function AppLayout({
               />
             </div>
           </div>
+          {/* «Hay una nueva actualización del CRM»: solo cuando algo falló por versión vieja
+              (escritorio: píldora aquí en medio; celular: franja debajo de la barra). */}
+          <UpdateNotice />
           {/* En móvil el correo y "Cerrar sesión" viven en el menú del usuario (cajón ☰):
               la barra solo deja el tema. */}
           <div className="flex min-w-0 items-center gap-3">
