@@ -3,6 +3,9 @@
 // externos. Safari decodifica HEIC solo; Chrome, Edge y Firefox no, y para ellos
 // se carga BAJO DEMANDA la librería del proyecto `heic-to` (libheif en
 // WebAssembly, ~3 MB, solo la primera vez que alguien suelta un HEIC).
+// Variante `heic-to/csp` (1-oct-2026): la de siempre hace 31 `new Function` dentro
+// de su Worker y la CSP no permite 'unsafe-eval'; esta no evalúa código y se llama
+// igual (`type: "bitmap"`). La prueba heic-csp.test.ts exige que siga siendo esta.
 // Solo navegador: usa createImageBitmap y canvas.
 import { jpgName } from "./rules";
 
@@ -25,7 +28,7 @@ async function decode(file: File): Promise<ImageBitmap> {
     if (!isHeifName(file.name) && !/image\/hei[cf]/i.test(file.type)) throw error;
   }
   // Chrome/Edge/Firefox: HEIC con la librería del proyecto (se descarga del propio CRM).
-  const { heicTo } = await import("heic-to/next");
+  const { heicTo } = await import("heic-to/csp");
   return heicTo({ blob: file, type: "bitmap", options: { imageOrientation: "from-image" } });
 }
 
