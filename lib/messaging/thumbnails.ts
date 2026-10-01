@@ -55,12 +55,17 @@ function renderOneAtATime(bytes: Uint8Array): Promise<{ png: Uint8Array; pageCou
   return run;
 }
 
+// S3 (CN-012): el hijo abre PDFs de clientes; no hereda NINGÚN secreto del worker
+// (base, bucket, AUTH_SECRET, llaves de IA). Solo PATH y NODE_ENV (no es secreto).
+const CHILD_ENV: NodeJS.ProcessEnv = { PATH: process.env.PATH ?? "", NODE_ENV: process.env.NODE_ENV };
+
 /** Renderiza en un proceso aparte; lo mata si pasa del tiempo o de la memoria. */
 function renderInChild(bytes: Uint8Array): Promise<{ png: Uint8Array; pageCount: number }> {
   const script = path.join(process.cwd(), "lib/messaging/pdf-thumb-child.mjs");
   return new Promise((resolve, reject) => {
     const child = spawn(process.execPath, [`--max-old-space-size=${CHILD_MAX_OLD_SPACE_MB}`, script], {
       stdio: ["pipe", "pipe", "ignore"],
+      env: CHILD_ENV,
     });
     const out: Buffer[] = [];
     const timer = setTimeout(() => {
