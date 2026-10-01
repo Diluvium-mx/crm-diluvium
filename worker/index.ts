@@ -57,6 +57,7 @@ import { adsIngestHooks, startAdsWorker } from "@/lib/ads/worker";
 import { enqueueUnavailableCheck } from "@/lib/queue/unavailable";
 import { startUnavailableWorker } from "./unavailable";
 import { syncAiBilling } from "@/lib/ai/billing/sync";
+import { refreshTemplatesInReview } from "@/lib/messaging/templates";
 
 const SWEEP_EVERY_MS = 60_000;
 const SWEEP_MIN_AGE_MS = 60_000;
@@ -402,6 +403,24 @@ function billing() {
 }
 const billingTimer = setInterval(billing, BILLING_EVERY_MS);
 
+// Plantillas al día solas (1-oct-2026): mientras alguna esté «En revisión», cada 10 min se le
+// pregunta a Meta su estado (lo mismo que «Ver estado»). Sin plantillas en revisión no consulta nada.
+const TEMPLATES_EVERY_MS = 10 * 60_000;
+let templatesRunning = false;
+function templatesInReview() {
+  if (!migrationsReady || templatesRunning) return;
+  templatesRunning = true;
+  refreshTemplatesInReview()
+    .then((n) => {
+      if (n) console.info(`[plantillas] estado revisado en Meta para ${n} organización(es)`);
+    })
+    .catch((error) => logError("[plantillas] la revisión del estado falló", error))
+    .finally(() => {
+      templatesRunning = false;
+    });
+}
+const templatesTimer = setInterval(templatesInReview, TEMPLATES_EVERY_MS);
+
 // Apagado ORDENADO (28-sep-2026, revisión completa B8/B9): en cada despliegue Railway manda SIGTERM al
 // worker viejo y, pasado RAILWAY_DEPLOYMENT_DRAINING_SECONDS (variable del servicio; sin ella son 0 s),
 // SIGKILL. Aquí se deja de tomar trabajo nuevo y se espera a que termine lo que está en curso (una
@@ -418,6 +437,7 @@ async function shutdown(signal: string) {
   clearInterval(sweepTimer);
   clearInterval(monitorTimer);
   clearInterval(billingTimer);
+  clearInterval(templatesTimer);
   await Promise.all([worker.close(), mediaWorker?.close(), scheduled.close(), agent.close(), lector.close(), workflowsRunner.close(), outbox.close(), ads.close(), unavailable.close(), chatUploads?.close()]);
   console.info(`[worker] cerrado en orden en ${((Date.now() - t0) / 1000).toFixed(1)} s`);
   process.exit(0);

@@ -33,7 +33,7 @@ export class TemplatesChannelError extends Error {
  */
 export class TemplatesSandboxError extends Error {
   constructor(
-    message = "El canal conectado es el sandbox de Zernio: sus plantillas no son de Diluvium y no se usan en el CRM. Las plantillas se crean y sincronizan cuando se conecte el número de Diluvium.",
+    message = "El canal conectado es el sandbox de Zernio: sus plantillas no son de Diluvium y no se usan en el CRM. Las plantillas se crean y se ve su estado cuando se conecte el número de Diluvium.",
   ) {
     super(message);
     this.name = "TemplatesSandboxError";
@@ -189,14 +189,18 @@ export async function syncTemplatesForOrg(
         remote.map((t) => ({ name: t.name, language: t.language, status: t.status, body: t.bodyText })),
         existing.filter((e) => removeIds.includes(e.id)),
       );
-      await logChanges(tx, {
-        organizationId,
-        userId: log.userId,
-        kind: "plantillas",
-        action: "sincronizar",
-        newValue: `${remote.length} en Meta · ${lines.length === 0 ? "sin cambios" : `${lines.length} ${lines.length === 1 ? "cambio" : "cambios"}`}`,
-        detail: lines.length ? { type: "lineas", lines } : null,
-      });
+      // Solo si algo cambió (1-oct-2026): «Ver estado» se pulsa seguido y el CRM lo hace solo
+      // al abrir la pestaña y cada 10 min; sin esto el Historial se llena de "sin cambios".
+      if (lines.length > 0) {
+        await logChanges(tx, {
+          organizationId,
+          userId: log.userId,
+          kind: "plantillas",
+          action: "sincronizar",
+          newValue: `${remote.length} en Meta · ${lines.length} ${lines.length === 1 ? "cambio" : "cambios"}`,
+          detail: { type: "lineas", lines },
+        });
+      }
     }
     return removeIds.length;
   });
@@ -222,7 +226,7 @@ async function loadOwnTemplate(organizationId: string, templateId: string) {
     .innerJoin(channels, eq(channels.id, templates.channelId))
     .where(and(eq(templates.id, templateId), eq(templates.organizationId, organizationId), eq(channels.organizationId, organizationId)))
     .limit(1);
-  if (!row) throw new TemplateActionError("Esa plantilla ya no existe; pulsa Sincronizar.");
+  if (!row) throw new TemplateActionError("Esa plantilla ya no existe; pulsa Ver estado.");
   if (isForeignTemplateAccount(row.providerAccountId)) throw new TemplatesSandboxError();
   return row;
 }
@@ -350,4 +354,38 @@ export async function templateReviewForOrg(
     await db.update(templates).set({ status: review.status, updatedAt: new Date() }).where(eq(templates.id, template.id));
   }
   return { name: template.name, ...review };
+}
+
+/** Estados en los que Meta todavía no decide: el worker revisa solo mientras haya alguna así. */
+const REVIEW_STATUSES = ["PENDING", "IN_APPEAL"];
+
+/**
+ * El CRM se pone al día solo (1-oct-2026; lo corre el worker cada 10 min): por cada
+ * organización con alguna plantilla EN REVISIÓN en su canal activo (no el sandbox), consulta
+ * a Meta igual que «Ver estado». Así nadie tiene que acordarse de pulsarlo para ver que Meta
+ * ya la aprobó. Al Historial va solo lo que cambió (sin autor: lo hizo el CRM). Devuelve
+ * cuántas organizaciones revisó; una que falle no frena a las demás.
+ */
+export async function refreshTemplatesInReview(): Promise<number> {
+  const orgs = await db
+    .selectDistinct({ organizationId: templates.organizationId })
+    .from(templates)
+    .innerJoin(channels, eq(channels.id, templates.channelId))
+    .where(
+      and(
+        inArray(templates.status, REVIEW_STATUSES),
+        eq(channels.isActive, true),
+        notInArray(channels.providerAccountId, [...FOREIGN_TEMPLATE_ACCOUNT_IDS]),
+      ),
+    );
+  let checked = 0;
+  for (const { organizationId } of orgs) {
+    try {
+      await syncTemplatesForOrg(organizationId, { userId: null });
+      checked++;
+    } catch (error) {
+      console.error(`[plantillas] no se pudo revisar el estado en Meta de ${organizationId}`, error);
+    }
+  }
+  return checked;
 }

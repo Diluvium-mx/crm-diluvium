@@ -1,10 +1,14 @@
 "use client";
 
 // Plantillas 📄: aprobadas por Meta, para escribir FUERA de la ventana de 24 h.
-// Aquí se SINCRONIZAN, se CREAN (van a revisión de Meta), se EDITAN (solo el
-// texto; vuelven a revisión) y se BORRAN (el nombre queda bloqueado 30 días en
-// Meta). El ENVÍO se hace desde el chat. Ver docs/investigacion/plantillas-zernio.md.
-import { useMemo, useState } from "react";
+// Aquí se ve su ESTADO en Meta («Ver estado»; antes «Sincronizar»), se CREAN (van a
+// revisión de Meta), se EDITAN (solo el texto; vuelven a revisión) y se BORRAN (el
+// nombre queda bloqueado 30 días en Meta). El ENVÍO se hace desde el chat. Ver
+// docs/investigacion/plantillas-zernio.md.
+// Al día solo (1-oct-2026): al abrir la pestaña se consulta a Meta sin pulsar nada, y
+// el worker lo hace cada 10 min mientras haya alguna en revisión. Los avisos verdes
+// se quitan solos a los pocos segundos.
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Pencil, Plus, RefreshCw, Trash2 } from "lucide-react";
 import { MetaNoticeDialog } from "@/app/(app)/_components/meta-notice-dialog";
 import { createTemplate, deleteTemplate, listTemplates, reviewTemplate, syncTemplates, updateTemplate } from "@/lib/actions/templates";
@@ -40,6 +44,8 @@ const LANGUAGES = [
 const HIDDEN_STATUSES = new Set(["REMOVED", "PENDING_DELETION"]);
 // Estados en los que Meta no deja mandarla y hay que explicar por qué (aviso grande).
 const PROBLEM_STATUSES = new Set(["REJECTED", "PAUSED", "DISABLED"]);
+// Cuánto dura a la vista un aviso verde (Ver estado, creada, editada, borrada).
+const NOTE_MS = 5_000;
 
 function categoryLabel(category: string | null): string | null {
   if (!category) return null;
@@ -119,21 +125,42 @@ export function PlantillasTab({
     if (notice) pushNotices([notice]);
   }
 
-  async function sync() {
+  // El aviso verde se quita solo (el dueño, 1-oct: «que desaparezca»); los errores se quedan.
+  useEffect(() => {
+    if (!note) return;
+    const timer = setTimeout(() => setNote(null), NOTE_MS);
+    return () => clearTimeout(timer);
+  }, [note]);
+
+  // Al abrir la pestaña se consulta el estado en Meta sin pulsar nada (en silencio: sin aviso
+  // verde; si alguna quedó rechazada o pausada, sí sale el aviso grande).
+  const checkedOnOpen = useRef(false);
+  useEffect(() => {
+    if (checkedOnOpen.current || !canManage || sandboxChannel) return;
+    checkedOnOpen.current = true;
+    void sync({ silent: true });
+    // Solo al abrir: `sync` usa la lista del momento.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  async function sync({ silent = false }: { silent?: boolean } = {}) {
     setSyncing(true);
-    clearMessages();
+    if (!silent) clearMessages();
     const before = new Map(items.map((t) => [t.id, t.status.toUpperCase()]));
     const result = await syncTemplates().catch(() => null);
-    if (!result) setError("No se pudo sincronizar. Revisa tu conexión y vuelve a intentarlo.");
-    else if (!result.ok) {
-      setError(result.message);
-      if (result.notice) pushNotices([result.notice]);
+    if (!result) {
+      if (!silent) setError("No se pudo ver el estado. Revisa tu conexión y vuelve a intentarlo.");
+    } else if (!result.ok) {
+      if (!silent) setError(result.message);
+      if (result.notice && !silent) pushNotices([result.notice]);
     } else {
       const next = await refresh();
-      setNote(
-        `Sincronizado: ${result.synced} plantilla(s) desde WhatsApp` +
-          (result.removed > 0 ? `; ${result.removed} ya no existe(n) en Meta.` : "."),
-      );
+      if (!silent) {
+        setNote(
+          `Estado al día: ${result.synced} plantilla(s) en WhatsApp` +
+            (result.removed > 0 ? `; ${result.removed} ya no existe(n) en Meta.` : "."),
+        );
+      }
       // Las que Meta acaba de rechazar, pausar o desactivar: aviso grande de cada una.
       const changed = (next ?? []).filter((t) => {
         const status = t.status.toUpperCase();
@@ -184,7 +211,7 @@ export function PlantillasTab({
               className="flex items-center gap-1.5 rounded-md border px-3 py-2 text-sm font-medium hover:bg-muted disabled:opacity-50"
             >
               <RefreshCw className={`size-4 ${syncing ? "animate-spin" : ""}`} aria-hidden="true" />
-              {syncing ? "Sincronizando…" : "Sincronizar"}
+              {syncing ? "Viendo estado…" : "Ver estado"}
             </button>
             <button
               type="button"
@@ -204,7 +231,7 @@ export function PlantillasTab({
       {sandboxChannel && canManage && (
         <div role="note" className="rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-sm text-amber-800 dark:border-amber-700 dark:bg-amber-950/40 dark:text-amber-200">
           El número conectado es el <strong>sandbox de Zernio</strong>: sus plantillas son de otros clientes de Zernio,
-          no de Diluvium, y no se muestran. Sincronizar y crear se habilitan al conectar el número de Diluvium.
+          no de Diluvium, y no se muestran. Ver estado y crear se habilitan al conectar el número de Diluvium.
         </div>
       )}
       {note && (
@@ -238,7 +265,7 @@ export function PlantillasTab({
           {canManage ? (
             <>
               No hay plantillas todavía. Pulsa <strong>Crear plantilla</strong> para darlas de alta desde aquí, o{" "}
-              <strong>Sincronizar</strong> para traer las que ya existan en WhatsApp.
+              <strong>Ver estado</strong> para traer las que ya existan en WhatsApp.
             </>
           ) : (
             "No hay plantillas todavía."
@@ -319,7 +346,7 @@ export function PlantillasTab({
                     {t.unsupported
                       ? "Encabezado o botón con variables: todavía no se puede mandar desde el CRM."
                       : pending
-                        ? "Meta la está revisando (de minutos a 24 h). Pulsa Sincronizar para ver si ya la aprobó."
+                        ? "Meta la está revisando (de minutos a 24 h). El CRM revisa solo cada 10 min; o pulsa Ver estado."
                         : problem
                           ? "Meta no deja mandarla. Toca «¿Por qué?» para ver el motivo y qué hacer."
                           : "No se puede mandar hasta que Meta la apruebe."}
@@ -384,7 +411,7 @@ function TemplateForm({
     await onDone(
       editing
         ? `Plantilla "${name}" editada: Meta la vuelve a revisar (de minutos a 24 h). Mientras tanto no se puede mandar.`
-        : `Plantilla "${name}" enviada a Meta. Queda "En revisión" (de minutos a 24 h); pulsa Sincronizar para ver si ya la aprobó.`,
+        : `Plantilla "${name}" enviada a Meta. Queda "En revisión" (de minutos a 24 h); el CRM revisa solo cada 10 min.`,
     );
   }
 

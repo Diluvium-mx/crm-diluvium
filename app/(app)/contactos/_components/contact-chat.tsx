@@ -33,12 +33,15 @@ type State =
 export function ContactChat({
   contactId,
   phoneE164 = null,
+  contactFirstName = "",
   headerAction,
   onOpenContact,
   searchTerm = null,
 }: {
   contactId: string;
   phoneE164?: string | null;
+  /** Primer nombre del contacto (sin chat: llena el {{1}} de la plantilla del primer mensaje). */
+  contactFirstName?: string;
   headerAction?: ReactNode;
   onOpenContact?: (contactId: string) => void;
   /** Lupa amarilla del Embudo: palabra buscada (normalizada) que el chat resalta. */
@@ -167,7 +170,7 @@ export function ContactChat({
     );
   }
   if (state.status === "none") {
-    return <FirstMessage contactId={contactId} phoneE164={phoneE164} onStarted={() => void load()} onOpenContact={onOpenContact} />;
+    return <FirstMessage contactId={contactId} phoneE164={phoneE164} firstName={contactFirstName} onStarted={() => void load()} onOpenContact={onOpenContact} />;
   }
   return (
     <ChatThread detail={state.detail} revalToken={revalToken} nowMs={nowMs} headerAction={headerAction} searchTerm={searchTerm} />
