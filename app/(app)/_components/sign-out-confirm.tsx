@@ -65,7 +65,7 @@ export function SignOutConfirm({
             <Popover.Arrow className="size-3 rotate-45 border-border bg-popover data-[side=bottom]:-top-1.5 data-[side=bottom]:border-t data-[side=bottom]:border-l data-[side=top]:-bottom-1.5 data-[side=top]:border-r data-[side=top]:border-b" />
             <Popover.Title className="text-[15px] font-semibold">¿Cerrar sesión?</Popover.Title>
             <Popover.Description className="mt-1 text-[13px] text-muted-foreground">
-              Saldrás del CRM en esta computadora.
+              Saldrás del CRM en este dispositivo.
             </Popover.Description>
             <div className="mt-3 flex justify-end gap-2">
               <Popover.Close
