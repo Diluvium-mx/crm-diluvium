@@ -66,7 +66,7 @@ export type BillingSnapshot = {
   lastError: string | null;
 };
 
-type Load = { provider: string; loadedUsd: number; firstTopupOn: string };
+export type Load = { provider: string; loadedUsd: number; firstTopupOn: string };
 
 export function providerLabel(provider: string): string {
   return PROVIDER_META[provider as ProviderId]?.label ?? provider;
@@ -195,17 +195,19 @@ export async function spendByDay(database: Database, organizationId: string, fro
   return rows.map((r) => ({ day: r.day, provider: r.provider, usd: Number(r.usd ?? 0) }));
 }
 
-export async function aiSpendSummary(database: Database, organizationId: string, options: { now?: Date } = {}): Promise<AiSpendSummary> {
-  const now = options.now ?? new Date();
-  const monthStart = monthStartUtc(now);
+// Recargas por proveedor: total cargado y día de la primera.
+export async function loadTopupTotals(database: Database, organizationId: string): Promise<Load[]> {
   const loadRows = await database.execute<{ provider: string; loaded: string; first: string }>(sql`
     select provider, sum(amount_usd)::text as loaded, to_char(min(topped_up_on), 'YYYY-MM-DD') as first
     from ai_credit_topups
     where organization_id = ${organizationId}
     group by provider
   `);
-  const loads: Load[] = loadRows.map((r) => ({ provider: r.provider, loadedUsd: Number(r.loaded), firstTopupOn: r.first }));
-  const days = await spendByDay(database, organizationId, spendFrom(monthStart, loads.map((l) => l.firstTopupOn)));
+  return loadRows.map((r) => ({ provider: r.provider, loadedUsd: Number(r.loaded), firstTopupOn: r.first }));
+}
+
+// Última lectura de cada proveedor (ai_provider_billing).
+export async function loadBillingSnapshots(database: Database, organizationId: string): Promise<BillingSnapshot[]> {
   const billingRows = await database.execute<{
     provider: string;
     days: BillingDays | null;
@@ -219,7 +221,7 @@ export async function aiSpendSummary(database: Database, organizationId: string,
     from ai_provider_billing
     where organization_id = ${organizationId}
   `);
-  const billing: BillingSnapshot[] = billingRows.map((r) => ({
+  return billingRows.map((r) => ({
     provider: r.provider,
     days: r.days ?? {},
     balanceUsd: r.balance_usd === null ? null : Number(r.balance_usd),
@@ -227,15 +229,40 @@ export async function aiSpendSummary(database: Database, organizationId: string,
     fetchedAt: r.fetched_at ? new Date(r.fetched_at) : null,
     lastError: r.last_error,
   }));
+}
 
+// Recargas una por una (las más recientes primero). `range` filtra por día de la recarga.
+export async function listTopups(
+  database: Database,
+  organizationId: string,
+  options: { limit?: number; range?: { desde: string; hasta: string } } = {},
+): Promise<TopupRow[]> {
+  const inRange = options.range ? sql`and tp.topped_up_on between ${options.range.desde}::date and ${options.range.hasta}::date` : sql``;
   const topups = await database.execute<{ id: string; provider: string; amount: string; day: string; author: string | null }>(sql`
     select tp.id, tp.provider, tp.amount_usd::text as amount, to_char(tp.topped_up_on, 'YYYY-MM-DD') as day, u.name as author
     from ai_credit_topups tp
     left join "user" u on u.id = tp.created_by_user_id
-    where tp.organization_id = ${organizationId}
+    where tp.organization_id = ${organizationId} ${inRange}
     order by tp.topped_up_on desc, tp.created_at desc
-    limit 20
+    limit ${options.limit ?? 500}
   `);
+  return topups.map((t) => ({
+    id: t.id,
+    provider: t.provider,
+    label: providerLabel(t.provider),
+    amountUsd: Number(t.amount),
+    toppedUpOn: t.day,
+    author: t.author,
+  }));
+}
+
+export async function aiSpendSummary(database: Database, organizationId: string, options: { now?: Date } = {}): Promise<AiSpendSummary> {
+  const now = options.now ?? new Date();
+  const monthStart = monthStartUtc(now);
+  const loads = await loadTopupTotals(database, organizationId);
+  const days = await spendByDay(database, organizationId, spendFrom(monthStart, loads.map((l) => l.firstTopupOn)));
+  const billing = await loadBillingSnapshots(database, organizationId);
+  const topups = await listTopups(database, organizationId, { limit: 20 });
 
   return {
     monthLabel: new Intl.DateTimeFormat("es-MX", { month: "long", year: "numeric", timeZone: "UTC" }).format(new Date(`${monthStart}T12:00:00Z`)),
@@ -248,13 +275,6 @@ export async function aiSpendSummary(database: Database, organizationId: string,
       // Solo si la variable de la llave EXISTE en el servidor (nunca su valor).
       connected: Object.values(PROVIDER_META).filter((m) => Boolean(process.env[m.envKey])).map((m) => m.id),
     }),
-    topups: topups.map((t) => ({
-      id: t.id,
-      provider: t.provider,
-      label: providerLabel(t.provider),
-      amountUsd: Number(t.amount),
-      toppedUpOn: t.day,
-      author: t.author,
-    })),
+    topups,
   };
 }

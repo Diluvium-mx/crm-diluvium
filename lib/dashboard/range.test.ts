@@ -10,12 +10,22 @@ describe("localToday", () => {
     expect(localToday(EARLY_UTC)).toBe("2026-08-31");
     expect(localToday(MID_SEPT)).toBe("2026-09-22");
   });
+
+  it("acepta UTC como zona explícita", () => {
+    expect(localToday(new Date("2026-10-01T03:00:00Z"), "UTC")).toBe("2026-10-01");
+  });
 });
 
 describe("resolveRange", () => {
   it("sin parámetros cae al mes en curso (local)", () => {
     expect(resolveRange({}, MID_SEPT)).toEqual({ desde: "2026-09-01", hasta: "2026-09-30", mes: "2026-09" });
     expect(resolveRange({}, EARLY_UTC)).toEqual({ desde: "2026-08-01", hasta: "2026-08-31", mes: "2026-08" });
+  });
+
+  it("sin parámetros resuelve el mes en la zona indicada", () => {
+    const now = new Date("2026-10-01T03:00:00Z");
+    expect(resolveRange({}, now, "UTC")).toEqual({ desde: "2026-10-01", hasta: "2026-10-31", mes: "2026-10" });
+    expect(resolveRange({}, now)).toEqual({ desde: "2026-09-01", hasta: "2026-09-30", mes: "2026-09" });
   });
 
   it("mes explícito, incluido febrero bisiesto", () => {
