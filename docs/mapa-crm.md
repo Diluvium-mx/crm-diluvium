@@ -397,7 +397,7 @@ y se mandan fotos y videos de la Biblioteca (📎 › Multimedia); cerrada, solo
 | 12 | **Plantilla** | Nombre, idioma y texto. Solo salen las aprobadas y que el CRM puede armar. | Todos |
 | 13 | **Cerrar** | Cierra la lista de plantillas. | Todos |
 | 14 | **← Volver a la lista** | Regresa a elegir otra plantilla. | Todos |
-| 15 | **Variable {{1}}** | Hueco a llenar (con un ejemplo). | Todos |
+| 15 | **Variable {{1}}** | Hueco a llenar (con un ejemplo). El {{1}} ya viene con el **primer nombre del cliente** (se puede cambiar); si el contacto no tiene nombre, va vacío. | Todos |
 | 16 | **Vista previa** | Cómo le llegará al cliente. | Todos |
 | 17 | **Enviar plantilla** | Manda la plantilla. | Todos |
 | 18 | **Fecha y hora (Mazatlán)** | Cuándo sale el mensaje programado. | Todos |
@@ -704,7 +704,7 @@ el 27-sep-2026; se editan aquí como cualquier otro.
 | 10 | **Cancelar** | Cierra sin guardar. | Todos |
 | 11 | **Crear mensaje rápido** | Guarda. | Todos |
 | 12 | **📄 Plantillas** | Pestaña de plantillas. | Todos |
-| 13 | **Sincronizar** | Trae de Meta las plantillas y su estado actual. | Todos |
+| 13 | **Ver estado** (antes «Sincronizar») | Trae de Meta las plantillas y su estado actual. No hace falta pulsarlo: el CRM lo revisa solo al abrir la pestaña y cada 10 min mientras alguna esté En revisión. El aviso verde («Estado al día: …») se quita solo a los 5 s. | Todos |
 | 14 | **Crear plantilla** | Abre el formulario (15–19). | Todos |
 | 15 | **Nombre** | Escríbelo como quieras (p. ej. "Hola buenas tardes"): el CRM lo pasa a minúsculas, sin acentos y con guion bajo, y debajo dice **"Así se guarda en Meta: hola_buenas_tardes"**. | Todos |
 | 16 | **Idioma** | Español (México) de fábrica (es_MX); también Español o Inglés. | Todos |
@@ -719,12 +719,12 @@ el 27-sep-2026; se editan aquí como cualquier otro.
 | 25 | **Editar** (lápiz de la plantilla) | Cambia **solo el texto** (nombre, idioma y categoría quedan fijos). Solo en aprobadas, rechazadas o pausadas. Vuelve a revisión y mientras tanto no se puede mandar; una aprobada se edita **1 vez al día y 10 al mes** (Meta). | Todos |
 | 26 | **Guardar y mandar a revisión** | Guarda la edición (25) y la manda a Meta. | Todos |
 | 27 | **Borrar** (bote de la plantilla) | Pide confirmación y la **borra en Meta** y del CRM. Meta no deja volver a usar ese nombre en 30 días. No se deja si hay mensajes programados con ella (primero se cancelan). | Todos |
-| 28 | **"Meta la está revisando (de minutos a 24 h)…"** | Aviso de una plantilla En revisión: pulsa Sincronizar (13) para ver si ya la aprobó. | Todos |
+| 28 | **"Meta la está revisando (de minutos a 24 h)…"** | Aviso de una plantilla En revisión. El CRM revisa solo cada 10 min; o pulsa **Ver estado** (13). | Todos |
 | 29 | **Rechazada · Pausada por Meta · Desactivada por Meta** | Otros estados que pone Meta; ninguno se puede mandar. Las borradas ya no se muestran. | Todos |
 | 30 | **¿Por qué?** (naranja, junto a la plantilla) | En rechazadas, pausadas o desactivadas: pregunta a Meta el motivo y abre el aviso grande (31). | Todos |
-| 31 | **Aviso de Meta** (pop-up grande) | Sale solo cuando Meta no acepta algo de una plantilla (al crear, editar, borrar, al Sincronizar si alguna quedó rechazada o pausada, o con 30): título, que lo decide Meta y no el CRM, **Por qué pasó** (el motivo de Meta en palabras simples), **Qué hacer** y **Entendido**. | Todos |
+| 31 | **Aviso de Meta** (pop-up grande) | Sale solo cuando Meta no acepta algo de una plantilla (al crear, editar, borrar, al ver el estado (13, o el CRM solo) si alguna quedó rechazada o pausada, o con 30): título, que lo decide Meta y no el CRM, **Por qué pasó** (el motivo de Meta en palabras simples), **Qué hacer** y **Entendido**. | Todos |
 
-**Lo cambias tú desde la pantalla:** crear, editar y borrar mensajes rápidos; crear, editar (van a revisión de Meta), borrar y sincronizar plantillas.
+**Lo cambias tú desde la pantalla:** crear, editar y borrar mensajes rápidos; crear, editar (van a revisión de Meta) y borrar plantillas, y ver su estado (Ver estado).
 Cada uno de esos cambios queda en **Agente IA › Historial** (72) con quién lo hizo y su texto (**Ver cambios**, 77).
 
 **Pídeselo a Code:**
@@ -876,7 +876,7 @@ una ventana arriba (59)**; nada se guarda con un solo clic.
 | 69 | **Guardar · Deshacer** (por fila) | Aparecen al cambiar nombre o regla; Guardar pide confirmar. | Todos |
 | 70 | **🗑 Borrar** | Pop-up que pregunta a qué columna pasan sus contactos (con cuántos tiene cada una) y los mueve todos de una vez. Gris si la columna tiene papel o si quedan 3. | Todos |
 | 71 | **Nueva columna · Después de · Agregar** | Agrega una columna entre dos (o al final), con el Modelo 2 y sin regla. Pide confirmar. | Todos |
-| 72 | **Historial** (subpestaña) | Una fila por cambio, lo más nuevo arriba (hasta 200; con fechas ves más atrás): opciones del Agente IA, Goal y FAQs, nombre del agente (Ángela ✎), Modelo 1 y 2, etapas (crear, renombrar, borrar, reordenar, papel, modelo y **regla del Agente IA**), canal encendido/apagado (y la limpieza de chats de prueba: quién y cuántos, `npm run pruebas:limpiar`), workflows (crear, editar, encender, apagar, borrar), **tallas y medidas**, **mensajes rápidos** (crear, editar, borrar), **plantillas** (alta, editar, borrar y sincronizar), **vendedores** (alta, cambio de rol, desactivar, reactivar y contraseña restablecida, sin mostrarla; solo las ven owner y admin) y, por chat, **Pausar agente** / **Activar** con quién lo hizo. No entra el trabajo diario (mover contactos de etapa, mensajes, comentarios). Solo se consulta. | Todos (Vendedores: solo Owner y Admin) |
+| 72 | **Historial** (subpestaña) | Una fila por cambio, lo más nuevo arriba (hasta 200; con fechas ves más atrás): opciones del Agente IA, Goal y FAQs, nombre del agente (Ángela ✎), Modelo 1 y 2, etapas (crear, renombrar, borrar, reordenar, papel, modelo y **regla del Agente IA**), canal encendido/apagado (y la limpieza de chats de prueba: quién y cuántos, `npm run pruebas:limpiar`), workflows (crear, editar, encender, apagar, borrar), **tallas y medidas**, **mensajes rápidos** (crear, editar, borrar), **plantillas** (alta, editar, borrar y cambios de estado en Meta, también los que revisa el CRM solo), **vendedores** (alta, cambio de rol, desactivar, reactivar y contraseña restablecida, sin mostrarla; solo las ven owner y admin) y, por chat, **Pausar agente** / **Activar** con quién lo hizo. No entra el trabajo diario (mover contactos de etapa, mensajes, comentarios). Solo se consulta. | Todos (Vendedores: solo Owner y Admin) |
 | 73 | **Tipo** | Filtra: Todos · Opciones del Agente IA · Goal y FAQs · Nombre del agente · Modelos · Etapas · Canales · Workflows · Tallas y medidas · Mensajes rápidos · Plantillas · Vendedores (solo Owner y Admin) · Pausas por chat. | Todos |
 | 74 | **Desde · Hasta** | Días (hora de Mazatlán), los dos incluidos. Vacío = sin límite. | Todos |
 | 75 | **Mostrar pausas automáticas (un vendedor contestó, tope de respuestas, pidió un asesor y vuelta sola)** | Agrega las pausas que el agente se puso solo (un vendedor contestó, llegó al máximo de respuestas, el cliente pidió un asesor) y su **vuelta sola** al cumplirse la hora de regreso (quién = «Automático»). Apagado de fábrica. | Todos |
@@ -1147,7 +1147,7 @@ Code sabe exactamente qué pieza tocar; no hace falta explicar nada más.
 | **Tallas y medidas** (Agente IA › 40–46) | Cambia el tamaño sugerido en todos los contactos y lo que cotiza el agente. |
 | **Apagar o borrar un workflow o su archivo** (Automatización › 5, 38) | El agente deja de mandar ese material (tabla, datos bancarios, videos). |
 | **▷ Probar un workflow** (Automatización › 14) | Manda mensajes de verdad a la conversación elegida. |
-| **Crear, editar o sincronizar plantillas** (Mensajes rápidos › 13, 19, 25) | Van a revisión de Meta y, mientras tanto, no se pueden mandar; la categoría cambia lo que cobra Meta. |
+| **Crear o editar plantillas** (Mensajes rápidos › 19, 25) | Van a revisión de Meta y, mientras tanto, no se pueden mandar; la categoría cambia lo que cobra Meta. |
 | **Borrar una plantilla** (Mensajes rápidos › 27) | Se borra en Meta; el nombre no se puede volver a usar en 30 días. |
 | **Borrar una recarga** (Dashboard › 9) | Cambia el saldo de Anthropic, OpenAI o Google (xAI y OpenRouter dan su saldo directo). |
 | **Desactivar o cambiar el rol de alguien** (Configuración › 4, 7) | Le cambia lo que puede ver o hacer de inmediato. |
