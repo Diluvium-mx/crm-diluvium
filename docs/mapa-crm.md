@@ -89,7 +89,7 @@ Nadie es "dueño" de un contacto: **todos ven todos los contactos, siempre**.
 | **Bloqueo de inicio de sesión** | Tras **10 intentos fallidos en 5 minutos** con un correo desde la misma conexión (la misma red), ese correo no puede entrar **desde esa red** por 5 minutos, ni con la contraseña correcta; desde otra red sí. Además, 50 intentos en una hora con un correo desde cualquier red lo bloquean en todas por hasta una hora. Los intentos durante el bloqueo no cuentan. Si es una confusión del equipo, se espera o se le pide a Code que lo quite. Con 3 bloqueos en una hora llega el aviso del monitor en GitHub (solo el conteo). Desde el 30-sep-2026 (revisión de seguridad). |
 | **Recarga / saldo** | Lo que se cargó en la página de cada proveedor de IA y lo que queda. Desde el 1-oct-2026 el saldo sale del proveedor: en Anthropic y OpenAI, recargas registradas menos el gasto real que reporta el proveedor; en xAI y OpenRouter, el saldo que da el proveedor directo. Google no da su cobro por API: su saldo sigue **estimado** con el registro del CRM. |
 | **Pruebas (gasto de IA)** | Lo que se gasta en IA fuera del Agente IA de producción: staging y pruebas de modelos. En Anthropic van en el espacio de trabajo **«Pruebas»** (con tope de US$10 al mes, para que nunca dejen sin saldo al Agente IA); en los demás proveedores es lo que cobró el proveedor menos lo que registró el CRM. Desde el 1-oct-2026. |
-| **Historial del gasto de IA** | Página del Dashboard (botón **Ver historial**) con el gasto de IA por día, por mes o por periodo, sus desgloses, el resumen por mes con el saldo al cierre y la proyección del mes en curso. Días UTC. Desde el 1-oct-2026. Ver [3.1.1](#311-historial-del-gasto-de-ia). |
+| **Historial del gasto de IA** | Página del Dashboard (botón **Historial**) con el gasto de IA por día, por mes o por periodo, sus desgloses, el resumen por mes con el saldo al cierre y la proyección del mes en curso. Días UTC. Desde el 1-oct-2026. Ver [3.1.1](#311-historial-del-gasto-de-ia). |
 | **Visor de archivos** | Lo que se abre encima al dar clic en una foto, sticker, PDF o documento del chat: recorre con ‹ › (o deslizando un dedo en el Magic Mouse) todos los archivos de ese chat, con lupa para las fotos, Girar, Imprimir página por página y Descargar. Ver [3.2.5](#325-visor-de-archivos). Desde el 1-oct-2026. |
 | **Archivo verificado** | Foto, audio, video o PDF cuyo **contenido** confirma lo que dice ser (el CRM lee el archivo, no se fía del nombre ni del tipo que manda el celular). Solo esos se ven dentro del CRM; cualquier otro archivo sale como tarjeta de documento y **solo se descarga**. Desde el 30-sep-2026 (revisión de seguridad). |
 
@@ -165,7 +165,7 @@ Resumen del mes: cuánto se gasta en IA y cuántas conversaciones nuevas llegan,
 | 21 | **Estado de WhatsApp** (recuadro al hacer clic en 20) | 4 líneas: **Número** (conectado o no), **Último mensaje de un cliente** (hace X min), **Worker** (activo o no) y **Webhook de Zernio** (activo y fallos). | Todos |
 | 22 | **Pastilla Agente IA** (junto a la de WhatsApp) | ¿El agente está contestando? Verde **"Agente IA contestando"**, ámbar **"Agente IA fuera de horario"**, roja **"Agente IA apagado"** (canal Apagado) o **"Agente IA callado"** (3 o más clientes de la última hora esperando más de 15 min y el agente sin mandar nada en 15 min, dentro de su horario). Sale de los datos del CRM; no consulta a Zernio. No está en la captura. | Todos |
 | 23 | **Estado del Agente IA** (recuadro al hacer clic en 22) | 5 líneas: **Canal** (Encendido o Apagado), **Horario** (24/7 o días y horas, y si ahora está fuera), **Sin respuesta hace más de 15 min (de la última hora)** (cuántas conversaciones; estas sí cuentan para la alarma), **Atrasados (más de 1 h)** («N chats esperan a un vendedor»: solo dato, no alarma) y **Última respuesta del Agente IA** (hace X min). | Todos |
-| 24 | **Ver historial** (junto a «Recargas registradas») | Abre **Dashboard › Historial del gasto de IA** ([3.1.1](#311-historial-del-gasto-de-ia)): el gasto y las recargas de cada mes o del periodo que elijas. | Todos |
+| 24 | **Historial** (botón junto a «Recargas registradas») | Abre **Dashboard › Historial del gasto de IA** ([3.1.1](#311-historial-del-gasto-de-ia)): el gasto y las recargas de cada mes o del periodo que elijas. | Todos |
 
 **Lo cambias tú desde la pantalla:** registrar y borrar recargas; el periodo de las conversaciones nuevas.
 
@@ -192,7 +192,7 @@ atiende cuentan en **Conversaciones nuevas** como cualquier otro. La pastilla **
 
 #### 3.1.1 Historial del gasto de IA
 
-Se abre con **Ver historial** (24). Es como **Conversaciones nuevas**, pero del gasto de IA: lo que cobró cada proveedor
+Se abre con el botón **Historial** (24). Es como **Conversaciones nuevas**, pero del gasto de IA: lo que cobró cada proveedor
 por día, por mes o en el periodo que elijas, con sus desgloses y la proyección del mes. Los días son **UTC** (igual que la
 consola de cada proveedor y la tarjeta Gasto de IA): lo que pasa de 5 pm a medianoche de Mazatlán cuenta en el día
 siguiente. Hay datos desde el 22-sep-2026 (la primera recarga). Desde el 1-oct-2026.
