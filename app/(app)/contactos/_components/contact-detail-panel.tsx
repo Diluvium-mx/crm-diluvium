@@ -6,6 +6,7 @@ import { usePersistentToggle } from "@/components/ui/use-persistent-toggle";
 import type { FunnelSignal } from "@/lib/contacts/funnel-tone";
 import { getContactFullName, type BoardContact, type Stage, type Temperature } from "../_data/types";
 import { ContactChat } from "./contact-chat";
+import { firstNameOf } from "@/lib/templates/first-name";
 import { ContactDetails } from "./contact-details";
 import { MarkReadButton } from "./mark-read-button";
 import { CloseX } from "@/components/ui/close-x";
@@ -121,6 +122,7 @@ export function ContactDetailPanel({
           <ContactChat
             contactId={contact.id}
             phoneE164={contact.phoneE164}
+            contactFirstName={firstNameOf(contact.firstName)}
             searchTerm={searchTerm}
             headerAction={
               <>

@@ -36,7 +36,7 @@ describe("submitNotice", () => {
     expect(submitNotice("crear", "Template name already exists").whatToDo[0]).toMatch(/otro nombre/);
     expect(submitNotice("editar", "Edit limit reached for template").whatToDo[0]).toMatch(/1 al día/);
     expect(submitNotice("editar", "Template is PENDING").whatToDo[0]).toMatch(/revisión/);
-    expect(submitNotice("enviar", "Template name does not exist in the translation").whatToDo[0]).toMatch(/Sincronizar/);
+    expect(submitNotice("enviar", "Template name does not exist in the translation").whatToDo[0]).toMatch(/Ver estado/);
     const generic = submitNotice("crear", "Invalid parameter");
     expect(generic.title).toBe("WhatsApp (Meta) no dejó crear");
     expect(generic.why).toBe("Lo que contestó: «Invalid parameter».");

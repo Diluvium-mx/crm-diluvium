@@ -86,7 +86,7 @@ export function statusNotice(name: string, status: string): MetaNotice | null {
 
 /** Aviso cuando Meta (vía Zernio) rechaza en el momento crear, editar o borrar. */
 export function submitNotice(action: "crear" | "editar" | "borrar" | "sincronizar" | "enviar", providerMessage: string): MetaNotice {
-  const verb = { crear: "crear", editar: "editar", borrar: "borrar", sincronizar: "sincronizar", enviar: "mandar" }[action];
+  const verb = { crear: "crear", editar: "editar", borrar: "borrar", sincronizar: "ver el estado", enviar: "mandar" }[action];
   const lower = providerMessage.toLowerCase();
   const whatToDo: string[] = [];
   if (lower.includes("already exists") || lower.includes("duplicate") || lower.includes("ya existe")) {
@@ -96,7 +96,7 @@ export function submitNotice(action: "crear" | "editar" | "borrar" | "sincroniza
   } else if (lower.includes("pending")) {
     whatToDo.push("Está en revisión: espera a que Meta termine (minutos a 24 h) y vuelve a intentarlo.");
   } else if (lower.includes("template") && (lower.includes("not found") || lower.includes("does not exist") || lower.includes("approved"))) {
-    whatToDo.push("La plantilla no está aprobada, ya no existe en Meta o no existe en ese idioma: pulsa Sincronizar en Mensajes rápidos → Plantillas y elige otra.");
+    whatToDo.push("La plantilla no está aprobada, ya no existe en Meta o no existe en ese idioma: pulsa Ver estado en Mensajes rápidos → Plantillas y elige otra.");
   } else {
     whatToDo.push("Revisa el texto (huecos, categoría) y vuelve a intentarlo.");
   }
