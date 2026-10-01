@@ -8,6 +8,8 @@ import { memo, useEffect, useRef, useState, type RefObject } from "react";
 import { Download, ExternalLink } from "lucide-react";
 import type { RenderTask } from "pdfjs-dist";
 import { pdfPageFitsScreen } from "@/lib/inbox/viewer";
+import { revisarVersion } from "@/lib/version/client";
+import { MENSAJE_ACTUALIZACION } from "@/lib/version/rules";
 import { getPdf } from "./viewer-pdf-document";
 
 // Ancho mínimo con el que se dibuja una página (en pantallas chicas se ve igual de nítida).
@@ -24,7 +26,8 @@ export const ViewerPdfStage = memo(function ViewerPdfStage({
   scrollRef: RefObject<HTMLDivElement | null>;
 }) {
   const columnRef = useRef<HTMLDivElement>(null);
-  const [state, setState] = useState<"loading" | "ready" | "error">("loading");
+  // "version": no cargó porque el CRM se actualizó (pestaña vieja); se dice eso en vez de "No se pudo".
+  const [state, setState] = useState<"loading" | "ready" | "error" | "version">("loading");
 
   useEffect(() => {
     const column = columnRef.current;
@@ -56,7 +59,8 @@ export const ViewerPdfStage = memo(function ViewerPdfStage({
           if (n === 1 && !cancelled) setState("ready");
         }
       } catch {
-        if (!cancelled) setState("error");
+        const nueva = await revisarVersion();
+        if (!cancelled) setState(nueva ? "version" : "error");
       }
     })();
     return () => {
@@ -72,9 +76,9 @@ export const ViewerPdfStage = memo(function ViewerPdfStage({
       {state === "loading" && (
         <p className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 rounded-xl bg-[rgba(10,15,24,0.92)] px-6 py-4 text-[15px] text-white/85">Cargando PDF…</p>
       )}
-      {state === "error" && (
+      {(state === "error" || state === "version") && (
         <div className="absolute top-1/2 left-1/2 flex -translate-x-1/2 -translate-y-1/2 flex-col items-center gap-4 rounded-2xl bg-[rgba(10,15,24,0.92)] px-10 py-8 text-center shadow-xl">
-          <p className="text-[15px] text-white/85">No se pudo mostrar este PDF.</p>
+          <p className="text-[15px] text-white/85">{state === "version" ? MENSAJE_ACTUALIZACION : "No se pudo mostrar este PDF."}</p>
           <div className="flex gap-3">
             <a href={downloadUrl} data-no-glow="" className="inline-flex h-12 items-center gap-2 rounded-xl bg-brand-orange px-5 font-semibold text-white hover:bg-brand-orange-light">
               <Download className="size-5" aria-hidden="true" />
