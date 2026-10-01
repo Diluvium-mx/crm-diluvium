@@ -87,7 +87,8 @@ Nadie es "dueño" de un contacto: **todos ven todos los contactos, siempre**.
 | **Tarjeta amarilla / azul** | Colores de la tarjeta en el Embudo (regla del 28-sep-2026): **amarilla** = el agente necesita al vendedor (se quita contestando); **azul** = el cliente escribió y nadie le ha contestado (se quita contestando —vendedor o agente— o con **Marcar como leído**; abrir el chat no lo quita); **blanca** = nada pendiente. Al pasar el mouse la tarjeta se ilumina en **gris**, nunca en azul. |
 | **Aviso emergente** | Cuadro que baja arriba de la pantalla cuando el agente u otra persona **cambió la etapa** de un contacto (también cuando el agente la mueve en segundo plano). |
 | **Bloqueo de inicio de sesión** | Tras **10 intentos fallidos en 5 minutos** con un correo desde la misma conexión (la misma red), ese correo no puede entrar **desde esa red** por 5 minutos, ni con la contraseña correcta; desde otra red sí. Además, 50 intentos en una hora con un correo desde cualquier red lo bloquean en todas por hasta una hora. Los intentos durante el bloqueo no cuentan. Si es una confusión del equipo, se espera o se le pide a Code que lo quite. Con 3 bloqueos en una hora llega el aviso del monitor en GitHub (solo el conteo). Desde el 30-sep-2026 (revisión de seguridad). |
-| **Recarga / saldo estimado** | Lo que se cargó en la página de cada proveedor de IA y lo que queda, calculado por el CRM (es un estimado). |
+| **Recarga / saldo** | Lo que se cargó en la página de cada proveedor de IA y lo que queda. Desde el 1-oct-2026 el saldo sale del proveedor: en Anthropic y OpenAI, recargas registradas menos el gasto real que reporta el proveedor; en xAI y OpenRouter, el saldo que da el proveedor directo. Google no da su cobro por API: su saldo sigue **estimado** con el registro del CRM. |
+| **Pruebas (gasto de IA)** | Lo que se gasta en IA fuera del Agente IA de producción: staging y pruebas de modelos. En Anthropic van en el espacio de trabajo **«Pruebas»** (con tope de US$10 al mes, para que nunca dejen sin saldo al Agente IA); en los demás proveedores es lo que cobró el proveedor menos lo que registró el CRM. Desde el 1-oct-2026. |
 | **Visor de archivos** | Lo que se abre encima al dar clic en una foto, sticker, PDF o documento del chat: recorre con ‹ › (o deslizando un dedo en el Magic Mouse) todos los archivos de ese chat, con lupa para las fotos, Girar, Imprimir página por página y Descargar. Ver [3.2.5](#325-visor-de-archivos). Desde el 1-oct-2026. |
 | **Archivo verificado** | Foto, audio, video o PDF cuyo **contenido** confirma lo que dice ser (el CRM lee el archivo, no se fía del nombre ni del tipo que manda el celular). Solo esos se ven dentro del CRM; cualquier otro archivo sale como tarjeta de documento y **solo se descarga**. Desde el 30-sep-2026 (revisión de seguridad). |
 
@@ -140,12 +141,12 @@ Resumen del mes: cuánto se gasta en IA y cuántas conversaciones nuevas llegan,
 
 | # | Nombre oficial | Qué hace | Quién lo ve |
 |---|---|---|---|
-| 1 | **Gasto de IA** | Tarjeta con lo que va gastando el agente en el mes (días de Mazatlán). Va hasta arriba porque el saldo importa más que las métricas. | Todos |
+| 1 | **Gasto de IA** | Tarjeta con lo que se va gastando en IA en el mes, según lo que cobra cada proveedor (días UTC, igual que la consola de cada proveedor). Va hasta arriba porque el saldo importa más que las métricas. | Todos |
 | 2 | **Total del mes** | Suma del gasto de todos los proveedores. | Todos |
-| 3 | **Tarjeta del proveedor** (OpenAI, Anthropic, Google, xAI, OpenRouter) | Gasto del mes de ese proveedor. Solo salen los que tienen llave conectada. | Todos |
-| 4 | **Saldo estimado** | Recargas menos gasto desde la primera recarga, con barra "% usado · quedan". | Todos |
-| 5 | **"Registra una recarga para ver el saldo estimado."** | Sale cuando ese proveedor no tiene recargas anotadas. | Todos |
-| 6 | **Nota "Es un estimado"** | Aclara que el cálculo es aproximado (sin impuestos); el saldo real está en la página de cada proveedor. | Todos |
+| 3 | **Tarjeta del proveedor** (OpenAI, Anthropic, Google, xAI, OpenRouter) | Gasto del mes de ese proveedor y, debajo, **«En producción: $X · Pruebas: $Y»** (ver Pruebas en el Glosario). Arriba dice **«Actualizado hace N min»** (el CRM lee al proveedor cada 5 min); en naranja **«Sin actualizar desde hace…»** si la última lectura falló o tiene más de 20 min; **«Estimado con el registro del CRM»** si el proveedor no da su cobro por API (Google). Solo salen los que tienen llave conectada o gasto. | Todos |
+| 4 | **Saldo** | Anthropic y OpenAI: recargas menos el gasto real desde la primera recarga. xAI y OpenRouter: el saldo que da el proveedor. Google: **«Saldo estimado»**. Con barra "% usado · quedan". | Todos |
+| 5 | **"Registra una recarga para ver el saldo."** | Sale cuando a Anthropic, OpenAI o Google les falta su recarga anotada (xAI y OpenRouter no la necesitan: dan su saldo). | Todos |
+| 6 | **Nota de abajo** | Aclara que el gasto y el saldo vienen de cada proveedor y se actualizan cada 5 minutos, que los «estimados» salen del registro del CRM y que no incluyen impuestos. | Todos |
 | 7 | **Recargas registradas** | Lista de recargas: fecha · proveedor · monto · quién la anotó. | Todos |
 | 8 | **+ Registrar recarga** | Anota una recarga que hiciste en la página del proveedor (proveedor, monto y fecha). | Todos |
 | 9 | **Borrar** (recarga) | Quita una recarga mal capturada. | Todos |
@@ -184,7 +185,7 @@ Zernio ya no manda correo: solo si se repite en la siguiente revisión.
 en segundo plano** para llenar el Detalle (Luna, ~US$0.0005 por lectura) se suma en **Gasto de IA**. Los chats que
 atiende cuentan en **Conversaciones nuevas** como cualquier otro. La pastilla **Agente IA** (22) dice si está contestando.
 
-<sub>Para Code: ruta `/inicio`; `app/(app)/inicio/` (`ai-spend-card`, `ai-topups`, `period-cards`, `daily-chart`, `breakdown-list`, `range-filter`, `whatsapp-status`); datos en `lib/dashboard/`; la pastilla (20–21) en `lib/monitoring/` (`status-pill`, `dashboard-status`) con lo que guarda el monitoreo en Redis; la pastilla Bot (22–23) en `lib/monitoring/` (`bot-status`, `bot-silence`) con datos de la base.</sub>
+<sub>Para Code: ruta `/inicio`; `app/(app)/inicio/` (`ai-spend-card`, `ai-topups`, `period-cards`, `daily-chart`, `breakdown-list`, `range-filter`, `whatsapp-status`); datos en `lib/dashboard/` (Gasto de IA: `ai-spend.ts` junta el registro del CRM con la lectura real de cada proveedor, tabla `ai_provider_billing` de la migración 0054, que el worker llena cada 5 min con `lib/ai/billing/`); la pastilla (20–21) en `lib/monitoring/` (`status-pill`, `dashboard-status`) con lo que guarda el monitoreo en Redis; la pastilla Bot (22–23) en `lib/monitoring/` (`bot-status`, `bot-silence`) con datos de la base.</sub>
 
 ---
 
@@ -844,7 +845,7 @@ Opciones, Tallas y medidas, y encender o apagar el agente por número. El **Hist
 - "En Agente IA › Historial › (75), muestra las pausas automáticas de fábrica."
 - "En Agente IA › Historial › (77) Ver cambios, muestra también los párrafos del Goal que no cambiaron."
 - "En Agente IA › (29) tiempo de espera, permite hasta 120 segundos."
-- "En Agente IA › (12) APIs de IA, agrega el saldo estimado de cada proveedor."
+- "En Agente IA › (12) APIs de IA, agrega el saldo de cada proveedor."
 
 **Agente IA aquí:** esta es su configuración. El Goal y las FAQs mandan sobre lo que dice; las Opciones, sobre
 cuándo y cuánto contesta. Nada de aquí apaga el trabajo en **segundo plano** (leer el chat y dejar al día etapa y
@@ -1094,7 +1095,7 @@ Code sabe exactamente qué pieza tocar; no hace falta explicar nada más.
 | **▷ Probar un workflow** (Automatización › 14) | Manda mensajes de verdad a la conversación elegida. |
 | **Crear, editar o sincronizar plantillas** (Mensajes rápidos › 13, 19, 25) | Van a revisión de Meta y, mientras tanto, no se pueden mandar; la categoría cambia lo que cobra Meta. |
 | **Borrar una plantilla** (Mensajes rápidos › 27) | Se borra en Meta; el nombre no se puede volver a usar en 30 días. |
-| **Borrar una recarga** (Dashboard › 9) | Cambia el saldo estimado. |
+| **Borrar una recarga** (Dashboard › 9) | Cambia el saldo de Anthropic, OpenAI o Google (xAI y OpenRouter dan su saldo directo). |
 | **Desactivar o cambiar el rol de alguien** (Configuración › 4, 7) | Le cambia lo que puede ver o hacer de inmediato. |
 
 ---

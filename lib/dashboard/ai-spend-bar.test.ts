@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { spendBar } from "./ai-spend-bar";
-import { formatUsd } from "@/lib/usd-format";
+import { STALE_MINUTES, freshness, spendBar } from "./ai-spend-bar";
+import { formatDollars, formatUsd } from "@/lib/usd-format";
 
 const p = (loadedUsd: number | null, spentSinceFirstUsd: number | null) => ({
   loadedUsd,
@@ -32,8 +32,48 @@ describe("spendBar", () => {
     expect(spendBar(p(20, 26.5))?.text).toBe("Sin saldo estimado");
   });
 
+  it("al agotarse un saldo real dice Sin saldo", () => {
+    expect(spendBar(p(20, 20), { estimated: false })).toEqual({ widthPct: 100, tone: "orange", text: "Sin saldo", exhausted: true });
+  });
+
   it("recarga sin gasto: 0 %", () => {
     expect(spendBar(p(10, 0))).toMatchObject({ widthPct: 0, text: "0 % usado · quedan US$10.00" });
+  });
+});
+
+describe("freshness", () => {
+  it("describe las cifras estimadas con el registro del CRM", () => {
+    expect(freshness({ source: "estimado", updatedMinutesAgo: null, lastError: null })).toEqual({
+      text: "Estimado con el registro del CRM",
+      tone: "muted",
+    });
+  });
+
+  it("muestra lecturas recientes en tono discreto", () => {
+    expect(freshness({ source: "proveedor", updatedMinutesAgo: 0, lastError: null })).toEqual({
+      text: "Actualizado hace menos de 1 min",
+      tone: "muted",
+    });
+    expect(freshness({ source: "proveedor", updatedMinutesAgo: 7, lastError: null })).toEqual({
+      text: "Actualizado hace 7 min",
+      tone: "muted",
+    });
+  });
+
+  it("marca en naranja una lectura vieja o cuyo último intento falló", () => {
+    expect(STALE_MINUTES).toBe(20);
+    expect(freshness({ source: "proveedor", updatedMinutesAgo: STALE_MINUTES, lastError: null })).toEqual({
+      text: "Sin actualizar desde hace 20 min",
+      tone: "orange",
+    });
+    expect(freshness({ source: "proveedor", updatedMinutesAgo: 7, lastError: "timeout" })).toEqual({
+      text: "Sin actualizar desde hace 7 min",
+      tone: "orange",
+    });
+    expect(freshness({ source: "proveedor", updatedMinutesAgo: 130, lastError: null })).toEqual({
+      text: "Sin actualizar desde hace 2 h",
+      tone: "orange",
+    });
   });
 });
 
@@ -42,5 +82,12 @@ describe("formatUsd", () => {
     expect(formatUsd(14.2)).toBe("US$14.20");
     expect(formatUsd(1234.5)).toBe("US$1,234.50");
     expect(formatUsd(-3)).toBe("−US$3.00");
+  });
+});
+
+describe("formatDollars", () => {
+  it("usa signo simple, miles y dos decimales", () => {
+    expect(formatDollars(6.16)).toBe("$6.16");
+    expect(formatDollars(1234.5)).toBe("$1,234.50");
   });
 });
