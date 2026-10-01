@@ -510,7 +510,10 @@ Regla: **no se empieza una fase sin que la anterior esté desplegada en Railway 
    (a) rate limiter por IP en `/api/auth/*` (`lib/rate-limit`, Redis, ventana deslizante
    atómica; 20/15 min en sign-in, 120/min general). IP = primer valor de `x-forwarded-for`
    (el edge de Railway descarta el del cliente; verificado en staging con XFF falsificado).
-   El limiter de fábrica de Better Auth queda apagado, y el candado por email sigue igual.
+   El limiter de fábrica de Better Auth queda apagado. Candado por correo (S3, 30-sep-2026): 10
+   intentos en 5 min por correo + IP y tope de 50/h por correo; fallos y bloqueos se registran
+   (`auth_failed`/`auth_locked`, correo con hash) y 3+ bloqueos/h abren el issue del monitor. Por
+   HTTP solo se atienden `/sign-in/email`, `/sign-out` y `/get-session` (lib/auth/allowed-routes.ts).
    (b) staging creado y aislado. (c) respaldos diarios con restore de prueba en cada corrida.
    Riesgo aceptado: si el repo pasa más de 60 días sin actividad, GitHub apaga el cron sin
    avisar. (d) **Decisión (18-sep): WhatsApp por Zernio con coexistencia**, no por la Cloud API

@@ -51,14 +51,16 @@ jobs:
             echo "status=ok" >> "$GITHUB_OUTPUT"
           elif [ "$code" = "503" ] && jq -e '.problems' body.json > /dev/null 2>&1; then
             echo "status=problems" >> "$GITHUB_OUTPUT"
+            # Delimitador al azar (S3, CN-011): un texto que trajera "EOF" no corta la salida.
+            delim="EOF_$(openssl rand -hex 16)"
             {
-              echo "summary<<EOF"
+              echo "summary<<$delim"
               jq -r '.problems[] | "- " + .' body.json
               echo
               echo '```json'
               jq '.metrics' body.json
               echo '```'
-              echo "EOF"
+              echo "$delim"
             } >> "$GITHUB_OUTPUT"
           else
             echo "status=unexpected" >> "$GITHUB_OUTPUT"

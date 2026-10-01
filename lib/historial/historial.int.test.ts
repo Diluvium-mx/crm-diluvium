@@ -94,6 +94,21 @@ describe.skipIf(!TEST_DATABASE_URL)("historial de cambios (Postgres real)", () =
     expect(r[0]).toMatchObject({ kind: "modelos", action: "modelo_1", userId: USER, oldValue: "GPT-5.6 Luna", newValue: "GPT-5.6 Terra" });
   });
 
+  it("S3 (0053): el Historial conserva el nombre del autor de ESE momento aunque luego se renombre", async () => {
+    await editor.saveModel1(ORG, "gpt-5.6-terra", USER);
+    await db.insert(s.aiConfigChanges).values({ id: "acc_hc", organizationId: ORG, userId: USER, field: "pausa_humano", oldValue: "no", newValue: "si" });
+    expect((await rows())[0].authorName).toBe("Daniel");
+    await db.update(s.user).set({ name: "Daniel Ruiz" }).where(d.eq(s.user.id, USER));
+    const list = await getChangeHistory({});
+    if (!list.ok) throw new Error(list.message);
+    expect(list.rows.length).toBeGreaterThanOrEqual(2);
+    expect(list.rows.every((r) => r.who === "Daniel")).toBe(true);
+    // Un cambio nuevo ya sale con el nombre nuevo.
+    await editor.saveModel1(ORG, "gpt-5.6-luna", USER);
+    const after = await getChangeHistory({ type: "modelos" });
+    expect(after.ok && after.rows[0].who).toBe("Daniel Ruiz");
+  });
+
   it("etapas: renombrar + modelo, reordenar, papel y borrar; un cambio que falla no deja fila", async () => {
     const stages = await fs.listFunnelStages(ORG);
     const prospecto = stages.find((x) => x.key === "prospecto")!;

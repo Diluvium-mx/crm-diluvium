@@ -11,6 +11,7 @@
 import { UnrecoverableError, Worker } from "bullmq";
 import { and, asc, count, desc, gte, isNotNull, isNull, lt, sql } from "drizzle-orm";
 import { db } from "@/lib/db";
+import { logError, safeErrorMessage } from "@/lib/log/safe-error";
 import { waitForMigrations } from "@/lib/db/wait-for-migrations";
 import { messages, webhookEvents } from "@/lib/db/schema";
 import { messagingProvider } from "@/lib/messaging";
@@ -148,7 +149,7 @@ const worker = new Worker<InboundJob>(
 );
 
 worker.on("failed", (job, error) => {
-  console.error(`[worker] falló ${job?.data.webhookEventId} (intento ${job?.attemptsMade}): ${error.message}`);
+  console.error(`[worker] falló ${job?.data.webhookEventId} (intento ${job?.attemptsMade}): ${safeErrorMessage(error)}`);
 });
 
 // Concurrencia baja: cada descarga va en streaming (memoria acotada por
@@ -178,7 +179,7 @@ async function transcribeAndWake(bucket: ObjectStorage, messageId: string): Prom
 }
 
 mediaWorker?.on("failed", (job, error) => {
-  console.error(`[media] falló ${job?.data.messageId} (intento ${job?.attemptsMade}): ${error.message}`);
+  console.error(`[media] falló ${job?.data.messageId} (intento ${job?.attemptsMade}): ${safeErrorMessage(error)}`);
 });
 
 // Hasta que la base tenga la última migración del código, ni colas ni barrido.
@@ -191,7 +192,7 @@ async function sweep() {
   // (o se queda esperando migraciones), deja de actualizarse y la GitHub Action
   // avisa aunque aquí no corra nada.
   await redis.set(WORKER_HEARTBEAT_KEY, String(Date.now()), "EX", 3_600).catch((error: unknown) => {
-    console.error("[monitor] no se pudo escribir el latido en Redis", error);
+    logError("[monitor] no se pudo escribir el latido en Redis", error);
   });
 
   // Huérfanos (estado/reacción/edición sin su mensaje) cuyo mensaje ya llegó:
@@ -203,13 +204,13 @@ async function sweep() {
   if (released) console.info(`[worker] barrido: ${released} estado(s) liberados de cuarentena (su mensaje ya existe)`);
 
   // Mensajes programados (A6): vencidos sin job y envíos atorados.
-  await scheduled.sweep().catch((error) => console.error("[scheduled] barrido falló", error));
-  await workflowsRunner.sweep().catch((error) => console.error("[workflows] barrido falló", error));
-  await outbox.sweep().catch((error) => console.error("[outbox] barrido falló", error));
+  await scheduled.sweep().catch((error) => logError("[scheduled] barrido falló", error));
+  await workflowsRunner.sweep().catch((error) => logError("[workflows] barrido falló", error));
+  await outbox.sweep().catch((error) => logError("[outbox] barrido falló", error));
   // Anuncios: clics sin registrar, media pendiente y nombres de Meta.
-  await ads.sweep().catch((error) => console.error("[anuncios] barrido falló", error));
-  await unavailable.sweep().catch((error) => console.error("[no-disponible] barrido falló", error));
-  await chatUploads?.sweep().catch((error) => console.error("[adjuntos] barrido falló", error));
+  await ads.sweep().catch((error) => logError("[anuncios] barrido falló", error));
+  await unavailable.sweep().catch((error) => logError("[no-disponible] barrido falló", error));
+  await chatUploads?.sweep().catch((error) => logError("[adjuntos] barrido falló", error));
 
   const stale = await db
     .select({ id: webhookEvents.id })
@@ -351,7 +352,7 @@ const sweepTimer = setInterval(() => {
   if (sweeping) return;
   sweeping = true;
   sweep()
-    .catch((error) => console.error("[worker] barrido falló", error))
+    .catch((error) => logError("[worker] barrido falló", error))
     .finally(() => {
       sweeping = false;
     });
@@ -381,7 +382,7 @@ async function monitor() {
   else console.error(`[monitor] ALERTA: ${report.problems.join(" · ")}${summary}`);
 }
 const monitorTimer = setInterval(() => {
-  monitor().catch((error) => console.error("[monitor] la revisión falló", error));
+  monitor().catch((error) => logError("[monitor] la revisión falló", error));
 }, MONITOR_EVERY_MS);
 
 // Apagado ORDENADO (28-sep-2026, revisión completa B8/B9): en cada despliegue Railway manda SIGTERM al
@@ -415,7 +416,7 @@ waitForMigrations()
     migrationsReady = true;
     console.info("[worker] migraciones al día: arrancan las colas");
     // Primera revisión del monitoreo ya, sin esperar 5 min (la pastilla del Dashboard sale al día tras un deploy).
-    monitor().catch((error) => console.error("[monitor] la revisión falló", error));
+    monitor().catch((error) => logError("[monitor] la revisión falló", error));
     void worker.run();
     void mediaWorker?.run();
     scheduled.run();
@@ -428,6 +429,6 @@ waitForMigrations()
     chatUploads?.run();
   })
   .catch((error: unknown) => {
-    console.error("[worker] no se pudo verificar las migraciones", error);
+    logError("[worker] no se pudo verificar las migraciones", error);
     process.exit(1);
   });
