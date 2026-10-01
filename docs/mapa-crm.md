@@ -201,7 +201,7 @@ siguiente. Hay datos desde el 22-sep-2026 (la primera recarga). Desde el 1-oct-2
 
 | # | Nombre oficial | Qué hace | Quién lo ve |
 |---|---|---|---|
-| 25 | **← Dashboard** | Regresa al Dashboard. | Todos |
+| 25 | **← Dashboard** (botón) | Regresa al Dashboard. Es el mismo botón que «← Workflows» de Automatización; en el celular solo se ve la flecha. | Todos |
 | 26 | **Hoy · 7 días · 30 días · Este mes · Mes · Desde / Hasta · Aplicar** | El periodo, igual que en Conversaciones nuevas (los días de los atajos son UTC). | Todos |
 | 27 | **Gasto del periodo** | Lo que cobraron los proveedores en el periodo, con **«En producción: $X · Pruebas: $Y»** y la comparación (▲ más, ▼ menos) contra el periodo anterior al mismo día (el mes pasado si eliges un mes). Si el periodo anterior es de antes de que hubiera datos, dice «Sin datos del periodo anterior para comparar». | Todos |
 | 28 | **Recargas del periodo** | Suma de las recargas registradas con fecha en el periodo y cuántas son. | Todos |
