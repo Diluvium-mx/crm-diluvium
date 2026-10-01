@@ -594,4 +594,86 @@ describe.skipIf(!TEST_DATABASE_URL)("executor de workflows", () => {
     expect(sent.map((x) => (x.input as SendTextInput).text)).toEqual(["Claro, es una barrera…"]);
   });
 
+
+  // ── Texto del Agente IA como pie del archivo (1-oct-2026, dueño) ──────────────
+  const PIE = "Claro, aquí le comparto el video de instalación de la mini compuerta.";
+  async function videoRun(steps: (a: { id: string }) => import("@/lib/db/schema/automation").WorkflowStepPayload[]) {
+    const a = await asset();
+    const wf = await workflow(steps(a));
+    await db.insert(s.messages).values({ id: "in_1", organizationId: ORG, conversationId: CONV, direction: "in", source: "contact", type: "text", body: "muéstreme el video", status: "received" });
+    const r = await ex.startWorkflowRun({ organizationId: ORG, workflowId: wf, conversationId: CONV, trigger: "agent", triggerMessageId: "in_1", payload: { pieDelAgente: PIE } });
+    expect(r.status).toBe("queued");
+    return { wf, runId: r.runId };
+  }
+
+  it("pie del Agente IA: su texto reemplaza el pie del workflow en el primer archivo (UN mensaje) y contesta lo que leyó", async () => {
+    const { runId } = await videoRun((a) => [
+      { kind: "send_media", assetId: a.id, title: "Video", caption: "Aquí le comparto un video de la instalación de las mini compuertas" },
+      { kind: "send_media", assetId: a.id, title: "Foto", caption: "Así queda" },
+    ]);
+    expect(await ex.executeWorkflowRun(runId, { provider, storage })).toBe("done");
+    expect(sent.map((x) => [x.kind, (x.input as SendMediaInput).caption])).toEqual([
+      ["media", PIE],
+      ["media", "Así queda"],
+    ]);
+    const outs = await db.select().from(s.messages).where(eq(s.messages.direction, "out")).orderBy(s.messages.createdAt);
+    expect(outs[0]).toMatchObject({ body: PIE, source: "ai_agent" });
+    // Es la respuesta del agente: contesta hasta su mensaje leído (no es "relleno" de workflow).
+    expect(outs[0].metadata).toMatchObject({ respondeHasta: expect.any(String) });
+    expect(outs[1].metadata ?? {}).not.toHaveProperty("respondeHasta");
+    const { pendingInbound } = await import("@/lib/ai/runtime/context");
+    expect(await pendingInbound(ORG, CONV)).toEqual([]);
+  });
+
+  it("pie del Agente IA: no es una variable {{…}} y solo lo usan las corridas del agente", async () => {
+    const a = await asset();
+    const wf = await workflow([{ kind: "send_media", assetId: a.id, title: "Video", caption: "Video {{pieDelAgente}}" }]);
+    const cmd = await ex.startWorkflowRun({ organizationId: ORG, workflowId: wf, conversationId: CONV, trigger: "command", triggeredByUserId: "u_v", payload: { pieDelAgente: PIE } });
+    expect(await ex.executeWorkflowRun(cmd.runId, { provider, storage })).toBe("done");
+    expect((sent[0].input as SendMediaInput).caption).toBe("Video");
+  });
+
+  it("pie del Agente IA: si la corrida ya no sale al arrancar, su texto sale SOLO (el cliente no se queda sin respuesta)", async () => {
+    const { wf, runId } = await videoRun((a) => [{ kind: "send_media", assetId: a.id, title: "Video", caption: "Pie del workflow" }]);
+    await db.update(s.workflows).set({ enabled: false }).where(eq(s.workflows.id, wf));
+    expect(await ex.executeWorkflowRun(runId, { provider, storage })).toBe("cancelled");
+    expect(await run(runId)).toMatchObject({ status: "skipped", errorCode: ex.SKIP_DISABLED });
+    expect(sent.map((x) => [x.kind, (x.input as SendTextInput).text])).toEqual([["text", PIE]]);
+    const [out] = await db.select().from(s.messages).where(eq(s.messages.direction, "out"));
+    expect(out).toMatchObject({ body: PIE, source: "ai_agent", metadata: expect.objectContaining({ respondeHasta: expect.any(String) }) });
+    // Un reintento del job no lo repite.
+    await db.update(s.workflowRuns).set({ status: "queued" }).where(eq(s.workflowRuns.id, runId));
+    expect(await ex.executeWorkflowRun(runId, { provider, storage })).toBe("cancelled");
+    expect(sent).toHaveLength(1);
+  });
+
+  it("pie del Agente IA: con el agente pausado no sale nada; si el workflow ya no empieza con archivo, el texto sale antes", async () => {
+    const first = await videoRun((a) => [{ kind: "send_media", assetId: a.id, title: "Video" }]);
+    await db.update(s.conversations).set({ agentState: "pausado_humano" }).where(eq(s.conversations.id, CONV));
+    expect(await ex.executeWorkflowRun(first.runId, { provider, storage })).toBe("cancelled");
+    expect(sent).toEqual([]);
+
+    await db.update(s.conversations).set({ agentState: "activo" }).where(eq(s.conversations.id, CONV));
+    const a = await asset();
+    const wf = await workflow([{ kind: "send_media", assetId: a.id, title: "Video" }]);
+    const r = await ex.startWorkflowRun({ organizationId: ORG, workflowId: wf, conversationId: CONV, trigger: "agent", triggerMessageId: "in_1", payload: { pieDelAgente: PIE } });
+    // Alguien le agregó un texto al inicio mientras esperaba en cola.
+    await db.update(s.workflowSteps).set({ position: 1 }).where(eq(s.workflowSteps.workflowId, wf));
+    await db.insert(s.workflowSteps).values({ id: crypto.randomUUID(), organizationId: ORG, workflowId: wf, position: 0, kind: "send_text", payload: { kind: "send_text", text: "Mire:" } });
+    expect(await ex.executeWorkflowRun(r.runId, { provider, storage })).toBe("done");
+    expect(sent.map((x) => [x.kind, x.kind === "text" ? (x.input as SendTextInput).text : (x.input as SendMediaInput).caption ?? null])).toEqual([
+      ["text", PIE],
+      ["text", "Mire:"],
+      ["media", null],
+    ]);
+  });
+
+  it("pie del Agente IA: si el archivo no sale, el aviso al vendedor lleva el texto que iba con él", async () => {
+    const { runId } = await videoRun((a) => [{ kind: "send_media", assetId: a.id, title: "Video" }]);
+    await db.update(s.conversations).set({ windowExpiresAt: new Date(Date.now() - 60_000) }).where(eq(s.conversations.id, CONV));
+    expect(await ex.executeWorkflowRun(runId, { provider, storage })).toBe("failed");
+    const notices = await db.select().from(s.aiAgentNotices);
+    expect(notices.map((n) => n.body).join("\n")).toContain(`Iba con el texto del Agente IA: «${PIE}»`);
+  });
+
 });

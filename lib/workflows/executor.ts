@@ -31,7 +31,7 @@ import { splitRepeated } from "@/lib/messaging/repeat";
 import { moveStageForward } from "@/lib/contacts/stage";
 import { listFunnelStages } from "@/lib/contacts/funnel-stages";
 import { roleKey } from "@/lib/contacts/stages";
-import { lastSendIndex, missingMedia, startOnlyApplies, stripUnresolvedVariables, waitMs } from "./steps";
+import { AGENT_CAPTION_KEY, agentCaptionOf, lastSendIndex, missingMedia, startOnlyApplies, stripUnresolvedVariables, takesAgentCaption, waitMs } from "./steps";
 import { startOnlyBlock, type StartOnlyBlock } from "./start-only";
 import { atMaxPerChat, maxPerChatApplies } from "./max-per-chat";
 import { SLUG_DATOS_BANCARIOS } from "./defaults";
@@ -213,6 +213,7 @@ export const FAIL_UNCONFIRMED = "envio_sin_confirmar";
 function variablesFor(run: { payload: Record<string, unknown> | null }, contact: { firstName: string; lastName: string | null }, sellerName: string | null) {
   const values: Record<string, string> = {};
   for (const [k, v] of Object.entries(run.payload ?? {})) {
+    if (k === AGENT_CAPTION_KEY) continue;
     if (typeof v === "string" || typeof v === "number") values[k] = String(v).slice(0, 500);
   }
   // Las variables del CRM van DESPUÉS: un argumento de herramienta o un texto
@@ -293,17 +294,23 @@ export async function executeWorkflowRun(runId: string, deps: ExecutorDeps): Pro
     await markRun(runId, { status: "failed", errorCode: "no_encontrado", finishedAt: now() });
     return "failed";
   }
+  // Texto del Agente IA que va como pie del primer archivo (run.ts, 1-oct-2026). Si la corrida ya
+  // no sale al arrancar, ese texto sale SOLO: el cliente no se queda sin la respuesta (en el peor
+  // caso queda como antes del cambio: la frase sin el archivo).
+  const agentCaption = run.trigger === "agent" ? agentCaptionOf(run.payload) : null;
+  // Si alguien cambió el workflow mientras la corrida esperaba (ya no empieza con un archivo), el
+  // texto sale solo antes del primer paso.
+  const captionFits = agentCaption !== null && takesAgentCaption(loaded.steps.map((st) => st.payload));
+  const skipAtClaim = async (code: string): Promise<ExecuteOutcome> => {
+    if (agentCaption && run.stepCursor === 0) await sendAgentCaptionAlone(run, agentCaption, deps.provider, now());
+    await markRun(runId, { status: "skipped", errorCode: code, finishedAt: now() });
+    return "cancelled";
+  };
   // Se revalida al reclamar: si el admin deshabilitó el workflow (o borró un
   // archivo) mientras la corrida esperaba en cola, no se ejecuta. Un comando
   // del vendedor ("Probar") es una acción explícita y no exige "habilitado".
-  if (run.trigger !== "command" && !loaded.wf.enabled) {
-    await markRun(runId, { status: "skipped", errorCode: SKIP_DISABLED, finishedAt: now() });
-    return "cancelled";
-  }
-  if (missingMedia(loaded.steps.map((st) => st.payload)).length > 0) {
-    await markRun(runId, { status: "skipped", errorCode: SKIP_MISSING_MEDIA, finishedAt: now() });
-    return "cancelled";
-  }
+  if (run.trigger !== "command" && !loaded.wf.enabled) return skipAtClaim(SKIP_DISABLED);
+  if (missingMedia(loaded.steps.map((st) => st.payload)).length > 0) return skipAtClaim(SKIP_MISSING_MEDIA);
   // Dos mensajes seguidos con la misma palabra clave encolan dos corridas; la
   // segunda encuentra la marca al reclamar y no repite.
   if (run.trigger === "keyword" && run.stepCursor === 0 && contact.keywordSent.includes(run.workflowId)) {
@@ -321,16 +328,12 @@ export async function executeWorkflowRun(runId: string, deps: ExecutorDeps): Pro
       exceptRunId: run.id,
       includeQueued: false,
     });
-    if (block) {
-      await markRun(runId, { status: "skipped", errorCode: START_ONLY_SKIP[block], finishedAt: now() });
-      return "cancelled";
-    }
+    if (block) return skipAtClaim(START_ONLY_SKIP[block]);
   }
   // «Máximo de envíos por chat», otra vez al arrancar: otra corrida con la misma foto (p. ej.
   // «Precio 2» y la Tabla en la misma ráfaga) ya la mandó mientras esta esperaba.
   if (run.stepCursor === 0 && maxPerChatApplies(run.trigger) && (await atMaxPerChat(run.organizationId, run.conversationId, loaded.wf, { exceptRunId: run.id }))) {
-    await markRun(runId, { status: "skipped", errorCode: SKIP_MAX_PER_CHAT, finishedAt: now() });
-    return "cancelled";
+    return skipAtClaim(SKIP_MAX_PER_CHAT);
   }
   const seller = run.triggeredByUserId
     ? (await db.select({ name: user.name }).from(user).where(eq(user.id, run.triggeredByUserId)).limit(1))[0]?.name ?? null
@@ -341,6 +344,8 @@ export async function executeWorkflowRun(runId: string, deps: ExecutorDeps): Pro
   const messageIds = [...run.messageIds];
   // «El workflow es la respuesta»: el último mensaje que le llega al cliente es el que contesta.
   const answerIndex = loaded.wf.isAnswer ? lastSendIndex(loaded.steps.map((st) => st.payload)) : -1;
+  // Paso en curso (el aviso de un fallo en el primer archivo lleva el texto del Agente IA que no salió).
+  let stepAt = run.stepCursor;
 
   const fail = async (code: string, message: string): Promise<ExecuteOutcome> => {
     await markRun(runId, { status: "failed", errorCode: code, errorMessage: message.slice(0, 500), messageIds, finishedAt: now() });
@@ -359,7 +364,9 @@ export async function executeWorkflowRun(runId: string, deps: ExecutorDeps): Pro
         conversationId: run.conversationId,
         messageId: run.triggerMessageId,
         kind: "envio",
-        body: `No se envió "${loaded.wf.name}" (${FAIL_LABEL[code] ?? message.slice(0, 200)}). El cliente lo estaba esperando: revisa el hilo.`,
+        body:
+          `No se envió "${loaded.wf.name}" (${FAIL_LABEL[code] ?? message.slice(0, 200)}). El cliente lo estaba esperando: revisa el hilo.` +
+          (captionFits && stepAt === 0 ? ` Iba con el texto del Agente IA: «${agentCaption}».` : ""),
       });
     }
     return "failed";
@@ -367,6 +374,7 @@ export async function executeWorkflowRun(runId: string, deps: ExecutorDeps): Pro
 
   for (let i = run.stepCursor; i < loaded.steps.length; i++) {
     const step = loaded.steps[i].payload;
+    stepAt = i;
     // Antes de CADA paso (también etapa/etiqueta/pausa), el agente relee si
     // sigue pudiendo actuar (definición 1 / Fase B): si un vendedor respondió a
     // la mitad o apagaron el canal, lo que falta no se ejecuta ("apagado no
@@ -389,6 +397,8 @@ export async function executeWorkflowRun(runId: string, deps: ExecutorDeps): Pro
           await markRun(runId, { messageIds });
         }
       }
+      if (i === 0 && agentCaption && !captionFits) await sendAgentCaptionAlone(run, agentCaption, deps.provider, now());
+      const withCaption = i === 0 && captionFits;
       const sent = await runStep(step, {
         run,
         workflowSlug: loaded.wf.slug,
@@ -396,9 +406,17 @@ export async function executeWorkflowRun(runId: string, deps: ExecutorDeps): Pro
         values,
         source,
         sentBy,
+        agentCaption: withCaption ? agentCaption : null,
         deps: { ...deps, now, sleep },
       });
       if (sent && !messageIds.includes(sent.messageId)) messageIds.push(sent.messageId);
+      // El archivo con el texto del Agente IA ES su respuesta: contesta hasta el último mensaje que
+      // el agente leyó (sin la marca sería "relleno" de un workflow y lo leído seguiría pendiente).
+      if (withCaption && sent && run.triggerMessageId) {
+        await markAnswersUntil(run.organizationId, sent.messageId, run.triggerMessageId).catch((error: unknown) =>
+          console.error(`[workflows] ${run.id}: no se pudo marcar el archivo con el texto del Agente IA como su respuesta`, error),
+        );
+      }
       // «El workflow es la respuesta» (29-sep-2026; antes, 28-sep, solo si terminaba en
       // pregunta): su último mensaje contesta al cliente. Se marca aunque WhatsApp no haya
       // confirmado: si al final falla, la fila queda "failed" y deja de contar. Si la marca no se
@@ -561,6 +579,8 @@ type StepCtx = {
   values: Record<string, string>;
   source: "crm" | "ai_agent";
   sentBy: string | null;
+  /** Texto del Agente IA que va como pie de este archivo, en lugar del pie del workflow. */
+  agentCaption?: string | null;
   deps: ExecutorDeps & { now: () => Date; sleep: (ms: number) => Promise<void> };
 };
 
@@ -587,6 +607,35 @@ async function alreadySent(organizationId: string, messageId: string): Promise<S
   }
   // "queued" = el envío anterior quedó sin confirmar; lo concilia el outbox, no se reenvía.
   return { messageId, status: row.status === "queued" ? "pending" : "sent" };
+}
+
+// El texto del Agente IA que iba como pie sale SOLO (la corrida ya no salía, o el workflow ya no
+// empieza con un archivo). Id determinista: un reintento no lo repite. Si el agente ya no puede
+// actuar (un vendedor contestó, lo pausaron) no sale; si el envío falla, aviso 🤖 con el texto.
+async function sendAgentCaptionAlone(run: typeof workflowRuns.$inferSelect, text: string, provider: MessagingProvider, now: Date): Promise<void> {
+  if (await agentMustStop(run.organizationId, run.conversationId, run.createdAt)) return;
+  const messageId = stepMessageId(run.id, -1);
+  try {
+    if (!(await alreadySent(run.organizationId, messageId))) {
+      await sendTextMessage(provider, { organizationId: run.organizationId, conversationId: run.conversationId, text, source: "ai_agent", sentByUserId: null, markRead: false, messageId, now });
+    }
+  } catch (error) {
+    const reason = error instanceof SendFailedError ? plainSendReason(error.code, error.message) : error instanceof Error ? error.message : String(error);
+    await addNotice({
+      organizationId: run.organizationId,
+      conversationId: run.conversationId,
+      messageId: run.triggerMessageId,
+      kind: "envio",
+      body: `No salió el texto del Agente IA (${reason.slice(0, 200)}): «${text}». Revisa el hilo.`,
+    });
+    return;
+  }
+  // Contesta hasta lo que el agente leyó (no lo que el cliente escribió después).
+  if (run.triggerMessageId) {
+    await markAnswersUntil(run.organizationId, messageId, run.triggerMessageId).catch((error: unknown) =>
+      console.error(`[workflows] ${run.id}: no se pudo marcar el texto del Agente IA como su respuesta`, error),
+    );
+  }
 }
 
 async function runStep(step: WorkflowStepPayload, ctx: StepCtx): Promise<SendOutcome | null> {
@@ -627,7 +676,7 @@ async function runStep(step: WorkflowStepPayload, ctx: StepCtx): Promise<SendOut
         organizationId: run.organizationId,
         conversationId: run.conversationId,
         assetId: step.assetId,
-        caption: step.caption ? stripUnresolvedVariables(renderSnippet(step.caption, ctx.values)) : null,
+        caption: ctx.agentCaption ?? (step.caption ? stripUnresolvedVariables(renderSnippet(step.caption, ctx.values)) : null),
         source: ctx.source,
         sentByUserId: ctx.sentBy,
         markRead: run.trigger === "command",
