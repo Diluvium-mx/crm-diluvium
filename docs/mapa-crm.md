@@ -119,7 +119,7 @@ Lo que se ve en todas las pantallas.
 | 7 | **Menú del usuario** (nombre y rol) | Abre **Mi cuenta** y **Cerrar sesión** (ver [Menú del usuario y Mi cuenta](#39-menú-del-usuario-y-mi-cuenta)). | Todos |
 | 8 | **Menú del vendedor** | Igual al de arriba pero **sin Configuración**. | Vendedor |
 | 9 | **Rol "Vendedor"** | Debajo del nombre se ve el rol de quien entró (Owner, Admin o Vendedor). | Todos |
-| 10 | **Globo «¿Cerrar sesión?»** | Sale pegado al botón que tocaste —el de la barra (6), el del menú del usuario (7) o el del cajón ☰ en el celular— con «Saldrás del CRM en esta computadora». Esc o un clic fuera lo cierran sin salir. Desde el 1-oct-2026. | Todos |
+| 10 | **Globo «¿Cerrar sesión?»** | Sale pegado al botón que tocaste —el de la barra (6), el del menú del usuario (7) o el del cajón ☰ en el celular— con «Saldrás del CRM en este dispositivo». Esc o un clic fuera lo cierran sin salir. Desde el 1-oct-2026. | Todos |
 | 11 | **Cancelar** | Cierra el globo y te deja donde estabas. Ya viene seleccionado: un Enter no te saca por error. | Todos |
 | 12 | **Cerrar sesión** (naranja) | Ahora sí sale del CRM (dice «Saliendo…» mientras). | Todos |
 | 13 | **Aviso de actualización** | Píldora en la barra azul: **«Hay una nueva actualización del CRM: recarga la página»** con el botón naranja **Recargar**. Sale **solo** cuando falló algo que hizo el vendedor (enviar, guardar, adjuntar, abrir un PDF…) porque su pestaña es de antes de una actualización del CRM. **Nunca** sale solo por haber versión nueva, ni por un refresco automático que falló (mensajes nuevos, programados). Donde falló, el mensaje propio también lo dice en la burbuja al enviar, la foto HEIC, el PDF del visor y Mensajes rápidos; las demás pantallas conservan su mensaje. Se quita al recargar. En celular baja como franja azul debajo de la barra (Versión móvil › 13). | Todos |
@@ -131,7 +131,7 @@ mismo menú en un cajón; ver [Versión móvil](#310-versión-móvil-celular).
 
 **Detalle escondido:** clic derecho en la píldora del tema (5) —en Android, dejarla presionada— saca una broma
 visual, una distinta cada vez: **estrella fugaz** (tema oscuro: dos estrellas cruzan la barra) o **avioncito** (tema
-claro: pasa entre las nubes de la píldora), y **eclipse** (3 s: una sombra tapa la bolita, queda su halo y toda la
+claro: pasa entre las nubes de la píldora), y **eclipse** (14.5 s: una sombra tapa la bolita, queda su halo y toda la
 pantalla se oscurece un poco). No cambia el tema ni toca nada; con «Reducir movimiento» no sale.
 
 **Pídeselo a Code:**
