@@ -8,25 +8,38 @@ import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { DASHBOARD_TIME_ZONE } from "@/lib/dashboard/range";
 
-function localDay(now: Date): string {
-  return new Intl.DateTimeFormat("en-CA", { timeZone: DASHBOARD_TIME_ZONE, year: "numeric", month: "2-digit", day: "2-digit" }).format(now);
+function localDay(now: Date, timeZone: string): string {
+  return new Intl.DateTimeFormat("en-CA", { timeZone, year: "numeric", month: "2-digit", day: "2-digit" }).format(now);
 }
 
-function daysAgo(days: number): string {
-  return localDay(new Date(Date.now() - days * 86_400_000));
+function daysAgo(days: number, timeZone: string): string {
+  return localDay(new Date(Date.now() - days * 86_400_000), timeZone);
 }
 
-export function RangeFilter({ mes, desde, hasta, basePath = "/inicio" }: { mes: string | null; desde: string; hasta: string; basePath?: string }) {
+// `timeZone`: de qué zona son los días de los atajos (el historial del Gasto de IA usa "UTC").
+export function RangeFilter({
+  mes,
+  desde,
+  hasta,
+  basePath = "/inicio",
+  timeZone = DASHBOARD_TIME_ZONE,
+}: {
+  mes: string | null;
+  desde: string;
+  hasta: string;
+  basePath?: string;
+  timeZone?: string;
+}) {
   const router = useRouter();
   const [from, setFrom] = useState(desde);
   const [to, setTo] = useState(hasta);
   const rangeValid = from !== "" && to !== "" && from <= to;
 
-  const today = localDay(new Date());
+  const today = localDay(new Date(), timeZone);
   const shortcuts: { label: string; href: string; active: boolean }[] = [
     { label: "Hoy", href: `${basePath}?desde=${today}&hasta=${today}`, active: mes === null && desde === today && hasta === today },
-    { label: "7 días", href: `${basePath}?desde=${daysAgo(6)}&hasta=${today}`, active: mes === null && desde === daysAgo(6) && hasta === today },
-    { label: "30 días", href: `${basePath}?desde=${daysAgo(29)}&hasta=${today}`, active: mes === null && desde === daysAgo(29) && hasta === today },
+    { label: "7 días", href: `${basePath}?desde=${daysAgo(6, timeZone)}&hasta=${today}`, active: mes === null && desde === daysAgo(6, timeZone) && hasta === today },
+    { label: "30 días", href: `${basePath}?desde=${daysAgo(29, timeZone)}&hasta=${today}`, active: mes === null && desde === daysAgo(29, timeZone) && hasta === today },
     { label: "Este mes", href: `${basePath}?mes=${today.slice(0, 7)}`, active: mes === today.slice(0, 7) },
   ];
 
