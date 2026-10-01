@@ -46,6 +46,7 @@ Nadie es "dueño" de un contacto: **todos ven todos los contactos, siempre**.
 | **Destacado** | Marca ⭐ del **contacto** para todo el equipo, aparte de la temperatura y combinable con ella (🔥 + ⭐). Es **un solo dato**: la **estrella** de la lista de la Bandeja y el ⭐ del Embudo (tarjeta y pop-up) son lo mismo y se ven en vivo en las dos pantallas. Se filtra con la pestaña Destacado de la Bandeja y con ⭐ Destacado del filtro del Embudo. Desde el 29-sep-2026. |
 | **Búsqueda en los chats (lupa)** | La **lupa** entre el buscador y el filtro de la Bandeja y del Embudo. Prendida se pinta de **amarillo** y el mismo buscador busca una palabra **dentro de los mensajes** de todos los chats (cliente, vendedor, Agente IA, historial, pies de foto y transcripciones; no los avisos 📝 ni los comentarios), sin acentos y con mínimo 3 letras. Solo quedan los contactos con la palabra, con un **círculo amarillo** (en cuántos mensajes aparece) junto al naranja de no leídos; al abrir el chat la palabra sale **resaltada en amarillo** y la barra «1 de N» recorre cada coincidencia. El círculo es amarillo **sólido con borde**; la tarjeta amarilla del Embudo es otra cosa (fondo claro: el agente necesita al vendedor). Desde el 29-sep-2026. |
 | **No leído (Embudo)** | Píldora con un **sobre** junto al contador de cada columna del Embudo, del mismo alto que el contador. Prendida (**naranja**) la columna deja solo las tarjetas con algo pendiente: **círculo naranja** (sin ver), **azul** (sin contestar) o **amarilla** (el Agente IA necesita al vendedor), y el contador cuenta solo esas. Cada columna va por su lado. Sobre **tenue** = esa columna no tiene nada pendiente. Es más amplio que la pestaña **No leído** de la Bandeja, que solo lleva el círculo naranja. Desde el 30-sep-2026. |
+| **Actualización del CRM** | Cuando se publica una versión nueva del CRM, una pestaña que ya estaba abierta sigue con la versión anterior y lo que hace con el servidor falla. Si al vendedor le falla algo por eso, la barra de arriba avisa **«Hay una nueva actualización del CRM: recarga la página»** (Menú › 13) y **Recargar** lo arregla. Si no falla nada, no se avisa. Desde el 1-oct-2026. |
 | **Semáforo** | Punto de color en la Bandeja: cuánto lleva el cliente esperando respuesta **de una persona**. Verde menos de 15 min, ámbar menos de 1 h, rojo más de 1 h. |
 | **Ventana de 24 h** | Regla de WhatsApp: hasta 24 horas después del último mensaje del cliente se puede escribir libre. Pasadas las 24 h **solo se puede mandar una plantilla**. |
 | **Gratis por anuncio (72 h)** | Si el cliente llegó por un anuncio y se le contesta dentro de 24 h, por 72 h todos los mensajes (también plantillas) son gratis. El chat lo indica con 🎁. |
@@ -105,6 +106,8 @@ Lo que se ve en todas las pantallas.
 
 ![Confirmación de «Cerrar sesión»](mapa-crm/00-marco-cerrar-sesion.png)
 
+![Aviso de actualización en la barra de arriba](mapa-crm/00-aviso-actualizacion.png)
+
 | # | Nombre oficial | Qué hace | Quién lo ve |
 |---|---|---|---|
 | 1 | **Menú lateral** | Lista de pestañas: Dashboard, Bandeja, Embudo, Mensajes rápidos, Anuncios, Agente IA, Automatización, Configuración. | Todos (Configuración solo Owner y Admin) |
@@ -119,6 +122,7 @@ Lo que se ve en todas las pantallas.
 | 10 | **Globo «¿Cerrar sesión?»** | Sale pegado al botón que tocaste —el de la barra (6), el del menú del usuario (7) o el del cajón ☰ en el celular— con «Saldrás del CRM en esta computadora». Esc o un clic fuera lo cierran sin salir. Desde el 1-oct-2026. | Todos |
 | 11 | **Cancelar** | Cierra el globo y te deja donde estabas. Ya viene seleccionado: un Enter no te saca por error. | Todos |
 | 12 | **Cerrar sesión** (naranja) | Ahora sí sale del CRM (dice «Saliendo…» mientras). | Todos |
+| 13 | **Aviso de actualización** | Píldora en la barra azul: **«Hay una nueva actualización del CRM: recarga la página»** con el botón naranja **Recargar**. Sale **solo** cuando falló algo que hizo el vendedor (enviar, guardar, adjuntar, abrir un PDF…) porque su pestaña es de antes de una actualización del CRM. **Nunca** sale solo por haber versión nueva, ni por un refresco automático que falló (mensajes nuevos, programados). Donde falló, el mensaje propio también lo dice en la burbuja al enviar, la foto HEIC, el PDF del visor y Mensajes rápidos; las demás pantallas conservan su mensaje. Se quita al recargar. En celular baja como franja azul debajo de la barra (Versión móvil › 13). | Todos |
 
 **En celular** (pantalla de menos de 768 px) el menú lateral se esconde y la barra lleva un botón ☰ que abre el
 mismo menú en un cajón; ver [Versión móvil](#310-versión-móvil-celular).
@@ -136,7 +140,8 @@ pantalla se oscurece un poco). No cambia el tema ni toca nada; con «Reducir mov
 
 <sub>Para Code: `app/(app)/layout.tsx` (sidebar y barra), `nav-item.tsx`, `user-menu.tsx`, `sign-out-button.tsx` y
 `sign-out-confirm.tsx` (globo 10–12), `components/theme-toggle.tsx` (píldora), `theme-circle-transition.ts` (círculo),
-`theme-toggle-eggs.ts` (detalle escondido); estilos en `app/globals.css` › «Interruptor de tema».</sub>
+`theme-toggle-eggs.ts` (detalle escondido); estilos en `app/globals.css` › «Interruptor de tema»; aviso de actualización (13): `update-notice.tsx`, `lib/version/` y
+`app/api/version/route.ts`.</sub>
 
 ---
 
@@ -1076,6 +1081,8 @@ números dibujados: el número de la tabla nombra la pieza.
 
 ![Pop-up del Embudo en móvil](mapa-crm/13-movil-embudo-popup.png)
 
+![Aviso de actualización en móvil](mapa-crm/13-movil-aviso-actualizacion.png)
+
 | # | Nombre oficial | Qué hace | Quién lo ve |
 |---|---|---|---|
 | 1 | **Botón ☰ (menú)** | En la barra de arriba, a la izquierda del logo. Abre un cajón con las mismas pestañas del menú lateral y, abajo, el **menú del usuario** (Mi cuenta, Cerrar sesión; esta pide confirmar con el globo de Menú › 10). Se cierra al elegir una pestaña, con ✕, tocando fuera o con Esc. | Todos |
@@ -1090,6 +1097,7 @@ números dibujados: el número de la tabla nombra la pieza.
 | 10 | **✕ roja (cerrar)** | En el celular todo lo que se abre encima se cierra con una ✕ blanca en círculo rojo: el menú ☰, el Detalle del contacto (5), el pop-up del Embudo (8), los selectores del chat (⚡ mensajes rápidos, 📄 plantillas, 🕒 programar y el buscador "/"), el visor de fotos (el de siempre: el visor nuevo de escritorio, Bandeja › 3.2.5, no aplica en el celular), Nuevo contacto, Columnas del Embudo y el formulario de Mensajes rápidos. En escritorio no cambia nada (Esc, "Cerrar" o la ✕ chica de siempre; el Visor de archivos tiene su ✕ naranja, 3.2.5). | Todos |
 | 11 | **▶ Automatizaciones** | Botón nuevo en la caja del chat (Bandeja y pop-up del Embudo), solo en el celular. Abre una lista como la de ⚡ con los workflows **encendidos** de Automatización: miniatura cuadrada de la imagen o el video (con el ícono de imagen/video a media opacidad encima; documento con su ícono), nombre, comando y el mensaje predeterminado. Tocar uno manda exactamente lo mismo que escribir su comando (el mensaje y el archivo, en su orden). En escritorio siguen con "/". | Todos |
 | 12 | **Avisos emergentes (móvil)** | Tarjetas azules delgadas, **centradas arriba** debajo de la barra; no llegan al centro ni tapan el chat. Texto completo de quién hizo el cambio: "🤖 Agente IA movió a … a …", "🌎 Luis movió a … a …" (owner o admin), "👨🏽‍💻 Daniel movió a … a …" (vendedor) o "⚙️ Automatización movió…". Duran **4 segundos**, con una barra naranja delgada abajo que se vacía, y un halo oscuro difuminado solo alrededor de cada tarjeta. Máximo 3; desde el 4.º se juntan en "N contactos cambiaron de etapa ▾", que al tocarlo despliega cada cambio (tocar uno abre su chat) y "Ver todo en el Embudo"; desplegado no se va solo y al plegarlo vuelve a contar 4 segundos. ✕ blanca para quitarlo. En escritorio siguen como en 3.2.4 (10 segundos). | Todos |
+| 13 | **Aviso de actualización (móvil)** | El mismo aviso de Menú › 13, pero como **franja azul** pegada debajo de la barra (en la barra del celular no cabe): «Hay una nueva actualización del CRM: recarga la página» y **Recargar**. Mismas reglas: solo cuando falló algo que hizo el vendedor por una versión vieja. | Todos |
 
 **Lo cambias tú desde la pantalla:** nada nuevo; el tema claro/oscuro sigue en la barra.
 
