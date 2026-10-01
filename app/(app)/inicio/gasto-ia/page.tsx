@@ -1,3 +1,4 @@
+import { ArrowLeft } from "lucide-react";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { requireActiveMembership } from "@/lib/auth/active-organization";
@@ -31,9 +32,16 @@ export default async function GastoIaPage({ searchParams }: PageProps<"/inicio/g
 
   return (
     <div className="mx-auto flex w-full max-w-6xl flex-col gap-4 p-4">
-      <div className="flex flex-col gap-1">
-        <Link href="/inicio" className="w-fit text-sm text-muted-foreground hover:text-foreground">
-          ← Dashboard
+      <div className="flex flex-col gap-2">
+        {/* Igual que «← Workflows» de Automatización (pedido del dueño, 1-oct-2026). */}
+        <Link
+          href="/inicio"
+          aria-label="Regresar a Dashboard"
+          title="Regresar a Dashboard"
+          className="flex w-fit shrink-0 items-center gap-1.5 rounded-md border px-3 py-2 text-sm font-medium hover:bg-muted"
+        >
+          <ArrowLeft className="size-4" aria-hidden="true" />
+          <span className="max-sm:hidden">Dashboard</span>
         </Link>
         <h1 className="text-lg font-semibold">Historial del gasto de IA</h1>
       </div>
