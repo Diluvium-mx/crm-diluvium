@@ -372,6 +372,13 @@ Reglas de UI:
   el texto `#1e2a35`, iguales en claro y oscuro (tokens `--busqueda*` en `app/globals.css`). SQL en
   `lib/inbox/chat-search.ts`, índice de trigramas (`pg_trgm`) de la migración 0050. Detalle:
   `docs/bandeja.md` › "Búsqueda en los chats".
+- **Aviso de actualización (1-oct-2026, decisión del dueño):** «Hay una nueva actualización del CRM: recarga la
+  página» + **Recargar**, en la barra de arriba (píldora; en celular, franja azul debajo). Sale **solo** cuando falló
+  algo que hizo el vendedor (petición al CRM hasta 3 s después de un gesto suyo: clic, tecla, archivo, soltar, pegar)
+  y `/api/version` dice que el servidor ya tiene otra versión que la pestaña. Nunca sale solo por haber versión nueva
+  ni por un refresco automático (en una pestaña vieja también pueden fallar los refrescos si la versión nueva cambió
+  sus acciones o archivos; sin esos cambios, la pestaña vieja sigue funcionando y no hay nada que avisar). Versión = `RAILWAY_GIT_COMMIT_SHA` fijada en el build (`next.config.ts`); código en
+  `lib/version/` (vigilancia instalada desde `instrumentation-client.ts`) y `app/(app)/_components/update-notice.tsx`.
 - **Paneles que se ocultan** (lista y Detalle de la Bandeja, Detalle del pop-up del Embudo):
   se recuerdan por computadora con `components/ui/use-persistent-toggle.ts` (localStorage con
   try/catch; sin almacenamiento, abierto por defecto; sin parpadeo). Cualquier panel nuevo que se

@@ -5,6 +5,8 @@ import { ArrowLeft, ChevronDown, ChevronUp, Search } from "lucide-react";
 import type { AdReferral, AttachmentView, ConversationDetail, MessageView } from "@/lib/inbox/types";
 import { useFunnelStages } from "../../_components/funnel-stages-provider";
 import { listChatMatches, listMessages, retryMessage, sendMessage, sendTemplate } from "@/lib/inbox/actions";
+import { mensajeDeFalla } from "@/lib/version/client";
+import { MENSAJE_ACTUALIZACION } from "@/lib/version/rules";
 import { runWorkflowCommand } from "@/lib/actions/workflows";
 import { parseCommand } from "@/lib/workflows/steps";
 import { sendAttachments, type ChatSendItem } from "@/lib/inbox/attachment-actions";
@@ -57,6 +59,8 @@ type OptimisticMessage = {
   body: string;
   status: "queued" | "failed";
   errorMessage: string | null;
+  // false: falló porque el CRM se actualizó; reintentar desde esta pestaña fallaría igual.
+  retryable?: false;
   sentAt: Date;
 };
 
@@ -186,7 +190,7 @@ function Bubble({
   // Una plantilla optimista fallida NO se reintenta como texto (fuera de la
   // ventana de 24 h el texto se rechaza): el vendedor vuelve a elegir plantilla.
   const canRetry = opt
-    ? row.status === "failed" && row.kind !== "template"
+    ? row.status === "failed" && row.kind !== "template" && row.retryable !== false
     : row.status === "failed" && (row as MessageView).canRetry;
   const errorMessage = opt ? row.errorMessage : (row as MessageView).errorMessage;
   const attachments = opt ? [] : (row as MessageView).attachments;
@@ -662,6 +666,16 @@ export function ChatThread({
     );
   }
 
+  // La acción lanzó en vez de responder: con el CRM actualizado se dice eso (sin «Reintentar»);
+  // si no, el «No se envió.» de siempre.
+  async function failThrown(clientId: string, error: unknown) {
+    const message = await mensajeDeFalla(error, "No se envió.");
+    const retryable = message === MENSAJE_ACTUALIZACION ? false : undefined;
+    setOptimistic((current) =>
+      current.map((o) => (o.clientId === clientId ? { ...o, status: "failed", errorMessage: message, retryable } : o)),
+    );
+  }
+
   async function doSend(text: string) {
     forceBottomRef.current = true;
     const clientId = `opt-${Date.now()}-${Math.random().toString(36).slice(2)}`;
@@ -669,7 +683,13 @@ export function ChatThread({
       ...current,
       { clientId, optimistic: true, direction: "out", kind: "text", body: text, status: "queued", errorMessage: null, sentAt: new Date() },
     ]);
-    const result = await sendMessage(conversationId, text);
+    let result: Awaited<ReturnType<typeof sendMessage>>;
+    try {
+      result = await sendMessage(conversationId, text);
+    } catch (error) {
+      await failThrown(clientId, error);
+      return;
+    }
     if (!result.ok) {
       setOptimistic((current) =>
         current.map((o) => (o.clientId === clientId ? { ...o, status: "failed", errorMessage: result.message } : o)),
@@ -689,7 +709,13 @@ export function ChatThread({
       ...current,
       { clientId, optimistic: true, direction: "out", kind: "template", body: preview, status: "queued", errorMessage: null, sentAt: new Date() },
     ]);
-    const result = await sendTemplate(conversationId, templateId, values);
+    let result: Awaited<ReturnType<typeof sendTemplate>>;
+    try {
+      result = await sendTemplate(conversationId, templateId, values);
+    } catch (error) {
+      await failThrown(clientId, error);
+      return;
+    }
     if (!result.ok) {
       setOptimistic((current) =>
         current.map((o) => (o.clientId === clientId ? { ...o, status: "failed", errorMessage: result.message } : o)),
