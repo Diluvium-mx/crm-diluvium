@@ -57,7 +57,7 @@ export function AiTopups({ topups, canRegister }: { topups: TopupRow[]; canRegis
         <div className="flex flex-wrap items-center gap-2">
           {/* 1-oct-2026 (dueño): el gasto y las recargas de cada mes o periodo, en su propia página. */}
           <Link href="/inicio/gasto-ia" className="rounded border px-2 py-1 text-xs font-medium text-foreground hover:bg-muted">
-            Ver historial
+            Historial
           </Link>
           {canRegister && !open && (
             <button type="button" onClick={() => setOpen(true)} className="rounded bg-brand-orange px-2 py-1 text-xs font-medium text-white">
