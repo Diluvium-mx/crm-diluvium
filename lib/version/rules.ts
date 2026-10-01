@@ -50,11 +50,12 @@ export function esAccionNoEncontrada(error: unknown): boolean {
   return error instanceof Error && error.name === "UnrecognizedActionError";
 }
 
-// Next 16 renueva los identificadores de TODAS las Server Actions en cada build: en una pestaña
-// vieja fallan también los refrescos automáticos (mensajes nuevos por SSE, programados cada
-// 30 s, la píldora del Agente IA). Esos NO prenden el aviso (decisión del dueño): solo cuenta
-// una petición que salió poco después de un gesto del vendedor (clic, tecla, archivo elegido,
-// soltar o pegar).
+// En una pestaña vieja también pueden fallar los refrescos automáticos (mensajes nuevos por SSE,
+// programados cada 30 s, la píldora del Agente IA) cuando la versión nueva cambió sus acciones o
+// archivos (en staging, 1-oct-2026: entre dos despliegues sin cambios en las acciones, la pestaña
+// vieja siguió funcionando). Esos NO prenden el aviso (decisión del dueño): solo cuenta una
+// petición que salió poco después de un gesto del vendedor (clic, tecla, archivo elegido, soltar
+// o pegar).
 export const VENTANA_GESTO_MS = 3_000;
 
 /** ¿La petición salió por algo que hizo el vendedor (hasta VENTANA_GESTO_MS después de su último gesto)? */
