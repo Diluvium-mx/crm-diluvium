@@ -3,7 +3,8 @@
 //
 // El bucket es privado: esta ruta exige sesión, verifica que el usuario sea
 // miembro de la organización DUEÑA del mensaje (CLAUDE.md §7) y redirige a una
-// URL firmada que caduca en 5 minutos. Si el archivo aún no se descarga al
+// URL firmada que caduca en 5 minutos (con ?bytes=1, fotos y PDF verificados se
+// sirven desde este mismo dominio para el visor). Si el archivo aún no se descarga al
 // bucket, responde 202 para que la UI muestre "procesando".
 import { and, eq } from "drizzle-orm";
 import { headers } from "next/headers";
@@ -55,6 +56,32 @@ export async function GET(req: Request, { params }: RouteContext<"/api/media/[me
   const verified = previewOf(attachment.verifiedMime) ? attachment.verifiedMime : undefined;
   const contentType = wantsThumb ? "image/png" : (verified ?? OCTET);
   const disposition = wantsThumb || (verified && search.get("download") !== "1") ? "inline" : "attachment";
+
+  // ?bytes=1 → el archivo desde ESTE dominio, sin redirigir al bucket (1-oct-2026): el
+  // visor lo necesita para dibujar e imprimir el PDF y para descargar una foto girada,
+  // porque el navegador no deja leer los bytes de otro dominio. Solo fotos y PDF ya
+  // verificados por sus bytes (S2), siempre con su tipo verificado y en streaming.
+  if (search.get("bytes") === "1") {
+    const kind = previewOf(verified);
+    if (wantsThumb || !verified || (kind !== "image" && kind !== "pdf")) return new Response("no disponible", { status: 404 });
+    try {
+      const storage = objectStorage();
+      if (!storage.getStream) return new Response("no disponible", { status: 501 });
+      const { body, bytes } = await storage.getStream(attachment.storageKey);
+      return new Response(body, {
+        headers: {
+          "Content-Type": verified,
+          "Content-Disposition": "inline",
+          "Cache-Control": "private, no-store",
+          ...(bytes != null ? { "Content-Length": String(bytes) } : {}),
+        },
+      });
+    } catch (error) {
+      if (!(error instanceof StorageNotConfiguredError)) throw error;
+      console.error("[media] bucket no configurado:", error.message);
+      return new Response("almacenamiento no configurado", { status: 503 });
+    }
+  }
 
   let url: string;
   try {

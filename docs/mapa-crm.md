@@ -88,6 +88,7 @@ Nadie es "dueño" de un contacto: **todos ven todos los contactos, siempre**.
 | **Aviso emergente** | Cuadro que baja arriba de la pantalla cuando el agente u otra persona **cambió la etapa** de un contacto (también cuando el agente la mueve en segundo plano). |
 | **Bloqueo de inicio de sesión** | Tras **10 intentos fallidos en 5 minutos** con un correo desde la misma conexión (la misma red), ese correo no puede entrar **desde esa red** por 5 minutos, ni con la contraseña correcta; desde otra red sí. Además, 50 intentos en una hora con un correo desde cualquier red lo bloquean en todas por hasta una hora. Los intentos durante el bloqueo no cuentan. Si es una confusión del equipo, se espera o se le pide a Code que lo quite. Con 3 bloqueos en una hora llega el aviso del monitor en GitHub (solo el conteo). Desde el 30-sep-2026 (revisión de seguridad). |
 | **Recarga / saldo estimado** | Lo que se cargó en la página de cada proveedor de IA y lo que queda, calculado por el CRM (es un estimado). |
+| **Visor de archivos** | Lo que se abre encima al dar clic en una foto, sticker, PDF o documento del chat: recorre con ‹ › (o deslizando un dedo en el Magic Mouse) todos los archivos de ese chat, con lupa para las fotos, Girar, Imprimir página por página y Descargar. Ver [3.2.5](#325-visor-de-archivos). Desde el 1-oct-2026. |
 | **Archivo verificado** | Foto, audio, video o PDF cuyo **contenido** confirma lo que dice ser (el CRM lee el archivo, no se fía del nombre ni del tipo que manda el celular). Solo esos se ven dentro del CRM; cualquier otro archivo sale como tarjeta de documento y **solo se descarga**. Desde el 30-sep-2026 (revisión de seguridad). |
 
 ---
@@ -277,7 +278,7 @@ dentro de él.
 | 6 | **Reintentar** (tarjeta del agente) | Le pide al agente un intento más, ya. | Todos |
 | 7 | **Apagar** (tarjeta del agente) | Pausa al agente solo en ese chat; vuelve con **Activar** en el Detalle. | Todos |
 | 8 | **🤖 Pausado · vuelve hoy 22:30** | Solo informa que el agente está en pausa en este chat y hasta cuándo. Se activa en el Detalle. | Todos |
-| 9 | **Documento** | PDF con miniatura de la primera página, nombre, páginas y peso. Clic lo abre. Mientras se copia dice "Procesando…"; si no se pudo bajar (o llegó vacío) tras varios intentos, dice **"No se pudo descargar"** (nunca un archivo en blanco). Igual para audio, imagen, video y XML. Los archivos que adjunta el vendedor (foto, video, documento) se ven igual que los del cliente, con ✓/✓✓ como cualquier mensaje. **Solo se abren dentro del CRM los archivos verificados** (Glosario): si el contenido no coincide —p. ej. un «PDF» que por dentro es otra cosa, o una «foto» que no es foto— sale como esta tarjeta y el visor solo ofrece **Descargar**. Desde el 30-sep-2026. | Todos |
+| 9 | **Documento** | PDF con miniatura de la primera página, nombre, páginas y peso. Clic lo abre en el [Visor de archivos](#325-visor-de-archivos). Mientras se copia dice "Procesando…"; si no se pudo bajar (o llegó vacío) tras varios intentos, dice **"No se pudo descargar"** (nunca un archivo en blanco). Igual para audio, imagen, video y XML. Los archivos que adjunta el vendedor (foto, video, documento) se ven igual que los del cliente, con ✓/✓✓ como cualquier mensaje. **Solo se abren dentro del CRM los archivos verificados** (Glosario): si el contenido no coincide —p. ej. un «PDF» que por dentro es otra cosa, o una «foto» que no es foto— sale como esta tarjeta y el visor solo ofrece **Descargar**. Desde el 30-sep-2026. | Todos |
 | 10 | **🤖 Depósito recibido** | El agente vio un comprobante: revisar el depósito en el banco antes de enviar. | Todos |
 | 11 | **Respuesta del agente al comprobante** | Confirma al cliente y pide sus datos de envío. | Todos |
 | 12 | **Respuesta de un vendedor** | Al contestar un vendedor, el agente se pausa en ese chat (según Opciones). | Todos |
@@ -477,6 +478,45 @@ arriba, 👨🏽‍💻 para el vendedor y grupo que se despliega): ver [Versió
 segundo plano con el agente apagado o pausado.
 
 <sub>Para Code: `app/(app)/_components/stage-change-toasts.tsx` y `stage-toasts.ts`; evento `contact.updated` (`lib/contacts/notify-updated.ts`).</sub>
+
+#### 3.2.5 Visor de archivos
+
+Lo que se abre encima al dar clic en una **foto, sticker, PDF o documento** del chat (Bandeja y pop-up del Embudo).
+Recorre **todos los archivos de ese chat**, del más viejo al más nuevo; las notas de voz y los videos no entran
+porque se reproducen en la burbuja. Detrás se sigue viendo el CRM, oscurecido al 65 %. Elegido por el dueño
+probando opciones el 30-sep/1-oct-2026 (opción B). **En el celular** sigue el visor de siempre (✕ roja, ver
+[Versión móvil](#310-versión-móvil-celular), punto 10).
+
+![Visor con una foto](mapa-crm/03-visor-foto.png)
+![Visor con un PDF](mapa-crm/03-visor-pdf.png)
+![Archivo que no se puede ver](mapa-crm/03-visor-otro.png)
+
+| # | Nombre oficial | Qué hace | Quién lo ve |
+|---|---|---|---|
+| 1 | **Nombre del archivo** | Arriba a la izquierda, en grande. Las fotos de WhatsApp no traen nombre: dice «Imagen» (o «Sticker»). | Todos |
+| 2 | **«1 de 6»** | Píldora azul: qué archivo es de cuántos tiene el chat. | Todos |
+| 3 | **✕ Cerrar** | Círculo naranja arriba a la derecha; se pone **rojo** al pasar el mouse. También cierra **Esc** (en el pop-up del Embudo, Esc cierra solo el visor). | Todos |
+| 4 | **‹ › Anterior / Siguiente** | Flechas naranjas a los lados (se adelantan hacia su lado al pasar el mouse); también las teclas **← →**. No salen en el primero/último. | Todos |
+| 5 | **Lupa** (foto) | Al pasar el mouse por la foto el cursor es una lupa: **un clic = 200 %** hacia donde se hizo clic; otro clic regresa a 100 %. La **rueda del mouse nunca hace zoom**: en 200 % sube, baja y va a los lados; también se puede arrastrar la foto. Siempre se llega a las cuatro orillas. | Todos |
+| 6 | **Alejar · Zoom · Acercar** (foto) | En la barra azul de abajo: 100 → 150 → 200 → 300 → 400 → 500 %, y el porcentaje en medio. | Todos |
+| 7 | **Ajustar** (foto) | Regresa la foto a como se abrió: completa y centrada al 100 %. | Todos |
+| 8 | **Girar** (foto) | Un cuarto de vuelta a la derecha. | Todos |
+| 9 | **Descargar** | Baja el archivo original. Si la foto se **giró**, baja **tal como se ve** (mismo nombre y formato, tamaño original). | Todos |
+| 10 | **Hojas del PDF** | El PDF lo dibuja el CRM (ya no el visor de Chrome), una página debajo de otra: las verticales (cotizaciones) a lo ancho; las cuadradas o acostadas, completas. Se baja con la rueda, con dos dedos o arrastrando con un dedo hacia arriba. | Todos |
+| 11 | **Imprimir** (PDF) | Manda **cada página completa, una por hoja**, a su tamaño real (antes salía recortado). Mientras la prepara dice «Preparando…». | Todos |
+| 12 | **Abrir aparte** (PDF) | Abre el PDF original en otra pestaña con el visor completo de Chrome (seleccionar texto, buscar, girar). | Todos |
+| 13 | **Deslizar** (sin marca: es un gesto) | **Un dedo a los lados en el Magic Mouse** (o clic, arrastrar y soltar) cambia al archivo anterior/siguiente en **todos** los archivos, también encima de la hoja del PDF; uno por gesto y el archivo sigue al dedo. En el primero/último **cede 40 px y regresa**. Dos dedos no cambian de archivo (es de la Mac). Con el visor abierto, el gesto no hace «Atrás» en Chrome. | Todos |
+| 14 | **Archivo que no se puede ver** | XML u otro archivo que no es foto ni PDF **verificado** (Glosario): recuadro con **Descargar …**. | Todos |
+
+**Lo cambias tú desde la pantalla:** nada; solo ver, girar, imprimir y descargar.
+
+**Pídeselo a Code:**
+- "En Visor de archivos › (5) Lupa, que el clic acerque a 300 %."
+- "En Visor de archivos › (13) Deslizar, que cueste un poco más cambiar de archivo."
+
+**Agente IA aquí:** no interviene.
+
+<sub>Para Code: `media-viewer.tsx` (escritorio o móvil, se decide al abrir), `media-viewer-desktop.tsx`, `viewer-toolbar.tsx`, `viewer-pdf-stage.tsx` + `viewer-pdf-document.ts` (pdf.js, worker propio), `viewer-print.ts` (#visor-impresion en `app/globals.css`), `viewer-rotated-download.ts`, `media-viewer-mobile.tsx` (el de siempre); lógica pura en `lib/inbox/viewer.ts`; `/api/media/{id}/{i}?bytes=1` entrega fotos y PDF verificados desde el mismo dominio (pdf.js, imprimir y la foto girada).</sub>
 
 ---
 
@@ -1000,7 +1040,7 @@ números dibujados: el número de la tabla nombra la pieza.
 | 7 | **Embudo: columnas** | Cada columna ocupa la pantalla; el tablero se desliza de lado columna por columna. Cada una trae su sobre **No leído** (Embudo › 33), igual que en escritorio. Para arrastrar una tarjeta a otra etapa: dejarla presionada un momento y moverla (el clic derecho no existe en celular). | Todos |
 | 8 | **Pop-up del Embudo (móvil)** | Al tocar una tarjeta, el pop-up ocupa toda la pantalla **igual que la Bandeja**: el chat completo y, en su encabezado, el sobre (Marcar como leído), el **(i)** que abre el Detalle del contacto encima y la ✕ roja que cierra el pop-up. | Todos |
 | 9 | **Demás pantallas** | Dashboard, Mensajes rápidos, Anuncios, Agente IA, Automatización y Configuración se acomodan en una sola columna. **Nada se desliza de lado** (solo el Embudo, 7): las tablas de Anuncios, Vendedores y Corridas se apilan como tarjetas y las subpestañas de Agente IA se acomodan en varios renglones. | Todos |
-| 10 | **✕ roja (cerrar)** | En el celular todo lo que se abre encima se cierra con una ✕ blanca en círculo rojo: el menú ☰, el Detalle del contacto (5), el pop-up del Embudo (8), los selectores del chat (⚡ mensajes rápidos, 📄 plantillas, 🕒 programar y el buscador "/"), el visor de fotos, Nuevo contacto, Columnas del Embudo y el formulario de Mensajes rápidos. En escritorio no cambia nada (Esc, "Cerrar" o la ✕ chica de siempre). | Todos |
+| 10 | **✕ roja (cerrar)** | En el celular todo lo que se abre encima se cierra con una ✕ blanca en círculo rojo: el menú ☰, el Detalle del contacto (5), el pop-up del Embudo (8), los selectores del chat (⚡ mensajes rápidos, 📄 plantillas, 🕒 programar y el buscador "/"), el visor de fotos (el de siempre: el visor nuevo de escritorio, Bandeja › 3.2.5, no aplica en el celular), Nuevo contacto, Columnas del Embudo y el formulario de Mensajes rápidos. En escritorio no cambia nada (Esc, "Cerrar" o la ✕ chica de siempre; el Visor de archivos tiene su ✕ naranja, 3.2.5). | Todos |
 | 11 | **▶ Automatizaciones** | Botón nuevo en la caja del chat (Bandeja y pop-up del Embudo), solo en el celular. Abre una lista como la de ⚡ con los workflows **encendidos** de Automatización: miniatura cuadrada de la imagen o el video (con el ícono de imagen/video a media opacidad encima; documento con su ícono), nombre, comando y el mensaje predeterminado. Tocar uno manda exactamente lo mismo que escribir su comando (el mensaje y el archivo, en su orden). En escritorio siguen con "/". | Todos |
 | 12 | **Avisos emergentes (móvil)** | Tarjetas azules delgadas, **centradas arriba** debajo de la barra; no llegan al centro ni tapan el chat. Texto completo de quién hizo el cambio: "🤖 Agente IA movió a … a …", "🌎 Luis movió a … a …" (owner o admin), "👨🏽‍💻 Daniel movió a … a …" (vendedor) o "⚙️ Automatización movió…". Duran **4 segundos**, con una barra naranja delgada abajo que se vacía, y un halo oscuro difuminado solo alrededor de cada tarjeta. Máximo 3; desde el 4.º se juntan en "N contactos cambiaron de etapa ▾", que al tocarlo despliega cada cambio (tocar uno abre su chat) y "Ver todo en el Embudo"; desplegado no se va solo y al plegarlo vuelve a contar 4 segundos. ✕ blanca para quitarlo. En escritorio siguen como en 3.2.4 (10 segundos). | Todos |
 
