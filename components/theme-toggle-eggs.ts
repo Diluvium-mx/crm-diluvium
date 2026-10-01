@@ -3,7 +3,7 @@
 // dos, una en cada clic derecho:
 // - Estrella fugaz / avioncito: en oscuro, dos estrellas fugaces cruzan la barra de arriba; en
 //   claro, un avioncito sale de detrás del sol y pasa entre las nubes de la píldora.
-// - Eclipse (3.1 s): la bolita va al centro, una sombra la tapa y queda su halo; la píldora y TODA
+// - Eclipse (14.5 s, a pedido del dueño): la bolita va al centro, una sombra la tapa y queda su halo; la píldora y TODA
 //   la pantalla se oscurecen un poco (con un hueco claro alrededor del halo) y luego todo regresa.
 // Solo visual: no cambia el tema ni toca datos, sin sonido; con «reducir movimiento» no hace nada.
 // Las medidas dentro de la píldora van en su escala de 62×32 (la píldora lleva zoom 0.8). Estilos
@@ -134,7 +134,7 @@ function planeIcon(): SVGSVGElement {
 }
 
 function eclipseEgg(scene: Scene, dark: boolean): void {
-  const total = 3100;
+  const total = 14500;
   const { pill, knob } = scene;
 
   // Toda la pantalla se oscurece poco (0.4 en las orillas) mientras dura; alrededor de la
