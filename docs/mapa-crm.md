@@ -116,7 +116,7 @@ Lo que se ve en todas las pantallas.
 | 7 | **Menú del usuario** (nombre y rol) | Abre **Mi cuenta** y **Cerrar sesión** (ver [Menú del usuario y Mi cuenta](#39-menú-del-usuario-y-mi-cuenta)). | Todos |
 | 8 | **Menú del vendedor** | Igual al de arriba pero **sin Configuración**. | Vendedor |
 | 9 | **Rol "Vendedor"** | Debajo del nombre se ve el rol de quien entró (Owner, Admin o Vendedor). | Todos |
-| 10 | **Globo «¿Cerrar sesión?»** | Sale pegado al botón que tocaste —el de la barra (6), el del menú del usuario (7) o el del cajón ☰ en el celular— con «Saldrás del CRM en esta computadora». Esc o un clic fuera lo cierran sin salir. Desde el 1-oct-2026. | Todos |
+| 10 | **Globo «¿Cerrar sesión?»** | Sale pegado al botón que tocaste —el de la barra (6), el del menú del usuario (7) o el del cajón ☰ en el celular— con «Saldrás del CRM en este dispositivo». Esc o un clic fuera lo cierran sin salir. Desde el 1-oct-2026. | Todos |
 | 11 | **Cancelar** | Cierra el globo y te deja donde estabas. Ya viene seleccionado: un Enter no te saca por error. | Todos |
 | 12 | **Cerrar sesión** (naranja) | Ahora sí sale del CRM (dice «Saliendo…» mientras). | Todos |
 
@@ -127,7 +127,7 @@ mismo menú en un cajón; ver [Versión móvil](#310-versión-móvil-celular).
 
 **Detalle escondido:** clic derecho en la píldora del tema (5) —en Android, dejarla presionada— saca una broma
 visual, una distinta cada vez: **estrella fugaz** (tema oscuro: dos estrellas cruzan la barra) o **avioncito** (tema
-claro: pasa entre las nubes de la píldora), y **eclipse** (3 s: una sombra tapa la bolita, queda su halo y toda la
+claro: pasa entre las nubes de la píldora), y **eclipse** (14.5 s: una sombra tapa la bolita, queda su halo y toda la
 pantalla se oscurece un poco). No cambia el tema ni toca nada; con «Reducir movimiento» no sale.
 
 **Pídeselo a Code:**
