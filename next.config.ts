@@ -6,6 +6,10 @@ import type { NextConfig } from "next";
 // bloquearía; cuando esté limpia en staging y producción se pasa a obligatoria.
 // Media y archivos vienen del bucket de Railway (<bucket>.t3.storageapi.dev) por
 // URL firmada; las miniaturas de anuncios, de Meta (https).
+// Sin 'unsafe-eval' (1-oct-2026): Zod va sin JIT en el navegador
+// (instrumentation-client.ts) y las fotos HEIC usan `heic-to/csp`. Al pasarla a
+// obligatoria falta "worker-src 'self' blob:": heic-to corre en un Worker que el
+// propio CRM arma desde un blob: (sin esa línea se bloquea y no se adjunta el HEIC).
 const BUCKET = "https://*.t3.storageapi.dev";
 const CSP_REPORT_ONLY = [
   "default-src 'self'",
