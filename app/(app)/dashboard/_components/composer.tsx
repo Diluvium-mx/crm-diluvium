@@ -6,6 +6,8 @@
 //   para buscar fragmentos mientras se escribe (↑↓ elige, Enter inserta, Esc
 //   cierra), como las respuestas rápidas de GHL.
 // - Ventana CERRADA: solo plantilla (docs/investigacion/plantillas-zernio.md).
+// - Instagram (docs/instagram.md): no hay plantillas. `windowOpen` ya trae la regla de
+//   Instagram (un vendedor puede escribir hasta 7 días); pasado eso, la caja se bloquea.
 // Al insertar un fragmento, {{vendedor}} se rellena con el nombre del usuario
 // logueado; las demás variables las completa el vendedor a mano.
 // Adjuntos (28-sep-2026): 📎 abre el selector, Cmd+V pega una foto o captura y
@@ -69,9 +71,13 @@ export function Composer({
   onPickFiles,
   onSendAttachments,
   contactFirstName = "",
+  channelType = "whatsapp",
 }: {
   conversationId: string;
+  /** ¿Puede escribir el vendedor? WhatsApp: ventana de 24 h. Instagram: hasta 7 días. */
   windowOpen: boolean;
+  /** Red de la conversación: Instagram no tiene plantillas (📄). */
+  channelType?: "whatsapp" | "instagram";
   windowExpiresAt: Date | null;
   onSendText: (text: string) => void;
   onSendTemplate: (templateId: string, values: string[], preview: string) => void;
@@ -263,6 +269,7 @@ export function Composer({
       mode={{ type: "new", initialText: draft, templateOnly: !windowOpen }}
       conversationId={conversationId}
       windowExpiresAt={windowExpiresAt}
+      channelType={channelType}
       onDone={() => {
         setScheduleOpen(false);
         // Lo programado sale del borrador (si se programó texto desde aquí).
@@ -272,6 +279,16 @@ export function Composer({
       onCancel={() => setScheduleOpen(false)}
     />
   );
+
+  if (!windowOpen && channelType === "instagram") {
+    return (
+      <div className="border-t bg-card p-3 pb-[max(0.75rem,env(safe-area-inset-bottom))]">
+        <p className="rounded-md border border-dashed px-3 py-2 text-center text-sm text-muted-foreground">
+          Pasaron más de 7 días desde el último mensaje del cliente: Instagram no deja escribirle hasta que vuelva a escribir.
+        </p>
+      </div>
+    );
+  }
 
   if (!windowOpen) {
     return (
@@ -448,23 +465,25 @@ export function Composer({
         >
           <Zap className="size-4" aria-hidden="true" />
         </button>
-        <button
-          type="button"
-          onClick={() => {
-            setTemplateOpen((open) => !open);
-            setSnippetOpen(false);
-            setWorkflowsOpen(false);
-            setMultimediaOpen(false);
-          }}
-          aria-label="Enviar plantilla"
-          aria-expanded={templateOpen}
-          title="Plantillas (aprobadas por Meta)"
-          className={`order-1 rounded-md border px-2.5 py-2 text-sm leading-4 transition-colors sm:order-none ${
-            templateOpen ? "border-brand-navy bg-brand-navy/10" : "hover:bg-brand-navy/10"
-          }`}
-        >
-          <span aria-hidden="true">📄</span>
-        </button>
+        {channelType === "whatsapp" && (
+          <button
+            type="button"
+            onClick={() => {
+              setTemplateOpen((open) => !open);
+              setSnippetOpen(false);
+              setWorkflowsOpen(false);
+              setMultimediaOpen(false);
+            }}
+            aria-label="Enviar plantilla"
+            aria-expanded={templateOpen}
+            title="Plantillas (aprobadas por Meta)"
+            className={`order-1 rounded-md border px-2.5 py-2 text-sm leading-4 transition-colors sm:order-none ${
+              templateOpen ? "border-brand-navy bg-brand-navy/10" : "hover:bg-brand-navy/10"
+            }`}
+          >
+            <span aria-hidden="true">📄</span>
+          </button>
+        )}
         <AttachMenu
           open={attachMenuOpen}
           onToggle={() => {

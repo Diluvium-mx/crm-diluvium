@@ -192,7 +192,8 @@ describe("normalizeZernioEvent", () => {
     expect(normalizeZernioEvent({ id: "evt_6", event: "message.received", message: {} })).toMatchObject({ kind: "ignored", eventId: "evt_6" });
     expect(normalizeZernioEvent({ id: "evt_7", event: "message.read" })).toMatchObject({ kind: "ignored", reason: expect.stringContaining("sin id") });
     expect(normalizeZernioEvent(null)).toMatchObject({ kind: "ignored" });
-    expect(normalizeZernioEvent(received({ account: { id: "a", platform: "instagram" } }))).toMatchObject({ kind: "ignored" });
+    // Instagram ya se procesa (docs/instagram.md); otras redes de Zernio siguen sin procesarse.
+    expect(normalizeZernioEvent(received({ account: { id: "a", platform: "tiktok" } }))).toMatchObject({ kind: "ignored" });
   });
 });
 

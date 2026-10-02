@@ -12,6 +12,16 @@ export function formatPhone(e164: string | null | undefined): string {
 }
 
 /**
+ * Lo que identifica al contacto debajo de su nombre: el teléfono o, si es un cliente de
+ * Instagram (sin teléfono, docs/instagram.md), su @usuario.
+ */
+export function contactHandle(e164: string | null | undefined, instagramUsername?: string | null): string {
+  if (e164) return formatPhone(e164);
+  if (instagramUsername) return `@${instagramUsername} · Instagram`;
+  return "Sin teléfono";
+}
+
+/**
  * ¿El teléfono coincide con lo que se teclea? Compara solo dígitos: acepta los
  * 10 dígitos solos, con 52 / +52 delante, con espacios o guiones, y el 521
  * heredado de WhatsApp (se busca como 52 + 10).

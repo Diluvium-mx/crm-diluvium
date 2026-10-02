@@ -133,7 +133,8 @@ export async function dispatchScheduled(
       // Autoría: un programado es un envío HUMANO desde el CRM, a nombre de quien
       // lo programó (source "crm" + sent_by_user_id): cuenta como respuesta del
       // vendedor y marca como leído, igual que un envío inmediato.
-      outcome = await sendTextMessage(provider, { ...base, text: row.body, source: "crm" });
+      // humanAgent: lo escribió un vendedor (Instagram: vale hasta 7 días, docs/instagram.md).
+      outcome = await sendTextMessage(provider, { ...base, text: row.body, source: "crm", humanAgent: true });
     } else {
       if (!row.templateId) throw new SendRejectedError("template_not_found", "La plantilla ya no existe.");
       outcome = await sendTemplateMessage(provider, {
