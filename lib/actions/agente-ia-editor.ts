@@ -82,6 +82,7 @@ export async function getAgentEditor(): Promise<AgentEditorView> {
     channels: channelRows.map((c) => ({
       id: c.id,
       displayName: c.displayName,
+      type: c.type,
       phoneE164: c.phoneE164,
       isActive: c.isActive,
       mode: toAgentMode(c.aiAgentMode),

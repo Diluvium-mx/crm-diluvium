@@ -667,6 +667,9 @@ async function runStep(step: WorkflowStepPayload, ctx: StepCtx): Promise<SendOut
         sentByUserId: ctx.sentBy,
         // Solo un comando (el vendedor está viendo el chat) marca leídos.
         markRead: run.trigger === "command",
+        // Un "/" lo pide el vendedor en el chat: en Instagram vale hasta 7 días. Lo demás
+        // (agente, palabra clave, etapa) es automático: solo dentro de 24 h (docs/instagram.md).
+        humanAgent: run.trigger === "command",
         messageId,
         now: deps.now(),
       });
@@ -685,6 +688,7 @@ async function runStep(step: WorkflowStepPayload, ctx: StepCtx): Promise<SendOut
         source: ctx.source,
         sentByUserId: ctx.sentBy,
         markRead: run.trigger === "command",
+        humanAgent: run.trigger === "command",
         messageId,
         now: deps.now(),
       });
