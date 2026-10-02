@@ -22,6 +22,7 @@ import { startOnlyEligible } from "@/lib/workflows/start-only";
 import { takesAgentCaption } from "@/lib/workflows/steps";
 import { sendsByWorkflow } from "@/lib/workflows/max-per-chat";
 import { addNotice } from "./notices";
+import { amountsIn, isBackedAmount } from "./lector-core";
 import { buildAgentTools, type AgentTools, type AvisoMotivo, type ValidToolCall } from "./tools";
 
 // Nota que NO se muestra al vendedor (Fase E, pendiente F): la media ya salió por la
@@ -107,11 +108,24 @@ export function textoMencionaMonto(text: string, monto: number): boolean {
   return candidates.has(monto.toFixed(2));
 }
 
+// ¿Se puede fijar ese total? Si el agente lo dice en su texto, o si sale de los precios que la
+// EMPRESA ya le dio al cliente en el chat (Agente IA, workflows o vendedor): la cantidad o la suma de
+// hasta 4, la misma regla que el lector en segundo plano (lector-core.ts). Lo que dicta el cliente
+// sigue sin contar. Caso 1-oct-2026: «Precio 2» dijo $5,500 y el agente, en complemento, no tenía
+// nada que agregar pero fijó $5,500: el CRM lo ignoraba y dejaba una tarjeta amarilla falsa (33 desde
+// el 27-sep, 29 seguían amarillas).
+export function quoteBacked(monto: number, modelText: string, companyTexts: readonly string[]): boolean {
+  if (textoMencionaMonto(modelText, monto)) return true;
+  return isBackedAmount(monto, [modelText, ...companyTexts].flatMap(amountsIn));
+}
+
 export async function prepareActions(input: {
   organizationId: string;
   conversationId: string;
   calls: readonly ValidToolCall[];
   modelText: string;
+  /** Lo que la empresa (Agente IA, workflows, vendedor) ya le dijo al cliente en el chat que leyó el modelo. */
+  companyTexts?: readonly string[];
   // Llegada del primer entrante que se está atendiendo: una corrida por palabra
   // clave del mismo workflow desde entonces ya mandó ese contenido (no se repite).
   pendingSince: Date | null;
@@ -122,7 +136,9 @@ export async function prepareActions(input: {
   for (const c of input.calls) {
     switch (c.kind) {
       case "cotizacion":
-        if (!textoMencionaMonto(input.modelText, c.monto)) plan.notes.push(`fijar_cotizacion ignorada: $${c.monto} no aparece en el texto del agente`);
+        if (!quoteBacked(c.monto, input.modelText, input.companyTexts ?? [])) {
+          plan.notes.push(`fijar_cotizacion ignorada: $${c.monto} no aparece en el texto del agente ni sale de los precios que la empresa le dio en el chat`);
+        }
         else plan.quote = c.monto;
         break;
       case "etapa":
