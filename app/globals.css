@@ -980,7 +980,10 @@ header:has([data-aviso-version]) [data-cinta-clima] {
 .dark {
   --cursor-escritura: #8fbdf0;
 }
+/* La selección necesita su fondo explícito: si solo se cambia el color de la letra, el navegador
+   deja el fondo transparente y lo seleccionado no se ve (2-oct-2026, reportado por el dueño). */
 [data-escritura]::selection {
+  background-color: Highlight;
   color: transparent;
   -webkit-text-fill-color: transparent;
 }
@@ -1022,11 +1025,12 @@ header:has([data-aviso-version]) [data-cinta-clima] {
     opacity: 1;
   }
 }
+/* 120 ms y desde 25 %: con 200 ms desde cero el dueño las sintió lentas (2-oct-2026). */
 .escritura-letra {
-  animation: escritura-letra 200ms ease-out both;
+  animation: escritura-letra 120ms ease-out both;
 }
 @keyframes escritura-letra {
   from {
-    opacity: 0;
+    opacity: 0.25;
   }
 }
