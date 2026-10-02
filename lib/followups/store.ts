@@ -54,8 +54,12 @@ async function asesorPendiente(organizationId: string, conversationId: string): 
   return rows[0]?.open === true;
 }
 
-/** "Pausar agente" puesto A MANO (no la pausa automática de cuando un vendedor contesta). */
-export async function manualPauseOf(organizationId: string, conversationId: string, agentState: string): Promise<boolean> {
+/**
+ * "Pausar agente" puesto A MANO (no la pausa automática de cuando un vendedor contesta). La fila del
+ * Historial se escribe en la misma transacción que la pausa (agent_state_changed_at): solo se busca
+ * desde ahí, así la consulta no recorre todo el Historial de la organización.
+ */
+export async function manualPauseOf(organizationId: string, conversationId: string, agentState: string, changedAt: Date | null): Promise<boolean> {
   if (agentState !== "pausado_humano") return false;
   const [last] = await db
     .select({ action: changeHistory.action })
@@ -66,6 +70,7 @@ export async function manualPauseOf(organizationId: string, conversationId: stri
         eq(changeHistory.kind, "pausas"),
         eq(changeHistory.subjectId, conversationId),
         inArray(changeHistory.action, ["pausar", "pausa_auto", "pausa_tope", "pausa_asesor"]),
+        changedAt ? gte(changeHistory.createdAt, new Date(changedAt.getTime() - 60_000)) : undefined,
       ),
     )
     .orderBy(desc(changeHistory.createdAt))
@@ -108,6 +113,7 @@ async function loadSignals(
       monto: contacts.montoCotizacion,
       pago: contacts.pagoTotal,
       agentState: conversations.agentState,
+      agentStateChangedAt: conversations.agentStateChangedAt,
       windowExpiresAt: conversations.windowExpiresAt,
       mode: channels.aiAgentMode,
       channelType: channels.type,
@@ -135,7 +141,7 @@ async function loadSignals(
       tieneMedidas: Boolean(medida),
     },
     zone: zoneForPhone(row.phone),
-    manualPause: await manualPauseOf(organizationId, conversationId, row.agentState),
+    manualPause: await manualPauseOf(organizationId, conversationId, row.agentState, row.agentStateChangedAt),
     // Solo WhatsApp con el Agente IA encendido: Instagram no tiene plantillas y lleva su
     // propia regla de 7 días (docs/instagram.md); sus seguimientos quedan para después.
     channelOn: row.mode === "auto" && row.channelType === "whatsapp",
@@ -240,11 +246,22 @@ async function applyReading(r: FollowUpReading): Promise<string | null> {
 
   let summary: string;
   await db.transaction(async (tx) => {
-    // Una ficha nueva reemplaza a la anterior (un solo pendiente por chat).
+    // Una ficha nueva reemplaza a la anterior (un solo pendiente por chat). Si a la anterior todavía
+    // no le salió ningún intento, se actualiza en su lugar (cada lectura no deja una fila nueva); si
+    // ya salió alguno, se cierra y queda con su historial.
     const current = await openRow(tx, organizationId, conversationId);
-    if (current) await closeRow(tx, current, "cancelado", "reemplazado", now);
+    const inPlace = current !== null && current.intentos.length === 0;
+    if (current && !inPlace) await closeRow(tx, current, "cancelado", "reemplazado", now);
+    const save = async (values: Omit<typeof followUps.$inferInsert, "id">) => {
+      if (inPlace) {
+        const { createdAt: _createdAt, ...rest } = values;
+        void _createdAt;
+        await tx.update(followUps).set(rest).where(and(eq(followUps.id, current.id), eq(followUps.organizationId, organizationId)));
+      } else await tx.insert(followUps).values({ ...values, id: crypto.randomUUID() });
+    };
+    const reset = { cancelReason: null, closedAt: null, presentarAt: null, autoAprobado: false, dueSetBy: "sistema" as const, updatedByUserId: null };
     if (caso === "no_seguir") {
-      await tx.insert(followUps).values({ ...base, id: crypto.randomUUID(), status: "no_seguir", intento: 1, totalIntentos: 0, closedAt: now });
+      await save({ ...base, ...reset, status: "no_seguir", intento: 1, totalIntentos: 0, dueAt: null, door: null, templateName: null, modo: "automatico", closedAt: now });
       summary = `seguimiento: no seguir${ficha?.motivo ? ` (${ficha.motivo})` : ""}`;
       return;
     }
@@ -260,9 +277,9 @@ async function applyReading(r: FollowUpReading): Promise<string | null> {
       lastTemplateAt: signals.lastTemplateAt,
     });
     const modo = signals.manualPause ? "sugerido" : "automatico";
-    await tx.insert(followUps).values({
+    await save({
       ...base,
-      id: crypto.randomUUID(),
+      ...reset,
       status: "programado",
       intento: 1,
       totalIntentos: effectiveTotal(caso, plan.door),
