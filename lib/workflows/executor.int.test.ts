@@ -625,6 +625,27 @@ describe.skipIf(!TEST_DATABASE_URL)("executor de workflows", () => {
     expect(await pendingInbound(ORG, CONV)).toEqual([]);
   });
 
+  it("pie del Agente IA con la Tabla (espera antes de la imagen): la espera no corre y la imagen lleva el texto; por palabra clave la espera sigue", async () => {
+    const waits: number[] = [];
+    const sleep = async (ms: number) => {
+      waits.push(ms);
+    };
+    const { wf, runId } = await videoRun((a) => [
+      { kind: "wait", seconds: 18 },
+      { kind: "send_media", assetId: a.id, title: "Tabla", caption: "Aquí le comparto una foto de los tamaños disponibles" },
+    ]);
+    expect(await ex.executeWorkflowRun(runId, { provider, storage, sleep })).toBe("done");
+    expect(waits).toEqual([]);
+    expect(sent.map((x) => [x.kind, (x.input as SendMediaInput).caption])).toEqual([["media", PIE]]);
+    const [out] = await db.select().from(s.messages).where(eq(s.messages.direction, "out"));
+    expect(out.metadata).toMatchObject({ respondeHasta: expect.any(String) });
+
+    const kw = await ex.startWorkflowRun({ organizationId: ORG, workflowId: wf, conversationId: CONV, trigger: "keyword", triggerMessageId: "in_1" });
+    expect(await ex.executeWorkflowRun(kw.runId, { provider, storage, sleep })).toBe("done");
+    expect(waits).toEqual([18_000]);
+    expect((sent[1].input as SendMediaInput).caption).toBe("Aquí le comparto una foto de los tamaños disponibles");
+  });
+
   it("pie del Agente IA: no es una variable {{…}} y solo lo usan las corridas del agente", async () => {
     const a = await asset();
     const wf = await workflow([{ kind: "send_media", assetId: a.id, title: "Video", caption: "Video {{pieDelAgente}}" }]);
