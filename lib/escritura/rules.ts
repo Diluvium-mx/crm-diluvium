@@ -4,9 +4,9 @@
 // letras nuevas entran con un desvanecido. Lo que dibuja la pantalla: ./client.ts.
 
 /** Duración del desvanecido de cada letra nueva (la animación vive en globals.css). */
-export const DURACION_LETRA_MS = 200;
+export const DURACION_LETRA_MS = 120;
 /** Pasado esto la letra ya es texto normal (un poco más que la animación). */
-export const VIGENCIA_LETRA_MS = 230;
+export const VIGENCIA_LETRA_MS = 150;
 /** Duración del deslizamiento del cursor en un salto. */
 export const DESLIZ_MS = 130;
 /** El cursor deja de parpadear al teclear y vuelve a hacerlo pasado este tiempo. */
