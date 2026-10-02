@@ -94,12 +94,16 @@ async function readAccount(accountId: string): Promise<AccountRead> {
   return { kind: "ok", health: parsed, events };
 }
 
-/** Canales que se vigilan: WhatsApp por Zernio, activos y no archivados (todas las organizaciones). */
+/**
+ * Canales que se vigilan: WhatsApp por Zernio, activos y no archivados (todas las
+ * organizaciones). Instagram NO (todavía): estas lecturas y avisos son de WhatsApp
+ * (account-events, calidad del número); su vigilancia va aparte (docs/instagram.md).
+ */
 export async function monitoredChannels() {
   return db
     .select({ id: channels.id, organizationId: channels.organizationId, accountId: channels.providerAccountId })
     .from(channels)
-    .where(and(eq(channels.provider, "zernio"), eq(channels.isActive, true), isNull(channels.archivedAt)));
+    .where(and(eq(channels.provider, "zernio"), eq(channels.type, "whatsapp"), eq(channels.isActive, true), isNull(channels.archivedAt)));
 }
 
 export function parseSnapshot(raw: string | null): AccountsSnapshot | null {

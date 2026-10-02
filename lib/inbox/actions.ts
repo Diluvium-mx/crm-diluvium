@@ -154,6 +154,8 @@ export async function sendMessage(conversationId: string, text: string): Promise
       text,
       // Si Zernio pide esperar (429), la pantalla no se traba: lo manda el worker.
       deferTo: enqueueOutboxSend,
+      // Lo escribió el vendedor: en Instagram puede contestar hasta 7 días (docs/instagram.md).
+      humanAgent: true,
     });
     // Un mensaje manual del vendedor pausa al Agente IA en esta conversación.
     await pauseAgentForManualSend(organizationId, conversationId);
