@@ -251,7 +251,7 @@ const INSTAGRAM_SHARE_LABEL: Record<string, string> = {
 };
 const INSTAGRAM_WITHHELD = "📎 Instagram no deja ver este mensaje en el CRM; ábrelo en la app de Instagram";
 
-function instagramLabel(attachments: { type: string; originalType?: string | null }[], metadata: Record<string, unknown> | null | undefined): string | null {
+export function instagramLabel(attachments: { type: string; originalType?: string | null }[], metadata: Record<string, unknown> | null | undefined): string | null {
   if (metadata?.noRenderableContent === true) return INSTAGRAM_WITHHELD;
   if (metadata?.isStoryMention === true) return INSTAGRAM_SHARE_LABEL.story_mention;
   for (const a of attachments) {
