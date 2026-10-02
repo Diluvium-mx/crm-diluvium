@@ -10,7 +10,8 @@ Decisión del dueño (1 y 2-oct-2026). En la barra azul, entre el logo y el corr
 - Iconos (lucide): sol / luna (despejado, según si el sol está arriba en esa ciudad), nube con sol / con luna
   (medio nublado), nube (nublado), niebla, llovizna, lluvia, tormenta. Llovizna, lluvia y tormenta van en
   **naranja** y esas ciudades pasan al frente (más mm primero); el resto, en el orden del ranking.
-- Milímetros: con un decimal hasta 10 mm («8.9 mm», «0 mm») y redondeados desde 10 («173 mm»).
+- Milímetros: con un decimal hasta 10 mm («0.4 mm», «8.9 mm») y redondeados desde 10 («173 mm»). **Si no llovió**
+  (o redondeado da 0) no se pone nada: solo icono, ciudad y grados (regla del dueño, 2-oct-2026: ningún dato en 0).
 - Corre **siempre** de derecha a izquierda a 40 px/s; **nada la detiene** (ni el mouse: `pointer-events: none`,
   sin globo). Con «Reducir movimiento» del sistema queda quieta.
 - Solo de **lunes a sábado de 9:00 a 19:00, hora de Mazatlán** (el mismo horario laboral del monitoreo,

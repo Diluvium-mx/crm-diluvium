@@ -21,14 +21,15 @@ const foto = (ciudades: CiudadClima[], generado = "2026-10-02T15:50:00Z"): FotoC
 
 describe("textoMm", () => {
   it.each([
-    [0, "0 mm"],
+    [0, null],
+    [0.04, null],
     [0.4, "0.4 mm"],
     [8.9, "8.9 mm"],
     [8.94, "8.9 mm"],
     [10, "10 mm"],
     [17.6, "18 mm"],
     [172.5, "173 mm"],
-  ])("%s → %s", (mm, texto) => {
+  ])("%s → %s (sin lluvia no se pone nada)", (mm, texto) => {
     expect(textoMm(mm)).toBe(texto);
   });
 });
@@ -62,7 +63,9 @@ describe("itemsCinta", () => {
     expect(items.map((i) => i.nombre)).toEqual(["Veracruz", "Toluca", "Tampico", "Ciudad de México", "Colima", "Mérida"]);
     expect(items.map((i) => i.agua)).toEqual([true, true, true, false, false, false]);
     expect(items[0]).toEqual({ nombre: "Veracruz", icono: "lluvia", agua: true, palabra: "Lluvia", grados: "24°", mm: "90 mm" });
-    expect(items[2]).toMatchObject({ icono: "tormenta", palabra: "Tormenta", mm: "0 mm" });
+    // Tormenta que apenas empieza: todavía sin milímetros en el observatorio, así que no se pone «0 mm».
+    expect(items[2]).toMatchObject({ icono: "tormenta", palabra: "Tormenta", mm: null });
+    expect(items[3]).toMatchObject({ nombre: "Ciudad de México", grados: "24°", mm: null });
   });
 
   it("de día: despejado = sol, medio nublado = nube con sol; nublado = nube", () => {

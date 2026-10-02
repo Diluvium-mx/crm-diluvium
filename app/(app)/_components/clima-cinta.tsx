@@ -47,7 +47,7 @@ function Lista({ items, copia }: { items: ItemCinta[]; copia?: boolean }) {
               <span className="sr-only">{c.palabra}</span>
               <span>{c.nombre}</span>
               <span className="font-semibold">{c.grados}</span>
-              <span className="text-[#cfe0f2]">{c.mm}</span>
+              {c.mm && <span className="text-[#cfe0f2]">{c.mm}</span>}
             </span>
             <span className="px-1.5 text-white/35" aria-hidden="true">
               •
