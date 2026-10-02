@@ -18,11 +18,14 @@ import { TemplatePicker } from "../../dashboard/_components/template-picker";
 export function FirstMessage({
   contactId,
   phoneE164,
+  firstName = "",
   onStarted,
   onOpenContact,
 }: {
   contactId: string;
   phoneE164: string | null;
+  /** Primer nombre del contacto: llena solo el {{1}} de la plantilla. */
+  firstName?: string;
   /** Ya hay chat (se mandó la plantilla): recargar para ver el hilo. */
   onStarted: () => void;
   /** Abrir otro contacto (el que ya tiene este número). */
@@ -127,6 +130,7 @@ export function FirstMessage({
               </p>
               {picking ? (
                 <TemplatePicker
+                  firstName={firstName}
                   submitLabel={busy ? "Enviando…" : "Enviar plantilla"}
                   busy={busy}
                   onSubmit={(templateId, values) => void sendTemplate(templateId, values)}

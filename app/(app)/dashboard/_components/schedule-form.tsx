@@ -26,12 +26,15 @@ export function ScheduleForm({
   windowExpiresAt,
   onDone,
   onCancel,
+  firstName = "",
 }: {
   mode: Mode;
   conversationId: string;
   windowExpiresAt: Date | null;
   onDone: () => void;
   onCancel: () => void;
+  /** Primer nombre del contacto para el hueco {{1}} de la plantilla. */
+  firstName?: string;
 }) {
   const editing = mode.type === "edit" ? mode.item : null;
   const [when, setWhen] = useState(() => (editing ? instantToLocal(new Date(editing.sendAt)) : defaultWhen()));
@@ -170,6 +173,7 @@ export function ScheduleForm({
       ) : (
         <div className="mt-2">
           <TemplatePicker
+            firstName={firstName}
             submitLabel={saving ? "Guardando…" : "Programar plantilla"}
             busy={saving}
             onSubmit={(templateId, values) =>
