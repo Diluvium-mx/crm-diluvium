@@ -1,5 +1,5 @@
-// Efectos del cielo de la píldora del tema («Cielo», 1-oct-2026; detalle en la nota del dueño fuera del
-// repo). Con clic derecho en la píldora (en Android, dejarla presionada) se alternan dos:
+// Efectos del cielo de la píldora del tema (actualización del interruptor de tema, 1-oct-2026). Con clic
+// derecho en la píldora (en Android, dejarla presionada) se alternan dos:
 // - Estrella fugaz / avioncito: en oscuro, dos estrellas fugaces cruzan la barra de arriba; en
 //   claro, un avioncito sale de detrás del sol y pasa entre las nubes de la píldora.
 // - Eclipse (14.5 s, a pedido del dueño): la bolita va al centro, una sombra la tapa y queda su halo; la píldora y TODA
