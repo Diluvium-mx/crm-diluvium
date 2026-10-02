@@ -1,8 +1,9 @@
 # Seguimientos por contexto — diseño
 
 > **Estado (2-oct-2026): el dueño aprobó la ESTRUCTURA (los 7 pasos, §4) el 30-sep y el 2-oct la TABLA DE CASOS
-> (§6, los 10 casos) y el horario de 7:00 a 21:00.** Siguen abiertas: la hora de cada caso (§6.2), los chats que lleva
-> un vendedor (§7.4) y el resto de la §12. **No se construye nada hasta cerrarlas.** Las plantillas de cada intento las
+> (§6, los 10 casos), la hora de cada caso, el horario de 7:00 a 21:00 todos los días y el envío automático en los chats
+> de vendedor.** Siguen abiertas las de la §12 (dónde se ve, pausa a mano, aviso de pago). **No se construye nada
+> hasta cerrarlas.** Las plantillas de cada intento las
 > confirma el dueño caso por caso. Parte 0 en producción (main d38f387); de la Parte 1 en adelante, nada construido. Se
 > construye por partes (§11), cada una por staging y con "OK MAIN". Este documento **reemplaza** al del 25-sep-2026,
 > que disparaba el seguimiento por tiempo ("2 días sin respuesta") y después veía qué decir: el orden correcto es al
@@ -169,8 +170,8 @@ que pedir un comprobante (en la mañana, para que alcance a pagar ese día).
 - **Día 9** = 7 días después del 2.º intento, a la hora del caso (nunca dos plantillas al mismo contacto en menos de
   7 días, §9).
 - Si un intento ya salió con plantilla, el siguiente con plantilla espera 7 días.
-- **Con plantilla, nunca después de las 19:00**: las puertas dicen "buenos días" o "buenas tardes" y no hay una de
-  "buenas noches" aprobada (§12). En los casos de noche, la plantilla sale de 18:00 a 19:00.
+- **Con plantilla, nunca después de las 19:00**: una plantilla de noche que no es respuesta del Agente IA es rara
+  (decisión del dueño, 2-oct). En los casos de noche, la plantilla sale de 18:00 a 19:00.
 
 **Puertas** (solo cuando la ventana está cerrada): 🚪 = `hola_buenos_dias` antes de las 12:00 hora del cliente,
 `hola_buenas_tardes` después · 📄 = `seguimiento_proteccion`. Con la ventana abierta, siempre texto del Agente IA.
@@ -217,7 +218,7 @@ en medio, el seguimiento se cancela y la siguiente lectura hace una ficha nueva.
   de compra; 37 de las 114 ventas con pausa regresaron después de 2 semanas. En precio general, solo información y
   medidas, el seguimiento tardío de Ángela dio 8–15 % de respuesta y casi ninguna venta: no se agrega.
 
-### 6.2 La hora de cada caso (propuesta; hora local del cliente según su lada, GHL mar–sep)
+### 6.2 La hora de cada caso (aprobada el 2-oct; hora local del cliente según su lada, GHL mar–sep)
 
 | Lo que mide | 7–9 h | 9–12 h | 12–15 h | 15–17 h | 17–19 h | 19–21 h | 21–24 h |
 |---|---|---|---|---|---|---|---|
@@ -271,47 +272,48 @@ marca leído y no cuenta como primera respuesta humana.
 - **Nunca**: genérico ("solo paso a dar seguimiento"), volver a pedir la medida si ya se pidió, "último seguimiento",
   ni presión.
 
-### 7.4 Chats que lleva un vendedor (por decidir: A o B)
+### 7.4 Chats que lleva un vendedor (decisión del dueño, 2-oct: automático con aviso)
 
-**Qué es "un chat que lleva un vendedor":** hoy, cuando un vendedor escribe (desde el CRM o desde el celular), el
-Agente IA se pausa en ese chat y, de fábrica, no vuelve hasta que alguien pulsa "Activar" (Opciones del Agente IA).
-También cuenta "Pausar agente" puesto a mano. El lector sigue leyendo esos chats, así que **la ficha y la hora del
-seguimiento se calculan igual** que en los demás. En GHL el 90 % de los chats con pago pendiente y el 33 % de los de
-cotización ya los llevaba un vendedor: ahí está buena parte de la venta.
+**Qué es:** cuando un vendedor escribe (desde el CRM o desde el celular), el Agente IA se pausa en ese chat y, de
+fábrica, no vuelve hasta que alguien pulsa "Activar". El lector sigue leyendo esos chats, así que **la ficha y la hora
+del seguimiento se calculan igual** que en los demás. En GHL el 90 % de los chats con pago pendiente y el 33 % de los
+de cotización ya los llevaba un vendedor, y los vendedores solo alcanzaron a seguir 266 de 11,686 paradas.
 
-Lo único que cambia es **qué pasa a la hora del intento**:
+| Momento | Qué pasa |
+|---|---|
+| Antes de la hora | El vendedor ve el seguimiento programado en el botón del composer (§8) y puede verlo, cambiar la hora, mandarlo él o cancelarlo |
+| El vendedor escribe antes de la hora | Se cancela ese seguimiento; si el chat vuelve a quedar parado, el lector hace una ficha nueva |
+| Llega la hora y el vendedor no hizo nada | **Sale solo** (texto o plantilla, como en §7.1–7.2), aunque el Agente IA siga en pausa |
+| El cliente contesta al seguimiento | **La conversación sigue con el Agente IA**: la pausa se quita en ese chat y el Agente IA le contesta con el contexto del seguimiento |
+| El vendedor vuelve a escribir | El Agente IA se vuelve a pausar, como hoy |
 
-| | **A. Sugerencia** | **B. Automático con aviso (propuesta)** |
-|---|---|---|
-| Antes de la hora | El vendedor ve el seguimiento programado (chat y Detalle) | Igual |
-| A la hora | No sale nada: queda "🤖 Seguimiento sugerido" con el borrador | Si el vendedor no hizo nada, **sale solo** (texto o plantilla, como en §7.1–7.2) |
-| Si el cliente contesta | — | El Agente IA **no** le contesta (sigue en pausa): la tarjeta se pone azul y el vendedor retoma |
-| Si el vendedor escribe antes | Se cancela ese intento | Igual |
-| Riesgo | Si el vendedor no lo ve, no hay seguimiento (en GHL los vendedores siguieron solo 266 de 11,686 paradas) | Que salga algo que el vendedor no quería: por eso lo ve antes y puede cambiarlo o cancelarlo |
-
-En los dos, el vendedor tiene a la mano: **Ver mensaje**, **Cambiar hora**, **Lo mando yo** (abre WhatsApp Web con
-el texto ya escrito: gratis y sin ventana de 24 h, así que ni siquiera hace falta plantilla) y **Cancelar**. En un
-chat de vendedor el mensaje no habla como asistente: habla como Diluvium y retoma lo que el vendedor dejó pendiente.
-Si el Agente IA está **apagado en el canal**, no hay seguimientos.
+En un chat de vendedor el mensaje no habla como asistente: habla como Diluvium y retoma lo que el vendedor dejó
+pendiente. Si el Agente IA está **apagado en el canal**, no hay seguimientos. Por decidir: si "Pausar agente" puesto
+**a mano** también deja salir el seguimiento (§12).
 
 ---
 
-## 8. Qué se ve en el CRM
+## 8. Qué se ve en el CRM (propuesta)
 
-- **En el chat** (Bandeja y pop-up del Embudo), abajo, como los programados de hoy:
-  `🤖 Seguimiento · hoy 20:00 · Faltan medidas (1.º de 2) — Pedir el ancho de la entrada   [Ver mensaje] [Cambiar hora] [Lo mando yo] [Cancelar]`.
-  Cuando sale, la burbuja se vuelve el mensaje real con la marca "Seguimiento". Lo que se cancela solo no se muestra
-  (menos datos), salvo que deje aviso. En **modo ensayo** (Parte 1) la burbuja dice "Ensayo" y no sale nada.
-- **En "Detalle del contacto"**, junto a "Pausar agente / Activar" y al indicador del lector: una línea
-  `Seguimiento del Agente IA: Faltan medidas · 1.º de 2 · hoy 20:00` con su estado (programado, esperando respuesta,
-  contestó, terminado → frío) y "Cancelar". Se ve aunque el Agente IA esté pausado en ese chat.
-- **Píldora del Agente IA** en el chat (la de "leyendo / escribiendo / enviando"): "enviando seguimiento" mientras sale.
-- **Embudo:** nada nuevo en la tarjeta (menos datos), salvo el color de pago pendiente si se aprueba (§12).
-- **Agente IA › Seguimientos:** la tabla de la §6 (encender/apagar cada caso e intento, tiempos, objetivo en texto),
-  el horario y la hora del cliente.
-- **Dashboard:** una tarjeta: seguimientos enviados · contestaron · avanzaron de etapa · compraron (del periodo
-  elegido).
+**El Detalle del contacto ya está lleno: el seguimiento vive en el composer**, en el mismo renglón que ⚡ Mensajes
+rápidos, 📄 Plantillas y 📎 Adjuntar (Bandeja y pop-up del Embudo usan el mismo composer).
+
+- **Botón-píldora 🤖** después de 📎. **Solo aparece cuando el chat tiene un seguimiento**; dice la hora:
+  `🤖 hoy 20:00` (programado) · `🤖 esperando` (salió con plantilla y espera respuesta) · `🤖 Ensayo 20:00` (Parte 1,
+  gris punteado). Sin seguimiento, no hay botón (menos datos).
+- **Al tocarlo se abre la burbuja** arriba del composer, como la de Mensajes rápidos:
+  - qué es: "Faltan medidas · 1.º de 2", por qué ("Se le pidió el ancho y no lo ha mandado") y qué busca;
+  - cuándo: la hora de Mazatlán y, si es distinta, la del cliente; por dónde sale (texto del Agente IA o la
+    plantilla);
+  - botones **Ver mensaje** (el borrador; se actualiza con lo último del chat al salir), **Cambiar hora**, **Lo mando
+    yo** (abre WhatsApp Web con el texto ya escrito: gratis y sin ventana de 24 h) y **Cancelar** (con confirmación).
+- **Cuando sale**, la burbuja del mensaje en el chat lleva la marca "Seguimiento". Mientras se manda, la píldora del
+  Agente IA dice "enviando seguimiento".
+- **No** va una línea en el Detalle ni una tarjeta dentro del hilo (sería repetido).
+- **Agente IA › Seguimientos:** la tabla de la §6 (encender/apagar cada caso e intento, horas, objetivo en texto).
+- **Dashboard:** una tarjeta: seguimientos enviados · contestaron · avanzaron de etapa · compraron (del periodo).
 - **Historial:** los cambios a la tabla de casos quedan en Agente IA › Historial.
+- **Embudo:** nada nuevo en la tarjeta, salvo el color de pago pendiente si se aprueba (§12).
 
 ---
 
@@ -326,8 +328,8 @@ Si el Agente IA está **apagado en el canal**, no hay seguimientos.
   (se quita desde el Detalle).
 - Solo a contactos que **ya escribieron** alguna vez (nunca a un contacto sin chat).
 - **Horario de envío: 7:00–21:00 hora del cliente** (decisión del dueño, 2-oct; estado de su lada → zona horaria;
-  sin lada mexicana, Mazatlán), con la hora de cada caso (§6.2). Con plantilla, hasta las 19:00. Domingo: por
-  decidir (§12).
+  sin lada mexicana, Mazatlán), con la hora de cada caso (§6.2), **todos los días, domingo incluido** (decisión del
+  dueño, 2-oct: si al seguimiento le toca ese día, sale ese día). Con plantilla, hasta las 19:00.
 
 ---
 
@@ -366,20 +368,25 @@ contacto de prueba del dueño.
 
 ## 12. Decisiones del dueño
 
-**Aprobado (2-oct-2026):** la tabla de casos (§6, los 10 casos con sus intentos y objetivos) y el horario de 7:00 a
-21:00, hora del cliente. Sin reactivación tardía de 15 días como Ángela (el seguimiento sale del contexto del chat).
+**Aprobado (2-oct-2026):**
+- La tabla de casos (§6, los 10 casos con sus intentos y objetivos) y la hora de cada caso (§6.2).
+- Horario de 7:00 a 21:00, hora del cliente, **todos los días** (domingo incluido si el seguimiento cae ese día).
+- Chats que lleva un vendedor: **automático con aviso**; si el cliente contesta, **la conversación sigue con el
+  Agente IA** (§7.4).
+- Sin plantilla de "buenas noches": una plantilla de noche que no es respuesta del Agente IA es rara; las plantillas
+  salen hasta las 19:00.
+- Sin reactivación tardía de 15 días como Ángela: el seguimiento sale del contexto del chat.
 
-**Abiertas (con propuesta):**
-1. **Hora de cada caso (§6.2):** pago 10:00 · medidas, objeción, precio, información 19:00–21:00 · cotización y sin
-   punto claro 18:00–20:00 · pidió fecha a su hora (solo el día: 11:00) · asesor 2 h y luego 10:00.
-2. **Domingo:** ¿sí se manda? (los clientes escriben en domingo el 11 % de sus mensajes; los vendedores nunca
-   mandaron seguimientos en domingo).
-3. **Chats que lleva un vendedor (§7.4):** A (solo sugerencia) o B (automático con aviso; propuesta).
+**Abiertas:**
+1. **Dónde se ve (§8):** el botón 🤖 en el composer con su burbuja (propuesta), en vez del Detalle.
+2. **"Pausar agente" puesto a mano:** ¿también deja salir el seguimiento (como la pausa automática) o ahí solo queda
+   como sugerencia en el botón 🤖? Propuesta: solo sugerencia, porque el vendedor pidió a propósito que el Agente IA
+   no entre.
+3. **Cancelar:** cancela todo el seguimiento de ese pendiente (los intentos que faltan), no solo el siguiente
+   (propuesta).
 4. **Pago pendiente, aviso al vendedor:** cuándo (propuesta: si no contesta el 2.º intento) y cómo (la tarjeta
-   amarilla de hoy o un color propio de "pago pendiente" en el Embudo). Por ver.
-5. **Plantillas de cada intento:** el dueño las confirma caso por caso antes de la Parte 3. Opcional: una puerta de
-   noche `hola_buenas_noches` ("Hola, buenas noches."), que solo se manda a Meta con OK a ese texto exacto; sin ella,
-   las plantillas salen hasta las 19:00.
+   amarilla de hoy o un color propio en el Embudo). Por ver.
+5. **Plantillas de cada intento:** el dueño las confirma caso por caso antes de la Parte 3.
 6. **Plantillas propias por caso** (las 8 borradas el 2-oct): después de ver el ensayo, con los textos revisados
    palabra por palabra. No hacen falta para las Partes 1–3.
 7. **Fechas de pago (quincena, fin de mes):** cuando el cliente la pide, va en "Pidió fecha". Una regla general se
@@ -414,7 +421,14 @@ encendido, intentos, objetivo) o `ai_config.jsonb`. `contacts.sin_seguimientos` 
 - `lib/ai/runtime/policy.ts` (`NoticeKind`): tipo nuevo `seguimiento`.
 - Asesor sin respuesta: si "pedir asesor" pausó al Agente IA en ese chat, la pausa la puso el Agente IA (no un
   vendedor): el seguimiento sí sale; revisar la regla al construir la Parte 2.
-- UI: burbuja en `chat-thread.tsx` junto a `ScheduledInThread`; subpestaña en Agente IA; tarjeta del Dashboard.
+- UI: botón 🤖 y su burbuja en `composer.tsx` (después de `AttachMenu`, mismo patrón que `SnippetPicker` /
+  `TemplatePicker`; en móvil va en el renglón de ⚡ 📄 📎 🕒); marca "Seguimiento" en la burbuja del mensaje enviado;
+  "Lo mando yo" reutiliza el enlace de WhatsApp Web del primer mensaje del Embudo; subpestaña en Agente IA; tarjeta del
+  Dashboard.
+- Chats de vendedor: al contestar el cliente un seguimiento que salió con el Agente IA en pausa, se quita la pausa
+  (`lib/ai/runtime/pause.ts`) antes de encolar la respuesta; la pausa a mano ("pausar") y la automática ("pausa_auto")
+  hoy solo se distinguen en el historial: si se decide tratarlas distinto (§12), hace falta guardarlo en la
+  conversación.
 
 ---
 
