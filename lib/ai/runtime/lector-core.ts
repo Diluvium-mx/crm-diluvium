@@ -12,6 +12,9 @@
 // - pago total = lo que el cliente ya pagó (anticipo + resto, o el pago completo);
 // - la etapa solo avanza, y la que puso un vendedor a mano se respeta: solo se avanza
 //   por lo que pase en el chat DESPUÉS de ese cambio.
+// Seguimientos (2-oct-2026, docs/seguimientos.md): cuando el ÚLTIMO mensaje del chat es de la
+// empresa, la misma lectura devuelve además la FICHA de seguimiento (`seguimiento`): qué quedó
+// pendiente, el caso de la tabla y el borrador. Sin llamada extra al modelo.
 import type { ModelMessage } from "ai";
 import { tool, type ToolSet } from "ai";
 import { z } from "zod";
@@ -20,6 +23,7 @@ import type { MessageAttachment } from "@/lib/db/schema";
 import type { ToolCallOutput } from "@/lib/ai/types";
 import { clip, messageText, neutralizeCrmHeader, type ThreadMessage } from "./transcript";
 import { ANCHO_EN_CM, parseDetalle, type DetalleIa } from "./tools";
+import { fichaSchema, parseFicha, type FollowUpFicha } from "@/lib/followups/ficha";
 
 // Siempre Luna (decisión del dueño): lee y llena, no vende.
 export const LECTOR_MODEL_ID = "gpt-5.6-luna";
@@ -73,7 +77,16 @@ function ventaCerradaLine(stages: readonly FunnelStage[]): string {
   return ` La etapa ${venta.key} («${venta.name}») solo cuando un Vendedor (no el Agente IA ni Diluvium automático) ya le confirmó al cliente en el chat que recibió su pago, después del último comprobante que mandó el cliente${cerca ? `; si el pago solo lo confirmó el Agente IA, a lo más ${cerca.key} («${cerca.name}»)` : ""}.`;
 }
 
-export function buildLectorSystem(stages: readonly FunnelStage[]): string {
+/** ¿El último mensaje del chat es de la empresa? (entonces se pide la ficha de seguimiento). */
+export function lastIsCompany(rows: readonly Pick<LectorMessage, "direction">[]): boolean {
+  return rows.length > 0 && rows[rows.length - 1].direction === "out";
+}
+
+export function buildLectorSystem(stages: readonly FunnelStage[], opts: { followUp?: boolean } = {}): string {
+  return `${lectorBase(stages)}${opts.followUp ? `\n\n${FOLLOW_UP_INSTRUCTIONS}` : ""}`;
+}
+
+function lectorBase(stages: readonly FunnelStage[]): string {
   return `Eres el LECTOR del CRM de Diluvium (compuertas contra inundaciones). No hablas con el cliente: lees el chat completo (WhatsApp o Instagram) y dejas al día la ficha del contacto con la herramienta ${LECTOR_TOOL}. Llámala UNA sola vez, sin escribir texto.
 
 CÓMO LEER
@@ -95,12 +108,39 @@ CAMPOS
 ${stagesInstructions(stages)}`;
 }
 
+// Solo cuando el último mensaje es de la empresa (docs/seguimientos.md §5–§7.3). El orden de
+// los casos es el de lib/followups/cases.ts (prioridad).
+export const FOLLOW_UP_INSTRUCTIONS = `SEGUIMIENTO (en esta lectura el ÚLTIMO mensaje del chat es de la empresa y el cliente no ha contestado)
+Llena también "seguimiento": qué quedó pendiente, para escribirle si no contesta. Elige UN caso, el PRIMERO de esta lista que aplique:
+- no_seguir: dijo que no o que ya compró en otro lado, no es de México, pidió que no le escriban, número equivocado o escribió por error, el que contesta es el contestador automático de otro negocio, o ya compró y pagó todo.
+- asesor_sin_respuesta: el cliente pidió hablar con una persona o la empresa le dijo que lo pasaba con un asesor, y ningún vendedor le contestó después.
+- pidio_fecha: el cliente pidió que le escribieran en una fecha u hora ("el lunes", "en la quincena", "más tarde", "estoy ocupado, al rato"). Llena fecha_pedida (AAAA-MM-DD) y, si dijo hora, hora_pedida (HH:MM, 24 h), según SU calendario y contando desde el día de su mensaje ("mañana" = el día siguiente a su mensaje; "en la quincena" = el próximo día 15 o el último del mes). "Al rato" u "ocupado" sin hora: fecha_pedida = el día de su mensaje, sin hora.
+- pago_pendiente: ya recibió los datos bancarios y no ha mandado el comprobante, o falta el resto del pago.
+- objecion: lo último del cliente fue "lo platico con mi esposo", "lo pienso", "está caro", "ahorita no", "más adelante" (sin fecha).
+- cotizacion_sin_respuesta: dio medidas y se le dijo talla y precio para SU entrada, y no respondió.
+- faltan_medidas: se le pidió el ancho de su entrada (o una foto) y no lo dio.
+- precio_sin_respuesta: recibió el precio general y no dio medidas ni siguió.
+- solo_informacion: solo escribió por el anuncio (1 o 2 mensajes) y recibió información, sin precio ni medidas.
+- sin_punto_claro: ninguno de los anteriores.
+pendiente: en una línea, lo que quedó abierto, con el dato concreto (medidas, talla, monto).
+siguiente_paso: en una línea, lo que lo acerca a comprar: el primer dato que falta en la ficha, o cerrar la venta si ya está todo.
+vale_la_pena: false solo en no_seguir, con el motivo en una frase.
+borrador: el mensaje que se le mandaría, como lo escribiría la empresa en este chat:
+- corto (1 o 2 renglones) y con el mismo trato del chat (tú o usted); SIN saludo ni nombre al principio: el CRM antepone "Hola <nombre>, buenos días / buenas tardes / buenas noches.";
+- con lo concreto (la talla, la medida, la cotización o el pedido) y, si sirve, cuándo lo platicaron ("hace un par de días");
+- pregunta por la decisión o por su duda, no por datos que ya dio; trae algo útil si lo hay (la respuesta a su duda, cómo se instala, cuándo le llegaría);
+- si la empresa tardó en contestarle, una disculpa por la espera;
+- nunca genérico ("solo paso a dar seguimiento"), ni "último seguimiento", ni presión; no vuelvas a pedir la medida si ya se pidió;
+- si en el chat escribió un vendedor, no te presentes como asistente: habla como Diluvium;
+- que sirva a cualquier hora: NO digas "hoy", "esta noche", "mañana" ni "cuando esté en su casa". Casi siempre sale a la hora del caso (hora del cliente: pago 10:00; objeción y medidas de 19:00 a 20:30, ya en su casa; precio e información de 19:00 a 21:00; cotización de 18:00 a 20:00; pidió fecha, a la hora que pidió), pero si su ventana de WhatsApp cierra antes sale más temprano.
+En no_seguir, borrador en null.`;
+
 // Cada campo acepta null = "el chat no lo dice": Luna manda SIEMPRE todos los campos
 // (medido con Luna real, 28-sep-2026: sin null los rellenaba con 0, "" o "no_sabe").
-export function lectorSchemaFor(stageKeys: readonly string[]) {
+export function lectorSchemaFor(stageKeys: readonly string[], opts: { followUp?: boolean } = {}) {
   const keys = stageKeys.length ? [...stageKeys] : ["inbox"];
   const sin = " (null si el chat no lo dice)";
-  return z.object({
+  const base = z.object({
     tiene_inundaciones: z.enum(["si", "no", "no_sabe"]).nullable().optional().describe(`Si se le mete el agua${sin}`),
     nivel_agua_cm: z.number().nullable().optional().describe(`Hasta dónde llega el agua, en cm${sin}`),
     nivel_agua_texto: z.string().nullable().optional().describe(`Cómo lo describió el cliente, corto${sin}`),
@@ -112,15 +152,16 @@ export function lectorSchemaFor(stageKeys: readonly string[]) {
     etapa: z.enum(keys as [string, ...string[]]).nullable().optional().describe("Clave de la etapa a la que AVANZA (null si se queda donde está)"),
     comentario: z.string().nullable().optional().describe("Un dato útil nuevo, en una frase (null si no hay)"),
   });
+  return opts.followUp ? base.extend({ seguimiento: fichaSchema() }) : base;
 }
 
-export function buildLectorTools(stages: readonly FunnelStage[]): { tools: ToolSet; stageKeys: string[] } {
+export function buildLectorTools(stages: readonly FunnelStage[], opts: { followUp?: boolean } = {}): { tools: ToolSet; stageKeys: string[] } {
   const stageKeys = sortStages(stages).map((s) => s.key);
   return {
     tools: {
       [LECTOR_TOOL]: tool({
         description: "Deja al día la ficha del contacto (el cliente no la ve). Manda solo lo que falte o cambió según el chat.",
-        inputSchema: lectorSchemaFor(stageKeys),
+        inputSchema: lectorSchemaFor(stageKeys, opts),
       }),
     },
     stageKeys,
@@ -187,6 +228,8 @@ export type LectorResult = {
   monto: number | null;
   pago: number | null;
   etapa: string | null;
+  /** Ficha de seguimiento (solo si se pidió: el último mensaje es de la empresa). */
+  seguimiento: FollowUpFicha | null;
   /** Lo que se descartó y por qué (solo log). */
   ignored: string[];
 };
@@ -198,8 +241,14 @@ function money(v: unknown): number | null {
 }
 
 // Valida campo por campo (un dato raro no tira los demás), como actualizar_detalle.
-export function parseLectorCalls(calls: readonly ToolCallOutput[], stageKeys: readonly string[], evidence: LectorEvidence): LectorResult {
-  const out: LectorResult = { detalle: null, monto: null, pago: null, etapa: null, ignored: [] };
+export function parseLectorCalls(
+  calls: readonly ToolCallOutput[],
+  stageKeys: readonly string[],
+  evidence: LectorEvidence,
+  // Con la ficha de seguimiento: zona del cliente y "ahora" para validar la fecha pedida.
+  followUp?: { zone: string; now: Date },
+): LectorResult {
+  const out: LectorResult = { detalle: null, monto: null, pago: null, etapa: null, seguimiento: null, ignored: [] };
   for (const c of calls) {
     if (c.toolName !== LECTOR_TOOL) {
       out.ignored.push(`${c.toolName}: herramienta desconocida`);
@@ -225,6 +274,7 @@ export function parseLectorCalls(calls: readonly ToolCallOutput[], stageKeys: re
       if (typeof raw.etapa === "string" && stageKeys.includes(raw.etapa)) out.etapa = raw.etapa;
       else out.ignored.push(`etapa: ${String(raw.etapa)} no existe`);
     }
+    if (followUp && raw.seguimiento != null) out.seguimiento = parseFicha(raw.seguimiento, followUp, out.ignored);
   }
   return out;
 }

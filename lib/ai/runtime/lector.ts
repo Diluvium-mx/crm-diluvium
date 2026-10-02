@@ -5,6 +5,9 @@
 // única scripts/lector-detalle.ts. Nunca le escribe al cliente, no manda avisos al
 // vendedor ni dispara los workflows "al entrar a esta etapa". Cada llamada deja su fila
 // en ai_usage (etapa "detalle", sin message_id). Nunca lanza hacia afuera.
+// Seguimientos (2-oct-2026): si el último mensaje es de la empresa, la misma lectura trae la
+// ficha de seguimiento y aquí se guarda (lib/followups/store.ts, modo ensayo); si es del
+// cliente, el seguimiento abierto del chat se cierra.
 // Multi-tenant (CLAUDE.md §7): todo filtra por organization_id.
 import { and, eq, sql } from "drizzle-orm";
 import { db } from "@/lib/db";
@@ -30,6 +33,7 @@ import {
   LECTOR_MODEL_ID,
   LECTOR_TIMEOUT_MS,
   lectorLockKey,
+  lastIsCompany,
   parseLectorCalls,
   type LectorMessage,
 } from "./lector-core";
@@ -38,6 +42,8 @@ import { MAX_PDF_BYTES } from "./run";
 import { fitHistory } from "./transcript";
 import { effectivePrice, recordAiUsage } from "./usage";
 import { allowedAgentStage, vendorAnsweredProof, ventaCerradaHeld } from "./venta-cerrada";
+import { applyFollowUpReading } from "@/lib/followups/store";
+import { zoneForPhone } from "@/lib/followups/timezone";
 
 export type LectorDeps = {
   now: () => Date;
@@ -136,6 +142,7 @@ async function readConversation(organizationId: string, conversationId: string, 
       monto: contacts.montoCotizacion,
       pago: contacts.pagoTotal,
       customFields: contacts.customFields,
+      phone: contacts.phoneE164,
     })
     .from(contacts)
     .where(and(eq(contacts.id, conv.contactId), eq(contacts.organizationId, organizationId)))
@@ -164,7 +171,9 @@ async function readConversation(organizationId: string, conversationId: string, 
 
   const mediaUrls = await clientMediaUrls(history, deps.resolveImage);
   const { messages, sawClientMedia } = buildLectorMessages(rows, mediaUrls, { ficha, vendorStage });
-  const { tools, stageKeys } = buildLectorTools(stages);
+  // Ficha de seguimiento: solo si el último mensaje del chat es de la empresa.
+  const followUp = lastIsCompany(rows);
+  const { tools, stageKeys } = buildLectorTools(stages, { followUp });
   const base = { organizationId, conversationId, messageId: null, stage: "detalle" as const, modelId: model.id, provider: model.provider };
 
   // Indicador del Detalle: "leyendo" justo antes de la llamada y, pase lo que pase, "listo"
@@ -176,7 +185,7 @@ async function readConversation(organizationId: string, conversationId: string, 
     const t0 = Date.now();
     let res: CallModelResult;
     try {
-      res = await deps.callModel(model.id, { system: buildLectorSystem(stages), messages, tools, maxOutputTokens: LECTOR_MAX_OUTPUT_TOKENS, timeoutMs: LECTOR_TIMEOUT_MS });
+      res = await deps.callModel(model.id, { system: buildLectorSystem(stages, { followUp }), messages, tools, maxOutputTokens: LECTOR_MAX_OUTPUT_TOKENS, timeoutMs: LECTOR_TIMEOUT_MS });
     } catch (error) {
       await recordAiUsage({ ...base, usage: null, latencyMs: Date.now() - t0, outcome: "error", error: errorText(error) });
       return (done = { kind: "error", reason: errorText(error), usage: null, costUsd: null });
@@ -184,8 +193,14 @@ async function readConversation(organizationId: string, conversationId: string, 
     const latencyMs = Date.now() - t0;
     const costUsd = computeCostUsd(res.usage, await effectivePrice(organizationId, res.modelId, res.provider));
 
-    const parsed = parseLectorCalls(res.toolCalls ?? [], stageKeys, evidenceFrom(rows, sawClientMedia));
+    const parsed = parseLectorCalls(
+      res.toolCalls ?? [],
+      stageKeys,
+      evidenceFrom(rows, sawClientMedia),
+      followUp ? { zone: zoneForPhone(contact.phone), now: deps.now() } : undefined,
+    );
     const cambios: string[] = [];
+    let stageNow = contact.stage;
     try {
       if (parsed.detalle) {
         const { comentario, ...campos } = parsed.detalle;
@@ -221,7 +236,10 @@ async function readConversation(organizationId: string, conversationId: string, 
             // En segundo plano nunca se le manda nada al cliente.
             fireStageTriggers: false,
           });
-          if (moved) cambios.push(`etapa ${moved.from} → ${etapa}`);
+          if (moved) {
+            cambios.push(`etapa ${moved.from} → ${etapa}`);
+            stageNow = etapa;
+          }
         }
       }
     } catch (error) {
@@ -229,6 +247,21 @@ async function readConversation(organizationId: string, conversationId: string, 
       await recordAiUsage({ ...base, usage: res.usage, latencyMs, outcome: "error", error: `al guardar: ${errorText(error)}` });
       return (done = { kind: "error", reason: `al guardar: ${errorText(error)}`, usage: res.usage, costUsd });
     }
+    // Seguimiento (modo ensayo): nunca lanza ni frena la lectura.
+    const seguimiento = await applyFollowUpReading({
+      organizationId,
+      conversationId,
+      contactId: conv.contactId,
+      readUpTo: upTo,
+      stopAt: rows[rows.length - 1].at,
+      lastIsCompany: followUp,
+      ficha: parsed.seguimiento,
+      stages,
+      stageKey: stageNow,
+      monto: parsed.monto ?? (contact.monto != null ? Number(contact.monto) : null),
+      pago: parsed.pago ?? (contact.pago != null ? Number(contact.pago) : null),
+      now: deps.now(),
+    });
     await recordAiUsage({
       ...base,
       modelId: res.modelId,
@@ -236,7 +269,10 @@ async function readConversation(organizationId: string, conversationId: string, 
       usage: res.usage,
       latencyMs,
       outcome: cambios.length ? "detalle_aplicado" : "detalle_sin_cambios",
-      error: [cambios.length ? `cambios: ${cambios.join(", ")}` : "", parsed.ignored.length ? `descartado: ${parsed.ignored.join("; ")}` : ""].filter(Boolean).join(" · ") || null,
+      error:
+        [cambios.length ? `cambios: ${cambios.join(", ")}` : "", parsed.ignored.length ? `descartado: ${parsed.ignored.join("; ")}` : "", seguimiento ?? ""]
+          .filter(Boolean)
+          .join(" · ") || null,
     });
     await markRead(organizationId, conversationId, upTo);
     return (done = { kind: "leido", cambios, ignored: parsed.ignored, usage: res.usage, costUsd });

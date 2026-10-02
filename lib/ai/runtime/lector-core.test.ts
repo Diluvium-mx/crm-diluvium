@@ -82,7 +82,7 @@ describe("lector: lo que devuelve el modelo", () => {
 
   it("null = sin dato: no guarda ni descarta nada (Luna manda todos los campos)", () => {
     const r = parseLectorCalls(call({ tiene_inundaciones: null, nivel_agua_cm: null, monto_cotizacion: null, pago_total: null, etapa: null, comentario: null, porcentaje_convencimiento: 40 }), KEYS, evidenceFrom(rows, false));
-    expect(r).toEqual({ detalle: { porcentajeConvencimiento: 40 }, monto: null, pago: null, etapa: null, ignored: [] });
+    expect(r).toEqual({ detalle: { porcentajeConvencimiento: 40 }, monto: null, pago: null, etapa: null, seguimiento: null, ignored: [] });
   });
 
   it("etapa que no existe, montos inválidos y herramientas desconocidas se descartan sin tirar lo demás", () => {

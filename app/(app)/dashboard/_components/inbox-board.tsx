@@ -276,6 +276,7 @@ export function InboxBoard({ openContactId = null }: { openContactId?: string | 
     }
     if (event.type === "stages.updated") return; // los nombres de etapa vienen del contexto
     if (event.type === "lector.status") return; // solo el indicador del Detalle (lector-status.tsx); ni fila ni hilo cambian
+    if (event.type === "followup.updated") return; // solo la píldora 🤖 del composer (followup-pill.tsx)
     scheduleUpdate(event.conversationId);
     const id = selectedIdRef.current;
     if (!id || event.conversationId !== id) return;
