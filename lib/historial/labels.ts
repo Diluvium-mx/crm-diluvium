@@ -121,7 +121,7 @@ export function describeAction(kind: string, action: string, subject: string | n
     case "plantillas.borrar":
       return `Borró la plantilla ${s} en Meta`;
     case "plantillas.sincronizar":
-      return "Sincronizó las plantillas con Meta";
+      return "Cambió el estado de las plantillas en Meta (Ver estado)";
     case "vendedores.alta":
       return `Dio de alta a ${s}`;
     case "vendedores.rol":

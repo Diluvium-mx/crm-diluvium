@@ -12,6 +12,7 @@ import { parseCommand } from "@/lib/workflows/steps";
 import { sendAttachments, type ChatSendItem } from "@/lib/inbox/attachment-actions";
 import { attachmentAcceptAttr } from "@/lib/chat-attachments/rules";
 import { Composer } from "./composer";
+import { firstNameOf } from "@/lib/templates/first-name";
 import { ChatDropZone } from "./chat-drop-zone";
 import { useChatAttachments } from "./use-chat-attachments";
 import { ArchivedComposer } from "./archived-composer";
@@ -932,6 +933,7 @@ export function ChatThread({
           attachments={attachments}
           onPickFiles={() => pickerRef.current?.click()}
           onSendAttachments={doSendAttachments}
+          contactFirstName={firstNameOf(detail.contact.name)}
         />}
       </ChatDropZone>
       <input
