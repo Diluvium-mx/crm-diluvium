@@ -1545,9 +1545,18 @@ describe.skipIf(!TEST_DATABASE_URL)("runtime del Agente IA (Postgres real)", () 
     expect(zernio.delivered).toEqual(["Claro, aquí está el video."]);
   });
 
-  it("pie del archivo NO aplica (el texto sale aparte, luego la corrida): workflow con espera antes del archivo, con textos, o texto que no cabe en el pie", async () => {
+  it("pie del archivo con la Tabla de verdad (espera de 18 s antes de la imagen): el texto también va como pie", async () => {
+    await msg({ direction: "in", body: "¿qué medidas manejan?", at: ago(40_000) });
+    await wf("tabla_tamanos_estandar", [{ kind: "wait", seconds: 18 }, { kind: "send_media", assetId: "a_tabla", title: "Tabla", caption: "Aquí le comparto una foto de los tamaños disponibles" }]);
+    const zernio = fakeZernio();
+    const { deps } = makeDeps({ brain: ["Claro, aquí le comparto los tamaños."], toolCalls: [{ toolName: "wf_tabla_tamanos_estandar", input: {} }] }, zernio);
+    expect(await run.runAgent(JOB, deps)).toEqual({ kind: "sent", bubbles: 0 });
+    expect(zernio.delivered).toEqual([]);
+    expect((await runs())[0].payload).toEqual({ pieDelAgente: "Claro, aquí le comparto los tamaños." });
+  });
+
+  it("pie del archivo NO aplica (el texto sale aparte, luego la corrida): workflow con textos, o texto que no cabe en el pie", async () => {
     const cases: { steps: Record<string, unknown>[]; text: string }[] = [
-      { steps: [{ kind: "wait", seconds: 30 }, { kind: "send_media", assetId: "a_video", title: "Video" }], text: "Le comparto el video." },
       { steps: [{ kind: "send_media", assetId: "a_video", title: "Video" }, { kind: "send_text", text: "¿Qué le pareció?" }], text: "Le comparto el video." },
       { steps: [{ kind: "send_media", assetId: "a_video", title: "Video" }], text: "x".repeat(1_025) },
     ];

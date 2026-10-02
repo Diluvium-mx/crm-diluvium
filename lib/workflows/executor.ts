@@ -31,7 +31,7 @@ import { splitRepeated } from "@/lib/messaging/repeat";
 import { moveStageForward } from "@/lib/contacts/stage";
 import { listFunnelStages } from "@/lib/contacts/funnel-stages";
 import { roleKey } from "@/lib/contacts/stages";
-import { AGENT_CAPTION_KEY, agentCaptionOf, lastSendIndex, missingMedia, startOnlyApplies, stripUnresolvedVariables, takesAgentCaption, waitMs } from "./steps";
+import { AGENT_CAPTION_KEY, agentCaptionIndex, agentCaptionOf, lastSendIndex, missingMedia, startOnlyApplies, stripUnresolvedVariables, waitMs } from "./steps";
 import { startOnlyBlock, type StartOnlyBlock } from "./start-only";
 import { atMaxPerChat, maxPerChatApplies } from "./max-per-chat";
 import { SLUG_DATOS_BANCARIOS } from "./defaults";
@@ -298,11 +298,14 @@ export async function executeWorkflowRun(runId: string, deps: ExecutorDeps): Pro
   // no sale al arrancar, ese texto sale SOLO: el cliente no se queda sin la respuesta (en el peor
   // caso queda como antes del cambio: la frase sin el archivo).
   const agentCaption = run.trigger === "agent" ? agentCaptionOf(run.payload) : null;
-  // Si alguien cambió el workflow mientras la corrida esperaba (ya no empieza con un archivo), el
-  // texto sale solo antes del primer paso.
-  const captionFits = agentCaption !== null && takesAgentCaption(loaded.steps.map((st) => st.payload));
+  // Paso del archivo que lleva el pie; las esperas antes de él no corren. Si alguien cambió el
+  // workflow mientras la corrida esperaba (ahora trae textos), el texto sale solo antes del 1er paso.
+  const captionIndex = agentCaption !== null ? agentCaptionIndex(loaded.steps.map((st) => st.payload)) : -1;
+  const captionFits = captionIndex >= 0;
+  // ¿El texto del agente todavía no ha salido? (un reintento retoma por cursor)
+  const captionPending = agentCaption !== null && run.stepCursor <= Math.max(captionIndex, 0);
   const skipAtClaim = async (code: string): Promise<ExecuteOutcome> => {
-    if (agentCaption && run.stepCursor === 0) await sendAgentCaptionAlone(run, agentCaption, deps.provider, now());
+    if (agentCaption && captionPending) await sendAgentCaptionAlone(run, agentCaption, deps.provider, now());
     await markRun(runId, { status: "skipped", errorCode: code, finishedAt: now() });
     return "cancelled";
   };
@@ -366,7 +369,7 @@ export async function executeWorkflowRun(runId: string, deps: ExecutorDeps): Pro
         kind: "envio",
         body:
           `No se envió "${loaded.wf.name}" (${FAIL_LABEL[code] ?? message.slice(0, 200)}). El cliente lo estaba esperando: revisa el hilo.` +
-          (captionFits && stepAt === 0 ? ` Iba con el texto del Agente IA: «${agentCaption}».` : ""),
+          (captionFits && stepAt <= captionIndex ? ` Iba con el texto del Agente IA: «${agentCaption}».` : ""),
       });
     }
     return "failed";
@@ -398,8 +401,10 @@ export async function executeWorkflowRun(runId: string, deps: ExecutorDeps): Pro
         }
       }
       if (i === 0 && agentCaption && !captionFits) await sendAgentCaptionAlone(run, agentCaption, deps.provider, now());
-      const withCaption = i === 0 && captionFits;
-      const sent = await runStep(step, {
+      const withCaption = captionFits && i === captionIndex;
+      // Con el texto del Agente IA como pie, una espera ANTES del archivo no corre: era para que el
+      // cliente leyera primero ese texto, que ahora va con el archivo (steps.ts, agentCaptionIndex).
+      const sent = captionFits && i < captionIndex && step.kind === "wait" ? null : await runStep(step, {
         run,
         workflowSlug: loaded.wf.slug,
         stepIndex: i,
@@ -609,8 +614,8 @@ async function alreadySent(organizationId: string, messageId: string): Promise<S
   return { messageId, status: row.status === "queued" ? "pending" : "sent" };
 }
 
-// El texto del Agente IA que iba como pie sale SOLO (la corrida ya no salía, o el workflow ya no
-// empieza con un archivo). Id determinista: un reintento no lo repite. Si el agente ya no puede
+// El texto del Agente IA que iba como pie sale SOLO (la corrida ya no salía, o al workflow le
+// agregaron textos). Id determinista: un reintento no lo repite. Si el agente ya no puede
 // actuar (un vendedor contestó, lo pausaron) no sale; si el envío falla, aviso 🤖 con el texto.
 async function sendAgentCaptionAlone(run: typeof workflowRuns.$inferSelect, text: string, provider: MessagingProvider, now: Date): Promise<void> {
   if (await agentMustStop(run.organizationId, run.conversationId, run.createdAt)) return;
