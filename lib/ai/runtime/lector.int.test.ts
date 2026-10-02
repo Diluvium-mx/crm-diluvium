@@ -51,7 +51,13 @@ describe.skipIf(!TEST_DATABASE_URL)("Lector en segundo plano (Postgres real)", (
   });
 
   let seq = 0;
-  async function msg(direction: "in" | "out", body: string, at: Date, source?: "contact" | "crm" | "business_app" | "ai_agent") {
+  async function msg(
+    direction: "in" | "out",
+    body: string,
+    at: Date,
+    source?: "contact" | "crm" | "business_app" | "ai_agent",
+    attachments: { type: string; url: string; storageKey?: string }[] = [],
+  ) {
     seq++;
     await db.insert(s.messages).values({
       id: `ml_${seq}`,
@@ -61,7 +67,7 @@ describe.skipIf(!TEST_DATABASE_URL)("Lector en segundo plano (Postgres real)", (
       source: source ?? (direction === "in" ? "contact" : "business_app"),
       type: "text",
       body,
-      attachments: [],
+      attachments,
       providerMessageId: `wamid.lector.${seq}`,
       status: direction === "in" ? "received" : "sent",
       sentAt: at,
@@ -168,6 +174,30 @@ describe.skipIf(!TEST_DATABASE_URL)("Lector en segundo plano (Postgres real)", (
     await msg("in", "Gracias", ago(5 * MIN));
     await lector.runLector(ORG, CONV, deps({ etapa: "interesado" }).deps);
     expect((await contact()).stage).toBe("compra");
+  });
+
+  it("Compra espera a un vendedor: el comprobante confirmado solo por el Agente IA avanza hasta Cerca de compra y queda descartado en ai_usage", async () => {
+    await msg("in", "", ago(30 * MIN), "contact", [{ type: "image", url: "/api/media/comprobante", storageKey: "org/comprobante.jpg" }]);
+    await msg("out", "Recibimos su anticipo ✅", ago(20 * MIN), "ai_agent");
+
+    const r = await lector.runLector(ORG, CONV, deps({ etapa: "compra" }).deps);
+
+    expect(r.kind).toBe("leido");
+    expect(await contact()).toMatchObject({ stage: "cerca_compra", stageChangedBy: "agente" });
+    const [u] = await db.select().from(s.aiUsage);
+    expect(u).toMatchObject({ stage: "detalle", outcome: "detalle_aplicado" });
+    expect(u.error).toContain("falta que un vendedor confirme el pago");
+  });
+
+  it("Compra se permite cuando un vendedor del CRM confirma después del comprobante", async () => {
+    await msg("in", "", ago(30 * MIN), "contact", [{ type: "image", url: "/api/media/comprobante", storageKey: "org/comprobante.jpg" }]);
+    await msg("out", "Recibimos su anticipo ✅", ago(20 * MIN), "ai_agent");
+    await msg("out", "Confirmo de recibido ✅", ago(10 * MIN), "crm");
+
+    const r = await lector.runLector(ORG, CONV, deps({ etapa: "compra" }).deps);
+
+    expect(r.kind).toBe("leido");
+    expect(await contact()).toMatchObject({ stage: "compra", stageChangedBy: "agente" });
   });
 
   it("si el modelo falla: fila de error, NO marca leído (se reintenta) y no toca la ficha", async () => {

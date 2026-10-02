@@ -16,8 +16,14 @@ export const STAGE_ROLE_LABELS: Record<StageRole, string> = {
 export const STAGE_ROLE_HINTS: Record<StageRole, string> = {
   entrada: "Donde llegan los contactos nuevos.",
   cerca_compra: "A donde mueven los datos bancarios y /banco.",
-  venta_cerrada: "A donde mueve un comprobante que cuadra; lo que Anuncios cuenta como \"Compraron\".",
+  venta_cerrada: "A donde pasa el cliente cuando un vendedor le confirma su pago en el chat; lo que Anuncios cuenta como \"Compraron\".",
 };
+
+// Regla fija del CRM para la etapa de venta cerrada (2-oct-2026, regla del dueño): va
+// junto a la regla editable en las instrucciones del Agente IA (el que contesta y el de
+// segundo plano) y el código la hace cumplir (lib/ai/runtime/venta-cerrada.ts).
+export const VENTA_CERRADA_RULE =
+  "Solo cuenta cuando un VENDEDOR ya le confirmó al cliente en el chat que recibió su pago, después del último comprobante que mandó el cliente; la confirmación del Agente IA no basta.";
 
 export type ModelSlot = 1 | 2;
 
@@ -170,13 +176,15 @@ export function validateStageSet(stages: readonly Pick<FunnelStage, "key" | "nam
 
 // Texto que el CRM agrega a las instrucciones del agente en cada respuesta: las etapas
 // vigentes en orden, con su clave (la que acepta mover_etapa) y su regla. Cambiarlas en
-// el editor cambia esto en la siguiente respuesta, sin tocar el Goal.
+// el editor cambia esto en la siguiente respuesta, sin tocar el Goal. La de venta
+// cerrada lleva además la regla fija del CRM (VENTA_CERRADA_RULE).
 export function stagesInstructions(stages: readonly FunnelStage[]): string {
   const ordered = sortStages(stages);
   const lines = ordered.map((s, i) => {
     const rule = s.botRule.trim();
     const papel = s.role === "entrada" ? " (aquí llegan los contactos nuevos)" : "";
-    return `${i + 1}. ${s.key} — "${s.name}"${papel}: ${rule || "sin regla: no muevas al contacto aquí por tu cuenta"}`;
+    const venta = s.role === "venta_cerrada" ? ` ${VENTA_CERRADA_RULE}` : "";
+    return `${i + 1}. ${s.key} — "${s.name}"${papel}: ${rule || "sin regla: no muevas al contacto aquí por tu cuenta"}${venta}`;
   });
   return [
     "ETAPAS DEL EMBUDO (las define el CRM)",

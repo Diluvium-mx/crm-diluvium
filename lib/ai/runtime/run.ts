@@ -19,7 +19,7 @@ import { hasUnresolvedAgentError, recordAgentError, supersedeAgentErrors } from 
 import { agentErrorBody, bothModelsFailedBody, classifyModelError, EMPTY_RESPONSE_INFO, sendErrorBody, sendErrorMotive, type ModelErrorInfo } from "./model-errors";
 import { cleanAdMessages } from "./ad-cleaner";
 import { buildBrainSystemWithRuntime, parseBrainOutput } from "./brain";
-import { answerRunsWithText, captionRunOf, crmContextFor, executeActions, loadAgentTools, noteForVendor, prepareActions, quoteSetByVendor, runsThatSend, setQuoteByAgent, type ActionPhase, type ActionPlan, type ExecutedActions, type StartWorkflow } from "./actions";
+import { answerRunsWithText, captionRunOf, crmContextFor, executeActions, loadAgentTools, noteForVendor, prepareActions, quoteSetByVendor, runsThatSend, setQuoteByAgent, type ActionContext, type ActionPhase, type ActionPlan, type ExecutedActions, type StartWorkflow } from "./actions";
 import { maxPerChatContextFor } from "@/lib/workflows/max-per-chat";
 import { AGENT_CAPTION_KEY, MAX_CAPTION } from "@/lib/workflows/steps";
 
@@ -82,6 +82,7 @@ import { isWindowOpen } from "@/lib/messaging/rules";
 import { completedAfterConfirmation, noDisponibleEstado, UNAVAILABLE_REPLY_TEXT } from "@/lib/messaging/unavailable";
 import { buildModelMessages, fitHistory } from "./transcript";
 import { recordAiUsage } from "./usage";
+import { allowedAgentStage, vendorAnsweredProof } from "./venta-cerrada";
 
 export const MAX_ROUNDS = 3; // regeneraciones por corrida antes de volver al debounce
 export const BUBBLE_PAUSE_MS = 1_500;
@@ -227,7 +228,7 @@ async function stopBeforeBubble(
 // ejecutar queda como aviso al vendedor.
 async function runActions(
   plan: ActionPlan,
-  ctx: { organizationId: string; conversationId: string; contactId: string; batchMessageId: string; receiptMessageId: string | null; now: Date; since: Date | null },
+  ctx: ActionContext,
   startWorkflow: StartWorkflow,
   phase: ActionPhase,
 ): Promise<ExecutedActions | null> {
@@ -238,7 +239,7 @@ async function runActions(
     // la respuesta (el job reintenta); el cliente no recibe "pago recibido" a ciegas.
     const done = await executeActions(plan, ctx, startWorkflow, phase);
     if (done.avisos || done.stageMoved || done.notes.length) {
-      console.info(`[agente] ${ctx.conversationId}: acciones previas → ${[done.avisos ? `${done.avisos} aviso(s)` : "", done.stageMoved ? `etapa → ${plan.stage}` : "", ...done.notes].filter(Boolean).join("; ")}`);
+      console.info(`[agente] ${ctx.conversationId}: acciones previas → ${[done.avisos ? `${done.avisos} aviso(s)` : "", done.stageMoved ? `etapa → ${done.stageTo}` : "", ...done.notes].filter(Boolean).join("; ")}`);
     }
     const paraVendedor = done.notes.filter(noteForVendor);
     if (paraVendedor.length) {
@@ -249,7 +250,7 @@ async function runActions(
   try {
     const done = await executeActions(plan, ctx, startWorkflow, phase);
     if (done.started.length || done.skipped.length || done.notes.length || done.avisos || done.stageMoved) {
-      console.info(`[agente] ${ctx.conversationId}: acciones → ${[...done.started, ...done.skipped, ...done.notes, done.avisos ? `${done.avisos} aviso(s)` : "", done.stageMoved ? `etapa → ${plan.stage}` : ""].filter(Boolean).join("; ")}`);
+      console.info(`[agente] ${ctx.conversationId}: acciones → ${[...done.started, ...done.skipped, ...done.notes, done.avisos ? `${done.avisos} aviso(s)` : "", done.stageMoved ? `etapa → ${done.stageTo}` : ""].filter(Boolean).join("; ")}`);
     }
     const paraVendedor = [...done.skipped, ...done.notes].filter(noteForVendor);
     if (paraVendedor.length) {
@@ -557,6 +558,9 @@ export async function runAgent(job: { organizationId: string; conversationId: st
     const readCount = await inboundCount(org, conv.id);
     // TODA la conversación; si algún día no cabe en el modelo, lo más reciente.
     const history = fitHistory(await loadHistory(org, conv.id));
+    // Venta cerrada solo con un vendedor (2-oct-2026): ¿ya contestó un vendedor a un comprobante
+    // del cliente en el chat que lee el modelo? Sin eso, Compra queda en "Cerca de compra".
+    const vendorConfirmedPayment = vendorAnsweredProof(history);
     const base = { organizationId: org, conversationId: conv.id, messageId: lastRead.id };
 
     // ── FILTRO: solo limpia el anuncio de Click-to-WhatsApp (nunca frena) ────
@@ -710,7 +714,7 @@ export async function runAgent(job: { organizationId: string; conversationId: st
     // que decidió el Modelo 1 se respeta aunque el Modelo 2 no la pida. Si el Modelo 2
     // falla, sale la respuesta del Modelo 1 (el cliente nunca se queda sin respuesta).
     if (usedSlot === 1) {
-      const target = handoffStage(modelCfg, stageAtStart, impliedStage(stages, stageSignals(used.toolCalls)));
+      const target = handoffStage(modelCfg, stageAtStart, allowedAgentStage(stages, impliedStage(stages, stageSignals(used.toolCalls)), vendorConfirmedPayment));
       const model2 = target ? getModel(cfg.modeloCerebro) : undefined;
       if (target && model2 && model2.id !== used.model.id && isAvailable(model2.id)) {
         const second = await attempt(model2, target);
@@ -839,7 +843,7 @@ export async function runAgent(job: { organizationId: string; conversationId: st
       pendingSince: pending[0]?.createdAt ?? null,
       stages,
     });
-    const actionCtx = { organizationId: org, conversationId: conv.id, contactId: conv.contactId, batchMessageId: lastRead.id, receiptMessageId: receiptMessageId(pending), now, since: pending[0]?.createdAt ?? null };
+    const actionCtx: ActionContext = { organizationId: org, conversationId: conv.id, contactId: conv.contactId, batchMessageId: lastRead.id, receiptMessageId: receiptMessageId(pending), now, since: pending[0]?.createdAt ?? null, vendorConfirmedPayment };
     // Sin texto del modelo: sale solo lo que manden sus workflows. Si no mandan nada, ya lo
     // resolvió la red contra el silencio (arriba): el CRM nunca escribe un texto fijo.
     let text = out.kind === "reply" ? out.text : "";

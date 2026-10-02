@@ -24,6 +24,7 @@ import { sendsByWorkflow } from "@/lib/workflows/max-per-chat";
 import { addNotice } from "./notices";
 import { amountsIn, isBackedAmount } from "./lector-core";
 import { buildAgentTools, type AgentTools, type AvisoMotivo, type ValidToolCall } from "./tools";
+import { allowedAgentStage, ventaCerradaHeld } from "./venta-cerrada";
 
 // Nota que NO se muestra al vendedor (Fase E, pendiente F): la media ya salió por la
 // palabra clave del cliente y el agente la pidió otra vez; no le pide nada al vendedor.
@@ -272,13 +273,26 @@ export function avisoBody(a: Aviso): string {
   return a.detalle ? `${MOTIVO_LABEL[a.motivo]}: ${a.detalle}` : `${MOTIVO_LABEL[a.motivo]}.`;
 }
 
-export type ExecutedActions = { started: string[]; skipped: string[]; notes: string[]; avisos: number; stageMoved: boolean };
+/** Etapa a la que de verdad se movió (`stageTo`): la venta cerrada puede quedar en "Cerca de compra". */
+export type ExecutedActions = { started: string[]; skipped: string[]; notes: string[]; avisos: number; stageMoved: boolean; stageTo: string | null };
 
 /**
- * Corre el plan DESPUÉS de las burbujas. `batchMessageId` (último entrante del
- * lote) es la clave de idempotencia de los avisos; `receiptMessageId` es el
- * mensaje del cliente con la imagen o PDF del comprobante (o null).
+ * `batchMessageId` (último entrante del lote) es la clave de idempotencia de los
+ * avisos; `receiptMessageId` es el mensaje del cliente con la imagen o PDF del
+ * comprobante (o null); `vendorConfirmedPayment`: en el chat que leyó el modelo, un
+ * vendedor ya contestó a un comprobante del cliente (venta-cerrada.ts). Sin él, la
+ * etapa de venta cerrada no se pone.
  */
+export type ActionContext = {
+  organizationId: string;
+  conversationId: string;
+  contactId: string;
+  batchMessageId: string;
+  receiptMessageId: string | null;
+  now: Date;
+  since: Date | null;
+  vendorConfirmedPayment?: boolean;
+};
 // "antes" = ANTES del texto: avisos (con registro del comprobante), cotización y
 // etapa — todo idempotente, así un reintento del job tras el texto no los pierde.
 // "despues" = DESPUÉS del texto: corridas de media (responder primero la duda).
@@ -286,11 +300,11 @@ export type ActionPhase = "antes" | "despues";
 
 export async function executeActions(
   plan: ActionPlan,
-  ctx: { organizationId: string; conversationId: string; contactId: string; batchMessageId: string; receiptMessageId: string | null; now: Date; since: Date | null },
+  ctx: ActionContext,
   startWorkflow: StartWorkflow,
   phase: ActionPhase,
 ): Promise<ExecutedActions> {
-  const out: ExecutedActions = { started: [], skipped: [], notes: phase === "antes" ? [...plan.notes] : [], avisos: 0, stageMoved: false };
+  const out: ExecutedActions = { started: [], skipped: [], notes: phase === "antes" ? [...plan.notes] : [], avisos: 0, stageMoved: false, stageTo: null };
   if (phase === "despues") {
     for (const r of plan.runs) {
       const res = await startWorkflow({ organizationId: ctx.organizationId, workflowId: r.workflowId, conversationId: ctx.conversationId, trigger: "agent", triggerMessageId: ctx.batchMessageId, now: ctx.now });
@@ -322,27 +336,38 @@ export async function executeActions(
     // Las etapas se releen aquí (no del plan): si alguien borró o reordenó columnas
     // entre la llamada al modelo y ahora, manda lo que hay en la base.
     const stages = await listFunnelStages(ctx.organizationId);
-    const moved = await moveStageForward({
-      organizationId: ctx.organizationId,
-      contactId: ctx.contactId,
-      to: plan.stage,
-      by: "agente",
-      now: ctx.now,
-      since: ctx.since ?? undefined,
-      stages,
-      // Los workflows "al entrar a esta etapa" no repiten la media pedida en esta respuesta.
-      excludeWorkflowIds: plan.runs.map((r) => r.workflowId),
-    });
+    const ventaCerrada = roleKey(stages, "venta_cerrada");
+    const cercaCompra = roleKey(stages, "cerca_compra");
+    // Venta cerrada solo si un VENDEDOR ya contestó al comprobante del cliente (2-oct-2026,
+    // regla del dueño; venta-cerrada.ts). Si no, el contacto va a lo más a "Cerca de
+    // compra" y el vendedor recibe el aviso de abajo para revisar el pago y confirmarlo.
+    const to = allowedAgentStage(stages, plan.stage, ctx.vendorConfirmedPayment ?? false);
+    const held = to !== plan.stage;
+    if (held) console.info(`[agente] ${ctx.conversationId}: ${ventaCerradaHeld(plan.stage)}`);
+    const moved = to
+      ? await moveStageForward({
+          organizationId: ctx.organizationId,
+          contactId: ctx.contactId,
+          to,
+          by: "agente",
+          now: ctx.now,
+          since: ctx.since ?? undefined,
+          stages,
+          // Los workflows "al entrar a esta etapa" no repiten la media pedida en esta respuesta.
+          excludeWorkflowIds: plan.runs.map((r) => r.workflowId),
+        })
+      : null;
     out.stageMoved = moved !== null;
+    out.stageTo = moved ? to : null;
     // A la etapa de VENTA CERRADA (o a la de CERCA DE COMPRA con comprobante) sin "Depósito
     // recibido": el CRM deja un aviso igual. "Depósito recibido" solo si el cliente mandó
     // imagen o PDF; sin adjunto, un aviso neutral. Con "Comprobante dudoso" en la misma
     // respuesta no se agrega nada (el vendedor no debe ver "dudoso" y "recibido" juntos).
-    const ventaCerrada = roleKey(stages, "venta_cerrada");
-    const cercaCompra = roleKey(stages, "cerca_compra");
+    // Venta cerrada frenada con comprobante en este mensaje: "Depósito recibido" aunque el
+    // contacto ya estuviera en "Cerca de compra" (el vendedor es quien lo confirma).
     const necesitaCotejar = plan.stage === ventaCerrada || (plan.stage === cercaCompra && ctx.receiptMessageId !== null);
     const dudoso = plan.avisos.some((a) => a.motivo === "comprobante_dudoso");
-    if (moved && necesitaCotejar && !cotejarEnviado && !dudoso) {
+    if ((moved || (held && ctx.receiptMessageId !== null)) && necesitaCotejar && !cotejarEnviado && !dudoso) {
       const added = await addNotice({
         organizationId: ctx.organizationId,
         conversationId: ctx.conversationId,
@@ -351,7 +376,7 @@ export async function executeActions(
         body:
           ctx.receiptMessageId !== null
             ? DEPOSITO_RECIBIDO_BODY
-            : `El agente movió al contacto a ${stageLabel(stages, plan.stage)} sin comprobante en este mensaje. Revisa el hilo y el depósito en el banco antes de enviar.`,
+            : `El agente movió al contacto a ${stageLabel(stages, to ?? plan.stage)} sin comprobante en este mensaje. Revisa el hilo y el depósito en el banco antes de enviar.`,
         strict: true,
       });
       if (added) out.avisos++;
