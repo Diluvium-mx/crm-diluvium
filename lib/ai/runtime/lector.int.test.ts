@@ -254,4 +254,26 @@ describe.skipIf(!TEST_DATABASE_URL)("Lector en segundo plano (Postgres real)", (
     await db.update(s.conversations).set({ detalleLeidoHasta: (await conv()).lastMessageAt }).where(d.eq(s.conversations.id, CONV));
     expect(await lectorWorker.findDueConversations(new Date(Date.now() + 10 * MIN))).toEqual([]);
   });
+  it("seguimiento (modo ensayo): si el último mensaje es nuestro, la MISMA lectura deja la ficha; si el cliente escribe, se cancela", async () => {
+    await db.update(s.channels).set({ aiAgentMode: "auto" }).where(d.eq(s.channels.id, "ch_lector"));
+    await msg("in", "¿Cuánto cuesta?", ago(30 * MIN));
+    await msg("out", "La estándar queda en $5,500. ¿Cuánto mide de ancho su entrada?", ago(29 * MIN), "ai_agent");
+    const { deps: dd, calls } = deps({
+      tiene_inundaciones: null,
+      seguimiento: { caso: "faltan_medidas", pendiente: "Se le pidió el ancho", siguiente_paso: "Pedir el ancho", vale_la_pena: true, borrador: "¿Pudo medir el ancho de su entrada?" },
+    });
+    const out = await lector.runLector(ORG, CONV, dd);
+    expect(out.kind).toBe("leido");
+    expect(String(calls[0].system)).toContain("SEGUIMIENTO");
+    const [f] = await db.select().from(s.followUps);
+    expect(f).toMatchObject({ caso: "faltan_medidas", status: "programado", ensayo: true, intento: 1, borrador: "¿Pudo medir el ancho de su entrada?", timeZone: "America/Mazatlan" });
+    const [u] = await db.select().from(s.aiUsage);
+    expect(u.error).toMatch(/seguimiento: faltan_medidas 1\.º/);
+
+    await msg("in", "Mide 1.20 m", ago(MIN));
+    const segunda = deps({ tiene_inundaciones: null });
+    await lector.runLector(ORG, CONV, segunda.deps);
+    expect(String(segunda.calls[0].system)).not.toContain("SEGUIMIENTO");
+    expect((await db.select().from(s.followUps))[0]).toMatchObject({ status: "cancelado", cancelReason: "cliente_escribio" });
+  });
 });

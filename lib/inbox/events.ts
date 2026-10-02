@@ -72,6 +72,10 @@ function payloadToEvent(raw: string): { organizationId: string; event: InboxEven
       return event ? { organizationId: org, event } : null;
     }
     if (typeof conversationId !== "string") return null;
+    // Seguimiento del Agente IA (lib/followups/store.ts).
+    if (type === "followup.updated") {
+      return typeof contactId === "string" ? { organizationId: org, event: { type, conversationId, contactId } } : null;
+    }
     if (type === "conversation.updated") {
       return { organizationId: org, event: { type, conversationId } };
     }
