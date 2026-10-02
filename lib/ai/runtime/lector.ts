@@ -37,6 +37,7 @@ import type { KvPort } from "./queue";
 import { MAX_PDF_BYTES } from "./run";
 import { fitHistory } from "./transcript";
 import { effectivePrice, recordAiUsage } from "./usage";
+import { allowedAgentStage, vendorAnsweredProof, ventaCerradaHeld } from "./venta-cerrada";
 
 export type LectorDeps = {
   now: () => Date;
@@ -198,16 +199,20 @@ async function readConversation(organizationId: string, conversationId: string, 
         await updateContactQualification(db, organizationId, conv.contactId, { pagoTotal: parsed.pago }, { kind: "agente" });
         cambios.push("pago_total");
       }
-      if (parsed.etapa) {
+      // Venta cerrada solo si un vendedor contestó al comprobante del cliente
+      // (venta-cerrada.ts); si no, a lo más "Cerca de compra".
+      const etapa = allowedAgentStage(stages, parsed.etapa, vendorAnsweredProof(rows));
+      if (parsed.etapa && etapa !== parsed.etapa) parsed.ignored.push(ventaCerradaHeld(parsed.etapa));
+      if (etapa) {
         // La etapa que puso un vendedor manda: sin nada en el chat DESPUÉS de su cambio,
         // el lector no tiene con qué avanzarla (lo de antes ya lo vio el vendedor).
         const nadaDespues = vendorStage !== null && !rows.some((m) => m.at > vendorStage.at);
-        if (nadaDespues) parsed.ignored.push(`etapa ${parsed.etapa}: un vendedor la puso a mano y no hay nada nuevo después`);
+        if (nadaDespues) parsed.ignored.push(`etapa ${etapa}: un vendedor la puso a mano y no hay nada nuevo después`);
         else {
           const moved = await moveStageForward({
             organizationId,
             contactId: conv.contactId,
-            to: parsed.etapa,
+            to: etapa,
             by: "agente",
             stages,
             now: deps.now(),
@@ -216,7 +221,7 @@ async function readConversation(organizationId: string, conversationId: string, 
             // En segundo plano nunca se le manda nada al cliente.
             fireStageTriggers: false,
           });
-          if (moved) cambios.push(`etapa ${moved.from} → ${parsed.etapa}`);
+          if (moved) cambios.push(`etapa ${moved.from} → ${etapa}`);
         }
       }
     } catch (error) {

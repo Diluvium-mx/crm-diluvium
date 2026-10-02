@@ -252,6 +252,8 @@ scheduled_messages   id, org_id, conversation_id, created_by_user_id, kind (text
 funnel_stages        id, org_id, key (estable, a-z0-9_), name, position, color (sin uso), role (entrada|cerca_compra|
                      venta_cerrada, cada uno en UNA etapa; entrada primero y cerca_compra antes que venta_cerrada),
                      bot_rule (cuándo mueve el agente ahí), model_slot (1|2; sustituye a ai_config.etapas_modelo_1)
+                     -- 2-oct-2026 (dueño): a venta_cerrada (anticipo o total) el Agente IA solo pasa si un VENDEDOR
+                     -- contestó DESPUÉS del último comprobante del cliente (lib/ai/runtime/venta-cerrada.ts); si no, cerca_compra
 
 -- Anuncios de Meta (24/25-sep-2026, migraciones 0035 + 0036; la 0030 quedó vacía; detalle en docs/anuncios.md)
 ad_clicks            id, org_id, contact_id, conversation_id, message_id, origin (webhook|zernio_conversation),

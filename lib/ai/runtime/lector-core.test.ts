@@ -166,4 +166,12 @@ describe("lector: el chat como lo lee", () => {
     expect(Object.keys(tools)).toEqual([LECTOR_TOOL]);
     expect(stageKeys).toEqual(["inbox", "prospecto", "interesado", "cerca_compra", "compra"]);
   });
+
+  it("venta cerrada solo con un vendedor (2-oct-2026): el lector la conoce por el papel, con los nombres vigentes", () => {
+    const system = buildLectorSystem(defaultStages());
+    expect(system).toContain("La etapa compra («Compra») solo cuando un Vendedor (no el Agente IA ni Diluvium automático) ya le confirmó al cliente en el chat que recibió su pago");
+    expect(system).toContain("a lo más cerca_compra («Cerca de compra»)");
+    const renamed = defaultStages().map((s) => (s.key === "compra" ? { ...s, name: "Pagado" } : s));
+    expect(buildLectorSystem(renamed)).toContain("La etapa compra («Pagado»)");
+  });
 });
