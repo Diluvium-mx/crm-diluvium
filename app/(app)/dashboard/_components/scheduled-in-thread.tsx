@@ -31,9 +31,11 @@ export function ScheduledInThread({
   windowExpiresAt,
   refreshToken,
   onCountChange,
+  channelType = "whatsapp",
 }: {
   conversationId: string;
   windowExpiresAt: Date | null;
+  channelType?: "whatsapp" | "instagram";
   /** Cambia con cada evento SSE de la conversación o al programar uno nuevo. */
   refreshToken: number;
   /** Avisa cuántos se muestran (el hilo baja al final cuando aparecen). */
@@ -85,6 +87,7 @@ export function ScheduledInThread({
                 mode={{ type: "edit", item }}
                 conversationId={conversationId}
                 windowExpiresAt={windowExpiresAt}
+                channelType={channelType}
                 onDone={() => {
                   setEditingId(null);
                   void load();

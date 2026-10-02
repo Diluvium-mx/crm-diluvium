@@ -12,6 +12,38 @@ export function isWindowOpen(windowExpires: Date | null, now = new Date()): bool
   return windowExpires !== null && windowExpires > now;
 }
 
+// ─── Instagram (docs/instagram.md) ─────────────────────────────────────────
+// Misma ventana de 24 h que WhatsApp (la abre cada mensaje del cliente), pero sin
+// plantillas: de 24 h a 7 días desde el último mensaje del cliente SOLO un vendedor puede
+// contestar, con la etiqueta HUMAN_AGENT de Meta (ni el Agente IA ni las automatizaciones);
+// después, nada hasta que el cliente vuelva a escribir.
+export const HUMAN_AGENT_WINDOW_MS = 7 * 24 * 60 * 60 * 1000;
+
+/** Fin de los 7 días de un vendedor en Instagram (`window_expires_at` = último entrante + 24 h). */
+export function humanAgentExpiresAt(windowExpires: Date | null): Date | null {
+  return windowExpires && new Date(windowExpires.getTime() - SERVICE_WINDOW_MS + HUMAN_AGENT_WINDOW_MS);
+}
+
+/**
+ * ¿Se puede mandar texto libre o un archivo? WhatsApp: solo dentro de 24 h (fuera,
+ * plantilla). Instagram: dentro de 24 h cualquiera; hasta 7 días, solo si lo manda una
+ * persona (`human`).
+ */
+export function canSendFreeForm(platform: string, windowExpires: Date | null, now: Date, human: boolean): boolean {
+  if (isWindowOpen(windowExpires, now)) return true;
+  return platform === "instagram" && human && isWindowOpen(humanAgentExpiresAt(windowExpires), now);
+}
+
+/** Instagram fuera de las 24 h: el envío (de una persona) va con la etiqueta HUMAN_AGENT. */
+export function needsHumanAgentTag(platform: string, windowExpires: Date | null, now: Date): boolean {
+  return platform === "instagram" && !isWindowOpen(windowExpires, now);
+}
+
+/** Marca en `messages.metadata` con los ids de las otras partes de un envío de Instagram. */
+export const INSTAGRAM_PARTS_META = "partesInstagram";
+/** Marca en `messages.metadata` con el aviso de un envío que salió incompleto. */
+export const SEND_WARNING_META = "avisoEnvio";
+
 /**
  * Tiempo de primera respuesta (CLAUDE.md §5: se calcula UNA vez, al primer
  * saliente humano). Cuenta la respuesta desde el CRM y también desde la app

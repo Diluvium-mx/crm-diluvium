@@ -11,6 +11,8 @@ export const boardContactColumns = {
   firstName: contacts.firstName,
   lastName: contacts.lastName,
   phoneE164: contacts.phoneE164,
+  // Cliente de Instagram (sin teléfono): su @usuario (docs/instagram.md).
+  instagramUsername: contacts.instagramUsername,
   stage: contacts.stage,
   temperature: contacts.temperature,
   destacado: contacts.destacado,

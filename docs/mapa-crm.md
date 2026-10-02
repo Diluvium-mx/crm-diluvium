@@ -18,7 +18,8 @@ Contenido: [1. Inicio](#1-inicio) · [2. Menú y barra de arriba](#2-menú-y-bar
 
 ### El CRM en 5 líneas
 
-1. Es el lugar donde el equipo atiende **todos los WhatsApp de Diluvium** sin abrir WhatsApp Web.
+1. Es el lugar donde el equipo atiende **todos los WhatsApp y los mensajes de Instagram de Diluvium** sin abrir WhatsApp Web
+   ni la app de Instagram.
 2. Cada cliente es un **contacto** con su chat, su **etapa** en el Embudo y su ficha (**Detalle del contacto**).
 3. **Ángela, el Agente IA**, contesta sola a toda hora siguiendo el **Goal** y las **FAQs**: cotiza, manda
    tablas y videos, llena el Detalle, avanza la etapa y **avisa al vendedor** cuando lo necesita. Aunque esté
@@ -48,9 +49,10 @@ Nadie es "dueño" de un contacto: **todos ven todos los contactos, siempre**.
 | **No leído (Embudo)** | Píldora con un **sobre** junto al contador de cada columna del Embudo, del mismo alto que el contador. Prendida (**naranja**) la columna deja solo las tarjetas con algo pendiente: **círculo naranja** (sin ver), **azul** (sin contestar) o **amarilla** (el Agente IA necesita al vendedor), y el contador cuenta solo esas. Cada columna va por su lado. Sobre **tenue** = esa columna no tiene nada pendiente. Es más amplio que la pestaña **No leído** de la Bandeja, que solo lleva el círculo naranja. Desde el 30-sep-2026. |
 | **Actualización del CRM** | Cuando se publica una versión nueva del CRM, una pestaña que ya estaba abierta sigue con la versión anterior y lo que hace con el servidor falla. Si al vendedor le falla algo por eso, la barra de arriba avisa **«Hay una nueva actualización del CRM: recarga la página»** (Menú › 13) y **Recargar** lo arregla. Si no falla nada, no se avisa. Desde el 1-oct-2026. |
 | **Semáforo** | Punto de color en la Bandeja: cuánto lleva el cliente esperando respuesta **de una persona**. Verde menos de 15 min, ámbar menos de 1 h, rojo más de 1 h. |
-| **Ventana de 24 h** | Regla de WhatsApp: hasta 24 horas después del último mensaje del cliente se puede escribir libre. Pasadas las 24 h **solo se puede mandar una plantilla**. |
+| **Ventana de 24 h** | Regla de WhatsApp: hasta 24 horas después del último mensaje del cliente se puede escribir libre. Pasadas las 24 h **solo se puede mandar una plantilla**. En **Instagram** es distinta (ver Instagram). |
+| **Instagram** | Canal de mensajes directos de la cuenta de Instagram de Diluvium (desde el 2-oct-2026, por Zernio, igual que WhatsApp). El cliente de Instagram es un **contacto aparte**: no tiene teléfono, se reconoce por su cuenta de Instagram y debajo de su nombre se ve su **@usuario · Instagram**; no se une con uno de WhatsApp. El **Agente IA** también contesta ahí. Reglas de Instagram: hasta 24 h desde el último mensaje del cliente escribe cualquiera; **de 24 h a 7 días solo un vendedor** (ni el Agente IA ni los workflows automáticos; el vendedor sí puede usar «/»); después, **nadie** hasta que el cliente vuelva a escribir. No hay plantillas ni se le puede escribir primero. Un texto largo (más de ~1,000 letras, menos con acentos) le llega en **varias partes**, y el pie de una foto o video le llega como **otro mensaje** justo después; en el CRM sigue siendo una sola burbuja. Las notas de voz y el GIF no se pueden mandar a Instagram. |
 | **Gratis por anuncio (72 h)** | Si el cliente llegó por un anuncio y se le contesta dentro de 24 h, por 72 h todos los mensajes (también plantillas) son gratis. El chat lo indica con 🎁. |
-| **Plantilla** | Mensaje fijo **aprobado por Meta** para escribir fuera de la ventana de 24 h. Sus huecos se llaman {{1}}, {{2}}… |
+| **Plantilla** | Mensaje fijo **aprobado por Meta** para escribir fuera de la ventana de 24 h. Sus huecos se llaman {{1}}, {{2}}… Solo existen en WhatsApp: en los chats de **Instagram** no sale 📄. |
 | **Link** | Dirección de una página (https://…, www.…, diluvium.com.mx, amzn.to/…) escrita en un texto. En todo el CRM sale **azul y subrayada**, como en WhatsApp, y un clic la abre en otra pestaña (ver Bandeja › Chat › 23): chat de la Bandeja y del pop-up del Embudo (en la burbuja nuestra, azul claro), comentarios, mensajes rápidos, plantillas, FAQs, programados y anuncios. Un correo (ventas@…) no es link. Desde el 29-sep-2026. |
 | **Contacto sin chat** | Contacto que nunca ha escrito (alta a mano en Embudo › Nuevo contacto, o importado de GHL). Se le escribe primero **gratis desde WhatsApp Web** o con una **plantilla** desde el CRM; con plantilla, en el CRM solo se escribe libre cuando el cliente conteste. |
 | **Aviso de Meta** | Pop-up grande que sale cuando WhatsApp (Meta) no acepta algo de una plantilla: por qué pasó y qué hacer. |
@@ -71,7 +73,7 @@ Nadie es "dueño" de un contacto: **todos ven todos los contactos, siempre**.
 | **Agente IA en segundo plano** | Aunque el Agente IA esté apagado o pausado en un chat, lo **lee** unos 3 minutos después de que se calma (o cada 15 min si no para) y deja al día la **etapa** y el **Detalle**: datos, monto de cotización, pago total, % y un comentario. Lee todo en orden y vale lo último que confirmó el cliente, aun después de la compra. Nunca le escribe al cliente, no avisa al vendedor ni dispara workflows. Usa Luna (~US$0.0005 por lectura); su gasto va aparte, como «Detalle». En el Detalle, bajo Calificación, se ve en vivo: en espera, leyendo, actualizó o al día. |
 | **Monto de cotización / Pago total** | **Monto**: total de lo que el cliente eligió comprar al final (no lo primero que se le cotizó). **Pago**: lo que ya pagó (anticipo + resto o completo). Juntos muestran quién cotizó mucho y no compró. El Agente IA (al contestar o en segundo plano) solo pone un monto que salga de los **precios que la empresa le dio al cliente en el chat** (Agente IA, workflow o vendedor), o la suma de ellos; lo que dicta el cliente no cuenta. |
 | **Pausar agente / Activar** | Detiene al agente **solo en ese chat** (8, 12 o 24 horas, hasta una fecha y hora o indefinidamente). **Activar** lo regresa. También se pausa solo cuando un vendedor contesta (se ajusta en Opciones). Cada pausa y cada Activar quedan en **Agente IA › Historial** con quién lo hizo; las automáticas (un vendedor contestó, tope de respuestas, el cliente pidió un asesor y la vuelta sola al cumplirse la hora) también, como «Automático». Pausado solo deja de **contestar**: el Detalle y la etapa se siguen llenando en segundo plano. |
-| **Canal Encendido / Apagado** | Interruptor general del agente por número de WhatsApp (Agente IA › Canales, que solo muestra los números **no archivados**: hoy WhatsApp Diluvium). Apagado = no contesta a nadie en ese número; la Bandeja lo avisa con una franja roja arriba y la pastilla **Agente IA** del Dashboard sale roja. Apagado solo deja de **contestar**: el Detalle y la etapa se siguen llenando en segundo plano. |
+| **Canal Encendido / Apagado** | Interruptor general del agente por número de WhatsApp o cuenta de Instagram (Agente IA › Canales, que solo muestra los canales **no archivados**: hoy WhatsApp Diluvium y, al conectarla, Instagram @diluvium). Apagado = no contesta a nadie en ese número; la Bandeja lo avisa con una franja roja arriba y la pastilla **Agente IA** del Dashboard sale roja. Apagado solo deja de **contestar**: el Detalle y la etapa se siguen llenando en segundo plano. |
 | **Horario del Agente IA** | Días y horas en que el agente contesta (Agente IA › Opciones; de fábrica 24/7). Si tiene horario, la Bandeja muestra arriba una franja «El Agente IA solo contesta … (ahora está fuera de horario / ahora sí está contestando)». |
 | **Agente IA callado** | Alarma: con el canal Encendido y dentro de su horario, 3 o más clientes que escribieron en la **última hora** llevan más de 15 min esperando y el agente no ha mandado nada en esos 15 min. Sale en la pastilla **Agente IA** (roja) y en el correo del issue `alerta-whatsapp`. Lo atrasado (más de 1 hora) **no** la hace sonar. |
 | **Chats que esperan a un vendedor** | Los atrasados: el cliente escribió hace más de 1 hora y nadie le contestó. El Agente IA ya no los recupera solo (solo rescata lo de los últimos 30 min), así que los atiende un vendedor. Salen como dato en la pastilla **Agente IA** del Dashboard; no son alarma. |
@@ -263,16 +265,16 @@ naranja, y el chat abierto la resalta y salta a la coincidencia más reciente co
 | # | Nombre oficial | Qué hace | Quién lo ve |
 |---|---|---|---|
 | 1 | **Ocultar lista** | Esconde o muestra la lista de chats; se recuerda en esa computadora. | Todos |
-| 2 | **Buscar por nombre o teléfono…** | Busca chats sin importar acentos ni mayúsculas. Con la lupa (26) prendida dice **«Buscar en los chats…»** y busca dentro de los mensajes. | Todos |
+| 2 | **Buscar por nombre o teléfono…** | Busca chats sin importar acentos ni mayúsculas; también por **@usuario** de Instagram (con o sin @). Con la lupa (26) prendida dice **«Buscar en los chats…»** y busca dentro de los mensajes. | Todos |
 | 3 | **No leído · Todo · Destacado** | Filtros de la lista. **Destacado** = chats cuyo contacto tiene la estrella (7). Se combinan con el filtro de temperatura (25): «Destacado + 🔥» = calientes y destacados. La lista siempre va del mensaje más reciente al más viejo. | Todos |
 | 4 | **Fila de conversación** | Iniciales con el logo del canal, nombre, hora del último mensaje y vista previa ("Tú:" si el último fue nuestro, también si lo mandó el agente). Si el primer mensaje del cliente no llegó al CRM, la vista previa dice «Recibiendo mensaje…» y luego «El cliente escribió, pero WhatsApp no pasó el mensaje al CRM…» (ver **Mensaje no disponible** en el Glosario). Clic abre el chat y lo marca como leído. | Todos |
 | 5 | **Semáforo** | Verde menos de 15 min, ámbar menos de 1 h, rojo más de 1 h desde el mensaje del cliente sin respuesta de una persona. | Todos |
 | 6 | **Círculo naranja** | Mensajes sin leer. | Todos |
 | 7 | **Estrella (Destacado)** | Marca al **contacto** como Destacado ⭐ para todo el equipo: se prende en todos sus chats, en su tarjeta del Embudo y en el pop-up. Convive con la temperatura (8). Aparece en el filtro Destacado. | Todos |
 | 8 | **Temperatura** | 🔥 🧊 ⏳ o ○. Clic para cambiarla sin abrir el chat. Aquí no hay ⭐: Destacado es la estrella (7). | Todos |
-| 9 | **Encabezado del chat** | Nombre, teléfono y ciudad (por la lada). | Todos |
+| 9 | **Encabezado del chat** | Nombre, teléfono y ciudad (por la lada). En un chat de **Instagram**: nombre y **@usuario · Instagram** (sin teléfono ni ciudad). | Todos |
 | 10 | **Chip de etapa** | Etapa actual del contacto. | Todos |
-| 11 | **Aviso de ventana de 24 h** | "Ventana abierta · quedan X h" (verde) o, vencida, "Pasaron 24 h…" (ámbar). | Todos |
+| 11 | **Aviso de ventana de 24 h** | "Ventana abierta · quedan X h" (verde) o, vencida, "Pasaron 24 h…" (ámbar). En **Instagram**, vencida dice hasta cuándo **solo un vendedor** puede contestar («…hasta el vie 9 oct, 10:00 p.m. (el Agente IA y las automatizaciones ya no)») y, pasados 7 días, «Instagram no deja escribirle hasta que vuelva a escribir». | Todos |
 | 12 | **Gratis por anuncio** | "🎁 Gratis por anuncio hasta…" o "📣 Responde antes de…: 72 h gratis". | Todos |
 | 13 | **Burbuja del cliente** | Mensaje del cliente (izquierda, blanca). Los **links** salen azules y subrayados; clic los abre en otra pestaña (Chat › 23). | Todos |
 | 14 | **Burbuja nuestra** | Mensaje del vendedor o del agente (derecha, azul; a propósito no dice quién). Los **links** salen en azul claro y subrayados; clic los abre en otra pestaña (Chat › 23). 🕗 enviando (también mientras espera su turno si WhatsApp pidió esperar) · ✓ enviado · ✓✓ entregado · ✓✓ azul leído. Si WhatsApp dice "entregado" o "leído", el mensaje **nunca** queda como "No se envió". | Todos |
@@ -347,6 +349,7 @@ dentro de él.
 | 23 | **Link** | Cualquier link del mensaje (https://…, www.…, diluvium.com.mx, amzn.to/…) sale **subrayado**: azul en la burbuja del cliente y azul claro en la nuestra, para que se lea sobre el fondo azul. Clic lo abre en otra pestaña. El punto o la coma del final no entran en el link, y un correo (ventas@…) no es link. Igual en el pop-up del Embudo. Desde el 29-sep-2026. | Todos |
 | 24 | **Pantalla completa** (video) | Ícono blanco de cuatro esquinas arriba a la derecha de cada video del chat (del cliente o enviado). Se ve con el video en pausa o al terminar y se oculta mientras corre. Un clic, o doble clic sobre la imagen del video (no sobre la barra), lo pone en pantalla completa y empieza a reproducirse. Para salir: Esc, el botón de salir de Chrome (abajo a la derecha) o doble clic. Para no repetirla, «Pantalla completa» ya no sale en el menú ⋮ ni en la barra de Chrome, y tampoco se ofrece **Silenciar**: el menú ⋮ queda con Descargar, Velocidad de reproducción y Pantalla en pantalla (desde el 30-sep-2026). Por eso el video mide al menos 208 px de ancho: uno vertical muestra franjas negras a los lados. En iPhone abre el reproductor del teléfono. Igual en el pop-up del Embudo. Desde el 30-sep-2026. Captura pendiente. | Todos |
 | 25 | **Sticker** | Sticker de WhatsApp como en WhatsApp: **sin burbuja**, siempre del **mismo tamaño** (más chico que una foto) y **solo la hora** abajo, en una píldora con los colores del CRM: **blanca** con hora gris si es del cliente (izquierda) y **azul** con hora blanca y ✓✓ si lo mandó un vendedor desde el celular (derecha). Así no se confunde con una foto, que siempre va dentro de su burbuja. Si el sticker responde a un mensaje, va dentro de su burbuja normal con la cita. Clic lo abre en grande. Igual en el pop-up del Embudo y en el celular. Desde el 30-sep-2026. | Todos |
+| 26 | **⚠ Salió incompleto** (Instagram) | Texto chico ámbar bajo un mensaje nuestro de Instagram que **sí salió** pero no completo: una parte de un texto largo, o el texto que acompañaba a una foto, no le llegó al cliente (Instagram la rechazó). Dice qué parte; escríbele lo que faltó. Desde el 2-oct-2026. Captura pendiente. | Todos |
 
 **Lo cambias tú desde la pantalla:** Reintentar o Apagar en la tarjeta del agente; Reintentar un mensaje que no salió.
 
@@ -384,7 +387,7 @@ y se mandan fotos y videos de la Biblioteca (📎 › Multimedia); cerrada, solo
 | # | Nombre oficial | Qué hace | Quién lo ve |
 |---|---|---|---|
 | 1 | **⚡ Mensajes rápidos** | Abre la ventana de mensajes rápidos (27–28) para insertar uno. | Todos |
-| 2 | **📄 Plantillas** | Abre las plantillas aprobadas por Meta. | Todos |
+| 2 | **📄 Plantillas** | Abre las plantillas aprobadas por Meta. No sale en chats de **Instagram** (no tiene plantillas). | Todos |
 | 3 | **Escribe un mensaje…** | Caja de texto. Empieza con 2 renglones y **crece sola** desde el 3.º para que se vea todo lo escrito (el historial se acomoda arriba); pasado el 40 % de la pantalla se desliza por dentro, y al enviar vuelve a 2 renglones. **Enter** envía, **Shift+Enter** hace salto de línea, **"/"** busca mensajes rápidos (el texto gris dice "/ busca mensajes rápidos"). **Cmd+V** con una foto o captura de pantalla la adjunta. | Todos |
 | 4 | **🕒 Programar mensaje** | Abre el formulario para programar. Con archivos adjuntos se apaga: programar no lleva archivos por ahora. | Todos |
 | 5 | **Enviar** (naranja) | Manda el mensaje. Con archivos, se activa cuando **todos terminaron de subir**; salen uno por mensaje en el orden de la vista previa y el texto va como pie del primero. | Todos |
@@ -402,12 +405,12 @@ y se mandan fotos y videos de la Biblioteca (📎 › Multimedia); cerrada, solo
 | 17 | **Enviar plantilla** | Manda la plantilla. | Todos |
 | 18 | **Fecha y hora (Mazatlán)** | Cuándo sale el mensaje programado. | Todos |
 | 19 | **Cancelar si el cliente escribe antes** | Si el cliente escribe antes de esa hora, el programado no sale. | Todos |
-| 20 | **Texto / 📄 Plantilla** | Qué se programa. Si a esa hora la ventana ya estará cerrada, solo plantilla. | Todos |
+| 20 | **Texto / 📄 Plantilla** | Qué se programa. Si a esa hora la ventana ya estará cerrada, solo plantilla. En **Instagram** solo texto, y solo si a esa hora no habrán pasado 7 días desde el último mensaje del cliente. | Todos |
 | 21 | **Mensaje a enviar** | El texto del programado. | Todos |
 | 22 | **Programar** | Guarda el programado; aparece al final del chat. | Todos |
 | 23 | **✕ Cerrar** | Cierra sin programar. | Todos |
 | 24 | **"Pasaron 24 h desde su último mensaje. Solo se puede enviar una plantilla."** | Aviso de ventana cerrada. Si el chat lo abrimos nosotros y el cliente aún no escribe, dice **"El cliente todavía no escribe: mientras no conteste, solo se puede enviar una plantilla (o escríbele gratis desde WhatsApp Web)."** | Todos |
-| 25 | **📄 Enviar plantilla** | Único botón para escribir con la ventana cerrada. | Todos |
+| 25 | **📄 Enviar plantilla** | Único botón para escribir con la ventana cerrada. En **Instagram** no existe: hasta 7 días se sigue escribiendo normal (solo vendedores) y después la caja dice «Pasaron más de 7 días desde el último mensaje del cliente: Instagram no deja escribirle hasta que vuelva a escribir.» | Todos |
 | 26 | **🕒 Programar plantilla** | Programa una plantilla para más tarde. | Todos |
 | 27 | **⚡ Mensajes rápidos** (ventana del ⚡) | Todos los mensajes rápidos; al elegir uno se agrega al final de lo que llevas escrito (no se manda solo). | Todos |
 | 28 | **✕ Cerrar** | Cierra la ventana del ⚡. | Todos |
@@ -458,7 +461,7 @@ Ningún dato es definitivo: el agente corrige lo que el cliente aclare después.
 
 | # | Nombre oficial | Qué hace | Quién lo ve |
 |---|---|---|---|
-| 1 | **Nombre y teléfono** | Datos del contacto. | Todos |
+| 1 | **Nombre y teléfono** | Datos del contacto. Un cliente de **Instagram** muestra su **@usuario · Instagram** en lugar del teléfono. | Todos |
 | 2 | **Etapa** | Cambiarla aquí la mueve también en el Embudo. La que pone un vendedor manda; el agente solo avanza, también en segundo plano. | Todos |
 | 3 | **Marca "IA"** | Ese dato lo escribió el agente al último. Si lo editas, se quita. Cuando lo acaba de llenar dice "IA actualizando" y el campo brilla. | Todos |
 | 4 | **Temperatura** | En la **Bandeja**: 🔥 Caliente, 🧊 Frío, ⏳ En espera o Sin asignar (Destacado es la estrella de la lista). En el **pop-up del Embudo** el mismo campo es un menú de dos partes: arriba la temperatura (una) y, abajo de la línea, **⭐ Destacado** (se prende o apaga aparte); el campo muestra las dos, p. ej. «🔥 Caliente ⭐». | Todos |
@@ -627,7 +630,7 @@ WhatsApp Web, o con una plantilla desde el CRM.
 
 | # | Nombre oficial | Qué hace | Quién lo ve |
 |---|---|---|---|
-| 1 | **Buscar por nombre o teléfono...** | Filtra las tarjetas de todas las columnas. Con la lupa (30) prendida dice **«Buscar en los chats…»** y busca dentro de los mensajes. | Todos |
+| 1 | **Buscar por nombre o teléfono...** | Filtra las tarjetas de todas las columnas (también por **@usuario** de Instagram; la tarjeta de un cliente de Instagram lo muestra en lugar del teléfono). Con la lupa (30) prendida dice **«Buscar en los chats…»** y busca dentro de los mensajes. | Todos |
 | 2 | **Columna de etapa** | Nombre de la etapa, el sobre **No leído** (33) y cuántos contactos tiene (con un filtro, cuántos quedan). Arriba va el de actividad más reciente: el último que **escribió** (sube solo, al momento) o el último que **entró** a la etapa. Un mensaje nuestro no lo mueve. | Todos |
 | 3 | **Tarjeta amarilla** | El agente necesita al vendedor (pidió un asesor, depósito recibido, error, tope de respuestas, no le escribió nada al cliente…) y ningún vendedor ha contestado después. | Todos |
 | 4 | **Tarjeta azul** | El cliente escribió y nadie le ha contestado. Se quita cuando sale una respuesta (vendedor desde el CRM o el celular, o el agente) o con **Marcar como leído** (19 o el clic derecho, 16); abrir el chat **no** la quita. Vuelve con el siguiente mensaje del cliente. Si también aplica amarilla, gana la amarilla. | Todos |
@@ -857,7 +860,7 @@ una ventana arriba (59)**; nada se guarda con un solo clic.
 | 45 | **+ Agregar tamaño** | Nueva fila. | Todos |
 | 46 | **Guardar rangos** | Guarda las tallas (con confirmación); el Detalle del contacto usa estos rangos para sugerir tamaño. | Todos |
 | 47 | ~~Implementar~~ | Ya no existe (27-sep-2026): ahora es la subpestaña **Canales** (52). | — |
-| 48 | **Canales** | Números de WhatsApp conectados, solo los **no archivados** (hoy solo WhatsApp Diluvium). | Todos |
+| 48 | **Canales** | Números de WhatsApp y cuentas de **Instagram** conectados, solo los **no archivados** (hoy WhatsApp Diluvium; al conectarla, Instagram @diluvium, donde abajo dice «Instagram» en lugar del número). | Todos |
 | 49 | **Canal** | Nombre y número (p. ej. WhatsApp Diluvium). | Todos |
 | 50 | **Apagado · Encendido** | Interruptor general del agente en ese número. Encender y apagar piden confirmación. Apagado, la Bandeja muestra la franja roja (Bandeja › 24) y la pastilla Agente IA del Dashboard sale roja. Apagado solo deja de contestar: el Detalle y la etapa se siguen llenando en segundo plano. | Todos |
 | 51 | ~~Número de prueba~~ | Ya no aparece (28-sep-2026): el Número de prueba y el Sandbox están archivados y se ocultan de esta lista **sin borrarse**; sus chats de prueba se borraron ese mismo día (los contactos se quedaron). | — |
