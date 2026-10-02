@@ -58,6 +58,7 @@ import { enqueueUnavailableCheck } from "@/lib/queue/unavailable";
 import { startUnavailableWorker } from "./unavailable";
 import { syncAiBilling } from "@/lib/ai/billing/sync";
 import { refreshTemplatesInReview } from "@/lib/messaging/templates";
+import { actualizarClima } from "@/lib/clima/sync";
 
 const SWEEP_EVERY_MS = 60_000;
 const SWEEP_MIN_AGE_MS = 60_000;
@@ -421,6 +422,22 @@ function templatesInReview() {
 }
 const templatesTimer = setInterval(templatesInReview, TEMPLATES_EVERY_MS);
 
+// Cinta del clima de la barra (2-oct-2026): cada 5 min se revisa si toca; trae el clima medido de
+// aeropuertos y observatorios del SMN una vez por hora, solo en horario de trabajo (lib/clima/sync.ts).
+// No usa base ni colas: deja la foto en Redis. Sin consultas solapadas.
+const CLIMA_EVERY_MS = 5 * 60_000;
+let climaRunning = false;
+function clima() {
+  if (climaRunning) return;
+  climaRunning = true;
+  actualizarClima()
+    .catch((error) => logError("[clima] no se pudo traer el clima", error))
+    .finally(() => {
+      climaRunning = false;
+    });
+}
+const climaTimer = setInterval(clima, CLIMA_EVERY_MS);
+
 // Apagado ORDENADO (28-sep-2026, revisión completa B8/B9): en cada despliegue Railway manda SIGTERM al
 // worker viejo y, pasado RAILWAY_DEPLOYMENT_DRAINING_SECONDS (variable del servicio; sin ella son 0 s),
 // SIGKILL. Aquí se deja de tomar trabajo nuevo y se espera a que termine lo que está en curso (una
@@ -438,6 +455,7 @@ async function shutdown(signal: string) {
   clearInterval(monitorTimer);
   clearInterval(billingTimer);
   clearInterval(templatesTimer);
+  clearInterval(climaTimer);
   await Promise.all([worker.close(), mediaWorker?.close(), scheduled.close(), agent.close(), lector.close(), workflowsRunner.close(), outbox.close(), ads.close(), unavailable.close(), chatUploads?.close()]);
   console.info(`[worker] cerrado en orden en ${((Date.now() - t0) / 1000).toFixed(1)} s`);
   process.exit(0);
@@ -457,6 +475,8 @@ waitForMigrations()
     monitor().catch((error) => logError("[monitor] la revisión falló", error));
     // Y la primera lectura del gasto real (la tarjeta del Dashboard sale al día tras un deploy).
     billing();
+    // Y el clima de la cinta (si es horario de trabajo y la foto ya tiene más de una hora).
+    clima();
     void worker.run();
     void mediaWorker?.run();
     scheduled.run();
