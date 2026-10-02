@@ -834,6 +834,8 @@ export async function runAgent(job: { organizationId: string; conversationId: st
       conversationId: conv.id,
       calls: toolCalls,
       modelText: out.kind === "reply" ? out.text : "",
+      // Un total que la empresa ya le dijo al cliente (p. ej. «Precio 2») también se fija.
+      companyTexts: history.filter((m) => m.direction === "out").map((m) => m.body ?? ""),
       pendingSince: pending[0]?.createdAt ?? null,
       stages,
     });
