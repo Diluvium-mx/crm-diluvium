@@ -1,10 +1,11 @@
 # Seguimientos por contexto — diseño
 
-> **Estado (30-sep-2026): el dueño aprobó la ESTRUCTURA (el orden de los 7 pasos, §4). Nada construido.**
-> Quedan abiertas las decisiones de la §12 (tienen propuesta de fábrica). Se construye por partes (§11), cada
-> una por staging y con "OK MAIN". Este documento **reemplaza** al del 25-sep-2026, que disparaba el seguimiento
-> por tiempo ("2 días sin respuesta") y después veía qué decir: el orden correcto es al revés.
-> Fuentes al final: **[M#]** Meta, **[Z#]** Zernio, **[G#]** GoHighLevel/GoGHL, **[C#]** código del CRM.
+> **Estado (2-oct-2026): el dueño aprobó la ESTRUCTURA (el orden de los 7 pasos, §4) el 30-sep. La TABLA DE CASOS
+> (§6) ya está apoyada en el historial completo de GoHighLevel (§2.1) y espera el OK del dueño junto con las
+> decisiones de la §12.** Parte 0 en producción (main d38f387); de la Parte 1 en adelante, nada construido. Se
+> construye por partes (§11), cada una por staging y con "OK MAIN". Este documento **reemplaza** al del 25-sep-2026,
+> que disparaba el seguimiento por tiempo ("2 días sin respuesta") y después veía qué decir: el orden correcto es al
+> revés. Fuentes al final: **[M#]** Meta, **[Z#]** Zernio, **[G#]** GoHighLevel/GoGHL, **[C#]** código del CRM.
 
 ---
 
@@ -15,10 +16,11 @@ Cuando un chat se queda parado (el último mensaje es nuestro y el cliente ya no
 el lunes"…), **después decide cuándo y qué decirle** para que avance un paso hacia comprar, y **al final** sale por
 la puerta que toque:
 
-- **Ventana de 24 h abierta:** el Agente IA le escribe un mensaje personal (texto libre).
-- **Ventana cerrada:** sale una **plantilla-puerta** (`hola_buenos_dias` / `hola_buenas_tardes`, según la hora del
-  cliente). Cuando el cliente contesta se abre la ventana y el Agente IA retoma **con el mismo contexto**: le dice lo
-  que quedó pendiente.
+- **Ventana de 24 h abierta:** el Agente IA le escribe un mensaje personal (texto libre). Es el 1.er intento de casi
+  todos los casos: sale justo antes de que cierre la ventana (~22 h).
+- **Ventana cerrada:** sale una **plantilla aprobada** (§7): el saludo según la hora (`hola_buenos_dias` /
+  `hola_buenas_tardes`) o `seguimiento_proteccion`. Cuando el cliente contesta se abre la ventana y el Agente IA
+  retoma **con el mismo contexto**: le dice lo que quedó pendiente.
 - **Chats que ya tomó un vendedor:** no se manda nada solo. La ficha y el mensaje sugerido le quedan al vendedor
   para mandarlo con un clic (desde el CRM o gratis desde WhatsApp Web).
 
@@ -30,17 +32,48 @@ sin una llamada extra.
 
 ## 2. Qué hacía GoHighLevel y por qué no se copia tal cual
 
-- En GHL **todo** el seguimiento lo hacía la IA de Ángela (Conversation AI), no los workflows [G1]:
-  "Dejó de responder" 2 días · 1 intento (activo), "Solicitud de contacto" 2 h (activo), "Ocupado" 2 h (apagado).
-  Horario 8:00–18:00 hora del contacto, redactado por la IA.
+- En GHL **todo** el seguimiento lo hacía la IA de Ángela (Conversation AI), no los workflows [G1][G6]. La
+  configuración de hoy dice "Dejó de responder" 2 días · 1 intento, "Solicitud de contacto" 2 h, "Ocupado" apagado,
+  horario 8:00–18:00 hora del contacto. **En los hechos salía a los 15 días** (§2.1).
 - GHL **no tenía el WhatsApp oficial**: los mensajes salían por **GoGHL**, un programa que se conecta como un
   WhatsApp Web más (dispositivo vinculado por QR) y por eso no tenía ventana de 24 h ni plantillas [G2]. WhatsApp
   prohíbe ese tipo de conexión y puede bloquear el número [M9][M10]. Hoy el mismo número sostiene el CRM, el Agente IA,
   Zernio y los anuncios: **no se conecta un programa así** (decisión informada al dueño el 28-sep).
 - Con WhatsApp **oficial**, ni GHL manda el seguimiento de Ángela por WhatsApp después de 24 h: lo pasa a SMS [G3].
+  Desde el 27-sep GHL sigue intentando mandar los seguimientos de Ángela y **todos fallan** (no llegan al cliente).
 - De GHL oficial **sí se copia** [G4]: revisar la ventana antes de cada envío automático (rama abierta/cerrada),
   plantilla aprobada de antemano para la rama cerrada, variables llenadas con datos del contacto, cancelar si el cliente
   contesta, horario laboral y tope de intentos.
+
+### 2.1 Lo que dice el historial completo de GHL (análisis del 1 y 2-oct-2026) [G5]
+
+108,864 mensajes (21-mar → 1-oct); para el análisis, WhatsApp hasta el 26-sep: **10,470 contactos** que escribieron.
+
+- **97 % de los chats terminan con un mensaje nuestro** sin respuesta: 11,366 paradas (nosotros al último, ≥24 h,
+  antes de comprar), ~2,450 al mes en ago–sep.
+- **Venta real** (no hay otra señal confiable): el vendedor confirma el pago ("confirmo de recibido", "gracias por su
+  compra", guía) o el cliente manda el comprobante. **217 ventas, 2 % de los contactos**; 96 % con un vendedor en el
+  chat. La etiqueta "venta cerrada" de GHL **no sirve**: sus 268 contactos se crearon todos del 27 al 31-ago, traen
+  también "anticipo-medida-especial-recibido" y son prospectos comunes (y en GHL ninguna oportunidad quedó "ganada").
+- **Embudo** (lo más lejos que llegó → compró): solo información 1 % · precio general 0.3 % · cotización personal
+  3 % · **recibió datos bancarios 58 %**.
+- **114 de las 217 ventas pasaron por una pausa de ≥24 h** antes de comprar: la rompió el cliente solo en 77, un
+  vendedor en 30 y Ángela en 6. Dónde estaban parados: pago pendiente 43, cotización 30, precio general 20.
+- **Ángela seguía a los 15 días** (los ~6,000 seguimientos, todos los meses de abril a septiembre): contestó **11 %**
+  y casi nadie compró (6 ventas en 6 meses). Los **vendedores** que siguieron pronto: 20–30 h **56 %**, 30–54 h
+  **71 %**, 54–100 h **72 %**, 4–8 días 52 %, 8–17 días 30 % (eligen chats más tibios: parte es correlación, pero la
+  caída con el tiempo es clara).
+- **Escribir a las ~22 h casi no estorba:** el cliente que va a contestar lo hace rápido (81 % en 15 min, 96 % en
+  24 h); de los que siguen callados a las 20 h, solo el 8 % contesta solo antes de las 24 h.
+- **La puerta funciona:** el seguimiento de vendedor que abrió solo con un saludo ("Hola, buenos días, … de
+  Diluvium 😀") contestó **57 %** y compró 19 %; con contenido, 67 % y 15 %.
+- **El cuándo pesa más que el texto.** Con la misma demora (15 días), el texto de Ángela movió poco: mencionar lo
+  concreto 11–30 % vs 8–16 %; ofertas 17–18 % vs 8–10 %; volver a pedir la medida 7–9 % vs 10–12 %. Lo que
+  funcionó en los vendedores está en §7.3.
+- **Ventana gratis de anuncio:** el 80 % de las paradas de anuncio pasan en las primeras 2 h desde que llegó; un
+  intento a las ~48 h cae dentro de la ventana gratis en el 86 % de ellas.
+- **Hora:** los clientes escriben de 9 a 19 h (~75 % de sus mensajes); 8 h 3 %, 19 h 5 %. Lunes es el día con más
+  mensajes (19 %); sábado 10 %, domingo 11 %. Los vendedores nunca mandaron seguimientos en domingo.
 
 ---
 
@@ -56,8 +89,12 @@ sin una llamada extra.
 | Bajas [M6] | Si el cliente se da de baja del marketing: error **131050**. El contacto queda "sin seguimientos". |
 | Calidad [M7] | Bloqueos y reportes bajan la calidad del número y Meta pausa la plantilla (3 h, 6 h, desactivada). Por eso hay topes (§9). |
 
-Las 3 plantillas de Diluvium están **aprobadas** (verificado en vivo el 30-sep): `hola_buenos_dias`,
-`hola_buenas_tardes`, `seguimiento_proteccion` (Marketing, es_MX).
+**Plantillas (2-oct-2026):** en Meta hay **3 aprobadas** (Marketing, es_MX): `hola_buenos_dias` ("Hola, buenos
+días."), `hola_buenas_tardes` ("Hola, buenas tardes.") y `seguimiento_proteccion` ("Buenas, aquí reportándonos
+respecto a lo que platicamos acerca de la protección. ¿Qué le pareció?"). **La tabla de casos funciona solo con esas
+3.** Las 8 plantillas por caso que se propusieron el 1-oct se dieron de alta sin autorización y se **borraron** el
+2-oct; plantillas propias por caso quedan para después (§12, decisión 6), con los textos revisados con el dueño
+palabra por palabra antes de mandarlas a Meta.
 
 ---
 
@@ -69,18 +106,19 @@ Las 3 plantillas de Diluvium están **aprobadas** (verificado en vivo el 30-sep)
    ya hace para el Detalle. La ficha dice qué quedó pendiente, qué puntos están claros, qué falta para que sea cliente
    potencial, si vale la pena, cuándo y un borrador del mensaje.
 3. **Decidir cuándo según el caso** (§6): cada caso tiene su momento y su objetivo. Si el cliente pidió una fecha,
-   manda esa fecha. Todo cae dentro del horario (8:00–18:00 hora del cliente). Un chat tiene como máximo **un**
-   seguimiento pendiente; una ficha nueva reemplaza a la anterior.
+   manda esa fecha. Todo cae dentro del horario (§9). Un chat tiene como máximo **un** seguimiento pendiente; una ficha
+   nueva reemplaza a la anterior.
 4. **Al llegar la hora, volver a revisar y salir por la puerta que toque** (§7). Si el cliente escribió, un vendedor
    contestó o el contacto ya compró, se cancela. Si sigue en pie, el Agente IA actualiza el mensaje con lo más
-   reciente y sale: ventana abierta → texto; cerrada → plantilla-puerta.
-5. **Si contesta:** el Agente IA sigue sabiendo por qué le escribió ("te escribí por tu cotización") y empuja el
+   reciente y sale: ventana abierta → texto; cerrada → plantilla.
+5. **Si contesta:** el Agente IA sigue sabiendo por qué le escribió ("le escribí por su cotización") y empuja el
    siguiente paso de la ficha. La etapa y el Detalle los sigue moviendo el lector.
-6. **Si no contesta:** un **segundo intento** con otro enfoque (§6). Después se detiene: la temperatura pasa a
-   **frío** y queda un aviso 🤖 para el vendedor.
+6. **Si no contesta:** el siguiente intento del caso (hasta **3** en los casos que venden, **2** en el resto, §6).
+   Después se detiene: la temperatura pasa a **frío** y, en pago pendiente y asesor sin respuesta, queda un aviso 🤖
+   para el vendedor.
 7. **Visible y medible:** en el chat se ve el seguimiento programado con su motivo (Ver mensaje · Cambiar hora ·
-   Cancelar); en Agente IA › Seguimientos se editan los casos; en el Dashboard, cuántos contestaron y cuántos
-   avanzaron de etapa.
+   Cancelar); en Agente IA › Seguimientos se editan los casos; en el Dashboard, cuántos contestaron, cuántos avanzaron
+   de etapa y cuántos compraron.
 
 ---
 
@@ -91,11 +129,19 @@ La devuelve el lector, en la misma herramienta `actualizar_contacto`, **solo cua
 | Campo | Qué es | Ejemplo |
 |---|---|---|
 | `caso` | Qué quedó pendiente (uno de la §6) | `cotizacion_sin_respuesta` |
-| `pendiente` | En una línea, lo que quedó abierto | "Se le cotizaron 2 compuertas de 90 cm ($8,400) y no respondió" |
-| `siguiente_paso` | Lo que lo acerca a comprar | "Resolver dudas y ofrecer apartar el precio" |
-| `vale_la_pena` + `motivo` | No, si dijo que no, ya compró, está fuera de zona o pidió que no le escriban | `false` · "Dijo que ya lo compró en otro lado" |
-| `fecha_pedida` | Si el cliente pidió que le escribieran en una fecha u hora ("el lunes", "en la tarde") | "2026-10-05T10:00" (hora de Mazatlán) |
-| `borrador` | El mensaje personal, corto (máx. 2 líneas), como lo diría el Agente IA | "Hola Ana, ¿pudiste revisar la cotización de tus 2 compuertas? Si quieres te aparto el precio de esta semana 😊" |
+| `pendiente` | En una línea, lo que quedó abierto | "Se le cotizaron 2 compuertas de 90 cm ($11,000) y no respondió" |
+| `siguiente_paso` | Lo que lo acerca a comprar | "Resolver su duda de instalación y ofrecer los datos de pago" |
+| `vale_la_pena` + `motivo` | No, si dijo que no, ya compró, no es de México, pidió que no le escriban o es el contestador de otro negocio | `false` · "Dijo que ya lo compró en otro lado" |
+| `fecha_pedida` | Si el cliente pidió que le escribieran en una fecha u hora ("el lunes", "en la quincena", "al rato") | "2026-10-05T10:00" (hora de Mazatlán) |
+| `borrador` | El mensaje personal, corto (máx. 2 líneas), con las reglas de §7.3 | "Hola Ana, buenos días. ¿Pudo revisar la cotización de sus 2 compuertas de 90 cm? Si le queda alguna duda de la instalación, se la resuelvo por aquí." |
+
+**El `caso` se cruza con datos duros del CRM** (el modelo propone, el código confirma):
+- Aviso abierto de "pasar a un asesor" / "el cliente pide una persona" sin respuesta humana después → `asesor_sin_respuesta`.
+- Etapa con papel **Cerca de compra** y `pago_total` vacío o menor que `monto_cotizacion` → `pago_pendiente`.
+- Etapa con papel **Venta cerrada**, o ya pagó el total → `no_seguir` (es postventa).
+- Detalle con medidas (`anchos_cm`) y `monto_cotizacion` → al menos `cotizacion_sin_respuesta` (salvo que el modelo
+  vea pidió fecha, objeción o no seguir, que van encima).
+- Si dos casos aplican, gana el primero de la tabla de §6 (está en orden de prioridad).
 
 **Puntos claros** (✓/✗) **no los inventa el modelo**: salen del Detalle guardado — problema de inundación, número
 de entradas, medidas, nivel de agua, cotización enviada, pago. Sirven para dos cosas:
@@ -104,58 +150,105 @@ de entradas, medidas, nivel de agua, cotización enviada, pago. Sirven para dos 
 
 ---
 
-## 6. Casos, tiempos y objetivos (propuesta de fábrica; se editan en Agente IA › Seguimientos)
+## 6. Tabla de casos (fábrica; se editan en Agente IA › Seguimientos)
 
-| Caso (`caso`) | 1.er intento | 2.º intento | Qué busca el mensaje |
-|---|---|---|---|
-| **Pidió que le escribieran** (`pidio_fecha`) | La fecha/hora que pidió | +1 día | Retomar como quedaron |
-| **Dijo que estaba ocupado** (`ocupado`) | 2 h | +1 día | Retomar |
-| **Pidió un asesor y nadie contestó** (`pidio_asesor`) | 30 min: **aviso al vendedor** (no al cliente) · 2 h: mensaje de disculpa | — | Que lo atienda un vendedor |
-| **Pago pendiente** (datos bancarios, sin comprobante) (`pago_pendiente`) | Antes de que cierre la ventana (~22 h) | +1 día (puerta) | El comprobante o resolver dudas de pago |
-| **Cotización sin respuesta** (`cotizacion_sin_respuesta`) | ~22 h | +1 día (puerta) | Resolver dudas y cerrar |
-| **Faltan datos para cotizar** (`faltan_datos`) | ~22 h | +1 día (puerta) | Pedir exactamente el dato que falta |
-| **"Lo voy a pensar" u objeción** (`objecion`) | 1 día | +2 días | Responder esa objeción |
-| **Dejó de contestar sin nada claro** (`sin_punto_claro`) | 2 días (como Ángela) | — | Reenganchar |
-| **No seguir** (`no_seguir`) | Nunca | — | — |
+**Tiempos**, contados desde nuestro último mensaje (la parada):
+- **~22 h** = justo antes de que cierre la ventana de 24 h: la última hora dentro del horario antes del cierre, con
+  1 h de margen. Si a esa hora el chat lleva menos de 8 h callado (p. ej. quedó parado a las 8:00 y el horario
+  termina a las 19:00, o el día siguiente es domingo), **no se fuerza**: el intento sale con plantilla el siguiente
+  día hábil a las 10:00.
+- **Día 2** = 2 días después de la parada, a la misma hora (ajustada al horario).
+- **Día 9** = 7 días después del 2.º intento (nunca dos plantillas al mismo contacto en menos de 7 días, §9).
+- Si un intento ya salió con plantilla, el siguiente con plantilla espera 7 días.
 
-- "**~22 h**" = antes de que cierre la ventana de 24 h, dentro del horario (si a esa hora es de noche, se adelanta a
-  la última hora del horario que quede antes del cierre). Así el 1.er intento sale como **texto personal** (barato y
-  sin plantilla) y solo el 2.º necesita la puerta.
-- Los tiempos se cuentan desde el **último mensaje nuestro**.
-- Si el cliente contesta en medio, el seguimiento se cancela y la siguiente lectura hace una ficha nueva.
+**Puertas** (solo cuando la ventana está cerrada): 🚪 = `hola_buenos_dias` antes de las 12:00 hora del cliente,
+`hola_buenas_tardes` después · 📄 = `seguimiento_proteccion`. Con la ventana abierta, siempre texto del Agente IA.
+
+| # | Caso (`caso`) | Cómo se detecta en el chat | 1.er intento | 2.º intento | 3.er intento | Qué busca el mensaje |
+|---|---|---|---|---|---|---|
+| 0 | **No seguir** (`no_seguir`) | Dijo que no o que ya compró en otro lado; no es de México; pidió que no le escriban; número equivocado o anuncio por error; contesta el contestador de otro negocio; ya compró (etapa Venta cerrada o pagó el total) | Nunca | — | — | — |
+| 1 | **Asesor sin respuesta** (`asesor_sin_respuesta`) | Aviso abierto "pasar a un asesor" / "el cliente pide una persona" (tarjeta amarilla) y ningún vendedor le contestó | **2 h** (texto): el Agente IA se disculpa por la espera y resuelve lo que pueda. Al vendedor ya le avisó la tarjeta amarilla al instante | Día 2 · 🚪 | — | Que no se quede colgado y lo atienda un vendedor |
+| 2 | **Pidió que le escribieran** (`pidio_fecha`) | El cliente dio fecha u hora ("el lunes", "en la quincena", "más tarde"); "estoy ocupado / al rato" sin hora = +3 h | **La fecha y hora que pidió** (sin hora: 10:00). Texto si la ventana sigue abierta; si no, 🚪 | +2 días · 🚪 (o +7 días si el 1.º ya fue plantilla) | +7 días · 📄 (solo si el 1.º fue texto) | Retomar justo como quedaron |
+| 3 | **Pago pendiente** (`pago_pendiente`) | Recibió los datos bancarios (etapa Cerca de compra) y no ha mandado comprobante, o falta el resto del pago | ~22 h (texto) | Día 2 · 🚪 | Día 9 · 📄 | El comprobante, o resolver lo que lo frena (forma de pago, tarjeta, fecha de entrega) |
+| 4 | **Lo va a pensar u objeción** (`objecion`) | Lo último del cliente: "lo platico con mi esposo", "lo pienso", "está caro", "ahorita no", "más adelante" (sin fecha) | ~22 h (texto) | Día 2 · 📄 | Día 9 · 🚪 | Responder esa duda u objeción con algo útil (video, opción, comparación) |
+| 5 | **Cotización sin respuesta** (`cotizacion_sin_respuesta`) | Dio medidas y se le dijo talla y precio para SU entrada (Detalle con medidas y monto); no llegó a datos bancarios | ~22 h (texto) | Día 2 · 📄 | Día 9 · 🚪 | Resolver la duda que lo frena (instalación, envío, si le queda) y ofrecer los datos de pago |
+| 6 | **Faltan medidas** (`faltan_medidas`) | Se le pidió el ancho (o una foto) y no lo dio; Detalle sin medidas | ~22 h (texto) | Día 2 · 🚪 | — | Pedir exactamente el dato que falta, con cómo medir (de lado a lado, en cm) |
+| 7 | **Precio sin respuesta** (`precio_sin_respuesta`) | Recibió el precio general (por workflow o por el Agente IA) y no dio medidas ni siguió | ~22 h (texto) | Día 2 · 🚪 | — (apagado de fábrica) | Saber dónde lo usaría (puerta, cochera, local) y si se le mete el agua; no volver a pedir la medida si ya se pidió |
+| 8 | **Solo información** (`solo_informacion`) | Escribió por el anuncio (1–2 mensajes) y recibió información, sin precio ni medidas | ~22 h (texto) | Día 2 · 🚪 | — | Calificar: dónde lo usaría y si se le mete el agua |
+| 9 | **Sin punto claro** (`sin_punto_claro`) | Ninguno de los anteriores | ~22 h (texto) | Día 2 · 🚪 | — | Reenganchar con una pregunta sobre su caso |
+
+Después del último intento sin respuesta: temperatura **frío**. En **pago pendiente** y **asesor sin respuesta**
+queda además un aviso 🤖 al vendedor (tarjeta amarilla; ~1 al día con los volúmenes de GHL). Si el cliente contesta
+en medio, el seguimiento se cancela y la siguiente lectura hace una ficha nueva.
+
+### 6.1 Por qué estos tiempos (números de GHL, §2.1)
+
+| Caso | Paradas al mes (ago–sep) | Compró después de la parada | Regresa solo en 1–5 días | Seguimiento de vendedor en 1–5 días: contestó · compró | Ángela a los 15 días: contestó |
+|---|---|---|---|---|---|
+| Asesor sin respuesta | 8 | 2 % | 10 % | 70 % · 7 % | 32 % |
+| Pidió fecha | ~75 | **7 %** | regresa 31 %, pero tarda (mediana 7.5 días) | con seguimiento en ≤4 días contestó 59 % | — |
+| Pago pendiente | 34 | **28 %** | 28 % | 70 % · 34 % | 30 % |
+| Lo pensará / objeción | ~100 | 3 % | 12–13 % (regresó) | — | — |
+| Cotización personal | 181 | 4 % | 6 % | 53 % · 17 % | 17 % |
+| Le pedimos medidas | 49 | 1 % | 13 % | (n=3) | 15 % |
+| Precio general | **1,927** | 1 % | 4 % | 50 % · 9 % (n=34) | 8 % |
+| Solo información | 168 | 0.3 % | 10 % | (n=8) | 11 % |
+| Otro | 86 | 2 % | 10 % | 93 % · 11 % | 18 % |
+| Ya no le interesa | ~20 | 1 % | regresó 8 % | — | — |
+
+- **1.er intento a las ~22 h:** el último momento para escribir texto personal (barato y sin plantilla); a esa hora
+  solo el 8 % de los callados iba a contestar solo. Los seguimientos de 1 a 4 días contestaron 56–72 %; a los 15
+  días, 11 %.
+- **2.º intento el día 2:** la mejor franja de los vendedores (30–100 h: 71–72 %) y, en las paradas de anuncio, cae
+  dentro de la ventana gratis en el 86 % (precio general: 57 % del total).
+- **3.er intento el día 9, solo en los casos que venden** (pidió fecha, pago, objeción, cotización): ahí está el 7–28 %
+  de compra; 37 de las 114 ventas con pausa regresaron después de 2 semanas. En precio general, solo información y
+  medidas, el seguimiento tardío de Ángela dio 8–15 % de respuesta y casi ninguna venta: no se agrega.
 
 ---
 
 ## 7. Por dónde sale
 
-**Ventana abierta:** el Agente IA (el modelo de la etapa del contacto, con el Goal, las FAQs y el chat completo)
-recibe la ficha y escribe **un** mensaje. Sale como del Agente IA (`source: ai_agent`): no pausa al Agente IA, no
+### 7.1 Ventana abierta
+El Agente IA (el modelo de la etapa del contacto, con el Goal, las FAQs y el chat completo) recibe la ficha y
+escribe **un** mensaje con las reglas de §7.3. Sale como del Agente IA (`source: ai_agent`): no pausa al Agente IA, no
 marca leído y no cuenta como primera respuesta humana.
 
-**Ventana cerrada (plantilla-puerta):**
-1. Sale `hola_buenos_dias` antes de las 12:00 hora del cliente, `hola_buenas_tardes` después. En el 2.º intento,
-   `seguimiento_proteccion` (otra redacción, para no repetir el mismo saludo).
+### 7.2 Ventana cerrada (plantilla)
+1. Sale la plantilla del intento (🚪 o 📄, §6) como del Agente IA (sin pausarlo).
 2. El seguimiento queda "esperando respuesta" con su ficha.
 3. Cuando el cliente contesta, la respuesta normal del Agente IA lleva en su contexto
    *"Seguimiento: le escribimos por «pendiente»; objetivo: «siguiente paso»"*, así que retoma justo ese punto.
 4. Si llegó por anuncio y sigue en su ventana gratis, la plantilla no cuesta.
 
-**Chats que tomó un vendedor** (Agente IA en pausa en ese chat): **no sale nada solo**. En el chat queda
+### 7.3 Cómo escribe el Agente IA el seguimiento (de los que sí funcionaron en GHL)
+- **Corto** (1–2 líneas), con saludo según la hora y su nombre.
+- **Lo concreto:** la talla, la medida, la cotización o el pedido, y cuándo lo platicaron ("hace un par de días").
+- **Pregunta por la decisión o la duda**, no por datos que ya dio: "¿Tuvo oportunidad de valorarla? ¿Qué le pareció?".
+- **Trae algo útil** si lo hay: la respuesta a su duda, el video de instalación, cuándo le llegaría.
+- **Si tardamos nosotros, disculpa** ("una disculpa por la espera").
+- **Nunca**: genérico ("solo paso a dar seguimiento"), volver a pedir la medida si ya se pidió, "último seguimiento",
+  ni presión.
+
+### 7.4 Chats que tomó un vendedor
+Agente IA en pausa en ese chat: **no sale nada solo**. A la hora del intento queda en el chat
 "🤖 Seguimiento sugerido · Cotización sin respuesta" con el borrador y tres botones: **Mandar** (desde el CRM, si la
-ventana está abierta; si no, con la plantilla-puerta), **Abrir en WhatsApp Web** (gratis, texto ya escrito) y
-**Descartar**.
+ventana está abierta; si no, con la plantilla del intento), **Abrir en WhatsApp Web** (gratis, texto ya escrito) y
+**Descartar**. En GHL el 90 % de los chats con pago pendiente y el 33 % de los de cotización ya los llevaba un
+vendedor: en esos casos el seguimiento casi siempre será sugerido.
 
 ---
 
 ## 8. Qué se ve en el CRM
 
 - **En el chat** (Bandeja y pop-up del Embudo), abajo, como los programados de hoy:
-  `🤖 Seguimiento · mié 10:00 · Cotización sin respuesta — Resolver dudas y cerrar   [Ver mensaje] [Cambiar hora] [Cancelar]`.
+  `🤖 Seguimiento · mié 10:00 · Cotización sin respuesta (1.º de 3) — Resolver dudas y cerrar   [Ver mensaje] [Cambiar hora] [Cancelar]`.
   Cuando sale, la burbuja se vuelve el mensaje real. Lo que se cancela solo no se muestra (menos datos), salvo que
-  deje aviso.
-- **Agente IA › Seguimientos:** la tabla de la §6 (encender/apagar cada caso, tiempos del 1.er y 2.º intento,
-  objetivo en texto), el horario y la hora del cliente.
-- **Dashboard:** una tarjeta: seguimientos enviados · contestaron · avanzaron de etapa (del periodo elegido).
+  deje aviso. En **modo ensayo** (Parte 1) la burbuja dice "Ensayo" y no sale nada.
+- **Agente IA › Seguimientos:** la tabla de la §6 (encender/apagar cada caso e intento, tiempos, objetivo en texto),
+  el horario y la hora del cliente.
+- **Dashboard:** una tarjeta: seguimientos enviados · contestaron · avanzaron de etapa · compraron (del periodo
+  elegido).
 - **Historial:** los cambios a la tabla de casos quedan en Agente IA › Historial.
 
 ---
@@ -164,27 +257,31 @@ ventana está abierta; si no, con la plantilla-puerta), **Abrir en WhatsApp Web*
 
 - Se cancela si: el cliente escribe, un vendedor escribe, el contacto llega a la etapa con papel **Venta cerrada**,
   el Agente IA está apagado en el canal, el caso se apagó, o un vendedor lo cancela.
-- Máximo **2 intentos** por punto pendiente. Después: temperatura **frío** + aviso 🤖 "No contestó 2 seguimientos".
-- Máximo **1 plantilla de seguimiento por contacto cada 7 días**.
+- Máximo **3 intentos** por punto pendiente (2 en los casos que no venden, §6). Después: temperatura **frío**; aviso
+  🤖 solo en pago pendiente y asesor sin respuesta.
+- **Plantillas de seguimiento al mismo contacto: nunca dos en menos de 7 días.**
 - **131049** (tope de marketing): aviso, sin reintento. **131050** (baja): el contacto queda "sin seguimientos"
   (se quita desde el Detalle).
 - Solo a contactos que **ya escribieron** alguna vez (nunca a un contacto sin chat).
-- Horario de envío: 8:00–18:00 **hora del cliente** (estado de su lada → zona horaria; sin lada mexicana, Mazatlán).
+- **Horario de envío: 9:00–19:00 hora del cliente, de lunes a sábado** (estado de su lada → zona horaria; sin lada
+  mexicana, Mazatlán). Lo que caiga en domingo pasa al lunes a las 10:00 (§12, decisión 3).
 
 ---
 
-## 10. Costo estimado (supuestos a la vista)
+## 10. Costo estimado (con los volúmenes de GHL de ago–sep)
 
-Base: ~4,000 contactos al mes atendidos por el Agente IA (GHL, jul–sep-2026 [G1]). Supuesto: **la mitad** se queda
-parada con algo pendiente (~2,000 al mes) y **la mitad** de esos no contesta el 1.er intento (~1,000).
+Base: ~2,450 paradas al mes (precio general 1,930 · cotización 180 · solo información 170 · otro 90 · medidas 50 ·
+pago 35 · asesor 8). Supuesto: **80 %** no contesta el 1.er intento y **60 %** de los casos que venden no contesta
+el 2.º. Más o menos la mitad de los intentos caen en la ventana gratis del anuncio.
 
 | Concepto | Cuenta | Al mes |
 |---|---|---|
 | Ficha de seguimiento | Sale en la lectura que ya existe (unos tokens más de Luna) | ≈ US$0.5 |
-| 1.er intento con texto (~2,000) | Servicio ~MX$0.16 (los 1,000 gratis ya los usan las respuestas normales) + redacción de la IA | ≈ MX$320 + US$10–60 |
-| 2.º intento con plantilla-puerta (~1,000) | Marketing ~MX$0.73 (gratis si sigue en la ventana del anuncio) | ≈ MX$730 o menos |
+| 1.er intento con texto (~2,350) | Servicio ~MX$0.16, gratis dentro de la ventana del anuncio (~la mitad) + redacción de la IA | ≈ MX$190 + US$10–30 |
+| 2.º intento con plantilla (~1,900) | Marketing ~MX$0.73, gratis en la ventana del anuncio (~la mitad) | ≈ MX$700 |
+| 3.er intento con plantilla (~200) | Marketing ~MX$0.73 (ya casi nunca en la ventana gratis) | ≈ MX$150 |
 
-Total aproximado: **MX$1,100–2,100 al mes**. Se ajusta con los números reales después de una semana.
+Total aproximado: **≈ MX$1,050 en WhatsApp + US$10–30 de IA (≈ MX$1,250–1,650 al mes)**. Se ajusta con los números reales después de una semana.
 
 ---
 
@@ -192,10 +289,10 @@ Total aproximado: **MX$1,100–2,100 al mes**. Se ajusta con los números reales
 
 | Parte | Qué | Migración |
 |---|---|---|
-| **0** | Plantillas al día solas (se sincronizan al abrir Plantillas y el 📄, y el worker revisa cada 15 min mientras haya alguna "En revisión"); `{{1}}` se llena solo con el nombre del contacto. | No |
-| **1** | Tabla `follow_ups` + la ficha en el lector + cálculo de la hora (§6, horario por lada) + la burbuja en el chat. **Modo ensayo: no manda nada**, para que el dueño vea en chats reales si las fichas y los tiempos tienen sentido. | 0052 |
-| **2** | Envío con la ventana abierta (el Agente IA redacta con la ficha) + paradas + 2.º intento + frío y aviso. | Quizá |
-| **3** | Ventana cerrada: plantilla-puerta como del Agente IA (sin pausarlo), retomar con contexto cuando conteste, topes de 7 días, 131049/131050. | No |
+| **0 ✅** | **En producción (main d38f387, 2-oct):** plantillas al día solas ("Ver estado"; chequeo al abrir Plantillas y el worker cada 10 min mientras haya alguna en revisión); `{{1}}` = primer nombre del contacto en 📄, 🕒 y el primer mensaje del Embudo. | No |
+| **1** | Tabla `follow_ups` + la ficha en el lector + cálculo de la hora (§6, horario por lada) + la burbuja en el chat. **Modo ensayo: no manda nada**, para que el dueño vea en chats reales si las fichas y los tiempos tienen sentido. | 0055 |
+| **2** | Envío con la ventana abierta (el Agente IA redacta con la ficha y §7.3) + paradas + 2.º y 3.er intento + frío y aviso. | Quizá |
+| **3** | Ventana cerrada: plantilla como del Agente IA (sin pausarlo), retomar con contexto cuando conteste, tope de 7 días, 131049/131050. | No |
 | **4** | Agente IA › Seguimientos (editar la tabla), chats de vendedor (sugerido + WhatsApp Web), tarjeta del Dashboard, mapa y capturas. | No |
 
 Pruebas: lógica pura (casos, horas, zona por lada, topes) con Vitest; integración con Postgres real (ficha → programa
@@ -206,30 +303,37 @@ contacto de prueba del dueño.
 
 ## 12. Decisiones para el dueño (con propuesta de fábrica)
 
-1. **Chats que tomó un vendedor:** ¿solo sugerencia para el vendedor (propuesta) o también automático?
+1. **Chats que tomó un vendedor:** solo sugerencia para el vendedor (propuesta; §7.4) o también automático.
 2. **Tabla de casos (§6):** ¿algún caso, tiempo u objetivo que cambiar?
-3. **Horario:** 8:00–18:00 hora del cliente, todos los días, como Ángela (propuesta).
-4. **Intentos:** máximo 2 y luego frío + aviso (propuesta).
-5. **Puerta:** saludo según la hora en el 1.er uso y `seguimiento_proteccion` en el 2.º (propuesta).
+3. **Horario:** 9:00–19:00 hora del cliente, de lunes a sábado; domingo pasa al lunes (propuesta, por los datos de
+   §2.1). La alternativa es 8:00–18:00 todos los días, como Ángela.
+4. **Intentos:** 3 en los casos que venden (pidió fecha, pago, objeción, cotización), 2 en el resto; luego frío; aviso
+   al vendedor solo en pago pendiente y asesor sin respuesta (propuesta).
+5. **Plantillas:** usar solo las 3 aprobadas, como en §6 (propuesta): 🚪 saludo por hora y 📄 `seguimiento_proteccion`.
+6. **Plantillas propias por caso** (las 8 borradas el 2-oct): después de ver el ensayo, con los textos revisados
+   palabra por palabra. No hacen falta para las Partes 1–3.
+7. **Reactivación tardía** (como Ángela, a los 15 días) en precio general y solo información: no (propuesta): contestó
+   8–11 % y casi nadie compró.
 
 ---
 
 ## 13. Detalle técnico (para Code)
 
-**Datos (migración 0052):** `follow_ups` — id, organization_id, conversation_id, contact_id, caso, pendiente,
-siguiente_paso, borrador, fecha_pedida, intento (1|2), due_at, status
-(`programado` | `enviando` | `esperando_respuesta` | `enviado` | `contestado` | `cancelado` | `sugerido` | `fallido`),
-cancel_reason, door (`texto` | `plantilla`), template_id, message_id, based_on_message_at (el último mensaje que leyó
-el lector), created_at, updated_at. Índice único parcial: un solo `programado`/`esperando_respuesta` por conversación.
-Tabla de casos editable: `follow_up_rules` (caso, encendido, espera_1, espera_2, objetivo) o `ai_config.jsonb`.
-`contacts.sin_seguimientos` (bool) para las bajas.
+**Datos (migración 0055; la 0052–0054 ya las tomaron otros cambios):** `follow_ups` — id, organization_id,
+conversation_id, contact_id, caso, pendiente, siguiente_paso, borrador, fecha_pedida, intento (1|2|3), due_at,
+status (`programado` | `enviando` | `esperando_respuesta` | `enviado` | `contestado` | `cancelado` | `sugerido` |
+`fallido` | `ensayo`), cancel_reason, door (`texto` | `plantilla`), template_name, message_id, based_on_message_at
+(el último mensaje que leyó el lector), created_at, updated_at. Índice único parcial: un solo
+`programado`/`esperando_respuesta`/`ensayo` por conversación. Tabla de casos editable: `follow_up_rules` (caso,
+encendido, intentos, objetivo) o `ai_config.jsonb`. `contacts.sin_seguimientos` (bool) para las bajas.
 
 **Código:**
 - `lib/ai/runtime/lector-core.ts`: el esquema de `actualizar_contacto` (`lectorSchemaFor`) suma `seguimiento`
-  (opcional), y las instrucciones del lector explican los casos. Validación pura nueva (caso válido, textos acotados,
-  fecha futura < 60 días).
-- `lib/ai/runtime/lector.ts`: al aplicar la lectura, si el último mensaje es nuestro, guarda o reemplaza la ficha y
-  calcula `due_at` (`lib/followups/rules.ts`, puro).
+  (opcional), y las instrucciones del lector explican los casos y las reglas de §7.3. Validación pura nueva (caso
+  válido, textos acotados, fecha futura < 60 días).
+- `lib/followups/rules.ts` (puro): tabla de §6, prioridad de casos, cruce con datos duros (§5) y cálculo de `due_at`
+  (~22 h / día 2 / día 9, horario, domingo, 7 días entre plantillas).
+- `lib/ai/runtime/lector.ts`: al aplicar la lectura, si el último mensaje es nuestro, guarda o reemplaza la ficha.
 - `lib/followups/timezone.ts` (puro): estado de la lada (`lib/phone-lada-data.ts`) → zona horaria (Tijuana, Hermosillo,
   Mazatlán, Chihuahua/Ciudad Juárez, CDMX, Cancún).
 - Worker: `startFollowUpRuntime` con el patrón de `startLectorRuntime` (barrido cada 60 s, candado por chat).
@@ -237,6 +341,8 @@ Tabla de casos editable: `follow_up_rules` (caso, encendido, espera_1, espera_2,
   `ai_agent` no pasa por `pauseAgentForManualSend`.
 - `lib/ai/runtime/actions.ts` (`crmContextFor`): agrega la línea del seguimiento esperando respuesta.
 - `lib/ai/runtime/policy.ts` (`NoticeKind`): tipo nuevo `seguimiento`.
+- Asesor sin respuesta: si "pedir asesor" pausó al Agente IA en ese chat, la pausa la puso el Agente IA (no un
+  vendedor): el seguimiento sí sale; revisar la regla al construir la Parte 2.
 - UI: burbuja en `chat-thread.tsx` junto a `ScheduledInThread`; subpestaña en Agente IA; tarjeta del Dashboard.
 
 ---
@@ -256,5 +362,9 @@ Tabla de casos editable: `follow_up_rules` (caso, encendido, espera_1, espera_2,
 - [G2] GoGHL: https://goghl.ai/es y https://help.goghl.ai/whatsapp/full-setup
 - [G3] GHL, seguimiento automático de Conversation AI (en WhatsApp pasa a SMS tras 24 h): https://help.gohighlevel.com/support/solutions/articles/155000005500-conversation-ai-auto-follow-up-action
 - [G4] GHL, revisión de ventana en workflows: https://help.gohighlevel.com/support/solutions/articles/155000003235-whatsapp-customer-service-window-check · acción WhatsApp: https://help.gohighlevel.com/support/solutions/articles/155000003531-workflow-action-whatsapp
+- [G5] Historial completo de GHL exportado por API (108,864 mensajes, 21-mar → 1-oct-2026) y contactos con etiquetas
+  (19-sep), analizados el 1 y 2-oct-2026. Datos de clientes: **fuera del repo** (carpeta de notas del dueño); aquí solo
+  van cifras agregadas.
+- [G6] Ask AI de GHL (2-oct-2026): configuración actual de Ángela y Ángela 2.0, embudo y etiquetas.
 - [C1] Lector en segundo plano: `lib/ai/runtime/lector-core.ts`, `lector.ts`, `lector-worker.ts` (main 8426d80).
 - Investigación previa (plantillas, edición, coexistencia): `docs/investigacion/plantillas-zernio.md`.
