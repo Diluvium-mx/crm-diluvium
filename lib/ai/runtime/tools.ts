@@ -58,12 +58,17 @@ export const avisoVendedorSchema = z.object({
 // los campos y, sin null, los rellenaba con 0, "" o "no_sabe" (en producción, 46 de 50
 // niveles de agua del agente eran "0 cm"). parseDetalle ignora los null.
 const SIN_DATO = " (null si el cliente no lo dijo)";
+// Ancho de las entradas (2-oct-2026, dueño): SIEMPRE en centímetros (los rangos de Tallas y medidas son
+// en cm y el Detalle lo muestra con «cm»). El modelo convierte lo que dijo el cliente; un número sin
+// unidad de 10 o más ya son centímetros, nunca metros. Lo usan el agente y el lector (lector-core.ts).
+export const ANCHO_EN_CM =
+  "en CENTÍMETROS. Convierte lo que dijo el cliente: metros × 100 (1.75 m, «1.75» o «1 metro 75» = 175), pulgadas × 2.54 (70 pulgadas = 178); un número sin unidad de 10 o más ya son centímetros (230 = 230 cm, nunca metros)";
 export const actualizarDetalleSchema = z.object({
   tiene_inundaciones: z.enum(["si", "no", "no_sabe"]).nullable().optional().describe(`Si el cliente dijo que se le mete el agua: si, no o no_sabe (solo si dijo que no sabe)${SIN_DATO}`),
   nivel_agua_cm: z.number().nullable().optional().describe(`Hasta dónde llega el agua, en centímetros (0.5 m = 50)${SIN_DATO}`),
   nivel_agua_texto: z.string().nullable().optional().describe(`Cómo lo describió el cliente, corto (p. ej. "le llega a la rodilla")${SIN_DATO}`),
   num_entradas: z.number().nullable().optional().describe(`Cuántas entradas quiere proteger${SIN_DATO}`),
-  anchos_cm: z.array(z.number()).nullable().optional().describe(`Ancho de cada entrada en centímetros, en orden (uno por entrada)${SIN_DATO}`),
+  anchos_cm: z.array(z.number()).nullable().optional().describe(`Ancho de cada entrada ${ANCHO_EN_CM}, en orden (uno por entrada)${SIN_DATO}`),
   porcentaje_convencimiento: z.number().nullable().optional().describe("Qué tan convencido está de comprar: 0 a 100, de 10 en 10"),
   comentario: z.string().nullable().optional().describe(`Un dato útil NUEVO que dio el cliente, en una frase (p. ej. "tiene cochera con desnivel")${SIN_DATO}`),
 });
@@ -105,7 +110,9 @@ export function parseDetalle(input: unknown): DetalleIa | null {
   const entradas = num(raw.num_entradas);
   if (entradas !== null && Number.isInteger(entradas) && entradas >= 1 && entradas <= 50) out.numEntradas = entradas;
   if (Array.isArray(raw.anchos_cm)) {
-    const anchos = raw.anchos_cm.map(num).map((a) => (a === null ? null : Math.round(a)));
+    // Red de seguridad: ninguna entrada mide menos de 10 cm, así que un valor así son METROS que el
+    // modelo no convirtió (1.75 → 175 cm). Antes se redondeaba y quedaban 2 cm.
+    const anchos = raw.anchos_cm.map(num).map((a) => (a === null ? null : Math.round(a < 10 ? a * 100 : a)));
     // Un ancho inválido invalida la lista (se perdería a qué entrada va cada uno).
     if (anchos.length > 0 && anchos.length <= 50 && anchos.every((a): a is number => a !== null && a >= 1 && a <= 1000)) out.anchosCm = anchos;
   }

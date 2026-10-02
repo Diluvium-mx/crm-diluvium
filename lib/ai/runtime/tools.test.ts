@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { defaultStages } from "@/lib/contacts/stages";
-import { buildAgentTools, parseDetalle, TOOL_ACTUALIZAR_DETALLE, TOOL_AVISO_VENDEDOR, TOOL_FIJAR_COTIZACION, TOOL_MOVER_ETAPA, validateToolCalls } from "./tools";
+import { actualizarDetalleSchema, buildAgentTools, parseDetalle, TOOL_ACTUALIZAR_DETALLE, TOOL_AVISO_VENDEDOR, TOOL_FIJAR_COTIZACION, TOOL_MOVER_ETAPA, validateToolCalls } from "./tools";
 
 const stages = defaultStages();
 
@@ -88,6 +88,9 @@ describe("herramientas del cerebro (Fase D reestructurada)", () => {
     expect(parseDetalle({ tiene_inundaciones: "tal vez", nivel_agua_cm: 5000, num_entradas: 1.5, anchos_cm: [90, 0], porcentaje_convencimiento: 30 })).toEqual({ porcentajeConvencimiento: 30 });
     expect(parseDetalle({})).toBeNull();
     expect(parseDetalle("basura")).toBeNull();
+    // Anchos SIEMPRE en cm (2-oct-2026): menos de 10 son metros que el modelo no convirtió.
+    expect(parseDetalle({ anchos_cm: [1.75, 2.3, 230, "0.9", 175] })).toEqual({ anchosCm: [175, 230, 230, 90, 175] });
+    expect(actualizarDetalleSchema.shape.anchos_cm.description).toContain("230 = 230 cm, nunca metros");
     const t = buildAgentTools(rows, stages);
     const { valid, ignored } = validateToolCalls(
       [
