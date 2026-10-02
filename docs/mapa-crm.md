@@ -47,6 +47,7 @@ Nadie es "dueño" de un contacto: **todos ven todos los contactos, siempre**.
 | **Búsqueda en los chats (lupa)** | La **lupa** entre el buscador y el filtro de la Bandeja y del Embudo. Prendida se pinta de **amarillo** y el mismo buscador busca una palabra **dentro de los mensajes** de todos los chats (cliente, vendedor, Agente IA, historial, pies de foto y transcripciones; no los avisos 📝 ni los comentarios), sin acentos y con mínimo 3 letras. Solo quedan los contactos con la palabra, con un **círculo amarillo** (en cuántos mensajes aparece) junto al naranja de no leídos; al abrir el chat la palabra sale **resaltada en amarillo** y la barra «1 de N» recorre cada coincidencia. El círculo es amarillo **sólido con borde**; la tarjeta amarilla del Embudo es otra cosa (fondo claro: el agente necesita al vendedor). Desde el 29-sep-2026. |
 | **No leído (Embudo)** | Píldora con un **sobre** junto al contador de cada columna del Embudo, del mismo alto que el contador. Prendida (**naranja**) la columna deja solo las tarjetas con algo pendiente: **círculo naranja** (sin ver), **azul** (sin contestar) o **amarilla** (el Agente IA necesita al vendedor), y el contador cuenta solo esas. Cada columna va por su lado. Sobre **tenue** = esa columna no tiene nada pendiente. Es más amplio que la pestaña **No leído** de la Bandeja, que solo lleva el círculo naranja. Desde el 30-sep-2026. |
 | **Actualización del CRM** | Cuando se publica una versión nueva del CRM, una pestaña que ya estaba abierta sigue con la versión anterior y lo que hace con el servidor falla. Si al vendedor le falla algo por eso, la barra de arriba avisa **«Hay una nueva actualización del CRM: recarga la página»** (Menú › 13) y **Recargar** lo arregla. Si no falla nada, no se avisa. Desde el 1-oct-2026. |
+| **Cinta del clima** | El clima **medido** (no pronosticado) de las 24 ciudades de México donde más llueve, corriendo en la barra de arriba (Menú › 14): icono, grados y lluvia de las últimas 24 h. Lo miden los aeropuertos (Servicio Meteorológico de EE. UU.) y los observatorios del SMN-Conagua; se trae gratis cada hora en horario de trabajo. Desde el 2-oct-2026. |
 | **Semáforo** | Punto de color en la Bandeja: cuánto lleva el cliente esperando respuesta **de una persona**. Verde menos de 15 min, ámbar menos de 1 h, rojo más de 1 h. |
 | **Ventana de 24 h** | Regla de WhatsApp: hasta 24 horas después del último mensaje del cliente se puede escribir libre. Pasadas las 24 h **solo se puede mandar una plantilla**. |
 | **Gratis por anuncio (72 h)** | Si el cliente llegó por un anuncio y se le contesta dentro de 24 h, por 72 h todos los mensajes (también plantillas) son gratis. El chat lo indica con 🎁. |
@@ -123,6 +124,7 @@ Lo que se ve en todas las pantallas.
 | 11 | **Cancelar** | Cierra el globo y te deja donde estabas. Ya viene seleccionado: un Enter no te saca por error. | Todos |
 | 12 | **Cerrar sesión** (naranja) | Ahora sí sale del CRM (dice «Saliendo…» mientras). | Todos |
 | 13 | **Aviso de actualización** | Píldora en la barra azul: **«Hay una nueva actualización del CRM: recarga la página»** con el botón naranja **Recargar**. Sale **solo** cuando falló algo que hizo el vendedor (enviar, guardar, adjuntar, abrir un PDF…) porque su pestaña es de antes de una actualización del CRM. **Nunca** sale solo por haber versión nueva, ni por un refresco automático que falló (mensajes nuevos, programados). Donde falló, el mensaje propio también lo dice en la burbuja al enviar, la foto HEIC, el PDF del visor y Mensajes rápidos; las demás pantallas conservan su mensaje. Se quita al recargar. En celular baja como franja azul debajo de la barra (Versión móvil › 13). | Todos |
+| 14 | **Cinta del clima** | Franja que corre **siempre** de derecha a izquierda en la barra azul, entre el logo y el correo, con el clima **medido** de las 24 ciudades de México donde más llueve: **icono** (lo que pasa ahora: sol o luna, medio nublado, nublado, niebla, llovizna, lluvia o tormenta), **ciudad**, **grados** y **lluvia de las últimas 24 h** en mm. Donde está cayendo agua, el icono va en **naranja** y la ciudad pasa al frente. **Nada la detiene** (ni el mouse) y no se le da clic. Grados e icono: el aeropuerto de la ciudad; milímetros: el observatorio del SMN-Conagua. Se actualiza **cada hora** y solo sale de **lunes a sábado de 9:00 a 19:00** (hora de Mazatlán) y en computadora (en el celular no). Una ciudad cuyo dato no es reciente o no cuadra entre el aeropuerto y el observatorio no sale esa hora. Si aparece el aviso de actualización (13), la cinta le cede el lugar. Desde el 2-oct-2026. | Todos |
 
 **En celular** (pantalla de menos de 768 px) el menú lateral se esconde y la barra lleva un botón ☰ que abre el
 mismo menú en un cajón; ver [Versión móvil](#310-versión-móvil-celular).
@@ -137,11 +139,13 @@ pantalla se oscurece un poco). No cambia el tema ni toca nada; con «Reducir mov
 **Pídeselo a Code:**
 - "En Menú › (1) menú lateral, pon Anuncios antes de Mensajes rápidos."
 - "En Menú › (4) correo de la sesión, muestra mi nombre en vez del correo."
+- "En Menú › (14) cinta del clima, que corra más despacio."
 
 <sub>Para Code: `app/(app)/layout.tsx` (sidebar y barra), `nav-item.tsx`, `user-menu.tsx`, `sign-out-button.tsx` y
 `sign-out-confirm.tsx` (globo 10–12), `components/theme-toggle.tsx` (píldora), `theme-circle-transition.ts` (círculo),
 `theme-toggle-eggs.ts` (detalle escondido); estilos en `app/globals.css` › «Interruptor de tema»; aviso de actualización (13): `update-notice.tsx`, `lib/version/` y
-`app/api/version/route.ts`.</sub>
+`app/api/version/route.ts`; cinta del clima (14): `clima-cinta.tsx`, `lib/clima/` (worker: `sync.ts`; foto en Redis) y
+`app/globals.css` › «Cinta del clima»; detalle en `docs/clima.md`.</sub>
 
 ---
 
@@ -1086,7 +1090,7 @@ números dibujados: el número de la tabla nombra la pieza.
 | # | Nombre oficial | Qué hace | Quién lo ve |
 |---|---|---|---|
 | 1 | **Botón ☰ (menú)** | En la barra de arriba, a la izquierda del logo. Abre un cajón con las mismas pestañas del menú lateral y, abajo, el **menú del usuario** (Mi cuenta, Cerrar sesión; esta pide confirmar con el globo de Menú › 10). Se cierra al elegir una pestaña, con ✕, tocando fuera o con Esc. | Todos |
-| 2 | **Barra de arriba (móvil)** | Solo ☰, el logo y el interruptor de tema (la píldora, Menú › 5). El correo y "Cerrar sesión" viven en el menú del usuario (1). | Todos |
+| 2 | **Barra de arriba (móvil)** | Solo ☰, el logo y el interruptor de tema (la píldora, Menú › 5). El correo y "Cerrar sesión" viven en el menú del usuario (1). La cinta del clima (Menú › 14) no sale en el celular. | Todos |
 | 3 | **Bandeja: lista** | Mientras no hay un chat abierto, la lista ocupa toda la pantalla (buscador con su filtro de temperatura, No leído/Todo/Destacado y las filas, igual que en escritorio). | Todos |
 | 4 | **← Volver a la lista** | En el encabezado del chat, a la izquierda del nombre: regresa a la lista (3). | Todos |
 | 5 | **(i) Detalle del contacto** | En el encabezado del chat: abre el mismo Detalle del contacto (3.2.3) encima del chat, a pantalla completa. ✕ lo cierra. En escritorio el detalle es el panel de la derecha, como siempre. | Todos |

@@ -30,7 +30,8 @@ export function UpdateNotice() {
   if (!visible) return null;
   return (
     <>
-      <div className="hidden min-w-0 flex-1 justify-center px-2 md:flex">
+      {/* data-aviso-version: mientras se ve, la cinta del clima cede el centro (globals.css). */}
+      <div data-aviso-version="" className="hidden min-w-0 flex-1 justify-center px-2 md:flex">
         <div
           role="status"
           aria-live="polite"

@@ -944,3 +944,28 @@ html[data-theme-circle]::view-transition-new(root) {
     animation: none !important;
   }
 }
+
+/* ── Cinta del clima de la barra de arriba (clima-cinta.tsx, 2-oct-2026) ─────────────
+   Corre siempre de derecha a izquierda a 40 px/s (la duración la pone el componente según el ancho);
+   va dos veces seguida y se recorre la mitad para que el círculo no tenga salto. Nada la detiene. */
+@keyframes cinta-clima {
+  from {
+    transform: translateX(0);
+  }
+  to {
+    transform: translateX(-50%);
+  }
+}
+.cinta-clima-pista[data-corriendo] {
+  animation: cinta-clima linear infinite;
+  will-change: transform;
+}
+/* Con el aviso «Hay una nueva actualización del CRM» a la vista, el centro de la barra es del aviso. */
+header:has([data-aviso-version]) [data-cinta-clima] {
+  display: none;
+}
+@media (prefers-reduced-motion: reduce) {
+  .cinta-clima-pista[data-corriendo] {
+    animation: none;
+  }
+}
