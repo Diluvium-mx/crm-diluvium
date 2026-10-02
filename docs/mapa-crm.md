@@ -464,7 +464,7 @@ Ningún dato es definitivo: el agente corrige lo que el cliente aclare después.
 | 6 | **¿Tiene problemas de inundaciones?** | Sí · No · No sabe. | Todos |
 | 7 | **¿Cuánta agua entra?** | Centímetros y una descripción opcional. | Todos |
 | 8 | **¿Cuántas entradas?** | Número de entradas. Si lo bajas, pide confirmación porque borra anchos. | Todos |
-| 9 | **Ancho de la entrada (cm)** | Una fila por entrada. | Todos |
+| 9 | **Ancho de la entrada (cm)** | Una fila por entrada. Siempre en **centímetros**, con «cm» a la vista (como el agua, 7). El Agente IA convierte lo que dijo el cliente: 1.75 m → 175 cm, pulgadas × 2.54; un número sin unidad de 10 o más ya son centímetros (230 = 230 cm, nunca metros). | Todos |
 | 10 | **Línea** | Mini o Estándar. | Todos |
 | 11 | **Tamaño sugerido** | Lo calcula el CRM con [Tallas y medidas](#36-agente-ia). | Todos |
 | 12 | **Manual** | Tamaño escrito a mano; manda sobre el sugerido. | Todos |
