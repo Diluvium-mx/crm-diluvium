@@ -43,10 +43,19 @@ infinito y varias oportunidades a lo largo del tiempo sin duplicarse.
 7. 4 reportes: conversaciones nuevas, tiempo de primera respuesta, conversión por etapa, ganadas/perdidas
 8. Mensajes rápidos (antes "Fragmentos"; tabla `snippets` a nivel organización, con variables tipo
    {{nombre}}): respuestas reutilizables. Separados de las plantillas de WhatsApp (Fase 2).
+9. **Canal Instagram (DMs) — entra a v1 (decisión del dueño, 2-oct-2026).** Por Zernio, igual que
+   WhatsApp (sin proveedor nuevo; Instagram Login con solo el permiso de mensajes). GHL ya se
+   desconectó de Instagram y Facebook ese día. Reglas del dueño: el cliente de Instagram es un
+   **contacto aparte** (se identifica por su id de Instagram y su @usuario, sin teléfono) y **no hay
+   botón para unirlo** con uno de WhatsApp: son clientes distintos. El **Agente IA contesta** en
+   Instagram desde que el canal se conecta. Reglas de Meta: ventana de 24 h; de 24 h a 7 días solo
+   un vendedor puede contestar (etiqueta `HUMAN_AGENT`; ni el Agente IA ni las automatizaciones);
+   después, nada hasta que el cliente escriba; no hay plantillas ni se puede escribir primero.
+   Detalle: `docs/instagram.md`. TikTok queda para después.
 
 ### v2 (no tocar antes de terminar v1)
-Automatizaciones visuales, Instagram/Messenger, email, SMS, difusiones masivas, calendario y citas,
-formularios y landing pages, agente IA de calificación.
+Automatizaciones visuales, Messenger, email, SMS, difusiones masivas, calendario y citas,
+formularios y landing pages, agente IA de calificación, TikTok.
 
 > **Agente IA — Fase A (hecha):** mecanismo de modelo multi-proveedor + selector (`lib/ai/`, tabla
 > `ai_config`, pestaña "Agente IA"). Detalle: `docs/agente-ia.md`. **Fase D (24-sep-2026):** la pestaña
@@ -240,6 +249,10 @@ contacts (+)         destacado bool -- 0048 (29-sep-2026): Destacado ⭐ del con
                      combinable (🔥 + ⭐). Es la estrella de la Bandeja y el ⭐ del Embudo. `conversations.is_starred` y
                      el valor 'destacado' de contact_temperature quedan sin uso.
 messages (+)         transcripcion text   -- 0037: nota de voz del cliente (estado en metadata.transcripcion)
+contacts (+)         instagram_id (IGSID, único por org), instagram_username  -- 0055: cliente de Instagram, sin
+                     teléfono (docs/instagram.md); channels.type acepta 'instagram'
+messages (+)         metadata.partesInstagram (ids de las otras partes de UN envío), metadata.avisoEnvio
+                     (salió incompleto)
 ai_agent_drafts (+)  runs jsonb; status "pendiente" = respuesta guardada cuyo envío falló ("Reintentar" la reenvía igual)
                      -- autor de sistema de comentarios "Agente IA" (usuario-sistema-agente-ia, 0037), como "Importado"
 scheduled_messages   id, org_id, conversation_id, created_by_user_id, kind (text|template), body,

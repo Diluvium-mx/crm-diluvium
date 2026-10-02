@@ -5,7 +5,7 @@ import { Mail, MailOpen } from "lucide-react";
 import type { BoardContact } from "../_data/types";
 import { DESTACADO_EMOJI, TEMPERATURES, TEMPERATURE_EMOJI, TEMPERATURE_LABELS, getContactFullName } from "../_data/types";
 import { ContactAvatar } from "./contact-avatar";
-import { formatPhone } from "@/lib/phone-format";
+import { contactHandle } from "@/lib/phone-format";
 import { canMarkRead, funnelTone, unreadBadge, type FunnelSignal } from "@/lib/contacts/funnel-tone";
 import { PhoneLocation } from "@/components/ui/phone-location";
 import { PruebaBadge } from "@/components/ui/prueba-badge";
@@ -39,7 +39,7 @@ export function ContactCardContent({ contact, signal, chatHits = 0 }: { contact:
           <span className="truncate font-medium">{getContactFullName(contact)}</span>
           {contact.esPrueba && <PruebaBadge />}
         </span>
-        <span className="truncate text-muted-foreground">{formatPhone(contact.phoneE164) || "Sin teléfono"}</span>
+        <span className="truncate text-muted-foreground">{contactHandle(contact.phoneE164, contact.instagramUsername)}</span>
         <PhoneLocation phone={contact.phoneE164} />
         {tone && <span className="sr-only">{TONE_LABEL[tone]}</span>}
       </div>

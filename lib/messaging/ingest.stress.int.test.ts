@@ -546,7 +546,7 @@ describe.skipIf(!TEST_DATABASE_URL)("ingesta bajo carga (Postgres real)", () => 
     const [row] = await db.select().from(s.webhookEvents);
     expect(row.processedAt).toBeNull();
     expect(row.deadLetteredAt).not.toBeNull();
-    expect(row.lastError).toMatch(/sin teléfono, BSUID ni conversación/);
+    expect(row.lastError).toMatch(/sin teléfono, BSUID, id de Instagram ni conversación/);
     expect(await count(s.contacts)).toBe(0);
   });
 });

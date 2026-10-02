@@ -1,7 +1,7 @@
 // Reglas puras de los mensajes programados (A6): hora local de Mazatlán ↔
 // instante UTC, límites de fecha y si la ventana de 24 h seguirá abierta a la
 // hora de envío. Sin base de datos, para testearlas solas.
-import { isWindowOpen } from "@/lib/messaging/rules";
+import { canSendFreeForm } from "@/lib/messaging/rules";
 
 export const SCHEDULE_TIME_ZONE = "America/Mazatlan";
 /** Mínimo de anticipación: menos que esto es "enviar ahora". */
@@ -75,9 +75,18 @@ export const SEND_AT_MESSAGES: Record<SendAtError, string> = {
  * ¿Se puede programar TEXTO libre para esa hora? Solo si la ventana de 24 h
  * seguirá abierta entonces. Si el cliente escribe antes, la ventana se renueva,
  * pero al programar no se puede contar con eso: fuera de ventana → plantilla.
+ * Instagram (docs/instagram.md): lo programa un vendedor, así que vale hasta 7 días desde
+ * el último mensaje del cliente; después no hay nada que mandar (no hay plantillas).
  */
-export function textAllowedAt(windowExpiresAt: Date | null, sendAt: Date): boolean {
-  return isWindowOpen(windowExpiresAt, sendAt);
+export function textAllowedAt(windowExpiresAt: Date | null, sendAt: Date, platform: string = "whatsapp"): boolean {
+  return canSendFreeForm(platform, windowExpiresAt, sendAt, true);
+}
+
+/** Motivo cuando a esa hora ya no se podrá mandar texto. */
+export function textClosedMessage(platform: string = "whatsapp"): string {
+  return platform === "instagram"
+    ? "A esa hora habrán pasado más de 7 días desde el último mensaje del cliente: Instagram no deja escribirle hasta que vuelva a escribir."
+    : "A esa hora la ventana de 24 h ya estará cerrada: solo se puede programar una plantilla.";
 }
 
 /**

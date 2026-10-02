@@ -29,7 +29,9 @@ import { AdFreeWindowNote, AdReferralCard } from "./ad-referral-card";
 import {
   bubbleTime,
   dayLabel,
+  canSellerWrite,
   isWindowOpen,
+  sellerDeadline,
   statusMark,
   windowHoursLeft,
 } from "./format";
@@ -48,6 +50,15 @@ const NEAR_BOTTOM_PX = 120;
 // del servidor) y a lo más estas vueltas.
 const JUMP_PAGE_LIMIT = 100;
 const JUMP_MAX_PAGES = 50;
+// Instagram: hasta cuándo puede contestar un vendedor (hora de Mazatlán, como todo el CRM).
+const deadlineFormat = new Intl.DateTimeFormat("es-MX", {
+  timeZone: "America/Mazatlan",
+  weekday: "short",
+  day: "numeric",
+  month: "short",
+  hour: "2-digit",
+  minute: "2-digit",
+});
 
 // Mensaje pintado de forma optimista (aún sin id del servidor). Se reconcilia
 // con el `message.upserted` del SSE: al re-pedir el hilo, se descarta el
@@ -311,6 +322,9 @@ function Bubble({
             {reactions.join(" ")}
           </span>
         )}
+        {out && row.status !== "failed" && view?.sendWarning && (
+          <p className="mt-1 text-right text-[11px] text-amber-200">⚠ {view.sendWarning}</p>
+        )}
         {out && row.status === "failed" && (
           <div className="mt-1 flex items-center justify-end gap-2 text-[11px] text-red-200">
             <span className="text-red-300">{errorMessage ?? "No se envió."}</span>
@@ -381,8 +395,11 @@ export function ChatThread({
 
   const windowOpen = isWindowOpen(detail.windowExpiresAt, nowMs);
   const hoursLeft = windowHoursLeft(detail.windowExpiresAt, nowMs);
+  // Instagram (docs/instagram.md): sin plantillas; un vendedor puede escribir hasta 7 días.
+  const instagram = detail.channel.type === "instagram";
+  const sellerCanWrite = canSellerWrite(detail.channel.type, detail.windowExpiresAt, nowMs);
   // Adjuntos (28-sep-2026): solo con la ventana abierta y el canal sin archivar.
-  const canAttach = windowOpen && !detail.channel.archived;
+  const canAttach = sellerCanWrite && !detail.channel.archived;
   const attachments = useChatAttachments(conversationId);
   const pickerRef = useRef<HTMLInputElement>(null);
 
@@ -771,8 +788,16 @@ export function ChatThread({
         )}
         <div className="min-w-0 flex-1">
           <p className="truncate text-sm font-semibold">{detail.contact.name}</p>
-          <p className="truncate text-xs text-muted-foreground">{formatPhone(detail.contact.phone) || "Sin teléfono"}</p>
-          <PhoneLocation phone={detail.contact.phone} />
+          {instagram ? (
+            <p className="truncate text-xs text-muted-foreground">
+              {detail.contact.instagramUsername ? `@${detail.contact.instagramUsername} · Instagram` : "Instagram"}
+            </p>
+          ) : (
+            <>
+              <p className="truncate text-xs text-muted-foreground">{formatPhone(detail.contact.phone) || "Sin teléfono"}</p>
+              <PhoneLocation phone={detail.contact.phone} />
+            </>
+          )}
         </div>
         {headerAction}
         {detail.channel.isTest && <PruebaBadge />}
@@ -790,6 +815,10 @@ export function ChatThread({
       >
         {windowOpen
           ? `Ventana abierta · quedan ${hoursLeft} h`
+          : instagram
+            ? sellerCanWrite
+              ? `Pasaron 24 h: en Instagram solo un vendedor puede contestar, hasta el ${deadlineFormat.format(sellerDeadline(detail.windowExpiresAt)!)} (el Agente IA y las automatizaciones ya no).`
+              : "Pasaron 7 días desde su último mensaje: Instagram no deja escribirle hasta que vuelva a escribir."
           : detail.windowExpiresAt === null
             ? // Chat abierto por nosotros (primer mensaje, 28-sep-2026): el cliente aún no escribe.
               "El cliente todavía no escribe: mientras no conteste, solo se puede enviar una plantilla (o escríbele gratis desde WhatsApp Web)."
@@ -901,6 +930,7 @@ export function ChatThread({
             key={`sched-${conversationId}`}
             conversationId={conversationId}
             windowExpiresAt={detail.windowExpiresAt}
+            channelType={detail.channel.type}
             refreshToken={revalToken + scheduledRev}
             onCountChange={setScheduledCount}
           />
@@ -922,8 +952,9 @@ export function ChatThread({
         {detail.channel.archived ? <ArchivedComposer /> : <Composer
           key={conversationId}
           conversationId={conversationId}
-          windowOpen={windowOpen}
+          windowOpen={sellerCanWrite}
           windowExpiresAt={detail.windowExpiresAt}
+          channelType={detail.channel.type}
           onSendText={(text) => {
             setCommandNotice(null);
             void doSendOrCommand(text);

@@ -1,5 +1,17 @@
 import { describe, expect, it } from "vitest";
-import { firstResponseSeconds, isAmbiguousSendError, isWindowOpen, nextStatus, SEND_ACCEPTED, SEND_RATE_LIMITED, windowExpiresAt } from "./rules";
+import {
+  canSendFreeForm,
+  firstResponseSeconds,
+  humanAgentExpiresAt,
+  isAmbiguousSendError,
+  isWindowOpen,
+  needsHumanAgentTag,
+  nextStatus,
+  SEND_ACCEPTED,
+  SEND_RATE_LIMITED,
+  SERVICE_WINDOW_MS,
+  windowExpiresAt,
+} from "./rules";
 
 const at = (iso: string) => new Date(iso);
 
@@ -62,5 +74,38 @@ describe("isAmbiguousSendError", () => {
   it("aceptado por Zernio sin confirmar en la base: nunca se reenvía; 429 agotado sí", () => {
     expect(isAmbiguousSendError(SEND_ACCEPTED)).toBe(true);
     expect(isAmbiguousSendError(SEND_RATE_LIMITED)).toBe(false);
+  });
+});
+
+describe("Instagram: 24 h para todos, 7 días solo para un vendedor (docs/instagram.md)", () => {
+  const lastInbound = new Date("2026-10-02T12:00:00Z");
+  const windowEnd = new Date(lastInbound.getTime() + SERVICE_WINDOW_MS);
+  const at = (hours: number) => new Date(lastInbound.getTime() + hours * 3_600_000);
+
+  it("dentro de 24 h: cualquiera, sin etiqueta", () => {
+    expect(canSendFreeForm("instagram", windowEnd, at(23), false)).toBe(true);
+    expect(needsHumanAgentTag("instagram", windowEnd, at(23))).toBe(false);
+  });
+
+  it("de 24 h a 7 días: solo una persona, con HUMAN_AGENT", () => {
+    expect(canSendFreeForm("instagram", windowEnd, at(25), false)).toBe(false);
+    expect(canSendFreeForm("instagram", windowEnd, at(25), true)).toBe(true);
+    expect(canSendFreeForm("instagram", windowEnd, at(167), true)).toBe(true);
+    expect(needsHumanAgentTag("instagram", windowEnd, at(25))).toBe(true);
+    expect(humanAgentExpiresAt(windowEnd)?.toISOString()).toBe(at(168).toISOString());
+  });
+
+  it("después de 7 días: nadie", () => {
+    expect(canSendFreeForm("instagram", windowEnd, at(169), true)).toBe(false);
+  });
+
+  it("WhatsApp no cambia: fuera de 24 h nadie escribe texto (solo plantilla) y nunca hay etiqueta", () => {
+    expect(canSendFreeForm("whatsapp", windowEnd, at(25), true)).toBe(false);
+    expect(needsHumanAgentTag("whatsapp", windowEnd, at(25))).toBe(false);
+  });
+
+  it("sin mensaje del cliente (ventana null) no se puede", () => {
+    expect(canSendFreeForm("instagram", null, at(1), true)).toBe(false);
+    expect(humanAgentExpiresAt(null)).toBeNull();
   });
 });

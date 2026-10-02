@@ -42,6 +42,8 @@ export type ProviderApiView = { id: ProviderId; label: string; envKey: string; s
 export type ChannelAgentView = {
   id: string;
   displayName: string;
+  /** Red del canal: WhatsApp (con número) o Instagram (sin número). */
+  type: "whatsapp" | "instagram";
   phoneE164: string | null;
   isActive: boolean;
   mode: AgentModeValue;

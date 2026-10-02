@@ -142,6 +142,8 @@ export function historyEventFromRest(
     event: {
       kind: "message",
       eventId: `history-${m.id}`,
+      // El historial del celular (coexistencia) es solo de WhatsApp.
+      platform: "whatsapp",
       providerAccountId: accountId,
       providerConversationId: conversation.id,
       direction: outgoing ? "out" : "in",

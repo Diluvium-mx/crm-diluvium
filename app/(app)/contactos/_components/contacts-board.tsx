@@ -695,7 +695,10 @@ export function ContactsBoard({
       if (!nameSearch) return true;
       const nameMatches = normalizeSearch(getContactFullName(contact)).includes(nameSearch);
       const phoneMatches = phoneMatchesSearch(contact.phoneE164, nameSearch);
-      return nameMatches || phoneMatches;
+      // Instagram: también por @usuario (con o sin "@").
+      const handle = nameSearch.replace(/^@+/, "");
+      const userMatches = !!handle && normalizeSearch(contact.instagramUsername ?? "").includes(handle);
+      return nameMatches || phoneMatches || userMatches;
     });
   }, [contacts, nameSearch, filtering, cardFilter, chatTerm, chatCounts]);
   const emptyText =

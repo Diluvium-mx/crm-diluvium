@@ -82,6 +82,7 @@ export function ContactPanel({
       conversationId={detail.id}
       name={contact.name}
       phone={contact.phone}
+      instagramUsername={contact.instagramUsername}
       stage={stage}
       temperature={temperature}
       onStageChange={changeStage}
