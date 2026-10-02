@@ -6,7 +6,7 @@
 import { useRef, useState } from "react";
 import { X } from "lucide-react";
 import { scheduleMessage, updateScheduledMessage } from "@/lib/actions/scheduled";
-import { instantToLocal, localToInstant, textAllowedAt } from "@/lib/scheduled/rules";
+import { instantToLocal, localToInstant, textAllowedAt, textClosedMessage } from "@/lib/scheduled/rules";
 import type { ScheduledView } from "@/lib/scheduled/types";
 import { TemplatePicker } from "./template-picker";
 import { CloseX } from "@/components/ui/close-x";
@@ -27,10 +27,13 @@ export function ScheduleForm({
   onDone,
   onCancel,
   firstName = "",
+  channelType = "whatsapp",
 }: {
   mode: Mode;
   conversationId: string;
   windowExpiresAt: Date | null;
+  /** Instagram: sin plantillas; el texto vale hasta 7 días desde el último mensaje del cliente. */
+  channelType?: "whatsapp" | "instagram";
   onDone: () => void;
   onCancel: () => void;
   /** Primer nombre del contacto para el hueco {{1}} de la plantilla. */
@@ -51,8 +54,10 @@ export function ScheduleForm({
   const inFlight = useRef(false);
 
   const sendAt = localToInstant(when);
-  const textOk = sendAt ? textAllowedAt(windowExpiresAt, sendAt) : true;
+  const textOk = sendAt ? textAllowedAt(windowExpiresAt, sendAt, channelType) : true;
   const canUseText = !(mode.type === "new" && mode.templateOnly);
+  // Instagram no tiene plantillas: solo texto.
+  const canUseTemplate = channelType === "whatsapp";
 
   async function submit(action: () => ReturnType<typeof scheduleMessage>) {
     if (inFlight.current) return;
@@ -111,7 +116,7 @@ export function ScheduleForm({
           <input type="checkbox" checked={cancelIfInbound} onChange={(event) => setCancelIfInbound(event.target.checked)} />
           <span>Cancelar si el cliente escribe antes</span>
         </label>
-        {!editing && canUseText && (
+        {!editing && canUseText && canUseTemplate && (
           <div role="radiogroup" aria-label="Tipo de mensaje" className="ml-auto flex gap-1 rounded-lg bg-muted p-1">
             {(["text", "template"] as const).map((k) => (
               <button
@@ -140,7 +145,9 @@ export function ScheduleForm({
           />
           {!textOk && (
             <p className="text-xs text-amber-700 dark:text-amber-300">
-              A esa hora la ventana de 24 h ya estará cerrada: elige una plantilla o una hora más cercana.
+              {channelType === "instagram"
+                ? textClosedMessage("instagram")
+                : "A esa hora la ventana de 24 h ya estará cerrada: elige una plantilla o una hora más cercana."}
             </p>
           )}
           <div className="flex justify-end">

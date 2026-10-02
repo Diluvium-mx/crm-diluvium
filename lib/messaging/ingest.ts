@@ -9,6 +9,7 @@ import { withTxRetry } from "@/lib/db/retry";
 import { channels, contacts, conversations, messages, webhookEvents } from "@/lib/db/schema";
 import { countryFromPhone, normalizePhone, phoneColumns, phoneLookupVariants } from "@/lib/phone";
 import type {
+  ChannelPlatform,
   MessagingProvider,
   NormalizedMessageChangeEvent,
   NormalizedMessageEvent,
@@ -16,7 +17,7 @@ import type {
   NormalizedStatusEvent,
   ProviderName,
 } from "./provider";
-import { firstResponseSeconds, nextStatus, windowExpiresAt } from "./rules";
+import { firstResponseSeconds, INSTAGRAM_PARTS_META, nextStatus, windowExpiresAt } from "./rules";
 import { noticeWorkflowSendFailed, type FailedOutbound } from "@/lib/workflows/delivery-notice";
 import { ingestHistoryMessage, isPhoneHistory } from "./history";
 import { markKeywordPending } from "@/lib/workflows/keyword-pending";
@@ -283,7 +284,7 @@ async function ingestMessage(
   // número): sin agente, workflows, no leídos, ventana ni primera respuesta.
   if (isPhoneHistory(channel, event)) return ingestHistoryMessage(provider, channel, event, hooks);
 
-  const { phone, bsuid } = eventIdentity(event);
+  const { phone, bsuid, instagramId, username } = eventIdentity(event);
 
   let mediaMessageId: string | undefined;
   // Mensaje NUEVO guardado en este intento (para los ganchos del Agente IA).
@@ -331,18 +332,18 @@ async function ingestMessage(
     }
 
     if (!upserted) {
-      if (!phone && !bsuid) {
+      if (!phone && !bsuid && !instagramId) {
         // Sin teléfono, sin BSUID y sin conversación conocida no hay a quién
         // atribuirlo. NUNCA se descarta: dead-letter (queda en la BD, visible
         // y reprocesable con scripts/replay-webhook-events.ts). Un eco saliente
         // antes se reintenta: su fila puede estar por enlazar los ids (Z1).
         const reason =
-          `${event.direction === "in" ? "entrante" : "eco saliente"} sin teléfono, BSUID ni conversación conocida ` +
+          `${event.direction === "in" ? "entrante" : "eco saliente"} sin teléfono, BSUID, id de Instagram ni conversación conocida ` +
           `(teléfono recibido: ${event.contactPhone ?? "ninguno"}, conversación ${event.providerConversationId})`;
         if (event.direction === "out") throw new UnattributedEchoError(reason);
         throw new DeadLetterIngestError(reason);
       }
-      const contactId = await resolveContact(tx, orgId, { phone, bsuid, name: event.contactName }, undefined, {
+      const contactId = await resolveContact(tx, orgId, { phone, bsuid, instagramId, username, name: event.contactName }, undefined, {
         esPrueba: channel.isTest,
       });
       [upserted] = await tx
@@ -362,10 +363,10 @@ async function ingestMessage(
           },
         })
         .returning();
-    } else if (phone || bsuid) {
+    } else if (phone || bsuid || instagramId) {
       // Conversación ya conocida: su contacto aprende el teléfono/BSUID del
-      // mensaje (los contactos previos no tienen BSUID).
-      await resolveContact(tx, orgId, { phone, bsuid }, upserted.contactId);
+      // mensaje (los contactos previos no tienen BSUID), o su @usuario de Instagram.
+      await resolveContact(tx, orgId, { phone, bsuid, instagramId, username }, upserted.contactId);
     }
 
     // Se BLOQUEA la conversación ANTES de tocar mensajes, en el MISMO orden que
@@ -430,6 +431,9 @@ async function ingestMessage(
         // Eco tardío de un envío del CRM que quedó en duda (timeout): se une a su fila en
         // vez de guardarse como otro mensaje de "otra API" (lib/messaging/late-echo.ts).
         outcome = LATE_ECHO_OUTCOME;
+      } else if (event.platform === "instagram" && (await isInstagramPartEcho(tx, orgId, conversation.id, event.providerMessageId))) {
+        // Eco del pie o de otra parte de un envío del CRM que ya es UNA burbuja (docs/instagram.md).
+        outcome = "eco de otra parte de un envío del CRM";
       }
     }
 
@@ -501,6 +505,7 @@ async function ingestMessage(
             sentAt: event.sentAt,
             conversationChanged: false,
             ad,
+            platform: event.platform,
           });
         }
       } else if (inserted.length === 0) {
@@ -538,6 +543,7 @@ async function ingestMessage(
             sentAt: event.sentAt,
             conversationChanged: adoptProviderConversation,
             ad,
+            platform: event.platform,
           });
         }
       }
@@ -559,8 +565,8 @@ async function ingestMessage(
       // El anuncio que ORIGINÓ la conversación: el primero, no se pisa.
       if (event.referral && !conversation.adReferral) updates.adReferral = event.referral;
       // Cada entrada por anuncio (también la de un cliente que vuelve por otro)
-      // mueve la marca de la ventana gratis de 72 h.
-      if (ad.click) {
+      // mueve la marca de la ventana gratis de 72 h (solo existe en WhatsApp).
+      if (ad.click && event.platform === "whatsapp") {
         updates.adEntryAt =
           conversation.adEntryAt && conversation.adEntryAt > event.sentAt ? conversation.adEntryAt : event.sentAt;
       }
@@ -569,7 +575,7 @@ async function ingestMessage(
     // solo se suma el anuncio si el mensaje real lo trae.
     if (outcome === COMPLETED_OUTCOME) {
       if (event.referral && !conversation.adReferral) updates.adReferral = event.referral;
-      if (ad.click) {
+      if (ad.click && event.platform === "whatsapp") {
         updates.adEntryAt =
           conversation.adEntryAt && conversation.adEntryAt > event.sentAt ? conversation.adEntryAt : event.sentAt;
       }
@@ -805,6 +811,8 @@ async function attributeAd(
     sentAt: Date;
     conversationChanged: boolean;
     ad: { click: RecordedClick | null; fallback: FallbackJob | null };
+    /** Instagram: el anuncio llega SOLO en el webhook (sin respaldo por la conversación de Zernio). */
+    platform: ChannelPlatform;
   },
 ): Promise<void> {
   if (p.referral) {
@@ -816,11 +824,12 @@ async function attributeAd(
       origin: "webhook",
       raw: p.referral,
       clickedAt: p.sentAt,
+      platform: p.platform,
     });
     p.ad.click = click === "error" ? null : click;
     return;
   }
-  if (!p.providerConversationId) return;
+  if (!p.providerConversationId || p.platform !== "whatsapp") return;
   const looksLikeAd = looksLikeAdMessage(p.body, p.metadata);
   let candidate = looksLikeAd || p.conversationChanged;
   if (!candidate) {
@@ -909,6 +918,23 @@ async function isNewestInbound(tx: Tx, orgId: string, conversationId: string, se
  * Conversación (del canal) del mensaje propio al que corresponde un eco: la
  * fila en cola (id interno) o la ya enlazada (wamid).
  */
+/** ¿Este id de Meta es una parte extra (pie, resto del texto) de un envío del CRM ya guardado? */
+async function isInstagramPartEcho(tx: Tx, orgId: string, conversationId: string, providerMessageId: string): Promise<boolean> {
+  const [row] = await tx
+    .select({ id: messages.id })
+    .from(messages)
+    .where(
+      and(
+        eq(messages.organizationId, orgId),
+        eq(messages.conversationId, conversationId),
+        eq(messages.direction, "out"),
+        sql`jsonb_exists(coalesce(${messages.metadata} -> ${INSTAGRAM_PARTS_META}, '[]'::jsonb), ${providerMessageId})`,
+      ),
+    )
+    .limit(1);
+  return !!row;
+}
+
 async function conversationOfOwnMessage(
   tx: Tx,
   orgId: string,
@@ -1014,7 +1040,14 @@ async function reconcileFirstResponse(tx: Tx, conversationId: string): Promise<n
   return firstReply?.at ? firstResponseSeconds(firstIn.at, firstReply.at) : null;
 }
 
-type Identity = { phone: string | null; bsuid: string | null; name?: string };
+type Identity = {
+  phone: string | null;
+  bsuid: string | null;
+  name?: string;
+  /** Instagram: id del cliente para nuestra cuenta (IGSID) — su identidad — y su @usuario. */
+  instagramId?: string | null;
+  username?: string | null;
+};
 
 /**
  * Teléfono y BSUID del mensaje. El teléfono puede faltar (eco sin
@@ -1022,10 +1055,15 @@ type Identity = { phone: string | null; bsuid: string | null; name?: string };
  * se inventa: se atribuye por la conversación existente, o por el BSUID.
  * normalizePhone ya deja a México como +52 + 10 dígitos (quita el 1 heredado).
  */
-export function eventIdentity(event: Pick<NormalizedMessageEvent, "contactPhone" | "contactBsuid">): {
+export function eventIdentity(
+  event: Pick<NormalizedMessageEvent, "contactPhone" | "contactBsuid"> & Partial<Pick<NormalizedMessageEvent, "contactInstagramId" | "contactUsername">>,
+): {
   phone: string | null;
   bsuid: string | null;
+  instagramId: string | null;
+  username: string | null;
 } {
+  const instagram = { instagramId: event.contactInstagramId ?? null, username: event.contactUsername ?? null };
   let phone: string | null = null;
   if (event.contactPhone) {
     try {
@@ -1034,7 +1072,7 @@ export function eventIdentity(event: Pick<NormalizedMessageEvent, "contactPhone"
       phone = null;
     }
   }
-  return { phone, bsuid: event.contactBsuid ?? null };
+  return { phone, bsuid: event.contactBsuid ?? null, ...instagram };
 }
 
 /**
@@ -1063,6 +1101,7 @@ export async function resolveContact(
 ): Promise<string> {
   const { phone, bsuid } = identity;
   await tx.execute(sql`select pg_advisory_xact_lock_shared(hashtextextended(${contactsImportLockKey(orgId)}, 0))`);
+  if (identity.instagramId) return resolveInstagramContact(tx, orgId, identity.instagramId, identity, knownContactId, newContact);
   // Serializa por (organización, identidad): dos mensajes simultáneos de un
   // número nuevo no pueden crear dos contactos. Un candado por CADA identidad
   // del mensaje, en orden fijo (sin interbloqueos).
@@ -1136,6 +1175,65 @@ export async function resolveContact(
       .set({ ...phoneColumns(phone), ...(target.country ? {} : { country: countryFromPhone(phone) }) })
       .where(eq(contacts.id, targetId));
   }
+  return targetId;
+}
+
+/**
+ * Cliente de Instagram (docs/instagram.md): se identifica SOLO por su id de Instagram
+ * (único por organización). Es un contacto aparte de cualquiera de WhatsApp: no se busca
+ * por nombre ni se une con nadie (regla del dueño, 2-oct-2026). El @usuario se guarda y se
+ * actualiza si el cliente lo cambia (solo es para mostrar y buscar).
+ */
+async function resolveInstagramContact(
+  tx: Tx,
+  orgId: string,
+  instagramId: string,
+  identity: Identity,
+  knownContactId: string | undefined,
+  newContact: NewContactOptions,
+): Promise<string> {
+  await tx.execute(sql`select pg_advisory_xact_lock(hashtextextended(${`contact:${orgId}:instagram:${instagramId}`}, 0))`);
+  const username = identity.username?.trim() || null;
+  const [existing] = await tx
+    .select({ id: contacts.id, instagramUsername: contacts.instagramUsername })
+    .from(contacts)
+    .where(and(eq(contacts.organizationId, orgId), eq(contacts.instagramId, instagramId)))
+    .limit(1);
+  const targetId = knownContactId ?? existing?.id;
+  if (!targetId) {
+    const id = crypto.randomUUID();
+    const name = identity.name?.trim();
+    await tx.insert(contacts).values({
+      id,
+      organizationId: orgId,
+      // Nombre del perfil de Instagram; si no viene, el @usuario; si tampoco, algo legible.
+      firstName: name || (username ? `@${username}` : "Cliente de Instagram"),
+      instagramId,
+      instagramUsername: username,
+      source: newContact.source ?? "instagram",
+      sourceChannel: "instagram",
+      esPrueba: newContact.esPrueba ?? false,
+      stage: sql`coalesce((select fs.key from funnel_stages fs where fs.organization_id = ${orgId} and fs.role = 'entrada'), 'inbox')`,
+      stageChangedAt: new Date(),
+    });
+    return id;
+  }
+  if (existing && existing.id !== targetId) {
+    console.warn(`[ingest] instagram: la conversación es del contacto ${targetId}, pero su id de Instagram es de ${existing.id}`);
+    return targetId;
+  }
+  // Aprender el id (conversación conocida) y el @usuario vigente, si nadie más tiene el id.
+  const [target] = await tx
+    .select({ instagramId: contacts.instagramId, instagramUsername: contacts.instagramUsername })
+    .from(contacts)
+    .where(and(eq(contacts.id, targetId), eq(contacts.organizationId, orgId)));
+  if (!target) return targetId;
+  const learn: Partial<typeof contacts.$inferInsert> = {};
+  if (!target.instagramId && !existing) learn.instagramId = instagramId;
+  if (username && target.instagramUsername !== username && (target.instagramId === instagramId || learn.instagramId)) {
+    learn.instagramUsername = username;
+  }
+  if (Object.keys(learn).length > 0) await tx.update(contacts).set(learn).where(eq(contacts.id, targetId));
   return targetId;
 }
 

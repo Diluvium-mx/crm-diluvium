@@ -121,6 +121,8 @@ export function classifySendError(error: unknown): string | null {
   const e = asObj(error);
   const name = str(e.name);
   const code = str((e as { code?: unknown }).code);
+  // Instagram (docs/instagram.md): el motivo ya viene escrito para Instagram (24 h / 7 días).
+  if (name === "SendRejectedError" && /instagram/i.test(str(e.message))) return str(e.message);
   if (name === "SendRejectedError") return SEND_REJECTED_TEXT[code] ?? `El CRM no pudo enviar el mensaje (${detalle(e) || code}).`;
   if ((e as { outcome?: unknown }).outcome === "rejected") {
     const d = detalle(e);

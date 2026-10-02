@@ -1,6 +1,6 @@
 // Contrato de datos backend → UI de la bandeja (docs/bandeja.md). Solo
 // tipos: la UI (Client Components) puede importarlo sin arrastrar el servidor.
-import type { NormalizedMessageType } from "@/lib/messaging/provider";
+import type { ChannelPlatform, NormalizedMessageType } from "@/lib/messaging/provider";
 import type { MediaPreview } from "@/lib/messaging/media-type";
 
 import type { TemperatureFilter } from "@/lib/contacts/filters";
@@ -26,6 +26,8 @@ export type InboxContact = {
   firstName: string;
   lastName: string | null;
   phone: string | null;
+  /** Cliente de Instagram: su @usuario (sin "@"); no tiene teléfono (docs/instagram.md). */
+  instagramUsername: string | null;
   /** Misma regla que contact-avatar: primera letra de nombre y apellido; null → ícono de persona. */
   avatarInitials: string | null;
   /** Canal de origen (badge del avatar), p. ej. "whatsapp". */
@@ -56,6 +58,8 @@ export type ConversationListItem = {
   windowExpiresAt: Date | null;
   /** El canal de la conversación es de PRUEBA (etiqueta "Prueba"). */
   isTestChannel: boolean;
+  /** Red de la conversación: WhatsApp o Instagram (ícono y reglas de la ventana). */
+  channelType: ChannelPlatform;
   /**
    * Búsqueda en los chats (lupa amarilla): cuántos mensajes tienen la palabra (círculo
    * amarillo) y el texto de la coincidencia más reciente (vista previa). null = sin búsqueda.
@@ -90,8 +94,8 @@ export type ConversationDetail = {
    * respuesta del negocio dentro de 24 h). null = no llegó por anuncio.
    */
   adEntry: { entryAt: Date; firstReplyAt: Date | null } | null;
-  /** Canal de la conversación: de prueba (etiqueta) y archivado (sin envíos). */
-  channel: { isTest: boolean; archived: boolean };
+  /** Canal de la conversación: de prueba (etiqueta), archivado (sin envíos) y su red. */
+  channel: { isTest: boolean; archived: boolean; type: ChannelPlatform };
 };
 
 export type AttachmentView = {
@@ -130,6 +134,8 @@ export type MessageView = {
   errorMessage: string | null;
   /** true solo si "Reintentar" es seguro (no duplica al cliente). */
   canRetry: boolean;
+  /** Salió, pero incompleto (Instagram: una parte del texto o el pie no salió). */
+  sendWarning: string | null;
   sentAt: Date;
   adReferral: AdReferral | null;
   /** Reacción vigente de cada lado (WhatsApp: una por persona). */

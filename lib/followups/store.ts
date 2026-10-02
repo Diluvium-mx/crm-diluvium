@@ -110,6 +110,7 @@ async function loadSignals(
       agentState: conversations.agentState,
       windowExpiresAt: conversations.windowExpiresAt,
       mode: channels.aiAgentMode,
+      channelType: channels.type,
     })
     .from(conversations)
     .innerJoin(contacts, and(eq(contacts.id, conversations.contactId), eq(contacts.organizationId, organizationId)))
@@ -135,7 +136,9 @@ async function loadSignals(
     },
     zone: zoneForPhone(row.phone),
     manualPause: await manualPauseOf(organizationId, conversationId, row.agentState),
-    channelOn: row.mode === "auto",
+    // Solo WhatsApp con el Agente IA encendido: Instagram no tiene plantillas y lleva su
+    // propia regla de 7 días (docs/instagram.md); sus seguimientos quedan para después.
+    channelOn: row.mode === "auto" && row.channelType === "whatsapp",
     windowExpiresAt: row.windowExpiresAt,
     lastTemplateAt: await lastTemplateAt(organizationId, contactId, now),
   };
@@ -212,7 +215,7 @@ async function applyReading(r: FollowUpReading): Promise<string | null> {
       await closeRow(db, existing, "cancelado", "agente_apagado", now);
       await announce(db, organizationId, conversationId, contactId);
     }
-    return "seguimiento: no (el Agente IA está apagado en el canal)";
+    return "seguimiento: no (canal sin Agente IA o que no es WhatsApp)";
   }
 
   const { caso, ajuste } = finalCase(r.ficha, signals.hard);

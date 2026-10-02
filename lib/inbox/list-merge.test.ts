@@ -5,7 +5,7 @@ import type { ConversationListItem } from "./types";
 function item(id: string, at: string | null, unread = 0): ConversationListItem {
   return {
     id,
-    contact: { id: `c_${id}`, name: id, firstName: id, lastName: null, phone: null, avatarInitials: "X", sourceChannel: null },
+    contact: { id: `c_${id}`, name: id, firstName: id, lastName: null, phone: null, instagramUsername: null, avatarInitials: "X", sourceChannel: null },
     lastMessage: at ? { preview: "hola", direction: "in", kind: "text", at: new Date(at) } : null,
     unreadCount: unread,
     isStarred: false,
@@ -13,6 +13,7 @@ function item(id: string, at: string | null, unread = 0): ConversationListItem {
     awaitingReplySince: null,
     windowExpiresAt: null,
     isTestChannel: false,
+    channelType: "whatsapp",
     chatMatch: null,
   };
 }

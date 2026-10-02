@@ -1,4 +1,5 @@
-// Contrato entre el CRM y el proveedor de WhatsApp. Hoy: Zernio (coexistencia).
+// Contrato entre el CRM y el proveedor de mensajería. Hoy: Zernio, con WhatsApp
+// (coexistencia) e Instagram (DMs, 2-oct-2026; docs/instagram.md).
 // Mañana, si se migra a la Cloud API directa de Meta, se agrega otro adaptador
 // que cumpla esta interfaz y el resto del CRM (webhook, worker, envío) no cambia.
 //
@@ -8,6 +9,9 @@ import type { ConversationClick } from "@/lib/ads/referral";
 import type { TemplateVariable } from "@/lib/templates/types";
 
 export type ProviderName = "zernio" | "meta_cloud";
+
+/** Red social del canal (channels.type). */
+export type ChannelPlatform = "whatsapp" | "instagram";
 
 export type NormalizedMessageType =
   | "text"
@@ -40,6 +44,8 @@ export type NormalizedAttachment = {
 export type NormalizedMessageEvent = {
   kind: "message";
   eventId: string;
+  /** Red del mensaje: decide la identidad del contacto (teléfono/BSUID o id de Instagram). */
+  platform: ChannelPlatform;
   providerAccountId: string;
   providerConversationId: string;
   direction: "in" | "out";
@@ -52,6 +58,10 @@ export type NormalizedMessageEvent = {
   contactPhone: string | null;
   // Business-scoped user ID de WhatsApp: identidad de respaldo sin teléfono.
   contactBsuid?: string;
+  /** Instagram: id del cliente para nuestra cuenta (IGSID). Es su identidad (no hay teléfono). */
+  contactInstagramId?: string;
+  /** Instagram: @usuario del cliente (sin "@"), solo para mostrar y buscar. */
+  contactUsername?: string;
   contactName?: string;
   type: NormalizedMessageType;
   body: string | null;
@@ -143,9 +153,20 @@ export type WebhookEnvelope = {
   providerAccountId?: string;
 };
 
-export type SendTextInput = {
+/**
+ * A quién y por dónde va un envío. `platform` (default whatsapp) decide las reglas de la
+ * red: en Instagram el texto va en partes de 1,000 bytes como máximo y el pie de un archivo
+ * sale como otro mensaje (docs/instagram.md). `humanAgentTag`: Instagram entre 24 h y 7 días
+ * desde el último mensaje del cliente; solo para respuestas que escribió un vendedor.
+ */
+export type SendTarget = {
   providerAccountId: string;
   providerConversationId: string;
+  platform?: ChannelPlatform;
+  humanAgentTag?: boolean;
+};
+
+export type SendTextInput = SendTarget & {
   text: string;
   /**
    * Clave de idempotencia (el id de NUESTRO mensaje): reintentar con la misma
@@ -183,6 +204,14 @@ export class SendFailedError extends Error {
 export type SendResult = {
   providerInternalId: string;
   providerMessageId?: string;
+  /**
+   * Instagram: ids de las OTRAS partes del mismo envío (el pie de un archivo, o el resto de
+   * un texto largo). La burbuja del CRM es una sola: los ecos de estas partes se reconocen
+   * por aquí y no se guardan como otro mensaje.
+   */
+  extraProviderMessageIds?: string[];
+  /** Salió, pero no completo (p. ej. Instagram rechazó el pie): se muestra en la burbuja. */
+  warning?: string;
 };
 
 // ─── Plantillas (aprobadas por Meta) ────────────────────────────────────────
@@ -222,9 +251,7 @@ export type SendTemplateInput = {
 };
 
 /** Media saliente (Fase D): imagen, video o documento desde la biblioteca. */
-export type SendMediaInput = {
-  providerAccountId: string;
-  providerConversationId: string;
+export type SendMediaInput = SendTarget & {
   /**
    * URL PÚBLICA y temporal del archivo (firmada, sin encabezados de auth): el
    * proveedor la descarga para reenviarla a WhatsApp. Nunca la URL del bucket

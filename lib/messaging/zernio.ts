@@ -1,4 +1,5 @@
-// Adaptador Zernio (WhatsApp con coexistencia). Formatos tomados del adaptador
+// Adaptador Zernio (WhatsApp con coexistencia, e Instagram desde el 2-oct-2026:
+// docs/instagram.md). Formatos tomados del adaptador
 // oficial de Zernio (github.com/zernio-dev/chat-sdk-adapter, src/types.ts y
 // src/webhook.ts) y de docs.zernio.com/webhooks:
 // - firma: X-Zernio-Signature = HMAC-SHA256 hex del body crudo con el secret
@@ -15,6 +16,7 @@ import { createHmac, timingSafeEqual } from "node:crypto";
 import { z } from "zod";
 import {
   SendFailedError,
+  type ChannelPlatform,
   type CreateTemplateInput,
   type CreateTemplateResult,
   type DeleteTemplateInput,
@@ -42,6 +44,7 @@ import {
   templateVariablesFromBody,
 } from "./template-format";
 import { clickFromZernioConversation, extractReferral, type ConversationClick } from "@/lib/ads/referral";
+import { splitInstagramText } from "./instagram-text";
 
 const DEFAULT_BASE_URL = "https://zernio.com/api";
 // Respaldo de anuncios por el listado de conversaciones (docs.zernio.com,
@@ -111,6 +114,9 @@ const attachmentSchema = z
   .object({
     type: z.string(),
     url: z.string(),
+    // Instagram: el tipo de Meta antes de que Zernio lo normalice (story_mention, ig_post…).
+    originalType: z.string().nullish(),
+    mimeType: z.string().nullish(),
     payload: z.record(z.string(), z.unknown()).optional(),
   })
   .passthrough();
@@ -128,6 +134,7 @@ const conversationSchema = z
     id: zernioConversationId,
     participantId: z.string().nullish(),
     participantName: z.string().nullish(),
+    participantUsername: z.string().nullish(),
   })
   .passthrough();
 
@@ -151,6 +158,7 @@ const messageEventSchema = z.object({
         .object({
           id: z.string().nullish(),
           name: z.string().nullish(),
+          username: z.string().nullish(),
           phoneNumber: z.string().nullish(),
           businessScopedUserId: z.string().nullish(),
         })
@@ -158,6 +166,9 @@ const messageEventSchema = z.object({
       // Puede faltar (formato plano): se usa la hora del sobre o la de recepción.
       sentAt: z.string().nullish(),
       source: z.string().optional(),
+      // Quién produjo un saliente en Zernio (api, human, workflow…). null = desde la app
+      // de la propia red (Instagram en el celular). undefined = no vino (WhatsApp).
+      sentVia: z.string().nullable().optional(),
     })
     .passthrough(),
   conversation: conversationSchema,
@@ -222,6 +233,34 @@ function attachmentType(type: string): NormalizedMessageType {
   }
 }
 
+/** Redes que el CRM procesa (channels.type). Lo demás se registra sin procesar. */
+export function supportedPlatform(platform: string): ChannelPlatform | null {
+  return platform === "whatsapp" || platform === "instagram" ? platform : null;
+}
+
+// Instagram manda lo que el cliente COMPARTE (una mención en su historia, una publicación)
+// como adjunto "share", sin texto. Sin esta etiqueta la burbuja y el Agente IA verían un
+// mensaje vacío; con ella saben qué pasó. El archivo se descarga igual (docs/instagram.md).
+const INSTAGRAM_SHARE_LABEL: Record<string, string> = {
+  story_mention: "📎 Te mencionó en su historia",
+  ig_story: "📎 Compartió una historia",
+  ig_post: "📎 Compartió una publicación",
+  post: "📎 Compartió una publicación",
+  ig_reel: "📎 Compartió un reel",
+  reel: "📎 Compartió un reel",
+};
+const INSTAGRAM_WITHHELD = "📎 Instagram no deja ver este mensaje en el CRM; ábrelo en la app de Instagram";
+
+function instagramLabel(attachments: { type: string; originalType?: string | null }[], metadata: Record<string, unknown> | null | undefined): string | null {
+  if (metadata?.noRenderableContent === true) return INSTAGRAM_WITHHELD;
+  if (metadata?.isStoryMention === true) return INSTAGRAM_SHARE_LABEL.story_mention;
+  for (const a of attachments) {
+    const label = (a.originalType && INSTAGRAM_SHARE_LABEL[a.originalType]) || (a.type === "share" ? "📎 Compartió una publicación" : null);
+    if (label) return label;
+  }
+  return null;
+}
+
 // Un valor es teléfono solo si, sin separadores, son 8-15 dígitos con o sin
 // "+" (Zernio a veces lo manda sin prefijo). Un BSUID ("MX.1446…") o cualquier
 // otro id NO se convierte en teléfono: antes se le sacaban los dígitos y
@@ -236,6 +275,12 @@ function asPhone(value: string | null | undefined): string | null {
 const BSUID_PATTERN = /^[A-Z]{2}\.[0-9A-Za-z]+$/;
 function asBsuid(value: string | null | undefined): string | undefined {
   return value && BSUID_PATTERN.test(value) ? value : undefined;
+}
+
+/** @usuario de Instagram sin "@" ni espacios (solo para mostrar y buscar; no es identidad). */
+function cleanUsername(value: string | null | undefined): string | undefined {
+  const clean = value?.trim().replace(/^@+/, "");
+  return clean ? clean : undefined;
 }
 
 function firstOf<T>(...values: (T | null | undefined)[]): T | null {
@@ -404,7 +449,8 @@ export function normalizeZernioEvent(payload: unknown, context: { receivedAt?: D
       return { kind: "ignored", eventId, event, reason: `formato no reconocido: ${parsed.error.issues[0]?.message}`, malformed: true };
     }
     const { message, conversation, account, metadata } = parsed.data;
-    if (account.platform !== "whatsapp") {
+    const platform = supportedPlatform(account.platform);
+    if (!platform) {
       return { kind: "ignored", eventId, event, reason: `plataforma ${account.platform}` };
     }
     // La MISMA cuenta que revisó la allowlist del webhook.
@@ -423,18 +469,22 @@ export function normalizeZernioEvent(payload: unknown, context: { receivedAt?: D
     // Copia del historial del celular (coexistencia): Zernio la marca con
     // source "coexistence_history" (docs.zernio.com, List messages → metadata).
     // No se sabe si además dispara webhooks; si llega, NUNCA se trata como vivo.
-    const history = isCoexistenceHistory(message.source, parsed.data.source, metadata?.source);
+    const history = platform === "whatsapp" && isCoexistenceHistory(message.source, parsed.data.source, metadata?.source);
     // En el historial, lo saliente lo escribió el negocio desde la app del celular.
+    // Instagram: `sentVia: null` = lo mandó un vendedor desde la app de Instagram (o lo
+    // escribió en el panel de Zernio: "human"); "api" y demás = automático u otra API.
+    // Ausente NO cuenta como app: el eco de un envío del propio CRM pausaría al agente.
+    const fromInstagramApp = platform === "instagram" && (message.sentVia === null || message.sentVia === "human");
     const source = !outgoing
       ? "contact"
-      : echoSource === "whatsappbusinessapp" || history
+      : echoSource === "whatsappbusinessapp" || history || fromInstagramApp
         ? "business_app"
         : "other_api";
 
     const attachments: NormalizedAttachment[] = message.attachments.map((a) => ({
       type: attachmentType(a.type),
       url: a.url,
-      mimeType: asString(a.payload?.mimeType) ?? asString(a.payload?.mime_type),
+      mimeType: asString(a.mimeType) ?? asString(a.payload?.mimeType) ?? asString(a.payload?.mime_type),
       fileName: asString(a.payload?.filename) ?? asString(a.payload?.fileName),
       providerMediaId: asString(a.payload?.id),
       sha256: asString(a.payload?.sha256),
@@ -476,9 +526,14 @@ export function normalizeZernioEvent(payload: unknown, context: { receivedAt?: D
       sentAt = ahead.at;
       sentAtFromReceipt = true;
     }
+    // Instagram: el cliente es SIEMPRE el participante (en un eco, el "sender" es nuestra
+    // cuenta). Su id (IGSID) es numérico: jamás se lee como teléfono.
+    const instagram = platform === "instagram";
+    const body = message.text ?? (instagram ? instagramLabel(message.attachments, metadata) : null);
     return {
       kind: "message",
       eventId,
+      platform,
       providerAccountId,
       providerConversationId: conversation.id,
       direction: outgoing ? "out" : "in",
@@ -486,16 +541,26 @@ export function normalizeZernioEvent(payload: unknown, context: { receivedAt?: D
       providerMessageId: message.platformMessageId,
       providerInternalId: message.id,
       // En un eco saliente el "sender" es el negocio: el contacto es el participante.
-      contactPhone: outgoing
-        ? asPhone(conversation.participantId)
-        : firstOf(asPhone(message.sender.phoneNumber), asPhone(message.sender.id), asPhone(conversation.participantId)),
-      contactBsuid: outgoing
-        ? asBsuid(conversation.participantId)
-        : (asBsuid(message.sender.businessScopedUserId) ?? asBsuid(message.sender.id) ?? asBsuid(conversation.participantId)),
+      contactPhone: instagram
+        ? null
+        : outgoing
+          ? asPhone(conversation.participantId)
+          : firstOf(asPhone(message.sender.phoneNumber), asPhone(message.sender.id), asPhone(conversation.participantId)),
+      contactBsuid: instagram
+        ? undefined
+        : outgoing
+          ? asBsuid(conversation.participantId)
+          : (asBsuid(message.sender.businessScopedUserId) ?? asBsuid(message.sender.id) ?? asBsuid(conversation.participantId)),
+      ...(instagram
+        ? {
+            contactInstagramId: asString(conversation.participantId) ?? (outgoing ? undefined : asString(message.sender.id)),
+            contactUsername: cleanUsername(conversation.participantUsername ?? (outgoing ? null : message.sender.username)),
+          }
+        : {}),
       contactName:
         (outgoing ? conversation.participantName : (message.sender.name ?? conversation.participantName)) ?? undefined,
-      type,
-      body: message.text ?? null,
+      type: instagram && type === "unknown" && body ? "text" : type,
+      body,
       attachments,
       sentAt,
       ...(sentAtFromReceipt ? { sentAtFromReceipt } : {}),
@@ -513,7 +578,7 @@ export function normalizeZernioEvent(payload: unknown, context: { receivedAt?: D
       return { kind: "ignored", eventId, event, reason: `formato no reconocido: ${parsed.error.issues[0]?.message}`, malformed: true };
     }
     const { reaction, conversation, account } = parsed.data;
-    if (account.platform !== "whatsapp") return { kind: "ignored", eventId, event, reason: `plataforma ${account.platform}` };
+    if (!supportedPlatform(account.platform)) return { kind: "ignored", eventId, event, reason: `plataforma ${account.platform}` };
     const providerAccountId = zernioAccountId(payload);
     if (!providerAccountId) return { kind: "ignored", eventId, event, reason: "cuenta ausente o contradictoria", malformed: true };
     // Doc de Zernio: quien reacciona "usually the participant", pero es el
@@ -547,7 +612,7 @@ export function normalizeZernioEvent(payload: unknown, context: { receivedAt?: D
       return { kind: "ignored", eventId, event, reason: `formato no reconocido: ${parsed.error.issues[0]?.message}`, malformed: true };
     }
     const data = parsed.data;
-    if (data.account.platform !== "whatsapp") return { kind: "ignored", eventId, event, reason: `plataforma ${data.account.platform}` };
+    if (!supportedPlatform(data.account.platform)) return { kind: "ignored", eventId, event, reason: `plataforma ${data.account.platform}` };
     const providerAccountId = zernioAccountId(payload);
     if (!providerAccountId) return { kind: "ignored", eventId, event, reason: "cuenta ausente o contradictoria", malformed: true };
     const changedAt = validDate(event === "message.edited" ? data.editedAt : data.deletedAt) ?? validDate(data.timestamp);
@@ -708,7 +773,10 @@ export class ZernioProvider implements MessagingProvider {
   // reintento con la misma clave (24 h) devuelve la respuesta original en vez
   // de mandar otro mensaje. Zernio libera la clave cuando responde error, así
   // que un fallo AMBIGUO se marca "unknown" y se reconcilia antes de reintentar.
-  async sendText({ providerAccountId, providerConversationId, text, idempotencyKey }: SendTextInput): Promise<SendResult> {
+  async sendText({ providerAccountId, providerConversationId, text, idempotencyKey, platform, humanAgentTag }: SendTextInput): Promise<SendResult> {
+    if (platform === "instagram") {
+      return this.sendInstagramParts(providerConversationId, { accountId: providerAccountId, ...instagramTag(humanAgentTag) }, idempotencyKey, [], text);
+    }
     return this.postToConversation(providerConversationId, { accountId: providerAccountId, message: text }, idempotencyKey);
   }
 
@@ -733,7 +801,7 @@ export class ZernioProvider implements MessagingProvider {
   // (docs/fase-d-diseno.md §0.3): attachmentUrl (pública) + attachmentType
   // image|video|audio|file + attachmentName (documentos) + message (pie).
   // El objeto `media: {url,type}` de la guía del inbox NO funciona (400).
-  async sendMedia({ providerAccountId, providerConversationId, url, kind, caption, fileName, idempotencyKey }: SendMediaInput): Promise<SendResult> {
+  async sendMedia({ providerAccountId, providerConversationId, url, kind, caption, fileName, idempotencyKey, platform, humanAgentTag }: SendMediaInput): Promise<SendResult> {
     const target = new URL(url);
     if (target.protocol !== "https:") throw new ZernioSendError(0, "media_url_insegura", "La URL del archivo debe ser https", "rejected");
     const body: Record<string, unknown> = {
@@ -742,8 +810,64 @@ export class ZernioProvider implements MessagingProvider {
       attachmentType: kind === "document" ? "file" : kind,
     };
     if (kind === "document" && fileName) body.attachmentName = fileName;
+    if (platform === "instagram") {
+      // Instagram no tiene pie de foto: Zernio manda el archivo y luego el texto como OTRO
+      // mensaje (devuelve los dos ids). Un pie de más de 1,000 bytes sale en partes después.
+      const tag = instagramTag(humanAgentTag);
+      const parts = splitInstagramText(caption ?? "");
+      if (parts.length === 1) Object.assign(body, { message: parts[0] });
+      return this.sendInstagramParts(providerConversationId, { ...body, ...tag }, idempotencyKey, parts.length > 1 ? parts : [], null);
+    }
     if (caption) body.message = caption;
     return this.postToConversation(providerConversationId, body, idempotencyKey);
+  }
+
+  /**
+   * Un envío de Instagram en varias partes con UNA burbuja en el CRM (docs/instagram.md):
+   * el primer POST (`first` = archivo con o sin pie, o la 1ª parte de `text`) usa la clave
+   * del mensaje; cada parte siguiente, la misma clave con "-p2", "-p3"… Repetir todo el
+   * envío (un 429 de cualquier parte) no duplica lo que ya salió: Zernio devuelve la
+   * respuesta guardada de cada clave. Si la 1ª falla, el envío falla como siempre; si falla
+   * una parte posterior (que no sea 429), el mensaje cuenta como enviado con un aviso.
+   */
+  private async sendInstagramParts(
+    providerConversationId: string,
+    first: Record<string, unknown>,
+    idempotencyKey: string,
+    restParts: string[],
+    text: string | null,
+  ): Promise<SendResult> {
+    const textParts = text === null ? [] : splitInstagramText(text);
+    if (text !== null && textParts.length === 0) throw new ZernioSendError(0, "empty", "El mensaje está vacío", "rejected");
+    const firstBody = text === null ? first : { ...first, message: textParts[0] };
+    const following = text === null ? restParts : textParts.slice(1);
+    const { data, status } = await this.postSend(
+      `/v1/inbox/conversations/${encodeURIComponent(providerConversationId)}/messages`,
+      firstBody,
+      idempotencyKey,
+    );
+    const result = instagramSendIds(data, status);
+    const tag = { ...(first.messagingType ? { messagingType: first.messagingType, messageTag: first.messageTag } : {}) };
+    const total = following.length + 1;
+    for (const [i, part] of following.entries()) {
+      try {
+        const next = await this.postSend(
+          `/v1/inbox/conversations/${encodeURIComponent(providerConversationId)}/messages`,
+          { accountId: first.accountId, message: part, ...tag },
+          `${idempotencyKey}-p${i + 2}`,
+        );
+        const ids = instagramSendIds(next.data, next.status);
+        result.extraProviderMessageIds = [...(result.extraProviderMessageIds ?? []), ids.providerInternalId, ...(ids.extraProviderMessageIds ?? [])];
+      } catch (error) {
+        // Saturado: se repite TODO el envío más tarde (lo ya salido no se duplica).
+        if (error instanceof SendFailedError && error.outcome === "rate_limited") throw error;
+        const reason = error instanceof Error ? error.message : String(error);
+        const lost = error instanceof SendFailedError && error.outcome === "rejected" ? "no salió" : "no se confirmó";
+        result.warning = `La parte ${i + 2} de ${total} del texto ${lost} en Instagram: ${reason}`.slice(0, 500);
+        break;
+      }
+    }
+    return result;
   }
 
   // GET /v1/whatsapp/templates?accountId=… (docs.zernio.com). FALLA CERRADO:
@@ -968,6 +1092,32 @@ export class ZernioProvider implements MessagingProvider {
     }
     return parsed as Record<string, unknown>;
   }
+}
+
+/** Etiqueta de Meta para contestar en Instagram entre 24 h y 7 días (solo un vendedor). */
+function instagramTag(humanAgentTag: boolean | undefined): Record<string, string> {
+  return humanAgentTag ? { messagingType: "MESSAGE_TAG", messageTag: "HUMAN_AGENT" } : {};
+}
+
+/**
+ * Ids de un envío de Instagram aceptado: `messageId` es el id de Meta del mensaje (el mismo
+ * `platformMessageId` que trae su eco). Con archivo + texto, Zernio manda DOS mensajes y
+ * `messageIds` trae ambos (el 1º = el archivo); `partialFailure` = salió el archivo pero
+ * Meta rechazó el texto.
+ */
+function instagramSendIds(data: Record<string, unknown>, status: number): SendResult {
+  const returned = asString(data.messageId) ?? asString(data.id);
+  if (!returned) throw new ZernioSendError(status, "sin_message_id", "Zernio no devolvió messageId", "unknown");
+  const all = Array.isArray(data.messageIds) ? data.messageIds.map(asString).filter((id): id is string => !!id) : [];
+  const extra = all.filter((id) => id !== returned);
+  const partial = asRecord(data.partialFailure);
+  const partialError = asString(partial.error);
+  return {
+    providerInternalId: returned,
+    providerMessageId: returned,
+    ...(extra.length ? { extraProviderMessageIds: extra } : {}),
+    ...(Object.keys(partial).length ? { warning: `Salió el archivo, pero Instagram rechazó el texto${partialError ? `: ${partialError}` : ""}`.slice(0, 500) } : {}),
+  };
 }
 
 /**
