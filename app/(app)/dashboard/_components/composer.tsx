@@ -42,11 +42,14 @@ import { WorkflowPicker } from "./workflow-picker";
 
 // Alto justo para el texto, entre los 2 renglones de `rows` y el max-height de la clase.
 // Vacía se queda en 2 renglones: Chrome mide también el texto gris de ayuda, y
-// la caja daría un brinco al escribir la primera letra.
+// la caja daría un brinco al escribir la primera letra. Vacía también regresa
+// arriba (2-oct-2026): tras enviar un mensaje largo que se desplazaba por dentro,
+// el texto gris quedaba recorrido medio renglón hacia arriba.
 function fitToContent(el: HTMLTextAreaElement) {
   if (!el.value) {
     el.style.height = "";
     el.style.overflowY = "";
+    el.scrollTop = 0;
     return;
   }
   const style = getComputedStyle(el);
