@@ -15,6 +15,9 @@ import { FunnelStagesProvider } from "./_components/funnel-stages-provider";
 import { listFunnelStages } from "@/lib/contacts/funnel-stages";
 import type { FunnelStage } from "@/lib/contacts/stages";
 import { ThemeToggle } from "@/components/theme-toggle";
+import { ClimaCinta } from "./_components/clima-cinta";
+import { itemsCinta } from "@/lib/clima/cinta";
+import { leerFotoClima } from "@/lib/clima/store";
 
 // "Dashboard" va primero y es el destino al entrar (/inicio). La Bandeja
 // conserva su URL histórica /dashboard. "Reportes" (/reports, sin página) se
@@ -69,6 +72,9 @@ export default async function AppLayout({
       : []),
   ];
   const roleLabel = role && isTeamRole(role) ? ROLE_LABELS[role] : "";
+  // Cinta del clima (2-oct-2026): la foto la deja el worker en Redis cada hora; si Redis falla o tarda
+  // más de 300 ms, la cinta no sale y la página no se frena.
+  const cinta = role ? itemsCinta(await leerFotoClima(), new Date()) : [];
 
   return (
     <FunnelStagesProvider initial={stages}>
@@ -121,6 +127,8 @@ export default async function AppLayout({
           {/* «Hay una nueva actualización del CRM»: solo cuando algo falló por versión vieja
               (escritorio: píldora aquí en medio; celular: franja debajo de la barra). */}
           <UpdateNotice />
+          {/* Clima de las ciudades donde más llueve: corre siempre, solo en escritorio y en horario de trabajo. */}
+          {role && <ClimaCinta inicial={cinta} />}
           {/* En móvil el correo y "Cerrar sesión" viven en el menú del usuario (cajón ☰):
               la barra solo deja el tema. */}
           <div className="flex min-w-0 items-center gap-3">

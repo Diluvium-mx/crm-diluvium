@@ -381,6 +381,14 @@ Reglas de UI:
   ni por un refresco automático (en una pestaña vieja también pueden fallar los refrescos si la versión nueva cambió
   sus acciones o archivos; sin esos cambios, la pestaña vieja sigue funcionando y no hay nada que avisar). Versión = `RAILWAY_GIT_COMMIT_SHA` fijada en el build (`next.config.ts`); código en
   `lib/version/` (vigilancia instalada desde `instrumentation-client.ts`) y `app/(app)/_components/update-notice.tsx`.
+- **Cinta del clima (2-oct-2026, decisión del dueño):** en la barra de arriba, entre el logo y el correo, corre
+  SIEMPRE de derecha a izquierda (40 px/s; nada la detiene, ni el mouse; sin globo) con el clima MEDIDO de 24
+  ciudades donde más llueve: icono (sin texto) + ciudad + grados + lluvia de las últimas 24 h. Icono y grados = METAR
+  del aeropuerto (aviationweather.gov, NWS); mm = SYNOP del observatorio del SMN-Conagua vía OGIMET; gratis, sin
+  llave. El worker la trae cada hora en horario laboral (lun–sáb 9–19 Mazatlán) y la deja en Redis
+  (`clima:cinta:v1`, sin tabla); no sale fuera de horario, < 768 px ni con foto de > 2 h. Una ciudad que no pasa las
+  revisiones (dato reciente, aeropuerto ≤ 30 km del observatorio, grados ≤ 5 °C de diferencia) no sale esa hora.
+  Código en `lib/clima/` y `app/(app)/_components/clima-cinta.tsx`; detalle en `docs/clima.md`.
 - **Paneles que se ocultan** (lista y Detalle de la Bandeja, Detalle del pop-up del Embudo):
   se recuerdan por computadora con `components/ui/use-persistent-toggle.ts` (localStorage con
   try/catch; sin almacenamiento, abierto por defecto; sin parpadeo). Cualquier panel nuevo que se
