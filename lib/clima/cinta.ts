@@ -1,6 +1,6 @@
 // Lo que muestra la cinta del clima de la barra de arriba (PURO, sirve al servidor y al navegador).
 // Reglas del dueño (1 y 2-oct-2026): solo en horario de trabajo (lun–sáb 9–19 Mazatlán), icono (sin
-// texto) + ciudad + grados + lluvia de las últimas 24 h; donde está cayendo agua ahora, primero.
+// texto) + ciudad + grados + lluvia de las últimas 24 h (si no llovió, nada); donde cae agua ahora, primero.
 import { isBusinessHours } from "@/lib/monitoring/business-hours";
 import type { FotoClima } from "./armar";
 import { CATEGORIAS_AGUA, type CategoriaClima } from "./metar";
@@ -27,7 +27,8 @@ export type ItemCinta = {
   /** Para lectores de pantalla; a la vista solo va el icono. */
   palabra: string;
   grados: string;
-  mm: string;
+  /** Lluvia de las últimas 24 h; null si no llovió (regla del dueño: ningún dato en 0, solo icono, ciudad y grados). */
+  mm: string | null;
 };
 
 const PALABRA: Record<CategoriaClima, string> = {
@@ -70,9 +71,13 @@ function icono(categoria: CategoriaClima, dia: boolean): IconoClima {
   }
 }
 
-/** «0 mm», «8.9 mm»; desde 10, sin decimales: «173 mm». */
-export function textoMm(mm: number): string {
-  return `${mm >= 10 ? Math.round(mm) : Number(mm.toFixed(1))} mm`;
+/**
+ * «0.4 mm», «8.9 mm»; desde 10, sin decimales: «173 mm». Sin lluvia (o tan poca que redondeada da 0) no se
+ * pone nada: null (regla del dueño, 2-oct-2026).
+ */
+export function textoMm(mm: number): string | null {
+  const valor = mm >= 10 ? Math.round(mm) : Number(mm.toFixed(1));
+  return valor > 0 ? `${valor} mm` : null;
 }
 
 /** Lo que va en la cinta en este momento; vacío = la cinta no se muestra. */
