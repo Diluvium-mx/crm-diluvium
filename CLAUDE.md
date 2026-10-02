@@ -385,6 +385,13 @@ Reglas de UI:
   se recuerdan por computadora con `components/ui/use-persistent-toggle.ts` (localStorage con
   try/catch; sin almacenamiento, abierto por defecto; sin parpadeo). Cualquier panel nuevo que se
   pueda ocultar usa ese hook.
+- **Cursor y letras al escribir** (2-oct-2026, decisión del dueño): en TODA caja de texto, mientras se
+  escribe, cursor azul de 2 px (`--cursor-escritura`), parpadeo suave, se desliza solo en los saltos y las
+  letras nuevas entran con desvanecido. Una sola pieza global (`lib/escritura/client.ts`, instalada en
+  `instrumentation-client.ts`): pone una capa encima de la caja enfocada y la quita al salir; la caja
+  (bordes, colores, iluminación) no cambia. Fuera: celular/tableta, «Reducir movimiento», contraseña,
+  correo, número y fechas. Una caja nueva no necesita nada; para excluir una, `data-sin-escritura` en ella
+  o en un ancestro.
 - **Indicador "Agente IA leyendo/escribiendo/enviando"** (píldora en el chat,
   `app/(app)/dashboard/_components/agent-activity-pill.tsx`, lector `lib/agente-ia/activity*.ts`,
   orbe del paquete `thinking-orbs` 0.3.2 fijo): depende de DOS contratos de Fase D que no se
