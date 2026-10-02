@@ -7,6 +7,7 @@
 // (1-oct-2026). jitless: sin prueba ni compilación; mismas validaciones y mismos
 // mensajes. El servidor y el worker no cargan este archivo: siguen con JIT.
 import { config } from "zod/v4/core";
+import { animarEscritura } from "@/lib/escritura/client";
 import { vigilarFallas } from "@/lib/version/client";
 
 config({ jitless: true });
@@ -14,3 +15,7 @@ config({ jitless: true });
 // Aviso «Hay una nueva actualización del CRM» (1-oct-2026): vigila desde el arranque las
 // fallas que pueden venir de una pestaña vieja (lib/version/client.ts).
 vigilarFallas();
+
+// Cursor azul y letras con desvanecido al escribir en cualquier caja de texto (2-oct-2026,
+// decisión del dueño): una sola pieza para todo el CRM (lib/escritura/client.ts).
+animarEscritura();
