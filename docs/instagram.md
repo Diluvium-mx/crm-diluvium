@@ -105,9 +105,24 @@ y el composer siguen §2 (`canSellerWrite`); 📄 no sale; 🕒 solo texto con l
    cuarentena: se libera con `scripts/replay-webhook-events.ts`.
 5. Encender el Agente IA en el canal (queda en el Historial).
 
-## 5. Pendientes
-- **Historial de Instagram**: Zernio copia al conectar hasta 500 chats × 500 mensajes (sin webhooks); falta
-  importarlos al CRM (como `zernio-history.ts`, con `platform=instagram`).
+## 5. Historial de Instagram (importado)
+
+Al conectar, Zernio copia los últimos 500 chats (hasta 500 mensajes c/u) **sin webhooks**. Se traen con
+`npm run historial:instagram -- --cuenta <accountId> [--simular]` (`lib/messaging/instagram-history.ts`,
+mismo cliente que el historial de WhatsApp: 40 peticiones/min, reintentos, reanudable con Ctrl+C):
+- Se guardan como **historial** (`imported_at`): sin Agente IA, workflows ni no leídos; en el chat dicen
+  «Importado de Instagram». Los contactos nuevos nacen con `source = historial_instagram` (el Dashboard no los
+  cuenta como conversaciones nuevas), sin teléfono, en la etapa de entrada.
+- Un cliente que ya escribió en vivo: su historial se pega a SU conversación; el `mid` de Meta es el mismo en
+  la API y en el webhook, así que nada se duplica.
+- La **ventana** sí se calcula con el último mensaje del cliente (en Instagram es un hecho de Meta): un chat
+  reciente queda contestable (24 h / 7 días).
+- Adjuntos: se guarda la ruta de Zernio (`refreshUrl`, vuelve a sacar el archivo aunque la URL de Meta
+  caducó); los de más de 2 semanas no se copian (se ven en la app de Instagram).
+- El Agente IA en segundo plano solo lee chats con actividad de los últimos 3 días: de lo importado, solo los
+  recientes (centavos).
+
+## 6. Pendientes
 - **Vigilancia de la conexión de Instagram** (token vencido → reconectar): Zernio manda
   `account.disconnected`; ver la forma real de `/v1/accounts/{id}/health` en staging antes de sumarla.
 - Adjuntos del chat: Instagram solo acepta PDF como documento; hoy un Word/Excel/XML falla con el motivo

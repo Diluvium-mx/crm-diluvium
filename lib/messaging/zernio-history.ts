@@ -6,6 +6,9 @@
 // - GET /v1/inbox/conversations/{id}/messages?accountId (docs.zernio.com → List messages;
 //   `id` del mensaje = el wamid, el mismo que el webhook trae en platformMessageId)
 // - GET /v1/contacts?accountId=…&platform=whatsapp      (docs.zernio.com → List contacts)
+// Instagram (2-oct-2026, docs/instagram.md): al conectar, Zernio copia los últimos 500 chats
+// (500 mensajes c/u) SIN webhooks; `instagramHistoryEventFromRest` los convierte y
+// lib/messaging/instagram-history.ts los importa con el mismo cliente.
 // Idempotente: el wamid único evita duplicados, así que se puede correr varias veces
 // (Zernio puede terminar de copiar después de la primera pasada).
 //
@@ -22,7 +25,7 @@
 import { z } from "zod";
 import { normalizePhone } from "@/lib/phone";
 import type { NormalizedAttachment, NormalizedMessageEvent, NormalizedMessageType } from "./provider";
-import { isCoexistenceHistory, validDate } from "./zernio";
+import { instagramLabel, isCoexistenceHistory, validDate } from "./zernio";
 
 const DEFAULT_BASE_URL = "https://zernio.com/api";
 const TIMEOUT_MS = 30_000;
@@ -55,6 +58,10 @@ const restAttachmentSchema = z
     mimeType: z.string().nullish(),
     url: z.string().nullish(),
     filename: z.string().nullish(),
+    // Instagram: el tipo de Meta (story_mention, ig_post…) y la ruta de Zernio que vuelve a
+    // sacar el archivo aunque la URL de Meta ya caducó (se guarda esa, no la de Meta).
+    originalType: z.string().nullish(),
+    refreshUrl: z.string().nullish(),
   })
   .passthrough();
 
@@ -72,6 +79,10 @@ const restMessageSchema = z
     attachments: z.array(restAttachmentSchema).nullish(),
     metadata: z.record(z.string(), z.unknown()).nullish(),
     deliveryStatus: z.string().nullish(),
+    // Instagram: contexto del mensaje (mención en historia, respuesta a historia, contenido oculto).
+    isStoryMention: z.boolean().nullish(),
+    noRenderableContent: z.boolean().nullish(),
+    storyReply: z.record(z.string(), z.unknown()).nullish(),
   })
   .passthrough();
 
@@ -79,6 +90,8 @@ export type RestConversation = {
   id: string;
   participantId: string | null;
   participantName: string | null;
+  /** Instagram: @usuario del cliente (sin "@"). */
+  participantUsername?: string | null;
   /** Grupo de WhatsApp: no tiene un teléfono de cliente (no se importa, se reporta). Zernio hoy NO lo manda (N2, 26-sep). */
   isGroup?: boolean;
   /** Última actividad (Zernio `updatedTime`): la muestra toma los chats más recientes. */
@@ -157,6 +170,77 @@ export function historyEventFromRest(
       attachments,
       sentAt,
       metadata: metadata && Object.keys(metadata).length > 0 ? metadata : undefined,
+      history: true,
+    },
+  };
+}
+
+/** Adjunto del historial de Instagram más viejo que esto: no se copia al CRM (se ve en la app). */
+export const INSTAGRAM_HISTORY_MEDIA_MAX_AGE_DAYS = 14;
+export const OLD_INSTAGRAM_MEDIA_REASON = "Adjunto del historial de Instagram con más de 2 semanas: no se copió al CRM; se ve en la app de Instagram";
+
+/**
+ * Mensaje de Instagram de la API → evento normalizado del HISTORIAL (docs/instagram.md).
+ * Todo lo que Zernio copió al conectar es historial; lo vivo ya entró por el webhook con el
+ * MISMO id (el `mid` de Meta), así que repetirlo no duplica. Sin fecha no se inventa una.
+ */
+export function instagramHistoryEventFromRest(
+  accountId: string,
+  conversation: RestConversation,
+  raw: unknown,
+  now = new Date(),
+): { event: NormalizedMessageEvent } | { skip: string } {
+  const parsed = restMessageSchema.safeParse(raw);
+  if (!parsed.success) return { skip: `formato no reconocido: ${parsed.error.issues[0]?.message}` };
+  const m = parsed.data;
+  if (m.platform && m.platform !== "instagram") return { skip: `plataforma ${m.platform}` };
+  const sentAt = validDate(m.sentAt) ?? validDate(m.createdAt);
+  if (!sentAt) return { skip: `sin fecha válida (${m.sentAt ?? m.createdAt ?? "vacía"})` };
+  const outgoing = m.direction === "outgoing";
+  const old = now.getTime() - sentAt.getTime() > INSTAGRAM_HISTORY_MEDIA_MAX_AGE_DAYS * 86_400_000;
+  const attachments: NormalizedAttachment[] = (m.attachments ?? []).map((a) => {
+    const url = a.refreshUrl ?? a.url ?? "";
+    const unavailable = !url
+      ? "Instagram no trae este archivo en el historial"
+      : old
+        ? OLD_INSTAGRAM_MEDIA_REASON
+        : undefined;
+    return {
+      type: attachmentType(a.type),
+      url,
+      mimeType: a.mimeType ?? undefined,
+      fileName: a.filename ?? undefined,
+      providerMediaId: a.id ?? undefined,
+      ...(unavailable ? { unavailable } : {}),
+    };
+  });
+  const metadata: Record<string, unknown> = { ...(m.metadata ?? {}) };
+  if (m.isStoryMention) metadata.isStoryMention = true;
+  if (m.noRenderableContent) metadata.noRenderableContent = true;
+  if (m.storyReply) metadata.storyReply = m.storyReply;
+  const body = m.message || instagramLabel(m.attachments ?? [], metadata);
+  const type: NormalizedMessageType = attachments[0]?.type ?? (body ? "text" : "unknown");
+  return {
+    event: {
+      kind: "message",
+      eventId: `history-${m.id}`,
+      platform: "instagram",
+      providerAccountId: accountId,
+      providerConversationId: conversation.id,
+      direction: outgoing ? "out" : "in",
+      // Lo saliente lo mandó el negocio desde la app de Instagram (o la herramienta de antes).
+      source: outgoing ? "business_app" : "contact",
+      providerMessageId: m.id,
+      providerInternalId: "",
+      contactPhone: null,
+      contactInstagramId: conversation.participantId ?? undefined,
+      contactUsername: conversation.participantUsername ?? undefined,
+      contactName: (outgoing ? conversation.participantName : (m.senderName ?? conversation.participantName)) ?? undefined,
+      type: type === "unknown" && body ? "text" : type,
+      body: body ?? null,
+      attachments,
+      sentAt,
+      metadata: Object.keys(metadata).length > 0 ? metadata : undefined,
       history: true,
     },
   };
@@ -366,10 +450,10 @@ export class ZernioHistoryClient {
   }
 
   /**
-   * Conversaciones de WhatsApp de la cuenta: activas y archivadas, en orden
-   * ascendente de actualización, sin repetir ninguna.
+   * Conversaciones de la cuenta (WhatsApp por omisión, o Instagram): activas y
+   * archivadas, en orden ascendente de actualización, sin repetir ninguna.
    */
-  async *conversations(accountId: string): AsyncGenerator<RestConversation> {
+  async *conversations(accountId: string, platform: "whatsapp" | "instagram" = "whatsapp"): AsyncGenerator<RestConversation> {
     const yielded = new Set<string>();
     const partial = (json: Record<string, unknown>): string | null => {
       const meta = (json.meta ?? {}) as Record<string, unknown>;
@@ -381,7 +465,7 @@ export class ZernioHistoryClient {
     };
     for (const status of [null, "archived"] as const) {
       const path = (cursor: string | undefined) => {
-        const params = new URLSearchParams({ accountId, platform: "whatsapp", limit: "100", sortOrder: "asc" });
+        const params = new URLSearchParams({ accountId, platform, limit: "100", sortOrder: "asc" });
         if (status) params.set("status", status);
         if (cursor) params.set("cursor", cursor);
         return `/v1/inbox/conversations?${params.toString()}`;
@@ -390,12 +474,13 @@ export class ZernioHistoryClient {
         for (const raw of page.list as Record<string, unknown>[]) {
           if (!raw || typeof raw.id !== "string" || !raw.id || yielded.has(raw.id)) continue;
           if (raw.accountId && raw.accountId !== accountId) continue;
-          if (raw.platform && raw.platform !== "whatsapp") continue;
+          if (raw.platform && raw.platform !== platform) continue;
           yielded.add(raw.id);
           yield {
             id: raw.id,
             participantId: typeof raw.participantId === "string" ? raw.participantId : null,
             participantName: typeof raw.participantName === "string" ? raw.participantName : null,
+            participantUsername: typeof raw.participantUsername === "string" ? raw.participantUsername.replace(/^@+/, "") || null : null,
             isGroup: raw.isGroup === true,
             updatedTime: typeof raw.updatedTime === "string" ? raw.updatedTime : null,
           };
