@@ -639,7 +639,7 @@ video[data-video-chat]::-webkit-media-controls-mute-button {
    se ve lo del tema elegido. Lo que entra aparece en 0.45 s (espera 0.1 s + 0.35 s, todo
    junto) y lo que sale se va en 0.25 s, igual en las dos direcciones; el titileo empieza ya
    con la estrella brillando. Medidas en la escala del prototipo (62×32) y `zoom: 0.8` =
-   50×26 en pantalla (las bromas de theme-toggle-eggs.ts usan la misma escala).
+   50×26 en pantalla (los efectos de theme-sky-effects.ts usan la misma escala).
    Las transiciones llevan !important: next-themes (disableTransitionOnChange) y
    applyThemeNow ponen `*{transition:none!important}` al cambiar de tema y estas reglas les
    ganan por especificidad, así la píldora sí se anima. */
@@ -873,15 +873,15 @@ html[data-theme-circle]::view-transition-new(root) {
   mix-blend-mode: normal;
 }
 
-/* Broma escondida (clic derecho en la píldora, theme-toggle-eggs.ts). */
-.theme-egg-sky {
+/* Efectos del cielo de la píldora (theme-sky-effects.ts). */
+.theme-sky-layer {
   position: absolute;
   inset: 0;
   z-index: 4;
   overflow: hidden;
   pointer-events: none;
 }
-.theme-egg-meteor {
+.theme-sky-meteor {
   position: absolute;
   left: 0;
   top: 0;
@@ -893,7 +893,7 @@ html[data-theme-circle]::view-transition-new(root) {
   transform-origin: 0 50%;
   opacity: 0;
 }
-.theme-egg-plane {
+.theme-sky-plane {
   position: absolute;
   left: 0;
   top: 8px;
@@ -902,13 +902,13 @@ html[data-theme-circle]::view-transition-new(root) {
   color: #fff;
   pointer-events: none;
 }
-.theme-egg-plane svg {
+.theme-sky-plane svg {
   display: block;
   width: 11px;
   height: 11px;
   transform: rotate(45deg);
 }
-.theme-egg-plane::before {
+.theme-sky-plane::before {
   content: "";
   position: absolute;
   right: 9px;
@@ -917,7 +917,7 @@ html[data-theme-circle]::view-transition-new(root) {
   height: 1px;
   background: linear-gradient(90deg, rgb(255 255 255 / 0), rgb(255 255 255 / 0.9));
 }
-.theme-egg-disc {
+.theme-sky-disc {
   position: absolute;
   z-index: 2;
   top: 3px;
@@ -928,7 +928,7 @@ html[data-theme-circle]::view-transition-new(root) {
   background: #050d18;
   pointer-events: none;
 }
-.theme-egg-shade {
+.theme-sky-shade {
   position: fixed;
   inset: 0;
   z-index: 60;
@@ -936,7 +936,7 @@ html[data-theme-circle]::view-transition-new(root) {
   opacity: 0;
 }
 
-/* Con «reducir movimiento» la píldora cambia sin animarse (y no hay círculo ni bromas). */
+/* Con «reducir movimiento» la píldora cambia sin animarse (sin círculo ni efectos del cielo). */
 @media (prefers-reduced-motion: reduce) {
   .theme-pill :is(.theme-pill-knob, .theme-pill-cloud, .theme-pill-star, span),
   .theme-pill.theme-pill {

@@ -4,12 +4,12 @@ import { useSyncExternalStore } from "react";
 import { useTheme } from "next-themes";
 import { Moon, Sun } from "lucide-react";
 import { applyThemeNow, switchThemeWithCircle, type ThemeName } from "./theme-circle-transition";
-import { playThemeEgg, stopThemeEgg } from "./theme-toggle-eggs";
+import { playSkyEffect, stopSkyEffect } from "./theme-sky-effects";
 
 // Interruptor de tema de la barra de arriba (1-oct-2026, prototipo aprobado por el dueño en
 // notas/barra-superior): píldora con la bolita del sol o la luna; en claro flotan 3 nubes y en
 // oscuro titilan 5 estrellas (solo se ve lo del tema elegido). Al tocarlo, el tema nuevo se
-// extiende en círculo desde el botón; clic derecho = broma escondida (theme-toggle-eggs.ts).
+// extiende en círculo desde el botón; clic derecho = efectos del cielo (theme-sky-effects.ts).
 // Todo lo visual sale de la clase .dark del <html> (next-themes la fija antes del primer paint;
 // app/globals.css › "Interruptor de tema"), así que no hay nada que hidratar mal: solo
 // aria-checked espera a montar (en el servidor no se sabe el tema).
@@ -31,16 +31,16 @@ export function ThemeToggle() {
 
   function toggle(event: React.MouseEvent<HTMLButtonElement>) {
     const next: ThemeName = dark ? "light" : "dark";
-    stopThemeEgg();
+    stopSkyEffect();
     switchThemeWithCircle(event.currentTarget, () => {
       applyThemeNow(next);
       setTheme(next);
     });
   }
 
-  function surprise(event: React.MouseEvent<HTMLButtonElement>) {
+  function skyEffect(event: React.MouseEvent<HTMLButtonElement>) {
     event.preventDefault();
-    playThemeEgg(event.currentTarget);
+    playSkyEffect(event.currentTarget);
   }
 
   return (
@@ -51,7 +51,7 @@ export function ThemeToggle() {
       aria-label="Tema oscuro"
       title="Cambiar entre tema claro y oscuro"
       onClick={toggle}
-      onContextMenu={surprise}
+      onContextMenu={skyEffect}
       className="theme-pill"
     >
       {CLOUDS.map((key) => (

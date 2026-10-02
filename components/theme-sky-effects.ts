@@ -1,6 +1,5 @@
-// Broma escondida del interruptor de tema (1-oct-2026, prototipo aprobado por el dueño en
-// notas/barra-superior): clic derecho en la píldora (en Android, dejarla presionada). Se alternan
-// dos, una en cada clic derecho:
+// Efectos del cielo de la píldora del tema («Cielo», 1-oct-2026; detalle en la nota del dueño fuera del
+// repo). Con clic derecho en la píldora (en Android, dejarla presionada) se alternan dos:
 // - Estrella fugaz / avioncito: en oscuro, dos estrellas fugaces cruzan la barra de arriba; en
 //   claro, un avioncito sale de detrás del sol y pasa entre las nubes de la píldora.
 // - Eclipse (14.5 s, a pedido del dueño): la bolita va al centro, una sombra la tapa y queda su halo; la píldora y TODA
@@ -21,19 +20,19 @@ type Scene = {
 let running: Scene | null = null;
 let turn = 0;
 
-export function stopThemeEgg(): void {
+export function stopSkyEffect(): void {
   running?.stop();
 }
 
-export function playThemeEgg(pill: HTMLElement): void {
+export function playSkyEffect(pill: HTMLElement): void {
   if (running || window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
   const knob = pill.querySelector<HTMLElement>(".theme-pill-knob");
   if (!knob) return;
   const scene = createScene(pill, knob);
   running = scene;
   const dark = document.documentElement.classList.contains("dark");
-  if (turn % 2 === 0) flyEgg(scene, dark);
-  else eclipseEgg(scene, dark);
+  if (turn % 2 === 0) flyEffect(scene, dark);
+  else eclipseEffect(scene, dark);
   turn += 1;
 }
 
@@ -68,14 +67,14 @@ function createScene(pill: HTMLElement, knob: HTMLElement): Scene {
   return scene;
 }
 
-function flyEgg(scene: Scene, dark: boolean): void {
+function flyEffect(scene: Scene, dark: boolean): void {
   if (dark) {
     const bar = scene.pill.closest("header");
     if (!bar) {
       scene.endAfter(0);
       return;
     }
-    const sky = scene.add("theme-egg-sky", bar);
+    const sky = scene.add("theme-sky-layer", bar);
     const width = sky.clientWidth;
     const height = sky.clientHeight;
     const meteors: [delay: number, fromY: number, toY: number, duration: number, length: number][] = [
@@ -83,7 +82,7 @@ function flyEgg(scene: Scene, dark: boolean): void {
       [380, -10, height * 0.7, 900, 0.7],
     ];
     for (const [delay, fromY, toY, duration, length] of meteors) {
-      const meteor = scene.add("theme-egg-meteor", sky);
+      const meteor = scene.add("theme-sky-meteor", sky);
       const fromX = width + 30;
       const toX = -110;
       // La cabeza va adelante y la cola queda atrás, alineada con la trayectoria.
@@ -103,7 +102,7 @@ function flyEgg(scene: Scene, dark: boolean): void {
     return;
   }
   // Entre la primera nube y las demás: sale de detrás del sol y pasa entre las nubes.
-  const plane = scene.add("theme-egg-plane", scene.pill, scene.pill.querySelector(".theme-pill-cloud.c2"));
+  const plane = scene.add("theme-sky-plane", scene.pill, scene.pill.querySelector(".theme-pill-cloud.c2"));
   plane.appendChild(planeIcon());
   scene.animate(
     plane,
@@ -133,14 +132,14 @@ function planeIcon(): SVGSVGElement {
   return svg;
 }
 
-function eclipseEgg(scene: Scene, dark: boolean): void {
+function eclipseEffect(scene: Scene, dark: boolean): void {
   const total = 14500;
   const { pill, knob } = scene;
 
   // Toda la pantalla se oscurece poco (0.4 en las orillas) mientras dura; alrededor de la
   // píldora queda un hueco claro para que el halo siga brillando.
   const box = pill.getBoundingClientRect();
-  const shade = scene.add("theme-egg-shade", document.body);
+  const shade = scene.add("theme-sky-shade", document.body);
   shade.style.background = `radial-gradient(circle at ${box.left + box.width / 2}px ${box.top + box.height / 2}px, rgb(2 6 14 / 0) 0 22px, rgb(2 6 14 / 0.4) 80px)`;
   scene.animate(
     shade,
@@ -166,7 +165,7 @@ function eclipseEgg(scene: Scene, dark: boolean): void {
     ],
     { duration: total, easing: "ease-in-out" },
   );
-  const disc = scene.add("theme-egg-disc", pill);
+  const disc = scene.add("theme-sky-disc", pill);
   scene.animate(
     disc,
     [

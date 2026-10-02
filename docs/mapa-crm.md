@@ -129,10 +129,8 @@ mismo menú en un cajón; ver [Versión móvil](#310-versión-móvil-celular).
 
 **Lo cambias tú desde la pantalla:** el tema claro u oscuro.
 
-**Detalle escondido:** clic derecho en la píldora del tema (5) —en Android, dejarla presionada— saca una broma
-visual, una distinta cada vez: **estrella fugaz** (tema oscuro: dos estrellas cruzan la barra) o **avioncito** (tema
-claro: pasa entre las nubes de la píldora), y **eclipse** (14.5 s: una sombra tapa la bolita, queda su halo y toda la
-pantalla se oscurece un poco). No cambia el tema ni toca nada; con «Reducir movimiento» no sale.
+**«Cielo»:** la píldora del tema (5) tiene efectos del cielo; el detalle vive en la nota privada del dueño
+(`reportes/cielo/`, fuera del repo). No cambian el tema ni tocan nada; con «Reducir movimiento» no salen.
 
 **Pídeselo a Code:**
 - "En Menú › (1) menú lateral, pon Anuncios antes de Mensajes rápidos."
@@ -140,7 +138,7 @@ pantalla se oscurece un poco). No cambia el tema ni toca nada; con «Reducir mov
 
 <sub>Para Code: `app/(app)/layout.tsx` (sidebar y barra), `nav-item.tsx`, `user-menu.tsx`, `sign-out-button.tsx` y
 `sign-out-confirm.tsx` (globo 10–12), `components/theme-toggle.tsx` (píldora), `theme-circle-transition.ts` (círculo),
-`theme-toggle-eggs.ts` (detalle escondido); estilos en `app/globals.css` › «Interruptor de tema»; aviso de actualización (13): `update-notice.tsx`, `lib/version/` y
+`theme-sky-effects.ts` («Cielo»); estilos en `app/globals.css` › «Interruptor de tema»; aviso de actualización (13): `update-notice.tsx`, `lib/version/` y
 `app/api/version/route.ts`.</sub>
 
 ---
