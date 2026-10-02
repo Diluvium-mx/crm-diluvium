@@ -60,6 +60,11 @@ export const contacts = pgTable(
     // cuando usa nombre de usuario y el webhook NO trae su teléfono. Se busca
     // por teléfono y, si no hay, por este id; así nunca se descarta un entrante.
     waBsuid: text("wa_bsuid"),
+    // Cliente que escribe por Instagram (2-oct-2026, docs/instagram.md): no hay teléfono.
+    // instagram_id = id de Instagram del cliente para NUESTRA cuenta (IGSID, estable) y es
+    // su identidad; el @usuario es solo para mostrar y buscar (el cliente lo puede cambiar).
+    instagramId: text("instagram_id"),
+    instagramUsername: text("instagram_username"),
     email: text("email"),
     customFields: jsonb("custom_fields").notNull().default({}),
     // Etiquetas de negocio (GHL y, a futuro, el agente IA/workflows). Se
@@ -133,6 +138,9 @@ export const contacts = pgTable(
     uniqueIndex("contacts_org_wa_bsuid_uidx")
       .on(table.organizationId, table.waBsuid)
       .where(isNotNull(table.waBsuid)),
+    uniqueIndex("contacts_org_instagram_id_uidx")
+      .on(table.organizationId, table.instagramId)
+      .where(isNotNull(table.instagramId)),
     // Parcial: ghl_contact_id es nullable (contactos nativos no vienen de
     // GHL) — un índice único normal rechazaría más de un NULL solo en
     // MySQL; en Postgres los NULL ya se consideran distintos entre sí, pero

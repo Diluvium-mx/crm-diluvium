@@ -21,7 +21,7 @@ import { getContactDetails, setNumEntradas, updateContactQualification } from "@
 import { createSerialSaves } from "@/lib/autosave/serial-saves";
 import { trackSaves } from "@/lib/autosave/tracked-saves";
 import { useInboxStream } from "../../dashboard/_components/use-inbox-stream";
-import { formatPhone } from "@/lib/phone-format";
+import { contactHandle } from "@/lib/phone-format";
 import { useFunnelStages } from "../../_components/funnel-stages-provider";
 import {
   TEMPERATURES,
@@ -147,6 +147,7 @@ export function ContactDetails({
   contactId,
   name,
   phone,
+  instagramUsername,
   stage,
   temperature,
   destacado,
@@ -163,6 +164,8 @@ export function ContactDetails({
   conversationId?: string;
   name: string;
   phone: string | null;
+  /** Cliente de Instagram (sin teléfono): su @usuario. */
+  instagramUsername?: string | null;
   stage: Stage;
   temperature: Temperature | null;
   /**
@@ -506,7 +509,7 @@ export function ContactDetails({
 
         <div>
           <p className="font-medium break-words">{name}</p>
-          <p className="text-xs text-muted-foreground">{formatPhone(phone) || "Sin teléfono"}</p>
+          <p className="text-xs text-muted-foreground">{contactHandle(phone, instagramUsername)}</p>
         </div>
 
         <div className="grid grid-cols-2 gap-2">

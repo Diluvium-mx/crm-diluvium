@@ -46,6 +46,8 @@ export async function loadWhatsappStatus(database: Database, organizationId: str
       and(
         eq(channels.organizationId, organizationId),
         eq(channels.provider, "zernio"),
+        // La pastilla es de WhatsApp (su último entrante y su conexión); Instagram va aparte.
+        eq(channels.type, "whatsapp"),
         eq(channels.isActive, true),
         isNull(channels.archivedAt),
       ),

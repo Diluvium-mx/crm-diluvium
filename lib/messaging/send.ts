@@ -29,7 +29,18 @@ import { withTxRetry } from "@/lib/db/retry";
 import { channels, conversations, messages, templates } from "@/lib/db/schema";
 import { applyOutboundToConversation, latestInboundMessageId } from "./ingest";
 import { SendFailedError, type MessagingProvider, type SendResult } from "./provider";
-import { isAmbiguousSendError, isWindowOpen, nextStatus, SEND_ACCEPTED, SEND_RATE_LIMITED, SEND_UNCONFIRMED, SEND_UNKNOWN } from "./rules";
+import {
+  canSendFreeForm,
+  INSTAGRAM_PARTS_META,
+  isAmbiguousSendError,
+  needsHumanAgentTag,
+  nextStatus,
+  SEND_ACCEPTED,
+  SEND_RATE_LIMITED,
+  SEND_UNCONFIRMED,
+  SEND_UNKNOWN,
+  SEND_WARNING_META,
+} from "./rules";
 import { sendInTurn, type TurnMark } from "./send-turn";
 import { plainSendReason } from "./send-reasons";
 import { findEarlyEcho } from "./late-echo";
@@ -94,6 +105,11 @@ export type SendTextParams = {
   markRead?: boolean;
   /** Solo el web: si hay que esperar (429 o turno), el envío pasa al worker. */
   deferTo?: DeferToWorker;
+  /**
+   * Lo escribió o lo pidió un VENDEDOR en el chat (composer, programado, "/"). En Instagram
+   * solo así se puede contestar entre 24 h y 7 días (docs/instagram.md). Default false.
+   */
+  humanAgent?: boolean;
 };
 
 /** "sent": confirmado. "pending": en fila, o resultado desconocido en reconciliación (sin reintento). */
@@ -116,12 +132,15 @@ type ConversationRow = typeof conversations.$inferSelect;
 // enforceWindow=true (texto libre): fuera de la ventana de 24 h solo se permiten
 // plantillas. Una plantilla (enforceWindow=false) se manda precisamente cuando
 // la ventana está cerrada (ese es su propósito), así que no la valida.
+// Instagram (docs/instagram.md): no hay plantillas; de 24 h a 7 días solo puede contestar
+// una persona (`human`: lo escribió o lo pidió un vendedor en el chat).
 async function loadConversation(
   provider: MessagingProvider,
   organizationId: string,
   conversationId: string,
   now: Date,
   enforceWindow = true,
+  human = false,
 ) {
   const [row] = await db
     .select({ conversation: conversations, channel: channels })
@@ -133,15 +152,37 @@ async function loadConversation(
   // Un canal desactivado no envía, y un canal de otro proveedor (p. ej. ya
   // migrado a Meta directa) no se manda por este adaptador.
   if (!row.channel.isActive || row.channel.provider !== provider.name) {
-    throw new SendRejectedError("channel_unavailable", "El canal de WhatsApp de esta conversación no está disponible");
+    throw new SendRejectedError("channel_unavailable", `El canal de ${channelLabel(row.channel.type)} de esta conversación no está disponible`);
   }
-  if (enforceWindow && !isWindowOpen(row.conversation.windowExpiresAt, now)) {
-    throw new SendRejectedError("window_closed", "La ventana de 24 h está cerrada: solo se puede enviar una plantilla");
+  if (enforceWindow && !canSendFreeForm(row.channel.type, row.conversation.windowExpiresAt, now, human)) {
+    throw new SendRejectedError("window_closed", windowClosedReason(row.channel.type, row.conversation.windowExpiresAt, now));
   }
   if (!row.conversation.providerConversationId) {
     throw new SendRejectedError("not_linked", "La conversación aún no está enlazada con el proveedor");
   }
   return row;
+}
+
+const channelLabel = (type: string) => (type === "instagram" ? "Instagram" : "WhatsApp");
+
+function windowClosedReason(type: string, windowExpires: Date | null, now: Date): string {
+  if (type !== "instagram") return "La ventana de 24 h está cerrada: solo se puede enviar una plantilla";
+  return canSendFreeForm(type, windowExpires, now, true)
+    ? "Pasaron más de 24 h desde el último mensaje del cliente: en Instagram solo un vendedor puede contestar (hasta 7 días); ni el Agente IA ni las automatizaciones."
+    : "Pasaron más de 7 días desde el último mensaje del cliente: Instagram no deja escribirle hasta que vuelva a escribir.";
+}
+
+type LoadedConversation = Awaited<ReturnType<typeof loadConversation>>;
+
+/** A dónde va el envío y con qué reglas de la red (Instagram: partes y etiqueta de 7 días). */
+function sendTarget({ channel, conversation }: LoadedConversation, now: Date, idempotencyKey: string) {
+  return {
+    providerAccountId: channel.providerAccountId,
+    providerConversationId: conversation.providerConversationId!,
+    platform: channel.type,
+    humanAgentTag: needsHumanAgentTag(channel.type, conversation.windowExpiresAt, now),
+    idempotencyKey,
+  };
 }
 
 // La plantilla debe existir en la organización, pertenecer al canal de la
@@ -200,7 +241,8 @@ function validText(raw: string): string {
 export async function sendTextMessage(provider: MessagingProvider, params: SendTextParams): Promise<SendOutcome> {
   const text = validText(params.text);
   const now = params.now ?? new Date();
-  const { conversation, channel } = await loadConversation(provider, params.organizationId, params.conversationId, now);
+  const loaded = await loadConversation(provider, params.organizationId, params.conversationId, now, true, params.humanAgent ?? false);
+  const { conversation } = loaded;
 
   const source = params.source ?? "crm";
   const sentByUserId = params.sentByUserId ?? null;
@@ -219,13 +261,7 @@ export async function sendTextMessage(provider: MessagingProvider, params: SendT
   });
   return deliver({
     messageId,
-    send: () =>
-      provider.sendText({
-        providerAccountId: channel.providerAccountId,
-        providerConversationId: conversation.providerConversationId!,
-        text,
-        idempotencyKey: messageId,
-      }),
+    send: () => provider.sendText({ ...sendTarget(loaded, now, messageId), text }),
     now,
     conversation,
     organizationId: params.organizationId,
@@ -249,6 +285,8 @@ export type SendMediaParams = {
   markRead?: boolean;
   messageId?: string;
   now?: Date;
+  /** Igual que en SendTextParams (Instagram de 24 h a 7 días). */
+  humanAgent?: boolean;
 };
 
 // Vida de la URL firmada que descarga el proveedor: suficiente para reintentos
@@ -266,7 +304,8 @@ export const MEDIA_SEND_URL_SECONDS = 15 * 60;
 export async function sendMediaMessage(provider: MessagingProvider, storage: ObjectStorage, params: SendMediaParams): Promise<SendOutcome> {
   const now = params.now ?? new Date();
   const caption = params.caption?.trim() ? validText(params.caption) : null;
-  const { conversation, channel } = await loadConversation(provider, params.organizationId, params.conversationId, now);
+  const loaded = await loadConversation(provider, params.organizationId, params.conversationId, now, true, params.humanAgent ?? false);
+  const { conversation } = loaded;
   const asset = await loadMediaAsset(params.organizationId, params.assetId);
   if (!asset) throw new SendRejectedError("media_not_found", "El archivo no existe en la biblioteca de esta organización.");
   let url: string;
@@ -310,13 +349,11 @@ export async function sendMediaMessage(provider: MessagingProvider, storage: Obj
     messageId,
     send: () =>
       provider.sendMedia({
-        providerAccountId: channel.providerAccountId,
-        providerConversationId: conversation.providerConversationId!,
+        ...sendTarget(loaded, now, messageId),
         url,
         kind: asset.kind,
         caption: caption ?? undefined,
         fileName: asset.fileName,
-        idempotencyKey: messageId,
       }),
     now,
     conversation,
@@ -368,7 +405,7 @@ export async function queueChatUploads(
 ): Promise<string[]> {
   const now = params.now ?? new Date();
   const captions = params.captions.map((c) => (c?.trim() ? validText(c) : null));
-  const { conversation } = await loadConversation(provider, params.organizationId, params.conversationId, now);
+  const { conversation } = await loadConversation(provider, params.organizationId, params.conversationId, now, true, true);
   const ids = params.files.map((f) => f.messageId ?? chatUploadMessageId(f.storageKey));
   const urls = ids.map((id) => `/api/media/${id}/0`);
   // Corte de lectura AL HACER CLIC (no cuando el worker manda): lo que el
@@ -462,9 +499,10 @@ export async function sendQueuedChatUpload(
   if (!attachment?.storageKey || (row.type !== "image" && row.type !== "video" && row.type !== "document")) {
     return fail("media_not_found", "El archivo adjunto no está disponible.");
   }
-  let loaded: Awaited<ReturnType<typeof loadConversation>>;
+  let loaded: LoadedConversation;
+  const sendNow = params.now ?? new Date();
   try {
-    loaded = await loadConversation(provider, params.organizationId, row.conversationId, params.now ?? new Date());
+    loaded = await loadConversation(provider, params.organizationId, row.conversationId, sendNow, true, true);
   } catch (error) {
     if (error instanceof SendRejectedError) return fail(error.code, error.message);
     // Falla de infraestructura ANTES de llamar al proveedor: se devuelve a
@@ -484,20 +522,18 @@ export async function sendQueuedChatUpload(
     console.error(`[adjuntos] no se pudo firmar ${row.id}`, error);
     return fail("storage_unavailable", "El almacenamiento de archivos no respondió; vuelve a adjuntarlo.");
   }
-  const { conversation, channel } = loaded;
+  const { conversation } = loaded;
   const kind = row.type;
   const corte = (row.metadata?.[CHAT_UPLOAD_META] as ChatUploadMeta | undefined)?.corte;
   return deliver({
     messageId: row.id,
     send: () =>
       provider.sendMedia({
-        providerAccountId: channel.providerAccountId,
-        providerConversationId: conversation.providerConversationId!,
+        ...sendTarget(loaded, sendNow, row.id),
         url,
         kind,
         caption: row.body ?? undefined,
         fileName: attachment.fileName,
-        idempotencyKey: row.id,
       }),
     now: row.sentAt ?? row.createdAt,
     conversation,
@@ -536,6 +572,9 @@ export async function sendTemplateMessage(provider: MessagingProvider, params: S
     now,
     false,
   );
+  if (channel.type !== "whatsapp") {
+    throw new SendRejectedError("template_not_found", "Instagram no tiene plantillas: contesta con texto (hasta 7 días desde el último mensaje del cliente).");
+  }
   const template = await loadSendableTemplate(params.organizationId, channel, params.templateId);
   const { values, preview } = templateSendValues(template.body, params.variableValues);
 
@@ -603,7 +642,8 @@ export async function retryTextMessage(
       "No se sabe si este mensaje llegó. Revisa el chat en el celular y, si no llegó, escríbelo de nuevo.",
     );
   }
-  const { conversation, channel } = await loadConversation(provider, params.organizationId, message.conversationId, now);
+  const loaded = await loadConversation(provider, params.organizationId, message.conversationId, now, true, true);
+  const { conversation } = loaded;
 
   // Paso atómico failed → queued: dos clics simultáneos no envían dos veces.
   const claimed = await db
@@ -625,13 +665,7 @@ export async function retryTextMessage(
 
   return deliver({
     messageId: message.id,
-    send: () =>
-      provider.sendText({
-        providerAccountId: channel.providerAccountId,
-        providerConversationId: conversation.providerConversationId!,
-        text: message.body!,
-        idempotencyKey: message.id,
-      }),
+    send: () => provider.sendText({ ...sendTarget(loaded, now, message.id), text: message.body! }),
     now,
     conversation,
     organizationId: params.organizationId,
@@ -672,17 +706,19 @@ export async function resumeDeferredSend(
     await db.update(messages).set({ status: "failed", errorCode: SEND_RATE_LIMITED, errorMessage: "No se pudo retomar el envío en espera." }).where(where);
     return null;
   }
-  let loaded: Awaited<ReturnType<typeof loadConversation>>;
+  let loaded: LoadedConversation;
+  const resumedAt = new Date();
   try {
     // Sin revisar la ventana: se revisó al escribirlo; si cerró mientras esperaba, WhatsApp lo dirá.
-    loaded = await loadConversation(provider, params.organizationId, row.conversationId, new Date(), false);
+    loaded = await loadConversation(provider, params.organizationId, row.conversationId, resumedAt, false);
   } catch (error) {
     if (!(error instanceof SendRejectedError)) throw error;
     await db.update(messages).set({ status: "failed", errorCode: error.code, errorMessage: error.message }).where(where);
     return null;
   }
-  const { conversation, channel } = loaded;
-  const target = { providerAccountId: channel.providerAccountId, providerConversationId: conversation.providerConversationId!, idempotencyKey: row.id };
+  const { conversation } = loaded;
+  // Lo diferido es del composer (un vendedor): en Instagram, fuera de 24 h lleva la etiqueta.
+  const target = sendTarget(loaded, resumedAt, row.id);
   return deliver({
     messageId: row.id,
     send: () =>
@@ -748,7 +784,8 @@ export async function sendAgentText(
   const text = validText(params.text);
   // La ventana y el canal se revisan ANTES de reclamar la fila: fuera de la ventana
   // la fila se queda como estaba y la tarjeta explica el motivo.
-  const { conversation, channel } = await loadConversation(provider, params.organizationId, params.conversationId, now);
+  const loaded = await loadConversation(provider, params.organizationId, params.conversationId, now);
+  const { conversation } = loaded;
   const claimed = await db
     .update(messages)
     .set({ status: "queued", errorCode: null, errorMessage: null, body: text, sentAt: now })
@@ -757,13 +794,7 @@ export async function sendAgentText(
   if (claimed.length === 0) throw new SendRejectedError("not_retryable", "La respuesta ya se envió o se está enviando.");
   return deliver({
     messageId: params.messageId,
-    send: () =>
-      provider.sendText({
-        providerAccountId: channel.providerAccountId,
-        providerConversationId: conversation.providerConversationId!,
-        text,
-        idempotencyKey: params.messageId,
-      }),
+    send: () => provider.sendText({ ...sendTarget(loaded, now, params.messageId), text }),
     now,
     conversation,
     organizationId: params.organizationId,
@@ -877,6 +908,8 @@ async function deliver(
       status: "sent",
       sentAt: ctx.now,
       readCutoffMessageId,
+      extraProviderMessageIds: result.extraProviderMessageIds,
+      warning: result.warning,
     });
     return { messageId: finalId, status: "sent" };
   } catch (error) {
@@ -939,6 +972,10 @@ export async function linkSentMessage(input: {
   sentAt: Date;
   /** null = no descontar no leídos (p. ej. la reconciliación del worker). */
   readCutoffMessageId: string | null;
+  /** Instagram: ids de las otras partes del mismo envío (pie, resto del texto). */
+  extraProviderMessageIds?: string[];
+  /** Salió incompleto (una parte no salió): se muestra en la burbuja. */
+  warning?: string;
 }): Promise<string> {
   const link = () =>
     db.transaction(async (tx) => {
@@ -1010,6 +1047,9 @@ export async function linkSentMessage(input: {
           })
           .where(queuedWhere);
       }
+      if (input.extraProviderMessageIds?.length || input.warning) {
+        await recordInstagramParts(tx, input.organizationId, input.conversationId, survivor, input.extraProviderMessageIds ?? [], input.warning);
+      }
       await applyOutboundToConversation(tx, input.conversationId, input.sentAt, input.readCutoffMessageId);
       return survivor;
     });
@@ -1024,6 +1064,37 @@ export async function linkSentMessage(input: {
       return link();
     }
   });
+}
+
+type LinkTx = Parameters<Parameters<typeof db.transaction>[0]>[0];
+
+/**
+ * Instagram (docs/instagram.md): un envío del CRM puede salir como VARIOS mensajes de Meta
+ * (archivo + pie, o un texto largo en partes) y cada uno trae su eco. La burbuja es una:
+ * los ids de las otras partes se guardan en ella (así sus ecos se reconocen en la ingesta)
+ * y, si algún eco llegó ANTES y se guardó como otro mensaje, se borra.
+ */
+async function recordInstagramParts(tx: LinkTx, organizationId: string, conversationId: string, messageId: string, extra: string[], warning?: string) {
+  const patch: Record<string, unknown> = {};
+  if (extra.length) patch[INSTAGRAM_PARTS_META] = extra;
+  if (warning) patch[SEND_WARNING_META] = warning;
+  await tx
+    .update(messages)
+    .set({ metadata: sql`coalesce(${messages.metadata}, '{}'::jsonb) || ${JSON.stringify(patch)}::jsonb` })
+    .where(and(eq(messages.id, messageId), eq(messages.organizationId, organizationId)));
+  if (extra.length) {
+    await tx
+      .delete(messages)
+      .where(
+        and(
+          eq(messages.organizationId, organizationId),
+          eq(messages.conversationId, conversationId),
+          eq(messages.direction, "out"),
+          eq(messages.source, "other_api"),
+          inArray(messages.providerMessageId, extra),
+        ),
+      );
+  }
 }
 
 // Un envío de resultado desconocido que siguió sin confirmarse (ni por la

@@ -57,7 +57,7 @@ function ChannelSwitch({ channel }: { channel: ChannelAgentView }) {
         <div className="flex flex-col">
           <span className="text-sm font-medium text-foreground">{channel.displayName}</span>
           <span className="text-xs text-foreground/70">
-            {channel.phoneE164 ?? "sin teléfono"}
+            {channel.type === "instagram" ? "Instagram" : (channel.phoneE164 ?? "sin teléfono")}
             {!channel.isActive && " · canal desactivado"}
           </span>
         </div>
@@ -97,7 +97,7 @@ function ChannelSwitch({ channel }: { channel: ChannelAgentView }) {
 }
 
 export function ChannelSwitches({ channels }: { channels: ChannelAgentView[] }) {
-  if (channels.length === 0) return <p className="text-sm text-foreground/70">No hay canales de WhatsApp conectados.</p>;
+  if (channels.length === 0) return <p className="text-sm text-foreground/70">No hay canales conectados (WhatsApp o Instagram).</p>;
   return (
     <div className="flex flex-col gap-3">
       {channels.map((c) => (

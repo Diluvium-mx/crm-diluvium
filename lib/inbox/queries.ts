@@ -11,6 +11,8 @@ import { chatSearchTerm, escapeLike, normalizeSearch, SQL_SEARCH_FROM, SQL_SEARC
 import { db } from "@/lib/db";
 import { channels, contacts, conversations, messages } from "@/lib/db/schema";
 import { latestInboundMessageId, unreadAfterCutoff } from "@/lib/messaging/ingest";
+import type { ChannelPlatform } from "@/lib/messaging/provider";
+import { SEND_WARNING_META } from "@/lib/messaging/rules";
 import { plainSendReason } from "@/lib/messaging/send-reasons";
 import { noDisponibleEstado, noticeDisplayText, shadowNoticeSql } from "@/lib/messaging/unavailable";
 import {
@@ -60,6 +62,7 @@ function toContact(row: typeof contacts.$inferSelect): InboxContact {
     firstName: row.firstName,
     lastName: row.lastName,
     phone: row.phoneE164,
+    instagramUsername: row.instagramUsername,
     avatarInitials: avatarInitials(row.firstName, row.lastName),
     sourceChannel: row.sourceChannel,
   };
@@ -91,15 +94,21 @@ function searchCondition(search: string | undefined): SQL | undefined {
   // (translate antes de lower: funciona aunque la base tenga locale C).
   const normalizedName = sql`lower(translate(${contacts.firstName} || ' ' || coalesce(${contacts.lastName}, ''), ${SQL_SEARCH_FROM}, ${SQL_SEARCH_TO}))`;
   const byName = like(normalizedName, `%${escapeLike(normalizeSearch(term))}%`);
+  // Instagram: también por @usuario (con o sin "@"), con la misma normalización.
+  const handle = normalizeSearch(term.replace(/^@+/, ""));
+  const byUsername = handle
+    ? like(sql`lower(translate(coalesce(${contacts.instagramUsername}, ''), ${SQL_SEARCH_FROM}, ${SQL_SEARCH_TO}))`, `%${escapeLike(handle)}%`)
+    : undefined;
+  const byNameOrUser = byUsername ? or(byName, byUsername)! : byName;
   // Dígitos: los 10 solos, o con 52 / +52 / 521 delante → prefijo del número
   // nacional, con índice (contacts_org_phone_national_idx).
   const prefixes = nationalSearchPrefixes(term);
-  if (prefixes.length === 0) return byName;
+  if (prefixes.length === 0) return byNameOrUser;
   // Respaldo para contactos aún sin phone_national (antes del backfill): la
   // búsqueda vieja por dígitos, solo sobre esas filas.
   const digits = term.replace(/\D/g, "");
   const legacy = sql`(${contacts.phoneNational} is null and regexp_replace(coalesce(${contacts.phoneE164}, ''), '\\D', '', 'g') like ${`%${digits}%`})`;
-  return or(byName, ...prefixes.map((p) => like(contacts.phoneNational, `${p}%`)), legacy);
+  return or(byNameOrUser, ...prefixes.map((p) => like(contacts.phoneNational, `${p}%`)), legacy);
 }
 
 type ListRow = { conversation: typeof conversations.$inferSelect; contact: typeof contacts.$inferSelect };
@@ -110,14 +119,14 @@ type ListRow = { conversation: typeof conversations.$inferSelect; contact: typeo
  */
 async function toListItems(organizationId: string, page: ListRow[], chatTerm: string | null): Promise<ConversationListItem[]> {
   const ids = page.map((r) => r.conversation.id);
-  const [lastMessages, awaiting, testIds, chatMatches] = ids.length
+  const [lastMessages, awaiting, channelInfo, chatMatches] = ids.length
     ? await Promise.all([
         lastMessageOf(organizationId, ids),
         awaitingReplySince(organizationId, ids),
-        testChannelConversations(organizationId, ids),
+        channelsOfConversations(organizationId, ids),
         chatTerm ? chatMatchesForConversations(organizationId, ids, chatTerm) : new Map<string, ChatMatch>(),
       ])
-    : [new Map(), new Map(), new Set<string>(), new Map<string, ChatMatch>()];
+    : [new Map(), new Map(), new Map<string, ChannelInfo>(), new Map<string, ChatMatch>()];
 
   return page.map(({ conversation, contact }) => {
     const last = lastMessages.get(conversation.id);
@@ -138,20 +147,23 @@ async function toListItems(organizationId: string, page: ListRow[], chatTerm: st
       awaitingReplySince: awaiting.get(conversation.id) ?? null,
       // Se manda la ventana tal cual; la UI decide "quedan X h" o si venció.
       windowExpiresAt: conversation.windowExpiresAt,
-      isTestChannel: testIds.has(conversation.id),
+      isTestChannel: channelInfo.get(conversation.id)?.isTest ?? false,
+      channelType: channelInfo.get(conversation.id)?.type ?? "whatsapp",
       chatMatch: chatMatches.get(conversation.id) ?? null,
     };
   });
 }
 
-/** Conversaciones (de la página) cuyo canal es de prueba. */
-async function testChannelConversations(organizationId: string, conversationIds: string[]): Promise<Set<string>> {
+type ChannelInfo = { isTest: boolean; type: ChannelPlatform };
+
+/** Canal de cada conversación de la página: si es de prueba y su red (WhatsApp/Instagram). */
+async function channelsOfConversations(organizationId: string, conversationIds: string[]): Promise<Map<string, ChannelInfo>> {
   const rows = await db
-    .select({ id: conversations.id })
+    .select({ id: conversations.id, isTest: channels.isTest, type: channels.type })
     .from(conversations)
     .innerJoin(channels, eq(channels.id, conversations.channelId))
-    .where(and(eq(conversations.organizationId, organizationId), inArray(conversations.id, conversationIds), eq(channels.isTest, true)));
-  return new Set(rows.map((r) => r.id));
+    .where(and(eq(conversations.organizationId, organizationId), inArray(conversations.id, conversationIds)));
+  return new Map(rows.map((r) => [r.id, { isTest: r.isTest, type: r.type }]));
 }
 
 // Temperatura del filtro (lib/contacts/filters.ts): una a la vez; "none" = sin asignar.
@@ -289,7 +301,7 @@ async function detail(where: SQL): Promise<ConversationDetail | null> {
     .select({
       conversation: conversations,
       contact: contacts,
-      channel: { isTest: channels.isTest, isActive: channels.isActive, archivedAt: channels.archivedAt },
+      channel: { isTest: channels.isTest, isActive: channels.isActive, archivedAt: channels.archivedAt, type: channels.type },
     })
     .from(conversations)
     .innerJoin(contacts, eq(contacts.id, conversations.contactId))
@@ -311,7 +323,7 @@ async function detail(where: SQL): Promise<ConversationDetail | null> {
           firstReplyAt: await firstReplyAfter(conversation.organizationId, conversation.id, conversation.adEntryAt),
         }
       : null,
-    channel: { isTest: channel.isTest, archived: channel.archivedAt !== null },
+    channel: { isTest: channel.isTest, archived: channel.archivedAt !== null, type: channel.type },
   };
 }
 
@@ -387,6 +399,7 @@ export async function listMessagesForOrg(
         // Fallido: el motivo en español claro (Bloque B), no el texto crudo de WhatsApp.
         errorMessage: m.status === "failed" ? plainSendReason(m.errorCode, m.errorMessage) : m.errorCode ? m.errorMessage : null,
         canRetry: canRetry(m),
+        sendWarning: typeof m.metadata?.[SEND_WARNING_META] === "string" ? (m.metadata[SEND_WARNING_META] as string) : null,
         sentAt: m.sentAt ?? m.createdAt,
         adReferral: adCards.get(m.id) ?? (m.direction === "in" ? adCardFromRaw(m.adReferral) : null),
         reactions: {
