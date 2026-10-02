@@ -17,3 +17,4 @@ export * from "./cobro";
 export * from "./ai-credit";
 export * from "./ai-billing";
 export * from "./ads";
+export * from "./followups";
