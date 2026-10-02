@@ -19,6 +19,7 @@ import { notifyContactUpdated } from "@/lib/contacts/notify-updated";
 import { furthestStage, roleKey, stageLabel, type FunnelStage } from "@/lib/contacts/stages";
 import type { StartRunInput, StartRunResult } from "@/lib/workflows/executor";
 import { startOnlyEligible } from "@/lib/workflows/start-only";
+import { takesAgentCaption } from "@/lib/workflows/steps";
 import { sendsByWorkflow } from "@/lib/workflows/max-per-chat";
 import { addNotice } from "./notices";
 import { buildAgentTools, type AgentTools, type AvisoMotivo, type ValidToolCall } from "./tools";
@@ -203,7 +204,8 @@ export async function quoteSetByVendor(organizationId: string, contactId: string
 // «El workflow es la respuesta» como herramienta (29-sep-2026, dueño: «Depende»): de estos
 // workflows, los marcados que traen TEXTOS. Con uno así, su último mensaje es la respuesta y el
 // texto del modelo no sale (no se le dice lo mismo dos veces); uno que solo manda archivos (la
-// Tabla) deja que el agente escriba su frase.
+// Tabla) deja que el agente escriba su frase, que desde el 1-oct-2026 va como pie del archivo
+// (captionRunOf).
 export async function answerRunsWithText(organizationId: string, workflowIds: readonly string[]): Promise<Set<string>> {
   if (workflowIds.length === 0) return new Set();
   const rows = await db
@@ -212,6 +214,20 @@ export async function answerRunsWithText(organizationId: string, workflowIds: re
     .innerJoin(workflows, and(eq(workflows.id, workflowSteps.workflowId), eq(workflows.organizationId, organizationId)))
     .where(and(eq(workflowSteps.organizationId, organizationId), inArray(workflowSteps.workflowId, [...workflowIds]), eq(workflowSteps.kind, "send_text"), eq(workflows.isAnswer, true)));
   return new Set(rows.map((r) => r.workflowId));
+}
+
+// Texto del Agente IA como pie del archivo (1-oct-2026, dueño): la PRIMERA corrida que pidió, si
+// empieza con un archivo y no manda textos (un video, la Tabla). Solo la primera: así el orden de
+// las corridas no cambia.
+export async function captionRunOf(organizationId: string, runs: ActionPlan["runs"]): Promise<ActionPlan["runs"][number] | null> {
+  const first = runs[0];
+  if (!first) return null;
+  const steps = await db
+    .select({ payload: workflowSteps.payload })
+    .from(workflowSteps)
+    .where(and(eq(workflowSteps.organizationId, organizationId), eq(workflowSteps.workflowId, first.workflowId)))
+    .orderBy(asc(workflowSteps.position));
+  return takesAgentCaption(steps.map((s) => s.payload)) ? first : null;
 }
 
 // ¿Alguna de estas corridas manda algo al cliente (texto o archivo)?
