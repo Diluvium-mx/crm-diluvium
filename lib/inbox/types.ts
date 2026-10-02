@@ -256,6 +256,8 @@ export type InboxEvent =
   | LectorStatusEvent
   /** Las etapas del Embudo cambiaron (editor): la UI vuelve a pedir la lista. Al borrar una, cuántos contactos pasaron de `from` a `to`. */
   | StagesUpdatedEvent
+  /** Cambió el seguimiento del Agente IA de un chat (lib/followups/store.ts): la píldora 🤖 se vuelve a pedir. */
+  | { type: "followup.updated"; conversationId: string; contactId: string }
   | { type: "reload" };
 
 export type StagesUpdatedEvent = {

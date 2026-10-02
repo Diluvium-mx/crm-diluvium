@@ -17,6 +17,9 @@
 // (fotos y videos de la Biblioteca; entran a la misma vista previa ya listos).
 // La caja empieza con 2 renglones y crece sola desde el 3.º (28-sep-2026: lo
 // escrito se perdía arriba); pasado el tope (max-h) se desliza por dentro.
+// Seguimiento del Agente IA (2-oct-2026): píldora 🤖 en el hueco de la barra arriba de ⚡ 📄 📎
+// (en el celular, al final del renglón de iconos; con la ventana cerrada, junto a "Enviar
+// plantilla") y su burbuja (followup-pill.tsx). Solo cuando el chat tiene un seguimiento.
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { Clock, Play, Zap } from "lucide-react";
 import { CHAT_CAPTION_MAX } from "@/lib/chat-attachments/rules";
@@ -39,6 +42,7 @@ import { TemplatePicker } from "./template-picker";
 import { useIsMobile } from "@/components/ui/use-media-query";
 import { CloseX } from "@/components/ui/close-x";
 import { WorkflowPicker } from "./workflow-picker";
+import { FollowUpPanel, FollowUpPill, useFollowUp } from "./followup-pill";
 
 // Alto justo para el texto, entre los 2 renglones de `rows` y el max-height de la clase.
 // Vacía se queda en 2 renglones: Chrome mide también el texto gris de ayuda, y
@@ -109,6 +113,20 @@ export function Composer({
   // 📎: menú de dos opciones y, de ahí, Multimedia (la Biblioteca).
   const [attachMenuOpen, setAttachMenuOpen] = useState(false);
   const [multimediaOpen, setMultimediaOpen] = useState(false);
+  // 🤖 Seguimiento del Agente IA: la burbuja con sus opciones.
+  const [followUpOpen, setFollowUpOpen] = useState(false);
+  const { followUp, reload: reloadFollowUp } = useFollowUp(conversationId);
+  const followUpPanelOpen = followUpOpen && followUp !== null;
+  const toggleFollowUp = () => {
+    setFollowUpOpen((open) => !open);
+    setSnippetOpen(false);
+    setTemplateOpen(false);
+    setWorkflowsOpen(false);
+    setMultimediaOpen(false);
+    setScheduleOpen(false);
+    setAttachMenuOpen(false);
+  };
+  const followUpPanel = followUpPanelOpen && <FollowUpPanel followUp={followUp} onClose={() => setFollowUpOpen(false)} onChanged={reloadFollowUp} />;
   const [snippets, setSnippets] = useState<SnippetView[] | null>(null);
   const [snippetsError, setSnippetsError] = useState(false);
   // Comandos de Automatización (Fase D): "/tabla", "/banco"… se listan bajo los
@@ -296,6 +314,7 @@ export function Composer({
   if (!windowOpen) {
     return (
       <div className="border-t bg-card p-3 pb-[max(0.75rem,env(safe-area-inset-bottom))]">
+        {followUpPanel}
         {scheduleOpen ? (
           scheduleForm
         ) : templateOpen ? (
@@ -309,16 +328,23 @@ export function Composer({
           />
         ) : (
           <div className="flex gap-2">
+            {followUp && <FollowUpPill followUp={followUp} open={followUpPanelOpen} onToggle={toggleFollowUp} className="flex max-w-[45%] self-center" />}
             <button
               type="button"
-              onClick={() => setTemplateOpen(true)}
+              onClick={() => {
+                setTemplateOpen(true);
+                setFollowUpOpen(false);
+              }}
               className="flex flex-1 items-center justify-center gap-2 rounded-md bg-brand-navy px-4 py-2 text-sm font-medium text-brand-white transition-colors hover:bg-brand-navy-dark"
             >
               📄 Enviar plantilla
             </button>
             <button
               type="button"
-              onClick={() => setScheduleOpen(true)}
+              onClick={() => {
+                setScheduleOpen(true);
+                setFollowUpOpen(false);
+              }}
               aria-label="Programar plantilla"
               title="Programar plantilla"
               className="rounded-md border px-3 py-2 text-brand-navy transition-colors hover:bg-brand-navy/10 dark:text-sky-300"
@@ -334,6 +360,7 @@ export function Composer({
   return (
     <div className="border-t bg-card p-3 pb-[max(0.75rem,env(safe-area-inset-bottom))]">
       {scheduleForm}
+      {followUpPanel}
       {snippetOpen && <SnippetPicker onInsert={appendFragment} onClose={() => setSnippetOpen(false)} />}
       {workflowsOpen && <WorkflowPicker onRun={runCommand} onClose={() => setWorkflowsOpen(false)} />}
       {multimediaOpen && <MultimediaPicker selected={selectedAssets} onToggle={attachments.toggleLibrary} onClose={() => setMultimediaOpen(false)} />}
@@ -451,66 +478,77 @@ export function Composer({
           `order` y un corte de renglón (basis-full). Desde sm, el renglón único de
           siempre en el orden del DOM (sm:order-none). */}
       <div className="flex flex-wrap items-end gap-2 sm:flex-nowrap">
-        <button
-          type="button"
-          onClick={() => {
-            setSnippetOpen((open) => !open);
-            setTemplateOpen(false);
-            setWorkflowsOpen(false);
-            setMultimediaOpen(false);
-          }}
-          aria-label="Insertar mensaje rápido"
-          aria-expanded={snippetOpen}
-          title="Mensajes rápidos"
-          className={`order-1 rounded-md border px-2.5 py-2 transition-colors sm:order-none ${
-            snippetOpen ? "border-brand-orange bg-brand-orange/10 text-brand-orange" : "text-brand-orange hover:bg-brand-orange/10"
-          }`}
-        >
-          <Zap className="size-4" aria-hidden="true" />
-        </button>
-        {channelType === "whatsapp" && (
-          <button
-            type="button"
-            onClick={() => {
-              setTemplateOpen((open) => !open);
-              setSnippetOpen(false);
-              setWorkflowsOpen(false);
-              setMultimediaOpen(false);
-            }}
-            aria-label="Enviar plantilla"
-            aria-expanded={templateOpen}
-            title="Plantillas (aprobadas por Meta)"
-            className={`order-1 rounded-md border px-2.5 py-2 text-sm leading-4 transition-colors sm:order-none ${
-              templateOpen ? "border-brand-navy bg-brand-navy/10" : "hover:bg-brand-navy/10"
-            }`}
-          >
-            <span aria-hidden="true">📄</span>
-          </button>
-        )}
-        <AttachMenu
-          open={attachMenuOpen}
-          onToggle={() => {
-            // Al abrir el menú ya se pide la lista de Multimedia: cuando se toca, ya está.
-            if (!attachMenuOpen) void prefetchMultimedia().catch(() => undefined);
-            setAttachMenuOpen((open) => !open);
-          }}
-          onClose={closeAttachMenu}
-          onPickFiles={onPickFiles}
-          onMultimedia={() => {
-            setMultimediaOpen(true);
-            setSnippetOpen(false);
-            setTemplateOpen(false);
-            setWorkflowsOpen(false);
-            setScheduleOpen(false);
-          }}
-          className="order-1 sm:order-none"
-        />
+        {/* ⚡ 📄 📎 en su columna: arriba, en el hueco que deja la caja de dos renglones, la
+            píldora 🤖 del seguimiento (desde sm; en el celular va al final del renglón). */}
+        <div className="order-1 flex min-w-0 flex-col gap-1 sm:order-none">
+          {followUp && <FollowUpPill followUp={followUp} open={followUpPanelOpen} onToggle={toggleFollowUp} className="hidden sm:flex" />}
+          <div className="flex gap-2">
+            <button
+              type="button"
+              onClick={() => {
+                setSnippetOpen((open) => !open);
+                setFollowUpOpen(false);
+                setTemplateOpen(false);
+                setWorkflowsOpen(false);
+                setMultimediaOpen(false);
+              }}
+              aria-label="Insertar mensaje rápido"
+              aria-expanded={snippetOpen}
+              title="Mensajes rápidos"
+              className={`order-1 rounded-md border px-2.5 py-2 transition-colors sm:order-none ${
+                snippetOpen ? "border-brand-orange bg-brand-orange/10 text-brand-orange" : "text-brand-orange hover:bg-brand-orange/10"
+              }`}
+            >
+              <Zap className="size-4" aria-hidden="true" />
+            </button>
+            {channelType === "whatsapp" && (
+              <button
+                type="button"
+                onClick={() => {
+                  setTemplateOpen((open) => !open);
+                  setFollowUpOpen(false);
+                  setSnippetOpen(false);
+                  setWorkflowsOpen(false);
+                  setMultimediaOpen(false);
+                }}
+                aria-label="Enviar plantilla"
+                aria-expanded={templateOpen}
+                title="Plantillas (aprobadas por Meta)"
+                className={`order-1 rounded-md border px-2.5 py-2 text-sm leading-4 transition-colors sm:order-none ${
+                  templateOpen ? "border-brand-navy bg-brand-navy/10" : "hover:bg-brand-navy/10"
+                }`}
+              >
+                <span aria-hidden="true">📄</span>
+              </button>
+            )}
+            <AttachMenu
+              open={attachMenuOpen}
+              onToggle={() => {
+                // Al abrir el menú ya se pide la lista de Multimedia: cuando se toca, ya está.
+                if (!attachMenuOpen) void prefetchMultimedia().catch(() => undefined);
+                setAttachMenuOpen((open) => !open);
+                setFollowUpOpen(false);
+              }}
+              onClose={closeAttachMenu}
+              onPickFiles={onPickFiles}
+              onMultimedia={() => {
+                setMultimediaOpen(true);
+                setSnippetOpen(false);
+                setTemplateOpen(false);
+                setWorkflowsOpen(false);
+                setScheduleOpen(false);
+              }}
+              className="order-1 sm:order-none"
+            />
+          </div>
+        </div>
         {/* ▶ Automatizaciones: SOLO móvil (md:hidden). Manda un workflow con un toque; en
             escritorio se escribe su comando con "/". */}
         <button
           type="button"
           onClick={() => {
             setWorkflowsOpen((open) => !open);
+            setFollowUpOpen(false);
             setSnippetOpen(false);
             setTemplateOpen(false);
             setMultimediaOpen(false);
@@ -596,6 +634,7 @@ export function Composer({
           type="button"
           onClick={() => {
             setScheduleOpen((open) => !open);
+            setFollowUpOpen(false);
             setSnippetOpen(false);
             setTemplateOpen(false);
             setWorkflowsOpen(false);
@@ -612,6 +651,7 @@ export function Composer({
         >
           <Clock className="size-4" aria-hidden="true" />
         </button>
+        {followUp && <FollowUpPill followUp={followUp} open={followUpPanelOpen} onToggle={toggleFollowUp} className="order-1 ml-auto flex max-w-[50%] self-center sm:hidden" />}
         <button
           type="button"
           onClick={submit}

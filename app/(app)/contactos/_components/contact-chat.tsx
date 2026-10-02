@@ -138,6 +138,8 @@ export function ContactChat({
     if (event.type === "stages.updated") return;
     // El Agente IA leyendo en segundo plano: solo el indicador del Detalle (el hilo no cambia).
     if (event.type === "lector.status") return;
+    // El seguimiento del Agente IA: solo la píldora 🤖 del composer (followup-pill.tsx).
+    if (event.type === "followup.updated") return;
     const id = conversationIdRef.current;
     if (!id) {
       // Con debounce: una ráfaga de mensajes de otros clientes = una búsqueda.
