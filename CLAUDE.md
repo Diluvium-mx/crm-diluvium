@@ -383,7 +383,8 @@ Reglas de UI:
   `lib/version/` (vigilancia instalada desde `instrumentation-client.ts`) y `app/(app)/_components/update-notice.tsx`.
 - **Cinta del clima (2-oct-2026, decisión del dueño):** en la barra de arriba, entre el logo y el correo, corre
   SIEMPRE de derecha a izquierda (40 px/s; nada la detiene, ni el mouse; sin globo) con el clima MEDIDO de 24
-  ciudades donde más llueve: icono (sin texto) + ciudad + grados + lluvia de las últimas 24 h. Icono y grados = METAR
+  ciudades donde más llueve: icono (sin texto) + ciudad + grados + lluvia de las últimas 24 h (sin lluvia, no se pone
+  nada: nunca «0 mm»). Icono y grados = METAR
   del aeropuerto (aviationweather.gov, NWS); mm = SYNOP del observatorio del SMN-Conagua vía OGIMET; gratis, sin
   llave. El worker la trae cada hora en horario laboral (lun–sáb 9–19 Mazatlán) y la deja en Redis
   (`clima:cinta:v1`, sin tabla); no sale fuera de horario, < 768 px ni con foto de > 2 h. Una ciudad que no pasa las
