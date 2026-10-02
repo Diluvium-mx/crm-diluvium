@@ -132,7 +132,7 @@ borrador: el mensaje que se le mandaría, como lo escribiría la empresa en este
 - si la empresa tardó en contestarle, una disculpa por la espera;
 - nunca genérico ("solo paso a dar seguimiento"), ni "último seguimiento", ni presión; no vuelvas a pedir la medida si ya se pidió;
 - si en el chat escribió un vendedor, no te presentes como asistente: habla como Diluvium;
-- la hora a la que sale según el caso (hora del cliente): pago 10:00; objeción y medidas de 19:00 a 20:30 (ya está en su casa: "cuando esté en su casa, ¿me puede medir…?"); precio e información de 19:00 a 21:00; cotización de 18:00 a 20:00; pidió fecha, a la hora que pidió.
+- que sirva a cualquier hora: NO digas "hoy", "esta noche", "mañana" ni "cuando esté en su casa". Casi siempre sale a la hora del caso (hora del cliente: pago 10:00; objeción y medidas de 19:00 a 20:30, ya en su casa; precio e información de 19:00 a 21:00; cotización de 18:00 a 20:00; pidió fecha, a la hora que pidió), pero si su ventana de WhatsApp cierra antes sale más temprano.
 En no_seguir, borrador en null.`;
 
 // Cada campo acepta null = "el chat no lo dice": Luna manda SIEMPRE todos los campos

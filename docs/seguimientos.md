@@ -2,9 +2,11 @@
 
 > **Estado (2-oct-2026): el dueño aprobó la ESTRUCTURA (los 7 pasos, §4) el 30-sep y el 2-oct la TABLA DE CASOS
 > (§6, los 10 casos), la hora de cada caso, el horario de 7:00 a 21:00 todos los días y el envío automático en los chats
-> de vendedor, el botón 🤖 arriba de ⚡ 📄 📎 y la pausa a mano como sugerencia.** Siguen abiertas las de la §12
-> (aviso de pago, plantillas por caso, quién redacta el texto al salir). Las plantillas de cada intento las
-> confirma el dueño caso por caso. Parte 0 en producción (main d38f387); de la Parte 1 en adelante, nada construido. Se
+> de vendedor, la píldora 🤖 en el hueco de la barra arriba de ⚡ 📄 📎, la pausa a mano como sugerencia y que el 1.er
+> intento salga con el borrador del lector tal cual (sin gasto extra de IA).** Siguen abiertas las de la §12 (aviso de
+> pago, plantillas por caso). Las plantillas de cada intento las confirma el dueño caso por caso. Parte 0 en producción
+> (main d38f387). **Parte 1 (modo ensayo) construida** en la rama `feat/seguimientos-parte-1` (migración 0056), falta
+> staging y "OK MAIN"; de la Parte 2 en adelante, nada construido. Se
 > construye por partes (§11), cada una por staging y con "OK MAIN". Este documento **reemplaza** al del 25-sep-2026,
 > que disparaba el seguimiento por tiempo ("2 días sin respuesta") y después veía qué decir: el orden correcto es al
 > revés. Fuentes al final: **[M#]** Meta, **[Z#]** Zernio, **[G#]** GoHighLevel/GoGHL, **[C#]** código del CRM.
@@ -243,9 +245,11 @@ en medio, el seguimiento se cancela y la siguiente lectura hace una ficha nueva.
   29–2, lo mismo que el calendario) y solo 3 clientes en 6 meses la mencionaron. Por eso, cuando el cliente la pide
   va en "Pidió fecha"; una regla general de fechas de pago se revisa con los datos del CRM (§12).
 
-**El Agente IA lo sabe:** la hora del caso y su porqué van en las instrucciones con las que redacta el seguimiento
-(p. ej. de noche: "cuando esté en su casa, ¿me puede medir el ancho de lado a lado?"), y se ven y editan en
-Agente IA › Seguimientos (Parte 4).
+**El Agente IA lo sabe:** la hora del caso y su porqué van en las instrucciones con las que redacta el seguimiento,
+y se ven y editan en Agente IA › Seguimientos (Parte 4). Como a veces la ventana cierra antes de la hora del caso y el
+intento sale más temprano, el borrador se escribe para que sirva a cualquier hora (sin "hoy", "esta noche" ni "cuando
+esté en su casa"): el saludo con la hora ("buenos días / buenas tardes / buenas noches") lo pone el CRM al salir
+(encontrado en la vista previa de la Parte 1, 2-oct-2026).
 
 ---
 
@@ -396,7 +400,7 @@ lectura.
 | Parte | Qué | Migración |
 |---|---|---|
 | **0 ✅** | **En producción (main d38f387, 2-oct):** plantillas al día solas ("Ver estado"; chequeo al abrir Plantillas y el worker cada 10 min mientras haya alguna en revisión); `{{1}}` = primer nombre del contacto en 📄, 🕒 y el primer mensaje del Embudo. | No |
-| **1** | Tabla `follow_ups` + la ficha en el lector + cálculo de la hora (§6, horario por lada) + la burbuja en el chat. **Modo ensayo: no manda nada**, para que el dueño vea en chats reales si las fichas y los tiempos tienen sentido. | 0055 |
+| **1** | Tabla `follow_ups` + la ficha en el lector + cálculo de la hora (§6, horario por lada) + la píldora 🤖 y su burbuja en la caja para escribir + el barrido que anota cuándo "habría salido" cada intento. **Modo ensayo: no manda nada**, para que el dueño vea en chats reales si las fichas y los tiempos tienen sentido. Solo WhatsApp (Instagram, después). | 0056 (la 0055 es Instagram) |
 | **2** | Envío con la ventana abierta (el Agente IA redacta con la ficha y §7.3) + paradas + 2.º y 3.er intento + frío y aviso. | Quizá |
 | **3** | Ventana cerrada: plantilla como del Agente IA (sin pausarlo), retomar con contexto cuando conteste, tope de 7 días, 131049/131050. | No |
 | **4** | Agente IA › Seguimientos (editar la tabla), chats de vendedor (sugerido + WhatsApp Web), tarjeta del Dashboard, mapa y capturas. | No |
@@ -442,13 +446,14 @@ contacto de prueba del dueño.
 
 ## 13. Detalle técnico (para Code)
 
-**Datos (migración 0055; la 0052–0054 ya las tomaron otros cambios):** `follow_ups` — id, organization_id,
-conversation_id, contact_id, caso, pendiente, siguiente_paso, borrador, fecha_pedida, intento (1|2|3), due_at,
-status (`programado` | `enviando` | `esperando_respuesta` | `enviado` | `contestado` | `cancelado` | `sugerido` |
-`fallido` | `ensayo`), cancel_reason, door (`texto` | `plantilla`), template_name, message_id, based_on_message_at
-(el último mensaje que leyó el lector), created_at, updated_at. Índice único parcial: un solo
-`programado`/`esperando_respuesta`/`ensayo` por conversación. Tabla de casos editable: `follow_up_rules` (caso,
-encendido, intentos, objetivo) o `ai_config.jsonb`. `contacts.sin_seguimientos` (bool) para las bajas.
+**Datos (migración 0056, construida en la Parte 1):** `follow_ups` (`lib/db/schema/followups.ts`) — una fila por
+pendiente: caso, status (`programado` → `esperando` → `terminado`; o `contestado`, `cancelado` con `cancel_reason`, y
+`no_seguir`), `ensayo`, intento y total_intentos, la ficha (pendiente, siguiente_paso, motivo, borrador, fecha_pedida,
+hora_pedida), time_zone del cliente, due_at, door (`texto` | `plantilla`), template_name, modo (`automatico` |
+`sugerido`), presentar_at, auto_aprobado ("Que salga solo"), due_set_by (`sistema` | `vendedor`), intentos (jsonb: cada
+intento que salió o "habría salido"), based_on_message_at (hasta dónde leyó el lector). Índice único parcial: un solo
+`programado`/`esperando` por conversación. Para la Parte 2+: tabla de casos editable (`follow_up_rules` o
+`ai_config.jsonb`) y `contacts.sin_seguimientos` (bool) para las bajas.
 
 **Código:**
 - `lib/ai/runtime/lector-core.ts`: el esquema de `actualizar_contacto` (`lectorSchemaFor`) suma `seguimiento`

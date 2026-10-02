@@ -62,10 +62,14 @@ const inAllowed = (t: Date, zone: string) => {
   return m >= minutesOf(ALLOWED_FROM) && m <= minutesOf(ALLOWED_TO);
 };
 
-/** Redondea hacia arriba a 5 minutos ("20:05", no "20:03"). */
+/** Redondea a 5 minutos ("20:05", no "20:03"): hacia arriba o hacia abajo. */
 function ceil5(t: Date): Date {
   const step = 5 * MINUTE;
   return new Date(Math.ceil(t.getTime() / step) * step);
+}
+function floor5(t: Date): Date {
+  const step = 5 * MINUTE;
+  return new Date(Math.floor(t.getTime() / step) * step);
 }
 
 /** ¿Se puede mandar texto libre a esa hora? (ventana abierta con 1 h de margen). */
@@ -82,7 +86,8 @@ export function templateFor(door: DoorKind, t: Date, zone: string): string {
 /** Hora de una plantilla en ese caso: la del caso, o las 18:00 si el caso es de noche. */
 export function templateTimeOf(caso: Exclude<FollowUpCase, "no_seguir">): string {
   const slot = CASE_RULES[caso].slot!;
-  return minutesOf(slot.from) <= minutesOf(TEMPLATE_LATEST) ? slot.from : TEMPLATE_EVENING;
+  // Los casos de noche (empiezan a las 19:00 o después) mandan la plantilla a las 18:00.
+  return minutesOf(slot.from) < minutesOf(TEMPLATE_LATEST) ? slot.from : TEMPLATE_EVENING;
 }
 
 /** Primer día (desde `from`) en que la hora `time` ya pasó `notBefore`. */
@@ -184,6 +189,8 @@ function firstAttempt(input: PlanInput): AttemptPlan {
     const m = localMinutes(hi, zone);
     if (m > minutesOf(ALLOWED_TO)) t = zonedInstant(zone, dateOf(hi, zone), ALLOWED_TO);
     else if (m < minutesOf(ALLOWED_FROM)) t = zonedInstant(zone, addDays(dateOf(hi, zone), -1), ALLOWED_TO);
+    const neat = floor5(t);
+    if (neat.getTime() >= lo.getTime()) return { dueAt: neat, door: "texto", templateName: null };
     if (t.getTime() >= lo.getTime()) return { dueAt: t, door: "texto", templateName: null };
   }
   // Tampoco: plantilla al día siguiente de la parada, a la hora del caso.
