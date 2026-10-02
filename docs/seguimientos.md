@@ -2,8 +2,8 @@
 
 > **Estado (2-oct-2026): el dueño aprobó la ESTRUCTURA (los 7 pasos, §4) el 30-sep y el 2-oct la TABLA DE CASOS
 > (§6, los 10 casos), la hora de cada caso, el horario de 7:00 a 21:00 todos los días y el envío automático en los chats
-> de vendedor.** Siguen abiertas las de la §12 (dónde se ve, pausa a mano, aviso de pago). **No se construye nada
-> hasta cerrarlas.** Las plantillas de cada intento las
+> de vendedor, el botón 🤖 arriba de ⚡ 📄 📎 y la pausa a mano como sugerencia.** Siguen abiertas las de la §12
+> (fuera del horario de los vendedores, quién ve el ensayo, aviso de pago). Las plantillas de cada intento las
 > confirma el dueño caso por caso. Parte 0 en producción (main d38f387); de la Parte 1 en adelante, nada construido. Se
 > construye por partes (§11), cada una por staging y con "OK MAIN". Este documento **reemplaza** al del 25-sep-2026,
 > que disparaba el seguimiento por tiempo ("2 días sin respuesta") y después veía qué decir: el orden correcto es al
@@ -288,8 +288,23 @@ de cotización ya los llevaba un vendedor, y los vendedores solo alcanzaron a se
 | El vendedor vuelve a escribir | El Agente IA se vuelve a pausar, como hoy |
 
 En un chat de vendedor el mensaje no habla como asistente: habla como Diluvium y retoma lo que el vendedor dejó
-pendiente. Si el Agente IA está **apagado en el canal**, no hay seguimientos. Por decidir: si "Pausar agente" puesto
-**a mano** también deja salir el seguimiento (§12).
+pendiente. Si el Agente IA está **apagado en el canal**, no hay seguimientos.
+
+**"Pausar agente" puesto a mano** (decisión del dueño, 2-oct): el vendedor pidió a propósito que el Agente IA no entre,
+así que ahí el seguimiento **no sale solo: queda como sugerencia** en el botón 🤖 ("Sugerido · 20:00", en amarillo)
+y la tarjeta del Embudo se pone **amarilla** (el Agente IA necesita al vendedor) a la hora del intento.
+
+**Si esa hora cae fuera del horario de los vendedores** (propuesta; en GHL escribían de lunes a viernes de 9:00 a
+18:00 y los sábados de 8:00 a 13:00; los domingos, casi nada):
+1. La sugerencia se le presenta **antes de que se vaya**: en su última hora de trabajo antes del intento (p. ej.
+   17:00 para uno de las 20:00, o el sábado a las 12:00 para uno del domingo), con la tarjeta amarilla.
+2. En la burbuja tiene, además, **"Que salga solo"**: con un toque, ese intento se vuelve automático (opción B): sale
+   a su hora y, si el cliente contesta, la conversación sigue con el Agente IA.
+3. Si nadie decide, **no sale y no se pierde**: sigue amarilla hasta el siguiente turno. Si para entonces ya cerró la
+   ventana, "Lo mando yo" (WhatsApp Web, sin ventana) o el botón 🤖 con la plantilla.
+
+**Si el cliente pide una hora fuera de 7:00–21:00** ("escríbame a las 10 de la noche"), se usa la más cercana
+dentro del horario (21:00 o 7:00).
 
 ---
 
@@ -298,15 +313,19 @@ pendiente. Si el Agente IA está **apagado en el canal**, no hay seguimientos. P
 **El Detalle del contacto ya está lleno: el seguimiento vive en el composer**, en el mismo renglón que ⚡ Mensajes
 rápidos, 📄 Plantillas y 📎 Adjuntar (Bandeja y pop-up del Embudo usan el mismo composer).
 
-- **Botón-píldora 🤖** después de 📎. **Solo aparece cuando el chat tiene un seguimiento**; dice la hora:
-  `🤖 hoy 20:00` (programado) · `🤖 esperando` (salió con plantilla y espera respuesta) · `🤖 Ensayo 20:00` (Parte 1,
-  gris punteado). Sin seguimiento, no hay botón (menos datos).
+- **Botón-píldora 🤖 ARRIBA de ⚡ 📄 📎** (decisión del dueño, 2-oct), flotando sobre el borde del composer y alineado
+  a la izquierda: no cambia ni el ancho ni el alto de la barra. **Solo aparece cuando el chat tiene un seguimiento**;
+  dice la hora: `🤖 Hoy 20:00` (programado, azul) · `🤖 Sugerido · 20:00` (pausa puesta a mano, amarillo) ·
+  `🤖 Esperando` (salió con plantilla y espera respuesta) · `🤖 Ensayo 20:00` (Parte 1, gris punteado). Sin
+  seguimiento, no hay botón (menos datos).
 - **Al tocarlo se abre la burbuja** arriba del composer, como la de Mensajes rápidos:
   - qué es: "Faltan medidas · 1.º de 2", por qué ("Se le pidió el ancho y no lo ha mandado") y qué busca;
   - cuándo: la hora de Mazatlán y, si es distinta, la del cliente; por dónde sale (texto del Agente IA o la
     plantilla);
   - botones **Ver mensaje** (el borrador; se actualiza con lo último del chat al salir), **Cambiar hora**, **Lo mando
-    yo** (abre WhatsApp Web con el texto ya escrito: gratis y sin ventana de 24 h) y **Cancelar** (con confirmación).
+    yo** (abre WhatsApp Web con el texto ya escrito: gratis y sin ventana de 24 h) y **Cancelar** (con confirmación;
+    cancela todo el seguimiento de ese pendiente, no solo el siguiente intento); en una sugerencia, también **Que
+    salga solo**.
 - **Cuando sale**, la burbuja del mensaje en el chat lleva la marca "Seguimiento". Mientras se manda, la píldora del
   Agente IA dice "enviando seguimiento".
 - **No** va una línea en el Detalle ni una tarjeta dentro del hilo (sería repetido).
@@ -377,19 +396,22 @@ contacto de prueba del dueño.
   salen hasta las 19:00.
 - Sin reactivación tardía de 15 días como Ángela: el seguimiento sale del contexto del chat.
 
+- El botón 🤖 va arriba de ⚡ 📄 📎 (§8). "Cancelar" cancela todo el seguimiento de ese pendiente; si el chat cambia y
+  vuelve a quedarse parado, se arma uno nuevo.
+- "Pausar agente" puesto a mano: el seguimiento queda como sugerencia (§7.4).
+
 **Abiertas:**
-1. **Dónde se ve (§8):** el botón 🤖 en el composer con su burbuja (propuesta), en vez del Detalle.
-2. **"Pausar agente" puesto a mano:** ¿también deja salir el seguimiento (como la pausa automática) o ahí solo queda
-   como sugerencia en el botón 🤖? Propuesta: solo sugerencia, porque el vendedor pidió a propósito que el Agente IA
-   no entre.
-3. **Cancelar:** cancela todo el seguimiento de ese pendiente (los intentos que faltan), no solo el siguiente
+1. **Fuera del horario de los vendedores (§7.4):** la sugerencia se presenta antes de que se vaya, con "Que salga
+   solo"; si nadie decide, espera al siguiente turno (propuesta). Horario de los vendedores de fábrica: lunes a viernes
+   9:00–18:00 y sábado 9:00–13:00, hora de Mazatlán (de los datos de GHL; editable en Agente IA › Seguimientos).
+2. **Modo ensayo (Parte 1):** el botón 🤖 lo ven solo owner y admin, para que los vendedores no se confundan
    (propuesta).
-4. **Pago pendiente, aviso al vendedor:** cuándo (propuesta: si no contesta el 2.º intento) y cómo (la tarjeta
+3. **Pago pendiente, aviso al vendedor:** cuándo (propuesta: si no contesta el 2.º intento) y cómo (la tarjeta
    amarilla de hoy o un color propio en el Embudo). Por ver.
-5. **Plantillas de cada intento:** el dueño las confirma caso por caso antes de la Parte 3.
-6. **Plantillas propias por caso** (las 8 borradas el 2-oct): después de ver el ensayo, con los textos revisados
+4. **Plantillas de cada intento:** el dueño las confirma caso por caso antes de la Parte 3.
+5. **Plantillas propias por caso** (las 8 borradas el 2-oct): después de ver el ensayo, con los textos revisados
    palabra por palabra. No hacen falta para las Partes 1–3.
-7. **Fechas de pago (quincena, fin de mes):** cuando el cliente la pide, va en "Pidió fecha". Una regla general se
+6. **Fechas de pago (quincena, fin de mes):** cuando el cliente la pide, va en "Pidió fecha". Una regla general se
    revisa con los datos del CRM, una vez que haya seguimientos funcionando.
 
 ---
