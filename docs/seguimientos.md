@@ -3,7 +3,7 @@
 > **Estado (2-oct-2026): el dueño aprobó la ESTRUCTURA (los 7 pasos, §4) el 30-sep y el 2-oct la TABLA DE CASOS
 > (§6, los 10 casos), la hora de cada caso, el horario de 7:00 a 21:00 todos los días y el envío automático en los chats
 > de vendedor, el botón 🤖 arriba de ⚡ 📄 📎 y la pausa a mano como sugerencia.** Siguen abiertas las de la §12
-> (fuera del horario de los vendedores, quién ve el ensayo, aviso de pago). Las plantillas de cada intento las
+> (aviso de pago, plantillas por caso, quién redacta el texto al salir). Las plantillas de cada intento las
 > confirma el dueño caso por caso. Parte 0 en producción (main d38f387); de la Parte 1 en adelante, nada construido. Se
 > construye por partes (§11), cada una por staging y con "OK MAIN". Este documento **reemplaza** al del 25-sep-2026,
 > que disparaba el seguimiento por tiempo ("2 días sin respuesta") y después veía qué decir: el orden correcto es al
@@ -313,9 +313,11 @@ dentro del horario (21:00 o 7:00).
 **El Detalle del contacto ya está lleno: el seguimiento vive en el composer**, en el mismo renglón que ⚡ Mensajes
 rápidos, 📄 Plantillas y 📎 Adjuntar (Bandeja y pop-up del Embudo usan el mismo composer).
 
-- **Botón-píldora 🤖 ARRIBA de ⚡ 📄 📎** (decisión del dueño, 2-oct), flotando sobre el borde del composer y alineado
-  a la izquierda: no cambia ni el ancho ni el alto de la barra. **Solo aparece cuando el chat tiene un seguimiento**;
-  dice la hora: `🤖 Hoy 20:00` (programado, azul) · `🤖 Sugerido · 20:00` (pausa puesta a mano, amarillo) ·
+- **Píldora 🤖 DENTRO de la barra, en el hueco que queda arriba de ⚡ 📄 📎** (decisión del dueño, 2-oct): la caja
+  de texto mide dos renglones y los iconos uno, así que arriba de ellos sobra un espacio blanco; la píldora lo rellena
+  (unos 20 px de alto y el ancho de los tres iconos), sin cambiar ni el ancho ni el alto de la barra. En el celular,
+  donde los iconos van en su propio renglón, va al final de ese renglón. **Solo aparece cuando el chat tiene un seguimiento**;
+  dice la hora: `🤖 Seguimiento · 20:00` (programado, azul) · `🤖 Sugerido · 20:00` (pausa puesta a mano, amarillo) ·
   `🤖 Esperando` (salió con plantilla y espera respuesta) · `🤖 Ensayo 20:00` (Parte 1, gris punteado). Sin
   seguimiento, no hay botón (menos datos).
 - **Al tocarlo se abre la burbuja** arriba del composer, como la de Mensajes rápidos:
@@ -365,7 +367,27 @@ el 2.º. Más o menos la mitad de los intentos caen en la ventana gratis del anu
 | 2.º intento con plantilla (~1,900) | Marketing ~MX$0.73, gratis en la ventana del anuncio (~la mitad) | ≈ MX$700 |
 | 3.er intento con plantilla (~200) | Marketing ~MX$0.73 (ya casi nunca en la ventana gratis) | ≈ MX$150 |
 
-Total aproximado: **≈ MX$1,050 en WhatsApp + US$10–30 de IA (≈ MX$1,250–1,650 al mes)**. Se ajusta con los números reales después de una semana.
+Total aproximado: **≈ MX$1,050 en WhatsApp + la IA de §10.1**. Se ajusta con los números reales después de una semana.
+
+### 10.1 Saldo de IA (lo que sale de OpenAI y Anthropic)
+
+Bases: lector = US$0.00037 por lectura, 211–433 lecturas al día (27 y 28-sep); respuesta del Agente IA = US$0.0009
+con Luna y US$0.033 con Sonnet (28-sep 18:29 → 29-sep 16:14, Mazatlán); precio de Luna US$0.20 / 1.20 por millón de
+tokens (entrada / salida); volúmenes de GHL de ago–sep.
+
+| Qué | ¿Cobra del saldo de IA? | Al día | Al mes |
+|---|---|---|---|
+| **Ficha** (caso, pendiente, hora, borrador) | Sí, pero va **dentro de la lectura que el lector ya hace**: solo unos tokens más de Luna (las instrucciones se repiten y OpenAI las cobra a 1/10 en caché) | ≈ US$0.07–0.20 | ≈ US$2–6 |
+| **1.er intento con texto**, opción propuesta: sale el borrador del lector tal cual (el chat no cambió desde esa lectura; si cambia, el seguimiento se rehace) | No | US$0 | US$0 |
+| 1.er intento con texto, si se vuelve a redactar al salir con Luna | Sí | ≈ US$0.07 | ≈ US$2 |
+| 1.er intento con texto, si se vuelve a redactar con el modelo de la etapa (Sonnet en Interesado, Cerca de compra y Compra) | Sí | ≈ US$2–2.5 | ≈ US$65–80 |
+| **2.º y 3.er intento** (plantilla) | No (solo el cobro de Meta) | US$0 | US$0 |
+| **Conversaciones que revive** (el cliente contesta y el Agente IA sigue) | Sí: es el costo normal de un cliente que escribe | ≈ US$0.9–1.8 | ≈ US$25–55 |
+
+La última fila sale de suponer que contesta entre el 15 y el 30 % de los ~2,350 primeros intentos (350–700 chats al mes)
+con unas 3 respuestas del Agente IA cada uno, casi todas con Sonnet. Es lo que cuesta atender a un cliente que regresa:
+el objetivo del seguimiento. En el ensayo (Parte 1) se mide el costo real de la ficha, porque queda anotado en cada
+lectura.
 
 ---
 
@@ -400,19 +422,21 @@ contacto de prueba del dueño.
   vuelve a quedarse parado, se arma uno nuevo.
 - "Pausar agente" puesto a mano: el seguimiento queda como sugerencia (§7.4).
 
+- Fuera del horario de los vendedores (§7.4): la sugerencia se presenta antes de que se vaya, con "Que salga solo";
+  si nadie decide, espera al siguiente turno. Horario de los vendedores de fábrica: lunes a viernes 9:00–18:00 y
+  sábado 9:00–13:00, hora de Mazatlán (de los datos de GHL; editable en Agente IA › Seguimientos).
+- El modo ensayo lo ven todos los roles, vendedores incluidos ("para eso es").
+
 **Abiertas:**
-1. **Fuera del horario de los vendedores (§7.4):** la sugerencia se presenta antes de que se vaya, con "Que salga
-   solo"; si nadie decide, espera al siguiente turno (propuesta). Horario de los vendedores de fábrica: lunes a viernes
-   9:00–18:00 y sábado 9:00–13:00, hora de Mazatlán (de los datos de GHL; editable en Agente IA › Seguimientos).
-2. **Modo ensayo (Parte 1):** el botón 🤖 lo ven solo owner y admin, para que los vendedores no se confundan
-   (propuesta).
-3. **Pago pendiente, aviso al vendedor:** cuándo (propuesta: si no contesta el 2.º intento) y cómo (la tarjeta
+1. **Pago pendiente, aviso al vendedor:** cuándo (propuesta: si no contesta el 2.º intento) y cómo (la tarjeta
    amarilla de hoy o un color propio en el Embudo). Por ver.
-4. **Plantillas de cada intento:** el dueño las confirma caso por caso antes de la Parte 3.
-5. **Plantillas propias por caso** (las 8 borradas el 2-oct): después de ver el ensayo, con los textos revisados
+2. **Plantillas de cada intento:** el dueño las confirma caso por caso antes de la Parte 3.
+3. **Plantillas propias por caso** (las 8 borradas el 2-oct): después de ver el ensayo, con los textos revisados
    palabra por palabra. No hacen falta para las Partes 1–3.
-6. **Fechas de pago (quincena, fin de mes):** cuando el cliente la pide, va en "Pidió fecha". Una regla general se
+4. **Fechas de pago (quincena, fin de mes):** cuando el cliente la pide, va en "Pidió fecha". Una regla general se
    revisa con los datos del CRM, una vez que haya seguimientos funcionando.
+5. **Quién redacta el texto al salir (§10.1):** el borrador del lector tal cual (sin gasto extra; propuesta) o una
+   llamada nueva al salir.
 
 ---
 
