@@ -217,8 +217,8 @@ export async function answerRunsWithText(organizationId: string, workflowIds: re
 }
 
 // Texto del Agente IA como pie del archivo (1-oct-2026, dueño): la PRIMERA corrida que pidió, si
-// empieza con un archivo y no manda textos (un video, la Tabla). Solo la primera: así el orden de
-// las corridas no cambia.
+// solo manda archivos (un video, la Tabla; esperas aparte). Solo la primera: así el orden de las
+// corridas no cambia.
 export async function captionRunOf(organizationId: string, runs: ActionPlan["runs"]): Promise<ActionPlan["runs"][number] | null> {
   const first = runs[0];
   if (!first) return null;

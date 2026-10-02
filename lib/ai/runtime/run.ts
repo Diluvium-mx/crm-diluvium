@@ -901,9 +901,9 @@ export async function runAgent(job: { organizationId: string; conversationId: st
     let stopped: StopReason | null = null;
 
     // Texto del Agente IA como pie del archivo (1-oct-2026, dueño: «lo puede mandar como texto
-    // adjunto al video y ya»). Si su PRIMERA corrida empieza con un archivo y no manda textos (un
-    // video, la Tabla), el texto va como pie de ese archivo en UN solo mensaje: antes salían su frase
-    // y luego el archivo con el pie del workflow, que decía lo mismo. Si no cabe en el pie (1,024
+    // adjunto al video y ya»). Si su PRIMERA corrida solo manda archivos (un video, la Tabla), el
+    // texto va como pie del primero en UN solo mensaje (sin la espera previa de la Tabla): antes
+    // salían su frase y luego el archivo con el pie del workflow, que decía lo mismo. Si no cabe en el pie (1,024
     // caracteres de WhatsApp) o la corrida no arranca, el texto sale aparte como siempre.
     let captionedBy: string | null = null;
     const caption = bubbles.join("\n\n");
