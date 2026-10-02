@@ -962,6 +962,17 @@ html[data-theme-circle]::view-transition-new(root) {
   color: transparent;
   -webkit-text-fill-color: transparent;
 }
+/* Las palabras con falta de ortografía (y de gramática) Chrome las vuelve a pintar con el color de la
+   caja tras revisarlas; sin esto salían dos veces (caja + capa) y se veían más negras que lo recién
+   escrito (2-oct-2026, reportado por el dueño). El subrayado rojo se queda. */
+[data-escritura]::spelling-error {
+  color: transparent;
+  -webkit-text-fill-color: transparent;
+}
+[data-escritura]::grammar-error {
+  color: transparent;
+  -webkit-text-fill-color: transparent;
+}
 [data-escritura]::placeholder {
   -webkit-text-fill-color: currentcolor;
 }
