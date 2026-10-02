@@ -19,7 +19,7 @@ import { sortStages, stagesInstructions, type FunnelStage } from "@/lib/contacts
 import type { MessageAttachment } from "@/lib/db/schema";
 import type { ToolCallOutput } from "@/lib/ai/types";
 import { clip, messageText, neutralizeCrmHeader, type ThreadMessage } from "./transcript";
-import { parseDetalle, type DetalleIa } from "./tools";
+import { ANCHO_EN_CM, parseDetalle, type DetalleIa } from "./tools";
 
 // Siempre Luna (decisión del dueño): lee y llena, no vende.
 export const LECTOR_MODEL_ID = "gpt-5.6-luna";
@@ -76,7 +76,7 @@ CÓMO LEER
 CAMPOS
 - tiene_inundaciones: si | no | no_sabe (si se le mete el agua). "no_sabe" solo si el cliente dijo que no sabe.
 - nivel_agua_cm: hasta dónde llega el agua, en centímetros (medio metro = 50). nivel_agua_texto: cómo lo dijo el cliente, corto.
-- num_entradas y anchos_cm: cuántas entradas va a proteger y el ancho de cada una en centímetros, en orden (uno por entrada). Si cambió cuántas quiere (p. ej. de 2 a 1), manda lo último.
+- num_entradas y anchos_cm: cuántas entradas va a proteger y el ancho de cada una ${ANCHO_EN_CM}; en orden (uno por entrada). Si cambió cuántas quiere (p. ej. de 2 a 1), manda lo último.
 - monto_cotizacion: total en pesos de lo que el CLIENTE eligió comprar al final, con los precios que la empresa le dio en el chat. No es lo primero que se le cotizó: si se le cotizaron 2 compuertas y eligió 1, es el total de 1 con el precio que ya se le dio. Si cambió lo que pide y el precio de lo nuevo nunca se dijo en el chat, NO lo calcules: no mandes monto y deja el comentario "El cliente cambió a …; falta confirmar el total".
 - pago_total: cuánto ha PAGADO el cliente en total (anticipo + resto, o el pago completo), según los comprobantes que mandó o los pagos que la empresa confirmó en el chat. Sin pagos, no lo mandes.
 - porcentaje_convencimiento: qué tan convencido está de comprar según cómo va la conversación, de 0 a 100 en pasos de 10.
@@ -96,7 +96,7 @@ export function lectorSchemaFor(stageKeys: readonly string[]) {
     nivel_agua_cm: z.number().nullable().optional().describe(`Hasta dónde llega el agua, en cm${sin}`),
     nivel_agua_texto: z.string().nullable().optional().describe(`Cómo lo describió el cliente, corto${sin}`),
     num_entradas: z.number().nullable().optional().describe(`Cuántas entradas va a proteger${sin}`),
-    anchos_cm: z.array(z.number()).nullable().optional().describe(`Ancho de cada entrada en cm, en orden${sin}`),
+    anchos_cm: z.array(z.number()).nullable().optional().describe(`Ancho de cada entrada ${ANCHO_EN_CM}, en orden${sin}`),
     monto_cotizacion: z.number().nullable().optional().describe(`Total en pesos de lo que el cliente eligió al final${sin}`),
     pago_total: z.number().nullable().optional().describe(`Lo que el cliente ya pagó en total, en pesos${sin}`),
     porcentaje_convencimiento: z.number().nullable().optional().describe("0 a 100, de 10 en 10"),

@@ -8,6 +8,7 @@ import {
   evidenceFrom,
   isBackedAmount,
   LECTOR_TOOL,
+  lectorSchemaFor,
   lectorTime,
   parseLectorCalls,
   speakerOf,
@@ -39,6 +40,13 @@ describe("lector: cantidades del chat", () => {
     expect(isBackedAmount(6000, [5500, 500])).toBe(true); // compuerta + instalación
     expect(isBackedAmount(7000, [5500, 11000])).toBe(false);
     expect(isBackedAmount(27500, [5500])).toBe(false); // 5 × 5,500: más de 4 términos
+  });
+});
+
+describe("lector: anchos de las entradas", () => {
+  it("siempre en centímetros, con la misma regla que el Agente IA (2-oct-2026)", () => {
+    expect(buildLectorSystem(defaultStages())).toContain("230 = 230 cm, nunca metros");
+    expect(lectorSchemaFor(["inbox"]).shape.anchos_cm.description).toContain("metros × 100");
   });
 });
 

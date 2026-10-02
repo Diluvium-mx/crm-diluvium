@@ -133,21 +133,25 @@ function EntradaRow({
             </span>
           )}
         </span>
-        <input
-          aria-label={`Ancho de la entrada ${entrada.posicion} (cm)`}
-          inputMode="numeric"
-          placeholder="cm"
-          value={ancho}
-          onChange={(e) => {
-            setTyping((t) => (t.ancho ? t : { ...t, ancho: true }));
-            setAncho(e.target.value);
-          }}
-          onBlur={() => {
-            setTyping((t) => ({ ...t, ancho: false }));
-            saveAncho();
-          }}
-          className={`${field} w-16`}
-        />
+        {/* Siempre en centímetros, con la unidad a la vista (2-oct-2026, dueño): el Agente IA
+            convierte lo que dijo el cliente (1.75 m → 175 cm), como en «¿Cuánta agua entra?». */}
+        <div className="relative w-20 shrink-0">
+          <input
+            aria-label={`Ancho de la entrada ${entrada.posicion} (cm)`}
+            inputMode="numeric"
+            value={ancho}
+            onChange={(e) => {
+              setTyping((t) => (t.ancho ? t : { ...t, ancho: true }));
+              setAncho(e.target.value);
+            }}
+            onBlur={() => {
+              setTyping((t) => ({ ...t, ancho: false }));
+              saveAncho();
+            }}
+            className={`${field} w-full pr-8`}
+          />
+          <span className="pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 text-xs text-muted-foreground">cm</span>
+        </div>
         <select
           aria-label={`Línea de la entrada ${entrada.posicion}`}
           value={requested("linea")}
