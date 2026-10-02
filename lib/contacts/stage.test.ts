@@ -9,6 +9,7 @@ import {
   stageKeyFromName,
   stagesInstructions,
   validateStageSet,
+  VENTA_CERRADA_RULE,
   type FunnelStage,
 } from "./stages";
 
@@ -78,5 +79,20 @@ describe("etapas del Embudo (puro)", () => {
     // Renombrar cambia el nombre en el bloque sin tocar la clave.
     const renamed = stages.map((s) => (s.key === "compra" ? { ...s, name: "Venta cerrada" } : s));
     expect(stagesInstructions(renamed)).toContain("5. compra — \"Venta cerrada\"");
+  });
+
+  it("venta cerrada solo con un vendedor (2-oct-2026): la regla fija del CRM va en la línea de la etapa con ese PAPEL, y solo ahí", () => {
+    const line = (text: string, key: string) => text.split("\n").find((l) => l.includes(`. ${key} — `)) ?? "";
+    const text = stagesInstructions(stages);
+    expect(line(text, "compra")).toContain(VENTA_CERRADA_RULE);
+    expect(text.split(VENTA_CERRADA_RULE)).toHaveLength(2);
+    // Sin regla escrita, también.
+    const empty = stagesInstructions(stages.map((s) => (s.key === "compra" ? { ...s, botRule: "" } : s)));
+    expect(line(empty, "compra")).toContain(`sin regla: no muevas al contacto aquí por tu cuenta ${VENTA_CERRADA_RULE}`);
+    // El papel en otra columna: la regla se va con él.
+    const moved = stages.map((s) => (s.key === "compra" ? { ...s, role: null } : s.key === "interesado" ? { ...s, role: "venta_cerrada" as const } : s));
+    const t2 = stagesInstructions(moved);
+    expect(line(t2, "interesado")).toContain(VENTA_CERRADA_RULE);
+    expect(line(t2, "compra")).not.toContain(VENTA_CERRADA_RULE);
   });
 });
