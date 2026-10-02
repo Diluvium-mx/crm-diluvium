@@ -792,12 +792,17 @@ Todo lo que define a Ángela. Arriba, su nombre y una **barra de subpestañas (5
 su parte (desde el 27-sep-2026; antes eran dos pestañas, Crear e Implementar; Historial desde el 28-sep-2026). **Todo cambio de esta pestaña pide confirmar en
 una ventana arriba (59)**; nada se guarda con un solo clic.
 
-> **Capturas:** la de Modelos es del 29-sep-2026 (subpestañas, logos, «Ir a Etapas →» y los modelos nuevos GPT-6.1 Sol y Claude Sonnet 5.5). **Pendientes** las otras
+> **Capturas:** la de Modelos es del 29-sep-2026 (subpestañas, logos, «Ir a Etapas →» y los modelos nuevos GPT-6.1 Sol y Claude Sonnet 5.5).
+> La de **Etapas** es del 2-oct-2026: las 5 columnas con las reglas vigentes (Cerca de compra «Cuando recibe los datos
+> bancarios», Compra «…sea de anticipo o del total») y la regla de «Cerca de compra» a medio editar para que se vean
+> Guardar · Deshacer (69) y el punto naranja de cambios sin guardar en la subpestaña. **Pendientes** las otras
 > cuatro, anteriores al 27-sep-2026 (todavía muestran «Crear · Implementar», todo en una sola página, sin nombres de
 > versión ni «Guardar cambios» en Opciones; la de Canales aún muestra el número de prueba). Los números 1–51 siguen
-> valiendo (salvo 3, 11 y 15, que se quitaron); de 52–83 solo 52 y 83 aparecen en una captura (la de Modelos).
+> valiendo (salvo 3, 11 y 15, que se quitaron); de 52–83 aparecen en captura 52 y 83 (Modelos) y 62–71 (Etapas; el 64,
+> color, ya no existe).
 
 ![Agente IA: nombre, subpestañas y modelos](mapa-crm/09-agente-modelos.png)
+![Agente IA: Etapas (columnas del Embudo y sus reglas)](mapa-crm/09-agente-etapas.png)
 ![Agente IA: Goal y FAQs](mapa-crm/09-agente-goal-faqs.png)
 ![Agente IA: Opciones](mapa-crm/09-agente-opciones.png)
 ![Agente IA: Tallas y medidas](mapa-crm/09-agente-tallas.png)
