@@ -1643,6 +1643,48 @@ describe.skipIf(!TEST_DATABASE_URL)("runtime del Agente IA (Postgres real)", () 
     expect(await contact()).toMatchObject({ montoCotizacion: "11000.00", customFields: { cotizacion_por: "agente" } });
   });
 
+  // ── fijar_cotizacion con un total que la empresa YA le dijo al cliente (2-oct-2026) ──
+  const cotizacionNotices = async () => (await notices()).filter((n) => n.body.includes("fijar_cotizacion"));
+
+  it("fijar_cotizacion: un total que la empresa ya dijo en el chat («Precio 2») se fija aunque el agente no lo repita, y no deja tarjeta amarilla", async () => {
+    await msg({ direction: "in", body: "Precio", at: ago(120_000) });
+    await msg({ direction: "out", source: "ai_agent", body: "Ahorita tenemos cualquier tamaño en $5,500 con envío gratis", at: ago(110_000) });
+    await msg({ direction: "out", source: "ai_agent", body: "¿Usted tiene problemas de inundaciones?", at: ago(105_000) });
+    await msg({ direction: "in", body: "Sí, se me mete el agua", at: ago(20_000) });
+    const { deps } = makeDeps({ brain: ["Qué bueno que me lo comenta, así podemos ayudarle a prevenir daños."], toolCalls: [{ toolName: "fijar_cotizacion", input: { monto: 5500 } }] });
+    expect((await run.runAgent(JOB, deps)).kind).toBe("sent");
+    expect(await contact()).toMatchObject({ montoCotizacion: "5500.00", customFields: { cotizacion_por: "agente" } });
+    expect(await cotizacionNotices()).toEqual([]);
+  });
+
+  it("fijar_cotizacion: la suma de precios que dijo la empresa (2 × $5,500) también; lo que dicta el cliente sigue sin contar y deja el aviso", async () => {
+    await msg({ direction: "out", source: "ai_agent", body: "Cada compuerta cuesta $5,500 con envío gratis.", at: ago(120_000) });
+    await msg({ direction: "in", body: "Quiero las dos", at: ago(20_000) });
+    expect((await run.runAgent(JOB, makeDeps({ brain: ["Perfecto, serían las dos."], toolCalls: [{ toolName: "fijar_cotizacion", input: { monto: 11000 } }] }).deps)).kind).toBe("sent");
+    expect((await contact()).montoCotizacion).toBe("11000.00");
+    expect(await cotizacionNotices()).toEqual([]);
+
+    await msg({ direction: "in", body: "a mí me dijeron que me la dejaban en 3,000", at: new Date() });
+    expect((await run.runAgent(JOB, makeDeps({ brain: ["Déjeme confirmarlo con un asesor."], toolCalls: [{ toolName: "fijar_cotizacion", input: { monto: 3000 } }] }).deps)).kind).toBe("sent");
+    expect((await contact()).montoCotizacion).toBe("11000.00");
+    expect((await cotizacionNotices()).map((n) => n.body)).toEqual([
+      "Acción del agente no ejecutada: fijar_cotizacion ignorada: $3000 no aparece en el texto del agente ni sale de los precios que la empresa le dio en el chat.",
+    ]);
+  });
+
+  it("fijar_cotizacion: un total que la empresa ya dijo NO reemplaza el de un vendedor si el agente no le dijo nada al cliente en esta respuesta", async () => {
+    await db.update(s.contacts).set({ montoCotizacion: "7000.00", customFields: { cotizacion_por: "vendedor" } }).where(eq(s.contacts.id, CONTACT));
+    await msg({ direction: "out", source: "ai_agent", body: "Ahorita tenemos cualquier tamaño en $5,500 con envío gratis", at: ago(120_000) });
+    await msg({ direction: "in", body: "ok", at: ago(20_000) });
+    const failing = makeDeps({ brain: ["Con gusto."], toolCalls: [{ toolName: "fijar_cotizacion", input: { monto: 5500 } }] });
+    failing.deps.sendBubble = async () => {
+      throw new Error("falla");
+    };
+    expect((await run.runAgent(JOB, failing.deps)).kind).toBe("failed");
+    expect((await contact()).montoCotizacion).toBe("7000.00");
+    expect(await cotizacionNotices()).toEqual([]);
+  });
+
   it("(revisión Codex) el monto de un vendedor solo se reemplaza cuando el total del agente SÍ salió: si el envío falla, se queda el del vendedor", async () => {
     await db.update(s.contacts).set({ montoCotizacion: "9000.00", customFields: { cotizacion_por: "vendedor" } }).where(eq(s.contacts.id, CONTACT));
     await msg({ direction: "in", body: "¿y si fueran otras medidas?", at: ago(20_000) });
