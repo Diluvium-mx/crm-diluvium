@@ -154,6 +154,7 @@ export function ContactDetailPanel({
               contactId={contact.id}
               name={getContactFullName(contact)}
               phone={contact.phoneE164}
+              instagramUsername={contact.instagramUsername}
               stage={contact.stage}
               temperature={contact.temperature}
               destacado={contact.destacado}
@@ -216,6 +217,7 @@ export function ContactDetailPanel({
               contactId={contact.id}
               name={getContactFullName(contact)}
               phone={contact.phoneE164}
+              instagramUsername={contact.instagramUsername}
               stage={contact.stage}
               temperature={contact.temperature}
               destacado={contact.destacado}

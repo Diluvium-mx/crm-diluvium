@@ -50,5 +50,5 @@ export async function setChannelAgentMode(input: { channelId: string; mode: stri
   if (!row) throw new Error("Canal no encontrado en tu organización.");
   console.info(`[agente] canal ${row.id} → ${mode}`);
   revalidatePath("/agente-ia");
-  return { id: row.id, displayName: row.displayName, phoneE164: row.phoneE164, isActive: row.isActive, mode: toAgentMode(row.aiAgentMode) };
+  return { id: row.id, displayName: row.displayName, type: row.type, phoneE164: row.phoneE164, isActive: row.isActive, mode: toAgentMode(row.aiAgentMode) };
 }

@@ -1,7 +1,5 @@
 -- Seguimientos del Agente IA, Parte 1 en MODO ENSAYO (2-oct-2026, docs/seguimientos.md): una fila por
 -- pendiente de un chat parado (lib/db/schema/followups.ts). Tabla nueva, sin tocar datos existentes.
--- Es la 0056 porque la 0055 la tomó la rama de Instagram (en paralelo); quien llegue segundo a main
--- revisa el número (docs/migraciones.md).
 -- lock_timeout: drizzle corre todo en UNA transacción; si una llave foránea no consigue su lock en
 -- 5 s, falla (y el pre-deploy se reintenta) en vez de bloquear el tráfico.
 SET LOCAL lock_timeout = '5s';--> statement-breakpoint

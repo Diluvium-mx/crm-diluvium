@@ -8,7 +8,7 @@ import { channels, conversations, scheduledMessages, templates } from "@/lib/db/
 import { renderTemplateBody, templateMaxIndex } from "@/lib/messaging/template-format";
 import { isForeignTemplateAccount } from "@/lib/messaging/template-sync";
 import { isTemplateSendable } from "@/lib/templates/types";
-import { isRetryableScheduledError, SEND_AT_MESSAGES, textAllowedAt, validateSendAt } from "./rules";
+import { isRetryableScheduledError, SEND_AT_MESSAGES, textAllowedAt, textClosedMessage, validateSendAt } from "./rules";
 import type { ScheduledView } from "./types";
 
 const MAX_TEXT = 4096; // límite de WhatsApp para texto
@@ -69,8 +69,9 @@ export async function listScheduledForConversation(organizationId: string, conve
 
 async function loadConversation(organizationId: string, conversationId: string) {
   const [row] = await db
-    .select({ id: conversations.id, channelId: conversations.channelId, windowExpiresAt: conversations.windowExpiresAt })
+    .select({ id: conversations.id, channelId: conversations.channelId, windowExpiresAt: conversations.windowExpiresAt, platform: channels.type })
     .from(conversations)
+    .innerJoin(channels, eq(channels.id, conversations.channelId))
     .where(and(eq(conversations.id, conversationId), eq(conversations.organizationId, organizationId)))
     .limit(1);
   if (!row) throw new ScheduleError("Conversación no encontrada.");
@@ -83,15 +84,11 @@ function checkSendAt(sendAt: Date | null, now: Date): Date {
   return sendAt;
 }
 
-function checkText(raw: string, windowExpiresAt: Date | null, sendAt: Date): string {
+function checkText(raw: string, windowExpiresAt: Date | null, sendAt: Date, platform: string): string {
   const text = raw.trim();
   if (!text) throw new ScheduleError("El mensaje está vacío.");
   if (text.length > MAX_TEXT) throw new ScheduleError(`El mensaje excede ${MAX_TEXT} caracteres.`);
-  if (!textAllowedAt(windowExpiresAt, sendAt)) {
-    throw new ScheduleError(
-      "A esa hora la ventana de 24 h ya estará cerrada: solo se puede programar una plantilla.",
-    );
-  }
+  if (!textAllowedAt(windowExpiresAt, sendAt, platform)) throw new ScheduleError(textClosedMessage(platform));
   return text;
 }
 
@@ -139,7 +136,7 @@ export async function createScheduled(params: CreateScheduledParams): Promise<Ro
   let templateId: string | null = null;
   let templateParams: string[] = [];
   if (params.kind === "text") {
-    body = checkText(params.text, conversation.windowExpiresAt, sendAt);
+    body = checkText(params.text, conversation.windowExpiresAt, sendAt, conversation.platform);
   } else {
     const checked = await checkTemplate(params.organizationId, conversation.channelId, params.templateId, params.templateParams);
     body = checked.preview;
@@ -198,13 +195,14 @@ export async function updateScheduled(params: {
     if (before.status !== "scheduled") throw new ScheduleError("Este mensaje ya no se puede editar.");
     const sendAt = checkSendAt(params.sendAt, now);
     const [conversation] = await tx
-      .select({ windowExpiresAt: conversations.windowExpiresAt })
+      .select({ windowExpiresAt: conversations.windowExpiresAt, platform: channels.type })
       .from(conversations)
+      .innerJoin(channels, eq(channels.id, conversations.channelId))
       .where(eq(conversations.id, before.conversationId))
       .limit(1);
     const body =
       before.kind === "text"
-        ? checkText(params.text ?? before.body, conversation?.windowExpiresAt ?? null, sendAt)
+        ? checkText(params.text ?? before.body, conversation?.windowExpiresAt ?? null, sendAt, conversation?.platform ?? "whatsapp")
         : before.body;
     const [after] = await tx
       .update(scheduledMessages)
@@ -251,12 +249,18 @@ export async function retryScheduled(organizationId: string, id: string, now: Da
     }
     if (row.kind === "text") {
       const [conversation] = await tx
-        .select({ windowExpiresAt: conversations.windowExpiresAt })
+        .select({ windowExpiresAt: conversations.windowExpiresAt, platform: channels.type })
         .from(conversations)
+        .innerJoin(channels, eq(channels.id, conversations.channelId))
         .where(and(eq(conversations.organizationId, organizationId), eq(conversations.id, row.conversationId)))
         .limit(1);
-      if (!textAllowedAt(conversation?.windowExpiresAt ?? null, now)) {
-        throw new ScheduleError("La ventana de 24 h está cerrada: programa una plantilla en su lugar.");
+      const platform = conversation?.platform ?? "whatsapp";
+      if (!textAllowedAt(conversation?.windowExpiresAt ?? null, now, platform)) {
+        throw new ScheduleError(
+          platform === "instagram"
+            ? "Pasaron más de 7 días desde el último mensaje del cliente: Instagram no deja escribirle."
+            : "La ventana de 24 h está cerrada: programa una plantilla en su lugar.",
+        );
       }
     }
     const [updated] = await tx

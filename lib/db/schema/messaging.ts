@@ -63,7 +63,8 @@ export type MessageReactions = {
   business?: { emoji: string | null; at: string };
 };
 
-export const channelTypeEnum = pgEnum("channel_type", ["whatsapp"]);
+// "instagram" (2-oct-2026): DMs de Instagram por Zernio (docs/instagram.md).
+export const channelTypeEnum = pgEnum("channel_type", ["whatsapp", "instagram"]);
 export const messagingProviderEnum = pgEnum("messaging_provider", ["zernio", "meta_cloud"]);
 export const conversationStatusEnum = pgEnum("conversation_status", ["open", "pending", "closed"]);
 export const messageDirectionEnum = pgEnum("message_direction", ["in", "out"]);
