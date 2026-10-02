@@ -15,7 +15,7 @@
 import type { ModelMessage } from "ai";
 import { tool, type ToolSet } from "ai";
 import { z } from "zod";
-import { sortStages, stagesInstructions, type FunnelStage } from "@/lib/contacts/stages";
+import { sortStages, stageForRole, stagesInstructions, type FunnelStage } from "@/lib/contacts/stages";
 import type { MessageAttachment } from "@/lib/db/schema";
 import type { ToolCallOutput } from "@/lib/ai/types";
 import { clip, messageText, neutralizeCrmHeader, type ThreadMessage } from "./transcript";
@@ -64,6 +64,15 @@ export function speakerOf(m: Pick<LectorMessage, "direction" | "source">): strin
   return "Diluvium (automático)";
 }
 
+// Venta cerrada solo con un vendedor (2-oct-2026, regla del dueño; venta-cerrada.ts la hace
+// cumplir): el Agente IA dice "recibimos su comprobante", pero el pago lo confirma un vendedor.
+function ventaCerradaLine(stages: readonly FunnelStage[]): string {
+  const venta = stageForRole(stages, "venta_cerrada");
+  if (!venta) return "";
+  const cerca = stageForRole(stages, "cerca_compra");
+  return ` La etapa ${venta.key} («${venta.name}») solo cuando un Vendedor (no el Agente IA ni Diluvium automático) ya le confirmó al cliente en el chat que recibió su pago, después del último comprobante que mandó el cliente${cerca ? `; si el pago solo lo confirmó el Agente IA, a lo más ${cerca.key} («${cerca.name}»)` : ""}.`;
+}
+
 export function buildLectorSystem(stages: readonly FunnelStage[]): string {
   return `Eres el LECTOR del CRM de Diluvium (compuertas contra inundaciones). No hablas con el cliente: lees el chat completo de WhatsApp y dejas al día la ficha del contacto con la herramienta ${LECTOR_TOOL}. Llámala UNA sola vez, sin escribir texto.
 
@@ -80,7 +89,7 @@ CAMPOS
 - monto_cotizacion: total en pesos de lo que el CLIENTE eligió comprar al final, con los precios que la empresa le dio en el chat. No es lo primero que se le cotizó: si se le cotizaron 2 compuertas y eligió 1, es el total de 1 con el precio que ya se le dio. Si cambió lo que pide y el precio de lo nuevo nunca se dijo en el chat, NO lo calcules: no mandes monto y deja el comentario "El cliente cambió a …; falta confirmar el total".
 - pago_total: cuánto ha PAGADO el cliente en total (anticipo + resto, o el pago completo), según los comprobantes que mandó o los pagos que la empresa confirmó en el chat. Sin pagos, no lo mandes.
 - porcentaje_convencimiento: qué tan convencido está de comprar según cómo va la conversación, de 0 a 100 en pasos de 10.
-- etapa: la clave de la etapa del Embudo que corresponde según las reglas de abajo; mándala solo si es MÁS ADELANTE que la de la ficha. Las reglas están escritas para el Agente IA ("cuando confirmas…"); aquí cuentan igual si lo hizo un vendedor en el chat. Solo se avanza: si ya está en esa etapa o más adelante, no la mandes. Si en el chat aparece la marca [CRM: un vendedor movió al contacto a …], respeta esa decisión: solo puedes llevarlo más adelante por lo que pasó DESPUÉS de esa marca.
+- etapa: la clave de la etapa del Embudo que corresponde según las reglas de abajo; mándala solo si es MÁS ADELANTE que la de la ficha. Las reglas están escritas para el Agente IA ("cuando confirmas…"); aquí cuentan igual si lo hizo un vendedor en el chat.${ventaCerradaLine(stages)} Solo se avanza: si ya está en esa etapa o más adelante, no la mandes. Si en el chat aparece la marca [CRM: un vendedor movió al contacto a …], respeta esa decisión: solo puedes llevarlo más adelante por lo que pasó DESPUÉS de esa marca.
 - comentario: un dato útil NUEVO que no quepa en los campos, en una frase (p. ej. "tiene cochera con desnivel"). No repitas los comentarios ya guardados.
 
 ${stagesInstructions(stages)}`;

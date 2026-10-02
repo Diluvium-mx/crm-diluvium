@@ -1752,11 +1752,11 @@ describe.skipIf(!TEST_DATABASE_URL)("runtime del Agente IA (Postgres real)", () 
     expect((await notices()).some((n) => n.kind === "respuesta_cortada" && n.body.includes("mover_etapa: argumentos inválidos"))).toBe(true);
   });
 
-  it("aviso_vendedor: 🤖 en el hilo, no llega al cliente ni pausa; mover a Compra sin cotejar_deposito deja el aviso igual", async () => {
+  it("aviso_vendedor: 🤖 en el hilo, no llega al cliente ni pausa; mover a Compra sin vendedor queda en Cerca de compra con «Depósito recibido»", async () => {
     await msg({ direction: "in", body: "", at: ago(20_000), attachments: [{ type: "image", url: "/api/media/x", storageKey: "org/x.jpg" }] });
     const { deps } = makeDeps({ brain: ["Perfecto, ya recibimos tu comprobante ✅\n\n¿A qué dirección lo enviamos?"], toolCalls: [{ toolName: "mover_etapa", input: { etapa: "compra" } }] });
     expect(await run.runAgent(JOB, deps)).toEqual({ kind: "sent", bubbles: 2 });
-    expect((await contact()).stage).toBe("compra");
+    expect((await contact()).stage).toBe("cerca_compra");
     const ns = await notices();
     expect(ns.map((n) => n.kind)).toEqual(["cotejar_deposito"]);
     expect(ns[0].body).toBe(actions.DEPOSITO_RECIBIDO_BODY);
@@ -1769,7 +1769,7 @@ describe.skipIf(!TEST_DATABASE_URL)("runtime del Agente IA (Postgres real)", () 
     expect((await conv()).agentState).toBe("activo");
   });
 
-  it("idempotencia con reintento: el aviso y la etapa no se duplican si el envío falla y se reintenta; \"Depósito recibido\" sin montos ni folio", async () => {
+  it("idempotencia con reintento: Compra espera a un vendedor; el aviso y Cerca de compra no se duplican; \"Depósito recibido\" sin montos ni folio", async () => {
     await msg({ direction: "in", body: "", at: ago(20_000), attachments: [{ type: "image", url: "/api/media/x", storageKey: "org/x.jpg" }] });
     const script = {
       brain: ["Ya recibimos tu pago ✅"],
@@ -1795,7 +1795,50 @@ describe.skipIf(!TEST_DATABASE_URL)("runtime del Agente IA (Postgres real)", () 
     expect(ns[0].body).toBe(actions.DEPOSITO_RECIBIDO_BODY);
     expect(ns[0].body).not.toContain("ABC 123");
     expect(await comprobantes()).toHaveLength(0);
+    expect((await contact()).stage).toBe("cerca_compra");
+  });
+
+  it("Compra espera a un vendedor: si el contacto ya está en Cerca de compra, el comprobante deja exactamente un aviso «Depósito recibido»", async () => {
+    await db.update(s.contacts).set({ stage: "cerca_compra" }).where(eq(s.contacts.id, CONTACT));
+    await msg({ direction: "in", body: "", at: ago(20_000), attachments: [{ type: "image", url: "/api/media/x", storageKey: "org/x.jpg" }] });
+    const { deps } = makeDeps({
+      brain: ["Recibimos tu comprobante ✅"],
+      toolCalls: [{ toolName: "mover_etapa", input: { etapa: "compra" } }],
+    });
+
+    expect(await run.runAgent(JOB, deps)).toEqual({ kind: "sent", bubbles: 1 });
+    expect((await contact()).stage).toBe("cerca_compra");
+    const ns = await notices();
+    expect(ns).toHaveLength(1);
+    expect(ns[0]).toMatchObject({ kind: "cotejar_deposito", body: actions.DEPOSITO_RECIBIDO_BODY });
+  });
+
+  it("Compra se permite cuando un vendedor del CRM contestó después del comprobante", async () => {
+    await msg({ direction: "in", body: "", at: ago(60_000), attachments: [{ type: "image", url: "/api/media/x", storageKey: "org/x.jpg" }] });
+    await msg({ direction: "out", source: "crm", body: "Confirmo de recibido ✅", at: ago(40_000) });
+    await state.setAgentState(ORG, CONV, "activo", { now: ago(30_000) });
+    await msg({ direction: "in", body: "¿Cuándo me lo envían?", at: ago(20_000) });
+    const { deps } = makeDeps({
+      brain: ["Enseguida coordinamos tu envío."],
+      toolCalls: [{ toolName: "mover_etapa", input: { etapa: "compra" } }],
+    });
+
+    expect(await run.runAgent(JOB, deps)).toEqual({ kind: "sent", bubbles: 1 });
+    expect((await conv()).agentState).toBe("activo");
     expect((await contact()).stage).toBe("compra");
+  });
+
+  it("Compra espera a un vendedor: la confirmación del Agente IA después del comprobante no cuenta", async () => {
+    await msg({ direction: "in", body: "", at: ago(60_000), attachments: [{ type: "image", url: "/api/media/x", storageKey: "org/x.jpg" }] });
+    await msg({ direction: "out", source: "ai_agent", body: "Recibimos su anticipo ✅", at: ago(40_000) });
+    await msg({ direction: "in", body: "¿Cuándo me lo envían?", at: ago(20_000) });
+    const { deps } = makeDeps({
+      brain: ["Enseguida coordinamos tu envío."],
+      toolCalls: [{ toolName: "mover_etapa", input: { etapa: "compra" } }],
+    });
+
+    expect(await run.runAgent(JOB, deps)).toEqual({ kind: "sent", bubbles: 1 });
+    expect((await contact()).stage).toBe("cerca_compra");
   });
 
   it("Fase E: sin chequeo de folio — la misma referencia en otro contacto no deja ⚠ ni registra nada", async () => {
@@ -2103,6 +2146,23 @@ describe.skipIf(!TEST_DATABASE_URL)("runtime del Agente IA (Postgres real)", () 
     // Sonnet no pidió la etapa: se respeta la que decidió Luna.
     expect((await contact()).stage).toBe("cerca_compra");
     expect(await brainOutcomes()).toEqual(["gpt-5.6-luna:traspaso", "claude-sonnet-5:sent"]);
+  });
+
+  it("traspaso: Luna pide Compra sin confirmación de vendedor → Sonnet recibe Cerca de compra y el contacto queda ahí", async () => {
+    await dosModelos();
+    await setStage("interesado");
+    await msg({ direction: "in", body: "", at: ago(20_000), attachments: [{ type: "image", url: "/api/media/x", storageKey: "org/x.jpg" }] });
+    const { deps, calls } = makeDeps({
+      brain: ["respuesta de Luna", "respuesta de Sonnet"],
+      brainToolCalls: [[{ toolName: "mover_etapa", input: { etapa: "compra" } }], []],
+    });
+
+    expect(await run.runAgent(JOB, deps)).toEqual({ kind: "sent", bubbles: 1 });
+    const brain = calls.filter((c) => c.kind === "cerebro");
+    expect(brain.map((c) => c.modelId)).toEqual(["gpt-5.6-luna", "claude-sonnet-5"]);
+    expect(lastUserText(brain[1].input)).toContain("el contacto pasa a Cerca de compra");
+    expect(lastUserText(brain[1].input)).not.toContain("el contacto pasa a Compra");
+    expect((await contact()).stage).toBe("cerca_compra");
   });
 
   it("Columnas del Embudo: traspaso hacia una etapa NUEVA del Modelo 2 (creada en el editor, con su regla); una renombrada y con Modelo 1 ya no traspasa", async () => {

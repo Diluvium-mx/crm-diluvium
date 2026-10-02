@@ -41,7 +41,7 @@ Nadie es "dueño" de un contacto: **todos ven todos los contactos, siempre**.
 
 | Palabra | Qué significa |
 |---|---|
-| **Etapa** | En qué punto de la venta va el cliente: **Inbox → Prospecto → Interesado → Cerca de compra → Compra**. Son las columnas del Embudo. El agente solo la **avanza** (también en segundo plano, aunque esté apagado o pausado); la que pone un vendedor manda. |
+| **Etapa** | En qué punto de la venta va el cliente: **Inbox → Prospecto → Interesado → Cerca de compra → Compra**. Son las columnas del Embudo. El agente solo la **avanza** (también en segundo plano, aunque esté apagado o pausado); la que pone un vendedor manda. A **Compra** (anticipo o pago total) solo pasa cuando un **vendedor** ya le confirmó el pago al cliente en el chat (desde el 2-oct-2026); con la sola confirmación del Agente IA se queda en Cerca de compra. |
 | **Temperatura** | Etiqueta rápida que pone el equipo: 🔥 Caliente · 🧊 Frío · ⏳ En espera · ○ sin asignar. Se filtra por ella (una a la vez) con el ícono junto al buscador de la Bandeja y del Embudo. ⭐ Destacado ya **no** es temperatura (desde el 29-sep-2026). |
 | **Destacado** | Marca ⭐ del **contacto** para todo el equipo, aparte de la temperatura y combinable con ella (🔥 + ⭐). Es **un solo dato**: la **estrella** de la lista de la Bandeja y el ⭐ del Embudo (tarjeta y pop-up) son lo mismo y se ven en vivo en las dos pantallas. Se filtra con la pestaña Destacado de la Bandeja y con ⭐ Destacado del filtro del Embudo. Desde el 29-sep-2026. |
 | **Búsqueda en los chats (lupa)** | La **lupa** entre el buscador y el filtro de la Bandeja y del Embudo. Prendida se pinta de **amarillo** y el mismo buscador busca una palabra **dentro de los mensajes** de todos los chats (cliente, vendedor, Agente IA, historial, pies de foto y transcripciones; no los avisos 📝 ni los comentarios), sin acentos y con mínimo 3 letras. Solo quedan los contactos con la palabra, con un **círculo amarillo** (en cuántos mensajes aparece) junto al naranja de no leídos; al abrir el chat la palabra sale **resaltada en amarillo** y la barra «1 de N» recorre cada coincidencia. El círculo es amarillo **sólido con borde**; la tarjeta amarilla del Embudo es otra cosa (fondo claro: el agente necesita al vendedor). Desde el 29-sep-2026. |
@@ -331,7 +331,7 @@ dentro de él.
 | 7 | **Apagar** (tarjeta del agente) | Pausa al agente solo en ese chat; vuelve con **Activar** en el Detalle. | Todos |
 | 8 | **🤖 Pausado · vuelve hoy 22:30** | Solo informa que el agente está en pausa en este chat y hasta cuándo. Se activa en el Detalle. | Todos |
 | 9 | **Documento** | PDF con miniatura de la primera página, nombre, páginas y peso. Clic lo abre en el [Visor de archivos](#325-visor-de-archivos). Mientras se copia dice "Procesando…"; si no se pudo bajar (o llegó vacío) tras varios intentos, dice **"No se pudo descargar"** (nunca un archivo en blanco). Igual para audio, imagen, video y XML. Los archivos que adjunta el vendedor (foto, video, documento) se ven igual que los del cliente, con ✓/✓✓ como cualquier mensaje. **Solo se abren dentro del CRM los archivos verificados** (Glosario): si el contenido no coincide —p. ej. un «PDF» que por dentro es otra cosa, o una «foto» que no es foto— sale como esta tarjeta y el visor solo ofrece **Descargar**. Desde el 30-sep-2026. | Todos |
-| 10 | **🤖 Depósito recibido** | El agente vio un comprobante: revisar el depósito en el banco antes de enviar. | Todos |
+| 10 | **🤖 Depósito recibido** | El agente vio un comprobante: revisar el depósito en el banco y **confirmárselo al cliente en el chat**; con esa confirmación el Agente IA lo pasa a Compra (sin ella se queda en Cerca de compra). | Todos |
 | 11 | **Respuesta del agente al comprobante** | Confirma al cliente y pide sus datos de envío. | Todos |
 | 12 | **Respuesta de un vendedor** | Al contestar un vendedor, el agente se pausa en ese chat (según Opciones). | Todos |
 | 13 | **⚠ No se envió** | El mensaje no salió. | Todos |
@@ -636,7 +636,7 @@ WhatsApp Web, o con una plantilla desde el CRM.
 | 7 | **Temperatura** y **⭐ Destacado** | La temperatura del contacto y, al lado y del mismo tamaño, ⭐ si es Destacado (la estrella de la Bandeja). Pueden ir juntas: 🔥 ⭐. | Todos |
 | 8 | **Ciudad por lada** | 📍 Ciudad calculada por la lada del teléfono. | Todos |
 | 9 | **PRUEBA** | Contacto del número de prueba. Hoy ninguno la lleva: se quitó el 28-sep-2026 al borrar los chats de prueba (la captura muestra uno de ejemplo). | Todos |
-| 10 | **Columna Compra** | Los que ya compraron (cuenta en Anuncios › Compraron). Es la columna con el papel «Venta cerrada» (70): si el papel pasa a otra, cuenta esa. | Todos |
+| 10 | **Columna Compra** | Los que ya compraron: anticipo o pago total que un **vendedor** confirmó en el chat (cuenta en Anuncios › Compraron). Es la columna con el papel «Venta cerrada» (70): si el papel pasa a otra, cuenta esa. | Todos |
 | 11 | **Chat** (pop-up) | El mismo chat de la Bandeja, con su caja para escribir. | Todos |
 | 12 | **Detalle del contacto** (pop-up) | El mismo Detalle de la Bandeja. | Todos |
 | 13 | **Ocultar detalle del contacto** | Esconde el Detalle en el pop-up; se recuerda en esa computadora. | Todos |
@@ -870,9 +870,9 @@ una ventana arriba (59)**; nada se guarda con un solo clic.
 | 63 | **⠿ ↑ ↓ Orden** | Arrastrar o flechas: cambia el lugar de la columna (pide confirmar). El agente solo avanza según este orden. «Entrada» va primero y «Cerca de compra» antes que «Venta cerrada». | Todos |
 | 64 | ~~Color~~ | Se quitó el 27-sep-2026 (decisión del dueño): todas las columnas van en el azul de la marca. | — |
 | 65 | **Nombre** | Cómo se llama la columna. Renombrar no cambia la clave interna: contactos, workflows y el agente la siguen reconociendo. | Todos |
-| 66 | **Papel** | Entrada (llegan los contactos nuevos) · Cerca de compra (datos bancarios y /banco) · Venta cerrada (comprobante que cuadra; Anuncios › Compraron). Cada papel en una sola columna; pasarlo a otra pide confirmar. | Todos |
+| 66 | **Papel** | Entrada (llegan los contactos nuevos) · Cerca de compra (datos bancarios y /banco) · Venta cerrada (un vendedor confirmó el pago en el chat; Anuncios › Compraron). Cada papel en una sola columna; pasarlo a otra pide confirmar. | Todos |
 | 67 | **Modelo 1 · Modelo 2** (por etapa) | Qué modelo contesta a los contactos de esa columna. Pide confirmar. | Todos |
-| 68 | **Regla del Agente IA** | Cuándo debe el agente mover al contacto a esa columna (texto libre). Vacía = el agente no mueve ahí por su cuenta. | Todos |
+| 68 | **Regla del Agente IA** | Cuándo debe el agente mover al contacto a esa columna (texto libre). Vacía = el agente no mueve ahí por su cuenta. En la columna con papel «Venta cerrada» el CRM agrega su regla fija: solo cuando un vendedor ya le confirmó el pago al cliente en el chat. | Todos |
 | 69 | **Guardar · Deshacer** (por fila) | Aparecen al cambiar nombre o regla; Guardar pide confirmar. | Todos |
 | 70 | **🗑 Borrar** | Pop-up que pregunta a qué columna pasan sus contactos (con cuántos tiene cada una) y los mueve todos de una vez. Gris si la columna tiene papel o si quedan 3. | Todos |
 | 71 | **Nueva columna · Después de · Agregar** | Agrega una columna entre dos (o al final), con el Modelo 2 y sin regla. Pide confirmar. | Todos |
