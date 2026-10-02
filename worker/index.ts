@@ -51,6 +51,7 @@ import { agentIngestHooks, wakeAgentAfterTranscription } from "@/lib/ai/runtime/
 import { closeInterruptedTranscriptions, staleTranscriptionIds, transcribeMessageAudio } from "@/lib/ai/transcription/transcribe";
 import { startAgentRuntime } from "@/lib/ai/runtime/worker";
 import { startLectorRuntime } from "@/lib/ai/runtime/lector-worker";
+import { startFollowUpRuntime } from "@/lib/followups/store";
 import { redisKvPort } from "@/lib/ai/runtime/queue";
 import { callModel } from "@/lib/ai";
 import { adsIngestHooks, startAdsWorker } from "@/lib/ads/worker";
@@ -95,6 +96,9 @@ const lector = startLectorRuntime({
   resolveImage: async (key) => (storage ? storage.signedGetUrl(key, 15 * 60) : null),
   kv: redisKvPort(),
 });
+// Seguimientos (2-oct-2026, Parte 1 en MODO ENSAYO): cada minuto anota cuándo "habría salido"
+// cada intento y programa el siguiente; no le manda nada al cliente. Arranca tras las migraciones.
+const followUps = startFollowUpRuntime();
 // Workflows (Fase D): corridas de acciones (media, etapa, humano, avisos).
 const workflowsRunner = startWorkflowWorker(provider, storage);
 // Envíos del web en fila de espera (Bloque B): 429 de Zernio o turno de la conversación.
@@ -438,7 +442,7 @@ async function shutdown(signal: string) {
   clearInterval(monitorTimer);
   clearInterval(billingTimer);
   clearInterval(templatesTimer);
-  await Promise.all([worker.close(), mediaWorker?.close(), scheduled.close(), agent.close(), lector.close(), workflowsRunner.close(), outbox.close(), ads.close(), unavailable.close(), chatUploads?.close()]);
+  await Promise.all([worker.close(), mediaWorker?.close(), scheduled.close(), agent.close(), lector.close(), followUps.close(), workflowsRunner.close(), outbox.close(), ads.close(), unavailable.close(), chatUploads?.close()]);
   console.info(`[worker] cerrado en orden en ${((Date.now() - t0) / 1000).toFixed(1)} s`);
   process.exit(0);
 }
@@ -462,6 +466,7 @@ waitForMigrations()
     scheduled.run();
     agent.run();
     lector.run();
+    followUps.run();
     workflowsRunner.run();
     outbox.run();
     ads.run();

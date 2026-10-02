@@ -159,6 +159,27 @@ function countryName(iso: string): string | null {
   return name && name !== iso ? name : null;
 }
 
+/**
+ * Lada y estado(s) de un teléfono mexicano (códigos de la fuente: "SIN", "BCN", "CHIH"…;
+ * "CDMX" para 55/56). Varios estados cuando la lada cruza estados ("Oaxaca/Puebla"); vacío
+ * si la fuente no trae estado. null si no es un número de México. Lo usa la zona horaria de
+ * los seguimientos (lib/followups/timezone.ts).
+ */
+export function mexicanLadaStates(e164: string | null | undefined): { lada: string; states: string[] } | null {
+  if (!e164) return null;
+  const mx = e164.replace(/\D/g, "").match(/^52(?:1(?=\d{10}$))?(\d{10})$/);
+  if (!mx) return null;
+  const national = mx[1];
+  const lada = mexicanLada(national);
+  if (lada === "55" || lada === "56") return { lada, states: ["CDMX"] };
+  if (lada === "664") return { lada, states: ["BCN"] };
+  const found = googlePlace(national);
+  if (!found) return { lada, states: [] };
+  const withCode = found.place.match(/, ([A-Z]+)$/);
+  if (withCode) return { lada, states: [STATE_CODE_BY_PREFIX[found.prefix] ?? withCode[1]] };
+  return { lada, states: found.place.split("/").flatMap((part) => (STATE_CODE_BY_NAME[part] ? [STATE_CODE_BY_NAME[part]] : [])) };
+}
+
 export function phoneLocation(e164: string | null | undefined): PhoneLocation | null {
   if (!e164) return null;
   const digits = e164.replace(/\D/g, "");

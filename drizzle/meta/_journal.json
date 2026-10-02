@@ -379,6 +379,13 @@
       "when": 1790883544820,
       "tag": "0054_gasto_ia_real",
       "breakpoints": true
+    },
+    {
+      "idx": 56,
+      "version": "7",
+      "when": 1790967632376,
+      "tag": "0056_seguimientos",
+      "breakpoints": true
     }
   ]
 }
