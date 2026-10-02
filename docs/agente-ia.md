@@ -823,7 +823,8 @@ Decisiones del dueño:
   - **Como herramienta del Agente IA** (decisión «Depende»): si el workflow trae **textos** («Precio 2»), el texto del
     modelo **no sale** (no se le dice lo mismo dos veces; queda en `ai_usage.error`) y el último mensaje del workflow
     contesta todo lo que el agente leyó (`respondeHasta`); si el workflow no arranca, aviso 🤖 al vendedor con el texto
-    que no salió. Si solo manda **archivos** (la Tabla), el agente sí escribe su frase y luego sale la imagen.
+    que no salió. Si solo manda **archivos** (la Tabla), el agente sí escribe su frase; desde el 1-oct-2026 va como
+    **pie de la imagen**, en un solo mensaje (ver «El texto del Agente IA va como pie del archivo»).
 - **Bug de la ráfaga (arreglado):** la pregunta final marcaba `respondeHasta` con la hora del disparador y cerraba
   también lo anterior de la misma ráfaga (29-sep 11:01 Mazatlán: «¿Cuánto tarda el envío?» + «Precio» → «Precio 2»
   contestó y lo del envío quedó sin respuesta). Ahora `contestaA` cierra un solo mensaje: `pendingInbound` y el barrido
@@ -887,6 +888,34 @@ Agente IA es porque debe ser inteligente».
   agente); que salga antes quedaría como mejora aparte (la pregunta esperaría al agente).
 - Pendiente aparte: como **herramienta** del Agente IA con textos («Depende»), su propio texto sigue sin salir; hoy
   ningún workflow con textos tiene «El Agente IA puede dispararlo».
+
+## El texto del Agente IA va como pie del archivo (1-oct-2026, sin migración)
+
+Caso del dueño (1-oct, captura): el cliente pidió el video de instalación; el Agente IA escribió «Claro, aquí comparto el
+video de instalación de la mini compuerta.» y después salió el video con el pie del workflow «Aquí le comparto un video de
+la instalación de las mini compuertas»: lo mismo dos veces. Pedido del dueño: que el Agente IA lo mande como texto
+adjunto al video y ya.
+
+- **Cuándo:** el agente pide un workflow como herramienta y su **primera** corrida **empieza con un archivo y no manda
+  textos** (un video, la Tabla; con o sin «El workflow es la respuesta»). Su texto (si eran dos mensajes, juntos con un
+  renglón en blanco) va como **pie del primer archivo**, en lugar del pie del workflow: **un solo mensaje**. Los demás
+  archivos del workflow conservan su pie. Por palabra clave, comando o etapa el workflow sale como siempre, con su pie.
+- **No aplica** (el texto sale aparte, como antes, y luego la corrida): el workflow trae textos (si es «la respuesta»,
+  el texto del modelo no sale, «Depende»), espera antes del primer archivo (el texto no se retrasa: la espera era para
+  que el cliente lo leyera primero), el texto no cabe en el pie (1,024 caracteres de WhatsApp) o la corrida no arranca
+  (máximo por chat, «Solo al inicio», canal apagado…).
+- **Cómo:** `run.ts` (`captionRunOf` en actions.ts, `takesAgentCaption` en lib/workflows/steps.ts) revisa el estado
+  como antes del primer mensaje (vendedor, pausa, cliente que escribió: entonces se vuelve a generar con todo) y arranca
+  esa corrida con el texto en `workflow_runs.payload.pieDelAgente` (durable entre reintentos; no es una variable
+  {{…}}). El resto de las corridas sale después, en el mismo orden. En `ai_usage.error`: «el texto va como pie del
+  archivo de «slug»». La respuesta cuenta 0 mensajes enviados: el total de un vendedor no se reemplaza con uno que el
+  cliente aún no recibió.
+- **Ejecutor:** el archivo sale con el texto del agente como pie y la marca `respondeHasta` (es la respuesta del agente,
+  no «relleno» de workflow: cierra lo que el agente leyó y nada de lo que el cliente escribió después). Si la corrida ya
+  no sale al arrancar (la deshabilitaron, otra corrida llegó al máximo, ya no es el inicio), el texto sale **solo** con
+  la misma marca (en el peor caso queda como antes: la frase sin el archivo); si el agente ya no puede actuar (un
+  vendedor contestó, lo pausaron) no sale nada. Si el workflow ya no empieza con un archivo, el texto sale antes del
+  primer paso. Si el archivo falla (ventana cerrada, rechazo), el aviso 🤖 lleva el texto que iba con él.
 
 ## Fuera de alcance (próximos briefs)
 
