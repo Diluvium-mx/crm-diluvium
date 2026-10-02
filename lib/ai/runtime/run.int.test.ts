@@ -1511,14 +1511,86 @@ describe.skipIf(!TEST_DATABASE_URL)("runtime del Agente IA (Postgres real)", () 
     expect(zernio.delivered.at(-1)).toBe("Sí, a todo México.");
   });
 
-  it("herramienta «es la respuesta» que solo manda ARCHIVOS (la Tabla): el Agente IA sí escribe su frase y después sale la imagen", async () => {
-    await msg({ direction: "in", body: "¿me pasa otra vez la tabla?", at: ago(40_000) });
-    const wfId = await wf("tabla_tamanos_estandar", [{ kind: "send_media", assetId: "a_tabla", title: "Tabla" }], { isAnswer: true });
+  it("herramienta «es la respuesta» que solo manda ARCHIVOS (la Tabla): el texto del Agente IA va como pie de la imagen, en UN mensaje (1-oct-2026)", async () => {
+    const m1 = await msg({ direction: "in", body: "¿me pasa otra vez la tabla?", at: ago(40_000) });
+    const wfId = await wf("tabla_tamanos_estandar", [{ kind: "send_media", assetId: "a_tabla", title: "Tabla", caption: "Estos son los tamaños" }], { isAnswer: true });
     const zernio = fakeZernio();
     const { deps } = makeDeps({ brain: ["Claro, aquí se la comparto de nuevo."], toolCalls: [{ toolName: "wf_tabla_tamanos_estandar", input: {} }] }, zernio);
+    expect(await run.runAgent(JOB, deps)).toEqual({ kind: "sent", bubbles: 0 });
+    expect(zernio.delivered).toEqual([]);
+    const all = await runs();
+    expect(all.map((r) => [r.workflowId, r.trigger, r.status, r.triggerMessageId])).toEqual([[wfId, "agent", "queued", m1]]);
+    expect(all[0].payload).toEqual({ pieDelAgente: "Claro, aquí se la comparto de nuevo." });
+    expect((await usage()).find((u) => u.stage === "cerebro")).toMatchObject({ outcome: "sent", error: expect.stringContaining("pie del archivo de «tabla_tamanos_estandar»") });
+  });
+
+  // ── Texto del Agente IA como pie del archivo (1-oct-2026, dueño) ──────────────
+  it("pie del archivo: el video sin «es la respuesta» también; dos mensajes del agente van juntos en el pie", async () => {
+    await msg({ direction: "in", body: "si por favor, muéstreme el video", at: ago(40_000) });
+    await wf("video_mini", [{ kind: "send_media", assetId: "a_video", title: "Video", caption: "Aquí le comparto un video de la instalación de las mini compuertas" }]);
+    const zernio = fakeZernio();
+    const { deps } = makeDeps({ brain: ["Claro, aquí le comparto el video de instalación.\n\n¿Le gustaría continuar con el pedido?"], toolCalls: [{ toolName: "wf_video_mini", input: {} }] }, zernio);
+    expect(await run.runAgent(JOB, deps)).toEqual({ kind: "sent", bubbles: 0 });
+    expect(zernio.delivered).toEqual([]);
+    expect((await runs())[0].payload).toEqual({ pieDelAgente: "Claro, aquí le comparto el video de instalación.\n\n¿Le gustaría continuar con el pedido?" });
+  });
+
+  it("pie del archivo: si la corrida no arranca, el texto sale aparte como siempre", async () => {
+    await msg({ direction: "in", body: "¿me pasa el video?", at: ago(40_000) });
+    await wf("video_mini", [{ kind: "send_media", assetId: "a_video", title: "Video" }]);
+    const zernio = fakeZernio();
+    const { deps } = makeDeps({ brain: ["Claro, aquí está el video."], toolCalls: [{ toolName: "wf_video_mini", input: {} }] }, zernio);
+    deps.startWorkflow = async () => ({ runId: "r_x", status: "skipped", reason: "maximo_por_chat" });
     expect(await run.runAgent(JOB, deps)).toEqual({ kind: "sent", bubbles: 1 });
-    expect(zernio.delivered).toEqual(["Claro, aquí se la comparto de nuevo."]);
-    expect((await runs()).map((r) => [r.workflowId, r.trigger, r.status])).toEqual([[wfId, "agent", "queued"]]);
+    expect(zernio.delivered).toEqual(["Claro, aquí está el video."]);
+  });
+
+  it("pie del archivo con la Tabla de verdad (espera de 18 s antes de la imagen): el texto también va como pie", async () => {
+    await msg({ direction: "in", body: "¿qué medidas manejan?", at: ago(40_000) });
+    await wf("tabla_tamanos_estandar", [{ kind: "wait", seconds: 18 }, { kind: "send_media", assetId: "a_tabla", title: "Tabla", caption: "Aquí le comparto una foto de los tamaños disponibles" }]);
+    const zernio = fakeZernio();
+    const { deps } = makeDeps({ brain: ["Claro, aquí le comparto los tamaños."], toolCalls: [{ toolName: "wf_tabla_tamanos_estandar", input: {} }] }, zernio);
+    expect(await run.runAgent(JOB, deps)).toEqual({ kind: "sent", bubbles: 0 });
+    expect(zernio.delivered).toEqual([]);
+    expect((await runs())[0].payload).toEqual({ pieDelAgente: "Claro, aquí le comparto los tamaños." });
+  });
+
+  it("pie del archivo NO aplica (el texto sale aparte, luego la corrida): workflow con textos, o texto que no cabe en el pie", async () => {
+    const cases: { steps: Record<string, unknown>[]; text: string }[] = [
+      { steps: [{ kind: "send_media", assetId: "a_video", title: "Video" }, { kind: "send_text", text: "¿Qué le pareció?" }], text: "Le comparto el video." },
+      { steps: [{ kind: "send_media", assetId: "a_video", title: "Video" }], text: "x".repeat(1_025) },
+    ];
+    for (const [i, c] of cases.entries()) {
+      await db.delete(s.workflowRuns);
+      await db.delete(s.messages);
+      await db.delete(s.aiUsage);
+      await msg({ direction: "in", body: `¿me pasa el video? ${i}`, at: ago(40_000) });
+      await wf(`video_${i}`, c.steps);
+      const zernio = fakeZernio();
+      const { deps } = makeDeps({ brain: [c.text], toolCalls: [{ toolName: `wf_video_${i}`, input: {} }] }, zernio);
+      expect(await run.runAgent(JOB, deps)).toEqual({ kind: "sent", bubbles: 1 });
+      expect(zernio.delivered).toEqual([c.text]);
+      expect((await runs()).map((r) => [r.status, r.payload])).toEqual([["queued", null]]);
+    }
+  });
+
+  it("pie del archivo: si el cliente escribe durante la generación, no arranca nada y se vuelve a generar con todo", async () => {
+    await msg({ direction: "in", body: "¿me pasa el video?", at: ago(40_000) });
+    await wf("video_mini", [{ kind: "send_media", assetId: "a_video", title: "Video" }]);
+    const zernio = fakeZernio();
+    const { deps, calls } = makeDeps(
+      {
+        brain: ["Claro, aquí está el video.", "Claro, y sí hacemos envíos."],
+        toolCalls: [{ toolName: "wf_video_mini", input: {} }],
+        onBrain: async (n) => {
+          if (n === 1) await msg({ direction: "in", body: "¿y hacen envíos?", at: new Date() });
+        },
+      },
+      zernio,
+    );
+    expect(await run.runAgent(JOB, deps)).toEqual({ kind: "sent", bubbles: 0 });
+    expect(calls.filter((c) => c.kind === "cerebro")).toHaveLength(2);
+    expect((await runs()).map((r) => r.payload)).toEqual([{ pieDelAgente: "Claro, y sí hacemos envíos." }]);
   });
 
   it("herramienta «es la respuesta» cuyo workflow NO arranca: el vendedor ve el texto que no salió", async () => {

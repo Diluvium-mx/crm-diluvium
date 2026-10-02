@@ -190,3 +190,28 @@ export function lastSendIndex(steps: readonly WorkflowStepPayload[]): number {
   for (let i = steps.length - 1; i >= 0; i--) if (steps[i].kind === "send_text" || steps[i].kind === "send_media") return i;
   return -1;
 }
+
+// Texto del Agente IA como pie del archivo (1-oct-2026, dueño). Cuando el agente pide un workflow
+// que solo manda archivos (video, Tabla), su texto viaja como pie del PRIMER archivo, en lugar del
+// pie del workflow: antes salían su frase y luego el archivo con su propio pie, que decía lo mismo.
+// La llave vive en `workflow_runs.payload` (durable entre reintentos); no es una variable {{…}}.
+export const AGENT_CAPTION_KEY = "pieDelAgente";
+
+// Índice del archivo que lleva el texto del agente como pie: el PRIMERO, si el workflow solo manda
+// archivos (con o sin esperas); -1 si trae textos (si es «la respuesta», el texto del modelo no
+// sale; si no, sale aparte como siempre) o ningún archivo. Las esperas ANTES de ese archivo no
+// corren con el pie (ejecutor): eran para que el cliente leyera primero ese texto, que ahora va con
+// el archivo (la Tabla espera 18 s; con el pie, la respuesta del agente no se retrasa).
+export function agentCaptionIndex(steps: readonly WorkflowStepPayload[]): number {
+  if (steps.some((s) => s.kind === "send_text")) return -1;
+  return steps.findIndex((s) => s.kind === "send_media");
+}
+
+export function takesAgentCaption(steps: readonly WorkflowStepPayload[]): boolean {
+  return agentCaptionIndex(steps) >= 0;
+}
+
+export function agentCaptionOf(payload: Record<string, unknown> | null | undefined): string | null {
+  const v = payload?.[AGENT_CAPTION_KEY];
+  return typeof v === "string" && v.trim() ? v.trim() : null;
+}
