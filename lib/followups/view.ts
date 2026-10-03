@@ -5,8 +5,10 @@ import { and, eq, inArray, sql } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { contacts, conversations, followUps, templates } from "@/lib/db/schema";
 import { firstNameOf } from "@/lib/templates/first-name";
-import { CASE_RULES, type FollowUpCase } from "./cases";
+import { CASE_RULES, templateForAttempt, TIME_PHRASE_TEMPLATES, type FollowUpCase } from "./cases";
 import { presentAtFor, templateFor, windowOpenAt } from "./schedule";
+import { approvedTemplateNames } from "./store";
+import { timePhrase } from "./time-phrase";
 
 export type FollowUpView = {
   id: string;
@@ -42,7 +44,15 @@ const OPEN = ["programado", "esperando"] as const;
 
 export async function loadFollowUpView(organizationId: string, conversationId: string): Promise<FollowUpView | null> {
   const [row] = await db
-    .select({ f: followUps, name: contacts.firstName, lastName: contacts.lastName, phone: contacts.phoneE164, channelId: conversations.channelId })
+    .select({
+      f: followUps,
+      name: contacts.firstName,
+      lastName: contacts.lastName,
+      phone: contacts.phoneE164,
+      channelId: conversations.channelId,
+      lastInboundAt: conversations.lastInboundAt,
+      windowExpiresAt: conversations.windowExpiresAt,
+    })
     .from(followUps)
     .innerJoin(conversations, and(eq(conversations.id, followUps.conversationId), eq(conversations.organizationId, organizationId)))
     .innerJoin(contacts, and(eq(contacts.id, followUps.contactId), eq(contacts.organizationId, organizationId)))
@@ -58,7 +68,10 @@ export async function loadFollowUpView(organizationId: string, conversationId: s
       .from(templates)
       .where(and(eq(templates.organizationId, organizationId), eq(templates.channelId, row.channelId), eq(templates.name, f.templateName)))
       .limit(1);
-    templateText = t?.body ? t.body.replace(/\{\{\s*1\s*\}\}/g, firstName || "") : null;
+    // {{1}} = cuándo nos escribió el cliente en las plantillas con tiempo; en las demás, su primer nombre.
+    const lastClient = row.lastInboundAt ?? (row.windowExpiresAt ? new Date(row.windowExpiresAt.getTime() - 24 * 60 * 60_000) : null);
+    const value = TIME_PHRASE_TEMPLATES.has(f.templateName) ? (lastClient ? timePhrase(lastClient, f.dueAt ?? new Date(), f.timeZone) : "") : firstName;
+    templateText = t?.body ? t.body.replace(/\{\{\s*1\s*\}\}/g, value || "") : null;
   }
   const caso = f.caso as FollowUpCase;
   return {
@@ -126,7 +139,10 @@ export async function changeFollowUpTime(organizationId: string, id: string, due
     .set({
       dueAt,
       door,
-      templateName: door === "plantilla" ? templateFor(CASE_RULES[caso].doors[f.intento - 1] ?? "saludo", dueAt, f.timeZone) : null,
+      templateName:
+        door === "plantilla"
+          ? templateForAttempt(caso, f.intento, templateFor(CASE_RULES[caso].doors[f.intento - 1] ?? "saludo", dueAt, f.timeZone), await approvedTemplateNames(organizationId))
+          : null,
       presentarAt: f.modo === "sugerido" ? presentAtFor(dueAt, now) : null,
       dueSetBy: "vendedor",
       updatedAt: now,
