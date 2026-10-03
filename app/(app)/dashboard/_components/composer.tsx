@@ -78,6 +78,7 @@ export function Composer({
   onPickFiles,
   onSendAttachments,
   contactFirstName = "",
+  contactTimePhrase = "",
   channelType = "whatsapp",
 }: {
   conversationId: string;
@@ -97,6 +98,8 @@ export function Composer({
   onSendAttachments: (items: ChatSendItem[], caption: string, sendId: string) => Promise<{ ok: true } | { ok: false; message: string }>;
   /** Primer nombre del contacto: llena solo el {{1}} de las plantillas (📄 y 🕒). */
   contactFirstName?: string;
+  /** Cuándo nos escribió el cliente ("anoche"…): el {{1}} de las plantillas de seguimiento con tiempo. */
+  contactTimePhrase?: string;
 }) {
   // Móvil: placeholder corto (en el celular no hay Shift+Enter que explicar).
   const isMobile = useIsMobile();
@@ -287,6 +290,7 @@ export function Composer({
   const scheduleForm = scheduleOpen && (
     <ScheduleForm
       firstName={contactFirstName}
+      timePhrase={contactTimePhrase}
       mode={{ type: "new", initialText: draft, templateOnly: !windowOpen }}
       conversationId={conversationId}
       windowExpiresAt={windowExpiresAt}
@@ -320,6 +324,7 @@ export function Composer({
         ) : templateOpen ? (
           <TemplatePicker
             firstName={contactFirstName}
+            timePhrase={contactTimePhrase}
             onSubmit={(templateId, values, preview) => {
               setTemplateOpen(false);
               onSendTemplate(templateId, values, preview);
@@ -368,6 +373,7 @@ export function Composer({
         <div className="mb-2">
           <TemplatePicker
             firstName={contactFirstName}
+            timePhrase={contactTimePhrase}
             onSubmit={(templateId, values, preview) => {
               setTemplateOpen(false);
               onSendTemplate(templateId, values, preview);
