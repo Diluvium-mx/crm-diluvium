@@ -152,3 +152,30 @@ export const TEMPLATE_BY_DOOR = {
 export function attemptLabel(intento: number, total: number): string {
   return `${intento}.º de ${total}`;
 }
+
+// ── Plantillas propias de cada caso (aprobadas por el dueño el 3-oct-2026; dadas de alta en Meta ese día) ──
+// Salen en el 1.er intento forzado a plantilla y en el 2.º, SOLO cuando Meta ya las aprobó (en la tabla
+// `templates` del CRM); mientras tanto, o si se rechazan, sale la puerta de respaldo (🚪 / 📄).
+export const CASE_TEMPLATE: Readonly<Partial<Record<FollowUpCase, string>>> = {
+  precio_sin_respuesta: "seg_precio",
+  solo_informacion: "seg_informacion",
+  cotizacion_sin_respuesta: "seg_valorar",
+  pago_pendiente: "seg_valorar",
+  pidio_fecha: "seg_valorar",
+  faltan_medidas: "seg_medidas",
+  asesor_sin_respuesta: "seg_asesor",
+  objecion: "seg_objecion",
+};
+
+/**
+ * Plantillas cuyo {{1}} NO es el nombre sino CUÁNDO nos escribió el cliente ("el día de ayer",
+ * "anoche"…; lib/followups/time-phrase.ts). Las demás siguen con el primer nombre en {{1}}.
+ */
+export const TIME_PHRASE_TEMPLATES: ReadonlySet<string> = new Set(["seg_precio", "seg_informacion", "seg_valorar", "seg_medidas"]);
+
+/** Plantilla que sale en ese intento: la del caso si ya está aprobada; si no, la de respaldo. */
+export function templateForAttempt(caso: FollowUpCase, intento: number, fallback: string | null, approved: ReadonlySet<string>): string | null {
+  if (fallback === null || intento > 2) return fallback;
+  const own = CASE_TEMPLATE[caso];
+  return own && approved.has(own) ? own : fallback;
+}

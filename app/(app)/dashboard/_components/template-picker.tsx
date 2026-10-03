@@ -11,6 +11,7 @@ import { renderTemplateBody } from "@/lib/messaging/template-format";
 import type { TemplateView } from "@/lib/templates/types";
 import { CloseX } from "@/components/ui/close-x";
 import { LinkedText } from "@/components/ui/linked-text";
+import { TIME_PHRASE_TEMPLATES } from "@/lib/followups/cases";
 
 const TOKEN_CLASS = "rounded bg-brand-navy/15 px-1 font-medium text-brand-navy";
 
@@ -20,6 +21,7 @@ export function TemplatePicker({
   submitLabel = "Enviar plantilla",
   busy = false,
   firstName = "",
+  timePhrase = "",
 }: {
   onSubmit: (templateId: string, values: string[], preview: string) => void;
   onClose: () => void;
@@ -29,6 +31,11 @@ export function TemplatePicker({
   busy?: boolean;
   /** Primer nombre del contacto: llena solo el hueco {{1}} al elegir la plantilla (se puede cambiar). */
   firstName?: string;
+  /**
+   * Cuándo nos escribió el cliente ("el día de ayer", "anoche"…): en las plantillas de seguimiento
+   * con tiempo (TIME_PHRASE_TEMPLATES) su {{1}} es ESTO, no el nombre (3-oct-2026). Se puede cambiar.
+   */
+  timePhrase?: string;
 }) {
   const [templates, setTemplates] = useState<TemplateView[] | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -56,7 +63,8 @@ export function TemplatePicker({
 
   function select(template: TemplateView) {
     setSelectedId(template.id);
-    setValues(template.variables.map((_, i) => (i === 0 ? firstName : "")));
+    const first = TIME_PHRASE_TEMPLATES.has(template.name) ? timePhrase : firstName;
+    setValues(template.variables.map((_, i) => (i === 0 ? first : "")));
   }
 
   const preview = selected?.bodyText ? renderTemplateBody(selected.bodyText, values) : selected?.bodyText ?? "";

@@ -98,8 +98,27 @@ sin una llamada extra.
 días."), `hola_buenas_tardes` ("Hola, buenas tardes.") y `seguimiento_proteccion` ("Buenas, aquí reportándonos
 respecto a lo que platicamos acerca de la protección. ¿Qué le pareció?"). **La tabla de casos funciona solo con esas
 3.** Las 8 plantillas por caso que se propusieron el 1-oct se dieron de alta sin autorización y se **borraron** el
-2-oct; plantillas propias por caso quedan para después (§12, decisión 6), con los textos revisados con el dueño
-palabra por palabra antes de mandarlas a Meta.
+2-oct.
+
+**Plantillas propias por caso (3-oct-2026):** el dueño escribió los textos (su ortografía tal cual, más natural) y
+dio el sí a la lista; se dieron de alta en Meta ese día (PENDING). Marketing, es_MX. En 4 de ellas `{{1}}` **no es el
+nombre** sino **cuándo nos escribió el cliente**, calculado por el CRM en su calendario (`lib/followups/time-phrase.ts`):
+"hoy", "el día de ayer", "anoche" (después de las 19:00), "antier", "el lunes"… (3–6 días), "la semana pasada",
+"hace unas semanas" o "hace un tiempo"; siempre en minúsculas. Ejemplo para Meta: "el día de ayer".
+
+| Plantilla | Casos | Texto |
+|---|---|---|
+| `seg_precio` | Precio sin respuesta | Hola, le escribo de parte del equipo de Diluvium. Referente a la compuerta que nos comento {{1}}. ¿Pudo ver la información de la compuerta? |
+| `seg_informacion` | Solo información | Hola, le escribo de parte del equipo de Diluvium. Referente a la compuerta que nos comento {{1}}. ¿Se le mete el agua en su casa? Unos 30, 40 cm? |
+| `seg_valorar` | Cotización, pago pendiente, pidió fecha | Referente a la compuerta anti-inundaciones que nos comentó {{1}}. Tuvo oportunidad de valorar la compra? Qué le pareció? |
+| `seg_medidas` | Faltan medidas | Referente a la compuerta anti-inundaciones que nos comentó {{1}}. Tuvo oportunidad de medir la entrada? Para saber que tamaño de compuerta le queda? |
+| `seg_asesor` | Asesor sin respuesta | Hola, le escribo de parte del equipo de Diluvium para atender su consulta, dígame, en que le puedo ayudar? |
+| `seg_objecion` | Lo va a pensar u objeción | Hola, le escribo de parte del equipo de Diluvium. Tuvo la oportunidad de pensarlo con calma? Si le queda alguna duda sobre la compuerta, con gusto se la resuelvo aquí mismo. |
+
+Salen en el 1.er intento (si ya no hay ventana) y en el 2.º, **solo cuando Meta ya las aprobó**; mientras están en
+revisión, o si se rechazan, sale la puerta de respaldo (🚪 / 📄). El 3.er intento sigue con 🚪 o 📄 (otro texto, para no
+repetir). Sin caso propio: "Sin punto claro" (🚪). En el 📄 y el 🕒 de la caja para escribir, el `{{1}}` de estas 4
+plantillas ya viene con la frase de tiempo (se puede cambiar); las demás siguen con el primer nombre.
 
 ---
 
@@ -434,9 +453,8 @@ contacto de prueba del dueño.
 **Abiertas:**
 1. **Pago pendiente, aviso al vendedor:** cuándo (propuesta: si no contesta el 2.º intento) y cómo (la tarjeta
    amarilla de hoy o un color propio en el Embudo). Por ver.
-2. **Plantillas de cada intento:** el dueño las confirma caso por caso antes de la Parte 3.
-3. **Plantillas propias por caso** (las 8 borradas el 2-oct): después de ver el ensayo, con los textos revisados
-   palabra por palabra. No hacen falta para las Partes 1–3.
+2. ~~Plantillas de cada intento~~ y ~~plantillas propias por caso~~: **resueltas el 3-oct-2026** (6 plantillas
+   `seg_*`, §3).
 4. **Fechas de pago (quincena, fin de mes):** cuando el cliente la pide, va en "Pidió fecha". Una regla general se
    revisa con los datos del CRM, una vez que haya seguimientos funcionando.
 5. **Quién redacta el texto al salir (§10.1):** el borrador del lector tal cual (sin gasto extra; propuesta) o una
