@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import type { ModelMessage } from "ai";
 import { withHistoryCacheBreakpoint } from "./anthropic-cache";
 
-const cc = { anthropic: { cacheControl: { type: "ephemeral" } } };
+const cc = { anthropic: { cacheControl: { type: "ephemeral", ttl: "1h" } } };
 
 describe("caché del historial (Anthropic)", () => {
   it("marca el mensaje justo antes del último turno del cliente, sin tocar el original", () => {

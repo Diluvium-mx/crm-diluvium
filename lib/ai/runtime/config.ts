@@ -69,13 +69,18 @@ export async function loadCustomValues(
         .where(and(eq(user.id, conversation.assigneeUserId), sql`coalesce(${user.banned}, false) = false`))
         .limit(1)
     : [];
-  const [org] = await db.select({ name: organization.name }).from(organization).where(eq(organization.id, organizationId)).limit(1);
   return {
+    ...(await orgCustomValues(organizationId, cfg)),
     contacto: contact?.firstName?.trim() || "",
     vendedor: seller?.name?.trim() || "un asesor",
-    empresa: cfg.companyName?.trim() || org?.name || "",
-    agente: cfg.agentName,
   };
+}
+
+// Los mismos valores sin conversación (contacto vacío, vendedor "un asesor"): los usa la
+// renovación de la caché (cache-keepalive.ts) para armar el mismo system que un chat.
+export async function orgCustomValues(organizationId: string, cfg: AgentConfig): Promise<CustomValues> {
+  const [org] = await db.select({ name: organization.name }).from(organization).where(eq(organization.id, organizationId)).limit(1);
+  return { contacto: "", vendedor: "un asesor", empresa: cfg.companyName?.trim() || org?.name || "", agente: cfg.agentName };
 }
 
 // FAQs habilitadas de la organización, en orden (para el system del cerebro).
