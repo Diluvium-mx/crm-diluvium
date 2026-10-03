@@ -179,139 +179,145 @@ export function AutomatizacionPanel({
         </div>
       </header>
 
-      <div className="min-h-0 flex-1 overflow-y-auto">
-        {tab === "workflows" && editing && (
-          // Barra fija del editor: se queda arriba al bajar por los pasos.
-          <div className="sticky top-0 z-20 border-b bg-card/95 backdrop-blur-sm">
-            <div className="mx-auto flex max-w-4xl items-center gap-2 px-4 py-2.5 sm:gap-3">
-              <button
-                type="button"
-                onClick={requestExit}
-                disabled={busy}
-                aria-label="Regresar a Workflows"
-                title="Regresar a Workflows"
-                className="flex shrink-0 items-center gap-1.5 rounded-md border px-3 py-2 text-sm font-medium hover:bg-muted disabled:opacity-60"
-              >
-                <ArrowLeft className="size-4" aria-hidden="true" />
-                <span className="max-sm:hidden">Workflows</span>
-              </button>
-              <div className="min-w-0 flex-1">
-                <h2 className="truncate text-sm font-semibold">{editorTitle}</h2>
-                {dirty && <p className="truncate text-[11px] text-brand-orange">Cambios sin guardar</p>}
+      {/* La Biblioteca lleva su propio scroll: así la zona para soltar archivos cubre todo lo
+          visible aunque la lista sea larga. El aviso de error de abajo no aplica ahí (cambiar
+          de pestaña lo borra). */}
+      {tab === "biblioteca" ? (
+        <BibliotecaTab assets={assets} onChanged={setAssets} />
+      ) : (
+        <div className="min-h-0 flex-1 overflow-y-auto">
+          {tab === "workflows" && editing && (
+            // Barra fija del editor: se queda arriba al bajar por los pasos.
+            <div className="sticky top-0 z-20 border-b bg-card/95 backdrop-blur-sm">
+              <div className="mx-auto flex max-w-4xl items-center gap-2 px-4 py-2.5 sm:gap-3">
+                <button
+                  type="button"
+                  onClick={requestExit}
+                  disabled={busy}
+                  aria-label="Regresar a Workflows"
+                  title="Regresar a Workflows"
+                  className="flex shrink-0 items-center gap-1.5 rounded-md border px-3 py-2 text-sm font-medium hover:bg-muted disabled:opacity-60"
+                >
+                  <ArrowLeft className="size-4" aria-hidden="true" />
+                  <span className="max-sm:hidden">Workflows</span>
+                </button>
+                <div className="min-w-0 flex-1">
+                  <h2 className="truncate text-sm font-semibold">{editorTitle}</h2>
+                  {dirty && <p className="truncate text-[11px] text-brand-orange">Cambios sin guardar</p>}
+                </div>
+                <button type="button" onClick={requestExit} disabled={busy} className="shrink-0 rounded-md border px-3 py-2 text-sm hover:bg-muted disabled:opacity-60">
+                  Cancelar
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setAsking({ kind: "guardar" })}
+                  disabled={!canSave}
+                  title={canSave ? "Guardar todos los cambios" : "No hay cambios que guardar"}
+                  className="shrink-0 rounded-md bg-brand-orange px-5 py-2.5 text-base font-semibold text-brand-white shadow-sm hover:bg-brand-orange-light disabled:opacity-50 sm:px-7"
+                >
+                  Guardar
+                </button>
               </div>
-              <button type="button" onClick={requestExit} disabled={busy} className="shrink-0 rounded-md border px-3 py-2 text-sm hover:bg-muted disabled:opacity-60">
-                Cancelar
-              </button>
-              <button
-                type="button"
-                onClick={() => setAsking({ kind: "guardar" })}
-                disabled={!canSave}
-                title={canSave ? "Guardar todos los cambios" : "No hay cambios que guardar"}
-                className="shrink-0 rounded-md bg-brand-orange px-5 py-2.5 text-base font-semibold text-brand-white shadow-sm hover:bg-brand-orange-light disabled:opacity-50 sm:px-7"
-              >
-                Guardar
-              </button>
             </div>
-          </div>
-        )}
+          )}
 
-        {error && (
-          <div className="mx-auto max-w-4xl px-4 pt-3">
-            <div className="rounded-md border border-red-300 bg-red-50 px-3 py-2 text-sm text-red-700 dark:bg-red-950/40 dark:text-red-300">{error}</div>
-          </div>
-        )}
+          {error && (
+            <div className="mx-auto max-w-4xl px-4 pt-3">
+              <div className="rounded-md border border-red-300 bg-red-50 px-3 py-2 text-sm text-red-700 dark:bg-red-950/40 dark:text-red-300">{error}</div>
+            </div>
+          )}
 
-        {tab === "biblioteca" && <BibliotecaTab assets={assets} onChanged={setAssets} />}
-        {tab === "corridas" && <CorridasTab runs={runs} onRefresh={async () => setRuns(await listWorkflowRuns())} />}
-        {tab === "workflows" && (
-          <div className="mx-auto max-w-4xl space-y-4 p-4">
-            {editing ? (
-              <div className="space-y-4 rounded-lg border bg-card p-4 shadow-sm">
-                <div className="flex items-center justify-end">
-                  <label className="flex items-center gap-2 text-sm">
-                    <input type="checkbox" checked={editing.draft.enabled} onChange={(e) => setEditing({ ...editing, draft: { ...editing.draft, enabled: e.target.checked } })} /> Habilitado
-                  </label>
-                </div>
-                <WorkflowEditor
-                  draft={editing.draft}
-                  onChange={(draft) => setEditing({ ...editing, draft })}
-                  assets={assets}
-                  onAssetsChanged={setAssets}
-                  isSystem={editing.original?.isSystem ?? false}
-                />
-              </div>
-            ) : (
-              <>
-                <div className="flex flex-wrap items-center justify-between gap-3">
-                  <p className="text-sm text-muted-foreground">
-                    Secuencias de pasos que dispara el Agente IA, un comando del vendedor (<code className="text-brand-orange">/tamaños</code>), una palabra clave del cliente o un cambio de etapa.
-                  </p>
-                  <div className="flex gap-2">
-                    {/* Solo el ícono (no estorba): copia TODOS los workflows, igual que las FAQs,
-                        para pegarlos en una IA (pedido del dueño, 28-sep-2026). */}
-                    {items.length > 0 && (
-                      <CopyButton
-                        iconOnly
-                        getText={() => workflowsAsText(items, labelOf)}
-                        title={`Copiar los ${items.length} workflows (pasos, textos y disparadores)`}
-                      />
-                    )}
-                    <button type="button" onClick={() => openEditor(null)} className="flex items-center gap-1.5 rounded-md bg-brand-orange px-3 py-2 text-sm font-medium text-brand-white hover:bg-brand-orange-light">
-                      <Plus className="size-4" aria-hidden="true" /> Nuevo
-                    </button>
+          {tab === "corridas" && <CorridasTab runs={runs} onRefresh={async () => setRuns(await listWorkflowRuns())} />}
+          {tab === "workflows" && (
+            <div className="mx-auto max-w-4xl space-y-4 p-4">
+              {editing ? (
+                <div className="space-y-4 rounded-lg border bg-card p-4 shadow-sm">
+                  <div className="flex items-center justify-end">
+                    <label className="flex items-center gap-2 text-sm">
+                      <input type="checkbox" checked={editing.draft.enabled} onChange={(e) => setEditing({ ...editing, draft: { ...editing.draft, enabled: e.target.checked } })} /> Habilitado
+                    </label>
                   </div>
+                  <WorkflowEditor
+                    draft={editing.draft}
+                    onChange={(draft) => setEditing({ ...editing, draft })}
+                    assets={assets}
+                    onAssetsChanged={setAssets}
+                    isSystem={editing.original?.isSystem ?? false}
+                  />
                 </div>
-                {items.length === 0 && <p className="rounded-lg border border-dashed p-8 text-center text-sm text-muted-foreground">No hay workflows. Crea uno con «+ Nuevo».</p>}
-                <ul className="space-y-2">
-                  {items.map((w, i) => (
-                    <li key={w.id} className={`rounded-lg border bg-card p-3 shadow-sm ${w.missingMedia.length ? "border-brand-orange/60" : ""}`}>
-                      <div className="flex flex-wrap items-center gap-2">
-                        <label className="flex items-center gap-2" title={w.enabled ? "Habilitado" : "Deshabilitado"}>
-                          <input type="checkbox" checked={w.enabled} onChange={() => void toggle(w)} aria-label={`Habilitar ${w.name}`} />
-                        </label>
-                        <span className="text-sm font-semibold">{w.name}</span>
-                        {w.triggerAgent && <Chip>🤖 agente</Chip>}
-                        {w.triggerCommand && <Chip mono>{w.triggerCommand}</Chip>}
-                        {w.triggerKeywords.length > 0 && <Chip>🔑 {w.triggerKeywords.slice(0, 3).join(", ")}{w.triggerKeywords.length > 3 ? "…" : ""}</Chip>}
-                        {w.triggerStage && <Chip>↗ {labelOf(w.triggerStage)}</Chip>}
-                        {w.missingMedia.length > 0 && <Chip warn>⚠ falta archivo</Chip>}
-                        <span className="ml-auto text-[11px] text-muted-foreground">{w.runs7d} corridas · 7 días</span>
-                        <div className="flex gap-0.5">
-                          <IconBtn label="Subir" onClick={() => void move(i, -1)} disabled={i === 0}>
-                            <ArrowUp className="size-4" />
-                          </IconBtn>
-                          <IconBtn label="Bajar" onClick={() => void move(i, 1)} disabled={i === items.length - 1}>
-                            <ArrowDown className="size-4" />
-                          </IconBtn>
-                          <IconBtn label="Probar" onClick={() => setTesting(w)} disabled={w.steps.length === 0 || w.missingMedia.length > 0}>
-                            <Play className="size-4" />
-                          </IconBtn>
-                          <IconBtn label="Editar" onClick={() => openEditor(w)}>
-                            <Pencil className="size-4" />
-                          </IconBtn>
-                          {!w.isSystem && (
-                            <IconBtn label="Borrar" onClick={() => setAsking({ kind: "borrar", workflow: w })} danger>
-                              <Trash2 className="size-4" />
+              ) : (
+                <>
+                  <div className="flex flex-wrap items-center justify-between gap-3">
+                    <p className="text-sm text-muted-foreground">
+                      Secuencias de pasos que dispara el Agente IA, un comando del vendedor (<code className="text-brand-orange">/tamaños</code>), una palabra clave del cliente o un cambio de etapa.
+                    </p>
+                    <div className="flex gap-2">
+                      {/* Solo el ícono (no estorba): copia TODOS los workflows, igual que las FAQs,
+                          para pegarlos en una IA (pedido del dueño, 28-sep-2026). */}
+                      {items.length > 0 && (
+                        <CopyButton
+                          iconOnly
+                          getText={() => workflowsAsText(items, labelOf)}
+                          title={`Copiar los ${items.length} workflows (pasos, textos y disparadores)`}
+                        />
+                      )}
+                      <button type="button" onClick={() => openEditor(null)} className="flex items-center gap-1.5 rounded-md bg-brand-orange px-3 py-2 text-sm font-medium text-brand-white hover:bg-brand-orange-light">
+                        <Plus className="size-4" aria-hidden="true" /> Nuevo
+                      </button>
+                    </div>
+                  </div>
+                  {items.length === 0 && <p className="rounded-lg border border-dashed p-8 text-center text-sm text-muted-foreground">No hay workflows. Crea uno con «+ Nuevo».</p>}
+                  <ul className="space-y-2">
+                    {items.map((w, i) => (
+                      <li key={w.id} className={`rounded-lg border bg-card p-3 shadow-sm ${w.missingMedia.length ? "border-brand-orange/60" : ""}`}>
+                        <div className="flex flex-wrap items-center gap-2">
+                          <label className="flex items-center gap-2" title={w.enabled ? "Habilitado" : "Deshabilitado"}>
+                            <input type="checkbox" checked={w.enabled} onChange={() => void toggle(w)} aria-label={`Habilitar ${w.name}`} />
+                          </label>
+                          <span className="text-sm font-semibold">{w.name}</span>
+                          {w.triggerAgent && <Chip>🤖 agente</Chip>}
+                          {w.triggerCommand && <Chip mono>{w.triggerCommand}</Chip>}
+                          {w.triggerKeywords.length > 0 && <Chip>🔑 {w.triggerKeywords.slice(0, 3).join(", ")}{w.triggerKeywords.length > 3 ? "…" : ""}</Chip>}
+                          {w.triggerStage && <Chip>↗ {labelOf(w.triggerStage)}</Chip>}
+                          {w.missingMedia.length > 0 && <Chip warn>⚠ falta archivo</Chip>}
+                          <span className="ml-auto text-[11px] text-muted-foreground">{w.runs7d} corridas · 7 días</span>
+                          <div className="flex gap-0.5">
+                            <IconBtn label="Subir" onClick={() => void move(i, -1)} disabled={i === 0}>
+                              <ArrowUp className="size-4" />
                             </IconBtn>
-                          )}
+                            <IconBtn label="Bajar" onClick={() => void move(i, 1)} disabled={i === items.length - 1}>
+                              <ArrowDown className="size-4" />
+                            </IconBtn>
+                            <IconBtn label="Probar" onClick={() => setTesting(w)} disabled={w.steps.length === 0 || w.missingMedia.length > 0}>
+                              <Play className="size-4" />
+                            </IconBtn>
+                            <IconBtn label="Editar" onClick={() => openEditor(w)}>
+                              <Pencil className="size-4" />
+                            </IconBtn>
+                            {!w.isSystem && (
+                              <IconBtn label="Borrar" onClick={() => setAsking({ kind: "borrar", workflow: w })} danger>
+                                <Trash2 className="size-4" />
+                              </IconBtn>
+                            )}
+                          </div>
                         </div>
-                      </div>
-                      <ol className="mt-2 flex flex-wrap gap-1.5">
-                        {w.steps.map((s, j) => (
-                          <li key={j} className="max-w-xs truncate rounded bg-muted px-2 py-0.5 text-[11px]" title={stepSummary(s)}>
-                            {STEP_ICON[s.kind]} {stepSummary(s)}
-                          </li>
-                        ))}
-                        {w.steps.length === 0 && <li className="text-[11px] text-muted-foreground">sin pasos</li>}
-                      </ol>
-                    </li>
-                  ))}
-                </ul>
-              </>
-            )}
-          </div>
-        )}
-      </div>
+                        <ol className="mt-2 flex flex-wrap gap-1.5">
+                          {w.steps.map((s, j) => (
+                            <li key={j} className="max-w-xs truncate rounded bg-muted px-2 py-0.5 text-[11px]" title={stepSummary(s)}>
+                              {STEP_ICON[s.kind]} {stepSummary(s)}
+                            </li>
+                          ))}
+                          {w.steps.length === 0 && <li className="text-[11px] text-muted-foreground">sin pasos</li>}
+                        </ol>
+                      </li>
+                    ))}
+                  </ul>
+                </>
+              )}
+            </div>
+          )}
+        </div>
+      )}
 
       {asking?.kind === "salir" && editing && (
         <TopConfirm
