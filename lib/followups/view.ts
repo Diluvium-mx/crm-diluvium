@@ -37,7 +37,7 @@ export type FollowUpView = {
   borrador: string | null;
   firstName: string;
   phoneE164: string | null;
-  intentos: { n: number; at: string; door: "texto" | "plantilla"; template: string | null; modo: "automatico" | "sugerido" }[];
+  intentos: { n: number; at: string; door: "texto" | "plantilla"; template: string | null; modo: "automatico" | "sugerido" | "vendedor" }[];
 };
 
 const OPEN = ["programado", "esperando"] as const;
