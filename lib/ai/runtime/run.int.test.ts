@@ -1356,6 +1356,71 @@ describe.skipIf(!TEST_DATABASE_URL)("runtime del Agente IA (Postgres real)", () 
     expect((await usage()).find((u) => u.stage === "cerebro")?.error).toContain("no se repitió lo que ya salió");
   });
 
+  describe("pregunta sin contestar (3-oct-2026)", () => {
+    const UBICACION = "Estamos en Los Mochis, Sinaloa, pero de aquí enviamos a todo México.";
+
+    it("el cliente ignora la pregunta y pregunta otra cosa: el Agente IA contesta su duda SIN volver a hacer la misma pregunta", async () => {
+      await msg({ direction: "in", body: "Precio?", at: ago(90_000) });
+      await msg({ direction: "out", body: "Ahorita tenemos cualquier tamaño en $5,500 con envío gratis.", at: ago(85_000), source: "ai_agent" });
+      await msg({ direction: "out", body: PREGUNTA, at: ago(84_000), source: "ai_agent" });
+      await msg({ direction: "in", body: "En donde están ubicados?", at: ago(30_000) });
+      const zernio = fakeZernio();
+      const { deps } = makeDeps({ brain: [`${UBICACION}\n\n${PREGUNTA}`] }, zernio);
+      expect(await run.runAgent(JOB, deps)).toEqual({ kind: "sent", bubbles: 1 });
+      expect((await agentOuts()).map((m) => m.body).slice(-1)).toEqual([UBICACION]);
+      expect((await usage()).find((u) => u.stage === "cerebro")?.error).toContain("no se repitió la pregunta sin contestar");
+    });
+
+    it("ráfaga: dos dudas seguidas del cliente → contesta las dos y no repite la pregunta del workflow", async () => {
+      const m1 = await msg({ direction: "in", body: "Precio", at: ago(120_000) });
+      const wfId = await wf("precio_2", [{ kind: "send_text", text: "Ahorita tenemos cualquier tamaño en $5,500 con envío gratis." }, { kind: "send_text", text: PREGUNTA }], { isAnswer: true });
+      await keywordRun("run_precio", wfId, m1);
+      const zernio = fakeZernio();
+      expect(await executor.executeWorkflowRun("run_precio", execDeps(zernio))).toBe("done");
+      await msg({ direction: "in", body: "Dónde están?", at: ago(20_000) });
+      await msg({ direction: "in", body: "Y cuánto tarda a Reynosa?", at: ago(18_000) });
+      const { deps } = makeDeps({ brain: [`${UBICACION} A Reynosa tarda de 3 a 5 días hábiles.\n\n${PREGUNTA}`] }, zernio);
+      expect(await run.runAgent(JOB, deps)).toEqual({ kind: "sent", bubbles: 1 });
+      expect((await agentOuts()).map((m) => m.body).slice(-1)).toEqual([`${UBICACION} A Reynosa tarda de 3 a 5 días hábiles.`]);
+    });
+
+    it("pregunta + explicación idéntica (caso de las medidas): no sale otra vez tras contestar la garantía", async () => {
+      const MEDIR = "¿Habrá manera de medir la anchura de cada una de las entradas? De izquierda a derecha, para ver qué tamaño de compuertas le servirían.";
+      await msg({ direction: "in", body: "Dos", at: ago(90_000) });
+      await msg({ direction: "out", body: MEDIR, at: ago(85_000), source: "ai_agent" });
+      await msg({ direction: "in", body: "Y que garantía tiene", at: ago(30_000) });
+      const { deps } = makeDeps({ brain: [`Tiene un año de garantía.\n\n${MEDIR}`] });
+      expect(await run.runAgent(JOB, deps)).toEqual({ kind: "sent", bubbles: 1 });
+      expect((await agentOuts()).map((m) => m.body).slice(-1)).toEqual(["Tiene un año de garantía."]);
+    });
+
+    it("si el Agente IA solo iba a preguntar (el cliente dijo «Ok»), la pregunta SÍ sale: nunca silencio", async () => {
+      await msg({ direction: "in", body: "Precio", at: ago(90_000) });
+      await msg({ direction: "out", body: PREGUNTA, at: ago(85_000), source: "ai_agent" });
+      await msg({ direction: "in", body: "Ok", at: ago(30_000) });
+      const { deps } = makeDeps({ brain: [PREGUNTA] });
+      expect(await run.runAgent(JOB, deps)).toEqual({ kind: "sent", bubbles: 1 });
+      expect((await agentOuts()).map((m) => m.body).slice(-1)).toEqual([PREGUNTA]);
+      expect((await usage()).find((u) => u.stage === "cerebro")?.error ?? "").not.toContain("pregunta sin contestar");
+    });
+
+    it("la pregunta de hace más de 24 h sí se puede volver a hacer (el cliente regresa otro día)", async () => {
+      await msg({ direction: "in", body: "Precio", at: ago(26 * 3_600_000) });
+      await msg({ direction: "out", body: PREGUNTA, at: ago(25 * 3_600_000), source: "ai_agent" });
+      await msg({ direction: "in", body: "Hola, sigue el precio?", at: ago(30_000) });
+      const { deps } = makeDeps({ brain: [`Sí, sigue en $5,500.\n\n${PREGUNTA}`] });
+      expect(await run.runAgent(JOB, deps)).toEqual({ kind: "sent", bubbles: 2 });
+    });
+
+    it("otra pregunta de la lista sí sale", async () => {
+      await msg({ direction: "in", body: "Sí, se mete el agua", at: ago(90_000) });
+      await msg({ direction: "out", body: PREGUNTA, at: ago(95_000), source: "ai_agent" });
+      await msg({ direction: "in", body: "Dónde están?", at: ago(30_000) });
+      const { deps } = makeDeps({ brain: [`${UBICACION}\n\n¿Cuántas entradas desea proteger?`] });
+      expect(await run.runAgent(JOB, deps)).toEqual({ kind: "sent", bubbles: 2 });
+    });
+  });
+
   it("candado anti-repetición: una burbuja del agente IDÉNTICA a lo que ya salió después del último mensaje del cliente no sale (corrida vieja, sin marca)", async () => {
     const m1 = await msg({ direction: "in", body: "Precio", at: ago(40_000) });
     const wfId = await wf("precio_viejo", [{ kind: "send_text", text: PREGUNTA }]);

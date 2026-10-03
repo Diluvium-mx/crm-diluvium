@@ -45,6 +45,7 @@ import { brainCandidates, brainModelForStage, handoffStage, impliedStage, type M
 import { loadContactStage } from "@/lib/contacts/stage";
 import { listFunnelStages } from "@/lib/contacts/funnel-stages";
 import { complementNote, partialNote, withoutClosingQuestions } from "./complement";
+import { withoutUnansweredRepeat } from "./unanswered";
 import {
   agentReplyCount,
   alreadyHandled,
@@ -57,6 +58,7 @@ import {
   loadSnapshot,
   messageAt,
   agentSendUnresolved,
+  lastQuestionAsked,
   outboundTextsSinceLastInbound,
   pendingInbound,
   sentToClientSinceLastInbound,
@@ -898,7 +900,14 @@ export async function runAgent(job: { organizationId: string; conversationId: st
       ? splitRepeated(drafted, await outboundTextsSinceLastInbound(org, conv.id))
       : { keep: [], dropped: [] };
     if (repeated.length) console.info(`[agente] ${conv.id}: no se repite lo que ya salió: «${repeated.join(" / ")}»`);
-    let bubbles = unique;
+    // Pregunta sin contestar (3-oct-2026, ./unanswered.ts): si el cliente no contestó la última
+    // pregunta y preguntó otra cosa, el Agente IA contesta su duda sin volver a hacer la MISMA
+    // pregunta; si solo iba la pregunta, sale (nunca silencio).
+    const { keep: sinRepetir, dropped: unanswered } = unique.length
+      ? withoutUnansweredRepeat(unique, await lastQuestionAsked(org, conv.id, deps.now()))
+      : { keep: [], dropped: [] };
+    if (unanswered.length) console.info(`[agente] ${conv.id}: no se repite la pregunta sin contestar: «${unanswered.join(" / ")}»`);
+    let bubbles = sinRepetir;
     let stopped: StopReason | null = null;
 
     // Texto del Agente IA como pie del archivo (1-oct-2026, dueño: «lo puede mandar como texto
@@ -1043,6 +1052,7 @@ export async function runAgent(job: { organizationId: string; conversationId: st
       complementOf ? `complemento de «${complementOf}»${out.kind !== "reply" ? ": nada que agregar" : ""}` : null,
       questions.length ? `sin preguntas en el complemento; no salió: «${questions.join(" / ")}»` : null,
       repeated.length ? `no se repitió lo que ya salió: «${repeated.join(" / ")}»` : null,
+      unanswered.length ? `no se repitió la pregunta sin contestar: «${unanswered.join(" / ")}»` : null,
       withheld ? `el workflow es la respuesta; no salió el texto del modelo: «${withheld.slice(0, 300)}»` : null,
       captionedBy ? `el texto va como pie del archivo de «${captionedBy}»` : null,
       silencio === "contestado" ? "sin texto: ya le había salido algo al cliente después de su último mensaje" : null,
