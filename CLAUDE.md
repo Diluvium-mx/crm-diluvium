@@ -287,6 +287,9 @@ follow_ups           id, org_id, conversation_id, contact_id, caso (tabla de 10 
                      ficha del lector (pendiente, siguiente_paso, borrador, fecha_pedida…), time_zone (por lada), due_at,
                      door (texto|plantilla), template_name, modo (automatico|sugerido), intentos jsonb, based_on_message_at
                      -- la ficha sale en la MISMA lectura del lector (sin llamada extra); un solo programado/esperando por chat
+                     -- 0057 (3-oct): caso_de_fondo (asunto de una fecha pedida: da la hora), plantilla_2/_3 (las elige el lector
+                     -- según cómo quedó el chat). El seguimiento de un VENDEDOR cuenta como intento; Compra cancela al instante;
+                     -- el CRM revisa el borrador (una pregunta, nunca una ya hecha ni el precio ya dado) y el lector lo rehace 1 vez
 ```
 
 Detalles que importan:
@@ -394,7 +397,7 @@ Reglas de UI:
   y, en una sugerencia, Que salga solo). No va en el Detalle del contacto. Horas en la hora del cliente según su lada, de
   7:00 a 21:00 todos los días; plantillas hasta las 19:00. Código: `followup-pill.tsx`, `lib/followups/`.
   Plantillas propias por caso (3-oct-2026, textos del dueño TAL CUAL): `seg_precio`, `seg_informacion`, `seg_valorar`,
-  `seg_medidas`, `seg_asesor`, `seg_objecion`; en las 4 primeras `{{1}}` = CUÁNDO escribió el cliente ("anoche",
+  `seg_medidas`, `seg_asesor`, `seg_objecion` y `seg_info_duda` (3-oct, 2.º intento de solo información); en `seg_precio`, `seg_informacion`, `seg_info_duda`, `seg_valorar` y `seg_medidas` `{{1}}` = CUÁNDO escribió el cliente ("anoche",
   "antier"…, `lib/followups/time-phrase.ts`), no el nombre, también en el 📄 y el 🕒. Salen solo ya aprobadas por Meta.
 - **Búsqueda en los chats (29-sep-2026, decisión del dueño):** una **lupa** entre el buscador y el
   filtro (Bandeja y Embudo). Prendida se pinta de amarillo y el MISMO campo busca una palabra dentro

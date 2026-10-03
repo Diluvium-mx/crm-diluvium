@@ -9,9 +9,11 @@
 // ficha de seguimiento y aquí se guarda (lib/followups/store.ts, modo ensayo); si es del
 // cliente, el seguimiento abierto del chat se cierra.
 // Multi-tenant (CLAUDE.md §7): todo filtra por organization_id.
-import { and, eq, sql } from "drizzle-orm";
+import { and, eq, inArray, sql } from "drizzle-orm";
+import { tool, type ModelMessage } from "ai";
+import { z } from "zod";
 import { db } from "@/lib/db";
-import { contacts, conversations } from "@/lib/db/schema";
+import { contacts, conversations, templates } from "@/lib/db/schema";
 import type { CallModelInput, CallModelResult, ModelUsage } from "@/lib/ai/types";
 import { getModel } from "@/lib/ai/catalog";
 import { modelAvailability } from "@/lib/ai/provider";
@@ -39,11 +41,15 @@ import {
 } from "./lector-core";
 import type { KvPort } from "./queue";
 import { MAX_PDF_BYTES } from "./run";
-import { fitHistory } from "./transcript";
+import { fitHistory, messageText } from "./transcript";
 import { effectivePrice, recordAiUsage } from "./usage";
 import { allowedAgentStage, vendorAnsweredProof, ventaCerradaHeld } from "./venta-cerrada";
 import { applyFollowUpReading } from "@/lib/followups/store";
 import { zoneForPhone } from "@/lib/followups/timezone";
+import { FOLLOW_UP_TEMPLATES } from "@/lib/followups/cases";
+import { borradorProblems } from "@/lib/followups/borrador-check";
+import { chatTail } from "@/lib/followups/vendor-attempts";
+import { MAX_BORRADOR } from "@/lib/followups/ficha";
 
 export type LectorDeps = {
   now: () => Date;
@@ -122,6 +128,77 @@ async function markRead(organizationId: string, conversationId: string, upTo: Da
     .where(and(eq(conversations.id, conversationId), eq(conversations.organizationId, organizationId)));
 }
 
+// Plantillas de seguimiento aprobadas del canal, con su texto, para que el lector elija la del
+// 2.º y 3.er intento.
+async function followUpTemplateList(organizationId: string, channelId: string): Promise<{ name: string; body: string }[]> {
+  const rows = await db
+    .select({ name: templates.name, body: templates.body })
+    .from(templates)
+    .where(
+      and(
+        eq(templates.organizationId, organizationId),
+        eq(templates.channelId, channelId),
+        eq(templates.status, "APPROVED"),
+        eq(templates.unsupported, false),
+        inArray(templates.name, [...FOLLOW_UP_TEMPLATES]),
+      ),
+    );
+  const seen = new Set<string>();
+  return rows.filter((r) => r.body && !seen.has(r.name) && seen.add(r.name)).map((r) => ({ name: r.name, body: r.body! }));
+}
+
+const REWRITE_TOOL = "reescribir_borrador";
+const REWRITE_SYSTEM = `Eres el LECTOR del CRM de Diluvium. Ya llenaste la ficha de seguimiento de este chat, pero el borrador del mensaje no cumple las reglas. Reescribe SOLO el borrador con la herramienta ${REWRITE_TOOL}, sin texto:
+- corto (1 o 2 renglones), mismo trato del chat (tú o usted), SIN saludo ni nombre al principio;
+- UNA sola pregunta, que la empresa NO haya hecho ya en el chat (con ninguna palabra);
+- sin repetir el precio ni la información que ya se le dio;
+- si el cliente dejó una duda sin contestar, contéstala;
+- según cómo terminó la conversación y lo que busca el caso; sin "hoy", "esta noche" ni "mañana"; nada genérico ni presión.
+Si no hay ninguna pregunta nueva que valga la pena, manda el borrador en null.`;
+
+/**
+ * El borrador rompió las reglas (borrador-check.ts): UNA llamada más, solo para el borrador
+ * (decisión del dueño, 3-oct-2026). Devuelve el borrador nuevo si ya cumple, o null.
+ */
+async function rewriteBorrador(
+  deps: LectorDeps,
+  modelId: string,
+  chat: ModelMessage[],
+  input: { caso: string; pendiente: string | null; siguientePaso: string | null; borrador: string; problems: string[] },
+  companyTexts: string[],
+  record: (usage: CallModelResult["usage"] | null, latencyMs: number, error: string | null) => Promise<void>,
+): Promise<string | null> {
+  const t0 = Date.now();
+  try {
+    const res = await deps.callModel(modelId, {
+      system: REWRITE_SYSTEM,
+      messages: [
+        ...chat,
+        {
+          role: "user",
+          content: `Caso: ${input.caso}. Pendiente: ${input.pendiente ?? "—"}. Siguiente paso: ${input.siguientePaso ?? "—"}.\nBorrador que no sirve: «${input.borrador}»\nPor qué: ${input.problems.join("; ")}.`,
+        },
+      ],
+      tools: {
+        [REWRITE_TOOL]: tool({
+          description: "El borrador del seguimiento, corregido (null si no hay una pregunta nueva que valga la pena).",
+          inputSchema: z.object({ borrador: z.string().nullable() }),
+        }),
+      },
+      maxOutputTokens: 1_024,
+      timeoutMs: LECTOR_TIMEOUT_MS,
+    });
+    const raw = res.toolCalls?.find((c) => c.toolName === REWRITE_TOOL)?.input as { borrador?: unknown } | undefined;
+    const text = typeof raw?.borrador === "string" ? raw.borrador.trim().slice(0, MAX_BORRADOR) : "";
+    const again = text ? borradorProblems({ borrador: text, companyTexts }) : ["sin borrador"];
+    await record(res.usage, Date.now() - t0, again.length ? `seguimiento: borrador rehecho sigue mal (${again.join("; ")})` : "seguimiento: borrador rehecho");
+    return again.length ? null : text;
+  } catch (error) {
+    await record(null, Date.now() - t0, `seguimiento: no se pudo rehacer el borrador (${errorText(error)})`);
+    return null;
+  }
+}
+
 async function readConversation(organizationId: string, conversationId: string, deps: LectorDeps, force: boolean): Promise<LectorOutcome> {
   const snap = await loadSnapshot(organizationId, conversationId);
   if (!snap) return { kind: "nada_nuevo" };
@@ -174,6 +251,7 @@ async function readConversation(organizationId: string, conversationId: string, 
   // Ficha de seguimiento: solo si el último mensaje del chat es de la empresa.
   const followUp = lastIsCompany(rows);
   const { tools, stageKeys } = buildLectorTools(stages, { followUp });
+  const followUpTemplates = followUp && snap.channel.type === "whatsapp" ? await followUpTemplateList(organizationId, conv.channelId) : [];
   const base = { organizationId, conversationId, messageId: null, stage: "detalle" as const, modelId: model.id, provider: model.provider };
 
   // Indicador del Detalle: "leyendo" justo antes de la llamada y, pase lo que pase, "listo"
@@ -185,7 +263,7 @@ async function readConversation(organizationId: string, conversationId: string, 
     const t0 = Date.now();
     let res: CallModelResult;
     try {
-      res = await deps.callModel(model.id, { system: buildLectorSystem(stages, { followUp }), messages, tools, maxOutputTokens: LECTOR_MAX_OUTPUT_TOKENS, timeoutMs: LECTOR_TIMEOUT_MS });
+      res = await deps.callModel(model.id, { system: buildLectorSystem(stages, { followUp, templates: followUpTemplates }), messages, tools, maxOutputTokens: LECTOR_MAX_OUTPUT_TOKENS, timeoutMs: LECTOR_TIMEOUT_MS });
     } catch (error) {
       await recordAiUsage({ ...base, usage: null, latencyMs: Date.now() - t0, outcome: "error", error: errorText(error) });
       return (done = { kind: "error", reason: errorText(error), usage: null, costUsd: null });
@@ -247,13 +325,33 @@ async function readConversation(organizationId: string, conversationId: string, 
       await recordAiUsage({ ...base, usage: res.usage, latencyMs, outcome: "error", error: `al guardar: ${errorText(error)}` });
       return (done = { kind: "error", reason: `al guardar: ${errorText(error)}`, usage: res.usage, costUsd });
     }
+    // Borrador del seguimiento: una sola pregunta, nunca una ya hecha ni el precio ya dado. Si
+    // falla, se rehace una vez; si vuelve a fallar, se queda sin borrador (no sale con texto).
+    const ficha = parsed.seguimiento;
+    if (ficha?.borrador && ficha.caso !== "no_seguir") {
+      const companyTexts = rows.filter((m) => m.direction === "out").map((m) => messageText(m));
+      const problems = borradorProblems({ borrador: ficha.borrador, companyTexts });
+      if (problems.length) {
+        ficha.borrador = await rewriteBorrador(
+          deps,
+          model.id,
+          messages,
+          { caso: ficha.caso ?? "sin_punto_claro", pendiente: ficha.pendiente, siguientePaso: ficha.siguientePaso, borrador: ficha.borrador, problems },
+          companyTexts,
+          (usage, ms, note) => recordAiUsage({ ...base, usage, latencyMs: ms, outcome: usage ? "detalle_sin_cambios" : "error", error: note }),
+        );
+      }
+    }
+    // Seguimientos que ya mandó un vendedor: cuentan como intento (decisión del dueño, 3-oct-2026).
+    const tail = chatTail(history.map((m) => ({ direction: m.direction, source: m.source, sentByUserId: m.sentByUserId, at: messageAt(m) })));
     // Seguimiento (modo ensayo): nunca lanza ni frena la lectura.
     const seguimiento = await applyFollowUpReading({
       organizationId,
       conversationId,
       contactId: conv.contactId,
       readUpTo: upTo,
-      stopAt: rows[rows.length - 1].at,
+      stopAt: tail?.stopAt ?? rows[rows.length - 1].at,
+      vendorAttempts: tail?.vendorAttempts ?? [],
       lastIsCompany: followUp,
       ficha: parsed.seguimiento,
       stages,

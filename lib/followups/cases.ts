@@ -55,7 +55,7 @@ export const CASE_RULES: Readonly<Record<FollowUpCase, CaseRule>> = {
     objetivo: "Retomar justo como quedaron",
     slot: { from: "11:00", to: "12:00" },
     total: 3,
-    doors: ["saludo", "saludo", "proteccion"],
+    doors: ["saludo", "saludo", "saludo"],
     avisoVendedor: false,
   },
   pago_pendiente: {
@@ -63,7 +63,7 @@ export const CASE_RULES: Readonly<Record<FollowUpCase, CaseRule>> = {
     objetivo: "El comprobante, o resolver lo que lo frena (forma de pago, tarjeta, fecha de entrega)",
     slot: { from: "10:00", to: "11:00" },
     total: 3,
-    doors: ["saludo", "saludo", "proteccion"],
+    doors: ["saludo", "saludo", "saludo"],
     avisoVendedor: true,
   },
   objecion: {
@@ -158,7 +158,10 @@ export function attemptLabel(intento: number, total: number): string {
 // `templates` del CRM); mientras tanto, o si se rechazan, sale la puerta de respaldo (🚪 / 📄).
 export const CASE_TEMPLATE: Readonly<Partial<Record<FollowUpCase, string>>> = {
   precio_sin_respuesta: "seg_precio",
-  solo_informacion: "seg_informacion",
+  // seg_informacion vuelve a preguntar si se le mete el agua, que el workflow «Información» ya
+  // preguntó: va seg_info_duda (aprobada por el dueño el 3-oct-2026); mientras Meta no la aprueba,
+  // seg_precio. seg_informacion solo si el lector la elige (nunca se preguntó lo del agua).
+  solo_informacion: "seg_info_duda",
   cotizacion_sin_respuesta: "seg_valorar",
   pago_pendiente: "seg_valorar",
   pidio_fecha: "seg_valorar",
@@ -171,11 +174,68 @@ export const CASE_TEMPLATE: Readonly<Partial<Record<FollowUpCase, string>>> = {
  * Plantillas cuyo {{1}} NO es el nombre sino CUÁNDO nos escribió el cliente ("el día de ayer",
  * "anoche"…; lib/followups/time-phrase.ts). Las demás siguen con el primer nombre en {{1}}.
  */
-export const TIME_PHRASE_TEMPLATES: ReadonlySet<string> = new Set(["seg_precio", "seg_informacion", "seg_valorar", "seg_medidas"]);
+export const TIME_PHRASE_TEMPLATES: ReadonlySet<string> = new Set(["seg_precio", "seg_informacion", "seg_info_duda", "seg_valorar", "seg_medidas"]);
 
-/** Plantilla que sale en ese intento: la del caso si ya está aprobada; si no, la de respaldo. */
-export function templateForAttempt(caso: FollowUpCase, intento: number, fallback: string | null, approved: ReadonlySet<string>): string | null {
-  if (fallback === null || intento > 2) return fallback;
-  const own = CASE_TEMPLATE[caso];
-  return own && approved.has(own) ? own : fallback;
+/** Si la plantilla del caso todavía no está aprobada: otra propia antes que la puerta. */
+export const CASE_TEMPLATE_BACKUP: Readonly<Partial<Record<FollowUpCase, string>>> = {
+  solo_informacion: "seg_precio",
+};
+
+/**
+ * Plantillas que el lector puede elegir para el 2.º y 3.er intento según cómo quedó el chat
+ * (decisión del dueño, 3-oct-2026: la que mejor encaje y nunca una pregunta ya hecha). Los dos
+ * saludos son la misma puerta: el CRM pone el de la mañana o el de la tarde según la hora.
+ */
+export const FOLLOW_UP_TEMPLATES: readonly string[] = [
+  TEMPLATE_BY_DOOR.saludoManana,
+  TEMPLATE_BY_DOOR.saludoTarde,
+  TEMPLATE_BY_DOOR.proteccion,
+  "seg_precio",
+  "seg_informacion",
+  "seg_info_duda",
+  "seg_valorar",
+  "seg_medidas",
+  "seg_asesor",
+  "seg_objecion",
+];
+const SALUDOS: ReadonlySet<string> = new Set([TEMPLATE_BY_DOOR.saludoManana, TEMPLATE_BY_DOOR.saludoTarde]);
+
+export type TemplatePicks = { plantilla2?: string | null; plantilla3?: string | null };
+
+/**
+ * Plantilla que sale en ese intento. `fallback` = la de la puerta (saludo por hora o
+ * seguimiento_proteccion). Orden: la que eligió el lector para ese intento (si Meta ya la aprobó
+ * y no es la misma del intento anterior); si no, en el 1.º y 2.º, la del caso si ya está aprobada;
+ * si no, la de la puerta. Un saludo elegido por el lector sale con el de la hora (`fallback`
+ * cuando la puerta es saludo).
+ */
+export function templateForAttempt(
+  caso: FollowUpCase,
+  intento: number,
+  fallback: string | null,
+  approved: ReadonlySet<string>,
+  picks: TemplatePicks = {},
+  previous: string | null = null,
+): string | null {
+  if (fallback === null) return null;
+  const pick = intento === 2 ? picks.plantilla2 : intento >= 3 ? picks.plantilla3 : null;
+  const same = (a: string | null, b: string | null) => a !== null && b !== null && (a === b || (SALUDOS.has(a) && SALUDOS.has(b)));
+  if (pick && FOLLOW_UP_TEMPLATES.includes(pick) && (SALUDOS.has(pick) || approved.has(pick))) {
+    const chosen = SALUDOS.has(pick) ? (SALUDOS.has(fallback) ? fallback : pick) : pick;
+    if (!same(chosen, previous)) return chosen;
+  }
+  if (intento > 2) return fallback;
+  for (const own of [CASE_TEMPLATE[caso], CASE_TEMPLATE_BACKUP[caso]]) {
+    if (own && approved.has(own) && !same(own, previous)) return own;
+  }
+  return fallback;
+}
+
+/**
+ * Caso con el que se calcula la HORA: en "pidió fecha" sin hora, la del asunto que quedó
+ * pendiente (medidas en la noche, pago en la mañana…; decisión del dueño, 3-oct-2026).
+ */
+export function timingCase(caso: Exclude<FollowUpCase, "no_seguir">, fondo: FollowUpCase | null | undefined): Exclude<FollowUpCase, "no_seguir"> {
+  if (caso !== "pidio_fecha" || !fondo || fondo === "no_seguir" || fondo === "pidio_fecha") return caso;
+  return fondo;
 }
