@@ -147,6 +147,9 @@ export function resolveModelPrice(
   };
 }
 
+// Escritura en la caché de 1 h de Anthropic = 2× el precio de entrada.
+export const CACHE_WRITE_1H_MULTIPLIER = 2;
+
 // Costo en USD de una llamada. `usage.inputTokens` es el TOTAL de entrada e
 // INCLUYE los tokens leídos y escritos en caché (AI SDK v7, Anthropic y OpenAI:
 // total = sinCaché + cacheRead + cacheWrite); por eso se restan antes de cobrar
@@ -160,12 +163,16 @@ export function computeCostUsd(usage: ModelUsage, price: ModelPrice | null): num
   const p: TierPrice = tier ?? price;
   const cacheRead = usage.cacheReadTokens ?? 0;
   const cacheWrite = usage.cacheWriteTokens ?? 0;
+  // Caché de 1 h de Anthropic (2-oct-2026): esa parte de la escritura cuesta 2× la entrada
+  // (https://platform.claude.com/docs/en/build-with-claude/prompt-caching#pricing).
+  const cacheWrite1h = Math.min(cacheWrite, usage.cacheWrite1hTokens ?? 0);
   const noCache = Math.max(0, total - cacheRead - cacheWrite);
   const output = usage.outputTokens ?? 0;
   const micro =
     noCache * p.inputPerMTok +
     cacheRead * p.cacheReadPerMTok +
-    cacheWrite * p.cacheWritePerMTok +
+    (cacheWrite - cacheWrite1h) * p.cacheWritePerMTok +
+    cacheWrite1h * p.inputPerMTok * CACHE_WRITE_1H_MULTIPLIER +
     output * p.outputPerMTok;
   // 8 decimales: suficiente para centavos acumulados de miles de llamadas.
   return Math.round((micro / 1_000_000) * 1e8) / 1e8;

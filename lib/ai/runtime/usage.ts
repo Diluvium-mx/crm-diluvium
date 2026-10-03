@@ -33,13 +33,17 @@ export type UsageOutcome =
   // Lector en segundo plano: cambió algo de la ficha, o la leyó y ya estaba al día. Van
   // SIN message_id (no cuentan como respuesta ni como error del agente sobre un mensaje).
   | "detalle_aplicado"
-  | "detalle_sin_cambios";
+  | "detalle_sin_cambios"
+  // 2-oct-2026: renovación de la caché de 1 h en horario laboral (cache-keepalive.ts). Sin
+  // conversación ni mensaje: no es respuesta ni error de ningún chat.
+  | "cache_renovada";
 // Resultados finales: si el último entrante ya tiene uno, no se vuelve a atender.
 export const FINAL_OUTCOMES: readonly UsageOutcome[] = ["sent", "draft", "skipped", "handover"];
 
 export type UsageRecord = {
   organizationId: string;
-  conversationId: string;
+  // null solo en la renovación de la caché (no pertenece a ningún chat).
+  conversationId: string | null;
   messageId: string | null;
   stage: UsageStage;
   modelId: string;

@@ -43,6 +43,9 @@ export type ModelUsage = {
   outputTokens: number | null;
   cacheReadTokens: number | null;
   cacheWriteTokens: number | null;
+  // Parte de cacheWriteTokens escrita en la caché de 1 h (solo Anthropic, 2-oct-2026): se
+  // cobra a 2× la entrada en vez de 1.25×. Ausente/null = toda la escritura fue de 5 min.
+  cacheWrite1hTokens?: number | null;
 };
 
 // Entrada ÚNICA de callModel. `system` va aparte (se cachea según el proveedor);
