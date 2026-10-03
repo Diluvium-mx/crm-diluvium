@@ -18,7 +18,8 @@ import { modelAvailability, PROVIDER_META } from "@/lib/ai/provider";
 import { hasUnresolvedAgentError, recordAgentError, supersedeAgentErrors } from "./agent-error";
 import { agentErrorBody, bothModelsFailedBody, classifyModelError, EMPTY_RESPONSE_INFO, sendErrorBody, sendErrorMotive, type ModelErrorInfo } from "./model-errors";
 import { cleanAdMessages } from "./ad-cleaner";
-import { buildBrainSystemWithRuntime, parseBrainOutput } from "./brain";
+import { parseBrainOutput } from "./brain";
+import { loadBrainSystem } from "./brain-system";
 import { answerRunsWithText, captionRunOf, crmContextFor, executeActions, loadAgentTools, noteForVendor, prepareActions, quoteSetByVendor, runsThatSend, setQuoteByAgent, type ActionContext, type ActionPhase, type ActionPlan, type ExecutedActions, type StartWorkflow } from "./actions";
 import { maxPerChatContextFor } from "@/lib/workflows/max-per-chat";
 import { AGENT_CAPTION_KEY, MAX_CAPTION } from "@/lib/workflows/steps";
@@ -36,9 +37,8 @@ export const SIN_RESPUESTA_BODY = "El Agente IA no le escribió nada al cliente 
 import { mergeHandoffToolCalls, validateToolCalls, type ValidToolCall } from "./tools";
 import { applyDetalleByAgent, detalleContextFor, mergeDetalle } from "./detalle";
 import { transcriptionWaitMs } from "@/lib/ai/transcription/rules";
-import { applyCustomValues } from "@/lib/agente-ia/editor";
 import { handoverPauseUntil, humanPauseUntil, isWithinSchedule, type BotOptions } from "@/lib/agente-ia/opciones";
-import { loadAgentConfig, loadCustomValues, loadEnabledFaqs } from "./config";
+import { loadAgentConfig, loadCustomValues } from "./config";
 import { loadBotOptions } from "./options";
 import { pauseForHumanReply } from "./pause";
 import { brainCandidates, brainModelForStage, handoffStage, impliedStage, type ModelSlot, type StageSignal } from "./model-by-stage";
@@ -589,13 +589,8 @@ export async function runAgent(job: { organizationId: string; conversationId: st
       console.warn(`[agente] ${conv.id}: el Modelo ${planned.slot} (${planned.modelId}) no está disponible aquí; contesta el Modelo ${candidates[0].slot} (${candidates[0].modelId})`);
     }
     // Goal y FAQs con los valores personalizados de esta conversación sustituidos.
-    const values = await loadCustomValues(org, conv, cfg);
-    const faqs = (await loadEnabledFaqs(org)).map((f) => ({
-      ...f,
-      question: applyCustomValues(f.question, values),
-      answer: applyCustomValues(f.answer, values),
-    }));
-    const system = buildBrainSystemWithRuntime(applyCustomValues(cfg.goal, values), faqs, stages, options.responseLength);
+    // El mismo armado que usa la renovación de la caché (brain-system.ts).
+    const system = await loadBrainSystem(org, cfg.goal, await loadCustomValues(org, conv, cfg), stages, options.responseLength);
     // Contexto del CRM (etapa, cotización y, desde la parte 1, el Detalle ya guardado)
     // en el último turno del cliente. En un traspaso lleva también la etapa a la que pasa.
     const mediaUrls = await mediaUrlsFor(history, deps.resolveImage, options.readImages);

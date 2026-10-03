@@ -109,6 +109,21 @@ describe("computeCostUsd", () => {
     ).toBeCloseTo(0.028516, 10);
   });
 
+  it("caché de 1 h (2-oct-2026): esa parte de la escritura cuesta 2× la entrada", () => {
+    // 19,000 escritos (18,000 de 1 h + 1,000 de 5 min) + 800 sin caché + 300 de salida:
+    // 18,000×4 + 1,000×2.5 + 800×2 + 300×10 = 72,000 + 2,500 + 1,600 + 3,000 = 79,100 µ$
+    expect(
+      computeCostUsd(
+        { inputTokens: 19_800, outputTokens: 300, cacheReadTokens: 0, cacheWriteTokens: 19_000, cacheWrite1hTokens: 18_000 },
+        sonnet,
+      ),
+    ).toBeCloseTo(0.0791, 10);
+    // Nunca más tokens de 1 h que la escritura total (un desglose raro no cobra de más).
+    expect(
+      computeCostUsd({ inputTokens: 1_000, outputTokens: 0, cacheReadTokens: 0, cacheWriteTokens: 1_000, cacheWrite1hTokens: 5_000 }, sonnet),
+    ).toBeCloseTo(0.004, 10);
+  });
+
   it("sin precio o sin uso reportado → null", () => {
     expect(computeCostUsd({ inputTokens: 10, outputTokens: 10, cacheReadTokens: null, cacheWriteTokens: null }, null)).toBeNull();
     expect(

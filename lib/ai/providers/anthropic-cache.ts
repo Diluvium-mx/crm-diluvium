@@ -1,11 +1,17 @@
 import type { ModelMessage } from "ai";
 
+export const ANTHROPIC_CACHE_CONTROL = { type: "ephemeral", ttl: "1h" } as const;
+
 // Segundo punto de caché de Anthropic (Fase E, pendiente E, 25-sep-2026): además del
 // system, se marca el mensaje JUSTO ANTES del último turno del cliente. El historial
 // hasta ahí es idéntico en la siguiente respuesta (lo nuevo se agrega al final y el
 // contexto del CRM viaja solo en el último turno), así que Anthropic lo lee de caché
 // (10 % del precio) en vez de cobrarlo completo cada vez. PURO; no toca el arreglo
 // original. Con un solo turno (primer mensaje) no hay nada que marcar.
+// Caché de 1 hora (2-oct-2026, decisión del dueño): con la de 5 min, el 70 % del gasto de
+// Sonnet era volver a escribir ~19 mil tokens cuando pasaban más de 5 min entre respuestas.
+// Las dos marcas (system e historial) llevan el mismo TTL: Anthropic exige que una entrada
+// de 1 h vaya antes que cualquiera de 5 min. Detalle: docs/agente-ia.md › Caché de 1 hora.
 // Las fotos y PDF van como URL firmada que CAMBIA en cada respuesta: el prefijo con
 // ellas nunca se repite y marcarlo costaría 1.25× sin lecturas. Por eso el punto de
 // caché va, como máximo, justo ANTES del primer mensaje con imagen o archivo.
@@ -24,7 +30,7 @@ export function withHistoryCacheBreakpoint(messages: readonly ModelMessage[]): M
   const target = out[at];
   out[at] = {
     ...target,
-    providerOptions: { ...target.providerOptions, anthropic: { ...target.providerOptions?.anthropic, cacheControl: { type: "ephemeral" } } },
+    providerOptions: { ...target.providerOptions, anthropic: { ...target.providerOptions?.anthropic, cacheControl: ANTHROPIC_CACHE_CONTROL } },
   } as ModelMessage;
   return out;
 }
