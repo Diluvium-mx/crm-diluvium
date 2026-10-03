@@ -30,6 +30,7 @@ import {
   type Tx,
 } from "./ingest";
 import type { NormalizedMessageEvent, ProviderName } from "./provider";
+import { windowExpiresAt } from "./rules";
 
 export { AmbiguousContactError };
 
@@ -63,6 +64,8 @@ export function storedAttachments(event: Pick<NormalizedMessageEvent, "attachmen
 
 /** source de los contactos que nacen del historial (el Dashboard los excluye). */
 export const HISTORY_CONTACT_SOURCE = "historial_celular";
+/** Igual, para los que nacen del historial de Instagram (docs/instagram.md). */
+export const INSTAGRAM_HISTORY_CONTACT_SOURCE = "historial_instagram";
 
 type ChannelRow = typeof channels.$inferSelect;
 
@@ -74,6 +77,13 @@ export type HistoryChat = {
   phone: string | null;
   bsuid: string | null;
   name?: string;
+  /**
+   * Instagram (docs/instagram.md): el cliente se identifica por su id de Instagram (nunca hay
+   * teléfono) y la ventana sí se calcula con su último mensaje: en Instagram es un hecho de
+   * Meta y sin ella un vendedor no podría contestar un chat reciente (24 h / 7 días).
+   */
+  instagramId?: string | null;
+  username?: string | null;
 };
 
 /** A quién se pegó el chat: contacto de GHL, otro existente, uno nuevo, o la conversación ya existía. */
@@ -138,6 +148,40 @@ async function writeHistory(
       )[0]
     : undefined;
   let contact: HistoryContactMatch = "conversacion_existente";
+
+  if (!conversation && chat.instagramId) {
+    // Instagram: un cliente = un contacto por su id (único); sin ambigüedades de teléfono.
+    const [existing] = await tx
+      .select({ id: contacts.id })
+      .from(contacts)
+      .where(and(eq(contacts.organizationId, orgId), eq(contacts.instagramId, chat.instagramId)))
+      .limit(1);
+    const contactId = await resolveContact(
+      tx,
+      orgId,
+      { phone: null, bsuid: null, instagramId: chat.instagramId, username: chat.username, name: chat.name },
+      undefined,
+      { source: INSTAGRAM_HISTORY_CONTACT_SOURCE, esPrueba: channel.isTest },
+    );
+    contact = existing ? "existente" : "nuevo";
+    [conversation] = await tx
+      .insert(conversations)
+      .values({
+        id: crypto.randomUUID(),
+        organizationId: orgId,
+        contactId,
+        channelId: channel.id,
+        providerConversationId: chat.providerConversationId || null,
+        lastMessageAt: events[0]?.sentAt ?? opts.now,
+      })
+      .onConflictDoUpdate({
+        target: [conversations.channelId, conversations.contactId],
+        set: {
+          providerConversationId: sql`coalesce(${conversations.providerConversationId}, excluded.provider_conversation_id)`,
+        },
+      })
+      .returning();
+  }
 
   if (!conversation) {
     const { phone, bsuid } = chat;
@@ -210,9 +254,18 @@ async function writeHistory(
 
   // Solo el orden de la lista (último mensaje).
   const newest = rows.reduce<Date | null>((max, r) => (r.sentAt && (!max || r.sentAt > max) ? r.sentAt : max), null);
-  if (newest && (!locked.lastMessageAt || locked.lastMessageAt < newest)) {
-    await tx.update(conversations).set({ lastMessageAt: newest }).where(eq(conversations.id, locked.id));
+  const updates: Partial<typeof conversations.$inferInsert> = {};
+  if (newest && (!locked.lastMessageAt || locked.lastMessageAt < newest)) updates.lastMessageAt = newest;
+  // Instagram: la ventana de Meta (24 h desde el último mensaje del cliente) aunque el CRM
+  // no lo haya visto en vivo. Solo se alarga; sin no leídos, agente ni workflows.
+  if (chat.instagramId) {
+    const lastInbound = events.reduce<Date | null>((max, e) => (e.direction === "in" && (!max || e.sentAt > max) ? e.sentAt : max), null);
+    if (lastInbound) {
+      const window = windowExpiresAt(lastInbound, locked.windowExpiresAt);
+      if (!locked.windowExpiresAt || window > locked.windowExpiresAt) updates.windowExpiresAt = window;
+    }
   }
+  if (Object.keys(updates).length > 0) await tx.update(conversations).set(updates).where(eq(conversations.id, locked.id));
   return {
     organizationId: orgId,
     conversationId: locked.id,

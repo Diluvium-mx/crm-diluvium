@@ -2,7 +2,7 @@ import { createAnthropic } from "@ai-sdk/anthropic";
 import { generateText, isStepCount } from "ai";
 import type { ProviderAdapter } from "../provider";
 import { DEFAULT_MODEL_TIMEOUT_MS } from "../types";
-import { withHistoryCacheBreakpoint } from "./anthropic-cache";
+import { ANTHROPIC_CACHE_CONTROL, withHistoryCacheBreakpoint } from "./anthropic-cache";
 import { toModelUsage } from "./usage";
 
 // Adaptador Anthropic. La caché del prompt es EXPLÍCITA: el system se cachea con
@@ -25,9 +25,9 @@ export const anthropicAdapter: ProviderAdapter = {
       system: {
         role: "system",
         content: input.system,
-        providerOptions: { anthropic: { cacheControl: { type: "ephemeral" } } },
+        providerOptions: { anthropic: { cacheControl: ANTHROPIC_CACHE_CONTROL } },
       },
-      // Fase E: el historial también se cachea (anthropic-cache.ts).
+      // Fase E: el historial también se cachea (anthropic-cache.ts). Ambas marcas, de 1 h.
       messages: withHistoryCacheBreakpoint(input.messages),
       ...(input.maxOutputTokens ? { maxOutputTokens: input.maxOutputTokens } : {}),
       abortSignal: AbortSignal.timeout(input.timeoutMs ?? DEFAULT_MODEL_TIMEOUT_MS),
@@ -40,9 +40,20 @@ export const anthropicAdapter: ProviderAdapter = {
     });
     return {
       text: result.text,
-      usage: toModelUsage(result.usage),
+      // La escritura de 1 h cuesta 2× la entrada (la de 5 min, 1.25×): se separa con el
+      // desglose que trae el uso crudo de Anthropic (usage.cache_creation).
+      usage: { ...toModelUsage(result.usage), cacheWrite1hTokens: cacheWrite1hTokens(result.providerMetadata) },
       finishReason: result.finishReason,
       toolCalls: result.toolCalls.map((c) => ({ toolName: c.toolName, input: c.input })),
     };
   },
 };
+
+// Tokens escritos en la caché de 1 h, del uso crudo de Anthropic
+// (usage.cache_creation.ephemeral_1h_input_tokens). null si no vino el desglose.
+export function cacheWrite1hTokens(providerMetadata: unknown): number | null {
+  const usage = (providerMetadata as { anthropic?: { usage?: { cache_creation?: { ephemeral_1h_input_tokens?: unknown } } } } | undefined)
+    ?.anthropic?.usage;
+  const n = usage?.cache_creation?.ephemeral_1h_input_tokens;
+  return typeof n === "number" && Number.isFinite(n) ? n : null;
+}

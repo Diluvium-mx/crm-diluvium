@@ -171,8 +171,11 @@ function Bubble({
   currentMatch,
   onRetry,
   onOpenAttachment,
+  instagram = false,
 }: {
   row: Row;
+  /** Chat de Instagram: lo importado es el historial de Instagram, no del celular. */
+  instagram?: boolean;
   /** Búsqueda en los chats (lupa amarilla): la palabra se resalta en amarillo. */
   searchTerm: string | null;
   /** Es la coincidencia que se está viendo («1 de N»): borde amarillo. */
@@ -305,7 +308,12 @@ function Bubble({
                 : "text-muted-foreground"
           }`}
         >
-          {view?.importedFromPhone && <span title="Copiado del historial del celular al conectar el número">Importado del celular ·</span>}
+          {view?.importedFromPhone &&
+            (instagram ? (
+              <span title="Copiado del historial de Instagram al conectar la cuenta">Importado de Instagram ·</span>
+            ) : (
+              <span title="Copiado del historial del celular al conectar el número">Importado del celular ·</span>
+            ))}
           {view?.editedAt && <span>editado</span>}
           <span>{bubbleTime(row.sentAt)}</span>
           {mark && mark.glyph && (
@@ -919,6 +927,7 @@ export function ChatThread({
                       currentMatch={!isOptimistic(row) && row.id === currentMatchId}
                       onRetry={handleRetry}
                       onOpenAttachment={setViewing}
+                      instagram={instagram}
                     />
                   </div>
                 );

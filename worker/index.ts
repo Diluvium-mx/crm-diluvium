@@ -52,6 +52,7 @@ import { closeInterruptedTranscriptions, staleTranscriptionIds, transcribeMessag
 import { startAgentRuntime } from "@/lib/ai/runtime/worker";
 import { startLectorRuntime } from "@/lib/ai/runtime/lector-worker";
 import { startFollowUpRuntime } from "@/lib/followups/store";
+import { keepBrainCacheAlive } from "@/lib/ai/runtime/cache-keepalive";
 import { redisKvPort } from "@/lib/ai/runtime/queue";
 import { callModel } from "@/lib/ai";
 import { adsIngestHooks, startAdsWorker } from "@/lib/ads/worker";
@@ -218,6 +219,8 @@ async function sweep() {
   await ads.sweep().catch((error) => logError("[anuncios] barrido falló", error));
   await unavailable.sweep().catch((error) => logError("[no-disponible] barrido falló", error));
   await chatUploads?.sweep().catch((error) => logError("[adjuntos] barrido falló", error));
+  // Caché de 1 h del Agente IA viva de 7:00 a 22:00 (2-oct-2026): ~US$0.004 por renovación.
+  await keepBrainCacheAlive({ callModel }).catch((error) => logError("[cache] la renovación de la caché falló", error));
 
   const stale = await db
     .select({ id: webhookEvents.id })

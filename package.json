@@ -29,6 +29,7 @@
     "pruebas:limpiar": "tsx scripts/limpiar-chats-prueba.ts",
     "historial:importar": "tsx scripts/importar-historial.ts",
     "historial:prueba-carga": "tsx scripts/prueba-carga-historial.ts",
+    "historial:instagram": "tsx scripts/importar-historial-instagram.ts",
     "seed:ai-knowledge": "tsx scripts/seed-ai-knowledge.ts",
     "ai:system-tokens": "tsx scripts/ai-system-tokens.ts",
     "ai:dry-run": "tsx scripts/ai-dry-run.ts",
