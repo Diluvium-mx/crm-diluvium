@@ -8,6 +8,7 @@ import { db } from "@/lib/db";
 import { aiAgentDrafts, aiUsage, channels, conversations, messages, workflowRuns, workflows } from "@/lib/db/schema";
 import { MAX_HISTORY_CHARS, messageText } from "./transcript";
 import { FINAL_OUTCOMES } from "./usage";
+import { asksSomething } from "./unanswered";
 import { hiddenNoticeSql, lateContentAtSql, noDisponibleEstado, UNAVAILABLE_HISTORY_NOTE } from "@/lib/messaging/unavailable";
 
 export type ConversationRow = typeof conversations.$inferSelect;
@@ -262,6 +263,33 @@ export async function outboundTextsSinceLastInbound(organizationId: string, conv
     .orderBy(desc(waAt))
     .limit(REPEAT_LOOKBACK_ROWS);
   return rows.flatMap((r) => (r.body ? [r.body] : []));
+}
+
+/**
+ * La última pregunta que se le hizo al cliente (pregunta sin contestar, 3-oct-2026,
+ * ./unanswered.ts): el texto completo del saliente más reciente que pregunta algo (Agente IA,
+ * workflow o vendedor; sin fallidos ni avisos internos), si salió hace menos de
+ * UNANSWERED_WINDOW_MS. Más vieja, el cliente que regresa días después sí puede oírla otra vez.
+ */
+export const UNANSWERED_WINDOW_MS = 24 * 60 * 60_000;
+export const UNANSWERED_LOOKBACK_ROWS = 20;
+export async function lastQuestionAsked(organizationId: string, conversationId: string, now: Date): Promise<string | null> {
+  const rows = await db
+    .select({ body: messages.body })
+    .from(messages)
+    .where(
+      and(
+        inConversation(organizationId, conversationId),
+        eq(messages.direction, "out"),
+        ne(messages.status, "failed"),
+        ne(messages.type, "system_note"),
+        isNotNull(messages.body),
+        sql`${waAt} > ${new Date(now.getTime() - UNANSWERED_WINDOW_MS).toISOString()}::timestamp`,
+      ),
+    )
+    .orderBy(desc(waAt))
+    .limit(UNANSWERED_LOOKBACK_ROWS);
+  return rows.find((r) => r.body && asksSomething(r.body))?.body ?? null;
 }
 
 // TODA la conversación en orden cronológico (historial del cerebro), sin tope de
