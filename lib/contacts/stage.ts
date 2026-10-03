@@ -10,6 +10,7 @@ import { contacts } from "@/lib/db/schema";
 import { onContactStageEntered } from "@/lib/workflows/triggers";
 import { listFunnelStages } from "./funnel-stages";
 import { notifyContactUpdated, type ContactActor } from "./notify-updated";
+import { cancelFollowUpsOnSale } from "@/lib/followups/sale";
 import { isForward, type FunnelStage, type StageChangedBy } from "./stages";
 
 export type { StageChangedBy } from "./stages";
@@ -85,6 +86,7 @@ async function tryMove(input: Parameters<typeof moveStageForward>[0], stages: re
         stage: { from: current.stage, to: input.to },
         by: actorFor(input.by, input.actorUserId),
       });
+      await cancelFollowUpsOnSale(tx, input.organizationId, input.contactId, input.to);
     }
     return updated;
   });

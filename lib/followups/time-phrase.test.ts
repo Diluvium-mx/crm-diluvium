@@ -54,8 +54,23 @@ describe("templateForAttempt", () => {
     expect(templateForAttempt("cotizacion_sin_respuesta", 3, "hola_buenas_tardes", approved)).toBe("hola_buenas_tardes");
     expect(templateForAttempt("faltan_medidas", 1, null, approved)).toBeNull();
   });
+  it("solo información usa seg_precio de fábrica (seg_informacion repite lo del agua); seg_informacion solo si el lector la elige", () => {
+    const all = new Set(["seg_precio", "seg_informacion"]);
+    expect(templateForAttempt("solo_informacion", 2, "hola_buenas_tardes", all)).toBe("seg_precio");
+    expect(templateForAttempt("solo_informacion", 2, "hola_buenas_tardes", all, { plantilla2: "seg_informacion" })).toBe("seg_informacion");
+  });
+  it("la que eligió el lector: si está aprobada y no repite la del intento anterior; un saludo sale con el de la hora", () => {
+    const all = new Set(["seg_valorar", "seg_objecion", "seguimiento_proteccion"]);
+    expect(templateForAttempt("pago_pendiente", 3, "hola_buenos_dias", all, { plantilla3: "seg_objecion" }, "seg_valorar")).toBe("seg_objecion");
+    expect(templateForAttempt("pago_pendiente", 3, "hola_buenos_dias", all, { plantilla3: "seg_valorar" }, "seg_valorar")).toBe("hola_buenos_dias");
+    expect(templateForAttempt("pago_pendiente", 3, "hola_buenos_dias", all, { plantilla3: "seg_medidas" }, null)).toBe("hola_buenos_dias");
+    expect(templateForAttempt("pago_pendiente", 3, "hola_buenas_tardes", all, { plantilla3: "hola_buenos_dias" }, "seg_valorar")).toBe("hola_buenas_tardes");
+    expect(templateForAttempt("pago_pendiente", 3, "hola_buenos_dias", all, { plantilla3: "inventada" })).toBe("hola_buenos_dias");
+    // Sin otra opción, sale la de la puerta
+    expect(templateForAttempt("sin_punto_claro", 2, "hola_buenas_tardes", all, { plantilla2: "hola_buenas_tardes" }, "hola_buenos_dias")).toBe("hola_buenas_tardes");
+  });
   it("las 6 plantillas: 4 con tiempo en {{1}} y 2 sin variable", () => {
-    expect(new Set(Object.values(CASE_TEMPLATE))).toEqual(new Set(["seg_precio", "seg_informacion", "seg_valorar", "seg_medidas", "seg_asesor", "seg_objecion"]));
+    expect(new Set([...Object.values(CASE_TEMPLATE), "seg_informacion"])).toEqual(new Set(["seg_precio", "seg_informacion", "seg_valorar", "seg_medidas", "seg_asesor", "seg_objecion"]));
     expect([...TIME_PHRASE_TEMPLATES].sort()).toEqual(["seg_informacion", "seg_medidas", "seg_precio", "seg_valorar"]);
   });
 });

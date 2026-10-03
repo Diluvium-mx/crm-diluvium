@@ -145,13 +145,13 @@ describe("2.º y 3.er intento", () => {
     expect(p.templateName).toBe("hola_buenas_tardes");
   });
 
-  it("pago pendiente: 2.º a las 10:00 con saludo de la mañana; 3.º con seguimiento_proteccion", () => {
+  it("pago pendiente: 2.º a las 10:00 con saludo de la mañana; 3.º saludo (la plantilla que encaje la elige el lector)", () => {
     const dos = planAttempt({ ...base, caso: "pago_pendiente", intento: 2, now: mx("2026-10-06T10:01"), prevAttemptAt: mx("2026-10-06T10:00") });
     expect(at(dos.dueAt)).toBe("2026-10-07 10:00");
     expect(dos.templateName).toBe("hola_buenos_dias");
     const tres = planAttempt({ ...base, caso: "pago_pendiente", intento: 3, now: mx("2026-10-07T10:01"), prevAttemptAt: mx("2026-10-07T10:00"), lastTemplateAt: mx("2026-10-07T10:00") });
     expect(at(tres.dueAt)).toBe("2026-10-14 10:00");
-    expect(tres.templateName).toBe("seguimiento_proteccion");
+    expect(tres.templateName).toBe("hola_buenos_dias");
   });
 });
 
@@ -197,5 +197,16 @@ describe("sugerencias: horario de los vendedores (Mazatlán, L–V 9–18, sáb 
   it("si esa hora ya pasó: ahora", () => {
     const late = mzt("2026-10-05T19:30");
     expect(presentAtFor(mzt("2026-10-05T20:00"), late).toISOString()).toBe(late.toISOString());
+  });
+});
+
+describe("pidió fecha sin hora: la hora del asunto pendiente (3-oct-2026)", () => {
+  const zone = "America/Mazatlan";
+  const mzt = (s: string) => new Date(`${s}:00-07:00`);
+  const base = { caso: "pidio_fecha" as const, intento: 1, zone, stopAt: mzt("2026-10-05T12:00"), windowExpiresAt: mzt("2026-10-06T11:00"), now: mzt("2026-10-05T12:05") };
+  it("«mañana mido» → 19:00; «mañana le deposito» → 10:00; sin asunto → 11:00", () => {
+    expect(planAttempt({ ...base, fechaPedida: "2026-10-06", fondo: "faltan_medidas" }).dueAt.toISOString()).toBe(mzt("2026-10-06T19:00").toISOString());
+    expect(planAttempt({ ...base, fechaPedida: "2026-10-06", fondo: "pago_pendiente" }).dueAt.toISOString()).toBe(mzt("2026-10-06T10:00").toISOString());
+    expect(planAttempt({ ...base, fechaPedida: "2026-10-06" }).dueAt.toISOString()).toBe(mzt("2026-10-06T11:00").toISOString());
   });
 });

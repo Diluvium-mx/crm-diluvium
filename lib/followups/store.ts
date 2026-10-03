@@ -6,10 +6,10 @@
 // Multi-tenant (CLAUDE.md §7): toda lectura y escritura filtra por organization_id.
 import { and, desc, eq, gte, inArray, lte, sql } from "drizzle-orm";
 import { db } from "@/lib/db";
-import { changeHistory, channels, contactEntradas, contacts, conversations, followUps, templates, type FollowUpAttemptLog } from "@/lib/db/schema";
+import { changeHistory, channels, contactEntradas, contacts, conversations, followUps, messages, templates, type FollowUpAttemptLog } from "@/lib/db/schema";
 import { listFunnelStages } from "@/lib/contacts/funnel-stages";
 import type { FunnelStage } from "@/lib/contacts/stages";
-import { CASE_RULES, templateForAttempt, WAIT_AFTER_LAST_MS, type FollowUpCase } from "./cases";
+import { CASE_RULES, isFollowUpCase, templateForAttempt, WAIT_AFTER_LAST_MS, type FollowUpCase, type TemplatePicks } from "./cases";
 import { finalCase, type FollowUpFicha, type HardSignals } from "./ficha";
 import { effectiveTotal, planAttempt, presentAtFor, templateFor, windowOpenAt, type AttemptPlan } from "./schedule";
 import { zoneForPhone } from "./timezone";
@@ -78,7 +78,11 @@ export async function manualPauseOf(organizationId: string, conversationId: stri
   return last?.action === "pausar";
 }
 
-/** Última plantilla de seguimiento que salió (o habría salido, en ensayo) a este contacto. */
+/**
+ * Última plantilla que le llegó a este contacto: CUALQUIERA que haya salido (las de los vendedores
+ * con 📄 o 🕒 también cuentan; decisión del dueño, 3-oct-2026) y las de seguimiento que salieron
+ * o, en ensayo, que habrían salido. Nunca dos en menos de 7 días.
+ */
 async function lastTemplateAt(organizationId: string, contactId: string, now: Date): Promise<Date | null> {
   const since = new Date(now.getTime() - 30 * 24 * 60 * 60_000);
   const rows = await db
@@ -87,6 +91,21 @@ async function lastTemplateAt(organizationId: string, contactId: string, now: Da
     .where(and(eq(followUps.organizationId, organizationId), eq(followUps.contactId, contactId), gte(followUps.createdAt, since)));
   let last: number | null = null;
   for (const r of rows) for (const a of r.intentos) if (a.door === "plantilla") last = Math.max(last ?? 0, Date.parse(a.at));
+  const [sent] = await db
+    .select({ at: sql<Date | null>`max(coalesce(${messages.sentAt}, ${messages.createdAt}))`.mapWith((v) => (v ? new Date(v as string) : null)) })
+    .from(messages)
+    .innerJoin(conversations, and(eq(conversations.id, messages.conversationId), eq(conversations.organizationId, organizationId)))
+    .where(
+      and(
+        eq(messages.organizationId, organizationId),
+        eq(conversations.contactId, contactId),
+        eq(messages.direction, "out"),
+        eq(messages.type, "template"),
+        inArray(messages.status, ["queued", "sent", "delivered", "read"]),
+        gte(messages.createdAt, since),
+      ),
+    );
+  if (sent?.at) last = Math.max(last ?? 0, sent.at.getTime());
   return last === null ? null : new Date(last);
 }
 
@@ -187,8 +206,10 @@ export type FollowUpReading = {
   contactId: string;
   /** Hasta dónde leyó el lector (conversations.last_message_at al leer). */
   readUpTo: Date;
-  /** Nuestro último mensaje (la parada), si el último del chat es de la empresa. */
+  /** La parada: nuestro último mensaje antes de los seguimientos que haya mandado un vendedor. */
   stopAt: Date;
+  /** Seguimientos que ya mandó un vendedor después de la parada (cuentan como intento). */
+  vendorAttempts?: readonly Date[];
   lastIsCompany: boolean;
   ficha: FollowUpFicha | null;
   stages: readonly FunnelStage[];
@@ -249,6 +270,9 @@ async function applyReading(r: FollowUpReading): Promise<string | null> {
     borrador: caso === "no_seguir" ? null : (ficha?.borrador ?? null),
     fechaPedida: ficha?.fechaPedida ?? null,
     horaPedida: ficha?.horaPedida ?? null,
+    casoDeFondo: ficha?.casoDeFondo ?? null,
+    plantilla2: ficha?.plantilla2 ?? null,
+    plantilla3: ficha?.plantilla3 ?? null,
     timeZone: signals.zone,
     basedOnMessageAt: r.readUpTo,
     createdAt: now,
@@ -258,49 +282,78 @@ async function applyReading(r: FollowUpReading): Promise<string | null> {
   let summary: string;
   await db.transaction(async (tx) => {
     // Una ficha nueva reemplaza a la anterior (un solo pendiente por chat). Si a la anterior todavía
-    // no le salió ningún intento, se actualiza en su lugar (cada lectura no deja una fila nueva); si
-    // ya salió alguno, se cierra y queda con su historial.
+    // no le salió ningún intento NUESTRO, se actualiza en su lugar (cada lectura no deja una fila
+    // nueva); si ya salió alguno, se cierra y queda con su historial.
     const current = await openRow(tx, organizationId, conversationId);
-    const inPlace = current !== null && current.intentos.length === 0;
+    const inPlace = current !== null && current.intentos.every((a) => a.modo === "vendedor");
     if (current && !inPlace) await closeRow(tx, current, "cancelado", "reemplazado", now);
+    // "No seguir" sin pendiente abierto: se actualiza la última fila "no seguir" del chat (cada
+    // relectura no deja otra igual).
+    const [lastNoSeguir] =
+      !current && caso === "no_seguir"
+        ? await tx
+            .select({ id: followUps.id })
+            .from(followUps)
+            .where(and(eq(followUps.organizationId, organizationId), eq(followUps.conversationId, conversationId), eq(followUps.status, "no_seguir")))
+            .orderBy(desc(followUps.createdAt))
+            .limit(1)
+        : [];
+    const targetId = inPlace ? current.id : (lastNoSeguir?.id ?? null);
     const save = async (values: Omit<typeof followUps.$inferInsert, "id">) => {
-      if (inPlace) {
+      if (targetId) {
         const { createdAt: _createdAt, ...rest } = values;
         void _createdAt;
-        await tx.update(followUps).set(rest).where(and(eq(followUps.id, current.id), eq(followUps.organizationId, organizationId)));
+        await tx.update(followUps).set(rest).where(and(eq(followUps.id, targetId), eq(followUps.organizationId, organizationId)));
       } else await tx.insert(followUps).values({ ...values, id: crypto.randomUUID() });
     };
     const reset = { cancelReason: null, closedAt: null, presentarAt: null, autoAprobado: false, dueSetBy: "sistema" as const, updatedByUserId: null };
     if (caso === "no_seguir") {
-      await save({ ...base, ...reset, status: "no_seguir", intento: 1, totalIntentos: 0, dueAt: null, door: null, templateName: null, modo: "automatico", closedAt: now });
+      await save({ ...base, ...reset, status: "no_seguir", intento: 1, totalIntentos: 0, intentos: [], dueAt: null, door: null, templateName: null, modo: "automatico", closedAt: now });
       summary = `seguimiento: no seguir${ficha?.motivo ? ` (${ficha.motivo})` : ""}`;
       return;
     }
-    const plan = planAttempt({
-      caso,
-      intento: 1,
-      zone: signals.zone,
-      stopAt: r.stopAt,
-      windowExpiresAt: signals.windowExpiresAt,
-      now,
-      fechaPedida: ficha?.fechaPedida,
-      horaPedida: ficha?.horaPedida,
-      lastTemplateAt: signals.lastTemplateAt,
-    });
+    // Los seguimientos del vendedor ya cuentan (decisión del dueño, 3-oct-2026).
+    const vendorLogs: FollowUpAttemptLog[] = (r.vendorAttempts ?? []).map((at, i) => ({ n: i + 1, at: at.toISOString(), door: "texto", template: null, modo: "vendedor", ensayo: false }));
+    const intento = vendorLogs.length + 1;
+    const total = effectiveTotal(caso, vendorLogs.length ? "texto" : null);
     const modo = signals.manualPause ? "sugerido" : "automatico";
+    if (intento > total) {
+      // El vendedor ya hizo todos los intentos del caso: solo se espera respuesta (después, frío).
+      const lastAt = r.vendorAttempts![r.vendorAttempts!.length - 1];
+      await save({ ...base, ...reset, status: "esperando", intento: total, totalIntentos: total, intentos: vendorLogs, dueAt: new Date(lastAt.getTime() + WAIT_AFTER_LAST_MS), door: null, templateName: null, modo });
+      summary = `seguimiento: ${caso}, el vendedor ya hizo los ${total} intentos; espera respuesta`;
+      return;
+    }
+    const plan =
+      intento === 1
+        ? planAttempt({
+            caso,
+            intento: 1,
+            zone: signals.zone,
+            stopAt: r.stopAt,
+            windowExpiresAt: signals.windowExpiresAt,
+            now,
+            fechaPedida: ficha?.fechaPedida,
+            horaPedida: ficha?.horaPedida,
+            fondo: ficha?.casoDeFondo,
+            lastTemplateAt: signals.lastTemplateAt,
+          })
+        : planNext({ ...base, caso }, intento, signals.windowExpiresAt, now, r.vendorAttempts![r.vendorAttempts!.length - 1], signals.lastTemplateAt);
+    const picks: TemplatePicks = { plantilla2: base.plantilla2, plantilla3: base.plantilla3 };
     await save({
       ...base,
       ...reset,
       status: "programado",
-      intento: 1,
-      totalIntentos: effectiveTotal(caso, plan.door),
+      intento,
+      totalIntentos: effectiveTotal(caso, vendorLogs.length ? "texto" : plan.door),
+      intentos: vendorLogs,
       dueAt: plan.dueAt,
       door: plan.door,
-      templateName: templateForAttempt(caso, 1, plan.templateName, signals.approved),
+      templateName: templateForAttempt(caso, intento, plan.templateName, signals.approved, picks, null),
       modo,
       presentarAt: modo === "sugerido" ? presentAtFor(plan.dueAt, now) : null,
     });
-    summary = `seguimiento: ${caso} 1.º ${fmt.format(plan.dueAt)} ${plan.door}${modo === "sugerido" ? " (sugerido)" : ""}`;
+    summary = `seguimiento: ${caso} ${intento}.º ${fmt.format(plan.dueAt)} ${plan.door}${vendorLogs.length ? ` (el vendedor ya hizo ${vendorLogs.length})` : ""}${modo === "sugerido" ? " (sugerido)" : ""}`;
   });
   await announce(db, organizationId, conversationId, contactId);
   return `${summary!}${ajuste ? ` [${ajuste}]` : ""}`;
@@ -313,7 +366,7 @@ export const SWEEP_BATCH = 50;
 export const STALE_CANCEL_MS = 30 * 60_000;
 
 /** Programa el intento `intento` de una fila (después de que salió el anterior). */
-export function planNext(row: Pick<FollowUpRow, "caso" | "timeZone" | "basedOnMessageAt" | "fechaPedida" | "horaPedida">, intento: number, windowExpiresAt: Date | null, now: Date, prevAt: Date, lastTemplate: Date | null): AttemptPlan {
+export function planNext(row: Pick<FollowUpRow, "caso" | "timeZone" | "basedOnMessageAt" | "fechaPedida" | "horaPedida" | "casoDeFondo">, intento: number, windowExpiresAt: Date | null, now: Date, prevAt: Date, lastTemplate: Date | null): AttemptPlan {
   return planAttempt({
     caso: row.caso as Exclude<FollowUpCase, "no_seguir">,
     intento,
@@ -323,6 +376,7 @@ export function planNext(row: Pick<FollowUpRow, "caso" | "timeZone" | "basedOnMe
     now,
     fechaPedida: row.fechaPedida,
     horaPedida: row.horaPedida,
+    fondo: isFollowUpCase(row.casoDeFondo) ? row.casoDeFondo : null,
     prevAttemptAt: prevAt,
     lastTemplateAt: lastTemplate,
   });
@@ -358,8 +412,10 @@ async function advance(row: FollowUpRow, now: Date): Promise<string | null> {
   const caso = row.caso as Exclude<FollowUpCase, "no_seguir">;
   // Por dónde sale AHORA (la ventana pudo cerrarse desde que se programó).
   const door = windowOpenAt(signals.windowExpiresAt, now) ? "texto" : "plantilla";
+  const picks: TemplatePicks = { plantilla2: row.plantilla2, plantilla3: row.plantilla3 };
+  const previous = row.intentos.at(-1)?.template ?? null;
   const templateName =
-    door === "plantilla" ? templateForAttempt(caso, row.intento, templateFor(CASE_RULES[caso].doors[row.intento - 1] ?? "saludo", now, row.timeZone), signals.approved) : null;
+    door === "plantilla" ? templateForAttempt(caso, row.intento, templateFor(CASE_RULES[caso].doors[row.intento - 1] ?? "saludo", now, row.timeZone), signals.approved, picks, previous) : null;
   const modo = signals.manualPause && !row.autoAprobado ? "sugerido" : "automatico";
   const log: FollowUpAttemptLog = { n: row.intento, at: now.toISOString(), door, template: templateName, modo, ensayo: row.ensayo };
   const intentos = [...row.intentos, log];
@@ -377,7 +433,7 @@ async function advance(row: FollowUpRow, now: Date): Promise<string | null> {
       totalIntentos: total,
       dueAt: next.dueAt,
       door: next.door,
-      templateName: templateForAttempt(caso, row.intento + 1, next.templateName, signals.approved),
+      templateName: templateForAttempt(caso, row.intento + 1, next.templateName, signals.approved, picks, templateName),
       modo: nextModo,
       presentarAt: nextModo === "sugerido" ? presentAtFor(next.dueAt, now) : null,
       autoAprobado: false,

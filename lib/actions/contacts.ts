@@ -16,6 +16,7 @@ import { parseGhlContactsCsv } from "@/lib/import/ghl-contacts-csv";
 import { onContactStageEntered } from "@/lib/workflows/triggers";
 import { createManualContact, type ManualContactInput } from "@/lib/contacts/create-manual";
 import { notifyContactUpdated } from "@/lib/contacts/notify-updated";
+import { cancelFollowUpsOnSale } from "@/lib/followups/sale";
 import {
   funnelSignalsForOrg,
   lastInboundFromWindow,
@@ -194,6 +195,7 @@ export async function updateContactStage(input: UpdateContactStageInput) {
         stage: { from: before.stage, to: row.stage },
         by: { kind: "vendedor", userId },
       });
+      await cancelFollowUpsOnSale(tx, organizationId, row.id, row.stage);
     }
     return row;
   });
