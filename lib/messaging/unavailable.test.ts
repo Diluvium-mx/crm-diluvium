@@ -68,7 +68,7 @@ describe("doble verificación (caso SDA, 29-sep-2026)", () => {
     );
     expect(noticeDisplayText({ unsupported: NOTICE })).toBeNull();
     expect(UNAVAILABLE_REPLY_TEXT).toBe(
-      "¡Hola! Gracias por escribirnos 😊 Tuvimos una falla técnica y su mensaje no nos llegó. ¿Nos ayudas escribiéndolo de nuevo para seguir con su atención?",
+      "¡Hola! Gracias por escribirnos 😊 Tuvimos una falla técnica y su mensaje no nos llegó. ¿Nos ayuda escribiéndolo de nuevo para seguir con su atención?",
     );
   });
 
