@@ -393,6 +393,13 @@
       "when": 1790975045568,
       "tag": "0056_seguimientos",
       "breakpoints": true
+    },
+    {
+      "idx": 57,
+      "version": "7",
+      "when": 1791056969132,
+      "tag": "0057_seguimientos_lector",
+      "breakpoints": true
     }
   ]
 }

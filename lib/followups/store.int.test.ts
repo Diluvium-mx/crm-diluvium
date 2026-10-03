@@ -69,6 +69,9 @@ describe.skipIf(!TEST_DATABASE_URL)("Seguimientos en la base (modo ensayo)", () 
     fechaPedida: null,
     horaPedida: null,
     borrador: "Cuando esté en su casa, ¿me puede medir el ancho de la cochera?",
+    casoDeFondo: null,
+    plantilla2: null,
+    plantilla3: null,
     ...extra,
   });
 
@@ -238,5 +241,58 @@ describe.skipIf(!TEST_DATABASE_URL)("Seguimientos en la base (modo ensayo)", () 
     expect(v?.templateName).toBe("seg_medidas");
     // Sale el miércoles 7 a las 18:00 del centro; el cliente escribió el lunes: «antier».
     expect(v?.templateText).toBe("Referente a la compuerta anti-inundaciones que nos comentó antier. Tuvo oportunidad de medir la entrada? Para saber que tamaño de compuerta le queda?");
+  });
+
+  it("seguimiento del vendedor (3-oct-2026): cuenta como intento; el CRM programa el siguiente, no otro encima", async () => {
+    // La parada fue el lunes 12:00; el vendedor le escribió el martes 11:40 (seguimiento suyo).
+    const vendor = new Date(T0.getTime() + 23 * HOUR + 40 * MIN);
+    const now = new Date(vendor.getTime() + 5 * MIN);
+    await db.update(s.conversations).set({ lastMessageAt: vendor, windowExpiresAt: new Date(T0.getTime() - 2 * MIN + 24 * HOUR) }).where(d.eq(s.conversations.id, CONV));
+    const summary = await reading({ readUpTo: vendor, stopAt: T0, vendorAttempts: [vendor], now });
+    expect(summary).toMatch(/faltan_medidas 2\.º .*el vendedor ya hizo 1/);
+    const [r] = await rows();
+    expect(r).toMatchObject({ status: "programado", intento: 2, totalIntentos: 2, door: "plantilla" });
+    expect(r.intentos).toEqual([expect.objectContaining({ n: 1, modo: "vendedor", at: vendor.toISOString() })]);
+    // La burbuja lo dice así.
+    expect((await view.loadFollowUpView(ORG, CONV))?.intentos[0]).toMatchObject({ n: 1, modo: "vendedor" });
+
+    // Si el vendedor ya hizo todos los intentos del caso, solo se espera respuesta.
+    const vendor2 = new Date(vendor.getTime() + 2 * 24 * HOUR);
+    await db.update(s.conversations).set({ lastMessageAt: vendor2 }).where(d.eq(s.conversations.id, CONV));
+    expect(await reading({ readUpTo: vendor2, stopAt: T0, vendorAttempts: [vendor, vendor2], now: new Date(vendor2.getTime() + MIN) })).toMatch(/ya hizo los 2 intentos/);
+    const [again] = await rows();
+    expect(again).toMatchObject({ id: r.id, status: "esperando", intento: 2 });
+    expect(again.intentos).toHaveLength(2);
+  });
+
+  it("no seguir: cada relectura actualiza la misma fila (no deja duplicados)", async () => {
+    const noSeguir = ficha("no_seguir", { valeLaPena: false, motivo: "Está en España", borrador: null });
+    await reading({ ficha: noSeguir });
+    await reading({ ficha: noSeguir, readUpTo: new Date(T0.getTime() + HOUR), stopAt: new Date(T0.getTime() + HOUR), now: new Date(NOW.getTime() + HOUR) });
+    const all = await rows();
+    expect(all).toHaveLength(1);
+    expect(all[0]).toMatchObject({ status: "no_seguir", basedOnMessageAt: new Date(T0.getTime() + HOUR) });
+  });
+
+  it("pidió fecha y solo dijo el día: sale a la hora del asunto pendiente (medidas → 19:00)", async () => {
+    await reading({ ficha: ficha("pidio_fecha", { fechaPedida: "2026-10-06", casoDeFondo: "faltan_medidas" }) });
+    const [r] = await rows();
+    expect(r).toMatchObject({ caso: "pidio_fecha", casoDeFondo: "faltan_medidas" });
+    // 19:00 del martes en la Ciudad de México = 01:00 UTC del miércoles.
+    expect(r.dueAt?.toISOString()).toBe("2026-10-07T01:00:00.000Z");
+  });
+
+  it("al pasar a la etapa de venta cerrada (Compra) el seguimiento se cancela en ese momento", async () => {
+    await reading();
+    const stages = await stagesMod.listFunnelStages(ORG);
+    const venta = stages.find((x) => x.role === "venta_cerrada")!;
+    const otra = stages.find((x) => x.role !== "venta_cerrada" && x.key !== "inbox")!;
+    const { cancelFollowUpsOnSale } = await import("./sale");
+    await cancelFollowUpsOnSale(db, ORG, CONTACT, otra.key);
+    expect(await open()).toHaveLength(1);
+    const { moveStageForward } = await import("@/lib/contacts/stage");
+    await moveStageForward({ organizationId: ORG, contactId: CONTACT, to: venta.key, by: "agente", stages, now: NOW, fireStageTriggers: false });
+    expect(await open()).toHaveLength(0);
+    expect((await rows())[0]).toMatchObject({ status: "cancelado", cancelReason: "venta_cerrada" });
   });
 });

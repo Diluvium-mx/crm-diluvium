@@ -276,4 +276,27 @@ describe.skipIf(!TEST_DATABASE_URL)("Lector en segundo plano (Postgres real)", (
     expect(String(segunda.calls[0].system)).not.toContain("SEGUIMIENTO");
     expect((await db.select().from(s.followUps))[0]).toMatchObject({ status: "cancelado", cancelReason: "cliente_escribio" });
   });
+
+  it("seguimiento: un borrador que repite una pregunta ya hecha se rehace UNA vez; si el nuevo cumple, se guarda", async () => {
+    await db.update(s.channels).set({ aiAgentMode: "auto" }).where(d.eq(s.channels.id, "ch_lector"));
+    await msg("in", "Quiero más información", ago(30 * MIN));
+    await msg("out", "La compuerta queda en $5,500 con envío gratis. ¿Usted tiene problemas de inundaciones?", ago(29 * MIN), "ai_agent");
+    const { deps: dd, calls } = deps({
+      tiene_inundaciones: null,
+      seguimiento: { caso: "solo_informacion", pendiente: "Recibió información", siguiente_paso: "Saber el ancho", vale_la_pena: true, borrador: "Le recuerdo que está en $5,500. ¿Se le mete el agua a su casa?" },
+    });
+    const first = dd.callModel;
+    dd.callModel = async (modelId: string, i: CallModelInput) => {
+      if (calls.length === 0) return first(modelId, i);
+      calls.push(i);
+      return { ...(await first(modelId, i)), toolCalls: [{ toolName: "reescribir_borrador", input: { borrador: "¿Qué ancho tiene la entrada que quiere proteger?" } }] };
+    };
+    await lector.runLector(ORG, CONV, dd);
+    expect(calls.length).toBeGreaterThanOrEqual(2);
+    expect(String(calls[calls.length - 1].system)).toContain("Reescribe SOLO el borrador");
+    const [f] = await db.select().from(s.followUps);
+    expect(f.borrador).toBe("¿Qué ancho tiene la entrada que quiere proteger?");
+    const usos = await db.select().from(s.aiUsage);
+    expect(usos.some((u) => /borrador rehecho/.test(u.error ?? ""))).toBe(true);
+  });
 });

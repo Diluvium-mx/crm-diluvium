@@ -207,7 +207,9 @@ export function FollowUpPanel({ followUp, onClose, onChanged }: { followUp: Foll
           <ul className="space-y-0.5 text-xs text-muted-foreground">
             {f.intentos.map((a) => (
               <li key={a.n}>
-                {`${a.n}.º ${f.ensayo ? "habría salido" : "salió"} ${whenLabel(a.at)} · ${a.door === "plantilla" ? `plantilla ${a.template}` : "texto"}${a.modo === "sugerido" ? " · sugerido" : ""}`}
+                {a.modo === "vendedor"
+                  ? `${a.n}.º lo mandó un vendedor ${whenLabel(a.at)}`
+                  : `${a.n}.º ${f.ensayo ? "habría salido" : "salió"} ${whenLabel(a.at)} · ${a.door === "plantilla" ? `plantilla ${a.template}` : "texto"}${a.modo === "sugerido" ? " · sugerido" : ""}`}
               </li>
             ))}
           </ul>
