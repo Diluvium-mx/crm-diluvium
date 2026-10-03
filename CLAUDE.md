@@ -393,6 +393,9 @@ Reglas de UI:
   plantilla"), solo cuando el chat tiene seguimiento; abre su burbuja (Ver mensaje · Cambiar hora · Lo mando yo · Cancelar
   y, en una sugerencia, Que salga solo). No va en el Detalle del contacto. Horas en la hora del cliente según su lada, de
   7:00 a 21:00 todos los días; plantillas hasta las 19:00. Código: `followup-pill.tsx`, `lib/followups/`.
+  Plantillas propias por caso (3-oct-2026, textos del dueño TAL CUAL): `seg_precio`, `seg_informacion`, `seg_valorar`,
+  `seg_medidas`, `seg_asesor`, `seg_objecion`; en las 4 primeras `{{1}}` = CUÁNDO escribió el cliente ("anoche",
+  "antier"…, `lib/followups/time-phrase.ts`), no el nombre, también en el 📄 y el 🕒. Salen solo ya aprobadas por Meta.
 - **Búsqueda en los chats (29-sep-2026, decisión del dueño):** una **lupa** entre el buscador y el
   filtro (Bandeja y Embudo). Prendida se pinta de amarillo y el MISMO campo busca una palabra dentro
   de los mensajes de todos los chats (cliente, vendedor, Agente IA, historial importado, pies de foto

@@ -27,6 +27,7 @@ export function ScheduleForm({
   onDone,
   onCancel,
   firstName = "",
+  timePhrase = "",
   channelType = "whatsapp",
 }: {
   mode: Mode;
@@ -38,6 +39,8 @@ export function ScheduleForm({
   onCancel: () => void;
   /** Primer nombre del contacto para el hueco {{1}} de la plantilla. */
   firstName?: string;
+  /** {{1}} de las plantillas de seguimiento con tiempo (ver TemplatePicker). */
+  timePhrase?: string;
 }) {
   const editing = mode.type === "edit" ? mode.item : null;
   const [when, setWhen] = useState(() => (editing ? instantToLocal(new Date(editing.sendAt)) : defaultWhen()));
@@ -181,6 +184,7 @@ export function ScheduleForm({
         <div className="mt-2">
           <TemplatePicker
             firstName={firstName}
+            timePhrase={timePhrase}
             submitLabel={saving ? "Guardando…" : "Programar plantilla"}
             busy={saving}
             onSubmit={(templateId, values) =>
