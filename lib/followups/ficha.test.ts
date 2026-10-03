@@ -30,8 +30,21 @@ describe("parseFicha", () => {
       fechaPedida: null,
       horaPedida: null,
       borrador: "¿Me puede medir el ancho de lado a lado?\n\nGracias",
+      casoDeFondo: null,
+      plantilla2: null,
+      plantilla3: null,
     });
     expect(ignored).toEqual([]);
+  });
+
+  it("pidió fecha: guarda el asunto pendiente; en otro caso se ignora. Plantillas: solo nombres limpios", () => {
+    const ignored: string[] = [];
+    const f = parseFicha({ caso: "pidio_fecha", fecha_pedida: "2026-10-05", caso_de_fondo: "faltan_medidas", plantilla_2: "seg_medidas", plantilla_3: "Hola!!" }, today, ignored);
+    expect(f?.casoDeFondo).toBe("faltan_medidas");
+    expect(f?.plantilla2).toBe("seg_medidas");
+    expect(f?.plantilla3).toBeNull();
+    expect(parseFicha({ caso: "objecion", caso_de_fondo: "faltan_medidas" }, today, ignored)?.casoDeFondo).toBeNull();
+    expect(parseFicha({ caso: "pidio_fecha", caso_de_fondo: "no_seguir" }, today, ignored)?.casoDeFondo).toBeNull();
   });
 
   it("descarta lo raro sin tirar lo demás: caso inexistente, fecha pasada o muy lejana, hora mal escrita", () => {
@@ -65,6 +78,9 @@ describe("finalCase: el modelo propone, el CRM confirma (en el orden de la tabla
     fechaPedida: null,
     horaPedida: null,
     borrador: null,
+    casoDeFondo: null,
+    plantilla2: null,
+    plantilla3: null,
     ...extra,
   });
   const hard = (h: Partial<HardSignals> = {}): HardSignals => ({ asesorPendiente: false, stageRole: null, monto: null, pago: null, tieneMedidas: false, ...h });

@@ -18,7 +18,15 @@ export type FollowUpFicha = {
   fechaPedida: string | null;
   horaPedida: string | null;
   borrador: string | null;
+  /** En "pidió fecha": el asunto que quedó pendiente (da la hora si solo dijo el día). */
+  casoDeFondo: FollowUpCase | null;
+  /** Plantilla que mejor encaja para el 2.º y el 3.er intento (la valida el CRM). */
+  plantilla2: string | null;
+  plantilla3: string | null;
 };
+
+/** Casos que pueden ser "el asunto" de una fecha pedida. */
+export const FONDO_CASES = FOLLOW_UP_CASES.filter((c) => c !== "no_seguir" && c !== "pidio_fecha");
 
 /** El campo `seguimiento` de `actualizar_contacto` (solo cuando el último mensaje es nuestro). */
 export function fichaSchema() {
@@ -33,6 +41,13 @@ export function fichaSchema() {
       fecha_pedida: z.string().nullable().optional().describe(`Pidió fecha: AAAA-MM-DD en su calendario${sin}`),
       hora_pedida: z.string().nullable().optional().describe(`Pidió hora: HH:MM en su hora${sin}`),
       borrador: z.string().nullable().optional().describe("El mensaje que se le mandaría, sin saludo al principio"),
+      caso_de_fondo: z
+        .enum(FONDO_CASES as [FollowUpCase, ...FollowUpCase[]])
+        .nullable()
+        .optional()
+        .describe(`Solo en pidio_fecha: qué quedó pendiente (faltan_medidas, pago_pendiente…)${sin}`),
+      plantilla_2: z.string().nullable().optional().describe(`Nombre de la plantilla de la lista para el 2.º intento${sin}`),
+      plantilla_3: z.string().nullable().optional().describe(`Nombre de la plantilla de la lista para el 3.er intento${sin}`),
     })
     .describe("Seguimiento: qué le escribiríamos si no contesta");
 }
@@ -82,8 +97,13 @@ export function parseFicha(raw: unknown, today: { zone: string; now: Date }, ign
     if (isHhmm(h)) horaPedida = h;
     else ignored.push(`seguimiento.hora_pedida: ${r.hora_pedida} no es una hora`);
   }
+  const casoDeFondo = isFollowUpCase(r.caso_de_fondo) && (FONDO_CASES as readonly string[]).includes(r.caso_de_fondo) ? r.caso_de_fondo : null;
+  const name = (v: unknown) => (typeof v === "string" && /^[a-z0-9_]{1,64}$/.test(v.trim()) ? v.trim() : null);
   return {
     caso,
+    casoDeFondo: caso === "pidio_fecha" ? casoDeFondo : null,
+    plantilla2: name(r.plantilla_2),
+    plantilla3: name(r.plantilla_3),
     pendiente: line(r.pendiente, MAX_FICHA_LINE),
     siguientePaso: line(r.siguiente_paso, MAX_FICHA_LINE),
     valeLaPena: typeof r.vale_la_pena === "boolean" ? r.vale_la_pena : null,

@@ -21,6 +21,7 @@ import {
   TEMPLATE_EVENING,
   TEMPLATE_LATEST,
   TEMPLATE_SPACING_DAYS,
+  timingCase,
   WINDOW_MARGIN_MS,
   type DoorKind,
   type FollowUpCase,
@@ -46,6 +47,8 @@ export type PlanInput = {
   now: Date;
   fechaPedida?: string | null;
   horaPedida?: string | null;
+  /** "Pidió fecha": el asunto pendiente; si solo dijo el día, sale a la hora de ese asunto. */
+  fondo?: FollowUpCase | null;
   /** Cuándo salió el intento anterior. */
   prevAttemptAt?: Date | null;
   /** Última plantilla de seguimiento que salió a este contacto (7 días entre plantillas). */
@@ -116,11 +119,11 @@ function templatePlan(caso: PlanInput["caso"], intento: number, t: Date, zone: s
 
 /** Plantilla a la hora del caso, el primer día desde `from` que no esté en el pasado ni rompa los 7 días. */
 function templateOnOrAfter(input: PlanInput, from: LocalDate): AttemptPlan {
-  const { caso, zone, now, lastTemplateAt } = input;
-  const time = templateTimeOf(caso);
+  const { zone, now, lastTemplateAt } = input;
+  const time = templateTimeOf(timingCase(input.caso, input.fondo));
   let notBefore = now;
   if (lastTemplateAt) notBefore = maxDate(notBefore, new Date(lastTemplateAt.getTime() + TEMPLATE_SPACING_DAYS * DAY - MINUTE));
-  return templatePlan(caso, input.intento, firstAfter(zone, from, time, notBefore), zone);
+  return templatePlan(input.caso, input.intento, firstAfter(zone, from, time, notBefore), zone);
 }
 
 /** Texto o plantilla a una hora fija `t` (asesor y pidió fecha). */
@@ -150,6 +153,8 @@ function firstAttempt(input: PlanInput): AttemptPlan {
   }
 
   if (caso === "pidio_fecha") {
+    // Solo dijo el día: la hora del asunto pendiente ("mañana mido" → 19:00, ya en su casa).
+    const dayTime = CASE_RULES[timingCase(caso, input.fondo)].slot!.from;
     const stopDay = dateOf(stopAt, zone);
     const day = (input.fechaPedida && parseLocalDate(input.fechaPedida)) || stopDay;
     let t: Date;
@@ -160,13 +165,13 @@ function firstAttempt(input: PlanInput): AttemptPlan {
       else if (m > minutesOf(ALLOWED_TO)) t = zonedInstant(zone, day, ALLOWED_TO);
     } else if (sameDate(day, stopDay)) {
       // "Estoy ocupado" / "al rato": 3 h después, dentro del horario.
-      t = nextAllowed(ceil5(new Date(stopAt.getTime() + OCUPADO_DELAY_MS)), zone, rule.slot!.from);
+      t = nextAllowed(ceil5(new Date(stopAt.getTime() + OCUPADO_DELAY_MS)), zone, dayTime);
     } else {
-      t = zonedInstant(zone, day, rule.slot!.from);
+      t = zonedInstant(zone, day, dayTime);
     }
     // La fecha ya pasó (lectura tardía): en cuanto se pueda.
-    if (t.getTime() <= now.getTime()) t = nextAllowed(ceil5(soon), zone, rule.slot!.from);
-    return atFixedTime(input, t, rule.slot!.from);
+    if (t.getTime() <= now.getTime()) t = nextAllowed(ceil5(soon), zone, dayTime);
+    return atFixedTime(input, t, dayTime);
   }
 
   // Casos con franja: texto antes del cierre de la ventana.
@@ -207,7 +212,7 @@ function laterAttempt(input: PlanInput): AttemptPlan {
         : addDays(dateOf(stopAt, zone), 2)
       : addDays(dateOf(prev, zone), TEMPLATE_SPACING_DAYS);
   // Casi nunca sigue abierta (el cliente no ha escrito); si sí, texto a la hora del caso.
-  const asText = zonedInstant(zone, base, CASE_RULES[caso].slot!.from);
+  const asText = zonedInstant(zone, base, CASE_RULES[timingCase(caso, input.fondo)].slot!.from);
   if (asText.getTime() > input.now.getTime() && windowOpenAt(windowExpiresAt, asText)) return { dueAt: asText, door: "texto", templateName: null };
   return templateOnOrAfter(input, base);
 }

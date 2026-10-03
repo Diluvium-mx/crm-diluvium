@@ -23,7 +23,8 @@ export type FollowUpAttemptLog = {
   at: string;
   door: "texto" | "plantilla";
   template: string | null;
-  modo: "automatico" | "sugerido";
+  /** vendedor = un seguimiento que mandó un vendedor y cuenta como intento (3-oct-2026). */
+  modo: "automatico" | "sugerido" | "vendedor";
   ensayo: boolean;
 };
 
@@ -56,6 +57,11 @@ export const followUps = pgTable(
     // "Pidió que le escribieran": fecha (YYYY-MM-DD) y hora (HH:MM) como las dijo el cliente.
     fechaPedida: text("fecha_pedida"),
     horaPedida: text("hora_pedida"),
+    // "Pidió fecha": el asunto pendiente (da la hora si solo dijo el día). Migración 0057.
+    casoDeFondo: text("caso_de_fondo"),
+    // Plantilla que eligió el lector para el 2.º y el 3.er intento (según cómo quedó el chat).
+    plantilla2: text("plantilla_2"),
+    plantilla3: text("plantilla_3"),
     // Zona horaria del cliente según su lada (IANA).
     timeZone: text("time_zone").notNull(),
     // Hora del siguiente intento y por dónde saldría (texto con la ventana abierta o plantilla).

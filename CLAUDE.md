@@ -287,6 +287,9 @@ follow_ups           id, org_id, conversation_id, contact_id, caso (tabla de 10 
                      ficha del lector (pendiente, siguiente_paso, borrador, fecha_pedida…), time_zone (por lada), due_at,
                      door (texto|plantilla), template_name, modo (automatico|sugerido), intentos jsonb, based_on_message_at
                      -- la ficha sale en la MISMA lectura del lector (sin llamada extra); un solo programado/esperando por chat
+                     -- 0057 (3-oct): caso_de_fondo (asunto de una fecha pedida: da la hora), plantilla_2/_3 (las elige el lector
+                     -- según cómo quedó el chat). El seguimiento de un VENDEDOR cuenta como intento; Compra cancela al instante;
+                     -- el CRM revisa el borrador (una pregunta, nunca una ya hecha ni el precio ya dado) y el lector lo rehace 1 vez
 ```
 
 Detalles que importan:

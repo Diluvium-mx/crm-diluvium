@@ -5,8 +5,8 @@
 > de vendedor, la píldora 🤖 en el hueco de la barra arriba de ⚡ 📄 📎, la pausa a mano como sugerencia y que el 1.er
 > intento salga con el borrador del lector tal cual (sin gasto extra de IA).** Siguen abiertas las de la §12 (aviso de
 > pago, plantillas por caso). Las plantillas de cada intento las confirma el dueño caso por caso. Parte 0 en producción
-> (main d38f387). **Parte 1 (modo ensayo) construida** en la rama `feat/seguimientos-parte-1` (migración 0056), falta
-> staging y "OK MAIN"; de la Parte 2 en adelante, nada construido. Se
+> (main d38f387). **Parte 1 (modo ensayo) en producción** (migración 0056). **3-oct-2026: revisión del ensayo en
+> producción (102 fichas) y arreglos al lector** (§14, migración 0057); la Parte 2 (envío real) espera esa revisión. Se
 > construye por partes (§11), cada una por staging y con "OK MAIN". Este documento **reemplaza** al del 25-sep-2026,
 > que disparaba el seguimiento por tiempo ("2 días sin respuesta") y después veía qué decir: el orden correcto es al
 > revés. Fuentes al final: **[M#]** Meta, **[Z#]** Zernio, **[G#]** GoHighLevel/GoGHL, **[C#]** código del CRM.
@@ -200,15 +200,15 @@ La plantilla de cada intento es propuesta: **el dueño la confirma caso por caso
 
 | # | Caso (`caso`) | Cómo se detecta en el chat | Hora (del cliente) | 1.er intento | 2.º intento | 3.er intento | Qué busca el mensaje |
 |---|---|---|---|---|---|---|---|
-| 0 | **No seguir** (`no_seguir`) | Dijo que no o que ya compró en otro lado; no es de México; pidió que no le escriban; número equivocado o anuncio por error; contesta el contestador de otro negocio; ya compró (etapa Venta cerrada o pagó el total) | — | Nunca | — | — | — |
+| 0 | **No seguir** (`no_seguir`) | Dijo que no o que ya compró (aquí o en Mercado Libre, Amazon, una tienda); pidió envío al extranjero y ya se le dijo que no se envía, aunque tenga a alguien en México; pidió que no le escriban; número equivocado o anuncio por error; contesta el contestador de otro negocio; ya compró (etapa Venta cerrada o pagó el total) | — | Nunca | — | — | — |
 | 1 | **Asesor sin respuesta** (`asesor_sin_respuesta`) | Aviso abierto "pasar a un asesor" / "el cliente pide una persona" (tarjeta amarilla) y ningún vendedor le contestó | 1.º: 2 h después (7:00–21:00) · luego 10:00 | **2 h** (texto): el Agente IA se disculpa por la espera y resuelve lo que pueda. Al vendedor ya le avisó la tarjeta amarilla al instante | Día 2 · 🚪 | — | Que no se quede colgado y lo atienda un vendedor |
-| 2 | **Pidió que le escribieran** (`pidio_fecha`) | El cliente dio fecha u hora ("el lunes", "en la quincena", "más tarde"); "estoy ocupado / al rato" sin hora = +3 h; "en la quincena" = el próximo día 15 o último del mes | La que pidió · solo el día: 11:00 | **La fecha y hora que pidió**. Texto si la ventana sigue abierta; si no, 🚪 | +2 días · 🚪 (o +7 días si el 1.º ya fue plantilla) | +7 días · 📄 (solo si el 1.º fue texto) | Retomar justo como quedaron |
-| 3 | **Pago pendiente** (`pago_pendiente`) | Recibió los datos bancarios (etapa Cerca de compra) y no ha mandado comprobante, o falta el resto del pago | 10:00 | Antes del cierre · texto | Día 2 · 🚪 | Día 9 · 📄 | El comprobante, o resolver lo que lo frena (forma de pago, tarjeta, fecha de entrega) |
+| 2 | **Pidió que le escribieran** (`pidio_fecha`) | El cliente dijo cuándo sigue, aunque sin hora exacta ("mañana mido", "en la tarde se la mando", "el domingo que regrese", "el lunes", "en la quincena", "no estoy en casa"); "estoy ocupado / al rato" sin más = +3 h; "en la quincena" = el próximo día 15 o último del mes; "cuando pueda" sin día NO es fecha | La que pidió (mañana 10:00 · tarde 18:00 · noche o "cuando llegue a casa" 19:30) · solo el día: **la hora de lo pendiente** (medidas 19:00, pago 10:00…; sin asunto, 11:00) | **La fecha y hora que pidió**. Texto si la ventana sigue abierta; si no, 🚪 | +2 días · 🚪 (o +7 días si el 1.º ya fue plantilla) | +7 días · la plantilla que mejor encaje (solo si el 1.º fue texto) | Retomar justo como quedaron |
+| 3 | **Pago pendiente** (`pago_pendiente`) | Recibió los datos bancarios (etapa Cerca de compra) y no ha mandado comprobante, o falta el resto del pago | 10:00 | Antes del cierre · texto | Día 2 · 🚪 | Día 9 · la plantilla que mejor encaje | El comprobante, o resolver lo que lo frena (forma de pago, tarjeta, fecha de entrega) |
 | 4 | **Lo va a pensar u objeción** (`objecion`) | Lo último del cliente: "lo platico con mi esposo", "lo pienso", "está caro", "ahorita no", "más adelante" (sin fecha) | 19:00–20:30 | Antes del cierre · texto | Día 2 · 📄 | Día 9 · 🚪 | Responder esa duda u objeción con algo útil (video, opción, comparación) |
 | 5 | **Cotización sin respuesta** (`cotizacion_sin_respuesta`) | Dio medidas y se le dijo talla y precio para SU entrada (Detalle con medidas y monto); no llegó a datos bancarios | 18:00–20:00 | Antes del cierre · texto | Día 2 · 📄 | Día 9 · 🚪 | Resolver la duda que lo frena (instalación, envío, si le queda) y ofrecer los datos de pago |
 | 6 | **Faltan medidas** (`faltan_medidas`) | Se le pidió el ancho (o una foto) y no lo dio; Detalle sin medidas | 19:00–20:30 | Antes del cierre · texto | Día 2 · 🚪 | — | Pedir exactamente el dato que falta, con cómo medir (de lado a lado, en cm), ahora que está en casa |
-| 7 | **Precio sin respuesta** (`precio_sin_respuesta`) | Recibió el precio general (por workflow o por el Agente IA) y no dio medidas ni siguió | 19:00–21:00 | Antes del cierre · texto | Día 2 · 🚪 | — (apagado de fábrica) | Saber dónde lo usaría (puerta, cochera, local) y si se le mete el agua; no volver a pedir la medida si ya se pidió |
-| 8 | **Solo información** (`solo_informacion`) | Escribió por el anuncio (1–2 mensajes) y recibió información, sin precio ni medidas | 19:00–21:00 | Antes del cierre · texto | Día 2 · 🚪 | — | Calificar: dónde lo usaría y si se le mete el agua |
+| 7 | **Precio sin respuesta** (`precio_sin_respuesta`) | El CLIENTE preguntó el precio, lo recibió (por workflow o por el Agente IA) y no dio medidas ni siguió | 19:00–21:00 | Antes del cierre · texto | Día 2 · 🚪 | — (apagado de fábrica) | Saber dónde lo usaría (puerta, cochera, local) y si se le mete el agua; no volver a pedir la medida si ya se pidió |
+| 8 | **Solo información** (`solo_informacion`) | Solo mandó el texto del anuncio o un saludo y recibió la información (aunque traiga el precio), sin preguntar el precio él | 19:00–21:00 | Antes del cierre · texto | Día 2 · 🚪 | — | Calificar: dónde lo usaría y si se le mete el agua |
 | 9 | **Sin punto claro** (`sin_punto_claro`) | Ninguno de los anteriores | 18:00–20:00 | Antes del cierre · texto | Día 2 · 🚪 | — | Reenganchar con una pregunta sobre su caso |
 
 Después del último intento sin respuesta: temperatura **frío**. En **pago pendiente** y **asesor sin respuesta**
@@ -498,6 +498,41 @@ intento que salió o "habría salido"), based_on_message_at (hasta dónde leyó 
   (`lib/ai/runtime/pause.ts`) antes de encolar la respuesta; la pausa a mano ("pausar") y la automática ("pausa_auto")
   hoy solo se distinguen en el historial: si se decide tratarlas distinto (§12), hace falta guardarlo en la
   conversación.
+
+---
+
+## 14. Revisión del ensayo y arreglos al lector (3-oct-2026)
+
+Se leyeron en producción (solo lectura, OK del dueño) las 102 fichas del 3-oct, chat por chat. Informe con los
+números en `~/Documents/Diluvium CRM/reportes/seguimientos-ensayo/informe-3-oct.md` (fuera del repo). Lo que salió:
+- **Horas: ~95 % bien** (la del caso en la zona del cliente, o 1 h antes de que cierre su ventana).
+- **Borradores: lo más grave.** 47 de 95 volvían a preguntar «¿tiene problemas de inundaciones?» (el workflow
+  «Información» ya lo pregunta) y 58 repetían «$5,500 con envío gratis». Causas: el lector tomaba la última pregunta sin
+  contestar como «lo pendiente», las instrucciones pedían «lo concreto» (en un chat de precio, solo el precio) y no
+  recibía qué busca cada caso.
+- 2 chats con un seguimiento que **el vendedor ya había hecho**; 4 «pidió fecha» no detectados («mañana mido»); 1 cliente
+  que compró por Mercado Libre; extranjeros mal clasificados; «Precio» y «Solo información» mezclados.
+
+Decisiones del dueño y lo construido (rama `feat/seguimientos-lector`, migración **0057**):
+1. **El seguimiento que manda un vendedor cuenta como intento** (`lib/followups/vendor-attempts.ts`): después del último
+   mensaje del cliente, cada tanda de la empresa que llega tras 8 h de silencio y trae un mensaje de vendedor (CRM o
+   celular) es un intento ya hecho; el CRM programa el siguiente. Si ya hizo todos, solo se espera respuesta.
+2. **Compra cancela al instante** (`lib/followups/sale.ts`, en la misma transacción del cambio de etapa).
+3. **Pidió fecha** con frases sin hora (tabla de §6); si solo dijo el día, sale a la hora del asunto pendiente
+   (`caso_de_fondo`).
+4. **Reglas del borrador** (aprobadas): una sola pregunta; nunca una pregunta ya hecha (con las mismas u otras palabras),
+   haya contestado o no; nunca el precio ni la información ya dados; primero contestar la duda que dejó el cliente;
+   guía de qué busca cada caso. En precio e información: el ancho de su entrada si nunca se pidió, o si le quedó alguna
+   duda (las dos valen, según cómo quedó el chat). **El CRM revisa el borrador** (`borrador-check.ts`); si falla, el
+   lector lo rehace UNA vez (≈ US$0.0004); si vuelve a fallar, el intento no sale con texto.
+5. **Precio = el cliente preguntó el precio; Solo información = solo mandó el texto del anuncio.**
+6. **Extranjero = no seguir**, aunque tenga a alguien en México, si en el chat ya se le dijo que no se envía fuera.
+7. **Plantilla de cada intento según el chat:** el lector elige entre las aprobadas (`plantilla_2`, `plantilla_3`) la
+   que mejor encaje y nunca una que repita una pregunta ya hecha; el CRM confirma que esté aprobada y que no sea la del
+   intento anterior; si nada encaja, el saludo. **Solo información** usa `seg_precio` de fábrica: `seg_informacion`
+   vuelve a preguntar lo del agua (el dueño pidió una plantilla nueva para ese 2.º intento; textos por confirmar).
+8. Los 7 días entre plantillas cuentan **todas** las que le llegaron al contacto (también las de los vendedores).
+9. Una ficha «no seguir» se actualiza en su lugar en cada relectura (antes dejaba filas repetidas).
 
 ---
 
