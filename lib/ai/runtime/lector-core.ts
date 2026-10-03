@@ -82,8 +82,10 @@ export function lastIsCompany(rows: readonly Pick<LectorMessage, "direction">[])
   return rows.length > 0 && rows[rows.length - 1].direction === "out";
 }
 
-export function buildLectorSystem(stages: readonly FunnelStage[], opts: { followUp?: boolean } = {}): string {
-  return `${lectorBase(stages)}${opts.followUp ? `\n\n${FOLLOW_UP_INSTRUCTIONS}` : ""}`;
+export function buildLectorSystem(stages: readonly FunnelStage[], opts: { followUp?: boolean; templates?: readonly { name: string; body: string }[] } = {}): string {
+  if (!opts.followUp) return lectorBase(stages);
+  const plantillas = followUpTemplatesBlock(opts.templates ?? []);
+  return `${lectorBase(stages)}\n\n${FOLLOW_UP_INSTRUCTIONS}${plantillas ? `\n\n${plantillas}` : ""}`;
 }
 
 function lectorBase(stages: readonly FunnelStage[]): string {
@@ -109,31 +111,57 @@ ${stagesInstructions(stages)}`;
 }
 
 // Solo cuando el último mensaje es de la empresa (docs/seguimientos.md §5–§7.3). El orden de
-// los casos es el de lib/followups/cases.ts (prioridad).
+// los casos es el de lib/followups/cases.ts (prioridad). Revisado el 3-oct-2026 con el ensayo
+// en producción: guía por caso, nunca una pregunta ya hecha ni el precio ya dado, una sola
+// pregunta, "pidió fecha" con frases sin hora y la plantilla de cada intento según el chat.
 export const FOLLOW_UP_INSTRUCTIONS = `SEGUIMIENTO (en esta lectura el ÚLTIMO mensaje del chat es de la empresa y el cliente no ha contestado)
-Llena también "seguimiento": qué quedó pendiente, para escribirle si no contesta. Elige UN caso, el PRIMERO de esta lista que aplique:
-- no_seguir: dijo que no o que ya compró en otro lado, no es de México, pidió que no le escriban, número equivocado o escribió por error, el que contesta es el contestador automático de otro negocio, o ya compró y pagó todo.
+Llena también "seguimiento": qué quedó pendiente, para escribirle si no contesta. Fíjate sobre todo en CÓMO TERMINÓ la conversación (los últimos mensajes). Elige UN caso, el PRIMERO de esta lista que aplique:
+- no_seguir: dijo que no o que ya compró (aquí o en otro lado: Mercado Libre, Amazon, una tienda); preguntó por envío fuera de México (España, Sudamérica, Estados Unidos…) y en el chat ya se le dijo que no se envía al extranjero, AUNQUE diga que tiene a alguien en México; pidió que no le escriban; número equivocado o escribió por error; el que contesta es el contestador automático de otro negocio; o ya compró y pagó todo.
 - asesor_sin_respuesta: el cliente pidió hablar con una persona o la empresa le dijo que lo pasaba con un asesor, y ningún vendedor le contestó después.
-- pidio_fecha: el cliente pidió que le escribieran en una fecha u hora ("el lunes", "en la quincena", "más tarde", "estoy ocupado, al rato"). Llena fecha_pedida (AAAA-MM-DD) y, si dijo hora, hora_pedida (HH:MM, 24 h), según SU calendario y contando desde el día de su mensaje ("mañana" = el día siguiente a su mensaje; "en la quincena" = el próximo día 15 o el último del mes). "Al rato" u "ocupado" sin hora: fecha_pedida = el día de su mensaje, sin hora.
+- pidio_fecha: el cliente dijo CUÁNDO va a seguir, aunque no dé hora exacta: "mañana mido", "mañana le mando la foto", "en la tarde se la mando", "el domingo que regrese", "el lunes le confirmo", "en la quincena", "ahorita no estoy en casa", "estoy trabajando, cuando llegue a mi casa", "estoy ocupado, al rato". Cuenta desde el día de SU mensaje y en SU calendario: "mañana" = el día siguiente a su mensaje; "en la quincena" = el próximo día 15 o el último del mes. Llena fecha_pedida (AAAA-MM-DD) y hora_pedida (HH:MM, 24 h) así: hora que dijo → esa; "en la mañana" → 10:00; "al mediodía" → 13:00; "en la tarde" → 18:00; "en la noche", "cuando llegue a mi casa", "no estoy en casa", "estoy trabajando" → 19:30; solo el día ("mañana", "el lunes") → sin hora; "ocupado" o "al rato" sin más → fecha = el día de su mensaje, sin hora. Llena caso_de_fondo: qué quedó pendiente detrás de esa fecha (faltan_medidas, pago_pendiente, cotizacion_sin_respuesta…). "Cuando pueda" o "cuando tenga la cinta", SIN día ni momento, NO es pidio_fecha: usa el caso del asunto.
 - pago_pendiente: ya recibió los datos bancarios y no ha mandado el comprobante, o falta el resto del pago.
-- objecion: lo último del cliente fue "lo platico con mi esposo", "lo pienso", "está caro", "ahorita no", "más adelante" (sin fecha).
+- objecion: lo último del cliente fue "lo platico con mi esposo", "lo pienso", "está caro", "ahorita no", "más adelante" (sin fecha), o una duda de que la compuerta le sirva (p. ej. el agua le sube más de lo que cubre).
 - cotizacion_sin_respuesta: dio medidas y se le dijo talla y precio para SU entrada, y no respondió.
 - faltan_medidas: se le pidió el ancho de su entrada (o una foto) y no lo dio.
-- precio_sin_respuesta: recibió el precio general y no dio medidas ni siguió.
-- solo_informacion: solo escribió por el anuncio (1 o 2 mensajes) y recibió información, sin precio ni medidas.
+- precio_sin_respuesta: el CLIENTE preguntó el precio ("precio", "costo", "cuánto cuesta", "$"), se le dio y no siguió.
+- solo_informacion: solo mandó el texto del anuncio ("Quiero más información", "Me interesa") o un saludo y recibió la información (aunque esa información traiga el precio), sin preguntar el precio él.
 - sin_punto_claro: ninguno de los anteriores.
+
+Qué busca el mensaje en cada caso (la pregunta va según cómo terminó el chat, nunca una ya hecha):
+- asesor_sin_respuesta: disculparse por la espera y resolver lo que pidió.
+- pidio_fecha: retomar justo lo que quedó ("¿Pudo medir la entrada?" si iba a medir, "¿Pudo hacer el depósito?" si iba a pagar).
+- pago_pendiente: el comprobante, o resolver lo que lo frena (forma de pago, meses sin intereses, fecha de entrega).
+- objecion: contestar esa duda u objeción con algo útil (la mini compuerta si es caro, hasta dónde protege, los meses sin intereses).
+- cotizacion_sin_respuesta: resolver la duda que lo frena (instalación, envío, si le queda) y ofrecer apartarla o los datos de pago.
+- faltan_medidas: el dato exacto que falta (cuál de las entradas, con cómo medir: de lado a lado, en cm).
+- precio_sin_respuesta y solo_informacion: avanzar un paso según cómo quedó: si nunca se le pidió el ancho de su entrada, pídelo ("¿Qué ancho tiene la entrada que quiere proteger? Con esa medida le digo qué tamaño le queda."); si ya se le pidió, pregunta si le quedó alguna duda de la compuerta; si dejó una duda sin contestar, contéstala.
+- sin_punto_claro: una pregunta sobre su caso que nadie le haya hecho.
+
 pendiente: en una línea, lo que quedó abierto, con el dato concreto (medidas, talla, monto).
 siguiente_paso: en una línea, lo que lo acerca a comprar: el primer dato que falta en la ficha, o cerrar la venta si ya está todo.
 vale_la_pena: false solo en no_seguir, con el motivo en una frase.
 borrador: el mensaje que se le mandaría, como lo escribiría la empresa en este chat:
 - corto (1 o 2 renglones) y con el mismo trato del chat (tú o usted); SIN saludo ni nombre al principio: el CRM antepone "Hola <nombre>, buenos días / buenas tardes / buenas noches.";
-- con lo concreto (la talla, la medida, la cotización o el pedido) y, si sirve, cuándo lo platicaron ("hace un par de días");
-- pregunta por la decisión o por su duda, no por datos que ya dio; trae algo útil si lo hay (la respuesta a su duda, cómo se instala, cuándo le llegaría);
+- UNA sola pregunta;
+- NUNCA una pregunta que la empresa ya hizo en el chat, con las mismas u otras palabras (si ya se le preguntó si tiene problemas de inundaciones o si se le mete el agua, no se vuelve a preguntar, haya contestado o no);
+- NUNCA repitas el precio ni la información que ya se le dio (p. ej. "$5,500 con envío gratis"): ya la tiene;
+- si el cliente dejó una duda o pregunta sin contestar, primero contéstala;
+- puede mencionar lo concreto de SU caso (talla, medida, número de entradas) sin repetirlo todo;
 - si la empresa tardó en contestarle, una disculpa por la espera;
-- nunca genérico ("solo paso a dar seguimiento"), ni "último seguimiento", ni presión; no vuelvas a pedir la medida si ya se pidió;
+- nunca genérico ("solo paso a dar seguimiento", "¿sigue interesado?"), ni "último seguimiento", ni presión ("mantenemos el precio", "por tiempo limitado");
 - si en el chat escribió un vendedor, no te presentes como asistente: habla como Diluvium;
 - que sirva a cualquier hora: NO digas "hoy", "esta noche", "mañana" ni "cuando esté en su casa". Casi siempre sale a la hora del caso (hora del cliente: pago 10:00; objeción y medidas de 19:00 a 20:30, ya en su casa; precio e información de 19:00 a 21:00; cotización de 18:00 a 20:00; pidió fecha, a la hora que pidió), pero si su ventana de WhatsApp cierra antes sale más temprano.
 En no_seguir, borrador en null.`;
+
+/**
+ * Las plantillas que el lector puede elegir para el 2.º y el 3.er intento (las aprobadas de
+ * FOLLOW_UP_TEMPLATES, con su texto). Sin lista, no se piden.
+ */
+export function followUpTemplatesBlock(templates: readonly { name: string; body: string }[]): string {
+  if (templates.length === 0) return "";
+  return `PLANTILLAS para el 2.º y el 3.er intento (salen días después, cuando ya no se le puede escribir libre). En plantilla_2 y plantilla_3 pon el NOMBRE de la que MEJOR ENCAJE con cómo terminó la conversación, distinta en cada intento, y nunca una que haga una pregunta que la empresa ya hizo en el chat (p. ej. si ya se le preguntó si se le mete el agua, no seg_informacion). Un saludo (hola_buenos_dias / hola_buenas_tardes) sirve cuando ninguna otra encaja: el CRM pone el de la hora. {{1}} lo llena el CRM. null si el caso no tiene ese intento.
+${templates.map((t) => `- ${t.name}: ${t.body.replace(/\s+/g, " ").trim()}`).join("\n")}`;
+}
 
 // Cada campo acepta null = "el chat no lo dice": Luna manda SIEMPRE todos los campos
 // (medido con Luna real, 28-sep-2026: sin null los rellenaba con 0, "" o "no_sabe").
