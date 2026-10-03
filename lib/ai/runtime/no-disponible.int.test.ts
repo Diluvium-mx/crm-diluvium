@@ -149,7 +149,7 @@ describe.skipIf(!TEST_DATABASE_URL)("Agente IA: primer mensaje no disponible (Po
     const { deps, delivered, brain } = makeDeps();
     expect(await run.runAgent(JOB, deps)).toEqual({ kind: "sent", bubbles: 1 });
     expect(delivered).toEqual([
-      "¡Hola! Gracias por escribirnos 😊 Tuvimos una falla técnica y su mensaje no nos llegó. ¿Nos ayudas escribiéndolo de nuevo para seguir con su atención?",
+      "¡Hola! Gracias por escribirnos 😊 Tuvimos una falla técnica y su mensaje no nos llegó. ¿Nos ayuda escribiéndolo de nuevo para seguir con su atención?",
     ]);
     expect(brain).toHaveLength(0);
     expect((await agentOuts()).map((m) => m.body)).toEqual([rules.UNAVAILABLE_REPLY_TEXT]);

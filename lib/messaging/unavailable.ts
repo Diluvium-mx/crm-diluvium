@@ -45,9 +45,9 @@ export const VERIFY_GIVE_UP_MS = 3 * 60_000;
 export const NOTICE_CARD_TEXT = "El cliente escribió, pero WhatsApp no pasó el mensaje al CRM. Míralo en el celular.";
 /** Mientras se verifica (hasta VERIFY_AFTER_MS). */
 export const NOTICE_RECEIVING_TEXT = "Recibiendo mensaje…";
-/** Respuesta del Agente IA, EXACTA como la escribió el dueño (29-sep-2026). */
+/** Respuesta del Agente IA, EXACTA como la escribió el dueño (29-sep-2026; «¿Nos ayuda…?» de usted, 3-oct-2026). */
 export const UNAVAILABLE_REPLY_TEXT =
-  "¡Hola! Gracias por escribirnos 😊 Tuvimos una falla técnica y su mensaje no nos llegó. ¿Nos ayudas escribiéndolo de nuevo para seguir con su atención?";
+  "¡Hola! Gracias por escribirnos 😊 Tuvimos una falla técnica y su mensaje no nos llegó. ¿Nos ayuda escribiéndolo de nuevo para seguir con su atención?";
 /**
  * ¿Se completó con el contenido real DESPUÉS de confirmarse sin contenido (el Agente IA
  * ya pudo mandar el texto fijo)? Entonces ese contenido cuenta como nuevo para el Agente
