@@ -114,6 +114,7 @@ nombre** sino **cuándo nos escribió el cliente**, calculado por el CRM en su c
 | `seg_medidas` | Faltan medidas | Referente a la compuerta anti-inundaciones que nos comentó {{1}}. Tuvo oportunidad de medir la entrada? Para saber que tamaño de compuerta le queda? |
 | `seg_asesor` | Asesor sin respuesta | Hola, le escribo de parte del equipo de Diluvium para atender su consulta, dígame, en que le puedo ayudar? |
 | `seg_objecion` | Lo va a pensar u objeción | Hola, le escribo de parte del equipo de Diluvium. Tuvo la oportunidad de pensarlo con calma? Si le queda alguna duda sobre la compuerta, con gusto se la resuelvo aquí mismo. |
+| `seg_info_duda` | Solo información (2.º intento; aprobada por el dueño el 3-oct-2026) | Hola, le escribo de parte del equipo de Diluvium. Referente a la compuerta que nos comento {{1}}. Le quedo alguna duda que le pueda resolver? |
 
 Salen en el 1.er intento (si ya no hay ventana) y en el 2.º, **solo cuando Meta ya las aprobó**; mientras están en
 revisión, o si se rechazan, sale la puerta de respaldo (🚪 / 📄). El 3.er intento sigue con 🚪 o 📄 (otro texto, para no
@@ -529,8 +530,9 @@ Decisiones del dueño y lo construido (rama `feat/seguimientos-lector`, migraci�
 6. **Extranjero = no seguir**, aunque tenga a alguien en México, si en el chat ya se le dijo que no se envía fuera.
 7. **Plantilla de cada intento según el chat:** el lector elige entre las aprobadas (`plantilla_2`, `plantilla_3`) la
    que mejor encaje y nunca una que repita una pregunta ya hecha; el CRM confirma que esté aprobada y que no sea la del
-   intento anterior; si nada encaja, el saludo. **Solo información** usa `seg_precio` de fábrica: `seg_informacion`
-   vuelve a preguntar lo del agua (el dueño pidió una plantilla nueva para ese 2.º intento; textos por confirmar).
+   intento anterior; si nada encaja, el saludo. **Solo información** usa `seg_info_duda` (plantilla nueva, texto aprobado
+   por el dueño el 3-oct-2026 y dada de alta en Meta ese día); mientras Meta no la aprueba, `seg_precio`. `seg_informacion`
+   vuelve a preguntar lo del agua: solo sale si el lector la elige porque nunca se preguntó.
 8. Los 7 días entre plantillas cuentan **todas** las que le llegaron al contacto (también las de los vendedores).
 9. Una ficha «no seguir» se actualiza en su lugar en cada relectura (antes dejaba filas repetidas).
 

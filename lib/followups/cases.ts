@@ -159,9 +159,9 @@ export function attemptLabel(intento: number, total: number): string {
 export const CASE_TEMPLATE: Readonly<Partial<Record<FollowUpCase, string>>> = {
   precio_sin_respuesta: "seg_precio",
   // seg_informacion vuelve a preguntar si se le mete el agua, que el workflow «Información» ya
-  // preguntó: de fábrica va seg_precio; seg_informacion solo si el lector la elige (nunca se
-  // preguntó lo del agua). Decisión del dueño, 3-oct-2026.
-  solo_informacion: "seg_precio",
+  // preguntó: va seg_info_duda (aprobada por el dueño el 3-oct-2026); mientras Meta no la aprueba,
+  // seg_precio. seg_informacion solo si el lector la elige (nunca se preguntó lo del agua).
+  solo_informacion: "seg_info_duda",
   cotizacion_sin_respuesta: "seg_valorar",
   pago_pendiente: "seg_valorar",
   pidio_fecha: "seg_valorar",
@@ -174,7 +174,12 @@ export const CASE_TEMPLATE: Readonly<Partial<Record<FollowUpCase, string>>> = {
  * Plantillas cuyo {{1}} NO es el nombre sino CUÁNDO nos escribió el cliente ("el día de ayer",
  * "anoche"…; lib/followups/time-phrase.ts). Las demás siguen con el primer nombre en {{1}}.
  */
-export const TIME_PHRASE_TEMPLATES: ReadonlySet<string> = new Set(["seg_precio", "seg_informacion", "seg_valorar", "seg_medidas"]);
+export const TIME_PHRASE_TEMPLATES: ReadonlySet<string> = new Set(["seg_precio", "seg_informacion", "seg_info_duda", "seg_valorar", "seg_medidas"]);
+
+/** Si la plantilla del caso todavía no está aprobada: otra propia antes que la puerta. */
+export const CASE_TEMPLATE_BACKUP: Readonly<Partial<Record<FollowUpCase, string>>> = {
+  solo_informacion: "seg_precio",
+};
 
 /**
  * Plantillas que el lector puede elegir para el 2.º y 3.er intento según cómo quedó el chat
@@ -187,6 +192,7 @@ export const FOLLOW_UP_TEMPLATES: readonly string[] = [
   TEMPLATE_BY_DOOR.proteccion,
   "seg_precio",
   "seg_informacion",
+  "seg_info_duda",
   "seg_valorar",
   "seg_medidas",
   "seg_asesor",
@@ -219,8 +225,10 @@ export function templateForAttempt(
     if (!same(chosen, previous)) return chosen;
   }
   if (intento > 2) return fallback;
-  const own = CASE_TEMPLATE[caso];
-  return own && approved.has(own) && !same(own, previous) ? own : fallback;
+  for (const own of [CASE_TEMPLATE[caso], CASE_TEMPLATE_BACKUP[caso]]) {
+    if (own && approved.has(own) && !same(own, previous)) return own;
+  }
+  return fallback;
 }
 
 /**
