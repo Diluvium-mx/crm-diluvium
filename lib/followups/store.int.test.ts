@@ -218,4 +218,25 @@ describe.skipIf(!TEST_DATABASE_URL)("Seguimientos en la base (modo ensayo)", () 
     expect((await rows())[0]).toMatchObject({ status: "cancelado", cancelReason: "manual" });
     expect(await view.loadFollowUpView(ORG, CONV)).toBeNull();
   });
+  it("plantilla del caso: el 2.º intento usa seg_medidas cuando Meta ya la aprobó, con {{1}} = cuándo escribió el cliente", async () => {
+    await db.insert(s.templates).values([
+      { id: "tpl_m", organizationId: ORG, channelId: CH, name: "seg_medidas", language: "es_MX", body: "Referente a la compuerta anti-inundaciones que nos comentó {{1}}. Tuvo oportunidad de medir la entrada? Para saber que tamaño de compuerta le queda?", status: "PENDING" },
+      { id: "tpl_t", organizationId: ORG, channelId: CH, name: "hola_buenas_tardes", language: "es_MX", body: "Hola, buenas tardes.", status: "APPROVED" },
+    ]);
+    // El cliente escribió el lunes 5 a las 11:58 (centro).
+    await db.update(s.conversations).set({ lastInboundAt: new Date(T0.getTime() - 2 * MIN) }).where(d.eq(s.conversations.id, CONV));
+    await reading();
+    // En revisión: el 2.º sale con la de respaldo.
+    await store.followUpSweepOnce(new Date((await rows())[0].dueAt!.getTime() + MIN));
+    expect((await rows())[0].templateName).toBe("hola_buenas_tardes");
+
+    // Aprobada: al volver a programar (Cambiar hora) ya sale con la del caso.
+    await db.update(s.templates).set({ status: "APPROVED" }).where(d.eq(s.templates.id, "tpl_m"));
+    const v0 = await view.loadFollowUpView(ORG, CONV);
+    await view.changeFollowUpTime(ORG, v0!.id, new Date("2026-10-08T00:00:00Z"), USER, NOW);
+    const v = await view.loadFollowUpView(ORG, CONV);
+    expect(v?.templateName).toBe("seg_medidas");
+    // Sale el miércoles 7 a las 18:00 del centro; el cliente escribió el lunes: «antier».
+    expect(v?.templateText).toBe("Referente a la compuerta anti-inundaciones que nos comentó antier. Tuvo oportunidad de medir la entrada? Para saber que tamaño de compuerta le queda?");
+  });
 });
