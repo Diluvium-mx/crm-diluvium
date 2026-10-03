@@ -12,7 +12,7 @@
 // Canales de PRUEBA (docs/numero-prueba.md): nada de lo que entra o sale por un
 // canal is_test cuenta, ni los contactos de prueba (es_prueba) ni lo copiado del
 // historial del celular (imported_at): un contacto cuenta solo si ESCRIBIÓ en vivo
-// por un canal real. Los que nacieron del historial (historial_celular) tampoco.
+// por un canal real. Los que nacieron del historial (historial_celular, historial_instagram) tampoco.
 //
 // Los días son LOCALES de America/Mazatlan. created_at es `timestamp` sin zona
 // guardado en UTC (defaultNow del servidor en UTC y los Date de JS llegan en
@@ -24,7 +24,7 @@ import { DASHBOARD_TIME_ZONE, type DateRange } from "./range";
 type Database = typeof appDb;
 
 // "manual" = alta a mano en el Embudo (28-sep-2026): no es alguien que escribió, no es conversación nueva.
-export const EXCLUDED_SOURCES = ["ghl_import", "seed", "historial_celular", "manual"] as const;
+export const EXCLUDED_SOURCES = ["ghl_import", "seed", "historial_celular", "historial_instagram", "manual"] as const;
 
 export type DailyCount = { dia: string; total: number };
 export type Bucket = { clave: string; total: number };

@@ -73,7 +73,10 @@ formularios y landing pages, agente IA de calificación, TikTok.
 > "IA"; % de convencimiento solo del agente; "Pausar agente"/"Activar" solo en el Detalle), notas de voz
 > transcritas con `gpt-4o-mini-transcribe` (el agente las lee; "Transcripción" en el chat), un error de
 > envío deja la respuesta guardada y "Reintentar" manda el MISMO texto (nunca otra llamada al modelo), y
-> `ai_config.daily_budget_usd` borrada. Detalle: `docs/agente-ia.md` › Parte 1. Fase E, parte 1: selectores, etapas (Modelo 1 = Inbox, Prospecto,
+> `ai_config.daily_budget_usd` borrada. Detalle: `docs/agente-ia.md` › Parte 1. **Caché de 1 h (2-oct-2026):** las marcas de caché de
+> Anthropic usan `ttl: "1h"` y el worker la renueva de 7:00 a 22:00 (Mazatlán) con una lectura mínima
+> (`lib/ai/runtime/cache-keepalive.ts`, `ai_usage.outcome = 'cache_renovada'`); la escritura de 1 h se cobra a 2×
+> la entrada. Detalle: `docs/agente-ia.md` › Caché de 1 hora. Fase E, parte 1: selectores, etapas (Modelo 1 = Inbox, Prospecto,
 > Interesado), adaptadores de Google/xAI/OpenRouter y tope de 4,096 tokens (migración 0033). Parte 2
 > (migración 0034): **reenvío seguro** = si el modelo falla, tarjeta en el chat con el error explicado y
 > botones "Reintentar" / "Apagar" (pausa esa conversación); sin reintentos automáticos salvo UNO si el
