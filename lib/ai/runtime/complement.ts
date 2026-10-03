@@ -30,7 +30,7 @@ const SENTENCE_END = /[.!…\n]/gu;
 
 // Quita la pregunta con que termina un texto («¿…?» o, sin «¿», la última oración que termina en
 // «?»). null = no terminaba en pregunta.
-function dropClosingQuestion(text: string): string | null {
+export function dropClosingQuestion(text: string): string | null {
   const t = text.trim();
   const body = t.replace(TAIL, "");
   if (!t.slice(body.length).includes("?")) return null;
