@@ -1,0 +1,24 @@
+// System del cerebro (Goal + FAQs con los valores personalizados sustituidos + sufijo del CRM +
+// etapas). UN solo armado para las respuestas (run.ts) y para la renovación de la caché
+// (cache-keepalive.ts): si los dos no mandan exactamente lo mismo, la renovación escribiría
+// otra entrada de caché en vez de mantener viva la de las respuestas.
+import type { ResponseLength } from "@/lib/agente-ia/opciones";
+import { applyCustomValues, type CustomValues } from "@/lib/agente-ia/editor";
+import type { FunnelStage } from "@/lib/contacts/stages";
+import { buildBrainSystemWithRuntime } from "./brain";
+import { loadEnabledFaqs } from "./config";
+
+export async function loadBrainSystem(
+  organizationId: string,
+  goal: string,
+  values: CustomValues,
+  stages: readonly FunnelStage[],
+  responseLength: ResponseLength,
+): Promise<string> {
+  const faqs = (await loadEnabledFaqs(organizationId)).map((f) => ({
+    ...f,
+    question: applyCustomValues(f.question, values),
+    answer: applyCustomValues(f.answer, values),
+  }));
+  return buildBrainSystemWithRuntime(applyCustomValues(goal, values), faqs, stages, responseLength);
+}

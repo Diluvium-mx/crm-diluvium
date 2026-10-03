@@ -28,6 +28,8 @@ export async function brainUsageTotals(organizationId: string, now: Date = new D
         gte(aiUsage.createdAt, since),
         // Solo llamadas con uso reportado (un error sin tokens no es una respuesta).
         or(isNotNull(aiUsage.inputTokens), isNotNull(aiUsage.outputTokens)),
+        // La renovación de la caché (2-oct-2026) no es una respuesta.
+        sql`${aiUsage.outcome} is distinct from 'cache_renovada'`,
       ),
     );
   return {
