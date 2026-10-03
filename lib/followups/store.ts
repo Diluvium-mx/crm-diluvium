@@ -6,10 +6,10 @@
 // Multi-tenant (CLAUDE.md §7): toda lectura y escritura filtra por organization_id.
 import { and, desc, eq, gte, inArray, lte, sql } from "drizzle-orm";
 import { db } from "@/lib/db";
-import { changeHistory, channels, contactEntradas, contacts, conversations, followUps, type FollowUpAttemptLog } from "@/lib/db/schema";
+import { changeHistory, channels, contactEntradas, contacts, conversations, followUps, templates, type FollowUpAttemptLog } from "@/lib/db/schema";
 import { listFunnelStages } from "@/lib/contacts/funnel-stages";
 import type { FunnelStage } from "@/lib/contacts/stages";
-import { CASE_RULES, WAIT_AFTER_LAST_MS, type FollowUpCase } from "./cases";
+import { CASE_RULES, templateForAttempt, WAIT_AFTER_LAST_MS, type FollowUpCase } from "./cases";
 import { finalCase, type FollowUpFicha, type HardSignals } from "./ficha";
 import { effectiveTotal, planAttempt, presentAtFor, templateFor, windowOpenAt, type AttemptPlan } from "./schedule";
 import { zoneForPhone } from "./timezone";
@@ -90,6 +90,15 @@ async function lastTemplateAt(organizationId: string, contactId: string, now: Da
   return last === null ? null : new Date(last);
 }
 
+/** Plantillas que Meta ya aprobó (las del caso salen solo así; si no, la de respaldo). */
+export async function approvedTemplateNames(organizationId: string): Promise<Set<string>> {
+  const rows = await db
+    .select({ name: templates.name })
+    .from(templates)
+    .where(and(eq(templates.organizationId, organizationId), eq(templates.status, "APPROVED")));
+  return new Set(rows.map((r) => r.name));
+}
+
 type Signals = {
   hard: HardSignals;
   zone: string;
@@ -97,6 +106,7 @@ type Signals = {
   channelOn: boolean;
   windowExpiresAt: Date | null;
   lastTemplateAt: Date | null;
+  approved: Set<string>;
 };
 
 async function loadSignals(
@@ -147,6 +157,7 @@ async function loadSignals(
     channelOn: row.mode === "auto" && row.channelType === "whatsapp",
     windowExpiresAt: row.windowExpiresAt,
     lastTemplateAt: await lastTemplateAt(organizationId, contactId, now),
+    approved: await approvedTemplateNames(organizationId),
   };
 }
 
@@ -285,7 +296,7 @@ async function applyReading(r: FollowUpReading): Promise<string | null> {
       totalIntentos: effectiveTotal(caso, plan.door),
       dueAt: plan.dueAt,
       door: plan.door,
-      templateName: plan.templateName,
+      templateName: templateForAttempt(caso, 1, plan.templateName, signals.approved),
       modo,
       presentarAt: modo === "sugerido" ? presentAtFor(plan.dueAt, now) : null,
     });
@@ -347,7 +358,8 @@ async function advance(row: FollowUpRow, now: Date): Promise<string | null> {
   const caso = row.caso as Exclude<FollowUpCase, "no_seguir">;
   // Por dónde sale AHORA (la ventana pudo cerrarse desde que se programó).
   const door = windowOpenAt(signals.windowExpiresAt, now) ? "texto" : "plantilla";
-  const templateName = door === "plantilla" ? templateFor(CASE_RULES[caso].doors[row.intento - 1] ?? "saludo", now, row.timeZone) : null;
+  const templateName =
+    door === "plantilla" ? templateForAttempt(caso, row.intento, templateFor(CASE_RULES[caso].doors[row.intento - 1] ?? "saludo", now, row.timeZone), signals.approved) : null;
   const modo = signals.manualPause && !row.autoAprobado ? "sugerido" : "automatico";
   const log: FollowUpAttemptLog = { n: row.intento, at: now.toISOString(), door, template: templateName, modo, ensayo: row.ensayo };
   const intentos = [...row.intentos, log];
@@ -365,7 +377,7 @@ async function advance(row: FollowUpRow, now: Date): Promise<string | null> {
       totalIntentos: total,
       dueAt: next.dueAt,
       door: next.door,
-      templateName: next.templateName,
+      templateName: templateForAttempt(caso, row.intento + 1, next.templateName, signals.approved),
       modo: nextModo,
       presentarAt: nextModo === "sugerido" ? presentAtFor(next.dueAt, now) : null,
       autoAprobado: false,

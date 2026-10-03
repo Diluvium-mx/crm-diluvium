@@ -40,6 +40,8 @@ import { PhoneLocation } from "@/components/ui/phone-location";
 import { LinkedText } from "@/components/ui/linked-text";
 import { isBareSticker, STICKER_LABEL, STICKER_SIZE_PX } from "@/lib/inbox/sticker";
 import { isViewerOpenable } from "@/lib/inbox/viewer";
+import { timePhrase } from "@/lib/followups/time-phrase";
+import { zoneForPhone } from "@/lib/followups/timezone";
 
 const PAGE_LIMIT = 30;
 // Distancia al tope (px) a la que se cargan solos los mensajes anteriores, y al
@@ -974,6 +976,10 @@ export function ChatThread({
           onPickFiles={() => pickerRef.current?.click()}
           onSendAttachments={doSendAttachments}
           contactFirstName={firstNameOf(detail.contact.name)}
+          contactTimePhrase={
+            // Último mensaje del cliente = cierre de la ventana − 24 h, en SU hora (lada).
+            detail.windowExpiresAt ? timePhrase(new Date(new Date(detail.windowExpiresAt).getTime() - 24 * 60 * 60_000), new Date(), zoneForPhone(detail.contact.phone)) : ""
+          }
         />}
       </ChatDropZone>
       <input
