@@ -66,7 +66,7 @@ Nadie es "dueño" de un contacto: **todos ven todos los contactos, siempre**.
 | **Adjuntar (📎)** | Mandar fotos, videos o documentos desde el chat: se arrastran sobre el chat, se eligen con 📎 › **Adjunta +** o se pegan con Cmd+V. Hasta **10 por envío**, uno por mensaje y en orden; el texto va como pie del primero. Fotos JPG/PNG (HEIC y WebP se pasan solas a JPG), video .mp4 hasta 16 MB, PDF/Word/Excel/PowerPoint/TXT/XML hasta 100 MB. GIF, ZIP o audio: se mandan desde el celular. |
 | **Multimedia** | 📎 › **Multimedia** en el chat (30-sep-2026): las **fotos y videos de la Biblioteca** (los mismos archivos, sin copia: lo que se sube, renombra o borra en la Biblioteca se ve igual aquí; los documentos no salen). Se tocan en el orden en que deben salir y se mandan con Enviar, con las mismas reglas que Adjuntar. No se vuelven a subir: salen como en un workflow, en lo que tarda WhatsApp (~5 s). Abre **al instante**: cada archivo tiene una miniatura chica que se hace sola al subirlo a la Biblioteca (en videos, su segundo 2). |
 | **Corrida** | Cada vez que un workflow se ejecutó (Hecho, Omitido, Falló…). |
-| **Biblioteca** | Los archivos (imágenes y videos) que usan los workflows. Sus fotos y videos son los que salen en **Multimedia** del chat. |
+| **Biblioteca** | Los archivos (imágenes y videos) que usan los workflows. Sus fotos y videos son los que salen en **Multimedia** del chat. Se suben con **Subir archivos** o arrastrándolos desde la computadora (Escritorio, Finder) a la pestaña. |
 | **Aviso 🤖** | Nota del agente **para el vendedor** dentro del chat; el cliente nunca la ve. Ej.: "El cliente pide hablar con una persona", "Depósito recibido", "Comprobante dudoso", "Llegó al máximo de respuestas", "El Agente IA no le escribió nada al cliente" (desde el 30-sep-2026: los modelos contestaron solo con acciones y nadie le escribió; el CRM ya **nunca** manda un texto fijo como «Listo 👍 ¿En qué más te ayudo?»). |
 | **Tarjeta "El agente no pudo responder"** | Aparece en el chat cuando falló el modelo o el envío. Tiene **Reintentar** y **Apagar**; mientras nadie elija, el agente no vuelve a intentar solo. |
 | **Fila de espera (🕗 Enviando…)** | Si WhatsApp (Zernio) pide esperar porque salieron muchos mensajes seguidos, el mensaje **espera su turno** con el reloj 🕗 y sale solo, en el orden en que se escribió. **No es error**: al cliente no le llega nada raro y no hay que volver a escribirlo. Vale para vendedores, agente, workflows y programados. |
@@ -945,6 +945,7 @@ chat con 📎 › Multimedia) y las **Corridas** (historial).
 ![Aviso al guardar](mapa-crm/10-auto-aviso-guardar.png)
 ![Workflow guardado](mapa-crm/10-auto-aviso-guardado.png)
 ![Biblioteca](mapa-crm/10-auto-biblioteca.png)
+![Capa al arrastrar archivos a la Biblioteca](mapa-crm/10-auto-biblioteca-capa.png)
 ![Renombrar archivo](mapa-crm/10-auto-renombrar.png)
 ![Corridas](mapa-crm/10-auto-corridas.png)
 
@@ -982,7 +983,7 @@ chat con 📎 › Multimedia) y las **Corridas** (historial).
 | 31 | **+ 💬 Texto · + 📎 Archivo · + ⏱ Esperar** | Agrega un paso. | Todos |
 | 32 | **Guardar** (barra fija de arriba) | Más grande y siempre a la vista, aunque bajes por los pasos. Todos los cambios del editor se hacen libres y se guardan **juntos**: al presionarlo sale **un solo aviso** (50) con lo de antes y lo de después. Apagado mientras no cambies nada. Los predeterminados se pueden editar y apagar, pero no borrar. | Todos |
 | 33 | **Límites de WhatsApp** | Imagen JPEG/PNG hasta 5 MB · Video MP4 hasta 16 MB · PDF hasta 100 MB. | Todos |
-| 34 | **Subir archivos** | Agrega imágenes, videos o PDF. El CRM revisa que el **contenido** coincida con el tipo (un archivo renombrado se rechaza con aviso) y que el nombre no traiga caracteres ocultos; hasta 60 subidas cada 10 minutos. Desde el 30-sep-2026. | Todos |
+| 34 | **Subir archivos** | Agrega imágenes, videos o PDF (también se pueden arrastrar, 55). El CRM revisa que el **contenido** coincida con el tipo (un archivo renombrado se rechaza con aviso) y que el nombre no traiga caracteres ocultos; hasta 60 subidas cada 10 minutos. Desde el 30-sep-2026. | Todos |
 | 35 | **Tarjeta de imagen** | Vista previa del archivo. | Todos |
 | 36 | **Nombre** (clic para renombrar) | Cómo se ve en el editor. Al darle clic sale el aviso de arriba con el nombre para cambiarlo (54). | Todos |
 | 37 | **Tipo · peso · archivo** | Datos del archivo. | Todos |
@@ -1003,8 +1004,9 @@ chat con 📎 › Multimedia) y las **Corridas** (historial).
 | 52 | **Máximo de envíos por chat** (vacío = Sin límite) | Cuántas veces puede salir en un mismo chat por palabra clave o por el Agente IA (la Tabla: 2). Cuenta su archivo **aunque haya salido dentro de otro workflow** (la foto de la tabla en «Precio 2» o «Información» cuenta). Al llegar al máximo, la palabra clave ya no lo dispara, el Agente IA ya no lo tiene a la mano (sabe cuántas veces salió: «1 de 2») y en Corridas queda Omitido con «ya salió el máximo de veces en este chat». El **comando del vendedor** suma, pero sí puede pasarlo. | Todos |
 | 53 | **El workflow es la respuesta** (casilla) | Cuando sale por **palabra clave**, el workflow contesta **su tema** y el Agente IA **revisa el mismo mensaje**: si el cliente preguntó algo más («De que cd son y que precio tienen»), contesta solo eso, sin repetir al workflow y **sin hacer preguntas** (sale unos segundos después); si no falta nada, no escribe. Después **espera a que el cliente conteste**, aunque el workflow termine en una imagen (la Tabla). Si el cliente escribió otra cosa antes («¿Cuánto tarda el envío?» + «Precio»), eso también lo contesta el Agente IA. Si el **Agente IA** lo usa por su cuenta: con textos («Precio 2») su propio texto no sale; solo con imagen o video, su frase va como pie del archivo, en un solo mensaje. Nace marcada en los que terminan en pregunta («Precio 2», «Información», «Tenemos»); si un workflow termina en «?» sin marcarla, abajo sale un aviso naranja. | Todos |
 | 54 | **Aviso «Renombrar archivo»** | Sale arriba al darle clic al nombre de un archivo (36), con el nombre adentro ya seleccionado para escribir el nuevo. **Guardar** (o Enter) lo cambia; **Cancelar**, Esc o clic fuera lo cierran sin cambiar. Si el nombre queda vacío, **Guardar** se apaga. El cliente nunca ve este nombre. | Todos |
+| 55 | **Capa para soltar** (Biblioteca) | Aparece al arrastrar uno o varios archivos desde la computadora (Escritorio, Finder…) a cualquier parte de la Biblioteca, igual que en el chat; al soltarlos se suben solos, sin presionar **Subir archivos** (34). Mismos tipos y límites (33): lo que no es imagen JPEG/PNG, video MP4/3GPP o PDF se rechaza con aviso y no se sube. **Seleccionar** abre el mismo selector que el botón. Mientras sube, no aparece. Desde el 3-oct-2026. | Todos |
 
-**Lo cambias tú desde la pantalla:** crear, editar, prender, apagar, ordenar y probar workflows; subir, renombrar y
+**Lo cambias tú desde la pantalla:** crear, editar, prender, apagar, ordenar y probar workflows; subir (con el botón o arrastrando), renombrar y
 borrar archivos. En el editor los cambios son libres y se guardan juntos con un solo aviso (50); borrar un workflow o un
 archivo pide confirmar (no se puede deshacer). Crear, editar, prender, apagar y borrar quedan en **Agente IA › Historial**
 con quién lo hizo. «Restaurar predeterminados» ya no está en la pantalla (29-sep-2026): los predeterminados se crean
@@ -1020,7 +1022,7 @@ solos al abrir la cuenta y no se pueden borrar.
 a su **Máximo por chat**, 52, ya no); espera a que termine uno por palabra clave con **El workflow es la respuesta** (53);
 en Corridas aparecen con disparador "Agente". Mientras manda uno, en el chat se ve "Agente IA enviando…".
 
-<sub>Para Code: ruta `/automatizacion`; `app/(app)/automatizacion/_components/` (`automatizacion-panel`, `workflow-editor`, `biblioteca-tab`, `labels`); `lib/workflows/` (Copiar, 46 = `as-text.ts`; 52 = `max-per-chat.ts`; regla fija de 47 = `fixed-rules.ts`), `lib/actions/workflows.ts`, `lib/media-library/`; diseño `docs/fase-d-diseno.md` §10.</sub>
+<sub>Para Code: ruta `/automatizacion`; `app/(app)/automatizacion/_components/` (`automatizacion-panel`, `workflow-editor`, `biblioteca-tab`, `labels`); capa para soltar (55) = `components/ui/file-drop-zone.tsx`, la misma del chat (Chat › 30, vía `chat-drop-zone`); `lib/workflows/` (Copiar, 46 = `as-text.ts`; 52 = `max-per-chat.ts`; regla fija de 47 = `fixed-rules.ts`), `lib/actions/workflows.ts`, `lib/media-library/`; diseño `docs/fase-d-diseno.md` §10.</sub>
 
 ---
 
