@@ -66,7 +66,7 @@ formularios y landing pages, agente IA de calificación, TikTok.
 > 057725c, migración 0031; prueba B5 en producción y pendientes A–F sin construir: §11 del mismo doc).
 > **Fase E CERRADA el 26-sep-2026 (main ebcd981).** Modelo 1 (Luna) y Modelo 2 (Sonnet 5) por etapa, con
 > sus selectores en la pestaña Agente IA, más el reenvío seguro; 5 proveedores activos (OpenAI, Anthropic,
-> Gemini, Grok, Qwen). Recargas de saldo: manuales en la página de cada proveedor. Revisión de Codex:
+> Gemini, Grok, Qwen). Recargas de saldo: manuales en la página de cada proveedor. **Respuesta sin completar (5-oct-2026, dueño):** texto interno del modelo (`[tool call] …`, notas), corte por tokens, una acción que no se puede hacer o algo que no salió después de enviar → no sale nada más al cliente, tarjeta `agente_error` y el Agente IA en pausa en ese chat hasta Reintentar/Apagar (`lib/ai/runtime/internal-text.ts`, `holdAgentForReview`; detalle en `docs/agente-ia.md`). Revisión de Codex:
 > penúltima acción antes del número oficial. **Agente IA parte 1 (26-sep-2026, migración 0037):** acción
 > `actualizar_detalle` en la misma respuesta (llena y corrige el Detalle del contacto; ningún dato es
 > definitivo, ni del vendedor ni del agente; `custom_fields.detalle_por` = quién escribió al último → marca

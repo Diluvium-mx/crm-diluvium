@@ -810,12 +810,14 @@ describe.skipIf(!TEST_DATABASE_URL)("runtime del Agente IA (Postgres real)", () 
     expect(await run.runAgent(JOB, deps)).toEqual({ kind: "sent", bubbles: 1 });
     expect(z.delivered).toEqual(["Manejamos varios tamaños."]);
     expect((await runs()).filter((r) => r.workflowId === tabla).map((r) => r.status)).toEqual(["queued"]);
-    const aviso = (await notices()).find((n) => n.kind === "envio")!;
-    expect(aviso.body).toContain("Salieron 1 de 2");
-    expect((await conv()).agentState).toBe("activo");
+    // 5-oct-2026: tarjeta y el Agente IA detenido en el chat hasta que el vendedor elija.
+    const card = (await notices()).find((n) => n.kind === "agente_error")!;
+    expect(card.body).toContain("Salieron 1 de 2");
+    expect(card.body).toContain("queda en pausa");
+    expect(await agentError.hasUnresolvedAgentError(ORG, CONV)).toBe(true);
   });
 
-  it("AUTO → 1ª burbuja sin confirmar: la 2ª no sale, queda en un AVISO y el agente sigue activo", async () => {
+  it("AUTO → 1ª burbuja sin confirmar: la 2ª no sale, queda en una TARJETA y el agente se detiene en el chat (5-oct-2026)", async () => {
     await msg({ direction: "in", body: "¿precio?", at: ago(10_000) });
     const { deps } = makeDeps();
     deps.sendBubble = async () => {
@@ -827,13 +829,13 @@ describe.skipIf(!TEST_DATABASE_URL)("runtime del Agente IA (Postgres real)", () 
     expect(brain).toMatchObject({ outcome: "sent", error: "1 mensaje(s) sin confirmar; 1 sin enviar (aviso)" });
     expect((await db.select().from(s.aiAgentDrafts)).map((d) => d.status)).toEqual(["enviado"]);
     const [n] = await notices();
-    expect(n).toMatchObject({ kind: "envio" });
+    expect(n).toMatchObject({ kind: "agente_error" });
     expect(n.body).toContain("¿Cuánto mide tu entrada?");
-    expect((await conv()).agentState).toBe("activo");
+    expect(await agentError.hasUnresolvedAgentError(ORG, CONV)).toBe(true);
     expect(await contactTags()).not.toContain("revisión humana");
   });
 
-  it("AUTO → una sola burbuja sin confirmar: espera; si vence sin confirmar, el barrido AVISA (una vez) y el agente sigue", async () => {
+  it("AUTO → una sola burbuja sin confirmar: espera; si vence sin confirmar, el barrido deja la TARJETA (una vez) y el agente se detiene hasta que el vendedor elija", async () => {
     const { SEND_UNCONFIRMED } = await import("@/lib/messaging/rules");
     await msg({ direction: "in", body: "¿precio?", at: ago(10_000) });
     const { deps } = makeDeps({ brain: ["Claro, cuesta $5,500 MXN."] });
@@ -851,12 +853,18 @@ describe.skipIf(!TEST_DATABASE_URL)("runtime del Agente IA (Postgres real)", () 
     const busy = makeDeps();
     expect(await run.runAgent(JOB, busy.deps)).toEqual({ kind: "skipped", reason: "envio_sin_confirmar" });
     expect(busy.calls).toHaveLength(0);
-    // Vence sin confirmar → aviso al vendedor, sin reenviar; el agente sigue contestando.
+    // Vence sin confirmar → tarjeta, sin reenviar; el agente no contesta hasta que el vendedor elija.
     await db.update(s.messages).set({ status: "failed", errorCode: SEND_UNCONFIRMED }).where(eq(s.messages.id, pendingId));
     expect(await sweep.noticeFailedAgentSends(new Date())).toBe(1);
     expect(await sweep.noticeFailedAgentSends(new Date())).toBe(0);
-    expect((await notices())[0].body).toContain("no confirmó");
-    expect((await conv()).agentState).toBe("activo");
+    const [card] = await notices();
+    expect(card).toMatchObject({ kind: "agente_error" });
+    expect(card.body).toContain("no confirmó");
+    const blocked = makeDeps();
+    expect((await run.runAgent(JOB, blocked.deps)).kind).not.toBe("sent");
+    expect(blocked.calls).toHaveLength(0);
+    // «Reintentar»: el Agente IA vuelve a atender.
+    await db.update(s.aiAgentNotices).set({ resolvedAt: new Date(), resolution: "reintentar" }).where(eq(s.aiAgentNotices.id, card.id));
     expect((await run.runAgent(JOB, makeDeps().deps)).kind).toBe("sent");
   });
 
@@ -1741,7 +1749,7 @@ describe.skipIf(!TEST_DATABASE_URL)("runtime del Agente IA (Postgres real)", () 
   it("media por herramienta: corrida 'agent' DESPUÉS del texto; palabra clave + herramienta del mismo workflow no se duplica; fijar_cotizacion solo con el total dicho por el agente", async () => {
     await msg({ direction: "in", body: "¿me mandas la tabla?", at: ago(20_000) });
     const wfId = await wf("tabla_tamanos_estandar", [{ kind: "send_text", text: "tabla" }]);
-    const { deps } = makeDeps({ brain: ["Claro, te la mando. El total es $5,500."], toolCalls: [{ toolName: "wf_tabla_tamanos_estandar", input: {} }, { toolName: "fijar_cotizacion", input: { monto: 5500 } }, { toolName: "wf_inventada", input: {} }] });
+    const { deps } = makeDeps({ brain: ["Claro, te la mando. El total es $5,500."], toolCalls: [{ toolName: "wf_tabla_tamanos_estandar", input: {} }, { toolName: "fijar_cotizacion", input: { monto: 5500 } }] });
     expect(await run.runAgent(JOB, deps)).toEqual({ kind: "sent", bubbles: 1 });
     expect((await runs()).map((r) => [r.workflowId, r.trigger, r.status])).toEqual([[wfId, "agent", "queued"]]);
     expect((await contact()).montoCotizacion).toBe("5500.00");
@@ -1859,11 +1867,13 @@ describe.skipIf(!TEST_DATABASE_URL)("runtime del Agente IA (Postgres real)", () 
     expect(moved).toBe(1);
     expect((await contact()).stage).toBe("interesado");
     await msg({ direction: "in", body: "y en mini?", at: new Date() });
+    // 5-oct-2026: una acción que no se puede hacer detiene la respuesta: tarjeta y pausa en el chat.
     const c = makeDeps({ brain: ["Mini cuesta $4,000."], toolCalls: [{ toolName: "mover_etapa", input: { etapa: "cotizacion_enviada" } }] });
-    expect((await run.runAgent(JOB, c.deps)).kind).toBe("sent");
+    expect(await run.runAgent(JOB, c.deps)).toEqual({ kind: "failed", reason: "respuesta_sin_completar" });
     expect(c.calls.find((x) => x.kind === "cerebro")!.input.system).not.toContain("cotizacion_enviada");
     expect((await contact()).stage).toBe("interesado");
-    expect((await notices()).some((n) => n.kind === "respuesta_cortada" && n.body.includes("mover_etapa: argumentos inválidos"))).toBe(true);
+    expect((await agentOuts()).map((m) => m.body)).not.toContain("Mini cuesta $4,000.");
+    expect((await openCard())!.body).toContain("mover_etapa: argumentos inválidos");
   });
 
   it("aviso_vendedor: 🤖 en el hilo, no llega al cliente ni pausa; mover a Compra sin vendedor queda en Cerca de compra con «Depósito recibido»", async () => {
@@ -2069,20 +2079,64 @@ describe.skipIf(!TEST_DATABASE_URL)("runtime del Agente IA (Postgres real)", () 
     expect(last).toContain("[documento: spei.pdf]");
   });
 
-  it("Fase E: respuesta cortada por el tope o acción con argumentos inválidos → aviso al vendedor (nunca en silencio); el texto sale igual", async () => {
+  it("respuesta cortada por el tope o acción con argumentos inválidos → no sale NADA, tarjeta y el Agente IA en pausa en el chat (5-oct-2026; antes salía el texto con aviso)", async () => {
     await msg({ direction: "in", body: "te mando dos comprobantes", at: ago(20_000) });
     const { deps } = makeDeps({
       brain: ["Recibimos tus comprobantes ✅"],
       finishReason: "length",
       toolCalls: [{ toolName: "aviso_vendedor", input: { motivo: "pago" } }],
     });
-    expect((await run.runAgent(JOB, deps)).kind).toBe("sent");
-    const n = (await notices()).filter((x) => x.kind === "respuesta_cortada");
-    expect(n).toHaveLength(1);
-    expect(n[0].body).toContain("se cortó");
-    expect(n[0].body).toContain(`${run.BRAIN_MAX_OUTPUT_TOKENS.toLocaleString("es-MX")} tokens`);
-    expect(n[0].body).toContain("aviso_vendedor: argumentos inválidos");
-    expect((await agentOuts()).map((m) => m.body)).toEqual(["Recibimos tus comprobantes ✅"]);
+    expect(await run.runAgent(JOB, deps)).toEqual({ kind: "failed", reason: "respuesta_sin_completar" });
+    expect((await openCard())!.body).toContain("se cortó");
+    expect(await agentOuts()).toEqual([]);
+    expect(await agentError.hasUnresolvedAgentError(ORG, CONV)).toBe(true);
+    // Solo la acción con datos inválidos (sin corte): también se detiene.
+    await db.delete(s.aiAgentNotices);
+    await msg({ direction: "in", body: "¿lo revisan?", at: new Date() });
+    const b = makeDeps({ brain: ["Sí, ya lo revisamos."], toolCalls: [{ toolName: "aviso_vendedor", input: { motivo: "pago" } }] });
+    expect((await run.runAgent(JOB, b.deps)).kind).toBe("failed");
+    expect((await openCard())!.body).toContain("aviso_vendedor: argumentos inválidos");
+    expect(await agentOuts()).toEqual([]);
+  });
+
+  // ── Texto interno (5-oct-2026, dueño: «nunca de los nuncas») ───────────────
+  it("texto interno pegado a una respuesta buena («[tool call] …», «[actions]») → no sale NADA, tarjeta y el Agente IA en pausa; Reintentar lo vuelve a intentar", async () => {
+    await msg({ direction: "in", body: "¿tienen videos de cómo se instala?", at: ago(20_000) });
+    const z = fakeZernio();
+    const leak = makeDeps({ brain: ["Sí, es removible y no requiere obra.\n\n[tool call] wf_video_instalacion_estandar"] }, z);
+    expect(await run.runAgent(JOB, leak.deps)).toEqual({ kind: "failed", reason: "respuesta_sin_completar" });
+    expect(z.delivered).toEqual([]);
+    expect(await agentOuts()).toEqual([]);
+    const card = (await openCard())!;
+    expect(card.body).toContain("nota interna");
+    expect(card.body).toContain("[tool call] wf_video_instalacion_estandar");
+    expect(card.body).toContain("No se le mandó nada al cliente");
+    // En pausa: un mensaje nuevo del cliente no llama al modelo.
+    await msg({ direction: "in", body: "¿hola?", at: new Date() });
+    const blocked = makeDeps({ brain: ["no debe salir"] }, z);
+    expect((await run.runAgent(JOB, blocked.deps)).kind).not.toBe("sent");
+    expect(blocked.calls).toHaveLength(0);
+    // Reintentar: vuelve a llamar al modelo y sale la respuesta limpia.
+    expect(await agentError.resolveAgentError({ organizationId: ORG, noticeId: card.id, resolution: "reintentar", userId: "u_vendedor" })).toEqual({ conversationId: CONV });
+    expect(await run.runAgent(JOB, makeDeps({ brain: ["Sí, es removible y no requiere obra."] }, z).deps)).toEqual({ kind: "sent", bubbles: 1 });
+    expect(z.delivered).toEqual(["Sí, es removible y no requiere obra."]);
+  });
+
+  it("texto interno en el último renglón de un mismo mensaje («…?\n[actions]») o como nota entre paréntesis también se detiene", async () => {
+    for (const brain of ["¿Me comparte una fotografía de cada entrada?\n[actions]", "*(sin acción adicional, la respuesta ya fue enviada por el sistema)*"]) {
+      await db.delete(s.aiAgentNotices);
+      await msg({ direction: "in", body: "ok", at: new Date() });
+      const z = fakeZernio();
+      expect((await run.runAgent(JOB, makeDeps({ brain: [brain] }, z).deps)).kind).toBe("failed");
+      expect(z.delivered).toEqual([]);
+      expect((await openCard())!.body).toContain("nota interna");
+    }
+  });
+
+  it("último candado: sendAgentText nunca manda un texto interno aunque llegue hasta ahí", async () => {
+    const z = fakeZernio();
+    await expect(send.sendAgentText(z.provider, { organizationId: ORG, conversationId: CONV, text: "[tool call?]", messageId: "m_interno" })).rejects.toThrow("nota interna");
+    expect(z.calls()).toBe(0);
   });
 
   it("Fase E: sin llave del Modelo 1 contesta el Modelo 2 (el agente no se queda callado)", async () => {
@@ -2825,16 +2879,19 @@ describe.skipIf(!TEST_DATABASE_URL)("runtime del Agente IA (Postgres real)", () 
     await run.runAgent(JOB, first.deps);
     await retryCard();
     const retry = makeDeps({}, z);
-    // Sin tarjeta sin salida (revisión): aviso para revisar el celular y el agente queda libre.
+    // No se reenvía (podría duplicar): tarjeta para revisar el celular y el Agente IA en pausa
+    // en el chat (5-oct-2026). La salida: Reintentar lo deja seguir atendiendo.
     expect(await run.runAgent(JOB, retry.deps)).toEqual({ kind: "skipped", reason: "envio_sin_confirmar" });
     expect(z.calls()).toBe(0);
-    expect(await openCard()).toBeNull();
-    expect((await notices()).find((n) => n.kind === "envio")!.body).toContain("no confirmó");
+    const card = (await openCard())!;
+    expect(card.body).toContain("no confirmó");
     expect((await db.select().from(s.aiAgentDrafts))[0].status).toBe("enviado");
-    // El barrido del worker da la fila por no confirmada y el cliente escribe otra vez:
-    // el agente le contesta (no se queda mudo).
     await send.expireUnconfirmedSends();
     await msg({ direction: "in", body: "¿hola?", at: new Date(Date.now() + 1_000) });
+    const blocked = makeDeps({ brain: ["no debe salir"] }, z);
+    expect((await run.runAgent(JOB, blocked.deps)).kind).not.toBe("sent");
+    expect(blocked.calls).toHaveLength(0);
+    await db.update(s.aiAgentNotices).set({ resolvedAt: new Date(), resolution: "reintentar" }).where(eq(s.aiAgentNotices.id, card.id));
     expect((await run.runAgent(JOB, makeDeps({ brain: ["¡Hola! Aquí estoy."] }, z).deps)).kind).toBe("sent");
   });
 
@@ -2905,13 +2962,13 @@ describe.skipIf(!TEST_DATABASE_URL)("runtime del Agente IA (Postgres real)", () 
     expect(z.delivered).toEqual(["Sí, seguimos."]);
   });
 
-  it("C · (revisión H2) el barrido NO convierte en tarjeta un envío sin confirmar (pudo llegar): aviso para revisar el celular", async () => {
+  it("C · (revisión H2) el barrido NO reenvía un envío sin confirmar (pudo llegar): tarjeta para revisar el celular y el Agente IA en pausa (5-oct-2026)", async () => {
     const { SEND_UNCONFIRMED } = await import("@/lib/messaging/rules");
     const trigger = await msg({ direction: "in", body: "¿precio?", at: ago(15 * 60_000) });
     await db.insert(s.aiAgentDrafts).values({ id: "plan_dudoso", organizationId: ORG, conversationId: CONV, bubbles: ["Cuesta $5,500."], triggerMessageId: trigger, status: "enviando", resolvedAt: ago(12 * 60_000) });
     await agentMsg({ status: "failed", errorCode: SEND_UNCONFIRMED, at: ago(12 * 60_000 - 1_000) });
     await sweep.reconcileStuckDrafts(new Date());
-    expect(await openCard()).toBeNull();
+    expect((await openCard())!.body).toContain("se interrumpió");
     expect((await db.select().from(s.aiAgentDrafts))[0].status).toBe("enviado");
   });
 });

@@ -29,6 +29,7 @@ import { withTxRetry } from "@/lib/db/retry";
 import { channels, conversations, messages, templates } from "@/lib/db/schema";
 import { applyOutboundToConversation, latestInboundMessageId } from "./ingest";
 import { SendFailedError, type MessagingProvider, type SendResult } from "./provider";
+import { findInternalText } from "@/lib/ai/runtime/internal-text";
 import {
   canSendFreeForm,
   INSTAGRAM_PARTS_META,
@@ -750,6 +751,13 @@ export async function sendAgentText(
   provider: MessagingProvider,
   params: { organizationId: string; conversationId: string; text: string; messageId: string; now?: Date },
 ): Promise<SendOutcome> {
+  // Último candado (5-oct-2026, dueño): TODO texto del Agente IA pasa por aquí (respuesta,
+  // «Reintentar», lo que venga). Un texto interno («[tool call] …») nunca sale, aunque se
+  // haya colado antes del candado de run.ts (unfinishedReply).
+  const internal = findInternalText([params.text]);
+  if (internal) {
+    throw new SendRejectedError("not_retryable", `El Agente IA escribió una nota interna (${internal.reason}) y no se envió.`);
+  }
   const now = params.now ?? new Date();
   const where = and(eq(messages.id, params.messageId), eq(messages.organizationId, params.organizationId));
   const [prior] = await db

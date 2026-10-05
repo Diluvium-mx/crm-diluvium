@@ -25,6 +25,7 @@ import type { ObjectStorage } from "@/lib/storage/s3";
 import { enqueueWorkflowRun } from "@/lib/queue/workflows";
 import { notifyConversation } from "@/lib/ai/runtime/state";
 import { addNotice } from "@/lib/ai/runtime/notices";
+import { holdAgentForReview } from "@/lib/ai/runtime/agent-error";
 import { outboundTextsSinceLastInbound } from "@/lib/ai/runtime/context";
 import { markAnswersOnly, markAnswersUntil } from "@/lib/ai/runtime/saved-reply";
 import { splitRepeated } from "@/lib/messaging/repeat";
@@ -360,17 +361,18 @@ export async function executeWorkflowRun(runId: string, deps: ExecutorDeps): Pro
         (e) => console.error("[workflows] no se pudo dejar el aviso de fallo", e),
       );
     } else {
-      // Del agente o por palabra clave: el cliente esperaba un archivo que no llegó;
-      // el vendedor lo ve como aviso 🤖 (idempotente por corrida).
-      await addNotice({
-        organizationId: run.organizationId,
-        conversationId: run.conversationId,
-        messageId: run.triggerMessageId,
-        kind: "envio",
-        body:
-          `No se envió "${loaded.wf.name}" (${FAIL_LABEL[code] ?? message.slice(0, 200)}). El cliente lo estaba esperando: revisa el hilo.` +
-          (captionFits && stepAt <= captionIndex ? ` Iba con el texto del Agente IA: «${agentCaption}».` : ""),
-      });
+      // Del agente o por palabra clave: el cliente esperaba un archivo que no llegó.
+      const body =
+        `No se envió "${loaded.wf.name}" (${FAIL_LABEL[code] ?? message.slice(0, 200)}). El cliente lo estaba esperando.` +
+        (captionFits && stepAt <= captionIndex ? ` Iba con el texto del Agente IA: «${agentCaption}».` : "");
+      if (run.trigger === "agent") {
+        // Lo pidió el Agente IA: tarjeta y el Agente IA en pausa en el chat hasta que el
+        // vendedor lo revise (5-oct-2026, dueño); antes seguía contestando como si hubiera salido.
+        await holdAgentForReview({ organizationId: run.organizationId, conversationId: run.conversationId, messageId: run.triggerMessageId, body });
+      } else {
+        // Por palabra clave: aviso 🤖 (idempotente por corrida).
+        await addNotice({ organizationId: run.organizationId, conversationId: run.conversationId, messageId: run.triggerMessageId, kind: "envio", body: `${body} Revisa el hilo.` });
+      }
     }
     return "failed";
   };
