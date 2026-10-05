@@ -9,8 +9,7 @@ import { and, eq, gte, inArray, lt, or, sql, type SQL } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { aiAgentDrafts, messages } from "@/lib/db/schema";
 import { isAmbiguousSendError, SEND_UNCONFIRMED, SEND_UNKNOWN } from "@/lib/messaging/rules";
-import { addNotice } from "./notices";
-import { recordAgentError } from "./agent-error";
+import { holdAgentForReview, recordAgentError } from "./agent-error";
 import { answeredOnlySql, workflowFillerSql } from "./context";
 import { hiddenNoticeSql } from "@/lib/messaging/unavailable";
 import { sendErrorBody } from "./model-errors";
@@ -231,11 +230,11 @@ export async function reconcileStuckDrafts(now: Date): Promise<number> {
     if (closed.length === 0) continue;
     const ok = outs.filter((m) => m.status !== "failed").length;
     if (outs.length > 0 && ok < d.bubbles.length) {
-      await addNotice({
+      await holdAgentForReview({
         organizationId: d.organizationId,
         conversationId: d.conversationId,
-        kind: "envio",
-        body: `El envío de una respuesta del agente se interrumpió: salieron ${ok} de ${d.bubbles.length} mensajes. No se envió: «${d.bubbles.slice(ok).join(" / ")}». Revisa el hilo.`,
+        messageId: d.triggerMessageId,
+        body: `El envío de una respuesta del Agente IA se interrumpió: salieron ${ok} de ${d.bubbles.length} mensajes. No se envió: «${d.bubbles.slice(ok).join(" / ")}».`,
       });
     }
     resolved++;
@@ -243,8 +242,10 @@ export async function reconcileStuckDrafts(now: Date): Promise<number> {
   return resolved;
 }
 
-// Respuesta del agente que WhatsApp rechazó o no confirmó: un aviso por mensaje
-// (índice único message_id+kind), sin pausar ni reenviar (podría duplicar).
+// Respuesta del agente que WhatsApp rechazó o no confirmó: una tarjeta por mensaje (índice único
+// message_id+kind) y el Agente IA en pausa en el chat hasta que el vendedor lo revise (5-oct-2026,
+// dueño; antes era un aviso y seguía contestando). Nunca reenvía (podría duplicar). Si el chat ya
+// tiene una tarjeta abierta (p. ej. la del envío que falló en run.ts), no se agrega otra.
 export async function noticeFailedAgentSends(now: Date): Promise<number> {
   const since = new Date(now.getTime() - FAILED_SEND_NOTICE_HOURS * 3_600_000);
   const rows = await db.execute<{ id: string; organization_id: string; conversation_id: string; error_code: string | null }>(sql`
@@ -252,16 +253,22 @@ export async function noticeFailedAgentSends(now: Date): Promise<number> {
     from messages m
     where m.direction = 'out' and m.source = 'ai_agent' and m.status = 'failed'
       and m.created_at > ${ts(since)}
-      and not exists (select 1 from ai_agent_notices n where n.message_id = m.id and n.kind = 'envio')
+      and not exists (select 1 from ai_agent_notices n where n.message_id = m.id and n.kind in ('envio', 'agente_error'))
+      and not exists (
+        select 1 from ai_agent_notices n
+        where n.organization_id = m.organization_id and n.conversation_id = m.conversation_id
+          and n.kind = 'agente_error' and n.resolved_at is null
+      )
     limit 50
   `);
   let added = 0;
   for (const r of rows) {
     const ambiguous = r.error_code === SEND_UNCONFIRMED || (r.error_code ?? "").startsWith(SEND_UNKNOWN);
     const body = ambiguous
-      ? "WhatsApp no confirmó una respuesta del agente: revisa en el celular si le llegó al cliente."
-      : `WhatsApp rechazó una respuesta del agente${r.error_code ? ` (código ${r.error_code})` : ""}: el cliente no la recibió.`;
-    if (await addNotice({ organizationId: r.organization_id, conversationId: r.conversation_id, kind: "envio", body, messageId: r.id })) added++;
+      ? "WhatsApp no confirmó una respuesta del Agente IA: revisa en el celular si le llegó al cliente."
+      : `WhatsApp rechazó una respuesta del Agente IA${r.error_code ? ` (código ${r.error_code})` : ""}: el cliente no la recibió.`;
+    await holdAgentForReview({ organizationId: r.organization_id, conversationId: r.conversation_id, messageId: r.id, body });
+    added++;
   }
   return added;
 }

@@ -9,6 +9,7 @@ import { and, eq, isNull, sql } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { aiAgentNotices, channels, conversations } from "@/lib/db/schema";
 import { notifyConversation } from "./state";
+import { addNotice } from "./notices";
 
 export const AGENT_ERROR_KIND = "agente_error";
 // "superada": el agente volvió a contestar en la conversación (p. ej. tras "Reactivar").
@@ -42,6 +43,24 @@ export async function recordAgentError(input: { organizationId: string; conversa
       set: { body: input.body.slice(0, 1_000), createdAt: sql`now()`, resolvedAt: null, resolution: null, resolvedByUserId: null },
     });
   await notifyConversation(db, input.organizationId, input.conversationId);
+}
+
+// Algo que el Agente IA tenía que hacer no se completó DESPUÉS de que ya salió parte de su respuesta
+// (WhatsApp rechazó o no confirmó un mensaje, salió solo una parte, un archivo suyo no se envió)
+// (5-oct-2026, dueño: el vendedor lo revisa y el Agente IA se pausa). Antes era un aviso 🤖 y el
+// Agente IA seguía contestando como si el cliente lo hubiera recibido. Ahora es la tarjeta con
+// Reintentar / Apagar, que BLOQUEA la conversación hasta que un vendedor elija. Sin mensaje de
+// referencia (no hay a qué atar la tarjeta), queda el aviso de antes.
+export const HOLD_SUFFIX =
+  "El Agente IA queda en pausa en este chat hasta que lo revises: contéstale tú, usa Reintentar para que siga atendiendo o Apagar para dejarlo apagado.";
+
+export async function holdAgentForReview(input: { organizationId: string; conversationId: string; messageId: string | null; body: string }): Promise<void> {
+  const body = `${input.body.trim()} ${HOLD_SUFFIX}`;
+  if (input.messageId) {
+    await recordAgentError({ organizationId: input.organizationId, conversationId: input.conversationId, messageId: input.messageId, body });
+    return;
+  }
+  await addNotice({ organizationId: input.organizationId, conversationId: input.conversationId, kind: "envio", body: input.body });
 }
 
 // ¿Hay una tarjeta de error sin atender que BLOQUEE la conversación? Mientras la

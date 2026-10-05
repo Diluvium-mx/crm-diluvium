@@ -1052,6 +1052,36 @@ común.
   funciona, cómo se instala, de qué está hecha), sin pregunta, con prioridad sobre PRIMER CONTACTO. Prueba sintética:
   solo-la-pregunta 2/6 → 0/6.
 
+## Texto interno y respuestas sin completar: no sale nada, tarjeta y pausa (5-oct-2026, sin migración)
+
+- **Qué pasó (30-sep → 4-oct):** 6 mensajes llegaron a 5 clientes con lo que el modelo «pensaba hacer» en vez de
+  hacerlo: `[tool call] wf_video… actualizar_detalle {…}`, `[We need tool after response]`, `[tool call?]`, `[actions]` y
+  `*(sin acción adicional, la respuesta ya fue enviada por el sistema)*` (5 de Luna, 1 de Sonnet). Siempre DESPUÉS de
+  una respuesta buena, aparte o en su último renglón. Causa: el sufijo del CRM decía «primero tu texto para el cliente
+  y luego la llamada» y algunos modelos escribían la llamada.
+- **Capa 1, la causa** (`brain.ts`, sufijo): «Las acciones se piden SOLO llamando su herramienta… El cliente recibe TODO
+  lo que escribas: nunca escribas el nombre de una herramienta o acción, sus datos, JSON, corchetes ni notas». Cambia el
+  prefijo en caché una vez (una escritura de 1 h, centavos).
+- **Capa 2, candado antes de enviar** (`internal-text.ts` › `unfinishedReply`, en `run.ts` después de las revisiones de
+  frescura y ANTES de cualquier acción): renglón por renglón, 6 patrones (mensaje entre corchetes, «tool call»,
+  nombres de acciones, JSON, nota entre paréntesis, notas al sistema). Probado contra los 4,825 renglones que el Agente
+  IA mandó en producción (26-sep → 5-oct): marca los 6 y ninguno bueno. También detienen la respuesta: el corte por
+  el tope de tokens y una acción pedida que no se puede hacer (datos inválidos, herramienta que no existe; el Detalle
+  sin datos válidos no cuenta). Resultado: **no sale nada, no se ejecuta nada**, tarjeta `agente_error` y el Agente IA
+  queda en pausa en ese chat (`hasUnresolvedAgentError`) hasta que un vendedor elija Reintentar (otra llamada al
+  modelo) o Apagar. Sin respuesta de respaldo del otro modelo (decisión del dueño). `ai_usage`: outcome `error`,
+  `no salió: …`. Costo y tiempo: cero (expresiones regulares sobre el texto, sin llamada extra).
+- **Capa 3, último candado** (`send.ts` › `sendAgentText`): todo texto del Agente IA pasa por ahí (respuesta,
+  Reintentar, lo que venga); un texto interno lanza `SendRejectedError("not_retryable")` y nunca sale.
+- **Lo que no se completó DESPUÉS de enviar** (`agent-error.ts` › `holdAgentForReview`): WhatsApp rechazó o no confirmó
+  un mensaje del Agente IA (barrido), salió solo una parte, un workflow que pidió el Agente IA no se envió (`executor.ts`,
+  trigger `agent`), un workflow «es la respuesta» que no arrancó o las acciones fallaron → antes era un aviso 🤖 y el
+  Agente IA seguía; ahora es la misma tarjeta y el Agente IA queda en pausa en el chat. Un workflow por palabra clave
+  sigue con su aviso. El barrido no agrega otra tarjeta si el chat ya tiene una abierta.
+- **Siguen como aviso, sin pausa:** `fijar_cotizacion` rechazada porque el total no se le dijo al cliente (es la
+  protección, no una falla; 0 desde el 2-oct), un workflow omitido por «Solo al inicio» o «Máximo por chat» y la
+  respuesta guardada que venció (24 h o ventana cerrada).
+
 ## Fuera de alcance (próximos briefs)
 
 Follow-ups (Fase C), modelos por etapa y reenvío seguro (Fase E), y los pendientes A–F de la Fase D
