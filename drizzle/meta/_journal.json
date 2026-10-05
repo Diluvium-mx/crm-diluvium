@@ -400,6 +400,13 @@
       "when": 1791056969132,
       "tag": "0057_seguimientos_lector",
       "breakpoints": true
+    },
+    {
+      "idx": 58,
+      "version": "7",
+      "when": 1791243380870,
+      "tag": "0058_meta_whatsapp_billing",
+      "breakpoints": true
     }
   ]
 }

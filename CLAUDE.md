@@ -144,6 +144,7 @@ Variables de entorno mínimas:
 DATABASE_URL, REDIS_URL, AUTH_SECRET, APP_URL,
 ZERNIO_API_KEY, ZERNIO_WEBHOOK_SECRET        (web y worker; canal WhatsApp vía Zernio)
 META_ADS_ACCESS_TOKEN                        (web; el worker la referencia; solo ads_read — docs/anuncios.md)
+META_WHATSAPP_TOKEN, META_WABA_ID            (solo worker; cobro de Meta por WhatsApp — docs/meta-costos.md)
 ```
 
 ---
@@ -291,6 +292,11 @@ follow_ups           id, org_id, conversation_id, contact_id, caso (tabla de 10 
                      -- 0057 (3-oct): caso_de_fondo (asunto de una fecha pedida: da la hora), plantilla_2/_3 (las elige el lector
                      -- según cómo quedó el chat). El seguimiento de un VENDEDOR cuenta como intento; Compra cancela al instante;
                      -- el CRM revisa el borrador (una pregunta, nunca una ya hecha ni el precio ya dado) y el lector lo rehace 1 vez
+
+-- Cobro de Meta por WhatsApp (5-oct-2026, migración 0058; docs/meta-costos.md). El worker lee cada hora
+-- pricing_analytics de la WABA; tarjeta «WhatsApp (Meta)» del Dashboard debajo del Gasto de IA.
+meta_whatsapp_billing org_id (PK), waba_id, currency, days jsonb (día UTC → tipo de precio → categoría →
+                     {volume, cost}), fetched_at, attempted_at, last_error
 ```
 
 Detalles que importan:
