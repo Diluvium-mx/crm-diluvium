@@ -1404,6 +1404,55 @@ describe.skipIf(!TEST_DATABASE_URL)("runtime del Agente IA (Postgres real)", () 
       expect((await usage()).find((u) => u.stage === "cerebro")?.error ?? "").not.toContain("pregunta sin contestar");
     });
 
+    // Parte 2 (5-oct-2026): la respuesta era SOLO la pregunta repetida (3 casos reales tras «Información»).
+    const INFO = ["Claro, es una barrera que se coloca en la entrada en 10 minutos.", "Ahorita tenemos cualquier tamaño en $5,500 con envío gratis", PREGUNTA];
+    async function infoYaSalio() {
+      await msg({ direction: "in", body: "Quiero más información", at: ago(3 * 3_600_000) });
+      for (const [i, body] of INFO.entries()) await msg({ direction: "out", body, at: ago(3 * 3_600_000 - (i + 1) * 1_000), source: "ai_agent" });
+    }
+
+    it("parte 2: «Quiero más información» otra vez → si el modelo solo repite la pregunta, se pide otra respuesta y sale esa", async () => {
+      await infoYaSalio();
+      await msg({ direction: "in", body: "Quiero más información", at: ago(30_000) });
+      const NUEVA = "Se coloca en el marco de la entrada y se ajusta con presión; no hay que perforar nada.";
+      const { deps, calls } = makeDeps({ brain: [PREGUNTA, NUEVA] });
+      expect(await run.runAgent(JOB, deps)).toEqual({ kind: "sent", bubbles: 1 });
+      expect(calls.filter((c) => c.kind === "cerebro")).toHaveLength(2);
+      expect((await agentOuts()).map((m) => m.body).slice(-1)).toEqual([NUEVA]);
+      expect((await usage()).some((u) => u.outcome === "repite_pregunta")).toBe(true);
+      expect((await notices()).filter((n) => n.kind === "sin_respuesta")).toHaveLength(0);
+    });
+
+    it("parte 2: respuesta indirecta («ha estado lloviendo mucho») → el segundo intento pasa al siguiente dato", async () => {
+      await infoYaSalio();
+      await msg({ direction: "in", body: "Bueno a estado lloviendo mucho", at: ago(30_000) });
+      const { deps } = makeDeps({ brain: [PREGUNTA, "¿Hasta qué nivel aproximado le sube el agua?"] });
+      expect(await run.runAgent(JOB, deps)).toEqual({ kind: "sent", bubbles: 1 });
+      expect((await agentOuts()).map((m) => m.body).slice(-1)).toEqual(["¿Hasta qué nivel aproximado le sube el agua?"]);
+    });
+
+    it("parte 2: si el segundo intento también solo repite, NO sale nada y el vendedor recibe el aviso amarillo", async () => {
+      await infoYaSalio();
+      await msg({ direction: "in", body: "Quiero más información", at: ago(30_000) });
+      const antes = (await agentOuts()).length;
+      const { deps } = makeDeps({ brain: [PREGUNTA, `  ${PREGUNTA.toUpperCase()} `] });
+      expect(await run.runAgent(JOB, deps)).toEqual({ kind: "sent", bubbles: 0 });
+      expect((await agentOuts()).length).toBe(antes);
+      const avisos = (await notices()).filter((n) => n.kind === "sin_respuesta");
+      expect(avisos).toHaveLength(1);
+      expect(avisos[0].body).toContain("solo iba a repetir la pregunta");
+      expect((await usage()).find((u) => u.stage === "cerebro" && u.outcome === "sent")?.error).toContain("solo repetía la pregunta sin contestar");
+    });
+
+    it("parte 2: con un acuse del cliente («Gracias 👍») la pregunta sola sí sale, sin segundo intento", async () => {
+      await infoYaSalio();
+      await msg({ direction: "in", body: "Gracias 👍", at: ago(30_000) });
+      const { deps, calls } = makeDeps({ brain: [PREGUNTA] });
+      expect(await run.runAgent(JOB, deps)).toEqual({ kind: "sent", bubbles: 1 });
+      expect(calls.filter((c) => c.kind === "cerebro")).toHaveLength(1);
+      expect((await agentOuts()).map((m) => m.body).slice(-1)).toEqual([PREGUNTA]);
+    });
+
     it("la pregunta de hace más de 24 h sí se puede volver a hacer (el cliente regresa otro día)", async () => {
       await msg({ direction: "in", body: "Precio", at: ago(26 * 3_600_000) });
       await msg({ direction: "out", body: PREGUNTA, at: ago(25 * 3_600_000), source: "ai_agent" });

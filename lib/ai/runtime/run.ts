@@ -34,6 +34,10 @@ import { AGENT_CAPTION_KEY, MAX_CAPTION } from "@/lib/workflows/steps";
 export const SIN_RESPUESTA_NOTE =
   "El cliente todavía no tiene respuesta a su último mensaje: contéstale con texto (además de las acciones que hagan falta).";
 export const SIN_RESPUESTA_BODY = "El Agente IA no le escribió nada al cliente (los modelos contestaron solo con acciones). Revisa si hacía falta contestar.";
+// Pregunta sin contestar, parte 2 (5-oct-2026): la respuesta solo repetía la pregunta.
+export function repeatNoticeBody(question: string): string {
+  return `El Agente IA solo iba a repetir la pregunta «${question}», que el cliente no contestó, y no salió. Revisa si hacía falta contestar.`;
+}
 import { mergeHandoffToolCalls, validateToolCalls, type ValidToolCall } from "./tools";
 import { applyDetalleByAgent, detalleContextFor, mergeDetalle } from "./detalle";
 import { transcriptionWaitMs } from "@/lib/ai/transcription/rules";
@@ -45,7 +49,7 @@ import { brainCandidates, brainModelForStage, handoffStage, impliedStage, type M
 import { loadContactStage } from "@/lib/contacts/stage";
 import { listFunnelStages } from "@/lib/contacts/funnel-stages";
 import { complementNote, partialNote, withoutClosingQuestions } from "./complement";
-import { withoutUnansweredRepeat } from "./unanswered";
+import { closingQuestion, isBareAck, onlyRepeatsLastQuestion, repeatNote, withoutUnansweredRepeat } from "./unanswered";
 import {
   agentReplyCount,
   alreadyHandled,
@@ -766,6 +770,44 @@ export async function runAgent(job: { organizationId: string; conversationId: st
         }
       }
     }
+    // ── Pregunta sin contestar, parte 2 (5-oct-2026, dueño) ─────────────────
+    // La respuesta era SOLO la pregunta que el cliente dejó sin contestar (p. ej. «Quiero más
+    // información» otra vez, o «ha estado lloviendo mucho»). Antes salía tal cual para no dejar
+    // al cliente sin respuesta; ahora se pide otra respuesta con una nota (otro modelo o, si no
+    // hay, el mismo) y, si tampoco, no sale nada y el vendedor recibe el aviso amarillo. Solo un
+    // acuse del cliente («ok», «gracias», 👍, sticker) deja volver a hacerla (Goal: PREGUNTA SIN
+    // CONTESTAR). En el complemento de un workflow ya no hay preguntas (withoutClosingQuestions).
+    let repetida: string | null = null;
+    const lastAsked = complementOf ? null : await lastQuestionAsked(org, conv.id, deps.now());
+    const acuse = pending.length > 0 && pending.every((m) => isBareAck(m));
+    const onlyRepeat = async (r: BrainOk): Promise<boolean> => {
+      if (!lastAsked || acuse || r.out.kind !== "reply" || !r.out.text.trim()) return false;
+      // Lo idéntico a lo que ya salió después del último mensaje lo quita el candado de siempre.
+      const { keep } = splitRepeated(toBubbles(r.out.text, options.maxBubbles), await outboundTextsSinceLastInbound(org, conv.id));
+      if (!onlyRepeatsLastQuestion(keep, lastAsked)) return false;
+      // Un workflow que le manda algo al cliente (p. ej. la Tabla) ya es respuesta.
+      const draft = await prepareActions({ organizationId: org, conversationId: conv.id, calls: r.toolCalls, modelText: "", pendingSince: pending[0]?.createdAt ?? null, stages });
+      const sending = await runsThatSend(org, draft.runs.map((run) => run.workflowId));
+      return !draft.runs.some((run) => sending.has(run.workflowId));
+    };
+    if (lastAsked && (await onlyRepeat(used))) {
+      const question = closingQuestion(lastAsked) ?? lastAsked;
+      const other = candidates.map((c) => getModel(c.modelId)).find((m): m is CatalogModel => m !== undefined && !tried.has(m.id)) ?? used.model;
+      const retry = await attempt(other, null, repeatNote(question));
+      if (retry.ok && !(await isSilent(retry)) && !(await onlyRepeat(retry))) {
+        await recordAiUsage({ ...usageOf(used), outcome: "repite_pregunta", error: `solo repetía la pregunta sin contestar; contesta ${retry.model.id}` });
+        console.warn(`[agente] ${conv.id}: ${used.model.label} solo repetía la pregunta sin contestar; escribe ${retry.model.label}`);
+        const toolCalls = mergeHandoffToolCalls(callsOf(used), callsOf(retry));
+        toolCalls.push(...used.toolCalls.filter((c) => c.kind === "etapa"));
+        used = { ...retry, toolCalls, ignored: [...used.ignored, ...retry.ignored] };
+      } else {
+        if (retry.ok) await recordAiUsage({ ...usageOf(retry), outcome: "repite_pregunta", error: `también repetía la pregunta o no escribió (${used.model.id})` });
+        repetida = question;
+        console.warn(`[agente] ${conv.id}: ningún modelo escribió algo distinto a la pregunta sin contestar; no sale y aviso al vendedor`);
+        // Sus acciones (Detalle, etapa, avisos) se conservan; el texto no sale.
+        used = { ...used, out: { kind: "empty" } };
+      }
+    }
     const brainUsage = usageOf(used);
 
     // ── Revisión antes de enviar: ¿llegó algo después de lo que leyó? ────────
@@ -854,6 +896,9 @@ export async function runAgent(job: { organizationId: string; conversationId: st
     // (amarillo en el Embudo; no pausa al agente). Uno por entrante.
     if (silencio === "sin_respuesta") {
       await addNotice({ organizationId: org, conversationId: conv.id, messageId: lastRead.id, kind: "sin_respuesta", body: SIN_RESPUESTA_BODY });
+    }
+    if (repetida && !(await alreadyAnswered())) {
+      await addNotice({ organizationId: org, conversationId: conv.id, messageId: lastRead.id, kind: "sin_respuesta", body: repeatNoticeBody(repetida) });
     }
     // Parte 1: el Detalle del contacto con lo que dijo el cliente (misma llamada, nunca
     // frena la respuesta; lo del vendedor no se toca).
@@ -1057,6 +1102,7 @@ export async function runAgent(job: { organizationId: string; conversationId: st
       captionedBy ? `el texto va como pie del archivo de «${captionedBy}»` : null,
       silencio === "contestado" ? "sin texto: ya le había salido algo al cliente después de su último mensaje" : null,
       silencio === "sin_respuesta" ? "sin texto: ningún modelo le escribió al cliente (aviso sin_respuesta)" : null,
+      repetida ? `sin texto: solo repetía la pregunta sin contestar «${repetida}» (aviso sin_respuesta)` : null,
     ]
       .filter(Boolean)
       .join("; ");
