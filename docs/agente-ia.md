@@ -313,8 +313,10 @@ Dashboard ya muestra el gasto del mes y el saldo estimado (24-sep-2026).
     canal o "Reactivar" es corte (no contesta historia); el barrido rescata entrantes sin job de
     los últimos 30 min. Un cliente que escribe durante la generación hace que la respuesta se
     descarte y se regenere con TODO (máx. 3 rondas; luego vuelve a la espera, nunca en bucle).
-  - **Envío sin carreras:** antes de CADA mensaje se relee el estado; si un vendedor responde,
-    apagan el canal o el cliente escribe, el resto ya no sale. Un envío en camino detiene los
+  - **Envío sin carreras:** antes de CADA mensaje se relee el estado; si un vendedor responde o
+    pausan/apagan al Agente IA, el resto ya no sale y queda en una tarjeta con el texto. Si el
+    cliente escribe cuando ya salió el 1.er mensaje, la respuesta se termina (5-oct-2026, ver
+    «Respuesta que ya empezó se termina»); antes del 1.er mensaje se descarta y se regenera. Un envío en camino detiene los
     siguientes y el agente no responde encima. Una respuesta de 2 mensajes guarda antes un
     **plan durable**; si el worker se reinicia a la mitad, el barrido lo concilia por
     `created_at` ≥ `resolved_at` (los dos con el reloj de Postgres): nada salió → el entrante se
@@ -1081,6 +1083,46 @@ común.
 - **Siguen como aviso, sin pausa:** `fijar_cotizacion` rechazada porque el total no se le dijo al cliente (es la
   protección, no una falla; 0 desde el 2-oct), un workflow omitido por «Solo al inicio» o «Máximo por chat» y la
   respuesta guardada que venció (24 h o ventana cerrada).
+
+## Mensaje tapado y red contra el silencio (5-oct-2026, sin migración)
+
+Revisión de 670 chats (30-sep → 5-oct): casi todas las preguntas que se quedaban sin contestar venían de dos
+fallas de código, no del modelo.
+
+- **Mensaje tapado.** WhatsApp da la hora en que el cliente ESCRIBIÓ y el mensaje llega de 2 a 40 s después. Si en
+  ese hueco salía una respuesta del CRM, con la hora de WhatsApp el mensaje quedaba ANTES de la respuesta: contaba
+  como contestado y el modelo lo leía como si ya se hubiera atendido (34 mensajes en el periodo, 6 chats sin
+  respuesta). Ahora, para el Agente IA y el lector, un entrante vivo va después de todo saliente que ya existía
+  cuando llegó (`agentAtSql` en `lib/ai/runtime/context.ts`): pendientes, orden del historial, candado
+  anti-repetición, red contra el silencio, `respondeHasta` y `inboundAfter`. La Bandeja, la ventana de 24 h y el
+  historial copiado del celular siguen con la hora de WhatsApp. Una ráfaga del cliente sin respuesta en medio
+  conserva el orden de WhatsApp.
+- **Red contra el silencio.** `sentToClientSinceLastInbound` contaba como "ya contestado" un workflow por palabra
+  clave de un mensaje ANTERIOR aunque el cliente hubiera escrito después («Quiero más información» → Información, y
+  luego «¿Hacen envíos?»). Ahora solo cuenta el workflow del ÚLTIMO mensaje del cliente; si escribió después, escribe
+  el otro modelo o queda el aviso `sin_respuesta`.
+
+Pruebas: `lib/ai/runtime/mensaje-tapado.int.test.ts`.
+
+## Respuesta que ya empezó se termina (5-oct-2026, sin migración)
+
+Caso del 2-oct, 7:44 p.m. El Agente IA escribió dos mensajes: «…en nuestra página web o en Amazon:» y el
+link. El cliente escribió «Es fácil de instalar» (su mensaje llegó 0.1 s después del 1.er mensaje) y el envío
+se detuvo: el link no salió y nadie avisó. Además, la pregunta del cliente se quedó sin contestar 10 minutos:
+su hora de WhatsApp era anterior al 1.er mensaje (mensaje tapado, sección anterior). Pasó 13 veces del
+26-sep al 3-oct.
+
+- Si el cliente escribe cuando ya salió el 1.er mensaje, **el resto de la respuesta sale igual**. Esos
+  mensajes llevan `respondeHasta` = la hora del último mensaje que leyó el modelo (`markAnswersUntil`):
+  no cuentan como respuesta a lo nuevo, que sigue pendiente y lo contesta la siguiente corrida.
+  `ai_usage.error`: «terminó la respuesta (N mensaje(s)) aunque el cliente escribió en medio».
+- Si lo que detiene el envío es **un vendedor** o **una pausa / el Agente IA apagado**, el resto no sale
+  y queda una tarjeta con el texto que faltó («El Agente IA se detuvo tras 1 de 2 mensajes (un vendedor
+  contestó)…»). Antes se perdía sin aviso.
+- El barrido (y la alarma del monitor, que usa la misma consulta) ordena los entrantes con la hora del
+  Agente IA (`agentAtSql`), igual que los pendientes: un mensaje tapado ya no pasa por contestado.
+
+Pruebas: `lib/ai/runtime/run.int.test.ts` (entre burbujas y «caso 2-oct»).
 
 ## Fuera de alcance (próximos briefs)
 

@@ -18,6 +18,27 @@ export type MessageRow = typeof messages.$inferSelect;
 // Hora del mensaje según WhatsApp (sent_at) o, si falta, cuándo se guardó.
 const waAt = sql`coalesce(${messages.sentAt}, ${messages.createdAt})`;
 
+/**
+ * Hora con la que el Agente IA ordena un mensaje (mensaje tapado, 5-oct-2026). WhatsApp da la hora
+ * en que el cliente ESCRIBIÓ y el mensaje llega de 2 a 40 s después. Si en ese hueco salió una
+ * respuesta del CRM, con la hora de WhatsApp el mensaje quedaba ANTES de esa respuesta: contaba como
+ * contestado sin que nadie lo hubiera leído (34 mensajes del 30-sep al 5-oct, 6 chats sin respuesta;
+ * «¿Realizan trabajos en Oaxaca?» llegó 5 s después de la pregunta del Agente IA y nunca se contestó).
+ * Para el Agente IA y el lector, un entrante vivo va DESPUÉS de todo saliente que ya existía cuando
+ * llegó (1 ms después del más reciente). La Bandeja, la ventana de 24 h y lo demás siguen con la hora
+ * de WhatsApp. El historial copiado del celular (imported_at) conserva su hora.
+ * `alias`: la fila de `messages` evaluada (constante del código, nunca un dato).
+ */
+export function agentAtSql(alias: "messages" | "i" | "c" | "t" | "m"): SQL {
+  const m = sql.raw(alias);
+  return sql`(case when ${m}.direction = 'in' and ${m}.imported_at is null then greatest(coalesce(${m}.sent_at, ${m}.created_at), (
+    select max(coalesce(o.sent_at, o.created_at)) + interval '1 millisecond' from messages o
+    where o.organization_id = ${m}.organization_id and o.conversation_id = ${m}.conversation_id
+      and o.direction = 'out' and o.status <> 'failed' and o.type <> 'system_note' and o.created_at < ${m}.created_at
+  )) else coalesce(${m}.sent_at, ${m}.created_at) end)`;
+}
+const agentAt = agentAtSql("messages");
+
 const inConversation = (organizationId: string, conversationId: string) =>
   and(eq(messages.organizationId, organizationId), eq(messages.conversationId, conversationId));
 
@@ -145,7 +166,7 @@ export async function pendingInbound(organizationId: string, conversationId: str
         not(hiddenNoticeSql(messages.metadata)),
         // Contenido real que llegó DESPUÉS de confirmarse "no disponible" (el Agente IA ya
         // pudo mandar el texto fijo): cuenta desde que llegó, para contestar lo que dice.
-        sql`coalesce(${lateContentAtSql(messages.metadata)}, ${waAt}) > coalesce((
+        sql`coalesce(${lateContentAtSql(messages.metadata)}, ${agentAt}) > coalesce((
           select max(coalesce((o.metadata->>'respondeHasta')::timestamp, o.sent_at, o.created_at)) from messages o
           where o.organization_id = ${organizationId} and o.conversation_id = ${conversationId}
             and o.direction = 'out' and o.status <> 'failed' and o.type <> 'system_note'
@@ -155,7 +176,7 @@ export async function pendingInbound(organizationId: string, conversationId: str
         not(answeredOnlySql("messages")),
       ),
     )
-    .orderBy(desc(waAt), desc(messages.createdAt))
+    .orderBy(desc(agentAt), desc(messages.createdAt))
     .limit(MAX_PENDING);
   return rows.reverse();
 }
@@ -198,6 +219,9 @@ export async function answerRunInFlight(organizationId: string, conversationId: 
  * por palabra clave de estos entrantes? Si sí, que el Agente IA no escriba nada es correcto
  * (p. ej. «Precio 2» ya contestó y terminó con su pregunta). Mismos salientes que el candado
  * anti-repetición (sin fallidos ni notas internas), pero con o sin texto.
+ * La corrida solo cuenta si la disparó el ÚLTIMO mensaje del cliente (5-oct-2026): si el cliente
+ * escribió después de que un workflow contestó un mensaje anterior («Quiero más información» →
+ * Información, y luego «Que precio en euros»), lo nuevo sigue sin respuesta y no se debe callar.
  */
 export async function sentToClientSinceLastInbound(organizationId: string, conversationId: string, triggerIds: readonly string[]): Promise<boolean> {
   const [out] = await db
@@ -210,7 +234,7 @@ export async function sentToClientSinceLastInbound(organizationId: string, conve
         ne(messages.status, "failed"),
         ne(messages.type, "system_note"),
         sql`${waAt} > coalesce((
-          select max(coalesce(i.sent_at, i.created_at)) from messages i
+          select max(${agentAtSql("i")}) from messages i
           where i.organization_id = ${organizationId} and i.conversation_id = ${conversationId}
             and i.direction = 'in' and i.imported_at is null
         ), '-infinity'::timestamp)`,
@@ -229,6 +253,12 @@ export async function sentToClientSinceLastInbound(organizationId: string, conve
         eq(workflowRuns.trigger, "keyword"),
         inArray(workflowRuns.status, ["queued", "running", "done"]),
         inArray(workflowRuns.triggerMessageId, [...triggerIds]),
+        sql`${workflowRuns.triggerMessageId} = (
+          select i.id from messages i
+          where i.organization_id = ${organizationId} and i.conversation_id = ${conversationId}
+            and i.direction = 'in' and i.imported_at is null
+          order by ${agentAtSql("i")} desc, i.created_at desc limit 1
+        )`,
       ),
     )
     .limit(1);
@@ -254,7 +284,7 @@ export async function outboundTextsSinceLastInbound(organizationId: string, conv
         ne(messages.type, "system_note"),
         isNotNull(messages.body),
         sql`${waAt} > coalesce((
-          select max(coalesce(i.sent_at, i.created_at)) from messages i
+          select max(${agentAtSql("i")}) from messages i
           where i.organization_id = ${organizationId} and i.conversation_id = ${conversationId}
             and i.direction = 'in' and i.imported_at is null
         ), '-infinity'::timestamp)`,
@@ -310,10 +340,10 @@ export async function loadHistory(
   let chars = 0;
   for (;;) {
     const last = newestFirst[newestFirst.length - 1];
-    // Cursor por (hora WhatsApp, created_at, id), mismo orden que la consulta. Se lee
+    // Cursor por (hora del Agente IA, created_at, id), mismo orden que la consulta. Se lee
     // de la fila en SQL (microsegundos exactos; un Date de JS los truncaría).
     const before = last
-      ? sql`(${waAt}, ${messages.createdAt}, ${messages.id}) < (select coalesce(c.sent_at, c.created_at), c.created_at, c.id from ${messages} c where c.id = ${last.id})`
+      ? sql`(${agentAt}, ${messages.createdAt}, ${messages.id}) < (select ${agentAtSql("c")}, c.created_at, c.id from ${messages} c where c.id = ${last.id})`
       : undefined;
     const page = await db
       .select()
@@ -330,7 +360,7 @@ export async function loadHistory(
           before,
         ),
       )
-      .orderBy(desc(waAt), desc(messages.createdAt), desc(messages.id))
+      .orderBy(desc(agentAt), desc(messages.createdAt), desc(messages.id))
       .limit(pageRows);
     // El confirmado sin contenido se lee como lo que es, no como "[Unsupported message]".
     for (const m of page) if (noDisponibleEstado(m.metadata) === "sin_contenido") m.body = UNAVAILABLE_HISTORY_NOTE;

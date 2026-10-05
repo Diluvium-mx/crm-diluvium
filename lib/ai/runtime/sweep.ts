@@ -10,7 +10,7 @@ import { db } from "@/lib/db";
 import { aiAgentDrafts, messages } from "@/lib/db/schema";
 import { isAmbiguousSendError, SEND_UNCONFIRMED, SEND_UNKNOWN } from "@/lib/messaging/rules";
 import { holdAgentForReview, recordAgentError } from "./agent-error";
-import { answeredOnlySql, workflowFillerSql } from "./context";
+import { agentAtSql, answeredOnlySql, workflowFillerSql } from "./context";
 import { hiddenNoticeSql } from "@/lib/messaging/unavailable";
 import { sendErrorBody } from "./model-errors";
 import { bubbleMessageId, holdForRetry } from "./saved-reply";
@@ -111,7 +111,9 @@ function unansweredSql(now: Date, opts: { since: Date; olderThan: Date; extra: S
       -- Parte 1: una burbuja reenviada cuenta en la hora del entrante que la originó
       -- (respondeHasta): si el cliente escribió mientras la tarjeta esperaba, lo suyo
       -- queda como lo último y el barrido lo rescata.
-      order by coalesce((m.metadata->>'respondeHasta')::timestamp, m.sent_at, m.created_at) desc, m.created_at desc
+      -- Un entrante va en la hora del Agente IA (mensaje tapado, 5-oct-2026): si llegó después
+      -- de una respuesta, queda después de ella aunque WhatsApp diga que se escribió antes.
+      order by coalesce((m.metadata->>'respondeHasta')::timestamp, ${agentAtSql("m")}) desc, m.created_at desc
       limit 1
     ) last on true
     where ch.ai_agent_mode = 'auto'
