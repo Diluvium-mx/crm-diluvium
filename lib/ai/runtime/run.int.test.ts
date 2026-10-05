@@ -764,7 +764,9 @@ describe.skipIf(!TEST_DATABASE_URL)("runtime del Agente IA (Postgres real)", () 
     expect(brain.error).toContain("detenido tras 1 mensaje(s): respuesta_humana");
   });
 
-  it("AUTO: si el CLIENTE escribe en la pausa entre burbujas, la 2ª no sale y su mensaje queda pendiente", async () => {
+  // Respuesta que ya empezó se termina (5-oct-2026, caso del 2-oct 7:44 p.m.: «…en nuestra página web o en
+  // Amazon:» salió sin su link porque el cliente escribió «Es fácil de instalar» entre los dos mensajes).
+  it("AUTO: si el CLIENTE escribe en la pausa entre burbujas, la 2ª sale igual y su mensaje queda pendiente", async () => {
     await msg({ direction: "in", body: "¿precio?", at: ago(10_000) });
     let nuevo = "";
     const { deps } = makeDeps({
@@ -772,12 +774,65 @@ describe.skipIf(!TEST_DATABASE_URL)("runtime del Agente IA (Postgres real)", () 
         nuevo = await msg({ direction: "in", body: "¿y hacen envíos?", at: new Date(Date.now() + 1_000) });
       },
     });
-    expect(await run.runAgent(JOB, deps)).toEqual({ kind: "sent", bubbles: 1 });
-    expect(await agentOuts()).toHaveLength(1);
+    expect(await run.runAgent(JOB, deps)).toEqual({ kind: "sent", bubbles: 2 });
+    expect((await agentOuts()).map((m) => m.body)).toEqual(["Claro, cuesta $5,500 MXN.", "¿Cuánto mide tu entrada?"]);
     const { pendingInbound } = await import("./context");
     expect((await pendingInbound(ORG, CONV)).map((m) => m.id)).toEqual([nuevo]); // la siguiente corrida lo atiende
     const brain = (await usage()).find((u) => u.stage === "cerebro")!;
-    expect(brain.error).toContain("detenido tras 1 mensaje(s): entrante_nuevo");
+    expect(brain.error).toContain("terminó la respuesta (1 mensaje(s)) aunque el cliente escribió en medio");
+    expect(await notices()).toHaveLength(0);
+    expect(await agentError.hasUnresolvedAgentError(ORG, CONV)).toBe(false);
+  });
+
+  it("caso 2-oct: el cliente ESCRIBIÓ antes del 1.er mensaje pero llegó después → la 2ª sale y su mensaje sigue pendiente (con el barrido también)", async () => {
+    await msg({ direction: "in", body: "O la tienen en Amazon", at: ago(20_000) });
+    let nuevo = "";
+    const { deps } = makeDeps({
+      onSleep: async () => {
+        // WhatsApp dice que lo escribió 2 s ANTES de que saliera el 1.er mensaje; llega ahora.
+        seq++;
+        nuevo = `m_${seq}`;
+        await db.insert(s.messages).values({
+          id: nuevo,
+          organizationId: ORG,
+          conversationId: CONV,
+          direction: "in",
+          source: "contact",
+          type: "text",
+          body: "Es fácil de instalar",
+          attachments: [],
+          providerMessageId: `wamid.rt.${seq}`,
+          status: "received",
+          sentAt: ago(2_000),
+          createdAt: new Date(),
+        });
+      },
+    });
+    expect(await run.runAgent(JOB, deps)).toEqual({ kind: "sent", bubbles: 2 });
+    expect(await agentOuts()).toHaveLength(2);
+    const { pendingInbound } = await import("./context");
+    expect((await pendingInbound(ORG, CONV)).map((m) => m.id)).toEqual([nuevo]);
+    // La 2.ª contesta solo hasta lo que leyó el modelo.
+    const second = (await agentOuts())[1];
+    const [row] = await db.select({ metadata: s.messages.metadata }).from(s.messages).where(eq(s.messages.id, second.id));
+    expect((row.metadata as Record<string, unknown>).respondeHasta).toBeTruthy();
+    // El barrido también lo ve sin atender (respaldo si se perdiera el aviso de la cola).
+    const orphans = await sweep.findOrphanConversations(new Date(Date.now() + 5 * 60_000));
+    expect(orphans.map((o) => o.conversationId)).toContain(CONV);
+  });
+
+  it("AUTO: si un vendedor contesta entre burbujas, lo que no salió queda en una TARJETA con el texto", async () => {
+    await msg({ direction: "in", body: "¿precio?", at: ago(10_000) });
+    const { deps } = makeDeps({
+      onSleep: async () => {
+        await msg({ direction: "out", source: "crm", body: "Yo le atiendo", at: new Date() });
+      },
+    });
+    expect(await run.runAgent(JOB, deps)).toEqual({ kind: "sent", bubbles: 1 });
+    const [n] = await notices();
+    expect(n).toMatchObject({ kind: "agente_error" });
+    expect(n.body).toContain("un vendedor contestó");
+    expect(n.body).toContain("¿Cuánto mide tu entrada?");
   });
 
   // ── Envíos del agente sin confirmar o fallidos (re-revisiones de Codex) ────

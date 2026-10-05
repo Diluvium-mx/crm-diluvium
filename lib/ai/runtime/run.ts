@@ -212,6 +212,12 @@ function receiptMessageId(pending: readonly MessageRow[]): string | null {
 // ¿Sigue pudiendo enviar el agente? Estado FRESCO justo antes de una burbuja.
 type StopReason = "cambio_antes_de_enviar" | "respuesta_humana" | "entrante_nuevo";
 
+function stoppedReasonText(reason: StopReason): string {
+  if (reason === "respuesta_humana") return "un vendedor contestó";
+  if (reason === "cambio_antes_de_enviar") return "se pausó o se apagó el Agente IA";
+  return "el cliente escribió";
+}
+
 async function stopBeforeBubble(
   organizationId: string,
   conversationId: string,
@@ -999,13 +1005,25 @@ export async function runAgent(job: { organizationId: string; conversationId: st
         body: `${why} No se envió: «${bubbles.slice(sent).join(" / ")}».`,
       });
     };
+    // Respuesta que ya empezó se termina (5-oct-2026, dueño): si el cliente escribe cuando ya salió
+    // el 1.er mensaje, el resto sale igual (antes se perdía: «…en nuestra página web o en Amazon:»
+    // salió sin su link). Esos mensajes contestan solo hasta lo que leyó el modelo (respondeHasta):
+    // lo nuevo sigue pendiente y lo atiende la siguiente corrida. Un vendedor o una pausa sí detienen.
+    let finishedAfterInbound = 0;
     try {
       for (const [i, text] of bubbles.entries()) {
         if (sent > 0) await deps.sleep(BUBBLE_PAUSE_MS);
         stopped = await stopBeforeBubble(org, conv.id, humansAtStart, readCount);
+        const finishing = stopped === "entrante_nuevo" && sent > 0;
+        if (finishing) stopped = null;
         if (stopped) break;
-        const outcome = await deps.sendBubble({ organizationId: org, conversationId: conv.id, text, messageId: bubbleMessageId(planId!, i) });
+        const messageId = bubbleMessageId(planId!, i);
+        const outcome = await deps.sendBubble({ organizationId: org, conversationId: conv.id, text, messageId });
         sent++;
+        if (finishing) {
+          finishedAfterInbound++;
+          await markAnswersUntil(org, messageId, lastRead.id);
+        }
         // Sin confirmación no se manda el siguiente: el cliente no recibe media respuesta
         // encima de algo que quizá no le llegó (lo resuelve el outbox; si vence, aviso).
         if (outcome.status !== "sent") {
@@ -1048,9 +1066,9 @@ export async function runAgent(job: { organizationId: string; conversationId: st
       continue;
     }
     if (stopped) {
-      // Detenido a propósito (humano, canal/estado o mensaje nuevo): el resto ya no
-      // aplica. Con "entrante_nuevo" tras ≥1 mensaje, el mensaje nuevo queda
-      // pendiente (es posterior a lo enviado) y lo atiende la siguiente corrida.
+      // Detenido a propósito (un vendedor contestó, o se pausó o apagó el Agente IA): el resto
+      // ya no sale. Un mensaje nuevo del cliente ya no llega aquí con ≥1 mensaje enviado: la
+      // respuesta se termina (arriba).
       if (planId) await closePlan(org, planId, sent > 0 ? "enviado" : "obsoleto");
       if (stopped === "respuesta_humana") await pauseForHuman(conv, deps.now());
       if (sent === 0) {
@@ -1061,6 +1079,9 @@ export async function runAgent(job: { organizationId: string; conversationId: st
       await markAgentReply(org, conv.id, deps.now());
       await supersedeAgentErrors(org, conv.id); // Fase E: el agente volvió a contestar
       await recordAiUsage({ ...brainUsage, outcome: "sent", error: `detenido tras ${sent} mensaje(s): ${stopped}` });
+      // Lo que no salió no se pierde en silencio: el vendedor ve el texto (después de supersede,
+      // que cerraría la tarjeta).
+      await noticeRemainder(`El Agente IA se detuvo tras ${sent} de ${bubbles.length} mensajes (${stoppedReasonText(stopped)}).`);
       // Las acciones no se pierden: el pago ya está registrado y su workflow (aviso
       // + etapa) debe correr; cada corrida relee el estado antes de cada paso.
       await runActions(plan, actionCtx, deps.startWorkflow, "despues");
@@ -1092,6 +1113,7 @@ export async function runAgent(job: { organizationId: string; conversationId: st
     // el barrido deja un aviso (nunca reenvía a ciegas).
     const omitted = bubbles.length - sent;
     const note = [
+      finishedAfterInbound ? `terminó la respuesta (${finishedAfterInbound} mensaje(s)) aunque el cliente escribió en medio; lo nuevo queda pendiente` : null,
       unconfirmed ? `${unconfirmed} mensaje(s) sin confirmar${omitted ? `; ${omitted} sin enviar (aviso)` : ""}` : null,
       complementOf ? `complemento de «${complementOf}»${out.kind !== "reply" ? ": nada que agregar" : ""}` : null,
       questions.length ? `sin preguntas en el complemento; no salió: «${questions.join(" / ")}»` : null,

@@ -29,7 +29,7 @@ const waAt = sql`coalesce(${messages.sentAt}, ${messages.createdAt})`;
  * de WhatsApp. El historial copiado del celular (imported_at) conserva su hora.
  * `alias`: la fila de `messages` evaluada (constante del código, nunca un dato).
  */
-export function agentAtSql(alias: "messages" | "i" | "c" | "t"): SQL {
+export function agentAtSql(alias: "messages" | "i" | "c" | "t" | "m"): SQL {
   const m = sql.raw(alias);
   return sql`(case when ${m}.direction = 'in' and ${m}.imported_at is null then greatest(coalesce(${m}.sent_at, ${m}.created_at), (
     select max(coalesce(o.sent_at, o.created_at)) + interval '1 millisecond' from messages o
