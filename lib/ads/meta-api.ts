@@ -111,7 +111,8 @@ function assertGraphId(id: string): void {
   if (!GRAPH_ID.test(id)) throw new MetaApiError(0, null, `id de Meta inválido: ${JSON.stringify(id.slice(0, 40))}`);
 }
 
-async function graphGet(config: MetaApiConfig, id: string, params: Record<string, string>): Promise<Json> {
+/** GET a un objeto de la Graph API (también lo usa el cobro de WhatsApp: lib/meta-billing/read.ts). */
+export async function graphGet(config: MetaApiConfig, id: string, params: Record<string, string>): Promise<Json> {
   assertGraphId(id);
   return graphRequest(config, id, params);
 }

@@ -159,7 +159,7 @@ contacto y los avisos se explican dentro de la Bandeja porque son **los mismos**
 
 ### 3.1 Dashboard
 
-Resumen del mes: cuánto se gasta en IA y cuántas conversaciones nuevas llegan, si el número de WhatsApp está conectado y si el Agente IA está contestando.
+Resumen del mes: cuánto se gasta en IA y en WhatsApp (Meta), cuántas conversaciones nuevas llegan, si el número de WhatsApp está conectado y si el Agente IA está contestando.
 
 ![Dashboard](mapa-crm/01-dashboard.png)
 
@@ -189,6 +189,9 @@ Resumen del mes: cuánto se gasta en IA y cuántas conversaciones nuevas llegan,
 | 22 | **Pastilla Agente IA** (junto a la de WhatsApp) | ¿El agente está contestando? Verde **"Agente IA contestando"**, ámbar **"Agente IA fuera de horario"**, roja **"Agente IA apagado"** (canal Apagado) o **"Agente IA callado"** (3 o más clientes de la última hora esperando más de 15 min y el agente sin mandar nada en 15 min, dentro de su horario). Sale de los datos del CRM; no consulta a Zernio. No está en la captura. | Todos |
 | 23 | **Estado del Agente IA** (recuadro al hacer clic en 22) | 5 líneas: **Canal** (Encendido o Apagado), **Horario** (24/7 o días y horas, y si ahora está fuera), **Sin respuesta hace más de 15 min (de la última hora)** (cuántas conversaciones; estas sí cuentan para la alarma), **Atrasados (más de 1 h)** («N chats esperan a un vendedor»: solo dato, no alarma) y **Última respuesta del Agente IA** (hace X min). | Todos |
 | 24 | **Historial** (botón junto a «Recargas registradas») | Abre **Dashboard › Historial del gasto de IA** ([3.1.1](#311-historial-del-gasto-de-ia)): el gasto y las recargas de cada mes o del periodo que elijas. | Todos |
+| 37 | **WhatsApp (Meta)** (tarjeta debajo del Gasto de IA) | Lo que Meta va cobrando en el mes por los mensajes de WhatsApp, sin entrar a Meta Business Suite. Arriba: **«Actualizado hace X min»** (se lee cada hora; en naranja si tiene más de 2½ h o si Meta falló), **Total del mes** y **Mes anterior**. Cifras aproximadas que da Meta, en días UTC. Solo aparece cuando el worker ya tiene la llave de Meta. Desde el 5-oct-2026. | Todos |
+| 38 | **Cuentan para cobro · Gratis por anuncio · Gratis en la ventana** | Mensajes entregados en el mes: los que cuentan para cobro (aunque caigan en los gratis del mes de Meta), los gratis porque el cliente llegó por un anuncio (72 h) y los gratis de la ventana. | Todos |
+| 39 | **Por categoría** (lista) | De lo que cuenta para cobro: Servicio (respuestas), Marketing, Utilidad… con cuántos mensajes y cuánto. La nota de abajo recuerda que lo del celular no se cobra y que la factura está en Business Suite › Facturación. | Todos |
 
 **Lo cambias tú desde la pantalla:** registrar y borrar recargas; el periodo de las conversaciones nuevas.
 
@@ -210,7 +213,7 @@ Zernio ya no manda correo: solo si se repite en la siguiente revisión.
 en segundo plano** para llenar el Detalle (Luna, ~US$0.0005 por lectura) se suma en **Gasto de IA**. Los chats que
 atiende cuentan en **Conversaciones nuevas** como cualquier otro. La pastilla **Agente IA** (22) dice si está contestando.
 
-<sub>Para Code: ruta `/inicio`; `app/(app)/inicio/` (`ai-spend-card`, `ai-topups`, `period-cards`, `daily-chart`, `breakdown-list`, `range-filter`, `whatsapp-status`); datos en `lib/dashboard/` (Gasto de IA: `ai-spend.ts` junta el registro del CRM con la lectura real de cada proveedor, tabla `ai_provider_billing` de la migración 0054, que el worker llena cada 5 min con `lib/ai/billing/`); la pastilla (20–21) en `lib/monitoring/` (`status-pill`, `dashboard-status`) con lo que guarda el monitoreo en Redis; la pastilla Bot (22–23) en `lib/monitoring/` (`bot-status`, `bot-silence`) con datos de la base.</sub>
+<sub>Para Code: ruta `/inicio`; `app/(app)/inicio/` (`ai-spend-card`, `meta-whatsapp-card`, `ai-topups`, `period-cards`, `daily-chart`, `breakdown-list`, `range-filter`, `whatsapp-status`); datos en `lib/dashboard/` (WhatsApp (Meta): `meta-whatsapp.ts` + `lib/meta-billing/`; Gasto de IA: `ai-spend.ts` junta el registro del CRM con la lectura real de cada proveedor, tabla `ai_provider_billing` de la migración 0054, que el worker llena cada 5 min con `lib/ai/billing/`); la pastilla (20–21) en `lib/monitoring/` (`status-pill`, `dashboard-status`) con lo que guarda el monitoreo en Redis; la pastilla Bot (22–23) en `lib/monitoring/` (`bot-status`, `bot-silence`) con datos de la base.</sub>
 
 
 #### 3.1.1 Historial del gasto de IA

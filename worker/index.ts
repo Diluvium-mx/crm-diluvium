@@ -59,6 +59,7 @@ import { adsIngestHooks, startAdsWorker } from "@/lib/ads/worker";
 import { enqueueUnavailableCheck } from "@/lib/queue/unavailable";
 import { startUnavailableWorker } from "./unavailable";
 import { syncAiBilling } from "@/lib/ai/billing/sync";
+import { syncMetaBilling } from "@/lib/meta-billing/sync";
 import { refreshTemplatesInReview } from "@/lib/messaging/templates";
 
 const SWEEP_EVERY_MS = 60_000;
@@ -410,6 +411,21 @@ function billing() {
 }
 const billingTimer = setInterval(billing, BILLING_EVERY_MS);
 
+// Cobro de Meta por WhatsApp (5-oct-2026): cada hora se lee pricing_analytics de la WABA
+// (lib/meta-billing/sync.ts), y una vez al arrancar. Sin META_WHATSAPP_TOKEN/META_WABA_ID no hace nada.
+const META_BILLING_EVERY_MS = 60 * 60_000;
+let metaBillingRunning = false;
+function metaBilling() {
+  if (!migrationsReady || metaBillingRunning) return;
+  metaBillingRunning = true;
+  syncMetaBilling()
+    .catch((error) => logError("[meta-whatsapp] la lectura del cobro falló", error))
+    .finally(() => {
+      metaBillingRunning = false;
+    });
+}
+const metaBillingTimer = setInterval(metaBilling, META_BILLING_EVERY_MS);
+
 // Plantillas al día solas (1-oct-2026): mientras alguna esté «En revisión», cada 10 min se le
 // pregunta a Meta su estado (lo mismo que «Ver estado»). Sin plantillas en revisión no consulta nada.
 const TEMPLATES_EVERY_MS = 10 * 60_000;
@@ -444,6 +460,7 @@ async function shutdown(signal: string) {
   clearInterval(sweepTimer);
   clearInterval(monitorTimer);
   clearInterval(billingTimer);
+  clearInterval(metaBillingTimer);
   clearInterval(templatesTimer);
   await Promise.all([worker.close(), mediaWorker?.close(), scheduled.close(), agent.close(), lector.close(), followUps.close(), workflowsRunner.close(), outbox.close(), ads.close(), unavailable.close(), chatUploads?.close()]);
   console.info(`[worker] cerrado en orden en ${((Date.now() - t0) / 1000).toFixed(1)} s`);
@@ -464,6 +481,7 @@ waitForMigrations()
     monitor().catch((error) => logError("[monitor] la revisión falló", error));
     // Y la primera lectura del gasto real (la tarjeta del Dashboard sale al día tras un deploy).
     billing();
+    metaBilling();
     void worker.run();
     void mediaWorker?.run();
     scheduled.run();
