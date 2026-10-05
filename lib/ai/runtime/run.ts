@@ -15,7 +15,7 @@
 import type { CallModelInput, CallModelResult, CatalogModel } from "@/lib/ai/types";
 import { getModel } from "@/lib/ai/catalog";
 import { modelAvailability, PROVIDER_META } from "@/lib/ai/provider";
-import { hasUnresolvedAgentError, recordAgentError, supersedeAgentErrors } from "./agent-error";
+import { hasUnresolvedAgentError, holdAgentForReview, recordAgentError, supersedeAgentErrors } from "./agent-error";
 import { agentErrorBody, bothModelsFailedBody, classifyModelError, EMPTY_RESPONSE_INFO, sendErrorBody, sendErrorMotive, type ModelErrorInfo } from "./model-errors";
 import { cleanAdMessages } from "./ad-cleaner";
 import { parseBrainOutput } from "./brain";
@@ -39,6 +39,7 @@ export function repeatNoticeBody(question: string): string {
   return `El Agente IA solo iba a repetir la pregunta «${question}», que el cliente no contestó, y no salió. Revisa si hacía falta contestar.`;
 }
 import { mergeHandoffToolCalls, validateToolCalls, type ValidToolCall } from "./tools";
+import { unfinishedReply } from "./internal-text";
 import { applyDetalleByAgent, detalleContextFor, mergeDetalle } from "./detalle";
 import { transcriptionWaitMs } from "@/lib/ai/transcription/rules";
 import { handoverPauseUntil, humanPauseUntil, isWithinSchedule, type BotOptions } from "@/lib/agente-ia/opciones";
@@ -265,7 +266,7 @@ async function runActions(
     return done;
   } catch (error) {
     console.error(`[agente] ${ctx.conversationId}: acciones fallaron`, error);
-    await addNotice({ organizationId: ctx.organizationId, conversationId: ctx.conversationId, messageId: ctx.batchMessageId, kind: "envio", body: `Las acciones del agente (${plan.runs.map((r) => r.slug).join(", ") || "etapa/aviso/cotización"}) no se ejecutaron: ${errorText(error)}. Revisa el hilo.` });
+    await holdAgentForReview({ organizationId: ctx.organizationId, conversationId: ctx.conversationId, messageId: ctx.batchMessageId, body: `Las acciones del Agente IA (${plan.runs.map((r) => r.slug).join(", ") || "etapa/aviso/cotización"}) no se ejecutaron: ${errorText(error)}.` });
     return null;
   }
 }
@@ -349,11 +350,11 @@ async function resendSavedReply(
   } catch (error) {
     if (sent === 0 && isUnconfirmedResend(error)) {
       await closePlan(org, saved.id, "enviado");
-      await addNotice({
+      await holdAgentForReview({
         organizationId: org,
         conversationId,
-        kind: "envio",
-        body: `WhatsApp no confirmó si le llegó al cliente la respuesta del agente «${saved.bubbles.join(" / ")}». Revísalo en el celular; si no le llegó, escríbesela tú.`,
+        messageId: triggerId,
+        body: `WhatsApp no confirmó si le llegó al cliente la respuesta del Agente IA «${saved.bubbles.join(" / ")}». Revísalo en el celular; si no le llegó, escríbesela tú.`,
       });
       console.warn(`[agente] ${conversationId}: respuesta guardada sin confirmar; no se reenvía (podría duplicar), aviso al vendedor`);
       return { kind: "done", result: { kind: "skipped", reason: "envio_sin_confirmar" } };
@@ -368,11 +369,11 @@ async function resendSavedReply(
     await closePlan(org, saved.id, "enviado");
     await markAgentReply(org, conversationId, deps.now());
     await supersedeAgentErrors(org, conversationId);
-    await addNotice({
+    await holdAgentForReview({
       organizationId: org,
       conversationId,
-      kind: "envio",
-      body: `Salieron ${sent} de ${saved.bubbles.length} mensajes de la respuesta guardada del agente y el siguiente falló. No se envió: «${saved.bubbles.slice(sent).join(" / ")}». Revisa el hilo.`,
+      messageId: triggerId,
+      body: `Salieron ${sent} de ${saved.bubbles.length} mensajes de la respuesta guardada del Agente IA y el siguiente falló. No se envió: «${saved.bubbles.slice(sent).join(" / ")}».`,
     });
     return { kind: "done", result: { kind: "sent", bubbles: sent } };
   }
@@ -389,11 +390,11 @@ async function resendSavedReply(
   if (stopped === "respuesta_humana") await pauseForHuman({ id: conversationId, organizationId: org }, deps.now());
   const omitted = saved.bubbles.length - sent;
   if (omitted > 0) {
-    await addNotice({
+    await holdAgentForReview({
       organizationId: org,
       conversationId,
-      kind: "envio",
-      body: `${unconfirmed ? "WhatsApp no confirmó una parte de la respuesta guardada del agente." : "El reenvío de la respuesta guardada del agente se detuvo."} No se envió: «${saved.bubbles.slice(sent).join(" / ")}». Revisa el hilo.`,
+      messageId: triggerId,
+      body: `${unconfirmed ? "WhatsApp no confirmó una parte de la respuesta guardada del Agente IA." : "El reenvío de la respuesta guardada del Agente IA se detuvo."} No se envió: «${saved.bubbles.slice(sent).join(" / ")}».`,
     });
   }
   console.info(`[agente] ${conversationId}: respuesta guardada reenviada (${sent} mensaje/s), sin llamar al modelo`);
@@ -847,22 +848,19 @@ export async function runAgent(job: { organizationId: string; conversationId: st
     const { res: brainRes, out, ignored } = used;
     const toolCalls = [...used.toolCalls];
     if (ignored.length) console.warn(`[agente] ${conv.id}: herramientas ignoradas: ${ignored.join("; ")}`);
-    // Respuesta cortada por el tope, o una acción descartada por argumentos inválidos
-    // (lo que pasó en B5): NUNCA en silencio. Aviso al vendedor, uno por lote.
-    const invalid = ignored.filter((i) => i.endsWith("argumentos inválidos"));
-    if (brainRes.finishReason === "length" || invalid.length) {
-      await addNotice({
-        organizationId: org,
-        conversationId: conv.id,
-        messageId: lastRead.id,
-        kind: "respuesta_cortada",
-        body:
-          (brainRes.finishReason === "length"
-            ? `La respuesta del agente se cortó (tope de ${BRAIN_MAX_OUTPUT_TOKENS.toLocaleString("es-MX")} tokens): pudo quedar incompleta o sin alguna acción.`
-            : "El agente pidió una acción con datos incompletos y no se ejecutó.") +
-          (invalid.length ? ` No se ejecutó: ${invalid.join("; ")}.` : "") +
-          " Revisa el hilo.",
-      });
+    // ── Respuesta que no se pudo completar (5-oct-2026, dueño: «nunca de los nuncas») ──
+    // Texto interno escrito como mensaje («[tool call] …», «*(sin acción adicional…)*»), una
+    // respuesta cortada por el tope o una acción que pidió y no se puede hacer (datos inválidos,
+    // herramienta que no existe): NO sale nada al cliente, nada se ejecuta, el vendedor recibe la
+    // tarjeta «El agente no pudo responder» y el Agente IA queda en pausa en este chat hasta que
+    // elija Reintentar o Apagar (hasUnresolvedAgentError). Antes salía el texto con un aviso.
+    // (El Detalle sin datos válidos no cuenta: es de apoyo y no le promete nada al cliente.)
+    const unfinished = unfinishedReply(out.kind === "reply" ? [out.text] : [], brainRes.finishReason, ignored);
+    if (unfinished) {
+      await recordAiUsage({ ...brainUsage, outcome: "error", error: `no salió: ${unfinished.log}` });
+      await recordAgentError({ organizationId: org, conversationId: conv.id, messageId: lastRead.id, body: unfinished.card });
+      console.warn(`[agente] ${conv.id}: respuesta sin completar (${unfinished.log}); no sale nada, tarjeta y pausa en el chat`);
+      return { kind: "failed", reason: "respuesta_sin_completar" };
     }
     // Solo llamadas, sin texto (algunos modelos lo hacen con tools): NO se lanza. Las
     // acciones corren igual; para un archivo el cliente recibe la media con su pie, y el
@@ -991,13 +989,14 @@ export async function runAgent(job: { organizationId: string; conversationId: st
       bubbles.length > 0
         ? await savePlan({ organizationId: org, conversationId: conv.id, bubbles, runs: plan.runs, triggerMessageId: lastRead.id, now: deps.now() })
         : null;
-    // Lo que no alcanzó a salir no se reenvía solo (podría duplicar): queda en un aviso.
+    // Lo que no alcanzó a salir no se reenvía solo (podría duplicar): tarjeta y el Agente IA
+    // en pausa en el chat hasta que el vendedor lo revise (5-oct-2026).
     const noticeRemainder = async (why: string) => {
-      await addNotice({
+      await holdAgentForReview({
         organizationId: org,
         conversationId: conv.id,
-        kind: "envio",
-        body: `${why} No se envió: «${bubbles.slice(sent).join(" / ")}». Revisa el hilo.`,
+        messageId: lastRead.id,
+        body: `${why} No se envió: «${bubbles.slice(sent).join(" / ")}».`,
       });
     };
     try {
@@ -1082,11 +1081,11 @@ export async function runAgent(job: { organizationId: string; conversationId: st
     // workflow no arrancó, el cliente se quedaría sin nada: el vendedor ve el texto que no salió.
     const answerSlugs = plan.runs.filter((r) => answerRuns.has(r.workflowId)).map((r) => r.slug);
     if (withheld && !answerSlugs.some((slug) => after?.started.includes(slug))) {
-      await addNotice({
+      await holdAgentForReview({
         organizationId: org,
         conversationId: conv.id,
-        kind: "envio",
-        body: `El Agente IA iba a contestar con un workflow (${answerSlugs.join(", ")}) que no salió, y su propio texto tampoco: «${withheld}». Revisa el hilo y contesta tú.`,
+        messageId: lastRead.id,
+        body: `El Agente IA iba a contestar con un workflow (${answerSlugs.join(", ")}) que no salió, y su propio texto tampoco: «${withheld}».`,
       });
     }
     // Un mensaje sin confirmar queda en el outbox: si vence como "sin confirmar",
