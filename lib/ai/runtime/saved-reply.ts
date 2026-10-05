@@ -15,7 +15,7 @@ import { createHash } from "node:crypto";
 import { and, asc, eq, ne, sql } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { aiAgentDrafts, messages } from "@/lib/db/schema";
-import { MAX_PENDING, type MessageRow } from "./context";
+import { agentAtSql, MAX_PENDING, type MessageRow } from "./context";
 
 export type SavedRun = { slug: string; workflowId: string };
 // Una respuesta guardada no sale después de esto (la clave de idempotencia de Zernio
@@ -125,7 +125,8 @@ export async function discardSavedReplies(
 // el agente los atiende en una ronda nueva (eso sí es una llamada al modelo: son
 // mensajes nuevos, no el error de envío).
 export async function inboundAfter(organizationId: string, conversationId: string, messageId: string): Promise<MessageRow[]> {
-  const waAt = sql`coalesce(${messages.sentAt}, ${messages.createdAt})`;
+  // Hora del Agente IA (context.ts, agentAtSql): un mensaje tapado por la respuesta también cuenta.
+  const waAt = agentAtSql("messages");
   return db
     .select()
     .from(messages)
@@ -134,7 +135,7 @@ export async function inboundAfter(organizationId: string, conversationId: strin
         eq(messages.organizationId, organizationId),
         eq(messages.conversationId, conversationId),
         eq(messages.direction, "in"),
-        sql`(${waAt}, ${messages.createdAt}) > (select coalesce(t.sent_at, t.created_at), t.created_at from ${messages} t
+        sql`(${waAt}, ${messages.createdAt}) > (select ${agentAtSql("t")}, t.created_at from ${messages} t
               where t.id = ${messageId} and t.organization_id = ${organizationId})`,
       ),
     )
@@ -157,11 +158,11 @@ export async function markAnswersOnly(organizationId: string, messageId: string,
 }
 
 // La burbuja reenviada contesta solo hasta el entrante que originó la respuesta (ver
-// ANSWERS_UNTIL_KEY en context.ts). La hora se copia en SQL, con microsegundos.
+// ANSWERS_UNTIL_KEY en context.ts). La hora (la del Agente IA, agentAtSql) se copia en SQL, con microsegundos.
 export async function markAnswersUntil(organizationId: string, messageId: string, triggerMessageId: string): Promise<void> {
   await db.execute(sql`
     update messages set metadata = jsonb_set(coalesce(metadata, '{}'::jsonb), '{respondeHasta}',
-      to_jsonb((select coalesce(t.sent_at, t.created_at)::text from messages t where t.id = ${triggerMessageId} and t.organization_id = ${organizationId})))
+      to_jsonb((select (${agentAtSql("t")})::text from messages t where t.id = ${triggerMessageId} and t.organization_id = ${organizationId})))
     where id = ${messageId} and organization_id = ${organizationId}
       and exists (select 1 from messages t where t.id = ${triggerMessageId} and t.organization_id = ${organizationId})
   `);
