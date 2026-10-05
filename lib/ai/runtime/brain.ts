@@ -6,6 +6,7 @@
 // formato: solo dice qué devolver y cómo se "activan" en este CRM las acciones del
 // Goal que aquí todavía no existen (así el cliente nunca espera algo que no llega).
 import type { ResponseLength } from "@/lib/agente-ia/opciones";
+import { sizesInstructions, type SizeRange } from "@/lib/contacts/sizes";
 import { stagesInstructions, type FunnelStage } from "@/lib/contacts/stages";
 import { buildBrainSystem, type Faq } from "./knowledge";
 
@@ -35,9 +36,18 @@ export const LENGTH_LINES: Record<ResponseLength, string | null> = {
 
 // Columnas del Embudo (26-sep-2026): las etapas vigentes van al FINAL, después del sufijo
 // (solo cambian cuando alguien edita las columnas; el prefijo largo sigue en caché).
-export function buildBrainSystemWithRuntime(goal: string, faqs: readonly Faq[], stages: readonly FunnelStage[], length: ResponseLength = "balanceada"): string {
+// Tamaños (5-oct-2026): la tabla de Tallas y medidas va después de las FAQs y antes del sufijo (es parte del
+// conocimiento; solo cambia cuando alguien edita los rangos). Sin rangos, el system queda igual que antes.
+export function buildBrainSystemWithRuntime(
+  goal: string,
+  faqs: readonly Faq[],
+  stages: readonly FunnelStage[],
+  length: ResponseLength = "balanceada",
+  sizes: readonly SizeRange[] = [],
+): string {
   const line = LENGTH_LINES[length];
-  return `${buildBrainSystem(goal, faqs)}\n\n${RUNTIME_SUFFIX}${line ? `\n${line}` : ""}\n\n${stagesInstructions(stages)}`;
+  const tamanos = sizesInstructions(sizes);
+  return `${buildBrainSystem(goal, faqs)}${tamanos ? `\n\n${tamanos}` : ""}\n\n${RUNTIME_SUFFIX}${line ? `\n${line}` : ""}\n\n${stagesInstructions(stages)}`;
 }
 
 // Complemento de un workflow «El workflow es la respuesta» (30-sep-2026, run.ts): el workflow ya
