@@ -873,7 +873,7 @@ una ventana arriba (59)**; nada se guarda con un solo clic.
 | 37 | **Máximo de mensajes por respuesta** | 1 o 2 burbujas por respuesta. | Todos |
 | 38 | **Máximo de respuestas del Agente IA por conversación** | Sin tope o Máximo; al llegar se pausa y deja aviso (tarjeta amarilla). | Todos |
 | 39 | **Último cambio** | Quién cambió qué y cuándo (solo el último; todos están en **Historial**, 72). | Todos |
-| 40 | **Tallas y medidas** | Qué tamaño de compuerta corresponde a cada ancho. | Todos |
+| 40 | **Tallas y medidas** | Qué tamaño de compuerta corresponde a cada ancho. Con esta tabla el CRM calcula el tamaño sugerido del Detalle y el Agente IA asigna el tamaño en el chat (desde el 5-oct-2026). | Todos |
 | 41 | **Línea mini** | Rangos de la mini compuerta. | Todos |
 | 42 | **Línea estándar** | Rangos de la compuerta estándar (incluye "A la medida"). | Todos |
 | 43 | **Fila de tamaño** | Tamaño · Desde (cm) · Hasta (cm). Dentro de una línea no se pueden encimar. | Todos |

@@ -234,6 +234,7 @@ contacts (+)         tiene_inundaciones (si|no|no_sabe), nivel_agua_cm, nivel_ag
 contact_entradas     id, org_id, contact_id, posicion, ancho_cm, linea (mini|estandar),
                      tamano_sugerido, tamano_manual   -- nunca más filas que num_entradas
 tallas_compuerta     id, org_id, linea, talla, min_cm, max_cm, posicion   -- editable por todos (Agente IA › Tallas y medidas)
+                     -- 5-oct-2026: también llega al Agente IA como sección TAMAÑOS del system (lib/ai/runtime/brain-system.ts)
 contact_comentarios  id, org_id, contact_id, author_user_id (obligatorio), body, created_at, updated_at
                      -- 0022: las notas viejas (custom_fields.notas) se copian aquí con autor de
                      -- sistema "Importado" (sin login ni membresía; las edita cualquier rol, 26-sep)

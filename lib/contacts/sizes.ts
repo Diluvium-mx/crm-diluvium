@@ -89,3 +89,22 @@ export function validateSizeRanges(ranges: readonly SizeRange[]): string[] {
 
   return errors;
 }
+
+// Sección TAMAÑOS del system del Agente IA (5-oct-2026, dueño): la MISMA tabla de Tallas y medidas que
+// calcula el tamaño sugerido del Detalle. Antes el modelo solo tenía la tabla de la mini (en el Goal)
+// y con ella asignaba la estándar (90 cm → M en vez de CH). PURO; sin rangos devuelve "".
+const LINEA_LABEL: Record<LineaCompuerta, string> = { estandar: "Compuerta estándar", mini: "Mini compuerta" };
+
+export function sizesInstructions(ranges: readonly SizeRange[]): string {
+  const lineas: LineaCompuerta[] = ["estandar", "mini"];
+  const lines = lineas.flatMap((linea) => {
+    const rows = ranges.filter((r) => r.linea === linea).sort((a, b) => a.posicion - b.posicion);
+    if (rows.length === 0) return [];
+    return [`${LINEA_LABEL[linea]}: ${rows.map((r) => `${r.talla.trim()} ${r.minCm} a ${r.maxCm} cm`).join(" | ")}`];
+  });
+  if (lines.length === 0) return "";
+  return [
+    "TAMAÑOS (tabla oficial: el tamaño se elige por el ancho de la entrada, de lado a lado, en centímetros)",
+    ...lines,
+  ].join("\n");
+}
