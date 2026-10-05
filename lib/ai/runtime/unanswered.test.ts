@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { closingQuestion, withoutUnansweredRepeat } from "./unanswered";
+import { closingQuestion, isBareAck, onlyRepeatsLastQuestion, repeatNote, withoutUnansweredRepeat } from "./unanswered";
 
 const PREGUNTA = "¿Usted tiene problemas de inundaciones?";
 
@@ -47,5 +47,31 @@ describe("pregunta sin contestar (3-oct-2026)", () => {
     const medir = "¿Habrá manera de medir la anchura de cada una de las entradas? De izquierda a derecha, para ver qué tamaño de compuertas le servirían.";
     // No termina en «?» (pregunta + explicación): igual no sale, porque es idéntica al último mensaje con pregunta.
     expect(withoutUnansweredRepeat(["Tiene un año de garantía.", medir], medir)).toEqual({ keep: ["Tiene un año de garantía."], dropped: [medir] });
+  });
+});
+
+describe("pregunta sin contestar, parte 2 (5-oct-2026)", () => {
+  it("onlyRepeatsLastQuestion: la respuesta es SOLO la pregunta repetida (con o sin mayúsculas/espacios)", () => {
+    expect(onlyRepeatsLastQuestion([PREGUNTA], PREGUNTA)).toBe(true);
+    expect(onlyRepeatsLastQuestion(["  ¿usted tiene problemas de INUNDACIONES? "], `Ahorita tenemos cualquier tamaño en $5,500.\n\n${PREGUNTA}`)).toBe(true);
+    expect(onlyRepeatsLastQuestion(["Se coloca sin perforar.", PREGUNTA], PREGUNTA)).toBe(false);
+    expect(onlyRepeatsLastQuestion(["¿Hasta qué nivel le sube el agua?"], PREGUNTA)).toBe(false);
+    expect(onlyRepeatsLastQuestion([PREGUNTA], null)).toBe(false);
+    expect(onlyRepeatsLastQuestion([], PREGUNTA)).toBe(false);
+  });
+
+  it("isBareAck: «ok», «gracias», emojis o un sticker sí; «Sí», preguntas, datos o una foto no", () => {
+    const m = (body: string | null, types: string[] = []) => ({ body, attachments: types.map((type) => ({ type })) });
+    for (const t of ["Ok", "okey!", "Va", "Gracias", "Muchas gracias 🙏", "Perfecto, gracias", "👍", "👌🏼"]) expect(isBareAck(m(t)), t).toBe(true);
+    expect(isBareAck(m(null, ["sticker"]))).toBe(true);
+    for (const t of ["Sí", "Si", "Quiero más información", "Bueno a estado lloviendo mucho", "ok y cuánto cuesta?", "2"]) expect(isBareAck(m(t)), t).toBe(false);
+    expect(isBareAck(m(null, ["image"]))).toBe(false);
+    expect(isBareAck(m(null, ["audio"]))).toBe(false);
+  });
+
+  it("repeatNote menciona la pregunta y pide no repetirla", () => {
+    const note = repeatNote(PREGUNTA);
+    expect(note).toContain(PREGUNTA);
+    expect(note).toContain("No la repitas");
   });
 });

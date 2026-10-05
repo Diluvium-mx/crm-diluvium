@@ -27,6 +27,9 @@ export type UsageOutcome =
   // el cliente, y nadie le había contestado: escribe otro modelo (o, si ninguno, aviso al
   // vendedor). No es resultado final: el final lo deja la respuesta que sí se usó.
   | "sin_texto"
+  // 5-oct-2026 (pregunta sin contestar): la respuesta solo repetía la pregunta que el cliente no
+  // contestó; se pide otra (o, si tampoco, aviso al vendedor). No es resultado final.
+  | "repite_pregunta"
   | "error"
   | "transcrita"
   | "transcripcion_fallida"
