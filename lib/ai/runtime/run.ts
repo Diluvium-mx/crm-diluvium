@@ -39,7 +39,7 @@ export function repeatNoticeBody(question: string): string {
   return `El Agente IA solo iba a repetir la pregunta «${question}», que el cliente no contestó, y no salió. Revisa si hacía falta contestar.`;
 }
 import { mergeHandoffToolCalls, validateToolCalls, type ValidToolCall } from "./tools";
-import { unfinishedReply } from "./internal-text";
+import { hasForeignScript, stripForeignScript, unfinishedReply } from "./internal-text";
 import { applyDetalleByAgent, detalleContextFor, mergeDetalle } from "./detalle";
 import { transcriptionWaitMs } from "@/lib/ai/transcription/rules";
 import { handoverPauseUntil, humanPauseUntil, isWithinSchedule, type BotOptions } from "@/lib/agente-ia/opciones";
@@ -639,7 +639,7 @@ export async function runAgent(job: { organizationId: string; conversationId: st
     // entonces, además del complemento de un workflow, el Agente IA puede no contestar
     // escribiendo NOTHING_TOKEN (Goal: PASAR A HUMANO).
     const acuse = pending.length > 0 && pending.every((m) => isBareAck(m));
-    const attempt = async (model: CatalogModel, avanzaA: string | null = null, nota: string | null = null): Promise<BrainOk | BrainFail> => {
+    const attempt = async (model: CatalogModel, avanzaA: string | null = null, nota: string | null = null, foreignRetry = false): Promise<BrainOk | BrainFail> => {
       tried.add(model.id);
       const messages = await messagesFor(model, avanzaA, nota);
       const t0 = Date.now();
@@ -651,8 +651,21 @@ export async function runAgent(job: { organizationId: string; conversationId: st
         return { ok: false, model, info: classifyModelError(error, PROVIDER_META[model.provider].label) };
       }
       const latencyMs = Date.now() - t0;
-      const out = parseBrainOutput(res.text);
+      let out = parseBrainOutput(res.text);
       const { valid, ignored } = validateToolCalls(res.toolCalls ?? [], agentTools);
+      // Letras de otro alfabeto (6-oct-2026, dueño: «娱乐平台招商» le llegó a una clienta): se BORRAN y
+      // sigue lo demás, sin tarjeta ni pausa. Si no queda texto ni acciones (caso «屹», 2-oct), se le
+      // pide otra respuesta al mismo modelo UNA vez; si tampoco, cuenta como respuesta vacía y entran
+      // las redes de siempre (contesta el otro modelo).
+      if (out.kind === "reply" && hasForeignScript(out.text)) {
+        const clean = stripForeignScript(out.text);
+        console.warn(`[agente] ${conv.id}: ${model.label} escribió letras de otro alfabeto; se borran${clean ? "" : " y no queda texto"}: «${out.text.slice(0, 160)}»`);
+        out = clean ? { ...out, text: clean } : { kind: "empty" };
+        if (!clean && valid.length === 0 && !foreignRetry) {
+          await recordAiUsage({ ...base, stage: "cerebro", modelId: res.modelId, provider: res.provider, usage: res.usage, latencyMs, outcome: "error", error: "solo letras de otro alfabeto; se pide otra respuesta" });
+          return attempt(model, avanzaA, nota, true);
+        }
+      }
       // "Nada que agregar" solo vale como complemento de un workflow; fuera de eso es respuesta vacía.
       // En el complemento, una respuesta en blanco también (con el Goal real de staging, Luna y
       // Sonnet a veces contestan vacío en vez de escribir la señal): el workflow ya contestó.
