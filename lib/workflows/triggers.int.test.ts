@@ -157,6 +157,14 @@ describe.skipIf(!TEST_DATABASE_URL)("disparadores de workflows", () => {
     expect((await runs()).map((r) => r.workflowId)).toEqual(["w_precio"]);
   });
 
+  it("lada de otro país (6-oct): la respuesta de inicio no sale (contesta el Agente IA); un workflow sin «Solo al inicio», sí", async () => {
+    await db.update(s.contacts).set({ phoneE164: "+34610605145", phoneCountryIso: "ES", phoneCountryCode: "34" }).where(eq(s.contacts.id, "c1"));
+    await precioYInfo();
+    expect(await inbound("m1", "Precio")).toBeNull();
+    expect(await inbound("m2", "más info")).toMatchObject({ status: "queued" });
+    expect((await runs()).map((r) => r.workflowId)).toEqual(["w_info"]);
+  });
+
   it("solo al inicio: si ya contestó el Agente IA con texto propio, no dispara y el mensaje puede disparar otro workflow que coincida", async () => {
     await precioYInfo();
     await out("o1", "ai_agent");
