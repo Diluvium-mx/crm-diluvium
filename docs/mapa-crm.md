@@ -394,8 +394,10 @@ y se mandan fotos y videos de la Biblioteca (📎 › Multimedia); cerrada, solo
 ![Menú al escribir "/"](mapa-crm/04-composer-slash.png)
 ![Ventana del ⚡ Mensajes rápidos](mapa-crm/04-composer-rapidos.png)
 ![Elegir plantilla](mapa-crm/04-composer-plantillas-lista.png)
+![Elegir plantilla en cuadrícula](mapa-crm/04-composer-plantillas-cuadricula.png)
 ![Llenar y enviar una plantilla](mapa-crm/04-composer-plantillas.png)
 ![Programar mensaje](mapa-crm/04-composer-programar.png)
+![Programar con la ventana cerrada: Texto apagado, solo plantilla](mapa-crm/04-composer-programar-plantilla.png)
 ![Ventana de 24 h cerrada](mapa-crm/04-composer-cerrada.png)
 ![Seguimiento del Agente IA: píldora y su burbuja](mapa-crm/04-composer-seguimiento.png)
 ![Seguimiento sugerido (Pausar agente puesto a mano)](mapa-crm/04-composer-seguimiento-sugerido.png)
@@ -412,16 +414,16 @@ y se mandan fotos y videos de la Biblioteca (📎 › Multimedia); cerrada, solo
 | 8 | **Lista de mensajes rápidos** | Nombre y texto; al elegir uno se pone en lugar del "/". Solo {{vendedor}} se llena solo (con tu nombre); {{nombre}} lo completas tú. | Todos |
 | 9 | **↑↓ elegir · Enter insertar · Esc cerrar** | Ayuda de teclas del menú. | Todos |
 | 10 | **"/" en la caja** | Lo que escribes después de "/" filtra la lista por nombre y texto, sin importar acentos ni mayúsculas ("cuanta" encuentra "Cuánta agua entra"). | Todos |
-| 11 | **Elegir plantilla** | Lista de plantillas que se pueden mandar. | Todos |
-| 12 | **Plantilla** | Nombre, idioma y texto. Solo salen las aprobadas y que el CRM puede armar. | Todos |
+| 11 | **Elegir plantilla** | Lista de plantillas que se pueden mandar, por secciones (60), con buscador (58) y vista de lista o cuadrícula (59). Es la misma en 📄, en 🕒 Programar mensaje y en el primer mensaje de Contactos. | Todos |
+| 12 | **Plantilla** | Título amigable de las conocidas («Precio sin respuesta», «Faltan medidas», «Lo va a pensar»…, igual para `seg_X` que para `daniel_X`) con el **nombre técnico chico debajo**; las desconocidas muestran su nombre. Idioma y texto con los {{1}} resaltados (1 línea en lista, 3–4 en cuadrícula). Solo salen las aprobadas y que el CRM puede armar. | Todos |
 | 13 | **Cerrar** | Cierra la lista de plantillas. | Todos |
 | 14 | **← Volver a la lista** | Regresa a elegir otra plantilla. | Todos |
-| 15 | **Variable {{1}}** | Hueco a llenar (con un ejemplo). El {{1}} ya viene con el **primer nombre del cliente** (se puede cambiar); si el contacto no tiene nombre, va vacío. En las plantillas de seguimiento **seg_precio, seg_informacion, seg_info_duda, seg_valorar y seg_medidas** el {{1}} es **cuándo nos escribió el cliente** («el día de ayer», «anoche», «antier», «el lunes», «la semana pasada»…) y ya viene puesto (se puede cambiar). | Todos |
+| 15 | **Variable {{1}}** | Hueco a llenar (con un ejemplo). El {{1}} ya viene con el **primer nombre del cliente** (se puede cambiar); si el contacto no tiene nombre, va vacío. En las plantillas de seguimiento **seg_precio, seg_informacion, seg_info_duda, seg_valorar y seg_medidas**, y en las **daniel_precio, daniel_informacion, daniel_info_duda, daniel_valorar, daniel_medidas, daniel_asesor y daniel_objecion**, el {{1}} es **cuándo nos escribió el cliente** («el día de ayer», «anoche», «antier», «el lunes», «la semana pasada»…) y ya viene puesto (se puede cambiar). | Todos |
 | 16 | **Vista previa** | Cómo le llegará al cliente. | Todos |
 | 17 | **Enviar plantilla** | Manda la plantilla. | Todos |
-| 18 | **Fecha y hora (Mazatlán)** | Cuándo sale el mensaje programado. | Todos |
+| 18 | **Fecha y hora (Mazatlán)** | Cuándo sale el mensaje programado. En **Texto** no deja pasar del cierre de la ventana de 24 h (Instagram: 7 días); al cambiar a Texto, si la hora ya quedaba después, se ajusta sola al último minuto permitido. En **Plantilla**, hasta 60 días. | Todos |
 | 19 | **Cancelar si el cliente escribe antes** | Si el cliente escribe antes de esa hora, el programado no sale. | Todos |
-| 20 | **Texto / 📄 Plantilla** | Qué se programa. Si a esa hora la ventana ya estará cerrada, solo plantilla. En **Instagram** solo texto, y solo si a esa hora no habrán pasado 7 días desde el último mensaje del cliente. | Todos |
+| 20 | **Texto / 📄 Plantilla** | Qué se programa. **Texto** dice hasta cuándo vale («Texto · hasta 3:21 p.m.», «Texto · hasta mié 3:21 p.m.»). Si la ventana ya cerró o cierra en menos de 2 min, Texto sale apagado («Texto · ventana cerrada», el motivo al pasar el ratón) y el formulario abre en Plantilla. En **Instagram** solo texto, y solo si a esa hora no habrán pasado 7 días desde el último mensaje del cliente. | Todos |
 | 21 | **Mensaje a enviar** | El texto del programado. | Todos |
 | 22 | **Programar** | Guarda el programado; aparece al final del chat. | Todos |
 | 23 | **✕ Cerrar** | Cierra sin programar. | Todos |
@@ -459,6 +461,11 @@ y se mandan fotos y videos de la Biblioteca (📎 › Multimedia); cerrada, solo
 | 55 | **Que salga solo** | Solo en una **sugerencia** (chat con Pausar agente puesto a mano): deja que ese intento salga solo a su hora; si el cliente contesta, la conversación sigue con el Agente IA. | Todos |
 | 56 | **Cancelar** | Pide confirmación y cancela **todo** el seguimiento de ese pendiente (los intentos que faltan). Si el chat vuelve a quedarse parado, se arma uno nuevo. | Todos |
 | 57 | **Aviso de sugerencia** | «Queda como sugerencia: el Agente IA está en pausa a mano en este chat. Se le presenta al vendedor: …» (en su última hora de trabajo antes del intento si cae fuera de turno: lunes a viernes 9–18, sábado 9–13, hora de Mazatlán). | Todos |
+| 58 | **Buscar plantilla** | Filtra por título, nombre técnico y texto, sin importar acentos ni mayúsculas («medidas» encuentra «Faltan medidas»). | Todos |
+| 59 | **Lista / Cuadrícula** | Íconos en el encabezado de Elegir plantilla: lista (título + 1 línea) o tarjetas (título, idioma y 3–4 líneas; 2 columnas si cabe, 1 en panel angosto). Se recuerda en esta computadora. | Todos |
+| 60 | **Secciones de plantillas** | «Saludo de Daniel» (las `daniel_*`), «Seguimiento» (las `seg_*`) y «Otras». Las vacías no salen. | Todos |
+| 61 | **Hasta cuándo sale el texto** | Línea arriba de Mensaje a enviar (21): «El texto solo puede salir mientras la ventana de 24 h esté abierta: hasta mié 7 oct, 3:21 p.m. (Mazatlán). Para después, usa una plantilla.» En Instagram, lo mismo con su límite de 7 días. | Todos |
+| 62 | **Plantillas a cualquier hora** | Línea arriba de Elegir plantilla en el 🕒: «Las plantillas aprobadas por Meta se pueden mandar a cualquier hora, aunque la ventana esté cerrada.» | Todos |
 
 **Lo cambias tú desde la pantalla:** qué mensajes rápidos y plantillas existen (en [Mensajes rápidos](#34-mensajes-rápidos))
 y qué comandos hay (en [Automatización](#37-automatización)).
@@ -474,7 +481,7 @@ primera respuesta) y pausa al agente en ese chat si así está en Opciones. El *
 Agente IA en segundo plano, en la misma lectura con la que llena el Detalle (sin gasto extra de IA); un mensaje nuevo
 en el chat lo cancela o lo rehace.
 
-<sub>Para Code: `composer.tsx`, `snippet-picker.tsx`, `template-picker.tsx`, `schedule-form.tsx`, `archived-composer.tsx`; comandos `lib/actions/workflows.ts` (`runWorkflowCommand`); adjuntos `chat-drop-zone.tsx`, `attachment-tray.tsx`, `use-chat-attachments.ts`, reglas `lib/chat-attachments/rules.ts` (XML: `XML_COMO_TEXTO`), subida `app/api/inbox/adjuntos`, envío `lib/inbox/attachment-actions.ts` + `worker/chat-uploads.ts`; menú del 📎 `attach-menu.tsx`, Multimedia `multimedia-picker.tsx` + `lib/chat-attachments/multimedia.ts` (id por envío: `multimediaMessageId` en `keys.ts`); lista en memoria y miniaturas `use-multimedia-assets.ts` + `lib/media-library/make-thumbnail.ts` (columna `media_assets.thumbnail`, 0052); seguimiento (48–57) `followup-pill.tsx`, `lib/actions/seguimientos.ts`, `lib/followups/` (tabla de casos `cases.ts`, horas `schedule.ts`, zona por lada `timezone.ts`, ficha `ficha.ts`, revisión del borrador `borrador-check.ts`, seguimientos del vendedor `vendor-attempts.ts`, cancelar al pasar a Compra `sale.ts`, base `store.ts` + `view.ts`, tabla `follow_ups` de la 0056 + 0057), ficha en el lector `lib/ai/runtime/lector-core.ts`.</sub>
+<sub>Para Code: `composer.tsx`, `snippet-picker.tsx`, `template-picker.tsx` (secciones y títulos `lib/templates/labels.ts`), `schedule-form.tsx` (límite del texto `lib/scheduled/rules.ts` `textMaxLocal`/`canScheduleText`, formato `lib/scheduled/deadline-format.ts`), `archived-composer.tsx`; comandos `lib/actions/workflows.ts` (`runWorkflowCommand`); adjuntos `chat-drop-zone.tsx`, `attachment-tray.tsx`, `use-chat-attachments.ts`, reglas `lib/chat-attachments/rules.ts` (XML: `XML_COMO_TEXTO`), subida `app/api/inbox/adjuntos`, envío `lib/inbox/attachment-actions.ts` + `worker/chat-uploads.ts`; menú del 📎 `attach-menu.tsx`, Multimedia `multimedia-picker.tsx` + `lib/chat-attachments/multimedia.ts` (id por envío: `multimediaMessageId` en `keys.ts`); lista en memoria y miniaturas `use-multimedia-assets.ts` + `lib/media-library/make-thumbnail.ts` (columna `media_assets.thumbnail`, 0052); seguimiento (48–57) `followup-pill.tsx`, `lib/actions/seguimientos.ts`, `lib/followups/` (tabla de casos `cases.ts`, horas `schedule.ts`, zona por lada `timezone.ts`, ficha `ficha.ts`, revisión del borrador `borrador-check.ts`, seguimientos del vendedor `vendor-attempts.ts`, cancelar al pasar a Compra `sale.ts`, base `store.ts` + `view.ts`, tabla `follow_ups` de la 0056 + 0057), ficha en el lector `lib/ai/runtime/lector-core.ts`.</sub>
 
 #### 3.2.3 Detalle del contacto
 
