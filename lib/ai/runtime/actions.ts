@@ -12,6 +12,7 @@
 // etapa: solo hacia adelante).
 import { and, asc, eq, gte, inArray, sql } from "drizzle-orm";
 import { db } from "@/lib/db";
+import { foreignLadaLine } from "@/lib/phone";
 import { contacts, workflowRuns, workflows, workflowSteps } from "@/lib/db/schema";
 import { moveStageForward } from "@/lib/contacts/stage";
 import { listFunnelStages } from "@/lib/contacts/funnel-stages";
@@ -21,7 +22,7 @@ import type { StartRunInput, StartRunResult } from "@/lib/workflows/executor";
 import { startOnlyEligible } from "@/lib/workflows/start-only";
 import { takesAgentCaption } from "@/lib/workflows/steps";
 import { sendsByWorkflow } from "@/lib/workflows/max-per-chat";
-import { addNotice } from "./notices";
+import { addNotice, hasOpenHandoverRequest } from "./notices";
 import { amountsIn, isBackedAmount } from "./lector-core";
 import { buildAgentTools, type AgentTools, type AvisoMotivo, type ValidToolCall } from "./tools";
 import { allowedAgentStage, ventaCerradaHeld } from "./venta-cerrada";
@@ -318,6 +319,10 @@ export async function executeActions(
   // decirle nada al cliente.
   const cotejarEnviado = plan.avisos.some((a) => a.motivo === "cotejar_deposito");
   for (const a of plan.avisos) {
+    if (a.motivo === "cliente_pide_humano" && (await hasOpenHandoverRequest(ctx.organizationId, ctx.conversationId))) {
+      console.info(`[agente] ${ctx.conversationId}: ya hay un aviso «pide hablar con una persona» abierto; no se repite`);
+      continue;
+    }
     const added = await addNotice({
       organizationId: ctx.organizationId,
       conversationId: ctx.conversationId,
@@ -392,7 +397,14 @@ export async function executeActions(
 // contacto pasa a esa etapa (clave); el Modelo 2 escribe la respuesta.
 export async function crmContextFor(organizationId: string, contactId: string, stages: readonly FunnelStage[], avanzaA: string | null = null): Promise<string> {
   const [c] = await db
-    .select({ stage: contacts.stage, by: contacts.stageChangedBy, monto: contacts.montoCotizacion, customFields: contacts.customFields })
+    .select({
+      stage: contacts.stage,
+      by: contacts.stageChangedBy,
+      monto: contacts.montoCotizacion,
+      customFields: contacts.customFields,
+      iso: contacts.phoneCountryIso,
+      code: contacts.phoneCountryCode,
+    })
     .from(contacts)
     .where(and(eq(contacts.id, contactId), eq(contacts.organizationId, organizationId)))
     .limit(1);
@@ -409,5 +421,9 @@ export async function crmContextFor(organizationId: string, contactId: string, s
       ? `Cotización guardada: $${Number(c.monto).toLocaleString("es-MX")} MXN${por === "vendedor" ? " (la corrigió un vendedor)" : ""}.`
       : "Cotización guardada: ninguna todavía.",
   );
+  // País por la lada (6-oct-2026): el Agente IA no veía el teléfono y cotizó a un cliente de
+  // España como si fuera de México. El Goal (CLIENTES EN EL EXTRANJERO) dice qué hacer.
+  const lada = foreignLadaLine(c.iso, c.code);
+  if (lada) lines.push(lada);
   return `[CONTEXTO DEL CRM — no lo menciones literalmente]\n${lines.join("\n")}`;
 }

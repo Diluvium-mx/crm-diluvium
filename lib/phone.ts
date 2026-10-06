@@ -97,3 +97,16 @@ export function countryFromPhone(e164: string | null | undefined): string | null
   const iso = phoneParts(e164).phoneCountryIso;
   return iso ? (regionNames.of(iso) ?? null) : null;
 }
+
+const regionNamesEs = new Intl.DisplayNames(["es"], { type: "region" });
+
+/**
+ * Línea del contexto del CRM para el Agente IA (6-oct-2026, caso +34 que se cotizó como si
+ * fuera de México): solo cuando la lada NO es de México. Con lada mexicana, sin teléfono
+ * (Instagram) o sin país reconocido, null y el contexto queda igual que antes.
+ */
+export function foreignLadaLine(iso: string | null | undefined, code: string | null | undefined): string | null {
+  if (!iso || iso === "MX") return null;
+  const name = regionNamesEs.of(iso) ?? iso;
+  return `Lada del número del cliente: ${name}${code ? ` (+${code})` : ""}, fuera de México.`;
+}

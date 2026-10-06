@@ -4,9 +4,9 @@
 // ni frenan al agente, y nunca lanzan: un aviso que no se pudo guardar no debe
 // frenar una respuesta al cliente.
 // Multi-tenant (CLAUDE.md §7): toda lectura/escritura filtra por organization_id.
-import { and, desc, eq, sql } from "drizzle-orm";
+import { and, desc, eq, gt, inArray, isNull, ne, notExists, sql } from "drizzle-orm";
 import { db } from "@/lib/db";
-import { aiAgentNotices, conversations } from "@/lib/db/schema";
+import { aiAgentNotices, conversations, messages } from "@/lib/db/schema";
 import type { NoticeKind } from "./policy";
 import { notifyConversation } from "./state";
 
@@ -89,4 +89,40 @@ export async function ensureHandoverNotice(input: { organizationId: string; conv
     .onConflictDoNothing()
     .returning({ id: aiAgentNotices.id });
   if (rows.length > 0) await notifyConversation(db, input.organizationId, input.conversationId);
+}
+
+// Un solo aviso «El cliente pide hablar con una persona» abierto por chat (6-oct-2026, C1;
+// caso b983412b: 4 avisos en 3 minutos porque el cliente insistió «Envíamelo», «Vale»…).
+// Abierto = sin resolver y sin un saliente humano (CRM o celular) después de él. Mientras
+// lo esté, los siguientes no se crean; el cliente sigue recibiendo su respuesta.
+export async function hasOpenHandoverRequest(organizationId: string, conversationId: string): Promise<boolean> {
+  // La comparación de horas va toda en SQL (las dos columnas son timestamp sin zona en UTC).
+  const humanAfter = db
+    .select({ one: sql`1` })
+    .from(messages)
+    .where(
+      and(
+        eq(messages.organizationId, organizationId),
+        eq(messages.conversationId, conversationId),
+        eq(messages.direction, "out"),
+        inArray(messages.source, ["crm", "business_app"]),
+        ne(messages.status, "failed"),
+        ne(messages.type, "system_note"),
+        gt(messages.createdAt, aiAgentNotices.createdAt),
+      ),
+    );
+  const rows = await db
+    .select({ id: aiAgentNotices.id })
+    .from(aiAgentNotices)
+    .where(
+      and(
+        eq(aiAgentNotices.organizationId, organizationId),
+        eq(aiAgentNotices.conversationId, conversationId),
+        eq(aiAgentNotices.kind, "cliente_pide_humano"),
+        isNull(aiAgentNotices.resolvedAt),
+        notExists(humanAfter),
+      ),
+    )
+    .limit(1);
+  return rows.length > 0;
 }
