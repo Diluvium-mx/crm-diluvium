@@ -29,7 +29,7 @@ import { withTxRetry } from "@/lib/db/retry";
 import { channels, conversations, messages, templates } from "@/lib/db/schema";
 import { applyOutboundToConversation, latestInboundMessageId } from "./ingest";
 import { SendFailedError, type MessagingProvider, type SendResult } from "./provider";
-import { findInternalText } from "@/lib/ai/runtime/internal-text";
+import { findInternalText, hasForeignScript } from "@/lib/ai/runtime/internal-text";
 import {
   canSendFreeForm,
   INSTAGRAM_PARTS_META,
@@ -241,8 +241,19 @@ function validText(raw: string): string {
   return text;
 }
 
+// Candado de idioma (6-oct-2026, dueño: «que no vuelva a ocurrir nunca más»): NADA que salga a
+// nombre del Agente IA (respuesta, texto suelto de un workflow, pie de un archivo, seguimiento)
+// lleva letras de otro alfabeto («娱乐平台招商» le llegó a una clienta). No sale y quien llama
+// deja su aviso o tarjeta. Lo del vendedor no se revisa: lo escribió él.
+function assertAgentLanguage(text: string | null, source: string | undefined): void {
+  if (source === "ai_agent" && text && hasForeignScript(text)) {
+    throw new SendRejectedError("not_retryable", "El Agente IA escribió texto en otro idioma (letras de otro alfabeto) y no se envió.");
+  }
+}
+
 export async function sendTextMessage(provider: MessagingProvider, params: SendTextParams): Promise<SendOutcome> {
   const text = validText(params.text);
+  assertAgentLanguage(text, params.source);
   const now = params.now ?? new Date();
   const loaded = await loadConversation(provider, params.organizationId, params.conversationId, now, true, params.humanAgent ?? false);
   const { conversation } = loaded;
@@ -308,6 +319,7 @@ export const MEDIA_SEND_URL_SECONDS = 15 * 60;
 export async function sendMediaMessage(provider: MessagingProvider, storage: ObjectStorage, params: SendMediaParams): Promise<SendOutcome> {
   const now = params.now ?? new Date();
   const caption = params.caption?.trim() ? validText(params.caption) : null;
+  assertAgentLanguage(caption, params.source);
   const loaded = await loadConversation(provider, params.organizationId, params.conversationId, now, true, params.humanAgent ?? false);
   const { conversation } = loaded;
   const asset = await loadMediaAsset(params.organizationId, params.assetId);
