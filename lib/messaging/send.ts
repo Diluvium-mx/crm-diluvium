@@ -111,6 +111,8 @@ export type SendTextParams = {
    * solo así se puede contestar entre 24 h y 7 días (docs/instagram.md). Default false.
    */
   humanAgent?: boolean;
+  /** Datos extra de la fila (p. ej. `seguimiento`: el intento de un seguimiento del Agente IA). */
+  metadata?: Record<string, unknown>;
 };
 
 /** "sent": confirmado. "pending": en fila, o resultado desconocido en reconciliación (sin reintento). */
@@ -259,6 +261,7 @@ export async function sendTextMessage(provider: MessagingProvider, params: SendT
     status: "queued",
     sentByUserId,
     sentAt: now,
+    ...(params.metadata ? { metadata: params.metadata } : {}),
   });
   return deliver({
     messageId,
@@ -548,8 +551,15 @@ export async function sendQueuedChatUpload(
 export type SendTemplateParams = {
   organizationId: string;
   conversationId: string;
-  sentByUserId: string;
+  /** null = sin humano: un seguimiento del Agente IA (`source: "ai_agent"`). */
+  sentByUserId: string | null;
   templateId: string;
+  /** Default "crm". "ai_agent" = seguimiento del Agente IA (no cuenta como respuesta humana). */
+  source?: OutboundTextSource;
+  /** Id de la fila (y clave de idempotencia). Default: uuid nuevo. */
+  messageId?: string;
+  /** Datos extra de la fila, además de `plantilla` (p. ej. `seguimiento`). */
+  metadata?: Record<string, unknown>;
   /** Valores de las variables del BODY en orden ({{1}}, {{2}}, …). */
   variableValues: string[];
   now?: Date;
@@ -579,19 +589,19 @@ export async function sendTemplateMessage(provider: MessagingProvider, params: S
   const template = await loadSendableTemplate(params.organizationId, channel, params.templateId);
   const { values, preview } = templateSendValues(template.body, params.variableValues);
 
-  const messageId = crypto.randomUUID();
+  const messageId = params.messageId ?? crypto.randomUUID();
   await db.insert(messages).values({
     id: messageId,
     organizationId: params.organizationId,
     conversationId: conversation.id,
     direction: "out",
-    source: "crm",
+    source: params.source ?? "crm",
     type: "template",
     body: preview,
     templateName: template.name,
     // Lo que hace falta para mandarla de nuevo con la misma clave si el envío
     // pasa a la fila de espera del worker (resumeDeferredSend).
-    metadata: { plantilla: { name: template.name, language: template.language, bodyParams: values } },
+    metadata: { ...(params.metadata ?? {}), plantilla: { name: template.name, language: template.language, bodyParams: values } },
     status: "queued",
     sentByUserId: params.sentByUserId,
     sentAt: now,
@@ -611,6 +621,8 @@ export async function sendTemplateMessage(provider: MessagingProvider, params: S
     conversation,
     organizationId: params.organizationId,
     sentByUserId: params.sentByUserId,
+    // Un seguimiento del Agente IA no "lee" por el vendedor.
+    markRead: params.source === "ai_agent" ? false : undefined,
     deferTo: params.deferTo,
   });
 }

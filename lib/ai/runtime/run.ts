@@ -90,6 +90,7 @@ import { completedAfterConfirmation, noDisponibleEstado, UNAVAILABLE_REPLY_TEXT 
 import { buildModelMessages, fitHistory } from "./transcript";
 import { recordAiUsage } from "./usage";
 import { allowedAgentStage, vendorAnsweredProof } from "./venta-cerrada";
+import { followUpContextFor } from "@/lib/followups/reply";
 
 export const MAX_ROUNDS = 3; // regeneraciones por corrida antes de volver al debounce
 export const BUBBLE_PAUSE_MS = 1_500;
@@ -615,7 +616,7 @@ export async function runAgent(job: { organizationId: string; conversationId: st
     const messagesFor = async (model: CatalogModel, avanzaA: string | null, nota: string | null = null) =>
       buildModelMessages(history, mediaUrls, {
         cleanText,
-        crmContext: [await crmContextFor(org, conv.contactId, stages, avanzaA), detalleContext, maxPerChatContext, workflowNote, nota].filter(Boolean).join("\n"),
+        crmContext: [await crmContextFor(org, conv.contactId, stages, avanzaA), detalleContext, maxPerChatContext, await followUpContextFor(org, conv.id), workflowNote, nota].filter(Boolean).join("\n"),
         ...(model.pdf ? {} : { maxPdfs: 0 }),
         ...(options.readImages ? {} : { maxImages: 0 }),
         ...(options.transcribeAudio ? {} : { voiceNotesOff: true }),

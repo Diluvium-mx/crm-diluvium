@@ -328,6 +328,23 @@ export function BotOptionsSection({
         }
       />
 
+      {/* 8. Seguimientos: ensayo o real */}
+      <Option
+        field="seguimientosReal"
+        control={
+          <Radio
+            label={OPTION_LABELS.seguimientosReal}
+            value={draft.seguimientosReal}
+            options={[
+              { value: false, label: "Ensayo" },
+              { value: true, label: "Real" },
+            ]}
+            disabled={busy}
+            onChange={(v) => set({ seguimientosReal: v })}
+          />
+        }
+      />
+
       {/* Guardar: solo con cambios; un solo botón para todo. Fijo abajo mientras la sección
           está a la vista: no hay que deslizar hasta el final para guardar. */}
       {dirty && (

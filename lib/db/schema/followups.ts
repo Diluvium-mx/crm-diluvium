@@ -26,6 +26,10 @@ export type FollowUpAttemptLog = {
   /** vendedor = un seguimiento que mandó un vendedor y cuenta como intento (3-oct-2026). */
   modo: "automatico" | "sugerido" | "vendedor";
   ensayo: boolean;
+  /** Mensaje que salió (modo real). */
+  messageId?: string | null;
+  /** Por qué no salió o falló (modo real), en palabras del vendedor. */
+  error?: string | null;
 };
 
 export const followUps = pgTable(
@@ -77,6 +81,8 @@ export const followUps = pgTable(
     // sistema | vendedor ("Cambiar hora").
     dueSetBy: text("due_set_by").notNull().default("sistema"),
     intentos: jsonb("intentos").$type<FollowUpAttemptLog[]>().notNull().default([]),
+    // Aviso al vendedor ya dejado (pago pendiente tras el 2.º intento, sugerencia presentada, asesor al final).
+    avisoAt: timestamp("aviso_at"),
     cancelReason: text("cancel_reason"),
     // Último mensaje que leyó el lector para esta ficha: uno posterior la deja vieja.
     basedOnMessageAt: timestamp("based_on_message_at").notNull(),

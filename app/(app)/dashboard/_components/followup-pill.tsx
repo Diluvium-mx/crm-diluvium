@@ -209,7 +209,7 @@ export function FollowUpPanel({ followUp, onClose, onChanged }: { followUp: Foll
               <li key={a.n}>
                 {a.modo === "vendedor"
                   ? `${a.n}.º lo mandó un vendedor ${whenLabel(a.at)}`
-                  : `${a.n}.º ${f.ensayo ? "habría salido" : "salió"} ${whenLabel(a.at)} · ${a.door === "plantilla" ? `plantilla ${a.template}` : "texto"}${a.modo === "sugerido" ? " · sugerido" : ""}`}
+                  : `${a.n}.º ${a.ensayo ? "habría salido" : a.error ? "no salió" : "salió"} ${whenLabel(a.at)} · ${a.door === "plantilla" ? `plantilla ${a.template}` : "texto"}${a.modo === "sugerido" ? " · sugerido" : ""}${a.error ? ` · ${a.error}` : ""}`}
               </li>
             ))}
           </ul>

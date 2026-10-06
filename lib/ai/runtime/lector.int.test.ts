@@ -299,4 +299,17 @@ describe.skipIf(!TEST_DATABASE_URL)("Lector en segundo plano (Postgres real)", (
     const usos = await db.select().from(s.aiUsage);
     expect(usos.some((u) => /borrador rehecho/.test(u.error ?? ""))).toBe(true);
   });
+
+  it("lo único nuevo es nuestro seguimiento (metadata.seguimiento): no llama al modelo ni rehace la ficha", async () => {
+    await msg("in", "¿Cuánto cuesta?", ago(30 * MIN));
+    await msg("out", "Está en $5,500. ¿Qué ancho tiene su entrada?", ago(29 * MIN), "ai_agent");
+    const first = deps({ tiene_inundaciones: null });
+    await lector.runLector(ORG, CONV, first.deps);
+    expect(first.calls).toHaveLength(1);
+    await msg("out", "Hola, buenas noches. ¿Pudo medir?", ago(MIN), "ai_agent");
+    await db.update(s.messages).set({ metadata: { seguimiento: { followUpId: "f1", intento: 1 } } }).where(d.eq(s.messages.body, "Hola, buenas noches. ¿Pudo medir?"));
+    const second = deps({ tiene_inundaciones: null });
+    expect((await lector.runLector(ORG, CONV, second.deps)).kind).toBe("nada_nuevo");
+    expect(second.calls).toHaveLength(0);
+  });
 });

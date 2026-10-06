@@ -29,6 +29,7 @@ describe("Opciones del bot: valores de fábrica = comportamiento de hoy", () => 
       responseLength: "balanceada",
       maxBubbles: MAX_BUBBLES,
       maxRepliesPerContact: null,
+      seguimientosReal: false,
     });
     const now = new Date();
     expect(humanPauseUntil(BOT_OPTIONS_DEFAULTS, now)).toEqual({ pause: true, until: null }); // hasta "Activar"
