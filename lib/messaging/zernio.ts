@@ -113,7 +113,10 @@ const envelopeSchema = z.object({
 const attachmentSchema = z
   .object({
     type: z.string(),
-    url: z.string(),
+    // Instagram manda adjuntos SIN url (foto/video temporal "ephemeral", tarjeta "template"): no se
+    // pueden descargar, pero el mensaje sí se guarda con su etiqueta. Antes la url obligatoria tumbaba
+    // el evento completo a dead-letter (3 y 4-oct-2026).
+    url: z.string().nullish(),
     // Instagram: el tipo de Meta antes de que Zernio lo normalice (story_mention, ig_post…).
     originalType: z.string().nullish(),
     mimeType: z.string().nullish(),
@@ -250,6 +253,10 @@ const INSTAGRAM_SHARE_LABEL: Record<string, string> = {
   reel: "📎 Compartió un reel",
 };
 const INSTAGRAM_WITHHELD = "📎 Instagram no deja ver este mensaje en el CRM; ábrelo en la app de Instagram";
+// Adjuntos que llegan sin archivo (sin url): la foto o el video temporal ("ver una vez") y la tarjeta
+// de una publicación o producto compartido.
+const INSTAGRAM_EPHEMERAL = "📎 Mandó una foto o video temporal; Instagram no deja verlo en el CRM, ábrelo en la app de Instagram";
+const INSTAGRAM_TEMPLATE = "📎 Compartió una publicación; ábrela en la app de Instagram";
 
 export function instagramLabel(attachments: { type: string; originalType?: string | null }[], metadata: Record<string, unknown> | null | undefined): string | null {
   if (metadata?.noRenderableContent === true) return INSTAGRAM_WITHHELD;
@@ -257,6 +264,8 @@ export function instagramLabel(attachments: { type: string; originalType?: strin
   for (const a of attachments) {
     const label = (a.originalType && INSTAGRAM_SHARE_LABEL[a.originalType]) || (a.type === "share" ? "📎 Compartió una publicación" : null);
     if (label) return label;
+    if (a.type === "ephemeral") return INSTAGRAM_EPHEMERAL;
+    if (a.type === "template") return INSTAGRAM_TEMPLATE;
   }
   return null;
 }
@@ -481,7 +490,9 @@ export function normalizeZernioEvent(payload: unknown, context: { receivedAt?: D
         ? "business_app"
         : "other_api";
 
-    const attachments: NormalizedAttachment[] = message.attachments.map((a) => ({
+    const attachments: NormalizedAttachment[] = message.attachments
+      .filter((a): a is typeof a & { url: string } => Boolean(a.url))
+      .map((a) => ({
       type: attachmentType(a.type),
       url: a.url,
       mimeType: asString(a.mimeType) ?? asString(a.payload?.mimeType) ?? asString(a.payload?.mime_type),

@@ -100,6 +100,30 @@ describe("normalizeZernioEvent · Instagram", () => {
     expect(e.body).toContain("Instagram no deja ver este mensaje");
   });
 
+  // Dead-letters reales del 3 y 4-oct-2026: un adjunto sin url tumbaba todo el evento.
+  it("una foto o video temporal (adjunto sin url) se guarda con su etiqueta, sin archivo", () => {
+    const e = msg(igReceived({ message: { text: null, attachments: [{ type: "ephemeral" }] } }));
+    expect(e.kind).toBe("message");
+    expect(e.attachments).toEqual([]);
+    expect(e.type).toBe("text");
+    expect(e.body).toContain("foto o video temporal");
+  });
+
+  it("una tarjeta compartida sin url con noRenderableContent se explica; sin la marca, como publicación", () => {
+    const card = { type: "template", payload: { generic: { elements: [] } } };
+    const withheld = msg(igReceived({ message: { text: null, attachments: [card] }, metadata: { noRenderableContent: true } }));
+    expect(withheld.kind).toBe("message");
+    expect(withheld.attachments).toEqual([]);
+    expect(withheld.body).toContain("Instagram no deja ver este mensaje");
+    expect(msg(igReceived({ message: { text: null, attachments: [card] } })).body).toContain("Compartió una publicación");
+  });
+
+  it("un adjunto sin url junto a otro con url: solo se descarga el que trae archivo", () => {
+    const e = msg(igReceived({ message: { text: null, attachments: [{ type: "ephemeral" }, { type: "image", url: "https://cdn.example/f.jpg" }] } }));
+    expect(e.attachments).toHaveLength(1);
+    expect(e.attachments[0]).toMatchObject({ type: "image", url: "https://cdn.example/f.jpg" });
+  });
+
   it("acepta reacciones y ediciones de Instagram", () => {
     const reaction = normalizeZernioEvent({
       id: "evt_r",

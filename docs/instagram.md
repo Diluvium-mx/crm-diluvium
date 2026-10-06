@@ -46,6 +46,11 @@
   cuenta como la app (el eco del propio CRM pausaría al agente).
 - Lo compartido sin texto llega con etiqueta: «📎 Te mencionó en su historia», «📎 Compartió una
   publicación», «📎 Compartió un reel»; lo que Meta no deja ver, «📎 Instagram no deja ver este mensaje…».
+- Adjuntos que llegan **sin archivo** (sin `url`): la foto o el video temporal (`ephemeral`) sale como
+  «📎 Mandó una foto o video temporal; Instagram no deja verlo en el CRM…» y la tarjeta compartida
+  (`template`) como «📎 Compartió una publicación…» (o el aviso de arriba si trae `noRenderableContent`).
+  El mensaje se guarda sin descargar nada; antes la `url` obligatoria mandaba todo el evento a
+  dead-letter (3 y 4-oct-2026).
   El archivo se descarga al bucket al llegar (las URLs de Meta caducan).
 - Anuncios (clic a Direct): la ficha `metadata.referral` se registra con `platform: "instagram"`. Sin
   respaldo por la conversación de Zernio y sin la ventana gratis de 72 h (eso es de WhatsApp).
