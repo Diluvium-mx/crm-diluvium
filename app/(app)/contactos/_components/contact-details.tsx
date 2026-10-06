@@ -34,6 +34,7 @@ import { ContactEntradas, type Entrada } from "./contact-entradas";
 import { ConvencimientoBar } from "./convencimiento-picker";
 import { useSaveStatus } from "./use-save-status";
 import { AgentContactSwitch } from "./agent-contact-switch";
+import { SinSeguimientosLine } from "./sin-seguimientos-line";
 import { IaMark } from "./ia-mark";
 import { TemperatureDestacadoMenu } from "./temperature-destacado-menu";
 import { LectorStatusLine } from "./lector-status";
@@ -777,6 +778,7 @@ export function ContactDetails({
             {/* El ÚNICO control del agente en esta conversación (26-sep-2026). */}
             <Section title="Agente IA">
               <AgentContactSwitch contactId={contactId} conversationId={conversationId} />
+              {details.sinSeguimientos && <SinSeguimientosLine contactId={contactId} onCleared={() => setDetails((d) => (d ? { ...d, sinSeguimientos: false } : d))} />}
             </Section>
 
             <div className="space-y-1 border-t pt-3 text-xs text-muted-foreground">

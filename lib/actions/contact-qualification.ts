@@ -14,6 +14,7 @@ import {
   updateEntrada as updateEntradaData,
 } from "@/lib/contacts/qualification";
 import { db } from "@/lib/db";
+import { sinSeguimientosOf } from "@/lib/followups/view";
 import { contactInundacionesEnum } from "@/lib/db/schema/contacts";
 import { lineaCompuertaEnum } from "@/lib/db/schema/qualification";
 
@@ -106,9 +107,12 @@ export async function getContactQualification(contactId: string) {
 export async function getContactDetails(contactId: string) {
   const membership = await requireActiveMembership();
   requirePermission(membership.role, "contact", "read");
-  const data = await getContactQualificationData(db, membership.organizationId, contactIdSchema.parse(contactId));
+  const parsedId = contactIdSchema.parse(contactId);
+  const data = await getContactQualificationData(db, membership.organizationId, parsedId);
   return {
     ...data,
+    // Se dio de baja de las promociones (131050): sin seguimientos hasta que alguien lo quite.
+    sinSeguimientos: await sinSeguimientosOf(membership.organizationId, parsedId),
     viewer: {
       userId: membership.userId,
       // Editar/borrar comentarios de otros: la misma regla que exige el servidor.

@@ -226,6 +226,13 @@ describe.skipIf(!TEST_DATABASE_URL)("Seguimientos en modo REAL (proveedor falso)
     expect(c.sinSeguimientos).toBe(true);
     // Una lectura nueva ya no programa nada.
     expect(await reading(new Date(T0.getTime() + 2 * HOUR))).toMatch(/se dio de baja/);
+    // «Quitar» en el Detalle: vuelve a tener seguimientos y la siguiente lectura arma uno.
+    const view = await import("./view");
+    expect(await view.sinSeguimientosOf(ORG, CONTACT)).toBe(true);
+    expect(await view.clearSinSeguimientos("otra_org", CONTACT)).toBe(false);
+    expect(await view.clearSinSeguimientos(ORG, CONTACT)).toBe(true);
+    expect(await view.sinSeguimientosOf(ORG, CONTACT)).toBe(false);
+    expect(await reading(new Date(T0.getTime() + 3 * HOUR))).toMatch(/faltan_medidas 1\.º/);
   });
 
   it("tras el último intento sin respuesta: frío", async () => {
