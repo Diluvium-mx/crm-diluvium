@@ -20,7 +20,6 @@ import type { MessagingProvider } from "@/lib/messaging/provider";
 import { addNotice } from "@/lib/ai/runtime/notices";
 import { notifyContactUpdated } from "@/lib/contacts/notify-updated";
 import { zoneForPhone } from "./timezone";
-import { firstNameOf } from "@/lib/templates/first-name";
 
 export type FollowUpRow = typeof followUps.$inferSelect;
 const OPEN = ["programado", "esperando"] as const;
@@ -89,14 +88,19 @@ export async function manualPauseOf(organizationId: string, conversationId: stri
  * con 📄 o 🕒 también cuentan; decisión del dueño, 3-oct-2026) y las de seguimiento que salieron
  * o, en ensayo, que habrían salido. Nunca dos en menos de 7 días.
  */
-async function lastTemplateAt(organizationId: string, contactId: string, now: Date): Promise<Date | null> {
+async function lastTemplateAt(organizationId: string, contactId: string, now: Date, real: boolean): Promise<Date | null> {
   const since = new Date(now.getTime() - 30 * 24 * 60 * 60_000);
-  const rows = await db
-    .select({ intentos: followUps.intentos })
-    .from(followUps)
-    .where(and(eq(followUps.organizationId, organizationId), eq(followUps.contactId, contactId), gte(followUps.createdAt, since)));
   let last: number | null = null;
-  for (const r of rows) for (const a of r.intentos) if (a.door === "plantilla") last = Math.max(last ?? 0, Date.parse(a.at));
+  // En ensayo cuentan las que "habrían salido" (para que el ensayo se parezca a lo real). En real
+  // NO: una plantilla que nunca le llegó al cliente no lo cansa (6-oct-2026); las reales salen de
+  // la tabla de mensajes de abajo.
+  if (!real) {
+    const rows = await db
+      .select({ intentos: followUps.intentos })
+      .from(followUps)
+      .where(and(eq(followUps.organizationId, organizationId), eq(followUps.contactId, contactId), gte(followUps.createdAt, since)));
+    for (const r of rows) for (const a of r.intentos) if (a.door === "plantilla") last = Math.max(last ?? 0, Date.parse(a.at));
+  }
   const [sent] = await db
     .select({ at: sql<Date | null>`max(coalesce(${messages.sentAt}, ${messages.createdAt}))`.mapWith(messages.createdAt) })
     .from(messages)
@@ -132,7 +136,6 @@ type Signals = {
   windowExpiresAt: Date | null;
   lastTemplateAt: Date | null;
   approved: Set<string>;
-  firstName: string;
   lastClientAt: Date | null;
   /** Se dio de baja de promociones (131050): sin seguimientos. */
   sinSeguimientos: boolean;
@@ -156,7 +159,6 @@ async function loadSignals(
       windowExpiresAt: conversations.windowExpiresAt,
       mode: channels.aiAgentMode,
       channelType: channels.type,
-      firstName: contacts.firstName,
       sinSeguimientos: contacts.sinSeguimientos,
       lastInboundAt: conversations.lastInboundAt,
     })
@@ -188,9 +190,8 @@ async function loadSignals(
     // propia regla de 7 días (docs/instagram.md); sus seguimientos quedan para después.
     channelOn: row.mode === "auto" && row.channelType === "whatsapp",
     windowExpiresAt: row.windowExpiresAt,
-    lastTemplateAt: await lastTemplateAt(organizationId, contactId, now),
+    lastTemplateAt: await lastTemplateAt(organizationId, contactId, now, await followUpsReal(organizationId)),
     approved: await approvedTemplateNames(organizationId),
-    firstName: firstNameOf(row.firstName),
     lastClientAt: row.lastInboundAt ?? (row.windowExpiresAt ? new Date(row.windowExpiresAt.getTime() - 24 * 60 * 60_000) : null),
     sinSeguimientos: row.sinSeguimientos,
   };
@@ -565,14 +566,13 @@ async function advance(row: FollowUpRow, now: Date, deps: FollowUpRuntimeDeps): 
   const mark = { followUpId: row.id, intento: row.intento };
   const sent =
     door === "texto"
-      ? await sendFollowUpText(deps.provider!, { organizationId, conversationId, messageId: messageId!, borrador: row.borrador!, firstName: signals.firstName, zone: row.timeZone, now, mark })
+      ? await sendFollowUpText(deps.provider!, { organizationId, conversationId, messageId: messageId!, borrador: row.borrador!, zone: row.timeZone, now, mark })
       : templateName
         ? await sendFollowUpTemplate(deps.provider!, {
             organizationId,
             conversationId,
             messageId: messageId!,
             templateName,
-            firstName: signals.firstName,
             lastClientAt: signals.lastClientAt,
             zone: row.timeZone,
             now,

@@ -205,12 +205,12 @@ describe.skipIf(!TEST_DATABASE_URL)("Seguimientos en la base (modo ensayo)", () 
     expect((await rows())[0]).toMatchObject({ status: "cancelado", cancelReason: "venta_cerrada" });
   });
 
-  it("la burbuja: muestra la plantilla con el nombre, cambia la hora, 'Que salga solo' solo en sugerencias y Cancelar", async () => {
-    await db.insert(s.templates).values({ id: "tpl1", organizationId: ORG, channelId: CH, name: "hola_buenas_tardes", language: "es_MX", body: "Hola {{1}}, buenas tardes.", status: "APPROVED" });
+  it("la burbuja: muestra la plantilla sin el nombre del perfil, cambia la hora, 'Que salga solo' solo en sugerencias y Cancelar", async () => {
+    await db.insert(s.templates).values({ id: "tpl1", organizationId: ORG, channelId: CH, name: "hola_buenas_tardes", language: "es_MX", body: "Hola, buenas tardes.", status: "APPROVED" });
     await reading();
     await store.followUpSweepOnce(new Date((await rows())[0].dueAt!.getTime() + MIN));
     const v = await view.loadFollowUpView(ORG, CONV);
-    expect(v).toMatchObject({ caso: "faltan_medidas", casoLabel: "Faltan medidas", intento: 2, total: 2, door: "plantilla", templateText: "Hola Ana, buenas tardes.", firstName: "Ana", phoneE164: "+525512345678", ensayo: true });
+    expect(v).toMatchObject({ caso: "faltan_medidas", casoLabel: "Faltan medidas", intento: 2, total: 2, door: "plantilla", templateText: "Hola, buenas tardes.", firstName: "Ana", phoneE164: "+525512345678", ensayo: true });
     expect(await view.loadFollowUpView("otra_org", CONV)).toBeNull();
 
     const nueva = new Date("2026-10-07T16:30:00Z");

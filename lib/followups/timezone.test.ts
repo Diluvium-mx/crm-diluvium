@@ -34,7 +34,8 @@ describe("saludo que pone el CRM", () => {
     expect(greetingFor(t("19:00"), zone)).toBe("buenas noches");
   });
   it("con y sin nombre", () => {
-    expect(followUpText("¿Pudo medir el ancho?", "Ana", t("20:00"), zone)).toBe("Hola Ana, buenas noches. ¿Pudo medir el ancho?");
-    expect(followUpText(" ¿Pudo medir el ancho? ", "", t("10:00"), zone)).toBe("Hola, buenos días. ¿Pudo medir el ancho?");
+    // Nunca el nombre del perfil (decisión del dueño, 6-oct-2026).
+    expect(followUpText("¿Pudo medir el ancho?", t("20:00"), zone)).toBe("Hola, buenas noches, le escribo de parte del equipo de Diluvium. ¿Pudo medir el ancho?");
+    expect(followUpText(" ¿Pudo medir el ancho? ", t("10:00"), zone)).toBe("Hola, buenos días, le escribo de parte del equipo de Diluvium. ¿Pudo medir el ancho?");
   });
 });

@@ -129,7 +129,7 @@ describe.skipIf(!TEST_DATABASE_URL)("Seguimientos en modo REAL (proveedor falso)
     await store.followUpSweepOnce(at, { provider });
     await store.followUpSweepOnce(at, { provider });
     expect(sent).toHaveLength(1);
-    expect(sent[0].text).toBe("Hola Ana, buenas noches. ¿Pudo medir el ancho de su cochera?");
+    expect(sent[0].text).toBe("Hola, buenas noches, le escribo de parte del equipo de Diluvium. ¿Pudo medir el ancho de su cochera?");
     const [m] = await db.select().from(s.messages).where(d.eq(s.messages.id, sent[0].key));
     expect(m).toMatchObject({ source: "ai_agent", sentByUserId: null, direction: "out" });
     expect(m.metadata).toMatchObject({ seguimiento: { followUpId: r.id, intento: 1 } });
@@ -240,5 +240,33 @@ describe.skipIf(!TEST_DATABASE_URL)("Seguimientos en modo REAL (proveedor falso)
     expect((await row()).status).toBe("terminado");
     const [c] = await db.select().from(s.contacts).where(d.eq(s.contacts.id, CONTACT));
     expect(c.temperature).toBe("frio");
+  });
+
+  it("7 días entre plantillas: en real NO cuentan las que solo «habrían salido» en el ensayo; sí las que salieron", async () => {
+    await reading();
+    await store.followUpSweepOnce(new Date((await row()).dueAt!.getTime() + MIN), { provider });
+    const r = await row();
+    // Una plantilla de ensayo de ayer (de otro seguimiento ya cerrado) no frena la plantilla real.
+    await db.insert(s.followUps).values({
+      id: "f_viejo", organizationId: ORG, conversationId: CONV, contactId: CONTACT, caso: "precio_sin_respuesta", status: "terminado",
+      ensayo: true, timeZone: "America/Mexico_City", basedOnMessageAt: T0, createdAt: new Date(r.dueAt!.getTime() - 24 * HOUR),
+      intentos: [{ n: 2, at: new Date(r.dueAt!.getTime() - 24 * HOUR).toISOString(), door: "plantilla", template: "hola_buenas_tardes", modo: "automatico", ensayo: true }],
+    });
+    sent = [];
+    await store.followUpSweepOnce(new Date(r.dueAt!.getTime() + MIN), { provider });
+    expect(sent).toEqual([expect.objectContaining({ kind: "template" })]);
+  });
+
+  it("7 días entre plantillas: una plantilla que de verdad le llegó (aunque la mandara un vendedor) sí recorre la siguiente", async () => {
+    await reading();
+    await store.followUpSweepOnce(new Date((await row()).dueAt!.getTime() + MIN), { provider });
+    const r = await row();
+    // Antes de la parada (si fuera después, sería un mensaje nuevo que el lector tiene que leer).
+    const ayer = new Date(T0.getTime() - HOUR);
+    await db.insert(s.messages).values({ id: "m_tpl_vendedor", organizationId: ORG, conversationId: CONV, direction: "out", source: "crm", type: "template", body: "Hola, buenas tardes.", status: "delivered", providerMessageId: "wamid.tplv", sentAt: ayer, createdAt: ayer });
+    sent = [];
+    await store.followUpSweepOnce(new Date(r.dueAt!.getTime() + MIN), { provider });
+    expect(sent).toHaveLength(0);
+    expect((await row()).dueAt!.getTime()).toBeGreaterThanOrEqual(ayer.getTime() + 7 * 24 * HOUR - MIN);
   });
 });

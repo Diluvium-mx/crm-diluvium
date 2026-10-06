@@ -81,10 +81,15 @@ const ZONE_NAMES: Readonly<Record<string, string>> = {
   "America/Cancun": "Cancún",
 };
 
+function pillPrefix(f: FollowUpView): string {
+  return f.ensayo ? "Ensayo" : f.modo === "sugerido" ? "Sugerido" : "Seguimiento";
+}
+
+// Corto: la píldora mide lo mismo que ⚡ 📄 📎 (6-oct-2026). Qué tipo es lo dice el color
+// (gris punteado = ensayo, amarillo = sugerido, azul = sale solo); el texto completo va en el title.
 function pillText(f: FollowUpView): string {
-  const prefix = f.ensayo ? "Ensayo" : f.modo === "sugerido" ? "Sugerido" : "Seguimiento";
-  if (f.status === "esperando") return `${prefix} · esperando`;
-  return f.dueAt ? `${prefix} · ${whenLabel(f.dueAt)}` : prefix;
+  if (f.status === "esperando") return "esperando";
+  return f.dueAt ? whenLabel(f.dueAt) : pillPrefix(f);
 }
 
 // ── Píldora ──────────────────────────────────────────────────────────────────
@@ -101,7 +106,7 @@ export function FollowUpPill({ followUp, open, onToggle, className = "" }: { fol
       onClick={onToggle}
       aria-expanded={open}
       aria-label={`Seguimiento del Agente IA: ${followUp.casoLabel}`}
-      title={`Seguimiento del Agente IA · ${followUp.casoLabel}`}
+      title={`Seguimiento del Agente IA · ${followUp.casoLabel} · ${pillPrefix(followUp)}${followUp.status === "esperando" ? " · esperando respuesta" : followUp.dueAt ? ` · ${whenLabel(followUp.dueAt)}` : ""}`}
       data-testid="followup-pill"
       className={`h-5 min-w-0 items-center justify-center gap-1 rounded-full border px-2 text-[11px] leading-none whitespace-nowrap transition-colors ${tone} ${open ? "ring-2 ring-brand-navy/30" : ""} ${className}`}
     >
@@ -123,7 +128,7 @@ export function FollowUpPanel({ followUp, onClose, onChanged }: { followUp: Foll
   const f = followUp;
   const due = f.dueAt ? new Date(f.dueAt) : null;
   const clientHour = due && dayKey(due, f.timeZone) + hourOf(due, f.timeZone) !== dayKey(due, SCHEDULE_TIME_ZONE) + hourOf(due, SCHEDULE_TIME_ZONE) ? hourOf(due, f.timeZone) : null;
-  const text = f.borrador ? followUpText(f.borrador, f.firstName, due ?? new Date(), f.timeZone) : null;
+  const text = f.borrador ? followUpText(f.borrador, due ?? new Date(), f.timeZone) : null;
 
   const run = async (action: () => Promise<{ ok: true } | { ok: false; message: string }>) => {
     setBusy(true);
@@ -271,7 +276,7 @@ export function FollowUpPanel({ followUp, onClose, onChanged }: { followUp: Foll
             )}
             {f.phoneE164 && f.borrador && (
               <a
-                href={whatsappWebLink(f.phoneE164, followUpText(f.borrador, f.firstName, new Date(), f.timeZone))}
+                href={whatsappWebLink(f.phoneE164, followUpText(f.borrador, new Date(), f.timeZone))}
                 target="_blank"
                 rel="noopener noreferrer"
                 className={button}
