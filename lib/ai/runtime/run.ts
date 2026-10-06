@@ -633,6 +633,11 @@ export async function runAgent(job: { organizationId: string; conversationId: st
     // (tokens agotados, filtro del proveedor…) cuentan como falla; las dos dejan su fila.
     // Modelos ya llamados en esta ronda (la red contra el silencio no le vuelve a preguntar a ninguno).
     const tried = new Set<string>();
+    // Acuse (6-oct-2026, C2; caso b983412b: 5 «el asesor le envía el enlace» a «Vale», «Ok»):
+    // todo lo pendiente del cliente es «ok», «vale», «gracias», un emoji o un sticker. Solo
+    // entonces, además del complemento de un workflow, el Agente IA puede no contestar
+    // escribiendo NOTHING_TOKEN (Goal: PASAR A HUMANO).
+    const acuse = pending.length > 0 && pending.every((m) => isBareAck(m));
     const attempt = async (model: CatalogModel, avanzaA: string | null = null, nota: string | null = null): Promise<BrainOk | BrainFail> => {
       tried.add(model.id);
       const messages = await messagesFor(model, avanzaA, nota);
@@ -650,7 +655,7 @@ export async function runAgent(job: { organizationId: string; conversationId: st
       // "Nada que agregar" solo vale como complemento de un workflow; fuera de eso es respuesta vacía.
       // En el complemento, una respuesta en blanco también (con el Goal real de staging, Luna y
       // Sonnet a veces contestan vacío en vez de escribir la señal): el workflow ya contestó.
-      if (out.kind !== "reply" && !complementOf && valid.length === 0) {
+      if (out.kind !== "reply" && !complementOf && !(acuse && out.kind === "nothing") && valid.length === 0) {
         await recordAiUsage({ ...base, stage: "cerebro", modelId: res.modelId, provider: res.provider, usage: res.usage, latencyMs, outcome: "error", error: `respuesta_vacia (${res.finishReason})` });
         return { ok: false, model, info: EMPTY_RESPONSE_INFO };
       }
@@ -728,7 +733,7 @@ export async function runAgent(job: { organizationId: string; conversationId: st
         const second = await attempt(model2, target);
         // Red contra el silencio: el Modelo 2 no escribió nada, nadie le ha contestado al cliente
         // y el Modelo 1 sí escribió → sale la del Modelo 1 (igual que si el Modelo 2 fallara).
-        const secondMute = second.ok && (await isSilent(second)) && !(await isSilent(used)) && !(await alreadyAnswered());
+        const secondMute = second.ok && !(acuse && second.out.kind === "nothing") && (await isSilent(second)) && !(await isSilent(used)) && !(await alreadyAnswered());
         if (second.ok && secondMute) {
           await recordAiUsage({ ...usageOf(second), outcome: "sin_texto", error: `traspaso sin texto; sale la respuesta de ${used.model.id}` });
           console.warn(`[agente] ${conv.id}: ${model2.label} contestó sin texto en el traspaso; sale la respuesta de ${used.model.label}`);
@@ -756,9 +761,12 @@ export async function runAgent(job: { organizationId: string; conversationId: st
     // acciones de la primera respuesta (Detalle, avisos, workflows, etapa) no se pierden. (3)
     // Si nadie escribe, no sale nada y el vendedor recibe el aviso "sin_respuesta" (abajo, ya
     // con la respuesta confirmada). Nunca un texto fijo del CRM.
-    let silencio: "contestado" | "sin_respuesta" | null = null;
+    let silencio: "contestado" | "acuse" | "sin_respuesta" | null = null;
     if (await isSilent(used)) {
-      if (await alreadyAnswered()) {
+      if (acuse && used.out.kind === "nothing") {
+        silencio = "acuse";
+        console.info(`[agente] ${conv.id}: el cliente solo confirmó o agradeció y no hay nada que agregar; no sale nada`);
+      } else if (await alreadyAnswered()) {
         silencio = "contestado";
       } else {
         const other = candidates.map((c) => getModel(c.modelId)).find((m): m is CatalogModel => m !== undefined && !tried.has(m.id));
@@ -786,7 +794,6 @@ export async function runAgent(job: { organizationId: string; conversationId: st
     // CONTESTAR). En el complemento de un workflow ya no hay preguntas (withoutClosingQuestions).
     let repetida: string | null = null;
     const lastAsked = complementOf ? null : await lastQuestionAsked(org, conv.id, deps.now());
-    const acuse = pending.length > 0 && pending.every((m) => isBareAck(m));
     const onlyRepeat = async (r: BrainOk): Promise<boolean> => {
       if (!lastAsked || acuse || r.out.kind !== "reply" || !r.out.text.trim()) return false;
       // Lo idéntico a lo que ya salió después del último mensaje lo quita el candado de siempre.
@@ -1122,6 +1129,7 @@ export async function runAgent(job: { organizationId: string; conversationId: st
       withheld ? `el workflow es la respuesta; no salió el texto del modelo: «${withheld.slice(0, 300)}»` : null,
       captionedBy ? `el texto va como pie del archivo de «${captionedBy}»` : null,
       silencio === "contestado" ? "sin texto: ya le había salido algo al cliente después de su último mensaje" : null,
+      silencio === "acuse" ? "sin texto: el cliente solo confirmó o agradeció (nada que agregar)" : null,
       silencio === "sin_respuesta" ? "sin texto: ningún modelo le escribió al cliente (aviso sin_respuesta)" : null,
       repetida ? `sin texto: solo repetía la pregunta sin contestar «${repetida}» (aviso sin_respuesta)` : null,
     ]

@@ -1370,6 +1370,58 @@ describe.skipIf(!TEST_DATABASE_URL)("runtime del Agente IA (Postgres real)", () 
     expect((await notices()).map((n) => n.kind)).toEqual(["agente_error"]);
   });
 
+  it("acuse (6-oct, C2): si el cliente solo dice «Vale» y el modelo escribe «nada que agregar», no sale nada, sin tarjeta ni otro modelo", async () => {
+    await msg({ direction: "in", body: "Envíamelo", at: ago(300_000) });
+    await msg({ direction: "out", body: "Claro, en un momento un asesor le envía el enlace.", at: ago(290_000), source: "ai_agent" });
+    await msg({ direction: "in", body: "Vale", at: ago(120_000) });
+    const { deps, calls } = makeDeps({ brain: [brainMod.NOTHING_TOKEN, "no debe llamarse"] });
+    expect(await run.runAgent(JOB, deps)).toEqual({ kind: "sent", bubbles: 0 });
+    expect(calls.filter((c) => c.kind === "cerebro")).toHaveLength(1);
+    expect((await agentOuts()).map((m) => m.body)).toEqual(["Claro, en un momento un asesor le envía el enlace."]);
+    expect(await notices()).toEqual([]);
+  });
+
+  it("acuse (6-oct, C2): «nada que agregar» a una PREGUNTA del cliente sigue siendo respuesta vacía", async () => {
+    await msg({ direction: "in", body: "Vale, ¿y cuánto tarda?", at: ago(120_000) });
+    expect(await run.runAgent(JOB, makeDeps({ brain: [brainMod.NOTHING_TOKEN] }).deps)).toEqual({ kind: "failed", reason: "vacia" });
+  });
+
+  // Las respuestas del Agente IA se guardan con la hora real: para una ronda nueva, se recorren atrás.
+  const backdateAgentOuts = (at: Date) => db.update(s.messages).set({ createdAt: at, sentAt: at }).where(eq(s.messages.source, "ai_agent"));
+
+  it("lada (6-oct, P1): con un número de otro país, el contexto del CRM dice la lada", async () => {
+    await db.update(s.contacts).set({ phoneE164: "+34610605145", phoneCountryIso: "ES", phoneCountryCode: "34" }).where(eq(s.contacts.id, CONTACT));
+    await msg({ direction: "in", body: "¿precio?", at: ago(120_000) });
+    const { deps, calls } = makeDeps({ brain: ["La compuerta cuesta $5,500 MXN."] });
+    await run.runAgent(JOB, deps);
+    expect(lastUserText(calls.find((c) => c.kind === "cerebro")!.input)).toContain("Lada del número del cliente: España (+34), fuera de México.");
+  });
+
+  it("lada (6-oct, P1): con un número de México, el contexto queda igual que antes", async () => {
+    await db.update(s.contacts).set({ phoneCountryIso: "MX", phoneCountryCode: "52" }).where(eq(s.contacts.id, CONTACT));
+    await msg({ direction: "in", body: "¿precio?", at: ago(120_000) });
+    const { deps, calls } = makeDeps({ brain: ["La compuerta cuesta $5,500 MXN."] });
+    await run.runAgent(JOB, deps);
+    expect(lastUserText(calls.find((c) => c.kind === "cerebro")!.input)).not.toContain("Lada del número");
+  });
+
+  it("aviso único (6-oct, C1): «pide una persona» no se repite mientras ningún vendedor conteste; después sí", async () => {
+    const pide = { toolName: "aviso_vendedor", input: { motivo: "cliente_pide_humano", detalle: "Pide el enlace de pago." } };
+    await msg({ direction: "in", body: "Envíamelo", at: ago(300_000) });
+    await run.runAgent(JOB, makeDeps({ brain: ["Un asesor le envía el enlace."], toolCalls: [pide] }).deps);
+    await backdateAgentOuts(ago(250_000));
+    await msg({ direction: "in", body: "Quiero el enlace", at: ago(200_000) });
+    await run.runAgent(JOB, makeDeps({ brain: ["En breve se lo comparte."], toolCalls: [pide] }).deps);
+    expect((await notices()).filter((n) => n.kind === "cliente_pide_humano")).toHaveLength(1);
+    expect((await agentOuts()).map((m) => m.body)).toEqual(["Un asesor le envía el enlace.", "En breve se lo comparte."]);
+    // Un vendedor contesta: el aviso deja de estar abierto y el siguiente pedido sí deja uno nuevo.
+    const { hasOpenHandoverRequest } = await import("./notices");
+    expect(await hasOpenHandoverRequest(ORG, CONV)).toBe(true);
+    await db.update(s.aiAgentNotices).set({ createdAt: ago(150_000) });
+    await msg({ direction: "out", body: "Aquí está el enlace", at: ago(100_000), source: "crm" });
+    expect(await hasOpenHandoverRequest(ORG, CONV)).toBe(false);
+  });
+
   it("complemento: una respuesta EN BLANCO (sin señal ni acciones) cuenta como «nada que agregar»: sin tarjeta ni otro intento", async () => {
     const m1 = await msg({ direction: "in", body: "Hola buenas tardes, qué precio tienen?", at: ago(40_000) });
     const wfId = await wf("precio_2", [{ kind: "send_text", text: "Ahorita tenemos cualquier tamaño en $5,500 con envío gratis." }, { kind: "send_text", text: PREGUNTA }], { isAnswer: true });
