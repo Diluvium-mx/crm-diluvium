@@ -34,6 +34,16 @@ export function templateTitle(name: string): string {
   return base !== name ? (KNOWN_TITLES[base] ?? name) : name;
 }
 
+/**
+ * Texto que se muestra en la lista: en las de «Saludo de Daniel» todas empiezan con el mismo
+ * saludo, así que se enseña lo que cambia (lo que va después del primer párrafo).
+ */
+export function templateSnippet(name: string, bodyText: string): string {
+  if (templateSection(name) !== "daniel") return bodyText;
+  const rest = bodyText.split(/\n\s*\n/).slice(1).join("\n\n").trim();
+  return rest || bodyText;
+}
+
 type Groupable = { name: string; bodyText: string | null };
 
 /** ¿La plantilla coincide con lo buscado? (nombre, título o texto; sin acentos ni mayúsculas). */

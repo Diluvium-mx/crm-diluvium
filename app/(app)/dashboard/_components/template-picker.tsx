@@ -14,7 +14,7 @@ import type { TemplateView } from "@/lib/templates/types";
 import { CloseX } from "@/components/ui/close-x";
 import { LinkedText } from "@/components/ui/linked-text";
 import { PICKER_TIME_PHRASE_TEMPLATES } from "@/lib/followups/cases";
-import { groupTemplates, templateTitle } from "@/lib/templates/labels";
+import { groupTemplates, templateSnippet, templateTitle } from "@/lib/templates/labels";
 import { usePersistentToggle } from "@/components/ui/use-persistent-toggle";
 
 const TOKEN_CLASS = "rounded bg-brand-navy/15 px-1 font-medium text-brand-navy";
@@ -228,7 +228,7 @@ export function TemplatePicker({
                             {title !== t.name && <span className="block truncate text-[10px] text-muted-foreground">{t.name}</span>}
                             {t.bodyText && (
                               <span className={`mt-0.5 block text-xs text-muted-foreground ${grid ? "line-clamp-4 break-words whitespace-pre-line" : "truncate"}`}>
-                                <BodyWithTokens text={t.bodyText} />
+                                <BodyWithTokens text={templateSnippet(t.name, t.bodyText)} />
                               </span>
                             )}
                           </button>

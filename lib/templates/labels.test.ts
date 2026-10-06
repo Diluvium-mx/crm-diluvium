@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { groupTemplates, templateSection, templateTitle } from "./labels";
+import { groupTemplates, templateSection, templateSnippet, templateTitle } from "./labels";
 import { PICKER_TIME_PHRASE_TEMPLATES, TIME_PHRASE_TEMPLATES } from "@/lib/followups/cases";
 
 const t = (name: string, bodyText: string | null = null) => ({ id: name, name, bodyText });
@@ -47,5 +47,14 @@ describe("frase de tiempo en {{1}}", () => {
     expect(PICKER_TIME_PHRASE_TEMPLATES.has("daniel_objecion")).toBe(true);
     expect(PICKER_TIME_PHRASE_TEMPLATES.has("seg_precio")).toBe(true);
     expect([...TIME_PHRASE_TEMPLATES].some((name) => name.startsWith("daniel_"))).toBe(false);
+  });
+});
+
+describe("texto de la lista", () => {
+  it("en las de Daniel enseña lo que va después del saludo", () => {
+    const body = "Hola muy buenos días, le habla Daniel de Diluvium 😀\n\nReferente a la compuerta que nos comentó {{1}}, pudo tomar las medidas?";
+    expect(templateSnippet("daniel_medidas", body)).toBe("Referente a la compuerta que nos comentó {{1}}, pudo tomar las medidas?");
+    expect(templateSnippet("seg_medidas", body)).toBe(body);
+    expect(templateSnippet("daniel_x", "Sin segundo párrafo")).toBe("Sin segundo párrafo");
   });
 });
