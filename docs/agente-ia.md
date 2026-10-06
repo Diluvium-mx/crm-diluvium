@@ -1171,3 +1171,12 @@ modelo manda el campo, se ignora. Los 800 comentarios guardados (casi todos del 
 la salida del comentario (~30 tokens cada uno, unos 670 por semana) y hasta 5 comentarios en la entrada de cada
 llamada; del orden de US$1–2 al mes. El lector, cuando el cliente cambia lo que pide y el precio nuevo nunca se dijo,
 ya no deja el comentario «falta confirmar el total»: solo no manda monto.
+
+
+## Lada extranjera: sin respuesta de inicio por palabra clave (6-oct-2026, sin migración)
+
+Con un número de otro país (`contacts.phone_country_iso` ≠ MX), los workflows «Solo al inicio» por palabra clave
+(«Información», «Precio 2», la Tabla) no salen (`onInboundKeyword`, lib/workflows/triggers.ts). Contesta el Agente IA
+con CLIENTES EN EL EXTRANJERO del Goal: explica que solo se envía dentro de México y pregunta si tiene dirección en
+México, antes de cotizar. Antes, el workflow mandaba el precio y el complemento del Agente IA (sin preguntas) borraba esa
+pregunta. Los workflows sin «Solo al inicio» (p. ej. videos) siguen saliendo por su palabra clave.
