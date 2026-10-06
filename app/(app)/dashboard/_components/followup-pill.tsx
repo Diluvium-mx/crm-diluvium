@@ -7,11 +7,14 @@
 // rápidos) con qué quedó pendiente, a qué hora sale, por dónde y Ver mensaje · Cambiar hora ·
 // Lo mando yo · Cancelar (y "Que salga solo" en una sugerencia).
 // Parte 1 = MODO ENSAYO: la píldora gris punteada dice "Ensayo"; nada sale al cliente.
+// Caritas (6-oct-2026, decisión del dueño): robot normal = programado; dormido = suspendido (pausa
+// puesta a mano: no sale solo); ojos en X = cancelado en este chat (se queda así hasta «Reactivar»)
+// o, en rojo, el cliente se dio de baja de las promociones (aviso que se abre solo una vez).
 // Consultas: al abrir el chat, con cada aviso "followup.updated" de este chat y al volver a la pestaña.
 import { useCallback, useEffect, useRef, useState } from "react";
 import { X } from "lucide-react";
-import { approveSuggestedFollowUp, cancelFollowUp, getFollowUp, rescheduleFollowUp } from "@/lib/actions/seguimientos";
-import type { FollowUpView } from "@/lib/followups/view";
+import { approveSuggestedFollowUp, cancelFollowUp, getFollowUp, quitarSinSeguimientos, reactivarSeguimientos, rescheduleFollowUp } from "@/lib/actions/seguimientos";
+import type { FollowUpOff, FollowUpState, FollowUpView } from "@/lib/followups/view";
 import { followUpText } from "@/lib/followups/message";
 import { whatsappWebLink } from "@/lib/contacts/whatsapp-link";
 import { instantToLocal, SCHEDULE_TIME_ZONE } from "@/lib/scheduled/rules";
@@ -20,8 +23,8 @@ import { useInboxStream } from "./use-inbox-stream";
 
 // ── Datos ────────────────────────────────────────────────────────────────────
 
-export function useFollowUp(conversationId: string): { followUp: FollowUpView | null; reload: () => void } {
-  const [followUp, setFollowUp] = useState<FollowUpView | null>(null);
+export function useFollowUp(conversationId: string): { followUp: FollowUpState | null; reload: () => void } {
+  const [followUp, setFollowUp] = useState<FollowUpState | null>(null);
   const seq = useRef(0);
   const [seen, setSeen] = useState(conversationId);
   if (seen !== conversationId) {
@@ -82,43 +85,163 @@ const ZONE_NAMES: Readonly<Record<string, string>> = {
 };
 
 function pillPrefix(f: FollowUpView): string {
-  return f.ensayo ? "Ensayo" : f.modo === "sugerido" ? "Sugerido" : "Seguimiento";
+  return f.ensayo ? "Ensayo" : f.modo === "sugerido" && !f.autoAprobado ? "Suspendido" : "Seguimiento";
 }
 
-// Corto: la píldora mide lo mismo que ⚡ 📄 📎 (6-oct-2026). Qué tipo es lo dice el color
-// (gris punteado = ensayo, amarillo = sugerido, azul = sale solo); el texto completo va en el title.
+// Corto: la píldora mide lo mismo que ⚡ 📄 📎 (6-oct-2026). Qué tipo es lo dicen la carita y el color;
+// el texto completo va en el title.
 function pillText(f: FollowUpView): string {
   if (f.status === "esperando") return "esperando";
   return f.dueAt ? whenLabel(f.dueAt) : pillPrefix(f);
 }
 
+export type RobotFace = "normal" | "dormido" | "cancelado";
+const FACE_SRC: Record<RobotFace, string> = { normal: "/emoji/robot.svg", dormido: "/emoji/robot-dormido.svg", cancelado: "/emoji/robot-cancelado.svg" };
+
+/** El robot del seguimiento (imagen propia: no existe emoji de robot con ojos en X ni dormido). */
+export function RobotIcon({ face, size = 14 }: { face: RobotFace; size?: number }) {
+  // eslint-disable-next-line @next/next/no-img-element -- SVG chico y estático de public/emoji
+  return <img src={FACE_SRC[face]} width={size} height={size} alt="" aria-hidden="true" className="shrink-0" draggable={false} />;
+}
+
+function faceOf(f: FollowUpState): RobotFace {
+  if (f.estado !== "activo") return "cancelado";
+  return f.modo === "sugerido" && !f.autoAprobado ? "dormido" : "normal";
+}
+
 // ── Píldora ──────────────────────────────────────────────────────────────────
 
-export function FollowUpPill({ followUp, open, onToggle, className = "" }: { followUp: FollowUpView; open: boolean; onToggle: () => void; className?: string }) {
-  const tone = followUp.ensayo
-    ? "border-dashed border-muted-foreground/60 bg-muted text-muted-foreground"
-    : followUp.modo === "sugerido" && !followUp.autoAprobado
-      ? "border-amber-500 bg-amber-50 text-amber-900 dark:bg-amber-500/15 dark:text-amber-200"
-      : "border-brand-navy bg-brand-navy/10 text-brand-navy dark:text-sky-300";
+export function FollowUpPill({ followUp, open, onToggle, className = "" }: { followUp: FollowUpState; open: boolean; onToggle: () => void; className?: string }) {
+  const f = followUp;
+  const tone =
+    f.estado === "baja"
+      ? "border-red-600 bg-red-50 text-red-800 dark:bg-red-500/15 dark:text-red-200"
+      : f.estado === "cancelado"
+        ? "border-muted-foreground/70 bg-background text-muted-foreground"
+        : f.ensayo
+          ? "border-dashed border-muted-foreground/60 bg-muted text-muted-foreground"
+          : f.modo === "sugerido" && !f.autoAprobado
+            ? "border-amber-500 bg-amber-50 text-amber-900 dark:bg-amber-500/15 dark:text-amber-200"
+            : "border-brand-navy bg-brand-navy/10 text-brand-navy dark:text-sky-300";
+  const label = f.estado === "baja" ? "Se dio de baja" : f.estado === "cancelado" ? "Cancelado" : pillText(f);
+  const title =
+    f.estado === "baja"
+      ? "Seguimiento del Agente IA · el cliente se dio de baja de las promociones de WhatsApp"
+      : f.estado === "cancelado"
+        ? "Seguimientos cancelados en este chat · se reactivan desde aquí"
+        : `Seguimiento del Agente IA · ${f.casoLabel} · ${pillPrefix(f)}${f.status === "esperando" ? " · esperando respuesta" : f.dueAt ? ` · ${whenLabel(f.dueAt)}` : ""}`;
   return (
     <button
       type="button"
       onClick={onToggle}
       aria-expanded={open}
-      aria-label={`Seguimiento del Agente IA: ${followUp.casoLabel}`}
-      title={`Seguimiento del Agente IA · ${followUp.casoLabel} · ${pillPrefix(followUp)}${followUp.status === "esperando" ? " · esperando respuesta" : followUp.dueAt ? ` · ${whenLabel(followUp.dueAt)}` : ""}`}
+      aria-label={title}
+      title={title}
       data-testid="followup-pill"
+      data-estado={f.estado}
       className={`h-5 min-w-0 items-center justify-center gap-1 rounded-full border px-2 text-[11px] leading-none whitespace-nowrap transition-colors ${tone} ${open ? "ring-2 ring-brand-navy/30" : ""} ${className}`}
     >
-      <span aria-hidden="true">🤖</span>
-      <span className="truncate">{pillText(followUp)}</span>
+      <RobotIcon face={faceOf(f)} />
+      <span className="truncate">{label}</span>
     </button>
+  );
+}
+
+// ── Aviso de «se dio de baja» (se abre solo una vez por contacto en esta computadora) ─────
+
+const bajaKey = (contactId: string) => `seguimiento-baja-visto:${contactId}`;
+export function bajaAlreadySeen(contactId: string): boolean {
+  try {
+    return window.localStorage.getItem(bajaKey(contactId)) === "1";
+  } catch {
+    return false;
+  }
+}
+export function markBajaSeen(contactId: string): void {
+  try {
+    window.localStorage.setItem(bajaKey(contactId), "1");
+  } catch {
+    /* sin almacenamiento: se vuelve a abrir la próxima vez, no pasa nada */
+  }
+}
+
+function OffPanel({ off, onClose, onChanged }: { off: FollowUpOff; onClose: () => void; onChanged: () => void }) {
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const run = async (action: () => Promise<{ ok: true } | { ok: false; message: string }>) => {
+    setBusy(true);
+    setError(null);
+    try {
+      const r = await action();
+      if (!r.ok) setError(r.message);
+      else {
+        onChanged();
+        onClose();
+      }
+    } catch {
+      setError("No se pudo guardar. Inténtalo otra vez.");
+    } finally {
+      setBusy(false);
+    }
+  };
+  const button = "rounded-md border px-2.5 py-1 text-xs font-medium transition-colors disabled:opacity-50";
+  const baja = off.estado === "baja";
+  return (
+    <div
+      onKeyDown={(event) => {
+        if (event.key !== "Escape") return;
+        event.stopPropagation();
+        onClose();
+      }}
+      data-testid="followup-panel"
+      className={`mb-2 rounded-lg border p-3 text-sm shadow-md ${baja ? "border-red-400 bg-red-50 text-red-900 dark:border-red-500/50 dark:bg-red-500/10 dark:text-red-100" : "bg-background"}`}
+    >
+      <div className="flex items-start justify-between gap-2">
+        <p className="flex items-center gap-2 font-semibold">
+          <RobotIcon face="cancelado" size={18} />
+          {baja ? "WhatsApp no entregó el seguimiento" : "Seguimientos cancelados en este chat"}
+        </p>
+        <CloseX size="sm" label="Cerrar" onClick={onClose} />
+      </div>
+      {baja ? (
+        <p className="mt-1">
+          El cliente se dio de baja de las promociones de Diluvium. El seguimiento ya se canceló y no se le mandarán más plantillas. Si escribe, el Agente IA y los
+          vendedores le contestan normal.
+        </p>
+      ) : (
+        <p className="mt-1 text-muted-foreground">
+          {`Los canceló ${off.byName ?? "un vendedor"}${off.at ? ` el ${whenLabel(off.at)}` : ""}. El Agente IA no arma seguimientos en este chat hasta que alguien los reactive.`}
+        </p>
+      )}
+      <div className="mt-2 flex flex-wrap gap-1.5">
+        {baja ? (
+          <>
+            <button type="button" onClick={onClose} className={`${button} border-red-700 bg-red-700 text-white`}>
+              Entendido
+            </button>
+            <button type="button" disabled={busy} onClick={() => void run(() => quitarSinSeguimientos(off.contactId))} className={`${button} border-red-500`}>
+              Volver a darle seguimiento
+            </button>
+          </>
+        ) : (
+          <button type="button" disabled={busy} onClick={() => void run(() => reactivarSeguimientos(off.conversationId))} className={`${button} border-brand-navy hover:bg-brand-navy/10`}>
+            Reactivar seguimientos
+          </button>
+        )}
+      </div>
+      {error && <p className="mt-1 text-xs font-medium text-red-600 dark:text-red-400">{error}</p>}
+    </div>
   );
 }
 
 // ── Burbuja ──────────────────────────────────────────────────────────────────
 
-export function FollowUpPanel({ followUp, onClose, onChanged }: { followUp: FollowUpView; onClose: () => void; onChanged: () => void }) {
+export function FollowUpPanel({ followUp, onClose, onChanged }: { followUp: FollowUpState; onClose: () => void; onChanged: () => void }) {
+  if (followUp.estado !== "activo") return <OffPanel off={followUp} onClose={onClose} onChanged={onChanged} />;
+  return <ActivePanel followUp={followUp} onClose={onClose} onChanged={onChanged} />;
+}
+
+function ActivePanel({ followUp, onClose, onChanged }: { followUp: FollowUpView; onClose: () => void; onChanged: () => void }) {
   const [showMessage, setShowMessage] = useState(false);
   const [editing, setEditing] = useState(false);
   const [confirmCancel, setConfirmCancel] = useState(false);
@@ -159,7 +282,7 @@ export function FollowUpPanel({ followUp, onClose, onChanged }: { followUp: Foll
     >
       <div className="flex shrink-0 items-center justify-between gap-2 border-b px-3 py-1.5">
         <span className="flex min-w-0 items-center gap-2 text-sm font-semibold text-brand-navy dark:text-sky-300">
-          <span aria-hidden="true">🤖</span>
+          <RobotIcon face={faceOf(f)} size={16} />
           <span className="truncate">Seguimiento del Agente IA</span>
           {f.ensayo && <span className="rounded-full border border-dashed border-muted-foreground/60 px-2 text-[11px] font-medium text-muted-foreground">Ensayo</span>}
           {f.total > 0 && f.status === "programado" && <span className="rounded-full bg-brand-navy/10 px-2 text-[11px] font-medium">{`${f.intento}.º de ${f.total}`}</span>}
@@ -256,7 +379,7 @@ export function FollowUpPanel({ followUp, onClose, onChanged }: { followUp: Foll
 
         {confirmCancel ? (
           <div className="flex flex-wrap items-center gap-2 rounded-md border border-red-300 bg-red-50 px-2 py-1.5 text-xs dark:border-red-500/40 dark:bg-red-500/10">
-            <span>¿Cancelar este seguimiento? Se cancelan los intentos que faltan.</span>
+            <span>¿Cancelar los seguimientos de este chat? Se cancelan los intentos que faltan y el Agente IA no arma otros aquí hasta que alguien los reactive.</span>
             <button type="button" disabled={busy} onClick={() => void run(() => cancelFollowUp(f.id)).then((ok) => ok && onClose())} className={`${button} border-red-400 text-red-700 dark:text-red-300`}>
               Sí, cancelar
             </button>

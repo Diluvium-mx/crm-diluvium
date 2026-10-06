@@ -6,17 +6,17 @@
 import { z } from "zod";
 import { requireActiveMembership } from "@/lib/auth/active-organization";
 import { localToInstant, validateSendAt, SEND_AT_MESSAGES } from "@/lib/scheduled/rules";
-import { approveFollowUp, cancelFollowUpById, changeFollowUpTime, clearSinSeguimientos, loadFollowUpView, type FollowUpView } from "@/lib/followups/view";
+import { approveFollowUp, cancelFollowUpById, changeFollowUpTime, clearSinSeguimientos, loadFollowUpState, reactivateFollowUps, type FollowUpState } from "@/lib/followups/view";
 
 const id = z.string().trim().min(1).max(100);
 
 export type FollowUpActionResult = { ok: true } | { ok: false; message: string };
 
-/** El seguimiento abierto del chat, o null (nunca rompe el composer). */
-export async function getFollowUp(conversationId: string): Promise<FollowUpView | null> {
+/** Lo que muestra la píldora del chat (seguimiento abierto, cancelado o dado de baja), o null (nunca rompe el composer). */
+export async function getFollowUp(conversationId: string): Promise<FollowUpState | null> {
   try {
     const { organizationId } = await requireActiveMembership();
-    return await loadFollowUpView(organizationId, id.parse(conversationId));
+    return await loadFollowUpState(organizationId, id.parse(conversationId));
   } catch {
     return null;
   }
@@ -51,4 +51,11 @@ export async function quitarSinSeguimientos(contactId: string): Promise<FollowUp
   const { organizationId } = await requireActiveMembership();
   const ok = await clearSinSeguimientos(organizationId, id.parse(contactId));
   return ok ? { ok: true } : { ok: false, message: "Ese contacto ya tenía seguimientos." };
+}
+
+/** «Reactivar seguimientos» en un chat donde se cancelaron (vendedor o admin; decisión del dueño, 6-oct-2026). */
+export async function reactivarSeguimientos(conversationId: string): Promise<FollowUpActionResult> {
+  const { organizationId } = await requireActiveMembership();
+  const ok = await reactivateFollowUps(organizationId, id.parse(conversationId), new Date());
+  return ok ? { ok: true } : { ok: false, message: "Los seguimientos de este chat ya estaban activos." };
 }

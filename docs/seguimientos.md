@@ -576,8 +576,14 @@ migración **0059**; la 0058 es la de los costos de WhatsApp de otra rama, que d
 - **Píldora 🤖 (6-oct-2026):** mide lo mismo que ⚡ 📄 📎 y dice solo cuándo sale; el tipo lo dice el color.
 - Pruebas: `lib/followups/envio.int.test.ts` (proveedor falso: texto una sola vez, plantilla, 20:00 → día siguiente,
   ensayo, sugerencia y aviso, opción B, 131050, frío) y `lector.int.test.ts` (el lector no relee por un seguimiento).
-- **Quitar «sin seguimientos»** (6-oct-2026): aviso ámbar con **Quitar** (con confirmación) en Detalle del contacto ›
-  Agente IA (`sin-seguimientos-line.tsx`, `quitarSinSeguimientos`).
+- **Píldora con caritas (6-oct-2026, decisión del dueño):** imágenes propias en `public/emoji/` (no existe emoji de robot con
+  esos ojos): normal = programado; **dormido** = suspendido (pausa puesta a mano; sustituye a «Sugerido»); **ojos en X** =
+  cancelado (gris) o se dio de baja (rojo). Contestó o compró = sin píldora.
+- **Cancelar = el chat entero (6-oct-2026):** `conversations.seguimientos_off_at/_by_user_id` (migración **0061**). Ni el
+  Agente IA ni el lector arman seguimientos en ese chat hasta **Reactivar seguimientos** (vendedor o admin), que reabre el
+  último cancelado si el chat no cambió (`reopenCancelledFollowUp`).
+- **Se dio de baja (131050):** nada en el Detalle; la píldora se pone roja y su aviso se abre solo una vez por computadora,
+  con «Volver a darle seguimiento» (`quitarSinSeguimientos`).
 - **Pendiente:** Agente IA › Seguimientos (editar la tabla) y la tarjeta del Dashboard (Parte 4).
 
 ---
