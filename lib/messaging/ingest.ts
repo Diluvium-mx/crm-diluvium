@@ -37,6 +37,7 @@ import {
 import { adoptLateEcho } from "./late-echo";
 import { pendingFallbackNote, recordAdClickSafely, type FallbackJob, type RecordedClick } from "@/lib/ads/attribution";
 import { looksLikeAdMessage } from "@/lib/ads/referral";
+import { onFollowUpDeliveryFailed } from "@/lib/followups/delivery";
 
 export type Tx = Parameters<Parameters<typeof db.transaction>[0]>[0];
 
@@ -1296,6 +1297,7 @@ async function ingestStatus(
         type: message.type,
         errorCode: event.errorCode ?? message.errorCode,
         errorMessage: event.errorMessage ?? message.errorMessage,
+        metadata: message.metadata,
       };
     }
     // Prueba de que salió (Bloque B): un saliente "fallido" que WhatsApp marca
@@ -1323,6 +1325,8 @@ async function ingestStatus(
   if (confirmed) await refreshAfterConfirmedOutbound(confirmed.conversationId, confirmed.sentAt);
   // Un archivo de un workflow que WhatsApp aceptó y luego rechazó: tarjeta en el chat.
   if (newlyFailed) await noticeWorkflowSendFailed(newlyFailed);
+  // Seguimientos: el error queda en su intento; 131050 (baja de promociones) = sin seguimientos.
+  if (newlyFailed) await onFollowUpDeliveryFailed(newlyFailed);
   return { outcome, organizationId: resolvedOrgId };
 }
 

@@ -46,12 +46,13 @@ export type ChangeAction = {
   vendedores: "alta" | "rol" | "desactivar" | "reactivar" | "contrasena";
   // Automáticas (sin autor; se ocultan o muestran con el filtro): pausa_auto = "un vendedor
   // contestó", pausa_tope = llegó al máximo de respuestas, pausa_asesor = el cliente pidió
-  // un asesor, vuelta_sola = se cumplió la hora de regreso.
-  pausas: "pausar" | "activar" | "pausa_auto" | "pausa_tope" | "pausa_asesor" | "vuelta_sola";
+  // un asesor, vuelta_sola = se cumplió la hora de regreso, vuelta_seguimiento = el cliente contestó
+  // un seguimiento del Agente IA y la conversación sigue con él (docs/seguimientos.md §7.4).
+  pausas: "pausar" | "activar" | "pausa_auto" | "pausa_tope" | "pausa_asesor" | "vuelta_sola" | "vuelta_seguimiento";
 };
 
 /** Acciones automáticas: ocultas en la subpestaña salvo que se pidan con el filtro. */
-export const AUTOMATIC_ACTIONS = ["pausa_auto", "pausa_tope", "pausa_asesor", "vuelta_sola"] as const;
+export const AUTOMATIC_ACTIONS = ["pausa_auto", "pausa_tope", "pausa_asesor", "vuelta_sola", "vuelta_seguimiento"] as const;
 
 export function isAutomaticAction(action: string): boolean {
   return (AUTOMATIC_ACTIONS as readonly string[]).includes(action);
@@ -160,6 +161,8 @@ export function describeAction(kind: string, action: string, subject: string | n
       return `El cliente pidió un asesor: el agente se pausó en el chat de ${subject ?? "un contacto"}`;
     case "pausas.vuelta_sola":
       return `Se cumplió la hora de regreso: el agente volvió solo en el chat de ${subject ?? "un contacto"}`;
+    case "pausas.vuelta_seguimiento":
+      return `El cliente contestó un seguimiento: el agente volvió en el chat de ${subject ?? "un contacto"}`;
     default:
       return `${kind} · ${action}`;
   }

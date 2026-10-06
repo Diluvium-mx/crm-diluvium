@@ -33,6 +33,7 @@ export type OptionsDraft = {
   schedule: BotSchedule;
   readImages: boolean;
   transcribeAudio: boolean;
+  seguimientosReal: boolean;
   responseLength: ResponseLength;
   maxBubbles: 1 | 2;
   maxRepliesMode: "sin_tope" | "tope";
@@ -58,6 +59,7 @@ export function draftFromOptions(o: BotOptions): OptionsDraft {
     schedule: o.schedule ? normalizeSchedule(o.schedule) : DEFAULT_SCHEDULE,
     readImages: o.readImages,
     transcribeAudio: o.transcribeAudio,
+    seguimientosReal: o.seguimientosReal,
     responseLength: o.responseLength,
     maxBubbles: o.maxBubbles,
     maxRepliesMode: o.maxRepliesPerContact === null ? "sin_tope" : "tope",
@@ -135,6 +137,7 @@ function draftValues(d: OptionsDraft, saved: BotOptions): { values: BotOptions; 
       schedule,
       readImages: d.readImages,
       transcribeAudio: d.transcribeAudio,
+      seguimientosReal: d.seguimientosReal,
       responseLength: d.responseLength,
       maxBubbles: d.maxBubbles,
       maxRepliesPerContact: maxReplies,

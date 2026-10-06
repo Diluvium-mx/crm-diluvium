@@ -421,8 +421,8 @@ lectura.
 |---|---|---|
 | **0 ✅** | **En producción (main d38f387, 2-oct):** plantillas al día solas ("Ver estado"; chequeo al abrir Plantillas y el worker cada 10 min mientras haya alguna en revisión); `{{1}}` = primer nombre del contacto en 📄, 🕒 y el primer mensaje del Embudo. | No |
 | **1** | Tabla `follow_ups` + la ficha en el lector + cálculo de la hora (§6, horario por lada) + la píldora 🤖 y su burbuja en la caja para escribir + el barrido que anota cuándo "habría salido" cada intento. **Modo ensayo: no manda nada**, para que el dueño vea en chats reales si las fichas y los tiempos tienen sentido. Solo WhatsApp (Instagram, después). | 0056 (la 0055 es Instagram) |
-| **2** | Envío con la ventana abierta (el Agente IA redacta con la ficha y §7.3) + paradas + 2.º y 3.er intento + frío y aviso. | Quizá |
-| **3** | Ventana cerrada: plantilla como del Agente IA (sin pausarlo), retomar con contexto cuando conteste, tope de 7 días, 131049/131050. | No |
+| **2 ✅** | Envío con la ventana abierta + paradas + 2.º y 3.er intento + frío y aviso (§15, 6-oct-2026). | 0059 |
+| **3 ✅** | Ventana cerrada: plantilla como del Agente IA (sin pausarlo), retomar con contexto cuando conteste, tope de 7 días, 131049/131050 (§15). | (misma) |
 | **4** | Agente IA › Seguimientos (editar la tabla), chats de vendedor (sugerido + WhatsApp Web), tarjeta del Dashboard, mapa y capturas. | No |
 
 Pruebas: lógica pura (casos, horas, zona por lada, topes) con Vitest; integración con Postgres real (ficha → programa
@@ -535,6 +535,40 @@ Decisiones del dueño y lo construido (rama `feat/seguimientos-lector`, migraci�
    vuelve a preguntar lo del agua: solo sale si el lector la elige porque nunca se preguntó.
 8. Los 7 días entre plantillas cuentan **todas** las que le llegaron al contacto (también las de los vendedores).
 9. Una ficha «no seguir» se actualiza en su lugar en cada relectura (antes dejaba filas repetidas).
+
+---
+
+## 15. Envío real: Partes 2 y 3 (6-oct-2026)
+
+El dueño dio su OK escrito para pasar a Real; se construyó todo lo aprobado (rama `feat/seguimientos-envio`,
+migración **0059**; la 0058 es la de los costos de WhatsApp de otra rama, que debe entrar antes a `main`).
+- **Interruptor** en Agente IA › Opciones › **Seguimientos del Agente IA**: Ensayo (fábrica) / Real
+  (`ai_config.seguimientos_real`; el cambio queda en el Historial de Opciones). Lo programado obedece el interruptor al
+  salir; la píldora 🤖 dice «Ensayo» o «Seguimiento».
+- **Cómo sale** (`lib/followups/dispatch.ts`, barrido de `store.ts`): como mensaje del **Agente IA** (`source: ai_agent`):
+  no pausa al Agente IA, no marca leído, no cuenta como respuesta humana ni para el tope de respuestas. Texto = el
+  borrador con «Hola <nombre>, buenos días / buenas tardes / buenas noches.» según la hora del cliente; sin borrador, ese
+  intento va por plantilla. Plantilla = la elegida (§14) ya APROBADA, con `{{1}}` = cuándo escribió (o el nombre). La fila
+  se aparta antes de mandar (dos barridos nunca mandan el mismo intento) y su id es la clave de idempotencia.
+- **Último chequeo al salir:** el chat no cambió, Compra, canal encendido, sin_seguimientos, hora del cliente 7:00–21:00
+  (plantilla hasta 19:00) y 7 días entre plantillas (cualquiera que le llegó); si no, se recorre a la siguiente hora válida.
+- **El lector no rehace la ficha** por nuestro mensaje: los mensajes llevan `metadata.seguimiento` y, si es lo único
+  nuevo, el lector ni llama al modelo.
+- **Contesta el cliente:** si el Agente IA estaba en pausa automática (vendedor contestó, tope o asesor) ANTES del
+  seguimiento, se quita la pausa (Historial: «El cliente contestó un seguimiento: el agente volvió»), y el Agente IA
+  recibe la línea «[SEGUIMIENTO] Le escribimos por… Lo que buscamos…» (`lib/followups/reply.ts`). La pausa a mano solo se
+  quita con «Que salga solo».
+- **Sugerencia** (pausa a mano): no sale sola; a su hora de presentarse deja un aviso 🤖 (tarjeta amarilla).
+- **Avisos al vendedor** (tarjeta amarilla, tipo `seguimiento`): pago pendiente 24 h después del 2.º intento sin
+  respuesta; asesor sin respuesta al terminar. **Frío** al terminar la espera tras el último intento (solo si salió de verdad).
+- **Errores:** lo que falla queda en el intento («no salió · motivo» en la burbuja 🤖) y en la burbuja del mensaje; nunca
+  se reintenta solo. **131049** (tope de promociones de Meta) queda anotado; **131050** (baja) marca el contacto
+  `sin_seguimientos` y cancela lo pendiente (también si vino de una plantilla de un vendedor).
+- **Marca en el chat:** «🤖 Seguimiento» arriba del mensaje.
+- Pruebas: `lib/followups/envio.int.test.ts` (proveedor falso: texto una sola vez, plantilla, 20:00 → día siguiente,
+  ensayo, sugerencia y aviso, opción B, 131050, frío) y `lector.int.test.ts` (el lector no relee por un seguimiento).
+- **Pendiente:** quitar «sin seguimientos» desde el Detalle (hoy solo por base de datos); Agente IA › Seguimientos
+  (editar la tabla) y la tarjeta del Dashboard (Parte 4).
 
 ---
 

@@ -101,7 +101,7 @@ const lector = startLectorRuntime({
 });
 // Seguimientos (2-oct-2026, Parte 1 en MODO ENSAYO): cada minuto anota cuándo "habría salido"
 // cada intento y programa el siguiente; no le manda nada al cliente. Arranca tras las migraciones.
-const followUps = startFollowUpRuntime();
+const followUps = startFollowUpRuntime({ provider });
 // Workflows (Fase D): corridas de acciones (media, etapa, humano, avisos).
 const workflowsRunner = startWorkflowWorker(provider, storage);
 // Envíos del web en fila de espera (Bloque B): 429 de Zernio o turno de la conversación.

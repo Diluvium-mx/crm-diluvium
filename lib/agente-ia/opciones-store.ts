@@ -21,6 +21,7 @@ const optionColumns = {
   botSchedule: aiConfig.botSchedule,
   readImages: aiConfig.readImages,
   transcribeAudio: aiConfig.transcribeAudio,
+  seguimientosReal: aiConfig.seguimientosReal,
   responseLength: aiConfig.responseLength,
   maxBubbles: aiConfig.maxBubbles,
   maxRepliesPerContact: aiConfig.maxRepliesPerContact,
@@ -54,6 +55,7 @@ function toColumns(patch: BotOptionsPatch) {
   if (patch.schedule !== undefined) set.botSchedule = patch.schedule;
   if (patch.readImages !== undefined) set.readImages = patch.readImages;
   if (patch.transcribeAudio !== undefined) set.transcribeAudio = patch.transcribeAudio;
+  if (patch.seguimientosReal !== undefined) set.seguimientosReal = patch.seguimientosReal;
   if (patch.responseLength !== undefined) set.responseLength = patch.responseLength;
   if (patch.maxBubbles !== undefined) set.maxBubbles = patch.maxBubbles;
   if (patch.maxRepliesPerContact !== undefined) set.maxRepliesPerContact = patch.maxRepliesPerContact;

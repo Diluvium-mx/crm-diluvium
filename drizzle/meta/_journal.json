@@ -407,6 +407,13 @@
       "when": 1791243380870,
       "tag": "0058_meta_whatsapp_billing",
       "breakpoints": true
+    },
+    {
+      "idx": 59,
+      "version": "7",
+      "when": 1791309397375,
+      "tag": "0059_seguimientos_envio",
+      "breakpoints": true
     }
   ]
 }

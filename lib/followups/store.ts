@@ -4,22 +4,28 @@
 //   - applyFollowUpReading: lo llama el lector al terminar cada lectura.
 //   - followUpSweepOnce: el barrido del worker (cada minuto).
 // Multi-tenant (CLAUDE.md §7): toda lectura y escritura filtra por organization_id.
-import { and, desc, eq, gte, inArray, lte, sql } from "drizzle-orm";
+import { and, desc, eq, gte, inArray, isNull, lte, sql } from "drizzle-orm";
 import { db } from "@/lib/db";
-import { changeHistory, channels, contactEntradas, contacts, conversations, followUps, messages, templates, type FollowUpAttemptLog } from "@/lib/db/schema";
+import { aiConfig, changeHistory, channels, contactEntradas, contacts, conversations, followUps, messages, templates, type FollowUpAttemptLog } from "@/lib/db/schema";
 import { listFunnelStages } from "@/lib/contacts/funnel-stages";
 import type { FunnelStage } from "@/lib/contacts/stages";
-import { CASE_RULES, isFollowUpCase, templateForAttempt, WAIT_AFTER_LAST_MS, type FollowUpCase, type TemplatePicks } from "./cases";
+import { ALLOWED_FROM, ALLOWED_TO, CASE_RULES, isFollowUpCase, TEMPLATE_LATEST, TEMPLATE_SPACING_DAYS, templateForAttempt, timingCase, WAIT_AFTER_LAST_MS, type FollowUpCase, type TemplatePicks } from "./cases";
 import { finalCase, type FollowUpFicha, type HardSignals } from "./ficha";
-import { effectiveTotal, planAttempt, presentAtFor, templateFor, windowOpenAt, type AttemptPlan } from "./schedule";
+import { effectiveTotal, planAttempt, presentAtFor, templateFor, templateTimeOf, windowOpenAt, type AttemptPlan } from "./schedule";
+import { addDays, localMinutes, localParts, minutesOf, zonedInstant } from "./time";
+import { sendFollowUpTemplate, sendFollowUpText } from "./dispatch";
+import { MARKETING_OPT_OUT, onFollowUpDeliveryFailed } from "./delivery";
+import { borradorProblems } from "./borrador-check";
+import type { MessagingProvider } from "@/lib/messaging/provider";
+import { addNotice } from "@/lib/ai/runtime/notices";
+import { notifyContactUpdated } from "@/lib/contacts/notify-updated";
 import { zoneForPhone } from "./timezone";
+import { firstNameOf } from "@/lib/templates/first-name";
 
 export type FollowUpRow = typeof followUps.$inferSelect;
 const OPEN = ["programado", "esperando"] as const;
 type Exec = Pick<typeof db, "select" | "update" | "insert" | "execute">;
 
-// Parte 1: todo en ensayo. La Parte 2 lo cambia por chat/organización.
-export const FOLLOW_UPS_ENSAYO = true;
 
 /** Aviso "followup.updated" por el canal del tiempo real: la píldora 🤖 se vuelve a pedir. */
 async function announce(exec: Exec, organizationId: string, conversationId: string, contactId: string): Promise<void> {
@@ -92,7 +98,7 @@ async function lastTemplateAt(organizationId: string, contactId: string, now: Da
   let last: number | null = null;
   for (const r of rows) for (const a of r.intentos) if (a.door === "plantilla") last = Math.max(last ?? 0, Date.parse(a.at));
   const [sent] = await db
-    .select({ at: sql<Date | null>`max(coalesce(${messages.sentAt}, ${messages.createdAt}))`.mapWith((v) => (v ? new Date(v as string) : null)) })
+    .select({ at: sql<Date | null>`max(coalesce(${messages.sentAt}, ${messages.createdAt}))`.mapWith(messages.createdAt) })
     .from(messages)
     .innerJoin(conversations, and(eq(conversations.id, messages.conversationId), eq(conversations.organizationId, organizationId)))
     .where(
@@ -126,6 +132,10 @@ type Signals = {
   windowExpiresAt: Date | null;
   lastTemplateAt: Date | null;
   approved: Set<string>;
+  firstName: string;
+  lastClientAt: Date | null;
+  /** Se dio de baja de promociones (131050): sin seguimientos. */
+  sinSeguimientos: boolean;
 };
 
 async function loadSignals(
@@ -146,6 +156,9 @@ async function loadSignals(
       windowExpiresAt: conversations.windowExpiresAt,
       mode: channels.aiAgentMode,
       channelType: channels.type,
+      firstName: contacts.firstName,
+      sinSeguimientos: contacts.sinSeguimientos,
+      lastInboundAt: conversations.lastInboundAt,
     })
     .from(conversations)
     .innerJoin(contacts, and(eq(contacts.id, conversations.contactId), eq(contacts.organizationId, organizationId)))
@@ -177,7 +190,16 @@ async function loadSignals(
     windowExpiresAt: row.windowExpiresAt,
     lastTemplateAt: await lastTemplateAt(organizationId, contactId, now),
     approved: await approvedTemplateNames(organizationId),
+    firstName: firstNameOf(row.firstName),
+    lastClientAt: row.lastInboundAt ?? (row.windowExpiresAt ? new Date(row.windowExpiresAt.getTime() - 24 * 60 * 60_000) : null),
+    sinSeguimientos: row.sinSeguimientos,
   };
+}
+
+/** Interruptor de la organización (Agente IA › Opciones): false = ensayo (fábrica). */
+export async function followUpsReal(organizationId: string): Promise<boolean> {
+  const [row] = await db.select({ real: aiConfig.seguimientosReal }).from(aiConfig).where(eq(aiConfig.organizationId, organizationId)).limit(1);
+  return row?.real === true;
 }
 
 async function openRow(exec: Exec, organizationId: string, conversationId: string): Promise<FollowUpRow | null> {
@@ -255,6 +277,14 @@ async function applyReading(r: FollowUpReading): Promise<string | null> {
     }
     return "seguimiento: no (canal sin Agente IA o que no es WhatsApp)";
   }
+  if (signals.sinSeguimientos) {
+    if (existing) {
+      await closeRow(db, existing, "cancelado", "sin_seguimientos", now);
+      await announce(db, organizationId, conversationId, contactId);
+    }
+    return "seguimiento: no (se dio de baja de las promociones)";
+  }
+  const real = await followUpsReal(organizationId);
 
   const { caso, ajuste } = finalCase(r.ficha, signals.hard);
   const ficha = r.ficha;
@@ -263,7 +293,7 @@ async function applyReading(r: FollowUpReading): Promise<string | null> {
     conversationId,
     contactId,
     caso,
-    ensayo: FOLLOW_UPS_ENSAYO,
+    ensayo: !real,
     pendiente: ficha?.pendiente ?? null,
     siguientePaso: ficha?.siguientePaso ?? null,
     motivo: ficha?.motivo ?? null,
@@ -359,11 +389,16 @@ async function applyReading(r: FollowUpReading): Promise<string | null> {
   return `${summary!}${ajuste ? ` [${ajuste}]` : ""}`;
 }
 
-// ── Barrido del ensayo ───────────────────────────────────────────────────────
+// ── Barrido: ensayo o envío real ─────────────────────────────────────────────
 
 export const SWEEP_BATCH = 50;
 /** Si el lector no ha releído un chat con mensajes nuevos en este tiempo, el seguimiento se cancela. */
 export const STALE_CANCEL_MS = 30 * 60_000;
+/** Pago pendiente: aviso al vendedor 24 h después del 2.º intento sin respuesta (decisión del dueño, 3-oct-2026). */
+export const PAGO_AVISO_MS = 24 * 60 * 60_000;
+const DAY_MS = 24 * 60 * 60_000;
+
+export type FollowUpRuntimeDeps = { provider?: MessagingProvider };
 
 /** Programa el intento `intento` de una fila (después de que salió el anterior). */
 export function planNext(row: Pick<FollowUpRow, "caso" | "timeZone" | "basedOnMessageAt" | "fechaPedida" | "horaPedida" | "casoDeFondo">, intento: number, windowExpiresAt: Date | null, now: Date, prevAt: Date, lastTemplate: Date | null): AttemptPlan {
@@ -382,17 +417,93 @@ export function planNext(row: Pick<FollowUpRow, "caso" | "timeZone" | "basedOnMe
   });
 }
 
-async function advance(row: FollowUpRow, now: Date): Promise<string | null> {
+/**
+ * Último mensaje del chat que NO es un seguimiento nuestro (los seguimientos no dejan vieja la
+ * ficha: la escribió el lector para ellos).
+ */
+async function lastNonFollowUpAt(organizationId: string, conversationId: string): Promise<Date | null> {
+  const [row] = await db
+    .select({ at: sql<Date | null>`max(${messages.createdAt})`.mapWith(messages.createdAt) })
+    .from(messages)
+    .where(and(eq(messages.organizationId, organizationId), eq(messages.conversationId, conversationId), sql`not coalesce(${messages.metadata} ? 'seguimiento', false)`));
+  return row?.at ?? null;
+}
+
+/** Mismo instante con otra hora: la siguiente que se pueda (7:00–21:00 del cliente; plantilla hasta las 19:00). */
+function nextSendable(now: Date, zone: string, door: "texto" | "plantilla", caso: Exclude<FollowUpCase, "no_seguir">, fondo: FollowUpCase | null): Date | null {
+  const m = localMinutes(now, zone);
+  const latest = door === "plantilla" ? minutesOf(TEMPLATE_LATEST) : minutesOf(ALLOWED_TO);
+  if (m >= minutesOf(ALLOWED_FROM) && m <= latest) return null;
+  const today = localParts(now, zone);
+  const day = m < minutesOf(ALLOWED_FROM) ? today : addDays(today, 1);
+  const time = door === "plantilla" ? templateTimeOf(timingCase(caso, fondo)) : CASE_RULES[timingCase(caso, fondo)].slot!.from;
+  return zonedInstant(zone, day, time);
+}
+
+/** El borrador sigue cumpliendo las reglas contra lo que la empresa escribió en el chat (borrador-check.ts). */
+async function borradorFits(organizationId: string, conversationId: string, borrador: string): Promise<boolean> {
+  const rows = await db
+    .select({ body: messages.body })
+    .from(messages)
+    .where(and(eq(messages.organizationId, organizationId), eq(messages.conversationId, conversationId), eq(messages.direction, "out")))
+    .orderBy(desc(messages.createdAt))
+    .limit(80);
+  return borradorProblems({ borrador, companyTexts: rows.map((r) => r.body ?? "") }).length === 0;
+}
+
+type Advance = { set: Partial<typeof followUps.$inferInsert>; summary: string };
+
+/** Lo que queda en la fila después del intento `row.intento` (que salió o habría salido). */
+function afterAttempt(row: FollowUpRow, log: FollowUpAttemptLog, signals: Signals, now: Date): Advance {
+  const caso = row.caso as Exclude<FollowUpCase, "no_seguir">;
+  const intentos = [...row.intentos, log];
+  const firstDoor = intentos[0]?.door ?? log.door;
+  const total = effectiveTotal(caso, firstDoor);
+  const word = row.ensayo ? "habría salido" : log.error ? "no salió" : "salió";
+  if (row.intento < total) {
+    const lastTemplate = log.door === "plantilla" && !log.error ? now : signals.lastTemplateAt;
+    const next = planNext(row, row.intento + 1, signals.windowExpiresAt, now, now, lastTemplate);
+    const nextModo = signals.manualPause ? "sugerido" : "automatico";
+    const picks: TemplatePicks = { plantilla2: row.plantilla2, plantilla3: row.plantilla3 };
+    return {
+      set: {
+        intentos,
+        intento: row.intento + 1,
+        totalIntentos: total,
+        dueAt: next.dueAt,
+        door: next.door,
+        templateName: templateForAttempt(caso, row.intento + 1, next.templateName, signals.approved, picks, log.template),
+        modo: nextModo,
+        presentarAt: nextModo === "sugerido" ? presentAtFor(next.dueAt, now) : null,
+        autoAprobado: false,
+        dueSetBy: "sistema",
+        avisoAt: nextModo === "sugerido" ? null : row.avisoAt,
+      },
+      summary: `${row.intento}.º ${word} (${log.door}${log.error ? `: ${log.error}` : ""}); ${row.intento + 1}.º ${fmt.format(next.dueAt)}`,
+    };
+  }
+  return {
+    set: { intentos, totalIntentos: total, status: "esperando", dueAt: new Date(now.getTime() + WAIT_AFTER_LAST_MS), door: null, templateName: null },
+    summary: `${row.intento}.º y último ${word} (${log.door}${log.error ? `: ${log.error}` : ""}); espera respuesta`,
+  };
+}
+
+async function save(row: FollowUpRow, set: Partial<typeof followUps.$inferInsert>, now: Date): Promise<boolean> {
+  // Condicional: si el lector la reemplazó, alguien la canceló o el otro barrido ya la tomó, no se pisa.
+  const done = await db
+    .update(followUps)
+    .set({ ...set, updatedAt: now })
+    .where(and(eq(followUps.id, row.id), eq(followUps.organizationId, row.organizationId), eq(followUps.status, "programado"), eq(followUps.intento, row.intento)))
+    .returning({ id: followUps.id });
+  return done.length > 0;
+}
+
+async function advance(row: FollowUpRow, now: Date, deps: FollowUpRuntimeDeps): Promise<string | null> {
   const { organizationId, conversationId, contactId } = row;
-  const [conv] = await db
-    .select({ lastMessageAt: conversations.lastMessageAt })
-    .from(conversations)
-    .where(and(eq(conversations.id, conversationId), eq(conversations.organizationId, organizationId)))
-    .limit(1);
-  if (!conv) return null;
-  // Algo nuevo en el chat que el lector todavía no lee: él decide (contestó, reemplaza…).
-  if (conv.lastMessageAt.getTime() > row.basedOnMessageAt.getTime()) {
-    if (now.getTime() - conv.lastMessageAt.getTime() < STALE_CANCEL_MS) return null;
+  // Algo nuevo en el chat (que no sea un seguimiento nuestro) que el lector todavía no lee: él decide.
+  const lastAt = await lastNonFollowUpAt(organizationId, conversationId);
+  if (lastAt && lastAt.getTime() > row.basedOnMessageAt.getTime()) {
+    if (now.getTime() - lastAt.getTime() < STALE_CANCEL_MS) return null;
     await closeRow(db, row, "cancelado", "nuevo_mensaje", now);
     await announce(db, organizationId, conversationId, contactId);
     return "cancelado (mensaje nuevo sin leer)";
@@ -409,64 +520,166 @@ async function advance(row: FollowUpRow, now: Date): Promise<string | null> {
     await announce(db, organizationId, conversationId, contactId);
     return "cancelado (Agente IA apagado)";
   }
+  if (signals.sinSeguimientos) {
+    await closeRow(db, row, "cancelado", "sin_seguimientos", now);
+    await announce(db, organizationId, conversationId, contactId);
+    return "cancelado (se dio de baja de las promociones)";
+  }
   const caso = row.caso as Exclude<FollowUpCase, "no_seguir">;
-  // Por dónde sale AHORA (la ventana pudo cerrarse desde que se programó).
-  const door = windowOpenAt(signals.windowExpiresAt, now) ? "texto" : "plantilla";
+  const fondo = isFollowUpCase(row.casoDeFondo) ? row.casoDeFondo : null;
+  const real = (await followUpsReal(organizationId)) && deps.provider !== undefined;
+  const modo = signals.manualPause && !row.autoAprobado ? "sugerido" : "automatico";
+  // Real: una sugerencia (pausa puesta a mano) no sale sola; la presenta el aviso al vendedor.
+  if (real && modo === "sugerido") return null;
+  // Por dónde sale AHORA (la ventana pudo cerrarse desde que se programó). Sin borrador, no hay texto; en
+  // real, un borrador que repite una pregunta o el precio del chat (fichas de antes del 3-oct) tampoco.
+  const textOk = !real || (row.borrador !== null && (await borradorFits(organizationId, conversationId, row.borrador)));
+  const door: "texto" | "plantilla" = windowOpenAt(signals.windowExpiresAt, now) && textOk ? "texto" : "plantilla";
   const picks: TemplatePicks = { plantilla2: row.plantilla2, plantilla3: row.plantilla3 };
   const previous = row.intentos.at(-1)?.template ?? null;
   const templateName =
     door === "plantilla" ? templateForAttempt(caso, row.intento, templateFor(CASE_RULES[caso].doors[row.intento - 1] ?? "saludo", now, row.timeZone), signals.approved, picks, previous) : null;
-  const modo = signals.manualPause && !row.autoAprobado ? "sugerido" : "automatico";
-  const log: FollowUpAttemptLog = { n: row.intento, at: now.toISOString(), door, template: templateName, modo, ensayo: row.ensayo };
-  const intentos = [...row.intentos, log];
-  const firstDoor = intentos[0]?.door ?? door;
-  const total = effectiveTotal(caso, firstDoor);
-  let set: Partial<typeof followUps.$inferInsert>;
-  let summary: string;
-  if (row.intento < total) {
-    const lastTemplate = door === "plantilla" ? now : signals.lastTemplateAt;
-    const next = planNext(row, row.intento + 1, signals.windowExpiresAt, now, now, lastTemplate);
-    const nextModo = signals.manualPause ? "sugerido" : "automatico";
-    set = {
-      intentos,
-      intento: row.intento + 1,
-      totalIntentos: total,
-      dueAt: next.dueAt,
-      door: next.door,
-      templateName: templateForAttempt(caso, row.intento + 1, next.templateName, signals.approved, picks, templateName),
-      modo: nextModo,
-      presentarAt: nextModo === "sugerido" ? presentAtFor(next.dueAt, now) : null,
-      autoAprobado: false,
-      dueSetBy: "sistema",
-    };
-    summary = `${row.intento}.º ${row.ensayo ? "habría salido" : "salió"} (${door}); ${row.intento + 1}.º ${fmt.format(next.dueAt)}`;
-  } else {
-    set = { intentos, totalIntentos: total, status: "esperando", dueAt: new Date(now.getTime() + WAIT_AFTER_LAST_MS), door: null, templateName: null };
-    summary = `${row.intento}.º y último ${row.ensayo ? "habría salido" : "salió"} (${door}); espera respuesta`;
+
+  if (real) {
+    // Último chequeo antes de escribirle al cliente: su hora, el tope de las 19:00 para plantilla y los 7 días.
+    let later = nextSendable(now, row.timeZone, door, caso, fondo);
+    if (!later && door === "plantilla" && signals.lastTemplateAt && now.getTime() < signals.lastTemplateAt.getTime() + TEMPLATE_SPACING_DAYS * DAY_MS) {
+      later = planAttempt({ caso, intento: Math.max(2, row.intento), zone: row.timeZone, stopAt: row.basedOnMessageAt, windowExpiresAt: null, now, fondo, prevAttemptAt: now, lastTemplateAt: signals.lastTemplateAt }).dueAt;
+    }
+    if (later) {
+      if (!(await save(row, { dueAt: later }, now))) return null;
+      await announce(db, organizationId, conversationId, contactId);
+      return `${row.intento}.º se mueve a ${fmt.format(later)} (hora del cliente o 7 días entre plantillas)`;
+    }
   }
-  // Condicional: si el lector la reemplazó o alguien la canceló en medio, no se pisa.
-  const done = await db
-    .update(followUps)
-    .set({ ...set, updatedAt: now })
-    .where(and(eq(followUps.id, row.id), eq(followUps.organizationId, organizationId), eq(followUps.status, "programado"), eq(followUps.intento, row.intento)))
-    .returning({ id: followUps.id });
-  if (done.length === 0) return null;
+
+  const messageId = real ? crypto.randomUUID() : null;
+  const log: FollowUpAttemptLog = { n: row.intento, at: now.toISOString(), door, template: templateName, modo, ensayo: !real, messageId };
+  const step = afterAttempt({ ...row, ensayo: !real }, log, signals, now);
+  // Se aparta la fila ANTES de mandar: dos barridos nunca mandan el mismo intento.
+  if (!(await save(row, { ...step.set, ensayo: !real }, now))) return null;
+  if (!real) {
+    await announce(db, organizationId, conversationId, contactId);
+    return step.summary;
+  }
+  const mark = { followUpId: row.id, intento: row.intento };
+  const sent =
+    door === "texto"
+      ? await sendFollowUpText(deps.provider!, { organizationId, conversationId, messageId: messageId!, borrador: row.borrador!, firstName: signals.firstName, zone: row.timeZone, now, mark })
+      : templateName
+        ? await sendFollowUpTemplate(deps.provider!, {
+            organizationId,
+            conversationId,
+            messageId: messageId!,
+            templateName,
+            firstName: signals.firstName,
+            lastClientAt: signals.lastClientAt,
+            zone: row.timeZone,
+            now,
+            mark,
+          })
+        : ({ ok: false, error: "no hay plantilla para este intento", code: null } as const);
+  if (!sent.ok) {
+    await patchAttempt(row.id, organizationId, row.intento, { error: sent.error });
+    // 131050 en el momento: el cliente se dio de baja de las promociones.
+    if (sent.code === MARKETING_OPT_OUT) await onFollowUpDeliveryFailed({ organizationId, conversationId, errorCode: sent.code, errorMessage: null });
+  }
   await announce(db, organizationId, conversationId, contactId);
-  return summary;
+  return sent.ok ? step.summary : step.summary.replace(/ salió \(/, ` no salió (${sent.error}; `);
 }
 
-/** Una pasada: intentos vencidos y esperas que ya terminaron (frío). Devuelve cuántas filas cambió. */
-export async function followUpSweepOnce(now: Date): Promise<number> {
+/** Anota en el intento `n` de la fila lo que pasó después (error del envío o de Meta). */
+export async function patchAttempt(id: string, organizationId: string, n: number, patch: Partial<FollowUpAttemptLog>): Promise<void> {
+  await db.transaction(async (tx) => {
+    const [row] = await tx.select({ intentos: followUps.intentos }).from(followUps).where(and(eq(followUps.id, id), eq(followUps.organizationId, organizationId))).for("update");
+    if (!row) return;
+    const intentos = row.intentos.map((a) => (a.n === n && a.modo !== "vendedor" ? { ...a, ...patch } : a));
+    await tx.update(followUps).set({ intentos, updatedAt: new Date() }).where(and(eq(followUps.id, id), eq(followUps.organizationId, organizationId)));
+  });
+}
+
+/** Intentos que de verdad le llegaron al cliente (modo real, sin error). */
+export function realAttempts(row: Pick<FollowUpRow, "intentos">): FollowUpAttemptLog[] {
+  return row.intentos.filter((a) => a.modo !== "vendedor" && !a.ensayo && a.messageId && !a.error);
+}
+
+/** Avisos al vendedor (tarjeta amarilla): sugerencia presentada y pago pendiente sin respuesta. */
+async function vendorNotices(now: Date): Promise<number> {
+  let n = 0;
+  const rows = await db
+    .select()
+    .from(followUps)
+    .where(and(inArray(followUps.status, [...OPEN]), isNull(followUps.avisoAt), eq(followUps.ensayo, false)))
+    .limit(SWEEP_BATCH);
+  for (const row of rows) {
+    let body: string | null = null;
+    let messageId: string | null = null;
+    const sent = realAttempts(row);
+    if (row.status === "programado" && row.modo === "sugerido" && !row.autoAprobado && row.presentarAt && row.presentarAt <= now) {
+      body = `Seguimiento sugerido (${CASE_RULES[row.caso as FollowUpCase].label}): ${row.pendiente ?? "quedó un pendiente"}. Mándalo tú o pulsa «Que salga solo» en la píldora 🤖.`;
+    } else if (row.caso === "pago_pendiente" && sent.length >= 2 && Date.parse(sent[sent.length - 1].at) <= now.getTime() - PAGO_AVISO_MS) {
+      body = `Pago pendiente: no ha contestado ${sent.length} seguimientos. Escríbele tú.`;
+      messageId = sent[sent.length - 1].messageId ?? null;
+    }
+    if (!body) continue;
+    const claimed = await db
+      .update(followUps)
+      .set({ avisoAt: now, updatedAt: now })
+      .where(and(eq(followUps.id, row.id), eq(followUps.organizationId, row.organizationId), isNull(followUps.avisoAt)))
+      .returning({ id: followUps.id });
+    if (claimed.length === 0) continue;
+    await addNotice({ organizationId: row.organizationId, conversationId: row.conversationId, kind: "seguimiento", body, messageId });
+    n++;
+  }
+  return n;
+}
+
+/** Terminó la espera tras el último intento: frío (y aviso en asesor sin respuesta). Solo si salió de verdad. */
+async function endWaits(now: Date): Promise<number> {
+  const ended = await db
+    .update(followUps)
+    .set({ status: "terminado", closedAt: now, updatedAt: now })
+    .where(and(eq(followUps.status, "esperando"), lte(followUps.dueAt, now)))
+    .returning();
+  for (const e of ended) {
+    await announce(db, e.organizationId, e.conversationId, e.contactId);
+    if (realAttempts(e).length === 0) continue;
+    await db.transaction(async (tx) => {
+      const [c] = await tx
+        .update(contacts)
+        .set({ temperature: "frio" })
+        .where(and(eq(contacts.id, e.contactId), eq(contacts.organizationId, e.organizationId), sql`${contacts.temperature} is distinct from 'frio'`))
+        .returning({ id: contacts.id });
+      if (c) await notifyContactUpdated(tx, { organizationId: e.organizationId, contactId: e.contactId, changes: ["temperatura"], by: { kind: "agente" } });
+    });
+    if (e.caso === "asesor_sin_respuesta") {
+      const last = realAttempts(e).at(-1);
+      await addNotice({ organizationId: e.organizationId, conversationId: e.conversationId, kind: "seguimiento", body: "Asesor sin respuesta: el cliente no contestó los seguimientos. Escríbele tú.", messageId: last?.messageId ?? null });
+    }
+  }
+  return ended.length;
+}
+
+/** Una pasada: intentos vencidos, avisos al vendedor y esperas que ya terminaron (frío). */
+export async function followUpSweepOnce(now: Date, deps: FollowUpRuntimeDeps = {}): Promise<number> {
   let changed = 0;
+  // Una sugerencia sin «Que salga solo» en una organización en modo real no se toma: no sale sola.
   const due = await db
     .select()
     .from(followUps)
-    .where(and(eq(followUps.status, "programado"), lte(followUps.dueAt, now)))
+    .where(
+      and(
+        eq(followUps.status, "programado"),
+        lte(followUps.dueAt, now),
+        sql`(${followUps.modo} <> 'sugerido' or ${followUps.autoAprobado}
+          or not coalesce((select a.seguimientos_real from ai_config a where a.organization_id = ${followUps.organizationId}), false))`,
+      ),
+    )
     .orderBy(followUps.dueAt)
     .limit(SWEEP_BATCH);
   for (const row of due) {
     try {
-      const summary = await advance(row, now);
+      const summary = await advance(row, now, deps);
       if (summary) {
         changed++;
         console.info(`[seguimientos] ${row.conversationId} ${row.caso}: ${summary}`);
@@ -475,26 +688,23 @@ export async function followUpSweepOnce(now: Date): Promise<number> {
       console.error(`[seguimientos] no se pudo avanzar ${row.id}`, error);
     }
   }
-  const ended = await db
-    .update(followUps)
-    .set({ status: "terminado", closedAt: now, updatedAt: now })
-    .where(and(eq(followUps.status, "esperando"), lte(followUps.dueAt, now)))
-    .returning({ organizationId: followUps.organizationId, conversationId: followUps.conversationId, contactId: followUps.contactId });
-  for (const e of ended) {
-    changed++;
-    await announce(db, e.organizationId, e.conversationId, e.contactId);
+  try {
+    changed += await vendorNotices(now);
+  } catch (error) {
+    console.error("[seguimientos] avisos al vendedor fallaron", error);
   }
+  changed += await endWaits(now);
   return changed;
 }
 
-export function startFollowUpRuntime(now: () => Date = () => new Date(), everyMs = 60_000) {
+export function startFollowUpRuntime(deps: FollowUpRuntimeDeps = {}, now: () => Date = () => new Date(), everyMs = 60_000) {
   let timer: ReturnType<typeof setInterval> | undefined;
   let running = false;
   const tick = async () => {
     if (running) return;
     running = true;
     try {
-      await followUpSweepOnce(now());
+      await followUpSweepOnce(now(), deps);
     } catch (error) {
       console.error("[seguimientos] barrido falló", error);
     } finally {
@@ -504,7 +714,7 @@ export function startFollowUpRuntime(now: () => Date = () => new Date(), everyMs
   return {
     run: () => {
       timer = setInterval(() => void tick(), everyMs);
-      console.info(`[seguimientos] barrido cada ${everyMs / 1000} s (modo ensayo: no se manda nada)`);
+      console.info(`[seguimientos] barrido cada ${everyMs / 1000} s (Ensayo o Real según Agente IA › Opciones)`);
     },
     close: async () => {
       if (timer) clearInterval(timer);

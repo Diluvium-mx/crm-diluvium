@@ -7,7 +7,7 @@ import { contacts, conversations, followUps, templates } from "@/lib/db/schema";
 import { firstNameOf } from "@/lib/templates/first-name";
 import { CASE_RULES, templateForAttempt, TIME_PHRASE_TEMPLATES, type FollowUpCase } from "./cases";
 import { presentAtFor, templateFor, windowOpenAt } from "./schedule";
-import { approvedTemplateNames } from "./store";
+import { approvedTemplateNames, followUpsReal } from "./store";
 import { timePhrase } from "./time-phrase";
 
 export type FollowUpView = {
@@ -37,7 +37,7 @@ export type FollowUpView = {
   borrador: string | null;
   firstName: string;
   phoneE164: string | null;
-  intentos: { n: number; at: string; door: "texto" | "plantilla"; template: string | null; modo: "automatico" | "sugerido" | "vendedor" }[];
+  intentos: { n: number; at: string; door: "texto" | "plantilla"; template: string | null; modo: "automatico" | "sugerido" | "vendedor"; ensayo: boolean; error: string | null }[];
 };
 
 const OPEN = ["programado", "esperando"] as const;
@@ -81,7 +81,8 @@ export async function loadFollowUpView(organizationId: string, conversationId: s
     casoLabel: CASE_RULES[caso].label,
     objetivo: CASE_RULES[caso].objetivo,
     status: f.status as FollowUpView["status"],
-    ensayo: f.ensayo,
+    // El interruptor de la organización manda (Agente IA › Opciones): al pasar a Real, lo programado ya sale.
+    ensayo: !(await followUpsReal(organizationId)),
     intento: f.intento,
     total: f.totalIntentos,
     dueAt: f.dueAt?.toISOString() ?? null,
@@ -98,7 +99,7 @@ export async function loadFollowUpView(organizationId: string, conversationId: s
     borrador: f.borrador,
     firstName,
     phoneE164: row.phone,
-    intentos: f.intentos.map(({ n, at, door, template, modo }) => ({ n, at, door, template, modo })),
+    intentos: f.intentos.map(({ n, at, door, template, modo, ensayo, error }) => ({ n, at, door, template, modo, ensayo, error: error ?? null })),
   };
 }
 

@@ -292,6 +292,9 @@ follow_ups           id, org_id, conversation_id, contact_id, caso (tabla de 10 
                      -- 0057 (3-oct): caso_de_fondo (asunto de una fecha pedida: da la hora), plantilla_2/_3 (las elige el lector
                      -- según cómo quedó el chat). El seguimiento de un VENDEDOR cuenta como intento; Compra cancela al instante;
                      -- el CRM revisa el borrador (una pregunta, nunca una ya hecha ni el precio ya dado) y el lector lo rehace 1 vez
+                     -- 0059 (6-oct): ENVÍO REAL. ai_config.seguimientos_real (interruptor Ensayo/Real de Opciones), contacts.
+                     -- sin_seguimientos (131050), follow_ups.aviso_at. Salen como ai_agent con metadata.seguimiento (el lector no
+                     -- rehace la ficha por ellos); si el cliente contesta con pausa automática, vuelve el Agente IA (lib/followups/reply.ts)
 
 -- Cobro de Meta por WhatsApp (5-oct-2026, migración 0058; docs/meta-costos.md). El worker lee cada hora
 -- pricing_analytics de la WABA; tarjeta «WhatsApp (Meta)» del Dashboard debajo del Gasto de IA.

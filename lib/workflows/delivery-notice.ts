@@ -17,6 +17,8 @@ export type FailedOutbound = {
   type: string;
   errorCode: string | null;
   errorMessage: string | null;
+  /** metadata del mensaje (p. ej. `seguimiento`). */
+  metadata?: Record<string, unknown> | null;
 };
 
 // Qué no llegó, con su artículo (para «Vuelve a mandarla/mandarlo»).

@@ -33,6 +33,8 @@ export type BotOptions = {
   readImages: boolean;
   /** 5. Transcribir las notas de voz del cliente. */
   transcribeAudio: boolean;
+  /** Seguimientos del Agente IA: false = ensayo (fábrica), true = salen de verdad. */
+  seguimientosReal: boolean;
   /** 6. Longitud de la respuesta. */
   responseLength: ResponseLength;
   /** 6. Máximo de mensajes por respuesta. */
@@ -51,6 +53,7 @@ export const BOT_OPTIONS_DEFAULTS: Readonly<BotOptions> = Object.freeze({
   schedule: null,
   readImages: true,
   transcribeAudio: true,
+  seguimientosReal: false,
   responseLength: "balanceada",
   maxBubbles: 2,
   maxRepliesPerContact: null,
@@ -85,6 +88,7 @@ export const botOptionsPatchSchema = z
     schedule: botScheduleSchema.nullable(),
     readImages: z.boolean(),
     transcribeAudio: z.boolean(),
+    seguimientosReal: z.boolean(),
     responseLength: z.enum(RESPONSE_LENGTHS),
     maxBubbles: z.union([z.literal(1), z.literal(2)]),
     maxRepliesPerContact: z.number().int().min(1, "Mínimo 1 respuesta.").max(MAX_REPLIES_CAP, `Máximo ${MAX_REPLIES_CAP.toLocaleString("es-MX")}.`).nullable(),
@@ -176,6 +180,7 @@ export const OPTION_LABELS: Record<BotOptionField, string> = {
   responseLength: "Longitud de respuesta",
   maxBubbles: "Máximo de mensajes por respuesta",
   maxRepliesPerContact: "Máximo de respuestas del Agente IA por conversación",
+  seguimientosReal: "Seguimientos del Agente IA",
 };
 
 // Ayuda en lenguaje simple + cómo está en GHL (Ángela), por opción.
@@ -217,8 +222,12 @@ export const OPTION_HELP: Record<BotOptionField, { help: string; ghl: string }> 
     ghl: "1 (todo en un mensaje)",
   },
   maxRepliesPerContact: {
-    help: "Al llegar al tope, el Agente IA se pausa en ese chat hasta «Activar» y deja el aviso 🤖 «Llegó al máximo de respuestas» (tarjeta amarilla en el Embudo). Protege de un bucle con otro contestador automático. Se cuenta desde el último «Activar».",
+    help: "Al llegar al tope, el Agente IA se pausa en ese chat hasta «Activar» y deja el aviso 🤖 «Llegó al máximo de respuestas» (tarjeta amarilla en el Embudo). Protege de un bucle con otro contestador automático. Se cuenta desde el último «Activar». Los seguimientos no cuentan y salen aunque el chat esté pausado por el tope.",
     ghl: "50",
+  },
+  seguimientosReal: {
+    help: "Con «Ensayo» el Agente IA calcula cada seguimiento (qué quedó pendiente, a qué hora y el mensaje) y se ve en la píldora 🤖, pero no le manda nada al cliente. Con «Real» sale a su hora: texto con la ventana de 24 h abierta y plantilla aprobada con la ventana cerrada.",
+    ghl: "seguimiento a los 15 días",
   },
 };
 
@@ -243,6 +252,8 @@ export function formatOptionValue(field: BotOptionField, value: unknown): string
       return String(value);
     case "maxRepliesPerContact":
       return value === null ? "Sin tope" : String(value);
+    case "seguimientosReal":
+      return value ? "Real" : "Ensayo";
   }
 }
 
