@@ -139,6 +139,8 @@ type Signals = {
   lastClientAt: Date | null;
   /** Se dio de baja de promociones (131050): sin seguimientos. */
   sinSeguimientos: boolean;
+  /** Clave de la etapa del contacto ahora. */
+  stageKey: string;
 };
 
 async function loadSignals(
@@ -194,6 +196,7 @@ async function loadSignals(
     approved: await approvedTemplateNames(organizationId),
     lastClientAt: row.lastInboundAt ?? (row.windowExpiresAt ? new Date(row.windowExpiresAt.getTime() - 24 * 60 * 60_000) : null),
     sinSeguimientos: row.sinSeguimientos,
+    stageKey,
   };
 }
 
@@ -563,7 +566,7 @@ async function advance(row: FollowUpRow, now: Date, deps: FollowUpRuntimeDeps): 
     await announce(db, organizationId, conversationId, contactId);
     return step.summary;
   }
-  const mark = { followUpId: row.id, intento: row.intento };
+  const mark = { followUpId: row.id, intento: row.intento, etapa: signals.stageKey };
   const sent =
     door === "texto"
       ? await sendFollowUpText(deps.provider!, { organizationId, conversationId, messageId: messageId!, borrador: row.borrador!, zone: row.timeZone, now, mark })

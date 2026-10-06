@@ -14,7 +14,8 @@ import { TIME_PHRASE_TEMPLATES } from "./cases";
 import { followUpText } from "./message";
 import { timePhrase } from "./time-phrase";
 
-export type FollowUpMark = { followUpId: string; intento: number };
+/** Va en messages.metadata.seguimiento. `etapa` = clave de la etapa del contacto al salir (Dashboard: avanzó de etapa). */
+export type FollowUpMark = { followUpId: string; intento: number; etapa?: string | null };
 export type DispatchResult = { ok: true } | { ok: false; error: string; code: string | null };
 
 /** El envío falló: el motivo en palabras del vendedor (con el código de WhatsApp si ya quedó en la fila). */

@@ -570,6 +570,9 @@ migración **0059**; la 0058 es la de los costos de WhatsApp de otra rama, que d
   equipo de Diluvium.» y ningún seguimiento usa el nombre (tampoco en `{{1}}` de una plantilla).
 - **7 días entre plantillas (arreglo del 6-oct-2026):** en Real solo cuentan las plantillas que de verdad le llegaron al
   contacto (las del Agente IA y las de los vendedores); las que solo «habrían salido» en el ensayo ya no frenan.
+- **Tarjeta del Dashboard (Parte 4, 6-oct-2026):** «Seguimientos del Agente IA» al final del Dashboard, con el periodo de
+  arriba: mensajes que salieron (y no entregados), chats, contestaron (72 h), avanzaron de etapa y compraron, por caso
+  (`lib/dashboard/seguimientos.ts`, `follow-up-card.tsx`). Cada envío guarda `metadata.seguimiento.etapa` para medir quién avanzó.
 - **Píldora 🤖 (6-oct-2026):** mide lo mismo que ⚡ 📄 📎 y dice solo cuándo sale; el tipo lo dice el color.
 - Pruebas: `lib/followups/envio.int.test.ts` (proveedor falso: texto una sola vez, plantilla, 20:00 → día siguiente,
   ensayo, sugerencia y aviso, opción B, 131050, frío) y `lector.int.test.ts` (el lector no relee por un seguimiento).
