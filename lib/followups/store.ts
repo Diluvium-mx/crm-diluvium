@@ -141,6 +141,8 @@ type Signals = {
   sinSeguimientos: boolean;
   /** Clave de la etapa del contacto ahora. */
   stageKey: string;
+  /** Un vendedor canceló los seguimientos de este chat (hasta que alguien los reactive). */
+  off: boolean;
 };
 
 async function loadSignals(
@@ -163,6 +165,7 @@ async function loadSignals(
       channelType: channels.type,
       sinSeguimientos: contacts.sinSeguimientos,
       lastInboundAt: conversations.lastInboundAt,
+      offAt: conversations.seguimientosOffAt,
     })
     .from(conversations)
     .innerJoin(contacts, and(eq(contacts.id, conversations.contactId), eq(contacts.organizationId, organizationId)))
@@ -197,6 +200,7 @@ async function loadSignals(
     lastClientAt: row.lastInboundAt ?? (row.windowExpiresAt ? new Date(row.windowExpiresAt.getTime() - 24 * 60 * 60_000) : null),
     sinSeguimientos: row.sinSeguimientos,
     stageKey,
+    off: row.offAt !== null,
   };
 }
 
@@ -287,6 +291,14 @@ async function applyReading(r: FollowUpReading): Promise<string | null> {
       await announce(db, organizationId, conversationId, contactId);
     }
     return "seguimiento: no (se dio de baja de las promociones)";
+  }
+  // Cancelados a mano en este chat: nada nuevo hasta que un vendedor o admin los reactive.
+  if (signals.off) {
+    if (existing) {
+      await closeRow(db, existing, "cancelado", "manual", now);
+      await announce(db, organizationId, conversationId, contactId);
+    }
+    return "seguimiento: no (cancelados en este chat; los reactiva un vendedor)";
   }
   const real = await followUpsReal(organizationId);
 
@@ -529,6 +541,11 @@ async function advance(row: FollowUpRow, now: Date, deps: FollowUpRuntimeDeps): 
     await announce(db, organizationId, conversationId, contactId);
     return "cancelado (se dio de baja de las promociones)";
   }
+  if (signals.off) {
+    await closeRow(db, row, "cancelado", "manual", now);
+    await announce(db, organizationId, conversationId, contactId);
+    return "cancelado (cancelados en este chat)";
+  }
   const caso = row.caso as Exclude<FollowUpCase, "no_seguir">;
   const fondo = isFollowUpCase(row.casoDeFondo) ? row.casoDeFondo : null;
   const real = (await followUpsReal(organizationId)) && deps.provider !== undefined;
@@ -724,4 +741,49 @@ export function startFollowUpRuntime(deps: FollowUpRuntimeDeps = {}, now: () => 
       for (let i = 0; running && i < 50; i++) await new Promise((r) => setTimeout(r, 200));
     },
   };
+}
+
+/**
+ * «Reactivar» (6-oct-2026): vuelve a programar el último seguimiento que se canceló a mano en este chat,
+ * desde su intento pendiente y con la hora que toque desde ahora, si el chat no cambió desde entonces.
+ * Si cambió, no hay nada que reabrir: la siguiente lectura del Agente IA arma uno nuevo si el chat se para.
+ * Devuelve si reabrió alguno.
+ */
+export async function reopenCancelledFollowUp(organizationId: string, conversationId: string, now: Date): Promise<boolean> {
+  const [row] = await db
+    .select()
+    .from(followUps)
+    .where(and(eq(followUps.organizationId, organizationId), eq(followUps.conversationId, conversationId), eq(followUps.status, "cancelado"), eq(followUps.cancelReason, "manual")))
+    .orderBy(desc(followUps.closedAt))
+    .limit(1);
+  if (!row) return false;
+  const lastAt = await lastNonFollowUpAt(organizationId, conversationId);
+  if (lastAt && lastAt.getTime() > row.basedOnMessageAt.getTime()) return false;
+  if (await openRow(db, organizationId, conversationId)) return false;
+  const signals = await loadSignals(organizationId, conversationId, row.contactId, now);
+  if (!signals || !signals.channelOn || signals.off || signals.sinSeguimientos || signals.hard.stageRole === "venta_cerrada") return false;
+  const caso = row.caso as Exclude<FollowUpCase, "no_seguir">;
+  const prev = row.intentos.at(-1);
+  const plan = planNext(row, row.intento, signals.windowExpiresAt, now, prev ? new Date(prev.at) : row.basedOnMessageAt, signals.lastTemplateAt);
+  const picks: TemplatePicks = { plantilla2: row.plantilla2, plantilla3: row.plantilla3 };
+  const modo = signals.manualPause ? "sugerido" : "automatico";
+  const done = await db
+    .update(followUps)
+    .set({
+      status: "programado",
+      cancelReason: null,
+      closedAt: null,
+      dueAt: plan.dueAt,
+      door: plan.door,
+      templateName: templateForAttempt(caso, row.intento, plan.templateName, signals.approved, picks, prev?.template ?? null),
+      modo,
+      presentarAt: modo === "sugerido" ? presentAtFor(plan.dueAt, now) : null,
+      autoAprobado: false,
+      avisoAt: null,
+      updatedAt: now,
+    })
+    .where(and(eq(followUps.id, row.id), eq(followUps.organizationId, organizationId), eq(followUps.status, "cancelado")))
+    .returning({ id: followUps.id });
+  if (done.length > 0) await announce(db, organizationId, conversationId, row.contactId);
+  return done.length > 0;
 }

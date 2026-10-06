@@ -421,6 +421,13 @@
       "when": 1791326423829,
       "tag": "0060_quitar_tarjeta",
       "breakpoints": true
+    },
+    {
+      "idx": 61,
+      "version": "7",
+      "when": 1791330674770,
+      "tag": "0061_seguimientos_cancelados",
+      "breakpoints": true
     }
   ]
 }
