@@ -39,7 +39,7 @@ import { CardFilterButton } from "../../_components/card-filter-button";
 import { CHAT_SEARCH_INPUT_ACTIVE, CHAT_SEARCH_PLACEHOLDER, ChatSearchButton } from "../../_components/chat-search-button";
 import { funnelTone, needsAttention, type FunnelSignal } from "@/lib/contacts/funnel-tone";
 import { useInboxStream } from "../../dashboard/_components/use-inbox-stream";
-import { searchChatsByContact, setContactUnread } from "@/lib/inbox/actions";
+import { clearContactCard, searchChatsByContact, setContactUnread } from "@/lib/inbox/actions";
 import { applyMarks, columnsByStage, mergeLiveContacts } from "./board-live";
 import { CloseX } from "@/components/ui/close-x";
 
@@ -68,6 +68,7 @@ function StageColumn({
   onToggleUnread,
   onCardClick,
   onSetUnread,
+  onClearCard,
 }: {
   stage: FunnelStage;
   contacts: BoardContact[];
@@ -83,6 +84,7 @@ function StageColumn({
   onToggleUnread: () => void;
   onCardClick: (contactId: string) => void;
   onSetUnread: (contactId: string, unread: boolean) => void;
+  onClearCard: (contactId: string) => void;
 }) {
   const { setNodeRef, isOver } = useDroppable({ id: stage.key });
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -180,6 +182,7 @@ function StageColumn({
                     chatHits={chatHits?.get(contact.id)}
                     onClick={() => onCardClick(contact.id)}
                     onSetUnread={(unread) => onSetUnread(contact.id, unread)}
+                    onClearCard={() => onClearCard(contact.id)}
                   />
                 </div>
               );
@@ -907,6 +910,27 @@ export function ContactsBoard({
     );
   }
 
+  // Clic derecho en la tarjeta azul o amarilla → «Quitar tarjeta». Optimista: queda en
+  // blanco (el círculo naranja se queda); el SSE trae después la señal del servidor. Si
+  // falla, vuelve al valor anterior (solo si nadie lo cambió mientras).
+  function handleClearCard(contactId: string) {
+    const previous: FunnelSignal | undefined = signals[contactId];
+    if (!previous) return;
+    const next: FunnelSignal = { ...previous, pending: false, urgent: false };
+    setError(null);
+    setSignals((current) => ({ ...current, [contactId]: next }));
+    const revert = (message: string) => {
+      setSignals((current) => (current[contactId] === next ? { ...current, [contactId]: previous } : current));
+      setError(message);
+    };
+    clearContactCard(contactId).then(
+      (found) => {
+        if (!found) revert("Este contacto todavía no tiene chat.");
+      },
+      () => revert("No se pudo quitar la tarjeta. Intenta de nuevo."),
+    );
+  }
+
   function handleCardClick(contactId: string) {
     if (justDraggedRef.current) {
       justDraggedRef.current = false;
@@ -1066,6 +1090,7 @@ export function ContactsBoard({
                 onToggleUnread={() => toggleUnreadStage(stage.key)}
                 onCardClick={handleCardClick}
                 onSetUnread={handleSetUnread}
+                onClearCard={handleClearCard}
               />
             );
           })}

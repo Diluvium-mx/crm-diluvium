@@ -521,4 +521,22 @@ export async function setContactUnreadForOrg(organizationId: string, contactId: 
   return latest ? setConversationUnreadForOrg(organizationId, latest.id, true) : false;
 }
 
+/**
+ * Clic derecho en la tarjeta azul o amarilla del Embudo → «Quitar tarjeta» (6-oct-2026,
+ * dueño): la tarjeta queda en blanco en TODAS las conversaciones del contacto. Azul: da
+ * por atendido lo que escribió el cliente (attended_at, como «Marcar como leído»).
+ * Amarillo: los avisos del Agente IA hasta ahora ya no pintan (urgent_cleared_at); el
+ * aviso NO se resuelve, así que el agente sigue como estaba. No toca el círculo naranja.
+ * Un entrante o un aviso nuevo vuelven a pintar. Del equipo (§5); el trigger de
+ * `conversations` avisa al SSE. false = el contacto no tiene ningún chat.
+ */
+export async function clearContactCardForOrg(organizationId: string, contactId: string): Promise<boolean> {
+  const updated = await db
+    .update(conversations)
+    .set({ attendedAt: sql`now()`, urgentClearedAt: sql`now()` })
+    .where(and(eq(conversations.organizationId, organizationId), eq(conversations.contactId, contactId)))
+    .returning({ id: conversations.id });
+  return updated.length > 0;
+}
+
 export type { ConversationListItem };

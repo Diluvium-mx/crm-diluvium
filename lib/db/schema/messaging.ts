@@ -214,6 +214,10 @@ export const conversations = pgTable(
     // haya contestado (p. ej. un "gracias"). El siguiente entrante la vuelve a pintar y
     // "Marcar como no leído" la borra. Abrir el chat NO la mueve. Del equipo (§5).
     attendedAt: timestamp("attended_at"),
+    // «Quitar tarjeta» (clic derecho en el Embudo, 6-oct-2026): los avisos del Agente IA
+    // anteriores a esta hora ya no pintan de amarillo la tarjeta. Solo es presentación:
+    // no resuelve el aviso (el agente sigue igual). Un aviso nuevo la vuelve a pintar.
+    urgentClearedAt: timestamp("urgent_cleared_at"),
     // Lector en segundo plano (0047): hasta qué mensaje (last_message_at) ya dejó al día
     // la etapa y el Detalle del contacto. Hay algo nuevo que leer si last_message_at es
     // mayor. La migración la pone en last_message_at para lo que ya existía (la pasada

@@ -13,7 +13,8 @@
 //              (fondo AMARILLO, gana al azul): hay un aviso abierto de URGENT_NOTICE_KINDS
 //              sin una respuesta humana que haya salido DESPUÉS del aviso. agente_error
 //              además se apaga al atender la tarjeta (resolved_at). «Marcar como leído»
-//              no lo apaga.
+//              no lo apaga; «Quitar tarjeta» sí (conversations.urgent_cleared_at: los
+//              avisos anteriores a esa hora ya no cuentan, el aviso sigue abierto).
 //   - lastInboundAt: último mensaje del cliente (ordena la columna en vivo).
 // Multi-tenant (CLAUDE.md §7): toda lectura filtra por organization_id.
 import { sql } from "drizzle-orm";
@@ -120,6 +121,8 @@ export async function funnelSignalsForOrg(
             and n.organization_id = ${organizationId}
             and n.kind in (${urgentKinds})
             and n.resolved_at is null
+            -- «Quitar tarjeta» (clic derecho del Embudo): avisos anteriores ya no pintan.
+            and (c.urgent_cleared_at is null or n.created_at > c.urgent_cleared_at)
             and not exists (
               -- Respuesta humana que SÍ salió (misma regla que el semáforo y la primera
               -- respuesta): desde el CRM con autor, o desde la app del celular.

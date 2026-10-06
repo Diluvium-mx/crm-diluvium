@@ -423,6 +423,35 @@ describe.skipIf(!TEST_DATABASE_URL)("señales del Embudo (Postgres real)", () =>
     expect((await funnelSignalsForOrg(ORG))[CONTACT]).toMatchObject({ pending: false, urgent: true });
   });
 
+  it("«Quitar tarjeta» deja en blanco la amarilla y la azul de todos sus chats, sin tocar el círculo ni resolver el aviso", async () => {
+    const q = await import("@/lib/inbox/queries");
+    await seedConversation({ unreadCount: 2 });
+    await seedSecondConversation();
+    await notice({ kind: "pasar_a_humano", createdAt: plus(1) });
+    await message({ direction: "in", createdAt: plus(2) });
+    await message({ conversationId: `${CONVERSATION}_2`, direction: "in", createdAt: plus(3) });
+    expect((await funnelSignalsForOrg(ORG))[CONTACT]).toMatchObject({ unread: 2, pending: true, urgent: true });
+
+    expect(await q.clearContactCardForOrg(ORG, CONTACT)).toBe(true);
+    expect((await funnelSignalsForOrg(ORG, [CONVERSATION]))[CONTACT]).toMatchObject({ unread: 2, pending: false, urgent: false });
+    const [open] = await db.select({ resolvedAt: s.aiAgentNotices.resolvedAt }).from(s.aiAgentNotices);
+    expect(open?.resolvedAt).toBeNull();
+
+    // Un aviso nuevo del Agente IA vuelve a pintar de amarillo.
+    await notice({ kind: "cliente_pide_humano", createdAt: new Date(Date.now() + 2_000) });
+    expect((await funnelSignalsForOrg(ORG))[CONTACT]).toMatchObject({ pending: false, urgent: true });
+  });
+
+  it("«Quitar tarjeta» no cruza organizaciones y avisa si el contacto no tiene chat", async () => {
+    const q = await import("@/lib/inbox/queries");
+    await seedConversation();
+    await notice({ kind: "pasar_a_humano", createdAt: plus(1) });
+
+    expect(await q.clearContactCardForOrg(OTHER_ORG, CONTACT)).toBe(false);
+    expect(await q.clearContactCardForOrg(ORG, "contacto_sin_chat")).toBe(false);
+    expect((await funnelSignalsForOrg(ORG))[CONTACT]?.urgent).toBe(true);
+  });
+
   it("lastInboundAt = el último mensaje del cliente en cualquiera de sus chats (ventana − 24 h); el modo completo trae a quien escribió en las últimas 24 h", async () => {
     const { SERVICE_WINDOW_MS } = await import("@/lib/messaging/rules");
     const { eq } = await import("drizzle-orm");

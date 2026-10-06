@@ -1,7 +1,7 @@
 "use client";
 
 import { useDraggable } from "@dnd-kit/core";
-import { Mail, MailOpen } from "lucide-react";
+import { Eraser, Mail, MailOpen } from "lucide-react";
 import type { BoardContact } from "../_data/types";
 import { DESTACADO_EMOJI, TEMPERATURES, TEMPERATURE_EMOJI, TEMPERATURE_LABELS, getContactFullName } from "../_data/types";
 import { ContactAvatar } from "./contact-avatar";
@@ -82,12 +82,14 @@ export function ContactCard({
   chatHits,
   onClick,
   onSetUnread,
+  onClearCard,
 }: {
   contact: BoardContact;
   signal?: FunnelSignal;
   chatHits?: number;
   onClick: () => void;
   onSetUnread: (unread: boolean) => void;
+  onClearCard: () => void;
 }) {
   const { attributes, listeners, setNodeRef, isDragging } = useDraggable({
     id: contact.id,
@@ -104,7 +106,9 @@ export function ContactCard({
   // toma el botón izquierdo). En táctil NO abre con pulsación larga: ahí la
   // pulsación larga es arrastrar (TouchSensor del board).
   // "Marcar como leído" si hay círculo o azul; si no, "Marcar como no leído".
+  // «Quitar tarjeta» (6-oct-2026) solo en la azul o la amarilla: la deja en blanco.
   const markable = canMarkRead(signal);
+  const tone = funnelTone(signal);
   return (
     <ContextMenu>
       <ContextMenuTrigger
@@ -117,7 +121,7 @@ export function ContactCard({
           onClick={onClick}
           {...attributes}
           {...listeners}
-          data-funnel={funnelTone(signal)}
+          data-funnel={tone}
           data-funnel-card
           className={`w-full cursor-grab rounded-md bg-card text-left active:cursor-grabbing [&>div]:bg-transparent ${
             isDragging ? "opacity-40" : ""
@@ -131,6 +135,12 @@ export function ContactCard({
           {markable ? <MailOpen aria-hidden="true" /> : <Mail aria-hidden="true" />}
           {markable ? "Marcar como leído" : "Marcar como no leído"}
         </ContextMenuItem>
+        {tone && (
+          <ContextMenuItem onClick={onClearCard}>
+            <Eraser aria-hidden="true" />
+            Quitar tarjeta
+          </ContextMenuItem>
+        )}
       </ContextMenuContent>
     </ContextMenu>
   );
