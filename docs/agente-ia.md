@@ -1083,15 +1083,20 @@ común.
 - **Siguen como aviso, sin pausa:** `fijar_cotizacion` rechazada porque el total no se le dijo al cliente (es la
   protección, no una falla; 0 desde el 2-oct), un workflow omitido por «Solo al inicio» o «Máximo por chat» y la
   respuesta guardada que venció (24 h o ventana cerrada).
-- **Candado de idioma (6-oct-2026, sin migración):** a una clienta en Prospecto le llegó «娱乐平台招商» como
-  burbuja aparte detrás de una pregunta buena del Agente IA (basura del modelo; en el repo no hay ni un carácter chino).
-  Regla nueva `letras de otro idioma` en `internal-text.ts` (primera de la lista): cualquier letra que no sea del
-  alfabeto latino (chino, japonés, coreano, cirílico, árabe…) detiene TODA la respuesta igual que un texto interno
-  (no sale nada, tarjeta «El Agente IA escribió texto en otro idioma…» y pausa en el chat). Acentos, ñ, ü, º/ª, °,
-  m² y emojis pasan. Además, la **puerta común** (`send.ts` › `sendTextMessage` y el pie de `sendMediaMessage`)
-  rechaza con `not_retryable` todo lo que sale con `source = ai_agent` y trae otro alfabeto: cubre el texto suelto
-  de un workflow, los pies y los **seguimientos** (que no pasan por `sendAgentText`). El borrador de seguimiento con
-  otro alfabeto se rehace una vez (`borrador-check.ts`). Lo que escribe un vendedor no se revisa.
+- **Letras de otro alfabeto: se borran, sin pausa (6-oct-2026, sin migración; decisión del dueño).** A una clienta en
+  Prospecto le llegó «娱乐平台招商» como burbuja aparte detrás de una pregunta buena, y el 2-oct a otro cliente «屹»
+  solo (2 de 5,318 salientes, las dos de GPT-5.6 Luna). Revisado en prod: el Goal (y todo su historial), las FAQs,
+  los Mensajes rápidos y los workflows no tienen ni un carácter así; es basura del modelo. El dueño pidió que NO se
+  detenga la respuesta ni se pause al Agente IA. `internal-text.ts` › `stripForeignScript` borra toda letra que no sea
+  del alfabeto latino (chino, japonés, coreano, cirílico, árabe…) y el renglón que se queda vacío; el resto queda
+  idéntico (acentos, ñ, ü, º/ª, °, m² y emojis pasan). Dónde:
+  1. `run.ts` › `attempt`, al leer la respuesta del modelo: sale lo demás (caso 6-oct: sale solo la pregunta). Si no
+     queda texto ni acciones (caso 2-oct), se le pide otra respuesta al mismo modelo UNA vez (fila `ai_usage` con
+     «solo letras de otro alfabeto; se pide otra respuesta»); si tampoco, es respuesta vacía y contesta el otro modelo.
+  2. Puerta común (`send.ts` › `sendTextMessage` y el pie de `sendMediaMessage`): a todo lo que sale con
+     `source = ai_agent` (textos sueltos de workflows, pies, seguimientos) se le borran también; solo si no queda nada,
+     no sale (`not_retryable`). Lo que escribe un vendedor no se toca.
+  3. Borrador de seguimiento con otro alfabeto: se rehace una vez (`borrador-check.ts`).
 
 ## Mensaje tapado y red contra el silencio (5-oct-2026, sin migración)
 

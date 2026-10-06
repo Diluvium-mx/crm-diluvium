@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { findInternalText, internalTextReason, unfinishedReply } from "./internal-text";
+import { findInternalText, hasForeignScript, internalTextReason, stripForeignScript, unfinishedReply } from "./internal-text";
 
 // Las formas reales que se colaron del 30-sep al 4-oct (datos del cliente cambiados) y textos
 // normales del Agente IA que NUNCA deben marcarse.
@@ -14,13 +14,6 @@ const LEAKS = [
   'mover_etapa {"etapa":"interesado"}',
   "fijar_cotizacion 5500",
   "function call: aviso_vendedor",
-  // 6-oct: basura del modelo en otro alfabeto, sola o pegada a una respuesta buena.
-  "娱乐平台招商",
-  "¿Aproximadamente hasta qué nivel le sube el agua? 娱乐",
-  "Спасибо",
-  "ありがとうございます",
-  "شكرا",
-  "감사합니다",
 ];
 
 const OK = [
@@ -50,10 +43,6 @@ describe("findInternalText", () => {
     const found = findInternalText(["¿Me comparte una fotografía de cada entrada?\n\n[actions]"]);
     expect(found?.text).toBe("[actions]");
   });
-  it("la burbuja en chino detrás de una pregunta buena (caso 6-oct) detiene toda la respuesta", () => {
-    const found = findInternalText(["¿Aproximadamente hasta qué nivel le sube el agua?\n\n娱乐平台招商"]);
-    expect(found).toEqual({ text: "娱乐平台招商", reason: "letras de otro idioma" });
-  });
   it("una respuesta normal de dos mensajes no tiene nada interno", () => {
     expect(findInternalText(OK.slice(0, 2))).toBeNull();
   });
@@ -78,5 +67,31 @@ describe("unfinishedReply", () => {
   });
   it("una respuesta normal sale", () => {
     expect(unfinishedReply(OK.slice(0, 2), "stop", [])).toBeNull();
+  });
+});
+
+// 6-oct-2026 (dueño): las letras de otro alfabeto se BORRAN y sale lo demás; no detienen la respuesta.
+describe("stripForeignScript", () => {
+  it("caso 6-oct: la burbuja en chino detrás de una pregunta buena desaparece y queda la pregunta", () => {
+    expect(stripForeignScript("¿Aproximadamente hasta qué nivel le sube el agua?\n\n娱乐平台招商")).toBe("¿Aproximadamente hasta qué nivel le sube el agua?");
+  });
+  it("caso 2-oct: un mensaje que solo era basura queda vacío", () => {
+    expect(stripForeignScript("屹")).toBe("");
+    expect(stripForeignScript("娱乐平台招商。")).toBe("");
+  });
+  it("basura en medio de un renglón: se quita sin dejar espacios dobles ni antes del signo", () => {
+    expect(stripForeignScript("La compuerta 娱乐平台 es de acero.")).toBe("La compuerta es de acero.");
+    expect(stripForeignScript("¿Hasta qué nivel 招商?")).toBe("¿Hasta qué nivel?");
+    expect(stripForeignScript("Hola Спасибо señora, ありがとう ¿cómo está? شكرا 감사합니다")).toBe("Hola señora, ¿cómo está?");
+  });
+  it("un texto en español queda IDÉNTICO (acentos, ñ, ü, º/ª, °, m², emojis, saltos de renglón)", () => {
+    for (const t of [...OK, "Señora Peña, ¿cuál es el nivel del agua? Pingüino, 2.º piso, 1.ª entrada, 30 °C, 5 m² ✅🏠💧", "Ç Ã Ê Ö ß Œ — «comillas» … ¡Gracias!", "Primero.\n\nSegundo.\n"]) {
+      expect(hasForeignScript(t)).toBe(false);
+      expect(stripForeignScript(t)).toBe(t);
+    }
+  });
+  it("ya no es «texto interno»: no detiene la respuesta ni pausa", () => {
+    expect(findInternalText(["¿Hasta qué nivel le sube el agua?\n\n娱乐平台招商"])).toBeNull();
+    expect(unfinishedReply(["娱乐平台招商"], "stop", [])).toBeNull();
   });
 });
