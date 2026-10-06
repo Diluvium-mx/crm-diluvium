@@ -14,6 +14,13 @@ const LEAKS = [
   'mover_etapa {"etapa":"interesado"}',
   "fijar_cotizacion 5500",
   "function call: aviso_vendedor",
+  // 6-oct: basura del modelo en otro alfabeto, sola o pegada a una respuesta buena.
+  "娱乐平台招商",
+  "¿Aproximadamente hasta qué nivel le sube el agua? 娱乐",
+  "Спасибо",
+  "ありがとうございます",
+  "شكرا",
+  "감사합니다",
 ];
 
 const OK = [
@@ -25,6 +32,8 @@ const OK = [
   "Claro, aquí quedo al pendiente 👍",
   "Estamos en Los Mochis, Sinaloa, y enviamos a todo México.",
   "El video de instalación está en nuestro canal: https://youtube.com/@ejemplo",
+  "Señora Peña, ¿cuál es el nivel del agua? Pingüino, 2.º piso, 1.ª entrada, 30 °C, 5 m² ✅🏠💧",
+  "Ç Ã Ê Ö ß Œ — «comillas» … ¡Gracias!",
 ];
 
 describe("internalTextReason", () => {
@@ -40,6 +49,10 @@ describe("findInternalText", () => {
   it("encuentra la nota en el último renglón de una respuesta buena (caso 1-oct)", () => {
     const found = findInternalText(["¿Me comparte una fotografía de cada entrada?\n\n[actions]"]);
     expect(found?.text).toBe("[actions]");
+  });
+  it("la burbuja en chino detrás de una pregunta buena (caso 6-oct) detiene toda la respuesta", () => {
+    const found = findInternalText(["¿Aproximadamente hasta qué nivel le sube el agua?\n\n娱乐平台招商"]);
+    expect(found).toEqual({ text: "娱乐平台招商", reason: "letras de otro idioma" });
   });
   it("una respuesta normal de dos mensajes no tiene nada interno", () => {
     expect(findInternalText(OK.slice(0, 2))).toBeNull();

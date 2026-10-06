@@ -124,6 +124,18 @@ describe.skipIf(!TEST_DATABASE_URL)("envío del Agente IA (Postgres real)", () =
     expect(after.firstResponseSeconds).toBeNull(); // el bot no cuenta como primera respuesta humana
   });
 
+  it("candado de idioma (6-oct): lo del Agente IA con letras de otro alfabeto no sale ni queda en la base; lo del vendedor sí", async () => {
+    const c = await openConversation(1);
+    let calls = 0;
+    const p = withProvider({ sendText: async () => ((calls += 1), { providerInternalId: `zL${calls}`, providerMessageId: `wamid.L${calls}` }) });
+    await expect(send.sendTextMessage(p, { organizationId: ORG, conversationId: c.id, text: "娱乐平台招商", source: "ai_agent" })).rejects.toThrow(/otro idioma/);
+    await expect(send.sendAgentText(p, { organizationId: ORG, conversationId: c.id, text: "¿Hasta qué nivel le sube el agua? 娱乐", messageId: randomUUID() })).rejects.toThrow(/otro idioma/);
+    expect(calls).toBe(0);
+    expect(await outs()).toHaveLength(0);
+    await send.sendTextMessage(p, { organizationId: ORG, conversationId: c.id, sentByUserId: "u_vendedor", text: "谢谢" });
+    expect(calls).toBe(1);
+  });
+
   it("sin source sigue siendo el envío humano de siempre (crm + vendedor, marca leído, primera respuesta)", async () => {
     const c = await openConversation(2);
     await send.sendTextMessage(

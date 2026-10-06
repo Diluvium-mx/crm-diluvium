@@ -19,6 +19,9 @@ describe("borradorProblems (reglas del dueño, 3-oct-2026)", () => {
     expect(borradorProblems({ borrador: "La compuerta sigue en $5,500. ¿Le quedó alguna duda?", companyTexts: workflow })).toEqual(["repite el precio que ya se le dio ($5,500)"]);
     expect(borradorProblems({ borrador: "Para su entrada de 120 cm, ¿le quedó alguna duda?", companyTexts: ["¿Su entrada mide 120 cm?"] })).toEqual([]);
   });
+  it("letras de otro idioma (caso 6-oct) → se rehace", () => {
+    expect(borradorProblems({ borrador: "¿Pudo medir la entrada? 娱乐平台招商", companyTexts: [] })).toEqual(["trae letras de otro idioma (debe ser solo español)"]);
+  });
   it("más de una pregunta", () => {
     expect(borradorProblems({ borrador: "¿Pudo medir? ¿Le quedó alguna duda?", companyTexts: [] })[0]).toMatch(/2 preguntas/);
   });

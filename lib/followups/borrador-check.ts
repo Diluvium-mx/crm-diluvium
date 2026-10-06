@@ -4,6 +4,7 @@
 // intento no sale con texto.
 import { normalizeSearch } from "@/lib/text/search";
 import { amountsIn } from "@/lib/ai/runtime/lector-core";
+import { hasForeignScript } from "@/lib/ai/runtime/internal-text";
 
 // Palabras que no dicen de qué trata una pregunta.
 const STOP = new Set(
@@ -50,6 +51,8 @@ export type BorradorCheckInput = {
 /** Problemas del borrador, en palabras del vendedor ([] = está bien). */
 export function borradorProblems({ borrador, companyTexts }: BorradorCheckInput): string[] {
   const problems: string[] = [];
+  // 6-oct: letras de otro alfabeto (chino, cirílico…) → se rehace; la puerta de envío tampoco lo deja salir.
+  if (hasForeignScript(borrador)) problems.push("trae letras de otro idioma (debe ser solo español)");
   const mine = questionsOf(borrador);
   if (mine.length > 1) problems.push(`hace ${mine.length} preguntas (debe ser una sola)`);
 
