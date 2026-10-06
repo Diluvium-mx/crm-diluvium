@@ -407,6 +407,13 @@
       "when": 1791309397375,
       "tag": "0059_seguimientos_envio",
       "breakpoints": true
+    },
+    {
+      "idx": 60,
+      "version": "7",
+      "when": 1791326423829,
+      "tag": "0060_quitar_tarjeta",
+      "breakpoints": true
     }
   ]
 }

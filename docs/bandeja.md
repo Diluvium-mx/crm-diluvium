@@ -142,13 +142,28 @@ clic abre un menú para cambiarla sin abrir el chat. Lista y panel quedan sincro
   apaga todas. Contacto sin chat → aviso "Este contacto todavía no tiene chat.". En la tarjeta el
   menú dice "Marcar como leído" si tiene círculo **o** está azul.
 
+### Clic derecho: «Quitar tarjeta» (6-oct-2026, dueño)
+- Segunda opción del menú de la tarjeta del Embudo, abajo de leído / no leído, **solo si la tarjeta es
+  azul o amarilla**. Motivo: muchas tarjetas amarillas las deja el Agente IA y el contexto no siempre
+  justifica que se queden así; el vendedor la quita a mano.
+- Deja la tarjeta **blanca** en todas las conversaciones del contacto: `attended_at = now()` (apaga el
+  azul, como «Marcar como leído») y `urgent_cleared_at = now()` (migración 0060): los avisos del Agente
+  IA creados hasta esa hora ya no cuentan para el amarillo.
+- **No resuelve el aviso** (`ai_agent_notices.resolved_at` queda igual): resolverlo tiene efectos en el
+  agente (p. ej. `agente_error` sin atender detiene al agente hasta que alguien elija) y aquí solo se
+  quiere quitar el color. Tampoco toca el círculo naranja ni el chat.
+- Vuelve a pintarse sola: un entrante nuevo (azul) o un aviso nuevo del agente (amarillo).
+- Del equipo; el trigger de `conversations` avisa al SSE. Optimista en el tablero, revierte si falla.
+  Código: `clearContactCard` (lib/inbox/actions.ts) → `clearContactCardForOrg` (lib/inbox/queries.ts),
+  condición en `lib/contacts/funnel-signals.ts`.
+
 ### Colores y orden del Embudo (28-sep-2026, regla del dueño)
 - **Azul** = el cliente escribió y nadie le ha contestado: el último mensaje (sin notas internas, sin
   lo importado del celular, sin salientes en cola o rechazados) es del cliente **y** llegó después de
   `attended_at`. Se apaga con una respuesta que salió (vendedor desde el CRM o el celular, o el Agente
   IA) o con "Marcar como leído" (clic derecho o el botón del pop-up, a la derecha del nombre). Abrir el
   chat solo apaga el círculo. **Amarillo** (gana) = aviso del agente sin respuesta humana posterior;
-  "Marcar como leído" no lo apaga. Código: `lib/contacts/funnel-signals.ts`, `funnel-tone.ts`.
+  "Marcar como leído" no lo apaga; «Quitar tarjeta» (clic derecho) sí, y también el azul. Código: `lib/contacts/funnel-signals.ts`, `funnel-tone.ts`.
 - **No leído por columna (30-sep-2026, dueño):** píldora con un sobre junto al contador de cada columna
   (mismo alto que el contador, sin texto). Prendida (naranja) la columna deja solo las tarjetas con
   algo pendiente: círculo naranja, azul **o** amarilla (`needsAttention` en `funnel-tone.ts`: "cualquier
