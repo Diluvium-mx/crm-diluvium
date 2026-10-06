@@ -118,8 +118,11 @@ nombre** sino **cuándo nos escribió el cliente**, calculado por el CRM en su c
 
 Salen en el 1.er intento (si ya no hay ventana) y en el 2.º, **solo cuando Meta ya las aprobó**; mientras están en
 revisión, o si se rechazan, sale la puerta de respaldo (🚪 / 📄). El 3.er intento sigue con 🚪 o 📄 (otro texto, para no
-repetir). Sin caso propio: "Sin punto claro" (🚪). En el 📄 y el 🕒 de la caja para escribir, el `{{1}}` de estas 4
-plantillas ya viene con la frase de tiempo (se puede cambiar); las demás siguen con el primer nombre.
+repetir). Sin caso propio: "Sin punto claro" (🚪). En el 📄 y el 🕒 de la caja para escribir, el `{{1}}` de las 5
+plantillas con tiempo (`TIME_PHRASE_TEMPLATES`) y de las `daniel_*` (precio, informacion, info_duda, valorar, medidas,
+asesor, objecion; conjunto aparte `PICKER_TIME_PHRASE_TEMPLATES`, solo para el selector: los seguimientos automáticos
+NO mandan las `daniel_*`) ya viene con la frase de tiempo (se puede cambiar); las demás siguen con el primer nombre.
+El selector las agrupa en «Saludo de Daniel», «Seguimiento» y «Otras», con título amigable (`lib/templates/labels.ts`).
 
 ---
 
