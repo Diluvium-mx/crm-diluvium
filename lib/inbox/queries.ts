@@ -416,6 +416,7 @@ export async function listMessagesForOrg(
           return q ? { direction: q.direction, preview: messagePreview(q.type as MessageKind, q.body) } : null;
         })(),
         importedFromPhone: m.importedAt !== null,
+        seguimiento: Boolean(m.metadata && typeof m.metadata === "object" && "seguimiento" in m.metadata),
         transcription: transcriptionView(m.transcripcion, m.metadata),
         noDisponible: (() => {
           const estado = noDisponibleEstado(m.metadata);

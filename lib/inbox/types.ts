@@ -150,6 +150,8 @@ export type MessageView = {
   quoted: { direction: "in" | "out"; preview: string } | null;
   /** Copiado del historial del celular (coexistencia): marca "Importado del celular". */
   importedFromPhone: boolean;
+  /** Lo mandó un seguimiento del Agente IA (metadata.seguimiento): la burbuja lleva la marca «Seguimiento». */
+  seguimiento?: boolean;
   /**
    * Nota de voz del cliente (Agente IA parte 1): "lista" con el texto, "pendiente"
    * mientras se transcribe, "sin" con el motivo (dura más de 10 min, falló…). null =

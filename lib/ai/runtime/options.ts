@@ -19,6 +19,7 @@ type OptionsRow = {
   botSchedule: BotSchedule | null;
   readImages: boolean;
   transcribeAudio: boolean;
+  seguimientosReal: boolean;
   responseLength: string;
   maxBubbles: number;
   maxRepliesPerContact: number | null;
@@ -40,6 +41,7 @@ export function optionsFromRow(row: OptionsRow | undefined | null): BotOptions {
     schedule: schedule.success ? schedule.data : null,
     readImages: row.readImages,
     transcribeAudio: row.transcribeAudio,
+    seguimientosReal: row.seguimientosReal,
     responseLength: (RESPONSE_LENGTHS as readonly string[]).includes(row.responseLength) ? (row.responseLength as ResponseLength) : d.responseLength,
     maxBubbles: row.maxBubbles === 1 ? 1 : 2,
     maxRepliesPerContact: int(row.maxRepliesPerContact, 1, 1_000, null),
@@ -60,6 +62,7 @@ export async function loadBotOptions(organizationId: string, now: Date = new Dat
       botSchedule: aiConfig.botSchedule,
       readImages: aiConfig.readImages,
       transcribeAudio: aiConfig.transcribeAudio,
+      seguimientosReal: aiConfig.seguimientosReal,
       responseLength: aiConfig.responseLength,
       maxBubbles: aiConfig.maxBubbles,
       maxRepliesPerContact: aiConfig.maxRepliesPerContact,

@@ -33,6 +33,7 @@ export const URGENT_NOTICE_KINDS = [
   "agente_error",
   "tope_respuestas", // Opciones del bot: llegó al máximo de respuestas; pausado hasta "Activar"
   "sin_respuesta", // Red contra el silencio: ningún modelo le escribió al cliente
+  "seguimiento", // Seguimientos: sugerencia presentada, pago pendiente sin respuesta, asesor al final
 ] as const satisfies readonly NoticeKind[];
 
 // Tope de conversaciones por lote en tiempo real (el cliente agrupa los eventos del SSE).

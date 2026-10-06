@@ -188,7 +188,9 @@ describe.skipIf(!TEST_DATABASE_URL)("Seguimientos en la base (modo ensayo)", () 
   it("mensaje nuevo que el lector no ha leído: espera; si pasan 30 min sin leerlo, se cancela", async () => {
     await reading();
     const due = (await rows())[0].dueAt!;
-    await db.update(s.conversations).set({ lastMessageAt: new Date(due.getTime() - 10 * MIN) }).where(d.eq(s.conversations.id, CONV));
+    const at = new Date(due.getTime() - 10 * MIN);
+    await db.insert(s.messages).values({ id: "m_nuevo", organizationId: ORG, conversationId: CONV, direction: "in", source: "contact", type: "text", body: "Hola", status: "received", providerMessageId: "wamid.nuevo", sentAt: at, createdAt: at });
+    await db.update(s.conversations).set({ lastMessageAt: at }).where(d.eq(s.conversations.id, CONV));
     expect(await store.followUpSweepOnce(new Date(due.getTime() + MIN))).toBe(0);
     expect((await rows())[0]).toMatchObject({ status: "programado", intento: 1 });
     await store.followUpSweepOnce(new Date(due.getTime() + 25 * MIN));

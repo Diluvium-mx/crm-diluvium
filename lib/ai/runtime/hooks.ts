@@ -18,6 +18,7 @@ import { humanPauseUntil } from "@/lib/agente-ia/opciones";
 import { loadBotOptions } from "./options";
 import { isPauseDue, pauseForHumanReply, reactivateDuePause } from "./pause";
 import { debounceDelayFor } from "./schedule";
+import { resumeAgentOnFollowUpReply } from "@/lib/followups/reply";
 
 type Ports = { queue?: AgentQueuePort; kv?: KvPort; now?: Date };
 
@@ -55,6 +56,10 @@ export async function onInboundCustomerMessage(
         lastInboundAt: sql`greatest(coalesce(${conversations.lastInboundAt}, ${input.receivedAt.toISOString()}::timestamp), ${input.receivedAt.toISOString()}::timestamp)`,
       })
       .where(and(eq(conversations.id, input.conversationId), eq(conversations.organizationId, input.organizationId)));
+    // Contestó un seguimiento que salió con el Agente IA en pausa automática: sigue con el Agente IA.
+    await resumeAgentOnFollowUpReply(input.organizationId, input.conversationId, wrote, now).catch((error: unknown) =>
+      console.error(`[seguimientos] no se pudo reactivar ${input.conversationId}`, error),
+    );
     // "Apagar bot" — solo mensajes nuevos: lo que el cliente ESCRIBIÓ con el bot
     // apagado no se contesta aunque llegue tarde (webhook retrasado).
     if (isPauseDue(conv, now)) {

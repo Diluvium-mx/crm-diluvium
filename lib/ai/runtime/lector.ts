@@ -13,7 +13,7 @@ import { and, eq, inArray, sql } from "drizzle-orm";
 import { tool, type ModelMessage } from "ai";
 import { z } from "zod";
 import { db } from "@/lib/db";
-import { contacts, conversations, templates } from "@/lib/db/schema";
+import { contacts, conversations, messages as messagesTable, templates } from "@/lib/db/schema";
 import type { CallModelInput, CallModelResult, ModelUsage } from "@/lib/ai/types";
 import { getModel } from "@/lib/ai/catalog";
 import { modelAvailability } from "@/lib/ai/provider";
@@ -206,6 +206,26 @@ async function readConversation(organizationId: string, conversationId: string, 
   // Hasta dónde lee esta pasada: lo que llegue durante la llamada queda para la siguiente.
   const upTo = conv.lastMessageAt;
   if (!force && conv.detalleLeidoHasta && conv.detalleLeidoHasta >= upTo) return { kind: "nada_nuevo" };
+  // Lo único nuevo son nuestros seguimientos (metadata.seguimiento): no hay nada que leer y la
+  // ficha NO se rehace por su propio mensaje (docs/seguimientos.md, Parte 2).
+  if (!force && conv.detalleLeidoHasta) {
+    const [other] = await db
+      .select({ id: messagesTable.id })
+      .from(messagesTable)
+      .where(
+        and(
+          eq(messagesTable.organizationId, organizationId),
+          eq(messagesTable.conversationId, conversationId),
+          sql`${messagesTable.createdAt} > ${conv.detalleLeidoHasta.toISOString()}::timestamp`,
+          sql`not coalesce(${messagesTable.metadata} ? 'seguimiento', false)`,
+        ),
+      )
+      .limit(1);
+    if (!other) {
+      await markRead(organizationId, conversationId, upTo);
+      return { kind: "nada_nuevo" };
+    }
+  }
   const startedAt = deps.now();
   const model = getModel(LECTOR_MODEL_ID);
   const isAvailable = deps.isModelAvailable ?? ((id: string) => modelAvailability(id).available);

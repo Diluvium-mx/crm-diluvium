@@ -20,6 +20,9 @@ const WHATSAPP_REASONS: Record<string, string> = {
   "131052": "WhatsApp no pudo subir el archivo",
   // Tipo de mensaje/archivo que WhatsApp no acepta.
   "131051": "WhatsApp no permite ese tipo de archivo",
+  // Promociones (plantillas de marketing): tope de Meta por persona y baja del cliente.
+  "131049": "WhatsApp no la entregó para cuidar al cliente: ya recibió muchas promociones de empresas; no se reintenta",
+  "131050": "el cliente se dio de baja de las promociones de WhatsApp",
 };
 
 // Rechazos del propio CRM (SendRejectedError, adaptador): su texto ya está en español.

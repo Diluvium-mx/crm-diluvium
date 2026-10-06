@@ -290,6 +290,7 @@ function Bubble({
             ))}
           </div>
         )}
+        {view?.seguimiento && <p className={`mb-0.5 text-[11px] font-medium ${out ? "text-brand-white/80" : "text-muted-foreground"}`}>🤖 Seguimiento</p>}
         {view?.transcription && <TranscriptionNote transcription={view.transcription} out={out} searchTerm={term} />}
         {warningCard && row.body && (
           <p className="whitespace-pre-wrap break-words">

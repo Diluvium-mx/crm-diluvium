@@ -97,6 +97,9 @@ export const contacts = pgTable(
     // temperatura y combinable con ella (🔥 + ⭐). Es la estrella de la lista de la Bandeja y
     // el ⭐ del Embudo: un solo dato para las dos pantallas.
     destacado: boolean("destacado").default(false).notNull(),
+    // Se dio de baja de las promociones de WhatsApp (error 131050 de Meta): sin seguimientos del
+    // Agente IA hasta que un vendedor lo quite. Migración 0059 (docs/seguimientos.md §9).
+    sinSeguimientos: boolean("sin_seguimientos").default(false).notNull(),
     tieneInundaciones: contactInundacionesEnum("tiene_inundaciones"),
     nivelAguaCm: integer("nivel_agua_cm"),
     nivelAguaTexto: text("nivel_agua_texto"),

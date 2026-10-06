@@ -21,7 +21,7 @@ export type AgentState = "activo" | "pausado_humano" | "pausado_handover" | "pau
 // conversación; el agente se pausó hasta "Activar" (tarjeta amarilla en el Embudo).
 // "sin_respuesta" (29-sep-2026): los modelos contestaron solo con acciones y nadie le escribió al
 // cliente (red contra el silencio, run.ts). Amarillo en el Embudo hasta que un vendedor conteste.
-export type NoticeKind = "pasar_a_humano" | "envio" | "cotejar_deposito" | "cliente_pide_humano" | "comprobante_dudoso" | "respuesta_cortada" | "agente_error" | "tope_respuestas" | "sin_respuesta";
+export type NoticeKind = "pasar_a_humano" | "envio" | "cotejar_deposito" | "cliente_pide_humano" | "comprobante_dudoso" | "respuesta_cortada" | "agente_error" | "tope_respuestas" | "sin_respuesta" | "seguimiento";
 
 // ── Debounce deslizante ──────────────────────────────────────────────────────
 // Cada entrante reinicia la espera (15 s de fábrica; 5–60 s desde Opciones del bot),

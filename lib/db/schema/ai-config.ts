@@ -60,6 +60,9 @@ export const aiConfig = pgTable("ai_config", {
   // línea extra) y máximo de mensajes por respuesta (1 o 2; fábrica 2).
   responseLength: text("response_length").default("balanceada").notNull(),
   maxBubbles: integer("max_bubbles").default(2).notNull(),
+  // 8. Seguimientos del Agente IA (docs/seguimientos.md): false = ENSAYO (se calcula todo y se ve en la
+  // píldora 🤖, no sale nada); true = REAL (salen a su hora). Migración 0059 (6-oct-2026).
+  seguimientosReal: boolean("seguimientos_real").default(false).notNull(),
   // 7. Tope de respuestas del bot por conversación (desde el último "Activar" o encendido).
   // null = sin tope (fábrica). Al llegar: pausa hasta "Activar" + aviso 🤖 (tarjeta amarilla).
   maxRepliesPerContact: integer("max_replies_per_contact"),
