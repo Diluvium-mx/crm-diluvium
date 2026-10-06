@@ -8,7 +8,7 @@
 // - la conversación se lee LINEAL confirmando cada dato: vale lo último que quedó
 //   confirmado, y cualquier dato puede cambiar aun después de cerrada la compra;
 // - monto de cotización = total de lo que el CLIENTE eligió al final (no lo primero que
-//   se le cotizó); si cambió y el precio nuevo nunca se dijo, no se inventa: comentario;
+//   se le cotizó); si cambió y el precio nuevo nunca se dijo, no se inventa (sin monto);
 // - pago total = lo que el cliente ya pagó (anticipo + resto, o el pago completo);
 // - la etapa solo avanza, y la que puso un vendedor a mano se respeta: solo se avanza
 //   por lo que pase en el chat DESPUÉS de ese cambio.
@@ -101,11 +101,10 @@ CAMPOS
 - tiene_inundaciones: si | no | no_sabe (si se le mete el agua). "no_sabe" solo si el cliente dijo que no sabe.
 - nivel_agua_cm: hasta dónde llega el agua, en centímetros (medio metro = 50). nivel_agua_texto: cómo lo dijo el cliente, corto.
 - num_entradas y anchos_cm: cuántas entradas va a proteger y el ancho de cada una ${ANCHO_EN_CM}; en orden (uno por entrada). Si cambió cuántas quiere (p. ej. de 2 a 1), manda lo último.
-- monto_cotizacion: total en pesos de lo que el CLIENTE eligió comprar al final, con los precios que la empresa le dio en el chat. No es lo primero que se le cotizó: si se le cotizaron 2 compuertas y eligió 1, es el total de 1 con el precio que ya se le dio. Si cambió lo que pide y el precio de lo nuevo nunca se dijo en el chat, NO lo calcules: no mandes monto y deja el comentario "El cliente cambió a …; falta confirmar el total".
+- monto_cotizacion: total en pesos de lo que el CLIENTE eligió comprar al final, con los precios que la empresa le dio en el chat. No es lo primero que se le cotizó: si se le cotizaron 2 compuertas y eligió 1, es el total de 1 con el precio que ya se le dio. Si cambió lo que pide y el precio de lo nuevo nunca se dijo en el chat, NO lo calcules: no mandes monto.
 - pago_total: cuánto ha PAGADO el cliente en total (anticipo + resto, o el pago completo), según los comprobantes que mandó o los pagos que la empresa confirmó en el chat. Sin pagos, no lo mandes.
 - porcentaje_convencimiento: qué tan convencido está de comprar según cómo va la conversación, de 0 a 100 en pasos de 10.
 - etapa: la clave de la etapa del Embudo que corresponde según las reglas de abajo; mándala solo si es MÁS ADELANTE que la de la ficha. Las reglas están escritas para el Agente IA ("cuando confirmas…"); aquí cuentan igual si lo hizo un vendedor en el chat.${ventaCerradaLine(stages)} Solo se avanza: si ya está en esa etapa o más adelante, no la mandes. Si en el chat aparece la marca [CRM: un vendedor movió al contacto a …], respeta esa decisión: solo puedes llevarlo más adelante por lo que pasó DESPUÉS de esa marca.
-- comentario: un dato útil NUEVO que no quepa en los campos, en una frase (p. ej. "tiene cochera con desnivel"). No repitas los comentarios ya guardados.
 
 ${stagesInstructions(stages)}`;
 }
@@ -178,7 +177,6 @@ export function lectorSchemaFor(stageKeys: readonly string[], opts: { followUp?:
     pago_total: z.number().nullable().optional().describe(`Lo que el cliente ya pagó en total, en pesos${sin}`),
     porcentaje_convencimiento: z.number().nullable().optional().describe("0 a 100, de 10 en 10"),
     etapa: z.enum(keys as [string, ...string[]]).nullable().optional().describe("Clave de la etapa a la que AVANZA (null si se queda donde está)"),
-    comentario: z.string().nullable().optional().describe("Un dato útil nuevo, en una frase (null si no hay)"),
   });
   return opts.followUp ? base.extend({ seguimiento: fichaSchema() }) : base;
 }
