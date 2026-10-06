@@ -140,7 +140,8 @@ pendiente: en una línea, lo que quedó abierto, con el dato concreto (medidas, 
 siguiente_paso: en una línea, lo que lo acerca a comprar: el primer dato que falta en la ficha, o cerrar la venta si ya está todo.
 vale_la_pena: false solo en no_seguir, con el motivo en una frase.
 borrador: el mensaje que se le mandaría, como lo escribiría la empresa en este chat:
-- corto (1 o 2 renglones) y con el mismo trato del chat (tú o usted); SIN saludo ni nombre al principio: el CRM antepone "Hola <nombre>, buenos días / buenas tardes / buenas noches.";
+- corto (1 o 2 renglones) y con el mismo trato del chat (tú o usted); SIN saludo al principio: el CRM antepone "Hola, buenos días / buenas tardes / buenas noches, le escribo de parte del equipo de Diluvium.";
+- NUNCA el nombre del cliente (el de su perfil de WhatsApp o Instagram muchas veces no es su nombre);
 - UNA sola pregunta;
 - NUNCA una pregunta que la empresa ya hizo en el chat, con las mismas u otras palabras (si ya se le preguntó si tiene problemas de inundaciones o si se le mete el agua, no se vuelve a preguntar, haya contestado o no);
 - NUNCA repitas el precio ni la información que ya se le dio (p. ej. "$5,500 con envío gratis"): ya la tiene;

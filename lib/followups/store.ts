@@ -20,7 +20,6 @@ import type { MessagingProvider } from "@/lib/messaging/provider";
 import { addNotice } from "@/lib/ai/runtime/notices";
 import { notifyContactUpdated } from "@/lib/contacts/notify-updated";
 import { zoneForPhone } from "./timezone";
-import { firstNameOf } from "@/lib/templates/first-name";
 
 export type FollowUpRow = typeof followUps.$inferSelect;
 const OPEN = ["programado", "esperando"] as const;
@@ -132,7 +131,6 @@ type Signals = {
   windowExpiresAt: Date | null;
   lastTemplateAt: Date | null;
   approved: Set<string>;
-  firstName: string;
   lastClientAt: Date | null;
   /** Se dio de baja de promociones (131050): sin seguimientos. */
   sinSeguimientos: boolean;
@@ -156,7 +154,6 @@ async function loadSignals(
       windowExpiresAt: conversations.windowExpiresAt,
       mode: channels.aiAgentMode,
       channelType: channels.type,
-      firstName: contacts.firstName,
       sinSeguimientos: contacts.sinSeguimientos,
       lastInboundAt: conversations.lastInboundAt,
     })
@@ -190,7 +187,6 @@ async function loadSignals(
     windowExpiresAt: row.windowExpiresAt,
     lastTemplateAt: await lastTemplateAt(organizationId, contactId, now),
     approved: await approvedTemplateNames(organizationId),
-    firstName: firstNameOf(row.firstName),
     lastClientAt: row.lastInboundAt ?? (row.windowExpiresAt ? new Date(row.windowExpiresAt.getTime() - 24 * 60 * 60_000) : null),
     sinSeguimientos: row.sinSeguimientos,
   };
@@ -565,14 +561,13 @@ async function advance(row: FollowUpRow, now: Date, deps: FollowUpRuntimeDeps): 
   const mark = { followUpId: row.id, intento: row.intento };
   const sent =
     door === "texto"
-      ? await sendFollowUpText(deps.provider!, { organizationId, conversationId, messageId: messageId!, borrador: row.borrador!, firstName: signals.firstName, zone: row.timeZone, now, mark })
+      ? await sendFollowUpText(deps.provider!, { organizationId, conversationId, messageId: messageId!, borrador: row.borrador!, zone: row.timeZone, now, mark })
       : templateName
         ? await sendFollowUpTemplate(deps.provider!, {
             organizationId,
             conversationId,
             messageId: messageId!,
             templateName,
-            firstName: signals.firstName,
             lastClientAt: signals.lastClientAt,
             zone: row.timeZone,
             now,

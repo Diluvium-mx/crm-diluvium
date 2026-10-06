@@ -30,14 +30,14 @@ async function failure(organizationId: string, messageId: string, error: unknown
 
 export async function sendFollowUpText(
   provider: MessagingProvider,
-  input: { organizationId: string; conversationId: string; messageId: string; borrador: string; firstName: string; zone: string; now: Date; mark: FollowUpMark },
+  input: { organizationId: string; conversationId: string; messageId: string; borrador: string; zone: string; now: Date; mark: FollowUpMark },
 ): Promise<DispatchResult> {
   try {
     await sendTextMessage(provider, {
       organizationId: input.organizationId,
       conversationId: input.conversationId,
       messageId: input.messageId,
-      text: followUpText(input.borrador, input.firstName, input.now, input.zone),
+      text: followUpText(input.borrador, input.now, input.zone),
       source: "ai_agent",
       sentByUserId: null,
       markRead: false,
@@ -75,7 +75,6 @@ export async function sendFollowUpTemplate(
     conversationId: string;
     messageId: string;
     templateName: string;
-    firstName: string;
     /** Último mensaje del cliente: el {{1}} "cuándo nos escribió". */
     lastClientAt: Date | null;
     zone: string;
@@ -87,12 +86,9 @@ export async function sendFollowUpTemplate(
     const template = await approvedTemplate(input.organizationId, input.conversationId, input.templateName);
     if (!template) return { ok: false, error: `la plantilla ${input.templateName} no está aprobada en este canal`, code: null };
     const count = templateMaxIndex(template.body);
-    const one = TIME_PHRASE_TEMPLATES.has(input.templateName)
-      ? input.lastClientAt
-        ? timePhrase(input.lastClientAt, input.now, input.zone)
-        : ""
-      : input.firstName.trim();
-    if (count > 1 || (count === 1 && !one)) return { ok: false, error: `la plantilla ${input.templateName} pide un dato que el contacto no tiene`, code: null };
+    // {{1}} solo puede ser CUÁNDO escribió el cliente: el nombre del perfil nunca se usa (6-oct-2026).
+    const one = TIME_PHRASE_TEMPLATES.has(input.templateName) && input.lastClientAt ? timePhrase(input.lastClientAt, input.now, input.zone) : "";
+    if (count > 1 || (count === 1 && !one)) return { ok: false, error: `la plantilla ${input.templateName} pide un dato que el seguimiento no pone (nunca el nombre)`, code: null };
     await sendTemplateMessage(provider, {
       organizationId: input.organizationId,
       conversationId: input.conversationId,

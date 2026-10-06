@@ -37,7 +37,8 @@ describe("lector + seguimiento", () => {
     const positions = order.map((caso) => FOLLOW_UP_INSTRUCTIONS.indexOf(`- ${caso}:`));
     expect(positions.every((p) => p > 0)).toBe(true);
     expect([...positions].sort((a, b) => a - b)).toEqual(positions);
-    expect(FOLLOW_UP_INSTRUCTIONS).toMatch(/SIN saludo ni nombre al principio/);
+    expect(FOLLOW_UP_INSTRUCTIONS).toMatch(/SIN saludo al principio/);
+    expect(FOLLOW_UP_INSTRUCTIONS).toMatch(/NUNCA el nombre del cliente/);
     expect(FOLLOW_UP_INSTRUCTIONS).toMatch(/solo paso a dar seguimiento/);
   });
 

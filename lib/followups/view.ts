@@ -70,7 +70,8 @@ export async function loadFollowUpView(organizationId: string, conversationId: s
       .limit(1);
     // {{1}} = cuándo nos escribió el cliente en las plantillas con tiempo; en las demás, su primer nombre.
     const lastClient = row.lastInboundAt ?? (row.windowExpiresAt ? new Date(row.windowExpiresAt.getTime() - 24 * 60 * 60_000) : null);
-    const value = TIME_PHRASE_TEMPLATES.has(f.templateName) ? (lastClient ? timePhrase(lastClient, f.dueAt ?? new Date(), f.timeZone) : "") : firstName;
+    // Solo CUÁNDO escribió; el nombre del perfil nunca va en un seguimiento (6-oct-2026).
+    const value = TIME_PHRASE_TEMPLATES.has(f.templateName) && lastClient ? timePhrase(lastClient, f.dueAt ?? new Date(), f.timeZone) : "";
     templateText = t?.body ? t.body.replace(/\{\{\s*1\s*\}\}/g, value || "") : null;
   }
   const caso = f.caso as FollowUpCase;

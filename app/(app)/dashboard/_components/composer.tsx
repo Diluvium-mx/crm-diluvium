@@ -487,7 +487,9 @@ export function Composer({
         {/* ⚡ 📄 📎 en su columna: arriba, en el hueco que deja la caja de dos renglones, la
             píldora 🤖 del seguimiento (desde sm; en el celular va al final del renglón). */}
         <div className="order-1 flex min-w-0 flex-col gap-1 sm:order-none">
-          {followUp && <FollowUpPill followUp={followUp} open={followUpPanelOpen} onToggle={toggleFollowUp} className="hidden sm:flex" />}
+          {/* w-0 + min-w-full: la píldora mide lo mismo que ⚡ 📄 📎 y nunca ensancha la columna (si no, la caja
+              de texto se encoge con la lista y el Detalle abiertos; decisión del dueño, 6-oct-2026). */}
+          {followUp && <FollowUpPill followUp={followUp} open={followUpPanelOpen} onToggle={toggleFollowUp} className="hidden w-0 min-w-full sm:flex" />}
           <div className="flex gap-2">
             <button
               type="button"
