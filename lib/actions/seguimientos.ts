@@ -6,7 +6,7 @@
 import { z } from "zod";
 import { requireActiveMembership } from "@/lib/auth/active-organization";
 import { localToInstant, validateSendAt, SEND_AT_MESSAGES } from "@/lib/scheduled/rules";
-import { approveFollowUp, cancelFollowUpById, changeFollowUpTime, loadFollowUpView, type FollowUpView } from "@/lib/followups/view";
+import { approveFollowUp, cancelFollowUpById, changeFollowUpTime, clearSinSeguimientos, loadFollowUpView, type FollowUpView } from "@/lib/followups/view";
 
 const id = z.string().trim().min(1).max(100);
 
@@ -44,4 +44,11 @@ export async function approveSuggestedFollowUp(followUpId: string): Promise<Foll
   const { organizationId, userId } = await requireActiveMembership();
   const ok = await approveFollowUp(organizationId, id.parse(followUpId), userId, new Date());
   return ok ? { ok: true } : { ok: false, message: "Ese seguimiento ya no está pendiente." };
+}
+
+/** «Quitar» en el Detalle del contacto: deja de estar «sin seguimientos» (baja de promociones, 131050). */
+export async function quitarSinSeguimientos(contactId: string): Promise<FollowUpActionResult> {
+  const { organizationId } = await requireActiveMembership();
+  const ok = await clearSinSeguimientos(organizationId, id.parse(contactId));
+  return ok ? { ok: true } : { ok: false, message: "Ese contacto ya tenía seguimientos." };
 }

@@ -166,3 +166,23 @@ export async function approveFollowUp(organizationId: string, id: string, userId
   if (rows[0]) await announce(organizationId, rows[0].conversationId, rows[0].contactId);
   return rows.length > 0;
 }
+
+/** ¿El contacto quedó «sin seguimientos» (se dio de baja de las promociones, 131050)? */
+export async function sinSeguimientosOf(organizationId: string, contactId: string): Promise<boolean> {
+  const [row] = await db
+    .select({ sin: contacts.sinSeguimientos })
+    .from(contacts)
+    .where(and(eq(contacts.id, contactId), eq(contacts.organizationId, organizationId)))
+    .limit(1);
+  return row?.sin === true;
+}
+
+/** «Quitar» en el Detalle: el contacto vuelve a tener seguimientos (la siguiente lectura arma uno si toca). */
+export async function clearSinSeguimientos(organizationId: string, contactId: string): Promise<boolean> {
+  const rows = await db
+    .update(contacts)
+    .set({ sinSeguimientos: false })
+    .where(and(eq(contacts.id, contactId), eq(contacts.organizationId, organizationId), eq(contacts.sinSeguimientos, true)))
+    .returning({ id: contacts.id });
+  return rows.length > 0;
+}

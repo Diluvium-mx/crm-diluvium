@@ -573,8 +573,9 @@ migración **0059**; la 0058 es la de los costos de WhatsApp de otra rama, que d
 - **Píldora 🤖 (6-oct-2026):** mide lo mismo que ⚡ 📄 📎 y dice solo cuándo sale; el tipo lo dice el color.
 - Pruebas: `lib/followups/envio.int.test.ts` (proveedor falso: texto una sola vez, plantilla, 20:00 → día siguiente,
   ensayo, sugerencia y aviso, opción B, 131050, frío) y `lector.int.test.ts` (el lector no relee por un seguimiento).
-- **Pendiente:** quitar «sin seguimientos» desde el Detalle (hoy solo por base de datos); Agente IA › Seguimientos
-  (editar la tabla) y la tarjeta del Dashboard (Parte 4).
+- **Quitar «sin seguimientos»** (6-oct-2026): aviso ámbar con **Quitar** (con confirmación) en Detalle del contacto ›
+  Agente IA (`sin-seguimientos-line.tsx`, `quitarSinSeguimientos`).
+- **Pendiente:** Agente IA › Seguimientos (editar la tabla) y la tarjeta del Dashboard (Parte 4).
 
 ---
 
