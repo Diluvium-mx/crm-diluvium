@@ -18,6 +18,9 @@ import { BreakdownList } from "./_components/breakdown-list";
 import { DailyChart } from "./_components/daily-chart";
 import { PeriodCards } from "./_components/period-cards";
 import { RangeFilter } from "./_components/range-filter";
+import { FollowUpCard } from "./_components/follow-up-card";
+import { followUpStats } from "@/lib/dashboard/seguimientos";
+import { followUpsReal as followUpsRealFor } from "@/lib/followups/store";
 import { StatusPill } from "./_components/whatsapp-status";
 
 // Dashboard (A2): destino al entrar. Todos lo ven completo, "Gasto de IA"
@@ -41,7 +44,7 @@ export default async function InicioPage({ searchParams }: PageProps<"/inicio">)
   const range = resolveRange({ mes: param(params.mes), desde: param(params.desde), hasta: param(params.hasta) });
 
   const canSeeSpend = roleAllows(role, "aiSpend", "read");
-  const [cards, series, breakdown, spend, meta, whatsapp, bot, stages] = await Promise.all([
+  const [cards, series, breakdown, spend, meta, whatsapp, bot, stages, followUps, followUpsReal] = await Promise.all([
     newConversationsCards(db, organizationId),
     newConversationsByDay(db, organizationId, range),
     newConversationsBreakdown(db, organizationId, range),
@@ -53,6 +56,9 @@ export default async function InicioPage({ searchParams }: PageProps<"/inicio">)
     // ¿El bot contesta? Solo datos del CRM (canal, horario, chats sin respuesta).
     loadBotStatus(organizationId),
     listFunnelStages(organizationId),
+    // Seguimientos del Agente IA en el periodo (Parte 4).
+    followUpStats(db, organizationId, range),
+    followUpsRealFor(organizationId),
   ]);
 
   const byStage = new Map(breakdown.porEtapa.map((b) => [b.clave, b.total]));
@@ -107,6 +113,8 @@ export default async function InicioPage({ searchParams }: PageProps<"/inicio">)
           </p>
         </div>
       </div>
+
+      <FollowUpCard stats={followUps} ensayo={!followUpsReal} />
     </div>
   );
 }
