@@ -15,6 +15,7 @@ import type { ChannelPlatform } from "@/lib/messaging/provider";
 import { SEND_WARNING_META } from "@/lib/messaging/rules";
 import { plainSendReason } from "@/lib/messaging/send-reasons";
 import { noDisponibleEstado, noticeDisplayText, shadowNoticeSql } from "@/lib/messaging/unavailable";
+import { instagramUnviewableCard } from "@/lib/messaging/instagram-unviewable";
 import {
   attachmentView,
   avatarInitials,
@@ -393,7 +394,7 @@ export async function listMessagesForOrg(
         id: m.id,
         direction: m.direction,
         kind: m.type as MessageKind,
-        body: noticeDisplayText(m.metadata) ?? m.body,
+        body: noticeDisplayText(m.metadata) ?? (m.direction === "in" ? instagramUnviewableCard(m.body) : null) ?? m.body,
         attachments: m.attachments.map((a, i) => attachmentView(m.id, i, a, m.createdAt, now)),
         status: m.status,
         // Fallido: el motivo en español claro (Bloque B), no el texto crudo de WhatsApp.
@@ -418,7 +419,8 @@ export async function listMessagesForOrg(
         transcription: transcriptionView(m.transcripcion, m.metadata),
         noDisponible: (() => {
           const estado = noDisponibleEstado(m.metadata);
-          return estado === "verificando" || estado === "sin_contenido" ? estado : null;
+          if (estado === "verificando" || estado === "sin_contenido") return estado;
+          return m.direction === "in" && instagramUnviewableCard(m.body) ? "instagram_sin_ver" : null;
         })(),
       }),
     ),

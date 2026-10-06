@@ -51,6 +51,9 @@
   (`template`) como «📎 Compartió una publicación…» (o el aviso de arriba si trae `noRenderableContent`).
   El mensaje se guarda sin descargar nada; antes la `url` obligatoria mandaba todo el evento a
   dead-letter (3 y 4-oct-2026).
+- La foto o video temporal y lo que Meta no deja ver se guardan como texto del cliente (cuentan para la
+  Bandeja y el Agente IA), pero el chat los pinta como **tarjeta** de aviso, igual que el «mensaje no
+  disponible» de WhatsApp (`lib/messaging/instagram-unviewable.ts`; 6-oct-2026, también los viejos).
   El archivo se descarga al bucket al llegar (las URLs de Meta caducan).
 - Anuncios (clic a Direct): la ficha `metadata.referral` se registra con `platform: "instagram"`. Sin
   respaldo por la conversación de Zernio y sin la ventana gratis de 72 h (eso es de WhatsApp).
