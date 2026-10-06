@@ -82,8 +82,7 @@ describe("herramientas del cerebro (Fase D reestructurada)", () => {
       numEntradas: 2,
       anchosCm: [95, 105],
       porcentajeConvencimiento: 70,
-      comentario: "Tiene cochera con desnivel",
-    });
+    }); // el comentario ya no se guarda (6-oct-2026)
     // Fuera de rango o raro → ese campo se descarta; los demás quedan.
     expect(parseDetalle({ tiene_inundaciones: "tal vez", nivel_agua_cm: 5000, num_entradas: 1.5, anchos_cm: [90, 0], porcentaje_convencimiento: 30 })).toEqual({ porcentajeConvencimiento: 30 });
     expect(parseDetalle({})).toBeNull();

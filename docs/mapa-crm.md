@@ -482,7 +482,6 @@ Ningún dato es definitivo: el agente corrige lo que el cliente aclare después.
 ![Agente IA leyendo el chat en segundo plano](mapa-crm/05-detalle-lector.png)
 ![Menú Pausar agente](mapa-crm/05-detalle-pausar.png)
 ![Agente en pausa y botón Activar](mapa-crm/05-detalle-activar.png)
-![Comentario con un link](mapa-crm/05-detalle-comentario-link.png)
 
 | # | Nombre oficial | Qué hace | Quién lo ve |
 |---|---|---|---|
@@ -503,10 +502,7 @@ Ningún dato es definitivo: el agente corrige lo que el cliente aclare después.
 | 15 | **Llegó por anuncio** | El anuncio que lo trajo (enlace), el resumen que hizo el agente y "También volvió por…". | Todos |
 | 16 | **Agente IA (estado)** | 🟢 Activo · 🟠 Pausado · vuelve… · o "Apagado en «canal»". Pausado o apagado solo deja de contestar: el Detalle se sigue llenando en segundo plano (28). | Todos |
 | 17 | **Pausar agente** | Abre el menú de pausa (24). | Todos |
-| 18 | **Escribe un comentario…** | Nota interna del equipo (Enter agrega). El cliente no la ve y el agente no la lee. | Todos |
-| 19 | **Agregar** | Guarda el comentario. | Todos |
-| 20 | **Comentario** | Autor y fecha. "Agente IA" = lo escribió el agente; "Importado" = nota vieja de GHL. Si el texto trae un link, sale azul y subrayado (clic lo abre en otra pestaña). | Todos |
-| 21 | **Editar · Borrar** (comentario) | Cualquier rol puede editar o borrar, también los de otros. | Todos |
+| 18–21 | *(Comentarios: se quitaron el 6-oct-2026)* | Ningún vendedor los veía. El Agente IA ya no escribe comentarios; los guardados siguen en la base, pero no se muestran. | — |
 | 22 | **Correo** (y etiquetas) | Datos compactos al final. | Todos |
 | 23 | **Ocultar panel** | Esconde el Detalle. | Todos |
 | 24 | **Pausar el agente en este chat** | 8 horas · 12 horas · 24 horas · Hasta una fecha y hora… · Pausar indefinidamente. | Todos |
@@ -515,7 +511,7 @@ Ningún dato es definitivo: el agente corrige lo que el cliente aclare después.
 | 27 | **Pago total (MXN)** | Lo que el cliente **ya pagó** (anticipo + resto, o el pago completo), junto al monto (13): así se ve quién cotizó mucho y no compró. Lo llena el Agente IA en segundo plano con los comprobantes y los pagos confirmados en el chat; se corrige a mano. | Todos |
 | 28 | **Agente IA en segundo plano** (bajo Calificación) | Qué está haciendo el Agente IA con el Detalle, en vivo: «⏳ Agente IA leerá el chat en ~3 min» (llegó algo nuevo y espera a que el chat se calme), «Agente IA leyendo el chat…» (lo está leyendo ahora; segunda captura), «Agente IA actualizó 2 datos» (unos segundos, mientras brillan los campos) y «✓ Al día · leído 10:42». Si una lectura falla: «No pudo leer el chat · se reintenta solo». Sale aunque el Agente IA esté apagado o pausado; nunca le escribe al cliente. Si nunca ha leído ese chat, no se muestra. | Todos |
 
-**Lo cambias tú desde la pantalla:** todos los campos menos el % de convencimiento; comentarios; pausar y activar al agente.
+**Lo cambias tú desde la pantalla:** todos los campos menos el % de convencimiento; pausar y activar al agente.
 
 **Pídeselo a Code:**
 - "En Bandeja › Detalle › (27) pago total, separa anticipo y liquidación."
@@ -523,7 +519,7 @@ Ningún dato es definitivo: el agente corrige lo que el cliente aclare después.
 - "En Bandeja › Detalle › (14) % de convencimiento, déjame corregirlo a mano."
 
 **Agente IA aquí:** llena y corrige los campos con lo que dice el cliente (marca "IA"), decide el % de
-convencimiento, escribe comentarios firmados "Agente IA", avanza la etapa y resume el anuncio en (15).
+convencimiento, avanza la etapa y resume el anuncio en (15).
 Lo hace **siempre en segundo plano**, aunque esté apagado o pausado en el chat: unos 3 minutos después de que
 el chat se calma lee todo en orden y deja al día etapa, datos, monto (13) y pago (27); lo que está haciendo se ve
 en vivo en (28). Nunca le escribe al

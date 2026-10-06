@@ -235,7 +235,7 @@ async function readConversation(organizationId: string, conversationId: string, 
   const stages = await listFunnelStages(organizationId);
   const vendorStage = contact.stageChangedBy === "vendedor" ? { at: contact.stageChangedAt, stageName: stageLabel(stages, contact.stage) } : null;
 
-  // Ficha guardada: etapa, monto y pago (con quién los puso) + el Detalle y los comentarios del agente.
+  // Ficha guardada: etapa, monto y pago (con quién los puso) + el Detalle.
   const cf = (contact.customFields as Record<string, unknown> | null) ?? {};
   const por = detallePorOf(cf);
   const ficha = [
@@ -281,8 +281,7 @@ async function readConversation(organizationId: string, conversationId: string, 
     let stageNow = contact.stage;
     try {
       if (parsed.detalle) {
-        const { comentario, ...campos } = parsed.detalle;
-        const r = await applyDetalleByAgent(organizationId, conv.contactId, { campos, comentarios: comentario ? [comentario] : [] });
+        const r = await applyDetalleByAgent(organizationId, conv.contactId, { campos: parsed.detalle });
         cambios.push(...r.llenados);
       }
       if (parsed.monto !== null && (contact.monto == null || Number(contact.monto) !== parsed.monto || cf.cotizacion_por !== "agente")) {

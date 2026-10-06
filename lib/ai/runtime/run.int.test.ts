@@ -2711,8 +2711,8 @@ describe.skipIf(!TEST_DATABASE_URL)("runtime del Agente IA (Postgres real)", () 
     expect(brainCalls(calls)).toBe(1); // sin llamada extra
     const [c] = await db.select().from(s.contacts).where(eq(s.contacts.id, CONTACT));
     expect(c).toMatchObject({ tieneInundaciones: "si", nivelAguaTexto: "hasta la rodilla", numEntradas: 2, porcentajeConvencimiento: 50 });
-    const [comentario] = await db.select().from(s.contactComentarios).where(eq(s.contactComentarios.contactId, CONTACT));
-    expect(comentario).toMatchObject({ body: "Cochera con desnivel", authorUserId: "usuario-sistema-agente-ia" });
+    // Sin comentarios desde el 6-oct-2026: el que mande el modelo se ignora.
+    expect(await db.select().from(s.contactComentarios).where(eq(s.contactComentarios.contactId, CONTACT))).toEqual([]);
     expect(await notices()).toEqual([]); // nada para el vendedor
     // La siguiente respuesta recibe el Detalle en el contexto del CRM.
     await msg({ direction: "in", body: "¿y cuánto sale?", at: new Date(Date.now() + 1_000) });
@@ -2720,7 +2720,7 @@ describe.skipIf(!TEST_DATABASE_URL)("runtime del Agente IA (Postgres real)", () 
     await run.runAgent(JOB, next.deps);
     const lastTurn = JSON.stringify(next.calls.find((x) => x.kind === "cerebro")!.input.messages.at(-1)!.content);
     expect(lastTurn).toContain("Detalle guardado del contacto: inundaciones: sí · agua: (hasta la rodilla) · entradas: 2 (anchos: 95, 105 cm) · convencimiento: 50 %");
-    expect(lastTurn).toContain("«Cochera con desnivel»");
+    expect(lastTurn).not.toContain("Cochera con desnivel");
   });
 
   // ── Parte 1 (26-sep-2026), B: notas de voz ──
