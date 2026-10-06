@@ -17,7 +17,7 @@ import { PICKER_TIME_PHRASE_TEMPLATES } from "@/lib/followups/cases";
 import { groupTemplates, templateSnippet, templateTitle } from "@/lib/templates/labels";
 import { usePersistentToggle } from "@/components/ui/use-persistent-toggle";
 
-const TOKEN_CLASS = "rounded bg-brand-navy/15 px-1 font-medium text-brand-navy";
+const TOKEN_CLASS = "rounded bg-brand-navy/15 px-1 font-medium text-brand-navy dark:bg-sky-300/15 dark:text-sky-300";
 
 /** Texto de la plantilla con los {{n}} resaltados. */
 function BodyWithTokens({ text }: { text: string }) {
@@ -219,7 +219,7 @@ export function TemplatePicker({
                           <button
                             type="button"
                             onClick={() => select(t)}
-                            className={`w-full min-w-0 rounded-md border px-3 py-2 text-left text-sm hover:border-brand-navy hover:bg-brand-navy/5 ${grid ? "h-full" : ""}`}
+                            className={`w-full min-w-0 rounded-md border px-3 py-2 text-left text-sm hover:border-brand-navy hover:bg-brand-navy/5 ${grid ? "flex h-full flex-col" : ""}`}
                           >
                             <span className="flex min-w-0 items-center gap-2">
                               <span className="truncate font-medium">{title}</span>
