@@ -6,13 +6,10 @@ import { z } from "zod";
 import { requireActiveMembership } from "@/lib/auth/active-organization";
 import { roleAllows, statement } from "@/lib/auth/permissions";
 import {
-  addComment as addCommentData,
-  deleteComment as deleteCommentData,
   getContactQualification as getContactQualificationData,
   listSizeRanges as listSizeRangesData,
   replaceSizeRanges as replaceSizeRangesData,
   setNumEntradas as setNumEntradasData,
-  updateComment as updateCommentData,
   updateContactQualification as updateContactQualificationData,
   updateEntrada as updateEntradaData,
 } from "@/lib/contacts/qualification";
@@ -31,7 +28,6 @@ function requirePermission(
 }
 
 const contactIdSchema = z.string().trim().min(1, "contactId es obligatorio.");
-const commentIdSchema = z.string().trim().min(1, "commentId es obligatorio.");
 const nullableInteger = (min: number, max: number, message: string) =>
   z.number().int(message).min(min, message).max(max, message).nullable();
 const moneySchema = z
@@ -93,11 +89,6 @@ const sizeRangesSchema = z
     }),
   )
   .max(100, "No puede haber más de 100 rangos de tallas.");
-const commentBodySchema = z
-  .string()
-  .trim()
-  .min(1, "El comentario no puede estar vacío.")
-  .max(5000, "El comentario no puede pasar de 5000 caracteres.");
 
 export async function getContactQualification(contactId: string) {
   const membership = await requireActiveMembership();
@@ -191,42 +182,4 @@ export async function replaceSizeRanges(ranges: z.input<typeof sizeRangesSchema>
   requirePermission(membership.role, "sizeRange", "update");
   const parsed = sizeRangesSchema.parse(ranges);
   return replaceSizeRangesData(db, membership.organizationId, parsed, membership.userId);
-}
-
-export async function addComment(contactId: string, body: string) {
-  const membership = await requireActiveMembership();
-  requirePermission(membership.role, "contact", "update");
-  const parsedContactId = contactIdSchema.parse(contactId);
-  const parsedBody = commentBodySchema.parse(body);
-  return addCommentData(
-    db,
-    membership.organizationId,
-    parsedContactId,
-    membership.userId,
-    parsedBody,
-  );
-}
-
-export async function updateComment(commentId: string, body: string) {
-  const membership = await requireActiveMembership();
-  requirePermission(membership.role, "contact", "update");
-  const parsedCommentId = commentIdSchema.parse(commentId);
-  const parsedBody = commentBodySchema.parse(body);
-  return updateCommentData(
-    db,
-    membership.organizationId,
-    parsedCommentId,
-    { userId: membership.userId, role: membership.role },
-    parsedBody,
-  );
-}
-
-export async function deleteComment(commentId: string) {
-  const membership = await requireActiveMembership();
-  requirePermission(membership.role, "contact", "update");
-  const parsedCommentId = commentIdSchema.parse(commentId);
-  return deleteCommentData(db, membership.organizationId, parsedCommentId, {
-    userId: membership.userId,
-    role: membership.role,
-  });
 }

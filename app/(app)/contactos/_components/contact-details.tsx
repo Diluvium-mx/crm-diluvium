@@ -4,7 +4,7 @@
 // Bandeja y en el pop-up de la tarjeta del Embudo. Orden acordado: nombre,
 // teléfono, (etapa y temperatura), ¿inundaciones?, ¿cuánta agua?, ¿cuántas
 // entradas?, ancho y tamaño por entrada, monto y pago, % de convencimiento, [interruptor
-// del bot → Fase B], comentarios y, al final compactos, correo y etiquetas.
+// del bot → Fase B] y, al final compactos, correo y etiquetas (sin Comentarios desde el 6-oct-2026).
 // Guardado automático al salir de cada campo (sin botón Guardar), con aviso
 // sutil. Etapa y temperatura las maneja el padre (cada vista las sincroniza a su
 // modo: el tablero con su estado optimista, la Bandeja con el suyo).
@@ -30,7 +30,6 @@ import {
   type Stage,
   type Temperature,
 } from "../_data/types";
-import { ContactComments } from "./contact-comments";
 import { ContactEntradas, type Entrada } from "./contact-entradas";
 import { ConvencimientoBar } from "./convencimiento-picker";
 import { useSaveStatus } from "./use-save-status";
@@ -104,7 +103,7 @@ function Field({
   );
 }
 
-// Encabezado de sección (Calificación, Agente IA, Comentarios).
+// Encabezado de sección (Calificación, Agente IA).
 function Section({ title, children }: { title: string; children: React.ReactNode }) {
   return (
     <section className="space-y-2 border-t pt-3">
@@ -116,8 +115,6 @@ function Section({ title, children }: { title: string; children: React.ReactNode
 
 // Cuánto dura la animación del campo que el agente acaba de llenar (igual que en globals.css).
 const FLASH_MS = 2_400;
-// Autor de sistema de los comentarios del agente (migración 0037; lib/contacts/qualification.ts).
-const AGENT_AI_AUTHOR_ID = "usuario-sistema-agente-ia";
 
 // Campo de la calificación → su llave de origen (lib/contacts/qualification.ts).
 const IA_KEY: Record<QualField, string> = {
@@ -271,7 +268,7 @@ export function ContactDetails({
     reloadRef.current = reload;
   }, [reload]);
 
-  // Recargas PARCIALES (tras cambiar las entradas o los comentarios): solo esa
+  // Recargas PARCIALES (tras cambiar las entradas): solo esa
   // parte, sin pisar lo que el vendedor esté tecleando en otros campos. Cada una
   // en su carril: una relectura vieja no pisa a una más nueva.
   //
@@ -305,20 +302,13 @@ export function ContactDetails({
     if (write) await syncEntradas().catch(() => undefined);
     throw outcome.error;
   }
-  async function refreshComments() {
-    const outcome = await saves.save("comentarios", () => getContactDetails(contactId));
-    if (outcome.status === "superseded" || !outcome.latest) return;
-    if (outcome.status === "failed") throw outcome.error;
-    const fresh = outcome.result;
-    setDetails((d) => (d ? { ...d, comentarios: fresh.comentarios } : d));
-  }
 
   useEffect(() => {
     const t = setTimeout(() => void reload(), 0);
     return () => clearTimeout(t);
   }, [reload]);
 
-  // Tiempo real: la cotización, los campos del Detalle o los comentarios de ESTE
+  // Tiempo real: la cotización o los campos del Detalle de ESTE
   // contacto cambiaron (o el SSE se reconectó). Ventana fija de 500 ms: varios
   // cambios seguidos = una lectura. Las lecturas van en su carril: solo se aplica
   // la última. Se salta lo que el vendedor tiene en curso: un campo con guardado
@@ -362,7 +352,7 @@ export function ContactDetails({
     }
     if (event.type !== "contact.updated" || event.contactId !== contactId) return;
     // La etapa también: su marca "IA" depende de quién la movió al último.
-    if (event.changes.some((change) => change === "etapa" || change === "cotizacion" || change === "detalle" || change === "comentarios")) scheduleLive();
+    if (event.changes.some((change) => change === "etapa" || change === "cotizacion" || change === "detalle")) scheduleLive();
     // El agente movió la etapa: se ilumina cuando llegue la lectura (con su marca "IA").
     if (event.by.kind === "agente" && event.changes.includes("etapa")) etapaByAgent.current = true;
   });
@@ -381,7 +371,7 @@ export function ContactDetails({
     if (outcome.status !== "saved" || !outcome.latest) return;
     liveRetry.current.ms = 0;
     const fresh = outcome.result;
-    const busy = new Set([...QUAL_FIELDS, "entradas", "comentarios"].filter((lane) => tracker.touchedSince(lane, snap)));
+    const busy = new Set([...QUAL_FIELDS, "entradas"].filter((lane) => tracker.touchedSince(lane, snap)));
     if (busy.size > 0) void tracker.whenIdle([...busy]).then(() => scheduleLive());
     const freshQ = qualificationOf(fresh);
     if (confirmed.current) {
@@ -402,9 +392,6 @@ export function ContactDetails({
         const anchos = (d: Details) => d.entradas.map((e) => `${e.posicion}:${e.anchoCm ?? ""}`).join(",");
         if (anchos(prev) !== anchos(fresh) && fresh.iaFields.some((k) => k.startsWith("entrada_"))) changed.push("entradas");
       }
-      // Un comentario nuevo del Agente IA.
-      const seen = new Set(prev.comentarios.map((c) => c.id));
-      if (!busy.has("comentarios") && fresh.comentarios.some((c) => !seen.has(c.id) && c.author.id === AGENT_AI_AUTHOR_ID)) changed.push("comentarios");
       if (etapaByAgent.current && fresh.iaFields.includes("etapa")) changed.push("etapa");
       etapaByAgent.current = false;
       flashKeys(changed);
@@ -417,7 +404,6 @@ export function ContactDetails({
         next.numEntradas = fresh.numEntradas;
         next.entradas = fresh.entradas;
       }
-      if (!busy.has("comentarios")) next.comentarios = fresh.comentarios;
       // Marca "IA" (parte 1): la del servidor, salvo en lo que el vendedor está guardando
       // ahí mismo (ahí manda lo local: al editarlo, el campo ya es suyo).
       const busyKey = (k: string) =>
@@ -498,7 +484,7 @@ export function ContactDetails({
         </div>
       </div>
       {/* Errores fuera de la zona con scroll: se ven aunque el vendedor esté
-          abajo (en los comentarios). */}
+          abajo. */}
       {(status.state === "error" || error) && (
         <p role="alert" className="border-b bg-brand-orange/10 px-4 py-1.5 text-xs text-brand-orange">
           {status.state === "error" ? status.message : error}
@@ -791,12 +777,6 @@ export function ContactDetails({
             {/* El ÚNICO control del agente en esta conversación (26-sep-2026). */}
             <Section title="Agente IA">
               <AgentContactSwitch contactId={contactId} conversationId={conversationId} />
-            </Section>
-
-            <Section title="Comentarios">
-              <div data-ia-flash={lit("comentarios") ? "" : undefined} className="-mx-1.5 px-1.5 py-1">
-                <ContactComments contactId={contactId} comments={details.comentarios} viewer={details.viewer} run={run} onChanged={refreshComments} />
-              </div>
             </Section>
 
             <div className="space-y-1 border-t pt-3 text-xs text-muted-foreground">

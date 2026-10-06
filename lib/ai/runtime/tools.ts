@@ -70,14 +70,13 @@ export const actualizarDetalleSchema = z.object({
   num_entradas: z.number().nullable().optional().describe(`Cuántas entradas quiere proteger${SIN_DATO}`),
   anchos_cm: z.array(z.number()).nullable().optional().describe(`Ancho de cada entrada ${ANCHO_EN_CM}, en orden (uno por entrada)${SIN_DATO}`),
   porcentaje_convencimiento: z.number().nullable().optional().describe("Qué tan convencido está de comprar: 0 a 100, de 10 en 10"),
-  comentario: z.string().nullable().optional().describe(`Un dato útil NUEVO que dio el cliente, en una frase (p. ej. "tiene cochera con desnivel")${SIN_DATO}`),
 });
 
 // "DESPUÉS de tu respuesta…": medido con Sonnet 5 real (26-sep-2026), sin esa frase 2 de
 // 19 respuestas salieron SOLO con acciones (el cliente habría recibido el texto de
 // respaldo en vez de su respuesta); con ella, 0 (detalle en docs/agente-ia.md).
 export const ACTUALIZAR_DETALLE_DESCRIPTION =
-  "Guarda en el Detalle del contacto (el cliente no lo ve) lo que el cliente dijo en el chat. Siempre va DESPUÉS de tu respuesta escrita al cliente, nunca en su lugar. Llena solo con lo que él dijo, sin adivinar ni suponer, y manda solo lo nuevo o lo que cambió. Actualiza el % de convencimiento conforme avance la conversación. El comentario no repite los ya guardados.";
+  "Guarda en el Detalle del contacto (el cliente no lo ve) lo que el cliente dijo en el chat. Siempre va DESPUÉS de tu respuesta escrita al cliente, nunca en su lugar. Llena solo con lo que él dijo, sin adivinar ni suponer, y manda solo lo nuevo o lo que cambió. Actualiza el % de convencimiento conforme avance la conversación.";
 
 export type DetalleIa = {
   tieneInundaciones?: "si" | "no" | "no_sabe";
@@ -86,7 +85,6 @@ export type DetalleIa = {
   numEntradas?: number;
   anchosCm?: number[];
   porcentajeConvencimiento?: number;
-  comentario?: string;
 };
 
 // Validación CAMPO POR CAMPO con los mismos límites que el Detalle en la UI
@@ -118,8 +116,6 @@ export function parseDetalle(input: unknown): DetalleIa | null {
   }
   const pct = num(raw.porcentaje_convencimiento);
   if (pct !== null && pct >= 0 && pct <= 100) out.porcentajeConvencimiento = Math.round(pct / 10) * 10;
-  const comentario = text(raw.comentario, 500);
-  if (comentario) out.comentario = comentario;
   return Object.keys(out).length ? out : null;
 }
 

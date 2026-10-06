@@ -8,16 +8,15 @@
 //   escribió al último: pinta la marca "IA" y le avisa al modelo qué corrigió un vendedor;
 // - escribe SIEMPRE con las funciones de lib/contacts/qualification.ts (así el aviso
 //   "contacto actualizado" en vivo las cubre igual que a un vendedor);
-// - sus comentarios van firmados por "Agente IA" (usuario de sistema, 0037).
+// - sin comentarios (6-oct-2026, dueño): la sección Comentarios del Detalle se quitó porque
+//   ningún vendedor la veía; el Agente IA y el lector ya no los escriben ni los leen.
 // Nunca lanza hacia afuera: el Detalle es de apoyo y no debe frenar la respuesta.
 // Multi-tenant (CLAUDE.md §7): todo filtra por organization_id.
-import { and, asc, desc, eq } from "drizzle-orm";
+import { and, asc, eq } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { contacts } from "@/lib/db/schema/contacts";
-import { contactComentarios, contactEntradas } from "@/lib/db/schema/qualification";
+import { contactEntradas } from "@/lib/db/schema/qualification";
 import {
-  addComment,
-  AGENT_AI_USER_ID,
   DETALLE_KEY,
   detallePorOf,
   entradaKey,
@@ -26,29 +25,23 @@ import {
   updateEntrada,
   type ContactQualificationPatch,
 } from "@/lib/contacts/qualification";
-import { normalizeSearch } from "@/lib/text/search";
 import type { DetalleIa, ValidToolCall } from "./tools";
 
-export const MAX_COMENTARIOS_POR_RESPUESTA = 2;
 // Quién escribe (aviso en vivo "contacto actualizado") y, con ello, el origen "agente".
 const AGENTE_IA = { kind: "agente" } as const;
 
-export type DetallePedido = { campos: Omit<DetalleIa, "comentario">; comentarios: string[] };
+export type DetallePedido = { campos: DetalleIa };
 
-// Varias llamadas en una respuesta: gana el último valor de cada campo; los
-// comentarios se juntan (sin repetir, máximo 2).
+// Varias llamadas en una respuesta: gana el último valor de cada campo.
 export function mergeDetalle(calls: readonly ValidToolCall[]): DetallePedido | null {
-  const campos: Omit<DetalleIa, "comentario"> = {};
-  const comentarios: string[] = [];
+  const campos: DetalleIa = {};
   let any = false;
   for (const c of calls) {
     if (c.kind !== "detalle") continue;
     any = true;
-    const { comentario, ...rest } = c.detalle;
-    Object.assign(campos, rest);
-    if (comentario && !comentarios.some((x) => normalizeSearch(x) === normalizeSearch(comentario))) comentarios.push(comentario);
+    Object.assign(campos, c.detalle);
   }
-  return any ? { campos, comentarios: comentarios.slice(0, MAX_COMENTARIOS_POR_RESPUESTA) } : null;
+  return any ? { campos } : null;
 }
 
 // `delVendedor`: campos que el agente corrigió sobre lo último que puso un vendedor (log).
@@ -131,36 +124,13 @@ export async function applyDetalleByAgent(organizationId: string, contactId: str
         out.llenados.push(entradaKey(posicion, "ancho"));
       }
     }
-
-    // Comentarios firmados por "Agente IA", sin repetir uno ya guardado (de quien sea).
-    // Cada uno en su punto de guardado: si falla, lo demás del Detalle se queda.
-    if (pedido.comentarios.length) {
-      const existing = await tx
-        .select({ body: contactComentarios.body })
-        .from(contactComentarios)
-        .where(and(eq(contactComentarios.organizationId, organizationId), eq(contactComentarios.contactId, contactId)));
-      const seen = new Set(existing.map((e) => normalizeSearch(e.body)));
-      for (const body of pedido.comentarios) {
-        if (seen.has(normalizeSearch(body))) continue;
-        try {
-          await tx.transaction((sp) => addComment(sp, organizationId, contactId, AGENT_AI_USER_ID, body));
-          seen.add(normalizeSearch(body));
-          out.llenados.push("comentario");
-        } catch (error) {
-          console.error(`[agente] comentario del Detalle no guardado (${contactId})`, error);
-        }
-      }
-    }
   });
   return out;
 }
 
 // Lo que ya dice el Detalle, para el contexto del CRM del último turno del cliente
-// (no en el system: la caché del prompt se mantiene). Solo los comentarios del PROPIO
-// agente: las notas internas de los vendedores no se le pasan al modelo (podría
-// repetírselas al cliente).
+// (no en el system: la caché del prompt se mantiene).
 const INUNDACIONES_LABEL = { si: "sí", no: "no", no_sabe: "no sabe" } as const;
-export const MAX_COMENTARIOS_EN_CONTEXTO = 5;
 
 export async function detalleContextFor(organizationId: string, contactId: string): Promise<string> {
   const [c] = await db
@@ -180,25 +150,11 @@ export async function detalleContextFor(organizationId: string, contactId: strin
   // cliente dice otra cosa, lo corrige), pero pudo saberlo por teléfono.
   const por = detallePorOf(c.customFields);
   const v = (...keys: string[]) => (keys.some((k) => por[k] === "vendedor") ? " (lo corrigió un vendedor)" : "");
-  const [entradas, propios] = await Promise.all([
-    db
-      .select({ anchoCm: contactEntradas.anchoCm })
-      .from(contactEntradas)
-      .where(and(eq(contactEntradas.organizationId, organizationId), eq(contactEntradas.contactId, contactId)))
-      .orderBy(asc(contactEntradas.posicion)),
-    db
-      .select({ body: contactComentarios.body })
-      .from(contactComentarios)
-      .where(
-        and(
-          eq(contactComentarios.organizationId, organizationId),
-          eq(contactComentarios.contactId, contactId),
-          eq(contactComentarios.authorUserId, AGENT_AI_USER_ID),
-        ),
-      )
-      .orderBy(desc(contactComentarios.createdAt))
-      .limit(MAX_COMENTARIOS_EN_CONTEXTO),
-  ]);
+  const entradas = await db
+    .select({ anchoCm: contactEntradas.anchoCm })
+    .from(contactEntradas)
+    .where(and(eq(contactEntradas.organizationId, organizationId), eq(contactEntradas.contactId, contactId)))
+    .orderBy(asc(contactEntradas.posicion));
   const partes: string[] = [];
   if (c.tieneInundaciones) partes.push(`inundaciones: ${INUNDACIONES_LABEL[c.tieneInundaciones]}${v(DETALLE_KEY.tieneInundaciones)}`);
   if (c.nivelAguaCm !== null || c.nivelAguaTexto) {
@@ -213,6 +169,5 @@ export async function detalleContextFor(organizationId: string, contactId: strin
   }
   if (c.porcentajeConvencimiento !== null) partes.push(`convencimiento: ${c.porcentajeConvencimiento} %`);
   const lines = [`Detalle guardado del contacto: ${partes.length ? partes.join(" · ") : "vacío"}.`];
-  if (propios.length) lines.push(`Comentarios que ya guardaste: ${propios.map((p) => `«${p.body.slice(0, 150)}»`).join(" · ")}.`);
   return lines.join("\n");
 }

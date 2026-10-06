@@ -62,7 +62,7 @@ describe.skipIf(!TEST_DATABASE_URL)("Detalle del contacto llenado por el Agente 
   const pedido = (campos: Record<string, unknown>) => detalle.mergeDetalle([{ kind: "detalle", detalle: tools.parseDetalle(campos)! }])!;
   const details = () => q.getContactQualification(db, ORG, CONTACT);
 
-  it("llena los 7 campos vacíos: marca 'IA', tamaño sugerido por ancho y comentario firmado \"Agente IA\"", async () => {
+  it("llena los 7 campos vacíos: marca 'IA', tamaño sugerido por ancho y ningún comentario (6-oct-2026)", async () => {
     const r = await detalle.applyDetalleByAgent(
       ORG,
       CONTACT,
@@ -84,8 +84,7 @@ describe.skipIf(!TEST_DATABASE_URL)("Detalle del contacto llenado por el Agente 
       [2, 105],
     ]);
     expect(dt.entradas.every((e) => e.tamanoSugerido !== null)).toBe(true);
-    expect(dt.comentarios).toHaveLength(1);
-    expect(dt.comentarios[0]).toMatchObject({ body: "Tiene cochera con desnivel", author: { id: q.AGENT_AI_USER_ID, name: "Agente IA" } });
+    expect(dt.comentarios).toEqual([]); // el comentario que mande un modelo viejo se ignora
     expect([...dt.iaFields].sort()).toEqual(
       ["entrada_1_ancho", "entrada_2_ancho", "nivel_agua_cm", "nivel_agua_texto", "num_entradas", "porcentaje_convencimiento", "tiene_inundaciones"].sort(),
     );
@@ -143,15 +142,6 @@ describe.skipIf(!TEST_DATABASE_URL)("Detalle del contacto llenado por el Agente 
     expect(dt.entradas.map((e) => e.anchoCm)).toEqual([80, 85]);
   });
 
-  it("comentarios: no repite uno ya guardado (de quien sea, sin importar acentos ni mayúsculas)", async () => {
-    await q.addComment(db, ORG, CONTACT, VENDEDOR, "Tiene cochera con desnivel");
-    await detalle.applyDetalleByAgent(ORG, CONTACT, pedido({ comentario: "tiene COCHERA con desnível" }));
-    await detalle.applyDetalleByAgent(ORG, CONTACT, pedido({ comentario: "Vive frente a un canal" }));
-    await detalle.applyDetalleByAgent(ORG, CONTACT, pedido({ comentario: "vive frente a un canal" }));
-    const bodies = (await details()).comentarios.map((c) => `${c.author.name}: ${c.body}`).sort();
-    expect(bodies).toEqual(["Agente IA: Vive frente a un canal", "Vendedora: Tiene cochera con desnivel"]);
-  });
-
   it("\"no sabe\" nunca borra un sí/no que ya dijo el cliente (relleno del modelo); sí llena uno vacío", async () => {
     await detalle.applyDetalleByAgent(ORG, CONTACT, pedido({ tiene_inundaciones: "si" }));
     await detalle.applyDetalleByAgent(ORG, CONTACT, pedido({ tiene_inundaciones: "no_sabe" }));
@@ -170,13 +160,13 @@ describe.skipIf(!TEST_DATABASE_URL)("Detalle del contacto llenado por el Agente 
     expect(ajeno.numEntradas).toBeNull();
   });
 
-  it("contexto para el modelo: lo guardado y SOLO los comentarios del agente (las notas de los vendedores no)", async () => {
+  it("contexto para el modelo: lo guardado, sin comentarios (6-oct-2026)", async () => {
     expect(await detalle.detalleContextFor(ORG, CONTACT)).toBe("Detalle guardado del contacto: vacío.");
     await detalle.applyDetalleByAgent(ORG, CONTACT, pedido({ tiene_inundaciones: "si", nivel_agua_cm: 40, anchos_cm: [95], porcentaje_convencimiento: 60, comentario: "Tiene cochera con desnivel" }));
     await q.addComment(db, ORG, CONTACT, VENDEDOR, "Nota interna: no darle descuento");
     let ctx = await detalle.detalleContextFor(ORG, CONTACT);
     expect(ctx).toContain("inundaciones: sí · agua: 40 cm · entradas: 1 (anchos: 95 cm) · convencimiento: 60 %");
-    expect(ctx).toContain("«Tiene cochera con desnivel»");
+    expect(ctx).not.toContain("cochera");
     expect(ctx).not.toContain("descuento");
     // Lo que corrigió un vendedor se le dice al modelo (pudo saberlo por teléfono).
     await q.setNumEntradas(db, ORG, CONTACT, 2, POR_VENDEDOR);

@@ -127,7 +127,7 @@ describe.skipIf(!TEST_DATABASE_URL)("Lector en segundo plano (Postgres real)", (
     expect(c).toMatchObject({ tieneInundaciones: "si", numEntradas: 1, montoCotizacion: "5500.00", pagoTotal: "2750.00", porcentajeConvencimiento: 80, stage: "interesado", stageChangedBy: "agente" });
     const det = await q.getContactQualification(db, ORG, CONTACT);
     expect(det.iaFields).toEqual(expect.arrayContaining(["monto_cotizacion", "pago_total", "etapa", "num_entradas"]));
-    expect(det.comentarios.map((x) => x.body)).toEqual(["Cambió de 2 a 1 compuerta"]);
+    expect(det.comentarios).toEqual([]); // sin comentarios desde el 6-oct-2026
     expect(await db.select().from(s.workflowRuns)).toHaveLength(0);
 
     const [u] = await db.select().from(s.aiUsage);
