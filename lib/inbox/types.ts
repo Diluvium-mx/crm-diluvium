@@ -161,9 +161,11 @@ export type MessageView = {
   /**
    * Primer mensaje que WhatsApp no pasó al CRM (Meta 131060, caso SDA): "verificando"
    * los primeros segundos, "sin_contenido" si se confirmó. `body` ya trae el texto de
-   * la tarjeta. null = mensaje normal.
+   * la tarjeta. "instagram_sin_ver": lo que el cliente mandó por Instagram y el CRM no puede
+   * mostrar (foto o video temporal, contenido que Meta no deja ver), también como tarjeta
+   * (lib/messaging/instagram-unviewable.ts). null = mensaje normal.
    */
-  noDisponible: "verificando" | "sin_contenido" | null;
+  noDisponible: "verificando" | "sin_contenido" | "instagram_sin_ver" | null;
 };
 
 /** Página de mensajes en orden cronológico (viejo → nuevo); `hasMore` = hay más viejos. */
