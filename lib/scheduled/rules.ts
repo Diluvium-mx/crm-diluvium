@@ -1,7 +1,7 @@
 // Reglas puras de los mensajes programados (A6): hora local de Mazatlán ↔
 // instante UTC, límites de fecha y si la ventana de 24 h seguirá abierta a la
 // hora de envío. Sin base de datos, para testearlas solas.
-import { canSendFreeForm } from "@/lib/messaging/rules";
+import { canSendFreeForm, humanAgentExpiresAt } from "@/lib/messaging/rules";
 
 export const SCHEDULE_TIME_ZONE = "America/Mazatlan";
 /** Mínimo de anticipación: menos que esto es "enviar ahora". */
@@ -80,6 +80,39 @@ export const SEND_AT_MESSAGES: Record<SendAtError, string> = {
  */
 export function textAllowedAt(windowExpiresAt: Date | null, sendAt: Date, platform: string = "whatsapp"): boolean {
   return canSendFreeForm(platform, windowExpiresAt, sendAt, true);
+}
+
+/**
+ * Último instante en que todavía se puede mandar TEXTO libre (exclusivo): WhatsApp, el cierre
+ * de la ventana de 24 h; Instagram, el fin de los 7 días de un vendedor. null = sin ventana.
+ */
+export function textDeadline(windowExpiresAt: Date | null, platform: string = "whatsapp"): Date | null {
+  return platform === "instagram" ? humanAgentExpiresAt(windowExpiresAt) : windowExpiresAt;
+}
+
+/** Menos que esto antes del cierre = ya no da tiempo de programar texto (se va a Plantilla). */
+export const TEXT_MIN_MARGIN_MS = 2 * 60_000;
+
+/** ¿Todavía da tiempo de programar texto? (la ventana sigue abierta al menos 2 min más). */
+export function canScheduleText(windowExpiresAt: Date | null, platform: string = "whatsapp", now: Date = new Date()): boolean {
+  const deadline = textDeadline(windowExpiresAt, platform);
+  return deadline !== null && deadline.getTime() - now.getTime() >= TEXT_MIN_MARGIN_MS;
+}
+
+/**
+ * `max` del selector de fecha en modo Texto: el último minuto en hora de Mazatlán que
+ * todavía cae ANTES del cierre (redondeado hacia abajo; si cierra en punto, el minuto anterior).
+ */
+export function textMaxLocal(windowExpiresAt: Date | null, platform: string = "whatsapp"): string | null {
+  const deadline = textDeadline(windowExpiresAt, platform);
+  if (!deadline) return null;
+  return instantToLocal(new Date(Math.floor((deadline.getTime() - 1) / 60_000) * 60_000));
+}
+
+/** Acota una hora local ("2026-10-07T15:21") entre `min` y `max` (mismo formato, se comparan como texto). */
+export function clampLocal(local: string, min: string, max: string | null): string {
+  if (max !== null && local > max) return max < min ? min : max;
+  return local < min ? min : local;
 }
 
 /** Motivo cuando a esa hora ya no se podrá mandar texto. */

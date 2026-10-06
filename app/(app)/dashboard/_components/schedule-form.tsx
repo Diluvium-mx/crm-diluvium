@@ -1,12 +1,24 @@
 "use client";
 
 // Formulario para programar (o editar) un mensaje (A6). Fecha y hora en hora
-// de Mazatlán. Si a esa hora la ventana de 24 h ya estará cerrada, solo deja
-// elegir PLANTILLA (el servidor lo vuelve a validar al programar y al enviar).
+// de Mazatlán. El TEXTO solo puede salir con la ventana de 24 h abierta (Instagram:
+// 7 días): en modo Texto el selector de fecha no pasa del cierre y se dice hasta
+// cuándo; si ya cerró o cierra en menos de 2 min, Texto queda deshabilitado y abre
+// en Plantilla. El servidor lo vuelve a validar al programar y al enviar.
 import { useRef, useState } from "react";
 import { X } from "lucide-react";
 import { scheduleMessage, updateScheduledMessage } from "@/lib/actions/scheduled";
-import { instantToLocal, localToInstant, textAllowedAt, textClosedMessage } from "@/lib/scheduled/rules";
+import {
+  canScheduleText,
+  clampLocal,
+  instantToLocal,
+  localToInstant,
+  MAX_LEAD_MS,
+  textAllowedAt,
+  textClosedMessage,
+  textMaxLocal,
+} from "@/lib/scheduled/rules";
+import { deadlineLong, deadlineShort } from "@/lib/scheduled/deadline-format";
 import type { ScheduledView } from "@/lib/scheduled/types";
 import { TemplatePicker } from "./template-picker";
 import { CloseX } from "@/components/ui/close-x";
@@ -43,14 +55,28 @@ export function ScheduleForm({
   timePhrase?: string;
 }) {
   const editing = mode.type === "edit" ? mode.item : null;
-  const [when, setWhen] = useState(() => (editing ? instantToLocal(new Date(editing.sendAt)) : defaultWhen()));
-  // Mínimo del selector, fijado al abrir el formulario (el servidor valida la hora real).
+  // Límites fijados al abrir el formulario (el servidor valida la hora real): mínimo 1 min
+  // adelante; máximo 60 días (Plantilla) o el cierre de la ventana (Texto).
   const [minWhen] = useState(() => instantToLocal(new Date(Date.now() + 60_000)));
+  const [maxLeadWhen] = useState(() => instantToLocal(new Date(Date.now() + MAX_LEAD_MS)));
+  // ¿Da tiempo de programar texto? (ventana abierta 2 min más o más). El composer ya manda
+  // templateOnly si está cerrada; esto cubre además el «cierra en un momento».
+  const [textOpen] = useState(() => canScheduleText(windowExpiresAt, channelType));
+  const textMax = textOpen ? textMaxLocal(windowExpiresAt, channelType) : null;
+  const textDeadlineAt = textMax ? localToInstant(textMax) : null;
+  const canUseText = textOpen && !(mode.type === "new" && mode.templateOnly);
+  // Instagram no tiene plantillas: solo texto.
+  const canUseTemplate = channelType === "whatsapp";
+  const [kind, setKind] = useState<"text" | "template">(
+    editing ? editing.kind : canUseText || !canUseTemplate ? "text" : "template",
+  );
+  const [when, setWhen] = useState(() => {
+    if (editing) return instantToLocal(new Date(editing.sendAt));
+    // En Texto, la propuesta (1 h) no pasa del cierre de la ventana.
+    return kind === "text" && textMax ? clampLocal(defaultWhen(), minWhen, textMax) : defaultWhen();
+  });
   const [cancelIfInbound, setCancelIfInbound] = useState(editing ? editing.cancelIfInbound : true);
   const [text, setText] = useState(editing ? editing.body : mode.type === "new" ? mode.initialText : "");
-  const [kind, setKind] = useState<"text" | "template">(
-    editing ? editing.kind : mode.type === "new" && mode.templateOnly ? "template" : "text",
-  );
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   // Candado síncrono contra el doble clic (el estado `saving` llega un render tarde).
@@ -58,9 +84,18 @@ export function ScheduleForm({
 
   const sendAt = localToInstant(when);
   const textOk = sendAt ? textAllowedAt(windowExpiresAt, sendAt, channelType) : true;
-  const canUseText = !(mode.type === "new" && mode.templateOnly);
-  // Instagram no tiene plantillas: solo texto.
-  const canUseTemplate = channelType === "whatsapp";
+  const maxWhen = kind === "text" ? (textMax ?? minWhen) : maxLeadWhen;
+  const textLimitLabel = textDeadlineAt ? deadlineShort(textDeadlineAt) : null;
+  const textDisabledReason =
+    channelType === "instagram"
+      ? "Pasaron más de 7 días desde el último mensaje del cliente: Instagram no deja escribirle."
+      : "La ventana de 24 h ya cerró (o cierra en menos de 2 min): solo se puede programar una plantilla.";
+
+  function chooseKind(next: "text" | "template") {
+    setKind(next);
+    // Al pasar a Texto, si la hora elegida ya queda después del cierre, se ajusta al máximo permitido.
+    if (next === "text" && textMax) setWhen((current) => clampLocal(current, minWhen, textMax));
+  }
 
   async function submit(action: () => ReturnType<typeof scheduleMessage>) {
     if (inFlight.current) return;
@@ -111,6 +146,7 @@ export function ScheduleForm({
             type="datetime-local"
             value={when}
             min={minWhen}
+            max={maxWhen}
             onChange={(event) => setWhen(event.target.value)}
             className="rounded-md border bg-background px-2 py-1.5 text-sm"
           />
@@ -119,26 +155,40 @@ export function ScheduleForm({
           <input type="checkbox" checked={cancelIfInbound} onChange={(event) => setCancelIfInbound(event.target.checked)} />
           <span>Cancelar si el cliente escribe antes</span>
         </label>
-        {!editing && canUseText && canUseTemplate && (
+        {!editing && canUseTemplate && (
           <div role="radiogroup" aria-label="Tipo de mensaje" className="ml-auto flex gap-1 rounded-lg bg-muted p-1">
-            {(["text", "template"] as const).map((k) => (
-              <button
-                key={k}
-                type="button"
-                role="radio"
-                aria-checked={kind === k}
-                onClick={() => setKind(k)}
-                className={`rounded-md px-2 py-1 ${kind === k ? "bg-card font-medium shadow-sm" : "text-muted-foreground"}`}
-              >
-                {k === "text" ? "Texto" : "📄 Plantilla"}
-              </button>
-            ))}
+            {(["text", "template"] as const).map((k) => {
+              const disabled = k === "text" && !canUseText;
+              return (
+                <button
+                  key={k}
+                  type="button"
+                  role="radio"
+                  aria-checked={kind === k}
+                  disabled={disabled}
+                  title={disabled ? textDisabledReason : k === "text" && textDeadlineAt ? `El texto solo puede salir hasta ${deadlineLong(textDeadlineAt)} (Mazatlán)` : undefined}
+                  onClick={() => chooseKind(k)}
+                  className={`rounded-md px-2 py-1 disabled:cursor-not-allowed disabled:opacity-50 ${kind === k ? "bg-card font-medium shadow-sm" : "text-muted-foreground"}`}
+                >
+                  {k === "template" ? "📄 Plantilla" : disabled ? "Texto · ventana cerrada" : textLimitLabel ? `Texto · hasta ${textLimitLabel}` : "Texto"}
+                </button>
+              );
+            })}
           </div>
         )}
       </div>
 
       {kind === "text" ? (
         <div className="mt-2 space-y-2">
+          {textDeadlineAt ? (
+            <p className="text-xs text-muted-foreground">
+              {channelType === "instagram"
+                ? `En Instagram el texto solo puede salir hasta 7 días después del último mensaje del cliente: hasta ${deadlineLong(textDeadlineAt)} (Mazatlán).`
+                : `El texto solo puede salir mientras la ventana de 24 h esté abierta: hasta ${deadlineLong(textDeadlineAt)} (Mazatlán). Para después, usa una plantilla.`}
+            </p>
+          ) : (
+            <p className="text-xs text-amber-700 dark:text-amber-300">{textDisabledReason}</p>
+          )}
           <textarea
             value={text}
             onChange={(event) => setText(event.target.value)}
@@ -146,7 +196,7 @@ export function ScheduleForm({
             placeholder="Mensaje a enviar"
             className="w-full resize-y rounded-md border bg-background px-3 py-2 text-sm outline-none focus:border-brand-navy focus:ring-2 focus:ring-brand-navy/30"
           />
-          {!textOk && (
+          {!textOk && textDeadlineAt && (
             <p className="text-xs text-amber-700 dark:text-amber-300">
               {channelType === "instagram"
                 ? textClosedMessage("instagram")
@@ -181,7 +231,10 @@ export function ScheduleForm({
           </div>
         </div>
       ) : (
-        <div className="mt-2">
+        <div className="mt-2 space-y-2">
+          <p className="text-xs text-muted-foreground">
+            Las plantillas aprobadas por Meta se pueden mandar a cualquier hora, aunque la ventana esté cerrada.
+          </p>
           <TemplatePicker
             firstName={firstName}
             timePhrase={timePhrase}
