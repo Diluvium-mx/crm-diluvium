@@ -129,7 +129,7 @@ describe.skipIf(!TEST_DATABASE_URL)("Seguimientos en modo REAL (proveedor falso)
     await store.followUpSweepOnce(at, { provider });
     await store.followUpSweepOnce(at, { provider });
     expect(sent).toHaveLength(1);
-    expect(sent[0].text).toBe("Hola Ana, buenas noches. ¿Pudo medir el ancho de su cochera?");
+    expect(sent[0].text).toBe("Hola, buenas noches, le escribo de parte del equipo de Diluvium. ¿Pudo medir el ancho de su cochera?");
     const [m] = await db.select().from(s.messages).where(d.eq(s.messages.id, sent[0].key));
     expect(m).toMatchObject({ source: "ai_agent", sentByUserId: null, direction: "out" });
     expect(m.metadata).toMatchObject({ seguimiento: { followUpId: r.id, intento: 1 } });
