@@ -88,14 +88,19 @@ export async function manualPauseOf(organizationId: string, conversationId: stri
  * con 📄 o 🕒 también cuentan; decisión del dueño, 3-oct-2026) y las de seguimiento que salieron
  * o, en ensayo, que habrían salido. Nunca dos en menos de 7 días.
  */
-async function lastTemplateAt(organizationId: string, contactId: string, now: Date): Promise<Date | null> {
+async function lastTemplateAt(organizationId: string, contactId: string, now: Date, real: boolean): Promise<Date | null> {
   const since = new Date(now.getTime() - 30 * 24 * 60 * 60_000);
-  const rows = await db
-    .select({ intentos: followUps.intentos })
-    .from(followUps)
-    .where(and(eq(followUps.organizationId, organizationId), eq(followUps.contactId, contactId), gte(followUps.createdAt, since)));
   let last: number | null = null;
-  for (const r of rows) for (const a of r.intentos) if (a.door === "plantilla") last = Math.max(last ?? 0, Date.parse(a.at));
+  // En ensayo cuentan las que "habrían salido" (para que el ensayo se parezca a lo real). En real
+  // NO: una plantilla que nunca le llegó al cliente no lo cansa (6-oct-2026); las reales salen de
+  // la tabla de mensajes de abajo.
+  if (!real) {
+    const rows = await db
+      .select({ intentos: followUps.intentos })
+      .from(followUps)
+      .where(and(eq(followUps.organizationId, organizationId), eq(followUps.contactId, contactId), gte(followUps.createdAt, since)));
+    for (const r of rows) for (const a of r.intentos) if (a.door === "plantilla") last = Math.max(last ?? 0, Date.parse(a.at));
+  }
   const [sent] = await db
     .select({ at: sql<Date | null>`max(coalesce(${messages.sentAt}, ${messages.createdAt}))`.mapWith(messages.createdAt) })
     .from(messages)
@@ -185,7 +190,7 @@ async function loadSignals(
     // propia regla de 7 días (docs/instagram.md); sus seguimientos quedan para después.
     channelOn: row.mode === "auto" && row.channelType === "whatsapp",
     windowExpiresAt: row.windowExpiresAt,
-    lastTemplateAt: await lastTemplateAt(organizationId, contactId, now),
+    lastTemplateAt: await lastTemplateAt(organizationId, contactId, now, await followUpsReal(organizationId)),
     approved: await approvedTemplateNames(organizationId),
     lastClientAt: row.lastInboundAt ?? (row.windowExpiresAt ? new Date(row.windowExpiresAt.getTime() - 24 * 60 * 60_000) : null),
     sinSeguimientos: row.sinSeguimientos,
