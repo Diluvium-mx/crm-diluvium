@@ -2246,6 +2246,27 @@ describe.skipIf(!TEST_DATABASE_URL)("runtime del Agente IA (Postgres real)", () 
     expect(z.calls()).toBe(0);
   });
 
+  // ── Letras de otro alfabeto (6-oct-2026, dueño: sin pausa, que el cliente reciba su respuesta) ──
+  it("caso 6-oct: la burbuja «娱乐平台招商» detrás de una pregunta buena se borra; sale la pregunta, sin tarjeta ni pausa", async () => {
+    await msg({ direction: "in", body: "Si", at: ago(20_000) });
+    const z = fakeZernio();
+    const r = await run.runAgent(JOB, makeDeps({ brain: ["¿Aproximadamente hasta qué nivel le sube el agua?\n\n娱乐平台招商"] }, z).deps);
+    expect(r).toEqual({ kind: "sent", bubbles: 1 });
+    expect(z.delivered).toEqual(["¿Aproximadamente hasta qué nivel le sube el agua?"]);
+    expect(await openCard()).toBeFalsy();
+    expect(await agentError.hasUnresolvedAgentError(ORG, CONV)).toBe(false);
+  });
+
+  it("caso 2-oct: si la respuesta solo era basura («屹»), no sale y contesta el otro modelo, sin tarjeta ni pausa", async () => {
+    await msg({ direction: "in", body: "¿Cuánto cuesta?", at: ago(20_000) });
+    const z = fakeZernio();
+    const d = makeDeps({ brain: ["屹", "La compuerta estándar cuesta $5,500 con envío incluido."] }, z);
+    expect((await run.runAgent(JOB, d.deps)).kind).toBe("sent");
+    expect(d.calls.length).toBe(2);
+    expect(z.delivered).toEqual(["La compuerta estándar cuesta $5,500 con envío incluido."]);
+    expect(await agentError.hasUnresolvedAgentError(ORG, CONV)).toBe(false);
+  });
+
   it("Fase E: sin llave del Modelo 1 contesta el Modelo 2 (el agente no se queda callado)", async () => {
     await db.update(s.aiConfig).set({ modelo1: "gpt-5.6-luna" }).where(eq(s.aiConfig.organizationId, ORG));
     await model1Stages(["inbox"]);

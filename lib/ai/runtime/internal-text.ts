@@ -14,18 +14,47 @@
 
 const TOOL_NAMES = /\b(wf_[a-z0-9_]+|actualizar_detalle|fijar_cotizacion|mover_etapa|aviso_vendedor)\b/;
 
-// Una letra que no es del alfabeto latino (chino, japonés, coreano, cirílico, árabe…). El 6-oct salió
-// «娱乐平台招商» como burbuja aparte a una clienta (basura del modelo, no del Goal). Los acentos, la ñ, la
-// ü, «º»/«ª» y los emojis no son de otra escritura y pasan.
-const FOREIGN_SCRIPT = /(?![\p{Script=Latin}\p{Script=Common}\p{Script=Inherited}])\p{L}/u;
+// Letras de otro alfabeto (chino, japonés, coreano, cirílico, árabe…). El 2-oct salió «屹» y el 6-oct
+// «娱乐平台招商» como burbuja aparte detrás de una pregunta buena: basura de GPT-5.6 Luna (el Goal, las
+// FAQs y los workflows no tienen ni un carácter así). Decisión del dueño (6-oct): NO detener la
+// respuesta ni pausar al Agente IA — esas letras se BORRAN y sale el resto (stripForeignScript, en
+// run.ts al leer la respuesta y otra vez en la puerta de envío). Acentos, ñ, ü, º/ª, °, m² y emojis
+// no son de otra escritura y pasan.
+const FOREIGN_LETTER = String.raw`(?![\p{Script=Latin}\p{Script=Common}\p{Script=Inherited}])\p{L}`;
+const FOREIGN_SCRIPT = new RegExp(FOREIGN_LETTER, "u");
+// Una tira de letras ajenas con sus marcas, espacios intermedios y puntuación CJK («。», «、»).
+const FOREIGN_RUN = new RegExp(String.raw`(?:${FOREIGN_LETTER}[\p{M}\u3000-\u303F\uFF01-\uFF0F\uFF1A-\uFF20]*)+(?:[^\S\n]+(?:${FOREIGN_LETTER}[\p{M}\u3000-\u303F\uFF01-\uFF0F\uFF1A-\uFF20]*)+)*`, "gu");
+const HAS_CONTENT = /[\p{L}\p{N}\p{Extended_Pictographic}]/u;
 
-/** ¿Trae letras de otro alfabeto? Lo usa también la puerta de envío para TODO lo del Agente IA (send.ts). */
+/** ¿Trae letras de otro alfabeto? */
 export function hasForeignScript(text: string): boolean {
   return FOREIGN_SCRIPT.test(text);
 }
 
+/**
+ * El texto sin las letras de otro alfabeto. Un renglón que se queda sin nada (solo era basura, o
+ * basura con puntuación) desaparece; los demás quedan igual. "" = no quedó nada para el cliente.
+ */
+export function stripForeignScript(text: string): string {
+  if (!hasForeignScript(text)) return text;
+  const lines: string[] = [];
+  for (const line of text.split("\n")) {
+    if (!hasForeignScript(line)) {
+      lines.push(line);
+      continue;
+    }
+    const clean = line
+      .replace(FOREIGN_RUN, "")
+      .replace(/[^\S\n]{2,}/g, " ")
+      .replace(/[^\S\n]+([?!.,;:)»])/g, "$1")
+      .replace(/([¿¡(«])[^\S\n]+/g, "$1")
+      .trim();
+    if (HAS_CONTENT.test(clean)) lines.push(clean);
+  }
+  return lines.join("\n").replace(/\n{3,}/g, "\n\n").trim();
+}
+
 const RULES: readonly { reason: string; test: (t: string) => boolean }[] = [
-  { reason: "letras de otro idioma", test: (t) => FOREIGN_SCRIPT.test(t) },
   // Todo el mensaje entre corchetes: «[tool call?]», «[We need tool after response]».
   { reason: "mensaje entre corchetes", test: (t) => /^\[[^\]]*\]$/.test(t) },
   { reason: "llamada a herramienta escrita como texto", test: (t) => /\b(tool|function)[ _-]?(calls?|use)\b/i.test(t) },
@@ -75,9 +104,8 @@ export function unfinishedReply(
 ): { card: string; log: string } | null {
   const internal = findInternalText(parts);
   if (internal) {
-    const what = internal.reason === "letras de otro idioma" ? "texto en otro idioma" : `una nota interna (${internal.reason})`;
     return {
-      card: `El Agente IA escribió ${what} en su respuesta: «${quote(internal.text)}». ${SUFFIX}`,
+      card: `El Agente IA escribió una nota interna (${internal.reason}) en su respuesta: «${quote(internal.text)}». ${SUFFIX}`,
       log: `texto interno (${internal.reason}): ${quote(internal.text)}`,
     };
   }

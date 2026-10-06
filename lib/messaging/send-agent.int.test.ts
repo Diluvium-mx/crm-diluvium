@@ -124,16 +124,17 @@ describe.skipIf(!TEST_DATABASE_URL)("envío del Agente IA (Postgres real)", () =
     expect(after.firstResponseSeconds).toBeNull(); // el bot no cuenta como primera respuesta humana
   });
 
-  it("candado de idioma (6-oct): lo del Agente IA con letras de otro alfabeto no sale ni queda en la base; lo del vendedor sí", async () => {
+  it("candado de idioma (6-oct): a lo del Agente IA se le borran las letras de otro alfabeto y sale lo demás; solo basura no sale; lo del vendedor no se toca", async () => {
     const c = await openConversation(1);
-    let calls = 0;
-    const p = withProvider({ sendText: async () => ((calls += 1), { providerInternalId: `zL${calls}`, providerMessageId: `wamid.L${calls}` }) });
-    await expect(send.sendTextMessage(p, { organizationId: ORG, conversationId: c.id, text: "娱乐平台招商", source: "ai_agent" })).rejects.toThrow(/otro idioma/);
-    await expect(send.sendAgentText(p, { organizationId: ORG, conversationId: c.id, text: "¿Hasta qué nivel le sube el agua? 娱乐", messageId: randomUUID() })).rejects.toThrow(/otro idioma/);
-    expect(calls).toBe(0);
-    expect(await outs()).toHaveLength(0);
+    const sent: string[] = [];
+    const p = withProvider({ sendText: async (input: { text: string }) => (sent.push(input.text), { providerInternalId: `zL${sent.length}`, providerMessageId: `wamid.L${sent.length}` }) } as Partial<P>);
+    await send.sendAgentText(p, { organizationId: ORG, conversationId: c.id, text: "¿Hasta qué nivel le sube el agua? 娱乐", messageId: randomUUID() });
+    expect(sent).toEqual(["¿Hasta qué nivel le sube el agua?"]);
+    expect((await outs()).map((m) => m.body)).toEqual(["¿Hasta qué nivel le sube el agua?"]);
+    await expect(send.sendTextMessage(p, { organizationId: ORG, conversationId: c.id, text: "娱乐平台招商", source: "ai_agent" })).rejects.toThrow(/otro alfabeto/);
+    expect(sent).toHaveLength(1);
     await send.sendTextMessage(p, { organizationId: ORG, conversationId: c.id, sentByUserId: "u_vendedor", text: "谢谢" });
-    expect(calls).toBe(1);
+    expect(sent).toEqual(["¿Hasta qué nivel le sube el agua?", "谢谢"]);
   });
 
   it("sin source sigue siendo el envío humano de siempre (crm + vendedor, marca leído, primera respuesta)", async () => {
