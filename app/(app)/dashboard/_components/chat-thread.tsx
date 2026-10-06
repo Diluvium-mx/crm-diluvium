@@ -216,7 +216,9 @@ function Bubble({
   const reactions = view ? [view.reactions.contact, view.reactions.business].filter(Boolean) : [];
   // Primer mensaje que WhatsApp no pasó al CRM (Meta 131060, caso SDA): tarjeta de
   // aviso en lugar de "[Unsupported message]"; mientras se verifica, "Recibiendo mensaje…".
+  // Lo de Instagram que el CRM no puede mostrar (foto temporal…) usa la misma tarjeta.
   const notice = view?.noDisponible ?? null;
+  const warningCard = notice === "sin_contenido" || notice === "instagram_sin_ver";
   // Sticker suelto (30-sep-2026): sin burbuja y solo la hora abajo, como en WhatsApp, en una
   // píldora con el color de su lado (blanca del cliente, azul nuestra) (lib/inbox/sticker.ts).
   const bare = view ? isBareSticker(view) : false;
@@ -225,7 +227,7 @@ function Bubble({
     : `rounded-2xl px-3 py-2 shadow-sm ${
         out
           ? "bg-brand-navy text-brand-white"
-          : notice === "sin_contenido"
+          : warningCard
             ? "border border-dashed border-brand-orange/60 bg-brand-orange/5 text-foreground"
             : notice === "verificando"
               ? "border border-dashed bg-card text-muted-foreground"
@@ -289,7 +291,7 @@ function Bubble({
           </div>
         )}
         {view?.transcription && <TranscriptionNote transcription={view.transcription} out={out} searchTerm={term} />}
-        {notice === "sin_contenido" && row.body && (
+        {warningCard && row.body && (
           <p className="whitespace-pre-wrap break-words">
             <span aria-hidden="true">⚠️ </span>
             {row.body}

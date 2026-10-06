@@ -43,6 +43,7 @@ import {
   templateRequiresUnsupportedParams,
   templateVariablesFromBody,
 } from "./template-format";
+import { INSTAGRAM_EPHEMERAL, INSTAGRAM_WITHHELD } from "./instagram-unviewable";
 import { clickFromZernioConversation, extractReferral, type ConversationClick } from "@/lib/ads/referral";
 import { splitInstagramText } from "./instagram-text";
 
@@ -252,10 +253,8 @@ const INSTAGRAM_SHARE_LABEL: Record<string, string> = {
   ig_reel: "📎 Compartió un reel",
   reel: "📎 Compartió un reel",
 };
-const INSTAGRAM_WITHHELD = "📎 Instagram no deja ver este mensaje en el CRM; ábrelo en la app de Instagram";
-// Adjuntos que llegan sin archivo (sin url): la foto o el video temporal ("ver una vez") y la tarjeta
-// de una publicación o producto compartido.
-const INSTAGRAM_EPHEMERAL = "📎 Mandó una foto o video temporal; Instagram no deja verlo en el CRM, ábrelo en la app de Instagram";
+// La tarjeta de una publicación o producto compartido llega sin archivo (sin url). La foto o el video
+// temporal y lo que Meta no deja ver: lib/messaging/instagram-unviewable.ts (el chat los pinta como tarjeta).
 const INSTAGRAM_TEMPLATE = "📎 Compartió una publicación; ábrela en la app de Instagram";
 
 export function instagramLabel(attachments: { type: string; originalType?: string | null }[], metadata: Record<string, unknown> | null | undefined): string | null {
