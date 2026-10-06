@@ -10,6 +10,7 @@ import { isTemperatureFilter } from "@/lib/contacts/filters";
 import { chatSearchTerm } from "@/lib/text/search";
 import { messagingProvider, MessagingNotConfiguredError } from "@/lib/messaging";
 import {
+  clearContactCardForOrg,
   getConversationByContactForOrg,
   getConversationForOrg,
   listConversationItemsByIdsForOrg,
@@ -124,6 +125,14 @@ export async function setContactUnread(contactId: string, unread: boolean): Prom
   const { organizationId } = await requireActiveMembership();
   const input = unreadInput.parse({ id: contactId, unread });
   return setContactUnreadForOrg(organizationId, input.id, input.unread);
+}
+
+// Clic derecho en la tarjeta azul o amarilla del Embudo → «Quitar tarjeta». false = aún
+// no tiene chat.
+export async function clearContactCard(contactId: string): Promise<boolean> {
+  const { organizationId } = await requireActiveMembership();
+  const id = z.string().min(1).max(128).parse(contactId);
+  return clearContactCardForOrg(organizationId, id);
 }
 
 // El código que la UI mapea a un mensaje amable; el texto es el respaldo.
