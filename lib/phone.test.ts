@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { canonicalPhone, countryFromPhone, nationalSearchPrefixes, normalizePhone, phoneLookupVariants, phoneParts } from "./phone";
+import { canonicalPhone, countryFromPhone, foreignLadaLine, nationalSearchPrefixes, normalizePhone, phoneLookupVariants, phoneParts } from "./phone";
 
 describe("normalizePhone", () => {
   it.each(["+525512345678", "+12345678", "+123456789012345"])(
@@ -90,5 +90,14 @@ describe("regla de México y partes por país (libphonenumber-js)", () => {
       expect(nationalSearchPrefixes(term)).toContain("6682426364");
     }
     expect(nationalSearchPrefixes("66")).toEqual([]);
+  });
+});
+
+describe("foreignLadaLine", () => {
+  it("solo con lada de otro país", () => {
+    expect(foreignLadaLine("ES", "34")).toBe("Lada del número del cliente: España (+34), fuera de México.");
+    expect(foreignLadaLine("US", "1")).toBe("Lada del número del cliente: Estados Unidos (+1), fuera de México.");
+    expect(foreignLadaLine("MX", "52")).toBeNull();
+    expect(foreignLadaLine(null, null)).toBeNull();
   });
 });
