@@ -10,6 +10,7 @@ import { markKeywordChecked, pendingKeywordMessages } from "./keyword-pending";
 import { startOnlyEligible } from "./start-only";
 import { atMaxPerChat } from "./max-per-chat";
 import { fixedRuleWinner, PRECIO_Y_MEDIDAS } from "./fixed-rules";
+import { foreignLadaLine } from "@/lib/phone";
 
 /**
  * Entrante NUEVO del cliente (después del commit de la ingesta): si es texto y
@@ -45,7 +46,7 @@ export async function onInboundKeyword(m: { organizationId: string; conversation
       return hit ? [{ ...wf, len: hit.length }] : [];
     });
     const [conv] = await db
-      .select({ contactId: conversations.contactId, keywordSent: contacts.keywordWorkflowsSent })
+      .select({ contactId: conversations.contactId, keywordSent: contacts.keywordWorkflowsSent, iso: contacts.phoneCountryIso })
       .from(conversations)
       .innerJoin(contacts, eq(contacts.id, conversations.contactId))
       .where(and(eq(conversations.id, m.conversationId), eq(conversations.organizationId, m.organizationId)))
@@ -57,7 +58,12 @@ export async function onInboundKeyword(m: { organizationId: string; conversation
     // (ya le contestaron o ya le salió a este contacto) no compite; así el mensaje puede disparar
     // otro workflow que también coincida. Igual uno que ya llegó a su «Máximo de envíos por chat».
     const startOnly = [...hits, ...(ruleWinner ? [ruleWinner] : [])].filter((h) => h.startOnly).map((h) => h.id);
-    const eligible = startOnly.length && conv ? await startOnlyEligible(m.organizationId, m.conversationId, conv.contactId, startOnly) : new Set<string>();
+    // Lada de otro país (6-oct-2026, dueño): las respuestas de inicio («Información», «Precio 2»…)
+    // no salen; contesta el Agente IA con CLIENTES EN EL EXTRANJERO del Goal (primero pregunta si
+    // tiene dirección en México, antes de cotizar). Los demás workflows por palabra clave, igual.
+    const foreign = foreignLadaLine(conv?.iso, null) !== null;
+    if (foreign && startOnly.length) console.info(`[workflows] ${m.conversationId}: lada de otro país; las respuestas de inicio no salen (contesta el Agente IA)`);
+    const eligible = startOnly.length && conv && !foreign ? await startOnlyEligible(m.organizationId, m.conversationId, conv.contactId, startOnly) : new Set<string>();
     const canFire = async (w: { id: string; startOnly: boolean; maxSendsPerChat: number | null }) =>
       !(w.startOnly && !eligible.has(w.id)) && !(await atMaxPerChat(m.organizationId, m.conversationId, w, { includeLive: true }));
     const competing: typeof hits = [];
