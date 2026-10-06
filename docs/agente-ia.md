@@ -1083,6 +1083,15 @@ común.
 - **Siguen como aviso, sin pausa:** `fijar_cotizacion` rechazada porque el total no se le dijo al cliente (es la
   protección, no una falla; 0 desde el 2-oct), un workflow omitido por «Solo al inicio» o «Máximo por chat» y la
   respuesta guardada que venció (24 h o ventana cerrada).
+- **Candado de idioma (6-oct-2026, sin migración):** a una clienta en Prospecto le llegó «娱乐平台招商» como
+  burbuja aparte detrás de una pregunta buena del Agente IA (basura del modelo; en el repo no hay ni un carácter chino).
+  Regla nueva `letras de otro idioma` en `internal-text.ts` (primera de la lista): cualquier letra que no sea del
+  alfabeto latino (chino, japonés, coreano, cirílico, árabe…) detiene TODA la respuesta igual que un texto interno
+  (no sale nada, tarjeta «El Agente IA escribió texto en otro idioma…» y pausa en el chat). Acentos, ñ, ü, º/ª, °,
+  m² y emojis pasan. Además, la **puerta común** (`send.ts` › `sendTextMessage` y el pie de `sendMediaMessage`)
+  rechaza con `not_retryable` todo lo que sale con `source = ai_agent` y trae otro alfabeto: cubre el texto suelto
+  de un workflow, los pies y los **seguimientos** (que no pasan por `sendAgentText`). El borrador de seguimiento con
+  otro alfabeto se rehace una vez (`borrador-check.ts`). Lo que escribe un vendedor no se revisa.
 
 ## Mensaje tapado y red contra el silencio (5-oct-2026, sin migración)
 

@@ -14,7 +14,18 @@
 
 const TOOL_NAMES = /\b(wf_[a-z0-9_]+|actualizar_detalle|fijar_cotizacion|mover_etapa|aviso_vendedor)\b/;
 
+// Una letra que no es del alfabeto latino (chino, japonés, coreano, cirílico, árabe…). El 6-oct salió
+// «娱乐平台招商» como burbuja aparte a una clienta (basura del modelo, no del Goal). Los acentos, la ñ, la
+// ü, «º»/«ª» y los emojis no son de otra escritura y pasan.
+const FOREIGN_SCRIPT = /(?![\p{Script=Latin}\p{Script=Common}\p{Script=Inherited}])\p{L}/u;
+
+/** ¿Trae letras de otro alfabeto? Lo usa también la puerta de envío para TODO lo del Agente IA (send.ts). */
+export function hasForeignScript(text: string): boolean {
+  return FOREIGN_SCRIPT.test(text);
+}
+
 const RULES: readonly { reason: string; test: (t: string) => boolean }[] = [
+  { reason: "letras de otro idioma", test: (t) => FOREIGN_SCRIPT.test(t) },
   // Todo el mensaje entre corchetes: «[tool call?]», «[We need tool after response]».
   { reason: "mensaje entre corchetes", test: (t) => /^\[[^\]]*\]$/.test(t) },
   { reason: "llamada a herramienta escrita como texto", test: (t) => /\b(tool|function)[ _-]?(calls?|use)\b/i.test(t) },
@@ -64,8 +75,9 @@ export function unfinishedReply(
 ): { card: string; log: string } | null {
   const internal = findInternalText(parts);
   if (internal) {
+    const what = internal.reason === "letras de otro idioma" ? "texto en otro idioma" : `una nota interna (${internal.reason})`;
     return {
-      card: `El Agente IA escribió una nota interna (${internal.reason}) en su respuesta: «${quote(internal.text)}». ${SUFFIX}`,
+      card: `El Agente IA escribió ${what} en su respuesta: «${quote(internal.text)}». ${SUFFIX}`,
       log: `texto interno (${internal.reason}): ${quote(internal.text)}`,
     };
   }
