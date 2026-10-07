@@ -13,6 +13,8 @@ import { maxSendsLabel, START_SCOPE_LABEL, startScopeOf } from "@/lib/workflows/
 // Filtro "Tipo" de la subpestaña, en este orden.
 export const HISTORY_TYPES = [
   { id: "opciones", label: "Opciones del Agente IA" },
+  // Tabla de Agente IA › Seguimientos (Parte 4, 6-oct-2026).
+  { id: "seguimientos", label: "Seguimientos" },
   { id: "goal_faqs", label: "Goal y FAQs" },
   { id: "nombre", label: "Nombre del agente" },
   { id: "modelos", label: "Modelos" },
@@ -41,6 +43,7 @@ export type ChangeAction = {
   canales: "encender" | "apagar" | "limpiar_pruebas";
   workflows: "crear" | "editar" | "encender" | "apagar" | "borrar";
   tallas: "editar";
+  seguimientos: "editar";
   mensajes_rapidos: "crear" | "editar" | "borrar";
   plantillas: "alta" | "editar" | "borrar" | "sincronizar";
   vendedores: "alta" | "rol" | "desactivar" | "reactivar" | "contrasena";
@@ -109,6 +112,8 @@ export function describeAction(kind: string, action: string, subject: string | n
       return "Cambió el nombre del agente";
     case "tallas.editar":
       return "Cambió las tallas y medidas";
+    case "seguimientos.editar":
+      return "Cambió la tabla de seguimientos";
     case "mensajes_rapidos.crear":
       return `Creó el mensaje rápido ${s}`;
     case "mensajes_rapidos.editar":

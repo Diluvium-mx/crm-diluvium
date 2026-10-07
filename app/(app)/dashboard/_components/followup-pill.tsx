@@ -10,9 +10,13 @@
 // Caritas (6-oct-2026, decisión del dueño): robot normal = programado; dormido = suspendido (pausa
 // puesta a mano: no sale solo); ojos en X = cancelado en este chat (se queda así hasta «Reactivar»)
 // o, en rojo, el cliente se dio de baja de las promociones (aviso que se abre solo una vez).
+// Ventana (6-oct-2026, decisión del dueño): arriba el estado junto a la ✕ roja (sin la palabra «Cerrar»,
+// como el visor de archivos) y la carita según el estado; en el cuerpo, preguntas cortas (¿Dónde se quedó el
+// chat? · ¿Qué busca el seguimiento? · ¿Cuándo sale el N.º mensaje?), «Ver mensaje» con el texto exacto y un
+// renglón por mensaje que ya salió. Sin «Por dónde» ni la palabra «plantilla». El texto de la píldora, los
+// títulos, las preguntas y los botones no se seleccionan; las respuestas y el mensaje sí (para copiarlos).
 // Consultas: al abrir el chat, con cada aviso "followup.updated" de este chat y al volver a la pestaña.
 import { useCallback, useEffect, useRef, useState } from "react";
-import { X } from "lucide-react";
 import { approveSuggestedFollowUp, cancelFollowUp, getFollowUp, quitarSinSeguimientos, reactivarSeguimientos, rescheduleFollowUp } from "@/lib/actions/seguimientos";
 import type { FollowUpOff, FollowUpState, FollowUpView } from "@/lib/followups/view";
 import { followUpText } from "@/lib/followups/message";
@@ -72,6 +76,35 @@ export function whenLabel(iso: string, zone: string = SCHEDULE_TIME_ZONE, now: D
   if (d.getTime() - now.getTime() < 6 * 24 * 60 * 60_000) return `${weekdayOf(d, zone)} ${hour}`;
   const date = new Intl.DateTimeFormat("es-MX", { timeZone: zone, day: "numeric", month: "short" }).format(d).replace(".", "");
   return `${date} ${hour}`;
+}
+
+/** Para la ventana: "hoy 20:00" · "mañana 10:00" · "lun 13 oct, 18:00". */
+export function dateLabel(iso: string, zone: string = SCHEDULE_TIME_ZONE, now: Date = new Date()): string {
+  const d = new Date(iso);
+  const day = dayKey(d, zone);
+  const hour = hourOf(d, zone);
+  if (day === dayKey(now, zone)) return `hoy ${hour}`;
+  if (day === dayKey(new Date(now.getTime() + 24 * 60 * 60_000), zone)) return `mañana ${hour}`;
+  if (day === dayKey(new Date(now.getTime() - 24 * 60 * 60_000), zone)) return `ayer ${hour}`;
+  const date = new Intl.DateTimeFormat("es-MX", { timeZone: zone, day: "numeric", month: "short" }).format(d).replace(".", "");
+  return `${weekdayOf(d, zone)} ${date}, ${hour}`;
+}
+
+/** "hoy 17:15" · "el mar 13 oct, 18:00" (con artículo solo cuando es una fecha). */
+function onDate(iso: string): string {
+  const label = dateLabel(iso);
+  return /^(hoy|mañana|ayer) /.test(label) ? label : `el ${label}`;
+}
+
+/** "antes de hoy 20:00" · "antes del mar 13 oct, 18:00". */
+function beforeDate(iso: string): string {
+  const label = dateLabel(iso);
+  return /^(hoy|mañana|ayer) /.test(label) ? `antes de ${label}` : `antes del ${label}`;
+}
+
+/** "1.er" · "2.º" · "3.er" (mensaje). */
+export function ordinal(n: number): string {
+  return n === 1 || n === 3 ? `${n}.er` : `${n}.º`;
 }
 
 const ZONE_NAMES: Readonly<Record<string, string>> = {
@@ -139,7 +172,7 @@ export function FollowUpPill({ followUp, open, onToggle, className = "" }: { fol
       title={title}
       data-testid="followup-pill"
       data-estado={f.estado}
-      className={`h-5 min-w-0 items-center justify-center gap-1 rounded-full border px-2 text-[11px] leading-none whitespace-nowrap transition-colors ${tone} ${open ? "ring-2 ring-brand-navy/30" : ""} ${className}`}
+      className={`h-5 min-w-0 cursor-pointer items-center justify-center gap-1 rounded-full border px-2 text-[11px] leading-none whitespace-nowrap transition-colors select-none ${tone} ${open ? "ring-2 ring-brand-navy/30" : ""} ${className}`}
     >
       <RobotIcon face={faceOf(f)} />
       <span className="truncate">{label}</span>
@@ -163,6 +196,34 @@ export function markBajaSeen(contactId: string): void {
   } catch {
     /* sin almacenamiento: se vuelve a abrir la próxima vez, no pasa nada */
   }
+}
+
+// ── Encabezado de la ventana: carita, título, estado y ✕ roja ────────────────
+
+type Estado = { label: string; tone: string };
+
+function estadoOf(f: FollowUpState): Estado {
+  if (f.estado === "baja") return { label: "Se dio de baja", tone: "border-red-600 bg-red-100 text-red-800 dark:bg-red-500/20 dark:text-red-200" };
+  if (f.estado === "cancelado") return { label: "Cancelado", tone: "border-muted-foreground/50 bg-muted text-muted-foreground" };
+  if (f.ensayo) return { label: "Ensayo", tone: "border-dashed border-muted-foreground/60 bg-muted text-muted-foreground" };
+  if (f.status === "esperando") return { label: "Esperando respuesta", tone: "border-brand-navy/40 bg-brand-navy/10 text-brand-navy dark:text-sky-300" };
+  if (f.modo === "sugerido" && !f.autoAprobado) return { label: "Suspendido", tone: "border-amber-500 bg-amber-50 text-amber-900 dark:bg-amber-500/15 dark:text-amber-200" };
+  return { label: "Programado", tone: "border-brand-navy bg-brand-navy/10 text-brand-navy dark:text-sky-300" };
+}
+
+function PanelHeader({ followUp, title, onClose }: { followUp: FollowUpState; title: string; onClose: () => void }) {
+  const estado = estadoOf(followUp);
+  const red = followUp.estado === "baja";
+  return (
+    <div className="flex shrink-0 items-center gap-2 border-b px-3 py-1.5">
+      <RobotIcon face={faceOf(followUp)} size={22} />
+      <span className={`min-w-0 flex-1 truncate text-sm font-semibold ${red ? "text-red-800 dark:text-red-200" : "text-brand-navy dark:text-sky-300"}`}>{title}</span>
+      <span data-testid="followup-estado" className={`shrink-0 rounded-full border px-2.5 py-0.5 text-[11px] font-medium whitespace-nowrap ${estado.tone}`}>
+        {estado.label}
+      </span>
+      <CloseX always size="sm" label="Cerrar seguimiento" onClick={onClose} />
+    </div>
+  );
 }
 
 function OffPanel({ off, onClose, onChanged }: { off: FollowUpOff; onClose: () => void; onChanged: () => void }) {
@@ -194,42 +255,38 @@ function OffPanel({ off, onClose, onChanged }: { off: FollowUpOff; onClose: () =
         onClose();
       }}
       data-testid="followup-panel"
-      className={`mb-2 rounded-lg border p-3 text-sm shadow-md ${baja ? "border-red-400 bg-red-50 text-red-900 dark:border-red-500/50 dark:bg-red-500/10 dark:text-red-100" : "bg-background"}`}
+      className={`mb-2 overflow-hidden rounded-lg border text-sm shadow-md select-none ${baja ? "border-red-400 bg-red-50 text-red-900 dark:border-red-500/50 dark:bg-red-500/10 dark:text-red-100" : "bg-background"}`}
     >
-      <div className="flex items-start justify-between gap-2">
-        <p className="flex items-center gap-2 font-semibold">
-          <RobotIcon face="cancelado" size={22} />
-          {baja ? "WhatsApp no entregó el seguimiento" : "Seguimientos cancelados en este chat"}
-        </p>
-        <CloseX size="sm" label="Cerrar" onClick={onClose} />
-      </div>
-      {baja ? (
-        <p className="mt-1">
-          El cliente se dio de baja de las promociones de Diluvium. El seguimiento ya se canceló y no se le mandarán más plantillas. Si escribe, el Agente IA y los
-          vendedores le contestan normal.
-        </p>
-      ) : (
-        <p className="mt-1 text-muted-foreground">
-          {`Los canceló ${off.byName ?? "un vendedor"}${off.at ? ` el ${whenLabel(off.at)}` : ""}. El Agente IA no arma seguimientos en este chat hasta que alguien los reactive.`}
-        </p>
-      )}
-      <div className="mt-2 flex flex-wrap gap-1.5">
+      <PanelHeader followUp={off} title={baja ? "WhatsApp no entregó el seguimiento" : "Seguimientos cancelados en este chat"} onClose={onClose} />
+      <div className="p-3">
         {baja ? (
-          <>
-            <button type="button" onClick={onClose} className={`${button} border-red-700 bg-red-700 text-white`}>
-              Entendido
-            </button>
-            <button type="button" disabled={busy} onClick={() => void run(() => quitarSinSeguimientos(off.contactId))} className={`${button} border-red-500`}>
-              Volver a darle seguimiento
-            </button>
-          </>
+          <p className="select-text">
+            El cliente se dio de baja de las promociones de Diluvium. El seguimiento ya se canceló y no se le mandarán más plantillas. Si escribe, el Agente IA y los
+            vendedores le contestan normal.
+          </p>
         ) : (
-          <button type="button" disabled={busy} onClick={() => void run(() => reactivarSeguimientos(off.conversationId))} className={`${button} border-brand-navy hover:bg-brand-navy/10`}>
-            Reactivar seguimientos
-          </button>
+          <p className="text-muted-foreground select-text">
+            {`Los canceló ${off.byName ?? "un vendedor"}${off.at ? ` ${onDate(off.at)}` : ""}. El Agente IA no arma seguimientos en este chat hasta que alguien los reactive.`}
+          </p>
         )}
+        <div className="mt-2 flex flex-wrap gap-1.5">
+          {baja ? (
+            <>
+              <button type="button" onClick={onClose} className={`${button} border-red-700 bg-red-700 text-white`}>
+                Entendido
+              </button>
+              <button type="button" disabled={busy} onClick={() => void run(() => quitarSinSeguimientos(off.contactId))} className={`${button} border-red-500`}>
+                Volver a darle seguimiento
+              </button>
+            </>
+          ) : (
+            <button type="button" disabled={busy} onClick={() => void run(() => reactivarSeguimientos(off.conversationId))} className={`${button} border-brand-navy hover:bg-brand-navy/10`}>
+              Reactivar seguimientos
+            </button>
+          )}
+        </div>
+        {error && <p className="mt-1 text-xs font-medium text-red-600 dark:text-red-400">{error}</p>}
       </div>
-      {error && <p className="mt-1 text-xs font-medium text-red-600 dark:text-red-400">{error}</p>}
     </div>
   );
 }
@@ -239,6 +296,24 @@ function OffPanel({ off, onClose, onChanged }: { off: FollowUpOff; onClose: () =
 export function FollowUpPanel({ followUp, onClose, onChanged }: { followUp: FollowUpState; onClose: () => void; onChanged: () => void }) {
   if (followUp.estado !== "activo") return <OffPanel off={followUp} onClose={onClose} onChanged={onChanged} />;
   return <ActivePanel followUp={followUp} onClose={onClose} onChanged={onChanged} />;
+}
+
+function Answer({ question, children }: { question: string; children: React.ReactNode }) {
+  return (
+    <div>
+      <p className="text-xs text-muted-foreground">{question}</p>
+      <div className="leading-snug select-text">{children}</div>
+    </div>
+  );
+}
+
+/** Un renglón por mensaje que ya salió (o lo mandó un vendedor), sin el nombre de la plantilla. */
+function sentLine(a: FollowUpView["intentos"][number], index: number): { ok: boolean; text: string } {
+  const what = `${ordinal(index + 1)} mensaje`;
+  if (a.modo === "vendedor") return { ok: true, text: `${what}: lo mandó un vendedor ${onDate(a.at)}` };
+  if (a.ensayo) return { ok: true, text: `${what}: habría salido ${onDate(a.at)}` };
+  if (a.error) return { ok: false, text: `${what}: no salió ${onDate(a.at)} · ${a.error}` };
+  return { ok: true, text: `${what}: salió ${onDate(a.at)}${a.modo === "sugerido" ? " (sugerido)" : ""}` };
 }
 
 function ActivePanel({ followUp, onClose, onChanged }: { followUp: FollowUpView; onClose: () => void; onChanged: () => void }) {
@@ -251,7 +326,10 @@ function ActivePanel({ followUp, onClose, onChanged }: { followUp: FollowUpView;
   const f = followUp;
   const due = f.dueAt ? new Date(f.dueAt) : null;
   const clientHour = due && dayKey(due, f.timeZone) + hourOf(due, f.timeZone) !== dayKey(due, SCHEDULE_TIME_ZONE) + hourOf(due, SCHEDULE_TIME_ZONE) ? hourOf(due, f.timeZone) : null;
-  const text = f.borrador ? followUpText(f.borrador, due ?? new Date(), f.timeZone) : null;
+  // Lo que va a salir, exacto: el texto del Agente IA con su saludo, o la plantilla ya llena.
+  const message = f.door === "plantilla" ? (f.templateText ?? f.templateName) : f.borrador ? followUpText(f.borrador, due ?? new Date(), f.timeZone) : null;
+  const programado = f.status === "programado";
+  const sent = f.intentos.length;
 
   const run = async (action: () => Promise<{ ok: true } | { ok: false; message: string }>) => {
     setBusy(true);
@@ -278,81 +356,50 @@ function ActivePanel({ followUp, onClose, onChanged }: { followUp: FollowUpView;
         onClose();
       }}
       data-testid="followup-panel"
-      className="mb-2 flex max-h-[min(26rem,55cqh)] min-w-0 flex-col overflow-hidden rounded-lg border bg-background shadow-md"
+      className="mb-2 flex max-h-[min(26rem,55cqh)] min-w-0 flex-col overflow-hidden rounded-lg border bg-background shadow-md select-none"
     >
-      <div className="flex shrink-0 items-center justify-between gap-2 border-b px-3 py-1.5">
-        <span className="flex min-w-0 items-center gap-2 text-sm font-semibold text-brand-navy dark:text-sky-300">
-          <RobotIcon face={faceOf(f)} size={20} />
-          <span className="truncate">Seguimiento del Agente IA</span>
-          {f.ensayo && <span className="rounded-full border border-dashed border-muted-foreground/60 px-2 text-[11px] font-medium text-muted-foreground">Ensayo</span>}
-          {f.total > 0 && f.status === "programado" && <span className="rounded-full bg-brand-navy/10 px-2 text-[11px] font-medium">{`${f.intento}.º de ${f.total}`}</span>}
-        </span>
-        <button
-          type="button"
-          onClick={onClose}
-          aria-label="Cerrar seguimiento"
-          className="hidden items-center gap-1 rounded-md px-2 py-1 text-xs font-medium text-muted-foreground hover:bg-muted hover:text-foreground md:flex"
-        >
-          <X className="size-4" aria-hidden="true" />
-          Cerrar
-        </button>
-        <CloseX size="sm" label="Cerrar seguimiento" onClick={onClose} />
-      </div>
+      <PanelHeader followUp={f} title="Seguimiento del Agente IA" onClose={onClose} />
       <div className="min-h-0 flex-1 space-y-2 overflow-y-auto overscroll-contain p-3 text-sm">
         {f.ensayo && <p className="text-xs text-muted-foreground">Modo ensayo: así trabajaría el seguimiento; no se le manda nada al cliente.</p>}
-        <div>
-          <p className="font-medium">{f.casoLabel}</p>
-          {f.pendiente && <p className="text-muted-foreground">{f.pendiente}</p>}
-          <p className="text-muted-foreground">Busca: {f.siguientePaso ?? f.objetivo}</p>
-        </div>
-
-        {f.status === "esperando" ? (
-          <p>
-            Ya {f.ensayo ? "habría salido" : "salió"} el último intento; espera respuesta{due ? ` hasta ${whenLabel(f.dueAt!)}` : ""}. Si no contesta, pasa a frío.
-          </p>
+        <Answer question="¿Dónde se quedó el chat?">{f.pendiente ?? f.casoLabel}</Answer>
+        <Answer question="¿Qué busca el seguimiento?">{f.siguientePaso ?? f.objetivo}</Answer>
+        {programado ? (
+          <Answer question={`¿Cuándo sale el ${ordinal(sent + 1)} mensaje?`}>
+            {due ? dateLabel(f.dueAt!) : "—"}
+            {clientHour && <span className="text-muted-foreground">{` (su hora: ${clientHour}, ${ZONE_NAMES[f.timeZone] ?? f.timeZone})`}</span>}
+            {f.dueSetBy === "vendedor" && <span className="text-muted-foreground"> · hora puesta a mano</span>}
+          </Answer>
         ) : (
-          <div className="space-y-0.5">
-            <p>
-              <span className="text-muted-foreground">{f.ensayo ? "Saldría:" : "Sale:"}</span> {due ? whenLabel(f.dueAt!) : "—"}
-              {clientHour && <span className="text-muted-foreground">{` (su hora: ${clientHour}, ${ZONE_NAMES[f.timeZone] ?? f.timeZone})`}</span>}
-              {f.dueSetBy === "vendedor" && <span className="text-muted-foreground"> · hora puesta a mano</span>}
-            </p>
-            <p>
-              <span className="text-muted-foreground">Por dónde:</span>{" "}
-              {f.door === "plantilla" ? `plantilla «${f.templateText ?? f.templateName}»` : "texto del Agente IA (la ventana de 24 h sigue abierta)"}
-            </p>
-            {f.modo === "sugerido" && (
-              <p className="rounded-md border border-amber-400/60 bg-amber-50 px-2 py-1 text-xs text-amber-900 dark:bg-amber-500/10 dark:text-amber-200">
-                {f.autoAprobado
-                  ? "Saldrá solo a su hora (lo aprobó un vendedor)."
-                  : `Queda como sugerencia: el Agente IA está en pausa a mano en este chat.${f.presentarAt ? ` Se le presenta al vendedor: ${whenLabel(f.presentarAt)}.` : ""}`}
-              </p>
-            )}
-          </div>
+          <Answer question="¿Y ahora?">
+            {sent === 1 ? `Ya ${f.ensayo ? "habría salido" : "salió"} el mensaje` : `Ya ${f.ensayo ? "habrían salido" : "salieron"} los ${sent} mensajes`}
+            {due ? `. Si no contesta ${beforeDate(f.dueAt!)}, pasa a frío.` : "."}
+          </Answer>
+        )}
+        {programado && f.modo === "sugerido" && (
+          <p className="rounded-md border border-amber-400/60 bg-amber-50 px-2 py-1 text-xs text-amber-900 dark:bg-amber-500/10 dark:text-amber-200">
+            {f.autoAprobado
+              ? "Saldrá solo a su hora (lo aprobó un vendedor)."
+              : `No sale solo: el Agente IA está en pausa a mano en este chat.${f.presentarAt ? ` Se le recuerda al vendedor: ${dateLabel(f.presentarAt)}.` : ""}`}
+          </p>
         )}
 
-        {f.intentos.length > 0 && (
+        {sent > 0 && (
           <ul className="space-y-0.5 text-xs text-muted-foreground">
-            {f.intentos.map((a) => (
-              <li key={a.n}>
-                {a.modo === "vendedor"
-                  ? `${a.n}.º lo mandó un vendedor ${whenLabel(a.at)}`
-                  : `${a.n}.º ${a.ensayo ? "habría salido" : a.error ? "no salió" : "salió"} ${whenLabel(a.at)} · ${a.door === "plantilla" ? `plantilla ${a.template}` : "texto"}${a.modo === "sugerido" ? " · sugerido" : ""}${a.error ? ` · ${a.error}` : ""}`}
-              </li>
-            ))}
+            {f.intentos.map((a, i) => {
+              const line = sentLine(a, i);
+              return (
+                <li key={`${a.n}-${a.at}`} className={line.ok ? "" : "text-red-700 dark:text-red-300"}>
+                  <span aria-hidden="true">{line.ok ? "✓ " : "✗ "}</span>
+                  {line.text}
+                </li>
+              );
+            })}
           </ul>
         )}
 
-        {showMessage && (
-          <div className="whitespace-pre-wrap rounded-md border bg-muted/40 p-2 text-[13px]">
-            {f.door === "plantilla" ? (
-              <>
-                <p>{f.templateText ?? f.templateName}</p>
-                {text && <p className="mt-2 text-muted-foreground">Cuando conteste, el Agente IA retoma: {f.borrador}</p>}
-              </>
-            ) : (
-              <p>{text ?? "El lector no dejó borrador para este chat."}</p>
-            )}
+        {showMessage && programado && (
+          <div data-testid="followup-message" className="whitespace-pre-wrap rounded-md border bg-muted/40 p-2 text-[13px] select-text">
+            {message ?? "El Agente IA no dejó el mensaje para este chat."}
           </div>
         )}
 
@@ -389,15 +436,17 @@ function ActivePanel({ followUp, onClose, onChanged }: { followUp: FollowUpView;
           </div>
         ) : (
           <div className="flex flex-wrap gap-1.5">
-            <button type="button" onClick={() => setShowMessage((v) => !v)} className={button} aria-expanded={showMessage}>
-              {showMessage ? "Ocultar mensaje" : "Ver mensaje"}
-            </button>
-            {f.status === "programado" && (
+            {programado && (
+              <button type="button" onClick={() => setShowMessage((v) => !v)} className={button} aria-expanded={showMessage}>
+                {showMessage ? "Ocultar mensaje" : "Ver mensaje"}
+              </button>
+            )}
+            {programado && (
               <button type="button" onClick={() => setEditing((v) => !v)} className={button} aria-expanded={editing}>
                 Cambiar hora
               </button>
             )}
-            {f.phoneE164 && f.borrador && (
+            {programado && f.phoneE164 && f.borrador && (
               <a
                 href={whatsappWebLink(f.phoneE164, followUpText(f.borrador, new Date(), f.timeZone))}
                 target="_blank"
@@ -408,7 +457,7 @@ function ActivePanel({ followUp, onClose, onChanged }: { followUp: FollowUpView;
                 Lo mando yo
               </a>
             )}
-            {f.status === "programado" && f.modo === "sugerido" && !f.autoAprobado && (
+            {programado && f.modo === "sugerido" && !f.autoAprobado && (
               <button type="button" disabled={busy} onClick={() => void run(() => approveSuggestedFollowUp(f.id))} className={`${button} border-amber-500`}>
                 Que salga solo
               </button>
@@ -418,7 +467,7 @@ function ActivePanel({ followUp, onClose, onChanged }: { followUp: FollowUpView;
             </button>
           </div>
         )}
-        {error && <p className="text-xs font-medium text-red-600 dark:text-red-400">{error}</p>}
+        {error && <p className="text-xs font-medium text-red-600 select-text dark:text-red-400">{error}</p>}
       </div>
     </div>
   );

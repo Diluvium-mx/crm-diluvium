@@ -421,6 +421,13 @@
       "when": 1791330674770,
       "tag": "0061_seguimientos_cancelados",
       "breakpoints": true
+    },
+    {
+      "idx": 62,
+      "version": "7",
+      "when": 1791334171563,
+      "tag": "0062_seguimientos_tabla",
+      "breakpoints": true
     }
   ]
 }

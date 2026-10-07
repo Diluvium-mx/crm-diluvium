@@ -358,7 +358,8 @@ rápidos, 📄 Plantillas y 📎 Adjuntar (Bandeja y pop-up del Embudo usan el m
 - **Cuando sale**, la burbuja del mensaje en el chat lleva la marca "Seguimiento". Mientras se manda, la píldora del
   Agente IA dice "enviando seguimiento".
 - **No** va una línea en el Detalle ni una tarjeta dentro del hilo (sería repetido).
-- **Agente IA › Seguimientos:** la tabla de la §6 (encender/apagar cada caso e intento, horas, objetivo en texto).
+- **Agente IA › Seguimientos:** la tabla de la §6 (encender/apagar cada caso e intento, horas, objetivo en texto). Hecho
+  en la Parte 4 (§16), junto con la ventana nueva de la píldora (preguntas en vez de «Por dónde»).
 - **Dashboard:** una tarjeta: seguimientos enviados · contestaron · avanzaron de etapa · compraron (del periodo).
 - **Historial:** los cambios a la tabla de casos quedan en Agente IA › Historial.
 - **Embudo:** nada nuevo en la tarjeta, salvo el color de pago pendiente si se aprueba (§12).
@@ -426,7 +427,7 @@ lectura.
 | **1** | Tabla `follow_ups` + la ficha en el lector + cálculo de la hora (§6, horario por lada) + la píldora 🤖 y su burbuja en la caja para escribir + el barrido que anota cuándo "habría salido" cada intento. **Modo ensayo: no manda nada**, para que el dueño vea en chats reales si las fichas y los tiempos tienen sentido. Solo WhatsApp (Instagram, después). | 0056 (la 0055 es Instagram) |
 | **2 ✅** | Envío con la ventana abierta + paradas + 2.º y 3.er intento + frío y aviso (§15, 6-oct-2026). | 0059 |
 | **3 ✅** | Ventana cerrada: plantilla como del Agente IA (sin pausarlo), retomar con contexto cuando conteste, tope de 7 días, 131049/131050 (§15). | (misma) |
-| **4** | Agente IA › Seguimientos (editar la tabla), chats de vendedor (sugerido + WhatsApp Web), tarjeta del Dashboard, mapa y capturas. | No |
+| **4** | Agente IA › Seguimientos (editar la tabla, §16), chats de vendedor (sugerido + WhatsApp Web), tarjeta del Dashboard (§15), ventana de la píldora con preguntas (§16), mapa y capturas. | 0062 |
 
 Pruebas: lógica pura (casos, horas, zona por lada, topes) con Vitest; integración con Postgres real (ficha → programa
 → cancela/sale); staging con webhooks firmados. La prueba real del envío solo se puede hacer en producción, con un
@@ -587,7 +588,46 @@ migración **0059**; la 0058 es la de los costos de WhatsApp de otra rama, que d
   último cancelado si el chat no cambió (`reopenCancelledFollowUp`).
 - **Se dio de baja (131050):** nada en el Detalle; la píldora se pone roja y su aviso se abre solo una vez por computadora,
   con «Volver a darle seguimiento» (`quitarSinSeguimientos`).
-- **Pendiente:** Agente IA › Seguimientos (editar la tabla) y la tarjeta del Dashboard (Parte 4).
+- **Parte 4:** la tabla editable y la ventana nueva de la píldora están en la §16.
+
+---
+
+## 16. Parte 4: tabla editable y ventana de la píldora (6-oct-2026)
+
+Aprobado por el dueño el 6-oct-2026 («OK 1–12», con vista previa). Rama `feat/seguimientos-tabla`, migración **0062**
+(`ai_config.seguimientos_casos` y `ai_config.seguimientos_vendedores`, jsonb; null = de fábrica).
+
+**Agente IA › Seguimientos** (subpestaña después de Opciones; la editan los mismos roles que Opciones):
+- Por caso (los 9 que pueden salir, en orden de prioridad; «No seguir» no se edita): **encendido**, **intentos 1.º 2.º
+  3.º** (cada uno se prende o se apaga; los tiempos no cambian: antes del cierre, día 2, día 9), **hora desde/hasta**
+  (hora del cliente, dentro de 7:00–21:00) y **qué busca** (lo lee el Agente IA; de fábrica, las guías del lector de §14).
+- **Horario de los vendedores** por día (Mazatlán) para presentar las sugerencias (§7.4).
+- Fijo en el código: 7:00–21:00, plantillas hasta las 19:00, 7 días entre plantillas.
+- Borrador + «Guardar cambios» con confirmación (lista de cambios) y «Descartar», como Opciones. Cada guardado deja una fila
+  en Agente IA › Historial (tipo «Seguimientos», con «Ver cambios» renglón por renglón). Aplica en ≤ 60 s (caché por
+  organización en web y worker).
+- **Caso apagado:** el lector lo sigue reconociendo (la lista de casos no cambia, la prioridad tampoco), pero no se programa
+  nada; lo programado de ese caso se cancela al llegar su hora (`caso_apagado`).
+- **Intento apagado:** se salta; el siguiente prendido sale con sus tiempos desde el último que salió. Si ya no queda
+  ninguno: espera respuesta (si salió alguno) o se cancela (`intento_apagado`). Lo ya programado conserva su hora y se
+  revisa al llegar (decisión del dueño).
+- **Asesor sin respuesta** y **Pidió fecha**: el 1.er mensaje no usa la hora de la tabla (2 h después / la hora pedida).
+- El lector recibe «Qué busca» y la hora de cada caso de la tabla; con los valores de fábrica su texto es idéntico al de
+  antes (prueba en `lector-seguimiento.test.ts`).
+
+**Ventana de la píldora:** estado junto a la ✕ (Programado · Suspendido · Esperando respuesta · Cancelado · Se dio de
+baja; Ensayo) y la carita según el estado; ✕ roja sin la palabra «Cerrar»; preguntas «¿Dónde se quedó el chat?», «¿Qué
+busca el seguimiento?», «¿Cuándo sale el N.º mensaje?» (N = mensajes que ya salieron + 1) o «¿Y ahora?» tras el último;
+sin «Por dónde» ni la palabra «plantilla»; «Ver mensaje» = el texto exacto; un renglón por mensaje que ya salió, sin el
+nombre de la plantilla. El texto de la píldora, títulos, preguntas y botones no se seleccionan; las respuestas y el mensaje
+sí. **Cambiar hora** ya no deja una hora que el CRM movería al salir: avisa al guardar (fuera de 7:00–21:00 del cliente,
+plantilla después de las 19:00 o a menos de 7 días de otra plantilla) con el rango en hora de Mazatlán.
+
+Código: `lib/followups/tabla.ts` (fábrica, validación, cambios), `tabla-store.ts` (lectura con caché, guardado +
+Historial), `schedule.ts` (`PlanInput.table`, `sendTimeProblem`), `store.ts` (caso/intento apagado, `skipStep`),
+`view.ts` (`changeFollowUpTime` con aviso), `lib/ai/runtime/lector-core.ts` (`followUpInstructions(table)`), acción
+`lib/actions/agente-ia-seguimientos.ts`, pantalla `app/(app)/agente-ia/_components/followup-rules-section.tsx`, ventana
+`followup-pill.tsx`. Pruebas: `tabla.test.ts`, `tabla.int.test.ts`, `schedule.test.ts`, `lector-seguimiento.test.ts`.
 
 ---
 

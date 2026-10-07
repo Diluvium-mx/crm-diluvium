@@ -4,7 +4,8 @@
 // justo abajo, una barra de SUBPESTAÑAS fija al hacer scroll (27-sep-2026; antes el
 // conmutador «Crear | Implementar» y todo en una sola página larga): Modelos · Etapas ·
 // Instrucciones (Goal) · FAQs · Opciones · Tallas y medidas · Canales · Historial (quién
-// cambió qué y cuándo, 28-sep-2026). "Etapas" (columnas
+// cambió qué y cuándo, 28-sep-2026) y, desde el 6-oct-2026, Seguimientos (después de Opciones: la
+// tabla de casos de los seguimientos del Agente IA). "Etapas" (columnas
 // del Embudo, con la regla del bot y el modelo de cada una) es el mismo editor que abre el
 // lápiz del Embudo. Cada subpestaña
 // muestra solo su sección; TODOS los paneles siguen montados (ocultos con `hidden`) para
@@ -26,6 +27,7 @@ import { BotOptionsSection } from "./bot-options";
 import { BrainModelPicker, Model1Picker } from "./brain-model-picker";
 import { ChannelSwitches } from "./channel-switches";
 import { FaqEditor } from "./faq-editor";
+import { FollowUpRulesSection } from "./followup-rules-section";
 import { GoalEditor } from "./goal-editor";
 import { HistoryPanel } from "./history-panel";
 import { SizeRangesSection } from "./size-ranges-section";
@@ -33,6 +35,8 @@ import { StagesEditor } from "../../_components/stages-editor";
 import { useConfirm } from "./use-confirm";
 import { useLogoMotions } from "./use-logo-motions";
 import type { SizeRange } from "@/lib/contacts/sizes";
+import type { FollowUpTableInput } from "@/lib/followups/tabla";
+import type { FollowUpTableLastChange } from "@/lib/actions/agente-ia-seguimientos";
 
 function Section({ title, hint, children }: { title: string; hint?: string; children: React.ReactNode }) {
   return (
@@ -157,11 +161,13 @@ type Dirty = Partial<Record<AgentSection, boolean>>;
 export function AgenteEditor({
   data,
   sizeRanges,
+  followUps,
   initialSection,
   canSeeSellers,
 }: {
   data: AgentEditorView;
   sizeRanges: SizeRange[];
+  followUps: { table: FollowUpTableInput; lastChange: FollowUpTableLastChange | null };
   initialSection: AgentSection;
   canSeeSellers: boolean;
 }) {
@@ -178,6 +184,7 @@ export function AgenteEditor({
   const markDirty = useCallback((s: AgentSection, value: boolean) => setDirty((d) => (Boolean(d[s]) === value ? d : { ...d, [s]: value })), []);
   const goalDirty = useCallback((v: boolean) => markDirty("goal", v), [markDirty]);
   const optionsDirty = useCallback((v: boolean) => markDirty("opciones", v), [markDirty]);
+  const followUpsDirty = useCallback((v: boolean) => markDirty("seguimientos", v), [markDirty]);
   const sizesDirty = useCallback((v: boolean) => markDirty("tallas", v), [markDirty]);
   const stagesDirty = useCallback((v: boolean) => markDirty("etapas", v), [markDirty]);
   const anyDirty = Object.values(dirty).some(Boolean);
@@ -339,6 +346,15 @@ export function AgenteEditor({
         "opciones",
         <Section title="Opciones" hint="Cómo se comporta el Agente IA, como las opciones de Ángela en GHL. Los valores de fábrica son el comportamiento de siempre; los cambios se guardan juntos con «Guardar cambios» y aplican en menos de un minuto, sin redesplegar.">
           <BotOptionsSection options={data.options} lastChange={data.optionsLastChange} onDirtyChange={optionsDirty} />
+        </Section>,
+      )}
+      {panel(
+        "seguimientos",
+        <Section
+          title="Seguimientos"
+          hint="Cuándo y para qué le escribe el Agente IA a un cliente que dejó de contestar, por caso. Los valores de fábrica son los de siempre; los cambios se guardan juntos con «Guardar cambios» y aplican en menos de un minuto."
+        >
+          <FollowUpRulesSection table={followUps.table} lastChange={followUps.lastChange} onDirtyChange={followUpsDirty} />
         </Section>,
       )}
       {panel(

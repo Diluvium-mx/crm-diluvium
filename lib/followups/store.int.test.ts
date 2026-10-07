@@ -214,7 +214,7 @@ describe.skipIf(!TEST_DATABASE_URL)("Seguimientos en la base (modo ensayo)", () 
     expect(await view.loadFollowUpView("otra_org", CONV)).toBeNull();
 
     const nueva = new Date("2026-10-07T16:30:00Z");
-    expect(await view.changeFollowUpTime(ORG, v!.id, nueva, USER, NOW)).toBe(true);
+    expect(await view.changeFollowUpTime(ORG, v!.id, nueva, USER, NOW)).toEqual({ ok: true });
     expect((await rows())[0]).toMatchObject({ dueSetBy: "vendedor", updatedByUserId: USER });
     expect((await rows())[0].dueAt?.toISOString()).toBe(nueva.toISOString());
     expect(await view.approveFollowUp(ORG, v!.id, USER, NOW)).toBe(false);
