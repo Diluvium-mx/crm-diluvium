@@ -424,10 +424,13 @@ lectura.
 | Parte | Qué | Migración |
 |---|---|---|
 | **0 ✅** | **En producción (main d38f387, 2-oct):** plantillas al día solas ("Ver estado"; chequeo al abrir Plantillas y el worker cada 10 min mientras haya alguna en revisión); `{{1}}` = primer nombre del contacto en 📄, 🕒 y el primer mensaje del Embudo. | No |
-| **1** | Tabla `follow_ups` + la ficha en el lector + cálculo de la hora (§6, horario por lada) + la píldora 🤖 y su burbuja en la caja para escribir + el barrido que anota cuándo "habría salido" cada intento. **Modo ensayo: no manda nada**, para que el dueño vea en chats reales si las fichas y los tiempos tienen sentido. Solo WhatsApp (Instagram, después). | 0056 (la 0055 es Instagram) |
+| **1** | Tabla `follow_ups` + la ficha en el lector + cálculo de la hora (§6, horario por lada) + la píldora 🤖 y su burbuja en la caja para escribir + el barrido que anota cuándo "habría salido" cada intento. **Modo ensayo: no manda nada**, para que el dueño vea en chats reales si las fichas y los tiempos tienen sentido. Solo WhatsApp (Instagram: descartado por el dueño el 7-oct-2026, ver abajo). | 0056 (la 0055 es Instagram) |
 | **2 ✅** | Envío con la ventana abierta + paradas + 2.º y 3.er intento + frío y aviso (§15, 6-oct-2026). | 0059 |
 | **3 ✅** | Ventana cerrada: plantilla como del Agente IA (sin pausarlo), retomar con contexto cuando conteste, tope de 7 días, 131049/131050 (§15). | (misma) |
 | **4** | Agente IA › Seguimientos (editar la tabla, §16), chats de vendedor (sugerido + WhatsApp Web), tarjeta del Dashboard (§15), ventana de la píldora con preguntas (§16), mapa y capturas. | 0062 |
+
+**Instagram descartado por el dueño (7-oct-2026):** los seguimientos del Agente IA se quedan solo en WhatsApp. La
+mayoría de los que escriben por Instagram son leads fríos; no se construye ni se vuelve a proponer.
 
 Pruebas: lógica pura (casos, horas, zona por lada, topes) con Vitest; integración con Postgres real (ficha → programa
 → cancela/sale); staging con webhooks firmados. La prueba real del envío solo se puede hacer en producción, con un
@@ -653,6 +656,8 @@ Aprobado por el dueño («OK 1–3»):
 - **Calendario del CRM** (`components/ui/date-time-picker.tsx`) en todo lo que pide fecha u hora; en el celular,
   el selector del teléfono. Una página web no puede usar el calendario propio de macOS.
 - Descartado por el dueño: marcar contactos como de prueba desde el CRM (se queda como está).
+- **Instagram descartado por el dueño, 7-oct-2026:** sin seguimientos del Agente IA en Instagram (la mayoría de los
+  que escriben por ahí son leads fríos). Su píldora queda dormida con su razón; no se vuelve a proponer (§11).
 - Ajustes del mismo día: robot de 30 px en el encabezado de la ventana; «Cancelado» y el robot dormido van **sin
   palabra** en la píldora (solo la carita, en medio); calendario con ruedas de hora y minutos sin fin (como iPhone)
   y deslizar arriba/abajo sobre los días para cambiar de mes; el calendario ya no llega «volando» al abrirse (la
