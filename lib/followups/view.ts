@@ -6,8 +6,10 @@ import { db } from "@/lib/db";
 import { contacts, conversations, followUps, templates, user } from "@/lib/db/schema";
 import { firstNameOf } from "@/lib/templates/first-name";
 import { CASE_RULES, templateForAttempt, TIME_PHRASE_TEMPLATES, type FollowUpCase } from "./cases";
-import { presentAtFor, templateFor, windowOpenAt } from "./schedule";
-import { approvedTemplateNames, followUpsReal, reopenCancelledFollowUp } from "./store";
+import { presentAtFor, sendTimeProblem, templateFor, windowOpenAt, VENDOR_ZONE, type SendTimeProblem } from "./schedule";
+import { approvedTemplateNames, followUpsReal, lastTemplateAt, reopenCancelledFollowUp } from "./store";
+import { loadFollowUpTable } from "./tabla-store";
+import { localParts, zonedInstant } from "./time";
 import { timePhrase } from "./time-phrase";
 
 export type FollowUpView = {
@@ -16,6 +18,7 @@ export type FollowUpView = {
   conversationId: string;
   caso: FollowUpCase;
   casoLabel: string;
+  /** Qué busca el caso (Agente IA › Seguimientos); la píldora muestra antes el siguiente paso de este chat. */
   objetivo: string;
   status: "programado" | "esperando";
   ensayo: boolean;
@@ -76,13 +79,14 @@ export async function loadFollowUpView(organizationId: string, conversationId: s
     templateText = t?.body ? t.body.replace(/\{\{\s*1\s*\}\}/g, value || "") : null;
   }
   const caso = f.caso as FollowUpCase;
+  const table = await loadFollowUpTable(organizationId);
   return {
     estado: "activo",
     id: f.id,
     conversationId: f.conversationId,
     caso,
     casoLabel: CASE_RULES[caso].label,
-    objetivo: CASE_RULES[caso].objetivo,
+    objetivo: caso === "no_seguir" ? CASE_RULES[caso].objetivo : table.casos[caso].busca,
     status: f.status as FollowUpView["status"],
     // El interruptor de la organización manda (Agente IA › Opciones): al pasar a Real, lo programado ya sale.
     ensayo: !(await followUpsReal(organizationId)),
@@ -180,18 +184,55 @@ export async function reactivateFollowUps(organizationId: string, conversationId
   return true;
 }
 
-/** Cambiar hora: la elige el vendedor (hora de Mazatlán); se recalcula por dónde saldría. */
-export async function changeFollowUpTime(organizationId: string, id: string, dueAt: Date, userId: string, now: Date): Promise<boolean> {
+const hourText = (t: Date, zone: string) => {
+  const p = localParts(t, zone);
+  return `${p.hh}:${String(p.mm).padStart(2, "0")}`;
+};
+const dayText = (t: Date) =>
+  new Intl.DateTimeFormat("es-MX", { timeZone: VENDOR_ZONE, weekday: "short", day: "numeric", month: "short", hour: "numeric", minute: "2-digit", hour12: false })
+    .format(t)
+    .replace(/\./g, "");
+
+/** El aviso de «Cambiar hora» cuando el CRM no dejaría salir el mensaje a esa hora. */
+export function sendTimeMessage(problem: SendTimeProblem, t: Date, zone: string): string {
+  if (problem.kind === "siete_dias") {
+    return `A este cliente ya le llegó una plantilla hace menos de 7 días. Elige desde el ${dayText(problem.from)} (hora de Mazatlán).`;
+  }
+  // De 7:00 a la última hora permitida del día del cliente, en hora de Mazatlán.
+  const p = localParts(t, zone);
+  const day = { y: p.y, m: p.m, d: p.d };
+  const from = hourText(zonedInstant(zone, day, "07:00"), VENDOR_ZONE);
+  const to = hourText(zonedInstant(zone, day, problem.latest), VENDOR_ZONE);
+  const why =
+    problem.latest === "21:00"
+      ? `Los seguimientos salen de 7:00 a 21:00 de su hora`
+      : `A esa hora su ventana de 24 h ya cerró y entonces solo se le puede escribir de 7:00 a 19:00 de su hora`;
+  return `Para el cliente serían las ${hourText(t, zone)} (su hora). ${why}: elige entre las ${from} y las ${to} de Mazatlán.`;
+}
+
+export type ChangeTimeResult = { ok: true } | { ok: false; message: string };
+
+/**
+ * Cambiar hora: la elige el vendedor (hora de Mazatlán); se recalcula por dónde saldría. Si a esa hora el
+ * CRM no lo dejaría salir (horario del cliente, plantillas hasta las 19:00, 7 días entre plantillas), no se
+ * guarda y se dice por qué: así sale justo a la hora que eligió.
+ */
+export async function changeFollowUpTime(organizationId: string, id: string, dueAt: Date, userId: string, now: Date): Promise<ChangeTimeResult> {
+  const gone: ChangeTimeResult = { ok: false, message: "Ese seguimiento ya no está programado." };
   const [row] = await db
     .select({ f: followUps, windowExpiresAt: conversations.windowExpiresAt })
     .from(followUps)
     .innerJoin(conversations, and(eq(conversations.id, followUps.conversationId), eq(conversations.organizationId, organizationId)))
     .where(and(eq(followUps.id, id), eq(followUps.organizationId, organizationId), eq(followUps.status, "programado")))
     .limit(1);
-  if (!row) return false;
+  if (!row) return gone;
   const f = row.f;
   const caso = f.caso as Exclude<FollowUpCase, "no_seguir">;
   const door = windowOpenAt(row.windowExpiresAt, dueAt) ? "texto" : "plantilla";
+  const lastTemplate = door === "plantilla" ? await lastTemplateAt(organizationId, f.contactId, now, await followUpsReal(organizationId)) : null;
+  const problem = sendTimeProblem(dueAt, f.timeZone, door, lastTemplate);
+  if (problem) return { ok: false, message: sendTimeMessage(problem, dueAt, f.timeZone) };
+  const table = await loadFollowUpTable(organizationId, now);
   const updated = await db
     .update(followUps)
     .set({
@@ -201,7 +242,7 @@ export async function changeFollowUpTime(organizationId: string, id: string, due
         door === "plantilla"
           ? templateForAttempt(caso, f.intento, templateFor(CASE_RULES[caso].doors[f.intento - 1] ?? "saludo", dueAt, f.timeZone), await approvedTemplateNames(organizationId))
           : null,
-      presentarAt: f.modo === "sugerido" ? presentAtFor(dueAt, now) : null,
+      presentarAt: f.modo === "sugerido" ? presentAtFor(dueAt, now, table.vendedores) : null,
       dueSetBy: "vendedor",
       updatedAt: now,
       updatedByUserId: userId,
@@ -209,7 +250,7 @@ export async function changeFollowUpTime(organizationId: string, id: string, due
     .where(and(eq(followUps.id, id), eq(followUps.organizationId, organizationId), eq(followUps.status, "programado")))
     .returning({ id: followUps.id });
   if (updated.length) await announce(organizationId, f.conversationId, f.contactId);
-  return updated.length > 0;
+  return updated.length > 0 ? { ok: true } : gone;
 }
 
 /** "Que salga solo": el vendedor deja salir el intento sugerido (chat con pausa a mano). */

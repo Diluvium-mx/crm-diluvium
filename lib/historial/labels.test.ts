@@ -58,6 +58,7 @@ describe("historial de cambios: textos y filtros", () => {
     expect(templateStatusLabel("PAUSED")).toBe("PAUSED");
     expect(HISTORY_TYPES.map((t) => t.label)).toEqual([
       "Opciones del Agente IA",
+      "Seguimientos",
       "Goal y FAQs",
       "Nombre del agente",
       "Modelos",

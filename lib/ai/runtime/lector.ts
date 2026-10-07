@@ -50,6 +50,7 @@ import { FOLLOW_UP_TEMPLATES } from "@/lib/followups/cases";
 import { borradorProblems } from "@/lib/followups/borrador-check";
 import { chatTail } from "@/lib/followups/vendor-attempts";
 import { MAX_BORRADOR } from "@/lib/followups/ficha";
+import { loadFollowUpTable } from "@/lib/followups/tabla-store";
 
 export type LectorDeps = {
   now: () => Date;
@@ -272,6 +273,8 @@ async function readConversation(organizationId: string, conversationId: string, 
   const followUp = lastIsCompany(rows);
   const { tools, stageKeys } = buildLectorTools(stages, { followUp });
   const followUpTemplates = followUp && snap.channel.type === "whatsapp" ? await followUpTemplateList(organizationId, conv.channelId) : [];
+  // «Qué busca» y la hora de cada caso: la tabla de la organización (Agente IA › Seguimientos).
+  const followUpTable = followUp ? await loadFollowUpTable(organizationId) : undefined;
   const base = { organizationId, conversationId, messageId: null, stage: "detalle" as const, modelId: model.id, provider: model.provider };
 
   // Indicador del Detalle: "leyendo" justo antes de la llamada y, pase lo que pase, "listo"
@@ -283,7 +286,7 @@ async function readConversation(organizationId: string, conversationId: string, 
     const t0 = Date.now();
     let res: CallModelResult;
     try {
-      res = await deps.callModel(model.id, { system: buildLectorSystem(stages, { followUp, templates: followUpTemplates }), messages, tools, maxOutputTokens: LECTOR_MAX_OUTPUT_TOKENS, timeoutMs: LECTOR_TIMEOUT_MS });
+      res = await deps.callModel(model.id, { system: buildLectorSystem(stages, { followUp, templates: followUpTemplates, table: followUpTable }), messages, tools, maxOutputTokens: LECTOR_MAX_OUTPUT_TOKENS, timeoutMs: LECTOR_TIMEOUT_MS });
     } catch (error) {
       await recordAiUsage({ ...base, usage: null, latencyMs: Date.now() - t0, outcome: "error", error: errorText(error) });
       return (done = { kind: "error", reason: errorText(error), usage: null, costUsd: null });

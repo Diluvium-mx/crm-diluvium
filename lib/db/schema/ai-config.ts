@@ -63,6 +63,11 @@ export const aiConfig = pgTable("ai_config", {
   // 8. Seguimientos del Agente IA (docs/seguimientos.md): false = ENSAYO (se calcula todo y se ve en la
   // píldora 🤖, no sale nada); true = REAL (salen a su hora). Migración 0059 (6-oct-2026).
   seguimientosReal: boolean("seguimientos_real").default(false).notNull(),
+  // Agente IA › Seguimientos (Parte 4, 6-oct-2026; lib/followups/tabla.ts): la tabla de casos (encendido,
+  // intentos, hora, qué busca) y el horario de los vendedores para las sugerencias. null = de fábrica; un
+  // caso o día guardado que no valide vuelve al de fábrica al leerlo. Migración 0062.
+  seguimientosCasos: jsonb("seguimientos_casos").$type<Record<string, unknown>>(),
+  seguimientosVendedores: jsonb("seguimientos_vendedores").$type<Record<string, unknown>>(),
   // 7. Tope de respuestas del bot por conversación (desde el último "Activar" o encendido).
   // null = sin tope (fábrica). Al llegar: pausa hasta "Activar" + aviso 🤖 (tarjeta amarilla).
   maxRepliesPerContact: integer("max_replies_per_contact"),

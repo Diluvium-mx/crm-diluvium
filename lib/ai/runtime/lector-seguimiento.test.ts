@@ -2,7 +2,8 @@
 // cuando el último mensaje del chat es de la empresa; sin llamada extra al modelo.
 import { describe, expect, it } from "vitest";
 import { defaultStages } from "@/lib/contacts/stages";
-import { buildLectorSystem, buildLectorTools, evidenceFrom, FOLLOW_UP_INSTRUCTIONS, lastIsCompany, LECTOR_TOOL, lectorSchemaFor, parseLectorCalls, type LectorMessage } from "./lector-core";
+import { buildLectorSystem, buildLectorTools, evidenceFrom, FOLLOW_UP_INSTRUCTIONS, followUpInstructions, lastIsCompany, LECTOR_TOOL, lectorSchemaFor, parseLectorCalls, type LectorMessage } from "./lector-core";
+import { FACTORY_TABLE, type FollowUpTable } from "@/lib/followups/tabla";
 
 const KEYS = defaultStages().map((s) => s.key);
 const m = (direction: "in" | "out"): LectorMessage => ({
@@ -40,6 +41,28 @@ describe("lector + seguimiento", () => {
     expect(FOLLOW_UP_INSTRUCTIONS).toMatch(/SIN saludo al principio/);
     expect(FOLLOW_UP_INSTRUCTIONS).toMatch(/NUNCA el nombre del cliente/);
     expect(FOLLOW_UP_INSTRUCTIONS).toMatch(/solo paso a dar seguimiento/);
+  });
+
+  it("«Qué busca» y la hora salen de la tabla de la organización (Agente IA › Seguimientos)", () => {
+    // De fábrica: el texto de siempre (precio e información comparten renglón).
+    expect(followUpInstructions(FACTORY_TABLE)).toBe(FOLLOW_UP_INSTRUCTIONS);
+    expect(FOLLOW_UP_INSTRUCTIONS).toContain("- precio_sin_respuesta y solo_informacion: avanzar un paso según cómo quedó");
+    expect(FOLLOW_UP_INSTRUCTIONS).toContain("(hora del cliente: pago 10:00; objeción y medidas de 19:00 a 20:30, ya en su casa;");
+    const table: FollowUpTable = {
+      ...FACTORY_TABLE,
+      casos: {
+        ...FACTORY_TABLE.casos,
+        precio_sin_respuesta: { ...FACTORY_TABLE.casos.precio_sin_respuesta, busca: "Saber si ya tiene la medida de su cochera." },
+        pago_pendiente: { ...FACTORY_TABLE.casos.pago_pendiente, from: "12:00", to: "13:00" },
+        objecion: { ...FACTORY_TABLE.casos.objecion, on: false },
+      },
+    };
+    const text = followUpInstructions(table);
+    expect(text).toContain("- precio_sin_respuesta: saber si ya tiene la medida de su cochera.");
+    expect(text).toContain("- solo_informacion: avanzar un paso según cómo quedó");
+    expect(text).toContain("(hora del cliente: asesor 2 h después y luego de 10:00 a 11:00; pago de 12:00 a 13:00; cotización de 18:00 a 20:00;");
+    expect(text).not.toContain("objeción de");
+    expect(buildLectorSystem(defaultStages(), { followUp: true, table })).toContain(text);
   });
 
   it("parseLectorCalls devuelve la ficha (validada) solo con el contexto del seguimiento", () => {

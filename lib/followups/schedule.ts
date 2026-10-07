@@ -10,6 +10,8 @@
 // 2.º intento: día 2 desde la parada (pidió fecha: 2 días después del 1.º). 3.º: 7 días después
 //   del 2.º. Con plantilla nunca dos en menos de 7 días al mismo contacto, nunca después de
 //   las 19:00 (los casos de noche salen a las 18:00) y nunca antes de las 7:00.
+// La hora de cada caso, qué intentos salen y el horario de los vendedores vienen de la tabla de la
+// organización (Agente IA › Seguimientos, lib/followups/tabla.ts; Parte 4, 6-oct-2026).
 import {
   ALLOWED_FROM,
   ALLOWED_TO,
@@ -26,6 +28,7 @@ import {
   type DoorKind,
   type FollowUpCase,
 } from "./cases";
+import { lastStep, slotOf, type FollowUpTable, type VendorShift, type VendorShifts } from "./tabla";
 import { addDays, localMinutes, localParts, minutesOf, parseLocalDate, sameDate, zonedInstant, type LocalDate } from "./time";
 
 const MINUTE = 60_000;
@@ -53,6 +56,8 @@ export type PlanInput = {
   prevAttemptAt?: Date | null;
   /** Última plantilla de seguimiento que salió a este contacto (7 días entre plantillas). */
   lastTemplateAt?: Date | null;
+  /** Tabla de la organización (hora de cada caso). */
+  table: FollowUpTable;
 };
 
 const maxDate = (a: Date, b: Date) => (a.getTime() >= b.getTime() ? a : b);
@@ -80,6 +85,23 @@ export function windowOpenAt(windowExpiresAt: Date | null, t: Date): boolean {
   return windowExpiresAt !== null && t.getTime() <= windowExpiresAt.getTime() - WINDOW_MARGIN_MS;
 }
 
+export type SendTimeProblem = { kind: "horario"; latest: string } | { kind: "siete_dias"; from: Date };
+
+/**
+ * ¿El CRM dejaría salir un intento a esa hora? Lo mismo que revisa el barrido al salir: de 7:00 a 21:00 del
+ * cliente (plantilla hasta las 19:00) y 7 días entre plantillas. Lo usa «Cambiar hora» para avisar al guardar
+ * en lugar de mover la hora en silencio (decisión del dueño, 6-oct-2026).
+ */
+export function sendTimeProblem(t: Date, zone: string, door: Door, lastTemplateAt: Date | null): SendTimeProblem | null {
+  const m = localMinutes(t, zone);
+  const latest = door === "plantilla" ? TEMPLATE_LATEST : ALLOWED_TO;
+  if (m < minutesOf(ALLOWED_FROM) || m > minutesOf(latest)) return { kind: "horario", latest };
+  if (door === "plantilla" && lastTemplateAt && t.getTime() < lastTemplateAt.getTime() + TEMPLATE_SPACING_DAYS * DAY) {
+    return { kind: "siete_dias", from: new Date(lastTemplateAt.getTime() + TEMPLATE_SPACING_DAYS * DAY) };
+  }
+  return null;
+}
+
 /** Plantilla de una puerta a esa hora del cliente: saludo de la mañana antes de las 12:00. */
 export function templateFor(door: DoorKind, t: Date, zone: string): string {
   if (door === "proteccion") return TEMPLATE_BY_DOOR.proteccion;
@@ -87,8 +109,8 @@ export function templateFor(door: DoorKind, t: Date, zone: string): string {
 }
 
 /** Hora de una plantilla en ese caso: la del caso, o las 18:00 si el caso es de noche. */
-export function templateTimeOf(caso: Exclude<FollowUpCase, "no_seguir">): string {
-  const slot = CASE_RULES[caso].slot!;
+export function templateTimeOf(caso: Exclude<FollowUpCase, "no_seguir">, table: FollowUpTable): string {
+  const slot = slotOf(table, caso);
   // Los casos de noche (empiezan a las 19:00 o después) mandan la plantilla a las 18:00.
   return minutesOf(slot.from) < minutesOf(TEMPLATE_LATEST) ? slot.from : TEMPLATE_EVENING;
 }
@@ -120,7 +142,7 @@ function templatePlan(caso: PlanInput["caso"], intento: number, t: Date, zone: s
 /** Plantilla a la hora del caso, el primer día desde `from` que no esté en el pasado ni rompa los 7 días. */
 function templateOnOrAfter(input: PlanInput, from: LocalDate): AttemptPlan {
   const { zone, now, lastTemplateAt } = input;
-  const time = templateTimeOf(timingCase(input.caso, input.fondo));
+  const time = templateTimeOf(timingCase(input.caso, input.fondo), input.table);
   let notBefore = now;
   if (lastTemplateAt) notBefore = maxDate(notBefore, new Date(lastTemplateAt.getTime() + TEMPLATE_SPACING_DAYS * DAY - MINUTE));
   return templatePlan(input.caso, input.intento, firstAfter(zone, from, time, notBefore), zone);
@@ -143,18 +165,17 @@ function atFixedTime(input: PlanInput, t: Date, fallbackTime: string): AttemptPl
 }
 
 function firstAttempt(input: PlanInput): AttemptPlan {
-  const { caso, zone, stopAt, windowExpiresAt, now } = input;
-  const rule = CASE_RULES[caso];
+  const { caso, zone, stopAt, windowExpiresAt, now, table } = input;
   const soon = new Date(now.getTime() + MINUTE);
 
   if (caso === "asesor_sin_respuesta") {
     const t = nextAllowed(ceil5(maxDate(new Date(stopAt.getTime() + ASESOR_DELAY_MS), soon)), zone, "09:00");
-    return atFixedTime(input, t, rule.slot!.from);
+    return atFixedTime(input, t, slotOf(table, caso).from);
   }
 
   if (caso === "pidio_fecha") {
     // Solo dijo el día: la hora del asunto pendiente ("mañana mido" → 19:00, ya en su casa).
-    const dayTime = CASE_RULES[timingCase(caso, input.fondo)].slot!.from;
+    const dayTime = slotOf(table, timingCase(caso, input.fondo)).from;
     const stopDay = dateOf(stopAt, zone);
     const day = (input.fechaPedida && parseLocalDate(input.fechaPedida)) || stopDay;
     let t: Date;
@@ -175,7 +196,7 @@ function firstAttempt(input: PlanInput): AttemptPlan {
   }
 
   // Casos con franja: texto antes del cierre de la ventana.
-  const slot = rule.slot!;
+  const slot = slotOf(table, caso);
   const lo = maxDate(new Date(stopAt.getTime() + MIN_SILENCE_MS), soon);
   const hi = windowExpiresAt ? new Date(windowExpiresAt.getTime() - WINDOW_MARGIN_MS) : null;
   if (hi && hi.getTime() >= lo.getTime()) {
@@ -212,7 +233,7 @@ function laterAttempt(input: PlanInput): AttemptPlan {
         : addDays(dateOf(stopAt, zone), 2)
       : addDays(dateOf(prev, zone), TEMPLATE_SPACING_DAYS);
   // Casi nunca sigue abierta (el cliente no ha escrito); si sí, texto a la hora del caso.
-  const asText = zonedInstant(zone, base, CASE_RULES[timingCase(caso, input.fondo)].slot!.from);
+  const asText = zonedInstant(zone, base, slotOf(input.table, timingCase(caso, input.fondo)).from);
   if (asText.getTime() > input.now.getTime() && windowOpenAt(windowExpiresAt, asText)) return { dueAt: asText, door: "texto", templateName: null };
   return templateOnOrAfter(input, base);
 }
@@ -221,35 +242,28 @@ export function planAttempt(input: PlanInput): AttemptPlan {
   return input.intento <= 1 ? firstAttempt(input) : laterAttempt(input);
 }
 
-/** Intentos del caso; "pidió fecha" cuyo 1.º ya salió con plantilla se queda en 2 (§6). */
-export function effectiveTotal(caso: FollowUpCase, firstDoor: Door | null): number {
-  const total = CASE_RULES[caso].total;
+/**
+ * Último intento del caso (el último prendido en la tabla); "pidió fecha" cuyo 1.º ya salió con
+ * plantilla no pasa del 2.º (§6).
+ */
+export function effectiveTotal(caso: FollowUpCase, firstDoor: Door | null, table: FollowUpTable): number {
+  const total = caso === "no_seguir" ? 0 : lastStep(table, caso);
   return caso === "pidio_fecha" && firstDoor === "plantilla" ? Math.min(total, 2) : total;
 }
 
 // ── Horario de los vendedores (sugerencias) ──────────────────────────────────
-// De fábrica, de los datos de GHL (may–sep 2026): lunes a viernes 9:00–18:00 y sábado
-// 9:00–13:00, hora de Mazatlán; domingo, nada. Editable en Agente IA › Seguimientos (Parte 4).
+// Hora de Mazatlán. De fábrica, de los datos de GHL (may–sep 2026): lunes a viernes 9:00–18:00 y
+// sábado 9:00–13:00; domingo, nada. Se edita en Agente IA › Seguimientos (tabla.ts).
 export const VENDOR_ZONE = "America/Mazatlan";
-export type VendorShift = { from: string; to: string };
-export const VENDOR_SHIFTS: Readonly<Record<number, VendorShift | null>> = {
-  1: { from: "09:00", to: "18:00" },
-  2: { from: "09:00", to: "18:00" },
-  3: { from: "09:00", to: "18:00" },
-  4: { from: "09:00", to: "18:00" },
-  5: { from: "09:00", to: "18:00" },
-  6: { from: "09:00", to: "13:00" },
-  7: null,
-};
 
-function shiftOf(day: LocalDate): VendorShift | null {
+function shiftOf(day: LocalDate, shifts: VendorShifts): VendorShift | null {
   const weekday = localParts(zonedInstant(VENDOR_ZONE, day, "12:00"), VENDOR_ZONE).weekday;
-  return VENDOR_SHIFTS[weekday] ?? null;
+  return shifts[weekday] ?? null;
 }
 
-export function inVendorShift(t: Date): boolean {
+export function inVendorShift(t: Date, shifts: VendorShifts): boolean {
   const day = dateOf(t, VENDOR_ZONE);
-  const shift = shiftOf(day);
+  const shift = shiftOf(day, shifts);
   if (!shift) return false;
   const m = localMinutes(t, VENDOR_ZONE);
   return m >= minutesOf(shift.from) && m < minutesOf(shift.to);
@@ -260,12 +274,12 @@ export function inVendorShift(t: Date): boolean {
  * a su hora si cae en su turno; si no, en su última hora de trabajo antes (17:00 para uno de
  * las 20:00; el sábado a las 12:00 para uno del domingo). Nunca antes de "ahora".
  */
-export function presentAtFor(dueAt: Date, now: Date): Date {
-  if (inVendorShift(dueAt)) return maxDate(dueAt, now);
+export function presentAtFor(dueAt: Date, now: Date, shifts: VendorShifts): Date {
+  if (inVendorShift(dueAt, shifts)) return maxDate(dueAt, now);
   const dueDay = dateOf(dueAt, VENDOR_ZONE);
   for (let k = 0; k <= 7; k++) {
     const day = addDays(dueDay, -k);
-    const shift = shiftOf(day);
+    const shift = shiftOf(day, shifts);
     if (!shift) continue;
     const end = zonedInstant(VENDOR_ZONE, day, shift.to);
     if (end.getTime() > dueAt.getTime()) continue;

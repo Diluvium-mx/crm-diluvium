@@ -24,6 +24,7 @@ import type { ToolCallOutput } from "@/lib/ai/types";
 import { clip, messageText, neutralizeCrmHeader, type ThreadMessage } from "./transcript";
 import { ANCHO_EN_CM, parseDetalle, type DetalleIa } from "./tools";
 import { fichaSchema, parseFicha, type FollowUpFicha } from "@/lib/followups/ficha";
+import { caseOn, EDITABLE_CASES, FACTORY_TABLE, slotOf, type EditableCase, type FollowUpTable } from "@/lib/followups/tabla";
 
 // Siempre Luna (decisión del dueño): lee y llena, no vende.
 export const LECTOR_MODEL_ID = "gpt-5.6-luna";
@@ -82,10 +83,13 @@ export function lastIsCompany(rows: readonly Pick<LectorMessage, "direction">[])
   return rows.length > 0 && rows[rows.length - 1].direction === "out";
 }
 
-export function buildLectorSystem(stages: readonly FunnelStage[], opts: { followUp?: boolean; templates?: readonly { name: string; body: string }[] } = {}): string {
+export function buildLectorSystem(
+  stages: readonly FunnelStage[],
+  opts: { followUp?: boolean; templates?: readonly { name: string; body: string }[]; table?: FollowUpTable } = {},
+): string {
   if (!opts.followUp) return lectorBase(stages);
   const plantillas = followUpTemplatesBlock(opts.templates ?? []);
-  return `${lectorBase(stages)}\n\n${FOLLOW_UP_INSTRUCTIONS}${plantillas ? `\n\n${plantillas}` : ""}`;
+  return `${lectorBase(stages)}\n\n${followUpInstructions(opts.table ?? FACTORY_TABLE)}${plantillas ? `\n\n${plantillas}` : ""}`;
 }
 
 function lectorBase(stages: readonly FunnelStage[]): string {
@@ -113,7 +117,9 @@ ${stagesInstructions(stages)}`;
 // los casos es el de lib/followups/cases.ts (prioridad). Revisado el 3-oct-2026 con el ensayo
 // en producción: guía por caso, nunca una pregunta ya hecha ni el precio ya dado, una sola
 // pregunta, "pidió fecha" con frases sin hora y la plantilla de cada intento según el chat.
-export const FOLLOW_UP_INSTRUCTIONS = `SEGUIMIENTO (en esta lectura el ÚLTIMO mensaje del chat es de la empresa y el cliente no ha contestado)
+// Desde la Parte 4 (6-oct-2026) «Qué busca» y la hora de cada caso salen de la tabla de la organización
+// (Agente IA › Seguimientos, lib/followups/tabla.ts); con los valores de fábrica el texto es el de siempre.
+const FOLLOW_UP_HEAD = `SEGUIMIENTO (en esta lectura el ÚLTIMO mensaje del chat es de la empresa y el cliente no ha contestado)
 Llena también "seguimiento": qué quedó pendiente, para escribirle si no contesta. Fíjate sobre todo en CÓMO TERMINÓ la conversación (los últimos mensajes). Elige UN caso, el PRIMERO de esta lista que aplique:
 - no_seguir: dijo que no o que ya compró (aquí o en otro lado: Mercado Libre, Amazon, una tienda); preguntó por envío fuera de México (España, Sudamérica, Estados Unidos…) y en el chat ya se le dijo que no se envía al extranjero, AUNQUE diga que tiene a alguien en México; pidió que no le escriban; número equivocado o escribió por error; el que contesta es el contestador automático de otro negocio; o ya compró y pagó todo.
 - asesor_sin_respuesta: el cliente pidió hablar con una persona o la empresa le dijo que lo pasaba con un asesor, y ningún vendedor le contestó después.
@@ -126,17 +132,52 @@ Llena también "seguimiento": qué quedó pendiente, para escribirle si no conte
 - solo_informacion: solo mandó el texto del anuncio ("Quiero más información", "Me interesa") o un saludo y recibió la información (aunque esa información traiga el precio), sin preguntar el precio él.
 - sin_punto_claro: ninguno de los anteriores.
 
-Qué busca el mensaje en cada caso (la pregunta va según cómo terminó el chat, nunca una ya hecha):
-- asesor_sin_respuesta: disculparse por la espera y resolver lo que pidió.
-- pidio_fecha: retomar justo lo que quedó ("¿Pudo medir la entrada?" si iba a medir, "¿Pudo hacer el depósito?" si iba a pagar).
-- pago_pendiente: el comprobante, o resolver lo que lo frena (forma de pago, meses sin intereses, fecha de entrega).
-- objecion: contestar esa duda u objeción con algo útil (la mini compuerta si es caro, hasta dónde protege, los meses sin intereses).
-- cotizacion_sin_respuesta: resolver la duda que lo frena (instalación, envío, si le queda) y ofrecer apartarla o los datos de pago.
-- faltan_medidas: el dato exacto que falta (cuál de las entradas, con cómo medir: de lado a lado, en cm).
-- precio_sin_respuesta y solo_informacion: avanzar un paso según cómo quedó: si nunca se le pidió el ancho de su entrada, pídelo ("¿Qué ancho tiene la entrada que quiere proteger? Con esa medida le digo qué tamaño le queda."); si ya se le pidió, pregunta si le quedó alguna duda de la compuerta; si dejó una duda sin contestar, contéstala.
-- sin_punto_claro: una pregunta sobre su caso que nadie le haya hecho.
+`;
 
-pendiente: en una línea, lo que quedó abierto, con el dato concreto (medidas, talla, monto).
+const FACTORY_HOURS = "(hora del cliente: pago 10:00; objeción y medidas de 19:00 a 20:30, ya en su casa; precio e información de 19:00 a 21:00; cotización de 18:00 a 20:00; pidió fecha, a la hora que pidió)";
+
+const HOURS_NAME: Readonly<Record<Exclude<EditableCase, "pidio_fecha">, string>> = {
+  asesor_sin_respuesta: "asesor",
+  pago_pendiente: "pago",
+  objecion: "objeción",
+  cotizacion_sin_respuesta: "cotización",
+  faltan_medidas: "medidas",
+  precio_sin_respuesta: "precio",
+  solo_informacion: "información",
+  sin_punto_claro: "sin punto claro",
+};
+
+/** La hora de cada caso que lee el lector: la frase de siempre con los valores de fábrica. */
+function hoursOf(table: FollowUpTable): string {
+  if (EDITABLE_CASES.every((c) => slotOf(table, c).from === slotOf(FACTORY_TABLE, c).from && slotOf(table, c).to === slotOf(FACTORY_TABLE, c).to)) return FACTORY_HOURS;
+  const items = EDITABLE_CASES.filter((c): c is Exclude<EditableCase, "pidio_fecha"> => c !== "pidio_fecha" && caseOn(table, c)).map((c) => {
+    const { from, to } = slotOf(table, c);
+    return c === "asesor_sin_respuesta" ? `asesor 2 h después y luego de ${from} a ${to}` : `${HOURS_NAME[c]} de ${from} a ${to}`;
+  });
+  return `(hora del cliente: ${[...items, "pidió fecha, a la hora que pidió"].join("; ")})`;
+}
+
+const lowerFirst = (t: string) => (/^\p{Lu}\p{Ll}/u.test(t) ? t.charAt(0).toLowerCase() + t.slice(1) : t);
+
+/** «Qué busca» de cada caso (casos seguidos con el mismo texto van en un renglón: «a y b»). */
+function buscaBlock(table: FollowUpTable): string {
+  const lines: string[] = [];
+  for (let i = 0; i < EDITABLE_CASES.length; ) {
+    const text = table.casos[EDITABLE_CASES[i]].busca;
+    let j = i + 1;
+    while (j < EDITABLE_CASES.length && table.casos[EDITABLE_CASES[j]].busca === text) j++;
+    const names = EDITABLE_CASES.slice(i, j);
+    const label = names.length === 1 ? names[0] : `${names.slice(0, -1).join(", ")} y ${names[names.length - 1]}`;
+    lines.push(`- ${label}: ${lowerFirst(text)}`);
+    i = j;
+  }
+  return `Qué busca el mensaje en cada caso (la pregunta va según cómo terminó el chat, nunca una ya hecha):\n${lines.join("\n")}`;
+}
+
+/** Instrucciones del seguimiento con la tabla de la organización. */
+export function followUpInstructions(table: FollowUpTable = FACTORY_TABLE): string {
+  const hours = hoursOf(table);
+  return `${FOLLOW_UP_HEAD}${buscaBlock(table)}\n\npendiente: en una línea, lo que quedó abierto, con el dato concreto (medidas, talla, monto).
 siguiente_paso: en una línea, lo que lo acerca a comprar: el primer dato que falta en la ficha, o cerrar la venta si ya está todo.
 vale_la_pena: false solo en no_seguir, con el motivo en una frase.
 borrador: el mensaje que se le mandaría, como lo escribiría la empresa en este chat:
@@ -150,8 +191,11 @@ borrador: el mensaje que se le mandaría, como lo escribiría la empresa en este
 - si la empresa tardó en contestarle, una disculpa por la espera;
 - nunca genérico ("solo paso a dar seguimiento", "¿sigue interesado?"), ni "último seguimiento", ni presión ("mantenemos el precio", "por tiempo limitado");
 - si en el chat escribió un vendedor, no te presentes como asistente: habla como Diluvium;
-- que sirva a cualquier hora: NO digas "hoy", "esta noche", "mañana" ni "cuando esté en su casa". Casi siempre sale a la hora del caso (hora del cliente: pago 10:00; objeción y medidas de 19:00 a 20:30, ya en su casa; precio e información de 19:00 a 21:00; cotización de 18:00 a 20:00; pidió fecha, a la hora que pidió), pero si su ventana de WhatsApp cierra antes sale más temprano.
+- que sirva a cualquier hora: NO digas "hoy", "esta noche", "mañana" ni "cuando esté en su casa". Casi siempre sale a la hora del caso ${hours}, pero si su ventana de WhatsApp cierra antes sale más temprano.
 En no_seguir, borrador en null.`;
+}
+
+export const FOLLOW_UP_INSTRUCTIONS = followUpInstructions(FACTORY_TABLE);
 
 /**
  * Las plantillas que el lector puede elegir para el 2.º y el 3.er intento (las aprobadas de
