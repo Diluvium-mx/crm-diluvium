@@ -206,7 +206,7 @@ La plantilla de cada intento es propuesta: **el dueño la confirma caso por caso
 |---|---|---|---|---|---|---|---|
 | 0 | **No seguir** (`no_seguir`) | Dijo que no o que ya compró (aquí o en Mercado Libre, Amazon, una tienda); pidió envío al extranjero y ya se le dijo que no se envía, aunque tenga a alguien en México; pidió que no le escriban; número equivocado o anuncio por error; contesta el contestador de otro negocio; ya compró (etapa Venta cerrada o pagó el total) | — | Nunca | — | — | — |
 | 1 | **Asesor sin respuesta** (`asesor_sin_respuesta`) | Aviso abierto "pasar a un asesor" / "el cliente pide una persona" (tarjeta amarilla) y ningún vendedor le contestó | 1.º: 2 h después (7:00–21:00) · luego 10:00 | **2 h** (texto): el Agente IA se disculpa por la espera y resuelve lo que pueda. Al vendedor ya le avisó la tarjeta amarilla al instante | Día 2 · 🚪 | — | Que no se quede colgado y lo atienda un vendedor |
-| 2 | **Pidió que le escribieran** (`pidio_fecha`) | El cliente dijo cuándo sigue, aunque sin hora exacta ("mañana mido", "en la tarde se la mando", "el domingo que regrese", "el lunes", "en la quincena", "no estoy en casa"); "estoy ocupado / al rato" sin más = +3 h; "en la quincena" = el próximo día 15 o último del mes; "cuando pueda" sin día NO es fecha | La que pidió (mañana 10:00 · tarde 18:00 · noche o "cuando llegue a casa" 19:30) · solo el día: **la hora de lo pendiente** (medidas 19:00, pago 10:00…; sin asunto, 11:00) | **La fecha y hora que pidió**. Texto si la ventana sigue abierta; si no, 🚪 | +2 días · 🚪 (o +7 días si el 1.º ya fue plantilla) | +7 días · la plantilla que mejor encaje (solo si el 1.º fue texto) | Retomar justo como quedaron |
+| 2 | **Pidió que le escribieran** (`pidio_fecha`) | El cliente dijo cuándo sigue, aunque sin hora exacta ("mañana mido", "en la tarde se la mando", "el domingo que regrese", "el lunes", "en la quincena", "cuando me paguen", "no estoy en casa"); "estoy ocupado / al rato" sin más = +3 h; "en la quincena", "cuando me paguen / cuando cobre" (sin día) = el próximo día 15 o último del mes; "a fin de mes" = el último; "a principios de mes" = el día 1; "me pagan el viernes" = ese viernes; "cuando pueda" sin día NO es fecha | La que pidió (mañana 10:00 · tarde 18:00 · noche o "cuando llegue a casa" 19:30) · solo el día: **la hora de lo pendiente** (medidas 19:00, pago 10:00…; sin asunto, 11:00) | **La fecha y hora que pidió**. Texto si la ventana sigue abierta; si no, 🚪 | +2 días · 🚪 (o +7 días si el 1.º ya fue plantilla) | +7 días · la plantilla que mejor encaje (solo si el 1.º fue texto) | Retomar justo como quedaron |
 | 3 | **Pago pendiente** (`pago_pendiente`) | Recibió los datos bancarios (etapa Cerca de compra) y no ha mandado comprobante, o falta el resto del pago | 10:00 | Antes del cierre · texto | Día 2 · 🚪 | Día 9 · la plantilla que mejor encaje | El comprobante, o resolver lo que lo frena (forma de pago, tarjeta, fecha de entrega) |
 | 4 | **Lo va a pensar u objeción** (`objecion`) | Lo último del cliente: "lo platico con mi esposo", "lo pienso", "está caro", "ahorita no", "más adelante" (sin fecha) | 19:00–20:30 | Antes del cierre · texto | Día 2 · 📄 | Día 9 · 🚪 | Responder esa duda u objeción con algo útil (video, opción, comparación) |
 | 5 | **Cotización sin respuesta** (`cotizacion_sin_respuesta`) | Dio medidas y se le dijo talla y precio para SU entrada (Detalle con medidas y monto); no llegó a datos bancarios | 18:00–20:00 | Antes del cierre · texto | Día 2 · 📄 | Día 9 · 🚪 | Resolver la duda que lo frena (instalación, envío, si le queda) y ofrecer los datos de pago |
@@ -266,7 +266,7 @@ en medio, el seguimiento se cancela y la siguiente lectura hace una ficha nueva.
   2 h; Ángela, 7 %).
 - **Quincena / fin de mes:** en GHL no se vendió más en esos días (26 % de las ventas cayó en los días 14–16 y
   29–2, lo mismo que el calendario) y solo 3 clientes en 6 meses la mencionaron. Por eso, cuando el cliente la pide
-  va en "Pidió fecha"; una regla general de fechas de pago se revisa con los datos del CRM (§12).
+  va en "Pidió fecha", y no hay regla general de fechas de pago (decisión del dueño del 7-oct-2026, §12).
 
 **El Agente IA lo sabe:** la hora del caso y su porqué van en las instrucciones con las que redacta el seguimiento,
 y se ven y editan en Agente IA › Seguimientos (Parte 4). Como a veces la ventana cierra antes de la hora del caso y el
@@ -465,8 +465,8 @@ contacto de prueba del dueño.
    amarilla de hoy o un color propio en el Embudo). Por ver.
 2. ~~Plantillas de cada intento~~ y ~~plantillas propias por caso~~: **resueltas el 3-oct-2026** (6 plantillas
    `seg_*`, §3).
-4. **Fechas de pago (quincena, fin de mes):** cuando el cliente la pide, va en "Pidió fecha". Una regla general se
-   revisa con los datos del CRM, una vez que haya seguimientos funcionando.
+4. ~~Fechas de pago (quincena, fin de mes)~~: **resuelta el 7-oct-2026, opción A** (§18): sin regla general; solo se
+   afinan las frases de pago del cliente en "Pidió fecha".
 5. **Quién redacta el texto al salir (§10.1):** el borrador del lector tal cual (sin gasto extra; propuesta) o una
    llamada nueva al salir.
 
@@ -662,6 +662,29 @@ Aprobado por el dueño («OK 1–3»):
   palabra** en la píldora (solo la carita, en medio); calendario con ruedas de hora y minutos sin fin (como iPhone)
   y deslizar arriba/abajo sobre los días para cambiar de mes; el calendario ya no llega «volando» al abrirse (la
   clase `duration-*` de su entrada animaba también su posición).
+
+
+---
+
+## 18. Quincena y fin de mes: opción A (7-oct-2026)
+
+Plan completo y números: `reportes/seguimientos-semana/plan-quincena-2026-10-07.md` (fuera del repo). El dueño eligió la
+**opción A** el 7-oct-2026; B (mover «Pago pendiente» a la quincena), C («no me alcanza» → la próxima quincena) y D (regla
+general de calendario) quedan descartadas.
+- **Por qué:** en GHL (23-mar → 24-sep, 217 ventas) el 25 % de las ventas cayó en los días de quincena (14–16 y penúltimo–2)
+  contra 23 % del calendario; solo el 15 y el último, 7 % contra 6 %. Lo que sí sobresale es el lunes (22 % contra 15 %):
+  el horario de los vendedores. Solo 13 de 11,207 clientes ataron la compra a su pago o a no tener dinero. En el CRM
+  (OK LECTURA PROD, 7-oct) la historia es corta (7 pagos detectados del 28-sep al 5-oct; la tabla `comprobantes` vacía) y
+  solo 2 de 1,796 chats dijeron que no tenían dinero, ninguno con fecha de pago: no alcanza para la opción C (umbral 1 %).
+- **Qué cambió:** las instrucciones del lector para `pidio_fecha` (`lib/ai/runtime/lector-core.ts`): «en la quincena»,
+  «cuando me paguen», «cuando cobre» o «el día de pago» sin día = el próximo 15 o el último del mes, el que llegue primero;
+  «a fin de mes» = el último día; «a principios de mes» = el día 1 del mes siguiente; «me pagan el viernes» = ese viernes.
+  Todas sin hora: salen a la hora de lo pendiente (pago 10:00). `schedule.ts` y la tabla no cambian; sin migración.
+- **Fin de semana:** no se recorre. Si el 15 cae en sábado, casi siempre pagan el viernes: el sábado ya tiene el dinero
+  (los seguimientos salen todos los días de 7:00 a 21:00, §12).
+- Prueba: `lector-seguimiento.test.ts` («las frases de pago van en «pidió fecha»…»).
+- **Instagram (mismo día):** la píldora dormida de un chat de Instagram dice «Los chats de Instagram no llevan
+  seguimientos del Agente IA.» (antes «todavía no tienen»; §17).
 
 ---
 
