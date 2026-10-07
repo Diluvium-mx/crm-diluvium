@@ -62,7 +62,9 @@ async function asesorPendiente(organizationId: string, conversationId: string): 
 }
 
 /**
- * "Pausar agente" puesto A MANO (no la pausa automática de cuando un vendedor contesta). La fila del
+ * "Pausar agente" puesto A MANO (no la pausa automática de cuando un vendedor contesta), o la pausa
+ * del freno ante contestadores automáticos (7-oct-2026): un seguimiento que saliera solo despertaría
+ * otra vez al contestador y, si respondiera, al Agente IA. Ahí el seguimiento queda como sugerencia. La fila del
  * Historial se escribe en la misma transacción que la pausa (agent_state_changed_at): solo se busca
  * desde ahí, así la consulta no recorre todo el Historial de la organización.
  */
@@ -76,13 +78,13 @@ export async function manualPauseOf(organizationId: string, conversationId: stri
         eq(changeHistory.organizationId, organizationId),
         eq(changeHistory.kind, "pausas"),
         eq(changeHistory.subjectId, conversationId),
-        inArray(changeHistory.action, ["pausar", "pausa_auto", "pausa_tope", "pausa_asesor"]),
+        inArray(changeHistory.action, ["pausar", "pausa_auto", "pausa_tope", "pausa_bucle", "pausa_asesor"]),
         changedAt ? gte(changeHistory.createdAt, new Date(changedAt.getTime() - 60_000)) : undefined,
       ),
     )
     .orderBy(desc(changeHistory.createdAt))
     .limit(1);
-  return last?.action === "pausar";
+  return last?.action === "pausar" || last?.action === "pausa_bucle";
 }
 
 /**

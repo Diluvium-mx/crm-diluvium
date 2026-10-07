@@ -52,7 +52,8 @@ describe("historial de cambios: textos y filtros", () => {
     expect(describeAction("pausas", "pausa_tope", "Juan")).toBe("Llegó al máximo de respuestas: el agente se pausó en el chat de Juan");
     expect(describeAction("pausas", "pausa_asesor", "Juan")).toBe("El cliente pidió un asesor: el agente se pausó en el chat de Juan");
     expect(describeAction("pausas", "vuelta_sola", "Juan")).toBe("Se cumplió la hora de regreso: el agente volvió solo en el chat de Juan");
-    expect(["pausa_auto", "pausa_tope", "pausa_asesor", "vuelta_sola"].every(isAutomaticAction)).toBe(true);
+    expect(["pausa_auto", "pausa_tope", "pausa_bucle", "pausa_asesor", "vuelta_sola"].every(isAutomaticAction)).toBe(true);
+    expect(describeAction("pausas", "pausa_bucle", "Juan")).toBe("Parecía un contestador automático: el agente se pausó en el chat de Juan");
     expect(isAutomaticAction("pausar")).toBe(false);
     expect(templateStatusLabel("approved")).toBe("Aprobada");
     expect(templateStatusLabel("PAUSED")).toBe("PAUSED");

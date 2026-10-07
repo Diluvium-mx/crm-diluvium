@@ -9,7 +9,8 @@ import { aiAgentDrafts, aiUsage, channels, conversations, messages, workflowRuns
 import { MAX_HISTORY_CHARS, messageText } from "./transcript";
 import { FINAL_OUTCOMES } from "./usage";
 import { asksSomething } from "./unanswered";
-import { hiddenNoticeSql, lateContentAtSql, noDisponibleEstado, UNAVAILABLE_HISTORY_NOTE } from "@/lib/messaging/unavailable";
+import { hiddenNoticeSql, isUnavailableNotice, lateContentAtSql, noDisponibleEstado, UNAVAILABLE_HISTORY_NOTE } from "@/lib/messaging/unavailable";
+import type { LoopMessage } from "./contestador";
 
 export type ConversationRow = typeof conversations.$inferSelect;
 export type ChannelRow = typeof channels.$inferSelect;
@@ -444,6 +445,42 @@ export async function agentReplyCount(organizationId: string, conversationId: st
       ),
     );
   return value;
+}
+
+// Freno ante contestadores automáticos (contestador.ts): los últimos mensajes del chat en el
+// orden del Agente IA, con lo mínimo para contar vueltas. 60 filas = unas 20 vueltas, de sobra
+// para saber si un texto ya se había mandado. Vendedor = la misma regla que el semáforo
+// (celular, o CRM con usuario; un workflow sin usuario no es una persona).
+export const LOOP_WINDOW_ROWS = 60;
+
+export async function loopWindow(organizationId: string, conversationId: string, cut: Date | null): Promise<LoopMessage[]> {
+  const rows = await db
+    .select({
+      direction: messages.direction,
+      source: messages.source,
+      sentByUserId: messages.sentByUserId,
+      body: messages.body,
+      metadata: messages.metadata,
+      createdAt: messages.createdAt,
+    })
+    .from(messages)
+    .where(
+      and(
+        inConversation(organizationId, conversationId),
+        ne(messages.status, "failed"),
+        ne(messages.type, "system_note"),
+        not(hiddenNoticeSql(messages.metadata)),
+      ),
+    )
+    .orderBy(desc(agentAt), desc(messages.createdAt), desc(messages.id))
+    .limit(LOOP_WINDOW_ROWS);
+  return rows.reverse().map((m) => ({
+    direction: m.direction,
+    human: m.source === "business_app" || (m.source === "crm" && m.sentByUserId !== null),
+    body: m.body,
+    unreadable: isUnavailableNotice(m.metadata),
+    afterCut: cut === null || m.createdAt > cut,
+  }));
 }
 
 // Total de entrantes: si crece entre leer y enviar, llegó algo nuevo (revisión
