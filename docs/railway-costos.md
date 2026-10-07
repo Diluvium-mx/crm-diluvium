@@ -30,6 +30,9 @@ Decisión del dueño (7-oct-2026): ver lo que va costando Railway sin entrar a R
   `lib/dashboard/railway.ts`, `app/(app)/inicio/_components/railway-card.tsx`): uso del periodo, lo que queda de lo
   incluido en el plan (barra naranja desde 80 %) y la **factura estimada** = máx(lo que cuesta el plan, uso
   proyectado al cierre a ritmo lineal). El primer día del periodo no se estima. Sin fila (sin token) no hay tarjeta.
+- **Aviso de pago pendiente** (OK del dueño 7-oct-2026): si `state` es `PAST_DUE` o `UNPAID`, la tarjeta muestra en
+  naranja «Railway marca un pago pendiente: revisa la tarjeta en Railway › Workspace › Billing antes de que detenga los
+  servidores.»; si es `CANCELLED` o `INACTIVE`, que el plan aparece cancelado o inactivo (`billingAlertFor`).
 - `currentUsage` lo da Railway en caché y puede venir unos minutos atrasado. No incluye impuestos.
 - Datos de referencia (7-oct-2026, 1.8 días del periodo): uso US$0.69, próxima factura US$5.02 (plan + 2 centavos
   del cambio de plan), estimada ≈ US$11.85.
@@ -39,8 +42,8 @@ Decisión del dueño (7-oct-2026): ver lo que va costando Railway sin entrar a R
 - `RAILWAY_BILLING_TOKEN`: token del **workspace** «diluvium-mx's Projects» (Railway › Account Settings › Tokens ›
   elegir el workspace). Railway no tiene tokens de solo lectura: este da control del workspace (podría borrar
   servicios), por eso va solo en el worker, nunca en la web ni en el repo, y el CRM solo hace la consulta de arriba.
-  Va en el encabezado `Authorization`. Si el token del workspace no alcanzara a leer el cobro, el error lo dice
-  («no devolvió el cobro del workspace») y habría que decidir con el dueño si usar uno de cuenta.
+  Va en el encabezado `Authorization`. Comprobado el 7-oct-2026: el token del workspace sí lee el cobro (`customer`); no
+  hace falta uno de cuenta.
 - `RAILWAY_PROJECT_ID`: la pone Railway sola en cada servicio; no hay que cargarla.
 
 Carga: primero `worker` de staging para probar; después `worker-production` y se borra de staging (como las llaves

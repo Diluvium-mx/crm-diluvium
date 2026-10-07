@@ -1,9 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { railwayFreshness, shortDate, summarizeRailway } from "./railway";
+import { billingAlertFor, railwayFreshness, shortDate, summarizeRailway } from "./railway";
 
 const START = new Date("2026-10-05T23:44:44.000Z");
 const END = new Date("2026-11-05T23:44:44.000Z");
-const base = { plan: "HOBBY", periodStart: START, periodEnd: END, usageUsd: 0.6928, fetchedAt: null, lastError: null };
+const base = { plan: "HOBBY", state: "ACTIVE", periodStart: START, periodEnd: END, usageUsd: 0.6928, fetchedAt: null, lastError: null };
 
 describe("summarizeRailway", () => {
   it("Hobby: uso, lo que queda de los US$5 y la factura proyectada (caso real del 7-oct)", () => {
@@ -52,10 +52,27 @@ describe("summarizeRailway", () => {
       includedPct: null,
     });
     const vacio = summarizeRailway(
-      { plan: null, periodStart: null, periodEnd: null, usageUsd: null, fetchedAt: null, lastError: "Railway respondió 401" },
+      { plan: null, state: null, periodStart: null, periodEnd: null, usageUsd: null, fetchedAt: null, lastError: "Railway respondió 401" },
       new Date(),
     );
     expect(vacio).toMatchObject({ planLabel: null, usageUsd: null, includedPct: null, estimatedBillUsd: null });
+  });
+});
+
+describe("aviso de cobro", () => {
+  it("al corriente o sin lectura: sin aviso", () => {
+    expect(summarizeRailway(base, new Date("2026-10-07T19:00:00Z")).billingAlert).toBeNull();
+    expect(billingAlertFor(null)).toBeNull();
+  });
+
+  it("pago vencido o sin pagar: aviso de pago pendiente", () => {
+    expect(summarizeRailway({ ...base, state: "PAST_DUE" }, new Date("2026-11-06T10:00:00Z")).billingAlert).toContain("pago pendiente");
+    expect(billingAlertFor("UNPAID")).toContain("pago pendiente");
+  });
+
+  it("plan cancelado o inactivo: aviso propio", () => {
+    expect(billingAlertFor("CANCELLED")).toContain("cancelado o inactivo");
+    expect(billingAlertFor("INACTIVE")).toContain("cancelado o inactivo");
   });
 });
 
