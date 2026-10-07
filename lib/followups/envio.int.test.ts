@@ -296,6 +296,22 @@ describe.skipIf(!TEST_DATABASE_URL)("Seguimientos en modo REAL (proveedor falso)
     expect(await view.reactivateFollowUps(ORG, CONV, new Date(T0.getTime() + 4 * HOUR))).toBe(false);
   });
 
+  it("«Reactivar» con el chat ya cambiado (7-oct-2026): no reabre el viejo, pide una lectura nueva (nunca deja el chat sin nada)", async () => {
+    const view = await import("./view");
+    await db.insert(s.user).values({ id: "u_vend", name: "Carlos", email: "carlos@envio.test" });
+    await reading();
+    const r = await row();
+    // Después de la lectura llegó otro mensaje nuestro (el chat cambió).
+    const despues = new Date(T0.getTime() + 5 * MIN);
+    await db.insert(s.messages).values({ id: "m_nuevo", organizationId: ORG, conversationId: CONV, direction: "out", source: "crm", type: "text", body: "¿Sigue ahí?", status: "delivered", providerMessageId: "wamid.nuevo", sentAt: despues, createdAt: despues });
+    await db.update(s.conversations).set({ detalleLeidoHasta: T0 }).where(d.eq(s.conversations.id, CONV));
+    expect(await view.cancelFollowUpById(ORG, r.id, "u_vend", new Date(T0.getTime() + 10 * MIN))).toBe(true);
+    expect(await view.reactivateFollowUps(ORG, CONV, new Date(T0.getTime() + 20 * MIN))).toBe(true);
+    expect((await row()).status).toBe("cancelado");
+    const [c] = await db.select().from(s.conversations).where(d.eq(s.conversations.id, CONV));
+    expect(c).toMatchObject({ seguimientosOffAt: null, detalleLeidoHasta: null });
+  });
+
   it("se dio de baja (131050): la píldora queda en «baja»; «Volver a darle seguimiento» la quita", async () => {
     const view = await import("./view");
     await reading();
@@ -303,6 +319,42 @@ describe.skipIf(!TEST_DATABASE_URL)("Seguimientos en modo REAL (proveedor falso)
     await delivery.onFollowUpDeliveryFailed({ organizationId: ORG, conversationId: CONV, errorCode: "131050", errorMessage: null, metadata: { seguimiento: { followUpId: r.id, intento: 1 } } });
     expect(await view.loadFollowUpState(ORG, CONV)).toMatchObject({ estado: "baja", contactId: CONTACT });
     await view.clearSinSeguimientos(ORG, CONTACT);
-    expect(await view.loadFollowUpState(ORG, CONV)).toBeNull();
+    // La píldora siempre está (7-oct-2026): sin seguimiento abierto, «dormido».
+    expect(await view.loadFollowUpState(ORG, CONV)).toMatchObject({ estado: "dormido" });
+  });
+
+  it("la píldora siempre está (7-oct-2026): «dormido» con su razón, «esperando» tras el último intento y «Apagar» desde dormido", async () => {
+    const view = await import("./view");
+    await db.insert(s.user).values({ id: "u_vend", name: "Carlos", email: "carlos@envio.test" });
+    // Nuestro mensaje es el último y el Agente IA todavía no lee el chat.
+    expect(await view.loadFollowUpState(ORG, CONV)).toMatchObject({ estado: "dormido", razon: expect.stringMatching(/lee el chat en unos minutos/) });
+    // Ya lo leyó y dijo «No seguir».
+    await db.update(s.conversations).set({ detalleLeidoHasta: T0 }).where(d.eq(s.conversations.id, CONV));
+    await store.applyFollowUpReading({
+      organizationId: ORG, conversationId: CONV, contactId: CONTACT, readUpTo: T0, stopAt: T0, lastIsCompany: true,
+      ficha: ficha({ caso: "no_seguir", valeLaPena: false, motivo: "Dijo que ya lo compró en otro lado" }),
+      stages: await stagesMod.listFunnelStages(ORG), stageKey: "inbox", monto: null, pago: null, now: new Date(T0.getTime() + 4 * MIN),
+    });
+    expect(await view.loadFollowUpState(ORG, CONV)).toMatchObject({ estado: "dormido", razon: "No seguir: Dijo que ya lo compró en otro lado." });
+    // El cliente escribió al último.
+    const despues = new Date(T0.getTime() + 10 * MIN);
+    await msg("m_cliente2", "in", despues);
+    expect(await view.loadFollowUpState(ORG, CONV)).toMatchObject({ estado: "dormido", razon: expect.stringMatching(/El cliente escribió al último/) });
+    // «Apagar seguimientos en este chat» desde dormido: queda «Cancelado».
+    expect(await view.turnOffFollowUps(ORG, CONV, "u_vend", new Date(T0.getTime() + 11 * MIN))).toBe(true);
+    expect(await view.loadFollowUpState(ORG, CONV)).toMatchObject({ estado: "cancelado", byName: "Carlos" });
+  });
+
+  it("«esperando» se queda tras la espera de 72 h mientras el último mensaje sea nuestro; Cancelar ahí apaga el chat", async () => {
+    const view = await import("./view");
+    await db.insert(s.user).values({ id: "u_vend", name: "Carlos", email: "carlos@envio.test" });
+    await reading();
+    const r = await row();
+    await db.update(s.followUps).set({ status: "terminado", closedAt: new Date(T0.getTime() + 5 * 24 * HOUR), intentos: [{ n: 1, at: new Date(T0.getTime() + HOUR).toISOString(), door: "texto", template: null, modo: "automatico", ensayo: false, messageId: "m_x" }] }).where(d.eq(s.followUps.id, r.id));
+    await db.update(s.conversations).set({ detalleLeidoHasta: T0 }).where(d.eq(s.conversations.id, CONV));
+    expect(await view.loadFollowUpState(ORG, CONV)).toMatchObject({ estado: "activo", status: "esperando", terminado: true, dueAt: null });
+    expect(await view.cancelFollowUpById(ORG, r.id, "u_vend", new Date(T0.getTime() + 6 * 24 * HOUR))).toBe(true);
+    expect((await row()).status).toBe("terminado");
+    expect(await view.loadFollowUpState(ORG, CONV)).toMatchObject({ estado: "cancelado" });
   });
 });

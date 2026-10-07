@@ -12,6 +12,7 @@ import { CASE_RULES } from "@/lib/followups/cases";
 import { EDITABLE_CASES, MAX_BUSCA, MAX_STEPS, tableChanges, tableFromInput, tableProblems, WEEKDAY_LABEL, WEEKDAYS, type EditableCase, type FollowUpTableInput } from "@/lib/followups/tabla";
 import { returnLabel } from "@/lib/agente-ia/pause";
 import { useConfirm } from "./use-confirm";
+import { DateTimePicker } from "@/components/ui/date-time-picker";
 
 const STEP_HELP = ["antes de que cierre su ventana de 24 h", "día 2", "día 9"] as const;
 const FIRST_STEP_NOTE: Partial<Record<EditableCase, string>> = {
@@ -165,9 +166,9 @@ export function FollowUpRulesSection({
                 </span>
                 <span className="flex items-center gap-1.5 text-xs text-foreground/70 sm:ml-auto">
                   de
-                  <input type="time" step={300} value={c.from} aria-label={`«${label}»: desde (hora del cliente)`} disabled={busy || !c.on} onChange={(e) => setCase(caso, { from: e.target.value })} className={timeClass} />
+                  <DateTimePicker mode="time" minuteStep={5} value={c.from} aria-label={`«${label}»: desde (hora del cliente)`} disabled={busy || !c.on} onChange={(v) => setCase(caso, { from: v })} className={timeClass} />
                   a
-                  <input type="time" step={300} value={c.to} aria-label={`«${label}»: hasta (hora del cliente)`} disabled={busy || !c.on} onChange={(e) => setCase(caso, { to: e.target.value })} className={timeClass} />
+                  <DateTimePicker mode="time" minuteStep={5} value={c.to} aria-label={`«${label}»: hasta (hora del cliente)`} disabled={busy || !c.on} onChange={(v) => setCase(caso, { to: v })} className={timeClass} />
                 </span>
               </div>
               {FIRST_STEP_NOTE[caso] && <p className="text-xs text-foreground/60">{FIRST_STEP_NOTE[caso]}</p>}
@@ -215,9 +216,9 @@ export function FollowUpRulesSection({
                   <span className="w-9 text-sm text-foreground">{name}</span>
                   {shift ? (
                     <span className="flex items-center gap-1.5 text-xs text-foreground/70">
-                      <input type="time" step={300} value={shift.from} aria-label={`${name}: entrada`} disabled={busy} onChange={(e) => setDay(day, { ...shift, from: e.target.value })} className={timeClass} />
+                      <DateTimePicker mode="time" minuteStep={5} value={shift.from} aria-label={`${name}: entrada`} disabled={busy} onChange={(v) => setDay(day, { ...shift, from: v })} className={timeClass} />
                       a
-                      <input type="time" step={300} value={shift.to} aria-label={`${name}: salida`} disabled={busy} onChange={(e) => setDay(day, { ...shift, to: e.target.value })} className={timeClass} />
+                      <DateTimePicker mode="time" minuteStep={5} value={shift.to} aria-label={`${name}: salida`} disabled={busy} onChange={(v) => setDay(day, { ...shift, to: v })} className={timeClass} />
                     </span>
                   ) : (
                     <span className="text-xs text-foreground/60">no trabaja</span>

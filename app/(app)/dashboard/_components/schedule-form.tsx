@@ -23,6 +23,7 @@ import type { ScheduledView } from "@/lib/scheduled/types";
 import { TemplatePicker } from "./template-picker";
 import { CloseX } from "@/components/ui/close-x";
 import { LinkedText } from "@/components/ui/linked-text";
+import { DateTimePicker } from "@/components/ui/date-time-picker";
 
 type Mode = { type: "new"; initialText: string; templateOnly: boolean } | { type: "edit"; item: ScheduledView };
 
@@ -142,14 +143,7 @@ export function ScheduleForm({
       <div className="flex flex-wrap items-end gap-3 text-xs">
         <label className="flex flex-col gap-1">
           <span className="text-muted-foreground">Fecha y hora (Mazatlán)</span>
-          <input
-            type="datetime-local"
-            value={when}
-            min={minWhen}
-            max={maxWhen}
-            onChange={(event) => setWhen(event.target.value)}
-            className="rounded-md border bg-background px-2 py-1.5 text-sm"
-          />
+          <DateTimePicker mode="datetime" value={when} min={minWhen} max={maxWhen} onChange={setWhen} className="rounded-md border bg-background px-2 py-1.5 text-sm" />
         </label>
         <label className="flex items-center gap-2 pb-2">
           <input type="checkbox" checked={cancelIfInbound} onChange={(event) => setCancelIfInbound(event.target.checked)} />

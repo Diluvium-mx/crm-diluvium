@@ -6,7 +6,7 @@
 import { z } from "zod";
 import { requireActiveMembership } from "@/lib/auth/active-organization";
 import { localToInstant, validateSendAt, SEND_AT_MESSAGES } from "@/lib/scheduled/rules";
-import { approveFollowUp, cancelFollowUpById, changeFollowUpTime, clearSinSeguimientos, loadFollowUpState, reactivateFollowUps, type FollowUpState } from "@/lib/followups/view";
+import { approveFollowUp, cancelFollowUpById, changeFollowUpTime, clearSinSeguimientos, loadFollowUpState, reactivateFollowUps, turnOffFollowUps, type FollowUpState } from "@/lib/followups/view";
 
 const id = z.string().trim().min(1).max(100);
 
@@ -26,6 +26,13 @@ export async function cancelFollowUp(followUpId: string): Promise<FollowUpAction
   const { organizationId, userId } = await requireActiveMembership();
   const ok = await cancelFollowUpById(organizationId, id.parse(followUpId), userId, new Date());
   return ok ? { ok: true } : { ok: false, message: "Ese seguimiento ya no está activo." };
+}
+
+/** «Apagar seguimientos en este chat» desde la píldora dormida: queda «Cancelado» hasta «Reactivar seguimientos». */
+export async function apagarSeguimientos(conversationId: string): Promise<FollowUpActionResult> {
+  const { organizationId, userId } = await requireActiveMembership();
+  const ok = await turnOffFollowUps(organizationId, id.parse(conversationId), userId, new Date());
+  return ok ? { ok: true } : { ok: false, message: "Los seguimientos de este chat ya estaban apagados." };
 }
 
 /** `local` = "2026-10-05T19:30", hora de Mazatlán (como el 🕒 Programar). */
