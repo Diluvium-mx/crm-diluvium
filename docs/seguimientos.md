@@ -651,6 +651,10 @@ Aprobado por el dueño («OK 1–3»):
 - **Calendario del CRM** (`components/ui/date-time-picker.tsx`) en todo lo que pide fecha u hora; en el celular,
   el selector del teléfono. Una página web no puede usar el calendario propio de macOS.
 - Descartado por el dueño: marcar contactos como de prueba desde el CRM (se queda como está).
+- Ajustes del mismo día: robot de 30 px en el encabezado de la ventana; «Cancelado» y el robot dormido van **sin
+  palabra** en la píldora (solo la carita, en medio); calendario con ruedas de hora y minutos sin fin (como iPhone)
+  y deslizar arriba/abajo sobre los días para cambiar de mes; el calendario ya no llega «volando» al abrirse (la
+  clase `duration-*` de su entrada animaba también su posición).
 
 ---
 
