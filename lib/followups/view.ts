@@ -3,14 +3,15 @@
 // organización. En modo ensayo nada de esto le manda algo al cliente.
 import { and, eq, inArray, sql } from "drizzle-orm";
 import { db } from "@/lib/db";
-import { contacts, conversations, followUps, templates } from "@/lib/db/schema";
+import { contacts, conversations, followUps, templates, user } from "@/lib/db/schema";
 import { firstNameOf } from "@/lib/templates/first-name";
 import { CASE_RULES, templateForAttempt, TIME_PHRASE_TEMPLATES, type FollowUpCase } from "./cases";
 import { presentAtFor, templateFor, windowOpenAt } from "./schedule";
-import { approvedTemplateNames, followUpsReal } from "./store";
+import { approvedTemplateNames, followUpsReal, reopenCancelledFollowUp } from "./store";
 import { timePhrase } from "./time-phrase";
 
 export type FollowUpView = {
+  estado: "activo";
   id: string;
   conversationId: string;
   caso: FollowUpCase;
@@ -76,6 +77,7 @@ export async function loadFollowUpView(organizationId: string, conversationId: s
   }
   const caso = f.caso as FollowUpCase;
   return {
+    estado: "activo",
     id: f.id,
     conversationId: f.conversationId,
     caso,
@@ -113,15 +115,69 @@ async function announce(organizationId: string, conversationId: string, contactI
     .catch(() => undefined);
 }
 
-/** Cancelar: todo el seguimiento de ese pendiente (decisión del dueño, 2-oct-2026). */
+/**
+ * Cancelar: todo el seguimiento de ese pendiente (decisión del dueño, 2-oct-2026) y, desde el 6-oct-2026,
+ * los seguimientos de ESE CHAT quedan apagados hasta que un vendedor o admin los reactive (ni el Agente IA
+ * ni el lector los vuelven a armar: puede ser un chat de prueba, de un proveedor o de alguien que ya compró).
+ */
 export async function cancelFollowUpById(organizationId: string, id: string, userId: string, now: Date): Promise<boolean> {
-  const rows = await db
-    .update(followUps)
-    .set({ status: "cancelado", cancelReason: "manual", closedAt: now, updatedAt: now, updatedByUserId: userId })
-    .where(and(eq(followUps.id, id), eq(followUps.organizationId, organizationId), inArray(followUps.status, [...OPEN])))
-    .returning({ conversationId: followUps.conversationId, contactId: followUps.contactId });
+  const rows = await db.transaction(async (tx) => {
+    const done = await tx
+      .update(followUps)
+      .set({ status: "cancelado", cancelReason: "manual", closedAt: now, updatedAt: now, updatedByUserId: userId })
+      .where(and(eq(followUps.id, id), eq(followUps.organizationId, organizationId), inArray(followUps.status, [...OPEN])))
+      .returning({ conversationId: followUps.conversationId, contactId: followUps.contactId });
+    if (done[0]) {
+      await tx
+        .update(conversations)
+        .set({ seguimientosOffAt: now, seguimientosOffByUserId: userId })
+        .where(and(eq(conversations.id, done[0].conversationId), eq(conversations.organizationId, organizationId)));
+    }
+    return done;
+  });
   if (rows[0]) await announce(organizationId, rows[0].conversationId, rows[0].contactId);
   return rows.length > 0;
+}
+
+/** El chat con los seguimientos cancelados, o el contacto que se dio de baja de las promociones (131050). */
+type FollowUpOffBase = {
+  conversationId: string;
+  contactId: string;
+  /** Cuándo se cancelaron (solo «cancelado»). */
+  at: string | null;
+  /** Quién (solo «cancelado»). */
+  byName: string | null;
+};
+export type FollowUpOff = (FollowUpOffBase & { estado: "cancelado" }) | (FollowUpOffBase & { estado: "baja" });
+export type FollowUpState = FollowUpView | FollowUpOff;
+
+/** Lo que muestra la píldora 🤖: el seguimiento abierto, o el chat cancelado / dado de baja; null = nada. */
+export async function loadFollowUpState(organizationId: string, conversationId: string): Promise<FollowUpState | null> {
+  const open = await loadFollowUpView(organizationId, conversationId);
+  if (open) return open;
+  const [row] = await db
+    .select({ contactId: conversations.contactId, offAt: conversations.seguimientosOffAt, byName: user.name, baja: contacts.sinSeguimientos })
+    .from(conversations)
+    .innerJoin(contacts, and(eq(contacts.id, conversations.contactId), eq(contacts.organizationId, organizationId)))
+    .leftJoin(user, eq(user.id, conversations.seguimientosOffByUserId))
+    .where(and(eq(conversations.id, conversationId), eq(conversations.organizationId, organizationId)))
+    .limit(1);
+  if (!row) return null;
+  if (row.baja) return { estado: "baja", conversationId, contactId: row.contactId, at: null, byName: null };
+  if (row.offAt) return { estado: "cancelado", conversationId, contactId: row.contactId, at: row.offAt.toISOString(), byName: row.byName ?? null };
+  return null;
+}
+
+/** «Reactivar seguimientos» en este chat: lo apaga la marca y reabre el último cancelado si el chat no cambió. */
+export async function reactivateFollowUps(organizationId: string, conversationId: string, now: Date): Promise<boolean> {
+  const rows = await db
+    .update(conversations)
+    .set({ seguimientosOffAt: null, seguimientosOffByUserId: null })
+    .where(and(eq(conversations.id, conversationId), eq(conversations.organizationId, organizationId), sql`${conversations.seguimientosOffAt} is not null`))
+    .returning({ contactId: conversations.contactId });
+  if (rows.length === 0) return false;
+  if (!(await reopenCancelledFollowUp(organizationId, conversationId, now))) await announce(organizationId, conversationId, rows[0].contactId);
+  return true;
 }
 
 /** Cambiar hora: la elige el vendedor (hora de Mazatlán); se recalcula por dónde saldría. */
@@ -164,5 +220,25 @@ export async function approveFollowUp(organizationId: string, id: string, userId
     .where(and(eq(followUps.id, id), eq(followUps.organizationId, organizationId), eq(followUps.status, "programado"), eq(followUps.modo, "sugerido")))
     .returning({ conversationId: followUps.conversationId, contactId: followUps.contactId });
   if (rows[0]) await announce(organizationId, rows[0].conversationId, rows[0].contactId);
+  return rows.length > 0;
+}
+
+/** ¿El contacto quedó «sin seguimientos» (se dio de baja de las promociones, 131050)? */
+export async function sinSeguimientosOf(organizationId: string, contactId: string): Promise<boolean> {
+  const [row] = await db
+    .select({ sin: contacts.sinSeguimientos })
+    .from(contacts)
+    .where(and(eq(contacts.id, contactId), eq(contacts.organizationId, organizationId)))
+    .limit(1);
+  return row?.sin === true;
+}
+
+/** «Quitar» en el Detalle: el contacto vuelve a tener seguimientos (la siguiente lectura arma uno si toca). */
+export async function clearSinSeguimientos(organizationId: string, contactId: string): Promise<boolean> {
+  const rows = await db
+    .update(contacts)
+    .set({ sinSeguimientos: false })
+    .where(and(eq(contacts.id, contactId), eq(contacts.organizationId, organizationId), eq(contacts.sinSeguimientos, true)))
+    .returning({ id: contacts.id });
   return rows.length > 0;
 }

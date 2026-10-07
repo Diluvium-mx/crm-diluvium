@@ -42,7 +42,7 @@ import { TemplatePicker } from "./template-picker";
 import { useIsMobile } from "@/components/ui/use-media-query";
 import { CloseX } from "@/components/ui/close-x";
 import { WorkflowPicker } from "./workflow-picker";
-import { FollowUpPanel, FollowUpPill, useFollowUp } from "./followup-pill";
+import { bajaAlreadySeen, FollowUpPanel, FollowUpPill, markBajaSeen, useFollowUp } from "./followup-pill";
 
 // Alto justo para el texto, entre los 2 renglones de `rows` y el max-height de la clase.
 // Vacía se queda en 2 renglones: Chrome mide también el texto gris de ayuda, y
@@ -119,9 +119,23 @@ export function Composer({
   // 🤖 Seguimiento del Agente IA: la burbuja con sus opciones.
   const [followUpOpen, setFollowUpOpen] = useState(false);
   const { followUp, reload: reloadFollowUp } = useFollowUp(conversationId);
-  const followUpPanelOpen = followUpOpen && followUp !== null;
+  // «Se dio de baja» (131050): el aviso se abre solo la primera vez en esta computadora (6-oct-2026).
+  const [bajaDismissed, setBajaDismissed] = useState<string | null>(null);
+  const bajaAlert = followUp?.estado === "baja" && bajaDismissed !== followUp.contactId && !bajaAlreadySeen(followUp.contactId);
+  const followUpPanelOpen = (followUpOpen || bajaAlert) && followUp !== null;
+  const closeFollowUp = () => {
+    setFollowUpOpen(false);
+    if (followUp?.estado === "baja") {
+      markBajaSeen(followUp.contactId);
+      setBajaDismissed(followUp.contactId);
+    }
+  };
   const toggleFollowUp = () => {
-    setFollowUpOpen((open) => !open);
+    if (followUpPanelOpen) {
+      closeFollowUp();
+      return;
+    }
+    setFollowUpOpen(true);
     setSnippetOpen(false);
     setTemplateOpen(false);
     setWorkflowsOpen(false);
@@ -129,7 +143,7 @@ export function Composer({
     setScheduleOpen(false);
     setAttachMenuOpen(false);
   };
-  const followUpPanel = followUpPanelOpen && <FollowUpPanel followUp={followUp} onClose={() => setFollowUpOpen(false)} onChanged={reloadFollowUp} />;
+  const followUpPanel = followUpPanelOpen && <FollowUpPanel followUp={followUp} onClose={closeFollowUp} onChanged={reloadFollowUp} />;
   const [snippets, setSnippets] = useState<SnippetView[] | null>(null);
   const [snippetsError, setSnippetsError] = useState(false);
   // Comandos de Automatización (Fase D): "/tabla", "/banco"… se listan bajo los

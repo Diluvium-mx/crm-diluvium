@@ -226,6 +226,13 @@ describe.skipIf(!TEST_DATABASE_URL)("Seguimientos en modo REAL (proveedor falso)
     expect(c.sinSeguimientos).toBe(true);
     // Una lectura nueva ya no programa nada.
     expect(await reading(new Date(T0.getTime() + 2 * HOUR))).toMatch(/se dio de baja/);
+    // «Quitar» en el Detalle: vuelve a tener seguimientos y la siguiente lectura arma uno.
+    const view = await import("./view");
+    expect(await view.sinSeguimientosOf(ORG, CONTACT)).toBe(true);
+    expect(await view.clearSinSeguimientos("otra_org", CONTACT)).toBe(false);
+    expect(await view.clearSinSeguimientos(ORG, CONTACT)).toBe(true);
+    expect(await view.sinSeguimientosOf(ORG, CONTACT)).toBe(false);
+    expect(await reading(new Date(T0.getTime() + 3 * HOUR))).toMatch(/faltan_medidas 1\.º/);
   });
 
   it("tras el último intento sin respuesta: frío", async () => {
@@ -268,5 +275,34 @@ describe.skipIf(!TEST_DATABASE_URL)("Seguimientos en modo REAL (proveedor falso)
     await store.followUpSweepOnce(new Date(r.dueAt!.getTime() + MIN), { provider });
     expect(sent).toHaveLength(0);
     expect((await row()).dueAt!.getTime()).toBeGreaterThanOrEqual(ayer.getTime() + 7 * 24 * HOUR - MIN);
+  });
+
+  it("Cancelar apaga los seguimientos de ESE chat: el Agente IA no arma otro aunque el chat se mueva; «Reactivar» lo reabre", async () => {
+    const view = await import("./view");
+    await db.insert(s.user).values({ id: "u_vend", name: "Carlos", email: "carlos@envio.test" });
+    await reading();
+    const r = await row();
+    expect(await view.cancelFollowUpById(ORG, r.id, "u_vend", new Date(T0.getTime() + 10 * MIN))).toBe(true);
+    // La píldora queda «cancelado», con quién.
+    expect(await view.loadFollowUpState(ORG, CONV)).toMatchObject({ estado: "cancelado", byName: "Carlos" });
+    // Una lectura nueva (el chat se movió) no arma nada.
+    expect(await reading(new Date(T0.getTime() + 2 * HOUR))).toMatch(/cancelados en este chat/);
+    expect((await db.select().from(s.followUps)).filter((x) => x.status === "programado")).toHaveLength(0);
+    // Reactivar: el chat no cambió, se reabre el mismo seguimiento con hora nueva.
+    expect(await view.reactivateFollowUps(ORG, CONV, new Date(T0.getTime() + 3 * HOUR))).toBe(true);
+    const again = await row();
+    expect(again).toMatchObject({ id: r.id, status: "programado", intento: 1 });
+    expect(await view.loadFollowUpState(ORG, CONV)).toMatchObject({ estado: "activo" });
+    expect(await view.reactivateFollowUps(ORG, CONV, new Date(T0.getTime() + 4 * HOUR))).toBe(false);
+  });
+
+  it("se dio de baja (131050): la píldora queda en «baja»; «Volver a darle seguimiento» la quita", async () => {
+    const view = await import("./view");
+    await reading();
+    const r = await row();
+    await delivery.onFollowUpDeliveryFailed({ organizationId: ORG, conversationId: CONV, errorCode: "131050", errorMessage: null, metadata: { seguimiento: { followUpId: r.id, intento: 1 } } });
+    expect(await view.loadFollowUpState(ORG, CONV)).toMatchObject({ estado: "baja", contactId: CONTACT });
+    await view.clearSinSeguimientos(ORG, CONTACT);
+    expect(await view.loadFollowUpState(ORG, CONV)).toBeNull();
   });
 });

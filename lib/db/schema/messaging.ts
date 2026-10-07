@@ -223,6 +223,11 @@ export const conversations = pgTable(
     // mayor. La migración la pone en last_message_at para lo que ya existía (la pasada
     // única de scripts/lector-detalle.ts cubre lo que el dueño eligió).
     detalleLeidoHasta: timestamp("detalle_leido_hasta"),
+    // Seguimientos del Agente IA cancelados EN ESTE CHAT (6-oct-2026, decisión del dueño): quedan apagados
+    // hasta que un vendedor o admin los reactive; ni el Agente IA ni el lector los vuelven a armar.
+    // Migración 0061 (docs/seguimientos.md §15).
+    seguimientosOffAt: timestamp("seguimientos_off_at"),
+    seguimientosOffByUserId: text("seguimientos_off_by_user_id").references(() => user.id, { onDelete: "set null" }),
     // Anuncio de clic a WhatsApp que ORIGINÓ la conversación (el primer
     // `referral` recibido). Meta lo manda una sola vez: se guarda crudo y
     // completo; la UI solo recibe una versión saneada (lib/inbox).
