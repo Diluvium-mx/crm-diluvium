@@ -60,6 +60,7 @@ import { enqueueUnavailableCheck } from "@/lib/queue/unavailable";
 import { startUnavailableWorker } from "./unavailable";
 import { syncAiBilling } from "@/lib/ai/billing/sync";
 import { syncMetaBilling } from "@/lib/meta-billing/sync";
+import { syncRailwayBilling } from "@/lib/railway-billing/sync";
 import { refreshTemplatesInReview } from "@/lib/messaging/templates";
 import { actualizarClima } from "@/lib/clima/sync";
 
@@ -426,6 +427,19 @@ function metaBilling() {
     });
 }
 const metaBillingTimer = setInterval(metaBilling, META_BILLING_EVERY_MS);
+// Cobro de Railway (7-oct-2026): cada 5 min se lee el uso y la factura del workspace
+// (lib/railway-billing/sync.ts), y una vez al arrancar. Sin RAILWAY_BILLING_TOKEN no hace nada.
+let railwayBillingRunning = false;
+function railwayBillingTick() {
+  if (!migrationsReady || railwayBillingRunning) return;
+  railwayBillingRunning = true;
+  syncRailwayBilling()
+    .catch((error) => logError("[railway] la lectura del cobro falló", error))
+    .finally(() => {
+      railwayBillingRunning = false;
+    });
+}
+const railwayBillingTimer = setInterval(railwayBillingTick, BILLING_EVERY_MS);
 
 // Plantillas al día solas (1-oct-2026): mientras alguna esté «En revisión», cada 10 min se le
 // pregunta a Meta su estado (lo mismo que «Ver estado»). Sin plantillas en revisión no consulta nada.
@@ -478,6 +492,7 @@ async function shutdown(signal: string) {
   clearInterval(monitorTimer);
   clearInterval(billingTimer);
   clearInterval(metaBillingTimer);
+  clearInterval(railwayBillingTimer);
   clearInterval(templatesTimer);
   clearInterval(climaTimer);
   await Promise.all([worker.close(), mediaWorker?.close(), scheduled.close(), agent.close(), lector.close(), followUps.close(), workflowsRunner.close(), outbox.close(), ads.close(), unavailable.close(), chatUploads?.close()]);
@@ -502,6 +517,7 @@ waitForMigrations()
     // Y el clima de la cinta (si es horario de trabajo y la foto ya tiene más de una hora).
     clima();
     metaBilling();
+    railwayBillingTick();
     void worker.run();
     void mediaWorker?.run();
     scheduled.run();
