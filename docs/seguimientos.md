@@ -555,7 +555,7 @@ migración **0059**; la 0058 es la de los costos de WhatsApp de otra rama, que d
   (`ai_config.seguimientos_real`; el cambio queda en el Historial de Opciones). Lo programado obedece el interruptor al
   salir; la píldora 🤖 dice «Ensayo» o «Seguimiento».
 - **Cómo sale** (`lib/followups/dispatch.ts`, barrido de `store.ts`): como mensaje del **Agente IA** (`source: ai_agent`):
-  no pausa al Agente IA, no marca leído, no cuenta como respuesta humana ni para el tope de respuestas. Texto = el
+  no pausa al Agente IA, no marca leído, no cuenta como respuesta humana. Texto = el
   borrador con «Hola <nombre>, buenos días / buenas tardes / buenas noches.» según la hora del cliente; sin borrador, ese
   intento va por plantilla. Plantilla = la elegida (§14) ya APROBADA, con `{{1}}` = cuándo escribió (o el nombre). La fila
   se aparta antes de mandar (dos barridos nunca mandan el mismo intento) y su id es la clave de idempotencia.

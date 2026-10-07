@@ -4,14 +4,13 @@
 // antes de responder: 15 s → 30 s», uno por línea) y manda SOLO los campos cambiados en
 // una sola llamada a updateBotOptions (saveBotOptions deja un registro por campo).
 //
-// Los números (horas, tope) se editan como texto: un valor inválido no se pierde al
+// Los números (horas) se editan como texto: un valor inválido no se pierde al
 // escribir, solo deshabilita el botón y se dice por qué. Lo que está oculto (p. ej. las
 // horas de reactivar con «Pausar el bot» = No) no cuenta ni se valida.
 import {
   botOptionsPatchSchema,
   formatOptionValue,
   MAX_PAUSE_HOURS,
-  MAX_REPLIES_CAP,
   OPTION_LABELS,
   type BotOptionField,
   type BotOptions,
@@ -36,15 +35,12 @@ export type OptionsDraft = {
   seguimientosReal: boolean;
   responseLength: ResponseLength;
   maxBubbles: 1 | 2;
-  maxRepliesMode: "sin_tope" | "tope";
-  maxReplies: string;
 };
 
 // Valores con que aparece cada control al elegirlo por primera vez.
 export const DEFAULT_SCHEDULE: BotSchedule = { days: [1, 2, 3, 4, 5, 6], from: "08:00", to: "18:00" };
 const DEFAULT_REACTIVATE_HOURS = 12;
 const DEFAULT_HANDOVER_HOURS = 8;
-const DEFAULT_MAX_REPLIES = 50;
 
 export function draftFromOptions(o: BotOptions): OptionsDraft {
   const h = o.humanReplyReactivateHours;
@@ -62,8 +58,6 @@ export function draftFromOptions(o: BotOptions): OptionsDraft {
     seguimientosReal: o.seguimientosReal,
     responseLength: o.responseLength,
     maxBubbles: o.maxBubbles,
-    maxRepliesMode: o.maxRepliesPerContact === null ? "sin_tope" : "tope",
-    maxReplies: String(o.maxRepliesPerContact ?? DEFAULT_MAX_REPLIES),
   };
 }
 
@@ -119,15 +113,6 @@ function draftValues(d: OptionsDraft, saved: BotOptions): { values: BotOptions; 
     } else schedule = s;
   }
 
-  let maxReplies: number | null = null;
-  if (d.maxRepliesMode === "tope") {
-    const n = parseWhole(d.maxReplies, 1, MAX_REPLIES_CAP);
-    if (n === null) {
-      errors.push(`${OPTION_LABELS.maxRepliesPerContact}: escribe un número entero entre 1 y ${MAX_REPLIES_CAP.toLocaleString("es-MX")}.`);
-      maxReplies = saved.maxRepliesPerContact;
-    } else maxReplies = n;
-  }
-
   return {
     values: {
       responseDelaySeconds: d.responseDelaySeconds,
@@ -140,7 +125,6 @@ function draftValues(d: OptionsDraft, saved: BotOptions): { values: BotOptions; 
       seguimientosReal: d.seguimientosReal,
       responseLength: d.responseLength,
       maxBubbles: d.maxBubbles,
-      maxRepliesPerContact: maxReplies,
     },
     errors,
   };

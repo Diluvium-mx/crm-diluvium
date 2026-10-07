@@ -13,7 +13,6 @@ describe("borrador de las Opciones → lo que se guarda", () => {
       humanReplyReactivateHours: 12,
       handoverPauseHours: 8,
       schedule: { days: [5, 1, 1], from: "08:00", to: "18:00" },
-      maxRepliesPerContact: 50,
     };
     expect(draftToPatch(custom, draftFromOptions(custom))).toEqual({ patch: {}, errors: [], dirty: false });
   });
@@ -40,12 +39,11 @@ describe("borrador de las Opciones → lo que se guarda", () => {
     expect(r).toEqual({ patch: { pauseOnHumanReply: false }, errors: [], dirty: true });
   });
 
-  it("pedir asesor, horario y tope con sus valores de arranque", () => {
-    const r = draftToPatch(saved, draft({ handoverMode: "pausar", scheduleMode: "horario", maxRepliesMode: "tope" }));
+  it("pedir asesor y horario con sus valores de arranque", () => {
+    const r = draftToPatch(saved, draft({ handoverMode: "pausar", scheduleMode: "horario" }));
     expect(r.patch).toEqual({
       handoverPauseHours: 8,
       schedule: { days: [1, 2, 3, 4, 5, 6], from: "08:00", to: "18:00" },
-      maxRepliesPerContact: 50,
     });
     expect(r.errors).toEqual([]);
   });
@@ -55,7 +53,6 @@ describe("borrador de las Opciones → lo que se guarda", () => {
     expect(hours.dirty).toBe(true);
     expect(hours.errors).toEqual(["Reactivar solo después de: escribe un número entero de horas entre 1 y 720."]);
     expect(draftToPatch(saved, draft({ handoverMode: "pausar", handoverHours: "721" })).errors[0]).toMatch(/^Cuando el cliente pide un asesor: /);
-    expect(draftToPatch(saved, draft({ maxRepliesMode: "tope", maxReplies: "2.5" })).errors[0]).toMatch(/entre 1 y 1,000/);
 
     const noDays = draftToPatch(saved, draft({ scheduleMode: "horario", schedule: { days: [], from: "08:00", to: "18:00" } }));
     expect(noDays.errors).toEqual(["Horario del Agente IA: elige al menos un día."]);
@@ -73,11 +70,11 @@ describe("borrador de las Opciones → lo que se guarda", () => {
 
 describe("lista de cambios del pop-up", () => {
   it("una línea por campo, en el orden de la pantalla, con el valor anterior y el nuevo", () => {
-    const { patch } = draftToPatch(saved, draft({ maxRepliesMode: "tope", maxReplies: "40", responseDelaySeconds: 30, scheduleMode: "horario" }));
+    const { patch } = draftToPatch(saved, draft({ maxBubbles: 1, responseDelaySeconds: 30, scheduleMode: "horario" }));
     expect(describePatch(saved, patch)).toEqual([
       "Tiempo de espera antes de responder: 15 s → 30 s",
       "Horario del Agente IA: 24/7 → lun–sáb 8:00–18:00 (hora de Mazatlán)",
-      "Máximo de respuestas del Agente IA por conversación: Sin tope → 40",
+      "Máximo de mensajes por respuesta: 2 → 1",
     ]);
   });
 

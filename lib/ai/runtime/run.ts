@@ -52,7 +52,6 @@ import { listFunnelStages } from "@/lib/contacts/funnel-stages";
 import { complementNote, partialNote, withoutClosingQuestions } from "./complement";
 import { closingQuestion, isBareAck, onlyRepeatsLastQuestion, repeatNote, withoutUnansweredRepeat } from "./unanswered";
 import {
-  agentReplyCount,
   alreadyHandled,
   answeredByWorkflow,
   humanOutboundCount,
@@ -305,13 +304,6 @@ async function pauseAfterHandover(conv: { id: string; organizationId: string }, 
   }
 }
 
-// Opciones del bot → "Máximo de respuestas del bot por conversación": al llegar al tope
-// se pausa hasta "Activar" y deja el aviso 🤖 (tarjeta amarilla en el Embudo). Cubre un
-// bucle con otro bot. Se cuenta desde el último corte ("Activar" o encendido del canal).
-export function topeRespuestasBody(max: number): string {
-  return `Llegó al máximo de respuestas (${max.toLocaleString("es-MX")}). El agente se pausó en este chat; revísalo y, si debe seguir, elige «Activar» en el Detalle del contacto.`;
-}
-
 // "Reintentar" de una respuesta GUARDADA (parte 1, 26-sep-2026): manda el MISMO texto
 // con los MISMOS ids de mensaje (sendAgentText decide qué burbuja ya salió), después
 // la media que iba tras el texto, y NUNCA llama al modelo. Si el cliente escribió
@@ -508,20 +500,10 @@ export async function runAgent(job: { organizationId: string; conversationId: st
     }
     if (!cfg.goal) return { kind: "skipped", reason: "sin_goal" };
     if (!lastRead) return { kind: "noop", reason: "sin_pendientes" };
-    // Tope de respuestas por conversación (Opciones del bot): PRIMERO la pausa (nunca
-    // "se pausó" con el agente todavía activo) y luego el aviso, idempotente por entrante.
-    if (options.maxRepliesPerContact !== null) {
-      const replies = await agentReplyCount(org, conv.id, cut);
-      if (replies >= options.maxRepliesPerContact) {
-        await pauseForHumanReply(org, conv.id, now, null, { action: "pausa_tope" });
-        await addNotice({ organizationId: org, conversationId: conv.id, messageId: lastRead.id, kind: "tope_respuestas", body: topeRespuestasBody(options.maxRepliesPerContact) });
-        console.warn(`[agente] ${conv.id}: llegó al máximo de respuestas (${replies}/${options.maxRepliesPerContact}); pausado hasta "Activar"`);
-        return { kind: "skipped", reason: "tope_respuestas" };
-      }
-    }
     // Freno ante contestadores automáticos (7-oct-2026, caso Estafeta; contestador.ts): en las
     // últimas vueltas el contacto solo repitió lo mismo o mandó avisos que WhatsApp no deja ver.
-    // Como el tope: PRIMERO la pausa (hasta «Activar») y luego el aviso, idempotente por entrante.
+    // PRIMERO la pausa (hasta «Activar»; nunca «se pausó» con el agente todavía activo) y luego el
+    // aviso, idempotente por entrante. No hay tope de respuestas (dueño, 7-oct-2026: nunca).
     if (looksLikeAutoResponder(await loopWindow(org, conv.id, cut))) {
       await pauseForHumanReply(org, conv.id, now, null, { action: "pausa_bucle" });
       await addNotice({ organizationId: org, conversationId: conv.id, messageId: lastRead.id, kind: "contestador", body: AUTO_RESPONDER_NOTICE });

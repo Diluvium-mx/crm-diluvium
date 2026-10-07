@@ -71,8 +71,8 @@ clientes** (eso llega en la Fase B y siguientes).
     Mazatlán**, lo más nuevo arriba (200 filas; con fechas se ve más atrás). Filtros: **Tipo**
     (Opciones del Agente IA · Goal y FAQs · Nombre del agente · Modelos · Etapas · Canales · Workflows ·
     Tallas y medidas · Mensajes rápidos · Plantillas · Vendedores · Pausas por chat), **Desde / Hasta**
-    (días de Mazatlán) y **«Mostrar pausas automáticas (un vendedor contestó, tope de respuestas, pidió
-    un asesor y vuelta sola)»** (ocultas de fábrica). **Vendedores** solo lo ven **owner y admin** (ni la
+    (días de Mazatlán) y **«Mostrar pausas automáticas (un vendedor contestó, contestador automático,
+    pidió un asesor y vuelta sola)»** (ocultas de fábrica). **Vendedores** solo lo ven **owner y admin** (ni la
     opción del filtro ni sus filas le llegan a un vendedor; lo revisa el servidor con `member:update`).
     Fuentes (`lib/historial/queries.ts`): **Opciones** = `ai_config_changes` (ya existía);
     **Goal y FAQs** = `ai_knowledge_versions` (antes → después = palabras del Goal o número de
@@ -99,8 +99,8 @@ clientes** (eso llega en la Fase B y siguientes).
       truena, no queda fila). El **alta** y el **cambio de rol** los hace Better Auth con sus reglas y su
       transacción: la fila se escribe en cuanto Better Auth confirma (`logTeamChange`).
     - Por chat: «Pausar agente» (y «Apagar» de la tarjeta de error) y «Activar» **con quién**, y las
-      **automáticas** (quién = «Automático»): «un vendedor contestó», **tope de respuestas**, **el cliente
-      pidió un asesor** y la **vuelta sola** al cumplirse la hora de regreso (`reactivateDuePause`, que ahora
+      **automáticas** (quién = «Automático»): «un vendedor contestó», **parecía un contestador automático**
+      (y el viejo «tope de respuestas», opción quitada el 7-oct-2026), **el cliente pidió un asesor** y la **vuelta sola** al cumplirse la hora de regreso (`reactivateDuePause`, que ahora
       bloquea la fila, reactiva y escribe en una transacción).
     `subject` guarda el nombre del contacto / etapa / canal / workflow / vendedor en ese momento y
     `subject_id` no tiene llave foránea: la fila sobrevive aunque se borre lo que nombra.
@@ -617,7 +617,7 @@ hasta que alguien mueva una opción. Reglas puras en `lib/agente-ia/opciones.ts`
 | 5 | Responder notas de voz | Sí | Sí | `transcribe_audio` (nueva) | con "No" el worker deja la transcripción `omitida` (motivo visible en el chat, sin llamar a OpenAI), el agente no la espera y ve `[nota de voz]` |
 | 6 | Longitud de respuesta | Balanceada | Balanceada | `response_length` (nueva) | "corta"/"detallada" = UNA línea al final del sufijo del CRM (`LENGTH_LINES`); el Goal, las FAQs y la caché no cambian |
 | 6 | Máximo de mensajes por respuesta | 2 | 1 | `max_bubbles` (reusada) | `toBubbles(text, 1)` manda todo en un mensaje |
-| 7 | Máximo de respuestas del Agente IA por conversación | Sin tope | 50 | `max_replies_per_contact` (reusada) | al llegar (respuestas `ai_usage` cerebro/sent desde el último corte «Activar»/encendido): pausa hasta «Activar» + aviso 🤖 `tope_respuestas` (idempotente por entrante; `URGENT_NOTICE_KINDS` → tarjeta amarilla). Cubre un bucle con otro contestador automático |
+| 7 | ~~Máximo de respuestas del Agente IA por conversación~~ | — | 50 | `max_replies_per_contact` (sin uso) | **Quitada el 7-oct-2026** (dueño: nunca un tope de respuestas). Contra un bucle con otro contestador automático está el freno de `lib/ai/runtime/contestador.ts`. Los avisos `tope_respuestas` y las filas `pausa_tope` viejas se siguen mostrando y «Activar» los atiende |
 
 - **Horario a la vista (Bloque C, 28-sep-2026):** si el Agente IA tiene horario (no 24/7), la **Bandeja**
   muestra arriba una franja «El Agente IA solo contesta mié–jue 20:00–6:00 (ahora está fuera de horario)»

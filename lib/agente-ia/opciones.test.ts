@@ -11,6 +11,7 @@ import {
   handoverPauseUntil,
   humanPauseUntil,
   isWithinSchedule,
+  optionLabel,
 } from "./opciones";
 
 // Hora de Mazatlán → instante (para no depender del reloj de la máquina).
@@ -28,7 +29,6 @@ describe("Opciones del bot: valores de fábrica = comportamiento de hoy", () => 
       transcribeAudio: true,
       responseLength: "balanceada",
       maxBubbles: MAX_BUBBLES,
-      maxRepliesPerContact: null,
       seguimientosReal: false,
     });
     const now = new Date();
@@ -45,8 +45,8 @@ describe("botOptionsPatchSchema", () => {
     expect(botOptionsPatchSchema.safeParse({ responseDelaySeconds: 61 }).success).toBe(false);
     expect(botOptionsPatchSchema.safeParse({ responseDelaySeconds: 7.5 }).success).toBe(false);
     expect(botOptionsPatchSchema.safeParse({ maxBubbles: 3 }).success).toBe(false);
-    expect(botOptionsPatchSchema.safeParse({ maxRepliesPerContact: 0 }).success).toBe(false);
-    expect(botOptionsPatchSchema.parse({ maxRepliesPerContact: null })).toEqual({ maxRepliesPerContact: null });
+    // La opción «Máximo de respuestas» se quitó (7-oct-2026): ya no es una llave conocida.
+    expect(botOptionsPatchSchema.safeParse({ maxRepliesPerContact: 50 }).success).toBe(false);
     expect(botOptionsPatchSchema.safeParse({ humanReplyReactivateHours: 721 }).success).toBe(false);
     expect(botOptionsPatchSchema.safeParse({ responseLength: "larga" }).success).toBe(false);
     expect(botOptionsPatchSchema.safeParse({}).success).toBe(false);
@@ -112,7 +112,8 @@ describe("textos", () => {
     expect(formatOptionValue("responseDelaySeconds", 5)).toBe("5 s");
     expect(formatOptionValue("humanReplyReactivateHours", null)).toBe("Nunca (a mano con «Activar»)");
     expect(formatOptionValue("handoverPauseHours", 8)).toBe("Avisar y pausar al Agente IA 8 h");
-    expect(formatOptionValue("maxRepliesPerContact", null)).toBe("Sin tope");
+    expect(optionLabel("maxRepliesPerContact")).toBe("Máximo de respuestas del Agente IA por conversación (quitada el 7-oct-2026)");
+    expect(optionLabel("maxBubbles")).toBe("Máximo de mensajes por respuesta");
     expect(formatOptionValue("readImages", false)).toBe("No");
     expect(formatOptionValue("responseLength", "corta")).toBe("Corta");
   });

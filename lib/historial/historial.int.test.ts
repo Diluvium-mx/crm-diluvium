@@ -155,14 +155,14 @@ describe.skipIf(!TEST_DATABASE_URL)("historial de cambios (Postgres real)", () =
     expect(r[4]).toMatchObject({ subject: "Datos bancarios", userId: USER });
   });
 
-  it("pausas por chat: «Pausar agente» y «Activar» con quién; las automáticas (vendedor, tope, asesor, vuelta sola) sin autor", async () => {
+  it("pausas por chat: «Pausar agente» y «Activar» con quién; las automáticas (vendedor, contestador automático, asesor, vuelta sola) sin autor", async () => {
     const now = new Date();
     await pause.pauseAgentManually({ organizationId: ORG, conversationId: CONV, until: null, now, userId: USER }, { queue });
     await manual.reactivateAgentInConversation(ORG, CONV, new Date(), USER);
     await manual.reactivateAgentInConversation(ORG, CONV, new Date(), USER); // ya activo: sin fila
     await pause.pauseForHumanReply(ORG, CONV, new Date(), null, { action: "pausa_auto" });
     await manual.reactivateAgentInConversation(ORG, CONV, new Date(), USER);
-    await pause.pauseForHumanReply(ORG, CONV, new Date(), null, { action: "pausa_tope" });
+    await pause.pauseForHumanReply(ORG, CONV, new Date(), null, { action: "pausa_bucle" });
     await manual.reactivateAgentInConversation(ORG, CONV, new Date(), USER);
     // Pidió un asesor: pausa con hora de regreso; al cumplirse, el agente vuelve solo.
     const until = new Date(Date.now() - 60_000);
@@ -175,7 +175,7 @@ describe.skipIf(!TEST_DATABASE_URL)("historial de cambios (Postgres real)", () =
       ["activar", USER],
       ["pausa_auto", null],
       ["activar", USER],
-      ["pausa_tope", null],
+      ["pausa_bucle", null],
       ["activar", USER],
       ["pausa_asesor", null],
       ["vuelta_sola", null],

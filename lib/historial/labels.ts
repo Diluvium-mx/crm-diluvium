@@ -48,7 +48,8 @@ export type ChangeAction = {
   plantillas: "alta" | "editar" | "borrar" | "sincronizar";
   vendedores: "alta" | "rol" | "desactivar" | "reactivar" | "contrasena";
   // Automáticas (sin autor; se ocultan o muestran con el filtro): pausa_auto = "un vendedor
-  // contestó", pausa_tope = llegó al máximo de respuestas, pausa_bucle = parecía un contestador
+  // contestó", pausa_tope = llegó al máximo de respuestas (solo filas viejas: la opción se quitó el
+  // 7-oct-2026), pausa_bucle = parecía un contestador
   // automático (lib/ai/runtime/contestador.ts), pausa_asesor = el cliente pidió
   // un asesor, vuelta_sola = se cumplió la hora de regreso, vuelta_seguimiento = el cliente contestó
   // un seguimiento del Agente IA y la conversación sigue con él (docs/seguimientos.md §7.4).
