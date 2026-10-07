@@ -42,12 +42,16 @@ export type RailwaySummary = {
   overUsd: number;
   // max(incluido, uso proyectado al cierre); null en el primer día o sin periodo.
   estimatedBillUsd: number | null;
+  // Aviso naranja si Railway no tiene el cobro al corriente (pago vencido o plan cancelado): con la
+  // tarjeta rechazada hay pocos días de gracia antes de que detenga los servidores. null = al corriente.
+  billingAlert: string | null;
   updatedMinutesAgo: number | null;
   lastError: string | null;
 };
 
 type Row = {
   plan: string | null;
+  state: string | null;
   periodStart: Date | null;
   periodEnd: Date | null;
   usageUsd: number | null;
@@ -56,6 +60,15 @@ type Row = {
 };
 
 const round2 = (n: number) => Math.round(n * 100) / 100;
+
+// Estado del cobro según Railway (ACTIVE | PAST_DUE | UNPAID | CANCELLED | INACTIVE) → aviso.
+export function billingAlertFor(state: string | null): string | null {
+  if (!state || state === "ACTIVE") return null;
+  if (state === "PAST_DUE" || state === "UNPAID") {
+    return "Railway marca un pago pendiente: revisa la tarjeta en Railway › Workspace › Billing antes de que detenga los servidores.";
+  }
+  return "Railway marca el plan como cancelado o inactivo: revisa Railway › Workspace › Billing.";
+}
 
 export function summarizeRailway(row: Row, now: Date): RailwaySummary {
   const included = row.plan ? (INCLUDED_USD[row.plan] ?? null) : null;
@@ -90,6 +103,7 @@ export function summarizeRailway(row: Row, now: Date): RailwaySummary {
     includedTone: includedPct !== null && includedPct >= SPEND_ALERT_PCT ? "orange" : "navy",
     overUsd,
     estimatedBillUsd,
+    billingAlert: billingAlertFor(row.state),
     updatedMinutesAgo: row.fetchedAt ? Math.max(0, Math.floor((now.getTime() - row.fetchedAt.getTime()) / 60_000)) : null,
     lastError: row.lastError,
   };

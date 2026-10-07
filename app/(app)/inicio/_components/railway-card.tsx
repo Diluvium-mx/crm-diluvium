@@ -1,7 +1,7 @@
 // «Railway» (7-oct-2026, pedido del dueño): en el plan Hobby Railway ya no muestra créditos
 // restantes; aquí se ve el uso del periodo, lo que queda de lo incluido en el plan y la factura
-// estimada al corte. Debajo del Gasto de IA, mismos permisos. Sin lógica de datos: recibe el
-// resumen ya calculado (lib/dashboard/railway.ts).
+// estimada al corte, y un aviso naranja si Railway marca un pago pendiente. Debajo del Gasto de
+// IA, mismos permisos. Sin lógica de datos: recibe el resumen ya calculado (lib/dashboard/railway.ts).
 import { railwayFreshness, type RailwaySummary } from "@/lib/dashboard/railway";
 import { formatUsd } from "@/lib/usd-format";
 import { ProgressBar } from "@/components/ui/progress-bar";
@@ -29,6 +29,11 @@ export function RailwayCard({ summary }: { summary: RailwaySummary }) {
           </p>
         </div>
       </div>
+      {s.billingAlert && (
+        <p role="alert" className="mt-3 rounded-md border border-brand-orange px-3 py-2 text-sm font-semibold text-brand-orange">
+          {s.billingAlert}
+        </p>
+      )}
       <div className="mt-3 grid gap-3 sm:grid-cols-2">
         <div className="flex flex-col rounded-md border p-3">
           <span className="text-xs text-muted-foreground">Uso del periodo</span>
