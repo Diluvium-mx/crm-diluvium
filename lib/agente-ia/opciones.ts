@@ -39,8 +39,9 @@ export type BotOptions = {
   responseLength: ResponseLength;
   /** 6. Máximo de mensajes por respuesta. */
   maxBubbles: 1 | 2;
-  /** 7. Tope de respuestas del bot por conversación; null = sin tope. */
-  maxRepliesPerContact: number | null;
+  // 7. «Máximo de respuestas por conversación»: QUITADA el 7-oct-2026 (dueño: nunca un tope de
+  // respuestas; contra los bucles está el freno ante contestadores automáticos,
+  // lib/ai/runtime/contestador.ts). La columna max_replies_per_contact queda sin uso.
 };
 
 export type BotOptionField = keyof BotOptions;
@@ -56,13 +57,11 @@ export const BOT_OPTIONS_DEFAULTS: Readonly<BotOptions> = Object.freeze({
   seguimientosReal: false,
   responseLength: "balanceada",
   maxBubbles: 2,
-  maxRepliesPerContact: null,
 });
 
 export const MIN_DELAY_SECONDS = 5;
 export const MAX_DELAY_SECONDS = 60;
 export const MAX_PAUSE_HOURS = 24 * 30;
-export const MAX_REPLIES_CAP = 1_000;
 
 const HHMM = /^([01]\d|2[0-3]):[0-5]\d$/;
 const hours = z.number().int().min(1, "Mínimo 1 hora.").max(MAX_PAUSE_HOURS, "Máximo 30 días (720 horas).");
@@ -91,7 +90,6 @@ export const botOptionsPatchSchema = z
     seguimientosReal: z.boolean(),
     responseLength: z.enum(RESPONSE_LENGTHS),
     maxBubbles: z.union([z.literal(1), z.literal(2)]),
-    maxRepliesPerContact: z.number().int().min(1, "Mínimo 1 respuesta.").max(MAX_REPLIES_CAP, `Máximo ${MAX_REPLIES_CAP.toLocaleString("es-MX")}.`).nullable(),
   })
   .partial()
   // Una llave presente con `undefined` (React Flight la conserva) no es un cambio: se quita
@@ -179,7 +177,6 @@ export const OPTION_LABELS: Record<BotOptionField, string> = {
   transcribeAudio: "Responder notas de voz",
   responseLength: "Longitud de respuesta",
   maxBubbles: "Máximo de mensajes por respuesta",
-  maxRepliesPerContact: "Máximo de respuestas del Agente IA por conversación",
   seguimientosReal: "Seguimientos del Agente IA",
 };
 
@@ -221,10 +218,6 @@ export const OPTION_HELP: Record<BotOptionField, { help: string; ghl: string }> 
     help: "En cuántos mensajes de WhatsApp se manda cada respuesta (con 2, la información y la pregunta van separadas).",
     ghl: "1 (todo en un mensaje)",
   },
-  maxRepliesPerContact: {
-    help: "Al llegar al tope, el Agente IA se pausa en ese chat hasta «Activar» y deja el aviso 🤖 «Llegó al máximo de respuestas» (tarjeta amarilla en el Embudo). Protege de un bucle con otro contestador automático. Se cuenta desde el último «Activar». Los seguimientos no cuentan y salen aunque el chat esté pausado por el tope.",
-    ghl: "50",
-  },
   seguimientosReal: {
     help: "Con «Ensayo» el Agente IA calcula cada seguimiento (qué quedó pendiente, a qué hora y el mensaje) y se ve en la píldora 🤖, pero no le manda nada al cliente. Con «Real» sale a su hora: texto con la ventana de 24 h abierta y plantilla aprobada con la ventana cerrada.",
     ghl: "seguimiento a los 15 días",
@@ -250,8 +243,6 @@ export function formatOptionValue(field: BotOptionField, value: unknown): string
       return RESPONSE_LENGTH_LABELS[value as ResponseLength] ?? String(value);
     case "maxBubbles":
       return String(value);
-    case "maxRepliesPerContact":
-      return value === null ? "Sin tope" : String(value);
     case "seguimientosReal":
       return value ? "Real" : "Ensayo";
   }
@@ -268,4 +259,14 @@ export function describeChange(c: BotOptionsChange, now: Date): string {
 
 export function isBotOptionField(v: unknown): v is BotOptionField {
   return typeof v === "string" && Object.hasOwn(OPTION_LABELS, v);
+}
+
+/** Opciones que ya no existen: su nombre para los cambios viejos del Historial. */
+const RETIRED_OPTION_LABELS: Record<string, string> = {
+  maxRepliesPerContact: "Máximo de respuestas del Agente IA por conversación (quitada el 7-oct-2026)",
+};
+
+/** Nombre de una opción para el Historial, también de una que ya se quitó. */
+export function optionLabel(field: string): string {
+  return isBotOptionField(field) ? OPTION_LABELS[field] : (RETIRED_OPTION_LABELS[field] ?? field);
 }

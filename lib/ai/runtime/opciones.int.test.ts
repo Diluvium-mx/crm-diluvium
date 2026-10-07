@@ -1,7 +1,7 @@
 // Opciones del bot (sección "Opciones" de la pestaña Agente IA, 26-sep-2026) contra
 // Postgres REAL: regresión (con los valores de fábrica todo es como antes) y una prueba
 // por opción —espera, reactivar tras horas, asesor que pausa, horario con su apertura,
-// imágenes y audios en "No", longitud, mensajes y tope con aviso amarillo—, más la caché
+// imágenes y audios en "No", longitud y mensajes—, más la caché
 // del worker y el aislamiento por organización. Los modelos y WhatsApp son dobles; la BD,
 // la cola (doble) y el envío (sendAgentText) siguen el camino real. Solo con TEST_DATABASE_URL.
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
@@ -32,7 +32,6 @@ describe.skipIf(!TEST_DATABASE_URL)("Opciones del bot (Postgres real)", () => {
   let rules: typeof import("@/lib/scheduled/rules");
   let send: typeof import("@/lib/messaging/send");
   let executor: typeof import("@/lib/workflows/executor");
-  let signals: typeof import("@/lib/contacts/funnel-signals");
   let transcribe: typeof import("@/lib/ai/transcription/transcribe");
 
   const ORG = "org_op";
@@ -63,7 +62,6 @@ describe.skipIf(!TEST_DATABASE_URL)("Opciones del bot (Postgres real)", () => {
     rules = await import("@/lib/scheduled/rules");
     send = await import("@/lib/messaging/send");
     executor = await import("@/lib/workflows/executor");
-    signals = await import("@/lib/contacts/funnel-signals");
     transcribe = await import("@/lib/ai/transcription/transcribe");
   });
 
@@ -425,42 +423,9 @@ describe.skipIf(!TEST_DATABASE_URL)("Opciones del bot (Postgres real)", () => {
     expect(await agentOuts()).toHaveLength(1);
   });
 
-  // ── 7. Tope de respuestas ────────────────────────────────────────────────
-  it("tope de 2 respuestas: a la tercera se pausa hasta «Activar», deja el aviso 🤖 y la tarjeta del Embudo queda amarilla; «Activar» reinicia la cuenta", async () => {
-    await set({ maxRepliesPerContact: 2 });
-    for (let i = 1; i <= 2; i++) {
-      await msg({ direction: "in", body: `pregunta ${i}`, at: new Date(Date.now() + i * 1_000) });
-      expect((await run.runAgent(JOB, makeDeps({ brain: [`respuesta ${i}`] }).deps)).kind).toBe("sent");
-    }
-    await msg({ direction: "in", body: "pregunta 3", at: new Date(Date.now() + 3_000) });
-    const third = makeDeps();
-    expect(await run.runAgent(JOB, third.deps)).toEqual({ kind: "skipped", reason: "tope_respuestas" });
-    expect(third.calls).toHaveLength(0); // no se paga otra llamada
-    expect(await conv()).toMatchObject({ agentState: "pausado_humano", agentPausedUntil: null });
-    const n = (await notices()).filter((x) => x.kind === "tope_respuestas");
-    expect(n).toHaveLength(1);
-    expect(n[0].body).toContain("máximo de respuestas (2)");
-    expect((await signals.funnelSignalsForOrg(ORG))[CONTACT]).toMatchObject({ urgent: true });
-    expect(signals.URGENT_NOTICE_KINDS).toContain("tope_respuestas");
-    // Otra corrida (barrido, cola) no repite el aviso ni llama al modelo.
-    expect((await run.runAgent(JOB, makeDeps().deps)).kind).toBe("skipped");
-    expect((await notices()).filter((x) => x.kind === "tope_respuestas")).toHaveLength(1);
-    // «Activar»: la cuenta empieza de cero desde el corte; el siguiente mensaje se contesta.
-    await manual.reactivateAgentInConversation(ORG, CONV, new Date());
-    // …y la tarjeta del Embudo deja de estar amarilla (el aviso queda atendido).
-    expect((await signals.funnelSignalsForOrg(ORG))[CONTACT]?.urgent ?? false).toBe(false);
-    await msg({ direction: "in", body: "pregunta 4", at: new Date(Date.now() + 5_000) });
-    expect((await run.runAgent(JOB, makeDeps({ brain: ["respuesta 4"] }).deps)).kind).toBe("sent");
-    expect((await conv()).agentState).toBe("activo");
-    // Sin tope (fábrica) no pasa nada aunque haya muchas respuestas.
-    await set({ maxRepliesPerContact: null });
-    await msg({ direction: "in", body: "pregunta 5", at: new Date(Date.now() + 7_000) });
-    expect((await run.runAgent(JOB, makeDeps({ brain: ["respuesta 5"] }).deps)).kind).toBe("sent");
-  });
-
   // ── Aislamiento por organización ─────────────────────────────────────────
   it("aislamiento: las opciones y los cambios de una organización no tocan a la otra", async () => {
-    await set({ responseDelaySeconds: 5, maxRepliesPerContact: 3 });
+    await set({ responseDelaySeconds: 5, maxBubbles: 1 });
     expect(await options.loadBotOptions(OTRA)).toEqual(opciones.BOT_OPTIONS_DEFAULTS);
     expect(await store.loadBotOptionsRow(OTRA)).toEqual(opciones.BOT_OPTIONS_DEFAULTS);
     expect(await store.loadLastOptionsChange(OTRA)).toBeNull();
@@ -468,7 +433,7 @@ describe.skipIf(!TEST_DATABASE_URL)("Opciones del bot (Postgres real)", () => {
     expect((await options.loadBotOptions(ORG)).responseDelaySeconds).toBe(5);
     expect((await options.loadBotOptions(OTRA)).responseDelaySeconds).toBe(20);
     const changes = await db.select().from(s.aiConfigChanges);
-    expect(changes.filter((c) => c.organizationId === ORG).map((c) => c.field).sort()).toEqual(["maxRepliesPerContact", "responseDelaySeconds"]);
+    expect(changes.filter((c) => c.organizationId === ORG).map((c) => c.field).sort()).toEqual(["maxBubbles", "responseDelaySeconds"]);
     expect(changes.filter((c) => c.organizationId === OTRA).map((c) => c.field)).toEqual(["responseDelaySeconds"]);
     // Guardar el mismo valor no deja registro.
     await set({ responseDelaySeconds: 5 });

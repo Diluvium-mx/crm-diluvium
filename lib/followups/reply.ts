@@ -1,7 +1,7 @@
 // El cliente contestó un seguimiento (docs/seguimientos.md §7.2 y §7.4, decisión del dueño 2-oct-2026):
-//   - si el Agente IA estaba en pausa AUTOMÁTICA (un vendedor contestó, tope de respuestas o pidió un
-//     asesor), la conversación sigue con el Agente IA: se quita la pausa (opción B). La pausa puesta a
-//     mano solo se quita si el vendedor eligió «Que salga solo»;
+//   - si el Agente IA estaba en pausa AUTOMÁTICA (un vendedor contestó o pidió un asesor), la
+//     conversación sigue con el Agente IA: se quita la pausa (opción B). La pausa puesta a mano, o la
+//     del freno ante contestadores automáticos, solo se quita si el vendedor eligió «Que salga solo»;
 //   - el Agente IA contesta sabiendo por qué le escribimos (línea de contexto).
 // Solo cuentan los seguimientos que de verdad le llegaron (modo real). Toda consulta filtra por organización.
 import { and, desc, eq, inArray, ne, sql } from "drizzle-orm";

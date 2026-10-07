@@ -8,7 +8,7 @@ import "server-only";
 import { and, desc, eq, gte, lt, notInArray, sql, type SQL } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { aiConfigChanges, aiKnowledgeVersions, changeHistory, user } from "@/lib/db/schema";
-import { isBotOptionField, OPTION_LABELS } from "@/lib/agente-ia/opciones";
+import { optionLabel } from "@/lib/agente-ia/opciones";
 import { buildChangeDiff, diffFaqs, diffGoal, type ChangeDiff, type FaqDetail } from "./diff";
 import {
   AUTOMATIC_ACTIONS,
@@ -98,7 +98,7 @@ async function fromBotOptions(organizationId: string, q: HistoryQuery): Promise<
     id: `o:${r.id}`,
     type: "opciones",
     who: r.author ?? SYSTEM_WHO,
-    what: `Cambió la opción «${isBotOptionField(r.field) ? OPTION_LABELS[r.field] : r.field}»`,
+    what: `Cambió la opción «${optionLabel(r.field)}»`,
     before: r.oldValue,
     after: r.newValue,
     at: r.createdAt.toISOString(),
