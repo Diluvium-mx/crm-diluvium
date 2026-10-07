@@ -217,7 +217,8 @@ async function readConversation(organizationId: string, conversationId: string, 
         and(
           eq(messagesTable.organizationId, organizationId),
           eq(messagesTable.conversationId, conversationId),
-          sql`${messagesTable.createdAt} > ${conv.detalleLeidoHasta.toISOString()}::timestamp`,
+          // La hora del mensaje (mismo reloj que detalle_leido_hasta), no la de llegada.
+          sql`coalesce(${messagesTable.sentAt}, ${messagesTable.createdAt}) > ${conv.detalleLeidoHasta.toISOString()}::timestamp`,
           sql`not coalesce(${messagesTable.metadata} ? 'seguimiento', false)`,
         ),
       )
@@ -366,12 +367,16 @@ async function readConversation(organizationId: string, conversationId: string, 
     }
     // Seguimientos que ya mandó un vendedor: cuentan como intento (decisión del dueño, 3-oct-2026).
     const tail = chatTail(history.map((m) => ({ direction: m.direction, source: m.source, sentByUserId: m.sentByUserId, at: messageAt(m) })));
+    // Hasta dónde leyó DE VERDAD: el último mensaje del historial, aunque conversations.last_message_at
+    // todavía no se haya movido (una respuesta que se está enviando ya está en el historial pero su hora llega
+    // al confirmarse). Con la hora vieja el seguimiento parecía «viejo» y Reactivar no lo reabría (7-oct-2026).
+    const readUpTo = new Date(Math.max(upTo.getTime(), ...history.flatMap((m) => [messageAt(m).getTime(), m.createdAt.getTime()])));
     // Seguimiento (modo ensayo): nunca lanza ni frena la lectura.
     const seguimiento = await applyFollowUpReading({
       organizationId,
       conversationId,
       contactId: conv.contactId,
-      readUpTo: upTo,
+      readUpTo,
       stopAt: tail?.stopAt ?? rows[rows.length - 1].at,
       vendorAttempts: tail?.vendorAttempts ?? [],
       lastIsCompany: followUp,

@@ -247,12 +247,23 @@ describe.skipIf(!TEST_DATABASE_URL)("Lector en segundo plano (Postgres real)", (
     expect(await lectorWorker.findDueConversations(new Date())).toEqual([]);
     expect((await lectorWorker.findDueConversations(new Date(Date.now() + 2 * MIN))).map((x) => x.conversationId)).toEqual([CONV]);
     // Un chat que no para: el primer mensaje sin leer tiene más de 15 min.
-    await db.update(s.messages).set({ createdAt: ago(16 * MIN) }).where(d.eq(s.messages.id, "ml_1"));
+    await db.update(s.messages).set({ sentAt: ago(16 * MIN), createdAt: ago(16 * MIN) }).where(d.eq(s.messages.id, "ml_1"));
     await msg("in", "¿Sigues?", ago(MIN));
     expect((await lectorWorker.findDueConversations(new Date())).map((x) => x.conversationId)).toEqual([CONV]);
     // Leído hasta el último mensaje: ya no.
     await db.update(s.conversations).set({ detalleLeidoHasta: (await conv()).lastMessageAt }).where(d.eq(s.conversations.id, CONV));
     expect(await lectorWorker.findDueConversations(new Date(Date.now() + 10 * MIN))).toEqual([]);
+  });
+
+  it("barrido con la hora de WhatsApp (7-oct-2026): el mensaje del cliente que llegó unos segundos después de su hora no queda «sin leer» para siempre; lo nuevo espera los 3 min", async () => {
+    // Llegó 9 s después de la hora que puso WhatsApp; el lector lo leyó (hasta last_message_at = esa hora).
+    await msg("in", "Hola", ago(60 * MIN));
+    await db.update(s.messages).set({ createdAt: new Date(ago(60 * MIN).getTime() + 9_000) }).where(d.eq(s.messages.id, "ml_1"));
+    await db.update(s.conversations).set({ detalleLeidoHasta: (await conv()).lastMessageAt }).where(d.eq(s.conversations.id, CONV));
+    // Mensaje nuevo hace 1 min: el chat no se ha calmado → todavía no (antes se leía al instante).
+    await msg("in", "¿Siguen?", ago(MIN));
+    expect(await lectorWorker.findDueConversations(new Date())).toEqual([]);
+    expect((await lectorWorker.findDueConversations(new Date(Date.now() + 3 * MIN))).map((x) => x.conversationId)).toEqual([CONV]);
   });
   it("seguimiento (modo ensayo): si el último mensaje es nuestro, la MISMA lectura deja la ficha; si el cliente escribe, se cancela", async () => {
     await db.update(s.channels).set({ aiAgentMode: "auto" }).where(d.eq(s.channels.id, "ch_lector"));
@@ -275,6 +286,21 @@ describe.skipIf(!TEST_DATABASE_URL)("Lector en segundo plano (Postgres real)", (
     await lector.runLector(ORG, CONV, segunda.deps);
     expect(String(segunda.calls[0].system)).not.toContain("SEGUIMIENTO");
     expect((await db.select().from(s.followUps))[0]).toMatchObject({ status: "cancelado", cancelReason: "cliente_escribio" });
+  });
+
+  it("seguimiento leído a media respuesta (7-oct-2026): se apunta al último mensaje que leyó, aunque last_message_at no se haya movido", async () => {
+    await db.update(s.channels).set({ aiAgentMode: "auto" }).where(d.eq(s.channels.id, "ch_lector"));
+    await msg("in", "Hola", ago(30 * MIN));
+    const clienteAt = (await conv()).lastMessageAt;
+    // Nuestra respuesta ya está en el historial, pero su hora todavía no llega a la conversación (se confirma después).
+    await msg("out", "hola, ¿en qué le ayudo?", ago(29 * MIN), "crm");
+    await db.update(s.conversations).set({ lastMessageAt: clienteAt }).where(d.eq(s.conversations.id, CONV));
+    const { deps: dd } = deps({ tiene_inundaciones: null, seguimiento: { caso: "sin_punto_claro", pendiente: "Saludó", siguiente_paso: "Saber su caso", vale_la_pena: true, borrador: "¿Qué entrada quiere proteger?" } });
+    await lector.runLector(ORG, CONV, dd);
+    const [f] = await db.select().from(s.followUps);
+    const [respuesta] = await db.select().from(s.messages).where(d.eq(s.messages.body, "hola, ¿en qué le ayudo?"));
+    expect(f.basedOnMessageAt.getTime()).toBe(respuesta.createdAt.getTime());
+    expect(f.basedOnMessageAt.getTime()).toBeGreaterThan(clienteAt.getTime());
   });
 
   it("seguimiento: un borrador que repite una pregunta ya hecha se rehace UNA vez; si el nuevo cumple, se guarda", async () => {

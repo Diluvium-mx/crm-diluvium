@@ -18,6 +18,7 @@ import {
 import { pauseAgent } from "@/lib/actions/agente-conversacion";
 import { MAX_PAUSE_MS, PAUSE_OPTIONS, PAUSE_OPTION_LABELS, pauseUntil, type PauseOption } from "@/lib/agente-ia/pause";
 import { instantToLocal } from "@/lib/scheduled/rules";
+import { DateTimePicker } from "@/components/ui/date-time-picker";
 
 // Propuesta inicial de la hora exacta: dentro de 1 h, redondeado a 5 minutos.
 function defaultAt(): string {
@@ -125,14 +126,7 @@ export function BotOffMenu({
             <div className="flex items-end gap-2">
               <label className="flex min-w-0 flex-1 flex-col gap-1">
                 <span className="text-muted-foreground">Fecha y hora (Mazatlán)</span>
-                <input
-                  type="datetime-local"
-                  value={at}
-                  min={limits.min}
-                  max={limits.max}
-                  onChange={(event) => setAt(event.target.value)}
-                  className="rounded-md border bg-background px-2 py-1.5 text-sm"
-                />
+                <DateTimePicker mode="datetime" value={at} min={limits.min} max={limits.max} onChange={setAt} className="rounded-md border bg-background px-2 py-1.5 text-sm" />
               </label>
               <button
                 type="button"

@@ -15,15 +15,18 @@
 // chat? · ¿Qué busca el seguimiento? · ¿Cuándo sale el N.º mensaje?), «Ver mensaje» con el texto exacto y un
 // renglón por mensaje que ya salió. Sin «Por dónde» ni la palabra «plantilla». El texto de la píldora, los
 // títulos, las preguntas y los botones no se seleccionan; las respuestas y el mensaje sí (para copiarlos).
+// Siempre está (7-oct-2026, decisión del dueño): sin nada que seguir sale el robot dormido en gris («dormido») y su
+// ventana dice por qué; «esperando» se queda mientras el último mensaje sea nuestro aunque ya no queden intentos.
 // Consultas: al abrir el chat, con cada aviso "followup.updated" de este chat y al volver a la pestaña.
 import { useCallback, useEffect, useRef, useState } from "react";
-import { approveSuggestedFollowUp, cancelFollowUp, getFollowUp, quitarSinSeguimientos, reactivarSeguimientos, rescheduleFollowUp } from "@/lib/actions/seguimientos";
-import type { FollowUpOff, FollowUpState, FollowUpView } from "@/lib/followups/view";
+import { apagarSeguimientos, approveSuggestedFollowUp, cancelFollowUp, getFollowUp, quitarSinSeguimientos, reactivarSeguimientos, rescheduleFollowUp } from "@/lib/actions/seguimientos";
+import type { FollowUpDormido, FollowUpOff, FollowUpState, FollowUpView } from "@/lib/followups/view";
 import { followUpText } from "@/lib/followups/message";
 import { whatsappWebLink } from "@/lib/contacts/whatsapp-link";
 import { instantToLocal, SCHEDULE_TIME_ZONE } from "@/lib/scheduled/rules";
 import { CloseX } from "@/components/ui/close-x";
 import { useInboxStream } from "./use-inbox-stream";
+import { DateTimePicker } from "@/components/ui/date-time-picker";
 
 // ── Datos ────────────────────────────────────────────────────────────────────
 
@@ -138,6 +141,7 @@ export function RobotIcon({ face, size = 18 }: { face: RobotFace; size?: number 
 }
 
 function faceOf(f: FollowUpState): RobotFace {
+  if (f.estado === "dormido") return "dormido";
   if (f.estado !== "activo") return "cancelado";
   return f.modo === "sugerido" && !f.autoAprobado ? "dormido" : "normal";
 }
@@ -146,6 +150,24 @@ function faceOf(f: FollowUpState): RobotFace {
 
 export function FollowUpPill({ followUp, open, onToggle, className = "" }: { followUp: FollowUpState; open: boolean; onToggle: () => void; className?: string }) {
   const f = followUp;
+  if (f.estado === "dormido") {
+    const title = `Seguimiento del Agente IA · dormido: ${f.razon}`;
+    return (
+      <button
+        type="button"
+        onClick={onToggle}
+        aria-expanded={open}
+        aria-label={title}
+        title={title}
+        data-testid="followup-pill"
+        data-estado="dormido"
+        className={`h-5 min-w-0 cursor-pointer items-center justify-center gap-1 rounded-full border border-muted-foreground/40 bg-background px-2 text-[11px] leading-none whitespace-nowrap text-muted-foreground transition-colors select-none ${open ? "ring-2 ring-brand-navy/30" : ""} ${className}`}
+      >
+        <RobotIcon face="dormido" />
+        <span className="truncate">dormido</span>
+      </button>
+    );
+  }
   const tone =
     f.estado === "baja"
       ? "border-red-600 bg-red-50 text-red-800 dark:bg-red-500/15 dark:text-red-200"
@@ -203,6 +225,7 @@ export function markBajaSeen(contactId: string): void {
 type Estado = { label: string; tone: string };
 
 function estadoOf(f: FollowUpState): Estado {
+  if (f.estado === "dormido") return { label: "Dormido", tone: "border-muted-foreground/40 bg-background text-muted-foreground" };
   if (f.estado === "baja") return { label: "Se dio de baja", tone: "border-red-600 bg-red-100 text-red-800 dark:bg-red-500/20 dark:text-red-200" };
   if (f.estado === "cancelado") return { label: "Cancelado", tone: "border-muted-foreground/50 bg-muted text-muted-foreground" };
   if (f.ensayo) return { label: "Ensayo", tone: "border-dashed border-muted-foreground/60 bg-muted text-muted-foreground" };
@@ -294,8 +317,62 @@ function OffPanel({ off, onClose, onChanged }: { off: FollowUpOff; onClose: () =
 // ── Burbuja ──────────────────────────────────────────────────────────────────
 
 export function FollowUpPanel({ followUp, onClose, onChanged }: { followUp: FollowUpState; onClose: () => void; onChanged: () => void }) {
+  if (followUp.estado === "dormido") return <DormidoPanel dormido={followUp} onClose={onClose} onChanged={onChanged} />;
   if (followUp.estado !== "activo") return <OffPanel off={followUp} onClose={onClose} onChanged={onChanged} />;
   return <ActivePanel followUp={followUp} onClose={onClose} onChanged={onChanged} />;
+}
+
+/** Sin nada que seguir: por qué, y «Apagar seguimientos en este chat» (queda «Cancelado» hasta que alguien los reactive). */
+function DormidoPanel({ dormido, onClose, onChanged }: { dormido: FollowUpDormido; onClose: () => void; onChanged: () => void }) {
+  const [confirm, setConfirm] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const button = "rounded-md border px-2.5 py-1 text-xs font-medium transition-colors hover:bg-brand-navy/10 disabled:opacity-50";
+  const apagar = async () => {
+    setBusy(true);
+    setError(null);
+    try {
+      const r = await apagarSeguimientos(dormido.conversationId);
+      if (!r.ok) setError(r.message);
+      else onChanged();
+    } catch {
+      setError("No se pudo guardar. Inténtalo otra vez.");
+    } finally {
+      setBusy(false);
+    }
+  };
+  return (
+    <div
+      onKeyDown={(event) => {
+        if (event.key !== "Escape") return;
+        event.stopPropagation();
+        onClose();
+      }}
+      data-testid="followup-panel"
+      className="mb-2 overflow-hidden rounded-lg border bg-background text-sm shadow-md select-none"
+    >
+      <PanelHeader followUp={dormido} title="Seguimiento del Agente IA" onClose={onClose} />
+      <div className="space-y-2 p-3">
+        <Answer question="¿Por qué no hay seguimiento?">{dormido.razon}</Answer>
+        {confirm ? (
+          <div className="flex flex-wrap items-center gap-2 rounded-md border border-red-300 bg-red-50 px-2 py-1.5 text-xs dark:border-red-500/40 dark:bg-red-500/10">
+            <span>¿Apagar los seguimientos de este chat? El Agente IA no arma seguimientos aquí hasta que alguien los reactive.</span>
+            <button type="button" disabled={busy} onClick={() => void apagar()} className={`${button} border-red-400 text-red-700 dark:text-red-300`}>
+              Sí, apagar
+            </button>
+            <button type="button" onClick={() => setConfirm(false)} className={button}>
+              No
+            </button>
+          </div>
+        ) : (
+          <button type="button" onClick={() => setConfirm(true)} className={`${button} text-red-700 dark:text-red-300`}>
+            Apagar seguimientos en este chat
+          </button>
+        )}
+        {error && <p className="text-xs font-medium text-red-600 select-text dark:text-red-400">{error}</p>}
+      </div>
+    </div>
+  );
 }
 
 function Answer({ question, children }: { question: string; children: React.ReactNode }) {
@@ -372,7 +449,7 @@ function ActivePanel({ followUp, onClose, onChanged }: { followUp: FollowUpView;
         ) : (
           <Answer question="¿Y ahora?">
             {sent === 1 ? `Ya ${f.ensayo ? "habría salido" : "salió"} el mensaje` : `Ya ${f.ensayo ? "habrían salido" : "salieron"} los ${sent} mensajes`}
-            {due ? `. Si no contesta ${beforeDate(f.dueAt!)}, pasa a frío.` : "."}
+            {f.terminado ? " y no ha contestado (pasó a frío). Si escribe, el Agente IA le contesta." : due ? `. Si no contesta ${beforeDate(f.dueAt!)}, pasa a frío.` : "."}
           </Answer>
         )}
         {programado && f.modo === "sugerido" && (
@@ -405,13 +482,7 @@ function ActivePanel({ followUp, onClose, onChanged }: { followUp: FollowUpView;
 
         {editing && (
           <div className="flex flex-wrap items-center gap-2">
-            <input
-              type="datetime-local"
-              value={local}
-              onChange={(event) => setLocal(event.target.value)}
-              aria-label="Nueva hora (Mazatlán)"
-              className="rounded-md border bg-background px-2 py-1 text-sm"
-            />
+            <DateTimePicker mode="datetime" value={local} onChange={setLocal} aria-label="Nueva hora (Mazatlán)" className="rounded-md border bg-background px-2 py-1 text-sm" />
             <span className="text-xs text-muted-foreground">hora de Mazatlán</span>
             <button
               type="button"

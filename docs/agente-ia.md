@@ -705,6 +705,11 @@ nadie leía el chat. Migración **`0047_lector_detalle`** (siguiente libre: 0048
   haya contestado (la lectura cuesta ~US$0.0005; así monto, pago y etapa siguen una sola regla). Candado
   Redis por chat (`lector-lock:<id>`). Si el modelo falla, no marca leído y reintenta hasta 3 veces por
   mensaje nuevo. La 0047 marcó todo lo anterior como leído.
+  **Mismo reloj (7-oct-2026):** «sin leer» se mide con la hora del mensaje (`coalesce(sent_at, created_at)`, la de
+  WhatsApp, igual que `last_message_at` y `detalle_leido_hasta`), no con la de llegada (`created_at`, unos segundos
+  después). Antes el último mensaje del cliente parecía sin leer para siempre y el chat se leía al instante con
+  cualquier mensaje nuevo, sin los 3 min de calma (así una lectura cayó a media respuesta del vendedor). También en
+  la revisión «solo hay seguimientos nuevos» (`lector.ts`) y en la espera del Detalle (`lector-status-store.ts`).
 - **Reglas del dueño:** lectura LINEAL, vale lo último que confirmó el cliente, aun tras la compra.
   **Monto de cotización** = total de lo que el cliente eligió al final (si se cotizaron 2 y eligió 1, el
   total de 1); si cambió y el precio nuevo nunca se dijo, no se inventa: comentario "falta confirmar el

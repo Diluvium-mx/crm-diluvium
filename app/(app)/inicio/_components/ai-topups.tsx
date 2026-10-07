@@ -8,6 +8,7 @@ import { useState, useTransition } from "react";
 import { addAiTopup, deleteAiTopup } from "@/lib/actions/ai-spend";
 import type { TopupRow } from "@/lib/dashboard/ai-spend";
 import { formatUsd } from "@/lib/usd-format";
+import { DateTimePicker } from "@/components/ui/date-time-picker";
 
 const PROVIDERS = [
   { id: "openai", label: "OpenAI" },
@@ -84,7 +85,7 @@ export function AiTopups({ topups, canRegister }: { topups: TopupRow[]; canRegis
           </label>
           <label className="flex flex-col gap-0.5 text-xs text-muted-foreground">
             Fecha
-            <input type="date" value={day} max={todayLocal()} onChange={(e) => setDay(e.target.value)} className={input} />
+            <DateTimePicker mode="date" value={day} max={todayLocal()} onChange={setDay} className={input} />
           </label>
           <button type="button" disabled={pending || !amount.trim()} onClick={submit} className="rounded bg-brand-orange px-3 py-1.5 text-xs font-medium text-white disabled:opacity-50">
             {pending ? "Guardando…" : "Guardar"}
