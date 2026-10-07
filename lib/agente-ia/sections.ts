@@ -7,6 +7,8 @@ export const AGENT_SECTIONS = [
   { id: "goal", label: "Instrucciones (Goal)" },
   { id: "faqs", label: "FAQs" },
   { id: "opciones", label: "Opciones" },
+  // Tabla de los seguimientos del Agente IA (Parte 4, 6-oct-2026).
+  { id: "seguimientos", label: "Seguimientos" },
   { id: "tallas", label: "Tallas y medidas" },
   { id: "canales", label: "Canales" },
   // Historial de cambios (Bloque A, 28-sep-2026): quién cambió qué y cuándo.

@@ -20,6 +20,8 @@ import type { MessagingProvider } from "@/lib/messaging/provider";
 import { addNotice } from "@/lib/ai/runtime/notices";
 import { notifyContactUpdated } from "@/lib/contacts/notify-updated";
 import { zoneForPhone } from "./timezone";
+import { caseOn, nextStep, slotOf, type FollowUpTable } from "./tabla";
+import { loadFollowUpTable } from "./tabla-store";
 
 export type FollowUpRow = typeof followUps.$inferSelect;
 const OPEN = ["programado", "esperando"] as const;
@@ -88,7 +90,7 @@ export async function manualPauseOf(organizationId: string, conversationId: stri
  * con 📄 o 🕒 también cuentan; decisión del dueño, 3-oct-2026) y las de seguimiento que salieron
  * o, en ensayo, que habrían salido. Nunca dos en menos de 7 días.
  */
-async function lastTemplateAt(organizationId: string, contactId: string, now: Date, real: boolean): Promise<Date | null> {
+export async function lastTemplateAt(organizationId: string, contactId: string, now: Date, real: boolean): Promise<Date | null> {
   const since = new Date(now.getTime() - 30 * 24 * 60 * 60_000);
   let last: number | null = null;
   // En ensayo cuentan las que "habrían salido" (para que el ensayo se parezca a lo real). En real
@@ -143,6 +145,8 @@ type Signals = {
   stageKey: string;
   /** Un vendedor canceló los seguimientos de este chat (hasta que alguien los reactive). */
   off: boolean;
+  /** Tabla de la organización (Agente IA › Seguimientos). */
+  table: FollowUpTable;
 };
 
 async function loadSignals(
@@ -201,6 +205,7 @@ async function loadSignals(
     sinSeguimientos: row.sinSeguimientos,
     stageKey,
     off: row.offAt !== null,
+    table: await loadFollowUpTable(organizationId, now),
   };
 }
 
@@ -303,6 +308,14 @@ async function applyReading(r: FollowUpReading): Promise<string | null> {
   const real = await followUpsReal(organizationId);
 
   const { caso, ajuste } = finalCase(r.ficha, signals.hard);
+  // Caso apagado en Agente IA › Seguimientos: el lector lo reconoce, pero no se le escribe.
+  if (!caseOn(signals.table, caso) && caso !== "no_seguir") {
+    if (existing) {
+      await closeRow(db, existing, "cancelado", "caso_apagado", now);
+      await announce(db, organizationId, conversationId, contactId);
+    }
+    return `seguimiento: no (${caso} apagado en Agente IA › Seguimientos)${ajuste ? ` [${ajuste}]` : ""}`;
+  }
   const ficha = r.ficha;
   const base = {
     organizationId,
@@ -360,10 +373,17 @@ async function applyReading(r: FollowUpReading): Promise<string | null> {
     }
     // Los seguimientos del vendedor ya cuentan (decisión del dueño, 3-oct-2026).
     const vendorLogs: FollowUpAttemptLog[] = (r.vendorAttempts ?? []).map((at, i) => ({ n: i + 1, at: at.toISOString(), door: "texto", template: null, modo: "vendedor", ensayo: false }));
-    const intento = vendorLogs.length + 1;
-    const total = effectiveTotal(caso, vendorLogs.length ? "texto" : null);
+    // El siguiente intento PRENDIDO en la tabla después de los del vendedor.
+    const intento = nextStep(signals.table, caso, vendorLogs.length);
+    const total = effectiveTotal(caso, vendorLogs.length ? "texto" : null, signals.table);
     const modo = signals.manualPause ? "sugerido" : "automatico";
-    if (intento > total) {
+    if (intento === null || intento > total) {
+      if (vendorLogs.length === 0) {
+        // Ningún intento prendido (no debería pasar: la tabla lo valida).
+        if (current) await closeRow(tx, current, "cancelado", "caso_apagado", now);
+        summary = `seguimiento: no (${caso} sin intentos prendidos)`;
+        return;
+      }
       // El vendedor ya hizo todos los intentos del caso: solo se espera respuesta (después, frío).
       const lastAt = r.vendorAttempts![r.vendorAttempts!.length - 1];
       await save({ ...base, ...reset, status: "esperando", intento: total, totalIntentos: total, intentos: vendorLogs, dueAt: new Date(lastAt.getTime() + WAIT_AFTER_LAST_MS), door: null, templateName: null, modo });
@@ -383,21 +403,22 @@ async function applyReading(r: FollowUpReading): Promise<string | null> {
             horaPedida: ficha?.horaPedida,
             fondo: ficha?.casoDeFondo,
             lastTemplateAt: signals.lastTemplateAt,
+            table: signals.table,
           })
-        : planNext({ ...base, caso }, intento, signals.windowExpiresAt, now, r.vendorAttempts![r.vendorAttempts!.length - 1], signals.lastTemplateAt);
+        : planNext({ ...base, caso }, intento, signals.windowExpiresAt, now, r.vendorAttempts?.at(-1) ?? r.stopAt, signals.lastTemplateAt, signals.table);
     const picks: TemplatePicks = { plantilla2: base.plantilla2, plantilla3: base.plantilla3 };
     await save({
       ...base,
       ...reset,
       status: "programado",
       intento,
-      totalIntentos: effectiveTotal(caso, vendorLogs.length ? "texto" : plan.door),
+      totalIntentos: effectiveTotal(caso, vendorLogs.length ? "texto" : intento === 1 ? plan.door : null, signals.table),
       intentos: vendorLogs,
       dueAt: plan.dueAt,
       door: plan.door,
       templateName: templateForAttempt(caso, intento, plan.templateName, signals.approved, picks, null),
       modo,
-      presentarAt: modo === "sugerido" ? presentAtFor(plan.dueAt, now) : null,
+      presentarAt: modo === "sugerido" ? presentAtFor(plan.dueAt, now, signals.table.vendedores) : null,
     });
     summary = `seguimiento: ${caso} ${intento}.º ${fmt.format(plan.dueAt)} ${plan.door}${vendorLogs.length ? ` (el vendedor ya hizo ${vendorLogs.length})` : ""}${modo === "sugerido" ? " (sugerido)" : ""}`;
   });
@@ -417,7 +438,15 @@ const DAY_MS = 24 * 60 * 60_000;
 export type FollowUpRuntimeDeps = { provider?: MessagingProvider };
 
 /** Programa el intento `intento` de una fila (después de que salió el anterior). */
-export function planNext(row: Pick<FollowUpRow, "caso" | "timeZone" | "basedOnMessageAt" | "fechaPedida" | "horaPedida" | "casoDeFondo">, intento: number, windowExpiresAt: Date | null, now: Date, prevAt: Date, lastTemplate: Date | null): AttemptPlan {
+export function planNext(
+  row: Pick<FollowUpRow, "caso" | "timeZone" | "basedOnMessageAt" | "fechaPedida" | "horaPedida" | "casoDeFondo">,
+  intento: number,
+  windowExpiresAt: Date | null,
+  now: Date,
+  prevAt: Date,
+  lastTemplate: Date | null,
+  table: FollowUpTable,
+): AttemptPlan {
   return planAttempt({
     caso: row.caso as Exclude<FollowUpCase, "no_seguir">,
     intento,
@@ -430,6 +459,7 @@ export function planNext(row: Pick<FollowUpRow, "caso" | "timeZone" | "basedOnMe
     fondo: isFollowUpCase(row.casoDeFondo) ? row.casoDeFondo : null,
     prevAttemptAt: prevAt,
     lastTemplateAt: lastTemplate,
+    table,
   });
 }
 
@@ -446,13 +476,13 @@ async function lastNonFollowUpAt(organizationId: string, conversationId: string)
 }
 
 /** Mismo instante con otra hora: la siguiente que se pueda (7:00–21:00 del cliente; plantilla hasta las 19:00). */
-function nextSendable(now: Date, zone: string, door: "texto" | "plantilla", caso: Exclude<FollowUpCase, "no_seguir">, fondo: FollowUpCase | null): Date | null {
+function nextSendable(now: Date, zone: string, door: "texto" | "plantilla", caso: Exclude<FollowUpCase, "no_seguir">, fondo: FollowUpCase | null, table: FollowUpTable): Date | null {
   const m = localMinutes(now, zone);
   const latest = door === "plantilla" ? minutesOf(TEMPLATE_LATEST) : minutesOf(ALLOWED_TO);
   if (m >= minutesOf(ALLOWED_FROM) && m <= latest) return null;
   const today = localParts(now, zone);
   const day = m < minutesOf(ALLOWED_FROM) ? today : addDays(today, 1);
-  const time = door === "plantilla" ? templateTimeOf(timingCase(caso, fondo)) : CASE_RULES[timingCase(caso, fondo)].slot!.from;
+  const time = door === "plantilla" ? templateTimeOf(timingCase(caso, fondo), table) : slotOf(table, timingCase(caso, fondo)).from;
   return zonedInstant(zone, day, time);
 }
 
@@ -473,29 +503,31 @@ type Advance = { set: Partial<typeof followUps.$inferInsert>; summary: string };
 function afterAttempt(row: FollowUpRow, log: FollowUpAttemptLog, signals: Signals, now: Date): Advance {
   const caso = row.caso as Exclude<FollowUpCase, "no_seguir">;
   const intentos = [...row.intentos, log];
-  const firstDoor = intentos[0]?.door ?? log.door;
-  const total = effectiveTotal(caso, firstDoor);
+  const firstDoor = intentos[0]?.n === 1 ? intentos[0].door : null;
+  const total = effectiveTotal(caso, firstDoor, signals.table);
   const word = row.ensayo ? "habría salido" : log.error ? "no salió" : "salió";
-  if (row.intento < total) {
+  // El siguiente intento prendido en la tabla (los apagados se saltan).
+  const step = nextStep(signals.table, caso, row.intento);
+  if (step !== null && step <= total) {
     const lastTemplate = log.door === "plantilla" && !log.error ? now : signals.lastTemplateAt;
-    const next = planNext(row, row.intento + 1, signals.windowExpiresAt, now, now, lastTemplate);
+    const next = planNext(row, step, signals.windowExpiresAt, now, now, lastTemplate, signals.table);
     const nextModo = signals.manualPause ? "sugerido" : "automatico";
     const picks: TemplatePicks = { plantilla2: row.plantilla2, plantilla3: row.plantilla3 };
     return {
       set: {
         intentos,
-        intento: row.intento + 1,
+        intento: step,
         totalIntentos: total,
         dueAt: next.dueAt,
         door: next.door,
-        templateName: templateForAttempt(caso, row.intento + 1, next.templateName, signals.approved, picks, log.template),
+        templateName: templateForAttempt(caso, step, next.templateName, signals.approved, picks, log.template),
         modo: nextModo,
-        presentarAt: nextModo === "sugerido" ? presentAtFor(next.dueAt, now) : null,
+        presentarAt: nextModo === "sugerido" ? presentAtFor(next.dueAt, now, signals.table.vendedores) : null,
         autoAprobado: false,
         dueSetBy: "sistema",
         avisoAt: nextModo === "sugerido" ? null : row.avisoAt,
       },
-      summary: `${row.intento}.º ${word} (${log.door}${log.error ? `: ${log.error}` : ""}); ${row.intento + 1}.º ${fmt.format(next.dueAt)}`,
+      summary: `${row.intento}.º ${word} (${log.door}${log.error ? `: ${log.error}` : ""}); ${step}.º ${fmt.format(next.dueAt)}`,
     };
   }
   return {
@@ -547,6 +579,14 @@ async function advance(row: FollowUpRow, now: Date, deps: FollowUpRuntimeDeps): 
     return "cancelado (cancelados en este chat)";
   }
   const caso = row.caso as Exclude<FollowUpCase, "no_seguir">;
+  // La tabla cambió desde que se programó (decisión del dueño, 6-oct-2026: lo programado conserva su hora
+  // y al llegar se revisa): caso apagado → se cancela; intento apagado → pasa al siguiente prendido.
+  if (!caseOn(signals.table, caso)) {
+    await closeRow(db, row, "cancelado", "caso_apagado", now);
+    await announce(db, organizationId, conversationId, contactId);
+    return "cancelado (caso apagado en Agente IA › Seguimientos)";
+  }
+  if (!signals.table.casos[caso].intentos[row.intento - 1]) return skipStep(row, caso, signals, now);
   const fondo = isFollowUpCase(row.casoDeFondo) ? row.casoDeFondo : null;
   const real = (await followUpsReal(organizationId)) && deps.provider !== undefined;
   const modo = signals.manualPause && !row.autoAprobado ? "sugerido" : "automatico";
@@ -563,9 +603,20 @@ async function advance(row: FollowUpRow, now: Date, deps: FollowUpRuntimeDeps): 
 
   if (real) {
     // Último chequeo antes de escribirle al cliente: su hora, el tope de las 19:00 para plantilla y los 7 días.
-    let later = nextSendable(now, row.timeZone, door, caso, fondo);
+    let later = nextSendable(now, row.timeZone, door, caso, fondo, signals.table);
     if (!later && door === "plantilla" && signals.lastTemplateAt && now.getTime() < signals.lastTemplateAt.getTime() + TEMPLATE_SPACING_DAYS * DAY_MS) {
-      later = planAttempt({ caso, intento: Math.max(2, row.intento), zone: row.timeZone, stopAt: row.basedOnMessageAt, windowExpiresAt: null, now, fondo, prevAttemptAt: now, lastTemplateAt: signals.lastTemplateAt }).dueAt;
+      later = planAttempt({
+        caso,
+        intento: Math.max(2, row.intento),
+        zone: row.timeZone,
+        stopAt: row.basedOnMessageAt,
+        windowExpiresAt: null,
+        now,
+        fondo,
+        prevAttemptAt: now,
+        lastTemplateAt: signals.lastTemplateAt,
+        table: signals.table,
+      }).dueAt;
     }
     if (later) {
       if (!(await save(row, { dueAt: later }, now))) return null;
@@ -608,6 +659,50 @@ async function advance(row: FollowUpRow, now: Date, deps: FollowUpRuntimeDeps): 
   return sent.ok ? step.summary : step.summary.replace(/ salió \(/, ` no salió (${sent.error}; `);
 }
 
+/**
+ * El intento programado quedó apagado en la tabla: se programa el siguiente prendido (con sus tiempos de
+ * siempre desde el último que salió); si ya no queda ninguno, se espera respuesta tras el último que salió
+ * (después, frío) o, si no salió ninguno, se cancela.
+ */
+async function skipStep(row: FollowUpRow, caso: Exclude<FollowUpCase, "no_seguir">, signals: Signals, now: Date): Promise<string | null> {
+  const { organizationId, conversationId, contactId } = row;
+  const firstDoor = row.intentos[0]?.n === 1 ? row.intentos[0].door : null;
+  const total = effectiveTotal(caso, firstDoor, signals.table);
+  const step = nextStep(signals.table, caso, row.intento);
+  const last = row.intentos.at(-1);
+  if (step !== null && step <= total) {
+    const plan = planNext(row, step, signals.windowExpiresAt, now, last ? new Date(last.at) : row.basedOnMessageAt, signals.lastTemplateAt, signals.table);
+    const modo = signals.manualPause && !row.autoAprobado ? "sugerido" : "automatico";
+    const picks: TemplatePicks = { plantilla2: row.plantilla2, plantilla3: row.plantilla3 };
+    const done = await save(
+      row,
+      {
+        intento: step,
+        totalIntentos: total,
+        dueAt: plan.dueAt,
+        door: plan.door,
+        templateName: templateForAttempt(caso, step, plan.templateName, signals.approved, picks, last?.template ?? null),
+        modo,
+        presentarAt: modo === "sugerido" ? presentAtFor(plan.dueAt, now, signals.table.vendedores) : null,
+        dueSetBy: "sistema",
+      },
+      now,
+    );
+    if (!done) return null;
+    await announce(db, organizationId, conversationId, contactId);
+    return `${row.intento}.º apagado en Agente IA › Seguimientos; pasa al ${step}.º ${fmt.format(plan.dueAt)}`;
+  }
+  if (last) {
+    const done = await save(row, { status: "esperando", totalIntentos: row.intentos.length, dueAt: new Date(Date.parse(last.at) + WAIT_AFTER_LAST_MS), door: null, templateName: null }, now);
+    if (!done) return null;
+    await announce(db, organizationId, conversationId, contactId);
+    return `${row.intento}.º apagado en Agente IA › Seguimientos; ya no quedan intentos, espera respuesta`;
+  }
+  await closeRow(db, row, "cancelado", "intento_apagado", now);
+  await announce(db, organizationId, conversationId, contactId);
+  return `cancelado (${row.intento}.º apagado en Agente IA › Seguimientos y no quedan intentos)`;
+}
+
 /** Anota en el intento `n` de la fila lo que pasó después (error del envío o de Meta). */
 export async function patchAttempt(id: string, organizationId: string, n: number, patch: Partial<FollowUpAttemptLog>): Promise<void> {
   await db.transaction(async (tx) => {
@@ -636,6 +731,9 @@ async function vendorNotices(now: Date): Promise<number> {
     let messageId: string | null = null;
     const sent = realAttempts(row);
     if (row.status === "programado" && row.modo === "sugerido" && !row.autoAprobado && row.presentarAt && row.presentarAt <= now) {
+      // Caso o intento apagado en la tabla: no se le presenta al vendedor.
+      const table = await loadFollowUpTable(row.organizationId, now);
+      if (!caseOn(table, row.caso as FollowUpCase) || !table.casos[row.caso as Exclude<FollowUpCase, "no_seguir">].intentos[row.intento - 1]) continue;
       body = `Seguimiento sugerido (${CASE_RULES[row.caso as FollowUpCase].label}): ${row.pendiente ?? "quedó un pendiente"}. Mándalo tú o pulsa «Que salga solo» en la píldora 🤖.`;
     } else if (row.caso === "pago_pendiente" && sent.length >= 2 && Date.parse(sent[sent.length - 1].at) <= now.getTime() - PAGO_AVISO_MS) {
       body = `Pago pendiente: no ha contestado ${sent.length} seguimientos. Escríbele tú.`;
@@ -763,8 +861,12 @@ export async function reopenCancelledFollowUp(organizationId: string, conversati
   const signals = await loadSignals(organizationId, conversationId, row.contactId, now);
   if (!signals || !signals.channelOn || signals.off || signals.sinSeguimientos || signals.hard.stageRole === "venta_cerrada") return false;
   const caso = row.caso as Exclude<FollowUpCase, "no_seguir">;
+  if (!caseOn(signals.table, caso)) return false;
+  // Si su intento quedó apagado en la tabla, se reabre en el siguiente prendido.
+  const step = signals.table.casos[caso].intentos[row.intento - 1] ? row.intento : nextStep(signals.table, caso, row.intento);
+  if (step === null) return false;
   const prev = row.intentos.at(-1);
-  const plan = planNext(row, row.intento, signals.windowExpiresAt, now, prev ? new Date(prev.at) : row.basedOnMessageAt, signals.lastTemplateAt);
+  const plan = planNext(row, step, signals.windowExpiresAt, now, prev ? new Date(prev.at) : row.basedOnMessageAt, signals.lastTemplateAt, signals.table);
   const picks: TemplatePicks = { plantilla2: row.plantilla2, plantilla3: row.plantilla3 };
   const modo = signals.manualPause ? "sugerido" : "automatico";
   const done = await db
@@ -773,11 +875,12 @@ export async function reopenCancelledFollowUp(organizationId: string, conversati
       status: "programado",
       cancelReason: null,
       closedAt: null,
+      intento: step,
       dueAt: plan.dueAt,
       door: plan.door,
-      templateName: templateForAttempt(caso, row.intento, plan.templateName, signals.approved, picks, prev?.template ?? null),
+      templateName: templateForAttempt(caso, step, plan.templateName, signals.approved, picks, prev?.template ?? null),
       modo,
-      presentarAt: modo === "sugerido" ? presentAtFor(plan.dueAt, now) : null,
+      presentarAt: modo === "sugerido" ? presentAtFor(plan.dueAt, now, signals.table.vendedores) : null,
       autoAprobado: false,
       avisoAt: null,
       updatedAt: now,

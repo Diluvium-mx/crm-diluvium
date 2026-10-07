@@ -3,7 +3,7 @@ import { AGENT_SECTIONS, parseAgentSection } from "./sections";
 
 describe("subpestañas del Agente IA (?seccion=)", () => {
   it("las ocho, en el orden de la barra (Etapas después de Modelos, Historial al final)", () => {
-    expect(AGENT_SECTIONS.map((s) => s.id)).toEqual(["modelos", "etapas", "goal", "faqs", "opciones", "tallas", "canales", "historial"]);
+    expect(AGENT_SECTIONS.map((s) => s.id)).toEqual(["modelos", "etapas", "goal", "faqs", "opciones", "seguimientos", "tallas", "canales", "historial"]);
     expect(parseAgentSection("historial")).toBe("historial");
     expect(parseAgentSection("etapas")).toBe("etapas");
   });

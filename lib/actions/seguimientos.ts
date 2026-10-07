@@ -35,8 +35,7 @@ export async function rescheduleFollowUp(followUpId: string, local: string): Pro
   const dueAt = localToInstant(z.string().trim().parse(local));
   const problem = validateSendAt(dueAt, now);
   if (problem || !dueAt) return { ok: false, message: SEND_AT_MESSAGES[problem ?? "invalid"] };
-  const ok = await changeFollowUpTime(organizationId, id.parse(followUpId), dueAt, userId, now);
-  return ok ? { ok: true } : { ok: false, message: "Ese seguimiento ya no está programado." };
+  return changeFollowUpTime(organizationId, id.parse(followUpId), dueAt, userId, now);
 }
 
 /** "Que salga solo": el intento sugerido sale a su hora aunque el Agente IA esté en pausa. */

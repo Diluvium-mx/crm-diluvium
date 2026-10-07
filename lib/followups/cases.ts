@@ -8,6 +8,8 @@
 //   asesor 2 h después y los siguientes a las 10:00.
 // Puertas (ventana cerrada): "saludo" = hola_buenos_dias antes de las 12:00 y
 // hola_buenas_tardes después; "proteccion" = seguimiento_proteccion.
+// Desde la Parte 4 (6-oct-2026) CASE_RULES es la FÁBRICA: la hora, los intentos y «qué busca» que
+// valen son los de la tabla de la organización (Agente IA › Seguimientos, ./tabla.ts).
 
 export const FOLLOW_UP_CASES = [
   "no_seguir",
