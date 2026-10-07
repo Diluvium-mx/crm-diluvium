@@ -239,7 +239,8 @@ function PanelHeader({ followUp, title, onClose }: { followUp: FollowUpState; ti
   const red = followUp.estado === "baja";
   return (
     <div className="flex shrink-0 items-center gap-2 border-b px-3 py-1.5">
-      <RobotIcon face={faceOf(followUp)} size={22} />
+      {/* 30 px (7-oct-2026, pedido del dueño): cabe en el alto que ya da la ✕ roja (32 px); el encabezado no crece. */}
+      <RobotIcon face={faceOf(followUp)} size={30} />
       <span className={`min-w-0 flex-1 truncate text-sm font-semibold ${red ? "text-red-800 dark:text-red-200" : "text-brand-navy dark:text-sky-300"}`}>{title}</span>
       <span data-testid="followup-estado" className={`shrink-0 rounded-full border px-2.5 py-0.5 text-[11px] font-medium whitespace-nowrap ${estado.tone}`}>
         {estado.label}
