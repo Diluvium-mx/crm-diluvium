@@ -43,6 +43,16 @@ describe("lector + seguimiento", () => {
     expect(FOLLOW_UP_INSTRUCTIONS).toMatch(/solo paso a dar seguimiento/);
   });
 
+  it("las frases de pago van en «pidió fecha» con su día y sin hora (opción A de la quincena, 7-oct-2026)", () => {
+    const line = FOLLOW_UP_INSTRUCTIONS.split("\n").find((l) => l.startsWith("- pidio_fecha:")) ?? "";
+    expect(line).toContain('"en la quincena", "cuando me paguen", "cuando cobre" o "el día de pago" (sin decir qué día) = el próximo día 15 o el último del mes, el que llegue primero');
+    expect(line).toContain('"a fin de mes" = el último día del mes; "a principios de mes" = el día 1 del mes siguiente');
+    expect(line).toContain('si dijo qué día le pagan ("me pagan el viernes"), ese día');
+    expect(line).toContain('solo el día ("mañana", "el lunes", "en la quincena") → sin hora');
+    // Sigue igual: sin día ni momento no es fecha.
+    expect(line).toContain('"Cuando pueda" o "cuando tenga la cinta", SIN día ni momento, NO es pidio_fecha');
+  });
+
   it("«Qué busca» y la hora salen de la tabla de la organización (Agente IA › Seguimientos)", () => {
     // De fábrica: el texto de siempre (precio e información comparten renglón).
     expect(followUpInstructions(FACTORY_TABLE)).toBe(FOLLOW_UP_INSTRUCTIONS);
