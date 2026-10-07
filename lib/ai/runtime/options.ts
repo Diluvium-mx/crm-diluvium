@@ -22,7 +22,6 @@ type OptionsRow = {
   seguimientosReal: boolean;
   responseLength: string;
   maxBubbles: number;
-  maxRepliesPerContact: number | null;
 };
 
 // Fila → opciones. Un valor fuera de rango en la BD (editado a mano) cae al de fábrica:
@@ -44,7 +43,6 @@ export function optionsFromRow(row: OptionsRow | undefined | null): BotOptions {
     seguimientosReal: row.seguimientosReal,
     responseLength: (RESPONSE_LENGTHS as readonly string[]).includes(row.responseLength) ? (row.responseLength as ResponseLength) : d.responseLength,
     maxBubbles: row.maxBubbles === 1 ? 1 : 2,
-    maxRepliesPerContact: int(row.maxRepliesPerContact, 1, 1_000, null),
   };
 }
 
@@ -65,7 +63,6 @@ export async function loadBotOptions(organizationId: string, now: Date = new Dat
       seguimientosReal: aiConfig.seguimientosReal,
       responseLength: aiConfig.responseLength,
       maxBubbles: aiConfig.maxBubbles,
-      maxRepliesPerContact: aiConfig.maxRepliesPerContact,
     })
     .from(aiConfig)
     .where(eq(aiConfig.organizationId, organizationId))

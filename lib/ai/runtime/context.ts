@@ -428,25 +428,6 @@ export async function agentSendUnresolved(organizationId: string, conversationId
   return Boolean(row);
 }
 
-// Respuestas del agente en la conversación desde `since` (el último corte: "Activar" o
-// encendido del canal; null = todas): una por llamada al cerebro que SÍ salió. Para el
-// tope de respuestas por conversación (Opciones del bot).
-export async function agentReplyCount(organizationId: string, conversationId: string, since: Date | null): Promise<number> {
-  const [{ value }] = await db
-    .select({ value: count() })
-    .from(aiUsage)
-    .where(
-      and(
-        eq(aiUsage.organizationId, organizationId),
-        eq(aiUsage.conversationId, conversationId),
-        eq(aiUsage.stage, "cerebro"),
-        eq(aiUsage.outcome, "sent"),
-        since ? sql`${aiUsage.createdAt} > ${since.toISOString()}::timestamp` : undefined,
-      ),
-    );
-  return value;
-}
-
 // Freno ante contestadores automáticos (contestador.ts): los últimos mensajes del chat en el
 // orden del Agente IA, con lo mínimo para contar vueltas. 60 filas = unas 20 vueltas, de sobra
 // para saber si un texto ya se había mandado. Vendedor = la misma regla que el semáforo

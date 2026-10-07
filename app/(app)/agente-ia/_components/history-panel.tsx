@@ -2,7 +2,7 @@
 
 // Subpestaña "Historial" de la pestaña Agente IA (Bloque A, 28-sep-2026): quién cambió qué,
 // antes → después y cuándo (hora de Mazatlán), lo más nuevo arriba. Filtros: tipo, fechas y
-// las pausas automáticas (vendedor contestó, tope, asesor, vuelta sola; ocultas de fábrica).
+// las pausas automáticas (vendedor contestó, contestador automático, asesor, vuelta sola; ocultas de fábrica).
 // Se carga la primera vez que se abre la subpestaña y con cada filtro. "Ver cambios"
 // (Bloque E) pide el detalle de UNA fila al abrirlo. Sin lógica de datos: solo llama a
 // getChangeHistory y getChangeDiff.
@@ -131,7 +131,7 @@ export function HistoryPanel({ active, canSeeSellers }: { active: boolean; canSe
         {(filters.type === "" || filters.type === "pausas") && (
           <label className="flex items-center gap-2 py-1 text-sm text-foreground">
             <input type="checkbox" checked={filters.includeAuto} onChange={(e) => set({ includeAuto: e.target.checked })} />
-            Mostrar pausas automáticas (un vendedor contestó, tope de respuestas, pidió un asesor y vuelta sola)
+            Mostrar pausas automáticas (un vendedor contestó, contestador automático, pidió un asesor y vuelta sola)
           </label>
         )}
       </div>

@@ -68,10 +68,10 @@ export const aiConfig = pgTable("ai_config", {
   // caso o día guardado que no valide vuelve al de fábrica al leerlo. Migración 0062.
   seguimientosCasos: jsonb("seguimientos_casos").$type<Record<string, unknown>>(),
   seguimientosVendedores: jsonb("seguimientos_vendedores").$type<Record<string, unknown>>(),
-  // 7. Tope de respuestas del bot por conversación (desde el último "Activar" o encendido).
-  // null = sin tope (fábrica). Al llegar: pausa hasta "Activar" + aviso 🤖 (tarjeta amarilla).
+  // 7. Tope de respuestas por conversación: opción QUITADA el 7-oct-2026 (nunca un tope); sin uso.
   maxRepliesPerContact: integer("max_replies_per_contact"),
-  // Sin uso desde el 23-sep-2026 (no hay freno anti-bucle ni recorte del historial);
+  // Sin uso desde el 23-sep-2026 (sin recorte del historial; el freno ante contestadores automáticos
+  // del 7-oct-2026 no usa anti_loop_max_per_hour);
   // se conservan las columnas.
   antiLoopMaxPerHour: integer("anti_loop_max_per_hour").default(30).notNull(),
   contextMessages: integer("context_messages").default(20).notNull(),

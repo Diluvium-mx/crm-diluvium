@@ -32,7 +32,7 @@ export const URGENT_NOTICE_KINDS = [
   "comprobante_dudoso",
   "envio", // WhatsApp no confirmó o rechazó una respuesta del agente
   "agente_error",
-  "tope_respuestas", // Opciones del bot: llegó al máximo de respuestas; pausado hasta "Activar"
+  "tope_respuestas", // Filas viejas: la opción «Máximo de respuestas» se quitó el 7-oct-2026
   "contestador", // Freno ante contestadores automáticos: pausado hasta "Activar"
   "sin_respuesta", // Red contra el silencio: ningún modelo le escribió al cliente
   "seguimiento", // Seguimientos: sugerencia presentada, pago pendiente sin respuesta, asesor al final

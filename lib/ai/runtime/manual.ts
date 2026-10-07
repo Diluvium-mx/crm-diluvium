@@ -43,9 +43,9 @@ export async function reactivateAgentInConversation(
         newValue: agentStateLabel("activo", null),
       });
     }
-    // "Activar" atiende el aviso 🤖 "Llegó al máximo de respuestas" (Opciones del bot) y el de
-    // "Parece un contestador automático" (la tarjeta del Embudo deja de estar amarilla; ya lo
-    // revisó una persona).
+    // "Activar" atiende el aviso 🤖 "Parece un contestador automático" (y el viejo "Llegó al máximo
+    // de respuestas", de la opción quitada el 7-oct-2026): la tarjeta del Embudo deja de estar
+    // amarilla; ya lo revisó una persona.
     await tx
       .update(aiAgentNotices)
       .set({ resolvedAt: now, resolution: "activar" })

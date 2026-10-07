@@ -24,7 +24,6 @@ const optionColumns = {
   seguimientosReal: aiConfig.seguimientosReal,
   responseLength: aiConfig.responseLength,
   maxBubbles: aiConfig.maxBubbles,
-  maxRepliesPerContact: aiConfig.maxRepliesPerContact,
 };
 
 export async function loadBotOptionsRow(organizationId: string): Promise<BotOptions> {
@@ -58,7 +57,6 @@ function toColumns(patch: BotOptionsPatch) {
   if (patch.seguimientosReal !== undefined) set.seguimientosReal = patch.seguimientosReal;
   if (patch.responseLength !== undefined) set.responseLength = patch.responseLength;
   if (patch.maxBubbles !== undefined) set.maxBubbles = patch.maxBubbles;
-  if (patch.maxRepliesPerContact !== undefined) set.maxRepliesPerContact = patch.maxRepliesPerContact;
   return set;
 }
 

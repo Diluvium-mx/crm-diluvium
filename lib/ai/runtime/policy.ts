@@ -19,7 +19,8 @@ export type AgentState = "activo" | "pausado_humano" | "pausado_handover" | "pau
 // son los tres motivos de aviso_vendedor (+ "envio" para fallos de envío del CRM).
 // "respuesta_cortada" (Fase E): la respuesta llegó al tope de tokens o una acción
 // traía argumentos inválidos; el vendedor revisa el hilo.
-// "tope_respuestas" (Opciones del bot, 26-sep-2026): llegó al máximo de respuestas por
+// "tope_respuestas" (Opciones del bot, 26-sep-2026; la opción se QUITÓ el 7-oct-2026, solo quedan
+// filas viejas): llegó al máximo de respuestas por
 // conversación; el agente se pausó hasta "Activar" (tarjeta amarilla en el Embudo).
 // "sin_respuesta" (29-sep-2026): los modelos contestaron solo con acciones y nadie le escribió al
 // cliente (red contra el silencio, run.ts). Amarillo en el Embudo hasta que un vendedor conteste.

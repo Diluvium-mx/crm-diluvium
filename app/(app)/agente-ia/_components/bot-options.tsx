@@ -17,7 +17,6 @@ import {
   describeChange,
   MAX_DELAY_SECONDS,
   MAX_PAUSE_HOURS,
-  MAX_REPLIES_CAP,
   MIN_DELAY_SECONDS,
   OPTION_HELP,
   OPTION_LABELS,
@@ -304,28 +303,6 @@ export function BotOptionsSection({
             disabled={busy}
             onChange={(v) => set({ maxBubbles: v })}
           />
-        }
-      />
-
-      {/* 7. Tope de respuestas */}
-      <Option
-        field="maxRepliesPerContact"
-        control={
-          <span className="flex flex-wrap items-center gap-2">
-            <Radio
-              label={OPTION_LABELS.maxRepliesPerContact}
-              value={draft.maxRepliesMode}
-              options={[
-                { value: "sin_tope", label: "Sin tope" },
-                { value: "tope", label: "Máximo" },
-              ]}
-              disabled={busy}
-              onChange={(m) => set({ maxRepliesMode: m })}
-            />
-            {draft.maxRepliesMode === "tope" && (
-              <NumberField label="Máximo de respuestas" value={draft.maxReplies} min={1} max={MAX_REPLIES_CAP} unit="respuestas" disabled={busy} onChange={(t) => set({ maxReplies: t })} />
-            )}
-          </span>
         }
       />
 

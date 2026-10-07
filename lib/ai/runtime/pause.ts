@@ -15,7 +15,8 @@
 //
 // Historial de cambios (Bloque A, 28-sep-2026): «Pausar agente» (con quién) y la pausa
 // automática "un vendedor contestó" dejan su fila en la MISMA transacción que la pausa.
-// Bloque E: también las automáticas por tope de respuestas y por pedir un asesor, y la
+// Bloque E: también las automáticas (contestador automático, pedir un asesor; el tope de respuestas
+// se quitó el 7-oct-2026), y la
 // vuelta sola al cumplirse la hora de regreso.
 import { and, eq, isNotNull, lte, or, sql } from "drizzle-orm";
 import { db } from "@/lib/db";
@@ -108,12 +109,12 @@ export async function reactivateDuePause(organizationId: string, conversationId:
 
 /**
  * Fila del historial que deja una pausa de pauseForHumanReply. Automáticas (sin autor):
- * `pausa_auto` = "un vendedor contestó", `pausa_tope` = llegó al máximo de respuestas,
- * `pausa_bucle` = parecía un contestador automático (contestador.ts), `pausa_asesor` = el
- * cliente pidió un asesor. `pausar` = la eligió una persona (p. ej.
+ * `pausa_auto` = "un vendedor contestó", `pausa_bucle` = parecía un contestador automático
+ * (contestador.ts), `pausa_asesor` = el cliente pidió un asesor. (`pausa_tope`, llegó al máximo
+ * de respuestas, solo queda en filas viejas: la opción se quitó el 7-oct-2026.) `pausar` = la eligió una persona (p. ej.
  * «Apagar» en la tarjeta de error). Sin `log` no deja fila.
  */
-export type PauseLog = { action: "pausa_auto" | "pausa_tope" | "pausa_bucle" | "pausa_asesor" } | { action: "pausar"; userId: string | null };
+export type PauseLog = { action: "pausa_auto" | "pausa_bucle" | "pausa_asesor" } | { action: "pausar"; userId: string | null };
 
 // Un vendedor contestó (CRM, celular, programado o comando): apaga el bot SOLO si
 // estaba encendido (o su hora de regreso ya se cumplió). `until` = hora de regreso
