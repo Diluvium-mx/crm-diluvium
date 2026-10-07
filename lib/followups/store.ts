@@ -198,7 +198,7 @@ async function loadSignals(
     zone: zoneForPhone(row.phone),
     manualPause: await manualPauseOf(organizationId, conversationId, row.agentState, row.agentStateChangedAt),
     // Solo WhatsApp con el Agente IA encendido: Instagram no tiene plantillas y lleva su
-    // propia regla de 7 días (docs/instagram.md); sus seguimientos quedan para después.
+    // propia regla de 7 días (docs/instagram.md); el dueño descartó sus seguimientos (7-oct-2026).
     channelOn: row.mode === "auto" && row.channelType === "whatsapp",
     windowExpiresAt: row.windowExpiresAt,
     lastTemplateAt: await lastTemplateAt(organizationId, contactId, now, await followUpsReal(organizationId)),

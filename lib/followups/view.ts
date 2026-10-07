@@ -218,7 +218,7 @@ export async function loadFollowUpState(organizationId: string, conversationId: 
   if (row.offAt) return { estado: "cancelado", conversationId, contactId: row.contactId, at: row.offAt.toISOString(), byName: row.byName ?? null };
   const dormido = (razon: string): FollowUpDormido => ({ estado: "dormido", conversationId, contactId: row.contactId, razon });
 
-  if (row.channelType !== "whatsapp") return dormido("Los chats de Instagram todavía no tienen seguimientos del Agente IA.");
+  if (row.channelType !== "whatsapp") return dormido("Los chats de Instagram no llevan seguimientos del Agente IA.");
   if (row.mode !== "auto") return dormido("El Agente IA está apagado en este canal (Agente IA › Canales): no hay seguimientos.");
   const stages = await listFunnelStages(organizationId);
   if (stages.find((st) => st.key === row.stage)?.role === "venta_cerrada") return dormido("Ya compró: no se le da seguimiento.");
