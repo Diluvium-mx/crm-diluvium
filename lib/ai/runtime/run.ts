@@ -60,6 +60,7 @@ import {
   answerRunInFlight,
   lastOutbound,
   loadHistory,
+  loopWindow,
   loadSnapshot,
   messageAt,
   agentSendUnresolved,
@@ -71,6 +72,7 @@ import {
 } from "./context";
 import { splitRepeated } from "@/lib/messaging/repeat";
 import { addNotice } from "./notices";
+import { AUTO_RESPONDER_NOTICE, looksLikeAutoResponder } from "./contestador";
 import { decideGate, toBubbles } from "./policy";
 import { rescheduleDelayFor } from "./schedule";
 import { closePlan, markAgentReply, savePlan, setAgentState } from "./state";
@@ -516,6 +518,15 @@ export async function runAgent(job: { organizationId: string; conversationId: st
         console.warn(`[agente] ${conv.id}: llegó al máximo de respuestas (${replies}/${options.maxRepliesPerContact}); pausado hasta "Activar"`);
         return { kind: "skipped", reason: "tope_respuestas" };
       }
+    }
+    // Freno ante contestadores automáticos (7-oct-2026, caso Estafeta; contestador.ts): en las
+    // últimas vueltas el contacto solo repitió lo mismo o mandó avisos que WhatsApp no deja ver.
+    // Como el tope: PRIMERO la pausa (hasta «Activar») y luego el aviso, idempotente por entrante.
+    if (looksLikeAutoResponder(await loopWindow(org, conv.id, cut))) {
+      await pauseForHumanReply(org, conv.id, now, null, { action: "pausa_bucle" });
+      await addNotice({ organizationId: org, conversationId: conv.id, messageId: lastRead.id, kind: "contestador", body: AUTO_RESPONDER_NOTICE });
+      console.warn(`[agente] ${conv.id}: parece un contestador automático; pausado hasta "Activar"`);
+      return { kind: "skipped", reason: "contestador_automatico" };
     }
     // «El workflow es la respuesta» (29-sep-2026; antes, 28-sep, "termina en pregunta"): el
     // workflow por palabra clave contesta el mensaje que lo disparó. Mientras esa corrida va en

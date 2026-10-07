@@ -448,7 +448,9 @@ contacto de prueba del dueño.
 
 - El botón 🤖 va arriba de ⚡ 📄 📎 (§8). "Cancelar" cancela todo el seguimiento de ese pendiente; si el chat cambia y
   vuelve a quedarse parado, se arma uno nuevo.
-- "Pausar agente" puesto a mano: el seguimiento queda como sugerencia (§7.4).
+- "Pausar agente" puesto a mano: el seguimiento queda como sugerencia (§7.4). Igual en la pausa del freno ante
+  contestadores automáticos (7-oct-2026, `lib/ai/runtime/contestador.ts`): un seguimiento que saliera solo despertaría
+  otra vez al contestador.
 
 - Fuera del horario de los vendedores (§7.4): la sugerencia se presenta antes de que se vaya, con "Que salga solo";
   si nadie decide, espera al siguiente turno. Horario de los vendedores de fábrica: lunes a viernes 9:00–18:00 y
