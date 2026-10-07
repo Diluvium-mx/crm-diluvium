@@ -280,12 +280,28 @@ Dashboard ya muestra el gasto del mes y el saldo estimado (24-sep-2026).
   FAQs; nada se interpone entre el agente y el cliente.
   - **Responde todo lo que entra**, sin trabas: sin borrador (ni tarjeta, ni Enviar/Descartar,
     ni modo Borrador: el canal queda **Apagado / Encendido**), sin guardia de salida, sin
-    freno anti-bucle, sin presupuesto diario y sin topes. El gasto lo controlan las llaves de
+    presupuesto diario y sin topes (dueño, 7-oct-2026: **nunca** un tope de respuestas). El único
+    freno es el de contestadores automáticos (abajo, 7-oct-2026). El gasto lo controlan las llaves de
     OpenAI/Anthropic y el saldo del Dashboard. La migración 0025 apagó los canales que estaban
     en borrador, descartó los borradores vigentes y levantó las pausas viejas.
   - **Pausa:** SOLO cuando un vendedor contesta en la conversación (Bandeja, pop-up del Embudo,
     programado o, con el número real, la app del celular). Se reactiva solo a mano con
     "Reactivar" (Bandeja o Detalle del contacto). Nada más pausa.
+  - **Freno ante contestadores automáticos (7-oct-2026, caso Estafeta;
+    `lib/ai/runtime/contestador.ts`):** el WhatsApp de Estafeta le mandó al número un aviso con
+    botones (Meta lo pasa como «no compatible», 131051); el Agente IA saludó y el contestador de
+    Estafeta respondió «Perdón, no estoy seguro de haber entendido bien…» más su menú, 102 veces en
+    78 minutos (se detuvo solo porque fallaron los dos modelos). Regla: si en las últimas **3
+    vueltas** que contestó el Agente IA el contacto **solo** mandó lo mismo que ya había mandado
+    (texto idéntico de 20 letras o más, sin importar mayúsculas ni espacios) o avisos que WhatsApp
+    no deja ver, el Agente IA **no contesta** (no llama al modelo), se **pausa hasta «Activar»**
+    (`pausado_humano`, Historial `pausa_bucle`) y deja el aviso 🤖 `contestador` (tarjeta amarilla
+    en el Embudo hasta «Activar»). No cuentan como «nada nuevo»: textos cortos repetidos («sí»,
+    «ok»), fotos, audios o archivos, ni lo que Instagram no deja ver. Un vendedor que contesta en
+    medio o un «Activar» vuelven a empezar la cuenta. En esa pausa un seguimiento no sale solo:
+    queda como sugerencia, como con «Pausar agente» puesto a mano (despertaría otra vez al
+    contestador). Simulado sobre los 1,806 chats de producción (7-oct): solo el de Estafeta la
+    cumple (se habría frenado a las 08:37 con 5 respuestas en vez de 102).
   - **Pase a humano:** el agente le dice al cliente que un vendedor lo atenderá (o le enviará
     los datos bancarios), deja un **aviso visible en la Bandeja** (`ai_agent_notices`) y sigue
     activo hasta que un vendedor conteste. La señal `[TRANSFERIR]` nunca llega al cliente.
@@ -335,8 +351,9 @@ Dashboard ya muestra el gasto del mes y el saldo estimado (24-sep-2026).
   - **AUTO con clientes reales (número real):** bloqueado hasta el approve de Codex del agente
     completo. En el sandbox (solo el teléfono del dueño) está autorizado.
   - **Antes de clientes reales** (no dañan a un cliente hoy; no abren ronda):
-    - Sin frenos, un bucle con otro contestador automático (dos agentes contestándose) gastaría sin límite hasta
-      que alguien lo note en el Dashboard; el cliente escribiendo sin parar solo retrasa.
+    - ~~Sin frenos, un bucle con otro contestador automático (dos agentes contestándose) gastaría sin límite hasta
+      que alguien lo note en el Dashboard; el cliente escribiendo sin parar solo retrasa.~~ Pasó el 7-oct-2026
+      (Estafeta) y se resolvió con el freno ante contestadores automáticos (arriba).
     - El cerebro ya no tiene la regla de no revelar sus instrucciones (no está en el Goal): un
       cliente podría pedírselas.
     - Conciliación de planes por hora de Postgres y no por id de plan en cada mensaje.

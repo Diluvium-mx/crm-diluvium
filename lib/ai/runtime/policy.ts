@@ -5,8 +5,10 @@
 // Definición del dueño (23-sep-2026): el agente es el motor que hace que siempre
 // haya alguien respondiendo, como Ángela en GHL. Responde TODO lo que entra, sin
 // trabas. Lo ÚNICO que lo pausa es que un vendedor conteste en la conversación; se
-// reactiva solo a mano con "Reactivar". Sin freno anti-bucle, sin presupuesto y sin
-// topes: el gasto lo controlan las llaves de los proveedores y el saldo del Dashboard.
+// reactiva solo a mano con "Reactivar". Sin presupuesto y sin topes de respuestas (dueño,
+// 7-oct-2026: nunca un tope): el gasto lo controlan las llaves de los proveedores y el saldo
+// del Dashboard. Desde el 7-oct-2026 SÍ hay freno ante contestadores automáticos
+// (contestador.ts, caso Estafeta): pausa hasta "Activar" con el aviso "contestador".
 
 // "borrador" sigue en el enum de la BD como historia: se trata igual que "off".
 export type AgentMode = "off" | "borrador" | "auto";
@@ -21,7 +23,9 @@ export type AgentState = "activo" | "pausado_humano" | "pausado_handover" | "pau
 // conversación; el agente se pausó hasta "Activar" (tarjeta amarilla en el Embudo).
 // "sin_respuesta" (29-sep-2026): los modelos contestaron solo con acciones y nadie le escribió al
 // cliente (red contra el silencio, run.ts). Amarillo en el Embudo hasta que un vendedor conteste.
-export type NoticeKind = "pasar_a_humano" | "envio" | "cotejar_deposito" | "cliente_pide_humano" | "comprobante_dudoso" | "respuesta_cortada" | "agente_error" | "tope_respuestas" | "sin_respuesta" | "seguimiento";
+// "contestador" (7-oct-2026): parecía un contestador automático; el agente se pausó hasta "Activar"
+// (contestador.ts; tarjeta amarilla en el Embudo).
+export type NoticeKind = "pasar_a_humano" | "envio" | "cotejar_deposito" | "cliente_pide_humano" | "comprobante_dudoso" | "respuesta_cortada" | "agente_error" | "tope_respuestas" | "contestador" | "sin_respuesta" | "seguimiento";
 
 // ── Debounce deslizante ──────────────────────────────────────────────────────
 // Cada entrante reinicia la espera (15 s de fábrica; 5–60 s desde Opciones del bot),
