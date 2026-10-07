@@ -99,9 +99,9 @@ export type RobotFace = "normal" | "dormido" | "cancelado";
 const FACE_SRC: Record<RobotFace, string> = { normal: "/emoji/robot.svg", dormido: "/emoji/robot-dormido.svg", cancelado: "/emoji/robot-cancelado.svg" };
 
 /** El robot del seguimiento (imagen propia: no existe emoji de robot con ojos en X ni dormido). */
-export function RobotIcon({ face, size = 14 }: { face: RobotFace; size?: number }) {
+export function RobotIcon({ face, size = 18 }: { face: RobotFace; size?: number }) {
   // eslint-disable-next-line @next/next/no-img-element -- SVG chico y estático de public/emoji
-  return <img src={FACE_SRC[face]} width={size} height={size} alt="" aria-hidden="true" className="shrink-0" draggable={false} />;
+  return <img src={FACE_SRC[face]} width={size} height={size} alt="" aria-hidden="true" className="-my-0.5 shrink-0" draggable={false} />;
 }
 
 function faceOf(f: FollowUpState): RobotFace {
@@ -198,7 +198,7 @@ function OffPanel({ off, onClose, onChanged }: { off: FollowUpOff; onClose: () =
     >
       <div className="flex items-start justify-between gap-2">
         <p className="flex items-center gap-2 font-semibold">
-          <RobotIcon face="cancelado" size={18} />
+          <RobotIcon face="cancelado" size={22} />
           {baja ? "WhatsApp no entregó el seguimiento" : "Seguimientos cancelados en este chat"}
         </p>
         <CloseX size="sm" label="Cerrar" onClick={onClose} />
@@ -282,7 +282,7 @@ function ActivePanel({ followUp, onClose, onChanged }: { followUp: FollowUpView;
     >
       <div className="flex shrink-0 items-center justify-between gap-2 border-b px-3 py-1.5">
         <span className="flex min-w-0 items-center gap-2 text-sm font-semibold text-brand-navy dark:text-sky-300">
-          <RobotIcon face={faceOf(f)} size={16} />
+          <RobotIcon face={faceOf(f)} size={20} />
           <span className="truncate">Seguimiento del Agente IA</span>
           {f.ensayo && <span className="rounded-full border border-dashed border-muted-foreground/60 px-2 text-[11px] font-medium text-muted-foreground">Ensayo</span>}
           {f.total > 0 && f.status === "programado" && <span className="rounded-full bg-brand-navy/10 px-2 text-[11px] font-medium">{`${f.intento}.º de ${f.total}`}</span>}
