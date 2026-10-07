@@ -161,10 +161,12 @@ export function FollowUpPill({ followUp, open, onToggle, className = "" }: { fol
         title={title}
         data-testid="followup-pill"
         data-estado="dormido"
-        className={`h-5 min-w-0 cursor-pointer items-center justify-center gap-1 rounded-full border border-muted-foreground/40 bg-background px-2 text-[11px] leading-none whitespace-nowrap text-muted-foreground transition-colors select-none ${open ? "ring-2 ring-brand-navy/30" : ""} ${className}`}
+        // px-6: sin palabra conserva su tamaño y el robot queda en medio (junto a «Enviar plantilla»); con la ventana
+        // abierta la Caja le da el ancho de ⚡ 📄 📎 (min-w-full) y el margen no estorba.
+        className={`h-5 min-w-0 cursor-pointer items-center justify-center gap-1 rounded-full border border-muted-foreground/40 bg-background px-6 text-[11px] leading-none whitespace-nowrap text-muted-foreground transition-colors select-none ${open ? "ring-2 ring-brand-navy/30" : ""} ${className}`}
       >
+        {/* Solo la carita (7-oct-2026, pedido del dueño): qué pasa lo dicen el robot dormido y su ventana. */}
         <RobotIcon face="dormido" />
-        <span className="truncate">dormido</span>
       </button>
     );
   }
@@ -178,7 +180,8 @@ export function FollowUpPill({ followUp, open, onToggle, className = "" }: { fol
           : f.modo === "sugerido" && !f.autoAprobado
             ? "border-amber-500 bg-amber-50 text-amber-900 dark:bg-amber-500/15 dark:text-amber-200"
             : "border-brand-navy bg-brand-navy/10 text-brand-navy dark:text-sky-300";
-  const label = f.estado === "baja" ? "Se dio de baja" : f.estado === "cancelado" ? "Cancelado" : pillText(f);
+  // «Cancelado» va sin palabra, solo el robot con ojos en X (7-oct-2026, pedido del dueño); su ventana lo explica.
+  const label = f.estado === "baja" ? "Se dio de baja" : f.estado === "cancelado" ? null : pillText(f);
   const title =
     f.estado === "baja"
       ? "Seguimiento del Agente IA · el cliente se dio de baja de las promociones de WhatsApp"
@@ -194,10 +197,10 @@ export function FollowUpPill({ followUp, open, onToggle, className = "" }: { fol
       title={title}
       data-testid="followup-pill"
       data-estado={f.estado}
-      className={`h-5 min-w-0 cursor-pointer items-center justify-center gap-1 rounded-full border px-2 text-[11px] leading-none whitespace-nowrap transition-colors select-none ${tone} ${open ? "ring-2 ring-brand-navy/30" : ""} ${className}`}
+      className={`h-5 min-w-0 cursor-pointer items-center justify-center gap-1 rounded-full border text-[11px] leading-none whitespace-nowrap transition-colors select-none ${label ? "px-2" : "px-6"} ${tone} ${open ? "ring-2 ring-brand-navy/30" : ""} ${className}`}
     >
       <RobotIcon face={faceOf(f)} />
-      <span className="truncate">{label}</span>
+      {label && <span className="truncate">{label}</span>}
     </button>
   );
 }
