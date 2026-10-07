@@ -159,7 +159,7 @@ contacto y los avisos se explican dentro de la Bandeja porque son **los mismos**
 
 ### 3.1 Dashboard
 
-Resumen del mes: cuánto se gasta en IA y cuántas conversaciones nuevas llegan, si el número de WhatsApp está conectado y si el Agente IA está contestando.
+Resumen del mes: cuánto se gasta en IA y en Railway (los servidores del CRM), cuántas conversaciones nuevas llegan, si el número de WhatsApp está conectado y si el Agente IA está contestando.
 
 ![Dashboard](mapa-crm/01-dashboard.png)
 
@@ -190,6 +190,9 @@ Resumen del mes: cuánto se gasta en IA y cuántas conversaciones nuevas llegan,
 | 23 | **Estado del Agente IA** (recuadro al hacer clic en 22) | 5 líneas: **Canal** (Encendido o Apagado), **Horario** (24/7 o días y horas, y si ahora está fuera), **Sin respuesta hace más de 15 min (de la última hora)** (cuántas conversaciones; estas sí cuentan para la alarma), **Atrasados (más de 1 h)** («N chats esperan a un vendedor»: solo dato, no alarma) y **Última respuesta del Agente IA** (hace X min). | Todos |
 | 24 | **Historial** (botón junto a «Recargas registradas») | Abre **Dashboard › Historial del gasto de IA** ([3.1.1](#311-historial-del-gasto-de-ia)): el gasto y las recargas de cada mes o del periodo que elijas. | Todos |
 | 40 | **Seguimientos del Agente IA** (tarjeta, abajo) | Del periodo elegido: **mensajes que salieron** (y cuántos no se entregaron), **chats**, cuántos **contestaron** (escribió después del seguimiento, hasta 72 h después del último), **avanzaron de etapa** (hoy más adelante que cuando salió el seguimiento; se mide desde el 6-oct-2026) y **compraron** (llegó a venta cerrada después). Debajo, la tabla por **caso**. En ensayo lo avisa. | Todos |
+| 41 | **Railway (servidores del CRM)** (tarjeta debajo del Gasto de IA) | Lo que va costando Railway, donde viven el CRM, el worker, la base y Redis (producción y staging juntos), sin entrar a Railway: en el plan Hobby Railway ya no enseña «créditos restantes». Arriba: el **plan**, el **periodo de cobro** (del día de corte al siguiente, p. ej. «del 5-oct al 5-nov») y **«Actualizado hace X min»** (se lee cada 5 min; en naranja si tiene más de 20 min o si Railway falló). Solo aparece cuando el worker ya tiene el token de Railway. Desde el 7-oct-2026. | Todos |
+| 42 | **Factura estimada** | Lo que se cobrará a la tarjeta el día de corte si el uso sigue al ritmo de estos días (nunca menos de lo que cuesta el plan, US$5 en Hobby). El primer día del periodo no se calcula: dice **«Se calcula después del primer día del periodo»**. Sin impuestos. | Todos |
+| 43 | **Uso del periodo · Incluido en el plan** | **Uso del periodo**: lo que llevan gastado los servidores desde el día de corte (Railway avisa que puede venir unos minutos atrasado). **Incluido en el plan**: lo que queda de los US$5 que trae el plan Hobby, con barra «% usado» (naranja desde 80 %). Si el uso pasa de lo incluido dice **«Se pasó por US$X: se cobra a la tarjeta al corte»**: los servidores NO se apagan por eso. | Todos |
 
 **Lo cambias tú desde la pantalla:** registrar y borrar recargas; el periodo de las conversaciones nuevas.
 
@@ -206,12 +209,13 @@ Zernio ya no manda correo: solo si se repite en la siguiente revisión.
 - "En Dashboard › (14) tarjetas de nuevas, agrega una que diga cuántas contestó el agente hoy."
 - "En Dashboard › (3) tarjeta del proveedor, avísame en naranja cuando el saldo baje de US$5."
 - "En Dashboard › (18) por etapa, agrega el total en pesos cotizado por etapa."
+- "En Dashboard › (41) Railway, avísame en naranja si Railway marca un pago pendiente."
 
 **Agente IA aquí:** todo lo que gasta al contestar, al transcribir notas de voz (se cobra en OpenAI) y al **leer chats
 en segundo plano** para llenar el Detalle (Luna, ~US$0.0005 por lectura) se suma en **Gasto de IA**. Los chats que
 atiende cuentan en **Conversaciones nuevas** como cualquier otro. La pastilla **Agente IA** (22) dice si está contestando.
 
-<sub>Para Code: ruta `/inicio`; `app/(app)/inicio/` (`ai-spend-card`, `ai-topups`, `period-cards`, `daily-chart`, `breakdown-list`, `range-filter`, `whatsapp-status`); datos en `lib/dashboard/` (Gasto de IA: `ai-spend.ts` junta el registro del CRM con la lectura real de cada proveedor, tabla `ai_provider_billing` de la migración 0054, que el worker llena cada 5 min con `lib/ai/billing/`); la pastilla (20–21) en `lib/monitoring/` (`status-pill`, `dashboard-status`) con lo que guarda el monitoreo en Redis; la pastilla Bot (22–23) en `lib/monitoring/` (`bot-status`, `bot-silence`) con datos de la base.</sub>
+<sub>Para Code: ruta `/inicio`; `app/(app)/inicio/` (`ai-spend-card`, `railway-card`, `ai-topups`, `period-cards`, `daily-chart`, `breakdown-list`, `range-filter`, `whatsapp-status`); datos en `lib/dashboard/` (Gasto de IA: `ai-spend.ts` junta el registro del CRM con la lectura real de cada proveedor, tabla `ai_provider_billing` de la migración 0054, que el worker llena cada 5 min con `lib/ai/billing/`); la pastilla (20–21) en `lib/monitoring/` (`status-pill`, `dashboard-status`) con lo que guarda el monitoreo en Redis; la pastilla Bot (22–23) en `lib/monitoring/` (`bot-status`, `bot-silence`) con datos de la base; Railway (41–43): `railway-card` con `lib/dashboard/railway.ts`, tabla `railway_billing` (migración 0063) que el worker llena cada 5 min con `lib/railway-billing/` (detalle en `docs/railway-costos.md`).</sub>
 
 
 #### 3.1.1 Historial del gasto de IA

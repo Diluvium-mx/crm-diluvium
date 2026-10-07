@@ -16,5 +16,6 @@ export * from "./automation";
 export * from "./cobro";
 export * from "./ai-credit";
 export * from "./ai-billing";
+export * from "./railway-billing";
 export * from "./ads";
 export * from "./followups";
