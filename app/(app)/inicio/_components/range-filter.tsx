@@ -7,6 +7,7 @@
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { DASHBOARD_TIME_ZONE } from "@/lib/dashboard/range";
+import { DateTimePicker } from "@/components/ui/date-time-picker";
 
 function localDay(now: Date, timeZone: string): string {
   return new Intl.DateTimeFormat("en-CA", { timeZone, year: "numeric", month: "2-digit", day: "2-digit" }).format(now);
@@ -72,21 +73,11 @@ export function RangeFilter({
       <span className="pb-2 text-muted-foreground">o</span>
       <label className="flex flex-col gap-1">
         <span className="text-muted-foreground">Desde</span>
-        <input
-          type="date"
-          value={from}
-          onChange={(event) => setFrom(event.target.value)}
-          className="rounded-md border bg-background px-2 py-1.5 text-sm"
-        />
+        <DateTimePicker mode="date" value={from} onChange={setFrom} className="rounded-md border bg-background px-2 py-1.5 text-sm" />
       </label>
       <label className="flex flex-col gap-1">
         <span className="text-muted-foreground">Hasta</span>
-        <input
-          type="date"
-          value={to}
-          onChange={(event) => setTo(event.target.value)}
-          className="rounded-md border bg-background px-2 py-1.5 text-sm"
-        />
+        <DateTimePicker mode="date" value={to} onChange={setTo} className="rounded-md border bg-background px-2 py-1.5 text-sm" />
       </label>
       <button
         type="button"

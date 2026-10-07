@@ -29,6 +29,7 @@ import {
 import { describePatch, draftFromOptions, draftToPatch, type OptionsDraft } from "@/lib/agente-ia/opciones-draft";
 import type { OptionsChangeView } from "@/lib/agente-ia/types";
 import { useConfirm } from "./use-confirm";
+import { DateTimePicker } from "@/components/ui/date-time-picker";
 
 const ALL_DAYS = [1, 2, 3, 4, 5, 6, 7];
 
@@ -270,11 +271,11 @@ export function BotOptionsSection({
             </div>
             <label className="flex items-center gap-1 text-xs text-foreground/70">
               de
-              <input type="time" value={draft.schedule.from} aria-label="Hora de inicio" disabled={busy} onChange={(e) => set({ schedule: { ...draft.schedule, from: e.target.value } })} className={timeClass} />
+              <DateTimePicker mode="time" value={draft.schedule.from} aria-label="Hora de inicio" disabled={busy} onChange={(v) => set({ schedule: { ...draft.schedule, from: v } })} className={timeClass} />
             </label>
             <label className="flex items-center gap-1 text-xs text-foreground/70">
               a
-              <input type="time" value={draft.schedule.to} aria-label="Hora de fin" disabled={busy} onChange={(e) => set({ schedule: { ...draft.schedule, to: e.target.value } })} className={timeClass} />
+              <DateTimePicker mode="time" value={draft.schedule.to} aria-label="Hora de fin" disabled={busy} onChange={(v) => set({ schedule: { ...draft.schedule, to: v } })} className={timeClass} />
             </label>
             <span className="text-xs text-foreground/70">hora de Mazatlán</span>
           </div>

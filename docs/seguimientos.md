@@ -631,6 +631,29 @@ Historial), `schedule.ts` (`PlanInput.table`, `sendTimeProblem`), `store.ts` (ca
 
 ---
 
+## 17. Píldora siempre presente, Reactivar y calendario (7-oct-2026)
+
+Revisión en producción (OK LECTURA PROD) del chat de pruebas del dueño: canceló y reactivó y la píldora desapareció.
+Causa: el lector leyó el chat **a media respuesta** del vendedor (su mensaje ya estaba en el historial pero
+`last_message_at` todavía no se movía), así que el seguimiento quedó apuntado a la hora vieja; al reactivar, el CRM
+vio «el chat cambió», no reabrió nada, quitó la marca de cancelado y la píldora se quedó sin nada que mostrar. La
+lectura llegó tan rápido porque el barrido comparaba dos relojes (ver docs/agente-ia.md, «Mismo reloj»).
+Aprobado por el dueño («OK 1–3»):
+- **El lector** apunta el seguimiento al último mensaje que de verdad leyó (`readUpTo` = el más nuevo del historial).
+- **Reactivar** nunca deja el chat sin nada: si no puede reabrir el anterior, pide una lectura nueva
+  (`detalle_leido_hasta = null`, el barrido la toma en ≤ 1 min) y el Agente IA arma uno si el último mensaje es nuestro.
+- **La píldora siempre está** en todos los chats, con los estados de siempre: hora (programado), robot dormido ámbar
+  con hora (suspendido), «esperando» (se queda mientras el último mensaje sea nuestro, también después de las 72 h, ya
+  en frío), «Cancelado» / «Se dio de baja» y, sin nada que seguir, el robot dormido **gris** con «dormido» y su razón
+  («el cliente escribió al último», «contestó», «ya compró», «No seguir: …», «caso apagado», «lee el chat en unos
+  minutos», Instagram o Agente IA apagado en el canal) más «Apagar seguimientos en este chat» (`turnOffFollowUps`).
+  Cancelar en un «esperando» ya en frío apaga el chat sin tocar el seguimiento terminado.
+- **Calendario del CRM** (`components/ui/date-time-picker.tsx`) en todo lo que pide fecha u hora; en el celular,
+  el selector del teléfono. Una página web no puede usar el calendario propio de macOS.
+- Descartado por el dueño: marcar contactos como de prueba desde el CRM (se queda como está).
+
+---
+
 ## Fuentes
 
 - [M1] Meta, enviar mensajes / ventana de servicio: https://developers.facebook.com/documentation/business-messaging/whatsapp/messages/send-messages

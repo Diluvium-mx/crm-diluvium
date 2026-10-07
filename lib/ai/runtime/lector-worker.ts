@@ -34,10 +34,13 @@ export async function findDueConversations(now: Date, limit = LECTOR_BATCH): Pro
       and c.last_message_at > ${ts(since)}
       and (
         c.last_message_at <= ${ts(quiet)}
+        -- Mismo reloj que last_message_at / detalle_leido_hasta: la hora del mensaje (sent_at, la que da
+        -- WhatsApp), no la de llegada (created_at, unos segundos después). Con created_at el último mensaje del
+        -- cliente parecía «sin leer» para siempre y el chat se leía AL INSTANTE, sin los 3 min de calma (7-oct-2026).
         or (
-          select min(m.created_at) from messages m
+          select min(coalesce(m.sent_at, m.created_at)) from messages m
           where m.organization_id = c.organization_id and m.conversation_id = c.id
-            and m.created_at > coalesce(c.detalle_leido_hasta, '-infinity'::timestamp)
+            and coalesce(m.sent_at, m.created_at) > coalesce(c.detalle_leido_hasta, '-infinity'::timestamp)
         ) <= ${ts(maxWait)}
       )
     order by c.last_message_at asc

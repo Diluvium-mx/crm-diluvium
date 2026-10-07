@@ -2,7 +2,7 @@
 // de lib/ai/runtime): sus chats de ESTA organización, qué tienen sin leer, si el lector los
 // está leyendo (candado de Redis, tope 1.5 s: si Redis falla o tarda se asume que no) y su
 // última lectura. Nunca lanza por Redis: el Detalle no se bloquea ni se rompe.
-import { and, desc, eq, gt, inArray, min, sql } from "drizzle-orm";
+import { and, desc, eq, inArray, sql } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { aiUsage, conversations, messages } from "@/lib/db/schema";
 import { lectorLockKey } from "@/lib/ai/runtime/lector-core";
@@ -56,13 +56,14 @@ export async function loadLectorStatus(organizationId: string, contactId: string
     // El primer mensaje sin leer solo hace falta para calcular la espera.
     if (isPending(info, now)) {
       const [row] = await db
-        .select({ first: min(messages.createdAt) })
+        // La hora del mensaje (mismo reloj que detalle_leido_hasta y el barrido), no la de llegada.
+        .select({ first: sql<Date | null>`min(coalesce(${messages.sentAt}, ${messages.createdAt}))`.mapWith(messages.createdAt) })
         .from(messages)
         .where(
           and(
             eq(messages.organizationId, organizationId),
             eq(messages.conversationId, c.id),
-            c.leidoHasta ? gt(messages.createdAt, c.leidoHasta) : sql`true`,
+            c.leidoHasta ? sql`coalesce(${messages.sentAt}, ${messages.createdAt}) > ${c.leidoHasta.toISOString()}::timestamp` : sql`true`,
           ),
         );
       info.firstUnreadAt = row?.first ?? null;

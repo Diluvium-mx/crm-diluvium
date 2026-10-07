@@ -18,6 +18,7 @@ import {
   type HistoryType,
 } from "@/lib/historial/labels";
 import { HistoryDiff } from "./history-diff";
+import { DateTimePicker } from "@/components/ui/date-time-picker";
 
 const fieldClass = "rounded border border-black/15 bg-background px-2 py-1 text-sm text-foreground dark:border-white/15";
 
@@ -121,11 +122,11 @@ export function HistoryPanel({ active, canSeeSellers }: { active: boolean; canSe
         </label>
         <label className="flex flex-col gap-1 text-xs text-foreground/70">
           Desde
-          <input type="date" value={filters.from} max={filters.to || undefined} onChange={(e) => set({ from: e.target.value })} className={fieldClass} />
+          <DateTimePicker mode="date" value={filters.from} max={filters.to || undefined} onChange={(v) => set({ from: v })} className={fieldClass} />
         </label>
         <label className="flex flex-col gap-1 text-xs text-foreground/70">
           Hasta
-          <input type="date" value={filters.to} min={filters.from || undefined} onChange={(e) => set({ to: e.target.value })} className={fieldClass} />
+          <DateTimePicker mode="date" value={filters.to} min={filters.from || undefined} onChange={(v) => set({ to: v })} className={fieldClass} />
         </label>
         {(filters.type === "" || filters.type === "pausas") && (
           <label className="flex items-center gap-2 py-1 text-sm text-foreground">
