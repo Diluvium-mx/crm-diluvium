@@ -166,7 +166,8 @@ La devuelve el lector, en la misma herramienta `actualizar_contacto`, **solo cua
 **El `caso` se cruza con datos duros del CRM** (el modelo propone, el código confirma):
 - Aviso abierto de "pasar a un asesor" / "el cliente pide una persona" sin respuesta humana después → `asesor_sin_respuesta`.
 - Etapa con papel **Cerca de compra** y `pago_total` vacío o menor que `monto_cotizacion` → `pago_pendiente`.
-- Etapa con papel **Venta cerrada**, o ya pagó el total → `no_seguir` (es postventa).
+- Etapa con papel **Venta cerrada**, o ya pagó el total → `no_seguir` (es postventa: lo que sigue después de la compra
+  es la **opinión**, pestaña Seguimientos del menú, `docs/opiniones.md`).
 - Detalle con medidas (`anchos_cm`) y `monto_cotizacion` → al menos `cotizacion_sin_respuesta` (salvo que el modelo
   vea pidió fecha, objeción o no seguir, que van encima).
 - Si dos casos aplican, gana el primero de la tabla de §6 (está en orden de prioridad).

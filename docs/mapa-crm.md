@@ -34,7 +34,7 @@ Contenido: [1. Inicio](#1-inicio) · [2. Menú y barra de arriba](#2-menú-y-bar
 |---|---|---|---|
 | **Owner** | El dueño de la cuenta | Todo (incluidas las filas de **Vendedores** en Agente IA › Historial) | Todo, incluida la pestaña **Configuración**. Es el único que puede dar el rol Owner; ningún Admin lo puede modificar. |
 | **Admin** | Encargado del equipo | Todo (incluidas las filas de **Vendedores** en Agente IA › Historial) | Todo lo del vendedor + **Configuración** (dar de alta vendedores, cambiar roles, restablecer contraseñas, desactivar). No puede tocar al Owner. |
-| **Vendedor** | Quien atiende a los clientes | Todo **menos Configuración** (y en Agente IA › Historial no ve las filas de **Vendedores**) | Todo lo demás: Dashboard (incluido registrar recargas y el historial del gasto de IA), Bandeja (también **adjuntar** fotos, videos y documentos en el chat, mandar fotos y videos de la Biblioteca con **Multimedia** y manejar el **seguimiento del Agente IA**: ver, cambiar la hora, mandarlo él o cancelarlo), Embudo (también dar de alta contactos y escribirles primero), Datos personales del contacto (**exportar** y **borrar**, en el Detalle), Mensajes rápidos (crear, editar y borrar mensajes rápidos y plantillas), Anuncios, Agente IA (Goal, FAQs, modelos, opciones, **seguimientos**, tallas y canales; el **Historial** solo se consulta) y Automatización. También edita o borra comentarios de otros. |
+| **Vendedor** | Quien atiende a los clientes | Todo **menos Configuración** (y en Agente IA › Historial no ve las filas de **Vendedores**) | Todo lo demás: Dashboard (incluido registrar recargas y el historial del gasto de IA), Bandeja (también **adjuntar** fotos, videos y documentos en el chat, mandar fotos y videos de la Biblioteca con **Multimedia** y manejar el **seguimiento del Agente IA**: ver, cambiar la hora, mandarlo él o cancelarlo), Embudo (también dar de alta contactos y escribirles primero), Datos personales del contacto (**exportar** y **borrar**, en el Detalle), Mensajes rápidos (crear, editar y borrar mensajes rápidos y plantillas), Anuncios, Agente IA (Goal, FAQs, modelos, opciones, **seguimientos**, tallas y canales; el **Historial** solo se consulta), Automatización y Seguimientos (ver las opiniones, crear y borrar enlaces de prueba y cambiar el enlace de Google). También edita o borra comentarios de otros. |
 
 Nadie es "dueño" de un contacto: **todos ven todos los contactos, siempre**.
 
@@ -93,6 +93,9 @@ Nadie es "dueño" de un contacto: **todos ven todos los contactos, siempre**.
 | **Mensaje no disponible** | A veces WhatsApp **no pasa al CRM el primer mensaje** de un cliente nuevo (Meta, código 131060; pasa sobre todo con iPhone y al llegar por anuncio: ~1 de cada 70 clientes nuevos). El CRM espera **hasta 1 minuto** con «Recibiendo mensaje…» (el más tardío que se ha medido llegó a los 5 s) y hace una **doble verificación**: si el mensaje llegó por otro lado lo muestra normal (el aviso desaparece), si Zernio lo tiene lo recupera, y si de verdad no llegó deja la tarjeta **«El cliente escribió, pero WhatsApp no pasó el mensaje al CRM. Míralo en el celular.»** y el Agente IA (en su horario) le escribe: «¡Hola! Gracias por escribirnos 😊 Tuvimos una falla técnica y su mensaje no nos llegó. ¿Nos ayuda escribiéndolo de nuevo para seguir con su atención?». Si el mensaje llega más tarde, reemplaza a la tarjeta solo y el Agente IA contesta **lo que dice**. Lo que el cliente escribe después sí llega y se contesta normal: el texto fijo solo sale si no hay nada que leer. Desde el 29-sep-2026. |
 | **Programado** | Mensaje que sale solo a la hora elegida (hora de Mazatlán). |
 | **Seguimiento del Agente IA** | Cuando un chat se queda parado (el último mensaje es nuestro y el cliente no contesta), el Agente IA en segundo plano anota **qué quedó pendiente** (uno de 10 casos: faltan medidas, cotización sin respuesta, pago pendiente…), **a qué hora** escribirle (la del caso, en la hora del cliente según su lada, de 7:00 a 21:00) y un **borrador**. Se ve en la píldora 🤖 de la caja para escribir, que **siempre está** en todos los chats (7-oct-2026): sin nada que seguir sale el **robot dormido gris**, sin palabra, y su ventana explica por qué. Hasta 3 intentos (día 1 con texto antes de que cierre la ventana, día 2 y día 9 con plantilla); si el cliente escribe, se cancela solo. Si un vendedor puso **Pausar agente** a mano, queda como **sugerencia**. Un seguimiento que ya mandó un **vendedor** (horas después, sin respuesta) **cuenta como intento**: el CRM programa el siguiente, no otro encima. Si el contacto pasa a **Compra**, se cancela en ese momento. El borrador nunca repite una pregunta que ya se hizo ni el precio que ya se le dio, y hace una sola pregunta. Con la ventana cerrada usa la plantilla que **mejor encaje con cómo quedó el chat** (seg_precio, seg_informacion, seg_info_duda, seg_valorar, seg_medidas, seg_asesor, seg_objecion o el saludo; las 5 primeras dicen «…que nos comentó **anoche**» con el cuándo puesto por el CRM) en cuanto Meta la aprueba. Se enciende en Agente IA › Opciones › **Seguimientos del Agente IA** (84): **Ensayo** (de fábrica) calcula todo y lo muestra en la píldora sin mandar nada; **Real** lo manda a su hora como mensaje del Agente IA (sin pausarlo). Si el cliente contesta con el Agente IA en pausa automática, la conversación sigue con el Agente IA. Tras el último intento sin respuesta, la temperatura pasa a **frío**; en pago pendiente (24 h después del 2.º) y asesor sin respuesta (al final) deja la tarjeta amarilla. Si el cliente se dio de baja de las promociones (error 131050 de WhatsApp), ese contacto queda **sin seguimientos**: la píldora se pone roja («Se dio de baja») y su aviso se abre solo una vez, con **Volver a darle seguimiento** (Caja para escribir › 64). **Cancelar** apaga los seguimientos de ese chat hasta que alguien pulse **Reactivar seguimientos** (63). Qué casos están encendidos, qué intentos salen, a qué hora y qué busca cada uno, y el horario de los vendedores, se editan en Agente IA › **Seguimientos** (85; desde el 6-oct-2026). Diseño: `docs/seguimientos.md`. |
+| **Seguimientos (pestaña del menú)** | Lo que sigue **después de la compra** (8-oct-2026). Hoy tiene una subpestaña: **Opinión**. Es otra cosa que Agente IA › Seguimientos (los mensajes que escribe el Agente IA cuando un chat se queda parado). Ver 3.11. |
+| **Opinión** | Formulario de 4 preguntas que el cliente contesta desde su celular en una **página aparte** del CRM, sin usuario ni contraseña (`…/opinion/<enlace>`): estrellas, «¿Qué le diría a alguien que está pensando comprarla?», si ya le tocó una lluvia y si se puede compartir su opinión (con su nombre, sin su nombre o no). Al final, para todos: mandar foto o video por WhatsApp, compartir con un vecino y reseña en Google. Cada enlace se contesta **una sola vez** y vence a los 60 días. Las respuestas se ven en Seguimientos › Opinión. Desde el 8-oct-2026, con **enlaces de prueba**; mandarlo a los clientes 7 días después de pagar el total (plantilla `opinion_compuerta`) viene después. Diseño: `docs/opiniones.md`. |
+| **Código de recomendación** | El código de cada cliente (p. ej. DILU-4K7P) que va en el mensaje de «Compartir con un vecino»: cuando el vecino escribe, lo trae ya puesto. El premio y el canje en la página web se definen después. |
 | **Transcripción** | Texto de una nota de voz del cliente, escrito por el CRM; el agente lo lee para contestar. |
 | **Tarjeta amarilla / azul** | Colores de la tarjeta en el Embudo (regla del 28-sep-2026): **amarilla** = el agente necesita al vendedor (se quita contestando o con **Quitar tarjeta** del clic derecho); **azul** = el cliente escribió y nadie le ha contestado (se quita contestando —vendedor o agente—, con **Marcar como leído** o con **Quitar tarjeta**; abrir el chat no lo quita); **blanca** = nada pendiente. Al pasar el mouse la tarjeta se ilumina en **gris**, nunca en azul. |
 | **Aviso emergente** | Cuadro que baja arriba de la pantalla cuando el agente u otra persona **cambió la etapa** de un contacto (también cuando el agente la mueve en segundo plano). |
@@ -119,7 +122,7 @@ Lo que se ve en todas las pantallas.
 
 | # | Nombre oficial | Qué hace | Quién lo ve |
 |---|---|---|---|
-| 1 | **Menú lateral** | Lista de pestañas: Dashboard, Bandeja, Embudo, Mensajes rápidos, Anuncios, Agente IA, Automatización, Configuración. | Todos (Configuración solo Owner y Admin) |
+| 1 | **Menú lateral** | Lista de pestañas: Dashboard, Bandeja, Embudo, Mensajes rápidos, Anuncios, Agente IA, Automatización, **Seguimientos** (desde el 8-oct-2026), Configuración. | Todos (Configuración solo Owner y Admin) |
 | 2 | **Pestaña activa** | La pestaña en la que estás, resaltada con una barra blanca. | Todos |
 | 3 | **Logo Diluvium** | Solo identifica la marca; no es botón. | Todos |
 | 4 | **Correo de la sesión** | Con qué cuenta entraste. | Todos |
@@ -157,7 +160,7 @@ pantalla se oscurece un poco). No cambia el tema ni toca nada; con «Reducir mov
 ## 3. Pantallas (en el orden del menú)
 
 El orden es el del menú lateral tal como está hoy: Dashboard, Bandeja, Embudo, **Mensajes rápidos, Anuncios**,
-Agente IA, Automatización, Configuración y el menú del usuario. El chat, la caja para escribir, el Detalle del
+Agente IA, Automatización, **Seguimientos** (3.11: se agregó después y conserva los números), Configuración y el menú del usuario. El chat, la caja para escribir, el Detalle del
 contacto y los avisos se explican dentro de la Bandeja porque son **los mismos** en el pop-up del Embudo.
 
 ### 3.1 Dashboard
@@ -1074,6 +1077,49 @@ en Corridas aparecen con disparador "Agente". Mientras manda uno, en el chat se 
 
 ---
 
+### 3.11 Seguimientos
+
+Pestaña del menú entre Automatización y Configuración (8-oct-2026): lo que sigue **después de la compra**. Hoy tiene
+una subpestaña, **Opinión**. **Todos** la ven y la usan, vendedor incluido. No es lo mismo que Agente IA › Seguimientos.
+Lleva el número 3.11 porque se agregó después (los números no cambian).
+
+![Seguimientos › Opinión](mapa-crm/14-seguimientos-opinion.png)
+
+| # | Nombre oficial | Qué hace | Quién lo ve |
+|---|---|---|---|
+| 1 | **Opinión** | Subpestaña con lo que contestan los clientes en el [formulario de opinión](#glosario). | Todos |
+| 2 | **Enlace de Google** | Abre la caja del enlace de reseñas (4). | Todos |
+| 3 | **Crear enlace de prueba** | Crea un enlace al formulario que no es de ningún cliente, para abrirlo y contestarlo como lo haría el cliente. Arriba sale «Enlace de prueba listo» con el enlace y **Copiar**; en la lista aparece como fila **Prueba** (9). | Todos |
+| 4 | **Enlace de reseñas de Google** | El enlace del botón «Dejar reseña en Google» de la pantalla final (21). Debe empezar con https://; vacío = no sale el botón. **Guardar** · **Cancelar**. | Todos |
+| 5 | **Quién y cuándo** | El nombre y la ciudad que dio el cliente si autorizó compartir su opinión con su nombre; si no, el nombre del contacto en el CRM. Debajo, cuándo contestó (hora de Mazatlán), o «Esperando respuesta · vence el …» o «Venció sin respuesta». Lo más reciente va primero. | Todos |
+| 6 | **Estrellas** | De 1 a 5. | Todos |
+| 7 | **Lo que dijo** | Su respuesta a «¿Qué le diría a alguien que está pensando comprarla?», entre comillas. | Todos |
+| 8 | **Etiquetas** | La lluvia (**Resistió** en verde, **Se metió agua** en ámbar o **Todavía sin lluvia**), el permiso (**Con su nombre**, **Sin su nombre** o **No publicar**) y su [código de recomendación](#glosario). | Todos |
+| 9 | **Prueba** | Marca de un enlace de prueba (3): no es de un cliente. | Todos |
+| 10 | **Copiar · Abrir** | Mientras siga sin contestar: copia el enlace o lo abre en otra pestaña. | Todos |
+| 11 | **Borrar** | Solo en los enlaces de prueba: los quita de la lista. Las opiniones de los clientes no se borran. | Todos |
+
+**El formulario que ve el cliente** (página aparte, sin menú ni datos de nadie, pensada para el celular):
+
+![Formulario de opinión](mapa-crm/15-opinion-formulario.png) ![Pantalla final del formulario](mapa-crm/16-opinion-gracias.png)
+
+| # | Nombre oficial | Qué hace | Quién lo ve |
+|---|---|---|---|
+| 12 | **¿Cómo le quedó su compuerta?** | Estrellas de 1 a 5 (obligatorio). | El cliente |
+| 13 | **¿Qué le diría a alguien que está pensando comprarla?** | Texto libre, opcional (hasta 1000 letras): sale listo para un anuncio. | El cliente |
+| 14 | **¿Ya le tocó una lluvia con ella?** | Sí, y resistió · Sí, y se metió agua · Todavía no (obligatorio). | El cliente |
+| 15 | **¿Podemos compartir su opinión?** | Sí, con mi nombre · Sí, sin mi nombre · No, solo para ustedes (obligatorio). Se guarda el texto exacto de lo que autorizó. | El cliente |
+| 16 | **Su nombre · Su ciudad** | Solo con «Sí, con mi nombre»: el nombre es obligatorio y la ciudad no. Si no autoriza con su nombre, no se guardan. | El cliente |
+| 17 | **Enviar** | Revisa las respuestas obligatorias (avisa en rojo junto a cada una y sube la pantalla al primer aviso) y guarda. Cada enlace se contesta **una vez**: si lo abre otra vez sale «Ya recibimos su opinión. Gracias.»; si venció o está incompleto, lo dice. | El cliente |
+| 18 | **Mandarla por WhatsApp** | Abre el chat con Diluvium con «Hola, les mando la foto de cómo me quedó la compuerta.»: la foto o el video llegan al chat del CRM. | El cliente |
+| 19 | **Compartir con un vecino** | Abre WhatsApp para elegir a quién mandarle un mensaje con el enlace al chat de Diluvium y su código ya escrito. | El cliente |
+| 20 | **Su código** | Su código de recomendación. | El cliente |
+| 21 | **Dejar reseña en Google** | Abre el enlace de 4. Sale **para todos**, sin importar las estrellas (Google no permite pedir reseña solo a los clientes contentos). | El cliente |
+
+<sub>Para Code: rutas `/seguimientos` (`app/(app)/seguimientos/`; subpestañas en `lib/seguimientos/sections.ts`) y `/opinion/[token]` (pública, `app/opinion/[token]/`); la respuesta entra por `app/api/opinion/route.ts` (límite por IP); `lib/opiniones/` (`codigo`, `respuestas`, `enlaces`, `store`, `queries`, `vista`), `lib/actions/opiniones.ts`, ACL `opinion`; tablas `opiniones` y `opiniones_config` (migración 0064); diseño `docs/opiniones.md`.</sub>
+
+---
+
 ### 3.8 Configuración
 
 Solo **Owner y Admin**. Hoy tiene una pestaña: **Vendedores**.
@@ -1171,7 +1217,7 @@ números dibujados: el número de la tabla nombra la pieza.
 | 6 | **Caja para escribir (móvil)** | Dos renglones: ⚡ 📄 📎 ▶ 🕒 arriba (y la píldora 🤖 al final; siempre está desde el 7-oct-2026) y la caja con **Enviar** abajo. En el celular **Enter baja de renglón** (el texto conserva sus saltos) y **solo el botón Enviar manda**; en escritorio Enter sigue enviando. El cursor es el del teléfono (sin la animación de escritorio, ver **Cursor al escribir**). | Todos |
 | 7 | **Embudo: columnas** | Cada columna ocupa la pantalla; el tablero se desliza de lado columna por columna. Cada una trae su sobre **No leído** (Embudo › 33), igual que en escritorio. Para arrastrar una tarjeta a otra etapa: dejarla presionada un momento y moverla (el clic derecho no existe en celular). | Todos |
 | 8 | **Pop-up del Embudo (móvil)** | Al tocar una tarjeta, el pop-up ocupa toda la pantalla **igual que la Bandeja**: el chat completo y, en su encabezado, el sobre (Marcar como leído), el **(i)** que abre el Detalle del contacto encima y la ✕ roja que cierra el pop-up. | Todos |
-| 9 | **Demás pantallas** | Dashboard, Mensajes rápidos, Anuncios, Agente IA, Automatización y Configuración se acomodan en una sola columna. **Nada se desliza de lado** (solo el Embudo, 7): las tablas de Anuncios, Vendedores y Corridas se apilan como tarjetas y las subpestañas de Agente IA se acomodan en varios renglones. | Todos |
+| 9 | **Demás pantallas** | Dashboard, Mensajes rápidos, Anuncios, Agente IA, Automatización, Seguimientos y Configuración se acomodan en una sola columna. **Nada se desliza de lado** (solo el Embudo, 7): las tablas de Anuncios, Vendedores y Corridas se apilan como tarjetas y las subpestañas de Agente IA se acomodan en varios renglones. | Todos |
 | 10 | **✕ roja (cerrar)** | En el celular todo lo que se abre encima se cierra con una ✕ blanca en círculo rojo: el menú ☰, el Detalle del contacto (5), el pop-up del Embudo (8), los selectores del chat (⚡ mensajes rápidos, 📄 plantillas, 🕒 programar y el buscador "/"), el visor de fotos (el de siempre: el visor nuevo de escritorio, Bandeja › 3.2.5, no aplica en el celular), Nuevo contacto, Columnas del Embudo y el formulario de Mensajes rápidos. En escritorio no cambia nada (Esc, "Cerrar" o la ✕ chica de siempre; el Visor de archivos tiene su ✕ naranja, 3.2.5). | Todos |
 | 11 | **▶ Automatizaciones** | Botón nuevo en la caja del chat (Bandeja y pop-up del Embudo), solo en el celular. Abre una lista como la de ⚡ con los workflows **encendidos** de Automatización: miniatura cuadrada de la imagen o el video (con el ícono de imagen/video a media opacidad encima; documento con su ícono), nombre, comando y el mensaje predeterminado. Tocar uno manda exactamente lo mismo que escribir su comando (el mensaje y el archivo, en su orden). En escritorio siguen con "/". | Todos |
 | 12 | **Avisos emergentes (móvil)** | Tarjetas azules delgadas, **centradas arriba** debajo de la barra; no llegan al centro ni tapan el chat. Texto completo de quién hizo el cambio: "🤖 Agente IA movió a … a …", "🌎 Luis movió a … a …" (owner o admin), "👨🏽‍💻 Daniel movió a … a …" (vendedor) o "⚙️ Automatización movió…". Duran **4 segundos**, con una barra naranja delgada abajo que se vacía, y un halo oscuro difuminado solo alrededor de cada tarjeta. Máximo 3; desde el 4.º se juntan en "N contactos cambiaron de etapa ▾", que al tocarlo despliega cada cambio (tocar uno abre su chat) y "Ver todo en el Embudo"; desplegado no se va solo y al plegarlo vuelve a contar 4 segundos. ✕ blanca para quitarlo. En escritorio siguen como en 3.2.4 (10 segundos). | Todos |
