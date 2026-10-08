@@ -7,6 +7,7 @@ import { z, ZodError } from "zod";
 import { requireActiveMembership, type ActiveMembership } from "@/lib/auth/active-organization";
 import { roleAllows } from "@/lib/auth/permissions";
 import type { AgentActionResult } from "@/lib/agente-ia/types";
+import { logError } from "@/lib/log/safe-error";
 import { enlaceOpinion } from "@/lib/opiniones/enlaces";
 import { borrarOpinionPrueba, crearOpinion, guardarGoogleResenaUrl } from "@/lib/opiniones/store";
 
@@ -29,7 +30,7 @@ export async function crearEnlacePrueba(): Promise<CrearEnlaceResult> {
     revalidatePath(RUTA);
     return { ok: true, enlace: enlaceOpinion(appUrl, token) };
   } catch (error) {
-    console.error("[opiniones] no se pudo crear el enlace de prueba", error);
+    logError("[opiniones] no se pudo crear el enlace de prueba", error);
     return { ok: false, message: "No se pudo crear el enlace. Intenta de nuevo." };
   }
 }
@@ -48,7 +49,7 @@ export async function borrarEnlacePrueba(input: { id: string }): Promise<AgentAc
     return { ok: true };
   } catch (error) {
     if (error instanceof ZodError) return { ok: false, message: "Enlace no válido." };
-    console.error("[opiniones] no se pudo borrar el enlace de prueba", error);
+    logError("[opiniones] no se pudo borrar el enlace de prueba", error);
     return { ok: false, message: "No se pudo borrar. Intenta de nuevo." };
   }
 }
@@ -79,7 +80,7 @@ export async function guardarEnlaceGoogle(input: { url: string }): Promise<Agent
     return { ok: true };
   } catch (error) {
     if (error instanceof ZodError) return { ok: false, message: error.issues[0]?.message ?? "Enlace no válido." };
-    console.error("[opiniones] no se pudo guardar el enlace de Google", error);
+    logError("[opiniones] no se pudo guardar el enlace de Google", error);
     return { ok: false, message: "No se pudo guardar. Intenta de nuevo." };
   }
 }

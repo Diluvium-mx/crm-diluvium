@@ -3,6 +3,7 @@
 // (128 bits al azar, una sola respuesta, vence a los 60 días). Límite por IP para que
 // nadie la use de buzón.
 import { ipRateLimiter } from "@/lib/rate-limit";
+import { logError } from "@/lib/log/safe-error";
 import { respuestaSchema } from "@/lib/opiniones/respuestas";
 import { responderOpinion, type ResultadoRespuesta } from "@/lib/opiniones/store";
 
@@ -46,7 +47,7 @@ export async function POST(req: Request): Promise<Response> {
     const { status, message } = RESPUESTAS[resultado];
     return Response.json({ ok: false, resultado, message }, { status });
   } catch (error) {
-    console.error("[opinion] no se pudo guardar la respuesta", error);
+    logError("[opinion] no se pudo guardar la respuesta", error);
     return Response.json({ ok: false, message: "No se pudo guardar. Intente de nuevo." }, { status: 500 });
   }
 }
