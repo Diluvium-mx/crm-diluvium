@@ -17,6 +17,7 @@ import {
   templateSyncLines,
   templatesToRemove,
 } from "./template-sync";
+import { logError } from "@/lib/log/safe-error";
 
 /** No hay canal de WhatsApp activo para esta organización (nada que sincronizar/enviar). */
 export class TemplatesChannelError extends Error {
@@ -384,7 +385,7 @@ export async function refreshTemplatesInReview(): Promise<number> {
       await syncTemplatesForOrg(organizationId, { userId: null });
       checked++;
     } catch (error) {
-      console.error(`[plantillas] no se pudo revisar el estado en Meta de ${organizationId}`, error);
+      logError(`[plantillas] no se pudo revisar el estado en Meta de ${organizationId}`, error);
     }
   }
   return checked;

@@ -13,6 +13,7 @@ import { db } from "@/lib/db";
 import { channels, member } from "@/lib/db/schema";
 import { validDate } from "@/lib/messaging/zernio";
 import { normalizePhone } from "@/lib/phone";
+import { safeErrorMessage } from "@/lib/log/safe-error";
 
 async function main() {
   const { values } = parseArgs({
@@ -102,6 +103,6 @@ async function main() {
 }
 
 main().catch((error) => {
-  console.error(error instanceof Error ? error.message : error);
+  console.error(safeErrorMessage(error));
   process.exit(1);
 });

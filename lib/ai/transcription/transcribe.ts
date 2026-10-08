@@ -28,6 +28,7 @@ import {
   transcriptionCostUsd,
   type TranscripcionMeta,
 } from "./rules";
+import { logError, safeErrorMessage } from "@/lib/log/safe-error";
 
 // Pista para el modelo (no cambia el idioma): mejora números y medidas dictadas.
 export const TRANSCRIPTION_PROMPT =
@@ -141,7 +142,7 @@ export async function transcribeMessageAudio(
     try {
       text = (await (deps.transcriber ?? openaiTranscriber())(bytes)).text.replace(/\s+/g, " ").trim().slice(0, 10_000);
     } catch (error) {
-      const detalle = error instanceof Error ? error.message : String(error);
+      const detalle = safeErrorMessage(error);
       await recordAiUsage({ ...base, latencyMs: Date.now() - t0, outcome: "transcripcion_fallida", error: detalle, costUsd: null });
       console.warn(`[transcripcion] ${m.id}: falló (${detalle})`);
       return await finish("fallida", { motivo: "el servicio de transcripción falló", segundos: seconds });
@@ -151,7 +152,7 @@ export async function transcribeMessageAudio(
     console.info(`[transcripcion] ${m.id}: ${Math.round(seconds)} s transcritos`);
     return await finish("lista", { texto: text, segundos: seconds });
   } catch (error) {
-    console.error(`[transcripcion] ${messageId}: error inesperado`, error);
+    logError(`[transcripcion] ${messageId}: error inesperado`, error);
     return { kind: "no_aplica" };
   }
 }

@@ -14,6 +14,7 @@ import type { MessagingProvider } from "@/lib/messaging/provider";
 import type { Tx } from "@/lib/messaging/ingest";
 import { adsManagerUrl } from "./meta-api";
 import { conversationClickMatches, normalizeReferral, referralThumbUrl, type AdPlatform } from "./referral";
+import { logError, safeErrorMessage } from "@/lib/log/safe-error";
 
 export type RecordedClick = {
   clickId: string;
@@ -96,7 +97,7 @@ export async function recordAdClickSafely(tx: Tx, input: ClickInput): Promise<Re
   try {
     return await tx.transaction((sp) => insertAdClick(sp, input));
   } catch (error) {
-    console.error(`[anuncios] no se pudo registrar el clic del mensaje ${input.messageId}; el mensaje entra igual y el barrido lo reintenta`, error);
+    logError(`[anuncios] no se pudo registrar el clic del mensaje ${input.messageId}; el mensaje entra igual y el barrido lo reintenta`, error);
     return "error";
   }
 }
@@ -319,7 +320,7 @@ export async function attributeFromProviderConversation(
       ? await provider.conversationAdClick(job.providerAccountId, job.providerConversationId, { updatedSince: messageAt })
       : null;
   } catch (error) {
-    const detail = error instanceof Error ? error.message : String(error);
+    const detail = safeErrorMessage(error);
     await note("error", detail);
     log("error", `${detail} (intento ${attempts}; el barrido reintenta)`);
     return { result: "error", click: null };

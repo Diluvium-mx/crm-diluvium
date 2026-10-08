@@ -7,6 +7,7 @@
 // conversación indicada se puede leer. Checklist del día del número real:
 // docs/anuncios.md.
 import { messagingProvider } from "@/lib/messaging";
+import { safeErrorMessage } from "@/lib/log/safe-error";
 
 function arg(name: string): string | undefined {
   const i = process.argv.indexOf(`--${name}`);
@@ -42,6 +43,6 @@ async function main() {
 main()
   .then(() => process.exit(0))
   .catch((error: unknown) => {
-    console.error("[ads:probe]", error instanceof Error ? error.message : error);
+    console.error("[ads:probe]", safeErrorMessage(error));
     process.exit(1);
   });

@@ -9,6 +9,7 @@ import { requireActiveMembership } from "@/lib/auth/active-organization";
 import { roleAllows } from "@/lib/auth/permissions";
 import { tableFromInput, tableToInput, type FollowUpTableInput, type TableChange } from "@/lib/followups/tabla";
 import { loadLastTableChange, saveFollowUpTable } from "@/lib/followups/tabla-store";
+import { logError } from "@/lib/log/safe-error";
 
 export type FollowUpTableLastChange = { author: string | null; at: string };
 export type FollowUpTableActionResult =
@@ -32,7 +33,7 @@ export async function saveFollowUpTableAction(input: unknown): Promise<FollowUpT
     if (error instanceof Error && /^(No autenticado|Usuario desactivado|No tienes permiso|El usuario no tiene membresía)/.test(error.message)) {
       return { ok: false, message: error.message };
     }
-    console.error("[agente-ia] no se pudo guardar la tabla de seguimientos", error);
+    logError("[agente-ia] no se pudo guardar la tabla de seguimientos", error);
     return { ok: false, message: "No se pudo guardar la tabla; inténtalo de nuevo." };
   }
 }

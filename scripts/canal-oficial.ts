@@ -14,6 +14,7 @@ import { db } from "@/lib/db";
 import { channels, member } from "@/lib/db/schema";
 import { validDate } from "@/lib/messaging/zernio";
 import { normalizePhone } from "@/lib/phone";
+import { safeErrorMessage } from "@/lib/log/safe-error";
 
 const OFFICIAL_PHONE = "+526682419579";
 
@@ -91,6 +92,6 @@ async function main(): Promise<number> {
 main()
   .then((code) => process.exit(code))
   .catch((error) => {
-    console.error(error instanceof Error ? error.message : error);
+    console.error(safeErrorMessage(error));
     process.exit(1);
   });

@@ -11,6 +11,7 @@ import { cleanupUnsentChatUploads, expireStuckChatUploads, pendingChatUploadJobs
 import { redisConnection } from "@/lib/queue/inbound";
 import { CHAT_UPLOAD_QUEUE, reviveChatUploads, type ChatUploadJob } from "@/lib/queue/chat-uploads";
 import type { ObjectStorage } from "@/lib/storage/s3";
+import { safeErrorMessage } from "@/lib/log/safe-error";
 
 const CLEANUP_EVERY_MS = 60 * 60_000;
 
@@ -37,7 +38,7 @@ export function startChatUploadWorker(provider: MessagingProvider, storage: Obje
     { connection: { ...redisConnection(), maxRetriesPerRequest: null }, concurrency: 1, autorun: false },
   );
   worker.on("failed", (job, error) => {
-    console.error(`[adjuntos] falló ${job?.data.messageIds[0]} (intento ${job?.attemptsMade}): ${error.message}`);
+    console.error(`[adjuntos] falló ${job?.data.messageIds[0]} (intento ${job?.attemptsMade}): ${safeErrorMessage(error)}`);
   });
 
   let lastCleanup = 0;

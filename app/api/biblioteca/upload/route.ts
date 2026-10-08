@@ -15,6 +15,7 @@ import { MediaRejectedError } from "@/lib/media-library/rules";
 import { storeUploadedAsset } from "@/lib/media-library/service";
 import { ipRateLimiter } from "@/lib/rate-limit";
 import { objectStorage, StorageNotConfiguredError } from "@/lib/storage/s3";
+import { logError } from "@/lib/log/safe-error";
 
 // La Biblioteca se llena a mano (pocos archivos): 60 subidas en 10 min por IP sobran.
 const UPLOAD_RULES = [{ name: "biblioteca-subida", max: 60, windowMs: 10 * 60_000 }] as const;
@@ -68,7 +69,7 @@ export async function POST(req: Request): Promise<Response> {
     return Response.json({ asset }, { status: 201 });
   } catch (error) {
     if (error instanceof MediaRejectedError) return Response.json({ error: error.message, code: error.code }, { status: 400 });
-    console.error("[biblioteca] subida falló:", error);
+    logError("[biblioteca] subida falló:", error);
     return Response.json({ error: "No se pudo guardar el archivo." }, { status: 500 });
   } finally {
     await slot.release();

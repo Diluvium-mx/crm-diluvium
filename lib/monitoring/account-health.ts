@@ -22,6 +22,7 @@ import {
   type AccountsSummary,
   type AccountState,
 } from "./zernio-account";
+import { logError } from "@/lib/log/safe-error";
 
 export const ACCOUNTS_SNAPSHOT_KEY = "monitor:whatsapp-accounts";
 /** Primera revisión registrada (SET NX, sin vencimiento): eventos anteriores no alertan. */
@@ -134,7 +135,7 @@ export async function checkWhatsappAccounts(input: { source: MonitorSource; now?
     if (lastRun && !Number.isNaN(Date.parse(lastRun))) alertAfter = new Date(lastRun);
   } catch (error) {
     redisOk = false;
-    console.error("[monitor] cuentas de WhatsApp: no se pudo leer Redis", error);
+    logError("[monitor] cuentas de WhatsApp: no se pudo leer Redis", error);
   }
   const previousOf = new Map((previous?.accounts ?? []).map((a) => [a.channelId, a]));
 
@@ -169,7 +170,7 @@ export async function checkWhatsappAccounts(input: { source: MonitorSource; now?
     await redis
       .mset(ACCOUNTS_SNAPSHOT_KEY, JSON.stringify(snapshot), accountsLastRunKey(input.source), now.toISOString())
       .catch((error: unknown) => {
-        console.error("[monitor] cuentas de WhatsApp: no se pudo guardar en Redis", error);
+        logError("[monitor] cuentas de WhatsApp: no se pudo guardar en Redis", error);
       });
   }
 

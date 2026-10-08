@@ -10,6 +10,7 @@ import { db } from "@/lib/db";
 import { aiAgentNotices, channels, conversations } from "@/lib/db/schema";
 import { notifyConversation } from "./state";
 import { addNotice } from "./notices";
+import { logError } from "@/lib/log/safe-error";
 
 export const AGENT_ERROR_KIND = "agente_error";
 // "superada": el agente volvió a contestar en la conversación (p. ej. tras "Reactivar").
@@ -107,7 +108,7 @@ export async function supersedeAgentErrors(organizationId: string, conversationI
       .returning({ id: aiAgentNotices.id });
     if (rows.length) await notifyConversation(db, organizationId, conversationId);
   } catch (error) {
-    console.error(`[agente] no se pudieron cerrar las tarjetas de error de ${conversationId}`, error);
+    logError(`[agente] no se pudieron cerrar las tarjetas de error de ${conversationId}`, error);
   }
 }
 

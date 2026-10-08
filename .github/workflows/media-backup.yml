@@ -1,0 +1,199 @@
+# Respaldo diario de los MEDIOS de producción (fotos, audios, videos y PDF del bucket
+# de media de Railway) al bucket privado `crm-respaldos`, carpeta media/.
+#
+# - `rclone sync` con DOS remotos (cada bucket tiene sus propias credenciales; un
+#   `aws s3 sync` de bucket a bucket usa una sola y no sirve). Copia SOLO lo nuevo o
+#   cambiado (tamaño + MD5 cuando el bucket lo da) y BORRA del respaldo lo que ya no
+#   está en producción: cuando se borra un contacto (derechos ARCO), sus archivos
+#   salen del respaldo en la siguiente corrida.
+# - Del bucket de media solo se LEE (sync nunca escribe en el origen).
+# - rclone fijado por versión y verificado por sha256 antes de usarlo. Sin acciones de
+#   terceros (no hay `uses:`).
+# - Credenciales por variables de entorno RCLONE_CONFIG_* (nunca como argumentos).
+# - El repo es PÚBLICO y sus logs de Actions también: NINGÚN nombre de archivo sale al
+#   log (las rutas llevan ids y a veces el nombre del archivo que mandó el cliente).
+#   rclone escribe a un archivo y aquí solo se imprimen conteos, tamaños y errores con la
+#   ruta tapada.
+# - Candado contra un bucket equivocado: si el origen tiene menos de la mitad de los
+#   archivos que ya están en el respaldo, no sincroniza (borraría el respaldo). Se puede
+#   forzar a mano con «permitir_borrado_masivo».
+#
+# Secrets del environment `production-backup` (solo se entregan a jobs que corren desde
+# `main`; una rama con un workflow modificado no los recibe):
+#   MEDIA_S3_BUCKET / MEDIA_S3_ENDPOINT    bucket de media de PRODUCCIÓN (S3_BUCKET /
+#   MEDIA_S3_ACCESS_KEY_ID                 S3_ENDPOINT / S3_ACCESS_KEY_ID /
+#   MEDIA_S3_SECRET_ACCESS_KEY             S3_SECRET_ACCESS_KEY del web en Railway)
+#   RESPALDOS_S3_BUCKET                    los mismos del respaldo de la base
+#   RESPALDOS_S3_ACCESS_KEY_ID             (db-backup.yml)
+#   RESPALDOS_S3_SECRET_ACCESS_KEY
+#
+# Cómo cargar los secrets, restaurar y monitorear: docs/backups.md, «Respaldo de medios».
+name: media-backup
+
+on:
+  schedule:
+    - cron: "17 10 * * *" # diario, 04:17 hora de CDMX (una hora después de db-backup)
+  workflow_dispatch:
+    inputs:
+      permitir_borrado_masivo:
+        description: "Sincronizar aunque el origen tenga menos de la mitad de los archivos del respaldo (borra el resto del respaldo)"
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+concurrency:
+  group: media-backup
+  cancel-in-progress: false
+
+defaults:
+  run:
+    shell: bash # = bash -eo pipefail
+
+env:
+  RCLONE_VERSION: v1.75.1 # del 4-sep-2026
+  # sha256 de rclone-v1.75.1-linux-amd64.zip (SHA256SUMS firmado de downloads.rclone.org
+  # y el digest del release en GitHub; coinciden). Si cambias la versión, cambia esto.
+  RCLONE_SHA256: 982b5aa772841168f8e380f139e9e787b2a105403e32b94da8676a0e1c0a13ab
+  MEDIA_PREFIX: media
+  # Los dos remotos de rclone (sin archivo de configuración). Llaves y nombres, por secrets.
+  RCLONE_CONFIG_MEDIA_TYPE: s3
+  RCLONE_CONFIG_MEDIA_PROVIDER: Other
+  RCLONE_CONFIG_MEDIA_REGION: auto
+  RCLONE_CONFIG_MEDIA_FORCE_PATH_STYLE: "false"
+  RCLONE_CONFIG_RESPALDOS_TYPE: s3
+  RCLONE_CONFIG_RESPALDOS_PROVIDER: Other
+  RCLONE_CONFIG_RESPALDOS_ENDPOINT: https://t3.storageapi.dev # el mismo de db-backup.yml
+  RCLONE_CONFIG_RESPALDOS_REGION: auto
+  RCLONE_CONFIG_RESPALDOS_FORCE_PATH_STYLE: "false"
+  RCLONE_CONFIG_RESPALDOS_NO_CHECK_BUCKET: "true" # el bucket ya existe; no intenta crearlo
+
+jobs:
+  backup:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 120
+    environment: production-backup
+    env:
+      RCLONE_CONFIG_MEDIA_ENDPOINT: ${{ secrets.MEDIA_S3_ENDPOINT }}
+      RCLONE_CONFIG_MEDIA_ACCESS_KEY_ID: ${{ secrets.MEDIA_S3_ACCESS_KEY_ID }}
+      RCLONE_CONFIG_MEDIA_SECRET_ACCESS_KEY: ${{ secrets.MEDIA_S3_SECRET_ACCESS_KEY }}
+      MEDIA_S3_BUCKET: ${{ secrets.MEDIA_S3_BUCKET }}
+      RCLONE_CONFIG_RESPALDOS_ACCESS_KEY_ID: ${{ secrets.RESPALDOS_S3_ACCESS_KEY_ID }}
+      RCLONE_CONFIG_RESPALDOS_SECRET_ACCESS_KEY: ${{ secrets.RESPALDOS_S3_SECRET_ACCESS_KEY }}
+      RESPALDOS_S3_BUCKET: ${{ secrets.RESPALDOS_S3_BUCKET }}
+
+    steps:
+      - name: Verificar secrets
+        run: |
+          for v in MEDIA_S3_BUCKET RCLONE_CONFIG_MEDIA_ENDPOINT RCLONE_CONFIG_MEDIA_ACCESS_KEY_ID RCLONE_CONFIG_MEDIA_SECRET_ACCESS_KEY \
+                   RESPALDOS_S3_BUCKET RCLONE_CONFIG_RESPALDOS_ACCESS_KEY_ID RCLONE_CONFIG_RESPALDOS_SECRET_ACCESS_KEY; do
+            [ -n "${!v}" ] || { echo "::error::Falta el secret de $v (ver docs/backups.md, «Respaldo de medios»)"; exit 1; }
+          done
+          if [ "$MEDIA_S3_BUCKET" = "$RESPALDOS_S3_BUCKET" ]; then
+            echo "::error::El bucket de media y el de respaldos son el mismo: el sync borraría el respaldo"
+            exit 1
+          fi
+
+      - name: Instalar rclone ${{ env.RCLONE_VERSION }} (sha256 verificado)
+        run: |
+          zip="rclone-${RCLONE_VERSION}-linux-amd64.zip"
+          curl -fsSLo "/tmp/$zip" "https://github.com/rclone/rclone/releases/download/${RCLONE_VERSION}/${zip}"
+          echo "${RCLONE_SHA256}  /tmp/${zip}" | sha256sum --check --strict -
+          unzip -q -j "/tmp/$zip" "rclone-${RCLONE_VERSION}-linux-amd64/rclone" -d /tmp/rclone-bin
+          sudo install -m 0755 /tmp/rclone-bin/rclone /usr/local/bin/rclone
+          rclone version
+
+      - name: Candado contra un bucket equivocado
+        env:
+          FORZAR: ${{ inputs.permitir_borrado_masivo || false }}
+        run: |
+          rclone size --json --fast-list "media:${MEDIA_S3_BUCKET}" > /tmp/origen.json
+          # Primera corrida: la carpeta media/ todavía no existe en el respaldo.
+          if ! rclone size --json --fast-list "respaldos:${RESPALDOS_S3_BUCKET}/${MEDIA_PREFIX}" > /tmp/respaldo.json 2> /tmp/respaldo.err; then
+            if grep -qi "directory not found" /tmp/respaldo.err; then echo '{"count":0,"bytes":0}' > /tmp/respaldo.json
+            else cat /tmp/respaldo.err >&2; echo "::error::No se pudo leer el bucket de respaldos"; exit 1; fi
+          fi
+          python3 - <<'PY'
+          import json, os
+          origen = json.load(open("/tmp/origen.json"))["count"]
+          respaldo = json.load(open("/tmp/respaldo.json"))["count"]
+          print(f"Archivos en producción: {origen} · en el respaldo: {respaldo}")
+          if respaldo and origen < respaldo / 2:
+              if os.environ.get("FORZAR") == "true":
+                  print(f"::warning::El origen tiene {origen} archivos y el respaldo {respaldo}; se sincroniza porque se pidió a mano.")
+              else:
+                  print(f"::error::El origen tiene {origen} archivos y el respaldo {respaldo} (menos de la mitad). "
+                        "¿Bucket equivocado? No se sincroniza: borraría el respaldo. Si es correcto, corre el workflow "
+                        "a mano con «permitir_borrado_masivo».")
+                  raise SystemExit(1)
+          PY
+
+      - name: Sincronizar media → crm-respaldos/media (solo lo nuevo o cambiado)
+        run: |
+          umask 077
+          start=$(date +%s)
+          # Tamaños del origen, para sumar lo copiado (las rutas se quedan en el runner).
+          rclone lsjson -R --files-only --fast-list "media:${MEDIA_S3_BUCKET}" > /tmp/origen-lista.json
+          rc=0
+          rclone sync "media:${MEDIA_S3_BUCKET}" "respaldos:${RESPALDOS_S3_BUCKET}/${MEDIA_PREFIX}" \
+            --checksum --fast-list --transfers 8 --checkers 16 \
+            --combined /tmp/resultado.txt \
+            --stats 0 --log-level NOTICE --use-json-log --log-file /tmp/rclone.log || rc=$?
+          rclone size --json --fast-list "respaldos:${RESPALDOS_S3_BUCKET}/${MEDIA_PREFIX}" > /tmp/respaldo-final.json || echo '{}' > /tmp/respaldo-final.json
+          resumen=0
+          SEGUNDOS=$(( $(date +%s) - start )) RC=$rc python3 - <<'PY' || resumen=$?
+          import json, os, re
+
+          def tam(b):
+              for unidad in ("B", "KB", "MB", "GB"):
+                  if b < 1024 or unidad == "GB":
+                      return f"{b:.0f} {unidad}" if unidad == "B" else f"{b:.1f} {unidad}"
+                  b /= 1024
+
+          tamanos = {o["Path"]: o.get("Size", 0) for o in json.load(open("/tmp/origen-lista.json"))}
+          nuevos = cambiados = borrados = errores = 0
+          bytes_copiados = 0
+          if os.path.exists("/tmp/resultado.txt"):
+              for linea in open("/tmp/resultado.txt", encoding="utf-8", errors="replace"):
+                  simbolo, _, ruta = linea.rstrip("\n").partition(" ")
+                  if simbolo == "+": nuevos += 1; bytes_copiados += max(tamanos.get(ruta, 0), 0)
+                  elif simbolo == "*": cambiados += 1; bytes_copiados += max(tamanos.get(ruta, 0), 0)
+                  elif simbolo == "-": borrados += 1
+                  elif simbolo == "!": errores += 1
+          final = json.load(open("/tmp/respaldo-final.json"))
+          rc = int(os.environ["RC"])
+          estado = "OK" if rc == 0 and errores == 0 else f"FALLÓ (rclone salió con {rc}; {errores} archivo(s) con error)"
+          filas = [
+              ("Estado", estado),
+              ("Copiados nuevos", f"{nuevos}"),
+              ("Copiados cambiados", f"{cambiados}"),
+              ("Tamaño copiado", tam(bytes_copiados)),
+              ("Borrados del respaldo (ya no están en producción)", f"{borrados}"),
+              ("Total en el respaldo", f"{final.get('count', '?')} archivo(s), {tam(final['bytes']) if 'bytes' in final else '?'}"),
+              ("En producción", f"{len(tamanos)} archivo(s), {tam(sum(max(v, 0) for v in tamanos.values()))}"),
+              ("Duración", f"{int(os.environ['SEGUNDOS'])} s"),
+          ]
+          with open(os.environ["GITHUB_STEP_SUMMARY"], "a") as s:
+              s.write("## Respaldo de medios\n\n| | |\n|---|---|\n")
+              s.writelines(f"| {k} | {v} |\n" for k, v in filas)
+          for k, v in filas: print(f"{k}: {v}")
+
+          # Errores al log SIN la ruta del archivo (el log de un repo público es público).
+          if os.path.exists("/tmp/rclone.log"):
+              for linea in open("/tmp/rclone.log", encoding="utf-8", errors="replace"):
+                  try: e = json.loads(linea)
+                  except ValueError: continue
+                  if e.get("level") not in ("error", "critical", "fatal"): continue
+                  msg = str(e.get("msg", ""))
+                  if e.get("object"): msg = msg.replace(str(e["object"]), "<archivo>")
+                  msg = re.sub(r"org/\S+", "<ruta>", msg)
+                  print(f"::error::rclone: {msg[:300]}")
+          # Un archivo con error falla el job aunque rclone haya salido con 0.
+          if errores: raise SystemExit(1)
+          PY
+          rm -f /tmp/origen-lista.json /tmp/resultado.txt /tmp/rclone.log
+          if [ "$rc" -ne 0 ] || [ "$resumen" -ne 0 ]; then
+            echo "::error::El respaldo de medios falló (rclone: $rc, resumen: $resumen). Revisa el resumen del job."
+            exit 1
+          fi

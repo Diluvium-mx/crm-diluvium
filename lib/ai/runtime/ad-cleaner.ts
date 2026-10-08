@@ -11,6 +11,7 @@ import type { CallModelInput, CallModelResult } from "@/lib/ai/types";
 import { buildAdCleanerPrompt, FILTER_SYSTEM, needsAdCleaning, parseAdCleaner } from "./filter";
 import type { MessageRow } from "./context";
 import { recordAiUsage } from "./usage";
+import { logError } from "@/lib/log/safe-error";
 
 export const AD_CLEAN_KEY = "agenteAnuncio";
 export const AD_CLEANER_TIMEOUT_MS = 20_000;
@@ -96,7 +97,7 @@ export async function cleanAdMessages(
           metadata: sql`coalesce(${messages.metadata}, '{}'::jsonb) || jsonb_build_object(${AD_CLEAN_KEY}::text, jsonb_build_object('mensaje', ${clean.mensaje}::text, 'anuncio', ${clean.anuncio}::text))`,
         })
         .where(and(eq(messages.id, m.id), eq(messages.organizationId, ctx.organizationId)))
-        .catch((error: unknown) => console.error(`[agente] no se pudo guardar la limpieza del anuncio de ${m.id}`, error));
+        .catch((error: unknown) => logError(`[agente] no se pudo guardar la limpieza del anuncio de ${m.id}`, error));
     }
   }
   return out;

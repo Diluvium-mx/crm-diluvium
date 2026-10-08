@@ -16,6 +16,7 @@ import { eq } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { contacts } from "@/lib/db/schema";
 import { countryFromPhone, normalizePhone, phoneParts } from "@/lib/phone";
+import { logError } from "@/lib/log/safe-error";
 
 async function main() {
   if (process.argv.includes("--apply")) {
@@ -98,6 +99,6 @@ async function main() {
 }
 
 main().catch((error) => {
-  console.error(error);
+  logError("[backfill-phone-parts]", error);
   process.exit(1);
 });

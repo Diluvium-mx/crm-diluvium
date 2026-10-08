@@ -14,6 +14,7 @@ import { acquireUploadSlot } from "@/lib/chat-attachments/in-flight";
 import { ChatUploadRejectedError, storeChatUpload } from "@/lib/chat-attachments/upload";
 import { ipRateLimiter } from "@/lib/rate-limit";
 import { objectStorage, StorageNotConfiguredError } from "@/lib/storage/s3";
+import { logError } from "@/lib/log/safe-error";
 
 // 10 archivos por envío: 200 subidas en 10 min por IP dan de sobra a dos vendedores en la misma red.
 const UPLOAD_RULES = [{ name: "chat-adjuntos", max: 200, windowMs: 10 * 60_000 }] as const;
@@ -63,7 +64,7 @@ export async function POST(req: Request): Promise<Response> {
     return Response.json(upload, { status: 201 });
   } catch (error) {
     if (error instanceof ChatUploadRejectedError) return Response.json({ error: error.message }, { status: 400 });
-    console.error("[adjuntos] subida falló:", error);
+    logError("[adjuntos] subida falló:", error);
     return Response.json({ error: "No se pudo guardar el archivo. Intenta de nuevo." }, { status: 500 });
   } finally {
     await slot.release();

@@ -22,6 +22,7 @@ import { notifyContactUpdated } from "@/lib/contacts/notify-updated";
 import { zoneForPhone } from "./timezone";
 import { caseOn, nextStep, slotOf, type FollowUpTable } from "./tabla";
 import { loadFollowUpTable } from "./tabla-store";
+import { logError } from "@/lib/log/safe-error";
 
 export type FollowUpRow = typeof followUps.$inferSelect;
 const OPEN = ["programado", "esperando"] as const;
@@ -36,7 +37,7 @@ async function announce(exec: Exec, organizationId: string, conversationId: stri
       'conversationId', ${conversationId}::text, 'contactId', ${contactId}::text
     )::text)`);
   } catch (error) {
-    console.error(`[seguimientos] no se pudo avisar el cambio de ${conversationId}`, error);
+    logError(`[seguimientos] no se pudo avisar el cambio de ${conversationId}`, error);
   }
 }
 
@@ -264,7 +265,7 @@ export async function applyFollowUpReading(r: FollowUpReading): Promise<string |
   try {
     return await applyReading(r);
   } catch (error) {
-    console.error(`[seguimientos] no se pudo guardar la ficha de ${r.conversationId}`, error);
+    logError(`[seguimientos] no se pudo guardar la ficha de ${r.conversationId}`, error);
     return `seguimiento: error al guardar (${error instanceof Error ? error.message : String(error)})`;
   }
 }
@@ -805,13 +806,13 @@ export async function followUpSweepOnce(now: Date, deps: FollowUpRuntimeDeps = {
         console.info(`[seguimientos] ${row.conversationId} ${row.caso}: ${summary}`);
       }
     } catch (error) {
-      console.error(`[seguimientos] no se pudo avanzar ${row.id}`, error);
+      logError(`[seguimientos] no se pudo avanzar ${row.id}`, error);
     }
   }
   try {
     changed += await vendorNotices(now);
   } catch (error) {
-    console.error("[seguimientos] avisos al vendedor fallaron", error);
+    logError("[seguimientos] avisos al vendedor fallaron", error);
   }
   changed += await endWaits(now);
   return changed;
@@ -826,7 +827,7 @@ export function startFollowUpRuntime(deps: FollowUpRuntimeDeps = {}, now: () => 
     try {
       await followUpSweepOnce(now(), deps);
     } catch (error) {
-      console.error("[seguimientos] barrido falló", error);
+      logError("[seguimientos] barrido falló", error);
     } finally {
       running = false;
     }
