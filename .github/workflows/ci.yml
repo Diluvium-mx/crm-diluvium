@@ -18,6 +18,9 @@ name: ci
 
 on:
   push:
+    # Railway solo muestra «Wait for CI» si el workflow NOMBRA la rama que despliega (main en
+    # producción, staging en staging). "**" mantiene la CI en TODAS las ramas, como antes.
+    branches: ["main", "staging", "**"]
   workflow_dispatch:
 
 permissions:
