@@ -83,7 +83,7 @@ function optionalStorage(): ObjectStorage | null {
     return objectStorage();
   } catch (error) {
     if (!(error instanceof StorageNotConfiguredError)) throw error;
-    console.error(`[media] DESACTIVADA: ${error.message}. Los adjuntos quedan pendientes.`);
+    console.error(`[media] DESACTIVADA: ${safeErrorMessage(error)}. Los adjuntos quedan pendientes.`);
     return null;
   }
 }
@@ -145,8 +145,8 @@ const worker = new Worker<InboundJob>(
       return outcome;
     } catch (error) {
       if (error instanceof PermanentIngestError || error instanceof DeadLetterIngestError) {
-        console.error(`[worker] ${job.data.webhookEventId}: error permanente: ${error.message}`);
-        throw new UnrecoverableError(error.message);
+        console.error(`[worker] ${job.data.webhookEventId}: error permanente: ${safeErrorMessage(error)}`);
+        throw new UnrecoverableError(safeErrorMessage(error));
       }
       throw error;
     }

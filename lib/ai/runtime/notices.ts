@@ -9,6 +9,7 @@ import { db } from "@/lib/db";
 import { aiAgentNotices, conversations, messages } from "@/lib/db/schema";
 import type { NoticeKind } from "./policy";
 import { notifyConversation } from "./state";
+import { logError } from "@/lib/log/safe-error";
 
 export type { NoticeKind };
 
@@ -45,7 +46,7 @@ export async function addNotice(input: {
     if (rows.length > 0) await notifyConversation(db, input.organizationId, input.conversationId);
     return rows.length > 0;
   } catch (error) {
-    console.error(`[agente] no se pudo guardar el aviso "${input.kind}" en ${input.conversationId}`, error);
+    logError(`[agente] no se pudo guardar el aviso "${input.kind}" en ${input.conversationId}`, error);
     if (input.strict) throw error;
     return false;
   }

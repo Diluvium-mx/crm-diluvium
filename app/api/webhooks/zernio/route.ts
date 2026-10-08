@@ -21,6 +21,7 @@ import {
 } from "@/lib/messaging";
 import type { MessagingProvider, WebhookEnvelope } from "@/lib/messaging/provider";
 import { enqueueInbound } from "@/lib/queue/inbound";
+import { safeErrorMessage } from "@/lib/log/safe-error";
 
 // Un mensaje con adjuntos llega como URL, no binario: 1 MB sobra.
 const MAX_BODY_BYTES = 1_000_000;
@@ -61,7 +62,7 @@ export async function POST(req: Request): Promise<Response> {
   } catch (error) {
     if (!(error instanceof MessagingNotConfiguredError)) throw error;
     // 503 (no 500): Zernio reintenta y el evento llega cuando se configure.
-    console.error("[webhook zernio] canal no configurado:", error.message);
+    console.error("[webhook zernio] canal no configurado:", safeErrorMessage(error));
     return new Response("canal de WhatsApp no configurado", { status: 503 });
   }
   if (!provider.verifyWebhook(rawBody, req.headers)) {

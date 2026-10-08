@@ -29,6 +29,7 @@
 import "./lib/solo-base-local";
 import { auth } from "@/lib/auth";
 import { runWithTransaction } from "@better-auth/core/context";
+import { logError } from "@/lib/log/safe-error";
 
 async function main() {
   const email = process.env.SEED_USER_EMAIL;
@@ -98,6 +99,6 @@ async function main() {
 main()
   .then(() => process.exit(0))
   .catch((err) => {
-    console.error(err);
+    logError("[seed-user]", err);
     process.exit(1);
   });

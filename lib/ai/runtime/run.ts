@@ -92,6 +92,7 @@ import { buildModelMessages, fitHistory } from "./transcript";
 import { recordAiUsage } from "./usage";
 import { allowedAgentStage, vendorAnsweredProof } from "./venta-cerrada";
 import { followUpContextFor } from "@/lib/followups/reply";
+import { logError, safeErrorMessage } from "@/lib/log/safe-error";
 
 export const MAX_ROUNDS = 3; // regeneraciones por corrida antes de volver al debounce
 export const BUBBLE_PAUSE_MS = 1_500;
@@ -173,10 +174,6 @@ function latestDate(a: Date | null, b: Date | null): Date | null {
   if (!a) return b;
   if (!b) return a;
   return a > b ? a : b;
-}
-
-function errorText(error: unknown): string {
-  return error instanceof Error ? error.message : String(error);
 }
 
 // Un PDF más grande (catálogo de 40 páginas, archivo renombrado) no va al modelo:
@@ -273,8 +270,8 @@ async function runActions(
     }
     return done;
   } catch (error) {
-    console.error(`[agente] ${ctx.conversationId}: acciones fallaron`, error);
-    await holdAgentForReview({ organizationId: ctx.organizationId, conversationId: ctx.conversationId, messageId: ctx.batchMessageId, body: `Las acciones del Agente IA (${plan.runs.map((r) => r.slug).join(", ") || "etapa/aviso/cotización"}) no se ejecutaron: ${errorText(error)}.` });
+    logError(`[agente] ${ctx.conversationId}: acciones fallaron`, error);
+    await holdAgentForReview({ organizationId: ctx.organizationId, conversationId: ctx.conversationId, messageId: ctx.batchMessageId, body: `Las acciones del Agente IA (${plan.runs.map((r) => r.slug).join(", ") || "etapa/aviso/cotización"}) no se ejecutaron: ${safeErrorMessage(error)}.` });
     return null;
   }
 }
@@ -364,7 +361,7 @@ async function resendSavedReply(
       // Vuelve a quedar guardada y la tarjeta se reabre con el motivo nuevo.
       await holdForRetry(org, saved.id);
       await recordAgentError({ organizationId: org, conversationId, messageId: triggerId, body: sendErrorBody(sendErrorMotive(error)) });
-      console.warn(`[agente] ${conversationId}: el reenvío de la respuesta guardada falló (${errorText(error)}); tarjeta otra vez`);
+      console.warn(`[agente] ${conversationId}: el reenvío de la respuesta guardada falló (${safeErrorMessage(error)}); tarjeta otra vez`);
       return { kind: "done", result: { kind: "failed", reason: "envio_fallido" } };
     }
     await closePlan(org, saved.id, "enviado");
@@ -544,7 +541,7 @@ export async function runAgent(job: { organizationId: string; conversationId: st
         // Igual que una respuesta normal: queda GUARDADA para "Reintentar" y la tarjeta al vendedor.
         await holdForRetry(org, planId);
         await recordAgentError({ organizationId: org, conversationId: conv.id, messageId: lastRead.id, body: sendErrorBody(sendErrorMotive(error)) });
-        console.warn(`[agente] ${conv.id}: el aviso de mensaje no recibido no salió (${errorText(error)}); guardado y tarjeta para el vendedor`);
+        console.warn(`[agente] ${conv.id}: el aviso de mensaje no recibido no salió (${safeErrorMessage(error)}); guardado y tarjeta para el vendedor`);
         return { kind: "failed", reason: "envio_fallido" };
       }
       await markAgentReply(org, conv.id, deps.now());
@@ -640,7 +637,7 @@ export async function runAgent(job: { organizationId: string; conversationId: st
       try {
         res = await deps.callModel(model.id, { system, messages, tools: agentTools.tools, maxOutputTokens: BRAIN_MAX_OUTPUT_TOKENS, timeoutMs: BRAIN_TIMEOUT_MS });
       } catch (error) {
-        await recordAiUsage({ ...base, stage: "cerebro", modelId: model.id, provider: model.provider, usage: null, latencyMs: Date.now() - t0, outcome: "error", error: errorText(error) });
+        await recordAiUsage({ ...base, stage: "cerebro", modelId: model.id, provider: model.provider, usage: null, latencyMs: Date.now() - t0, outcome: "error", error: safeErrorMessage(error) });
         return { ok: false, model, info: classifyModelError(error, PROVIDER_META[model.provider].label) };
       }
       const latencyMs = Date.now() - t0;
@@ -652,7 +649,7 @@ export async function runAgent(job: { organizationId: string; conversationId: st
       // las redes de siempre (contesta el otro modelo).
       if (out.kind === "reply" && hasForeignScript(out.text)) {
         const clean = stripForeignScript(out.text);
-        console.warn(`[agente] ${conv.id}: ${model.label} escribió letras de otro alfabeto; se borran${clean ? "" : " y no queda texto"}: «${out.text.slice(0, 160)}»`);
+        console.warn(`[agente] ${conv.id}: ${model.label} escribió letras de otro alfabeto; se borran${clean ? "" : " y no queda texto"} (${out.text.length} caracteres)`);
         out = clean ? { ...out, text: clean } : { kind: "empty" };
         if (!clean && valid.length === 0 && !foreignRetry) {
           await recordAiUsage({ ...base, stage: "cerebro", modelId: res.modelId, provider: res.provider, usage: res.usage, latencyMs, outcome: "error", error: "solo letras de otro alfabeto; se pide otra respuesta" });
@@ -928,7 +925,7 @@ export async function runAgent(job: { organizationId: string; conversationId: st
           console.info(`[agente] ${conv.id}: detalle → ${r.llenados.join(", ") || "sin cambios"}${r.delVendedor.length ? ` (corrigió lo que había puesto un vendedor: ${r.delVendedor.join(", ")})` : ""}`);
         }
       } catch (error) {
-        console.error(`[agente] ${conv.id}: el Detalle del contacto no se pudo actualizar`, error);
+        logError(`[agente] ${conv.id}: el Detalle del contacto no se pudo actualizar`, error);
       }
     }
     // Avisos, comprobante, cotización y etapa ANTES de enviar (idempotentes por el
@@ -943,7 +940,7 @@ export async function runAgent(job: { organizationId: string; conversationId: st
     const applyDeferredQuote = async (confirmed: number) => {
       if (deferredQuote === null || confirmed <= 0) return;
       await setQuoteByAgent(org, conv.contactId, deferredQuote).catch((error: unknown) =>
-        console.error(`[agente] ${conv.id}: la cotización no se guardó`, error),
+        logError(`[agente] ${conv.id}: la cotización no se guardó`, error),
       );
     };
     await runActions(plan, actionCtx, deps.startWorkflow, "antes");
@@ -958,18 +955,18 @@ export async function runAgent(job: { organizationId: string; conversationId: st
         ? withoutClosingQuestions(toBubbles(text, options.maxBubbles))
         : { keep: toBubbles(text, options.maxBubbles), dropped: [] }
       : { keep: [], dropped: [] };
-    if (questions.length) console.info(`[agente] ${conv.id}: complemento de «${complementOf}» sin preguntas; no sale: «${questions.join(" / ")}»`);
+    if (questions.length) console.info(`[agente] ${conv.id}: complemento de "${complementOf}" sin preguntas; no salen ${questions.length} pregunta(s)`);
     const { keep: unique, dropped: repeated } = drafted.length
       ? splitRepeated(drafted, await outboundTextsSinceLastInbound(org, conv.id))
       : { keep: [], dropped: [] };
-    if (repeated.length) console.info(`[agente] ${conv.id}: no se repite lo que ya salió: «${repeated.join(" / ")}»`);
+    if (repeated.length) console.info(`[agente] ${conv.id}: no se repite lo que ya salió (${repeated.length} burbuja(s))`);
     // Pregunta sin contestar (3-oct-2026, ./unanswered.ts): si el cliente no contestó la última
     // pregunta y preguntó otra cosa, el Agente IA contesta su duda sin volver a hacer la MISMA
     // pregunta; si solo iba la pregunta, sale (nunca silencio).
     const { keep: sinRepetir, dropped: unanswered } = unique.length
       ? withoutUnansweredRepeat(unique, await lastQuestionAsked(org, conv.id, deps.now()))
       : { keep: [], dropped: [] };
-    if (unanswered.length) console.info(`[agente] ${conv.id}: no se repite la pregunta sin contestar: «${unanswered.join(" / ")}»`);
+    if (unanswered.length) console.info(`[agente] ${conv.id}: no se repite la pregunta sin contestar (${unanswered.length} burbuja(s))`);
     let bubbles = sinRepetir;
     let stopped: StopReason | null = null;
 
@@ -1053,10 +1050,10 @@ export async function runAgent(job: { organizationId: string; conversationId: st
         // "Reintentar" reenvía este mismo texto (resendSavedReply). Si ni la tarjeta se
         // pudo guardar, se lanza: el reintento de la cola encuentra la respuesta guardada
         // y la reenvía, sin generar otra.
-        await recordAiUsage({ ...brainUsage, outcome: "error", error: `envío: ${errorText(error)}` });
+        await recordAiUsage({ ...brainUsage, outcome: "error", error: `envío: ${safeErrorMessage(error)}` });
         await holdForRetry(org, planId!);
         await recordAgentError({ organizationId: org, conversationId: conv.id, messageId: lastRead.id, body: sendErrorBody(sendErrorMotive(error)) });
-        console.warn(`[agente] ${conv.id}: el envío falló (${errorText(error)}); respuesta guardada y tarjeta para el vendedor`);
+        console.warn(`[agente] ${conv.id}: el envío falló (${safeErrorMessage(error)}); respuesta guardada y tarjeta para el vendedor`);
         return { kind: "failed", reason: "envio_fallido" };
       }
       // Salió una parte: el agente sigue activo; el resto queda en un aviso al vendedor.
@@ -1064,7 +1061,7 @@ export async function runAgent(job: { organizationId: string; conversationId: st
       await markAgentReply(org, conv.id, deps.now());
       await supersedeAgentErrors(org, conv.id); // Fase E: el agente volvió a contestar
       if (planId) await closePlan(org, planId, "enviado");
-      await recordAiUsage({ ...brainUsage, outcome: "sent", error: `mensaje ${sent + 1} no salió: ${errorText(error)}` });
+      await recordAiUsage({ ...brainUsage, outcome: "sent", error: `mensaje ${sent + 1} no salió: ${safeErrorMessage(error)}` });
       await noticeRemainder(`Salieron ${sent} de ${bubbles.length} mensajes de la respuesta del agente y el siguiente falló.`);
       // La media que el modelo pidió (tabla, video) sale igual: el cliente ya recibió la primera parte y
       // la esperaba; antes se perdía sin aviso (revisión completa, 27-sep-2026). Idempotente por entrante.

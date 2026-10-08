@@ -28,6 +28,7 @@ import { refreshMetaAd } from "./meta-cache";
 import { STATUS_REFRESH_MS } from "./ad-status";
 import { refreshAdStatuses } from "./meta-status";
 import { storeAdThumbnail, THUMB_MAX_ATTEMPTS, ThumbnailError } from "./thumbnail";
+import { safeErrorMessage } from "@/lib/log/safe-error";
 
 /** Encola lo que sigue a un clic nuevo: la miniatura del anuncio (si aún no tiene) y los nombres de Meta. */
 export async function enqueueAfterClick(click: RecordedClick): Promise<void> {
@@ -108,7 +109,7 @@ export function startAdsWorker({ provider, storage }: { provider: MessagingProvi
   );
   worker.on("completed", (job, result) => console.info(`[anuncios] ${String(result)}`));
   worker.on("failed", (job, error) => {
-    console.error(`[anuncios] falló ${job?.data.kind} (intento ${job?.attemptsMade}): ${error.message}`);
+    console.error(`[anuncios] falló ${job?.data.kind} (intento ${job?.attemptsMade}): ${safeErrorMessage(error)}`);
   });
 
   // El programador de cada hora vive en Redis; se registra en el primer barrido que lo logre.

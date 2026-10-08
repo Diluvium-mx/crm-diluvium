@@ -51,6 +51,7 @@ import { borradorProblems } from "@/lib/followups/borrador-check";
 import { chatTail } from "@/lib/followups/vendor-attempts";
 import { MAX_BORRADOR } from "@/lib/followups/ficha";
 import { loadFollowUpTable } from "@/lib/followups/tabla-store";
+import { logError, safeErrorMessage } from "@/lib/log/safe-error";
 
 export type LectorDeps = {
   now: () => Date;
@@ -70,10 +71,6 @@ export type LectorOutcome =
 
 export { lectorLockKey };
 const LOCK_MS = 3 * 60_000;
-
-function errorText(error: unknown): string {
-  return error instanceof Error ? error.message : String(error);
-}
 
 // Las imágenes y PDF del cliente más recientes, con URL firmada (solo los que va a ver).
 async function clientMediaUrls(rows: readonly MessageRow[], resolve: LectorDeps["resolveImage"]): Promise<Map<string, string>> {
@@ -118,7 +115,7 @@ async function announceLector(organizationId: string, contactId: string, convers
       'conversationId', ${conversationId}::text, 'phase', ${phase}::text, 'cambios', ${cambios}::int
     )::text)`);
   } catch (error) {
-    console.error(`[lector] no se pudo avisar "${phase}" de ${conversationId}`, error);
+    logError(`[lector] no se pudo avisar "${phase}" de ${conversationId}`, error);
   }
 }
 
@@ -195,7 +192,7 @@ async function rewriteBorrador(
     await record(res.usage, Date.now() - t0, again.length ? `seguimiento: borrador rehecho sigue mal (${again.join("; ")})` : "seguimiento: borrador rehecho");
     return again.length ? null : text;
   } catch (error) {
-    await record(null, Date.now() - t0, `seguimiento: no se pudo rehacer el borrador (${errorText(error)})`);
+    await record(null, Date.now() - t0, `seguimiento: no se pudo rehacer el borrador (${safeErrorMessage(error)})`);
     return null;
   }
 }
@@ -289,8 +286,8 @@ async function readConversation(organizationId: string, conversationId: string, 
     try {
       res = await deps.callModel(model.id, { system: buildLectorSystem(stages, { followUp, templates: followUpTemplates, table: followUpTable }), messages, tools, maxOutputTokens: LECTOR_MAX_OUTPUT_TOKENS, timeoutMs: LECTOR_TIMEOUT_MS });
     } catch (error) {
-      await recordAiUsage({ ...base, usage: null, latencyMs: Date.now() - t0, outcome: "error", error: errorText(error) });
-      return (done = { kind: "error", reason: errorText(error), usage: null, costUsd: null });
+      await recordAiUsage({ ...base, usage: null, latencyMs: Date.now() - t0, outcome: "error", error: safeErrorMessage(error) });
+      return (done = { kind: "error", reason: safeErrorMessage(error), usage: null, costUsd: null });
     }
     const latencyMs = Date.now() - t0;
     const costUsd = computeCostUsd(res.usage, await effectivePrice(organizationId, res.modelId, res.provider));
@@ -345,8 +342,8 @@ async function readConversation(organizationId: string, conversationId: string, 
       }
     } catch (error) {
       // Lo que alcanzó a guardarse se queda; la lectura se registra como error y se repite.
-      await recordAiUsage({ ...base, usage: res.usage, latencyMs, outcome: "error", error: `al guardar: ${errorText(error)}` });
-      return (done = { kind: "error", reason: `al guardar: ${errorText(error)}`, usage: res.usage, costUsd });
+      await recordAiUsage({ ...base, usage: res.usage, latencyMs, outcome: "error", error: `al guardar: ${safeErrorMessage(error)}` });
+      return (done = { kind: "error", reason: `al guardar: ${safeErrorMessage(error)}`, usage: res.usage, costUsd });
     }
     // Borrador del seguimiento: una sola pregunta, nunca una ya hecha ni el precio ya dado. Si
     // falla, se rehace una vez; si vuelve a fallar, se queda sin borrador (no sale con texto).

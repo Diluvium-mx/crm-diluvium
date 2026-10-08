@@ -4,6 +4,7 @@
 // Redis no responde, se deja pasar (igual que el límite por IP de lib/rate-limit):
 // un corte de Redis no debe impedir que el vendedor adjunte.
 import { redis } from "@/lib/redis";
+import { logError } from "@/lib/log/safe-error";
 
 /** Una vista previa sube hasta 10 archivos a la vez; margen para un segundo chat abierto. */
 export const UPLOADS_IN_FLIGHT_MAX = 12;
@@ -33,7 +34,7 @@ export async function acquireUploadSlot(userId: string): Promise<UploadSlot> {
     }
     return { ok: true, release: () => withTimeout(redis.decr(key)).then(() => undefined, () => undefined) };
   } catch (error) {
-    console.error("[adjuntos] sin tope de subidas simultáneas (Redis no respondió); se deja pasar", error);
+    logError("[adjuntos] sin tope de subidas simultáneas (Redis no respondió); se deja pasar", error);
     return { ok: true, release: async () => undefined };
   }
 }

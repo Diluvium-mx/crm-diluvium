@@ -9,6 +9,7 @@ import { db } from "@/lib/db";
 import { workflowRuns, workflows } from "@/lib/db/schema";
 import { addNotice } from "@/lib/ai/runtime/notices";
 import { plainSendReason } from "@/lib/messaging/send-reasons";
+import { logError } from "@/lib/log/safe-error";
 
 export type FailedOutbound = {
   organizationId: string;
@@ -61,6 +62,6 @@ export async function noticeWorkflowSendFailed(failed: FailedOutbound): Promise<
       body: workflowFailureNotice({ ...failed, workflowName: run.name, command: run.command }),
     });
   } catch (error) {
-    console.error(`[workflows] no se pudo dejar la tarjeta del envío fallido ${failed.messageId}`, error);
+    logError(`[workflows] no se pudo dejar la tarjeta del envío fallido ${failed.messageId}`, error);
   }
 }

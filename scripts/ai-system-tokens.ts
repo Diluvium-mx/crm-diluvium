@@ -8,6 +8,7 @@
 import { readFileSync } from "node:fs";
 import { buildBrainSystem, type Faq } from "@/lib/ai/runtime/knowledge";
 import { getModel, DEFAULT_BRAIN_MODEL } from "@/lib/ai/catalog";
+import { logError } from "@/lib/log/safe-error";
 
 const goalUrl = new URL("../docs/agente-ia/angela-goal.md", import.meta.url);
 const faqsUrl = new URL("../docs/agente-ia/angela-faqs.json", import.meta.url);
@@ -62,6 +63,6 @@ async function main(): Promise<void> {
 main()
   .then(() => process.exit(0))
   .catch((e) => {
-    console.error(e);
+    logError("[ai:system-tokens]", e);
     process.exit(1);
   });

@@ -19,6 +19,7 @@ import { loadBotOptions } from "./options";
 import { isPauseDue, pauseForHumanReply, reactivateDuePause } from "./pause";
 import { debounceDelayFor } from "./schedule";
 import { resumeAgentOnFollowUpReply } from "@/lib/followups/reply";
+import { logError, safeErrorMessage } from "@/lib/log/safe-error";
 
 type Ports = { queue?: AgentQueuePort; kv?: KvPort; now?: Date };
 
@@ -58,7 +59,7 @@ export async function onInboundCustomerMessage(
       .where(and(eq(conversations.id, input.conversationId), eq(conversations.organizationId, input.organizationId)));
     // Contestó un seguimiento que salió con el Agente IA en pausa automática: sigue con el Agente IA.
     await resumeAgentOnFollowUpReply(input.organizationId, input.conversationId, wrote, now).catch((error: unknown) =>
-      console.error(`[seguimientos] no se pudo reactivar ${input.conversationId}`, error),
+      logError(`[seguimientos] no se pudo reactivar ${input.conversationId}`, error),
     );
     // "Apagar bot" — solo mensajes nuevos: lo que el cliente ESCRIBIÓ con el bot
     // apagado no se contesta aunque llegue tarde (webhook retrasado).
@@ -82,7 +83,7 @@ export async function onInboundCustomerMessage(
       "programar",
     );
   } catch (error) {
-    console.error(`[agente] no se pudo programar ${input.conversationId}; lo recoge el barrido`, error);
+    logError(`[agente] no se pudo programar ${input.conversationId}; lo recoge el barrido`, error);
   }
 }
 
@@ -108,10 +109,10 @@ export async function onHumanOutbound(
     await pauseForHumanReply(input.organizationId, input.conversationId, now, decision.until, { action: "pausa_auto" });
     // La pausa ya quedó guardada: cancelar el job es solo optimización (acotada).
     await withQueueTimeout(cancelAgentRun(ports.queue ?? bullAgentQueuePort(), input.conversationId), "cancelar").catch(
-      (error) => console.error(`[agente] no se pudo cancelar el job de ${input.conversationId}: ${String(error)}`),
+      (error) => console.error(`[agente] no se pudo cancelar el job de ${input.conversationId}: ${safeErrorMessage(error)}`),
     );
   } catch (error) {
-    console.error(`[agente] no se pudo pausar ${input.conversationId} tras respuesta humana`, error);
+    logError(`[agente] no se pudo pausar ${input.conversationId} tras respuesta humana`, error);
   }
 }
 
@@ -138,7 +139,7 @@ export async function pauseAgentForManualSend(organizationId: string, conversati
   try {
     await onHumanOutbound({ organizationId, conversationId });
   } catch (error) {
-    console.error(`[agente] no se pudo pausar ${conversationId} tras envío manual`, error);
+    logError(`[agente] no se pudo pausar ${conversationId} tras envío manual`, error);
   }
 }
 
@@ -152,7 +153,7 @@ export async function pauseAgentOnManualMessageId(organizationId: string, messag
       .limit(1);
     if (m) await onHumanOutbound({ organizationId, conversationId: m.conversationId });
   } catch (error) {
-    console.error(`[agente] no se pudo pausar tras el reintento ${messageId}`, error);
+    logError(`[agente] no se pudo pausar tras el reintento ${messageId}`, error);
   }
 }
 
@@ -171,6 +172,6 @@ export async function wakeAgentAfterTranscription(
       "programar tras la transcripción",
     );
   } catch (error) {
-    console.error(`[agente] no se pudo adelantar ${input.conversationId} tras la transcripción; sigue su espera`, error);
+    logError(`[agente] no se pudo adelantar ${input.conversationId} tras la transcripción; sigue su espera`, error);
   }
 }

@@ -6,6 +6,7 @@ import { requireActiveMembership } from "@/lib/auth/active-organization";
 import { loadMediaAsset } from "@/lib/media-library/service";
 import { isMultimedia, MEDIA_LIMITS } from "@/lib/media-library/rules";
 import { objectStorage, StorageNotConfiguredError } from "@/lib/storage/s3";
+import { safeErrorMessage } from "@/lib/log/safe-error";
 
 export async function GET(_req: Request, { params }: RouteContext<"/api/biblioteca/[assetId]/original">): Promise<Response> {
   let organizationId: string;
@@ -24,7 +25,7 @@ export async function GET(_req: Request, { params }: RouteContext<"/api/bibliote
     });
   } catch (error) {
     if (error instanceof StorageNotConfiguredError) return new Response("almacenamiento no configurado", { status: 503 });
-    console.error("[biblioteca] original no disponible", assetId, error);
+    console.error("[biblioteca] original no disponible", assetId, safeErrorMessage(error));
     return new Response("no disponible", { status: 502 });
   }
 }

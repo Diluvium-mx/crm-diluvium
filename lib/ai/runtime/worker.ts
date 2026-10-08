@@ -26,6 +26,7 @@ import { runAgent, type RunDeps, type RunResult } from "./run";
 import { reactivateDuePauses } from "./pause";
 import { debounceDelayFor } from "./schedule";
 import { findLostRetries, findOrphanConversations, findPendingAtOpening, noticeFailedAgentSends, OPENING_STAGGER_MS, reconcileStuckDrafts } from "./sweep";
+import { logError, safeErrorMessage } from "@/lib/log/safe-error";
 
 const SWEEP_EVERY_MS = 60_000;
 
@@ -111,7 +112,7 @@ export function startAgentRuntime(opts: { provider: MessagingProvider; storage: 
     { connection: { ...redisConnection(), maxRetriesPerRequest: null }, concurrency: 5, autorun: false },
   );
   worker.on("failed", (job, error) => {
-    console.error(`[agente] falló ${job?.data.conversationId} (intento ${job?.attemptsMade}): ${error.message}`);
+    console.error(`[agente] falló ${job?.data.conversationId} (intento ${job?.attemptsMade}): ${safeErrorMessage(error)}`);
   });
   let timer: ReturnType<typeof setInterval> | undefined;
   return {
@@ -120,7 +121,7 @@ export function startAgentRuntime(opts: { provider: MessagingProvider; storage: 
     run: () => {
       void worker.run();
       timer = setInterval(() => {
-        sweepOnce(queue, kv, new Date()).catch((error) => console.error("[agente] barrido falló", error));
+        sweepOnce(queue, kv, new Date()).catch((error) => logError("[agente] barrido falló", error));
       }, SWEEP_EVERY_MS);
       console.info(`[agente] escuchando ${AGENT_QUEUE}`);
     },

@@ -11,6 +11,7 @@ import { reviveWorkflowRun, WORKFLOW_QUEUE, type WorkflowJob } from "@/lib/queue
 import type { ObjectStorage } from "@/lib/storage/s3";
 import { executeWorkflowRun, failStuckRuns, staleQueuedRuns, staleRunningRuns } from "@/lib/workflows/executor";
 import { sweepPendingKeywords } from "@/lib/workflows/triggers";
+import { logError, safeErrorMessage } from "@/lib/log/safe-error";
 
 export const QUICK_SWEEP_EVERY_MS = 5_000;
 // Una "queued" más joven que esto está recién encolada: su job la toma solo.
@@ -34,7 +35,7 @@ export function startWorkflowWorker(provider: MessagingProvider, storage: Object
     { connection: { ...redisConnection(), maxRetriesPerRequest: null }, concurrency: 3, autorun: false },
   );
   worker.on("failed", (job, error) => {
-    console.error(`[workflows] falló ${job?.data.runId} (intento ${job?.attemptsMade}): ${error.message}`);
+    console.error(`[workflows] falló ${job?.data.runId} (intento ${job?.attemptsMade}): ${safeErrorMessage(error)}`);
   });
 
   async function sweep() {
@@ -74,7 +75,7 @@ export function startWorkflowWorker(provider: MessagingProvider, storage: Object
         if (quickRunning) return;
         quickRunning = true;
         quickSweep()
-          .catch((error) => console.error("[workflows] barrido rápido falló", error))
+          .catch((error) => logError("[workflows] barrido rápido falló", error))
           .finally(() => {
             quickRunning = false;
           });

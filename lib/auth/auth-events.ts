@@ -6,6 +6,7 @@
 // una hora (decisión del dueño). Nada de esto puede frenar un inicio de sesión:
 // Redis se carga al usarse y sus fallas solo se registran.
 import { createHash, randomUUID } from "node:crypto";
+import { safeErrorMessage } from "@/lib/log/safe-error";
 
 /** Bloqueos en una hora a partir de los cuales el monitor abre el issue. */
 export const AUTH_LOCKOUT_ALERT = 3;
@@ -52,7 +53,7 @@ export function recordLockout(email: string, ip: string | null, scope: LockoutSc
     console.warn(line);
   })().catch((error: unknown) => {
     // Sin Redis no hay conteo para la alerta, pero el bloqueo sí queda en el log.
-    console.warn(line, "(sin conteo:", error instanceof Error ? error.message : String(error), ")");
+    console.warn(line, "(sin conteo:", safeErrorMessage(error), ")");
   });
 }
 

@@ -17,6 +17,7 @@ import { member, organization } from "@/lib/db/schema/auth";
 import { contacts } from "@/lib/db/schema/contacts";
 import { channels, conversations, messages } from "@/lib/db/schema/messaging";
 import type { MessageAttachment } from "@/lib/db/schema/messaging";
+import { logError } from "@/lib/log/safe-error";
 
 const SEED_SOURCE = "seed-inbox";
 const SEED_PROVIDER_ACCOUNT = "seed-inbox-account";
@@ -264,6 +265,6 @@ async function main() {
 main()
   .then(() => process.exit(0))
   .catch((err) => {
-    console.error(err);
+    logError("[seed-inbox]", err);
     process.exit(1);
   });

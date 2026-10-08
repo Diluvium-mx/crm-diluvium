@@ -5,6 +5,7 @@
 import { Queue } from "bullmq";
 import type { FallbackJob } from "@/lib/ads/attribution";
 import { redisConnection } from "./inbound";
+import { logError } from "@/lib/log/safe-error";
 
 export const ADS_QUEUE = "ads";
 
@@ -69,7 +70,7 @@ export async function enqueueAdsJob(job: AdsJob, delayMs = 0): Promise<boolean> 
     ]);
     return true;
   } catch (error) {
-    console.error(`[anuncios] no se pudo encolar ${job.kind}; lo recogerá el barrido`, error);
+    logError(`[anuncios] no se pudo encolar ${job.kind}; lo recogerá el barrido`, error);
     return false;
   } finally {
     clearTimeout(timer);
@@ -91,7 +92,7 @@ export async function scheduleAdStatusRefresh(everyMs: number): Promise<boolean>
     );
     return true;
   } catch (error) {
-    console.error("[anuncios] no se pudo programar el estado de los anuncios; se reintenta en el barrido", error);
+    logError("[anuncios] no se pudo programar el estado de los anuncios; se reintenta en el barrido", error);
     return false;
   }
 }

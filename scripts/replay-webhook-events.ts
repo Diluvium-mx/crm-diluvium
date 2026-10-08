@@ -10,6 +10,7 @@
 // el replay nunca salta la frontera entre entornos. Lógica: lib/messaging/replay.ts.
 import { allowedAccountIds } from "@/lib/messaging";
 import { replayWebhookEvents } from "@/lib/messaging/replay";
+import { logError } from "@/lib/log/safe-error";
 
 async function main() {
   const { replayed, released, kept } = await replayWebhookEvents(allowedAccountIds(), process.argv.slice(2));
@@ -21,6 +22,6 @@ async function main() {
 }
 
 main().catch((error) => {
-  console.error(error);
+  logError("[webhooks:replay]", error);
   process.exit(1);
 });

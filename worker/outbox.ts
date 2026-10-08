@@ -8,6 +8,7 @@ import { resumeDeferredSend } from "@/lib/messaging/send";
 import type { MessagingProvider } from "@/lib/messaging/provider";
 import { redisConnection } from "@/lib/queue/inbound";
 import { enqueueOutboxSend, OUTBOX_QUEUE, outboxJobId, type OutboxJob } from "@/lib/queue/outbox";
+import { logError, safeErrorMessage } from "@/lib/log/safe-error";
 
 export function startOutboxWorker(provider: MessagingProvider) {
   const worker = new Worker<OutboxJob>(
@@ -22,7 +23,7 @@ export function startOutboxWorker(provider: MessagingProvider) {
     { connection: { ...redisConnection(), maxRetriesPerRequest: null }, concurrency: 10, autorun: false },
   );
   worker.on("failed", (job, error) => {
-    console.error(`[outbox] falló ${job?.data.messageId} (intento ${job?.attemptsMade}): ${error.message}`);
+    console.error(`[outbox] falló ${job?.data.messageId} (intento ${job?.attemptsMade}): ${safeErrorMessage(error)}`);
   });
   const queue = new Queue<OutboxJob>(OUTBOX_QUEUE, { connection: { ...redisConnection(), maxRetriesPerRequest: 1 } });
 
@@ -50,7 +51,7 @@ export function startOutboxWorker(provider: MessagingProvider) {
         } else continue;
         revived++;
       } catch (error) {
-        console.error(`[outbox] barrido no pudo revisar ${row.id}`, error);
+        logError(`[outbox] barrido no pudo revisar ${row.id}`, error);
       }
     }
     if (revived) console.info(`[outbox] barrido: ${revived} envío(s) en espera re-encolados`);

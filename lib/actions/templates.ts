@@ -34,6 +34,7 @@ import type { TemplateView } from "@/lib/templates/types";
 import { db } from "@/lib/db";
 import { logChanges } from "@/lib/historial/log";
 import { templateStatusLabel } from "@/lib/historial/labels";
+import { logError } from "@/lib/log/safe-error";
 
 // `notice`: el rechazo vino de WhatsApp (Meta): la pantalla lo muestra como aviso grande (pop-up).
 export type TemplateActionResult<T extends object = object> =
@@ -121,7 +122,7 @@ export async function createTemplate(
       subject: parsed.name,
       newValue: `${parsed.category} · ${parsed.language} · ${templateStatusLabel(result.status)}`,
       detail: { type: "texto", title: "Cuerpo", before: null, after: parsed.bodyText },
-    }).catch((error) => console.error(`[plantillas] no se pudo registrar el alta de ${parsed.name} en el historial`, error));
+    }).catch((error) => logError(`[plantillas] no se pudo registrar el alta de ${parsed.name} en el historial`, error));
     // Re-sincroniza para reflejar la nueva plantilla (queda PENDING). Best-effort:
     // el alta ya se hizo, así que un fallo al sincronizar no la reporta como error
     // (la próxima sincronización la traerá).
@@ -216,6 +217,6 @@ function friendly(error: unknown, fallback: string): string {
       : `WhatsApp (Meta) lo rechazó: ${error.message}`;
   }
   if (error instanceof Error && error.message === "No autenticado.") return "Tu sesión se cerró; vuelve a entrar.";
-  console.error(`[plantillas] ${fallback}`, error);
+  logError(`[plantillas] ${fallback}`, error);
   return `${fallback} Inténtalo de nuevo.`;
 }

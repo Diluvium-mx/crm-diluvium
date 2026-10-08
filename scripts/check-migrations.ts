@@ -7,6 +7,7 @@
 // despliegue NO avanza y la versión anterior sigue atendiendo, sin caída.
 import { db } from "@/lib/db";
 import { compareMigrations, describeReport, migrationHashes, readApplied, readJournal } from "@/lib/db/migration-check";
+import { logError } from "@/lib/log/safe-error";
 
 function waitSeconds(argv: string[]): number {
   const i = argv.indexOf("--wait");
@@ -41,6 +42,6 @@ async function main(): Promise<number> {
 main()
   .then((code) => process.exit(code))
   .catch((error: unknown) => {
-    console.error("[migraciones] no se pudo revisar la base:", error);
+    logError("[migraciones] no se pudo revisar la base:", error);
     process.exit(1);
   });

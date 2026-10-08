@@ -9,6 +9,7 @@ import { db } from "@/lib/db";
 import { contacts, conversations, followUps } from "@/lib/db/schema";
 import { plainSendReason } from "@/lib/messaging/send-reasons";
 import { patchAttempt } from "./store";
+import { logError } from "@/lib/log/safe-error";
 
 export const MARKETING_OPT_OUT = "131050";
 
@@ -45,6 +46,6 @@ export async function onFollowUpDeliveryFailed(failed: Failed): Promise<void> {
       }
     });
   } catch (error) {
-    console.error(`[seguimientos] no se pudo anotar el envío fallido de ${failed.conversationId}`, error);
+    logError(`[seguimientos] no se pudo anotar el envío fallido de ${failed.conversationId}`, error);
   }
 }

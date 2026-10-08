@@ -3,6 +3,7 @@
 // "queued" y el barrido rápido del worker (cada 5 s) la recoge.
 import { Queue } from "bullmq";
 import { redisConnection } from "./inbound";
+import { safeErrorMessage } from "@/lib/log/safe-error";
 
 export const WORKFLOW_QUEUE = "workflow-runs";
 
@@ -64,7 +65,7 @@ export async function enqueueWorkflowRun(runId: string): Promise<boolean> {
         await new Promise((resolve) => setTimeout(resolve, ENQUEUE_RETRY_MS));
         continue;
       }
-      console.error("[workflows] no se pudo encolar; lo toma el barrido rápido del worker", runId, error);
+      console.error("[workflows] no se pudo encolar; lo toma el barrido rápido del worker", runId, safeErrorMessage(error));
     }
   }
   return false;
@@ -86,7 +87,7 @@ export async function reviveWorkflowRun(runId: string): Promise<"added" | "retri
     }
     return "in_flight";
   } catch (error) {
-    console.error("[workflows] barrido no pudo revisar el job", runId, error);
+    console.error("[workflows] barrido no pudo revisar el job", runId, safeErrorMessage(error));
     return "error";
   }
 }

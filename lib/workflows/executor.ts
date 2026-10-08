@@ -36,6 +36,7 @@ import { AGENT_CAPTION_KEY, agentCaptionIndex, agentCaptionOf, lastSendIndex, mi
 import { startOnlyBlock, type StartOnlyBlock } from "./start-only";
 import { atMaxPerChat, maxPerChatApplies } from "./max-per-chat";
 import { SLUG_DATOS_BANCARIOS } from "./defaults";
+import { logError } from "@/lib/log/safe-error";
 
 export type RunTrigger = "agent" | "keyword" | "command" | "stage";
 
@@ -358,7 +359,7 @@ export async function executeWorkflowRun(runId: string, deps: ExecutorDeps): Pro
     // cliente ya recibió los datos y esperaría un comprobante que nunca llega.
     if (run.trigger === "command" || run.trigger === "stage") {
       await insertInternalNote(run, `No se envió "${loaded.wf.name}": ${FAIL_LABEL[code] ?? message.slice(0, 200)}.`, ctxSource(run), sentBy, now()).catch(
-        (e) => console.error("[workflows] no se pudo dejar el aviso de fallo", e),
+        (e) => logError("[workflows] no se pudo dejar el aviso de fallo", e),
       );
     } else {
       // Del agente o por palabra clave: el cliente esperaba un archivo que no llegó.
@@ -421,7 +422,7 @@ export async function executeWorkflowRun(runId: string, deps: ExecutorDeps): Pro
       // el agente leyó (sin la marca sería "relleno" de un workflow y lo leído seguiría pendiente).
       if (withCaption && sent && run.triggerMessageId) {
         await markAnswersUntil(run.organizationId, sent.messageId, run.triggerMessageId).catch((error: unknown) =>
-          console.error(`[workflows] ${run.id}: no se pudo marcar el archivo con el texto del Agente IA como su respuesta`, error),
+          logError(`[workflows] ${run.id}: no se pudo marcar el archivo con el texto del Agente IA como su respuesta`, error),
         );
       }
       // «El workflow es la respuesta» (29-sep-2026; antes, 28-sep, solo si terminaba en
@@ -447,7 +448,7 @@ export async function executeWorkflowRun(runId: string, deps: ExecutorDeps): Pro
             : run.trigger === "agent" && loaded.steps.some((st) => st.payload.kind === "send_text")
               ? markAnswersUntil(run.organizationId, answerId, run.triggerMessageId)
               : null;
-        await mark?.catch((error: unknown) => console.error(`[workflows] ${run.id}: no se pudo marcar el último mensaje como la respuesta`, error));
+        await mark?.catch((error: unknown) => logError(`[workflows] ${run.id}: no se pudo marcar el último mensaje como la respuesta`, error));
       }
       // Resultado DESCONOCIDO del proveedor (timeout): no se sabe si el cliente
       // recibió el archivo. No se avanza (moverlo a "Cerca de compra" sin la
@@ -481,7 +482,7 @@ export async function executeWorkflowRun(runId: string, deps: ExecutorDeps): Pro
       const to = roleKey(stages, "cerca_compra");
       if (!to) return;
       await moveStageForward({ organizationId: run.organizationId, contactId: run.contactId, to, by: run.trigger === "agent" ? "agente" : "sistema", now: now(), since: run.createdAt, stages, fireStageTriggers: false, actorUserId: run.triggeredByUserId });
-    })().catch((error) => console.error(`[workflows] no se pudo mover a "Cerca de compra" tras ${loaded.wf.slug}`, error));
+    })().catch((error) => logError(`[workflows] no se pudo mover a "Cerca de compra" tras ${loaded.wf.slug}`, error));
     await notifyConversation(db, run.organizationId, run.conversationId).catch(() => undefined);
   }
   if (run.trigger === "keyword") {
@@ -640,7 +641,7 @@ async function sendAgentCaptionAlone(run: typeof workflowRuns.$inferSelect, text
   // Contesta hasta lo que el agente leyó (no lo que el cliente escribió después).
   if (run.triggerMessageId) {
     await markAnswersUntil(run.organizationId, messageId, run.triggerMessageId).catch((error: unknown) =>
-      console.error(`[workflows] ${run.id}: no se pudo marcar el texto del Agente IA como su respuesta`, error),
+      logError(`[workflows] ${run.id}: no se pudo marcar el texto del Agente IA como su respuesta`, error),
     );
   }
 }
@@ -658,7 +659,7 @@ async function runStep(step: WorkflowStepPayload, ctx: StepCtx): Promise<SendOut
       // último mensaje del cliente (p. ej. la pregunta que el agente ya hizo). El comando o
       // la etapa de un vendedor salen siempre: los pidió él.
       if (isAgentTrigger(run) && splitRepeated([text], await outboundTextsSinceLastInbound(run.organizationId, run.conversationId)).dropped.length) {
-        console.info(`[workflows] ${run.id}: paso ${ctx.stepIndex + 1} omitido; ya salió igual: «${text.slice(0, 120)}»`);
+        console.info(`[workflows] ${run.id}: paso ${ctx.stepIndex + 1} omitido; ya salió igual (${text.length} caracteres)`);
         return null;
       }
       return sendTextMessage(deps.provider, {

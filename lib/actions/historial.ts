@@ -10,6 +10,7 @@ import { roleAllows } from "@/lib/auth/permissions";
 import { historyFilterSchema, historyRange, type HistoryFilter, type HistoryRow } from "@/lib/historial/labels";
 import { loadChangeDiff, loadHistory } from "@/lib/historial/queries";
 import type { ChangeDiff } from "@/lib/historial/diff";
+import { logError } from "@/lib/log/safe-error";
 
 export type HistoryResult = { ok: true; rows: HistoryRow[]; truncated: boolean } | { ok: false; message: string };
 
@@ -24,7 +25,7 @@ export async function getChangeHistory(input: HistoryFilter): Promise<HistoryRes
     return { ok: true, ...(await loadHistory(organizationId, { type: f.type ?? null, start, end, includeAuto: f.includeAuto, canSeeManagerOnly })) };
   } catch (error) {
     if (error instanceof ZodError) return { ok: false, message: "Revisa los filtros." };
-    console.error("[historial] no se pudo cargar", error);
+    logError("[historial] no se pudo cargar", error);
     return { ok: false, message: "No se pudo cargar el historial." };
   }
 }
@@ -39,7 +40,7 @@ export async function getChangeDiff(rowId: string): Promise<ChangeDiffResult> {
     const diff = await loadChangeDiff(organizationId, rowId, roleAllows(role, "member", "update"));
     return diff ? { ok: true, diff } : { ok: false, message: "Este cambio no tiene detalle." };
   } catch (error) {
-    console.error("[historial] no se pudo cargar el detalle", error);
+    logError("[historial] no se pudo cargar el detalle", error);
     return { ok: false, message: "No se pudieron cargar los cambios." };
   }
 }

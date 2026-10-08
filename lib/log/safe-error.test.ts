@@ -34,4 +34,12 @@ describe("logError", () => {
     expect(printed).toContain("[prueba]");
     expect(printed).not.toContain(PHONE);
   });
+  it("de la pila de otro error solo imprime las líneas «at …» (no repite un mensaje con «params:»)", () => {
+    const spy = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    logError("[prueba]", new Error(`Failed query: select 1\nparams: ${PHONE}`));
+    const printed = spy.mock.calls.flat().map(String).join(" ");
+    expect(printed).toContain("Failed query: select 1");
+    expect(printed).toContain("at ");
+    expect(printed).not.toContain(PHONE);
+  });
 });
