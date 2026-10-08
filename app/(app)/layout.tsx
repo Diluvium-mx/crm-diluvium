@@ -62,6 +62,11 @@ export default async function AppLayout({
     ...(role && roleAllows(role, "workflow", "update")
       ? [{ label: "Automatización", href: "/automatizacion" }]
       : []),
+    // Lo que sigue después de la compra (Opinión; 7-oct-2026, docs/opiniones.md). Todos
+    // los roles. Distinta de Agente IA › Seguimientos.
+    ...(role && roleAllows(role, "opinion", "read")
+      ? [{ label: "Seguimientos", href: "/seguimientos" }]
+      : []),
     // Configuración va al final y es solo de owner/admin. "Mi cuenta" vive en el
     // menú del usuario, abajo del sidebar, para todos.
     ...(role && roleAllows(role, "settings", "read")
