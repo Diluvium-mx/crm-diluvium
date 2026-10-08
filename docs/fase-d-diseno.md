@@ -364,7 +364,8 @@ Decisiones que no estaban en el diseño original:
   biblioteca vuelve a dejar el workflow en "falta archivo".
 - **Palabra clave del cliente: dispara UN workflow por mensaje** (la coincidencia más larga; `position`
   desempata) para no inundar; solo mensajes de texto, nunca imágenes. **Igual que GHL (24-sep):** coincidencia
-  "contiene", sin mayúsculas ni acentos, sin tope de palabras; por palabra clave cada workflow se manda **una
+  "contiene", sin mayúsculas ni acentos, sin tope de palabras (un mensaje que solo trae signos de pesos,
+  «$», «$$» o «$?», cuenta como "precio": 5-oct-2026); por palabra clave cada workflow se manda **una
   sola vez por contacto** (`contacts.keyword_workflows_sent`, migración 0028; invisible al vendedor); por
   comando del vendedor y por petición del agente se manda siempre (salvo «Solo al inicio», 29-sep-2026: por
   palabra clave o agente solo antes de que le contesten y una vez por contacto —o solo la palabra clave, la

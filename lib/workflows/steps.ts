@@ -137,8 +137,12 @@ export function normalizeKeyword(text: string): string {
 // (24-sep-2026): coincidencia "contiene", sin distinguir mayúsculas ni acentos y
 // sin tope de palabras ("instalacion" dispara con "¿cómo es la instalación?").
 // Devuelve la coincidencia MÁS LARGA ("video a la medida" gana a "video").
+// Un mensaje que solo trae signos de pesos («$», «$$», «$$$», «$?») se compara como si
+// dijera "precio" (5-oct-2026, dueño): el cliente pregunta el precio y, al quitar los
+// signos, quedaba vacío y nunca disparaba «Precio 2».
 export function matchesKeyword(message: string, keywords: readonly string[]): string | null {
-  const haystack = normalizeKeyword(message).replace(/[^\p{L}\p{N}]+/gu, " ").trim();
+  const words = normalizeKeyword(message).replace(/[^\p{L}\p{N}]+/gu, " ").trim();
+  const haystack = words || (message.includes("$") ? "precio" : "");
   if (!haystack) return null;
   let best: { raw: string; len: number } | null = null;
   for (const raw of keywords) {
