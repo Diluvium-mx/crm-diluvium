@@ -7,6 +7,7 @@ import { redisConnection } from "@/lib/queue/inbound";
 import { reviveScheduled, SCHEDULED_QUEUE, type ScheduledJob } from "@/lib/queue/scheduled";
 import { dispatchScheduled, failStuckSending } from "@/lib/scheduled/dispatch";
 import { dueScheduled } from "@/lib/scheduled/store";
+import { safeErrorMessage } from "@/lib/log/safe-error";
 
 // Un programado vencido por más de esto sin enviarse perdió su job.
 const DUE_GRACE_MS = 30_000;
@@ -24,7 +25,7 @@ export function startScheduledWorker(provider: MessagingProvider) {
     { connection: { ...redisConnection(), maxRetriesPerRequest: null }, concurrency: 2, autorun: false },
   );
   worker.on("failed", (job, error) => {
-    console.error(`[scheduled] falló ${job?.data.scheduledId} (intento ${job?.attemptsMade}): ${error.message}`);
+    console.error(`[scheduled] falló ${job?.data.scheduledId} (intento ${job?.attemptsMade}): ${safeErrorMessage(error)}`);
   });
 
   async function sweep() {

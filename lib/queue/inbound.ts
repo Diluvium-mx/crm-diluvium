@@ -6,6 +6,7 @@
 // del worker (pendingWebhookEvents) lo recoge. Encolar es optimización de
 // latencia, no la fuente de verdad.
 import { Queue, type ConnectionOptions } from "bullmq";
+import { safeErrorMessage } from "@/lib/log/safe-error";
 
 export const INBOUND_QUEUE = "inbound-webhooks";
 
@@ -46,7 +47,7 @@ export async function enqueueInbound(webhookEventId: string): Promise<boolean> {
     ]);
     return true;
   } catch (error) {
-    console.error("[inbound] no se pudo encolar; lo recogerá el barrido del worker", webhookEventId, error);
+    console.error("[inbound] no se pudo encolar; lo recogerá el barrido del worker", webhookEventId, safeErrorMessage(error));
     return false;
   } finally {
     clearTimeout(timer);
@@ -75,7 +76,7 @@ export async function reviveInbound(webhookEventId: string): Promise<"added" | "
     }
     return "in_flight"; // waiting / delayed / active: ya va en camino
   } catch (error) {
-    console.error("[inbound] barrido no pudo revisar el job", webhookEventId, error);
+    console.error("[inbound] barrido no pudo revisar el job", webhookEventId, safeErrorMessage(error));
     return "error";
   }
 }
@@ -113,6 +114,6 @@ export async function enqueueMediaDownload(messageId: string): Promise<void> {
     if (existing && (await existing.getState()) === "completed") await existing.remove();
     await mediaQueue().add("download", { messageId }, { jobId });
   } catch (error) {
-    console.error("[media] no se pudo encolar; lo recogerá el barrido", messageId, error);
+    console.error("[media] no se pudo encolar; lo recogerá el barrido", messageId, safeErrorMessage(error));
   }
 }

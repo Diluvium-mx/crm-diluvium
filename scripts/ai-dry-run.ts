@@ -3,6 +3,7 @@
 // Uso: railway run -e staging -s crm-diluvium npm run ai:dry-run -- <modelId>
 import { callModel, getModel } from "@/lib/ai";
 import { computeCostUsd, resolveModelPrice } from "@/lib/ai/pricing";
+import { safeErrorMessage } from "@/lib/log/safe-error";
 
 async function main(): Promise<void> {
   const modelId = process.argv[2];
@@ -23,6 +24,6 @@ async function main(): Promise<void> {
 main()
   .then(() => process.exit(0))
   .catch((e) => {
-    console.error(e instanceof Error ? e.message : e);
+    console.error(safeErrorMessage(e));
     process.exit(1);
   });

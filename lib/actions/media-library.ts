@@ -8,6 +8,7 @@ import { requireActiveMembership } from "@/lib/auth/active-organization";
 import { roleAllows } from "@/lib/auth/permissions";
 import { deleteMediaAsset, listMediaAssets, MediaInUseError, renameMediaAsset, saveMediaThumbnail, type MediaAssetView } from "@/lib/media-library/service";
 import { isMultimedia, MediaRejectedError } from "@/lib/media-library/rules";
+import { logError } from "@/lib/log/safe-error";
 
 const idSchema = z.string().trim().min(1).max(200);
 
@@ -36,7 +37,7 @@ export async function saveMediaThumbnailAction(input: { assetId: string; jpegBas
     return { ok: await saveMediaThumbnail(organizationId, parsed.data.assetId, parsed.data.jpegBase64) };
   } catch (error) {
     if (error instanceof MediaRejectedError) return { ok: false };
-    console.error("[biblioteca] miniatura falló", error);
+    logError("[biblioteca] miniatura falló", error);
     return { ok: false };
   }
 }
@@ -50,7 +51,7 @@ export async function renameMediaAssetAction(input: { assetId: string; title: st
     await renameMediaAsset(organizationId, parsed.data.assetId, parsed.data.title);
   } catch (error) {
     if (error instanceof MediaRejectedError) return { ok: false, error: error.message };
-    console.error("[biblioteca] renombrar falló", error);
+    logError("[biblioteca] renombrar falló", error);
     return { ok: false, error: "No se pudo renombrar el archivo." };
   }
   revalidatePath("/automatizacion");
@@ -66,7 +67,7 @@ export async function deleteMediaAssetAction(input: { assetId: string }): Promis
     await deleteMediaAsset(organizationId, parsed.data.assetId);
   } catch (error) {
     if (error instanceof MediaInUseError || error instanceof MediaRejectedError) return { ok: false, error: error.message };
-    console.error("[biblioteca] borrar falló", error);
+    logError("[biblioteca] borrar falló", error);
     return { ok: false, error: "No se pudo borrar el archivo." };
   }
   revalidatePath("/automatizacion");

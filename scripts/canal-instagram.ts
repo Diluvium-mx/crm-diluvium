@@ -14,6 +14,7 @@ import { parseArgs } from "node:util";
 import { and, eq } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { channels, member } from "@/lib/db/schema";
+import { safeErrorMessage } from "@/lib/log/safe-error";
 
 async function main(): Promise<number> {
   const { values } = parseArgs({
@@ -83,6 +84,6 @@ async function main(): Promise<number> {
 main()
   .then((code) => process.exit(code))
   .catch((error) => {
-    console.error(error instanceof Error ? error.message : error);
+    console.error(safeErrorMessage(error));
     process.exit(1);
   });

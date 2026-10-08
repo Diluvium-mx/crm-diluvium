@@ -13,6 +13,7 @@ import { db } from "@/lib/db";
 import { member, messages } from "@/lib/db/schema";
 import { OCTET, previewOf } from "@/lib/messaging/media-type";
 import { objectStorage, StorageNotConfiguredError } from "@/lib/storage/s3";
+import { safeErrorMessage } from "@/lib/log/safe-error";
 
 const SIGNED_URL_SECONDS = 300;
 
@@ -78,7 +79,7 @@ export async function GET(req: Request, { params }: RouteContext<"/api/media/[me
       });
     } catch (error) {
       if (!(error instanceof StorageNotConfiguredError)) throw error;
-      console.error("[media] bucket no configurado:", error.message);
+      console.error("[media] bucket no configurado:", safeErrorMessage(error));
       return new Response("almacenamiento no configurado", { status: 503 });
     }
   }
@@ -90,7 +91,7 @@ export async function GET(req: Request, { params }: RouteContext<"/api/media/[me
     url = await objectStorage().signedGetUrl(key, SIGNED_URL_SECONDS, name, disposition, contentType);
   } catch (error) {
     if (!(error instanceof StorageNotConfiguredError)) throw error;
-    console.error("[media] bucket no configurado:", error.message);
+    console.error("[media] bucket no configurado:", safeErrorMessage(error));
     return new Response("almacenamiento no configurado", { status: 503 });
   }
   return new Response(null, {

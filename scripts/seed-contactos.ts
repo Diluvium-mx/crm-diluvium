@@ -21,6 +21,7 @@ import { member, organization, user } from "@/lib/db/schema/auth";
 import { contacts } from "@/lib/db/schema/contacts";
 import { DEFAULT_STAGE_KEYS } from "@/lib/contacts/stages";
 import { normalizePhone } from "@/lib/phone";
+import { logError } from "@/lib/log/safe-error";
 
 const SEED_SOURCE = "seed";
 const CONTACTS_PER_STAGE = 8; // 8 × 5 etapas = 40 contactos
@@ -178,6 +179,6 @@ async function main() {
 main()
   .then(() => process.exit(0))
   .catch((err) => {
-    console.error(err);
+    logError("[seed-contactos]", err);
     process.exit(1);
   });

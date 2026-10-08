@@ -14,6 +14,7 @@ import { MessagingNotConfiguredError } from "@/lib/messaging";
 import { SendFailedError, type MessagingProvider } from "@/lib/messaging/provider";
 import { sendTemplateMessage, sendTextMessage, SendRejectedError } from "@/lib/messaging/send";
 import { pauseAgentForManualSend } from "@/lib/ai/runtime/hooks";
+import { logError } from "@/lib/log/safe-error";
 
 export type DispatchOutcome = "skipped" | "cancelled" | "sent" | "failed";
 
@@ -151,7 +152,7 @@ export async function dispatchScheduled(
       .where(eq(scheduledMessages.id, row.id));
   } catch (error) {
     const { code, message } = failure(error);
-    if (code === "unexpected") console.error(`[scheduled] ${row.id}: error inesperado al enviar`, error);
+    if (code === "unexpected") logError(`[scheduled] ${row.id}: error inesperado al enviar`, error);
     await db
       .update(scheduledMessages)
       .set({ status: "failed", errorCode: code, errorMessage: message, updatedAt: new Date() })

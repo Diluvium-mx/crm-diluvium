@@ -14,6 +14,7 @@ import { db } from "@/lib/db";
 import { organization, snippets } from "@/lib/db/schema";
 import { planSnippetLoad, verifySnippetLoad, type ExistingSnippet, type SnippetLoadPlan } from "@/lib/snippets/carga";
 import { MENSAJES_RAPIDOS_DILUVIUM } from "@/lib/snippets/mensajes-rapidos-diluvium";
+import { safeErrorMessage } from "@/lib/log/safe-error";
 
 type Db = typeof db;
 type Tx = Parameters<Parameters<Db["transaction"]>[0]>[0];
@@ -147,6 +148,6 @@ async function main(): Promise<number> {
 main()
   .then((code) => process.exit(code))
   .catch((error) => {
-    console.error(error instanceof Error ? error.message : error);
+    console.error(safeErrorMessage(error));
     process.exit(1);
   });

@@ -13,6 +13,7 @@ import { db } from "@/lib/db";
 import type { LectorDeps, LectorOutcome } from "./lector";
 import { runLector } from "./lector";
 import { LECTOR_EVERY_MS, LECTOR_LOOKBACK_DAYS, LECTOR_MAX_WAIT_MS, LECTOR_QUIET_MS } from "./lector-core";
+import { logError, safeErrorMessage } from "@/lib/log/safe-error";
 
 export { LECTOR_EVERY_MS, LECTOR_LOOKBACK_DAYS, LECTOR_MAX_WAIT_MS, LECTOR_QUIET_MS };
 export const LECTOR_BATCH = 20;
@@ -73,7 +74,7 @@ export async function lectorSweepOnce(deps: LectorDeps, now: Date): Promise<numb
     await Promise.all(
       due.slice(i, i + LECTOR_CONCURRENCY).map(async (d) => {
         const outcome = await runLector(d.organizationId, d.conversationId, deps).catch(
-          (error: unknown): LectorOutcome => ({ kind: "error", reason: error instanceof Error ? error.message : String(error), usage: null, costUsd: null }),
+          (error: unknown): LectorOutcome => ({ kind: "error", reason: safeErrorMessage(error), usage: null, costUsd: null }),
         );
         if (outcome.kind === "error") {
           const prev = failures.get(d.conversationId);
@@ -103,7 +104,7 @@ export function startLectorRuntime(deps: LectorDeps) {
     try {
       await lectorSweepOnce(deps, deps.now());
     } catch (error) {
-      console.error("[lector] barrido falló", error);
+      logError("[lector] barrido falló", error);
     } finally {
       running = false;
     }

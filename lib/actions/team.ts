@@ -27,6 +27,7 @@ import {
   TeamError,
   type TeamMember,
 } from "@/lib/team/store";
+import { logError } from "@/lib/log/safe-error";
 
 export type TeamResult = { ok: true } | { ok: false; message: string };
 
@@ -140,7 +141,7 @@ export async function addSeller(input: z.input<typeof addSellerSchema>): Promise
     }
     const userId = await createSeller({ organizationId: actor.organizationId, ...parsed });
     await logTeamChange({ organizationId: actor.organizationId, actorId: actor.userId, targetName: parsed.name.trim() }, userId, { action: "alta", role: parsed.role }).catch(
-      (error) => console.error("[vendedores] no se pudo registrar el alta en el historial", error),
+      (error) => logError("[vendedores] no se pudo registrar el alta en el historial", error),
     );
   });
 }
@@ -165,7 +166,7 @@ export async function changeSellerRole(memberId: string, newRole: string): Promi
         action: "rol",
         from: target.role,
         to: newRole,
-      }).catch((error) => console.error("[vendedores] no se pudo registrar el cambio de rol en el historial", error));
+      }).catch((error) => logError("[vendedores] no se pudo registrar el cambio de rol en el historial", error));
     }
   });
 }

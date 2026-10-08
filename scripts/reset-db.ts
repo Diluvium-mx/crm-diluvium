@@ -5,6 +5,7 @@
 // de producción (guarda en scripts/lib/base-local.ts, la misma de los seed-*).
 import postgres from "postgres";
 import { assertLocalDevDatabase } from "./lib/base-local";
+import { logError } from "@/lib/log/safe-error";
 
 async function main() {
   const url = process.env.DATABASE_URL;
@@ -20,6 +21,6 @@ async function main() {
 main()
   .then(() => process.exit(0))
   .catch((err) => {
-    console.error(err);
+    logError("[db:reset]", err);
     process.exit(1);
   });

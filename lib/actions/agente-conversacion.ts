@@ -16,10 +16,11 @@ import { pauseAgentManually } from "@/lib/ai/runtime/pause";
 import { PAUSE_OPTIONS, pauseUntil } from "@/lib/agente-ia/pause";
 import { idSchema, toAgentMode } from "@/lib/agente-ia/settings";
 import type { AgentActionResult, AgentThreadView, ContactAgentView } from "@/lib/agente-ia/types";
+import { logError } from "@/lib/log/safe-error";
 
 function fail(error: unknown, fallback: string): AgentActionResult {
   if (error instanceof ZodError) return { ok: false, message: fallback };
-  console.error(`[agente] ${fallback}`, error);
+  logError(`[agente] ${fallback}`, error);
   return { ok: false, message: fallback };
 }
 

@@ -25,6 +25,7 @@ import { parseArgs } from "node:util";
 import { importPhoneHistory, simulationSummary, type HistoryImportReport } from "@/lib/messaging/history-import";
 import { fileStateStore } from "@/lib/messaging/history-state";
 import { ZernioHistoryClient, ZernioHistoryError } from "@/lib/messaging/zernio-history";
+import { safeErrorMessage } from "@/lib/log/safe-error";
 
 const fmt = new Intl.NumberFormat("es-MX");
 
@@ -126,7 +127,7 @@ async function main(): Promise<number> {
 main()
   .then((code) => process.exit(code))
   .catch((error: unknown) => {
-    console.error(error instanceof Error ? error.message : error);
+    console.error(safeErrorMessage(error));
     if (error instanceof ZernioHistoryError && error.retryable) {
       console.error("El avance quedó guardado: corre el MISMO comando más tarde para seguir.");
       process.exit(4);

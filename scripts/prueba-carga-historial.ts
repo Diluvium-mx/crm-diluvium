@@ -22,6 +22,7 @@ import { ZernioHistoryClient } from "@/lib/messaging/zernio-history";
 import { listConversationsForOrg, listMessagesForOrg } from "@/lib/inbox/queries";
 import { funnelSignalsForOrg } from "@/lib/contacts/funnel-signals";
 import { fakeZernioFetch, type FakeAttachment, type FakeChat, type FakeMessage, type FakeWorld } from "@/test/zernio-historial-falso";
+import { logError } from "@/lib/log/safe-error";
 
 const ORG = "org_carga";
 const ACCOUNT = "zacc_oficial_carga";
@@ -391,6 +392,6 @@ async function main() {
 }
 
 main().catch((error: unknown) => {
-  console.error(error);
+  logError("[historial:prueba-carga]", error);
   process.exit(1);
 });

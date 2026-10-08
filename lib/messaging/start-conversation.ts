@@ -23,6 +23,7 @@ import { phoneLookupVariants } from "@/lib/phone";
 import { SendFailedError, type MessagingProvider, type StartConversationResult } from "./provider";
 import { SEND_UNKNOWN } from "./rules";
 import { linkSentMessage, loadSendableTemplate, saveAcceptedSend, SendRejectedError, sendTemplateMessage, templateSendValues } from "./send";
+import { safeErrorMessage } from "@/lib/log/safe-error";
 
 export type StartChatParams = {
   organizationId: string;
@@ -158,7 +159,7 @@ export async function startConversationWithTemplate(provider: MessagingProvider,
       idempotencyKey: messageId,
     });
   } catch (error) {
-    const reason = error instanceof Error ? error.message : String(error);
+    const reason = safeErrorMessage(error);
     if (error instanceof SendFailedError && error.outcome !== "unknown") {
       // No salió (rechazado o saturado): no queda rastro; el vendedor ve el motivo.
       await db.delete(messages).where(and(eq(messages.id, messageId), eq(messages.organizationId, organizationId)));
@@ -197,7 +198,7 @@ export async function startConversationWithTemplate(provider: MessagingProvider,
     });
     return { conversationId, messageId: finalId, status: "sent" };
   } catch (error) {
-    const reason = error instanceof Error ? error.message : String(error);
+    const reason = safeErrorMessage(error);
     console.error(`[start-conversation] Zernio aceptó ${messageId} pero no se pudo guardar la confirmación: ${reason}`);
     await saveAcceptedSend(messageId, organizationId, result, reason);
     return { conversationId, messageId, status: "pending" };

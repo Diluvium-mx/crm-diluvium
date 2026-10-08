@@ -15,6 +15,7 @@ import { PROVIDER_META } from "@/lib/ai/provider";
 import { localToday } from "@/lib/dashboard/range";
 import { idSchema } from "@/lib/agente-ia/settings";
 import type { AgentActionResult } from "@/lib/agente-ia/types";
+import { logError } from "@/lib/log/safe-error";
 
 const topupSchema = z.object({
   provider: z.string().refine((p) => p in PROVIDER_META, { message: "Proveedor no válido." }),
@@ -35,7 +36,7 @@ async function run(fallback: string, fn: (m: { organizationId: string; userId: s
     return { ok: true };
   } catch (error) {
     if (error instanceof ZodError) return { ok: false, message: error.issues[0]?.message ?? fallback };
-    console.error(`[gasto-ia] ${fallback}`, error);
+    logError(`[gasto-ia] ${fallback}`, error);
     return { ok: false, message: fallback };
   }
 }

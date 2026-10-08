@@ -24,6 +24,7 @@ import {
   VERIFY_AFTER_MS,
   VERIFY_GIVE_UP_MS,
 } from "./unavailable";
+import { logError, safeErrorMessage } from "@/lib/log/safe-error";
 
 export type VerifyOutcome =
   /** Ya no está en verificación (se completó, se decidió antes o no existe). */
@@ -101,11 +102,11 @@ export async function verifyUnavailableNotice(
     } catch (error) {
       const waited = since ? now.getTime() - since.getTime() : Infinity;
       if (waited < VERIFY_GIVE_UP_MS) {
-        console.warn(`[no-disponible] ${messageId}: Zernio no respondió; se reintenta`, error);
+        console.warn(`[no-disponible] ${messageId}: Zernio no respondió; se reintenta`, safeErrorMessage(error));
         return "reintentar";
       }
       // Sin respuesta de Zernio por minutos: el cliente no se queda esperando.
-      console.warn(`[no-disponible] ${messageId}: Zernio sigue sin responder; se decide con la base`, error);
+      console.warn(`[no-disponible] ${messageId}: Zernio sigue sin responder; se decide con la base`, safeErrorMessage(error));
     }
   }
   if (stored?.available) {
@@ -248,6 +249,6 @@ async function isolated(messageId: string, what: string, fn: () => Promise<unkno
   try {
     await fn();
   } catch (error) {
-    console.error(`[no-disponible] ${messageId}: falló el aviso a ${what}; el mensaje ya quedó decidido`, error);
+    logError(`[no-disponible] ${messageId}: falló el aviso a ${what}; el mensaje ya quedó decidido`, error);
   }
 }

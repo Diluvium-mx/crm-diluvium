@@ -2,7 +2,9 @@
 
 Railway está en plan trial: los backups nativos y el PITR son del plan Pro. Mientras tanto,
 la BD de producción se respalda con `pg_dump` desde GitHub Actions
-(`.github/workflows/db-backup.yml`).
+(`.github/workflows/db-backup.yml`). Las fotos, audios y PDF del bucket de media tienen su propio
+respaldo diario (*Respaldo de medios*, abajo) y los datos crudos de los webhooks tienen retención
+(*Retención de datos crudos*).
 
 ## Cómo funciona
 
@@ -263,6 +265,138 @@ La carpeta `restore/` está en `.gitignore`: el dump en claro nunca debe llegar 
 
 El rol `backup_ro` (`pg_read_all_data`) es del servidor, no de la base, así que los respaldos
 siguen funcionando después del intercambio.
+
+## Respaldo de medios
+
+Las fotos, audios, videos y PDF (mensajes, adjuntos del chat, Biblioteca, miniaturas de anuncios) viven
+en el bucket de media de producción, el que el web `crm-diluvium` usa en `S3_BUCKET`. Se respaldan con
+`.github/workflows/media-backup.yml`.
+
+- **Cuándo:** todos los días a las **04:17** (hora de CDMX), una hora después del de la base, y a mano
+  desde *Actions → media-backup → Run workflow*.
+- **Qué hace:** `rclone sync` del bucket de media a `crm-respaldos`, carpeta **`media/`** (misma ruta de
+  cada archivo). Copia solo lo **nuevo o cambiado** (tamaño y MD5 cuando el bucket lo da) y **borra del
+  respaldo lo que ya no está en producción**: cuando se borra un contacto (derechos ARCO), sus archivos
+  salen del respaldo en la siguiente corrida (≤ 24 h). No hay versiones viejas: el respaldo es un espejo
+  de ayer.
+- **Del bucket de media solo lee.** rclone 1.75.1 fijado por versión y sha256; las credenciales van por
+  variables de entorno.
+- **Sin nombres de archivo en el log** (el repo y sus logs son públicos; las rutas llevan ids y a veces
+  el nombre que puso el cliente). El resumen del job (*Summary*) dice cuántos archivos se copiaron y
+  cuánto pesan, cuántos se borraron y el total del respaldo. Si algo falla, el job sale en rojo y GitHub
+  manda correo.
+- **Candado:** si producción tiene menos de la mitad de los archivos que ya hay en el respaldo, no
+  sincroniza (un bucket equivocado borraría el respaldo). Si de verdad se borró tanto, córrelo a mano con
+  la casilla **permitir_borrado_masivo**.
+- No va cifrado aparte (a diferencia del dump): el bucket `crm-respaldos` es privado y quien tenga las
+  credenciales del CI ya puede leer los originales.
+- Monitoreo: igual que el de la base (*Monitoreo*, arriba); si GitHub apaga los workflows programados,
+  reactiva también este.
+
+### Secrets del respaldo de medios
+
+Van en el mismo environment **`production-backup`** (solo `main`; ver *Secrets*). Los tres
+`RESPALDOS_S3_*` ya existen (los usa el respaldo de la base). Faltan cuatro, del bucket de media de
+**producción**; cada valor sale de una variable del servicio web `crm-diluvium` en Railway
+(environment `production`):
+
+| Secret | Variable de Railway (`crm-diluvium`, production) |
+|---|---|
+| `MEDIA_S3_BUCKET` | `S3_BUCKET` |
+| `MEDIA_S3_ENDPOINT` | `S3_ENDPOINT` |
+| `MEDIA_S3_ACCESS_KEY_ID` | `S3_ACCESS_KEY_ID` |
+| `MEDIA_S3_SECRET_ACCESS_KEY` | `S3_SECRET_ACCESS_KEY` |
+
+Si Railway ofrece credenciales de **solo lectura** para ese bucket, usa esas en lugar de las del web.
+
+Para cada uno: copia el valor al portapapeles (desde *Railway → crm-diluvium → production → Variables*,
+o con el primer comando, que no lo muestra en pantalla) y cárgalo con el segundo:
+
+```bash
+railway variable list -s crm-diluvium -e production --json | jq -r .S3_BUCKET | tr -d '\n' | pbcopy
+pbpaste | gh secret set MEDIA_S3_BUCKET --env production-backup
+```
+
+```bash
+railway variable list -s crm-diluvium -e production --json | jq -r .S3_ENDPOINT | tr -d '\n' | pbcopy
+pbpaste | gh secret set MEDIA_S3_ENDPOINT --env production-backup
+```
+
+```bash
+railway variable list -s crm-diluvium -e production --json | jq -r .S3_ACCESS_KEY_ID | tr -d '\n' | pbcopy
+pbpaste | gh secret set MEDIA_S3_ACCESS_KEY_ID --env production-backup
+```
+
+```bash
+railway variable list -s crm-diluvium -e production --json | jq -r .S3_SECRET_ACCESS_KEY | tr -d '\n' | pbcopy
+pbpaste | gh secret set MEDIA_S3_SECRET_ACCESS_KEY --env production-backup
+```
+
+Al terminar, limpia el portapapeles y confirma que están los siete:
+
+```bash
+echo -n | pbcopy; gh secret list --env production-backup
+```
+
+Después del merge a `main`, lánzalo a mano (*Run workflow*). La primera corrida copia todo y tarda más;
+las siguientes, solo lo del día. Confirma en el *Summary* que el total del respaldo coincide con
+producción.
+
+### Restaurar medios
+
+Requisitos: `brew install rclone jq`. Las credenciales salen de Railway y solo viven en esa terminal.
+Prepara los dos remotos (`respaldos:` y `media:`, el bucket de media de producción):
+
+```bash
+eval "$(railway bucket credentials --bucket crm-respaldos -e production --json | jq -r '"export RCLONE_CONFIG_RESPALDOS_TYPE=s3 RCLONE_CONFIG_RESPALDOS_PROVIDER=Other RCLONE_CONFIG_RESPALDOS_REGION=auto RCLONE_CONFIG_RESPALDOS_FORCE_PATH_STYLE=false RCLONE_CONFIG_RESPALDOS_ENDPOINT=https://t3.storageapi.dev RCLONE_CONFIG_RESPALDOS_ACCESS_KEY_ID=\(.accessKeyId) RCLONE_CONFIG_RESPALDOS_SECRET_ACCESS_KEY=\(.secretAccessKey) RB=\(.bucketName)"')"
+```
+
+```bash
+eval "$(railway variable list -s crm-diluvium -e production --json | jq -r '"export RCLONE_CONFIG_MEDIA_TYPE=s3 RCLONE_CONFIG_MEDIA_PROVIDER=Other RCLONE_CONFIG_MEDIA_REGION=auto RCLONE_CONFIG_MEDIA_FORCE_PATH_STYLE=false RCLONE_CONFIG_MEDIA_ENDPOINT=\(.S3_ENDPOINT) RCLONE_CONFIG_MEDIA_ACCESS_KEY_ID=\(.S3_ACCESS_KEY_ID) RCLONE_CONFIG_MEDIA_SECRET_ACCESS_KEY=\(.S3_SECRET_ACCESS_KEY) MB=\(.S3_BUCKET)"')"
+```
+
+**Un archivo.** La ruta es la misma en los dos buckets (`org/<org>/messages/<mensaje>/…`; la del mensaje
+sale de `messages.attachments[].storageKey`). Búscala y cópiala de vuelta:
+
+```bash
+rclone lsf -R "respaldos:$RB/media/org/<org>/messages/<mensaje>/"
+```
+
+```bash
+rclone copyto "respaldos:$RB/media/<ruta>" "media:$MB/<ruta>"
+```
+
+**Todo.** Con `copy` (nunca `sync`: no borra nada de producción). Primero en seco, revisa y después de
+verdad:
+
+```bash
+rclone copy "respaldos:$RB/media" "media:$MB" --checksum --dry-run
+```
+
+```bash
+rclone copy "respaldos:$RB/media" "media:$MB" --checksum --transfers 8 --progress
+```
+
+Al terminar: `unset RB MB $(env | grep -o '^RCLONE_CONFIG_[A-Z_]*')`.
+
+> Antes de restaurar en producción, ensaya contra el bucket de staging (mismos comandos con `-e staging`
+> en el segundo `eval`).
+
+## Retención de datos crudos (webhook_events)
+
+`webhook_events` guarda el payload **crudo** de cada webhook de Zernio (teléfono, nombre y texto del
+cliente) para no perder nada y poder reprocesar. No se guarda para siempre (barrido del worker, cada
+minuto):
+
+- **Procesados:** se borran a los **30 días** de `processed_at`.
+- **Cuarentena** (cuenta no permitida en el entorno): se borran a los **30 días** de `quarantined_at`.
+- **Dead-letter** (agotó sus intentos o formato no reconocido): a los **30 días** de `dead_lettered_at`
+  se **vacía el payload** (queda `{"_vaciado": "<fecha>"}`). La fila se queda —id, evento, intentos,
+  `last_error`, fechas— para que el monitor y los conteos sigan igual; solo deja de tener los datos del
+  cliente. `npm run webhooks:replay` reactiva los demás y **salta** los vaciados con un aviso (siguen en
+  dead-letter), y la ingesta tampoco intenta procesarlos. Lógica:
+  `lib/messaging/dead-letter-retention.ts`. Si un dead-letter importa, hay que reprocesarlo antes de
+  esos 30 días.
 
 ## Cuándo cambiar a Railway Pro
 

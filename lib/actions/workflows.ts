@@ -21,6 +21,7 @@ import { isUniqueViolation } from "@/lib/db/errors";
 import { logChanges } from "@/lib/historial/log";
 import { describeWorkflowEdit, workflowAssetIds, workflowDetail, workflowSummary, type WorkflowSnapshot } from "@/lib/historial/labels";
 import { DEFAULT_WORKFLOWS } from "@/lib/workflows/defaults";
+import { logError } from "@/lib/log/safe-error";
 
 const idSchema = z.string().trim().min(1).max(200);
 
@@ -310,7 +311,7 @@ export async function saveWorkflow(raw: WorkflowInput): Promise<{ ok: true; id: 
     return { ok: true, id };
   } catch (error) {
     if (isUniqueViolation(error)) return { ok: false, error: "Ese comando ya lo usa otro workflow." };
-    console.error("[workflows] no se pudo guardar", error);
+    logError("[workflows] no se pudo guardar", error);
     return { ok: false, error: "No se pudo guardar el workflow." };
   }
 }
@@ -548,7 +549,7 @@ export async function runWorkflowCommand(input: { conversationId: string; text: 
     if (r.status === "queued") await pauseAgentForManualSend(organizationId, parsed.data.conversationId);
     return { ok: true, runId: r.runId, status: r.status, reason: r.reason, name: wf.name };
   } catch (error) {
-    console.error("[workflows] comando falló", error);
+    logError("[workflows] comando falló", error);
     return { ok: false, error: "No se pudo ejecutar el comando." };
   }
 }
@@ -580,7 +581,7 @@ export async function runWorkflowTest(input: { workflowId: string; conversationI
     revalidatePath("/automatizacion");
     return { ok: true, runId: r.runId, status: r.status, reason: r.reason, name: wf.name };
   } catch (error) {
-    console.error("[workflows] prueba falló", error);
+    logError("[workflows] prueba falló", error);
     return { ok: false, error: "No se pudo ejecutar la prueba." };
   }
 }

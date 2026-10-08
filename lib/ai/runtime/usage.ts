@@ -6,6 +6,7 @@ import { db } from "@/lib/db";
 import { aiModelPrices, aiUsage } from "@/lib/db/schema";
 import { computeCostUsd, resolveModelPrice } from "@/lib/ai/pricing";
 import type { ModelUsage, ProviderId } from "@/lib/ai/types";
+import { logError } from "@/lib/log/safe-error";
 
 // "transcripcion" (parte 1, 26-sep-2026): nota de voz del cliente → texto (worker).
 // "detalle" (0047): el lector en segundo plano (lector.ts) deja al día etapa y Detalle.
@@ -110,6 +111,6 @@ export async function recordAiUsage(r: UsageRecord): Promise<void> {
       createdAt: new Date(),
     });
   } catch (error) {
-    console.error(`[agente] no se pudo registrar ai_usage (${r.stage}/${r.outcome})`, error);
+    logError(`[agente] no se pudo registrar ai_usage (${r.stage}/${r.outcome})`, error);
   }
 }

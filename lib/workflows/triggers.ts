@@ -11,6 +11,7 @@ import { startOnlyEligible } from "./start-only";
 import { atMaxPerChat } from "./max-per-chat";
 import { fixedRuleWinner, PRECIO_Y_MEDIDAS } from "./fixed-rules";
 import { foreignLadaLine } from "@/lib/phone";
+import { logError } from "@/lib/log/safe-error";
 
 /**
  * Entrante NUEVO del cliente (después del commit de la ingesta): si es texto y
@@ -99,7 +100,7 @@ export async function onInboundKeyword(m: { organizationId: string; conversation
     return result;
   } catch (error) {
     // Sin marcar "revisada": el barrido lo retoma (1–30 min).
-    console.error(`[workflows] disparador por palabra clave falló (${m.conversationId}); el mensaje ya está guardado`, error);
+    logError(`[workflows] disparador por palabra clave falló (${m.conversationId}); el mensaje ya está guardado`, error);
     return null;
   }
 }
@@ -168,7 +169,7 @@ export async function onContactStageEntered(input: {
     }
     return out;
   } catch (error) {
-    console.error(`[workflows] disparador por etapa falló (${input.contactId}); la etapa ya cambió`, error);
+    logError(`[workflows] disparador por etapa falló (${input.contactId}); la etapa ya cambió`, error);
     return [];
   }
 }

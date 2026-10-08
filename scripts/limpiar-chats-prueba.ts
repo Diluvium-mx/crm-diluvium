@@ -18,6 +18,7 @@ import { parseArgs } from "node:util";
 import { sql, type SQL } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { logChanges } from "@/lib/historial/log";
+import { safeErrorMessage } from "@/lib/log/safe-error";
 
 type Exec = Pick<typeof db, "execute">;
 
@@ -352,8 +353,8 @@ async function main() {
 main()
   .then(() => process.exit(0))
   .catch((error) => {
-    if (error instanceof Refusal) console.error(error.message);
-    else if (error instanceof VerificationFailed) console.error(`Se deshizo todo (nada se borró): ${error.message}.`);
-    else console.error(error instanceof Error ? error.message : error);
+    if (error instanceof Refusal) console.error(safeErrorMessage(error));
+    else if (error instanceof VerificationFailed) console.error(`Se deshizo todo (nada se borró): ${safeErrorMessage(error)}.`);
+    else console.error(safeErrorMessage(error));
     process.exit(error instanceof VerificationFailed ? 2 : 1);
   });

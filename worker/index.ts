@@ -27,6 +27,7 @@ import { downloadMessageMedia } from "@/lib/messaging/media";
 import { generateMessageThumbnails, THUMBNAIL_MAX_ATTEMPTS } from "@/lib/messaging/thumbnails";
 import { HISTORY_MEDIA_PER_SWEEP, MEDIA_MAX_ATTEMPTS, MEDIA_SWEEP_DAYS } from "@/lib/messaging/media-keys";
 import { expireUnconfirmedSends } from "@/lib/messaging/send";
+import { DEAD_LETTER_PAYLOAD_DAYS, sweepExpiredDeadLetterPayloads } from "@/lib/messaging/dead-letter-retention";
 import {
   enqueueMediaDownload,
   INBOUND_QUEUE,
@@ -70,7 +71,8 @@ const SWEEP_MAX_ATTEMPTS = DEAD_LETTER_ATTEMPTS;
 // Retención de webhook_events PROCESADOS: traen datos crudos del cliente
 // (teléfono, nombre, texto, URLs de media). Ya aplicados a las tablas del CRM,
 // se conservan 30 días para reprocesar/depurar y luego se borran. Los NO
-// procesados (dead-letter) NO se tocan: siguen disponibles para replay.
+// procesados (dead-letter) siguen disponibles para replay 30 días; después se
+// VACÍA su payload y la fila se queda para los conteos (dead-letter-retention.ts).
 const WEBHOOK_RETENTION_DAYS = 30;
 
 const provider = messagingProvider();
@@ -85,7 +87,7 @@ function optionalStorage(): ObjectStorage | null {
     return objectStorage();
   } catch (error) {
     if (!(error instanceof StorageNotConfiguredError)) throw error;
-    console.error(`[media] DESACTIVADA: ${error.message}. Los adjuntos quedan pendientes.`);
+    console.error(`[media] DESACTIVADA: ${safeErrorMessage(error)}. Los adjuntos quedan pendientes.`);
     return null;
   }
 }
@@ -147,8 +149,8 @@ const worker = new Worker<InboundJob>(
       return outcome;
     } catch (error) {
       if (error instanceof PermanentIngestError || error instanceof DeadLetterIngestError) {
-        console.error(`[worker] ${job.data.webhookEventId}: error permanente: ${error.message}`);
-        throw new UnrecoverableError(error.message);
+        console.error(`[worker] ${job.data.webhookEventId}: error permanente: ${safeErrorMessage(error)}`);
+        throw new UnrecoverableError(safeErrorMessage(error));
       }
       throw error;
     }
@@ -307,6 +309,10 @@ async function sweep() {
         lt(webhookEvents.quarantinedAt, new Date(Date.now() - WEBHOOK_RETENTION_DAYS * 86_400_000)),
       ),
     );
+  // Dead-letter: a los 30 días se vacía el payload crudo (datos personales); la fila
+  // se queda para el monitor y los conteos, y el replay la salta.
+  const emptied = await sweepExpiredDeadLetterPayloads(new Date());
+  if (emptied) console.info(`[worker] barrido: ${emptied} dead-letter(s) con el payload vaciado (>${DEAD_LETTER_PAYLOAD_DAYS} d; la fila se conserva)`);
 
   if (!storage) return;
   // Media pendiente: mensajes con algún adjunto sin storageKey. Primero los vivos; el

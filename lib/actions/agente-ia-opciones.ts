@@ -10,6 +10,7 @@ import { roleAllows } from "@/lib/auth/permissions";
 import { botOptionsPatchSchema } from "@/lib/agente-ia/opciones";
 import { loadLastOptionsChange, saveBotOptions } from "@/lib/agente-ia/opciones-store";
 import type { OptionsActionResult } from "@/lib/agente-ia/types";
+import { logError } from "@/lib/log/safe-error";
 
 export async function updateBotOptions(input: unknown): Promise<OptionsActionResult> {
   try {
@@ -30,7 +31,7 @@ export async function updateBotOptions(input: unknown): Promise<OptionsActionRes
     if (error instanceof Error && /^(No autenticado|Usuario desactivado|No tienes permiso|El usuario no tiene membresía)/.test(error.message)) {
       return { ok: false, message: error.message };
     }
-    console.error("[agente-ia] no se pudieron guardar las opciones del Agente IA", error);
+    logError("[agente-ia] no se pudieron guardar las opciones del Agente IA", error);
     return { ok: false, message: "No se pudo guardar la opción; inténtalo de nuevo." };
   }
 }

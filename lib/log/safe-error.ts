@@ -26,11 +26,18 @@ export function safeErrorMessage(error: unknown): string {
   return String(error);
 }
 
-/** console.error con el texto seguro; la pila solo si no es de una consulta (repite los parámetros). */
+/**
+ * console.error con el texto seguro; la pila solo si no es de una consulta (repite los
+ * parámetros) y solo sus líneas «at …»: el encabezado de la pila repite el mensaje
+ * completo, también las líneas que safeErrorMessage cortó.
+ */
 export function logError(tag: string, error: unknown): void {
   if (error instanceof Error && !(error instanceof DrizzleQueryError) && error.stack) {
-    console.error(tag, safeErrorMessage(error), "\n", error.stack.split("\n").slice(1).join("\n"));
-    return;
+    const frames = error.stack.split("\n").filter((line) => /^\s+at /.test(line));
+    if (frames.length) {
+      console.error(tag, safeErrorMessage(error), "\n", frames.join("\n"));
+      return;
+    }
   }
   console.error(tag, safeErrorMessage(error));
 }

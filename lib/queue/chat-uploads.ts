@@ -4,6 +4,7 @@
 // el barrido del worker las recoge (mismo patrón que workflows).
 import { Queue } from "bullmq";
 import { redisConnection } from "./inbound";
+import { safeErrorMessage } from "@/lib/log/safe-error";
 
 export const CHAT_UPLOAD_QUEUE = "chat-uploads";
 
@@ -46,7 +47,7 @@ export async function enqueueChatUploads(job: ChatUploadJob): Promise<boolean> {
       ]);
       return true;
     } catch (error) {
-      if (attempt === ENQUEUE_ATTEMPTS) console.error("[adjuntos] no se pudo encolar; lo recoge el barrido", job.messageIds[0], error);
+      if (attempt === ENQUEUE_ATTEMPTS) console.error("[adjuntos] no se pudo encolar; lo recoge el barrido", job.messageIds[0], safeErrorMessage(error));
       else await new Promise((resolve) => setTimeout(resolve, 200));
     } finally {
       clearTimeout(timer);
@@ -71,7 +72,7 @@ export async function reviveChatUploads(job: ChatUploadJob): Promise<"added" | "
     }
     return "in_flight";
   } catch (error) {
-    console.error("[adjuntos] barrido no pudo revisar el job", job.messageIds[0], error);
+    console.error("[adjuntos] barrido no pudo revisar el job", job.messageIds[0], safeErrorMessage(error));
     return "error";
   }
 }
