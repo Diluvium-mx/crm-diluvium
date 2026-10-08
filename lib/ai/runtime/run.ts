@@ -622,7 +622,8 @@ export async function runAgent(job: { organizationId: string; conversationId: st
     };
     // Una llamada al cerebro. Un error del proveedor o una respuesta sin texto ni acciones
     // (tokens agotados, filtro del proveedor…) cuentan como falla; las dos dejan su fila.
-    // Modelos ya llamados en esta ronda (la red contra el silencio no le vuelve a preguntar a ninguno).
+    // Modelos ya llamados en esta ronda: la red contra el silencio prefiere uno que no se haya
+    // usado; si no hay otro (etapas del Modelo 1, 8-oct-2026), le vuelve a preguntar al mismo.
     const tried = new Set<string>();
     // Acuse (6-oct-2026, C2; caso b983412b: 5 «el asesor le envía el enlace» a «Vale», «Ok»):
     // todo lo pendiente del cliente es «ok», «vale», «gracias», un emoji o un sticker. Solo
@@ -704,6 +705,13 @@ export async function runAgent(job: { organizationId: string; conversationId: st
         if (!(await stillInCharge())) return { kind: "skipped", reason: "cambio_durante_error" };
         r = await attempt(model);
       }
+      // Un solo modelo (etapas del Modelo 1, 8-oct-2026): la respuesta vacía se le vuelve a pedir
+      // UNA vez, con la nota de que el cliente sigue sin respuesta (antes la escribía el Modelo 2).
+      if (!r.ok && candidates.length === 1 && r.info.kind === EMPTY_RESPONSE_INFO.kind) {
+        if (!(await stillInCharge())) return { kind: "skipped", reason: "cambio_durante_error" };
+        console.warn(`[agente] ${conv.id}: ${model.label} contestó vacío; se le pide otra respuesta`);
+        r = await attempt(model, null, SIN_RESPUESTA_NOTE);
+      }
       if (r.ok) {
         used = r;
         usedSlot = candidate.slot;
@@ -762,7 +770,8 @@ export async function runAgent(job: { organizationId: string; conversationId: st
     // mensaje (p. ej. «Precio 2» por palabra clave, que termina con su pregunta), callar es
     // correcto: no se manda nada más. (2) Si no, escribe el otro modelo (uno que no se haya
     // usado ni fallado en esta ronda), con una nota de que el cliente sigue sin respuesta; las
-    // acciones de la primera respuesta (Detalle, avisos, workflows, etapa) no se pierden. (3)
+    // acciones de la primera respuesta (Detalle, avisos, workflows, etapa) no se pierden. En una
+    // etapa del Modelo 1 no hay otro (8-oct-2026, dueño): le escribe otra vez el Modelo 1. (3)
     // Si nadie escribe, no sale nada y el vendedor recibe el aviso "sin_respuesta" (abajo, ya
     // con la respuesta confirmada). Nunca un texto fijo del CRM.
     let silencio: "contestado" | "acuse" | "sin_respuesta" | null = null;
@@ -773,7 +782,10 @@ export async function runAgent(job: { organizationId: string; conversationId: st
       } else if (await alreadyAnswered()) {
         silencio = "contestado";
       } else {
-        const other = candidates.map((c) => getModel(c.modelId)).find((m): m is CatalogModel => m !== undefined && !tried.has(m.id));
+        // El mismo modelo solo si es el de la etapa (en un traspaso, el Modelo 2 no se repite).
+        const other =
+          candidates.map((c) => getModel(c.modelId)).find((m): m is CatalogModel => m !== undefined && !tried.has(m.id)) ??
+          (used.model.id === candidates[0].modelId ? used.model : undefined);
         const rescue = other ? await attempt(other, null, SIN_RESPUESTA_NOTE) : null;
         if (rescue?.ok && !(await isSilent(rescue))) {
           await recordAiUsage({ ...usageOf(used), outcome: "sin_texto", error: `sin texto; contesta ${rescue.model.id}` });

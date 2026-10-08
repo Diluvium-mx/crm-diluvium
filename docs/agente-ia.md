@@ -188,7 +188,8 @@ Interesado) y **Sonnet cierra** (Cerca de compra y Compra: datos bancarios, comp
   sin texto ni acciones) contesta el otro, sin esperar. La tarjeta «El agente no pudo responder» sale
   solo si **fallan los dos**, y dice qué le pasó a cada uno. Un modelo sin llave se salta (en los
   dos sentidos). Con un solo modelo (el mismo en los dos espacios) sigue el reintento único por
-  proveedor saturado de la Fase E.
+  proveedor saturado de la Fase E. **Desde el 8-oct-2026 solo en las etapas del Modelo 2:** en una etapa del
+  Modelo 1 el Modelo 2 nunca contesta por él (ver «Luna sin texto», abajo).
 - **Red contra el silencio (30-sep-2026, dueño)** (`run.ts`, después del traspaso): el CRM **nunca** escribe
   un texto fijo por su cuenta. Antes, si el modelo contestaba solo con acciones (sin texto) y ninguna le
   mandaba algo al cliente, salía «Listo 👍 ¿En qué más te ayudo?» (o uno por motivo: comprobante, asesor,
@@ -199,7 +200,8 @@ Interesado) y **Sonnet cierra** (Cerca de compra y Compra: datos bancarios, comp
      camino), callar es correcto: no sale nada más (`sentToClientSinceLastInbound`, `context.ts`);
   2. si no, **escribe el otro modelo** (uno que no se haya usado ni fallado en esa ronda), con la nota «El
      cliente todavía no tiene respuesta a su último mensaje…» en el contexto del CRM. Las acciones de la
-     primera respuesta (Detalle, avisos, workflows, etapa y el pase a humano) no se pierden. En el traspaso,
+     primera respuesta (Detalle, avisos, workflows, etapa y el pase a humano) no se pierden. En una etapa del
+     Modelo 1 no hay otro: le escribe otra vez el Modelo 1 con la misma nota (8-oct-2026). En el traspaso,
      si el Modelo 2 no escribe y nadie le ha contestado, sale lo que escribió el Modelo 1 (como si fallara);
   3. si **nadie escribe**, no sale nada y el vendedor recibe el aviso 🤖 `sin_respuesta` («El Agente IA no le
      escribió nada al cliente…»): tarjeta amarilla en el Embudo hasta que un vendedor conteste; **no** pausa
@@ -1114,7 +1116,8 @@ común.
   idéntico (acentos, ñ, ü, º/ª, °, m² y emojis pasan). Dónde:
   1. `run.ts` › `attempt`, al leer la respuesta del modelo: sale lo demás (caso 6-oct: sale solo la pregunta). Si no
      queda texto ni acciones (caso 2-oct), se le pide otra respuesta al mismo modelo UNA vez (fila `ai_usage` con
-     «solo letras de otro alfabeto; se pide otra respuesta»); si tampoco, es respuesta vacía y contesta el otro modelo.
+     «solo letras de otro alfabeto; se pide otra respuesta»); si tampoco, es respuesta vacía y contesta el otro modelo
+     (en una etapa del Modelo 1, desde el 8-oct, otra vez el Modelo 1 y luego la tarjeta).
   2. Puerta común (`send.ts` › `sendTextMessage` y el pie de `sendMediaMessage`): a todo lo que sale con
      `source = ai_agent` (textos sueltos de workflows, pies, seguimientos) se le borran también; solo si no queda nada,
      no sale (`not_retryable`). Lo que escribe un vendedor no se toca.
@@ -1216,3 +1219,28 @@ Con un número de otro país (`contacts.phone_country_iso` ≠ MX), los workflow
 con CLIENTES EN EL EXTRANJERO del Goal: explica que solo se envía dentro de México y pregunta si tiene dirección en
 México, antes de cotizar. Antes, el workflow mandaba el precio y el complemento del Agente IA (sin preguntas) borraba esa
 pregunta. Los workflows sin «Solo al inicio» (p. ej. videos) siguen saliendo por su palabra clave.
+
+## Luna sin texto: el sufijo y sin Sonnet en las etapas del Modelo 1 (8-oct-2026, sin migración)
+
+- **Qué pasó:** del 4 al 8-oct, Sonnet escribió 80 respuestas en chats de Prospecto porque Luna contestó solo con
+  acciones (red contra el silencio → «escribe el otro modelo»): US$1.73, el 39 % de lo que gastó Sonnet en esos días, y
+  más caro por respuesta porque Sonnet leía el chat completo por primera vez. Desde el cambio del sufijo del 5-oct
+  (12:17 Mazatlán, «texto interno», arriba) Luna se quedaba sin texto el **8.2 %** de las veces (antes 1.7 %): el sufijo
+  dejó de decir que el texto va primero y Luna, con herramientas en una sola vuelta, a veces solo llamaba
+  `fijar_cotizacion` / `actualizar_detalle`.
+- **Capa 1, el sufijo** (`brain.ts`): «Cada respuesta lleva SIEMPRE primero tu texto para el cliente y, en la misma
+  respuesta, las herramientas que hagan falta: una respuesta solo con herramientas deja al cliente sin contestar»; lo
+  de no escribir nombres de herramientas, JSON ni notas sigue igual. Banco con los 70 casos REALES en que Luna se quedó
+  sin texto (`notas/banco-luna-sin-texto`, 2 vueltas, llaves de staging): sufijo del 5-oct 26.4 % sin texto, sufijo
+  nuevo 8.6 %; con la segunda vuelta de Luna (abajo), 2.9 %. Texto interno: 1 de 140 en cada sufijo, y el candado de
+  `internal-text.ts` detiene los dos. Cambia el prefijo en caché una vez (una escritura de 1 h, centavos).
+- **Capa 2, nunca Sonnet por Luna** (decisión del dueño, «por nada del mundo»): en una etapa del Modelo 1,
+  `brainCandidates` devuelve SOLO el Modelo 1 (aunque falte su llave: la tarjeta dice qué falta). Respuesta vacía → se
+  le pide otra vez a Luna UNA vez con `SIN_RESPUESTA_NOTE` (`run.ts`); si tampoco, tarjeta «El agente no pudo
+  responder». Red contra el silencio → escribe otra vez Luna con la nota; si tampoco, aviso `sin_respuesta`. La
+  pregunta sin contestar y las letras de otro alfabeto ya usaban el mismo modelo cuando no hay otro. Lo único que
+  sigue llevando a Sonnet desde una etapa del Modelo 1 es el **traspaso** (Luna mueve el contacto a una etapa del
+  Modelo 2). Las etapas del Modelo 2 no cambian: si Sonnet falla o se queda sin texto, contesta Luna.
+- **Efecto:** si Luna (OpenAI) se cae, los chats de Inbox y Prospecto se quedan con la tarjeta en vez de contestar
+  con Sonnet. Ahorro estimado: ~US$0.35 al día de Sonnet (80 respuestas en 5 días) a cambio de unas 2 llamadas más de
+  Luna al día (~US$0.002).
