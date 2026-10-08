@@ -3,7 +3,8 @@
 Railway está en plan trial: los backups nativos y el PITR son del plan Pro. Mientras tanto,
 la BD de producción se respalda con `pg_dump` desde GitHub Actions
 (`.github/workflows/db-backup.yml`). Las fotos, audios y PDF del bucket de media tienen su propio
-respaldo diario (*Respaldo de medios*, abajo).
+respaldo diario (*Respaldo de medios*, abajo) y los datos crudos de los webhooks tienen retención
+(*Retención de datos crudos*).
 
 ## Cómo funciona
 
@@ -380,6 +381,22 @@ Al terminar: `unset RB MB $(env | grep -o '^RCLONE_CONFIG_[A-Z_]*')`.
 
 > Antes de restaurar en producción, ensaya contra el bucket de staging (mismos comandos con `-e staging`
 > en el segundo `eval`).
+
+## Retención de datos crudos (webhook_events)
+
+`webhook_events` guarda el payload **crudo** de cada webhook de Zernio (teléfono, nombre y texto del
+cliente) para no perder nada y poder reprocesar. No se guarda para siempre (barrido del worker, cada
+minuto):
+
+- **Procesados:** se borran a los **30 días** de `processed_at`.
+- **Cuarentena** (cuenta no permitida en el entorno): se borran a los **30 días** de `quarantined_at`.
+- **Dead-letter** (agotó sus intentos o formato no reconocido): a los **30 días** de `dead_lettered_at`
+  se **vacía el payload** (queda `{"_vaciado": "<fecha>"}`). La fila se queda —id, evento, intentos,
+  `last_error`, fechas— para que el monitor y los conteos sigan igual; solo deja de tener los datos del
+  cliente. `npm run webhooks:replay` reactiva los demás y **salta** los vaciados con un aviso (siguen en
+  dead-letter), y la ingesta tampoco intenta procesarlos. Lógica:
+  `lib/messaging/dead-letter-retention.ts`. Si un dead-letter importa, hay que reprocesarlo antes de
+  esos 30 días.
 
 ## Cuándo cambiar a Railway Pro
 
