@@ -84,7 +84,7 @@ export async function GET(req: Request, { params }: RouteContext<"/api/contactos
       storage = objectStorage();
     } catch (error) {
       if (!(error instanceof StorageNotConfiguredError)) throw error;
-      console.error("[exportar contacto] bucket no configurado:", error.message);
+      logError("[exportar contacto] bucket no configurado", error);
       return text("almacenamiento no configurado", 503);
     }
   }
