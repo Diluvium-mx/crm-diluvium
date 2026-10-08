@@ -32,6 +32,7 @@ import {
 import { useVirtualizer } from "@tanstack/react-virtual";
 import { ContactCard, ContactCardContent } from "./contact-card";
 import { ContactDetailPanel } from "./contact-detail-panel";
+import { isDeletingHere, noteDeletedEvent } from "./deleting-contacts";
 import { phoneMatchesSearch } from "@/lib/phone-format";
 import { chatSearchTerm, normalizeSearch } from "@/lib/text/search";
 import { hasCardFilter, matchesCardFilter, type TemperatureFilter } from "@/lib/contacts/filters";
@@ -633,7 +634,28 @@ export function ContactsBoard({
     }, 1_500);
   }
 
+  // Contacto borrado (ARCO, 7-oct-2026): fuera su tarjeta y, si su pop-up estaba abierto, se
+  // cierra. Lo llama el aviso en vivo (`contact.deleted`) y la ventana de borrar de esta pestaña.
+  function removeContact(contactId: string) {
+    setContacts((current) => (current.some((c) => c.id === contactId) ? current.filter((c) => c.id !== contactId) : current));
+    setLiveAdded((current) => (current.some((c) => c.id === contactId) ? current.filter((c) => c.id !== contactId) : current));
+    setSelectedContactId((current) => (current === contactId ? null : current));
+    setKeptContactId((current) => (current === contactId ? null : current));
+    setSignals((current) => {
+      if (!(contactId in current)) return current;
+      const next = { ...current };
+      delete next[contactId];
+      return next;
+    });
+  }
+
   useInboxStream((event) => {
+    if (event.type === "contact.deleted") {
+      // Lo está borrando la ventana de ESTA pestaña: ella lo quita al cerrarse (con su resultado a la vista).
+      if (isDeletingHere(event.contactId)) noteDeletedEvent(event.contactId);
+      else removeContact(event.contactId);
+      return;
+    }
     if (event.type === "reload" || event.type === "inbox.bulk" || event.type === "message.upserted" || event.type === "message.deleted") {
       scheduleChatRefresh();
     }
@@ -1146,6 +1168,7 @@ export function ContactsBoard({
           }
           onDestacadoChange={(next) => handleDestacadoChange(selectedContact.id, next)}
           onOpenContact={(contactId) => void openContactById(contactId)}
+          onDeleted={() => removeContact(selectedContact.id)}
           searchTerm={chatTerm}
         />
       )}

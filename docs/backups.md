@@ -29,6 +29,20 @@ cifrado con passphrase (AES256, simétrico) a un artifact del repo público. El 
 artifacts viejos y el secret `BACKUP_GPG_PASSPHRASE` (decisión del dueño): hoy los respaldos existen solo
 en el bucket y se abren solo con la llave privada.
 
+## Contactos borrados (ARCO)
+
+«Borrar contacto» (Detalle del contacto, desde el 7-oct-2026; `docs/bandeja.md` › Borrar y exportar
+un contacto) borra al contacto de la base y sus archivos del bucket de media **al momento**. Lo que
+ya estaba respaldado no se reescribe:
+
+- **Respaldos de la base:** el contacto, sus chats y mensajes siguen dentro de los respaldos de los
+  días anteriores hasta que caducan a los **90 días** (la retención normal de arriba); después ya no
+  existen en ningún lado. Un restore de un respaldo viejo lo traería de vuelta: si se restaura, hay
+  que volver a borrar a los contactos que pidieron su baja después de la fecha del respaldo (quedan
+  en Agente IA › Historial, tipo «Contactos borrados», con la fecha y los últimos 4 dígitos).
+- **Respaldo de medios:** lo quita en su siguiente corrida.
+- El Historial guarda solo quién borró, cuándo y los últimos 4 dígitos del teléfono; nunca el nombre.
+
 ## Monitoreo: que el respaldo no se apague en silencio
 
 Sin herramientas externas, a propósito: el CRM solo depende de GitHub y Railway.
