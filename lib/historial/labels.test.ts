@@ -71,7 +71,11 @@ describe("historial de cambios: textos y filtros", () => {
       "Plantillas",
       "Vendedores",
       "Pausas por chat",
+      "Contactos borrados",
     ]);
+    expect(describeAction("contacto_borrado", "borrar", "6364")).toBe("Borró un contacto (teléfono terminado en 6364) con sus chats y archivos");
+    expect(describeAction("contacto_borrado", "borrar", "instagram")).toBe("Borró un contacto de Instagram con sus chats y archivos");
+    expect(describeAction("contacto_borrado", "borrar", null)).toBe("Borró un contacto con sus chats y archivos");
   });
 
   it("foto de un workflow para 'Ver cambios': archivo por su nombre (o 'archivo borrado')", () => {

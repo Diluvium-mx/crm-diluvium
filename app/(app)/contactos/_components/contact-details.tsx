@@ -4,7 +4,9 @@
 // Bandeja y en el pop-up de la tarjeta del Embudo. Orden acordado: nombre,
 // teléfono, (etapa y temperatura), ¿inundaciones?, ¿cuánta agua?, ¿cuántas
 // entradas?, ancho y tamaño por entrada, monto y pago, % de convencimiento, [interruptor
-// del bot → Fase B] y, al final compactos, correo y etiquetas (sin Comentarios desde el 6-oct-2026).
+// del bot → Fase B] y, al final compactos, el correo (sin Comentarios desde el 6-oct-2026; sin
+// etiquetas desde el 7-oct-2026: siguen en la base y vuelven con las difusiones) y «Datos personales»
+// (exportar o borrar el contacto, derechos ARCO).
 // Guardado automático al salir de cada campo (sin botón Guardar), con aviso
 // sutil. Etapa y temperatura las maneja el padre (cada vista las sincroniza a su
 // modo: el tablero con su estado optimista, la Bandeja con el suyo).
@@ -37,6 +39,7 @@ import { AgentContactSwitch } from "./agent-contact-switch";
 import { IaMark } from "./ia-mark";
 import { TemperatureDestacadoMenu } from "./temperature-destacado-menu";
 import { LectorStatusLine } from "./lector-status";
+import { ContactArcoSection } from "./contact-arco-section";
 
 type Details = Awaited<ReturnType<typeof getContactDetails>>;
 type Inundaciones = NonNullable<Details["tieneInundaciones"]>;
@@ -155,6 +158,7 @@ export function ContactDetails({
   error,
   action,
   conversationId,
+  onDeleted,
 }: {
   contactId: string;
   /** La conversación abierta (Bandeja): el control del agente es el de ESTA. */
@@ -177,6 +181,8 @@ export function ContactDetails({
   error?: string | null;
   /** Botón extra en el encabezado (p. ej. "Cerrar" en el pop-up del Embudo). */
   action?: React.ReactNode;
+  /** «Borrar contacto» (Datos personales) lo borró: el tablero lo quita y cierra este Detalle. */
+  onDeleted: () => void;
 }) {
   const { status, run } = useSaveStatus();
   // Columnas del Embudo vigentes (nombre y orden en vivo).
@@ -398,7 +404,7 @@ export function ContactDetails({
     }
     setDetails((d) => {
       if (!d) return d;
-      const next: Details = { ...d, anuncio: fresh.anuncio, anuncios: fresh.anuncios, email: fresh.email, tags: fresh.tags };
+      const next: Details = { ...d, anuncio: fresh.anuncio, anuncios: fresh.anuncios, email: fresh.email };
       for (const field of QUAL_FIELDS) if (!busy.has(field)) copyField(next, freshQ, field);
       if (!busy.has("entradas")) {
         next.numEntradas = fresh.numEntradas;
@@ -784,16 +790,10 @@ export function ContactDetails({
                 <span className="mr-1">Correo:</span>
                 <span className="text-foreground">{details.email || "—"}</span>
               </p>
-              {details.tags.length > 0 && (
-                <p className="flex flex-wrap gap-1">
-                  {details.tags.map((t) => (
-                    <span key={t} className="rounded-full bg-muted px-1.5 py-0.5 text-[11px] text-foreground">
-                      {t}
-                    </span>
-                  ))}
-                </p>
-              )}
             </div>
+
+            {/* Derechos ARCO (7-oct-2026): exportar o borrar el contacto con todo lo suyo. */}
+            <ContactArcoSection contactId={contactId} contactName={name} onDeleted={onDeleted} />
           </>
         )}
       </div>

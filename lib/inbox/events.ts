@@ -39,6 +39,12 @@ function payloadToEvent(raw: string): { organizationId: string; event: InboxEven
       return { organizationId: org, event: { type, contactId } };
     }
     if (type === "contacts.bulk") return { organizationId: org, event: { type } };
+    // Contacto borrado con todo lo suyo (ARCO, lib/contacts/notify-updated.ts › notifyContactDeleted).
+    if (type === "contact.deleted" && typeof contactId === "string") {
+      const { conversationIds } = data as Record<string, unknown>;
+      const ids = Array.isArray(conversationIds) ? conversationIds.filter((id): id is string => typeof id === "string") : [];
+      return { organizationId: org, event: { type, contactId, conversationIds: ids } };
+    }
     // Lote del historial del celular (lib/messaging/history-import.ts).
     if (type === "inbox.bulk") {
       const { contactos } = data as Record<string, unknown>;
