@@ -310,6 +310,14 @@ follow_ups           id, org_id, conversation_id, contact_id, caso (tabla de 10 
 -- pricing_analytics de la WABA; tarjeta «WhatsApp (Meta)» del Dashboard debajo del Gasto de IA.
 meta_whatsapp_billing org_id (PK), waba_id, currency, days jsonb (día UTC → tipo de precio → categoría →
                      {volume, cost}), fetched_at, attempted_at, last_error
+-- Opiniones después de la compra (8-oct-2026, migración 0064; diseño en docs/opiniones.md). Pestaña «Seguimientos» del
+-- menú › Opinión + formulario PÚBLICO /opinion/<token> (sin sesión; la respuesta entra por /api/opinion con límite por IP).
+opiniones            id, org_id, contact_id?, conversation_id?, token (128 bits, único; va en el enlace), codigo (de
+                     recomendación, único por org: DILU-XXXX), prueba, created_by_user_id, expires_at (60 días), answered_at,
+                     estrellas 1–5, texto, lluvia (resistio|se_metio|todavia_no), permiso (con_nombre|sin_nombre|no),
+                     nombre/ciudad (solo con_nombre), permiso_texto (texto exacto que aceptó)
+                     -- una sola respuesta por enlace (UPDATE … where answered_at is null)
+opiniones_config     org_id (PK), google_resena_url (botón «Dejar reseña en Google», sale para todos)
 ```
 
 Detalles que importan:

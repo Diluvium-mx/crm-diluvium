@@ -32,6 +32,9 @@ export const statement = {
   // Columnas del Embudo (etapas: nombre, orden, color, papel, regla del bot y modelo).
   // Las editan vendedores, admin y owner (decisión del dueño, 26-sep-2026).
   funnelStage: ["read", "update"],
+  // Pestaña "Seguimientos" › Opinión (7-oct-2026, docs/opiniones.md): todos los roles
+  // ven las opiniones, crean y borran enlaces de prueba y cambian el enlace de Google.
+  opinion: ["read", "create", "update", "delete"],
   // Sección "Configuración" (Vendedores y lo que se agregue): solo owner/admin
   // la ven y editan. "Mi cuenta" NO vive aquí (menú del usuario).
   settings: ["read"],
@@ -51,6 +54,7 @@ export const owner = ac.newRole({
   workflow: ["read", "run", "create", "update", "delete"],
   mediaAsset: ["read", "create", "delete"],
   funnelStage: ["read", "update"],
+  opinion: ["read", "create", "update", "delete"],
   settings: ["read"],
 });
 
@@ -66,6 +70,7 @@ export const admin = ac.newRole({
   workflow: ["read", "run", "create", "update", "delete"],
   mediaAsset: ["read", "create", "delete"],
   funnelStage: ["read", "update"],
+  opinion: ["read", "create", "update", "delete"],
   settings: ["read"],
 });
 
@@ -85,6 +90,7 @@ export const agent = ac.newRole({
   workflow: ["read", "run", "create", "update", "delete"],
   mediaAsset: ["read", "create", "delete"],
   funnelStage: ["read", "update"],
+  opinion: ["read", "create", "update", "delete"],
   // Sin `settings`: roleAllows falla cerrado → sin la sección Configuración.
 });
 
