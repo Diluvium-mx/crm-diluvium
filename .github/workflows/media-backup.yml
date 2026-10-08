@@ -52,10 +52,12 @@ defaults:
     shell: bash # = bash -eo pipefail
 
 env:
-  RCLONE_VERSION: v1.75.1 # del 4-sep-2026
+  # OJO: nada que empiece con RCLONE_ fuera de RCLONE_CONFIG_*: rclone lee toda variable RCLONE_<OPCIÓN>
+  # como si fuera esa opción (RCLONE_VERSION = --version y la primera corrida murió el 8-oct).
+  BIN_RCLONE_VERSION: v1.75.1 # del 4-sep-2026
   # sha256 de rclone-v1.75.1-linux-amd64.zip (SHA256SUMS firmado de downloads.rclone.org
   # y el digest del release en GitHub; coinciden). Si cambias la versión, cambia esto.
-  RCLONE_SHA256: 982b5aa772841168f8e380f139e9e787b2a105403e32b94da8676a0e1c0a13ab
+  BIN_RCLONE_SHA256: 982b5aa772841168f8e380f139e9e787b2a105403e32b94da8676a0e1c0a13ab
   MEDIA_PREFIX: media
   # Los dos remotos de rclone (sin archivo de configuración). Llaves y nombres, por secrets.
   RCLONE_CONFIG_MEDIA_TYPE: s3
@@ -95,12 +97,12 @@ jobs:
             exit 1
           fi
 
-      - name: Instalar rclone ${{ env.RCLONE_VERSION }} (sha256 verificado)
+      - name: Instalar rclone ${{ env.BIN_RCLONE_VERSION }} (sha256 verificado)
         run: |
-          zip="rclone-${RCLONE_VERSION}-linux-amd64.zip"
-          curl -fsSLo "/tmp/$zip" "https://github.com/rclone/rclone/releases/download/${RCLONE_VERSION}/${zip}"
-          echo "${RCLONE_SHA256}  /tmp/${zip}" | sha256sum --check --strict -
-          unzip -q -j "/tmp/$zip" "rclone-${RCLONE_VERSION}-linux-amd64/rclone" -d /tmp/rclone-bin
+          zip="rclone-${BIN_RCLONE_VERSION}-linux-amd64.zip"
+          curl -fsSLo "/tmp/$zip" "https://github.com/rclone/rclone/releases/download/${BIN_RCLONE_VERSION}/${zip}"
+          echo "${BIN_RCLONE_SHA256}  /tmp/${zip}" | sha256sum --check --strict -
+          unzip -q -j "/tmp/$zip" "rclone-${BIN_RCLONE_VERSION}-linux-amd64/rclone" -d /tmp/rclone-bin
           sudo install -m 0755 /tmp/rclone-bin/rclone /usr/local/bin/rclone
           rclone version
 
