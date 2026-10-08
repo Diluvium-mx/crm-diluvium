@@ -11,6 +11,11 @@
 // abajo que se vacía, halo oscuro difuminado SOLO alrededor de cada tarjeta (el resto de
 // la pantalla no se oscurece) y la ✕ blanca de siempre. El agrupado (desde el 4.º) se
 // despliega con cada cambio y no vence mientras está abierto. Escritorio: igual que antes.
+//
+// Luz del cursor (8-oct-2026): la tarjeta se ilumina COMPLETA, como una sola pieza, esté
+// el cursor sobre el texto o sobre la ✕ (data-glow en la tarjeta y data-no-glow en sus dos
+// botones, como la fila de la Bandeja). En el celular solo la fila de arriba: los cambios
+// del agrupado desplegado conservan su propia luz.
 import { useEffect, useRef, useState } from "react";
 import { usePathname, useRouter } from "next/navigation";
 import { ChevronDown, ChevronUp, X } from "lucide-react";
@@ -114,9 +119,10 @@ export function StageChangeToasts({ viewerUserId }: { viewerUserId: string }) {
               key={toast.key}
               className="pointer-events-auto w-full max-w-md overflow-hidden rounded-lg bg-brand-navy text-brand-white shadow-[0_6px_30px_6px_rgb(0_0_0/0.35)] duration-200 ease-out animate-in fade-in-0 slide-in-from-top-2 motion-reduce:animate-none"
             >
-              <div className="flex items-start">
+              <div data-glow="" className="flex items-start">
                 <button
                   type="button"
+                  data-no-glow=""
                   onClick={() => (toast.kind === "group" ? toggleGroup(toast.key) : open(toast))}
                   aria-expanded={toast.kind === "group" ? expanded : undefined}
                   className="flex min-w-0 flex-1 items-center gap-1.5 px-3 py-2 text-left text-[13px] leading-snug"
@@ -133,6 +139,7 @@ export function StageChangeToasts({ viewerUserId }: { viewerUserId: string }) {
                 </button>
                 <button
                   type="button"
+                  data-no-glow=""
                   onClick={() => dismiss(toast.key)}
                   aria-label="Cerrar aviso"
                   title="Cerrar"
@@ -199,11 +206,13 @@ export function StageChangeToasts({ viewerUserId }: { viewerUserId: string }) {
         return (
           <div
             key={toast.key}
+            data-glow=""
             className="pointer-events-auto flex w-full max-w-md overflow-hidden rounded-lg bg-brand-navy text-brand-white shadow-[0_10px_28px_-10px_rgb(4_30_60/0.7)] ring-1 ring-white/15 duration-300 ease-out animate-in fade-in-0 slide-in-from-top-4 motion-reduce:animate-none"
           >
             <span aria-hidden="true" className="w-1 shrink-0 bg-brand-orange" />
             <button
               type="button"
+              data-no-glow=""
               onClick={() => open(toast)}
               title={toast.kind === "group" ? "Abrir el Embudo" : "Abrir su chat en la Bandeja"}
               className="min-w-0 flex-1 px-3 py-2.5 text-left text-sm leading-snug"
@@ -213,6 +222,7 @@ export function StageChangeToasts({ viewerUserId }: { viewerUserId: string }) {
             </button>
             <button
               type="button"
+              data-no-glow=""
               onClick={() => dismiss(toast.key)}
               aria-label="Cerrar aviso"
               title="Cerrar"
