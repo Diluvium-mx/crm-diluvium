@@ -62,6 +62,14 @@ describe("comandos y palabras clave", () => {
     expect(matchesKeyword("¿Qué tamaño son?", ["que tamaño son"])).toBe("que tamaño son");
     expect(matchesKeyword("quiero la tabla de tamaños", ["tabla de tamaños"])).toBe("tabla de tamaños");
     expect(matchesKeyword("hola, buenas tardes", ["tabla"])).toBeNull();
+    // Solo signos de pesos = pregunta de precio (5-oct-2026).
+    expect(matchesKeyword("$", ["cuesta", "costo", "precio"])).toBe("precio");
+    expect(matchesKeyword(" $$$ ", ["precio"])).toBe("precio");
+    expect(matchesKeyword("¿$?", ["precio"])).toBe("precio");
+    expect(matchesKeyword("$", ["tabla"])).toBeNull(); // sin la palabra «precio» no dispara nada
+    expect(matchesKeyword("$500", ["precio"])).toBeNull(); // trae número: se compara normal
+    expect(matchesKeyword("$ precio?", ["precio"])).toBe("precio");
+    expect(matchesKeyword("???", ["precio"])).toBeNull();
   });
   it("gana la palabra clave más larga; un mensaje largo también dispara (como GHL)", () => {
     expect(matchesKeyword("me mandas el video a la medida?", ["video", "video a la medida"])).toBe("video a la medida");
