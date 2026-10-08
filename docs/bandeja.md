@@ -79,6 +79,63 @@ entradas?, ancho + línea + tamaño de compuerta (sugerido por rangos / manual) 
 de cotización (MXN), % de convencimiento, [espacio para el interruptor del Agente IA, Fase B],
 comentarios (autor y fecha) y, al final compactos, correo y etiquetas. Guardado automático al
 salir de cada campo (sin botón Guardar) con aviso "Guardado ✓". Ya no existe "Ver ficha completa".
+**7-oct-2026:** las etiquetas (`contacts.tags`, de GHL) ya no se muestran ni viajan en
+`getContactDetails` (decisión del dueño): siguen en la base, el importador las sigue guardando y
+vuelven con las difusiones (v2). Al final va «Datos personales» (ver *Borrar y exportar un contacto*).
+
+### Borrar y exportar un contacto (ARCO, 7-oct-2026)
+Derechos del cliente sobre sus datos. Sección discreta **«Datos personales»** al final del Detalle
+del contacto (el mismo de la Bandeja y del pop-up del Embudo), con dos acciones de texto. Todos los
+roles (`contact: delete/export` en `lib/auth/permissions.ts`; el vendedor puede todo menos Configuración).
+
+- **Exportar datos** → `GET /api/contactos/[contactId]/exportar` descarga
+  `contacto-<nombre-saneado>-<AAAA-MM-DD>.zip` (fecha de Mazatlán):
+  - `datos.json`: contacto (nombre, teléfono, correo, Instagram, país, origen y anuncio, etapa,
+    temperatura, Detalle con sus entradas, fechas) y sus conversaciones con cada mensaje (fecha en
+    hora de Mazatlán, quién habló —Cliente, Vendedor o Agente IA—, texto, transcripción y adjuntos con
+    su nombre y, si va en el zip, su ruta);
+  - `chat.txt`: el chat legible, «[2026-10-03 10:12] Cliente: …» (`lib/contacts/arco/chat-txt.ts`);
+  - `archivos/`: SOLO lo que mandó el **cliente** (entrantes) y ya está en el bucket; lo que mandó
+    Diluvium (Biblioteca, adjuntos del vendedor) solo aparece por su nombre.
+  - No van: las notas internas del Agente IA para el vendedor (`system_note`), los comentarios
+    internos ni las etiquetas.
+  - Tope **200 MB** de archivos (`EXPORT_MAX_FILE_BYTES`): la UI pregunta antes
+    (`getContactArcoSummary`) y, si se pasa, avisa y ofrece «Descargar sin archivos»
+    (`?sinArchivos=1`); la ruta también responde 413 con el mismo texto. Un archivo que no se pudo
+    leer del bucket va en `archivos/NO-INCLUIDOS.txt`; un error a medio archivo corta la descarga.
+  - **Por qué es ruta y no Server Action:** es una DESCARGA (el navegador la guarda con
+    `Content-Disposition`), de hasta 200 MB y en streaming desde el bucket (zip con `fflate`, pieza
+    por pieza). Una Server Action serializa toda su respuesta en memoria, no entrega un archivo y
+    bloquearía las demás acciones de la pestaña (se despachan en fila). Igual que `/api/media`: sesión
+    y membresía vigente, la organización sale de `requireActiveMembership` y un contacto de otra
+    organización da 404.
+- **Borrar contacto** (rojo) → ventana que dice qué se borra (chats con cuántos mensajes, archivos
+  del chat, Detalle, seguimientos y programados pendientes) y pide escribir **BORRAR**. Server Action
+  `deleteContact` (`lib/actions/contact-arco.ts` → `lib/contacts/arco/delete.ts`):
+  1. contacto por id + organización (de otra: «ya no existe»);
+  2. saca de la cola `agent-replies` el job de cada chat (`jobId = conversationId`; si Redis no
+     responde, sigue: la corrida ya no encuentra la conversación);
+  3. UNA transacción (con `crm.avisos_en_lote` para no mandar un aviso por mensaje): junta las
+     llaves del bucket (solo `org/{org}/messages/…` y `org/{org}/chat/…` con sus miniaturas, y la
+     carpeta de un mensaje con descarga pendiente; **nunca** `org/{org}/library/…`, que comparten
+     todos los chats); `ai_usage` de sus chats queda con `conversation_id` y `message_id` en null (el
+     gasto de IA del Dashboard se conserva); borra sus `comprobantes` (FK con set null: quedarían
+     huérfanos con monto, banco y referencia) y lo crudo de `webhook_events` de su organización
+     ligado a sus mensajes o chats (por wamid, id interno o id de conversación de Zernio; los eventos
+     sin organización todavía no se tocan y el dead-letter se vacía a los 30 días); las filas viejas
+     del Historial que nombraban su chat (pausas) se quedan sin el nombre; borra el contacto (el
+     cascade se lleva chats, mensajes, entradas, comentarios, seguimientos, programados, corridas de
+     workflows, clics de anuncios, borradores y avisos del agente); fila `contacto_borrado` en
+     `change_history` (quién y cuándo; `subject` = últimos 4 dígitos del teléfono o «instagram»;
+     nunca el nombre); aviso en vivo `contact.deleted` (`notifyContactDeleted`, solo ids);
+  4. ya confirmado, borra los archivos del bucket. Si alguno falla, la ventana dice «quedaron N
+     archivos» con **Reintentar** (`retryContactFilesDeletion` con un comprobante firmado de esas
+     llaves, 7 días, misma organización y usuario).
+- **En vivo:** `contact.deleted` quita los chats de la Bandeja y la tarjeta del Embudo (y cierra su
+  Detalle o pop-up) en todas las pantallas. En la pestaña que borra, la ventana se queda con su
+  resultado y el tablero lo quita al cerrarla (`deleting-contacts.ts`).
+- Lo borrado sigue en los respaldos (ver `docs/backups.md`). Si el cliente vuelve a escribir, entra
+  como contacto nuevo.
 
 ### Lista: temperatura (C1)
 Debajo de la estrella de cada fila va la temperatura del contacto (🔥/🧊/⏳; ○ sin asignar; ⭐ no es
@@ -330,6 +387,8 @@ automatización (`/banco` → Cerca de compra) o por otro vendedor se ve sin ref
   `detalle`, `comentarios`), `stage {from, to}` si cambió la etapa, `by` (vendedor con `userId` y
   nombre · `agente` · `automatizacion` con el `userId` de quien escribió el comando, o null si fue
   una palabra clave del cliente) y `at`.
+- **Contacto borrado** (ARCO, 7-oct-2026): evento `contact.deleted` (`contactId`, `conversationIds`,
+  sin datos personales) de `notifyContactDeleted`, en la transacción del borrado.
 - **Un solo helper**: `notifyContactUpdated` (`lib/contacts/notify-updated.ts`), llamado DENTRO de
   la transacción de cada escritura (NOTIFY sale al confirmar; si se revierte, no sale). Lo llaman
   `updateContactStage`/`updateContactTemperature` (`lib/actions/contacts.ts`), TODAS las escrituras

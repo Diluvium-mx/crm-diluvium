@@ -14,9 +14,12 @@ export function ContactPanel({
   detail,
   onTemperatureChanged,
   onStageChanged,
+  onContactDeleted,
   action,
 }: {
   detail: ConversationDetail;
+  /** «Borrar contacto» del Detalle lo borró: la Bandeja quita sus chats y cierra este. */
+  onContactDeleted: (contactId: string) => void;
   /** Botón del encabezado (ocultar el panel). */
   action?: React.ReactNode;
   /** La temperatura cambió aquí: la lista de la Bandeja la refleja (C1). */
@@ -90,6 +93,7 @@ export function ContactPanel({
       busy={isSaving}
       error={error}
       action={action}
+      onDeleted={() => onContactDeleted(contact.id)}
     />
   );
 }

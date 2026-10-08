@@ -262,7 +262,17 @@ export type InboxEvent =
   | StagesUpdatedEvent
   /** Cambió el seguimiento del Agente IA de un chat (lib/followups/store.ts): la píldora 🤖 se vuelve a pedir. */
   | { type: "followup.updated"; conversationId: string; contactId: string }
+  /** Se borró un contacto con todo lo suyo (ARCO): la Bandeja quita sus chats y el Embudo su tarjeta. */
+  | ContactDeletedEvent
   | { type: "reload" };
+
+/** Contacto borrado (lib/contacts/notify-updated.ts › notifyContactDeleted). Solo ids, sin datos personales. */
+export type ContactDeletedEvent = {
+  type: "contact.deleted";
+  contactId: string;
+  /** Sus chats (la Bandeja los quita de la lista y cierra el abierto). */
+  conversationIds: string[];
+};
 
 export type StagesUpdatedEvent = {
   type: "stages.updated";

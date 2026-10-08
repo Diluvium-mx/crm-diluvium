@@ -140,6 +140,8 @@ export function ContactChat({
     if (event.type === "lector.status") return;
     // El seguimiento del Agente IA: solo la píldora 🤖 del composer (followup-pill.tsx).
     if (event.type === "followup.updated") return;
+    // Contacto borrado (ARCO): el Embudo cierra el pop-up; el chat no tiene nada que releer.
+    if (event.type === "contact.deleted") return;
     const id = conversationIdRef.current;
     if (!id) {
       // Con debounce: una ráfaga de mensajes de otros clientes = una búsqueda.

@@ -12,7 +12,6 @@ import {
   type LineaCompuerta,
   type SizeRange,
 } from "./sizes";
-import { isInternalAgentTag } from "@/lib/ai/runtime/tags";
 import { conversations, messages } from "@/lib/db/schema/messaging";
 import { sanitizeReferral } from "@/lib/inbox/format";
 import { contactAdAttribution } from "@/lib/ads/queries";
@@ -221,10 +220,10 @@ export async function getContactQualification(
           others: anuncios.others.map((o) => ({ name: o.name, href: o.href })),
         }
       : null,
-    // Datos básicos que el panel muestra al final (compactos).
+    // Datos básicos que el panel muestra al final (compactos). Las etiquetas (contacts.tags, de
+    // GHL) ya NO se mandan ni se muestran (decisión del dueño, 7-oct-2026): siguen en la base y
+    // vuelven con las difusiones (v2).
     email: contact.email,
-    // Sin las etiquetas internas del agente ("pasar a humano", "revisión humana").
-    tags: contact.tags.filter((t) => !isInternalAgentTag(t)),
     tieneInundaciones: contact.tieneInundaciones,
     nivelAguaCm: contact.nivelAguaCm,
     nivelAguaTexto: contact.nivelAguaTexto,
