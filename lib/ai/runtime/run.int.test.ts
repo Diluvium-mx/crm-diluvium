@@ -2267,13 +2267,13 @@ describe.skipIf(!TEST_DATABASE_URL)("runtime del Agente IA (Postgres real)", () 
     expect(await agentError.hasUnresolvedAgentError(ORG, CONV)).toBe(false);
   });
 
-  it("Fase E: sin llave del Modelo 1 contesta el Modelo 2 (el agente no se queda callado)", async () => {
+  it("8-oct: sin llave del Modelo 1, en su etapa el Modelo 2 NO contesta por él (su falla llega a la tarjeta)", async () => {
     await db.update(s.aiConfig).set({ modelo1: "gpt-5.6-luna" }).where(eq(s.aiConfig.organizationId, ORG));
     await model1Stages(["inbox"]);
     await msg({ direction: "in", body: "hola", at: ago(20_000) });
     const { deps, calls } = makeDeps({ brain: ["¡Hola! ¿En qué te ayudo?"] });
-    expect((await run.runAgent(JOB, { ...deps, isModelAvailable: (id) => id !== "gpt-5.6-luna" })).kind).toBe("sent");
-    expect(calls.filter((c) => c.kind === "cerebro").map((c) => c.modelId)).toEqual(["claude-sonnet-5"]);
+    await run.runAgent(JOB, { ...deps, isModelAvailable: (id) => id !== "gpt-5.6-luna" });
+    expect(calls.filter((c) => c.kind === "cerebro").map((c) => c.modelId)).toEqual(["gpt-5.6-luna"]);
   });
 
   it("Fase E: un vendedor cambia la etapa durante la generación y con ella el modelo → esa respuesta no sale; se regenera con el correcto", async () => {
@@ -2379,16 +2379,17 @@ describe.skipIf(!TEST_DATABASE_URL)("runtime del Agente IA (Postgres real)", () 
     (await db.select().from(s.aiUsage).orderBy(s.aiUsage.createdAt)).filter((u) => u.stage === "cerebro").map((u) => `${u.modelId}:${u.outcome}`);
   const setStage = (stage: "inbox" | "prospecto" | "interesado" | "cerca_compra" | "compra") => db.update(s.contacts).set({ stage }).where(eq(s.contacts.id, CONTACT));
 
-  it("respaldo: si Luna (Modelo 1) falla, contesta Sonnet (Modelo 2) en la misma corrida; sin tarjeta", async () => {
+  it("8-oct: si Luna (Modelo 1) falla en su etapa, Sonnet NO contesta por ella: tarjeta y nada al cliente", async () => {
     await dosModelos();
     await msg({ direction: "in", body: "hola, precio?", at: ago(20_000) });
-    const { deps, calls, sleeps } = makeDeps({ brain: ["Cuesta $5,500 MXN."], brainErrors: [apiError(401, "Incorrect API key provided")] });
-    expect(await run.runAgent(JOB, deps)).toEqual({ kind: "sent", bubbles: 1 });
-    expect(brainIds(calls)).toEqual(["gpt-5.6-luna", "claude-sonnet-5"]);
-    expect(sleeps).not.toContain(run.SATURATED_RETRY_MS);
-    expect((await agentOuts()).map((m) => m.body)).toEqual(["Cuesta $5,500 MXN."]);
-    expect(await brainOutcomes()).toEqual(["gpt-5.6-luna:error", "claude-sonnet-5:sent"]);
-    expect((await notices()).filter((n) => n.kind === "agente_error")).toHaveLength(0);
+    const { deps, calls } = makeDeps({ brain: ["Cuesta $5,500 MXN."], brainErrors: [apiError(401, "Incorrect API key provided")] });
+    expect(await run.runAgent(JOB, deps)).toEqual({ kind: "failed", reason: "llave_invalida" });
+    expect(brainIds(calls)).toEqual(["gpt-5.6-luna"]);
+    expect(await agentOuts()).toHaveLength(0);
+    expect(await brainOutcomes()).toEqual(["gpt-5.6-luna:error"]);
+    const cards = (await notices()).filter((n) => n.kind === "agente_error");
+    expect(cards).toHaveLength(1);
+    expect(cards[0].body).toContain("GPT-5.6 Luna");
   });
 
   it("respaldo: si Sonnet (Modelo 2) falla —aunque sea saturado—, contesta Luna sin esperar", async () => {
@@ -2402,21 +2403,45 @@ describe.skipIf(!TEST_DATABASE_URL)("runtime del Agente IA (Postgres real)", () 
     expect((await notices()).filter((n) => n.kind === "agente_error")).toHaveLength(0);
   });
 
-  it("respaldo: una respuesta VACÍA cuenta como falla: contesta el otro modelo", async () => {
+  it("8-oct: una respuesta VACÍA de Luna en su etapa se le vuelve a pedir a Luna (con la nota), nunca a Sonnet", async () => {
     await dosModelos();
     await msg({ direction: "in", body: "hola", at: ago(20_000) });
     const { deps, calls } = makeDeps({ brain: ["", "¡Hola! ¿En qué te ayudo?"] });
     expect(await run.runAgent(JOB, deps)).toEqual({ kind: "sent", bubbles: 1 });
-    expect(brainIds(calls)).toEqual(["gpt-5.6-luna", "claude-sonnet-5"]);
-    expect(await brainOutcomes()).toEqual(["gpt-5.6-luna:error", "claude-sonnet-5:sent"]);
+    const brain = calls.filter((c) => c.kind === "cerebro");
+    expect(brain.map((c) => c.modelId)).toEqual(["gpt-5.6-luna", "gpt-5.6-luna"]);
+    expect(lastUserText(brain[0].input)).not.toContain(run.SIN_RESPUESTA_NOTE);
+    expect(lastUserText(brain[1].input)).toContain(run.SIN_RESPUESTA_NOTE);
+    expect(await brainOutcomes()).toEqual(["gpt-5.6-luna:error", "gpt-5.6-luna:sent"]);
   });
 
-  it("respaldo: si fallan los DOS, una sola tarjeta que dice qué le pasó a cada uno; nada al cliente", async () => {
+  it("8-oct: si Luna contesta vacío DOS veces, tarjeta (Sonnet no entra)", async () => {
     await dosModelos();
     await msg({ direction: "in", body: "hola", at: ago(20_000) });
-    const { deps, calls } = makeDeps({ brainErrors: [apiError(401, "Incorrect API key provided"), apiError(400, "bad request")] });
+    const { deps, calls } = makeDeps({ brain: ["", ""] });
     expect((await run.runAgent(JOB, deps)).kind).toBe("failed");
-    expect(brainIds(calls)).toEqual(["gpt-5.6-luna", "claude-sonnet-5"]);
+    expect(brainIds(calls)).toEqual(["gpt-5.6-luna", "gpt-5.6-luna"]);
+    expect(await agentOuts()).toHaveLength(0);
+    expect((await notices()).filter((n) => n.kind === "agente_error")).toHaveLength(1);
+  });
+
+  it("respaldo en una etapa del Modelo 2: una respuesta VACÍA de Sonnet cuenta como falla y contesta Luna", async () => {
+    await dosModelos();
+    await setStage("cerca_compra");
+    await msg({ direction: "in", body: "hola", at: ago(20_000) });
+    const { deps, calls } = makeDeps({ brain: ["", "¡Hola! ¿En qué le ayudo?"] });
+    expect(await run.runAgent(JOB, deps)).toEqual({ kind: "sent", bubbles: 1 });
+    expect(brainIds(calls)).toEqual(["claude-sonnet-5", "gpt-5.6-luna"]);
+    expect(await brainOutcomes()).toEqual(["claude-sonnet-5:error", "gpt-5.6-luna:sent"]);
+  });
+
+  it("respaldo en una etapa del Modelo 2: si fallan los DOS, una sola tarjeta que dice qué le pasó a cada uno; nada al cliente", async () => {
+    await dosModelos();
+    await setStage("cerca_compra");
+    await msg({ direction: "in", body: "hola", at: ago(20_000) });
+    const { deps, calls } = makeDeps({ brainErrors: [apiError(400, "bad request"), apiError(401, "Incorrect API key provided")] });
+    expect((await run.runAgent(JOB, deps)).kind).toBe("failed");
+    expect(brainIds(calls)).toEqual(["claude-sonnet-5", "gpt-5.6-luna"]);
     const cards = (await notices()).filter((n) => n.kind === "agente_error");
     expect(cards).toHaveLength(1);
     expect(cards[0].body).toContain("fallaron los dos modelos");
@@ -2540,7 +2565,7 @@ describe.skipIf(!TEST_DATABASE_URL)("runtime del Agente IA (Postgres real)", () 
   // ── 29-sep-2026 (dueño): red contra el silencio; el CRM nunca escribe un texto fijo ──
   const sinRespuesta = async () => (await notices()).filter((n) => n.kind === "sin_respuesta");
 
-  it("red contra el silencio: Luna contesta solo con acciones y nadie le ha contestado → escribe Sonnet (con la nota); la etapa de Luna se respeta", async () => {
+  it("red contra el silencio (8-oct): Luna contesta solo con acciones y nadie le ha contestado → escribe otra vez Luna (con la nota), nunca Sonnet; la etapa de Luna se respeta", async () => {
     await dosModelos();
     await msg({ direction: "in", body: "¿De qué material es?", at: ago(20_000) });
     const { deps, calls } = makeDeps({
@@ -2549,12 +2574,12 @@ describe.skipIf(!TEST_DATABASE_URL)("runtime del Agente IA (Postgres real)", () 
     });
     expect(await run.runAgent(JOB, deps)).toEqual({ kind: "sent", bubbles: 1 });
     const brain = calls.filter((c) => c.kind === "cerebro");
-    expect(brain.map((c) => c.modelId)).toEqual(["gpt-5.6-luna", "claude-sonnet-5"]);
+    expect(brain.map((c) => c.modelId)).toEqual(["gpt-5.6-luna", "gpt-5.6-luna"]);
     expect(lastUserText(brain[0].input)).not.toContain(run.SIN_RESPUESTA_NOTE);
     expect(lastUserText(brain[1].input)).toContain(run.SIN_RESPUESTA_NOTE);
     expect((await agentOuts()).map((m) => m.body)).toEqual(["Es de acero con funda impermeable de neopreno."]);
     expect((await contact()).stage).toBe("prospecto");
-    expect(await brainOutcomes()).toEqual(["gpt-5.6-luna:sin_texto", "claude-sonnet-5:sent"]);
+    expect(await brainOutcomes()).toEqual(["gpt-5.6-luna:sin_texto", "gpt-5.6-luna:sent"]);
     expect(await sinRespuesta()).toHaveLength(0);
   });
 
@@ -2590,11 +2615,11 @@ describe.skipIf(!TEST_DATABASE_URL)("runtime del Agente IA (Postgres real)", () 
     await msg({ direction: "in", body: "muchas gracias", at: ago(20_000) });
     const { deps, calls } = makeDeps({ brain: ["", ""], toolCalls: [{ toolName: "mover_etapa", input: { etapa: "prospecto" } }] });
     expect(await run.runAgent(JOB, deps)).toEqual({ kind: "sent", bubbles: 0 });
-    expect(brainIds(calls)).toEqual(["gpt-5.6-luna", "claude-sonnet-5"]);
+    expect(brainIds(calls)).toEqual(["gpt-5.6-luna", "gpt-5.6-luna"]);
     expect(await agentOuts()).toHaveLength(0);
     expect((await sinRespuesta()).map((n) => n.body)).toEqual([run.SIN_RESPUESTA_BODY]);
     expect((await conv()).agentState).toBe("activo");
-    expect(await brainOutcomes()).toEqual(["claude-sonnet-5:sin_texto", "gpt-5.6-luna:sent"]);
+    expect(await brainOutcomes()).toEqual(["gpt-5.6-luna:sin_texto", "gpt-5.6-luna:sent"]);
     // El barrido no lo vuelve a intentar: el entrante ya tiene su resultado final.
     expect(await run.runAgent(JOB, makeDeps().deps)).toEqual({ kind: "noop", reason: "ya_atendido" });
   });
