@@ -4,7 +4,6 @@
 // WABA). Si Meta falla, se guarda el error y se conserva la última lectura buena.
 import { db } from "@/lib/db";
 import { metaWhatsappBilling, organization } from "@/lib/db/schema";
-import { MetaApiError } from "@/lib/ads/meta-api";
 import { safeErrorMessage } from "@/lib/log/safe-error";
 import { mergePricingDays, previousMonthStart } from "./days";
 import { metaBillingConfigFromEnv, readMetaPricing, type MetaBillingConfig, type MetaPricingReading } from "./read";
@@ -34,7 +33,8 @@ export async function syncMetaBilling(
   try {
     reading = await (options.read ?? readMetaPricing)(config, { now, fromDay });
   } catch (error) {
-    const base = error instanceof MetaApiError ? error.message : safeErrorMessage(error);
+    // safeErrorMessage da el mismo texto que error.message en un MetaApiError (punto 9: logs sin errores crudos).
+    const base = safeErrorMessage(error);
     const message = redactToken(base).slice(0, 500);
     for (const org of orgs) {
       await db
