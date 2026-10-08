@@ -8,6 +8,8 @@
 // contacto pasa a una etapa del Modelo 2 (p. ej. Cerca de compra, aunque se salte
 // etapas), esa MISMA respuesta la escribe el Modelo 2 (traspaso). Y si un modelo falla,
 // contesta el otro; la tarjeta "El agente no pudo responder" sale solo si fallan los dos.
+// 8-oct-2026 (dueño): en las etapas del Modelo 1 el Modelo 2 NUNCA contesta por él (ni si
+// falla ni si se queda sin texto); solo el traspaso a una etapa del Modelo 2.
 import { isForward, roleKey, stageByKey, type FunnelStage, type ModelSlot } from "@/lib/contacts/stages";
 import { SLUG_DATOS_BANCARIOS } from "@/lib/workflows/defaults";
 
@@ -31,9 +33,12 @@ export type BrainCandidate = { modelId: string; slot: ModelSlot };
 // adaptador en este entorno se salta (el agente nunca se queda callado por una llave
 // faltante); el mismo modelo en los dos espacios cuenta una vez. Si ninguno se puede usar
 // queda el de la etapa: su falla ("falta la llave") llega a la tarjeta con el motivo claro.
+// En una etapa del Modelo 1 solo el Modelo 1 (8-oct-2026, dueño): del 4 al 8-oct el Modelo 2
+// escribió 80 respuestas por él en Prospecto (39 % de su gasto) y eso nunca debe pasar.
 export function brainCandidates(cfg: ModelConfig, stage: string | null, isAvailable: (modelId: string) => boolean): BrainCandidate[] {
   const first = brainModelForStage(cfg, stage);
-  const other: BrainCandidate = first.slot === 1 ? { modelId: cfg.modeloCerebro, slot: 2 } : { modelId: cfg.modelo1, slot: 1 };
+  if (first.slot === 1) return [first];
+  const other: BrainCandidate = { modelId: cfg.modelo1, slot: 1 };
   const out: BrainCandidate[] = [];
   for (const c of [first, other]) {
     if (isAvailable(c.modelId) && !out.some((o) => o.modelId === c.modelId)) out.push(c);

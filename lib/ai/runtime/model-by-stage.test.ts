@@ -29,19 +29,20 @@ describe("modelo por etapa (Fase E; el modelo de cada etapa vive en funnel_stage
 });
 
 describe("respaldo entre modelos (27-sep-2026)", () => {
-  it("primero el de la etapa y, si falla, el otro", () => {
-    expect(brainCandidates(cfg, "inbox", all)).toEqual([
-      { modelId: "gpt-5.6-luna", slot: 1 },
-      { modelId: "claude-sonnet-5", slot: 2 },
-    ]);
+  it("en una etapa del Modelo 2: primero él y, si falla, el Modelo 1", () => {
     expect(brainCandidates(cfg, "compra", all)).toEqual([
       { modelId: "claude-sonnet-5", slot: 2 },
       { modelId: "gpt-5.6-luna", slot: 1 },
     ]);
   });
 
-  it("un modelo sin llave se salta (nunca se queda callado por una llave faltante), en los dos sentidos", () => {
-    expect(brainCandidates(cfg, "inbox", (id) => id !== "gpt-5.6-luna")).toEqual([{ modelId: "claude-sonnet-5", slot: 2 }]);
+  it("en una etapa del Modelo 1 solo el Modelo 1, aunque falte su llave (8-oct-2026, dueño)", () => {
+    expect(brainCandidates(cfg, "inbox", all)).toEqual([{ modelId: "gpt-5.6-luna", slot: 1 }]);
+    expect(brainCandidates(cfg, "prospecto", all)).toEqual([{ modelId: "gpt-5.6-luna", slot: 1 }]);
+    expect(brainCandidates(cfg, "inbox", (id) => id !== "gpt-5.6-luna")).toEqual([{ modelId: "gpt-5.6-luna", slot: 1 }]);
+  });
+
+  it("en una etapa del Modelo 2, un modelo sin llave se salta", () => {
     expect(brainCandidates(cfg, "compra", (id) => id !== "claude-sonnet-5")).toEqual([{ modelId: "gpt-5.6-luna", slot: 1 }]);
   });
 
