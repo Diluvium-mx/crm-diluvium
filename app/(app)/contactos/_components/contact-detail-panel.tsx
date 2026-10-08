@@ -21,9 +21,12 @@ export function ContactDetailPanel({
   onTemperatureChange,
   onDestacadoChange,
   onOpenContact,
+  onDeleted,
   searchTerm = null,
 }: {
   contact: BoardContact;
+  /** «Borrar contacto» del Detalle lo borró: el Embudo quita la tarjeta y cierra este pop-up. */
+  onDeleted: () => void;
   /** Señal de la tarjeta (en vivo): decide si «Marcar como leído» tiene algo que apagar. */
   signal: FunnelSignal | undefined;
   onMarkRead: () => void;
@@ -162,6 +165,7 @@ export function ContactDetailPanel({
               onTemperatureChange={onTemperatureChange}
               onDestacadoChange={onDestacadoChange}
               busy={isSaving}
+              onDeleted={onDeleted}
               action={
                 <>
                   <button
@@ -225,6 +229,7 @@ export function ContactDetailPanel({
               onTemperatureChange={onTemperatureChange}
               onDestacadoChange={onDestacadoChange}
               busy={isSaving}
+              onDeleted={onDeleted}
               action={<CloseX always label="Cerrar detalle del contacto" onClick={() => setMobileDetailOpen(false)} />}
             />
           </div>

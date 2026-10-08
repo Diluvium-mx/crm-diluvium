@@ -17,6 +17,7 @@ import { SNIFF_BYTES } from "@/lib/chat-attachments/sniff";
 import { bytesMatchMime } from "@/lib/media-library/rules";
 import { MEDIA_SNIFF_BYTES, OCTET, verifiedMediaMime } from "@/lib/messaging/media-type";
 import { objectStorage } from "@/lib/storage/s3";
+import { safeErrorMessage } from "@/lib/log/safe-error";
 
 const { values } = parseArgs({
   options: { confirmar: { type: "boolean", default: false }, lote: { type: "string", default: "200" } },
@@ -123,6 +124,6 @@ async function main(): Promise<void> {
 main()
   .then(() => process.exit(0))
   .catch((error: unknown) => {
-    console.error(error instanceof Error ? error.message : error);
+    console.error(safeErrorMessage(error));
     process.exit(1);
   });

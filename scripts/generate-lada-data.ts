@@ -5,6 +5,7 @@
 // UI (estado abreviado) lo hace lib/phone-lada.ts. Para actualizar: cambia
 // VERSION, corre el script y revisa el diff.
 import { writeFileSync } from "node:fs";
+import { logError } from "@/lib/log/safe-error";
 
 const VERSION = "v9.0.9";
 const SOURCE = `https://raw.githubusercontent.com/google/libphonenumber/${VERSION}/resources/geocoding/es/52.txt`;
@@ -36,6 +37,6 @@ ${body}
 }
 
 main().catch((error) => {
-  console.error(error);
+  logError("[generate-lada-data]", error);
   process.exit(1);
 });

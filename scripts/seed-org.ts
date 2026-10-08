@@ -22,6 +22,7 @@ import { and, eq } from "drizzle-orm";
 import { auth } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { member, organization, user } from "@/lib/db/schema/auth";
+import { logError } from "@/lib/log/safe-error";
 
 const ORG_NAME = "Diluvium";
 const ORG_SLUG = "diluvium";
@@ -90,6 +91,6 @@ async function main() {
 main()
   .then(() => process.exit(0))
   .catch((err) => {
-    console.error(err);
+    logError("[seed-org]", err);
     process.exit(1);
   });

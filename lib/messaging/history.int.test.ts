@@ -399,10 +399,10 @@ describe.skipIf(!TEST_DATABASE_URL)("historial del celular (Postgres real)", () 
     await expect(ingest.processWebhookEvent(provider, id)).resolves.toContain("cuarentena");
     expect(await db.select().from(s.messages)).toHaveLength(0);
 
-    expect(await replay.replayWebhookEvents(new Set(["zacc_1"]))).toEqual({ replayed: 0, released: 0, kept: 1 });
+    expect(await replay.replayWebhookEvents(new Set(["zacc_1"]))).toEqual({ replayed: 0, released: 0, kept: 1, emptied: [] });
     let [event] = await db.select().from(s.webhookEvents);
     expect(event.quarantinedAt).not.toBeNull();
-    expect(await replay.replayWebhookEvents(new Set(["zacc_1", "zacc_new"]))).toEqual({ replayed: 0, released: 1, kept: 0 });
+    expect(await replay.replayWebhookEvents(new Set(["zacc_1", "zacc_new"]))).toEqual({ replayed: 0, released: 1, kept: 0, emptied: [] });
     [event] = await db.select().from(s.webhookEvents);
     expect(event).toMatchObject({ quarantinedAt: null, attempts: 0, lastError: null });
 

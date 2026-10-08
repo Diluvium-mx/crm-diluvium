@@ -9,6 +9,7 @@ import { inboundHealth, WORKER_HEARTBEAT_KEY } from "@/lib/monitoring/inbound-he
 import { checkWhatsappAccounts, ZERNIO_WEBHOOK_KEY } from "@/lib/monitoring/account-health";
 import { recordUncheckedStreak } from "@/lib/monitoring/unchecked-streak";
 import type { WebhookSnapshot } from "@/lib/monitoring/status-pill";
+import { logError } from "@/lib/log/safe-error";
 
 export const dynamic = "force-dynamic";
 
@@ -38,7 +39,7 @@ export async function GET(req: Request): Promise<Response> {
   // El Dashboard muestra el webhook de Zernio que revisó esta llamada (no llama a Zernio al cargar).
   const webhook: WebhookSnapshot = { checkedAt: report.checkedAt, webhook: report.metrics.zernioWebhook };
   await redis.set(ZERNIO_WEBHOOK_KEY, JSON.stringify(webhook)).catch((error: unknown) => {
-    console.error("[monitor] no se pudo guardar el estado del webhook en Redis", error);
+    logError("[monitor] no se pudo guardar el estado del webhook en Redis", error);
   });
   return Response.json(report, { status: report.ok ? 200 : 503, headers: { "cache-control": "no-store" } });
 }

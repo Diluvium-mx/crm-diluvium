@@ -390,7 +390,8 @@ export const webhookEvents = pgTable(
     attempts: integer("attempts").default(0).notNull(),
     lastError: text("last_error"),
     // Cuándo quedó en dead-letter (agotó intentos o formato no reconocido).
-    // Queda en la BD para revisarlo y reprocesarlo; la retención no lo purga.
+    // Queda en la BD para revisarlo y reprocesarlo; a los 30 días se vacía su
+    // payload y la fila se queda para los conteos (lib/messaging/dead-letter-retention.ts).
     deadLetteredAt: timestamp("dead_lettered_at"),
     // Firmado pero de una cuenta NO permitida en este entorno (p. ej. el número
     // real antes de agregarlo a ZERNIO_ALLOWED_ACCOUNT_IDS). Se guarda en vez

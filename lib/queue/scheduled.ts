@@ -6,6 +6,7 @@
 // está en la base y el barrido del worker la recoge cuando se vence.
 import { Queue } from "bullmq";
 import { redisConnection } from "./inbound";
+import { safeErrorMessage } from "@/lib/log/safe-error";
 
 export const SCHEDULED_QUEUE = "scheduled-messages";
 
@@ -61,7 +62,7 @@ export async function enqueueScheduled(scheduledId: string, sendAt: Date): Promi
     );
     return true;
   } catch (error) {
-    console.error("[scheduled] no se pudo encolar; lo recogerá el barrido", scheduledId, error);
+    console.error("[scheduled] no se pudo encolar; lo recogerá el barrido", scheduledId, safeErrorMessage(error));
     return false;
   }
 }
@@ -72,7 +73,7 @@ export async function removeScheduledJob(scheduledId: string, sendAt: Date): Pro
     const job = await withTimeout(scheduledQueue().getJob(scheduledJobId(scheduledId, sendAt.getTime())));
     if (job && (await job.getState()) === "delayed") await job.remove();
   } catch (error) {
-    console.warn("[scheduled] no se pudo quitar el job viejo (se ignorará al disparar)", scheduledId, error);
+    console.warn("[scheduled] no se pudo quitar el job viejo (se ignorará al disparar)", scheduledId, safeErrorMessage(error));
   }
 }
 
@@ -96,7 +97,7 @@ export async function reviveScheduled(scheduledId: string, sendAt: Date): Promis
     }
     return "in_flight";
   } catch (error) {
-    console.error("[scheduled] barrido no pudo revisar el job", scheduledId, error);
+    console.error("[scheduled] barrido no pudo revisar el job", scheduledId, safeErrorMessage(error));
     return "error";
   }
 }

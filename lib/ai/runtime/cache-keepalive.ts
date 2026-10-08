@@ -21,6 +21,7 @@ import { keepAliveDue } from "./cache-keepalive-core";
 import { loadAgentConfig, orgCustomValues } from "./config";
 import { loadBotOptions } from "./options";
 import { recordAiUsage } from "./usage";
+import { safeErrorMessage } from "@/lib/log/safe-error";
 
 const KEEPALIVE_TIMEOUT_MS = 30_000;
 // Solo hace falta mirar las últimas 2 h (la caché dura 1 h).
@@ -105,7 +106,7 @@ export async function keepBrainCacheAlive(deps: KeepAliveDeps): Promise<number> 
       } catch (error) {
         // Queda el intento (sin tokens): no se repite hasta la siguiente respuesta real.
         await recordAiUsage({ ...base, usage: null, latencyMs: Date.now() - t0, outcome: "cache_renovada", error: error instanceof Error ? error.message : String(error) });
-        console.warn(`[cache] ${modelId}: la renovación falló (${error instanceof Error ? error.message : String(error)})`);
+        console.warn(`[cache] ${modelId}: la renovación falló (${safeErrorMessage(error)})`);
       }
     }
   }

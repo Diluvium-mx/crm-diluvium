@@ -35,6 +35,7 @@ import type { AgentActionResult, AgentEditorView } from "@/lib/agente-ia/types";
 import { db } from "@/lib/db";
 import { channels } from "@/lib/db/schema";
 import { and, eq, isNull } from "drizzle-orm";
+import { logError } from "@/lib/log/safe-error";
 
 async function requireManage() {
   const membership = await requireActiveMembership();
@@ -101,7 +102,7 @@ async function run(fallback: string, fn: (m: { organizationId: string; userId: s
   } catch (error) {
     if (error instanceof ZodError) return { ok: false, message: error.issues[0]?.message ?? fallback };
     if (error instanceof EditorNotFoundError) return { ok: false, message: error.message };
-    console.error(`[agente-ia] ${fallback}`, error);
+    logError(`[agente-ia] ${fallback}`, error);
     return { ok: false, message: error instanceof Error && error.message.startsWith("No tienes permiso") ? error.message : fallback };
   }
 }

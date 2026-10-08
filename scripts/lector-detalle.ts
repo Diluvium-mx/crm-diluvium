@@ -20,6 +20,7 @@ import type { KvPort } from "@/lib/ai/runtime/queue";
 import { fitHistory } from "@/lib/ai/runtime/transcript";
 import { effectivePrice } from "@/lib/ai/runtime/usage";
 import { objectStorage, StorageNotConfiguredError, type ObjectStorage } from "@/lib/storage/s3";
+import { safeErrorMessage } from "@/lib/log/safe-error";
 
 // Estimación del ensayo: ~3.5 caracteres por token en español; una imagen ~1,000 tokens;
 // la respuesta (razonamiento + herramienta) ~400 tokens. La pasada real da los números exactos.
@@ -124,7 +125,7 @@ async function main(): Promise<void> {
       chats.slice(i, i + CONCURRENCY).map(async (c) => {
         const o: LectorOutcome = await runLector(c.organizationId, c.conversationId, deps, { force: true }).catch((e: unknown) => ({
           kind: "error" as const,
-          reason: e instanceof Error ? e.message : String(e),
+          reason: safeErrorMessage(e),
           usage: null,
           costUsd: null,
         }));
@@ -154,6 +155,6 @@ async function main(): Promise<void> {
 main()
   .then(() => process.exit(0))
   .catch((e) => {
-    console.error(e instanceof Error ? e.message : e);
+    console.error(safeErrorMessage(e));
     process.exit(1);
   });

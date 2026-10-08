@@ -15,6 +15,7 @@ import { parseArgs } from "node:util";
 import { and, eq, inArray, sql } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { channels, conversations, scheduledMessages, workflowRuns } from "@/lib/db/schema";
+import { safeErrorMessage } from "@/lib/log/safe-error";
 
 type Counts = { conversaciones: number; mensajes: number; contactos: number };
 
@@ -115,6 +116,6 @@ async function main() {
 }
 
 main().catch((error) => {
-  console.error(error instanceof Error ? error.message : error);
+  console.error(safeErrorMessage(error));
   process.exit(1);
 });

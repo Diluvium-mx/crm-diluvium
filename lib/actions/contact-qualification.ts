@@ -98,8 +98,8 @@ export async function getContactQualification(contactId: string) {
 }
 
 /**
- * Lo que necesita el panel "Detalle del contacto" (B2): la calificación, correo y
- * etiquetas, y quién mira (para mostrar editar/borrar solo en los comentarios que
+ * Lo que necesita el panel "Detalle del contacto" (B2): la calificación, el correo
+ * (sin etiquetas desde el 7-oct-2026) y quién mira (para mostrar editar/borrar solo en los comentarios que
  * puede modificar: los suyos, o todos si su rol puede editar contactos —owner,
  * admin y vendedor—; el servidor lo vuelve a exigir al modificar).
  */

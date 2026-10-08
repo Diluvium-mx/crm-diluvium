@@ -6,6 +6,7 @@ import type { MessagingProvider } from "@/lib/messaging/provider";
 import { noticesToVerify, verifyUnavailableNotice, type VerifyHooks } from "@/lib/messaging/unavailable-check";
 import { redisConnection } from "@/lib/queue/inbound";
 import { UNAVAILABLE_QUEUE, type UnavailableJob } from "@/lib/queue/unavailable";
+import { logError, safeErrorMessage } from "@/lib/log/safe-error";
 
 export function startUnavailableWorker(provider: MessagingProvider, hooks: VerifyHooks) {
   const worker = new Worker<UnavailableJob>(
@@ -18,7 +19,7 @@ export function startUnavailableWorker(provider: MessagingProvider, hooks: Verif
     { connection: { ...redisConnection(), maxRetriesPerRequest: null }, concurrency: 5, autorun: false },
   );
   worker.on("failed", (job, error) => {
-    console.error(`[no-disponible] falló ${job?.data.messageId} (intento ${job?.attemptsMade}): ${error.message}`);
+    console.error(`[no-disponible] falló ${job?.data.messageId} (intento ${job?.attemptsMade}): ${safeErrorMessage(error)}`);
   });
 
   async function sweep() {
@@ -30,7 +31,7 @@ export function startUnavailableWorker(provider: MessagingProvider, hooks: Verif
         if (outcome !== "reintentar" && outcome !== "esperando") decided++;
         console.info(`[no-disponible] barrido ${notice.messageId}: ${outcome}`);
       } catch (error) {
-        console.error(`[no-disponible] barrido no pudo verificar ${notice.messageId}`, error);
+        logError(`[no-disponible] barrido no pudo verificar ${notice.messageId}`, error);
       }
     }
     if (decided) console.info(`[no-disponible] barrido: ${decided} aviso(s) decididos`);

@@ -11,6 +11,7 @@ import { requireActiveMembership } from "@/lib/auth/active-organization";
 import { subscribeToInbox } from "@/lib/inbox/events";
 import { streamStillAllowed } from "@/lib/inbox/stream-access";
 import type { InboxEvent } from "@/lib/inbox/types";
+import { logError } from "@/lib/log/safe-error";
 
 // LISTEN vive mientras la conexión está abierta: este handler no puede ser
 // estático ni cachearse.
@@ -57,7 +58,7 @@ export async function GET(request: Request): Promise<Response> {
       } catch (error) {
         // Si LISTEN no se pudo establecer, se ERRORA el stream para que
         // EventSource lo detecte y reconecte, en vez de quedar abierto y mudo.
-        console.error("[inbox stream] no se pudo suscribir:", error);
+        logError("[inbox stream] no se pudo suscribir:", error);
         try {
           controller.error(error);
         } catch {

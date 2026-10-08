@@ -24,6 +24,7 @@ import { conversations } from "@/lib/db/schema";
 import { agentStateLabel } from "@/lib/historial/labels";
 import { chatSubject, logChanges } from "@/lib/historial/log";
 import { bullAgentQueuePort, cancelAgentRun, withQueueTimeout, type AgentQueuePort } from "./queue";
+import { safeErrorMessage } from "@/lib/log/safe-error";
 
 const ownConversation = (organizationId: string, conversationId: string) =>
   and(eq(conversations.id, conversationId), eq(conversations.organizationId, organizationId));
@@ -70,7 +71,7 @@ export async function pauseAgentManually(
   // La pausa ya quedó guardada: cancelar el job es solo optimización (la corrida
   // revisa el estado antes de responder y antes de cada burbuja).
   await withQueueTimeout(cancelAgentRun(ports.queue ?? bullAgentQueuePort(), input.conversationId), "cancelar").catch(
-    (error) => console.error(`[agente] no se pudo cancelar el job de ${input.conversationId}: ${String(error)}`),
+    (error) => console.error(`[agente] no se pudo cancelar el job de ${input.conversationId}: ${safeErrorMessage(error)}`),
   );
   return true;
 }

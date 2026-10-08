@@ -9,6 +9,7 @@ import { db } from "@/lib/db";
 import { conversations, member } from "@/lib/db/schema";
 import { messagingProvider } from "@/lib/messaging";
 import { sendTextMessage } from "@/lib/messaging/send";
+import { safeErrorMessage } from "@/lib/log/safe-error";
 
 async function main() {
   const [text, conversationArg] = process.argv.slice(2);
@@ -44,6 +45,6 @@ async function main() {
 }
 
 main().catch((error) => {
-  console.error("No se pudo enviar:", error instanceof Error ? error.message : error);
+  console.error("No se pudo enviar:", safeErrorMessage(error));
   process.exit(1);
 });

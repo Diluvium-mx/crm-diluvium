@@ -22,6 +22,7 @@ import { ConversationList } from "./conversation-list";
 import { useInboxStream } from "./use-inbox-stream";
 import { mergeItems } from "@/lib/inbox/list-merge";
 import { useOpenContactRequests } from "../../_components/open-contact";
+import { isDeletingHere, noteDeletedEvent } from "../../contactos/_components/deleting-contacts";
 import { CloseX } from "@/components/ui/close-x";
 import { chatSearchTerm } from "@/lib/text/search";
 
@@ -241,8 +242,30 @@ export function InboxBoard({ openContactId = null }: { openContactId?: string | 
     }, 500);
   }
 
+  // Contacto borrado (ARCO, 7-oct-2026): fuera sus chats de la lista y, si estaba abierto, se
+  // cierra. Lo llama el aviso en vivo (`contact.deleted`) y la ventana de borrar de esta pestaña.
+  function removeContact(contactId: string, conversationIds: readonly string[] = []) {
+    const ids = new Set(conversationIds);
+    setConversations((current) => current.filter((c) => c.contact.id !== contactId && !ids.has(c.id)));
+    const openId = selectedIdRef.current;
+    if (detailRef.current?.contact.id === contactId || (openId && ids.has(openId))) {
+      setSelectedId(null);
+      setDetail(null);
+      setMobileDetailOpen(false);
+    }
+  }
+
   // Tiempo real (el mismo hook que el chat del pop-up de Contactos).
   useInboxStream((event) => {
+    if (event.type === "contact.deleted") {
+      // Lo está borrando la ventana de ESTA pestaña: ella lo quita al cerrarse (con su resultado a la vista).
+      if (isDeletingHere(event.contactId)) {
+        noteDeletedEvent(event.contactId);
+        return;
+      }
+      removeContact(event.contactId, event.conversationIds);
+      return;
+    }
     if (event.type === "contact.updated") {
       // Temperatura en las filas de ese contacto (C1).
       if (event.changes.includes("temperatura")) {
@@ -529,6 +552,7 @@ export function InboxBoard({ openContactId = null }: { openContactId?: string | 
               detail={detail}
               onTemperatureChanged={applyTemperature}
               onStageChanged={applyStage}
+              onContactDeleted={(contactId) => removeContact(contactId)}
               action={
                 <button
                   type="button"
@@ -566,6 +590,7 @@ export function InboxBoard({ openContactId = null }: { openContactId?: string | 
             detail={detail}
             onTemperatureChanged={applyTemperature}
             onStageChanged={applyStage}
+            onContactDeleted={(contactId) => removeContact(contactId)}
             action={<CloseX always label="Cerrar detalle del contacto" onClick={() => setMobileDetailOpen(false)} />}
           />
         </div>

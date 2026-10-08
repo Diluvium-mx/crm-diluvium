@@ -53,6 +53,7 @@ import { loadMediaAsset, mediaAssetSignedUrl } from "@/lib/media-library/service
 import type { ObjectStorage } from "@/lib/storage/s3";
 import { isTemplateSendable } from "@/lib/templates/types";
 import { chatUploadMessageId } from "@/lib/chat-attachments/keys";
+import { logError, safeErrorMessage } from "@/lib/log/safe-error";
 
 export class SendRejectedError extends Error {
   constructor(
@@ -534,7 +535,7 @@ export async function sendQueuedChatUpload(
     url = await storage.signedGetUrl(attachment.storageKey, MEDIA_SEND_URL_SECONDS, attachment.fileName, "inline");
   } catch (error) {
     // El detalle (endpoint, bucket) va al log; en la burbuja, un motivo simple.
-    console.error(`[adjuntos] no se pudo firmar ${row.id}`, error);
+    logError(`[adjuntos] no se pudo firmar ${row.id}`, error);
     return fail("storage_unavailable", "El almacenamiento de archivos no respondió; vuelve a adjuntarlo.");
   }
   const { conversation } = loaded;
@@ -879,7 +880,7 @@ async function deliver(
         enqueue: (delayMs) =>
           deferTo({ messageId: ctx.messageId, organizationId: ctx.organizationId, readCutoffMessageId, delayMs }).catch((error: unknown) =>
             // El barrido del worker recoge los diferidos sin job (expireUnconfirmedSends no los toca antes).
-            console.error(`[send] no se pudo pasar ${ctx.messageId} al worker; lo recoge el barrido`, error),
+            logError(`[send] no se pudo pasar ${ctx.messageId} al worker; lo recoge el barrido`, error),
           ),
       },
     });
@@ -887,7 +888,7 @@ async function deliver(
     if (turn.kind === "deferred") return { messageId: ctx.messageId, status: "pending" };
     result = turn.result;
   } catch (error) {
-    const reason = error instanceof Error ? error.message : String(error);
+    const reason = safeErrorMessage(error);
     // Cualquier error que no sea un rechazo EXPLÍCITO del proveedor se trata
     // como desconocido: es preferible verificar que duplicar.
     if (error instanceof SendFailedError && error.outcome === "rejected") {
@@ -918,7 +919,7 @@ async function deliver(
         return { messageId: finalId, status: "sent" };
       }
     } catch (linkError) {
-      console.error(`[send] ${ctx.messageId}: no se pudo unir con su eco; se reconciliará`, linkError);
+      logError(`[send] ${ctx.messageId}: no se pudo unir con su eco; se reconciliará`, linkError);
     }
     return { messageId: ctx.messageId, status: "pending" };
   }
@@ -944,7 +945,7 @@ async function deliver(
     });
     return { messageId: finalId, status: "sent" };
   } catch (error) {
-    const reason = error instanceof Error ? error.message : String(error);
+    const reason = safeErrorMessage(error);
     console.error(`[send] Zernio aceptó ${ctx.messageId} pero no se pudo guardar la confirmación; queda "enviando": ${reason}`);
     await saveAcceptedSend(ctx.messageId, ctx.organizationId, result, reason);
     return { messageId: ctx.messageId, status: "pending" };
@@ -971,7 +972,7 @@ export async function saveAcceptedSend(messageId: string, organizationId: string
       await db.update(messages).set({ errorCode: SEND_ACCEPTED, errorMessage, ...ids }).where(where);
       return;
     } catch (error) {
-      console.error(`[send] no se pudo marcar ${messageId} como aceptado (intento ${attempt + 1})`, error);
+      logError(`[send] no se pudo marcar ${messageId} como aceptado (intento ${attempt + 1})`, error);
       await new Promise((resolve) => setTimeout(resolve, 300 * (attempt + 1)));
     }
   }

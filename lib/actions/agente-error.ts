@@ -17,6 +17,7 @@ import { openAgentErrorConversation, reopenAgentError, resolveAgentError } from 
 import { bullAgentQueuePort, cancelAgentRun, redisKvPort, scheduleAgentRun, withQueueTimeout } from "@/lib/ai/runtime/queue";
 import { setAgentState } from "@/lib/ai/runtime/state";
 import { discardSavedReplies } from "@/lib/ai/runtime/saved-reply";
+import { logError } from "@/lib/log/safe-error";
 
 const YA_ATENDIDA = "Esta tarjeta ya se atendió.";
 
@@ -29,7 +30,7 @@ export async function retryAgentAfterError(input: { noticeId: string }): Promise
       await withQueueTimeout(scheduleAgentRun(bullAgentQueuePort(), redisKvPort(), { conversationId: done.conversationId, organizationId }, 0), "reintentar");
     } catch (error) {
       // Sin corrida programada nadie quedaría a cargo: la tarjeta se reabre.
-      console.error("[agente-error] no se pudo programar el reintento", error);
+      logError("[agente-error] no se pudo programar el reintento", error);
       await reopenAgentError(organizationId, idSchema.parse(input.noticeId));
       return { ok: false, message: "No se pudo reintentar ahora; inténtalo de nuevo en un momento." };
     }
@@ -37,7 +38,7 @@ export async function retryAgentAfterError(input: { noticeId: string }): Promise
     return { ok: true };
   } catch (error) {
     if (error instanceof ZodError) return { ok: false, message: "No se pudo reintentar." };
-    console.error("[agente-error] reintentar", error);
+    logError("[agente-error] reintentar", error);
     return { ok: false, message: "No se pudo reintentar." };
   }
 }
@@ -59,7 +60,7 @@ export async function pauseAgentAfterError(input: { noticeId: string }): Promise
     return { ok: true };
   } catch (error) {
     if (error instanceof ZodError) return { ok: false, message: "No se pudo apagar el agente." };
-    console.error("[agente-error] apagar", error);
+    logError("[agente-error] apagar", error);
     return { ok: false, message: "No se pudo apagar el agente." };
   }
 }

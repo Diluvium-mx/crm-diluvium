@@ -4,7 +4,8 @@
 // Opciones del Agente IA y el Goal/FAQs se leen de sus propias tablas (lib/historial/queries.ts).
 // Bloque E (28-sep): + regla de etapa, nombre del agente, tallas, mensajes rápidos, plantillas,
 // vendedores (solo owner/admin) y las pausas automáticas por tope, por asesor y la vuelta sola.
-// NO entra el trabajo diario (mover contactos de etapa, mensajes, comentarios).
+// NO entra el trabajo diario (mover contactos de etapa, mensajes, comentarios). Desde el 7-oct-2026
+// también los contactos borrados (ARCO), sin datos personales.
 import { z } from "zod";
 import { instantToLocal, localToInstant } from "@/lib/scheduled/rules";
 import type { WorkflowDetail, WorkflowDetailStep } from "./diff";
@@ -26,6 +27,8 @@ export const HISTORY_TYPES = [
   { id: "plantillas", label: "Plantillas" },
   { id: "vendedores", label: "Vendedores" },
   { id: "pausas", label: "Pausas por chat" },
+  // Contacto borrado con todo lo suyo (derechos ARCO, 7-oct-2026). Sin nombre ni teléfono completo.
+  { id: "contacto_borrado", label: "Contactos borrados" },
 ] as const;
 
 export type HistoryType = (typeof HISTORY_TYPES)[number]["id"];
@@ -54,6 +57,8 @@ export type ChangeAction = {
   // un asesor, vuelta_sola = se cumplió la hora de regreso, vuelta_seguimiento = el cliente contestó
   // un seguimiento del Agente IA y la conversación sigue con él (docs/seguimientos.md §7.4).
   pausas: "pausar" | "activar" | "pausa_auto" | "pausa_tope" | "pausa_bucle" | "pausa_asesor" | "vuelta_sola" | "vuelta_seguimiento";
+  // subject = últimos 4 dígitos del teléfono, "instagram" o null (nunca el nombre ni el número completo).
+  contacto_borrado: "borrar";
 };
 
 /** Acciones automáticas: ocultas en la subpestaña salvo que se pidan con el filtro. */
@@ -172,6 +177,11 @@ export function describeAction(kind: string, action: string, subject: string | n
       return `Se cumplió la hora de regreso: el agente volvió solo en el chat de ${subject ?? "un contacto"}`;
     case "pausas.vuelta_seguimiento":
       return `El cliente contestó un seguimiento: el agente volvió en el chat de ${subject ?? "un contacto"}`;
+    case "contacto_borrado.borrar":
+      if (subject === "instagram") return "Borró un contacto de Instagram con sus chats y archivos";
+      return subject
+        ? `Borró un contacto (teléfono terminado en ${subject}) con sus chats y archivos`
+        : "Borró un contacto con sus chats y archivos";
     default:
       return `${kind} · ${action}`;
   }

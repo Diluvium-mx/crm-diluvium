@@ -1,0 +1,165 @@
+# CI: en cada push (cualquier rama) revisa que el repo esté sano antes de que
+# llegue a staging o a producción.
+#
+# - Migraciones: aplica TODAS las de drizzle/ en un Postgres vacío y corre el
+#   candado `db:check` (el mismo del pre-deploy de Railway).
+# - Tipos (`next typegen` + `typecheck`), lint y la suite COMPLETA de pruebas,
+#   incluidas las de integración (*.int.test.ts), que sin TEST_DATABASE_URL se
+#   saltan; y las de Redis real del rate limit (REDIS_TEST_URL).
+# - `npm audit` de dependencias de producción: INFORMATIVO (no tumba la CI);
+#   el resumen sale en la página de la corrida.
+#
+# Sin secrets: Postgres y Redis son servicios desechables del propio job, sin
+# datos reales. La contraseña del Postgres de servicio no es secreta (solo
+# existe dentro del runner mientras dura el job).
+#
+# Cómo leerla y qué hacer si falla: docs/staging.md § CI.
+name: ci
+
+on:
+  push:
+    # Railway solo muestra «Wait for CI» si el workflow NOMBRA la rama que despliega (main en
+    # producción, staging en staging). "**" mantiene la CI en TODAS las ramas, como antes.
+    branches: ["main", "staging", "**"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+# Un push nuevo a la misma rama cancela la corrida anterior (ya no importa).
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+defaults:
+  run:
+    # bash con -eo pipefail: un error en medio de un pipe también falla el paso.
+    shell: bash
+
+jobs:
+  verificar:
+    name: migraciones, tipos, lint y pruebas
+    # Fijo (no ubuntu-latest): ubuntu-latest pasa a Ubuntu 26 el 19-oct-2026.
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+
+    services:
+      # Misma versión mayor que producción (ver db-backup.yml) y fijado por
+      # digest (postgres:18 del 24-sep-2026): una etiqueta puede cambiar de
+      # contenido sin aviso; el digest no. El nombre lleva `test`: la guarda de
+      # los seeds (scripts/lib/base-local.ts) exige dev/test/local.
+      postgres:
+        image: postgres:18@sha256:5a5a84b19854a9ffaa54082c166ff4ec27473a361e496e5ea167f298f2da9722
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: ci-desechable
+          POSTGRES_DB: crm_ci_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d crm_ci_test"
+          --health-interval 5s --health-timeout 5s --health-retries 10
+      # Solo para lib/rate-limit/redis-store.test.ts (concurrencia contra Redis
+      # real). Fijado por digest (redis:8.10.2 del 7-oct-2026).
+      redis:
+        image: redis:8.10.2@sha256:2c2dff791878316e3b083188be0d578423b24813cdda5de0e80ea4f7b3e6bfd6
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s --health-timeout 5s --health-retries 10
+
+    env:
+      # Conexión a los servicios. Nada de esto es un secret. Se entrega como
+      # DATABASE_URL / TEST_DATABASE_URL / REDIS_TEST_URL solo en el paso que la
+      # usa, para que el resto corra con el mismo entorno que en local.
+      CI_DATABASE_URL: postgres://postgres:ci-desechable@localhost:5432/crm_ci_test
+      CI_REDIS_URL: redis://localhost:6379
+      NEXT_TELEMETRY_DISABLED: "1"
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Node 22 (mínimo de engines y de @types/node)
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: "22"
+          # Caché de ~/.npm: `npm ci` verifica cada paquete contra la integridad
+          # de package-lock.json, así que una caché alterada no se instala.
+          cache: npm
+
+      - name: npm ci
+        run: npm ci --no-audit --no-fund
+
+      - name: npm audit (producción, informativo)
+        # Hoy hay vulnerabilidades altas/críticas que se arreglan en otro punto:
+        # se reporta en el resumen de la corrida pero NO tumba la CI.
+        continue-on-error: true
+        run: |
+          set +e
+          npm run --silent audit:prod > "$RUNNER_TEMP/audit.txt" 2>&1
+          code=$?
+          npm audit --omit=dev --json > "$RUNNER_TEMP/audit.json" 2>/dev/null
+          set -e
+          {
+            echo "## npm audit (dependencias de producción)"
+            echo
+            jq -r '.metadata.vulnerabilities // {} | "Críticas: \(.critical // 0) · altas: \(.high // 0) · moderadas: \(.moderate // 0) · bajas: \(.low // 0)"' "$RUNNER_TEMP/audit.json" || echo "No se pudo leer el resultado de npm audit."
+            echo
+            if [ "$code" -eq 0 ]; then
+              echo "Sin vulnerabilidades altas ni críticas."
+            else
+              echo "Hay vulnerabilidades **altas o críticas**. Es informativo: no tumba la CI."
+            fi
+            echo
+            echo "<details><summary>Detalle de npm audit</summary>"
+            echo
+            echo '```'
+            cat "$RUNNER_TEMP/audit.txt"
+            echo '```'
+            echo "</details>"
+          } >> "$GITHUB_STEP_SUMMARY"
+          exit "$code"
+
+      - name: Base de pruebas en UTC
+        # Las pruebas de fechas asumen la sesión de Postgres en UTC.
+        env:
+          # psql por variables PG* (la contraseña no va en argumentos).
+          PGHOST: localhost
+          PGPORT: "5432"
+          PGUSER: postgres
+          PGPASSWORD: ci-desechable
+          PGDATABASE: crm_ci_test
+        run: |
+          psql -X -v ON_ERROR_STOP=1 -c "alter database crm_ci_test set timezone to 'UTC'"
+          tz=$(psql -XAtc "show timezone")
+          echo "Zona horaria de la base: $tz"
+          [ "$tz" = "UTC" ] || { echo "::error::La base no quedó en UTC ($tz)"; exit 1; }
+
+      - name: Migraciones (drizzle-kit migrate)
+        env:
+          DATABASE_URL: ${{ env.CI_DATABASE_URL }}
+        run: npm run db:migrate
+
+      - name: Candado de migraciones (db:check)
+        env:
+          DATABASE_URL: ${{ env.CI_DATABASE_URL }}
+        run: npm run db:check
+
+      - name: Tipos de rutas (next typegen)
+        run: ./node_modules/.bin/next typegen
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Pruebas (unitarias + integración + Redis real)
+        env:
+          TEST_DATABASE_URL: ${{ env.CI_DATABASE_URL }}
+          REDIS_TEST_URL: ${{ env.CI_REDIS_URL }}
+        run: npm test

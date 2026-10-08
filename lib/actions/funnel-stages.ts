@@ -19,6 +19,7 @@ import {
   updateFunnelStage,
 } from "@/lib/contacts/funnel-stages";
 import { MAX_STAGE_NAME, MAX_STAGE_RULE, STAGE_ROLES, type FunnelStage } from "@/lib/contacts/stages";
+import { logError } from "@/lib/log/safe-error";
 
 export type StagesActionResult = { ok: true; stages: FunnelStage[]; moved?: number } | { ok: false; message: string };
 
@@ -66,7 +67,7 @@ async function run(
       return { ok: false, message: "Un contacto entró a esa etapa en este momento; inténtalo de nuevo." };
     }
     if (error instanceof Error && error.message.startsWith("No tienes permiso")) return { ok: false, message: error.message };
-    console.error(`[etapas] ${fallback}`, error);
+    logError(`[etapas] ${fallback}`, error);
     return { ok: false, message: fallback };
   }
 }

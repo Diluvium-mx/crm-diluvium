@@ -35,6 +35,7 @@ import {
   verifyingMetadata,
 } from "./unavailable";
 import { adoptLateEcho } from "./late-echo";
+import { EMPTIED_PAYLOAD_NOTICE, isEmptiedPayload } from "./dead-letter-retention";
 import { pendingFallbackNote, recordAdClickSafely, type FallbackJob, type RecordedClick } from "@/lib/ads/attribution";
 import { looksLikeAdMessage } from "@/lib/ads/referral";
 import { onFollowUpDeliveryFailed } from "@/lib/followups/delivery";
@@ -155,6 +156,9 @@ export async function processWebhookEvent(
   // Defensa adicional: la cuarentena (cuenta no permitida) no se procesa
   // aunque alguien la encole; se libera con scripts/replay-webhook-events.ts.
   if (row.quarantinedAt) return "en cuarentena: no se procesa";
+  // Dead-letter de más de 30 días: el payload ya se vació (./dead-letter-retention.ts).
+  // No hay nada que procesar; la fila sigue en dead-letter, sin tocarla.
+  if (isEmptiedPayload(row.payload)) return `dead-letter vaciado: ${EMPTIED_PAYLOAD_NOTICE}`;
   // La ruta del webhook ya pudo atribuir la organización al guardar (incluso
   // para eventos que terminarán "ignored"): no se pierde al procesar.
   const attributedOrgId = row.organizationId;

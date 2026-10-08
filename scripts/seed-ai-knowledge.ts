@@ -19,6 +19,7 @@ import { db } from "@/lib/db";
 import { organization } from "@/lib/db/schema/auth";
 import { aiConfig, aiKnowledge, aiKnowledgeVersions } from "@/lib/db/schema";
 import { DEFAULT_BRAIN_MODEL, DEFAULT_FILTER_MODEL } from "@/lib/ai/catalog";
+import { logError } from "@/lib/log/safe-error";
 
 const goalUrl = new URL("../docs/agente-ia/angela-goal.md", import.meta.url);
 const faqsUrl = new URL("../docs/agente-ia/angela-faqs.json", import.meta.url);
@@ -123,6 +124,6 @@ async function main(): Promise<void> {
 main()
   .then(() => process.exit(0))
   .catch((e) => {
-    console.error(e);
+    logError("[seed:ai-knowledge]", e);
     process.exit(1);
   });
