@@ -579,6 +579,9 @@ arriba, 👨🏽‍💻 para el vendedor y grupo que se despliega): ver [Versió
 | 2 | **"Adriana movió a … a …"** | Una persona (vendedor, admin u owner, tú incluido) o una automatización ("⚙️ Automatización movió…") cambió la etapa. | Todos |
 | 3 | **✕ Cerrar aviso** | Lo quita antes de los 10 segundos. | Todos |
 
+Al pasar el cursor, **todo el aviso se ilumina como una sola pieza** (8-oct-2026), esté el cursor sobre el
+texto (1)/(2) o sobre la ✕ (3); antes se iluminaba solo la mitad donde estaba el cursor.
+
 **Lo cambias tú desde la pantalla:** nada; solo cerrarlos.
 
 **Pídeselo a Code:**
@@ -588,7 +591,7 @@ arriba, 👨🏽‍💻 para el vendedor y grupo que se despliega): ver [Versió
 **Agente IA aquí:** cada vez que mueve a alguien de etapa sale el aviso (1), también cuando lo hace en
 segundo plano con el agente apagado o pausado.
 
-<sub>Para Code: `app/(app)/_components/stage-change-toasts.tsx` y `stage-toasts.ts`; evento `contact.updated` (`lib/contacts/notify-updated.ts`).</sub>
+<sub>Para Code: `app/(app)/_components/stage-change-toasts.tsx` y `stage-toasts.ts`; evento `contact.updated` (`lib/contacts/notify-updated.ts`). Luz del cursor de una pieza: `data-glow` en la tarjeta (en el celular, en su fila de arriba) y `data-no-glow` en sus dos botones (regla de superficies interactivas de `app/globals.css` + `components/ui/glow-pointer.tsx`).</sub>
 
 #### 3.2.5 Visor de archivos
 
