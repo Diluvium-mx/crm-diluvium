@@ -30,8 +30,11 @@ infinito y varias oportunidades a lo largo del tiempo sin duplicarse.
 
 ### v1 (lo único que existe hasta que funcione completo)
 1. Auth + organización + roles (owner / admin / agente)
-2. Contactos: CRUD, importación CSV, etiquetas, búsqueda, campos personalizados
-   flexibles (gestionables desde la UI por admin/owner; arranca vacío)
+2. Contactos: crear, buscar, importar (CSV de GHL), borrar y exportar (derechos ARCO).
+   **Ajuste del 7-oct-2026 (dueño):** los campos personalizados desde la pantalla salen de la v1 (los
+   datos del negocio viven fijos en el Detalle; un campo nuevo se le pide a Code, que enseña al Agente IA a
+   llenarlo; vuelven si se vende a otros negocios). Las etiquetas se ocultan de la pantalla (siguen en la
+   base) hasta que haya difusiones (v2). Editar nombre, teléfono y correo: pendiente, todavía no.
 3. [Fase 2] Canal WhatsApp (Cloud API): recibir, enviar, media, estados de entrega,
    ventana 24 h, plantillas. Requiere aprobación de Meta; no es parte del núcleo v1.
 4. Bandeja unificada + vista tablero (embudo kanban) intercambiables
@@ -39,8 +42,15 @@ infinito y varias oportunidades a lo largo del tiempo sin duplicarse.
    (capacidad presente en el modelo de datos; sin asignación automática ni
    round-robin activos en v1). Ningún contacto tiene dueño fijo: los dos
    agentes ven todos los contactos, siempre.
-6. Notas, tareas con recordatorio y línea de tiempo por contacto
-7. 4 reportes: conversaciones nuevas, tiempo de primera respuesta, conversión por etapa, ganadas/perdidas
+6. Línea de tiempo por contacto = el chat (mensajes, avisos del Agente IA, programados y seguimientos).
+   **Ajuste del 7-oct-2026 (dueño):** notas y tareas con recordatorio salen de la v1 (las cubren los
+   Seguimientos del Agente IA, los mensajes programados y el chat; Comentarios se quitó el 6-oct porque nadie
+   lo veía). El historial de etapas se guardará SIN aviso en el chat (al cambiar la etapa ya sale la ventana
+   emergente); dónde se consulta está por definir.
+7. 4 reportes: conversaciones nuevas, tiempo de primera respuesta, conversión por etapa, ganadas/perdidas.
+   **7-oct-2026:** las tarjetas se diseñan primero (cómo se ven) para no llenar el Dashboard de datos.
+   «Perdidas» = chats que no llegaron a nada; NO se marcan solos al terminar los seguimientos; la
+   definición queda pendiente para el final.
 8. Mensajes rápidos (antes "Fragmentos"; tabla `snippets` a nivel organización, con variables tipo
    {{nombre}}): respuestas reutilizables. Separados de las plantillas de WhatsApp (Fase 2).
 9. **Canal Instagram (DMs) — entra a v1 (decisión del dueño, 2-oct-2026).** Por Zernio, igual que
@@ -540,10 +550,10 @@ Regla para Codex y Claude: cualquier check nuevo se agrega como script de
 | Fase | Entregable | Terminado cuando |
 |---|---|---|
 | 0 | Repo + Railway + deploy vacío + trámite Meta iniciado | La URL de Railway responde y el número está en revisión |
-| 1 | Auth + org + contactos | Se importa un CSV de 500 contactos y se buscan por nombre/teléfono |
+| 1 | Auth + org + contactos | Se importa un CSV de 500 contactos y se buscan por nombre/teléfono; un contacto se puede borrar y exportar |
 | 2 | Canal WhatsApp | Un mensaje real entra, se ve en la bandeja, se responde y llega al celular |
 | 3 | Embudo kanban | Se arrastra una tarjeta entre etapas y persiste tras recargar |
-| 4 | Notas, tareas, timeline | El historial completo de un contacto se ve en una sola vista |
+| 4 | Línea de tiempo (notas y tareas fuera desde el 7-oct-2026) | El historial completo de un contacto se ve en una sola vista: el chat y su historial de etapas |
 | 5 | Reportes | Las 4 métricas cuadran contra consulta SQL manual |
 
 Regla: **no se empieza una fase sin que la anterior esté desplegada en Railway y usada por una persona real.**
