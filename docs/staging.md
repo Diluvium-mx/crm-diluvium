@@ -23,60 +23,11 @@ feature/*  →  staging (se valida en https://crm-diluvium-staging.up.railway.ap
   crear un servicio o un environment nuevo, es lo primero que se revisa.
 - Para validar una rama, mérgala a `staging` y haz push. Cuando esté validada, abre el PR a `main`.
 
-## CI
+## Protección de `main` en GitHub
 
-`.github/workflows/ci.yml` corre en **cada push a cualquier rama** (y a mano con *Run workflow*). Un
-push nuevo a la misma rama cancela la corrida anterior. Usa un Postgres 18 y un Redis desechables del
-propio job: sin secrets ni datos reales.
-
-Qué revisa:
-1. aplica **todas** las migraciones en una base vacía y corre el candado `npm run db:check`;
-2. `next typegen` + `npm run typecheck` y `npm run lint`;
-3. `npm test` completo, **incluidas** las de integración (`*.int.test.ts`, que necesitan
-   `TEST_DATABASE_URL`) y las de Redis real del rate limit (`REDIS_TEST_URL`);
-4. `npm run audit:prod` (dependencias de producción, nivel alto o crítico): **informativo**, no tumba la
-   CI; el conteo y el detalle salen en el resumen de la corrida.
-
-Cómo ver el resultado: palomita o tache junto al commit en GitHub, pestaña **Actions › ci**, o
-`gh run list --branch <rama> --limit 3` y `gh run view <id> --log-failed`.
-
-Si falla: abre el paso en rojo y reprodúcelo local igual que en CI (base con `test` en el nombre y en UTC):
-
-```bash
-createdb -h localhost crm_ci_test && psql -h localhost -d crm_ci_test -c "alter database crm_ci_test set timezone to 'UTC'"
-DATABASE_URL=postgres://localhost:5432/crm_ci_test npm run db:migrate
-./node_modules/.bin/next typegen && npm run typecheck && npm run lint
-TEST_DATABASE_URL=postgres://localhost:5432/crm_ci_test npm test
-```
-
-No se mergea a `staging` ni a `main` con la CI en rojo. Una prueba que falla no se salta ni se
-«arregla» cambiando el producto: si falla solo por el entorno (Node 22, hora UTC del runner, base
-vacía), se corrige la prueba o el workflow; si está rota de verdad, se arregla el código.
-
-### Ajustes pendientes del dueño (no aplicados)
-
-1. **Railway › «Wait for CI».** En el proyecto `energetic-ambition`, servicios `crm-diluvium` (web) y
-   worker, en **production** y en **staging** › *Settings* › *Source* › activar **Wait for CI**. Railway
-   espera a que terminen los checks de GitHub del commit y, si alguno falla, no lo despliega (queda
-   *Skipped*) y sigue atendiendo la versión anterior. Prenderlo **cuando la CI ya esté en verde en
-   `main`**; si no, el siguiente push a `main` se quedaría sin desplegar. Si una corrida se cancela
-   porque llegó otro push a la rama, ese commit no se despliega pero el siguiente sí.
-2. **Ruleset de `main` en GitHub:** bloquear force-push y borrado de la rama. **No** exigir checks ni PR:
-   los merges a `main` se empujan directo y se rechazarían. Sin *bypass*: aplica también al dueño (si
-   algún día hay que reescribir la historia, se desactiva el ruleset a propósito y se vuelve a prender).
-
-   ```bash
-   gh api -X POST repos/Diluvium-mx/crm-diluvium/rulesets --input - <<'JSON'
-   {
-     "name": "main: sin force-push ni borrado",
-     "target": "branch",
-     "enforcement": "active",
-     "conditions": { "ref_name": { "include": ["refs/heads/main"], "exclude": [] } },
-     "rules": [ { "type": "deletion" }, { "type": "non_fast_forward" } ]
-   }
-   JSON
-   gh api repos/Diluvium-mx/crm-diluvium/rulesets   # para comprobarlo
-   ```
+Desde el 8-oct-2026 hay un ruleset en `main` («main: sin force-push ni borrado»): nadie puede reescribir ni borrar
+la rama. No exige PR ni checks. Si algún día hay que reescribir la historia (como en S6), se desactiva a propósito en
+GitHub › Settings › Rules › Rulesets y se vuelve a prender al terminar.
 
 ## Aislamiento verificado (18-sep-2026)
 

@@ -34,8 +34,8 @@ en orden de dinero:
   subpestaña «Opinión». Agente IA › Seguimientos se queda igual.
 - Página de prueba con la dirección de Railway (`…up.railway.app/opinion/<token>`). Un subdominio de la página web
   se verá después.
-- Google Maps: `https://maps.app.goo.gl/cnujYXX1fUYcbi2z7` (abre «Diluvium» en Los Mochis; falta que el dueño confirme
-  que es el perfil correcto). Se guarda en Seguimientos › Opinión › Enlace de Google, no en el código.
+- Google Maps: `https://maps.app.goo.gl/cnujYXX1fUYcbi2z7` (el perfil de Diluvium en Los Mochis, confirmado por el dueño
+  el 8-oct). Se guarda en Seguimientos › Opinión › Enlace de Google, no en el código.
 
 ## 3. Plantilla del Momento 1 (mandada a revisión el 7-oct-2026)
 
@@ -95,8 +95,8 @@ en orden de dinero:
 
 ## 6. Pendientes y riesgos
 
-- Confirmar el perfil de Google (el enlace abre Los Mochis). Mejor aún, el enlace de «Pedir reseñas» del Perfil de
-  Negocio, que abre directo la caja de la reseña.
+- Si se quiere, cambiar el enlace de Google por el de «Pedir reseñas» del Perfil de Negocio, que abre directo la caja
+  de la reseña.
 - El mensaje de «Compartir con un vecino» lleva un enlace largo (wa.me con el texto ya escrito). Si estorba, un
   enlace corto propio del CRM que redirija.
 - El permiso para publicar no enlaza todavía a un aviso de privacidad (falta saber su dirección).
