@@ -689,6 +689,26 @@ general de calendario) quedan descartadas.
 
 ---
 
+## 19. Escenas del robot en la píldora (9-oct-2026)
+
+Pedido del dueño: animaciones cortas y graciosas **dentro** de la píldora cuando cambia su estado. Se aprueban con un
+prototipo (tamaño real y ampliado) antes de construirlas.
+
+- **Disparo** (pasa a Cancelado; prototipo aprobado tal cual, EN LA RAMA `feature/robot-disparo`): sale una pistola por la
+  izquierda y le dispara; el robot se sacude y hace cortocircuito (chispas, la antena parpadea, le brincan tres cables de
+  la cabeza), queda con ojos en X y la pistola gira como de vaquero y se regresa. 1.9 s; el último cuadro es idéntico a
+  `robot-cancelado.svg`. Sale con «Cancelar» y con «Apagar seguimientos en este chat».
+- **Quién la ve** (decisión del dueño): todo el que tenga el chat abierto cuando cambia el estado, vendedor o admin, lo haya
+  hecho él u otro. Al abrir un chat que ya estaba así no se juega. Con «reducir movimiento» se ve directo la carita final.
+- Código: `robot-escena.tsx` (solo dibujo, robot en SVG en línea), `useRobotEscena` en `followup-pill.tsx` (cuándo se
+  juega) y `app/globals.css` › «Robot del seguimiento» (tiempos). En chico los detalles finos casi no se ven; el dueño lo
+  aceptó así.
+- **Propuestas esperando OK** (prototipos del 9-oct): Reactivar seguimientos (llave inglesa, se reinicia), Cambiar hora
+  (ojos de reloj que giran y la hora cambia), Que salga solo (despertador) y, opcional, Salió el mensaje (avioncito de
+  papel). «Lo mando yo» no lleva escena: abre WhatsApp Web en otra pestaña y no se vería.
+
+---
+
 ## Fuentes
 
 - [M1] Meta, enviar mensajes / ventana de servicio: https://developers.facebook.com/documentation/business-messaging/whatsapp/messages/send-messages

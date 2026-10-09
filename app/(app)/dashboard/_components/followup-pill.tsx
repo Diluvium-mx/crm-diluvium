@@ -18,6 +18,8 @@
 // Siempre está (7-oct-2026, decisión del dueño): sin nada que seguir sale el robot dormido en gris («dormido») y su
 // ventana dice por qué; «esperando» se queda mientras el último mensaje sea nuestro aunque ya no queden intentos.
 // Consultas: al abrir el chat, con cada aviso "followup.updated" de este chat y al volver a la pestaña.
+// Escenas (9-oct-2026, prototipo aprobado por el dueño): al pasar a «Cancelado» con el chat abierto, la píldora juega
+// «disparo» (robot-escena.tsx). Lo ve todo el que tenga el chat abierto, vendedor o admin, lo haya cancelado él u otro.
 import { useCallback, useEffect, useRef, useState } from "react";
 import { apagarSeguimientos, approveSuggestedFollowUp, cancelFollowUp, getFollowUp, quitarSinSeguimientos, reactivarSeguimientos, rescheduleFollowUp } from "@/lib/actions/seguimientos";
 import type { FollowUpDormido, FollowUpOff, FollowUpState, FollowUpView } from "@/lib/followups/view";
@@ -27,6 +29,7 @@ import { instantToLocal, SCHEDULE_TIME_ZONE } from "@/lib/scheduled/rules";
 import { CloseX } from "@/components/ui/close-x";
 import { useInboxStream } from "./use-inbox-stream";
 import { DateTimePicker } from "@/components/ui/date-time-picker";
+import { ESCENA_MS, RobotEscena, type Escena } from "./robot-escena";
 
 // ── Datos ────────────────────────────────────────────────────────────────────
 
@@ -146,10 +149,28 @@ function faceOf(f: FollowUpState): RobotFace {
   return f.modo === "sugerido" && !f.autoAprobado ? "dormido" : "normal";
 }
 
+/** La escena que toca jugar: solo cuando el estado CAMBIA con la píldora a la vista (al abrir el chat no se juega;
+ * al cambiar de chat la píldora se vuelve a montar). Se quita sola al terminar. */
+function useRobotEscena(estado: FollowUpState["estado"]): Escena | null {
+  const [antes, setAntes] = useState(estado);
+  const [escena, setEscena] = useState<Escena | null>(null);
+  if (antes !== estado) {
+    setAntes(estado);
+    setEscena(estado === "cancelado" ? "disparo" : null);
+  }
+  useEffect(() => {
+    if (!escena) return;
+    const timer = window.setTimeout(() => setEscena(null), ESCENA_MS[escena]);
+    return () => window.clearTimeout(timer);
+  }, [escena]);
+  return escena;
+}
+
 // ── Píldora ──────────────────────────────────────────────────────────────────
 
 export function FollowUpPill({ followUp, open, onToggle, className = "" }: { followUp: FollowUpState; open: boolean; onToggle: () => void; className?: string }) {
   const f = followUp;
+  const escena = useRobotEscena(f.estado);
   if (f.estado === "dormido") {
     const title = `Seguimiento del Agente IA · dormido: ${f.razon}`;
     return (
@@ -197,9 +218,10 @@ export function FollowUpPill({ followUp, open, onToggle, className = "" }: { fol
       title={title}
       data-testid="followup-pill"
       data-estado={f.estado}
-      className={`h-5 min-w-0 cursor-pointer items-center justify-center gap-1 rounded-full border text-[11px] leading-none whitespace-nowrap transition-colors select-none ${label ? "px-2" : "px-6"} ${tone} ${open ? "ring-2 ring-brand-navy/30" : ""} ${className}`}
+      // overflow-hidden mientras corre una escena: la pistola entra desde la orilla sin salirse de la píldora.
+      className={`h-5 min-w-0 cursor-pointer items-center justify-center gap-1 rounded-full border text-[11px] leading-none whitespace-nowrap transition-colors select-none ${label ? "px-2" : "px-6"} ${escena ? "overflow-hidden" : ""} ${tone} ${open ? "ring-2 ring-brand-navy/30" : ""} ${className}`}
     >
-      <RobotIcon face={faceOf(f)} />
+      {escena ? <RobotEscena escena={escena} /> : <RobotIcon face={faceOf(f)} />}
       {label && <span className="truncate">{label}</span>}
     </button>
   );

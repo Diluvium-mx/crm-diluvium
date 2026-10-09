@@ -1020,3 +1020,234 @@ html[data-theme-circle]::view-transition-new(root) {
     opacity: 0.25;
   }
 }
+
+/* Robot del seguimiento (9-oct-2026, prototipo aprobado por el dueño): escenas cortas dentro de la píldora 🤖 del
+   composer (app/(app)/dashboard/_components/robot-escena.tsx). «disparo» (pasa a Cancelado, 1.9 s): una pistola sale
+   por la izquierda y le dispara; el robot se sacude y hace cortocircuito (chispas, la antena parpadea, le brincan tres
+   cables), queda con ojos en X y la pistola gira como de vaquero y se regresa. Sin animación («reducir movimiento») se
+   ve directo el cuadro final, idéntico a robot-cancelado.svg. Medidas en px para el robot de 18 px. */
+.robot-escena {
+  --re-d: 1900ms;
+}
+.robot-escena .re-robot {
+  display: block;
+  overflow: visible;
+}
+.re-pistola {
+  position: absolute;
+  top: 5px;
+  right: calc(100% + 5px);
+  width: 13px;
+  height: 8px;
+  opacity: 0;
+  transform-origin: 40% 65%;
+}
+.re-pistola-oscuro {
+  fill: #2a333d;
+}
+.re-pistola-cuerpo {
+  fill: #3b4754;
+}
+.re-pistola-brillo {
+  fill: #6b7887;
+}
+.re-pistola-guarda {
+  stroke: #3b4754;
+}
+/* En oscuro, la pistola en gris claro para que no se pierda en el fondo. */
+.dark .re-pistola-oscuro {
+  fill: #8c99a6;
+}
+.dark .re-pistola-cuerpo {
+  fill: #a7b3bf;
+}
+.dark .re-pistola-brillo {
+  fill: #dde3e9;
+}
+.dark .re-pistola-guarda {
+  stroke: #a7b3bf;
+}
+.re-fogonazo {
+  position: absolute;
+  top: 2px;
+  left: -8px;
+  width: 8px;
+  height: 8px;
+  opacity: 0;
+}
+.re-bala {
+  position: absolute;
+  top: 7px;
+  left: -5px;
+  width: 3px;
+  height: 1.2px;
+  border-radius: 1px;
+  background: #f5b400;
+  opacity: 0;
+}
+.re-humo {
+  position: absolute;
+  top: 5px;
+  left: -6px;
+  width: 2.5px;
+  height: 2.5px;
+  border-radius: 50%;
+  background: #b8c0c8;
+  opacity: 0;
+}
+.re-cuerpo {
+  transform-box: fill-box;
+  transform-origin: center;
+}
+.re-cables path {
+  stroke-dasharray: 1;
+}
+/* Cuadro final (también es lo que se ve sin animación): ojos en X, boca en «O», sin cables ni chispas. */
+.re-ojos,
+.re-boca,
+.re-cables,
+.re-chispas {
+  opacity: 0;
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .robot-escena-disparo .re-pistola {
+    animation: re-disparo-pistola var(--re-d) both;
+  }
+  .robot-escena-disparo .re-fogonazo {
+    animation: re-disparo-fogonazo var(--re-d) both;
+  }
+  .robot-escena-disparo .re-bala {
+    animation: re-disparo-bala var(--re-d) both;
+  }
+  .robot-escena-disparo .re-humo {
+    animation: re-disparo-humo var(--re-d) both;
+  }
+  .robot-escena-disparo .re-humo-2 {
+    animation-delay: calc(var(--re-d) * 0.05);
+  }
+  .robot-escena-disparo .re-cuerpo {
+    animation: re-disparo-cuerpo var(--re-d) both;
+  }
+  .robot-escena-disparo :is(.re-ojos, .re-boca) {
+    animation: re-disparo-antes var(--re-d) both;
+  }
+  .robot-escena-disparo .re-ojos-x {
+    animation: re-disparo-ojos-x var(--re-d) both;
+  }
+  .robot-escena-disparo .re-boca-o {
+    animation: re-disparo-despues var(--re-d) both;
+  }
+  .robot-escena-disparo .re-antena {
+    animation: re-disparo-antena var(--re-d) both;
+  }
+  .robot-escena-disparo .re-cables {
+    animation: re-disparo-cables var(--re-d) both;
+  }
+  .robot-escena-disparo .re-cables path {
+    animation: re-disparo-cables-salen var(--re-d) both;
+  }
+  .robot-escena-disparo .re-chispas-1 {
+    animation: re-disparo-chispas-1 var(--re-d) both step-end;
+  }
+  .robot-escena-disparo .re-chispas-2 {
+    animation: re-disparo-chispas-2 var(--re-d) both step-end;
+  }
+}
+@keyframes re-disparo-pistola {
+  0% { opacity: 0; transform: translateX(-24px) rotate(0); }
+  4% { opacity: 1; }
+  13% { transform: translateX(1px) rotate(0); }
+  16% { transform: translateX(0) rotate(0); }
+  19% { transform: translateX(-2px) rotate(-28deg); }
+  25% { transform: translateX(0) rotate(0); }
+  52% { transform: translateX(0) rotate(0); }
+  68% { transform: translateX(0) rotate(-360deg); }
+  73% { transform: translateX(0) rotate(-360deg); }
+  86% { opacity: 1; transform: translateX(-24px) rotate(-360deg); }
+  87%, 100% { opacity: 0; transform: translateX(-24px) rotate(-360deg); }
+}
+@keyframes re-disparo-fogonazo {
+  0%, 17.5% { opacity: 0; transform: scale(0.3); }
+  18.5% { opacity: 1; transform: scale(1.15); }
+  21.5%, 100% { opacity: 0; transform: scale(0.6); }
+}
+@keyframes re-disparo-bala {
+  0%, 18% { opacity: 0; transform: translateX(0); }
+  18.5% { opacity: 1; transform: translateX(0); }
+  21.5% { opacity: 1; transform: translateX(6px); }
+  22%, 100% { opacity: 0; transform: translateX(6px); }
+}
+@keyframes re-disparo-humo {
+  0%, 24% { opacity: 0; transform: translate(0, 0) scale(0.6); }
+  28% { opacity: 0.85; }
+  48%, 100% { opacity: 0; transform: translate(1.5px, -6px) scale(1.4); }
+}
+@keyframes re-disparo-cuerpo {
+  0%, 22% { transform: none; }
+  22.5% { transform: translate(5px, 0) rotate(14deg); }
+  25% { transform: translate(-3px, 0) rotate(-8deg); }
+  28% { transform: translate(2px, 0) rotate(5deg); }
+  31% { transform: translate(-1px, 0) rotate(-2deg); }
+  34% { transform: none; }
+  40% { transform: translate(1px, -1px); }
+  42% { transform: translate(-1px, 1px); }
+  44% { transform: none; }
+  52% { transform: translate(1px, 0); }
+  54%, 100% { transform: none; }
+}
+@keyframes re-disparo-antes {
+  0%, 22% { opacity: 1; }
+  22.5%, 100% { opacity: 0; }
+}
+@keyframes re-disparo-despues {
+  0%, 22% { opacity: 0; }
+  22.5%, 100% { opacity: 1; }
+}
+@keyframes re-disparo-ojos-x {
+  0%, 22% { opacity: 0; }
+  22.5%, 39% { opacity: 1; }
+  40% { opacity: 0.25; }
+  41.5%, 100% { opacity: 1; }
+}
+@keyframes re-disparo-antena {
+  0%, 22% { fill: #e5484d; }
+  23% { fill: #ffe066; }
+  26% { fill: #5b6876; }
+  29% { fill: #ffe066; }
+  33% { fill: #5b6876; }
+  41% { fill: #ffe066; }
+  43%, 60% { fill: #5b6876; }
+  66%, 100% { fill: #e5484d; }
+}
+@keyframes re-disparo-cables {
+  0%, 22.5% { opacity: 0; }
+  23%, 76% { opacity: 1; }
+  86%, 100% { opacity: 0; }
+}
+@keyframes re-disparo-cables-salen {
+  0%, 23% { stroke-dashoffset: 1; }
+  28%, 100% { stroke-dashoffset: 0; }
+}
+@keyframes re-disparo-chispas-1 {
+  0% { opacity: 0; }
+  23% { opacity: 1; }
+  26% { opacity: 0; }
+  29% { opacity: 1; }
+  31% { opacity: 0; }
+  38% { opacity: 1; }
+  40% { opacity: 0; }
+  47% { opacity: 1; }
+  49%, 100% { opacity: 0; }
+}
+@keyframes re-disparo-chispas-2 {
+  0% { opacity: 0; }
+  24.5% { opacity: 1; }
+  27.5% { opacity: 0; }
+  33% { opacity: 1; }
+  35.5% { opacity: 0; }
+  43% { opacity: 1; }
+  45% { opacity: 0; }
+  55% { opacity: 1; }
+  57%, 100% { opacity: 0; }
+}
