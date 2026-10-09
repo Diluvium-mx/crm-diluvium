@@ -31,6 +31,21 @@ export function neutralizeCrmHeader(text: string): string {
   return text.replace(/\[\s*CONTEXTO DEL CRM/gi, "(CONTEXTO DEL CRM");
 }
 
+/**
+ * Texto que viene del cliente (o que el lector sacó de lo que escribió) y vuelve a entrar como
+ * DATO dentro del contexto del CRM (seguridad B, 9-oct-2026, inyección indirecta): en una sola
+ * línea, sin corchetes ni comillas propias (no puede abrir otra sección ni cerrar la cita),
+ * recortado y entre «». Así nunca se lee como una instrucción del CRM.
+ */
+export function quotedData(text: string, max = 120): string {
+  const one = neutralizeCrmHeader(text)
+    .replace(/[\u0000-\u001f\u007f\u2028\u2029]+/g, " ")
+    .replace(/[«»\[\]]/g, "")
+    .replace(/\s{2,}/g, " ")
+    .trim();
+  return `«${one.length > max ? `${one.slice(0, max)}…` : one}»`;
+}
+
 // Lo mínimo de una fila de `messages` que se necesita aquí.
 export type ThreadMessage = {
   id: string;
@@ -66,7 +81,8 @@ function attachmentNote(a: MessageAttachment): string {
     case "sticker":
       return "[sticker]";
     case "document":
-      return `[documento${a.fileName ? `: ${a.fileName}` : ""}]`;
+      // El nombre lo pone el celular del cliente: entra como dato (seguridad B, 9-oct-2026).
+      return `[documento${a.fileName?.trim() ? `: ${quotedData(a.fileName, 80)}` : ""}]`;
     default:
       return `[adjunto: ${a.type}]`;
   }

@@ -10,6 +10,7 @@ import { conversations, followUps } from "@/lib/db/schema";
 import { agentStateLabel } from "@/lib/historial/labels";
 import { chatSubject, logChanges } from "@/lib/historial/log";
 import { manualPauseOf, realAttempts } from "./store";
+import { quotedData } from "@/lib/ai/runtime/transcript";
 
 const RECENT_MS = 3 * 24 * 60 * 60_000;
 
@@ -77,8 +78,9 @@ export async function resumeAgentOnFollowUpReply(organizationId: string, convers
 export async function followUpContextFor(organizationId: string, conversationId: string, now: Date = new Date()): Promise<string> {
   const row = await lastSentFollowUp(organizationId, conversationId, now);
   if (!row) return "";
-  const parts = [`[SEGUIMIENTO] Le escribimos al cliente un seguimiento por: «${row.pendiente ?? "lo que quedó pendiente"}».`];
-  if (row.siguientePaso) parts.push(`Lo que buscamos: «${row.siguientePaso}».`);
+  // pendiente y siguientePaso los escribió el lector con palabras del chat: entran como dato (seguridad B).
+  const parts = [`[SEGUIMIENTO] Le escribimos al cliente un seguimiento por: ${row.pendiente ? quotedData(row.pendiente, 200) : "«lo que quedó pendiente»"}.`];
+  if (row.siguientePaso) parts.push(`Lo que buscamos: ${quotedData(row.siguientePaso, 200)}.`);
   parts.push("Si contesta, retoma justo eso, sin repetir lo que ya se le dijo.");
   return parts.join(" ");
 }

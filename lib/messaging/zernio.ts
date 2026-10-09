@@ -13,6 +13,7 @@
 // tolerante. Un evento que el CRM procesa pero cuyo formato no se reconoce
 // sale "malformed": queda en dead-letter en webhook_events (nada se pierde).
 import { createHmac, timingSafeEqual } from "node:crypto";
+import { resolveHost, safeFetch, UnsafeUrlError, type ResolveHost } from "@/lib/net/safe-fetch";
 import { z } from "zod";
 import {
   SendFailedError,
@@ -665,6 +666,7 @@ export class ZernioProvider implements MessagingProvider {
   constructor(
     private readonly config: { apiKey: string; webhookSecret: string; baseUrl?: string },
     private readonly fetchImpl: typeof fetch = fetch,
+    private readonly resolveImpl: ResolveHost = resolveHost,
   ) {}
 
   verifyWebhook(rawBody: string, headers: Headers): boolean {
@@ -765,14 +767,21 @@ export class ZernioProvider implements MessagingProvider {
   // Media de WhatsApp vía Zernio: https://zernio.com/api/v1/whatsapp/media/{id}
   // exige el Bearer (sin él, 401; verificado en vivo). El Bearer SOLO se
   // agrega si la URL es del host de la API de Zernio: una URL de otro dominio
-  // en un payload nunca recibe la API key.
+  // en un payload nunca recibe la API key (tampoco tras una redirección: se calcula en cada salto).
+  // Seguridad B (9-oct-2026): cada salto pasa por safeFetch (solo https a un dominio público).
   async fetchMedia(url: string, signal?: AbortSignal): Promise<Response> {
-    const target = new URL(url);
     const api = new URL(this.config.baseUrl ?? DEFAULT_BASE_URL);
-    if (target.protocol !== "https:") throw new ZernioSendError(0, "media_url_insegura", "La URL de media no es https");
-    const headers: Record<string, string> = {};
-    if (target.host === api.host) headers.Authorization = `Bearer ${this.config.apiKey}`;
-    return this.fetchImpl(target, { headers, signal, redirect: "follow" });
+    try {
+      return await safeFetch(url, {
+        fetchImpl: this.fetchImpl,
+        resolve: this.resolveImpl,
+        signal,
+        headersFor: (target): Record<string, string> => (target.host === api.host ? { Authorization: `Bearer ${this.config.apiKey}` } : {}),
+      });
+    } catch (error) {
+      if (error instanceof UnsafeUrlError) throw new ZernioSendError(0, "media_url_insegura", `La URL de media no es segura: ${error.message}`);
+      throw error;
+    }
   }
 
   private apiUrl(path: string): string {

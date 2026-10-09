@@ -352,6 +352,8 @@ describe.skipIf(!TEST_DATABASE_URL)("anuncios de Meta (Postgres real)", () => {
   });
 
   describe("miniatura: UNA copia chica por anuncio (sin videos ni archivos por clic)", () => {
+    // DNS de prueba: los dominios de Meta resuelven a una IP pública (sin red real).
+    const publicDns = async () => ["157.240.1.1"];
     function memoryStorage() {
       const objects = new Map<string, { bytes: Buffer; contentType: string }>();
       return {
@@ -385,8 +387,8 @@ describe.skipIf(!TEST_DATABASE_URL)("anuncios de Meta (Postgres real)", () => {
         return new Response(new Uint8Array(big), { status: 200, headers: { "content-type": "image/png" } });
       }) as typeof fetch;
       const [c1, c2] = hooksLog.clicks;
-      expect(await thumbnail.storeAdThumbnail(storage, ORG, AD_IMAGE, c1.thumbUrl!, fetchImpl)).toBe("guardada");
-      expect(await thumbnail.storeAdThumbnail(storage, ORG, AD_IMAGE, c2.thumbUrl!, fetchImpl)).toBe("ya_existe");
+      expect(await thumbnail.storeAdThumbnail(storage, ORG, AD_IMAGE, c1.thumbUrl!, fetchImpl, publicDns)).toBe("guardada");
+      expect(await thumbnail.storeAdThumbnail(storage, ORG, AD_IMAGE, c2.thumbUrl!, fetchImpl, publicDns)).toBe("ya_existe");
       expect(downloads).toBe(1);
       expect([...objects.keys()]).toEqual([`org/${ORG}/ads/meta/${AD_IMAGE}/miniatura.jpg`]);
       const stored = objects.get(`org/${ORG}/ads/meta/${AD_IMAGE}/miniatura.jpg`)!;
@@ -403,7 +405,7 @@ describe.skipIf(!TEST_DATABASE_URL)("anuncios de Meta (Postgres real)", () => {
       await deliver(adEvent({ phone: "5216681000015", referral: imageFicha("c-15"), sentAt: new Date().toISOString() }));
       const { storage } = memoryStorage();
       const expired = (async () => new Response("URL signature expired", { status: 403 })) as typeof fetch;
-      const err = await thumbnail.storeAdThumbnail(storage, ORG, AD_IMAGE, hooksLog.clicks[0].thumbUrl!, expired).catch((e: unknown) => e);
+      const err = await thumbnail.storeAdThumbnail(storage, ORG, AD_IMAGE, hooksLog.clicks[0].thumbUrl!, expired, publicDns).catch((e: unknown) => e);
       expect(err).toBeInstanceOf(thumbnail.ThumbnailError);
       expect((err as InstanceType<typeof thumbnail.ThumbnailError>).httpStatus).toBe(403);
       let [ad] = await db.select().from(s.metaAds);
@@ -450,7 +452,7 @@ describe.skipIf(!TEST_DATABASE_URL)("anuncios de Meta (Postgres real)", () => {
       expect((ad.metaRaw as { creative: { id: string } }).creative.id).toBe("1586953986127289");
       const small = await png(160, 160);
       const ok = (async () => new Response(new Uint8Array(small), { status: 200, headers: { "content-type": "image/png" } })) as typeof fetch;
-      expect(await thumbnail.storeAdThumbnail(storage, ORG, AD_IMAGE, undefined, ok)).toBe("guardada");
+      expect(await thumbnail.storeAdThumbnail(storage, ORG, AD_IMAGE, undefined, ok, publicDns)).toBe("guardada");
       const card = (await queries.adCardsForMessages(ORG, [(await db.select().from(s.messages))[0].id])).values().next().value;
       expect(card).toMatchObject({ name: "AC - IMG 14", href: `/anuncios/${AD_IMAGE}`, thumbnailUrl: `/api/ads/thumbnail/${AD_IMAGE}` });
       const page = await queries.getAd(ORG, AD_IMAGE);
@@ -463,7 +465,7 @@ describe.skipIf(!TEST_DATABASE_URL)("anuncios de Meta (Postgres real)", () => {
       const { storage } = memoryStorage();
       const bad = (async () => new Response("no", { status: 500 })) as typeof fetch;
       for (let i = 0; i < thumbnail.THUMB_MAX_ATTEMPTS; i++) {
-        await expect(thumbnail.storeAdThumbnail(storage, ORG, AD_IMAGE, undefined, bad)).rejects.toThrow();
+        await expect(thumbnail.storeAdThumbnail(storage, ORG, AD_IMAGE, undefined, bad, publicDns)).rejects.toThrow();
       }
       let [ad] = await db.select().from(s.metaAds);
       expect(ad.thumbnailAttempts).toBe(thumbnail.THUMB_MAX_ATTEMPTS);

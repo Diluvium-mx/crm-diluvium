@@ -2310,7 +2310,7 @@ describe.skipIf(!TEST_DATABASE_URL)("runtime del Agente IA (Postgres real)", () 
     expect(brain.modelId).toBe("qwen-3.7-flash");
     const last = lastUserText(brain.input);
     expect(last).not.toContain('"type":"file"');
-    expect(last).toContain("[documento: spei.pdf]");
+    expect(last).toContain("[documento: «spei.pdf»]");
   });
 
   it("respuesta cortada por el tope o acción con argumentos inválidos → no sale NADA, tarjeta y el Agente IA en pausa en el chat (5-oct-2026; antes salía el texto con aviso)", async () => {
@@ -2892,7 +2892,7 @@ describe.skipIf(!TEST_DATABASE_URL)("runtime del Agente IA (Postgres real)", () 
     const next = makeDeps({ brain: ["Te sale en $11,000."] });
     await run.runAgent(JOB, next.deps);
     const lastTurn = JSON.stringify(next.calls.find((x) => x.kind === "cerebro")!.input.messages.at(-1)!.content);
-    expect(lastTurn).toContain("Detalle guardado del contacto: inundaciones: sí · agua: (hasta la rodilla) · entradas: 2 (anchos: 95, 105 cm) · convencimiento: 50 %");
+    expect(lastTurn).toContain("Detalle guardado del contacto: inundaciones: sí · agua: («hasta la rodilla») · entradas: 2 (anchos: 95, 105 cm) · convencimiento: 50 %");
     expect(lastTurn).not.toContain("Cochera con desnivel");
   });
 

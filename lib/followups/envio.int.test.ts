@@ -214,6 +214,15 @@ describe.skipIf(!TEST_DATABASE_URL)("Seguimientos en modo REAL (proveedor falso)
     expect(await reply.resumeAgentOnFollowUpReply(ORG, CONV, new Date(at.getTime() + 5 * MIN), new Date(at.getTime() + 5 * MIN))).toBe(false);
   });
 
+  it("un borrador con una nota interna no sale: el intento queda con el error (mismo candado que las respuestas)", async () => {
+    await reading();
+    await db.update(s.followUps).set({ borrador: '[tool call] actualizar_detalle {"tiene_inundaciones":"si"}' });
+    await store.followUpSweepOnce(new Date((await row()).dueAt!.getTime() + MIN), { provider });
+    expect(sent).toHaveLength(0);
+    expect((await row()).intentos[0].error).toMatch(/nota interna/);
+    expect(await db.select().from(s.messages).where(d.eq(s.messages.conversationId, CONV))).toHaveLength(2);
+  });
+
   it("131050 (baja de promociones): el intento queda con el error y el contacto, sin seguimientos", async () => {
     await reading();
     await store.followUpSweepOnce(new Date((await row()).dueAt!.getTime() + MIN), { provider });
