@@ -9,6 +9,7 @@ import { useCallback, useEffect, useRef, useState, type ReactNode } from "react"
 import type { ConversationDetail } from "@/lib/inbox/types";
 import { getConversationByContact, markConversationRead } from "@/lib/inbox/actions";
 import { ChatThread } from "../../dashboard/_components/chat-thread";
+import { createReadMarks, EVENT_BATCH_MS } from "../../dashboard/_components/chat-events";
 import { useInboxStream } from "../../dashboard/_components/use-inbox-stream";
 import { FirstMessage } from "./first-message";
 
@@ -57,6 +58,11 @@ export function ContactChat({
   useEffect(() => () => clearTimeout(pendingLoadRef.current), []);
   const stageTimerRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   useEffect(() => () => clearTimeout(stageTimerRef.current), []);
+  // conversation.updated seguidos (llegada, no leídos, ventana) = una sola relectura del detalle.
+  const detailTimerRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+  useEffect(() => () => clearTimeout(detailTimerRef.current), []);
+  // «Leído» una vez por mensaje, no en cada cambio de estado (chat-events.ts).
+  const [readMarks] = useState(createReadMarks);
   // Conversación ya marcada como leída al abrirla (una vez; luego la marcan las
   // llegadas y el regreso a la pestaña).
   const markedOpenRef = useRef<string | null>(null);
@@ -152,11 +158,14 @@ export function ContactChat({
       return;
     }
     if (event.conversationId !== id) return;
-    if (event.type === "conversation.updated") void load();
-    else {
+    if (event.type === "conversation.updated") {
+      clearTimeout(detailTimerRef.current);
+      detailTimerRef.current = setTimeout(() => void load(), EVENT_BATCH_MS);
+    } else {
       setRevalToken((n) => n + 1);
-      // Llegó algo con el chat abierto y a la vista: leído solo hasta ese mensaje.
-      if (event.type === "message.upserted" && tabVisible()) markRead(id, event.messageId);
+      // Llegó un mensaje con el chat abierto y a la vista: leído solo hasta ese mensaje, y
+      // solo la primera vez (sus cambios de estado vuelven a avisar con el mismo id).
+      if (event.type === "message.upserted" && tabVisible() && readMarks.first(event.messageId)) markRead(id, event.messageId);
     }
   });
 

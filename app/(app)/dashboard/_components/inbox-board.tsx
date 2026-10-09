@@ -17,6 +17,7 @@ import { setContactDestacado, updateContactTemperature } from "@/lib/actions/con
 import type { Temperature } from "../../contactos/_data/types";
 import { usePersistentToggle } from "@/components/ui/use-persistent-toggle";
 import { ChatThread } from "./chat-thread";
+import { createReadMarks } from "./chat-events";
 import { ContactPanel } from "./contact-panel";
 import { ConversationList } from "./conversation-list";
 import { useInboxStream } from "./use-inbox-stream";
@@ -60,6 +61,8 @@ export function InboxBoard({ openContactId = null }: { openContactId?: string | 
   const [mobileDetailOpen, setMobileDetailOpen] = useState(false);
   const [nowMs, setNowMs] = useState(() => Date.now());
   const [revalToken, setRevalToken] = useState(0);
+  // «Leído» una vez por mensaje, no en cada cambio de estado (chat-events.ts).
+  const [readMarks] = useState(createReadMarks);
 
   // Refs para que los handlers del SSE (suscritos una sola vez) lean el estado
   // actual sin re-suscribirse en cada cambio.
@@ -305,13 +308,14 @@ export function InboxBoard({ openContactId = null }: { openContactId?: string | 
     if (!id || event.conversationId !== id) return;
     if (event.type === "conversation.updated") {
       // Ventana de 24 h, estrella, etapa: sin esto una llegada nueva dejaría
-      // el composer bloqueado o con la ventana vieja.
-      void refreshDetail(id);
+      // el composer bloqueado o con la ventana vieja. Varios seguidos = una lectura.
+      scheduleDetailRefresh();
     } else {
       setRevalToken((n) => n + 1); // recarga el hilo abierto
       // Marcar leído SOLO si la pestaña está a la vista, y solo hasta el
-      // mensaje que llegó (corte): una llegada posterior sigue sin leer.
-      if (event.type === "message.upserted" && tabVisible()) {
+      // mensaje que llegó (corte): una llegada posterior sigue sin leer. Una vez
+      // por mensaje: sus cambios de estado vuelven a avisar con el mismo id.
+      if (event.type === "message.upserted" && tabVisible() && readMarks.first(event.messageId)) {
         void markConversationRead(id, event.messageId).then(() => scheduleUpdate(id));
       }
     }
