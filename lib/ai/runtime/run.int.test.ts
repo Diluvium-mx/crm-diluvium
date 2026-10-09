@@ -1721,7 +1721,7 @@ describe.skipIf(!TEST_DATABASE_URL)("runtime del Agente IA (Postgres real)", () 
   });
 
   // ── «El workflow es la respuesta» como herramienta (29-sep-2026, dueño: «Depende») ──
-  it("herramienta «es la respuesta» que trae TEXTOS: el texto del modelo no sale; sale el workflow y su último mensaje contesta lo que el agente leyó", async () => {
+  it("herramienta «es la respuesta» que trae TEXTOS (9-oct-2026, como «Dónde medir»): el texto del modelo no sale; sale el workflow, su último mensaje contesta SOLO el mensaje que lo pidió y lo que el cliente escribió mientras se contesta sin repetir al workflow", async () => {
     const m1 = await msg({ direction: "in", body: "hola, ¿qué precio tiene?", at: ago(40_000) });
     const wfId = await wf(
       "precio_2",
@@ -1733,21 +1733,31 @@ describe.skipIf(!TEST_DATABASE_URL)("runtime del Agente IA (Postgres real)", () 
     );
     const zernio = fakeZernio();
     const { deps } = makeDeps({ brain: ["Cuesta $5,500 MXN con envío gratis."], toolCalls: [{ toolName: "wf_precio_2", input: {} }] }, zernio);
-    expect(await run.runAgent(JOB, deps)).toEqual({ kind: "sent", bubbles: 0 });
+    // Arranca el workflow y vuelve a mirar en unos segundos (complemento), igual que con archivos.
+    expect(await run.runAgent(JOB, deps)).toEqual({ kind: "reschedule", delayMs: run.ANSWER_RUN_POLL_MS, reason: "complemento_workflow_respuesta" });
     expect(zernio.delivered).toEqual([]);
     const [r] = await runs();
     expect(r).toMatchObject({ workflowId: wfId, trigger: "agent", status: "queued", triggerMessageId: m1 });
-    expect((await usage()).find((u) => u.stage === "cerebro")?.error).toContain("el workflow es la respuesta");
-    // Mientras la corrida va en camino, un mensaje nuevo espera (lo leído aún no queda contestado).
+    const u1 = (await usage()).find((u) => u.stage === "cerebro")?.error ?? "";
+    expect(u1).toContain("el workflow es la respuesta");
+    expect(u1).toContain("cuando salga «precio_2», el Agente IA revisa el mismo mensaje (complemento)");
+    // Mientras la corrida va en camino, un mensaje nuevo espera sin llamar al modelo.
     await msg({ direction: "in", body: "¿y hacen envíos?", at: ago(5_000) });
-    expect((await run.runAgent(JOB, makeDeps({ brain: ["x"] }).deps)).kind).toBe("reschedule");
+    const early = makeDeps({ brain: ["x"] });
+    expect(await run.runAgent(JOB, early.deps)).toEqual({ kind: "reschedule", delayMs: run.ANSWER_RUN_POLL_MS, reason: "esperando_workflow_respuesta" });
+    expect(early.calls).toHaveLength(0);
     expect(await executor.executeWorkflowRun(r.id, execDeps(zernio))).toBe("done");
     expect(zernio.delivered).toEqual(["Ahorita tenemos cualquier tamaño en $5,500 con envío gratis.", PREGUNTA]);
-    expect((await agentOuts()).find((m) => m.body === PREGUNTA)!.metadata).toMatchObject({ respondeHasta: expect.any(String) });
-    // Ya solo queda pendiente lo nuevo.
+    // Antes (respondeHasta) contestaba todo lo que el agente leyó; ahora solo su mensaje, con revisión.
+    const last = (await agentOuts()).find((m) => m.body === PREGUNTA)!;
+    expect(last.metadata).toMatchObject({ contestaA: m1, revisaAgente: true, revisaDesde: expect.any(String) });
+    expect(last.metadata ?? {}).not.toHaveProperty("respondeHasta");
+    // El cliente siguió escribiendo: se contesta como siempre (nota parcial), sin repetir al workflow.
     const after = makeDeps({ brain: ["Sí, a todo México."] }, zernio);
     expect(await run.runAgent(JOB, after.deps)).toEqual({ kind: "sent", bubbles: 1 });
+    expect(lastUserText(after.calls[0].input)).toContain("El workflow «precio_2» ya contestó una parte de lo que escribió el cliente");
     expect(zernio.delivered.at(-1)).toBe("Sí, a todo México.");
+    expect(await run.runAgent(JOB, makeDeps({ brain: ["x"] }).deps)).toEqual({ kind: "noop", reason: "sin_pendientes" });
   });
 
   // ── «Es la respuesta» que solo manda ARCHIVOS (9-oct-2026, dueño, caso «Dónde medir») ──
@@ -1878,6 +1888,133 @@ describe.skipIf(!TEST_DATABASE_URL)("runtime del Agente IA (Postgres real)", () 
     const late = makeDeps({ brain: [brainMod.NOTHING_TOKEN] }, zernio);
     expect(await run.runAgent(JOB, late.deps)).toEqual({ kind: "sent", bubbles: 0 });
     expect(lastUserText(late.calls[0].input)).toContain("El workflow «tabla_tamanos_estandar» ya le contestó");
+  });
+
+  // ── «Es la respuesta» con TEXTOS pedido por el Agente IA (9-oct-2026, dueño, «Entrada mayor a 2.5 m») ──
+  // Foto con su pie + texto que termina en pregunta, sin esperas. Antes su último mensaje contestaba
+  // todo lo que el agente leyó y lo demás del mensaje se perdía («¿Hacen envíos a Culiacán?»); ahora,
+  // como «Dónde medir», cuando sale el texto el agente revisa el mismo mensaje (complemento).
+  const PIE_POSTE = "La compuerta más amplia que fabricamos es de 2.5 m. Para entradas más anchas no recomendamos cubrir todo el ancho, porque es más probable que haya filtraciones.";
+  const TEXTO_POSTE =
+    "Aun así, se puede colocar un soporte intermedio como el de la foto: un poste de acero anclado al piso entre dos compuertas, que tendría que fabricar un herrero de su confianza (nosotros no lo fabricamos ni lo vendemos). ¿Le gustaría protegerla de esta forma?";
+  const WF_POSTE = { toolName: "wf_entrada_mayor", input: {} };
+  async function poste() {
+    await libraryAsset("a_poste", "image");
+    return wf(
+      "entrada_mayor",
+      [
+        { kind: "send_media", assetId: "a_poste", title: "Poste", caption: PIE_POSTE },
+        { kind: "send_text", text: TEXTO_POSTE },
+      ],
+      { isAnswer: true, maxSendsPerChat: 2 },
+    );
+  }
+
+  it("«Entrada mayor a 2.5 m» (foto + texto): el texto del modelo no sale; la foto con su pie y ENSEGUIDA el texto, sin esperas; el texto contesta SOLO ese mensaje y pide la revisión; si no falta nada, el agente no escribe", async () => {
+    const m1 = await msg({ direction: "in", body: "Son 4.2 mts de ancho", at: ago(40_000) });
+    const wfId = await poste();
+    const zernio = fakeZernio();
+    const first = makeDeps({ brain: ["La compuerta más amplia que fabricamos es de 2.5 m. Para 4.2 m no recomendamos cubrir todo el ancho."], toolCalls: [WF_POSTE] }, zernio);
+    expect(await run.runAgent(JOB, first.deps)).toEqual({ kind: "reschedule", delayMs: run.ANSWER_RUN_POLL_MS, reason: "complemento_workflow_respuesta" });
+    expect(zernio.delivered).toEqual([]);
+    const [r] = await runs();
+    expect(r).toMatchObject({ workflowId: wfId, trigger: "agent", status: "queued", triggerMessageId: m1, payload: null });
+    // Mientras el workflow va en camino espera sin llamar al modelo (la respuesta que lo pidió no
+    // cuenta como «ya atendido»: el mensaje espera su revisión).
+    const early = makeDeps({ brain: ["x"] }, zernio);
+    expect(await run.runAgent(JOB, early.deps)).toEqual({ kind: "reschedule", delayMs: run.ANSWER_RUN_POLL_MS, reason: "esperando_workflow_respuesta" });
+    expect(early.calls).toHaveLength(0);
+    const waits: number[] = [];
+    expect(await executor.executeWorkflowRun(r.id, mediaExecDeps(zernio, waits))).toBe("done");
+    expect(zernio.delivered).toEqual([`📎 ${PIE_POSTE}`, TEXTO_POSTE]);
+    expect(waits).toEqual([]);
+    const [foto, texto] = await agentOuts();
+    expect(foto.metadata ?? {}).not.toHaveProperty("contestaA");
+    expect(texto.metadata).toMatchObject({ contestaA: m1, revisaAgente: true, revisaDesde: expect.any(String) });
+    expect(texto.metadata ?? {}).not.toHaveProperty("respondeHasta");
+    // Sigue pendiente hasta la revisión: el barrido lo rescataría si se perdiera el job.
+    expect((await sweep.findOrphanConversations(new Date(Date.now() + 2 * 60_000))).map((c) => c.conversationId)).toContain(CONV);
+    const late = makeDeps({ brain: [brainMod.NOTHING_TOKEN] }, zernio);
+    expect(await run.runAgent(JOB, late.deps)).toEqual({ kind: "sent", bubbles: 0 });
+    expect(lastUserText(late.calls[0].input)).toContain("El workflow «entrada_mayor» ya le contestó al cliente su último mensaje");
+    expect(zernio.delivered).toHaveLength(2);
+    expect(await notices()).toEqual([]);
+    expect(await run.runAgent(JOB, makeDeps({ brain: ["x"] }).deps)).toEqual({ kind: "noop", reason: "sin_pendientes" });
+    // El cliente contesta la pregunta del workflow → respuesta normal, sin la nota del complemento.
+    await msg({ direction: "in", body: "Sí, me interesa", at: new Date() });
+    const after = makeDeps({ brain: ["Perfecto, serían dos compuertas, una de cada lado del poste."] }, zernio);
+    expect(await run.runAgent(JOB, after.deps)).toEqual({ kind: "sent", bubbles: 1 });
+    expect(lastUserText(after.calls[0].input)).not.toContain("El workflow «entrada_mayor»");
+  });
+
+  it("«Entrada mayor a 2.5 m» con otra pregunta («Son 4.2 m. ¿Hacen envíos a Culiacán?»): sale el workflow y el complemento contesta SOLO lo del envío, sin preguntar y sin volver a pedir el workflow", async () => {
+    const m1 = await msg({ direction: "in", body: "Son 4.2 m. ¿Hacen envíos a Culiacán?", at: ago(40_000) });
+    await poste();
+    const zernio = fakeZernio();
+    expect((await run.runAgent(JOB, makeDeps({ brain: ["La compuerta más amplia es de 2.5 m. Sí, enviamos a Culiacán."], toolCalls: [WF_POSTE] }, zernio).deps)).kind).toBe("reschedule");
+    const [r] = await runs();
+    expect(await executor.executeWorkflowRun(r.id, mediaExecDeps(zernio))).toBe("done");
+    // En la revisión el modelo vuelve a pedir el workflow y, por costumbre, pregunta: ninguno de los dos sale.
+    const late = makeDeps({ brain: ["Sí, enviamos a Culiacán sin costo.\n\n¿Le gustaría que le cotice?"], toolCalls: [WF_POSTE] }, zernio);
+    expect(await run.runAgent(JOB, late.deps)).toEqual({ kind: "sent", bubbles: 1 });
+    expect(lastUserText(late.calls[0].input)).toContain("SIN hacer preguntas");
+    expect(zernio.delivered).toEqual([`📎 ${PIE_POSTE}`, TEXTO_POSTE, "Sí, enviamos a Culiacán sin costo."]);
+    expect(await runs()).toHaveLength(1);
+    expect(await notices()).toEqual([]);
+    const u = (await usage()).find((x) => x.stage === "cerebro" && (x.error ?? "").includes("complemento de «entrada_mayor»"))!;
+    expect(u.messageId).toBe(m1);
+    expect(u.error).toContain("no salió: «¿Le gustaría que le cotice?»");
+    expect(await run.runAgent(JOB, makeDeps({ brain: ["x"] }).deps)).toEqual({ kind: "noop", reason: "sin_pendientes" });
+  });
+
+  it("«Entrada mayor a 2.5 m» con dos entradas («la puerta de 1.10 y la cochera de 5 metros»): el workflow contesta la cochera y el complemento, la puerta", async () => {
+    await msg({ direction: "in", body: "Tengo dos entradas: la puerta de 1.10 y la cochera de 5 metros", at: ago(40_000) });
+    await poste();
+    const zernio = fakeZernio();
+    expect((await run.runAgent(JOB, makeDeps({ brain: ["Para la cochera de 5 m no recomendamos cubrir todo el ancho."], toolCalls: [WF_POSTE] }, zernio).deps)).kind).toBe("reschedule");
+    const [r] = await runs();
+    expect(await executor.executeWorkflowRun(r.id, mediaExecDeps(zernio))).toBe("done");
+    const late = makeDeps({ brain: ["Para la puerta de 1.10 m le queda una compuerta estándar de $5,500 con envío gratis."] }, zernio);
+    expect(await run.runAgent(JOB, late.deps)).toEqual({ kind: "sent", bubbles: 1 });
+    expect(lastUserText(late.calls[0].input)).toContain("otra entrada con su propia medida");
+    expect(zernio.delivered).toEqual([`📎 ${PIE_POSTE}`, TEXTO_POSTE, "Para la puerta de 1.10 m le queda una compuerta estándar de $5,500 con envío gratis."]);
+  });
+
+  it("«Entrada mayor a 2.5 m» y el cliente escribe mientras sale el workflow: el agente espera y luego contesta lo nuevo como siempre (nota parcial, sin la del complemento)", async () => {
+    await msg({ direction: "in", body: "Son 4.2 m", at: ago(40_000) });
+    await poste();
+    const zernio = fakeZernio();
+    expect((await run.runAgent(JOB, makeDeps({ brain: ["La compuerta más amplia es de 2.5 m."], toolCalls: [WF_POSTE] }, zernio).deps)).kind).toBe("reschedule");
+    await msg({ direction: "in", body: "¿Y hacen envíos a Culiacán?", at: ago(2_000) });
+    const early = makeDeps({ brain: ["x"] }, zernio);
+    expect(await run.runAgent(JOB, early.deps)).toEqual({ kind: "reschedule", delayMs: run.ANSWER_RUN_POLL_MS, reason: "esperando_workflow_respuesta" });
+    expect(early.calls).toHaveLength(0);
+    const [r] = await runs();
+    expect(await executor.executeWorkflowRun(r.id, mediaExecDeps(zernio))).toBe("done");
+    const late = makeDeps({ brain: ["Sí, enviamos a Culiacán sin costo."] }, zernio);
+    expect(await run.runAgent(JOB, late.deps)).toEqual({ kind: "sent", bubbles: 1 });
+    const input = lastUserText(late.calls[0].input);
+    expect(input).not.toContain("ya le contestó al cliente su último mensaje");
+    expect(input).toContain("El workflow «entrada_mayor» ya contestó una parte de lo que escribió el cliente");
+    expect(zernio.delivered).toEqual([`📎 ${PIE_POSTE}`, TEXTO_POSTE, "Sí, enviamos a Culiacán sin costo."]);
+    expect(await run.runAgent(JOB, makeDeps({ brain: ["x"] }).deps)).toEqual({ kind: "noop", reason: "sin_pendientes" });
+  });
+
+  it("«Entrada mayor a 2.5 m» y ráfaga («Son 4.2 m» + «¿Hacen envíos a Culiacán?» antes de contestar): el workflow contesta el último mensaje y el complemento lee la ráfaga completa y contesta lo del envío", async () => {
+    await msg({ direction: "in", body: "Son 4.2 m", at: ago(42_000) });
+    const m2 = await msg({ direction: "in", body: "¿Hacen envíos a Culiacán?", at: ago(40_000) });
+    await poste();
+    const zernio = fakeZernio();
+    expect((await run.runAgent(JOB, makeDeps({ brain: ["La compuerta más amplia es de 2.5 m. Sí, enviamos a Culiacán."], toolCalls: [WF_POSTE] }, zernio).deps)).kind).toBe("reschedule");
+    const [r] = await runs();
+    expect(r.triggerMessageId).toBe(m2);
+    expect(await executor.executeWorkflowRun(r.id, mediaExecDeps(zernio))).toBe("done");
+    const late = makeDeps({ brain: ["Sí, enviamos a Culiacán sin costo."] }, zernio);
+    expect(await run.runAgent(JOB, late.deps)).toEqual({ kind: "sent", bubbles: 1 });
+    expect(lastUserText(late.calls[0].input)).toContain("El workflow «entrada_mayor» ya le contestó al cliente su último mensaje");
+    expect(JSON.stringify(late.calls[0].input.messages)).toContain("Son 4.2 m");
+    expect(zernio.delivered).toEqual([`📎 ${PIE_POSTE}`, TEXTO_POSTE, "Sí, enviamos a Culiacán sin costo."]);
+    expect(await run.runAgent(JOB, makeDeps({ brain: ["x"] }).deps)).toEqual({ kind: "noop", reason: "sin_pendientes" });
   });
 
   // ── Texto del Agente IA como pie del archivo (1-oct-2026, dueño) ──────────────

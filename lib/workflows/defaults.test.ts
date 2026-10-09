@@ -32,7 +32,9 @@ describe("DEFAULT_WORKFLOWS", () => {
     for (const w of DEFAULT_WORKFLOWS) {
       for (const st of w.steps) if (st.kind === "send_media") expect(st.caption?.length ?? 0).toBeGreaterThan(10);
     }
-    for (const slug of ["tabla_tamanos_mini", "donde_medir", "medidas_especiales"]) expect(by(slug).triggerKeywords).toEqual([]);
+    for (const slug of ["tabla_tamanos_mini", "donde_medir"]) expect(by(slug).triggerKeywords).toEqual([]);
+    // 9-oct-2026 (dueño): «Medidas especiales» ya no es predeterminado («Restaurar» no lo vuelve a crear).
+    expect(DEFAULT_WORKFLOWS.find((w) => w.slug === "medidas_especiales" || w.triggerCommand === "/especial")).toBeUndefined();
     for (const w of DEFAULT_WORKFLOWS) expect(w.agentDescription).not.toMatch(/ya se envió/i);
   });
   it("respeta el Goal: nunca 'talla', precios solo de la base", () => {

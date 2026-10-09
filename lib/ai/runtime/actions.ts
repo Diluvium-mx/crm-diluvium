@@ -158,7 +158,7 @@ export async function prepareActions(input: {
   // Palabra clave + herramienta para el MISMO workflow ("pásame la tabla"): la
   // corrida por palabra clave ya lo manda; la del agente no se repite. Igual con una corrida del
   // propio Agente IA para estos mensajes (9-oct-2026): en el complemento de un workflow «es la
-  // respuesta» que solo manda archivos, el archivo ya salió y no se vuelve a mandar.
+  // respuesta» (con archivos o con textos), el workflow ya salió y no se vuelve a mandar.
   if (input.pendingSince && plan.runs.length) {
     const dup = await db
       .select({ workflowId: workflowRuns.workflowId })
@@ -222,18 +222,18 @@ export async function quoteSetByVendor(organizationId: string, contactId: string
 }
 
 // «El workflow es la respuesta» como herramienta (29-sep-2026, dueño: «Depende»): de estos
-// workflows, los marcados que mandan algo, y si traen TEXTOS o solo ARCHIVOS. Con uno así, el
-// workflow es la respuesta y el texto del modelo no sale (no se le dice lo mismo dos veces).
-// - Con textos («Precio 2»): su último mensaje contesta todo lo que el agente leyó.
+// workflows, los marcados que mandan algo (texto o archivo). Con uno así, el workflow es la
+// respuesta y el texto del modelo no sale (no se le dice lo mismo dos veces); el workflow contesta
+// SU tema y, cuando sale su último mensaje, el agente revisa el mismo mensaje del cliente y contesta
+// solo lo que haya preguntado aparte (complemento, como por palabra clave; run.ts).
 // - Solo archivos (9-oct-2026, dueño, caso «Dónde medir»): antes la frase del agente iba como pie
-//   del archivo en lugar del pie del workflow (1-oct-2026); ahora sale el pie del workflow tal cual
-//   y, cuando el archivo ya salió, el agente revisa el mismo mensaje y contesta solo lo que el
-//   cliente haya preguntado aparte (complemento, como por palabra clave).
-export type AnswerRunKind = "textos" | "archivos";
-export async function answerRunsOf(organizationId: string, workflowIds: readonly string[]): Promise<Map<string, AnswerRunKind>> {
-  if (workflowIds.length === 0) return new Map();
+//   del archivo en lugar del pie del workflow (1-oct-2026); ahora sale el pie del workflow tal cual.
+// - Con textos (9-oct-2026, dueño, caso «Entrada mayor a 2.5 m»): igual que con archivos. Antes
+//   su último mensaje contestaba todo lo que el agente leyó y lo demás del mensaje se perdía.
+export async function answerRunsOf(organizationId: string, workflowIds: readonly string[]): Promise<Set<string>> {
+  if (workflowIds.length === 0) return new Set();
   const rows = await db
-    .selectDistinct({ workflowId: workflowSteps.workflowId, kind: workflowSteps.kind })
+    .selectDistinct({ workflowId: workflowSteps.workflowId })
     .from(workflowSteps)
     .innerJoin(workflows, and(eq(workflows.id, workflowSteps.workflowId), eq(workflows.organizationId, organizationId)))
     .where(
@@ -244,12 +244,7 @@ export async function answerRunsOf(organizationId: string, workflowIds: readonly
         eq(workflows.isAnswer, true),
       ),
     );
-  const out = new Map<string, AnswerRunKind>();
-  for (const r of rows) {
-    if (r.kind === "send_text") out.set(r.workflowId, "textos");
-    else if (!out.has(r.workflowId)) out.set(r.workflowId, "archivos");
-  }
-  return out;
+  return new Set(rows.map((r) => r.workflowId));
 }
 
 // Texto del Agente IA como pie del archivo (1-oct-2026, dueño): la PRIMERA corrida que pidió, si

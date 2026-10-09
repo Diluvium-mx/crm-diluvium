@@ -464,8 +464,9 @@ export async function runAgent(job: { organizationId: string; conversationId: st
     // se sigue para reenviarla.
     // El texto fijo del mensaje no disponible se guardó con el id de ESTA fila: si después
     // llegó su contenido real, está pendiente (pendingInbound) y se contesta lo que dice.
-    // Excepción (9-oct-2026): el mensaje que contestó un workflow «es la respuesta» de solo archivos
-    // pedido por el agente sigue esperando su revisión (complemento) aunque ya tenga resultado.
+    // Excepción (9-oct-2026): el mensaje que contestó un workflow «es la respuesta» pedido por el
+    // agente (con archivos o con textos) sigue esperando su revisión (complemento) aunque ya tenga
+    // resultado.
     if (
       !saved &&
       lastRead &&
@@ -925,7 +926,8 @@ export async function runAgent(job: { organizationId: string; conversationId: st
     // «El workflow es la respuesta» como herramienta (29-sep-2026, dueño: «Depende»): si pidió un
     // workflow marcado, ese workflow es la respuesta y el texto del modelo no sale (no se le dice
     // lo mismo dos veces). Desde el 9-oct-2026 también si solo manda archivos («Dónde medir», la
-    // Tabla): sale el pie del workflow, no la frase del agente (actions.ts, answerRunsOf).
+    // Tabla): sale el pie del workflow, no la frase del agente (actions.ts, answerRunsOf). Traiga
+    // textos o archivos, después viene el complemento (abajo, complementRun).
     const answerRuns = await answerRunsOf(org, plan.runs.map((r) => r.workflowId));
     const withheld = answerRuns.size && text.trim() ? text.trim() : null;
     if (withheld) text = "";
@@ -1134,13 +1136,15 @@ export async function runAgent(job: { organizationId: string; conversationId: st
     // El texto del modelo se guardó porque un workflow «es la respuesta» iba a contestar; si ese
     // workflow no arrancó, el cliente se quedaría sin nada: el vendedor ve el texto que no salió.
     const answerSlugs = plan.runs.filter((r) => answerRuns.has(r.workflowId)).map((r) => r.slug);
-    // Complemento (9-oct-2026, dueño): un workflow «es la respuesta» que solo manda archivos contesta
-    // SU tema; cuando el archivo sale, el agente revisa el mismo mensaje y contesta lo que el cliente
-    // haya preguntado aparte («¿dónde mido y cuánto cuesta?»), sin preguntar, o no escribe nada. El
-    // ejecutor deja el archivo con la marca de revisión (markAnswersOnly) y esta corrida vuelve a
-    // mirar en unos segundos: mientras el workflow va en camino espera (answerRunInFlight) y luego
-    // entra en modo complemento (answeredByWorkflow), igual que por palabra clave.
-    const complementRun = plan.runs.find((r) => answerRuns.get(r.workflowId) === "archivos" && after?.started.includes(r.slug)) ?? null;
+    // Complemento (9-oct-2026, dueño): un workflow «es la respuesta» contesta SU tema; cuando sale su
+    // último mensaje, el agente revisa el mismo mensaje y contesta lo que el cliente haya preguntado
+    // aparte («¿dónde mido y cuánto cuesta?», «Son 4.2 m. ¿Hacen envíos a Culiacán?»), sin
+    // preguntar, o no escribe nada. Primero solo con archivos («Dónde medir»); el mismo día también
+    // con textos («Entrada mayor a 2.5 m»: antes lo demás del mensaje se perdía). El ejecutor deja
+    // ese último mensaje con la marca de revisión (markAnswersOnly) y esta corrida vuelve a mirar en
+    // unos segundos: mientras el workflow va en camino espera (answerRunInFlight) y luego entra en
+    // modo complemento (answeredByWorkflow), igual que por palabra clave.
+    const complementRun = plan.runs.find((r) => answerRuns.has(r.workflowId) && after?.started.includes(r.slug)) ?? null;
     if (withheld && !answerSlugs.some((slug) => after?.started.includes(slug))) {
       await holdAgentForReview({
         organizationId: org,
@@ -1161,7 +1165,7 @@ export async function runAgent(job: { organizationId: string; conversationId: st
       unanswered.length ? `no se repitió la pregunta sin contestar: «${unanswered.join(" / ")}»` : null,
       withheld ? `el workflow es la respuesta; no salió el texto del modelo: «${withheld.slice(0, 300)}»` : null,
       captionedBy ? `el texto va como pie del archivo de «${captionedBy}»` : null,
-      complementRun ? `cuando salga el archivo de «${complementRun.slug}», el Agente IA revisa el mismo mensaje (complemento)` : null,
+      complementRun ? `cuando salga «${complementRun.slug}», el Agente IA revisa el mismo mensaje (complemento)` : null,
       silencio === "contestado" ? "sin texto: ya le había salido algo al cliente después de su último mensaje" : null,
       silencio === "acuse" ? "sin texto: el cliente solo confirmó o agradeció (nada que agregar)" : null,
       silencio === "sin_respuesta" ? "sin texto: ningún modelo le escribió al cliente (aviso sin_respuesta)" : null,
