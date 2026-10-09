@@ -437,6 +437,26 @@ automatización (`/banco` → Cerca de compra) o por otro vendedor se ve sin ref
 - Fallos de red: las lecturas en vivo del Embudo (contactos nuevos, cambios, puesta al día) y del
   Detalle (también la carga al abrirlo, con "Reintentando…") se reintentan solas, 5 s … 60 s.
 
+### Menos llamadas por aviso (9-oct-2026, lentitud del Embudo)
+Next manda las Server Actions de cada pestaña UNA POR UNA: cada llamada de fondo de más retrasa el
+clic del vendedor. El 9-oct el Embudo hacía ráfagas de ~15 llamadas cada ~3 s y mover una tarjeta
+devolvía la página completa (~600 KB). Reglas desde entonces:
+- **Acciones de tarjeta sin `revalidatePath`** (etapa, temperatura, Destacado, alta a mano;
+  `CARD_ACTIONS_NO_REVALIDATE` en `lib/actions/contacts.ts`, con prueba guardiana). Cualquier
+  `revalidatePath` re-renderiza la página DESDE LA QUE se llamó dentro de la respuesta. El tablero y
+  la Bandeja ya son optimistas y el aviso en vivo trae lo del servidor. La importación CSV sí lo usa.
+- **Chat abierto** (Bandeja y pop-up; `app/(app)/dashboard/_components/chat-events.ts`): avisos
+  seguidos = una sola relectura del hilo (250 ms) y del detalle (Bandeja 500 ms, pop-up 250 ms);
+  «leído» UNA vez por mensaje (sus cambios de estado enviado → entregado → leído vuelven a avisar con
+  el mismo id); la píldora del Agente IA, sus avisos y los programados se releen solo cuando llega o
+  se va un mensaje (no con un cambio de estado), y la consulta de la píldora cada 2 s espera a que
+  conteste la anterior. Medido con la misma secuencia (un saliente con sus 3 estados + un entrante):
+  51 → 31 llamadas.
+- **Acciones lentas en el log** (`lib/monitoring/slow-actions.ts`): toda Server Action que tarde
+  ≥ 1 s (medida desde `requireActiveMembership()` hasta que termina su respuesta) sale en los logs
+  del web como `[lenta] agente-actividad › getAgentActivity 2310 ms · /embudo`: archivo, acción,
+  tiempo y pantalla, sin datos de clientes. En Railway: logs de `crm-diluvium`, filtro `[lenta]`.
+
 ### Lo que NO va (vs. GHL)
 Nueva conversación/Importar (requiere plantilla: llega con el número real), asignado/seguido/chat
 interno/visualizaciones, selección múltiple, íconos de llamar/carpeta/correo/borrar,

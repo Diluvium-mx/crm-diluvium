@@ -4,14 +4,16 @@
 // "Pausado indefinidamente"), solo informativo desde el 26-sep-2026, y los avisos
 // del agente para el vendedor, intercalados en el hilo (discretos, sin acción). Se
 // recarga con cada evento SSE de la conversación (refreshToken), igual que los programados.
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { getConversationAgent } from "@/lib/actions/agente-conversacion";
 import type { AgentNoticeView, AgentThreadView } from "@/lib/agente-ia/types";
 import { agentStatusLabel } from "@/lib/agente-ia/labels";
+import { EVENT_BATCH_MS } from "./chat-events";
 
-// Recarga con cada evento del hilo (refreshToken) y cada vez que la Bandeja
+// Recarga con cada mensaje que llega o se va (refreshToken) y cada vez que la Bandeja
 // vuelve a pedir el detalle (detailKey): un `conversation.updated` —pausa,
-// reactivación o aviso nuevo— llega por ahí, no por refreshToken.
+// reactivación o aviso nuevo— llega por ahí, no por refreshToken. Si los dos cambian
+// seguidos (llegó un mensaje), es UNA sola lectura (EVENT_BATCH_MS).
 export function useConversationAgent(conversationId: string, refreshToken: number, detailKey?: unknown) {
   const [agent, setAgent] = useState<AgentThreadView | null>(null);
   const load = useCallback(async () => {
@@ -21,10 +23,13 @@ export function useConversationAgent(conversationId: string, refreshToken: numbe
       // Silencioso: el siguiente evento lo intenta de nuevo.
     }
   }, [conversationId]);
+  const loadedForRef = useRef<string | null>(null);
   useEffect(() => {
-    const t = setTimeout(() => void load(), 0);
+    const delay = loadedForRef.current === conversationId ? EVENT_BATCH_MS : 0;
+    loadedForRef.current = conversationId;
+    const t = setTimeout(() => void load(), delay);
     return () => clearTimeout(t);
-  }, [load, refreshToken, detailKey]);
+  }, [load, refreshToken, detailKey, conversationId]);
   return { agent, reload: load };
 }
 
