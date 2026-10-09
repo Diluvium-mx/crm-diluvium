@@ -103,10 +103,11 @@ export const workflows = pgTable(
     // archivos, sus corridas. Frena a la palabra clave y al Agente IA; el comando del vendedor
     // suma pero puede pasarlo (lib/workflows/max-per-chat.ts).
     maxSendsPerChat: integer("max_sends_per_chat"),
-    // «El workflow es la respuesta» (29-sep-2026): por palabra clave, el Agente IA no agrega nada
-    // a ese mensaje y espera al cliente (aunque no termine en pregunta). Como herramienta: el texto
-    // del modelo no sale; si solo manda archivos (desde el 9-oct-2026), sale el pie del workflow y
-    // luego el agente revisa el mismo mensaje (complemento, lib/ai/runtime/actions.ts answerRunsOf).
+    // «El workflow es la respuesta» (29-sep-2026): su último mensaje contesta el mensaje del cliente
+    // (aunque no termine en pregunta). Por palabra clave, el Agente IA revisa ese mismo mensaje y
+    // contesta solo lo que el workflow no cubrió (complemento, 30-sep-2026). Como herramienta: el
+    // texto del modelo no sale, sale el workflow (con su pie si es archivo) y, desde el 9-oct-2026,
+    // también el complemento, traiga textos o archivos (lib/ai/runtime/actions.ts answerRunsOf).
     isAnswer: boolean("is_answer").notNull().default(false),
     position: integer("position").notNull().default(0),
     createdByUserId: text("created_by_user_id").references(() => user.id, { onDelete: "set null" }),

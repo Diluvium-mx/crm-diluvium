@@ -5,13 +5,16 @@
 // mensaje como contestado y nadie le dijo de qué ciudad somos. Ahora el workflow contesta SU tema
 // y el Agente IA revisa el mismo mensaje: contesta lo que falte, sin repetir al workflow y sin
 // hacer preguntas (ahora le toca contestar al cliente), o no escribe nada si no falta nada.
+// 9-oct-2026: también tras un workflow «es la respuesta» que pidió el propio Agente IA, traiga
+// archivos («Dónde medir») o textos («Entrada mayor a 2.5 m»: «Tengo dos entradas: la puerta de
+// 1.10 y la cochera de 5 metros» → el workflow contesta la cochera y el agente, la puerta).
 import { NOTHING_TOKEN } from "./brain";
 
 // El ÚLTIMO mensaje pendiente del cliente es el que contestó el workflow: modo complemento.
 export function complementNote(workflowName: string): string {
   return (
     `El workflow «${workflowName}» ya le contestó al cliente su último mensaje con lo que aparece en "[Después de este mensaje ya se le envió al cliente: …]". ` +
-    "Ese workflow contesta solo su tema (p. ej. el precio o la tabla de tamaños). Revisa si el último mensaje del cliente (o los que mandó seguidos) trae OTRA pregunta o petición que el workflow no contestó (p. ej. de qué ciudad son, envíos, instalación, garantía o formas de pago). " +
+    "Ese workflow contesta solo su tema (p. ej. el precio, la tabla de tamaños o una entrada más ancha de lo que fabricamos). Revisa si el último mensaje del cliente (o los que mandó seguidos) trae OTRA pregunta o petición que el workflow no contestó (p. ej. de qué ciudad son, envíos, instalación, garantía, formas de pago u otra entrada con su propia medida). " +
     "Si la hay, contéstala breve, sin repetir nada de lo que ya dijo el workflow y SIN hacer preguntas: ahora le toca contestar al cliente. " +
     `Si el workflow ya contestó todo (un saludo o un "gracias" no necesitan respuesta aparte), escribe exactamente ${NOTHING_TOKEN} y nada más; las acciones internas (detalle, etapa, avisos) sí puedes usarlas.`
   );

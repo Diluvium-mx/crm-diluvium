@@ -848,8 +848,9 @@ Decisiones del dueño:
     aunque termine en imagen (la Tabla). Después el agente espera la respuesta del cliente.
   - **Como herramienta del Agente IA** (decisión «Depende»): si el workflow trae **textos** («Precio 2»), el texto del
     modelo **no sale** (no se le dice lo mismo dos veces; queda en `ai_usage.error`) y el último mensaje del workflow
-    contesta todo lo que el agente leyó (`respondeHasta`); si el workflow no arranca, aviso 🤖 al vendedor con el texto
-    que no salió. Si solo manda **archivos** (la Tabla), el agente sí escribía su frase; del 1 al 8-oct-2026 iba como
+    contestaba todo lo que el agente leyó (`respondeHasta`); **desde el 9-oct-2026** contesta solo el mensaje que lo pidió
+    y después el agente revisa el mismo mensaje (complemento; ver «Workflow «es la respuesta» con textos pedido por el
+    Agente IA»). Si el workflow no arranca, aviso 🤖 al vendedor con el texto que no salió. Si solo manda **archivos** (la Tabla), el agente sí escribía su frase; del 1 al 8-oct-2026 iba como
     **pie de la imagen**, en un solo mensaje. **Desde el 9-oct-2026** su frase tampoco sale: el archivo lleva el pie del
     workflow y después el agente revisa el mismo mensaje (ver «Workflow «es la respuesta» de solo archivos pedido por el
     Agente IA»).
@@ -914,8 +915,10 @@ Agente IA es porque debe ser inteligente».
 - Costo: una llamada más al modelo por cada workflow «es la respuesta» por palabra clave (casi siempre al inicio, con el
   Modelo 1). Orden: la aclaración del agente sale **después** de la pregunta del workflow (~15–20 s, la espera normal del
   agente); que salga antes quedaría como mejora aparte (la pregunta esperaría al agente).
-- Pendiente aparte: como **herramienta** del Agente IA con textos («Depende»), su propio texto sigue sin salir; hoy
-  ningún workflow con textos tiene «El Agente IA puede dispararlo».
+- Como **herramienta** del Agente IA con textos («Depende»), su propio texto sigue sin salir; quedaba pendiente el
+  complemento (en ese momento ningún workflow con textos tenía «El Agente IA puede dispararlo»). **Resuelto el
+  9-oct-2026:** con textos o con archivos, también hay complemento (ver «Workflow «es la respuesta» con textos pedido
+  por el Agente IA»).
 
 ## El texto del Agente IA va como pie del archivo (1-oct-2026, sin migración)
 
@@ -956,7 +959,8 @@ tiene y el cambio le aplica, aceptado) y que el Agente IA conteste aparte lo que
 (opción 2A, complemento, como por palabra clave).
 
 - **Texto del modelo:** con un workflow marcado que solo manda archivos, su texto **no sale** (igual que con textos,
-  «Depende»): `answerRunsOf` (actions.ts) distingue `textos` y `archivos`. La corrida arranca **sin** `pieDelAgente`: el
+  «Depende»): `answerRunsOf` (actions.ts) distinguía `textos` y `archivos` (desde el cambio de textos del mismo día ya no
+  hace falta: ver la sección siguiente). La corrida arranca **sin** `pieDelAgente`: el
   archivo lleva el pie del workflow y **sus esperas corren** (la Tabla: 18 s antes de la imagen, con su pie fijo).
 - **Ejecutor:** el archivo contesta **solo el mensaje que lo disparó** y pide la revisión del agente (`markAnswersOnly`
   con `contestaA` + `revisaAgente`) y además guarda **`revisaDesde`** (hora UTC en que salió). La respuesta que pidió el
@@ -981,6 +985,52 @@ tiene y el cambio le aplica, aceptado) y que el Agente IA conteste aparte lo que
   queda contestado por el archivo, sin duplicar nada.
 - Pruebas: `run.int.test.ts` (Dónde medir completo, dos preguntas, ráfaga, no arranca, la Tabla con su espera) y
   `executor.int.test.ts` (marca con hora; corrida vieja con `pieDelAgente`).
+
+## Workflow «es la respuesta» con textos pedido por el Agente IA (9-oct-2026, sin migración)
+
+Caso del dueño (9-oct): creó en producción «Entrada mayor a 2.5 m» (paso 1: foto del poste con el pie «La compuerta más
+amplia que fabricamos es de 2.5 m. Para entradas más anchas no recomendamos cubrir todo el ancho, porque es más
+probable que haya filtraciones.»; paso 2: texto «Aun así, se puede colocar un soporte intermedio como el de la foto: un
+poste de acero anclado al piso entre dos compuertas, que tendría que fabricar un herrero de su confianza (nosotros no lo
+fabricamos ni lo vendemos). ¿Le gustaría protegerla de esta forma?»; sin espera, «El workflow es la respuesta», máximo 2
+por chat, lo dispara el Agente IA) y borró el predeterminado viejo «Medidas especiales (más de 250 cm)». Con textos, el
+último mensaje del workflow contestaba **todo** lo que el agente leyó (`respondeHasta`) y no había complemento: con «Son
+4.2 m. ¿Hacen envíos a Culiacán?» lo del envío se perdía. Decisión del dueño: que con textos sea **justo como «Dónde
+medir»** (sección anterior).
+
+- **Ejecutor** (`lib/workflows/executor.ts`): toda corrida del Agente IA de un workflow «es la respuesta» (sin
+  `pieDelAgente`) marca su último mensaje con `markAnswersOnly` y revisión (`contestaA` + `revisaAgente` + `revisaDesde`),
+  traiga textos o archivos. Antes, con textos, `markAnswersUntil` (`respondeHasta`). `respondeHasta` solo queda para una
+  corrida vieja con `pieDelAgente` cuyo workflow, mientras esperaba, ahora trae textos (su texto ya salió solo antes del
+  primer paso). Foto y texto salen seguidos, sin esperas (el workflow no tiene).
+- **Agente** (`lib/ai/runtime/run.ts`): la corrida que pidió el workflow termina con `reschedule`
+  (`complemento_workflow_respuesta`) también con textos; `answerRunsOf` (actions.ts) ya no distingue textos y archivos
+  (devuelve los workflows marcados que mandan algo). Mientras el workflow va en camino espera (`answerRunInFlight`);
+  `awaitingWorkflowReview` (context.ts) ya no excluye los workflows con textos: sin eso, el sondeo de los 5 s cortaba con
+  «ya atendido» y el complemento esperaba al barrido (~90 s). Luego entra en **modo complemento** (`complementNote`):
+  contesta solo lo que el cliente preguntó aparte («Sí, enviamos a Culiacán…»), **sin preguntas** (la del workflow sigue
+  siendo la última), o `[NADA_QUE_AGREGAR]`. Si el cliente escribió mientras salía el workflow, contesta todo junto como
+  siempre (`partialNote`). Si en la revisión el modelo vuelve a pedir el workflow, no sale otra vez.
+- **Nota del complemento** (`lib/ai/runtime/complement.ts`): además de ciudad, envíos, instalación, garantía y formas
+  de pago, nombra «otra entrada con su propia medida» y, como tema de un workflow, «una entrada más ancha de lo que
+  fabricamos» («Tengo dos entradas: la puerta de 1.10 y la cochera de 5 metros» → el workflow contesta la cochera y el
+  agente, la puerta de 1.10 m). La misma nota sirve a los complementos por palabra clave; va en el contexto del último
+  turno (no toca el Goal, las FAQs ni la caché).
+- **Predeterminados:** `medidas_especiales` («Medidas especiales (más de 250 cm)», comando `/especial`, texto viejo de la
+  fabricación especial de 280 cm) sale de `DEFAULT_WORKFLOWS` (`lib/workflows/defaults.ts`): «Restaurar
+  predeterminados» y una organización nueva ya no lo crean.
+- **Qué cambia en producción:** hoy el único workflow con textos + «es la respuesta» + Agente IA es «Entrada mayor a
+  2.5 m». «Tapones inflables» tiene textos y Agente IA pero no es la respuesta: no cambia. Por palabra clave, comando o
+  etapa, nada cambia.
+- **Costo:** una llamada más al modelo por cada envío así (como «Dónde medir»).
+- **Hueco conocido (ya existía con «Dónde medir» y por palabra clave):** en una ráfaga («Hola» + «Son 4.2 m de ancho»)
+  el workflow contesta el último mensaje; si el complemento contesta algo, cierra los dos, pero si decide
+  `[NADA_QUE_AGREGAR]` el primero sigue pendiente y el barrido se lo vuelve a dar al agente (normal, sin la nota del
+  complemento). Antes, con textos, `respondeHasta` cerraba los dos.
+- Pruebas: `run.int.test.ts` («Precio 2» como herramienta, ahora con complemento; «Entrada mayor a 2.5 m»: nada que
+  agregar y luego «Sí, me interesa», otra pregunta, dos entradas, el cliente escribe mientras sale, ráfaga),
+  `executor.int.test.ts` (marca con hora para foto + texto; corrida vieja con `pieDelAgente` que ahora trae textos) y
+  `defaults.test.ts` (sin `medidas_especiales`).
 
 ## El total que la empresa ya dijo también se fija (2-oct-2026, sin migración)
 

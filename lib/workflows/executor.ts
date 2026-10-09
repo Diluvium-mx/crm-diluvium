@@ -432,11 +432,14 @@ export async function executeWorkflowRun(runId: string, deps: ExecutorDeps): Pro
       // - Palabra clave: contesta SOLO el mensaje que lo disparó (bug de la ráfaga, 29-sep: con la
       //   hora del disparador cerraba también lo anterior, p. ej. "¿Cuánto tarda el envío?" +
       //   "Precio"); lo demás lo atiende el agente.
-      // - Agente IA con un workflow que trae textos (su propio texto no salió, run.ts): contesta
-      //   todo lo que el agente leyó, hasta el último mensaje del lote.
-      // - Agente IA con un workflow que solo manda archivos (9-oct-2026, «Dónde medir»; su texto
-      //   tampoco salió): como por palabra clave, contesta SOLO el mensaje que lo disparó y pide la
-      //   revisión del agente, que contesta lo que el cliente haya preguntado aparte (complemento).
+      // - Agente IA (su propio texto no salió, run.ts): como por palabra clave, contesta SOLO el
+      //   mensaje que lo disparó y pide la revisión del agente, que contesta lo que el cliente haya
+      //   preguntado aparte (complemento). Primero solo con archivos (9-oct-2026, «Dónde medir»); el
+      //   mismo día también con textos («Entrada mayor a 2.5 m»): antes contestaba todo lo que el
+      //   agente leyó (respondeHasta) y lo demás del mensaje se perdía («¿Hacen envíos a Culiacán?»).
+      // - Corrida del agente que ya traía su pie (encolada antes del 9-oct) y ahora trae textos (el
+      //   workflow cambió mientras esperaba; su texto salió solo antes del 1er paso): como antes,
+      //   contesta todo lo que el agente leyó.
       // 30-sep-2026 (bug, caso 12:31 «Quiero más información» + «Hola costos»): el último paso puede
       // NO salir porque el candado anti-repetición lo quita (la misma pregunta ya la mandó otro
       // workflow de la ráfaga). Antes la marca dependía de ese paso y se perdía: el mensaje quedaba
@@ -449,7 +452,7 @@ export async function executeWorkflowRun(runId: string, deps: ExecutorDeps): Pro
           ? null
           : run.trigger === "keyword"
             ? markAnswersOnly(run.organizationId, answerId, run.triggerMessageId)
-            : run.trigger === "agent" && !withText && agentCaption === null
+            : run.trigger === "agent" && agentCaption === null
               ? markAnswersOnly(run.organizationId, answerId, run.triggerMessageId, { reviewSinceNow: true })
               : run.trigger === "agent" && withText
                 ? markAnswersUntil(run.organizationId, answerId, run.triggerMessageId)

@@ -630,6 +630,46 @@ describe.skipIf(!TEST_DATABASE_URL)("executor de workflows", () => {
     expect((await pendingInbound(ORG, CONV)).map((m) => m.id)).toEqual(["in_1"]);
   });
 
+  // ── «Es la respuesta» con TEXTOS pedido por el Agente IA (9-oct-2026, «Entrada mayor a 2.5 m») ──
+  it("«es la respuesta» con textos pedido por el Agente IA (foto + texto, sin esperas): salen seguidos y el ÚLTIMO contesta SOLO su mensaje, con la marca de revisión y su hora (antes, respondeHasta)", async () => {
+    const waits: number[] = [];
+    const a = await asset();
+    const wf = await workflow(
+      [
+        { kind: "send_media", assetId: a.id, title: "Poste", caption: "La compuerta más amplia que fabricamos es de 2.5 m." },
+        { kind: "send_text", text: "Aun así, se puede colocar un soporte intermedio. ¿Le gustaría protegerla de esta forma?" },
+      ],
+      { isAnswer: true },
+    );
+    await db.insert(s.messages).values({ id: "in_1", organizationId: ORG, conversationId: CONV, direction: "in", source: "contact", type: "text", body: "Son 4.2 m. ¿Hacen envíos a Culiacán?", status: "received" });
+    const r = await ex.startWorkflowRun({ organizationId: ORG, workflowId: wf, conversationId: CONV, trigger: "agent", triggerMessageId: "in_1" });
+    expect(await ex.executeWorkflowRun(r.runId, { provider, storage, sleep: async (ms: number) => void waits.push(ms) })).toBe("done");
+    expect(waits).toEqual([]);
+    expect(sent.map((x) => x.kind)).toEqual(["media", "text"]);
+    const outs = await db.select().from(s.messages).where(eq(s.messages.direction, "out")).orderBy(s.messages.createdAt);
+    expect(outs[0].metadata ?? {}).not.toHaveProperty("contestaA");
+    expect(outs[1].metadata).toMatchObject({ contestaA: "in_1", revisaAgente: true, revisaDesde: expect.any(String) });
+    expect(outs[1].metadata ?? {}).not.toHaveProperty("respondeHasta");
+    // Sigue pendiente hasta que el Agente IA lo revise: contesta lo del envío (complemento, run.ts).
+    const { pendingInbound } = await import("@/lib/ai/runtime/context");
+    expect((await pendingInbound(ORG, CONV)).map((m) => m.id)).toEqual(["in_1"]);
+  });
+
+  it("corrida del Agente IA que YA traía su pie en un workflow «es la respuesta» que, mientras esperaba, ahora trae textos: su texto sale solo y el último mensaje contesta lo que leyó, como antes", async () => {
+    const a = await asset();
+    const wf = await workflow([{ kind: "send_media", assetId: a.id, title: "Video", caption: "Pie del workflow" }], { isAnswer: true });
+    await db.insert(s.messages).values({ id: "in_1", organizationId: ORG, conversationId: CONV, direction: "in", source: "contact", type: "text", body: "¿cómo mido?", status: "received" });
+    const r = await ex.startWorkflowRun({ organizationId: ORG, workflowId: wf, conversationId: CONV, trigger: "agent", triggerMessageId: "in_1", payload: { pieDelAgente: PIE } });
+    await db.insert(s.workflowSteps).values({ id: crypto.randomUUID(), organizationId: ORG, workflowId: wf, position: 1, kind: "send_text", payload: { kind: "send_text", text: "¿Le sirvió?" } });
+    expect(await ex.executeWorkflowRun(r.runId, { provider, storage })).toBe("done");
+    expect(sent.map((x) => (x.kind === "text" ? (x.input as SendTextInput).text : (x.input as SendMediaInput).caption))).toEqual([PIE, "Pie del workflow", "¿Le sirvió?"]);
+    const outs = await db.select().from(s.messages).where(eq(s.messages.direction, "out")).orderBy(s.messages.createdAt);
+    expect(outs.at(-1)!.metadata).toMatchObject({ respondeHasta: expect.any(String) });
+    expect(outs.at(-1)!.metadata ?? {}).not.toHaveProperty("contestaA");
+    const { pendingInbound } = await import("@/lib/ai/runtime/context");
+    expect(await pendingInbound(ORG, CONV)).toEqual([]);
+  });
+
   it("corrida del Agente IA que YA traía su pie (encolada antes del 9-oct) en un workflow «es la respuesta»: sale como antes, con su texto y sin pedir revisión", async () => {
     const a = await asset();
     const wf = await workflow([{ kind: "send_media", assetId: a.id, title: "Video", caption: "Pie del workflow" }], { isAnswer: true });
