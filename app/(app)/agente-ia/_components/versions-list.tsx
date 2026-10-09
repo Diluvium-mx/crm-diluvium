@@ -71,11 +71,14 @@ export function VersionsList({
   versions,
   onRestore,
   restoreWarning,
+  schedule = false,
 }: {
   versions: VersionView[];
   onRestore: (versionId: string) => Promise<AgentActionResult>;
   // Se agrega al pop-up de «Restaurar» (p. ej. si el editor tiene cambios sin guardar).
   restoreWarning?: string | null;
+  // «Hoy a las 22:00» (9-oct-2026): la versión se programa en vez de restaurarse al momento.
+  schedule?: boolean;
 }) {
   const [open, setOpen] = useState(false);
   const [editing, setEditing] = useState<string | null>(null);
@@ -106,13 +109,19 @@ export function VersionsList({
       title: restoreVersionQuestion(v.name, whenOf(v)),
       body: (
         <>
-          Lo actual queda guardado como otra versión. El agente usa la versión restaurada desde el siguiente mensaje.
+          {schedule
+            ? "La versión queda programada para las 22:00, junto con los demás cambios; mientras, el agente sigue con lo actual."
+            : "Lo actual queda guardado como otra versión. El agente usa la versión restaurada desde el siguiente mensaje."}
           {restoreWarning && <span className="mt-1 block font-medium text-foreground">{restoreWarning}</span>}
         </>
       ),
-      confirmLabel: "Sí, restaurar",
-      pendingLabel: "Restaurando…",
-      done: v.name ? `Listo: se restauró «${v.name}»` : `Listo: se restauró la versión del ${whenOf(v)}`,
+      confirmLabel: schedule ? "Sí, programar" : "Sí, restaurar",
+      pendingLabel: schedule ? "Programando…" : "Restaurando…",
+      done: schedule
+        ? "Listo: la versión quedó programada para las 22:00"
+        : v.name
+          ? `Listo: se restauró «${v.name}»`
+          : `Listo: se restauró la versión del ${whenOf(v)}`,
       scope: "restaurar",
       run: () => onRestore(v.id),
     });

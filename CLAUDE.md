@@ -151,7 +151,8 @@ Reglas duras:
 - **Goal y FAQs del Agente IA (regla del dueño, 9-oct-2026):** los cambios se juntan y se aplican en
   producción **una sola vez al día, después de las 22:00 (Mazatlán)**, salvo un error grave que haya que
   corregir de inmediato. Cada guardado obliga a Anthropic a volver a cobrar el Goal completo (~US$0.09);
-  el 8-oct fueron 7 en un día. Detalle: `docs/agente-ia.md` › Renovación de la caché las 24 horas.
+  el 8-oct fueron 7 en un día. Se hace con **«Programar para las 22:00»** del editor (el worker lo aplica solo;
+  migración 0066). Detalle: `docs/agente-ia.md` › Renovación de la caché las 24 horas y › Programar el Goal y las FAQs.
 
 Variables de entorno mínimas:
 ```

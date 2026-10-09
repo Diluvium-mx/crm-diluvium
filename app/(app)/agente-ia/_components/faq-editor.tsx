@@ -10,10 +10,23 @@
 // desliza por dentro: la página no crece con las FAQs. Cada cambio deja una versión
 // de todas las FAQs (se puede regresar a una anterior). Agregar, guardar una edición,
 // borrar y activar/desactivar piden confirmación arriba antes de guardar (regla del
-// dueño, 27-sep-2026; use-confirm.tsx). Sin lógica de datos.
+// dueño, 27-sep-2026; use-confirm.tsx). «Programar para las 22:00» (9-oct-2026, regla del
+// dueño): por defecto cada cambio va a la lista programada (la ve y la edita aquí) y el worker
+// la aplica a las 22:00 de una sola vez; «Ahora» (error grave) cambia la que usa el agente.
+// Sin lógica de datos.
 import { useState } from "react";
 import { ChevronRight, ListChecks, Search, Trash2 } from "lucide-react";
-import { createAgentFaq, deleteAgentFaq, deleteAgentFaqs, restoreAgentFaqs, updateAgentFaq } from "@/lib/actions/agente-ia-editor";
+import {
+  createAgentFaq,
+  deleteAgentFaq,
+  deleteAgentFaqs,
+  restoreAgentFaqs,
+  scheduleAgentFaqs,
+  scheduleAgentVersion,
+  updateAgentFaq,
+} from "@/lib/actions/agente-ia-editor";
+import { addFaq, editFaq, removeFaqs } from "@/lib/agente-ia/scheduled-rules";
+import { ApplyModeToggle, whenText, type ApplyMode } from "./schedule-controls";
 import { faqSchema, faqsAsText } from "@/lib/agente-ia/editor";
 import { CopyButton } from "@/components/ui/copy-button";
 import { matchesSearch } from "@/lib/text/search";
@@ -112,7 +125,18 @@ function short(question: string): string {
   return q.length > 80 ? `${q.slice(0, 79)}…` : q;
 }
 
-export function FaqEditor({ faqs, versions }: { faqs: FaqView[]; versions: VersionView[] }) {
+export function FaqEditor({ faqs: liveFaqs, scheduledFaqs, versions }: { faqs: FaqView[]; scheduledFaqs: FaqView[] | null; versions: VersionView[] }) {
+  // «Hoy a las 22:00» muestra y edita la lista programada (o la de ahora, si aún no hay);
+  // «Ahora» (error grave), la que usa el agente.
+  const [mode, setMode] = useState<ApplyMode>("programar");
+  const programar = mode === "programar";
+  const faqs = programar ? (scheduledFaqs ?? liveFaqs) : liveFaqs;
+  // Texto del pop-up según el modo.
+  const when = (now: string) =>
+    programar
+      ? `Se aplica ${whenText()}, junto con los demás cambios programados; mientras, el agente sigue con las FAQs actuales.`
+      : `Solo para un error grave: ${now} Se vuelve a cobrar el Goal completo (~US$0.09). Queda una versión de las FAQs.`;
+  const schedule = (next: FaqView[]) => scheduleAgentFaqs({ faqs: next });
   // Abiertas: cada una se queda así hasta cerrarla a mano (pedido del dueño, 28-sep-2026).
   const [openIds, setOpenIds] = useState<ReadonlySet<string>>(() => new Set());
   const [editing, setEditing] = useState<string | "new" | null>(null);
@@ -160,14 +184,12 @@ export function FaqEditor({ faqs, versions }: { faqs: FaqView[]; versions: Versi
     if (invalid(v, "new")) return;
     confirm.ask({
       title: `¿Agregar la pregunta «${short(v.question)}»?`,
-      body: v.enabled
-        ? "El agente la usa desde el siguiente mensaje. Queda una versión de las FAQs."
-        : "Queda inactiva: el agente no la usa hasta que la actives. Queda una versión de las FAQs.",
-      confirmLabel: "Sí, agregar",
-      pendingLabel: "Agregando…",
-      done: "Listo: pregunta agregada",
+      body: when(v.enabled ? "el agente la usa desde el siguiente mensaje." : "queda inactiva: el agente no la usa hasta que la actives."),
+      confirmLabel: programar ? "Sí, programar" : "Sí, agregar",
+      pendingLabel: programar ? "Programando…" : "Agregando…",
+      done: programar ? "Listo: pregunta programada para las 22:00" : "Listo: pregunta agregada",
       scope: "new",
-      run: () => createAgentFaq(v),
+      run: () => (programar ? schedule(addFaq(faqs, v, crypto.randomUUID())) : createAgentFaq(v)),
       onDone: () => setEditing(null),
     });
   }
@@ -180,14 +202,12 @@ export function FaqEditor({ faqs, versions }: { faqs: FaqView[]; versions: Versi
     }
     confirm.ask({
       title: `¿Guardar los cambios de «${short(v.question)}»?`,
-      body: v.enabled
-        ? "El agente usa la pregunta así desde el siguiente mensaje. Queda una versión de las FAQs."
-        : "Queda inactiva: el agente no la usa. Queda una versión de las FAQs.",
-      confirmLabel: "Sí, guardar",
-      pendingLabel: "Guardando…",
-      done: "Listo: pregunta guardada",
+      body: when(v.enabled ? "el agente usa la pregunta así desde el siguiente mensaje." : "queda inactiva: el agente no la usa."),
+      confirmLabel: programar ? "Sí, programar" : "Sí, guardar",
+      pendingLabel: programar ? "Programando…" : "Guardando…",
+      done: programar ? "Listo: cambio programado para las 22:00" : "Listo: pregunta guardada",
       scope: f.id,
-      run: () => updateAgentFaq({ id: f.id, ...v }),
+      run: () => (programar ? schedule(editFaq(faqs, f.id, v)) : updateAgentFaq({ id: f.id, ...v })),
       onDone: () => setEditing(null),
     });
   }
@@ -195,12 +215,12 @@ export function FaqEditor({ faqs, versions }: { faqs: FaqView[]; versions: Versi
   function remove(f: FaqView) {
     confirm.ask({
       title: `¿Borrar la pregunta «${short(f.question)}»?`,
-      body: "El agente deja de usarla desde el siguiente mensaje. Queda en las versiones por si hay que regresarla.",
-      confirmLabel: "Sí, borrar",
-      pendingLabel: "Borrando…",
-      done: "Listo: pregunta borrada",
+      body: when("el agente deja de usarla desde el siguiente mensaje (queda en las versiones)."),
+      confirmLabel: programar ? "Sí, programar" : "Sí, borrar",
+      pendingLabel: programar ? "Programando…" : "Borrando…",
+      done: programar ? "Listo: se borra a las 22:00" : "Listo: pregunta borrada",
       scope: "list",
-      run: () => deleteAgentFaq({ id: f.id }),
+      run: () => (programar ? schedule(removeFaqs(faqs, [f.id])) : deleteAgentFaq({ id: f.id })),
       onDone: () => forget([f.id]),
     });
   }
@@ -216,12 +236,12 @@ export function FaqEditor({ faqs, versions }: { faqs: FaqView[]; versions: Versi
           : n === faqs.length
             ? `¿Borrar las ${n} preguntas (todas)?`
             : `¿Borrar ${n} preguntas?`,
-      body: `El agente deja de ${n === 1 ? "usarla" : "usarlas"} desde el siguiente mensaje. Queda una versión con las de antes (abajo, «Versiones») por si hay que regresarlas.`,
-      confirmLabel: "Sí, borrar",
-      pendingLabel: "Borrando…",
-      done: n === 1 ? "Listo: pregunta borrada" : `Listo: ${n} preguntas borradas`,
+      body: when(`el agente deja de ${n === 1 ? "usarla" : "usarlas"} desde el siguiente mensaje (las de antes quedan en «Versiones»).`),
+      confirmLabel: programar ? "Sí, programar" : "Sí, borrar",
+      pendingLabel: programar ? "Programando…" : "Borrando…",
+      done: programar ? `Listo: se ${n === 1 ? "borra" : `borran ${n}`} a las 22:00` : n === 1 ? "Listo: pregunta borrada" : `Listo: ${n} preguntas borradas`,
       scope: "list",
-      run: () => deleteAgentFaqs({ ids }),
+      run: () => (programar ? schedule(removeFaqs(faqs, ids)) : deleteAgentFaqs({ ids })),
       onDone: () => {
         forget(ids);
         setSelecting(false);
@@ -232,14 +252,15 @@ export function FaqEditor({ faqs, versions }: { faqs: FaqView[]; versions: Versi
   function toggle(f: FaqView) {
     confirm.ask({
       title: f.enabled ? `¿Desactivar «${short(f.question)}»?` : `¿Activar «${short(f.question)}»?`,
-      body: f.enabled
-        ? "El agente deja de usarla desde el siguiente mensaje (no se borra; se puede activar otra vez)."
-        : "El agente la usa desde el siguiente mensaje.",
-      confirmLabel: f.enabled ? "Sí, desactivar" : "Sí, activar",
-      pendingLabel: "Guardando…",
-      done: f.enabled ? "Listo: pregunta desactivada" : "Listo: pregunta activada",
+      body: when(f.enabled ? "el agente deja de usarla desde el siguiente mensaje (no se borra)." : "el agente la usa desde el siguiente mensaje."),
+      confirmLabel: programar ? "Sí, programar" : f.enabled ? "Sí, desactivar" : "Sí, activar",
+      pendingLabel: programar ? "Programando…" : "Guardando…",
+      done: programar ? "Listo: cambio programado para las 22:00" : f.enabled ? "Listo: pregunta desactivada" : "Listo: pregunta activada",
       scope: "list",
-      run: () => updateAgentFaq({ id: f.id, question: f.question, answer: f.answer, enabled: !f.enabled }),
+      run: () =>
+        programar
+          ? schedule(editFaq(faqs, f.id, { question: f.question, answer: f.answer, enabled: !f.enabled }))
+          : updateAgentFaq({ id: f.id, question: f.question, answer: f.answer, enabled: !f.enabled }),
     });
   }
 
@@ -255,6 +276,15 @@ export function FaqEditor({ faqs, versions }: { faqs: FaqView[]; versions: Versi
 
   return (
     <div className="flex flex-col gap-3">
+      <ApplyModeToggle
+        mode={mode}
+        disabled={confirm.pending}
+        onChange={(m) => {
+          setMode(m);
+          setEditing(null);
+          stopSelecting();
+        }}
+      />
       <div className="flex flex-wrap items-center gap-2">
         <label className="relative min-w-48 flex-1">
           <Search className="pointer-events-none absolute top-1/2 left-2 size-3.5 -translate-y-1/2 text-muted-foreground" aria-hidden="true" />
@@ -464,7 +494,11 @@ export function FaqEditor({ faqs, versions }: { faqs: FaqView[]; versions: Versi
         )}
       </div>
 
-      <VersionsList versions={versions} onRestore={(versionId) => restoreAgentFaqs({ versionId })} />
+      <VersionsList
+        versions={versions}
+        onRestore={(versionId) => (programar ? scheduleAgentVersion({ kind: "faqs", versionId }) : restoreAgentFaqs({ versionId }))}
+        schedule={programar}
+      />
       {confirm.ui}
     </div>
   );

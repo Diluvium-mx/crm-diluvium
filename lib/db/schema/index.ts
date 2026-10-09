@@ -9,6 +9,7 @@ export * from "./messaging";
 export * from "./snippets";
 export * from "./ai-config";
 export * from "./ai-knowledge";
+export * from "./ai-scheduled";
 export * from "./qualification";
 export * from "./scheduled";
 export * from "./ai-runtime";
