@@ -7,6 +7,7 @@ import { and, asc, eq, sql } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { contacts, funnelStages, workflows } from "@/lib/db/schema";
 import { logChanges } from "@/lib/historial/log";
+import { recordStageChanges } from "./stage-history";
 import { preview } from "@/lib/historial/diff";
 import {
   MAX_STAGES,
@@ -289,6 +290,14 @@ export async function deleteFunnelStage(
       .set({ stage: target.key, stageChangedAt: new Date(), stageChangedBy: "sistema" })
       .where(and(eq(contacts.organizationId, organizationId), eq(contacts.stage, stage.key)))
       .returning({ id: contacts.id });
+    // Historial de etapas: una fila por contacto movido, con el vendedor que borró la etapa.
+    await recordStageChanges(tx, {
+      organizationId,
+      stages: current,
+      by: "sistema",
+      userId,
+      changes: moved.map((m) => ({ contactId: m.id, from: stage.key, to: target.key })),
+    });
     await tx
       .update(workflows)
       .set({ triggerStage: null })

@@ -12,6 +12,7 @@ import { listFunnelStages } from "./funnel-stages";
 import { notifyContactUpdated, type ContactActor } from "./notify-updated";
 import { cancelFollowUpsOnSale } from "@/lib/followups/sale";
 import { isForward, type FunnelStage, type StageChangedBy } from "./stages";
+import { recordStageChanges } from "./stage-history";
 
 export type { StageChangedBy } from "./stages";
 
@@ -85,6 +86,13 @@ async function tryMove(input: Parameters<typeof moveStageForward>[0], stages: re
         changes: ["etapa"],
         stage: { from: current.stage, to: input.to },
         by: actorFor(input.by, input.actorUserId),
+      });
+      await recordStageChanges(tx, {
+        organizationId: input.organizationId,
+        stages,
+        by: input.by,
+        userId: input.actorUserId ?? null,
+        changes: [{ contactId: input.contactId, from: current.stage, to: input.to }],
       });
       await cancelFollowUpsOnSale(tx, input.organizationId, input.contactId, input.to);
     }
