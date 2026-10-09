@@ -1056,7 +1056,7 @@ entre respuestas (101 de 310). Cada una de esas costaba ~US$0.048, contra ~US$0.
 - Las dos marcas de caché de Anthropic (system y historial) usan **`ttl: "1h"`**
   (`lib/ai/providers/anthropic-cache.ts`, `ANTHROPIC_CACHE_CONTROL`). Anthropic solo ofrece 5 min o 1 h; leer
   la caché reinicia su reloj sin costo.
-- **Renovación de 7:00 a 22:00 (Mazatlán):** en el barrido de cada minuto del worker
+- **Renovación de 7:00 a 22:00 (Mazatlán; las 24 horas desde el 9-oct-2026, ver abajo):** en el barrido de cada minuto del worker
   (`lib/ai/runtime/cache-keepalive.ts`, regla en `cache-keepalive-core.ts`), si la última llamada que tocó la
   caché de un modelo de Anthropic (Modelo 1 o 2) empezó hace 50–58 min, se manda una petición mínima con el
   MISMO system (`brain-system.ts`, el mismo armado que `run.ts`) y las mismas herramientas, 1 token de salida:
@@ -1282,3 +1282,21 @@ pregunta. Los workflows sin «Solo al inicio» (p. ej. videos) siguen saliendo p
 - **Efecto:** si Luna (OpenAI) se cae, los chats de Inbox y Prospecto se quedan con la tarjeta en vez de contestar
   con Sonnet. Ahorro estimado: ~US$0.35 al día de Sonnet (80 respuestas en 5 días) a cambio de unas 2 llamadas más de
   Luna al día (~US$0.002).
+
+## Renovación de la caché las 24 horas y cambios del Goal una vez al día (9-oct-2026, sin migración)
+
+- **Qué se midió (3 al 8-oct, producción):** Sonnet gastó US$5.39 en 5.3 días y el Goal completo (Goal + FAQs + tallas +
+  sufijo + herramientas, ~21–24 mil tokens, ~US$0.09 cada vez) se volvió a escribir 28 veces (US$2.53, 47 %):
+  11 de noche o con la primera respuesta después de las 7:00 (≈ US$5.7 al mes), 16 por guardar el Goal o las FAQs
+  (`ai_knowledge_versions`: 5, 6 y 8-oct) o por despliegues que cambian el sufijo o las herramientas, y 1 por cambio
+  de modelo. Las respuestas descartadas (el cliente escribe mientras contesta Sonnet) quedaron en ~US$1 al mes y no
+  se tocan.
+- **Renovación las 24 horas** (`cache-keepalive-core.ts`): ya no hay horario. De noche cuesta ~11 lecturas de
+  ~US$0.005 (≈ US$1.6 al mes) y evita las ~2 reescrituras por noche: ahorro neto ≈ US$3.8 al mes.
+- **Una renovación que reescribe la caché cuenta una vez** (`effectiveTouch`): cuando cambió el Goal, la primera
+  renovación la escribe (~US$0.09) y se sigue renovando; antes se dejaba de renovar y la siguiente respuesta, si
+  llegaba más de una hora después, la volvía a pagar (8-oct 13:11 y 17:39). Si dos renovaciones seguidas la
+  reescriben, se para hasta la siguiente respuesta real (a lo más dos escrituras).
+- **Regla del dueño:** los cambios al Goal y a las FAQs se juntan y se aplican una sola vez al día, después de las
+  22:00 (Mazatlán), salvo un error grave que haya que corregir de inmediato. Cada vez que se guardan y contesta Sonnet
+  se paga una reescritura; juntarlos en una sola vez evita pagar varias el mismo día (el 8-oct fueron 7).

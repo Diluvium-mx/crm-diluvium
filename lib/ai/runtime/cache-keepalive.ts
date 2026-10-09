@@ -1,4 +1,4 @@
-// Renovación de la caché del Agente IA en horario laboral (2-oct-2026, decisión del dueño).
+// Renovación de la caché del Agente IA (2-oct-2026, decisión del dueño; las 24 horas desde el 9-oct-2026).
 // La regla (cuándo toca) vive en cache-keepalive-core.ts; aquí se arma la petición y se
 // registra en ai_usage (etapa "cerebro", resultado "cache_renovada", sin conversación).
 // Corre en el barrido de cada minuto del worker.
@@ -7,8 +7,9 @@
 // (loadAgentTools sin conversación: todas las del agente, como en casi todos los chats) que
 // una respuesta, más un mensaje mínimo y 1 token de salida: Anthropic solo LEE la caché y
 // su reloj de 1 h vuelve a empezar. Si la renovación no encuentra la caché (otro prefijo:
-// cambió el Goal, una FAQ o las herramientas) o falla, no se repite: un solo intento por cada
-// vez que se tocó la caché. Nunca se paga una escritura cada hora por nada.
+// cambió el Goal, una FAQ o las herramientas), la escribe UNA vez y la sigue renovando; si la
+// siguiente tampoco la encuentra, o una renovación falla, no se repite hasta la siguiente
+// respuesta real (effectiveTouch). Nunca se paga una escritura cada hora por nada.
 import { and, eq, gte, isNotNull, sql } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { aiConfig, aiUsage } from "@/lib/db/schema";
@@ -17,7 +18,7 @@ import type { CallModelInput, CallModelResult } from "@/lib/ai/types";
 import { listFunnelStages } from "@/lib/contacts/funnel-stages";
 import { loadAgentTools } from "./actions";
 import { loadBrainSystem } from "./brain-system";
-import { keepAliveDue } from "./cache-keepalive-core";
+import { effectiveTouch, keepAliveDue } from "./cache-keepalive-core";
 import { loadAgentConfig, orgCustomValues } from "./config";
 import { loadBotOptions } from "./options";
 import { recordAiUsage } from "./usage";
@@ -37,7 +38,7 @@ const START = (col: typeof aiUsage.createdAt, latency: typeof aiUsage.latencyMs)
 const ISO = `'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"'`;
 
 export type CacheState = {
-  /** Inicio de la última llamada que leyó o escribió la caché de ese modelo (o null). */
+  /** Inicio de la última llamada que leyó o escribió la caché de ese modelo (o null; ver effectiveTouch). */
   touch: Date | null;
   /** Inicio del último intento de renovación, haya salido bien o no (o null). */
   lastAttempt: Date | null;
@@ -45,12 +46,14 @@ export type CacheState = {
 
 export async function cacheState(organizationId: string, modelId: string, now: Date): Promise<CacheState> {
   const start = START(aiUsage.createdAt, aiUsage.latencyMs);
+  // Respuestas que leyeron o escribieron caché; renovaciones solo si de verdad la leyeron.
+  const good = sql`(${aiUsage.outcome} is distinct from 'cache_renovada' and (coalesce(${aiUsage.cacheReadTokens}, 0) > 0 or coalesce(${aiUsage.cacheWriteTokens}, 0) > 0))
+        or (${aiUsage.outcome} = 'cache_renovada' and coalesce(${aiUsage.cacheReadTokens}, 0) > 0)`;
+  // Renovaciones que no la encontraron y la volvieron a escribir.
+  const cold = sql`${aiUsage.outcome} = 'cache_renovada' and coalesce(${aiUsage.cacheReadTokens}, 0) = 0 and coalesce(${aiUsage.cacheWriteTokens}, 0) > 0`;
   const [row] = await db
     .select({
-      // Respuestas que leyeron o escribieron caché; renovaciones solo si de verdad la leyeron.
-      touch: sql<string | null>`to_char(max(${start}) filter (where
-        (${aiUsage.outcome} is distinct from 'cache_renovada' and (coalesce(${aiUsage.cacheReadTokens}, 0) > 0 or coalesce(${aiUsage.cacheWriteTokens}, 0) > 0))
-        or (${aiUsage.outcome} = 'cache_renovada' and coalesce(${aiUsage.cacheReadTokens}, 0) > 0)), ${sql.raw(ISO)})`,
+      good: sql<string | null>`to_char(max(${start}) filter (where ${good}), ${sql.raw(ISO)})`,
       lastAttempt: sql<string | null>`to_char(max(${start}) filter (where ${aiUsage.outcome} = 'cache_renovada'), ${sql.raw(ISO)})`,
     })
     .from(aiUsage)
@@ -62,7 +65,28 @@ export async function cacheState(organizationId: string, modelId: string, now: D
         gte(aiUsage.createdAt, new Date(now.getTime() - LOOKBACK_MS)),
       ),
     );
-  return { touch: row?.touch ? new Date(row.touch) : null, lastAttempt: row?.lastAttempt ? new Date(row.lastAttempt) : null };
+  const goodAt = row?.good ? new Date(row.good) : null;
+  const [colds] = await db
+    .select({
+      n: sql<number>`count(*)::int`,
+      last: sql<string | null>`to_char(max(${start}), ${sql.raw(ISO)})`,
+    })
+    .from(aiUsage)
+    .where(
+      and(
+        eq(aiUsage.organizationId, organizationId),
+        eq(aiUsage.modelId, modelId),
+        eq(aiUsage.stage, "cerebro"),
+        gte(aiUsage.createdAt, new Date(now.getTime() - LOOKBACK_MS)),
+        cold,
+        // created_at guarda la hora UTC sin zona (como el to_char de arriba): se compara sin zona.
+        goodAt ? sql`${start} > ${goodAt.toISOString()}::timestamp` : sql`true`,
+      ),
+    );
+  return {
+    touch: effectiveTouch(goodAt, Number(colds?.n ?? 0), colds?.last ? new Date(colds.last) : null),
+    lastAttempt: row?.lastAttempt ? new Date(row.lastAttempt) : null,
+  };
 }
 
 /** Renueva las cachés que tocan. Devuelve cuántas peticiones mandó. */
@@ -101,7 +125,7 @@ export async function keepBrainCacheAlive(deps: KeepAliveDeps): Promise<number> 
         if ((res.usage.cacheReadTokens ?? 0) > 0) {
           console.info(`[cache] ${modelId}: caché del Agente IA renovada (${res.usage.cacheReadTokens} tokens leídos)`);
         } else {
-          console.warn(`[cache] ${modelId}: la renovación no encontró la caché (cambió el Goal, una FAQ o las herramientas); no se repite hasta la siguiente respuesta`);
+          console.warn(`[cache] ${modelId}: la renovación no encontró la caché (cambió el Goal, una FAQ o las herramientas) y la volvió a escribir; se sigue renovando una vez más`);
         }
       } catch (error) {
         // Queda el intento (sin tokens): no se repite hasta la siguiente respuesta real.
