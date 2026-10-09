@@ -29,6 +29,7 @@ import { ChannelSwitches } from "./channel-switches";
 import { FaqEditor } from "./faq-editor";
 import { FollowUpRulesSection } from "./followup-rules-section";
 import { GoalEditor } from "./goal-editor";
+import { ScheduledBanner } from "./schedule-controls";
 import { HistoryPanel } from "./history-panel";
 import { SizeRangesSection } from "./size-ranges-section";
 import { StagesEditor } from "../../_components/stages-editor";
@@ -333,13 +334,15 @@ export function AgenteEditor({
       {panel(
         "goal",
         <Section title="Instrucciones (Goal)" hint="Cómo se comporta el agente: lo que dice aquí es lo único que sigue, junto con las preguntas frecuentes.">
-          <GoalEditor goal={data.goal} versions={data.goalVersions} onDirtyChange={goalDirty} />
+          <ScheduledBanner scheduled={data.scheduled} />
+          <GoalEditor goal={data.goal} scheduledGoal={data.scheduled?.goal ?? null} versions={data.goalVersions} onDirtyChange={goalDirty} />
         </Section>,
       )}
       {panel(
         "faqs",
         <Section title="FAQs" hint="Preguntas frecuentes que el agente usa para responder.">
-          <FaqEditor faqs={data.faqs} versions={data.faqVersions} />
+          <ScheduledBanner scheduled={data.scheduled} />
+          <FaqEditor faqs={data.faqs} scheduledFaqs={data.scheduled?.faqs ?? null} versions={data.faqVersions} />
         </Section>,
       )}
       {panel(

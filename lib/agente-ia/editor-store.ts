@@ -119,10 +119,17 @@ async function saveModelSlot(organizationId: string, slot: 1 | 2, modelId: strin
 // ── Versiones ────────────────────────────────────────────────────────────────
 // clock_timestamp(): dos versiones de la MISMA transacción (la anterior y la nueva)
 // quedan ordenadas; now() les daría la misma hora.
-async function addVersion(exec: Exec, organizationId: string, kind: VersionKind, snapshot: Record<string, unknown>, userId: string | null) {
+async function addVersion(
+  exec: Exec,
+  organizationId: string,
+  kind: VersionKind,
+  snapshot: Record<string, unknown>,
+  userId: string | null,
+  name: string | null = null,
+) {
   await exec
     .insert(aiKnowledgeVersions)
-    .values({ id: crypto.randomUUID(), organizationId, kind, snapshot, createdByUserId: userId, createdAt: sql`clock_timestamp()` });
+    .values({ id: crypto.randomUUID(), organizationId, kind, snapshot, name, createdByUserId: userId, createdAt: sql`clock_timestamp()` });
 }
 
 async function hasVersion(exec: Exec, organizationId: string, kind: VersionKind): Promise<boolean> {
@@ -176,18 +183,30 @@ export async function renameVersion(organizationId: string, versionId: string, n
 // para poder regresar a él.
 export async function saveGoal(organizationId: string, userId: string | null, goal: string): Promise<void> {
   await db.transaction(async (tx) => {
-    await ensureConfig(tx, organizationId);
-    const [cfg] = await tx.select({ goal: aiConfig.goal }).from(aiConfig).where(eq(aiConfig.organizationId, organizationId)).for("update");
-    if (cfg?.goal === goal) return;
-    if (cfg?.goal && !(await hasVersion(tx, organizationId, "goal"))) {
-      await addVersion(tx, organizationId, "goal", { goal: cfg.goal }, null);
-    }
-    await tx.update(aiConfig).set({ goal, updatedAt: new Date() }).where(eq(aiConfig.organizationId, organizationId));
-    await addVersion(tx, organizationId, "goal", { goal }, userId);
+    await writeGoal(tx, organizationId, userId, goal);
   });
 }
 
-async function versionSnapshot(organizationId: string, kind: VersionKind, versionId: string) {
+// Lo mismo dentro de una transacción ya abierta (la aplicación de lo programado para las 22:00,
+// scheduled-store.ts, guarda Goal y FAQs juntos). `name` = nombre de la versión.
+export async function writeGoal(tx: Tx, organizationId: string, userId: string | null, goal: string, name: string | null = null): Promise<void> {
+  await ensureConfig(tx, organizationId);
+  const [cfg] = await tx.select({ goal: aiConfig.goal }).from(aiConfig).where(eq(aiConfig.organizationId, organizationId)).for("update");
+  if (cfg?.goal === goal) return;
+  if (cfg?.goal && !(await hasVersion(tx, organizationId, "goal"))) {
+    await addVersion(tx, organizationId, "goal", { goal: cfg.goal }, null);
+  }
+  await tx.update(aiConfig).set({ goal, updatedAt: new Date() }).where(eq(aiConfig.organizationId, organizationId));
+  await addVersion(tx, organizationId, "goal", { goal }, userId, name);
+}
+
+/** El Goal en vivo (vacío si no hay). */
+export async function liveGoal(exec: Exec, organizationId: string): Promise<string> {
+  const [cfg] = await exec.select({ goal: aiConfig.goal }).from(aiConfig).where(eq(aiConfig.organizationId, organizationId)).limit(1);
+  return cfg?.goal ?? "";
+}
+
+export async function versionSnapshot(organizationId: string, kind: VersionKind, versionId: string) {
   const [v] = await db
     .select({ snapshot: aiKnowledgeVersions.snapshot })
     .from(aiKnowledgeVersions)
@@ -217,14 +236,58 @@ async function faqSnapshot(exec: Exec, organizationId: string): Promise<FaqSnaps
 // Candado por organización: dos cambios a la vez no se pisan las versiones.
 async function changeFaqs(organizationId: string, userId: string | null, change: (tx: Tx) => Promise<void>): Promise<void> {
   await db.transaction(async (tx) => {
-    await tx.execute(sql`select pg_advisory_xact_lock(hashtext(${`ai_knowledge:${organizationId}`}))`);
-    if (!(await hasVersion(tx, organizationId, "faqs"))) {
-      const before = await faqSnapshot(tx, organizationId);
-      if (before.length > 0) await addVersion(tx, organizationId, "faqs", { faqs: before }, null);
-    }
-    await change(tx);
-    await addVersion(tx, organizationId, "faqs", { faqs: await faqSnapshot(tx, organizationId) }, userId);
+    await changeFaqsTx(tx, organizationId, userId, change);
   });
+}
+
+async function changeFaqsTx(tx: Tx, organizationId: string, userId: string | null, change: (tx: Tx) => Promise<void>, name: string | null = null): Promise<void> {
+  await tx.execute(sql`select pg_advisory_xact_lock(hashtext(${`ai_knowledge:${organizationId}`}))`);
+  if (!(await hasVersion(tx, organizationId, "faqs"))) {
+    const before = await faqSnapshot(tx, organizationId);
+    if (before.length > 0) await addVersion(tx, organizationId, "faqs", { faqs: before }, null);
+  }
+  await change(tx);
+  await addVersion(tx, organizationId, "faqs", { faqs: await faqSnapshot(tx, organizationId) }, userId, name);
+}
+
+/** Las FAQs en vivo, en el orden del system (con id: el editor y lo programado las identifican así). */
+export async function liveFaqs(exec: Exec, organizationId: string): Promise<FaqRow[]> {
+  return exec
+    .select({ id: aiKnowledge.id, question: aiKnowledge.question, answer: aiKnowledge.answer, position: aiKnowledge.position, enabled: aiKnowledge.enabled })
+    .from(aiKnowledge)
+    .where(eq(aiKnowledge.organizationId, organizationId))
+    .orderBy(asc(aiKnowledge.position), asc(aiKnowledge.id));
+}
+
+// Reemplaza TODAS las FAQs por esta lista en una transacción ya abierta, con UNA versión
+// (lo programado para las 22:00). Conserva el id y el ancla de GHL de las que ya existían.
+export async function writeFaqs(tx: Tx, organizationId: string, userId: string | null, list: readonly FaqRow[], name: string | null = null): Promise<void> {
+  await changeFaqsTx(
+    tx,
+    organizationId,
+    userId,
+    async (t) => {
+      const anchors = new Map(
+        (await t.select({ id: aiKnowledge.id, ghlId: aiKnowledge.ghlId }).from(aiKnowledge).where(eq(aiKnowledge.organizationId, organizationId))).map(
+          (r) => [r.id, r.ghlId],
+        ),
+      );
+      await t.delete(aiKnowledge).where(eq(aiKnowledge.organizationId, organizationId));
+      if (list.length === 0) return;
+      await t.insert(aiKnowledge).values(
+        list.map((f, i) => ({
+          id: anchors.has(f.id) ? f.id : crypto.randomUUID(),
+          organizationId,
+          ghlId: anchors.get(f.id) ?? null,
+          question: f.question,
+          answer: f.answer,
+          position: i + 1,
+          enabled: f.enabled,
+        })),
+      );
+    },
+    name,
+  );
 }
 
 export async function createFaq(organizationId: string, userId: string | null, input: { question: string; answer: string; enabled: boolean }): Promise<void> {
