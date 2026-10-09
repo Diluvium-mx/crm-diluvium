@@ -4,8 +4,9 @@
 // final, que es idéntico a la carita de public/emoji/ del estado nuevo.
 // - disparo (pasa a Cancelado): una pistola sale por la izquierda y le dispara; cortocircuito, cables y ojos en X; la
 //   pistola gira como de vaquero y se regresa.
-// - reparacion / reparacion-dormido (Reactivar): una llave inglesa entra por la derecha (a la izquierda del robot no
-//   cabe cuando la píldora lleva la hora), le da dos golpes, se reinicia y abre los ojos; brinca o bosteza y se duerme.
+// - reparacion-golpes → reparacion / reparacion-dormido (Reactivar): una llave inglesa entra por la derecha (a la
+//   izquierda del robot no cabe cuando la píldora lleva la hora) y le da dos golpes; el robot se queda «cargando» hasta
+//   que se sabe el final y entonces abre los ojos y brinca, o bosteza y se duerme.
 // - reloj (Cambiar hora): los ojos se vuelven relojes que giran y la hora de la píldora cambia.
 // - despertador (Que salga solo): suena un despertador, el robot despierta, lo apaga y la píldora pasa a azul.
 // - avion (salió el mensaje): lanza un avioncito de papel y la píldora dice la hora nueva o «esperando».
@@ -16,7 +17,7 @@ export function RobotEscena({ escena }: { escena: Escena }) {
   return (
     <span aria-hidden="true" data-escena={escena} className={`robot-escena robot-escena-${escena} relative -my-0.5 inline-block size-[18px] shrink-0`}>
       {escena === "disparo" && <Pistola />}
-      {(escena === "reparacion" || escena === "reparacion-dormido") && <Llave />}
+      {(escena === "reparacion-golpes" || escena === "reparacion" || escena === "reparacion-dormido") && <Llave />}
       {escena === "despertador" && <Despertador />}
       {escena === "avion" && <Avioncito />}
       <svg className="re-robot" viewBox="0 0 64 64" width="18" height="18">
