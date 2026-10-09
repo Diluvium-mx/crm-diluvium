@@ -11,6 +11,19 @@ import { isIP } from "node:net";
 
 export const MAX_REDIRECTS = 5;
 
+/**
+ * De dónde llegan los adjuntos y las miniaturas (9-oct-2026, visto en producción: zernio.com,
+ * lookaside.fbsbx.com y www.instagram.com; más los CDN de Meta, Instagram y WhatsApp). El PRIMER
+ * link tiene que ser de uno de estos dominios (o un subdominio); las redirecciones solo tienen que
+ * ir a un dominio público (no se sabe a qué CDN redirige cada proveedor).
+ */
+export const MEDIA_HOSTS = ["zernio.com", "fbsbx.com", "fbcdn.net", "cdninstagram.com", "instagram.com", "whatsapp.net", "facebook.com"] as const;
+
+export function hostAllowed(host: string, allowed: readonly string[]): boolean {
+  const h = host.toLowerCase();
+  return allowed.some((d) => h === d || h.endsWith(`.${d}`));
+}
+
 export type ResolveHost = (host: string) => Promise<string[]>;
 
 export const resolveHost: ResolveHost = async (host) => (await lookup(host, { all: true, verbatim: true })).map((a) => a.address);
@@ -90,6 +103,8 @@ export async function safeFetch(
     headersFor?: (target: URL) => Record<string, string>;
     signal?: AbortSignal;
     maxRedirects?: number;
+    /** Dominios permitidos para el PRIMER link (p. ej. MEDIA_HOSTS); sin esto, cualquiera público. */
+    allowedHosts?: readonly string[];
   } = {},
 ): Promise<Response> {
   const fetchImpl = opts.fetchImpl ?? fetch;
@@ -97,6 +112,7 @@ export async function safeFetch(
   const max = opts.maxRedirects ?? MAX_REDIRECTS;
   let current = safeUrl(url);
   if (!current) throw new UnsafeUrlError("link no permitido (solo https a un dominio público)");
+  if (opts.allowedHosts && !hostAllowed(current.hostname, opts.allowedHosts)) throw new UnsafeUrlError(`${current.hostname} no está en la lista de servidores permitidos`);
   for (let hop = 0; ; hop++) {
     await assertPublic(current, resolve);
     const res = await fetchImpl(current, { headers: opts.headersFor?.(current) ?? {}, signal: opts.signal, redirect: "manual" });
