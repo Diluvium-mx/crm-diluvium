@@ -3,6 +3,9 @@
 // era. Aquí cada Server Action se mide desde requireActiveMembership() (todas pasan por ahí)
 // hasta que su respuesta termina (after) y, si tardó SLOW_ACTION_MS o más, sale en el log:
 //   [lenta] getAgentActivity 2310 ms · /embudo
+// Una acción ATORADA cuya respuesta nunca termina (el vendedor se cansó y recargó: 499 en
+// Railway) no llega al after(): a los STUCK_ACTION_MS sale otra línea, aunque luego termine:
+//   [lenta] getAgentActivity sigue sin terminar a los 5000 ms · /embudo
 // Sin datos de clientes: el nombre sale del manifiesto de Next (id → nombre exportado) y la
 // pantalla es solo la ruta, sin ?contacto=… ni nada más.
 import { readFileSync } from "node:fs";
@@ -10,6 +13,7 @@ import { join } from "node:path";
 import { after } from "next/server";
 
 export const SLOW_ACTION_MS = 1_000;
+export const STUCK_ACTION_MS = 5_000;
 
 type Manifest = { node?: Record<string, { exportedName?: string; filename?: string }> };
 
@@ -66,7 +70,13 @@ export function timeServerAction(requestHeaders: Headers): void {
   timed.add(requestHeaders);
   const start = performance.now();
   const screen = screenPath(requestHeaders.get("referer"));
+  const stuck = setTimeout(() => {
+    console.warn(`[lenta] ${actionName(actionId)} sigue sin terminar a los ${STUCK_ACTION_MS} ms · ${screen}`);
+  }, STUCK_ACTION_MS);
+  // No detiene el apagado del servidor (redeploy) por un aviso pendiente.
+  if (typeof stuck === "object" && "unref" in stuck) stuck.unref();
   after(() => {
+    clearTimeout(stuck);
     const ms = Math.round(performance.now() - start);
     if (ms >= SLOW_ACTION_MS) console.warn(`[lenta] ${actionName(actionId)} ${ms} ms · ${screen}`);
   });

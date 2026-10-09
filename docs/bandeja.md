@@ -455,7 +455,9 @@ devolvía la página completa (~600 KB). Reglas desde entonces:
 - **Acciones lentas en el log** (`lib/monitoring/slow-actions.ts`): toda Server Action que tarde
   ≥ 1 s (medida desde `requireActiveMembership()` hasta que termina su respuesta) sale en los logs
   del web como `[lenta] agente-actividad › getAgentActivity 2310 ms · /embudo`: archivo, acción,
-  tiempo y pantalla, sin datos de clientes. En Railway: logs de `crm-diluvium`, filtro `[lenta]`.
+  tiempo y pantalla, sin datos de clientes. Si a los 5 s su respuesta no ha terminado (atorada, o el
+  vendedor recargó y Railway marca 499), sale además `[lenta] … sigue sin terminar a los 5000 ms ·
+  /embudo`. En Railway: logs de `crm-diluvium`, filtro `[lenta]`.
 
 ### Lo que NO va (vs. GHL)
 Nueva conversación/Importar (requiere plantilla: llega con el número real), asignado/seguido/chat
