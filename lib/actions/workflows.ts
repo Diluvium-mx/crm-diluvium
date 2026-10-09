@@ -88,7 +88,7 @@ const workflowInputSchema = z.object({
   triggerStartOnlyAgent: z.boolean(),
   // «Máximo de envíos por chat» (1–20; null = sin límite).
   maxSendsPerChat: maxSendsSchema,
-  // «El workflow es la respuesta»: por palabra clave, el Agente IA no agrega nada y espera al cliente.
+  // «El workflow es la respuesta»: contesta su tema; el Agente IA solo agrega lo que falte, sin preguntas, y espera al cliente.
   isAnswer: z.boolean(),
   steps: stepsSchema,
 });
