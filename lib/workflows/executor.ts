@@ -434,6 +434,9 @@ export async function executeWorkflowRun(runId: string, deps: ExecutorDeps): Pro
       //   "Precio"); lo demás lo atiende el agente.
       // - Agente IA con un workflow que trae textos (su propio texto no salió, run.ts): contesta
       //   todo lo que el agente leyó, hasta el último mensaje del lote.
+      // - Agente IA con un workflow que solo manda archivos (9-oct-2026, «Dónde medir»; su texto
+      //   tampoco salió): como por palabra clave, contesta SOLO el mensaje que lo disparó y pide la
+      //   revisión del agente, que contesta lo que el cliente haya preguntado aparte (complemento).
       // 30-sep-2026 (bug, caso 12:31 «Quiero más información» + «Hola costos»): el último paso puede
       // NO salir porque el candado anti-repetición lo quita (la misma pregunta ya la mandó otro
       // workflow de la ráfaga). Antes la marca dependía de ese paso y se perdía: el mensaje quedaba
@@ -441,13 +444,16 @@ export async function executeWorkflowRun(runId: string, deps: ExecutorDeps): Pro
       // corrida SÍ mandó (si no mandó nada, no hay marca y lo atiende el agente).
       if (run.triggerMessageId && i === answerIndex) {
         const answerId = sent?.messageId ?? (await lastSentMessageOf(run.organizationId, messageIds));
+        const withText = loaded.steps.some((st) => st.payload.kind === "send_text");
         const mark = !answerId
           ? null
           : run.trigger === "keyword"
             ? markAnswersOnly(run.organizationId, answerId, run.triggerMessageId)
-            : run.trigger === "agent" && loaded.steps.some((st) => st.payload.kind === "send_text")
-              ? markAnswersUntil(run.organizationId, answerId, run.triggerMessageId)
-              : null;
+            : run.trigger === "agent" && !withText && agentCaption === null
+              ? markAnswersOnly(run.organizationId, answerId, run.triggerMessageId, { reviewSinceNow: true })
+              : run.trigger === "agent" && withText
+                ? markAnswersUntil(run.organizationId, answerId, run.triggerMessageId)
+                : null;
         await mark?.catch((error: unknown) => logError(`[workflows] ${run.id}: no se pudo marcar el último mensaje como la respuesta`, error));
       }
       // Resultado DESCONOCIDO del proveedor (timeout): no se sabe si el cliente

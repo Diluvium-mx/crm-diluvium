@@ -27,12 +27,12 @@ import { amountsIn, isBackedAmount } from "./lector-core";
 import { buildAgentTools, type AgentTools, type AvisoMotivo, type ValidToolCall } from "./tools";
 import { allowedAgentStage, ventaCerradaHeld } from "./venta-cerrada";
 
-// Nota que NO se muestra al vendedor (Fase E, pendiente F): la media ya salió por la
-// palabra clave del cliente y el agente la pidió otra vez; no le pide nada al vendedor.
-// Solo queda en el log del worker.
-export const YA_SALIO_POR_PALABRA_CLAVE = "ya salió por palabra clave para este mensaje";
+// Nota que NO se muestra al vendedor (Fase E, pendiente F): la media ya salió para este mensaje
+// (por la palabra clave del cliente o, desde el 9-oct-2026, por el propio Agente IA antes del
+// complemento) y el agente la pidió otra vez; no le pide nada al vendedor. Solo queda en el log.
+export const YA_SALIO_PARA_ESTE_MENSAJE = "ya salió para este mensaje";
 export function noteForVendor(note: string): boolean {
-  return !note.endsWith(YA_SALIO_POR_PALABRA_CLAVE);
+  return !note.endsWith(YA_SALIO_PARA_ESTE_MENSAJE);
 }
 
 export type StartWorkflow = (input: StartRunInput) => Promise<StartRunResult>;
@@ -156,7 +156,9 @@ export async function prepareActions(input: {
     }
   }
   // Palabra clave + herramienta para el MISMO workflow ("pásame la tabla"): la
-  // corrida por palabra clave ya lo manda; la del agente no se repite.
+  // corrida por palabra clave ya lo manda; la del agente no se repite. Igual con una corrida del
+  // propio Agente IA para estos mensajes (9-oct-2026): en el complemento de un workflow «es la
+  // respuesta» que solo manda archivos, el archivo ya salió y no se vuelve a mandar.
   if (input.pendingSince && plan.runs.length) {
     const dup = await db
       .select({ workflowId: workflowRuns.workflowId })
@@ -165,7 +167,7 @@ export async function prepareActions(input: {
         and(
           eq(workflowRuns.organizationId, input.organizationId),
           eq(workflowRuns.conversationId, input.conversationId),
-          eq(workflowRuns.trigger, "keyword"),
+          inArray(workflowRuns.trigger, ["keyword", "agent"]),
           inArray(workflowRuns.workflowId, plan.runs.map((r) => r.workflowId)),
           inArray(workflowRuns.status, ["queued", "running", "done"]),
           gte(workflowRuns.createdAt, input.pendingSince),
@@ -173,7 +175,7 @@ export async function prepareActions(input: {
       );
     const dupIds = new Set(dup.map((d) => d.workflowId));
     if (dupIds.size) {
-      plan.notes.push(`${plan.runs.filter((r) => dupIds.has(r.workflowId)).map((r) => r.slug).join(", ")}: ${YA_SALIO_POR_PALABRA_CLAVE}`);
+      plan.notes.push(`${plan.runs.filter((r) => dupIds.has(r.workflowId)).map((r) => r.slug).join(", ")}: ${YA_SALIO_PARA_ESTE_MENSAJE}`);
       plan.runs = plan.runs.filter((r) => !dupIds.has(r.workflowId));
     }
   }
@@ -220,18 +222,34 @@ export async function quoteSetByVendor(organizationId: string, contactId: string
 }
 
 // «El workflow es la respuesta» como herramienta (29-sep-2026, dueño: «Depende»): de estos
-// workflows, los marcados que traen TEXTOS. Con uno así, su último mensaje es la respuesta y el
-// texto del modelo no sale (no se le dice lo mismo dos veces); uno que solo manda archivos (la
-// Tabla) deja que el agente escriba su frase, que desde el 1-oct-2026 va como pie del archivo
-// (captionRunOf).
-export async function answerRunsWithText(organizationId: string, workflowIds: readonly string[]): Promise<Set<string>> {
-  if (workflowIds.length === 0) return new Set();
+// workflows, los marcados que mandan algo, y si traen TEXTOS o solo ARCHIVOS. Con uno así, el
+// workflow es la respuesta y el texto del modelo no sale (no se le dice lo mismo dos veces).
+// - Con textos («Precio 2»): su último mensaje contesta todo lo que el agente leyó.
+// - Solo archivos (9-oct-2026, dueño, caso «Dónde medir»): antes la frase del agente iba como pie
+//   del archivo en lugar del pie del workflow (1-oct-2026); ahora sale el pie del workflow tal cual
+//   y, cuando el archivo ya salió, el agente revisa el mismo mensaje y contesta solo lo que el
+//   cliente haya preguntado aparte (complemento, como por palabra clave).
+export type AnswerRunKind = "textos" | "archivos";
+export async function answerRunsOf(organizationId: string, workflowIds: readonly string[]): Promise<Map<string, AnswerRunKind>> {
+  if (workflowIds.length === 0) return new Map();
   const rows = await db
-    .selectDistinct({ workflowId: workflowSteps.workflowId })
+    .selectDistinct({ workflowId: workflowSteps.workflowId, kind: workflowSteps.kind })
     .from(workflowSteps)
     .innerJoin(workflows, and(eq(workflows.id, workflowSteps.workflowId), eq(workflows.organizationId, organizationId)))
-    .where(and(eq(workflowSteps.organizationId, organizationId), inArray(workflowSteps.workflowId, [...workflowIds]), eq(workflowSteps.kind, "send_text"), eq(workflows.isAnswer, true)));
-  return new Set(rows.map((r) => r.workflowId));
+    .where(
+      and(
+        eq(workflowSteps.organizationId, organizationId),
+        inArray(workflowSteps.workflowId, [...workflowIds]),
+        inArray(workflowSteps.kind, ["send_text", "send_media"]),
+        eq(workflows.isAnswer, true),
+      ),
+    );
+  const out = new Map<string, AnswerRunKind>();
+  for (const r of rows) {
+    if (r.kind === "send_text") out.set(r.workflowId, "textos");
+    else if (!out.has(r.workflowId)) out.set(r.workflowId, "archivos");
+  }
+  return out;
 }
 
 // Texto del Agente IA como pie del archivo (1-oct-2026, dueño): la PRIMERA corrida que pidió, si

@@ -180,7 +180,7 @@ export function WorkflowEditor({
               El workflow es la respuesta
             </label>
             <span className="block text-[11px] text-muted-foreground">
-              Por palabra clave, el Agente IA no agrega nada a ese mensaje y espera a que el cliente conteste. Si lo usa el Agente IA y trae textos, su propio texto no sale.
+              Por palabra clave, el Agente IA no agrega nada a ese mensaje y espera a que el cliente conteste. Si lo usa el Agente IA, su propio texto no sale: sale el del workflow.
             </span>
             {!draft.isAnswer && endsWithQuestionStep(draft.steps) ? (
               <span className="block text-[11px] text-brand-orange">

@@ -135,6 +135,16 @@ function unansweredSql(now: Date, opts: { since: Date; olderThan: Date; extra: S
         select 1 from ai_usage u
         where u.organization_id = c.organization_id and u.message_id = last.id
           and u.outcome in ('sent', 'draft', 'skipped', 'handover')
+          -- Complemento (9-oct-2026): la respuesta que pidió un workflow «es la respuesta» de solo
+          -- archivos queda ANTES de la marca de revisión de su archivo (revisaDesde) y no cuenta:
+          -- el mensaje sigue esperando que el agente lo revise.
+          and not exists (
+            select 1 from messages a
+            where a.organization_id = c.organization_id and a.conversation_id = c.id
+              and a.direction = 'out' and a.status <> 'failed'
+              and a.metadata->>'contestaA' = last.id and coalesce(a.metadata ? 'revisaDesde', false)
+              and u.created_at <= (a.metadata->>'revisaDesde')::timestamp
+          )
       )
       -- Un plan/borrador OBSOLETO no cuenta (p. ej. la 1ª burbuja falló en los 3 intentos):
       -- el barrido lo rescata hasta MAX_ERRORS_PER_MESSAGE.

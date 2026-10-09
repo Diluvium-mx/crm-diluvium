@@ -20,7 +20,7 @@ import { agentErrorBody, bothModelsFailedBody, classifyModelError, EMPTY_RESPONS
 import { cleanAdMessages } from "./ad-cleaner";
 import { parseBrainOutput } from "./brain";
 import { loadBrainSystem } from "./brain-system";
-import { answerRunsWithText, captionRunOf, crmContextFor, executeActions, loadAgentTools, noteForVendor, prepareActions, quoteSetByVendor, runsThatSend, setQuoteByAgent, type ActionContext, type ActionPhase, type ActionPlan, type ExecutedActions, type StartWorkflow } from "./actions";
+import { answerRunsOf, captionRunOf, crmContextFor, executeActions, loadAgentTools, noteForVendor, prepareActions, quoteSetByVendor, runsThatSend, setQuoteByAgent, type ActionContext, type ActionPhase, type ActionPlan, type ExecutedActions, type StartWorkflow } from "./actions";
 import { maxPerChatContextFor } from "@/lib/workflows/max-per-chat";
 import { AGENT_CAPTION_KEY, MAX_CAPTION } from "@/lib/workflows/steps";
 
@@ -57,6 +57,7 @@ import {
   humanOutboundCount,
   inboundCount,
   answerRunInFlight,
+  awaitingWorkflowReview,
   lastOutbound,
   loadHistory,
   loopWindow,
@@ -463,7 +464,15 @@ export async function runAgent(job: { organizationId: string; conversationId: st
     // se sigue para reenviarla.
     // El texto fijo del mensaje no disponible se guardó con el id de ESTA fila: si después
     // llegó su contenido real, está pendiente (pendingInbound) y se contesta lo que dice.
-    if (!saved && lastRead && !completedAfterConfirmation(lastRead.metadata) && (await alreadyHandled(org, lastRead.id))) {
+    // Excepción (9-oct-2026): el mensaje que contestó un workflow «es la respuesta» de solo archivos
+    // pedido por el agente sigue esperando su revisión (complemento) aunque ya tenga resultado.
+    if (
+      !saved &&
+      lastRead &&
+      !completedAfterConfirmation(lastRead.metadata) &&
+      (await alreadyHandled(org, lastRead.id)) &&
+      !(await awaitingWorkflowReview(org, conv.id, lastRead.id))
+    ) {
       return { kind: "noop", reason: "ya_atendido" };
     }
     // Las burbujas de la respuesta guardada no cuentan como "envío en camino": el
@@ -914,9 +923,10 @@ export async function runAgent(job: { organizationId: string; conversationId: st
     // resolvió la red contra el silencio (arriba): el CRM nunca escribe un texto fijo.
     let text = out.kind === "reply" ? out.text : "";
     // «El workflow es la respuesta» como herramienta (29-sep-2026, dueño: «Depende»): si pidió un
-    // workflow marcado que trae TEXTOS, ese workflow es la respuesta y el texto del modelo no sale
-    // (no se le dice lo mismo dos veces); si el workflow solo manda archivos (la Tabla), sí sale.
-    const answerRuns = await answerRunsWithText(org, plan.runs.map((r) => r.workflowId));
+    // workflow marcado, ese workflow es la respuesta y el texto del modelo no sale (no se le dice
+    // lo mismo dos veces). Desde el 9-oct-2026 también si solo manda archivos («Dónde medir», la
+    // Tabla): sale el pie del workflow, no la frase del agente (actions.ts, answerRunsOf).
+    const answerRuns = await answerRunsOf(org, plan.runs.map((r) => r.workflowId));
     const withheld = answerRuns.size && text.trim() ? text.trim() : null;
     if (withheld) text = "";
     // Red contra el silencio, paso 3: nadie le escribió al cliente → aviso al vendedor
@@ -1124,6 +1134,13 @@ export async function runAgent(job: { organizationId: string; conversationId: st
     // El texto del modelo se guardó porque un workflow «es la respuesta» iba a contestar; si ese
     // workflow no arrancó, el cliente se quedaría sin nada: el vendedor ve el texto que no salió.
     const answerSlugs = plan.runs.filter((r) => answerRuns.has(r.workflowId)).map((r) => r.slug);
+    // Complemento (9-oct-2026, dueño): un workflow «es la respuesta» que solo manda archivos contesta
+    // SU tema; cuando el archivo sale, el agente revisa el mismo mensaje y contesta lo que el cliente
+    // haya preguntado aparte («¿dónde mido y cuánto cuesta?»), sin preguntar, o no escribe nada. El
+    // ejecutor deja el archivo con la marca de revisión (markAnswersOnly) y esta corrida vuelve a
+    // mirar en unos segundos: mientras el workflow va en camino espera (answerRunInFlight) y luego
+    // entra en modo complemento (answeredByWorkflow), igual que por palabra clave.
+    const complementRun = plan.runs.find((r) => answerRuns.get(r.workflowId) === "archivos" && after?.started.includes(r.slug)) ?? null;
     if (withheld && !answerSlugs.some((slug) => after?.started.includes(slug))) {
       await holdAgentForReview({
         organizationId: org,
@@ -1144,6 +1161,7 @@ export async function runAgent(job: { organizationId: string; conversationId: st
       unanswered.length ? `no se repitió la pregunta sin contestar: «${unanswered.join(" / ")}»` : null,
       withheld ? `el workflow es la respuesta; no salió el texto del modelo: «${withheld.slice(0, 300)}»` : null,
       captionedBy ? `el texto va como pie del archivo de «${captionedBy}»` : null,
+      complementRun ? `cuando salga el archivo de «${complementRun.slug}», el Agente IA revisa el mismo mensaje (complemento)` : null,
       silencio === "contestado" ? "sin texto: ya le había salido algo al cliente después de su último mensaje" : null,
       silencio === "acuse" ? "sin texto: el cliente solo confirmó o agradeció (nada que agregar)" : null,
       silencio === "sin_respuesta" ? "sin texto: ningún modelo le escribió al cliente (aviso sin_respuesta)" : null,
@@ -1156,6 +1174,7 @@ export async function runAgent(job: { organizationId: string; conversationId: st
     // "Avisar y pausar X horas" al pedir un asesor (Opciones del bot): al final, ya con
     // el texto enviado y la media encolada.
     await pauseAfterHandover(conv, plan, options, deps.now());
+    if (complementRun) return { kind: "reschedule", delayMs: ANSWER_RUN_POLL_MS, reason: "complemento_workflow_respuesta" };
     return { kind: "sent", bubbles: sent };
   }
 

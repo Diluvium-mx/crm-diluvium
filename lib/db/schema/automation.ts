@@ -104,8 +104,9 @@ export const workflows = pgTable(
     // suma pero puede pasarlo (lib/workflows/max-per-chat.ts).
     maxSendsPerChat: integer("max_sends_per_chat"),
     // «El workflow es la respuesta» (29-sep-2026): por palabra clave, el Agente IA no agrega nada
-    // a ese mensaje y espera al cliente (aunque no termine en pregunta). Como herramienta: si el
-    // workflow trae textos, el texto del modelo no sale; si solo manda archivos, sí.
+    // a ese mensaje y espera al cliente (aunque no termine en pregunta). Como herramienta: el texto
+    // del modelo no sale; si solo manda archivos (desde el 9-oct-2026), sale el pie del workflow y
+    // luego el agente revisa el mismo mensaje (complemento, lib/ai/runtime/actions.ts answerRunsOf).
     isAnswer: boolean("is_answer").notNull().default(false),
     position: integer("position").notNull().default(0),
     createdByUserId: text("created_by_user_id").references(() => user.id, { onDelete: "set null" }),
