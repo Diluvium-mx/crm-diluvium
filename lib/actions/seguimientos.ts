@@ -10,7 +10,8 @@ import { approveFollowUp, cancelFollowUpById, changeFollowUpTime, clearSinSeguim
 
 const id = z.string().trim().min(1).max(100);
 
-export type FollowUpActionResult = { ok: true } | { ok: false; message: string };
+/** `estado`: lo que muestra la píldora después, cuando la acción ya lo trae (ahorra la consulta de getFollowUp). */
+export type FollowUpActionResult = { ok: true; estado?: FollowUpState | null } | { ok: false; message: string };
 
 /** Lo que muestra la píldora del chat (seguimiento abierto, cancelado o dado de baja), o null (nunca rompe el composer). */
 export async function getFollowUp(conversationId: string): Promise<FollowUpState | null> {
@@ -59,9 +60,12 @@ export async function quitarSinSeguimientos(contactId: string): Promise<FollowUp
   return ok ? { ok: true } : { ok: false, message: "Ese contacto ya tenía seguimientos." };
 }
 
-/** «Reactivar seguimientos» en un chat donde se cancelaron (vendedor o admin; decisión del dueño, 6-oct-2026). */
+/** «Reactivar seguimientos» en un chat donde se cancelaron (vendedor o admin; decisión del dueño, 6-oct-2026). Trae el
+ * estado nuevo: la píldora termina su escena (despierto o dormido) sin esperar otra consulta (9-oct-2026). */
 export async function reactivarSeguimientos(conversationId: string): Promise<FollowUpActionResult> {
   const { organizationId } = await requireActiveMembership();
-  const ok = await reactivateFollowUps(organizationId, id.parse(conversationId), new Date());
-  return ok ? { ok: true } : { ok: false, message: "Los seguimientos de este chat ya estaban activos." };
+  const conversation = id.parse(conversationId);
+  const ok = await reactivateFollowUps(organizationId, conversation, new Date());
+  if (!ok) return { ok: false, message: "Los seguimientos de este chat ya estaban activos." };
+  return { ok: true, estado: await loadFollowUpState(organizationId, conversation) };
 }

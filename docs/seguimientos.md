@@ -689,6 +689,38 @@ general de calendario) quedan descartadas.
 
 ---
 
+## 19. Escenas del robot en la píldora (9-oct-2026)
+
+Pedido del dueño: animaciones cortas y graciosas **dentro** de la píldora cuando cambia su estado. Se aprobaron con
+prototipos (tamaño real y ampliado) antes de construirlas; el dueño aprobó las cinco tal cual.
+
+| Escena | Cuándo | Qué se ve | Dura |
+|---|---|---|---|
+| **Disparo** | Pasa a Cancelado (Cancelar o Apagar seguimientos en este chat) | Pistola por la izquierda, cortocircuito, tres cables, ojos en X; la pistola gira y se va | 1.9 s |
+| **Llave inglesa** | Sale de Cancelado (Reactivar) | Entra por la derecha, dos golpes y «cargando» hasta la respuesta; abre los ojos y brinca (se desliza si llega la hora) o, si queda sin seguimiento todavía (dormido o suspendido), bosteza y se duerme | 1 s + espera + 1.2 s |
+| **Reloj** | El mismo seguimiento cambia de hora con el robot despierto (Cambiar hora) | Ojos de reloj que giran; la hora de antes sube y la nueva llega desde abajo | 1.5 s |
+| **Despertador** | El mismo seguimiento deja de estar suspendido (Que salga solo) | Suena, el robot despierta, lo apaga y la píldora pasa de ámbar a azul | 2 s |
+| **Avioncito** | El mismo seguimiento tiene un mensaje más y sí salió | Lanza un avioncito de papel que cruza la píldora; llega la hora siguiente o «esperando» | 1.8 s |
+
+- **Arranca al presionar** (9-oct-2026, pedido del dueño: en staging tardaba 1–2 s porque esperaba la acción y otra consulta,
+  y Next atiende las acciones de una en una): los botones de la ventana ANTICIPAN cómo quedará la píldora (`useFollowUp` ›
+  `anticipar`) y el servidor solo confirma; si rechaza, la píldora regresa sin escena (`revertir` sube `silencio`). Reactivar no se
+  puede anticipar (programado o dormido según el chat): la llave golpea al instante (`reparacion-golpes`, 1 s mínimo), el robot
+  queda «cargando» y `reactivarSeguimientos` trae el estado nuevo para el final. Medido en local: 5–22 ms del clic a la escena.
+- **Quién la ve** (decisión del dueño): todo el que tenga el chat abierto cuando cambia, vendedor o admin, lo haya hecho
+  él u otro. Al abrir un chat no se juega ninguna. Con «reducir movimiento» se ve directo la carita final, que es la de
+  `public/emoji/` del estado nuevo.
+- **Sin escena:** «Lo mando yo» (abre WhatsApp Web en otra pestaña y no se vería); Cambiar hora con el robot dormido
+  (suspendido); un mensaje que falló o en ensayo; un seguimiento nuevo que arma el Agente IA; «Volver a darle seguimiento».
+- La llave entra por la **derecha** (el prototipo la traía por la izquierda): con la hora en la píldora el robot queda
+  pegado a la orilla izquierda y ahí no cabe; la hora se esconde mientras dura y aparece al final.
+- Código: `robot-escena-cuando.ts` (qué escena toca y la máquina de golpes → final, con pruebas en `robot-escena-cuando.test.ts`), `robot-escena.tsx`
+  (solo dibujo, robot en SVG en línea), `useRobotEscena` en `followup-pill.tsx` (la juega, conserva el color de antes
+  hasta el cambio y la quita al terminar) y `app/globals.css` › «Robot del seguimiento» (tiempos; `--re-d` igual que
+  `ESCENA_MS`). En chico los detalles finos casi no se ven; el dueño lo aceptó así.
+
+---
+
 ## Fuentes
 
 - [M1] Meta, enviar mensajes / ventana de servicio: https://developers.facebook.com/documentation/business-messaging/whatsapp/messages/send-messages

@@ -18,32 +18,110 @@
 // Siempre está (7-oct-2026, decisión del dueño): sin nada que seguir sale el robot dormido en gris («dormido») y su
 // ventana dice por qué; «esperando» se queda mientras el último mensaje sea nuestro aunque ya no queden intentos.
 // Consultas: al abrir el chat, con cada aviso "followup.updated" de este chat y al volver a la pestaña.
-import { useCallback, useEffect, useRef, useState } from "react";
-import { apagarSeguimientos, approveSuggestedFollowUp, cancelFollowUp, getFollowUp, quitarSinSeguimientos, reactivarSeguimientos, rescheduleFollowUp } from "@/lib/actions/seguimientos";
+// Escenas (9-oct-2026, prototipos aprobados por el dueño): cuando la píldora cambia con el chat abierto juega una
+// animación corta (disparo, reparación, reloj, despertador, avioncito; robot-escena-cuando.ts y robot-escena.tsx). Lo
+// ve todo el que tenga el chat abierto, vendedor o admin, lo haya hecho él u otro.
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type RefObject } from "react";
+import {
+  apagarSeguimientos,
+  approveSuggestedFollowUp,
+  cancelFollowUp,
+  getFollowUp,
+  quitarSinSeguimientos,
+  reactivarSeguimientos,
+  rescheduleFollowUp,
+  type FollowUpActionResult,
+} from "@/lib/actions/seguimientos";
 import type { FollowUpDormido, FollowUpOff, FollowUpState, FollowUpView } from "@/lib/followups/view";
 import { followUpText } from "@/lib/followups/message";
 import { whatsappWebLink } from "@/lib/contacts/whatsapp-link";
-import { instantToLocal, SCHEDULE_TIME_ZONE } from "@/lib/scheduled/rules";
+import { instantToLocal, localToInstant, SCHEDULE_TIME_ZONE } from "@/lib/scheduled/rules";
 import { CloseX } from "@/components/ui/close-x";
 import { useInboxStream } from "./use-inbox-stream";
 import { DateTimePicker } from "@/components/ui/date-time-picker";
+import { EtiquetaEscena, RobotEscena } from "./robot-escena";
+import {
+  ESCENA_MS,
+  ESCENA_TONO_MS,
+  finDeGolpes,
+  GOLPES_ESPERA_MAX_MS,
+  siguienteEscena,
+  vistaDe,
+  type EntradaPildora,
+  type Escena,
+  type EscenaEnCurso,
+  type FotoPildora,
+  type RobotFace,
+} from "./robot-escena-cuando";
 
 // ── Datos ────────────────────────────────────────────────────────────────────
 
-export function useFollowUp(conversationId: string): { followUp: FollowUpState | null; reload: () => void } {
+/** Lo que un botón de la ventana anticipa para la píldora mientras contesta el servidor: cómo quedará, o «Reactivar»
+ * (no se sabe el final: la llave golpea y el robot carga hasta la respuesta). */
+export type Anticipo = { foto: FotoPildora } | { reparando: true };
+
+export type FollowUpHook = {
+  /** Lo que dice el servidor (la ventana se dibuja con esto). */
+  followUp: FollowUpState | null;
+  reload: () => void;
+  anticipo: Anticipo | null;
+  /** Sube cuando el servidor rechaza lo anticipado: la píldora regresa sin escena. */
+  silencio: number;
+  anticipar: (anticipo: Anticipo) => void;
+  /** El servidor ya lo hizo: con el estado nuevo si la acción lo trae (sin otra consulta) o volviendo a consultar. */
+  confirmar: (estado?: FollowUpState | null) => void;
+  revertir: () => void;
+};
+
+export function useFollowUp(conversationId: string): FollowUpHook {
   const [followUp, setFollowUp] = useState<FollowUpState | null>(null);
+  const [anticipo, setAnticipo] = useState<Anticipo | null>(null);
+  const [silencio, setSilencio] = useState(0);
   const seq = useRef(0);
+  // La consulta desde la que lo anticipado ya se puede soltar (una que salió DESPUÉS de que el servidor lo hizo).
+  const soltarDesde = useRef<number | null>(null);
   const [seen, setSeen] = useState(conversationId);
   if (seen !== conversationId) {
     setSeen(conversationId);
     setFollowUp(null);
+    setAnticipo(null);
   }
   const reload = useCallback(() => {
     const mine = ++seq.current;
     void getFollowUp(conversationId).then((view) => {
-      if (mine === seq.current) setFollowUp(view);
+      if (mine !== seq.current) return;
+      setFollowUp(view);
+      if (soltarDesde.current !== null && mine >= soltarDesde.current) {
+        soltarDesde.current = null;
+        setAnticipo(null);
+      }
     });
   }, [conversationId]);
+  const acciones = useMemo(
+    () => ({
+      anticipar: (a: Anticipo) => {
+        soltarDesde.current = null;
+        setAnticipo(a);
+      },
+      confirmar: (estado?: FollowUpState | null) => {
+        if (estado === undefined) {
+          soltarDesde.current = seq.current + 1;
+          reload();
+          return;
+        }
+        seq.current += 1;
+        soltarDesde.current = null;
+        setFollowUp(estado);
+        setAnticipo(null);
+      },
+      revertir: () => {
+        soltarDesde.current = null;
+        setAnticipo(null);
+        setSilencio((n) => n + 1);
+      },
+    }),
+    [reload],
+  );
 
   useEffect(() => {
     reload();
@@ -58,7 +136,7 @@ export function useFollowUp(conversationId: string): { followUp: FollowUpState |
     if (event.type === "reload") reload();
     else if (event.type === "followup.updated" && event.conversationId === conversationId) reload();
   });
-  return { followUp, reload };
+  return { followUp, reload, anticipo, silencio, ...acciones };
 }
 
 // ── Formato ──────────────────────────────────────────────────────────────────
@@ -131,7 +209,6 @@ function pillText(f: FollowUpView): string {
   return f.dueAt ? whenLabel(f.dueAt) : pillPrefix(f);
 }
 
-export type RobotFace = "normal" | "dormido" | "cancelado";
 const FACE_SRC: Record<RobotFace, string> = { normal: "/emoji/robot.svg", dormido: "/emoji/robot-dormido.svg", cancelado: "/emoji/robot-cancelado.svg" };
 
 /** El robot del seguimiento (imagen propia: no existe emoji de robot con ojos en X ni dormido). */
@@ -146,61 +223,137 @@ function faceOf(f: FollowUpState): RobotFace {
   return f.modo === "sugerido" && !f.autoAprobado ? "dormido" : "normal";
 }
 
+const TONO_CANCELADO = "border-muted-foreground/70 bg-background text-muted-foreground";
+
+function toneOf(f: FollowUpState): string {
+  if (f.estado === "dormido") return "border-muted-foreground/40 bg-background text-muted-foreground";
+  if (f.estado === "baja") return "border-red-600 bg-red-50 text-red-800 dark:bg-red-500/15 dark:text-red-200";
+  if (f.estado === "cancelado") return TONO_CANCELADO;
+  if (f.ensayo) return "border-dashed border-muted-foreground/60 bg-muted text-muted-foreground";
+  if (f.modo === "sugerido" && !f.autoAprobado) return "border-amber-500 bg-amber-50 text-amber-900 dark:bg-amber-500/15 dark:text-amber-200";
+  return "border-brand-navy bg-brand-navy/10 text-brand-navy dark:text-sky-300";
+}
+
+// «Cancelado» y el robot dormido van sin palabra, solo la carita (7-oct-2026, pedido del dueño); su ventana lo explica.
+function labelOf(f: FollowUpState): string | null {
+  if (f.estado === "baja") return "Se dio de baja";
+  return f.estado === "activo" ? pillText(f) : null;
+}
+
+function titleOf(f: FollowUpState): string {
+  if (f.estado === "dormido") return `Seguimiento del Agente IA · dormido: ${f.razon}`;
+  if (f.estado === "baja") return "Seguimiento del Agente IA · el cliente se dio de baja de las promociones de WhatsApp";
+  if (f.estado === "cancelado") return "Seguimientos cancelados en este chat · se reactivan desde aquí";
+  return `Seguimiento del Agente IA · ${f.casoLabel} · ${pillPrefix(f)}${f.status === "esperando" ? " · esperando respuesta" : f.dueAt ? ` · ${whenLabel(f.dueAt)}` : ""}`;
+}
+
+function fotoDe(f: FollowUpState): FotoPildora {
+  if (f.estado !== "activo") return { estado: f.estado, id: null, dueAt: null, enviados: 0, ultimoSalio: false, cara: faceOf(f), etiqueta: labelOf(f), tono: toneOf(f) };
+  const ultimo = f.intentos.at(-1);
+  const ultimoSalio = !!ultimo && !ultimo.error && !ultimo.ensayo;
+  return { estado: "activo", id: f.id, dueAt: f.dueAt, enviados: f.intentos.length, ultimoSalio, cara: faceOf(f), etiqueta: labelOf(f), tono: toneOf(f) };
+}
+
+/** Cancelar y Apagar: la píldora queda así (la misma foto que dará el servidor). */
+const FOTO_CANCELADO: FotoPildora = { estado: "cancelado", id: null, dueAt: null, enviados: 0, ultimoSalio: false, cara: "cancelado", etiqueta: null, tono: TONO_CANCELADO };
+
+/** La escena que toca jugar: solo cuando la píldora CAMBIA a la vista (al abrir el chat no se juega; al cambiar de
+ * chat la píldora se vuelve a montar). Las reglas están en robot-escena-cuando.ts; aquí van los relojes: el cambio de
+ * color, el final de la escena y, en Reactivar, cuándo pasan los golpes a su final (nunca antes de ESCENA_MS). */
+function useRobotEscena(entrada: EntradaPildora): EscenaEnCurso | null {
+  const clave = JSON.stringify(entrada);
+  const [antes, setAntes] = useState({ clave, entrada });
+  const [enCurso, setEnCurso] = useState<EscenaEnCurso | null>(null);
+  if (antes.clave !== clave) {
+    setAntes({ clave, entrada });
+    const nueva = siguienteEscena(antes.entrada, entrada, enCurso);
+    if (nueva !== enCurso) setEnCurso(nueva);
+  }
+  const escena = enCurso?.escena;
+  const n = enCurso?.n;
+  const siguiente = enCurso?.siguiente ?? null;
+  const desde = useRef(0);
+  useEffect(() => {
+    if (n !== undefined) desde.current = Date.now();
+  }, [n]);
+  useEffect(() => {
+    if (!escena || n === undefined) return;
+    const timers: number[] = [];
+    const despues = (ms: number, cambio: (e: EscenaEnCurso) => EscenaEnCurso | null) =>
+      timers.push(window.setTimeout(() => setEnCurso((e) => (e && e.n === n ? cambio(e) : e)), Math.max(0, ms)));
+    if (escena === "reparacion-golpes") {
+      if (siguiente) despues(desde.current + ESCENA_MS[escena] - Date.now(), finDeGolpes);
+      else despues(GOLPES_ESPERA_MAX_MS, () => null);
+    } else {
+      despues(ESCENA_MS[escena], () => null);
+      const tono = ESCENA_TONO_MS[escena];
+      if (tono !== undefined) despues(tono, (e) => ({ ...e, tonoAntes: null }));
+    }
+    return () => timers.forEach((t) => window.clearTimeout(t));
+  }, [escena, n, siguiente]);
+  return enCurso;
+}
+
+/** De los golpes al final de Reactivar la píldora puede cambiar de forma (llega la hora): el robot se desliza a su
+ * lugar en vez de brincar. */
+function useDeslizarRobot(boton: RefObject<HTMLButtonElement | null>, escena: Escena | undefined) {
+  const antes = useRef<{ x: number; escena: Escena | undefined } | null>(null);
+  useLayoutEffect(() => {
+    const robot = boton.current?.firstElementChild;
+    if (!robot) return;
+    const x = robot.getBoundingClientRect().left;
+    const previo = antes.current;
+    antes.current = { x, escena };
+    if (previo?.escena !== "reparacion-golpes" || !escena || escena === "reparacion-golpes") return;
+    const dx = previo.x - x;
+    if (Math.abs(dx) < 1 || window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
+    robot.animate([{ transform: `translateX(${dx}px)` }, { transform: "none" }], { duration: 260, easing: "ease-out" });
+  });
+}
+
 // ── Píldora ──────────────────────────────────────────────────────────────────
 
-export function FollowUpPill({ followUp, open, onToggle, className = "" }: { followUp: FollowUpState; open: boolean; onToggle: () => void; className?: string }) {
-  const f = followUp;
-  if (f.estado === "dormido") {
-    const title = `Seguimiento del Agente IA · dormido: ${f.razon}`;
-    return (
-      <button
-        type="button"
-        onClick={onToggle}
-        aria-expanded={open}
-        aria-label={title}
-        title={title}
-        data-testid="followup-pill"
-        data-estado="dormido"
-        // px-6: sin palabra conserva su tamaño y el robot queda en medio (junto a «Enviar plantilla»); con la ventana
-        // abierta la Caja le da el ancho de ⚡ 📄 📎 (min-w-full) y el margen no estorba.
-        className={`h-5 min-w-0 cursor-pointer items-center justify-center gap-1 rounded-full border border-muted-foreground/40 bg-background px-6 text-[11px] leading-none whitespace-nowrap text-muted-foreground transition-colors select-none ${open ? "ring-2 ring-brand-navy/30" : ""} ${className}`}
-      >
-        {/* Solo la carita (7-oct-2026, pedido del dueño): qué pasa lo dicen el robot dormido y su ventana. */}
-        <RobotIcon face="dormido" />
-      </button>
-    );
-  }
-  const tone =
-    f.estado === "baja"
-      ? "border-red-600 bg-red-50 text-red-800 dark:bg-red-500/15 dark:text-red-200"
-      : f.estado === "cancelado"
-        ? "border-muted-foreground/70 bg-background text-muted-foreground"
-        : f.ensayo
-          ? "border-dashed border-muted-foreground/60 bg-muted text-muted-foreground"
-          : f.modo === "sugerido" && !f.autoAprobado
-            ? "border-amber-500 bg-amber-50 text-amber-900 dark:bg-amber-500/15 dark:text-amber-200"
-            : "border-brand-navy bg-brand-navy/10 text-brand-navy dark:text-sky-300";
-  // «Cancelado» va sin palabra, solo el robot con ojos en X (7-oct-2026, pedido del dueño); su ventana lo explica.
-  const label = f.estado === "baja" ? "Se dio de baja" : f.estado === "cancelado" ? null : pillText(f);
-  const title =
-    f.estado === "baja"
-      ? "Seguimiento del Agente IA · el cliente se dio de baja de las promociones de WhatsApp"
-      : f.estado === "cancelado"
-        ? "Seguimientos cancelados en este chat · se reactivan desde aquí"
-        : `Seguimiento del Agente IA · ${f.casoLabel} · ${pillPrefix(f)}${f.status === "esperando" ? " · esperando respuesta" : f.dueAt ? ` · ${whenLabel(f.dueAt)}` : ""}`;
+export function FollowUpPill({
+  followUp,
+  anticipo = null,
+  silencio = 0,
+  open,
+  onToggle,
+  className = "",
+}: {
+  followUp: FollowUpState;
+  /** Lo que un botón de la ventana anticipó (useFollowUp): la escena arranca al presionar. */
+  anticipo?: Anticipo | null;
+  silencio?: number;
+  open: boolean;
+  onToggle: () => void;
+  className?: string;
+}) {
+  const foto = anticipo && "foto" in anticipo ? anticipo.foto : fotoDe(followUp);
+  const enCurso = useRobotEscena({ foto, reparando: anticipo !== null && "reparando" in anticipo, silencio });
+  const vista = vistaDe(foto, enCurso);
+  const boton = useRef<HTMLButtonElement>(null);
+  useDeslizarRobot(boton, enCurso?.escena);
+  const title = titleOf(followUp);
+  const label = vista.etiqueta;
   return (
     <button
+      ref={boton}
       type="button"
       onClick={onToggle}
       aria-expanded={open}
       aria-label={title}
       title={title}
       data-testid="followup-pill"
-      data-estado={f.estado}
-      className={`h-5 min-w-0 cursor-pointer items-center justify-center gap-1 rounded-full border text-[11px] leading-none whitespace-nowrap transition-colors select-none ${label ? "px-2" : "px-6"} ${tone} ${open ? "ring-2 ring-brand-navy/30" : ""} ${className}`}
+      data-estado={vista.estado}
+      data-escena={enCurso?.escena}
+      // px-6 sin palabra (Cancelado y dormido): conserva su tamaño y el robot queda en medio (junto a «Enviar
+      // plantilla»); con la ventana abierta la Caja le da el ancho de ⚡ 📄 📎 (min-w-full) y el margen no estorba.
+      // overflow-hidden mientras corre una escena: lo que entra (pistola, llave, despertador, avioncito) no se sale.
+      className={`h-5 min-w-0 cursor-pointer items-center justify-center gap-1 rounded-full border text-[11px] leading-none whitespace-nowrap transition-colors select-none ${label ? "px-2" : "px-6"} ${enCurso ? "overflow-hidden" : ""} ${vista.tono} ${open ? "ring-2 ring-brand-navy/30" : ""} ${className}`}
     >
-      <RobotIcon face={faceOf(f)} />
-      {label && <span className="truncate">{label}</span>}
+      {enCurso ? <RobotEscena key={enCurso.n} escena={enCurso.escena} /> : <RobotIcon face={vista.cara} />}
+      {label && (enCurso ? <EtiquetaEscena key={enCurso.n} antes={enCurso.etiquetaAntes} ahora={label} /> : <span className="truncate">{label}</span>)}
     </button>
   );
 }
@@ -253,21 +406,28 @@ function PanelHeader({ followUp, title, onClose }: { followUp: FollowUpState; ti
   );
 }
 
-function OffPanel({ off, onClose, onChanged }: { off: FollowUpOff; onClose: () => void; onChanged: () => void }) {
+/** Lo que la ventana le pasa a la píldora: anticipar (la escena arranca al presionar), confirmar o regresar. */
+type PanelProps = { onClose: () => void; onChanged: (estado?: FollowUpState | null) => void; onAnticipar: (anticipo: Anticipo) => void; onRevertir: () => void };
+
+function OffPanel({ off, onClose, onChanged, onAnticipar, onRevertir }: { off: FollowUpOff } & PanelProps) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const run = async (action: () => Promise<{ ok: true } | { ok: false; message: string }>) => {
+  const run = async (action: () => Promise<FollowUpActionResult>, anticipo?: Anticipo) => {
     setBusy(true);
     setError(null);
+    if (anticipo) onAnticipar(anticipo);
     try {
       const r = await action();
-      if (!r.ok) setError(r.message);
-      else {
-        onChanged();
+      if (!r.ok) {
+        setError(r.message);
+        if (anticipo) onRevertir();
+      } else {
+        onChanged(r.estado);
         onClose();
       }
     } catch {
       setError("No se pudo guardar. Inténtalo otra vez.");
+      if (anticipo) onRevertir();
     } finally {
       setBusy(false);
     }
@@ -307,7 +467,7 @@ function OffPanel({ off, onClose, onChanged }: { off: FollowUpOff; onClose: () =
               </button>
             </>
           ) : (
-            <button type="button" disabled={busy} onClick={() => void run(() => reactivarSeguimientos(off.conversationId))} className={`${button} border-brand-navy hover:bg-brand-navy/10`}>
+            <button type="button" disabled={busy} onClick={() => void run(() => reactivarSeguimientos(off.conversationId), { reparando: true })} className={`${button} border-brand-navy hover:bg-brand-navy/10`}>
               Reactivar seguimientos
             </button>
           )}
@@ -320,14 +480,14 @@ function OffPanel({ off, onClose, onChanged }: { off: FollowUpOff; onClose: () =
 
 // ── Burbuja ──────────────────────────────────────────────────────────────────
 
-export function FollowUpPanel({ followUp, onClose, onChanged }: { followUp: FollowUpState; onClose: () => void; onChanged: () => void }) {
-  if (followUp.estado === "dormido") return <DormidoPanel dormido={followUp} onClose={onClose} onChanged={onChanged} />;
-  if (followUp.estado !== "activo") return <OffPanel off={followUp} onClose={onClose} onChanged={onChanged} />;
-  return <ActivePanel followUp={followUp} onClose={onClose} onChanged={onChanged} />;
+export function FollowUpPanel({ followUp, ...props }: { followUp: FollowUpState } & PanelProps) {
+  if (followUp.estado === "dormido") return <DormidoPanel dormido={followUp} {...props} />;
+  if (followUp.estado !== "activo") return <OffPanel off={followUp} {...props} />;
+  return <ActivePanel followUp={followUp} {...props} />;
 }
 
 /** Sin nada que seguir: por qué, y «Apagar seguimientos en este chat» (queda «Cancelado» hasta que alguien los reactive). */
-function DormidoPanel({ dormido, onClose, onChanged }: { dormido: FollowUpDormido; onClose: () => void; onChanged: () => void }) {
+function DormidoPanel({ dormido, onClose, onChanged, onAnticipar, onRevertir }: { dormido: FollowUpDormido } & PanelProps) {
   const [confirm, setConfirm] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -335,12 +495,16 @@ function DormidoPanel({ dormido, onClose, onChanged }: { dormido: FollowUpDormid
   const apagar = async () => {
     setBusy(true);
     setError(null);
+    onAnticipar({ foto: FOTO_CANCELADO });
     try {
       const r = await apagarSeguimientos(dormido.conversationId);
-      if (!r.ok) setError(r.message);
-      else onChanged();
+      if (!r.ok) {
+        setError(r.message);
+        onRevertir();
+      } else onChanged();
     } catch {
       setError("No se pudo guardar. Inténtalo otra vez.");
+      onRevertir();
     } finally {
       setBusy(false);
     }
@@ -397,7 +561,7 @@ function sentLine(a: FollowUpView["intentos"][number], index: number): { ok: boo
   return { ok: true, text: `${what}: salió ${onDate(a.at)}${a.modo === "sugerido" ? " (sugerido)" : ""}` };
 }
 
-function ActivePanel({ followUp, onClose, onChanged }: { followUp: FollowUpView; onClose: () => void; onChanged: () => void }) {
+function ActivePanel({ followUp, onClose, onChanged, onAnticipar, onRevertir }: { followUp: FollowUpView } & PanelProps) {
   const [showMessage, setShowMessage] = useState(false);
   const [editing, setEditing] = useState(false);
   const [confirmCancel, setConfirmCancel] = useState(false);
@@ -412,21 +576,27 @@ function ActivePanel({ followUp, onClose, onChanged }: { followUp: FollowUpView;
   const programado = f.status === "programado";
   const sent = f.intentos.length;
 
-  const run = async (action: () => Promise<{ ok: true } | { ok: false; message: string }>) => {
+  const run = async (action: () => Promise<FollowUpActionResult>, anticipo?: Anticipo) => {
     setBusy(true);
     setError(null);
+    if (anticipo) onAnticipar(anticipo);
     try {
       const result = await action();
-      if (!result.ok) setError(result.message);
-      else onChanged();
+      if (!result.ok) {
+        setError(result.message);
+        if (anticipo) onRevertir();
+      } else onChanged();
       return result.ok;
     } catch {
       setError("No se pudo guardar. Inténtalo otra vez.");
+      if (anticipo) onRevertir();
       return false;
     } finally {
       setBusy(false);
     }
   };
+  // Lo que quedará en la píldora, para que la escena arranque al presionar (el servidor solo confirma).
+  const nuevaHora = (valor: string): Anticipo => ({ foto: fotoDe({ ...f, dueAt: localToInstant(valor)?.toISOString() ?? f.dueAt, dueSetBy: "vendedor" }) });
 
   const button = "rounded-md border px-2.5 py-1 text-xs font-medium transition-colors hover:bg-brand-navy/10 disabled:opacity-50";
   return (
@@ -491,7 +661,7 @@ function ActivePanel({ followUp, onClose, onChanged }: { followUp: FollowUpView;
             <button
               type="button"
               disabled={busy || !local}
-              onClick={() => void run(() => rescheduleFollowUp(f.id, local)).then((ok) => ok && setEditing(false))}
+              onClick={() => void run(() => rescheduleFollowUp(f.id, local), nuevaHora(local)).then((ok) => ok && setEditing(false))}
               className={`${button} border-brand-navy`}
             >
               Guardar
@@ -502,7 +672,7 @@ function ActivePanel({ followUp, onClose, onChanged }: { followUp: FollowUpView;
         {confirmCancel ? (
           <div className="flex flex-wrap items-center gap-2 rounded-md border border-red-300 bg-red-50 px-2 py-1.5 text-xs dark:border-red-500/40 dark:bg-red-500/10">
             <span>¿Cancelar los seguimientos de este chat? Se cancelan los intentos que faltan y el Agente IA no arma otros aquí hasta que alguien los reactive.</span>
-            <button type="button" disabled={busy} onClick={() => void run(() => cancelFollowUp(f.id)).then((ok) => ok && onClose())} className={`${button} border-red-400 text-red-700 dark:text-red-300`}>
+            <button type="button" disabled={busy} onClick={() => void run(() => cancelFollowUp(f.id), { foto: FOTO_CANCELADO }).then((ok) => ok && onClose())} className={`${button} border-red-400 text-red-700 dark:text-red-300`}>
               Sí, cancelar
             </button>
             <button type="button" onClick={() => setConfirmCancel(false)} className={button}>
@@ -533,7 +703,7 @@ function ActivePanel({ followUp, onClose, onChanged }: { followUp: FollowUpView;
               </a>
             )}
             {programado && f.modo === "sugerido" && !f.autoAprobado && (
-              <button type="button" disabled={busy} onClick={() => void run(() => approveSuggestedFollowUp(f.id))} className={`${button} border-amber-500`}>
+              <button type="button" disabled={busy} onClick={() => void run(() => approveSuggestedFollowUp(f.id), { foto: fotoDe({ ...f, autoAprobado: true }) })} className={`${button} border-amber-500`}>
                 Que salga solo
               </button>
             )}
