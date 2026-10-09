@@ -7,11 +7,11 @@
 // Nunca frena un mensaje: corre en el worker y reintenta con espera.
 import { Readable } from "node:stream";
 import type { ReadableStream as WebReadableStream } from "node:stream/web";
-import { isIP } from "node:net";
 import { and, eq, sql } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { metaAds } from "@/lib/db/schema";
 import type { ObjectStorage } from "@/lib/storage/s3";
+import { resolveHost, safeFetch, safeUrl, UnsafeUrlError, type ResolveHost } from "@/lib/net/safe-fetch";
 
 /** Lado mayor de la miniatura (px). */
 export const THUMB_MAX_SIDE = 320;
@@ -33,26 +33,15 @@ export class ThumbnailError extends Error {
 }
 
 /** Solo https a un host con nombre (nunca IP literal, localhost ni red interna). */
-export function safeMediaUrl(value: string): URL | null {
-  let url: URL;
-  try {
-    url = new URL(value);
-  } catch {
-    return null;
-  }
-  const host = url.hostname.replace(/^\[|\]$/g, "").toLowerCase();
-  if (url.protocol !== "https:" || isIP(host) || host === "localhost" || !host.includes(".")) return null;
-  if (host.endsWith(".internal") || host.endsWith(".local") || host.endsWith(".localhost")) return null;
-  return url;
-}
+export const safeMediaUrl = (value: string): URL | null => safeUrl(value);
 
-async function download(url: string, fetchImpl: typeof fetch): Promise<Buffer> {
-  const target = safeMediaUrl(url);
-  if (!target) throw new ThumbnailError("link no permitido (solo https a un dominio público)", 400);
+async function download(url: string, fetchImpl: typeof fetch, resolve: ResolveHost): Promise<Buffer> {
   let res: Response;
   try {
-    res = await fetchImpl(target, { redirect: "follow", signal: AbortSignal.timeout(DOWNLOAD_TIMEOUT_MS) });
+    // Seguridad B (9-oct-2026): cada salto (también las redirecciones) solo a un dominio público.
+    res = await safeFetch(url, { fetchImpl, resolve, signal: AbortSignal.timeout(DOWNLOAD_TIMEOUT_MS) });
   } catch (error) {
+    if (error instanceof UnsafeUrlError) throw new ThumbnailError(`link no permitido: ${error.message}`, 400);
     throw new ThumbnailError(`sin respuesta: ${error instanceof Error ? error.message : String(error)}`);
   }
   if (!res.ok) {
@@ -121,6 +110,7 @@ export async function storeAdThumbnail(
   adId: string,
   url?: string,
   fetchImpl: typeof fetch = fetch,
+  resolve: ResolveHost = resolveHost,
 ): Promise<ThumbResult> {
   const where = and(eq(metaAds.organizationId, organizationId), eq(metaAds.adId, adId));
   const [row] = await db
@@ -134,7 +124,7 @@ export async function storeAdThumbnail(
   if (!source) return "sin_link";
   const fromCreative = !url;
   try {
-    const jpeg = await toThumbnailJpeg(await download(source, fetchImpl));
+    const jpeg = await toThumbnailJpeg(await download(source, fetchImpl, resolve));
     const key = thumbnailKeyFor(organizationId, adId);
     await storage.putStream(key, Readable.from([jpeg]), "image/jpeg");
     // Solo la primera gana (dos clics a la vez escriben la misma llave).

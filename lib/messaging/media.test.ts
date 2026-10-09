@@ -19,9 +19,11 @@ describe("storageKeyFor", () => {
 });
 
 describe("ZernioProvider.fetchMedia", () => {
+  // DNS de prueba: todo resuelve a una IP pública (sin red real).
+  const publicDns = async () => ["104.21.1.1"];
   it("manda el Bearer SOLO al host de la API de Zernio", async () => {
     const fetchImpl = vi.fn(async () => new Response("x")) as unknown as typeof fetch;
-    const p = new ZernioProvider({ apiKey: "sk_secreta", webhookSecret: "s" }, fetchImpl);
+    const p = new ZernioProvider({ apiKey: "sk_secreta", webhookSecret: "s" }, fetchImpl, publicDns);
     await p.fetchMedia("https://zernio.com/api/v1/whatsapp/media/123?accountId=a");
     await p.fetchMedia("https://evil.example.com/robar");
     const calls = (fetchImpl as unknown as ReturnType<typeof vi.fn>).mock.calls;
@@ -31,6 +33,13 @@ describe("ZernioProvider.fetchMedia", () => {
 
   it("rechaza URLs que no son https", async () => {
     const p = new ZernioProvider({ apiKey: "k", webhookSecret: "s" }, vi.fn() as unknown as typeof fetch);
-    await expect(p.fetchMedia("http://zernio.com/api/v1/whatsapp/media/1")).rejects.toThrow(/https/);
+    await expect(p.fetchMedia("http://zernio.com/api/v1/whatsapp/media/1")).rejects.toThrow(/no es segura/);
+  });
+
+  it("no descarga de un dominio que apunta a la red interna (seguridad B)", async () => {
+    const fetchImpl = vi.fn() as unknown as typeof fetch;
+    const p = new ZernioProvider({ apiKey: "k", webhookSecret: "s" }, fetchImpl, async () => ["10.0.0.7"]);
+    await expect(p.fetchMedia("https://zernio.com/api/v1/whatsapp/media/1")).rejects.toThrow(/dirección interna/);
+    expect(fetchImpl).not.toHaveBeenCalled();
   });
 });

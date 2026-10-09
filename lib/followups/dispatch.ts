@@ -5,6 +5,7 @@
 // La clave de idempotencia es el id del mensaje, que el barrido aparta ANTES de mandar.
 import { and, eq } from "drizzle-orm";
 import { db } from "@/lib/db";
+import { findInternalText } from "@/lib/ai/runtime/internal-text";
 import { conversations, messages, templates } from "@/lib/db/schema";
 import { plainSendReason } from "@/lib/messaging/send-reasons";
 import type { MessagingProvider } from "@/lib/messaging/provider";
@@ -33,12 +34,17 @@ export async function sendFollowUpText(
   provider: MessagingProvider,
   input: { organizationId: string; conversationId: string; messageId: string; borrador: string; zone: string; now: Date; mark: FollowUpMark },
 ): Promise<DispatchResult> {
+  const text = followUpText(input.borrador, input.now, input.zone);
+  // Mismo último candado que las respuestas del Agente IA (sendAgentText; seguridad B, 9-oct-2026):
+  // un borrador con una nota interna («[tool call] …») nunca sale; el error queda en el intento.
+  const internal = findInternalText([text]);
+  if (internal) return { ok: false, error: `el borrador traía una nota interna (${internal.reason}) y no se envió`, code: null };
   try {
     await sendTextMessage(provider, {
       organizationId: input.organizationId,
       conversationId: input.conversationId,
       messageId: input.messageId,
-      text: followUpText(input.borrador, input.now, input.zone),
+      text,
       source: "ai_agent",
       sentByUserId: null,
       markRead: false,
