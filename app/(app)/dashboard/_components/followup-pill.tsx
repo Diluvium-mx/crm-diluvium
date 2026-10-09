@@ -18,8 +18,9 @@
 // Siempre está (7-oct-2026, decisión del dueño): sin nada que seguir sale el robot dormido en gris («dormido») y su
 // ventana dice por qué; «esperando» se queda mientras el último mensaje sea nuestro aunque ya no queden intentos.
 // Consultas: al abrir el chat, con cada aviso "followup.updated" de este chat y al volver a la pestaña.
-// Escenas (9-oct-2026, prototipo aprobado por el dueño): al pasar a «Cancelado» con el chat abierto, la píldora juega
-// «disparo» (robot-escena.tsx). Lo ve todo el que tenga el chat abierto, vendedor o admin, lo haya cancelado él u otro.
+// Escenas (9-oct-2026, prototipos aprobados por el dueño): cuando la píldora cambia con el chat abierto juega una
+// animación corta (disparo, reparación, reloj, despertador, avioncito; robot-escena-cuando.ts y robot-escena.tsx). Lo
+// ve todo el que tenga el chat abierto, vendedor o admin, lo haya hecho él u otro.
 import { useCallback, useEffect, useRef, useState } from "react";
 import { apagarSeguimientos, approveSuggestedFollowUp, cancelFollowUp, getFollowUp, quitarSinSeguimientos, reactivarSeguimientos, rescheduleFollowUp } from "@/lib/actions/seguimientos";
 import type { FollowUpDormido, FollowUpOff, FollowUpState, FollowUpView } from "@/lib/followups/view";
@@ -29,7 +30,8 @@ import { instantToLocal, SCHEDULE_TIME_ZONE } from "@/lib/scheduled/rules";
 import { CloseX } from "@/components/ui/close-x";
 import { useInboxStream } from "./use-inbox-stream";
 import { DateTimePicker } from "@/components/ui/date-time-picker";
-import { ESCENA_MS, RobotEscena, type Escena } from "./robot-escena";
+import { EtiquetaEscena, RobotEscena } from "./robot-escena";
+import { elegirEscena, ESCENA_MS, ESCENA_TONO_MS, type Escena, type FotoPildora, type RobotFace } from "./robot-escena-cuando";
 
 // ── Datos ────────────────────────────────────────────────────────────────────
 
@@ -134,7 +136,6 @@ function pillText(f: FollowUpView): string {
   return f.dueAt ? whenLabel(f.dueAt) : pillPrefix(f);
 }
 
-export type RobotFace = "normal" | "dormido" | "cancelado";
 const FACE_SRC: Record<RobotFace, string> = { normal: "/emoji/robot.svg", dormido: "/emoji/robot-dormido.svg", cancelado: "/emoji/robot-cancelado.svg" };
 
 /** El robot del seguimiento (imagen propia: no existe emoji de robot con ojos en X ni dormido). */
@@ -149,28 +150,63 @@ function faceOf(f: FollowUpState): RobotFace {
   return f.modo === "sugerido" && !f.autoAprobado ? "dormido" : "normal";
 }
 
-/** La escena que toca jugar: solo cuando el estado CAMBIA con la píldora a la vista (al abrir el chat no se juega;
- * al cambiar de chat la píldora se vuelve a montar). Se quita sola al terminar. */
-function useRobotEscena(estado: FollowUpState["estado"]): Escena | null {
-  const [antes, setAntes] = useState(estado);
-  const [escena, setEscena] = useState<Escena | null>(null);
-  if (antes !== estado) {
-    setAntes(estado);
-    setEscena(estado === "cancelado" ? "disparo" : null);
+function toneOf(f: FollowUpState): string {
+  if (f.estado === "dormido") return "border-muted-foreground/40 bg-background text-muted-foreground";
+  if (f.estado === "baja") return "border-red-600 bg-red-50 text-red-800 dark:bg-red-500/15 dark:text-red-200";
+  if (f.estado === "cancelado") return "border-muted-foreground/70 bg-background text-muted-foreground";
+  if (f.ensayo) return "border-dashed border-muted-foreground/60 bg-muted text-muted-foreground";
+  if (f.modo === "sugerido" && !f.autoAprobado) return "border-amber-500 bg-amber-50 text-amber-900 dark:bg-amber-500/15 dark:text-amber-200";
+  return "border-brand-navy bg-brand-navy/10 text-brand-navy dark:text-sky-300";
+}
+
+// «Cancelado» y el robot dormido van sin palabra, solo la carita (7-oct-2026, pedido del dueño); su ventana lo explica.
+function labelOf(f: FollowUpState): string | null {
+  if (f.estado === "baja") return "Se dio de baja";
+  return f.estado === "activo" ? pillText(f) : null;
+}
+
+function fotoDe(f: FollowUpState): FotoPildora {
+  const base = { cara: faceOf(f), etiqueta: labelOf(f), tono: toneOf(f) };
+  if (f.estado !== "activo") return { ...base, estado: f.estado, id: null, dueAt: null, enviados: 0, ultimoSalio: false };
+  const ultimo = f.intentos.at(-1);
+  return { ...base, estado: "activo", id: f.id, dueAt: f.dueAt, enviados: f.intentos.length, ultimoSalio: !!ultimo && !ultimo.error && !ultimo.ensayo };
+}
+
+type EscenaEnCurso = { escena: Escena; n: number; etiquetaAntes: string | null; tonoAntes: string | null };
+
+/** La escena que toca jugar: solo cuando la píldora CAMBIA a la vista (al abrir el chat no se juega; al cambiar de
+ * chat la píldora se vuelve a montar). Mientras corre conserva el color de antes hasta ESCENA_TONO_MS y se quita sola
+ * al terminar. */
+function useRobotEscena(foto: FotoPildora): EscenaEnCurso | null {
+  const clave = JSON.stringify(foto);
+  const [antes, setAntes] = useState({ clave, foto });
+  const [enCurso, setEnCurso] = useState<EscenaEnCurso | null>(null);
+  if (antes.clave !== clave) {
+    setAntes({ clave, foto });
+    const escena = elegirEscena(antes.foto, foto);
+    if (escena) setEnCurso({ escena, n: (enCurso?.n ?? 0) + 1, etiquetaAntes: antes.foto.etiqueta, tonoAntes: ESCENA_TONO_MS[escena] ? antes.foto.tono : null });
+    else if (antes.foto.estado !== foto.estado) setEnCurso(null);
   }
+  const escena = enCurso?.escena;
+  const n = enCurso?.n;
   useEffect(() => {
     if (!escena) return;
-    const timer = window.setTimeout(() => setEscena(null), ESCENA_MS[escena]);
-    return () => window.clearTimeout(timer);
-  }, [escena]);
-  return escena;
+    const termina = window.setTimeout(() => setEnCurso((e) => (e?.n === n ? null : e)), ESCENA_MS[escena]);
+    const tonoMs = ESCENA_TONO_MS[escena];
+    const tono = tonoMs === undefined ? null : window.setTimeout(() => setEnCurso((e) => (e && e.n === n ? { ...e, tonoAntes: null } : e)), tonoMs);
+    return () => {
+      window.clearTimeout(termina);
+      if (tono !== null) window.clearTimeout(tono);
+    };
+  }, [escena, n]);
+  return enCurso;
 }
 
 // ── Píldora ──────────────────────────────────────────────────────────────────
 
 export function FollowUpPill({ followUp, open, onToggle, className = "" }: { followUp: FollowUpState; open: boolean; onToggle: () => void; className?: string }) {
   const f = followUp;
-  const escena = useRobotEscena(f.estado);
+  const enCurso = useRobotEscena(fotoDe(f));
   if (f.estado === "dormido") {
     const title = `Seguimiento del Agente IA · dormido: ${f.razon}`;
     return (
@@ -182,27 +218,17 @@ export function FollowUpPill({ followUp, open, onToggle, className = "" }: { fol
         title={title}
         data-testid="followup-pill"
         data-estado="dormido"
+        data-escena={enCurso?.escena}
         // px-6: sin palabra conserva su tamaño y el robot queda en medio (junto a «Enviar plantilla»); con la ventana
         // abierta la Caja le da el ancho de ⚡ 📄 📎 (min-w-full) y el margen no estorba.
-        className={`h-5 min-w-0 cursor-pointer items-center justify-center gap-1 rounded-full border border-muted-foreground/40 bg-background px-6 text-[11px] leading-none whitespace-nowrap text-muted-foreground transition-colors select-none ${open ? "ring-2 ring-brand-navy/30" : ""} ${className}`}
+        className={`h-5 min-w-0 cursor-pointer items-center justify-center gap-1 rounded-full border px-6 text-[11px] leading-none whitespace-nowrap transition-colors select-none ${enCurso ? "overflow-hidden" : ""} ${toneOf(f)} ${open ? "ring-2 ring-brand-navy/30" : ""} ${className}`}
       >
         {/* Solo la carita (7-oct-2026, pedido del dueño): qué pasa lo dicen el robot dormido y su ventana. */}
-        <RobotIcon face="dormido" />
+        {enCurso ? <RobotEscena key={enCurso.n} escena={enCurso.escena} /> : <RobotIcon face="dormido" />}
       </button>
     );
   }
-  const tone =
-    f.estado === "baja"
-      ? "border-red-600 bg-red-50 text-red-800 dark:bg-red-500/15 dark:text-red-200"
-      : f.estado === "cancelado"
-        ? "border-muted-foreground/70 bg-background text-muted-foreground"
-        : f.ensayo
-          ? "border-dashed border-muted-foreground/60 bg-muted text-muted-foreground"
-          : f.modo === "sugerido" && !f.autoAprobado
-            ? "border-amber-500 bg-amber-50 text-amber-900 dark:bg-amber-500/15 dark:text-amber-200"
-            : "border-brand-navy bg-brand-navy/10 text-brand-navy dark:text-sky-300";
-  // «Cancelado» va sin palabra, solo el robot con ojos en X (7-oct-2026, pedido del dueño); su ventana lo explica.
-  const label = f.estado === "baja" ? "Se dio de baja" : f.estado === "cancelado" ? null : pillText(f);
+  const label = labelOf(f);
   const title =
     f.estado === "baja"
       ? "Seguimiento del Agente IA · el cliente se dio de baja de las promociones de WhatsApp"
@@ -218,11 +244,12 @@ export function FollowUpPill({ followUp, open, onToggle, className = "" }: { fol
       title={title}
       data-testid="followup-pill"
       data-estado={f.estado}
-      // overflow-hidden mientras corre una escena: la pistola entra desde la orilla sin salirse de la píldora.
-      className={`h-5 min-w-0 cursor-pointer items-center justify-center gap-1 rounded-full border text-[11px] leading-none whitespace-nowrap transition-colors select-none ${label ? "px-2" : "px-6"} ${escena ? "overflow-hidden" : ""} ${tone} ${open ? "ring-2 ring-brand-navy/30" : ""} ${className}`}
+      data-escena={enCurso?.escena}
+      // overflow-hidden mientras corre una escena: lo que entra (pistola, llave, despertador, avioncito) no se sale.
+      className={`h-5 min-w-0 cursor-pointer items-center justify-center gap-1 rounded-full border text-[11px] leading-none whitespace-nowrap transition-colors select-none ${label ? "px-2" : "px-6"} ${enCurso ? "overflow-hidden" : ""} ${enCurso?.tonoAntes ?? toneOf(f)} ${open ? "ring-2 ring-brand-navy/30" : ""} ${className}`}
     >
-      {escena ? <RobotEscena escena={escena} /> : <RobotIcon face={faceOf(f)} />}
-      {label && <span className="truncate">{label}</span>}
+      {enCurso ? <RobotEscena key={enCurso.n} escena={enCurso.escena} /> : <RobotIcon face={faceOf(f)} />}
+      {label && (enCurso ? <EtiquetaEscena key={enCurso.n} antes={enCurso.etiquetaAntes} ahora={label} /> : <span className="truncate">{label}</span>)}
     </button>
   );
 }

@@ -691,21 +691,28 @@ general de calendario) quedan descartadas.
 
 ## 19. Escenas del robot en la píldora (9-oct-2026)
 
-Pedido del dueño: animaciones cortas y graciosas **dentro** de la píldora cuando cambia su estado. Se aprueban con un
-prototipo (tamaño real y ampliado) antes de construirlas.
+Pedido del dueño: animaciones cortas y graciosas **dentro** de la píldora cuando cambia su estado. Se aprobaron con
+prototipos (tamaño real y ampliado) antes de construirlas; el dueño aprobó las cinco tal cual.
 
-- **Disparo** (pasa a Cancelado; prototipo aprobado tal cual, EN LA RAMA `feature/robot-disparo`): sale una pistola por la
-  izquierda y le dispara; el robot se sacude y hace cortocircuito (chispas, la antena parpadea, le brincan tres cables de
-  la cabeza), queda con ojos en X y la pistola gira como de vaquero y se regresa. 1.9 s; el último cuadro es idéntico a
-  `robot-cancelado.svg`. Sale con «Cancelar» y con «Apagar seguimientos en este chat».
-- **Quién la ve** (decisión del dueño): todo el que tenga el chat abierto cuando cambia el estado, vendedor o admin, lo haya
-  hecho él u otro. Al abrir un chat que ya estaba así no se juega. Con «reducir movimiento» se ve directo la carita final.
-- Código: `robot-escena.tsx` (solo dibujo, robot en SVG en línea), `useRobotEscena` en `followup-pill.tsx` (cuándo se
-  juega) y `app/globals.css` › «Robot del seguimiento» (tiempos). En chico los detalles finos casi no se ven; el dueño lo
-  aceptó así.
-- **Propuestas esperando OK** (prototipos del 9-oct): Reactivar seguimientos (llave inglesa, se reinicia), Cambiar hora
-  (ojos de reloj que giran y la hora cambia), Que salga solo (despertador) y, opcional, Salió el mensaje (avioncito de
-  papel). «Lo mando yo» no lleva escena: abre WhatsApp Web en otra pestaña y no se vería.
+| Escena | Cuándo | Qué se ve | Dura |
+|---|---|---|---|
+| **Disparo** | Pasa a Cancelado (Cancelar o Apagar seguimientos en este chat) | Pistola por la izquierda, cortocircuito, tres cables, ojos en X; la pistola gira y se va | 1.9 s |
+| **Llave inglesa** | Sale de Cancelado (Reactivar) | Entra por la derecha, dos golpes, «cargando» y abre los ojos y brinca; si queda sin seguimiento todavía (dormido o suspendido), bosteza y se duerme | 2.2 s |
+| **Reloj** | El mismo seguimiento cambia de hora con el robot despierto (Cambiar hora) | Ojos de reloj que giran; la hora de antes sube y la nueva llega desde abajo | 1.5 s |
+| **Despertador** | El mismo seguimiento deja de estar suspendido (Que salga solo) | Suena, el robot despierta, lo apaga y la píldora pasa de ámbar a azul | 2 s |
+| **Avioncito** | El mismo seguimiento tiene un mensaje más y sí salió | Lanza un avioncito de papel que cruza la píldora; llega la hora siguiente o «esperando» | 1.8 s |
+
+- **Quién la ve** (decisión del dueño): todo el que tenga el chat abierto cuando cambia, vendedor o admin, lo haya hecho
+  él u otro. Al abrir un chat no se juega ninguna. Con «reducir movimiento» se ve directo la carita final, que es la de
+  `public/emoji/` del estado nuevo.
+- **Sin escena:** «Lo mando yo» (abre WhatsApp Web en otra pestaña y no se vería); Cambiar hora con el robot dormido
+  (suspendido); un mensaje que falló o en ensayo; un seguimiento nuevo que arma el Agente IA; «Volver a darle seguimiento».
+- La llave entra por la **derecha** (el prototipo la traía por la izquierda): con la hora en la píldora el robot queda
+  pegado a la orilla izquierda y ahí no cabe; la hora se esconde mientras dura y aparece al final.
+- Código: `robot-escena-cuando.ts` (qué escena toca, con pruebas en `robot-escena-cuando.test.ts`), `robot-escena.tsx`
+  (solo dibujo, robot en SVG en línea), `useRobotEscena` en `followup-pill.tsx` (la juega, conserva el color de antes
+  hasta el cambio y la quita al terminar) y `app/globals.css` › «Robot del seguimiento» (tiempos; `--re-d` igual que
+  `ESCENA_MS`). En chico los detalles finos casi no se ven; el dueño lo aceptó así.
 
 ---
 
