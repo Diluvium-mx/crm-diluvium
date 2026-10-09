@@ -144,6 +144,10 @@ Reglas duras:
   `main` (despliega sola en producción). Ninguna migración, cambio de webhook ni trabajo del
   worker toca `production` sin haberse validado antes en `staging`. Detalle y chequeo de
   aislamiento: `docs/staging.md`.
+- **Rama que llega a `main` se cierra en el momento (regla del dueño, 9-oct-2026):** después del merge
+  con «OK MAIN» y el push, `npm run rama:cerrar -- <rama>` desde la copia principal: pone la etiqueta del
+  pase a producción `prod-AAAA-MM-DD-<rama>` y borra la rama en GitHub, en local y su worktree. En GitHub
+  solo quedan `main`, `staging` y las ramas en curso. Detalle: `docs/staging.md` › Al llegar a `main`.
 - Respaldos: `pg_dump` diario cifrado desde GitHub Actions (`.github/workflows/db-backup.yml`),
   con restore de prueba en cada corrida. Secrets en el environment `production-backup`
   (solo `main`), rol `backup_ro` de solo lectura y TLS con CA fijada. Restore: `docs/backups.md`.
@@ -488,6 +492,10 @@ Reglas de UI:
   elemento de cada pantalla). Todo cambio que toque la interfaz actualiza esa guía y su captura en
   `docs/mapa-crm/` **en el mismo commit**, conservando los números existentes; lo nuevo toma el
   siguiente número libre de su sección (nunca se renumera). Capturas solo con datos de ejemplo.
+  **Desde el 9-oct-2026 está partido:** `docs/mapa-crm.md` es solo el índice y cada sección vive en
+  `docs/mapa-crm/<número>-<nombre>.md` junto a sus capturas; se edita el archivo de la sección y todo lo
+  que la mencione (`grep -rn` en `docs/mapa-crm/`). Igual `docs/agente-ia.md`: índice por tema y fecha, y
+  cada tema en `docs/agente-ia/` (decisión nueva = archivo `AAAA-MM-DD-tema.md` + su fila en el índice).
 
 ---
 
