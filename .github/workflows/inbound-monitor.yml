@@ -31,7 +31,9 @@ env:
 
 jobs:
   check:
-    runs-on: ubuntu-latest
+    # Fija (9-oct-2026, seguridad D6): «ubuntu-latest» cambia de versión solo (a Ubuntu 26 el 19-oct)
+    # y podía romper la alarma sin aviso. Igual que db-backup y media-backup.
+    runs-on: ubuntu-24.04
     timeout-minutes: 5
     steps:
       - name: Consultar salud de la entrada
@@ -40,8 +42,10 @@ jobs:
           MONITOR_TOKEN: ${{ secrets.MONITOR_TOKEN }}
         run: |
           set +e
-          code=$(curl -sS -o body.json -w '%{http_code}' --max-time 30 \
-            -H "Authorization: Bearer ${MONITOR_TOKEN}" "$HEALTH_URL")
+          # El token va por la entrada estándar (-K -), no en los argumentos de curl: así no se
+          # ve en la lista de procesos del runner (seguridad D6, 9-oct-2026).
+          code=$(printf 'header = "Authorization: Bearer %s"\n' "$MONITOR_TOKEN" \
+            | curl -sS -K - -o body.json -w '%{http_code}' --max-time 30 "$HEALTH_URL")
           curl_exit=$?
           set -e
           if [ "$curl_exit" -ne 0 ]; then
