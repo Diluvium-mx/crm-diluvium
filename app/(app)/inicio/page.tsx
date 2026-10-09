@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { requireActiveMembership } from "@/lib/auth/active-organization";
 import { roleAllows } from "@/lib/auth/permissions";
 import { db } from "@/lib/db";
@@ -104,6 +105,12 @@ export default async function InicioPage({ searchParams }: PageProps<"/inicio">)
           title="Por etapa (actual)"
           total={breakdown.total}
           rows={stages.map((stage) => ({ label: stage.name, total: byStage.get(stage.key) ?? 0 }))}
+          action={
+            // 9-oct-2026 (dueño): cada cambio de etapa, quién y cuándo, en su propia página.
+            <Link href="/inicio/etapas" className="-my-1 rounded border px-2 py-1 text-xs font-medium text-foreground hover:bg-muted">
+              Historial
+            </Link>
+          }
         />
         <div className="rounded-lg border bg-card p-4">
           <h2 className="text-sm font-semibold">Llegaron por anuncio</h2>

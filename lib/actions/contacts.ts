@@ -17,6 +17,7 @@ import { onContactStageEntered } from "@/lib/workflows/triggers";
 import { createManualContact, type ManualContactInput } from "@/lib/contacts/create-manual";
 import { notifyContactUpdated } from "@/lib/contacts/notify-updated";
 import { cancelFollowUpsOnSale } from "@/lib/followups/sale";
+import { recordStageChanges } from "@/lib/contacts/stage-history";
 import {
   funnelSignalsForOrg,
   lastInboundFromWindow,
@@ -161,7 +162,8 @@ export type UpdateContactStageInput = z.infer<typeof updateContactStageSchema>;
 export async function updateContactStage(input: UpdateContactStageInput) {
   const { organizationId, userId } = await requireActiveMembership();
   const parsed = updateContactStageSchema.parse(input);
-  if (!isStageKey(await listFunnelStages(organizationId), parsed.stage)) {
+  const stages = await listFunnelStages(organizationId);
+  if (!isStageKey(stages, parsed.stage)) {
     throw new Error("Esa etapa ya no existe en el Embudo; recarga la página.");
   }
 
@@ -194,6 +196,13 @@ export async function updateContactStage(input: UpdateContactStageInput) {
         changes: ["etapa"],
         stage: { from: before.stage, to: row.stage },
         by: { kind: "vendedor", userId },
+      });
+      await recordStageChanges(tx, {
+        organizationId,
+        stages,
+        by: "vendedor",
+        userId,
+        changes: [{ contactId: row.id, from: before.stage, to: row.stage }],
       });
       await cancelFollowUpsOnSale(tx, organizationId, row.id, row.stage);
     }
