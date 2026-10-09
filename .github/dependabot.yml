@@ -1,0 +1,29 @@
+# Dependabot (8-oct-2026, seguridad S5): revisa las dependencias cada lunes y abre PRs
+# contra staging, nunca contra main (regla: nada llega a producción sin pasar por staging).
+# Sin CI: cada PR se prueba con el gate local (typecheck, test, lint) antes de mezclarlo.
+version: 2
+updates:
+  - package-ecosystem: "npm"
+    directory: "/"
+    target-branch: "staging"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "06:00"
+      timezone: "America/Mazatlan"
+    open-pull-requests-limit: 5
+    commit-message:
+      prefix: "chore(deps)"
+    groups:
+      menores:
+        update-types: ["minor", "patch"]
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    target-branch: "staging"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "06:00"
+      timezone: "America/Mazatlan"
+    commit-message:
+      prefix: "chore(deps)"
