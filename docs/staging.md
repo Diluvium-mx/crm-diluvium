@@ -23,6 +23,23 @@ feature/*  →  staging (se valida en https://crm-diluvium-staging.up.railway.ap
   crear un servicio o un environment nuevo, es lo primero que se revisa.
 - Para validar una rama, mérgala a `staging` y haz push. Cuando esté validada, abre el PR a `main`.
 
+## Al llegar a `main`: etiqueta y rama borrada (regla del dueño, 9-oct-2026)
+
+En cuanto una rama entra a `main` (merge con «OK MAIN» + push), **en el mismo momento**, desde la copia principal:
+
+```
+npm run rama:cerrar -- <rama>            # --probar para ver qué haría sin hacerlo
+```
+
+1. Comprueba que todo lo de la rama ya está en `origin/main`; si no, se detiene sin tocar nada.
+2. Pone la etiqueta del pase a producción `prod-AAAA-MM-DD-<rama sin prefijo>` (fecha de Mazatlán) en el commit con
+   el que entró y la sube a GitHub. `git tag -l "prod-*"` lista lo que ha salido a producción y en qué orden.
+3. Quita el worktree de la rama (si tiene cambios sin guardar, se detiene y avisa).
+4. Borra la rama en GitHub y en local.
+
+Así en GitHub solo quedan `main`, `staging` y las ramas en curso. Una rama que todavía no llega a `main` (pendiente o
+solo en staging) no se borra. Las ramas de Dependabot las cierra GitHub al mezclar o cerrar su PR.
+
 ## Protección de `main` en GitHub
 
 Desde el 8-oct-2026 hay un ruleset en `main` («main: sin force-push ni borrado»): nadie puede reescribir ni borrar
