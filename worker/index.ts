@@ -54,6 +54,7 @@ import { startAgentRuntime } from "@/lib/ai/runtime/worker";
 import { startLectorRuntime } from "@/lib/ai/runtime/lector-worker";
 import { startFollowUpRuntime } from "@/lib/followups/store";
 import { keepBrainCacheAlive } from "@/lib/ai/runtime/cache-keepalive";
+import { applyDueScheduled } from "@/lib/agente-ia/scheduled-store";
 import { redisKvPort } from "@/lib/ai/runtime/queue";
 import { callModel } from "@/lib/ai";
 import { adsIngestHooks, startAdsWorker } from "@/lib/ads/worker";
@@ -223,7 +224,16 @@ async function sweep() {
   await ads.sweep().catch((error) => logError("[anuncios] barrido falló", error));
   await unavailable.sweep().catch((error) => logError("[no-disponible] barrido falló", error));
   await chatUploads?.sweep().catch((error) => logError("[adjuntos] barrido falló", error));
-  // Caché de 1 h del Agente IA viva de 7:00 a 22:00 (2-oct-2026): ~US$0.004 por renovación.
+  // Goal y FAQs programados para las 22:00 (9-oct-2026): se aplican juntos, una sola vez.
+  await applyDueScheduled()
+    .then((done) => {
+      for (const d of done) {
+        if (d.result.kind === "aplicado") console.info(`[agente-ia] ${d.organizationId}: se aplicó lo programado (Goal/FAQs)`);
+        if (d.result.kind === "conflicto") console.warn(`[agente-ia] ${d.organizationId}: lo programado no se aplicó: ${d.result.message}`);
+      }
+    })
+    .catch((error) => logError("[agente-ia] aplicar lo programado falló", error));
+  // Caché de 1 h del Agente IA viva las 24 horas (9-oct-2026): ~US$0.005 por renovación.
   await keepBrainCacheAlive({ callModel }).catch((error) => logError("[cache] la renovación de la caché falló", error));
 
   const stale = await db

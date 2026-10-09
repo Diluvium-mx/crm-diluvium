@@ -7,43 +7,63 @@
 // runtime, lib/agente-ia/editor.ts). «Guardar Goal» y «Descartar cambios» piden
 // confirmación arriba (regla del dueño, 27-sep-2026; use-confirm.tsx). Al guardar queda
 // una versión (se puede nombrar con el lápiz). Avisa hacia arriba si hay cambios sin
-// guardar (punto naranja en la subpestaña). Sin lógica de datos: solo llama a las
-// Server Actions del editor.
+// guardar (punto naranja en la subpestaña). «Programar para las 22:00» (9-oct-2026, regla del
+// dueño): por defecto el Goal se programa y el worker lo aplica a las 22:00 junto con las FAQs
+// (schedule-controls.tsx); «Ahora» queda para un error grave. Sin lógica de datos: solo llama
+// a las Server Actions del editor.
 import { useEffect, useRef, useState } from "react";
-import { restoreAgentGoal, saveAgentGoal } from "@/lib/actions/agente-ia-editor";
+import { restoreAgentGoal, saveAgentGoal, scheduleAgentGoal, scheduleAgentVersion } from "@/lib/actions/agente-ia-editor";
 import { approxTokens, countWords } from "@/lib/agente-ia/editor";
 import type { VersionView } from "@/lib/agente-ia/types";
 import { CopyButton } from "@/components/ui/copy-button";
 import { useConfirm } from "./use-confirm";
 import { VersionsList } from "./versions-list";
+import { ApplyModeToggle, whenText, type ApplyMode } from "./schedule-controls";
 
 const HISTORY_LIMIT = 100;
 const HISTORY_IDLE_MS = 800;
 
 export function GoalEditor({
   goal,
+  scheduledGoal,
   versions,
   onDirtyChange,
 }: {
   goal: string;
+  // El Goal programado para las 22:00 (null = no hay).
+  scheduledGoal: string | null;
   versions: VersionView[];
   onDirtyChange?: (dirty: boolean) => void;
 }) {
-  const [text, setText] = useState(goal);
-  const [saved, setSaved] = useState(goal);
+  // «Hoy a las 22:00» parte de lo programado (o del Goal en vivo); «Ahora», del Goal en vivo.
+  const [mode, setMode] = useState<ApplyMode>("programar");
+  const baseFor = (m: ApplyMode) => (m === "programar" ? (scheduledGoal ?? goal) : goal);
+  const [text, setText] = useState(() => baseFor("programar"));
+  const [saved, setSaved] = useState(() => baseFor("programar"));
   const [history, setHistory] = useState<string[]>([]);
   const lastPush = useRef(-Infinity);
+  const modeRef = useRef<ApplyMode>("programar");
   const confirm = useConfirm();
 
-  // Al restaurar una versión, el servidor manda otro Goal: se toma como el guardado.
+  // Al restaurar o programar, el servidor manda otro Goal: se toma como el guardado.
   useEffect(() => {
     const t = setTimeout(() => {
-      setText(goal);
-      setSaved(goal);
+      const base = modeRef.current === "programar" ? (scheduledGoal ?? goal) : goal;
+      setText(base);
+      setSaved(base);
       setHistory([]);
     }, 0);
     return () => clearTimeout(t);
-  }, [goal]);
+  }, [goal, scheduledGoal]);
+
+  // Cambiar de modo: si no había cambios, el editor pasa al texto de ese modo; si los había, se quedan.
+  function changeMode(m: ApplyMode) {
+    const base = baseFor(m);
+    if (text === saved) setText(base);
+    setSaved(base);
+    modeRef.current = m;
+    setMode(m);
+  }
 
   const dirty = text !== saved;
   useEffect(() => {
@@ -72,10 +92,22 @@ export function GoalEditor({
 
   function save() {
     const goalToSave = text;
+    if (mode === "programar") {
+      confirm.ask({
+        title: "¿Programar las instrucciones del agente?",
+        body: `Se aplican ${whenText()}, junto con los demás cambios programados. Mientras, el Agente IA sigue con el Goal actual.`,
+        confirmLabel: "Sí, programar",
+        pendingLabel: "Programando…",
+        done: "Listo: Goal programado",
+        run: () => scheduleAgentGoal({ goal: goalToSave }),
+        onDone: () => setSaved(goalToSave),
+      });
+      return;
+    }
     confirm.ask({
-      title: "¿Guardar las instrucciones del agente?",
-      body: "El agente las sigue desde el siguiente mensaje. Queda una versión que puedes nombrar con el lápiz.",
-      confirmLabel: "Sí, guardar",
+      title: "¿Guardar ahora las instrucciones del agente?",
+      body: "Solo para un error grave: el agente las sigue desde el siguiente mensaje y se vuelve a cobrar el Goal completo (~US$0.09). Lo normal es programarlas para las 22:00. Queda una versión que puedes nombrar con el lápiz.",
+      confirmLabel: "Sí, guardar ahora",
       pendingLabel: "Guardando…",
       done: "Listo: Goal guardado (quedó una versión)",
       run: () => saveAgentGoal({ goal: goalToSave }),
@@ -100,6 +132,7 @@ export function GoalEditor({
 
   return (
     <div className="flex flex-col gap-2">
+      <ApplyModeToggle mode={mode} onChange={changeMode} disabled={confirm.pending} />
       <div className="flex flex-wrap items-center gap-2">
         <button
           type="button"
@@ -133,7 +166,7 @@ export function GoalEditor({
           disabled={!dirty || confirm.pending}
           className="rounded bg-brand-orange px-3 py-1.5 text-sm font-medium text-white disabled:opacity-50"
         >
-          {confirm.pending ? "Guardando…" : "Guardar Goal"}
+          {confirm.pending ? (mode === "programar" ? "Programando…" : "Guardando…") : mode === "programar" ? "Programar para las 22:00" : "Guardar ahora"}
         </button>
         {dirty && !confirm.pending && (
           <button type="button" onClick={discard} className="text-xs text-muted-foreground hover:underline">
@@ -145,7 +178,8 @@ export function GoalEditor({
       </div>
       <VersionsList
         versions={versions}
-        onRestore={(versionId) => restoreAgentGoal({ versionId })}
+        onRestore={(versionId) => (mode === "programar" ? scheduleAgentVersion({ kind: "goal", versionId }) : restoreAgentGoal({ versionId }))}
+        schedule={mode === "programar"}
         restoreWarning={dirty ? "Los cambios sin guardar del editor se reemplazan por la versión restaurada." : null}
       />
       {confirm.ui}

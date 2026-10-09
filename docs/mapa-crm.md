@@ -86,6 +86,7 @@ Nadie es "dueño" de un contacto: **todos ven todos los contactos, siempre**.
 | **Historial de cambios** | Subpestaña de Agente IA: **quién** cambió **qué**, **antes → después** y **cuándo** (hora de Mazatlán): opciones, Goal y FAQs, nombre del agente, modelos, etapas (incluida la regla del Agente IA), canales (incluida la limpieza de chats de prueba), workflows, tallas y medidas, mensajes rápidos, plantillas, vendedores (solo owner y admin), pausas del agente por chat y contactos borrados (Detalle › 32; sin su nombre ni su teléfono completo). **Ver cambios** muestra lo quitado (tachado en rojo) y lo agregado (en verde). El nombre de quién lo hizo es el que tenía **en ese momento**: si después se cambia el nombre de alguien, sus cambios anteriores conservan el nombre viejo (desde el 30-sep-2026). No entra el trabajo diario (mover contactos, mensajes, comentarios); los cambios de etapa están en **Dashboard › Historial de etapas**. Lo ven todos; no se edita. |
 | **Goal** | Las instrucciones de Ángela: cómo habla, qué ofrece, cuándo pasa a un asesor. Es lo único que sigue, junto con las FAQs. |
 | **FAQs** | Preguntas frecuentes con su respuesta que el agente usa para contestar. |
+| **Programar para las 22:00** | Los cambios del Goal y las FAQs se juntan y el Agente IA los usa desde las 22:00, de una sola vez (cada guardado vuelve a cobrar el Goal completo en Anthropic). «Ahora» solo para un error grave. Agente IA › Goal y FAQs (95–97). |
 | **Modelo 1 / Modelo 2** | Los dos "cerebros" del agente. Cada etapa usa uno (hoy: Modelo 1 en Inbox, Prospecto e Interesado; Modelo 2 en Cerca de compra y Compra). |
 | **Número de prueba / PRUEBA** | Número de WhatsApp para probar. Sus chats llevan la etiqueta **PRUEBA** y **no cuentan en el Dashboard**. Desde el 28-sep-2026 está **archivado** (igual que el Sandbox): ya no aparece en Agente IA › Canales. Ese mismo día se **borraron sus chats de prueba** (eran celulares del negocio): los contactos se quedaron, sin la marca Prueba, y hoy ningún chat lleva la etiqueta PRUEBA. |
 | **Importado del celular** | Mensaje viejo copiado del teléfono al conectar un número. El agente no lo contesta y no cuenta como nuevo. En Instagram es **Importado de Instagram**: los últimos 500 chats que había al conectar la cuenta (2-oct-2026); el chat de un cliente reciente sí se puede contestar (hasta 24 h, o 7 días si contesta un vendedor). |
@@ -905,11 +906,13 @@ una ventana arriba (59)**; nada se guarda con un solo clic.
 > todo en una sola página, sin nombres de versión; la de Canales aún muestra el número de prueba). Los números 1–51 siguen
 > valiendo (salvo 3, 11 y 15, que se quitaron); de 52–83 aparecen en captura 52 y 83 (Modelos) y 62–71 (Etapas; el 64,
 > color, ya no existe). La de **Seguimientos** (85–94) es del 6-oct-2026, con los valores de fábrica y un cambio sin
-> guardar para que se vea la barra de Guardar (93).
+> guardar para que se vea la barra de Guardar (93). La de **Programar para las 22:00** (95–97) es del 9-oct-2026: un Goal
+> y una FAQ programados (el aviso de arriba) y un cambio sin guardar para que se vea el botón.
 
 ![Agente IA: nombre, subpestañas y modelos](mapa-crm/09-agente-modelos.png)
 ![Agente IA: Etapas (columnas del Embudo y sus reglas)](mapa-crm/09-agente-etapas.png)
 ![Agente IA: Goal y FAQs](mapa-crm/09-agente-goal-faqs.png)
+![Agente IA: Programar el Goal y las FAQs para las 22:00](mapa-crm/09-agente-programar.png)
 ![Agente IA: Opciones](mapa-crm/09-agente-opciones.png)
 ![Agente IA: Seguimientos (tabla de casos y horario de los vendedores)](mapa-crm/09-agente-seguimientos.png)
 ![Agente IA: Tallas y medidas](mapa-crm/09-agente-tallas.png)
@@ -934,16 +937,16 @@ una ventana arriba (59)**; nada se guarda con un solo clic.
 | 15 | ~~{ } Valores personalizados~~ | Se quitó el 28-sep-2026 (decisión del dueño): el Goal escribe los nombres tal cual y no usaba ninguno. Si alguien escribe a mano `{{contacto.nombre}}` (u otro), el agente lo sigue cambiando por el dato. | — |
 | 16 | **Palabras · tokens** | Qué tan largo es el Goal (más largo = cada respuesta cuesta un poco más). | Todos |
 | 17 | **Editor del Goal** | Donde se escribe el Goal. Arriba a la derecha, **Copiar** (78). | Todos |
-| 18 | **Guardar Goal** | Guarda (con confirmación) y deja una versión. | Todos |
+| 18 | **Guardar Goal** | Desde el 9-oct-2026 se llama **Programar para las 22:00** (96) o **Guardar ahora**, según «Cuándo se aplica» (95). Pide confirmación y deja una versión. | Todos |
 | 19 | **Versiones / Ocultar versiones** | Historial de Goals guardados (nombre si tiene, fecha, palabras, quién). | Todos |
-| 20 | **Restaurar** | Regresa a una versión anterior (también deja versión). Pide confirmación con el nombre y la fecha. | Todos |
+| 20 | **Restaurar** | Regresa a una versión anterior (también deja versión). Pide confirmación con el nombre y la fecha. Con «Hoy a las 22:00» (95) la versión se **programa** en vez de aplicarse al momento. | Todos |
 | 21 | **FAQs** | Preguntas frecuentes del agente. | Todos |
 | 22 | **Buscar en preguntas y respuestas…** | Busca sin acentos ni mayúsculas. | Todos |
 | 23 | **Todas · Activas · Inactivas** | Filtro de FAQs. | Todos |
 | 24 | **+ Agregar pregunta** | Nueva FAQ. | Todos |
 | 25 | **Pregunta** | Clic muestra la respuesta y **se queda abierta** hasta que le vuelves a dar clic; puedes tener varias abiertas a la vez. | Todos |
-| 26 | **Interruptor** | Activa o desactiva la FAQ (desactivada, el agente no la usa). Pide confirmación. | Todos |
-| 27 | **Editar · Borrar** (FAQ) | Dentro de la pregunta abierta: cambia o elimina esa FAQ. Cada cambio deja versión. Agregar, guardar y borrar piden confirmación. Para borrar varias, **Seleccionar** (81). | Todos |
+| 26 | **Interruptor** | Activa o desactiva la FAQ (desactivada, el agente no la usa). Pide confirmación. Con «Hoy a las 22:00» (95) el cambio queda programado. | Todos |
+| 27 | **Editar · Borrar** (FAQ) | Dentro de la pregunta abierta: cambia o elimina esa FAQ. Cada cambio deja versión. Agregar, guardar y borrar piden confirmación. Para borrar varias, **Seleccionar** (81). Con «Hoy a las 22:00» (95) se cambia la lista **programada**: la que ves es la que se aplicará a las 22:00. | Todos |
 | 28 | **Opciones** | Cómo se comporta el Agente IA. Los cambios se guardan juntos con «Guardar cambios» (56) y aplican en menos de un minuto. | Todos |
 | 29 | **Tiempo de espera antes de responder** | 5 a 60 s para juntar varios mensajes seguidos del cliente. | Todos |
 | 30 | **Pausar al Agente IA cuando un vendedor contesta** | Sí / No. La pausa solo es para contestar: el Detalle y la etapa se siguen llenando en segundo plano. | Todos |
@@ -1011,6 +1014,9 @@ una ventana arriba (59)**; nada se guarda con un solo clic.
 | 92 | **Horario de los vendedores** | Por día, hora de Mazatlán (de fábrica lunes a viernes 9:00–18:00, sábado 9:00–13:00, domingo no trabaja). Con Pausar agente puesto a mano el seguimiento no sale solo: se le presenta al vendedor a su hora o, si cae fuera de este horario, en su última hora de trabajo antes (57). | Todos |
 | 93 | **Guardar cambios · Descartar** | Solo con cambios (la subpestaña lleva el punto naranja). Guardar pide confirmar arriba (59) con la lista de cambios («Faltan medidas · 3.er intento: apagado → prendido»); si algo no vale, lo dice junto al control y no deja guardar. Cada guardado queda en Historial (72). | Todos |
 | 94 | **Último cambio** | Quién y cuándo cambió la tabla por última vez. | Todos |
+| 95 | **Cuándo se aplica: Hoy a las 22:00 · Ahora (error grave)** | Arriba del Goal y de las FAQs (9-oct-2026, regla del dueño). **Hoy a las 22:00** (lo normal): los cambios se juntan y el Agente IA los usa desde las 22:00; mientras, sigue con lo actual. **Ahora**: solo para un error grave (cada guardado vuelve a cobrar el Goal completo, ~US$0.09). De 22:00 a 6:00 lo programado se aplica en el siguiente minuto. | Todos |
+| 96 | **Programar para las 22:00** | Programa el Goal (con «Ahora», **Guardar ahora**). Pide confirmación. | Todos |
+| 97 | **Aviso de lo programado** | Qué está programado y para qué hora («el Goal y las FAQs (1 editada)»), quién lo programó, **Aplicar ahora** (error grave) y **Quitar programación**. Si alguien guardó «Ahora» después de programar, a las 22:00 **no se aplica** (para no borrar ese cambio): el aviso dice por qué, con **Aplicar de todos modos**. Al aplicarse queda una versión llamada «Programado para las 22:00». | Todos |
 
 **Lo cambias tú desde la pantalla:** todo lo de esta sección: nombre, modelos, etapas (columnas del Embudo), Goal (con versiones), FAQs,
 Opciones, Seguimientos, Tallas y medidas, y encender o apagar el agente por número. El **Historial** (72) solo se consulta: se llena solo con cada cambio.

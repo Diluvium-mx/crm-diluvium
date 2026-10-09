@@ -53,6 +53,18 @@ export type ChannelAgentView = {
 export type FaqView = { id: string; question: string; answer: string; enabled: boolean; position: number };
 // `name`: el que le puso el equipo con el lápiz ✎ (null = sin nombre, se ve solo la fecha).
 export type VersionView = { id: string; createdAt: string; author: string | null; summary: string; name: string | null };
+// Lo programado para las 22:00 (9-oct-2026): `goal`/`faqs` null = esa parte no cambia.
+// `faqSummary` = «2 nuevas, 1 editada»; `conflict` = por qué no se aplicó (status conflicto).
+export type ScheduledView = {
+  goal: string | null;
+  faqs: FaqView[] | null;
+  faqSummary: string | null;
+  applyAt: string;
+  status: "programado" | "conflicto";
+  conflict: string | null;
+  author: string | null;
+  updatedAt: string;
+};
 
 export type AgentEditorView = {
   agentName: string;
@@ -64,6 +76,8 @@ export type AgentEditorView = {
   stages: FunnelStage[];
   goal: string;
   faqs: FaqView[];
+  // Cambios del Goal y las FAQs programados para las 22:00 (null = nada programado).
+  scheduled: ScheduledView | null;
   goalVersions: VersionView[];
   faqVersions: VersionView[];
   brainOptions: ModelOptionView[];
