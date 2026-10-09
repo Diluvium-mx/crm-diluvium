@@ -18,30 +18,34 @@ function daysAgo(days: number, timeZone: string): string {
 }
 
 // `timeZone`: de qué zona son los días de los atajos (el historial del Gasto de IA usa "UTC").
+// `keep`: otros filtros de la página que se conservan al cambiar el periodo (p. ej. «etapa=compra»).
 export function RangeFilter({
   mes,
   desde,
   hasta,
   basePath = "/inicio",
   timeZone = DASHBOARD_TIME_ZONE,
+  keep = "",
 }: {
   mes: string | null;
   desde: string;
   hasta: string;
   basePath?: string;
   timeZone?: string;
+  keep?: string;
 }) {
   const router = useRouter();
+  const extra = keep ? `&${keep}` : "";
   const [from, setFrom] = useState(desde);
   const [to, setTo] = useState(hasta);
   const rangeValid = from !== "" && to !== "" && from <= to;
 
   const today = localDay(new Date(), timeZone);
   const shortcuts: { label: string; href: string; active: boolean }[] = [
-    { label: "Hoy", href: `${basePath}?desde=${today}&hasta=${today}`, active: mes === null && desde === today && hasta === today },
-    { label: "7 días", href: `${basePath}?desde=${daysAgo(6, timeZone)}&hasta=${today}`, active: mes === null && desde === daysAgo(6, timeZone) && hasta === today },
-    { label: "30 días", href: `${basePath}?desde=${daysAgo(29, timeZone)}&hasta=${today}`, active: mes === null && desde === daysAgo(29, timeZone) && hasta === today },
-    { label: "Este mes", href: `${basePath}?mes=${today.slice(0, 7)}`, active: mes === today.slice(0, 7) },
+    { label: "Hoy", href: `${basePath}?desde=${today}&hasta=${today}${extra}`, active: mes === null && desde === today && hasta === today },
+    { label: "7 días", href: `${basePath}?desde=${daysAgo(6, timeZone)}&hasta=${today}${extra}`, active: mes === null && desde === daysAgo(6, timeZone) && hasta === today },
+    { label: "30 días", href: `${basePath}?desde=${daysAgo(29, timeZone)}&hasta=${today}${extra}`, active: mes === null && desde === daysAgo(29, timeZone) && hasta === today },
+    { label: "Este mes", href: `${basePath}?mes=${today.slice(0, 7)}${extra}`, active: mes === today.slice(0, 7) },
   ];
 
   return (
@@ -65,7 +69,7 @@ export function RangeFilter({
           type="month"
           value={mes ?? ""}
           onChange={(event) => {
-            if (event.target.value) router.push(`${basePath}?mes=${event.target.value}`);
+            if (event.target.value) router.push(`${basePath}?mes=${event.target.value}${extra}`);
           }}
           className="rounded-md border bg-background px-2 py-1.5 text-sm"
         />
@@ -82,7 +86,7 @@ export function RangeFilter({
       <button
         type="button"
         disabled={!rangeValid}
-        onClick={() => router.push(`${basePath}?desde=${from}&hasta=${to}`)}
+        onClick={() => router.push(`${basePath}?desde=${from}&hasta=${to}${extra}`)}
         className="rounded-md bg-brand-navy px-3 py-1.5 text-sm font-medium text-brand-white transition-colors hover:bg-brand-navy-dark disabled:opacity-50"
       >
         Aplicar

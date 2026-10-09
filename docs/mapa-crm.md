@@ -82,7 +82,7 @@ Nadie es "dueño" de un contacto: **todos ven todos los contactos, siempre**.
 | **Horario del Agente IA** | Días y horas en que el agente contesta (Agente IA › Opciones; de fábrica 24/7). Si tiene horario, la Bandeja muestra arriba una franja «El Agente IA solo contesta … (ahora está fuera de horario / ahora sí está contestando)». |
 | **Agente IA callado** | Alarma: con el canal Encendido y dentro de su horario, 3 o más clientes que escribieron en la **última hora** llevan más de 15 min esperando y el agente no ha mandado nada en esos 15 min. Sale en la pastilla **Agente IA** (roja) y en el correo del issue `alerta-whatsapp`. Lo atrasado (más de 1 hora) **no** la hace sonar. |
 | **Chats que esperan a un vendedor** | Los atrasados: el cliente escribió hace más de 1 hora y nadie le contestó. El Agente IA ya no los recupera solo (solo rescata lo de los últimos 30 min), así que los atiende un vendedor. Salen como dato en la pastilla **Agente IA** del Dashboard; no son alarma. |
-| **Historial de cambios** | Subpestaña de Agente IA: **quién** cambió **qué**, **antes → después** y **cuándo** (hora de Mazatlán): opciones, Goal y FAQs, nombre del agente, modelos, etapas (incluida la regla del Agente IA), canales (incluida la limpieza de chats de prueba), workflows, tallas y medidas, mensajes rápidos, plantillas, vendedores (solo owner y admin), pausas del agente por chat y contactos borrados (Detalle › 32; sin su nombre ni su teléfono completo). **Ver cambios** muestra lo quitado (tachado en rojo) y lo agregado (en verde). El nombre de quién lo hizo es el que tenía **en ese momento**: si después se cambia el nombre de alguien, sus cambios anteriores conservan el nombre viejo (desde el 30-sep-2026). No entra el trabajo diario (mover contactos, mensajes, comentarios). Lo ven todos; no se edita. |
+| **Historial de cambios** | Subpestaña de Agente IA: **quién** cambió **qué**, **antes → después** y **cuándo** (hora de Mazatlán): opciones, Goal y FAQs, nombre del agente, modelos, etapas (incluida la regla del Agente IA), canales (incluida la limpieza de chats de prueba), workflows, tallas y medidas, mensajes rápidos, plantillas, vendedores (solo owner y admin), pausas del agente por chat y contactos borrados (Detalle › 32; sin su nombre ni su teléfono completo). **Ver cambios** muestra lo quitado (tachado en rojo) y lo agregado (en verde). El nombre de quién lo hizo es el que tenía **en ese momento**: si después se cambia el nombre de alguien, sus cambios anteriores conservan el nombre viejo (desde el 30-sep-2026). No entra el trabajo diario (mover contactos, mensajes, comentarios); los cambios de etapa están en **Dashboard › Historial de etapas**. Lo ven todos; no se edita. |
 | **Goal** | Las instrucciones de Ángela: cómo habla, qué ofrece, cuándo pasa a un asesor. Es lo único que sigue, junto con las FAQs. |
 | **FAQs** | Preguntas frecuentes con su respuesta que el agente usa para contestar. |
 | **Modelo 1 / Modelo 2** | Los dos "cerebros" del agente. Cada etapa usa uno (hoy: Modelo 1 en Inbox, Prospecto e Interesado; Modelo 2 en Cerca de compra y Compra). |
@@ -103,6 +103,7 @@ Nadie es "dueño" de un contacto: **todos ven todos los contactos, siempre**.
 | **Recarga / saldo** | Lo que se cargó en la página de cada proveedor de IA y lo que queda. Desde el 1-oct-2026 el saldo sale del proveedor: en Anthropic y OpenAI, recargas registradas menos el gasto real que reporta el proveedor; en xAI y OpenRouter, el saldo que da el proveedor directo. Google no da su cobro por API: su saldo sigue **estimado** con el registro del CRM. |
 | **Pruebas (gasto de IA)** | Lo que se gasta en IA fuera del Agente IA de producción: staging y pruebas de modelos. En Anthropic van en el espacio de trabajo **«Pruebas»** (con tope de US$10 al mes, para que nunca dejen sin saldo al Agente IA); en los demás proveedores es lo que cobró el proveedor menos lo que registró el CRM. Desde el 1-oct-2026. |
 | **Historial del gasto de IA** | Página del Dashboard (botón **Historial**) con el gasto de IA por día, por mes o por periodo, sus desgloses, el resumen por mes con el saldo al cierre y la proyección del mes en curso. Días UTC. Desde el 1-oct-2026. Ver [3.1.1](#311-historial-del-gasto-de-ia). |
+| **Historial de etapas** | Página del Dashboard (botón **Historial** de «Por etapa (actual)») con cada cambio de etapa de cada contacto: cuándo, de qué etapa a cuál y quién lo movió (vendedor, Agente IA o Automático), con filtros de periodo, etapa, quién y contacto. Lo ven todos; no se edita. Desde el 9-oct-2026 (empezó vacío). Ver [3.1.2](#312-historial-de-etapas). |
 | **Visor de archivos** | Lo que se abre encima al dar clic en una foto, sticker, PDF o documento del chat: recorre con ‹ › (o deslizando un dedo en el Magic Mouse) todos los archivos de ese chat, con lupa para las fotos, Girar, Imprimir página por página y Descargar. Ver [3.2.5](#325-visor-de-archivos). Desde el 1-oct-2026. |
 | **Archivo verificado** | Foto, audio, video o PDF cuyo **contenido** confirma lo que dice ser (el CRM lee el archivo, no se fía del nombre ni del tipo que manda el celular). Solo esos se ven dentro del CRM; cualquier otro archivo sale como tarjeta de documento y **solo se descarga**. Desde el 30-sep-2026 (revisión de seguridad). |
 
@@ -189,6 +190,7 @@ Resumen del mes: cuánto se gasta en IA y en Railway (los servidores del CRM), c
 | 16 | **Ver como tabla** | Muestra los números de la gráfica en tabla. | Todos |
 | 17 | **Por canal** | Por qué canal llegaron (WhatsApp, Facebook…). | Todos |
 | 18 | **Por etapa (actual)** | En qué etapa están hoy esas conversaciones. | Todos |
+| 45 | **Historial** (botón en «Por etapa (actual)») | Abre **Dashboard › Historial de etapas** ([3.1.2](#312-historial-de-etapas)): cada vez que un contacto cambió de etapa, quién lo movió y cuándo. | Todos |
 | 19 | **Llegaron por anuncio** | Cuántas vinieron de un anuncio de Meta y qué porcentaje del periodo. | Todos |
 | 20 | **Pastilla de WhatsApp** (arriba a la derecha) | Estado del número según el monitoreo (cada 5 min): verde **"WhatsApp conectado"**, ámbar **"WhatsApp: revisar"**, rojo **"WhatsApp desconectado desde HH:MM"** (hora de Mazatlán) o gris **"Sin revisar desde HH:MM"** si la última revisión tiene más de 15 min. No consulta a Zernio al abrir la página. | Todos |
 | 21 | **Estado de WhatsApp** (recuadro al hacer clic en 20) | 4 líneas: **Número** (conectado o no), **Último mensaje de un cliente** (hace X min), **Worker** (activo o no) y **Webhook de Zernio** (activo y fallos). | Todos |
@@ -256,6 +258,41 @@ siguiente. Hay datos desde el 22-sep-2026 (la primera recarga). Desde el 1-oct-2
 - "En Dashboard › Historial del gasto de IA › (30) proyección, usa el promedio de los últimos 14 días."
 
 <sub>Para Code: ruta `/inicio/gasto-ia`; `app/(app)/inicio/gasto-ia/` (`page.tsx`, `spend-cards`, `monthly-summary`, `period-topups`) y los componentes compartidos del Dashboard (`range-filter` con `timeZone="UTC"`, `daily-chart` y `breakdown-list` con `format`); datos en `lib/dashboard/ai-spend-history.ts` (mismas reglas por día que `ai-spend.ts`: lectura del proveedor y piso del registro del CRM).</sub>
+#### 3.1.2 Historial de etapas
+
+Se abre con el botón **Historial** (45) de «Por etapa (actual)». Es la lista de **cada vez que un contacto cambió de
+etapa**, del más reciente al más viejo: cuándo (hora de Mazatlán), quién, de qué etapa a cuál y quién lo movió. Cuenta
+todos los caminos: el vendedor (arrastrando en el Embudo o en la Etapa del Detalle, también hacia atrás), el **Agente IA**
+(al contestar o al leer el chat en segundo plano), **/banco** y el borrado de una etapa en Agente IA › Etapas (sus
+contactos pasan a otra). **Empieza vacío el 9-oct-2026**: lo de antes no se guardaba. No avisa nada en el chat (ya sale la
+ventana emergente al cambiar la etapa). Desde el 9-oct-2026.
+
+![Historial de etapas](mapa-crm/01c-historial-etapas.png)
+
+| # | Nombre oficial | Qué hace | Quién lo ve |
+|---|---|---|---|
+| 46 | **← Dashboard** (botón) | Regresa al Dashboard. | Todos |
+| 47 | **Pasó a** | Solo los cambios hacia esa etapa (p. ej. todos los que pasaron a **Compra**). | Todos |
+| 48 | **Quién lo movió** | **Agente IA**, **Automático** (sin vendedor de por medio) o un vendedor por su nombre (incluye su /banco y las etapas que borró). | Todos |
+| 49 | **Contacto · Buscar** | Busca por nombre o teléfono, sin importar acentos ni mayúsculas. | Todos |
+| 50 | **Hoy · 7 días · 30 días · Este mes · Mes · Desde / Hasta · Aplicar** | El periodo, igual que en Conversaciones nuevas (días de Mazatlán); se conservan los otros filtros. Sin elegir nada, el mes en curso. | Todos |
+| 51 | **Fecha y hora** | Cuándo cambió de etapa (hora de Mazatlán). | Todos |
+| 52 | **Contacto** | Nombre y teléfono; al hacer clic se abre su chat en la Bandeja. | Todos |
+| 53 | **De → a** | La etapa de antes y la nueva (con su color). Guarda los nombres que tenían **en ese momento**: si después se renombra o se borra una etapa, aquí sigue el nombre de entonces. | Todos |
+| 54 | **Quién** | El vendedor (con el nombre que tenía en ese momento), **Agente IA** o **Automático**. | Todos |
+
+Se muestran los **200** cambios más recientes del filtro; para ver más atrás, acorta el periodo. Solo se consulta: no se
+edita ni se borra. Si se borra un contacto (Detalle › Datos personales) se borra también su historial, y **Exportar datos**
+lo incluye (fecha y etapas, sin quién lo movió).
+
+**Lo cambias tú desde la pantalla:** solo los filtros.
+
+**Pídeselo a Code:**
+- "En Dashboard › Historial de etapas, agrega arriba cuántos pasaron a cada etapa en el periodo."
+- "En Dashboard › Historial de etapas › (48), agrega un filtro «Todos los vendedores»."
+
+<sub>Para Code: ruta `/inicio/etapas`; `app/(app)/inicio/etapas/` (`page.tsx`, `stage-history-filters`) y `range-filter` con `keep`; tabla `contact_stage_history` (migración 0065, trigger `historial_fijar_autor`); se escribe en la misma transacción con `recordStageChanges` (`lib/contacts/stage-history.ts`) desde `updateContactStage` (`lib/actions/contacts.ts`), `moveStageForward` (`lib/contacts/stage.ts`: Agente IA, lector y /banco) y `deleteFunnelStage`; lectura en `lib/contacts/stage-history-queries.ts`.</sub>
+
 ---
 
 ### 3.2 Bandeja

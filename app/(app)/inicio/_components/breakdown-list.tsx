@@ -1,6 +1,9 @@
 // Desglose como barras horizontales de un solo tono: la etiqueta de texto da
 // la identidad (no el color) y el número va siempre visible. Conteos por defecto; el historial
 // del Gasto de IA lo usa con dólares (`format`), su texto vacío y una nota bajo el título.
+// `action`: un botón junto al título (p. ej. «Historial» en «Por etapa (actual)»).
+import type { ReactNode } from "react";
+
 export type BreakdownRow = { label: string; total: number };
 
 export function BreakdownList({
@@ -10,6 +13,7 @@ export function BreakdownList({
   format = (n: number) => String(n),
   emptyText = "Sin conversaciones nuevas en el periodo.",
   note,
+  action,
 }: {
   title: string;
   rows: BreakdownRow[];
@@ -17,10 +21,14 @@ export function BreakdownList({
   format?: (n: number) => string;
   emptyText?: string;
   note?: string;
+  action?: ReactNode;
 }) {
   return (
     <div className="rounded-lg border bg-card p-4">
-      <h2 className="text-sm font-semibold">{title}</h2>
+      <div className="flex items-center justify-between gap-2">
+        <h2 className="text-sm font-semibold">{title}</h2>
+        {action}
+      </div>
       {note && <p className="text-[11px] text-muted-foreground">{note}</p>}
       {total === 0 ? (
         <p className="mt-3 text-xs text-muted-foreground">{emptyText}</p>

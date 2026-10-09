@@ -4,7 +4,7 @@
 // Lo arma la ruta GET /api/contactos/[contactId]/exportar (la descarga en zip).
 import { and, asc, eq, inArray, sql } from "drizzle-orm";
 import { db } from "@/lib/db";
-import { channels, contacts, conversations, messages } from "@/lib/db/schema";
+import { channels, contactStageHistory, contacts, conversations, messages } from "@/lib/db/schema";
 import { getContactQualification } from "@/lib/contacts/qualification";
 import { listFunnelStages } from "@/lib/contacts/funnel-stages";
 import { formatPhone } from "@/lib/phone-format";
@@ -49,6 +49,8 @@ export type DatosJson = {
     };
     creadoEl: string;
     enSuEtapaDesde: string;
+    // Historial de etapas (9-oct-2026): cuándo pasó de una etapa a otra, sin quién lo movió.
+    historialDeEtapas: { fecha: string; de: string; a: string }[];
   };
   conversaciones: {
     canal: string;
@@ -91,9 +93,14 @@ export async function loadContactExport(
     .limit(1);
   if (!contact) return null;
 
-  const [detalle, stages, convs] = await Promise.all([
+  const [detalle, stages, stageMoves, convs] = await Promise.all([
     getContactQualification(db, organizationId, contactId),
     listFunnelStages(organizationId),
+    db
+      .select({ at: contactStageHistory.createdAt, from: contactStageHistory.fromName, to: contactStageHistory.toName })
+      .from(contactStageHistory)
+      .where(and(eq(contactStageHistory.organizationId, organizationId), eq(contactStageHistory.contactId, contactId)))
+      .orderBy(asc(contactStageHistory.createdAt)),
     db
       .select({ id: conversations.id, createdAt: conversations.createdAt, channelType: channels.type })
       .from(conversations)
@@ -175,6 +182,7 @@ export async function loadContactExport(
       },
       creadoEl: mazatlanDateTime(contact.createdAt),
       enSuEtapaDesde: mazatlanDateTime(contact.stageChangedAt),
+      historialDeEtapas: stageMoves.map((m) => ({ fecha: mazatlanDateTime(m.at), de: m.from, a: m.to })),
     },
     conversaciones: byConversation.map(({ conversation, channelLabel, messages: list }) => ({
       canal: channelLabel,
