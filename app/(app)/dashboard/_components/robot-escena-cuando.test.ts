@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { elegirEscena, ESCENA_MS, ESCENA_TONO_MS, type FotoPildora } from "./robot-escena-cuando";
+import { elegirEscena, ESCENA_MS, ESCENA_TONO_MS, finDeGolpes, siguienteEscena, vistaDe, type EntradaPildora, type FotoPildora } from "./robot-escena-cuando";
 
 const programado: FotoPildora = {
   estado: "activo",
@@ -58,5 +58,49 @@ describe("escena de la píldora del seguimiento", () => {
 
   it("el cambio de color cae antes de que termine la escena", () => {
     for (const [escena, ms] of Object.entries(ESCENA_TONO_MS)) expect(ms).toBeLessThan(ESCENA_MS[escena as keyof typeof ESCENA_MS]);
+  });
+});
+
+describe("escena en curso (anticipada y con Reactivar en dos tiempos)", () => {
+  const entrada = (foto: FotoPildora, extra: Partial<EntradaPildora> = {}): EntradaPildora => ({ foto, reparando: false, silencio: 0, ...extra });
+
+  it("Cancelar anticipado arranca el disparo y la confirmación igual no repite nada", () => {
+    const disparo = siguienteEscena(entrada(programado), entrada(cancelado), null);
+    expect(disparo?.escena).toBe("disparo");
+    expect(siguienteEscena(entrada(cancelado), entrada({ ...cancelado }), disparo)).toBe(disparo);
+  });
+
+  it("si el servidor rechaza lo anticipado, regresa sin escena", () => {
+    const reloj = siguienteEscena(entrada(programado), entrada({ ...programado, dueAt: "2026-10-15T17:00:00.000Z" }), null);
+    expect(reloj?.escena).toBe("reloj");
+    expect(siguienteEscena(entrada({ ...programado, dueAt: "2026-10-15T17:00:00.000Z" }), entrada(programado, { silencio: 1 }), reloj)).toBeNull();
+  });
+
+  it("Reactivar: golpes al presionar con la píldora como estaba, y el final al llegar la respuesta", () => {
+    const golpes = siguienteEscena(entrada(cancelado), entrada(cancelado, { reparando: true }), null);
+    expect(golpes).toMatchObject({ escena: "reparacion-golpes", siguiente: null, vista: cancelado });
+    expect(vistaDe(programado, golpes)).toBe(cancelado);
+    const conFinal = siguienteEscena(entrada(cancelado, { reparando: true }), entrada(programado), golpes);
+    expect(conFinal).toMatchObject({ escena: "reparacion-golpes", siguiente: "reparacion", n: golpes?.n });
+    const fin = finDeGolpes(conFinal!);
+    expect(fin).toMatchObject({ escena: "reparacion", tonoAntes: "gris", vista: null });
+    expect(vistaDe(programado, fin).tono).toBe("gris");
+    expect(siguienteEscena(entrada(cancelado, { reparando: true }), entrada(dormido), golpes)?.siguiente).toBe("reparacion-dormido");
+  });
+
+  it("Reactivar rechazado: deja de cargar sin escena", () => {
+    const golpes = siguienteEscena(entrada(cancelado), entrada(cancelado, { reparando: true }), null);
+    expect(siguienteEscena(entrada(cancelado, { reparando: true }), entrada(cancelado, { silencio: 1 }), golpes)).toBeNull();
+  });
+
+  it("Reactivar hecho por otro vendedor: también empieza con los golpes y ya sabe el final", () => {
+    const golpes = siguienteEscena(entrada(cancelado), entrada(programado), null);
+    expect(golpes).toMatchObject({ escena: "reparacion-golpes", siguiente: "reparacion", vista: cancelado });
+  });
+
+  it("los golpes siguen mientras llega la respuesta", () => {
+    const golpes = siguienteEscena(entrada(cancelado), entrada(cancelado, { reparando: true }), null);
+    expect(siguienteEscena(entrada(cancelado, { reparando: true }), entrada({ ...cancelado, etiqueta: null }, { reparando: true }), golpes)).toBe(golpes);
+    expect(finDeGolpes(golpes!)).toBeNull();
   });
 });

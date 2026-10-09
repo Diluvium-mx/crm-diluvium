@@ -118,7 +118,7 @@ export function Composer({
   const [multimediaOpen, setMultimediaOpen] = useState(false);
   // 🤖 Seguimiento del Agente IA: la burbuja con sus opciones.
   const [followUpOpen, setFollowUpOpen] = useState(false);
-  const { followUp, reload: reloadFollowUp } = useFollowUp(conversationId);
+  const { followUp, anticipo: followUpAnticipo, silencio: followUpSilencio, anticipar, confirmar, revertir } = useFollowUp(conversationId);
   // «Se dio de baja» (131050): el aviso se abre solo la primera vez en esta computadora (6-oct-2026).
   const [bajaDismissed, setBajaDismissed] = useState<string | null>(null);
   const bajaAlert = followUp?.estado === "baja" && bajaDismissed !== followUp.contactId && !bajaAlreadySeen(followUp.contactId);
@@ -143,7 +143,7 @@ export function Composer({
     setScheduleOpen(false);
     setAttachMenuOpen(false);
   };
-  const followUpPanel = followUpPanelOpen && <FollowUpPanel followUp={followUp} onClose={closeFollowUp} onChanged={reloadFollowUp} />;
+  const followUpPanel = followUpPanelOpen && <FollowUpPanel followUp={followUp} onClose={closeFollowUp} onChanged={confirmar} onAnticipar={anticipar} onRevertir={revertir} />;
   const [snippets, setSnippets] = useState<SnippetView[] | null>(null);
   const [snippetsError, setSnippetsError] = useState(false);
   // Comandos de Automatización (Fase D): "/tabla", "/banco"… se listan bajo los
@@ -347,7 +347,7 @@ export function Composer({
           />
         ) : (
           <div className="flex gap-2">
-            {followUp && <FollowUpPill followUp={followUp} open={followUpPanelOpen} onToggle={toggleFollowUp} className="flex max-w-[45%] self-center" />}
+            {followUp && <FollowUpPill followUp={followUp} anticipo={followUpAnticipo} silencio={followUpSilencio} open={followUpPanelOpen} onToggle={toggleFollowUp} className="flex max-w-[45%] self-center" />}
             <button
               type="button"
               onClick={() => {
@@ -503,7 +503,7 @@ export function Composer({
         <div className="order-1 flex min-w-0 flex-col gap-1 sm:order-none">
           {/* w-0 + min-w-full: la píldora mide lo mismo que ⚡ 📄 📎 y nunca ensancha la columna (si no, la caja
               de texto se encoge con la lista y el Detalle abiertos; decisión del dueño, 6-oct-2026). */}
-          {followUp && <FollowUpPill followUp={followUp} open={followUpPanelOpen} onToggle={toggleFollowUp} className="hidden w-0 min-w-full sm:flex" />}
+          {followUp && <FollowUpPill followUp={followUp} anticipo={followUpAnticipo} silencio={followUpSilencio} open={followUpPanelOpen} onToggle={toggleFollowUp} className="hidden w-0 min-w-full sm:flex" />}
           <div className="flex gap-2">
             <button
               type="button"
@@ -673,7 +673,7 @@ export function Composer({
         >
           <Clock className="size-4" aria-hidden="true" />
         </button>
-        {followUp && <FollowUpPill followUp={followUp} open={followUpPanelOpen} onToggle={toggleFollowUp} className="order-1 ml-auto flex max-w-[50%] self-center sm:hidden" />}
+        {followUp && <FollowUpPill followUp={followUp} anticipo={followUpAnticipo} silencio={followUpSilencio} open={followUpPanelOpen} onToggle={toggleFollowUp} className="order-1 ml-auto flex max-w-[50%] self-center sm:hidden" />}
         <button
           type="button"
           onClick={submit}
