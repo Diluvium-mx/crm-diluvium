@@ -352,8 +352,10 @@ export function FollowUpPill({
       // overflow-hidden mientras corre una escena: lo que entra (pistola, llave, despertador, avioncito) no se sale.
       className={`h-5 min-w-0 cursor-pointer items-center justify-center gap-1 rounded-full border text-[11px] leading-none whitespace-nowrap transition-colors select-none ${label ? "px-2" : "px-6"} ${enCurso ? "overflow-hidden" : ""} ${vista.tono} ${open ? "ring-2 ring-brand-navy/30" : ""} ${className}`}
     >
-      {enCurso ? <RobotEscena key={enCurso.n} escena={enCurso.escena} /> : <RobotIcon face={vista.cara} />}
-      {label && (enCurso ? <EtiquetaEscena key={enCurso.n} antes={enCurso.etiquetaAntes} ahora={label} /> : <span className="truncate">{label}</span>)}
+      {/* Llaves distintas para el robot y la etiqueta: con la misma, React dejaba un robot de más al terminar la escena
+          (9-oct-2026, «dos robots» al cambiar la hora). Cambian con cada escena para que las animaciones empiecen de cero. */}
+      {enCurso ? <RobotEscena key={`robot-${enCurso.n}`} escena={enCurso.escena} /> : <RobotIcon face={vista.cara} />}
+      {label && (enCurso ? <EtiquetaEscena key={`etiqueta-${enCurso.n}`} antes={enCurso.etiquetaAntes} ahora={label} /> : <span className="truncate">{label}</span>)}
     </button>
   );
 }
