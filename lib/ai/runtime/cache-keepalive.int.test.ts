@@ -1,7 +1,6 @@
-// Renovación de la caché de 1 h en horario laboral (2-oct-2026) contra Postgres REAL: manda el
-// mismo system que una respuesta, con 1 token de salida, y deja su fila "cache_renovada" sin
-// conversación; un solo intento por cada vez que se tocó la caché; nada fuera de horario ni con
-// la caché vencida. Solo corre con TEST_DATABASE_URL (base DESECHABLE).
+// Renovación de la caché de 1 h (2-oct-2026; las 24 horas desde el 9-oct) contra Postgres REAL:
+// manda el mismo system que una respuesta, con 1 token de salida, y deja su fila "cache_renovada"
+// sin conversación; si la reescribe, una sola vez más; nada con la caché vencida. Solo corre con TEST_DATABASE_URL (base DESECHABLE).
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import type { CallModelInput, CallModelResult, ModelUsage } from "@/lib/ai/types";
 
@@ -91,7 +90,7 @@ describe.skipIf(!TEST_DATABASE_URL)("Renovación de la caché del Agente IA (Pos
     expect(rows[0].cacheReadTokens).toBe(18_900);
   });
 
-  it("antes de los 50 min, con la caché vencida o fuera de horario no manda nada", async () => {
+  it("antes de los 50 min o con la caché vencida no manda nada; de noche sí renueva (9-oct)", async () => {
     const m = fakeModel(18_900);
     const deps = { callModel: m.callModel, isModelAvailable: () => true };
     await usage(NOON, 30);
@@ -100,9 +99,10 @@ describe.skipIf(!TEST_DATABASE_URL)("Renovación de la caché del Agente IA (Pos
     await usage(NOON, 75);
     expect(await keepalive.keepBrainCacheAlive({ ...deps, now: () => NOON })).toBe(0);
     await db.execute(d.sql`truncate ai_usage`);
-    await usage(NIGHT, 52);
-    expect(await keepalive.keepBrainCacheAlive({ ...deps, now: () => NIGHT })).toBe(0);
     expect(m.calls).toHaveLength(0);
+    await db.execute(d.sql`truncate ai_usage`);
+    await usage(NIGHT, 52);
+    expect(await keepalive.keepBrainCacheAlive({ ...deps, now: () => NIGHT })).toBe(1);
   });
 
   it("la duración de la llamada cuenta: el reloj de la caché empieza al INICIO de la petición", async () => {
@@ -112,7 +112,7 @@ describe.skipIf(!TEST_DATABASE_URL)("Renovación de la caché del Agente IA (Pos
     expect(await keepalive.keepBrainCacheAlive({ now: () => NOON, callModel: m.callModel, isModelAvailable: () => true })).toBe(1);
   });
 
-  it("si la renovación no encuentra la caché, no se repite cada minuto (un intento por respuesta real)", async () => {
+  it("si la renovación no encuentra la caché y la reescribe, cuenta UNA vez: la siguiente toca 50 min después (9-oct)", async () => {
     await usage(NOON, 52);
     const miss = fakeModel(0);
     const deps = { callModel: miss.callModel, isModelAvailable: () => true };
@@ -123,9 +123,29 @@ describe.skipIf(!TEST_DATABASE_URL)("Renovación de la caché del Agente IA (Pos
     await usage(later, 53);
     await db.insert(s.aiUsage).values({ id: crypto.randomUUID(), organizationId: ORG, stage: "cerebro", provider: "anthropic", modelId: SONNET, inputTokens: 19_001, outputTokens: 1, cacheReadTokens: 0, cacheWriteTokens: 19_000, latencyMs: 0, outcome: "cache_renovada", createdAt: new Date(later.getTime() - MIN) });
     const state = await keepalive.cacheState(ORG, SONNET, later);
-    // La renovación fallida no cuenta como "tocada"…
-    expect(state.touch?.getTime()).toBe(later.getTime() - 53 * MIN);
-    // …y como ya hubo un intento después de la última respuesta, no se vuelve a mandar.
+    // La renovación que reescribió la caché cuenta como "tocada" (la caché nueva quedó viva)…
+    expect(state.touch?.getTime()).toBe(later.getTime() - MIN);
+    // …y el siguiente barrido no la repite: toca hasta 50 min después de ella.
+    expect(state.lastAttempt?.getTime()).toBe(state.touch?.getTime());
+    expect(await keepalive.keepBrainCacheAlive({ ...deps, now: () => later })).toBe(0);
+  });
+
+  it("si DOS renovaciones seguidas la reescriben, no se repite hasta la siguiente respuesta real", async () => {
+    await usage(NOON, 110);
+    await usage(NOON, 59, { outcome: "cache_renovada", cacheReadTokens: 0, cacheWriteTokens: 19_000 });
+    await usage(NOON, 5, { outcome: "cache_renovada", cacheReadTokens: 0, cacheWriteTokens: 19_000 });
+    const state = await keepalive.cacheState(ORG, SONNET, NOON);
+    expect(state.touch?.getTime()).toBe(NOON.getTime() - 110 * MIN);
+    expect(state.lastAttempt!.getTime()).toBeGreaterThan(state.touch!.getTime());
+    const m = fakeModel(0);
+    expect(await keepalive.keepBrainCacheAlive({ now: () => new Date(NOON.getTime() + 47 * MIN), callModel: m.callModel, isModelAvailable: () => true })).toBe(0);
+  });
+
+  it("una renovación que falló (sin tokens) no cuenta como tocada", async () => {
+    await usage(NOON, 53);
+    await usage(NOON, 1, { outcome: "cache_renovada", cacheReadTokens: 0, cacheWriteTokens: 0 });
+    const state = await keepalive.cacheState(ORG, SONNET, NOON);
+    expect(state.touch?.getTime()).toBe(NOON.getTime() - 53 * MIN);
     expect(state.lastAttempt!.getTime()).toBeGreaterThan(state.touch!.getTime());
   });
 

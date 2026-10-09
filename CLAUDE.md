@@ -84,7 +84,7 @@ formularios y landing pages, agente IA de calificación, TikTok.
 > transcritas con `gpt-4o-mini-transcribe` (el agente las lee; "Transcripción" en el chat), un error de
 > envío deja la respuesta guardada y "Reintentar" manda el MISMO texto (nunca otra llamada al modelo), y
 > `ai_config.daily_budget_usd` borrada. Detalle: `docs/agente-ia.md` › Parte 1. **Caché de 1 h (2-oct-2026):** las marcas de caché de
-> Anthropic usan `ttl: "1h"` y el worker la renueva de 7:00 a 22:00 (Mazatlán) con una lectura mínima
+> Anthropic usan `ttl: "1h"` y el worker la renueva las 24 horas (desde el 9-oct; antes de 7:00 a 22:00) con una lectura mínima
 > (`lib/ai/runtime/cache-keepalive.ts`, `ai_usage.outcome = 'cache_renovada'`); la escritura de 1 h se cobra a 2×
 > la entrada. Detalle: `docs/agente-ia.md` › Caché de 1 hora. Fase E, parte 1: selectores, etapas (Modelo 1 = Inbox, Prospecto,
 > Interesado), adaptadores de Google/xAI/OpenRouter y tope de 4,096 tokens (migración 0033). Parte 2
@@ -148,6 +148,10 @@ Reglas duras:
   con restore de prueba en cada corrida. Secrets en el environment `production-backup`
   (solo `main`), rol `backup_ro` de solo lectura y TLS con CA fijada. Restore: `docs/backups.md`.
   **Sin servicios externos**: el CRM depende solo de GitHub, Railway y Meta.
+- **Goal y FAQs del Agente IA (regla del dueño, 9-oct-2026):** los cambios se juntan y se aplican en
+  producción **una sola vez al día, después de las 22:00 (Mazatlán)**, salvo un error grave que haya que
+  corregir de inmediato. Cada guardado obliga a Anthropic a volver a cobrar el Goal completo (~US$0.09);
+  el 8-oct fueron 7 en un día. Detalle: `docs/agente-ia.md` › Renovación de la caché las 24 horas.
 
 Variables de entorno mínimas:
 ```
