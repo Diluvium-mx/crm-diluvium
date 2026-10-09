@@ -707,6 +707,9 @@ prototipos (tamaño real y ampliado) antes de construirlas; el dueño aprobó la
   `anticipar`) y el servidor solo confirma; si rechaza, la píldora regresa sin escena (`revertir` sube `silencio`). Reactivar no se
   puede anticipar (programado o dormido según el chat): la llave golpea al instante (`reparacion-golpes`, 1 s mínimo), el robot
   queda «cargando» y `reactivarSeguimientos` trae el estado nuevo para el final. Medido en local: 5–22 ms del clic a la escena.
+- **Arreglo «dos robots»** (9-oct-2026, reportado por el dueño al cambiar la hora): el robot animado y la etiqueta usaban la
+  misma llave de React y al terminar la escena se quedaba un robot de más (reloj, despertador, avioncito y llave). Ahora
+  cada uno lleva la suya (`robot-N` / `etiqueta-N`).
 - **Quién la ve** (decisión del dueño): todo el que tenga el chat abierto cuando cambia, vendedor o admin, lo haya hecho
   él u otro. Al abrir un chat no se juega ninguna. Con «reducir movimiento» se ve directo la carita final, que es la de
   `public/emoji/` del estado nuevo.
