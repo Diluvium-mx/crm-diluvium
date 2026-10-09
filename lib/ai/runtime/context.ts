@@ -61,8 +61,10 @@ export async function loadSnapshot(
 // contesta el resto del mismo mensaje, como en GHL; y lo que el cliente escriba durante
 // la espera de 30 s de la tabla no queda "atendido" por la imagen).
 // EXCEPCIÓN (28-sep-2026, pregunta duplicada): el último mensaje de un workflow del AGENTE con
-// «El workflow es la respuesta» y textos (su texto propio no salió) contesta hasta el último
-// mensaje que el agente leyó: el ejecutor lo marca con `respondeHasta` (ANSWERS_UNTIL_KEY).
+// «El workflow es la respuesta» y textos (su texto propio no salió) contestaba hasta el último
+// mensaje que el agente leyó (`respondeHasta`, ANSWERS_UNTIL_KEY). Desde el 9-oct-2026 va como por
+// palabra clave, con la marca de revisión (complemento); `respondeHasta` queda para el texto del
+// Agente IA que sale como pie del archivo o solo (executor.ts).
 // Por PALABRA CLAVE (29-sep-2026, bug de la ráfaga) el último mensaje contesta SOLO su
 // disparador (`contestaA`, ANSWERS_ONLY_KEY): sigue siendo relleno aquí (no cierra lo anterior)
 // y pendingInbound excluye ese único mensaje. `alias`: la fila de `messages` evaluada
@@ -115,9 +117,10 @@ export const ANSWERS_ONLY_KEY = "contestaA";
 // conteste lo que el workflow no cubrió (o decida que no falta nada). Las marcas anteriores (sin
 // ella) siguen como antes: el workflow contestó todo.
 export const ANSWERS_ONLY_REVIEW_KEY = "revisaAgente";
-// 9-oct-2026 (complemento de un workflow «es la respuesta» de solo archivos que pidió el propio
-// Agente IA): junto a la marca de revisión va la hora en que salió el archivo. El registro de la
-// respuesta que PIDIÓ el workflow (anterior) no cuenta como revisión; solo uno posterior a esta hora.
+// 9-oct-2026 (complemento de un workflow «es la respuesta» que pidió el propio Agente IA, con
+// archivos o con textos): junto a la marca de revisión va la hora en que salió su último mensaje. El
+// registro de la respuesta que PIDIÓ el workflow (anterior) no cuenta como revisión; solo uno
+// posterior a esta hora.
 export const ANSWERS_REVIEW_SINCE_KEY = "revisaDesde";
 // Entrante contestado uno por uno por un workflow (ANSWERS_ONLY_KEY) con un saliente que no falló
 // y, si lleva la marca de revisión, que el Agente IA ya revisó (resultado final en ai_usage: lo
@@ -141,9 +144,9 @@ export function answeredOnlySql(alias: "messages" | "m"): SQL {
 
 /**
  * Entrantes pendientes que un workflow «El workflow es la respuesta» ya contestó en parte (por
- * palabra clave o, si solo manda archivos, pedido por el propio agente) y que el Agente IA todavía
- * debe revisar (ANSWERS_ONLY_REVIEW_KEY): id del entrante → nombre del workflow. El agente contesta
- * lo que falte del mensaje (run.ts, modo complemento).
+ * palabra clave o pedido por el propio agente) y que el Agente IA todavía debe revisar
+ * (ANSWERS_ONLY_REVIEW_KEY): id del entrante → nombre del workflow. El agente contesta lo que
+ * falte del mensaje (run.ts, modo complemento).
  */
 export async function answeredByWorkflow(organizationId: string, conversationId: string, ids: readonly string[]): Promise<Map<string, string>> {
   if (ids.length === 0) return new Map();
@@ -198,7 +201,7 @@ export const ANSWER_RUN_WAIT_MAX_MS = 3 * 60_000;
  * antes, 28-sep: "termina en pregunta"), disparada por uno de estos entrantes pendientes? Su
  * último mensaje contesta ese entrante: el agente espera a que termine en vez de contestar
  * encima (al terminar, lo demás de la ráfaga sigue pendiente). Por palabra clave, y también la
- * del propio Agente IA cuando su texto no salió (workflow con textos; run.ts).
+ * del propio Agente IA cuando su texto no salió (workflow con textos o archivos; run.ts).
  */
 export async function answerRunInFlight(organizationId: string, conversationId: string, triggerIds: readonly string[], now: Date): Promise<boolean> {
   if (triggerIds.length === 0) return false;
@@ -483,11 +486,12 @@ export async function inboundCount(organizationId: string, conversationId: strin
 }
 
 /**
- * Complemento de un workflow «es la respuesta» de solo archivos que pidió el propio Agente IA
- * (9-oct-2026, «Dónde medir»): la respuesta que lo pidió ya dejó su resultado final en ai_usage,
- * pero el mensaje sigue esperando la revisión del agente. ¿Va en camino esa corrida, o ya salió
- * su archivo con la marca de revisión (`revisaDesde`)? Mientras sea así, el resultado anterior no
- * cuenta como «ya atendido» (run.ts): el agente espera a la corrida y luego revisa el mensaje.
+ * Complemento de un workflow «es la respuesta» que pidió el propio Agente IA (9-oct-2026: primero
+ * solo archivos, «Dónde medir»; el mismo día también con textos, «Entrada mayor a 2.5 m»): la
+ * respuesta que lo pidió ya dejó su resultado final en ai_usage, pero el mensaje sigue esperando la
+ * revisión del agente. ¿Va en camino esa corrida, o ya salió su último mensaje con la marca de
+ * revisión (`revisaDesde`)? Mientras sea así, el resultado anterior no cuenta como «ya atendido»
+ * (run.ts): el agente espera a la corrida y luego revisa el mensaje.
  * (Si el mensaje sigue pendiente con esa marca, pendingInbound ya sabe que no se ha revisado.)
  */
 export async function awaitingWorkflowReview(organizationId: string, conversationId: string, messageId: string): Promise<boolean> {
@@ -502,7 +506,6 @@ export async function awaitingWorkflowReview(organizationId: string, conversatio
     where r.organization_id = ${organizationId} and r.conversation_id = ${conversationId}
       and r.trigger = 'agent' and r.trigger_message_id = ${messageId}
       and r.status in ('queued', 'running') and w.is_answer
-      and not exists (select 1 from workflow_steps st where st.organization_id = r.organization_id and st.workflow_id = r.workflow_id and st.kind = 'send_text')
     limit 1
   `);
   return rows.length > 0;

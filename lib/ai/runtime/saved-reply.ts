@@ -149,9 +149,10 @@ export async function inboundAfter(organizationId: string, conversationId: strin
 // pendiente para el Agente IA. Desde el 30-sep-2026 con la marca de revisión
 // (ANSWERS_ONLY_REVIEW_KEY): el Agente IA revisa ese mismo mensaje y contesta lo que el workflow
 // no cubrió («De que cd son y que precio tienen»).
-// `reviewSinceNow` (9-oct-2026, workflow «es la respuesta» de solo archivos que pidió el propio
-// Agente IA): la marca guarda la hora (UTC, como ai_usage.created_at) para que la respuesta que pidió
-// el workflow, registrada antes, no cuente como su revisión (ANSWERS_REVIEW_SINCE_KEY en context.ts).
+// `reviewSinceNow` (9-oct-2026, workflow «es la respuesta» que pidió el propio Agente IA, con
+// archivos o con textos): la marca guarda la hora (UTC, como ai_usage.created_at) para que la
+// respuesta que pidió el workflow, registrada antes, no cuente como su revisión
+// (ANSWERS_REVIEW_SINCE_KEY en context.ts).
 export async function markAnswersOnly(organizationId: string, messageId: string, triggerMessageId: string, opts: { reviewSinceNow?: boolean } = {}): Promise<void> {
   const since = opts.reviewSinceNow ? sql`|| jsonb_build_object('revisaDesde', (now() at time zone 'utc')::text)` : sql``;
   await db.execute(sql`

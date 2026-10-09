@@ -9,8 +9,12 @@
 // Por palabra clave cada workflow se manda UNA vez por contacto (marca en el
 // contacto, como la etiqueta "medidas enviadas" de GHL); por comando del
 // vendedor y por petición del agente se manda siempre. Los workflows NUNCA
-// pausan al agente. Datos bancarios, tabla mini, dónde medir y medidas
-// especiales no llevan palabra clave (solo agente y comando).
+// pausan al agente. Datos bancarios, tabla mini y dónde medir no llevan
+// palabra clave (solo agente y comando).
+// 9-oct-2026 (dueño): ya no hay «Medidas especiales (más de 250 cm)» (`medidas_especiales`,
+// `/especial`, el texto viejo de la fabricación especial de 280 cm): el dueño lo borró en producción
+// y lo reemplazó por su propio workflow «Entrada mayor a 2.5 m». Fuera de esta lista, «Restaurar
+// predeterminados» y una organización nueva ya no lo vuelven a crear.
 // Como GHL, el texto de un paso de imagen/video va como PIE del adjunto (un solo
 // mensaje de WhatsApp: Zernio manda `message` junto con `attachmentUrl`); un
 // paso de solo texto sigue siendo un mensaje aparte.
@@ -153,22 +157,6 @@ export const DEFAULT_WORKFLOWS: readonly DefaultWorkflow[] = [
       media(
         "Video de dónde medir la entrada (MP4 H.264, ≤16 MB)",
         "La medida es de lateral a lateral, en centímetros, justo en el punto donde se va a apoyar la compuerta. Te dejo un video corto para que veas dónde tomarla.",
-      ),
-    ],
-  },
-  {
-    slug: "medidas_especiales",
-    name: "Medidas especiales (más de 250 cm)",
-    agentDescription:
-      "Envía el diagrama de las opciones para entradas mayores a 250 cm (fabricación especial de aprox. 280 cm, o poste central de acero con dos compuertas a la medida). " +
-      "Úsala solo cuando el cliente confirme una entrada mayor a 250 cm y pregunte qué opciones hay. Nunca digas que no fabricamos.",
-    triggerAgent: true,
-    triggerKeywords: [],
-    triggerCommand: "/especial",
-    steps: [
-      media(
-        "Diagrama de medidas especiales — poste central / 280 cm (PNG/JPG)",
-        "Para entradas mayores a 250 cm sí hay opción: una fabricación especial de aproximadamente 280 cm, o un poste central de acero con dos compuertas a la medida, una por lado. Te dejo un diagrama para que se entienda mejor.",
       ),
     ],
   },
