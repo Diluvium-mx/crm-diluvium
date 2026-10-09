@@ -26,6 +26,7 @@ import {
   type ContactQualificationPatch,
 } from "@/lib/contacts/qualification";
 import type { DetalleIa, ValidToolCall } from "./tools";
+import { quotedData } from "./transcript";
 
 // Quién escribe (aviso en vivo "contacto actualizado") y, con ello, el origen "agente".
 const AGENTE_IA = { kind: "agente" } as const;
@@ -159,7 +160,7 @@ export async function detalleContextFor(organizationId: string, contactId: strin
   if (c.tieneInundaciones) partes.push(`inundaciones: ${INUNDACIONES_LABEL[c.tieneInundaciones]}${v(DETALLE_KEY.tieneInundaciones)}`);
   if (c.nivelAguaCm !== null || c.nivelAguaTexto) {
     partes.push(
-      `agua: ${[c.nivelAguaCm !== null ? `${c.nivelAguaCm} cm` : "", c.nivelAguaTexto ? `(${c.nivelAguaTexto})` : ""].filter(Boolean).join(" ")}${v(DETALLE_KEY.nivelAguaCm, DETALLE_KEY.nivelAguaTexto)}`,
+      `agua: ${[c.nivelAguaCm !== null ? `${c.nivelAguaCm} cm` : "", c.nivelAguaTexto ? `(${quotedData(c.nivelAguaTexto)})` : ""].filter(Boolean).join(" ")}${v(DETALLE_KEY.nivelAguaCm, DETALLE_KEY.nivelAguaTexto)}`,
     );
   }
   if (c.numEntradas !== null) {
