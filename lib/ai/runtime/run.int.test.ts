@@ -1288,7 +1288,7 @@ describe.skipIf(!TEST_DATABASE_URL)("runtime del Agente IA (Postgres real)", () 
     const late = makeDeps({ brain: [brainMod.NOTHING_TOKEN] }, zernio);
     expect(await run.runAgent(JOB, late.deps)).toEqual({ kind: "sent", bubbles: 0 });
     expect(late.calls.filter((c) => c.kind === "cerebro")).toHaveLength(1);
-    expect(lastUserText(late.calls[0].input)).toContain("El workflow «informacion» ya le contestó al cliente su último mensaje");
+    expect(lastUserText(late.calls[0].input)).toContain("El workflow «informacion» ya le contestó al cliente con lo que aparece");
     expect(zernio.delivered).toHaveLength(3);
     expect(await notices()).toEqual([]);
     expect((await usage()).find((u) => u.stage === "cerebro")).toMatchObject({ messageId: m1, outcome: "sent", error: expect.stringContaining("complemento de «informacion»: nada que agregar") });
@@ -1369,7 +1369,7 @@ describe.skipIf(!TEST_DATABASE_URL)("runtime del Agente IA (Postgres real)", () 
     // El Agente IA revisa en modo complemento: su pregunta no sale.
     const { deps, calls } = makeDeps({ brain: ["Para orientarle bien, ¿qué situación quiere prevenir en su entrada?"] }, zernio);
     await run.runAgent(JOB, deps);
-    expect(lastUserText(calls.find((c) => c.kind === "cerebro")!.input)).toContain("ya le contestó al cliente su último mensaje");
+    expect(lastUserText(calls.find((c) => c.kind === "cerebro")!.input)).toContain("ya le contestó al cliente con lo que aparece");
     expect(zernio.delivered).not.toContain("Para orientarle bien, ¿qué situación quiere prevenir en su entrada?");
     expect(zernio.delivered.filter((t) => t === PREGUNTA)).toHaveLength(1);
   });
@@ -1710,6 +1710,52 @@ describe.skipIf(!TEST_DATABASE_URL)("runtime del Agente IA (Postgres real)", () 
     expect(await run.runAgent(JOB, makeDeps({ brain: ["x"] }).deps)).toEqual({ kind: "noop", reason: "sin_pendientes" });
   });
 
+  // ── Ráfagas (9-oct-2026, dueño): revisada la ráfaga, nada queda pendiente ──
+  // Banco notas/banco-rafaga (23 ráfagas reales del 1 al 9-oct): el complemento revisa cada mensaje
+  // (la nota los nombra) y, si no falta nada, el saludo de la ráfaga ya no recibe un «Buenas tardes»
+  // aparte ~90 s después por el barrido.
+  it("ráfaga con saludo: «Buenas tardes» + «Precio» → «Precio 2» contesta; el complemento revisa los dos (la nota los nombra) y, si no falta nada, ninguno queda pendiente", async () => {
+    await msg({ direction: "in", body: "Buenas tardes", at: ago(42_000) });
+    const m2 = await msg({ direction: "in", body: "Precio", at: ago(40_000) });
+    const wfId = await wf(
+      "precio_2",
+      [
+        { kind: "send_text", text: "Ahorita tenemos cualquier tamaño en $5,500 con envío gratis." },
+        { kind: "send_text", text: PREGUNTA },
+      ],
+      { isAnswer: true },
+    );
+    await keywordRun("run_precio", wfId, m2);
+    expect(await executor.executeWorkflowRun("run_precio", execDeps(fakeZernio()))).toBe("done");
+    // Antes de la revisión, el saludo sigue pendiente: el barrido lo rescataría si se perdiera el job.
+    expect((await sweep.findOrphanConversations(new Date(Date.now() + 2 * 60_000))).map((c) => c.conversationId)).toContain(CONV);
+    const { deps, calls } = makeDeps({ brain: [brainMod.NOTHING_TOKEN] });
+    expect(await run.runAgent(JOB, deps)).toEqual({ kind: "sent", bubbles: 0 });
+    expect(lastUserText(calls[0].input)).toContain("estos 2 mensajes seguidos: «Buenas tardes» · «Precio»");
+    expect(lastUserText(calls[0].input)).toContain("Revisa CADA uno, no solo el último");
+    // Revisado: ni el agente ni el barrido vuelven a tomar el saludo.
+    expect((await sweep.findOrphanConversations(new Date(Date.now() + 2 * 60_000))).map((c) => c.conversationId)).not.toContain(CONV);
+    const again = makeDeps({ brain: ["Buenas tardes 😊"] });
+    expect(await run.runAgent(JOB, again.deps)).toEqual({ kind: "noop", reason: "sin_pendientes" });
+    expect(again.calls).toHaveLength(0);
+  });
+
+  it("ráfaga con una marca VIEJA (sin revisión, antes del 30-sep): lo anterior al disparador sigue pendiente (bug de la ráfaga del 29-sep)", async () => {
+    await msg({ direction: "in", body: "¿Cuánto tarda el envío?", at: ago(42_000) });
+    const m2 = await msg({ direction: "in", body: "Precio", at: ago(40_000) });
+    const wfId = await wf("precio_2", [{ kind: "send_text", text: PREGUNTA }], { isAnswer: true });
+    await keywordRun("run_precio", wfId, m2);
+    expect(await executor.executeWorkflowRun("run_precio", execDeps(fakeZernio()))).toBe("done");
+    // Como las marcas de antes del 30-sep: contestaA sin revisaAgente.
+    const { sql } = await import("drizzle-orm");
+    await db.execute(sql`update messages set metadata = metadata - 'revisaAgente' where metadata ? 'contestaA'`);
+    const { deps, calls } = makeDeps({ brain: ["El envío tarda de 3 a 5 días hábiles."] });
+    expect(await run.runAgent(JOB, deps)).toEqual({ kind: "sent", bubbles: 1 });
+    // El disparador quedó contestado por el workflow; lo del envío no: el agente lo contesta como siempre.
+    expect(lastUserText(calls[0].input)).not.toContain("ya le contestó al cliente con lo que aparece");
+    expect((await agentOuts()).at(-1)?.body).toBe("El envío tarda de 3 a 5 días hábiles.");
+  });
+
   it("solo al inicio POR PALABRA CLAVE (la Tabla): el Agente IA conserva la herramienta después de contestar", async () => {
     await msg({ direction: "in", body: "hola", at: ago(40_000) });
     await wf("tabla_tamanos_estandar", [{ kind: "send_text", text: "tabla" }], { triggerStartOnly: true, triggerStartOnlyAgent: false });
@@ -1809,7 +1855,7 @@ describe.skipIf(!TEST_DATABASE_URL)("runtime del Agente IA (Postgres real)", () 
     const late = makeDeps({ brain: [brainMod.NOTHING_TOKEN] }, zernio);
     expect(await run.runAgent(JOB, late.deps)).toEqual({ kind: "sent", bubbles: 0 });
     expect(late.calls.filter((c) => c.kind === "cerebro")).toHaveLength(1);
-    expect(lastUserText(late.calls[0].input)).toContain("El workflow «donde_medir» ya le contestó al cliente su último mensaje");
+    expect(lastUserText(late.calls[0].input)).toContain("El workflow «donde_medir» ya le contestó al cliente con lo que aparece");
     expect(zernio.delivered).toEqual([`📎 ${PIE_MEDIR}`]);
     expect(await notices()).toEqual([]);
     expect((await usage()).some((u) => u.stage === "cerebro" && (u.error ?? "").includes("complemento de «donde_medir»: nada que agregar"))).toBe(true);
@@ -1855,7 +1901,7 @@ describe.skipIf(!TEST_DATABASE_URL)("runtime del Agente IA (Postgres real)", () 
     const late = makeDeps({ brain: ["Sí, enviamos a todo México sin costo.\n\n¿Ya tiene su medida?"] }, zernio);
     expect(await run.runAgent(JOB, late.deps)).toEqual({ kind: "sent", bubbles: 2 });
     const input = lastUserText(late.calls[0].input);
-    expect(input).not.toContain("ya le contestó al cliente su último mensaje");
+    expect(input).not.toContain("ya le contestó al cliente con lo que aparece");
     expect(input).toContain("ya contestó una parte de lo que escribió el cliente");
     expect(zernio.delivered).toEqual([`📎 ${PIE_MEDIR}`, "Sí, enviamos a todo México sin costo.", "¿Ya tiene su medida?"]);
     expect(await run.runAgent(JOB, makeDeps({ brain: ["x"] }).deps)).toEqual({ kind: "noop", reason: "sin_pendientes" });
@@ -1936,7 +1982,7 @@ describe.skipIf(!TEST_DATABASE_URL)("runtime del Agente IA (Postgres real)", () 
     expect((await sweep.findOrphanConversations(new Date(Date.now() + 2 * 60_000))).map((c) => c.conversationId)).toContain(CONV);
     const late = makeDeps({ brain: [brainMod.NOTHING_TOKEN] }, zernio);
     expect(await run.runAgent(JOB, late.deps)).toEqual({ kind: "sent", bubbles: 0 });
-    expect(lastUserText(late.calls[0].input)).toContain("El workflow «entrada_mayor» ya le contestó al cliente su último mensaje");
+    expect(lastUserText(late.calls[0].input)).toContain("El workflow «entrada_mayor» ya le contestó al cliente con lo que aparece");
     expect(zernio.delivered).toHaveLength(2);
     expect(await notices()).toEqual([]);
     expect(await run.runAgent(JOB, makeDeps({ brain: ["x"] }).deps)).toEqual({ kind: "noop", reason: "sin_pendientes" });
@@ -1945,6 +1991,23 @@ describe.skipIf(!TEST_DATABASE_URL)("runtime del Agente IA (Postgres real)", () 
     const after = makeDeps({ brain: ["Perfecto, serían dos compuertas, una de cada lado del poste."] }, zernio);
     expect(await run.runAgent(JOB, after.deps)).toEqual({ kind: "sent", bubbles: 1 });
     expect(lastUserText(after.calls[0].input)).not.toContain("El workflow «entrada_mayor»");
+  });
+
+  it("«Entrada mayor a 2.5 m» y ráfaga sin pregunta («Ya la medí» + «y mide 4.2 m», prueba del dueño 9-oct): el complemento revisa los dos y, si no falta nada, ninguno queda pendiente", async () => {
+    await msg({ direction: "in", body: "Ya la medí", at: ago(45_000) });
+    const m2 = await msg({ direction: "in", body: "y mide 4.2 m", at: ago(40_000) });
+    await poste();
+    const zernio = fakeZernio();
+    expect((await run.runAgent(JOB, makeDeps({ brain: ["Para 4.2 m se necesita un poste intermedio."], toolCalls: [WF_POSTE] }, zernio).deps)).kind).toBe("reschedule");
+    const [r] = await runs();
+    expect(r).toMatchObject({ trigger: "agent", triggerMessageId: m2 });
+    expect(await executor.executeWorkflowRun(r.id, mediaExecDeps(zernio))).toBe("done");
+    const late = makeDeps({ brain: [brainMod.NOTHING_TOKEN] }, zernio);
+    expect(await run.runAgent(JOB, late.deps)).toEqual({ kind: "sent", bubbles: 0 });
+    expect(lastUserText(late.calls[0].input)).toContain("estos 2 mensajes seguidos: «Ya la medí» · «y mide 4.2 m»");
+    expect(zernio.delivered).toEqual([`📎 ${PIE_POSTE}`, TEXTO_POSTE]);
+    expect((await sweep.findOrphanConversations(new Date(Date.now() + 2 * 60_000))).map((c) => c.conversationId)).not.toContain(CONV);
+    expect(await run.runAgent(JOB, makeDeps({ brain: ["x"] }).deps)).toEqual({ kind: "noop", reason: "sin_pendientes" });
   });
 
   it("«Entrada mayor a 2.5 m» con otra pregunta («Son 4.2 m. ¿Hacen envíos a Culiacán?»): sale el workflow y el complemento contesta SOLO lo del envío, sin preguntar y sin volver a pedir el workflow", async () => {
@@ -1994,7 +2057,7 @@ describe.skipIf(!TEST_DATABASE_URL)("runtime del Agente IA (Postgres real)", () 
     const late = makeDeps({ brain: ["Sí, enviamos a Culiacán sin costo."] }, zernio);
     expect(await run.runAgent(JOB, late.deps)).toEqual({ kind: "sent", bubbles: 1 });
     const input = lastUserText(late.calls[0].input);
-    expect(input).not.toContain("ya le contestó al cliente su último mensaje");
+    expect(input).not.toContain("ya le contestó al cliente con lo que aparece");
     expect(input).toContain("El workflow «entrada_mayor» ya contestó una parte de lo que escribió el cliente");
     expect(zernio.delivered).toEqual([`📎 ${PIE_POSTE}`, TEXTO_POSTE, "Sí, enviamos a Culiacán sin costo."]);
     expect(await run.runAgent(JOB, makeDeps({ brain: ["x"] }).deps)).toEqual({ kind: "noop", reason: "sin_pendientes" });
@@ -2011,7 +2074,7 @@ describe.skipIf(!TEST_DATABASE_URL)("runtime del Agente IA (Postgres real)", () 
     expect(await executor.executeWorkflowRun(r.id, mediaExecDeps(zernio))).toBe("done");
     const late = makeDeps({ brain: ["Sí, enviamos a Culiacán sin costo."] }, zernio);
     expect(await run.runAgent(JOB, late.deps)).toEqual({ kind: "sent", bubbles: 1 });
-    expect(lastUserText(late.calls[0].input)).toContain("El workflow «entrada_mayor» ya le contestó al cliente su último mensaje");
+    expect(lastUserText(late.calls[0].input)).toContain("El workflow «entrada_mayor» ya le contestó al cliente con lo que aparece");
     expect(JSON.stringify(late.calls[0].input.messages)).toContain("Son 4.2 m");
     expect(zernio.delivered).toEqual([`📎 ${PIE_POSTE}`, TEXTO_POSTE, "Sí, enviamos a Culiacán sin costo."]);
     expect(await run.runAgent(JOB, makeDeps({ brain: ["x"] }).deps)).toEqual({ kind: "noop", reason: "sin_pendientes" });

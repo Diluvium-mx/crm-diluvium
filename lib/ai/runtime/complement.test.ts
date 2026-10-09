@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { HANDOVER_TOKEN, NOTHING_TOKEN, parseBrainOutput } from "./brain";
-import { complementNote, partialNote, withoutClosingQuestions } from "./complement";
+import { complementNote, partialNote, saidText, withoutClosingQuestions } from "./complement";
 
 describe("señal «nada que agregar» (complemento de un workflow, 30-sep-2026)", () => {
   it("sola → nothing; con texto → el texto sin la señal; vacío sin señal sigue siendo vacío", () => {
@@ -17,10 +17,34 @@ describe("señal «nada que agregar» (complemento de un workflow, 30-sep-2026)"
 
 describe("notas del modo complemento", () => {
   it("la del complemento nombra al workflow, prohíbe preguntar y ofrece la señal exacta", () => {
-    const note = complementNote("Precio 2");
+    const note = complementNote("Precio 2", ["Precio"]);
     expect(note).toContain("«Precio 2»");
     expect(note).toContain("SIN hacer preguntas");
     expect(note).toContain(NOTHING_TOKEN);
+  });
+
+  it("ráfaga (9-oct-2026): nombra CADA mensaje del cliente y pide revisarlos todos, no solo el último", () => {
+    const note = complementNote("Precio 2", ["¿Cuánto tarda el envío?", "Precio"]);
+    expect(note).toContain("estos 2 mensajes seguidos: «¿Cuánto tarda el envío?» · «Precio»");
+    expect(note).toContain("Revisa CADA uno, no solo el último");
+    expect(note).toContain("«envío gratis» no dice cuánto tarda el envío");
+    // Un solo mensaje: sin «seguidos».
+    expect(complementNote("Precio 2", ["De que cd son y que precio tienen"])).toContain("el cliente mandó: «De que cd son y que precio tienen». Revisa si alguno");
+  });
+
+  it("ráfaga larga: solo los 8 más recientes", () => {
+    const said = Array.from({ length: 10 }, (_, i) => `m${i + 1}`);
+    const note = complementNote("Precio 2", said);
+    expect(note).toContain("estos 10 mensajes seguidos: «m3»");
+    expect(note).not.toContain("«m2»");
+  });
+
+  it("saidText: texto en una línea y recortado; nota de voz con su transcripción o sin ella; adjunto por tipo", () => {
+    expect(saidText({ type: "text", body: "  Hola\n  buenas  " })).toBe("Hola buenas");
+    expect(saidText({ type: "text", body: "x".repeat(200) })).toBe(`${"x".repeat(160)}…`);
+    expect(saidText({ type: "audio", body: null, transcripcion: "mide cuatro metros" })).toBe("[nota de voz] mide cuatro metros");
+    expect(saidText({ type: "audio", body: null, transcripcion: null })).toBe("[nota de voz sin transcribir]");
+    expect(saidText({ type: "image", body: null })).toBe("[image]");
   });
 
   it("la parcial (el cliente siguió escribiendo) no ofrece la señal: hay que contestar", () => {
