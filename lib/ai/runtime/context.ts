@@ -115,9 +115,14 @@ export const ANSWERS_ONLY_KEY = "contestaA";
 // conteste lo que el workflow no cubrió (o decida que no falta nada). Las marcas anteriores (sin
 // ella) siguen como antes: el workflow contestó todo.
 export const ANSWERS_ONLY_REVIEW_KEY = "revisaAgente";
+// 9-oct-2026 (complemento de un workflow «es la respuesta» de solo archivos que pidió el propio
+// Agente IA): junto a la marca de revisión va la hora en que salió el archivo. El registro de la
+// respuesta que PIDIÓ el workflow (anterior) no cuenta como revisión; solo uno posterior a esta hora.
+export const ANSWERS_REVIEW_SINCE_KEY = "revisaDesde";
 // Entrante contestado uno por uno por un workflow (ANSWERS_ONLY_KEY) con un saliente que no falló
 // y, si lleva la marca de revisión, que el Agente IA ya revisó (resultado final en ai_usage: lo
-// contestó, decidió que no faltaba nada o lo tomó un vendedor). `alias`: la fila de `messages`
+// contestó, decidió que no faltaba nada o lo tomó un vendedor; si la marca trae hora,
+// ANSWERS_REVIEW_SINCE_KEY, solo un resultado posterior a ella). `alias`: la fila de `messages`
 // evaluada (constante del código, nunca un dato).
 export function answeredOnlySql(alias: "messages" | "m"): SQL {
   const m = sql.raw(alias);
@@ -128,15 +133,17 @@ export function answeredOnlySql(alias: "messages" | "m"): SQL {
       and (not coalesce(a.metadata ? 'revisaAgente', false) or exists (
         select 1 from ai_usage u
         where u.organization_id = ${m}.organization_id and u.message_id = ${m}.id
+          and (not coalesce(a.metadata ? 'revisaDesde', false) or u.created_at > (a.metadata->>'revisaDesde')::timestamp)
           and u.outcome in (${sql.join(FINAL_OUTCOMES.map((o) => sql`${o}`), sql`, `)})
       ))
   )`;
 }
 
 /**
- * Entrantes pendientes que un workflow «El workflow es la respuesta» por palabra clave ya contestó
- * en parte y que el Agente IA todavía debe revisar (ANSWERS_ONLY_REVIEW_KEY): id del entrante →
- * nombre del workflow. El agente contesta lo que falte del mensaje (run.ts, modo complemento).
+ * Entrantes pendientes que un workflow «El workflow es la respuesta» ya contestó en parte (por
+ * palabra clave o, si solo manda archivos, pedido por el propio agente) y que el Agente IA todavía
+ * debe revisar (ANSWERS_ONLY_REVIEW_KEY): id del entrante → nombre del workflow. El agente contesta
+ * lo que falte del mensaje (run.ts, modo complemento).
  */
 export async function answeredByWorkflow(organizationId: string, conversationId: string, ids: readonly string[]): Promise<Map<string, string>> {
   if (ids.length === 0) return new Map();
@@ -473,6 +480,32 @@ export async function inboundCount(organizationId: string, conversationId: strin
     .from(messages)
     .where(and(inConversation(organizationId, conversationId), eq(messages.direction, "in"), isNull(messages.importedAt)));
   return value;
+}
+
+/**
+ * Complemento de un workflow «es la respuesta» de solo archivos que pidió el propio Agente IA
+ * (9-oct-2026, «Dónde medir»): la respuesta que lo pidió ya dejó su resultado final en ai_usage,
+ * pero el mensaje sigue esperando la revisión del agente. ¿Va en camino esa corrida, o ya salió
+ * su archivo con la marca de revisión (`revisaDesde`)? Mientras sea así, el resultado anterior no
+ * cuenta como «ya atendido» (run.ts): el agente espera a la corrida y luego revisa el mensaje.
+ * (Si el mensaje sigue pendiente con esa marca, pendingInbound ya sabe que no se ha revisado.)
+ */
+export async function awaitingWorkflowReview(organizationId: string, conversationId: string, messageId: string): Promise<boolean> {
+  const rows = await db.execute<{ one: number }>(sql`
+    select 1 as one from messages a
+    where a.organization_id = ${organizationId} and a.conversation_id = ${conversationId}
+      and a.direction = 'out' and a.status <> 'failed'
+      and a.metadata->>'contestaA' = ${messageId} and coalesce(a.metadata ? 'revisaDesde', false)
+    union all
+    select 1 as one from workflow_runs r
+    join workflows w on w.id = r.workflow_id and w.organization_id = r.organization_id
+    where r.organization_id = ${organizationId} and r.conversation_id = ${conversationId}
+      and r.trigger = 'agent' and r.trigger_message_id = ${messageId}
+      and r.status in ('queued', 'running') and w.is_answer
+      and not exists (select 1 from workflow_steps st where st.organization_id = r.organization_id and st.workflow_id = r.workflow_id and st.kind = 'send_text')
+    limit 1
+  `);
+  return rows.length > 0;
 }
 
 // Idempotencia: ¿este entrante ya tiene un resultado final del agente? Un
