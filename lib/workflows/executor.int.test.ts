@@ -606,6 +606,44 @@ describe.skipIf(!TEST_DATABASE_URL)("executor de workflows", () => {
     return { wf, runId: r.runId };
   }
 
+  // ── «Es la respuesta» de solo archivos pedido por el Agente IA (9-oct-2026, «Dónde medir») ──
+  it("«es la respuesta» de solo archivos pedido por el Agente IA: el archivo lleva el pie del workflow (tras su espera) y contesta SOLO su mensaje, con la marca de revisión y su hora", async () => {
+    const waits: number[] = [];
+    const a = await asset();
+    const wf = await workflow(
+      [
+        { kind: "wait", seconds: 18 },
+        { kind: "send_media", assetId: a.id, title: "Video", caption: "Le comparto un video de como debe medir su entrada" },
+      ],
+      { isAnswer: true },
+    );
+    await db.insert(s.messages).values({ id: "in_1", organizationId: ORG, conversationId: CONV, direction: "in", source: "contact", type: "text", body: "¿cómo mido?", status: "received" });
+    const r = await ex.startWorkflowRun({ organizationId: ORG, workflowId: wf, conversationId: CONV, trigger: "agent", triggerMessageId: "in_1" });
+    expect(await ex.executeWorkflowRun(r.runId, { provider, storage, sleep: async (ms: number) => void waits.push(ms) })).toBe("done");
+    expect(waits).toEqual([18_000]);
+    expect(sent.map((x) => [x.kind, (x.input as SendMediaInput).caption])).toEqual([["media", "Le comparto un video de como debe medir su entrada"]]);
+    const [out] = await db.select().from(s.messages).where(eq(s.messages.direction, "out"));
+    expect(out.metadata).toMatchObject({ contestaA: "in_1", revisaAgente: true, revisaDesde: expect.any(String) });
+    expect(out.metadata ?? {}).not.toHaveProperty("respondeHasta");
+    // Sigue pendiente hasta que el Agente IA lo revise (complemento, run.ts).
+    const { pendingInbound } = await import("@/lib/ai/runtime/context");
+    expect((await pendingInbound(ORG, CONV)).map((m) => m.id)).toEqual(["in_1"]);
+  });
+
+  it("corrida del Agente IA que YA traía su pie (encolada antes del 9-oct) en un workflow «es la respuesta»: sale como antes, con su texto y sin pedir revisión", async () => {
+    const a = await asset();
+    const wf = await workflow([{ kind: "send_media", assetId: a.id, title: "Video", caption: "Pie del workflow" }], { isAnswer: true });
+    await db.insert(s.messages).values({ id: "in_1", organizationId: ORG, conversationId: CONV, direction: "in", source: "contact", type: "text", body: "¿cómo mido?", status: "received" });
+    const r = await ex.startWorkflowRun({ organizationId: ORG, workflowId: wf, conversationId: CONV, trigger: "agent", triggerMessageId: "in_1", payload: { pieDelAgente: PIE } });
+    expect(await ex.executeWorkflowRun(r.runId, { provider, storage })).toBe("done");
+    expect(sent.map((x) => (x.input as SendMediaInput).caption)).toEqual([PIE]);
+    const [out] = await db.select().from(s.messages).where(eq(s.messages.direction, "out"));
+    expect(out.metadata).toMatchObject({ respondeHasta: expect.any(String) });
+    expect(out.metadata ?? {}).not.toHaveProperty("contestaA");
+    const { pendingInbound } = await import("@/lib/ai/runtime/context");
+    expect(await pendingInbound(ORG, CONV)).toEqual([]);
+  });
+
   it("pie del Agente IA: su texto reemplaza el pie del workflow en el primer archivo (UN mensaje) y contesta lo que leyó", async () => {
     const { runId } = await videoRun((a) => [
       { kind: "send_media", assetId: a.id, title: "Video", caption: "Aquí le comparto un video de la instalación de las mini compuertas" },

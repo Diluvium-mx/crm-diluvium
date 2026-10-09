@@ -198,6 +198,8 @@ export function lastSendIndex(steps: readonly WorkflowStepPayload[]): number {
 // Texto del Agente IA como pie del archivo (1-oct-2026, dueño). Cuando el agente pide un workflow
 // que solo manda archivos (video, Tabla), su texto viaja como pie del PRIMER archivo, en lugar del
 // pie del workflow: antes salían su frase y luego el archivo con su propio pie, que decía lo mismo.
+// Con «El workflow es la respuesta» NO aplica (9-oct-2026, dueño, caso «Dónde medir»): el texto del
+// agente no sale y el archivo lleva el pie del workflow (run.ts, answerRunsOf).
 // La llave vive en `workflow_runs.payload` (durable entre reintentos); no es una variable {{…}}.
 export const AGENT_CAPTION_KEY = "pieDelAgente";
 
