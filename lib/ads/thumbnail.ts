@@ -11,7 +11,7 @@ import { and, eq, sql } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { metaAds } from "@/lib/db/schema";
 import type { ObjectStorage } from "@/lib/storage/s3";
-import { resolveHost, safeFetch, safeUrl, UnsafeUrlError, type ResolveHost } from "@/lib/net/safe-fetch";
+import { MEDIA_HOSTS, resolveHost, safeFetch, safeUrl, UnsafeUrlError, type ResolveHost } from "@/lib/net/safe-fetch";
 
 /** Lado mayor de la miniatura (px). */
 export const THUMB_MAX_SIDE = 320;
@@ -39,7 +39,7 @@ async function download(url: string, fetchImpl: typeof fetch, resolve: ResolveHo
   let res: Response;
   try {
     // Seguridad B (9-oct-2026): cada salto (también las redirecciones) solo a un dominio público.
-    res = await safeFetch(url, { fetchImpl, resolve, signal: AbortSignal.timeout(DOWNLOAD_TIMEOUT_MS) });
+    res = await safeFetch(url, { fetchImpl, resolve, allowedHosts: MEDIA_HOSTS, signal: AbortSignal.timeout(DOWNLOAD_TIMEOUT_MS) });
   } catch (error) {
     if (error instanceof UnsafeUrlError) throw new ThumbnailError(`link no permitido: ${error.message}`, 400);
     throw new ThumbnailError(`sin respuesta: ${error instanceof Error ? error.message : String(error)}`);

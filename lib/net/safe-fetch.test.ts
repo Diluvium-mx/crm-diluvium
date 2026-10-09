@@ -2,7 +2,7 @@
 // nunca una dirección interna (aunque el dominio sea «bonito»), redirecciones a mano con tope y la
 // llave solo para su dominio.
 import { describe, expect, it } from "vitest";
-import { isBlockedAddress, safeFetch, safeUrl, UnsafeUrlError } from "./safe-fetch";
+import { hostAllowed, isBlockedAddress, MEDIA_HOSTS, safeFetch, safeUrl, UnsafeUrlError } from "./safe-fetch";
 
 const dns = (map: Record<string, string[]>) => async (host: string) => {
   if (!map[host]) throw new Error("ENOTFOUND");
@@ -41,6 +41,13 @@ describe("safeUrl", () => {
     (u) => expect(safeUrl(u)).toBeNull(),
   );
   it("acepta https a un dominio", () => expect(safeUrl("https://scontent.xx.fbcdn.net/v/a.jpg")?.hostname).toBe("scontent.xx.fbcdn.net"));
+});
+
+describe("hostAllowed", () => {
+  it.each(["zernio.com", "lookaside.fbsbx.com", "scontent.xx.fbcdn.net", "www.instagram.com", "scontent.cdninstagram.com", "mmg.whatsapp.net"])("permite %s", (h) =>
+    expect(hostAllowed(h, MEDIA_HOSTS)).toBe(true),
+  );
+  it.each(["evil.com", "zernio.com.evil.com", "notzernio.com", "fbcdn.net.attacker.io"])("rechaza %s", (h) => expect(hostAllowed(h, MEDIA_HOSTS)).toBe(false));
 });
 
 describe("safeFetch", () => {
