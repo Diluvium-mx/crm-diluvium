@@ -3,6 +3,7 @@ import { eq } from "drizzle-orm";
 import { auth } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { member, user } from "@/lib/db/schema/auth";
+import { timeServerAction } from "@/lib/monitoring/slow-actions";
 
 // Nunca confiar en un organization_id que venga del cliente (CLAUDE.md §7),
 // ni tampoco en session.activeOrganizationId a secas: better-auth no lo
@@ -20,7 +21,10 @@ import { member, user } from "@/lib/db/schema/auth";
 export type ActiveMembership = { organizationId: string; userId: string; role: string };
 
 export async function requireActiveMembership(): Promise<ActiveMembership> {
-  const session = await auth.api.getSession({ headers: await headers() });
+  const requestHeaders = await headers();
+  // Toda Server Action pasa por aquí: si tarda ≥ 1 s, sale en el log con su nombre.
+  timeServerAction(requestHeaders);
+  const session = await auth.api.getSession({ headers: requestHeaders });
 
   if (!session) {
     throw new Error("No autenticado.");

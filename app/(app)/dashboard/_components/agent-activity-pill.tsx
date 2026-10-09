@@ -7,15 +7,18 @@
 //   leyendo     → orbe "breathing"  "Agente IA leyendo…"   (espera de 15 s)
 //   escribiendo → orbe "composing"  "Agente IA escribiendo…"
 //   enviando    → orbe "working"    "Agente IA enviando…"  (tabla, video, datos)
-// Consultas: al abrir; con cada evento SSE de la conversación (refreshToken /
-// detailKey) más reintentos a 1 s y 3 s (el worker crea el job un momento
+// Consultas: al abrir; con cada mensaje que llega o se va (refreshToken) o detalle
+// nuevo (detailKey) más reintentos a 1 s y 3 s (el worker crea el job un momento
 // después del entrante); y cada 2 s SOLO mientras la píldora esté visible y la
-// pestaña en primer plano. Ninguna consulta si no hay actividad.
-import { useEffect, useState } from "react";
+// pestaña en primer plano. Ninguna consulta si no hay actividad. Avisos seguidos se
+// juntan (EVENT_BATCH_MS) y la consulta de cada 2 s espera a que conteste la anterior:
+// las Server Actions de una pestaña van en fila y cada una de más retrasa los clics.
+import { useEffect, useRef, useState } from "react";
 import { useTheme } from "next-themes";
 import { ThinkingOrb, type OrbState } from "thinking-orbs";
 import { getAgentActivity } from "@/lib/actions/agente-actividad";
 import type { AgentActivity } from "@/lib/agente-ia/activity";
+import { EVENT_BATCH_MS } from "./chat-events";
 
 const LABEL: Record<NonNullable<AgentActivity>, { state: OrbState; text: string }> = {
   leyendo: { state: "breathing", text: "Agente IA leyendo…" },
@@ -48,9 +51,12 @@ export function AgentActivityPill({
     setActivity(null);
   }
 
-  // Consulta ahora y reintenta a 1 s y 3 s (respuestas viejas se descartan).
-  // SOLO con la pestaña en primer plano: una pestaña oculta con el SSE abierto
-  // no consulta nada; al volver a verse, consulta de inmediato.
+  // Consulta y reintenta a 1 s y 3 s (respuestas viejas se descartan). Al abrir la
+  // conversación, de inmediato; con un aviso, tras EVENT_BATCH_MS (si llega otro antes,
+  // se reinicia: varios avisos seguidos = una tanda). SOLO con la pestaña en primer
+  // plano: una pestaña oculta con el SSE abierto no consulta nada; al volver a verse,
+  // consulta de inmediato.
+  const askedForRef = useRef<string | null>(null);
   useEffect(() => {
     let alive = true;
     const ask = async () => {
@@ -58,8 +64,9 @@ export function AgentActivityPill({
       const result = await getAgentActivity(conversationId);
       if (alive) setActivity(result);
     };
-    void ask();
-    const timers = RETRY_DELAYS_MS.map((ms) => setTimeout(() => void ask(), ms));
+    const delay = askedForRef.current === conversationId ? EVENT_BATCH_MS : 0;
+    askedForRef.current = conversationId;
+    const timers = [0, ...RETRY_DELAYS_MS].map((ms) => setTimeout(() => void ask(), delay + ms));
     const onVisible = () => {
       if (document.visibilityState === "visible") void ask();
     };
@@ -71,21 +78,31 @@ export function AgentActivityPill({
     };
   }, [conversationId, refreshToken, detailKey]);
 
-  // Mientras haya actividad y la pestaña esté visible: cada 2 s hasta que termine.
+  // Mientras haya actividad y la pestaña esté visible: 2 s DESPUÉS de que contestó la
+  // consulta anterior, hasta que termine (con el servidor lento no se apilan en la fila).
   useEffect(() => {
     if (!activity) return;
     let alive = true;
-    let timer: ReturnType<typeof setInterval> | undefined;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    let inFlight = false;
     const start = () => {
-      if (timer || document.visibilityState !== "visible") return;
-      timer = setInterval(() => {
-        void getAgentActivity(conversationId).then((result) => {
-          if (alive) setActivity(result);
-        });
+      if (!alive || timer || inFlight || document.visibilityState !== "visible") return;
+      timer = setTimeout(() => {
+        timer = undefined;
+        inFlight = true;
+        getAgentActivity(conversationId)
+          .then((result) => {
+            if (alive) setActivity(result);
+          })
+          .catch(() => undefined)
+          .finally(() => {
+            inFlight = false;
+            start();
+          });
       }, POLL_MS);
     };
     const stop = () => {
-      if (timer) clearInterval(timer);
+      clearTimeout(timer);
       timer = undefined;
     };
     const onVisibility = () => (document.visibilityState === "visible" ? start() : stop());

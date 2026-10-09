@@ -24,6 +24,7 @@ import { ScheduledInThread } from "./scheduled-in-thread";
 import { AgentNoticeLine, AgentPausedBanner, useConversationAgent } from "./agent-in-thread";
 import { AgentErrorCard } from "./agent-error-card";
 import { AgentActivityPill } from "./agent-activity-pill";
+import { EVENT_BATCH_MS, newestChanged } from "./chat-events";
 import { interleaveNotices } from "@/lib/agente-ia/timeline";
 import { AdFreeWindowNote, AdReferralCard } from "./ad-referral-card";
 import {
@@ -403,8 +404,12 @@ export function ChatThread({
   // Sube al programar un mensaje: la franja de programados (A6) se recarga.
   const [scheduledRev, setScheduledRev] = useState(0);
   const [scheduledCount, setScheduledCount] = useState(0);
-  // Agente IA (Fase B): pausa + avisos; se recarga con el SSE de la conversación.
-  const { agent, reload: reloadAgent } = useConversationAgent(conversationId, revalToken, detail);
+  // Sube SOLO cuando llega o se va un mensaje (no con sus cambios de estado: enviado,
+  // entregado, leído). Con esto se releen la píldora del Agente IA, sus avisos y los
+  // programados (chat-events.ts). La búsqueda sigue con cada aviso (un mensaje editado).
+  const [arrivals, setArrivals] = useState(0);
+  // Agente IA (Fase B): pausa + avisos; se recarga con mensajes nuevos y con el detalle.
+  const { agent, reload: reloadAgent } = useConversationAgent(conversationId, arrivals, detail);
 
   const windowOpen = isWindowOpen(detail.windowExpiresAt, nowMs);
   const hoursLeft = windowHoursLeft(detail.windowExpiresAt, nowMs);
@@ -452,6 +457,7 @@ export function ChatThread({
       const older = joinAt > 0 ? loaded.messages.slice(0, joinAt) : [];
       const next = older.length ? [...older, ...page.messages] : page.messages;
       const nextHasMore = older.length ? loaded.hasMore : page.hasMore;
+      if (newestChanged(loaded.conversationId === conversationId ? loaded.messages : undefined, next)) setArrivals((n) => n + 1);
       loadedRef.current = { conversationId, messages: next, hasMore: nextHasMore };
       setMessages(next);
       setHasMore(nextHasMore);
@@ -463,12 +469,16 @@ export function ChatThread({
     }
   }, [conversationId, reconcile]);
 
-  // Carga inicial y recarga ante cada evento SSE de esta conversación.
+  // Carga inicial y recarga ante cada evento SSE de esta conversación. La primera, de
+  // inmediato; las recargas se juntan (EVENT_BATCH_MS): un envío avisa varias veces
+  // seguidas. Diferido también la primera: evita setState síncrono dentro del efecto.
+  const loadedForRef = useRef<string | null>(null);
   useEffect(() => {
-    // Diferido: evita setState síncrono dentro del efecto (react-hooks).
-    const t = setTimeout(() => void load(), 0);
+    const delay = loadedForRef.current === conversationId ? EVENT_BATCH_MS : 0;
+    loadedForRef.current = conversationId;
+    const t = setTimeout(() => void load(), delay);
     return () => clearTimeout(t);
-  }, [load, revalToken]);
+  }, [load, revalToken, conversationId]);
 
   // Búsqueda en los chats: ids de los mensajes con la palabra (del más reciente al más
   // viejo) y cuál se ve (0 = el más reciente). `key` = conversación + palabra: una búsqueda
@@ -945,13 +955,13 @@ export function ChatThread({
             conversationId={conversationId}
             windowExpiresAt={detail.windowExpiresAt}
             channelType={detail.channel.type}
-            refreshToken={revalToken + scheduledRev}
+            refreshToken={arrivals + scheduledRev}
             onCountChange={setScheduledCount}
           />
         </div>
 
         {/* Píldora "Agente IA leyendo/escribiendo/enviando" (flota sobre el fondo del historial). */}
-        <AgentActivityPill conversationId={conversationId} refreshToken={revalToken} detailKey={detail} />
+        <AgentActivityPill conversationId={conversationId} refreshToken={arrivals} detailKey={detail} />
         {commandNotice && (
           <div className="mx-4 mb-1 flex items-center justify-between rounded-md border border-brand-orange/40 bg-brand-orange/10 px-3 py-1.5 text-xs">
             <span>{commandNotice}</span>

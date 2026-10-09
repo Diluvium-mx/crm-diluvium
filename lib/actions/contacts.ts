@@ -142,7 +142,7 @@ export async function createContact(input: ManualContactInput): Promise<CreateCo
     const result = await createManualContact(organizationId, input);
     if (!result.ok) return result;
     const [contact] = await selectBoardContacts(organizationId, eq(contacts.id, result.contactId), 1);
-    revalidatePath("/embudo");
+    // Sin revalidatePath (ver CARD_ACTIONS_NO_REVALIDATE): el diálogo agrega la tarjeta.
     return contact ? { ok: true, contact } : { ok: false, message: "Se creó, pero no se pudo cargar: recarga la página." };
   } catch (error) {
     if (error instanceof z.ZodError) return { ok: false, message: error.issues[0]?.message ?? "Revisa los datos." };
@@ -159,6 +159,12 @@ const updateContactStageSchema = z.object({
 
 export type UpdateContactStageInput = z.infer<typeof updateContactStageSchema>;
 
+// CARD_ACTIONS_NO_REVALIDATE (9-oct-2026): etapa, temperatura, Destacado y alta a mano NO llaman
+// revalidatePath. Cualquier revalidatePath hace que Next re-renderice la página DESDE LA QUE se
+// llamó la acción dentro de su respuesta: en el Embudo eran ~600 KB por clic y el tablero se
+// re-sincronizaba completo. El Embudo y la Bandeja ya son optimistas y el aviso en vivo
+// (contact.updated / contact.created) trae lo del servidor; las páginas son dinámicas (cada carga
+// lee la base). Lo cuida lib/actions/contacts-no-revalidate.test.ts.
 export async function updateContactStage(input: UpdateContactStageInput) {
   const { organizationId, userId } = await requireActiveMembership();
   const parsed = updateContactStageSchema.parse(input);
@@ -222,8 +228,6 @@ export async function updateContactStage(input: UpdateContactStageInput) {
   // Fase D: workflows con "al entrar a esta etapa". Aislado: nunca rompe el cambio.
   await onContactStageEntered({ organizationId, contactId: updated.id, stage: updated.stage, userId });
 
-  revalidatePath("/embudo");
-
   return updated;
 }
 
@@ -265,8 +269,6 @@ export async function updateContactTemperature(input: UpdateContactTemperatureIn
     throw new Error("Contacto no encontrado en esta organización.");
   }
 
-  revalidatePath("/embudo");
-
   return updated;
 }
 
@@ -298,7 +300,6 @@ export async function setContactDestacado(input: z.infer<typeof setContactDestac
   if (!updated) {
     throw new Error("Contacto no encontrado en esta organización.");
   }
-  revalidatePath("/embudo");
   return updated;
 }
 
