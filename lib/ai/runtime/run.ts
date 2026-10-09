@@ -49,7 +49,7 @@ import { pauseForHumanReply } from "./pause";
 import { brainCandidates, brainModelForStage, handoffStage, impliedStage, type ModelSlot, type StageSignal } from "./model-by-stage";
 import { loadContactStage } from "@/lib/contacts/stage";
 import { listFunnelStages } from "@/lib/contacts/funnel-stages";
-import { complementNote, partialNote, withoutClosingQuestions } from "./complement";
+import { complementNote, partialNote, saidText, withoutClosingQuestions } from "./complement";
 import { closingQuestion, isBareAck, onlyRepeatsLastQuestion, repeatNote, withoutUnansweredRepeat } from "./unanswered";
 import {
   alreadyHandled,
@@ -530,7 +530,7 @@ export async function runAgent(job: { organizationId: string; conversationId: st
     // (NOTHING_TOKEN). Si el cliente ya siguió escribiendo, se contesta como siempre.
     const byWorkflow = await answeredByWorkflow(org, conv.id, pending.map((p) => p.id));
     const complementOf = byWorkflow.get(lastRead.id) ?? null;
-    const workflowNote = complementOf ? complementNote(complementOf) : byWorkflow.size ? partialNote([...byWorkflow.values()][0]) : null;
+    const workflowNote = complementOf ? complementNote(complementOf, pending.map(saidText)) : byWorkflow.size ? partialNote([...byWorkflow.values()][0]) : null;
     // Caso SDA (29-sep-2026, lib/messaging/unavailable.ts): el PRIMER mensaje del
     // cliente no llegó (Meta 131060, confirmado por la doble verificación). Sale el
     // texto fijo del dueño, sin llamar al modelo, con las mismas reglas que cualquier
