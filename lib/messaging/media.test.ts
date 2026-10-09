@@ -25,7 +25,7 @@ describe("ZernioProvider.fetchMedia", () => {
     const fetchImpl = vi.fn(async () => new Response("x")) as unknown as typeof fetch;
     const p = new ZernioProvider({ apiKey: "sk_secreta", webhookSecret: "s" }, fetchImpl, publicDns);
     await p.fetchMedia("https://zernio.com/api/v1/whatsapp/media/123?accountId=a");
-    await p.fetchMedia("https://evil.example.com/robar");
+    await p.fetchMedia("https://lookaside.fbsbx.com/ig_messaging_cdn/?asset_id=1");
     const calls = (fetchImpl as unknown as ReturnType<typeof vi.fn>).mock.calls;
     expect(calls[0][1].headers.Authorization).toBe("Bearer sk_secreta");
     expect(calls[1][1].headers.Authorization).toBeUndefined();
@@ -34,6 +34,14 @@ describe("ZernioProvider.fetchMedia", () => {
   it("rechaza URLs que no son https", async () => {
     const p = new ZernioProvider({ apiKey: "k", webhookSecret: "s" }, vi.fn() as unknown as typeof fetch);
     await expect(p.fetchMedia("http://zernio.com/api/v1/whatsapp/media/1")).rejects.toThrow(/no es segura/);
+  });
+
+  it("solo descarga de los servidores conocidos (Zernio, Meta, Instagram, WhatsApp)", async () => {
+    const fetchImpl = vi.fn() as unknown as typeof fetch;
+    const p = new ZernioProvider({ apiKey: "k", webhookSecret: "s" }, fetchImpl, publicDns);
+    await expect(p.fetchMedia("https://evil.example.com/robar")).rejects.toThrow(/lista de servidores permitidos/);
+    await expect(p.fetchMedia("https://fbcdn.net.evil.com/x")).rejects.toThrow(/lista de servidores permitidos/);
+    expect(fetchImpl).not.toHaveBeenCalled();
   });
 
   it("no descarga de un dominio que apunta a la red interna (seguridad B)", async () => {

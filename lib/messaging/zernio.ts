@@ -13,7 +13,7 @@
 // tolerante. Un evento que el CRM procesa pero cuyo formato no se reconoce
 // sale "malformed": queda en dead-letter en webhook_events (nada se pierde).
 import { createHmac, timingSafeEqual } from "node:crypto";
-import { resolveHost, safeFetch, UnsafeUrlError, type ResolveHost } from "@/lib/net/safe-fetch";
+import { MEDIA_HOSTS, resolveHost, safeFetch, UnsafeUrlError, type ResolveHost } from "@/lib/net/safe-fetch";
 import { z } from "zod";
 import {
   SendFailedError,
@@ -776,6 +776,7 @@ export class ZernioProvider implements MessagingProvider {
         fetchImpl: this.fetchImpl,
         resolve: this.resolveImpl,
         signal,
+        allowedHosts: [...MEDIA_HOSTS, api.hostname],
         headersFor: (target): Record<string, string> => (target.host === api.host ? { Authorization: `Bearer ${this.config.apiKey}` } : {}),
       });
     } catch (error) {
