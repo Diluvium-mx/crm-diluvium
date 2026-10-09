@@ -125,20 +125,30 @@ export const ANSWERS_REVIEW_SINCE_KEY = "revisaDesde";
 // Entrante contestado uno por uno por un workflow (ANSWERS_ONLY_KEY) con un saliente que no falló
 // y, si lleva la marca de revisión, que el Agente IA ya revisó (resultado final en ai_usage: lo
 // contestó, decidió que no faltaba nada o lo tomó un vendedor; si la marca trae hora,
-// ANSWERS_REVIEW_SINCE_KEY, solo un resultado posterior a ella). `alias`: la fila de `messages`
-// evaluada (constante del código, nunca un dato).
+// ANSWERS_REVIEW_SINCE_KEY, solo un resultado posterior a ella).
+// Ráfagas (9-oct-2026, dueño): con la marca de revisión, una vez revisado el disparador quedan
+// contestados también los entrantes ANTERIORES a él (el agente leyó la ráfaga completa en modo
+// complemento, complement.ts). Antes solo el disparador: si no faltaba nada, un «Buenas tardes» de la
+// ráfaga quedaba pendiente y el barrido lo contestaba aparte ~90 s después (7 de 23 ráfagas del 1 al
+// 9-oct). Mientras no se revise, lo anterior sigue pendiente (el barrido lo rescata). Las marcas sin
+// revisión (anteriores al 30-sep) siguen cerrando solo su disparador (bug de la ráfaga, 29-sep).
+// `alias`: la fila de `messages` evaluada (constante del código, nunca un dato).
 export function answeredOnlySql(alias: "messages" | "m"): SQL {
   const m = sql.raw(alias);
   return sql`exists (
     select 1 from messages a
+    join messages t on t.id = a.metadata->>'contestaA' and t.organization_id = a.organization_id and t.conversation_id = a.conversation_id
     where a.organization_id = ${m}.organization_id and a.conversation_id = ${m}.conversation_id
-      and a.direction = 'out' and a.status <> 'failed' and a.metadata->>'contestaA' = ${m}.id
-      and (not coalesce(a.metadata ? 'revisaAgente', false) or exists (
-        select 1 from ai_usage u
-        where u.organization_id = ${m}.organization_id and u.message_id = ${m}.id
-          and (not coalesce(a.metadata ? 'revisaDesde', false) or u.created_at > (a.metadata->>'revisaDesde')::timestamp)
-          and u.outcome in (${sql.join(FINAL_OUTCOMES.map((o) => sql`${o}`), sql`, `)})
-      ))
+      and a.direction = 'out' and a.status <> 'failed' and a.metadata ? 'contestaA'
+      and (
+        (t.id = ${m}.id and not coalesce(a.metadata ? 'revisaAgente', false))
+        or (coalesce(a.metadata ? 'revisaAgente', false) and t.created_at >= ${m}.created_at and exists (
+          select 1 from ai_usage u
+          where u.organization_id = t.organization_id and u.message_id = t.id
+            and (not coalesce(a.metadata ? 'revisaDesde', false) or u.created_at > (a.metadata->>'revisaDesde')::timestamp)
+            and u.outcome in (${sql.join(FINAL_OUTCOMES.map((o) => sql`${o}`), sql`, `)})
+        ))
+      )
   )`;
 }
 

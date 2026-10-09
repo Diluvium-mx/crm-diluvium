@@ -10,13 +10,39 @@
 // 1.10 y la cochera de 5 metros» → el workflow contesta la cochera y el agente, la puerta).
 import { NOTHING_TOKEN } from "./brain";
 
-// El ÚLTIMO mensaje pendiente del cliente es el que contestó el workflow: modo complemento.
-export function complementNote(workflowName: string): string {
+// Ráfagas (9-oct-2026, dueño): el cliente suele tocar una pregunta del anuncio («¿Cuánto tarda el
+// envío?», «¿Cómo funciona?») y luego escribir «Precio». El workflow contesta el ÚLTIMO mensaje y el
+// agente revisa la ráfaga completa: la nota nombra cada mensaje para que no se fije solo en el último
+// (banco notas/banco-rafaga con los 23 casos reales del 1 al 9-oct). Lo revisado queda contestado
+// (context.ts, answeredOnlySql): un saludo de la ráfaga ya no recibe un «Buenas tardes» aparte ~90 s
+// después por el barrido.
+const SAID_MAX = 8;
+const SAID_CHARS = 160;
+
+/** Lo que dijo un mensaje del cliente, en una línea, para nombrarlo en la nota del complemento. */
+export function saidText(m: { type: string; body: string | null; transcripcion?: string | null }): string {
+  const raw = m.type === "audio" ? (m.transcripcion?.trim() ? `[nota de voz] ${m.transcripcion.trim()}` : "[nota de voz sin transcribir]") : m.body?.trim() || `[${m.type}]`;
+  const line = raw.replace(/\s+/g, " ");
+  return line.length > SAID_CHARS ? `${line.slice(0, SAID_CHARS)}…` : line;
+}
+
+// El ÚLTIMO mensaje pendiente del cliente es el que contestó el workflow: modo complemento. `said`:
+// los mensajes del cliente que el agente está revisando (saidText), del más viejo al último.
+export function complementNote(workflowName: string, said: readonly string[]): string {
+  const shown = said.slice(-SAID_MAX).map((t) => `«${t}»`).join(" · ");
+  const review =
+    said.length > 1
+      ? `Antes de esa respuesta el cliente mandó estos ${said.length} mensajes seguidos: ${shown}. Revisa CADA uno, no solo el último: `
+      : said.length === 1
+        ? `Antes de esa respuesta el cliente mandó: ${shown}. Revisa `
+        : "Revisa el último mensaje del cliente: ";
   return (
-    `El workflow «${workflowName}» ya le contestó al cliente su último mensaje con lo que aparece en "[Después de este mensaje ya se le envió al cliente: …]". ` +
-    "Ese workflow contesta solo su tema (p. ej. el precio, la tabla de tamaños o una entrada más ancha de lo que fabricamos). Revisa si el último mensaje del cliente (o los que mandó seguidos) trae OTRA pregunta o petición que el workflow no contestó (p. ej. de qué ciudad son, envíos, instalación, garantía, formas de pago u otra entrada con su propia medida). " +
-    "Si la hay, contéstala breve, sin repetir nada de lo que ya dijo el workflow y SIN hacer preguntas: ahora le toca contestar al cliente. " +
-    `Si el workflow ya contestó todo (un saludo o un "gracias" no necesitan respuesta aparte), escribe exactamente ${NOTHING_TOKEN} y nada más; las acciones internas (detalle, etapa, avisos) sí puedes usarlas.`
+    `El workflow «${workflowName}» ya le contestó al cliente con lo que aparece en "[Después de este mensaje ya se le envió al cliente: …]". ` +
+    "Ese workflow contesta solo SU tema (p. ej. el precio, la tabla de tamaños o una entrada más ancha de lo que fabricamos). " +
+    review +
+    "si alguno trae una pregunta o petición que el workflow no contestó de forma directa (p. ej. cuánto tarda el envío, de qué ciudad son o dónde están, cómo funciona, si es fácil de instalar, para qué tipo de puerta sirve, garantía, formas de pago u otra entrada con su propia medida), contéstala breve, sin repetir nada de lo que ya dijo el workflow y SIN hacer preguntas: ahora le toca contestar al cliente. " +
+    "Que el workflow mencione el tema no basta: «envío gratis» no dice cuánto tarda el envío. Si el cliente dio la medida de OTRA entrada que el workflow no atendió, dile qué tamaño le corresponde y su precio. " +
+    `Si ninguno trae algo así (un saludo, un "gracias", algo que el workflow ya contestó o una nota de voz sin contenido útil no necesitan respuesta aparte), escribe exactamente ${NOTHING_TOKEN} y nada más; las acciones internas (detalle, etapa, avisos) sí puedes usarlas.`
   );
 }
 
