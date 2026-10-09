@@ -3,7 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 const pending: (() => void)[] = [];
 vi.mock("next/server", () => ({ after: (fn: () => void) => pending.push(fn) }));
 
-const { actionName, resetActionNames, screenPath, SLOW_ACTION_MS, timeServerAction } = await import("./slow-actions");
+const { actionName, resetActionNames, screenPath, SLOW_ACTION_MS, STUCK_ACTION_MS, timeServerAction } = await import("./slow-actions");
 
 const manifest = () => ({
   node: {
@@ -62,6 +62,35 @@ describe("timeServerAction", () => {
     now = SLOW_ACTION_MS - 1;
     pending[0]();
     expect(warn).not.toHaveBeenCalled();
+  });
+
+  it("una acción atorada (la respuesta nunca termina) avisa a los 5 s", () => {
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+    try {
+      const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+      timeServerAction(actionHeaders());
+      vi.advanceTimersByTime(STUCK_ACTION_MS - 1);
+      expect(warn).not.toHaveBeenCalled();
+      vi.advanceTimersByTime(1);
+      expect(warn).toHaveBeenCalledTimes(1);
+      expect(warn.mock.calls[0][0]).toMatch(/^\[lenta\] .+ sigue sin terminar a los 5000 ms · \/embudo$/);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("si la respuesta termina antes de 5 s, no queda aviso pendiente", () => {
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+    try {
+      const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+      timeServerAction(actionHeaders());
+      now = 300;
+      pending[0]();
+      vi.advanceTimersByTime(STUCK_ACTION_MS * 2);
+      expect(warn).not.toHaveBeenCalled();
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it("una página o ruta (sin next-action) no se mide", () => {
