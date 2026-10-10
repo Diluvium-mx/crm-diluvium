@@ -478,10 +478,13 @@ async function lastNonFollowUpAt(organizationId: string, conversationId: string)
   return row?.at ?? null;
 }
 
-/** Mismo instante con otra hora: la siguiente que se pueda (7:00–21:00 del cliente; plantilla hasta las 19:00). */
-function nextSendable(now: Date, zone: string, door: "texto" | "plantilla", caso: Exclude<FollowUpCase, "no_seguir">, fondo: FollowUpCase | null, table: FollowUpTable): Date | null {
+/**
+ * Mismo instante con otra hora: la siguiente que se pueda (7:00–21:00 del cliente; plantilla hasta las 19:00,
+ * salvo la hora que eligió el vendedor con «Cambiar hora»: hasta las 21:00, 10-oct-2026).
+ */
+function nextSendable(now: Date, zone: string, door: "texto" | "plantilla", caso: Exclude<FollowUpCase, "no_seguir">, fondo: FollowUpCase | null, table: FollowUpTable, setByVendor: boolean): Date | null {
   const m = localMinutes(now, zone);
-  const latest = door === "plantilla" ? minutesOf(TEMPLATE_LATEST) : minutesOf(ALLOWED_TO);
+  const latest = door === "plantilla" && !setByVendor ? minutesOf(TEMPLATE_LATEST) : minutesOf(ALLOWED_TO);
   if (m >= minutesOf(ALLOWED_FROM) && m <= latest) return null;
   const today = localParts(now, zone);
   const day = m < minutesOf(ALLOWED_FROM) ? today : addDays(today, 1);
@@ -605,8 +608,9 @@ async function advance(row: FollowUpRow, now: Date, deps: FollowUpRuntimeDeps): 
     door === "plantilla" ? templateForAttempt(caso, row.intento, templateFor(CASE_RULES[caso].doors[row.intento - 1] ?? "saludo", now, row.timeZone), signals.approved, picks, previous) : null;
 
   if (real) {
-    // Último chequeo antes de escribirle al cliente: su hora, el tope de las 19:00 para plantilla y los 7 días.
-    let later = nextSendable(now, row.timeZone, door, caso, fondo, signals.table);
+    // Último chequeo antes de escribirle al cliente: su hora, el tope de las 19:00 para plantilla (si no la eligió
+    // el vendedor) y los 7 días.
+    let later = nextSendable(now, row.timeZone, door, caso, fondo, signals.table, row.dueSetBy === "vendedor");
     if (!later && door === "plantilla" && signals.lastTemplateAt && now.getTime() < signals.lastTemplateAt.getTime() + TEMPLATE_SPACING_DAYS * DAY_MS) {
       later = planAttempt({
         caso,

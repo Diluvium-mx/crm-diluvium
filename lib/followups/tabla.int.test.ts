@@ -186,11 +186,13 @@ describe.skipIf(!TEST_DATABASE_URL)("Tabla de seguimientos en la base", () => {
     // 22:00 del centro con la ventana abierta: texto, pero fuera de 7:00–21:00.
     const late = await view.changeFollowUpTime(ORG, v!.id, new Date("2026-10-05T22:00:00-06:00"), USER, NOW);
     expect(late).toEqual({ ok: false, message: "Para el cliente serían las 22:00 (su hora). Los seguimientos salen de 7:00 a 21:00 de su hora: elige entre las 6:00 y las 20:00 de Mazatlán." });
-    // Miércoles 20:00 del centro: la ventana ya cerró → plantilla, hasta las 19:00.
-    const tpl = await view.changeFollowUpTime(ORG, v!.id, new Date("2026-10-07T20:00:00-06:00"), USER, NOW);
-    expect(tpl.ok).toBe(false);
-    expect(tpl.ok ? "" : tpl.message).toMatch(/solo se le puede escribir de 7:00 a 19:00 de su hora: elige entre las 6:00 y las 18:00 de Mazatlán/);
+    // Miércoles 21:30 del centro: la ventana ya cerró → plantilla, también de 7:00 a 21:00 (10-oct-2026).
+    const tpl = await view.changeFollowUpTime(ORG, v!.id, new Date("2026-10-07T21:30:00-06:00"), USER, NOW);
+    expect(tpl).toEqual({ ok: false, message: "Para el cliente serían las 21:30 (su hora). Los seguimientos salen de 7:00 a 21:00 de su hora: elige entre las 6:00 y las 20:00 de Mazatlán." });
     expect((await rows())[0]).toMatchObject({ dueAt: before.dueAt, dueSetBy: "sistema" });
+    // Miércoles 20:59 del centro con plantilla (el caso del 10-oct-2026): se guarda.
+    expect(await view.changeFollowUpTime(ORG, v!.id, new Date("2026-10-07T20:59:00-06:00"), USER, NOW)).toEqual({ ok: true });
+    expect((await rows())[0]).toMatchObject({ door: "plantilla", dueSetBy: "vendedor" });
     // Una hora que sí se puede: se guarda tal cual.
     expect(await view.changeFollowUpTime(ORG, v!.id, new Date("2026-10-05T20:45:00-06:00"), USER, NOW)).toEqual({ ok: true });
     expect((await rows())[0]).toMatchObject({ dueSetBy: "vendedor" });
