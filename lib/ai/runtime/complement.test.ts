@@ -6,6 +6,10 @@ describe("señal «nada que agregar» (complemento de un workflow, 30-sep-2026)"
   it("sola → nothing; con texto → el texto sin la señal; vacío sin señal sigue siendo vacío", () => {
     expect(parseBrainOutput(NOTHING_TOKEN)).toEqual({ kind: "nothing" });
     expect(parseBrainOutput(`  ${NOTHING_TOKEN}\n`)).toEqual({ kind: "nothing" });
+    // 10-oct-2026: Luna la escribió con espacios 3 veces; también cuenta (y no queda como nota entre corchetes).
+    expect(parseBrainOutput("[ NADA_QUE_AGREGAR ]")).toEqual({ kind: "nothing" });
+    expect(parseBrainOutput("[nada que agregar]")).toEqual({ kind: "nothing" });
+    expect(parseBrainOutput("[ TRANSFERIR ]")).toEqual({ kind: "reply", text: "", handover: true });
     expect(parseBrainOutput(`Somos de Mazatlán. ${NOTHING_TOKEN}`)).toEqual({ kind: "reply", text: "Somos de Mazatlán.", handover: false });
     expect(parseBrainOutput("   ")).toEqual({ kind: "empty" });
   });
