@@ -171,8 +171,12 @@ sobrevive, puede bloquear el drop de lo demás y deja `drizzle.__drizzle_migrati
 con el schema real. Por eso el restore va **a una base nueva y limpia**, se valida, y después se
 intercambia por la actual.
 
-> **Ensaya primero en staging** (mismo procedimiento con `-e staging`). En producción la app
-> queda caída durante el intercambio (paso 7).
+> **Ensaya primero, sin sacar datos de clientes de producción** (10-oct-2026, seguridad S1): un
+> respaldo de **producción** nunca se restaura en staging (staging tiene menos protección y quedarían
+> ahí nombres, teléfonos y chats). Para ensayar usa **todo de staging** (bucket y base con `-e staging`
+> en los pasos 2 y 4) o restaura el de producción en un **Postgres local desechable**
+> (`createdb restore_prueba` y bórralo con `dropdb` al terminar), como hace el respaldo diario en su
+> prueba de restauración. En producción la app queda caída durante el intercambio (paso 7).
 
 Requisitos: `gpg`, el cliente de Postgres 18 y el cliente de S3 (`brew install gnupg postgresql@18 awscli`).
 La carpeta `restore/` está en `.gitignore`: el dump en claro nunca debe llegar al repo.
@@ -210,11 +214,12 @@ La carpeta `restore/` está en `.gitignore`: el dump en claro nunca debe llegar 
    fijada; `require` solo cifra y un MITM recibiría la credencial del superusuario):
 
    ```bash
-   export PGSSLMODE=verify-ca PGSSLROOTCERT="$PWD/.github/backup/prod-postgres-root-ca.pem" ADMIN_URL="$(railway variable list -s Postgres -e staging --json | python3 -c 'import json,sys,urllib.parse as u; v=json.load(sys.stdin); q=lambda k: u.quote(v[k], safe=""); sys.stdout.write("postgresql://%s:%s@%s:%s/postgres" % (q("PGUSER"), q("PGPASSWORD"), v["RAILWAY_TCP_PROXY_DOMAIN"], v["RAILWAY_TCP_PROXY_PORT"]))')"
+   export PGSSLMODE=verify-ca PGSSLROOTCERT="$PWD/.github/backup/prod-postgres-root-ca.pem" ADMIN_URL="$(railway variable list -s Postgres -e production --json | python3 -c 'import json,sys,urllib.parse as u; v=json.load(sys.stdin); q=lambda k: u.quote(v[k], safe=""); sys.stdout.write("postgresql://%s:%s@%s:%s/postgres" % (q("PGUSER"), q("PGPASSWORD"), v["RAILWAY_TCP_PROXY_DOMAIN"], v["RAILWAY_TCP_PROXY_PORT"]))')"
    ```
 
-   (La CA fijada es la de **producción**; para staging fija la suya con el comando de *TLS: CA fijada*
-   sobre `-e staging`, o usa `railway connect Postgres -e staging`, que va por la red privada.)
+   (La CA fijada es la de **producción**. Para el ensayo con todo de staging fija la suya con el comando
+   de *TLS: CA fijada* sobre `-e staging`, o usa `railway connect Postgres -e staging`, que va por la red
+   privada.)
 
 5. Crea una base **limpia** desde `template0` y restaura ahí:
 
@@ -393,8 +398,10 @@ rclone copy "respaldos:$RB/media" "media:$MB" --checksum --transfers 8 --progres
 
 Al terminar: `unset RB MB $(env | grep -o '^RCLONE_CONFIG_[A-Z_]*')`.
 
-> Antes de restaurar en producción, ensaya contra el bucket de staging (mismos comandos con `-e staging`
-> en el segundo `eval`).
+> Antes de restaurar en producción, ensaya **sin copiar fotos de clientes a staging** (10-oct-2026,
+> seguridad S1): copia a una carpeta local temporal en lugar del bucket destino
+> (`rclone copy "respaldos:$RB/media" restore/media-prueba --checksum --max-transfer 200M`), revisa que
+> abran y bórrala al terminar (`rm -rf restore/media-prueba`; `restore/` está en `.gitignore`).
 
 ## Retención de datos crudos (webhook_events)
 
