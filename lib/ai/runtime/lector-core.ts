@@ -69,8 +69,10 @@ export function speakerOf(m: Pick<LectorMessage, "direction" | "source">): strin
   return "Diluvium (automático)";
 }
 
-// Venta cerrada solo con un vendedor (2-oct-2026, regla del dueño; venta-cerrada.ts la hace
-// cumplir): el Agente IA dice "recibimos su comprobante", pero el pago lo confirma un vendedor.
+// Venta cerrada (venta-cerrada.ts la hace cumplir): el lector en segundo plano solo la pone si un
+// vendedor confirmó el pago en el chat. Que el Agente IA verifique el comprobante (C4, 10-oct-2026)
+// lo decide el Agente IA al contestar, con el aviso «Depósito recibido» en esa misma respuesta; el
+// lector no lo puede distinguir de un aviso que puso el CRM, así que no lo usa.
 function ventaCerradaLine(stages: readonly FunnelStage[]): string {
   const venta = stageForRole(stages, "venta_cerrada");
   if (!venta) return "";
