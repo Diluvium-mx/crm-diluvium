@@ -707,6 +707,10 @@ prototipos (tamaño real y ampliado) antes de construirlas; el dueño aprobó la
   `anticipar`) y el servidor solo confirma; si rechaza, la píldora regresa sin escena (`revertir` sube `silencio`). Reactivar no se
   puede anticipar (programado o dormido según el chat): la llave golpea al instante (`reparacion-golpes`, 1 s mínimo), el robot
   queda «cargando» y `reactivarSeguimientos` trae el estado nuevo para el final. Medido en local: 5–22 ms del clic a la escena.
+- **Sin parpadeo y salidas por la orilla** (10-oct-2026, pedido del dueño): al terminar una escena la píldora cambiaba el robot
+  dibujado por la imagen de `public/emoji/` y quedaba un instante sin robot (parpadeo); ahora la píldora usa siempre el mismo
+  robot en línea (`RobotQuieto`), así que al terminar solo se detiene. La pistola y la llave se movían 24/30 px y en la
+  computadora se apagaban a media píldora: ahora entran y salen 80/110 px (izquierda/derecha) y se apagan ya fuera.
 - **Arreglo «dos robots»** (9-oct-2026, reportado por el dueño al cambiar la hora): el robot animado y la etiqueta usaban la
   misma llave de React y al terminar la escena se quedaba un robot de más (reloj, despertador, avioncito y llave). Ahora
   cada uno lleva la suya (`robot-N` / `etiqueta-N`).

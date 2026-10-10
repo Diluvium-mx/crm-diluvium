@@ -1220,7 +1220,10 @@ header:has([data-aviso-version]) [data-cinta-clima] {
 .robot-escena-disparo :is(.re-ojos-x, .re-boca-o),
 .robot-escena:is(.robot-escena-reparacion, .robot-escena-reloj, .robot-escena-despertador, .robot-escena-avion) :is(.re-ojos, .re-boca),
 .robot-escena-reparacion-dormido :is(.re-ojos-dormido, .re-boca-dormida, .re-zzz),
-.robot-escena-reparacion-golpes .re-ojos-cargando {
+.robot-escena-reparacion-golpes .re-ojos-cargando,
+.robot-quieto-normal :is(.re-ojos, .re-boca),
+.robot-quieto-dormido :is(.re-ojos-dormido, .re-boca-dormida, .re-zzz),
+.robot-quieto-cancelado :is(.re-ojos-x, .re-boca-o) {
   opacity: 1;
 }
 
@@ -1425,9 +1428,10 @@ header:has([data-aviso-version]) [data-cinta-clima] {
 }
 
 /* disparo */
+/* Entra y sale por la orilla izquierda de la píldora (10-oct-2026): 80 px alcanzan la orilla en cualquier ancho de la
+   píldora (overflow-hidden la recorta); antes eran 24 px y en la computadora se apagaba a media píldora. */
 @keyframes re-disparo-pistola {
-  0% { opacity: 0; transform: translateX(-24px) rotate(0); }
-  4% { opacity: 1; }
+  0% { opacity: 1; transform: translateX(-80px) rotate(0); }
   13% { transform: translateX(1px) rotate(0); }
   16% { transform: translateX(0) rotate(0); }
   19% { transform: translateX(-2px) rotate(-28deg); }
@@ -1435,8 +1439,8 @@ header:has([data-aviso-version]) [data-cinta-clima] {
   52% { transform: translateX(0) rotate(0); }
   68% { transform: translateX(0) rotate(-360deg); }
   73% { transform: translateX(0) rotate(-360deg); }
-  86% { opacity: 1; transform: translateX(-24px) rotate(-360deg); }
-  87%, 100% { opacity: 0; transform: translateX(-24px) rotate(-360deg); }
+  86% { opacity: 1; transform: translateX(-80px) rotate(-360deg); }
+  87%, 100% { opacity: 0; transform: translateX(-80px) rotate(-360deg); }
 }
 @keyframes re-disparo-fogonazo {
   0%, 17.5% { opacity: 0; transform: scale(0.3); }
@@ -1524,9 +1528,9 @@ header:has([data-aviso-version]) [data-cinta-clima] {
 }
 
 /* reparacion-golpes (1010 ms; los tiempos son los de la escena de 2.2 s que aprobó el dueño) */
+/* La llave entra y sale por la orilla derecha (10-oct-2026): 110 px alcanzan la orilla aunque la píldora lleve la hora. */
 @keyframes re-golpes-llave {
-  0% { opacity: 0; transform: translateX(30px) rotate(0); }
-  8.7% { opacity: 1; }
+  0% { opacity: 1; transform: translateX(110px) rotate(0); }
   26.1% { transform: translateX(0) rotate(0); }
   32.7% { transform: translateX(0) rotate(40deg); }
   39.2% { transform: translateX(-3px) rotate(-10deg); }
@@ -1581,8 +1585,8 @@ header:has([data-aviso-version]) [data-cinta-clima] {
 @keyframes re-reparacion-llave {
   0%, 7.6% { opacity: 1; transform: translateX(0) rotate(0); }
   29.7%, 37.1% { transform: translateX(0) rotate(-360deg); }
-  59.3% { opacity: 1; transform: translateX(30px) rotate(-360deg); }
-  61.2%, 100% { opacity: 0; transform: translateX(30px) rotate(-360deg); }
+  59.3% { opacity: 1; transform: translateX(110px) rotate(-360deg); }
+  61.2%, 100% { opacity: 0; transform: translateX(110px) rotate(-360deg); }
 }
 @keyframes re-reparacion-cargando {
   0% { opacity: 1; }
