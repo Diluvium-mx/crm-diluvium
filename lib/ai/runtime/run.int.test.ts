@@ -2327,7 +2327,7 @@ describe.skipIf(!TEST_DATABASE_URL)("runtime del Agente IA (Postgres real)", () 
     expect((await conv()).agentState).toBe("activo");
   });
 
-  it("idempotencia con reintento: Compra espera a un vendedor; el aviso y Cerca de compra no se duplican; \"Depósito recibido\" sin montos ni folio", async () => {
+  it("idempotencia con reintento: el Agente IA verifica el comprobante (C4) y pasa a Compra; el aviso no se duplica; \"Depósito recibido\" sin montos ni folio", async () => {
     await msg({ direction: "in", body: "", at: ago(20_000), attachments: [{ type: "image", url: "/api/media/x", storageKey: "org/x.jpg" }] });
     const script = {
       brain: ["Ya recibimos tu pago ✅"],
@@ -2353,6 +2353,20 @@ describe.skipIf(!TEST_DATABASE_URL)("runtime del Agente IA (Postgres real)", () 
     expect(ns[0].body).toBe(actions.DEPOSITO_RECIBIDO_BODY);
     expect(ns[0].body).not.toContain("ABC 123");
     expect(await comprobantes()).toHaveLength(0);
+    // C4 (10-oct-2026): comprobante del cliente + «Depósito recibido» en la misma respuesta = verificado.
+    expect((await contact()).stage).toBe("compra");
+  });
+
+  it("C4: sin imagen ni documento del cliente, «Depósito recibido» + mover a Compra se queda en Cerca de compra", async () => {
+    await msg({ direction: "in", body: "ya te deposité", at: ago(20_000) });
+    const { deps } = makeDeps({
+      brain: ["Gracias, lo revisamos."],
+      toolCalls: [
+        { toolName: "aviso_vendedor", input: { motivo: "cotejar_deposito", detalle: "Dice que pagó." } },
+        { toolName: "mover_etapa", input: { etapa: "compra" } },
+      ],
+    });
+    expect((await run.runAgent(JOB, deps)).kind).toBe("sent");
     expect((await contact()).stage).toBe("cerca_compra");
   });
 

@@ -12,7 +12,7 @@ Rama `feat/columnas-embudo`, migración **`0041_columnas_embudo`**.
   (se conserva para que el web y el worker anteriores funcionen durante el despliegue; borrarla en una migración
   posterior). Volumen de prueba: 10,973 contactos con el reparto de producción, `db:deploy` en 0.6 s y conteos iguales.
 - **Papeles** (uno por etapa, cada uno en exactamente una): Entrada (contactos nuevos; siempre la primera columna),
-  Cerca de compra (datos bancarios y /banco) y Venta cerrada (un vendedor confirmó el pago en el chat, desde el 2-oct;
+  Cerca de compra (datos bancarios y /banco) y Venta cerrada (un vendedor confirmó el pago en el chat, desde el 2-oct; desde el 10-oct también el Agente IA cuando verifica el comprobante y da «Depósito recibido» en esa misma respuesta, C4;
   Anuncios › Compraron). Cerca de compra va antes que Venta cerrada. Una etapa con papel se renombra, pero no se borra hasta pasar su papel.
   Entre 3 y 10 etapas.
 - **Agente.** Al final del system (después del sufijo del CRM y de la longitud) va el bloque "ETAPAS DEL EMBUDO

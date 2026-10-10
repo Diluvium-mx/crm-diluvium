@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { defaultStages, type FunnelStage } from "@/lib/contacts/stages";
-import { allowedAgentStage, isClientProof, isVendorMessage, vendorAnsweredProof, ventaCerradaHeld } from "./venta-cerrada";
+import { agentVerifiedProof, allowedAgentStage, hasClientProof, isClientProof, isVendorMessage, lastClientProofAt, vendorAnsweredProof, ventaCerradaHeld } from "./venta-cerrada";
 
 type Row = { direction: string; source: string; attachments: { type: string }[] };
 const cliente = (): Row => ({ direction: "in", source: "contact", attachments: [] });
@@ -69,6 +69,23 @@ describe("allowedAgentStage", () => {
   });
 
   it("el registro dice por qué se frenó", () => {
-    expect(ventaCerradaHeld("compra")).toContain("falta que un vendedor confirme el pago");
+    expect(ventaCerradaHeld("compra")).toContain("falta que el pago se verifique");
+  });
+});
+
+describe("el Agente IA verifica el comprobante (C4, 10-oct-2026)", () => {
+  const proof = { direction: "in", source: "contact", attachments: [{ type: "image" }] };
+  const text = { direction: "in", source: "contact", attachments: [] };
+  it("cuenta solo con «Depósito recibido» Y una imagen o documento del cliente en el chat", () => {
+    expect(agentVerifiedProof([text, proof], true)).toBe(true);
+    expect(agentVerifiedProof([text], true)).toBe(false);
+    expect(agentVerifiedProof([proof], false)).toBe(false);
+    expect(hasClientProof([proof])).toBe(true);
+  });
+  it("cuándo fue el último comprobante del cliente", () => {
+    const a = new Date("2026-10-10T10:00:00Z");
+    const b = new Date("2026-10-10T11:00:00Z");
+    expect(lastClientProofAt([{ ...proof, at: a }, { ...text, at: b }, { ...proof, at: b }])).toEqual(b);
+    expect(lastClientProofAt([{ ...text, at: a }])).toBeNull();
   });
 });
