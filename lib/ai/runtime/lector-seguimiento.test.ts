@@ -28,6 +28,9 @@ describe("lector + seguimiento", () => {
     const stages = defaultStages();
     expect(buildLectorSystem(stages)).not.toContain("SEGUIMIENTO");
     expect(buildLectorSystem(stages, { followUp: true })).toContain(FOLLOW_UP_INSTRUCTIONS);
+    // Acuse corto del cliente al final (10-oct-2026): el bloque solo va cuando aplica.
+    expect(buildLectorSystem(stages, { followUp: true })).not.toContain("EL CHAT TERMINA CON UN MENSAJE CORTO DEL CLIENTE");
+    expect(buildLectorSystem(stages, { followUp: true, acuse: true })).toContain("EL CHAT TERMINA CON UN MENSAJE CORTO DEL CLIENTE");
     expect(Object.keys(lectorSchemaFor(KEYS).shape)).not.toContain("seguimiento");
     expect(Object.keys(lectorSchemaFor(KEYS, { followUp: true }).shape)).toContain("seguimiento");
     expect(buildLectorTools(stages, { followUp: true }).stageKeys).toEqual(KEYS);

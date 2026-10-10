@@ -6,6 +6,7 @@ import { db } from "@/lib/db";
 import { channels, contacts, conversations, followUps, messages, templates, user } from "@/lib/db/schema";
 import { listFunnelStages } from "@/lib/contacts/funnel-stages";
 import { firstNameOf } from "@/lib/templates/first-name";
+import { endsWithClientAck } from "./acuse";
 import { ALLOWED_FROM, ALLOWED_TO, CASE_RULES, templateForAttempt, TIME_PHRASE_TEMPLATES, type FollowUpCase } from "./cases";
 import { presentAtFor, sendTimeProblem, templateFor, windowOpenAt, VENDOR_ZONE, type SendTimeProblem } from "./schedule";
 import { approvedTemplateNames, followUpsReal, lastTemplateAt, reopenCancelledFollowUp } from "./store";
@@ -223,13 +224,14 @@ export async function loadFollowUpState(organizationId: string, conversationId: 
   const stages = await listFunnelStages(organizationId);
   if (stages.find((st) => st.key === row.stage)?.role === "venta_cerrada") return dormido("Ya compró: no se le da seguimiento.");
 
-  // Último mensaje del chat (sin las notas del sistema) y el último seguimiento, de cualquier estado.
-  const [last] = await db
-    .select({ direction: messages.direction, at: messages.createdAt })
+  // Últimos mensajes del chat (sin las notas del sistema) y el último seguimiento, de cualquier estado.
+  const recent = await db
+    .select({ direction: messages.direction, at: messages.createdAt, type: messages.type, body: messages.body })
     .from(messages)
     .where(and(eq(messages.organizationId, organizationId), eq(messages.conversationId, conversationId), sql`${messages.type} <> 'system_note'`))
     .orderBy(desc(messages.createdAt))
-    .limit(1);
+    .limit(12);
+  const last = recent[0];
   if (!last) return dormido("Todavía no hay mensajes en este chat.");
   const [latest] = await db
     .select({ status: followUps.status, caso: followUps.caso, motivo: followUps.motivo, cancelReason: followUps.cancelReason, basedOn: followUps.basedOnMessageAt })
@@ -237,6 +239,14 @@ export async function loadFollowUpState(organizationId: string, conversationId: 
     .where(and(eq(followUps.organizationId, organizationId), eq(followUps.conversationId, conversationId)))
     .orderBy(desc(followUps.createdAt))
     .limit(1);
+  // Acuse corto del cliente al final («de acuerdo», 👍): cuenta como parada (10-oct-2026).
+  if (last.direction === "in" && endsWithClientAck([...recent].reverse())) {
+    if (!row.leidoHasta || row.leidoHasta < row.lastMessageAt) {
+      return dormido("El cliente solo contestó con un acuse. El Agente IA lee el chat en unos minutos y, si no espera respuesta, arma el seguimiento.");
+    }
+    if (latest?.status === "no_seguir" && latest.basedOn >= last.at) return dormido(`No seguir: ${latest.motivo ?? "el Agente IA vio que no hay que escribirle"}.`);
+    return dormido("El Agente IA no armó un seguimiento en su última lectura del chat.");
+  }
   if (last.direction === "in") {
     return dormido(
       latest?.status === "contestado"

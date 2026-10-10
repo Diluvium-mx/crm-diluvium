@@ -16,3 +16,5 @@ tarjeta, el Agente IA dejó 4 avisos en 3 minutos y contestó 5 veces casi lo mi
   «gracias», emoji, sticker), `[NADA_QUE_AGREGAR]` cuenta como «no contestar»: no sale nada, no se llama a otro modelo ni
   hay tarjeta (registro: «sin texto: el cliente solo confirmó o agradeció»). Fuera de un acuse (o del complemento de un
   workflow) la señal sigue siendo respuesta vacía. Cuándo escribirla lo dice el Goal (PASAR A HUMANO).
+
+**10-oct-2026:** la lada +1 (Estados Unidos, Canadá, el Caribe) ya no cuenta como extranjera ([2026-10-10-lada-mas-uno.md](2026-10-10-lada-mas-uno.md)).

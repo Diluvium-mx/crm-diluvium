@@ -288,6 +288,21 @@ describe.skipIf(!TEST_DATABASE_URL)("Lector en segundo plano (Postgres real)", (
     expect((await db.select().from(s.followUps))[0]).toMatchObject({ status: "cancelado", cancelReason: "cliente_escribio" });
   });
 
+  it("acuse corto del cliente al final (10-oct-2026): «De acuerdo» también pide la ficha y arma el seguimiento desde su mensaje", async () => {
+    await db.update(s.channels).set({ aiAgentMode: "auto" }).where(d.eq(s.channels.id, "ch_lector"));
+    await msg("in", "¿Cuánto cuesta?", ago(30 * MIN));
+    await msg("out", "Queda en $11,000 por las dos. ¿Me manda una foto de cada entrada?", ago(29 * MIN), "ai_agent");
+    await msg("in", "De acuerdo", ago(28 * MIN));
+    const { deps: dd, calls } = deps({
+      tiene_inundaciones: null,
+      seguimiento: { caso: "cotizacion_sin_respuesta", pendiente: "Quedó en mandar la foto", siguiente_paso: "La foto de las entradas", vale_la_pena: true, borrador: "¿Pudo tomar la foto de las entradas?" },
+    });
+    expect((await lector.runLector(ORG, CONV, dd)).kind).toBe("leido");
+    expect(String(calls[0].system)).toContain("EL CHAT TERMINA CON UN MENSAJE CORTO DEL CLIENTE");
+    const [f] = await db.select().from(s.followUps);
+    expect(f).toMatchObject({ caso: "cotizacion_sin_respuesta", status: "programado" });
+  });
+
   it("seguimiento leído a media respuesta (7-oct-2026): se apunta al último mensaje que leyó, aunque last_message_at no se haya movido", async () => {
     await db.update(s.channels).set({ aiAgentMode: "auto" }).where(d.eq(s.channels.id, "ch_lector"));
     await msg("in", "Hola", ago(30 * MIN));

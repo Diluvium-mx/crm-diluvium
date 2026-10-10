@@ -46,3 +46,4 @@
 | Programar el Goal y las FAQs para las 22:00 (9-oct-2026, migración 0066) | [2026-10-09-programar-goal-faqs-22.md](agente-ia/2026-10-09-programar-goal-faqs-22.md) |  |
 | Texto interno: otra respuesta automática antes de la tarjeta (10-oct-2026, sin migración) | [2026-10-10-texto-interno-reintento.md](agente-ia/2026-10-10-texto-interno-reintento.md) | Señales [NADA_QUE_AGREGAR] / [TRANSFERIR] con espacios · respuesta completa en el registro |
 | Medida y foto según el escenario, sin «¿Desea avanzar…?» (10-oct-2026, sin migración) | [2026-10-10-medida-y-foto.md](agente-ia/2026-10-10-medida-y-foto.md) | Goal programado 22:00 |
+| La lada +1 cuenta como de México (10-oct-2026, sin migración) | [2026-10-10-lada-mas-uno.md](agente-ia/2026-10-10-lada-mas-uno.md) | Estados Unidos, Canadá y el Caribe: sin aviso «fuera de México» y con respuestas de inicio |
