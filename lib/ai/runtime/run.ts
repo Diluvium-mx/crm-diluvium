@@ -91,7 +91,7 @@ import { isWindowOpen } from "@/lib/messaging/rules";
 import { completedAfterConfirmation, noDisponibleEstado, UNAVAILABLE_REPLY_TEXT } from "@/lib/messaging/unavailable";
 import { buildModelMessages, fitHistory } from "./transcript";
 import { recordAiUsage } from "./usage";
-import { allowedAgentStage, vendorAnsweredProof } from "./venta-cerrada";
+import { agentVerifiedProof, allowedAgentStage, hasClientProof, vendorAnsweredProof } from "./venta-cerrada";
 import { followUpContextFor } from "@/lib/followups/reply";
 import { logError, safeErrorMessage } from "@/lib/log/safe-error";
 
@@ -575,6 +575,8 @@ export async function runAgent(job: { organizationId: string; conversationId: st
     // Venta cerrada solo con un vendedor (2-oct-2026): ¿ya contestó un vendedor a un comprobante
     // del cliente en el chat que lee el modelo? Sin eso, Compra queda en "Cerca de compra".
     const vendorConfirmedPayment = vendorAnsweredProof(history);
+    // C4 (10-oct-2026): o el Agente IA lo verifica («Depósito recibido») si el cliente mandó comprobante.
+    const clientSentProof = hasClientProof(history);
     const base = { organizationId: org, conversationId: conv.id, messageId: lastRead.id };
 
     // ── FILTRO: solo limpia el anuncio de Click-to-WhatsApp (nunca frena) ────
@@ -749,7 +751,7 @@ export async function runAgent(job: { organizationId: string; conversationId: st
     // que decidió el Modelo 1 se respeta aunque el Modelo 2 no la pida. Si el Modelo 2
     // falla, sale la respuesta del Modelo 1 (el cliente nunca se queda sin respuesta).
     if (usedSlot === 1) {
-      const target = handoffStage(modelCfg, stageAtStart, allowedAgentStage(stages, impliedStage(stages, stageSignals(used.toolCalls)), vendorConfirmedPayment));
+      const target = handoffStage(modelCfg, stageAtStart, allowedAgentStage(stages, impliedStage(stages, stageSignals(used.toolCalls)), vendorConfirmedPayment || agentVerifiedProof(history, used.toolCalls.some((c) => c.kind === "aviso" && c.aviso.motivo === "cotejar_deposito"))));
       const model2 = target ? getModel(cfg.modeloCerebro) : undefined;
       if (target && model2 && model2.id !== used.model.id && isAvailable(model2.id)) {
         const second = await attempt(model2, target);
@@ -919,7 +921,7 @@ export async function runAgent(job: { organizationId: string; conversationId: st
       pendingSince: pending[0]?.createdAt ?? null,
       stages,
     });
-    const actionCtx: ActionContext = { organizationId: org, conversationId: conv.id, contactId: conv.contactId, batchMessageId: lastRead.id, receiptMessageId: receiptMessageId(pending), now, since: pending[0]?.createdAt ?? null, vendorConfirmedPayment };
+    const actionCtx: ActionContext = { organizationId: org, conversationId: conv.id, contactId: conv.contactId, batchMessageId: lastRead.id, receiptMessageId: receiptMessageId(pending), now, since: pending[0]?.createdAt ?? null, vendorConfirmedPayment, clientSentProof };
     // Sin texto del modelo: sale solo lo que manden sus workflows. Si no mandan nada, ya lo
     // resolvió la red contra el silencio (arriba): el CRM nunca escribe un texto fijo.
     let text = out.kind === "reply" ? out.text : "";

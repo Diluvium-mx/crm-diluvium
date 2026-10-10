@@ -186,7 +186,7 @@ describe.skipIf(!TEST_DATABASE_URL)("Lector en segundo plano (Postgres real)", (
     expect(await contact()).toMatchObject({ stage: "cerca_compra", stageChangedBy: "agente" });
     const [u] = await db.select().from(s.aiUsage);
     expect(u).toMatchObject({ stage: "detalle", outcome: "detalle_aplicado" });
-    expect(u.error).toContain("falta que un vendedor confirme el pago");
+    expect(u.error).toContain("falta que el pago se verifique");
   });
 
   it("Compra se permite cuando un vendedor del CRM confirma después del comprobante", async () => {

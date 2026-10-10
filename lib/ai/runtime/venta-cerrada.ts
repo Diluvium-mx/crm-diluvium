@@ -1,9 +1,12 @@
-// VENTA CERRADA SOLO CON UN VENDEDOR (2-oct-2026, regla del dueño). PURO (sin BD ni red).
+// VENTA CERRADA CON EL PAGO VERIFICADO (regla del dueño; PURO, sin BD ni red).
 //
-// La etapa con papel "Venta cerrada" (Compra) es anticipo o pago total, pero solo cuando un
-// VENDEDOR ya revisó el comprobante y se lo confirmó al cliente en el chat, desde el CRM o
-// desde el celular. La confirmación del Agente IA o de un workflow no basta: el Agente IA
-// deja el aviso "Depósito recibido" (tarjeta amarilla) y el vendedor decide.
+// La etapa con papel "Venta cerrada" (Compra) es anticipo o pago total, y solo después de que
+// el cliente mandó su comprobante y el pago se verificó:
+// - un VENDEDOR se lo confirmó al cliente en el chat (CRM o celular) — 2-oct-2026; o
+// - el AGENTE IA revisó el comprobante, cuadra, y en esa MISMA respuesta dio el aviso
+//   "Depósito recibido" (cotejar_deposito) — 10-oct-2026, decisión del dueño (C4). El vendedor
+//   sigue viendo la tarjeta amarilla para revisarlo.
+// Un workflow solo no basta.
 //
 // El código revisa la ESTRUCTURA: después de la ÚLTIMA imagen o documento del cliente (el
 // comprobante) escribió un vendedor. Qué dice ese mensaje ("Confirmo de recibido
@@ -25,6 +28,22 @@ type ChatRow = {
 /** ¿El cliente mandó una imagen o un documento (posible comprobante)? */
 export function isClientProof(m: ChatRow): boolean {
   return m.direction === "in" && (m.attachments ?? []).some((a) => a.type === "image" || a.type === "document");
+}
+
+/** ¿El cliente ya mandó una imagen o un documento (posible comprobante) en el chat? */
+export function hasClientProof(rows: readonly ChatRow[]): boolean {
+  return rows.some(isClientProof);
+}
+
+/** Cuándo mandó el cliente su ÚLTIMA imagen o documento (o null). */
+export function lastClientProofAt(rows: readonly (ChatRow & { at: Date })[]): Date | null {
+  for (let i = rows.length - 1; i >= 0; i--) if (isClientProof(rows[i])) return rows[i].at;
+  return null;
+}
+
+/** ¿El Agente IA verificó el pago? Dio «Depósito recibido» y el cliente sí mandó comprobante. */
+export function agentVerifiedProof(rows: readonly ChatRow[], cotejarDeposito: boolean): boolean {
+  return cotejarDeposito && hasClientProof(rows);
 }
 
 /** ¿Escribió un vendedor (no el Agente IA ni un workflow)? */
@@ -64,5 +83,5 @@ export function allowedAgentStage(stages: readonly FunnelStage[], requested: str
 
 /** Texto para el registro cuando se frenó la venta cerrada. */
 export function ventaCerradaHeld(requested: string): string {
-  return `etapa ${requested}: falta que un vendedor confirme el pago en el chat (después del comprobante del cliente)`;
+  return `etapa ${requested}: falta que el pago se verifique después del comprobante del cliente (que un vendedor lo confirme en el chat o que el Agente IA dé «Depósito recibido»)`;
 }

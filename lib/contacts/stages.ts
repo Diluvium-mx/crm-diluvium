@@ -16,14 +16,14 @@ export const STAGE_ROLE_LABELS: Record<StageRole, string> = {
 export const STAGE_ROLE_HINTS: Record<StageRole, string> = {
   entrada: "Donde llegan los contactos nuevos.",
   cerca_compra: "A donde mueven los datos bancarios y /banco.",
-  venta_cerrada: "A donde pasa el cliente cuando un vendedor le confirma su pago en el chat; lo que Anuncios cuenta como \"Compraron\".",
+  venta_cerrada: "A donde pasa el cliente cuando su pago se verifica después de su comprobante (un vendedor se lo confirma en el chat o el Agente IA da «Depósito recibido»); lo que Anuncios cuenta como \"Compraron\".",
 };
 
 // Regla fija del CRM para la etapa de venta cerrada (2-oct-2026, regla del dueño): va
 // junto a la regla editable en las instrucciones del Agente IA (el que contesta y el de
 // segundo plano) y el código la hace cumplir (lib/ai/runtime/venta-cerrada.ts).
 export const VENTA_CERRADA_RULE =
-  "Solo cuenta cuando un VENDEDOR ya le confirmó al cliente en el chat que recibió su pago, después del último comprobante que mandó el cliente; la confirmación del Agente IA no basta.";
+  "Solo cuenta cuando el cliente ya mandó su comprobante de pago y el pago se verificó después de ese comprobante: un VENDEDOR se lo confirmó en el chat, o tú revisaste el comprobante, cuadra con lo que debe, y en esa MISMA respuesta das el aviso cotejar_deposito («Depósito recibido»). Sin comprobante, nunca.";
 
 export type ModelSlot = 1 | 2;
 

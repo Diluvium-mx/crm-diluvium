@@ -306,6 +306,8 @@ export type ActionContext = {
   now: Date;
   since: Date | null;
   vendorConfirmedPayment?: boolean;
+  /** El cliente ya mandó imagen o documento en el chat (para que el Agente IA verifique el pago, C4). */
+  clientSentProof?: boolean;
 };
 // "antes" = ANTES del texto: avisos (con registro del comprobante), cotización y
 // etapa — todo idempotente, así un reintento del job tras el texto no los pierde.
@@ -359,7 +361,9 @@ export async function executeActions(
     // Venta cerrada solo si un VENDEDOR ya contestó al comprobante del cliente (2-oct-2026,
     // regla del dueño; venta-cerrada.ts). Si no, el contacto va a lo más a "Cerca de
     // compra" y el vendedor recibe el aviso de abajo para revisar el pago y confirmarlo.
-    const to = allowedAgentStage(stages, plan.stage, ctx.vendorConfirmedPayment ?? false);
+    // C4 (10-oct-2026): también basta que el Agente IA verifique el comprobante en esta respuesta.
+    const paymentVerified = (ctx.vendorConfirmedPayment ?? false) || (cotejarEnviado && (ctx.clientSentProof ?? false));
+    const to = allowedAgentStage(stages, plan.stage, paymentVerified);
     const held = to !== plan.stage;
     if (held) console.info(`[agente] ${ctx.conversationId}: ${ventaCerradaHeld(plan.stage)}`);
     const moved = to
