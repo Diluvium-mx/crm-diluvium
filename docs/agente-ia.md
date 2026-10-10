@@ -45,3 +45,4 @@
 | Renovación de la caché las 24 horas y cambios del Goal una vez al día (9-oct-2026, sin migración) | [2026-10-09-cache-24-horas-goal-1-vez.md](agente-ia/2026-10-09-cache-24-horas-goal-1-vez.md) |  |
 | Programar el Goal y las FAQs para las 22:00 (9-oct-2026, migración 0066) | [2026-10-09-programar-goal-faqs-22.md](agente-ia/2026-10-09-programar-goal-faqs-22.md) |  |
 | Texto interno: otra respuesta automática antes de la tarjeta (10-oct-2026, sin migración) | [2026-10-10-texto-interno-reintento.md](agente-ia/2026-10-10-texto-interno-reintento.md) | Señales [NADA_QUE_AGREGAR] / [TRANSFERIR] con espacios · respuesta completa en el registro |
+| Medida y foto según el escenario, sin «¿Desea avanzar…?» (10-oct-2026, sin migración) | [2026-10-10-medida-y-foto.md](agente-ia/2026-10-10-medida-y-foto.md) | Goal programado 22:00 |
