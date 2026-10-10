@@ -170,6 +170,19 @@ describe.skipIf(!TEST_DATABASE_URL)("Seguimientos en modo REAL (proveedor falso)
     expect((await row()).intentos.at(-1)).toMatchObject({ ensayo: true });
   });
 
+  it("plantilla a las 20:30 del cliente elegida con «Cambiar hora»: sale a esa hora (el tope de las 19:00 es solo para lo del CRM)", async () => {
+    await reading();
+    await store.followUpSweepOnce(new Date((await row()).dueAt!.getTime() + MIN), { provider });
+    const r = await row();
+    expect(r).toMatchObject({ intento: 2, door: "plantilla" });
+    const late = new Date("2026-10-07T20:30:00-06:00");
+    await db.update(s.followUps).set({ dueAt: late, dueSetBy: "vendedor" }).where(d.eq(s.followUps.id, r.id));
+    sent = [];
+    await store.followUpSweepOnce(new Date(late.getTime() + MIN), { provider });
+    expect(sent).toEqual([expect.objectContaining({ kind: "template", name: "seg_medidas" })]);
+    expect(await row()).toMatchObject({ status: "esperando" });
+  });
+
   it("pausa puesta a mano: no sale sola; a su hora de presentarse deja UN aviso (tarjeta amarilla); «Que salga solo» la deja salir", async () => {
     await db.update(s.conversations).set({ agentState: "pausado_humano", agentStateChangedAt: new Date(T0.getTime() - MIN) }).where(d.eq(s.conversations.id, CONV));
     await db.insert(s.changeHistory).values({ id: "h_pausa", organizationId: ORG, kind: "pausas", action: "pausar", subjectId: CONV, createdAt: new Date(T0.getTime() - MIN) });

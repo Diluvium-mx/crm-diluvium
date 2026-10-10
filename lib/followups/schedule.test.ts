@@ -246,11 +246,12 @@ describe("tabla de la organización (Agente IA › Seguimientos, Parte 4)", () =
 });
 
 describe("¿saldría a esa hora? (aviso de «Cambiar hora»)", () => {
-  it("texto: de 7:00 a 21:00 del cliente; plantilla: hasta las 19:00 y a 7 días de la anterior", () => {
+  it("elegida por el vendedor: de 7:00 a 21:00 del cliente, también con plantilla (10-oct-2026), y a 7 días de la anterior", () => {
     expect(sendTimeProblem(mx("2026-10-05T21:00"), CDMX, "texto", null)).toBeNull();
-    expect(sendTimeProblem(mx("2026-10-05T22:00"), CDMX, "texto", null)).toEqual({ kind: "horario", latest: "21:00" });
-    expect(sendTimeProblem(mx("2026-10-05T06:55"), CDMX, "texto", null)).toEqual({ kind: "horario", latest: "21:00" });
-    expect(sendTimeProblem(mx("2026-10-05T19:30"), CDMX, "plantilla", null)).toEqual({ kind: "horario", latest: "19:00" });
+    expect(sendTimeProblem(mx("2026-10-05T22:00"), CDMX, "texto", null)).toEqual({ kind: "horario" });
+    expect(sendTimeProblem(mx("2026-10-05T06:55"), CDMX, "texto", null)).toEqual({ kind: "horario" });
+    expect(sendTimeProblem(mx("2026-10-05T20:59"), CDMX, "plantilla", null)).toBeNull();
+    expect(sendTimeProblem(mx("2026-10-05T21:05"), CDMX, "plantilla", null)).toEqual({ kind: "horario" });
     expect(sendTimeProblem(mx("2026-10-08T10:00"), CDMX, "plantilla", mx("2026-10-05T10:00"))).toEqual({ kind: "siete_dias", from: mx("2026-10-12T10:00") });
     expect(sendTimeProblem(mx("2026-10-12T10:00"), CDMX, "plantilla", mx("2026-10-05T10:00"))).toBeNull();
     // Texto no cuenta los 7 días entre plantillas.

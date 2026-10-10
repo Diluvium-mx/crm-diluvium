@@ -15,8 +15,23 @@ describe("zoneForPhone", () => {
     ["+526561234567", "America/Ciudad_Juarez"], // Ciudad Juárez
     ["+529981234567", "America/Cancun"], // Cancún
     ["+523291234567", "America/Mexico_City"], // Bahía de Banderas (Nayarit, hora del centro)
+    ["+528991234567", "America/Matamoros"], // Reynosa (frontera: horario de verano como EE. UU.)
+    ["+528681234567", "America/Matamoros"], // Matamoros
+    ["+528671234567", "America/Matamoros"], // Nuevo Laredo
+    ["+528781234567", "America/Matamoros"], // Piedras Negras
+    ["+528771234567", "America/Matamoros"], // Ciudad Acuña
+    ["+526261234567", "America/Ojinaga"], // Ojinaga
+    ["+528181234567", "America/Mexico_City"], // Monterrey (no es frontera: sin horario de verano)
   ])("%s → %s", (phone, zone) => {
     expect(zoneForPhone(phone)).toBe(zone);
+  });
+
+  it("frontera noreste en octubre: una hora más que el centro (21:00 de Reynosa = 20:00 del centro); en diciembre, igual", () => {
+    const hour = (zone: string, iso: string) => new Intl.DateTimeFormat("en-US", { timeZone: zone, hour: "numeric", hourCycle: "h23" }).format(new Date(iso));
+    expect(hour(zoneForPhone("+528991234567"), "2026-10-10T02:00:00Z")).toBe("21");
+    expect(hour(zoneForPhone("+523312345678"), "2026-10-10T02:00:00Z")).toBe("20");
+    expect(hour(zoneForPhone("+528991234567"), "2026-12-10T03:00:00Z")).toBe("21");
+    expect(hour(zoneForPhone("+523312345678"), "2026-12-10T03:00:00Z")).toBe("21");
   });
 
   it("otro país o sin teléfono: Mazatlán (la hora del CRM)", () => {
