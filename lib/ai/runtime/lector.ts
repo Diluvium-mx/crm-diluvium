@@ -39,6 +39,7 @@ import {
   parseLectorCalls,
   type LectorMessage,
 } from "./lector-core";
+import { endsWithClientAck } from "@/lib/followups/acuse";
 import type { KvPort } from "./queue";
 import { MAX_PDF_BYTES } from "./run";
 import { fitHistory, messageText } from "./transcript";
@@ -93,14 +94,15 @@ const pesos = (n: number) => `$${n.toLocaleString("es-MX", { minimumFractionDigi
 
 /**
  * Lee UNA conversación y deja al día la ficha de su contacto. `force` (pasada única): lee
- * aunque no haya nada nuevo desde la última lectura. Marca la conversación como leída
+ * aunque no haya nada nuevo desde la última lectura. `despertar` («Despertar» en la píldora dormida, 10-oct-2026):
+ * pide la ficha de seguimiento aunque el último mensaje sea del cliente. Marca la conversación como leída
  * hasta el último mensaje que vio (conversations.detalle_leido_hasta).
  */
-export async function runLector(organizationId: string, conversationId: string, deps: LectorDeps, opts: { force?: boolean } = {}): Promise<LectorOutcome> {
+export async function runLector(organizationId: string, conversationId: string, deps: LectorDeps, opts: { force?: boolean; despertar?: boolean } = {}): Promise<LectorOutcome> {
   const token = crypto.randomUUID();
   if (!(await deps.kv.setNxPx(lectorLockKey(conversationId), token, LOCK_MS))) return { kind: "ocupado" };
   try {
-    return await readConversation(organizationId, conversationId, deps, opts.force ?? false);
+    return await readConversation(organizationId, conversationId, deps, opts.force ?? false, opts.despertar ?? false);
   } finally {
     await deps.kv.delIfEquals(lectorLockKey(conversationId), token).catch(() => undefined);
   }
@@ -197,7 +199,7 @@ async function rewriteBorrador(
   }
 }
 
-async function readConversation(organizationId: string, conversationId: string, deps: LectorDeps, force: boolean): Promise<LectorOutcome> {
+async function readConversation(organizationId: string, conversationId: string, deps: LectorDeps, force: boolean, despertar: boolean): Promise<LectorOutcome> {
   const snap = await loadSnapshot(organizationId, conversationId);
   if (!snap) return { kind: "nada_nuevo" };
   const conv = snap.conversation;
@@ -267,8 +269,10 @@ async function readConversation(organizationId: string, conversationId: string, 
 
   const mediaUrls = await clientMediaUrls(history, deps.resolveImage);
   const { messages, sawClientMedia } = buildLectorMessages(rows, mediaUrls, { ficha, vendorStage });
-  // Ficha de seguimiento: solo si el último mensaje del chat es de la empresa.
-  const followUp = lastIsCompany(rows);
+  // Ficha de seguimiento: si el último mensaje del chat es de la empresa, si después solo hay un acuse corto del
+  // cliente («de acuerdo», 👍; 10-oct-2026: ahí el silencio cuenta desde su acuse) o si un vendedor pidió «Despertar».
+  const acuse = !despertar && !lastIsCompany(rows) && endsWithClientAck(rows);
+  const followUp = despertar || lastIsCompany(rows) || acuse;
   const { tools, stageKeys } = buildLectorTools(stages, { followUp });
   const followUpTemplates = followUp && snap.channel.type === "whatsapp" ? await followUpTemplateList(organizationId, conv.channelId) : [];
   // «Qué busca» y la hora de cada caso: la tabla de la organización (Agente IA › Seguimientos).
@@ -284,7 +288,7 @@ async function readConversation(organizationId: string, conversationId: string, 
     const t0 = Date.now();
     let res: CallModelResult;
     try {
-      res = await deps.callModel(model.id, { system: buildLectorSystem(stages, { followUp, templates: followUpTemplates, table: followUpTable }), messages, tools, maxOutputTokens: LECTOR_MAX_OUTPUT_TOKENS, timeoutMs: LECTOR_TIMEOUT_MS });
+      res = await deps.callModel(model.id, { system: buildLectorSystem(stages, { followUp, acuse, despertar, templates: followUpTemplates, table: followUpTable }), messages, tools, maxOutputTokens: LECTOR_MAX_OUTPUT_TOKENS, timeoutMs: LECTOR_TIMEOUT_MS });
     } catch (error) {
       await recordAiUsage({ ...base, usage: null, latencyMs: Date.now() - t0, outcome: "error", error: safeErrorMessage(error) });
       return (done = { kind: "error", reason: safeErrorMessage(error), usage: null, costUsd: null });
@@ -377,6 +381,7 @@ async function readConversation(organizationId: string, conversationId: string, 
       stopAt: tail?.stopAt ?? rows[rows.length - 1].at,
       vendorAttempts: tail?.vendorAttempts ?? [],
       lastIsCompany: followUp,
+      acuse,
       ficha: parsed.seguimiento,
       stages,
       stageKey: stageNow,

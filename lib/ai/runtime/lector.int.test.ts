@@ -288,6 +288,38 @@ describe.skipIf(!TEST_DATABASE_URL)("Lector en segundo plano (Postgres real)", (
     expect((await db.select().from(s.followUps))[0]).toMatchObject({ status: "cancelado", cancelReason: "cliente_escribio" });
   });
 
+  it("acuse corto del cliente al final (10-oct-2026): «De acuerdo» también pide la ficha y arma el seguimiento desde su mensaje", async () => {
+    await db.update(s.channels).set({ aiAgentMode: "auto" }).where(d.eq(s.channels.id, "ch_lector"));
+    await msg("in", "¿Cuánto cuesta?", ago(30 * MIN));
+    await msg("out", "Queda en $11,000 por las dos. ¿Me manda una foto de cada entrada?", ago(29 * MIN), "ai_agent");
+    await msg("in", "De acuerdo", ago(28 * MIN));
+    const { deps: dd, calls } = deps({
+      tiene_inundaciones: null,
+      seguimiento: { caso: "cotizacion_sin_respuesta", pendiente: "Quedó en mandar la foto", siguiente_paso: "La foto de las entradas", vale_la_pena: true, borrador: "¿Pudo tomar la foto de las entradas?" },
+    });
+    expect((await lector.runLector(ORG, CONV, dd)).kind).toBe("leido");
+    expect(String(calls[0].system)).toContain("EL CHAT TERMINA CON UN MENSAJE CORTO DEL CLIENTE");
+    const [f] = await db.select().from(s.followUps);
+    expect(f).toMatchObject({ caso: "cotizacion_sin_respuesta", status: "programado" });
+  });
+
+  it("«Despertar» (10-oct-2026): con el último mensaje del cliente, la lectura forzada pide la ficha y arma el seguimiento", async () => {
+    await db.update(s.channels).set({ aiAgentMode: "auto" }).where(d.eq(s.channels.id, "ch_lector"));
+    await msg("out", "Queda en $5,500. ¿Cuánto mide de ancho su entrada?", ago(40 * MIN), "ai_agent");
+    await msg("in", "¿Y si no me queda la puedo regresar?", ago(39 * MIN));
+    const normal = deps({ tiene_inundaciones: null });
+    await lector.runLector(ORG, CONV, normal.deps);
+    expect(String(normal.calls[0].system)).not.toContain("SEGUIMIENTO");
+    const { deps: dd, calls } = deps({
+      tiene_inundaciones: null,
+      seguimiento: { caso: "faltan_medidas", pendiente: "Preguntó si la puede regresar", siguiente_paso: "Contestar y pedir el ancho", vale_la_pena: true, borrador: "Sí, tiene garantía. ¿Pudo medir el ancho de su entrada?" },
+    });
+    expect((await lector.runLector(ORG, CONV, dd, { force: true, despertar: true })).kind).toBe("leido");
+    expect(String(calls[0].system)).toContain("UN VENDEDOR PIDIÓ «DESPERTAR»");
+    const [f] = await db.select().from(s.followUps);
+    expect(f).toMatchObject({ caso: "faltan_medidas", status: "programado" });
+  });
+
   it("seguimiento leído a media respuesta (7-oct-2026): se apunta al último mensaje que leyó, aunque last_message_at no se haya movido", async () => {
     await db.update(s.channels).set({ aiAgentMode: "auto" }).where(d.eq(s.channels.id, "ch_lector"));
     await msg("in", "Hola", ago(30 * MIN));

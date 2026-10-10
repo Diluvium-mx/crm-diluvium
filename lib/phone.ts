@@ -5,7 +5,7 @@
 // libphonenumber, metadata "max" = todos los países y tipos de número):
 // https://gitlab.com/catamphetamine/libphonenumber-js · metadata de
 // https://github.com/google/libphonenumber/tree/master/resources
-import { parsePhoneNumberFromString } from "libphonenumber-js/max";
+import { getCountryCallingCode, isSupportedCountry, parsePhoneNumberFromString } from "libphonenumber-js/max";
 
 const E164_PATTERN = /^\+[1-9]\d{7,14}$/;
 
@@ -104,9 +104,14 @@ const regionNamesEs = new Intl.DisplayNames(["es"], { type: "region" });
  * Línea del contexto del CRM para el Agente IA (6-oct-2026, caso +34 que se cotizó como si
  * fuera de México): solo cuando la lada NO es de México. Con lada mexicana, sin teléfono
  * (Instagram) o sin país reconocido, null y el contexto queda igual que antes.
+ * La lada +1 (Estados Unidos, Canadá, el Caribe) cuenta como de México: muchos clientes que
+ * viven aquí usan un número de allá (decisión del dueño, 10-oct-2026). Si de verdad está
+ * fuera, el Goal lo nota por lo que dice el cliente.
  */
 export function foreignLadaLine(iso: string | null | undefined, code: string | null | undefined): string | null {
   if (!iso || iso === "MX") return null;
+  const calling = code ?? (isSupportedCountry(iso) ? getCountryCallingCode(iso) : null);
+  if (calling === "1") return null;
   const name = regionNamesEs.of(iso) ?? iso;
   return `Lada del número del cliente: ${name}${code ? ` (+${code})` : ""}, fuera de México.`;
 }

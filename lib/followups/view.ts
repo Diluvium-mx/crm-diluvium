@@ -6,6 +6,7 @@ import { db } from "@/lib/db";
 import { channels, contacts, conversations, followUps, messages, templates, user } from "@/lib/db/schema";
 import { listFunnelStages } from "@/lib/contacts/funnel-stages";
 import { firstNameOf } from "@/lib/templates/first-name";
+import { endsWithClientAck } from "./acuse";
 import { ALLOWED_FROM, ALLOWED_TO, CASE_RULES, templateForAttempt, TIME_PHRASE_TEMPLATES, type FollowUpCase } from "./cases";
 import { presentAtFor, sendTimeProblem, templateFor, windowOpenAt, VENDOR_ZONE, type SendTimeProblem } from "./schedule";
 import { approvedTemplateNames, followUpsReal, lastTemplateAt, reopenCancelledFollowUp } from "./store";
@@ -120,7 +121,8 @@ async function loadView(organizationId: string, conversationId: string, statuses
   };
 }
 
-async function announce(organizationId: string, conversationId: string, contactId: string): Promise<void> {
+/** Aviso «followup.updated» del chat (la píldora vuelve a consultar). También lo usa el worker al terminar «Despertar». */
+export async function announce(organizationId: string, conversationId: string, contactId: string): Promise<void> {
   await db
     .execute(sql`select pg_notify('inbox_events', json_build_object(
       'org', ${organizationId}::text, 'type', 'followup.updated',
@@ -184,7 +186,8 @@ type FollowUpOffBase = {
 };
 export type FollowUpOff = (FollowUpOffBase & { estado: "cancelado" }) | (FollowUpOffBase & { estado: "baja" });
 /** Nada que seguir por ahora (robot dormido, gris): la píldora siempre está y dice por qué (7-oct-2026). */
-export type FollowUpDormido = { estado: "dormido"; conversationId: string; contactId: string; razon: string };
+/** `despertable`: la ventana ofrece «Despertar» (el Agente IA lee el chat ya y arma uno; 10-oct-2026). */
+export type FollowUpDormido = { estado: "dormido"; conversationId: string; contactId: string; razon: string; despertable: boolean };
 export type FollowUpState = FollowUpView | FollowUpOff | FollowUpDormido;
 
 /**
@@ -216,20 +219,21 @@ export async function loadFollowUpState(organizationId: string, conversationId: 
   if (!row) return null;
   if (row.baja) return { estado: "baja", conversationId, contactId: row.contactId, at: null, byName: null };
   if (row.offAt) return { estado: "cancelado", conversationId, contactId: row.contactId, at: row.offAt.toISOString(), byName: row.byName ?? null };
-  const dormido = (razon: string): FollowUpDormido => ({ estado: "dormido", conversationId, contactId: row.contactId, razon });
+  const dormido = (razon: string, despertable = false): FollowUpDormido => ({ estado: "dormido", conversationId, contactId: row.contactId, razon, despertable });
 
   if (row.channelType !== "whatsapp") return dormido("Los chats de Instagram no llevan seguimientos del Agente IA.");
   if (row.mode !== "auto") return dormido("El Agente IA está apagado en este canal (Agente IA › Canales): no hay seguimientos.");
   const stages = await listFunnelStages(organizationId);
   if (stages.find((st) => st.key === row.stage)?.role === "venta_cerrada") return dormido("Ya compró: no se le da seguimiento.");
 
-  // Último mensaje del chat (sin las notas del sistema) y el último seguimiento, de cualquier estado.
-  const [last] = await db
-    .select({ direction: messages.direction, at: messages.createdAt })
+  // Últimos mensajes del chat (sin las notas del sistema) y el último seguimiento, de cualquier estado.
+  const recent = await db
+    .select({ direction: messages.direction, at: messages.createdAt, type: messages.type, body: messages.body })
     .from(messages)
     .where(and(eq(messages.organizationId, organizationId), eq(messages.conversationId, conversationId), sql`${messages.type} <> 'system_note'`))
     .orderBy(desc(messages.createdAt))
-    .limit(1);
+    .limit(12);
+  const last = recent[0];
   if (!last) return dormido("Todavía no hay mensajes en este chat.");
   const [latest] = await db
     .select({ status: followUps.status, caso: followUps.caso, motivo: followUps.motivo, cancelReason: followUps.cancelReason, basedOn: followUps.basedOnMessageAt })
@@ -237,11 +241,20 @@ export async function loadFollowUpState(organizationId: string, conversationId: 
     .where(and(eq(followUps.organizationId, organizationId), eq(followUps.conversationId, conversationId)))
     .orderBy(desc(followUps.createdAt))
     .limit(1);
+  // Acuse corto del cliente al final («de acuerdo», 👍): cuenta como parada (10-oct-2026).
+  if (last.direction === "in" && endsWithClientAck([...recent].reverse())) {
+    if (!row.leidoHasta || row.leidoHasta < row.lastMessageAt) {
+      return dormido("El cliente solo contestó con un acuse. El Agente IA lee el chat en unos minutos y, si no espera respuesta, arma el seguimiento.", true);
+    }
+    if (latest?.status === "no_seguir" && latest.basedOn >= last.at) return dormido(`No seguir: ${latest.motivo ?? "el Agente IA vio que no hay que escribirle"}.`, true);
+    return dormido("El Agente IA no armó un seguimiento en su última lectura del chat.", true);
+  }
   if (last.direction === "in") {
     return dormido(
       latest?.status === "contestado"
         ? "Contestó el seguimiento. Si le contestamos y deja de responder, el Agente IA arma otro."
         : "El cliente escribió al último. Si le contestamos y deja de responder, el Agente IA arma el seguimiento.",
+      true,
     );
   }
   // El último mensaje es nuestro.
@@ -249,13 +262,13 @@ export async function loadFollowUpState(organizationId: string, conversationId: 
     const ended = await loadView(organizationId, conversationId, ["terminado"]);
     if (ended) return ended;
   }
-  if (!row.leidoHasta || row.leidoHasta < row.lastMessageAt) return dormido("El Agente IA lee el chat en unos minutos y, si el cliente no ha contestado, arma el seguimiento.");
-  if (latest?.status === "no_seguir") return dormido(`No seguir: ${latest.motivo ?? "el Agente IA vio que no hay que escribirle"}.`);
+  if (!row.leidoHasta || row.leidoHasta < row.lastMessageAt) return dormido("El Agente IA lee el chat en unos minutos y, si el cliente no ha contestado, arma el seguimiento.", true);
+  if (latest?.status === "no_seguir") return dormido(`No seguir: ${latest.motivo ?? "el Agente IA vio que no hay que escribirle"}.`, true);
   if (latest?.status === "cancelado" && (latest.cancelReason === "caso_apagado" || latest.cancelReason === "intento_apagado")) {
     const label = CASE_RULES[latest.caso as FollowUpCase]?.label ?? latest.caso;
     return dormido(`El caso «${label}» está apagado en Agente IA › Seguimientos.`);
   }
-  return dormido("El Agente IA no armó un seguimiento en su última lectura del chat.");
+  return dormido("El Agente IA no armó un seguimiento en su última lectura del chat.", true);
 }
 
 /**

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { elegirEscena, ESCENA_MS, ESCENA_TONO_MS, finDeGolpes, siguienteEscena, vistaDe, type EntradaPildora, type FotoPildora } from "./robot-escena-cuando";
+import { elegirEscena, ESCENA_MS, ESCENA_TONO_MS, finDeEspera, siguienteEscena, vistaDe, type EntradaPildora, type FotoPildora } from "./robot-escena-cuando";
 
 const programado: FotoPildora = {
   estado: "activo",
@@ -62,7 +62,7 @@ describe("escena de la píldora del seguimiento", () => {
 });
 
 describe("escena en curso (anticipada y con Reactivar en dos tiempos)", () => {
-  const entrada = (foto: FotoPildora, extra: Partial<EntradaPildora> = {}): EntradaPildora => ({ foto, reparando: false, silencio: 0, ...extra });
+  const entrada = (foto: FotoPildora, extra: Partial<EntradaPildora> = {}): EntradaPildora => ({ foto, reparando: false, despertando: false, silencio: 0, ...extra });
 
   it("Cancelar anticipado arranca el disparo y la confirmación igual no repite nada", () => {
     const disparo = siguienteEscena(entrada(programado), entrada(cancelado), null);
@@ -82,7 +82,7 @@ describe("escena en curso (anticipada y con Reactivar en dos tiempos)", () => {
     expect(vistaDe(programado, golpes)).toBe(cancelado);
     const conFinal = siguienteEscena(entrada(cancelado, { reparando: true }), entrada(programado), golpes);
     expect(conFinal).toMatchObject({ escena: "reparacion-golpes", siguiente: "reparacion", n: golpes?.n });
-    const fin = finDeGolpes(conFinal!);
+    const fin = finDeEspera(conFinal!);
     expect(fin).toMatchObject({ escena: "reparacion", tonoAntes: "gris", vista: null });
     expect(vistaDe(programado, fin).tono).toBe("gris");
     expect(siguienteEscena(entrada(cancelado, { reparando: true }), entrada(dormido), golpes)?.siguiente).toBe("reparacion-dormido");
@@ -101,6 +101,26 @@ describe("escena en curso (anticipada y con Reactivar en dos tiempos)", () => {
   it("los golpes siguen mientras llega la respuesta", () => {
     const golpes = siguienteEscena(entrada(cancelado), entrada(cancelado, { reparando: true }), null);
     expect(siguienteEscena(entrada(cancelado, { reparando: true }), entrada({ ...cancelado, etiqueta: null }, { reparando: true }), golpes)).toBe(golpes);
-    expect(finDeGolpes(golpes!)).toBeNull();
+    expect(finDeEspera(golpes!)).toBeNull();
+  });
+
+  it("Despertar: la taza llega al presionar con la píldora dormida, espera «cargando» y el final según la carita nueva", () => {
+    const cafe = siguienteEscena(entrada(dormido), entrada(dormido, { despertando: true }), null);
+    expect(cafe).toMatchObject({ escena: "cafe", siguiente: null, vista: dormido });
+    // La consulta inmediata (todavía dormido, sigue anticipado) no la interrumpe.
+    expect(siguienteEscena(entrada(dormido, { despertando: true }), entrada({ ...dormido }, { despertando: true }), cafe)).toBe(cafe);
+    expect(finDeEspera(cafe!)).toBeNull();
+    // Llega la lectura: se programó → despierta (y la píldora conserva el gris hasta su cambio de color).
+    const despierta = siguienteEscena(entrada(dormido, { despertando: true }), entrada(programado), cafe);
+    expect(despierta).toMatchObject({ escena: "cafe", siguiente: "cafe-despierto", n: cafe?.n });
+    expect(finDeEspera(despierta!)).toMatchObject({ escena: "cafe-despierto", tonoAntes: "gris" });
+    // Sigue dormido (No seguir) o quedó suspendido: se vuelve a dormir.
+    expect(siguienteEscena(entrada(dormido, { despertando: true }), entrada(dormido), cafe)?.siguiente).toBe("cafe-dormido");
+    expect(siguienteEscena(entrada(dormido, { despertando: true }), entrada(suspendido), cafe)?.siguiente).toBe("cafe-dormido");
+  });
+
+  it("Despertar rechazado: deja de cargar sin escena", () => {
+    const cafe = siguienteEscena(entrada(dormido), entrada(dormido, { despertando: true }), null);
+    expect(siguienteEscena(entrada(dormido, { despertando: true }), entrada(dormido, { silencio: 1 }), cafe)).toBeNull();
   });
 });

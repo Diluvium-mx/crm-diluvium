@@ -5,14 +5,16 @@
 // Casi inmediata (9-oct-2026, pedido del dueño: tardaba 1–2 s en arrancar): los botones de la ventana ANTICIPAN cómo
 // quedará la píldora y la escena arranca al presionar; el servidor solo confirma (si dice que no, la píldora regresa
 // sin escena). Reactivar no se puede anticipar (queda programado o dormido según el chat): la llave entra y golpea al
-// instante, el robot se queda «cargando» hasta que llega la respuesta y entonces juega el final que toque.
+// instante, el robot se queda «cargando» hasta que llega la respuesta y entonces juega el final que toque. Despertar
+// (10-oct-2026) igual: llega la taza de café, el robot sorbe «cargando» mientras el Agente IA lee el chat y al final se
+// la toma y despierta, o la deja y se vuelve a dormir.
 
 export type RobotFace = "normal" | "dormido" | "cancelado";
 
-export type Escena = "disparo" | "reparacion-golpes" | "reparacion" | "reparacion-dormido" | "reloj" | "despertador" | "avion";
+export type Escena = "disparo" | "reparacion-golpes" | "reparacion" | "reparacion-dormido" | "reloj" | "despertador" | "avion" | "cafe" | "cafe-despierto" | "cafe-dormido";
 
-/** Lo que dura cada escena (lo mismo que `--re-d` en globals.css). En «reparacion-golpes» es lo mínimo: después el
- * robot sigue «cargando» hasta que se sabe el final. */
+/** Lo que dura cada escena (lo mismo que `--re-d` en globals.css). En «reparacion-golpes» y «cafe» es lo mínimo:
+ * después el robot sigue «cargando» hasta que se sabe el final. */
 export const ESCENA_MS: Readonly<Record<Escena, number>> = {
   disparo: 1900,
   "reparacion-golpes": 1010,
@@ -21,6 +23,9 @@ export const ESCENA_MS: Readonly<Record<Escena, number>> = {
   reloj: 1500,
   despertador: 2000,
   avion: 1800,
+  cafe: 1150,
+  "cafe-despierto": 1200,
+  "cafe-dormido": 1200,
 };
 
 /** Escenas en que la píldora cambia de color: hasta este momento conserva el color de antes. */
@@ -28,10 +33,18 @@ export const ESCENA_TONO_MS: Readonly<Partial<Record<Escena, number>>> = {
   reparacion: 750,
   "reparacion-dormido": 750,
   despertador: 1240,
+  "cafe-despierto": 700,
 };
 
 /** Si el servidor nunca contesta a Reactivar, el robot deja de «cargar» a los 15 s. */
 export const GOLPES_ESPERA_MAX_MS = 15_000;
+/** Despertar espera la lectura del Agente IA (segundos; más si el worker está ocupado): a los 60 s deja de «cargar». */
+export const CAFE_ESPERA_MAX_MS = 60_000;
+
+/** Las escenas que esperan la respuesta «cargando» antes de su final. */
+export function esEspera(escena: Escena | undefined): escena is "reparacion-golpes" | "cafe" {
+  return escena === "reparacion-golpes" || escena === "cafe";
+}
 
 /** Lo que importa de la píldora para decidir la escena y para dibujarla. */
 export type FotoPildora = {
@@ -52,6 +65,7 @@ export type FotoPildora = {
  * - disparo: pasa a Cancelado (Cancelar o Apagar seguimientos en este chat).
  * - reparacion / reparacion-dormido: sale de Cancelado (Reactivar); termina despierto o dormido según la carita nueva.
  *   Siempre van después de «reparacion-golpes» (siguienteEscena).
+ * - cafe-despierto / cafe-dormido: el final de Despertar (siguienteEscena, nunca por elegirEscena).
  * - avion: el mismo seguimiento tiene un mensaje más y sí salió.
  * - despertador: el mismo seguimiento deja de estar suspendido (Que salga solo).
  * - reloj: el mismo seguimiento cambia de hora con el robot despierto (Cambiar hora).
@@ -69,9 +83,9 @@ export function elegirEscena(antes: FotoPildora, ahora: FotoPildora): Escena | n
   return null;
 }
 
-/** Lo que recibe la píldora: cómo se ve (real o anticipada), si se está reactivando y el contador de «regresar sin
- * escena» (sube cuando el servidor rechaza lo anticipado). */
-export type EntradaPildora = { foto: FotoPildora; reparando: boolean; silencio: number };
+/** Lo que recibe la píldora: cómo se ve (real o anticipada), si se está reactivando o despertando y el contador de
+ * «regresar sin escena» (sube cuando el servidor rechaza lo anticipado). */
+export type EntradaPildora = { foto: FotoPildora; reparando: boolean; despertando: boolean; silencio: number };
 
 export type EscenaEnCurso = {
   escena: Escena;
@@ -81,9 +95,9 @@ export type EscenaEnCurso = {
   etiquetaAntes: string | null;
   /** Color que conserva hasta ESCENA_TONO_MS. */
   tonoAntes: string | null;
-  /** Cómo se ve la píldora mientras golpea la llave (como estaba: Cancelado). */
+  /** Cómo se ve la píldora mientras golpea la llave o llega el café (como estaba: Cancelado o dormido). */
   vista: FotoPildora | null;
-  /** El final que toca cuando terminan los golpes (null = esperando la respuesta). */
+  /** El final que toca cuando terminan los golpes o el café (null = esperando la respuesta). */
   siguiente: Escena | null;
 };
 
@@ -91,6 +105,17 @@ export type EscenaEnCurso = {
 export function siguienteEscena(antes: EntradaPildora, ahora: EntradaPildora, enCurso: EscenaEnCurso | null): EscenaEnCurso | null {
   if (antes.silencio !== ahora.silencio) return null;
   const n = (enCurso?.n ?? 0) + 1;
+  // Despertar: la taza llega al presionar; mientras se espera, nada la interrumpe; cuando se suelta lo anticipado (llegó
+  // la lectura), el final según la carita nueva.
+  const cafe = enCurso?.escena === "cafe" ? enCurso : null;
+  if (ahora.despertando && !antes.despertando && !cafe) {
+    return { escena: "cafe", n, etiquetaAntes: null, tonoAntes: null, vista: ahora.foto, siguiente: null };
+  }
+  if (cafe) {
+    if (ahora.despertando || cafe.siguiente) return cafe;
+    if (!antes.despertando) return cafe;
+    return { ...cafe, siguiente: ahora.foto.estado === "activo" && ahora.foto.cara === "normal" ? "cafe-despierto" : "cafe-dormido" };
+  }
   const golpes = enCurso?.escena === "reparacion-golpes" ? enCurso : null;
   if (ahora.reparando && !antes.reparando && !golpes) {
     return { escena: "reparacion-golpes", n, etiquetaAntes: null, tonoAntes: null, vista: ahora.foto, siguiente: null };
@@ -107,10 +132,10 @@ export function siguienteEscena(antes: EntradaPildora, ahora: EntradaPildora, en
   return antes.foto.estado === ahora.foto.estado ? enCurso : null;
 }
 
-/** Al terminar los golpes: el final que tocaba, con el color de antes hasta su cambio. */
-export function finDeGolpes(golpes: EscenaEnCurso): EscenaEnCurso | null {
-  if (!golpes.siguiente) return null;
-  return { escena: golpes.siguiente, n: golpes.n + 1, etiquetaAntes: null, tonoAntes: golpes.vista?.tono ?? null, vista: null, siguiente: null };
+/** Al terminar los golpes o el café: el final que tocaba, con el color de antes hasta su cambio. */
+export function finDeEspera(espera: EscenaEnCurso): EscenaEnCurso | null {
+  if (!espera.siguiente) return null;
+  return { escena: espera.siguiente, n: espera.n + 1, etiquetaAntes: null, tonoAntes: espera.vista?.tono ?? null, vista: null, siguiente: null };
 }
 
 /** Cómo se dibuja la píldora mientras corre la escena. */

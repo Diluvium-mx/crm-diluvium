@@ -297,4 +297,61 @@ describe.skipIf(!TEST_DATABASE_URL)("Seguimientos en la base (modo ensayo)", () 
     expect(await open()).toHaveLength(0);
     expect((await rows())[0]).toMatchObject({ status: "cancelado", cancelReason: "venta_cerrada" });
   });
+
+  describe("acuse corto del cliente al final (10-oct-2026)", () => {
+    // Nuestro mensaje a las 12:00 y el cliente contesta «De acuerdo» a las 12:02 (la ventana cierra mañana a las 12:02).
+    const ACK = new Date(T0.getTime() + 2 * MIN);
+    const msg = (id: string, direction: "in" | "out", body: string, at: Date) =>
+      db.insert(s.messages).values({ id, organizationId: ORG, conversationId: CONV, direction, source: direction === "in" ? "contact" : "ai_agent", type: "text", body, status: direction === "in" ? "received" : "sent", providerMessageId: `wamid.${id}`, sentAt: at, createdAt: at });
+
+    it("cuenta como parada: el silencio y la ventana cuentan desde el acuse y sale con texto a la hora del caso", async () => {
+      await db.update(s.conversations).set({ lastMessageAt: ACK, windowExpiresAt: new Date(ACK.getTime() + 24 * HOUR) }).where(d.eq(s.conversations.id, CONV));
+      const summary = await reading({ acuse: true, stopAt: ACK, readUpTo: ACK, now: new Date(ACK.getTime() + 4 * MIN) });
+      expect(summary).toMatch(/seguimiento: faltan_medidas 1\.º .* texto/);
+      const [r] = await rows();
+      expect(r).toMatchObject({ status: "programado", door: "texto", basedOnMessageAt: ACK });
+      // Faltan medidas (19:00–20:30 del cliente), con 8 h de silencio desde las 12:02: hoy a las 20:05.
+      expect(r.dueAt?.toISOString()).toBe(new Date("2026-10-05T20:05:00-06:00").toISOString());
+    });
+
+    it("acuse a uno de NUESTROS seguimientos: sigue la misma serie (no empieza otra) y el barrido no lo toma por mensaje sin leer", async () => {
+      await reading();
+      const [first] = await rows();
+      await db
+        .update(s.followUps)
+        .set({ intento: 2, intentos: [{ n: 1, at: T0.toISOString(), door: "texto", template: null, modo: "automatico", ensayo: false }] })
+        .where(d.eq(s.followUps.id, first.id));
+      await msg("m_ok", "in", "Ok gracias", ACK);
+      await db.update(s.conversations).set({ lastMessageAt: ACK }).where(d.eq(s.conversations.id, CONV));
+      expect(await reading({ acuse: true, stopAt: ACK, readUpTo: ACK })).toBe("seguimiento: acuse al seguimiento; sigue la misma serie");
+      const all = await rows();
+      expect(all).toHaveLength(1);
+      expect(all[0]).toMatchObject({ id: first.id, status: "programado", intento: 2, basedOnMessageAt: ACK });
+      expect(await store.followUpSweepOnce(new Date(ACK.getTime() + 30 * MIN))).toBe(0);
+      expect((await rows())[0]).toMatchObject({ status: "programado", intento: 2 });
+    });
+
+    it("la píldora: antes de que lea el lector lo dice; si decidió no seguir, dice por qué", async () => {
+      await msg("m_out", "out", "¿Me manda una foto de la entrada?", T0);
+      await msg("m_ack", "in", "De acuerdo", ACK);
+      await db.update(s.conversations).set({ lastMessageAt: ACK, detalleLeidoHasta: null }).where(d.eq(s.conversations.id, CONV));
+      expect(await view.loadFollowUpState(ORG, CONV)).toMatchObject({ estado: "dormido", razon: expect.stringMatching(/solo contestó con un acuse/), despertable: true });
+      await db.update(s.conversations).set({ detalleLeidoHasta: ACK }).where(d.eq(s.conversations.id, CONV));
+      await reading({ acuse: true, stopAt: ACK, readUpTo: ACK, ficha: ficha("no_seguir", { valeLaPena: false, motivo: "Espera una respuesta que nadie le dio" }) });
+      expect(await view.loadFollowUpState(ORG, CONV)).toMatchObject({ estado: "dormido", razon: "No seguir: Espera una respuesta que nadie le dio." });
+    });
+
+    it("una pregunta corta o un mensaje largo NO es acuse: sigue «el cliente escribió al último»", async () => {
+      await msg("m_out", "out", "¿Me manda una foto de la entrada?", T0);
+      await msg("m_q", "in", "¿y cuánto tarda?", ACK);
+      await db.update(s.conversations).set({ lastMessageAt: ACK, detalleLeidoHasta: ACK }).where(d.eq(s.conversations.id, CONV));
+      expect(await view.loadFollowUpState(ORG, CONV)).toMatchObject({ estado: "dormido", razon: expect.stringMatching(/El cliente escribió al último/), despertable: true });
+    });
+
+    it("«Despertar» no se ofrece en Instagram, con el Agente IA apagado ni sin mensajes", async () => {
+      expect(await view.loadFollowUpState(ORG, CONV)).toMatchObject({ estado: "dormido", razon: expect.stringMatching(/Todavía no hay mensajes/), despertable: false });
+      await db.update(s.channels).set({ aiAgentMode: "off" }).where(d.eq(s.channels.id, CH));
+      expect(await view.loadFollowUpState(ORG, CONV)).toMatchObject({ estado: "dormido", despertable: false });
+    });
+  });
 });

@@ -96,8 +96,15 @@ describe("regla de México y partes por país (libphonenumber-js)", () => {
 describe("foreignLadaLine", () => {
   it("solo con lada de otro país", () => {
     expect(foreignLadaLine("ES", "34")).toBe("Lada del número del cliente: España (+34), fuera de México.");
-    expect(foreignLadaLine("US", "1")).toBe("Lada del número del cliente: Estados Unidos (+1), fuera de México.");
+    expect(foreignLadaLine("GT", "502")).toBe("Lada del número del cliente: Guatemala (+502), fuera de México.");
     expect(foreignLadaLine("MX", "52")).toBeNull();
     expect(foreignLadaLine(null, null)).toBeNull();
+  });
+  it("la lada +1 cuenta como de México (10-oct-2026), con o sin el código", () => {
+    expect(foreignLadaLine("US", "1")).toBeNull();
+    expect(foreignLadaLine("CA", "1")).toBeNull();
+    expect(foreignLadaLine("US", null)).toBeNull();
+    expect(foreignLadaLine("PR", null)).toBeNull();
+    expect(foreignLadaLine("ES", null)).toBe("Lada del número del cliente: España, fuera de México.");
   });
 });

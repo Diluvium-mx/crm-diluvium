@@ -765,6 +765,57 @@ cliente), así que de noche se leen igual de bien.
 Código: `timezone.ts` (`ZONE_BY_LADA`), `schedule.ts` (`sendTimeProblem` sin tope de plantilla), `store.ts` (`nextSendable`
 con `setByVendor`), `view.ts` (`sendTimeMessage`). Guiones del análisis, fuera del repo: `notas/historial-ghl/analizar5.py`.
 
+## 21. Acuse corto del cliente al final del chat (10-oct-2026)
+
+**Origen:** el cliente quedó en mandar la foto de sus entradas («si me animo le envío la foto»), Ángela le contestó y él
+cerró con «De acuerdo». Ángela no contesta un acuse (6-oct, a propósito), así que el último mensaje quedaba del cliente y
+el CRM nunca armaba el seguimiento: la píldora se quedaba «dormida» justo donde más importa. En producción (10 días, chats
+con el Agente IA en automático): 59 chats con el último mensaje del cliente sin respuesta, 48 de ellos con un mensaje corto
+(«gracias» 14, sticker 5, «ok gracias» 4, «de acuerdo» 2…); 25 en chats con «Pausar agente».
+
+**Regla (decisión del dueño, «OK 1 y 2»):**
+- Si después de nuestro último mensaje el cliente solo mandó mensajes cortos (hasta 40 letras, sin pregunta ni números) o
+  stickers (`lib/followups/acuse.ts`), el lector también pide la ficha de seguimiento y decide: si solo acusa recibo o
+  cierra, arma el seguimiento como siempre; si espera respuesta, «No seguir: Espera una respuesta que nadie le dio».
+- El silencio (8 h) y la ventana de 24 h cuentan desde su acuse, que reabrió la ventana: el 1.er intento casi siempre sale
+  con texto, sin plantilla.
+- Un acuse a uno de NUESTROS seguimientos no es respuesta: sigue la misma serie (día 2, día 9) en lugar de empezar otra, para
+  que un «ok» a cada seguimiento no lo vuelva infinito.
+- La píldora, mientras el lector no lee el acuse: «El cliente solo contestó con un acuse. El Agente IA lee el chat en unos
+  minutos y, si no espera respuesta, arma el seguimiento.»
+
+Código: `acuse.ts` (`endsWithClientAck`), `lector.ts` (`acuse` → ficha y bloque del system), `lector-core.ts`
+(`ACUSE_BLOCK`), `store.ts` (`FollowUpReading.acuse`, misma serie), `view.ts` (razones de la píldora).
+
+## 22. «Despertar» en la píldora dormida y la escena del café (10-oct-2026)
+
+**Origen:** en el chat del caso de §21 la píldora se quedó dormida y no había cómo despertarla. El dueño pidió un botón
+«Despertar» con su propia animación, fluida como las demás (§19). Diseño aprobado con vista previa («OK al diseño de
+Despertar y la escena café»).
+
+- **Dónde:** en la burbuja de la píldora dormida, junto a «Apagar seguimientos en este chat».
+- **Cuándo sale** (`FollowUpDormido.despertable`): el cliente escribió al último, solo contestó con un acuse, «No seguir»,
+  «el Agente IA no armó un seguimiento» o «lee el chat en unos minutos». No sale en Instagram, con el Agente IA apagado en
+  el canal, si ya compró, sin mensajes ni con el caso apagado en la tabla.
+- **Qué hace:** la acción `despertarSeguimiento` revisa que siga dormido y encola `despertar-seguimiento` (BullMQ); el worker
+  (`worker/despertar.ts`) corre el lector AL MOMENTO con `despertar: true`: pide la ficha aunque el último mensaje sea del
+  cliente, con el bloque «UN VENDEDOR PIDIÓ DESPERTAR» (sin no_seguir salvo ya compró, pidió que no le escriban, número
+  equivocado o contestador de otro negocio; si dejó una pregunta, el borrador primero la contesta). Si el lector está
+  ocupado con ese chat, reintenta cada 4 s. Pase lo que pase, al terminar avisa «followup.updated».
+- **La escena** (`cafe` → `cafe-despierto` / `cafe-dormido`, en dos tiempos como Reactivar): al presionar llega la taza por
+  la derecha, se van los zzz y el robot la huele; se queda sorbiendo con los ojos «cargando» hasta el aviso del worker (a
+  los 60 s deja de esperar). Si quedó programado: sorbe, la taza se va, abre los ojos, brinca y la píldora pasa a azul con
+  la hora (1.2 s). Si no: deja la taza, bosteza y se vuelve a dormir (los movimientos de reparacion-dormido) y la burbuja dice
+  por qué. La píldora espera el aviso desde que se presiona (no desde que contesta la acción): si la lectura termina antes
+  que la respuesta, el aviso no se pierde.
+- Vendedores y admins, como Reactivar.
+
+Código: `lib/actions/seguimientos.ts` (`despertarSeguimiento`), `lib/queue/despertar.ts`, `worker/despertar.ts`,
+`lib/ai/runtime/lector.ts` / `lector-core.ts` (`despertar`, `DESPERTAR_BLOCK`), `lib/followups/view.ts` (`despertable`,
+`announce`), `followup-pill.tsx` (botón, `{ despertando: true }`), `robot-escena-cuando.ts` (escenas y `finDeEspera`),
+`robot-escena.tsx` (`Taza`), `app/globals.css` (escena café). Mapa: Caja 48, 69 y 98, capturas 04-composer-seguimiento-cafe,
+-cafe-dormido y -dormido.
+
 ## Fuentes
 
 - [M1] Meta, enviar mensajes / ventana de servicio: https://developers.facebook.com/documentation/business-messaging/whatsapp/messages/send-messages
