@@ -21,11 +21,14 @@
 // Escenas (9-oct-2026, prototipos aprobados por el dueño): cuando la píldora cambia con el chat abierto juega una
 // animación corta (disparo, reparación, reloj, despertador, avioncito; robot-escena-cuando.ts y robot-escena.tsx). Lo
 // ve todo el que tenga el chat abierto, vendedor o admin, lo haya hecho él u otro.
+// Despertar (10-oct-2026, decisión del dueño): en la ventana dormida, el Agente IA lee el chat al momento y arma el
+// seguimiento; la píldora juega la taza de café y espera «cargando» el aviso de que terminó la lectura.
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type RefObject } from "react";
 import {
   apagarSeguimientos,
   approveSuggestedFollowUp,
   cancelFollowUp,
+  despertarSeguimiento,
   getFollowUp,
   quitarSinSeguimientos,
   reactivarSeguimientos,
@@ -41,9 +44,11 @@ import { useInboxStream } from "./use-inbox-stream";
 import { DateTimePicker } from "@/components/ui/date-time-picker";
 import { EtiquetaEscena, RobotEscena, RobotQuieto } from "./robot-escena";
 import {
+  CAFE_ESPERA_MAX_MS,
+  esEspera,
   ESCENA_MS,
   ESCENA_TONO_MS,
-  finDeGolpes,
+  finDeEspera,
   GOLPES_ESPERA_MAX_MS,
   siguienteEscena,
   vistaDe,
@@ -56,9 +61,10 @@ import {
 
 // ── Datos ────────────────────────────────────────────────────────────────────
 
-/** Lo que un botón de la ventana anticipa para la píldora mientras contesta el servidor: cómo quedará, o «Reactivar»
- * (no se sabe el final: la llave golpea y el robot carga hasta la respuesta). */
-export type Anticipo = { foto: FotoPildora } | { reparando: true };
+/** Lo que un botón de la ventana anticipa para la píldora mientras contesta el servidor: cómo quedará, «Reactivar»
+ * (no se sabe el final: la llave golpea y el robot carga hasta la respuesta) o «Despertar» (el café, hasta que el
+ * Agente IA termina de leer el chat). */
+export type Anticipo = { foto: FotoPildora } | { reparando: true } | { despertando: true };
 
 export type FollowUpHook = {
   /** Lo que dice el servidor (la ventana se dibuja con esto). */
@@ -80,6 +86,9 @@ export function useFollowUp(conversationId: string): FollowUpHook {
   const seq = useRef(0);
   // La consulta desde la que lo anticipado ya se puede soltar (una que salió DESPUÉS de que el servidor lo hizo).
   const soltarDesde = useRef<number | null>(null);
+  // Despertar: esperando el aviso «followup.updated» del worker (con un tope por si nunca llega). Empieza al presionar,
+  // no cuando contesta la acción: si la lectura termina antes que la respuesta, el aviso no se pierde.
+  const esperando = useRef<number | null>(null);
   const [seen, setSeen] = useState(conversationId);
   if (seen !== conversationId) {
     setSeen(conversationId);
@@ -97,11 +106,22 @@ export function useFollowUp(conversationId: string): FollowUpHook {
       }
     });
   }, [conversationId]);
+  const dejarDeEsperar = useCallback(() => {
+    if (esperando.current !== null) window.clearTimeout(esperando.current);
+    esperando.current = null;
+  }, []);
+  const soltarConLectura = useCallback(() => {
+    dejarDeEsperar();
+    soltarDesde.current = seq.current + 1;
+    reload();
+  }, [dejarDeEsperar, reload]);
   const acciones = useMemo(
     () => ({
       anticipar: (a: Anticipo) => {
+        dejarDeEsperar();
         soltarDesde.current = null;
         setAnticipo(a);
+        if ("despertando" in a) esperando.current = window.setTimeout(soltarConLectura, CAFE_ESPERA_MAX_MS);
       },
       confirmar: (estado?: FollowUpState | null) => {
         if (estado === undefined) {
@@ -115,13 +135,15 @@ export function useFollowUp(conversationId: string): FollowUpHook {
         setAnticipo(null);
       },
       revertir: () => {
+        dejarDeEsperar();
         soltarDesde.current = null;
         setAnticipo(null);
         setSilencio((n) => n + 1);
       },
     }),
-    [reload],
+    [reload, dejarDeEsperar, soltarConLectura],
   );
+  useEffect(() => dejarDeEsperar, [conversationId, dejarDeEsperar]);
 
   useEffect(() => {
     reload();
@@ -134,7 +156,10 @@ export function useFollowUp(conversationId: string): FollowUpHook {
 
   useInboxStream((event) => {
     if (event.type === "reload") reload();
-    else if (event.type === "followup.updated" && event.conversationId === conversationId) reload();
+    else if (event.type === "followup.updated" && event.conversationId === conversationId) {
+      if (esperando.current !== null) soltarConLectura();
+      else reload();
+    }
   });
   return { followUp, reload, anticipo, silencio, ...acciones };
 }
@@ -281,9 +306,9 @@ function useRobotEscena(entrada: EntradaPildora): EscenaEnCurso | null {
     const timers: number[] = [];
     const despues = (ms: number, cambio: (e: EscenaEnCurso) => EscenaEnCurso | null) =>
       timers.push(window.setTimeout(() => setEnCurso((e) => (e && e.n === n ? cambio(e) : e)), Math.max(0, ms)));
-    if (escena === "reparacion-golpes") {
-      if (siguiente) despues(desde.current + ESCENA_MS[escena] - Date.now(), finDeGolpes);
-      else despues(GOLPES_ESPERA_MAX_MS, () => null);
+    if (esEspera(escena)) {
+      if (siguiente) despues(desde.current + ESCENA_MS[escena] - Date.now(), finDeEspera);
+      else despues(escena === "cafe" ? CAFE_ESPERA_MAX_MS + 2_000 : GOLPES_ESPERA_MAX_MS, () => null);
     } else {
       despues(ESCENA_MS[escena], () => null);
       const tono = ESCENA_TONO_MS[escena];
@@ -294,7 +319,7 @@ function useRobotEscena(entrada: EntradaPildora): EscenaEnCurso | null {
   return enCurso;
 }
 
-/** De los golpes al final de Reactivar la píldora puede cambiar de forma (llega la hora): el robot se desliza a su
+/** De los golpes (o el café) a su final la píldora puede cambiar de forma (llega la hora): el robot se desliza a su
  * lugar en vez de brincar. */
 function useDeslizarRobot(boton: RefObject<HTMLButtonElement | null>, escena: Escena | undefined) {
   const antes = useRef<{ x: number; escena: Escena | undefined } | null>(null);
@@ -304,7 +329,7 @@ function useDeslizarRobot(boton: RefObject<HTMLButtonElement | null>, escena: Es
     const x = robot.getBoundingClientRect().left;
     const previo = antes.current;
     antes.current = { x, escena };
-    if (previo?.escena !== "reparacion-golpes" || !escena || escena === "reparacion-golpes") return;
+    if (!esEspera(previo?.escena) || !escena || esEspera(escena)) return;
     const dx = previo.x - x;
     if (Math.abs(dx) < 1 || window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
     robot.animate([{ transform: `translateX(${dx}px)` }, { transform: "none" }], { duration: 260, easing: "ease-out" });
@@ -330,7 +355,7 @@ export function FollowUpPill({
   className?: string;
 }) {
   const foto = anticipo && "foto" in anticipo ? anticipo.foto : fotoDe(followUp);
-  const enCurso = useRobotEscena({ foto, reparando: anticipo !== null && "reparando" in anticipo, silencio });
+  const enCurso = useRobotEscena({ foto, reparando: anticipo !== null && "reparando" in anticipo, despertando: anticipo !== null && "despertando" in anticipo, silencio });
   const vista = vistaDe(foto, enCurso);
   const boton = useRef<HTMLButtonElement>(null);
   useDeslizarRobot(boton, enCurso?.escena);
@@ -349,7 +374,7 @@ export function FollowUpPill({
       data-escena={enCurso?.escena}
       // px-6 sin palabra (Cancelado y dormido): conserva su tamaño y el robot queda en medio (junto a «Enviar
       // plantilla»); con la ventana abierta la Caja le da el ancho de ⚡ 📄 📎 (min-w-full) y el margen no estorba.
-      // overflow-hidden mientras corre una escena: lo que entra (pistola, llave, despertador, avioncito) no se sale.
+      // overflow-hidden mientras corre una escena: lo que entra (pistola, llave, despertador, avioncito, taza) no se sale.
       className={`h-5 min-w-0 cursor-pointer items-center justify-center gap-1 rounded-full border text-[11px] leading-none whitespace-nowrap transition-colors select-none ${label ? "px-2" : "px-6"} ${enCurso ? "overflow-hidden" : ""} ${vista.tono} ${open ? "ring-2 ring-brand-navy/30" : ""} ${className}`}
     >
       {/* Llaves distintas para el robot y la etiqueta: con la misma, React dejaba un robot de más al terminar la escena
@@ -408,7 +433,8 @@ function PanelHeader({ followUp, title, onClose }: { followUp: FollowUpState; ti
   );
 }
 
-/** Lo que la ventana le pasa a la píldora: anticipar (la escena arranca al presionar), confirmar o regresar. */
+/** Lo que la ventana le pasa a la píldora: anticipar (la escena arranca al presionar), confirmar o regresar. Despertar
+ * no confirma: lo anticipado se suelta con el aviso de que terminó la lectura (useFollowUp). */
 type PanelProps = { onClose: () => void; onChanged: (estado?: FollowUpState | null) => void; onAnticipar: (anticipo: Anticipo) => void; onRevertir: () => void };
 
 function OffPanel({ off, onClose, onChanged, onAnticipar, onRevertir }: { off: FollowUpOff } & PanelProps) {
@@ -488,11 +514,40 @@ export function FollowUpPanel({ followUp, ...props }: { followUp: FollowUpState 
   return <ActivePanel followUp={followUp} {...props} />;
 }
 
-/** Sin nada que seguir: por qué, y «Apagar seguimientos en este chat» (queda «Cancelado» hasta que alguien los reactive). */
+/** Sin nada que seguir: por qué, «Despertar» (el Agente IA lee el chat ya y arma uno; 10-oct-2026) y «Apagar
+ * seguimientos en este chat» (queda «Cancelado» hasta que alguien los reactive). */
 function DormidoPanel({ dormido, onClose, onChanged, onAnticipar, onRevertir }: { dormido: FollowUpDormido } & PanelProps) {
   const [confirm, setConfirm] = useState(false);
   const [busy, setBusy] = useState(false);
+  const [despertando, setDespertando] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // Mientras el Agente IA lee el chat, el botón dice «Despertando…»; vuelve en cuanto llega el estado nuevo (aunque siga
+  // dormido con la misma razón).
+  const [visto, setVisto] = useState(dormido);
+  if (visto !== dormido) {
+    setVisto(dormido);
+    setDespertando(false);
+  }
+  const despertar = async () => {
+    setBusy(true);
+    setError(null);
+    setDespertando(true);
+    onAnticipar({ despertando: true });
+    try {
+      const r = await despertarSeguimiento(dormido.conversationId);
+      if (!r.ok) {
+        setError(r.message);
+        setDespertando(false);
+        onRevertir();
+      }
+    } catch {
+      setError("No se pudo despertar. Inténtalo otra vez.");
+      setDespertando(false);
+      onRevertir();
+    } finally {
+      setBusy(false);
+    }
+  };
   const button = "rounded-md border px-2.5 py-1 text-xs font-medium transition-colors hover:bg-brand-navy/10 disabled:opacity-50";
   const apagar = async () => {
     setBusy(true);
@@ -535,9 +590,21 @@ function DormidoPanel({ dormido, onClose, onChanged, onAnticipar, onRevertir }: 
             </button>
           </div>
         ) : (
-          <button type="button" onClick={() => setConfirm(true)} className={`${button} text-red-700 dark:text-red-300`}>
-            Apagar seguimientos en este chat
-          </button>
+          <div className="flex flex-wrap gap-2">
+            {dormido.despertable && (
+              <button
+                type="button"
+                disabled={busy || despertando}
+                onClick={() => void despertar()}
+                className={`${button} border-brand-navy/40 text-brand-navy dark:text-sky-300`}
+              >
+                {despertando ? "Despertando…" : "Despertar"}
+              </button>
+            )}
+            <button type="button" onClick={() => setConfirm(true)} className={`${button} text-red-700 dark:text-red-300`}>
+              Apagar seguimientos en este chat
+            </button>
+          </div>
         )}
         {error && <p className="text-xs font-medium text-red-600 select-text dark:text-red-400">{error}</p>}
       </div>

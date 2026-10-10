@@ -6,6 +6,8 @@
 import { z } from "zod";
 import { requireActiveMembership } from "@/lib/auth/active-organization";
 import { localToInstant, validateSendAt, SEND_AT_MESSAGES } from "@/lib/scheduled/rules";
+import { enqueueDespertar } from "@/lib/queue/despertar";
+import { logError } from "@/lib/log/safe-error";
 import { approveFollowUp, cancelFollowUpById, changeFollowUpTime, clearSinSeguimientos, loadFollowUpState, reactivateFollowUps, turnOffFollowUps, type FollowUpState } from "@/lib/followups/view";
 
 const id = z.string().trim().min(1).max(100);
@@ -68,4 +70,21 @@ export async function reactivarSeguimientos(conversationId: string): Promise<Fol
   const ok = await reactivateFollowUps(organizationId, conversation, new Date());
   if (!ok) return { ok: false, message: "Los seguimientos de este chat ya estaban activos." };
   return { ok: true, estado: await loadFollowUpState(organizationId, conversation) };
+}
+
+/** «Despertar» en la píldora dormida (vendedor o admin; decisión del dueño, 10-oct-2026): el worker corre el lector al
+ * momento y arma el seguimiento aunque el último mensaje sea del cliente. Contesta en cuanto queda encolado; el final
+ * llega por el aviso «followup.updated» (la píldora sigue «cargando» con la taza mientras tanto). */
+export async function despertarSeguimiento(conversationId: string): Promise<FollowUpActionResult> {
+  const { organizationId } = await requireActiveMembership();
+  const conversation = id.parse(conversationId);
+  const estado = await loadFollowUpState(organizationId, conversation);
+  if (estado?.estado !== "dormido" || !estado.despertable) return { ok: false, message: "Este chat ya no está dormido o no se puede despertar." };
+  try {
+    await enqueueDespertar({ organizationId, conversationId: conversation });
+  } catch (error) {
+    logError(`[despertar] no se pudo encolar ${conversation}`, error);
+    return { ok: false, message: "No se pudo despertar. Inténtalo otra vez." };
+  }
+  return { ok: true };
 }

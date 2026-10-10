@@ -1031,7 +1031,11 @@ html[data-theme-circle]::view-transition-new(root) {
      al final. Partida en dos para que arranque al presionar (robot-escena-cuando.ts).
    - reloj (Cambiar hora, 1.5 s): ojos de reloj que giran; la hora de antes sube y la nueva llega desde abajo.
    - despertador (Que salga solo, 2 s): suena, el robot despierta, lo apaga y el despertador sale volando.
-   - avion (salió el mensaje, 1.8 s): lanza un avioncito de papel que cruza la píldora y llega la etiqueta nueva. */
+   - avion (salió el mensaje, 1.8 s): lanza un avioncito de papel que cruza la píldora y llega la etiqueta nueva.
+   - cafe (Despertar, 1.15 s y luego «cargando» con la taza humeando hasta que el Agente IA termina de leer el chat):
+     llega la taza por la derecha, se van los zzz, el robot la huele. cafe-despierto (1.2 s): sorbe, la taza se va, abre
+     los ojos, brinca y la píldora pasa a azul con la hora. cafe-dormido (1.2 s): la taza se va, bosteza y se duerme
+     (los mismos movimientos que reparacion-dormido). */
 [data-escena="disparo"] {
   --re-d: 1900ms;
 }
@@ -1050,6 +1054,13 @@ html[data-theme-circle]::view-transition-new(root) {
 }
 [data-escena="avion"] {
   --re-d: 1800ms;
+}
+[data-escena="cafe"] {
+  --re-d: 1150ms;
+}
+[data-escena="cafe-despierto"],
+[data-escena="cafe-dormido"] {
+  --re-d: 1200ms;
 }
 .robot-escena .re-robot {
   display: block;
@@ -1159,6 +1170,21 @@ html[data-theme-circle]::view-transition-new(root) {
   opacity: 0;
   transform-origin: 50% 90%;
 }
+.re-taza {
+  position: absolute;
+  top: 3px;
+  left: calc(100% + 2px);
+  width: 8px;
+  height: 9.5px;
+  overflow: visible;
+  opacity: 0;
+  transform-origin: 30% 90%;
+}
+.re-vapor path {
+  stroke-dasharray: 1;
+  stroke-dashoffset: 1;
+  opacity: 0;
+}
 .re-avioncito {
   position: absolute;
   top: 4px;
@@ -1193,9 +1219,10 @@ html[data-theme-circle]::view-transition-new(root) {
   opacity: 0;
 }
 .robot-escena-disparo :is(.re-ojos-x, .re-boca-o),
-.robot-escena:is(.robot-escena-reparacion, .robot-escena-reloj, .robot-escena-despertador, .robot-escena-avion) :is(.re-ojos, .re-boca),
-.robot-escena-reparacion-dormido :is(.re-ojos-dormido, .re-boca-dormida, .re-zzz),
-.robot-escena-reparacion-golpes .re-ojos-cargando,
+.robot-escena:is(.robot-escena-reparacion, .robot-escena-reloj, .robot-escena-despertador, .robot-escena-avion, .robot-escena-cafe-despierto) :is(.re-ojos, .re-boca),
+.robot-escena:is(.robot-escena-reparacion-dormido, .robot-escena-cafe-dormido) :is(.re-ojos-dormido, .re-boca-dormida, .re-zzz),
+.robot-escena:is(.robot-escena-reparacion-golpes, .robot-escena-cafe) .re-ojos-cargando,
+.robot-escena-cafe .re-taza,
 .robot-quieto-normal :is(.re-ojos, .re-boca),
 .robot-quieto-dormido :is(.re-ojos-dormido, .re-boca-dormida, .re-zzz),
 .robot-quieto-cancelado :is(.re-ojos-x, .re-boca-o) {
@@ -1324,6 +1351,87 @@ html[data-theme-circle]::view-transition-new(root) {
   }
   [data-escena="reparacion-dormido"] .re-etiqueta {
     animation: re-reparacion-etiqueta var(--re-d) both;
+  }
+
+  /* cafe: llega la taza, se van los zzz y la cara dormida, el robot la huele y se queda «cargando» con la taza humeando */
+  .robot-escena-cafe .re-taza {
+    animation: re-cafe-taza var(--re-d) both;
+  }
+  .robot-escena:is(.robot-escena-cafe, .robot-escena-cafe-despierto) .re-vapor path {
+    animation: re-cafe-vapor 1000ms 350ms ease-out infinite;
+  }
+  .robot-escena-cafe .re-vapor path:nth-child(2) {
+    animation-delay: 650ms;
+  }
+  .robot-escena-cafe .re-zzz {
+    animation: re-cafe-zzz var(--re-d) both;
+  }
+  .robot-escena-cafe :is(.re-ojos-dormido, .re-boca-dormida) {
+    animation: re-cafe-cara-dormida var(--re-d) both;
+  }
+  .robot-escena-cafe .re-ojos-cargando {
+    animation: re-cafe-cargando var(--re-d) both;
+  }
+  .robot-escena-cafe .re-ojos-cargando circle {
+    animation: re-cargando-ola 300ms step-end infinite;
+  }
+  .robot-escena-cafe .re-ojos-cargando circle:nth-child(2) {
+    animation-delay: 100ms;
+  }
+  .robot-escena-cafe .re-ojos-cargando circle:nth-child(3) {
+    animation-delay: 200ms;
+  }
+  .robot-escena-cafe .re-robot {
+    animation: re-cafe-robot var(--re-d) both;
+  }
+
+  /* cafe-despierto: sorbe, la taza se va, abre los ojos, brinca; la hora llega al final */
+  .robot-escena-cafe-despierto .re-taza {
+    animation: re-cafe-despierto-taza var(--re-d) both;
+  }
+  .robot-escena-cafe-despierto .re-ojos-cargando {
+    animation: re-cafe-despierto-cargando var(--re-d) both;
+  }
+  .robot-escena-cafe-dormido .re-ojos-cargando {
+    animation: re-reparacion-cargando var(--re-d) both;
+  }
+  .robot-escena-cafe-despierto .re-ojos {
+    animation: re-cafe-despierto-ojos var(--re-d) both;
+  }
+  .robot-escena-cafe-despierto .re-boca {
+    animation: re-cafe-despierto-boca var(--re-d) both;
+  }
+  .robot-escena-cafe-despierto .re-robot {
+    animation: re-cafe-despierto-robot var(--re-d) both;
+  }
+  .robot-escena-cafe-despierto .re-antena {
+    animation: re-cafe-despierto-antena var(--re-d) both;
+  }
+  [data-escena="cafe-despierto"] .re-etiqueta {
+    animation: re-reparacion-etiqueta var(--re-d) both;
+  }
+
+  /* cafe-dormido: la taza se va; bosteza y se duerme como reparacion-dormido */
+  .robot-escena-cafe-dormido .re-taza {
+    animation: re-cafe-dormido-taza var(--re-d) both;
+  }
+  .robot-escena-cafe-dormido .re-robot {
+    animation: re-reparacion-dormido-robot var(--re-d) both;
+  }
+  .robot-escena-cafe-dormido .re-boca-o {
+    animation: re-reparacion-dormido-bostezo var(--re-d) both;
+  }
+  .robot-escena-cafe-dormido .re-ojos {
+    animation: re-reparacion-dormido-ojos var(--re-d) both;
+  }
+  .robot-escena-cafe-dormido .re-boca {
+    animation: re-reparacion-dormido-boca var(--re-d) both;
+  }
+  .robot-escena-cafe-dormido :is(.re-ojos-dormido, .re-boca-dormida) {
+    animation: re-reparacion-dormido-duerme var(--re-d) both;
+  }
+  .robot-escena-cafe-dormido .re-zzz {
+    animation: re-reparacion-dormido-zzz var(--re-d) both;
   }
 
   /* reloj */
@@ -1626,6 +1734,81 @@ html[data-theme-circle]::view-transition-new(root) {
 @keyframes re-reparacion-dormido-zzz {
   0%, 44.5% { opacity: 0; transform: translate(-3px, 3px) scale(0.6); }
   70.4%, 100% { opacity: 1; transform: none; }
+}
+
+/* cafe (1150 ms, luego «cargando» con la taza humeando) */
+@keyframes re-cafe-taza {
+  0% { opacity: 0; transform: translateX(40px); }
+  12% { opacity: 1; }
+  45% { opacity: 1; transform: translateX(-1px); }
+  55%, 100% { opacity: 1; transform: translateX(0); }
+}
+@keyframes re-cafe-vapor {
+  0% { opacity: 0; stroke-dashoffset: 1; }
+  30% { opacity: 0.9; }
+  100% { opacity: 0; stroke-dashoffset: -1; }
+}
+@keyframes re-cafe-zzz {
+  0%, 25% { opacity: 1; transform: none; }
+  50%, 100% { opacity: 0; transform: translate(2px, -3px) scale(0.6); }
+}
+@keyframes re-cafe-cara-dormida {
+  0%, 52% { opacity: 1; }
+  56%, 100% { opacity: 0; }
+}
+@keyframes re-cafe-cargando {
+  0%, 55% { opacity: 0; }
+  56%, 100% { opacity: 1; }
+}
+@keyframes re-cafe-robot {
+  0%, 40% { transform: none; }
+  62% { transform: translateX(1px) rotate(7deg); }
+  78% { transform: translateX(0.5px) rotate(3deg); }
+  100% { transform: none; }
+}
+
+/* cafe-despierto (1200 ms) */
+@keyframes re-cafe-despierto-cargando {
+  0%, 38% { opacity: 1; }
+  40%, 100% { opacity: 0; }
+}
+@keyframes re-cafe-despierto-taza {
+  0% { opacity: 1; transform: translateX(0) rotate(0); }
+  22% { transform: translate(-3px, -1px) rotate(-32deg); }
+  40% { transform: translateX(0) rotate(0); }
+  70% { opacity: 1; transform: translateX(40px) rotate(0); }
+  72%, 100% { opacity: 0; transform: translateX(40px); }
+}
+@keyframes re-cafe-despierto-ojos {
+  0%, 38% { opacity: 0; transform: scaleY(0.1); }
+  40% { opacity: 1; transform: scaleY(0.1); }
+  50% { transform: scaleY(1.15); }
+  58%, 66% { transform: scaleY(1); }
+  70% { transform: scaleY(0.1); }
+  75%, 100% { opacity: 1; transform: scaleY(1); }
+}
+@keyframes re-cafe-despierto-boca {
+  0%, 39% { opacity: 0; }
+  40%, 100% { opacity: 1; }
+}
+@keyframes re-cafe-despierto-robot {
+  0%, 46% { transform: none; }
+  56% { transform: translateY(-4px); }
+  65% { transform: none; }
+  71% { transform: translateY(-2px); }
+  77%, 100% { transform: none; }
+}
+@keyframes re-cafe-despierto-antena {
+  0%, 40% { fill: #e5484d; }
+  50% { fill: #ffc300; }
+  64%, 100% { fill: #e5484d; }
+}
+
+/* cafe-dormido (1200 ms): la taza se va antes del bostezo */
+@keyframes re-cafe-dormido-taza {
+  0%, 4% { opacity: 1; transform: translateX(0); }
+  30% { opacity: 1; transform: translateX(40px); }
+  32%, 100% { opacity: 0; transform: translateX(40px); }
 }
 
 /* reloj */

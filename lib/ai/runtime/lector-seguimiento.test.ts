@@ -31,6 +31,9 @@ describe("lector + seguimiento", () => {
     // Acuse corto del cliente al final (10-oct-2026): el bloque solo va cuando aplica.
     expect(buildLectorSystem(stages, { followUp: true })).not.toContain("EL CHAT TERMINA CON UN MENSAJE CORTO DEL CLIENTE");
     expect(buildLectorSystem(stages, { followUp: true, acuse: true })).toContain("EL CHAT TERMINA CON UN MENSAJE CORTO DEL CLIENTE");
+    // «Despertar» (10-oct-2026): su bloque en lugar del de acuse.
+    expect(buildLectorSystem(stages, { followUp: true, acuse: true, despertar: true })).toContain("UN VENDEDOR PIDIÓ «DESPERTAR»");
+    expect(buildLectorSystem(stages, { followUp: true, acuse: true, despertar: true })).not.toContain("EL CHAT TERMINA CON UN MENSAJE CORTO DEL CLIENTE");
     expect(Object.keys(lectorSchemaFor(KEYS).shape)).not.toContain("seguimiento");
     expect(Object.keys(lectorSchemaFor(KEYS, { followUp: true }).shape)).toContain("seguimiento");
     expect(buildLectorTools(stages, { followUp: true }).stageKeys).toEqual(KEYS);
