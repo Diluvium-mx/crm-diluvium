@@ -10,6 +10,9 @@
 // - reloj (Cambiar hora): los ojos se vuelven relojes que giran y la hora de la píldora cambia.
 // - despertador (Que salga solo): suena un despertador, el robot despierta, lo apaga y la píldora pasa a azul.
 // - avion (salió el mensaje): lanza un avioncito de papel y la píldora dice la hora nueva o «esperando».
+// - cafe → cafe-despierto / cafe-dormido (Despertar, 10-oct-2026): llega una taza de café humeante por la derecha, el
+//   robot la huele y sorbe «cargando» mientras el Agente IA lee el chat; al final se la toma, abre los ojos y brinca, o
+//   deja la taza, bosteza y se vuelve a dormir.
 import type { Escena, RobotFace } from "./robot-escena-cuando";
 
 /** El robot de 18 px de la píldora, dibujado en línea para poder animar ojos, boca, antena, cables y chispas. */
@@ -20,6 +23,7 @@ export function RobotEscena({ escena }: { escena: Escena }) {
       {(escena === "reparacion-golpes" || escena === "reparacion" || escena === "reparacion-dormido") && <Llave />}
       {escena === "despertador" && <Despertador />}
       {escena === "avion" && <Avioncito />}
+      {(escena === "cafe" || escena === "cafe-despierto" || escena === "cafe-dormido") && <Taza />}
       <RobotSvg />
     </span>
   );
@@ -197,6 +201,21 @@ function Avioncito() {
     <svg className="re-avioncito" viewBox="0 0 20 14">
       <path d="M0.5 6.2 L19.5 0.5 L12 13.5 L9 8.2 Z" fill="#FFFFFF" stroke="#0A559A" strokeWidth="1.3" strokeLinejoin="round" />
       <path d="M9 8.2 L19.5 0.5" stroke="#0A559A" strokeWidth="1.1" />
+    </svg>
+  );
+}
+
+/** Taza de café humeante (naranja de la marca), con el asa hacia afuera. */
+function Taza() {
+  return (
+    <svg className="re-taza" viewBox="0 0 24 28">
+      <g className="re-vapor" fill="none" stroke="#7D8A97" strokeWidth="2.6" strokeLinecap="round">
+        <path pathLength={1} d="M5 11 q-2.5 -3 0 -5.5 q2.5 -2.5 0 -5" />
+        <path pathLength={1} d="M12 11 q-2.5 -3 0 -5.5 q2.5 -2.5 0 -5" />
+      </g>
+      <rect x="1" y="12" width="15" height="15" rx="3" fill="#DE8C11" stroke="#A8650A" strokeWidth="1.4" />
+      <rect x="1" y="16" width="15" height="3" fill="#FFFFFF" opacity="0.85" />
+      <path d="M16 15.5 q6 0 6 5 q0 5 -6 5" fill="none" stroke="#A8650A" strokeWidth="2.4" />
     </svg>
   );
 }

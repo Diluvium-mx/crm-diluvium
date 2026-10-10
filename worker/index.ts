@@ -60,6 +60,7 @@ import { callModel } from "@/lib/ai";
 import { adsIngestHooks, startAdsWorker } from "@/lib/ads/worker";
 import { enqueueUnavailableCheck } from "@/lib/queue/unavailable";
 import { startUnavailableWorker } from "./unavailable";
+import { startDespertarWorker } from "./despertar";
 import { syncAiBilling } from "@/lib/ai/billing/sync";
 import { syncMetaBilling } from "@/lib/meta-billing/sync";
 import { syncRailwayBilling } from "@/lib/railway-billing/sync";
@@ -97,12 +98,15 @@ const storage = optionalStorage();
 const agent = startAgentRuntime({ provider, storage });
 // Lector en segundo plano (28-sep-2026): etapa y Detalle del contacto al día aunque el
 // Agente IA esté apagado o pausado; nunca le escribe al cliente. Arranca tras las migraciones.
-const lector = startLectorRuntime({
+const lectorDeps = {
   now: () => new Date(),
   callModel,
-  resolveImage: async (key) => (storage ? storage.signedGetUrl(key, 15 * 60) : null),
+  resolveImage: async (key: string) => (storage ? storage.signedGetUrl(key, 15 * 60) : null),
   kv: redisKvPort(),
-});
+};
+const lector = startLectorRuntime(lectorDeps);
+// «Despertar» desde la píldora dormida (10-oct-2026): el lector al momento, sin esperar el barrido.
+const despertar = startDespertarWorker(lectorDeps);
 // Seguimientos (2-oct-2026, Parte 1 en MODO ENSAYO): cada minuto anota cuándo "habría salido"
 // cada intento y programa el siguiente; no le manda nada al cliente. Arranca tras las migraciones.
 const followUps = startFollowUpRuntime({ provider });
@@ -511,7 +515,7 @@ async function shutdown(signal: string) {
   clearInterval(railwayBillingTimer);
   clearInterval(templatesTimer);
   clearInterval(climaTimer);
-  await Promise.all([worker.close(), mediaWorker?.close(), scheduled.close(), agent.close(), lector.close(), followUps.close(), workflowsRunner.close(), outbox.close(), ads.close(), unavailable.close(), chatUploads?.close()]);
+  await Promise.all([worker.close(), mediaWorker?.close(), scheduled.close(), agent.close(), lector.close(), despertar.close(), followUps.close(), workflowsRunner.close(), outbox.close(), ads.close(), unavailable.close(), chatUploads?.close()]);
   console.info(`[worker] cerrado en orden en ${((Date.now() - t0) / 1000).toFixed(1)} s`);
   process.exit(0);
 }
@@ -539,6 +543,7 @@ waitForMigrations()
     scheduled.run();
     agent.run();
     lector.run();
+    despertar.run();
     followUps.run();
     workflowsRunner.run();
     outbox.run();

@@ -90,13 +90,19 @@ const ACUSE_BLOCK = `EL CHAT TERMINA CON UN MENSAJE CORTO DEL CLIENTE, SIN RESPU
 - Si pregunta, pide algo o da un dato que espera respuesta (dónde lo usaría, cuántas entradas, su ciudad) y nadie le contestó, caso no_seguir con el motivo «Espera una respuesta que nadie le dio».
 - Las demás reglas de no_seguir siguen igual (ya compró, no le interesa, pidió que no le escriban…).`;
 
+const DESPERTAR_BLOCK = `UN VENDEDOR PIDIÓ «DESPERTAR» EL SEGUIMIENTO DE ESTE CHAT
+- Llena la ficha de seguimiento aunque el último mensaje sea del cliente: el caso que mejor encaje con lo que quedó pendiente.
+- No uses no_seguir salvo que ya compró y pagó todo, pidió que no le escriban, es número equivocado o el que contesta es el contestador de otro negocio.
+- Si el cliente dejó una pregunta o un dato sin respuesta, el borrador primero lo contesta.`;
+
 export function buildLectorSystem(
   stages: readonly FunnelStage[],
-  opts: { followUp?: boolean; acuse?: boolean; templates?: readonly { name: string; body: string }[]; table?: FollowUpTable } = {},
+  opts: { followUp?: boolean; acuse?: boolean; despertar?: boolean; templates?: readonly { name: string; body: string }[]; table?: FollowUpTable } = {},
 ): string {
   if (!opts.followUp) return lectorBase(stages);
   const plantillas = followUpTemplatesBlock(opts.templates ?? []);
-  return `${lectorBase(stages)}\n\n${followUpInstructions(opts.table ?? FACTORY_TABLE)}${opts.acuse ? `\n\n${ACUSE_BLOCK}` : ""}${plantillas ? `\n\n${plantillas}` : ""}`;
+  const extra = opts.despertar ? DESPERTAR_BLOCK : opts.acuse ? ACUSE_BLOCK : null;
+  return `${lectorBase(stages)}\n\n${followUpInstructions(opts.table ?? FACTORY_TABLE)}${extra ? `\n\n${extra}` : ""}${plantillas ? `\n\n${plantillas}` : ""}`;
 }
 
 function lectorBase(stages: readonly FunnelStage[]): string {
