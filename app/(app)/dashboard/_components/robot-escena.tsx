@@ -10,7 +10,7 @@
 // - reloj (Cambiar hora): los ojos se vuelven relojes que giran y la hora de la píldora cambia.
 // - despertador (Que salga solo): suena un despertador, el robot despierta, lo apaga y la píldora pasa a azul.
 // - avion (salió el mensaje): lanza un avioncito de papel y la píldora dice la hora nueva o «esperando».
-import type { Escena } from "./robot-escena-cuando";
+import type { Escena, RobotFace } from "./robot-escena-cuando";
 
 /** El robot de 18 px de la píldora, dibujado en línea para poder animar ojos, boca, antena, cables y chispas. */
 export function RobotEscena({ escena }: { escena: Escena }) {
@@ -20,6 +20,24 @@ export function RobotEscena({ escena }: { escena: Escena }) {
       {(escena === "reparacion-golpes" || escena === "reparacion" || escena === "reparacion-dormido") && <Llave />}
       {escena === "despertador" && <Despertador />}
       {escena === "avion" && <Avioncito />}
+      <RobotSvg />
+    </span>
+  );
+}
+
+/** El robot de la píldora sin escena (10-oct-2026, pedido del dueño): el mismo dibujo en línea que el de las escenas, con
+ * la carita fija. Antes era una <img> de public/emoji/ y al terminar la escena el cambio dejaba la píldora un instante
+ * sin robot (la imagen se cargaba y pintaba de nuevo): se veía un parpadeo. */
+export function RobotQuieto({ cara }: { cara: RobotFace }) {
+  return (
+    <span aria-hidden="true" className={`robot-escena robot-quieto-${cara} relative -my-0.5 inline-block size-[18px] shrink-0`}>
+      <RobotSvg />
+    </span>
+  );
+}
+
+function RobotSvg() {
+  return (
       <svg className="re-robot" viewBox="0 0 64 64" width="18" height="18">
         <g className="re-cuerpo">
           <line x1="32" y1="6" x2="32" y2="13" stroke="#7D8A97" strokeWidth="4.5" strokeLinecap="round" />
@@ -90,7 +108,6 @@ export function RobotEscena({ escena }: { escena: Escena }) {
           </g>
         </g>
       </svg>
-    </span>
   );
 }
 

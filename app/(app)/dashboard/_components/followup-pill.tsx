@@ -39,7 +39,7 @@ import { instantToLocal, localToInstant, SCHEDULE_TIME_ZONE } from "@/lib/schedu
 import { CloseX } from "@/components/ui/close-x";
 import { useInboxStream } from "./use-inbox-stream";
 import { DateTimePicker } from "@/components/ui/date-time-picker";
-import { EtiquetaEscena, RobotEscena } from "./robot-escena";
+import { EtiquetaEscena, RobotEscena, RobotQuieto } from "./robot-escena";
 import {
   ESCENA_MS,
   ESCENA_TONO_MS,
@@ -354,7 +354,7 @@ export function FollowUpPill({
     >
       {/* Llaves distintas para el robot y la etiqueta: con la misma, React dejaba un robot de más al terminar la escena
           (9-oct-2026, «dos robots» al cambiar la hora). Cambian con cada escena para que las animaciones empiecen de cero. */}
-      {enCurso ? <RobotEscena key={`robot-${enCurso.n}`} escena={enCurso.escena} /> : <RobotIcon face={vista.cara} />}
+      {enCurso ? <RobotEscena key={`robot-${enCurso.n}`} escena={enCurso.escena} /> : <RobotQuieto cara={vista.cara} />}
       {label && (enCurso ? <EtiquetaEscena key={`etiqueta-${enCurso.n}`} antes={enCurso.etiquetaAntes} ahora={label} /> : <span className="truncate">{label}</span>)}
     </button>
   );
