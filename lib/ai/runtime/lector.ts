@@ -39,6 +39,7 @@ import {
   parseLectorCalls,
   type LectorMessage,
 } from "./lector-core";
+import { endsWithClientAck } from "@/lib/followups/acuse";
 import type { KvPort } from "./queue";
 import { MAX_PDF_BYTES } from "./run";
 import { fitHistory, messageText } from "./transcript";
@@ -267,8 +268,10 @@ async function readConversation(organizationId: string, conversationId: string, 
 
   const mediaUrls = await clientMediaUrls(history, deps.resolveImage);
   const { messages, sawClientMedia } = buildLectorMessages(rows, mediaUrls, { ficha, vendorStage });
-  // Ficha de seguimiento: solo si el último mensaje del chat es de la empresa.
-  const followUp = lastIsCompany(rows);
+  // Ficha de seguimiento: si el último mensaje del chat es de la empresa, o si después solo hay un acuse corto del
+  // cliente («de acuerdo», 👍; 10-oct-2026): ahí el silencio cuenta desde su acuse.
+  const acuse = !lastIsCompany(rows) && endsWithClientAck(rows);
+  const followUp = lastIsCompany(rows) || acuse;
   const { tools, stageKeys } = buildLectorTools(stages, { followUp });
   const followUpTemplates = followUp && snap.channel.type === "whatsapp" ? await followUpTemplateList(organizationId, conv.channelId) : [];
   // «Qué busca» y la hora de cada caso: la tabla de la organización (Agente IA › Seguimientos).
@@ -284,7 +287,7 @@ async function readConversation(organizationId: string, conversationId: string, 
     const t0 = Date.now();
     let res: CallModelResult;
     try {
-      res = await deps.callModel(model.id, { system: buildLectorSystem(stages, { followUp, templates: followUpTemplates, table: followUpTable }), messages, tools, maxOutputTokens: LECTOR_MAX_OUTPUT_TOKENS, timeoutMs: LECTOR_TIMEOUT_MS });
+      res = await deps.callModel(model.id, { system: buildLectorSystem(stages, { followUp, acuse, templates: followUpTemplates, table: followUpTable }), messages, tools, maxOutputTokens: LECTOR_MAX_OUTPUT_TOKENS, timeoutMs: LECTOR_TIMEOUT_MS });
     } catch (error) {
       await recordAiUsage({ ...base, usage: null, latencyMs: Date.now() - t0, outcome: "error", error: safeErrorMessage(error) });
       return (done = { kind: "error", reason: safeErrorMessage(error), usage: null, costUsd: null });
@@ -377,6 +380,7 @@ async function readConversation(organizationId: string, conversationId: string, 
       stopAt: tail?.stopAt ?? rows[rows.length - 1].at,
       vendorAttempts: tail?.vendorAttempts ?? [],
       lastIsCompany: followUp,
+      acuse,
       ficha: parsed.seguimiento,
       stages,
       stageKey: stageNow,

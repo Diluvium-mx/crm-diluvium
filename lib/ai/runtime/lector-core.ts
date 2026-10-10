@@ -85,13 +85,18 @@ export function lastIsCompany(rows: readonly Pick<LectorMessage, "direction">[])
   return rows.length > 0 && rows[rows.length - 1].direction === "out";
 }
 
+const ACUSE_BLOCK = `EL CHAT TERMINA CON UN MENSAJE CORTO DEL CLIENTE, SIN RESPUESTA NUESTRA
+- Si solo acusa recibo o cierra la plática («de acuerdo», «ok, gracias», «va», «sale», un emoji o un sticker) y no pregunta ni pide nada, el chat quedó parado igual que si el último mensaje fuera nuestro: llena la ficha de seguimiento como siempre, con el caso de lo que quedó pendiente ANTES de su acuse.
+- Si pregunta, pide algo o da un dato que espera respuesta (dónde lo usaría, cuántas entradas, su ciudad) y nadie le contestó, caso no_seguir con el motivo «Espera una respuesta que nadie le dio».
+- Las demás reglas de no_seguir siguen igual (ya compró, no le interesa, pidió que no le escriban…).`;
+
 export function buildLectorSystem(
   stages: readonly FunnelStage[],
-  opts: { followUp?: boolean; templates?: readonly { name: string; body: string }[]; table?: FollowUpTable } = {},
+  opts: { followUp?: boolean; acuse?: boolean; templates?: readonly { name: string; body: string }[]; table?: FollowUpTable } = {},
 ): string {
   if (!opts.followUp) return lectorBase(stages);
   const plantillas = followUpTemplatesBlock(opts.templates ?? []);
-  return `${lectorBase(stages)}\n\n${followUpInstructions(opts.table ?? FACTORY_TABLE)}${plantillas ? `\n\n${plantillas}` : ""}`;
+  return `${lectorBase(stages)}\n\n${followUpInstructions(opts.table ?? FACTORY_TABLE)}${opts.acuse ? `\n\n${ACUSE_BLOCK}` : ""}${plantillas ? `\n\n${plantillas}` : ""}`;
 }
 
 function lectorBase(stages: readonly FunnelStage[]): string {

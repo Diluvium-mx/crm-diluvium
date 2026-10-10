@@ -249,6 +249,8 @@ export type FollowUpReading = {
   /** Seguimientos que ya mandó un vendedor después de la parada (cuentan como intento). */
   vendorAttempts?: readonly Date[];
   lastIsCompany: boolean;
+  /** El chat termina con un acuse corto del cliente («de acuerdo», 👍): cuenta como parada (10-oct-2026). */
+  acuse?: boolean;
   ficha: FollowUpFicha | null;
   stages: readonly FunnelStage[];
   stageKey: string;
@@ -284,6 +286,16 @@ async function applyReading(r: FollowUpReading): Promise<string | null> {
 
   const existing = await openRow(db, organizationId, conversationId);
   if (existing && existing.basedOnMessageAt.getTime() >= r.readUpTo.getTime()) return null;
+  // Acuse («ok», 👍) a uno de NUESTROS seguimientos: no es respuesta; sigue la misma serie (día 2, día 9) en lugar de
+  // empezar otra, así un «ok» a cada seguimiento no lo vuelve infinito (10-oct-2026). Se apunta al acuse para que el
+  // barrido no lo tome por un mensaje sin leer.
+  if (r.acuse && existing && existing.intentos.some((a) => a.modo !== "vendedor")) {
+    await db
+      .update(followUps)
+      .set({ basedOnMessageAt: r.readUpTo, updatedAt: now })
+      .where(and(eq(followUps.id, existing.id), eq(followUps.organizationId, organizationId)));
+    return "seguimiento: acuse al seguimiento; sigue la misma serie";
+  }
   const signals = await loadSignals(organizationId, conversationId, contactId, now, { stages: r.stages, stageKey: r.stageKey, monto: r.monto, pago: r.pago });
   if (!signals) return null;
   if (!signals.channelOn) {

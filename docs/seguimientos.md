@@ -765,6 +765,28 @@ cliente), así que de noche se leen igual de bien.
 Código: `timezone.ts` (`ZONE_BY_LADA`), `schedule.ts` (`sendTimeProblem` sin tope de plantilla), `store.ts` (`nextSendable`
 con `setByVendor`), `view.ts` (`sendTimeMessage`). Guiones del análisis, fuera del repo: `notas/historial-ghl/analizar5.py`.
 
+## 21. Acuse corto del cliente al final del chat (10-oct-2026)
+
+**Origen:** el cliente quedó en mandar la foto de sus entradas («si me animo le envío la foto»), Ángela le contestó y él
+cerró con «De acuerdo». Ángela no contesta un acuse (6-oct, a propósito), así que el último mensaje quedaba del cliente y
+el CRM nunca armaba el seguimiento: la píldora se quedaba «dormida» justo donde más importa. En producción (10 días, chats
+con el Agente IA en automático): 59 chats con el último mensaje del cliente sin respuesta, 48 de ellos con un mensaje corto
+(«gracias» 14, sticker 5, «ok gracias» 4, «de acuerdo» 2…); 25 en chats con «Pausar agente».
+
+**Regla (decisión del dueño, «OK 1 y 2»):**
+- Si después de nuestro último mensaje el cliente solo mandó mensajes cortos (hasta 40 letras, sin pregunta ni números) o
+  stickers (`lib/followups/acuse.ts`), el lector también pide la ficha de seguimiento y decide: si solo acusa recibo o
+  cierra, arma el seguimiento como siempre; si espera respuesta, «No seguir: Espera una respuesta que nadie le dio».
+- El silencio (8 h) y la ventana de 24 h cuentan desde su acuse, que reabrió la ventana: el 1.er intento casi siempre sale
+  con texto, sin plantilla.
+- Un acuse a uno de NUESTROS seguimientos no es respuesta: sigue la misma serie (día 2, día 9) en lugar de empezar otra, para
+  que un «ok» a cada seguimiento no lo vuelva infinito.
+- La píldora, mientras el lector no lee el acuse: «El cliente solo contestó con un acuse. El Agente IA lee el chat en unos
+  minutos y, si no espera respuesta, arma el seguimiento.»
+
+Código: `acuse.ts` (`endsWithClientAck`), `lector.ts` (`acuse` → ficha y bloque del system), `lector-core.ts`
+(`ACUSE_BLOCK`), `store.ts` (`FollowUpReading.acuse`, misma serie), `view.ts` (razones de la píldora).
+
 ## Fuentes
 
 - [M1] Meta, enviar mensajes / ventana de servicio: https://developers.facebook.com/documentation/business-messaging/whatsapp/messages/send-messages
