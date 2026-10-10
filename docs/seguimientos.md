@@ -197,7 +197,8 @@ que pedir un comprobante (en la mañana, para que alcance a pagar ese día).
   7 días, §9).
 - Si un intento ya salió con plantilla, el siguiente con plantilla espera 7 días.
 - **Con plantilla, nunca después de las 19:00**: una plantilla de noche que no es respuesta del Agente IA es rara
-  (decisión del dueño, 2-oct). En los casos de noche, la plantilla sale de 18:00 a 19:00.
+  (decisión del dueño, 2-oct). En los casos de noche, la plantilla sale de 18:00 a 19:00. **Salvo** la hora que elige
+  el vendedor con «Cambiar hora»: con plantilla, hasta las 21:00 como el texto (decisión del dueño, 10-oct, §20).
 
 **Puertas** (solo cuando la ventana está cerrada): 🚪 = `hola_buenos_dias` antes de las 12:00 hora del cliente,
 `hola_buenas_tardes` después · 📄 = `seguimiento_proteccion`. Con la ventana abierta, siempre texto del Agente IA.
@@ -379,7 +380,8 @@ rápidos, 📄 Plantillas y 📎 Adjuntar (Bandeja y pop-up del Embudo usan el m
 - Solo a contactos que **ya escribieron** alguna vez (nunca a un contacto sin chat).
 - **Horario de envío: 7:00–21:00 hora del cliente** (decisión del dueño, 2-oct; estado de su lada → zona horaria;
   sin lada mexicana, Mazatlán), con la hora de cada caso (§6.2), **todos los días, domingo incluido** (decisión del
-  dueño, 2-oct: si al seguimiento le toca ese día, sale ese día). Con plantilla, hasta las 19:00.
+  dueño, 2-oct: si al seguimiento le toca ese día, sale ese día). Con plantilla, hasta las 19:00 (elegida a mano con
+  «Cambiar hora», hasta las 21:00; §20).
 
 ---
 
@@ -447,7 +449,7 @@ contacto de prueba del dueño.
 - Chats que lleva un vendedor: **automático con aviso**; si el cliente contesta, **la conversación sigue con el
   Agente IA** (§7.4).
 - Sin plantilla de "buenas noches": una plantilla de noche que no es respuesta del Agente IA es rara; las plantillas
-  salen hasta las 19:00.
+  que programa el CRM salen hasta las 19:00 (a mano con «Cambiar hora», hasta las 21:00: decisión del 10-oct, §20).
 - Sin reactivación tardía de 15 días como Ángela: el seguimiento sale del contexto del chat.
 
 - El botón 🤖 va arriba de ⚡ 📄 📎 (§8). "Cancelar" cancela todo el seguimiento de ese pendiente; si el chat cambia y
@@ -493,7 +495,7 @@ intento que salió o "habría salido"), based_on_message_at (hasta dónde leyó 
   entre plantillas).
 - `lib/ai/runtime/lector.ts`: al aplicar la lectura, si el último mensaje es nuestro, guarda o reemplaza la ficha.
 - `lib/followups/timezone.ts` (puro): estado de la lada (`lib/phone-lada-data.ts`) → zona horaria (Tijuana, Hermosillo,
-  Mazatlán, Chihuahua/Ciudad Juárez, CDMX, Cancún).
+  Mazatlán, Chihuahua/Ciudad Juárez/Ojinaga, CDMX, frontera noreste → Matamoros, Cancún; §20).
 - Worker: `startFollowUpRuntime` con el patrón de `startLectorRuntime` (barrido cada 60 s, candado por chat).
 - `lib/messaging/send.ts`: `sendTemplateMessage` acepta `source` (`crm` | `ai_agent`) y `sentByUserId` nulo; con
   `ai_agent` no pasa por `pauseAgentForManualSend`.
@@ -608,7 +610,8 @@ Aprobado por el dueño el 6-oct-2026 («OK 1–12», con vista previa). Rama `fe
   3.º** (cada uno se prende o se apaga; los tiempos no cambian: antes del cierre, día 2, día 9), **hora desde/hasta**
   (hora del cliente, dentro de 7:00–21:00) y **qué busca** (lo lee el Agente IA; de fábrica, las guías del lector de §14).
 - **Horario de los vendedores** por día (Mazatlán) para presentar las sugerencias (§7.4).
-- Fijo en el código: 7:00–21:00, plantillas hasta las 19:00, 7 días entre plantillas.
+- Fijo en el código: 7:00–21:00, plantillas hasta las 19:00 (con «Cambiar hora», hasta las 21:00; 10-oct), 7 días
+  entre plantillas.
 - Borrador + «Guardar cambios» con confirmación (lista de cambios) y «Descartar», como Opciones. Cada guardado deja una fila
   en Agente IA › Historial (tipo «Seguimientos», con «Ver cambios» renglón por renglón). Aplica en ≤ 60 s (caché por
   organización en web y worker).
@@ -626,8 +629,9 @@ baja; Ensayo) y la carita según el estado; ✕ roja sin la palabra «Cerrar»; 
 busca el seguimiento?», «¿Cuándo sale el N.º mensaje?» (N = mensajes que ya salieron + 1) o «¿Y ahora?» tras el último;
 sin «Por dónde» ni la palabra «plantilla»; «Ver mensaje» = el texto exacto; un renglón por mensaje que ya salió, sin el
 nombre de la plantilla. El texto de la píldora, títulos, preguntas y botones no se seleccionan; las respuestas y el mensaje
-sí. **Cambiar hora** ya no deja una hora que el CRM movería al salir: avisa al guardar (fuera de 7:00–21:00 del cliente,
-plantilla después de las 19:00 o a menos de 7 días de otra plantilla) con el rango en hora de Mazatlán.
+sí. **Cambiar hora** ya no deja una hora que el CRM movería al salir: avisa al guardar (fuera de 7:00–21:00 del cliente
+o a menos de 7 días de otra plantilla) con el rango en hora de Mazatlán. Hasta el 10-oct también avisaba con plantilla
+después de las 19:00; ese tope ya no aplica a la hora elegida a mano (§20).
 
 Código: `lib/followups/tabla.ts` (fábrica, validación, cambios), `tabla-store.ts` (lectura con caché, guardado +
 Historial), `schedule.ts` (`PlanInput.table`, `sendTimeProblem`), `store.ts` (caso/intento apagado, `skipStep`),
@@ -727,6 +731,39 @@ prototipos (tamaño real y ampliado) antes de construirlas; el dueño aprobó la
   `ESCENA_MS`). En chico los detalles finos casi no se ven; el dueño lo aceptó así.
 
 ---
+
+## 20. Frontera noreste y plantilla a mano hasta las 21:00 (10-oct-2026)
+
+**Origen:** un cliente del centro (una hora más que Mazatlán) contestó «aún no llego del trabajo» al seguimiento de las
+19:00 de su hora. El siguiente quedó a las 18:25 de su hora (la última antes del cierre de la ventana, con 1 h de margen).
+El dueño lo quiso mover a las 20:59 de su hora y «Cambiar hora» no lo dejó: con la ventana cerrada sale plantilla y las
+plantillas tenían tope a las 19:00. Las plantillas `seg_*` no saludan por hora (su `{{1}}` dice cuándo escribió el
+cliente), así que de noche se leen igual de bien.
+
+**Decisiones del dueño (10-oct, «OK 1 y 2»):**
+1. **Zona de la frontera noreste.** Desde 2022 esos municipios cambian de horario como Estados Unidos, y el CRM los
+   trataba como centro: de marzo a noviembre su «21:00» les llegaba a las 22:00. Ahora las ladas 867 (Nuevo Laredo),
+   868 (Matamoros), 894 (Valle Hermoso), 897 (Miguel Alemán, Mier, Camargo), 899 (Reynosa, Río Bravo), 877 (Ciudad
+   Acuña) y 878 (Piedras Negras) van con `America/Matamoros`, y la 626 (Ojinaga) con `America/Ojinaga`. En GHL eran
+   270 contactos (2.4 %), 125 de Reynosa. Lo ya programado conserva la zona con la que se calculó; lo nuevo usa la nueva.
+2. **«Cambiar hora» con plantilla, hasta las 21:00 del cliente** (antes, hasta las 19:00). El barrido respeta esa hora
+   (`due_set_by = vendedor`). Lo que programa el CRM solo no cambia: plantillas hasta las 19:00 y, en los casos de noche,
+   a las 18:00.
+
+**Lo que dijeron los datos antes de decidir (lo automático de noche se queda igual):**
+- GHL casi no tiene seguimientos de noche: retomando un chat callado ≥8 h, de 19 a 22 h del cliente hubo entre 0 y 5 envíos
+  (ni vendedores ni Ángela escribían a esa hora). El «77–79 % en 2 h de 19 a 21 h» de §6.2 es de chats **activos**, no de
+  seguimientos. Retomando chats, el vendedor tuvo 63–71 % de respuesta en 12 h de 9 a 17 h, 46 % de 17 a 18 h y 33 % de 18 a
+  19 h (n=12).
+- Los que dijeron «estoy en el trabajo / no he llegado a mi casa» (182): solo el 17 % volvió a escribir solo en 48 h, con una
+  mediana de 15 h, casi siempre a la mañana siguiente o al mediodía; ninguno de 20 a 24 h (n=31).
+- Producción, del 6 al 10-oct (782 intentos reales), contestó en 12 h: texto de 18 a 19 h 17 % (n=64), de 19 a 20 h 13 %
+  (n=193), de 20 a 21 h 9 % (n=11), de 15 a 17 h 25 % (n=36); plantilla de 18 a 19 h 9 % (n=373). Por caso no hay una
+  franja que gane siempre. La noche no salió mejor: no hay base para mover lo automático más tarde ni para un tope de 21:30.
+- Siguiente revisión con más datos: la del 13-oct (horas de los seguimientos por caso).
+
+Código: `timezone.ts` (`ZONE_BY_LADA`), `schedule.ts` (`sendTimeProblem` sin tope de plantilla), `store.ts` (`nextSendable`
+con `setByVendor`), `view.ts` (`sendTimeMessage`). Guiones del análisis, fuera del repo: `notas/historial-ghl/analizar5.py`.
 
 ## Fuentes
 

@@ -85,17 +85,17 @@ export function windowOpenAt(windowExpiresAt: Date | null, t: Date): boolean {
   return windowExpiresAt !== null && t.getTime() <= windowExpiresAt.getTime() - WINDOW_MARGIN_MS;
 }
 
-export type SendTimeProblem = { kind: "horario"; latest: string } | { kind: "siete_dias"; from: Date };
+export type SendTimeProblem = { kind: "horario" } | { kind: "siete_dias"; from: Date };
 
 /**
- * ¿El CRM dejaría salir un intento a esa hora? Lo mismo que revisa el barrido al salir: de 7:00 a 21:00 del
- * cliente (plantilla hasta las 19:00) y 7 días entre plantillas. Lo usa «Cambiar hora» para avisar al guardar
- * en lugar de mover la hora en silencio (decisión del dueño, 6-oct-2026).
+ * ¿El CRM dejaría salir a esa hora un intento que eligió el vendedor? Lo mismo que revisa el barrido al salir:
+ * de 7:00 a 21:00 del cliente, también con plantilla (el tope de las 19:00 es solo para lo que programa el CRM;
+ * decisión del dueño, 10-oct-2026), y 7 días entre plantillas. Lo usa «Cambiar hora» para avisar al guardar en
+ * lugar de mover la hora en silencio (decisión del dueño, 6-oct-2026).
  */
 export function sendTimeProblem(t: Date, zone: string, door: Door, lastTemplateAt: Date | null): SendTimeProblem | null {
   const m = localMinutes(t, zone);
-  const latest = door === "plantilla" ? TEMPLATE_LATEST : ALLOWED_TO;
-  if (m < minutesOf(ALLOWED_FROM) || m > minutesOf(latest)) return { kind: "horario", latest };
+  if (m < minutesOf(ALLOWED_FROM) || m > minutesOf(ALLOWED_TO)) return { kind: "horario" };
   if (door === "plantilla" && lastTemplateAt && t.getTime() < lastTemplateAt.getTime() + TEMPLATE_SPACING_DAYS * DAY) {
     return { kind: "siete_dias", from: new Date(lastTemplateAt.getTime() + TEMPLATE_SPACING_DAYS * DAY) };
   }

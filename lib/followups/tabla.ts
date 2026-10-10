@@ -6,7 +6,7 @@
 // de que cierre la ventana, 2.º día 2, 3.º día 9), la hora (desde/hasta, hora del cliente, dentro de
 // 7:00–21:00) y «Qué busca» (lo lee el Agente IA al escribir el seguimiento). Además, el horario de los
 // vendedores (hora de Mazatlán) con el que se presentan las sugerencias. Fijo en el código: 7:00–21:00,
-// plantillas hasta las 19:00 y 7 días entre plantillas (cases.ts).
+// plantillas hasta las 19:00 (con «Cambiar hora», hasta las 21:00) y 7 días entre plantillas (cases.ts).
 //
 // En ai_config: `seguimientos_casos` y `seguimientos_vendedores` (migración 0062); null = de fábrica.
 // Un caso guardado que ya no valide (editado a mano) vuelve al de fábrica: nunca queda uno imposible.

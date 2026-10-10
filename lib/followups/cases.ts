@@ -125,7 +125,10 @@ export function isFollowUpCase(value: unknown): value is FollowUpCase {
 /** Horario permitido (hora del cliente, todos los días): 7:00 a 21:00. */
 export const ALLOWED_FROM = "07:00";
 export const ALLOWED_TO = "21:00";
-/** Con plantilla, nunca después de las 19:00 (una plantilla de noche es rara). */
+/**
+ * Con plantilla, lo que programa el CRM nunca sale después de las 19:00 (una plantilla de noche es rara). Si la hora
+ * la eligió el vendedor con «Cambiar hora», hasta las 21:00 como el texto (decisión del dueño, 10-oct-2026).
+ */
 export const TEMPLATE_LATEST = "19:00";
 /** En los casos de noche, la plantilla sale a esta hora. */
 export const TEMPLATE_EVENING = "18:00";

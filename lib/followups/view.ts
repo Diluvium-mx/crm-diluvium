@@ -6,7 +6,7 @@ import { db } from "@/lib/db";
 import { channels, contacts, conversations, followUps, messages, templates, user } from "@/lib/db/schema";
 import { listFunnelStages } from "@/lib/contacts/funnel-stages";
 import { firstNameOf } from "@/lib/templates/first-name";
-import { CASE_RULES, templateForAttempt, TIME_PHRASE_TEMPLATES, type FollowUpCase } from "./cases";
+import { ALLOWED_FROM, ALLOWED_TO, CASE_RULES, templateForAttempt, TIME_PHRASE_TEMPLATES, type FollowUpCase } from "./cases";
 import { presentAtFor, sendTimeProblem, templateFor, windowOpenAt, VENDOR_ZONE, type SendTimeProblem } from "./schedule";
 import { approvedTemplateNames, followUpsReal, lastTemplateAt, reopenCancelledFollowUp } from "./store";
 import { loadFollowUpTable } from "./tabla-store";
@@ -294,23 +294,19 @@ export function sendTimeMessage(problem: SendTimeProblem, t: Date, zone: string)
   if (problem.kind === "siete_dias") {
     return `A este cliente ya le llegó una plantilla hace menos de 7 días. Elige desde el ${dayText(problem.from)} (hora de Mazatlán).`;
   }
-  // De 7:00 a la última hora permitida del día del cliente, en hora de Mazatlán.
+  // De 7:00 a 21:00 del día del cliente, en hora de Mazatlán.
   const p = localParts(t, zone);
   const day = { y: p.y, m: p.m, d: p.d };
-  const from = hourText(zonedInstant(zone, day, "07:00"), VENDOR_ZONE);
-  const to = hourText(zonedInstant(zone, day, problem.latest), VENDOR_ZONE);
-  const why =
-    problem.latest === "21:00"
-      ? `Los seguimientos salen de 7:00 a 21:00 de su hora`
-      : `A esa hora su ventana de 24 h ya cerró y entonces solo se le puede escribir de 7:00 a 19:00 de su hora`;
-  return `Para el cliente serían las ${hourText(t, zone)} (su hora). ${why}: elige entre las ${from} y las ${to} de Mazatlán.`;
+  const from = hourText(zonedInstant(zone, day, ALLOWED_FROM), VENDOR_ZONE);
+  const to = hourText(zonedInstant(zone, day, ALLOWED_TO), VENDOR_ZONE);
+  return `Para el cliente serían las ${hourText(t, zone)} (su hora). Los seguimientos salen de 7:00 a 21:00 de su hora: elige entre las ${from} y las ${to} de Mazatlán.`;
 }
 
 export type ChangeTimeResult = { ok: true } | { ok: false; message: string };
 
 /**
  * Cambiar hora: la elige el vendedor (hora de Mazatlán); se recalcula por dónde saldría. Si a esa hora el
- * CRM no lo dejaría salir (horario del cliente, plantillas hasta las 19:00, 7 días entre plantillas), no se
+ * CRM no lo dejaría salir (7:00–21:00 del cliente, también con plantilla; 7 días entre plantillas), no se
  * guarda y se dice por qué: así sale justo a la hora que eligió.
  */
 export async function changeFollowUpTime(organizationId: string, id: string, dueAt: Date, userId: string, now: Date): Promise<ChangeTimeResult> {

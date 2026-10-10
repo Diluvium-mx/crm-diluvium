@@ -4,7 +4,7 @@
 // tabla de casos de los seguimientos y el horario de los vendedores. Como en Opciones, todo edita un
 // BORRADOR; con cambios aparecen «Guardar cambios» (naranja) y «Descartar», y «Guardar cambios» confirma
 // arriba con la lista de cambios. Cada guardado queda en Agente IA › Historial. Lo fijo (7:00–21:00,
-// plantillas hasta las 19:00, 7 días entre plantillas) solo se muestra. Sin lógica de datos: las reglas
+// plantillas hasta las 19:00 salvo con «Cambiar hora», 7 días entre plantillas) solo se muestra. Sin lógica de datos: las reglas
 // viven en lib/followups/tabla.ts y el guardado en la Server Action.
 import { useEffect, useState } from "react";
 import { saveFollowUpTableAction, type FollowUpTableLastChange } from "@/lib/actions/agente-ia-seguimientos";
@@ -120,7 +120,7 @@ export function FollowUpRulesSection({
   return (
     <div className="flex flex-col gap-3">
       <p className="rounded-md border border-dashed border-black/20 px-3 py-2 text-xs text-foreground/70 dark:border-white/20">
-        Fijo: de 7:00 a 21:00 hora del cliente · plantillas hasta las 19:00 · 7 días entre plantillas · «No seguir» nunca sale.
+        Fijo: de 7:00 a 21:00 hora del cliente · plantillas hasta las 19:00 (a mano, hasta las 21:00) · 7 días entre plantillas · «No seguir» nunca sale.
       </p>
 
       <ul className="flex flex-col gap-2">
