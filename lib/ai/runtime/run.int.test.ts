@@ -5,6 +5,7 @@
 // DESECHABLE con las migraciones aplicadas. Nunca a staging ni prod.
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import type { CallModelInput, CallModelResult } from "@/lib/ai/types";
+import { INTERNAL_TEXT_RETRY_NOTE } from "./internal-text";
 
 const TEST_DATABASE_URL = process.env.TEST_DATABASE_URL;
 if (TEST_DATABASE_URL) process.env.DATABASE_URL = TEST_DATABASE_URL;
@@ -2551,8 +2552,10 @@ describe.skipIf(!TEST_DATABASE_URL)("runtime del Agente IA (Postgres real)", () 
   it("texto interno pegado a una respuesta buena («[tool call] …», «[actions]») → no sale NADA, tarjeta y el Agente IA en pausa; Reintentar lo vuelve a intentar", async () => {
     await msg({ direction: "in", body: "¿tienen videos de cómo se instala?", at: ago(20_000) });
     const z = fakeZernio();
+    // 10-oct: se le pide otra respuesta al mismo modelo UNA vez; aquí la segunda también trae la nota.
     const leak = makeDeps({ brain: ["Sí, es removible y no requiere obra.\n\n[tool call] wf_video_instalacion_estandar"] }, z);
     expect(await run.runAgent(JOB, leak.deps)).toEqual({ kind: "failed", reason: "respuesta_sin_completar" });
+    expect(leak.calls.filter((c) => c.kind === "cerebro")).toHaveLength(2);
     expect(z.delivered).toEqual([]);
     expect(await agentOuts()).toEqual([]);
     const card = (await openCard())!;
@@ -2579,6 +2582,56 @@ describe.skipIf(!TEST_DATABASE_URL)("runtime del Agente IA (Postgres real)", () 
       expect(z.delivered).toEqual([]);
       expect((await openCard())!.body).toContain("nota interna");
     }
+  });
+
+  // ── Reintento automático del texto interno (10-oct-2026, dueño: «que no vuelva a ocurrir») ──
+  it("caso 9-oct («Si» al poste → respuesta buena + «[tool]»): se le pide otra respuesta al mismo modelo y sale la limpia, sin tarjeta ni pausa", async () => {
+    await msg({ direction: "in", body: "Si", at: ago(20_000) });
+    const z = fakeZernio();
+    const d = makeDeps({
+      brain: ["Perfecto, serían dos compuertas, una por cada mitad.\n\n[tool]", "Perfecto, serían dos compuertas, una por cada mitad. ¿Me confirma la medida de cada lado?"],
+      brainToolCalls: [[], [{ toolName: "actualizar_detalle", input: { cantidad_compuertas: 2 } }]],
+    }, z);
+    expect(await run.runAgent(JOB, d.deps)).toEqual({ kind: "sent", bubbles: 1 });
+    expect(z.delivered).toEqual(["Perfecto, serían dos compuertas, una por cada mitad. ¿Me confirma la medida de cada lado?"]);
+    const brains = d.calls.filter((c) => c.kind === "cerebro");
+    expect(brains.map((c) => c.modelId)).toEqual([brains[0].modelId, brains[0].modelId]);
+    expect(lastUserText(brains[0].input)).not.toContain(INTERNAL_TEXT_RETRY_NOTE);
+    expect(lastUserText(brains[1].input)).toContain(INTERNAL_TEXT_RETRY_NOTE);
+    // El system es el mismo: la caché no cambia.
+    expect(brains[1].input.system).toBe(brains[0].input.system);
+    expect(await openCard()).toBeFalsy();
+    expect(await agentError.hasUnresolvedAgentError(ORG, CONV)).toBe(false);
+    // El registro guarda la respuesta COMPLETA que no salió (B).
+    const rows = (await usage()).filter((u) => u.stage === "cerebro");
+    expect(rows.map((u) => u.outcome)).toEqual(["error", "sent"]);
+    expect(rows[0].error).toBe("texto interno (mensaje entre corchetes); se pide otra respuesta — respuesta: «Perfecto, serían dos compuertas, una por cada mitad. ⏎ [tool]»");
+  });
+
+  it("si la segunda respuesta también trae texto interno: tarjeta y pausa, y el registro guarda la respuesta completa", async () => {
+    await msg({ direction: "in", body: "Mide 4 metros", at: ago(20_000) });
+    const z = fakeZernio();
+    const d = makeDeps({ brain: ["Gracias por la medida.\n[tool]", "Gracias por la medida.\n(update tool after written)", "no debe llamarse"] }, z);
+    expect(await run.runAgent(JOB, d.deps)).toEqual({ kind: "failed", reason: "respuesta_sin_completar" });
+    expect(d.calls.filter((c) => c.kind === "cerebro")).toHaveLength(2);
+    expect(z.delivered).toEqual([]);
+    expect((await openCard())!.body).toContain("(update tool after written)");
+    const rows = (await usage()).filter((u) => u.stage === "cerebro");
+    expect(rows.map((u) => u.error)).toEqual([
+      "texto interno (mensaje entre corchetes); se pide otra respuesta — respuesta: «Gracias por la medida. ⏎ [tool]»",
+      "no salió: texto interno (nota entre paréntesis): (update tool after written) — respuesta: «Gracias por la medida. ⏎ (update tool after written)»",
+    ]);
+  });
+
+  it("casos 7 al 10-oct: «[ NADA_QUE_AGREGAR ]» (con espacios) ante un «Ok» es no contestar: no sale nada, sin reintento ni tarjeta", async () => {
+    await msg({ direction: "in", body: "Ok", at: ago(20_000) });
+    const z = fakeZernio();
+    const d = makeDeps({ brain: ["[ NADA_QUE_AGREGAR ]", "no debe llamarse"] }, z);
+    expect((await run.runAgent(JOB, d.deps)).kind).not.toBe("failed");
+    expect(d.calls.filter((c) => c.kind === "cerebro")).toHaveLength(1);
+    expect(z.delivered).toEqual([]);
+    expect(await openCard()).toBeFalsy();
+    expect(await agentError.hasUnresolvedAgentError(ORG, CONV)).toBe(false);
   });
 
   it("último candado: sendAgentText nunca manda un texto interno aunque llegue hasta ahí", async () => {

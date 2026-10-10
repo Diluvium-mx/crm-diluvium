@@ -39,7 +39,7 @@ export function repeatNoticeBody(question: string): string {
   return `El Agente IA solo iba a repetir la pregunta «${question}», que el cliente no contestó, y no salió. Revisa si hacía falta contestar.`;
 }
 import { mergeHandoffToolCalls, validateToolCalls, type ValidToolCall } from "./tools";
-import { hasForeignScript, stripForeignScript, unfinishedReply } from "./internal-text";
+import { findInternalText, hasForeignScript, INTERNAL_TEXT_RETRY_NOTE, replyExcerpt, stripForeignScript, unfinishedReply } from "./internal-text";
 import { applyDetalleByAgent, detalleContextFor, mergeDetalle } from "./detalle";
 import { transcriptionWaitMs } from "@/lib/ai/transcription/rules";
 import { handoverPauseUntil, humanPauseUntil, isWithinSchedule, type BotOptions } from "@/lib/agente-ia/opciones";
@@ -642,7 +642,7 @@ export async function runAgent(job: { organizationId: string; conversationId: st
     // entonces, además del complemento de un workflow, el Agente IA puede no contestar
     // escribiendo NOTHING_TOKEN (Goal: PASAR A HUMANO).
     const acuse = pending.length > 0 && pending.every((m) => isBareAck(m));
-    const attempt = async (model: CatalogModel, avanzaA: string | null = null, nota: string | null = null, foreignRetry = false): Promise<BrainOk | BrainFail> => {
+    const attempt = async (model: CatalogModel, avanzaA: string | null = null, nota: string | null = null, foreignRetry = false, internalRetry = false): Promise<BrainOk | BrainFail> => {
       tried.add(model.id);
       const messages = await messagesFor(model, avanzaA, nota);
       const t0 = Date.now();
@@ -666,8 +666,18 @@ export async function runAgent(job: { organizationId: string; conversationId: st
         out = clean ? { ...out, text: clean } : { kind: "empty" };
         if (!clean && valid.length === 0 && !foreignRetry) {
           await recordAiUsage({ ...base, stage: "cerebro", modelId: res.modelId, provider: res.provider, usage: res.usage, latencyMs, outcome: "error", error: "solo letras de otro alfabeto; se pide otra respuesta" });
-          return attempt(model, avanzaA, nota, true);
+          return attempt(model, avanzaA, nota, true, internalRetry);
         }
+      }
+      // Texto interno (10-oct-2026, dueño: «que no vuelva a ocurrir»; internal-text.ts › INTERNAL_TEXT_RETRY_NOTE):
+      // una respuesta con «[tool]», «[tool call]», «(update tool after written)»… se le vuelve a pedir al MISMO
+      // modelo UNA vez, con la nota. Sus acciones no se ejecutan: las pide otra vez la respuesta nueva. Si la nueva
+      // también trae texto interno, el candado de abajo (unfinishedReply) la detiene: tarjeta y pausa como antes.
+      const internal = !internalRetry && out.kind === "reply" ? findInternalText([out.text]) : null;
+      if (internal) {
+        await recordAiUsage({ ...base, stage: "cerebro", modelId: res.modelId, provider: res.provider, usage: res.usage, latencyMs, outcome: "error", error: `texto interno (${internal.reason}); se pide otra respuesta — respuesta: «${replyExcerpt(out.kind === "reply" ? out.text : "")}»` });
+        console.warn(`[agente] ${conv.id}: ${model.label} escribió texto interno (${internal.reason}); se le pide otra respuesta`);
+        return attempt(model, avanzaA, [nota, INTERNAL_TEXT_RETRY_NOTE].filter(Boolean).join("\n"), foreignRetry, true);
       }
       // "Nada que agregar" solo vale como complemento de un workflow; fuera de eso es respuesta vacía.
       // En el complemento, una respuesta en blanco también (con el Goal real de staging, Luna y

@@ -85,6 +85,24 @@ export function findInternalText(parts: readonly string[]): { text: string; reas
   return null;
 }
 
+// Reintento automático (10-oct-2026, dueño). Del 7 al 10-oct, 10 respuestas de GPT-5.6 Luna se detuvieron por
+// texto interno: 7 eran una respuesta buena seguida de «[tool]», «[tool call]», «(update tool after written)» o
+// «[tool call?] Need tool update after written…» (el modelo escribió que iba a llamar una herramienta en vez de
+// llamarla; empezó 18 minutos después del sufijo del 8-oct, «primero tu texto y, en la misma respuesta, las
+// herramientas») y 3 eran la señal de no contestar escrita con espacios, «[ NADA_QUE_AGREGAR ]», ante un «ok» o
+// un «gracias». Antes cada una dejaba la tarjeta y al cliente sin respuesta hasta que un vendedor entrara. Ahora
+// el CRM le pide otra respuesta al MISMO modelo UNA vez con esta nota (va en el contexto, no en el system: la
+// caché no cambia); si la nueva también trae texto interno, la tarjeta y la pausa de siempre. La nota no repite
+// el texto malo para no dárselo al modelo como ejemplo.
+export const INTERNAL_TEXT_RETRY_NOTE =
+  "Tu respuesta anterior NO se le envió al cliente porque traía una nota interna escrita como texto (corchetes, «tool», el nombre de una herramienta, JSON o una nota para ti o para el sistema). Escribe otra vez tu respuesta solo con lo que el cliente debe leer. Si hace falta una acción (Detalle, cotización, etapa, aviso o un archivo), llama su herramienta en esta misma respuesta: no escribas que la vas a llamar.";
+
+/** La respuesta completa en un renglón y recortada, para el registro (ai_usage.error). */
+export function replyExcerpt(text: string, max = 500): string {
+  const flat = text.trim().replace(/\s*\n+\s*/g, " ⏎ ");
+  return flat.length > max ? `${flat.slice(0, max)}…` : flat;
+}
+
 const SUFFIX = "No se le mandó nada al cliente y el Agente IA queda en pausa en este chat. Contéstale tú, o usa Reintentar para que vuelva a intentarlo.";
 
 function quote(text: string): string {
@@ -106,7 +124,8 @@ export function unfinishedReply(
   if (internal) {
     return {
       card: `El Agente IA escribió una nota interna (${internal.reason}) en su respuesta: «${quote(internal.text)}». ${SUFFIX}`,
-      log: `texto interno (${internal.reason}): ${quote(internal.text)}`,
+      // La respuesta completa (10-oct-2026): antes solo quedaba el renglón malo y no se sabía si traía texto bueno.
+      log: `texto interno (${internal.reason}): ${quote(internal.text)} — respuesta: «${replyExcerpt(parts.join("\n"))}»`,
     };
   }
   if (finishReason === "length") {
