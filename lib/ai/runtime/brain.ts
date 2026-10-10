@@ -64,10 +64,16 @@ export type BrainOutput = { kind: "reply"; text: string; handover: boolean } | {
 // quitan del texto. Si solo venía la señal de pase a humano, el texto queda vacío: sin textos
 // fijos del CRM (29-sep-2026, dueño), la red contra el silencio de run.ts decide (otro modelo
 // escribe o aviso al vendedor).
+// Las señales se reconocen con espacios, guiones bajos o minúsculas de más (10-oct-2026): Luna escribió
+// «[ NADA_QUE_AGREGAR ]» 3 veces ante un «ok»/«gracias» (7 al 10-oct) y, sin reconocerla, el candado de texto
+// interno la detenía como nota entre corchetes (tarjeta y pausa en un chat donde lo correcto era no contestar).
+const HANDOVER_SIGNAL = /\[\s*TRANSFERIR\s*\]/gi;
+const NOTHING_SIGNAL = /\[\s*NADA[\s_]*QUE[\s_]*AGREGAR\s*\]/gi;
+
 export function parseBrainOutput(raw: string): BrainOutput {
-  const handover = raw.includes(HANDOVER_TOKEN);
-  const nothing = raw.includes(NOTHING_TOKEN);
-  const text = raw.split(HANDOVER_TOKEN).join("").split(NOTHING_TOKEN).join("").replace(/\n{3,}/g, "\n\n").trim();
+  const handover = raw.search(HANDOVER_SIGNAL) !== -1;
+  const nothing = raw.search(NOTHING_SIGNAL) !== -1;
+  const text = raw.replace(HANDOVER_SIGNAL, "").replace(NOTHING_SIGNAL, "").replace(/\n{3,}/g, "\n\n").trim();
   if (handover) return { kind: "reply", text, handover: true };
   if (!text) return nothing ? { kind: "nothing" } : { kind: "empty" };
   return { kind: "reply", text, handover: false };
