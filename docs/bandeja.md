@@ -82,7 +82,7 @@ salir de cada campo (sin botón Guardar) con aviso "Guardado ✓". Ya no existe 
 **7-oct-2026:** las etiquetas (`contacts.tags`, de GHL) ya no se muestran ni viajan en
 `getContactDetails` (decisión del dueño): siguen en la base, el importador las sigue guardando y
 vuelven con las difusiones (v2). Al final va «Datos personales» (ver *Borrar y exportar un contacto*).
-**12-oct-2026 — ✎ Editar contacto:** junto al nombre, abre una ventana con **Nombre**, **Apellido** y **Correo**
+**12-oct-2026 — Editar contacto:** el botón de lápiz ✎ a la derecha del nombre (igual que «Editar columnas» del Embudo) abre una ventana con **Nombre**, **Apellido** y **Correo**
 (todos los roles). El **teléfono no se edita** (decisión del dueño): se captura solo al crear el contacto a mano, y el
 de WhatsApp lo da el cliente al escribir; además los envíos van al chat de Zernio (`provider_conversation_id`), no a
 `contacts.phone_e164`, así que cambiarlo dejaría en pantalla un número distinto del que recibe los mensajes. Server
