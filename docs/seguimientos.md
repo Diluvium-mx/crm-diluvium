@@ -114,6 +114,7 @@ nombre** sino **cuándo nos escribió el cliente**, calculado por el CRM en su c
 | `seg_medidas` | Faltan medidas | Referente a la compuerta anti-inundaciones que nos comentó {{1}}. Tuvo oportunidad de medir la entrada? Para saber que tamaño de compuerta le queda? |
 | `seg_asesor` | Asesor sin respuesta | Hola, le escribo de parte del equipo de Diluvium para atender su consulta, dígame, en que le puedo ayudar? |
 | `seg_objecion` | Lo va a pensar u objeción | Hola, le escribo de parte del equipo de Diluvium. Tuvo la oportunidad de pensarlo con calma? Si le queda alguna duda sobre la compuerta, con gusto se la resuelvo aquí mismo. |
+| `seg_medidas_2` | Faltan medidas, si `seg_medidas` ya salió y lo dejó en visto (aprobada por el dueño el 12-oct-2026, §24) | Hola, le escribo de parte del equipo de Diluvium. Seguimos pendientes con la medida de su entrada. Si gusta, le explico cómo medirla para que su compuerta le quede exacta. |
 | `seg_info_duda` | Solo información (2.º intento; aprobada por el dueño el 3-oct-2026) | Hola, le escribo de parte del equipo de Diluvium. Referente a la compuerta que nos comento {{1}}. Le quedo alguna duda que le pueda resolver? |
 
 Salen en el 1.er intento (si ya no hay ventana) y en el 2.º, **solo cuando Meta ya las aprobó**; mientras están en
@@ -843,6 +844,22 @@ Código: migración 0067 (`follow_ups.mensaje_vendedor`, `plantilla_vendedor`), 
 (`advance`: texto exacto / plantilla del vendedor; se borran en `afterAttempt`, `skipStep` y la lectura), `dispatch.ts`
 (`exacto`), `lib/actions/seguimientos.ts`, `followup-editar-mensaje.tsx`. Mapa: Caja 51, 52, 54 y 99–101, capturas
 04-composer-seguimiento, -editar y -editar-texto.
+
+## 24. Recordatorio de medidas: `seg_medidas_2` (12-oct-2026)
+
+**Origen:** probando «Editar mensaje» (§23), el dueño vio que el 2.º mensaje de un chat de medidas ya había sido
+`seg_medidas` («¿Tuvo oportunidad de medir la entrada?»); elegirla otra vez para el 3.º la repetía, y el Agente IA había
+escogido `seg_info_duda`, que no va con lo pendiente. Pidió una segunda plantilla de medidas para cuando el cliente deja
+en visto la primera (texto A, «OK para el punto 2»).
+
+- **Plantilla:** `seg_medidas_2`, Marketing, es_MX, sin `{{1}}` (tabla de §3). Título en el selector: «Faltan medidas
+  (recordatorio)».
+- **Regla** (`CASE_TEMPLATE_REPEAT` en `cases.ts`, `templateForAttempt`): si la plantilla del caso salió en el intento
+  anterior y la del recordatorio ya está aprobada, el siguiente sale con el recordatorio **antes** que la que eligió el
+  lector. Mientras Meta no la aprueba, todo sigue como antes. Hoy solo en «Faltan medidas». También está en
+  `FOLLOW_UP_TEMPLATES` (el lector la puede elegir) y en «Editar mensaje» (§23) en cuanto se aprueba.
+- **Arreglo de paso:** «Cambiar hora» volvía a calcular la plantilla sin la que eligió el lector ni la del intento
+  anterior (podía repetirla); ahora usa las dos, como el barrido (`changeFollowUpTime` en `view.ts`).
 
 ## Fuentes
 

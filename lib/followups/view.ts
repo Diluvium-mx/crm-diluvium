@@ -356,7 +356,15 @@ export async function changeFollowUpTime(organizationId: string, id: string, due
       door,
       templateName:
         door === "plantilla"
-          ? templateForAttempt(caso, f.intento, templateFor(CASE_RULES[caso].doors[f.intento - 1] ?? "saludo", dueAt, f.timeZone), await approvedTemplateNames(organizationId))
+          ? templateForAttempt(
+              caso,
+              f.intento,
+              templateFor(CASE_RULES[caso].doors[f.intento - 1] ?? "saludo", dueAt, f.timeZone),
+              await approvedTemplateNames(organizationId),
+              // Lo que eligió el lector y la que salió antes cuentan igual que en el barrido (no repetir la plantilla).
+              { plantilla2: f.plantilla2, plantilla3: f.plantilla3 },
+              f.intentos.at(-1)?.template ?? null,
+            )
           : null,
       presentarAt: f.modo === "sugerido" ? presentAtFor(dueAt, now, table.vendedores) : null,
       dueSetBy: "vendedor",
