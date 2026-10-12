@@ -137,6 +137,36 @@ describe.skipIf(!TEST_DATABASE_URL)("aviso contact.updated (Postgres real)", () 
     }
   });
 
+  it("✎ editar contacto: nombre, apellido y correo con aviso «datos»; el teléfono no se toca; sin cambio no avisa; nunca otra organización", async () => {
+    await db.update(s.contacts).set({ phoneE164: "+526681234567", email: "viejo@correo.mx" }).where(d.eq(s.contacts.id, JUAN));
+    const a = await listen(ORG_A);
+    const b = await listen(ORG_B);
+    try {
+      const out = await contactActions.editContactBasics(JUAN, { firstName: "  Juan Carlos ", lastName: "", email: " juan@correo.mx " });
+      expect(out).toEqual({ ok: true, firstName: "Juan Carlos", lastName: null, email: "juan@correo.mx" });
+      await a.wait(1);
+      expect(a.updates()[0]).toMatchObject({ contactId: JUAN, contactName: "Juan Carlos", changes: ["datos"], by: { kind: "vendedor", userId: DANIEL } });
+      const [row] = await db.select().from(s.contacts).where(d.eq(s.contacts.id, JUAN));
+      expect(row).toMatchObject({ firstName: "Juan Carlos", lastName: null, email: "juan@correo.mx", phoneE164: "+526681234567" });
+
+      // Lo mismo otra vez: ni escritura ni aviso.
+      expect((await contactActions.editContactBasics(JUAN, { firstName: "Juan Carlos", email: "juan@correo.mx" })).ok).toBe(true);
+      // Datos no válidos: el mensaje para el vendedor, sin guardar.
+      expect(await contactActions.editContactBasics(JUAN, { firstName: " ", email: "" })).toEqual({ ok: false, message: "El nombre es obligatorio." });
+      expect(await contactActions.editContactBasics(JUAN, { firstName: "Juan", email: "no-es-correo" })).toEqual({ ok: false, message: "El correo no es válido." });
+      // El contacto de otra organización no existe para esta sesión.
+      expect(await contactActions.editContactBasics(OTRO, { firstName: "Cambiada" })).toEqual({ ok: false, message: "Este contacto ya no existe." });
+      await settle();
+      expect(a.updates()).toHaveLength(1);
+      expect(b.all.filter((e) => e.type !== "reload")).toHaveLength(0);
+      const [otra] = await db.select({ firstName: s.contacts.firstName }).from(s.contacts).where(d.eq(s.contacts.id, OTRO));
+      expect(otra.firstName).toBe("Otra");
+    } finally {
+      a.off();
+      b.off();
+    }
+  });
+
   it("el agente mueve la etapa y fija la cotización (también sobre la de un vendedor: nada es definitivo); sin cambio, no escribe ni avisa", async () => {
     const a = await listen(ORG_A);
     try {

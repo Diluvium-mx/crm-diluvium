@@ -4,7 +4,7 @@
 // UI un evento a medias.
 import type { ContactChange, ContactChangeActor, ContactUpdatedEvent } from "./types";
 
-const CHANGES: readonly ContactChange[] = ["etapa", "temperatura", "cotizacion", "detalle", "comentarios"];
+const CHANGES: readonly ContactChange[] = ["etapa", "temperatura", "cotizacion", "detalle", "comentarios", "datos"];
 
 function isChange(value: unknown): value is ContactChange {
   return typeof value === "string" && (CHANGES as readonly string[]).includes(value);
