@@ -28,10 +28,15 @@ const TOOL_NAMES = /\b(wf_[a-z0-9_]+|actualizar_detalle|fijar_cotizacion|mover_e
 // los únicos renglones de una sola palabra fueron esos dos, «[actions]», «😊», las letras de otro alfabeto y enlaces:
 // nunca una palabra buena. Un renglón que es UNA palabra (con o sin signos) es texto interno salvo estas cortesías.
 // Solo letras latinas: las de otro alfabeto se borran (stripForeignScript), no detienen la respuesta.
-const SINGLE_WORD = /^[¡¿"«(*_]*([\p{Script=Latin}\p{M}]+)[!?.,;:"»)*_]*$/u;
+// 12-oct (tarde, OK del dueño): «Entiendo.» se frenaba (lo cazaron las pruebas del runtime). Se suman los acuses
+// de recibo que faltaban y un título que termina en «:» («Ubicación:», «Dirección:») ya no cuenta: la basura del
+// modelo nunca lo trae. Revisión de prod (60 días, todos los mensajes salientes): ninguna palabra buena del Agente IA
+// se habría frenado; los vendedores sí escriben «Dirección» o «Teléfono» como título.
+const SINGLE_WORD = /^[¡¿"«(*_]*([\p{Script=Latin}\p{M}]+)[!?.,;"»)*_]*$/u;
 const SINGLE_WORD_OK = new Set([
   "claro", "perfecto", "gracias", "listo", "si", "excelente", "entendido", "ok", "okay", "va", "hola", "saludos",
   "bienvenido", "bienvenida", "correcto", "exacto", "genial", "enterado", "enterada", "disculpe", "perdon", "buenas",
+  "entiendo", "comprendo", "vale", "bien", "sale", "andale", "digame", "adelante", "felicidades", "bienvenidos",
 ]);
 
 const FOREIGN_LETTER = String.raw`(?![\p{Script=Latin}\p{Script=Common}\p{Script=Inherited}])\p{L}`;

@@ -18,6 +18,8 @@ const LEAKS = [
   "ileswi",
   "undefined",
   "null.",
+  "Winvalid.",
+  "¡ileswi!",
 ];
 
 const OK = [
@@ -33,6 +35,11 @@ const OK = [
   "Ç Ã Ê Ö ß Œ — «comillas» … ¡Gracias!",
   "¡Claro!",
   "Perfecto.",
+  "Entiendo.",
+  "¡Ándale!",
+  "Dígame.",
+  "Ubicación:",
+  "**Dirección:**",
   "Sí",
   "😊",
   "5500",

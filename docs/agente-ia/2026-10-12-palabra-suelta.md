@@ -12,3 +12,10 @@ interno, salvo una lista corta de cortesías (claro, perfecto, gracias, listo, s
 enlaces y letras de otro alfabeto no cuentan (las de otro alfabeto se siguen borrando, decisión del 6-oct).
 Como todo texto interno: el CRM pide otra respuesta al mismo modelo una vez
 ([reintento del 10-oct](2026-10-10-texto-interno-reintento.md)); si vuelve a fallar, tarjeta y pausa.
+
+**Ajuste del 12-oct (tarde, OK del dueño).** Las pruebas del runtime mostraron que la regla frenaba «Entiendo.»
+(no estaba en la lista): con el reintento fallido, el Agente IA se habría pausado en ese chat por una respuesta buena.
+En producción no pasó (0 frenadas desde el despliegue). Revisión de 60 días, renglón por renglón, de todos los
+mensajes salientes: el Agente IA nunca escribió una palabra buena suelta; los vendedores sí usan «Dirección» o
+«Teléfono» como título. Cambios: se suman entiendo, comprendo, vale, bien, sale, ándale, dígame, adelante,
+felicidades y bienvenidos, y un título que termina en «:» («Ubicación:») ya no cuenta como palabra suelta.
