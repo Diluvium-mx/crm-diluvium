@@ -18,6 +18,7 @@
 // se ilumina con el orbe "actualizando"; el % de convencimiento es solo del agente
 // (sin selector) y el control del agente (Pausar agente / Activar) vive aquí.
 import Link from "next/link";
+import { Pencil } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { getContactDetails, setNumEntradas, updateContactQualification } from "@/lib/actions/contact-qualification";
 import { createSerialSaves } from "@/lib/autosave/serial-saves";
@@ -186,7 +187,7 @@ export function ContactDetails({
   onDeleted: () => void;
 }) {
   const { status, run } = useSaveStatus();
-  // «✎ Editar contacto» (12-oct-2026). `renamed` muestra el nombre guardado al instante, solo
+  // Lápiz «Editar contacto» (12-oct-2026). `renamed` muestra el nombre guardado al instante, solo
   // mientras el padre siga pasando el nombre de antes (el aviso en vivo `datos` lo pone al día).
   const [editing, setEditing] = useState(false);
   const [renamed, setRenamed] = useState<{ from: string; to: string } | null>(null);
@@ -511,14 +512,15 @@ export function ContactDetails({
             <p className="text-xs text-muted-foreground">{contactHandle(phone, instagramUsername)}</p>
           </div>
           {details && (
+            // Mismo botón de lápiz que «Editar columnas» del Embudo (decisión del dueño, 12-oct-2026).
             <button
               type="button"
-              data-link="text"
               onClick={() => setEditing(true)}
+              aria-label="Editar contacto"
               title="Editar nombre, apellido y correo"
-              className="shrink-0 text-xs"
+              className="shrink-0 rounded p-1 text-muted-foreground hover:bg-muted hover:text-foreground"
             >
-              ✎ Editar
+              <Pencil className="size-4" aria-hidden="true" />
             </button>
           )}
         </div>
