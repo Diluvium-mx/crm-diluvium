@@ -34,7 +34,8 @@ infinito y varias oportunidades a lo largo del tiempo sin duplicarse.
    **Ajuste del 7-oct-2026 (dueño):** los campos personalizados desde la pantalla salen de la v1 (los
    datos del negocio viven fijos en el Detalle; un campo nuevo se le pide a Code, que enseña al Agente IA a
    llenarlo; vuelven si se vende a otros negocios). Las etiquetas se ocultan de la pantalla (siguen en la
-   base) hasta que haya difusiones (v2). Editar nombre, teléfono y correo: pendiente, todavía no.
+   base) hasta que haya difusiones (v2). Editar nombre, apellido y correo: lápiz ✎ del Detalle (12-oct-2026);
+   el teléfono NO se edita: se captura solo al crear el contacto a mano (los envíos van al chat de Zernio).
 3. [Fase 2] Canal WhatsApp (Cloud API): recibir, enviar, media, estados de entrega,
    ventana 24 h, plantillas. Requiere aprobación de Meta; no es parte del núcleo v1.
 4. Bandeja unificada + vista tablero (embudo kanban) intercambiables

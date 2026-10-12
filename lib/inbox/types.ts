@@ -195,7 +195,8 @@ export type SendMessageResult =
   | { ok: false; code: SendErrorCode; message: string };
 
 /** Qué cambió de un contacto (evento `contact.updated`). */
-export type ContactChange = "etapa" | "temperatura" | "cotizacion" | "detalle" | "comentarios";
+/** `datos` = nombre, apellido o correo editados a mano (✎ del Detalle, 12-oct-2026). */
+export type ContactChange = "etapa" | "temperatura" | "cotizacion" | "detalle" | "comentarios" | "datos";
 
 /**
  * Quién hizo el cambio. `userId` en automatización = el vendedor que la disparó

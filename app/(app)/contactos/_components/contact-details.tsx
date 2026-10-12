@@ -18,6 +18,7 @@
 // se ilumina con el orbe "actualizando"; el % de convencimiento es solo del agente
 // (sin selector) y el control del agente (Pausar agente / Activar) vive aquí.
 import Link from "next/link";
+import { Pencil } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { getContactDetails, setNumEntradas, updateContactQualification } from "@/lib/actions/contact-qualification";
 import { createSerialSaves } from "@/lib/autosave/serial-saves";
@@ -40,6 +41,7 @@ import { IaMark } from "./ia-mark";
 import { TemperatureDestacadoMenu } from "./temperature-destacado-menu";
 import { LectorStatusLine } from "./lector-status";
 import { ContactArcoSection } from "./contact-arco-section";
+import { EditContactDialog } from "./edit-contact-dialog";
 
 type Details = Awaited<ReturnType<typeof getContactDetails>>;
 type Inundaciones = NonNullable<Details["tieneInundaciones"]>;
@@ -185,6 +187,11 @@ export function ContactDetails({
   onDeleted: () => void;
 }) {
   const { status, run } = useSaveStatus();
+  // Lápiz «Editar contacto» (12-oct-2026). `renamed` muestra el nombre guardado al instante, solo
+  // mientras el padre siga pasando el nombre de antes (el aviso en vivo `datos` lo pone al día).
+  const [editing, setEditing] = useState(false);
+  const [renamed, setRenamed] = useState<{ from: string; to: string } | null>(null);
+  const shownName = renamed && renamed.from === name ? renamed.to : name;
   // Columnas del Embudo vigentes (nombre y orden en vivo).
   const { stages } = useFunnelStages();
   const [details, setDetails] = useState<Details | null>(null);
@@ -358,7 +365,7 @@ export function ContactDetails({
     }
     if (event.type !== "contact.updated" || event.contactId !== contactId) return;
     // La etapa también: su marca "IA" depende de quién la movió al último.
-    if (event.changes.some((change) => change === "etapa" || change === "cotizacion" || change === "detalle")) scheduleLive();
+    if (event.changes.some((change) => change === "etapa" || change === "cotizacion" || change === "detalle" || change === "datos")) scheduleLive();
     // El agente movió la etapa: se ilumina cuando llegue la lectura (con su marca "IA").
     if (event.by.kind === "agente" && event.changes.includes("etapa")) etapaByAgent.current = true;
   });
@@ -404,7 +411,7 @@ export function ContactDetails({
     }
     setDetails((d) => {
       if (!d) return d;
-      const next: Details = { ...d, anuncio: fresh.anuncio, anuncios: fresh.anuncios, email: fresh.email };
+      const next: Details = { ...d, anuncio: fresh.anuncio, anuncios: fresh.anuncios, email: fresh.email, firstName: fresh.firstName, lastName: fresh.lastName };
       for (const field of QUAL_FIELDS) if (!busy.has(field)) copyField(next, freshQ, field);
       if (!busy.has("entradas")) {
         next.numEntradas = fresh.numEntradas;
@@ -499,10 +506,36 @@ export function ContactDetails({
 
       <div className="min-h-0 flex-1 space-y-3 overflow-y-auto px-4 py-3 text-sm">
 
-        <div>
-          <p className="font-medium break-words">{name}</p>
-          <p className="text-xs text-muted-foreground">{contactHandle(phone, instagramUsername)}</p>
+        <div className="flex items-start justify-between gap-2">
+          <div className="min-w-0">
+            <p className="font-medium break-words">{shownName}</p>
+            <p className="text-xs text-muted-foreground">{contactHandle(phone, instagramUsername)}</p>
+          </div>
+          {details && (
+            // Mismo botón de lápiz que «Editar columnas» del Embudo (decisión del dueño, 12-oct-2026).
+            <button
+              type="button"
+              onClick={() => setEditing(true)}
+              aria-label="Editar contacto"
+              title="Editar nombre, apellido y correo"
+              className="shrink-0 rounded p-1 text-muted-foreground hover:bg-muted hover:text-foreground"
+            >
+              <Pencil className="size-4" aria-hidden="true" />
+            </button>
+          )}
         </div>
+        {editing && details && (
+          <EditContactDialog
+            contactId={contactId}
+            initial={{ firstName: details.firstName, lastName: details.lastName, email: details.email }}
+            onClose={() => setEditing(false)}
+            onSaved={(saved) => {
+              setEditing(false);
+              setDetails((d) => (d ? { ...d, ...saved } : d));
+              setRenamed({ from: name, to: [saved.firstName, saved.lastName].filter(Boolean).join(" ") });
+            }}
+          />
+        )}
 
         <div className="grid grid-cols-2 gap-2">
           <label data-ia-flash={lit("etapa") ? "" : undefined} className="-mx-1 space-y-1 px-1 py-0.5">
@@ -793,7 +826,7 @@ export function ContactDetails({
             </div>
 
             {/* Derechos ARCO (7-oct-2026): exportar o borrar el contacto con todo lo suyo. */}
-            <ContactArcoSection contactId={contactId} contactName={name} onDeleted={onDeleted} />
+            <ContactArcoSection contactId={contactId} contactName={shownName} onDeleted={onDeleted} />
           </>
         )}
       </div>
