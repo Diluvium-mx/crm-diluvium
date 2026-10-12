@@ -1,3 +1,5 @@
+import { normalizeSearch } from "@/lib/text/search";
+
 // Texto interno del Agente IA (5-oct-2026, dueño: «nunca de los nuncas»). PURO (sin BD).
 //
 // Del 30-sep al 4-oct, 6 mensajes llegaron a 5 clientes con lo que el modelo «pensaba hacer» en
@@ -20,6 +22,18 @@ const TOOL_NAMES = /\b(wf_[a-z0-9_]+|actualizar_detalle|fijar_cotizacion|mover_e
 // respuesta ni pausar al Agente IA — esas letras se BORRAN y sale el resto (stripForeignScript, en
 // run.ts al leer la respuesta y otra vez en la puerta de envío). Acentos, ñ, ü, º/ª, °, m² y emojis
 // no son de otra escritura y pasan.
+// Palabra suelta (12-oct-2026, dueño: «por nada del mundo»). El 10-oct GPT-5.6 Luna mandó «Winvalid» como burbuja
+// aparte detrás de «¿Hasta qué altura aproximada le llega el agua?», y antes «ileswi» como renglón solo: basura del
+// modelo en letras latinas, que ninguna otra regla ve. En TODOS los mensajes del Agente IA en producción (al 12-oct),
+// los únicos renglones de una sola palabra fueron esos dos, «[actions]», «😊», las letras de otro alfabeto y enlaces:
+// nunca una palabra buena. Un renglón que es UNA palabra (con o sin signos) es texto interno salvo estas cortesías.
+// Solo letras latinas: las de otro alfabeto se borran (stripForeignScript), no detienen la respuesta.
+const SINGLE_WORD = /^[¡¿"«(*_]*([\p{Script=Latin}\p{M}]+)[!?.,;:"»)*_]*$/u;
+const SINGLE_WORD_OK = new Set([
+  "claro", "perfecto", "gracias", "listo", "si", "excelente", "entendido", "ok", "okay", "va", "hola", "saludos",
+  "bienvenido", "bienvenida", "correcto", "exacto", "genial", "enterado", "enterada", "disculpe", "perdon", "buenas",
+]);
+
 const FOREIGN_LETTER = String.raw`(?![\p{Script=Latin}\p{Script=Common}\p{Script=Inherited}])\p{L}`;
 const FOREIGN_SCRIPT = new RegExp(FOREIGN_LETTER, "u");
 // Una tira de letras ajenas con sus marcas, espacios intermedios y puntuación CJK («。», «、»).
@@ -62,6 +76,10 @@ const RULES: readonly { reason: string; test: (t: string) => boolean }[] = [
   { reason: "datos en formato JSON", test: (t) => /\{\s*"[A-Za-z_]+"\s*:/.test(t) },
   // Todo el mensaje entre paréntesis (con o sin * o _): «*(sin acción adicional…)*».
   { reason: "nota entre paréntesis", test: (t) => /^[*_]*\([\s\S]*\)[*_]*$/.test(t) },
+  { reason: "palabra suelta sin sentido", test: (t) => {
+    const word = SINGLE_WORD.exec(t)?.[1];
+    return word !== undefined && !SINGLE_WORD_OK.has(normalizeSearch(word));
+  } },
   { reason: "nota para el sistema", test: (t) => /sin acci[oó]n adicional|respuesta ya fue enviada|nota interna|\bwe need\b/i.test(t) },
 ];
 
@@ -95,7 +113,7 @@ export function findInternalText(parts: readonly string[]): { text: string; reas
 // caché no cambia); si la nueva también trae texto interno, la tarjeta y la pausa de siempre. La nota no repite
 // el texto malo para no dárselo al modelo como ejemplo.
 export const INTERNAL_TEXT_RETRY_NOTE =
-  "Tu respuesta anterior NO se le envió al cliente porque traía una nota interna escrita como texto (corchetes, «tool», el nombre de una herramienta, JSON o una nota para ti o para el sistema). Escribe otra vez tu respuesta solo con lo que el cliente debe leer. Si hace falta una acción (Detalle, cotización, etapa, aviso o un archivo), llama su herramienta en esta misma respuesta: no escribas que la vas a llamar.";
+  "Tu respuesta anterior NO se le envió al cliente porque traía una nota interna escrita como texto (corchetes, «tool», el nombre de una herramienta, JSON, una nota para ti o para el sistema, o una palabra suelta sin sentido). Escribe otra vez tu respuesta solo con lo que el cliente debe leer. Si hace falta una acción (Detalle, cotización, etapa, aviso o un archivo), llama su herramienta en esta misma respuesta: no escribas que la vas a llamar.";
 
 /** La respuesta completa en un renglón y recortada, para el registro (ai_usage.error). */
 export function replyExcerpt(text: string, max = 500): string {

@@ -62,3 +62,6 @@ next-env.d.ts
 id_rsa*
 id_ed25519*
 .npmrc
+
+# Permisos locales de Claude Code (solo en esta Mac)
+.claude/settings.local.json
