@@ -82,6 +82,13 @@ salir de cada campo (sin botón Guardar) con aviso "Guardado ✓". Ya no existe 
 **7-oct-2026:** las etiquetas (`contacts.tags`, de GHL) ya no se muestran ni viajan en
 `getContactDetails` (decisión del dueño): siguen en la base, el importador las sigue guardando y
 vuelven con las difusiones (v2). Al final va «Datos personales» (ver *Borrar y exportar un contacto*).
+**12-oct-2026 — ✎ Editar contacto:** junto al nombre, abre una ventana con **Nombre**, **Apellido** y **Correo**
+(todos los roles). El **teléfono no se edita** (decisión del dueño): se captura solo al crear el contacto a mano, y el
+de WhatsApp lo da el cliente al escribir; además los envíos van al chat de Zernio (`provider_conversation_id`), no a
+`contacts.phone_e164`, así que cambiarlo dejaría en pantalla un número distinto del que recibe los mensajes. Server
+Action `editContactBasics` (`lib/actions/contacts.ts`) → `lib/contacts/edit-basics.ts`; aviso en vivo
+`contact.updated` con el cambio `datos` (el Embudo relee la tarjeta, la Bandeja la fila y el Detalle abierto). El nombre
+nuevo también es el `{{contacto.nombre}}` del Agente IA.
 
 ### Borrar y exportar un contacto (ARCO, 7-oct-2026)
 Derechos del cliente sobre sus datos. Sección discreta **«Datos personales»** al final del Detalle

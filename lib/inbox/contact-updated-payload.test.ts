@@ -49,6 +49,12 @@ describe("parseContactUpdated", () => {
     expect(parseContactUpdated({ ...base, stageTo: null })).toBeNull();
   });
 
+  it("nombre o correo editados a mano (`datos`, ✎ del Detalle)", () => {
+    const event = parseContactUpdated({ ...base, contactName: "Juan Carlos", changes: ["datos"], stageFrom: null, stageTo: null, by: "vendedor", byUserId: "u1", byName: "Daniel" });
+    expect(event).toMatchObject({ contactName: "Juan Carlos", changes: ["datos"] });
+    expect(event?.stage).toBeUndefined();
+  });
+
   it("descarta lo que no cuadra", () => {
     expect(parseContactUpdated({ ...base, contactId: "" })).toBeNull();
     expect(parseContactUpdated({ ...base, changes: "etapa" })).toBeNull();

@@ -665,8 +665,8 @@ export function ContactsBoard({
     }
     if (event.type === "contact.updated") {
       // La cotización y el Detalle no se ven en la tarjeta (decisión del dueño):
-      // esos los pone al día el Detalle abierto.
-      if (event.changes.includes("etapa") || event.changes.includes("temperatura")) scheduleLive(event.contactId);
+      // esos los pone al día el Detalle abierto. El nombre editado (`datos`) sí.
+      if (event.changes.includes("etapa") || event.changes.includes("temperatura") || event.changes.includes("datos")) scheduleLive(event.contactId);
       return;
     }
     if (event.type === "reload") scheduleLive(null);

@@ -15,6 +15,7 @@ import { isStageKey } from "@/lib/contacts/stages";
 import { parseGhlContactsCsv } from "@/lib/import/ghl-contacts-csv";
 import { onContactStageEntered } from "@/lib/workflows/triggers";
 import { createManualContact, type ManualContactInput } from "@/lib/contacts/create-manual";
+import { updateContactBasics, type ContactBasicsInput, type ContactBasicsResult } from "@/lib/contacts/edit-basics";
 import { notifyContactUpdated } from "@/lib/contacts/notify-updated";
 import { cancelFollowUpsOnSale } from "@/lib/followups/sale";
 import { recordStageChanges } from "@/lib/contacts/stage-history";
@@ -148,6 +149,23 @@ export async function createContact(input: ManualContactInput): Promise<CreateCo
     if (error instanceof z.ZodError) return { ok: false, message: error.issues[0]?.message ?? "Revisa los datos." };
     logError("[contactos] no se pudo crear el contacto", error);
     return { ok: false, message: "No se pudo crear el contacto. Inténtalo de nuevo." };
+  }
+}
+
+/**
+ * ✎ «Editar contacto» del Detalle (12-oct-2026): nombre, apellido y correo; el teléfono no se
+ * edita (lib/contacts/edit-basics.ts). Todos los roles. Sin revalidatePath
+ * (CARD_ACTIONS_NO_REVALIDATE): el aviso en vivo `datos` pone al día cada pantalla.
+ */
+export async function editContactBasics(contactId: string, input: ContactBasicsInput): Promise<ContactBasicsResult> {
+  try {
+    const { organizationId, userId } = await requireActiveMembership();
+    const id = z.string().trim().min(1).max(100).parse(contactId);
+    return await updateContactBasics(organizationId, id, input, { kind: "vendedor", userId });
+  } catch (error) {
+    if (error instanceof z.ZodError) return { ok: false, message: error.issues[0]?.message ?? "Revisa los datos." };
+    logError("[contactos] no se pudo editar el contacto", error);
+    return { ok: false, message: "No se pudo guardar. Inténtalo de nuevo." };
   }
 }
 

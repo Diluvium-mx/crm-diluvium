@@ -270,12 +270,12 @@ export function InboxBoard({ openContactId = null }: { openContactId?: string | 
       return;
     }
     if (event.type === "contact.updated") {
-      // Temperatura en las filas de ese contacto (C1).
-      if (event.changes.includes("temperatura")) {
+      // Temperatura (C1) o nombre editado (`datos`) en las filas de ese contacto.
+      if (event.changes.includes("temperatura") || event.changes.includes("datos")) {
         for (const item of conversationsRef.current) if (item.contact.id === event.contactId) scheduleUpdate(item.id);
       }
       if (
-        (event.changes.includes("etapa") || event.changes.includes("temperatura")) &&
+        (event.changes.includes("etapa") || event.changes.includes("temperatura") || event.changes.includes("datos")) &&
         detailRef.current?.contact.id === event.contactId
       ) {
         scheduleDetailRefresh();

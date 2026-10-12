@@ -6,7 +6,7 @@ import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 
 const SRC = readFileSync(join(__dirname, "contacts.ts"), "utf8");
-const CARD_ACTIONS = ["createContact", "updateContactStage", "updateContactTemperature", "setContactDestacado"];
+const CARD_ACTIONS = ["createContact", "editContactBasics", "updateContactStage", "updateContactTemperature", "setContactDestacado"];
 
 // Cuerpo de `export async function <name>(` hasta la siguiente función exportada.
 function body(name: string): string {

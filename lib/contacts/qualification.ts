@@ -224,6 +224,9 @@ export async function getContactQualification(
     // GHL) ya NO se mandan ni se muestran (decisión del dueño, 7-oct-2026): siguen en la base y
     // vuelven con las difusiones (v2).
     email: contact.email,
+    // Para llenar «✎ Editar contacto» (el panel recibe el nombre completo ya armado).
+    firstName: contact.firstName,
+    lastName: contact.lastName,
     tieneInundaciones: contact.tieneInundaciones,
     nivelAguaCm: contact.nivelAguaCm,
     nivelAguaTexto: contact.nivelAguaTexto,
