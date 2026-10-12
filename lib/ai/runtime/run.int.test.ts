@@ -2115,7 +2115,7 @@ describe.skipIf(!TEST_DATABASE_URL)("runtime del Agente IA (Postgres real)", () 
   it("pie del archivo NO aplica (el texto sale aparte, luego la corrida): workflow con textos, o texto que no cabe en el pie", async () => {
     const cases: { steps: Record<string, unknown>[]; text: string }[] = [
       { steps: [{ kind: "send_media", assetId: "a_video", title: "Video" }, { kind: "send_text", text: "¿Qué le pareció?" }], text: "Le comparto el video." },
-      { steps: [{ kind: "send_media", assetId: "a_video", title: "Video" }], text: "x".repeat(1_025) },
+      { steps: [{ kind: "send_media", assetId: "a_video", title: "Video" }], text: Array.from({ length: 120 }, (_, i) => `palabra${i}`).join(" ") },
     ];
     for (const [i, c] of cases.entries()) {
       await db.delete(s.workflowRuns);
@@ -3372,7 +3372,7 @@ describe.skipIf(!TEST_DATABASE_URL)("runtime del Agente IA (Postgres real)", () 
 
   it("C · respuesta guardada ANTERIOR a \"Reactivar\" (el vendedor contestó a mano y reactivó): ya no sale", async () => {
     await msg({ direction: "in", body: "hola", at: ago(60_000) });
-    const failing = makeDeps({ brain: ["VIEJA"] });
+    const failing = makeDeps({ brain: ["Respuesta vieja."] });
     failing.deps.sendBubble = async () => {
       throw new Error("falla");
     };
