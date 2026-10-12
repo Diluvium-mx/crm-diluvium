@@ -463,6 +463,13 @@
       "when": 1791569071172,
       "tag": "0066_programar_goal_22",
       "breakpoints": true
+    },
+    {
+      "idx": 67,
+      "version": "7",
+      "when": 1791844340092,
+      "tag": "0067_editar_mensaje_seguimiento",
+      "breakpoints": true
     }
   ]
 }

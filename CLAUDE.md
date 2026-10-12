@@ -431,8 +431,9 @@ Reglas de UI:
   comandos del composer (Fase D).
 - **Seguimiento del Agente IA (2-oct-2026, decisión del dueño):** píldora 🤖 **en el hueco de la barra arriba de ⚡ 📄
   📎** (no agranda la barra; en el celular al final del renglón de iconos; con la ventana cerrada, junto a "Enviar
-  plantilla"), solo cuando el chat tiene seguimiento; abre su burbuja (Ver mensaje · Cambiar hora · Lo mando yo · Cancelar
-  y, en una sugerencia, Que salga solo). No va en el Detalle del contacto. Horas en la hora del cliente según su lada, de
+  plantilla"), solo cuando el chat tiene seguimiento; abre su burbuja (Ver mensaje · Editar mensaje · Cambiar hora · Lo mando yo ·
+  Cancelar y, en una sugerencia, Que salga solo; Editar mensaje = otra plantilla o el texto exacto del siguiente
+  intento, 12-oct-2026, `docs/seguimientos.md` §23). No va en el Detalle del contacto. Horas en la hora del cliente según su lada, de
   7:00 a 21:00 todos los días; plantillas hasta las 19:00. Código: `followup-pill.tsx`, `lib/followups/`.
   Plantillas propias por caso (3-oct-2026, textos del dueño TAL CUAL): `seg_precio`, `seg_informacion`, `seg_valorar`,
   `seg_medidas`, `seg_asesor`, `seg_objecion` y `seg_info_duda` (3-oct, 2.º intento de solo información); en `seg_precio`, `seg_informacion`, `seg_info_duda`, `seg_valorar` y `seg_medidas` `{{1}}` = CUÁNDO escribió el cliente ("anoche",

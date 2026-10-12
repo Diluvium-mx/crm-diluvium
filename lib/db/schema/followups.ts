@@ -30,6 +30,8 @@ export type FollowUpAttemptLog = {
   messageId?: string | null;
   /** Por qué no salió o falló (modo real), en palabras del vendedor. */
   error?: string | null;
+  /** Salió lo que eligió un vendedor con «Editar mensaje» (12-oct-2026). */
+  editado?: boolean;
 };
 
 export const followUps = pgTable(
@@ -66,6 +68,11 @@ export const followUps = pgTable(
     // Plantilla que eligió el lector para el 2.º y el 3.er intento (según cómo quedó el chat).
     plantilla2: text("plantilla_2"),
     plantilla3: text("plantilla_3"),
+    // «Editar mensaje» (12-oct-2026, docs/seguimientos.md §23): lo que eligió un vendedor para el SIGUIENTE intento.
+    // Texto exacto (ventana abierta; sale tal cual, sin saludo) o plantilla (ventana cerrada). Se borran cuando sale
+    // el intento o cuando el lector vuelve a leer el chat. Migración 0067.
+    mensajeVendedor: text("mensaje_vendedor"),
+    plantillaVendedor: text("plantilla_vendedor"),
     // Zona horaria del cliente según su lada (IANA).
     timeZone: text("time_zone").notNull(),
     // Hora del siguiente intento y por dónde saldría (texto con la ventana abierta o plantilla).
