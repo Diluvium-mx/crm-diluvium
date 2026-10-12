@@ -47,3 +47,4 @@
 | Texto interno: otra respuesta automática antes de la tarjeta (10-oct-2026, sin migración) | [2026-10-10-texto-interno-reintento.md](agente-ia/2026-10-10-texto-interno-reintento.md) | Señales [NADA_QUE_AGREGAR] / [TRANSFERIR] con espacios · respuesta completa en el registro |
 | Palabra suelta sin sentido («Winvalid») = texto interno (12-oct-2026, sin migración) | [2026-10-12-palabra-suelta.md](agente-ia/2026-10-12-palabra-suelta.md) | Un renglón de una palabra salvo cortesías → reintento / tarjeta |
 | La lada +1 cuenta como de México (10-oct-2026, sin migración) | [2026-10-10-lada-mas-uno.md](agente-ia/2026-10-10-lada-mas-uno.md) | Estados Unidos, Canadá y el Caribe: sin aviso «fuera de México» y con respuestas de inicio |
+| Medida y foto según el escenario, sin «¿Desea avanzar…?» (10-oct-2026, sin migración) | [2026-10-10-medida-y-foto.md](agente-ia/2026-10-10-medida-y-foto.md) | Goal aplicado el 10-oct a las 22:00 |

@@ -1,6 +1,7 @@
 // Siembra idempotente del conocimiento de Angela (Fase B):
 //   - Goal        -> ai_config.goal
-//   - 47 FAQs     -> ai_knowledge (upsert por organization_id + ghl_id)
+//   - FAQs        -> ai_knowledge (upsert por organization_id + ghl_id; las creadas en el CRM,
+//                    sin ghl_id, se insertan solo si su pregunta no existe todavía)
 // El contenido NO se hardcodea: se lee de las fuentes versionadas
 // docs/agente-ia/angela-goal.md y docs/agente-ia/angela-faqs.json. Re-ejecutable
 // (upsert), no borra nada y preserva el toggle `enabled` que se haya puesto en el CRM.
@@ -14,7 +15,7 @@
 // Prod:     railway run -e production -s crm-diluvium sh -c 'SEED_ORG_ID=<orgProd> npm run seed:ai-knowledge'
 import { readFileSync } from "node:fs";
 import { randomUUID } from "node:crypto";
-import { eq, isNotNull } from "drizzle-orm";
+import { and, eq, isNotNull } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { organization } from "@/lib/db/schema/auth";
 import { aiConfig, aiKnowledge, aiKnowledgeVersions } from "@/lib/db/schema";
@@ -24,15 +25,16 @@ import { logError } from "@/lib/log/safe-error";
 const goalUrl = new URL("../docs/agente-ia/angela-goal.md", import.meta.url);
 const faqsUrl = new URL("../docs/agente-ia/angela-faqs.json", import.meta.url);
 
-type FaqRow = { position: number; ghl_id: string; question: string; answer: string };
+type FaqRow = { position: number; ghl_id: string | null; question: string; answer: string };
 
 function loadFaqs(): FaqRow[] {
   const parsed = JSON.parse(readFileSync(faqsUrl, "utf8")) as unknown;
   const faqs = (parsed as { faqs?: unknown }).faqs ?? parsed;
   if (!Array.isArray(faqs)) throw new Error("angela-faqs.json: no encontré el arreglo `faqs`.");
   for (const f of faqs as FaqRow[]) {
-    if (!f.ghl_id || !f.question || !f.answer || typeof f.position !== "number") {
-      throw new Error(`FAQ inválida (falta ghl_id/question/answer/position): ${JSON.stringify(f).slice(0, 120)}`);
+    const ghlOk = f.ghl_id === null || (typeof f.ghl_id === "string" && f.ghl_id !== "");
+    if (!ghlOk || !f.question || !f.answer || typeof f.position !== "number") {
+      throw new Error(`FAQ inválida (ghl_id/question/answer/position): ${JSON.stringify(f).slice(0, 120)}`);
     }
   }
   return faqs as FaqRow[];
@@ -86,8 +88,30 @@ async function main(): Promise<void> {
     .onConflictDoUpdate({ target: aiConfig.organizationId, set: { goal, updatedAt: now } });
 
   // FAQs -> ai_knowledge. Upsert por (org, ghl_id): actualiza contenido/posición
-  // pero NO toca `enabled` (respeta un apagado manual desde el CRM).
+  // pero NO toca `enabled` (respeta un apagado manual desde el CRM). Las creadas en el
+  // CRM no tienen ghl_id (el índice único no las cubre): se insertan solo si su pregunta
+  // no está ya en la org, para que re-ejecutar no las duplique.
   for (const f of faqs) {
+    if (f.ghl_id === null) {
+      const [exists] = await db
+        .select({ id: aiKnowledge.id })
+        .from(aiKnowledge)
+        .where(and(eq(aiKnowledge.organizationId, orgId), eq(aiKnowledge.question, f.question)))
+        .limit(1);
+      if (!exists) {
+        await db.insert(aiKnowledge).values({
+          id: randomUUID(),
+          organizationId: orgId,
+          ghlId: null,
+          question: f.question,
+          answer: f.answer,
+          position: f.position,
+          enabled: true,
+          updatedAt: now,
+        });
+      }
+      continue;
+    }
     await db
       .insert(aiKnowledge)
       .values({
