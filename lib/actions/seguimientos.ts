@@ -8,6 +8,7 @@ import { requireActiveMembership } from "@/lib/auth/active-organization";
 import { localToInstant, validateSendAt, SEND_AT_MESSAGES } from "@/lib/scheduled/rules";
 import { enqueueDespertar } from "@/lib/queue/despertar";
 import { logError } from "@/lib/log/safe-error";
+import { chooseFollowUpTemplate, editFollowUpText, followUpTemplateOptions, MAX_FOLLOW_UP_TEXT, type FollowUpTemplateOption } from "@/lib/followups/editar";
 import { approveFollowUp, cancelFollowUpById, changeFollowUpTime, clearSinSeguimientos, loadFollowUpState, reactivateFollowUps, turnOffFollowUps, type FollowUpState } from "@/lib/followups/view";
 
 const id = z.string().trim().min(1).max(100);
@@ -87,4 +88,27 @@ export async function despertarSeguimiento(conversationId: string): Promise<Foll
     return { ok: false, message: "No se pudo despertar. Inténtalo otra vez." };
   }
   return { ok: true };
+}
+
+/** «Editar mensaje» con la ventana cerrada: las plantillas que se pueden elegir, ya llenas (12-oct-2026). */
+export async function getFollowUpTemplateOptions(followUpId: string): Promise<FollowUpTemplateOption[] | null> {
+  try {
+    const { organizationId } = await requireActiveMembership();
+    return await followUpTemplateOptions(organizationId, id.parse(followUpId));
+  } catch {
+    return null;
+  }
+}
+
+/** «Editar mensaje» con la ventana abierta: el texto exacto del siguiente intento (`null` = el del Agente IA). */
+export async function editFollowUpMessage(followUpId: string, texto: string | null): Promise<FollowUpActionResult> {
+  const { organizationId, userId } = await requireActiveMembership();
+  const value = z.string().max(MAX_FOLLOW_UP_TEXT * 2).nullable().parse(texto);
+  return editFollowUpText(organizationId, id.parse(followUpId), value, userId, new Date());
+}
+
+/** «Editar mensaje» con la ventana cerrada: la plantilla del siguiente intento (`null` = la del Agente IA). */
+export async function chooseFollowUpTemplateAction(followUpId: string, name: string | null): Promise<FollowUpActionResult> {
+  const { organizationId, userId } = await requireActiveMembership();
+  return chooseFollowUpTemplate(organizationId, id.parse(followUpId), z.string().trim().min(1).max(512).nullable().parse(name), userId, new Date());
 }

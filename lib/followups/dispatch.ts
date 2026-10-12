@@ -11,9 +11,8 @@ import { plainSendReason } from "@/lib/messaging/send-reasons";
 import type { MessagingProvider } from "@/lib/messaging/provider";
 import { sendTemplateMessage, sendTextMessage } from "@/lib/messaging/send";
 import { templateMaxIndex } from "@/lib/messaging/template-format";
-import { TIME_PHRASE_TEMPLATES } from "./cases";
 import { followUpText } from "./message";
-import { timePhrase } from "./time-phrase";
+import { followUpCanFill, followUpTemplateValue } from "./plantilla-llena";
 
 /** Va en messages.metadata.seguimiento. `etapa` = clave de la etapa del contacto al salir (Dashboard: avanzó de etapa). */
 export type FollowUpMark = { followUpId: string; intento: number; etapa?: string | null };
@@ -32,12 +31,23 @@ async function failure(organizationId: string, messageId: string, error: unknown
 
 export async function sendFollowUpText(
   provider: MessagingProvider,
-  input: { organizationId: string; conversationId: string; messageId: string; borrador: string; zone: string; now: Date; mark: FollowUpMark },
+  input: {
+    organizationId: string;
+    conversationId: string;
+    messageId: string;
+    /** El borrador del lector (el CRM le pone el saludo) o, con `exacto`, el texto que escribió un vendedor. */
+    borrador: string;
+    /** «Editar mensaje» (12-oct-2026): sale tal cual, sin saludo ni candado del Agente IA (lo escribió una persona). */
+    exacto?: boolean;
+    zone: string;
+    now: Date;
+    mark: FollowUpMark;
+  },
 ): Promise<DispatchResult> {
-  const text = followUpText(input.borrador, input.now, input.zone);
+  const text = input.exacto ? input.borrador.trim() : followUpText(input.borrador, input.now, input.zone);
   // Mismo último candado que las respuestas del Agente IA (sendAgentText; seguridad B, 9-oct-2026):
   // un borrador con una nota interna («[tool call] …») nunca sale; el error queda en el intento.
-  const internal = findInternalText([text]);
+  const internal = input.exacto ? null : findInternalText([text]);
   if (internal) return { ok: false, error: `el borrador traía una nota interna (${internal.reason}) y no se envió`, code: null };
   try {
     await sendTextMessage(provider, {
@@ -94,8 +104,8 @@ export async function sendFollowUpTemplate(
     if (!template) return { ok: false, error: `la plantilla ${input.templateName} no está aprobada en este canal`, code: null };
     const count = templateMaxIndex(template.body);
     // {{1}} solo puede ser CUÁNDO escribió el cliente: el nombre del perfil nunca se usa (6-oct-2026).
-    const one = TIME_PHRASE_TEMPLATES.has(input.templateName) && input.lastClientAt ? timePhrase(input.lastClientAt, input.now, input.zone) : "";
-    if (count > 1 || (count === 1 && !one)) return { ok: false, error: `la plantilla ${input.templateName} pide un dato que el seguimiento no pone (nunca el nombre)`, code: null };
+    const one = followUpTemplateValue(input.templateName, input.lastClientAt, input.now, input.zone);
+    if (!followUpCanFill(input.templateName, template.body) || (count === 1 && !one)) return { ok: false, error: `la plantilla ${input.templateName} pide un dato que el seguimiento no pone (nunca el nombre)`, code: null };
     await sendTemplateMessage(provider, {
       organizationId: input.organizationId,
       conversationId: input.conversationId,

@@ -380,7 +380,8 @@ async function applyReading(r: FollowUpReading): Promise<string | null> {
         await tx.update(followUps).set(rest).where(and(eq(followUps.id, targetId), eq(followUps.organizationId, organizationId)));
       } else await tx.insert(followUps).values({ ...values, id: crypto.randomUUID() });
     };
-    const reset = { cancelReason: null, closedAt: null, presentarAt: null, autoAprobado: false, dueSetBy: "sistema" as const, updatedByUserId: null };
+    // Lo que eligió un vendedor con «Editar mensaje» era para el chat de antes: con una lectura nueva se descarta.
+    const reset = { cancelReason: null, closedAt: null, presentarAt: null, autoAprobado: false, dueSetBy: "sistema" as const, updatedByUserId: null, mensajeVendedor: null, plantillaVendedor: null };
     if (caso === "no_seguir") {
       await save({ ...base, ...reset, status: "no_seguir", intento: 1, totalIntentos: 0, intentos: [], dueAt: null, door: null, templateName: null, modo: "automatico", closedAt: now });
       summary = `seguimiento: no seguir${ficha?.motivo ? ` (${ficha.motivo})` : ""}`;
@@ -544,12 +545,14 @@ function afterAttempt(row: FollowUpRow, log: FollowUpAttemptLog, signals: Signal
         autoAprobado: false,
         dueSetBy: "sistema",
         avisoAt: nextModo === "sugerido" ? null : row.avisoAt,
+        mensajeVendedor: null,
+        plantillaVendedor: null,
       },
       summary: `${row.intento}.º ${word} (${log.door}${log.error ? `: ${log.error}` : ""}); ${step}.º ${fmt.format(next.dueAt)}`,
     };
   }
   return {
-    set: { intentos, totalIntentos: total, status: "esperando", dueAt: new Date(now.getTime() + WAIT_AFTER_LAST_MS), door: null, templateName: null },
+    set: { intentos, totalIntentos: total, status: "esperando", dueAt: new Date(now.getTime() + WAIT_AFTER_LAST_MS), door: null, templateName: null, mensajeVendedor: null, plantillaVendedor: null },
     summary: `${row.intento}.º y último ${word} (${log.door}${log.error ? `: ${log.error}` : ""}); espera respuesta`,
   };
 }
@@ -612,12 +615,19 @@ async function advance(row: FollowUpRow, now: Date, deps: FollowUpRuntimeDeps): 
   if (real && modo === "sugerido") return null;
   // Por dónde sale AHORA (la ventana pudo cerrarse desde que se programó). Sin borrador, no hay texto; en
   // real, un borrador que repite una pregunta o el precio del chat (fichas de antes del 3-oct) tampoco.
-  const textOk = !real || (row.borrador !== null && (await borradorFits(organizationId, conversationId, row.borrador)));
+  // «Editar mensaje» (12-oct-2026): el texto de un vendedor sale tal cual (no pasa por la revisión del borrador) y su
+  // plantilla, si Meta la sigue teniendo aprobada, va en lugar de la del Agente IA.
+  const vendorText = row.mensajeVendedor;
+  const textOk = !real || vendorText !== null || (row.borrador !== null && (await borradorFits(organizationId, conversationId, row.borrador)));
   const door: "texto" | "plantilla" = windowOpenAt(signals.windowExpiresAt, now) && textOk ? "texto" : "plantilla";
   const picks: TemplatePicks = { plantilla2: row.plantilla2, plantilla3: row.plantilla3 };
   const previous = row.intentos.at(-1)?.template ?? null;
+  const vendorTemplate = row.plantillaVendedor && signals.approved.has(row.plantillaVendedor) ? row.plantillaVendedor : null;
   const templateName =
-    door === "plantilla" ? templateForAttempt(caso, row.intento, templateFor(CASE_RULES[caso].doors[row.intento - 1] ?? "saludo", now, row.timeZone), signals.approved, picks, previous) : null;
+    door === "plantilla"
+      ? (vendorTemplate ?? templateForAttempt(caso, row.intento, templateFor(CASE_RULES[caso].doors[row.intento - 1] ?? "saludo", now, row.timeZone), signals.approved, picks, previous))
+      : null;
+  const editado = door === "texto" ? vendorText !== null : vendorTemplate !== null;
 
   if (real) {
     // Último chequeo antes de escribirle al cliente: su hora, el tope de las 19:00 para plantilla (si no la eligió
@@ -645,7 +655,7 @@ async function advance(row: FollowUpRow, now: Date, deps: FollowUpRuntimeDeps): 
   }
 
   const messageId = real ? crypto.randomUUID() : null;
-  const log: FollowUpAttemptLog = { n: row.intento, at: now.toISOString(), door, template: templateName, modo, ensayo: !real, messageId };
+  const log: FollowUpAttemptLog = { n: row.intento, at: now.toISOString(), door, template: templateName, modo, ensayo: !real, messageId, ...(editado ? { editado: true } : {}) };
   const step = afterAttempt({ ...row, ensayo: !real }, log, signals, now);
   // Se aparta la fila ANTES de mandar: dos barridos nunca mandan el mismo intento.
   if (!(await save(row, { ...step.set, ensayo: !real }, now))) return null;
@@ -656,7 +666,7 @@ async function advance(row: FollowUpRow, now: Date, deps: FollowUpRuntimeDeps): 
   const mark = { followUpId: row.id, intento: row.intento, etapa: signals.stageKey };
   const sent =
     door === "texto"
-      ? await sendFollowUpText(deps.provider!, { organizationId, conversationId, messageId: messageId!, borrador: row.borrador!, zone: row.timeZone, now, mark })
+      ? await sendFollowUpText(deps.provider!, { organizationId, conversationId, messageId: messageId!, borrador: vendorText ?? row.borrador!, exacto: vendorText !== null, zone: row.timeZone, now, mark })
       : templateName
         ? await sendFollowUpTemplate(deps.provider!, {
             organizationId,
@@ -704,6 +714,8 @@ async function skipStep(row: FollowUpRow, caso: Exclude<FollowUpCase, "no_seguir
         modo,
         presentarAt: modo === "sugerido" ? presentAtFor(plan.dueAt, now, signals.table.vendedores) : null,
         dueSetBy: "sistema",
+        mensajeVendedor: null,
+        plantillaVendedor: null,
       },
       now,
     );
@@ -712,7 +724,7 @@ async function skipStep(row: FollowUpRow, caso: Exclude<FollowUpCase, "no_seguir
     return `${row.intento}.º apagado en Agente IA › Seguimientos; pasa al ${step}.º ${fmt.format(plan.dueAt)}`;
   }
   if (last) {
-    const done = await save(row, { status: "esperando", totalIntentos: row.intentos.length, dueAt: new Date(Date.parse(last.at) + WAIT_AFTER_LAST_MS), door: null, templateName: null }, now);
+    const done = await save(row, { status: "esperando", totalIntentos: row.intentos.length, dueAt: new Date(Date.parse(last.at) + WAIT_AFTER_LAST_MS), door: null, templateName: null, mensajeVendedor: null, plantillaVendedor: null }, now);
     if (!done) return null;
     await announce(db, organizationId, conversationId, contactId);
     return `${row.intento}.º apagado en Agente IA › Seguimientos; ya no quedan intentos, espera respuesta`;
