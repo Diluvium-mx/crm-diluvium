@@ -14,6 +14,10 @@ const LEAKS = [
   'mover_etapa {"etapa":"interesado"}',
   "fijar_cotizacion 5500",
   "function call: aviso_vendedor",
+  "Winvalid",
+  "ileswi",
+  "undefined",
+  "null.",
 ];
 
 const OK = [
@@ -27,6 +31,12 @@ const OK = [
   "El video de instalación está en nuestro canal: https://youtube.com/@ejemplo",
   "Señora Peña, ¿cuál es el nivel del agua? Pingüino, 2.º piso, 1.ª entrada, 30 °C, 5 m² ✅🏠💧",
   "Ç Ã Ê Ö ß Œ — «comillas» … ¡Gracias!",
+  "¡Claro!",
+  "Perfecto.",
+  "Sí",
+  "😊",
+  "5500",
+  "https://articulo.mercadolibre.com.mx/MLM-1966051269-compuerta",
 ];
 
 describe("internalTextReason", () => {
@@ -42,6 +52,10 @@ describe("findInternalText", () => {
   it("encuentra la nota en el último renglón de una respuesta buena (caso 1-oct)", () => {
     const found = findInternalText(["¿Me comparte una fotografía de cada entrada?\n\n[actions]"]);
     expect(found?.text).toBe("[actions]");
+  });
+  it("encuentra la palabra suelta detrás de una pregunta buena (caso 10-oct)", () => {
+    const found = findInternalText(["¿Hasta qué altura aproximada le llega el agua?", "Winvalid"]);
+    expect(found?.reason).toBe("palabra suelta sin sentido");
   });
   it("una respuesta normal de dos mensajes no tiene nada interno", () => {
     expect(findInternalText(OK.slice(0, 2))).toBeNull();
