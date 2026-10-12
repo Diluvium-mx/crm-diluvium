@@ -144,8 +144,8 @@ El selector las agrupa en «Saludo de Daniel», «Seguimiento» y «Otras», con
 6. **Si no contesta:** el siguiente intento del caso (hasta **3** en los casos que venden, **2** en el resto, §6).
    Después se detiene: la temperatura pasa a **frío** y, en pago pendiente y asesor sin respuesta, queda un aviso 🤖
    para el vendedor.
-7. **Visible y medible:** en el chat se ve el seguimiento programado con su motivo (Ver mensaje · Cambiar hora ·
-   Cancelar); en Agente IA › Seguimientos se editan los casos; en el Dashboard, cuántos contestaron, cuántos avanzaron
+7. **Visible y medible:** en el chat se ve el seguimiento programado con su motivo (Ver mensaje · Editar mensaje ·
+   Cambiar hora · Cancelar); en Agente IA › Seguimientos se editan los casos; en el Dashboard, cuántos contestaron, cuántos avanzaron
    de etapa y cuántos compraron.
 
 ---
@@ -815,6 +815,34 @@ Código: `lib/actions/seguimientos.ts` (`despertarSeguimiento`), `lib/queue/desp
 `announce`), `followup-pill.tsx` (botón, `{ despertando: true }`), `robot-escena-cuando.ts` (escenas y `finDeEspera`),
 `robot-escena.tsx` (`Taza`), `app/globals.css` (escena café). Mapa: Caja 48, 69 y 98, capturas 04-composer-seguimiento-cafe,
 -cafe-dormido y -dormido.
+
+## 23. «Editar mensaje» (12-oct-2026)
+
+**Origen:** el 3.er mensaje de un chat parado en «falta la medida exacta del zaguán» iba a salir con `seg_info_duda`
+(«¿Le quedó alguna duda…?»), que no encaja con lo pendiente. El dueño pidió poder cambiar lo que sale y que el
+seguimiento lo mande tal cual. Diseño aprobado con vista previa («OK» a los puntos 2–6; el 1 ajustado: el botón solo
+sale con el mensaje a la vista, junto a «Ocultar mensaje»).
+
+- **Dónde:** en la burbuja del seguimiento Programado, junto a «Ocultar mensaje» (después de «Ver mensaje»). Vendedores
+  y admins.
+- **Ventana cerrada → otra plantilla.** Lista de las plantillas aprobadas del canal que el seguimiento sabe llenar (sin
+  datos, o con el `{{1}}` de «cuándo escribió»: las `seg_*` y las `daniel_*`; nunca las que piden el nombre ni las que
+  tienen datos en encabezado o botón), **ya llenas** como le llegarían; la del Agente IA primero. El texto de una
+  plantilla no se cambia (Meta no lo deja).
+- **Ventana abierta → el texto completo.** Sale **tal cual**: sin el saludo del CRM, sin la revisión del borrador
+  (`borrador-check`) ni el candado de notas internas (lo escribió una persona). Hasta 4,096 letras.
+- **Vale para ese intento:** se borra cuando sale (o se salta el intento) y cuando el lector rehace la ficha por un mensaje
+  nuevo en el chat (releer sin nada nuevo no lo toca). Si «Cambiar hora» cambia la puerta (texto ↔ plantilla), lo
+  editado de la otra puerta no se usa y la burbuja avisa que hay que elegir de nuevo; si la ventana se cierra antes de
+  salir, sale la plantilla del Agente IA. Mismas reglas de hora y de 7 días entre plantillas.
+- **Se ve:** «· mensaje editado a mano» junto a la hora, «Ver mensaje» y «Lo mando yo» con lo editado, y en el renglón
+  del intento que salió «(editado a mano)» (`intentos[].editado`).
+
+Código: migración 0067 (`follow_ups.mensaje_vendedor`, `plantilla_vendedor`), `lib/followups/editar.ts` (lista, guardar),
+`plantilla-llena.ts` (qué plantillas se pueden llenar y su texto; también lo usan `dispatch.ts` y `view.ts`), `store.ts`
+(`advance`: texto exacto / plantilla del vendedor; se borran en `afterAttempt`, `skipStep` y la lectura), `dispatch.ts`
+(`exacto`), `lib/actions/seguimientos.ts`, `followup-editar-mensaje.tsx`. Mapa: Caja 51, 52, 54 y 99–101, capturas
+04-composer-seguimiento, -editar y -editar-texto.
 
 ## Fuentes
 

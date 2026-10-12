@@ -7,12 +7,12 @@ import { channels, contacts, conversations, followUps, messages, templates, user
 import { listFunnelStages } from "@/lib/contacts/funnel-stages";
 import { firstNameOf } from "@/lib/templates/first-name";
 import { endsWithClientAck } from "./acuse";
-import { ALLOWED_FROM, ALLOWED_TO, CASE_RULES, templateForAttempt, TIME_PHRASE_TEMPLATES, type FollowUpCase } from "./cases";
+import { ALLOWED_FROM, ALLOWED_TO, CASE_RULES, templateForAttempt, type FollowUpCase } from "./cases";
+import { fillFollowUpTemplate } from "./plantilla-llena";
 import { presentAtFor, sendTimeProblem, templateFor, windowOpenAt, VENDOR_ZONE, type SendTimeProblem } from "./schedule";
 import { approvedTemplateNames, followUpsReal, lastTemplateAt, reopenCancelledFollowUp } from "./store";
 import { loadFollowUpTable } from "./tabla-store";
 import { localParts, zonedInstant } from "./time";
-import { timePhrase } from "./time-phrase";
 
 export type FollowUpView = {
   estado: "activo";
@@ -31,9 +31,14 @@ export type FollowUpView = {
   /** Zona del cliente (IANA). */
   timeZone: string;
   door: "texto" | "plantilla" | null;
+  /** La plantilla que saldría: la que eligió un vendedor con «Editar mensaje» o, si no, la del Agente IA. */
   templateName: string | null;
-  /** Texto de la plantilla ({{1}} = primer nombre). */
+  /** Texto de la plantilla ya lleno ({{1}} = cuándo escribió el cliente; nunca el nombre). */
   templateText: string | null;
+  /** «Editar mensaje» (12-oct-2026): texto exacto que escribió un vendedor (sale con la ventana abierta). */
+  mensajeVendedor: string | null;
+  /** «Editar mensaje»: plantilla que eligió un vendedor (sale con la ventana cerrada). */
+  plantillaVendedor: string | null;
   modo: "automatico" | "sugerido";
   presentarAt: string | null;
   autoAprobado: boolean;
@@ -43,7 +48,7 @@ export type FollowUpView = {
   borrador: string | null;
   firstName: string;
   phoneE164: string | null;
-  intentos: { n: number; at: string; door: "texto" | "plantilla"; template: string | null; modo: "automatico" | "sugerido" | "vendedor"; ensayo: boolean; error: string | null }[];
+  intentos: { n: number; at: string; door: "texto" | "plantilla"; template: string | null; modo: "automatico" | "sugerido" | "vendedor"; ensayo: boolean; error: string | null; editado: boolean }[];
   /** Ya terminó la espera tras el último intento (pasó a frío) y el cliente sigue sin contestar: «esperando» sin fecha. */
   terminado: boolean;
 };
@@ -76,17 +81,16 @@ async function loadView(organizationId: string, conversationId: string, statuses
   const terminado = f.status === "terminado";
   const firstName = firstNameOf(row.name);
   let templateText: string | null = null;
-  if (f.templateName) {
+  // Con la ventana cerrada sale la plantilla que eligió un vendedor; si no eligió, la del Agente IA.
+  const templateName = f.door === "plantilla" ? (f.plantillaVendedor ?? f.templateName) : f.templateName;
+  if (templateName) {
     const [t] = await db
       .select({ body: templates.body })
       .from(templates)
-      .where(and(eq(templates.organizationId, organizationId), eq(templates.channelId, row.channelId), eq(templates.name, f.templateName)))
+      .where(and(eq(templates.organizationId, organizationId), eq(templates.channelId, row.channelId), eq(templates.name, templateName)))
       .limit(1);
-    // {{1}} = cuándo nos escribió el cliente en las plantillas con tiempo; en las demás, su primer nombre.
-    const lastClient = row.lastInboundAt ?? (row.windowExpiresAt ? new Date(row.windowExpiresAt.getTime() - 24 * 60 * 60_000) : null);
-    // Solo CUÁNDO escribió; el nombre del perfil nunca va en un seguimiento (6-oct-2026).
-    const value = TIME_PHRASE_TEMPLATES.has(f.templateName) && lastClient ? timePhrase(lastClient, f.dueAt ?? new Date(), f.timeZone) : "";
-    templateText = t?.body ? t.body.replace(/\{\{\s*1\s*\}\}/g, value || "") : null;
+    // {{1}} = cuándo nos escribió el cliente; el nombre del perfil nunca va en un seguimiento (6-oct-2026).
+    templateText = t?.body ? fillFollowUpTemplate(templateName, t.body, lastClientOf(row), f.dueAt ?? new Date(), f.timeZone) : null;
   }
   const caso = f.caso as FollowUpCase;
   const table = await loadFollowUpTable(organizationId);
@@ -105,8 +109,10 @@ async function loadView(organizationId: string, conversationId: string, statuses
     dueAt: terminado ? null : (f.dueAt?.toISOString() ?? null),
     timeZone: f.timeZone,
     door: (f.door as FollowUpView["door"]) ?? null,
-    templateName: f.templateName,
+    templateName,
     templateText,
+    mensajeVendedor: f.mensajeVendedor,
+    plantillaVendedor: f.plantillaVendedor,
     modo: f.modo as FollowUpView["modo"],
     presentarAt: f.presentarAt?.toISOString() ?? null,
     autoAprobado: f.autoAprobado,
@@ -116,9 +122,14 @@ async function loadView(organizationId: string, conversationId: string, statuses
     borrador: f.borrador,
     firstName,
     phoneE164: row.phone,
-    intentos: f.intentos.map(({ n, at, door, template, modo, ensayo, error }) => ({ n, at, door, template, modo, ensayo, error: error ?? null })),
+    intentos: f.intentos.map(({ n, at, door, template, modo, ensayo, error, editado }) => ({ n, at, door, template, modo, ensayo, error: error ?? null, editado: editado === true })),
     terminado,
   };
+}
+
+/** Cuándo escribió el cliente por última vez (o, sin ese dato, 24 h antes de que cierre su ventana). */
+export function lastClientOf(row: { lastInboundAt: Date | null; windowExpiresAt: Date | null }): Date | null {
+  return row.lastInboundAt ?? (row.windowExpiresAt ? new Date(row.windowExpiresAt.getTime() - 24 * 60 * 60_000) : null);
 }
 
 /** Aviso «followup.updated» del chat (la píldora vuelve a consultar). También lo usa el worker al terminar «Despertar». */

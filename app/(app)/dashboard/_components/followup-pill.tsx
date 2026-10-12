@@ -23,13 +23,18 @@
 // ve todo el que tenga el chat abierto, vendedor o admin, lo haya hecho él u otro.
 // Despertar (10-oct-2026, decisión del dueño): en la ventana dormida, el Agente IA lee el chat al momento y arma el
 // seguimiento; la píldora juega la taza de café y espera «cargando» el aviso de que terminó la lectura.
+// Editar mensaje (12-oct-2026, decisión del dueño): junto a «Ocultar mensaje» (solo con el mensaje a la vista); el
+// vendedor cambia el texto (ventana abierta) o la plantilla (ventana cerrada) del siguiente intento.
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type RefObject } from "react";
 import {
   apagarSeguimientos,
   approveSuggestedFollowUp,
   cancelFollowUp,
+  chooseFollowUpTemplateAction,
   despertarSeguimiento,
+  editFollowUpMessage,
   getFollowUp,
+  getFollowUpTemplateOptions,
   quitarSinSeguimientos,
   reactivarSeguimientos,
   rescheduleFollowUp,
@@ -43,6 +48,7 @@ import { CloseX } from "@/components/ui/close-x";
 import { useInboxStream } from "./use-inbox-stream";
 import { DateTimePicker } from "@/components/ui/date-time-picker";
 import { EtiquetaEscena, RobotEscena, RobotQuieto } from "./robot-escena";
+import { FollowUpEditarMensaje } from "./followup-editar-mensaje";
 import {
   CAFE_ESPERA_MAX_MS,
   esEspera,
@@ -627,12 +633,13 @@ function sentLine(a: FollowUpView["intentos"][number], index: number): { ok: boo
   if (a.modo === "vendedor") return { ok: true, text: `${what}: lo mandó un vendedor ${onDate(a.at)}` };
   if (a.ensayo) return { ok: true, text: `${what}: habría salido ${onDate(a.at)}` };
   if (a.error) return { ok: false, text: `${what}: no salió ${onDate(a.at)} · ${a.error}` };
-  return { ok: true, text: `${what}: salió ${onDate(a.at)}${a.modo === "sugerido" ? " (sugerido)" : ""}` };
+  return { ok: true, text: `${what}: salió ${onDate(a.at)}${a.modo === "sugerido" ? " (sugerido)" : ""}${a.editado ? " (editado a mano)" : ""}` };
 }
 
 function ActivePanel({ followUp, onClose, onChanged, onAnticipar, onRevertir }: { followUp: FollowUpView } & PanelProps) {
   const [showMessage, setShowMessage] = useState(false);
   const [editing, setEditing] = useState(false);
+  const [editingMessage, setEditingMessage] = useState(false);
   const [confirmCancel, setConfirmCancel] = useState(false);
   const [local, setLocal] = useState(followUp.dueAt ? instantToLocal(new Date(followUp.dueAt)) : "");
   const [busy, setBusy] = useState(false);
@@ -640,8 +647,21 @@ function ActivePanel({ followUp, onClose, onChanged, onAnticipar, onRevertir }: 
   const f = followUp;
   const due = f.dueAt ? new Date(f.dueAt) : null;
   const clientHour = due && dayKey(due, f.timeZone) + hourOf(due, f.timeZone) !== dayKey(due, SCHEDULE_TIME_ZONE) + hourOf(due, SCHEDULE_TIME_ZONE) ? hourOf(due, f.timeZone) : null;
-  // Lo que va a salir, exacto: el texto del Agente IA con su saludo, o la plantilla ya llena.
-  const message = f.door === "plantilla" ? (f.templateText ?? f.templateName) : f.borrador ? followUpText(f.borrador, due ?? new Date(), f.timeZone) : null;
+  // Lo que va a salir, exacto: el texto del vendedor («Editar mensaje») o el del Agente IA con su saludo, o la
+  // plantilla ya llena (la que eligió el vendedor o la del Agente IA).
+  const door = f.door === "plantilla" ? "plantilla" : "texto";
+  const message = door === "plantilla" ? (f.templateText ?? f.templateName) : (f.mensajeVendedor ?? (f.borrador ? followUpText(f.borrador, due ?? new Date(), f.timeZone) : null));
+  const editado = door === "plantilla" ? f.plantillaVendedor !== null : f.mensajeVendedor !== null;
+  // Lo editado es para una sola puerta: si «Cambiar hora» la cambió, se avisa que hay que elegir de nuevo.
+  const otraPuerta =
+    door === "plantilla" && f.mensajeVendedor !== null && f.plantillaVendedor === null
+      ? "Con esta hora ya pasaron las 24 h y sale plantilla: el texto que editaste no se puede mandar. Elige la plantilla en «Editar mensaje»."
+      : door === "texto" && f.plantillaVendedor !== null && f.mensajeVendedor === null
+        ? "Con esta hora la ventana de 24 h sigue abierta y sale texto: la plantilla que elegiste no se usa. Edita el texto en «Editar mensaje»."
+        : null;
+  // «Lo mando yo» abre WhatsApp Web con lo editado (lo que se ve en «Ver mensaje») o con el texto del Agente IA.
+  const loMando = editado ? message : f.borrador ? followUpText(f.borrador, new Date(), f.timeZone) : null;
+  const loadOptions = useCallback(() => getFollowUpTemplateOptions(f.id), [f.id]);
   const programado = f.status === "programado";
   const sent = f.intentos.length;
 
@@ -688,6 +708,7 @@ function ActivePanel({ followUp, onClose, onChanged, onAnticipar, onRevertir }: 
             {due ? dateLabel(f.dueAt!) : "—"}
             {clientHour && <span className="text-muted-foreground">{` (su hora: ${clientHour}, ${ZONE_NAMES[f.timeZone] ?? f.timeZone})`}</span>}
             {f.dueSetBy === "vendedor" && <span className="text-muted-foreground"> · hora puesta a mano</span>}
+            {editado && <span className="text-muted-foreground"> · mensaje editado a mano</span>}
           </Answer>
         ) : (
           <Answer question="¿Y ahora?">
@@ -717,10 +738,25 @@ function ActivePanel({ followUp, onClose, onChanged, onAnticipar, onRevertir }: 
           </ul>
         )}
 
-        {showMessage && programado && (
+        {showMessage && programado && !editingMessage && (
           <div data-testid="followup-message" className="whitespace-pre-wrap rounded-md border bg-muted/40 p-2 text-[13px] select-text">
             {message ?? "El Agente IA no dejó el mensaje para este chat."}
           </div>
+        )}
+        {showMessage && programado && otraPuerta && (
+          <p className="rounded-md border border-amber-400/60 bg-amber-50 px-2 py-1 text-xs text-amber-900 dark:bg-amber-500/10 dark:text-amber-200">{otraPuerta}</p>
+        )}
+        {showMessage && programado && editingMessage && (
+          <FollowUpEditarMensaje
+            door={door}
+            current={message ?? ""}
+            edited={door === "plantilla" ? f.plantillaVendedor : f.mensajeVendedor}
+            busy={busy}
+            loadOptions={loadOptions}
+            onSaveText={(texto) => run(() => editFollowUpMessage(f.id, texto))}
+            onSaveTemplate={(name) => run(() => chooseFollowUpTemplateAction(f.id, name))}
+            onDone={() => setEditingMessage(false)}
+          />
         )}
 
         {editing && (
@@ -751,8 +787,21 @@ function ActivePanel({ followUp, onClose, onChanged, onAnticipar, onRevertir }: 
         ) : (
           <div className="flex flex-wrap gap-1.5">
             {programado && (
-              <button type="button" onClick={() => setShowMessage((v) => !v)} className={button} aria-expanded={showMessage}>
+              <button
+                type="button"
+                onClick={() => {
+                  setShowMessage((v) => !v);
+                  setEditingMessage(false);
+                }}
+                className={button}
+                aria-expanded={showMessage}
+              >
                 {showMessage ? "Ocultar mensaje" : "Ver mensaje"}
+              </button>
+            )}
+            {programado && showMessage && (
+              <button type="button" onClick={() => setEditingMessage((v) => !v)} className={button} aria-expanded={editingMessage}>
+                Editar mensaje
               </button>
             )}
             {programado && (
@@ -760,9 +809,9 @@ function ActivePanel({ followUp, onClose, onChanged, onAnticipar, onRevertir }: 
                 Cambiar hora
               </button>
             )}
-            {programado && f.phoneE164 && f.borrador && (
+            {programado && f.phoneE164 && loMando && (
               <a
-                href={whatsappWebLink(f.phoneE164, followUpText(f.borrador, new Date(), f.timeZone))}
+                href={whatsappWebLink(f.phoneE164, loMando)}
                 target="_blank"
                 rel="noopener noreferrer"
                 className={button}

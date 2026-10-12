@@ -182,9 +182,9 @@ export const CASE_TEMPLATE: Readonly<Partial<Record<FollowUpCase, string>>> = {
 export const TIME_PHRASE_TEMPLATES: ReadonlySet<string> = new Set(["seg_precio", "seg_informacion", "seg_info_duda", "seg_valorar", "seg_medidas"]);
 
 /**
- * Lo mismo, pero SOLO para el selector 📄 (mandar o programar a mano): también las `daniel_*`,
- * cuyo {{1}} es la misma frase de tiempo. Conjunto aparte a propósito: TIME_PHRASE_TEMPLATES lo usan
- * los seguimientos automáticos (dispatch.ts, view.ts) y esos NO mandan las `daniel_*`.
+ * Lo mismo, pero también las `daniel_*`, cuyo {{1}} es la misma frase de tiempo: el selector 📄 (mandar o
+ * programar a mano) y «Editar mensaje» del seguimiento (plantilla-llena.ts, 12-oct-2026). Conjunto aparte a
+ * propósito: el seguimiento automático nunca ELIGE una `daniel_*` (solo las de FOLLOW_UP_TEMPLATES y del caso).
  */
 export const PICKER_TIME_PHRASE_TEMPLATES: ReadonlySet<string> = new Set([
   ...TIME_PHRASE_TEMPLATES,
