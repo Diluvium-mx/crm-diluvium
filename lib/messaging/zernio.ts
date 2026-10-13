@@ -13,6 +13,7 @@
 // tolerante. Un evento que el CRM procesa pero cuyo formato no se reconoce
 // sale "malformed": queda en dead-letter en webhook_events (nada se pierde).
 import { createHmac, timingSafeEqual } from "node:crypto";
+import { zernioErrorDetail } from "./zernio-error";
 import { MEDIA_HOSTS, resolveHost, safeFetch, UnsafeUrlError, type ResolveHost } from "@/lib/net/safe-fetch";
 import { z } from "zod";
 import {
@@ -1068,8 +1069,9 @@ export class ZernioProvider implements MessagingProvider {
       const err = asRecord(json?.error);
       throw new ZernioSendError(
         res.status,
+        // El código se queda como antes (lo usan los motivos de envío); el texto ya trae lo que dijo Meta.
         asString(err.code) ?? String(res.status),
-        asString(err.message) ?? asString(json?.message) ?? `Zernio respondió ${res.status}`,
+        zernioErrorDetail(json, res.status).message,
         sendOutcomeForStatus(res.status),
         res.status === 429 ? retryAfterMs(res.headers.get("retry-after"), asRecord(json?.details ?? err.details).retryAfterSeconds) : null,
       );
@@ -1097,12 +1099,8 @@ export class ZernioProvider implements MessagingProvider {
     }
     const parsed: unknown = await res.json().catch(() => undefined);
     if (!res.ok) {
-      const err = asRecord(asRecord(parsed).error);
-      throw new ZernioApiError(
-        res.status,
-        asString(err.message) ?? asString(asRecord(parsed).message) ?? `Zernio respondió ${res.status}`,
-        asString(err.code),
-      );
+      const detail = zernioErrorDetail(parsed, res.status);
+      throw new ZernioApiError(res.status, detail.message, detail.code);
     }
     // Un 2xx con cuerpo ilegible o que no es un objeto JSON NO se trata como
     // vacío: la sincronización lo usa como censo y un [] falso borraría

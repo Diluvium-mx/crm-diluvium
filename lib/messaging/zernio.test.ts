@@ -527,6 +527,18 @@ describe("ZernioProvider.createTemplate", () => {
       p.createTemplate({ providerAccountId: "a", name: "x", language: "es", category: "UTILITY", bodyText: "hola", bodyExample: [] }),
     ).rejects.toMatchObject({ name: "ZernioApiError", httpStatus: 409 });
   });
+
+  it("sobre de Zernio (error en texto + platformError de Meta): el alta lanza ZernioApiError con el motivo real", async () => {
+    const fetchImpl = (async () =>
+      Response.json(
+        { error: "Meta rejected the template", type: "platform_error", code: "platform_api_error", platform: "meta", platformError: { error: { error_user_title: "Message template language is being deleted", error_user_msg: "Try again in 4 weeks." } } },
+        { status: 400 },
+      )) as unknown as typeof fetch;
+    const p = new ZernioProvider({ apiKey: "k", webhookSecret: SECRET }, fetchImpl);
+    await expect(
+      p.createTemplate({ providerAccountId: "a", name: "seg_medidas_2", language: "es_MX", category: "MARKETING", bodyText: "Hola", bodyExample: [] }),
+    ).rejects.toMatchObject({ name: "ZernioApiError", httpStatus: 400, code: "platform_api_error", message: "Meta rejected the template — Message template language is being deleted: Try again in 4 weeks." });
+  });
 });
 
 describe("ZernioProvider.updateTemplate", () => {
