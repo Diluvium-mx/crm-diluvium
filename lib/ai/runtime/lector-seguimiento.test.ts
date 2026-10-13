@@ -49,6 +49,21 @@ describe("lector + seguimiento", () => {
     expect(FOLLOW_UP_INSTRUCTIONS).toMatch(/solo paso a dar seguimiento/);
   });
 
+  it("«cuándo dijo que no» (13-oct-2026): cerrar la decisión es no_seguir; lo que deja algo abierto sigue en objeción", () => {
+    const lines = FOLLOW_UP_INSTRUCTIONS.split("\n");
+    const i = lines.findIndex((l) => l.startsWith("- no_seguir:"));
+    const criterio = lines[i + 1] ?? "";
+    // Va justo debajo de no_seguir (antes que los demás casos: no_seguir manda).
+    expect(criterio.trim().startsWith('Cuándo "dijo que no": cuando el cliente CERRÓ LA DECISIÓN')).toBe(true);
+    expect(criterio).toContain('"no está en mi presupuesto, gracias", "por el momento no puedo comprar, será en otra ocasión", "no gracias", "ya no me interesa"');
+    expect(criterio).toContain('si dice que ÉL avisará cuando pueda ("cuando pueda les aviso", "yo me comunico")');
+    expect(criterio).toContain('"está caro" o "ahorita no" SOLOS, sin despedirse, siguen siendo objecion');
+    expect(criterio).toContain('Si dudas, lee su último mensaje: si se lee como una despedida, es no_seguir.');
+    expect(criterio).toContain('el motivo empieza con "Cerró la decisión: "');
+    const objecion = lines.find((l) => l.startsWith("- objecion:")) ?? "";
+    expect(objecion).toContain("sin haber cerrado la decisión (ver no_seguir)");
+  });
+
   it("las frases de pago van en «pidió fecha» con su día y sin hora (opción A de la quincena, 7-oct-2026)", () => {
     const line = FOLLOW_UP_INSTRUCTIONS.split("\n").find((l) => l.startsWith("- pidio_fecha:")) ?? "";
     expect(line).toContain('"en la quincena", "cuando me paguen", "cuando cobre" o "el día de pago" (sin decir qué día) = el próximo día 15 o el último del mes, el que llegue primero');

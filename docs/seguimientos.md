@@ -891,6 +891,33 @@ escribirle a mano; solo se quitan los seguimientos.
 
 Sin migración. Pruebas en `store.int.test.ts` («lada de otro país») y `lib/phone.test.ts`.
 
+## 25. Cuándo «dijo que no»: cerrar la decisión (13-oct-2026)
+
+**Origen:** clientes que contestaron un seguimiento con que no les alcanzaba seguían recibiendo seguimientos. Lectura
+de producción (12-oct, «OK LECTURA PROD»): del 6 al 12-oct salieron 1,361 seguimientos en 850 chats; en 22 el cliente
+contestó hablando de dinero o de «por ahora no», 18 de ellos diciendo que no. De esos 18, el lector dejó 5 en
+«no seguir» y 13 en **objeción** (hasta 3 intentos más): Admin canceló 7 a mano, 5 seguían programados y a 6 de los 18
+ya les había llegado otro seguimiento. Con frases casi iguales el lector elegía a veces una y a veces la otra: las
+instrucciones decían «no_seguir: dijo que no» sin definir qué es decir que no.
+
+**Decisión del dueño** («Ok al texto», 13-oct): no una lista de palabras («está muy caro, gracias» como regla), sino
+un criterio de **decisión cerrada**, sin contradecir lo que ya había. Texto (debajo de `no_seguir` en
+`lector-core.ts`):
+- Cuenta como «dijo que no» cuando el cliente **cerró la decisión**: dice que no compra y se despide o agradece sin dejar
+  nada abierto («no está en mi presupuesto, gracias», «por el momento no puedo comprar, será en otra ocasión», «no
+  gracias», «ya no me interesa»); también si lo repite después de que se le ofreció otra opción, o si dice que **él**
+  avisará («cuando pueda les aviso», «yo me comunico»).
+- Sigue siendo **objeción** cuando deja algo abierto: una pregunta, una duda, una condición («si me hacen descuento»,
+  «¿hay una más chica?») o algo que todavía va a pasar («lo platico con mi esposo», «lo pienso», «déjeme ver»). «Está
+  caro» o «ahorita no» **solos**, sin despedirse, siguen siendo objeción.
+- Si duda: si su último mensaje se lee como despedida, es «no seguir». El motivo empieza con «Cerró la decisión: …».
+- Con una fecha («en la quincena») sigue siendo «pidió fecha». «Despertar» (§22) no cambia: un vendedor puede despertarlo.
+
+Contra los 18 casos: 12 de los 13 que quedaron en objeción habrían sido «no seguir»; la primera respuesta de un chat
+(cerraba con una pregunta) seguiría en objeción hasta que el cliente cerró en la siguiente. Sin banco con modelos
+(regla del 9-oct): se verifica en producción con una lectura de los chats después de unos días.
+Pendiente aparte (punto 2, para después): un solo recordatorio suave ~30 días después en lugar de no seguir.
+
 ## Fuentes
 
 - [M1] Meta, enviar mensajes / ventana de servicio: https://developers.facebook.com/documentation/business-messaging/whatsapp/messages/send-messages
