@@ -379,6 +379,8 @@ rápidos, 📄 Plantillas y 📎 Adjuntar (Bandeja y pop-up del Embudo usan el m
 - **131049** (tope de marketing): aviso, sin reintento. **131050** (baja): el contacto queda "sin seguimientos"
   (se quita desde el Detalle).
 - Solo a contactos que **ya escribieron** alguna vez (nunca a un contacto sin chat).
+- **Solo números de México (+52) y +1** (Estados Unidos, Canadá, el Caribe): a una lada de otro país nunca se le da
+  seguimiento (decisión del dueño, 13-oct-2026; §25).
 - **Horario de envío: 7:00–21:00 hora del cliente** (decisión del dueño, 2-oct; estado de su lada → zona horaria;
   sin lada mexicana, Mazatlán), con la hora de cada caso (§6.2), **todos los días, domingo incluido** (decisión del
   dueño, 2-oct: si al seguimiento le toca ese día, sale ese día). Con plantilla, hasta las 19:00 (elegida a mano con
@@ -541,6 +543,7 @@ Decisiones del dueño y lo construido (rama `feat/seguimientos-lector`, migraci�
    lector lo rehace UNA vez (≈ US$0.0004); si vuelve a fallar, el intento no sale con texto.
 5. **Precio = el cliente preguntó el precio; Solo información = solo mandó el texto del anuncio.**
 6. **Extranjero = no seguir**, aunque tenga a alguien en México, si en el chat ya se le dijo que no se envía fuera.
+   Desde el 13-oct-2026 una lada de otro país (salvo la +1) ni siquiera llega aquí: candado fijo en el código (§25).
 7. **Plantilla de cada intento según el chat:** el lector elige entre las aprobadas (`plantilla_2`, `plantilla_3`) la
    que mejor encaje y nunca una que repita una pregunta ya hecha; el CRM confirma que esté aprobada y que no sea la del
    intento anterior; si nada encaja, el saludo. **Solo información** usa `seg_info_duda` (plantilla nueva, texto aprobado
@@ -862,6 +865,31 @@ en visto la primera (texto A, «OK para el punto 2»).
   `FOLLOW_UP_TEMPLATES` (el lector la puede elegir) y en «Editar mensaje» (§23) en cuanto se aprueba.
 - **Arreglo de paso:** «Cambiar hora» volvía a calcular la plantilla sin la que eligió el lector ni la del intento
   anterior (podía repetirla); ahora usa las dos, como el barrido (`changeFollowUpTime` en `view.ts`).
+
+## 25. Sin seguimientos a números de otro país, salvo la +1 (13-oct-2026)
+
+**Qué pasó:** a un número de Argentina (+54) el Agente IA le explicó que solo enviamos dentro de México y le preguntó
+si tenía una dirección aquí; el cliente no contestó, el lector lo tomó como pendiente («Sin punto claro») y salió un
+seguimiento «¿En qué ciudad de México sería la dirección…?», con otro programado. La regla del lector (§14, regla 6)
+solo para cuando ya se le dijo que no se envía fuera.
+
+**Decisión del dueño:** quitar los seguimientos a todo número que no sea +52 ni +1. Candado en el código, no en el Goal:
+no depende de cómo lo lea el Agente IA ni cuesta tokens. La +1 cuenta como de México, igual que en el contexto del
+Agente IA y los workflows de inicio (10-oct-2026: muchos clientes de aquí usan un número de allá; incluye el Caribe).
+Sin teléfono o con país no reconocido: igual que antes. El Agente IA sigue contestando en el chat y el vendedor puede
+escribirle a mano; solo se quitan los seguimientos.
+
+**Dónde está el candado** (`foreignLadaLabel` en `lib/phone.ts`, con `contacts.phone_country_iso/code`):
+- **Lector** (`applyReading`): no arma ficha; si había una abierta, se cancela con motivo `extranjero`.
+- **Barrido** (`cancelForeign`, cada minuto): cancela los **programados** de esos contactos sin esperar su hora (así se
+  fueron también los que ya estaban programados antes del candado). Los que ya están «esperando» no mandan nada más y
+  siguen hasta pasar a frío. Además `advance` lo revisa justo antes de mandar.
+- **Reactivar** (`reopenCancelledFollowUp`): no reabre el cancelado.
+- **Píldora**: robot dormido gris con «Número de Argentina (+54): no lleva seguimientos del Agente IA (solo México y
+  +1).», sin Despertar. «Se dio de baja» y «Cancelado» se siguen viendo primero (sus botones funcionan igual y después
+  queda dormida con esta razón).
+
+Sin migración. Pruebas en `store.int.test.ts` («lada de otro país») y `lib/phone.test.ts`.
 
 ## Fuentes
 

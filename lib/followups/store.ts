@@ -23,6 +23,7 @@ import { zoneForPhone } from "./timezone";
 import { caseOn, nextStep, slotOf, type FollowUpTable } from "./tabla";
 import { loadFollowUpTable } from "./tabla-store";
 import { logError } from "@/lib/log/safe-error";
+import { foreignLadaLabel } from "@/lib/phone";
 
 export type FollowUpRow = typeof followUps.$inferSelect;
 const OPEN = ["programado", "esperando"] as const;
@@ -144,6 +145,8 @@ type Signals = {
   lastClientAt: Date | null;
   /** Se dio de baja de promociones (131050): sin seguimientos. */
   sinSeguimientos: boolean;
+  /** País de la lada si es de fuera de México y de la +1 («Argentina (+54)»): sin seguimientos (13-oct-2026). */
+  extranjero: string | null;
   /** Clave de la etapa del contacto ahora. */
   stageKey: string;
   /** Un vendedor canceló los seguimientos de este chat (hasta que alguien los reactive). */
@@ -162,6 +165,8 @@ async function loadSignals(
   const [row] = await db
     .select({
       phone: contacts.phoneE164,
+      phoneIso: contacts.phoneCountryIso,
+      phoneCode: contacts.phoneCountryCode,
       stage: contacts.stage,
       monto: contacts.montoCotizacion,
       pago: contacts.pagoTotal,
@@ -206,6 +211,7 @@ async function loadSignals(
     approved: await approvedTemplateNames(organizationId),
     lastClientAt: row.lastInboundAt ?? (row.windowExpiresAt ? new Date(row.windowExpiresAt.getTime() - 24 * 60 * 60_000) : null),
     sinSeguimientos: row.sinSeguimientos,
+    extranjero: foreignLadaLabel(row.phoneIso, row.phoneCode),
     stageKey,
     off: row.offAt !== null,
     table: await loadFollowUpTable(organizationId, now),
@@ -304,6 +310,14 @@ async function applyReading(r: FollowUpReading): Promise<string | null> {
       await announce(db, organizationId, conversationId, contactId);
     }
     return "seguimiento: no (canal sin Agente IA o que no es WhatsApp)";
+  }
+  // Lada de otro país (salvo la +1): no se le da seguimiento, aunque el chat quede pendiente (13-oct-2026).
+  if (signals.extranjero) {
+    if (existing) {
+      await closeRow(db, existing, "cancelado", "extranjero", now);
+      await announce(db, organizationId, conversationId, contactId);
+    }
+    return `seguimiento: no (lada de otro país: ${signals.extranjero})`;
   }
   if (signals.sinSeguimientos) {
     if (existing) {
@@ -589,6 +603,11 @@ async function advance(row: FollowUpRow, now: Date, deps: FollowUpRuntimeDeps): 
     await announce(db, organizationId, conversationId, contactId);
     return "cancelado (Agente IA apagado)";
   }
+  if (signals.extranjero) {
+    await closeRow(db, row, "cancelado", "extranjero", now);
+    await announce(db, organizationId, conversationId, contactId);
+    return `cancelado (lada de otro país: ${signals.extranjero})`;
+  }
   if (signals.sinSeguimientos) {
     await closeRow(db, row, "cancelado", "sin_seguimientos", now);
     await announce(db, organizationId, conversationId, contactId);
@@ -809,9 +828,43 @@ async function endWaits(now: Date): Promise<number> {
   return ended.length;
 }
 
+/**
+ * Programados de contactos con lada de otro país (salvo la +1): se cancelan sin esperar su hora, así la píldora y las
+ * listas dejan de mostrarlos, también los que ya estaban programados antes del candado (13-oct-2026). Los que ya
+ * terminaron sus intentos («esperando») no mandan nada más y siguen hasta pasar a frío.
+ */
+async function cancelForeign(now: Date): Promise<number> {
+  const rows = await db
+    .select({ f: followUps, iso: contacts.phoneCountryIso, code: contacts.phoneCountryCode })
+    .from(followUps)
+    .innerJoin(contacts, and(eq(contacts.id, followUps.contactId), eq(contacts.organizationId, followUps.organizationId)))
+    .where(
+      and(
+        eq(followUps.status, "programado"),
+        sql`${contacts.phoneCountryIso} is not null and ${contacts.phoneCountryIso} <> 'MX' and coalesce(${contacts.phoneCountryCode}, '') <> '1'`,
+      ),
+    )
+    .limit(SWEEP_BATCH);
+  let n = 0;
+  for (const { f, iso, code } of rows) {
+    const pais = foreignLadaLabel(iso, code);
+    if (!pais) continue;
+    await closeRow(db, f, "cancelado", "extranjero", now);
+    await announce(db, f.organizationId, f.conversationId, f.contactId);
+    console.info(`[seguimientos] ${f.conversationId} ${f.caso}: cancelado (lada de otro país: ${pais})`);
+    n++;
+  }
+  return n;
+}
+
 /** Una pasada: intentos vencidos, avisos al vendedor y esperas que ya terminaron (frío). */
 export async function followUpSweepOnce(now: Date, deps: FollowUpRuntimeDeps = {}): Promise<number> {
   let changed = 0;
+  try {
+    changed += await cancelForeign(now);
+  } catch (error) {
+    logError("[seguimientos] no se pudieron cancelar los de otro país", error);
+  }
   // Una sugerencia sin «Que salga solo» en una organización en modo real no se toma: no sale sola.
   const due = await db
     .select()
@@ -890,7 +943,7 @@ export async function reopenCancelledFollowUp(organizationId: string, conversati
   if (lastAt && lastAt.getTime() > row.basedOnMessageAt.getTime()) return false;
   if (await openRow(db, organizationId, conversationId)) return false;
   const signals = await loadSignals(organizationId, conversationId, row.contactId, now);
-  if (!signals || !signals.channelOn || signals.off || signals.sinSeguimientos || signals.hard.stageRole === "venta_cerrada") return false;
+  if (!signals || !signals.channelOn || signals.extranjero || signals.off || signals.sinSeguimientos || signals.hard.stageRole === "venta_cerrada") return false;
   const caso = row.caso as Exclude<FollowUpCase, "no_seguir">;
   if (!caseOn(signals.table, caso)) return false;
   // Si su intento quedó apagado en la tabla, se reabre en el siguiente prendido.

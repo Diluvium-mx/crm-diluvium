@@ -205,6 +205,51 @@ describe.skipIf(!TEST_DATABASE_URL)("Seguimientos en la base (modo ensayo)", () 
     expect((await rows())[0]).toMatchObject({ status: "cancelado", cancelReason: "venta_cerrada" });
   });
 
+  describe("lada de otro país (13-oct-2026): sin seguimientos, salvo la +1", () => {
+    const lada = (phoneE164: string, phoneCountryCode: string, phoneCountryIso: string) =>
+      db.update(s.contacts).set({ phoneE164, phoneCountryCode, phoneCountryIso }).where(d.eq(s.contacts.id, CONTACT));
+    const argentina = () => lada("+5491155550123", "54", "AR");
+
+    it("el lector no arma seguimiento y cierra el que había", async () => {
+      await reading();
+      expect(await open()).toHaveLength(1);
+      await argentina();
+      const later = new Date(T0.getTime() + MIN);
+      expect(await reading({ readUpTo: later, stopAt: later })).toBe("seguimiento: no (lada de otro país: Argentina (+54))");
+      expect(await open()).toHaveLength(0);
+      expect((await rows())[0]).toMatchObject({ status: "cancelado", cancelReason: "extranjero" });
+    });
+
+    it("el barrido cancela el que ya estaba programado sin esperar su hora, y no sale nada", async () => {
+      await reading();
+      await argentina();
+      expect(await store.followUpSweepOnce(NOW)).toBe(1);
+      const [r] = await rows();
+      expect(r).toMatchObject({ status: "cancelado", cancelReason: "extranjero" });
+      expect(r.intentos).toHaveLength(0);
+    });
+
+    it("la +1 sí lleva seguimientos", async () => {
+      await lada("+12025550123", "1", "US");
+      expect(await reading()).toMatch(/seguimiento: faltan_medidas 1\.º/);
+      expect(await store.followUpSweepOnce(NOW)).toBe(0);
+      expect(await open()).toHaveLength(1);
+    });
+
+    it("la píldora dice por qué, sin Despertar; Reactivar no lo reabre", async () => {
+      await reading();
+      expect(await view.turnOffFollowUps(ORG, CONV, USER, NOW)).toBe(true);
+      await argentina();
+      expect(await view.reactivateFollowUps(ORG, CONV, new Date(NOW.getTime() + MIN))).toBe(true);
+      expect(await open()).toHaveLength(0);
+      expect(await view.loadFollowUpState(ORG, CONV)).toMatchObject({
+        estado: "dormido",
+        razon: "Número de Argentina (+54): no lleva seguimientos del Agente IA (solo México y +1).",
+        despertable: false,
+      });
+    });
+  });
+
   it("la burbuja: muestra la plantilla sin el nombre del perfil, cambia la hora, 'Que salga solo' solo en sugerencias y Cancelar", async () => {
     await db.insert(s.templates).values({ id: "tpl1", organizationId: ORG, channelId: CH, name: "hola_buenas_tardes", language: "es_MX", body: "Hola, buenas tardes.", status: "APPROVED" });
     await reading();

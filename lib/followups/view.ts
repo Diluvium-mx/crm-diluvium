@@ -6,6 +6,7 @@ import { db } from "@/lib/db";
 import { channels, contacts, conversations, followUps, messages, templates, user } from "@/lib/db/schema";
 import { listFunnelStages } from "@/lib/contacts/funnel-stages";
 import { firstNameOf } from "@/lib/templates/first-name";
+import { foreignLadaLabel } from "@/lib/phone";
 import { endsWithClientAck } from "./acuse";
 import { ALLOWED_FROM, ALLOWED_TO, CASE_RULES, templateForAttempt, type FollowUpCase } from "./cases";
 import { fillFollowUpTemplate } from "./plantilla-llena";
@@ -215,6 +216,8 @@ export async function loadFollowUpState(organizationId: string, conversationId: 
       offAt: conversations.seguimientosOffAt,
       byName: user.name,
       baja: contacts.sinSeguimientos,
+      phoneIso: contacts.phoneCountryIso,
+      phoneCode: contacts.phoneCountryCode,
       stage: contacts.stage,
       lastMessageAt: conversations.lastMessageAt,
       leidoHasta: conversations.detalleLeidoHasta,
@@ -231,6 +234,9 @@ export async function loadFollowUpState(organizationId: string, conversationId: 
   if (row.baja) return { estado: "baja", conversationId, contactId: row.contactId, at: null, byName: null };
   if (row.offAt) return { estado: "cancelado", conversationId, contactId: row.contactId, at: row.offAt.toISOString(), byName: row.byName ?? null };
   const dormido = (razon: string, despertable = false): FollowUpDormido => ({ estado: "dormido", conversationId, contactId: row.contactId, razon, despertable });
+  // Lada de otro país (salvo la +1): no lleva seguimientos; sin Despertar (13-oct-2026).
+  const pais = foreignLadaLabel(row.phoneIso, row.phoneCode);
+  if (pais) return dormido(`Número de ${pais}: no lleva seguimientos del Agente IA (solo México y +1).`);
 
   if (row.channelType !== "whatsapp") return dormido("Los chats de Instagram no llevan seguimientos del Agente IA.");
   if (row.mode !== "auto") return dormido("El Agente IA está apagado en este canal (Agente IA › Canales): no hay seguimientos.");
