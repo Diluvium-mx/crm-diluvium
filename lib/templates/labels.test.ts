@@ -8,6 +8,7 @@ describe("títulos de las plantillas", () => {
   it("las conocidas tienen título amigable, igual con seg_ que con daniel_", () => {
     expect(templateTitle("seg_precio")).toBe("Precio sin respuesta");
     expect(templateTitle("daniel_precio")).toBe("Precio sin respuesta");
+    expect(templateTitle("seg_medidas_recordatorio")).toBe("Faltan medidas (recordatorio)");
     expect(templateTitle("seg_info_duda")).toBe("¿Le quedó alguna duda?");
     expect(templateTitle("daniel_objecion")).toBe("Lo va a pensar");
     expect(templateTitle("seg_informacion")).toBe("Solo información");

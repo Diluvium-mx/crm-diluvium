@@ -197,6 +197,15 @@ export const PICKER_TIME_PHRASE_TEMPLATES: ReadonlySet<string> = new Set([
   "daniel_objecion",
 ]);
 
+/**
+ * Si la plantilla del caso ya salió en el intento anterior y el cliente no contestó (lo dejó en visto), el siguiente
+ * sale con este recordatorio, distinto, en lugar de la que elija el lector (decisión del dueño, 12-oct-2026: el 3.er
+ * mensaje de un chat de medidas iba a repetir la pregunta o a salir con «¿Le quedó alguna duda?»). Solo ya aprobado.
+ */
+export const CASE_TEMPLATE_REPEAT: Readonly<Partial<Record<FollowUpCase, string>>> = {
+  faltan_medidas: "seg_medidas_recordatorio",
+};
+
 /** Si la plantilla del caso todavía no está aprobada: otra propia antes que la puerta. */
 export const CASE_TEMPLATE_BACKUP: Readonly<Partial<Record<FollowUpCase, string>>> = {
   solo_informacion: "seg_precio",
@@ -216,6 +225,7 @@ export const FOLLOW_UP_TEMPLATES: readonly string[] = [
   "seg_info_duda",
   "seg_valorar",
   "seg_medidas",
+  "seg_medidas_recordatorio",
   "seg_asesor",
   "seg_objecion",
 ];
@@ -225,7 +235,8 @@ export type TemplatePicks = { plantilla2?: string | null; plantilla3?: string | 
 
 /**
  * Plantilla que sale en ese intento. `fallback` = la de la puerta (saludo por hora o
- * seguimiento_proteccion). Orden: la que eligió el lector para ese intento (si Meta ya la aprobó
+ * seguimiento_proteccion). Orden: si la del caso salió en el intento anterior, su recordatorio
+ * (CASE_TEMPLATE_REPEAT, ya aprobado); luego la que eligió el lector para ese intento (si Meta ya la aprobó
  * y no es la misma del intento anterior); si no, en el 1.º y 2.º, la del caso si ya está aprobada;
  * si no, la de la puerta. Un saludo elegido por el lector sale con el de la hora (`fallback`
  * cuando la puerta es saludo).
@@ -239,6 +250,8 @@ export function templateForAttempt(
   previous: string | null = null,
 ): string | null {
   if (fallback === null) return null;
+  const repeat = CASE_TEMPLATE_REPEAT[caso];
+  if (repeat && previous !== null && previous === CASE_TEMPLATE[caso] && approved.has(repeat)) return repeat;
   const pick = intento === 2 ? picks.plantilla2 : intento >= 3 ? picks.plantilla3 : null;
   const same = (a: string | null, b: string | null) => a !== null && b !== null && (a === b || (SALUDOS.has(a) && SALUDOS.has(b)));
   if (pick && FOLLOW_UP_TEMPLATES.includes(pick) && (SALUDOS.has(pick) || approved.has(pick))) {
