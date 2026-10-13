@@ -436,7 +436,7 @@ Reglas de UI:
   intento, 12-oct-2026, `docs/seguimientos.md` §23). No va en el Detalle del contacto. Horas en la hora del cliente según su lada, de
   7:00 a 21:00 todos los días; plantillas hasta las 19:00. Código: `followup-pill.tsx`, `lib/followups/`.
   Plantillas propias por caso (3-oct-2026, textos del dueño TAL CUAL): `seg_precio`, `seg_informacion`, `seg_valorar`,
-  `seg_medidas`, `seg_asesor`, `seg_objecion`, `seg_info_duda` (3-oct, 2.º intento de solo información) y `seg_medidas_2` (12-oct,
+  `seg_medidas`, `seg_asesor`, `seg_objecion`, `seg_info_duda` (3-oct, 2.º intento de solo información) y `seg_medidas_recordatorio` (12-oct,
   recordatorio si `seg_medidas` ya salió y lo dejó en visto; `docs/seguimientos.md` §24); en `seg_precio`, `seg_informacion`, `seg_info_duda`, `seg_valorar` y `seg_medidas` `{{1}}` = CUÁNDO escribió el cliente ("anoche",
   "antier"…, `lib/followups/time-phrase.ts`), no el nombre, también en el 📄 y el 🕒. Salen solo ya aprobadas por Meta.
 - **Búsqueda en los chats (29-sep-2026, decisión del dueño):** una **lupa** entre el buscador y el

@@ -54,12 +54,12 @@ describe("templateForAttempt", () => {
     expect(templateForAttempt("cotizacion_sin_respuesta", 3, "hola_buenas_tardes", approved)).toBe("hola_buenas_tardes");
     expect(templateForAttempt("faltan_medidas", 1, null, approved)).toBeNull();
   });
-  it("faltan medidas: si seg_medidas ya salió y no contestó, el recordatorio seg_medidas_2 (aunque el lector elija otra); sin aprobar, como antes", () => {
-    const all = new Set(["seg_medidas", "seg_medidas_2", "seg_info_duda"]);
-    expect(templateForAttempt("faltan_medidas", 3, "hola_buenas_tardes", all, { plantilla3: "seg_info_duda" }, "seg_medidas")).toBe("seg_medidas_2");
-    expect(templateForAttempt("faltan_medidas", 2, "hola_buenas_tardes", all, {}, "seg_medidas")).toBe("seg_medidas_2");
+  it("faltan medidas: si seg_medidas ya salió y no contestó, el recordatorio seg_medidas_recordatorio (aunque el lector elija otra); sin aprobar, como antes", () => {
+    const all = new Set(["seg_medidas", "seg_medidas_recordatorio", "seg_info_duda"]);
+    expect(templateForAttempt("faltan_medidas", 3, "hola_buenas_tardes", all, { plantilla3: "seg_info_duda" }, "seg_medidas")).toBe("seg_medidas_recordatorio");
+    expect(templateForAttempt("faltan_medidas", 2, "hola_buenas_tardes", all, {}, "seg_medidas")).toBe("seg_medidas_recordatorio");
     expect(templateForAttempt("faltan_medidas", 2, "hola_buenas_tardes", all, {}, null)).toBe("seg_medidas");
-    expect(templateForAttempt("faltan_medidas", 3, "hola_buenas_tardes", all, { plantilla3: "seg_medidas_2" }, "seg_medidas_2")).toBe("hola_buenas_tardes");
+    expect(templateForAttempt("faltan_medidas", 3, "hola_buenas_tardes", all, { plantilla3: "seg_medidas_recordatorio" }, "seg_medidas_recordatorio")).toBe("hola_buenas_tardes");
     expect(templateForAttempt("faltan_medidas", 3, "hola_buenas_tardes", new Set(["seg_medidas", "seg_info_duda"]), { plantilla3: "seg_info_duda" }, "seg_medidas")).toBe("seg_info_duda");
     expect(templateForAttempt("cotizacion_sin_respuesta", 3, "hola_buenas_tardes", all, {}, "seg_valorar")).toBe("hola_buenas_tardes");
   });
