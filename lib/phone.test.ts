@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { canonicalPhone, countryFromPhone, foreignLadaLine, nationalSearchPrefixes, normalizePhone, phoneLookupVariants, phoneParts } from "./phone";
+import { canonicalPhone, countryFromPhone, foreignLadaLabel, foreignLadaLine, nationalSearchPrefixes, normalizePhone, phoneLookupVariants, phoneParts } from "./phone";
 
 describe("normalizePhone", () => {
   it.each(["+525512345678", "+12345678", "+123456789012345"])(
@@ -106,5 +106,16 @@ describe("foreignLadaLine", () => {
     expect(foreignLadaLine("US", null)).toBeNull();
     expect(foreignLadaLine("PR", null)).toBeNull();
     expect(foreignLadaLine("ES", null)).toBe("Lada del número del cliente: España, fuera de México.");
+  });
+});
+
+describe("foreignLadaLabel", () => {
+  it("el país con su lada, solo fuera de México y de la +1", () => {
+    expect(foreignLadaLabel("AR", "54")).toBe("Argentina (+54)");
+    expect(foreignLadaLabel("ES", null)).toBe("España");
+    expect(foreignLadaLabel("MX", "52")).toBeNull();
+    expect(foreignLadaLabel("US", "1")).toBeNull();
+    expect(foreignLadaLabel("DO", null)).toBeNull();
+    expect(foreignLadaLabel(null, null)).toBeNull();
   });
 });

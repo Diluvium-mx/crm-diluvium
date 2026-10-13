@@ -101,17 +101,27 @@ export function countryFromPhone(e164: string | null | undefined): string | null
 const regionNamesEs = new Intl.DisplayNames(["es"], { type: "region" });
 
 /**
- * Línea del contexto del CRM para el Agente IA (6-oct-2026, caso +34 que se cotizó como si
- * fuera de México): solo cuando la lada NO es de México. Con lada mexicana, sin teléfono
- * (Instagram) o sin país reconocido, null y el contexto queda igual que antes.
- * La lada +1 (Estados Unidos, Canadá, el Caribe) cuenta como de México: muchos clientes que
- * viven aquí usan un número de allá (decisión del dueño, 10-oct-2026). Si de verdad está
- * fuera, el Goal lo nota por lo que dice el cliente.
+ * País de una lada de FUERA de México («Argentina (+54)»), o null. Con lada mexicana, sin
+ * teléfono (Instagram) o sin país reconocido, null. La lada +1 (Estados Unidos, Canadá, el
+ * Caribe) cuenta como de México: muchos clientes que viven aquí usan un número de allá
+ * (decisión del dueño, 10-oct-2026). La usan el contexto del Agente IA, los workflows de
+ * inicio y los seguimientos (sin seguimientos a otros países, 13-oct-2026).
  */
-export function foreignLadaLine(iso: string | null | undefined, code: string | null | undefined): string | null {
+export function foreignLadaLabel(iso: string | null | undefined, code: string | null | undefined): string | null {
   if (!iso || iso === "MX") return null;
   const calling = code ?? (isSupportedCountry(iso) ? getCountryCallingCode(iso) : null);
   if (calling === "1") return null;
   const name = regionNamesEs.of(iso) ?? iso;
-  return `Lada del número del cliente: ${name}${code ? ` (+${code})` : ""}, fuera de México.`;
+  return `${name}${code ? ` (+${code})` : ""}`;
+}
+
+/**
+ * Línea del contexto del CRM para el Agente IA (6-oct-2026, caso +34 que se cotizó como si
+ * fuera de México): solo cuando la lada NO es de México (`foreignLadaLabel`); si no, null y el
+ * contexto queda igual que antes. Si un +1 de verdad está fuera, el Goal lo nota por lo que
+ * dice el cliente.
+ */
+export function foreignLadaLine(iso: string | null | undefined, code: string | null | undefined): string | null {
+  const label = foreignLadaLabel(iso, code);
+  return label ? `Lada del número del cliente: ${label}, fuera de México.` : null;
 }
