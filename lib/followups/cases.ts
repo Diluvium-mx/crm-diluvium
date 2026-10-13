@@ -203,7 +203,7 @@ export const PICKER_TIME_PHRASE_TEMPLATES: ReadonlySet<string> = new Set([
  * mensaje de un chat de medidas iba a repetir la pregunta o a salir con «¿Le quedó alguna duda?»). Solo ya aprobado.
  */
 export const CASE_TEMPLATE_REPEAT: Readonly<Partial<Record<FollowUpCase, string>>> = {
-  faltan_medidas: "seg_medidas_2",
+  faltan_medidas: "seg_medidas_recordatorio",
 };
 
 /** Si la plantilla del caso todavía no está aprobada: otra propia antes que la puerta. */
@@ -225,7 +225,7 @@ export const FOLLOW_UP_TEMPLATES: readonly string[] = [
   "seg_info_duda",
   "seg_valorar",
   "seg_medidas",
-  "seg_medidas_2",
+  "seg_medidas_recordatorio",
   "seg_asesor",
   "seg_objecion",
 ];
