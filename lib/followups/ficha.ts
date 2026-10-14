@@ -72,9 +72,10 @@ function block(v: unknown, max: number): string | null {
 }
 
 /**
- * Fecha pedida que ya pasó por un año mal puesto: el lector a veces escribía el año anterior («2025-10-10» leyendo el
- * 14-oct-2026: 23 de 148 fechas del 1 al 14-oct, auditoría F4) y el seguimiento se descartaba por «ya pasó». Si con
- * el año de hoy (o el siguiente, de diciembre a enero) cae en el rango permitido, se toma esa; si no, queda como vino.
+ * Fecha pedida que ya pasó por un año mal puesto: el lector escribía años viejos («2024-10-14» o «2025-10-10» leyendo
+ * en octubre de 2026: 58 de 148 fechas del 1 al 14-oct, en 47 chats, auditoría F4) y el seguimiento se descartaba por
+ * «ya pasó». Si con el año de hoy (o el siguiente, de diciembre a enero) cae en el rango permitido, se toma esa; si no,
+ * queda como vino.
  */
 function withThisYear(d: LocalDate, year: number, hoy: string, limite: string): LocalDate {
   for (const y of [year, year + 1]) {
