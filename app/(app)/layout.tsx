@@ -5,7 +5,7 @@ import { auth } from "@/lib/auth";
 import { requireActiveMembership } from "@/lib/auth/active-organization";
 import { roleAllows } from "@/lib/auth/permissions";
 import { isTeamRole, ROLE_LABELS } from "@/lib/team/rules";
-import { NavItem } from "./_components/nav-item";
+import { NavItem, type NavLink } from "./_components/nav-item";
 import { SignOutButton } from "./_components/sign-out-button";
 import { UserMenu } from "./_components/user-menu";
 import { MobileNav } from "./_components/mobile-nav";
@@ -22,13 +22,14 @@ import { leerFotoClima } from "@/lib/clima/store";
 // "Dashboard" va primero y es el destino al entrar (/inicio). La Bandeja
 // conserva su URL histórica /dashboard. "Reportes" (/reports, sin página) se
 // reemplazó por el Dashboard.
-const NAV_ITEMS = [
-  { label: "Dashboard", href: "/inicio" },
-  { label: "Bandeja", href: "/dashboard" },
-  { label: "Embudo", href: "/embudo" },
-  { label: "Mensajes rápidos", href: "/mensajes-rapidos" },
+// Cada pestaña lleva su ícono animado (_components/nav-icons.tsx).
+const NAV_ITEMS: NavLink[] = [
+  { label: "Dashboard", href: "/inicio", icon: "dashboard" },
+  { label: "Bandeja", href: "/dashboard", icon: "bandeja" },
+  { label: "Embudo", href: "/embudo", icon: "embudo" },
+  { label: "Mensajes rápidos", href: "/mensajes-rapidos", icon: "mensajes-rapidos" },
   // De qué anuncios de Meta llegan los clientes (todos lo ven: la tarjeta del chat lleva aquí).
-  { label: "Anuncios", href: "/anuncios" },
+  { label: "Anuncios", href: "/anuncios", icon: "anuncios" },
 ];
 
 export default async function AppLayout({
@@ -60,20 +61,20 @@ export default async function AppLayout({
   const navItems = [
     ...NAV_ITEMS,
     ...(role && roleAllows(role, "aiConfig", "read")
-      ? [{ label: "Agente IA", href: "/agente-ia" }]
+      ? [{ label: "Agente IA", href: "/agente-ia", icon: "agente-ia" } satisfies NavLink]
       : []),
     ...(role && roleAllows(role, "workflow", "update")
-      ? [{ label: "Automatización", href: "/automatizacion" }]
+      ? [{ label: "Automatización", href: "/automatizacion", icon: "automatizacion" } satisfies NavLink]
       : []),
     // Lo que sigue después de la compra (Opinión; 7-oct-2026, docs/opiniones.md). Todos
     // los roles. Distinta de Agente IA › Seguimientos.
     ...(role && roleAllows(role, "opinion", "read")
-      ? [{ label: "Seguimientos", href: "/seguimientos" }]
+      ? [{ label: "Seguimientos", href: "/seguimientos", icon: "seguimientos" } satisfies NavLink]
       : []),
     // Configuración va al final y es solo de owner/admin. "Mi cuenta" vive en el
     // menú del usuario, abajo del sidebar, para todos.
     ...(role && roleAllows(role, "settings", "read")
-      ? [{ label: "Configuración", href: "/configuracion" }]
+      ? [{ label: "Configuración", href: "/configuracion", icon: "configuracion" } satisfies NavLink]
       : []),
   ];
   const roleLabel = role && isTeamRole(role) ? ROLE_LABELS[role] : "";
@@ -95,7 +96,7 @@ export default async function AppLayout({
         <div className="sticky top-0 flex h-dvh flex-col">
           <nav aria-label="Principal" className="flex min-h-0 flex-col gap-1 overflow-y-auto p-3">
             {navItems.map((item) => (
-              <NavItem key={item.href} href={item.href} label={item.label} />
+              <NavItem key={item.href} {...item} />
             ))}
           </nav>
           <div className="mt-auto border-t border-white/10 p-3">

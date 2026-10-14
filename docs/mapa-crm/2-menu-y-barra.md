@@ -14,8 +14,8 @@ Lo que se ve en todas las pantallas.
 
 | # | Nombre oficial | Qué hace | Quién lo ve |
 |---|---|---|---|
-| 1 | **Menú lateral** | Lista de pestañas: Dashboard, Bandeja, Embudo, Mensajes rápidos, Anuncios, Agente IA, Automatización, **Seguimientos** (desde el 8-oct-2026), Configuración. | Todos (Configuración solo Owner y Admin) |
-| 2 | **Pestaña activa** | La pestaña en la que estás, resaltada con una barra blanca. | Todos |
+| 1 | **Menú lateral** | Lista de pestañas: Dashboard, Bandeja, Embudo, Mensajes rápidos, Anuncios, Agente IA, Automatización, **Seguimientos** (desde el 8-oct-2026), Configuración. Desde el 14-oct-2026 cada pestaña lleva su **ícono**, que hace un gesto corto **una sola vez** al pasar el cursor (o al llegar con Tab), como en Zernio: Dashboard, los cuadros aparecen uno por uno · Bandeja, brincan los puntitos de «escribiendo» · Embudo, cae una gota · Mensajes rápidos, se dibuja el rayo · Anuncios, se sacude el megáfono · Agente IA, parpadean las chispas · Automatización, se traza la conexión · Seguimientos, gira la estrella · Configuración, gira el engrane. Con «Reducir movimiento» en la computadora no se mueven. | Todos (Configuración solo Owner y Admin) |
+| 2 | **Pestaña activa** | La pestaña en la que estás, resaltada con una barra blanca (a la izquierda de su ícono). | Todos |
 | 3 | **Logo Diluvium** | Solo identifica la marca; no es botón. | Todos |
 | 4 | **Correo de la sesión** | Con qué cuenta entraste. | Todos |
 | 5 | **Tema claro / oscuro** (píldora) | Interruptor en forma de píldora (1-oct-2026): la bolita muestra el **sol** en tema claro, con nubes que flotan despacio, o la **luna** en tema oscuro, con estrellas que titilan; lo del otro tema no se ve. Al tocarlo, la bolita se desliza y el tema nuevo se extiende **en círculo desde el botón** por toda la pantalla. Se recuerda en esa computadora. Con «Reducir movimiento» en la computadora cambia sin animaciones. | Todos |
@@ -41,8 +41,9 @@ mismo menú en un cajón; ver [Versión móvil](3.10-version-movil.md#310-versi�
 - "En Menú › (1) menú lateral, pon Anuncios antes de Mensajes rápidos."
 - "En Menú › (4) correo de la sesión, muestra mi nombre en vez del correo."
 - "En Menú › (14) cinta del clima, que corra más despacio."
+- "En Menú › (1) menú lateral, cambia el ícono de Anuncios por uno de cohete."
 
-<sub>Para Code: `app/(app)/layout.tsx` (sidebar y barra), `nav-item.tsx`, `user-menu.tsx`, `sign-out-button.tsx` y
+<sub>Para Code: `app/(app)/layout.tsx` (sidebar y barra), `nav-item.tsx`, `nav-icons.tsx` (íconos del menú; su movimiento en `app/globals.css` › «Íconos del menú»), `user-menu.tsx`, `sign-out-button.tsx` y
 `sign-out-confirm.tsx` (globo 10–12), `components/theme-toggle.tsx` (píldora), `theme-circle-transition.ts` (círculo),
 `theme-sky-effects.ts` («Cielo»); estilos en `app/globals.css` › «Interruptor de tema»; aviso de actualización (13): `update-notice.tsx`, `lib/version/` y
 `app/api/version/route.ts`; cinta del clima (14): `clima-cinta.tsx`, `lib/clima/` (worker: `sync.ts`; foto en Redis) y
