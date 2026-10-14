@@ -23,7 +23,8 @@ import { zoneForPhone } from "./timezone";
 import { caseOn, nextStep, slotOf, type FollowUpTable } from "./tabla";
 import { loadFollowUpTable } from "./tabla-store";
 import { logError } from "@/lib/log/safe-error";
-import { hasUnresolvedAgentError } from "@/lib/ai/runtime/agent-error";
+// Con otro nombre: el guardián de logs toma todo lo que termina en «Error» como un error crudo.
+import { hasUnresolvedAgentError as tarjetaDeErrorSinAtender } from "@/lib/ai/runtime/agent-error";
 import { foreignLadaLabel } from "@/lib/phone";
 
 export type FollowUpRow = typeof followUps.$inferSelect;
@@ -633,8 +634,8 @@ async function advance(row: FollowUpRow, now: Date, deps: FollowUpRuntimeDeps): 
   // Tarjeta «El agente no pudo responder» sin atender (14-oct-2026, auditoría F2): el Agente IA no contestaría
   // lo que el cliente responda al seguimiento (salieron 9 así en 14 días; 2 clientes se quedaron sin respuesta).
   // Igual que la pausa a mano: queda como sugerencia para el vendedor.
-  const agentError = real && !row.autoAprobado && (await hasUnresolvedAgentError(organizationId, conversationId));
-  const modo = (signals.manualPause || agentError) && !row.autoAprobado ? "sugerido" : "automatico";
+  const tarjetaAbierta = real && !row.autoAprobado && (await tarjetaDeErrorSinAtender(organizationId, conversationId));
+  const modo = (signals.manualPause || tarjetaAbierta) && !row.autoAprobado ? "sugerido" : "automatico";
   // Real: una sugerencia no sale sola; la presenta el aviso al vendedor. Si se volvió sugerencia después de
   // programarse, se guarda así (antes se quedaba vencida en silencio y el aviso nunca la presentaba).
   if (real && modo === "sugerido") {
@@ -642,7 +643,7 @@ async function advance(row: FollowUpRow, now: Date, deps: FollowUpRuntimeDeps): 
     const presentarAt = presentAtFor(row.dueAt ?? now, now, signals.table.vendedores);
     if (!(await save(row, { modo: "sugerido", presentarAt }, now))) return null;
     await announce(db, organizationId, conversationId, contactId);
-    return `${row.intento}.º queda como sugerencia (${agentError ? "tarjeta de error sin atender" : "Agente IA en pausa a mano"})`;
+    return `${row.intento}.º queda como sugerencia (${tarjetaAbierta ? "tarjeta de error sin atender" : "Agente IA en pausa a mano"})`;
   }
   // Por dónde sale AHORA (la ventana pudo cerrarse desde que se programó). Sin borrador, no hay texto; en
   // real, un borrador que repite una pregunta o el precio del chat (fichas de antes del 3-oct) tampoco.
