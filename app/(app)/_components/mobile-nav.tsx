@@ -9,7 +9,7 @@ import { useEffect, useState } from "react";
 import { createPortal } from "react-dom";
 import { usePathname } from "next/navigation";
 import { Menu } from "lucide-react";
-import { NavItem } from "./nav-item";
+import { NavItem, type NavLink } from "./nav-item";
 import { UserMenu } from "./user-menu";
 import { CloseX } from "@/components/ui/close-x";
 
@@ -17,7 +17,7 @@ export function MobileNav({
   items,
   user,
 }: {
-  items: { label: string; href: string }[];
+  items: NavLink[];
   user: { name: string; email: string; roleLabel: string };
 }) {
   const [open, setOpen] = useState(false);
@@ -74,7 +74,7 @@ export function MobileNav({
               </div>
               <div className="flex min-h-0 flex-1 flex-col gap-1 overflow-y-auto p-3">
                 {items.map((item) => (
-                  <NavItem key={item.href} href={item.href} label={item.label} />
+                  <NavItem key={item.href} {...item} />
                 ))}
               </div>
               <div className="mt-auto border-t border-white/10 p-3 pb-[max(0.75rem,env(safe-area-inset-bottom))]">
