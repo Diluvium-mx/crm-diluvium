@@ -6,6 +6,7 @@ import { db } from "@/lib/db";
 import { channels, contacts, conversations, followUps, messages, templates, user } from "@/lib/db/schema";
 import { listFunnelStages } from "@/lib/contacts/funnel-stages";
 import { firstNameOf } from "@/lib/templates/first-name";
+import { hasUnresolvedAgentError } from "@/lib/ai/runtime/agent-error";
 import { foreignLadaLabel } from "@/lib/phone";
 import { endsWithClientAck } from "./acuse";
 import { ALLOWED_FROM, ALLOWED_TO, CASE_RULES, templateForAttempt, type FollowUpCase } from "./cases";
@@ -41,6 +42,8 @@ export type FollowUpView = {
   /** «Editar mensaje»: plantilla que eligió un vendedor (sale con la ventana cerrada). */
   plantillaVendedor: string | null;
   modo: "automatico" | "sugerido";
+  /** Sugerido porque hay una tarjeta «El agente no pudo responder» sin atender (14-oct-2026), no por pausa a mano. */
+  errorAbierto: boolean;
   presentarAt: string | null;
   autoAprobado: boolean;
   dueSetBy: "sistema" | "vendedor";
@@ -95,6 +98,7 @@ async function loadView(organizationId: string, conversationId: string, statuses
   }
   const caso = f.caso as FollowUpCase;
   const table = await loadFollowUpTable(organizationId);
+  const errorAbierto = f.status === "programado" && f.modo === "sugerido" && (await hasUnresolvedAgentError(organizationId, f.conversationId));
   return {
     estado: "activo",
     id: f.id,
@@ -115,6 +119,7 @@ async function loadView(organizationId: string, conversationId: string, statuses
     mensajeVendedor: f.mensajeVendedor,
     plantillaVendedor: f.plantillaVendedor,
     modo: f.modo as FollowUpView["modo"],
+    errorAbierto,
     presentarAt: f.presentarAt?.toISOString() ?? null,
     autoAprobado: f.autoAprobado,
     dueSetBy: f.dueSetBy as FollowUpView["dueSetBy"],
