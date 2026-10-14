@@ -28,6 +28,7 @@ import { generateMessageThumbnails, THUMBNAIL_MAX_ATTEMPTS } from "@/lib/messagi
 import { HISTORY_MEDIA_PER_SWEEP, MEDIA_MAX_ATTEMPTS, MEDIA_SWEEP_DAYS } from "@/lib/messaging/media-keys";
 import { expireUnconfirmedSends } from "@/lib/messaging/send";
 import { DEAD_LETTER_PAYLOAD_DAYS, sweepExpiredDeadLetterPayloads } from "@/lib/messaging/dead-letter-retention";
+import { PROCESSED_RETENTION_DAYS, purgeExpiredProcessed, purgeExpiredQuarantine } from "@/lib/messaging/webhook-retention";
 import {
   enqueueMediaDownload,
   INBOUND_QUEUE,
@@ -70,12 +71,9 @@ import { actualizarClima } from "@/lib/clima/sync";
 const SWEEP_EVERY_MS = 60_000;
 const SWEEP_MIN_AGE_MS = 60_000;
 const SWEEP_MAX_ATTEMPTS = DEAD_LETTER_ATTEMPTS;
-// Retención de webhook_events PROCESADOS: traen datos crudos del cliente
-// (teléfono, nombre, texto, URLs de media). Ya aplicados a las tablas del CRM,
-// se conservan 30 días para reprocesar/depurar y luego se borran. Los NO
-// procesados (dead-letter) siguen disponibles para replay 30 días; después se
+// Retención de webhook_events: procesados 7 días y cuarentena 30 (webhook-retention.ts).
+// Los NO procesados (dead-letter) siguen disponibles para replay 30 días; después se
 // VACÍA su payload y la fila se queda para los conteos (dead-letter-retention.ts).
-const WEBHOOK_RETENTION_DAYS = 30;
 
 const provider = messagingProvider();
 // Mensajes programados (A6): cola diferida + su parte del barrido.
@@ -302,27 +300,10 @@ async function sweep() {
     );
   }
 
-  // Retención: borra los eventos ya procesados de más de 30 días.
-  const purged = await db
-    .delete(webhookEvents)
-    .where(
-      and(
-        isNotNull(webhookEvents.processedAt),
-        lt(webhookEvents.processedAt, new Date(Date.now() - WEBHOOK_RETENTION_DAYS * 86_400_000)),
-      ),
-    )
-    .returning({ id: webhookEvents.id });
-  if (purged.length) console.info(`[worker] barrido: ${purged.length} webhook_event(s) procesados purgados (>${WEBHOOK_RETENTION_DAYS} d)`);
-  // La cuarentena también caduca a los 30 días: son datos crudos de una cuenta
-  // ajena a este entorno; si en 30 días nadie la liberó, no era de aquí.
-  await db
-    .delete(webhookEvents)
-    .where(
-      and(
-        isNotNull(webhookEvents.quarantinedAt),
-        lt(webhookEvents.quarantinedAt, new Date(Date.now() - WEBHOOK_RETENTION_DAYS * 86_400_000)),
-      ),
-    );
+  // Retención: una tanda por barrido de procesados (>7 d) y de cuarentena (>30 d).
+  const purged = await purgeExpiredProcessed(new Date());
+  if (purged) console.info(`[worker] barrido: ${purged} webhook_event(s) procesados purgados (>${PROCESSED_RETENTION_DAYS} d)`);
+  await purgeExpiredQuarantine(new Date());
   // Dead-letter: a los 30 días se vacía el payload crudo (datos personales); la fila
   // se queda para el monitor y los conteos, y el replay la salta.
   const emptied = await sweepExpiredDeadLetterPayloads(new Date());
