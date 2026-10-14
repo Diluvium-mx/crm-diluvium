@@ -3,18 +3,23 @@
 // Ítem del sidebar (compartido por todas las secciones). El activo se resalta con
 // fondo más claro, texto en negritas, una barra blanca a la izquierda y una sombra
 // leve que lo "levanta"; los demás se iluminan al pasar el cursor (data-glow="light":
-// luz blanca sobre navy, app/globals.css). Transiciones suaves; con "reducir
-// movimiento" el cambio es inmediato.
+// luz blanca sobre navy, app/globals.css). Cada pestaña lleva su ícono, que hace su
+// gesto al pasar el cursor (nav-icons.tsx). Transiciones suaves; con "reducir
+// movimiento" el cambio es inmediato y los íconos no se mueven.
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import { NavIcon, type NavIconName } from "./nav-icons";
 
-export function NavItem({ href, label }: { href: string; label: string }) {
+export type NavLink = { label: string; href: string; icon: NavIconName };
+
+export function NavItem({ href, label, icon }: NavLink) {
   const pathname = usePathname();
   const active = pathname === href || pathname.startsWith(`${href}/`);
   return (
     <Link
       href={href}
       data-glow="light"
+      data-nav-item
       aria-current={active ? "page" : undefined}
       className={`group flex items-center rounded-md px-3 py-2 text-sm transition-[background-color,color,box-shadow] duration-200 ease-out motion-reduce:transition-none ${
         active
@@ -28,7 +33,8 @@ export function NavItem({ href, label }: { href: string; label: string }) {
           active ? "scale-y-100 opacity-100" : "scale-y-50 opacity-0 group-hover:opacity-40"
         }`}
       />
-      {label}
+      <NavIcon name={icon} />
+      <span className="ml-2.5">{label}</span>
     </Link>
   );
 }
