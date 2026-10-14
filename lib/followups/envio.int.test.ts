@@ -200,6 +200,31 @@ describe.skipIf(!TEST_DATABASE_URL)("Seguimientos en modo REAL (proveedor falso)
     expect(sent).toHaveLength(1);
   });
 
+  it("tarjeta «El agente no pudo responder» sin atender al llegar la hora: no sale, se vuelve sugerencia y deja el aviso", async () => {
+    await reading();
+    const r = await row();
+    expect(r.modo).toBe("automatico");
+    await db.insert(s.aiAgentNotices).values({ id: "n_error", organizationId: ORG, conversationId: CONV, messageId: "m_cliente", kind: "agente_error", body: "El agente no pudo responder", createdAt: new Date(T0.getTime() + 5 * MIN) });
+    const at = new Date(r.dueAt!.getTime() + MIN);
+    await store.followUpSweepOnce(at, { provider });
+    await store.followUpSweepOnce(at, { provider });
+    expect(sent).toHaveLength(0);
+    const after = await row();
+    expect(after).toMatchObject({ status: "programado", intento: 1, modo: "sugerido" });
+    await store.followUpSweepOnce(new Date(Math.max(at.getTime(), after.presentarAt!.getTime()) + MIN), { provider });
+    expect(sent).toHaveLength(0);
+    const notices = await db.select().from(s.aiAgentNotices).where(d.eq(s.aiAgentNotices.kind, "seguimiento"));
+    expect(notices).toHaveLength(1);
+  });
+
+  it("tarjeta de error ya atendida: el seguimiento sale normal", async () => {
+    await reading();
+    const r = await row();
+    await db.insert(s.aiAgentNotices).values({ id: "n_error", organizationId: ORG, conversationId: CONV, messageId: "m_cliente", kind: "agente_error", body: "El agente no pudo responder", createdAt: new Date(T0.getTime() + 5 * MIN), resolvedAt: new Date(T0.getTime() + 6 * MIN), resolution: "reintentar" });
+    await store.followUpSweepOnce(new Date(r.dueAt!.getTime() + MIN), { provider });
+    expect(sent).toHaveLength(1);
+  });
+
   it("el cliente contesta un seguimiento que salió con pausa automática: vuelve el Agente IA con el contexto", async () => {
     const pausedAt = new Date(T0.getTime() + MIN);
     await db.update(s.conversations).set({ agentState: "pausado_humano", agentStateChangedAt: pausedAt }).where(d.eq(s.conversations.id, CONV));
