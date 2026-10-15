@@ -2290,6 +2290,18 @@ describe.skipIf(!TEST_DATABASE_URL)("runtime del Agente IA (Postgres real)", () 
     expect(await contact()).toMatchObject({ stage: "compra", stageChangedBy: "vendedor" });
   });
 
+  it("15-oct-2026: «Quiero más información» desde Inbox → el agente contesta y el contacto pasa a Prospecto aunque el modelo no mueva la etapa", async () => {
+    expect((await contact()).stage).toBe("inbox");
+    await msg({ direction: "in", body: "Quiero más información", at: ago(20_000) });
+    expect((await run.runAgent(JOB, makeDeps({ brain: ["Claro, es una barrera que se coloca en la entrada."] }).deps)).kind).toBe("sent");
+    expect(await contact()).toMatchObject({ stage: "prospecto", stageChangedBy: "agente" });
+    // Si el modelo lo lleva más adelante, gana la más adelantada.
+    await db.update(s.contacts).set({ stage: "inbox", stageChangedBy: null }).where(eq(s.contacts.id, CONTACT));
+    await msg({ direction: "in", body: "cuánto cuesta", at: new Date() });
+    expect((await run.runAgent(JOB, makeDeps({ brain: ["$5,500."], toolCalls: [{ toolName: "mover_etapa", input: { etapa: "interesado" } }] }).deps)).kind).toBe("sent");
+    expect((await contact()).stage).toBe("interesado");
+  });
+
   it("Columnas del Embudo: el bot ve las etapas VIGENTES con su regla (sin tocar el Goal), mueve a una etapa nueva y una borrada ya no existe para él", async () => {
     const fs = await import("@/lib/contacts/funnel-stages");
     const interesado = (await fs.listFunnelStages(ORG)).find((x) => x.key === "interesado")!;
