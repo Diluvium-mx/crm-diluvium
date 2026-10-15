@@ -720,7 +720,7 @@ function ActivePanel({ followUp, onClose, onChanged, onAnticipar, onRevertir }: 
           <p className="rounded-md border border-amber-400/60 bg-amber-50 px-2 py-1 text-xs text-amber-900 dark:bg-amber-500/10 dark:text-amber-200">
             {f.autoAprobado
               ? "Saldrá solo a su hora (lo aprobó un vendedor)."
-              : `No sale solo: el Agente IA está en pausa a mano en este chat.${f.presentarAt ? ` Se le recuerda al vendedor: ${dateLabel(f.presentarAt)}.` : ""}`}
+              : `No sale solo: ${f.errorAbierto ? "el Agente IA no pudo responder en este chat y espera que lo revises." : "el Agente IA está en pausa a mano en este chat."}${f.presentarAt ? ` Se le recuerda al vendedor: ${dateLabel(f.presentarAt)}.` : ""}`}
           </p>
         )}
 

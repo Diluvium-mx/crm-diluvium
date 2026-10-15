@@ -574,7 +574,8 @@ migración **0059**; la 0058 es la de los costos de WhatsApp de otra rama, que d
   seguimiento, se quita la pausa (Historial: «El cliente contestó un seguimiento: el agente volvió»), y el Agente IA
   recibe la línea «[SEGUIMIENTO] Le escribimos por… Lo que buscamos…» (`lib/followups/reply.ts`). La pausa a mano solo se
   quita con «Que salga solo».
-- **Sugerencia** (pausa a mano): no sale sola; a su hora de presentarse deja un aviso 🤖 (tarjeta amarilla).
+- **Sugerencia** (pausa a mano o tarjeta «El agente no pudo responder» sin atender, §26): no sale sola; a su hora de
+  presentarse deja un aviso 🤖 (tarjeta amarilla).
 - **Avisos al vendedor** (tarjeta amarilla, tipo `seguimiento`): pago pendiente 24 h después del 2.º intento sin
   respuesta; asesor sin respuesta al terminar. **Frío** al terminar la espera tras el último intento (solo si salió de verdad).
 - **Errores:** lo que falla queda en el intento («no salió · motivo» en la burbuja 🤖) y en la burbuja del mensaje; nunca
@@ -917,6 +918,22 @@ Contra los 18 casos: 12 de los 13 que quedaron en objeción habrían sido «no s
 (cerraba con una pregunta) seguiría en objeción hasta que el cliente cerró en la siguiente. Sin banco con modelos
 (regla del 9-oct): se verifica en producción con una lectura de los chats después de unos días.
 Pendiente aparte (punto 2, para después): un solo recordatorio suave ~30 días después en lugar de no seguir.
+
+## 26. Tarjeta de error sin atender: el seguimiento queda como sugerencia (14-oct-2026)
+
+**Origen:** auditoría del 14-oct (lectura de producción). Cuando el modelo falla, el chat queda con la tarjeta «El
+agente no pudo responder» y el Agente IA ya no contesta ahí hasta que un vendedor elige Reintentar o Apagar
+(`lib/ai/runtime/agent-error.ts`). El seguimiento no revisaba esa tarjeta: del 1 al 14-oct salieron 9 seguimientos a
+chats bloqueados, 4 clientes contestaron y 2 se quedaron sin ninguna respuesta (el Agente IA no podía contestar y la
+tarjeta era de días antes).
+
+**Regla (OK del dueño, 14-oct):** al llegar la hora, si el chat tiene una tarjeta de error sin atender (la misma regla
+del Agente IA, `hasUnresolvedAgentError`), el seguimiento **no sale**: se guarda como **sugerencia** y a su hora de
+presentarse deja el aviso 🤖 al vendedor, igual que con la pausa a mano. «Que salga solo» lo deja salir. La ventana
+de la píldora dice «No sale solo: el Agente IA no pudo responder en este chat y espera que lo revises.»
+
+De paso: un seguimiento automático que al llegar su hora encuentra la pausa a mano también se guarda como sugerencia
+(antes se quedaba vencido en silencio, sin aviso). Código: `advance()` en `lib/followups/store.ts`.
 
 ## Fuentes
 
