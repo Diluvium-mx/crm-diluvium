@@ -571,6 +571,24 @@ export function ChatThread({
     return () => observer.disconnect();
   }, []);
 
+  // Una imagen o un video crece al terminar de cargar, DESPUÉS de bajar al fondo: sin esto
+  // empujaba los mensajes de abajo fuera de la vista y parecía que no habían salido (15-oct-2026,
+  // Nova Salon: la Tabla tapaba las 2 burbujas que la seguían). `load` no burbujea: se escucha
+  // en captura sobre el historial.
+  useEffect(() => {
+    const el = scrollRef.current;
+    if (!el) return;
+    const onMediaLoaded = () => {
+      if (nearBottomRef.current) el.scrollTop = el.scrollHeight;
+    };
+    el.addEventListener("load", onMediaLoaded, true);
+    el.addEventListener("loadedmetadata", onMediaLoaded, true);
+    return () => {
+      el.removeEventListener("load", onMediaLoaded, true);
+      el.removeEventListener("loadedmetadata", onMediaLoaded, true);
+    };
+  }, []);
+
   // Salto a una coincidencia de la búsqueda: si el mensaje es viejo se cargan páginas
   // anteriores hasta tenerlo y luego se centra en el historial. Espera a que haya llegado
   // la primera página de ESTA conversación (al abrir el chat llegan juntas).
