@@ -19,7 +19,7 @@ import { getModel } from "@/lib/ai/catalog";
 import { modelAvailability } from "@/lib/ai/provider";
 import { listFunnelStages } from "@/lib/contacts/funnel-stages";
 import { moveStageForward } from "@/lib/contacts/stage";
-import { furthestStage, stageLabel, stageWhenClientWrites } from "@/lib/contacts/stages";
+import { stageLabel } from "@/lib/contacts/stages";
 import { DETALLE_KEY, detallePorOf, updateContactQualification } from "@/lib/contacts/qualification";
 import { computeCostUsd } from "@/lib/ai/pricing";
 import { setQuoteByAgent } from "./actions";
@@ -318,12 +318,8 @@ async function readConversation(organizationId: string, conversationId: string, 
       }
       // Venta cerrada solo si un vendedor contestó al comprobante del cliente
       // (venta-cerrada.ts); si no, a lo más "Cerca de compra".
-      // El cliente escribió y sigue en la Entrada: pasa a la que sigue aunque el modelo no lo
-      // diga (15-oct-2026, dueño; también con el Agente IA apagado o pausado).
-      const salida = rows.some((m) => m.direction === "in") ? stageWhenClientWrites(stages, contact.stage) : null;
-      const pedida = furthestStage(stages, [parsed.etapa, salida].filter((k): k is string => k !== null));
-      const etapa = allowedAgentStage(stages, pedida, vendorAnsweredProof(rows));
-      if (pedida && etapa !== pedida) parsed.ignored.push(ventaCerradaHeld(pedida));
+      const etapa = allowedAgentStage(stages, parsed.etapa, vendorAnsweredProof(rows));
+      if (parsed.etapa && etapa !== parsed.etapa) parsed.ignored.push(ventaCerradaHeld(parsed.etapa));
       if (etapa) {
         // La etapa que puso un vendedor manda: sin nada en el chat DESPUÉS de su cambio,
         // el lector no tiene con qué avanzarla (lo de antes ya lo vio el vendedor).

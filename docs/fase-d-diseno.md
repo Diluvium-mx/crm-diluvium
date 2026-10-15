@@ -670,13 +670,6 @@ conservan `fijar_cotizacion` y las `wf_<slug>` de los 9 workflows de media.
   cambio del Agente IA (`stage_changed_by = agente`) y dispara lo mismo que hoy dispara un cambio de
   etapa (workflows "al entrar a esta etapa"). La etapa es el dato del que la parte (c) sacará el
   modelo (Luna / Sonnet 5); la parte (c) no se construye ahora.
-  **Entrada → la que sigue, fija del CRM (15-oct-2026, dueño):** el que solo pedía información por el
-  anuncio («Quiero más información») y ya no contestaba se quedaba en Inbox: el modelo no contaba su
-  primer mensaje como «contesta por primera vez». Ahora, si el contacto está en la columna de Entrada y
-  el cliente escribió, el CRM agrega `mover_etapa` a la columna que sigue (hoy Prospecto) en cada
-  respuesta del agente (`lib/ai/runtime/run.ts`) y en el lector de segundo plano (`lector.ts`, también
-  con el agente apagado o pausado). Regla pura: `stageWhenClientWrites` (`lib/contacts/stages.ts`);
-  nunca salta a Cerca de compra ni a Venta cerrada. No cambia el Goal ni las instrucciones del modelo.
 - **`aviso_vendedor(motivo, detalle, …)`** — motivos `cotejar_deposito | cliente_pide_humano |
   comprobante_dudoso`. Se muestra como el aviso 🤖 de hoy en la Bandeja y el pop-up del Embudo; nunca
   le llega al cliente; **no pausa al agente**. Con `cotejar_deposito` y `comprobante_dudoso` el agente

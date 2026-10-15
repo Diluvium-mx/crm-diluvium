@@ -169,20 +169,6 @@ describe.skipIf(!TEST_DATABASE_URL)("Lector en segundo plano (Postgres real)", (
     expect(await contact()).toMatchObject({ stage: "cerca_compra", stageChangedBy: "agente" });
   });
 
-  it("el cliente solo pidió información y ya no contestó (15-oct-2026): sale de Inbox a Prospecto aunque el modelo no mueva la etapa", async () => {
-    await msg("in", "Quiero más información", ago(30 * MIN));
-    await msg("out", "Claro, es una barrera que se coloca en la entrada…", ago(29 * MIN));
-    expect((await contact()).stage).toBe("inbox");
-    await lector.runLector(ORG, CONV, deps({}).deps);
-    expect(await contact()).toMatchObject({ stage: "prospecto", stageChangedBy: "agente" });
-  });
-
-  it("solo salientes (el vendedor escribió primero y nadie contestó): se queda en Inbox", async () => {
-    await msg("out", "Hola, te escribo de Diluvium", ago(30 * MIN));
-    await lector.runLector(ORG, CONV, deps({}).deps);
-    expect((await contact()).stage).toBe("inbox");
-  });
-
   it("nunca regresa la etapa (solo hacia adelante)", async () => {
     await db.update(s.contacts).set({ stage: "compra", stageChangedBy: "agente" }).where(d.eq(s.contacts.id, CONTACT));
     await msg("in", "Gracias", ago(5 * MIN));
@@ -237,8 +223,7 @@ describe.skipIf(!TEST_DATABASE_URL)("Lector en segundo plano (Postgres real)", (
       await until(2);
       expect(got).toEqual([
         { type: "lector.status", contactId: CONTACT, conversationId: CONV, phase: "leyendo", cambios: 0 },
-        // 2 del Detalle + la etapa: el cliente escribió y sale de Inbox (15-oct-2026).
-        { type: "lector.status", contactId: CONTACT, conversationId: CONV, phase: "listo", cambios: 3 },
+        { type: "lector.status", contactId: CONTACT, conversationId: CONV, phase: "listo", cambios: 2 },
       ]);
       got.length = 0;
       await msg("in", "¿Sigues?", ago(5 * MIN));

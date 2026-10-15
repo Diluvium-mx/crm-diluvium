@@ -112,21 +112,6 @@ export function furthestStage(stages: readonly FunnelStage[], keys: readonly str
   return best?.key ?? null;
 }
 
-/**
- * El cliente escribió y el contacto sigue en la columna de Entrada → la columna que sigue
- * (15-oct-2026, dueño: el que solo pidió información por el anuncio y ya no contestó se
- * quedaba en Inbox; la regla «cuando contesta por primera vez» no contaba su primer
- * mensaje). Lo pone el CRM, no el modelo. null si el contacto no está en la Entrada o si
- * la que sigue es de Cerca de compra o Venta cerrada (escribir no alcanza para eso).
- */
-export function stageWhenClientWrites(stages: readonly FunnelStage[], current: string | null): string | null {
-  const ordered = sortStages(stages);
-  const i = ordered.findIndex((s) => s.role === "entrada");
-  if (i < 0 || ordered[i].key !== current) return null;
-  const next = ordered[i + 1];
-  return next && next.role === null ? next.key : null;
-}
-
 // Clave estable a partir del nombre ("Cerca de compra" → "cerca_de_compra"); si ya
 // existe, sufijo numérico. Nunca cambia después aunque se renombre la etapa.
 export function stageKeyFromName(name: string, existingKeys: readonly string[]): string {

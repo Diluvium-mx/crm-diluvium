@@ -48,7 +48,6 @@ import { loadBotOptions } from "./options";
 import { pauseForHumanReply } from "./pause";
 import { brainCandidates, brainModelForStage, handoffStage, impliedStage, type ModelSlot, type StageSignal } from "./model-by-stage";
 import { loadContactStage } from "@/lib/contacts/stage";
-import { stageWhenClientWrites } from "@/lib/contacts/stages";
 import { listFunnelStages } from "@/lib/contacts/funnel-stages";
 import { complementNote, partialNote, saidText, withoutClosingQuestions } from "./complement";
 import { closingQuestion, isBareAck, onlyRepeatsLastQuestion, repeatNote, withoutUnansweredRepeat } from "./unanswered";
@@ -902,10 +901,6 @@ export async function runAgent(job: { organizationId: string; conversationId: st
     // DESPUÉS de las burbujas.
     const { res: brainRes, out, ignored } = used;
     const toolCalls = [...used.toolCalls];
-    // El cliente escribió y el agente lo atiende: sale de la Entrada aunque el modelo no lo
-    // mueva (15-oct-2026, dueño). Solo avanza; gana la más adelantada (prepareActions).
-    const salida = stageWhenClientWrites(stages, stageAtStart);
-    if (salida) toolCalls.push({ kind: "etapa", etapa: salida });
     if (ignored.length) console.warn(`[agente] ${conv.id}: herramientas ignoradas: ${ignored.join("; ")}`);
     // ── Respuesta que no se pudo completar (5-oct-2026, dueño: «nunca de los nuncas») ──
     // Texto interno escrito como mensaje («[tool call] …», «*(sin acción adicional…)*»), una
