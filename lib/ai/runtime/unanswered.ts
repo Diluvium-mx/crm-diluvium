@@ -81,14 +81,19 @@ export function onlyRepeatsLastQuestion(bubbles: readonly string[], lastAsked: s
 // Acuse puro del cliente: «ok», «va», «gracias», un emoji o un sticker. Ahí volver a hacer la
 // pregunta pendiente es lo correcto (Goal, PREGUNTA SIN CONTESTAR: «vuelve a ella cuando el
 // cliente ya no esté haciendo dudas»). «Sí» NO es acuse: puede ser la respuesta a la pregunta.
-const ACK_WORDS = /^(ok|oka|okey|okay|oki|okis|ok\s+gracias|va|vale|sale|sale\s+gracias|gracias|muchas\s+gracias|mil\s+gracias|perfecto|perfecto\s+gracias|de\s+acuerdo|entendido|enterado|listo|bien|muy\s+bien|excelente|gracias\s+por\s+la\s+informaci[oó]n)$/u;
+// Por palabras (14-oct-2026, auditoría: «Muy bien gracias», «Okey, gracias», «Ok grasias», «oki gracias» y
+// «Dale muchas gracias» no entraban en la lista de frases y dejaron 5 tarjetas «no pudo responder» en 14 días):
+// lleva al menos una palabra de acuse y todas las demás son de cortesía.
+const ACK_CORE = new Set(["ok", "oka", "okey", "okay", "oki", "okis", "va", "vale", "dale", "sale", "gracias", "grasias", "graciaz", "grax", "perfecto", "excelente", "entendido", "enterado", "listo", "bien", "acuerdo", "agradezco", "igualmente"]);
+const ACK_COURTESY = new Set(["muy", "muchas", "mil", "por", "la", "el", "de", "le", "lo", "se", "a", "y", "usted", "informacion", "información", "info", "buenas", "buenos", "buen", "noches", "tardes", "dias", "días", "dia", "día", "saludos", "bendiciones", "que", "este", "esté"]);
 export function isBareAck(message: { body: string | null; attachments: readonly { type: string }[] }): boolean {
   const others = message.attachments.filter((a) => a.type !== "sticker");
   if (others.length) return false;
   const text = (message.body ?? "").normalize("NFC").toLocaleLowerCase("es-MX").replace(/[\s.,;:!¡¿?…]+/gu, " ").trim();
   if (!text) return message.attachments.length > 0; // solo un sticker
   if (!/[\p{L}\p{N}]/u.test(text)) return true; // solo emojis
-  return ACK_WORDS.test(text.replace(/[^\p{L}\p{N}\s]/gu, "").replace(/\s+/g, " ").trim());
+  const words = text.replace(/[^\p{L}\p{N}\s]/gu, "").split(/\s+/).filter(Boolean);
+  return words.some((w) => ACK_CORE.has(w)) && words.every((w) => ACK_CORE.has(w) || ACK_COURTESY.has(w));
 }
 
 /** Nota para pedir otra respuesta cuando la primera solo repetía la pregunta (run.ts). */

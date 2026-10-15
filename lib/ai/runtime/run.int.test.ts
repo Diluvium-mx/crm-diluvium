@@ -1392,6 +1392,21 @@ describe.skipIf(!TEST_DATABASE_URL)("runtime del Agente IA (Postgres real)", () 
     expect(await notices()).toEqual([]);
   });
 
+  it("acuse (14-oct): a «Muy bien gracias» el modelo contesta EN BLANCO: no sale nada, sin tarjeta ni segundo intento", async () => {
+    await msg({ direction: "in", body: "El lunes mido", at: ago(300_000) });
+    await msg({ direction: "out", body: "El lunes me comparte el ancho de cada entrada.", at: ago(290_000), source: "ai_agent" });
+    await msg({ direction: "in", body: "Muy bien gracias", at: ago(120_000) });
+    const { deps, calls } = makeDeps({ brain: ["", "no debe llamarse"] });
+    expect(await run.runAgent(JOB, deps)).toEqual({ kind: "sent", bubbles: 0 });
+    expect(calls.filter((c) => c.kind === "cerebro")).toHaveLength(1);
+    expect(await notices()).toEqual([]);
+  });
+
+  it("acuse (14-oct): en blanco a una PREGUNTA del cliente sigue siendo respuesta vacía", async () => {
+    await msg({ direction: "in", body: "Ok gracias, ¿y cuánto tarda?", at: ago(120_000) });
+    expect(await run.runAgent(JOB, makeDeps({ brain: [""] }).deps)).toEqual({ kind: "failed", reason: "vacia" });
+  });
+
   it("acuse (6-oct, C2): «nada que agregar» a una PREGUNTA del cliente sigue siendo respuesta vacía", async () => {
     await msg({ direction: "in", body: "Vale, ¿y cuánto tarda?", at: ago(120_000) });
     expect(await run.runAgent(JOB, makeDeps({ brain: [brainMod.NOTHING_TOKEN] }).deps)).toEqual({ kind: "failed", reason: "vacia" });
@@ -3006,7 +3021,8 @@ describe.skipIf(!TEST_DATABASE_URL)("runtime del Agente IA (Postgres real)", () 
 
   it("red contra el silencio: si ninguno escribe, nada al cliente y aviso sin_respuesta (no pausa); el mensaje queda atendido (sin llamadas de más)", async () => {
     await dosModelos();
-    await msg({ direction: "in", body: "muchas gracias", at: ago(20_000) });
+    // No un acuse: a «muchas gracias» callar es correcto desde el 14-oct (prueba de acuse de arriba).
+    await msg({ direction: "in", body: "me interesa", at: ago(20_000) });
     const { deps, calls } = makeDeps({ brain: ["", ""], toolCalls: [{ toolName: "mover_etapa", input: { etapa: "prospecto" } }] });
     expect(await run.runAgent(JOB, deps)).toEqual({ kind: "sent", bubbles: 0 });
     expect(brainIds(calls)).toEqual(["gpt-5.6-luna", "gpt-5.6-luna"]);
