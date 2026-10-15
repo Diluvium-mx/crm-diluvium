@@ -18,7 +18,7 @@ import { modelAvailability, PROVIDER_META } from "@/lib/ai/provider";
 import { hasUnresolvedAgentError, holdAgentForReview, recordAgentError, supersedeAgentErrors } from "./agent-error";
 import { agentErrorBody, bothModelsFailedBody, classifyModelError, EMPTY_RESPONSE_INFO, sendErrorBody, sendErrorMotive, type ModelErrorInfo } from "./model-errors";
 import { cleanAdMessages } from "./ad-cleaner";
-import { parseBrainOutput } from "./brain";
+import { parseBrainOutput, type BrainOutput } from "./brain";
 import { loadBrainSystem } from "./brain-system";
 import { answerRunsOf, captionRunOf, crmContextFor, executeActions, loadAgentTools, noteForVendor, prepareActions, quoteSetByVendor, runsThatSend, setQuoteByAgent, type ActionContext, type ActionPhase, type ActionPlan, type ExecutedActions, type StartWorkflow } from "./actions";
 import { maxPerChatContextFor } from "@/lib/workflows/max-per-chat";
@@ -642,6 +642,9 @@ export async function runAgent(job: { organizationId: string; conversationId: st
     // entonces, además del complemento de un workflow, el Agente IA puede no contestar
     // escribiendo NOTHING_TOKEN (Goal: PASAR A HUMANO).
     const acuse = pending.length > 0 && pending.every((m) => isBareAck(m));
+    // Ante un acuse, la respuesta en blanco vale lo mismo que «nada que agregar» (14-oct-2026, dueño): antes contaba
+    // como falla y dejaba la tarjeta «El agente no pudo responder», que bloquea el chat (5 de 10 en 14 días).
+    const quietAck = (out: BrainOutput) => acuse && (out.kind === "nothing" || out.kind === "empty");
     const attempt = async (model: CatalogModel, avanzaA: string | null = null, nota: string | null = null, foreignRetry = false, internalRetry = false): Promise<BrainOk | BrainFail> => {
       tried.add(model.id);
       const messages = await messagesFor(model, avanzaA, nota);
@@ -682,7 +685,7 @@ export async function runAgent(job: { organizationId: string; conversationId: st
       // "Nada que agregar" solo vale como complemento de un workflow; fuera de eso es respuesta vacía.
       // En el complemento, una respuesta en blanco también (con el Goal real de staging, Luna y
       // Sonnet a veces contestan vacío en vez de escribir la señal): el workflow ya contestó.
-      if (out.kind !== "reply" && !complementOf && !(acuse && out.kind === "nothing") && valid.length === 0) {
+      if (out.kind !== "reply" && !complementOf && !quietAck(out) && valid.length === 0) {
         await recordAiUsage({ ...base, stage: "cerebro", modelId: res.modelId, provider: res.provider, usage: res.usage, latencyMs, outcome: "error", error: `respuesta_vacia (${res.finishReason})` });
         return { ok: false, model, info: EMPTY_RESPONSE_INFO };
       }
@@ -767,7 +770,7 @@ export async function runAgent(job: { organizationId: string; conversationId: st
         const second = await attempt(model2, target);
         // Red contra el silencio: el Modelo 2 no escribió nada, nadie le ha contestado al cliente
         // y el Modelo 1 sí escribió → sale la del Modelo 1 (igual que si el Modelo 2 fallara).
-        const secondMute = second.ok && !(acuse && second.out.kind === "nothing") && (await isSilent(second)) && !(await isSilent(used)) && !(await alreadyAnswered());
+        const secondMute = second.ok && !quietAck(second.out) && (await isSilent(second)) && !(await isSilent(used)) && !(await alreadyAnswered());
         if (second.ok && secondMute) {
           await recordAiUsage({ ...usageOf(second), outcome: "sin_texto", error: `traspaso sin texto; sale la respuesta de ${used.model.id}` });
           console.warn(`[agente] ${conv.id}: ${model2.label} contestó sin texto en el traspaso; sale la respuesta de ${used.model.label}`);
@@ -798,7 +801,7 @@ export async function runAgent(job: { organizationId: string; conversationId: st
     // con la respuesta confirmada). Nunca un texto fijo del CRM.
     let silencio: "contestado" | "acuse" | "sin_respuesta" | null = null;
     if (await isSilent(used)) {
-      if (acuse && used.out.kind === "nothing") {
+      if (quietAck(used.out)) {
         silencio = "acuse";
         console.info(`[agente] ${conv.id}: el cliente solo confirmó o agradeció y no hay nada que agregar; no sale nada`);
       } else if (await alreadyAnswered()) {
