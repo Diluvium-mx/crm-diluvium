@@ -69,6 +69,12 @@ describe("pregunta sin contestar, parte 2 (5-oct-2026)", () => {
     expect(isBareAck(m(null, ["audio"]))).toBe(false);
   });
 
+  it("isBareAck por palabras (14-oct-2026): los agradecimientos reales que dejaron tarjeta sí; con «sí», «claro» o una duda no", () => {
+    const m = (body: string) => ({ body, attachments: [] });
+    for (const t of ["Muy bien gracias", "Okey, gracias", "Ok grasias", "oki gracias", "Dale muchas gracias", "Gracias, buenas noches", "Muchas gracias por la información", "De acuerdo, saludos"]) expect(isBareAck(m(t)), t).toBe(true);
+    for (const t of ["Si gracias", "Claro", "Buenas tardes", "Ok y cuánto cuesta", "Gracias, el lunes mido", "Correcto quedo en espera de que me contacten"]) expect(isBareAck(m(t)), t).toBe(false);
+  });
+
   it("repeatNote menciona la pregunta y pide no repetirla", () => {
     const note = repeatNote(PREGUNTA);
     expect(note).toContain(PREGUNTA);
