@@ -409,7 +409,9 @@ Al terminar: `unset RB MB $(env | grep -o '^RCLONE_CONFIG_[A-Z_]*')`.
 cliente) para no perder nada y poder reprocesar. No se guarda para siempre (barrido del worker, cada
 minuto):
 
-- **Procesados:** se borran a los **30 días** de `processed_at`.
+- **Procesados:** se borran a los **7 días** de `processed_at` (antes 30; se bajó el 14-oct-2026 porque con
+  30 días la tabla llegaba a ~200 MB y el disco de Postgres, de 500 MB, se llenaba). Se borran por tandas de
+  2,000 en cada barrido. Lógica: `lib/messaging/webhook-retention.ts`.
 - **Cuarentena** (cuenta no permitida en el entorno): se borran a los **30 días** de `quarantined_at`.
 - **Dead-letter** (agotó sus intentos o formato no reconocido): a los **30 días** de `dead_lettered_at`
   se **vacía el payload** (queda `{"_vaciado": "<fecha>"}`). La fila se queda —id, evento, intentos,
