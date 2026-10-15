@@ -49,10 +49,12 @@ export const lectorLockKey = (conversationId: string) => `lector-lock:${conversa
 
 export type LectorMessage = ThreadMessage & { source: string; at: Date };
 
+// Con año (14-oct-2026, auditoría F4): sin él, el lector escribía fechas pedidas del año anterior.
 const TIME = new Intl.DateTimeFormat("es-MX", {
   timeZone: "America/Mazatlan",
   day: "2-digit",
   month: "short",
+  year: "numeric",
   hour: "2-digit",
   minute: "2-digit",
   hour12: false,
@@ -386,7 +388,7 @@ export function neutralizeLector(text: string): string {
 export function clientLine(text: string): string {
   return text
     .replace(/\s*[\r\n\u2028\u2029]+\s*/g, " / ")
-    .replace(/\[(\s*\d{1,2}\s+\p{L}+\.?\s+\d{1,2}:\d{2}\s*)\]/gu, "($1)");
+    .replace(/\[(\s*\d{1,2}\s+\p{L}+\.?(?:\s+\d{4},?)?\s+\d{1,2}:\d{2}\s*)\]/gu, "($1)");
 }
 
 function isPdf(a: MessageAttachment): boolean {

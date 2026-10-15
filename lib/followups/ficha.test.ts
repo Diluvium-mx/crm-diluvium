@@ -56,6 +56,17 @@ describe("parseFicha", () => {
     expect(ignored).toHaveLength(4);
   });
 
+  it("año viejo por error (auditoría F4, 14-oct-2026): se toma con el año de hoy o el siguiente si cae en el rango", () => {
+    const ignored: string[] = [];
+    expect(parseFicha({ caso: "pidio_fecha", fecha_pedida: "2025-10-10" }, today, ignored)?.fechaPedida).toBe("2026-10-10");
+    expect(parseFicha({ caso: "pidio_fecha", fecha_pedida: "2024-10-12" }, today, ignored)?.fechaPedida).toBe("2026-10-12");
+    // Con el año de hoy ya pasó y con el siguiente queda muy lejos: se descarta como antes.
+    expect(parseFicha({ caso: "pidio_fecha", fecha_pedida: "2025-10-04" }, today, ignored)?.fechaPedida).toBeNull();
+    expect(ignored).toEqual(["seguimiento.fecha_pedida: 2025-10-04 ya pasó"]);
+    const diciembre = { zone: today.zone, now: new Date("2026-12-28T18:00:00Z") };
+    expect(parseFicha({ caso: "pidio_fecha", fecha_pedida: "2026-01-03" }, diciembre, [])?.fechaPedida).toBe("2027-01-03");
+  });
+
   it("fecha de hoy y hora sin cero ('9:30'); sin fecha, la hora no sirve", () => {
     const ignored: string[] = [];
     expect(parseFicha({ caso: "pidio_fecha", fecha_pedida: "2026-10-05", hora_pedida: "9:30" }, today, ignored)).toMatchObject({ fechaPedida: "2026-10-05", horaPedida: "09:30" });

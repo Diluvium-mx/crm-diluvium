@@ -4,7 +4,7 @@
 // datos duros del CRM (el modelo propone, el código confirma).
 import { z } from "zod";
 import { FOLLOW_UP_CASES, isFollowUpCase, MAX_ASKED_DAYS, type FollowUpCase } from "./cases";
-import { addDays, formatLocalDate, isHhmm, localParts, parseLocalDate } from "./time";
+import { addDays, formatLocalDate, isHhmm, localParts, parseLocalDate, type LocalDate } from "./time";
 
 export const MAX_FICHA_LINE = 240;
 export const MAX_BORRADOR = 600;
@@ -72,6 +72,20 @@ function block(v: unknown, max: number): string | null {
 }
 
 /**
+ * Fecha pedida que ya pasó por un año mal puesto: el lector escribía años viejos («2024-10-14» o «2025-10-10» leyendo
+ * en octubre de 2026: 58 de 148 fechas del 1 al 14-oct, en 47 chats, auditoría F4) y el seguimiento se descartaba por
+ * «ya pasó». Si con el año de hoy (o el siguiente, de diciembre a enero) cae en el rango permitido, se toma esa; si no,
+ * queda como vino.
+ */
+function withThisYear(d: LocalDate, year: number, hoy: string, limite: string): LocalDate {
+  for (const y of [year, year + 1]) {
+    const c = parseLocalDate(formatLocalDate({ ...d, y }));
+    if (c && formatLocalDate(c) >= hoy && formatLocalDate(c) <= limite) return c;
+  }
+  return d;
+}
+
+/**
  * Valida la ficha. `today` = fecha del cliente al leer: la fecha pedida debe ser de hoy en
  * adelante y a menos de 60 días; si no, se descarta (con su motivo en `ignored`).
  */
@@ -82,10 +96,11 @@ export function parseFicha(raw: unknown, today: { zone: string; now: Date }, ign
   if (r.caso != null && !caso) ignored.push(`seguimiento.caso: ${String(r.caso)} no existe`);
   let fechaPedida: string | null = null;
   if (typeof r.fecha_pedida === "string" && r.fecha_pedida.trim()) {
-    const d = parseLocalDate(r.fecha_pedida.trim());
+    const parsed = parseLocalDate(r.fecha_pedida.trim());
     const p = localParts(today.now, today.zone);
     const hoy = formatLocalDate(p);
     const limite = formatLocalDate(addDays(p, MAX_ASKED_DAYS));
+    const d = parsed && formatLocalDate(parsed) < hoy ? withThisYear(parsed, p.y, hoy, limite) : parsed;
     if (!d) ignored.push(`seguimiento.fecha_pedida: ${r.fecha_pedida} no es una fecha`);
     else if (formatLocalDate(d) < hoy) ignored.push(`seguimiento.fecha_pedida: ${r.fecha_pedida} ya pasó`);
     else if (formatLocalDate(d) > limite) ignored.push(`seguimiento.fecha_pedida: ${r.fecha_pedida} a más de ${MAX_ASKED_DAYS} días`);
