@@ -8,6 +8,7 @@ import {
   roleKey,
   stageKeyFromName,
   stagesInstructions,
+  stageWhenClientWrites,
   validateStageSet,
   VENTA_CERRADA_RULE,
   type FunnelStage,
@@ -43,6 +44,19 @@ describe("etapas del Embudo (puro)", () => {
     expect(furthestStage(stages, ["prospecto", "compra", "interesado"])).toBe("compra");
     expect(furthestStage(stages, ["ganado"])).toBeNull();
     expect(furthestStage(stages, ["ganado", "prospecto"])).toBe("prospecto");
+  });
+
+  it("el cliente escribió (15-oct-2026): de la Entrada a la columna que sigue, y solo de ahí", () => {
+    expect(stageWhenClientWrites(stages, "inbox")).toBe("prospecto");
+    expect(stageWhenClientWrites(stages, "prospecto")).toBeNull();
+    expect(stageWhenClientWrites(stages, "compra")).toBeNull();
+    expect(stageWhenClientWrites(stages, null)).toBeNull();
+    // Sigue el ORDEN de las columnas, no la clave.
+    const reordered = stages.map((s) => ({ ...s, position: s.key === "interesado" ? 2 : s.key === "prospecto" ? 3 : s.position }));
+    expect(stageWhenClientWrites(reordered, "inbox")).toBe("interesado");
+    // Escribir no alcanza para Cerca de compra ni Venta cerrada.
+    const short = stages.filter((s) => s.key !== "prospecto" && s.key !== "interesado");
+    expect(stageWhenClientWrites(short, "inbox")).toBeNull();
   });
 
   it("clave estable a partir del nombre, sin acentos y única", () => {
