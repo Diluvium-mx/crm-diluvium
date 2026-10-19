@@ -952,6 +952,24 @@ pendiente es la foto y eligió el texto B (con la frase de tiempo).
   aunque ya se haya pedido la foto en el chat (es el recordatorio, no una pregunta nueva; `followUpTemplatesBlock`
   en `lib/ai/runtime/lector-core.ts`). Mientras Meta no la aprueba, todo sigue como antes.
 
+## 28. Gemela de Utilidad de medidas: `seg_medidas_cotizacion` (19-oct-2026)
+
+**Origen:** revisión del 16 al 19-oct. Meta no entrega una plantilla de marketing a quien ya recibió muchas promociones de
+todas las empresas (131049): 11 de ~1,390 seguimientos desde el 1-oct, 6 % en el 3.er intento. Las 14 plantillas de
+seguimiento son de Marketing; el tope no aplica a las de Utilidad. El dueño aprobó una versión de Utilidad de
+`seg_medidas` (la más enviada). La primera alta, `seg_medidas_solicitud`, salió como Marketing (el formulario de
+Plantillas trae Marketing por defecto) y no se usa; la nueva es `seg_medidas_cotizacion`, elegida como Utilidad.
+
+- **Plantilla:** `seg_medidas_cotizacion`, Utilidad, es_MX, `{{1}}` = frase de tiempo (en `TIME_PHRASE_TEMPLATES`):
+  «Hola, le escribo de parte del equipo de Diluvium para dar seguimiento a la cotización de compuerta que nos solicitó
+  {{1}}. Para indicarle el tamaño correcto necesitamos el ancho de su entrada. ¿Ya pudo medirla?». Título en el
+  selector: «Faltan medidas (utilidad)».
+- **Regla** (`UTILITY_TWIN` en `cases.ts`, `templateForAttempt`): cuando sale `seg_medidas` (del caso o elegida por el
+  lector), sale la gemela si ya está aprobada. Para no repetirse cuenta como la misma (después de la gemela viene el
+  recordatorio). `approvedTemplateNames` (`store.ts`) solo la cuenta si Meta la aprobó **como UTILITY**: si la
+  reclasifica a Marketing, vuelve a salir `seg_medidas` sola.
+- **Vigilar:** que Meta la apruebe como Utilidad y, después, los 131049 en «Faltan medidas».
+
 ## Fuentes
 
 - [M1] Meta, enviar mensajes / ventana de servicio: https://developers.facebook.com/documentation/business-messaging/whatsapp/messages/send-messages

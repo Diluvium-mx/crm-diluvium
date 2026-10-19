@@ -290,6 +290,28 @@ describe.skipIf(!TEST_DATABASE_URL)("Seguimientos en la base (modo ensayo)", () 
     expect(v?.templateText).toBe("Referente a la compuerta anti-inundaciones que nos comentó antier. Tuvo oportunidad de medir la entrada? Para saber que tamaño de compuerta le queda?");
   });
 
+  it("gemela de utilidad (19-oct-2026): seg_medidas_cotizacion sale en lugar de seg_medidas solo si Meta la aprobó COMO UTILIDAD", async () => {
+    const COTIZACION = "Hola, le escribo de parte del equipo de Diluvium para dar seguimiento a la cotización de compuerta que nos solicitó {{1}}. Para indicarle el tamaño correcto necesitamos el ancho de su entrada. ¿Ya pudo medirla?";
+    await db.insert(s.templates).values([
+      { id: "tpl_m", organizationId: ORG, channelId: CH, name: "seg_medidas", language: "es_MX", body: "Referente a la compuerta anti-inundaciones que nos comentó {{1}}. Tuvo oportunidad de medir la entrada? Para saber que tamaño de compuerta le queda?", status: "APPROVED", category: "MARKETING" },
+      { id: "tpl_c", organizationId: ORG, channelId: CH, name: "seg_medidas_cotizacion", language: "es_MX", body: COTIZACION, status: "APPROVED", category: "MARKETING" },
+      { id: "tpl_t", organizationId: ORG, channelId: CH, name: "hola_buenas_tardes", language: "es_MX", body: "Hola, buenas tardes.", status: "APPROVED" },
+    ]);
+    await db.update(s.conversations).set({ lastInboundAt: new Date(T0.getTime() - 2 * MIN) }).where(d.eq(s.conversations.id, CONV));
+    await reading();
+    // Meta la dejó en marketing: no sirve de nada, sale la original.
+    expect(await store.approvedTemplateNames(ORG)).not.toContain("seg_medidas_cotizacion");
+    await store.followUpSweepOnce(new Date((await rows())[0].dueAt!.getTime() + MIN));
+    expect((await rows())[0].templateName).toBe("seg_medidas");
+    // Aprobada como utilidad: al volver a programar sale la gemela, con la misma frase de tiempo.
+    await db.update(s.templates).set({ category: "UTILITY" }).where(d.eq(s.templates.id, "tpl_c"));
+    const v0 = await view.loadFollowUpView(ORG, CONV);
+    await view.changeFollowUpTime(ORG, v0!.id, new Date("2026-10-08T00:00:00Z"), USER, NOW);
+    const v = await view.loadFollowUpView(ORG, CONV);
+    expect(v?.templateName).toBe("seg_medidas_cotizacion");
+    expect(v?.templateText).toBe(COTIZACION.replace("{{1}}", "antier"));
+  });
+
   it("seguimiento del vendedor (3-oct-2026): cuenta como intento; el CRM programa el siguiente, no otro encima", async () => {
     // La parada fue el lunes 12:00; el vendedor le escribió el martes 11:40 (seguimiento suyo).
     const vendor = new Date(T0.getTime() + 23 * HOUR + 40 * MIN);

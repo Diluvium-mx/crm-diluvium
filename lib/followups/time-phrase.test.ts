@@ -54,6 +54,19 @@ describe("templateForAttempt", () => {
     expect(templateForAttempt("cotizacion_sin_respuesta", 3, "hola_buenas_tardes", approved)).toBe("hola_buenas_tardes");
     expect(templateForAttempt("faltan_medidas", 1, null, approved)).toBeNull();
   });
+  it("gemela de utilidad (19-oct-2026): seg_medidas_cotizacion en lugar de seg_medidas si está aprobada; cuenta como la misma para no repetir", () => {
+    const all = new Set(["seg_medidas", "seg_medidas_recordatorio", "seg_medidas_cotizacion", "seg_info_duda"]);
+    expect(templateForAttempt("faltan_medidas", 2, "hola_buenas_tardes", all, {}, null)).toBe("seg_medidas_cotizacion");
+    // El lector eligió seg_medidas en otro caso: también sale la gemela.
+    expect(templateForAttempt("sin_punto_claro", 2, "hola_buenas_tardes", all, { plantilla2: "seg_medidas" })).toBe("seg_medidas_cotizacion");
+    // Ya salió la gemela y no contestó: el recordatorio, como si hubiera salido seg_medidas.
+    expect(templateForAttempt("faltan_medidas", 3, "hola_buenas_tardes", all, {}, "seg_medidas_cotizacion")).toBe("seg_medidas_recordatorio");
+    expect(templateForAttempt("sin_punto_claro", 3, "hola_buenas_tardes", all, { plantilla3: "seg_medidas" }, "seg_medidas_cotizacion")).toBe("hola_buenas_tardes");
+    // Sin la gemela aprobada, todo como antes.
+    expect(templateForAttempt("faltan_medidas", 2, "hola_buenas_tardes", new Set(["seg_medidas"]), {}, null)).toBe("seg_medidas");
+    expect(TIME_PHRASE_TEMPLATES.has("seg_medidas_cotizacion")).toBe(true);
+  });
+
   it("faltan medidas: si seg_medidas ya salió y no contestó, el recordatorio seg_medidas_recordatorio (aunque el lector elija otra); sin aprobar, como antes", () => {
     const all = new Set(["seg_medidas", "seg_medidas_recordatorio", "seg_info_duda"]);
     expect(templateForAttempt("faltan_medidas", 3, "hola_buenas_tardes", all, { plantilla3: "seg_info_duda" }, "seg_medidas")).toBe("seg_medidas_recordatorio");
@@ -85,8 +98,8 @@ describe("templateForAttempt", () => {
     // Sin otra opción, sale la de la puerta
     expect(templateForAttempt("sin_punto_claro", 2, "hola_buenas_tardes", all, { plantilla2: "hola_buenas_tardes" }, "hola_buenos_dias")).toBe("hola_buenas_tardes");
   });
-  it("las 7 plantillas de caso: 5 con tiempo en {{1}} y 2 sin variable; además seg_foto_entrada (la elige el lector) con tiempo", () => {
+  it("las 7 plantillas de caso: 5 con tiempo en {{1}} y 2 sin variable; además seg_foto_entrada (la elige el lector) y la gemela seg_medidas_cotizacion con tiempo", () => {
     expect(new Set([...Object.values(CASE_TEMPLATE), "seg_informacion"])).toEqual(new Set(["seg_precio", "seg_informacion", "seg_info_duda", "seg_valorar", "seg_medidas", "seg_asesor", "seg_objecion"]));
-    expect([...TIME_PHRASE_TEMPLATES].sort()).toEqual(["seg_foto_entrada", "seg_info_duda", "seg_informacion", "seg_medidas", "seg_precio", "seg_valorar"]);
+    expect([...TIME_PHRASE_TEMPLATES].sort()).toEqual(["seg_foto_entrada", "seg_info_duda", "seg_informacion", "seg_medidas", "seg_medidas_cotizacion", "seg_precio", "seg_valorar"]);
   });
 });
