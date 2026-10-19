@@ -117,6 +117,29 @@ export function findInternalText(parts: readonly string[]): { text: string; reas
 // el CRM le pide otra respuesta al MISMO modelo UNA vez con esta nota (va en el contexto, no en el system: la
 // caché no cambia); si la nueva también trae texto interno, la tarjeta y la pausa de siempre. La nota no repite
 // el texto malo para no dárselo al modelo como ejemplo.
+// Parte limpia (19-oct-2026, dueño). Del 10 al 19-oct, 16 respuestas de GPT-5.6 Luna trajeron texto interno y
+// casi todas eran la misma: el cliente contesta «Sí» a «¿Usted tiene problemas de inundaciones?» y Luna escribe
+// «¿Hasta qué altura aproximada le llega el agua?» seguido de su llamada a actualizar_detalle como texto («[tool]»,
+// JSON, «multi_tool_use.parallel…»). El reintento salvó 13; en 3 la segunda respuesta también falló (o salió sin
+// texto) y el cliente se quedó sin nada (fin de semana del 16 al 19-oct: dos chats). La pregunta de arriba siempre
+// estaba bien: si todo lo interno viene DESPUÉS de un texto bueno, ese texto es lo que sale (run.ts, solo cuando el
+// reintento tampoco sirve). No aplica si lo interno nombra un workflow (wf_…): el texto pudo prometer un archivo que
+// no saldría. Los renglones de adorno del final («━━━━», «---») se quitan.
+const DECORATION_TAIL = /[\s─-╿*_=~-]+$/u;
+
+/**
+ * El texto para el cliente que va ANTES del primer renglón interno, o null si no hay (lo interno va primero, no hay
+ * nada interno, o lo interno nombra un workflow).
+ */
+export function cleanBeforeInternal(text: string): string | null {
+  const lines = text.split("\n");
+  const first = lines.findIndex((l) => internalTextReason(l) !== null);
+  if (first <= 0) return null;
+  if (/\bwf_[a-z0-9_]+/.test(lines.slice(first).join("\n"))) return null;
+  const clean = lines.slice(0, first).join("\n").replace(DECORATION_TAIL, "").trim();
+  return HAS_CONTENT.test(clean) ? clean : null;
+}
+
 export const INTERNAL_TEXT_RETRY_NOTE =
   "Tu respuesta anterior NO se le envió al cliente porque traía una nota interna escrita como texto (corchetes, «tool», el nombre de una herramienta, JSON, una nota para ti o para el sistema, o una palabra suelta sin sentido). Escribe otra vez tu respuesta solo con lo que el cliente debe leer. Si hace falta una acción (Detalle, cotización, etapa, aviso o un archivo), llama su herramienta en esta misma respuesta: no escribas que la vas a llamar.";
 
