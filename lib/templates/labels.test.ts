@@ -9,6 +9,7 @@ describe("títulos de las plantillas", () => {
     expect(templateTitle("seg_precio")).toBe("Precio sin respuesta");
     expect(templateTitle("daniel_precio")).toBe("Precio sin respuesta");
     expect(templateTitle("seg_medidas_recordatorio")).toBe("Faltan medidas (recordatorio)");
+    expect(templateTitle("seg_foto_entrada")).toBe("Foto de la entrada");
     expect(templateTitle("seg_info_duda")).toBe("¿Le quedó alguna duda?");
     expect(templateTitle("daniel_objecion")).toBe("Lo va a pensar");
     expect(templateTitle("seg_informacion")).toBe("Solo información");
@@ -47,6 +48,7 @@ describe("frase de tiempo en {{1}}", () => {
     expect(PICKER_TIME_PHRASE_TEMPLATES.has("daniel_precio")).toBe(true);
     expect(PICKER_TIME_PHRASE_TEMPLATES.has("daniel_objecion")).toBe(true);
     expect(PICKER_TIME_PHRASE_TEMPLATES.has("seg_precio")).toBe(true);
+    expect(TIME_PHRASE_TEMPLATES.has("seg_foto_entrada")).toBe(true);
     expect([...TIME_PHRASE_TEMPLATES].some((name) => name.startsWith("daniel_"))).toBe(false);
   });
 });

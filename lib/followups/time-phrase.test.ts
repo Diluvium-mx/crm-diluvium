@@ -63,6 +63,12 @@ describe("templateForAttempt", () => {
     expect(templateForAttempt("faltan_medidas", 3, "hola_buenas_tardes", new Set(["seg_medidas", "seg_info_duda"]), { plantilla3: "seg_info_duda" }, "seg_medidas")).toBe("seg_info_duda");
     expect(templateForAttempt("cotizacion_sin_respuesta", 3, "hola_buenas_tardes", all, {}, "seg_valorar")).toBe("hola_buenas_tardes");
   });
+  it("foto pendiente: el lector puede elegir seg_foto_entrada en el 2.º o 3.er intento en cuanto Meta la aprueba; sin aprobar, la puerta", () => {
+    const all = new Set(["seg_medidas", "seg_foto_entrada"]);
+    expect(templateForAttempt("faltan_medidas", 3, "hola_buenas_tardes", all, { plantilla3: "seg_foto_entrada" }, "seg_medidas")).toBe("seg_foto_entrada");
+    expect(templateForAttempt("sin_punto_claro", 2, "hola_buenas_tardes", all, { plantilla2: "seg_foto_entrada" })).toBe("seg_foto_entrada");
+    expect(templateForAttempt("sin_punto_claro", 2, "hola_buenas_tardes", new Set(["seg_medidas"]), { plantilla2: "seg_foto_entrada" })).toBe("hola_buenas_tardes");
+  });
   it("solo información: seg_info_duda; mientras Meta no la aprueba, seg_precio; seg_informacion solo si el lector la elige", () => {
     const all = new Set(["seg_precio", "seg_informacion"]);
     expect(templateForAttempt("solo_informacion", 2, "hola_buenas_tardes", new Set([...all, "seg_info_duda"]))).toBe("seg_info_duda");
@@ -79,8 +85,8 @@ describe("templateForAttempt", () => {
     // Sin otra opción, sale la de la puerta
     expect(templateForAttempt("sin_punto_claro", 2, "hola_buenas_tardes", all, { plantilla2: "hola_buenas_tardes" }, "hola_buenos_dias")).toBe("hola_buenas_tardes");
   });
-  it("las 7 plantillas: 5 con tiempo en {{1}} y 2 sin variable", () => {
+  it("las 7 plantillas de caso: 5 con tiempo en {{1}} y 2 sin variable; además seg_foto_entrada (la elige el lector) con tiempo", () => {
     expect(new Set([...Object.values(CASE_TEMPLATE), "seg_informacion"])).toEqual(new Set(["seg_precio", "seg_informacion", "seg_info_duda", "seg_valorar", "seg_medidas", "seg_asesor", "seg_objecion"]));
-    expect([...TIME_PHRASE_TEMPLATES].sort()).toEqual(["seg_info_duda", "seg_informacion", "seg_medidas", "seg_precio", "seg_valorar"]);
+    expect([...TIME_PHRASE_TEMPLATES].sort()).toEqual(["seg_foto_entrada", "seg_info_duda", "seg_informacion", "seg_medidas", "seg_precio", "seg_valorar"]);
   });
 });
