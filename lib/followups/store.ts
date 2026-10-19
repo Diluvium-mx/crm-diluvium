@@ -9,7 +9,7 @@ import { db } from "@/lib/db";
 import { aiConfig, changeHistory, channels, contactEntradas, contacts, conversations, followUps, messages, templates, type FollowUpAttemptLog } from "@/lib/db/schema";
 import { listFunnelStages } from "@/lib/contacts/funnel-stages";
 import type { FunnelStage } from "@/lib/contacts/stages";
-import { ALLOWED_FROM, ALLOWED_TO, CASE_RULES, isFollowUpCase, TEMPLATE_LATEST, TEMPLATE_SPACING_DAYS, templateForAttempt, timingCase, WAIT_AFTER_LAST_MS, type FollowUpCase, type TemplatePicks } from "./cases";
+import { ALLOWED_FROM, ALLOWED_TO, CASE_RULES, isFollowUpCase, TEMPLATE_LATEST, TEMPLATE_SPACING_DAYS, templateForAttempt, timingCase, UTILITY_TWIN, WAIT_AFTER_LAST_MS, type FollowUpCase, type TemplatePicks } from "./cases";
 import { finalCase, type FollowUpFicha, type HardSignals } from "./ficha";
 import { effectiveTotal, planAttempt, presentAtFor, templateFor, templateTimeOf, windowOpenAt, type AttemptPlan } from "./schedule";
 import { addDays, localMinutes, localParts, minutesOf, zonedInstant } from "./time";
@@ -127,13 +127,17 @@ export async function lastTemplateAt(organizationId: string, contactId: string, 
   return last === null ? null : new Date(last);
 }
 
-/** Plantillas que Meta ya aprobó (las del caso salen solo así; si no, la de respaldo). */
+/**
+ * Plantillas que Meta ya aprobó (las del caso salen solo así; si no, la de respaldo). Una gemela de utilidad
+ * (UTILITY_TWIN) solo cuenta si Meta la aprobó como UTILITY: en marketing no sirve de nada y saldría la original.
+ */
 export async function approvedTemplateNames(organizationId: string): Promise<Set<string>> {
   const rows = await db
-    .select({ name: templates.name })
+    .select({ name: templates.name, category: templates.category })
     .from(templates)
     .where(and(eq(templates.organizationId, organizationId), eq(templates.status, "APPROVED")));
-  return new Set(rows.map((r) => r.name));
+  const twins = new Set(Object.values(UTILITY_TWIN));
+  return new Set(rows.filter((r) => !twins.has(r.name) || r.category?.toUpperCase() === "UTILITY").map((r) => r.name));
 }
 
 type Signals = {
