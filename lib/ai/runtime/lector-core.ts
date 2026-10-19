@@ -202,7 +202,7 @@ borrador: el mensaje que se le mandaría, como lo escribiría la empresa en este
 - corto (1 o 2 renglones) y con el mismo trato del chat (tú o usted); SIN saludo al principio: el CRM antepone "Hola, buenos días / buenas tardes / buenas noches, le escribo de parte del equipo de Diluvium.";
 - NUNCA el nombre del cliente (el de su perfil de WhatsApp o Instagram muchas veces no es su nombre);
 - UNA sola pregunta;
-- NUNCA una pregunta que la empresa ya hizo en el chat, con las mismas u otras palabras (si ya se le preguntó si tiene problemas de inundaciones o si se le mete el agua, no se vuelve a preguntar, haya contestado o no);
+- NUNCA una pregunta que la empresa ya hizo en el chat, con las mismas u otras palabras (si ya se le preguntó si tiene problemas de inundaciones o si se le mete el agua, no se vuelve a preguntar, haya contestado o no). SALVO la ÚLTIMA pregunta que hizo la empresa si el cliente no la contestó (p. ej. respondió "ya te digo" o "luego le aviso"): esa es la pendiente y el borrador la retoma, con otras palabras (no la copies);
 - NUNCA repitas el precio ni la información que ya se le dio (p. ej. "$5,500 con envío gratis"): ya la tiene;
 - si el cliente dejó una duda o pregunta sin contestar, primero contéstala;
 - puede mencionar lo concreto de SU caso (talla, medida, número de entradas) sin repetirlo todo;

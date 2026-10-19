@@ -37,6 +37,11 @@ export type FollowUpView = {
   templateName: string | null;
   /** Texto de la plantilla ya lleno ({{1}} = cuándo escribió el cliente; nunca el nombre). */
   templateText: string | null;
+  /**
+   * Con la ventana abierta pero sin texto que mandar (el lector no dejó borrador y ningún vendedor lo escribió): en real
+   * sale plantilla (store.ts › sin borrador no hay texto). La tarjeta lo avisa y `door`/`templateName` ya son la plantilla.
+   */
+  sinTexto: boolean;
   /** «Editar mensaje» (12-oct-2026): texto exacto que escribió un vendedor (sale con la ventana abierta). */
   mensajeVendedor: string | null;
   /** «Editar mensaje»: plantilla que eligió un vendedor (sale con la ventana cerrada). */
@@ -85,8 +90,26 @@ async function loadView(organizationId: string, conversationId: string, statuses
   const terminado = f.status === "terminado";
   const firstName = firstNameOf(row.name);
   let templateText: string | null = null;
+  const real = await followUpsReal(organizationId);
+  // Sin borrador ni texto del vendedor, en real sale plantilla aunque la ventana siga abierta: la misma que elige el
+  // envío (store.ts › door) para que la tarjeta muestre lo que de verdad va a salir (19-oct-2026).
+  const sinTexto = real && f.status === "programado" && f.door === "texto" && f.mensajeVendedor === null && f.borrador === null;
+  const door = sinTexto ? "plantilla" : f.door;
+  const caso = f.caso as FollowUpCase;
+  const due = f.dueAt ?? new Date();
   // Con la ventana cerrada sale la plantilla que eligió un vendedor; si no eligió, la del Agente IA.
-  const templateName = f.door === "plantilla" ? (f.plantillaVendedor ?? f.templateName) : f.templateName;
+  const templateName = sinTexto
+    ? templateForAttempt(
+        caso,
+        f.intento,
+        templateFor(CASE_RULES[caso].doors[f.intento - 1] ?? "saludo", due, f.timeZone),
+        await approvedTemplateNames(organizationId),
+        { plantilla2: f.plantilla2, plantilla3: f.plantilla3 },
+        f.intentos.at(-1)?.template ?? null,
+      )
+    : door === "plantilla"
+      ? (f.plantillaVendedor ?? f.templateName)
+      : f.templateName;
   if (templateName) {
     const [t] = await db
       .select({ body: templates.body })
@@ -94,9 +117,8 @@ async function loadView(organizationId: string, conversationId: string, statuses
       .where(and(eq(templates.organizationId, organizationId), eq(templates.channelId, row.channelId), eq(templates.name, templateName)))
       .limit(1);
     // {{1}} = cuándo nos escribió el cliente; el nombre del perfil nunca va en un seguimiento (6-oct-2026).
-    templateText = t?.body ? fillFollowUpTemplate(templateName, t.body, lastClientOf(row), f.dueAt ?? new Date(), f.timeZone) : null;
+    templateText = t?.body ? fillFollowUpTemplate(templateName, t.body, lastClientOf(row), due, f.timeZone) : null;
   }
-  const caso = f.caso as FollowUpCase;
   const table = await loadFollowUpTable(organizationId);
   const errorAbierto = f.status === "programado" && f.modo === "sugerido" && (await hasUnresolvedAgentError(organizationId, f.conversationId));
   return {
@@ -108,12 +130,13 @@ async function loadView(organizationId: string, conversationId: string, statuses
     objetivo: caso === "no_seguir" ? CASE_RULES[caso].objetivo : table.casos[caso].busca,
     status: terminado ? "esperando" : (f.status as FollowUpView["status"]),
     // El interruptor de la organización manda (Agente IA › Opciones): al pasar a Real, lo programado ya sale.
-    ensayo: !(await followUpsReal(organizationId)),
+    ensayo: !real,
     intento: f.intento,
     total: f.totalIntentos,
     dueAt: terminado ? null : (f.dueAt?.toISOString() ?? null),
     timeZone: f.timeZone,
-    door: (f.door as FollowUpView["door"]) ?? null,
+    door: (door as FollowUpView["door"]) ?? null,
+    sinTexto,
     templateName,
     templateText,
     mensajeVendedor: f.mensajeVendedor,
