@@ -221,7 +221,7 @@ export const FOLLOW_UP_INSTRUCTIONS = followUpInstructions(FACTORY_TABLE);
  */
 export function followUpTemplatesBlock(templates: readonly { name: string; body: string }[]): string {
   if (templates.length === 0) return "";
-  return `PLANTILLAS para el 2.º y el 3.er intento (salen días después, cuando ya no se le puede escribir libre). En plantilla_2 y plantilla_3 pon el NOMBRE de la que MEJOR ENCAJE con cómo terminó la conversación, distinta en cada intento, y nunca una que haga una pregunta que la empresa ya hizo en el chat (p. ej. si ya se le preguntó si se le mete el agua, no seg_informacion). Un saludo (hola_buenos_dias / hola_buenas_tardes) sirve cuando ninguna otra encaja: el CRM pone el de la hora. {{1}} lo llena el CRM. null si el caso no tiene ese intento.
+  return `PLANTILLAS para el 2.º y el 3.er intento (salen días después, cuando ya no se le puede escribir libre). En plantilla_2 y plantilla_3 pon el NOMBRE de la que MEJOR ENCAJE con cómo terminó la conversación, distinta en cada intento, y nunca una que haga una pregunta que la empresa ya hizo en el chat (p. ej. si ya se le preguntó si se le mete el agua, no seg_informacion). seg_foto_entrada sí sirve aunque ya se le haya pedido la foto: es el recordatorio para cuando la foto de su entrada quedó pendiente. Un saludo (hola_buenos_dias / hola_buenas_tardes) sirve cuando ninguna otra encaja: el CRM pone el de la hora. {{1}} lo llena el CRM. null si el caso no tiene ese intento.
 ${templates.map((t) => `- ${t.name}: ${t.body.replace(/\s+/g, " ").trim()}`).join("\n")}`;
 }
 
