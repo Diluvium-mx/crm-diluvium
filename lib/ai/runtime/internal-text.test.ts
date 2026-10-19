@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { findInternalText, hasForeignScript, internalTextReason, stripForeignScript, unfinishedReply } from "./internal-text";
+import { cleanBeforeInternal, findInternalText, hasForeignScript, internalTextReason, stripForeignScript, unfinishedReply } from "./internal-text";
 
 // Las formas reales que se colaron del 30-sep al 4-oct (datos del cliente cambiados) y textos
 // normales del Agente IA que NUNCA deben marcarse.
@@ -114,5 +114,21 @@ describe("stripForeignScript", () => {
   it("ya no es «texto interno»: no detiene la respuesta ni pausa", () => {
     expect(findInternalText(["¿Hasta qué nivel le sube el agua?\n\n娱乐平台招商"])).toBeNull();
     expect(unfinishedReply(["娱乐平台招商"], "stop", [])).toBeNull();
+  });
+});
+
+// Parte limpia (19-oct-2026): las respuestas reales del 15 al 19-oct (datos del cliente cambiados).
+describe("cleanBeforeInternal", () => {
+  it("sale la pregunta buena que iba antes de la llamada escrita como texto", () => {
+    expect(cleanBeforeInternal('¿Hasta qué altura aproximada le sube el agua?\n━━━━━━━\n{"tiene_inundaciones":"si","nivel_agua_cm":null}')).toBe("¿Hasta qué altura aproximada le sube el agua?");
+    expect(cleanBeforeInternal('¿Hasta qué altura aproximada le sube el agua?\n[tool calls]\nmulti_tool_use.parallel.parallel  code:\n{"tool_uses":[]}')).toBe("¿Hasta qué altura aproximada le sube el agua?");
+    expect(cleanBeforeInternal("¿Hasta qué altura aproximadamente le sube el agua?\n[Need tool calls after text]")).toBe("¿Hasta qué altura aproximadamente le sube el agua?");
+    expect(cleanBeforeInternal("Gracias por la medida.\n\nLe confirmo el tamaño en un momento.\n[tool]\nYou have 938 weighted tokens left")).toBe("Gracias por la medida.\n\nLe confirmo el tamaño en un momento.");
+  });
+  it("nada que salvar: lo interno va primero, no hay nada interno o lo interno nombra un workflow", () => {
+    expect(cleanBeforeInternal("[tool]\n¿Hasta qué altura le llega el agua?")).toBeNull();
+    expect(cleanBeforeInternal("¿Hasta qué altura le llega el agua?")).toBeNull();
+    expect(cleanBeforeInternal("Sí, es removible y no requiere obra.\n\n[tool call] wf_video_instalacion_estandar")).toBeNull();
+    expect(cleanBeforeInternal("━━━━\n[tool]")).toBeNull();
   });
 });

@@ -585,6 +585,39 @@ describe.skipIf(!TEST_DATABASE_URL)("ingesta de WhatsApp (Postgres real)", () =>
       expect(rows[0]).toMatchObject({ id: out.messageId, source: "crm", sentByUserId: "u_vendedor", providerMessageId: "wamid.TEMPRANO", errorCode: null });
     });
 
+    it("eco de OTRO tipo (19-oct, chat de Silvia): la plantilla del seguimiento vuelve como texto y se une a su envío en duda", async () => {
+      const c = await openConversation();
+      const send = await import("./send");
+      const ctx = await import("@/lib/ai/runtime/context");
+      const SEGUIMIENTO = "Referente a la compuerta anti-inundaciones que nos comentó anoche. ¿Tuvo oportunidad de medir la entrada?";
+      await db.insert(s.messages).values({
+        id: "m_plantilla", organizationId: ORG_A, conversationId: c.id, direction: "out", source: "ai_agent", type: "template",
+        body: SEGUIMIENTO, templateName: "seg_medidas", status: "queued", errorCode: "send_unknown:network", sentAt: new Date(), createdAt: new Date(),
+      });
+      expect(await ctx.agentSendUnresolved(ORG_A, c.id)).toBe(true);
+      expect(await deliver(msgEvent({ direction: "outgoing", source: "cloud_api", wamid: "wamid.SEG", text: SEGUIMIENTO, sentAt: later(28_000).toISOString() }))).toBe(
+        ingest.LATE_ECHO_OUTCOME,
+      );
+      const rows = await outs();
+      expect(rows).toHaveLength(1);
+      expect(rows[0]).toMatchObject({ id: "m_plantilla", type: "template", source: "ai_agent", status: "sent", errorCode: null, providerMessageId: "wamid.SEG" });
+      expect(await ctx.agentSendUnresolved(ORG_A, c.id)).toBe(false);
+      expect(await send.expireUnconfirmedSends(later(16 * 60_000))).toBe(0);
+    });
+
+    it("eco de otro tipo: un texto en duda con el mismo texto se une al texto, no a la plantilla; un texto distinto no se une", async () => {
+      const c = await openConversation();
+      const doubt = { organizationId: ORG_A, conversationId: c.id, direction: "out" as const, source: "ai_agent" as const, status: "queued" as const, errorCode: "send_unknown:network", sentAt: new Date() };
+      await db.insert(s.messages).values([
+        { ...doubt, id: "m_tpl", type: "template", body: "Hola", createdAt: later(-2_000) },
+        { ...doubt, id: "m_txt", type: "text", body: "Hola", createdAt: later(-1_000) },
+      ]);
+      expect(await deliver(msgEvent({ direction: "outgoing", source: "cloud_api", wamid: "wamid.H1", text: "Hola", sentAt: new Date().toISOString() }))).toBe(ingest.LATE_ECHO_OUTCOME);
+      expect((await outs()).find((m) => m.id === "m_txt")).toMatchObject({ providerMessageId: "wamid.H1" });
+      expect(await deliver(msgEvent({ direction: "outgoing", source: "cloud_api", wamid: "wamid.H2", text: "Otro texto", sentAt: new Date().toISOString() }))).not.toBe(ingest.LATE_ECHO_OUTCOME);
+      expect((await outs()).find((m) => m.id === "m_tpl")).toMatchObject({ providerMessageId: null, status: "queued" });
+    });
+
     it("no se adivina fuera de la regla: otra conversación o fuera de la ventana de 2 h quedan como otra API", async () => {
       const c = await openConversation();
       const send = await import("./send");

@@ -39,7 +39,7 @@ export function repeatNoticeBody(question: string): string {
   return `El Agente IA solo iba a repetir la pregunta «${question}», que el cliente no contestó, y no salió. Revisa si hacía falta contestar.`;
 }
 import { mergeHandoffToolCalls, validateToolCalls, type ValidToolCall } from "./tools";
-import { findInternalText, hasForeignScript, INTERNAL_TEXT_RETRY_NOTE, replyExcerpt, stripForeignScript, unfinishedReply } from "./internal-text";
+import { cleanBeforeInternal, findInternalText, hasForeignScript, INTERNAL_TEXT_RETRY_NOTE, replyExcerpt, stripForeignScript, unfinishedReply } from "./internal-text";
 import { applyDetalleByAgent, detalleContextFor, mergeDetalle } from "./detalle";
 import { transcriptionWaitMs } from "@/lib/ai/transcription/rules";
 import { handoverPauseUntil, humanPauseUntil, isWithinSchedule, type BotOptions } from "@/lib/agente-ia/opciones";
@@ -157,6 +157,8 @@ type BrainOk = {
   toolCalls: ValidToolCall[];
   ignored: string[];
   latencyMs: number;
+  // Parte limpia (19-oct-2026): el texto es lo bueno que iba antes del texto interno.
+  parteLimpia?: true;
 };
 type BrainFail = { ok: false; model: CatalogModel; info: ModelErrorInfo };
 
@@ -645,7 +647,7 @@ export async function runAgent(job: { organizationId: string; conversationId: st
     // Ante un acuse, la respuesta en blanco vale lo mismo que «nada que agregar» (14-oct-2026, dueño): antes contaba
     // como falla y dejaba la tarjeta «El agente no pudo responder», que bloquea el chat (5 de 10 en 14 días).
     const quietAck = (out: BrainOutput) => acuse && (out.kind === "nothing" || out.kind === "empty");
-    const attempt = async (model: CatalogModel, avanzaA: string | null = null, nota: string | null = null, foreignRetry = false, internalRetry = false): Promise<BrainOk | BrainFail> => {
+    const attempt = async (model: CatalogModel, avanzaA: string | null = null, nota: string | null = null, foreignRetry = false, internalRetry = false, salvage: string | null = null): Promise<BrainOk | BrainFail> => {
       tried.add(model.id);
       const messages = await messagesFor(model, avanzaA, nota);
       const t0 = Date.now();
@@ -669,18 +671,29 @@ export async function runAgent(job: { organizationId: string; conversationId: st
         out = clean ? { ...out, text: clean } : { kind: "empty" };
         if (!clean && valid.length === 0 && !foreignRetry) {
           await recordAiUsage({ ...base, stage: "cerebro", modelId: res.modelId, provider: res.provider, usage: res.usage, latencyMs, outcome: "error", error: "solo letras de otro alfabeto; se pide otra respuesta" });
-          return attempt(model, avanzaA, nota, true, internalRetry);
+          return attempt(model, avanzaA, nota, true, internalRetry, salvage);
         }
       }
       // Texto interno (10-oct-2026, dueño: «que no vuelva a ocurrir»; internal-text.ts › INTERNAL_TEXT_RETRY_NOTE):
       // una respuesta con «[tool]», «[tool call]», «(update tool after written)»… se le vuelve a pedir al MISMO
       // modelo UNA vez, con la nota. Sus acciones no se ejecutan: las pide otra vez la respuesta nueva. Si la nueva
-      // también trae texto interno, el candado de abajo (unfinishedReply) la detiene: tarjeta y pausa como antes.
-      const internal = !internalRetry && out.kind === "reply" ? findInternalText([out.text]) : null;
-      if (internal) {
+      // también trae texto interno y no hay parte limpia (abajo), el candado (unfinishedReply) la detiene: tarjeta y pausa.
+      const internal = out.kind === "reply" ? findInternalText([out.text]) : null;
+      if (internal && !internalRetry) {
         await recordAiUsage({ ...base, stage: "cerebro", modelId: res.modelId, provider: res.provider, usage: res.usage, latencyMs, outcome: "error", error: `texto interno (${internal.reason}); se pide otra respuesta — respuesta: «${replyExcerpt(out.kind === "reply" ? out.text : "")}»` });
         console.warn(`[agente] ${conv.id}: ${model.label} escribió texto interno (${internal.reason}); se le pide otra respuesta`);
-        return attempt(model, avanzaA, [nota, INTERNAL_TEXT_RETRY_NOTE].filter(Boolean).join("\n"), foreignRetry, true);
+        return attempt(model, avanzaA, [nota, INTERNAL_TEXT_RETRY_NOTE].filter(Boolean).join("\n"), foreignRetry, true, out.kind === "reply" ? cleanBeforeInternal(out.text) : null);
+      }
+      // Parte limpia (19-oct-2026, dueño; internal-text.ts › cleanBeforeInternal): el reintento tampoco sirvió —otra
+      // vez texto interno, o sin texto— → sale el texto bueno que iba ANTES de lo interno (el de esta respuesta o, si
+      // no tiene, el de la primera) con las acciones de esta. Si no hay texto bueno, todo sigue como antes (tarjeta, o
+      // la red contra el silencio). Sin texto ante un acuse o en el complemento de un workflow, callar es lo correcto.
+      let parteLimpia: string | null = null;
+      if (internalRetry && out.kind === "reply" && internal) parteLimpia = cleanBeforeInternal(out.text) ?? salvage;
+      else if (internalRetry && out.kind !== "reply" && !acuse && !complementOf) parteLimpia = salvage;
+      if (parteLimpia) {
+        console.warn(`[agente] ${conv.id}: ${model.label} tampoco escribió una respuesta limpia; sale la parte limpia (${parteLimpia.length} caracteres)`);
+        out = { kind: "reply", text: parteLimpia, handover: out.kind === "reply" && out.handover };
       }
       // "Nada que agregar" solo vale como complemento de un workflow; fuera de eso es respuesta vacía.
       // En el complemento, una respuesta en blanco también (con el Goal real de staging, Luna y
@@ -689,7 +702,7 @@ export async function runAgent(job: { organizationId: string; conversationId: st
         await recordAiUsage({ ...base, stage: "cerebro", modelId: res.modelId, provider: res.provider, usage: res.usage, latencyMs, outcome: "error", error: `respuesta_vacia (${res.finishReason})` });
         return { ok: false, model, info: EMPTY_RESPONSE_INFO };
       }
-      return { ok: true, model, res, out, toolCalls: valid, ignored, latencyMs };
+      return { ok: true, model, res, out, toolCalls: valid, ignored, latencyMs, ...(parteLimpia ? { parteLimpia: true } : {}) };
     };
     const usageOf = (r: BrainOk) => ({ ...base, stage: "cerebro" as const, modelId: r.res.modelId, provider: r.res.provider, usage: r.res.usage, latencyMs: r.latencyMs });
     // Red contra el silencio (29-sep-2026, dueño): ¿esta respuesta no le manda NADA al cliente?
@@ -1181,6 +1194,7 @@ export async function runAgent(job: { organizationId: string; conversationId: st
       withheld ? `el workflow es la respuesta; no salió el texto del modelo: «${withheld.slice(0, 300)}»` : null,
       captionedBy ? `el texto va como pie del archivo de «${captionedBy}»` : null,
       complementRun ? `cuando salga «${complementRun.slug}», el Agente IA revisa el mismo mensaje (complemento)` : null,
+      used.parteLimpia ? "parte limpia: el reintento también traía texto interno o no escribió; salió el texto bueno de antes de lo interno" : null,
       silencio === "contestado" ? "sin texto: ya le había salido algo al cliente después de su último mensaje" : null,
       silencio === "acuse" ? "sin texto: el cliente solo confirmó o agradeció (nada que agregar)" : null,
       silencio === "sin_respuesta" ? "sin texto: ningún modelo le escribió al cliente (aviso sin_respuesta)" : null,
