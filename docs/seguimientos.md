@@ -115,6 +115,7 @@ nombre** sino **cuándo nos escribió el cliente**, calculado por el CRM en su c
 | `seg_asesor` | Asesor sin respuesta | Hola, le escribo de parte del equipo de Diluvium para atender su consulta, dígame, en que le puedo ayudar? |
 | `seg_objecion` | Lo va a pensar u objeción | Hola, le escribo de parte del equipo de Diluvium. Tuvo la oportunidad de pensarlo con calma? Si le queda alguna duda sobre la compuerta, con gusto se la resuelvo aquí mismo. |
 | `seg_medidas_recordatorio` | Faltan medidas, si `seg_medidas` ya salió y lo dejó en visto (aprobada por el dueño el 12-oct-2026, §24) | Hola, le escribo de parte del equipo de Diluvium. Seguimos pendientes con la medida de su entrada. Si gusta, le explico cómo medirla para que su compuerta le quede exacta. |
+| `seg_foto_entrada` | Quedó pendiente la foto de la entrada; la elige el lector en el 2.º o 3.er intento (aprobada por el dueño el 19-oct-2026, §27) | Hola, le escribo de parte del equipo de Diluvium. Referente a la compuerta que nos comentó {{1}}. ¿Tuvo oportunidad de tomar la foto de su entrada? Con ella revisamos si la instalación es viable. |
 | `seg_info_duda` | Solo información (2.º intento; aprobada por el dueño el 3-oct-2026) | Hola, le escribo de parte del equipo de Diluvium. Referente a la compuerta que nos comento {{1}}. Le quedo alguna duda que le pueda resolver? |
 
 Salen en el 1.er intento (si ya no hay ventana) y en el 2.º, **solo cuando Meta ya las aprobó**; mientras están en
@@ -934,6 +935,20 @@ de la píldora dice «No sale solo: el Agente IA no pudo responder en este chat 
 
 De paso: un seguimiento automático que al llegar su hora encuentra la pausa a mano también se guarda como sugerencia
 (antes se quedaba vencido en silencio, sin aviso). Código: `advance()` en `lib/followups/store.ts`.
+
+## 27. Foto de la entrada pendiente: `seg_foto_entrada` (19-oct-2026)
+
+**Origen:** en un chat de Cárdenas, Tab. el Agente IA pidió una foto de frente de la entrada (piso, ambos lados y la
+desviación de la puerta); el cliente contestó «Claro» y no la mandó. El seguimiento de la tarde preguntó «¿qué tan
+amplia es la superficie firme…?», que el cliente no sabe contestar. El dueño pidió una plantilla para cuando lo
+pendiente es la foto y eligió el texto B (con la frase de tiempo).
+
+- **Plantilla:** `seg_foto_entrada`, Marketing, es_MX, `{{1}}` = frase de tiempo (ejemplo para Meta: «el día de ayer»;
+  está en `TIME_PHRASE_TEMPLATES`). El dueño la mandó a revisión el 19-oct. Título en el selector: «Foto de la entrada».
+- **Cuándo sale:** no tiene caso propio. Está en `FOLLOW_UP_TEMPLATES`, así que en cuanto Meta la aprueba el lector la ve
+  con su texto y la puede elegir para el 2.º o 3.er intento de cualquier caso. Al lector se le dice que sí sirve
+  aunque ya se haya pedido la foto en el chat (es el recordatorio, no una pregunta nueva; `followUpTemplatesBlock`
+  en `lib/ai/runtime/lector-core.ts`). Mientras Meta no la aprueba, todo sigue como antes.
 
 ## Fuentes
 

@@ -179,7 +179,14 @@ export const CASE_TEMPLATE: Readonly<Partial<Record<FollowUpCase, string>>> = {
  * Plantillas cuyo {{1}} NO es el nombre sino CUÁNDO nos escribió el cliente ("el día de ayer",
  * "anoche"…; lib/followups/time-phrase.ts). Las demás siguen con el primer nombre en {{1}}.
  */
-export const TIME_PHRASE_TEMPLATES: ReadonlySet<string> = new Set(["seg_precio", "seg_informacion", "seg_info_duda", "seg_valorar", "seg_medidas"]);
+export const TIME_PHRASE_TEMPLATES: ReadonlySet<string> = new Set([
+  "seg_precio",
+  "seg_informacion",
+  "seg_info_duda",
+  "seg_valorar",
+  "seg_medidas",
+  "seg_foto_entrada",
+]);
 
 /**
  * Lo mismo, pero también las `daniel_*`, cuyo {{1}} es la misma frase de tiempo: el selector 📄 (mandar o
@@ -226,6 +233,7 @@ export const FOLLOW_UP_TEMPLATES: readonly string[] = [
   "seg_valorar",
   "seg_medidas",
   "seg_medidas_recordatorio",
+  "seg_foto_entrada",
   "seg_asesor",
   "seg_objecion",
 ];
