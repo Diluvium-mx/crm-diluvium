@@ -543,6 +543,7 @@ Decisiones del dueño y lo construido (rama `feat/seguimientos-lector`, migraci�
    guía de qué busca cada caso. En precio e información: el ancho de su entrada si nunca se pidió, o si le quedó alguna
    duda (las dos valen, según cómo quedó el chat). **El CRM revisa el borrador** (`borrador-check.ts`); si falla, el
    lector lo rehace UNA vez (≈ US$0.0004); si vuelve a fallar, el intento no sale con texto.
+   **Salvo la pregunta pendiente** (19-oct-2026, §29): la última que hizo la empresa sí se retoma, con otras palabras.
 5. **Precio = el cliente preguntó el precio; Solo información = solo mandó el texto del anuncio.**
 6. **Extranjero = no seguir**, aunque tenga a alguien en México, si en el chat ya se le dijo que no se envía fuera.
    Desde el 13-oct-2026 una lada de otro país (salvo la +1) ni siquiera llega aquí: candado fijo en el código (§25).
@@ -969,6 +970,25 @@ Plantillas trae Marketing por defecto) y no se usa; la nueva es `seg_medidas_cot
   recordatorio). `approvedTemplateNames` (`store.ts`) solo la cuenta si Meta la aprobó **como UTILITY**: si la
   reclasifica a Marketing, vuelve a salir `seg_medidas` sola.
 - **Vigilar:** que Meta la apruebe como Utilidad y, después, los 131049 en «Faltan medidas».
+
+## 29. La pregunta pendiente sí se retoma (19-oct-2026)
+
+**Origen:** chat de luz (+52 984…, 19-oct): el Agente IA preguntó «¿Cuántas entradas necesita proteger?», ella contestó
+«ya te digo» y el seguimiento quedó **sin mensaje** («El Agente IA no dejó el mensaje para este chat»). El borrador
+retomaba esa pregunta, la regla «nunca una pregunta ya hecha» lo rechazó y, al rehacerlo, el lector mandó null («no hay
+pregunta nueva»). Sin borrador, el envío sale con plantilla aunque la ventana siga abierta. El dueño pidió que el
+seguimiento retome la pregunta pendiente con otras palabras y que la burbuja avise cuando vaya a salir plantilla.
+
+- **Regla** (`borrador-check.ts`): la **última pregunta de la empresa** es la pendiente. El borrador puede retomarla con
+  otras palabras; si es casi copia (la misma prueba de palabras de siempre) se rechaza con «copia casi igual la pregunta
+  pendiente «…»: retómala con otras palabras» y el lector la rehace. Las preguntas anteriores siguen sin repetirse, y
+  «si se le mete el agua» nunca se repite (por tema), sea o no la última.
+- **Lector** (`lector-core.ts`, `lector.ts`): el borrador y su reescritura dicen lo mismo; la reescritura ya no manda
+  null si hay una pregunta pendiente. Al enviar (`store.ts › borradorFits`) los mensajes van del más viejo al más nuevo
+  para saber cuál es la última.
+- **Burbuja** (`view.ts › sinTexto`, mapa 102): en real, con la ventana abierta y sin borrador ni texto del vendedor,
+  dice «El Agente IA no dejó texto para este chat: sale la plantilla «Faltan medidas» (su título) aunque la ventana de 24 h siga abierta…»,
+  «Ver mensaje» muestra esa plantilla (la misma que elige el envío) y «Editar mensaje» deja escribir el texto, que sí sale.
 
 ## Fuentes
 
