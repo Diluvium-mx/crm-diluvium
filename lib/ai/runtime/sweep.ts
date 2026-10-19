@@ -258,6 +258,11 @@ export async function reconcileStuckDrafts(now: Date): Promise<number> {
 // message_id+kind) y el Agente IA en pausa en el chat hasta que el vendedor lo revise (5-oct-2026,
 // dueño; antes era un aviso y seguía contestando). Nunca reenvía (podría duplicar). Si el chat ya
 // tiene una tarjeta abierta (p. ej. la del envío que falló en run.ts), no se agrega otra.
+// 131049 (19-oct-2026, dueño): el tope de promociones de Meta por persona. Solo le pasa a una plantilla de
+// marketing, es decir, a un seguimiento: no es una respuesta que el cliente esté esperando ni una falla del
+// Agente IA. Queda anotado en su intento (lib/followups/delivery.ts) y NO deja tarjeta ni pausa: antes 7 chats
+// se quedaban pausados del 16 al 19-oct y, si el cliente escribía, nadie le contestaba (docs/seguimientos.md).
+export const MARKETING_CAP = "131049";
 export async function noticeFailedAgentSends(now: Date): Promise<number> {
   const since = new Date(now.getTime() - FAILED_SEND_NOTICE_HOURS * 3_600_000);
   const rows = await db.execute<{ id: string; organization_id: string; conversation_id: string; error_code: string | null }>(sql`
@@ -265,6 +270,7 @@ export async function noticeFailedAgentSends(now: Date): Promise<number> {
     from messages m
     where m.direction = 'out' and m.source = 'ai_agent' and m.status = 'failed'
       and m.created_at > ${ts(since)}
+      and coalesce(m.error_code, '') <> ${MARKETING_CAP}
       and not exists (select 1 from ai_agent_notices n where n.message_id = m.id and n.kind in ('envio', 'agente_error'))
       and not exists (
         select 1 from ai_agent_notices n
