@@ -72,7 +72,19 @@ describe("pregunta sin contestar, parte 2 (5-oct-2026)", () => {
   it("isBareAck por palabras (14-oct-2026): los agradecimientos reales que dejaron tarjeta sí; con «sí», «claro» o una duda no", () => {
     const m = (body: string) => ({ body, attachments: [] });
     for (const t of ["Muy bien gracias", "Okey, gracias", "Ok grasias", "oki gracias", "Dale muchas gracias", "Gracias, buenas noches", "Muchas gracias por la información", "De acuerdo, saludos"]) expect(isBareAck(m(t)), t).toBe(true);
-    for (const t of ["Si gracias", "Claro", "Buenas tardes", "Ok y cuánto cuesta", "Gracias, el lunes mido", "Correcto quedo en espera de que me contacten"]) expect(isBareAck(m(t)), t).toBe(false);
+    for (const t of ["Claro", "Buenas tardes", "Ok y cuánto cuesta", "Gracias, el lunes mido"]) expect(isBareAck(m(t)), t).toBe(false);
+  });
+
+  it("isBareAck con promesas y esperas (19-oct-2026, arreglo D): los casos reales que dejaron tarjeta sí, salvo «sí» tras una pregunta", () => {
+    const m = (body: string) => ({ body, attachments: [] });
+    const reales = ["si lo hare", "Sí muchas gracias", "Sí, gracias.", "Si gracias", "Correcto quedo en espera de que me contacten", "quedo atento a sus comentarios", "Agradezco mucho su atención y espero la respuesta de su compañero 🙏🏻", "Claro, gracias", "Lo haré"];
+    for (const t of reales) expect(isBareAck(m(t)), t).toBe(true);
+    // Después de una pregunta de la empresa, «Sí»/«Claro»/«Correcto» con acuse es un «sí, por favor»: hay que contestar.
+    for (const t of ["Sí, gracias.", "Si lo hare", "Claro, gracias", "Correcto quedo en espera"]) expect(isBareAck(m(t), { afterQuestion: true }), t).toBe(false);
+    // Lo que no lleva «sí» sigue igual después de una pregunta.
+    for (const t of ["Muchas gracias", "Lo haré", "Quedo atento"]) expect(isBareAck(m(t), { afterQuestion: true }), t).toBe(true);
+    // Solos o con un dato, nunca.
+    for (const t of ["Sí", "Si", "Claro", "Correcto", "Sí, lo haré mañana", "Espero el precio", "Quedo en espera del link de pago y la dirección"]) expect(isBareAck(m(t)), t).toBe(false);
   });
 
   it("repeatNote menciona la pregunta y pide no repetirla", () => {
