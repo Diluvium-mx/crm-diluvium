@@ -42,6 +42,7 @@ import {
 } from "@/lib/actions/seguimientos";
 import type { FollowUpDormido, FollowUpOff, FollowUpState, FollowUpView } from "@/lib/followups/view";
 import { followUpText } from "@/lib/followups/message";
+import { templateTitle } from "@/lib/templates/labels";
 import { whatsappWebLink } from "@/lib/contacts/whatsapp-link";
 import { instantToLocal, localToInstant, SCHEDULE_TIME_ZONE } from "@/lib/scheduled/rules";
 import { CloseX } from "@/components/ui/close-x";
@@ -652,6 +653,8 @@ function ActivePanel({ followUp, onClose, onChanged, onAnticipar, onRevertir }: 
   const door = f.door === "plantilla" ? "plantilla" : "texto";
   const message = door === "plantilla" ? (f.templateText ?? f.templateName) : (f.mensajeVendedor ?? (f.borrador ? followUpText(f.borrador, due ?? new Date(), f.timeZone) : null));
   const editado = door === "plantilla" ? f.plantillaVendedor !== null : f.mensajeVendedor !== null;
+  // Sin texto del Agente IA (sale plantilla con la ventana abierta): «Editar mensaje» deja escribir el texto, que sí sale.
+  const editorDoor = f.sinTexto ? "texto" : door;
   // Lo editado es para una sola puerta: si «Cambiar hora» la cambió, se avisa que hay que elegir de nuevo.
   const otraPuerta =
     door === "plantilla" && f.mensajeVendedor !== null && f.plantillaVendedor === null
@@ -716,6 +719,11 @@ function ActivePanel({ followUp, onClose, onChanged, onAnticipar, onRevertir }: 
             {f.terminado ? " y no ha contestado (pasó a frío). Si escribe, el Agente IA le contesta." : due ? `. Si no contesta ${beforeDate(f.dueAt!)}, pasa a frío.` : "."}
           </Answer>
         )}
+        {programado && f.sinTexto && (
+          <p className="rounded-md border border-amber-400/60 bg-amber-50 px-2 py-1 text-xs text-amber-900 dark:bg-amber-500/10 dark:text-amber-200">
+            {`El Agente IA no dejó texto para este chat: sale la plantilla${f.templateName ? ` «${templateTitle(f.templateName)}»` : ""} aunque la ventana de 24 h siga abierta. Para mandar texto, escríbelo en «Editar mensaje».`}
+          </p>
+        )}
         {programado && f.modo === "sugerido" && (
           <p className="rounded-md border border-amber-400/60 bg-amber-50 px-2 py-1 text-xs text-amber-900 dark:bg-amber-500/10 dark:text-amber-200">
             {f.autoAprobado
@@ -748,9 +756,9 @@ function ActivePanel({ followUp, onClose, onChanged, onAnticipar, onRevertir }: 
         )}
         {showMessage && programado && editingMessage && (
           <FollowUpEditarMensaje
-            door={door}
-            current={message ?? ""}
-            edited={door === "plantilla" ? f.plantillaVendedor : f.mensajeVendedor}
+            door={editorDoor}
+            current={f.sinTexto ? "" : (message ?? "")}
+            edited={editorDoor === "plantilla" ? f.plantillaVendedor : f.mensajeVendedor}
             busy={busy}
             loadOptions={loadOptions}
             onSaveText={(texto) => run(() => editFollowUpMessage(f.id, texto))}

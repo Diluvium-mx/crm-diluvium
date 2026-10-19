@@ -27,8 +27,31 @@ describe("borradorProblems (reglas del dueño, 3-oct-2026)", () => {
   });
   it("copia casi literal de una pregunta ya hecha", () => {
     const asked = ["¿Cuánto mide de ancho cada una de las dos entradas, de izquierda a derecha?"];
-    expect(borradorProblems({ borrador: "¿Cuánto mide de ancho cada una de sus dos entradas?", companyTexts: asked })[0]).toMatch(/repite una pregunta/);
+    expect(borradorProblems({ borrador: "¿Cuánto mide de ancho cada una de sus dos entradas?", companyTexts: ["¿Cuántas personas viven en la casa?", ...asked, "¿Le funciona?"] })[0]).toMatch(
+      /repite una pregunta/,
+    );
     // Preguntar si ya pudo medir (faltan medidas) no es la misma pregunta.
     expect(borradorProblems({ borrador: "¿Pudo medir el ancho de las entradas?", companyTexts: asked })).toEqual([]);
+  });
+  // 19-oct-2026, chat de luz: «¿Cuántas entradas necesita proteger?» → «ya te digo». La última pregunta de la empresa es
+  // la pendiente: el seguimiento la retoma con otras palabras; antes se quedaba sin mensaje.
+  describe("la pregunta pendiente (la última que hizo la empresa)", () => {
+    const luz = [
+      "¿Usted tiene problemas de inundaciones?",
+      "La compuerta estándar le funciona, ya que protege hasta 60 cm de altura. ¿Cuántas entradas necesita proteger?",
+      "Claro, quedo pendiente. La compuerta estándar le funciona para una altura de agua de hasta 60 cm.",
+    ];
+    it("con otras palabras sí se puede", () => {
+      expect(borradorProblems({ borrador: "Quedo atento a cuántas puertas o accesos quiere cubrir para armarle la cotización. ¿Ya lo pudo revisar?", companyTexts: luz })).toEqual([]);
+      expect(borradorProblems({ borrador: "Para armarle la cotización, ¿en cuántas entradas la colocaría?", companyTexts: luz })).toEqual([]);
+    });
+    it("casi copiada, se pide con otras palabras", () => {
+      expect(borradorProblems({ borrador: "¿Ya sabe cuántas entradas necesita proteger?", companyTexts: luz })).toEqual([
+        "copia casi igual la pregunta pendiente «Cuántas entradas necesita proteger?»: retómala con otras palabras",
+      ]);
+    });
+    it("una pregunta vieja sigue sin repetirse, aunque sea por tema", () => {
+      expect(borradorProblems({ borrador: "¿Se le mete el agua cuando llueve?", companyTexts: luz })).toEqual(["vuelve a preguntar si se le mete el agua, que ya se le preguntó"]);
+    });
   });
 });

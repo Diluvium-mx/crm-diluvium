@@ -150,11 +150,11 @@ async function followUpTemplateList(organizationId: string, channelId: string): 
 const REWRITE_TOOL = "reescribir_borrador";
 const REWRITE_SYSTEM = `Eres el LECTOR del CRM de Diluvium. Ya llenaste la ficha de seguimiento de este chat, pero el borrador del mensaje no cumple las reglas. Reescribe SOLO el borrador con la herramienta ${REWRITE_TOOL}, sin texto:
 - corto (1 o 2 renglones), mismo trato del chat (tú o usted), SIN saludo ni nombre al principio;
-- UNA sola pregunta, que la empresa NO haya hecho ya en el chat (con ninguna palabra);
+- UNA sola pregunta, que la empresa NO haya hecho ya en el chat (con ninguna palabra), SALVO la última pregunta de la empresa que el cliente dejó sin contestar: esa se retoma con otras palabras, sin copiarla;
 - sin repetir el precio ni la información que ya se le dio;
 - si el cliente dejó una duda sin contestar, contéstala;
 - según cómo terminó la conversación y lo que busca el caso; sin "hoy", "esta noche" ni "mañana"; nada genérico ni presión.
-Si no hay ninguna pregunta nueva que valga la pena, manda el borrador en null.`;
+Si quedó pendiente la última pregunta de la empresa, retómala con otras palabras en lugar de mandar null. Solo si no hay ninguna pregunta que valga la pena (ni nueva ni la pendiente), manda el borrador en null.`;
 
 /**
  * El borrador rompió las reglas (borrador-check.ts): UNA llamada más, solo para el borrador
@@ -181,7 +181,7 @@ async function rewriteBorrador(
       ],
       tools: {
         [REWRITE_TOOL]: tool({
-          description: "El borrador del seguimiento, corregido (null si no hay una pregunta nueva que valga la pena).",
+          description: "El borrador del seguimiento, corregido (null solo si no hay ninguna pregunta que valga la pena, ni nueva ni la pendiente).",
           inputSchema: z.object({ borrador: z.string().nullable() }),
         }),
       },

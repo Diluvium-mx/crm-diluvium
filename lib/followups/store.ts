@@ -533,7 +533,8 @@ async function borradorFits(organizationId: string, conversationId: string, borr
     .where(and(eq(messages.organizationId, organizationId), eq(messages.conversationId, conversationId), eq(messages.direction, "out")))
     .orderBy(desc(messages.createdAt))
     .limit(80);
-  return borradorProblems({ borrador, companyTexts: rows.map((r) => r.body ?? "") }).length === 0;
+  // Del más viejo al más nuevo: la última pregunta de la empresa es la pendiente (borrador-check.ts).
+  return borradorProblems({ borrador, companyTexts: rows.reverse().map((r) => r.body ?? "") }).length === 0;
 }
 
 type Advance = { set: Partial<typeof followUps.$inferInsert>; summary: string };

@@ -2,6 +2,8 @@
 // sola pregunta, nunca una pregunta que la empresa ya hizo en el chat y nunca el precio que ya
 // se le dio. PURO. Si falla, el lector lo rehace una vez (lector.ts); si vuelve a fallar, el
 // intento no sale con texto.
+// 19-oct-2026 (chat de luz: «¿Cuántas entradas necesita proteger?» → «ya te digo»): la ÚLTIMA pregunta de la
+// empresa es la pendiente y el seguimiento SÍ la retoma, pero con otras palabras; solo se rechaza si es casi copia.
 import { normalizeSearch } from "@/lib/text/search";
 import { amountsIn } from "@/lib/ai/runtime/lector-core";
 import { hasForeignScript } from "@/lib/ai/runtime/internal-text";
@@ -44,7 +46,7 @@ function moneyIn(text: string): number[] {
 
 export type BorradorCheckInput = {
   borrador: string;
-  /** Lo que escribió la empresa en el chat (Agente IA, vendedor, automático). */
+  /** Lo que escribió la empresa en el chat (Agente IA, vendedor, automático), del más viejo al más nuevo. */
   companyTexts: readonly string[];
 };
 
@@ -57,7 +59,9 @@ export function borradorProblems({ borrador, companyTexts }: BorradorCheckInput)
   if (mine.length > 1) problems.push(`hace ${mine.length} preguntas (debe ser una sola)`);
 
   const asked = companyTexts.flatMap(questionsOf);
+  // La pregunta pendiente: la última que hizo la empresa.
   const askedNorm = asked.map((q) => normalizeSearch(q));
+  const pending = askedNorm.at(-1) ?? null;
   for (const q of mine) {
     const nq = normalizeSearch(q);
     const topic = TOPICS.find((t) => t.re.test(nq) && askedNorm.some((a) => t.re.test(a)));
@@ -66,11 +70,15 @@ export function borradorProblems({ borrador, companyTexts }: BorradorCheckInput)
       continue;
     }
     const a = words(q);
-    for (const other of asked) {
+    for (const [i, other] of asked.entries()) {
       const b = words(other);
       const shared = [...a].filter((w) => b.has(w)).length;
       if (shared >= 3 && shared / Math.min(a.size, b.size) >= 0.7) {
-        problems.push(`repite una pregunta que ya se hizo: «${other}»`);
+        problems.push(
+          askedNorm[i] === pending
+            ? `copia casi igual la pregunta pendiente «${other}»: retómala con otras palabras`
+            : `repite una pregunta que ya se hizo: «${other}»`,
+        );
         break;
       }
     }
