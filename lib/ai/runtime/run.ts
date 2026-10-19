@@ -643,7 +643,10 @@ export async function runAgent(job: { organizationId: string; conversationId: st
     // todo lo pendiente del cliente es «ok», «vale», «gracias», un emoji o un sticker. Solo
     // entonces, además del complemento de un workflow, el Agente IA puede no contestar
     // escribiendo NOTHING_TOKEN (Goal: PASAR A HUMANO).
-    const acuse = pending.length > 0 && pending.every((m) => isBareAck(m));
+    // «Sí, gracias» después de una pregunta de la empresa es un «sí, por favor», no un acuse (19-oct-2026, arreglo D).
+    const lastCompanyOut = history.filter((m) => m.direction === "out" && pending.length > 0 && m.createdAt < pending[0].createdAt).reduce<(typeof history)[number] | null>((a, m) => (!a || m.createdAt >= a.createdAt ? m : a), null);
+    const afterQuestion = closingQuestion(lastCompanyOut?.body ?? "") !== null;
+    const acuse = pending.length > 0 && pending.every((m) => isBareAck(m, { afterQuestion }));
     // Ante un acuse, la respuesta en blanco vale lo mismo que «nada que agregar» (14-oct-2026, dueño): antes contaba
     // como falla y dejaba la tarjeta «El agente no pudo responder», que bloquea el chat (5 de 10 en 14 días).
     const quietAck = (out: BrainOutput) => acuse && (out.kind === "nothing" || out.kind === "empty");

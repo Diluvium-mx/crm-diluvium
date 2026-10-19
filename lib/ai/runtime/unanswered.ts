@@ -84,16 +84,35 @@ export function onlyRepeatsLastQuestion(bubbles: readonly string[], lastAsked: s
 // Por palabras (14-oct-2026, auditoría: «Muy bien gracias», «Okey, gracias», «Ok grasias», «oki gracias» y
 // «Dale muchas gracias» no entraban en la lista de frases y dejaron 5 tarjetas «no pudo responder» en 14 días):
 // lleva al menos una palabra de acuse y todas las demás son de cortesía.
-const ACK_CORE = new Set(["ok", "oka", "okey", "okay", "oki", "okis", "va", "vale", "dale", "sale", "gracias", "grasias", "graciaz", "grax", "perfecto", "excelente", "entendido", "enterado", "listo", "bien", "acuerdo", "agradezco", "igualmente"]);
-const ACK_COURTESY = new Set(["muy", "muchas", "mil", "por", "la", "el", "de", "le", "lo", "se", "a", "y", "usted", "informacion", "información", "info", "buenas", "buenos", "buen", "noches", "tardes", "dias", "días", "dia", "día", "saludos", "bendiciones", "que", "este", "esté"]);
-export function isBareAck(message: { body: string | null; attachments: readonly { type: string }[] }): boolean {
+// Promesas y esperas (19-oct-2026, arreglo D, OK del dueño): «si lo hare», «Sí muchas gracias», «Correcto quedo en espera
+// de que me contacten» y «Agradezco mucho su atención y espero la respuesta de su compañero» dejaron tarjeta y pausa
+// (el modelo, con razón, no tenía nada que agregar). «Sí», «Claro» y «Correcto» cuentan SOLO junto a un acuse y SOLO si
+// el último mensaje de la empresa no terminaba en pregunta: ante «¿Le explico cómo medirla?», «Sí, gracias» es un «sí,
+// por favor» y hay que contestar. Solos nunca son acuse (pueden ser la respuesta a una pregunta).
+const ACK_CORE = new Set([
+  "ok", "oka", "okey", "okay", "oki", "okis", "va", "vale", "dale", "sale", "gracias", "grasias", "graciaz", "grax", "perfecto",
+  "excelente", "entendido", "enterado", "listo", "bien", "acuerdo", "agradezco", "igualmente",
+  "hare", "haré", "espera", "espero", "pendiente", "pendientes", "atento", "atenta", "atentos",
+]);
+const ACK_COURTESY = new Set([
+  "muy", "muchas", "mil", "por", "la", "el", "de", "le", "lo", "se", "a", "y", "usted", "informacion", "información", "info", "buenas",
+  "buenos", "buen", "noches", "tardes", "dias", "días", "dia", "día", "saludos", "bendiciones", "que", "este", "esté",
+  "quedo", "quedamos", "en", "me", "nos", "su", "sus", "mucho", "atencion", "atención", "respuesta", "comentarios", "contacten",
+  "contacte", "compañero", "companero", "compañera", "companera", "asesor", "yo", "les",
+]);
+const ACK_AFFIRM = new Set(["si", "sí", "claro", "correcto", "correcta"]);
+export function isBareAck(
+  message: { body: string | null; attachments: readonly { type: string }[] },
+  opts: { afterQuestion?: boolean } = {},
+): boolean {
   const others = message.attachments.filter((a) => a.type !== "sticker");
   if (others.length) return false;
   const text = (message.body ?? "").normalize("NFC").toLocaleLowerCase("es-MX").replace(/[\s.,;:!¡¿?…]+/gu, " ").trim();
   if (!text) return message.attachments.length > 0; // solo un sticker
   if (!/[\p{L}\p{N}]/u.test(text)) return true; // solo emojis
   const words = text.replace(/[^\p{L}\p{N}\s]/gu, "").split(/\s+/).filter(Boolean);
-  return words.some((w) => ACK_CORE.has(w)) && words.every((w) => ACK_CORE.has(w) || ACK_COURTESY.has(w));
+  const allowed = (w: string) => ACK_CORE.has(w) || ACK_COURTESY.has(w) || (!opts.afterQuestion && ACK_AFFIRM.has(w));
+  return words.some((w) => ACK_CORE.has(w)) && words.every(allowed);
 }
 
 /** Nota para pedir otra respuesta cuando la primera solo repetía la pregunta (run.ts). */

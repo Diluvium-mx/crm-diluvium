@@ -1418,6 +1418,24 @@ describe.skipIf(!TEST_DATABASE_URL)("runtime del Agente IA (Postgres real)", () 
     expect(await run.runAgent(JOB, makeDeps({ brain: [""] }).deps)).toEqual({ kind: "failed", reason: "vacia" });
   });
 
+  it("acuse (19-oct, arreglo D, caso Gisela): a «si lo hare» después de un mensaje SIN pregunta, el blanco es no contestar: sin tarjeta ni pausa", async () => {
+    await msg({ direction: "in", body: "Tambien le mandare el numero de una vecina que se intereso", at: ago(300_000) });
+    await msg({ direction: "out", body: "Muchas gracias, será bienvenida. Si es posible, compártale nuestro contacto.", at: ago(290_000), source: "ai_agent" });
+    await msg({ direction: "in", body: "si lo hare", at: ago(120_000) });
+    const { deps, calls } = makeDeps({ brain: ["", "no debe llamarse"] });
+    expect(await run.runAgent(JOB, deps)).toEqual({ kind: "sent", bubbles: 0 });
+    expect(calls.filter((c) => c.kind === "cerebro")).toHaveLength(1);
+    expect(await notices()).toEqual([]);
+    expect(await agentError.hasUnresolvedAgentError(ORG, CONV)).toBe(false);
+  });
+
+  it("acuse (19-oct, arreglo D): «Sí, gracias» a una PREGUNTA de la empresa es un «sí, por favor»: el blanco sigue siendo respuesta vacía", async () => {
+    await msg({ direction: "in", body: "No sé cómo medir", at: ago(300_000) });
+    await msg({ direction: "out", body: "¿Le explico cómo medirla?", at: ago(290_000), source: "ai_agent" });
+    await msg({ direction: "in", body: "Sí, gracias", at: ago(120_000) });
+    expect(await run.runAgent(JOB, makeDeps({ brain: [""] }).deps)).toEqual({ kind: "failed", reason: "vacia" });
+  });
+
   it("acuse (6-oct, C2): «nada que agregar» a una PREGUNTA del cliente sigue siendo respuesta vacía", async () => {
     await msg({ direction: "in", body: "Vale, ¿y cuánto tarda?", at: ago(120_000) });
     expect(await run.runAgent(JOB, makeDeps({ brain: [brainMod.NOTHING_TOKEN] }).deps)).toEqual({ kind: "failed", reason: "vacia" });
