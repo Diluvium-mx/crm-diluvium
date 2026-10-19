@@ -42,6 +42,7 @@ import {
 } from "@/lib/actions/seguimientos";
 import type { FollowUpDormido, FollowUpOff, FollowUpState, FollowUpView } from "@/lib/followups/view";
 import { followUpText } from "@/lib/followups/message";
+import { templateTitle } from "@/lib/templates/labels";
 import { whatsappWebLink } from "@/lib/contacts/whatsapp-link";
 import { instantToLocal, localToInstant, SCHEDULE_TIME_ZONE } from "@/lib/scheduled/rules";
 import { CloseX } from "@/components/ui/close-x";
@@ -720,7 +721,7 @@ function ActivePanel({ followUp, onClose, onChanged, onAnticipar, onRevertir }: 
         )}
         {programado && f.sinTexto && (
           <p className="rounded-md border border-amber-400/60 bg-amber-50 px-2 py-1 text-xs text-amber-900 dark:bg-amber-500/10 dark:text-amber-200">
-            {`El Agente IA no dejó texto para este chat: sale la plantilla${f.templateName ? ` «${f.templateName}»` : ""} aunque la ventana de 24 h siga abierta. Para mandar texto, escríbelo en «Editar mensaje».`}
+            {`El Agente IA no dejó texto para este chat: sale la plantilla${f.templateName ? ` «${templateTitle(f.templateName)}»` : ""} aunque la ventana de 24 h siga abierta. Para mandar texto, escríbelo en «Editar mensaje».`}
           </p>
         )}
         {programado && f.modo === "sugerido" && (

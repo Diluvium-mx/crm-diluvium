@@ -987,7 +987,7 @@ seguimiento retome la pregunta pendiente con otras palabras y que la burbuja avi
   null si hay una pregunta pendiente. Al enviar (`store.ts › borradorFits`) los mensajes van del más viejo al más nuevo
   para saber cuál es la última.
 - **Burbuja** (`view.ts › sinTexto`, mapa 102): en real, con la ventana abierta y sin borrador ni texto del vendedor,
-  dice «El Agente IA no dejó texto para este chat: sale la plantilla «…» aunque la ventana de 24 h siga abierta…»,
+  dice «El Agente IA no dejó texto para este chat: sale la plantilla «Faltan medidas» (su título) aunque la ventana de 24 h siga abierta…»,
   «Ver mensaje» muestra esa plantilla (la misma que elige el envío) y «Editar mensaje» deja escribir el texto, que sí sale.
 
 ## Fuentes
