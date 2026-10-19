@@ -377,7 +377,8 @@ rápidos, 📄 Plantillas y 📎 Adjuntar (Bandeja y pop-up del Embudo usan el m
 - Máximo **3 intentos** por punto pendiente (2 en los casos que no venden, §6). Después: temperatura **frío**; aviso
   🤖 solo en pago pendiente y asesor sin respuesta.
 - **Plantillas de seguimiento al mismo contacto: nunca dos en menos de 7 días.**
-- **131049** (tope de marketing): aviso, sin reintento. **131050** (baja): el contacto queda "sin seguimientos"
+- **131049** (tope de marketing): aviso, sin reintento y **sin tarjeta ni pausa del Agente IA** (19-oct-2026; antes el
+  barrido lo tomaba como respuesta rechazada y pausaba el chat). **131050** (baja): el contacto queda "sin seguimientos"
   (se quita desde el Detalle).
 - Solo a contactos que **ya escribieron** alguna vez (nunca a un contacto sin chat).
 - **Solo números de México (+52) y +1** (Estados Unidos, Canadá, el Caribe): a una lada de otro país nunca se le da
@@ -580,7 +581,8 @@ migración **0059**; la 0058 es la de los costos de WhatsApp de otra rama, que d
 - **Avisos al vendedor** (tarjeta amarilla, tipo `seguimiento`): pago pendiente 24 h después del 2.º intento sin
   respuesta; asesor sin respuesta al terminar. **Frío** al terminar la espera tras el último intento (solo si salió de verdad).
 - **Errores:** lo que falla queda en el intento («no salió · motivo» en la burbuja 🤖) y en la burbuja del mensaje; nunca
-  se reintenta solo. **131049** (tope de promociones de Meta) queda anotado; **131050** (baja) marca el contacto
+  se reintenta solo. **131049** (tope de promociones de Meta) queda anotado, sin tarjeta ni pausa (`sweep.ts` ›
+  `noticeFailedAgentSends` lo salta; el siguiente intento sigue su calendario); **131050** (baja) marca el contacto
   `sin_seguimientos` y cancela lo pendiente (también si vino de una plantilla de un vendedor).
 - **Marca en el chat:** «🤖 Seguimiento» arriba del mensaje.
 - **Sin nombre (6-oct-2026, decisión del dueño):** el nombre del perfil de WhatsApp o Instagram muchas veces no es el del

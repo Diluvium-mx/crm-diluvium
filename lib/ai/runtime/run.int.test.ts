@@ -1098,6 +1098,17 @@ describe.skipIf(!TEST_DATABASE_URL)("runtime del Agente IA (Postgres real)", () 
     expect((await conv()).agentState).toBe("activo");
   });
 
+  it("131049 (tope de promociones de Meta) en un seguimiento: sin tarjeta ni pausa; el Agente IA sigue contestando", async () => {
+    await agentMsg({ status: "failed", errorCode: "131049" });
+    expect(await sweep.noticeFailedAgentSends(new Date())).toBe(0);
+    expect(await notices()).toEqual([]);
+    expect(await agentError.hasUnresolvedAgentError(ORG, CONV)).toBe(false);
+    expect((await conv()).agentState).toBe("activo");
+    // Otro rechazo en el mismo chat sí deja la tarjeta (el 131049 no la tapa).
+    await agentMsg({ status: "failed", errorCode: "131047" });
+    expect(await sweep.noticeFailedAgentSends(new Date())).toBe(1);
+  });
+
   it("una burbuja ambigua que NO es el último saliente también avisa (la 2ª sí salió)", async () => {
     const { SEND_UNCONFIRMED } = await import("@/lib/messaging/rules");
     await agentMsg({ status: "failed", errorCode: SEND_UNCONFIRMED, at: ago(5_000) });
