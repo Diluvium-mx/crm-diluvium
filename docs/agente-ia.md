@@ -50,3 +50,4 @@
 | Medida y foto según el escenario, sin «¿Desea avanzar…?» (10-oct-2026, sin migración) | [2026-10-10-medida-y-foto.md](agente-ia/2026-10-10-medida-y-foto.md) | Goal aplicado el 10-oct a las 22:00 |
 | El lector ve el año: fechas pedidas sin el año anterior (14-oct-2026, sin migración) | [2026-10-14-lector-fecha-con-anio.md](agente-ia/2026-10-14-lector-fecha-con-anio.md) | Auditoría F4: 58 de 148 fechas salían con un año viejo (2024/2025) y se descartaban |
 | Respuesta en blanco ante un agradecimiento = nada que agregar, sin tarjeta (14-oct-2026, sin migración) | [2026-10-14-despedida-sin-tarjeta.md](agente-ia/2026-10-14-despedida-sin-tarjeta.md) | 5 de 10 tarjetas «no pudo responder» eran un «gracias» |
+| Parte limpia tras el texto interno y eco de otro tipo (19-oct-2026, sin migración) | [2026-10-19-parte-limpia-y-eco-de-otro-tipo.md](agente-ia/2026-10-19-parte-limpia-y-eco-de-otro-tipo.md) | Revisión del 16 al 19-oct: 7 clientes sin respuesta; A y B con OK |

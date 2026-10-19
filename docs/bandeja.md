@@ -522,6 +522,11 @@ la sesión). Tipos exactos en `lib/inbox/types.ts`.
   "enviando" frenaba al agente 15 min y el eco "contestaba" al cliente. Si el eco llega ANTES del
   timeout, al marcar la duda se fusiona como cualquier "eco primero" (`linkSentMessage`). Texto distinto,
   otra conversación o más de 2 h: no se adivina, queda como otra API.
+  **Eco de otro tipo (19-oct-2026, chats de Silvia y Ary Prat):** una plantilla (seguimiento) vuelve como
+  «text» con su texto, y en Instagram un archivo con pie vuelve en dos ecos (el pie como «text» y el
+  archivo sin texto). También se unen: la plantilla con el texto exacto; en Instagram el primer eco se une
+  al archivo en duda y el segundo queda como parte del mismo envío (`partesInstagram`). Antes el envío se
+  daba por no confirmado a los 15 min (tarjeta y Agente IA en pausa) aunque el cliente ya lo había leído.
 - **Entregado/leído gana siempre sobre fallido**, en cualquier orden (`nextStatus`), borra el error
   y recalcula la primera respuesta y el último mensaje. Un fallido real (sin prueba de entrega) sigue
   fallido y visible.

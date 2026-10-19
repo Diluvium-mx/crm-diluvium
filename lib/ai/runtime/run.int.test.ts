@@ -2588,8 +2588,8 @@ describe.skipIf(!TEST_DATABASE_URL)("runtime del Agente IA (Postgres real)", () 
     expect(z.delivered).toEqual(["Sí, es removible y no requiere obra."]);
   });
 
-  it("texto interno en el último renglón de un mismo mensaje («…?\n[actions]») o como nota entre paréntesis también se detiene", async () => {
-    for (const brain of ["¿Me comparte una fotografía de cada entrada?\n[actions]", "*(sin acción adicional, la respuesta ya fue enviada por el sistema)*"]) {
+  it("texto interno en el último renglón de un mismo mensaje («…?\n[actions]») sin texto bueno antes, o como nota entre paréntesis, también se detiene", async () => {
+    for (const brain of ["[actions]\n¿Me comparte una fotografía de cada entrada?", "*(sin acción adicional, la respuesta ya fue enviada por el sistema)*"]) {
       await db.delete(s.aiAgentNotices);
       await msg({ direction: "in", body: "ok", at: new Date() });
       const z = fakeZernio();
@@ -2623,19 +2623,68 @@ describe.skipIf(!TEST_DATABASE_URL)("runtime del Agente IA (Postgres real)", () 
     expect(rows[0].error).toBe("texto interno (mensaje entre corchetes); se pide otra respuesta — respuesta: «Perfecto, serían dos compuertas, una por cada mitad. ⏎ [tool]»");
   });
 
-  it("si la segunda respuesta también trae texto interno: tarjeta y pausa, y el registro guarda la respuesta completa", async () => {
+  it("si la segunda respuesta también trae texto interno y ninguna tiene texto bueno antes: tarjeta y pausa, y el registro guarda la respuesta completa", async () => {
     await msg({ direction: "in", body: "Mide 4 metros", at: ago(20_000) });
     const z = fakeZernio();
-    const d = makeDeps({ brain: ["Gracias por la medida.\n[tool]", "Gracias por la medida.\n(update tool after written)", "no debe llamarse"] }, z);
+    const d = makeDeps({ brain: ["[tool]\nGracias por la medida.", "(update tool after written)\nGracias por la medida.", "no debe llamarse"] }, z);
     expect(await run.runAgent(JOB, d.deps)).toEqual({ kind: "failed", reason: "respuesta_sin_completar" });
     expect(d.calls.filter((c) => c.kind === "cerebro")).toHaveLength(2);
     expect(z.delivered).toEqual([]);
     expect((await openCard())!.body).toContain("(update tool after written)");
     const rows = (await usage()).filter((u) => u.stage === "cerebro");
     expect(rows.map((u) => u.error)).toEqual([
-      "texto interno (mensaje entre corchetes); se pide otra respuesta — respuesta: «Gracias por la medida. ⏎ [tool]»",
-      "no salió: texto interno (nota entre paréntesis): (update tool after written) — respuesta: «Gracias por la medida. ⏎ (update tool after written)»",
+      "texto interno (mensaje entre corchetes); se pide otra respuesta — respuesta: «[tool] ⏎ Gracias por la medida.»",
+      "no salió: texto interno (nota entre paréntesis): (update tool after written) — respuesta: «(update tool after written) ⏎ Gracias por la medida.»",
     ]);
+  });
+
+  // ── Parte limpia (19-oct-2026, dueño): el reintento tampoco sirve → sale el texto bueno de antes de lo interno ──
+  it("caso 19-oct (Samuel y Rocío): el reintento también trae texto interno → sale su pregunta limpia, sin tarjeta ni pausa", async () => {
+    await msg({ direction: "in", body: "Si", at: ago(20_000) });
+    const z = fakeZernio();
+    const d = makeDeps({
+      brain: ["¿Hasta qué altura aproximada le sube el agua?\n[tool calls]\nmulti_tool_use.parallel.parallel  code:\n{\"tool_uses\":[]}", "¿Hasta qué altura aproximadamente le sube el agua?\n[Need tool calls after text]", "no debe llamarse"],
+      brainToolCalls: [[], [{ toolName: "actualizar_detalle", input: { tiene_inundaciones: "si" } }]],
+    }, z);
+    expect(await run.runAgent(JOB, d.deps)).toEqual({ kind: "sent", bubbles: 1 });
+    expect(d.calls.filter((c) => c.kind === "cerebro")).toHaveLength(2);
+    expect(z.delivered).toEqual(["¿Hasta qué altura aproximadamente le sube el agua?"]);
+    expect(await openCard()).toBeFalsy();
+    expect(await agentError.hasUnresolvedAgentError(ORG, CONV)).toBe(false);
+    const rows = (await usage()).filter((u) => u.stage === "cerebro");
+    expect(rows.map((u) => u.outcome)).toEqual(["error", "sent"]);
+    expect(rows[1].error).toContain("parte limpia");
+  });
+
+  it("caso 19-oct (😋): el reintento solo trae acciones → sale la pregunta limpia de la primera con las acciones del reintento, sin aviso «sin respuesta»", async () => {
+    await msg({ direction: "in", body: "Si", at: ago(20_000) });
+    const z = fakeZernio();
+    const d = makeDeps({
+      brain: ["¿Hasta qué altura aproximada le sube el agua?\n━━━━━━━\n{\"tiene_inundaciones\":\"si\",\"nivel_agua_cm\":null}", "", "no debe llamarse"],
+      brainToolCalls: [[], [{ toolName: "actualizar_detalle", input: { tiene_inundaciones: "si" } }]],
+    }, z);
+    expect(await run.runAgent(JOB, d.deps)).toEqual({ kind: "sent", bubbles: 1 });
+    expect(d.calls.filter((c) => c.kind === "cerebro")).toHaveLength(2);
+    expect(z.delivered).toEqual(["¿Hasta qué altura aproximada le sube el agua?"]);
+    expect(await openCard()).toBeFalsy();
+    expect((await notices()).filter((n) => n.kind === "sin_respuesta")).toEqual([]);
+  });
+
+  it("parte limpia: ante un acuse, el reintento en blanco sigue siendo no contestar (no sale la parte limpia)", async () => {
+    await msg({ direction: "in", body: "Ok gracias", at: ago(20_000) });
+    const z = fakeZernio();
+    const d = makeDeps({ brain: ["Con gusto, aquí estamos.\n[tool]", "", "no debe llamarse"] }, z);
+    expect((await run.runAgent(JOB, d.deps)).kind).not.toBe("failed");
+    expect(z.delivered).toEqual([]);
+    expect(await openCard()).toBeFalsy();
+  });
+
+  it("parte limpia: el texto interno ANTES del bueno en la de reintento usa la parte limpia de la primera", async () => {
+    await msg({ direction: "in", body: "Mide 4 metros", at: ago(20_000) });
+    const z = fakeZernio();
+    const d = makeDeps({ brain: ["Gracias por la medida.\n[tool]", "[tool]\nGracias por la medida."] }, z);
+    expect(await run.runAgent(JOB, d.deps)).toEqual({ kind: "sent", bubbles: 1 });
+    expect(z.delivered).toEqual(["Gracias por la medida."]);
   });
 
   it("casos 7 al 10-oct: «[ NADA_QUE_AGREGAR ]» (con espacios) ante un «Ok» es no contestar: no sale nada, sin reintento ni tarjeta", async () => {
