@@ -11,6 +11,7 @@ const KNOWN_TITLES: Readonly<Record<string, string>> = {
   valorar: "Valorar la compra",
   medidas: "Faltan medidas",
   medidas_recordatorio: "Faltan medidas (recordatorio)",
+  medidas_cotizacion: "Faltan medidas (utilidad)",
   foto_entrada: "Foto de la entrada",
   asesor: "Asesor sin respuesta",
   objecion: "Lo va a pensar",

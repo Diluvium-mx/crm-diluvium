@@ -10,6 +10,7 @@ describe("títulos de las plantillas", () => {
     expect(templateTitle("daniel_precio")).toBe("Precio sin respuesta");
     expect(templateTitle("seg_medidas_recordatorio")).toBe("Faltan medidas (recordatorio)");
     expect(templateTitle("seg_foto_entrada")).toBe("Foto de la entrada");
+    expect(templateTitle("seg_medidas_cotizacion")).toBe("Faltan medidas (utilidad)");
     expect(templateTitle("seg_info_duda")).toBe("¿Le quedó alguna duda?");
     expect(templateTitle("daniel_objecion")).toBe("Lo va a pensar");
     expect(templateTitle("seg_informacion")).toBe("Solo información");

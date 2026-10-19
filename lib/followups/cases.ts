@@ -186,6 +186,7 @@ export const TIME_PHRASE_TEMPLATES: ReadonlySet<string> = new Set([
   "seg_valorar",
   "seg_medidas",
   "seg_foto_entrada",
+  "seg_medidas_cotizacion",
 ]);
 
 /**
@@ -212,6 +213,17 @@ export const PICKER_TIME_PHRASE_TEMPLATES: ReadonlySet<string> = new Set([
 export const CASE_TEMPLATE_REPEAT: Readonly<Partial<Record<FollowUpCase, string>>> = {
   faltan_medidas: "seg_medidas_recordatorio",
 };
+
+/**
+ * Gemela de UTILIDAD (19-oct-2026, dueño). Meta no entrega una plantilla de marketing a quien ya recibió muchas
+ * promociones (131049; 6 % de los 3.er intentos) y las 14 de seguimiento son de marketing. Si la gemela ya está
+ * aprobada COMO UTILIDAD (`approvedTemplateNames` no la cuenta si Meta la dejó en marketing), sale en lugar de la
+ * original con el mismo {{1}}; para no repetirse se trata como la misma plantilla. Hoy solo «Faltan medidas».
+ */
+export const UTILITY_TWIN: Readonly<Record<string, string>> = {
+  seg_medidas: "seg_medidas_cotizacion",
+};
+const TWIN_OF: Readonly<Record<string, string>> = Object.fromEntries(Object.entries(UTILITY_TWIN).map(([a, b]) => [b, a]));
 
 /** Si la plantilla del caso todavía no está aprobada: otra propia antes que la puerta. */
 export const CASE_TEMPLATE_BACKUP: Readonly<Partial<Record<FollowUpCase, string>>> = {
@@ -258,6 +270,19 @@ export function templateForAttempt(
   previous: string | null = null,
 ): string | null {
   if (fallback === null) return null;
+  const chosen = pickTemplate(caso, intento, fallback, approved, picks, previous === null ? null : (TWIN_OF[previous] ?? previous));
+  const twin = chosen === null ? undefined : UTILITY_TWIN[chosen];
+  return twin && approved.has(twin) ? twin : chosen;
+}
+
+function pickTemplate(
+  caso: FollowUpCase,
+  intento: number,
+  fallback: string,
+  approved: ReadonlySet<string>,
+  picks: TemplatePicks,
+  previous: string | null,
+): string | null {
   const repeat = CASE_TEMPLATE_REPEAT[caso];
   if (repeat && previous !== null && previous === CASE_TEMPLATE[caso] && approved.has(repeat)) return repeat;
   const pick = intento === 2 ? picks.plantilla2 : intento >= 3 ? picks.plantilla3 : null;
