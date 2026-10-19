@@ -914,6 +914,7 @@ async function deliver(
           status: "sent",
           sentAt: early.sentAt,
           readCutoffMessageId,
+          ...(early.extraProviderMessageIds.length ? { extraProviderMessageIds: early.extraProviderMessageIds } : {}),
         });
         console.info(`[send] ${ctx.messageId}: su eco ya había llegado; queda enviado (${finalId})`);
         return { messageId: finalId, status: "sent" };

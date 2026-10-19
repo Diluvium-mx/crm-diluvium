@@ -228,6 +228,48 @@ describe.skipIf(!TEST_DATABASE_URL)("canal Instagram (Postgres real)", () => {
     expect(row.metadata).toMatchObject({ avisoEnvio: expect.stringContaining("parte 2 de 2") });
   });
 
+  // ── Eco de otro tipo (19-oct-2026, chat de Ary Prat): un video con pie en duda vuelve como dos ecos ──
+  function videoEcho(opts: { sentAt: string; mid: string; conv: string }) {
+    const e = igEvent({ ...opts, direction: "outgoing", text: null });
+    (e.message as { attachments: unknown[] }).attachments = [{ type: "video", url: "https://zernio.test/v.mp4", mimeType: "video/mp4" }];
+    return e;
+  }
+  const PIE = "Se elige según el ancho de la entrada. ¿Usted tiene problemas de inundaciones?";
+  async function videoEnDuda(conv: string) {
+    await deliver(igEvent({ sentAt: ago(0.1), conv }));
+    const [c] = await db.select().from(s.conversations);
+    await db.insert(s.messages).values({
+      id: "m_video", organizationId: ORG, conversationId: c.id, direction: "out", source: "ai_agent", type: "video", body: PIE,
+      status: "failed", errorCode: "send_unconfirmed", sentAt: new Date(Date.now() - 60_000), createdAt: new Date(Date.now() - 60_000),
+    });
+    return c;
+  }
+  for (const order of ["pie primero", "video primero"] as const) {
+    it(`eco de otro tipo (${order}): el pie y el video se unen al video en duda, una sola burbuja enviada y sin «otra API»`, async () => {
+      const conv = order === "pie primero" ? "6ab0000000000000000000e1" : "6ab0000000000000000000e2";
+      await videoEnDuda(conv);
+      const now = new Date().toISOString();
+      const pie = igEvent({ sentAt: now, direction: "outgoing", text: PIE, mid: "MID_PIE", conv });
+      const video = videoEcho({ sentAt: now, mid: "MID_VIDEO", conv });
+      for (const e of order === "pie primero" ? [pie, video] : [video, pie]) await deliver(e);
+      const outs = await db.select().from(s.messages).where(eq(s.messages.direction, "out"));
+      expect(outs).toHaveLength(1);
+      const [first, second] = order === "pie primero" ? ["MID_PIE", "MID_VIDEO"] : ["MID_VIDEO", "MID_PIE"];
+      expect(outs[0]).toMatchObject({ id: "m_video", status: "sent", errorCode: null, providerMessageId: first });
+      expect(outs[0].metadata).toMatchObject({ partesInstagram: [second] });
+      expect(outs[0].metadata).not.toHaveProperty("ecoTardioPartes");
+    });
+  }
+
+  it("eco de otro tipo: un video sin pie en duda no se une a un texto cualquiera", async () => {
+    const conv = "6ab0000000000000000000e3";
+    await videoEnDuda(conv);
+    await deliver(igEvent({ sentAt: new Date().toISOString(), direction: "outgoing", text: "Otro texto", mid: "MID_OTRO", conv }));
+    const outs = await db.select().from(s.messages).where(eq(s.messages.direction, "out"));
+    expect(outs.find((m) => m.id === "m_video")).toMatchObject({ status: "failed", providerMessageId: null });
+    expect(outs.filter((m) => m.source === "other_api")).toHaveLength(1);
+  });
+
   it("lo que un vendedor manda desde la app de Instagram se guarda como de la app (pausa al Agente IA)", async () => {
     await deliver(igEvent({ sentAt: ago(1), conv: "6ab0000000000000000000d1" }));
     await deliver(igEvent({ sentAt: new Date().toISOString(), direction: "outgoing", sentVia: null, text: "te llamo", conv: "6ab0000000000000000000d1" }));
