@@ -12,7 +12,8 @@ y la lista de acuses era de frases exactas («ok gracias» sí, «okey gracias»
 **Cambio (OK del dueño, 14-oct):**
 - `isBareAck` (`lib/ai/runtime/unanswered.ts`) reconoce el acuse por palabras: al menos una de acuse (ok, okey, oki,
   va, vale, dale, sale, gracias, grasias, perfecto, excelente, entendido, listo, bien, de acuerdo…) y todas las demás de
-  cortesía (muy, muchas, mil, por la información, buenas noches, saludos…). «Sí», «Claro», un saludo solo, una duda o
+  cortesía (muy, muchas, mil, por la información, buenas noches, saludos…). (19-oct: también promesas y esperas, y «Sí,
+  gracias» si no venía de una pregunta: [acuse con promesas](2026-10-19-acuse-promesas-y-esperas.md).) «Sí», «Claro», un saludo solo, una duda o
   un dato («Gracias, el lunes mido») siguen sin ser acuse.
 - `run.ts`: si todo lo pendiente del cliente es acuse, la respuesta en blanco vale lo mismo que «nada que agregar»: no
   sale nada, sin tarjeta, sin segundo intento y sin aviso «sin respuesta». Ante una pregunta, el blanco sigue siendo falla.
