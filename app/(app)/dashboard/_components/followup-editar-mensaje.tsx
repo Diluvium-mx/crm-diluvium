@@ -6,6 +6,7 @@
 // (el texto de una plantilla no se puede cambiar: Meta no lo deja). Sin lógica de datos: guarda con lo que le pasan.
 import { useEffect, useRef, useState } from "react";
 import type { FollowUpTemplateOption } from "@/lib/followups/editar";
+import { SpellcheckOverlay } from "@/components/spelling/spellcheck-overlay";
 
 type Props = {
   door: "texto" | "plantilla";
@@ -34,9 +35,12 @@ export function FollowUpEditarMensaje(props: Props) {
 
 function EditarTexto({ current, edited, busy, onSaveText, onDone }: Props) {
   const [texto, setTexto] = useState(current);
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
   return (
     <div data-testid="followup-editar-texto" className="space-y-1.5">
+      <SpellcheckOverlay textareaRef={textareaRef} value={texto} />
       <textarea
+        ref={textareaRef}
         value={texto}
         onChange={(event) => setTexto(event.target.value)}
         aria-label="Mensaje que sale"

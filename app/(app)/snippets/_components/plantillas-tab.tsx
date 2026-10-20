@@ -22,6 +22,7 @@ import {
 import { rejectionNotice, statusNotice, type MetaNotice } from "@/lib/templates/meta-reasons";
 import type { TemplateView } from "@/lib/templates/types";
 import { HighlightBody } from "./highlight";
+import { SpellcheckOverlay } from "@/components/spelling/spellcheck-overlay";
 
 const TOKEN_CLASS = "rounded bg-brand-navy/15 px-1 font-medium text-brand-navy";
 const INPUT_CLASS =
@@ -378,6 +379,7 @@ function TemplateForm({
   const [language, setLanguage] = useState<string>("es_MX");
   const [category, setCategory] = useState<Category>("MARKETING");
   const [body, setBody] = useState(editing?.bodyText ?? "");
+  const bodyRef = useRef<HTMLTextAreaElement>(null);
   const [examples, setExamples] = useState<string[]>(editing ? editing.variables.map((v) => v.example ?? "") : []);
   const [busy, setBusy] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
@@ -474,7 +476,9 @@ function TemplateForm({
 
       <div className="space-y-1">
         <label htmlFor="tpl-body" className="text-xs font-medium text-muted-foreground">Texto</label>
+        <SpellcheckOverlay textareaRef={bodyRef} value={body} />
         <textarea
+          ref={bodyRef}
           id="tpl-body"
           value={body}
           onChange={(e) => setBody(e.target.value)}

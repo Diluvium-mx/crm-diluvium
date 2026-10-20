@@ -8,12 +8,13 @@
 // - Plantilla desde el CRM: la única forma de escribirle por la API a quien no ha
 //   escrito en 24 h (regla de Meta). Después, en el CRM solo se escribe libre
 //   cuando el cliente conteste.
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { MetaNoticeDialog } from "@/app/(app)/_components/meta-notice-dialog";
 import { startChatWithTemplate } from "@/lib/inbox/actions";
 import { whatsappPhoneLink, whatsappWebLink } from "@/lib/contacts/whatsapp-link";
 import type { MetaNotice } from "@/lib/templates/meta-reasons";
 import { TemplatePicker } from "../../dashboard/_components/template-picker";
+import { SpellcheckOverlay } from "@/components/spelling/spellcheck-overlay";
 
 export function FirstMessage({
   contactId,
@@ -32,6 +33,7 @@ export function FirstMessage({
   onOpenContact?: (contactId: string) => void;
 }) {
   const [text, setText] = useState("");
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
   const [picking, setPicking] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -87,7 +89,9 @@ export function FirstMessage({
                 Se abre su chat con tu mensaje ya escrito y tú le das Enviar. Sin plantilla y sin límite de 24 h. El mensaje
                 llega aquí solo.
               </p>
+              <SpellcheckOverlay textareaRef={textareaRef} value={text} />
               <textarea
+                ref={textareaRef}
                 value={text}
                 onChange={(e) => setText(e.target.value)}
                 rows={2}

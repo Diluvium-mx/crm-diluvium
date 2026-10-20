@@ -35,6 +35,9 @@ export const statement = {
   // Pestaña "Seguimientos" › Opinión (7-oct-2026, docs/opiniones.md): todos los roles
   // ven las opiniones, crean y borran enlaces de prueba y cambian el enlace de Google.
   opinion: ["read", "create", "update", "delete"],
+  // Diccionario del equipo del corrector ortográfico (20-oct-2026, docs/corrector.md):
+  // cualquier rol lo lee y agrega palabras («Agregar al diccionario»; decisión del dueño).
+  spellingWord: ["read", "create"],
   // Sección "Configuración" (Vendedores y lo que se agregue): solo owner/admin
   // la ven y editan. "Mi cuenta" NO vive aquí (menú del usuario).
   settings: ["read"],
@@ -55,6 +58,7 @@ export const owner = ac.newRole({
   mediaAsset: ["read", "create", "delete"],
   funnelStage: ["read", "update"],
   opinion: ["read", "create", "update", "delete"],
+  spellingWord: ["read", "create"],
   settings: ["read"],
 });
 
@@ -71,6 +75,7 @@ export const admin = ac.newRole({
   mediaAsset: ["read", "create", "delete"],
   funnelStage: ["read", "update"],
   opinion: ["read", "create", "update", "delete"],
+  spellingWord: ["read", "create"],
   settings: ["read"],
 });
 
@@ -91,6 +96,7 @@ export const agent = ac.newRole({
   mediaAsset: ["read", "create", "delete"],
   funnelStage: ["read", "update"],
   opinion: ["read", "create", "update", "delete"],
+  spellingWord: ["read", "create"],
   // Sin `settings`: roleAllows falla cerrado → sin la sección Configuración.
 });
 

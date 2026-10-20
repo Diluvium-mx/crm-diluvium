@@ -18,6 +18,8 @@ import { ThemeToggle } from "@/components/theme-toggle";
 import { ClimaCinta } from "./_components/clima-cinta";
 import { itemsCinta } from "@/lib/clima/cinta";
 import { leerFotoClima } from "@/lib/clima/store";
+import { SpellingProvider } from "./_components/spelling-provider";
+import { listTeamWords } from "@/lib/spelling/store";
 
 // "Dashboard" va primero y es el destino al entrar (/inicio). La Bandeja
 // conserva su URL histórica /dashboard. "Reportes" (/reports, sin página) se
@@ -51,10 +53,15 @@ export default async function AppLayout({
   // Columnas del Embudo de la organización: toda la UI las lee del contexto y el SSE
   // las mantiene al día.
   let stages: FunnelStage[] = [];
+  // Diccionario del equipo del corrector ortográfico (docs/corrector.md).
+  let teamWords: string[] = [];
   try {
     const membership = await requireActiveMembership();
     role = membership.role;
-    stages = await listFunnelStages(membership.organizationId);
+    [stages, teamWords] = await Promise.all([
+      listFunnelStages(membership.organizationId),
+      listTeamWords(membership.organizationId),
+    ]);
   } catch {
     role = null;
   }
@@ -84,6 +91,7 @@ export default async function AppLayout({
 
   return (
     <FunnelStagesProvider initial={stages}>
+    <SpellingProvider initial={teamWords}>
     <div className="flex min-h-dvh w-full font-brand">
       {/* Capas: el sidebar va encima (z-20) y proyecta su sombra sobre la barra y
           el contenido; la barra (z-10) proyecta la suya sobre el contenido. Sin
@@ -155,6 +163,7 @@ export default async function AppLayout({
         {role && <StageChangeToasts viewerUserId={session.user.id} />}
       </div>
     </div>
+    </SpellingProvider>
     </FunnelStagesProvider>
   );
 }
