@@ -22,3 +22,4 @@ export * from "./ads";
 export * from "./followups";
 export * from "./opiniones";
 export * from "./stage-history";
+export * from "./spelling";

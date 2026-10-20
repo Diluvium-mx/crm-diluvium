@@ -24,6 +24,7 @@ import { TemplatePicker } from "./template-picker";
 import { CloseX } from "@/components/ui/close-x";
 import { LinkedText } from "@/components/ui/linked-text";
 import { DateTimePicker } from "@/components/ui/date-time-picker";
+import { SpellcheckOverlay } from "@/components/spelling/spellcheck-overlay";
 
 type Mode = { type: "new"; initialText: string; templateOnly: boolean } | { type: "edit"; item: ScheduledView };
 
@@ -78,6 +79,7 @@ export function ScheduleForm({
   });
   const [cancelIfInbound, setCancelIfInbound] = useState(editing ? editing.cancelIfInbound : true);
   const [text, setText] = useState(editing ? editing.body : mode.type === "new" ? mode.initialText : "");
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   // Candado síncrono contra el doble clic (el estado `saving` llega un render tarde).
@@ -183,7 +185,9 @@ export function ScheduleForm({
           ) : (
             <p className="text-xs text-amber-700 dark:text-amber-300">{textDisabledReason}</p>
           )}
+          <SpellcheckOverlay textareaRef={textareaRef} value={text} />
           <textarea
+            ref={textareaRef}
             value={text}
             onChange={(event) => setText(event.target.value)}
             rows={3}

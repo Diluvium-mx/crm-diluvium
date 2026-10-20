@@ -3,7 +3,7 @@
 // Fragmentos ⚡: respuestas reutilizables a nivel organización, con variables
 // {{nombre}}. Se crean, editan y borran aquí mismo. Todo el equipo comparte los
 // mismos (CLAUDE.md §5). Para responder DENTRO de la ventana de 24 h.
-import { useMemo, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import { Pencil, Plus, Trash2 } from "lucide-react";
 import { createSnippet, deleteSnippet, updateSnippet } from "@/lib/actions/snippets";
 import { extractVariables } from "@/lib/snippets/variables";
@@ -11,6 +11,7 @@ import { mensajeDeFalla } from "@/lib/version/client";
 import type { SnippetView } from "@/lib/snippets/types";
 import { HighlightBody } from "./highlight";
 import { CloseX } from "@/components/ui/close-x";
+import { SpellcheckOverlay } from "@/components/spelling/spellcheck-overlay";
 
 type Draft = { id?: string; name: string; body: string };
 
@@ -19,6 +20,7 @@ const TOKEN_CLASS = "rounded bg-brand-orange/15 px-1 font-medium text-brand-oran
 export function FragmentosTab({ initial, canManage }: { initial: SnippetView[]; canManage: boolean }) {
   const [items, setItems] = useState<SnippetView[]>(initial);
   const [draft, setDraft] = useState<Draft | null>(null);
+  const bodyRef = useRef<HTMLTextAreaElement>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -123,7 +125,9 @@ export function FragmentosTab({ initial, canManage }: { initial: SnippetView[]; 
             <label htmlFor="snippet-body" className="text-xs font-medium text-muted-foreground">
               Mensaje
             </label>
+            <SpellcheckOverlay textareaRef={bodyRef} value={draft.body} />
             <textarea
+              ref={bodyRef}
               id="snippet-body"
               value={draft.body}
               onChange={(e) => setDraft((d) => (d ? { ...d, body: e.target.value } : d))}
