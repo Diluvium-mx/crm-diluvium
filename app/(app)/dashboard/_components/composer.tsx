@@ -43,6 +43,7 @@ import { useIsMobile } from "@/components/ui/use-media-query";
 import { CloseX } from "@/components/ui/close-x";
 import { WorkflowPicker } from "./workflow-picker";
 import { bajaAlreadySeen, FollowUpPanel, FollowUpPill, markBajaSeen, useFollowUp } from "./followup-pill";
+import { SpellcheckOverlay } from "@/components/spelling/spellcheck-overlay";
 
 // Alto justo para el texto, entre los 2 renglones de `rows` y el max-height de la clase.
 // Vacía se queda en 2 renglones: Chrome mide también el texto gris de ayuda, y
@@ -585,6 +586,7 @@ export function Composer({
           <Play className="size-4" aria-hidden="true" />
         </button>
         <div aria-hidden="true" className="order-2 h-0 basis-full sm:hidden" />
+        <SpellcheckOverlay textareaRef={textareaRef} value={draft} />
         <textarea
           ref={textareaRef}
           value={draft}
