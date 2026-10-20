@@ -6,9 +6,9 @@ y el Glosario.
 
 ## Qué hace
 
-- Subraya en **rojo ondulado** las palabras mal escritas mientras se escribe. La palabra en curso no se marca hasta
+- Subraya las palabras mal escritas mientras se escribe con **el mismo subrayado del navegador** (`text-decoration-line: spelling-error`; donde no existe, una onda roja de 1 px; `[data-spelling-error]` en `app/globals.css`). El primero era una onda de 1.5 px y al dueño le pareció demasiado grande (20-oct-2026). La palabra en curso no se marca hasta
   salir de ella. Nunca impide enviar.
-- **Clic izquierdo** en una palabra subrayada abre un menú estilo Apple pegado a ella (debajo; si no cabe, arriba):
+- **Clic izquierdo** en una palabra subrayada abre un menú estilo Apple pegado a ella, **siempre arriba** de la palabra en todas las cajas (decisión del dueño, 20-oct-2026; solo si no cabe arriba se va abajo):
   hasta 3 palabras correctas en negritas, **Ignorar** (solo en ese mensaje; se olvida al vaciar la caja) y
   **Agregar al diccionario** (diccionario del equipo: ya no se marca para nadie de la organización).
 - Solo ortografía, no gramática (decisión del 20-oct-2026: la gramática necesitaría LanguageTool en Railway,

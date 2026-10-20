@@ -219,7 +219,7 @@ export function SpellcheckOverlay({ textareaRef, value }: Props) {
       <span
         key={i.start}
         data-start={i.start}
-        className="underline decoration-red-500 decoration-wavy decoration-[1.5px] underline-offset-[3px] [text-decoration-skip-ink:none]"
+        data-spelling-error=""
       >
         {value.slice(i.start, i.end)}
       </span>,

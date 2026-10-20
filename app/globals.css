@@ -2111,3 +2111,17 @@ header:has([data-aviso-version]) [data-cinta-clima] {
   68% { opacity: 1; transform: translateY(-1px); }
   72%, 100% { opacity: 1; transform: none; }
 }
+
+/* Corrector ortográfico (components/spelling/spellcheck-overlay.tsx, docs/corrector.md):
+   el MISMO subrayado del navegador (spelling-error: Chrome, Edge, Safari dibujan el suyo).
+   Donde no existe, una onda roja fina de 1 px pegada a la letra, como la de Google Docs. */
+[data-spelling-error] {
+  text-decoration: underline wavy #e5484d 1px;
+  text-underline-offset: 2px;
+  text-decoration-skip-ink: none;
+}
+@supports (text-decoration-line: spelling-error) {
+  [data-spelling-error] {
+    text-decoration-line: spelling-error;
+  }
+}
