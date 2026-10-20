@@ -26,13 +26,14 @@ export function SpellingMenu({ anchor, suggestions, onPick, onIgnore, onAdd }: P
   const ref = useRef<HTMLDivElement>(null);
   const [pos, setPos] = useState<{ top: number; left: number } | null>(null);
 
-  // Debajo de la palabra; si no cabe (la caja del chat va abajo de la pantalla), arriba.
+  // SIEMPRE arriba de la palabra (decisión del dueño, 20-oct-2026), en todas las cajas; solo
+  // si no cabe arriba (palabra pegada al borde de la ventana) se va abajo.
   useLayoutEffect(() => {
     const el = ref.current;
     if (!el) return;
     const { offsetHeight: h, offsetWidth: w } = el;
-    const below = anchor.bottom + GAP;
-    const top = below + h <= window.innerHeight - EDGE ? below : Math.max(EDGE, anchor.top - GAP - h);
+    const above = anchor.top - GAP - h;
+    const top = above >= EDGE ? above : Math.min(anchor.bottom + GAP, window.innerHeight - h - EDGE);
     const left = Math.min(Math.max(EDGE, anchor.left), window.innerWidth - w - EDGE);
     setPos({ top, left });
   }, [anchor, suggestions]);
