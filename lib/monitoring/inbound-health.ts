@@ -13,6 +13,7 @@ import { isBusinessHours } from "./business-hours";
 import { silenceProblem, uncheckedAlert, UNCHECKED_ALERT_AFTER } from "./alert-rules";
 import type { AccountsReport } from "./account-health";
 import { checkBotSilence, type BotSilenceReport } from "./bot-silence";
+import { alarmingGroups, recentSendFailures, sendFailureProblems } from "./send-failures";
 import type { UncheckedCheck } from "./unchecked-streak";
 import type { AccountsSummary } from "./zernio-account";
 
@@ -37,6 +38,8 @@ export type InboundHealth = {
     bot: BotSilenceReport["metrics"] | null;
     /** Bloqueos de inicio de sesión de la última hora (S3); null si no se revisó o falló Redis. */
     authLockoutsLastHour: number | null;
+    /** P4: envíos fallidos de la última hora con el mismo código (solo los que ya son alarma); null si no se pudo revisar. */
+    sendFailures: { code: string; count: number }[] | null;
     businessHours: boolean;
   };
 };
@@ -108,6 +111,8 @@ export async function inboundHealth(deps: {
   const accountsCheck = deps.whatsappAccounts ? settle(deps.whatsappAccounts()) : null;
   // Solo la base del CRM (sin Zernio): también arranca ya.
   const botCheck = settle(checkBotSilence({ now }));
+  // P4 (22-oct-2026): envíos que fallan en serie con el mismo error.
+  const sendCheck = settle(recentSendFailures({ now }));
   const notices: string[] = [];
   const streakOf = async (check: UncheckedCheck, failed: boolean): Promise<number> => {
     if (!deps.uncheckedStreak) return failed ? UNCHECKED_ALERT_AFTER : 0;
@@ -201,6 +206,16 @@ export async function inboundHealth(deps: {
     problems.push(`no se pudo revisar si el Agente IA contesta: ${errorText(botResult.error)}`);
   }
 
+  // P4: 3 o más envíos con el mismo error en la última hora (./send-failures.ts). A cualquier hora.
+  let sendFailures: InboundHealth["metrics"]["sendFailures"] = null;
+  const sendResult = await sendCheck;
+  if (sendResult.ok) {
+    sendFailures = alarmingGroups(sendResult.value).map(({ code, count }) => ({ code, count }));
+    problems.push(...sendFailureProblems(sendResult.value));
+  } else {
+    notices.push(`no se pudieron revisar los envíos fallidos: ${errorText(sendResult.error)}`);
+  }
+
   // S3 (CN-007): 3 o más bloqueos de inicio de sesión en una hora = alguien prueba contraseñas
   // (decisión del dueño). Solo el conteo: el issue es público.
   let authLockoutsLastHour: number | null = null;
@@ -222,6 +237,6 @@ export async function inboundHealth(deps: {
     checkedAt: now.toISOString(),
     problems,
     notices,
-    metrics: { ...row, workerHeartbeatAgeSeconds, zernioWebhook, whatsappAccounts, bot, authLockoutsLastHour, businessHours },
+    metrics: { ...row, workerHeartbeatAgeSeconds, zernioWebhook, whatsappAccounts, bot, authLockoutsLastHour, sendFailures, businessHours },
   };
 }

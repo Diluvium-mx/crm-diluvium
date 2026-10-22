@@ -111,6 +111,18 @@ async function verifiedMimeOfStored(storage: ObjectStorage, key: string, kind: s
   return head ? verifiedMediaMime(head, kind) : undefined;
 }
 
+/**
+ * P3 (22-oct-2026): ¿falló NUESTRO bucket (llaves, permisos, bucket) y no la descarga del
+ * proveedor? Esos intentos no cuentan para MEDIA_MAX_ATTEMPTS: el 21-oct Railway cambió las
+ * llaves y 11 fotos de clientes se dieron por perdidas por un problema nuestro. Los errores del
+ * SDK de S3 traen `$metadata` y su nombre (SignatureDoesNotMatch, InvalidAccessKeyId…). (pura)
+ */
+export function isOwnStorageError(error: unknown): boolean {
+  if (!(error instanceof Error)) return false;
+  if ("$metadata" in error) return true;
+  return /signature we calculated|access key id|accessdenied|access denied|nosuchbucket/i.test(`${error.name} ${error.message}`);
+}
+
 /** Descarga los adjuntos pendientes de un mensaje. Devuelve cuántos guardó. */
 export async function downloadMessageMedia(
   provider: MessagingProvider,
@@ -122,6 +134,8 @@ export async function downloadMessageMedia(
   if (!message) return { stored: 0, pending: 0 };
 
   const results = new Map<number, Partial<MessageAttachment>>();
+  // Adjuntos que fallaron por nuestro bucket: el intento no se cuenta (isOwnStorageError).
+  const ownFault = new Set<number>();
   const errors: string[] = [];
   for (const [index, attachment] of message.attachments.entries()) {
     if (isStoredAttachment(attachment)) continue;
@@ -139,6 +153,7 @@ export async function downloadMessageMedia(
         results.set(index, { storageKey: key, sizeBytes: previous.bytes, verifiedMime, downloadedAt: new Date().toISOString(), downloadError: undefined });
       } else {
         results.set(index, { downloadError: reason });
+        if (isOwnStorageError(error)) ownFault.add(index);
         errors.push(`adjunto ${index}: ${reason}`);
       }
     }
@@ -159,7 +174,7 @@ export async function downloadMessageMedia(
       const next: MessageAttachment = {
         ...attachment,
         ...update,
-        downloadAttempts: (attachment.downloadAttempts ?? 0) + 1,
+        downloadAttempts: (attachment.downloadAttempts ?? 0) + (ownFault.has(index) ? 0 : 1),
       };
       if (!update.downloadError) delete next.downloadError;
       return next;

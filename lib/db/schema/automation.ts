@@ -40,6 +40,11 @@ export const mediaAssets = pgTable(
     // navegador al subir el archivo (o la primera vez que se abre Multimedia). Llega con la lista:
     // Multimedia no descarga ningún archivo para mostrarse. null = aún no hay.
     thumbnail: text("thumbnail"),
+    // Envío blindado (22-oct-2026, docs/fase-d-diseno.md §12): copia del archivo en el almacenamiento de
+    // Zernio (otro proveedor, se borra a los 7 días; el worker la renueva cada 5). Si el bucket no responde
+    // al enviar, el archivo sale desde aquí. null = aún no hay copia.
+    zernioCopyUrl: text("zernio_copy_url"),
+    zernioCopyAt: timestamp("zernio_copy_at"),
     createdByUserId: text("created_by_user_id").references(() => user.id, { onDelete: "set null" }),
     createdAt: timestamp("created_at").defaultNow().notNull(),
     // Borrado lógico: un paso que lo referencia deja de poder enviarse, pero

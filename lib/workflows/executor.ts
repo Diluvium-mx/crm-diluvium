@@ -13,7 +13,7 @@
 // + idempotencia); los pasos internos (etapa, etiqueta, pausa del agente, aviso)
 // escriben directo, siempre acotados a la organización.
 import { createHash } from "node:crypto";
-import { and, desc, eq, gt, inArray, lt, lte, or, sql } from "drizzle-orm";
+import { and, desc, eq, gt, inArray, isNull, lt, lte, or, sql } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { channels, contacts, conversations, messages, user, workflowRuns, workflowSteps, workflows } from "@/lib/db/schema";
 import type { WorkflowStepPayload } from "@/lib/db/schema/automation";
@@ -36,7 +36,7 @@ import { AGENT_CAPTION_KEY, agentCaptionIndex, agentCaptionOf, lastSendIndex, mi
 import { startOnlyBlock, type StartOnlyBlock } from "./start-only";
 import { atMaxPerChat, maxPerChatApplies } from "./max-per-chat";
 import { SLUG_DATOS_BANCARIOS } from "./defaults";
-import { logError } from "@/lib/log/safe-error";
+import { logError, safeErrorMessage } from "@/lib/log/safe-error";
 
 export type RunTrigger = "agent" | "keyword" | "command" | "stage";
 
@@ -204,13 +204,23 @@ export type ExecutorDeps = {
 
 // "busy": otra corrida de la MISMA conversación está en curso; el job se
 // reintenta (los mensajes de dos corridas no deben intercalarse al cliente).
-export type ExecuteOutcome = "done" | "failed" | "cancelled" | "not_claimed" | "busy";
+// "deferred": envío blindado (22-oct-2026); un archivo no se pudo preparar (ni el bucket ni la
+// copia en Zernio lo entregan): la corrida vuelve a "queued" en el mismo paso y el barrido del
+// worker la retoma en ~1 min, hasta MEDIA_HOLD_MS; el job termina y no ocupa al worker.
+export type ExecuteOutcome = "done" | "failed" | "cancelled" | "not_claimed" | "busy" | "deferred";
 
 // Una corrida "running" cuyo worker no avanzó en este tiempo se puede
 // reclamar de nuevo y retomar por cursor (reinicio del worker a la mitad).
 export const RUN_LEASE_MS = 2 * 60_000;
 export const RUN_MAX_ATTEMPTS = 3;
 export const FAIL_UNCONFIRMED = "envio_sin_confirmar";
+// Envío blindado: cuánto se reintenta un archivo que no se pudo preparar antes de darlo por no
+// enviado (decisión del dueño, 22-oct-2026): pasado ese tiempo ya no tiene sentido en la plática.
+export const MEDIA_HOLD_MS = 10 * 60_000;
+// En `workflow_runs.payload`: desde cuándo espera el archivo (ISO).
+const MEDIA_HOLD_KEY = "archivoEnEsperaDesde";
+// Entre un intento y otro del archivo en espera (lo respeta staleQueuedRuns).
+export const MEDIA_RETRY_MS = 60_000;
 
 function variablesFor(run: { payload: Record<string, unknown> | null }, contact: { firstName: string; lastName: string | null }, sellerName: string | null) {
   const values: Record<string, string> = {};
@@ -468,6 +478,24 @@ export async function executeWorkflowRun(runId: string, deps: ExecutorDeps): Pro
         return fail(FAIL_UNCONFIRMED, "el proveedor no confirmó el envío; se verifica en unos minutos");
       }
     } catch (error) {
+      if (error instanceof SendRejectedError && error.code === "media_unavailable") {
+        const since = holdSince(run.payload) ?? now();
+        if (now().getTime() - since.getTime() < MEDIA_HOLD_MS) {
+          // Vuelve a la fila en ESTE paso; el reintento no gasta los de RUN_MAX_ATTEMPTS.
+          await markRun(runId, {
+            status: "queued",
+            stepCursor: i,
+            messageIds,
+            attempts: Math.max(0, run.attempts - 1),
+            errorCode: "media_unavailable",
+            errorMessage: error.message.slice(0, 500),
+            payload: { ...run.payload, [MEDIA_HOLD_KEY]: since.toISOString() },
+          });
+          console.warn(`[workflows] ${run.id}: archivo en espera desde ${since.toISOString()} (${safeErrorMessage(error)})`);
+          return "deferred";
+        }
+        return fail("media_unavailable", error.message);
+      }
       if (error instanceof SendRejectedError && error.code === "window_closed") return fail(FAIL_WINDOW, error.message);
       if (error instanceof SendRejectedError) return fail(error.code, error.message);
       // Motivo del proveedor en palabras simples (tarjeta del vendedor; Bloque B).
@@ -478,7 +506,9 @@ export async function executeWorkflowRun(runId: string, deps: ExecutorDeps): Pro
     // lentos) que siga viva no debe poder ser reclamada por otro worker.
     await markRun(runId, { stepCursor: i + 1, messageIds, startedAt: now() });
   }
-  await markRun(runId, { status: "done", finishedAt: now(), messageIds });
+  // Si esperó un archivo, el aviso de la espera ya no aplica.
+  const held = holdSince(run.payload) !== null;
+  await markRun(runId, { status: "done", finishedAt: now(), messageIds, ...(held ? { errorCode: null, errorMessage: null } : {}) });
   // Regla interna del CRM (24-sep-2026): recibir los datos bancarios deja al
   // contacto en la etapa con papel "Cerca de compra" (sea cual sea su nombre u orden
   // hoy; solo hacia adelante; la etapa de un vendedor no se regresa). No es un paso
@@ -539,7 +569,16 @@ const FAIL_LABEL: Record<string, string> = {
   [FAIL_UNCONFIRMED]: "WhatsApp no confirmó el envío; revisa el hilo antes de repetirlo",
   media_not_found: "el archivo ya no está en la biblioteca",
   storage_unavailable: "el almacenamiento de archivos no está disponible",
+  media_unavailable: "ni el almacenamiento ni la copia de respaldo entregaron el archivo durante 10 min",
 };
+
+/** Desde cuándo una corrida espera un archivo (envío blindado), o null. */
+function holdSince(payload: Record<string, unknown> | null): Date | null {
+  const raw = payload?.[MEDIA_HOLD_KEY];
+  if (typeof raw !== "string") return null;
+  const at = new Date(raw);
+  return Number.isNaN(at.getTime()) ? null : at;
+}
 
 // Regla del dueño (24-sep-2026): lo que manda un workflow cuenta como del AGENTE
 // (no pausa al agente, no apaga el semáforo ni cuenta como primera respuesta
@@ -714,12 +753,22 @@ async function runStep(step: WorkflowStepPayload, ctx: StepCtx): Promise<SendOut
   }
 }
 
-/** Barrido: corridas "queued" viejas (perdieron su job) para re-encolar. */
+/**
+ * Barrido: corridas "queued" viejas (perdieron su job) para re-encolar. Una que ya arrancó y
+ * volvió a la fila esperando un archivo ("deferred", started_at puesto) se retoma hasta que
+ * pasó MEDIA_RETRY_MS desde su último intento: el barrido rápido (5 s) no la martilla.
+ */
 export async function staleQueuedRuns(now = new Date(), graceMs = RUN_QUEUED_GRACE_MS): Promise<string[]> {
   const rows = await db
     .select({ id: workflowRuns.id })
     .from(workflowRuns)
-    .where(and(eq(workflowRuns.status, "queued"), lt(workflowRuns.createdAt, new Date(now.getTime() - graceMs))))
+    .where(
+      and(
+        eq(workflowRuns.status, "queued"),
+        lt(workflowRuns.createdAt, new Date(now.getTime() - graceMs)),
+        or(isNull(workflowRuns.startedAt), lt(workflowRuns.startedAt, new Date(now.getTime() - MEDIA_RETRY_MS))),
+      ),
+    )
     .limit(100);
   return rows.map((r) => r.id);
 }
