@@ -133,6 +133,11 @@ export type IngestHooks = {
   onAdFallbackCandidate?: (job: FallbackJob) => Promise<void> | void;
   /** Doble verificación (después del commit): aviso 131060 del primer entrante, nacido "verificando". */
   onUnavailableNotice?: (m: { organizationId: string; messageId: string }) => Promise<void> | void;
+  /**
+   * Envío blindado (22-oct-2026): un archivo saliente que WhatsApp aceptó y luego rechazó. true =
+   * se rescató (lib/workflows/media-rescue.ts) y no va tarjeta; false = tarjeta de siempre. Nunca lanza.
+   */
+  onOutboundMediaFailed?: (failed: FailedOutbound) => Promise<boolean>;
 };
 
 export async function processWebhookEvent(
@@ -189,7 +194,7 @@ export async function processWebhookEvent(
         outcome = r.outcome;
         organizationId = r.organizationId ?? attributedOrgId;
       } else if (event.kind === "status") {
-        const r = await ingestStatus(provider.name, event);
+        const r = await ingestStatus(provider.name, event, hooks);
         outcome = r.outcome;
         organizationId = r.organizationId ?? attributedOrgId;
       } else if (event.kind === "reaction" || event.kind === "message_change") {
@@ -1245,6 +1250,7 @@ async function resolveInstagramContact(
 async function ingestStatus(
   provider: ProviderName,
   event: NormalizedStatusEvent,
+  hooks: IngestHooks = {},
 ): Promise<{ outcome: string; organizationId: string | null }> {
   // La organización sale del canal (proveedor + cuenta), nunca de un id de
   // mensaje suelto: un estado jamás toca mensajes de otra organización.
@@ -1327,8 +1333,12 @@ async function ingestStatus(
   }));
   if (revokeReplyOf) await recomputeFirstResponse(revokeReplyOf);
   if (confirmed) await refreshAfterConfirmedOutbound(confirmed.conversationId, confirmed.sentAt);
-  // Un archivo de un workflow que WhatsApp aceptó y luego rechazó: tarjeta en el chat.
-  if (newlyFailed) await noticeWorkflowSendFailed(newlyFailed);
+  // Un archivo de un workflow que WhatsApp aceptó y luego rechazó: primero el rescate desde el
+  // otro origen (envío blindado); si no aplica o no salió, tarjeta en el chat.
+  if (newlyFailed) {
+    const rescued = hooks.onOutboundMediaFailed ? await hooks.onOutboundMediaFailed(newlyFailed).catch(() => false) : false;
+    if (!rescued) await noticeWorkflowSendFailed(newlyFailed);
+  }
   // Seguimientos: el error queda en su intento; 131050 (baja de promociones) = sin seguimientos.
   if (newlyFailed) await onFollowUpDeliveryFailed(newlyFailed);
   return { outcome, organizationId: resolvedOrgId };

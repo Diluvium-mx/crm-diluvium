@@ -27,12 +27,18 @@ import { downloadMessageMedia } from "@/lib/messaging/media";
 import { generateMessageThumbnails, THUMBNAIL_MAX_ATTEMPTS } from "@/lib/messaging/thumbnails";
 import { HISTORY_MEDIA_PER_SWEEP, MEDIA_MAX_ATTEMPTS, MEDIA_SWEEP_DAYS } from "@/lib/messaging/media-keys";
 import { expireUnconfirmedSends } from "@/lib/messaging/send";
+import { refreshZernioCopies } from "@/lib/media-library/zernio-copy";
+import { rescueFailedMedia } from "@/lib/workflows/media-rescue";
+import type { FailedOutbound } from "@/lib/workflows/delivery-notice";
 import { DEAD_LETTER_PAYLOAD_DAYS, sweepExpiredDeadLetterPayloads } from "@/lib/messaging/dead-letter-retention";
 import { PROCESSED_RETENTION_DAYS, purgeExpiredProcessed, purgeExpiredQuarantine } from "@/lib/messaging/webhook-retention";
 import {
   enqueueMediaDownload,
   INBOUND_QUEUE,
+  MEDIA_BACKOFF_MAX_MS,
+  MEDIA_BACKOFF_TYPE,
   MEDIA_QUEUE,
+  mediaBackoffMs,
   redisConnection,
   reviveInbound,
   type InboundJob,
@@ -145,6 +151,8 @@ const worker = new Worker<InboundJob>(
         },
         ...adsIngestHooks,
         onUnavailableNotice: enqueueUnavailableCheck,
+        // Envío blindado (22-oct-2026): archivo que WhatsApp no pudo bajar → otra vez desde el otro origen.
+        ...(storage ? { onOutboundMediaFailed: (failed: FailedOutbound) => rescueFailedMedia({ provider, storage }, failed) } : {}),
       });
       console.info(`[worker] ${job.data.webhookEventId}: ${outcome}`);
       return outcome;
@@ -181,7 +189,13 @@ const mediaWorker = storage
         // bucket y se despierta al agente que la esperaba. Nunca lanza.
         await transcribeAndWake(storage, job.data.messageId);
       },
-      { connection: { ...redisConnection(), maxRetriesPerRequest: null }, concurrency: 2, autorun: false },
+      {
+        connection: { ...redisConnection(), maxRetriesPerRequest: null },
+        concurrency: 2,
+        autorun: false,
+        // P3: espera con tope de 10 min (lib/queue/inbound.ts). Los jobs viejos ("exponential") siguen igual.
+        settings: { backoffStrategy: (attemptsMade: number, type?: string) => (type === MEDIA_BACKOFF_TYPE ? mediaBackoffMs(attemptsMade) : MEDIA_BACKOFF_MAX_MS) },
+      },
     )
   : null;
 async function transcribeAndWake(bucket: ObjectStorage, messageId: string): Promise<void> {
@@ -444,6 +458,24 @@ function templatesInReview() {
 }
 const templatesTimer = setInterval(templatesInReview, TEMPLATES_EVERY_MS);
 
+// Envío blindado (22-oct-2026): copia de cada archivo de la Biblioteca en Zernio, renovada antes de
+// que Zernio la borre (7 días). Si el bucket falla al enviar, el archivo sale desde ahí.
+const ZERNIO_COPY_EVERY_MS = 10 * 60_000;
+let zernioCopyRunning = false;
+function zernioCopies() {
+  if (!migrationsReady || zernioCopyRunning || !storage) return;
+  zernioCopyRunning = true;
+  refreshZernioCopies({ provider, storage })
+    .then(({ copied, failed }) => {
+      if (copied || failed) console.info(`[biblioteca] copias en Zernio: ${copied} al día, ${failed} con error`);
+    })
+    .catch((error) => logError("[biblioteca] la copia en Zernio falló", error))
+    .finally(() => {
+      zernioCopyRunning = false;
+    });
+}
+const zernioCopyTimer = setInterval(zernioCopies, ZERNIO_COPY_EVERY_MS);
+
 // Apagado ORDENADO (28-sep-2026, revisión completa B8/B9): en cada despliegue Railway manda SIGTERM al
 // worker viejo y, pasado RAILWAY_DEPLOYMENT_DRAINING_SECONDS (variable del servicio; sin ella son 0 s),
 // SIGKILL. Aquí se deja de tomar trabajo nuevo y se espera a que termine lo que está en curso (una
@@ -462,6 +494,7 @@ async function shutdown(signal: string) {
   clearInterval(billingTimer);
   clearInterval(railwayBillingTimer);
   clearInterval(templatesTimer);
+  clearInterval(zernioCopyTimer);
   await Promise.all([worker.close(), mediaWorker?.close(), scheduled.close(), agent.close(), lector.close(), despertar.close(), followUps.close(), workflowsRunner.close(), outbox.close(), ads.close(), unavailable.close(), chatUploads?.close()]);
   console.info(`[worker] cerrado en orden en ${((Date.now() - t0) / 1000).toFixed(1)} s`);
   process.exit(0);
@@ -482,6 +515,8 @@ waitForMigrations()
     // Y la primera lectura del gasto real (la tarjeta del Dashboard sale al día tras un deploy).
     billing();
     railwayBillingTick();
+    // Y las copias en Zernio que falten (envío blindado), sin esperar 10 min.
+    zernioCopies();
     void worker.run();
     void mediaWorker?.run();
     scheduled.run();

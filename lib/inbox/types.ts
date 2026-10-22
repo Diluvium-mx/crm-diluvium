@@ -186,6 +186,7 @@ export type SendErrorCode =
   | "template_params"
   | "media_not_found"
   | "storage_unavailable"
+  | "media_unavailable"
   | "no_phone"
   | "duplicate_phone";
 

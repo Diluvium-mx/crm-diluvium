@@ -49,7 +49,8 @@ import { trustedMediaMime } from "./media-type";
 import { addNotice } from "@/lib/ai/runtime/notices";
 import { renderTemplateBody, templateMaxIndex } from "./template-format";
 import { isForeignTemplateAccount } from "./template-sync";
-import { loadMediaAsset, mediaAssetSignedUrl } from "@/lib/media-library/service";
+import { loadMediaAsset } from "@/lib/media-library/service";
+import { libraryCopyFor, MEDIA_ORIGIN_META, MEDIA_SEND_URL_SECONDS, pickMediaSource, type MediaOrigin } from "./media-source";
 import type { ObjectStorage } from "@/lib/storage/s3";
 import { isTemplateSendable } from "@/lib/templates/types";
 import { chatUploadMessageId } from "@/lib/chat-attachments/keys";
@@ -70,6 +71,8 @@ export class SendRejectedError extends Error {
       | "template_params"
       | "media_not_found"
       | "storage_unavailable"
+      // Envío blindado (22-oct-2026): ni el bucket ni la copia en Zernio entregan el archivo ahora.
+      | "media_unavailable"
       // Primer mensaje a un contacto sin chat (lib/messaging/start-conversation.ts).
       | "no_phone"
       | "duplicate_phone",
@@ -303,19 +306,23 @@ export type SendMediaParams = {
   now?: Date;
   /** Igual que en SendTextParams (Instagram de 24 h a 7 días). */
   humanAgent?: boolean;
+  /** Origen que se prueba primero (rescate: el que NO falló). Por defecto, el bucket. */
+  prefer?: MediaOrigin;
+  /** metadata extra de la fila (rescate: la marca y lo que contestaba el original). */
+  metadata?: Record<string, unknown>;
+  /** Pruebas: fetch para probar la copia de Zernio. */
+  fetchImpl?: typeof fetch;
 };
-
-// Vida de la URL firmada que descarga el proveedor: suficiente para reintentos
-// del proveedor, corta para que no circule.
-export const MEDIA_SEND_URL_SECONDS = 15 * 60;
 
 /**
  * Envía un archivo de la biblioteca (Fase D) con el MISMO patrón outbox que el
  * texto: fila "queued" antes de llamar al proveedor (su id = clave de
  * idempotencia) y la clasificación enviado/rechazado/desconocido de `deliver`.
  * Es texto libre para WhatsApp: exige la ventana de 24 h abierta. El archivo
- * viaja por URL firmada temporal; en la burbuja queda el storageKey (la bandeja
- * lo sirve por /api/media/{messageId}/{index} como cualquier adjunto).
+ * viaja por URL temporal: la firmada del bucket o, si no responde, la copia en
+ * Zernio (envío blindado, ./media-source.ts); sin ninguna, `media_unavailable`
+ * ANTES de crear la burbuja (la corrida reintenta, executor.ts). En la burbuja
+ * queda el storageKey (la bandeja lo sirve por /api/media/{messageId}/{index}).
  */
 export async function sendMediaMessage(provider: MessagingProvider, storage: ObjectStorage, params: SendMediaParams): Promise<SendOutcome> {
   const now = params.now ?? new Date();
@@ -324,12 +331,10 @@ export async function sendMediaMessage(provider: MessagingProvider, storage: Obj
   const { conversation } = loaded;
   const asset = await loadMediaAsset(params.organizationId, params.assetId);
   if (!asset) throw new SendRejectedError("media_not_found", "El archivo no existe en la biblioteca de esta organización.");
-  let url: string;
-  try {
-    url = await mediaAssetSignedUrl(storage, asset, MEDIA_SEND_URL_SECONDS);
-  } catch (error) {
-    throw new SendRejectedError("storage_unavailable", `No se pudo firmar el archivo: ${error instanceof Error ? error.message : String(error)}`);
-  }
+  const picked = await pickMediaSource({ storage, asset, now, prefer: params.prefer, fetchImpl: params.fetchImpl });
+  if (picked.url === null) throw new SendRejectedError("media_unavailable", `El archivo no se pudo preparar (${picked.reasons.join("; ")})`);
+  const url = picked.url;
+  if (picked.origin === "zernio") console.warn(`[send] ${asset.id}: el bucket no entregó el archivo; sale desde la copia en Zernio`);
 
   const source = params.source ?? "crm";
   const sentByUserId = params.sentByUserId ?? null;
@@ -360,6 +365,8 @@ export async function sendMediaMessage(provider: MessagingProvider, storage: Obj
     status: "queued",
     sentByUserId,
     sentAt: now,
+    // De dónde salió: si WhatsApp lo rechaza, el rescate lo manda desde el otro (lib/workflows/media-rescue.ts).
+    metadata: { ...params.metadata, [MEDIA_ORIGIN_META]: picked.origin },
   });
   return deliver({
     messageId,
@@ -537,6 +544,19 @@ export async function sendQueuedChatUpload(
     // El detalle (endpoint, bucket) va al log; en la burbuja, un motivo simple.
     logError(`[adjuntos] no se pudo firmar ${row.id}`, error);
     return fail("storage_unavailable", "El almacenamiento de archivos no respondió; vuelve a adjuntarlo.");
+  }
+  // Envío blindado (22-oct-2026): el enlace se prueba ANTES de mandarlo. Si el bucket no lo
+  // entrega y el archivo es de la Biblioteca (Multimedia), sale desde su copia en Zernio; si no,
+  // falla aquí, a la vista del vendedor, y no minutos después como 131053.
+  const probe = storage.probeSignedUrl ? await storage.probeSignedUrl(url) : null;
+  if (probe && !probe.ok) {
+    const copy = await libraryCopyFor(params.organizationId, attachment.storageKey, sendNow);
+    if (!copy) {
+      console.error(`[adjuntos] ${row.id}: el bucket no entrega el archivo (${probe.reason})`);
+      return fail("storage_unavailable", "El almacenamiento de archivos no responde; vuelve a intentarlo en unos minutos.");
+    }
+    console.warn(`[adjuntos] ${row.id}: el bucket no entregó el archivo (${probe.reason}); sale desde la copia en Zernio`);
+    url = copy;
   }
   const { conversation } = loaded;
   const kind = row.type;

@@ -39,6 +39,7 @@ const CRM_OWN_CODES = new Set([
   "template_params",
   "media_not_found",
   "storage_unavailable",
+  "media_unavailable",
   "media_url_insegura",
 ]);
 

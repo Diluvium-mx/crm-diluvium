@@ -6,6 +6,7 @@ import type { Readable } from "node:stream";
 import { DeleteObjectCommand, GetObjectCommand, HeadObjectCommand, ListObjectsV2Command, S3Client } from "@aws-sdk/client-s3";
 import { Upload } from "@aws-sdk/lib-storage";
 import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
+import { probeUrl, type ProbeResult } from "@/lib/net/probe-url";
 
 export interface ObjectStorage {
   /**
@@ -46,6 +47,12 @@ export interface ObjectStorage {
    * limpieza de adjuntos del chat no enviados (lib/chat-attachments/cleanup.ts).
    */
   listObjects?(prefix: string): AsyncIterable<{ key: string; lastModified: Date }>;
+  /**
+   * ¿Una URL de `signedGetUrl` entrega el archivo desde fuera, como la descargaría WhatsApp?
+   * (envío blindado, 22-oct-2026: el 21-oct las firmas con la llave vieja daban 403). Opcional:
+   * los dobles de prueba no lo tienen y se da por buena.
+   */
+  probeSignedUrl?(url: string): Promise<ProbeResult>;
 }
 
 export class StorageNotConfiguredError extends Error {}
@@ -161,6 +168,9 @@ export function objectStorage(): ObjectStorage {
         }),
         { expiresIn: expiresInSeconds },
       );
+    },
+    probeSignedUrl(url) {
+      return probeUrl(url);
     },
   };
   return cached;

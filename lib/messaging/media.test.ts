@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import { sha256Base64, storageKeyFor } from "./media-keys";
 import { ZernioProvider } from "./zernio";
+import { isOwnStorageError, MediaDownloadError } from "./media";
 
 describe("storageKeyFor", () => {
   it("llave determinista por organización/mensaje/índice, con nombre saneado", () => {
@@ -49,5 +50,24 @@ describe("ZernioProvider.fetchMedia", () => {
     const p = new ZernioProvider({ apiKey: "k", webhookSecret: "s" }, fetchImpl, async () => ["10.0.0.7"]);
     await expect(p.fetchMedia("https://zernio.com/api/v1/whatsapp/media/1")).rejects.toThrow(/dirección interna/);
     expect(fetchImpl).not.toHaveBeenCalled();
+  });
+});
+
+// P3 (22-oct-2026): una falla de NUESTRO bucket no cuenta como intento de descarga.
+describe("isOwnStorageError", () => {
+  it("error del SDK de S3 (trae $metadata): sí", () => {
+    const error = Object.assign(new Error("The request signature we calculated does not match the signature you provided."), {
+      name: "SignatureDoesNotMatch",
+      $metadata: { httpStatusCode: 403 },
+    });
+    expect(isOwnStorageError(error)).toBe(true);
+  });
+
+  it.each(["InvalidAccessKeyId: The AWS Access Key Id you provided does not exist", "AccessDenied: Access Denied"])("por el texto: %s", (message) => {
+    expect(isOwnStorageError(new Error(message))).toBe(true);
+  });
+
+  it.each([new MediaDownloadError("descarga respondió 404"), new Error("ECONNRESET"), "texto suelto"])("una falla de la descarga del proveedor cuenta: %s", (error) => {
+    expect(isOwnStorageError(error)).toBe(false);
   });
 });

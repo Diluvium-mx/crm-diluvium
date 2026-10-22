@@ -470,6 +470,13 @@
       "when": 1792518290991,
       "tag": "0068_corrector_diccionario",
       "breakpoints": true
+    },
+    {
+      "idx": 69,
+      "version": "7",
+      "when": 1792693000655,
+      "tag": "0069_envio_blindado",
+      "breakpoints": true
     }
   ]
 }
