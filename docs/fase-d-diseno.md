@@ -204,6 +204,8 @@ media_assets        id, org_id, kind (image|video|document), title, file_name, m
                     bytes, sha256, storage_key, width, height, duration_seconds,
                     created_by_user_id, created_at, deleted_at (soft)
                     -- bucket: org/{org_id}/library/{asset_id}-{slug}. Índice (org_id, deleted_at).
+                    -- 0069 (22-oct-2026, §12): zernio_copy_url, zernio_copy_at = copia de respaldo en
+                    -- el almacenamiento de Zernio (se borra a los 7 días; el worker la renueva a los 5).
 
 workflows           id, org_id, slug (único por org), name, agent_description ("Cuándo usarlo",
                     va a la descripción de la tool), enabled, is_system (predeterminado: no se
@@ -853,3 +855,54 @@ Modelo 1 (Luna) y Modelo 2 (Sonnet 5) **por etapa**, cada uno con su selector en
 más el **reenvío seguro** (ver también §10.2: el bug de reintentos de `fix/agente-reenvio` sigue abierto).
 
 **Fase D cerrada.**
+
+## 12. Envío blindado de archivos (22-oct-2026)
+
+**Qué pasó.** El 21-oct Railway tuvo un incidente de seguridad y a las 22:37 UTC (15:37 Mazatlán)
+cambió las llaves de TODOS los buckets. Los servicios leen sus variables solo al arrancar y Railway
+no dejaba redesplegar, así que el CRM siguió firmando los enlaces con la llave vieja: WhatsApp los
+descargaba, el bucket respondía 403 y la imagen fallaba minutos después (131053). De 15:45 a 09:10
+del día siguiente **58 archivos no le llegaron a 53 clientes** (52 la tabla de tamaños) y nada lo
+frenó ni avisó: se notó por las tarjetas amarillas. El dueño decidió no reenviarlos (llegarían fuera
+de la plática) y pidió que no vuelva a pasar aunque falle un proveedor.
+
+**Cómo sale ahora un archivo de la Biblioteca** (`lib/messaging/media-source.ts`, `send.ts`):
+1. **Se prueba antes de mandar.** El CRM pide el primer byte del enlace firmado, igual que lo haría
+   WhatsApp (`storage.probeSignedUrl`, `lib/net/probe-url.ts`). Un 403 se ve aquí, no en el chat.
+2. **Segunda fuente: copia en Zernio.** Cada archivo de la Biblioteca vive también en el
+   almacenamiento de Zernio (`POST /v1/media/presign` + PUT; `media.zernio.com`, Cloudflare R2: otro
+   proveedor que nuestro bucket de Railway). Zernio borra lo subido a los 7 días: el worker sube lo
+   que falta y renueva cada copia a los 5 (`lib/media-library/zernio-copy.ts`, cada 10 min y al
+   arrancar; tope 16 MB, solo tipos que Zernio acepta). Se usa hasta el día 6.5. Si el bucket no
+   entrega, el archivo sale desde la copia (`metadata.origenArchivo = "zernio"` en la burbuja; la
+   burbuja se sigue viendo desde el bucket).
+3. **Espera corta, nunca tarde.** Si ninguna fuente entrega, no se crea la burbuja: la corrida vuelve
+   a "queued" en ese paso (`ExecuteOutcome "deferred"`, `payload.archivoEnEsperaDesde`), sin gastar sus
+   reintentos ni ocupar al worker, y el barrido la retoma una vez por minuto (`MEDIA_RETRY_MS`). A los
+   **10 minutos** (`MEDIA_HOLD_MS`, decisión del dueño: después ya no tiene sentido en la plática) falla
+   con `media_unavailable` y su tarjeta de siempre.
+4. **Rescate.** WhatsApp descarga desde SUS servidores: si aun así avisa 131053 (o el 400 «Upload
+   attachment failure» de Zernio) en los primeros 10 min, el mismo archivo sale **una vez más** desde
+   el otro origen (`lib/workflows/media-rescue.ts`, gancho `onOutboundMediaFailed` de la ingesta),
+   con id `<original>:rescate`, el mismo pie y lo que contestaba el original («el workflow es la
+   respuesta»); entra a la corrida y no deja tarjeta. Si el rescate también falla, tarjeta.
+5. Adjuntos del chat (vendedor): el enlace también se prueba; si es de la Biblioteca (Multimedia) y
+   el bucket no entrega, sale desde su copia; si no, falla al momento, a la vista del vendedor.
+
+**Qué no cubre.** Si Zernio o WhatsApp están caídos no sale nada (tampoco texto). Las fotos que manda
+el cliente y el lector siguen dependiendo del bucket (P3 abajo evita que se pierdan).
+
+**Junto con esto (decisión del dueño, 22-oct):**
+- **P3 — fotos de clientes.** Un error de NUESTRO bucket (llaves, permisos) no cuenta para los 25
+  intentos (`isOwnStorageError`, `lib/messaging/media.ts`) y la espera entre reintentos tiene tope de
+  10 min (`mediaBackoffMs`, `lib/queue/inbound.ts`). El 22-oct 11 fotos se dieron por perdidas por las
+  llaves y se recuperaron a mano. Ojo: Zernio borra la media entrante a los 7 días.
+- **P4 — alarma de envíos en serie.** 3 o más salientes fallidos con el mismo código en la última hora
+  (sin 131049, 130472 ni 131050, que son normales) = franja roja en la Bandeja (`send-failures-banner`,
+  se recarga cada 2 min) y problema del vigilante (`/api/health/inbound` → issue `alerta-whatsapp`; el
+  issue solo lleva conteo y código). `lib/monitoring/send-failures.ts`.
+- **P5 — respaldos.** Si `db-backup` o `media-backup` fallan, issue `alerta-respaldo` el mismo día
+  (docs/backups.md).
+- **Si Railway vuelve a cambiar las llaves:** redesplegar web y worker (producción y staging) y recargar
+  las llaves que usa GitHub para los respaldos (docs/backups.md, paso 4 y secretos de medios).
+

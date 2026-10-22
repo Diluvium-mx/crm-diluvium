@@ -27,6 +27,8 @@
 #   RESPALDOS_S3_ACCESS_KEY_ID             (db-backup.yml)
 #   RESPALDOS_S3_SECRET_ACCESS_KEY
 #
+# Si el respaldo falla, el job `aviso` (al final) abre un issue `alerta-respaldo` el mismo día.
+#
 # Cómo cargar los secrets, restaurar y monitorear: docs/backups.md, «Respaldo de medios».
 name: media-backup
 
@@ -199,3 +201,72 @@ jobs:
             echo "::error::El respaldo de medios falló (rclone: $rc, resumen: $resumen). Revisa el resumen del job."
             exit 1
           fi
+
+  # Aviso el MISMO día si el respaldo falla (22-oct-2026, P5). Ese día fallaron los dos respaldos
+  # (Railway cambió las llaves del bucket) y nadie se enteró hasta verlo de casualidad: el correo de
+  # GitHub por un job fallido solo le llega a quien editó el cron por última vez.
+  # Abre un issue con la etiqueta `alerta-respaldo` (GitHub lo manda por correo a quien vigila el
+  # repo, igual que `alerta-whatsapp` en inbound-monitor.yml); si ya hay uno abierto de este
+  # workflow, le agrega un comentario en vez de abrir otro; y cuando el respaldo vuelve a pasar,
+  # comenta y lo cierra. Doc: docs/backups.md, «Aviso si falla un respaldo».
+  #
+  # - Job aparte, SIN el environment `production-backup` y sin más secret que el token de la propia
+  #   corrida: el job de respaldo no cambia ni gana permisos.
+  # - Solo en `main`: una prueba lanzada a mano desde otra rama no recibe los secrets, fallaría por
+  #   eso y abriría una alerta falsa.
+  # - El repo es PÚBLICO: el issue solo lleva nombre del workflow, fecha, enlace a la corrida y el
+  #   resultado. Nunca logs, nombres de bucket ni datos.
+  # - El título distingue el workflow (la etiqueta la comparten los dos respaldos). Dos corridas del
+  #   mismo workflow no se pisan: el `concurrency` de arriba las pone en fila, aviso incluido.
+  aviso:
+    needs: backup
+    if: ${{ always() && github.ref == 'refs/heads/main' }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      issues: write
+    env:
+      GH_TOKEN: ${{ github.token }}
+      LABEL: alerta-respaldo
+      WORKFLOW_NAME: media-backup
+      RESULTADO: ${{ needs.backup.result }}
+    steps:
+      - name: Abrir, comentar o cerrar el issue de alerta
+        run: |
+          set -euo pipefail
+          titulo="Respaldo falló: ${WORKFLOW_NAME}"
+          corrida="${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
+          utc=$(date -u '+%Y-%m-%d %H:%M')
+          mazatlan=$(TZ=America/Mazatlan date '+%Y-%m-%d %H:%M')
+
+          # Issues ABIERTOS de ESTE workflow (misma etiqueta para los dos respaldos; el título los distingue).
+          abiertos=$(gh issue list --repo "$GITHUB_REPOSITORY" --label "$LABEL" --state open --limit 100 \
+            --json number,title | jq -r --arg t "$titulo" '.[] | select(.title == $t) | .number')
+          primero=${abiertos%%$'\n'*}
+
+          case "$RESULTADO" in
+            failure | cancelled)
+              if [ "$RESULTADO" = "cancelled" ]; then resultado_es="cancelado"; else resultado_es="falló"; fi
+              gh label create "$LABEL" --repo "$GITHUB_REPOSITORY" --color D93F0B \
+                --description "Un respaldo diario falló" 2>/dev/null || true
+              body=$(printf 'El respaldo **%s** no terminó bien.\n\n- Resultado: %s\n- Fecha: %s UTC (%s hora de Mazatlán)\n- [Corrida](%s)\n\nQué hacer: docs/backups.md, «Aviso si falla un respaldo».' \
+                "$WORKFLOW_NAME" "$resultado_es" "$utc" "$mazatlan" "$corrida")
+              if [ -n "$primero" ]; then
+                gh issue comment "$primero" --repo "$GITHUB_REPOSITORY" --body "$body"
+              else
+                gh issue create --repo "$GITHUB_REPOSITORY" --label "$LABEL" --title "$titulo" --body "$body"
+              fi
+              ;;
+            success)
+              # Volvió a pasar: se comenta y se cierra cada alerta abierta de este workflow.
+              for n in $abiertos; do
+                gh issue close "$n" --repo "$GITHUB_REPOSITORY" \
+                  --comment "El respaldo volvió a pasar: ${utc} UTC (${mazatlan} hora de Mazatlán). [Corrida](${corrida})"
+              done
+              ;;
+            *)
+              # skipped u otro: no es ni falla ni éxito, no se toca ninguna alerta.
+              echo "Resultado del respaldo: ${RESULTADO}. Sin cambios en las alertas."
+              ;;
+          esac

@@ -14,7 +14,7 @@
 // sale "malformed": queda en dead-letter en webhook_events (nada se pierde).
 import { createHmac, timingSafeEqual } from "node:crypto";
 import { zernioErrorDetail } from "./zernio-error";
-import { MEDIA_HOSTS, resolveHost, safeFetch, UnsafeUrlError, type ResolveHost } from "@/lib/net/safe-fetch";
+import { MEDIA_HOSTS, resolveHost, safeFetch, safeUrl, UnsafeUrlError, type ResolveHost } from "@/lib/net/safe-fetch";
 import { z } from "zod";
 import {
   SendFailedError,
@@ -29,6 +29,7 @@ import {
   type ProviderTemplate,
   type SendResult,
   type SendMediaInput,
+  type UploadMediaInput,
   type SendTemplateInput,
   type SendTextInput,
   type StoredInbound,
@@ -66,6 +67,8 @@ const CONVERSATION_MAX_PAGES = 10;
 /** Holgura contra desfase de relojes (hora de WhatsApp vs. `updatedTime` de Zernio). */
 const CONVERSATION_SKEW_MS = 5 * 60_000;
 const SEND_TIMEOUT_MS = 15_000;
+// Subir la copia de un video de la Biblioteca (hasta ~16 MB) puede tardar más que un envío.
+const UPLOAD_TIMEOUT_MS = 120_000;
 /** Doble verificación del aviso: el chat de un contacto nuevo cabe en la 1.ª página; tope por seguridad. */
 const STORED_MESSAGE_PAGES = 3;
 /** Texto con el que Zernio guarda el aviso vacío de Meta. */
@@ -841,6 +844,32 @@ export class ZernioProvider implements MessagingProvider {
     }
     if (caption) body.message = caption;
     return this.postToConversation(providerConversationId, body, idempotencyKey);
+  }
+
+  // Copia de respaldo de la Biblioteca (envío blindado, 22-oct-2026). docs.zernio.com/media:
+  // POST /v1/media/presign { filename, contentType, size } → { uploadUrl, publicUrl }; el archivo
+  // va con PUT a uploadUrl SIN la llave (es el almacenamiento, no la API; vence en 1 h). La
+  // publicUrl (media.zernio.com/temp/…) se borra a los 7 días: el worker la renueva antes.
+  async uploadMedia({ body, fileName, contentType }: UploadMediaInput): Promise<{ publicUrl: string }> {
+    const presigned = await this.apiJson("POST", "/v1/media/presign", { filename: fileName, contentType, size: body.byteLength });
+    const data = asRecord(presigned.data ?? presigned);
+    const uploadUrl = safeUrl(asString(data.uploadUrl) ?? "");
+    const publicUrl = safeUrl(asString(data.publicUrl) ?? "");
+    if (!uploadUrl || !publicUrl) throw new ZernioApiError(0, "Zernio no devolvió una URL https para subir el archivo");
+    let res: Response;
+    try {
+      res = await this.fetchImpl(uploadUrl, {
+        method: "PUT",
+        headers: { "Content-Type": contentType },
+        body: body as BodyInit,
+        signal: AbortSignal.timeout(UPLOAD_TIMEOUT_MS),
+      });
+    } catch (error) {
+      throw new ZernioApiError(0, `Sin respuesta al subir el archivo a Zernio: ${error instanceof Error ? error.message : String(error)}`);
+    }
+    await res.body?.cancel().catch(() => undefined);
+    if (!res.ok) throw new ZernioApiError(res.status, `El almacenamiento de Zernio respondió ${res.status} al subir el archivo`);
+    return { publicUrl: publicUrl.toString() };
   }
 
   /**

@@ -55,6 +55,27 @@ Sin herramientas externas, a propósito: el CRM solo depende de GitHub y Railway
   se congela, revisa *Actions → db-backup* al menos una vez al mes. Si está desactivado:
   *Enable workflow* y *Run workflow*.
 
+## Aviso si falla un respaldo (22-oct-2026)
+
+El 22-oct fallaron `db-backup` y `media-backup` (Railway cambió las llaves del bucket) y nadie se
+enteró hasta verlo de casualidad: el correo de GitHub por un job fallido solo le llega a quien editó
+el cron por última vez. Por eso cada workflow (`db-backup.yml` y `media-backup.yml`) tiene un job
+`aviso` que corre al final, pase lo que pase:
+
+- **Si el respaldo falló** (o se canceló): abre un issue con la etiqueta **`alerta-respaldo`** y el
+  título «Respaldo falló: db-backup» (o `media-backup`). Si ya hay uno abierto de ese workflow, le agrega
+  un comentario en vez de abrir otro. GitHub lo manda por correo a quien vigila el repo, igual que
+  `alerta-whatsapp`.
+- **Si volvió a pasar**: comenta en el issue abierto de ese workflow, con el enlace a la corrida, y lo
+  cierra solo.
+- El repo es público: el issue solo lleva el nombre del workflow, la fecha (UTC y hora de Mazatlán), el
+  enlace a la corrida y el resultado. El detalle del error se ve entrando a la corrida.
+- Solo avisa desde `main` (los lanzamientos a mano desde otra rama no reciben los secrets y fallarían
+  por eso). El job usa solo el token de la propia corrida (`issues: write`); no toca el environment
+  `production-backup` ni los secrets del respaldo.
+- Esto cubre un respaldo que corre y falla. Un respaldo que **no corre** (workflows apagados por
+  inactividad) sigue sin avisar: ver *Monitoreo*, arriba.
+
 ## Secrets
 
 Viven en el environment **`production-backup`** de GitHub, que solo entrega secrets a jobs que

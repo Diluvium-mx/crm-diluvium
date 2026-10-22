@@ -86,6 +86,20 @@ export async function reviveInbound(webhookEventId: string): Promise<"added" | "
 export const MEDIA_QUEUE = "media-download";
 export type MediaJob = { messageId: string };
 
+// P3 (22-oct-2026): espera entre reintentos de una descarga, exponencial desde 10 s pero con TOPE
+// de 10 min. Con el "exponential" de BullMQ, el barrido re-lanza el job sin reiniciar el contador
+// y la espera crecía sin fin: el 22-oct, tras el cambio de llaves de Railway, fotos de clientes
+// quedaron con su siguiente intento a días (10 s · 2^n). Va en `settings.backoffStrategy` del worker.
+export const MEDIA_BACKOFF_TYPE = "media";
+const MEDIA_BACKOFF_BASE_MS = 10_000;
+export const MEDIA_BACKOFF_MAX_MS = 10 * 60_000;
+
+/** Espera antes del siguiente intento (pura). */
+export function mediaBackoffMs(attemptsMade: number): number {
+  const exponent = Math.min(Math.max(attemptsMade - 1, 0), 20);
+  return Math.min(MEDIA_BACKOFF_BASE_MS * 2 ** exponent, MEDIA_BACKOFF_MAX_MS);
+}
+
 const globalForMediaQueue = globalThis as unknown as { mediaQueue?: Queue<MediaJob> };
 
 function mediaQueue(): Queue<MediaJob> {
@@ -94,7 +108,7 @@ function mediaQueue(): Queue<MediaJob> {
     defaultJobOptions: {
       // ~1 h de reintentos con backoff; después sigue el barrido del worker.
       attempts: 10,
-      backoff: { type: "exponential", delay: 10_000 },
+      backoff: { type: MEDIA_BACKOFF_TYPE },
       removeOnComplete: { age: 24 * 3600, count: 10_000 },
       removeOnFail: { age: 14 * 24 * 3600 },
     },

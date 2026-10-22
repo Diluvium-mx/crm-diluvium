@@ -407,4 +407,17 @@ export interface MessagingProvider {
     providerConversationId: string,
     providerMessageId: string,
   ): Promise<StoredInbound | null>;
+  /**
+   * Envío blindado (22-oct-2026): sube un archivo al almacenamiento DEL PROVEEDOR y devuelve
+   * su URL pública (sirve para `sendMedia`). Es la copia de respaldo de la Biblioteca: no
+   * depende de nuestro bucket. Lanza ZernioApiError si no se pudo. Opcional: sin él, no hay copia.
+   */
+  uploadMedia?(input: UploadMediaInput): Promise<{ publicUrl: string }>;
 }
+
+export type UploadMediaInput = {
+  /** El archivo completo (los de la Biblioteca son chicos: imágenes y videos de WhatsApp). */
+  body: Uint8Array;
+  fileName: string;
+  contentType: string;
+};
