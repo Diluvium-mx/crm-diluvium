@@ -477,6 +477,13 @@
       "when": 1792693000655,
       "tag": "0069_envio_blindado",
       "breakpoints": true
+    },
+    {
+      "idx": 70,
+      "version": "7",
+      "when": 1792778463622,
+      "tag": "0070_zernio_billing",
+      "breakpoints": true
     }
   ]
 }
