@@ -11,12 +11,14 @@ import { resolveRange } from "@/lib/dashboard/range";
 import { aiSpendSummary } from "@/lib/dashboard/ai-spend";
 import { metaWhatsappSummary } from "@/lib/dashboard/meta-whatsapp";
 import { railwaySummary } from "@/lib/dashboard/railway";
+import { zernioSummary } from "@/lib/dashboard/zernio";
 import { loadWhatsappStatus } from "@/lib/monitoring/dashboard-status";
 import { loadBotStatus } from "@/lib/monitoring/bot-silence";
 import { listFunnelStages } from "@/lib/contacts/funnel-stages";
 import { AiSpendCard } from "./_components/ai-spend-card";
 import { MetaWhatsappCard } from "./_components/meta-whatsapp-card";
 import { RailwayCard } from "./_components/railway-card";
+import { ZernioCard } from "./_components/zernio-card";
 import { BreakdownList } from "./_components/breakdown-list";
 import { DailyChart } from "./_components/daily-chart";
 import { PeriodCards } from "./_components/period-cards";
@@ -47,7 +49,7 @@ export default async function InicioPage({ searchParams }: PageProps<"/inicio">)
   const range = resolveRange({ mes: param(params.mes), desde: param(params.desde), hasta: param(params.hasta) });
 
   const canSeeSpend = roleAllows(role, "aiSpend", "read");
-  const [cards, series, breakdown, spend, meta, railway, whatsapp, bot, stages, followUps, followUpsReal] = await Promise.all([
+  const [cards, series, breakdown, spend, meta, railway, zernio, whatsapp, bot, stages, followUps, followUpsReal] = await Promise.all([
     newConversationsCards(db, organizationId),
     newConversationsByDay(db, organizationId, range),
     newConversationsBreakdown(db, organizationId, range),
@@ -56,6 +58,8 @@ export default async function InicioPage({ searchParams }: PageProps<"/inicio">)
     canSeeSpend ? metaWhatsappSummary(db, organizationId) : null,
     // Cobro de Railway (lo lee el worker cada 5 min); null sin token: no hay tarjeta.
     canSeeSpend ? railwaySummary(db, organizationId) : null,
+    // Cobro de Zernio (lo lee el worker cada 15 min); null sin lectura: no hay tarjeta.
+    canSeeSpend ? zernioSummary(db, organizationId) : null,
     // Alarma de desconexión: lo último que guardó el monitoreo (no llama a Zernio).
     loadWhatsappStatus(db, organizationId),
     // ¿El bot contesta? Solo datos del CRM (canal, horario, chats sin respuesta).
@@ -85,6 +89,7 @@ export default async function InicioPage({ searchParams }: PageProps<"/inicio">)
       {spend && <AiSpendCard summary={spend} canRegister={roleAllows(role, "aiSpend", "update")} />}
       {meta && <MetaWhatsappCard summary={meta} />}
       {railway && <RailwayCard summary={railway} />}
+      {zernio && <ZernioCard summary={zernio} />}
 
       <header className="flex flex-wrap items-end justify-between gap-3">
         <div>
