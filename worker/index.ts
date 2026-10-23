@@ -70,6 +70,7 @@ import { startUnavailableWorker } from "./unavailable";
 import { startDespertarWorker } from "./despertar";
 import { syncAiBilling } from "@/lib/ai/billing/sync";
 import { syncRailwayBilling } from "@/lib/railway-billing/sync";
+import { syncZernioBilling } from "@/lib/zernio-billing/sync";
 import { refreshTemplatesInReview } from "@/lib/messaging/templates";
 
 const SWEEP_EVERY_MS = 60_000;
@@ -440,6 +441,21 @@ function railwayBillingTick() {
 }
 const railwayBillingTimer = setInterval(railwayBillingTick, BILLING_EVERY_MS);
 
+// Cobro de Zernio (23-oct-2026): cada 15 min se lee el consumo del mes y el estado del cobro
+// (lib/zernio-billing/sync.ts), y una vez al arrancar. Usa la misma ZERNIO_API_KEY de los mensajes.
+const ZERNIO_BILLING_EVERY_MS = 15 * 60_000;
+let zernioBillingRunning = false;
+function zernioBillingTick() {
+  if (!migrationsReady || zernioBillingRunning) return;
+  zernioBillingRunning = true;
+  syncZernioBilling()
+    .catch((error) => logError("[zernio-cobro] la lectura del cobro falló", error))
+    .finally(() => {
+      zernioBillingRunning = false;
+    });
+}
+const zernioBillingTimer = setInterval(zernioBillingTick, ZERNIO_BILLING_EVERY_MS);
+
 // Plantillas al día solas (1-oct-2026): mientras alguna esté «En revisión», cada 10 min se le
 // pregunta a Meta su estado (lo mismo que «Ver estado»). Sin plantillas en revisión no consulta nada.
 const TEMPLATES_EVERY_MS = 10 * 60_000;
@@ -493,6 +509,7 @@ async function shutdown(signal: string) {
   clearInterval(monitorTimer);
   clearInterval(billingTimer);
   clearInterval(railwayBillingTimer);
+  clearInterval(zernioBillingTimer);
   clearInterval(templatesTimer);
   clearInterval(zernioCopyTimer);
   await Promise.all([worker.close(), mediaWorker?.close(), scheduled.close(), agent.close(), lector.close(), despertar.close(), followUps.close(), workflowsRunner.close(), outbox.close(), ads.close(), unavailable.close(), chatUploads?.close()]);
@@ -515,6 +532,7 @@ waitForMigrations()
     // Y la primera lectura del gasto real (la tarjeta del Dashboard sale al día tras un deploy).
     billing();
     railwayBillingTick();
+    zernioBillingTick();
     // Y las copias en Zernio que falten (envío blindado), sin esperar 10 min.
     zernioCopies();
     void worker.run();
