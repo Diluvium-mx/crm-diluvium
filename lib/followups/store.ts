@@ -667,10 +667,12 @@ async function advance(row: FollowUpRow, now: Date, deps: FollowUpRuntimeDeps): 
   const editado = door === "texto" ? vendorText !== null : vendorTemplate !== null;
 
   if (real) {
-    // Último chequeo antes de escribirle al cliente: su hora, el tope de las 19:00 para plantilla (si no la eligió
-    // el vendedor) y los 7 días.
-    let later = nextSendable(now, row.timeZone, door, caso, fondo, signals.table, row.dueSetBy === "vendedor");
-    if (!later && door === "plantilla" && signals.lastTemplateAt && now.getTime() < signals.lastTemplateAt.getTime() + TEMPLATE_SPACING_DAYS * DAY_MS) {
+    // Último chequeo antes de escribirle al cliente: su hora, el tope de las 19:00 para plantilla y los 7 días
+    // entre plantillas. Las dos últimas, solo si la hora la puso el CRM: la que eligió una persona sale a esa hora
+    // aunque otra plantilla le haya llegado hace menos de 7 días (decisión del dueño, 24-oct-2026).
+    const setByVendor = row.dueSetBy === "vendedor";
+    let later = nextSendable(now, row.timeZone, door, caso, fondo, signals.table, setByVendor);
+    if (!later && !setByVendor && door === "plantilla" && signals.lastTemplateAt && now.getTime() < signals.lastTemplateAt.getTime() + TEMPLATE_SPACING_DAYS * DAY_MS) {
       later = planAttempt({
         caso,
         intento: Math.max(2, row.intento),
