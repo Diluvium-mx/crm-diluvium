@@ -2,10 +2,11 @@
 // derecho en la píldora (en Android, dejarla presionada) se alternan dos:
 // - Estrella fugaz / avioncito: en oscuro, dos estrellas fugaces cruzan la barra de arriba; en
 //   claro, un avioncito sale de detrás del sol y pasa entre las nubes de la píldora.
-// - Eclipse: la bolita va al centro, una sombra la tapa y queda su halo; la píldora y TODA la pantalla
-//   se oscurecen un poco (con un hueco claro alrededor del halo) y luego todo regresa. A pedido del
-//   dueño (24-oct-2026): la entrada y la salida en la píldora son rápidas (1 s y 0.9 s) y la pantalla
-//   se queda oscura 14.1 s completos (antes eran 14.5 s en total, con solo ~3 s de oscuridad completa).
+// - Eclipse: la bolita va al centro, una sombra la tapa y queda su halo (solo dentro de la píldora);
+//   la píldora y TODA la pantalla se oscurecen un poco y luego todo regresa. A pedido del dueño
+//   (24-oct-2026): la entrada y la salida en la píldora son rápidas (1 s y 0.9 s), la pantalla se queda
+//   oscura 14.1 s completos (antes eran 14.5 s en total, con solo ~3 s de oscuridad completa) y ya no
+//   hay luz alrededor de la píldora (antes un degradado de 80 px dejaba un círculo claro sobre la página).
 // Solo visual: no cambia el tema ni toca datos, sin sonido; con «reducir movimiento» no hace nada.
 // Las medidas dentro de la píldora van en su escala de 62×32 (la píldora lleva zoom 0.8). Estilos
 // en app/globals.css › "Interruptor de tema".
@@ -16,6 +17,7 @@ type Scene = {
   add: (className: string, parent: Element, before?: Element | null) => HTMLElement;
   animate: (el: Element, keyframes: Keyframe[], options: KeyframeAnimationOptions) => void;
   endAfter: (ms: number) => void;
+  listen: (target: EventTarget, type: string, handler: () => void) => void;
   stop: () => void;
 };
 
@@ -42,6 +44,7 @@ function createScene(pill: HTMLElement, knob: HTMLElement): Scene {
   const parts: Element[] = [];
   const animations: Animation[] = [];
   const timers: number[] = [];
+  const unlisten: (() => void)[] = [];
   const scene: Scene = {
     pill,
     knob,
@@ -59,8 +62,13 @@ function createScene(pill: HTMLElement, knob: HTMLElement): Scene {
     endAfter(ms) {
       timers.push(window.setTimeout(() => scene.stop(), ms));
     },
+    listen(target, type, handler) {
+      target.addEventListener(type, handler);
+      unlisten.push(() => target.removeEventListener(type, handler));
+    },
     stop() {
       timers.forEach((id) => window.clearTimeout(id));
+      unlisten.forEach((off) => off());
       animations.forEach((animation) => animation.cancel());
       parts.forEach((el) => el.remove());
       if (running === scene) running = null;
@@ -146,11 +154,14 @@ function eclipseEffect(scene: Scene, dark: boolean): void {
   const smooth = (frames: Keyframe[]): Keyframe[] => frames.map((frame) => ({ easing: "ease-in-out", ...frame }));
   const { pill, knob } = scene;
 
-  // Toda la pantalla se oscurece poco (0.4 en las orillas) mientras dura; alrededor de la
-  // píldora queda un hueco claro para que el halo siga brillando.
-  const box = pill.getBoundingClientRect();
+  // Toda la pantalla se oscurece poco mientras dura, menos la píldora (hueco con su forma exacta, sin
+  // degradado): así el halo de adentro sigue brillando y no sale luz alrededor.
   const shade = scene.add("theme-sky-shade", document.body);
-  shade.style.background = `radial-gradient(circle at ${box.left + box.width / 2}px ${box.top + box.height / 2}px, rgb(2 6 14 / 0) 0 22px, rgb(2 6 14 / 0.4) 80px)`;
+  const cutPill = () => {
+    shade.style.clipPath = pillHole(pill.getBoundingClientRect());
+  };
+  cutPill();
+  scene.listen(window, "resize", cutPill);
   scene.animate(
     shade,
     smooth([
@@ -247,4 +258,11 @@ function eclipseEffect(scene: Scene, dark: boolean): void {
     );
   });
   scene.endAfter(total + 50);
+}
+
+// Toda la ventana menos un hueco con la forma de la píldora (rectángulo de puntas redondas).
+function pillHole(box: DOMRect): string {
+  const r = box.height / 2;
+  const { left, top, right, bottom } = box;
+  return `path(evenodd, "M0 0H${window.innerWidth}V${window.innerHeight}H0Z M${left + r} ${top}H${right - r}A${r} ${r} 0 0 1 ${right - r} ${bottom}H${left + r}A${r} ${r} 0 0 1 ${left + r} ${top}Z")`;
 }

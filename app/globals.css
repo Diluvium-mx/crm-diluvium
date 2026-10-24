@@ -1059,6 +1059,7 @@ html[data-theme-circle]::view-transition-new(root) {
   z-index: 60;
   pointer-events: none;
   opacity: 0;
+  background: rgb(2 6 14 / 0.4);
 }
 
 /* Con «reducir movimiento» la píldora cambia sin animarse (sin círculo ni efectos del cielo). */
