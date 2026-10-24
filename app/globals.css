@@ -1053,12 +1053,255 @@ html[data-theme-circle]::view-transition-new(root) {
   background: #050d18;
   pointer-events: none;
 }
+/* Eclipse: punto sobre el centro de la píldora (va con la página) y, adentro, el recorte con la forma
+   de la píldora cuya sombra enorme oscurece todo lo demás; al final crece en círculo y regresa la luz. */
 .theme-sky-shade {
-  position: fixed;
-  inset: 0;
+  position: absolute;
   z-index: 60;
+  width: 0;
+  height: 0;
   pointer-events: none;
   opacity: 0;
+}
+.theme-sky-hole {
+  position: absolute;
+  left: 0;
+  top: 0;
+  translate: -50% -50%;
+  border-radius: 999px;
+  box-shadow: 0 0 0 9999px rgb(2 6 14 / 0.4);
+}
+
+/* ── Tormenta del interruptor de tema (components/theme-sky-storm/, tercer efecto del cielo) ─────
+   Capas encima de todo el CRM: oscurecido y destello debajo del lienzo de WebGL; encima, el globo de la
+   persona, la indicación de amasar, la zona de clic de la casa, el tablero, «Salir», el fundido de los
+   cortes y la tarjeta final. Mientras se juega (.playing) captura el mouse; antes, solo la casa. */
+.theme-storm-root {
+  position: fixed;
+  inset: 0;
+  z-index: 9000;
+  overflow: hidden;
+  pointer-events: none;
+  font-family: Helvetica, "Helvetica Neue", Arial, sans-serif;
+}
+.theme-storm-root.playing {
+  pointer-events: auto;
+}
+.theme-storm-dim {
+  position: absolute;
+  inset: 0;
+  background: rgb(8 18 32 / 0.3);
+  opacity: 0;
+  transition: opacity 0.6s, background-color 0.6s;
+}
+.theme-storm-flash {
+  position: absolute;
+  inset: 0;
+  background: #fff;
+  opacity: 0;
+  pointer-events: none;
+}
+.theme-storm-canvas {
+  position: absolute;
+  inset: 0;
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+.theme-storm-ui {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+.theme-storm-fade {
+  position: absolute;
+  inset: 0;
+  background: #05080d;
+  opacity: 0;
+  transition: opacity 0.3s;
+  pointer-events: none;
+}
+.theme-storm-hit {
+  position: absolute;
+  border-radius: 12px;
+  cursor: pointer;
+  pointer-events: auto;
+}
+.theme-storm-bubble {
+  position: absolute;
+  transform: translate(-50%, -100%);
+  padding: 8px 12px;
+  border-radius: 12px;
+  background: #fff;
+  color: #1e2a35;
+  font-size: 15px;
+  font-weight: 700;
+  white-space: nowrap;
+  box-shadow: 0 8px 24px -8px rgb(0 0 0 / 0.45);
+  opacity: 0;
+  transition: opacity 0.25s;
+}
+.theme-storm-bubble::after {
+  content: "";
+  position: absolute;
+  left: 50%;
+  bottom: -6px;
+  width: 12px;
+  height: 12px;
+  background: #fff;
+  transform: translateX(-50%) rotate(45deg);
+}
+.theme-storm-bubble.show {
+  opacity: 1;
+}
+.theme-storm-bubble.free {
+  transform: none;
+}
+.theme-storm-bubble.free::after {
+  display: none;
+}
+.theme-storm-tip {
+  position: absolute;
+  transform: translate(-50%, -150%);
+  padding: 7px 12px;
+  border-radius: 999px;
+  background: rgb(30 42 53 / 0.92);
+  color: #fff;
+  font: 700 13px Helvetica, Arial, sans-serif;
+  white-space: nowrap;
+  opacity: 0;
+  transition: opacity 0.25s;
+}
+.theme-storm-tip.show {
+  opacity: 1;
+}
+.theme-storm-tip b {
+  display: inline-block;
+  margin-right: 6px;
+  animation: theme-storm-knead 0.45s ease-in-out infinite alternate;
+}
+@keyframes theme-storm-knead {
+  from { translate: -7px 0; }
+  to { translate: 7px 0; }
+}
+.theme-storm-hud {
+  position: absolute;
+  bottom: 16px;
+  left: 50%;
+  display: flex;
+  align-items: stretch;
+  gap: 8px;
+  transform: translateX(-50%);
+  opacity: 0;
+  transition: opacity 0.4s;
+  pointer-events: none;
+}
+.theme-storm-hud.show {
+  opacity: 1;
+}
+.theme-storm-card {
+  padding: 8px 12px;
+  border-radius: 12px;
+  background: rgb(255 255 255 / 0.94);
+  color: #1e2a35;
+  font-size: 13px;
+  box-shadow: 0 10px 26px -10px rgb(0 0 0 / 0.5);
+}
+.theme-storm-meter {
+  min-width: 170px;
+}
+.theme-storm-meter b {
+  display: block;
+  margin-bottom: 5px;
+  font-size: 12px;
+}
+.theme-storm-bar {
+  height: 10px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: #dbe5ef;
+}
+.theme-storm-bar i {
+  display: block;
+  width: 0;
+  height: 100%;
+  background: linear-gradient(90deg, #3a82c8, #0a559a);
+  transition: width 0.2s;
+}
+.theme-storm-press {
+  display: none;
+}
+.theme-storm-press.on {
+  display: block;
+}
+.theme-storm-press .theme-storm-bar i {
+  background: linear-gradient(90deg, #de8c11, #2e9b57);
+}
+.theme-storm-time {
+  display: flex;
+  align-items: center;
+  font-size: 20px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+.theme-storm-exit {
+  position: absolute;
+  top: 104px;
+  right: 18px;
+  padding: 8px 14px;
+  border: 0;
+  border-radius: 999px;
+  background: #fff;
+  color: #1e2a35;
+  font: 700 14px Helvetica, Arial, sans-serif;
+  box-shadow: 0 8px 22px -8px rgb(0 0 0 / 0.5);
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity 0.4s;
+  pointer-events: auto;
+}
+.theme-storm-exit.show {
+  opacity: 1;
+}
+.theme-storm-result {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  min-width: 300px;
+  padding: 22px 24px;
+  transform: translate(-50%, -50%);
+  border-radius: 16px;
+  background: #fff;
+  color: #1e2a35;
+  text-align: center;
+  box-shadow: 0 30px 70px -20px rgb(0 0 0 / 0.6);
+  pointer-events: auto;
+}
+.theme-storm-result h3 {
+  margin: 0 0 6px;
+  font-size: 22px;
+}
+.theme-storm-result p {
+  margin: 0 0 16px;
+  color: #4d5b68;
+  font-size: 14px;
+  line-height: 1.5;
+}
+.theme-storm-result button {
+  margin: 0 4px;
+  padding: 10px 16px;
+  border: 0;
+  border-radius: 8px;
+  font: 700 14px Helvetica, Arial, sans-serif;
+  cursor: pointer;
+}
+.theme-storm-result .go {
+  background: #de8c11;
+  color: #fff;
+}
+.theme-storm-result .out {
+  background: #ecf0f3;
+  color: #1e2a35;
 }
 
 /* Con «reducir movimiento» la píldora cambia sin animarse (sin círculo ni efectos del cielo). */

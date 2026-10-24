@@ -1,9 +1,14 @@
-// Efectos del cielo de la píldora del tema («Cielo», 1-oct-2026; detalle en la nota del dueño fuera del
-// repo). Con clic derecho en la píldora (en Android, dejarla presionada) se alternan dos:
+// Efectos del cielo de la píldora del tema (actualización del interruptor de tema, 1-oct-2026). Con clic
+// derecho en la píldora (en Android, dejarla presionada) salen por turnos, uno en cada clic derecho:
 // - Estrella fugaz / avioncito: en oscuro, dos estrellas fugaces cruzan la barra de arriba; en
 //   claro, un avioncito sale de detrás del sol y pasa entre las nubes de la píldora.
-// - Eclipse (14.5 s, a pedido del dueño): la bolita va al centro, una sombra la tapa y queda su halo; la píldora y TODA
-//   la pantalla se oscurecen un poco (con un hueco claro alrededor del halo) y luego todo regresa.
+// - Eclipse: la bolita va al centro, una sombra la tapa y queda su halo (solo dentro de la píldora);
+//   la píldora y TODA la pantalla se oscurecen un poco y al final la luz regresa en círculo desde la
+//   píldora, como el cambio de tema. A pedido del dueño (24-oct-2026): la entrada es rápida (1 s), la
+//   pantalla se queda oscura 14.1 s completos y la salida dura 1 s; sin luz alrededor de la píldora.
+// - Tormenta (24-oct-2026): theme-sky-storm/storm.ts, que se carga (con three.js) solo cuando le toca.
+//   Necesita mouse y pantalla grande; en celular o tableta se salta y siguen los otros dos.
+// El turno empieza de nuevo al recargar la página. Ninguno sale si otro sigue en pantalla.
 // Solo visual: no cambia el tema ni toca datos, sin sonido; con «reducir movimiento» no hace nada.
 // Las medidas dentro de la píldora van en su escala de 62×32 (la píldora lleva zoom 0.8). Estilos
 // en app/globals.css › "Interruptor de tema".
@@ -14,32 +19,69 @@ type Scene = {
   add: (className: string, parent: Element, before?: Element | null) => HTMLElement;
   animate: (el: Element, keyframes: Keyframe[], options: KeyframeAnimationOptions) => void;
   endAfter: (ms: number) => void;
+  after: (ms: number, run: () => void) => void;
+  listen: (target: EventTarget, type: string, handler: () => void) => void;
   stop: () => void;
 };
 
+const TURNS = ["fly", "eclipse", "storm"] as const;
 let running: Scene | null = null;
+let storm: { leave: () => void } | null = null;
+let stormLoading = false;
 let turn = 0;
 
 export function stopSkyEffect(): void {
   running?.stop();
+  storm?.leave();
 }
 
 export function playSkyEffect(pill: HTMLElement): void {
-  if (running || window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
+  if (running || storm || stormLoading || window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
   const knob = pill.querySelector<HTMLElement>(".theme-pill-knob");
   if (!knob) return;
+  let next = TURNS[turn % TURNS.length];
+  turn += 1;
+  if (next === "storm" && !canStorm()) {
+    next = TURNS[turn % TURNS.length];
+    turn += 1;
+  }
+  if (next === "storm") {
+    stormEffect(pill);
+    return;
+  }
   const scene = createScene(pill, knob);
   running = scene;
   const dark = document.documentElement.classList.contains("dark");
-  if (turn % 2 === 0) flyEffect(scene, dark);
+  if (next === "fly") flyEffect(scene, dark);
   else eclipseEffect(scene, dark);
-  turn += 1;
+}
+
+// La tormenta se juega con mouse en pantalla grande (la versión para celular queda para después).
+function canStorm(): boolean {
+  return window.matchMedia("(pointer: fine)").matches && window.innerWidth >= 1000 && window.innerHeight >= 600;
+}
+
+function stormEffect(pill: HTMLElement): void {
+  stormLoading = true;
+  import("./theme-sky-storm/storm")
+    .then(({ startStorm }) => {
+      storm = startStorm(() => {
+        storm = null;
+      });
+      // Sin WebGL no hay tormenta: sale el efecto que sigue.
+      stormLoading = false;
+      if (!storm) playSkyEffect(pill);
+    })
+    .catch(() => {
+      stormLoading = false;
+    });
 }
 
 function createScene(pill: HTMLElement, knob: HTMLElement): Scene {
   const parts: Element[] = [];
   const animations: Animation[] = [];
   const timers: number[] = [];
+  const unlisten: (() => void)[] = [];
   const scene: Scene = {
     pill,
     knob,
@@ -57,8 +99,16 @@ function createScene(pill: HTMLElement, knob: HTMLElement): Scene {
     endAfter(ms) {
       timers.push(window.setTimeout(() => scene.stop(), ms));
     },
+    after(ms, run) {
+      timers.push(window.setTimeout(run, ms));
+    },
+    listen(target, type, handler) {
+      target.addEventListener(type, handler);
+      unlisten.push(() => target.removeEventListener(type, handler));
+    },
     stop() {
       timers.forEach((id) => window.clearTimeout(id));
+      unlisten.forEach((off) => off());
       animations.forEach((animation) => animation.cancel());
       parts.forEach((el) => el.remove());
       if (running === scene) running = null;
@@ -133,91 +183,121 @@ function planeIcon(): SVGSVGElement {
 }
 
 function eclipseEffect(scene: Scene, dark: boolean): void {
-  const total = 14500;
+  // Tiempos en ms: la entrada termina en IN (pantalla ya oscura), la oscuridad completa dura DARK y en
+  // OUT la luz empieza a regresar en círculo desde la píldora (LIGHT ms, como el cambio de tema).
+  const IN = 1000;
+  const DARK = 14100;
+  const OUT = IN + DARK;
+  const LIGHT = 1000;
+  const total = OUT + LIGHT;
+  const at = (ms: number) => ms / total;
+  // La suavidad va en cada tramo: puesta en la animación entera, deformaría los tiempos de arriba.
+  const smooth = (frames: Keyframe[]): Keyframe[] => frames.map((frame) => ({ easing: "ease-in-out", ...frame }));
   const { pill, knob } = scene;
 
-  // Toda la pantalla se oscurece poco (0.4 en las orillas) mientras dura; alrededor de la
-  // píldora queda un hueco claro para que el halo siga brillando.
-  const box = pill.getBoundingClientRect();
+  // La oscuridad es la sombra enorme de un recorte con la forma exacta de la píldora: oscurece TODO menos
+  // la píldora (el halo de adentro sigue brillando), va pegada a la página (al bajar se va con la
+  // píldora) y no tiene orillas dentro de la pantalla. El recorte se centra en un punto (`shade`) puesto
+  // sobre el centro de la píldora.
   const shade = scene.add("theme-sky-shade", document.body);
-  shade.style.background = `radial-gradient(circle at ${box.left + box.width / 2}px ${box.top + box.height / 2}px, rgb(2 6 14 / 0) 0 22px, rgb(2 6 14 / 0.4) 80px)`;
+  const hole = scene.add("theme-sky-hole", shade);
+  const place = () => {
+    const box = pill.getBoundingClientRect();
+    shade.style.left = "0px";
+    shade.style.top = "0px";
+    const origin = shade.getBoundingClientRect();
+    shade.style.left = `${box.left + box.width / 2 - origin.left}px`;
+    shade.style.top = `${box.top + box.height / 2 - origin.top}px`;
+    hole.style.width = `${box.width}px`;
+    hole.style.height = `${box.height}px`;
+  };
+  place();
+  scene.listen(window, "resize", place);
   scene.animate(
     shade,
-    [
-      { opacity: 0 },
-      { opacity: 0, offset: 0.22 },
-      { opacity: 1, offset: 0.42 },
-      { opacity: 1, offset: 0.62 },
-      { opacity: 0, offset: 0.8 },
-      { opacity: 0 },
-    ],
-    { duration: total, easing: "ease-in-out", fill: "forwards" },
+    smooth([{ opacity: 0 }, { opacity: 0, offset: at(400) }, { opacity: 1, offset: at(IN) }, { opacity: 1 }]),
+    { duration: total, fill: "forwards" },
   );
+  // Salida: el recorte crece en círculo hasta la esquina más lejana de la pantalla y la luz regresa.
+  scene.after(OUT, () => {
+    const box = pill.getBoundingClientRect();
+    const x = box.left + box.width / 2;
+    const y = box.top + box.height / 2;
+    const size = 2 * Math.hypot(Math.max(x, window.innerWidth - x), Math.max(y, window.innerHeight - y));
+    scene.animate(
+      hole,
+      [
+        { width: `${box.width}px`, height: `${box.height}px` },
+        { width: `${size}px`, height: `${size}px` },
+      ],
+      { duration: LIGHT, easing: "cubic-bezier(0.4, 0, 0.2, 1)", fill: "forwards" },
+    );
+  });
 
   const home = dark ? "translateX(30px)" : "translateX(0px)";
   scene.animate(
     knob,
-    [
+    smooth([
       { transform: home },
-      { transform: "translateX(15px)", offset: 0.18 },
-      { transform: "translateX(15px)", offset: 0.8 },
+      { transform: "translateX(15px)", offset: at(450) },
+      { transform: "translateX(15px)", offset: at(OUT + 500) },
       { transform: home },
-    ],
-    { duration: total, easing: "ease-in-out" },
+    ]),
+    { duration: total },
   );
   const disc = scene.add("theme-sky-disc", pill);
   scene.animate(
     disc,
-    [
+    smooth([
       { transform: "translateX(56px)" },
-      { transform: "translateX(56px)", offset: 0.2 },
-      { transform: "translateX(15px)", offset: 0.42 },
-      { transform: "translateX(15px)", offset: 0.62 },
-      { transform: "translateX(-28px)", offset: 0.84 },
+      { transform: "translateX(56px)", offset: at(250) },
+      { transform: "translateX(15px)", offset: at(900) },
+      { transform: "translateX(15px)", offset: at(OUT - 300) },
+      { transform: "translateX(-28px)", offset: at(OUT + 350) },
       { transform: "translateX(-28px)" },
-    ],
-    { duration: total, easing: "ease-in-out", fill: "forwards" },
+    ]),
+    { duration: total, fill: "forwards" },
   );
 
   const shadow = getComputedStyle(knob).boxShadow;
   const corona = "0 0 0 1.5px rgb(255 255 255 / 0.95), 0 0 10px 3px rgb(255 225 150 / 0.85)";
   scene.animate(
     knob,
-    [
+    smooth([
       { boxShadow: shadow },
-      { boxShadow: shadow, offset: 0.36 },
-      { boxShadow: corona, offset: 0.43 },
-      { boxShadow: corona, offset: 0.6 },
-      { boxShadow: shadow, offset: 0.7 },
+      { boxShadow: shadow, offset: at(750) },
+      { boxShadow: corona, offset: at(IN) },
+      { boxShadow: corona, offset: at(OUT - 200) },
+      { boxShadow: shadow, offset: at(OUT + 100) },
       { boxShadow: shadow },
-    ],
+    ]),
     { duration: total },
   );
   const sky = getComputedStyle(pill).backgroundColor;
   scene.animate(
     pill,
-    [
+    smooth([
       { backgroundColor: sky },
-      { backgroundColor: sky, offset: 0.3 },
-      { backgroundColor: "#050d18", offset: 0.42 },
-      { backgroundColor: "#050d18", offset: 0.62 },
-      { backgroundColor: sky, offset: 0.76 },
+      { backgroundColor: sky, offset: at(500) },
+      { backgroundColor: "#050d18", offset: at(950) },
+      { backgroundColor: "#050d18", offset: at(OUT) },
+      { backgroundColor: sky, offset: at(OUT + 450) },
       { backgroundColor: sky },
-    ],
+    ]),
     { duration: total },
   );
   pill.querySelectorAll(".theme-pill-star").forEach((star) => {
     const { opacity, transform } = getComputedStyle(star);
     scene.animate(
       star,
-      [
+      smooth([
         { opacity, transform },
-        { opacity, transform, offset: 0.38 },
-        { opacity: 1, transform: "scale(1)", offset: 0.46 },
-        { opacity: 1, transform: "scale(1)", offset: 0.62 },
-        { opacity, transform, offset: 0.72 },
+        { opacity, transform, offset: at(650) },
+        { opacity: 1, transform: "scale(1)", offset: at(IN) },
+        { opacity: 1, transform: "scale(1)", offset: at(OUT + 100) },
+        { opacity, transform, offset: at(OUT + 450) },
         { opacity, transform },
-      ],
+      ]),
       { duration: total },
     );
   });
@@ -225,14 +305,14 @@ function eclipseEffect(scene: Scene, dark: boolean): void {
     const { opacity } = getComputedStyle(cloud);
     scene.animate(
       cloud,
-      [
+      smooth([
         { opacity },
-        { opacity, offset: 0.34 },
-        { opacity: 0.15, offset: 0.42 },
-        { opacity: 0.15, offset: 0.62 },
-        { opacity, offset: 0.74 },
+        { opacity, offset: at(450) },
+        { opacity: 0.15, offset: at(900) },
+        { opacity: 0.15, offset: at(OUT + 150) },
+        { opacity, offset: at(OUT + 550) },
         { opacity },
-      ],
+      ]),
       { duration: total },
     );
   });
