@@ -1,7 +1,7 @@
 // Hora de cada intento de un seguimiento (docs/seguimientos.md §6 y §6.2), sin base de datos.
 // Ciudad de México = UTC-6 todo el año; Mazatlán = UTC-7; Tijuana en octubre = UTC-7 (verano).
 import { describe, expect, it } from "vitest";
-import { effectiveTotal, inVendorShift, planAttempt, presentAtFor, sendTimeProblem, templateFor, templateTimeOf, windowOpenAt, type PlanInput } from "./schedule";
+import { effectiveTotal, inVendorShift, outsideSendHours, planAttempt, presentAtFor, templateFor, templateTimeOf, windowOpenAt, type PlanInput } from "./schedule";
 import { FACTORY_TABLE as T, FACTORY_VENDOR_SHIFTS as V, type FollowUpTable } from "./tabla";
 import { localParts } from "./time";
 
@@ -246,15 +246,11 @@ describe("tabla de la organización (Agente IA › Seguimientos, Parte 4)", () =
 });
 
 describe("¿saldría a esa hora? (aviso de «Cambiar hora»)", () => {
-  it("elegida por el vendedor: de 7:00 a 21:00 del cliente, también con plantilla (10-oct-2026), y a 7 días de la anterior", () => {
-    expect(sendTimeProblem(mx("2026-10-05T21:00"), CDMX, "texto", null)).toBeNull();
-    expect(sendTimeProblem(mx("2026-10-05T22:00"), CDMX, "texto", null)).toEqual({ kind: "horario" });
-    expect(sendTimeProblem(mx("2026-10-05T06:55"), CDMX, "texto", null)).toEqual({ kind: "horario" });
-    expect(sendTimeProblem(mx("2026-10-05T20:59"), CDMX, "plantilla", null)).toBeNull();
-    expect(sendTimeProblem(mx("2026-10-05T21:05"), CDMX, "plantilla", null)).toEqual({ kind: "horario" });
-    expect(sendTimeProblem(mx("2026-10-08T10:00"), CDMX, "plantilla", mx("2026-10-05T10:00"))).toEqual({ kind: "siete_dias", from: mx("2026-10-12T10:00") });
-    expect(sendTimeProblem(mx("2026-10-12T10:00"), CDMX, "plantilla", mx("2026-10-05T10:00"))).toBeNull();
-    // Texto no cuenta los 7 días entre plantillas.
-    expect(sendTimeProblem(mx("2026-10-08T10:00"), CDMX, "texto", mx("2026-10-05T10:00"))).toBeNull();
+  it("elegida por el vendedor: de 7:00 a 21:00 del cliente, también con plantilla (10-oct-2026); sin los 7 días (24-oct-2026)", () => {
+    expect(outsideSendHours(mx("2026-10-05T21:00"), CDMX)).toBe(false);
+    expect(outsideSendHours(mx("2026-10-05T22:00"), CDMX)).toBe(true);
+    expect(outsideSendHours(mx("2026-10-05T06:55"), CDMX)).toBe(true);
+    expect(outsideSendHours(mx("2026-10-05T20:59"), CDMX)).toBe(false);
+    expect(outsideSendHours(mx("2026-10-05T21:05"), CDMX)).toBe(true);
   });
 });

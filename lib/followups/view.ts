@@ -11,8 +11,8 @@ import { foreignLadaLabel } from "@/lib/phone";
 import { endsWithClientAck } from "./acuse";
 import { ALLOWED_FROM, ALLOWED_TO, CASE_RULES, templateForAttempt, type FollowUpCase } from "./cases";
 import { fillFollowUpTemplate } from "./plantilla-llena";
-import { presentAtFor, sendTimeProblem, templateFor, windowOpenAt, VENDOR_ZONE, type SendTimeProblem } from "./schedule";
-import { approvedTemplateNames, followUpsReal, lastTemplateAt, reopenCancelledFollowUp } from "./store";
+import { outsideSendHours, presentAtFor, templateFor, windowOpenAt, VENDOR_ZONE } from "./schedule";
+import { approvedTemplateNames, followUpsReal, reopenCancelledFollowUp } from "./store";
 import { loadFollowUpTable } from "./tabla-store";
 import { localParts, zonedInstant } from "./time";
 
@@ -342,16 +342,9 @@ const hourText = (t: Date, zone: string) => {
   const p = localParts(t, zone);
   return `${p.hh}:${String(p.mm).padStart(2, "0")}`;
 };
-const dayText = (t: Date) =>
-  new Intl.DateTimeFormat("es-MX", { timeZone: VENDOR_ZONE, weekday: "short", day: "numeric", month: "short", hour: "numeric", minute: "2-digit", hour12: false })
-    .format(t)
-    .replace(/\./g, "");
 
 /** El aviso de «Cambiar hora» cuando el CRM no dejaría salir el mensaje a esa hora. */
-export function sendTimeMessage(problem: SendTimeProblem, t: Date, zone: string): string {
-  if (problem.kind === "siete_dias") {
-    return `A este cliente ya le llegó una plantilla hace menos de 7 días. Elige desde el ${dayText(problem.from)} (hora de Mazatlán).`;
-  }
+export function sendTimeMessage(t: Date, zone: string): string {
   // De 7:00 a 21:00 del día del cliente, en hora de Mazatlán.
   const p = localParts(t, zone);
   const day = { y: p.y, m: p.m, d: p.d };
@@ -364,8 +357,8 @@ export type ChangeTimeResult = { ok: true } | { ok: false; message: string };
 
 /**
  * Cambiar hora: la elige el vendedor (hora de Mazatlán); se recalcula por dónde saldría. Si a esa hora el
- * CRM no lo dejaría salir (7:00–21:00 del cliente, también con plantilla; 7 días entre plantillas), no se
- * guarda y se dice por qué: así sale justo a la hora que eligió.
+ * CRM no lo dejaría salir (7:00–21:00 del cliente, también con plantilla), no se guarda y se dice por qué:
+ * así sale justo a la hora que eligió. Sin los 7 días entre plantillas: los decide quien la puso (24-oct-2026).
  */
 export async function changeFollowUpTime(organizationId: string, id: string, dueAt: Date, userId: string, now: Date): Promise<ChangeTimeResult> {
   const gone: ChangeTimeResult = { ok: false, message: "Ese seguimiento ya no está programado." };
@@ -379,9 +372,7 @@ export async function changeFollowUpTime(organizationId: string, id: string, due
   const f = row.f;
   const caso = f.caso as Exclude<FollowUpCase, "no_seguir">;
   const door = windowOpenAt(row.windowExpiresAt, dueAt) ? "texto" : "plantilla";
-  const lastTemplate = door === "plantilla" ? await lastTemplateAt(organizationId, f.contactId, now, await followUpsReal(organizationId)) : null;
-  const problem = sendTimeProblem(dueAt, f.timeZone, door, lastTemplate);
-  if (problem) return { ok: false, message: sendTimeMessage(problem, dueAt, f.timeZone) };
+  if (outsideSendHours(dueAt, f.timeZone)) return { ok: false, message: sendTimeMessage(dueAt, f.timeZone) };
   const table = await loadFollowUpTable(organizationId, now);
   const updated = await db
     .update(followUps)

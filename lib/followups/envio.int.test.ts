@@ -324,6 +324,22 @@ describe.skipIf(!TEST_DATABASE_URL)("Seguimientos en modo REAL (proveedor falso)
     expect((await row()).dueAt!.getTime()).toBeGreaterThanOrEqual(ayer.getTime() + 7 * 24 * HOUR - MIN);
   });
 
+  it("7 días entre plantillas: NO frenan la hora que puso una persona con «Cambiar hora» (24-oct-2026)", async () => {
+    const view = await import("./view");
+    await db.insert(s.user).values({ id: "u_vend", name: "Carlos", email: "carlos@envio.test" });
+    await reading();
+    await store.followUpSweepOnce(new Date((await row()).dueAt!.getTime() + MIN), { provider });
+    const r = await row();
+    const ayer = new Date(T0.getTime() - HOUR);
+    await db.insert(s.messages).values({ id: "m_tpl_vendedor", organizationId: ORG, conversationId: CONV, direction: "out", source: "crm", type: "template", body: "Hola, buenas tardes.", status: "delivered", providerMessageId: "wamid.tplv", sentAt: ayer, createdAt: ayer });
+    // Se guarda sin el aviso de los 7 días y sale a esa hora.
+    expect(await view.changeFollowUpTime(ORG, r.id, r.dueAt!, "u_vend", new Date(r.dueAt!.getTime() - HOUR))).toEqual({ ok: true });
+    expect((await row()).door).toBe("plantilla");
+    sent = [];
+    await store.followUpSweepOnce(new Date(r.dueAt!.getTime() + MIN), { provider });
+    expect(sent).toEqual([expect.objectContaining({ kind: "template" })]);
+  });
+
   it("Cancelar apaga los seguimientos de ESE chat: el Agente IA no arma otro aunque el chat se mueva; «Reactivar» lo reabre", async () => {
     const view = await import("./view");
     await db.insert(s.user).values({ id: "u_vend", name: "Carlos", email: "carlos@envio.test" });
