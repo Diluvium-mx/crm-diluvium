@@ -1,11 +1,14 @@
 // Efectos del cielo de la píldora del tema (actualización del interruptor de tema, 1-oct-2026). Con clic
-// derecho en la píldora (en Android, dejarla presionada) se alternan dos:
+// derecho en la píldora (en Android, dejarla presionada) salen por turnos, uno en cada clic derecho:
 // - Estrella fugaz / avioncito: en oscuro, dos estrellas fugaces cruzan la barra de arriba; en
 //   claro, un avioncito sale de detrás del sol y pasa entre las nubes de la píldora.
 // - Eclipse: la bolita va al centro, una sombra la tapa y queda su halo (solo dentro de la píldora);
 //   la píldora y TODA la pantalla se oscurecen un poco y al final la luz regresa en círculo desde la
 //   píldora, como el cambio de tema. A pedido del dueño (24-oct-2026): la entrada es rápida (1 s), la
 //   pantalla se queda oscura 14.1 s completos y la salida dura 1 s; sin luz alrededor de la píldora.
+// - Tormenta (24-oct-2026): theme-sky-storm/storm.ts, que se carga (con three.js) solo cuando le toca.
+//   Necesita mouse y pantalla grande; en celular o tableta se salta y siguen los otros dos.
+// El turno empieza de nuevo al recargar la página. Ninguno sale si otro sigue en pantalla.
 // Solo visual: no cambia el tema ni toca datos, sin sonido; con «reducir movimiento» no hace nada.
 // Las medidas dentro de la píldora van en su escala de 62×32 (la píldora lleva zoom 0.8). Estilos
 // en app/globals.css › "Interruptor de tema".
@@ -21,23 +24,57 @@ type Scene = {
   stop: () => void;
 };
 
+const TURNS = ["fly", "eclipse", "storm"] as const;
 let running: Scene | null = null;
+let storm: { leave: () => void } | null = null;
+let stormLoading = false;
 let turn = 0;
 
 export function stopSkyEffect(): void {
   running?.stop();
+  storm?.leave();
 }
 
 export function playSkyEffect(pill: HTMLElement): void {
-  if (running || window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
+  if (running || storm || stormLoading || window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
   const knob = pill.querySelector<HTMLElement>(".theme-pill-knob");
   if (!knob) return;
+  let next = TURNS[turn % TURNS.length];
+  turn += 1;
+  if (next === "storm" && !canStorm()) {
+    next = TURNS[turn % TURNS.length];
+    turn += 1;
+  }
+  if (next === "storm") {
+    stormEffect(pill);
+    return;
+  }
   const scene = createScene(pill, knob);
   running = scene;
   const dark = document.documentElement.classList.contains("dark");
-  if (turn % 2 === 0) flyEffect(scene, dark);
+  if (next === "fly") flyEffect(scene, dark);
   else eclipseEffect(scene, dark);
-  turn += 1;
+}
+
+// La tormenta se juega con mouse en pantalla grande (la versión para celular queda para después).
+function canStorm(): boolean {
+  return window.matchMedia("(pointer: fine)").matches && window.innerWidth >= 1000 && window.innerHeight >= 600;
+}
+
+function stormEffect(pill: HTMLElement): void {
+  stormLoading = true;
+  import("./theme-sky-storm/storm")
+    .then(({ startStorm }) => {
+      storm = startStorm(() => {
+        storm = null;
+      });
+      // Sin WebGL no hay tormenta: sale el efecto que sigue.
+      stormLoading = false;
+      if (!storm) playSkyEffect(pill);
+    })
+    .catch(() => {
+      stormLoading = false;
+    });
 }
 
 function createScene(pill: HTMLElement, knob: HTMLElement): Scene {
