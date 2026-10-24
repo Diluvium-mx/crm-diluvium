@@ -1053,13 +1053,23 @@ html[data-theme-circle]::view-transition-new(root) {
   background: #050d18;
   pointer-events: none;
 }
+/* Eclipse: punto sobre el centro de la píldora (va con la página) y, adentro, el recorte con la forma
+   de la píldora cuya sombra enorme oscurece todo lo demás; al final crece en círculo y regresa la luz. */
 .theme-sky-shade {
-  position: fixed;
-  inset: 0;
+  position: absolute;
   z-index: 60;
+  width: 0;
+  height: 0;
   pointer-events: none;
   opacity: 0;
-  background: rgb(2 6 14 / 0.4);
+}
+.theme-sky-hole {
+  position: absolute;
+  left: 0;
+  top: 0;
+  translate: -50% -50%;
+  border-radius: 999px;
+  box-shadow: 0 0 0 9999px rgb(2 6 14 / 0.4);
 }
 
 /* Con «reducir movimiento» la píldora cambia sin animarse (sin círculo ni efectos del cielo). */

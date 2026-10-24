@@ -3,10 +3,9 @@
 // - Estrella fugaz / avioncito: en oscuro, dos estrellas fugaces cruzan la barra de arriba; en
 //   claro, un avioncito sale de detrás del sol y pasa entre las nubes de la píldora.
 // - Eclipse: la bolita va al centro, una sombra la tapa y queda su halo (solo dentro de la píldora);
-//   la píldora y TODA la pantalla se oscurecen un poco y luego todo regresa. A pedido del dueño
-//   (24-oct-2026): la entrada y la salida en la píldora son rápidas (1 s y 0.9 s), la pantalla se queda
-//   oscura 14.1 s completos (antes eran 14.5 s en total, con solo ~3 s de oscuridad completa) y ya no
-//   hay luz alrededor de la píldora (antes un degradado de 80 px dejaba un círculo claro sobre la página).
+//   la píldora y TODA la pantalla se oscurecen un poco y al final la luz regresa en círculo desde la
+//   píldora, como el cambio de tema. A pedido del dueño (24-oct-2026): la entrada es rápida (1 s), la
+//   pantalla se queda oscura 14.1 s completos y la salida dura 1 s; sin luz alrededor de la píldora.
 // Solo visual: no cambia el tema ni toca datos, sin sonido; con «reducir movimiento» no hace nada.
 // Las medidas dentro de la píldora van en su escala de 62×32 (la píldora lleva zoom 0.8). Estilos
 // en app/globals.css › "Interruptor de tema".
@@ -17,6 +16,7 @@ type Scene = {
   add: (className: string, parent: Element, before?: Element | null) => HTMLElement;
   animate: (el: Element, keyframes: Keyframe[], options: KeyframeAnimationOptions) => void;
   endAfter: (ms: number) => void;
+  after: (ms: number, run: () => void) => void;
   listen: (target: EventTarget, type: string, handler: () => void) => void;
   stop: () => void;
 };
@@ -61,6 +61,9 @@ function createScene(pill: HTMLElement, knob: HTMLElement): Scene {
     },
     endAfter(ms) {
       timers.push(window.setTimeout(() => scene.stop(), ms));
+    },
+    after(ms, run) {
+      timers.push(window.setTimeout(run, ms));
     },
     listen(target, type, handler) {
       target.addEventListener(type, handler);
@@ -143,37 +146,56 @@ function planeIcon(): SVGSVGElement {
 }
 
 function eclipseEffect(scene: Scene, dark: boolean): void {
-  // Tiempos en ms: la entrada termina en IN (pantalla ya oscura), la oscuridad completa dura DARK y
-  // después todo regresa rápido.
+  // Tiempos en ms: la entrada termina en IN (pantalla ya oscura), la oscuridad completa dura DARK y en
+  // OUT la luz empieza a regresar en círculo desde la píldora (LIGHT ms, como el cambio de tema).
   const IN = 1000;
   const DARK = 14100;
   const OUT = IN + DARK;
-  const total = OUT + 900;
+  const LIGHT = 1000;
+  const total = OUT + LIGHT;
   const at = (ms: number) => ms / total;
   // La suavidad va en cada tramo: puesta en la animación entera, deformaría los tiempos de arriba.
   const smooth = (frames: Keyframe[]): Keyframe[] => frames.map((frame) => ({ easing: "ease-in-out", ...frame }));
   const { pill, knob } = scene;
 
-  // Toda la pantalla se oscurece poco mientras dura, menos la píldora (hueco con su forma exacta, sin
-  // degradado): así el halo de adentro sigue brillando y no sale luz alrededor.
+  // La oscuridad es la sombra enorme de un recorte con la forma exacta de la píldora: oscurece TODO menos
+  // la píldora (el halo de adentro sigue brillando), va pegada a la página (al bajar se va con la
+  // píldora) y no tiene orillas dentro de la pantalla. El recorte se centra en un punto (`shade`) puesto
+  // sobre el centro de la píldora.
   const shade = scene.add("theme-sky-shade", document.body);
-  const cutPill = () => {
-    shade.style.clipPath = pillHole(pill.getBoundingClientRect());
+  const hole = scene.add("theme-sky-hole", shade);
+  const place = () => {
+    const box = pill.getBoundingClientRect();
+    shade.style.left = "0px";
+    shade.style.top = "0px";
+    const origin = shade.getBoundingClientRect();
+    shade.style.left = `${box.left + box.width / 2 - origin.left}px`;
+    shade.style.top = `${box.top + box.height / 2 - origin.top}px`;
+    hole.style.width = `${box.width}px`;
+    hole.style.height = `${box.height}px`;
   };
-  cutPill();
-  scene.listen(window, "resize", cutPill);
+  place();
+  scene.listen(window, "resize", place);
   scene.animate(
     shade,
-    smooth([
-      { opacity: 0 },
-      { opacity: 0, offset: at(400) },
-      { opacity: 1, offset: at(IN) },
-      { opacity: 1, offset: at(OUT) },
-      { opacity: 0, offset: at(OUT + 600) },
-      { opacity: 0 },
-    ]),
+    smooth([{ opacity: 0 }, { opacity: 0, offset: at(400) }, { opacity: 1, offset: at(IN) }, { opacity: 1 }]),
     { duration: total, fill: "forwards" },
   );
+  // Salida: el recorte crece en círculo hasta la esquina más lejana de la pantalla y la luz regresa.
+  scene.after(OUT, () => {
+    const box = pill.getBoundingClientRect();
+    const x = box.left + box.width / 2;
+    const y = box.top + box.height / 2;
+    const size = 2 * Math.hypot(Math.max(x, window.innerWidth - x), Math.max(y, window.innerHeight - y));
+    scene.animate(
+      hole,
+      [
+        { width: `${box.width}px`, height: `${box.height}px` },
+        { width: `${size}px`, height: `${size}px` },
+      ],
+      { duration: LIGHT, easing: "cubic-bezier(0.4, 0, 0.2, 1)", fill: "forwards" },
+    );
+  });
 
   const home = dark ? "translateX(30px)" : "translateX(0px)";
   scene.animate(
@@ -181,7 +203,7 @@ function eclipseEffect(scene: Scene, dark: boolean): void {
     smooth([
       { transform: home },
       { transform: "translateX(15px)", offset: at(450) },
-      { transform: "translateX(15px)", offset: at(OUT + 400) },
+      { transform: "translateX(15px)", offset: at(OUT + 500) },
       { transform: home },
     ]),
     { duration: total },
@@ -193,8 +215,8 @@ function eclipseEffect(scene: Scene, dark: boolean): void {
       { transform: "translateX(56px)" },
       { transform: "translateX(56px)", offset: at(250) },
       { transform: "translateX(15px)", offset: at(900) },
-      { transform: "translateX(15px)", offset: at(OUT) },
-      { transform: "translateX(-28px)", offset: at(OUT + 650) },
+      { transform: "translateX(15px)", offset: at(OUT - 300) },
+      { transform: "translateX(-28px)", offset: at(OUT + 350) },
       { transform: "translateX(-28px)" },
     ]),
     { duration: total, fill: "forwards" },
@@ -208,8 +230,8 @@ function eclipseEffect(scene: Scene, dark: boolean): void {
       { boxShadow: shadow },
       { boxShadow: shadow, offset: at(750) },
       { boxShadow: corona, offset: at(IN) },
-      { boxShadow: corona, offset: at(OUT) },
-      { boxShadow: shadow, offset: at(OUT + 250) },
+      { boxShadow: corona, offset: at(OUT - 200) },
+      { boxShadow: shadow, offset: at(OUT + 100) },
       { boxShadow: shadow },
     ]),
     { duration: total },
@@ -221,8 +243,8 @@ function eclipseEffect(scene: Scene, dark: boolean): void {
       { backgroundColor: sky },
       { backgroundColor: sky, offset: at(500) },
       { backgroundColor: "#050d18", offset: at(950) },
-      { backgroundColor: "#050d18", offset: at(OUT + 150) },
-      { backgroundColor: sky, offset: at(OUT + 550) },
+      { backgroundColor: "#050d18", offset: at(OUT) },
+      { backgroundColor: sky, offset: at(OUT + 450) },
       { backgroundColor: sky },
     ]),
     { duration: total },
@@ -235,8 +257,8 @@ function eclipseEffect(scene: Scene, dark: boolean): void {
         { opacity, transform },
         { opacity, transform, offset: at(650) },
         { opacity: 1, transform: "scale(1)", offset: at(IN) },
-        { opacity: 1, transform: "scale(1)", offset: at(OUT + 150) },
-        { opacity, transform, offset: at(OUT + 500) },
+        { opacity: 1, transform: "scale(1)", offset: at(OUT + 100) },
+        { opacity, transform, offset: at(OUT + 450) },
         { opacity, transform },
       ]),
       { duration: total },
@@ -250,19 +272,12 @@ function eclipseEffect(scene: Scene, dark: boolean): void {
         { opacity },
         { opacity, offset: at(450) },
         { opacity: 0.15, offset: at(900) },
-        { opacity: 0.15, offset: at(OUT + 200) },
-        { opacity, offset: at(OUT + 600) },
+        { opacity: 0.15, offset: at(OUT + 150) },
+        { opacity, offset: at(OUT + 550) },
         { opacity },
       ]),
       { duration: total },
     );
   });
   scene.endAfter(total + 50);
-}
-
-// Toda la ventana menos un hueco con la forma de la píldora (rectángulo de puntas redondas).
-function pillHole(box: DOMRect): string {
-  const r = box.height / 2;
-  const { left, top, right, bottom } = box;
-  return `path(evenodd, "M0 0H${window.innerWidth}V${window.innerHeight}H0Z M${left + r} ${top}H${right - r}A${r} ${r} 0 0 1 ${right - r} ${bottom}H${left + r}A${r} ${r} 0 0 1 ${left + r} ${top}Z")`;
 }
