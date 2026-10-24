@@ -376,7 +376,10 @@ rápidos, 📄 Plantillas y 📎 Adjuntar (Bandeja y pop-up del Embudo usan el m
   el Agente IA está apagado en el canal, el caso se apagó, o un vendedor lo cancela.
 - Máximo **3 intentos** por punto pendiente (2 en los casos que no venden, §6). Después: temperatura **frío**; aviso
   🤖 solo en pago pendiente y asesor sin respuesta.
-- **Plantillas de seguimiento al mismo contacto: nunca dos en menos de 7 días.**
+- **Plantillas de seguimiento al mismo contacto: nunca dos en menos de 7 días.** Solo para la hora que pone el CRM: la
+  que elige una persona con «Cambiar hora» sale a esa hora aunque otra plantilla le haya llegado hace menos de 7 días
+  (decisión del dueño, 24-oct-2026: quien la pone ya revisó el chat). El siguiente intento del Agente IA vuelve a esperar
+  7 días desde esa plantilla.
 - **131049** (tope de marketing): aviso, sin reintento y **sin tarjeta ni pausa del Agente IA** (19-oct-2026; antes el
   barrido lo tomaba como respuesta rechazada y pausaba el chat). **131050** (baja): el contacto queda "sin seguimientos"
   (se quita desde el Detalle).
@@ -620,7 +623,7 @@ Aprobado por el dueño el 6-oct-2026 («OK 1–12», con vista previa). Rama `fe
   (hora del cliente, dentro de 7:00–21:00) y **qué busca** (lo lee el Agente IA; de fábrica, las guías del lector de §14).
 - **Horario de los vendedores** por día (Mazatlán) para presentar las sugerencias (§7.4).
 - Fijo en el código: 7:00–21:00, plantillas hasta las 19:00 (con «Cambiar hora», hasta las 21:00; 10-oct), 7 días
-  entre plantillas.
+  entre plantillas (con «Cambiar hora», sin ese tope; 24-oct).
 - Borrador + «Guardar cambios» con confirmación (lista de cambios) y «Descartar», como Opciones. Cada guardado deja una fila
   en Agente IA › Historial (tipo «Seguimientos», con «Ver cambios» renglón por renglón). Aplica en ≤ 60 s (caché por
   organización en web y worker).
@@ -638,8 +641,8 @@ baja; Ensayo) y la carita según el estado; ✕ roja sin la palabra «Cerrar»; 
 busca el seguimiento?», «¿Cuándo sale el N.º mensaje?» (N = mensajes que ya salieron + 1) o «¿Y ahora?» tras el último;
 sin «Por dónde» ni la palabra «plantilla»; «Ver mensaje» = el texto exacto; un renglón por mensaje que ya salió, sin el
 nombre de la plantilla. El texto de la píldora, títulos, preguntas y botones no se seleccionan; las respuestas y el mensaje
-sí. **Cambiar hora** ya no deja una hora que el CRM movería al salir: avisa al guardar (fuera de 7:00–21:00 del cliente
-o a menos de 7 días de otra plantilla) con el rango en hora de Mazatlán. Hasta el 10-oct también avisaba con plantilla
+sí. **Cambiar hora** ya no deja una hora que el CRM movería al salir: avisa al guardar (fuera de 7:00–21:00 del cliente)
+con el rango en hora de Mazatlán. Hasta el 24-oct también avisaba a menos de 7 días de otra plantilla; ya no (§9). Hasta el 10-oct también avisaba con plantilla
 después de las 19:00; ese tope ya no aplica a la hora elegida a mano (§20).
 
 Código: `lib/followups/tabla.ts` (fábrica, validación, cambios), `tabla-store.ts` (lectura con caché, guardado +
