@@ -2,8 +2,10 @@
 // derecho en la píldora (en Android, dejarla presionada) se alternan dos:
 // - Estrella fugaz / avioncito: en oscuro, dos estrellas fugaces cruzan la barra de arriba; en
 //   claro, un avioncito sale de detrás del sol y pasa entre las nubes de la píldora.
-// - Eclipse (14.5 s, a pedido del dueño): la bolita va al centro, una sombra la tapa y queda su halo; la píldora y TODA
-//   la pantalla se oscurecen un poco (con un hueco claro alrededor del halo) y luego todo regresa.
+// - Eclipse: la bolita va al centro, una sombra la tapa y queda su halo; la píldora y TODA la pantalla
+//   se oscurecen un poco (con un hueco claro alrededor del halo) y luego todo regresa. A pedido del
+//   dueño (24-oct-2026): la entrada y la salida en la píldora son rápidas (1 s y 0.9 s) y la pantalla
+//   se queda oscura 14.1 s completos (antes eran 14.5 s en total, con solo ~3 s de oscuridad completa).
 // Solo visual: no cambia el tema ni toca datos, sin sonido; con «reducir movimiento» no hace nada.
 // Las medidas dentro de la píldora van en su escala de 62×32 (la píldora lleva zoom 0.8). Estilos
 // en app/globals.css › "Interruptor de tema".
@@ -133,7 +135,15 @@ function planeIcon(): SVGSVGElement {
 }
 
 function eclipseEffect(scene: Scene, dark: boolean): void {
-  const total = 14500;
+  // Tiempos en ms: la entrada termina en IN (pantalla ya oscura), la oscuridad completa dura DARK y
+  // después todo regresa rápido.
+  const IN = 1000;
+  const DARK = 14100;
+  const OUT = IN + DARK;
+  const total = OUT + 900;
+  const at = (ms: number) => ms / total;
+  // La suavidad va en cada tramo: puesta en la animación entera, deformaría los tiempos de arriba.
+  const smooth = (frames: Keyframe[]): Keyframe[] => frames.map((frame) => ({ easing: "ease-in-out", ...frame }));
   const { pill, knob } = scene;
 
   // Toda la pantalla se oscurece poco (0.4 en las orillas) mientras dura; alrededor de la
@@ -143,81 +153,81 @@ function eclipseEffect(scene: Scene, dark: boolean): void {
   shade.style.background = `radial-gradient(circle at ${box.left + box.width / 2}px ${box.top + box.height / 2}px, rgb(2 6 14 / 0) 0 22px, rgb(2 6 14 / 0.4) 80px)`;
   scene.animate(
     shade,
-    [
+    smooth([
       { opacity: 0 },
-      { opacity: 0, offset: 0.22 },
-      { opacity: 1, offset: 0.42 },
-      { opacity: 1, offset: 0.62 },
-      { opacity: 0, offset: 0.8 },
+      { opacity: 0, offset: at(400) },
+      { opacity: 1, offset: at(IN) },
+      { opacity: 1, offset: at(OUT) },
+      { opacity: 0, offset: at(OUT + 600) },
       { opacity: 0 },
-    ],
-    { duration: total, easing: "ease-in-out", fill: "forwards" },
+    ]),
+    { duration: total, fill: "forwards" },
   );
 
   const home = dark ? "translateX(30px)" : "translateX(0px)";
   scene.animate(
     knob,
-    [
+    smooth([
       { transform: home },
-      { transform: "translateX(15px)", offset: 0.18 },
-      { transform: "translateX(15px)", offset: 0.8 },
+      { transform: "translateX(15px)", offset: at(450) },
+      { transform: "translateX(15px)", offset: at(OUT + 400) },
       { transform: home },
-    ],
-    { duration: total, easing: "ease-in-out" },
+    ]),
+    { duration: total },
   );
   const disc = scene.add("theme-sky-disc", pill);
   scene.animate(
     disc,
-    [
+    smooth([
       { transform: "translateX(56px)" },
-      { transform: "translateX(56px)", offset: 0.2 },
-      { transform: "translateX(15px)", offset: 0.42 },
-      { transform: "translateX(15px)", offset: 0.62 },
-      { transform: "translateX(-28px)", offset: 0.84 },
+      { transform: "translateX(56px)", offset: at(250) },
+      { transform: "translateX(15px)", offset: at(900) },
+      { transform: "translateX(15px)", offset: at(OUT) },
+      { transform: "translateX(-28px)", offset: at(OUT + 650) },
       { transform: "translateX(-28px)" },
-    ],
-    { duration: total, easing: "ease-in-out", fill: "forwards" },
+    ]),
+    { duration: total, fill: "forwards" },
   );
 
   const shadow = getComputedStyle(knob).boxShadow;
   const corona = "0 0 0 1.5px rgb(255 255 255 / 0.95), 0 0 10px 3px rgb(255 225 150 / 0.85)";
   scene.animate(
     knob,
-    [
+    smooth([
       { boxShadow: shadow },
-      { boxShadow: shadow, offset: 0.36 },
-      { boxShadow: corona, offset: 0.43 },
-      { boxShadow: corona, offset: 0.6 },
-      { boxShadow: shadow, offset: 0.7 },
+      { boxShadow: shadow, offset: at(750) },
+      { boxShadow: corona, offset: at(IN) },
+      { boxShadow: corona, offset: at(OUT) },
+      { boxShadow: shadow, offset: at(OUT + 250) },
       { boxShadow: shadow },
-    ],
+    ]),
     { duration: total },
   );
   const sky = getComputedStyle(pill).backgroundColor;
   scene.animate(
     pill,
-    [
+    smooth([
       { backgroundColor: sky },
-      { backgroundColor: sky, offset: 0.3 },
-      { backgroundColor: "#050d18", offset: 0.42 },
-      { backgroundColor: "#050d18", offset: 0.62 },
-      { backgroundColor: sky, offset: 0.76 },
+      { backgroundColor: sky, offset: at(500) },
+      { backgroundColor: "#050d18", offset: at(950) },
+      { backgroundColor: "#050d18", offset: at(OUT + 150) },
+      { backgroundColor: sky, offset: at(OUT + 550) },
       { backgroundColor: sky },
-    ],
+    ]),
     { duration: total },
   );
   pill.querySelectorAll(".theme-pill-star").forEach((star) => {
     const { opacity, transform } = getComputedStyle(star);
     scene.animate(
       star,
-      [
+      smooth([
         { opacity, transform },
-        { opacity, transform, offset: 0.38 },
-        { opacity: 1, transform: "scale(1)", offset: 0.46 },
-        { opacity: 1, transform: "scale(1)", offset: 0.62 },
-        { opacity, transform, offset: 0.72 },
+        { opacity, transform, offset: at(650) },
+        { opacity: 1, transform: "scale(1)", offset: at(IN) },
+        { opacity: 1, transform: "scale(1)", offset: at(OUT + 150) },
+        { opacity, transform, offset: at(OUT + 500) },
         { opacity, transform },
-      ],
+      ]),
       { duration: total },
     );
   });
@@ -225,14 +235,14 @@ function eclipseEffect(scene: Scene, dark: boolean): void {
     const { opacity } = getComputedStyle(cloud);
     scene.animate(
       cloud,
-      [
+      smooth([
         { opacity },
-        { opacity, offset: 0.34 },
-        { opacity: 0.15, offset: 0.42 },
-        { opacity: 0.15, offset: 0.62 },
-        { opacity, offset: 0.74 },
+        { opacity, offset: at(450) },
+        { opacity: 0.15, offset: at(900) },
+        { opacity: 0.15, offset: at(OUT + 200) },
+        { opacity, offset: at(OUT + 600) },
         { opacity },
-      ],
+      ]),
       { duration: total },
     );
   });
