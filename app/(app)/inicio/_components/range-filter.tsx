@@ -65,13 +65,14 @@ export function RangeFilter({
       </div>
       <label className="flex flex-col gap-1">
         <span className="text-muted-foreground">Mes</span>
-        <input
-          type="month"
+        {/* Calendario del CRM en modo mes (26-oct-2026; antes el <input type="month"> del navegador). Ancho fijo: «septiembre» no recorre la fila. */}
+        <DateTimePicker
+          mode="month"
           value={mes ?? ""}
-          onChange={(event) => {
-            if (event.target.value) router.push(`${basePath}?mes=${event.target.value}${extra}`);
+          onChange={(value) => {
+            if (value) router.push(`${basePath}?mes=${value}${extra}`);
           }}
-          className="rounded-md border bg-background px-2 py-1.5 text-sm"
+          className="w-44 rounded-md border bg-background px-2 py-1.5 text-sm"
         />
       </label>
       <span className="pb-2 text-muted-foreground">o</span>

@@ -8,7 +8,10 @@
 // azul queda fija en medio, la lista gira debajo y lo que queda en la banda al soltar es lo elegido; nunca se
 // acaba) y deslizar hacia arriba o abajo sobre los días (Magic Mouse o trackpad) cambia de mes con el mismo gesto
 // del visor de archivos (lib/inbox/viewer.ts › wheelSwipe), pero en vertical.
-// Mismo valor que el input nativo ("AAAA-MM-DD", "HH:MM" o "AAAA-MM-DDTHH:MM"): quien lo usa no cambia.
+// 26-oct-2026 (pedido del dueño): también el <input type="month"> («Mes» del filtro de periodo de Inicio y Anuncios)
+// con el modo "month": el año con sus flechas ↑ ↓ y los 12 meses, el elegido en azul, como la vista de meses de
+// los días.
+// Mismo valor que el input nativo ("AAAA-MM-DD", "HH:MM", "AAAA-MM-DDTHH:MM" o "AAAA-MM"): quien lo usa no cambia.
 // Sin lógica de datos: las cuentas viven en lib/dates/picker.ts.
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
@@ -23,6 +26,8 @@ import {
   minuteOptions,
   monthMatrix,
   MONTH_NAMES,
+  monthOutOfRange,
+  monthValue,
   parseValue,
   to12h,
   WEEKDAY_INITIALS,
@@ -32,8 +37,9 @@ import {
 import { WHEEL_SWIPE_START, wheelSwipe } from "@/lib/inbox/viewer";
 import { useIsMobile } from "./use-media-query";
 
-const NATIVE_TYPE: Record<PickerMode, string> = { datetime: "datetime-local", date: "date", time: "time" };
-const PLACEHOLDER: Record<PickerMode, string> = { datetime: "dd/mm/aaaa, --:-- --", date: "dd/mm/aaaa", time: "--:-- --" };
+const NATIVE_TYPE: Record<PickerMode, string> = { datetime: "datetime-local", date: "date", time: "time", month: "month" };
+const PLACEHOLDER: Record<PickerMode, string> = { datetime: "dd/mm/aaaa, --:-- --", date: "dd/mm/aaaa", time: "--:-- --", month: "Elegir mes" };
+const ARIA_LABEL: Record<PickerMode, string> = { datetime: "Elegir fecha y hora", date: "Elegir fecha", time: "Elegir hora", month: "Elegir mes" };
 const todayMazatlan = () => new Intl.DateTimeFormat("en-CA", { timeZone: "America/Mazatlan" }).format(new Date());
 
 export type DateTimePickerProps = {
@@ -61,7 +67,7 @@ export function DateTimePicker(props: DateTimePickerProps) {
         value={value}
         min={min}
         max={max}
-        step={mode !== "date" && minuteStep && minuteStep > 1 ? minuteStep * 60 : undefined}
+        step={(mode === "time" || mode === "datetime") && minuteStep && minuteStep > 1 ? minuteStep * 60 : undefined}
         disabled={disabled}
         aria-label={props["aria-label"]}
         onChange={(event) => onChange(event.target.value)}
@@ -140,7 +146,7 @@ function DesktopPicker({ mode, value, onChange, min, max, minuteStep = 1, disabl
           <div
             ref={popRef}
             role="dialog"
-            aria-label={ariaLabel ?? "Elegir fecha y hora"}
+            aria-label={ariaLabel ?? ARIA_LABEL[mode]}
             // Lo que pasa adentro no llega a las ventanas de atrás (React pasa los eventos del portal a sus padres).
             onPointerDown={(event) => event.stopPropagation()}
             onClick={(event) => event.stopPropagation()}
@@ -156,7 +162,18 @@ function DesktopPicker({ mode, value, onChange, min, max, minuteStep = 1, disabl
             style={{ top: pos?.top ?? 0, left: pos?.left ?? 0, visibility: pos ? "visible" : "hidden" }}
             className="fixed z-[60] flex gap-3 rounded-xl border bg-background p-3 text-foreground shadow-xl ring-1 ring-black/5 transition-none select-none animate-in fade-in-0 zoom-in-95 duration-150 motion-reduce:animate-none dark:ring-white/10"
           >
-            {mode !== "time" && (
+            {mode === "month" && (
+              <MonthCalendar
+                value={value}
+                min={min}
+                max={max}
+                onPick={(month) => {
+                  onChange(clampValue(month, min, max));
+                  close();
+                }}
+              />
+            )}
+            {(mode === "date" || mode === "datetime") && (
               <Calendar
                 value={value}
                 min={min}
@@ -169,7 +186,7 @@ function DesktopPicker({ mode, value, onChange, min, max, minuteStep = 1, disabl
                 }}
               />
             )}
-            {mode !== "date" && (
+            {(mode === "time" || mode === "datetime") && (
               <TimeColumns
                 parts={parseValue(value, mode)}
                 minuteStep={minuteStep}
@@ -184,6 +201,66 @@ function DesktopPicker({ mode, value, onChange, min, max, minuteStep = 1, disabl
           document.body,
         )}
     </>
+  );
+}
+
+// ── Meses (modo "month") ─────────────────────────────────────────────────────
+
+/** El año con sus flechas y los 12 meses: el elegido en azul y el mes de hoy con aro, como los días. */
+function MonthCalendar({ value, min, max, onPick }: { value: string; min?: string; max?: string; onPick: (month: string) => void }) {
+  const thisMonth = todayMazatlan().slice(0, 7);
+  const [year, setYear] = useState(() => parseValue(value, "month")?.y ?? Number(thisMonth.slice(0, 4)));
+  const [slide, setSlide] = useState<1 | -1 | 0>(0);
+  const move = (delta: 1 | -1) => {
+    setSlide(delta);
+    setYear((y) => y + delta);
+  };
+
+  return (
+    <div className="flex w-[15.5rem] flex-col gap-1">
+      <div className="flex items-center justify-between">
+        <span className="px-1.5 py-1 text-sm font-semibold tabular-nums">{year}</span>
+        <span className="flex">
+          <button type="button" onClick={() => move(-1)} aria-label="Año anterior" className="rounded-md p-1.5 hover:bg-muted">
+            <ArrowUp className="size-4" aria-hidden="true" />
+          </button>
+          <button type="button" onClick={() => move(1)} aria-label="Año siguiente" className="rounded-md p-1.5 hover:bg-muted">
+            <ArrowDown className="size-4" aria-hidden="true" />
+          </button>
+        </span>
+      </div>
+      <div
+        key={year}
+        className={`grid grid-cols-3 gap-1 pt-1 ${
+          slide === 1 ? "animate-in fade-in-0 slide-in-from-bottom-6 duration-200" : slide === -1 ? "animate-in fade-in-0 slide-in-from-top-6 duration-200" : ""
+        } motion-reduce:animate-none`}
+      >
+        {MONTH_NAMES.map((name, i) => {
+          const month = monthValue(year, i + 1);
+          const isSel = month === value;
+          const isNow = month === thisMonth;
+          return (
+            <button
+              key={name}
+              type="button"
+              disabled={monthOutOfRange(month, min, max)}
+              aria-pressed={isSel}
+              aria-label={`${name} de ${year}`}
+              onClick={() => onPick(month)}
+              className={`rounded-lg py-2.5 text-sm capitalize transition-colors disabled:cursor-not-allowed disabled:opacity-30 ${
+                isSel
+                  ? "bg-brand-navy font-semibold text-white shadow-md"
+                  : isNow
+                    ? "text-brand-navy ring-1 ring-brand-navy ring-inset hover:bg-brand-navy/10 dark:text-sky-300 dark:ring-sky-300"
+                    : "hover:bg-muted"
+              }`}
+            >
+              {name.slice(0, 3)}
+            </button>
+          );
+        })}
+      </div>
+    </div>
   );
 }
 

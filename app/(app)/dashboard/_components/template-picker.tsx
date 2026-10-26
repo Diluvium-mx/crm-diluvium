@@ -7,7 +7,7 @@
 // Programar mensaje y el primer mensaje de Contactos. La lista va por secciones
 // (lib/templates/labels.ts), con buscador y vista de lista o cuadrícula (se recuerda).
 import { useEffect, useMemo, useState } from "react";
-import { ArrowLeft, LayoutGrid, List, Search, X } from "lucide-react";
+import { ArrowLeft, Search, X } from "lucide-react";
 import { listTemplates } from "@/lib/actions/templates";
 import { renderTemplateBody } from "@/lib/messaging/template-format";
 import type { TemplateView } from "@/lib/templates/types";
@@ -16,6 +16,7 @@ import { LinkedText } from "@/components/ui/linked-text";
 import { PICKER_TIME_PHRASE_TEMPLATES } from "@/lib/followups/cases";
 import { groupTemplates, templateSnippet, templateTitle } from "@/lib/templates/labels";
 import { usePersistentToggle } from "@/components/ui/use-persistent-toggle";
+import { ViewToggle } from "@/components/ui/view-toggle";
 
 const TOKEN_CLASS = "rounded bg-brand-navy/15 px-1 font-medium text-brand-navy dark:bg-sky-300/15 dark:text-sky-300";
 
@@ -126,28 +127,7 @@ export function TemplatePicker({
             📄 {selected ? templateTitle(selected.name) : "Elegir plantilla"}
           </span>
         </div>
-        {!selected && (
-          <div role="radiogroup" aria-label="Vista de las plantillas" className="ml-auto flex shrink-0 gap-0.5 rounded-md bg-muted p-0.5">
-            {([false, true] as const).map((isGrid) => {
-              const Icon = isGrid ? LayoutGrid : List;
-              const label = isGrid ? "Cuadrícula" : "Lista";
-              return (
-                <button
-                  key={label}
-                  type="button"
-                  role="radio"
-                  aria-checked={grid === isGrid}
-                  aria-label={label}
-                  title={label}
-                  onClick={() => setGrid(isGrid)}
-                  className={`rounded p-1 ${grid === isGrid ? "bg-card text-brand-navy shadow-sm dark:text-sky-300" : "text-muted-foreground hover:text-foreground"}`}
-                >
-                  <Icon className="size-3.5" aria-hidden="true" />
-                </button>
-              );
-            })}
-          </div>
-        )}
+        {!selected && <ViewToggle grid={grid} onChange={setGrid} label="Vista de las plantillas" />}
         <button
           type="button"
           onClick={onClose}

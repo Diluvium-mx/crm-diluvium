@@ -3,7 +3,7 @@
 // para responder DENTRO de la ventana de 24 h — nada que ver con las plantillas
 // aprobadas por Meta (tabla `templates`, para FUERA de la ventana). Todos los
 // miembros de la organización comparten los mismos fragmentos.
-import { pgTable, text, timestamp, jsonb, index, uniqueIndex } from "drizzle-orm/pg-core";
+import { pgTable, text, timestamp, jsonb, index, integer, uniqueIndex } from "drizzle-orm/pg-core";
 import { organization } from "./auth";
 
 export const snippets = pgTable(
@@ -21,6 +21,9 @@ export const snippets = pgTable(
     // sin repetir. Se derivan del body en cada escritura (no se piden aparte),
     // así el listado y la UI no tienen que re-parsear el texto.
     variables: jsonb("variables").$type<string[]>().notNull().default([]),
+    // Orden que el equipo elige arrastrando en Mensajes rápidos (26-oct-2026; antes, por nombre). Así salen
+    // en la página, en ⚡ del chat y en «/» con la búsqueda vacía. Uno nuevo va al final.
+    position: integer("position").notNull().default(0),
     createdAt: timestamp("created_at").defaultNow().notNull(),
     updatedAt: timestamp("updated_at").defaultNow().notNull(),
   },
