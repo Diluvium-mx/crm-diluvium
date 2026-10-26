@@ -12,6 +12,7 @@ import { sql } from "drizzle-orm";
 import { db } from "@/lib/db";
 import type { LectorDeps, LectorOutcome } from "./lector";
 import { runLector } from "./lector";
+import { withAgenteIaSql } from "./context";
 import { LECTOR_EVERY_MS, LECTOR_LOOKBACK_DAYS, LECTOR_MAX_WAIT_MS, LECTOR_QUIET_MS } from "./lector-core";
 import { logError, safeErrorMessage } from "@/lib/log/safe-error";
 
@@ -33,6 +34,8 @@ export async function findDueConversations(now: Date, limit = LECTOR_BATCH): Pro
     from conversations c
     where c.last_message_at > coalesce(c.detalle_leido_hasta, '-infinity'::timestamp)
       and c.last_message_at > ${ts(since)}
+      -- Chat sin Agente IA (26-oct-2026): nunca se lee (ni ocupa lugar en el barrido).
+      and ${withAgenteIaSql("c")}
       and (
         c.last_message_at <= ${ts(quiet)}
         -- Mismo reloj que last_message_at / detalle_leido_hasta: la hora del mensaje (sent_at, la que da

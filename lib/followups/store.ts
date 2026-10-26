@@ -182,6 +182,7 @@ async function loadSignals(
       mode: channels.aiAgentMode,
       channelType: channels.type,
       sinSeguimientos: contacts.sinSeguimientos,
+      sinAgenteIa: contacts.sinAgenteIa,
       lastInboundAt: conversations.lastInboundAt,
       offAt: conversations.seguimientosOffAt,
     })
@@ -211,7 +212,8 @@ async function loadSignals(
     manualPause: await manualPauseOf(organizationId, conversationId, row.agentState, row.agentStateChangedAt),
     // Solo WhatsApp con el Agente IA encendido: Instagram no tiene plantillas y lleva su
     // propia regla de 7 días (docs/instagram.md); el dueño descartó sus seguimientos (7-oct-2026).
-    channelOn: row.mode === "auto" && row.channelType === "whatsapp",
+    // Un chat sin Agente IA (26-oct-2026) cuenta como apagado: los que tuviera se cancelan.
+    channelOn: row.mode === "auto" && row.channelType === "whatsapp" && !row.sinAgenteIa,
     windowExpiresAt: row.windowExpiresAt,
     lastTemplateAt: await lastTemplateAt(organizationId, contactId, now, await followUpsReal(organizationId)),
     approved: await approvedTemplateNames(organizationId),
