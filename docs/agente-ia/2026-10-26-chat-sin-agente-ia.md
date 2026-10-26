@@ -14,8 +14,12 @@ para marcarlo y sin etiquetas** de «prueba» (se descartó un interruptor en el
 para poder probarlo en staging).
 
 **Cómo:** columna `contacts.sin_agente_ia` (migración **0071**, falso por defecto). La misma migración marca el
-contacto del dueño por su **id** (el teléfono no va al repo, que es público). Para marcar otro chat después: un
-`update contacts set sin_agente_ia = true where id = …` en producción, con el OK del dueño.
+contacto del dueño por su **id** (el teléfono no va al repo, que es público). Para marcar otro chat después: una
+migración nueva que lo marca por id y organización (leídos en producción con el OK del dueño), como la 0072.
+
+**Chats marcados:**
+- **0071** (26-oct-2026): el chat propio del dueño, para pasarse mensajes.
+- **0072** (26-oct-2026): «Mostrador Paquetexpress», desde donde se piden las recolecciones a Paquete Express.
 
 Con la marca, en todos los chats de ese contacto:
 - **Respuesta del Agente IA:** no se programa al llegar un mensaje ni al vencer la pausa (`hooks.ts`, `schedule.ts`),
