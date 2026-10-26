@@ -25,7 +25,7 @@ export type FollowUpTemplateOption = {
 
 export type EditResult = { ok: true } | { ok: false; message: string };
 
-// Primero las de seguimiento (las que más encajan), luego el saludo de Daniel y las demás.
+// Primero las de seguimiento (las que más encajan), luego el saludo del vendedor (las `daniel_*`, hoy con Carlos) y las demás.
 const SECTION_ORDER: Record<TemplateSectionKey, number> = { seguimiento: 0, daniel: 1, otras: 2 };
 
 const GONE: EditResult = { ok: false, message: "Ese seguimiento ya no está programado." };

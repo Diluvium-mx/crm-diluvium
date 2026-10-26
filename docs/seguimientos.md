@@ -124,7 +124,7 @@ repetir). Sin caso propio: "Sin punto claro" (🚪). En el 📄 y el 🕒 de la 
 plantillas con tiempo (`TIME_PHRASE_TEMPLATES`) y de las `daniel_*` (precio, informacion, info_duda, valorar, medidas,
 asesor, objecion; conjunto aparte `PICKER_TIME_PHRASE_TEMPLATES`, solo para el selector: los seguimientos automáticos
 NO mandan las `daniel_*`) ya viene con la frase de tiempo (se puede cambiar); las demás siguen con el primer nombre.
-El selector las agrupa en «Saludo de Daniel», «Seguimiento» y «Otras», con título amigable (`lib/templates/labels.ts`).
+El selector las agrupa en «Saludo de Carlos» (las `daniel_*`; hasta el 26-oct-2026 «Saludo de Daniel»), «Seguimiento» y «Otras», con título amigable (`lib/templates/labels.ts`).
 
 ---
 
