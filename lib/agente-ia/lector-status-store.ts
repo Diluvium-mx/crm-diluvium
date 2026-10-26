@@ -4,7 +4,7 @@
 // última lectura. Nunca lanza por Redis: el Detalle no se bloquea ni se rompe.
 import { and, desc, eq, inArray, sql } from "drizzle-orm";
 import { db } from "@/lib/db";
-import { aiUsage, conversations, messages } from "@/lib/db/schema";
+import { aiUsage, contacts, conversations, messages } from "@/lib/db/schema";
 import { lectorLockKey } from "@/lib/ai/runtime/lector-core";
 import { withQueueTimeout } from "@/lib/ai/runtime/queue";
 import { isPending, resolveLectorStatus, type LectorConversationInfo, type LectorStatus } from "./lector-status";
@@ -22,6 +22,13 @@ export const readLectorLocks: LockReader = async (conversationIds) => {
 export type LectorStatusView = { status: LectorStatus; conversationIds: string[] };
 
 export async function loadLectorStatus(organizationId: string, contactId: string, now: Date, readLocks: LockReader = readLectorLocks): Promise<LectorStatusView> {
+  // Chat sin Agente IA (26-oct-2026): el lector nunca lo lee; sin línea (ni «leerá el chat…»).
+  const [contact] = await db
+    .select({ sinAgenteIa: contacts.sinAgenteIa })
+    .from(contacts)
+    .where(and(eq(contacts.organizationId, organizationId), eq(contacts.id, contactId)))
+    .limit(1);
+  if (contact?.sinAgenteIa) return { status: null, conversationIds: [] };
   const convs = await db
     .select({ id: conversations.id, lastMessageAt: conversations.lastMessageAt, leidoHasta: conversations.detalleLeidoHasta })
     .from(conversations)

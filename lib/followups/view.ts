@@ -244,6 +244,7 @@ export async function loadFollowUpState(organizationId: string, conversationId: 
       offAt: conversations.seguimientosOffAt,
       byName: user.name,
       baja: contacts.sinSeguimientos,
+      sinAgenteIa: contacts.sinAgenteIa,
       phoneIso: contacts.phoneCountryIso,
       phoneCode: contacts.phoneCountryCode,
       stage: contacts.stage,
@@ -262,6 +263,8 @@ export async function loadFollowUpState(organizationId: string, conversationId: 
   if (row.baja) return { estado: "baja", conversationId, contactId: row.contactId, at: null, byName: null };
   if (row.offAt) return { estado: "cancelado", conversationId, contactId: row.contactId, at: row.offAt.toISOString(), byName: row.byName ?? null };
   const dormido = (razon: string, despertable = false): FollowUpDormido => ({ estado: "dormido", conversationId, contactId: row.contactId, razon, despertable });
+  // Chat propio del dueño (26-oct-2026): el Agente IA no lo lee, así que tampoco hay «Despertar».
+  if (row.sinAgenteIa) return dormido("El Agente IA no lee este chat: no hay seguimientos.");
   // Lada de otro país (salvo la +1): no lleva seguimientos; sin Despertar (13-oct-2026).
   const pais = foreignLadaLabel(row.phoneIso, row.phoneCode);
   if (pais) return dormido(`Número de ${pais}: no lleva seguimientos del Agente IA (solo México y +1).`);

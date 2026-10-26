@@ -419,6 +419,8 @@ export async function runAgent(job: { organizationId: string; conversationId: st
     const { conversation: conv, channel } = snap;
     // Solo "auto" (Encendido) responde; "borrador" ya no existe y cuenta como apagado.
     if (channel.aiAgentMode !== "auto") return { kind: "skipped", reason: "canal_off" };
+    // Chat propio del dueño (26-oct-2026): el Agente IA nunca lo lee ni lo contesta.
+    if (snap.sinAgenteIa) return { kind: "skipped", reason: "sin_agente_ia" };
     const cfg = await loadAgentConfig(org);
     // Opciones del bot (caché ≤ 60 s): los cambios de la pestaña aplican sin redesplegar.
     const options = await loadBotOptions(org, now);

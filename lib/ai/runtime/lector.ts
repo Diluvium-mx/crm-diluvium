@@ -201,7 +201,8 @@ async function rewriteBorrador(
 
 async function readConversation(organizationId: string, conversationId: string, deps: LectorDeps, force: boolean, despertar: boolean): Promise<LectorOutcome> {
   const snap = await loadSnapshot(organizationId, conversationId);
-  if (!snap) return { kind: "nada_nuevo" };
+  // Chat sin Agente IA (26-oct-2026): ni el barrido ni «Despertar» lo leen.
+  if (!snap || snap.sinAgenteIa) return { kind: "nada_nuevo" };
   const conv = snap.conversation;
   // Hasta dónde lee esta pasada: lo que llegue durante la llamada queda para la siguiente.
   const upTo = conv.lastMessageAt;

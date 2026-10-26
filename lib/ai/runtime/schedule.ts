@@ -28,7 +28,7 @@ export async function pendingWindow(
 // null = no hay nada que programar (canal apagado o sin pendientes).
 export async function debounceDelayFor(organizationId: string, conversationId: string, now: Date): Promise<number | null> {
   const snap = await loadSnapshot(organizationId, conversationId);
-  if (!snap || snap.channel.aiAgentMode !== "auto") return null;
+  if (!snap || snap.channel.aiAgentMode !== "auto" || snap.sinAgenteIa) return null;
   // Agente pausado (un vendedor contestó): no hay nada que programar hasta "Reactivar".
   if (snap.conversation.agentState !== "activo") return null;
   const options = await loadBotOptions(organizationId, now);

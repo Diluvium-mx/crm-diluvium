@@ -47,11 +47,21 @@ export async function onInboundKeyword(m: { organizationId: string; conversation
       return hit ? [{ ...wf, len: hit.length }] : [];
     });
     const [conv] = await db
-      .select({ contactId: conversations.contactId, keywordSent: contacts.keywordWorkflowsSent, iso: contacts.phoneCountryIso })
+      .select({
+        contactId: conversations.contactId,
+        keywordSent: contacts.keywordWorkflowsSent,
+        iso: contacts.phoneCountryIso,
+        sinAgenteIa: contacts.sinAgenteIa,
+      })
       .from(conversations)
       .innerJoin(contacts, eq(contacts.id, conversations.contactId))
       .where(and(eq(conversations.id, m.conversationId), eq(conversations.organizationId, m.organizationId)))
       .limit(1);
+    // Chat sin Agente IA (26-oct-2026): ninguna respuesta por palabra clave.
+    if (conv?.sinAgenteIa) {
+      await markKeywordChecked(m);
+      return null;
+    }
     // Regla fija «precio y medidas» (lib/workflows/fixed-rules.ts): «Información» puede ganar sin
     // tener la palabra clave, así que también se revisa si puede salir.
     const ruleWinner = rows.find((w) => w.slug === PRECIO_Y_MEDIDAS.gana) ?? null;

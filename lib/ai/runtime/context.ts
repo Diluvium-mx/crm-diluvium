@@ -5,7 +5,7 @@
 // los ids vienen de la cola interna, pero nunca se confía en ellos solos).
 import { and, count, desc, eq, gt, inArray, isNotNull, isNull, ne, not, notInArray, sql, type SQL } from "drizzle-orm";
 import { db } from "@/lib/db";
-import { aiAgentDrafts, aiUsage, channels, conversations, messages, workflowRuns, workflows } from "@/lib/db/schema";
+import { aiAgentDrafts, aiUsage, channels, contacts, conversations, messages, workflowRuns, workflows } from "@/lib/db/schema";
 import { MAX_HISTORY_CHARS, messageText } from "./transcript";
 import { FINAL_OUTCOMES } from "./usage";
 import { asksSomething } from "./unanswered";
@@ -43,17 +43,26 @@ const agentAt = agentAtSql("messages");
 const inConversation = (organizationId: string, conversationId: string) =>
   and(eq(messages.organizationId, organizationId), eq(messages.conversationId, conversationId));
 
+// `sinAgenteIa`: el contacto está marcado para que el Agente IA lo deje por completo (chat propio del
+// dueño, 26-oct-2026): ni respuesta, ni lector, ni seguimientos.
 export async function loadSnapshot(
   organizationId: string,
   conversationId: string,
-): Promise<{ conversation: ConversationRow; channel: ChannelRow } | null> {
+): Promise<{ conversation: ConversationRow; channel: ChannelRow; sinAgenteIa: boolean } | null> {
   const [row] = await db
-    .select({ conversation: conversations, channel: channels })
+    .select({ conversation: conversations, channel: channels, sinAgenteIa: contacts.sinAgenteIa })
     .from(conversations)
     .innerJoin(channels, and(eq(channels.id, conversations.channelId), eq(channels.organizationId, organizationId)))
+    .innerJoin(contacts, and(eq(contacts.id, conversations.contactId), eq(contacts.organizationId, organizationId)))
     .where(and(eq(conversations.id, conversationId), eq(conversations.organizationId, organizationId)))
     .limit(1);
   return row ?? null;
+}
+
+/** Filtro SQL: el contacto de la conversación `alias` NO está marcado «sin Agente IA». */
+export function withAgenteIaSql(alias: "c"): SQL {
+  const c = sql.raw(alias);
+  return sql`not exists (select 1 from contacts ct where ct.id = ${c}.contact_id and ct.organization_id = ${c}.organization_id and ct.sin_agente_ia)`;
 }
 
 // Saliente mandado por una corrida de workflow por PALABRA CLAVE o del AGENTE: NO

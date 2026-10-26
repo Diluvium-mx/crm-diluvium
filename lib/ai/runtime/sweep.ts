@@ -10,7 +10,7 @@ import { db } from "@/lib/db";
 import { aiAgentDrafts, messages } from "@/lib/db/schema";
 import { isAmbiguousSendError, SEND_UNCONFIRMED, SEND_UNKNOWN } from "@/lib/messaging/rules";
 import { holdAgentForReview, recordAgentError } from "./agent-error";
-import { agentAtSql, answeredOnlySql, workflowFillerSql } from "./context";
+import { agentAtSql, answeredOnlySql, withAgenteIaSql, workflowFillerSql } from "./context";
 import { hiddenNoticeSql } from "@/lib/messaging/unavailable";
 import { sendErrorBody } from "./model-errors";
 import { bubbleMessageId, holdForRetry } from "./saved-reply";
@@ -118,6 +118,8 @@ function unansweredSql(now: Date, opts: { since: Date; olderThan: Date; extra: S
     ) last on true
     where ch.ai_agent_mode = 'auto'
       and c.agent_state = 'activo'
+      -- Chat sin Agente IA (26-oct-2026): ni se contesta ni cuenta para la alarma.
+      and ${withAgenteIaSql("c")}
       and c.window_expires_at > ${ts(now)}
       and c.last_message_at > ${ts(since)}
       ${extra}
