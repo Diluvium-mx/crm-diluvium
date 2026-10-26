@@ -20,7 +20,9 @@ const KNOWN_TITLES: Readonly<Record<string, string>> = {
 export type TemplateSectionKey = "daniel" | "seguimiento" | "otras";
 
 export const TEMPLATE_SECTIONS: ReadonlyArray<{ key: TemplateSectionKey; title: string }> = [
-  { key: "daniel", title: "Saludo de Daniel" },
+  // Las `daniel_*` conservan su nombre en Meta (no se puede cambiar); desde el 26-oct-2026 su texto dice Carlos,
+  // el vendedor nuevo (Daniel renunció).
+  { key: "daniel", title: "Saludo de Carlos" },
   { key: "seguimiento", title: "Seguimiento" },
   { key: "otras", title: "Otras" },
 ];
@@ -38,7 +40,7 @@ export function templateTitle(name: string): string {
 }
 
 /**
- * Texto que se muestra en la lista: en las de «Saludo de Daniel» todas empiezan con el mismo
+ * Texto que se muestra en la lista: en las de «Saludo de Carlos» todas empiezan con el mismo
  * saludo, así que se enseña lo que cambia (lo que va después del primer párrafo).
  */
 export function templateSnippet(name: string, bodyText: string): string {
