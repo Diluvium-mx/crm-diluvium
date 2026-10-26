@@ -241,6 +241,31 @@ describe.skipIf(!TEST_DATABASE_URL)("historial de cambios (Postgres real)", () =
     expect(diff.diff.blocks[0].lines[0].segments.filter((x) => x.op === "added").map((x) => x.text)).toEqual([", soy {{vendedor}}"]);
   });
 
+  it("mensajes rápidos: orden manual (26-oct-2026) — nuevo al final, reordenar completo y una fila con el antes y el después", async () => {
+    const b = await snippetsActions.createSnippet({ name: "B saludo", body: "Hola" });
+    const a = await snippetsActions.createSnippet({ name: "A precio", body: "Cuesta" });
+    const c = await snippetsActions.createSnippet({ name: "C envío", body: "Enviamos" });
+    // Nuevo al final (antes salían por nombre).
+    expect((await snippetsActions.listSnippets()).map((x) => x.name)).toEqual(["B saludo", "A precio", "C envío"]);
+    const saved = await snippetsActions.reorderSnippets({ ids: [c.id, b.id, a.id] });
+    expect(saved.map((x) => x.name)).toEqual(["C envío", "B saludo", "A precio"]);
+    expect((await snippetsActions.listSnippets()).map((x) => x.id)).toEqual([c.id, b.id, a.id]);
+    // Incompleto, repetido o de otra organización: no se guarda nada.
+    await expect(snippetsActions.reorderSnippets({ ids: [a.id, b.id] })).rejects.toThrow("Recarga la página");
+    await expect(snippetsActions.reorderSnippets({ ids: [a.id, a.id, b.id] })).rejects.toThrow("Recarga la página");
+    session.current = { organizationId: OTRA, userId: USER, role: "agent" };
+    await expect(snippetsActions.reorderSnippets({ ids: [c.id, a.id, b.id] })).rejects.toThrow("Recarga la página");
+    session.current = { organizationId: ORG, userId: USER, role: "agent" };
+    // El mismo orden otra vez: sin fila nueva.
+    await snippetsActions.reorderSnippets({ ids: [c.id, b.id, a.id] });
+    const r = (await rows()).filter((x) => x.action === "reordenar");
+    expect(r).toHaveLength(1);
+    expect(r[0]).toMatchObject({ kind: "mensajes_rapidos", userId: USER, subject: null });
+    const list = await getChangeHistory({ type: "mensajes_rapidos" });
+    if (!list.ok) throw new Error(list.message);
+    expect(list.rows.filter((x) => x.what === "Cambió el orden de los mensajes rápidos")).toHaveLength(1);
+  });
+
   it("vendedores: desactivar, reactivar y contraseña (sin mostrarla) en la misma transacción; solo owner y admin los ven", async () => {
     await db.insert(s.user).values({ id: VEND, name: "Ana", email: "ana.hc@example.test" });
     await db.insert(s.member).values([

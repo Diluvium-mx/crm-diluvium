@@ -1,8 +1,8 @@
 // Los 22 mensajes rápidos de Diluvium (lista final del dueño, 27-sep-2026), que
 // carga `npm run mensajes-rapidos:cargar`. Textos EXACTOS: no se corrigen aquí;
 // si el dueño cambia uno, se edita en la sección Mensajes rápidos o aquí y se
-// vuelve a correr el script (actualiza por nombre). Sin variables: "Daniel" va
-// escrito tal cual.
+// vuelve a correr el script (actualiza por nombre). Sin variables: el nombre del
+// vendedor va escrito tal cual ("Carlos" desde el 26-oct-2026; antes "Daniel").
 import type { DesiredSnippet } from "./carga";
 
 export const MENSAJES_RAPIDOS_DILUVIUM: DesiredSnippet[] = [
@@ -12,14 +12,14 @@ export const MENSAJES_RAPIDOS_DILUVIUM: DesiredSnippet[] = [
   },
   {
     name: "Buenas tardes 🌅",
-    body: "Hola, buenas tardes. Aquí Daniel, de Diluvium 🌅",
+    body: "Hola, buenas tardes. Aquí Carlos, de Diluvium 🌅",
     // Ya existe en producción con el nombre sin emoji: se actualiza (nombre y
     // texto), no se duplica.
     previousNames: ["Buenas tardes"],
   },
   {
     name: "Buenos días",
-    body: "Hola, muy buenos días. Aquí Daniel, de Diluvium ☀️",
+    body: "Hola, muy buenos días. Aquí Carlos, de Diluvium ☀️",
   },
   {
     name: "Cuánta agua entra",

@@ -670,8 +670,8 @@ Aprobado por el dueño («OK 1–3»):
   («el cliente escribió al último», «contestó», «ya compró», «No seguir: …», «caso apagado», «lee el chat en unos
   minutos», Instagram o Agente IA apagado en el canal) más «Apagar seguimientos en este chat» (`turnOffFollowUps`).
   Cancelar en un «esperando» ya en frío apaga el chat sin tocar el seguimiento terminado.
-- **Calendario del CRM** (`components/ui/date-time-picker.tsx`) en todo lo que pide fecha u hora; en el celular,
-  el selector del teléfono. Una página web no puede usar el calendario propio de macOS.
+- **Calendario del CRM** (`components/ui/date-time-picker.tsx`) en todo lo que pide fecha u hora (desde el 26-oct-2026
+  también el «Mes» del filtro de periodo, modo `month`); en el celular, el selector del teléfono. Una página web no puede usar el calendario propio de macOS.
 - Descartado por el dueño: marcar contactos como de prueba desde el CRM (se queda como está).
 - **Instagram descartado por el dueño, 7-oct-2026:** sin seguimientos del Agente IA en Instagram (la mayoría de los
   que escriben por ahí son leads fríos). Su píldora queda dormida con su razón; no se vuelve a proponer (§11).

@@ -6,6 +6,8 @@
 // los miembros ven y editan los mismos (igual criterio que Contactos, §5).
 // Bloque E (28-sep-2026): crear, editar y borrar quedan en el Historial (Agente IA) con su
 // texto, en la MISMA transacción que el cambio.
+// Orden manual (26-oct-2026): se listan por `position` (el que el equipo acomoda arrastrando), uno nuevo va
+// al final y `reorderSnippets` guarda el orden completo (queda en el Historial con el antes y el después).
 import { revalidatePath } from "next/cache";
 import { and, asc, eq } from "drizzle-orm";
 import { z } from "zod";
@@ -15,6 +17,8 @@ import { db } from "@/lib/db";
 import { snippets } from "@/lib/db/schema/snippets";
 import { logChanges } from "@/lib/historial/log";
 import { SNIPPET_BODY_MAX, SNIPPET_NAME_MAX } from "@/lib/snippets/limits";
+import { nextSnippetPosition } from "@/lib/snippets/next-position";
+import { isFullOrder } from "@/lib/snippets/orden";
 import { extractVariables } from "@/lib/snippets/variables";
 import type { SnippetView } from "@/lib/snippets/types";
 
@@ -30,6 +34,8 @@ const updateSnippetSchema = z.object({
   name: nameSchema,
   body: bodySchema,
 });
+
+const reorderSnippetsSchema = z.object({ ids: z.array(z.string().trim().min(1)).max(500) });
 
 export type CreateSnippetInput = z.infer<typeof createSnippetSchema>;
 export type UpdateSnippetInput = z.infer<typeof updateSnippetSchema>;
@@ -59,7 +65,7 @@ export async function listSnippets(): Promise<SnippetView[]> {
     .select()
     .from(snippets)
     .where(eq(snippets.organizationId, organizationId))
-    .orderBy(asc(snippets.name));
+    .orderBy(asc(snippets.position), asc(snippets.name));
   return rows.map(toView);
 }
 
@@ -77,6 +83,7 @@ export async function createSnippet(input: CreateSnippetInput): Promise<SnippetV
           name: parsed.name,
           body: parsed.body,
           variables: extractVariables(parsed.body),
+          position: nextSnippetPosition(organizationId),
         })
         .returning();
       await logChanges(tx, {
@@ -166,4 +173,51 @@ export async function deleteSnippet(id: string): Promise<void> {
   });
   if (!deleted) throw new Error("Mensaje rápido no encontrado en esta organización.");
   revalidatePath("/mensajes-rapidos");
+}
+
+/**
+ * Guarda el orden manual: `ids` = TODOS los mensajes rápidos de la organización en el orden nuevo. Si alguien
+ * creó o borró uno mientras tanto, no coincide y pide recargar (no se adivina dónde va el que falta).
+ */
+export async function reorderSnippets(input: { ids: string[] }): Promise<SnippetView[]> {
+  const { organizationId, role, userId } = await requireActiveMembership();
+  requireSnippetManage(role, "update");
+  const { ids } = reorderSnippetsSchema.parse(input);
+  const rows = await db.transaction(async (tx) => {
+    const current = await tx
+      .select({ id: snippets.id, name: snippets.name, position: snippets.position })
+      .from(snippets)
+      .where(eq(snippets.organizationId, organizationId))
+      .orderBy(asc(snippets.position), asc(snippets.name))
+      .for("update");
+    if (!isFullOrder(current.map((s) => s.id), ids)) {
+      throw new Error("La lista cambió mientras la acomodabas (alguien creó o borró un mensaje rápido). Recarga la página e inténtalo de nuevo.");
+    }
+    const byId = new Map(current.map((s) => [s.id, s]));
+    for (const [position, id] of ids.entries()) {
+      if (byId.get(id)!.position === position) continue;
+      await tx
+        .update(snippets)
+        .set({ position })
+        .where(and(eq(snippets.id, id), eq(snippets.organizationId, organizationId)));
+    }
+    const before = current.map((s) => s.name).join("\n");
+    const after = ids.map((id) => byId.get(id)!.name).join("\n");
+    if (before !== after) {
+      await logChanges(tx, {
+        organizationId,
+        userId,
+        kind: "mensajes_rapidos",
+        action: "reordenar",
+        detail: { type: "texto", title: "Orden", before, after },
+      });
+    }
+    return tx
+      .select()
+      .from(snippets)
+      .where(eq(snippets.organizationId, organizationId))
+      .orderBy(asc(snippets.position), asc(snippets.name));
+  });
+  revalidatePath("/mensajes-rapidos");
+  return rows.map(toView);
 }
