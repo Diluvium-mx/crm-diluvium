@@ -63,6 +63,16 @@ describe.skipIf(!TEST_DATABASE_URL)("disparadores de workflows", () => {
     expect(all[0]).toMatchObject({ workflowId: "w_tabla", trigger: "keyword", conversationId: "cv_new" });
   });
 
+  it("chat sin Agente IA (26-oct-2026): la palabra clave no dispara nada; sin la marca, el mismo mensaje sí", async () => {
+    await wf("w_tabla", { triggerKeywords: ["tabla"], position: 0 });
+    await db.update(s.contacts).set({ sinAgenteIa: true }).where(eq(s.contacts.id, "c1"));
+    expect(await inbound("m_marcado", "¿Me mandan la tabla?")).toBeNull();
+    expect(await runs()).toHaveLength(0);
+    await db.update(s.contacts).set({ sinAgenteIa: false }).where(eq(s.contacts.id, "c1"));
+    expect(await inbound("m_normal", "¿Me mandan la tabla?")).toMatchObject({ status: "queued" });
+    expect(await runs()).toHaveLength(1);
+  });
+
   it("B1: palabra clave durable — el barrido retoma la que un reinicio dejó 'pendiente', sin duplicar la corrida", async () => {
     await wf("w_tabla", { triggerKeywords: ["tabla"], position: 0 });
     const mark = async (id: string) =>

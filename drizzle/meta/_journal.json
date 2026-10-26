@@ -491,6 +491,13 @@
       "when": 1792778463622,
       "tag": "0070_zernio_billing",
       "breakpoints": true
+    },
+    {
+      "idx": 71,
+      "version": "7",
+      "when": 1793053213705,
+      "tag": "0071_sin_agente_ia",
+      "breakpoints": true
     }
   ]
 }

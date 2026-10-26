@@ -100,6 +100,10 @@ export const contacts = pgTable(
     // Se dio de baja de las promociones de WhatsApp (error 131050 de Meta): sin seguimientos del
     // Agente IA hasta que un vendedor lo quite. Migración 0059 (docs/seguimientos.md §9).
     sinSeguimientos: boolean("sin_seguimientos").default(false).notNull(),
+    // Chat propio del dueño (26-oct-2026, migración 0071): el Agente IA lo deja por completo (no
+    // contesta, el lector no lo lee, sin seguimientos ni palabras clave). Fijo en la base, sin
+    // interfaz ni etiqueta (docs/agente-ia/2026-10-26-chat-sin-agente-ia.md).
+    sinAgenteIa: boolean("sin_agente_ia").default(false).notNull(),
     tieneInundaciones: contactInundacionesEnum("tiene_inundaciones"),
     nivelAguaCm: integer("nivel_agua_cm"),
     nivelAguaTexto: text("nivel_agua_texto"),

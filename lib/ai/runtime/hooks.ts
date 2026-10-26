@@ -46,7 +46,8 @@ export async function onInboundCustomerMessage(
 ): Promise<void> {
   try {
     const snap = await loadSnapshot(input.organizationId, input.conversationId);
-    if (!snap || snap.channel.aiAgentMode !== "auto") return;
+    // Chat sin Agente IA: tampoco se reactiva por un seguimiento.
+    if (!snap || snap.channel.aiAgentMode !== "auto" || snap.sinAgenteIa) return;
     const now = ports.now ?? new Date();
     const conv = snap.conversation;
     const wrote = input.messageId ? await writtenAt(input.organizationId, input.conversationId, input.messageId) : null;

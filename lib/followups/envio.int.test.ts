@@ -386,6 +386,23 @@ describe.skipIf(!TEST_DATABASE_URL)("Seguimientos en modo REAL (proveedor falso)
     expect(await view.loadFollowUpState(ORG, CONV)).toMatchObject({ estado: "dormido" });
   });
 
+  it("chat sin Agente IA (26-oct-2026): el que ya estaba se cancela sin salir, no se arma otro y la píldora duerme sin «Despertar»", async () => {
+    const view = await import("./view");
+    await reading();
+    const r = await row();
+    await db.update(s.contacts).set({ sinAgenteIa: true }).where(d.eq(s.contacts.id, CONTACT));
+    await store.followUpSweepOnce(new Date(r.dueAt!.getTime() + MIN), { provider });
+    expect(sent).toHaveLength(0);
+    expect(await row()).toMatchObject({ status: "cancelado", cancelReason: "agente_apagado" });
+    expect(await reading(new Date(r.dueAt!.getTime() + 2 * MIN))).toMatch(/^seguimiento: no/);
+    expect(await db.select().from(s.followUps)).toHaveLength(1);
+    expect(await view.loadFollowUpState(ORG, CONV)).toMatchObject({
+      estado: "dormido",
+      razon: "El Agente IA no lee este chat: no hay seguimientos.",
+      despertable: false,
+    });
+  });
+
   it("la píldora siempre está (7-oct-2026): «dormido» con su razón, «esperando» tras el último intento y «Apagar» desde dormido", async () => {
     const view = await import("./view");
     await db.insert(s.user).values({ id: "u_vend", name: "Carlos", email: "carlos@envio.test" });
