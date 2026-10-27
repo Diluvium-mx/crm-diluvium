@@ -68,19 +68,22 @@ export function TopConfirm({
     function cancel() {
       if (!latest.current.pending) latest.current.onCancel();
     }
+    // Esc cierra SOLO este aviso: se atiende antes (fase de captura) y no sigue a lo de atrás, p. ej. el pop-up
+    // del Embudo con el Detalle, que también cierra con Esc (27-oct-2026, borrar anchos de entradas).
     function onKey(event: KeyboardEvent) {
       if (event.key !== "Escape") return;
       event.preventDefault();
+      event.stopPropagation();
       cancel();
     }
     function onPointer(event: PointerEvent) {
       if (event.target instanceof Node && boxRef.current?.contains(event.target)) return;
       cancel();
     }
-    document.addEventListener("keydown", onKey);
+    window.addEventListener("keydown", onKey, true);
     document.addEventListener("pointerdown", onPointer);
     return () => {
-      document.removeEventListener("keydown", onKey);
+      window.removeEventListener("keydown", onKey, true);
       document.removeEventListener("pointerdown", onPointer);
       if (previous?.isConnected) previous.focus();
     };
