@@ -328,7 +328,7 @@ opiniones            id, org_id, contact_id?, conversation_id?, token (128 bits,
                      nombre/ciudad (solo con_nombre), permiso_texto (texto exacto que aceptó)
                      -- una sola respuesta por enlace (UPDATE … where answered_at is null)
 opiniones_config     org_id (PK), google_resena_url (botón «Dejar reseña en Google», sale para todos),
-                     amazon_resena_url, mercado_libre_resena_url (0074: van en el mensaje que pide la reseña)
+                     amazon_resena_url (sin uso desde el 27-oct: Amazon se pide en Seller Central), mercado_libre_resena_url (0074)
 -- Reseñas en Amazon y Mercado Libre (27-oct-2026, migración 0074; docs/opiniones.md § 7). Seguimientos › Amazon y
 -- Mercado Libre. La anota el lector (campo compro_en, solo si el CLIENTE nombra la tienda); el vendedor pide la reseña.
 resenas_tienda       id, org_id, contact_id (único por org), conversation_id?, tienda (amazon|mercado_libre), frase,
