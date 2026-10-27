@@ -23,5 +23,6 @@ export * from "./zernio-billing";
 export * from "./ads";
 export * from "./followups";
 export * from "./opiniones";
+export * from "./resenas-tienda";
 export * from "./stage-history";
 export * from "./spelling";

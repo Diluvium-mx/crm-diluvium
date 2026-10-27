@@ -512,6 +512,13 @@
       "when": 1793056913251,
       "tag": "0073_snippets_orden",
       "breakpoints": true
+    },
+    {
+      "idx": 74,
+      "version": "7",
+      "when": 1793118133778,
+      "tag": "0074_resenas_tienda",
+      "breakpoints": true
     }
   ]
 }

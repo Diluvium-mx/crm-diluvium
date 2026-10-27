@@ -8,7 +8,7 @@ import { requireActiveMembership, type ActiveMembership } from "@/lib/auth/activ
 import { roleAllows } from "@/lib/auth/permissions";
 import type { AgentActionResult } from "@/lib/agente-ia/types";
 import { logError } from "@/lib/log/safe-error";
-import { enlaceOpinion } from "@/lib/opiniones/enlaces";
+import { enlaceOpinion, esHttps } from "@/lib/opiniones/enlaces";
 import { borrarOpinionPrueba, crearOpinion, guardarGoogleResenaUrl } from "@/lib/opiniones/store";
 
 const RUTA = "/seguimientos";
@@ -61,14 +61,6 @@ const googleSchema = z.object({
     .max(500, "El enlace es demasiado largo.")
     .refine((v) => v === "" || esHttps(v), "El enlace debe empezar con https://"),
 });
-
-function esHttps(v: string): boolean {
-  try {
-    return new URL(v).protocol === "https:";
-  } catch {
-    return false;
-  }
-}
 
 export async function guardarEnlaceGoogle(input: { url: string }): Promise<AgentActionResult> {
   try {

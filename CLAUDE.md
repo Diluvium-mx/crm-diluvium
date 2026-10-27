@@ -327,7 +327,13 @@ opiniones            id, org_id, contact_id?, conversation_id?, token (128 bits,
                      estrellas 1–5, texto, lluvia (resistio|se_metio|todavia_no), permiso (con_nombre|sin_nombre|no),
                      nombre/ciudad (solo con_nombre), permiso_texto (texto exacto que aceptó)
                      -- una sola respuesta por enlace (UPDATE … where answered_at is null)
-opiniones_config     org_id (PK), google_resena_url (botón «Dejar reseña en Google», sale para todos)
+opiniones_config     org_id (PK), google_resena_url (botón «Dejar reseña en Google», sale para todos),
+                     amazon_resena_url, mercado_libre_resena_url (0074: van en el mensaje que pide la reseña)
+-- Reseñas en Amazon y Mercado Libre (27-oct-2026, migración 0074; docs/opiniones.md § 7). Seguimientos › Amazon y
+-- Mercado Libre. La anota el lector (campo compro_en, solo si el CLIENTE nombra la tienda); el vendedor pide la reseña.
+resenas_tienda       id, org_id, contact_id (único por org), conversation_id?, tienda (amazon|mercado_libre), frase,
+                     origen (lector|manual), estado (por_pedir|pedida|la_dejo|no_quiso|descartada), pedida_at,
+                     pedida_por_user_id -- descartada = «No compró ahí»: el lector ya no lo vuelve a anotar
 ```
 
 Detalles que importan:
