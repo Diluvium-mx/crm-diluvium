@@ -7,6 +7,8 @@
 // - ENVIA_GENERAR: candado del saldo (27-oct-2026, pedido del dueño: «no gastes ni un peso»). Con la cuenta real
 //   (production) solo se generan guías si vale «si»; sin él, el servidor solo lee y cotiza (eso no cobra). Staging
 //   usa la cuenta real sin el candado abierto; producción lo abre en el OK MAIN. La de pruebas siempre genera.
+// - ENVIA_ORIGEN_CP: código postal de la dirección de origen guardada en Envia que se usa si ninguna está marcada
+//   como favorita (27-oct-2026: la cuenta real tiene 5 orígenes y ninguno favorito; la oficina es 81200).
 // URLs de docs.envia.com/docs/production-checklist (revisado el 26-oct-2026). Geocodes solo existe en
 // producción y no pide token.
 export type EnviaEnv = "sandbox" | "production";
@@ -16,6 +18,8 @@ export type EnviaConfig = {
   token: string;
   /** ¿Puede generar guías (gastar saldo)? Pruebas: sí; cuenta real: solo con ENVIA_GENERAR=si. */
   canGenerate: boolean;
+  /** Código postal del origen a usar si en Envia no hay favorita (ENVIA_ORIGEN_CP), o null. */
+  originPostalCode: string | null;
   shipUrl: string;
   queriesUrl: string;
   geocodesUrl: string;
@@ -46,7 +50,9 @@ export function enviaConfigFrom(env: Record<string, string | undefined>): EnviaC
   const which = env.ENVIA_ENV?.trim();
   if (!token || (which !== "sandbox" && which !== "production")) return null;
   const canGenerate = which === "sandbox" || env.ENVIA_GENERAR?.trim().toLowerCase() === "si";
-  return { env: which, token, canGenerate, ...ENVIA_URLS[which] };
+  const cp = env.ENVIA_ORIGEN_CP?.trim();
+  const originPostalCode = cp && /^\d{5}$/.test(cp) ? cp : null;
+  return { env: which, token, canGenerate, originPostalCode, ...ENVIA_URLS[which] };
 }
 
 export function requireEnviaConfig(): EnviaConfig {

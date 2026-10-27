@@ -10,7 +10,7 @@
 import { useEffect, useState } from "react";
 import { Printer, Truck } from "lucide-react";
 import { cancelarGuia, getEnvioPanel, type EnvioPanel } from "@/lib/actions/envios";
-import { carrierLabel, priceLabel, trackingMessage } from "@/lib/envios/messages";
+import { carrierLabel, priceLabel, serviceName, trackingMessage } from "@/lib/envios/messages";
 import type { ShipmentView } from "@/lib/envios/store";
 import { writeClipboard } from "@/components/ui/copy-button";
 import { PruebaBadge } from "@/components/ui/prueba-badge";
@@ -96,7 +96,7 @@ export function ContactEnvioSection({ contactId, conversationId }: { contactId: 
           <div className="flex items-center justify-between gap-2">
             <p className="font-medium text-foreground">
               {carrierLabel(s.carrier)}
-              {s.serviceLabel && <span className="font-normal text-muted-foreground"> · {s.serviceLabel}</span>}
+              {s.serviceLabel && <span className="font-normal text-muted-foreground"> · {serviceName(s.carrier, s.serviceLabel)}</span>}
             </p>
             <span className="flex items-center gap-1">
               {s.environment === "sandbox" && <PruebaBadge />}

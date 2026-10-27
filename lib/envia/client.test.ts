@@ -48,6 +48,12 @@ describe("configuración", () => {
     expect(enviaConfigFrom({ ENVIA_API_TOKEN: "x", ENVIA_ENV: "production", ENVIA_GENERAR: " Si " })?.canGenerate).toBe(true);
   });
 
+  it("ENVIA_ORIGEN_CP: solo un código postal de 5 dígitos", () => {
+    expect(enviaConfigFrom({ ENVIA_API_TOKEN: "x", ENVIA_ENV: "production", ENVIA_ORIGEN_CP: " 81200 " })?.originPostalCode).toBe("81200");
+    expect(enviaConfigFrom({ ENVIA_API_TOKEN: "x", ENVIA_ENV: "production", ENVIA_ORIGEN_CP: "Los Mochis" })?.originPostalCode).toBeNull();
+    expect(CONFIG.originPostalCode).toBeNull();
+  });
+
   it("pruebas y producción usan sus propias URLs", () => {
     expect(CONFIG.shipUrl).toBe("https://api-test.envia.com");
     expect(CONFIG.queriesUrl).toBe("https://queries.test.envia.com");
@@ -69,9 +75,27 @@ describe("lectura de respuestas", () => {
     expect(parseZip([])).toBeNull();
   });
 
-  it("embalajes guardados", () => {
+  it("embalajes guardados en la forma de la documentación", () => {
     expect(parsePackages({ success: true, data: [{ id: 7, name: " Compuerta Chica ", length: 91, width: 14, height: 66, weight: "13" }] })).toEqual([
-      { id: "7", name: "Compuerta Chica", lengthCm: 91, widthCm: 14, heightCm: 66, weightKg: 13 },
+      { id: "7", name: "Compuerta Chica", content: null, lengthCm: 91, widthCm: 14, heightCm: 66, weightKg: 13 },
+    ]);
+  });
+
+  it("embalajes guardados como los manda la cuenta real (27-oct-2026): por grupos, nombre en description", () => {
+    const real = {
+      data: {
+        userPackages: [
+          { package_id: 1527837, description: "Compuerta Grande ", content: "Compuerta Anti-Inundaciones ", type: "box", length: 102, width: 14, height: 66, length_unit: "CM", weight: 15.5, weight_unit: "KG", declared_value: 0 },
+          { package_id: 9, description: "Caja en pulgadas", content: "", length: 10, width: 10, height: 10, length_unit: "IN", weight: 2, weight_unit: "LB" },
+          { package_id: 10, description: "", length: 1, width: 1, height: 1, weight: 1 },
+        ],
+        companyPackages: [{ package_id: 1527837, description: "Compuerta Grande", length: 102, width: 14, height: 66, weight: 15.5 }],
+        shopPackages: [],
+      },
+    };
+    expect(parsePackages(real)).toEqual([
+      { id: "1527837", name: "Compuerta Grande", content: "Compuerta Anti-Inundaciones", lengthCm: 102, widthCm: 14, heightCm: 66, weightKg: 15.5 },
+      { id: "9", name: "Caja en pulgadas", content: null, lengthCm: 25.4, widthCm: 25.4, heightCm: 25.4, weightKg: 0.91 },
     ]);
   });
 

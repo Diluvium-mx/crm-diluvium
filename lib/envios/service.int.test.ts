@@ -235,6 +235,18 @@ describe.skipIf(!TEST_DATABASE_URL)("guías de Envia (Postgres real)", () => {
     expect(envia.generated).toBe(1);
   });
 
+  it("sin favorita, el origen sale del código postal de ENVIA_ORIGEN_CP (cuenta real: 5 orígenes, ninguno favorito)", async () => {
+    envia.origins = [
+      { address: { ...ORIGEN, name: "Bodega", postalCode: "52755" }, favorite: false },
+      { address: ORIGEN, favorite: false },
+    ];
+    expect((await service.resolveOrigin(envia, "81200")).name).toBe("Diluvium");
+    await expect(service.resolveOrigin(envia, null)).rejects.toThrow("ninguna es la favorita");
+    await expect(service.resolveOrigin(envia, "99999")).rejects.toThrow("ninguna es la favorita");
+    const res = await service.createShipment({ ...deps, originPostalCode: "81200" }, actor, createInput());
+    expect(res.ok).toBe(true);
+  });
+
   it("sin dirección de origen favorita no se pide la guía", async () => {
     envia.origins = [
       { address: ORIGEN, favorite: false },

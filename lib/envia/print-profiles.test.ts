@@ -22,11 +22,12 @@ async function sizes(bytes: Uint8Array) {
 }
 
 describe("perfiles", () => {
-  it("Paquetexpress: la última página; Estafeta y las demás: todas; siempre PDF carta", () => {
+  it("Paquetexpress: la última página; Estafeta y las demás: todas; a Envia se le pide PDF 4x6 (carta no existe)", () => {
     expect(printProfileFor("paquetexpress").pages).toBe("last");
     expect(printProfileFor("Estafeta").pages).toBe("all");
     expect(printProfileFor("dhl").pages).toBe("all");
-    expect(printProfileFor("paquetexpress").settings).toEqual({ printFormat: "PDF", printSize: "PAPER_LETTER" });
+    expect(printProfileFor("paquetexpress").settings).toEqual({ printFormat: "PDF", printSize: "STOCK_4X6" });
+    expect(printProfileFor("estafeta").settings).toEqual({ printFormat: "PDF", printSize: "STOCK_4X6" });
   });
 
   it("qué páginas salen", () => {
@@ -67,8 +68,8 @@ describe("acomodo en la hoja carta", () => {
 });
 
 describe("PDF listo para imprimir", () => {
-  it("Paquetexpress de 3 páginas → solo la 3, en carta", async () => {
-    const out = await buildPrintReadyPdf(await pdfWith([LETTER, LETTER, { width: 288, height: 432 }]), "paquetexpress");
+  it("Paquetexpress de 3 hojas 4x6 (como las guías reales) → solo la 3, en carta", async () => {
+    const out = await buildPrintReadyPdf(await pdfWith([{ width: 288, height: 432 }, { width: 288, height: 432 }, { width: 288, height: 432 }]), "paquetexpress");
     expect(await sizes(out)).toEqual([{ width: 612, height: 792 }]);
   });
 

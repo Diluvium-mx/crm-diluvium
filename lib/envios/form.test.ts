@@ -2,17 +2,17 @@
 import { describe, expect, it } from "vitest";
 import type { SavedPackage } from "@/lib/envia/client";
 import { createShipmentSchema, defaultPackages, destinationSchema, packageForEntrada, packagesWithValue, shipmentInputSchema, splitDeclaredValue, volumetricKg } from "./form";
-import { trackingMessage } from "./messages";
+import { defaultOptionIndex, serviceHint, serviceName, trackingMessage } from "./messages";
 
 // Los embalajes guardados del dueño (26-oct-2026).
 const SAVED: SavedPackage[] = [
-  { id: "1", name: "Compuerta Anti-Inundaciones", lengthCm: 89, widthCm: 7, heightCm: 33, weightKg: 5 },
-  { id: "2", name: "Compuerta Chica", lengthCm: 91, widthCm: 14, heightCm: 66, weightKg: 13 },
-  { id: "3", name: "Compuerta Extra Chica", lengthCm: 70, widthCm: 13, heightCm: 65, weightKg: 14 },
-  { id: "4", name: "Compuerta Extra Grande", lengthCm: 114, widthCm: 13, heightCm: 68, weightKg: 16 },
-  { id: "5", name: "Compuerta Grande", lengthCm: 102, widthCm: 14, heightCm: 66, weightKg: 15.5 },
-  { id: "6", name: "Compuerta Mediana", lengthCm: 95, widthCm: 14, heightCm: 66, weightKg: 15.5 },
-  { id: "7", name: "Compuerta XXCH", lengthCm: 11, widthCm: 64, heightCm: 69, weightKg: 12 },
+  { id: "1", name: "Compuerta Anti-Inundaciones", content: null, lengthCm: 89, widthCm: 7, heightCm: 33, weightKg: 5 },
+  { id: "2", name: "Compuerta Chica", content: null, lengthCm: 91, widthCm: 14, heightCm: 66, weightKg: 13 },
+  { id: "3", name: "Compuerta Extra Chica", content: null, lengthCm: 70, widthCm: 13, heightCm: 65, weightKg: 14 },
+  { id: "4", name: "Compuerta Extra Grande", content: null, lengthCm: 114, widthCm: 13, heightCm: 68, weightKg: 16 },
+  { id: "5", name: "Compuerta Grande", content: null, lengthCm: 102, widthCm: 14, heightCm: 66, weightKg: 15.5 },
+  { id: "6", name: "Compuerta Mediana", content: null, lengthCm: 95, widthCm: 14, heightCm: 66, weightKg: 15.5 },
+  { id: "7", name: "Compuerta XXCH", content: null, lengthCm: 11, widthCm: 64, heightCm: 69, weightKg: 12 },
 ];
 
 const DEST = {
@@ -103,5 +103,22 @@ describe("mensaje con el rastreo", () => {
       "Le comparto su guía de Paquetexpress: *LMM01WE0191229*\nPuede rastrear su pedido aquí: https://envia.com/rastreo?label=LMM01WE0191229",
     );
     expect(trackingMessage({ carrier: "estafeta", trackingNumber: "123", trackUrl: null })).toBe("Le comparto su guía de Estafeta: *123*");
+  });
+});
+
+describe("servicios de la cotización (como los da la cuenta real)", () => {
+  it("nombre sin la paquetería repetida", () => {
+    expect(serviceName("paquetexpress", "Paquetexpress Standard")).toBe("Standard");
+    expect(serviceName("estafeta", "Estafeta Terrestre Ocurre - Domicilio")).toBe("Terrestre Ocurre - Domicilio");
+    expect(serviceName("estafeta", "Terrestre")).toBe("Terrestre");
+  });
+
+  it("las variantes «Ocurre» se explican y la marcada es la más barata a domicilio", () => {
+    expect(serviceHint("ground")).toBe("a domicilio");
+    expect(serviceHint("ground_od")).toBe("se deja en sucursal; llega a domicilio");
+    expect(serviceHint("ground_do")).toBe("el cliente la recoge en sucursal");
+    // Culiacán, Compuerta Chica (27-oct-2026), de la más barata a la más cara.
+    expect(defaultOptionIndex([{ service: "ground_od" }, { service: "ground" }, { service: "ground_od" }, { service: "ground_do" }])).toBe(1);
+    expect(defaultOptionIndex([{ service: "ground_do" }])).toBe(0);
   });
 });

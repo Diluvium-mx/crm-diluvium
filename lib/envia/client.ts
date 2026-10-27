@@ -68,7 +68,16 @@ export type LabelSettings = { printFormat: "PDF"; printSize: "PAPER_LETTER" | "P
 // ── Tipos que salen ────────────────────────────────────────────────────────────
 
 export type ZipInfo = { postalCode: string; state: string; stateName: string; city: string; colonias: string[] };
-export type SavedPackage = { id: string; name: string; lengthCm: number; widthCm: number; heightCm: number; weightKg: number };
+export type SavedPackage = {
+  id: string;
+  name: string;
+  /** Lo que dice «Contenido» del embalaje en Envia (p. ej. «Compuerta Anti-Inundaciones»), o null. */
+  content: string | null;
+  lengthCm: number;
+  widthCm: number;
+  heightCm: number;
+  weightKg: number;
+};
 export type RateOption = {
   carrier: string;
   service: string;
@@ -154,23 +163,73 @@ export function parseZip(body: unknown): ZipInfo | null {
   };
 }
 
+// Embalajes guardados. La cuenta real (27-oct-2026) NO contesta como la documentación (`data: [{id, name, …}]`): manda
+// `data: { userPackages, companyPackages, shopPackages }` con `package_id`, el nombre en `description`, `content` y
+// las unidades (`length_unit`, `weight_unit`). Se leen las dos formas; pulgadas y libras se pasan a cm y kg.
+const packageRowSchema = z
+  .object({
+    id: z.union([z.number(), z.string()]).nullish(),
+    package_id: z.union([z.number(), z.string()]).nullish(),
+    name: z.string().nullish(),
+    description: z.string().nullish(),
+    content: z.string().nullish(),
+    length: num,
+    width: num,
+    height: num,
+    weight: num,
+    length_unit: z.string().nullish(),
+    weight_unit: z.string().nullish(),
+  })
+  .passthrough();
+type PackageRow = z.infer<typeof packageRowSchema>;
+
 const packagesSchema = z.object({
-  data: z.array(
-    z.object({ id: z.union([z.number(), z.string()]), name: z.string(), length: num, width: num, height: num, weight: num }).passthrough(),
-  ),
+  data: z.union([
+    z.array(packageRowSchema),
+    z
+      .object({
+        userPackages: z.array(packageRowSchema).nullish(),
+        companyPackages: z.array(packageRowSchema).nullish(),
+        shopPackages: z.array(packageRowSchema).nullish(),
+      })
+      .passthrough(),
+  ]),
 });
+
+const round2 = (n: number) => Math.round(n * 100) / 100;
+
+function savedPackage(p: PackageRow): SavedPackage | null {
+  const id = p.package_id ?? p.id;
+  const name = (p.description ?? p.name)?.trim();
+  if (id === null || id === undefined || !name) return null;
+  const toCm = p.length_unit?.trim().toUpperCase() === "IN" ? 2.54 : 1;
+  const toKg = p.weight_unit?.trim().toUpperCase() === "LB" ? 0.45359237 : 1;
+  return {
+    id: String(id),
+    name,
+    content: p.content?.trim() || null,
+    lengthCm: round2(p.length * toCm),
+    widthCm: round2(p.width * toCm),
+    heightCm: round2(p.height * toCm),
+    weightKg: round2(p.weight * toKg),
+  };
+}
 
 export function parsePackages(body: unknown): SavedPackage[] {
   const parsed = packagesSchema.safeParse(body);
   if (!parsed.success) throw new EnviaApiError("Envia mandó los embalajes en un formato que el CRM no reconoce.", null);
-  return parsed.data.data.map((p) => ({
-    id: String(p.id),
-    name: p.name.trim(),
-    lengthCm: p.length,
-    widthCm: p.width,
-    heightCm: p.height,
-    weightKg: p.weight,
-  }));
+  const data = parsed.data.data;
+  const rows = Array.isArray(data) ? data : [...(data.userPackages ?? []), ...(data.companyPackages ?? []), ...(data.shopPackages ?? [])];
+  const seen = new Set<string>();
+  const out: SavedPackage[] = [];
+  for (const row of rows) {
+    const p = savedPackage(row);
+    if (p && !seen.has(p.id)) {
+      seen.add(p.id);
+      out.push(p);
+    }
+  }
+  return out;
 }
 
 // El origen guardado no tiene esquema documentado (solo `data: array`): se lee con los nombres de campo

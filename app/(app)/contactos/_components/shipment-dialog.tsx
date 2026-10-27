@@ -3,7 +3,8 @@
 // Ventana «Hacer guía de envío» del Detalle (guías de Envia, 27-oct-2026; docs/envios.md). Llega casi llena:
 // quien recibe y su teléfono del contacto (o la dirección de su última guía), una caja por entrada con el
 // embalaje de Envia de su talla y el valor declarado del Pago total. El CP trae estado, ciudad y colonias.
-// «Cotizar» pide precio a Paquetexpress y Estafeta (viene marcada la más barata) y «Generar guía por $X» la
+// «Cotizar» pide precio a Paquetexpress y Estafeta (viene marcada la más barata A DOMICILIO; las variantes
+// «Ocurre» de sucursal se ven con su explicación) y «Generar guía por $X» la
 // hace con UN clic: la llave de esta ventana evita una segunda guía por doble clic. Cambiar un dato después
 // de cotizar borra la cotización (el precio podría ser otro). Con la cuenta real y el candado del saldo cerrado
 // (ENVIA_GENERAR, docs/envios.md) solo se cotiza: no hay botón de generar. Sin lógica de datos: todo pasa por
@@ -13,7 +14,7 @@ import { Plus, X } from "lucide-react";
 import { buscarCodigoPostal, cotizarEnvio, generarGuia, getEnvioForm, type EnvioForm } from "@/lib/actions/envios";
 import type { RateOption, SavedPackage } from "@/lib/envia/client";
 import { DEFAULT_CONTENT, EMPTY_PACKAGE, draftFromSaved, type PackageDraft } from "@/lib/envios/form";
-import { carrierLabel, priceLabel } from "@/lib/envios/messages";
+import { carrierLabel, defaultOptionIndex, priceLabel, serviceHint, serviceName } from "@/lib/envios/messages";
 import type { ShipmentView } from "@/lib/envios/store";
 import { PruebaBadge } from "@/components/ui/prueba-badge";
 import { ArcoDialog } from "./arco-dialog";
@@ -193,7 +194,7 @@ export function ShipmentDialog({
       setQuote({ options: [], errors: res.errors, selected: null });
       return setError("Ninguna paquetería dio precio para este envío.");
     }
-    setQuote({ options: res.options, errors: res.errors, selected: 0 });
+    setQuote({ options: res.options, errors: res.errors, selected: defaultOptionIndex(res.options) });
   }
 
   async function generateNow() {
@@ -455,8 +456,11 @@ export function ShipmentDialog({
                   <span className="flex items-center gap-2">
                     <input type="radio" name={`tarifa-${contactId}`} checked={quote.selected === i} onChange={() => setQuote({ ...quote, selected: i })} />
                     <span>
-                      {carrierLabel(o.carrier)} · {o.serviceLabel}
-                      {o.delivery && <span className="block text-xs text-muted-foreground">{o.delivery}</span>}
+                      {carrierLabel(o.carrier)} · {serviceName(o.carrier, o.serviceLabel)}
+                      <span className="block text-xs text-muted-foreground">
+                        {serviceHint(o.service)}
+                        {o.delivery && ` · ${o.delivery}`}
+                      </span>
                     </span>
                   </span>
                   <span className="font-medium tabular-nums">{priceLabel(o.price)}</span>
