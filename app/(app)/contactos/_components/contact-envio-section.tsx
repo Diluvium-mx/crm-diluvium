@@ -51,7 +51,12 @@ export function ContactEnvioSection({ contactId, conversationId }: { contactId: 
   }, [notice]);
 
   function upsert(shipment: ShipmentView) {
-    setPanel((p) => (p && p.ok ? { ...p, shipments: [shipment, ...p.shipments.filter((s) => s.id !== shipment.id)] } : p));
+    upsertMany([shipment]);
+  }
+
+  function upsertMany(list: readonly ShipmentView[]) {
+    const ids = new Set(list.map((s) => s.id));
+    setPanel((p) => (p && p.ok ? { ...p, shipments: [...[...list].reverse(), ...p.shipments.filter((s) => !ids.has(s.id))] } : p));
   }
 
   async function putInChat(s: ShipmentView) {
@@ -147,11 +152,17 @@ export function ContactEnvioSection({ contactId, conversationId }: { contactId: 
         <ShipmentDialog
           contactId={contactId}
           onClose={() => setDialogOpen(false)}
-          onCreated={(shipment) => {
+          onCreated={(created) => {
             setDialogOpen(false);
-            upsert(shipment);
-            setNotice(`Guía de ${carrierLabel(shipment.carrier)} lista: ${shipment.trackingNumber ?? ""}`);
+            upsertMany(created);
+            const first = created[0];
+            setNotice(
+              created.length === 1 && first
+                ? `Guía de ${carrierLabel(first.carrier)} lista: ${first.trackingNumber ?? ""}`
+                : `${created.length} guías listas (una por compuerta).`,
+            );
           }}
+          onPartial={upsertMany}
         />
       )}
 

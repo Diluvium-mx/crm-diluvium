@@ -162,6 +162,23 @@ export async function markShipmentFailed(organizationId: string, id: string, mes
     .where(and(eq(shipments.organizationId, organizationId), eq(shipments.id, id)));
 }
 
+/**
+ * Reabre una guía «fallida» para reintentarla con su misma llave (nunca una creada), con los datos del reintento
+ * (el vendedor pudo corregir la dirección o la paquetería). Devuelve su id o null.
+ */
+export async function reopenFailedShipment(
+  organizationId: string,
+  requestKey: string,
+  data: Pick<NewShipment, "carrier" | "service" | "serviceLabel" | "destination" | "packages">,
+): Promise<string | null> {
+  const [row] = await db
+    .update(shipments)
+    .set({ ...data, status: "generando", errorMessage: null, updatedAt: new Date() })
+    .where(and(eq(shipments.organizationId, organizationId), eq(shipments.requestKey, requestKey), eq(shipments.status, "fallida")))
+    .returning({ id: shipments.id });
+  return row?.id ?? null;
+}
+
 export async function setShipmentFiles(organizationId: string, id: string, files: { labelKey?: string; printKey?: string }): Promise<void> {
   await db
     .update(shipments)

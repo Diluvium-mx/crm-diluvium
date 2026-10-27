@@ -1,9 +1,11 @@
 // Cotizar, generar y cancelar guías de Envia desde el Detalle del contacto (docs/envios.md).
 //
-// Generar (cuesta dinero real en producción):
+// Generar (cuesta dinero real en producción; reglas fijas del dueño en ./form.ts: una guía por compuerta, valor
+// declarado $4,000, nota «Compuerta Anti-Inundaciones», sin seguro):
 //  1. La fila se apunta ANTES de pedir la guía, con la llave de la ventana (`request_key`, única): un doble
 //     clic o un reintento con la misma llave no genera otra guía.
-//  2. Envia contesta con error → la fila queda «fallida» con el mensaje de Envia tal cual (se ve en la UI).
+//  2. Envia contesta con error → la fila queda «fallida» con el mensaje de Envia tal cual (se ve en la UI); el
+//     reintento con la misma llave vuelve a pedir esa guía en la misma fila.
 //  3. Envia da la guía → la fila queda «creada» EN SEGUIDA (ya se cobró), y después se guardan en el bucket
 //     el PDF de Envia y la copia lista para imprimir. Si el bucket falla, la guía sigue creada: la ruta de
 //     impresión la arma al primer clic desde la liga de Envia.
@@ -13,8 +15,8 @@ import { EnviaNotConfiguredError, type EnviaEnv } from "@/lib/envia/config";
 import { buildPrintReadyPdf, printProfileFor } from "@/lib/envia/print-profiles";
 import { logError } from "@/lib/log/safe-error";
 import type { ObjectStorage } from "@/lib/storage/s3";
-import type { ShipmentDestination } from "@/lib/db/schema";
-import { createShipmentSchema, packagesWithValue, shipmentInputSchema, type CreateShipmentInput, type ShipmentInput } from "./form";
+import type { ShipmentDestination, ShipmentPackage } from "@/lib/db/schema";
+import { createShipmentSchema, FIXED_NOTE, packagesWithValue, shipmentInputSchema, type CreateShipmentInput, type ShipmentInput } from "./form";
 import {
   contactExists,
   getShipment,
@@ -23,10 +25,10 @@ import {
   markShipmentCanceled,
   markShipmentCreated,
   markShipmentFailed,
+  reopenFailedShipment,
   setShipmentFiles,
   shipmentFolder,
   shipmentView,
-  type ShipmentRow,
   type ShipmentView,
 } from "./store";
 
@@ -94,81 +96,122 @@ export async function resolveOrigin(client: EnviaClient, originPostalCode: strin
   return chosen.address;
 }
 
+/**
+ * Una opción de la cotización para TODAS las compuertas: el mismo servicio en cada caja (una guía por compuerta).
+ * `price` y `extendedFare` son la suma de las guías; `perGuide`, el precio de cada una en el orden de las cajas.
+ */
+export type QuoteOption = RateOption & { perGuide: number[] };
+
 export type QuoteResult = {
-  options: RateOption[];
+  options: QuoteOption[];
   /** Paqueterías que no cotizaron, con el porqué (la otra puede salir igual). */
   errors: { carrier: string; message: string }[];
+  /** Cuántas guías serían (una por compuerta). */
+  guides: number;
 };
+
+/** Junta las cotizaciones de cada caja: solo quedan los servicios que la paquetería dio para TODAS las cajas. */
+export function combineRates(perBox: readonly (readonly RateOption[])[]): QuoteOption[] {
+  if (perBox.length === 0) return [];
+  const out: QuoteOption[] = [];
+  for (const first of perBox[0]!) {
+    const same = perBox.map((rates) => rates.find((r) => r.carrier === first.carrier && r.service === first.service));
+    if (same.some((r) => !r || r.price <= 0)) continue;
+    const found = same as RateOption[];
+    out.push({
+      ...first,
+      price: Math.round(found.reduce((s, r) => s + r.price, 0) * 100) / 100,
+      extendedFare: Math.round(found.reduce((s, r) => s + r.extendedFare, 0) * 100) / 100,
+      perGuide: found.map((r) => r.price),
+    });
+  }
+  return out;
+}
 
 export async function quoteShipment(deps: EnviosDeps, actor: Actor, raw: ShipmentInput): Promise<QuoteResult> {
   const input = shipmentInputSchema.parse(raw);
   if (!(await contactExists(actor.organizationId, input.contactId))) throw new EnviaApiError("El contacto ya no existe.", null);
   const origin = await resolveOrigin(deps.client, deps.originPostalCode ?? null);
   const packages = packagesWithValue(input);
-  const request = {
-    origin,
-    destination: toEnviaAddress(input.destination),
-    packages: packages.map((p) => ({ ...p, insuranceMxn: input.insured ? p.declaredValue : null })),
-  };
-  const results = await Promise.allSettled(CARRIERS.map((c) => deps.client.rate({ ...request, carrier: c.id })));
-  const options: RateOption[] = [];
+  const destination = toEnviaAddress(input.destination);
+  const results = await Promise.allSettled(
+    CARRIERS.map((c) =>
+      Promise.all(packages.map((p) => deps.client.rate({ origin, destination, packages: [{ ...p, insuranceMxn: null }], carrier: c.id }))),
+    ),
+  );
+  const options: QuoteOption[] = [];
   const errors: QuoteResult["errors"] = [];
   results.forEach((r, i) => {
     const carrier = CARRIERS[i]!.id;
-    if (r.status === "fulfilled") options.push(...r.value.filter((o) => o.price > 0));
+    if (r.status === "fulfilled") options.push(...combineRates(r.value));
     else errors.push({ carrier, message: errorText(r.reason) });
   });
   options.sort((a, b) => a.price - b.price);
-  return { options, errors };
+  return { options, errors, guides: packages.length };
 }
 
-export type CreateResult = { ok: true; shipment: ShipmentView } | { ok: false; message: string; shipment?: ShipmentView };
-
-function existingOutcome(row: ShipmentRow): CreateResult {
-  if (row.status === "creada" || row.status === "cancelada") return { ok: true, shipment: shipmentView(row) };
-  if (row.status === "fallida") return { ok: false, message: row.errorMessage ?? "Envia no generó la guía.", shipment: shipmentView(row) };
-  return { ok: false, message: "Esta guía ya se está generando. Espera unos segundos." };
-}
+/** `shipments` = las guías de esta ventana que ya existen (creadas o la que falló), en el orden de las cajas. */
+export type CreateResult = { ok: true; shipments: ShipmentView[] } | { ok: false; message: string; shipments: ShipmentView[] };
 
 export const GENERATE_LOCKED =
   "En este servidor no se generan guías con la cuenta real de Envia (no se gasta saldo): solo se puede cotizar.";
 
-export async function createShipment(deps: EnviosDeps, actor: Actor, raw: CreateShipmentInput): Promise<CreateResult> {
-  if (!deps.canGenerate) return { ok: false, message: GENERATE_LOCKED };
-  const input = createShipmentSchema.parse(raw);
+type OneGuide = { ok: true; shipment: ShipmentView } | { ok: false; message: string; shipment?: ShipmentView };
+
+/**
+ * Genera UNA guía (una caja) con su llave. Si la llave ya existe: creada o cancelada → se devuelve sin generar;
+ * generando → se espera; fallida → se reintenta en la MISMA fila (un reintento nunca duplica una guía creada).
+ */
+async function createOneGuide(
+  deps: EnviosDeps,
+  actor: Actor,
+  input: ReturnType<typeof createShipmentSchema.parse>,
+  pkg: ShipmentPackage,
+  requestKey: string,
+  origin: EnviaAddress,
+): Promise<OneGuide> {
   const { organizationId } = actor;
-  if (!(await contactExists(organizationId, input.contactId))) return { ok: false, message: "El contacto ya no existe." };
-  const packages = packagesWithValue(input);
-  const id = crypto.randomUUID();
+  let id: string = crypto.randomUUID();
   const inserted = await insertPendingShipment({
     id,
     organizationId,
     contactId: input.contactId,
-    requestKey: input.requestKey,
+    requestKey,
     environment: deps.env,
     carrier: input.carrier,
     service: input.service,
     serviceLabel: input.serviceLabel ?? null,
     destination: input.destination,
-    packages,
-    insured: input.insured,
+    packages: [pkg],
+    insured: false,
     createdByUserId: actor.userId,
   });
   if (!inserted) {
-    const existing = await getShipmentByRequestKey(organizationId, input.requestKey);
-    return existing ? existingOutcome(existing) : { ok: false, message: "Esta guía ya se pidió." };
+    const existing = await getShipmentByRequestKey(organizationId, requestKey);
+    if (!existing) return { ok: false, message: "Esta guía ya se pidió." };
+    if (existing.status === "creada" || existing.status === "cancelada") return { ok: true, shipment: shipmentView(existing) };
+    if (existing.status === "generando") return { ok: false, message: "Esta guía ya se está generando. Espera unos segundos.", shipment: shipmentView(existing) };
+    const reopened = await reopenFailedShipment(organizationId, requestKey, {
+      carrier: input.carrier,
+      service: input.service,
+      serviceLabel: input.serviceLabel ?? null,
+      destination: input.destination,
+      packages: [pkg],
+    });
+    if (!reopened) return { ok: false, message: "Esta guía ya se está generando. Espera unos segundos." };
+    id = reopened;
   }
 
   let label;
   try {
-    const origin = await resolveOrigin(deps.client, deps.originPostalCode ?? null);
     label = await deps.client.generate(
       {
         origin,
         destination: toEnviaAddress(input.destination),
-        packages: packages.map((p) => ({ ...p, insuranceMxn: input.insured ? p.declaredValue : null })),
+        packages: [{ ...pkg, insuranceMxn: null }],
         carrier: input.carrier,
         service: input.service,
+        comments: FIXED_NOTE,
       },
       printProfileFor(input.carrier).settings,
     );
@@ -194,6 +237,35 @@ export async function createShipment(deps: EnviosDeps, actor: Actor, raw: Create
   const row = await getShipment(organizationId, id);
   if (!row) return { ok: false, message: "La guía se generó pero no se encontró en el CRM. Revisa Envia." };
   return { ok: true, shipment: shipmentView(row) };
+}
+
+/**
+ * Una guía por compuerta (regla del dueño, 27-oct-2026), en orden. Cada caja tiene su llave (`<llave>:<n>`,
+ * también con una sola): el mismo clic repetido no genera ni cobra otra guía. Si una falla, ya no se piden las
+ * siguientes; el reintento salta las creadas y vuelve a intentar la que falló.
+ */
+export async function createShipment(deps: EnviosDeps, actor: Actor, raw: CreateShipmentInput): Promise<CreateResult> {
+  if (!deps.canGenerate) return { ok: false, message: GENERATE_LOCKED, shipments: [] };
+  const input = createShipmentSchema.parse(raw);
+  if (!(await contactExists(actor.organizationId, input.contactId))) return { ok: false, message: "El contacto ya no existe.", shipments: [] };
+  const packages = packagesWithValue(input);
+  let origin: EnviaAddress;
+  try {
+    origin = await resolveOrigin(deps.client, deps.originPostalCode ?? null);
+  } catch (error) {
+    return { ok: false, message: errorText(error), shipments: [] };
+  }
+  const shipments: ShipmentView[] = [];
+  for (const [i, pkg] of packages.entries()) {
+    const key = `${input.requestKey}:${i + 1}`;
+    const one = await createOneGuide(deps, actor, input, pkg, key, origin);
+    if (one.shipment) shipments.push(one.shipment);
+    if (!one.ok) {
+      const prefix = packages.length > 1 ? `Guía ${i + 1} de ${packages.length}: ` : "";
+      return { ok: false, message: `${prefix}${one.message}`, shipments };
+    }
+  }
+  return { ok: true, shipments };
 }
 
 async function putPdf(storage: ObjectStorage, key: string, bytes: Uint8Array): Promise<void> {

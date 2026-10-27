@@ -32,10 +32,35 @@ export function serviceHint(service: string): string {
   return "a domicilio";
 }
 
-/** La que viene marcada: la más barata a domicilio (las opciones ya vienen de la más barata a la más cara). */
-export function defaultOptionIndex(options: readonly { service: string }[]): number {
-  const i = options.findIndex((o) => isDoorToDoor(o.service));
-  return i >= 0 ? i : 0;
+/** Paquetería preferida (regla del dueño, 27-oct-2026): Paquetexpress puerta a puerta; recoge en la oficina y entrega a domicilio. */
+export const PREFERRED_CARRIER = "paquetexpress";
+
+type OptionLike = { carrier: string; service: string; extendedFare: number };
+
+/** ¿Es la opción de siempre? Paquetexpress, puerta a puerta y sin zona extendida. */
+export function isPreferred(o: OptionLike): boolean {
+  return o.carrier.trim().toLowerCase() === PREFERRED_CARRIER && isDoorToDoor(o.service) && o.extendedFare <= 0;
+}
+
+/**
+ * La que viene marcada: Paquetexpress puerta a puerta aunque cueste unos pesos más (la más barata de esas);
+ * si no hay, la más barata puerta a puerta; si no, la primera. Las opciones vienen de la más barata a la más cara.
+ */
+export function preferredOptionIndex(options: readonly OptionLike[]): number {
+  const preferred = options.findIndex((o) => o.carrier.trim().toLowerCase() === PREFERRED_CARRIER && isDoorToDoor(o.service));
+  if (preferred >= 0) return preferred;
+  const door = options.findIndex((o) => isDoorToDoor(o.service));
+  return door >= 0 ? door : 0;
+}
+
+/** Por qué la opción marcada necesita que un vendedor la revise (zona extendida o no es la paquetería de siempre), o null. */
+export function reviewReason(options: readonly OptionLike[]): string | null {
+  if (options.length === 0) return "Ninguna paquetería dio precio para este destino.";
+  const chosen = options[preferredOptionIndex(options)]!;
+  if (chosen.carrier.trim().toLowerCase() !== PREFERRED_CARRIER) return "Paquetexpress no llega a este código postal: hay que elegir otra paquetería.";
+  if (chosen.extendedFare > 0) return "Es zona extendida: hay que elegir la paquetería.";
+  if (!isDoorToDoor(chosen.service)) return "Paquetexpress no da servicio puerta a puerta a este destino.";
+  return null;
 }
 
 const money = new Intl.NumberFormat("es-MX", { style: "currency", currency: "MXN", minimumFractionDigits: 2 });

@@ -1,6 +1,7 @@
 // Guías de Envia desde el Detalle (docs/envios.md) contra Postgres REAL (TEST_DATABASE_URL) con un Envia y
-// un bucket falsos: generar apunta la fila antes de pedir la guía y una llave repetida no genera (ni cobra)
-// otra; un error de Envia queda guardado tal cual; la guía creada guarda su PDF y la copia para imprimir;
+// un bucket falsos: una guía por compuerta; generar apunta la fila antes de pedir la guía y una llave repetida no
+// genera (ni cobra) otra; un error de Envia queda guardado tal cual y el reintento lo pide en la misma fila; la
+// guía creada guarda su PDF y la copia para imprimir;
 // cancelar solo una creada y de la misma cuenta; otra organización no ve nada; borrar el contacto (ARCO)
 // se lleva sus guías y sus PDF.
 import { degrees, PDFDocument } from "pdf-lib";
@@ -86,11 +87,18 @@ async function labelPdf(pages: number): Promise<Uint8Array> {
   return doc.save();
 }
 
-type FakeEnvia = EnviaClient & { generated: number; canceled: string[]; nextError: Error | null; origins: Awaited<ReturnType<EnviaClient["listOrigins"]>> };
+type FakeEnvia = EnviaClient & {
+  generated: number;
+  requests: Parameters<EnviaClient["generate"]>[0][];
+  canceled: string[];
+  nextError: Error | null;
+  origins: Awaited<ReturnType<EnviaClient["listOrigins"]>>;
+};
 
 function fakeEnvia(label: GeneratedLabel, pdf: Uint8Array, rates: Record<string, RateOption[] | Error>): FakeEnvia {
   const fake: FakeEnvia = {
     generated: 0,
+    requests: [],
     canceled: [],
     nextError: null,
     origins: [{ address: ORIGEN, favorite: true }],
@@ -102,10 +110,12 @@ function fakeEnvia(label: GeneratedLabel, pdf: Uint8Array, rates: Record<string,
       if (r instanceof Error) throw r;
       return r ?? [];
     },
-    generate: async () => {
+    generate: async (request) => {
       fake.generated++;
+      fake.requests.push(request);
       if (fake.nextError) throw fake.nextError;
-      return label;
+      const n = fake.generated;
+      return n === 1 ? label : { ...label, shipmentId: `${label.shipmentId}-${n}`, trackingNumber: `${label.trackingNumber}-${n}`, trackingNumbers: [`${label.trackingNumber}-${n}`] };
     },
     cancel: async (_carrier, tracking) => {
       fake.canceled.push(tracking);
@@ -144,8 +154,6 @@ describe.skipIf(!TEST_DATABASE_URL)("guías de Envia (Postgres real)", () => {
     contactId: MARIA,
     destination: DEST,
     packages: [CAJA],
-    declaredValue: 5500,
-    insured: false,
     requestKey,
     carrier: "paquetexpress",
     service: "ground",
@@ -183,8 +191,8 @@ describe.skipIf(!TEST_DATABASE_URL)("guías de Envia (Postgres real)", () => {
       { id: AJENO, organizationId: ORG_B, firstName: "Ajeno", phoneE164: "+526687777777", stage: "prospecto" },
     ]);
     envia = fakeEnvia(LABEL, await labelPdf(3), {
-      paquetexpress: [{ carrier: "paquetexpress", service: "ground", serviceLabel: "Terrestre", price: 310, currency: "MXN", delivery: "3-5 días" }],
-      estafeta: [{ carrier: "estafeta", service: "ground", serviceLabel: "Terrestre", price: 295.5, currency: "MXN", delivery: null }],
+      paquetexpress: [{ carrier: "paquetexpress", service: "ground", serviceLabel: "Paquetexpress Standard", price: 310, currency: "MXN", delivery: "3-5 días", dropOff: "Puerta a puerta", extendedFare: 0 }],
+      estafeta: [{ carrier: "estafeta", service: "ground", serviceLabel: "Estafeta Terrestre", price: 295.5, currency: "MXN", delivery: null, dropOff: "Puerta a puerta", extendedFare: 0 }],
     });
     deps = { env: "sandbox", canGenerate: true, client: envia, storage: () => bucket.storage };
   });
@@ -201,14 +209,28 @@ describe.skipIf(!TEST_DATABASE_URL)("guías de Envia (Postgres real)", () => {
     expect(partial.errors).toEqual([{ carrier: "estafeta", message: "Estafeta no da servicio." }]);
   });
 
+  it("dos compuertas: se cotiza cada caja y la opción suma las dos guías", async () => {
+    const res = await service.quoteShipment(deps, actor, { ...createInput(), packages: [CAJA, CAJA] });
+    expect(res.guides).toBe(2);
+    expect(res.options.map((o) => [o.carrier, o.price, o.perGuide])).toEqual([
+      ["estafeta", 591, [295.5, 295.5]],
+      ["paquetexpress", 620, [310, 310]],
+    ]);
+  });
+
   it("genera: fila creada con rastreo y precio, el PDF de Envia y la copia para imprimir (solo la última página)", async () => {
     const res = await service.createShipment(deps, actor, createInput());
     expect(res.ok).toBe(true);
     if (!res.ok) return;
-    expect(res.shipment).toMatchObject({ status: "creada", environment: "sandbox", carrier: "paquetexpress", trackingNumber: "LMM01WE0191229", price: 310 });
-    const row = await store.getShipment(ORG_A, res.shipment.id);
-    expect(row?.labelKey).toBe(`org/${ORG_A}/envios/${res.shipment.id}/guia-envia.pdf`);
-    expect(row?.packages).toEqual([{ ...CAJA, declaredValue: 5500 }]);
+    const [shipment] = res.shipments;
+    expect(res.shipments).toHaveLength(1);
+    expect(shipment).toMatchObject({ status: "creada", environment: "sandbox", carrier: "paquetexpress", trackingNumber: "LMM01WE0191229", price: 310 });
+    const row = await store.getShipment(ORG_A, shipment!.id);
+    expect(row?.labelKey).toBe(`org/${ORG_A}/envios/${shipment!.id}/guia-envia.pdf`);
+    // Reglas fijas: valor declarado $4,000, la nota interna y sin seguro.
+    expect(row?.packages).toEqual([{ ...CAJA, declaredValue: 4000 }]);
+    expect(row?.insured).toBe(false);
+    expect(envia.requests[0]).toMatchObject({ comments: "Compuerta Anti-Inundaciones", packages: [expect.objectContaining({ declaredValue: 4000, insuranceMxn: null })] });
     const printDoc = await PDFDocument.load(bucket.objects.get(row!.printKey!)!);
     expect(printDoc.getPageCount()).toBe(1);
     expect(Math.round(printDoc.getPage(0).getWidth())).toBe(612);
@@ -220,19 +242,48 @@ describe.skipIf(!TEST_DATABASE_URL)("guías de Envia (Postgres real)", () => {
     const again = await service.createShipment(deps, actor, input);
     expect(envia.generated).toBe(1);
     expect([a.ok, b.ok].filter(Boolean).length).toBeGreaterThanOrEqual(1);
-    expect(again.ok && again.shipment.trackingNumber).toBe("LMM01WE0191229");
+    expect(again.ok && again.shipments[0]!.trackingNumber).toBe("LMM01WE0191229");
     expect(await store.listContactShipments(ORG_A, MARIA)).toHaveLength(1);
   });
 
-  it("un error de Envia queda guardado tal cual y la misma llave no vuelve a pedir", async () => {
+  it("un error de Envia queda guardado tal cual; el reintento lo pide en la MISMA fila con los datos corregidos", async () => {
     const { EnviaApiError } = await import("@/lib/envia/client");
     envia.nextError = new EnviaApiError("No hay saldo suficiente en Envia.", 402);
     const input = createInput();
     const res = await service.createShipment(deps, actor, input);
-    expect(res).toMatchObject({ ok: false, message: "No hay saldo suficiente en Envia.", shipment: { status: "fallida", errorMessage: "No hay saldo suficiente en Envia." } });
+    expect(res).toMatchObject({ ok: false, message: "No hay saldo suficiente en Envia.", shipments: [{ status: "fallida", errorMessage: "No hay saldo suficiente en Envia." }] });
+    envia.nextError = null;
+    const again = await service.createShipment(deps, actor, { ...input, destination: { ...DEST, number: "456" } });
+    expect(again).toMatchObject({ ok: true, shipments: [{ status: "creada", destination: { number: "456" } }] });
+    expect(envia.generated).toBe(2);
+    expect(await store.listContactShipments(ORG_A, MARIA)).toHaveLength(1);
+  });
+
+  it("dos compuertas = dos guías; si la 2.ª falla, el reintento NO vuelve a cobrar la 1.ª", async () => {
+    const { EnviaApiError } = await import("@/lib/envia/client");
+    const input = { ...createInput(), packages: [CAJA, { ...CAJA, packageName: "Compuerta Grande", lengthCm: 102, weightKg: 15.5 }] };
+    const real = envia.generate;
+    let calls = 0;
+    envia.generate = async (request, settings) => {
+      calls++;
+      if (calls === 2) {
+        envia.generated++;
+        throw new EnviaApiError("Envia tardó demasiado en contestar.", null);
+      }
+      return real(request, settings);
+    };
+    const res = await service.createShipment(deps, actor, input);
+    expect(res).toMatchObject({ ok: false, message: "Guía 2 de 2: Envia tardó demasiado en contestar." });
+    expect(res.shipments.map((s) => s.status)).toEqual(["creada", "fallida"]);
     const again = await service.createShipment(deps, actor, input);
-    expect(again).toMatchObject({ ok: false, message: "No hay saldo suficiente en Envia." });
-    expect(envia.generated).toBe(1);
+    expect(again.ok).toBe(true);
+    expect(again.shipments.map((s) => s.status)).toEqual(["creada", "creada"]);
+    expect(again.shipments[0]!.id).toBe(res.shipments[0]!.id);
+    expect(calls).toBe(3);
+    const rows = await store.listContactShipments(ORG_A, MARIA);
+    expect(rows).toHaveLength(2);
+    expect(rows.map((r) => r.packages.length)).toEqual([1, 1]);
+    expect(rows.map((r) => r.requestKey).sort()).toEqual([`${input.requestKey}:1`, `${input.requestKey}:2`]);
   });
 
   it("sin favorita, el origen sale del código postal de ENVIA_ORIGEN_CP (cuenta real: 5 orígenes, ninguno favorito)", async () => {
@@ -262,17 +313,17 @@ describe.skipIf(!TEST_DATABASE_URL)("guías de Envia (Postgres real)", () => {
     const res = await service.createShipment(deps, actor, createInput());
     expect(res.ok).toBe(true);
     if (!res.ok) return;
-    expect((await store.getShipment(ORG_A, res.shipment.id))?.printKey).toBeNull();
+    expect((await store.getShipment(ORG_A, res.shipments[0]!.id))?.printKey).toBeNull();
     bucket.state.failPut = false;
     process.env.ENVIA_API_TOKEN = "token-de-pruebas";
     process.env.ENVIA_ENV = "sandbox";
     const realClient = await import("@/lib/envia/client");
     const spy = vi.spyOn(realClient, "enviaClient").mockReturnValue(envia);
     try {
-      const pdf = await route.GET(new Request("http://localhost/api/envios/x/guia"), { params: Promise.resolve({ shipmentId: res.shipment.id }) });
+      const pdf = await route.GET(new Request("http://localhost/api/envios/x/guia"), { params: Promise.resolve({ shipmentId: res.shipments[0]!.id }) });
       expect(pdf.status).toBe(200);
       expect(pdf.headers.get("Content-Type")).toBe("application/pdf");
-      expect((await store.getShipment(ORG_A, res.shipment.id))?.printKey).not.toBeNull();
+      expect((await store.getShipment(ORG_A, res.shipments[0]!.id))?.printKey).not.toBeNull();
     } finally {
       spy.mockRestore();
       delete process.env.ENVIA_API_TOKEN;
@@ -283,28 +334,28 @@ describe.skipIf(!TEST_DATABASE_URL)("guías de Envia (Postgres real)", () => {
   it("la ruta sirve la copia para imprimir; otra organización recibe 404", async () => {
     const res = await service.createShipment(deps, actor, createInput());
     if (!res.ok) throw new Error(res.message);
-    const ok = await route.GET(new Request("http://localhost/x"), { params: Promise.resolve({ shipmentId: res.shipment.id }) });
+    const ok = await route.GET(new Request("http://localhost/x"), { params: Promise.resolve({ shipmentId: res.shipments[0]!.id }) });
     expect(ok.status).toBe(200);
     expect(ok.headers.get("Content-Disposition")).toContain("guia-paquetexpress-LMM01WE0191229.pdf");
     session.current = { organizationId: ORG_B, userId: DANIEL, role: "agent" };
-    const ajena = await route.GET(new Request("http://localhost/x"), { params: Promise.resolve({ shipmentId: res.shipment.id }) });
+    const ajena = await route.GET(new Request("http://localhost/x"), { params: Promise.resolve({ shipmentId: res.shipments[0]!.id }) });
     expect(ajena.status).toBe(404);
-    expect(await store.getShipment(ORG_B, res.shipment.id)).toBeNull();
+    expect(await store.getShipment(ORG_B, res.shipments[0]!.id)).toBeNull();
   });
 
   it("cancelar: solo una creada, de la misma cuenta de Envia", async () => {
     const res = await service.createShipment(deps, actor, createInput());
     if (!res.ok) throw new Error(res.message);
-    expect(await service.cancelShipment({ ...deps, env: "production" }, actor, res.shipment.id)).toMatchObject({ ok: false, message: expect.stringContaining("otra cuenta") });
-    const canceled = await service.cancelShipment(deps, actor, res.shipment.id);
+    expect(await service.cancelShipment({ ...deps, env: "production" }, actor, res.shipments[0]!.id)).toMatchObject({ ok: false, message: expect.stringContaining("otra cuenta") });
+    const canceled = await service.cancelShipment(deps, actor, res.shipments[0]!.id);
     expect(canceled).toMatchObject({ ok: true, shipment: { status: "cancelada" }, refundNote: expect.stringContaining("regresa el dinero") });
     expect(envia.canceled).toEqual(["LMM01WE0191229"]);
-    expect(await service.cancelShipment(deps, actor, res.shipment.id)).toMatchObject({ ok: false });
+    expect(await service.cancelShipment(deps, actor, res.shipments[0]!.id)).toMatchObject({ ok: false });
   });
 
   it("candado del saldo: con la cuenta real sin ENVIA_GENERAR=si no se apunta ni se pide ninguna guía", async () => {
     const res = await service.createShipment({ ...deps, env: "production", canGenerate: false }, actor, createInput());
-    expect(res).toEqual({ ok: false, message: service.GENERATE_LOCKED });
+    expect(res).toEqual({ ok: false, message: service.GENERATE_LOCKED, shipments: [] });
     expect(envia.generated).toBe(0);
     expect(await store.listContactShipments(ORG_A, MARIA)).toHaveLength(0);
     // Cotizar sí (no cobra).
@@ -312,7 +363,7 @@ describe.skipIf(!TEST_DATABASE_URL)("guías de Envia (Postgres real)", () => {
   });
 
   it("un contacto de otra organización no recibe guías", async () => {
-    expect(await service.createShipment(deps, actor, { ...createInput(), contactId: AJENO })).toEqual({ ok: false, message: "El contacto ya no existe." });
+    expect(await service.createShipment(deps, actor, { ...createInput(), contactId: AJENO })).toEqual({ ok: false, message: "El contacto ya no existe.", shipments: [] });
     expect(envia.generated).toBe(0);
   });
 
@@ -323,6 +374,6 @@ describe.skipIf(!TEST_DATABASE_URL)("guías de Envia (Postgres real)", () => {
     const out = await arco.deleteContactAndData({ organizationId: ORG_A, userId: DANIEL, contactId: MARIA }, { storage: () => bucket.storage, cancelAgentJob: async () => undefined });
     expect(out.status).toBe("deleted");
     expect(bucket.objects.size).toBe(0);
-    expect(await store.getShipment(ORG_A, res.shipment.id)).toBeNull();
+    expect(await store.getShipment(ORG_A, res.shipments[0]!.id)).toBeNull();
   });
 });
