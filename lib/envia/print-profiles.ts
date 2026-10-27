@@ -8,6 +8,9 @@
 // «ajustar» salen igual): se elige la HP y «Imprimir».
 // Paquetexpress toma la ÚLTIMA página (no «la 3»): si Envia algún día la manda en una sola página, sigue
 // saliendo la guía.
+// A Envia se le pide STOCK_4X6: en la cuenta real (27-oct-2026, /carrier-print-option) Paquetexpress y Estafeta
+// solo ofrecen PDF en STOCK_4X6 (el de omisión, el que se imprime hoy) o PAPER_7X4.75; carta no existe. Las guías
+// reales de Paquetexpress traen 3 hojas 4x6 (la guía es la 3) y las de Estafeta 1.
 import { degrees, PDFDocument } from "pdf-lib";
 import type { LabelSettings } from "./client";
 
@@ -19,11 +22,11 @@ export type PrintProfile = {
   pages: PageSelection;
 };
 
-const DEFAULT_PROFILE: PrintProfile = { settings: { printFormat: "PDF", printSize: "PAPER_LETTER" }, pages: "all" };
+const DEFAULT_PROFILE: PrintProfile = { settings: { printFormat: "PDF", printSize: "STOCK_4X6" }, pages: "all" };
 
 export const PRINT_PROFILES: Readonly<Record<string, PrintProfile>> = {
-  paquetexpress: { settings: { printFormat: "PDF", printSize: "PAPER_LETTER" }, pages: "last" },
-  estafeta: { settings: { printFormat: "PDF", printSize: "PAPER_LETTER" }, pages: "all" },
+  paquetexpress: { settings: { printFormat: "PDF", printSize: "STOCK_4X6" }, pages: "last" },
+  estafeta: { settings: { printFormat: "PDF", printSize: "STOCK_4X6" }, pages: "all" },
 };
 
 export function printProfileFor(carrier: string): PrintProfile {

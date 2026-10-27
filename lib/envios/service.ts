@@ -44,6 +44,8 @@ export type EnviosDeps = {
   env: EnviaEnv;
   /** Candado del saldo (lib/envia/config.ts › ENVIA_GENERAR): sin él, generar se niega antes de apuntar nada. */
   canGenerate: boolean;
+  /** Origen si en Envia no hay favorita (ENVIA_ORIGEN_CP). */
+  originPostalCode?: string | null;
   client: EnviaClient;
   storage: () => ObjectStorage;
 };
@@ -72,10 +74,15 @@ export function toEnviaAddress(d: ShipmentDestination): EnviaAddress {
   };
 }
 
-/** El origen de las guías: la dirección favorita de origen guardada en Envia (o la única que haya). */
-export async function resolveOrigin(client: EnviaClient): Promise<EnviaAddress> {
+/**
+ * El origen de las guías: la dirección de origen favorita guardada en Envia; si no hay, la del código postal de
+ * ENVIA_ORIGEN_CP; si no, la única que haya.
+ */
+export async function resolveOrigin(client: EnviaClient, originPostalCode: string | null = null): Promise<EnviaAddress> {
   const origins = await client.listOrigins();
-  const chosen = origins.find((o) => o.favorite) ?? (origins.length === 1 ? origins[0] : undefined);
+  const byPostalCode = originPostalCode ? origins.filter((o) => o.address.postalCode === originPostalCode) : [];
+  const chosen =
+    origins.find((o) => o.favorite) ?? (byPostalCode.length === 1 ? byPostalCode[0] : undefined) ?? (origins.length === 1 ? origins[0] : undefined);
   if (!chosen) {
     throw new EnviaApiError(
       origins.length === 0
@@ -96,7 +103,7 @@ export type QuoteResult = {
 export async function quoteShipment(deps: EnviosDeps, actor: Actor, raw: ShipmentInput): Promise<QuoteResult> {
   const input = shipmentInputSchema.parse(raw);
   if (!(await contactExists(actor.organizationId, input.contactId))) throw new EnviaApiError("El contacto ya no existe.", null);
-  const origin = await resolveOrigin(deps.client);
+  const origin = await resolveOrigin(deps.client, deps.originPostalCode ?? null);
   const packages = packagesWithValue(input);
   const request = {
     origin,
@@ -154,7 +161,7 @@ export async function createShipment(deps: EnviosDeps, actor: Actor, raw: Create
 
   let label;
   try {
-    const origin = await resolveOrigin(deps.client);
+    const origin = await resolveOrigin(deps.client, deps.originPostalCode ?? null);
     label = await deps.client.generate(
       {
         origin,

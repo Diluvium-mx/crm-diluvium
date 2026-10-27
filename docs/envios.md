@@ -24,8 +24,10 @@ Decisiones del dueño (26-oct-2026):
    Pago total (o del monto de cotización).
 2. El **código postal** se busca en Envia (geocodes): estado (código de 2 letras de Envia, p. ej. Sinaloa = `SI`),
    ciudad y colonias.
-3. **Cotizar** pide precio a Paquetexpress y Estafeta en paralelo (Envia cotiza una paquetería por llamada). La más
-   barata va primero y marcada; si una falla, la otra sale igual con el porqué de la que falló.
+3. **Cotizar** pide precio a Paquetexpress y Estafeta en paralelo (Envia cotiza una paquetería por llamada) y salen
+   de la más barata a la más cara. Cada paquetería da su servicio a domicilio (`ground`, `express`) y las variantes
+   «Ocurre» (`_od`: se deja en sucursal y llega a domicilio; `_do`: el cliente la recoge en sucursal), cada una con su
+   explicación. Viene marcada **la más barata a domicilio**. Si una paquetería falla, la otra sale igual con el porqué.
 4. **Generar guía por $X**:
    - La fila de `shipments` se apunta ANTES de pedir la guía con la llave de la ventana (`request_key`, única por
      organización): un doble clic o un reintento con la misma llave no genera ni cobra otra guía.
@@ -38,7 +40,9 @@ Decisiones del dueño (26-oct-2026):
 6. **Cancelar guía** la cancela en Envia (regresa el dinero si no se escaneó; puede tardar días). Solo una `creada` y con
    la misma cuenta de Envia con la que se hizo (`environment`).
 
-Origen: la **dirección favorita de origen guardada en Envia** (o la única que haya). Embalajes: los **guardados en
+Origen: la **dirección favorita de origen guardada en Envia**; si no hay favorita, la del código postal de
+`ENVIA_ORIGEN_CP`; si no, la única que haya. La cuenta real (27-oct-2026) tiene 5 orígenes (Los Mochis, Ocoyoacac,
+Mexicali, San Pedro Garza García y CDMX) y ninguno es favorito: por eso `ENVIA_ORIGEN_CP=81200`. Embalajes: los **guardados en
 Envia** (se leen cada vez; si se cambian allá, el CRM los ve). Talla → embalaje (`lib/envios/form.ts`): XCH → Compuerta
 Extra Chica, CH → Chica, M → Mediana, G → Grande, XG → Extra Grande; mini y a la medida las elige el vendedor.
 
@@ -51,17 +55,19 @@ Impresora de la oficina: HP LaserJet Professional P1606dn (láser, carta). Hoy, 
 
 | Paquetería | Lo que se imprimía a mano | Lo que guarda el CRM (`lib/envia/print-profiles.ts`) |
 |---|---|---|
-| Paquetexpress | PDF de 3 páginas: solo la 3, escala 100 % | La **última** página, en hoja carta, tamaño real y centrada |
-| Estafeta | 1 página, escala 100 % | Su página, en hoja carta, tamaño real |
+| Paquetexpress | PDF de 3 hojas 4x6: solo la 3, escala 100 % | La **última** hoja, en hoja carta, tamaño real y centrada |
+| Estafeta | 1 hoja 4x6, escala 100 % | Su hoja, en hoja carta, tamaño real |
 | Otra | — | Todas sus páginas, en carta |
 
 Como la hoja ya es carta y la guía ya va a 100 %, el diálogo de impresión da lo mismo: se elige la HP e Imprimir.
 Se toma la ÚLTIMA página (no «la 3») para que siga saliendo la guía si Envia algún día la manda en una sola hoja. Una
 página apaisada va en carta horizontal; solo se reduce si no cabe. Si pdf-lib no puede acomodar una página, se copia tal
-cual. A Envia se le pide `printFormat: PDF`, `printSize: PAPER_LETTER`.
+cual. A Envia se le pide `printFormat: PDF`, `printSize: STOCK_4X6`: en la cuenta real Paquetexpress y Estafeta solo
+ofrecen 4x6 (el de omisión) o 7x4.75; carta no existe.
 
-**Por verificar con la cuenta de pruebas / la primera guía real:** que el PDF de Paquetexpress que da la API sea el
-mismo de 3 páginas del panel (si la API la da en 1, el perfil sigue funcionando).
+**Verificado el 27-oct-2026 sin gastar** (guías ya hechas en la cuenta real, `GET queries…/guide/{MM}/{AAAA}`): el PDF
+de Paquetexpress trae 3 hojas 4x6 y la guía es la 3; el de Estafeta, 1 hoja 4x6. El CRM saca una hoja carta con la
+guía a tamaño real en los dos.
 
 ## Variables y ambientes
 
@@ -70,6 +76,7 @@ mismo de 3 páginas del panel (si la API la da en 1, el perfil sigue funcionando
 | `ENVIA_API_TOKEN` | Token de la **cuenta de pruebas** de Envia (shipping-test.envia.com, cuenta aparte; guías falsas sin costo) | Token de la cuenta real (Desarrolladores › Acceso de API) |
 | `ENVIA_ENV` | `sandbox` (o `production` con la cuenta real, ver abajo) | `production` |
 | `ENVIA_GENERAR` | sin poner (con la cuenta real: solo cotizar) | `si` (se pone en el OK MAIN) |
+| `ENVIA_ORIGEN_CP` | `81200` | `81200` (la oficina de Los Mochis, mientras en Envia no haya origen favorito) |
 
 - **Candado del saldo** (27-oct-2026, pedido del dueño: «no gastes ni un peso»): con la cuenta real (`ENVIA_ENV=production`)
   el servidor **solo genera guías si `ENVIA_GENERAR=si`**; sin eso, lee y cotiza (no cobra) y la ventana dice «Solo

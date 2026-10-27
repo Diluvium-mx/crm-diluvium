@@ -33,7 +33,7 @@ export function draftFromSaved(p: SavedPackage): PackageDraft {
   return {
     packageId: p.id,
     packageName: p.name,
-    content: DEFAULT_CONTENT,
+    content: p.content ?? DEFAULT_CONTENT,
     lengthCm: p.lengthCm,
     widthCm: p.widthCm,
     heightCm: p.heightCm,

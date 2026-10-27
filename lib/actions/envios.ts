@@ -36,7 +36,7 @@ async function conPermiso(accion: "read" | "update"): Promise<ActiveMembership |
 function depsOrNull(): EnviosDeps | null {
   const config = enviaConfigFrom(process.env);
   if (!config) return null;
-  return { env: config.env, canGenerate: config.canGenerate, client: enviaClient(config), storage: objectStorage };
+  return { env: config.env, canGenerate: config.canGenerate, originPostalCode: config.originPostalCode, client: enviaClient(config), storage: objectStorage };
 }
 
 const NO_CONFIG = "Envia no está configurado en este servidor. Avísale a Code.";
