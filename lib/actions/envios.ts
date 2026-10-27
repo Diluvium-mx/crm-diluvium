@@ -36,7 +36,7 @@ async function conPermiso(accion: "read" | "update"): Promise<ActiveMembership |
 function depsOrNull(): EnviosDeps | null {
   const config = enviaConfigFrom(process.env);
   if (!config) return null;
-  return { env: config.env, client: enviaClient(config), storage: objectStorage };
+  return { env: config.env, canGenerate: config.canGenerate, client: enviaClient(config), storage: objectStorage };
 }
 
 const NO_CONFIG = "Envia no está configurado en este servidor. Avísale a Code.";
@@ -60,6 +60,8 @@ export type EnvioForm =
   | {
       ok: true;
       env: EnviaEnv;
+      /** false = solo cotizar (cuenta real con el candado cerrado). */
+      canGenerate: boolean;
       savedPackages: SavedPackage[];
       destination: Partial<ShipmentDestination>;
       packages: PackageDraft[];
@@ -99,6 +101,7 @@ export async function getEnvioForm(contactId: string): Promise<EnvioForm> {
     return {
       ok: true,
       env: deps.env,
+      canGenerate: deps.canGenerate,
       savedPackages,
       destination,
       packages: defaultPackages(details.entradas, savedPackages),

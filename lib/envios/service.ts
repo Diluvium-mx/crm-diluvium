@@ -42,6 +42,8 @@ export function carrierName(id: string): string {
 
 export type EnviosDeps = {
   env: EnviaEnv;
+  /** Candado del saldo (lib/envia/config.ts › ENVIA_GENERAR): sin él, generar se niega antes de apuntar nada. */
+  canGenerate: boolean;
   client: EnviaClient;
   storage: () => ObjectStorage;
 };
@@ -121,7 +123,11 @@ function existingOutcome(row: ShipmentRow): CreateResult {
   return { ok: false, message: "Esta guía ya se está generando. Espera unos segundos." };
 }
 
+export const GENERATE_LOCKED =
+  "En este servidor no se generan guías con la cuenta real de Envia (no se gasta saldo): solo se puede cotizar.";
+
 export async function createShipment(deps: EnviosDeps, actor: Actor, raw: CreateShipmentInput): Promise<CreateResult> {
+  if (!deps.canGenerate) return { ok: false, message: GENERATE_LOCKED };
   const input = createShipmentSchema.parse(raw);
   const { organizationId } = actor;
   if (!(await contactExists(organizationId, input.contactId))) return { ok: false, message: "El contacto ya no existe." };

@@ -44,7 +44,7 @@ export async function GET(_req: Request, { params }: RouteContext<"/api/envios/[
       const config = enviaConfigFrom(process.env);
       if (!config) return text("Envia no está configurado en este servidor", 503);
       pdf = await storeLabelFiles(
-        { env: config.env, client: enviaClient(config), storage: objectStorage },
+        { env: config.env, canGenerate: config.canGenerate, client: enviaClient(config), storage: objectStorage },
         membership.organizationId,
         shipment.id,
         shipment.carrier,
