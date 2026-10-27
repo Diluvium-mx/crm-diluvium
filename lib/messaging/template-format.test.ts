@@ -178,19 +178,19 @@ describe("isTemplateEditable", () => {
 });
 
 describe("replaceBodyComponent", () => {
-  it("cambia solo el BODY y conserva encabezado, pie y botones", () => {
+  it("cambia solo el BODY y conserva encabezado, pie y botones (con el tipo en minúsculas, como lo pide Zernio)", () => {
     const current = [
       { type: "HEADER", format: "TEXT", text: "Diluvium" },
       { type: "BODY", text: "Hola {{1}}, ¿cómo estás?", example: { body_text: [["Ana"]] } },
       { type: "FOOTER", text: "Compuertas" },
       { type: "BUTTONS", buttons: [{ type: "QUICK_REPLY", text: "Sí" }] },
     ];
-    const out = replaceBodyComponent(current, "Hola {{1}}, soy {{2}} de Diluvium.", ["Ana", "Daniel"]);
+    const out = replaceBodyComponent(current, "Hola {{1}}, soy {{2}} de Diluvium.", ["Ana", "Carlos"]);
     expect(out).toEqual([
-      { type: "HEADER", format: "TEXT", text: "Diluvium" },
-      { type: "BODY", text: "Hola {{1}}, soy {{2}} de Diluvium.", example: { body_text: [["Ana", "Daniel"]] } },
-      { type: "FOOTER", text: "Compuertas" },
-      { type: "BUTTONS", buttons: [{ type: "QUICK_REPLY", text: "Sí" }] },
+      { type: "header", format: "TEXT", text: "Diluvium" },
+      { type: "body", text: "Hola {{1}}, soy {{2}} de Diluvium.", example: { body_text: [["Ana", "Carlos"]] } },
+      { type: "footer", text: "Compuertas" },
+      { type: "buttons", buttons: [{ type: "QUICK_REPLY", text: "Sí" }] },
     ]);
     // No muta lo que recibió.
     expect(current[1]).toEqual({ type: "BODY", text: "Hola {{1}}, ¿cómo estás?", example: { body_text: [["Ana"]] } });
@@ -204,8 +204,8 @@ describe("replaceBodyComponent", () => {
 
   it("si no había BODY lo agrega al final", () => {
     expect(replaceBodyComponent([{ type: "HEADER", format: "TEXT", text: "X" }], "Hola.", [])).toEqual([
-      { type: "HEADER", format: "TEXT", text: "X" },
-      { type: "BODY", text: "Hola." },
+      { type: "header", format: "TEXT", text: "X" },
+      { type: "body", text: "Hola." },
     ]);
   });
 });
