@@ -5,7 +5,8 @@
 // mismos (CLAUDE.md §5). Para responder DENTRO de la ventana de 24 h.
 // 26-oct-2026 (pedido del dueño): buscador, vista de lista o cuadrícula (como 📄 Plantillas del chat) y orden
 // manual arrastrando ⋮⋮; ese orden es el de ⚡ del chat y el de «/». Uno nuevo va al final.
-import { useMemo, useRef, useState } from "react";
+// 27-oct-2026 (pedido del dueño): Borrar pregunta con el aviso de arriba del CRM (TopConfirm), no con el del navegador.
+import { useEffect, useMemo, useRef, useState } from "react";
 import { GripVertical, Plus, Search } from "lucide-react";
 import { createSnippet, deleteSnippet, reorderSnippets, updateSnippet } from "@/lib/actions/snippets";
 import { moveItem } from "@/lib/snippets/orden";
@@ -15,11 +16,15 @@ import { mensajeDeFalla } from "@/lib/version/client";
 import type { SnippetView } from "@/lib/snippets/types";
 import { FragmentosLista, TOKEN_CLASS } from "./fragmentos-lista";
 import { CloseX } from "@/components/ui/close-x";
+import { TopConfirm, TopNotice } from "@/components/ui/top-confirm";
 import { usePersistentToggle } from "@/components/ui/use-persistent-toggle";
 import { ViewToggle } from "@/components/ui/view-toggle";
 import { SpellcheckOverlay } from "@/components/spelling/spellcheck-overlay";
 
 type Draft = { id?: string; name: string; body: string };
+
+// Cuánto dura a la vista el aviso «… borrado.» (o hasta el primer clic).
+const DONE_MS = 3_000;
 
 export function FragmentosTab({ initial, canManage }: { initial: SnippetView[]; canManage: boolean }) {
   const [items, setItems] = useState<SnippetView[]>(initial);
@@ -32,6 +37,21 @@ export function FragmentosTab({ initial, canManage }: { initial: SnippetView[]; 
   const [grid, setGrid] = usePersistentToggle("mensajes-rapidos.pagina.cuadricula", false);
   // Solo cuenta la respuesta del último acomodo (si arrastra dos seguidos, la primera no regresa la lista vieja).
   const lastMove = useRef(0);
+  // El que se va a borrar (aviso de arriba abierto) y el aviso de «listo».
+  const [deleting, setDeleting] = useState<SnippetView | null>(null);
+  const [done, setDone] = useState<string | null>(null);
+
+  // El aviso de «listo» se quita solo o con el primer clic en cualquier parte.
+  useEffect(() => {
+    if (!done) return;
+    const timer = setTimeout(() => setDone(null), DONE_MS);
+    const onPointer = () => setDone(null);
+    document.addEventListener("pointerdown", onPointer);
+    return () => {
+      clearTimeout(timer);
+      document.removeEventListener("pointerdown", onPointer);
+    };
+  }, [done]);
 
   const detected = useMemo(() => (draft ? extractVariables(draft.body) : []), [draft]);
   const shown = useMemo(() => items.filter((s) => matchesSearch(s.name, query) || matchesSearch(s.body, query)), [items, query]);
@@ -72,18 +92,25 @@ export function FragmentosTab({ initial, canManage }: { initial: SnippetView[]; 
     }
   }
 
+  function askRemove(snippet: SnippetView) {
+    setError(null);
+    setDone(null);
+    setDeleting(snippet);
+  }
+
   async function remove(snippet: SnippetView) {
-    if (!window.confirm(`¿Borrar el mensaje rápido "${snippet.name}"?`)) return;
     setBusy(true);
     setError(null);
     try {
       await deleteSnippet(snippet.id);
       setItems((current) => current.filter((s) => s.id !== snippet.id));
       if (draft?.id === snippet.id) setDraft(null);
+      setDone(`Mensaje rápido «${snippet.name}» borrado.`);
     } catch (err) {
       setError(await mensajeDeFalla(err, err instanceof Error ? err.message : "No se pudo borrar el mensaje rápido."));
     } finally {
       setBusy(false);
+      setDeleting(null);
     }
   }
 
@@ -237,12 +264,26 @@ export function FragmentosTab({ initial, canManage }: { initial: SnippetView[]; 
               sortable={sortable && !busy}
               canManage={canManage}
               onEdit={openEdit}
-              onRemove={(snippet) => void remove(snippet)}
+              onRemove={askRemove}
               onMove={(fromId, toId) => void move(fromId, toId)}
             />
           )}
         </div>
       ) : null}
+
+      {deleting && (
+        <TopConfirm
+          title={`¿Borrar el mensaje rápido «${deleting.name}»?`}
+          confirmLabel="Borrar"
+          pendingLabel="Borrando…"
+          pending={busy}
+          onConfirm={() => void remove(deleting)}
+          onCancel={() => setDeleting(null)}
+        >
+          Se borra para todo el equipo: ya no sale en ⚡ ni en «/» del chat. Los mensajes que ya se mandaron no cambian.
+        </TopConfirm>
+      )}
+      <TopNotice message={deleting ? null : done} />
     </div>
   );
 }
