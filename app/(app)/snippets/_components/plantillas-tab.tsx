@@ -8,6 +8,7 @@
 // Al día solo (1-oct-2026): al abrir la pestaña se consulta a Meta sin pulsar nada, y
 // el worker lo hace cada 10 min mientras haya alguna en revisión. Los avisos verdes
 // se quitan solos a los pocos segundos.
+// 27-oct-2026 (pedido del dueño): Borrar pregunta con el aviso de arriba del CRM (TopConfirm), no con el del navegador.
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Pencil, Plus, RefreshCw, Trash2 } from "lucide-react";
 import { MetaNoticeDialog } from "@/app/(app)/_components/meta-notice-dialog";
@@ -23,6 +24,7 @@ import { rejectionNotice, statusNotice, type MetaNotice } from "@/lib/templates/
 import type { TemplateView } from "@/lib/templates/types";
 import { HighlightBody } from "./highlight";
 import { SpellcheckOverlay } from "@/components/spelling/spellcheck-overlay";
+import { TopConfirm } from "@/components/ui/top-confirm";
 
 const TOKEN_CLASS = "rounded bg-brand-navy/15 px-1 font-medium text-brand-navy";
 const INPUT_CLASS =
@@ -82,6 +84,8 @@ export function PlantillasTab({
   const [items, setItems] = useState<TemplateView[]>(initial);
   const [syncing, setSyncing] = useState(false);
   const [deletingId, setDeletingId] = useState<string | null>(null);
+  // La que se va a borrar (aviso de arriba abierto).
+  const [asking, setAsking] = useState<TemplateView | null>(null);
   const [note, setNote] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [form, setForm] = useState<FormMode | null>(null);
@@ -174,14 +178,6 @@ export function PlantillasTab({
   }
 
   async function remove(template: TemplateView) {
-    if (
-      !window.confirm(
-        `¿Borrar la plantilla "${template.name}" (${template.language}) en Meta?\n\n` +
-          `Ya no se podrá mandar, y Meta no deja volver a usar el nombre "${template.name}" durante 30 días.`,
-      )
-    ) {
-      return;
-    }
     setDeletingId(template.id);
     clearMessages();
     const result = await deleteTemplate({ id: template.id }).catch(() => null);
@@ -194,11 +190,24 @@ export function PlantillasTab({
       setNote(`Plantilla "${template.name}" borrada.`);
     }
     setDeletingId(null);
+    setAsking(null);
   }
 
   return (
     <div className="mx-auto max-w-3xl space-y-4 p-4">
       <MetaNoticeDialog notice={notices[0] ?? null} onClose={() => setNotices((current) => current.slice(1))} />
+      {asking && (
+        <TopConfirm
+          title={`¿Borrar la plantilla «${asking.name}» (${asking.language}) en Meta?`}
+          confirmLabel="Borrar"
+          pendingLabel="Borrando…"
+          pending={deletingId === asking.id}
+          onConfirm={() => void remove(asking)}
+          onCancel={() => setAsking(null)}
+        >
+          Ya no se podrá mandar, y Meta no deja volver a usar el nombre «{asking.name}» durante 30 días.
+        </TopConfirm>
+      )}
       <div className="flex flex-wrap items-center justify-between gap-3">
         <p className="text-sm text-muted-foreground">
           Aprobadas por Meta, para escribir fuera de las 24 h. Se envían desde el chat (📄).
@@ -316,7 +325,10 @@ export function PlantillasTab({
                       )}
                       <button
                         type="button"
-                        onClick={() => void remove(t)}
+                        onClick={() => {
+                          clearMessages();
+                          setAsking(t);
+                        }}
                         disabled={deletingId !== null}
                         aria-label={`Borrar ${t.name}`}
                         title="Borrar en Meta"
