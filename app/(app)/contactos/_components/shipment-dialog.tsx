@@ -1,8 +1,10 @@
 "use client";
 
-// Ventana «Hacer guía de envío» del Detalle (guías de Envia, 27-oct-2026; docs/envios.md). Llega casi llena:
-// quien recibe y su teléfono del contacto (o la dirección de su última guía), una caja por entrada con el
-// embalaje de Envia de su talla y el valor declarado del Pago total. El CP trae estado, ciudad y colonias.
+// Ventana «Hacer guía de envío» del Detalle (guías de Envia, 27-oct-2026; docs/envios.md). Solo pide lo que se usa
+// (nombre, teléfono, calle, número, CP, colonia, ciudad y estado) y llega casi llena: quien recibe y su teléfono
+// del contacto (o la dirección de su última guía) y una compuerta por entrada con el embalaje de Envia de su
+// talla. El CP trae estado, ciudad y colonias. Reglas fijas a la vista: una guía por compuerta, valor declarado
+// $4,000 y la nota «Compuerta Anti-Inundaciones»; sin seguro ni servicios adicionales.
 // «Cotizar» pide precio a Paquetexpress y Estafeta (viene marcada la más barata A DOMICILIO; las variantes
 // «Ocurre» de sucursal se ven con su explicación) y «Generar guía por $X» la
 // hace con UN clic: la llave de esta ventana evita una segunda guía por doble clic. Cambiar un dato después
@@ -12,9 +14,10 @@
 import { useEffect, useRef, useState } from "react";
 import { Plus, X } from "lucide-react";
 import { buscarCodigoPostal, cotizarEnvio, generarGuia, getEnvioForm, type EnvioForm } from "@/lib/actions/envios";
-import type { RateOption, SavedPackage } from "@/lib/envia/client";
-import { DEFAULT_CONTENT, EMPTY_PACKAGE, draftFromSaved, type PackageDraft } from "@/lib/envios/form";
-import { carrierLabel, defaultOptionIndex, priceLabel, serviceHint, serviceName } from "@/lib/envios/messages";
+import type { SavedPackage } from "@/lib/envia/client";
+import { DEFAULT_CONTENT, EMPTY_PACKAGE, FIXED_DECLARED_VALUE, FIXED_NOTE, draftFromSaved, type PackageDraft } from "@/lib/envios/form";
+import type { QuoteOption } from "@/lib/envios/service";
+import { carrierLabel, preferredOptionIndex, priceLabel, reviewReason, serviceHint, serviceName } from "@/lib/envios/messages";
 import type { ShipmentView } from "@/lib/envios/store";
 import { PruebaBadge } from "@/components/ui/prueba-badge";
 import { ArcoDialog } from "./arco-dialog";
@@ -35,7 +38,7 @@ type Dest = {
   reference: string;
 };
 
-type Quote = { options: RateOption[]; errors: { carrier: string; message: string }[]; selected: number | null };
+type Quote = { options: QuoteOption[]; errors: { carrier: string; message: string }[]; guides: number; selected: number | null };
 
 const input =
   "w-full rounded-md border bg-background px-2 py-1.5 text-sm outline-none focus:border-brand-navy focus:ring-2 focus:ring-brand-navy/30";
@@ -60,16 +63,20 @@ function destFrom(d: FormData["destination"]): Dest {
 const dims = (p: Pick<SavedPackage, "lengthCm" | "widthCm" | "heightCm" | "weightKg">) =>
   `${p.lengthCm}×${p.widthCm}×${p.heightCm} cm, ${p.weightKg} kg`;
 
-const optionKey = (o: RateOption) => `${o.carrier}:${o.service}`;
+const optionKey = (o: QuoteOption) => `${o.carrier}:${o.service}`;
 
 export function ShipmentDialog({
   contactId,
   onClose,
   onCreated,
+  onPartial,
 }: {
   contactId: string;
   onClose: () => void;
-  onCreated: (shipment: ShipmentView) => void;
+  /** Guías creadas (una por compuerta). */
+  onCreated: (shipments: ShipmentView[]) => void;
+  /** Algunas se crearon y otra falló: la sección las muestra ya. */
+  onPartial: (shipments: ShipmentView[]) => void;
 }) {
   const [phase, setPhase] = useState<{ kind: "loading" } | { kind: "error"; message: string } | { kind: "form"; data: FormData }>({
     kind: "loading",
@@ -78,12 +85,11 @@ export function ShipmentDialog({
   const [colonias, setColonias] = useState<string[]>([]);
   const [zipNote, setZipNote] = useState<string | null>(null);
   const [packages, setPackages] = useState<PackageDraft[]>([]);
-  const [declared, setDeclared] = useState("");
-  const [insured, setInsured] = useState(false);
   const [quote, setQuote] = useState<Quote | null>(null);
   const [busy, setBusy] = useState<"cotizando" | "generando" | null>(null);
   const [error, setError] = useState<string | null>(null);
-  // Llave de esta guía: la misma en un reintento (no se cobra dos veces); nueva tras un error de Envia.
+  // Llave de esta ventana: la misma en cada reintento (las guías ya creadas no se vuelven a cobrar; la que falló se
+  // reintenta en su misma fila).
   const requestKey = useRef<string>(crypto.randomUUID());
   const zipAsked = useRef<string>("");
 
@@ -99,7 +105,6 @@ export function ShipmentDialog({
         setDest(destFrom(res.destination));
         setColonias(res.zip?.colonias ?? []);
         setPackages(res.packages);
-        setDeclared(res.declaredValue === null ? "" : String(res.declaredValue));
         setPhase({ kind: "form", data: res });
       })
       .catch(() => {
@@ -178,8 +183,6 @@ export function ShipmentDialog({
         heightCm: p.heightCm,
         weightKg: p.weightKg,
       })),
-      declaredValue: declared.trim() === "" ? 0 : Number(declared),
-      insured,
     };
   }
 
@@ -191,10 +194,10 @@ export function ShipmentDialog({
     if (!res) return setError("No se pudo cotizar. Revisa tu conexión.");
     if (!res.ok) return setError(res.message);
     if (res.options.length === 0) {
-      setQuote({ options: [], errors: res.errors, selected: null });
+      setQuote({ options: [], errors: res.errors, guides: res.guides, selected: null });
       return setError("Ninguna paquetería dio precio para este envío.");
     }
-    setQuote({ options: res.options, errors: res.errors, selected: defaultOptionIndex(res.options) });
+    setQuote({ options: res.options, errors: res.errors, guides: res.guides, selected: preferredOptionIndex(res.options) });
   }
 
   async function generateNow() {
@@ -212,14 +215,16 @@ export function ShipmentDialog({
     setBusy(null);
     if (!res) return setError("No se supo si la guía se generó (falló la conexión). Vuelve a intentar: no se cobra dos veces.");
     if (!res.ok) {
-      // Envia la rechazó (ya quedó apuntada como fallida): el siguiente intento es otra guía.
-      if (res.shipment?.status === "fallida") requestKey.current = crypto.randomUUID();
+      // Las que sí se crearon ya quedan en la sección; el reintento solo pide las que faltan.
+      if (res.shipments.length > 0) onPartial(res.shipments);
       return setError(res.message);
     }
-    onCreated(res.shipment);
+    onCreated(res.shipments);
   }
 
   const selected = quote?.selected !== null && quote ? quote.options[quote.selected] : undefined;
+  const guides = quote?.guides ?? packages.length;
+  const review = quote && quote.options.length > 0 ? reviewReason(quote.options) : null;
 
   return (
     <ArcoDialog
@@ -242,7 +247,9 @@ export function ShipmentDialog({
                 disabled={busy !== null}
                 className="rounded-md bg-brand-orange px-4 py-2 text-sm font-medium text-white hover:bg-brand-orange/90 disabled:opacity-60"
               >
-                {busy === "generando" ? "Generando…" : `Generar guía por ${priceLabel(selected.price)}`}
+                {busy === "generando"
+                  ? "Generando…"
+                  : `Generar ${guides === 1 ? "guía" : `${guides} guías`} por ${priceLabel(selected.price)}`}
               </button>
             ) : (
               <button
@@ -335,20 +342,10 @@ export function ShipmentDialog({
               Estado
               <p className="py-1.5 text-sm text-foreground">{dest.stateName || <span className="text-muted-foreground">Sale del código postal</span>}</p>
             </div>
-            <label className={`${label} sm:col-span-2`}>
-              Referencias
-              <input
-                className={input}
-                value={dest.reference}
-                onChange={(e) => setField("reference", e.target.value)}
-                placeholder="Portón negro, frente a la tienda"
-                autoComplete="off"
-              />
-            </label>
           </fieldset>
 
           <fieldset className="space-y-2" disabled={busy === "generando"}>
-            <legend className="text-xs text-muted-foreground">Paquetes (embalajes guardados en Envia)</legend>
+            <legend className="text-xs text-muted-foreground">Compuertas: una guía por cada una (embalajes guardados en Envia)</legend>
             {packages.map((p, i) => (
               <div key={i} className="space-y-1.5 rounded-md border p-2">
                 <div className="flex items-center gap-2">
@@ -356,7 +353,7 @@ export function ShipmentDialog({
                     className={input}
                     value={p.packageId ?? "manual"}
                     onChange={(e) => pickPackage(i, e.target.value)}
-                    aria-label={`Paquete ${i + 1}`}
+                    aria-label={`Compuerta ${i + 1}`}
                   >
                     {saved.map((s) => (
                       <option key={s.id} value={s.id}>
@@ -368,7 +365,7 @@ export function ShipmentDialog({
                   {packages.length > 1 && (
                     <button
                       type="button"
-                      aria-label={`Quitar paquete ${i + 1}`}
+                      aria-label={`Quitar compuerta ${i + 1}`}
                       onClick={() => {
                         setPackages((list) => list.filter((_, j) => j !== i));
                         touched();
@@ -413,37 +410,19 @@ export function ShipmentDialog({
               className="inline-flex items-center gap-1 text-xs"
               data-link="text"
             >
-              <Plus className="size-3.5" /> Agregar paquete
+              <Plus className="size-3.5" /> Agregar compuerta
             </button>
           </fieldset>
 
-          <fieldset className="grid grid-cols-1 items-end gap-2 sm:grid-cols-2" disabled={busy === "generando"}>
-            <label className={label}>
-              Valor declarado (MXN, del Pago total)
-              <input
-                className={input}
-                inputMode="decimal"
-                value={declared}
-                onChange={(e) => {
-                  setDeclared(e.target.value.replace(/[^\d.]/g, ""));
-                  touched();
-                }}
-                autoComplete="off"
-              />
-            </label>
-            <label className="flex items-center gap-2 pb-2 text-xs">
-              <input
-                type="checkbox"
-                checked={insured}
-                onChange={(e) => {
-                  setInsured(e.target.checked);
-                  touched();
-                }}
-              />
-              Asegurar por el valor declarado
-            </label>
-          </fieldset>
+<p className="text-xs text-muted-foreground">
+            Cada guía: valor declarado {priceLabel(FIXED_DECLARED_VALUE)} · nota «{FIXED_NOTE}» · sin seguro ni servicios adicionales.
+          </p>
 
+          {review && (
+            <p role="alert" className="rounded-md border border-brand-orange/40 bg-brand-orange/10 px-3 py-2 text-xs">
+              ⚠ {review}
+            </p>
+          )}
           {quote && quote.options.length > 0 && (
             <div role="radiogroup" aria-label="Paquetería" className="overflow-hidden rounded-md border">
               {quote.options.map((o, i) => (
@@ -458,9 +437,13 @@ export function ShipmentDialog({
                     <span>
                       {carrierLabel(o.carrier)} · {serviceName(o.carrier, o.serviceLabel)}
                       <span className="block text-xs text-muted-foreground">
-                        {serviceHint(o.service)}
+                        {o.dropOff ?? serviceHint(o.service)}
                         {o.delivery && ` · ${o.delivery}`}
+                        {quote.guides > 1 && ` · ${quote.guides} guías`}
                       </span>
+                      {o.extendedFare > 0 && (
+                        <span className="block text-xs font-medium text-brand-orange">Zona extendida (+{priceLabel(o.extendedFare)})</span>
+                      )}
                     </span>
                   </span>
                   <span className="font-medium tabular-nums">{priceLabel(o.price)}</span>

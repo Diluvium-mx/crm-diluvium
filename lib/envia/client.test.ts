@@ -103,18 +103,35 @@ describe("lectura de respuestas", () => {
     const origins = parseOrigins({
       data: [
         { name: "Bodega", phone: "6680000000", street: "Calle 1", city: "Culiacán", state: "SI", postal_code: "80000" },
-        { name: "Oficina", phone: "6680000001", street: "Calle 2", number: "10", city: "Los Mochis", state_code: "SI", postalCode: "81200", is_favorite: 1 },
+        { name: "Oficina", phone: "6680000001", street: "Calle 2", number: "10", city: "Los Mochis", state_code: "SI", postalCode: "81200", is_favorite: 1, identification_number: "XAXX010101000", reference: "Entre calles" },
         { name: "Sin CP", phone: "1", street: "x", city: "y", state: "SI" },
       ],
     });
     expect(origins).toHaveLength(2);
-    expect(origins[1]).toMatchObject({ favorite: true, address: { name: "Oficina", number: "10", postalCode: "81200", country: "MX" } });
+    expect(origins[1]).toMatchObject({
+      favorite: true,
+      address: { name: "Oficina", number: "10", postalCode: "81200", country: "MX", identificationNumber: "XAXX010101000", reference: "Entre calles" },
+    });
     expect(origins[0]!.favorite).toBe(false);
   });
 
   it("cotización: precio en texto → número", () => {
     expect(parseRates({ meta: "rate", data: [{ carrier: "estafeta", service: "ground", serviceDescription: "Terrestre", deliveryEstimate: "3-5 días", totalPrice: "355.40", currency: "MXN" }] })).toEqual([
-      { carrier: "estafeta", service: "ground", serviceLabel: "Terrestre", price: 355.4, currency: "MXN", delivery: "3-5 días" },
+      { carrier: "estafeta", service: "ground", serviceLabel: "Terrestre", price: 355.4, currency: "MXN", delivery: "3-5 días", dropOff: null, extendedFare: 0 },
+    ]);
+  });
+
+  it("cotización real (27-oct-2026): puerta a puerta o sucursal y el cargo de zona extendida", () => {
+    const real = {
+      meta: "rate",
+      data: [
+        { carrier: "estafeta", service: "ground", serviceDescription: "Estafeta Terrestre", dropOff: 0, dropOffDescription: "Puerta a puerta", zone: 5, deliveryEstimate: "7-9 días", basePrice: 197.41, extendedFare: 185, totalPrice: 414, currency: "MXN" },
+        { carrier: "estafeta", service: "ground_od", serviceDescription: "Estafeta Terrestre Ocurre - Domicilio", dropOff: 1, dropOffDescription: "Sucursal a puerta", extendedFare: 185, totalPrice: 401, currency: "MXN" },
+      ],
+    };
+    expect(parseRates(real).map((r) => [r.service, r.dropOff, r.extendedFare, r.price])).toEqual([
+      ["ground", "Puerta a puerta", 185, 414],
+      ["ground_od", "Sucursal a puerta", 185, 401],
     ]);
   });
 
@@ -159,6 +176,13 @@ describe("peticiones", () => {
     expect(body.destination).toMatchObject({ country: "MX", state: "SI", district: "Centro", reference: "Portón negro" });
     expect(body.settings).toEqual({ currency: "MXN", printFormat: "PDF", printSize: "PAPER_LETTER" });
     expect(shipmentBody(REQUEST).packages[0]).not.toHaveProperty("additionalServices");
+  });
+
+  it("la nota interna va en settings.comments y el RFC del origen en identificationNumber", () => {
+    const body = shipmentBody({ ...REQUEST, comments: "Compuerta Anti-Inundaciones", origin: { ...REQUEST.origin, identificationNumber: "XAXX010101000" } });
+    expect(body.settings).toEqual({ currency: "MXN", comments: "Compuerta Anti-Inundaciones" });
+    expect(body.origin).toMatchObject({ identificationNumber: "XAXX010101000" });
+    expect(shipmentBody(REQUEST).settings).toEqual({ currency: "MXN" });
   });
 
   it("cotiza con el token y una paquetería por llamada", async () => {

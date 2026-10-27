@@ -7,6 +7,12 @@ import type { ShipmentDestination, ShipmentPackage } from "@/lib/db/schema/shipm
 
 export const DEFAULT_CONTENT = "Compuerta Anti-Inundaciones";
 
+// Reglas fijas del dueño para TODAS las guías (27-oct-2026; docs/envios.md › Reglas fijas): valor declarado de
+// $4,000 por guía, la «nota interna» «Compuerta Anti-Inundaciones», sin seguro ni servicios adicionales ni
+// recolección, y UNA GUÍA POR COMPUERTA (dos compuertas = dos guías, cada una con su caja).
+export const FIXED_DECLARED_VALUE = 4000;
+export const FIXED_NOTE = "Compuerta Anti-Inundaciones";
+
 // Talla estándar del Detalle (lib/contacts/sizes.ts) → nombre del embalaje guardado en Envia (los del dueño,
 // 26-oct-2026). Las mini, «A la medida» y las demás las elige el vendedor en el menú.
 const ESTANDAR_A_EMBALAJE: Readonly<Record<string, string>> = {
@@ -38,7 +44,7 @@ export function draftFromSaved(p: SavedPackage): PackageDraft {
     widthCm: p.widthCm,
     heightCm: p.heightCm,
     weightKg: p.weightKg,
-    declaredValue: 0,
+    declaredValue: FIXED_DECLARED_VALUE,
   };
 }
 
@@ -50,24 +56,16 @@ export const EMPTY_PACKAGE: PackageDraft = {
   widthCm: 0,
   heightCm: 0,
   weightKg: 0,
-  declaredValue: 0,
+  declaredValue: FIXED_DECLARED_VALUE,
 };
 
-/** Una caja por entrada del Detalle (con su embalaje si la talla tiene uno); sin entradas, una vacía. */
+/** Una caja (= una guía) por entrada del Detalle, con el embalaje de su talla si lo hay; sin entradas, una vacía. */
 export function defaultPackages(entradas: readonly EntradaTalla[], saved: readonly SavedPackage[]): PackageDraft[] {
   if (entradas.length === 0) return [{ ...EMPTY_PACKAGE }];
   return entradas.map((e) => {
     const match = packageForEntrada(e, saved);
     return match ? draftFromSaved(match) : { ...EMPTY_PACKAGE };
   });
-}
-
-/** El valor declarado del envío repartido entre las cajas (centavos al último para que sume exacto). */
-export function splitDeclaredValue(total: number, parts: number): number[] {
-  if (parts <= 0) return [];
-  const cents = Math.round(total * 100);
-  const base = Math.floor(cents / parts);
-  return Array.from({ length: parts }, (_, i) => (i === parts - 1 ? cents - base * (parts - 1) : base) / 100);
 }
 
 /** Peso volumétrico (largo × ancho × alto ÷ 5,000, el factor de Paquetexpress y Estafeta en Envia). */
@@ -122,9 +120,8 @@ export const packageSchema = z.object({
 export const shipmentInputSchema = z.object({
   contactId: z.string().trim().min(1).max(128),
   destination: destinationSchema,
-  packages: z.array(packageSchema).min(1, "Falta al menos un paquete.").max(10, "Máximo 10 paquetes por guía."),
-  declaredValue: z.coerce.number().min(0, "El valor declarado no puede ser negativo.").max(1_000_000),
-  insured: z.boolean(),
+  // Una guía por caja.
+  packages: z.array(packageSchema).min(1, "Falta al menos una compuerta.").max(10, "Máximo 10 compuertas a la vez."),
 });
 export type ShipmentInput = z.input<typeof shipmentInputSchema>;
 export type ParsedShipmentInput = z.output<typeof shipmentInputSchema>;
@@ -137,10 +134,9 @@ export const createShipmentSchema = shipmentInputSchema.extend({
 });
 export type CreateShipmentInput = z.input<typeof createShipmentSchema>;
 
-/** Paquetes con su parte del valor declarado (lo que se guarda y se manda a Envia). */
+/** Las cajas con el valor declarado fijo (lo que se guarda y se manda a Envia, una guía por caja). */
 export function packagesWithValue(input: ParsedShipmentInput): ShipmentPackage[] {
-  const values = splitDeclaredValue(input.declaredValue, input.packages.length);
-  return input.packages.map((p, i) => ({ ...p, declaredValue: values[i] ?? 0 }));
+  return input.packages.map((p) => ({ ...p, declaredValue: FIXED_DECLARED_VALUE }));
 }
 
 /** El primer mensaje de error que entiende el vendedor. */

@@ -65,7 +65,6 @@ export type EnvioForm =
       savedPackages: SavedPackage[];
       destination: Partial<ShipmentDestination>;
       packages: PackageDraft[];
-      declaredValue: number | null;
       /** Las colonias y el estado del CP que ya viene lleno (de su última guía). */
       zip: ZipInfo | null;
     }
@@ -105,7 +104,6 @@ export async function getEnvioForm(contactId: string): Promise<EnvioForm> {
       savedPackages,
       destination,
       packages: defaultPackages(details.entradas, savedPackages),
-      declaredValue: details.pagoTotal ?? details.montoCotizacion ?? null,
       zip,
     };
   } catch (error) {
@@ -152,14 +150,14 @@ export async function cotizarEnvio(input: ShipmentInput): Promise<CotizarResult>
 export async function generarGuia(input: CreateShipmentInput): Promise<CreateResult> {
   try {
     const m = await conPermiso("update");
-    if (!m) return { ok: false, message: "No tienes permiso para hacer guías." };
+    if (!m) return { ok: false, message: "No tienes permiso para hacer guías.", shipments: [] };
     const deps = depsOrNull();
-    if (!deps) return { ok: false, message: NO_CONFIG };
+    if (!deps) return { ok: false, message: NO_CONFIG, shipments: [] };
     return await createShipment(deps, m, input);
   } catch (error) {
-    if (error instanceof ZodError) return { ok: false, message: firstIssue(error) };
+    if (error instanceof ZodError) return { ok: false, message: firstIssue(error), shipments: [] };
     logError("[envios] no se pudo generar la guía", error);
-    return { ok: false, message: errorText(error) };
+    return { ok: false, message: errorText(error), shipments: [] };
   }
 }
 

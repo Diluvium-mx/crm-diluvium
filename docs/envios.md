@@ -17,24 +17,36 @@ Decisiones del dueño (26-oct-2026):
   paquetería ya definido.
 - Mercado Libre, Amazon y Shopify **no** se conectan al CRM en esta fase. Amazon Easy Ship se sigue imprimiendo a mano.
 
+## Reglas fijas (decisión del dueño, 27-oct-2026)
+
+- **Datos del cliente que se piden:** nombre completo, teléfono, calle, número, código postal, colonia, ciudad y
+  estado. Sin correo ni referencias.
+- **Origen:** siempre la oficina de Los Mochis, tal como está guardada en Envia (con su RFC y referencia).
+- **Una guía por compuerta**, con el embalaje guardado de su talla (tipo «Caja»).
+- **Paquetexpress puerta a puerta** es la de siempre (recoge en la oficina y entrega a domicilio), aunque cueste
+  unos pesos más. Si Paquetexpress no llega, es zona extendida o ninguna da precio → aviso para que el vendedor elija.
+- **Cada guía:** valor declarado **$4,000** y la nota interna (`settings.comments`) **«Compuerta
+  Anti-Inundaciones»**. Sin seguro, sin servicios adicionales y sin programar recolección.
+
 ## Cómo funciona
 
 1. **Hacer guía** abre la ventana llena con lo que ya sabe el CRM: nombre y teléfono (10 dígitos) del contacto o la
-   dirección de su última guía, una caja por entrada del Detalle con el embalaje de su talla y el valor declarado del
-   Pago total (o del monto de cotización).
+   dirección de su última guía, y una compuerta por entrada del Detalle con el embalaje de su talla.
 2. El **código postal** se busca en Envia (geocodes): estado (código de 2 letras de Envia, p. ej. Sinaloa = `SI`),
    ciudad y colonias.
-3. **Cotizar** pide precio a Paquetexpress y Estafeta en paralelo (Envia cotiza una paquetería por llamada) y salen
-   de la más barata a la más cara. Cada paquetería da su servicio a domicilio (`ground`, `express`) y las variantes
-   «Ocurre» (`_od`: se deja en sucursal y llega a domicilio; `_do`: el cliente la recoge en sucursal), cada una con su
-   explicación. Viene marcada **la más barata a domicilio**. Si una paquetería falla, la otra sale igual con el porqué.
-4. **Generar guía por $X**:
-   - La fila de `shipments` se apunta ANTES de pedir la guía con la llave de la ventana (`request_key`, única por
-     organización): un doble clic o un reintento con la misma llave no genera ni cobra otra guía.
-   - Error de Envia → fila `fallida` con el mensaje tal cual (se ve en la sección). El siguiente intento usa otra llave.
+3. **Cotizar** pide precio a Paquetexpress y Estafeta en paralelo, una llamada por paquetería y por compuerta (Envia
+   cotiza una paquetería por llamada); cada opción suma las guías. Cada paquetería da su servicio puerta a puerta
+   (`ground`, `express`) y las variantes «Ocurre» (`_od`: sucursal a puerta; `_do`: puerta a sucursal), con el texto de
+   Envia (`dropOffDescription`) y el cargo de zona extendida (`extendedFare`). Viene marcada Paquetexpress puerta a
+   puerta (`lib/envios/messages.ts` › `preferredOptionIndex`); `reviewReason` dice cuándo hay que avisar al vendedor.
+4. **Generar guía por $X** (una por compuerta, en orden):
+   - Cada guía se apunta ANTES de pedirla con su llave (`<llave de la ventana>:<n>`, única por organización): un
+     doble clic o un reintento no genera ni cobra otra.
+   - Error de Envia → esa fila queda `fallida` con el mensaje tal cual y ya no se piden las siguientes. El reintento
+     salta las creadas y vuelve a pedir la fallida en su misma fila (con los datos corregidos).
    - Guía creada → la fila queda `creada` en seguida (ya se cobró) y después se guardan en el bucket el PDF de Envia y
-     la copia lista para imprimir (`org/{org}/envios/{id}/guia-envia.pdf` y `guia-imprimir.pdf`). Si el bucket falla, la
-     guía sigue creada y `/api/envios/{id}/guia` arma la copia al primer clic desde la liga de Envia.
+     la copia lista para imprimir (`org/{org}/envios/{id}/guia-envia.pdf` y `guia-imprimir.pdf`). Si el bucket falla,
+     la guía sigue creada y `/api/envios/{id}/guia` arma la copia al primer clic desde la liga de Envia.
 5. **Poner rastreo en el chat** deja el texto en la caja del chat sin mandarlo (FAQ 55: se manda cuando sale a ruta).
    Sin caja a la vista (pop-up del Embudo o chat fuera de las 24 h) lo copia.
 6. **Cancelar guía** la cancela en Envia (regresa el dinero si no se escaneó; puede tardar días). Solo una `creada` y con

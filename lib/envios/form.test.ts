@@ -1,8 +1,8 @@
 // La ventana «Hacer guía» (docs/envios.md): qué llega lleno y qué se acepta.
 import { describe, expect, it } from "vitest";
 import type { SavedPackage } from "@/lib/envia/client";
-import { createShipmentSchema, defaultPackages, destinationSchema, packageForEntrada, packagesWithValue, shipmentInputSchema, splitDeclaredValue, volumetricKg } from "./form";
-import { defaultOptionIndex, serviceHint, serviceName, trackingMessage } from "./messages";
+import { createShipmentSchema, defaultPackages, destinationSchema, packageForEntrada, packagesWithValue, shipmentInputSchema, volumetricKg, FIXED_DECLARED_VALUE, FIXED_NOTE } from "./form";
+import { preferredOptionIndex, reviewReason, serviceHint, serviceName, trackingMessage } from "./messages";
 
 // Los embalajes guardados del dueño (26-oct-2026).
 const SAVED: SavedPackage[] = [
@@ -56,11 +56,11 @@ describe("embalaje por talla", () => {
   });
 });
 
-describe("valor declarado y peso", () => {
-  it("se reparte entre las cajas y suma exacto", () => {
-    expect(splitDeclaredValue(5500, 1)).toEqual([5500]);
-    expect(splitDeclaredValue(1000, 3)).toEqual([333.33, 333.33, 333.34]);
-    expect(splitDeclaredValue(10, 0)).toEqual([]);
+describe("reglas fijas del dueño (27-oct-2026) y peso", () => {
+  it("valor declarado $4,000 por guía y la nota «Compuerta Anti-Inundaciones»", () => {
+    expect(FIXED_DECLARED_VALUE).toBe(4000);
+    expect(FIXED_NOTE).toBe("Compuerta Anti-Inundaciones");
+    expect(defaultPackages([{ linea: "estandar", tamanoSugerido: "CH", tamanoManual: null }], SAVED)[0]!.declaredValue).toBe(4000);
   });
 
   it("peso volumétrico ÷5,000 (Chica: 16.82 kg, como lo muestra Envia)", () => {
@@ -82,18 +82,23 @@ describe("validación", () => {
       contactId: "c1",
       destination: DEST,
       packages: [{ packageName: null, content: "Compuerta", lengthCm: 0, widthCm: 10, heightCm: 10, weightKg: 5 }],
-      declaredValue: 0,
-      insured: false,
     });
     expect(sinMedidas.error?.issues[0]?.message).toBe("Falta el largo.");
   });
 
   it("la guía necesita llave, paquetería y servicio", () => {
-    const base = { contactId: "c1", destination: DEST, packages: [{ packageName: "Compuerta Chica", content: "Compuerta", lengthCm: 91, widthCm: 14, heightCm: 66, weightKg: 13 }], declaredValue: 5500, insured: true };
+    const base = { contactId: "c1", destination: DEST, packages: [
+        { packageName: "Compuerta Chica", content: "Compuerta", lengthCm: 91, widthCm: 14, heightCm: 66, weightKg: 13 },
+        { packageName: "Compuerta Grande", content: "Compuerta", lengthCm: 102, widthCm: 14, heightCm: 66, weightKg: 15.5 },
+      ] };
     expect(createShipmentSchema.safeParse({ ...base, requestKey: "no-es-uuid", carrier: "paquetexpress", service: "ground" }).success).toBe(false);
     const ok = createShipmentSchema.parse({ ...base, requestKey: crypto.randomUUID(), carrier: " Paquetexpress ", service: "ground" });
     expect(ok.carrier).toBe("paquetexpress");
-    expect(packagesWithValue(ok)).toEqual([expect.objectContaining({ packageName: "Compuerta Chica", declaredValue: 5500 })]);
+    // Una guía por compuerta, cada una con su valor declarado fijo.
+    expect(packagesWithValue(ok)).toEqual([
+      expect.objectContaining({ packageName: "Compuerta Chica", declaredValue: 4000 }),
+      expect.objectContaining({ packageName: "Compuerta Grande", declaredValue: 4000 }),
+    ]);
   });
 });
 
@@ -113,12 +118,26 @@ describe("servicios de la cotización (como los da la cuenta real)", () => {
     expect(serviceName("estafeta", "Terrestre")).toBe("Terrestre");
   });
 
-  it("las variantes «Ocurre» se explican y la marcada es la más barata a domicilio", () => {
+  it("las variantes «Ocurre» se explican", () => {
     expect(serviceHint("ground")).toBe("a domicilio");
     expect(serviceHint("ground_od")).toBe("se deja en sucursal; llega a domicilio");
     expect(serviceHint("ground_do")).toBe("el cliente la recoge en sucursal");
-    // Culiacán, Compuerta Chica (27-oct-2026), de la más barata a la más cara.
-    expect(defaultOptionIndex([{ service: "ground_od" }, { service: "ground" }, { service: "ground_od" }, { service: "ground_do" }])).toBe(1);
-    expect(defaultOptionIndex([{ service: "ground_do" }])).toBe(0);
+  });
+
+  const opt = (carrier: string, service: string, extendedFare = 0) => ({ carrier, service, extendedFare });
+
+  it("viene marcada Paquetexpress puerta a puerta aunque cueste unos pesos más (Culiacán, 27-oct-2026)", () => {
+    // De la más barata a la más cara, como las da Envia.
+    const culiacan = [opt("estafeta", "ground_od"), opt("estafeta", "ground"), opt("paquetexpress", "ground_do"), opt("paquetexpress", "ground_od"), opt("paquetexpress", "ground")];
+    expect(preferredOptionIndex(culiacan)).toBe(4);
+    expect(reviewReason(culiacan)).toBeNull();
+  });
+
+  it("aviso al vendedor: zona extendida o Paquetexpress no llega (Veracruz 95850, 27-oct-2026)", () => {
+    const veracruz = [opt("estafeta", "ground_od", 185), opt("estafeta", "ground", 185)];
+    expect(preferredOptionIndex(veracruz)).toBe(1);
+    expect(reviewReason(veracruz)).toBe("Paquetexpress no llega a este código postal: hay que elegir otra paquetería.");
+    expect(reviewReason([opt("paquetexpress", "ground", 185)])).toBe("Es zona extendida: hay que elegir la paquetería.");
+    expect(reviewReason([])).toBe("Ninguna paquetería dio precio para este destino.");
   });
 });

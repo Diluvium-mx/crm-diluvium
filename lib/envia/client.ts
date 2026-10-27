@@ -42,6 +42,8 @@ export type EnviaAddress = {
   country: "MX";
   postalCode: string;
   reference?: string;
+  /** RFC (el origen guardado en Envia lo trae). */
+  identificationNumber?: string;
 };
 
 export type EnviaPackage = {
@@ -61,6 +63,8 @@ export type ShipmentRequest = {
   packages: readonly EnviaPackage[];
   carrier: string;
   service?: string;
+  /** «Nota interna» de la guía en el panel de Envia (`settings.comments`). */
+  comments?: string;
 };
 
 export type LabelSettings = { printFormat: "PDF"; printSize: "PAPER_LETTER" | "PAPER_4X6" | "STOCK_4X6" | "PAPER_7X4.75" };
@@ -86,6 +90,10 @@ export type RateOption = {
   currency: string;
   /** «3-5 business days» o lo que mande la paquetería; null si no viene. */
   delivery: string | null;
+  /** «Puerta a puerta», «Sucursal a puerta» o «Puerta a sucursal» (dropOffDescription), o null. */
+  dropOff: string | null;
+  /** Cargo de zona extendida incluido en el precio (extendedFare; 0 = no es zona extendida). */
+  extendedFare: number;
 };
 export type GeneratedLabel = {
   shipmentId: string | null;
@@ -271,6 +279,7 @@ export function parseOrigins(body: unknown): { address: EnviaAddress; favorite: 
         country: "MX",
         postalCode,
         reference: pick(row, "reference") ?? undefined,
+        identificationNumber: pick(row, "identification_number", "identificationNumber") ?? undefined,
       },
       favorite: fav === true || fav === 1 || fav === "1" || fav === "true",
     });
@@ -286,6 +295,8 @@ const rateSchema = z.object({
         service: z.string(),
         serviceDescription: z.string().nullish(),
         deliveryEstimate: z.string().nullish(),
+        dropOffDescription: z.string().nullish(),
+        extendedFare: num.nullish(),
         totalPrice: num,
         currency: z.string().nullish(),
       })
@@ -303,6 +314,8 @@ export function parseRates(body: unknown): RateOption[] {
     price: Math.round(r.totalPrice * 100) / 100,
     currency: r.currency?.trim() || "MXN",
     delivery: r.deliveryEstimate?.trim() || null,
+    dropOff: r.dropOffDescription?.trim() || null,
+    extendedFare: Math.round((r.extendedFare ?? 0) * 100) / 100,
   }));
 }
 
@@ -369,6 +382,7 @@ function addressBody(a: EnviaAddress) {
     country: a.country,
     postalCode: a.postalCode,
     ...(a.reference ? { reference: a.reference } : {}),
+    ...(a.identificationNumber ? { identificationNumber: a.identificationNumber } : {}),
   };
 }
 
@@ -388,7 +402,7 @@ export function shipmentBody(request: ShipmentRequest, settings?: LabelSettings)
       ...(p.insuranceMxn !== null ? { additionalServices: [{ service: "envia_insurance", data: { amount: String(p.insuranceMxn) } }] } : {}),
     })),
     shipment: { type: 1, carrier: request.carrier, ...(request.service ? { service: request.service } : {}) },
-    settings: { currency: "MXN", ...(settings ?? {}) },
+    settings: { currency: "MXN", ...(request.comments ? { comments: request.comments } : {}), ...(settings ?? {}) },
   };
 }
 
