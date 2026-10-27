@@ -3,14 +3,12 @@
 // Ventana «Borrar contacto» (derechos ARCO, 7-oct-2026): dice QUÉ se borra (chats, mensajes,
 // archivos, Detalle, seguimientos y programados pendientes) y pide escribir BORRAR. Si la base se
 // borró pero quedaron archivos en el almacenamiento, lo dice con cuántos y deja «Reintentar»: el
-// error nunca se esconde. Va en un portal encima de todo (también del pop-up del Embudo y del
-// Detalle a pantalla completa del celular); Esc la cierra sin cerrar lo de abajo. Sin lógica de
-// datos: llama a las acciones de lib/actions/contact-arco.ts.
-import { useEffect, useId, useLayoutEffect, useRef, useState } from "react";
-import { createPortal } from "react-dom";
-import { CloseX } from "@/components/ui/close-x";
+// error nunca se esconde. El marco (portal encima de todo, Esc, foco) es ArcoDialog, el mismo de
+// «Exportar datos». Sin lógica de datos: llama a las acciones de lib/actions/contact-arco.ts.
+import { useEffect, useId, useState } from "react";
 import { deleteContact, getContactArcoSummary, retryContactFilesDeletion } from "@/lib/actions/contact-arco";
 import type { ContactArcoSummary } from "@/lib/contacts/arco/summary";
+import { ArcoDialog } from "./arco-dialog";
 import { finishDeleting, startDeleting } from "./deleting-contacts";
 
 type Phase =
@@ -45,14 +43,11 @@ export function DeleteContactDialog({
   /** Ya se borró: el tablero lo quita (y cierra su Detalle). */
   onDeleted: () => void;
 }) {
-  const titleId = useId();
   const inputId = useId();
   const [phase, setPhase] = useState<Phase>({ kind: "loading" });
   const [typed, setTyped] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const boxRef = useRef<HTMLDivElement>(null);
-  const [opener] = useState(() => (typeof document !== "undefined" && document.activeElement instanceof HTMLElement ? document.activeElement : null));
 
   useEffect(() => {
     let alive = true;
@@ -75,29 +70,6 @@ export function DeleteContactDialog({
     if (phase.kind === "pending-files") onDeleted();
     else onClose();
   }
-  const closeRef = useRef(close);
-  useLayoutEffect(() => {
-    closeRef.current = close;
-  });
-
-  // Esc cierra SOLO esta ventana: se atiende antes que el pop-up del Embudo (que también escucha Esc).
-  useEffect(() => {
-    function onKey(event: KeyboardEvent) {
-      if (event.key !== "Escape") return;
-      event.preventDefault();
-      event.stopPropagation();
-      closeRef.current();
-    }
-    window.addEventListener("keydown", onKey, true);
-    return () => {
-      window.removeEventListener("keydown", onKey, true);
-      if (opener?.isConnected) opener.focus();
-    };
-  }, [opener]);
-
-  useEffect(() => {
-    boxRef.current?.focus();
-  }, []);
 
   const confirmed = typed.trim().toUpperCase() === "BORRAR";
 
@@ -153,88 +125,12 @@ export function DeleteContactDialog({
     }
   }
 
-  if (typeof document === "undefined") return null;
-
-  return createPortal(
-    <div className="fixed inset-0 z-[80] flex items-end justify-center p-0 sm:items-center sm:p-4">
-      <button type="button" aria-label="Cerrar" tabIndex={-1} onClick={close} className="absolute inset-0 bg-black/40" />
-      <div
-        ref={boxRef}
-        role="alertdialog"
-        aria-modal="true"
-        aria-labelledby={titleId}
-        tabIndex={-1}
-        className="relative w-full max-w-md space-y-3 rounded-t-xl bg-popover p-4 text-sm text-popover-foreground shadow-xl ring-1 ring-foreground/10 outline-none sm:rounded-xl"
-      >
-        <div className="flex items-start justify-between gap-3">
-          <h2 id={titleId} className="text-base font-semibold break-words">
-            {phase.kind === "pending-files" ? "Contacto borrado" : `¿Borrar a «${contactName}»?`}
-          </h2>
-          <CloseX label="Cerrar" onClick={close} />
-        </div>
-
-        {phase.kind === "loading" && <p className="text-muted-foreground">Revisando qué se borra…</p>}
-
-        {phase.kind === "load-error" && (
-          <p role="alert" className="rounded-md border border-brand-orange/40 bg-brand-orange/10 px-3 py-2 text-xs">
-            ⚠ {phase.message}
-          </p>
-        )}
-
-        {phase.kind === "confirm" && (
-          <>
-            <div className="space-y-1.5">
-              <p>Se borra para siempre del CRM, para todo el equipo:</p>
-              <ul className="list-disc space-y-0.5 pl-5 text-muted-foreground">
-                {deletionLines(phase.summary).map((line) => (
-                  <li key={line}>{line}</li>
-                ))}
-              </ul>
-              <p className="text-xs text-muted-foreground">
-                No se puede deshacer. Si el cliente vuelve a escribir, entra como contacto nuevo. Los archivos de la
-                Biblioteca que se le mandaron no se tocan. En Agente IA › Historial queda quién lo borró y cuándo, sin su
-                nombre ni su teléfono.
-              </p>
-            </div>
-            <div className="space-y-1">
-              <label htmlFor={inputId} className="text-xs font-medium text-muted-foreground">
-                Escribe <span className="font-semibold text-foreground">BORRAR</span> para confirmar
-              </label>
-              <input
-                id={inputId}
-                value={typed}
-                autoFocus
-                autoComplete="off"
-                autoCapitalize="characters"
-                spellCheck={false}
-                disabled={busy}
-                onChange={(e) => setTyped(e.target.value)}
-                onKeyDown={(e) => {
-                  if (e.key === "Enter") {
-                    e.preventDefault();
-                    void confirm();
-                  }
-                }}
-                className="w-full rounded-md border bg-background px-3 py-2 text-sm outline-none focus:border-red-600 focus:ring-2 focus:ring-red-600/30"
-              />
-            </div>
-          </>
-        )}
-
-        {phase.kind === "pending-files" && (
-          <p role="alert" className="rounded-md border border-brand-orange/40 bg-brand-orange/10 px-3 py-2 text-xs">
-            ⚠ Se borró el contacto, pero {phase.count === 1 ? "quedó 1 archivo" : `quedaron ${n(phase.count, "archivo", "archivos")}`} en el
-            almacenamiento sin poderse borrar. Reintenta ahora o en unos minutos.
-          </p>
-        )}
-
-        {error && (
-          <p role="alert" className="rounded-md border border-brand-orange/40 bg-brand-orange/10 px-3 py-2 text-xs">
-            ⚠ {error}
-          </p>
-        )}
-
-        <div className="flex justify-end gap-2 pt-1">
+  return (
+    <ArcoDialog
+      title={phase.kind === "pending-files" ? "Contacto borrado" : `¿Borrar a «${contactName}»?`}
+      onClose={close}
+      footer={
+        <>
           <button
             type="button"
             onClick={close}
@@ -263,9 +159,69 @@ export function DeleteContactDialog({
               {busy ? "Reintentando…" : "Reintentar"}
             </button>
           )}
-        </div>
-      </div>
-    </div>,
-    document.body,
+        </>
+      }
+    >
+      {phase.kind === "loading" && <p className="text-muted-foreground">Revisando qué se borra…</p>}
+
+      {phase.kind === "load-error" && (
+        <p role="alert" className="rounded-md border border-brand-orange/40 bg-brand-orange/10 px-3 py-2 text-xs">
+          ⚠ {phase.message}
+        </p>
+      )}
+
+      {phase.kind === "confirm" && (
+        <>
+          <div className="space-y-1.5">
+            <p>Se borra para siempre del CRM, para todo el equipo:</p>
+            <ul className="list-disc space-y-0.5 pl-5 text-muted-foreground">
+              {deletionLines(phase.summary).map((line) => (
+                <li key={line}>{line}</li>
+              ))}
+            </ul>
+            <p className="text-xs text-muted-foreground">
+              No se puede deshacer. Si el cliente vuelve a escribir, entra como contacto nuevo. Los archivos de la
+              Biblioteca que se le mandaron no se tocan. En Agente IA › Historial queda quién lo borró y cuándo, sin su
+              nombre ni su teléfono.
+            </p>
+          </div>
+          <div className="space-y-1">
+            <label htmlFor={inputId} className="text-xs font-medium text-muted-foreground">
+              Escribe <span className="font-semibold text-foreground">BORRAR</span> para confirmar
+            </label>
+            <input
+              id={inputId}
+              value={typed}
+              autoFocus
+              autoComplete="off"
+              autoCapitalize="characters"
+              spellCheck={false}
+              disabled={busy}
+              onChange={(e) => setTyped(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") {
+                  e.preventDefault();
+                  void confirm();
+                }
+              }}
+              className="w-full rounded-md border bg-background px-3 py-2 text-sm outline-none focus:border-red-600 focus:ring-2 focus:ring-red-600/30"
+            />
+          </div>
+        </>
+      )}
+
+      {phase.kind === "pending-files" && (
+        <p role="alert" className="rounded-md border border-brand-orange/40 bg-brand-orange/10 px-3 py-2 text-xs">
+          ⚠ Se borró el contacto, pero {phase.count === 1 ? "quedó 1 archivo" : `quedaron ${n(phase.count, "archivo", "archivos")}`} en el
+          almacenamiento sin poderse borrar. Reintenta ahora o en unos minutos.
+        </p>
+      )}
+
+      {error && (
+        <p role="alert" className="rounded-md border border-brand-orange/40 bg-brand-orange/10 px-3 py-2 text-xs">
+          ⚠ {error}
+        </p>
+      )}
+    </ArcoDialog>
   );
 }

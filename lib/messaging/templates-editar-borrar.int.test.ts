@@ -188,7 +188,8 @@ describe.skipIf(!TEST_DATABASE_URL)("editar y borrar plantillas (Postgres real)"
     expect(patch).toEqual({
       accountId: "zacc_oficial",
       language: "es_MX",
-      components: [{ type: "BODY", text: "Hola {{1}}, soy {{2}} de Diluvium.", example: { body_text: [["Ana", "Daniel"]] } }],
+      // En minúsculas: el PATCH de Zernio solo acepta "body" (26-oct-2026).
+      components: [{ type: "body", text: "Hola {{1}}, soy {{2}} de Diluvium.", example: { body_text: [["Ana", "Daniel"]] } }],
     });
     const [row] = await db.select().from(s.templates).where(eq(s.templates.id, "t_ok"));
     expect(row).toMatchObject({

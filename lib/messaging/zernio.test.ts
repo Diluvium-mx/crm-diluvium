@@ -542,7 +542,7 @@ describe("ZernioProvider.createTemplate", () => {
 });
 
 describe("ZernioProvider.updateTemplate", () => {
-  it("lee la variante exacta, cambia solo el BODY y hace PATCH con accountId y language", async () => {
+  it("lee la variante exacta, cambia solo el BODY y hace PATCH con accountId, language y los tipos en minúsculas", async () => {
     const fetchImpl = vi.fn(async (_url: string, init?: RequestInit) =>
       init?.method === "GET"
         ? Response.json({
@@ -564,7 +564,7 @@ describe("ZernioProvider.updateTemplate", () => {
       providerAccountId: "zacc_1",
       name: "seguimiento_libre",
       language: "es_MX",
-      bodyText: "Hola {{1}}, soy Daniel.",
+      bodyText: "Hola {{1}}, soy Carlos.",
       bodyExample: ["Ana"],
     });
     expect(out).toEqual({ status: "PENDING" });
@@ -576,9 +576,10 @@ describe("ZernioProvider.updateTemplate", () => {
     expect(JSON.parse(calls[1][1].body)).toEqual({
       accountId: "zacc_1",
       language: "es_MX",
+      // Zernio solo acepta el tipo en minúsculas (26-oct-2026), aunque Meta lo devuelva en mayúsculas.
       components: [
-        { type: "BODY", text: "Hola {{1}}, soy Daniel.", example: { body_text: [["Ana"]] } },
-        { type: "FOOTER", text: "Diluvium" },
+        { type: "body", text: "Hola {{1}}, soy Carlos.", example: { body_text: [["Ana"]] } },
+        { type: "footer", text: "Diluvium" },
       ],
     });
   });

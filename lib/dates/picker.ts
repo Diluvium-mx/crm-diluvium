@@ -1,9 +1,10 @@
 // Calendario propio del CRM (7-oct-2026, aprobado por el dueño): las cuentas del selector de fecha y hora.
 // PURO y seguro para el cliente. Los valores van en el MISMO formato que los <input> nativos que reemplaza,
-// para que el resto del código no cambie: "AAAA-MM-DD" (fecha), "HH:MM" (hora, 24 h) o "AAAA-MM-DDTHH:MM"
-// (fecha y hora). En pantalla, como el nativo de Chrome en español: "08/10/2026, 05:00 p.m.".
+// para que el resto del código no cambie: "AAAA-MM-DD" (fecha), "HH:MM" (hora, 24 h), "AAAA-MM-DDTHH:MM"
+// (fecha y hora) o "AAAA-MM" (mes, 26-oct-2026: el «Mes» del filtro de periodo). En pantalla, como el nativo
+// de Chrome en español: "08/10/2026, 05:00 p.m." u "octubre de 2026".
 
-export type PickerMode = "datetime" | "date" | "time";
+export type PickerMode = "datetime" | "date" | "time" | "month";
 export type PickerParts = { y: number; m: number; d: number; hh: number; mm: number };
 export type CalendarDay = { y: number; m: number; d: number; inMonth: boolean; value: string };
 
@@ -17,9 +18,18 @@ export function timeValue(hh: number, mm: number): string {
   return `${pad(hh)}:${pad(mm)}`;
 }
 
+export function monthValue(y: number, m: number): string {
+  return `${y}-${pad(m)}`;
+}
+
 /** Valor del input → partes; null si viene vacío o no es válido para ese modo. */
 export function parseValue(value: string | null | undefined, mode: PickerMode): PickerParts | null {
   if (!value) return null;
+  if (mode === "month") {
+    const month = /^(\d{4})-(\d{2})$/.exec(value);
+    if (!month || Number(month[2]) < 1 || Number(month[2]) > 12) return null;
+    return { y: Number(month[1]), m: Number(month[2]), d: 1, hh: 0, mm: 0 };
+  }
   const date = /^(\d{4})-(\d{2})-(\d{2})/.exec(value);
   const time = /(?:^|T)(\d{2}):(\d{2})$/.exec(value);
   if (mode !== "time" && !date) return null;
@@ -32,6 +42,7 @@ export function parseValue(value: string | null | undefined, mode: PickerMode): 
 
 /** Partes → valor del input. */
 export function formatValue(p: PickerParts, mode: PickerMode): string {
+  if (mode === "month") return monthValue(p.y, p.m);
   if (mode === "date") return dateValue(p.y, p.m, p.d);
   if (mode === "time") return timeValue(p.hh, p.mm);
   return `${dateValue(p.y, p.m, p.d)}T${timeValue(p.hh, p.mm)}`;
@@ -47,10 +58,11 @@ export function from12h(h12: number, ap: "a.m." | "p.m."): number {
   return ap === "p.m." ? base + 12 : base;
 }
 
-/** Lo que se lee en el campo: "08/10/2026, 05:00 p.m.", "08/10/2026" o "05:00 p.m.". */
+/** Lo que se lee en el campo: "08/10/2026, 05:00 p.m.", "08/10/2026", "05:00 p.m." u "octubre de 2026". */
 export function displayValue(value: string | null | undefined, mode: PickerMode): string {
   const p = parseValue(value, mode);
   if (!p) return "";
+  if (mode === "month") return `${MONTH_NAMES[p.m - 1]} de ${p.y}`;
   const { h12, ap } = to12h(p.hh);
   const date = `${pad(p.d)}/${pad(p.m)}/${p.y}`;
   const time = `${pad(h12)}:${pad(p.mm)} ${ap}`;
@@ -83,6 +95,11 @@ export function monthMatrix(y: number, m: number): CalendarDay[] {
 /** ¿El día queda fuera de [min, max]? (min/max en el formato del input; se compara solo la fecha). */
 export function dayOutOfRange(day: string, min?: string, max?: string): boolean {
   return (min !== undefined && min !== "" && day < min.slice(0, 10)) || (max !== undefined && max !== "" && day > max.slice(0, 10));
+}
+
+/** ¿El mes ("AAAA-MM") queda fuera de [min, max]? (en cualquier formato del input; se compara solo el mes). */
+export function monthOutOfRange(month: string, min?: string, max?: string): boolean {
+  return (min !== undefined && min !== "" && month < min.slice(0, 7)) || (max !== undefined && max !== "" && month > max.slice(0, 7));
 }
 
 /** Lleva un valor completo dentro de [min, max] (los dos en el mismo formato: se comparan como texto). */

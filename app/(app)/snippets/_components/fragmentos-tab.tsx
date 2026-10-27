@@ -3,19 +3,23 @@
 // Fragmentos ⚡: respuestas reutilizables a nivel organización, con variables
 // {{nombre}}. Se crean, editan y borran aquí mismo. Todo el equipo comparte los
 // mismos (CLAUDE.md §5). Para responder DENTRO de la ventana de 24 h.
+// 26-oct-2026 (pedido del dueño): buscador, vista de lista o cuadrícula (como 📄 Plantillas del chat) y orden
+// manual arrastrando ⋮⋮; ese orden es el de ⚡ del chat y el de «/». Uno nuevo va al final.
 import { useMemo, useRef, useState } from "react";
-import { Pencil, Plus, Trash2 } from "lucide-react";
-import { createSnippet, deleteSnippet, updateSnippet } from "@/lib/actions/snippets";
+import { GripVertical, Plus, Search } from "lucide-react";
+import { createSnippet, deleteSnippet, reorderSnippets, updateSnippet } from "@/lib/actions/snippets";
+import { moveItem } from "@/lib/snippets/orden";
 import { extractVariables } from "@/lib/snippets/variables";
+import { matchesSearch } from "@/lib/text/search";
 import { mensajeDeFalla } from "@/lib/version/client";
 import type { SnippetView } from "@/lib/snippets/types";
-import { HighlightBody } from "./highlight";
+import { FragmentosLista, TOKEN_CLASS } from "./fragmentos-lista";
 import { CloseX } from "@/components/ui/close-x";
+import { usePersistentToggle } from "@/components/ui/use-persistent-toggle";
+import { ViewToggle } from "@/components/ui/view-toggle";
 import { SpellcheckOverlay } from "@/components/spelling/spellcheck-overlay";
 
 type Draft = { id?: string; name: string; body: string };
-
-const TOKEN_CLASS = "rounded bg-brand-orange/15 px-1 font-medium text-brand-orange";
 
 export function FragmentosTab({ initial, canManage }: { initial: SnippetView[]; canManage: boolean }) {
   const [items, setItems] = useState<SnippetView[]>(initial);
@@ -23,8 +27,15 @@ export function FragmentosTab({ initial, canManage }: { initial: SnippetView[]; 
   const bodyRef = useRef<HTMLTextAreaElement>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [query, setQuery] = useState("");
+  // Vista recordada en esta computadora: false = lista, true = cuadrícula.
+  const [grid, setGrid] = usePersistentToggle("mensajes-rapidos.pagina.cuadricula", false);
+  // Solo cuenta la respuesta del último acomodo (si arrastra dos seguidos, la primera no regresa la lista vieja).
+  const lastMove = useRef(0);
 
   const detected = useMemo(() => (draft ? extractVariables(draft.body) : []), [draft]);
+  const shown = useMemo(() => items.filter((s) => matchesSearch(s.name, query) || matchesSearch(s.body, query)), [items, query]);
+  const sortable = canManage && !query.trim() && items.length > 1;
 
   function openNew() {
     setError(null);
@@ -48,10 +59,10 @@ export function FragmentosTab({ initial, canManage }: { initial: SnippetView[]; 
     try {
       if (draft.id) {
         const updated = await updateSnippet({ id: draft.id, name, body });
-        setItems((current) => current.map((s) => (s.id === updated.id ? updated : s)).sort(byName));
+        setItems((current) => current.map((s) => (s.id === updated.id ? updated : s)));
       } else {
         const created = await createSnippet({ name, body });
-        setItems((current) => [...current, created].sort(byName));
+        setItems((current) => [...current, created]);
       }
       setDraft(null);
     } catch (err) {
@@ -73,6 +84,24 @@ export function FragmentosTab({ initial, canManage }: { initial: SnippetView[]; 
       setError(await mensajeDeFalla(err, err instanceof Error ? err.message : "No se pudo borrar el mensaje rápido."));
     } finally {
       setBusy(false);
+    }
+  }
+
+  // Al soltar: cambia al momento y el servidor confirma; si no se pudo, regresa como estaba y lo dice.
+  async function move(fromId: string, toId: string) {
+    const before = items;
+    const next = moveItem(before, before.findIndex((s) => s.id === fromId), before.findIndex((s) => s.id === toId));
+    if (next.every((s, i) => s === before[i])) return;
+    setItems(next);
+    setError(null);
+    const ticket = ++lastMove.current;
+    try {
+      const saved = await reorderSnippets({ ids: next.map((s) => s.id) });
+      if (ticket === lastMove.current) setItems(saved);
+    } catch (err) {
+      if (ticket !== lastMove.current) return;
+      setItems(before);
+      setError(await mensajeDeFalla(err, err instanceof Error ? err.message : "No se pudo guardar el orden."));
     }
   }
 
@@ -172,55 +201,48 @@ export function FragmentosTab({ initial, canManage }: { initial: SnippetView[]; 
             ? "Aún no hay mensajes rápidos. Crea el primero para responder más rápido."
             : "Aún no hay mensajes rápidos. Un administrador puede crearlos; tú los usarás desde el chat."}
         </div>
-      ) : (
-        <ul className="space-y-2">
-          {items.map((snippet) => (
-            <li key={snippet.id} className="rounded-lg border bg-card p-3 shadow-sm">
-              <div className="flex items-start justify-between gap-3">
-                <div className="min-w-0 flex-1">
-                  <p className="truncate text-sm font-semibold">{snippet.name}</p>
-                  <p className="mt-1 whitespace-pre-wrap break-words text-sm text-foreground/90">
-                    <HighlightBody body={snippet.body} tokenClassName={TOKEN_CLASS} />
-                  </p>
-                  {snippet.variables.length > 0 && (
-                    <div className="mt-2 flex flex-wrap gap-1.5 text-xs">
-                      {snippet.variables.map((v) => (
-                        <span key={v} className={TOKEN_CLASS}>{`{{${v}}}`}</span>
-                      ))}
-                    </div>
-                  )}
-                </div>
-                {canManage && (
-                  <div className="flex shrink-0 gap-1">
-                    <button
-                      type="button"
-                      onClick={() => openEdit(snippet)}
-                      aria-label={`Editar ${snippet.name}`}
-                      title="Editar"
-                      className="rounded p-1.5 text-muted-foreground hover:bg-muted hover:text-foreground"
-                    >
-                      <Pencil className="size-4" aria-hidden="true" />
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => void remove(snippet)}
-                      aria-label={`Borrar ${snippet.name}`}
-                      title="Borrar"
-                      className="rounded p-1.5 text-muted-foreground hover:bg-red-50 hover:text-red-600 dark:hover:bg-red-950/40"
-                    >
-                      <Trash2 className="size-4" aria-hidden="true" />
-                    </button>
-                  </div>
-                )}
-              </div>
-            </li>
-          ))}
-        </ul>
-      )}
+      ) : items.length > 0 ? (
+        <div className="space-y-2">
+          <div className="flex items-center gap-2">
+            <label className="flex min-w-0 flex-1 items-center gap-2 rounded-md border bg-background px-2 py-1.5 focus-within:border-brand-navy focus-within:ring-2 focus-within:ring-brand-navy/30">
+              <Search className="size-4 shrink-0 text-muted-foreground" aria-hidden="true" />
+              <input
+                type="search"
+                value={query}
+                onChange={(e) => setQuery(e.target.value)}
+                placeholder="Buscar mensaje rápido"
+                aria-label="Buscar mensaje rápido"
+                className="min-w-0 flex-1 bg-transparent text-sm outline-none"
+              />
+            </label>
+            <ViewToggle grid={grid} onChange={setGrid} label="Vista de los mensajes rápidos" />
+          </div>
+          {canManage && items.length > 1 && (
+            <p className="flex items-center gap-1 text-xs text-muted-foreground">
+              {query.trim() ? (
+                "Para cambiar el orden, borra la búsqueda."
+              ) : (
+                <>
+                  Arrastra <GripVertical className="size-3.5" aria-label="la manija" /> para cambiar el orden: así salen en el chat.
+                </>
+              )}
+            </p>
+          )}
+          {shown.length === 0 ? (
+            <p className="py-6 text-center text-sm text-muted-foreground">Ningún mensaje rápido coincide con «{query.trim()}».</p>
+          ) : (
+            <FragmentosLista
+              items={shown}
+              grid={grid}
+              sortable={sortable && !busy}
+              canManage={canManage}
+              onEdit={openEdit}
+              onRemove={(snippet) => void remove(snippet)}
+              onMove={(fromId, toId) => void move(fromId, toId)}
+            />
+          )}
+        </div>
+      ) : null}
     </div>
   );
-}
-
-function byName(a: SnippetView, b: SnippetView): number {
-  return a.name.localeCompare(b.name, "es");
 }

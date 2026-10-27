@@ -14,6 +14,7 @@ import { db } from "@/lib/db";
 import { organization, snippets } from "@/lib/db/schema";
 import { planSnippetLoad, verifySnippetLoad, type ExistingSnippet, type SnippetLoadPlan } from "@/lib/snippets/carga";
 import { MENSAJES_RAPIDOS_DILUVIUM } from "@/lib/snippets/mensajes-rapidos-diluvium";
+import { nextSnippetPosition } from "@/lib/snippets/next-position";
 import { safeErrorMessage } from "@/lib/log/safe-error";
 
 type Db = typeof db;
@@ -113,12 +114,14 @@ async function main(): Promise<number> {
       }
       if (fresh.create.length > 0) {
         await tx.insert(snippets).values(
-          fresh.create.map((item) => ({
+          fresh.create.map((item, i) => ({
             id: crypto.randomUUID(),
             organizationId: org.id,
             name: item.name,
             body: item.body,
             variables: [],
+            // Al final del orden manual (26-oct-2026), en el orden de la lista.
+            position: nextSnippetPosition(org.id, i),
           })),
         );
       }

@@ -1,6 +1,6 @@
 // Cuentas del calendario propio del CRM (lib/dates/picker.ts). Sin navegador.
 import { describe, expect, it } from "vitest";
-import { addMonths, clampValue, dayOutOfRange, displayValue, formatValue, from12h, minuteOptions, monthMatrix, parseValue, to12h } from "./picker";
+import { addMonths, clampValue, dayOutOfRange, displayValue, formatValue, from12h, minuteOptions, monthMatrix, monthOutOfRange, parseValue, to12h } from "./picker";
 
 describe("valores en el formato del input nativo", () => {
   it("fecha y hora, fecha sola y hora sola: ida y vuelta", () => {
@@ -22,6 +22,16 @@ describe("valores en el formato del input nativo", () => {
     expect(displayValue("00:15", "time")).toBe("12:15 a.m.");
     expect(displayValue("12:00", "time")).toBe("12:00 p.m.");
     expect(displayValue("", "time")).toBe("");
+  });
+
+  it("mes (26-oct-2026, «Mes» del filtro de periodo): ida y vuelta y se lee «octubre de 2026»", () => {
+    expect(formatValue(parseValue("2026-10", "month")!, "month")).toBe("2026-10");
+    expect(parseValue("2026-13", "month")).toBeNull();
+    expect(parseValue("2026-10-08", "month")).toBeNull();
+    expect(parseValue("2026-10", "date")).toBeNull();
+    expect(displayValue("2026-10", "month")).toBe("octubre de 2026");
+    expect(displayValue("2026-09", "month")).toBe("septiembre de 2026");
+    expect(displayValue("", "month")).toBe("");
   });
 
   it("12 h ↔ 24 h", () => {
@@ -54,6 +64,13 @@ describe("el mes en pantalla", () => {
 });
 
 describe("límites y minutos", () => {
+  it("un mes fuera de [min, max] (min y max en cualquier formato del input)", () => {
+    expect(monthOutOfRange("2026-09", "2026-10")).toBe(true);
+    expect(monthOutOfRange("2026-10", "2026-10-15")).toBe(false);
+    expect(monthOutOfRange("2026-11", undefined, "2026-10")).toBe(true);
+    expect(monthOutOfRange("2026-10", "", "")).toBe(false);
+  });
+
   it("días fuera de [mín, máx] se apagan; el valor se lleva dentro del rango", () => {
     expect(dayOutOfRange("2026-10-05", "2026-10-07T10:00", undefined)).toBe(true);
     expect(dayOutOfRange("2026-10-07", "2026-10-07T10:00", "2026-11-06T10:00")).toBe(false);

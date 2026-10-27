@@ -262,7 +262,12 @@ clic abre un menú para cambiarla sin abrir el chat. Lista y panel quedan sincro
 - El buscador ignora acentos y mayúsculas y busca en nombre y texto (`lib/snippets/slash.ts`):
   "cuanta" encuentra "Cuánta agua entra". Solo `{{vendedor}}` se llena solo (con quien escribe).
 - Los 22 de Diluvium se cargan con `npm run mensajes-rapidos:cargar` (simula; escribe con
-  `--confirmar`; por nombre, sin duplicar ni tocar otros). Lista: `lib/snippets/mensajes-rapidos-diluvium.ts`.
+  `--confirmar`; por nombre, sin duplicar ni tocar otros; los nuevos al final). Lista: `lib/snippets/mensajes-rapidos-diluvium.ts`.
+- **Orden a mano (26-oct-2026, pedido del dueño):** en Mensajes rápidos se acomodan arrastrando la manija ⋮⋮ y se
+  guarda al soltar (`snippets.position`, migración 0073; `reorderSnippets` exige la lista completa, si alguien creó o
+  borró uno mientras tanto pide recargar; una fila «Cambió el orden» en el Historial). Ese orden es el de ⚡, el de «/»
+  con la búsqueda vacía y el de la sección; uno nuevo va al final. La sección y ⚡ tienen buscador y vista de lista o
+  cuadrícula como 📄 Plantillas (`components/ui/view-toggle.tsx`; se recuerda por computadora).
 
 ### Adjuntos en el chat (28-sep-2026)
 El vendedor manda fotos, videos y documentos desde la Bandeja y el pop-up del Embudo (mismo `ChatThread`/`Composer`).
