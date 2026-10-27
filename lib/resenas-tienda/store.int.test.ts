@@ -86,7 +86,7 @@ describe.skipIf(!TEST_DATABASE_URL)("reseñas en Amazon y Mercado Libre (Postgre
     expect(await queries.listarResenasTienda(ORG)).toEqual([]); // descartada: ya no sale
   });
 
-  it("primero las que faltan por pedir; nunca las de otra organización", async () => {
+  it("lo más reciente primero; nunca las de otra organización", async () => {
     await anotar();
     await store.anotarCompraEnTienda({ organizationId: ORG, contactId: "c_lucia", conversationId: null, tienda: "mercado_libre", frase: null, now: new Date(NOW.getTime() + 60_000) });
     await store.anotarCompraEnTienda({ organizationId: OTRA, contactId: "c_otra", conversationId: null, tienda: "amazon", frase: null, now: NOW });
@@ -104,13 +104,25 @@ describe.skipIf(!TEST_DATABASE_URL)("reseñas en Amazon y Mercado Libre (Postgre
     expect(await store.cambiarEstadoResena(OTRA, pedro.id, "la_dejo")).toBe(false);
   });
 
-  it("enlaces de las tiendas: se guardan junto al de Google sin borrarlo", async () => {
-    expect(await queries.enlacesTiendas(ORG)).toEqual({ amazon: null, mercado_libre: null });
-    await db.insert(s.opinionesConfig).values({ organizationId: ORG, googleResenaUrl: "https://maps.app.goo.gl/x" });
-    await store.guardarEnlacesTiendas(ORG, { amazon: "https://www.amazon.com.mx/review/create-review?asin=B0F2792F2H", mercadoLibre: null }, "u_rt", NOW);
-    expect(await queries.enlacesTiendas(ORG)).toEqual({ amazon: "https://www.amazon.com.mx/review/create-review?asin=B0F2792F2H", mercado_libre: null });
-    const [cfg] = await db.select().from(s.opinionesConfig).where(d.eq(s.opinionesConfig.organizationId, ORG));
-    expect(cfg.googleResenaUrl).toBe("https://maps.app.goo.gl/x");
-    expect(await queries.enlacesTiendas(OTRA)).toEqual({ amazon: null, mercado_libre: null });
+  it("sabe cuándo salió la plantilla «Reseña en tienda» en ese chat (no las de antes ni las que fallaron)", async () => {
+    await anotar({ tienda: "mercado_libre", frase: "Ya la pedí en Mercado Libre" });
+    const plantilla = (id: string, at: Date, status: "sent" | "failed", templateName = "resena_tienda") => ({
+      id, organizationId: ORG, conversationId: "conv_pedro", direction: "out" as const, source: "crm" as const,
+      type: "template" as const, body: "Hola…", templateName, status, createdAt: at, sentAt: at,
+    });
+    const antes = new Date(NOW.getTime() - 86_400_000);
+    const despues = new Date(NOW.getTime() + 86_400_000);
+    await db.insert(s.messages).values([
+      plantilla("m_antes", antes, "sent"),
+      plantilla("m_otra", despues, "sent", "seg_medidas"),
+      plantilla("m_fallo", new Date(despues.getTime() + 60_000), "failed"),
+    ]);
+    expect((await queries.listarResenasTienda(ORG))[0].plantillaAt).toBeNull();
+
+    await db.insert(s.messages).values(plantilla("m_ok", despues, "sent"));
+    const [fila] = await queries.listarResenasTienda(ORG);
+    expect(fila.plantillaAt).toEqual(despues);
+    expect(fila.channelId).toBe("ch_rt");
+    expect(await queries.plantillaResenaId(ORG, "ch_rt")).toBeNull();
   });
 });

@@ -3,7 +3,7 @@ import { requireActiveMembership } from "@/lib/auth/active-organization";
 import { roleAllows } from "@/lib/auth/permissions";
 import { googleResenaUrl, listarOpiniones } from "@/lib/opiniones/queries";
 import { opinionVista } from "@/lib/opiniones/vista";
-import { enlacesTiendas, listarResenasTienda } from "@/lib/resenas-tienda/queries";
+import { listarResenasTienda } from "@/lib/resenas-tienda/queries";
 import { resenaVista } from "@/lib/resenas-tienda/vista";
 import { parseSeguimientosSection } from "@/lib/seguimientos/sections";
 import { SeguimientosPanel } from "./_components/seguimientos-panel";
@@ -18,11 +18,10 @@ export default async function SeguimientosPage({ searchParams }: PageProps<"/seg
     redirect("/dashboard");
   }
   const seccion = parseSeguimientosSection((await searchParams).seccion);
-  const [filas, google, resenas, enlaces] = await Promise.all([
+  const [filas, google, resenas] = await Promise.all([
     listarOpiniones(organizationId),
     googleResenaUrl(organizationId),
     listarResenasTienda(organizationId),
-    enlacesTiendas(organizationId),
   ]);
   const appUrl = process.env.APP_URL ?? "";
   const now = new Date();
@@ -31,8 +30,7 @@ export default async function SeguimientosPage({ searchParams }: PageProps<"/seg
       seccionInicial={seccion}
       opiniones={filas.map((f) => opinionVista(f, appUrl))}
       googleUrl={google}
-      resenas={resenas.map((r) => resenaVista(r, enlaces, now))}
-      enlaces={enlaces}
+      resenas={resenas.flatMap((r) => resenaVista(r, now) ?? [])}
       puede={{
         crear: roleAllows(role, "opinion", "create"),
         editar: roleAllows(role, "opinion", "update"),
