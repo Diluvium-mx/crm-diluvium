@@ -1,13 +1,12 @@
 import { describe, expect, it } from "vitest";
 import type { ResenaFila } from "./queries";
-import { bloqueoDe, resenaVista } from "./vista";
+import { pasoDe, resenaVista } from "./vista";
 
 const NOW = new Date("2026-10-27T22:00:00Z");
 const HORA = 60 * 60 * 1000;
 const DIA = 24 * HORA;
-const SIN_ENLACES = { amazon: null, mercado_libre: null };
 
-// De Mercado Libre y con más de 40 días desde que lo dijo: ya pasó Compra Protegida.
+// De Mercado Libre, con más de 40 días desde que lo dijo (ya pasó Compra Protegida) y la ventana abierta.
 function fila(over: Partial<ResenaFila> = {}): ResenaFila {
   return {
     id: "r1",
@@ -21,53 +20,59 @@ function fila(over: Partial<ResenaFila> = {}): ResenaFila {
     contacto: "Pedro",
     telefono: "+526681110000",
     canal: "whatsapp",
+    channelId: "ch1",
     windowExpiresAt: new Date(NOW.getTime() + 5 * HORA),
+    plantillaAt: null,
     ...over,
   };
 }
 
-describe("cómo se ve cada cliente en Amazon y Mercado Libre", () => {
-  it("Mercado Libre por pedir, con la ventana abierta: se puede pedir y trae el texto que saldría", () => {
-    const v = resenaVista(fila(), SIN_ENLACES, NOW);
-    expect(v).toMatchObject({ titulo: "Pedro", tienda: "Mercado Libre", estadoTexto: "Por pedir", tono: "alerta", bloqueo: null, enAmazon: false, fecha: "Lo dijo el 10-sep-2026", chatHref: "/dashboard?contacto=c1" });
-    expect(v.mensaje).toContain("nuestra compuerta en Mercado Libre");
+describe("Amazon: se pide en Seller Central, sin marcar nada a mano", () => {
+  it("sale para pedir con el botón a Seller Central y la fecha límite, aunque alguien la haya marcado como pedida", () => {
+    for (const estado of ["por_pedir", "pedida"] as const) {
+      const v = resenaVista(fila({ tienda: "amazon", estado, createdAt: new Date("2026-10-13T21:00:00Z"), frase: "Disculpe lo pedí por Amazon" }), NOW);
+      expect(v).toMatchObject({ tienda: "Amazon", seccion: "pedir", accion: "amazon", mensaje: null });
+      expect(v?.aviso).toBe("En su pedido de Seller Central, toque «Solicitar una reseña». Amazon deja hasta el 17-nov-2026.");
+    }
   });
 
-  it("Mercado Libre antes de 40 días: no se le escribe por fuera mientras dura Compra Protegida", () => {
-    const reciente = fila({ createdAt: new Date("2026-10-03T15:37:00Z") });
-    expect(resenaVista(reciente, SIN_ENLACES, NOW).bloqueo).toBe(
-      "Mercado Libre no deja escribirle por fuera mientras dura Compra Protegida: se puede desde el 12-nov-2026.",
-    );
-    const despues = new Date("2026-11-12T16:00:00Z");
-    expect(bloqueoDe({ ...reciente, windowExpiresAt: new Date(despues.getTime() + HORA) }, despues)).toBeNull();
+  it("pasado su plazo (35 días desde que lo dijo) ya no sale", () => {
+    expect(resenaVista(fila({ tienda: "amazon", createdAt: new Date(NOW.getTime() - 35 * DIA) }), NOW)).toBeNull();
+  });
+});
+
+describe("Mercado Libre: cuando su tienda lo permite, texto o plantilla", () => {
+  it("antes de 40 días: en espera, con la fecha desde la que se puede", () => {
+    const v = resenaVista(fila({ createdAt: new Date("2026-10-03T15:37:00Z") }), NOW);
+    expect(v).toMatchObject({ seccion: "espera", accion: null, mensaje: null });
+    expect(v?.aviso).toBe("Se le puede escribir desde el 12-nov-2026: antes, Mercado Libre no lo permite (Compra Protegida).");
   });
 
-  it("WhatsApp fuera de 24 h: se manda la plantilla desde el chat y su respuesta abre «Pedir reseña»", () => {
-    const v = resenaVista(fila({ windowExpiresAt: new Date(NOW.getTime() - HORA) }), SIN_ENLACES, NOW);
-    expect(v.bloqueo).toMatch(/más de 24 h.*plantilla «Reseña en tienda»/);
+  it("ventana abierta: «Pedir reseña» con el texto que saldría", () => {
+    const v = resenaVista(fila(), NOW);
+    expect(v).toMatchObject({ titulo: "Pedro", tienda: "Mercado Libre", seccion: "pedir", accion: "texto", dicho: "Lo dijo el 10-sep-2026", chatHref: "/dashboard?contacto=c1" });
+    expect(v?.mensaje).toContain("nuestra compuerta en Mercado Libre");
   });
 
-  it("Instagram: un vendedor puede hasta 7 días desde su último mensaje", () => {
-    const tresDias = fila({ canal: "instagram", windowExpiresAt: new Date(NOW.getTime() - 2 * DIA) });
-    expect(resenaVista(tresDias, SIN_ENLACES, NOW).bloqueo).toBeNull();
-    const ochoDias = fila({ canal: "instagram", windowExpiresAt: new Date(NOW.getTime() - 7 * DIA) });
-    expect(resenaVista(ochoDias, SIN_ENLACES, NOW).bloqueo).toMatch(/más de 7 días/);
+  it("WhatsApp de más de 24 h: primero la plantilla; ya mandada, espera su respuesta; contestó, ya sale el texto", () => {
+    const cerrada = { windowExpiresAt: new Date(NOW.getTime() - HORA) };
+    expect(resenaVista(fila(cerrada), NOW)).toMatchObject({ seccion: "pedir", accion: "plantilla" });
+    expect(resenaVista(fila(cerrada), NOW)?.mensaje).toContain("por la compuerta que pidió en Mercado Libre");
+
+    const mandada = resenaVista(fila({ ...cerrada, plantillaAt: new Date("2026-10-26T17:30:00Z") }), NOW);
+    expect(mandada).toMatchObject({ seccion: "espera", accion: null, aviso: "Le mandamos la plantilla el 26-oct-2026 10:30: cuando conteste, sale «Pedir reseña»." });
+
+    expect(pasoDe(fila({ plantillaAt: new Date("2026-10-26T17:30:00Z") }), NOW)?.accion).toBe("texto");
   });
 
-  it("Amazon: nunca por WhatsApp, aunque la ventana esté abierta; se pide en Seller Central", () => {
-    const v = resenaVista(fila({ tienda: "amazon", frase: "Ya la pedí por Amazon" }), SIN_ENLACES, NOW);
-    expect(v).toMatchObject({ tienda: "Amazon", enAmazon: true });
-    expect(v.bloqueo).toMatch(/^Amazon no deja pedirla por WhatsApp: pídala en Seller Central/);
+  it("Instagram (sin plantillas): un vendedor puede hasta 7 días; después, a esperar que escriba", () => {
+    expect(pasoDe(fila({ canal: "instagram", windowExpiresAt: new Date(NOW.getTime() - 2 * DIA) }), NOW)?.accion).toBe("texto");
+    expect(pasoDe(fila({ canal: "instagram", windowExpiresAt: new Date(NOW.getTime() - 7 * DIA) }), NOW)).toMatchObject({ seccion: "espera", accion: null });
   });
 
-  it("sin chat no se puede; ya pedida, dice cuándo y no muestra bloqueo", () => {
-    expect(resenaVista(fila({ conversationId: null, canal: null }), SIN_ENLACES, NOW).bloqueo).toMatch(/Ya no está el chat/);
-    const pedida = resenaVista(fila({ estado: "pedida", pedidaAt: new Date("2026-10-27T17:30:00Z"), windowExpiresAt: null }), SIN_ENLACES, NOW);
-    expect(pedida).toMatchObject({ estadoTexto: "Pedida", bloqueo: null, fecha: "Se le pidió el 27-oct-2026 10:30" });
-  });
-
-  it("el enlace configurado de la tienda va en el mensaje", () => {
-    const v = resenaVista(fila(), { amazon: null, mercado_libre: "https://ejemplo.mx/opinar" }, NOW);
-    expect(v.mensaje).toContain("Aquí la puede dejar: https://ejemplo.mx/opinar");
+  it("ya pedida: dice cuándo; sin chat, no hay acción", () => {
+    const pedida = resenaVista(fila({ estado: "pedida", pedidaAt: new Date("2026-10-27T17:30:00Z") }), NOW);
+    expect(pedida).toMatchObject({ seccion: "pedida", accion: null, aviso: "Se le pidió el 27-oct-2026 10:30." });
+    expect(pasoDe(fila({ conversationId: null, canal: null }), NOW)).toMatchObject({ accion: null, aviso: "Ya no está el chat donde lo dijo." });
   });
 });

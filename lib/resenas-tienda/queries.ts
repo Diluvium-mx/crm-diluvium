@@ -2,7 +2,8 @@
 // Libre), siempre acotadas a la organización de la sesión.
 import { and, desc, eq, ne, sql } from "drizzle-orm";
 import { db } from "@/lib/db";
-import { channels, contacts, conversations, opinionesConfig, resenasTienda } from "@/lib/db/schema";
+import { channels, contacts, conversations, messages, resenasTienda, templates } from "@/lib/db/schema";
+import { PLANTILLA_RESENA } from "./mensaje";
 import type { EstadoResena, Tienda } from "./tiendas";
 
 export type ResenaFila = {
@@ -18,7 +19,10 @@ export type ResenaFila = {
   telefono: string | null;
   /** Del chat donde lo dijo: si todavía se le puede escribir texto libre. */
   canal: string | null;
+  channelId: string | null;
   windowExpiresAt: Date | null;
+  /** Última plantilla «Reseña en tienda» que salió en ese chat desde que lo dijo (sin las que fallaron). */
+  plantillaAt: Date | null;
 };
 
 const LIMITE = 200;
@@ -36,7 +40,15 @@ const columnas = {
   lastName: contacts.lastName,
   telefono: contacts.phoneE164,
   canal: channels.type,
+  channelId: conversations.channelId,
   windowExpiresAt: conversations.windowExpiresAt,
+  plantillaAt: sql<Date | null>`(
+    select max(coalesce(${messages.sentAt}, ${messages.createdAt})) from ${messages}
+    where ${messages.organizationId} = ${resenasTienda.organizationId}
+      and ${messages.conversationId} = ${resenasTienda.conversationId}
+      and ${messages.direction} = 'out' and ${messages.templateName} = ${PLANTILLA_RESENA}
+      and ${messages.status} <> 'failed' and coalesce(${messages.sentAt}, ${messages.createdAt}) >= ${resenasTienda.createdAt}
+  )`.mapWith(messages.createdAt),
 };
 
 type Cruda = Omit<ResenaFila, "tienda" | "estado" | "contacto"> & {
@@ -67,11 +79,11 @@ function base(organizationId: string) {
     .leftJoin(channels, eq(channels.id, conversations.channelId));
 }
 
-/** Primero las que faltan por pedir; las descartadas no salen. */
+/** Lo más reciente primero (la vista las acomoda por sección); las quitadas no salen. */
 export async function listarResenasTienda(organizationId: string): Promise<ResenaFila[]> {
   const filas = await base(organizationId)
     .where(and(eq(resenasTienda.organizationId, organizationId), ne(resenasTienda.estado, "descartada")))
-    .orderBy(sql`(${resenasTienda.estado} = 'por_pedir') desc`, desc(resenasTienda.createdAt))
+    .orderBy(desc(resenasTienda.createdAt))
     .limit(LIMITE);
   return filas.map(aFila);
 }
@@ -83,13 +95,12 @@ export async function resenaTienda(organizationId: string, id: string): Promise<
   return fila ? aFila(fila) : null;
 }
 
-export type EnlacesTiendas = Readonly<Record<Tienda, string | null>>;
-
-export async function enlacesTiendas(organizationId: string): Promise<EnlacesTiendas> {
+/** La plantilla «Reseña en tienda» del canal de ese chat (su estado lo revisa el envío). */
+export async function plantillaResenaId(organizationId: string, channelId: string): Promise<string | null> {
   const [fila] = await db
-    .select({ amazon: opinionesConfig.amazonResenaUrl, mercadoLibre: opinionesConfig.mercadoLibreResenaUrl })
-    .from(opinionesConfig)
-    .where(eq(opinionesConfig.organizationId, organizationId))
+    .select({ id: templates.id })
+    .from(templates)
+    .where(and(eq(templates.organizationId, organizationId), eq(templates.channelId, channelId), eq(templates.name, PLANTILLA_RESENA)))
     .limit(1);
-  return { amazon: fila?.amazon ?? null, mercado_libre: fila?.mercadoLibre ?? null };
+  return fila?.id ?? null;
 }

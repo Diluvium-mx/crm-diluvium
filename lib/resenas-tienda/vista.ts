@@ -1,39 +1,47 @@
 // Cómo se ve cada cliente en Seguimientos › Amazon y Mercado Libre (docs/opiniones.md § Amazon
-// y Mercado Libre). Puro; el servidor lo arma y el panel solo pinta.
+// y Mercado Libre). Puro; el servidor lo arma y el panel solo pinta. Cada cliente cae en UNA
+// sección con UNA acción, según las reglas de su tienda (sin marcarlo a mano).
 import { zoneForPhone } from "@/lib/followups/timezone";
 import { formatMazatlan } from "@/lib/historial/labels";
 import { canSendFreeForm } from "@/lib/messaging/rules";
-import type { TonoEtiqueta } from "@/lib/opiniones/vista";
-import { mensajeResena } from "./mensaje";
-import type { EnlacesTiendas, ResenaFila } from "./queries";
-import { TIENDA_NOMBRE, type EstadoResena } from "./tiendas";
+import { mensajeResena, textoPlantillaResena } from "./mensaje";
+import type { ResenaFila } from "./queries";
+import { TIENDA_NOMBRE } from "./tiendas";
+
+/** Para pedir: se puede hoy. En espera: todavía no (dice desde cuándo o qué falta). Ya pedidas: salió el texto. */
+export type SeccionResena = "pedir" | "espera" | "pedida";
+
+/** amazon = abrir Seller Central; texto = mandar el texto fijo; plantilla = mandar «Reseña en tienda». */
+export type AccionResena = "amazon" | "texto" | "plantilla";
 
 export type ResenaVista = {
   id: string;
   titulo: string;
   tienda: string;
   frase: string | null;
-  fecha: string;
-  estado: EstadoResena;
-  estadoTexto: string;
-  tono: TonoEtiqueta;
+  /** «Lo dijo el …». */
+  dicho: string;
+  seccion: SeccionResena;
+  accion: AccionResena | null;
+  /** Una línea: qué hacer o por qué todavía no. */
+  aviso: string;
+  /** Lo que saldría (texto o plantilla), para verlo antes de mandarlo. */
+  mensaje: string | null;
+  /** Orden dentro de su sección (menor primero). */
+  orden: number;
   /** Abre su chat en la Bandeja. */
   chatHref: string;
-  /** El texto que saldría (para verlo antes de mandarlo). */
-  mensaje: string;
-  /** Por qué todavía no se puede pedir por WhatsApp (en Amazon: dónde se pide); null = se puede. */
-  bloqueo: string | null;
-  /** De Amazon: la reseña se pide en Seller Central, nunca por WhatsApp; aquí solo se anota. */
-  enAmazon: boolean;
 };
+
+/** Pedidos de Seller Central México: ahí, en el pedido, está «Solicitar una reseña». */
+export const SELLER_CENTRAL_PEDIDOS = "https://sellercentral.amazon.com.mx/orders-v3";
 
 /**
  * Amazon solo deja contactar al comprador por su propio servicio de mensajes (código de conducta
- * para vendedores en México, G1801); su botón «Solicitar una reseña» sirve del día 5 al 30
- * después de la entrega (docs/opiniones.md § 7).
+ * para vendedores en México, G1801) y su «Solicitar una reseña» sirve hasta 30 días después de la
+ * entrega. Se cuenta desde que lo dijo, con hasta una semana para la entrega; después ya no sale.
  */
-export const AMAZON_SELLER_CENTRAL =
-  "Amazon no deja pedirla por WhatsApp: pídala en Seller Central, en su pedido › «Solicitar una reseña» (del día 5 al 30 después de la entrega).";
+export const DIAS_AMAZON = 35;
 
 /**
  * Mercado Libre prohíbe escribirle al comprador por otro medio hasta que vence Compra Protegida
@@ -41,53 +49,87 @@ export const AMAZON_SELLER_CENTRAL =
  * compró, con hasta una semana para la entrega.
  */
 export const DIAS_MERCADO_LIBRE = 40;
+
 const DIA_MS = 24 * 60 * 60 * 1000;
+const masDias = (at: Date, dias: number) => new Date(at.getTime() + dias * DIA_MS);
+const soloFecha = (at: Date) => formatMazatlan(at).split(" ")[0];
 
-const ESTADO: Readonly<Record<EstadoResena, { texto: string; tono: TonoEtiqueta }>> = {
-  por_pedir: { texto: "Por pedir", tono: "alerta" },
-  pedida: { texto: "Pedida", tono: "marca" },
-  la_dejo: { texto: "La dejó", tono: "bien" },
-  no_quiso: { texto: "No quiso", tono: "neutro" },
-  descartada: { texto: "No compró ahí", tono: "neutro" },
-};
+type Paso = { seccion: SeccionResena; accion: AccionResena | null; aviso: string; orden: number };
 
-function soloFecha(at: Date): string {
-  return formatMazatlan(at).split(" ")[0];
-}
-
-/**
- * Por qué todavía no se puede mandar el texto que pide la reseña. Es texto libre (WhatsApp 24 h;
- * Instagram 7 días, de un vendedor); con la ventana cerrada, la plantilla `resena_tienda` se
- * manda desde el chat y su respuesta la abre.
- */
-export function bloqueoDe(
-  f: Pick<ResenaFila, "tienda" | "createdAt" | "conversationId" | "canal" | "windowExpiresAt">,
+/** Dónde está cada cliente hoy. null = de Amazon y ya pasó su plazo: ya no sale en la lista. */
+export function pasoDe(
+  f: Pick<ResenaFila, "tienda" | "estado" | "createdAt" | "pedidaAt" | "conversationId" | "canal" | "windowExpiresAt" | "plantillaAt">,
   now: Date,
-): string | null {
-  if (f.tienda === "amazon") return AMAZON_SELLER_CENTRAL;
-  const desde = new Date(f.createdAt.getTime() + DIAS_MERCADO_LIBRE * DIA_MS);
-  if (now < desde) return `Mercado Libre no deja escribirle por fuera mientras dura Compra Protegida: se puede desde el ${soloFecha(desde)}.`;
-  if (!f.conversationId || !f.canal) return "Ya no está el chat donde lo dijo.";
-  if (canSendFreeForm(f.canal, f.windowExpiresAt, now, true)) return null;
-  return f.canal === "instagram"
-    ? "Pasaron más de 7 días desde su último mensaje: se puede pedir cuando vuelva a escribir."
-    : "Pasaron más de 24 h desde su último mensaje: mándele la plantilla «Reseña en tienda» desde su chat; cuando conteste, aquí se activa «Pedir reseña».";
+): Paso | null {
+  if (f.tienda === "amazon") {
+    const hasta = masDias(f.createdAt, DIAS_AMAZON);
+    if (now >= hasta) return null;
+    return {
+      seccion: "pedir",
+      accion: "amazon",
+      aviso: `En su pedido de Seller Central, toque «Solicitar una reseña». Amazon deja hasta el ${soloFecha(hasta)}.`,
+      orden: hasta.getTime(),
+    };
+  }
+  if (f.estado !== "por_pedir") {
+    const cuando = f.pedidaAt ?? f.createdAt;
+    return { seccion: "pedida", accion: null, aviso: `Se le pidió el ${formatMazatlan(cuando)}.`, orden: -cuando.getTime() };
+  }
+  const desde = masDias(f.createdAt, DIAS_MERCADO_LIBRE);
+  if (now < desde) {
+    return {
+      seccion: "espera",
+      accion: null,
+      aviso: `Se le puede escribir desde el ${soloFecha(desde)}: antes, Mercado Libre no lo permite (Compra Protegida).`,
+      orden: desde.getTime(),
+    };
+  }
+  if (!f.conversationId || !f.canal) {
+    return { seccion: "espera", accion: null, aviso: "Ya no está el chat donde lo dijo.", orden: desde.getTime() };
+  }
+  if (canSendFreeForm(f.canal, f.windowExpiresAt, now, true)) {
+    return { seccion: "pedir", accion: "texto", aviso: "Ya se le puede pedir por WhatsApp.", orden: desde.getTime() };
+  }
+  if (f.canal === "instagram") {
+    return {
+      seccion: "espera",
+      accion: null,
+      aviso: "Pasaron más de 7 días desde su último mensaje: se le pide cuando vuelva a escribir.",
+      orden: desde.getTime(),
+    };
+  }
+  if (f.plantillaAt) {
+    return {
+      seccion: "espera",
+      accion: null,
+      aviso: `Le mandamos la plantilla el ${formatMazatlan(f.plantillaAt)}: cuando conteste, sale «Pedir reseña».`,
+      orden: f.plantillaAt.getTime(),
+    };
+  }
+  return {
+    seccion: "pedir",
+    accion: "plantilla",
+    aviso: "Pasaron más de 24 h desde su último mensaje: primero va la plantilla.",
+    orden: desde.getTime(),
+  };
 }
 
-export function resenaVista(f: ResenaFila, enlaces: EnlacesTiendas, now: Date): ResenaVista {
-  const estado = ESTADO[f.estado];
+export function resenaVista(f: ResenaFila, now: Date): ResenaVista | null {
+  const paso = pasoDe(f, now);
+  if (!paso) return null;
   return {
     id: f.id,
     titulo: f.contacto || "Cliente",
     tienda: TIENDA_NOMBRE[f.tienda],
     frase: f.frase,
-    fecha: f.pedidaAt && f.estado !== "por_pedir" ? `Se le pidió el ${formatMazatlan(f.pedidaAt)}` : `Lo dijo el ${soloFecha(f.createdAt)}`,
-    estado: f.estado,
-    estadoTexto: estado.texto,
-    tono: estado.tono,
+    dicho: `Lo dijo el ${soloFecha(f.createdAt)}`,
+    ...paso,
+    mensaje:
+      paso.accion === "texto"
+        ? mensajeResena(f.tienda, now, zoneForPhone(f.telefono))
+        : paso.accion === "plantilla"
+          ? textoPlantillaResena(f.tienda)
+          : null,
     chatHref: `/dashboard?contacto=${encodeURIComponent(f.contactId)}`,
-    mensaje: mensajeResena(f.tienda, enlaces[f.tienda], now, zoneForPhone(f.telefono)),
-    bloqueo: f.estado === "por_pedir" ? bloqueoDe(f, now) : null,
-    enAmazon: f.tienda === "amazon",
   };
 }
