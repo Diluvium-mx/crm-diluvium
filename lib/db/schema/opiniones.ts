@@ -55,13 +55,16 @@ export const opiniones = pgTable(
   ],
 );
 
-// Ajustes de las opiniones por organización. Hoy solo el enlace de reseñas de Google
-// (botón de la pantalla final); lo demás del Momento 1 (días, hora) llega con el envío.
+// Ajustes de las opiniones por organización: el enlace de reseñas de Google (botón de la
+// pantalla final) y, desde el 27-oct-2026, los de Amazon y Mercado Libre (van en el mensaje
+// de Seguimientos › Amazon y Mercado Libre). Lo demás del Momento 1 llega con el envío.
 export const opinionesConfig = pgTable("opiniones_config", {
   organizationId: text("organization_id")
     .primaryKey()
     .references(() => organization.id, { onDelete: "cascade" }),
   googleResenaUrl: text("google_resena_url"),
+  amazonResenaUrl: text("amazon_resena_url"),
+  mercadoLibreResenaUrl: text("mercado_libre_resena_url"),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
   updatedByUserId: text("updated_by_user_id").references(() => user.id, { onDelete: "set null" }),
 });

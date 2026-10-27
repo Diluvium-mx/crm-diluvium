@@ -51,6 +51,8 @@ import { FOLLOW_UP_TEMPLATES } from "@/lib/followups/cases";
 import { borradorProblems } from "@/lib/followups/borrador-check";
 import { chatTail } from "@/lib/followups/vendor-attempts";
 import { MAX_BORRADOR } from "@/lib/followups/ficha";
+import { anotarCompraEnTienda, compraEnTiendaDe } from "@/lib/resenas-tienda/store";
+import { fraseDeTienda, TIENDA_NOMBRE } from "@/lib/resenas-tienda/tiendas";
 import { loadFollowUpTable } from "@/lib/followups/tabla-store";
 import { logError, safeErrorMessage } from "@/lib/log/safe-error";
 
@@ -257,14 +259,16 @@ async function readConversation(organizationId: string, conversationId: string, 
   const stages = await listFunnelStages(organizationId);
   const vendorStage = contact.stageChangedBy === "vendedor" ? { at: contact.stageChangedAt, stageName: stageLabel(stages, contact.stage) } : null;
 
-  // Ficha guardada: etapa, monto y pago (con quién los puso) + el Detalle.
+  // Ficha guardada: etapa, monto y pago (con quién los puso), la tienda donde compró + el Detalle.
   const cf = (contact.customFields as Record<string, unknown> | null) ?? {};
   const por = detallePorOf(cf);
+  const tienda = await compraEnTiendaDe(organizationId, conv.contactId);
   const ficha = [
     "FICHA GUARDADA (la pone el CRM; no es parte del chat):",
     `Etapa: ${stageLabel(stages, contact.stage)}${contact.stageChangedBy === "vendedor" ? " (la puso un vendedor a mano)" : ""}.`,
     `Monto de cotización: ${contact.monto != null ? `${pesos(Number(contact.monto))}${cf.cotizacion_por === "vendedor" ? " (lo corrigió un vendedor)" : ""}` : "ninguno"}.`,
     `Pago total: ${contact.pago != null ? `${pesos(Number(contact.pago))}${por[DETALLE_KEY.pagoTotal] === "vendedor" ? " (lo corrigió un vendedor)" : ""}` : "ninguno"}.`,
+    `Compró en otra tienda: ${!tienda ? "ninguna" : tienda.estado === "descartada" ? "no (lo corrigió un vendedor)" : TIENDA_NOMBRE[tienda.tienda]}.`,
     await detalleContextFor(organizationId, conv.contactId),
   ].join("\n");
 
@@ -317,6 +321,12 @@ async function readConversation(organizationId: string, conversationId: string, 
         await updateContactQualification(db, organizationId, conv.contactId, { pagoTotal: parsed.pago }, { kind: "agente" });
         cambios.push("pago_total");
       }
+      // Compró en Amazon o Mercado Libre: a la lista de Seguimientos › Amazon y Mercado Libre.
+      if (parsed.tienda) {
+        const frase = fraseDeTienda(rows.filter((m) => m.direction === "in").map((m) => messageText(m)), parsed.tienda);
+        const anotada = await anotarCompraEnTienda({ organizationId, contactId: conv.contactId, conversationId, tienda: parsed.tienda, frase, now: deps.now() });
+        if (anotada) cambios.push(`compro_en ${parsed.tienda}`);
+      }
       // Venta cerrada solo si un vendedor contestó al comprobante del cliente
       // (venta-cerrada.ts); si no, a lo más "Cerca de compra".
       const etapa = allowedAgentStage(stages, parsed.etapa, vendorAnsweredProof(rows));
@@ -350,9 +360,16 @@ async function readConversation(organizationId: string, conversationId: string, 
       await recordAiUsage({ ...base, usage: res.usage, latencyMs, outcome: "error", error: `al guardar: ${safeErrorMessage(error)}` });
       return (done = { kind: "error", reason: `al guardar: ${safeErrorMessage(error)}`, usage: res.usage, costUsd });
     }
+    // Ya compró en Amazon o Mercado Libre (27-oct-2026): la regla «ya compró en otro lado = no_seguir» de las
+    // instrucciones, también en el código. Así, después de pedirle la reseña, no le sale un seguimiento de venta.
+    const ficha = parsed.seguimiento;
+    const comproFuera = tienda?.estado === "descartada" ? null : (parsed.tienda ?? tienda?.tienda ?? null);
+    if (ficha && comproFuera && ficha.caso !== "no_seguir") {
+      parsed.ignored.push(`seguimiento ${ficha.caso}: ya compró en ${comproFuera}`);
+      Object.assign(ficha, { caso: "no_seguir", valeLaPena: false, motivo: `Ya compró la compuerta en ${TIENDA_NOMBRE[comproFuera]}.`, borrador: null, fechaPedida: null, horaPedida: null, casoDeFondo: null, plantilla2: null, plantilla3: null });
+    }
     // Borrador del seguimiento: una sola pregunta, nunca una ya hecha ni el precio ya dado. Si
     // falla, se rehace una vez; si vuelve a fallar, se queda sin borrador (no sale con texto).
-    const ficha = parsed.seguimiento;
     if (ficha?.borrador && ficha.caso !== "no_seguir") {
       const companyTexts = rows.filter((m) => m.direction === "out").map((m) => messageText(m));
       const problems = borradorProblems({ borrador: ficha.borrador, companyTexts });

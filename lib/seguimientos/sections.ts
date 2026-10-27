@@ -1,7 +1,11 @@
 // Subpestañas de la pestaña «Seguimientos» del menú (7-oct-2026, docs/opiniones.md).
 // Es otra cosa que Agente IA › Seguimientos (los mensajes que escribe el Agente IA
 // cuando un chat se queda parado): aquí va lo que sigue después de la compra.
-export const SEGUIMIENTOS_SECTIONS = [{ id: "opinion", label: "Opinión" }] as const;
+// «Amazon y Mercado Libre» (27-oct-2026): reseñas de quien compró en esas tiendas.
+export const SEGUIMIENTOS_SECTIONS = [
+  { id: "opinion", label: "Opinión" },
+  { id: "tiendas", label: "Amazon y Mercado Libre" },
+] as const;
 
 export type SeguimientosSection = (typeof SEGUIMIENTOS_SECTIONS)[number]["id"];
 

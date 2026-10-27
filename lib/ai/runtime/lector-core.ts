@@ -12,6 +12,8 @@
 // - pago total = lo que el cliente ya pagó (anticipo + resto, o el pago completo);
 // - la etapa solo avanza, y la que puso un vendedor a mano se respeta: solo se avanza
 //   por lo que pase en el chat DESPUÉS de ese cambio.
+// - compró en Amazon o Mercado Libre (27-oct-2026, docs/opiniones.md): solo si el cliente YA la
+//   compró ahí y él nombra esa tienda en el chat; va a Seguimientos › Amazon y Mercado Libre.
 // Seguimientos (2-oct-2026, docs/seguimientos.md): cuando el ÚLTIMO mensaje del chat es de la
 // empresa, la misma lectura devuelve además la FICHA de seguimiento (`seguimiento`): qué quedó
 // pendiente, el caso de la tabla y el borrador. Sin llamada extra al modelo.
@@ -25,6 +27,7 @@ import { clip, messageText, neutralizeCrmHeader, type ThreadMessage } from "./tr
 import { ANCHO_EN_CM, parseDetalle, type DetalleIa } from "./tools";
 import { fichaSchema, parseFicha, type FollowUpFicha } from "@/lib/followups/ficha";
 import { caseOn, EDITABLE_CASES, FACTORY_TABLE, slotOf, type EditableCase, type FollowUpTable } from "@/lib/followups/tabla";
+import { esTienda, TIENDAS, tiendasNombradas, type Tienda } from "@/lib/resenas-tienda/tiendas";
 
 // Siempre Luna (decisión del dueño): lee y llena, no vende.
 export const LECTOR_MODEL_ID = "gpt-5.6-luna";
@@ -123,6 +126,7 @@ CAMPOS
 - monto_cotizacion: total en pesos de lo que el CLIENTE eligió comprar al final, con los precios que la empresa le dio en el chat. No es lo primero que se le cotizó: si se le cotizaron 2 compuertas y eligió 1, es el total de 1 con el precio que ya se le dio. Si cambió lo que pide y el precio de lo nuevo nunca se dijo en el chat, NO lo calcules: no mandes monto.
 - pago_total: cuánto ha PAGADO el cliente en total (anticipo + resto, o el pago completo), según los comprobantes que mandó o los pagos que la empresa confirmó en el chat. Sin pagos, no lo mandes.
 - porcentaje_convencimiento: qué tan convencido está de comprar según cómo va la conversación, de 0 a 100 en pasos de 10.
+- compro_en: amazon | mercado_libre, solo si el cliente YA compró o pidió la compuerta en esa tienda: lo dice él ("ya la pedí por Amazon", "la compré en Mercado Libre") o la empresa confirma en el chat su pedido de esa tienda. NO si solo pregunta por esas tiendas, pide el enlace o dice que la va a comprar ahí.
 - etapa: la clave de la etapa del Embudo que corresponde según las reglas de abajo; mándala solo si es MÁS ADELANTE que la de la ficha. Las reglas están escritas para el Agente IA ("cuando confirmas…"); aquí cuentan igual si lo hizo un vendedor en el chat.${ventaCerradaLine(stages)} Solo se avanza: si ya está en esa etapa o más adelante, no la mandes. Si en el chat aparece la marca [CRM: un vendedor movió al contacto a …], respeta esa decisión: solo puedes llevarlo más adelante por lo que pasó DESPUÉS de esa marca.
 
 ${stagesInstructions(stages)}`;
@@ -239,6 +243,7 @@ export function lectorSchemaFor(stageKeys: readonly string[], opts: { followUp?:
     monto_cotizacion: z.number().nullable().optional().describe(`Total en pesos de lo que el cliente eligió al final${sin}`),
     pago_total: z.number().nullable().optional().describe(`Lo que el cliente ya pagó en total, en pesos${sin}`),
     porcentaje_convencimiento: z.number().nullable().optional().describe("0 a 100, de 10 en 10"),
+    compro_en: z.enum(TIENDAS).nullable().optional().describe(`Tienda en línea donde YA compró la compuerta${sin}`),
     etapa: z.enum(keys as [string, ...string[]]).nullable().optional().describe("Clave de la etapa a la que AVANZA (null si se queda donde está)"),
   });
   return opts.followUp ? base.extend({ seguimiento: fichaSchema() }) : base;
@@ -298,17 +303,22 @@ export type LectorEvidence = {
   allAmounts: number[];
   /** El modelo vio una imagen o PDF del cliente (un comprobante trae el monto en la imagen). */
   sawClientMedia: boolean;
+  /** Tiendas en línea que nombró el CLIENTE en el chat: respaldan «compró en» (la empresa las nombra siempre). */
+  clientStores: Tienda[];
 };
 
 export function evidenceFrom(rows: readonly LectorMessage[], sawClientMedia: boolean): LectorEvidence {
   const companyAmounts: number[] = [];
   const allAmounts: number[] = [];
+  const clientStores = new Set<Tienda>();
   for (const m of rows) {
-    const found = amountsIn(messageText(m));
+    const text = messageText(m);
+    const found = amountsIn(text);
     allAmounts.push(...found);
     if (m.direction === "out") companyAmounts.push(...found);
+    else for (const t of tiendasNombradas(text)) clientStores.add(t);
   }
-  return { companyAmounts, allAmounts, sawClientMedia };
+  return { companyAmounts, allAmounts, sawClientMedia, clientStores: [...clientStores] };
 }
 
 // ── Lo que devolvió el modelo ────────────────────────────────────────────────
@@ -317,6 +327,8 @@ export type LectorResult = {
   monto: number | null;
   pago: number | null;
   etapa: string | null;
+  /** Tienda en línea donde el cliente dijo que compró (Seguimientos › Amazon y Mercado Libre). */
+  tienda: Tienda | null;
   /** Ficha de seguimiento (solo si se pidió: el último mensaje es de la empresa). */
   seguimiento: FollowUpFicha | null;
   /** Lo que se descartó y por qué (solo log). */
@@ -337,7 +349,7 @@ export function parseLectorCalls(
   // Con la ficha de seguimiento: zona del cliente y "ahora" para validar la fecha pedida.
   followUp?: { zone: string; now: Date },
 ): LectorResult {
-  const out: LectorResult = { detalle: null, monto: null, pago: null, etapa: null, seguimiento: null, ignored: [] };
+  const out: LectorResult = { detalle: null, monto: null, pago: null, etapa: null, tienda: null, seguimiento: null, ignored: [] };
   for (const c of calls) {
     if (c.toolName !== LECTOR_TOOL) {
       out.ignored.push(`${c.toolName}: herramienta desconocida`);
@@ -362,6 +374,12 @@ export function parseLectorCalls(
     if (raw.etapa != null) {
       if (typeof raw.etapa === "string" && stageKeys.includes(raw.etapa)) out.etapa = raw.etapa;
       else out.ignored.push(`etapa: ${String(raw.etapa)} no existe`);
+    }
+    // Como los montos: la tienda tiene que salir de lo que escribió el cliente, no solo del modelo.
+    if (raw.compro_en != null) {
+      if (!esTienda(raw.compro_en)) out.ignored.push(`compro_en: ${String(raw.compro_en)} no es una tienda`);
+      else if (!evidence.clientStores.includes(raw.compro_en)) out.ignored.push(`compro_en: el cliente nunca nombra ${raw.compro_en} en el chat`);
+      else out.tienda = raw.compro_en;
     }
     if (followUp && raw.seguimiento != null) out.seguimiento = parseFicha(raw.seguimiento, followUp, out.ignored);
   }

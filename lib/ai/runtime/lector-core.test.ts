@@ -51,6 +51,30 @@ describe("lector: anchos de las entradas", () => {
   });
 });
 
+describe("lector: compró en Amazon o Mercado Libre (27-oct-2026)", () => {
+  const compro = [
+    m("out", "Puede comprarla por aquí, en la página, en Amazon o en Mercado Libre", "2026-10-16T15:00:00Z", "ai_agent"),
+    m("in", "Ya la encargué en Amazon, gracias", "2026-10-16T15:30:00Z"),
+  ];
+
+  it("lo pide con las tiendas de siempre y lo describe en las instrucciones", () => {
+    expect(lectorSchemaFor(KEYS).shape.compro_en.description).toContain("YA compró");
+    expect(buildLectorSystem(defaultStages())).toContain("compro_en: amazon | mercado_libre");
+  });
+
+  it("vale si el CLIENTE nombra esa tienda en el chat", () => {
+    expect(evidenceFrom(compro, false).clientStores).toEqual(["amazon"]);
+    expect(parseLectorCalls(call({ compro_en: "amazon" }), KEYS, evidenceFrom(compro, false))).toMatchObject({ tienda: "amazon", ignored: [] });
+  });
+
+  it("la empresa siempre nombra las dos tiendas: eso no cuenta; tampoco una tienda que no existe", () => {
+    const r = parseLectorCalls(call({ compro_en: "mercado_libre" }), KEYS, evidenceFrom(compro, false));
+    expect(r.tienda).toBeNull();
+    expect(r.ignored).toEqual(["compro_en: el cliente nunca nombra mercado_libre en el chat"]);
+    expect(parseLectorCalls(call({ compro_en: "walmart" }), KEYS, evidenceFrom(compro, false)).ignored).toEqual(["compro_en: walmart no es una tienda"]);
+  });
+});
+
 describe("lector: lo que devuelve el modelo", () => {
   const rows = [
     m("in", "¿Cuánto cuestan 2 de 95 cm?", "2026-09-28T16:00:00Z"),
@@ -83,7 +107,7 @@ describe("lector: lo que devuelve el modelo", () => {
 
   it("null = sin dato: no guarda ni descarta nada (Luna manda todos los campos)", () => {
     const r = parseLectorCalls(call({ tiene_inundaciones: null, nivel_agua_cm: null, monto_cotizacion: null, pago_total: null, etapa: null, comentario: null, porcentaje_convencimiento: 40 }), KEYS, evidenceFrom(rows, false));
-    expect(r).toEqual({ detalle: { porcentajeConvencimiento: 40 }, monto: null, pago: null, etapa: null, seguimiento: null, ignored: [] });
+    expect(r).toEqual({ detalle: { porcentajeConvencimiento: 40 }, monto: null, pago: null, etapa: null, tienda: null, seguimiento: null, ignored: [] });
   });
 
   it("etapa que no existe, montos inválidos y herramientas desconocidas se descartan sin tirar lo demás", () => {

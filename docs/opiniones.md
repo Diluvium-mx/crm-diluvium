@@ -1,6 +1,7 @@
 # Opiniones después de la compra
 
-> Diseño y estado de la pestaña **Seguimientos** del menú (subpestaña **Opinión**) y del formulario público
+> Diseño y estado de la pestaña **Seguimientos** del menú (subpestañas **Opinión** y, desde el 27-oct-2026, **Amazon y
+> Mercado Libre**, § 7) y del formulario público
 > `/opinion/<token>`. Decisiones del dueño del 7-oct-2026. Lo que se ve en pantalla está en `docs/mapa-crm.md` §3.11.
 > No confundir con Agente IA › Seguimientos (`docs/seguimientos.md`): eso es para chats parados **antes** de comprar.
 
@@ -102,3 +103,38 @@ en orden de dinero:
 - El permiso para publicar no enlaza todavía a un aviso de privacidad (falta saber su dirección).
 - La dirección pública de Railway se ve rara en WhatsApp; el subdominio de la página web lo resuelve (un registro
   CNAME hacia Railway, sin servicio nuevo).
+
+## 7. Amazon y Mercado Libre (27-oct-2026)
+
+Pedido del dueño: hay clientes que, al darles seguimiento, contestan que **ya compraron** la compuerta en Amazon o en
+Mercado Libre. Antes solo quedaban en «No seguir» y nadie los volvía a ver. Ahora se les pide una reseña en esa tienda,
+con foto o video, **con el menor gasto de IA posible**. OK del dueño a los puntos 1–3 el 27-oct-2026.
+
+1. **El lector anota dónde compró, sin llamada extra.** La lectura en segundo plano que llena el Detalle
+   (`docs/agente-ia/2026-09-28-segundo-plano-etapa-y-detalle.md`) ya leía cada chat y ya reconocía «ya compró en otro
+   lado». Se le agregó un campo, `compro_en` (amazon | mercado_libre), solo si el cliente **ya** compró o pidió ahí (no si
+   pregunta por esas tiendas, pide el enlace o dice que la va a comprar). **Candado en el código**, como con los montos:
+   solo vale si un mensaje del **cliente** nombra esa tienda (la empresa las nombra siempre al dar las opciones de
+   compra). No toca el Goal ni las FAQs. La ficha guardada que lee el lector dice «Compró en otra tienda: …».
+2. **Subpestaña «Amazon y Mercado Libre»** en Seguimientos (mapa 3.11 › 22–32): quién, tienda, su frase, estado
+   (por pedir → pedida → la dejó / no quiso). «No compró ahí» lo descarta y el lector ya no lo vuelve a anotar.
+3. **«Pedir reseña» con texto fijo, sin IA** (`lib/resenas-tienda/mensaje.ts`, texto aprobado): saludo de la hora del
+   cliente, gracias por comprar en esa tienda, su opinión «cuando ya la tenga instalada» con foto o video, el enlace de la
+   tienda (Seguimientos › Enlaces de las tiendas; vacío = explica dónde se deja) y que mande la foto por WhatsApp también.
+   Sale como mensaje del vendedor (pausa al Agente IA en ese chat) y **solo con texto libre**: WhatsApp dentro de 24 h,
+   Instagram hasta 7 días. Se ve antes de mandarlo. Con tienda anotada, el lector nunca le arma un seguimiento de venta
+   (`no_seguir` forzado en el código; ya era la regla de sus instrucciones).
+
+**Reglas de las tiendas:** nada a cambio (ni descuento, ni regalo, ni el código de recomendación), sin pedir
+«5 estrellas» y a todos por igual, no solo a los contentos. El CRM no puede saber si la dejó: lo marca el vendedor.
+
+**Modelo:** tabla `resenas_tienda` (una por contacto; tienda, frase, origen lector|manual, estado, pedida_at) y
+`opiniones_config.amazon_resena_url` / `mercado_libre_resena_url` (migración 0074).
+
+**Casos anteriores** (lectura de producción del 27-oct-2026 con OK del dueño, sin IA: mensajes del cliente que nombran
+la tienda y motivos de «No seguir»): 3 dijeron que ya la pidieron en Amazon y 2 en Mercado Libre (uno de ellos solo dijo
+que la iba a encargar). Los nombres están fuera del repo (`~/Documents/Diluvium CRM/reportes/resenas-tiendas/`). Entran
+a la lista solo con OK aparte de escritura en producción.
+
+**Después (sin OK todavía):** una plantilla de Meta para pedirla con la ventana cerrada (a ~10 días, a quien no la haya
+dejado). Mostrar la lista final y pedir OK antes de mandarla a revisión.
