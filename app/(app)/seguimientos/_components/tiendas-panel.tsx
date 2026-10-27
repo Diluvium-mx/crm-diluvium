@@ -5,14 +5,15 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { guardarEnlacesResena, marcarResena, pedirResena } from "@/lib/actions/resenas-tienda";
+import { guardarEnlacesResena, marcarResena, pedirResena, yaLaPediEnAmazon } from "@/lib/actions/resenas-tienda";
 import type { EnlacesTiendas } from "@/lib/resenas-tienda/queries";
 import type { ResenaVista } from "@/lib/resenas-tienda/vista";
 import { TONOS } from "./opinion-panel";
 
 // Seguimientos › Amazon y Mercado Libre (27-oct-2026, docs/opiniones.md): los clientes que
-// dijeron en el chat que compraron en una de esas tiendas (los anota el lector) y el botón que
-// les pide la reseña con un texto fijo, sin IA.
+// dijeron en el chat que compraron en una de esas tiendas (los anota el lector). A los de Mercado
+// Libre se les pide la reseña con un texto fijo, sin IA; los de Amazon se piden en Seller Central
+// (Amazon no deja escribirles por fuera) y aquí solo se anotan.
 export function TiendasPanel({
   resenas,
   enlaces,
@@ -47,7 +48,7 @@ export function TiendasPanel({
         </p>
         {puedeEditar && (
           <Button variant="outline" size="sm" aria-expanded={editandoEnlaces} onClick={() => setEditandoEnlaces((v) => !v)}>
-            Enlaces de las tiendas
+            Enlace de Mercado Libre
           </Button>
         )}
       </div>
@@ -84,6 +85,7 @@ export function TiendasPanel({
               viendo={viendo === r.id}
               onVer={() => setViendo(viendo === r.id ? null : r.id)}
               onPedir={() => correr(() => pedirResena({ id: r.id }))}
+              onPedidaEnAmazon={() => correr(() => yaLaPediEnAmazon({ id: r.id }))}
               onMarcar={(estado) => correr(() => marcarResena({ id: r.id, estado }))}
             />
           ))}
@@ -100,6 +102,7 @@ function Fila({
   viendo,
   onVer,
   onPedir,
+  onPedidaEnAmazon,
   onMarcar,
 }: {
   r: ResenaVista;
@@ -108,6 +111,7 @@ function Fila({
   viendo: boolean;
   onVer: () => void;
   onPedir: () => void;
+  onPedidaEnAmazon: () => void;
   onMarcar: (estado: "la_dejo" | "no_quiso" | "descartada") => void;
 }) {
   return (
@@ -127,9 +131,7 @@ function Fila({
       {viendo && (
         <div className="flex flex-col gap-2 rounded-lg border border-brand-navy/30 bg-brand-navy/5 p-3 text-sm">
           <p className="whitespace-pre-line">{r.mensaje}</p>
-          <p className="text-xs text-foreground/60">
-            Se le pide a todos por igual y sin ofrecer nada a cambio: Amazon y Mercado Libre castigan las reseñas pedidas así.
-          </p>
+          <p className="text-xs text-foreground/60">Se le pide a todos por igual y sin ofrecer nada a cambio.</p>
           <div className="flex gap-2">
             <Button
               size="sm"
@@ -152,7 +154,14 @@ function Fila({
         </Link>
         {puedeEditar && r.estado === "por_pedir" && (
           <>
-            {r.bloqueo ? (
+            {r.enAmazon ? (
+              <>
+                <span className="text-xs text-foreground/60">· {r.bloqueo}</span>
+                <Button variant="outline" size="xs" disabled={ocupado} onClick={onPedidaEnAmazon}>
+                  Ya la pedí en Amazon
+                </Button>
+              </>
+            ) : r.bloqueo ? (
               <span className="text-xs text-foreground/60">· {r.bloqueo}</span>
             ) : (
               !viendo && (
@@ -195,7 +204,6 @@ function EnlacesForm({
   onListo: () => void;
   onCancelar: () => void;
 }) {
-  const [amazon, setAmazon] = useState(actuales.amazon ?? "");
   const [mercadoLibre, setMercadoLibre] = useState(actuales.mercado_libre ?? "");
   const [error, setError] = useState<string | null>(null);
   const [guardando, startTransition] = useTransition();
@@ -204,7 +212,8 @@ function EnlacesForm({
     e.preventDefault();
     setError(null);
     startTransition(async () => {
-      const r = await guardarEnlacesResena({ amazon, mercadoLibre });
+      // El de Amazon ya no va en ningún mensaje (se pide en Seller Central): se guarda como estaba.
+      const r = await guardarEnlacesResena({ amazon: actuales.amazon ?? "", mercadoLibre });
       if (r.ok) onListo();
       else setError(r.message);
     });
@@ -212,18 +221,6 @@ function EnlacesForm({
 
   return (
     <form onSubmit={guardar} className="flex flex-col gap-2 rounded-lg border border-black/10 p-3 dark:border-white/10">
-      <label htmlFor="resena-amazon" className="text-sm font-medium">
-        Enlace de reseña de Amazon
-      </label>
-      <Input
-        id="resena-amazon"
-        value={amazon}
-        placeholder="https://www.amazon.com.mx/review/create-review?asin=…"
-        onChange={(e) => {
-          setAmazon(e.target.value);
-          setError(null);
-        }}
-      />
       <label htmlFor="resena-mercado-libre" className="text-sm font-medium">
         Enlace de reseña de Mercado Libre
       </label>
@@ -237,7 +234,7 @@ function EnlacesForm({
         }}
       />
       <p className="text-xs text-foreground/60">
-        Van en el mensaje que pide la reseña. Si dejas uno vacío, el mensaje explica dónde se deja dentro de la tienda.
+        Va en el mensaje que pide la reseña. Si lo dejas vacío, el mensaje explica dónde se deja dentro de Mercado Libre.
       </p>
       {error && (
         <p role="alert" className="text-sm text-destructive">
