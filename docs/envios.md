@@ -1,7 +1,7 @@
 # Guías de envío con Envia.com
 
 > Fase 1, construida el 27-oct-2026 (rama `feature/guias-envia`, migración 0075). Pantalla: Bandeja › Detalle del
-> contacto › **Envío** (mapa 3.2.3 › 36–46). Análisis y diseño previos (fuera del repo):
+> contacto › **Envío** (mapa 3.2.3 › 37–47). Análisis y diseño previos (fuera del repo):
 > `~/Documents/Diluvium CRM/reportes/guias-envia/`.
 
 ## Qué es
