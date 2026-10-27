@@ -386,6 +386,9 @@ export function enviaClient(config: EnviaConfig, deps: { fetchImpl?: typeof fetc
       return parseRates(await call(`${config.shipUrl}/ship/rate/`, { method: "POST", body: shipmentBody(request), auth: true }));
     },
     async generate(request, settings) {
+      // Segunda barrera del candado del saldo (la primera está en lib/envios/service.ts): nunca se pide una guía con
+      // la cuenta real sin ENVIA_GENERAR=si.
+      if (!config.canGenerate) throw new EnviaApiError("Generar guías está apagado en este servidor (no se gasta saldo).", null);
       return parseGenerated(await call(`${config.shipUrl}/ship/generate/`, { method: "POST", body: shipmentBody(request, settings), auth: true }));
     },
     async cancel(carrier, trackingNumber) {

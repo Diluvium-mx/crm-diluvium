@@ -4,6 +4,9 @@
 //   cualquier token puede gastar saldo).
 // - ENVIA_ENV: "sandbox" (staging: cuenta de pruebas aparte, guías falsas sin costo) o "production".
 //   Un token de pruebas no sirve en producción ni al revés.
+// - ENVIA_GENERAR: candado del saldo (27-oct-2026, pedido del dueño: «no gastes ni un peso»). Con la cuenta real
+//   (production) solo se generan guías si vale «si»; sin él, el servidor solo lee y cotiza (eso no cobra). Staging
+//   usa la cuenta real sin el candado abierto; producción lo abre en el OK MAIN. La de pruebas siempre genera.
 // URLs de docs.envia.com/docs/production-checklist (revisado el 26-oct-2026). Geocodes solo existe en
 // producción y no pide token.
 export type EnviaEnv = "sandbox" | "production";
@@ -11,6 +14,8 @@ export type EnviaEnv = "sandbox" | "production";
 export type EnviaConfig = {
   env: EnviaEnv;
   token: string;
+  /** ¿Puede generar guías (gastar saldo)? Pruebas: sí; cuenta real: solo con ENVIA_GENERAR=si. */
+  canGenerate: boolean;
   shipUrl: string;
   queriesUrl: string;
   geocodesUrl: string;
@@ -40,7 +45,8 @@ export function enviaConfigFrom(env: Record<string, string | undefined>): EnviaC
   const token = env.ENVIA_API_TOKEN?.trim();
   const which = env.ENVIA_ENV?.trim();
   if (!token || (which !== "sandbox" && which !== "production")) return null;
-  return { env: which, token, ...ENVIA_URLS[which] };
+  const canGenerate = which === "sandbox" || env.ENVIA_GENERAR?.trim().toLowerCase() === "si";
+  return { env: which, token, canGenerate, ...ENVIA_URLS[which] };
 }
 
 export function requireEnviaConfig(): EnviaConfig {

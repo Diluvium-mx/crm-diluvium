@@ -5,7 +5,9 @@
 // embalaje de Envia de su talla y el valor declarado del Pago total. El CP trae estado, ciudad y colonias.
 // «Cotizar» pide precio a Paquetexpress y Estafeta (viene marcada la más barata) y «Generar guía por $X» la
 // hace con UN clic: la llave de esta ventana evita una segunda guía por doble clic. Cambiar un dato después
-// de cotizar borra la cotización (el precio podría ser otro). Sin lógica de datos: todo pasa por las acciones.
+// de cotizar borra la cotización (el precio podría ser otro). Con la cuenta real y el candado del saldo cerrado
+// (ENVIA_GENERAR, docs/envios.md) solo se cotiza: no hay botón de generar. Sin lógica de datos: todo pasa por
+// las acciones.
 import { useEffect, useRef, useState } from "react";
 import { Plus, X } from "lucide-react";
 import { buscarCodigoPostal, cotizarEnvio, generarGuia, getEnvioForm, type EnvioForm } from "@/lib/actions/envios";
@@ -109,6 +111,7 @@ export function ShipmentDialog({
 
   const saved = phase.kind === "form" ? phase.data.savedPackages : [];
   const sandbox = phase.kind === "form" && phase.data.env === "sandbox";
+  const canGenerate = phase.kind === "form" && phase.data.canGenerate;
 
   // Cualquier cambio después de cotizar borra la cotización.
   function touched() {
@@ -231,7 +234,7 @@ export function ShipmentDialog({
             Cancelar
           </button>
           {phase.kind === "form" &&
-            (selected ? (
+            (selected && canGenerate ? (
               <button
                 type="button"
                 onClick={() => void generateNow()}
@@ -265,6 +268,11 @@ export function ShipmentDialog({
         <div className="space-y-3">
           {sandbox && (
             <p className="text-xs text-muted-foreground">Cuenta de pruebas de Envia: la guía no es real y no cuesta.</p>
+          )}
+          {!canGenerate && (
+            <p className="rounded-md border border-brand-orange/40 bg-brand-orange/10 px-3 py-2 text-xs">
+              Solo cotizar: con la cuenta real de Envia este servidor no genera guías (no se gasta saldo).
+            </p>
           )}
 
           <fieldset className="grid grid-cols-1 gap-2 sm:grid-cols-2" disabled={busy === "generando"}>

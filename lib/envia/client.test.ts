@@ -41,6 +41,13 @@ describe("configuración", () => {
     expect(enviaConfigFrom({ ENVIA_ENV: "sandbox" })).toBeNull();
     expect(enviaConfigFrom({ ENVIA_API_TOKEN: "x", ENVIA_ENV: "prod" })).toBeNull();
   });
+  it("candado del saldo: la cuenta real solo genera con ENVIA_GENERAR=si; la de pruebas siempre", () => {
+    expect(CONFIG.canGenerate).toBe(true);
+    expect(enviaConfigFrom({ ENVIA_API_TOKEN: "x", ENVIA_ENV: "production" })?.canGenerate).toBe(false);
+    expect(enviaConfigFrom({ ENVIA_API_TOKEN: "x", ENVIA_ENV: "production", ENVIA_GENERAR: "no" })?.canGenerate).toBe(false);
+    expect(enviaConfigFrom({ ENVIA_API_TOKEN: "x", ENVIA_ENV: "production", ENVIA_GENERAR: " Si " })?.canGenerate).toBe(true);
+  });
+
   it("pruebas y producción usan sus propias URLs", () => {
     expect(CONFIG.shipUrl).toBe("https://api-test.envia.com");
     expect(CONFIG.queriesUrl).toBe("https://queries.test.envia.com");
@@ -151,6 +158,15 @@ describe("peticiones", () => {
     );
     const token = fakeFetch(() => ({ status: 401, body: { message: "Unauthorized" } }));
     await expect(enviaClient(CONFIG, { fetchImpl: token.impl }).listPackages()).rejects.toThrow(/rechazó el token \(401\)/);
+  });
+
+  it("con el candado cerrado, generar ni siquiera llama a Envia", async () => {
+    const f = fakeFetch(() => ({ body: { meta: "generate", data: [] } }));
+    const real = enviaConfigFrom({ ENVIA_API_TOKEN: "x", ENVIA_ENV: "production" })!;
+    await expect(enviaClient(real, { fetchImpl: f.impl }).generate({ ...REQUEST, service: "ground" }, { printFormat: "PDF", printSize: "PAPER_LETTER" })).rejects.toThrow(
+      "Generar guías está apagado",
+    );
+    expect(f.calls).toHaveLength(0);
   });
 
   it("el código postal va a geocodes sin token; uno mal escrito ni se pregunta", async () => {

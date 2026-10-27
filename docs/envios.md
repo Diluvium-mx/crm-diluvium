@@ -68,8 +68,13 @@ mismo de 3 páginas del panel (si la API la da en 1, el perfil sigue funcionando
 | Variable | Staging | Producción |
 |---|---|---|
 | `ENVIA_API_TOKEN` | Token de la **cuenta de pruebas** de Envia (shipping-test.envia.com, cuenta aparte; guías falsas sin costo) | Token de la cuenta real (Desarrolladores › Acceso de API) |
-| `ENVIA_ENV` | `sandbox` | `production` |
+| `ENVIA_ENV` | `sandbox` (o `production` con la cuenta real, ver abajo) | `production` |
+| `ENVIA_GENERAR` | sin poner (con la cuenta real: solo cotizar) | `si` (se pone en el OK MAIN) |
 
+- **Candado del saldo** (27-oct-2026, pedido del dueño: «no gastes ni un peso»): con la cuenta real (`ENVIA_ENV=production`)
+  el servidor **solo genera guías si `ENVIA_GENERAR=si`**; sin eso, lee y cotiza (no cobra) y la ventana dice «Solo
+  cotizar». Dos barreras: `createShipment` se niega antes de apuntar la fila y el cliente (`generate`) se niega sin
+  llamar a Envia. La cuenta de pruebas siempre genera (no cobra). Staging usa la cuenta real con el candado cerrado.
 - El token **no caduca y no se puede limitar** (cualquier token puede gastar saldo): solo en las variables de Railway,
   cargado con `railway variables … --stdin` desde el portapapeles; nunca en el repo ni en el chat.
 - Sin las dos variables la sección dice «Envia no está configurado» y no deja hacer guías.

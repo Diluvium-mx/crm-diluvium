@@ -186,7 +186,7 @@ describe.skipIf(!TEST_DATABASE_URL)("guías de Envia (Postgres real)", () => {
       paquetexpress: [{ carrier: "paquetexpress", service: "ground", serviceLabel: "Terrestre", price: 310, currency: "MXN", delivery: "3-5 días" }],
       estafeta: [{ carrier: "estafeta", service: "ground", serviceLabel: "Terrestre", price: 295.5, currency: "MXN", delivery: null }],
     });
-    deps = { env: "sandbox", client: envia, storage: () => bucket.storage };
+    deps = { env: "sandbox", canGenerate: true, client: envia, storage: () => bucket.storage };
   });
 
   it("cotiza las dos paqueterías, la más barata primero; una que falla no tapa a la otra", async () => {
@@ -288,6 +288,15 @@ describe.skipIf(!TEST_DATABASE_URL)("guías de Envia (Postgres real)", () => {
     expect(canceled).toMatchObject({ ok: true, shipment: { status: "cancelada" }, refundNote: expect.stringContaining("regresa el dinero") });
     expect(envia.canceled).toEqual(["LMM01WE0191229"]);
     expect(await service.cancelShipment(deps, actor, res.shipment.id)).toMatchObject({ ok: false });
+  });
+
+  it("candado del saldo: con la cuenta real sin ENVIA_GENERAR=si no se apunta ni se pide ninguna guía", async () => {
+    const res = await service.createShipment({ ...deps, env: "production", canGenerate: false }, actor, createInput());
+    expect(res).toEqual({ ok: false, message: service.GENERATE_LOCKED });
+    expect(envia.generated).toBe(0);
+    expect(await store.listContactShipments(ORG_A, MARIA)).toHaveLength(0);
+    // Cotizar sí (no cobra).
+    expect((await service.quoteShipment({ ...deps, env: "production", canGenerate: false }, actor, createInput())).options).toHaveLength(2);
   });
 
   it("un contacto de otra organización no recibe guías", async () => {
