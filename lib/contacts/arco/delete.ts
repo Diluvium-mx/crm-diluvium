@@ -13,13 +13,15 @@
 //       (por wamid, id interno de Zernio o id de la conversación en Zernio, siempre en su organización);
 //     - las filas viejas del Historial que nombraban su chat (pausas) se quedan sin el nombre;
 //     - se borra el contacto: el cascade se lleva chats, mensajes, entradas, comentarios,
-//       seguimientos, programados, corridas de workflows, clics de anuncios, borradores y avisos;
+//       seguimientos, programados, corridas de workflows, clics de anuncios, borradores, avisos y guías de
+//       envío (la carpeta de cada guía en el bucket se borra con los demás archivos);
 //     - queda la fila «contacto_borrado» del Historial (quién y cuándo; solo los últimos 4 dígitos);
 //     - aviso en vivo `contact.deleted` (sale al confirmar).
 //  4. Ya confirmado, se borran los archivos del bucket. Lo que falle se devuelve (nunca se traga).
 import { and, eq, inArray, or, sql } from "drizzle-orm";
 import { db } from "@/lib/db";
-import { aiUsage, changeHistory, comprobantes, contacts, conversations, messages } from "@/lib/db/schema";
+import { aiUsage, changeHistory, comprobantes, contacts, conversations, messages, shipments } from "@/lib/db/schema";
+import { shipmentFolder } from "@/lib/envios/store";
 import { logChanges } from "@/lib/historial/log";
 import { logError } from "@/lib/log/safe-error";
 import type { ObjectStorage } from "@/lib/storage/s3";
@@ -100,6 +102,12 @@ export async function deleteContactAndData(
       for (const key of ownOriginalKeys(organizationId, m.attachments)) originals.add(key);
       if (hasUnstoredAttachment(m.attachments)) files.add(messageFolderPrefix(organizationId, m.id));
     }
+    // Los PDF de sus guías de envío (27-oct-2026): la fila se va con el cascade y su carpeta con lo demás.
+    const ownShipments = await tx
+      .select({ id: shipments.id })
+      .from(shipments)
+      .where(and(eq(shipments.organizationId, organizationId), eq(shipments.contactId, contactId)));
+    for (const s of ownShipments) files.add(shipmentFolder(organizationId, s.id));
     const counts: DeletedCounts = {
       chats: convIds.length,
       mensajes: rows.filter((m) => m.type !== "system_note").length,

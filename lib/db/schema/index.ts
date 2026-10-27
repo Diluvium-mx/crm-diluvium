@@ -24,3 +24,4 @@ export * from "./followups";
 export * from "./opiniones";
 export * from "./stage-history";
 export * from "./spelling";
+export * from "./shipments";

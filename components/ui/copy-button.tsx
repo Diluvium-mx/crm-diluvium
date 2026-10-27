@@ -10,7 +10,8 @@ import { Check, Copy } from "lucide-react";
 
 const FEEDBACK_MS = 2_000;
 
-async function writeClipboard(text: string): Promise<boolean> {
+/** Copia al portapapeles con el método moderno y, si no deja, con el viejo (también lo usa «Poner rastreo»). */
+export async function writeClipboard(text: string): Promise<boolean> {
   try {
     if (navigator.clipboard?.writeText) {
       await navigator.clipboard.writeText(text);

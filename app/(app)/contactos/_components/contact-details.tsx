@@ -6,7 +6,8 @@
 // entradas?, ancho y tamaño por entrada, monto y pago, % de convencimiento, [interruptor
 // del bot → Fase B] y, al final compactos, el correo (sin Comentarios desde el 6-oct-2026; sin
 // etiquetas desde el 7-oct-2026: siguen en la base y vuelven con las difusiones) y «Datos personales»
-// (exportar o borrar el contacto, derechos ARCO).
+// (exportar o borrar el contacto, derechos ARCO). Antes de «Datos personales», la sección «Envío» (guías de
+// Envia, 27-oct-2026).
 // Guardado automático al salir de cada campo (sin botón Guardar), con aviso
 // sutil. Etapa y temperatura las maneja el padre (cada vista las sincroniza a su
 // modo: el tablero con su estado optimista, la Bandeja con el suyo).
@@ -41,6 +42,7 @@ import { IaMark } from "./ia-mark";
 import { TemperatureDestacadoMenu } from "./temperature-destacado-menu";
 import { LectorStatusLine } from "./lector-status";
 import { ContactArcoSection } from "./contact-arco-section";
+import { ContactEnvioSection } from "./contact-envio-section";
 import { EditContactDialog } from "./edit-contact-dialog";
 
 type Details = Awaited<ReturnType<typeof getContactDetails>>;
@@ -824,6 +826,9 @@ export function ContactDetails({
                 <span className="text-foreground">{details.email || "—"}</span>
               </p>
             </div>
+
+            {/* Guías de envío con Envia (27-oct-2026, docs/envios.md). */}
+            <ContactEnvioSection key={contactId} contactId={contactId} conversationId={conversationId ?? null} />
 
             {/* Derechos ARCO (7-oct-2026): exportar o borrar el contacto con todo lo suyo. */}
             <ContactArcoSection contactId={contactId} contactName={shownName} onDeleted={onDeleted} />
