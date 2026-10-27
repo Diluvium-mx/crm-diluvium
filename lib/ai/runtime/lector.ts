@@ -45,6 +45,7 @@ import { MAX_PDF_BYTES } from "./run";
 import { fitHistory, messageText } from "./transcript";
 import { effectivePrice, recordAiUsage } from "./usage";
 import { allowedAgentStage, vendorAnsweredProof, ventaCerradaHeld } from "./venta-cerrada";
+import { hasClientPhoto, instagramAllowedStage, instagramHeld, instagramStageLine } from "./instagram-entrada";
 import { applyFollowUpReading } from "@/lib/followups/store";
 import { zoneForPhone } from "@/lib/followups/timezone";
 import { FOLLOW_UP_TEMPLATES } from "@/lib/followups/cases";
@@ -258,6 +259,8 @@ async function readConversation(organizationId: string, conversationId: string, 
   const rows: LectorMessage[] = history.map((m) => ({ ...m, at: messageAt(m) }));
   const stages = await listFunnelStages(organizationId);
   const vendorStage = contact.stageChangedBy === "vendedor" ? { at: contact.stageChangedAt, stageName: stageLabel(stages, contact.stage) } : null;
+  // Instagram (27-oct-2026, regla del dueño): sin foto del cliente el contacto se queda en la entrada.
+  const igChat = { instagram: snap.channel.type === "instagram", clientPhoto: hasClientPhoto(rows) };
 
   // Ficha guardada: etapa, monto y pago (con quién los puso), la tienda donde compró + el Detalle.
   const cf = (contact.customFields as Record<string, unknown> | null) ?? {};
@@ -269,6 +272,7 @@ async function readConversation(organizationId: string, conversationId: string, 
     `Monto de cotización: ${contact.monto != null ? `${pesos(Number(contact.monto))}${cf.cotizacion_por === "vendedor" ? " (lo corrigió un vendedor)" : ""}` : "ninguno"}.`,
     `Pago total: ${contact.pago != null ? `${pesos(Number(contact.pago))}${por[DETALLE_KEY.pagoTotal] === "vendedor" ? " (lo corrigió un vendedor)" : ""}` : "ninguno"}.`,
     `Compró en otra tienda: ${!tienda ? "ninguna" : tienda.estado === "descartada" ? "no (lo corrigió un vendedor)" : TIENDA_NOMBRE[tienda.tienda]}.`,
+    ...(igChat.instagram ? [instagramStageLine(stages)] : []),
     await detalleContextFor(organizationId, conv.contactId),
   ].join("\n");
 
@@ -329,8 +333,10 @@ async function readConversation(organizationId: string, conversationId: string, 
       }
       // Venta cerrada solo si un vendedor contestó al comprobante del cliente
       // (venta-cerrada.ts); si no, a lo más "Cerca de compra".
-      const etapa = allowedAgentStage(stages, parsed.etapa, vendorAnsweredProof(rows));
-      if (parsed.etapa && etapa !== parsed.etapa) parsed.ignored.push(ventaCerradaHeld(parsed.etapa));
+      const permitida = allowedAgentStage(stages, parsed.etapa, vendorAnsweredProof(rows));
+      if (parsed.etapa && permitida !== parsed.etapa) parsed.ignored.push(ventaCerradaHeld(parsed.etapa));
+      const etapa = instagramAllowedStage(stages, permitida, igChat);
+      if (permitida && !etapa) parsed.ignored.push(instagramHeld(permitida));
       if (etapa) {
         // La etapa que puso un vendedor manda: sin nada en el chat DESPUÉS de su cambio,
         // el lector no tiene con qué avanzarla (lo de antes ya lo vio el vendedor).

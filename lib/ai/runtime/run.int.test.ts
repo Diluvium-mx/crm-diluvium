@@ -2319,6 +2319,32 @@ describe.skipIf(!TEST_DATABASE_URL)("runtime del Agente IA (Postgres real)", () 
     expect(await contact()).toMatchObject({ stage: "compra", stageChangedBy: "vendedor" });
   });
 
+  it("Instagram (27-oct-2026): sin foto del cliente se queda en Inbox aunque el modelo pida Prospecto; con foto avanza; el contexto lleva la regla", async () => {
+    await db.update(s.channels).set({ type: "instagram" }).where(eq(s.channels.id, "ch_rt"));
+    await msg({ direction: "in", body: "Quiero 1, mi puerta mide 80 cm", at: ago(20_000) });
+    const a = makeDeps({ brain: ["Con gusto."], toolCalls: [{ toolName: "mover_etapa", input: { etapa: "prospecto" } }] });
+    expect((await run.runAgent(JOB, a.deps)).kind).toBe("sent");
+    expect((await contact()).stage).toBe("inbox");
+    expect(JSON.stringify(a.calls.find((c) => c.kind === "cerebro")!.input.messages)).toContain("Chat de Instagram: el contacto se queda en «Inbox»");
+
+    await msg({ direction: "in", body: "", at: new Date(), attachments: [{ type: "image", url: "/api/media/puerta", storageKey: "org/puerta.jpg" }] });
+    expect((await run.runAgent(JOB, makeDeps({ brain: ["Gracias por la foto."], toolCalls: [{ toolName: "mover_etapa", input: { etapa: "interesado" } }] }).deps)).kind).toBe("sent");
+    expect(await contact()).toMatchObject({ stage: "interesado", stageChangedBy: "agente" });
+  });
+
+  it("Instagram sin foto: los datos bancarios sí lo mueven a Cerca de compra; WhatsApp no lleva la línea de Instagram", async () => {
+    await msg({ direction: "in", body: "pásame la cuenta para depositar", at: ago(20_000) });
+    const w = makeDeps({ brain: ["Claro."], toolCalls: [{ toolName: "mover_etapa", input: { etapa: "prospecto" } }] });
+    expect((await run.runAgent(JOB, w.deps)).kind).toBe("sent");
+    expect((await contact()).stage).toBe("prospecto");
+    expect(JSON.stringify(w.calls.find((c) => c.kind === "cerebro")!.input.messages)).not.toContain("Chat de Instagram");
+
+    await db.update(s.channels).set({ type: "instagram" }).where(eq(s.channels.id, "ch_rt"));
+    await msg({ direction: "in", body: "ya, ¿a qué cuenta?", at: new Date() });
+    expect((await run.runAgent(JOB, makeDeps({ brain: ["Le paso los datos."], toolCalls: [{ toolName: "mover_etapa", input: { etapa: "cerca_compra" } }] }).deps)).kind).toBe("sent");
+    expect((await contact()).stage).toBe("cerca_compra");
+  });
+
   it("Columnas del Embudo: el bot ve las etapas VIGENTES con su regla (sin tocar el Goal), mueve a una etapa nueva y una borrada ya no existe para él", async () => {
     const fs = await import("@/lib/contacts/funnel-stages");
     const interesado = (await fs.listFunnelStages(ORG)).find((x) => x.key === "interesado")!;
