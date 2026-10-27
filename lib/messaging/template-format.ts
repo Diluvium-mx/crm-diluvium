@@ -175,6 +175,9 @@ export function templateBodyProblem(bodyText: string, examples: readonly string[
  * reemplaza TODOS los componentes al editar, así que se conservan tal cual los
  * demás (encabezado, pie, botones) y solo se cambian el texto y el ejemplo del
  * BODY. Si no había BODY, se agrega. No muta la entrada.
+ * El `type` de cada componente sale en minúsculas ("header", "body"…): Meta los devuelve en mayúsculas, pero el
+ * PATCH de Zernio solo acepta minúsculas (26-oct-2026: las 7 ediciones daniel_* → Carlos fallaron con «Invalid
+ * discriminator value. Expected 'header' | 'body' | …»; crear ya mandaba "body").
  */
 export function replaceBodyComponent(
   components: readonly unknown[],
@@ -190,11 +193,11 @@ export function replaceBodyComponent(
   let found = false;
   const out = components.map((raw) => {
     const component = raw && typeof raw === "object" ? { ...(raw as Record<string, unknown>) } : {};
-    const type = typeof component.type === "string" ? component.type.toUpperCase() : "";
-    if (type !== "BODY" || found) return component;
+    if (typeof component.type === "string") component.type = component.type.toLowerCase();
+    if (component.type !== "body" || found) return component;
     found = true;
     return body(component);
   });
-  if (!found) out.push(body({ type: "BODY" }));
+  if (!found) out.push(body({ type: "body" }));
   return out;
 }
