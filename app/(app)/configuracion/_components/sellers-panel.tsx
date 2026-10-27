@@ -4,6 +4,7 @@
 // contraseña y desactivar/reactivar. La UI esconde lo que el usuario no puede
 // hacer con las MISMAS reglas que la server action (lib/team/rules.ts); el
 // servidor las vuelve a exigir y la BD garantiza el owner activo.
+// 27-oct-2026 (pedido del dueño): Desactivar pregunta con el aviso de arriba del CRM, no con el del navegador.
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 import {
@@ -16,6 +17,7 @@ import {
 } from "@/lib/actions/team";
 import { assignableRoles, isTeamRole, ROLE_LABELS, teamActionError, type TeamRole } from "@/lib/team/rules";
 import type { TeamMember } from "@/lib/team/store";
+import { TopConfirm } from "@/components/ui/top-confirm";
 
 const inputClass =
   "w-full rounded-md border bg-background px-3 py-2 text-sm outline-none focus:border-brand-navy focus:ring-2 focus:ring-brand-navy/30";
@@ -30,6 +32,8 @@ export function SellersPanel({ members, me, myRole }: { members: TeamMember[]; m
   const [notice, setNotice] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [resettingId, setResettingId] = useState<string | null>(null);
+  // El vendedor que se va a desactivar (aviso de arriba abierto).
+  const [deactivating, setDeactivating] = useState<TeamMember | null>(null);
   const [newPassword, setNewPassword] = useState("");
   const [form, setForm] = useState({ name: "", email: "", password: "", role: "agent" as TeamRole });
 
@@ -124,11 +128,7 @@ export function SellersPanel({ members, me, myRole }: { members: TeamMember[]; m
                       <button
                         type="button"
                         disabled={busy}
-                        onClick={() => {
-                          if (window.confirm(`¿Desactivar a ${m.name}? No podrá entrar y se cerrarán sus sesiones. Sus mensajes se conservan.`)) {
-                            void act(() => deactivateSeller(m.memberId), `${m.name} quedó desactivado.`);
-                          }
-                        }}
+                        onClick={() => setDeactivating(m)}
                         className="rounded px-2 py-1 text-xs text-brand-orange hover:bg-brand-orange/10"
                       >
                         Desactivar
@@ -215,6 +215,21 @@ export function SellersPanel({ members, me, myRole }: { members: TeamMember[]; m
           </button>
         </div>
       </form>
+      {deactivating && (
+        <TopConfirm
+          title={`¿Desactivar a ${deactivating.name}?`}
+          confirmLabel="Desactivar"
+          pendingLabel="Desactivando…"
+          pending={busy}
+          onConfirm={() => {
+            const m = deactivating;
+            void act(() => deactivateSeller(m.memberId), `${m.name} quedó desactivado.`).finally(() => setDeactivating(null));
+          }}
+          onCancel={() => setDeactivating(null)}
+        >
+          No podrá entrar y se cerrarán sus sesiones. Sus mensajes se conservan y se puede reactivar después.
+        </TopConfirm>
+      )}
     </div>
   );
 }

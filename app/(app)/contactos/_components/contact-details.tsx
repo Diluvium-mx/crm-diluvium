@@ -42,6 +42,7 @@ import { TemperatureDestacadoMenu } from "./temperature-destacado-menu";
 import { LectorStatusLine } from "./lector-status";
 import { ContactArcoSection } from "./contact-arco-section";
 import { EditContactDialog } from "./edit-contact-dialog";
+import { TopConfirm } from "@/components/ui/top-confirm";
 
 type Details = Awaited<ReturnType<typeof getContactDetails>>;
 type Inundaciones = NonNullable<Details["tieneInundaciones"]>;
@@ -200,6 +201,8 @@ export function ContactDetails({
   const [nivelCm, setNivelCm] = useState("");
   const [nivelTexto, setNivelTexto] = useState("");
   const [numEntradas, setNumEntradasDraft] = useState("");
+  // Bajar las entradas borra anchos: se pregunta con el aviso de arriba del CRM (27-oct-2026; antes window.confirm).
+  const [shrinkAsk, setShrinkAsk] = useState<{ value: number | null; title: string } | null>(null);
   const [monto, setMonto] = useState("");
   const [pago, setPago] = useState("");
   // Hallazgo 4: los guardados de cada campo salen en serie y solo la respuesta
@@ -314,6 +317,12 @@ export function ContactDetails({
     setNumEntradasDraft(saved === null ? "" : String(saved));
     if (write) await syncEntradas().catch(() => undefined);
     throw outcome.error;
+  }
+
+  // Guarda el número de entradas (si baja, ya se confirmó en el aviso de arriba).
+  function applyNumEntradas(value: number | null) {
+    setDetails((d) => (d ? { ...d, numEntradas: value, iaFields: d.iaFields.filter((k) => k !== "num_entradas") } : d));
+    void run(() => syncEntradas(() => setNumEntradas(contactId, value)));
   }
 
   useEffect(() => {
@@ -694,14 +703,16 @@ export function ContactDetails({
                   const target = value ?? 0;
                   const existing = details.entradas.length;
                   if (target < existing) {
-                    const which = target === 0 ? "todas las entradas" : `las entradas ${target + 1} a ${existing}`;
-                    if (!window.confirm(`Se borrarán los anchos de ${which}. ¿Continuar?`)) {
-                      setNumEntradasDraft(details.numEntradas === null ? "" : String(details.numEntradas));
-                      return;
-                    }
+                    const title =
+                      target === 0
+                        ? "¿Borrar los anchos de todas las entradas?"
+                        : existing - target === 1
+                          ? `¿Borrar el ancho de la entrada ${existing}?`
+                          : `¿Borrar los anchos de las entradas ${target + 1} a ${existing}?`;
+                    setShrinkAsk({ value, title });
+                    return;
                   }
-                  setDetails((d) => (d ? { ...d, numEntradas: value, iaFields: d.iaFields.filter((k) => k !== "num_entradas") } : d));
-                  void run(() => syncEntradas(() => setNumEntradas(contactId, value)));
+                  applyNumEntradas(value);
                 }}
                 className={`${input} w-24`}
               />
@@ -827,6 +838,24 @@ export function ContactDetails({
 
             {/* Derechos ARCO (7-oct-2026): exportar o borrar el contacto con todo lo suyo. */}
             <ContactArcoSection contactId={contactId} contactName={shownName} onDeleted={onDeleted} />
+
+            {shrinkAsk && (
+              <TopConfirm
+                title={shrinkAsk.title}
+                confirmLabel="Sí, borrar"
+                onConfirm={() => {
+                  const { value } = shrinkAsk;
+                  setShrinkAsk(null);
+                  applyNumEntradas(value);
+                }}
+                onCancel={() => {
+                  setShrinkAsk(null);
+                  setNumEntradasDraft(details.numEntradas === null ? "" : String(details.numEntradas));
+                }}
+              >
+                Al bajar el número de entradas se borran sus anchos y su tamaño de compuerta sugerido. Cancelar deja el número como estaba.
+              </TopConfirm>
+            )}
           </>
         )}
       </div>
