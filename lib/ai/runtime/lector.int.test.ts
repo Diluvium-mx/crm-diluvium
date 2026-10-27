@@ -198,6 +198,22 @@ describe.skipIf(!TEST_DATABASE_URL)("Lector en segundo plano (Postgres real)", (
     expect((await contact()).stage).toBe("compra");
   });
 
+  it("Instagram (27-oct-2026): sin foto del cliente se queda en Inbox (descartado en ai_usage); la ficha lleva la regla; con foto avanza", async () => {
+    await db.update(s.channels).set({ type: "instagram" }).where(d.eq(s.channels.id, "ch_lector"));
+    await msg("in", "Soy de Argentina, quiero 1 para una puerta de 80 cm", ago(30 * MIN));
+    const t = deps({ etapa: "prospecto" });
+    const r = await lector.runLector(ORG, CONV, t.deps);
+    expect(r.kind === "leido" && r.ignored.join("; ")).toMatch(/etapa prospecto: chat de Instagram sin foto/);
+    expect((await contact()).stage).toBe("inbox");
+    expect(JSON.stringify(t.calls[0].messages)).toContain("Chat de Instagram: el contacto se queda en «Inbox»");
+    const [u] = await db.select().from(s.aiUsage);
+    expect(u.error).toContain("chat de Instagram sin foto");
+
+    await msg("in", "", ago(5 * MIN), "contact", [{ type: "image", url: "/api/media/puerta", storageKey: "org/puerta.jpg" }]);
+    await lector.runLector(ORG, CONV, deps({ etapa: "interesado" }).deps);
+    expect(await contact()).toMatchObject({ stage: "interesado", stageChangedBy: "agente" });
+  });
+
   it("Compra espera a un vendedor: el comprobante confirmado solo por el Agente IA avanza hasta Cerca de compra y queda descartado en ai_usage", async () => {
     await msg("in", "", ago(30 * MIN), "contact", [{ type: "image", url: "/api/media/comprobante", storageKey: "org/comprobante.jpg" }]);
     await msg("out", "Recibimos su anticipo ✅", ago(20 * MIN), "ai_agent");

@@ -26,6 +26,7 @@ import { addNotice, hasOpenHandoverRequest } from "./notices";
 import { amountsIn, isBackedAmount } from "./lector-core";
 import { buildAgentTools, type AgentTools, type AvisoMotivo, type ValidToolCall } from "./tools";
 import { allowedAgentStage, ventaCerradaHeld } from "./venta-cerrada";
+import { instagramAllowedStage, instagramHeld } from "./instagram-entrada";
 
 // Nota que NO se muestra al vendedor (Fase E, pendiente F): la media ya salió para este mensaje
 // (por la palabra clave del cliente o, desde el 9-oct-2026, por el propio Agente IA antes del
@@ -308,6 +309,9 @@ export type ActionContext = {
   vendorConfirmedPayment?: boolean;
   /** El cliente ya mandó imagen o documento en el chat (para que el Agente IA verifique el pago, C4). */
   clientSentProof?: boolean;
+  /** Chat de Instagram y si el cliente ya mandó una foto (sin foto se queda en la entrada; instagram-entrada.ts). */
+  instagram?: boolean;
+  clientSentPhoto?: boolean;
 };
 // "antes" = ANTES del texto: avisos (con registro del comprobante), cotización y
 // etapa — todo idempotente, así un reintento del job tras el texto no los pierde.
@@ -363,9 +367,12 @@ export async function executeActions(
     // compra" y el vendedor recibe el aviso de abajo para revisar el pago y confirmarlo.
     // C4 (10-oct-2026): también basta que el Agente IA verifique el comprobante en esta respuesta.
     const paymentVerified = (ctx.vendorConfirmedPayment ?? false) || (cotejarEnviado && (ctx.clientSentProof ?? false));
-    const to = allowedAgentStage(stages, plan.stage, paymentVerified);
-    const held = to !== plan.stage;
+    const allowed = allowedAgentStage(stages, plan.stage, paymentVerified);
+    const held = allowed !== plan.stage;
     if (held) console.info(`[agente] ${ctx.conversationId}: ${ventaCerradaHeld(plan.stage)}`);
+    // Instagram (27-oct-2026, regla del dueño): sin foto del cliente se queda en la entrada.
+    const to = instagramAllowedStage(stages, allowed, { instagram: ctx.instagram ?? false, clientPhoto: ctx.clientSentPhoto ?? false });
+    if (allowed && !to) console.info(`[agente] ${ctx.conversationId}: ${instagramHeld(allowed)}`);
     const moved = to
       ? await moveStageForward({
           organizationId: ctx.organizationId,

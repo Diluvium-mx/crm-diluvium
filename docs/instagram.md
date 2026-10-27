@@ -11,6 +11,7 @@
 | GHL | Desconectado de Instagram y Facebook el 2-oct-2026 (verificado en Integraciones de la subcuenta). Con dos apps conectadas Meta manda los mensajes a las dos y las dos pueden contestar. |
 | Contacto | El cliente de Instagram es un **contacto aparte**: se identifica por su id de Instagram (IGSID, `contacts.instagram_id`, único por organización) y se muestra su @usuario (`contacts.instagram_username`). Sin teléfono. **No hay botón para unirlo** con uno de WhatsApp (son clientes distintos). |
 | Agente IA | Contesta en Instagram **desde que el canal se conecta** (interruptor del canal en Agente IA › Canales). |
+| Etapas | **Se queda en Inbox hasta la foto y la medida** (27-oct-2026, regla del dueño): sin una foto del cliente en el chat, ni el Agente IA ni el lector lo pasan de Inbox (en Instagram no se usa Prospecto); con la foto de su entrada y la medida pasa directo a Interesado. Los datos bancarios y el comprobante mueven como siempre. Detalle: `docs/agente-ia/2026-10-27-instagram-entrada.md`. |
 
 ## 2. Reglas de Meta para Instagram
 
