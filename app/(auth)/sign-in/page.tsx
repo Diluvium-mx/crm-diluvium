@@ -1,10 +1,11 @@
 "use client";
 
-import { useState } from "react";
+import { Suspense, useState } from "react";
 import Image from "next/image";
 import { useRouter } from "next/navigation";
 import { Eye, EyeOff } from "lucide-react";
 import { signIn } from "@/lib/auth/client";
+import { SignInNotice } from "./_components/sign-in-notice";
 
 export default function SignInPage() {
   const router = useRouter();
@@ -56,6 +57,11 @@ export default function SignInPage() {
             </p>
           </div>
         </div>
+
+        {/* useSearchParams pide Suspense para que la página se pueda prerenderizar */}
+        <Suspense fallback={null}>
+          <SignInNotice />
+        </Suspense>
 
         <form onSubmit={handleSubmit} className="space-y-4">
           <div className="space-y-1.5">

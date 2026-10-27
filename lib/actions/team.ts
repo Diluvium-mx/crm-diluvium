@@ -8,14 +8,17 @@
 // Las contraseñas nunca se devuelven ni se muestran: solo se asignan.
 import { headers } from "next/headers";
 import { revalidatePath } from "next/cache";
+import { redirect } from "next/navigation";
 import { APIError } from "better-auth/api";
 import { z } from "zod";
 import { auth } from "@/lib/auth";
 import { requireActiveMembership } from "@/lib/auth/active-organization";
 import { roleAllows } from "@/lib/auth/permissions";
+import { signInNoticeHref } from "@/lib/auth/sign-in-notice";
 import { ipRateLimiter } from "@/lib/rate-limit";
 import { assignableRoles, isTeamRole, teamActionError, type TeamAction } from "@/lib/team/rules";
 import {
+  closeAllSessions,
   countActiveOwners,
   createSeller,
   listTeam,
@@ -73,20 +76,27 @@ const changePasswordSchema = z.object({
   newPassword: z.string().min(12, "La nueva contraseña debe tener al menos 12 caracteres.").max(128),
 });
 
+// Al cambiarla se cierran TODAS sus sesiones, también la de esta pestaña, y va a «Iniciar
+// sesión» con el aviso de entrar con la nueva (decisión del dueño, 27-oct-2026). Antes,
+// revokeOtherSessions abría una sesión nueva con cookie nueva, pero la página se volvía a
+// dibujar con la cookie vieja (ya borrada) y lo sacaba a «Iniciar sesión» sin decir por qué.
+// Si sale bien no regresa: redirige (por eso va fuera de run, que atrapa errores).
 export async function changeMyPassword(input: z.infer<typeof changePasswordSchema>): Promise<TeamResult> {
-  await requireActiveMembership();
+  const { userId } = await requireActiveMembership();
   const requestHeaders = await headers();
   const limited = await ipRateLimiter.check(new Request("http://crm.local/mi-cuenta", { headers: requestHeaders }), [PASSWORD_RULE]);
   if (limited) return { ok: false, message: "Demasiados intentos. Espera unos minutos." };
-  return run(async () => {
+  const result = await run(async () => {
     const parsed = changePasswordSchema.parse(input);
-    // Better Auth verifica la actual y, con revokeOtherSessions, cierra las
-    // demás sesiones del usuario (dist/api/routes/update-user.mjs:75).
+    // Better Auth verifica la actual (dist/api/routes/update-user.mjs).
     await auth.api.changePassword({
       headers: requestHeaders,
-      body: { currentPassword: parsed.currentPassword, newPassword: parsed.newPassword, revokeOtherSessions: true },
+      body: { currentPassword: parsed.currentPassword, newPassword: parsed.newPassword },
     });
+    await closeAllSessions(userId);
   });
+  if (result.ok) redirect(signInNoticeHref("contrasena"));
+  return result;
 }
 
 // ─── Vendedores ───────────────────────────────────────────────────────────
