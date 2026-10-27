@@ -214,6 +214,11 @@ export async function setPassword(userId: string, password: string, log?: TeamLo
   });
 }
 
+/** Cierra TODAS las sesiones del usuario, también la de quien lo pide («Mi cuenta» › cambiar contraseña). */
+export async function closeAllSessions(userId: string): Promise<void> {
+  await db.delete(session).where(eq(session.userId, userId));
+}
+
 /** Desactiva (no borra: sus mensajes conservan el autor) y revoca sus sesiones; o lo reactiva. */
 export async function setDeactivated(userId: string, deactivated: boolean, log?: TeamLog): Promise<void> {
   try {
