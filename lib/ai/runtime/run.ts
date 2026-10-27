@@ -92,6 +92,7 @@ import { completedAfterConfirmation, noDisponibleEstado, UNAVAILABLE_REPLY_TEXT 
 import { buildModelMessages, fitHistory } from "./transcript";
 import { recordAiUsage } from "./usage";
 import { agentVerifiedProof, allowedAgentStage, hasClientProof, vendorAnsweredProof } from "./venta-cerrada";
+import { hasClientPhoto, instagramAllowedStage, instagramStageLine } from "./instagram-entrada";
 import { followUpContextFor } from "@/lib/followups/reply";
 import { logError, safeErrorMessage } from "@/lib/log/safe-error";
 
@@ -581,6 +582,8 @@ export async function runAgent(job: { organizationId: string; conversationId: st
     const vendorConfirmedPayment = vendorAnsweredProof(history);
     // C4 (10-oct-2026): o el Agente IA lo verifica («Depósito recibido») si el cliente mandó comprobante.
     const clientSentProof = hasClientProof(history);
+    // Instagram (27-oct-2026, regla del dueño): sin foto del cliente el contacto se queda en la entrada.
+    const igChat = { instagram: channel.type === "instagram", clientPhoto: hasClientPhoto(history) };
     const base = { organizationId: org, conversationId: conv.id, messageId: lastRead.id };
 
     // ── FILTRO: solo limpia el anuncio de Click-to-WhatsApp (nunca frena) ────
@@ -622,7 +625,7 @@ export async function runAgent(job: { organizationId: string; conversationId: st
     const messagesFor = async (model: CatalogModel, avanzaA: string | null, nota: string | null = null) =>
       buildModelMessages(history, mediaUrls, {
         cleanText,
-        crmContext: [await crmContextFor(org, conv.contactId, stages, avanzaA), detalleContext, maxPerChatContext, await followUpContextFor(org, conv.id), workflowNote, nota].filter(Boolean).join("\n"),
+        crmContext: [await crmContextFor(org, conv.contactId, stages, avanzaA), igChat.instagram ? instagramStageLine(stages) : null, detalleContext, maxPerChatContext, await followUpContextFor(org, conv.id), workflowNote, nota].filter(Boolean).join("\n"),
         ...(model.pdf ? {} : { maxPdfs: 0 }),
         ...(options.readImages ? {} : { maxImages: 0 }),
         ...(options.transcribeAudio ? {} : { voiceNotesOff: true }),
@@ -782,7 +785,9 @@ export async function runAgent(job: { organizationId: string; conversationId: st
     // que decidió el Modelo 1 se respeta aunque el Modelo 2 no la pida. Si el Modelo 2
     // falla, sale la respuesta del Modelo 1 (el cliente nunca se queda sin respuesta).
     if (usedSlot === 1) {
-      const target = handoffStage(modelCfg, stageAtStart, allowedAgentStage(stages, impliedStage(stages, stageSignals(used.toolCalls)), vendorConfirmedPayment || agentVerifiedProof(history, used.toolCalls.some((c) => c.kind === "aviso" && c.aviso.motivo === "cotejar_deposito"))));
+      const allowed = allowedAgentStage(stages, impliedStage(stages, stageSignals(used.toolCalls)), vendorConfirmedPayment || agentVerifiedProof(history, used.toolCalls.some((c) => c.kind === "aviso" && c.aviso.motivo === "cotejar_deposito")));
+      // Instagram sin foto: la etapa no avanza, así que tampoco hay traspaso al Modelo 2.
+      const target = handoffStage(modelCfg, stageAtStart, instagramAllowedStage(stages, allowed, igChat));
       const model2 = target ? getModel(cfg.modeloCerebro) : undefined;
       if (target && model2 && model2.id !== used.model.id && isAvailable(model2.id)) {
         const second = await attempt(model2, target);
@@ -952,7 +957,7 @@ export async function runAgent(job: { organizationId: string; conversationId: st
       pendingSince: pending[0]?.createdAt ?? null,
       stages,
     });
-    const actionCtx: ActionContext = { organizationId: org, conversationId: conv.id, contactId: conv.contactId, batchMessageId: lastRead.id, receiptMessageId: receiptMessageId(pending), now, since: pending[0]?.createdAt ?? null, vendorConfirmedPayment, clientSentProof };
+    const actionCtx: ActionContext = { organizationId: org, conversationId: conv.id, contactId: conv.contactId, batchMessageId: lastRead.id, receiptMessageId: receiptMessageId(pending), now, since: pending[0]?.createdAt ?? null, vendorConfirmedPayment, clientSentProof, instagram: igChat.instagram, clientSentPhoto: igChat.clientPhoto };
     // Sin texto del modelo: sale solo lo que manden sus workflows. Si no mandan nada, ya lo
     // resolvió la red contra el silencio (arriba): el CRM nunca escribe un texto fijo.
     let text = out.kind === "reply" ? out.text : "";
