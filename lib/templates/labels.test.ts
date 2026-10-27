@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { groupTemplates, templateSection, templateSnippet, templateTitle } from "./labels";
+import { groupTemplates, templateFirstValue, templateSection, templateSnippet, templateTitle } from "./labels";
 import { PICKER_TIME_PHRASE_TEMPLATES, TIME_PHRASE_TEMPLATES } from "@/lib/followups/cases";
 
 const t = (name: string, bodyText: string | null = null) => ({ id: name, name, bodyText });
@@ -60,5 +60,14 @@ describe("texto de la lista", () => {
     expect(templateSnippet("daniel_medidas", body)).toBe("Referente a la compuerta que nos comentó {{1}}, pudo tomar las medidas?");
     expect(templateSnippet("seg_medidas", body)).toBe(body);
     expect(templateSnippet("daniel_x", "Sin segundo párrafo")).toBe("Sin segundo párrafo");
+  });
+});
+
+describe("reseña en tienda", () => {
+  it("tiene título y su {{1}} es la tienda (Mercado Libre), no el nombre del cliente", () => {
+    expect(templateTitle("resena_tienda")).toBe("Reseña en tienda");
+    expect(templateSection("resena_tienda")).toBe("otras");
+    expect(templateFirstValue("resena_tienda")).toBe("Mercado Libre");
+    expect(templateFirstValue("seg_medidas")).toBeUndefined();
   });
 });

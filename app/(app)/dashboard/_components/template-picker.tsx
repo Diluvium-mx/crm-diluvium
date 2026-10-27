@@ -14,7 +14,7 @@ import type { TemplateView } from "@/lib/templates/types";
 import { CloseX } from "@/components/ui/close-x";
 import { LinkedText } from "@/components/ui/linked-text";
 import { PICKER_TIME_PHRASE_TEMPLATES } from "@/lib/followups/cases";
-import { groupTemplates, templateSnippet, templateTitle } from "@/lib/templates/labels";
+import { groupTemplates, templateFirstValue, templateSnippet, templateTitle } from "@/lib/templates/labels";
 import { usePersistentToggle } from "@/components/ui/use-persistent-toggle";
 import { ViewToggle } from "@/components/ui/view-toggle";
 
@@ -88,7 +88,7 @@ export function TemplatePicker({
 
   function select(template: TemplateView) {
     setSelectedId(template.id);
-    const first = PICKER_TIME_PHRASE_TEMPLATES.has(template.name) ? timePhrase : firstName;
+    const first = PICKER_TIME_PHRASE_TEMPLATES.has(template.name) ? timePhrase : (templateFirstValue(template.name) ?? firstName);
     setValues(template.variables.map((_, i) => (i === 0 ? first : "")));
   }
 

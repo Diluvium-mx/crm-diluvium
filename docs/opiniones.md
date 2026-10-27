@@ -120,9 +120,9 @@ con foto o video, **con el menor gasto de IA posible**. OK del dueño a los punt
    (por pedir → pedida → la dejó / no quiso). «No compró ahí» lo descarta y el lector ya no lo vuelve a anotar.
 3. **«Pedir reseña» con texto fijo, sin IA** (`lib/resenas-tienda/mensaje.ts`, texto aprobado): saludo de la hora del
    cliente, gracias por comprar en esa tienda, su opinión «cuando ya la tenga instalada» con foto o video, el enlace de la
-   tienda (Seguimientos › Enlaces de las tiendas; vacío = explica dónde se deja) y que mande la foto por WhatsApp también.
+   tienda (Seguimientos › Enlace de Mercado Libre; vacío = explica dónde se deja) y que mande la foto por WhatsApp también.
    Sale como mensaje del vendedor (pausa al Agente IA en ese chat) y **solo con texto libre**: WhatsApp dentro de 24 h,
-   Instagram hasta 7 días. Se ve antes de mandarlo. Con tienda anotada, el lector nunca le arma un seguimiento de venta
+   Instagram hasta 7 días. **Solo Mercado Libre** desde el ajuste del 27-oct (ver abajo). Se ve antes de mandarlo. Con tienda anotada, el lector nunca le arma un seguimiento de venta
    (`no_seguir` forzado en el código; ya era la regla de sus instrucciones).
 
 **Reglas de las tiendas:** nada a cambio (ni descuento, ni regalo, ni el código de recomendación), sin pedir
@@ -136,5 +136,30 @@ la tienda y motivos de «No seguir»): 3 dijeron que ya la pidieron en Amazon y 
 que la iba a encargar). Los nombres están fuera del repo (`~/Documents/Diluvium CRM/reportes/resenas-tiendas/`). Entran
 a la lista solo con OK aparte de escritura en producción.
 
-**Después (sin OK todavía):** una plantilla de Meta para pedirla con la ventana cerrada (a ~10 días, a quien no la haya
-dejado). Mostrar la lista final y pedir OK antes de mandarla a revisión.
+**Revisión de esos casos (27-oct-2026):** el dueño confirmó 4 y descartó 1 (tenía un problema de piezas abierto).
+
+### Lo que permiten las tiendas (investigación del 27-oct-2026; detalle fuera del repo, `reportes/resenas-tiendas/`)
+
+- **Ninguna API dice «este teléfono compró aquí».** Amazon (SP-API) solo da el teléfono con un rol restringido y lo
+  oculta tras la entrega; Mercado Libre no lo da en Mercado Envíos 2. Las dos prohíben usar los datos del comprador para
+  algo que no sea el envío o los impuestos. Por eso la detección sigue siendo el lector (lo que el cliente dice en el chat).
+- **Amazon no deja escribirle al comprador fuera de su servicio de mensajes** (código de conducta para vendedores en
+  México, G1801). La reseña de Amazon se pide con su botón **«Solicitar una reseña»** en Seller Central (del día 5 al 30
+  después de la entrega; una por pedido); nunca por WhatsApp. El CRM solo lo anota («Ya la pedí en Amazon»). Para
+  después, sin OK: la Solicitations API de Amazon hace lo mismo sola para todos los pedidos, gratis.
+- **Mercado Libre prohíbe escribirle por otro medio (menciona WhatsApp) hasta que vence Compra Protegida**: 30 días después
+  de recibirla (cláusula 3 b de sus términos). El CRM deja «Pedir reseña» a los **40 días** de que lo dijo (una semana
+  para la entrega). Sus calificaciones tampoco se pueden usar fuera de Mercado Libre (3 c): no van en anuncios.
+
+### Ajuste con OK del dueño (27-oct-2026)
+
+- Filas de **Amazon**: en lugar de «Pedir reseña», «Pídala en Seller Central…» y el botón **Ya la pedí en Amazon** (queda
+  «Pedida»). `pedirResena` rechaza las de Amazon en el servidor (`bloqueoDe`).
+- Filas de **Mercado Libre**: «Pedir reseña» desde el día 40; antes dice desde qué fecha. Con la ventana cerrada, se manda
+  la plantilla `resena_tienda` desde el chat y su respuesta abre la ventana.
+- **Plantilla `resena_tienda`** (id de Meta 1798462208055679, es_MX, pedida como UTILITY, dada de alta el 27-oct-2026 por
+  la API de Zernio): «Hola, le escribo de parte del equipo de Diluvium por la compuerta que pidió en {{1}}. ¿Ya la pudo
+  instalar? Nos ayuda mucho saber cómo le quedó.» Botones: Me quedó bien · Tuve un problema · Aún no la instalo. No pide
+  la reseña (así es Utilidad, como `opinion_compuerta`); solo reabre la conversación. En el selector 📄 se llama
+  «Reseña en tienda» y su {{1}} ya viene con «Mercado Libre».
+- La caja de enlaces solo pide el de Mercado Libre (el de Amazon ya no va en ningún mensaje; la columna se queda).

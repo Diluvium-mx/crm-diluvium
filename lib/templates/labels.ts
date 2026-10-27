@@ -17,6 +17,24 @@ const KNOWN_TITLES: Readonly<Record<string, string>> = {
   objecion: "Lo va a pensar",
 };
 
+/** Título de las conocidas que no son `seg_` ni `daniel_`. */
+const OTHER_TITLES: Readonly<Record<string, string>> = {
+  resena_tienda: "Reseña en tienda",
+};
+
+/**
+ * Plantillas cuyo {{1}} no es el nombre del cliente: con qué se llena al elegirla (se puede
+ * cambiar). La reseña por WhatsApp solo se pide en Mercado Libre; la de Amazon, en Seller Central
+ * (docs/opiniones.md § 7).
+ */
+const FIRST_VALUES: Readonly<Record<string, string>> = {
+  resena_tienda: "Mercado Libre",
+};
+
+export function templateFirstValue(name: string): string | undefined {
+  return FIRST_VALUES[name];
+}
+
 export type TemplateSectionKey = "daniel" | "seguimiento" | "otras";
 
 export const TEMPLATE_SECTIONS: ReadonlyArray<{ key: TemplateSectionKey; title: string }> = [
@@ -36,7 +54,7 @@ export function templateSection(name: string): TemplateSectionKey {
 /** Título amigable de una plantilla conocida; si no se conoce, su nombre técnico. */
 export function templateTitle(name: string): string {
   const base = name.replace(/^(seg|daniel)_/, "");
-  return base !== name ? (KNOWN_TITLES[base] ?? name) : name;
+  return base !== name ? (KNOWN_TITLES[base] ?? name) : (OTHER_TITLES[name] ?? name);
 }
 
 /**
