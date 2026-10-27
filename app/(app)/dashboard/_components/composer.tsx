@@ -44,6 +44,7 @@ import { CloseX } from "@/components/ui/close-x";
 import { WorkflowPicker } from "./workflow-picker";
 import { bajaAlreadySeen, FollowUpPanel, FollowUpPill, markBajaSeen, useFollowUp } from "./followup-pill";
 import { SpellcheckOverlay } from "@/components/spelling/spellcheck-overlay";
+import { useComposerTextRequests } from "../../_components/composer-text";
 
 // Alto justo para el texto, entre los 2 renglones de `rows` y el max-height de la clase.
 // Vacía se queda en 2 renglones: Chrome mide también el texto gris de ayuda, y
@@ -251,6 +252,16 @@ export function Composer({
     pendingCaret.current = next.length;
     updateDraft(next, next.length);
   }
+
+  // «Poner rastreo en el chat» del Detalle (guías de Envia, 27-oct-2026): va al final del borrador, tal cual
+  // (sin variables) y sin mandarse; el vendedor lo manda cuando la guía sale a ruta. Con la ventana de 24 h
+  // cerrada no hay dónde escribir: no lo toma y el Detalle lo copia.
+  useComposerTextRequests(conversationId, windowOpen, (text) => {
+    const next = draft.trim() ? `${draft.replace(/\s*$/, "")}\n${text}` : text;
+    pendingCaret.current = next.length;
+    updateDraft(next, next.length);
+    textareaRef.current?.focus();
+  });
 
   // Fragmento desde "/": reemplaza "/búsqueda" en su lugar.
   function insertFromSlash(snippet: SnippetView) {

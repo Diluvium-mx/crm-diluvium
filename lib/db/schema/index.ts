@@ -26,3 +26,4 @@ export * from "./opiniones";
 export * from "./resenas-tienda";
 export * from "./stage-history";
 export * from "./spelling";
+export * from "./shipments";
