@@ -246,7 +246,7 @@ function EnlaceGoogle({
   );
 }
 
-const TONOS: Record<TonoEtiqueta, string> = {
+export const TONOS: Record<TonoEtiqueta, string> = {
   bien: "bg-emerald-500/10 text-emerald-800 dark:text-emerald-300",
   alerta: "bg-amber-500/15 text-amber-800 dark:text-amber-300",
   marca: "bg-brand-navy/10 text-brand-navy dark:text-sky-300",

@@ -146,6 +146,28 @@ describe.skipIf(!TEST_DATABASE_URL)("Lector en segundo plano (Postgres real)", (
     expect(t.calls).toHaveLength(1);
   });
 
+  it("compró en Amazon (27-oct-2026): queda en Seguimientos con su frase, la ficha lo dice y una tienda que el cliente nunca nombró se descarta", async () => {
+    await msg("out", "Puede comprarla por aquí, en la página, en Amazon o en Mercado Libre", ago(30 * MIN));
+    await msg("in", "Ya la encargué en Amazon, gracias", ago(20 * MIN));
+    const r = await lector.runLector(ORG, CONV, deps({ compro_en: "amazon" }).deps);
+    expect(r.kind === "leido" && r.cambios).toEqual(["compro_en amazon"]);
+    const [fila] = await db.select().from(s.resenasTienda);
+    expect(fila).toMatchObject({ organizationId: ORG, contactId: CONTACT, conversationId: CONV, tienda: "amazon", estado: "por_pedir", origen: "lector", frase: "Ya la encargué en Amazon, gracias" });
+
+    // La siguiente lectura lo ve en la ficha; si lo vuelve a mandar, no cambia nada.
+    await msg("in", "Ya me llegó, mañana la instalo", ago(10 * MIN));
+    const t = deps({ compro_en: "amazon" });
+    const otra = await lector.runLector(ORG, CONV, t.deps);
+    expect(otra.kind === "leido" && otra.cambios).toEqual([]);
+    expect(JSON.stringify(t.calls[0].messages)).toContain("Compró en otra tienda: Amazon.");
+
+    // Mercado Libre solo lo nombró la empresa: no cuenta.
+    await msg("in", "Gracias", ago(5 * MIN));
+    const ml = await lector.runLector(ORG, CONV, deps({ compro_en: "mercado_libre" }).deps);
+    expect(ml.kind === "leido" && ml.ignored).toEqual(["compro_en: el cliente nunca nombra mercado_libre en el chat"]);
+    expect(await db.select().from(s.resenasTienda)).toHaveLength(1);
+  });
+
   it("un monto que la empresa nunca dijo no se guarda; lo demás sí", async () => {
     await msg("in", "¿Cuánto por una de 95?", ago(20 * MIN));
     await msg("out", "Queda en $5,500", ago(19 * MIN));
@@ -286,6 +308,20 @@ describe.skipIf(!TEST_DATABASE_URL)("Lector en segundo plano (Postgres real)", (
     await lector.runLector(ORG, CONV, segunda.deps);
     expect(String(segunda.calls[0].system)).not.toContain("SEGUIMIENTO");
     expect((await db.select().from(s.followUps))[0]).toMatchObject({ status: "cancelado", cancelReason: "cliente_escribio" });
+  });
+
+  it("ya compró en Amazon (27-oct-2026): después de pedirle la reseña no le sale un seguimiento de venta aunque el modelo lo arme", async () => {
+    await db.update(s.channels).set({ aiAgentMode: "auto" }).where(d.eq(s.channels.id, "ch_lector"));
+    await msg("in", "Ya la encargué en Amazon, gracias", ago(40 * MIN));
+    await lector.runLector(ORG, CONV, deps({ compro_en: "amazon" }).deps);
+    await msg("out", "Gracias por elegir nuestra compuerta en Amazon. ¿Nos ayudaría con su opinión ahí?", ago(30 * MIN), "crm");
+    const r = await lector.runLector(
+      ORG,
+      CONV,
+      deps({ seguimiento: { caso: "sin_punto_claro", pendiente: "Pedir su opinión", siguiente_paso: "Que deje la reseña", vale_la_pena: true, borrador: "¿Pudo dejar su opinión?" } }).deps,
+    );
+    expect(r.kind === "leido" && r.ignored).toEqual(["seguimiento sin_punto_claro: ya compró en amazon"]);
+    expect((await db.select().from(s.followUps))[0]).toMatchObject({ caso: "no_seguir", motivo: "Ya compró la compuerta en Amazon.", borrador: null });
   });
 
   it("acuse corto del cliente al final (10-oct-2026): «De acuerdo» también pide la ficha y arma el seguimiento desde su mensaje", async () => {

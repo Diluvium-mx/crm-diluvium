@@ -26,3 +26,12 @@ export function enlaceCompartir(telefonoEmpresa: string, organizacion: string, c
 export function enlaceOpinion(appUrl: string, token: string): string {
   return `${appUrl.replace(/\/+$/, "")}/opinion/${token}`;
 }
+
+/** Enlace de reseñas que se guarda en la configuración: solo https. */
+export function esHttps(v: string): boolean {
+  try {
+    return new URL(v).protocol === "https:";
+  } catch {
+    return false;
+  }
+}
