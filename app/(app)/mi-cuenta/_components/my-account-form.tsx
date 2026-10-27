@@ -1,9 +1,9 @@
 "use client";
 
-// "Mi cuenta": cualquier usuario cambia SU contraseña (pide la actual). Guía de 4 pasos y,
-// antes de cambiarla, un aviso: no se deshace y se cierra su sesión en TODOS sus dispositivos,
-// también en este (decisión del dueño, 27-oct-2026). Si sale bien, la acción lleva a «Iniciar
-// sesión» con el aviso de entrar con la nueva; aquí solo regresa si falló.
+// "Mi cuenta": cualquier usuario cambia SU contraseña (pide la actual). Antes de cambiarla, un
+// aviso: no se deshace y se cierra su sesión en TODOS sus dispositivos, también en este (decisión
+// del dueño, 27-oct-2026; sin guía de pasos, la quitó el mismo día). Si sale bien, la acción lleva
+// a «Iniciar sesión» con el aviso de entrar con la nueva; aquí solo regresa si falló.
 import { useState } from "react";
 import { unstable_rethrow } from "next/navigation";
 import { TopConfirm } from "@/components/ui/top-confirm";
@@ -51,15 +51,6 @@ export function MyAccountForm({ name, email }: { name: string; email: string }) 
       </div>
       <form onSubmit={submit} className="space-y-3 rounded-lg border bg-card p-4">
         <h2 className="text-sm font-semibold">Cambiar mi contraseña</h2>
-        <div className="space-y-1 text-xs text-muted-foreground">
-          <p className="font-medium text-foreground">Cómo se hace:</p>
-          <ol className="list-decimal space-y-0.5 pl-4">
-            <li>Escribe tu contraseña actual.</li>
-            <li>Escribe la nueva dos veces (mínimo 12 caracteres).</li>
-            <li>Confirma el aviso: se cierra tu sesión en todos tus dispositivos, también en este.</li>
-            <li>Entra otra vez con tu correo y la contraseña nueva.</li>
-          </ol>
-        </div>
         <label className="block space-y-1 text-xs">
           <span className="text-muted-foreground">Contraseña actual</span>
           <input type="password" autoComplete="current-password" required value={current} onChange={(e) => setCurrent(e.target.value)} className={inputClass} />
