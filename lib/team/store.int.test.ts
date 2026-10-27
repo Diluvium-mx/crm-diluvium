@@ -100,6 +100,19 @@ describe.skipIf(!TEST_DATABASE_URL)("vendedores (Postgres real + Better Auth)", 
     await expect(team.setPassword(carlos.userId, "corta")).rejects.toThrow(/al menos 12/);
   });
 
+  it("cerrar todas sus sesiones («Mi cuenta» › cambiar contraseña): todas las suyas y ninguna ajena", async () => {
+    await team.createSeller({ organizationId: ORG, name: "Carlos", email: "carlos@diluvium.mx", password: "vendedor-pass-12", role: "agent" });
+    const carlos = (await team.listTeam(ORG)).find((m) => m.email === "carlos@diluvium.mx")!;
+    await signIn("carlos@diluvium.mx", "vendedor-pass-12");
+    await signIn("carlos@diluvium.mx", "vendedor-pass-12");
+    await signIn("owner@diluvium.mx", OWNER_PASSWORD);
+    const sessionsOf = async (userId: string) => (await db.select().from(s.session).where(eq(s.session.userId, userId))).length;
+    expect(await sessionsOf(carlos.userId)).toBe(2);
+    await team.closeAllSessions(carlos.userId);
+    expect(await sessionsOf(carlos.userId)).toBe(0);
+    expect(await sessionsOf(ownerId)).toBe(1);
+  });
+
   it("un alta que se cortó a la mitad (usuario sin organización) se completa en vez de bloquear el correo", async () => {
     await auth.api.createUser({ body: { email: "huerfano@diluvium.mx", password: "cualquier-pass-1", name: "Viejo" } });
     await team.createSeller({ organizationId: ORG, name: "Daniel", email: "huerfano@diluvium.mx", password: "vendedor-pass-12", role: "agent" });
