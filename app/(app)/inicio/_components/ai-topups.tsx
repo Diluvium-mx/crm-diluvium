@@ -2,13 +2,15 @@
 
 // Recargas de crédito de los proveedores de IA: cualquier rol registra cada una
 // (proveedor, monto en USD sin impuestos y fecha) y puede borrar una capturada
-// por error. Sin lógica de datos: solo llama a las Server Actions.
+// por error (27-oct-2026: Borrar pregunta con el aviso de arriba del CRM, no con el del navegador). Sin lógica de
+// datos: solo llama a las Server Actions.
 import Link from "next/link";
 import { useState, useTransition } from "react";
 import { addAiTopup, deleteAiTopup } from "@/lib/actions/ai-spend";
 import type { TopupRow } from "@/lib/dashboard/ai-spend";
 import { formatUsd } from "@/lib/usd-format";
 import { DateTimePicker } from "@/components/ui/date-time-picker";
+import { TopConfirm } from "@/components/ui/top-confirm";
 
 const PROVIDERS = [
   { id: "openai", label: "OpenAI" },
@@ -30,6 +32,8 @@ export function AiTopups({ topups, canRegister }: { topups: TopupRow[]; canRegis
   const [day, setDay] = useState(todayLocal);
   const [error, setError] = useState<string | null>(null);
   const [pending, start] = useTransition();
+  // La recarga que se va a borrar (aviso de arriba abierto).
+  const [asking, setAsking] = useState<TopupRow | null>(null);
 
   function submit() {
     setError(null);
@@ -44,10 +48,11 @@ export function AiTopups({ topups, canRegister }: { topups: TopupRow[]; canRegis
   }
 
   function remove(t: TopupRow) {
-    if (!window.confirm(`¿Borrar la recarga de ${formatUsd(t.amountUsd)} en ${t.label} del ${t.toppedUpOn}?`)) return;
+    setError(null);
     start(async () => {
       const r = await deleteAiTopup({ id: t.id });
       if (!r.ok) setError(r.message);
+      setAsking(null);
     });
   }
 
@@ -106,7 +111,7 @@ export function AiTopups({ topups, canRegister }: { topups: TopupRow[]; canRegis
                 {t.author ? <span className="text-muted-foreground"> · {t.author}</span> : null}
               </span>
               {canRegister && (
-                <button type="button" disabled={pending} onClick={() => remove(t)} className="rounded px-1.5 py-0.5 text-muted-foreground hover:bg-muted disabled:opacity-50">
+                <button type="button" disabled={pending} onClick={() => setAsking(t)} className="rounded px-1.5 py-0.5 text-muted-foreground hover:bg-muted disabled:opacity-50">
                   Borrar
                 </button>
               )}
@@ -115,6 +120,18 @@ export function AiTopups({ topups, canRegister }: { topups: TopupRow[]; canRegis
         </ul>
       )}
       {error && <p className="mt-2 border-l-2 border-brand-orange pl-2 text-xs text-foreground">{error}</p>}
+      {asking && (
+        <TopConfirm
+          title={`¿Borrar la recarga de ${formatUsd(asking.amountUsd)} en ${asking.label} del ${asking.toppedUpOn}?`}
+          confirmLabel="Borrar"
+          pendingLabel="Borrando…"
+          pending={pending}
+          onConfirm={() => remove(asking)}
+          onCancel={() => setAsking(null)}
+        >
+          El saldo de {asking.label} se vuelve a calcular sin ella. Bórrala solo si se capturó por error.
+        </TopConfirm>
+      )}
     </div>
   );
 }
