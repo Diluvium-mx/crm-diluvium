@@ -16,9 +16,9 @@ import { TONOS } from "./opinion-panel";
 // secciones según lo que se puede hacer hoy y con UNA acción cada uno. Amazon se pide en Seller
 // Central; Mercado Libre, con el texto fijo o la plantilla, cuando su tienda lo permite.
 const SECCIONES: ReadonlyArray<{ id: SeccionResena; titulo: string }> = [
-  { id: "pedir", titulo: "Para pedir" },
+  { id: "pedir", titulo: "Por solicitar" },
   { id: "espera", titulo: "En espera" },
-  { id: "pedida", titulo: "Ya pedidas" },
+  { id: "pedida", titulo: "Solicitadas" },
 ];
 
 const NARANJA = "bg-brand-orange text-brand-white hover:bg-brand-orange-light";
