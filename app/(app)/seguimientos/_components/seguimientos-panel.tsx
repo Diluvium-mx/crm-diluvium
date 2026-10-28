@@ -2,7 +2,6 @@
 
 import { useState } from "react";
 import type { OpinionVista } from "@/lib/opiniones/vista";
-import type { EnlacesTiendas } from "@/lib/resenas-tienda/queries";
 import type { ResenaVista } from "@/lib/resenas-tienda/vista";
 import { SEGUIMIENTOS_SECTIONS, type SeguimientosSection } from "@/lib/seguimientos/sections";
 import { OpinionPanel, type PermisosOpinion } from "./opinion-panel";
@@ -18,14 +17,12 @@ export function SeguimientosPanel({
   opiniones,
   googleUrl,
   resenas,
-  enlaces,
   puede,
 }: {
   seccionInicial: SeguimientosSection;
   opiniones: OpinionVista[];
   googleUrl: string | null;
   resenas: ResenaVista[];
-  enlaces: EnlacesTiendas;
   puede: PermisosOpinion;
 }) {
   const [seccion, setSeccion] = useState<SeguimientosSection>(seccionInicial);
@@ -70,7 +67,7 @@ export function SeguimientosPanel({
         <OpinionPanel opiniones={opiniones} googleUrl={googleUrl} puede={puede} />
       </div>
       <div role="tabpanel" id={panelId("tiendas")} aria-labelledby={tabId("tiendas")} hidden={seccion !== "tiendas"}>
-        <TiendasPanel resenas={resenas} enlaces={enlaces} puedeEditar={puede.editar} />
+        <TiendasPanel resenas={resenas} puedeEditar={puede.editar} />
       </div>
     </div>
   );

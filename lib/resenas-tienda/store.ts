@@ -2,7 +2,7 @@
 // Mercado Libre). Toda escritura va acotada a la organización.
 import { and, eq, ne, sql } from "drizzle-orm";
 import { db } from "@/lib/db";
-import { opinionesConfig, resenasTienda } from "@/lib/db/schema";
+import { resenasTienda } from "@/lib/db/schema";
 import type { EstadoResena, Tienda } from "./tiendas";
 
 /**
@@ -59,7 +59,7 @@ export async function compraEnTiendaDe(
   return fila ? { tienda: fila.tienda as Tienda, estado: fila.estado as EstadoResena } : null;
 }
 
-/** El vendedor marca cómo quedó (o la descarta: el cliente no compró ahí). */
+/** El vendedor la quita de la lista (`descartada`): el lector ya no la vuelve a anotar. */
 export async function cambiarEstadoResena(
   organizationId: string,
   id: string,
@@ -80,18 +80,4 @@ export async function marcarPedida(organizationId: string, id: string, userId: s
     .update(resenasTienda)
     .set({ estado: "pedida", pedidaAt: now, pedidaPorUserId: userId, updatedAt: now })
     .where(and(eq(resenasTienda.id, id), eq(resenasTienda.organizationId, organizationId)));
-}
-
-/** Enlaces de reseña de las tiendas (vacío = el mensaje explica dónde se deja). */
-export async function guardarEnlacesTiendas(
-  organizationId: string,
-  enlaces: { amazon: string | null; mercadoLibre: string | null },
-  userId: string,
-  now = new Date(),
-): Promise<void> {
-  const valores = { amazonResenaUrl: enlaces.amazon, mercadoLibreResenaUrl: enlaces.mercadoLibre, updatedAt: now, updatedByUserId: userId };
-  await db
-    .insert(opinionesConfig)
-    .values({ organizationId, ...valores })
-    .onConflictDoUpdate({ target: opinionesConfig.organizationId, set: valores });
 }

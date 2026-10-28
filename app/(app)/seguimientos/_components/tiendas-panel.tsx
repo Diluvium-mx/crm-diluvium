@@ -3,66 +3,58 @@
 import { useState, useTransition } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { guardarEnlacesResena, marcarResena, pedirResena, yaLaPediEnAmazon } from "@/lib/actions/resenas-tienda";
-import type { EnlacesTiendas } from "@/lib/resenas-tienda/queries";
-import type { ResenaVista } from "@/lib/resenas-tienda/vista";
+import { ExternalLink } from "lucide-react";
+import { Button, buttonVariants } from "@/components/ui/button";
+import { TopConfirm, TopNotice } from "@/components/ui/top-confirm";
+import { mandarPlantillaResena, pedirResena, quitarResena } from "@/lib/actions/resenas-tienda";
+import { cn } from "@/lib/utils";
+import { SELLER_CENTRAL_PEDIDOS, type ResenaVista, type SeccionResena } from "@/lib/resenas-tienda/vista";
 import { TONOS } from "./opinion-panel";
 
 // Seguimientos › Amazon y Mercado Libre (27-oct-2026, docs/opiniones.md): los clientes que
-// dijeron en el chat que compraron en una de esas tiendas (los anota el lector). A los de Mercado
-// Libre se les pide la reseña con un texto fijo, sin IA; los de Amazon se piden en Seller Central
-// (Amazon no deja escribirles por fuera) y aquí solo se anotan.
-export function TiendasPanel({
-  resenas,
-  enlaces,
-  puedeEditar,
-}: {
-  resenas: ResenaVista[];
-  enlaces: EnlacesTiendas;
-  puedeEditar: boolean;
-}) {
+// dijeron en el chat que compraron en una de esas tiendas (los anota el lector), en tres
+// secciones según lo que se puede hacer hoy y con UNA acción cada uno. Amazon se pide en Seller
+// Central; Mercado Libre, con el texto fijo o la plantilla, cuando su tienda lo permite.
+const SECCIONES: ReadonlyArray<{ id: SeccionResena; titulo: string }> = [
+  { id: "pedir", titulo: "Por solicitar" },
+  { id: "espera", titulo: "En espera" },
+  { id: "pedida", titulo: "Solicitadas" },
+];
+
+const NARANJA = "bg-brand-orange text-brand-white hover:bg-brand-orange-light";
+
+export function TiendasPanel({ resenas, puedeEditar }: { resenas: ResenaVista[]; puedeEditar: boolean }) {
   const router = useRouter();
   const [ocupado, startTransition] = useTransition();
   const [aviso, setAviso] = useState<string | null>(null);
+  const [listo, setListo] = useState<string | null>(null);
   const [viendo, setViendo] = useState<string | null>(null);
-  const [editandoEnlaces, setEditandoEnlaces] = useState(false);
+  const [quitando, setQuitando] = useState<ResenaVista | null>(null);
 
-  function correr(accion: () => Promise<{ ok: true } | { ok: false; message: string }>) {
+  function correr(accion: () => Promise<{ ok: true } | { ok: false; message: string }>, hecho: string) {
     setAviso(null);
+    setListo(null);
     startTransition(async () => {
       const r = await accion();
       if (r.ok) {
         setViendo(null);
+        setQuitando(null);
+        setListo(hecho);
         router.refresh();
       } else setAviso(r.message);
     });
   }
 
-  return (
-    <div className="flex flex-col gap-4">
-      <div className="flex flex-wrap items-center gap-2">
-        <p className="min-w-0 flex-1 text-sm text-foreground/70">
-          Clientes que dijeron en el chat que compraron la compuerta en Amazon o Mercado Libre.
-        </p>
-        {puedeEditar && (
-          <Button variant="outline" size="sm" aria-expanded={editandoEnlaces} onClick={() => setEditandoEnlaces((v) => !v)}>
-            Enlace de Mercado Libre
-          </Button>
-        )}
-      </div>
+  function mandar(r: ResenaVista) {
+    if (r.accion === "texto") correr(() => pedirResena({ id: r.id }), `Se le pidió la reseña a ${r.titulo}.`);
+    else if (r.accion === "plantilla") correr(() => mandarPlantillaResena({ id: r.id }), `Se le mandó la plantilla a ${r.titulo}.`);
+  }
 
-      {editandoEnlaces && (
-        <EnlacesForm
-          actuales={enlaces}
-          onListo={() => {
-            setEditandoEnlaces(false);
-            router.refresh();
-          }}
-          onCancelar={() => setEditandoEnlaces(false)}
-        />
-      )}
+  return (
+    <div className="flex flex-col gap-5">
+      <p className="text-sm text-foreground/70">
+        Clientes que dijeron en el chat que compraron la compuerta en Amazon o Mercado Libre.
+      </p>
 
       {aviso && (
         <p role="alert" className="text-sm text-destructive">
@@ -75,22 +67,49 @@ export function TiendasPanel({
           Todavía no hay clientes. Cuando alguien diga en el chat que ya compró en Amazon o Mercado Libre, aparece aquí.
         </div>
       ) : (
-        <ul className="divide-y divide-black/10 rounded-xl border border-black/10 bg-card dark:divide-white/10 dark:border-white/10">
-          {resenas.map((r) => (
-            <Fila
-              key={r.id}
-              r={r}
-              puedeEditar={puedeEditar}
-              ocupado={ocupado}
-              viendo={viendo === r.id}
-              onVer={() => setViendo(viendo === r.id ? null : r.id)}
-              onPedir={() => correr(() => pedirResena({ id: r.id }))}
-              onPedidaEnAmazon={() => correr(() => yaLaPediEnAmazon({ id: r.id }))}
-              onMarcar={(estado) => correr(() => marcarResena({ id: r.id, estado }))}
-            />
-          ))}
-        </ul>
+        SECCIONES.map(({ id, titulo }) => {
+          const filas = resenas.filter((r) => r.seccion === id).sort((a, b) => a.orden - b.orden);
+          if (filas.length === 0) return null;
+          return (
+            <section key={id} aria-labelledby={`resenas-${id}`} className="flex flex-col gap-2">
+              <h3 id={`resenas-${id}`} className="flex items-center gap-2 text-sm font-medium">
+                {titulo}
+                <span className={`rounded-md px-1.5 text-xs font-normal ${id === "pedir" ? TONOS.alerta : TONOS.neutro}`}>
+                  {filas.length}
+                </span>
+              </h3>
+              <ul className="divide-y divide-black/10 rounded-xl border border-black/10 bg-card dark:divide-white/10 dark:border-white/10">
+                {filas.map((r) => (
+                  <Fila
+                    key={r.id}
+                    r={r}
+                    puedeEditar={puedeEditar}
+                    ocupado={ocupado}
+                    viendo={viendo === r.id}
+                    onVer={() => setViendo(viendo === r.id ? null : r.id)}
+                    onMandar={() => mandar(r)}
+                    onQuitar={() => setQuitando(r)}
+                  />
+                ))}
+              </ul>
+            </section>
+          );
+        })
       )}
+
+      {quitando && (
+        <TopConfirm
+          title={`¿Quitar a ${quitando.titulo} de la lista?`}
+          confirmLabel="Quitar"
+          pendingLabel="Quitando…"
+          pending={ocupado}
+          onConfirm={() => correr(() => quitarResena({ id: quitando.id }), `${quitando.titulo} salió de la lista.`)}
+          onCancel={() => setQuitando(null)}
+        >
+          No se le pedirá la reseña y el Agente IA ya no lo vuelve a anotar.
+        </TopConfirm>
+      )}
+      <TopNotice message={quitando ? null : listo} />
     </div>
   );
 }
@@ -101,44 +120,38 @@ function Fila({
   ocupado,
   viendo,
   onVer,
-  onPedir,
-  onPedidaEnAmazon,
-  onMarcar,
+  onMandar,
+  onQuitar,
 }: {
   r: ResenaVista;
   puedeEditar: boolean;
   ocupado: boolean;
   viendo: boolean;
   onVer: () => void;
-  onPedir: () => void;
-  onPedidaEnAmazon: () => void;
-  onMarcar: (estado: "la_dejo" | "no_quiso" | "descartada") => void;
+  onMandar: () => void;
+  onQuitar: () => void;
 }) {
   return (
-    <li className="flex flex-col gap-1.5 px-4 py-3">
-      <div className="flex items-start justify-between gap-3">
-        <div className="min-w-0">
-          <p className="flex items-center gap-2 font-medium">
-            <span className="truncate">{r.titulo}</span>
-            <span className={`shrink-0 rounded-md px-2 py-0.5 text-xs font-normal ${TONOS.marca}`}>{r.tienda}</span>
-          </p>
-          <p className="text-xs text-foreground/60">{r.fecha}</p>
-        </div>
-        <span className={`shrink-0 rounded-md px-2 py-0.5 text-xs ${TONOS[r.tono]}`}>{r.estadoTexto}</span>
+    <li className="flex flex-col gap-1 px-4 py-3">
+      <div className="flex items-center justify-between gap-3">
+        <p className="flex min-w-0 items-center gap-2 font-medium">
+          <span className="truncate">{r.titulo}</span>
+          <span className={`shrink-0 rounded-md px-2 py-0.5 text-xs font-normal ${TONOS.marca}`}>{r.tienda}</span>
+        </p>
+        {puedeEditar && <Accion r={r} ocupado={ocupado} viendo={viendo} onVer={onVer} />}
       </div>
-      {r.frase && <p className="text-sm text-foreground/80">«{r.frase}»</p>}
+      <p className="text-sm text-foreground/70">{r.aviso}</p>
 
-      {viendo && (
-        <div className="flex flex-col gap-2 rounded-lg border border-brand-navy/30 bg-brand-navy/5 p-3 text-sm">
+      {viendo && r.mensaje && (
+        <div className="mt-1 flex flex-col gap-2 rounded-lg border border-brand-navy/30 bg-brand-navy/5 p-3 text-sm">
           <p className="whitespace-pre-line">{r.mensaje}</p>
-          <p className="text-xs text-foreground/60">Se le pide a todos por igual y sin ofrecer nada a cambio.</p>
+          <p className="text-xs text-foreground/60">
+            {r.accion === "plantilla"
+              ? "Plantilla «Reseña en tienda», con 3 botones: Me quedó bien · Tuve un problema · Aún no la instalo. Cuando conteste, sale «Pedir reseña»."
+              : "Se le pide a todos por igual y sin ofrecer nada a cambio."}
+          </p>
           <div className="flex gap-2">
-            <Button
-              size="sm"
-              disabled={ocupado}
-              onClick={onPedir}
-              className="bg-brand-orange text-brand-white hover:bg-brand-orange-light"
-            >
+            <Button size="sm" disabled={ocupado} onClick={onMandar} className={NARANJA}>
               Mandar
             </Button>
             <Button variant="ghost" size="sm" disabled={ocupado} onClick={onVer}>
@@ -148,107 +161,44 @@ function Fila({
         </div>
       )}
 
-      <div className="flex flex-wrap items-center gap-1.5">
-        <Link href={r.chatHref} data-link="text" className="text-xs">
-          Ver chat
-        </Link>
-        {puedeEditar && r.estado === "por_pedir" && (
-          <>
-            {r.enAmazon ? (
-              <>
-                <span className="text-xs text-foreground/60">· {r.bloqueo}</span>
-                <Button variant="outline" size="xs" disabled={ocupado} onClick={onPedidaEnAmazon}>
-                  Ya la pedí en Amazon
-                </Button>
-              </>
-            ) : r.bloqueo ? (
-              <span className="text-xs text-foreground/60">· {r.bloqueo}</span>
-            ) : (
-              !viendo && (
-                <Button
-                  size="xs"
-                  disabled={ocupado}
-                  onClick={onVer}
-                  className="bg-brand-orange text-brand-white hover:bg-brand-orange-light"
-                >
-                  Pedir reseña
-                </Button>
-              )
-            )}
-            <Button variant="ghost" size="xs" disabled={ocupado} onClick={() => onMarcar("descartada")} className="ml-auto">
-              No compró ahí
+      <div className="flex flex-wrap items-center gap-x-2 text-xs text-foreground/60">
+        {r.frase && <span className="min-w-0">«{r.frase}»</span>}
+        <span>{r.dicho}</span>
+        <span className="ml-auto flex items-center gap-2">
+          <Link href={r.chatHref} data-link="text">
+            Ver chat
+          </Link>
+          {puedeEditar && (
+            <Button variant="ghost" size="xs" disabled={ocupado} onClick={onQuitar}>
+              Quitar
             </Button>
-          </>
-        )}
-        {puedeEditar && r.estado === "pedida" && (
-          <span className="ml-auto flex gap-1.5">
-            <Button variant="outline" size="xs" disabled={ocupado} onClick={() => onMarcar("la_dejo")}>
-              La dejó
-            </Button>
-            <Button variant="ghost" size="xs" disabled={ocupado} onClick={() => onMarcar("no_quiso")}>
-              No quiso
-            </Button>
-          </span>
-        )}
+          )}
+        </span>
       </div>
     </li>
   );
 }
 
-function EnlacesForm({
-  actuales,
-  onListo,
-  onCancelar,
-}: {
-  actuales: EnlacesTiendas;
-  onListo: () => void;
-  onCancelar: () => void;
-}) {
-  const [mercadoLibre, setMercadoLibre] = useState(actuales.mercado_libre ?? "");
-  const [error, setError] = useState<string | null>(null);
-  const [guardando, startTransition] = useTransition();
-
-  function guardar(e: React.FormEvent) {
-    e.preventDefault();
-    setError(null);
-    startTransition(async () => {
-      // El de Amazon ya no va en ningún mensaje (se pide en Seller Central): se guarda como estaba.
-      const r = await guardarEnlacesResena({ amazon: actuales.amazon ?? "", mercadoLibre });
-      if (r.ok) onListo();
-      else setError(r.message);
-    });
+/** La única acción del cliente, según su paso de hoy. */
+function Accion({ r, ocupado, viendo, onVer }: { r: ResenaVista; ocupado: boolean; viendo: boolean; onVer: () => void }) {
+  if (r.accion === "amazon") {
+    return (
+      <a
+        href={SELLER_CENTRAL_PEDIDOS}
+        target="_blank"
+        rel="noopener noreferrer"
+        className={cn(buttonVariants({ size: "xs" }), "shrink-0", NARANJA)}
+      >
+        Pedir en Amazon <ExternalLink aria-hidden="true" />
+      </a>
+    );
   }
-
-  return (
-    <form onSubmit={guardar} className="flex flex-col gap-2 rounded-lg border border-black/10 p-3 dark:border-white/10">
-      <label htmlFor="resena-mercado-libre" className="text-sm font-medium">
-        Enlace de reseña de Mercado Libre
-      </label>
-      <Input
-        id="resena-mercado-libre"
-        value={mercadoLibre}
-        placeholder="https://…"
-        onChange={(e) => {
-          setMercadoLibre(e.target.value);
-          setError(null);
-        }}
-      />
-      <p className="text-xs text-foreground/60">
-        Va en el mensaje que pide la reseña. Si lo dejas vacío, el mensaje explica dónde se deja dentro de Mercado Libre.
-      </p>
-      {error && (
-        <p role="alert" className="text-sm text-destructive">
-          {error}
-        </p>
-      )}
-      <div className="flex gap-2">
-        <Button type="submit" size="sm" disabled={guardando}>
-          Guardar
-        </Button>
-        <Button type="button" variant="ghost" size="sm" onClick={onCancelar}>
-          Cancelar
-        </Button>
-      </div>
-    </form>
-  );
+  if ((r.accion === "texto" || r.accion === "plantilla") && !viendo) {
+    return (
+      <Button size="xs" disabled={ocupado} onClick={onVer} className={`shrink-0 ${NARANJA}`}>
+        {r.accion === "texto" ? "Pedir reseña" : "Mandar plantilla"}
+      </Button>
+    );
+  }
+  return null;
 }
