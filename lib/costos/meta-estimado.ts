@@ -1,7 +1,7 @@
 // Estimado de lo que Meta cobra por WhatsApp en un mes (reporte de costos, docs/costos.md › Meta). Meta todavía
 // no le da su cobro al CRM (feat/meta-costos espera el token), así que se cuenta mensaje por mensaje con las
-// mismas reglas que se revisaron contra Meta el 27-oct-2026 (coincidieron en el 97 % de los mensajes; el CRM
-// dio ≈ US$39 contra US$36.25 que cobró Meta: el estimado queda un poco ARRIBA, nunca abajo):
+// mismas reglas que se revisaron contra Meta el 27-oct-2026 (Notion «Gastos CRM Sep/Oct»: coincidieron en el
+// 97 % de los mensajes y en el total de cobrables, 2,498 del 22-sep al 23-oct):
 // - Solo WhatsApp (Instagram no cobra), sin canales de prueba, sin lo importado ni lo mandado desde el celular,
 //   y solo lo entregado o leído.
 // - Gratis 72 h desde la primera respuesta (≤ 24 h) a un cliente que llegó por un anuncio.
@@ -14,15 +14,16 @@ type Database = Pick<typeof appDb, "execute">;
 
 export type MetaConteo = { marketing: number; utilidad: number; servicio: number };
 
-// Tarifas de Meta para México en dólares, sin IVA (las que dio Meta, oct-2026). Si Meta las cambia, se
-// cambian aquí y en docs/costos.md.
+// Tarifas de Meta para México en dólares por mensaje cobrado (las que dio Meta, oct-2026), con el IVA YA
+// INCLUIDO: calibradas con el cobro real del 22-sep al 23-oct (312 de marketing, 47 de utilidad y 2,139 de
+// servicio = US$36.41 contra US$36.25 con IVA que cobró Meta, 0.5 % arriba). Sumarles otro 16 % daba US$42.24.
+// Si Meta cambia sus tarifas, se cambian aquí y en docs/costos.md.
 export const META_TARIFAS_USD = { marketing: 0.0431, utilidad: 0.0108, servicio: 0.0105 } as const;
-export const META_IVA = 0.16;
 export const META_SERVICIO_GRATIS_MES = 1000;
 
 export function metaCostoUsd(c: MetaConteo): number {
   const t = META_TARIFAS_USD;
-  return (c.marketing * t.marketing + c.utilidad * t.utilidad + c.servicio * t.servicio) * (1 + META_IVA);
+  return c.marketing * t.marketing + c.utilidad * t.utilidad + c.servicio * t.servicio;
 }
 
 // Mensajes cobrables del mes (hora de Mazatlán). `desde`/`hasta` = primer y último día "AAAA-MM-DD".

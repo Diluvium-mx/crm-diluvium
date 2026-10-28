@@ -115,8 +115,8 @@ describe("renglonZernio", () => {
 describe("renglonMeta y armarReporte", () => {
   it("Meta estimado con IVA; el total suma lo que tiene dato y el costo por venta usa ese total", () => {
     const meta = renglonMeta({ marketing: 100, utilidad: 10, servicio: 1000 });
-    // (100 × 0.0431 + 10 × 0.0108 + 1000 × 0.0105) × 1.16 = 17.30
-    expect(meta.usd).toBe(17.3);
+    // 100 × 0.0431 + 10 × 0.0108 + 1000 × 0.0105 = 14.92 (IVA ya incluido en las tarifas)
+    expect(meta.usd).toBe(14.92);
     expect(meta.nota).toMatch(/^estimado por el CRM con IVA \(1,110 mensajes cobrables\)/);
 
     const r = armarReporte({
@@ -128,9 +128,9 @@ describe("renglonMeta y armarReporte", () => {
       meta,
       ventas: 10,
     });
-    expect(r.totalUsd).toBe(48.3);
+    expect(r.totalUsd).toBe(45.92);
     expect(r.sinDato).toEqual(["Railway"]);
-    expect(r.costoPorVentaUsd).toBe(4.83);
+    expect(r.costoPorVentaUsd).toBe(4.59);
     expect(r.avisos).toEqual(["a", "z"]);
     expect(armarReporte({ ...r, ia: { renglones: [], avisos: [] }, railway: { renglon: meta, avisos: [] }, zernio: { renglon: meta, avisos: [] }, meta, ventas: 0 }).costoPorVentaUsd).toBeNull();
   });

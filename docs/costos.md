@@ -30,14 +30,17 @@ en hora de Mazatlán.
 ### Meta (estimado)
 
 `lib/costos/meta-estimado.ts`, con las reglas que se revisaron mensaje por mensaje contra Meta el 27-oct-2026
-(coincidieron en el 97 % de los mensajes; el estimado queda un poco arriba de lo que cobra Meta):
+(coincidieron en el 97 % de los mensajes y en el total de cobrables):
 
 - Solo WhatsApp, sin canales de prueba, sin lo importado ni lo mandado desde el celular, solo lo entregado o leído.
 - Gratis 72 h desde la primera respuesta (≤ 24 h) a un cliente que llegó por un anuncio.
 - Plantillas de marketing y de utilidad según su categoría; mensajes normales (servicio) después de los primeros
   1,000 del mes por número (Meta los cobra desde el 1-oct-2026).
-- Tarifas de México sin IVA (oct-2026): marketing US$0.0431, utilidad US$0.0108, servicio US$0.0105; más 16 % de IVA.
-  Si Meta cambia sus tarifas, se cambian en `META_TARIFAS_USD` y aquí.
+- Tarifas por mensaje cobrado, con el IVA ya incluido (oct-2026): marketing US$0.0431, utilidad US$0.0108, servicio
+  US$0.0105. Calibradas con el cobro real de Notion «Gastos CRM Sep/Oct»: los 2,498 mensajes cobrables del 22-sep al
+  23-oct (312 de marketing, 47 de utilidad, 2,139 de servicio) dan US$36.41 contra US$36.25 con IVA que cobró Meta
+  (0.5 % arriba). Sumarles otro 16 % daba US$42.24, de más. Si Meta cambia sus tarifas, se cambian en
+  `META_TARIFAS_USD` y aquí.
 
 El monto exacto sigue en Meta Business Suite › Facturación y pagos. Cuando entre `feat/meta-costos` (falta el token
 de Meta), el renglón pasa a usar lo que reporta Meta.
@@ -55,19 +58,31 @@ de Meta), el renglón pasa a usar lo que reporta Meta.
 - Código: `scripts/costos-mes.ts` (`npm run costos:correo`) y `lib/costos/` (`mes.ts` arma los renglones, `cargar.ts`
   lee la base, `meta-estimado.ts`, `correo.ts` el HTML, `zoho.ts` el envío).
 
+### ¿Cuesta algo?
+
+No (revisado el 28-oct-2026):
+- **GitHub:** el repo es público y corre en una máquina estándar de GitHub (`ubuntu-24.04`): gratis, sin tope de
+  minutos. Una corrida al mes de ~2–3 min.
+- **Zoho:** la API de Zoho Mail viene con el plan gratis; es un correo al mes desde la cuenta que ya existe.
+- **Railway:** no hay servicio nuevo. Lee la base que ya existe una vez al mes por el mismo acceso de los respaldos;
+  la consulta tarda segundos y la respuesta pesa unos KB (la salida de datos de Railway cuesta US$0.05 por GB: menos
+  de una milésima de centavo).
+- **IA:** no llama a ningún modelo. Las lecturas de cobro las hace el worker cada 5–15 min desde antes (no cambian).
+
 ### Conectar Zoho
 
 Una sola vez (o si se revoca el acceso). El permiso es solo **crear y mandar correos** (`ZohoMail.messages.CREATE`).
 
-1. En https://api-console.zoho.com con la cuenta de contacto@diluvium.com.mx: **Add Client › Self Client › Create**.
-2. Pestaña **Client Secret**: copiar el *Client ID* y el *Client Secret* (uno por uno, al portapapeles).
-3. Pestaña **Generate Code**: scope `ZohoMail.messages.CREATE`, duración 10 minutos, descripción «Correo de
-   costos del CRM» → **Create** → copiar el código.
-4. Claude cambia el código por el *refresh token* (`POST https://accounts.zoho.com/oauth/v2/token`,
-   `grant_type=authorization_code`) leyendo del portapapeles y guarda en el environment `production-backup` de
-   GitHub (`gh secret set … --env production-backup`, por la entrada estándar): `ZOHO_CLIENT_ID`,
-   `ZOHO_CLIENT_SECRET`, `ZOHO_REFRESH_TOKEN`, `ZOHO_ACCOUNT_ID` y `COSTOS_CORREO_PARA`. Las llaves también van a
-   `~/Documents/Diluvium CRM/llaves/llaves-crm.md`. El refresh token no caduca.
+1. En https://api-console.zoho.com con la cuenta de contacto@diluvium.com.mx (Zoho pide confirmar la contraseña: eso
+   lo hace el dueño): **Add Client › Self Client › Create**.
+2. **Generate Code**: scope `ZohoMail.messages.CREATE`, duración 10 minutos, descripción «Correo de costos del CRM» →
+   **Create** → **Download** (baja `self_client.json` con el Client ID, el Client Secret y el código).
+3. `notas/costos-correo/conectar-zoho.sh archivo <ruta>/self_client.json <correo-destino>` (en `~/Documents/Diluvium
+   CRM/`): cambia el código por el *refresh token* (`POST https://accounts.zoho.com/oauth/v2/token`,
+   `grant_type=authorization_code`), guarda en el environment `production-backup` de GitHub `ZOHO_CLIENT_ID`,
+   `ZOHO_CLIENT_SECRET`, `ZOHO_REFRESH_TOKEN`, `ZOHO_ACCOUNT_ID` y `COSTOS_CORREO_PARA`, copia las llaves a
+   `~/Documents/Diluvium CRM/llaves/llaves-crm.md` y **borra el archivo**. Nada pasa por el chat. El refresh token no
+   caduca. (Sin el archivo: los modos `id`, `secreto`, `codigo` y `fijos` leen cada valor del portapapeles.)
 
 Quitar el acceso: api-console.zoho.com › el Self Client › borrar (el correo deja de salir y abre la alerta).
 
