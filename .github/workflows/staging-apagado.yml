@@ -1,0 +1,54 @@
+# Apaga staging cuando nadie lo usa (punto 3 de costos de Railway, OK del dueño 28-oct-2026).
+#
+# Cada hora corre `scripts/staging-energia.ts revisar`: si el web y el worker de staging llevan 2 horas
+# sin visitas ni subidas, los apaga (Postgres y Redis siguen prendidos, así una subida nunca falla).
+# Se vuelven a prender solos con el siguiente push a `staging`, o con `npm run staging:encender` desde
+# la Mac. Detalle en docs/staging.md › Encender y apagar staging.
+#
+# Secret del repo: RAILWAY_STAGING_TOKEN = token de PROYECTO de Railway creado para el environment
+# staging (el script lo comprueba y se detiene si es de otro environment: producción nunca se toca).
+# El log solo dice prendido/apagado, versiones y horas: el repo es público.
+#
+# GitHub solo corre los horarios desde `main`; en un repo público los pausa tras 60 días sin actividad.
+name: staging-apagado
+
+on:
+  schedule:
+    - cron: "23 * * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: staging-apagado
+  cancel-in-progress: false
+
+jobs:
+  revisar:
+    # Fija, igual que inbound-monitor, db-backup y media-backup (seguridad D6).
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - name: Checkout (solo el script)
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          sparse-checkout: scripts/staging-energia.ts
+          sparse-checkout-cone-mode: false
+          persist-credentials: false
+
+      # Node 24 corre TypeScript sin instalar nada (el script no tiene dependencias).
+      - name: Node 24
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: "24"
+
+      - name: Apagar staging si lleva 2 h sin uso
+        env:
+          RAILWAY_STAGING_TOKEN: ${{ secrets.RAILWAY_STAGING_TOKEN }}
+        run: |
+          if [ -z "$RAILWAY_STAGING_TOKEN" ]; then
+            echo "::error::Falta el secret RAILWAY_STAGING_TOKEN (docs/staging.md › Encender y apagar staging)."
+            exit 1
+          fi
+          node --no-warnings scripts/staging-energia.ts revisar

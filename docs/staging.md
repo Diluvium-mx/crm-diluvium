@@ -22,6 +22,41 @@ feature/*  →  staging (se valida en https://crm-diluvium-staging.up.railway.ap
   El *Custom Start Command* de cada servicio en Railway debe ser exactamente ese script; al
   crear un servicio o un environment nuevo, es lo primero que se revisa.
 - Para validar una rama, mérgala a `staging` y haz push. Cuando esté validada, abre el PR a `main`.
+  El push también **prende** staging si estaba apagado (sección siguiente).
+- **Nunca** «Deploy Latest Commit» (Cmd+K) ni un deploy por API sin commit en staging: toman la rama por
+  defecto del repo (`main`). Así el web de staging recibió `main` el 23, 24 y 27-oct-2026 (de1c567, 89312a2,
+  b723cc2) hasta el siguiente push a `staging`. Para prender staging sin subir nada: `npm run staging:encender`.
+
+## Encender y apagar staging (ahorro de Railway, OK del dueño 28-oct-2026)
+
+Staging solo se usa unas horas a la semana (16 h con visitas del 21 al 28-oct) y prendido todo el tiempo costaba
+≈ US$4.9 al mes (worker ≈ 2.4, web ≈ 1.5, Postgres ≈ 0.9, Redis ≈ 0.2; memoria promedio de 7 días a US$10/GB-mes).
+Por eso **el web y el worker de staging se apagan solos** cuando nadie los usa; **Postgres y Redis siempre siguen
+prendidos** (≈ US$1 al mes), así una subida nunca falla por la base apagada y no se pierde nada.
+
+| Qué | Cómo |
+|---|---|
+| Prender | Solo: cada push a `staging` crea un despliegue nuevo. Sin subir nada: `npm run staging:encender` (la misma versión de `staging`, sin reconstruir; responde en 1–2 min) |
+| Apagar | Solo: `.github/workflows/staging-apagado.yml` revisa cada hora y apaga el web y el worker si llevan **2 h sin visitas ni subidas**. Ya: `npm run staging:apagar` |
+| Ver cómo está | `npm run staging:estado` (prendido/apagado, versión, última subida y última visita en hora de Mazatlán) |
+| Ver qué haría | cualquiera con `-- --probar` |
+
+- Script: `scripts/staging-energia.ts` (sin dependencias; la lógica tiene pruebas en `staging-energia.test.ts`).
+  Solo conoce los IDs del environment staging y los comprueba antes de apagar o prender: producción nunca.
+  «Apagar» quita el despliegue activo (Railway › Remove). «Prender» vuelve a desplegar la imagen del último
+  despliegue de la rama `staging` (nunca uno de `main`).
+- Desde la Mac usa el login del CLI `railway`. En GitHub usa el secret **`RAILWAY_STAGING_TOKEN`**: un token de
+  **proyecto** de Railway creado para el environment staging (no puede tocar producción; el script se detiene si
+  el token es de otro environment). GitHub solo corre los horarios desde `main` y los pausa tras 60 días sin
+  actividad en el repo.
+- Mientras está apagado: la URL de staging muestra un error de Railway (se pide «prende staging»), y los mensajes
+  programados y seguimientos de prueba de staging no salen hasta prenderlo. Una pestaña abierta en staging que
+  sigue haciendo peticiones cuenta como visita y lo mantiene prendido.
+- Para dejarlo prendido más tiempo (p. ej. probar un seguimiento programado para mañana), basta con volver a
+  correr `npm run staging:encender` cuando haga falta; no hay interruptor para pausar la revisión.
+- Por qué no el «Serverless» (App Sleeping) de Railway: duerme un servicio solo si no manda ningún paquete en
+  5–10 min, y el web deja abiertas sus conexiones a Postgres (`postgres` manda señal cada 60 s, el LISTEN de la
+  bandeja no se cierra) y a Redis (`ioredis`, cada 30 s); el worker lee Redis sin parar. Nunca se dormirían.
 
 ## Al llegar a `main`: etiqueta y rama borrada (regla del dueño, 9-oct-2026)
 
