@@ -1,0 +1,126 @@
+# Correo mensual de costos del CRM (decisión del dueño 28-oct-2026; docs/costos.md).
+#
+# El día 3 de cada mes a las 9:00 de Mazatlán manda al dueño lo que costó el CRM el mes anterior: IA, Railway,
+# Zernio y Meta (WhatsApp), con ventas y costo por venta (`npm run costos:correo`, scripts/costos-mes.ts).
+# Corre aquí y no en Railway porque el plan Hobby de Railway bloquea el correo (SMTP); el envío va por la API
+# de Zoho (HTTPS) desde contacto@diluvium.com.mx.
+#
+# Secrets del environment `production-backup` (solo se entregan a jobs que corren desde `main`):
+#   PROD_DATABASE_URL      la URL de SOLO LECTURA de los respaldos (rol backup_ro), con TLS verify-ca
+#   ZOHO_CLIENT_ID         «Self Client» de Zoho con el permiso ZohoMail.messages.CREATE
+#   ZOHO_CLIENT_SECRET
+#   ZOHO_REFRESH_TOKEN     no caduca; si se revoca, docs/costos.md › Conectar Zoho
+#   ZOHO_ACCOUNT_ID        cuenta de Zoho Mail de contacto@diluvium.com.mx
+#   COSTOS_CORREO_PARA     a quién le llega (lo eligió el dueño; no va en el repo)
+#
+# El repo es PÚBLICO: el log solo dice qué mes se mandó o el error; nunca montos ni correos. Si falla, el job
+# `aviso` abre un issue `alerta-costos` (GitHub lo manda por correo a quien vigila el repo).
+#
+# A mano: Actions → costos-mes → Run workflow (vacío = el mes anterior; o AAAA-MM). Solo desde `main`.
+# GitHub solo corre los horarios desde `main`; en un repo público los pausa tras 60 días sin actividad.
+name: costos-mes
+
+on:
+  schedule:
+    # Día 3 a las 16:00 UTC = 9:00 de Mazatlán (UTC−7 todo el año desde 2022).
+    - cron: "0 16 3 * *"
+  workflow_dispatch:
+    inputs:
+      mes:
+        description: "Mes a mandar (AAAA-MM). Vacío = el mes anterior."
+        required: false
+        default: ""
+
+permissions:
+  contents: read
+
+concurrency:
+  group: costos-mes
+  cancel-in-progress: false
+
+env:
+  # TLS autenticado contra producción, igual que db-backup (la CA de Railway fijada; verify-ca).
+  PGSSLMODE: verify-ca
+  PGSSLROOTCERT: .github/backup/prod-postgres-root-ca.pem
+
+jobs:
+  correo:
+    # Fija, igual que los demás workflows (seguridad D6).
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    environment: production-backup
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Node 24
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: "24"
+          cache: npm
+
+      - name: Dependencias
+        run: npm ci --no-audit --no-fund
+
+      - name: Mandar el correo de costos
+        env:
+          DATABASE_URL: ${{ secrets.PROD_DATABASE_URL }}
+          ZOHO_CLIENT_ID: ${{ secrets.ZOHO_CLIENT_ID }}
+          ZOHO_CLIENT_SECRET: ${{ secrets.ZOHO_CLIENT_SECRET }}
+          ZOHO_REFRESH_TOKEN: ${{ secrets.ZOHO_REFRESH_TOKEN }}
+          ZOHO_ACCOUNT_ID: ${{ secrets.ZOHO_ACCOUNT_ID }}
+          COSTOS_CORREO_PARA: ${{ secrets.COSTOS_CORREO_PARA }}
+          COSTOS_CORREO_DE: contacto@diluvium.com.mx
+          # Vacío en el horario; el script valida el formato (nada de esto pasa por el shell).
+          COSTOS_MES: ${{ inputs.mes }}
+        run: npm run costos:correo
+
+  # Aviso el MISMO día si el correo no salió (mismo patrón que db-backup › aviso): abre un issue con la
+  # etiqueta `alerta-costos`, o comenta el que ya está abierto; cuando vuelve a salir, lo cierra.
+  # Sin el environment ni más secret que el token de la propia corrida. Solo en `main`.
+  aviso:
+    needs: correo
+    if: ${{ always() && github.ref == 'refs/heads/main' }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      issues: write
+    env:
+      GH_TOKEN: ${{ github.token }}
+      LABEL: alerta-costos
+      RESULTADO: ${{ needs.correo.result }}
+    steps:
+      - name: Abrir, comentar o cerrar el issue de alerta
+        run: |
+          set -euo pipefail
+          titulo="Correo de costos falló"
+          corrida="${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
+          utc=$(date -u '+%Y-%m-%d %H:%M')
+          mazatlan=$(TZ=America/Mazatlan date '+%Y-%m-%d %H:%M')
+          abiertos=$(gh issue list --repo "$GITHUB_REPOSITORY" --label "$LABEL" --state open --limit 100 \
+            --json number,title | jq -r --arg t "$titulo" '.[] | select(.title == $t) | .number')
+          primero=${abiertos%%$'\n'*}
+
+          case "$RESULTADO" in
+            failure | cancelled)
+              if [ "$RESULTADO" = "cancelled" ]; then resultado_es="cancelado"; else resultado_es="falló"; fi
+              gh label create "$LABEL" --repo "$GITHUB_REPOSITORY" --color D93F0B \
+                --description "El correo mensual de costos no salió" 2>/dev/null || true
+              body=$(printf 'El correo mensual de costos no salió.\n\n- Resultado: %s\n- Fecha: %s UTC (%s hora de Mazatlán)\n- [Corrida](%s)\n\nQué hacer: docs/costos.md, «Si el correo no llega».' \
+                "$resultado_es" "$utc" "$mazatlan" "$corrida")
+              if [ -n "$primero" ]; then
+                gh issue comment "$primero" --repo "$GITHUB_REPOSITORY" --body "$body"
+              else
+                gh issue create --repo "$GITHUB_REPOSITORY" --label "$LABEL" --title "$titulo" --body "$body"
+              fi
+              ;;
+            success)
+              for n in $abiertos; do
+                gh issue close "$n" --repo "$GITHUB_REPOSITORY" \
+                  --comment "El correo de costos volvió a salir: ${utc} UTC (${mazatlan} hora de Mazatlán). [Corrida](${corrida})"
+              done
+              ;;
+          esac
