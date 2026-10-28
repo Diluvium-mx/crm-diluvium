@@ -104,6 +104,21 @@ describe.skipIf(!TEST_DATABASE_URL)("reseñas en Amazon y Mercado Libre (Postgre
     expect(await store.cambiarEstadoResena(OTRA, pedro.id, "la_dejo")).toBe(false);
   });
 
+  it("«Deshacer» de Amazon: solo una de Amazon ya solicitada regresa a por pedir, y nunca la de otra organización", async () => {
+    await anotar();
+    const [fila] = await queries.listarResenasTienda(ORG);
+    expect(await store.regresarAPorPedir(ORG, fila.id, NOW)).toBe(false); // todavía no estaba solicitada
+    await store.marcarPedida(ORG, fila.id, "u_rt", NOW);
+    expect(await store.regresarAPorPedir(OTRA, fila.id, NOW)).toBe(false);
+    expect(await store.regresarAPorPedir(ORG, fila.id, NOW)).toBe(true);
+    expect(await queries.resenaTienda(ORG, fila.id)).toMatchObject({ estado: "por_pedir", pedidaAt: null });
+
+    await anotar({ contactId: "c_lucia", conversationId: null, tienda: "mercado_libre", frase: null });
+    const lucia = (await queries.listarResenasTienda(ORG)).find((f) => f.contactId === "c_lucia")!;
+    await store.marcarPedida(ORG, lucia.id, "u_rt", NOW);
+    expect(await store.regresarAPorPedir(ORG, lucia.id, NOW)).toBe(false); // Mercado Libre: el texto ya salió
+  });
+
   it("sabe cuándo salió la plantilla «Reseña en tienda» en ese chat (no las de antes ni las que fallaron)", async () => {
     await anotar({ tienda: "mercado_libre", frase: "Ya la pedí en Mercado Libre" });
     const plantilla = (id: string, at: Date, status: "sent" | "failed", templateName = "resena_tienda") => ({

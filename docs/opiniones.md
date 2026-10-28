@@ -178,6 +178,11 @@ a la lista solo con OK aparte de escritura en producción.
   pide reseñas por su cuenta y sin costo; pedir varias veces por pedido es una infracción; y al usar el botón se acepta no
   mandar ninguna otra solicitud de reseña por el Servicio de mensajes de Amazon. Le llega al cliente un correo, en su
   idioma. Por eso: una sola vez por pedido y nunca, además, por WhatsApp.
+- **«Ya la solicité» y «Deshacer»** (27-oct-2026, OK del dueño): como la de Amazon se pide fuera del CRM, el vendedor la
+  marca a mano después de tocar «Sí» en Seller Central. Pregunta antes (TopConfirm) y en Solicitadas tiene «Deshacer»
+  (`regresarAPorPedir`: solo Amazon y solo si estaba solicitada). Es lo que faltaba con el primer «Ya la pedí en Amazon»:
+  se marcaba con un clic y no se podía regresar. Una de Amazon ya solicitada se queda en Solicitadas aunque pase su plazo.
 - **Se quitaron** (el dueño marcó por error una de Amazon como pedida al probar): «Ya la pedí en Amazon», «La dejó / No
   quiso», el estado de cada fila y la caja de enlaces. «No compró ahí» ahora es **Quitar**, con el aviso de arriba del CRM.
-  Las de Amazon ya no usan el estado: una marcada como pedida por error vuelve sola a «Por solicitar».
+  Las de Amazon ya no usaban el estado (una marcada como pedida por error volvía sola a «Por solicitar»); el mismo día
+  volvió con «Ya la solicité» (abajo).
