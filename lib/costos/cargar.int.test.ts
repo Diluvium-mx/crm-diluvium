@@ -51,10 +51,10 @@ describe.skipIf(!TEST_DATABASE_URL)("reporte de costos (base real)", () => {
     }
   });
 
-  async function chat(opts: { org?: string; canal?: "wa" | "ig" | "pr"; stage?: string; stageChangedAt?: Date } = {}) {
+  async function chat(opts: { org?: string; canal?: "wa" | "ig" | "pr"; stage?: string; stageChangedAt?: Date; prueba?: boolean } = {}) {
     const org = opts.org ?? ORG;
     const n = ++seq;
-    await db.insert(s.contacts).values({ id: `c${n}`, organizationId: org, firstName: "X", phoneE164: `+5255100000${n}`, stage: opts.stage ?? "inbox", stageChangedAt: opts.stageChangedAt ?? T });
+    await db.insert(s.contacts).values({ id: `c${n}`, organizationId: org, firstName: "X", phoneE164: `+5255100000${n}`, stage: opts.stage ?? "inbox", stageChangedAt: opts.stageChangedAt ?? T, esPrueba: opts.prueba ?? false });
     await db.insert(s.conversations).values({ id: `v${n}`, organizationId: org, contactId: `c${n}`, channelId: `${opts.canal ?? "wa"}_${org}`, lastMessageAt: T });
     return { org, conv: `v${n}` };
   }
@@ -116,7 +116,7 @@ describe.skipIf(!TEST_DATABASE_URL)("reporte de costos (base real)", () => {
     expect(await meta.contarMetaCobrables(db, ORG, "2026-10-01", "2026-10-31")).toEqual({ marketing: 2, utilidad: 1, servicio: 2 });
   });
 
-  it("ventas: contactos que hoy están en la etapa de venta y entraron en el mes", async () => {
+  it("ventas: contactos que hoy están en la etapa de venta y entraron en el mes (sin los de prueba)", async () => {
     const stages = await stagesMod.listFunnelStages(ORG);
     const venta = stages.find((x) => x.role === "venta_cerrada")!.key;
     const otra = stages.find((x) => x.role === "cerca_compra")!.key;
@@ -124,6 +124,7 @@ describe.skipIf(!TEST_DATABASE_URL)("reporte de costos (base real)", () => {
     await chat({ stage: venta, stageChangedAt: new Date("2026-11-01T05:00:00Z") }); // 31-oct en Mazatlán
     await chat({ stage: venta, stageChangedAt: new Date("2026-10-01T05:00:00Z") }); // 30-sep en Mazatlán
     await chat({ stage: otra, stageChangedAt: T });
+    await chat({ stage: venta, stageChangedAt: T, prueba: true }); // contacto de prueba
     const ventaOtra = (await stagesMod.listFunnelStages(OTRA)).find((x) => x.role === "venta_cerrada")!.key;
     await chat({ org: OTRA, stage: ventaOtra, stageChangedAt: T });
 

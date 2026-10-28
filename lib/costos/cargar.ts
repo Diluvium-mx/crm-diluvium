@@ -12,13 +12,13 @@ type Database = Pick<typeof appDb, "select" | "execute">;
 
 // Ventas del mes, como en el informe del primer mes (27-oct-2026): contactos que HOY están en la etapa de venta
 // (papel `venta_cerrada`) y entraron a ella en el mes, hora de Mazatlán. El que entró y regresó a otra etapa no
-// cuenta. No depende del Historial de etapas (existe solo desde el 9-oct-2026).
+// cuenta, ni los contactos de prueba. No depende del Historial de etapas (existe solo desde el 9-oct-2026).
 export async function contarVentas(database: Database, organizationId: string, mes: Mes): Promise<number> {
   const [row] = await database.execute<{ ventas: string }>(sql`
     select count(*)::text as ventas
     from contacts c
     join funnel_stages f on f.organization_id = c.organization_id and f.key = c.stage and f.role = 'venta_cerrada'
-    where c.organization_id = ${organizationId}
+    where c.organization_id = ${organizationId} and not c.es_prueba
       and c.stage_changed_at >= (${mes.desde}::timestamp at time zone 'America/Mazatlan') at time zone 'UTC'
       and c.stage_changed_at < ((${mes.hasta}::date + 1)::timestamp at time zone 'America/Mazatlan') at time zone 'UTC'
   `);
