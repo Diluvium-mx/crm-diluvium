@@ -33,8 +33,11 @@ export type ResenaVista = {
   chatHref: string;
 };
 
-/** Pedidos de Seller Central México: ahí, en el pedido, está «Solicitar una reseña». */
-export const SELLER_CENTRAL_PEDIDOS = "https://sellercentral.amazon.com.mx/orders-v3";
+/**
+ * Pedidos enviados con Easy Ship que ya se entregaron a la paquetería, en Seller Central México (el
+ * enlace que eligió el dueño, 27-oct-2026): ahí, en el pedido, está «Solicitar una reseña».
+ */
+export const SELLER_CENTRAL_PEDIDOS = "https://sellercentral.amazon.com.mx/orders-v3/mfn/shipped/easyship/handover-done?page=1";
 
 /**
  * Amazon solo deja contactar al comprador por su propio servicio de mensajes (código de conducta
