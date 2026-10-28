@@ -81,3 +81,20 @@ export async function marcarPedida(organizationId: string, id: string, userId: s
     .set({ estado: "pedida", pedidaAt: now, pedidaPorUserId: userId, updatedAt: now })
     .where(and(eq(resenasTienda.id, id), eq(resenasTienda.organizationId, organizationId)));
 }
+
+/** «Deshacer» de Amazon: la que se marcó como solicitada por error regresa a por pedir. */
+export async function regresarAPorPedir(organizationId: string, id: string, now = new Date()): Promise<boolean> {
+  const filas = await db
+    .update(resenasTienda)
+    .set({ estado: "por_pedir", pedidaAt: null, pedidaPorUserId: null, updatedAt: now })
+    .where(
+      and(
+        eq(resenasTienda.id, id),
+        eq(resenasTienda.organizationId, organizationId),
+        eq(resenasTienda.tienda, "amazon"),
+        eq(resenasTienda.estado, "pedida"),
+      ),
+    )
+    .returning({ id: resenasTienda.id });
+  return filas.length > 0;
+}

@@ -2,7 +2,8 @@
 
 // Acciones de Seguimientos › Amazon y Mercado Libre (docs/opiniones.md § Amazon y Mercado
 // Libre). Solo Mercado Libre se pide por WhatsApp: el texto fijo con la ventana abierta o la
-// plantilla «Reseña en tienda» con la ventana cerrada (la de Amazon se pide en Seller Central).
+// plantilla «Reseña en tienda» con la ventana cerrada. La de Amazon se pide en Seller Central y
+// aquí solo se marca («Ya la solicité») o se deshace.
 // Cada acción revisa en el servidor que su paso sea el de hoy (`pasoDe`). La organización sale
 // de la sesión; mismos permisos que Opinión (ACL `opinion`).
 import { revalidatePath } from "next/cache";
@@ -21,7 +22,7 @@ import { syncTemplatesForOrg } from "@/lib/messaging/templates";
 import { enqueueOutboxSend } from "@/lib/queue/outbox";
 import { mensajeResena } from "@/lib/resenas-tienda/mensaje";
 import { plantillaResenaId, resenaTienda, type ResenaFila } from "@/lib/resenas-tienda/queries";
-import { cambiarEstadoResena, marcarPedida } from "@/lib/resenas-tienda/store";
+import { cambiarEstadoResena, marcarPedida, regresarAPorPedir } from "@/lib/resenas-tienda/store";
 import { TIENDA_NOMBRE } from "@/lib/resenas-tienda/tiendas";
 import { pasoDe, type AccionResena } from "@/lib/resenas-tienda/vista";
 
@@ -141,6 +142,40 @@ export async function mandarPlantillaResena(input: { id: string }): Promise<Agen
     if (error instanceof ZodError) return { ok: false, message: "Cliente no válido." };
     logError("[resenas-tienda] no se pudo mandar la plantilla", error);
     return { ok: false, message: "No se pudo confirmar el envío. Revisa su chat antes de intentar otra vez." };
+  }
+}
+
+/** Amazon: el vendedor ya tocó «Solicitar una reseña» › «Sí» en Seller Central; pasa a Solicitadas. */
+export async function yaLaSolicite(input: { id: string }): Promise<AgentActionResult> {
+  try {
+    const listo = await paraAccion(input, "amazon");
+    if (!("m" in listo)) return listo;
+    const { m, fila, now } = listo;
+    await marcarPedida(m.organizationId, fila.id, m.userId, now);
+    revalidatePath(RUTA);
+    return { ok: true };
+  } catch (error) {
+    if (error instanceof ZodError) return { ok: false, message: "Cliente no válido." };
+    logError("[resenas-tienda] no se pudo marcar la de Amazon", error);
+    return { ok: false, message: "No se pudo guardar. Intenta de nuevo." };
+  }
+}
+
+/** Amazon: «Deshacer» de «Ya la solicité» (si se marcó por error); regresa a Por solicitar. */
+export async function deshacerSolicitada(input: { id: string }): Promise<AgentActionResult> {
+  try {
+    const { id } = idSchema.parse(input);
+    const m = await conPermiso();
+    if (!m) return { ok: false, message: "No tienes permiso para cambiar la lista." };
+    if (!(await regresarAPorPedir(m.organizationId, id))) {
+      return { ok: false, message: "Ese cliente ya no está en Solicitadas." };
+    }
+    revalidatePath(RUTA);
+    return { ok: true };
+  } catch (error) {
+    if (error instanceof ZodError) return { ok: false, message: "Cliente no válido." };
+    logError("[resenas-tienda] no se pudo deshacer la de Amazon", error);
+    return { ok: false, message: "No se pudo guardar. Intenta de nuevo." };
   }
 }
 

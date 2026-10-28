@@ -1,6 +1,7 @@
 // Cómo se ve cada cliente en Seguimientos › Amazon y Mercado Libre (docs/opiniones.md § Amazon
 // y Mercado Libre). Puro; el servidor lo arma y el panel solo pinta. Cada cliente cae en UNA
-// sección con UNA acción, según las reglas de su tienda (sin marcarlo a mano).
+// sección con UNA acción, según las reglas de su tienda. Solo la de Amazon se marca a mano («Ya la
+// solicité», con su «Deshacer»), porque se pide fuera del CRM.
 import { zoneForPhone } from "@/lib/followups/timezone";
 import { formatMazatlan } from "@/lib/historial/labels";
 import { canSendFreeForm } from "@/lib/messaging/rules";
@@ -8,11 +9,14 @@ import { mensajeResena, textoPlantillaResena } from "./mensaje";
 import type { ResenaFila } from "./queries";
 import { TIENDA_NOMBRE } from "./tiendas";
 
-/** Por solicitar: se puede hoy. En espera: todavía no (dice desde cuándo o qué falta). Solicitadas: salió el texto. */
+/** Por solicitar: se puede hoy. En espera: todavía no (dice desde cuándo o qué falta). Solicitadas: salió el texto o se solicitó en Amazon. */
 export type SeccionResena = "pedir" | "espera" | "pedida";
 
 /** amazon = abrir Seller Central; texto = mandar el texto fijo; plantilla = mandar «Reseña en tienda». */
 export type AccionResena = "amazon" | "texto" | "plantilla";
+
+/** Solo Amazon: «Ya la solicité» (después de pedirla en Seller Central) y su «Deshacer». */
+export type MarcaResena = "solicitada" | "deshacer";
 
 export type ResenaVista = {
   id: string;
@@ -23,6 +27,7 @@ export type ResenaVista = {
   dicho: string;
   seccion: SeccionResena;
   accion: AccionResena | null;
+  marca: MarcaResena | null;
   /** Una línea: qué hacer o por qué todavía no. */
   aviso: string;
   /** Lo que saldría (texto o plantilla), para verlo antes de mandarlo. */
@@ -33,8 +38,11 @@ export type ResenaVista = {
   chatHref: string;
 };
 
-/** Pedidos de Seller Central México: ahí, en el pedido, está «Solicitar una reseña». */
-export const SELLER_CENTRAL_PEDIDOS = "https://sellercentral.amazon.com.mx/orders-v3";
+/**
+ * Pedidos enviados con Easy Ship que ya se entregaron a la paquetería, en Seller Central México (el
+ * enlace que eligió el dueño, 27-oct-2026): ahí, en el pedido, está «Solicitar una reseña».
+ */
+export const SELLER_CENTRAL_PEDIDOS = "https://sellercentral.amazon.com.mx/orders-v3/mfn/shipped/easyship/handover-done?page=1";
 
 /**
  * Amazon solo deja contactar al comprador por su propio servicio de mensajes (código de conducta
@@ -54,7 +62,7 @@ const DIA_MS = 24 * 60 * 60 * 1000;
 const masDias = (at: Date, dias: number) => new Date(at.getTime() + dias * DIA_MS);
 const soloFecha = (at: Date) => formatMazatlan(at).split(" ")[0];
 
-type Paso = { seccion: SeccionResena; accion: AccionResena | null; aviso: string; orden: number };
+type Paso = { seccion: SeccionResena; accion: AccionResena | null; marca?: MarcaResena; aviso: string; orden: number };
 
 /** Dónde está cada cliente hoy. null = de Amazon y ya pasó su plazo: ya no sale en la lista. */
 export function pasoDe(
@@ -62,12 +70,18 @@ export function pasoDe(
   now: Date,
 ): Paso | null {
   if (f.tienda === "amazon") {
+    // Amazon la deja pedir una sola vez por pedido: ya marcada, se queda en Solicitadas.
+    if (f.estado !== "por_pedir") {
+      const cuando = f.pedidaAt ?? f.createdAt;
+      return { seccion: "pedida", accion: null, marca: "deshacer", aviso: `Se solicitó en Amazon el ${formatMazatlan(cuando)}.`, orden: -cuando.getTime() };
+    }
     const hasta = masDias(f.createdAt, DIAS_AMAZON);
     if (now >= hasta) return null;
     return {
       seccion: "pedir",
       accion: "amazon",
-      aviso: `En su pedido de Seller Central, toque «Solicitar una reseña». Amazon deja hasta el ${soloFecha(hasta)}.`,
+      marca: "solicitada",
+      aviso: `En su pedido de Seller Central, toque «Solicitar una reseña» y después «Ya la solicité». Amazon deja hasta el ${soloFecha(hasta)}.`,
       orden: hasta.getTime(),
     };
   }
@@ -124,6 +138,7 @@ export function resenaVista(f: ResenaFila, now: Date): ResenaVista | null {
     frase: f.frase,
     dicho: `Lo dijo el ${soloFecha(f.createdAt)}`,
     ...paso,
+    marca: paso.marca ?? null,
     mensaje:
       paso.accion === "texto"
         ? mensajeResena(f.tienda, now, zoneForPhone(f.telefono))

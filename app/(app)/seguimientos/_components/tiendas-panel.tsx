@@ -6,7 +6,7 @@ import { useRouter } from "next/navigation";
 import { ExternalLink } from "lucide-react";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { TopConfirm, TopNotice } from "@/components/ui/top-confirm";
-import { mandarPlantillaResena, pedirResena, quitarResena } from "@/lib/actions/resenas-tienda";
+import { deshacerSolicitada, mandarPlantillaResena, pedirResena, quitarResena, yaLaSolicite } from "@/lib/actions/resenas-tienda";
 import { cn } from "@/lib/utils";
 import { SELLER_CENTRAL_PEDIDOS, type ResenaVista, type SeccionResena } from "@/lib/resenas-tienda/vista";
 import { TONOS } from "./opinion-panel";
@@ -14,7 +14,8 @@ import { TONOS } from "./opinion-panel";
 // Seguimientos › Amazon y Mercado Libre (27-oct-2026, docs/opiniones.md): los clientes que
 // dijeron en el chat que compraron en una de esas tiendas (los anota el lector), en tres
 // secciones según lo que se puede hacer hoy y con UNA acción cada uno. Amazon se pide en Seller
-// Central; Mercado Libre, con el texto fijo o la plantilla, cuando su tienda lo permite.
+// Central y aquí se marca «Ya la solicité» (pregunta antes; en Solicitadas tiene «Deshacer»);
+// Mercado Libre, con el texto fijo o la plantilla, cuando su tienda lo permite.
 const SECCIONES: ReadonlyArray<{ id: SeccionResena; titulo: string }> = [
   { id: "pedir", titulo: "Por solicitar" },
   { id: "espera", titulo: "En espera" },
@@ -29,7 +30,8 @@ export function TiendasPanel({ resenas, puedeEditar }: { resenas: ResenaVista[];
   const [aviso, setAviso] = useState<string | null>(null);
   const [listo, setListo] = useState<string | null>(null);
   const [viendo, setViendo] = useState<string | null>(null);
-  const [quitando, setQuitando] = useState<ResenaVista | null>(null);
+  // Lo que pide confirmación con el aviso de arriba: quitarlo de la lista o marcar la de Amazon.
+  const [confirmando, setConfirmando] = useState<{ que: "quitar" | "solicitada"; r: ResenaVista } | null>(null);
 
   function correr(accion: () => Promise<{ ok: true } | { ok: false; message: string }>, hecho: string) {
     setAviso(null);
@@ -38,7 +40,7 @@ export function TiendasPanel({ resenas, puedeEditar }: { resenas: ResenaVista[];
       const r = await accion();
       if (r.ok) {
         setViendo(null);
-        setQuitando(null);
+        setConfirmando(null);
         setListo(hecho);
         router.refresh();
       } else setAviso(r.message);
@@ -88,7 +90,9 @@ export function TiendasPanel({ resenas, puedeEditar }: { resenas: ResenaVista[];
                     viendo={viendo === r.id}
                     onVer={() => setViendo(viendo === r.id ? null : r.id)}
                     onMandar={() => mandar(r)}
-                    onQuitar={() => setQuitando(r)}
+                    onQuitar={() => setConfirmando({ que: "quitar", r })}
+                    onSolicitada={() => setConfirmando({ que: "solicitada", r })}
+                    onDeshacer={() => correr(() => deshacerSolicitada({ id: r.id }), `${r.titulo} regresó a «Por solicitar».`)}
                   />
                 ))}
               </ul>
@@ -97,19 +101,31 @@ export function TiendasPanel({ resenas, puedeEditar }: { resenas: ResenaVista[];
         })
       )}
 
-      {quitando && (
+      {confirmando?.que === "quitar" && (
         <TopConfirm
-          title={`¿Quitar a ${quitando.titulo} de la lista?`}
+          title={`¿Quitar a ${confirmando.r.titulo} de la lista?`}
           confirmLabel="Quitar"
           pendingLabel="Quitando…"
           pending={ocupado}
-          onConfirm={() => correr(() => quitarResena({ id: quitando.id }), `${quitando.titulo} salió de la lista.`)}
-          onCancel={() => setQuitando(null)}
+          onConfirm={() => correr(() => quitarResena({ id: confirmando.r.id }), `${confirmando.r.titulo} salió de la lista.`)}
+          onCancel={() => setConfirmando(null)}
         >
           No se le pedirá la reseña y el Agente IA ya no lo vuelve a anotar.
         </TopConfirm>
       )}
-      <TopNotice message={quitando ? null : listo} />
+      {confirmando?.que === "solicitada" && (
+        <TopConfirm
+          title={`¿Ya tocaste «Sí» en Amazon para el pedido de ${confirmando.r.titulo}?`}
+          confirmLabel="Sí, ya la solicité"
+          pendingLabel="Guardando…"
+          pending={ocupado}
+          onConfirm={() => correr(() => yaLaSolicite({ id: confirmando.r.id }), `${confirmando.r.titulo} pasó a «Solicitadas».`)}
+          onCancel={() => setConfirmando(null)}
+        >
+          Pasa a «Solicitadas». Amazon deja pedirla una sola vez por pedido.
+        </TopConfirm>
+      )}
+      <TopNotice message={confirmando ? null : listo} />
     </div>
   );
 }
@@ -122,6 +138,8 @@ function Fila({
   onVer,
   onMandar,
   onQuitar,
+  onSolicitada,
+  onDeshacer,
 }: {
   r: ResenaVista;
   puedeEditar: boolean;
@@ -130,6 +148,8 @@ function Fila({
   onVer: () => void;
   onMandar: () => void;
   onQuitar: () => void;
+  onSolicitada: () => void;
+  onDeshacer: () => void;
 }) {
   return (
     <li className="flex flex-col gap-1 px-4 py-3">
@@ -138,7 +158,21 @@ function Fila({
           <span className="truncate">{r.titulo}</span>
           <span className={`shrink-0 rounded-md px-2 py-0.5 text-xs font-normal ${TONOS.marca}`}>{r.tienda}</span>
         </p>
-        {puedeEditar && <Accion r={r} ocupado={ocupado} viendo={viendo} onVer={onVer} />}
+        {puedeEditar && (
+          <span className="flex shrink-0 items-center gap-1.5">
+            {r.marca === "solicitada" && (
+              <Button variant="outline" size="xs" disabled={ocupado} onClick={onSolicitada}>
+                Ya la solicité
+              </Button>
+            )}
+            {r.marca === "deshacer" && (
+              <Button variant="outline" size="xs" disabled={ocupado} onClick={onDeshacer}>
+                Deshacer
+              </Button>
+            )}
+            <Accion r={r} ocupado={ocupado} viendo={viendo} onVer={onVer} />
+          </span>
+        )}
       </div>
       <p className="text-sm text-foreground/70">{r.aviso}</p>
 

@@ -27,17 +27,29 @@ function fila(over: Partial<ResenaFila> = {}): ResenaFila {
   };
 }
 
-describe("Amazon: se pide en Seller Central, sin marcar nada a mano", () => {
-  it("sale para pedir con el botón a Seller Central y la fecha límite, aunque alguien la haya marcado como pedida", () => {
-    for (const estado of ["por_pedir", "pedida"] as const) {
-      const v = resenaVista(fila({ tienda: "amazon", estado, createdAt: new Date("2026-10-13T21:00:00Z"), frase: "Disculpe lo pedí por Amazon" }), NOW);
-      expect(v).toMatchObject({ tienda: "Amazon", seccion: "pedir", accion: "amazon", mensaje: null });
-      expect(v?.aviso).toBe("En su pedido de Seller Central, toque «Solicitar una reseña». Amazon deja hasta el 17-nov-2026.");
+describe("Amazon: se pide en Seller Central y aquí se marca", () => {
+  const amazon = { tienda: "amazon" as const, createdAt: new Date("2026-10-13T21:00:00Z"), frase: "Disculpe lo pedí por Amazon" };
+
+  it("por solicitar: botón a Seller Central, «Ya la solicité» y la fecha límite", () => {
+    const v = resenaVista(fila(amazon), NOW);
+    expect(v).toMatchObject({ tienda: "Amazon", seccion: "pedir", accion: "amazon", marca: "solicitada", mensaje: null });
+    expect(v?.aviso).toBe("En su pedido de Seller Central, toque «Solicitar una reseña» y después «Ya la solicité». Amazon deja hasta el 17-nov-2026.");
+  });
+
+  it("ya solicitada: en Solicitadas con la fecha y «Deshacer», aunque haya pasado su plazo", () => {
+    const pedida = { ...amazon, estado: "pedida" as const, pedidaAt: new Date("2026-10-27T23:37:00Z") };
+    for (const now of [NOW, new Date("2026-12-01T00:00:00Z")]) {
+      expect(resenaVista(fila(pedida), now)).toMatchObject({ seccion: "pedida", accion: null, marca: "deshacer", aviso: "Se solicitó en Amazon el 27-oct-2026 16:37." });
     }
   });
 
-  it("pasado su plazo (35 días desde que lo dijo) ya no sale", () => {
+  it("pasado su plazo (35 días desde que lo dijo) sin solicitar, ya no sale", () => {
     expect(resenaVista(fila({ tienda: "amazon", createdAt: new Date(NOW.getTime() - 35 * DIA) }), NOW)).toBeNull();
+  });
+
+  it("Mercado Libre no se marca a mano", () => {
+    expect(resenaVista(fila(), NOW)?.marca).toBeNull();
+    expect(resenaVista(fila({ estado: "pedida", pedidaAt: NOW }), NOW)?.marca).toBeNull();
   });
 });
 
