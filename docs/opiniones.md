@@ -167,12 +167,13 @@ a la lista solo con OK aparte de escritura en producción.
 ### Rediseño de la lista (27-oct-2026, noche; pedido del dueño: «lo más simple, concreto y fácil de entender»)
 
 - **Una sección y una acción por cliente, sin marcar nada a mano** (`pasoDe` en `lib/resenas-tienda/vista.ts`):
-  - **Para pedir**: Amazon (botón **Pedir en Amazon** → pedidos de Seller Central, hasta 35 días después de que lo dijo;
+  - **Por solicitar**: Amazon (botón **Pedir en Amazon** → pedidos de Seller Central, hasta 35 días después de que lo dijo;
     después sale solo de la lista); Mercado Libre ya pasados los 40 días: **Pedir reseña** (texto fijo, ventana abierta) o
     **Mandar plantilla** (`resena_tienda` con un clic desde la lista, ventana cerrada).
   - **En espera**: Mercado Libre antes de los 40 días, o con la plantilla ya mandada esperando que conteste (se sabe por
     `messages.template_name`, sin columna nueva).
-  - **Ya pedidas**: salió el texto.
+  - **Solicitadas**: salió el texto.
+  - Nombres de las secciones elegidos por el dueño (27-oct): «Por solicitar», «En espera» y «Solicitadas».
 - **Se quitaron** (el dueño marcó por error una de Amazon como pedida al probar): «Ya la pedí en Amazon», «La dejó / No
   quiso», el estado de cada fila y la caja de enlaces. «No compró ahí» ahora es **Quitar**, con el aviso de arriba del CRM.
-  Las de Amazon ya no usan el estado: una marcada como pedida por error vuelve sola a «Para pedir».
+  Las de Amazon ya no usan el estado: una marcada como pedida por error vuelve sola a «Por solicitar».

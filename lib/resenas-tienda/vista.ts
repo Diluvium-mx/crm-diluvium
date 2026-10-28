@@ -8,7 +8,7 @@ import { mensajeResena, textoPlantillaResena } from "./mensaje";
 import type { ResenaFila } from "./queries";
 import { TIENDA_NOMBRE } from "./tiendas";
 
-/** Para pedir: se puede hoy. En espera: todavía no (dice desde cuándo o qué falta). Ya pedidas: salió el texto. */
+/** Por solicitar: se puede hoy. En espera: todavía no (dice desde cuándo o qué falta). Solicitadas: salió el texto. */
 export type SeccionResena = "pedir" | "espera" | "pedida";
 
 /** amazon = abrir Seller Central; texto = mandar el texto fijo; plantilla = mandar «Reseña en tienda». */
