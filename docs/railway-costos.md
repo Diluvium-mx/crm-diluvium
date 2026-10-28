@@ -11,6 +11,8 @@ Decisión del dueño (7-oct-2026): ver lo que va costando Railway sin entrar a R
   corte: el 5 de cada mes, a las 16:44 de Mazatlán). Ejemplo: uso de US$12 → factura de US$12 (US$5 del plan +
   US$7 de diferencia). Railway también puede cobrar una parte antes del corte si el uso sube mucho («partial amount
   … earlier in the billing cycle», docs de Railway).
+- Casi todo el gasto es **memoria** (94 % al 28-oct-2026). Staging se llevaba ≈ 37 % del uso estando prendido todo
+  el día; desde el 28-oct su web y su worker se apagan solos sin uso (`docs/staging.md` › Encender y apagar staging).
 - **Pasar de US$5 no apaga nada.** Los servicios solo se detienen si:
   1. hay un **límite duro** de uso configurado (Workspace › Usage › Usage Limits) y se alcanza. Al 7-oct-2026 la
      cuenta NO tiene límite (`usageLimit: null`); el **límite suave** solo manda correo, no apaga;
