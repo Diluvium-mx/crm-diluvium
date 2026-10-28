@@ -75,14 +75,16 @@ Una sola vez (o si se revoca el acceso). El permiso es solo **crear y mandar cor
 
 1. En https://api-console.zoho.com con la cuenta de contacto@diluvium.com.mx (Zoho pide confirmar la contraseña: eso
    lo hace el dueño): **Add Client › Self Client › Create**.
-2. **Generate Code**: scope `ZohoMail.messages.CREATE`, duración 10 minutos, descripción «Correo de costos del CRM» →
-   **Create** → **Download** (baja `self_client.json` con el Client ID, el Client Secret y el código).
-3. `notas/costos-correo/conectar-zoho.sh archivo <ruta>/self_client.json <correo-destino>` (en `~/Documents/Diluvium
-   CRM/`): cambia el código por el *refresh token* (`POST https://accounts.zoho.com/oauth/v2/token`,
-   `grant_type=authorization_code`), guarda en el environment `production-backup` de GitHub `ZOHO_CLIENT_ID`,
-   `ZOHO_CLIENT_SECRET`, `ZOHO_REFRESH_TOKEN`, `ZOHO_ACCOUNT_ID` y `COSTOS_CORREO_PARA`, copia las llaves a
-   `~/Documents/Diluvium CRM/llaves/llaves-crm.md` y **borra el archivo**. Nada pasa por el chat. El refresh token no
-   caduca. (Sin el archivo: los modos `id`, `secreto`, `codigo` y `fijos` leen cada valor del portapapeles.)
+2. **Generate Code**: scope `ZohoMail.messages.CREATE`, duración 10 minutos, descripción «Correo mensual de costos del
+   CRM» → **Create**.
+3. Con los botones **COPY** de Zoho (código, Client ID y Client Secret, uno por uno; nunca leyendo la página) y
+   `notas/costos-correo/conectar-zoho.sh` en `~/Documents/Diluvium CRM/`: `id`, `secreto` y `codigo` leen el
+   portapapeles; `codigo` lo cambia por el *refresh token* (`POST https://accounts.zoho.com/oauth/v2/token`,
+   `grant_type=authorization_code`); `fijos <correo-destino>` pone `ZOHO_ACCOUNT_ID` y `COSTOS_CORREO_PARA`. Todo queda en
+   el environment `production-backup` de GitHub y en `~/Documents/Diluvium CRM/llaves/llaves-crm.md`. El refresh token
+   no caduca. (El modo `archivo` sirve si Zoho deja bajar `self_client.json`; el navegador integrado no lo baja.)
+
+Hecho el 28-oct-2026 (Self Client «Diluvium México»; acceso comprobado y correo de prueba entregado).
 
 Quitar el acceso: api-console.zoho.com › el Self Client › borrar (el correo deja de salir y abre la alerta).
 
