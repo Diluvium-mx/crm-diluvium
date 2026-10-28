@@ -431,6 +431,19 @@
   background-size: 160px 160px;
 }
 
+/* Detalles de la burbuja que no se seleccionan ni se copian (28-oct-2026, pedido del dueño):
+   hora, palomitas, «editado», «Importado…» y reacciones (chat-thread.tsx). El texto va en el
+   atributo y lo pinta ::after: lo que pinta CSS no es texto de la página, así que ningún navegador
+   lo marca al seleccionar ni lo copia; al copiar un mensaje solo sale lo que se escribió.
+   Uso: <span data-sin-copia="10:48 a.m." />. */
+[data-sin-copia] {
+  -webkit-user-select: none;
+  user-select: none;
+}
+[data-sin-copia]::after {
+  content: attr(data-sin-copia);
+}
+
 .dark .chat-wallpaper {
   background-color: #0d1f33;
   background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160' viewBox='0 0 160 160'%3E%3Cg fill='none' stroke='%23FFFFFF' stroke-opacity='0.06' stroke-width='1.4' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M28 18c-5 7-8 11-8 15a8 8 0 0 0 16 0c0-4-3-8-8-15z'/%3E%3Cpath d='M112 70c-4 6-6 9-6 12a6 6 0 0 0 12 0c0-3-2-6-6-12z'/%3E%3Cpath d='M58 118c-3 4-5 7-5 9a5 5 0 0 0 10 0c0-2-2-5-5-9z'/%3E%3Cpath d='M86 22q8-6 16 0t16 0'/%3E%3Cpath d='M12 84q8-6 16 0t16 0'/%3E%3Cpath d='M104 132q8-6 16 0t16 0'/%3E%3Ccircle cx='140' cy='40' r='2'/%3E%3Ccircle cx='70' cy='64' r='1.5'/%3E%3Ccircle cx='24' cy='140' r='1.5'/%3E%3C/g%3E%3C/svg%3E");

@@ -199,7 +199,7 @@ function Bubble({
         >
           <span className="font-semibold text-brand-orange">📝 Aviso interno · </span>
           <span className="whitespace-pre-wrap break-words">{row.body && <LinkedText text={row.body} />}</span>
-          <span className="ml-2 text-[10px] text-muted-foreground">{bubbleTime(row.sentAt)}</span>
+          <span className="ml-2 text-[10px] text-muted-foreground" data-sin-copia={bubbleTime(row.sentAt)} />
         </div>
       </div>
     );
@@ -305,6 +305,7 @@ function Bubble({
             <LinkedText text={row.body} searchTerm={term} />
           </p>
         )}
+        {/* Hora, palomitas y marcas: no se seleccionan ni se copian con el texto (data-sin-copia, globals.css). */}
         <div
           className={`mt-1 flex items-center justify-end gap-1 text-[10px] ${
             bare
@@ -316,25 +317,22 @@ function Bubble({
         >
           {view?.importedFromPhone &&
             (instagram ? (
-              <span title="Copiado del historial de Instagram al conectar la cuenta">Importado de Instagram ·</span>
+              <span title="Copiado del historial de Instagram al conectar la cuenta" data-sin-copia="Importado de Instagram ·" />
             ) : (
-              <span title="Copiado del historial del celular al conectar el número">Importado del celular ·</span>
+              <span title="Copiado del historial del celular al conectar el número" data-sin-copia="Importado del celular ·" />
             ))}
-          {view?.editedAt && <span>editado</span>}
-          <span>{bubbleTime(row.sentAt)}</span>
+          {view?.editedAt && <span data-sin-copia="editado" />}
+          <span data-sin-copia={bubbleTime(row.sentAt)} />
           {mark && mark.glyph && (
-            <span className={mark.className} title={mark.label} aria-label={mark.label}>
-              {mark.glyph}
-            </span>
+            <span className={mark.className} title={mark.label} aria-label={mark.label} data-sin-copia={mark.glyph} />
           )}
         </div>
         {reactions.length > 0 && (
           <span
             className={`absolute -bottom-3 ${out ? "right-2" : "left-2"} rounded-full border bg-card px-1.5 text-xs text-foreground shadow-sm`}
             aria-label={`Reacciones: ${reactions.join(" ")}`}
-          >
-            {reactions.join(" ")}
-          </span>
+            data-sin-copia={reactions.join(" ")}
+          />
         )}
         {out && row.status !== "failed" && view?.sendWarning && (
           <p className="mt-1 text-right text-[11px] text-amber-200">⚠ {view.sendWarning}</p>
