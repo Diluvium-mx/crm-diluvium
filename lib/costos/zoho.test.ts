@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { type FetchLike, type ZohoConfig, enviarCorreoZoho, zohoConfigFromEnv } from "./zoho";
+import { type FetchLike, type ZohoConfig, enviarCorreoZoho, verificarZoho, zohoConfigFromEnv } from "./zoho";
 
 const config: ZohoConfig = {
   clientId: "1000.CLIENTE",
@@ -67,5 +67,11 @@ describe("enviarCorreoZoho", () => {
       { ok: false, status: 400, body: { status: { code: 400, description: "Invalid fromAddress" } } },
     ]);
     await expect(enviarCorreoZoho(config, correo, fetchImpl)).rejects.toThrow("Zoho no mandó el correo (Invalid fromAddress).");
+  });
+
+  it("verificar solo pide el access token: no manda nada", async () => {
+    const { fetchImpl, llamadas } = fake([{ ok: true, status: 200, body: { access_token: "tok" } }]);
+    await verificarZoho(config, fetchImpl);
+    expect(llamadas.map((l) => l.url)).toEqual(["https://accounts.zoho.com/oauth/v2/token"]);
   });
 });

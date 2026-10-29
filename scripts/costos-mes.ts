@@ -3,6 +3,8 @@
 //      COSTOS_MES=2026-10 npm run costos:correo → el de otro mes
 //      npm run costos:correo -- --probar        → no manda nada: guarda el correo como HTML en la carpeta temporal
 //                                                y dice dónde (para verlo antes en la Mac)
+//      npm run costos:correo -- --verificar     → (o COSTOS_VERIFICAR=true) hace todo menos mandar: lee la base,
+//                                                el tipo de cambio y el acceso a Zoho; el log no lleva montos
 //
 // Reporte mensual de costos del CRM (decisión del dueño 28-oct-2026; docs/costos.md). Lee la base con DATABASE_URL:
 // en GitHub es la URL de SOLO LECTURA de los respaldos, con TLS autenticado si viene PGSSLROOTCERT, y la sesión
@@ -19,7 +21,7 @@ import { cargarReporte } from "@/lib/costos/cargar";
 import { asuntoCorreo, htmlCorreo } from "@/lib/costos/correo";
 import { mesAnterior, mesDe } from "@/lib/costos/mes";
 import { leerTipoCambio } from "@/lib/costos/tipo-cambio";
-import { type ZohoConfig, enviarCorreoZoho, zohoConfigFromEnv } from "@/lib/costos/zoho";
+import { type ZohoConfig, enviarCorreoZoho, verificarZoho, zohoConfigFromEnv } from "@/lib/costos/zoho";
 import * as schema from "@/lib/db/schema";
 import { safeErrorMessage } from "@/lib/log/safe-error";
 
@@ -32,6 +34,7 @@ function fallar(motivo: string): never {
 
 async function main() {
   const probar = process.argv.includes("--probar");
+  const verificar = process.argv.includes("--verificar") || process.env.COSTOS_VERIFICAR === "true";
   const now = new Date();
   const mes = process.env.COSTOS_MES ? mesDe(process.env.COSTOS_MES) : mesAnterior(now);
 
@@ -70,6 +73,12 @@ async function main() {
         const archivo = join(tmpdir(), `costos-${mes.clave}-${org.id}.html`);
         writeFileSync(archivo, html);
         console.log(`[costos] ${asunto}\n         ${archivo}`);
+        continue;
+      }
+      if (verificar) {
+        await verificarZoho(envio.zoho);
+        const tc = reporte.tipoCambio ? "OK" : "NO (saldría solo en dólares)";
+        console.log(`[costos] Verificación de ${mes.nombre}: base OK (${reporte.renglones.length} servicios, ${reporte.sinDato.length} sin dato, ${reporte.avisos.length} avisos), tipo de cambio ${tc}, Zoho OK. No se mandó nada.`);
         continue;
       }
       await enviarCorreoZoho(envio.zoho, { de: envio.de, para: envio.para, asunto, html });

@@ -72,6 +72,11 @@ async function accessToken(config: ZohoConfig, fetchImpl: FetchLike): Promise<st
   return json.access_token;
 }
 
+// Comprueba el acceso (pide un access token) sin mandar nada: modo «verificar» del script.
+export async function verificarZoho(config: ZohoConfig, fetchImpl: FetchLike = fetch): Promise<void> {
+  await accessToken(config, fetchImpl);
+}
+
 export async function enviarCorreoZoho(
   config: ZohoConfig,
   correo: { de: string; para: string; asunto: string; html: string },

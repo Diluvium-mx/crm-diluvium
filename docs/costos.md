@@ -114,6 +114,8 @@ PROD y la URL de solo lectura.
   dice el motivo en una línea, sin montos.
 - «Zoho no dio acceso»: el refresh token se revocó o se borró el Self Client → repetir *Conectar Zoho*.
 - «Zoho no mandó el correo»: el motivo viene de Zoho (p. ej. límite de envío del plan gratis).
+- Revisar sin mandar: Actions › costos-mes › Run workflow con «Solo verificar» (lee la base, el tipo de cambio y el
+  acceso a Zoho; el log dice si todo está bien, sin montos).
 - Mandarlo otra vez: Actions › costos-mes › Run workflow (vacío = el mes anterior, o `AAAA-MM`). Railway y Zernio
   solo guardan el periodo actual y el anterior: un mes viejo sale con «sin dato» en esos renglones.
 - Cambiar a quién le llega: `gh secret set COSTOS_CORREO_PARA --env production-backup`.

@@ -16,7 +16,8 @@
 # El repo es PÚBLICO: el log solo dice qué mes se mandó o el error; nunca montos ni correos. Si falla, el job
 # `aviso` abre un issue `alerta-costos` (GitHub lo manda por correo a quien vigila el repo).
 #
-# A mano: Actions → costos-mes → Run workflow (vacío = el mes anterior; o AAAA-MM). Solo desde `main`.
+# A mano: Actions → costos-mes → Run workflow (vacío = el mes anterior; o AAAA-MM). «Solo verificar» hace todo
+# menos mandar (sin montos en el log). Solo desde `main`.
 # GitHub solo corre los horarios desde `main`; en un repo público los pausa tras 60 días sin actividad.
 name: costos-mes
 
@@ -30,6 +31,11 @@ on:
         description: "Mes a mandar (AAAA-MM). Vacío = el mes anterior."
         required: false
         default: ""
+      verificar:
+        description: "Solo verificar (lee la base, el tipo de cambio y Zoho; NO manda el correo)"
+        type: boolean
+        required: false
+        default: false
 
 permissions:
   contents: read
@@ -75,6 +81,8 @@ jobs:
           COSTOS_CORREO_DE: contacto@diluvium.com.mx
           # Vacío en el horario; el script valida el formato (nada de esto pasa por el shell).
           COSTOS_MES: ${{ inputs.mes }}
+          # «true» solo si se pidió a mano; en el horario va vacío y el correo sí se manda.
+          COSTOS_VERIFICAR: ${{ inputs.verificar }}
         run: npm run costos:correo
 
   # Aviso el MISMO día si el correo no salió (mismo patrón que db-backup › aviso): abre un issue con la
