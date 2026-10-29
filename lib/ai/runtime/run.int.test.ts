@@ -2770,6 +2770,26 @@ describe.skipIf(!TEST_DATABASE_URL)("runtime del Agente IA (Postgres real)", () 
     expect(await agentError.hasUnresolvedAgentError(ORG, CONV)).toBe(false);
   });
 
+  // ── Nombre del cliente (28-oct-2026, dueño: «por nada del mundo debe suceder») ──
+  it("caso 28-oct: el Agente IA llama al cliente con el nombre del vendedor → sale sin el nombre", async () => {
+    await msg({ direction: "in", body: "Que precio tiene envío al código postal 96360?", at: ago(2 * 86_400_000) });
+    await msg({ direction: "out", body: "Hola muy buenos días, aquí Carlos de Diluvium 😀", at: ago(2 * 86_400_000 - 60_000) });
+    await msg({ direction: "out", source: "ai_agent", body: "Si le surge cualquier duda al instalarla, aquí estamos para ayudarle. 😊", at: ago(60_000) });
+    await msg({ direction: "in", body: "Enterado cualquier duda los contacto", at: ago(20_000) });
+    const z = fakeZernio();
+    const r = await run.runAgent(JOB, makeDeps({ brain: ["Claro, Carlos. Quedamos a sus órdenes para cualquier duda durante la instalación."] }, z).deps);
+    expect(r).toEqual({ kind: "sent", bubbles: 1 });
+    expect(z.delivered).toEqual(["Claro. Quedamos a sus órdenes para cualquier duda durante la instalación."]);
+  });
+
+  it("28-oct: el nombre que dio el cliente sí sale", async () => {
+    await msg({ direction: "in", body: "Buenas, soy Carlos. ¿Cuánto cuesta?", at: ago(20_000) });
+    const z = fakeZernio();
+    const r = await run.runAgent(JOB, makeDeps({ brain: ["Hola, Carlos. La compuerta estándar cuesta $5,500 MXN con envío incluido."] }, z).deps);
+    expect(r).toEqual({ kind: "sent", bubbles: 1 });
+    expect(z.delivered).toEqual(["Hola, Carlos. La compuerta estándar cuesta $5,500 MXN con envío incluido."]);
+  });
+
   it("caso 2-oct: si la respuesta solo era basura («屹»), no sale y contesta el otro modelo, sin tarjeta ni pausa", async () => {
     await msg({ direction: "in", body: "¿Cuánto cuesta?", at: ago(20_000) });
     const z = fakeZernio();
