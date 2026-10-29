@@ -297,6 +297,44 @@
   }
 }
 
+/* ── Fondo de las tarjetas que no son clientes (29-oct-2026) ──────────────────
+   Pura estética y fijo (lib/contacts/tarjeta-fondo.ts): un color y un patrón de
+   íconos de public/fondos/ según lo que hacen. Nunca junto con la señal: si la
+   tarjeta pide atención (data-funnel) no lleva data-fondo. Sin azul (es «por
+   contestar»), amarillo («necesita al vendedor») ni naranja (nunca fondo extenso).
+   paqueteria = cartón con cajas y camión; costura = lila con carrete y tijeras;
+   propio = gris con flechas de traspaso y notas. Claro y oscuro. */
+[data-fondo="paqueteria"] {
+  --fondo-color: #f1e6d2;
+  --fondo-patron: url("/fondos/paqueteria-claro.svg");
+}
+[data-fondo="costura"] {
+  --fondo-color: #efe8f8;
+  --fondo-patron: url("/fondos/costura-claro.svg");
+}
+[data-fondo="propio"] {
+  --fondo-color: #eceef2;
+  --fondo-patron: url("/fondos/propio-claro.svg");
+}
+.dark [data-fondo="paqueteria"] {
+  --fondo-color: #3b3022;
+  --fondo-patron: url("/fondos/paqueteria-oscuro.svg");
+}
+.dark [data-fondo="costura"] {
+  --fondo-color: #2f2742;
+  --fondo-patron: url("/fondos/costura-oscuro.svg");
+}
+.dark [data-fondo="propio"] {
+  --fondo-color: #2a2e36;
+  --fondo-patron: url("/fondos/propio-oscuro.svg");
+}
+
+[data-fondo] {
+  background-color: var(--fondo-color);
+  background-image: var(--fondo-patron);
+  background-size: 64px 64px;
+}
+
 /* ── Enlaces: estilo propio (SIN fondo iluminado; ese es de botones) ──────────
    Opt-in con data-link, para no tocar el sidebar ni enlaces con estilo propio:
      data-link="text" → subrayado que se dibuja de izquierda a derecha y navy más
