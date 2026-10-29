@@ -127,12 +127,35 @@ describe("renglonMeta y armarReporte", () => {
       zernio: { renglon: { servicio: "Zernio", paraQue: "x", usd: 1, nota: null }, avisos: ["z"] },
       meta,
       ventas: 10,
+      tipoCambio: { mxnPorUsd: 18.5, dias: 22 },
     });
     expect(r.totalUsd).toBe(45.92);
     expect(r.sinDato).toEqual(["Railway"]);
     expect(r.costoPorVentaUsd).toBe(4.59);
     expect(r.avisos).toEqual(["a", "z"]);
+    // Pesos por renglón; el total es la suma de los renglones en pesos.
+    expect(r.renglones.map((x) => x.mxn)).toEqual([555, null, 18.5, 276.02]);
+    expect(r.totalMxn).toBe(849.52);
+    expect(r.costoPorVentaMxn).toBe(84.95);
     expect(armarReporte({ ...r, ia: { renglones: [], avisos: [] }, railway: { renglon: meta, avisos: [] }, zernio: { renglon: meta, avisos: [] }, meta, ventas: 0 }).costoPorVentaUsd).toBeNull();
+  });
+
+  it("sin tipo de cambio: todo en dólares y un aviso", () => {
+    const meta = renglonMeta({ marketing: 1, utilidad: 0, servicio: 0 });
+    const vacio = { renglon: meta, avisos: [] };
+    const r = armarReporte({ mes: OCT, organizacion: "D", ia: { renglones: [], avisos: [] }, railway: vacio, zernio: vacio, meta, ventas: 3, tipoCambio: null });
+    expect(r.totalMxn).toBeNull();
+    expect(r.costoPorVentaMxn).toBeNull();
+    expect(r.renglones.every((x) => x.mxn === null)).toBe(true);
+    expect(r.avisos).toEqual(["No se pudo leer el tipo de cambio del Diario Oficial: los montos van solo en dólares."]);
+  });
+
+  it("la nota de una sola vez sale solo en el correo de octubre de 2026", () => {
+    const meta = renglonMeta({ marketing: 0, utilidad: 0, servicio: 0 });
+    const vacio = { renglon: meta, avisos: [] };
+    const base = { organizacion: "D", ia: { renglones: [], avisos: [] }, railway: vacio, zernio: vacio, meta, ventas: 1, tipoCambio: { mxnPorUsd: 18, dias: 1 } };
+    expect(armarReporte({ ...base, mes: OCT }).nota).toMatch(/^Es el primer mes completo del CRM/);
+    expect(armarReporte({ ...base, mes: mesDe("2026-11") }).nota).toBeNull();
   });
 
   it("Meta sin conteo: sin dato", () => {

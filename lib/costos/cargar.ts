@@ -7,6 +7,7 @@ import { railwayBilling, zernioBilling } from "@/lib/db/schema";
 import { loadBillingSnapshots, spendByDay } from "@/lib/dashboard/ai-spend";
 import { contarMetaCobrables } from "./meta-estimado";
 import { type Mes, type ReporteCostos, armarReporte, renglonMeta, renglonRailway, renglonZernio, renglonesIa } from "./mes";
+import type { TipoCambio } from "./tipo-cambio";
 
 type Database = Pick<typeof appDb, "select" | "execute">;
 
@@ -30,6 +31,7 @@ export async function cargarReporte(
   org: { id: string; name: string },
   mes: Mes,
   now: Date,
+  tipoCambio: TipoCambio | null,
 ): Promise<ReporteCostos> {
   const [billing, crmDays, [railway], [zernio], meta, ventas] = await Promise.all([
     loadBillingSnapshots(database, org.id),
@@ -47,5 +49,6 @@ export async function cargarReporte(
     zernio: renglonZernio(zernio ?? null, mes),
     meta: renglonMeta(meta),
     ventas,
+    tipoCambio,
   });
 }

@@ -9,8 +9,15 @@ import { monthLabel } from "@/lib/dashboard/ai-spend-history";
 import { billingAlertFor as railwayAlertFor, shortDate, summarizeRailway } from "@/lib/dashboard/railway";
 import { billingAlertFor as zernioAlertFor } from "@/lib/dashboard/zernio";
 import { type MetaConteo, metaCostoUsd } from "./meta-estimado";
+import type { TipoCambio } from "./tipo-cambio";
 
 const ZONA = "America/Mazatlan";
+
+// Nota que sale UNA sola vez, en el correo de ese mes (decisión del dueño 28-oct-2026).
+const NOTAS_DEL_MES: Record<string, string> = {
+  "2026-10":
+    "Es el primer mes completo del CRM: todavía no hay un mes anterior con qué compararlo, y salió un poco alto por pruebas y ajustes. Desde noviembre el costo ya debe ser más razonable.",
+};
 
 // "2026-10" → del 1 al último día. Los proveedores cobran por día UTC; las ventas y los mensajes de Meta
 // se cuentan con el mes en hora de Mazatlán (lib/costos/cargar.ts).
@@ -24,16 +31,25 @@ export type Renglon = {
   nota: string | null;
 };
 
+// En pesos con el tipo de cambio del mes (null = sin tipo de cambio o sin dato).
+export type RenglonReporte = Renglon & { mxn: number | null };
+
 export type ReporteCostos = {
   mes: Mes;
   organizacion: string;
-  renglones: Renglon[];
+  renglones: RenglonReporte[];
   totalUsd: number;
+  totalMxn: number | null;
   // Servicios que no tuvieron dato: el total va sin ellos.
   sinDato: string[];
   // Contactos que llegaron a la etapa de venta en el mes (null = no se pudo contar).
   ventas: number | null;
   costoPorVentaUsd: number | null;
+  costoPorVentaMxn: number | null;
+  // Promedio del dólar en el mes (Diario Oficial); null = no se pudo leer y todo va en dólares.
+  tipoCambio: TipoCambio | null;
+  // Nota de una sola vez para ese mes (NOTAS_DEL_MES).
+  nota: string | null;
   // Avisos para el dueño: cobro pendiente, lectura vieja o con error.
   avisos: string[];
 };
@@ -180,19 +196,32 @@ export function armarReporte(input: {
   zernio: ReturnType<typeof renglonZernio>;
   meta: Renglon;
   ventas: number | null;
+  tipoCambio: TipoCambio | null;
 }): ReporteCostos {
-  const renglones = [...input.ia.renglones, input.railway.renglon, input.zernio.renglon, input.meta];
+  const tc = input.tipoCambio?.mxnPorUsd ?? null;
+  const renglones = [...input.ia.renglones, input.railway.renglon, input.zernio.renglon, input.meta].map((r) => ({
+    ...r,
+    mxn: tc !== null && r.usd !== null ? round2(r.usd * tc) : null,
+  }));
   const totalUsd = round2(renglones.reduce((s, r) => s + (r.usd ?? 0), 0));
+  // Suma de los renglones en pesos (no total × tipo de cambio) para que cuadre centavo por centavo.
+  const totalMxn = tc === null ? null : round2(renglones.reduce((s, r) => s + (r.mxn ?? 0), 0));
   const sinDato = renglones.filter((r) => r.usd === null).map((r) => r.servicio);
   const ventas = input.ventas;
+  const avisos = [...input.ia.avisos, ...input.railway.avisos, ...input.zernio.avisos];
+  if (tc === null) avisos.push("No se pudo leer el tipo de cambio del Diario Oficial: los montos van solo en dólares.");
   return {
     mes: input.mes,
     organizacion: input.organizacion,
     renglones,
     totalUsd,
+    totalMxn,
     sinDato,
     ventas,
     costoPorVentaUsd: ventas ? round2(totalUsd / ventas) : null,
-    avisos: [...input.ia.avisos, ...input.railway.avisos, ...input.zernio.avisos],
+    costoPorVentaMxn: ventas && totalMxn !== null ? round2(totalMxn / ventas) : null,
+    tipoCambio: input.tipoCambio,
+    nota: NOTAS_DEL_MES[input.mes.clave] ?? null,
+    avisos,
   };
 }

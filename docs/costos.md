@@ -15,8 +15,17 @@ el **día 3 de cada mes**, sin pedirlo. Base: el informe del primer mes (Notion 
 | Meta (WhatsApp) | Plantillas y mensajes cobrados | **Estimado del CRM** con IVA (abajo), mientras Meta no le dé su cobro al CRM |
 
 El correo también trae el **total**, las **ventas del mes** (contactos que hoy están en la etapa de venta y entraron
-a ella en el mes) y el **costo del CRM por venta**. Si un servicio no tiene dato, sale «sin dato» y el total dice
-que va sin él.
+a ella en el mes, sin los de prueba) y el **costo del CRM por venta**. Si un servicio no tiene dato, sale «sin dato» y
+el total dice que va sin él.
+
+**En pesos** (decisión del dueño 28-oct-2026): cada monto sale en pesos y, abajo en gris, en dólares, con el
+**promedio del dólar del mes** que publica el Diario Oficial de la Federación (FIX; API pública de SIDOF, indicador
+158, sin llave ni registro; la de Banxico pide token): `lib/costos/tipo-cambio.ts`. Una línea al final dice a cuánto
+quedó el dólar. Si el Diario Oficial no responde, el correo sale igual, solo en dólares, con un aviso.
+
+**Nota de una sola vez:** `NOTAS_DEL_MES` en `lib/costos/mes.ts`. Octubre de 2026 (correo del 3-nov) explica que es el
+primer mes completo, que no hay mes anterior para comparar y que salió alto por pruebas y ajustes. Sin pie de texto
+(el dueño lo quitó por ser demasiada explicación).
 
 **Fuera, por decisión del dueño:** suscripciones con las que se construye el CRM (Claude, ChatGPT/Codex), la
 publicidad en Meta, las guías de Envia y el dominio. No son costo de tener el CRM funcionando.
@@ -56,7 +65,7 @@ de Meta), el renglón pasa a usar lo que reporta Meta.
 - Llega al correo que eligió el dueño: secret `COSTOS_CORREO_PARA` del environment `production-backup` (el repo es
   público: el correo no se escribe aquí).
 - Código: `scripts/costos-mes.ts` (`npm run costos:correo`) y `lib/costos/` (`mes.ts` arma los renglones, `cargar.ts`
-  lee la base, `meta-estimado.ts`, `correo.ts` el HTML, `zoho.ts` el envío).
+  lee la base, `meta-estimado.ts`, `tipo-cambio.ts`, `correo.ts` el HTML, `zoho.ts` el envío).
 
 ### ¿Cuesta algo?
 
@@ -68,6 +77,7 @@ No (revisado el 28-oct-2026):
   la consulta tarda segundos y la respuesta pesa unos KB (la salida de datos de Railway cuesta US$0.05 por GB: menos
   de una milésima de centavo).
 - **IA:** no llama a ningún modelo. Las lecturas de cobro las hace el worker cada 5–15 min desde antes (no cambian).
+- **Tipo de cambio:** el Diario Oficial lo publica gratis y sin registro.
 
 ### Conectar Zoho
 

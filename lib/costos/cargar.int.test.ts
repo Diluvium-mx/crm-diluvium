@@ -132,7 +132,7 @@ describe.skipIf(!TEST_DATABASE_URL)("reporte de costos (base real)", () => {
   });
 
   it("arma el reporte completo de la organización sin lecturas de cobro", async () => {
-    const r = await cargar.cargarReporte(db, { id: ORG, name: "Diluvium" }, mes.mesDe("2026-10"), new Date("2026-11-03T16:00:00Z"));
+    const r = await cargar.cargarReporte(db, { id: ORG, name: "Diluvium" }, mes.mesDe("2026-10"), new Date("2026-11-03T16:00:00Z"), null);
     expect(r.renglones.map((x) => [x.servicio, x.usd])).toEqual([
       ["IA · Anthropic", 0],
       ["IA · OpenAI", 0],

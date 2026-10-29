@@ -7,7 +7,8 @@
 // Reporte mensual de costos del CRM (decisión del dueño 28-oct-2026; docs/costos.md). Lee la base con DATABASE_URL:
 // en GitHub es la URL de SOLO LECTURA de los respaldos, con TLS autenticado si viene PGSSLROOTCERT, y la sesión
 // además se abre en solo lectura. Manda por la API de Zoho (lib/costos/zoho.ts) de COSTOS_CORREO_DE a
-// COSTOS_CORREO_PARA. El log solo dice qué mes se mandó o el error: el repo es público (nada de montos ni correos).
+// COSTOS_CORREO_PARA, en pesos (promedio del dólar del mes, Diario Oficial: lib/costos/tipo-cambio.ts) y dólares.
+// El log solo dice qué mes se mandó o el error: el repo es público (nada de montos ni correos).
 import { readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -17,6 +18,7 @@ import postgres from "postgres";
 import { cargarReporte } from "@/lib/costos/cargar";
 import { asuntoCorreo, htmlCorreo } from "@/lib/costos/correo";
 import { mesAnterior, mesDe } from "@/lib/costos/mes";
+import { leerTipoCambio } from "@/lib/costos/tipo-cambio";
 import { type ZohoConfig, enviarCorreoZoho, zohoConfigFromEnv } from "@/lib/costos/zoho";
 import * as schema from "@/lib/db/schema";
 import { safeErrorMessage } from "@/lib/log/safe-error";
@@ -58,8 +60,10 @@ async function main() {
   try {
     const orgs = await db.select({ id: schema.organization.id, name: schema.organization.name }).from(schema.organization).orderBy(asc(schema.organization.createdAt));
     if (!orgs.length) fallar("No hay organizaciones en la base.");
+    // Promedio del dólar del mes (Diario Oficial). Si falla, el correo sale en dólares con un aviso.
+    const tipoCambio = await leerTipoCambio(mes);
     for (const org of orgs) {
-      const reporte = await cargarReporte(db, org, mes, now);
+      const reporte = await cargarReporte(db, org, mes, now, tipoCambio);
       const asunto = asuntoCorreo(reporte);
       const html = htmlCorreo(reporte);
       if (!envio) {
