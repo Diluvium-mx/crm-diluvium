@@ -238,6 +238,10 @@ clic abre un menú para cambiarla sin abrir el chat. Lista y panel quedan sincro
   el pop-up (`keptContactId`), aunque abrirla o «Marcar como leído» la apague.
 - La luz del cursor sobre la tarjeta es **gris** (`[data-funnel-card]`): antes era el mismo azul del
   "por contestar" y una tarjeta bajo el mouse parecía pendiente.
+- **Tarjeta con fondo (29-oct-2026, regla del dueño):** los chats que no son clientes llevan un color y un
+  patrón de íconos fijos, pura estética (`lib/contacts/tarjeta-fondo.ts` por id → `data-fondo`; patrones en
+  `public/fondos/`): paquetería = cartón, costura = lila, chat propio = gris. Sin azul, amarillo ni naranja.
+  Nunca junto con la señal: con azul o amarilla la tarjeta lleva ese color y, al atenderse, vuelve el patrón.
 - **Orden de cada columna:** de más reciente a más viejo por lo último entre "entró a la etapa"
   (`stage_changed_at`) y "el cliente escribió" (max `window_expires_at` − 24 h de sus chats: la ventana
   se mueve SOLO con entrantes). En vivo: la señal del SSE trae `lastInboundAt` y la tarjeta sube sin
