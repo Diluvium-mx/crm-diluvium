@@ -92,3 +92,12 @@ ningún archivo existente (solo agregó su entrada al journal), el test del jour
 2. Si drizzle la saltó por `when` menor: regenerar esa migración con un `when` posterior al último
    aplicado (idempotente si ya se aplicó en algún entorno) y volver a desplegar.
 3. Nunca borrar filas de `drizzle.__drizzle_migrations` a mano para "destrabar".
+
+## esbuild de drizzle-kit (override, 29-oct-2026)
+
+drizzle-kit 0.31 (la última estable) todavía carga `drizzle.config.ts` con `@esbuild-kit/esm-loader`, que trae
+esbuild 0.18, marcado por Dependabot (GHSA-67mh-4wv8-2f99: el servidor de desarrollo de esbuild acepta peticiones de
+cualquier página). El CRM nunca usa ese servidor, pero drizzle-kit corre en producción al arrancar el web
+(`start:web` migra), así que se fuerza esbuild ^0.25.4 solo dentro de `@esbuild-kit/core-utils` con `overrides` en
+`package.json` (la misma serie que ya usa drizzle-kit). Probado: migrar una base nueva, `db:check` y `db:generate` sin
+cambios. Quitar el override cuando drizzle-kit deje `@esbuild-kit` (la 1.0 está en beta).
