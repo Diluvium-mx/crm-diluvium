@@ -4,11 +4,12 @@
 // notas/barra-superior): un globo pegado al botón que se tocó —el de la barra de arriba o el
 // menú del usuario (sidebar y cajón ☰)—. «Cancelar» queda enfocado (un Enter no saca a nadie por
 // error); Esc o clic fuera cancelan. Solo «Cerrar sesión» sale del CRM. Sin lógica de datos más
-// allá de salir.
+// allá de salir (y de borrar los borradores de los chats de este navegador, 29-oct-2026).
 import { useRef, useState, type ReactElement, type RefObject } from "react";
 import { useRouter } from "next/navigation";
 import { Popover } from "@base-ui/react/popover";
 import { signOut } from "@/lib/auth/client";
+import { clearAllChatDrafts } from "../dashboard/_components/use-chat-draft";
 
 export function SignOutConfirm({
   open,
@@ -32,6 +33,7 @@ export function SignOutConfirm({
 
   async function handleSignOut() {
     setLeaving(true);
+    clearAllChatDrafts();
     try {
       await signOut();
     } finally {
