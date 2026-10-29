@@ -61,6 +61,13 @@ const PROPIEDADES = [
 // Lo que se le cambia a la caja mientras tiene la capa encima (y se le regresa al salir).
 const OCULTAR = ["-webkit-text-fill-color", "caret-color"] as const;
 
+// Espacio invisible al final de las capas de una caja de varios renglones: un salto de línea al final
+// ocupa su renglón, como en la caja. Sin él, con el texto desplazado por dentro (la caja ya no crece) y
+// un Shift+Enter al final, la capa no llegaba hasta abajo: las letras y el cursor quedaban hasta un
+// renglón más abajo y el cursor caía encima del último renglón escrito (29-oct-2026, reportado por el
+// dueño). El corrector ortográfico usa el mismo truco.
+const FIN_INVISIBLE = "\u200B";
+
 function cumpleElEquipo(): boolean {
   return (
     window.matchMedia("(hover: hover) and (pointer: fine)").matches &&
@@ -301,6 +308,7 @@ function adjuntar(caja: CajaDeTexto): () => void {
         letras.appendChild(letra);
       }
     }
+    if (!unRenglon) letras.appendChild(document.createTextNode(FIN_INVISIBLE));
     desplazar(letras);
   }
 
@@ -316,6 +324,7 @@ function adjuntar(caja: CajaDeTexto): () => void {
     const marca = document.createElement("span");
     marca.textContent = texto.slice(fin) || ".";
     medida.append(document.createTextNode(texto.slice(0, fin)), marca);
+    if (!unRenglon) medida.append(FIN_INVISIBLE);
     desplazar(medida);
     const lugar = marca.getClientRects()[0] ?? marca.getBoundingClientRect();
     const origen = raiz.getBoundingClientRect();

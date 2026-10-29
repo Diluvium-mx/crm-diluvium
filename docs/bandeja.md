@@ -273,6 +273,19 @@ clic abre un menú para cambiarla sin abrir el chat. Lista y panel quedan sincro
   con la búsqueda vacía y el de la sección; uno nuevo va al final. La sección y ⚡ tienen buscador y vista de lista o
   cuadrícula como 📄 Plantillas (`components/ui/view-toggle.tsx`; se recuerda por computadora).
 
+### Borrador del chat (29-oct-2026, decisión del dueño)
+- Lo escrito en la caja y no enviado se guarda **en el navegador** (localStorage), por usuario y conversación
+  (`diluvium.borrador.<userId>.<conversationId>`, texto + hora), y vuelve al regresar al chat: Bandeja, pop-up del
+  Embudo y celular usan el mismo composer. Opción elegida por el dueño: **en cada equipo**, sin base de datos ni
+  servidor (costo cero; nunca sale del equipo, ni al Agente IA ni a Zernio). No se ve en otro equipo ni a otro vendedor.
+- Solo texto (los adjuntos se suben a un lugar temporal que vence). Se borra al enviar, programar, mandar un comando o
+  vaciar la caja; vence a los 7 días sin tocarlo (limpieza al abrir el CRM) y al cerrar sesión se borran todos.
+- La fila de la Bandeja dice «Borrador: …» en lugar del último mensaje (menos en el chat abierto; con la lupa manda la
+  lupa). Con la ventana cerrada la caja no se ve: se conserva y una línea lo avisa arriba de 📄 Enviar plantilla.
+- Código: reglas puras y pruebas en `lib/inbox/chat-drafts.ts`; lectura y escritura en el navegador en
+  `dashboard/_components/use-chat-draft.ts` (`useSyncExternalStore`, como `use-persistent-toggle.ts`; sin
+  localStorage queda en memoria mientras dure la página).
+
 ### Adjuntos en el chat (28-sep-2026)
 El vendedor manda fotos, videos y documentos desde la Bandeja y el pop-up del Embudo (mismo `ChatThread`/`Composer`).
 - **Cómo entran:** arrastrándolos sobre el chat (una capa navy muy clara con borde punteado cubre historial y
