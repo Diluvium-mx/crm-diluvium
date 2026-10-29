@@ -59,6 +59,17 @@ export async function loadSnapshot(
   return row ?? null;
 }
 
+// Nombre, apellido y usuario de Instagram del contacto: de ahí también puede salir el nombre con el que el
+// Agente IA llama al cliente (nombre-cliente.ts).
+export async function loadContactNames(organizationId: string, contactId: string): Promise<(string | null)[]> {
+  const [row] = await db
+    .select({ firstName: contacts.firstName, lastName: contacts.lastName, instagramUsername: contacts.instagramUsername })
+    .from(contacts)
+    .where(and(eq(contacts.id, contactId), eq(contacts.organizationId, organizationId)))
+    .limit(1);
+  return row ? [row.firstName, row.lastName, row.instagramUsername] : [];
+}
+
 /** Filtro SQL: el contacto de la conversación `alias` NO está marcado «sin Agente IA». */
 export function withAgenteIaSql(alias: "c"): SQL {
   const c = sql.raw(alias);

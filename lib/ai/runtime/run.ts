@@ -51,6 +51,7 @@ import { loadContactStage } from "@/lib/contacts/stage";
 import { listFunnelStages } from "@/lib/contacts/funnel-stages";
 import { complementNote, partialNote, saidText, withoutClosingQuestions } from "./complement";
 import { closingQuestion, isBareAck, onlyRepeatsLastQuestion, repeatNote, withoutUnansweredRepeat } from "./unanswered";
+import { clientNameWords, withoutUnknownNames } from "./nombre-cliente";
 import {
   alreadyHandled,
   answeredByWorkflow,
@@ -59,6 +60,7 @@ import {
   answerRunInFlight,
   awaitingWorkflowReview,
   lastOutbound,
+  loadContactNames,
   loadHistory,
   loopWindow,
   loadSnapshot,
@@ -1029,7 +1031,19 @@ export async function runAgent(job: { organizationId: string; conversationId: st
       ? withoutUnansweredRepeat(unique, await lastQuestionAsked(org, conv.id, deps.now()))
       : { keep: [], dropped: [] };
     if (unanswered.length) console.info(`[agente] ${conv.id}: no se repite la pregunta sin contestar (${unanswered.length} burbuja(s))`);
-    let bubbles = sinRepetir;
+    // Nombre del cliente (28-oct-2026, ./nombre-cliente.ts): el Agente IA solo lo llama por un nombre que dio
+    // el cliente (lo que escribió o dictó, o su perfil); otro nombre —el del vendedor— se quita de la burbuja.
+    const { keep: conNombreBueno, removed: nombres } = sinRepetir.length
+      ? withoutUnknownNames(
+          sinRepetir,
+          clientNameWords([
+            ...history.filter((m) => m.direction === "in").flatMap((m) => [m.body, m.transcripcion]),
+            ...(await loadContactNames(org, conv.contactId)),
+          ]),
+        )
+      : { keep: [], removed: [] };
+    if (nombres.length) console.warn(`[agente] ${conv.id}: se quitó un nombre que el cliente no ha dado (${nombres.length})`);
+    let bubbles = conNombreBueno;
     let stopped: StopReason | null = null;
 
     // Texto del Agente IA como pie del archivo (1-oct-2026, dueño: «lo puede mandar como texto
