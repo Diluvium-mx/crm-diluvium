@@ -57,6 +57,11 @@ const ALLOW: { file: string; includes: string; why: string }[] = [
     includes: "preview(",
     why: "muestra los Mensajes rápidos de la empresa (textos fijos del dueño) antes de cargarlos; no son mensajes de clientes",
   },
+  {
+    file: "scripts/staging-energia.ts",
+    includes: "error instanceof Error ? error.message : String(error)",
+    why: "GitHub lo corre con `node` a secas y solo ese archivo (sin dependencias ni alias): no puede importar safe-error; sus errores son los suyos y los de la API de Railway, sin base ni datos de clientes",
+  },
 ];
 
 type Leak = string | null;
