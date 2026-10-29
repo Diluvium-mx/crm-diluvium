@@ -25,6 +25,7 @@
     "staging:encender": "tsx scripts/staging-energia.ts encender",
     "staging:apagar": "tsx scripts/staging-energia.ts apagar",
     "staging:revisar": "tsx scripts/staging-energia.ts revisar",
+    "costos:correo": "tsx scripts/costos-mes.ts",
     "db:reset": "tsx scripts/reset-db.ts",
     "webhooks:replay": "tsx scripts/replay-webhook-events.ts",
     "canal:prueba": "tsx scripts/canal-prueba.ts",
