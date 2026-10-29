@@ -7,6 +7,7 @@ import { DESTACADO_EMOJI, TEMPERATURES, TEMPERATURE_EMOJI, TEMPERATURE_LABELS, g
 import { ContactAvatar } from "./contact-avatar";
 import { contactHandle } from "@/lib/phone-format";
 import { canMarkRead, funnelTone, unreadBadge, type FunnelSignal } from "@/lib/contacts/funnel-tone";
+import { tarjetaFondo } from "@/lib/contacts/tarjeta-fondo";
 import { PhoneLocation } from "@/components/ui/phone-location";
 import { PruebaBadge } from "@/components/ui/prueba-badge";
 import { ContextMenu, ContextMenuContent, ContextMenuItem, ContextMenuTrigger } from "@/components/ui/context-menu";
@@ -107,6 +108,7 @@ export function ContactCard({
   // pulsación larga es arrastrar (TouchSensor del board).
   // "Marcar como leído" si hay círculo o azul; si no, "Marcar como no leído".
   // «Quitar tarjeta» (6-oct-2026) solo en la azul o la amarilla: la deja en blanco.
+  // data-fondo (29-oct-2026): el patrón fijo de los chats que no son clientes, solo sin señal.
   const markable = canMarkRead(signal);
   const tone = funnelTone(signal);
   return (
@@ -122,6 +124,7 @@ export function ContactCard({
           {...attributes}
           {...listeners}
           data-funnel={tone}
+          data-fondo={tarjetaFondo(contact.id, tone)}
           data-funnel-card
           className={`w-full cursor-grab rounded-md bg-card text-left active:cursor-grabbing [&>div]:bg-transparent ${
             isDragging ? "opacity-40" : ""

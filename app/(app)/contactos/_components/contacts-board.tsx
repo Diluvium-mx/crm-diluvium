@@ -39,6 +39,7 @@ import { hasCardFilter, matchesCardFilter, type TemperatureFilter } from "@/lib/
 import { CardFilterButton } from "../../_components/card-filter-button";
 import { CHAT_SEARCH_INPUT_ACTIVE, CHAT_SEARCH_PLACEHOLDER, ChatSearchButton } from "../../_components/chat-search-button";
 import { funnelTone, needsAttention, type FunnelSignal } from "@/lib/contacts/funnel-tone";
+import { tarjetaFondo } from "@/lib/contacts/tarjeta-fondo";
 import { useInboxStream } from "../../dashboard/_components/use-inbox-stream";
 import { clearContactCard, searchChatsByContact, setContactUnread } from "@/lib/inbox/actions";
 import { applyMarks, columnsByStage, mergeLiveContacts } from "./board-live";
@@ -1125,6 +1126,7 @@ export function ContactsBoard({
           {activeContact ? (
             <div
               data-funnel={funnelTone(signals[activeContact.id])}
+              data-fondo={tarjetaFondo(activeContact.id, funnelTone(signals[activeContact.id]))}
               className="card-pickup w-[calc(100vw-2.5rem)] cursor-grabbing rounded-md bg-card shadow-2xl sm:w-72 [&>div]:bg-transparent"
             >
               <ContactCardContent
