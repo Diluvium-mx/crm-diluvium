@@ -16,6 +16,8 @@ import type { Temperature } from "../../contactos/_data/types";
 import { TemperaturePicker } from "./temperature-picker";
 import { PruebaBadge } from "@/components/ui/prueba-badge";
 import { ContextMenu, ContextMenuContent, ContextMenuItem, ContextMenuTrigger } from "@/components/ui/context-menu";
+import { useSession } from "@/lib/auth/client";
+import { useSavedChatDraft } from "./use-chat-draft";
 import {
   SEMAFORO_CLASS,
   SEMAFORO_LABEL,
@@ -45,6 +47,7 @@ function SemaforoDot({ since, nowMs }: { since: Date | null; nowMs: number }) {
 function ConversationRow({
   item,
   selected,
+  userId,
   nowMs,
   chatTerm,
   onSelect,
@@ -54,6 +57,8 @@ function ConversationRow({
 }: {
   item: ConversationListItem;
   selected: boolean;
+  /** Usuario con sesión: los borradores son suyos (use-chat-draft.ts). */
+  userId: string | null;
   nowMs: number;
   /** Búsqueda en los chats (lupa amarilla) ya normalizada; null = apagada o sin 3 letras. */
   chatTerm: string | null;
@@ -72,6 +77,10 @@ function ConversationRow({
   const unread = item.unreadCount > 0;
   // Con la lupa: la vista previa es el pedazo donde aparece la palabra (resaltada).
   const match = chatTerm ? item.chatMatch : null;
+  // Borrador sin enviar (29-oct-2026): en lugar del último mensaje, como WhatsApp. En el chat
+  // abierto no, porque ahí ya se ve en la caja.
+  const savedDraft = useSavedChatDraft(userId, item.id);
+  const draft = selected ? null : savedDraft;
   return (
     <ContextMenu>
       <ContextMenuTrigger
@@ -100,6 +109,10 @@ function ConversationRow({
               <span className="min-w-0 flex-1 truncate text-xs text-muted-foreground">
                 {match && chatTerm ? (
                   <SearchHighlight text={snippetAround(match.text, chatTerm)} term={chatTerm} />
+                ) : draft !== null ? (
+                  <>
+                    <span className="font-medium text-brand-navy dark:text-sky-300">Borrador:</span> {draft.replace(/\s+/g, " ").trim()}
+                  </>
                 ) : (
                   rowPreview(item.lastMessage)
                 )}
@@ -188,6 +201,8 @@ export function ConversationList({
   // montan las filas visibles aunque haya cientos cargadas. El contenedor
   // scrolleable tiene altura acotada (min-h-0 + flex-1 dentro de un h-full).
   const scrollRef = useRef<HTMLDivElement>(null);
+  const { data: session } = useSession();
+  const userId = session?.user.id ?? null;
   // Igual que el kanban: useVirtualizer devuelve funciones que el React
   // Compiler no puede memoizar; es esperado (el compiler no está activo).
   // eslint-disable-next-line react-hooks/incompatible-library
@@ -269,6 +284,7 @@ export function ConversationList({
                     <ConversationRow
                       item={item}
                       selected={item.id === selectedId}
+                      userId={userId}
                       nowMs={nowMs}
                       chatTerm={chatTerm}
                       onSelect={onSelect}

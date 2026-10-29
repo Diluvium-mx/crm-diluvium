@@ -20,6 +20,8 @@
 // Seguimiento del Agente IA (2-oct-2026): píldora 🤖 en el hueco de la barra arriba de ⚡ 📄 📎
 // (en el celular, al final del renglón de iconos; con la ventana cerrada, junto a "Enviar
 // plantilla") y su burbuja (followup-pill.tsx). Solo cuando el chat tiene un seguimiento.
+// Borrador (29-oct-2026): lo escrito y no enviado se guarda en este navegador (use-chat-draft.ts) y
+// vuelve al regresar al chat; con la ventana cerrada se conserva y se avisa en una línea.
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { Clock, Play, Zap } from "lucide-react";
 import { CHAT_CAPTION_MAX } from "@/lib/chat-attachments/rules";
@@ -45,6 +47,7 @@ import { WorkflowPicker } from "./workflow-picker";
 import { bajaAlreadySeen, FollowUpPanel, FollowUpPill, markBajaSeen, useFollowUp } from "./followup-pill";
 import { SpellcheckOverlay } from "@/components/spelling/spellcheck-overlay";
 import { useComposerTextRequests } from "../../_components/composer-text";
+import { saveChatDraft, useSavedChatDraft } from "./use-chat-draft";
 
 // Alto justo para el texto, entre los 2 renglones de `rows` y el max-height de la clase.
 // Vacía se queda en 2 renglones: Chrome mide también el texto gris de ayuda, y
@@ -107,8 +110,17 @@ export function Composer({
   const isMobile = useIsMobile();
   const { data: session } = useSession();
   const sellerName = session?.user.name?.trim() ?? "";
+  const userId = session?.user.id ?? null;
 
   const [draft, setDraft] = useState("");
+  // El borrador guardado entra una sola vez, al abrir el chat (o en cuanto se sabe quién es el
+  // usuario), y solo si la caja sigue vacía. Ajuste durante el render, sin efecto.
+  const savedDraft = useSavedChatDraft(userId, conversationId);
+  const [draftRestored, setDraftRestored] = useState(false);
+  if (!draftRestored && savedDraft !== null) {
+    setDraftRestored(true);
+    if (draft === "") setDraft(savedDraft);
+  }
   const [caret, setCaret] = useState(0);
   const [snippetOpen, setSnippetOpen] = useState(false);
   const [templateOpen, setTemplateOpen] = useState(false);
@@ -239,6 +251,7 @@ export function Composer({
 
   function updateDraft(value: string, nextCaret: number) {
     setDraft(value);
+    saveChatDraft(userId, conversationId, value);
     setCaret(nextCaret);
     setActive(0);
     // Si el "/" cerrado ya no está en su lugar, se olvida el cierre.
@@ -331,9 +344,15 @@ export function Composer({
     />
   );
 
+  // Ventana cerrada: la caja no se ve, pero el borrador se queda para cuando el cliente vuelva a escribir.
+  const keptDraftNotice = draft.trim() !== "" && (
+    <p className="mb-2 text-xs text-muted-foreground">✏️ Tu borrador se guardó: podrás enviarlo cuando el cliente vuelva a escribir.</p>
+  );
+
   if (!windowOpen && channelType === "instagram") {
     return (
       <div className="border-t bg-card p-3 pb-[max(0.75rem,env(safe-area-inset-bottom))]">
+        {keptDraftNotice}
         <p className="rounded-md border border-dashed px-3 py-2 text-center text-sm text-muted-foreground">
           Pasaron más de 7 días desde el último mensaje del cliente: Instagram no deja escribirle hasta que vuelva a escribir.
         </p>
@@ -345,6 +364,7 @@ export function Composer({
     return (
       <div className="border-t bg-card p-3 pb-[max(0.75rem,env(safe-area-inset-bottom))]">
         {followUpPanel}
+        {!scheduleOpen && !templateOpen && keptDraftNotice}
         {scheduleOpen ? (
           scheduleForm
         ) : templateOpen ? (
