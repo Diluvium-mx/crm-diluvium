@@ -47,7 +47,8 @@ export function brainCandidates(cfg: ModelConfig, stage: string | null, isAvaila
 }
 
 // Lo que el modelo pidió en su respuesta, en lo que toca a la etapa (clave de funnel_stages).
-export type StageSignal = { kind: "etapa"; etapa: string } | { kind: "workflow"; slug: string };
+// `link` = enviar_link_pago (30-oct-2026): como los datos bancarios, lleva a "Cerca de compra".
+export type StageSignal = { kind: "etapa"; etapa: string } | { kind: "workflow"; slug: string } | { kind: "link" };
 
 // La etapa más adelantada (en el ORDEN actual de las columnas) a la que llevaría al
 // contacto una respuesta: por `mover_etapa` o por un workflow que mueve la etapa (datos
@@ -56,7 +57,8 @@ export type StageSignal = { kind: "etapa"; etapa: string } | { kind: "workflow";
 export function impliedStage(stages: readonly FunnelStage[], signals: readonly StageSignal[]): string | null {
   let best: string | null = null;
   for (const s of signals) {
-    const stage = s.kind === "etapa" ? s.etapa : s.slug === SLUG_DATOS_BANCARIOS ? roleKey([...stages], "cerca_compra") : null;
+    const stage =
+      s.kind === "etapa" ? s.etapa : s.kind === "link" || s.slug === SLUG_DATOS_BANCARIOS ? roleKey([...stages], "cerca_compra") : null;
     if (!stage || !stageByKey(stages, stage)) continue;
     if (best === null || isForward(stages, best, stage)) best = stage;
   }

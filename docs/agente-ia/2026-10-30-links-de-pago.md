@@ -32,8 +32,8 @@ recibir el enlace?» a quien nunca se lo mandaron, y a otro MercadoPago le recha
   comprobante.» (de contado: «Es un pago de contado con tarjeta de crédito o débito.»). Los datos de envío se piden con el
   comprobante, igual que con la transferencia (COMPROBANTES DE PAGO del Goal).
 - El contacto pasa a **Cerca de compra** (como los datos bancarios; solo hacia adelante, mismas reglas de etapa).
-- En el traspaso Luna → Sonnet el link del Modelo 1 se conserva si el Modelo 2 no pidió uno. Un link cuenta como
-  respuesta para la red contra el silencio.
+- Como los datos bancarios, el link **provoca el traspaso** Luna → Sonnet (`impliedStage`: lleva a Cerca de compra) y el
+  link del Modelo 1 se conserva si el Modelo 2 no pidió uno. Un link cuenta como respuesta para la red contra el silencio.
 - El lector: `pago_pendiente` ahora dice «ya recibió los datos bancarios o el link de pago…».
 
 ### Candados en el código (`lib/agente-ia/links-pago.ts`, `planLink` en `actions.ts`)

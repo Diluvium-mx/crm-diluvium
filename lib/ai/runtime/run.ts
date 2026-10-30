@@ -168,7 +168,13 @@ type BrainFail = { ok: false; model: CatalogModel; info: ModelErrorInfo };
 // Lo que importa de las acciones para saber a qué etapa lleva la respuesta (traspaso).
 function stageSignals(calls: readonly ValidToolCall[]): StageSignal[] {
   return calls.flatMap((c): StageSignal[] =>
-    c.kind === "etapa" ? [{ kind: "etapa", etapa: c.etapa }] : c.kind === "workflow" ? [{ kind: "workflow", slug: c.workflow.slug }] : [],
+    c.kind === "etapa"
+      ? [{ kind: "etapa", etapa: c.etapa }]
+      : c.kind === "workflow"
+        ? [{ kind: "workflow", slug: c.workflow.slug }]
+        : c.kind === "link"
+          ? [{ kind: "link" }]
+          : [],
   );
 }
 

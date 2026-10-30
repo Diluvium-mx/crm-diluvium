@@ -3082,6 +3082,24 @@ describe.skipIf(!TEST_DATABASE_URL)("runtime del Agente IA (Postgres real)", () 
     expect((await contact()).stage).toBe("cerca_compra");
   });
 
+  it("traspaso: Luna pide el link de pago → contesta Sonnet y, aunque no lo repita, el link sale una vez y el contacto queda en Cerca de compra (30-oct-2026)", async () => {
+    await dosModelos();
+    const { replaceLinksPago } = await import("@/lib/agente-ia/links-pago-store");
+    await replaceLinksPago(ORG, [{ nombre: "1 compuerta estándar", monto: 5500, cubre: "total", meses: 6, url: "https://mpago.la/EJEMPLO1" }], null);
+    await db.update(s.contacts).set({ montoCotizacion: "5500.00", customFields: { cotizacion_por: "agente" } }).where(eq(s.contacts.id, CONTACT));
+    await msg({ direction: "in", body: "la pago con tarjeta", at: ago(20_000) });
+    const { deps, calls } = makeDeps({
+      brain: ["Luna: aquí va el link", "Sonnet: con gusto, aquí le paso el link."],
+      brainToolCalls: [[{ toolName: "enviar_link_pago", input: { opcion: "1_compuerta_estandar" } }], []],
+    });
+    expect(await run.runAgent(JOB, deps)).toEqual({ kind: "sent", bubbles: 2 });
+    expect(brainIds(calls)).toEqual(["gpt-5.6-luna", "claude-sonnet-5"]);
+    const bodies = (await agentOuts()).map((m) => m.body ?? "");
+    expect(bodies[0]).toBe("Sonnet: con gusto, aquí le paso el link.");
+    expect(bodies.filter((b) => b.includes("https://mpago.la/EJEMPLO1"))).toHaveLength(1);
+    expect((await contact()).stage).toBe("cerca_compra");
+  });
+
   it("traspaso (revisión 27-sep): si Sonnet NO repite el workflow ni el aviso que pidió Luna, salen igual (una sola vez) y la etapa es la del traspaso", async () => {
     await dosModelos();
     const bank = await wf("datos_bancarios", [{ kind: "send_text", text: "CLABE 0123" }]);

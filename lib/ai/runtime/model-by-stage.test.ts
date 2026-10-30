@@ -56,6 +56,8 @@ describe("traspaso del Modelo 1 al Modelo 2 (27-sep-2026)", () => {
   it("la etapa implícita: mover_etapa o el workflow de datos bancarios (→ la etapa con papel Cerca de compra); la más adelantada gana", () => {
     expect(impliedStage(stages, [])).toBeNull();
     expect(impliedStage(stages, [{ kind: "workflow", slug: "tabla_tamanos_estandar" }])).toBeNull();
+    // El link de pago (30-oct-2026) lleva a Cerca de compra, como los datos bancarios.
+    expect(impliedStage(stages, [{ kind: "link" }])).toBe("cerca_compra");
     expect(impliedStage(stages, [{ kind: "workflow", slug: "datos_bancarios" }])).toBe("cerca_compra");
     expect(impliedStage(stages, [{ kind: "etapa", etapa: "compra" }, { kind: "workflow", slug: "datos_bancarios" }])).toBe("compra");
     expect(impliedStage(stages, [{ kind: "etapa", etapa: "prospecto" }, { kind: "etapa", etapa: "interesado" }])).toBe("interesado");
