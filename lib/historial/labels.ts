@@ -23,6 +23,8 @@ export const HISTORY_TYPES = [
   { id: "canales", label: "Canales" },
   { id: "workflows", label: "Workflows" },
   { id: "tallas", label: "Tallas y medidas" },
+  // Agente IA › Links de pago (30-oct-2026).
+  { id: "links_pago", label: "Links de pago" },
   { id: "mensajes_rapidos", label: "Mensajes rápidos" },
   { id: "plantillas", label: "Plantillas" },
   { id: "vendedores", label: "Vendedores" },
@@ -46,6 +48,7 @@ export type ChangeAction = {
   canales: "encender" | "apagar" | "limpiar_pruebas";
   workflows: "crear" | "editar" | "encender" | "apagar" | "borrar";
   tallas: "editar";
+  links_pago: "editar";
   seguimientos: "editar";
   mensajes_rapidos: "crear" | "editar" | "borrar" | "reordenar";
   plantillas: "alta" | "editar" | "borrar" | "sincronizar";
@@ -119,6 +122,8 @@ export function describeAction(kind: string, action: string, subject: string | n
       return "Cambió el nombre del agente";
     case "tallas.editar":
       return "Cambió las tallas y medidas";
+    case "links_pago.editar":
+      return "Cambió los links de pago";
     case "seguimientos.editar":
       return "Cambió la tabla de seguimientos";
     case "mensajes_rapidos.crear":
