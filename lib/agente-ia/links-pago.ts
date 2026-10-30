@@ -9,7 +9,10 @@
 // - el link debe cobrar el total acordado en el chat (o la mitad, en el anticipo o la liquidación de una
 //   compuerta a la medida); si no cuadra, no sale y un asesor lo manda;
 // - máximo MAX_LINKS_POR_CHAT links del Agente IA por chat.
-// Los links de precio especial (descuentos, Los Mochis) no se cargan aquí: son solo del vendedor.
+// Los de precio especial (descuentos, Los Mochis) van marcados «Solo vendedor»: salen en el ⚡ del chat y el
+// Agente IA nunca los ve. Con cada link salen DOS mensajes (30-oct-2026, regla del dueño): el 1.º con el
+// link y, aparte, el 2.º que pide los datos de envío (primero el pago, después los datos: da confianza).
+// Los dos se editan en Agente IA › Links de pago.
 import { z } from "zod";
 import { foreignLadaLabel } from "@/lib/phone";
 import { normalizeSearch } from "@/lib/text/search";
@@ -24,8 +27,15 @@ export type LinkPago = {
   /** Hasta cuántos meses sin intereses (0 = de contado). */
   meses: number;
   url: string;
+  /** Precio especial: solo lo manda un vendedor desde el ⚡ (el Agente IA nunca lo ve). */
+  soloVendedor: boolean;
   posicion: number;
 };
+
+/** Los que puede mandar el Agente IA (los «Solo vendedor» nunca). */
+export function linksDelAgente<T extends Pick<LinkPago, "soloVendedor">>(links: readonly T[]): T[] {
+  return links.filter((l) => !l.soloVendedor);
+}
 
 /** Una opción de la herramienta del Agente IA: su clave y el link que manda. */
 export type OpcionLink = { clave: string; link: LinkPago };
@@ -60,9 +70,10 @@ export const linkPagoInputSchema = z.object({
   cubre: z.enum(["total", "mitad"]),
   meses: z.number().int().min(0).max(24),
   url: httpsUrl,
+  soloVendedor: z.boolean().default(false),
 });
 
-export type LinkPagoInput = z.infer<typeof linkPagoInputSchema>;
+export type LinkPagoInput = z.input<typeof linkPagoInputSchema>;
 
 export const linksPagoSchema = z
   .array(linkPagoInputSchema)
@@ -122,13 +133,54 @@ export function ladaSinLinks(iso: string | null | undefined, code: string | null
   return foreignLadaLabel(iso, code);
 }
 
-/** Lo que recibe el cliente: un mensaje con el monto, el link y cómo pagar. */
-export function mensajeLink(link: Pick<LinkPago, "monto" | "meses" | "url">): string {
-  const como =
-    link.meses > 0
-      ? `Puede pagar con tarjeta de crédito o débito, y con crédito elegir hasta ${link.meses} meses sin intereses.`
-      : "Es un pago de contado con tarjeta de crédito o débito.";
-  return `Aquí le paso el link para pagar ${pesos(link.monto)} con tarjeta por MercadoPago ✅\n\n${link.url.trim()}\n\n${como} Cuando realice el pago, por favor mándeme por aquí su comprobante.`;
+// ── Los dos mensajes (editables) ──────────────────────────────────────────
+export type TextosLink = { mensaje1: string; mensaje2: string };
+
+export const VARIABLES_LINK = ["monto", "link", "forma_de_pago"] as const;
+
+export const TEXTOS_DE_FABRICA: TextosLink = {
+  mensaje1: "Aquí le paso el link para pagar {{monto}} con tarjeta por MercadoPago ✅\n\n{{link}}\n\n{{forma_de_pago}}",
+  mensaje2: "Una vez realizado el pago, nos apoya con sus datos de envío:\nNombre de quien recibe\nDirección\nCódigo postal\nTeléfono\nCorreo electrónico",
+};
+
+export const MAX_TEXTO_LINK = 1000;
+
+export const textosLinkSchema = z.object({
+  mensaje1: z
+    .string()
+    .trim()
+    .min(1, "Falta el mensaje 1.")
+    .max(MAX_TEXTO_LINK, `El mensaje 1 pasa de ${MAX_TEXTO_LINK} caracteres.`)
+    .refine((t) => t.includes("{{link}}"), "El mensaje 1 debe llevar {{link}} (ahí va el link)."),
+  mensaje2: z.string().trim().max(MAX_TEXTO_LINK, `El mensaje 2 pasa de ${MAX_TEXTO_LINK} caracteres.`),
+});
+
+/** Errores de los textos para el editor (variables desconocidas incluidas). */
+export function validateTextosLink(textos: TextosLink): string[] {
+  const r = textosLinkSchema.safeParse(textos);
+  const errors = r.success ? [] : r.error.issues.map((i) => i.message);
+  for (const [n, t] of [["1", textos.mensaje1], ["2", textos.mensaje2]] as const) {
+    for (const m of t.matchAll(/\{\{\s*([^}]*?)\s*\}\}/g)) {
+      if (!(VARIABLES_LINK as readonly string[]).includes(m[1])) errors.push(`El mensaje ${n} tiene {{${m[1]}}}: solo valen {{monto}}, {{link}} y {{forma_de_pago}}.`);
+    }
+  }
+  return [...new Set(errors)];
+}
+
+/** Cómo se paga ese link, en una frase ({{forma_de_pago}}). */
+export function formaDePago(link: Pick<LinkPago, "meses">): string {
+  return link.meses > 0
+    ? `Puede pagar con tarjeta de crédito o débito, y con crédito elegir hasta ${link.meses} meses sin intereses.`
+    : "Es un pago de contado con tarjeta de crédito o débito.";
+}
+
+/** Lo que recibe el cliente, en orden: el mensaje con el link y, si no está vacío, el de los datos de envío. */
+export function mensajesLink(link: Pick<LinkPago, "monto" | "meses" | "url">, textos: TextosLink = TEXTOS_DE_FABRICA): string[] {
+  const vars: Record<(typeof VARIABLES_LINK)[number], string> = { monto: pesos(link.monto), link: link.url.trim(), forma_de_pago: formaDePago(link) };
+  const fill = (t: string) => t.replace(/\{\{\s*(monto|link|forma_de_pago)\s*\}\}/g, (_, k: keyof typeof vars) => vars[k]).trim();
+  const uno = fill(textos.mensaje1);
+  const dos = fill(textos.mensaje2);
+  return dos ? [uno, dos] : [uno];
 }
 
 /** Qué cobra cada opción, en una línea para la herramienta del modelo. */

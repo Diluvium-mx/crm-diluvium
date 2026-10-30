@@ -80,7 +80,8 @@ describe.skipIf(!TEST_DATABASE_URL)("Links de pago (Postgres real)", () => {
     ]);
     await store.replaceLinksPago(ORG, LINKS, null);
     const rows = await db.select().from(s.changeHistory).where(d.eq(s.changeHistory.organizationId, ORG));
-    expect(rows.map((r) => [r.kind, r.action, r.oldValue])).toEqual([["links_pago", "editar", "Sin links"]]);
+    expect(rows.map((r) => [r.kind, r.action])).toEqual([["links_pago", "editar"]]);
+    expect(rows[0].oldValue).toMatch(/^Sin links\nMensaje 1: /);
     expect(rows[0].newValue).toContain("1 compuerta estándar $5,500 · 6 MSI · https://mpago.la/EJEMPLO1");
   });
 
@@ -97,7 +98,9 @@ describe.skipIf(!TEST_DATABASE_URL)("Links de pago (Postgres real)", () => {
 
   it("con el total acordado sale el link exacto y el contacto va a Cerca de compra", async () => {
     const p = await plan("mx", "1_compuerta_estandar", { monto: 5500, modelText: "Son $5,500 con envío gratis." });
-    expect(p.link?.texto).toContain("\n\nhttps://mpago.la/EJEMPLO1\n\n");
+    expect(p.link?.mensajes).toHaveLength(2);
+    expect(p.link?.mensajes[0]).toContain("\n\nhttps://mpago.la/EJEMPLO1\n\n");
+    expect(p.link?.mensajes[1]).toContain("datos de envío");
     expect(p.linkFallback).toBeNull();
     expect(p.stage).toBe("cerca_compra");
     expect(p.avisos).toEqual([]);
@@ -128,9 +131,25 @@ describe.skipIf(!TEST_DATABASE_URL)("Links de pago (Postgres real)", () => {
 
   it("compuerta a la medida: el anticipo cobra la mitad del total de $7,000", async () => {
     await quote("mx", 7000, "agente");
-    expect((await plan("mx", "medida_especial_anticipo")).link?.texto).toContain("https://mpago.li/EJEMPLO3");
+    expect((await plan("mx", "medida_especial_anticipo")).link?.mensajes[0]).toContain("https://mpago.li/EJEMPLO3");
     await quote("mx", 3500, "agente");
     expect((await plan("mx", "medida_especial_anticipo")).link).toBeNull();
+  });
+
+  it("«Solo vendedor» no se ofrece al Agente IA; los textos editados salen tal cual y quedan en el Historial", async () => {
+    await store.replaceLinksPago(ORG, [...LINKS, { nombre: "2 compuertas (especial)", monto: 10400, cubre: "total", meses: 6, url: "https://mpago.la/EJEMPLO9", soloVendedor: true }], null, {
+      mensaje1: "Link de {{monto}}: {{link}}",
+      mensaje2: "",
+    });
+    const t = await actions.loadAgentTools(ORG, stages, { id: conv("mx"), contactId: contact("mx") });
+    expect(t.linkOptions.map((o) => o.clave)).toEqual(["1_compuerta_estandar", "2_compuertas_estandar", "medida_especial_anticipo"]);
+    expect((await store.listLinksPago(ORG)).at(-1)?.soloVendedor).toBe(true);
+    await quote("mx", 5500, "agente");
+    expect((await plan("mx", "1_compuerta_estandar")).link?.mensajes).toEqual(["Link de $5,500: https://mpago.la/EJEMPLO1"]);
+    const last = (await db.select().from(s.changeHistory).where(d.eq(s.changeHistory.organizationId, ORG)).orderBy(d.desc(s.changeHistory.createdAt)))[0];
+    expect(last.newValue).toContain("2 compuertas (especial) $10,400 · 6 MSI · solo vendedor");
+    expect(last.newValue).toContain("Mensaje 1: Link de {{monto}}: {{link}}");
+    expect(last.newValue).toContain("Mensaje 2: (no sale)");
   });
 
   it("lada de Perú: aunque el modelo lo pida, ni link ni frase ni aviso; +1 sí", async () => {

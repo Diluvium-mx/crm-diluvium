@@ -29,8 +29,8 @@ import { sendsByWorkflow } from "@/lib/workflows/max-per-chat";
 import { addNotice, hasOpenHandoverRequest } from "./notices";
 import { amountsIn, isBackedAmount } from "./lector-core";
 import { buildAgentTools, type AgentTools, type AvisoMotivo, type ValidToolCall } from "./tools";
-import { ladaSinLinks, LINK_POR_ASESOR, linkCuadra, MAX_LINKS_POR_CHAT, mensajeLink, opcionesDe, totalQueCubre, type OpcionLink } from "@/lib/agente-ia/links-pago";
-import { linksSentByAgent, listLinksPago } from "@/lib/agente-ia/links-pago-store";
+import { ladaSinLinks, LINK_POR_ASESOR, linkCuadra, linksDelAgente, MAX_LINKS_POR_CHAT, mensajesLink, opcionesDe, totalQueCubre, type OpcionLink } from "@/lib/agente-ia/links-pago";
+import { linksSentByAgent, listLinksPago, loadTextosLink } from "@/lib/agente-ia/links-pago-store";
 import { allowedAgentStage, ventaCerradaHeld } from "./venta-cerrada";
 import { instagramAllowedStage, instagramHeld } from "./instagram-entrada";
 
@@ -91,9 +91,10 @@ export async function loadAgentTools(
 
 // Opciones de enviar_link_pago. Sin conversación (renovación de la caché) se ofrecen si hay links,
 // como en casi todos los chats. Con conversación, nunca a una lada fuera de México (regla del dueño,
-// 30-oct-2026: Perú, España…; +1 sí) ni cuando el Agente IA ya mandó el máximo en ese chat.
+// 30-oct-2026: Perú, España…; +1 sí) ni cuando el Agente IA ya mandó el máximo en ese chat. Los
+// «Solo vendedor» (precio especial) nunca.
 async function linkOptionsFor(organizationId: string, conversation?: { id: string; contactId: string }): Promise<OpcionLink[]> {
-  const links = await listLinksPago(organizationId);
+  const links = linksDelAgente(await listLinksPago(organizationId));
   if (links.length === 0) return [];
   if (conversation) {
     const [c] = await db
@@ -119,8 +120,8 @@ export type ActionPlan = {
   stage: string | null;
   avisos: Aviso[];
   notes: string[];
-  /** Mensaje con el link de pago que sale después del texto del Agente IA (run.ts), o null. */
-  link: { clave: string; texto: string } | null;
+  /** Mensajes del link de pago (el del link y el de los datos de envío) que salen después del texto del Agente IA (run.ts), o null. */
+  link: { clave: string; mensajes: string[] } | null;
   /** El link no pasó los candados: en su lugar sale esta frase (un asesor lo manda), o null. */
   linkFallback: string | null;
 };
@@ -240,6 +241,10 @@ async function planLink(
     plan.notes.push(`enviar_link_pago ignorada: lada ${pais}, fuera de México (nunca recibe links)`);
     return;
   }
+  if (link.soloVendedor) {
+    plan.notes.push("enviar_link_pago ignorada: ese link es solo del vendedor");
+    return;
+  }
   const nombre = `«${link.nombre}» (${pesos(link.monto)})`;
   const urls = (await listLinksPago(input.organizationId)).map((l) => l.url);
   const enviados = await linksSentByAgent(input.organizationId, input.conversationId, [...urls, link.url]);
@@ -262,7 +267,7 @@ async function planLink(
     plan.linkFallback = LINK_POR_ASESOR;
     return;
   }
-  plan.link = { clave, texto: mensajeLink(link) };
+  plan.link = { clave, mensajes: mensajesLink(link, await loadTextosLink(input.organizationId)) };
   // Como los datos bancarios: el link lleva a "Cerca de compra" (solo hacia adelante).
   const cerca = roleKey(input.stages, "cerca_compra");
   if (cerca) plan.stage = furthestStage(input.stages, plan.stage ? [plan.stage, cerca] : [cerca]);

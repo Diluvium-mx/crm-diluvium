@@ -37,7 +37,7 @@ import { StagesEditor } from "../../_components/stages-editor";
 import { useConfirm } from "./use-confirm";
 import { useLogoMotions } from "./use-logo-motions";
 import type { SizeRange } from "@/lib/contacts/sizes";
-import type { LinkPago } from "@/lib/agente-ia/links-pago";
+import type { LinkPago, TextosLink } from "@/lib/agente-ia/links-pago";
 import type { FollowUpTableInput } from "@/lib/followups/tabla";
 import type { FollowUpTableLastChange } from "@/lib/actions/agente-ia-seguimientos";
 
@@ -171,7 +171,7 @@ export function AgenteEditor({
 }: {
   data: AgentEditorView;
   sizeRanges: SizeRange[];
-  linksPago: LinkPago[];
+  linksPago: { links: LinkPago[]; textos: TextosLink };
   followUps: { table: FollowUpTableInput; lastChange: FollowUpTableLastChange | null };
   initialSection: AgentSection;
   canSeeSellers: boolean;
@@ -374,7 +374,7 @@ export function AgenteEditor({
       {panel(
         "links",
         <Section title="Links de pago" hint="Los links de MercadoPago que el Agente IA manda cuando el cliente elige pagar con tarjeta.">
-          <LinksPagoSection initial={linksPago} onDirtyChange={linksDirty} />
+          <LinksPagoSection initial={linksPago.links} textos={linksPago.textos} onDirtyChange={linksDirty} />
         </Section>,
       )}
       {panel(

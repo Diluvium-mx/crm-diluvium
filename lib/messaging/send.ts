@@ -30,6 +30,7 @@ import { channels, conversations, messages, templates } from "@/lib/db/schema";
 import { applyOutboundToConversation, latestInboundMessageId } from "./ingest";
 import { SendFailedError, type MessagingProvider, type SendResult } from "./provider";
 import { findInternalText, stripForeignScript } from "@/lib/ai/runtime/internal-text";
+import { esMensajeDeLink } from "@/lib/agente-ia/links-pago-store";
 import {
   canSendFreeForm,
   INSTAGRAM_PARTS_META,
@@ -798,8 +799,10 @@ export async function sendAgentText(
   // Último candado (5-oct-2026, dueño): TODO texto del Agente IA pasa por aquí (respuesta,
   // «Reintentar», lo que venga). Un texto interno («[tool call] …») nunca sale, aunque se
   // haya colado antes del candado de run.ts (unfinishedReply).
+  // Los mensajes de un link de pago (30-oct-2026) los escribió el dueño en Agente IA › Links de pago: pasan
+  // aunque traigan renglones de una palabra («Dirección»).
   const internal = findInternalText([params.text]);
-  if (internal) {
+  if (internal && !(await esMensajeDeLink(params.organizationId, params.text))) {
     throw new SendRejectedError("not_retryable", `El Agente IA escribió una nota interna (${internal.reason}) y no se envió.`);
   }
   const now = params.now ?? new Date();
