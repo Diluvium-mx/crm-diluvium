@@ -280,14 +280,16 @@ function titleOf(f: FollowUpState): string {
 }
 
 function fotoDe(f: FollowUpState): FotoPildora {
-  if (f.estado !== "activo") return { estado: f.estado, id: null, dueAt: null, enviados: 0, ultimoSalio: false, cara: faceOf(f), etiqueta: labelOf(f), tono: toneOf(f) };
+  if (f.estado !== "activo") return { estado: f.estado, id: null, dueAt: null, enviados: 0, ultimoSalio: false, cara: faceOf(f), etiqueta: labelOf(f), tono: toneOf(f), mensaje: null };
   const ultimo = f.intentos.at(-1);
   const ultimoSalio = !!ultimo && !ultimo.error && !ultimo.ensayo;
-  return { estado: "activo", id: f.id, dueAt: f.dueAt, enviados: f.intentos.length, ultimoSalio, cara: faceOf(f), etiqueta: labelOf(f), tono: toneOf(f) };
+  // Lo que dejó un vendedor en «Editar mensaje»: si cambia, la píldora juega el lápiz (30-oct-2026).
+  const mensaje = f.mensajeVendedor === null && f.plantillaVendedor === null ? null : JSON.stringify([f.mensajeVendedor, f.plantillaVendedor]);
+  return { estado: "activo", id: f.id, dueAt: f.dueAt, enviados: f.intentos.length, ultimoSalio, cara: faceOf(f), etiqueta: labelOf(f), tono: toneOf(f), mensaje };
 }
 
 /** Cancelar y Apagar: la píldora queda así (la misma foto que dará el servidor). */
-const FOTO_CANCELADO: FotoPildora = { estado: "cancelado", id: null, dueAt: null, enviados: 0, ultimoSalio: false, cara: "cancelado", etiqueta: null, tono: TONO_CANCELADO };
+const FOTO_CANCELADO: FotoPildora = { estado: "cancelado", id: null, dueAt: null, enviados: 0, ultimoSalio: false, cara: "cancelado", etiqueta: null, tono: TONO_CANCELADO, mensaje: null };
 
 /** La escena que toca jugar: solo cuando la píldora CAMBIA a la vista (al abrir el chat no se juega; al cambiar de
  * chat la píldora se vuelve a montar). Las reglas están en robot-escena-cuando.ts; aquí van los relojes: el cambio de
@@ -386,7 +388,7 @@ export function FollowUpPill({
     >
       {/* Llaves distintas para el robot y la etiqueta: con la misma, React dejaba un robot de más al terminar la escena
           (9-oct-2026, «dos robots» al cambiar la hora). Cambian con cada escena para que las animaciones empiecen de cero. */}
-      {enCurso ? <RobotEscena key={`robot-${enCurso.n}`} escena={enCurso.escena} /> : <RobotQuieto cara={vista.cara} />}
+      {enCurso ? <RobotEscena key={`robot-${enCurso.n}`} escena={enCurso.escena} cara={vista.cara} /> : <RobotQuieto cara={vista.cara} />}
       {label && (enCurso ? <EtiquetaEscena key={`etiqueta-${enCurso.n}`} antes={enCurso.etiquetaAntes} ahora={label} /> : <span className="truncate">{label}</span>)}
     </button>
   );
@@ -761,8 +763,9 @@ function ActivePanel({ followUp, onClose, onChanged, onAnticipar, onRevertir }: 
             edited={editorDoor === "plantilla" ? f.plantillaVendedor : f.mensajeVendedor}
             busy={busy}
             loadOptions={loadOptions}
-            onSaveText={(texto) => run(() => editFollowUpMessage(f.id, texto))}
-            onSaveTemplate={(name) => run(() => chooseFollowUpTemplateAction(f.id, name))}
+            // Anticipan la píldora (el servidor recorta espacios igual): el lápiz arranca al presionar Guardar.
+            onSaveText={(texto) => run(() => editFollowUpMessage(f.id, texto), { foto: fotoDe({ ...f, mensajeVendedor: texto?.trim() ?? null }) })}
+            onSaveTemplate={(name) => run(() => chooseFollowUpTemplateAction(f.id, name), { foto: fotoDe({ ...f, plantillaVendedor: name?.trim() ?? null }) })}
             onDone={() => setEditingMessage(false)}
           />
         )}

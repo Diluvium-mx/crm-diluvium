@@ -717,6 +717,7 @@ prototipos (tamaño real y ampliado) antes de construirlas; el dueño aprobó la
 | **Reloj** | El mismo seguimiento cambia de hora con el robot despierto (Cambiar hora) | Ojos de reloj que giran; la hora de antes sube y la nueva llega desde abajo | 1.5 s |
 | **Despertador** | El mismo seguimiento deja de estar suspendido (Que salga solo) | Suena, el robot despierta, lo apaga y la píldora pasa de ámbar a azul | 2 s |
 | **Avioncito** | El mismo seguimiento tiene un mensaje más y sí salió | Lanza un avioncito de papel que cruza la píldora; llega la hora siguiente o «esperando» | 1.8 s |
+| **Lápiz** (30-oct-2026) | El mismo seguimiento cambia su mensaje o plantilla («Editar mensaje» › Guardar o «Volver al del Agente IA») | La hora se esconde, un lápiz entra por la derecha, escribe un garabato, palomita verde, el robot asiente y el lápiz se va por la derecha; la carita no cambia (sirve suspendido) | 1.6 s |
 
 - **Arranca al presionar** (9-oct-2026, pedido del dueño: en staging tardaba 1–2 s porque esperaba la acción y otra consulta,
   y Next atiende las acciones de una en una): los botones de la ventana ANTICIPAN cómo quedará la píldora (`useFollowUp` ›

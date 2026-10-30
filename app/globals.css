@@ -2138,6 +2138,109 @@ html[data-theme-circle]::view-transition-new(root) {
   72%, 100% { opacity: 1; transform: none; }
 }
 
+/* lapiz («Editar mensaje» › Guardar, 1.6 s; 30-oct-2026, pedido del dueño): la hora se esconde, un lápiz entra por la
+   orilla derecha (110 px alcanzan la orilla), escribe un garabato, sale la palomita verde de guardado, el robot asiente
+   y el lápiz se regresa por la derecha. La carita no cambia (robot-quieto-<cara> en la misma escena). */
+[data-escena="lapiz"] {
+  --re-d: 1600ms;
+}
+.re-lapiz {
+  position: absolute;
+  top: 10px;
+  left: calc(100% + 5px);
+  width: 16px;
+  height: 4.6px;
+  opacity: 0;
+  transform-origin: 0% 50%;
+}
+.re-garabato {
+  position: absolute;
+  top: 11px;
+  left: calc(100% + 4px);
+  width: 14px;
+  height: 5px;
+  opacity: 0;
+}
+.re-garabato path,
+.re-palomita path {
+  stroke-dasharray: 1;
+}
+.re-palomita {
+  position: absolute;
+  top: 1px;
+  left: calc(100% + 2px);
+  width: 8px;
+  height: 8px;
+  opacity: 0;
+}
+@media (prefers-reduced-motion: no-preference) {
+  .robot-escena-lapiz .re-lapiz {
+    animation: re-lapiz-lapiz var(--re-d) both;
+  }
+  .robot-escena-lapiz .re-garabato {
+    animation: re-lapiz-garabato var(--re-d) both;
+  }
+  .robot-escena-lapiz .re-garabato path {
+    animation: re-lapiz-escribe var(--re-d) both;
+  }
+  .robot-escena-lapiz .re-palomita {
+    animation: re-lapiz-palomita var(--re-d) both;
+  }
+  .robot-escena-lapiz .re-palomita path {
+    animation: re-lapiz-palomita-traza var(--re-d) both;
+  }
+  .robot-escena-lapiz .re-robot {
+    animation: re-lapiz-robot var(--re-d) both;
+  }
+  [data-escena="lapiz"] .re-etiqueta {
+    animation: re-lapiz-etiqueta var(--re-d) both;
+  }
+}
+@keyframes re-lapiz-lapiz {
+  0% { opacity: 1; transform: translateX(110px) rotate(-25deg); }
+  18%, 22% { transform: translate(0, 0) rotate(-25deg); }
+  28% { transform: translate(2px, -1px) rotate(-25deg); }
+  34% { transform: translate(4px, 0.5px) rotate(-25deg); }
+  40% { transform: translate(6px, -1px) rotate(-25deg); }
+  46% { transform: translate(8px, 0.5px) rotate(-25deg); }
+  52% { transform: translate(10px, -1px) rotate(-25deg); }
+  58% { transform: translate(12px, 0) rotate(-25deg); }
+  64%, 70% { transform: translate(12px, -3px) rotate(-10deg); }
+  86% { opacity: 1; transform: translate(110px, -3px) rotate(-10deg); }
+  87%, 100% { opacity: 0; transform: translate(110px, -3px) rotate(-10deg); }
+}
+@keyframes re-lapiz-garabato {
+  0%, 21% { opacity: 0; }
+  22%, 80% { opacity: 1; }
+  92%, 100% { opacity: 0; }
+}
+@keyframes re-lapiz-escribe {
+  0%, 22% { stroke-dashoffset: 1; }
+  58%, 100% { stroke-dashoffset: 0; }
+}
+@keyframes re-lapiz-palomita {
+  0%, 60% { opacity: 0; transform: scale(0.2); }
+  66% { opacity: 1; transform: scale(1.2); }
+  70%, 80% { opacity: 1; transform: scale(1); }
+  92%, 100% { opacity: 0; transform: scale(1); }
+}
+@keyframes re-lapiz-palomita-traza {
+  0%, 62% { stroke-dashoffset: 1; }
+  70%, 100% { stroke-dashoffset: 0; }
+}
+@keyframes re-lapiz-robot {
+  0%, 64% { transform: none; }
+  67% { transform: translateY(1.5px); }
+  71% { transform: none; }
+  74% { transform: translateY(1px); }
+  77%, 100% { transform: none; }
+}
+@keyframes re-lapiz-etiqueta {
+  0% { opacity: 1; transform: none; }
+  10%, 84% { opacity: 0; transform: translateX(-4px); }
+  96%, 100% { opacity: 1; transform: none; }
+}
+
 /* Corrector ortográfico (components/spelling/spellcheck-overlay.tsx, docs/corrector.md):
    el MISMO subrayado del navegador (spelling-error: Chrome, Edge, Safari dibujan el suyo).
    Donde no existe, una onda roja fina de 1 px pegada a la letra, como la de Google Docs. */
