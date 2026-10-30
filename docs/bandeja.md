@@ -282,6 +282,10 @@ clic abre un menú para cambiarla sin abrir el chat. Lista y panel quedan sincro
   vaciar la caja; vence a los 7 días sin tocarlo (limpieza al abrir el CRM) y al cerrar sesión se borran todos.
 - La fila de la Bandeja dice «Borrador: …» en lugar del último mensaje (menos en el chat abierto; con la lupa manda la
   lupa). Con la ventana cerrada la caja no se ve: se conserva y una línea lo avisa arriba de 📄 Enviar plantilla.
+- Vuelve **ordenado** (30-oct-2026, reportado por el dueño): sin renglones vacíos ni espacios al principio y sin
+  renglones vacíos al final (`tidyDraft`). Un borrador que empezaba con un salto de línea (p. ej. al cortar el 2.º
+  renglón para mandarlo aparte) volvía con el primer renglón vacío y el texto pegado abajo de la caja. Los saltos de en
+  medio se respetan y los espacios al final del último renglón se quedan (para seguir escribiendo).
 - Código: reglas puras y pruebas en `lib/inbox/chat-drafts.ts`; lectura y escritura en el navegador en
   `dashboard/_components/use-chat-draft.ts` (`useSyncExternalStore`, como `use-persistent-toggle.ts`; sin
   localStorage queda en memoria mientras dure la página).
