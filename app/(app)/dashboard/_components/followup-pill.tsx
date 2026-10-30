@@ -71,7 +71,7 @@ import {
 /** Lo que un botón de la ventana anticipa para la píldora mientras contesta el servidor: cómo quedará, «Reactivar»
  * (no se sabe el final: la llave golpea y el robot carga hasta la respuesta) o «Despertar» (el café, hasta que el
  * Agente IA termina de leer el chat). */
-export type Anticipo = { foto: FotoPildora } | { reparando: true } | { despertando: true };
+export type Anticipo = { foto: FotoPildora } | { reparando: true } | { despertando: true } | { curando: true };
 
 export type FollowUpHook = {
   /** Lo que dice el servidor (la ventana se dibuja con esto). */
@@ -280,16 +280,41 @@ function titleOf(f: FollowUpState): string {
 }
 
 function fotoDe(f: FollowUpState): FotoPildora {
-  if (f.estado !== "activo") return { estado: f.estado, id: null, dueAt: null, enviados: 0, ultimoSalio: false, cara: faceOf(f), etiqueta: labelOf(f), tono: toneOf(f), mensaje: null };
+  if (f.estado !== "activo") {
+    return { estado: f.estado, id: null, dueAt: null, enviados: 0, ultimoSalio: false, ultimoVendedor: false, cara: faceOf(f), etiqueta: labelOf(f), tono: toneOf(f), mensaje: null, plantilla: null };
+  }
   const ultimo = f.intentos.at(-1);
   const ultimoSalio = !!ultimo && !ultimo.error && !ultimo.ensayo;
-  // Lo que dejó un vendedor en «Editar mensaje»: si cambia, la píldora juega el lápiz (30-oct-2026).
-  const mensaje = f.mensajeVendedor === null && f.plantillaVendedor === null ? null : JSON.stringify([f.mensajeVendedor, f.plantillaVendedor]);
-  return { estado: "activo", id: f.id, dueAt: f.dueAt, enviados: f.intentos.length, ultimoSalio, cara: faceOf(f), etiqueta: labelOf(f), tono: toneOf(f), mensaje };
+  // Lo que dejó un vendedor en «Editar mensaje»: si cambia, la píldora juega el lápiz o la goma (30-oct-2026).
+  return {
+    estado: "activo",
+    id: f.id,
+    dueAt: f.dueAt,
+    enviados: f.intentos.length,
+    ultimoSalio,
+    ultimoVendedor: ultimo?.modo === "vendedor",
+    cara: faceOf(f),
+    etiqueta: labelOf(f),
+    tono: toneOf(f),
+    mensaje: f.mensajeVendedor,
+    plantilla: f.plantillaVendedor,
+  };
 }
 
 /** Cancelar y Apagar: la píldora queda así (la misma foto que dará el servidor). */
-const FOTO_CANCELADO: FotoPildora = { estado: "cancelado", id: null, dueAt: null, enviados: 0, ultimoSalio: false, cara: "cancelado", etiqueta: null, tono: TONO_CANCELADO, mensaje: null };
+const FOTO_CANCELADO: FotoPildora = {
+  estado: "cancelado",
+  id: null,
+  dueAt: null,
+  enviados: 0,
+  ultimoSalio: false,
+  ultimoVendedor: false,
+  cara: "cancelado",
+  etiqueta: null,
+  tono: TONO_CANCELADO,
+  mensaje: null,
+  plantilla: null,
+};
 
 /** La escena que toca jugar: solo cuando la píldora CAMBIA a la vista (al abrir el chat no se juega; al cambiar de
  * chat la píldora se vuelve a montar). Las reglas están en robot-escena-cuando.ts; aquí van los relojes: el cambio de
@@ -364,7 +389,7 @@ export function FollowUpPill({
   className?: string;
 }) {
   const foto = anticipo && "foto" in anticipo ? anticipo.foto : fotoDe(followUp);
-  const enCurso = useRobotEscena({ foto, reparando: anticipo !== null && "reparando" in anticipo, despertando: anticipo !== null && "despertando" in anticipo, silencio });
+  const enCurso = useRobotEscena({ foto, reparando: anticipo !== null && "reparando" in anticipo, despertando: anticipo !== null && "despertando" in anticipo, curando: anticipo !== null && "curando" in anticipo, silencio });
   const vista = vistaDe(foto, enCurso);
   const boton = useRef<HTMLButtonElement>(null);
   useDeslizarRobot(boton, enCurso?.escena);
@@ -499,7 +524,7 @@ function OffPanel({ off, onClose, onChanged, onAnticipar, onRevertir }: { off: F
               <button type="button" onClick={onClose} className={`${button} border-red-700 bg-red-700 text-white`}>
                 Entendido
               </button>
-              <button type="button" disabled={busy} onClick={() => void run(() => quitarSinSeguimientos(off.contactId))} className={`${button} border-red-500`}>
+              <button type="button" disabled={busy} onClick={() => void run(() => quitarSinSeguimientos(off.contactId), { curando: true })} className={`${button} border-red-500`}>
                 Volver a darle seguimiento
               </button>
             </>
