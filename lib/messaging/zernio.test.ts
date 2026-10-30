@@ -210,7 +210,8 @@ describe("ZernioProvider.sendText", () => {
     expect(url).toBe("https://zernio.com/api/v1/inbox/conversations/zconv_1/messages");
     expect(init.headers.Authorization).toBe("Bearer sk_live");
     expect(init.headers["Idempotency-Key"]).toBe("msg_1");
-    expect(JSON.parse(init.body)).toEqual({ accountId: "zacc_1", message: "Hola" });
+    // linkPreview explícito (30-oct-2026): la tarjeta del link de pago de MercadoPago.
+    expect(JSON.parse(init.body)).toEqual({ accountId: "zacc_1", message: "Hola", linkPreview: true });
   });
 
   it("si Zernio devuelve el wamid como messageId, se reconoce como wamid", async () => {

@@ -45,11 +45,13 @@ describe("links de pago: reglas", () => {
 
   it("dos mensajes: el del link (monto, link exacto y cómo pagar) y, aparte, el de los datos de envío", () => {
     expect(mensajesLink(LINKS[1])).toEqual([
-      "Aquí le paso el link para pagar $5,500 con tarjeta por MercadoPago ✅\n\nhttps://mpago.la/EJEMPLO1\n\nPuede pagar con tarjeta de crédito o débito, y con crédito elegir hasta 6 meses sin intereses.",
+      "Adjunto link de pago ✅\nhttps://mpago.la/EJEMPLO1",
       "Una vez realizado el pago, nos apoya con sus datos de envío:\nNombre de quien recibe\nDirección\nCódigo postal\nTeléfono\nCorreo electrónico",
     ]);
-    expect(mensajesLink(LINKS[2])[0]).toContain("$3,500");
-    expect(mensajesLink(LINKS[2])[0]).toContain("Es un pago de contado con tarjeta de crédito o débito.");
+    // Con las variables (las de fábrica ya no las usan): monto y forma de pago.
+    const conVariables = { mensaje1: "Pague {{monto}}: {{link}}. {{forma_de_pago}}", mensaje2: "" };
+    expect(mensajesLink(LINKS[2], conVariables)).toEqual(["Pague $3,500: https://mpago.li/EJEMPLO3. Es un pago de contado con tarjeta de crédito o débito."]);
+    expect(mensajesLink(LINKS[1], conVariables)[0]).toContain("hasta 6 meses sin intereses");
     // Textos editados: variables con o sin espacios; el 2.º vacío no sale.
     expect(mensajesLink(LINKS[1], { mensaje1: "Link {{ link }} por {{monto}}", mensaje2: "  " })).toEqual(["Link https://mpago.la/EJEMPLO1 por $5,500"]);
   });

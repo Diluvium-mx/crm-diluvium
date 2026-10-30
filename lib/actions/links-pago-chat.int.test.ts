@@ -86,8 +86,7 @@ describe.skipIf(!TEST_DATABASE_URL)("Links de pago en el ⚡ del chat (Postgres 
     expect(await chat.sendLinkPago(conv("mx"), await linkId("2 compuertas (especial)"))).toEqual({ ok: true, sent: 2 });
     const o = await outs("mx");
     expect(o.map(([source]) => source)).toEqual(["crm", "crm"]);
-    expect(o[0][1]).toContain("$10,400");
-    expect(o[0][1]).toContain("https://mpago.la/EJEMPLO9");
+    expect(o[0][1]).toBe("Adjunto link de pago ✅\nhttps://mpago.la/EJEMPLO9");
     expect(o[1][1]).toMatch(/^Una vez realizado el pago, nos apoya con sus datos de envío:/);
     expect(sent.texts).toHaveLength(2);
     const [contact] = await db.select().from(s.contacts).where(d.eq(s.contacts.id, "ct_lc_mx"));

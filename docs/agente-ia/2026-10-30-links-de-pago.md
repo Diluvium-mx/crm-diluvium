@@ -111,6 +111,15 @@ Pedido del dueño al verlo en staging (mapa 3.6 › 98–109 y 3.2.2 › 108–1
 - **Cliente de prueba en staging** (`lib/messaging/simulador.ts`, `docs/staging.md` › Cliente de prueba): contacto
   fijo con la ventana siempre abierta (nunca plantilla) y una caja para escribir como el cliente; nada sale a WhatsApp.
 
+**Mensaje 1 de fábrica = como el de los vendedores** (dueño, 30-oct, al verlo en staging): «Adjunto link de pago ✅» y
+el link en el renglón de abajo, sin monto ni explicación: corto, ordenado y sin presionar. El monto lo dice la tarjeta
+que WhatsApp arma debajo con la página de MercadoPago («Paga $3,000 a Diluvium», el producto y «Abrir link de pago»).
+Esa tarjeta sale porque el CRM manda los textos por Zernio con `linkPreview: true` (lo que Zernio hace de fábrica; desde
+el 30-oct queda explícito en `lib/messaging/zernio.ts`) y se arma con el PRIMER link del mensaje. La dibuja WhatsApp: si
+al mandar no alcanza a leer la página de MercadoPago, el link llega igual (azul, se puede abrir) pero sin tarjeta, y
+el diseño cambia un poco entre Android, iPhone y WhatsApp Web. Las variables `{{monto}}` y `{{forma_de_pago}}` siguen
+disponibles si se quiere volver a escribir el monto.
+
 **Goal, ajuste por los dos mensajes** (se suma al borrador de abajo): en COMPROBANTES DE PAGO › Pago completo, después
 de «…pide los datos de envío:», agregar «Si el cliente ya mandó sus datos de envío (se los pidió el mensaje del link de
 pago), no se los vuelvas a pedir: solo agradece y di que un asesor confirma el pago en un momento.». Y en el cambio 1,

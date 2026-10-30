@@ -801,7 +801,9 @@ export class ZernioProvider implements MessagingProvider {
     if (platform === "instagram") {
       return this.sendInstagramParts(providerConversationId, { accountId: providerAccountId, ...instagramTag(humanAgentTag) }, idempotencyKey, [], text);
     }
-    return this.postToConversation(providerConversationId, { accountId: providerAccountId, message: text }, idempotencyKey);
+    // Vista previa del primer link (la tarjeta «Paga $5,500 a Diluvium» de un link de MercadoPago; 30-oct-2026):
+    // Zernio la manda encendida si no se dice nada, pero queda explícita para que no cambie sin que lo sepamos.
+    return this.postToConversation(providerConversationId, { accountId: providerAccountId, message: text, linkPreview: true }, idempotencyKey);
   }
 
   // Envía una plantilla aprobada por el MISMO endpoint que el texto. Cuerpo
