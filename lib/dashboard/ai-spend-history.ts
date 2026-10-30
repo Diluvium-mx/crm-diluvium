@@ -1,7 +1,7 @@
 // Historial del Gasto de IA (Dashboard › Historial del gasto de IA, 1-oct-2026): gasto por día y
 // por mes con las mismas reglas que la tarjeta (lib/dashboard/ai-spend.ts): cada día UTC sale de
-// lo que cobró el proveedor (ai_provider_billing) y nunca menos de lo que registró el CRM en
-// producción; "pruebas" = lo demás (en Anthropic, el espacio «Pruebas»). Los desgloses por modelo
+// lo que cobró el proveedor (ai_provider_billing) y, solo ayer y hoy, nunca menos de lo que registró
+// el CRM en producción; "pruebas" = lo demás (en Anthropic, el espacio «Pruebas»). Los desgloses por modelo
 // y por tarea salen del registro de producción (ai_usage): los proveedores no dan ese detalle.
 // Días UTC, igual que la consola de cada proveedor.
 import { sql } from "drizzle-orm";
@@ -18,6 +18,7 @@ import {
   loadBillingSnapshots,
   loadTopupTotals,
   providerLabel,
+  recentFromDay,
   spendByDay,
   splitDay,
 } from "./ai-spend";
@@ -105,7 +106,8 @@ function daysBetween(desde: string, hasta: string): number {
 }
 
 // PURO: gasto por día UTC y proveedor a partir del registro del CRM y de las lecturas de los proveedores.
-export function buildSpendByDay(days: readonly DaySpend[], billing: readonly BillingSnapshot[]): SpendByDay {
+export function buildSpendByDay(days: readonly DaySpend[], billing: readonly BillingSnapshot[], now: Date): SpendByDay {
+  const recentFrom = recentFromDay(now);
   const crm = new Map<string, number>(); // "proveedor|día"
   const providers = new Set<string>();
   const allDays = new Set<string>();
@@ -123,7 +125,7 @@ export function buildSpendByDay(days: readonly DaySpend[], billing: readonly Bil
   for (const day of allDays) {
     const byProvider = new Map<string, DayTotals>();
     for (const provider of providers) {
-      const v = splitDay(provider, day, crm.get(`${provider}|${day}`) ?? 0, snaps.get(provider)?.days[day]);
+      const v = splitDay(provider, day, crm.get(`${provider}|${day}`) ?? 0, snaps.get(provider)?.days[day], recentFrom);
       if (v.prod !== 0 || v.tests !== 0) byProvider.set(provider, v);
     }
     if (byProvider.size) out.set(day, byProvider);
@@ -276,7 +278,7 @@ export async function aiSpendHistory(
   // Desde lo más antiguo que haga falta: el periodo anterior, la primera recarga o el primer mes con datos.
   const from = [prev.desde, ...loads.map((l) => l.firstTopupOn), ...billing.flatMap((b) => Object.keys(b.days))].sort()[0];
   const crmDays = await spendByDay(database, organizationId, from);
-  const spend = buildSpendByDay(crmDays, billing);
+  const spend = buildSpendByDay(crmDays, billing, now);
   const firstDataDay = firstDay(spend, loads);
 
   const series: HistoryDay[] = [];

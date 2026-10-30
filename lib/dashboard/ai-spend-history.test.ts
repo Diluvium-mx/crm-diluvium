@@ -57,6 +57,7 @@ describe("buildSpendByDay", () => {
           days: { "2026-10-06": { todo: 99 } },
         }),
       ],
+      new Date("2026-10-03T12:00:00Z"),
     );
 
     expect([...spend.entries()].map(([day, providers]) => [day, Object.fromEntries(providers)])).toEqual([
@@ -66,6 +67,13 @@ describe("buildSpendByDay", () => {
     ]);
     expect(spend.has("2026-10-05")).toBe(false);
     expect(spend.has("2026-10-06")).toBe(false);
+  });
+
+  it("antes de ayer manda el cobro del proveedor aunque el CRM calcule más", () => {
+    const crm = [{ day: "2026-10-02", provider: "anthropic", usd: 4 }];
+    const billing = [snapshot({ provider: "anthropic", days: { "2026-10-02": { todo: 3, prod: 3 } } })];
+    expect(buildSpendByDay(crm, billing, new Date("2026-10-03T12:00:00Z")).get("2026-10-02")?.get("anthropic")).toEqual({ prod: 4, tests: 0 });
+    expect(buildSpendByDay(crm, billing, new Date("2026-10-05T12:00:00Z")).get("2026-10-02")?.get("anthropic")).toEqual({ prod: 3, tests: 0 });
   });
 });
 
