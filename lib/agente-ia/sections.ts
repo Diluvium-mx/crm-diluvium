@@ -10,6 +10,8 @@ export const AGENT_SECTIONS = [
   // Tabla de los seguimientos del Agente IA (Parte 4, 6-oct-2026).
   { id: "seguimientos", label: "Seguimientos" },
   { id: "tallas", label: "Tallas y medidas" },
+  // Links de MercadoPago que manda el Agente IA (30-oct-2026, lib/agente-ia/links-pago.ts).
+  { id: "links", label: "Links de pago" },
   { id: "canales", label: "Canales" },
   // Historial de cambios (Bloque A, 28-sep-2026): quién cambió qué y cuándo.
   { id: "historial", label: "Historial" },

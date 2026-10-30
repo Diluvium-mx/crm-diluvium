@@ -404,7 +404,7 @@ async function resendSavedReply(
   console.info(`[agente] ${conversationId}: respuesta guardada reenviada (${sent} mensaje/s), sin llamar al modelo`);
   if (stopped) return { kind: "done", result: { kind: "sent", bubbles: sent } };
   // La media que iba después del texto (idempotente por el entrante de la respuesta).
-  const media: ActionPlan = { runs: saved.runs, quote: null, stage: null, avisos: [], notes: [] };
+  const media: ActionPlan = { runs: saved.runs, quote: null, stage: null, avisos: [], notes: [], link: null, linkFallback: null };
   await runActions(media, { organizationId: org, conversationId, contactId: ctx.contactId, batchMessageId: triggerId, receiptMessageId: null, now: deps.now(), since: null }, deps.startWorkflow, "despues");
   if ((await inboundAfter(org, conversationId, triggerId)).length) return { kind: "newer" };
   return { kind: "done", result: { kind: "sent", bubbles: sent } };
@@ -720,7 +720,9 @@ export async function runAgent(job: { organizationId: string; conversationId: st
     // prepareActions lo quita, igual que al ejecutar). Solo lectura.
     const isSilent = async (r: BrainOk): Promise<boolean> => {
       if (r.out.kind === "reply" && r.out.text.trim()) return false;
-      const draft = await prepareActions({ organizationId: org, conversationId: conv.id, calls: r.toolCalls, modelText: "", pendingSince: pending[0]?.createdAt ?? null, stages });
+      const draft = await prepareActions({ organizationId: org, conversationId: conv.id, contactId: conv.contactId, calls: r.toolCalls, modelText: "", pendingSince: pending[0]?.createdAt ?? null, stages });
+      // El link de pago (o la frase de que un asesor lo manda) también le llega al cliente.
+      if (draft.link || draft.linkFallback) return false;
       const sending = await runsThatSend(org, draft.runs.map((run) => run.workflowId));
       return !draft.runs.some((run) => sending.has(run.workflowId));
     };
@@ -866,7 +868,9 @@ export async function runAgent(job: { organizationId: string; conversationId: st
       const { keep } = splitRepeated(toBubbles(r.out.text, options.maxBubbles), await outboundTextsSinceLastInbound(org, conv.id));
       if (!onlyRepeatsLastQuestion(keep, lastAsked)) return false;
       // Un workflow que le manda algo al cliente (p. ej. la Tabla) ya es respuesta.
-      const draft = await prepareActions({ organizationId: org, conversationId: conv.id, calls: r.toolCalls, modelText: "", pendingSince: pending[0]?.createdAt ?? null, stages });
+      const draft = await prepareActions({ organizationId: org, conversationId: conv.id, contactId: conv.contactId, calls: r.toolCalls, modelText: "", pendingSince: pending[0]?.createdAt ?? null, stages });
+      // El link de pago (o la frase de que un asesor lo manda) también le llega al cliente.
+      if (draft.link || draft.linkFallback) return false;
       const sending = await runsThatSend(org, draft.runs.map((run) => run.workflowId));
       return !draft.runs.some((run) => sending.has(run.workflowId));
     };
@@ -952,6 +956,7 @@ export async function runAgent(job: { organizationId: string; conversationId: st
     const plan = await prepareActions({
       organizationId: org,
       conversationId: conv.id,
+      contactId: conv.contactId,
       calls: toolCalls,
       modelText: out.kind === "reply" ? out.text : "",
       // Un total que la empresa ya le dijo al cliente (p. ej. «Precio 2») también se fija.
@@ -1069,6 +1074,13 @@ export async function runAgent(job: { organizationId: string; conversationId: st
         }
       }
     }
+
+    // Link de pago (30-oct-2026, lib/agente-ia/links-pago.ts): sale al final, como un mensaje más del
+    // Agente IA (después de su texto y nunca como pie de un archivo), con el link exacto de la lista. Si
+    // no pasó los candados del CRM, en su lugar sale la frase de que un asesor se lo manda.
+    const linkText = plan.link?.texto ?? plan.linkFallback;
+    if (linkText && !stopped) bubbles = [...bubbles, linkText];
+    if (plan.link) console.info(`[agente] ${conv.id}: link de pago ${plan.link.clave}`);
 
     // Mensajes con pausa corta. Antes de CADA uno se revisa el estado fresco: si un
     // vendedor respondió (desde el INICIO de la ronda), alguien apagó el canal o
