@@ -87,7 +87,9 @@ function withThisYear(d: LocalDate, year: number, hoy: string, limite: string): 
 
 /**
  * Valida la ficha. `today` = fecha del cliente al leer: la fecha pedida debe ser de hoy en
- * adelante y a menos de 60 días; si no, se descarta (con su motivo en `ignored`).
+ * adelante; si ya pasó o no es fecha, se descarta (con su motivo en `ignored`). Una a más de
+ * MAX_ASKED_DAYS se recorre a ese día (30-oct-2026): descartarla dejaba el seguimiento para los
+ * próximos días, justo lo que el cliente pidió que no.
  */
 export function parseFicha(raw: unknown, today: { zone: string; now: Date }, ignored: string[]): FollowUpFicha | null {
   if (!raw || typeof raw !== "object") return null;
@@ -103,8 +105,10 @@ export function parseFicha(raw: unknown, today: { zone: string; now: Date }, ign
     const d = parsed && formatLocalDate(parsed) < hoy ? withThisYear(parsed, p.y, hoy, limite) : parsed;
     if (!d) ignored.push(`seguimiento.fecha_pedida: ${r.fecha_pedida} no es una fecha`);
     else if (formatLocalDate(d) < hoy) ignored.push(`seguimiento.fecha_pedida: ${r.fecha_pedida} ya pasó`);
-    else if (formatLocalDate(d) > limite) ignored.push(`seguimiento.fecha_pedida: ${r.fecha_pedida} a más de ${MAX_ASKED_DAYS} días`);
-    else fechaPedida = formatLocalDate(d);
+    else if (formatLocalDate(d) > limite) {
+      ignored.push(`seguimiento.fecha_pedida: ${r.fecha_pedida} a más de ${MAX_ASKED_DAYS} días; se toma el ${limite}`);
+      fechaPedida = limite;
+    } else fechaPedida = formatLocalDate(d);
   }
   let horaPedida: string | null = null;
   if (typeof r.hora_pedida === "string" && r.hora_pedida.trim()) {

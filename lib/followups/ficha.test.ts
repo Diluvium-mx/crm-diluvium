@@ -47,13 +47,26 @@ describe("parseFicha", () => {
     expect(parseFicha({ caso: "pidio_fecha", caso_de_fondo: "no_seguir" }, today, ignored)?.casoDeFondo).toBeNull();
   });
 
-  it("descarta lo raro sin tirar lo demás: caso inexistente, fecha pasada o muy lejana, hora mal escrita", () => {
+  it("descarta lo raro sin tirar lo demás: caso inexistente, fecha pasada, hora mal escrita", () => {
     const ignored: string[] = [];
     expect(parseFicha({ caso: "llamar", pendiente: "x" }, today, ignored)?.caso).toBeNull();
     expect(parseFicha({ caso: "pidio_fecha", fecha_pedida: "2026-10-04" }, today, ignored)?.fechaPedida).toBeNull();
-    expect(parseFicha({ caso: "pidio_fecha", fecha_pedida: "2026-12-20" }, today, ignored)?.fechaPedida).toBeNull();
     expect(parseFicha({ caso: "pidio_fecha", fecha_pedida: "2026-10-05", hora_pedida: "25:00" }, today, ignored)?.horaPedida).toBeNull();
-    expect(ignored).toHaveLength(4);
+    expect(ignored).toHaveLength(3);
+  });
+
+  it("fecha lejana (30-oct-2026): hasta 120 días se toma tal cual; más lejos, se recorre al día 120 (nunca se descarta)", () => {
+    const ignored: string[] = [];
+    // «voy a casa hasta diciembre» (29-oct) y «a fin de año» (22-oct): con el tope de 60 días la segunda se tiraba.
+    const oct29 = { zone: "America/Mexico_City", now: new Date("2026-10-29T21:25:00-06:00") };
+    expect(parseFicha({ caso: "pidio_fecha", fecha_pedida: "2026-12-01", caso_de_fondo: "faltan_medidas" }, oct29, ignored)?.fechaPedida).toBe("2026-12-01");
+    const oct22 = { zone: "America/Mexico_City", now: new Date("2026-10-22T12:00:00-06:00") };
+    expect(parseFicha({ caso: "pidio_fecha", fecha_pedida: "2026-12-20" }, oct22, ignored)?.fechaPedida).toBe("2026-12-20");
+    expect(parseFicha({ caso: "pidio_fecha", fecha_pedida: "2026-12-31" }, oct22, ignored)?.fechaPedida).toBe("2026-12-31");
+    expect(ignored).toEqual([]);
+    // 5-oct + 120 días = 2-feb-2027.
+    expect(parseFicha({ caso: "pidio_fecha", fecha_pedida: "2027-03-01" }, today, ignored)?.fechaPedida).toBe("2027-02-02");
+    expect(ignored).toEqual(["seguimiento.fecha_pedida: 2027-03-01 a más de 120 días; se toma el 2027-02-02"]);
   });
 
   it("año viejo por error (auditoría F4, 14-oct-2026): se toma con el año de hoy o el siguiente si cae en el rango", () => {

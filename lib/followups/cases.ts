@@ -144,8 +144,11 @@ export const ASESOR_DELAY_MS = 2 * 60 * 60_000;
 export const OCUPADO_DELAY_MS = 3 * 60 * 60_000;
 /** Tras el último intento, cuánto se espera respuesta antes de darlo por frío. */
 export const WAIT_AFTER_LAST_MS = 72 * 60 * 60_000;
-/** Fecha pedida: más allá de esto el contexto ya cambió. */
-export const MAX_ASKED_DAYS = 60;
+/**
+ * Fecha pedida: hasta dónde se toma tal cual; una más lejana se recorre a este día (ficha.ts). Era 60 y tiraba
+ * «a fin de año» o «en enero» dichos en octubre: el seguimiento salía a los pocos días (30-oct-2026, §30).
+ */
+export const MAX_ASKED_DAYS = 120;
 
 export const TEMPLATE_BY_DOOR = {
   proteccion: "seguimiento_proteccion",
