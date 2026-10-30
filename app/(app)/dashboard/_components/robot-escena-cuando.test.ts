@@ -7,21 +7,23 @@ const programado: FotoPildora = {
   dueAt: "2026-10-14T01:00:00.000Z",
   enviados: 0,
   ultimoSalio: false,
+  ultimoVendedor: false,
   cara: "normal",
   etiqueta: "mar 18:00",
   tono: "azul",
   mensaje: null,
+  plantilla: null,
 };
 const suspendido: FotoPildora = { ...programado, cara: "dormido", tono: "ambar" };
-const cancelado: FotoPildora = { estado: "cancelado", id: null, dueAt: null, enviados: 0, ultimoSalio: false, cara: "cancelado", etiqueta: null, tono: "gris", mensaje: null };
+const cancelado: FotoPildora = { estado: "cancelado", id: null, dueAt: null, enviados: 0, ultimoSalio: false, ultimoVendedor: false, cara: "cancelado", etiqueta: null, tono: "gris", mensaje: null, plantilla: null };
 const dormido: FotoPildora = { ...cancelado, estado: "dormido", cara: "dormido" };
 const baja: FotoPildora = { ...cancelado, estado: "baja", etiqueta: "Se dio de baja", tono: "rojo" };
 
 describe("escena de la píldora del seguimiento", () => {
-  it("disparo al pasar a Cancelado, desde programado o desde dormido (Apagar)", () => {
+  it("disparo al pasar a Cancelado (desde dormido es el enchufe de Apagar)", () => {
     expect(elegirEscena(programado, cancelado)).toBe("disparo");
     expect(elegirEscena(suspendido, cancelado)).toBe("disparo");
-    expect(elegirEscena(dormido, cancelado)).toBe("disparo");
+    expect(elegirEscena(dormido, cancelado)).toBe("enchufe");
     expect(elegirEscena(cancelado, cancelado)).toBeNull();
   });
 
@@ -63,7 +65,7 @@ describe("escena de la píldora del seguimiento", () => {
 });
 
 describe("escena en curso (anticipada y con Reactivar en dos tiempos)", () => {
-  const entrada = (foto: FotoPildora, extra: Partial<EntradaPildora> = {}): EntradaPildora => ({ foto, reparando: false, despertando: false, silencio: 0, ...extra });
+  const entrada = (foto: FotoPildora, extra: Partial<EntradaPildora> = {}): EntradaPildora => ({ foto, reparando: false, despertando: false, curando: false, silencio: 0, ...extra });
 
   it("Cancelar anticipado arranca el disparo y la confirmación igual no repite nada", () => {
     const disparo = siguienteEscena(entrada(programado), entrada(cancelado), null);
@@ -126,20 +128,23 @@ describe("escena en curso (anticipada y con Reactivar en dos tiempos)", () => {
   });
 });
 
-describe("lápiz: «Editar mensaje» › Guardar", () => {
-  const editado = { ...programado, mensaje: JSON.stringify(["Buen día, ¿tuvo oportunidad de verlo?", null]) };
+describe("lápiz y goma: «Editar mensaje»", () => {
+  const editado = { ...programado, mensaje: "Buen día, ¿tuvo oportunidad de verlo?" };
 
   it("guardar un texto o una plantilla nuevos juega el lápiz", () => {
     expect(elegirEscena(programado, editado)).toBe("lapiz");
-    expect(elegirEscena(editado, { ...editado, mensaje: JSON.stringify([null, "seg_medidas_recordatorio"]) })).toBe("lapiz");
+    expect(elegirEscena(editado, { ...editado, mensaje: "Otro texto" })).toBe("lapiz");
+    expect(elegirEscena(programado, { ...programado, plantilla: "seg_medidas_recordatorio" })).toBe("lapiz");
   });
 
-  it("«Volver al del Agente IA» también", () => {
-    expect(elegirEscena(editado, programado)).toBe("lapiz");
+  it("«Volver al del Agente IA» juega la goma", () => {
+    expect(elegirEscena(editado, programado)).toBe("goma");
+    expect(elegirEscena({ ...programado, plantilla: "seg_medidas_recordatorio" }, programado)).toBe("goma");
   });
 
-  it("sirve con el robot suspendido (la carita no cambia)", () => {
+  it("sirven con el robot suspendido (la carita no cambia)", () => {
     expect(elegirEscena(suspendido, { ...suspendido, mensaje: editado.mensaje })).toBe("lapiz");
+    expect(elegirEscena({ ...suspendido, mensaje: editado.mensaje }, suspendido)).toBe("goma");
   });
 
   it("si sale un mensaje gana el avión, si cambia la hora gana el reloj, y en otro seguimiento nada", () => {
@@ -150,5 +155,41 @@ describe("lápiz: «Editar mensaje» › Guardar", () => {
 
   it("guardar el mismo texto no juega nada", () => {
     expect(elegirEscena(editado, { ...editado })).toBeNull();
+  });
+});
+
+describe("una escena por botón", () => {
+  const entrada = (foto: FotoPildora, extra: Partial<EntradaPildora> = {}): EntradaPildora => ({ foto, reparando: false, despertando: false, curando: false, silencio: 0, ...extra });
+
+  it("Apagar (de dormido) juega el enchufe; Cancelar sigue con el disparo", () => {
+    expect(elegirEscena(dormido, cancelado)).toBe("enchufe");
+    expect(elegirEscena(programado, cancelado)).toBe("disparo");
+    expect(elegirEscena(suspendido, cancelado)).toBe("disparo");
+  });
+
+  it("«Lo mando yo»: el mensaje del vendedor juega el pulgar; el del Agente IA, el avión", () => {
+    expect(elegirEscena(programado, { ...programado, enviados: 1, ultimoSalio: true, ultimoVendedor: true })).toBe("pulgar");
+    expect(elegirEscena(programado, { ...programado, enviados: 1, ultimoSalio: true })).toBe("avion");
+  });
+
+  it("Volver a darle seguimiento: la curita cae al presionar y el final llega con la respuesta", () => {
+    const curita = siguienteEscena(entrada(baja), entrada(baja, { curando: true }), null);
+    expect(curita).toMatchObject({ escena: "curita", siguiente: null, vista: baja });
+    expect(siguienteEscena(entrada(baja, { curando: true }), entrada(baja, { curando: true }), curita)).toBe(curita);
+    expect(siguienteEscena(entrada(baja, { curando: true }), entrada(dormido), curita)).toMatchObject({ escena: "curita", siguiente: "curita-dormido" });
+    const conFinal = siguienteEscena(entrada(baja, { curando: true }), entrada(programado), curita);
+    expect(conFinal?.siguiente).toBe("curita-despierto");
+    expect(finDeEspera(conFinal!)).toMatchObject({ escena: "curita-despierto", tonoAntes: "rojo" });
+    expect(siguienteEscena(entrada(baja, { curando: true }), entrada(baja, { silencio: 1 }), curita)).toBeNull();
+  });
+
+  it("si el chat seguía cancelado, al quitar la baja no juega el disparo: la curita termina sin final", () => {
+    expect(elegirEscena(baja, cancelado)).toBeNull();
+    const curita = siguienteEscena(entrada(baja), entrada(baja, { curando: true }), null);
+    expect(siguienteEscena(entrada(baja, { curando: true }), entrada(cancelado), curita)).toBeNull();
+  });
+
+  it("si otro vendedor lo hace, también empieza con la curita y ya sabe el final", () => {
+    expect(siguienteEscena(entrada(baja), entrada(programado), null)).toMatchObject({ escena: "curita", siguiente: "curita-despierto", vista: baja });
   });
 });

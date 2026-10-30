@@ -18,7 +18,7 @@ import type { Escena, RobotFace } from "./robot-escena-cuando";
 /** El robot de 18 px de la píldora, dibujado en línea para poder animar ojos, boca, antena, cables y chispas. */
 /** `cara`: la carita que se queda en las escenas que no la cambian (el lápiz sirve despierto o suspendido). */
 export function RobotEscena({ escena, cara }: { escena: Escena; cara: RobotFace }) {
-  const conCara = escena === "lapiz" ? ` robot-quieto-${cara}` : "";
+  const conCara = escena === "lapiz" || escena === "goma" ? ` robot-quieto-${cara}` : "";
   return (
     <span aria-hidden="true" data-escena={escena} className={`robot-escena robot-escena-${escena}${conCara} relative -my-0.5 inline-block size-[18px] shrink-0`}>
       {escena === "disparo" && <Pistola />}
@@ -27,6 +27,10 @@ export function RobotEscena({ escena, cara }: { escena: Escena; cara: RobotFace 
       {escena === "avion" && <Avioncito />}
       {(escena === "cafe" || escena === "cafe-despierto" || escena === "cafe-dormido") && <Taza />}
       {escena === "lapiz" && <Lapiz />}
+      {escena === "goma" && <Goma />}
+      {escena === "enchufe" && <Enchufe />}
+      {(escena === "curita" || escena === "curita-despierto" || escena === "curita-dormido") && <Curita />}
+      {escena === "pulgar" && <Pulgar />}
       <RobotSvg />
     </span>
   );
@@ -242,6 +246,80 @@ function Lapiz() {
       <svg className="re-palomita" viewBox="0 0 10 10">
         <circle cx="5" cy="5" r="5" fill="#22A06B" />
         <path pathLength={1} d="M2.6 5.2 L4.4 7 L7.6 3.4" fill="none" stroke="#FFFFFF" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+      </svg>
+    </>
+  );
+}
+
+/** «Volver al del Agente IA» (30-oct-2026): el lápiz entra al revés, con la goma hacia el robot, y borra el garabato. */
+function Goma() {
+  return (
+    <>
+      <svg className="re-borron" viewBox="0 0 14 5">
+        <path pathLength={1} d="M0.5 3 q1.5 -2.6 3 0 t3 0 t3 0 t3 0" fill="none" stroke="#0A559A" strokeWidth="1.1" strokeLinecap="round" />
+      </svg>
+      <svg className="re-goma" viewBox="0 0 28 8">
+        <rect x="0.4" y="0.8" width="3.2" height="6.4" rx="1.4" fill="#F28CA0" />
+        <rect x="3.6" y="0.8" width="2.4" height="6.4" fill="#B9C3CD" />
+        <rect x="6" y="1" width="16.5" height="6" fill="#FFC300" />
+        <rect x="6" y="3.4" width="16.5" height="1.2" fill="#E0A800" />
+        <path d="M27.6 4 L22.5 1 V7 Z" fill="#F2C48D" />
+        <path d="M27.6 4 L25.8 2.95 V5.05 Z" fill="#2A333D" />
+      </svg>
+      <span className="re-borona re-borona-1" />
+      <span className="re-borona re-borona-2" />
+      <span className="re-borona re-borona-3" />
+    </>
+  );
+}
+
+/** Apagar seguimientos en este chat (30-oct-2026): el cable conectado a la oreja del robot dormido; lo jalan y sale por
+ * la orilla izquierda. */
+function Enchufe() {
+  return (
+    <svg className="re-enchufe" viewBox="0 0 48 10">
+      <path d="M0 5 C8 2 14 8 22 5 S34 3 38 5" fill="none" stroke="#5B6876" strokeWidth="1.8" strokeLinecap="round" />
+      <rect className="re-pistola-cuerpo" x="37.5" y="1.8" width="6.5" height="6.4" rx="1.3" />
+      <rect x="44" y="2.8" width="4" height="1.3" fill="#B9C3CD" />
+      <rect x="44" y="5.9" width="4" height="1.3" fill="#B9C3CD" />
+    </svg>
+  );
+}
+
+/** Volver a darle seguimiento (30-oct-2026): la curita cae en la cabeza; mientras responde el CRM salen corazoncitos. */
+function Curita() {
+  return (
+    <>
+      <svg className="re-curita" viewBox="0 0 20 8">
+        <rect x="0" y="0" width="20" height="8" rx="4" fill="#F5C49C" />
+        <rect x="7" y="1.6" width="6" height="4.8" rx="1" fill="#E3A579" />
+        <circle cx="3.5" cy="3" r="0.6" fill="#E3A579" />
+        <circle cx="3.5" cy="5" r="0.6" fill="#E3A579" />
+        <circle cx="16.5" cy="3" r="0.6" fill="#E3A579" />
+        <circle cx="16.5" cy="5" r="0.6" fill="#E3A579" />
+      </svg>
+      <svg className="re-corazon" viewBox="0 0 10 9">
+        <path d="M5 8.4 C1.2 5.8 0 4.2 0 2.6 A2.5 2.5 0 0 1 5 1.6 A2.5 2.5 0 0 1 10 2.6 C10 4.2 8.8 5.8 5 8.4 Z" fill="#F0617A" />
+      </svg>
+    </>
+  );
+}
+
+/** «Lo mando yo» (30-oct-2026): cuando llega el mensaje del vendedor, una mano con el pulgar arriba junto al robot. */
+function Pulgar() {
+  return (
+    <>
+      <svg className="re-pulgar" viewBox="0 0 12 14">
+        <rect x="2" y="10" width="8" height="4" fill="#0A559A" />
+        <rect x="3.2" y="0.6" width="3" height="6" rx="1.5" fill="#FFC93C" stroke="#E0A800" strokeWidth="0.6" />
+        <rect x="2" y="5" width="8" height="6" rx="2" fill="#FFC93C" stroke="#E0A800" strokeWidth="0.6" />
+        <path d="M6 7 H9.4 M6 9 H9.4" stroke="#E0A800" strokeWidth="0.6" strokeLinecap="round" />
+      </svg>
+      <svg className="re-brillo re-brillo-1" viewBox="0 0 10 10">
+        <polygon points="5,0 6.2,3.6 10,5 6.2,6.4 5,10 3.8,6.4 0,5 3.8,3.6" fill="#FFE066" stroke="#F59E0B" strokeWidth=".6" />
+      </svg>
+      <svg className="re-brillo re-brillo-2" viewBox="0 0 10 10">
+        <polygon points="5,0 6.2,3.6 10,5 6.2,6.4 5,10 3.8,6.4 0,5 3.8,3.6" fill="#FFE066" stroke="#F59E0B" strokeWidth=".6" />
       </svg>
     </>
   );

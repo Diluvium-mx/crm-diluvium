@@ -712,12 +712,16 @@ prototipos (tamaño real y ampliado) antes de construirlas; el dueño aprobó la
 
 | Escena | Cuándo | Qué se ve | Dura |
 |---|---|---|---|
-| **Disparo** | Pasa a Cancelado (Cancelar o Apagar seguimientos en este chat) | Pistola por la izquierda, cortocircuito, tres cables, ojos en X; la pistola gira y se va | 1.9 s |
+| **Disparo** | Pasa a Cancelado con Cancelar (Apagar tiene el enchufe desde el 30-oct-2026) | Pistola por la izquierda, cortocircuito, tres cables, ojos en X; la pistola gira y se va | 1.9 s |
 | **Llave inglesa** | Sale de Cancelado (Reactivar) | Entra por la derecha, dos golpes y «cargando» hasta la respuesta; abre los ojos y brinca (se desliza si llega la hora) o, si queda sin seguimiento todavía (dormido o suspendido), bosteza y se duerme | 1 s + espera + 1.2 s |
 | **Reloj** | El mismo seguimiento cambia de hora con el robot despierto (Cambiar hora) | Ojos de reloj que giran; la hora de antes sube y la nueva llega desde abajo | 1.5 s |
 | **Despertador** | El mismo seguimiento deja de estar suspendido (Que salga solo) | Suena, el robot despierta, lo apaga y la píldora pasa de ámbar a azul | 2 s |
 | **Avioncito** | El mismo seguimiento tiene un mensaje más y sí salió | Lanza un avioncito de papel que cruza la píldora; llega la hora siguiente o «esperando» | 1.8 s |
 | **Lápiz** (30-oct-2026) | El mismo seguimiento cambia su mensaje o plantilla («Editar mensaje» › Guardar o «Volver al del Agente IA») | La hora se esconde, un lápiz entra por la derecha, escribe un garabato, palomita verde, el robot asiente y el lápiz se va por la derecha; la carita no cambia (sirve suspendido) | 1.6 s |
+| **Goma** (30-oct-2026) | «Volver al del Agente IA» (lo editado se borra) | El lápiz entra al revés y borra el garabato con boronas; la antena destella | 1.6 s |
+| **Enchufe** (30-oct-2026) | De dormido a Cancelado (Apagar seguimientos en este chat) | Jalan el cable de la oreja del robot dormido, sale por la izquierda con chispa; despierta del susto, se queda sin luz y con ojos en X | 1.8 s |
+| **Curita** (30-oct-2026) | Sale de «Se dio de baja» (Volver a darle seguimiento) | Cae una curita en la cabeza; corazoncitos mientras responde el CRM; se despega y abre los ojos (o se duerme), sale del rojo | 0.9 s + espera + 1.1 s |
+| **Pulgar arriba** (30-oct-2026) | El mensaje que salió lo mandó un vendedor («Lo mando yo») | Mano con el pulgar arriba, ojos felices; llega la hora siguiente o «esperando» | 1.7 s |
 
 - **Arranca al presionar** (9-oct-2026, pedido del dueño: en staging tardaba 1–2 s porque esperaba la acción y otra consulta,
   y Next atiende las acciones de una en una): los botones de la ventana ANTICIPAN cómo quedará la píldora (`useFollowUp` ›
