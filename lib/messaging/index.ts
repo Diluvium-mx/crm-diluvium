@@ -1,6 +1,7 @@
 // Proveedor activo de WhatsApp. Un solo punto donde se elige: para migrar a la
 // Cloud API directa de Meta, se agrega su adaptador y se cambia aquí.
 import type { MessagingProvider } from "./provider";
+import { conSimulador } from "./simulador";
 import { ZernioProvider } from "./zernio";
 
 let cached: MessagingProvider | undefined;
@@ -16,7 +17,8 @@ export function messagingProvider(): MessagingProvider {
       "ZERNIO_API_KEY y ZERNIO_WEBHOOK_SECRET son obligatorios para el canal de WhatsApp",
     );
   }
-  cached = new ZernioProvider({ apiKey, webhookSecret, baseUrl: process.env.ZERNIO_BASE_URL });
+  // Cliente de prueba de staging (./simulador.ts): lo que se le manda no sale a WhatsApp.
+  cached = conSimulador(new ZernioProvider({ apiKey, webhookSecret, baseUrl: process.env.ZERNIO_BASE_URL }));
   return cached;
 }
 

@@ -2247,7 +2247,7 @@ describe.skipIf(!TEST_DATABASE_URL)("runtime del Agente IA (Postgres real)", () 
   // ── Links de pago (30-oct-2026, lib/agente-ia/links-pago.ts) ──
   it("link de pago: sale DESPUÉS del texto como otro mensaje del Agente IA, con el link exacto, y el contacto pasa a Cerca de compra; si no cuadra, un asesor", async () => {
     const { replaceLinksPago } = await import("@/lib/agente-ia/links-pago-store");
-    const { mensajeLink } = await import("@/lib/agente-ia/links-pago");
+    const { mensajesLink } = await import("@/lib/agente-ia/links-pago");
     const unaCompuerta = { nombre: "1 compuerta estándar", monto: 5500, cubre: "total" as const, meses: 6, url: "https://mpago.la/EJEMPLO1" };
     await replaceLinksPago(ORG, [unaCompuerta, { nombre: "2 compuertas estándar", monto: 11000, cubre: "total" as const, meses: 6, url: "https://mpago.la/EJEMPLO2" }], null);
     await msg({ direction: "in", body: "Con tarjeta por favor", at: ago(20_000) });
@@ -2256,10 +2256,11 @@ describe.skipIf(!TEST_DATABASE_URL)("runtime del Agente IA (Postgres real)", () 
       { brain: ["Con gusto, el total es $5,500."], toolCalls: [{ toolName: "fijar_cotizacion", input: { monto: 5500 } }, { toolName: "enviar_link_pago", input: { opcion: "1_compuerta_estandar" } }] },
       zernio,
     );
-    expect(await run.runAgent(JOB, deps)).toEqual({ kind: "sent", bubbles: 2 });
+    expect(await run.runAgent(JOB, deps)).toEqual({ kind: "sent", bubbles: 3 });
     expect(Object.keys(calls[0].input.tools ?? {})).toContain("enviar_link_pago");
-    expect(zernio.delivered).toEqual(["Con gusto, el total es $5,500.", mensajeLink(unaCompuerta)]);
-    expect((await agentOuts()).map((m) => m.body)).toEqual(["Con gusto, el total es $5,500.", mensajeLink(unaCompuerta)]);
+    // Primero el texto, luego el link y, aparte, los datos de envío.
+    expect(zernio.delivered).toEqual(["Con gusto, el total es $5,500.", ...mensajesLink(unaCompuerta)]);
+    expect((await agentOuts()).map((m) => m.body)).toEqual(["Con gusto, el total es $5,500.", ...mensajesLink(unaCompuerta)]);
     expect(await contact()).toMatchObject({ stage: "cerca_compra", montoCotizacion: "5500.00" });
     // Pide el de 2 compuertas pero el total sigue en $5,500: no sale, el cliente lee que un asesor se lo
     // manda y el vendedor recibe el aviso.
@@ -3092,7 +3093,7 @@ describe.skipIf(!TEST_DATABASE_URL)("runtime del Agente IA (Postgres real)", () 
       brain: ["Luna: aquí va el link", "Sonnet: con gusto, aquí le paso el link."],
       brainToolCalls: [[{ toolName: "enviar_link_pago", input: { opcion: "1_compuerta_estandar" } }], []],
     });
-    expect(await run.runAgent(JOB, deps)).toEqual({ kind: "sent", bubbles: 2 });
+    expect(await run.runAgent(JOB, deps)).toEqual({ kind: "sent", bubbles: 3 });
     expect(brainIds(calls)).toEqual(["gpt-5.6-luna", "claude-sonnet-5"]);
     const bodies = (await agentOuts()).map((m) => m.body ?? "");
     expect(bodies[0]).toBe("Sonnet: con gusto, aquí le paso el link.");

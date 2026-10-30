@@ -3,9 +3,9 @@ import { describe, expect, it } from "vitest";
 import { defaultStages } from "@/lib/contacts/stages";
 import { phoneParts } from "@/lib/phone";
 import { buildAgentTools, mergeHandoffToolCalls, TOOL_ACTUALIZAR_DETALLE, TOOL_AVISO_VENDEDOR, TOOL_LINK_PAGO, validateToolCalls, type ValidToolCall } from "@/lib/ai/runtime/tools";
-import { ladaSinLinks, linkCuadra, linkPagoDescription, mensajeLink, opcionesDe, totalQueCubre, validateLinksPago, type LinkPago } from "./links-pago";
+import { ladaSinLinks, linkCuadra, linkPagoDescription, linksDelAgente, mensajesLink, opcionesDe, TEXTOS_DE_FABRICA, totalQueCubre, validateLinksPago, validateTextosLink, type LinkPago } from "./links-pago";
 
-const link = (posicion: number, nombre: string, monto: number, cubre: "total" | "mitad", meses: number, url: string): LinkPago => ({ id: `l${posicion}`, nombre, monto, cubre, meses, url, posicion });
+const link = (posicion: number, nombre: string, monto: number, cubre: "total" | "mitad", meses: number, url: string, soloVendedor = false): LinkPago => ({ id: `l${posicion}`, nombre, monto, cubre, meses, url, soloVendedor, posicion });
 
 const LINKS = [
   link(2, "2 compuertas estándar", 11_000, "total", 6, "https://mpago.la/EJEMPLO2"),
@@ -43,12 +43,31 @@ describe("links de pago: reglas", () => {
     expect(lada("+51987654321")).toContain("Perú");
   });
 
-  it("el mensaje lleva el monto, el link exacto y cómo pagar", () => {
-    expect(mensajeLink(LINKS[1])).toBe(
-      "Aquí le paso el link para pagar $5,500 con tarjeta por MercadoPago ✅\n\nhttps://mpago.la/EJEMPLO1\n\nPuede pagar con tarjeta de crédito o débito, y con crédito elegir hasta 6 meses sin intereses. Cuando realice el pago, por favor mándeme por aquí su comprobante.",
-    );
-    expect(mensajeLink(LINKS[2])).toContain("Es un pago de contado con tarjeta de crédito o débito.");
-    expect(mensajeLink(LINKS[2])).toContain("$3,500");
+  it("dos mensajes: el del link (monto, link exacto y cómo pagar) y, aparte, el de los datos de envío", () => {
+    expect(mensajesLink(LINKS[1])).toEqual([
+      "Aquí le paso el link para pagar $5,500 con tarjeta por MercadoPago ✅\n\nhttps://mpago.la/EJEMPLO1\n\nPuede pagar con tarjeta de crédito o débito, y con crédito elegir hasta 6 meses sin intereses.",
+      "Una vez realizado el pago, nos apoya con sus datos de envío:\nNombre de quien recibe\nDirección\nCódigo postal\nTeléfono\nCorreo electrónico",
+    ]);
+    expect(mensajesLink(LINKS[2])[0]).toContain("$3,500");
+    expect(mensajesLink(LINKS[2])[0]).toContain("Es un pago de contado con tarjeta de crédito o débito.");
+    // Textos editados: variables con o sin espacios; el 2.º vacío no sale.
+    expect(mensajesLink(LINKS[1], { mensaje1: "Link {{ link }} por {{monto}}", mensaje2: "  " })).toEqual(["Link https://mpago.la/EJEMPLO1 por $5,500"]);
+  });
+
+  it("textos editables: {{link}} obligatorio en el 1.º; solo valen {{monto}}, {{link}} y {{forma_de_pago}}", () => {
+    expect(validateTextosLink(TEXTOS_DE_FABRICA)).toEqual([]);
+    expect(validateTextosLink({ mensaje1: "Aquí está el link", mensaje2: "" })).toEqual(["El mensaje 1 debe llevar {{link}} (ahí va el link)."]);
+    expect(validateTextosLink({ mensaje1: "{{link}} {{nombre}}", mensaje2: "Hola {{cliente}}" })).toEqual([
+      "El mensaje 1 tiene {{nombre}}: solo valen {{monto}}, {{link}} y {{forma_de_pago}}.",
+      "El mensaje 2 tiene {{cliente}}: solo valen {{monto}}, {{link}} y {{forma_de_pago}}.",
+    ]);
+    expect(validateTextosLink({ mensaje1: " ", mensaje2: "" })).toContain("Falta el mensaje 1.");
+  });
+
+  it("los «Solo vendedor» (precio especial) nunca son del Agente IA", () => {
+    const conEspecial = [...LINKS, link(5, "2 compuertas (especial)", 10_400, "total", 6, "https://mpago.la/EJEMPLO9", true)];
+    expect(linksDelAgente(conEspecial).map((l) => l.nombre)).not.toContain("2 compuertas (especial)");
+    expect(linksDelAgente(conEspecial)).toHaveLength(4);
   });
 
   it("validación del editor: https, nombre sin repetir, monto positivo", () => {

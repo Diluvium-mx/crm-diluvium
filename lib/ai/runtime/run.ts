@@ -1081,11 +1081,11 @@ export async function runAgent(job: { organizationId: string; conversationId: st
       }
     }
 
-    // Link de pago (30-oct-2026, lib/agente-ia/links-pago.ts): sale al final, como un mensaje más del
-    // Agente IA (después de su texto y nunca como pie de un archivo), con el link exacto de la lista. Si
-    // no pasó los candados del CRM, en su lugar sale la frase de que un asesor se lo manda.
-    const linkText = plan.link?.texto ?? plan.linkFallback;
-    if (linkText && !stopped) bubbles = [...bubbles, linkText];
+    // Link de pago (30-oct-2026, lib/agente-ia/links-pago.ts): sale al final, como mensajes del Agente IA
+    // (después de su texto y nunca como pie de un archivo): el del link exacto de la lista y, aparte, el de
+    // los datos de envío. Si no pasó los candados del CRM, en su lugar sale la frase de que un asesor lo manda.
+    const linkTexts = plan.link?.mensajes ?? (plan.linkFallback ? [plan.linkFallback] : []);
+    if (linkTexts.length && !stopped) bubbles = [...bubbles, ...linkTexts];
     if (plan.link) console.info(`[agente] ${conv.id}: link de pago ${plan.link.clave}`);
 
     // Mensajes con pausa corta. Antes de CADA uno se revisa el estado fresco: si un

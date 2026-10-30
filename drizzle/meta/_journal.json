@@ -533,6 +533,13 @@
       "when": 1793381440304,
       "tag": "0076_links_de_pago",
       "breakpoints": true
+    },
+    {
+      "idx": 77,
+      "version": "7",
+      "when": 1793386666612,
+      "tag": "0077_links_pago_mensajes",
+      "breakpoints": true
     }
   ]
 }

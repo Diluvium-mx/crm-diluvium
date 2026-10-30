@@ -1,6 +1,6 @@
 > Parte de [docs/agente-ia.md](../agente-ia.md) (índice por tema y fecha).
 
-## Links de pago: el Agente IA manda el link de MercadoPago (30-oct-2026, migración 0076)
+## Links de pago: el Agente IA manda el link de MercadoPago (30-oct-2026, migraciones 0076 y 0077)
 
 Pedido del dueño: con los links de MercadoPago (no vencen), el Agente IA ya puede mandar solo el link que corresponde a lo
 que eligió el cliente, en vez de decir «un asesor le envía el link». Pantalla: mapa 3.6 › 98–106.
@@ -84,8 +84,43 @@ versión de producción del 30-oct (igual a `angela-goal.md`); si cambió, aplic
 la saltaría: el candado `db:check` detiene ese despliegue (sin caída) y hay que renumerarla (0077, `when` nuevo; ver
 `docs/migraciones.md`).
 
+### 2.ª parte, el mismo día (migración 0077): dos mensajes, «Solo vendedor», el ⚡ y el cliente de prueba
+
+Pedido del dueño al verlo en staging (mapa 3.6 › 98–109 y 3.2.2 › 108–113):
+
+- **Dos mensajes, editables** (`links_pago_textos`, una fila por organización; null = el de fábrica): primero el del
+  link y, **aparte**, el de los datos de envío («Una vez realizado el pago, nos apoya con sus datos de envío: …»).
+  Primero el pago y después los datos: da confianza (así lo hacen los vendedores). Variables del mensaje 1:
+  `{{monto}}`, `{{link}}` (obligatoria) y `{{forma_de_pago}}` (meses sin intereses o de contado); el 2 sin variables
+  y vacío = no sale. Valen para el Agente IA y para el ⚡. Se editan en Agente IA › Links de pago, con «Así le llega
+  al cliente» y «Volver al de fábrica»; el cambio queda en el Historial.
+- **El último candado del Agente IA** (`sendAgentText`) toma un renglón de una sola palabra («Dirección»,
+  «Teléfono») por nota interna del modelo («Winvalid», 12-oct). Los mensajes de un link los escribió el dueño: pasan
+  si son, tal cual, uno de los mensajes de un link de la lista (`esMensajeDeLink`; solo se consulta cuando el candado
+  ya marcó algo). Todo lo demás del modelo sigue con el candado.
+- **«Solo vendedor»** (`links_pago.solo_vendedor`): los de precio especial (2 × $10,400, 3 × $15,000, Los Mochis) se
+  guardan en la misma lista para tenerlos a la mano, pero el Agente IA nunca los ve (ni la herramienta ni `planLink`).
+- **⚡ con dos pestañas: Mensajes rápidos · Links de pago** (decisión del dueño entre ⚡, 📎 o solo «/»): sin ícono
+  nuevo. Al elegir un link se ven los dos mensajes y «Mandar» los envía en orden como mensajes del vendedor
+  (`sendLinkPago`; pausan al Agente IA como cualquier mensaje manual) y el contacto pasa a Cerca de compra, como
+  `/banco`. En el «/» aparecen con «/link», «/pago» o el nombre del link («Link de pago … ver y mandar»): abren la
+  pestaña con ese link elegido (Enter si solo hay uno).
+- **Lada extranjera, también para el vendedor:** la pestaña sale apagada con el motivo y el candado está en TODO texto
+  que sale (`sendTextMessage` y `sendAgentText`, `linkPagoBloqueado`): un link de la lista nunca sale a un número de
+  fuera de México, aunque se pegue a mano (+1 sí; otros links, sí).
+- **Cliente de prueba en staging** (`lib/messaging/simulador.ts`, `docs/staging.md` › Cliente de prueba): contacto
+  fijo con la ventana siempre abierta (nunca plantilla) y una caja para escribir como el cliente; nada sale a WhatsApp.
+
+**Goal, ajuste por los dos mensajes** (se suma al borrador de abajo): en COMPROBANTES DE PAGO › Pago completo, después
+de «…pide los datos de envío:», agregar «Si el cliente ya mandó sus datos de envío (se los pidió el mensaje del link de
+pago), no se los vuelvas a pedir: solo agradece y di que un asesor confirma el pago en un momento.». Y en el cambio 1,
+«el CRM le manda el link después de tu texto» → «el CRM le manda el link y, aparte, el mensaje de los datos de envío
+después de tu texto».
+
 ### Pruebas
 
-`lib/agente-ia/links-pago.test.ts` (claves, monto, ladas, texto, validación, herramienta y traspaso),
+`lib/agente-ia/links-pago.test.ts` (claves, monto, ladas, los dos mensajes y sus variables, «Solo vendedor», validación,
+herramienta y traspaso), `lib/actions/links-pago-chat.int.test.ts` (⚡: dos mensajes en orden, Cerca de compra, Perú
+nunca ni pegado a mano, +1 sí), `lib/messaging/simulador*.test.ts` (cliente de prueba),
 `lib/agente-ia/links-pago.int.test.ts` (guardar e Historial; se ofrece a México, +1 e Instagram, nunca a Perú; total,
 precio del vendedor, mitad, lada, máximo por chat) y `run.int.test.ts` («link de pago: sale DESPUÉS del texto…»).

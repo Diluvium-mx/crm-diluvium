@@ -30,6 +30,7 @@ import { channels, conversations, messages, templates } from "@/lib/db/schema";
 import { applyOutboundToConversation, latestInboundMessageId } from "./ingest";
 import { SendFailedError, type MessagingProvider, type SendResult } from "./provider";
 import { findInternalText, stripForeignScript } from "@/lib/ai/runtime/internal-text";
+import { esMensajeDeLink, linkPagoBloqueado } from "@/lib/agente-ia/links-pago-store";
 import {
   canSendFreeForm,
   INSTAGRAM_PARTS_META,
@@ -258,6 +259,9 @@ function agentLanguage(text: string, source: string | undefined): string {
 
 export async function sendTextMessage(provider: MessagingProvider, params: SendTextParams): Promise<SendOutcome> {
   const text = agentLanguage(validText(params.text), params.source);
+  // Links de pago (30-oct-2026): nunca a un número de fuera de México (+1 sí), aunque se pegue a mano.
+  const sinLink = await linkPagoBloqueado(params.organizationId, params.conversationId, text);
+  if (sinLink) throw new SendRejectedError("not_retryable", sinLink);
   const now = params.now ?? new Date();
   const loaded = await loadConversation(provider, params.organizationId, params.conversationId, now, true, params.humanAgent ?? false);
   const { conversation } = loaded;
@@ -798,10 +802,14 @@ export async function sendAgentText(
   // Último candado (5-oct-2026, dueño): TODO texto del Agente IA pasa por aquí (respuesta,
   // «Reintentar», lo que venga). Un texto interno («[tool call] …») nunca sale, aunque se
   // haya colado antes del candado de run.ts (unfinishedReply).
+  // Los mensajes de un link de pago (30-oct-2026) los escribió el dueño en Agente IA › Links de pago: pasan
+  // aunque traigan renglones de una palabra («Dirección»).
   const internal = findInternalText([params.text]);
-  if (internal) {
+  if (internal && !(await esMensajeDeLink(params.organizationId, params.text))) {
     throw new SendRejectedError("not_retryable", `El Agente IA escribió una nota interna (${internal.reason}) y no se envió.`);
   }
+  const sinLink = await linkPagoBloqueado(params.organizationId, params.conversationId, params.text);
+  if (sinLink) throw new SendRejectedError("not_retryable", sinLink);
   const now = params.now ?? new Date();
   const where = and(eq(messages.id, params.messageId), eq(messages.organizationId, params.organizationId));
   const [prior] = await db

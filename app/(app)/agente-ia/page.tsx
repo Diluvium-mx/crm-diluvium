@@ -3,7 +3,7 @@ import { requireActiveMembership } from "@/lib/auth/active-organization";
 import { roleAllows } from "@/lib/auth/permissions";
 import { getAgentEditor } from "@/lib/actions/agente-ia-editor";
 import { listSizeRanges } from "@/lib/actions/contact-qualification";
-import { listLinksPago } from "@/lib/agente-ia/links-pago-store";
+import { listLinksPago, loadTextosLink } from "@/lib/agente-ia/links-pago-store";
 import { parseAgentSection } from "@/lib/agente-ia/sections";
 import { tableToInput } from "@/lib/followups/tabla";
 import { loadFollowUpTableFresh, loadLastTableChange } from "@/lib/followups/tabla-store";
@@ -25,10 +25,11 @@ export default async function AgenteIaPage({ searchParams }: PageProps<"/agente-
     redirect("/dashboard");
   }
   const initialSection = parseAgentSection((await searchParams).seccion);
-  const [data, sizeRanges, linksPago, followUpTable, followUpLast] = await Promise.all([
+  const [data, sizeRanges, linksPago, textosLink, followUpTable, followUpLast] = await Promise.all([
     getAgentEditor(),
     listSizeRanges(),
     listLinksPago(organizationId),
+    loadTextosLink(organizationId),
     loadFollowUpTableFresh(organizationId),
     loadLastTableChange(organizationId),
   ]);
@@ -38,7 +39,7 @@ export default async function AgenteIaPage({ searchParams }: PageProps<"/agente-
     <AgenteEditor
       data={data}
       sizeRanges={sizeRanges}
-      linksPago={linksPago}
+      linksPago={{ links: linksPago, textos: textosLink }}
       followUps={{ table: tableToInput(followUpTable), lastChange: followUpLast ? { author: followUpLast.author, at: followUpLast.at.toISOString() } : null }}
       initialSection={initialSection}
       canSeeSellers={canSeeSellers}

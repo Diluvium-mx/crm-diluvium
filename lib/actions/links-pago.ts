@@ -7,11 +7,11 @@ import { revalidatePath } from "next/cache";
 import { ZodError } from "zod";
 import { requireActiveMembership } from "@/lib/auth/active-organization";
 import { roleAllows } from "@/lib/auth/permissions";
-import type { LinkPago } from "@/lib/agente-ia/links-pago";
-import { replaceLinksPago } from "@/lib/agente-ia/links-pago-store";
+import type { LinkPago, TextosLink } from "@/lib/agente-ia/links-pago";
+import { loadTextosLink, replaceLinksPago } from "@/lib/agente-ia/links-pago-store";
 import { logError } from "@/lib/log/safe-error";
 
-export type LinksPagoActionResult = { ok: true; links: LinkPago[] } | { ok: false; message: string };
+export type LinksPagoActionResult = { ok: true; links: LinkPago[]; textos: TextosLink } | { ok: false; message: string };
 
 export async function saveLinksPago(input: unknown): Promise<LinksPagoActionResult> {
   try {
@@ -19,10 +19,11 @@ export async function saveLinksPago(input: unknown): Promise<LinksPagoActionResu
     if (!roleAllows(role, "aiConfig", "update")) {
       return { ok: false, message: "No tienes permiso para cambiar los links de pago; pídeselo a un administrador." };
     }
-    if (!Array.isArray(input)) return { ok: false, message: "Lista de links no válida." };
-    const links = await replaceLinksPago(organizationId, input, userId);
+    const body = input && typeof input === "object" ? (input as { links?: unknown; textos?: unknown }) : {};
+    if (!Array.isArray(body.links)) return { ok: false, message: "Lista de links no válida." };
+    const links = await replaceLinksPago(organizationId, body.links, userId, body.textos ?? undefined);
     revalidatePath("/agente-ia");
-    return { ok: true, links };
+    return { ok: true, links, textos: await loadTextosLink(organizationId) };
   } catch (error) {
     if (error instanceof ZodError) return { ok: false, message: error.issues[0]?.message ?? "Valor no válido." };
     if (error instanceof Error && /^(No autenticado|Usuario desactivado|No tienes permiso|El usuario no tiene membresía)/.test(error.message)) {
