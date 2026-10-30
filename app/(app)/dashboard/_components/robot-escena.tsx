@@ -16,14 +16,17 @@
 import type { Escena, RobotFace } from "./robot-escena-cuando";
 
 /** El robot de 18 px de la píldora, dibujado en línea para poder animar ojos, boca, antena, cables y chispas. */
-export function RobotEscena({ escena }: { escena: Escena }) {
+/** `cara`: la carita que se queda en las escenas que no la cambian (el lápiz sirve despierto o suspendido). */
+export function RobotEscena({ escena, cara }: { escena: Escena; cara: RobotFace }) {
+  const conCara = escena === "lapiz" ? ` robot-quieto-${cara}` : "";
   return (
-    <span aria-hidden="true" data-escena={escena} className={`robot-escena robot-escena-${escena} relative -my-0.5 inline-block size-[18px] shrink-0`}>
+    <span aria-hidden="true" data-escena={escena} className={`robot-escena robot-escena-${escena}${conCara} relative -my-0.5 inline-block size-[18px] shrink-0`}>
       {escena === "disparo" && <Pistola />}
       {(escena === "reparacion-golpes" || escena === "reparacion" || escena === "reparacion-dormido") && <Llave />}
       {escena === "despertador" && <Despertador />}
       {escena === "avion" && <Avioncito />}
       {(escena === "cafe" || escena === "cafe-despierto" || escena === "cafe-dormido") && <Taza />}
+      {escena === "lapiz" && <Lapiz />}
       <RobotSvg />
     </span>
   );
@@ -217,5 +220,29 @@ function Taza() {
       <rect x="1" y="16" width="15" height="3" fill="#FFFFFF" opacity="0.85" />
       <path d="M16 15.5 q6 0 6 5 q0 5 -6 5" fill="none" stroke="#A8650A" strokeWidth="2.4" />
     </svg>
+  );
+}
+
+/** «Editar mensaje» › Guardar (30-oct-2026): entra por la derecha, escribe un garabato, sale la palomita de guardado y
+ * se regresa por donde entró. La punta va a la izquierda, hacia el robot. */
+function Lapiz() {
+  return (
+    <>
+      <svg className="re-garabato" viewBox="0 0 14 5">
+        <path pathLength={1} d="M0.5 3 q1.5 -2.6 3 0 t3 0 t3 0 t3 0" fill="none" stroke="#0A559A" strokeWidth="1.1" strokeLinecap="round" />
+      </svg>
+      <svg className="re-lapiz" viewBox="0 0 28 8">
+        <path d="M0.4 4 L5.5 1 V7 Z" fill="#F2C48D" />
+        <path d="M0.4 4 L2.2 2.95 V5.05 Z" fill="#2A333D" />
+        <rect x="5.5" y="1" width="16.5" height="6" fill="#FFC300" />
+        <rect x="5.5" y="3.4" width="16.5" height="1.2" fill="#E0A800" />
+        <rect x="22" y="0.8" width="2.4" height="6.4" fill="#B9C3CD" />
+        <rect x="24.4" y="0.8" width="3.2" height="6.4" rx="1.4" fill="#F28CA0" />
+      </svg>
+      <svg className="re-palomita" viewBox="0 0 10 10">
+        <circle cx="5" cy="5" r="5" fill="#22A06B" />
+        <path pathLength={1} d="M2.6 5.2 L4.4 7 L7.6 3.4" fill="none" stroke="#FFFFFF" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+      </svg>
+    </>
   );
 }

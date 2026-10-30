@@ -10,9 +10,10 @@ const programado: FotoPildora = {
   cara: "normal",
   etiqueta: "mar 18:00",
   tono: "azul",
+  mensaje: null,
 };
 const suspendido: FotoPildora = { ...programado, cara: "dormido", tono: "ambar" };
-const cancelado: FotoPildora = { estado: "cancelado", id: null, dueAt: null, enviados: 0, ultimoSalio: false, cara: "cancelado", etiqueta: null, tono: "gris" };
+const cancelado: FotoPildora = { estado: "cancelado", id: null, dueAt: null, enviados: 0, ultimoSalio: false, cara: "cancelado", etiqueta: null, tono: "gris", mensaje: null };
 const dormido: FotoPildora = { ...cancelado, estado: "dormido", cara: "dormido" };
 const baja: FotoPildora = { ...cancelado, estado: "baja", etiqueta: "Se dio de baja", tono: "rojo" };
 
@@ -122,5 +123,32 @@ describe("escena en curso (anticipada y con Reactivar en dos tiempos)", () => {
   it("Despertar rechazado: deja de cargar sin escena", () => {
     const cafe = siguienteEscena(entrada(dormido), entrada(dormido, { despertando: true }), null);
     expect(siguienteEscena(entrada(dormido, { despertando: true }), entrada(dormido, { silencio: 1 }), cafe)).toBeNull();
+  });
+});
+
+describe("lápiz: «Editar mensaje» › Guardar", () => {
+  const editado = { ...programado, mensaje: JSON.stringify(["Buen día, ¿tuvo oportunidad de verlo?", null]) };
+
+  it("guardar un texto o una plantilla nuevos juega el lápiz", () => {
+    expect(elegirEscena(programado, editado)).toBe("lapiz");
+    expect(elegirEscena(editado, { ...editado, mensaje: JSON.stringify([null, "seg_medidas_recordatorio"]) })).toBe("lapiz");
+  });
+
+  it("«Volver al del Agente IA» también", () => {
+    expect(elegirEscena(editado, programado)).toBe("lapiz");
+  });
+
+  it("sirve con el robot suspendido (la carita no cambia)", () => {
+    expect(elegirEscena(suspendido, { ...suspendido, mensaje: editado.mensaje })).toBe("lapiz");
+  });
+
+  it("si sale un mensaje gana el avión, si cambia la hora gana el reloj, y en otro seguimiento nada", () => {
+    expect(elegirEscena(editado, { ...programado, enviados: 1, ultimoSalio: true })).toBe("avion");
+    expect(elegirEscena(programado, { ...editado, dueAt: "2026-10-15T17:00:00.000Z" })).toBe("reloj");
+    expect(elegirEscena(programado, { ...editado, id: "f2" })).toBeNull();
+  });
+
+  it("guardar el mismo texto no juega nada", () => {
+    expect(elegirEscena(editado, { ...editado })).toBeNull();
   });
 });

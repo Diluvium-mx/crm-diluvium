@@ -11,7 +11,18 @@
 
 export type RobotFace = "normal" | "dormido" | "cancelado";
 
-export type Escena = "disparo" | "reparacion-golpes" | "reparacion" | "reparacion-dormido" | "reloj" | "despertador" | "avion" | "cafe" | "cafe-despierto" | "cafe-dormido";
+export type Escena =
+  | "disparo"
+  | "reparacion-golpes"
+  | "reparacion"
+  | "reparacion-dormido"
+  | "reloj"
+  | "despertador"
+  | "avion"
+  | "cafe"
+  | "cafe-despierto"
+  | "cafe-dormido"
+  | "lapiz";
 
 /** Lo que dura cada escena (lo mismo que `--re-d` en globals.css). En «reparacion-golpes» y «cafe» es lo mínimo:
  * después el robot sigue «cargando» hasta que se sabe el final. */
@@ -26,6 +37,7 @@ export const ESCENA_MS: Readonly<Record<Escena, number>> = {
   cafe: 1150,
   "cafe-despierto": 1200,
   "cafe-dormido": 1200,
+  lapiz: 1600,
 };
 
 /** Escenas en que la píldora cambia de color: hasta este momento conserva el color de antes. */
@@ -59,6 +71,8 @@ export type FotoPildora = {
   cara: RobotFace;
   etiqueta: string | null;
   tono: string;
+  /** Lo que un vendedor dejó en «Editar mensaje» (texto o plantilla; solo «activo»). */
+  mensaje: string | null;
 };
 
 /**
@@ -69,6 +83,8 @@ export type FotoPildora = {
  * - avion: el mismo seguimiento tiene un mensaje más y sí salió.
  * - despertador: el mismo seguimiento deja de estar suspendido (Que salga solo).
  * - reloj: el mismo seguimiento cambia de hora con el robot despierto (Cambiar hora).
+ * - lapiz: el mismo seguimiento cambia su mensaje o plantilla («Editar mensaje» › Guardar o «Volver al del Agente IA»;
+ *   30-oct-2026, pedido del dueño). La carita no cambia: sirve despierto o suspendido.
  */
 export function elegirEscena(antes: FotoPildora, ahora: FotoPildora): Escena | null {
   if (ahora.estado === "cancelado") return antes.estado === "cancelado" ? null : "disparo";
@@ -80,6 +96,7 @@ export function elegirEscena(antes: FotoPildora, ahora: FotoPildora): Escena | n
   if (ahora.enviados > antes.enviados) return ahora.ultimoSalio && ahora.cara === "normal" ? "avion" : null;
   if (antes.cara === "dormido" && ahora.cara === "normal") return "despertador";
   if (ahora.dueAt && antes.dueAt !== ahora.dueAt && antes.cara === "normal" && ahora.cara === "normal") return "reloj";
+  if (antes.mensaje !== ahora.mensaje && antes.cara === ahora.cara) return "lapiz";
   return null;
 }
 
