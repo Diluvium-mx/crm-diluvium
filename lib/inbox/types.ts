@@ -96,6 +96,8 @@ export type ConversationDetail = {
   adEntry: { entryAt: Date; firstReplyAt: Date | null } | null;
   /** Canal de la conversación: de prueba (etiqueta), archivado (sin envíos) y su red. */
   channel: { isTest: boolean; archived: boolean; type: ChannelPlatform };
+  /** Cliente de prueba de staging (lib/messaging/simulador.ts): el chat muestra «Escribir como el cliente». */
+  simulado?: boolean;
 };
 
 export type AttachmentView = {

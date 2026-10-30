@@ -9,6 +9,7 @@ import type { TemperatureFilter } from "@/lib/contacts/filters";
 import { nationalSearchPrefixes } from "@/lib/phone";
 import { chatSearchTerm, escapeLike, normalizeSearch, SQL_SEARCH_FROM, SQL_SEARCH_TO } from "@/lib/text/search";
 import { db } from "@/lib/db";
+import { esCuentaSimulada, simuladorActivo } from "@/lib/messaging/simulador";
 import { channels, contacts, conversations, messages } from "@/lib/db/schema";
 import { latestInboundMessageId, unreadAfterCutoff } from "@/lib/messaging/ingest";
 import type { ChannelPlatform } from "@/lib/messaging/provider";
@@ -302,7 +303,7 @@ async function detail(where: SQL): Promise<ConversationDetail | null> {
     .select({
       conversation: conversations,
       contact: contacts,
-      channel: { isTest: channels.isTest, isActive: channels.isActive, archivedAt: channels.archivedAt, type: channels.type },
+      channel: { isTest: channels.isTest, isActive: channels.isActive, archivedAt: channels.archivedAt, type: channels.type, providerAccountId: channels.providerAccountId },
     })
     .from(conversations)
     .innerJoin(contacts, eq(contacts.id, conversations.contactId))
@@ -325,6 +326,7 @@ async function detail(where: SQL): Promise<ConversationDetail | null> {
         }
       : null,
     channel: { isTest: channel.isTest, archived: channel.archivedAt !== null, type: channel.type },
+    simulado: esCuentaSimulada(channel.providerAccountId) && simuladorActivo(),
   };
 }
 

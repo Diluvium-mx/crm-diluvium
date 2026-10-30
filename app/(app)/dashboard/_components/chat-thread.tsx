@@ -27,6 +27,7 @@ import { AgentActivityPill } from "./agent-activity-pill";
 import { EVENT_BATCH_MS, newestChanged } from "./chat-events";
 import { interleaveNotices } from "@/lib/agente-ia/timeline";
 import { AdFreeWindowNote, AdReferralCard } from "./ad-referral-card";
+import { SimuladorBar } from "./simulador-bar";
 import {
   bubbleTime,
   dayLabel,
@@ -853,7 +854,9 @@ export function ChatThread({
         }`}
       >
         {windowOpen
-          ? `Ventana abierta · quedan ${hoursLeft} h`
+          ? detail.simulado
+            ? "Cliente de prueba: la ventana nunca cierra"
+            : `Ventana abierta · quedan ${hoursLeft} h`
           : instagram
             ? sellerCanWrite
               ? `Pasaron 24 h: en Instagram solo un vendedor puede contestar, hasta el ${deadlineFormat.format(sellerDeadline(detail.windowExpiresAt)!)} (el Agente IA y las automatizaciones ya no).`
@@ -986,6 +989,8 @@ export function ChatThread({
             </button>
           </div>
         )}
+        {/* Cliente de prueba de staging (simulador-bar.tsx): escribir como el cliente y empezar de nuevo. */}
+        {detail.simulado && <SimuladorBar onReset={() => window.location.reload()} />}
         {/* Composer (composer.tsx): texto libre, fragmentos y plantillas con la
             ventana abierta; solo plantilla cuando está cerrada. key: al cambiar de
             conversación se reinicia el borrador y se cierran los selectores. */}

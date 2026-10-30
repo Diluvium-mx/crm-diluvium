@@ -10,6 +10,8 @@
 // - `actualizar_detalle { … }` (Agente IA parte 1, 26-sep-2026): llena el Detalle del
 //   contacto con lo que dijo el cliente (lib/ai/runtime/detalle.ts). Solo campos vacíos
 //   o que el propio agente llenó; lo del vendedor nunca se toca.
+// - `enviar_link_pago { opcion }` (30-oct-2026, lib/agente-ia/links-pago.ts): el CRM manda el link
+//   de MercadoPago de esa opción, tal cual; solo se ofrece si hay links y el chat puede recibirlos.
 // Sin `execute`: el modelo devuelve texto + llamadas en UNA vuelta y el runtime
 // decide qué corre. Las reglas de negocio viven en el Goal, no aquí.
 import { tool, type ToolSet } from "ai";
@@ -17,11 +19,13 @@ import { z } from "zod";
 import { toolNameFor } from "@/lib/workflows/defaults";
 import { sortStages, type FunnelStage } from "@/lib/contacts/stages";
 import type { ToolCallOutput } from "@/lib/ai/types";
+import { linkPagoDescription, type OpcionLink } from "@/lib/agente-ia/links-pago";
 
 export const TOOL_FIJAR_COTIZACION = "fijar_cotizacion";
 export const TOOL_MOVER_ETAPA = "mover_etapa";
 export const TOOL_AVISO_VENDEDOR = "aviso_vendedor";
 export const TOOL_ACTUALIZAR_DETALLE = "actualizar_detalle";
+export const TOOL_LINK_PAGO = "enviar_link_pago";
 
 export const AVISO_MOTIVOS = ["cotejar_deposito", "cliente_pide_humano", "comprobante_dudoso"] as const;
 export type AvisoMotivo = (typeof AVISO_MOTIVOS)[number];
@@ -33,6 +37,8 @@ export type AgentTools = {
   byName: ReadonlyMap<string, AgentToolWorkflow>;
   /** Claves de etapa que acepta mover_etapa, en el orden del Embudo. */
   stageKeys: readonly string[];
+  /** Opciones de enviar_link_pago (vacío = la herramienta no se ofrece). */
+  linkOptions: readonly OpcionLink[];
 };
 
 export const fijarCotizacionSchema = z.object({
@@ -51,6 +57,13 @@ export const avisoVendedorSchema = z.object({
   motivo: z.enum(AVISO_MOTIVOS).describe("cotejar_deposito = el cliente pagó y el pago cuadra (el vendedor ve \"Depósito recibido\"); cliente_pide_humano = pidió hablar con una persona; comprobante_dudoso = el comprobante no cuadra o se ve dudoso"),
   detalle: z.string().max(500).optional().describe("Qué debe saber el vendedor, en una frase (no hace falta con cotejar_deposito)"),
 });
+
+export function linkPagoSchemaFor(options: readonly OpcionLink[]) {
+  const claves = options.length ? options.map((o) => o.clave) : ["sin_links"];
+  return z.object({
+    opcion: z.enum(claves as [string, ...string[]]).describe("Clave del link que corresponde a lo que eligió el cliente"),
+  });
+}
 
 // Lo que ve el MODELO (todo opcional). El runtime vuelve a validar CAMPO POR CAMPO
 // (parseDetalle): un campo raro se descarta sin tirar los demás.
@@ -135,7 +148,11 @@ export const AVISO_VENDEDOR_DESCRIPTION =
 
 // Puro: arma el ToolSet a partir de las filas de workflows (orden estable: la
 // consulta viene por position; fijas al final → la caché del prompt no se rompe).
-export function buildAgentTools(rows: readonly { id: string; slug: string; name: string; description: string }[], stages: readonly FunnelStage[]): AgentTools {
+export function buildAgentTools(
+  rows: readonly { id: string; slug: string; name: string; description: string }[],
+  stages: readonly FunnelStage[],
+  linkOptions: readonly OpcionLink[] = [],
+): AgentTools {
   const tools: ToolSet = {};
   const byName = new Map<string, AgentToolWorkflow>();
   const stageKeys = sortStages(stages).map((s) => s.key);
@@ -148,9 +165,10 @@ export function buildAgentTools(rows: readonly { id: string; slug: string; name:
   tools[TOOL_FIJAR_COTIZACION] = tool({ description: FIJAR_COTIZACION_DESCRIPTION, inputSchema: fijarCotizacionSchema });
   tools[TOOL_MOVER_ETAPA] = tool({ description: moverEtapaDescription(stages), inputSchema: moverEtapaSchemaFor(stageKeys) });
   tools[TOOL_AVISO_VENDEDOR] = tool({ description: AVISO_VENDEDOR_DESCRIPTION, inputSchema: avisoVendedorSchema });
+  if (linkOptions.length) tools[TOOL_LINK_PAGO] = tool({ description: linkPagoDescription(linkOptions), inputSchema: linkPagoSchemaFor(linkOptions) });
   // Al final (orden estable): la caché del prompt de las herramientas de arriba no cambia.
   tools[TOOL_ACTUALIZAR_DETALLE] = tool({ description: ACTUALIZAR_DETALLE_DESCRIPTION, inputSchema: actualizarDetalleSchema });
-  return { tools, byName, stageKeys };
+  return { tools, byName, stageKeys, linkOptions };
 }
 
 export type ValidToolCall =
@@ -158,7 +176,8 @@ export type ValidToolCall =
   | { kind: "cotizacion"; monto: number }
   | { kind: "etapa"; etapa: string }
   | { kind: "aviso"; aviso: z.infer<typeof avisoVendedorSchema> }
-  | { kind: "detalle"; detalle: DetalleIa };
+  | { kind: "detalle"; detalle: DetalleIa }
+  | { kind: "link"; opcion: OpcionLink };
 
 // Valida lo que pidió el modelo contra las herramientas ofrecidas: una
 // desconocida (workflow deshabilitado entre la llamada y ahora, o nombre
@@ -184,6 +203,14 @@ export function validateToolCalls(calls: readonly ToolCallOutput[], tools: Agent
       const p = avisoVendedorSchema.safeParse(c.input);
       if (p.success) valid.push({ kind: "aviso", aviso: p.data });
       else ignored.push(`${c.toolName}: argumentos inválidos`);
+      continue;
+    }
+    if (c.toolName === TOOL_LINK_PAGO) {
+      // Sin la herramienta ofrecida (chat que no recibe links) se ignora; uno por respuesta.
+      const p = tools.linkOptions.length ? linkPagoSchemaFor(tools.linkOptions).safeParse(c.input) : null;
+      const opcion = p?.success ? tools.linkOptions.find((o) => o.clave === p.data.opcion) : undefined;
+      if (!opcion) ignored.push(`${c.toolName}: ${tools.linkOptions.length ? "opción inválida" : "herramienta no ofrecida en este chat"}`);
+      else if (!valid.some((v) => v.kind === "link")) valid.push({ kind: "link", opcion });
       continue;
     }
     if (c.toolName === TOOL_ACTUALIZAR_DETALLE) {
@@ -212,8 +239,8 @@ export function validateToolCalls(calls: readonly ToolCallOutput[], tools: Agent
  * `wf_datos_bancarios` (y por eso hubo traspaso) y Sonnet contestó "te paso los datos" sin volver
  * a pedir la herramienta, los datos nunca salían y el contacto quedaba en Cerca de compra.
  * Regla: mandan las llamadas del Modelo 2; de las del Modelo 1 se conservan los workflows que el
- * Modelo 2 no repitió, los avisos con un motivo que no repitió y el Detalle (antes del del Modelo 2,
- * que gana campo por campo). La cotización del Modelo 1 NO se arrastra: el cliente lee el texto del
+ * Modelo 2 no repitió, los avisos con un motivo que no repitió, el link de pago si el Modelo 2 no pidió
+ * uno y el Detalle (antes del del Modelo 2, que gana campo por campo). La cotización del Modelo 1 NO se arrastra: el cliente lee el texto del
  * Modelo 2, y un monto que ese texto no dice no se fija (prepareActions lo rechazaría con aviso al
  * vendedor). La etapa la pone quien llama (la del traspaso).
  */
@@ -222,6 +249,7 @@ export function mergeHandoffToolCalls(first: readonly ValidToolCall[], second: r
   const detalleFirst = first.filter((c) => c.kind === "detalle");
   const workflows = new Set(second.flatMap((c) => (c.kind === "workflow" ? [c.workflow.id] : [])));
   const motivos = new Set(second.flatMap((c) => (c.kind === "aviso" ? [c.aviso.motivo] : [])));
+  let link = second.some((c) => c.kind === "link");
   out.push(...detalleFirst);
   for (const c of first) {
     if (c.kind === "workflow" && !workflows.has(c.workflow.id)) {
@@ -229,6 +257,9 @@ export function mergeHandoffToolCalls(first: readonly ValidToolCall[], second: r
       out.push(c);
     } else if (c.kind === "aviso" && !motivos.has(c.aviso.motivo)) {
       motivos.add(c.aviso.motivo);
+      out.push(c);
+    } else if (c.kind === "link" && !link) {
+      link = true;
       out.push(c);
     }
     // "cotizacion" y "etapa" del Modelo 1 no se arrastran (ver arriba); "detalle" ya va arriba.

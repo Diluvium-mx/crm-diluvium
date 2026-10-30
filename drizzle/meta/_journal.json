@@ -512,6 +512,20 @@
       "when": 1793118133778,
       "tag": "0074_resenas_tienda",
       "breakpoints": true
+    },
+    {
+      "idx": 76,
+      "version": "7",
+      "when": 1793381440304,
+      "tag": "0076_links_de_pago",
+      "breakpoints": true
+    },
+    {
+      "idx": 77,
+      "version": "7",
+      "when": 1793386666612,
+      "tag": "0077_links_pago_mensajes",
+      "breakpoints": true
     }
   ]
 }

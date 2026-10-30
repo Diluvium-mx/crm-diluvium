@@ -39,7 +39,9 @@ import type { SnippetView } from "@/lib/snippets/types";
 import { renderSnippet } from "@/lib/snippets/variables";
 import { parseCommand } from "@/lib/workflows/steps";
 import { ScheduleForm } from "./schedule-form";
-import { SnippetPicker } from "./snippet-picker";
+import { SnippetPicker, type SnippetTab } from "./snippet-picker";
+import { listLinksPagoDelChat } from "@/lib/actions/links-pago-chat";
+import { pesos, type LinkPago } from "@/lib/agente-ia/links-pago";
 import { TemplatePicker } from "./template-picker";
 import { useIsMobile } from "@/components/ui/use-media-query";
 import { CloseX } from "@/components/ui/close-x";
@@ -122,6 +124,11 @@ export function Composer({
   }
   const [caret, setCaret] = useState(0);
   const [snippetOpen, setSnippetOpen] = useState(false);
+  // ⚡ con dos pestañas (30-oct-2026): Mensajes rápidos o Links de pago (el «/» abre esta con un link elegido).
+  const [snippetTab, setSnippetTab] = useState<SnippetTab>("rapidos");
+  const [snippetLinkId, setSnippetLinkId] = useState<string | null>(null);
+  // Links de pago para el «/» (se cargan al abrirlo; a un número de fuera de México, ninguno).
+  const [chatLinks, setChatLinks] = useState<LinkPago[] | null>(null);
   const [templateOpen, setTemplateOpen] = useState(false);
   const [scheduleOpen, setScheduleOpen] = useState(false);
   // ▶ Automatizaciones (solo móvil): lista de workflows para mandar con un toque.
@@ -184,6 +191,13 @@ export function Composer({
     commandQuery !== null
       ? commands.filter((c) => normalizeForSearch(c.command.slice(1)).startsWith(commandQuery) || normalizeForSearch(c.name).includes(commandQuery))
       : [];
+  // «/link», «/pago» (o «/mercadopago») listan todos los links; con otra palabra, los que la llevan en el nombre.
+  const linkMatches =
+    commandQuery !== null && commandQuery.length >= 2 && chatLinks
+      ? ["link", "links", "pago", "mercadopago"].some((w) => w.startsWith(commandQuery) || commandQuery.startsWith(w))
+        ? chatLinks
+        : chatLinks.filter((l) => normalizeForSearch(l.nombre).includes(commandQuery))
+      : [];
 
   // Carga los fragmentos (y los comandos) la primera vez que se abre el buscador con
   // "/" o el selector ⚡ (en móvil ⚡ también lista los comandos de Automatización).
@@ -206,6 +220,21 @@ export function Composer({
       alive = false;
     };
   }, [slashOpen, snippets, snippetsError]);
+
+  useEffect(() => {
+    if (!slashOpen || chatLinks !== null) return;
+    let alive = true;
+    listLinksPagoDelChat(conversationId)
+      .then((d) => {
+        if (alive) setChatLinks(d.bloqueo ? [] : d.links);
+      })
+      .catch(() => {
+        if (alive) setChatLinks([]);
+      });
+    return () => {
+      alive = false;
+    };
+  }, [slashOpen, chatLinks, conversationId]);
 
   // Coloca el cursor después de insertar (tras el render del nuevo borrador).
   useEffect(() => {
@@ -271,6 +300,22 @@ export function Composer({
     const { text, caret: nextCaret } = applySlashInsert(draft, slash, fill(snippet.body));
     pendingCaret.current = nextCaret;
     updateDraft(text, nextCaret);
+  }
+
+  // Link de pago desde «/»: se quita «/búsqueda» y se abre la pestaña Links de pago del ⚡ con ese link elegido
+  // (ahí se ven los dos mensajes y «Mandar» los envía).
+  function openLinkFromSlash(linkId: string) {
+    if (!slash) return;
+    const { text, caret: nextCaret } = applySlashInsert(draft, slash, "");
+    pendingCaret.current = nextCaret;
+    updateDraft(text, nextCaret);
+    setSnippetTab("links");
+    setSnippetLinkId(linkId);
+    setSnippetOpen(true);
+    setFollowUpOpen(false);
+    setTemplateOpen(false);
+    setWorkflowsOpen(false);
+    setMultimediaOpen(false);
   }
 
   function submit() {
@@ -401,7 +446,16 @@ export function Composer({
     <div className="border-t bg-card p-3 pb-[max(0.75rem,env(safe-area-inset-bottom))]">
       {scheduleForm}
       {followUpPanel}
-      {snippetOpen && <SnippetPicker onInsert={appendFragment} onClose={() => setSnippetOpen(false)} />}
+      {snippetOpen && (
+        <SnippetPicker
+          key={`${snippetTab}:${snippetLinkId ?? ""}`}
+          conversationId={conversationId}
+          tab={snippetTab}
+          linkId={snippetLinkId}
+          onInsert={appendFragment}
+          onClose={() => setSnippetOpen(false)}
+        />
+      )}
       {workflowsOpen && <WorkflowPicker onRun={runCommand} onClose={() => setWorkflowsOpen(false)} />}
       {multimediaOpen && <MultimediaPicker selected={selectedAssets} onToggle={attachments.toggleLibrary} onClose={() => setMultimediaOpen(false)} />}
       {templateOpen && (
@@ -479,6 +533,30 @@ export function Composer({
               ))}
             </ul>
           )}
+          {linkMatches.length > 0 && (
+            <ul aria-label="Links de pago" className="border-b py-1">
+              {linkMatches.map((l) => (
+                <li key={l.id}>
+                  <button
+                    type="button"
+                    onMouseDown={(event) => {
+                      event.preventDefault();
+                      openLinkFromSlash(l.id);
+                    }}
+                    onTouchEnd={(event) => {
+                      event.preventDefault();
+                      openLinkFromSlash(l.id);
+                    }}
+                    className="flex w-full items-center gap-2 px-3 py-1.5 text-left text-sm hover:bg-brand-orange/10"
+                  >
+                    <span className="shrink-0 rounded bg-brand-orange/15 px-1.5 py-0.5 text-[11px] font-medium text-brand-orange">Link de pago</span>
+                    <span className="min-w-0 truncate font-medium">{l.nombre}</span>
+                    <span className="ml-auto shrink-0 text-[11px] text-muted-foreground">{pesos(l.monto)} · ver y mandar</span>
+                  </button>
+                </li>
+              ))}
+            </ul>
+          )}
           {snippetsError ? (
             <p className="px-3 py-3 text-sm text-brand-orange">No se pudieron cargar los mensajes rápidos.</p>
           ) : snippets === null ? (
@@ -530,6 +608,8 @@ export function Composer({
               type="button"
               onClick={() => {
                 setSnippetOpen((open) => !open);
+                setSnippetTab("rapidos");
+                setSnippetLinkId(null);
                 setFollowUpOpen(false);
                 setTemplateOpen(false);
                 setWorkflowsOpen(false);
@@ -634,6 +714,8 @@ export function Composer({
               const typed = parseCommand(draft);
               const exact = typed ? commands.find((c) => c.command === typed) : undefined;
               if (exact) runCommand(exact.command);
+              // Un solo link de pago que coincide («/link 2 compuertas»): Enter lo abre para revisarlo y mandarlo.
+              else if (linkMatches.length === 1) openLinkFromSlash(linkMatches[0].id);
               return;
             }
             if (slash && matches.length > 0) {
