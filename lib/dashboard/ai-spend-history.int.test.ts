@@ -83,7 +83,9 @@ describe.skipIf(!TEST_DATABASE_URL)("historial del gasto de IA (Postgres real)",
           "2026-09-22": { todo: 2 },
           "2026-09-30": { todo: 3 },
           "2026-10-01": { todo: 5, prod: 3, pruebas: 2 },
-          "2026-10-02": { todo: 4, prod: 1, pruebas: 3 },
+          // Día cerrado (antes de ayer): manda lo que cobró Anthropic (la regla del CRM vs. proveedor
+          // está en ai-spend.test.ts y ai-spend-history.test.ts).
+          "2026-10-02": { todo: 5, prod: 2, pruebas: 3 },
           "2026-10-04": { todo: 1, prod: 1, pruebas: 0 },
         },
         fetchedAt: new Date("2026-10-05T11:55:00Z"),
