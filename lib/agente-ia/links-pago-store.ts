@@ -4,9 +4,9 @@
 // (herramienta del Agente IA, lib/ai/runtime/actions.ts).
 import { and, asc, eq, sql } from "drizzle-orm";
 import { db } from "@/lib/db";
-import { linksPago, linksPagoTextos, messages } from "@/lib/db/schema";
+import { contacts, conversations, linksPago, linksPagoTextos, messages } from "@/lib/db/schema";
 import { logChanges } from "@/lib/historial/log";
-import { linksPagoSchema, mensajesLink, TEXTOS_DE_FABRICA, textosLinkSchema, type LinkPago, type LinkPagoInput, type TextosLink } from "./links-pago";
+import { ladaSinLinks, linksPagoSchema, mensajesLink, TEXTOS_DE_FABRICA, textosLinkSchema, type LinkPago, type LinkPagoInput, type TextosLink } from "./links-pago";
 
 type Row = typeof linksPago.$inferSelect;
 
@@ -87,6 +87,30 @@ export async function esMensajeDeLink(organizationId: string, text: string): Pro
   const t = text.trim();
   const [links, textos] = await Promise.all([listLinksPago(organizationId), loadTextosLink(organizationId)]);
   return links.some((l) => mensajesLink(l, textos).includes(t));
+}
+
+/** País de la lada del contacto del chat si NO recibe links («Perú (+51)»), o null (México, +1, Instagram). */
+export async function paisSinLinksDelChat(organizationId: string, conversationId: string): Promise<string | null> {
+  const [c] = await db
+    .select({ iso: contacts.phoneCountryIso, code: contacts.phoneCountryCode })
+    .from(conversations)
+    .innerJoin(contacts, and(eq(contacts.id, conversations.contactId), eq(contacts.organizationId, conversations.organizationId)))
+    .where(and(eq(conversations.id, conversationId), eq(conversations.organizationId, organizationId)))
+    .limit(1);
+  return c ? ladaSinLinks(c.iso, c.code) : null;
+}
+
+/**
+ * Candado de TODO texto que sale (vendedor, programado o Agente IA; lib/messaging/send.ts): si lleva un link
+ * de la lista y el número es de fuera de México, devuelve por qué no sale; si no, null. Regla estricta del
+ * dueño (30-oct-2026): a otro país nunca un link de pago, tampoco pegado a mano (+1 sí). Sin «http» no consulta.
+ */
+export async function linkPagoBloqueado(organizationId: string, conversationId: string, text: string): Promise<string | null> {
+  if (!/https?:\/\//i.test(text)) return null;
+  const urls = (await listLinksPago(organizationId)).map((l) => l.url.trim()).filter(Boolean);
+  if (!urls.some((u) => text.includes(u))) return null;
+  const pais = await paisSinLinksDelChat(organizationId, conversationId);
+  return pais ? `Este número es de ${pais}, fuera de México: no se le mandan links de pago.` : null;
 }
 
 /** Links que el Agente IA ya mandó en este chat (cualquiera de la lista vigente). */

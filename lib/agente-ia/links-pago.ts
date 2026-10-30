@@ -112,7 +112,8 @@ export function opcionesDe(links: readonly LinkPago[]): OpcionLink[] {
     });
 }
 
-const pesos = (n: number) => `$${n.toLocaleString("es-MX", { maximumFractionDigits: 2 })}`;
+/** «$5,500» (sin centavos si no los hay). */
+export const pesos = (n: number) => `$${n.toLocaleString("es-MX", { maximumFractionDigits: 2 })}`;
 
 /** El total del chat que debe estar acordado para mandar este link. */
 export function totalQueCubre(link: Pick<LinkPago, "monto" | "cubre">): number {
