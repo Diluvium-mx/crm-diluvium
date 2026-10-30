@@ -87,8 +87,11 @@ Lo que se midió contra la API (1-oct-2026):
 - Leer reportes **no gasta tokens ni saldo**.
 
 Reglas del Dashboard (`lib/dashboard/ai-spend.ts`):
-- Gasto de cada día UTC = lo que reporta el proveedor, **nunca menos** de lo que registró el CRM ese día
-  (cubre los minutos que el proveedor aún no reporta).
+- Gasto de cada día UTC = lo que reporta el proveedor. **Solo ayer y hoy** (el proveedor aún no termina de
+  reportarlos) nunca baja de lo que registró el CRM ese día (cubre los minutos que faltan). Antes de ayer
+  manda el cobro del proveedor aunque el CRM diga más (30-oct-2026: desde el 7-oct Anthropic cobra la
+  lectura de caché de Sonnet 5.5 a 0.10 y el CRM seguía con 0.20; el máximo con el CRM en todos los días
+  dejó el saldo US$2.27 abajo de la consola: US$0.77 contra US$3.04).
 - **En producción / Pruebas:** en Anthropic, desde el 1-oct-2026 (`ANTHROPIC_PRUEBAS_DESDE`), producción =
   espacio de trabajo **Default** (llave "CRM Diluvium", la de producción) y pruebas = espacio **«Pruebas»**
   (llave de staging; tope de US$10 al mes). Antes de esa fecha, y en los demás proveedores, producción =
@@ -98,4 +101,5 @@ Reglas del Dashboard (`lib/dashboard/ai-spend.ts`):
 - xAI: el saldo nunca se muestra mayor que lo comprado − lo ya registrado (un tercero dice que xAI
   descuenta con retraso; sin confirmar).
 - Lo único que puede descuadrar Anthropic y OpenAI son las **recargas registradas** (monto en créditos,
-  sin IVA, todas; con recarga automática, cada una).
+  sin IVA, todas; con recarga automática, cada una). OpenAI tiene la recarga automática encendida (en US$5
+  recarga hasta US$10): la del 20-oct-2026 (US$5) no estaba anotada y el saldo salía US$5 abajo.

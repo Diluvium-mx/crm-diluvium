@@ -28,6 +28,9 @@
 //     y caché y 1.5× salida).
 //   · Claude Opus 5.5 (corrección, misma fuente de Anthropic): su lectura de caché es
 //     el 5 % de la entrada (0.20), no el 10 % de la regla.
+//   · Claude Sonnet 5.5 (30-oct-2026): desde el 7-oct-2026 Anthropic cobra su lectura de caché
+//     al 5 % de la entrada (0.10; antes 0.20). Medido en su cost_report: «Input Tokens, Cache
+//     Hit» = tokens × 0.10 por millón del 8-oct en adelante (el 7-oct, mezcla de los dos).
 // - Overrides sin caché de xAI / Google / OpenRouter: sin descuento (los tokens de
 //   caché se cobran como entrada normal).
 import type { ModelUsage, ProviderId } from "./types";
@@ -66,7 +69,7 @@ export const DEFAULT_MODEL_PRICES: Readonly<Record<string, BasePrice | null>> = 
     cacheWrite: 2.5,
     tiers: [{ minInputTokens: 272_001, input: 4, output: 15, cacheRead: 0.2, cacheWrite: 5 }],
   },
-  "claude-sonnet-5-5": { input: 2, output: 10 },
+  "claude-sonnet-5-5": { input: 2, output: 10, cacheRead: 0.1 },
   "claude-haiku-4-5": { input: 1, output: 5 },
   "grok-4.6": {
     input: 2,

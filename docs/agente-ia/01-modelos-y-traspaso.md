@@ -18,7 +18,8 @@ Qwen no lee PDF: un comprobante en PDF le llega como nota de texto. Precios inte
 **hasta el 31-dic-2026** (se duplica en 2027), Grok 4.6 2 / 6 (desde 200 mil tokens de entrada
 4 / 12), Qwen 3.7 Flash 0.03 / 0.13 (desde 32 mil 0.10 / 0.40; desde 256 mil 0.20 / 0.80): el
 tramo se elige por la entrada de cada llamada. GPT-6.1 Sol 2 / 10 (caché 0.10; desde 272 mil tokens de
-entrada 4 / 15), Claude Sonnet 5.5 2 / 10 (como Sonnet 5) y Claude Opus 5.5 4 / 20 con lectura de caché
+entrada 4 / 15), Claude Sonnet 5.5 2 / 10 (como Sonnet 5) con lectura de caché de 0.10 (el 5 %: Anthropic
+la bajó el 7-oct-2026; corregido el 30-oct-2026) y Claude Opus 5.5 4 / 20 con lectura de caché
 de 0.20 (el 5 %, no el 10 %; corregido el 29-sep-2026). El tope de respuesta del cerebro es de 4,096 tokens; si
 una respuesta se corta o una acción llega incompleta, el vendedor ve el aviso 🤖 "respuesta
 cortada" (nunca se descarta en silencio). Los model-id de API se verificaron contra docs

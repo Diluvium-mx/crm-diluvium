@@ -1,7 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { splitDay, summarizeProviders, type BillingSnapshot } from "./ai-spend";
+import { recentFromDay, splitDay, summarizeProviders, type BillingSnapshot } from "./ai-spend";
 
 const NOW = new Date("2026-10-03T12:34:56Z");
+// Ayer UTC de NOW: desde aquí el proveedor aún no termina de reportar.
+const RECENT = "2026-10-02";
 
 const snapshot = (values: Partial<BillingSnapshot> & Pick<BillingSnapshot, "provider">): BillingSnapshot => ({
   days: {},
@@ -13,22 +15,36 @@ const snapshot = (values: Partial<BillingSnapshot> & Pick<BillingSnapshot, "prov
 });
 
 describe("splitDay", () => {
+  it("ayer UTC es el primer día que el proveedor aún no termina de reportar", () => {
+    expect(recentFromDay(NOW)).toBe(RECENT);
+    expect(recentFromDay(new Date("2026-11-01T00:00:00Z"))).toBe("2026-10-31");
+  });
+
   it("sin reporte considera todo el registro del CRM como producción", () => {
-    expect(splitDay("openai", "2026-10-02", 1.25, undefined)).toEqual({ prod: 1.25, tests: 0 });
+    expect(splitDay("openai", "2026-10-02", 1.25, undefined, RECENT)).toEqual({ prod: 1.25, tests: 0 });
   });
 
   it("para un proveedor genérico atribuye a pruebas solo el excedente no negativo", () => {
-    expect(splitDay("openai", "2026-10-02", 1, { todo: 2.5 })).toEqual({ prod: 1, tests: 1.5 });
-    expect(splitDay("openai", "2026-10-02", 3, { todo: 2.5 })).toEqual({ prod: 3, tests: 0 });
+    expect(splitDay("openai", "2026-10-02", 1, { todo: 2.5 }, RECENT)).toEqual({ prod: 1, tests: 1.5 });
+    expect(splitDay("openai", "2026-10-02", 3, { todo: 2.5 }, RECENT)).toEqual({ prod: 3, tests: 0 });
   });
 
-  it("para Anthropic desde Pruebas usa los grupos y nunca baja producción del CRM", () => {
-    expect(splitDay("anthropic", "2026-10-01", 2, { todo: 6, prod: 3, pruebas: 3 })).toEqual({ prod: 3, tests: 3 });
-    expect(splitDay("anthropic", "2026-10-02", 4, { todo: 6, prod: 3, pruebas: 3 })).toEqual({ prod: 4, tests: 3 });
+  it("para Anthropic desde Pruebas usa los grupos y ayer y hoy nunca baja producción del CRM", () => {
+    expect(splitDay("anthropic", "2026-10-01", 2, { todo: 6, prod: 3, pruebas: 3 }, RECENT)).toEqual({ prod: 3, tests: 3 });
+    expect(splitDay("anthropic", "2026-10-02", 4, { todo: 6, prod: 3, pruebas: 3 }, RECENT)).toEqual({ prod: 4, tests: 3 });
+    expect(splitDay("anthropic", "2026-10-03", 4, { todo: 6, prod: 3, pruebas: 3 }, RECENT)).toEqual({ prod: 4, tests: 3 });
+  });
+
+  it("antes de ayer manda el cobro del proveedor aunque el CRM calcule más", () => {
+    // 27-oct-2026: el CRM calculó US$0.4234 (caché de Sonnet 5.5 a precio viejo) y Anthropic cobró US$0.3487.
+    expect(splitDay("anthropic", "2026-10-01", 0.4234, { todo: 0.3487, prod: 0.3487 }, RECENT)).toEqual({ prod: 0.3487, tests: 0 });
+    expect(splitDay("openai", "2026-10-01", 3, { todo: 2.5 }, RECENT)).toEqual({ prod: 2.5, tests: 0 });
+    expect(splitDay("openai", "2026-10-01", 1, { todo: 2.5 }, RECENT)).toEqual({ prod: 1, tests: 1.5 });
   });
 
   it("para Anthropic antes de Pruebas conserva la regla genérica", () => {
-    expect(splitDay("anthropic", "2026-09-30", 1.5, { todo: 3, prod: 2, pruebas: 1 })).toEqual({ prod: 1.5, tests: 1.5 });
+    expect(splitDay("anthropic", "2026-09-30", 1.5, { todo: 3, prod: 2, pruebas: 1 }, RECENT)).toEqual({ prod: 1.5, tests: 1.5 });
+    expect(splitDay("anthropic", "2026-09-30", 4, { todo: 3, prod: 2, pruebas: 1 }, RECENT)).toEqual({ prod: 3, tests: 0 });
   });
 });
 
@@ -66,6 +82,34 @@ describe("summarizeProviders", () => {
       spentSinceFirstUsd: 13,
       balanceUsd: 7,
       lastError: null,
+    });
+  });
+
+  it("el saldo de Anthropic sale del cobro real en los días cerrados aunque el CRM calcule más", () => {
+    const providers = summarizeProviders({
+      now: NOW,
+      monthStart: "2026-10-01",
+      days: [
+        { day: "2026-10-01", provider: "anthropic", usd: 4 },
+        { day: "2026-10-03", provider: "anthropic", usd: 1 },
+      ],
+      loads: [{ provider: "anthropic", loadedUsd: 10, firstTopupOn: "2026-10-01" }],
+      billing: [
+        snapshot({
+          provider: "anthropic",
+          days: {
+            "2026-10-01": { todo: 3, prod: 3 },
+            "2026-10-03": { todo: 0.5, prod: 0.5 },
+          },
+        }),
+      ],
+    });
+
+    expect(providers.find((provider) => provider.provider === "anthropic")).toMatchObject({
+      monthUsd: 4,
+      monthProdUsd: 4,
+      spentSinceFirstUsd: 4,
+      balanceUsd: 6,
     });
   });
 
