@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { DRAFT_PREFIX, DRAFT_TTL_MS, draftKey, memoryDraftStore, purgeDrafts, readDraft, writeDraft } from "./chat-drafts";
+import { DRAFT_PREFIX, DRAFT_TTL_MS, draftKey, memoryDraftStore, purgeDrafts, readDraft, tidyDraft, writeDraft } from "./chat-drafts";
 
 const NOW = Date.UTC(2026, 9, 29, 18, 0);
 
@@ -8,6 +8,20 @@ describe("borradores del chat (guardados en el navegador)", () => {
     const store = memoryDraftStore();
     writeDraft(store, "u1", "c1", "Hola buenas tardes\n\nLo podemos contactar vía telefónica?", NOW);
     expect(readDraft(store, "u1", "c1", NOW + 60_000)).toBe("Hola buenas tardes\n\nLo podemos contactar vía telefónica?");
+  });
+
+  it("vuelve ordenado: sin renglones vacíos arriba ni abajo (30-oct, el texto quedaba pegado abajo de la caja)", () => {
+    const store = memoryDraftStore();
+    writeDraft(store, "u1", "c1", "\nQuedo pendiente cualquier cosa 🙌🏻", NOW);
+    expect(readDraft(store, "u1", "c1", NOW)).toBe("Quedo pendiente cualquier cosa 🙌🏻");
+    writeDraft(store, "u1", "c1", " \n\n  Hola\n\nQué tal\n \n", NOW);
+    expect(readDraft(store, "u1", "c1", NOW)).toBe("Hola\n\nQué tal");
+  });
+
+  it("los espacios al final del último renglón se quedan, para seguir escribiendo", () => {
+    expect(tidyDraft("Hola, ")).toBe("Hola, ");
+    expect(tidyDraft("Hola, \n")).toBe("Hola,");
+    expect(tidyDraft("Ya quedó")).toBe("Ya quedó");
   });
 
   it("cada chat y cada usuario tiene el suyo", () => {

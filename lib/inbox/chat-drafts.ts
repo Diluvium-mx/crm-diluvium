@@ -17,14 +17,26 @@ export function draftKey(userId: string, conversationId: string): string {
   return `${DRAFT_PREFIX}${userId}.${conversationId}`;
 }
 
-/** Texto guardado, o null si no hay, está dañado o ya venció. */
+/**
+ * El borrador vuelve ordenado (30-oct-2026, reportado por el dueño): sin renglones vacíos ni espacios
+ * al principio y sin renglones vacíos al final. Antes un borrador que empezaba con un salto de línea
+ * (p. ej. al cortar el 2.º renglón para mandarlo aparte) volvía con un renglón vacío arriba y el texto
+ * pegado abajo de la caja. Al enviar ya se quitaba todo eso; los saltos de en medio no se tocan y los
+ * espacios al final del último renglón se quedan, para seguir escribiendo.
+ */
+export function tidyDraft(text: string): string {
+  const start = text.replace(/^\s+/, "");
+  return /\n\s*$/.test(start) ? start.trimEnd() : start;
+}
+
+/** Texto guardado (ordenado), o null si no hay, está dañado o ya venció. */
 export function parseDraft(raw: string | null, now: number): string | null {
   if (!raw) return null;
   try {
     const saved = JSON.parse(raw) as Partial<Saved>;
     if (typeof saved.t !== "string" || typeof saved.at !== "number") return null;
     if (now - saved.at > DRAFT_TTL_MS || saved.t.trim() === "") return null;
-    return saved.t;
+    return tidyDraft(saved.t);
   } catch {
     return null;
   }
