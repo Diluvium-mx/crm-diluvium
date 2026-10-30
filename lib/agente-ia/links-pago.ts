@@ -140,7 +140,9 @@ export type TextosLink = { mensaje1: string; mensaje2: string };
 export const VARIABLES_LINK = ["monto", "link", "forma_de_pago"] as const;
 
 export const TEXTOS_DE_FABRICA: TextosLink = {
-  mensaje1: "Aquí le paso el link para pagar {{monto}} con tarjeta por MercadoPago ✅\n\n{{link}}\n\n{{forma_de_pago}}",
+  // Como lo mandan los vendedores (30-oct-2026, dueño): corto y ordenado; WhatsApp arma debajo la tarjeta de
+  // MercadoPago con el monto («Paga $5,500 a Diluvium»).
+  mensaje1: "Adjunto link de pago ✅\n{{link}}",
   mensaje2: "Una vez realizado el pago, nos apoya con sus datos de envío:\nNombre de quien recibe\nDirección\nCódigo postal\nTeléfono\nCorreo electrónico",
 };
 

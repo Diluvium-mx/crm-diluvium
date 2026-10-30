@@ -99,7 +99,7 @@ describe.skipIf(!TEST_DATABASE_URL)("Links de pago (Postgres real)", () => {
   it("con el total acordado sale el link exacto y el contacto va a Cerca de compra", async () => {
     const p = await plan("mx", "1_compuerta_estandar", { monto: 5500, modelText: "Son $5,500 con envío gratis." });
     expect(p.link?.mensajes).toHaveLength(2);
-    expect(p.link?.mensajes[0]).toContain("\n\nhttps://mpago.la/EJEMPLO1\n\n");
+    expect(p.link?.mensajes[0]).toBe("Adjunto link de pago ✅\nhttps://mpago.la/EJEMPLO1");
     expect(p.link?.mensajes[1]).toContain("datos de envío");
     expect(p.linkFallback).toBeNull();
     expect(p.stage).toBe("cerca_compra");
