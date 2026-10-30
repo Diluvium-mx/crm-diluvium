@@ -1,4 +1,7 @@
 import { requireActiveMembership } from "@/lib/auth/active-organization";
+import { logError } from "@/lib/log/safe-error";
+import { simuladorActivo } from "@/lib/messaging/simulador";
+import { asegurarClienteDePrueba } from "@/lib/messaging/simulador-store";
 import { loadBotBanner } from "@/lib/monitoring/bot-silence";
 import { recentSendFailures, sendFailureBannerLines } from "@/lib/monitoring/send-failures";
 import { BotBanner } from "./_components/bot-banner";
@@ -12,6 +15,8 @@ import { SendFailuresBanner } from "./_components/send-failures-banner";
 // con datos del CRM. Si la de envíos no se puede leer, la Bandeja abre igual sin ella.
 export default async function BandejaPage({ searchParams }: PageProps<"/dashboard">) {
   const { organizationId } = await requireActiveMembership();
+  // Staging: el cliente de prueba siempre está (lib/messaging/simulador.ts); en producción no hace nada.
+  if (simuladorActivo()) await asegurarClienteDePrueba(organizationId).catch((error: unknown) => logError("[simulador] no se pudo preparar el cliente de prueba", error));
   const [{ contacto }, banner, sendFailures] = await Promise.all([
     searchParams,
     loadBotBanner(organizationId),

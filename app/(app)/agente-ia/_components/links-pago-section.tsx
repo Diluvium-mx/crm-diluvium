@@ -102,7 +102,7 @@ export function LinksPagoSection({ initial, textos: textosIniciales, onDirtyChan
         <textarea
           id={`${uid}-texto-${n}`}
           value={textos[key]}
-          rows={n === 1 ? 4 : 6}
+          rows={n === 1 ? 6 : 7}
           maxLength={MAX_TEXTO_LINK + 100}
           onChange={(e) => setTextos((t) => ({ ...t, [key]: e.target.value }))}
           className={`${field} resize-y`}
@@ -174,18 +174,6 @@ export function LinksPagoSection({ initial, textos: textosIniciales, onDirtyChan
                   <input type="checkbox" checked={r.soloVendedor} onChange={(e) => update(r.key, { soloVendedor: e.target.checked })} className="size-3.5 accent-brand-navy" />
                   Solo vendedor (el Agente IA no lo manda)
                 </label>
-                {Number.isFinite(monto) && monto > 0 && r.url.trim() && (
-                  <details className="mr-auto min-w-0 basis-full text-xs sm:basis-auto">
-                    <summary className="cursor-pointer text-muted-foreground">Así le llega al cliente</summary>
-                    <div className="mt-1 space-y-1.5">
-                      {mensajesLink({ monto, meses: r.meses, url: r.url }, textos).map((m, j) => (
-                        <p key={j} className="whitespace-pre-wrap break-words rounded bg-muted p-2 text-foreground">
-                          {m}
-                        </p>
-                      ))}
-                    </div>
-                  </details>
-                )}
                 <button type="button" aria-label={`Subir ${r.nombre || "link"}`} disabled={i === 0} onClick={() => move(r.key, -1)} className="ml-auto rounded px-2 py-1 text-xs text-muted-foreground hover:bg-muted disabled:opacity-40">
                   ↑
                 </button>
@@ -196,6 +184,18 @@ export function LinksPagoSection({ initial, textos: textosIniciales, onDirtyChan
                   Quitar
                 </button>
               </div>
+              {Number.isFinite(monto) && monto > 0 && r.url.trim() && (
+                <details className="mt-1 min-w-0 text-xs">
+                  <summary className="cursor-pointer text-muted-foreground">Así le llega al cliente</summary>
+                  <div className="mt-1 space-y-1.5">
+                    {mensajesLink({ monto, meses: r.meses, url: r.url }, textos).map((m, j) => (
+                      <p key={j} className="whitespace-pre-wrap break-words rounded bg-muted p-2 text-foreground">
+                        {m}
+                      </p>
+                    ))}
+                  </div>
+                </details>
+              )}
             </li>
           );
         })}
