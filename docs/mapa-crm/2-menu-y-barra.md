@@ -12,6 +12,8 @@ Lo que se ve en todas las pantallas.
 
 ![Aviso de actualización en la barra de arriba](00-aviso-actualizacion.png)
 
+![Pantalla de «cargando» al tocar una pestaña (Embudo)](00-cargando.png)
+
 | # | Nombre oficial | Qué hace | Quién lo ve |
 |---|---|---|---|
 | 1 | **Menú lateral** | Lista de pestañas: Dashboard, Bandeja, Embudo, Mensajes rápidos, Anuncios, Agente IA, Automatización, **Seguimientos** (desde el 8-oct-2026), Configuración. Desde el 14-oct-2026 cada pestaña lleva su **ícono**, que hace un gesto corto **una sola vez** al pasar el cursor (o al llegar con Tab), como en Zernio: Dashboard, los cuadros aparecen uno por uno · Bandeja, brincan los puntitos de «escribiendo» · Embudo, cae una gota · Mensajes rápidos, se dibuja el rayo · Anuncios, se sacude el megáfono · Agente IA, parpadean las chispas · Automatización, se traza la conexión · Seguimientos, gira la estrella · Configuración, gira el engrane. Con «Reducir movimiento» en la computadora no se mueven. | Todos (Configuración solo Owner y Admin) |
@@ -28,6 +30,7 @@ Lo que se ve en todas las pantallas.
 | 12 | **Cerrar sesión** (naranja) | Ahora sí sale del CRM (dice «Saliendo…» mientras). Al salir se borran los **borradores** de los chats guardados en ese equipo (ver Borrador del chat en el Glosario; 29-oct-2026). | Todos |
 | 13 | **Aviso de actualización** | Píldora en la barra azul: **«Hay una nueva actualización del CRM: recarga la página»** con el botón naranja **Recargar**. Sale **solo** cuando falló algo que hizo el vendedor (enviar, guardar, adjuntar, abrir un PDF…) porque su pestaña es de antes de una actualización del CRM. **Nunca** sale solo por haber versión nueva, ni por un refresco automático que falló (mensajes nuevos, programados). Donde falló, el mensaje propio también lo dice en la burbuja al enviar, la foto HEIC, el PDF del visor y Mensajes rápidos; las demás pantallas conservan su mensaje. Se quita al recargar. En celular baja como franja azul debajo de la barra (Versión móvil › 13). | Todos |
 | 14 | **Cinta del clima** | Franja que corre **siempre** de derecha a izquierda en la barra azul, entre el logo y el correo, con el clima **medido** de las 24 ciudades de México donde más llueve: **icono** (lo que pasa ahora: sol o luna, medio nublado, nublado, niebla, llovizna, lluvia o tormenta), **ciudad**, **grados** y **lluvia de las últimas 24 h** en mm (si no llovió, no se pone nada: nunca «0 mm»). Donde está cayendo agua, el icono va en **naranja** y la ciudad pasa al frente. **Nada la detiene** (ni el mouse) y no se le da clic. Grados e icono: el aeropuerto de la ciudad; milímetros: el observatorio del SMN-Conagua. Se actualiza **cada hora** y solo sale de **lunes a sábado de 9:00 a 19:00** (hora de Mazatlán) y en computadora (en el celular no). Una ciudad cuyo dato no es reciente o no cuadra entre el aeropuerto y el observatorio no sale esa hora. Si aparece el aviso de actualización (13), la cinta le cede el lugar. Desde el 2-oct-2026. | Todos |
+| 15 | **Pantalla de «cargando»** | Al tocar una pestaña del menú sale **al instante** la forma gris de esa pantalla (la Bandeja con su lista, el Embudo con sus columnas, el Dashboard con sus tarjetas; las demás, título y lista) mientras llegan sus datos; cuando llegan, se cambia sola por la pantalla real. Antes el clic no mostraba nada hasta tener la página completa. Con «Reducir movimiento» las formas no parpadean. Desde el 31-oct-2026. | Todos |
 
 **En celular** (pantalla de menos de 768 px) el menú lateral se esconde y la barra lleva un botón ☰ que abre el
 mismo menú en un cajón; ver [Versión móvil](3.10-version-movil.md#310-versión-móvil-celular).
@@ -44,4 +47,4 @@ mismo menú en un cajón; ver [Versión móvil](3.10-version-movil.md#310-versi�
 `sign-out-confirm.tsx` (globo 10–12), `components/theme-toggle.tsx` (píldora), `theme-circle-transition.ts` (círculo),
 `theme-sky-effects.ts` (efectos del cielo); estilos en `app/globals.css` › «Interruptor de tema»; aviso de actualización (13): `update-notice.tsx`, `lib/version/` y
 `app/api/version/route.ts`; cinta del clima (14): `clima-cinta.tsx`, `lib/clima/` (worker: `sync.ts`; foto en Redis) y
-`app/globals.css` › «Cinta del clima»; detalle en `docs/clima.md`.</sub>
+`app/globals.css` › «Cinta del clima»; detalle en `docs/clima.md`; pantalla de «cargando» (15; el 14 lo tiene la cinta del clima, aún en staging): `_components/esqueleto.tsx` y el `loading.tsx` de cada sección (con él, Next también precarga la sección; guion de captura `notas/capturas-mapa/capture-cargando.mjs`).</sub>

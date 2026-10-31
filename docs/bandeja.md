@@ -502,6 +502,11 @@ devolvía la página completa (~600 KB). Reglas desde entonces:
   También: «marcar leído» de un chat ya leído sale sin abrir transacción ni bloquear la fila, volver
   a la pestaña marca leído una sola vez (no por `visibilitychange` y `focus`), y la franja roja de
   envíos fallidos no consulta con la pestaña oculta.
+- **Pantalla de «cargando» por sección** (31-oct-2026, auditoría de velocidad B3): cada sección del menú tiene su
+  `loading.tsx` con un esqueleto de sus mismas medidas (`app/(app)/_components/esqueleto.tsx`; Mapa › Menú › 15).
+  Sin `loading.tsx` Next NO precarga las pantallas dinámicas y el clic no mostraba nada hasta tener la página
+  completa (`node_modules/next/dist/docs/01-app/02-guides/prefetching.md`). Medido en una copia compilada con 80 ms
+  por viaje: el esqueleto sale a los 5–19 ms del clic y la pantalla a los ~300 ms. Sección nueva = su `loading.tsx`.
 - **Acciones lentas en el log** (`lib/monitoring/slow-actions.ts`): toda Server Action que tarde
   ≥ 1 s (medida desde `requireActiveMembership()` hasta que termina su respuesta) sale en los logs
   del web como `[lenta] agente-actividad › getAgentActivity 2310 ms · /embudo`: archivo, acción,
