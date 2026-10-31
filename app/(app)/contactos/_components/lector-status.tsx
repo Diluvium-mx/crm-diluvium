@@ -15,7 +15,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useTheme } from "next-themes";
 import { ThinkingOrb, type OrbState } from "thinking-orbs";
-import { getLectorStatus } from "@/lib/actions/agente-lector";
+import { leer } from "@/lib/inbox/leer";
 import type { LectorStatusView } from "@/lib/agente-ia/lector-status-store";
 import { useInboxStream } from "../../dashboard/_components/use-inbox-stream";
 
@@ -63,7 +63,7 @@ export function LectorStatusLine({ contactId }: { contactId: string }) {
   // Solo aplica la respuesta del último pedido (y nunca la de otro contacto).
   const load = useCallback(async () => {
     const mine = ++seq.current;
-    const data = await getLectorStatus(contactId);
+    const data = await leer("getLectorStatus", contactId);
     if (mine !== seq.current) return;
     conversationIds.current = data?.conversationIds ?? [];
     const at = Date.now();

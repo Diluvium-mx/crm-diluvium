@@ -13,6 +13,7 @@ export function SendFailuresBanner({ initial }: { initial: string[] }) {
   const [lines, setLines] = useState(initial);
   useEffect(() => {
     const id = setInterval(() => {
+      if (document.visibilityState !== "visible") return; // pestaña oculta: no hace fila con las acciones
       loadSendFailureLines()
         .then(setLines)
         .catch(() => undefined); // sin conexión: se queda lo último que se vio

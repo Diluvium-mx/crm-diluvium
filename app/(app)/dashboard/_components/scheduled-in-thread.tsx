@@ -7,9 +7,9 @@
 import { useCallback, useEffect, useState } from "react";
 import {
   cancelScheduledMessage,
-  listScheduledMessages,
   retryScheduledMessage,
 } from "@/lib/actions/scheduled";
+import { leer } from "@/lib/inbox/leer";
 import { SCHEDULE_TIME_ZONE } from "@/lib/scheduled/rules";
 import type { ScheduledView } from "@/lib/scheduled/types";
 import { ScheduleForm } from "./schedule-form";
@@ -47,7 +47,7 @@ export function ScheduledInThread({
 
   const load = useCallback(async () => {
     try {
-      const next = await listScheduledMessages(conversationId);
+      const next = await leer("listScheduledMessages", conversationId);
       setItems(next);
       onCountChange?.(next.length);
     } catch {

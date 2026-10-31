@@ -440,6 +440,14 @@ export async function markConversationReadForOrg(
   conversationId: string,
   upToMessageId?: string | null,
 ): Promise<boolean> {
+  // Ya leída (lo más común al abrir un chat o volver a la pestaña): nada que recalcular, y sin el bloqueo
+  // de la fila, que compite con la llegada de mensajes. Lo que entre después sí cuenta como no leído.
+  const [current] = await db
+    .select({ unreadCount: conversations.unreadCount })
+    .from(conversations)
+    .where(and(eq(conversations.id, conversationId), eq(conversations.organizationId, organizationId)));
+  if (!current) return false;
+  if (current.unreadCount === 0) return true;
   return db.transaction(async (tx) => {
     const [conversation] = await tx
       .select({ id: conversations.id, unreadCount: conversations.unreadCount })

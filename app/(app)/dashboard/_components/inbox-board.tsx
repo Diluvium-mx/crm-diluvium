@@ -5,14 +5,8 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import type { ConversationDetail, ConversationListItem, InboxFilter } from "@/lib/inbox/types";
 import type { TemperatureFilter } from "@/lib/contacts/filters";
-import {
-  getConversation,
-  getConversationByContact,
-  getConversationItems,
-  listConversations,
-  markConversationRead,
-  setConversationUnread,
-} from "@/lib/inbox/actions";
+import { getConversationByContact, listConversations, markConversationRead, setConversationUnread } from "@/lib/inbox/actions";
+import { leer, olvidarPrecarga, precargarChat } from "@/lib/inbox/leer";
 import { setContactDestacado, updateContactTemperature } from "@/lib/actions/contacts";
 import type { Temperature } from "../../contactos/_data/types";
 import { usePersistentToggle } from "@/components/ui/use-persistent-toggle";
@@ -176,7 +170,7 @@ export function InboxBoard({ openContactId = null }: { openContactId?: string | 
       for (const id of ids) latestRequestRef.current.set(id, seq);
       let items: ConversationListItem[];
       try {
-        items = await getConversationItems(ids, params());
+        items = await leer("getConversationItems", ids, params());
       } catch {
         // Fallo transitorio (red, deploy): nada se descarta. Este lote y los
         // que faltaban vuelven a la cola y se reintentan en 2 s.
@@ -212,7 +206,7 @@ export function InboxBoard({ openContactId = null }: { openContactId?: string | 
   }, [scheduleUpdate]);
 
   const refreshDetail = useCallback(async (id: string) => {
-    const next = await getConversation(id);
+    const next = await leer("getConversation", id);
     // Evita pisar el detalle si el usuario ya cambió de conversación.
     if (selectedIdRef.current === id) setDetail(next);
   }, []);
@@ -260,6 +254,9 @@ export function InboxBoard({ openContactId = null }: { openContactId?: string | 
 
   // Tiempo real (el mismo hook que el chat del pop-up de Contactos).
   useInboxStream((event) => {
+    // Lo precargado al abrir ese chat (o de ese contacto) ya puede estar viejo: sus piezas leen de nuevo.
+    if ("conversationId" in event) olvidarPrecarga(event.conversationId);
+    if ("contactId" in event) olvidarPrecarga(event.contactId);
     if (event.type === "contact.deleted") {
       // Lo está borrando la ventana de ESTA pestaña: ella lo quita al cerrarse (con su resultado a la vista).
       if (isDeletingHere(event.contactId)) {
@@ -323,12 +320,14 @@ export function InboxBoard({ openContactId = null }: { openContactId?: string | 
 
   // Al volver a la pestaña con una conversación abierta, marcar leído lo que
   // haya llegado mientras estuvo en segundo plano (hasta el último entrante).
+  // Volver dispara «visibilitychange» y «focus» casi juntos: una sola marca.
   useEffect(() => {
+    let lastMarkAt = 0;
     const onVisible = () => {
       const id = selectedIdRef.current;
-      if (id && tabVisible()) {
-        void markConversationRead(id).then(() => scheduleUpdate(id));
-      }
+      if (!id || !tabVisible() || Date.now() - lastMarkAt < 1_000) return;
+      lastMarkAt = Date.now();
+      void markConversationRead(id).then(() => scheduleUpdate(id));
     };
     document.addEventListener("visibilitychange", onVisible);
     window.addEventListener("focus", onVisible);
@@ -342,10 +341,19 @@ export function InboxBoard({ openContactId = null }: { openContactId?: string | 
     setSelectedId(id);
     setDetail(null);
     setMobileDetailOpen(false);
-    void refreshDetail(id);
-    // Abrir la conversación la marca como leída; limpia el contador optimista.
+    // Todo lo que piden las piezas del chat al montarse, en UN viaje (antes ~10 en fila). Lo del
+    // contacto solo si su Detalle se ve (escritorio con el panel abierto).
+    const contactId = conversationsRef.current.find((c) => c.id === id)?.contact.id ?? null;
+    const detailShown = contactOpen && window.matchMedia("(min-width: 768px)").matches;
+    precargarChat(id, detailShown ? contactId : null);
+    // Abrir la conversación la marca como leída; limpia el contador optimista. La marca va
+    // DESPUÉS de las lecturas: las acciones de la pestaña van en fila y no debe ir delante.
     setConversations((current) => current.map((c) => (c.id === id ? { ...c, unreadCount: 0 } : c)));
-    void markConversationRead(id).then(() => scheduleUpdate(id));
+    void refreshDetail(id)
+      .catch(() => undefined)
+      .then(() => markConversationRead(id))
+      .then(() => scheduleUpdate(id))
+      .catch(() => undefined);
   }
 
   // Abrir el chat de un contacto (clic en el aviso de cambio de etapa). Si aún no
