@@ -20,7 +20,8 @@
 import Link from "next/link";
 import { Pencil } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
-import { getContactDetails, setNumEntradas, updateContactQualification } from "@/lib/actions/contact-qualification";
+import { setNumEntradas, updateContactQualification, type getContactDetails } from "@/lib/actions/contact-qualification";
+import { leer } from "@/lib/inbox/leer";
 import { createSerialSaves } from "@/lib/autosave/serial-saves";
 import { trackSaves } from "@/lib/autosave/tracked-saves";
 import { useInboxStream } from "../../dashboard/_components/use-inbox-stream";
@@ -266,7 +267,7 @@ export function ContactDetails({
     clearTimeout(state.timer);
     state.timer = undefined;
     try {
-      const next = await getContactDetails(contactId);
+      const next = await leer("getContactDetails", contactId);
       if (seq !== state.seq) return;
       applyDetails(next);
       state.failed = false;
@@ -300,7 +301,7 @@ export function ContactDetails({
       "numEntradas",
       async () => {
         await write?.();
-        return getContactDetails(contactId);
+        return leer("getContactDetails", contactId);
       },
       { lane: "entradas", droppable: !write },
     );
@@ -381,7 +382,7 @@ export function ContactDetails({
 
   async function liveRefresh() {
     const snap = tracker.snapshot();
-    const outcome = await saves.save("live", () => getContactDetails(contactId));
+    const outcome = await saves.save("live", () => leer("getContactDetails", contactId));
     if (outcome.status === "failed" && outcome.latest) {
       liveRetry.current.ms = Math.min(liveRetry.current.ms ? liveRetry.current.ms * 2 : 5_000, 60_000);
       if (!liveTimer.current) {

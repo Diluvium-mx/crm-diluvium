@@ -5,7 +5,7 @@
 // del agente para el vendedor, intercalados en el hilo (discretos, sin acción). Se
 // recarga con cada evento SSE de la conversación (refreshToken), igual que los programados.
 import { useCallback, useEffect, useRef, useState } from "react";
-import { getConversationAgent } from "@/lib/actions/agente-conversacion";
+import { leer } from "@/lib/inbox/leer";
 import type { AgentNoticeView, AgentThreadView } from "@/lib/agente-ia/types";
 import { agentStatusLabel } from "@/lib/agente-ia/labels";
 import { EVENT_BATCH_MS } from "./chat-events";
@@ -18,7 +18,7 @@ export function useConversationAgent(conversationId: string, refreshToken: numbe
   const [agent, setAgent] = useState<AgentThreadView | null>(null);
   const load = useCallback(async () => {
     try {
-      setAgent(await getConversationAgent(conversationId));
+      setAgent(await leer("getConversationAgent", conversationId));
     } catch {
       // Silencioso: el siguiente evento lo intenta de nuevo.
     }

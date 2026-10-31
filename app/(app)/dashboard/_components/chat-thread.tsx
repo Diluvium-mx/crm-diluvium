@@ -5,6 +5,7 @@ import { ArrowLeft, ChevronDown, ChevronUp, Search } from "lucide-react";
 import type { AdReferral, AttachmentView, ConversationDetail, MessageView } from "@/lib/inbox/types";
 import { useFunnelStages } from "../../_components/funnel-stages-provider";
 import { listChatMatches, listMessages, retryMessage, sendMessage, sendTemplate } from "@/lib/inbox/actions";
+import { leer, PAGINA_CHAT } from "@/lib/inbox/leer";
 import { mensajeDeFalla } from "@/lib/version/client";
 import { MENSAJE_ACTUALIZACION } from "@/lib/version/rules";
 import { runWorkflowCommand } from "@/lib/actions/workflows";
@@ -45,7 +46,7 @@ import { isViewerOpenable } from "@/lib/inbox/viewer";
 import { timePhrase } from "@/lib/followups/time-phrase";
 import { zoneForPhone } from "@/lib/followups/timezone";
 
-const PAGE_LIMIT = 30;
+const PAGE_LIMIT = PAGINA_CHAT;
 // Distancia al tope (px) a la que se cargan solos los mensajes anteriores, y al
 // fondo para considerar que el vendedor "está abajo" (los nuevos lo siguen).
 const LOAD_OLDER_AT_PX = 120;
@@ -436,7 +437,7 @@ export function ChatThread({
     setLoading(true);
     setLoadError(null);
     try {
-      const page = await listMessages(conversationId, { limit: PAGE_LIMIT });
+      const page = await leer("listMessages", conversationId, { limit: PAGE_LIMIT });
       if (!page) {
         setLoadError("No se pudo cargar la conversación.");
         return;
