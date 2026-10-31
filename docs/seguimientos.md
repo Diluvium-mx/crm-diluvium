@@ -750,9 +750,15 @@ prototipos (tamaño real y ampliado) antes de construirlas; el dueño aprobó la
   robot despierto (`normal`) de la píldora y el del encabezado de su ventana (ahora también SVG en línea, 30 px) siguen el
   cursor por toda la ventana: los ojos se mueven dentro del visor y la cabeza se inclina hasta 9°. El dormido y el de ojos
   en X no miran; tampoco en el celular (sin cursor) ni con «reducir movimiento». Al tocar la píldora se aplasta y el robot
-  brinca y cae (0.62 s); con una escena en curso no brinca (la escena manda). Un solo escucha del cursor para todos los
+  brinca y cae (0.49 s, salto de 8 px); con una escena en curso no brinca (la escena manda). Un solo escucha del cursor para todos los
   robots (`robot-mirada.ts`, con pruebas) y `app/globals.css` › «Mirada del robot». La píldora gris (dormido y Cancelado)
   lleva el borde `border-border`, el mismo de ⚡ 📄 📎 (pedido del dueño el mismo día: el gris de antes se veía casi negro).
+- **La ventana sale de la píldora** (30-oct-2026): con el brinco de 620 ms y la ventana apareciendo de golpe, el robot seguía
+  brincando con la ventana ya abierta. El dueño midió en `notas/robot-mirada/velocidad.html` (ventana de Mac, sale de la
+  píldora, genio) y eligió: brinco 490 ms y 8 px; la ventana **sale de la píldora** en 310 ms (nace al 20 % y transparente,
+  rebota a 103 %) y al cerrarla con la píldora, la ✕ o Esc regresa a ella en 260 ms; abrir ⚡, plantillas u otra caja la
+  quita de golpe. Si se vuelve a abrir a medio cerrar, sigue desde el mismo cuadro. Mientras se cierra no se puede tocar.
+  Código: `ventana-de-pildora.tsx` (envuelve a `FollowUpPanel` en el composer) y `followUpCerrando` en `composer.tsx`.
 
 ---
 

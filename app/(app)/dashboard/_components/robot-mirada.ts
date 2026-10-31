@@ -83,7 +83,9 @@ export function useMirada(robot: RefObject<HTMLElement | null>, activa: boolean)
   }, [robot, activa]);
 }
 
-export const BRINCO_MS = 620;
+// 490 ms y 8 px (30-oct-2026, el dueño los midió en notas/robot-mirada/velocidad.html: con 620 ms el robot seguía
+// brincando con la ventana ya abierta).
+export const BRINCO_MS = 490;
 
 /** Al tocar la píldora: se aplasta contra el piso y el robot brinca y cae aplastándose un poco. */
 export function brincar(pildora: HTMLElement, robot: Element | null) {
@@ -103,7 +105,7 @@ export function brincar(pildora: HTMLElement, robot: Element | null) {
     [
       { transform: "none", transformOrigin: piso },
       { transform: "translateY(1px) scale(1.12, 0.84)", transformOrigin: piso, offset: 0.15 },
-      { transform: "translateY(-10px) scale(0.9, 1.12)", transformOrigin: piso, offset: 0.45 },
+      { transform: "translateY(-8px) scale(0.9, 1.12)", transformOrigin: piso, offset: 0.45 },
       { transform: "scale(1.16, 0.84)", transformOrigin: piso, offset: 0.8 },
       { transform: "none", transformOrigin: piso },
     ],
