@@ -146,7 +146,8 @@ export function Composer({
   const bajaAlert = followUp?.estado === "baja" && bajaDismissed !== followUp.contactId && !bajaAlreadySeen(followUp.contactId);
   const followUpPanelOpen = (followUpOpen || bajaAlert) && followUp !== null;
   // Mientras regresa a la píldora (30-oct-2026, ventana-de-pildora.tsx): la píldora, la ✕ y Esc la cierran con
-  // animación; abrir ⚡, plantillas u otra caja la quita de golpe (lo nuevo ocupa su lugar).
+  // animación; abrir ⚡, plantillas u otra caja la quita de golpe. Flota sobre el chat (31-oct-2026): no ocupa lugar
+  // en la caja blanca, por eso la caja no crece ni se encoge.
   const [followUpCerrando, setFollowUpCerrando] = useState(false);
   const closeFollowUp = () => {
     if (followUpPanelOpen) setFollowUpCerrando(true);
@@ -417,7 +418,7 @@ export function Composer({
 
   if (!windowOpen) {
     return (
-      <div className="border-t bg-card p-3 pb-[max(0.75rem,env(safe-area-inset-bottom))]">
+      <div className="relative border-t bg-card p-3 pb-[max(0.75rem,env(safe-area-inset-bottom))]">
         {followUpPanel}
         {!scheduleOpen && !templateOpen && keptDraftNotice}
         {scheduleOpen ? (
@@ -464,7 +465,7 @@ export function Composer({
   }
 
   return (
-    <div className="border-t bg-card p-3 pb-[max(0.75rem,env(safe-area-inset-bottom))]">
+    <div className="relative border-t bg-card p-3 pb-[max(0.75rem,env(safe-area-inset-bottom))]">
       {scheduleForm}
       {followUpPanel}
       {snippetOpen && (
