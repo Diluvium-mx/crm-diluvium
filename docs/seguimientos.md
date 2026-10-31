@@ -759,6 +759,12 @@ prototipos (tamaño real y ampliado) antes de construirlas; el dueño aprobó la
   rebota a 103 %) y al cerrarla con la píldora, la ✕ o Esc regresa a ella en 260 ms; abrir ⚡, plantillas u otra caja la
   quita de golpe. Si se vuelve a abrir a medio cerrar, sigue desde el mismo cuadro. Mientras se cierra no se puede tocar.
   Código: `ventana-de-pildora.tsx` (envuelve a `FollowUpPanel` en el composer) y `followUpCerrando` en `composer.tsx`.
+- **La ventana flota sobre el chat** (31-oct-2026): iba DENTRO de la caja blanca del composer y la animación solo movía
+  la ventana: al abrir, la caja crecía de golpe (de 89 a 324 px en un cuadro) y los mensajes brincaban; al cerrar, el
+  hueco blanco se quedaba los 260 ms y se iba de golpe. La maqueta flotaba encima, por eso ahí se veía bien. El dueño
+  comparó en la misma maqueta «como hoy», «el fondo crece con ella» y «flota sobre el chat» y eligió **flotar**: la ventana
+  va encima del historial (`absolute`, a lo ancho de la caja, 8 px arriba de ella, `z-20`); la caja y los mensajes no se
+  mueven y, abierta, tapa los últimos mensajes. Brinco y tiempos, iguales.
 
 ---
 

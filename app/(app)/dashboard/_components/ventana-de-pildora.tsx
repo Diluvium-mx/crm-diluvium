@@ -5,6 +5,9 @@
 // que salen de un botón). Nace en la píldora con un pequeño rebote; al cerrar se encoge hacia ella y se desvanece. Si se
 // vuelve a abrir a medio cerrar, sigue desde donde iba. Solo movimiento: lo de adentro es FollowUpPanel. Con «reducir
 // movimiento» aparece y se va de golpe, como antes.
+// Flota sobre el chat (31-oct-2026, el dueño lo eligió en la misma maqueta): va encima del historial, justo arriba de la
+// caja para escribir, sin empujar nada. Antes iba dentro de la caja blanca del composer, que crecía y se encogía de golpe
+// al abrir y al cerrar (y los mensajes brincaban). El composer que la contiene lleva `relative`.
 import { useEffect, useLayoutEffect, useRef, type ReactNode } from "react";
 
 export const VENTANA_ABRE_MS = 310;
@@ -58,9 +61,10 @@ export function VentanaDePildora({ cerrando, onCerrada, children }: { cerrando: 
     };
   }, [cerrando]);
 
-  // Mientras regresa a la píldora ya no se puede tocar nada adentro.
+  // Encima del historial, a lo ancho de la caja para escribir (su mb-2 la separa de la orilla). Mientras regresa a la
+  // píldora ya no se puede tocar nada adentro.
   return (
-    <div ref={ventana} className={cerrando ? "pointer-events-none" : undefined}>
+    <div ref={ventana} className={`absolute inset-x-3 bottom-full z-20 ${cerrando ? "pointer-events-none" : ""}`}>
       {children}
     </div>
   );
