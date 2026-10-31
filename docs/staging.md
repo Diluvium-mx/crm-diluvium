@@ -110,10 +110,17 @@ solo al abrir la Bandeja (`asegurarClienteDePrueba`) y su ventana de 24 h nunca 
 nunca pide plantilla. Arriba de la caja, solo en su chat, está la barra 🧪:
 
 - **Escribe como el cliente…** + **Mandar como cliente**: el mensaje entra por el mismo camino que un webhook de Zernio
-  (`webhook_events` + cola de entrantes), así que el Agente IA (modelos reales: unos centavos por prueba), el lector, los
-  workflows por palabra clave y los seguimientos se comportan igual que con un cliente de verdad.
+  (`webhook_events` + cola de entrantes), así que el Agente IA (modelos reales: unos centavos por prueba), los workflows
+  por palabra clave y los seguimientos se comportan igual que con un cliente de verdad (el lector, sin IA: abajo).
 - Lo que se le manda (vendedor, ⚡, Agente IA, workflows, archivos) se marca como enviado **sin llamar a Zernio**
   (`conSimulador` en `lib/messaging/index.ts`): nada sale a WhatsApp.
+- **Su seguimiento no gasta IA** (30-oct-2026, pedido del dueño): el lector lee su chat SIN llamar al modelo
+  (`lib/ai/runtime/lector-simulado.ts`) y siempre arma el mismo seguimiento de ejemplo («Ejemplo sin IA (Cliente de
+  prueba): …», caso cotización sin respuesta, borrador «¿Pudo revisar la cotización que le compartimos?»), también con
+  **Despertar**. Su fila de `ai_usage` queda con 0 tokens, costo US$0 y la nota «cliente de prueba: sin IA». No llena el
+  Detalle ni mueve la etapa. Así se prueba todo el seguimiento (píldora, ventana, Cambiar hora, Editar mensaje, Cancelar,
+  Reactivar, el envío simulado) sin costo; lo que la IA decidiría en un chat real se ve con clientes reales. Las
+  respuestas del Agente IA al Cliente de prueba siguen con el modelo real.
 - **Empezar de nuevo**: borra su chat, Detalle y seguimientos y lo deja como nuevo (el Agente IA lee todo el chat; para
   probar una venta desde cero hay que empezar limpio).
 

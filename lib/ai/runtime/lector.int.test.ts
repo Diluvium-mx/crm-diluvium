@@ -326,6 +326,33 @@ describe.skipIf(!TEST_DATABASE_URL)("Lector en segundo plano (Postgres real)", (
     expect((await db.select().from(s.followUps))[0]).toMatchObject({ status: "cancelado", cancelReason: "cliente_escribio" });
   });
 
+  it("Cliente de prueba de staging (30-oct-2026): se lee SIN IA (nunca llama al modelo, ni sin llave) y arma el seguimiento de ejemplo con costo 0", async () => {
+    const { SIMULADOR } = await import("@/lib/messaging/simulador");
+    const { FICHA_DE_PRUEBA } = await import("./lector-simulado");
+    await db.update(s.channels).set({ aiAgentMode: "auto", providerAccountId: SIMULADOR.accountId }).where(d.eq(s.channels.id, "ch_lector"));
+    await msg("in", "¿Cuánto cuesta?", ago(30 * MIN));
+    await msg("out", "La estándar queda en $5,500.", ago(29 * MIN), "ai_agent");
+    const t = deps(new Error("el Cliente de prueba no debe llamar al modelo"));
+    const out = await lector.runLector(ORG, CONV, { ...t.deps, isModelAvailable: () => false });
+    expect(out.kind).toBe("leido");
+    expect(t.calls).toHaveLength(0);
+    const [f] = await db.select().from(s.followUps);
+    expect(f).toMatchObject({ caso: "cotizacion_sin_respuesta", status: "programado", intento: 1, borrador: FICHA_DE_PRUEBA.borrador });
+    const [u] = await db.select().from(s.aiUsage);
+    expect(u).toMatchObject({ stage: "detalle", inputTokens: 0, outputTokens: 0 });
+    expect(Number(u.costUsd ?? 0)).toBe(0);
+    expect(u.error).toMatch(/^cliente de prueba: sin IA/);
+    // El Detalle y la etapa no se tocan.
+    expect(await contact()).toMatchObject({ tieneInundaciones: null, montoCotizacion: null, stage: "inbox" });
+
+    // «Despertar» con el último mensaje del cliente: también sin IA y con la ficha de ejemplo.
+    await msg("in", "Lo platico y le aviso", ago(MIN));
+    const despierta = deps(new Error("el Cliente de prueba no debe llamar al modelo"));
+    expect((await lector.runLector(ORG, CONV, despierta.deps, { force: true, despertar: true })).kind).toBe("leido");
+    expect(despierta.calls).toHaveLength(0);
+    expect((await db.select().from(s.followUps)).some((x) => x.status === "programado" && x.caso === "cotizacion_sin_respuesta")).toBe(true);
+  });
+
   it("ya compró en Amazon (27-oct-2026): después de pedirle la reseña no le sale un seguimiento de venta aunque el modelo lo arme", async () => {
     await db.update(s.channels).set({ aiAgentMode: "auto" }).where(d.eq(s.channels.id, "ch_lector"));
     await msg("in", "Ya la encargué en Amazon, gracias", ago(40 * MIN));
