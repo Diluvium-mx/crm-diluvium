@@ -485,6 +485,23 @@ devolvía la página completa (~600 KB). Reglas desde entonces:
   se va un mensaje (no con un cambio de estado), y la consulta de la píldora cada 2 s espera a que
   conteste la anterior. Medido con la misma secuencia (un saliente con sus 3 estados + un entrante):
   51 → 31 llamadas.
+- **Lote de lecturas** (31-oct-2026, auditoría de velocidad B1/B2; `lib/inbox/leer.ts`): las piezas
+  del chat (Bandeja y pop-up del Embudo) leen con `leer("nombre", …)` en vez de llamar su Server Action
+  suelta. Lo que se pide casi junto (10 ms) viaja en UNA acción (`leerLote`, `lib/inbox/lecturas-actions.ts`)
+  que el servidor corre en paralelo (`lib/inbox/lote-servidor.ts`), y solo hay un viaje de lecturas en la
+  fila a la vez (lo que llega mientras tanto se junta para el siguiente): un clic espera a lo más ese
+  viaje. Al abrir un chat de la Bandeja se precarga de un jalón todo lo que piden sus piezas
+  (`precargarChat`: encabezado, 30 mensajes, Agente IA, programados, seguimiento, actividad y, con el
+  Detalle a la vista, el Detalle, el Agente IA del contacto y el lector); cada pieza toma lo suyo al
+  montarse (una sola vez, hasta 5 s; un aviso en vivo de ese chat o contacto lo descarta) y «marcar
+  leído» sale después de las lecturas. Medido en una copia local con 80 ms por viaje (la distancia de
+  la oficina a los servidores): abrir un chat pasó de 15 acciones en fila (mensajes a los 0.99 s,
+  todo a los 1.42 s) a 6 (todo a los 0.13 s). Solo lecturas y solo las del registro
+  (`lib/inbox/lecturas.ts`, que también valida sus argumentos); escribir sigue yendo por su acción.
+  Una lectura de ≥ 1 s dentro del lote sale como `[lenta] lote › getContactDetails 1500 ms`.
+  También: «marcar leído» de un chat ya leído sale sin abrir transacción ni bloquear la fila, volver
+  a la pestaña marca leído una sola vez (no por `visibilitychange` y `focus`), y la franja roja de
+  envíos fallidos no consulta con la pestaña oculta.
 - **Acciones lentas en el log** (`lib/monitoring/slow-actions.ts`): toda Server Action que tarde
   ≥ 1 s (medida desde `requireActiveMembership()` hasta que termina su respuesta) sale en los logs
   del web como `[lenta] agente-actividad › getAgentActivity 2310 ms · /embudo`: archivo, acción,

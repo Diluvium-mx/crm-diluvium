@@ -267,6 +267,15 @@ describe.skipIf(!TEST_DATABASE_URL)("bandeja: lecturas y escrituras (Postgres re
     expect(conv.unreadCount).toBe(1);
   });
 
+  it("markConversationRead de un chat ya leído no cambia nada; de otra organización devuelve false", async () => {
+    const { convId } = await seedConversation({ lastMessageAt: "2026-09-18T10:00:00Z" });
+    await addMessage({ convId, direction: "in", sentAt: "2026-09-18T10:00:00Z" });
+    expect(await q.markConversationReadForOrg(ORG_A, convId)).toBe(true);
+    const [conv] = await db.select().from(s.conversations).where(eq(s.conversations.id, convId));
+    expect(conv.unreadCount).toBe(0);
+    expect(await q.markConversationReadForOrg(ORG_B, convId)).toBe(false);
+  });
+
   it("clic derecho: no leído pone al menos 1 (no baja lo que había), leído pone 0; aislado por organización", async () => {
     const { convId } = await seedConversation({ lastMessageAt: "2026-09-18T10:00:00Z" });
     const { convId: withUnread } = await seedConversation({ lastMessageAt: "2026-09-18T11:00:00Z", unread: 3 });

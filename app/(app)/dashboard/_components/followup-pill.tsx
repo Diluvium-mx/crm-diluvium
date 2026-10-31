@@ -35,13 +35,13 @@ import {
   chooseFollowUpTemplateAction,
   despertarSeguimiento,
   editFollowUpMessage,
-  getFollowUp,
   getFollowUpTemplateOptions,
   quitarSinSeguimientos,
   reactivarSeguimientos,
   rescheduleFollowUp,
   type FollowUpActionResult,
 } from "@/lib/actions/seguimientos";
+import { leer } from "@/lib/inbox/leer";
 import type { FollowUpDormido, FollowUpOff, FollowUpState, FollowUpView } from "@/lib/followups/view";
 import { followUpText } from "@/lib/followups/message";
 import { templateTitle } from "@/lib/templates/labels";
@@ -107,7 +107,7 @@ export function useFollowUp(conversationId: string): FollowUpHook {
   }
   const reload = useCallback(() => {
     const mine = ++seq.current;
-    void getFollowUp(conversationId).then((view) => {
+    void leer("getFollowUp", conversationId).then((view) => {
       if (mine !== seq.current) return;
       setFollowUp(view);
       if (soltarDesde.current !== null && mine >= soltarDesde.current) {

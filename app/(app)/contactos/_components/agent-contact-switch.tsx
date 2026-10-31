@@ -8,7 +8,8 @@
 // chat en dos canales (p. ej. el sandbox y el número de prueba) mostraba dos filas.
 // Si el canal está apagado en la pestaña Agente IA, no aplica.
 import { useCallback, useEffect, useRef, useState } from "react";
-import { getContactAgentStatus, reactivateAgent } from "@/lib/actions/agente-conversacion";
+import { reactivateAgent } from "@/lib/actions/agente-conversacion";
+import { leer } from "@/lib/inbox/leer";
 import { agentStatusLabel } from "@/lib/agente-ia/labels";
 import type { ContactAgentView } from "@/lib/agente-ia/types";
 import { BotOffMenu } from "../../dashboard/_components/bot-off-menu";
@@ -21,7 +22,7 @@ export function AgentContactSwitch({ contactId, conversationId }: { contactId: s
 
   const load = useCallback(async () => {
     try {
-      setRows(await getContactAgentStatus(contactId));
+      setRows(await leer("getContactAgentStatus", contactId));
     } catch {
       setRows([]);
     }

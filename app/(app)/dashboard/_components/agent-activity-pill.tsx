@@ -16,7 +16,7 @@
 import { useEffect, useRef, useState } from "react";
 import { useTheme } from "next-themes";
 import { ThinkingOrb, type OrbState } from "thinking-orbs";
-import { getAgentActivity } from "@/lib/actions/agente-actividad";
+import { leer } from "@/lib/inbox/leer";
 import type { AgentActivity } from "@/lib/agente-ia/activity";
 import { EVENT_BATCH_MS } from "./chat-events";
 
@@ -61,7 +61,7 @@ export function AgentActivityPill({
     let alive = true;
     const ask = async () => {
       if (document.visibilityState !== "visible") return;
-      const result = await getAgentActivity(conversationId);
+      const result = await leer("getAgentActivity", conversationId);
       if (alive) setActivity(result);
     };
     const delay = askedForRef.current === conversationId ? EVENT_BATCH_MS : 0;
@@ -90,7 +90,7 @@ export function AgentActivityPill({
       timer = setTimeout(() => {
         timer = undefined;
         inFlight = true;
-        getAgentActivity(conversationId)
+        leer("getAgentActivity", conversationId)
           .then((result) => {
             if (alive) setActivity(result);
           })
