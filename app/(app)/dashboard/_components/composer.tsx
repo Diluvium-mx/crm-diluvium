@@ -47,6 +47,7 @@ import { useIsMobile } from "@/components/ui/use-media-query";
 import { CloseX } from "@/components/ui/close-x";
 import { WorkflowPicker } from "./workflow-picker";
 import { bajaAlreadySeen, FollowUpPanel, FollowUpPill, markBajaSeen, useFollowUp } from "./followup-pill";
+import { VentanaDePildora } from "./ventana-de-pildora";
 import { SpellcheckOverlay } from "@/components/spelling/spellcheck-overlay";
 import { useComposerTextRequests } from "../../_components/composer-text";
 import { saveChatDraft, useSavedChatDraft } from "./use-chat-draft";
@@ -144,7 +145,11 @@ export function Composer({
   const [bajaDismissed, setBajaDismissed] = useState<string | null>(null);
   const bajaAlert = followUp?.estado === "baja" && bajaDismissed !== followUp.contactId && !bajaAlreadySeen(followUp.contactId);
   const followUpPanelOpen = (followUpOpen || bajaAlert) && followUp !== null;
+  // Mientras regresa a la píldora (30-oct-2026, ventana-de-pildora.tsx): la píldora, la ✕ y Esc la cierran con
+  // animación; abrir ⚡, plantillas u otra caja la quita de golpe (lo nuevo ocupa su lugar).
+  const [followUpCerrando, setFollowUpCerrando] = useState(false);
   const closeFollowUp = () => {
+    if (followUpPanelOpen) setFollowUpCerrando(true);
     setFollowUpOpen(false);
     if (followUp?.estado === "baja") {
       markBajaSeen(followUp.contactId);
@@ -157,6 +162,7 @@ export function Composer({
       return;
     }
     setFollowUpOpen(true);
+    setFollowUpCerrando(false);
     setSnippetOpen(false);
     setTemplateOpen(false);
     setWorkflowsOpen(false);
@@ -164,7 +170,11 @@ export function Composer({
     setScheduleOpen(false);
     setAttachMenuOpen(false);
   };
-  const followUpPanel = followUpPanelOpen && <FollowUpPanel followUp={followUp} onClose={closeFollowUp} onChanged={confirmar} onAnticipar={anticipar} onRevertir={revertir} />;
+  const followUpPanel = (followUpPanelOpen || followUpCerrando) && followUp !== null && (
+    <VentanaDePildora cerrando={!followUpPanelOpen} onCerrada={() => setFollowUpCerrando(false)}>
+      <FollowUpPanel followUp={followUp} onClose={closeFollowUp} onChanged={confirmar} onAnticipar={anticipar} onRevertir={revertir} />
+    </VentanaDePildora>
+  );
   const [snippets, setSnippets] = useState<SnippetView[] | null>(null);
   const [snippetsError, setSnippetsError] = useState(false);
   // Comandos de Automatización (Fase D): "/tabla", "/banco"… se listan bajo los
