@@ -26,6 +26,7 @@ Code sabe exactamente qué pieza tocar; no hace falta explicar nada más.
 | **Editar o borrar el Goal o las FAQs** (Agente IA › 13–27) | Es lo único que sigue el agente. Si algo sale mal, **Restaurar** (20) regresa una versión anterior. |
 | **Pausar al Agente IA cuando un vendedor contesta = No** (Agente IA › 30) | El agente seguiría contestando aunque un vendedor ya tomó el chat. |
 | **Tallas y medidas** (Agente IA › 40–46) | Cambia el tamaño sugerido en todos los contactos y lo que cotiza el agente. |
+| **Links de pago** (Agente IA › 98–109) | El Agente IA y los vendedores los mandan tal cual a los clientes: un link o monto equivocado cobra otra cantidad o no sirve, y los dos mensajes salen en cada link. Revisa «Así le llega al cliente» (104) antes de guardar. |
 | **Apagar o borrar un workflow o su archivo** (Automatización › 5, 38) | El agente deja de mandar ese material (tabla, datos bancarios, videos). |
 | **▷ Probar un workflow** (Automatización › 14) | Manda mensajes de verdad a la conversación elegida. |
 | **Crear o editar plantillas** (Mensajes rápidos › 19, 25) | Van a revisión de Meta y, mientras tanto, no se pueden mandar; la categoría cambia lo que cobra Meta. |

@@ -103,6 +103,24 @@ for env in production staging; do railway variable list -s crm-diluvium -e $env 
 
 Si los hashes de production y staging coinciden, **staging apunta a producción**: detén los deploys de staging.
 
+## Cliente de prueba (30-oct-2026, pedido del dueño)
+
+En la Bandeja de staging siempre está **«Cliente de prueba»** (canal «Simulador (staging)», marcado PRUEBA): se crea
+solo al abrir la Bandeja (`asegurarClienteDePrueba`) y su ventana de 24 h nunca cierra, así que la caja para escribir
+nunca pide plantilla. Arriba de la caja, solo en su chat, está la barra 🧪:
+
+- **Escribe como el cliente…** + **Mandar como cliente**: el mensaje entra por el mismo camino que un webhook de Zernio
+  (`webhook_events` + cola de entrantes), así que el Agente IA (modelos reales: unos centavos por prueba), el lector, los
+  workflows por palabra clave y los seguimientos se comportan igual que con un cliente de verdad.
+- Lo que se le manda (vendedor, ⚡, Agente IA, workflows, archivos) se marca como enviado **sin llamar a Zernio**
+  (`conSimulador` en `lib/messaging/index.ts`): nada sale a WhatsApp.
+- **Empezar de nuevo**: borra su chat, Detalle y seguimientos y lo deja como nuevo (el Agente IA lee todo el chat; para
+  probar una venta desde cero hay que empezar limpio).
+
+Solo existe donde `simuladorActivo()`: staging en Railway (`RAILWAY_ENVIRONMENT_NAME=staging`) o local sin Railway. En
+producción no se crea, no aparece la barra y la cuenta simulada no tiene nada especial. Su número (+52 668 000 0000) es
+de México: para probar el candado de lada extranjera hace falta un contacto con otra lada.
+
 ## Usuario semilla de staging
 
 > **Desde el Bloque C (28-sep-2026) esto ya NO corre contra staging:** `seed-user`, `seed-org`,

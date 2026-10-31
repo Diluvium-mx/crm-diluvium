@@ -32,10 +32,12 @@ import { GoalEditor } from "./goal-editor";
 import { ScheduledBanner } from "./schedule-controls";
 import { HistoryPanel } from "./history-panel";
 import { SizeRangesSection } from "./size-ranges-section";
+import { LinksPagoSection } from "./links-pago-section";
 import { StagesEditor } from "../../_components/stages-editor";
 import { useConfirm } from "./use-confirm";
 import { useLogoMotions } from "./use-logo-motions";
 import type { SizeRange } from "@/lib/contacts/sizes";
+import type { LinkPago, TextosLink } from "@/lib/agente-ia/links-pago";
 import type { FollowUpTableInput } from "@/lib/followups/tabla";
 import type { FollowUpTableLastChange } from "@/lib/actions/agente-ia-seguimientos";
 
@@ -162,12 +164,14 @@ type Dirty = Partial<Record<AgentSection, boolean>>;
 export function AgenteEditor({
   data,
   sizeRanges,
+  linksPago,
   followUps,
   initialSection,
   canSeeSellers,
 }: {
   data: AgentEditorView;
   sizeRanges: SizeRange[];
+  linksPago: { links: LinkPago[]; textos: TextosLink };
   followUps: { table: FollowUpTableInput; lastChange: FollowUpTableLastChange | null };
   initialSection: AgentSection;
   canSeeSellers: boolean;
@@ -187,6 +191,7 @@ export function AgenteEditor({
   const optionsDirty = useCallback((v: boolean) => markDirty("opciones", v), [markDirty]);
   const followUpsDirty = useCallback((v: boolean) => markDirty("seguimientos", v), [markDirty]);
   const sizesDirty = useCallback((v: boolean) => markDirty("tallas", v), [markDirty]);
+  const linksDirty = useCallback((v: boolean) => markDirty("links", v), [markDirty]);
   const stagesDirty = useCallback((v: boolean) => markDirty("etapas", v), [markDirty]);
   const anyDirty = Object.values(dirty).some(Boolean);
 
@@ -364,6 +369,12 @@ export function AgenteEditor({
         "tallas",
         <Section title="Tallas y medidas" hint="Qué tamaño corresponde a cada ancho de entrada, por línea (mini y estándar).">
           <SizeRangesSection initial={sizeRanges} onDirtyChange={sizesDirty} />
+        </Section>,
+      )}
+      {panel(
+        "links",
+        <Section title="Links de pago" hint="Los links de MercadoPago que el Agente IA manda cuando el cliente elige pagar con tarjeta.">
+          <LinksPagoSection initial={linksPago.links} textos={linksPago.textos} onDirtyChange={linksDirty} />
         </Section>,
       )}
       {panel(

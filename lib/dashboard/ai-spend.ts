@@ -2,9 +2,9 @@
 //
 // Desde el 1-oct-2026 los números salen de cada proveedor (lib/ai/billing, leídos cada 5 min por
 // el worker y guardados en ai_provider_billing), no de una estimación:
-// - Gasto de cada día = lo que reporta el proveedor, y nunca menos de lo que registró el CRM ese
-//   día en producción (ai_usage): así los últimos minutos que el proveedor aún no reporta ya
-//   cuentan. Días UTC, igual que la consola de cada proveedor.
+// - Gasto de cada día = lo que reporta el proveedor. Solo ayer y hoy, que el proveedor aún no
+//   termina de reportar, nunca baja de lo que registró el CRM en producción (ai_usage): así los
+//   últimos minutos ya cuentan. Días UTC, igual que la consola de cada proveedor.
 // - "En producción" = el registro del CRM (en Anthropic, desde el 1-oct, lo que cobró en el
 //   espacio Default); "Pruebas" = el resto (en Anthropic, el espacio "Pruebas").
 // - Saldo: xAI y OpenRouter lo dan directo; Anthropic y OpenAI no tienen API del saldo → recargas
@@ -14,7 +14,7 @@
 import { sql } from "drizzle-orm";
 import type { db as appDb } from "@/lib/db";
 import { ANTHROPIC_PRUEBAS_DESDE } from "@/lib/ai/billing/anthropic";
-import { monthStartUtc, round8 } from "@/lib/ai/billing/days";
+import { addDays, monthStartUtc, round8, utcDay } from "@/lib/ai/billing/days";
 import { PROVIDER_META } from "@/lib/ai/provider";
 import type { ProviderId } from "@/lib/ai/types";
 import type { BillingDay, BillingDays } from "@/lib/db/schema/ai-billing";
@@ -91,17 +91,33 @@ export function spendFrom(monthStart: string, firstTopups: readonly string[]): s
   return [monthStart, ...firstTopups].sort()[0];
 }
 
+// Primer día que el proveedor aún no termina de reportar: ayer UTC.
+export function recentFromDay(now: Date): string {
+  return addDays(utcDay(now), -1);
+}
+
 // Producción y pruebas de UN día. `crm` = lo que registró el CRM ese día; `rep` = lo que reportó
-// el proveedor (undefined si no hay lectura). PURO.
-export function splitDay(provider: string, day: string, crm: number, rep: BillingDay | undefined): { prod: number; tests: number } {
+// el proveedor (undefined si no hay lectura); `recentFrom` = recentFromDay(now). Desde ese día el
+// gasto nunca baja de lo que registró el CRM; antes manda el cobro del proveedor, aunque el CRM
+// diga más (el 7-oct-2026 Anthropic bajó la caché de Sonnet 5.5 y el cálculo del CRM se quedó
+// arriba). PURO.
+export function splitDay(
+  provider: string,
+  day: string,
+  crm: number,
+  rep: BillingDay | undefined,
+  recentFrom: string,
+): { prod: number; tests: number } {
   if (!rep) return { prod: crm, tests: 0 };
+  const floor = day >= recentFrom ? crm : 0;
   // Anthropic separa por espacio de trabajo desde que existe "Pruebas".
   if (provider === "anthropic" && day >= ANTHROPIC_PRUEBAS_DESDE && (rep.prod !== undefined || rep.pruebas !== undefined)) {
-    return { prod: Math.max(rep.prod ?? 0, crm), tests: rep.pruebas ?? 0 };
+    return { prod: Math.max(rep.prod ?? 0, floor), tests: rep.pruebas ?? 0 };
   }
   // Los demás (y Anthropic antes de "Pruebas"): lo que no registró el CRM es de pruebas.
-  const total = Math.max(rep.todo, crm);
-  return { prod: crm, tests: total - crm };
+  const total = Math.max(rep.todo, floor);
+  const prod = Math.min(crm, total);
+  return { prod, tests: total - prod };
 }
 
 // PURO: arma los números de cada proveedor a partir del gasto diario del CRM, la última lectura
@@ -116,6 +132,7 @@ export function summarizeProviders(input: {
   connected?: readonly string[];
 }): ProviderSpend[] {
   const monthEnd = nextMonthStart(input.monthStart);
+  const recentFrom = recentFromDay(input.now);
   const loadBy = new Map(input.loads.map((l) => [l.provider, l]));
   const billingBy = new Map((input.billing ?? []).filter((b) => b.fetchedAt).map((b) => [b.provider, b]));
   const errorBy = new Map((input.billing ?? []).map((b) => [b.provider, b.lastError]));
@@ -139,7 +156,7 @@ export function summarizeProviders(input: {
     let sinceFirst = 0;
     let all = 0;
     for (const day of allDays) {
-      const { prod, tests } = splitDay(provider, day, crmBy.get(day) ?? 0, snap?.days[day]);
+      const { prod, tests } = splitDay(provider, day, crmBy.get(day) ?? 0, snap?.days[day], recentFrom);
       all += prod + tests;
       if (day >= input.monthStart && day < monthEnd) {
         monthProd += prod;

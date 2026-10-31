@@ -4,7 +4,8 @@
 // Inserta el texto del fragmento en el borrador; el vendedor rellena las
 // variables {{nombre}} a mano antes de enviar. En el orden que el equipo acomoda
 // en Mensajes rápidos, con buscador y vista de lista o cuadrícula (se recuerda),
-// igual que 📄 Plantillas (26-oct-2026).
+// igual que 📄 Plantillas (26-oct-2026). Desde el 30-oct-2026 con dos pestañas: Mensajes rápidos y Links de
+// pago (links-pago-tab.tsx: el link y los datos de envío salen directo, no se insertan en la caja).
 import { useEffect, useMemo, useState } from "react";
 import { Search, X } from "lucide-react";
 import { listSnippets } from "@/lib/actions/snippets";
@@ -13,14 +14,25 @@ import { matchesSearch } from "@/lib/text/search";
 import { CloseX } from "@/components/ui/close-x";
 import { usePersistentToggle } from "@/components/ui/use-persistent-toggle";
 import { ViewToggle } from "@/components/ui/view-toggle";
+import { LinksPagoTab } from "./links-pago-tab";
+
+export type SnippetTab = "rapidos" | "links";
 
 export function SnippetPicker({
+  conversationId,
+  tab: initialTab = "rapidos",
+  linkId = null,
   onInsert,
   onClose,
 }: {
+  conversationId: string;
+  /** Pestaña con la que abre (el «/» abre Links de pago con un link ya elegido). */
+  tab?: SnippetTab;
+  linkId?: string | null;
   onInsert: (body: string) => void;
   onClose: () => void;
 }) {
+  const [tab, setTab] = useState<SnippetTab>(initialTab);
   const [snippets, setSnippets] = useState<SnippetView[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [query, setQuery] = useState("");
@@ -57,8 +69,26 @@ export function SnippetPicker({
       className="mb-2 flex max-h-[min(24rem,50cqh)] min-w-0 flex-col overflow-hidden rounded-lg border bg-background shadow-md"
     >
       <div className="flex shrink-0 items-center justify-between gap-2 border-b px-3 py-1.5">
-        <span className="truncate text-sm font-semibold text-brand-orange">⚡ Mensajes rápidos</span>
-        <ViewToggle grid={grid} onChange={setGrid} label="Vista de los mensajes rápidos" />
+        <div role="tablist" aria-label="Mensajes rápidos y links de pago" className="flex min-w-0 items-center gap-1">
+          {(
+            [
+              ["rapidos", "⚡ Mensajes rápidos"],
+              ["links", "Links de pago"],
+            ] as const
+          ).map(([id, label]) => (
+            <button
+              key={id}
+              type="button"
+              role="tab"
+              aria-selected={tab === id}
+              onClick={() => setTab(id)}
+              className={`truncate rounded-md px-2 py-1 text-sm ${tab === id ? "bg-brand-orange/10 font-semibold text-brand-orange" : "text-muted-foreground hover:text-foreground"}`}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
+        {tab === "rapidos" && <ViewToggle grid={grid} onChange={setGrid} label="Vista de los mensajes rápidos" />}
         <button
           type="button"
           onClick={onClose}
@@ -71,7 +101,9 @@ export function SnippetPicker({
         <CloseX size="sm" label="Cerrar mensajes rápidos" onClick={onClose} />
       </div>
       <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain p-3">
-        {error ? (
+        {tab === "links" ? (
+          <LinksPagoTab conversationId={conversationId} initialLinkId={linkId} onSent={onClose} />
+        ) : error ? (
           <p className="py-4 text-center text-sm text-brand-orange">{error}</p>
         ) : snippets === null ? (
           <p className="py-4 text-center text-sm text-muted-foreground">Cargando mensajes rápidos…</p>

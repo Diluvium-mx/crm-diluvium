@@ -2244,6 +2244,33 @@ describe.skipIf(!TEST_DATABASE_URL)("runtime del Agente IA (Postgres real)", () 
     expect(await contact()).toMatchObject({ montoCotizacion: "11000.00", customFields: { cotizacion_por: "agente" } });
   });
 
+  // ── Links de pago (30-oct-2026, lib/agente-ia/links-pago.ts) ──
+  it("link de pago: sale DESPUÉS del texto como otro mensaje del Agente IA, con el link exacto, y el contacto pasa a Cerca de compra; si no cuadra, un asesor", async () => {
+    const { replaceLinksPago } = await import("@/lib/agente-ia/links-pago-store");
+    const { mensajesLink } = await import("@/lib/agente-ia/links-pago");
+    const unaCompuerta = { nombre: "1 compuerta estándar", monto: 5500, cubre: "total" as const, meses: 6, url: "https://mpago.la/EJEMPLO1" };
+    await replaceLinksPago(ORG, [unaCompuerta, { nombre: "2 compuertas estándar", monto: 11000, cubre: "total" as const, meses: 6, url: "https://mpago.la/EJEMPLO2" }], null);
+    await msg({ direction: "in", body: "Con tarjeta por favor", at: ago(20_000) });
+    const zernio = fakeZernio();
+    const { deps, calls } = makeDeps(
+      { brain: ["Con gusto, el total es $5,500."], toolCalls: [{ toolName: "fijar_cotizacion", input: { monto: 5500 } }, { toolName: "enviar_link_pago", input: { opcion: "1_compuerta_estandar" } }] },
+      zernio,
+    );
+    expect(await run.runAgent(JOB, deps)).toEqual({ kind: "sent", bubbles: 3 });
+    expect(Object.keys(calls[0].input.tools ?? {})).toContain("enviar_link_pago");
+    // Primero el texto, luego el link y, aparte, los datos de envío.
+    expect(zernio.delivered).toEqual(["Con gusto, el total es $5,500.", ...mensajesLink(unaCompuerta)]);
+    expect((await agentOuts()).map((m) => m.body)).toEqual(["Con gusto, el total es $5,500.", ...mensajesLink(unaCompuerta)]);
+    expect(await contact()).toMatchObject({ stage: "cerca_compra", montoCotizacion: "5500.00" });
+    // Pide el de 2 compuertas pero el total sigue en $5,500: no sale, el cliente lee que un asesor se lo
+    // manda y el vendedor recibe el aviso.
+    await msg({ direction: "in", body: "Mándeme el link otra vez", at: new Date() });
+    const otro = fakeZernio();
+    expect((await run.runAgent(JOB, makeDeps({ brain: ["Claro."], toolCalls: [{ toolName: "enviar_link_pago", input: { opcion: "2_compuertas_estandar" } }] }, otro).deps)).kind).toBe("sent");
+    expect(otro.delivered).toEqual(["Claro.", "En un momento un asesor le comparte el link de pago."]);
+    expect((await notices()).map((n) => n.body)).toContainEqual(expect.stringContaining("Mándale tú el link de pago"));
+  });
+
   // ── fijar_cotizacion con un total que la empresa YA le dijo al cliente (2-oct-2026) ──
   const cotizacionNotices = async () => (await notices()).filter((n) => n.body.includes("fijar_cotizacion"));
 
@@ -3053,6 +3080,24 @@ describe.skipIf(!TEST_DATABASE_URL)("runtime del Agente IA (Postgres real)", () 
     expect(brainIds(calls)).toEqual(["gpt-5.6-luna", "claude-sonnet-5"]);
     expect((await agentOuts()).map((m) => m.body)).toEqual(["Sonnet: te paso los datos para tu depósito"]);
     expect((await runs()).filter((r) => r.workflowId === bank)).toHaveLength(1);
+    expect((await contact()).stage).toBe("cerca_compra");
+  });
+
+  it("traspaso: Luna pide el link de pago → contesta Sonnet y, aunque no lo repita, el link sale una vez y el contacto queda en Cerca de compra (30-oct-2026)", async () => {
+    await dosModelos();
+    const { replaceLinksPago } = await import("@/lib/agente-ia/links-pago-store");
+    await replaceLinksPago(ORG, [{ nombre: "1 compuerta estándar", monto: 5500, cubre: "total", meses: 6, url: "https://mpago.la/EJEMPLO1" }], null);
+    await db.update(s.contacts).set({ montoCotizacion: "5500.00", customFields: { cotizacion_por: "agente" } }).where(eq(s.contacts.id, CONTACT));
+    await msg({ direction: "in", body: "la pago con tarjeta", at: ago(20_000) });
+    const { deps, calls } = makeDeps({
+      brain: ["Luna: aquí va el link", "Sonnet: con gusto, aquí le paso el link."],
+      brainToolCalls: [[{ toolName: "enviar_link_pago", input: { opcion: "1_compuerta_estandar" } }], []],
+    });
+    expect(await run.runAgent(JOB, deps)).toEqual({ kind: "sent", bubbles: 3 });
+    expect(brainIds(calls)).toEqual(["gpt-5.6-luna", "claude-sonnet-5"]);
+    const bodies = (await agentOuts()).map((m) => m.body ?? "");
+    expect(bodies[0]).toBe("Sonnet: con gusto, aquí le paso el link.");
+    expect(bodies.filter((b) => b.includes("https://mpago.la/EJEMPLO1"))).toHaveLength(1);
     expect((await contact()).stage).toBe("cerca_compra");
   });
 

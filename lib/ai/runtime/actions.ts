@@ -7,7 +7,11 @@
 //   o el cliente pide una persona). Desde la Fase E (25-sep-2026, decisión del dueño)
 //   el agente ya NO anota monto ni folio del comprobante y no hay chequeo de folio
 //   repetido: el aviso de pago solo dice "Depósito recibido".
-// El CRM NO decide por monto: las reglas viven en el Goal. Nada aquí pausa al agente.
+// - enviar_link_pago (30-oct-2026): el link de MercadoPago sale como un mensaje más del Agente IA,
+//   después de su texto (run.ts), y lleva a "Cerca de compra". Aquí SÍ hay candados del CRM
+//   (lib/agente-ia/links-pago.ts): lada fuera de México (salvo +1) nunca; el link debe cobrar el total
+//   acordado; máximo MAX_LINKS_POR_CHAT por chat. Si no pasa, sale la frase de que un asesor lo manda.
+// Fuera de los links, el CRM NO decide por monto: las reglas viven en el Goal. Nada aquí pausa al agente.
 // Idempotente por lote de mensajes del cliente (avisos: índice único message_id+kind;
 // etapa: solo hacia adelante).
 import { and, asc, eq, gte, inArray, sql } from "drizzle-orm";
@@ -25,6 +29,8 @@ import { sendsByWorkflow } from "@/lib/workflows/max-per-chat";
 import { addNotice, hasOpenHandoverRequest } from "./notices";
 import { amountsIn, isBackedAmount } from "./lector-core";
 import { buildAgentTools, type AgentTools, type AvisoMotivo, type ValidToolCall } from "./tools";
+import { ladaSinLinks, LINK_POR_ASESOR, linkCuadra, linksDelAgente, MAX_LINKS_POR_CHAT, mensajesLink, opcionesDe, totalQueCubre, type OpcionLink } from "@/lib/agente-ia/links-pago";
+import { linksSentByAgent, listLinksPago, loadTextosLink } from "@/lib/agente-ia/links-pago-store";
 import { allowedAgentStage, ventaCerradaHeld } from "./venta-cerrada";
 import { instagramAllowedStage, instagramHeld } from "./instagram-entrada";
 
@@ -43,7 +49,8 @@ export type StartWorkflow = (input: StartRunInput) => Promise<StartRunResult>;
 // Con la conversación, no se ofrece (el modelo no promete algo que no saldría):
 // - un workflow «Solo al inicio» ESTRICTO que ya no aplica (ya le contestaron o ya le salió a
 //   este contacto); el de «solo al inicio por palabra clave» (la Tabla) sí se ofrece;
-// - uno que ya llegó a su «Máximo de envíos por chat» (29-sep-2026).
+// - uno que ya llegó a su «Máximo de envíos por chat» (29-sep-2026);
+// - enviar_link_pago a una lada fuera de México o con MAX_LINKS_POR_CHAT ya mandados (linkOptionsFor).
 export async function loadAgentTools(
   organizationId: string,
   stages: readonly FunnelStage[],
@@ -79,7 +86,26 @@ export async function loadAgentTools(
   const rows = all.filter(
     (w) => (!(w.startOnly && w.startOnlyAgent) || eligible.has(w.id)) && !(w.maxSendsPerChat && (sent.get(w.id) ?? 0) >= w.maxSendsPerChat),
   );
-  return buildAgentTools(rows, stages);
+  return buildAgentTools(rows, stages, await linkOptionsFor(organizationId, conversation));
+}
+
+// Opciones de enviar_link_pago. Sin conversación (renovación de la caché) se ofrecen si hay links,
+// como en casi todos los chats. Con conversación, nunca a una lada fuera de México (regla del dueño,
+// 30-oct-2026: Perú, España…; +1 sí) ni cuando el Agente IA ya mandó el máximo en ese chat. Los
+// «Solo vendedor» (precio especial) nunca.
+async function linkOptionsFor(organizationId: string, conversation?: { id: string; contactId: string }): Promise<OpcionLink[]> {
+  const links = linksDelAgente(await listLinksPago(organizationId));
+  if (links.length === 0) return [];
+  if (conversation) {
+    const [c] = await db
+      .select({ iso: contacts.phoneCountryIso, code: contacts.phoneCountryCode })
+      .from(contacts)
+      .where(and(eq(contacts.id, conversation.contactId), eq(contacts.organizationId, organizationId)))
+      .limit(1);
+    if (!c || ladaSinLinks(c.iso, c.code)) return [];
+    if ((await linksSentByAgent(organizationId, conversation.id, links.map((l) => l.url))) >= MAX_LINKS_POR_CHAT) return [];
+  }
+  return opcionesDe(links);
 }
 
 export type Aviso = {
@@ -94,6 +120,10 @@ export type ActionPlan = {
   stage: string | null;
   avisos: Aviso[];
   notes: string[];
+  /** Mensajes del link de pago (el del link y el de los datos de envío) que salen después del texto del Agente IA (run.ts), o null. */
+  link: { clave: string; mensajes: string[] } | null;
+  /** El link no pasó los candados: en su lugar sale esta frase (un asesor lo manda), o null. */
+  linkFallback: string | null;
 };
 
 // ¿El texto del agente menciona ese monto? ("$5,500", "5500", "5,500.00"). Un
@@ -125,6 +155,7 @@ export function quoteBacked(monto: number, modelText: string, companyTexts: read
 export async function prepareActions(input: {
   organizationId: string;
   conversationId: string;
+  contactId: string;
   calls: readonly ValidToolCall[];
   modelText: string;
   /** Lo que la empresa (Agente IA, workflows, vendedor) ya le dijo al cliente en el chat que leyó el modelo. */
@@ -135,7 +166,8 @@ export async function prepareActions(input: {
   /** Etapas vigentes de la organización (orden para "gana la más adelantada"). */
   stages: readonly FunnelStage[];
 }): Promise<ActionPlan> {
-  const plan: ActionPlan = { runs: [], quote: null, stage: null, avisos: [], notes: [] };
+  const plan: ActionPlan = { runs: [], quote: null, stage: null, avisos: [], notes: [], link: null, linkFallback: null };
+  let linkCall: OpcionLink | null = null;
   for (const c of input.calls) {
     switch (c.kind) {
       case "cotizacion":
@@ -154,8 +186,12 @@ export async function prepareActions(input: {
       case "workflow":
         plan.runs.push({ slug: c.workflow.slug, workflowId: c.workflow.id });
         break;
+      case "link":
+        linkCall ??= c.opcion;
+        break;
     }
   }
+  if (linkCall) await planLink(plan, linkCall, input);
   // Palabra clave + herramienta para el MISMO workflow ("pásame la tabla"): la
   // corrida por palabra clave ya lo manda; la del agente no se repite. Igual con una corrida del
   // propio Agente IA para estos mensajes (9-oct-2026): en el complemento de un workflow «es la
@@ -181,6 +217,60 @@ export async function prepareActions(input: {
     }
   }
   return plan;
+}
+
+const pesos = (n: number) => `$${n.toLocaleString("es-MX", { maximumFractionDigits: 2 })}`;
+
+// Candados del link de pago (lib/agente-ia/links-pago.ts). Se releen de la base: el contacto (lada y
+// total) y cuántos links ya mandó el Agente IA. Total acordado: el de un VENDEDOR manda (un precio
+// especial no se cambia por uno de lista); si no, el que fija esta respuesta o el guardado; sin ninguno,
+// el que la empresa ya le dijo en el chat. Solo lectura: lo ejecuta run.ts.
+async function planLink(
+  plan: ActionPlan,
+  { clave, link }: OpcionLink,
+  input: { organizationId: string; conversationId: string; contactId: string; modelText: string; companyTexts?: readonly string[]; stages: readonly FunnelStage[] },
+): Promise<void> {
+  const [c] = await db
+    .select({ monto: contacts.montoCotizacion, customFields: contacts.customFields, iso: contacts.phoneCountryIso, code: contacts.phoneCountryCode })
+    .from(contacts)
+    .where(and(eq(contacts.id, input.contactId), eq(contacts.organizationId, input.organizationId)))
+    .limit(1);
+  const pais = c ? ladaSinLinks(c.iso, c.code) : "contacto no encontrado";
+  if (pais) {
+    // Nunca un link fuera de México, ni siquiera por medio de un asesor: sin frase ni aviso.
+    plan.notes.push(`enviar_link_pago ignorada: lada ${pais}, fuera de México (nunca recibe links)`);
+    return;
+  }
+  if (link.soloVendedor) {
+    plan.notes.push("enviar_link_pago ignorada: ese link es solo del vendedor");
+    return;
+  }
+  const nombre = `«${link.nombre}» (${pesos(link.monto)})`;
+  const urls = (await listLinksPago(input.organizationId)).map((l) => l.url);
+  const enviados = await linksSentByAgent(input.organizationId, input.conversationId, [...urls, link.url]);
+  if (enviados >= MAX_LINKS_POR_CHAT) {
+    plan.notes.push(`enviar_link_pago ignorada: ya salieron ${enviados} links del Agente IA en este chat`);
+    plan.avisos.push({ motivo: "cliente_pide_humano", detalle: `Pide el link de pago otra vez y el Agente IA ya lo mandó ${MAX_LINKS_POR_CHAT} veces en este chat; mándaselo tú (${nombre}).` });
+    plan.linkFallback = LINK_POR_ASESOR;
+    return;
+  }
+  const guardado = c!.monto != null ? Number(c!.monto) : null;
+  const delVendedor = (c!.customFields as Record<string, unknown> | null)?.cotizacion_por === "vendedor" ? guardado : null;
+  const total = delVendedor ?? plan.quote ?? guardado;
+  const cuadra = total !== null ? linkCuadra(link, total) : quoteBacked(totalQueCubre(link), input.modelText, input.companyTexts ?? []);
+  if (!cuadra) {
+    plan.notes.push(`enviar_link_pago ignorada: ${nombre} no cuadra con el total del chat (${total !== null ? pesos(total) : "ninguno"})`);
+    plan.avisos.push({
+      motivo: "cliente_pide_humano",
+      detalle: `Mándale tú el link de pago: el Agente IA quiso mandar ${nombre}, pero ${total !== null ? `el total acordado es ${pesos(total)}` : "no hay un total acordado en el chat"}.`,
+    });
+    plan.linkFallback = LINK_POR_ASESOR;
+    return;
+  }
+  plan.link = { clave, mensajes: mensajesLink(link, await loadTextosLink(input.organizationId)) };
+  // Como los datos bancarios: el link lleva a "Cerca de compra" (solo hacia adelante).
+  const cerca = roleKey(input.stages, "cerca_compra");
+  if (cerca) plan.stage = furthestStage(input.stages, plan.stage ? [plan.stage, cerca] : [cerca]);
 }
 
 // Guarda el total cotizado por el AGENTE. Desde el 26-sep-2026 (regla del dueño: ningún
