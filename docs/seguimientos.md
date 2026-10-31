@@ -210,7 +210,7 @@ La plantilla de cada intento es propuesta: **el dueño la confirma caso por caso
 |---|---|---|---|---|---|---|---|
 | 0 | **No seguir** (`no_seguir`) | Dijo que no o que ya compró (aquí o en Mercado Libre, Amazon, una tienda); pidió envío al extranjero y ya se le dijo que no se envía, aunque tenga a alguien en México; pidió que no le escriban; número equivocado o anuncio por error; contesta el contestador de otro negocio; ya compró (etapa Venta cerrada o pagó el total) | — | Nunca | — | — | — |
 | 1 | **Asesor sin respuesta** (`asesor_sin_respuesta`) | Aviso abierto "pasar a un asesor" / "el cliente pide una persona" (tarjeta amarilla) y ningún vendedor le contestó | 1.º: 2 h después (7:00–21:00) · luego 10:00 | **2 h** (texto): el Agente IA se disculpa por la espera y resuelve lo que pueda. Al vendedor ya le avisó la tarjeta amarilla al instante | Día 2 · 🚪 | — | Que no se quede colgado y lo atienda un vendedor |
-| 2 | **Pidió que le escribieran** (`pidio_fecha`) | El cliente dijo cuándo sigue, aunque sin hora exacta ("mañana mido", "en la tarde se la mando", "el domingo que regrese", "el lunes", "en la quincena", "cuando me paguen", "no estoy en casa"); "estoy ocupado / al rato" sin más = +3 h; "en la quincena", "cuando me paguen / cuando cobre" (sin día) = el próximo día 15 o último del mes; "a fin de mes" = el último; "a principios de mes" = el día 1; "me pagan el viernes" = ese viernes; "cuando pueda" sin día NO es fecha | La que pidió (mañana 10:00 · tarde 18:00 · noche o "cuando llegue a casa" 19:30) · solo el día: **la hora de lo pendiente** (medidas 19:00, pago 10:00…; sin asunto, 11:00) | **La fecha y hora que pidió**. Texto si la ventana sigue abierta; si no, 🚪 | +2 días · 🚪 (o +7 días si el 1.º ya fue plantilla) | +7 días · la plantilla que mejor encaje (solo si el 1.º fue texto) | Retomar justo como quedaron |
+| 2 | **Pidió que le escribieran** (`pidio_fecha`) | El cliente dijo cuándo sigue, aunque sin hora exacta ("mañana mido", "en la tarde se la mando", "el domingo que regrese", "el lunes", "en la quincena", "cuando me paguen", "no estoy en casa"); "estoy ocupado / al rato" sin más = +3 h; "en la quincena", "cuando me paguen / cuando cobre" (sin día) = el próximo día 15 o último del mes; "a fin de mes" = el último; "a principios de mes" = el día 1; "me pagan el viernes" = ese viernes; un mes sin día ("hasta diciembre") = el 1 de ese mes; "a fin de año" o "con el aguinaldo" = el 20 de diciembre; "la próxima semana" = el lunes; "en dos semanas" = 14 días (§30); "cuando pueda" sin día NO es fecha | La que pidió (mañana 10:00 · tarde 18:00 · noche o "cuando llegue a casa" 19:30) · solo el día: **la hora de lo pendiente** (medidas 19:00, pago 10:00…; sin asunto, 11:00) | **La fecha y hora que pidió**. Texto si la ventana sigue abierta; si no, 🚪 | +2 días · 🚪 (o +7 días si el 1.º ya fue plantilla) | +7 días · la plantilla que mejor encaje (solo si el 1.º fue texto) | Retomar justo como quedaron |
 | 3 | **Pago pendiente** (`pago_pendiente`) | Recibió los datos bancarios o el link de pago (etapa Cerca de compra) y no ha mandado comprobante, o falta el resto del pago | 10:00 | Antes del cierre · texto | Día 2 · 🚪 | Día 9 · la plantilla que mejor encaje | El comprobante, o resolver lo que lo frena (forma de pago, tarjeta, fecha de entrega) |
 | 4 | **Lo va a pensar u objeción** (`objecion`) | Lo último del cliente: "lo platico con mi esposo", "lo pienso", "está caro", "ahorita no", "más adelante" (sin fecha) | 19:00–20:30 | Antes del cierre · texto | Día 2 · 📄 | Día 9 · 🚪 | Responder esa duda u objeción con algo útil (video, opción, comparación) |
 | 5 | **Cotización sin respuesta** (`cotizacion_sin_respuesta`) | Dio medidas y se le dijo talla y precio para SU entrada (Detalle con medidas y monto); no llegó a datos bancarios | 18:00–20:00 | Antes del cierre · texto | Día 2 · 📄 | Día 9 · 🚪 | Resolver la duda que lo frena (instalación, envío, si le queda) y ofrecer los datos de pago |
@@ -497,7 +497,7 @@ intento que salió o "habría salido"), based_on_message_at (hasta dónde leyó 
 **Código:**
 - `lib/ai/runtime/lector-core.ts`: el esquema de `actualizar_contacto` (`lectorSchemaFor`) suma `seguimiento`
   (opcional), y las instrucciones del lector explican los casos y las reglas de §7.3. Validación pura nueva (caso
-  válido, textos acotados, fecha futura < 60 días).
+  válido, textos acotados, fecha futura; desde el 30-oct-2026 a más de 120 días se recorre al día 120, §30).
 - `lib/followups/rules.ts` (puro): tabla de §6, prioridad de casos, cruce con datos duros (§5) y cálculo de `due_at`
   (antes del cierre / día 2 / día 9, hora de cada caso, horario 7–21, domingo, plantillas hasta las 19:00 y 7 días
   entre plantillas).
@@ -997,6 +997,30 @@ seguimiento retome la pregunta pendiente con otras palabras y que la burbuja avi
 - **Burbuja** (`view.ts › sinTexto`, mapa 102): en real, con la ventana abierta y sin borrador ni texto del vendedor,
   dice «El Agente IA no dejó texto para este chat: sale la plantilla «Faltan medidas» (su título) aunque la ventana de 24 h siga abierta…»,
   «Ver mensaje» muestra esa plantilla (la misma que elige el envío) y «Editar mensaje» deja escribir el texto, que sí sale.
+
+## 30. Fecha lejana: un mes o unas semanas también es «pidió fecha» (30-oct-2026)
+
+**Origen:** chat del 29-oct en Prospecto: «De momento no tengo las medidas, voy a casa hasta Diciembre» y «les
+escribo cuando tenga las medidas». El lector dejó `faltan_medidas` sin fecha y el seguimiento quedó para el día
+siguiente a las 18:00 (Mazatlán), aunque su propia nota decía «cuando tenga acceso a la casa en diciembre». Lectura de
+producción (30 días): 4 seguimientos ignoraron un mes sin día («voy para principios de noviembre», «hasta que pase
+noviembre», «espero a fin de año», «hasta diciembre») y el tope de 60 días tiró otras 4 fechas (31-dic y 1-ene) que
+el lector sí había puesto. Las fechas con día («hasta el 11 de noviembre», «en quince o veinte días») ya salían bien.
+
+**Cambio (pedido del dueño, 30-oct):**
+- **Instrucciones del lector** (`lector-core.ts`, `pidio_fecha`): un mes sin día («en diciembre», «hasta diciembre»,
+  «para principios de noviembre») = el día 1 de ese mes; «a mediados de» = el 15; «a finales de» = su último día;
+  «hasta que pase noviembre» = el 1 del mes siguiente; «a fin de año» o «con el aguinaldo» = el 20 de diciembre (ya
+  cobró el aguinaldo y antes de las fiestas); «la próxima semana» = el lunes que sigue; «en dos semanas», «en 15 días»,
+  «en un mes» = contados desde su mensaje. Una fecha lejana cuenta aunque diga que él escribirá cuando tenga el dato.
+  Todas sin hora: salen a la hora de lo pendiente (medidas 19:00 del cliente) y, con la ventana cerrada, con plantilla.
+- **«Yo me comunico» con fecha** (debajo de `no_seguir`): si además dice cuándo, no cerró la decisión: es `pidio_fecha`.
+  Ya lo decía §25 («con una fecha sigue siendo pidió fecha»); ahora también lo dicen las instrucciones.
+- **Tope** (`cases.ts › MAX_ASKED_DAYS`, `ficha.ts`): de 60 a **120 días**, y una fecha más lejana ya no se tira (eso
+  dejaba el seguimiento para los próximos días): se recorre al día 120, con la nota en el registro de la lectura.
+- Sin migración. Pruebas: `ficha.test.ts`, `schedule.test.ts` (1-dic a las 19:00 con plantilla) y
+  `lector-seguimiento.test.ts`. Sin banco con modelos (regla del 9-oct): se revisa en producción con las próximas
+  lecturas que mencionen un mes.
 
 ## Fuentes
 

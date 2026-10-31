@@ -99,6 +99,12 @@ describe("asesor sin respuesta y pidió fecha", () => {
     expect(cerrada).toMatchObject({ door: "plantilla", templateName: "hola_buenas_tardes" });
   });
 
+  it("fecha lejana (30-oct-2026): «voy a casa hasta diciembre» sale el 1-dic a la hora de las medidas, con plantilla", () => {
+    const p = plan({ caso: "pidio_fecha", fondo: "faltan_medidas", stopAt: mx("2026-10-29T22:21"), windowExpiresAt: mx("2026-10-30T22:16"), fechaPedida: "2026-12-01" });
+    expect(at(p.dueAt)).toBe("2026-12-01 19:00");
+    expect(p.door).toBe("plantilla");
+  });
+
   it("pidió fecha con el 1.º en plantilla: solo 2 intentos y el 2.º a 7 días", () => {
     expect(effectiveTotal("pidio_fecha", "plantilla", T)).toBe(2);
     expect(effectiveTotal("pidio_fecha", "texto", T)).toBe(3);

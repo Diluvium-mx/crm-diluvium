@@ -74,6 +74,21 @@ describe("lector + seguimiento", () => {
     expect(line).toContain('"Cuando pueda" o "cuando tenga la cinta", SIN día ni momento, NO es pidio_fecha');
   });
 
+  it("fecha lejana (30-oct-2026): un mes, una semana o «en 15 días» también es «pidió fecha», aunque él vaya a escribir", () => {
+    const lines = FOLLOW_UP_INSTRUCTIONS.split("\n");
+    const line = lines.find((l) => l.startsWith("- pidio_fecha:")) ?? "";
+    expect(line).toContain('"voy a mi casa hasta diciembre", "en dos semanas le confirmo"');
+    expect(line).toContain('un mes sin día ("en diciembre", "hasta diciembre", "para principios de noviembre") = el día 1 de ese mes');
+    expect(line).toContain('"a mediados de" un mes = el 15; "a finales de" un mes = su último día');
+    expect(line).toContain('"hasta que pase noviembre" o "después de noviembre" = el día 1 del mes siguiente');
+    expect(line).toContain('"a fin de año" o "con el aguinaldo" = el 20 de diciembre');
+    expect(line).toContain('"la próxima semana" u "otra semana" = el lunes que sigue; "en dos semanas", "en 15 días" o "en un mes" = esos días contados desde su mensaje');
+    expect(line).toContain('"les escribo cuando tenga las medidas, voy a casa hasta diciembre" = el 1 de diciembre, con caso_de_fondo faltan_medidas');
+    // «Yo me comunico» con fecha no cierra la decisión (§25: «con una fecha sigue siendo pidió fecha»).
+    const criterio = lines[lines.findIndex((l) => l.startsWith("- no_seguir:")) + 1] ?? "";
+    expect(criterio).toContain('Si además dice CUÁNDO va a seguir (un día, una semana o un mes: "en diciembre les escribo", "espero a fin de año poder comprar"), no cerró la decisión: es pidio_fecha.');
+  });
+
   it("«Qué busca» y la hora salen de la tabla de la organización (Agente IA › Seguimientos)", () => {
     // De fábrica: el texto de siempre (precio e información comparten renglón).
     expect(followUpInstructions(FACTORY_TABLE)).toBe(FOLLOW_UP_INSTRUCTIONS);
