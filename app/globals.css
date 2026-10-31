@@ -1404,6 +1404,20 @@ html[data-theme-circle]::view-transition-new(root) {
 .robot-quieto-cancelado :is(.re-ojos-x, .re-boca-o) {
   opacity: 1;
 }
+/* Mirada del robot (30-oct-2026, decisión del dueño): el robot despierto sin escena sigue el cursor con los ojos y la
+   cabeza (robot-mirada.ts pone --re-mx y --re-my, de -1 a 1). Los ojos se mueven hasta 4.5 × 3.5 del dibujo de 64 (sin
+   salirse del visor) y la cabeza se inclina hasta 9° y se asoma un poco hacia el cursor. */
+@media (prefers-reduced-motion: no-preference) {
+  .robot-mira .re-robot {
+    transform-origin: 50% 50%;
+    transform: rotate(calc(var(--re-mx, 0) * 9deg)) translate(calc(var(--re-mx, 0) * 5%), calc(var(--re-my, 0) * 5%));
+    transition: transform 160ms ease-out;
+  }
+  .robot-mira .re-ojos {
+    transform: translate(calc(var(--re-mx, 0) * 4.5px), calc(var(--re-my, 0) * 3.5px));
+    transition: transform 70ms linear;
+  }
+}
 
 @media (prefers-reduced-motion: no-preference) {
   /* disparo */
