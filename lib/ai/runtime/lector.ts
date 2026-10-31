@@ -8,6 +8,8 @@
 // Seguimientos (2-oct-2026): si el último mensaje es de la empresa, la misma lectura trae la
 // ficha de seguimiento y aquí se guarda (lib/followups/store.ts, modo ensayo); si es del
 // cliente, el seguimiento abierto del chat se cierra.
+// Cliente de prueba de staging (30-oct-2026, pedido del dueño): su chat se lee SIN IA, con una respuesta fija
+// (lector-simulado.ts); costo US$0.
 // Multi-tenant (CLAUDE.md §7): todo filtra por organization_id.
 import { and, eq, inArray, sql } from "drizzle-orm";
 import { tool, type ModelMessage } from "ai";
@@ -55,6 +57,7 @@ import { MAX_BORRADOR } from "@/lib/followups/ficha";
 import { anotarCompraEnTienda, compraEnTiendaDe } from "@/lib/resenas-tienda/store";
 import { fraseDeTienda, TIENDA_NOMBRE } from "@/lib/resenas-tienda/tiendas";
 import { loadFollowUpTable } from "@/lib/followups/tabla-store";
+import { esLecturaSimulada, lectorSimulado } from "./lector-simulado";
 import { logError, safeErrorMessage } from "@/lib/log/safe-error";
 
 export type LectorDeps = {
@@ -207,6 +210,7 @@ async function readConversation(organizationId: string, conversationId: string, 
   // Chat sin Agente IA (26-oct-2026): ni el barrido ni «Despertar» lo leen.
   if (!snap || snap.sinAgenteIa) return { kind: "nada_nuevo" };
   const conv = snap.conversation;
+  const simulado = esLecturaSimulada(snap.channel);
   // Hasta dónde lee esta pasada: lo que llegue durante la llamada queda para la siguiente.
   const upTo = conv.lastMessageAt;
   if (!force && conv.detalleLeidoHasta && conv.detalleLeidoHasta >= upTo) return { kind: "nada_nuevo" };
@@ -234,7 +238,7 @@ async function readConversation(organizationId: string, conversationId: string, 
   const startedAt = deps.now();
   const model = getModel(LECTOR_MODEL_ID);
   const isAvailable = deps.isModelAvailable ?? ((id: string) => modelAvailability(id).available);
-  if (!model || !isAvailable(LECTOR_MODEL_ID)) return { kind: "error", reason: `${LECTOR_MODEL_ID} no está disponible (falta la llave)`, usage: null, costUsd: null };
+  if (!model || (!simulado && !isAvailable(LECTOR_MODEL_ID))) return { kind: "error", reason: `${LECTOR_MODEL_ID} no está disponible (falta la llave)`, usage: null, costUsd: null };
 
   const [contact] = await db
     .select({
@@ -287,6 +291,8 @@ async function readConversation(organizationId: string, conversationId: string, 
   // «Qué busca» y la hora de cada caso: la tabla de la organización (Agente IA › Seguimientos).
   const followUpTable = followUp ? await loadFollowUpTable(organizationId) : undefined;
   const base = { organizationId, conversationId, messageId: null, stage: "detalle" as const, modelId: model.id, provider: model.provider };
+  // Las llamadas al modelo de esta lectura (la principal y la del borrador rehecho).
+  const llamar: LectorDeps = simulado ? { ...deps, callModel: lectorSimulado(followUp) } : deps;
 
   // Indicador del Detalle: "leyendo" justo antes de la llamada y, pase lo que pase, "listo"
   // (con cuántos datos cambió) o "error" al terminar. Si el proceso muere a la mitad, la UI
@@ -297,7 +303,7 @@ async function readConversation(organizationId: string, conversationId: string, 
     const t0 = Date.now();
     let res: CallModelResult;
     try {
-      res = await deps.callModel(model.id, { system: buildLectorSystem(stages, { followUp, acuse, despertar, templates: followUpTemplates, table: followUpTable }), messages, tools, maxOutputTokens: LECTOR_MAX_OUTPUT_TOKENS, timeoutMs: LECTOR_TIMEOUT_MS });
+      res = await llamar.callModel(model.id, { system: buildLectorSystem(stages, { followUp, acuse, despertar, templates: followUpTemplates, table: followUpTable }), messages, tools, maxOutputTokens: LECTOR_MAX_OUTPUT_TOKENS, timeoutMs: LECTOR_TIMEOUT_MS });
     } catch (error) {
       await recordAiUsage({ ...base, usage: null, latencyMs: Date.now() - t0, outcome: "error", error: safeErrorMessage(error) });
       return (done = { kind: "error", reason: safeErrorMessage(error), usage: null, costUsd: null });
@@ -381,7 +387,7 @@ async function readConversation(organizationId: string, conversationId: string, 
       const problems = borradorProblems({ borrador: ficha.borrador, companyTexts });
       if (problems.length) {
         ficha.borrador = await rewriteBorrador(
-          deps,
+          llamar,
           model.id,
           messages,
           { caso: ficha.caso ?? "sin_punto_claro", pendiente: ficha.pendiente, siguientePaso: ficha.siguientePaso, borrador: ficha.borrador, problems },
@@ -421,7 +427,7 @@ async function readConversation(organizationId: string, conversationId: string, 
       latencyMs,
       outcome: cambios.length ? "detalle_aplicado" : "detalle_sin_cambios",
       error:
-        [cambios.length ? `cambios: ${cambios.join(", ")}` : "", parsed.ignored.length ? `descartado: ${parsed.ignored.join("; ")}` : "", seguimiento ?? ""]
+        [simulado ? "cliente de prueba: sin IA" : "", cambios.length ? `cambios: ${cambios.join(", ")}` : "", parsed.ignored.length ? `descartado: ${parsed.ignored.join("; ")}` : "", seguimiento ?? ""]
           .filter(Boolean)
           .join(" · ") || null,
     });
