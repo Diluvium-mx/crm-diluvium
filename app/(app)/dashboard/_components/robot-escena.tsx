@@ -13,7 +13,10 @@
 // - cafe → cafe-despierto / cafe-dormido (Despertar, 10-oct-2026): llega una taza de café humeante por la derecha, el
 //   robot la huele y sorbe «cargando» mientras el Agente IA lee el chat; al final se la toma, abre los ojos y brinca, o
 //   deja la taza, bosteza y se vuelve a dormir.
+// Sin escena, el robot despierto sigue el cursor con los ojos y la cabeza (30-oct-2026, robot-mirada.ts).
+import { useRef } from "react";
 import type { Escena, RobotFace } from "./robot-escena-cuando";
+import { useMirada } from "./robot-mirada";
 
 /** El robot de 18 px de la píldora, dibujado en línea para poder animar ojos, boca, antena, cables y chispas. */
 /** `cara`: la carita que se queda en las escenas que no la cambian (el lápiz sirve despierto o suspendido). */
@@ -38,18 +41,27 @@ export function RobotEscena({ escena, cara }: { escena: Escena; cara: RobotFace 
 
 /** El robot de la píldora sin escena (10-oct-2026, pedido del dueño): el mismo dibujo en línea que el de las escenas, con
  * la carita fija. Antes era una <img> de public/emoji/ y al terminar la escena el cambio dejaba la píldora un instante
- * sin robot (la imagen se cargaba y pintaba de nuevo): se veía un parpadeo. */
-export function RobotQuieto({ cara }: { cara: RobotFace }) {
+ * sin robot (la imagen se cargaba y pintaba de nuevo): se veía un parpadeo. Despierto sigue el cursor con los ojos y la
+ * cabeza (30-oct-2026, robot-mirada.ts); `size` para el del encabezado de su ventana (30 px), que también era <img>. */
+export function RobotQuieto({ cara, size = 18 }: { cara: RobotFace; size?: number }) {
+  const robot = useRef<HTMLSpanElement>(null);
+  const mira = cara === "normal";
+  useMirada(robot, mira);
   return (
-    <span aria-hidden="true" className={`robot-escena robot-quieto-${cara} relative -my-0.5 inline-block size-[18px] shrink-0`}>
-      <RobotSvg />
+    <span
+      ref={robot}
+      aria-hidden="true"
+      style={{ width: size, height: size }}
+      className={`robot-escena robot-quieto-${cara} ${mira ? "robot-mira" : ""} relative -my-0.5 inline-block shrink-0`}
+    >
+      <RobotSvg size={size} />
     </span>
   );
 }
 
-function RobotSvg() {
+function RobotSvg({ size = 18 }: { size?: number }) {
   return (
-      <svg className="re-robot" viewBox="0 0 64 64" width="18" height="18">
+      <svg className="re-robot" viewBox="0 0 64 64" width={size} height={size}>
         <g className="re-cuerpo">
           <line x1="32" y1="6" x2="32" y2="13" stroke="#7D8A97" strokeWidth="4.5" strokeLinecap="round" />
           <circle className="re-antena" cx="32" cy="5.5" r="5" fill="#E5484D" />

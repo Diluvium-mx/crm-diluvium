@@ -746,6 +746,13 @@ prototipos (tamaño real y ampliado) antes de construirlas; el dueño aprobó la
   (solo dibujo, robot en SVG en línea), `useRobotEscena` en `followup-pill.tsx` (la juega, conserva el color de antes
   hasta el cambio y la quita al terminar) y `app/globals.css` › «Robot del seguimiento» (tiempos; `--re-d` igual que
   `ESCENA_MS`). En chico los detalles finos casi no se ven; el dueño lo aceptó así.
+- **Mirada y brinco** (30-oct-2026, el dueño eligió entre maquetas: mirada «ojos y cabeza», clic «brinco»): sin escena, el
+  robot despierto (`normal`) de la píldora y el del encabezado de su ventana (ahora también SVG en línea, 30 px) siguen el
+  cursor por toda la ventana: los ojos se mueven dentro del visor y la cabeza se inclina hasta 9°. El dormido y el de ojos
+  en X no miran; tampoco en el celular (sin cursor) ni con «reducir movimiento». Al tocar la píldora se aplasta y el robot
+  brinca y cae (0.62 s); con una escena en curso no brinca (la escena manda). Un solo escucha del cursor para todos los
+  robots (`robot-mirada.ts`, con pruebas) y `app/globals.css` › «Mirada del robot». La píldora gris (dormido y Cancelado)
+  lleva el borde `border-border`, el mismo de ⚡ 📄 📎 (pedido del dueño el mismo día: el gris de antes se veía casi negro).
 
 ---
 

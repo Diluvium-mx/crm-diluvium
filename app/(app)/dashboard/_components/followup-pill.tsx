@@ -25,6 +25,8 @@
 // seguimiento; la píldora juega la taza de café y espera «cargando» el aviso de que terminó la lectura.
 // Editar mensaje (12-oct-2026, decisión del dueño): junto a «Ocultar mensaje» (solo con el mensaje a la vista); el
 // vendedor cambia el texto (ventana abierta) o la plantilla (ventana cerrada) del siguiente intento.
+// Mirada y brinco (30-oct-2026, decisión del dueño): el robot despierto de la píldora y el del encabezado de la ventana
+// siguen el cursor con los ojos y la cabeza; al tocar la píldora se aplasta y el robot brinca (robot-mirada.ts).
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type RefObject } from "react";
 import {
   apagarSeguimientos,
@@ -50,6 +52,7 @@ import { useInboxStream } from "./use-inbox-stream";
 import { DateTimePicker } from "@/components/ui/date-time-picker";
 import { EtiquetaEscena, RobotEscena, RobotQuieto } from "./robot-escena";
 import { FollowUpEditarMensaje } from "./followup-editar-mensaje";
+import { brincar } from "./robot-mirada";
 import {
   CAFE_ESPERA_MAX_MS,
   esEspera,
@@ -241,24 +244,18 @@ function pillText(f: FollowUpView): string {
   return f.dueAt ? whenLabel(f.dueAt) : pillPrefix(f);
 }
 
-const FACE_SRC: Record<RobotFace, string> = { normal: "/emoji/robot.svg", dormido: "/emoji/robot-dormido.svg", cancelado: "/emoji/robot-cancelado.svg" };
-
-/** El robot del seguimiento (imagen propia: no existe emoji de robot con ojos en X ni dormido). */
-export function RobotIcon({ face, size = 18 }: { face: RobotFace; size?: number }) {
-  // eslint-disable-next-line @next/next/no-img-element -- SVG chico y estático de public/emoji
-  return <img src={FACE_SRC[face]} width={size} height={size} alt="" aria-hidden="true" className="-my-0.5 shrink-0" draggable={false} />;
-}
-
 function faceOf(f: FollowUpState): RobotFace {
   if (f.estado === "dormido") return "dormido";
   if (f.estado !== "activo") return "cancelado";
   return f.modo === "sugerido" && !f.autoAprobado ? "dormido" : "normal";
 }
 
-const TONO_CANCELADO = "border-muted-foreground/70 bg-background text-muted-foreground";
+// Borde gris como ⚡ 📄 📎 (border-border; 30-oct-2026, pedido del dueño: antes el gris oscuro se veía casi negro junto a ellos).
+const TONO_GRIS = "border-border bg-background text-muted-foreground";
+const TONO_CANCELADO = TONO_GRIS;
 
 function toneOf(f: FollowUpState): string {
-  if (f.estado === "dormido") return "border-muted-foreground/40 bg-background text-muted-foreground";
+  if (f.estado === "dormido") return TONO_GRIS;
   if (f.estado === "baja") return "border-red-600 bg-red-50 text-red-800 dark:bg-red-500/15 dark:text-red-200";
   if (f.estado === "cancelado") return TONO_CANCELADO;
   if (f.ensayo) return "border-dashed border-muted-foreground/60 bg-muted text-muted-foreground";
@@ -399,7 +396,11 @@ export function FollowUpPill({
     <button
       ref={boton}
       type="button"
-      onClick={onToggle}
+      onClick={() => {
+        // Brinco al tocarla (30-oct-2026); con una escena en curso, la escena manda.
+        if (!enCurso && boton.current) brincar(boton.current, boton.current.firstElementChild);
+        onToggle();
+      }}
       aria-expanded={open}
       aria-label={title}
       title={title}
@@ -457,7 +458,7 @@ function PanelHeader({ followUp, title, onClose }: { followUp: FollowUpState; ti
   return (
     <div className="flex shrink-0 items-center gap-2 border-b px-3 py-1.5">
       {/* 30 px (7-oct-2026, pedido del dueño): cabe en el alto que ya da la ✕ roja (32 px); el encabezado no crece. */}
-      <RobotIcon face={faceOf(followUp)} size={30} />
+      <RobotQuieto cara={faceOf(followUp)} size={30} />
       <span className={`min-w-0 flex-1 truncate text-sm font-semibold ${red ? "text-red-800 dark:text-red-200" : "text-brand-navy dark:text-sky-300"}`}>{title}</span>
       <span data-testid="followup-estado" className={`shrink-0 rounded-full border px-2.5 py-0.5 text-[11px] font-medium whitespace-nowrap ${estado.tone}`}>
         {estado.label}
