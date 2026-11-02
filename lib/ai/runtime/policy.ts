@@ -40,12 +40,25 @@ export type DebounceInput = {
   lastInboundAt: number; // epoch ms del entrante más reciente
 };
 
-// Delay (ms) desde `now` hasta que debe dispararse el job de respuesta.
-export function debounceDelayMs(i: DebounceInput, delaySeconds: number = RESPONSE_DELAY_SECONDS): number {
+// Hora (epoch ms) desde la que la respuesta puede salir: la espera tras el último entrante, sin pasar del tope.
+export function fireAtMs(i: Omit<DebounceInput, "now">, delaySeconds: number = RESPONSE_DELAY_SECONDS): number {
   const soft = i.lastInboundAt + delaySeconds * 1000;
   const hard = i.firstPendingAt + Math.max(MAX_WAIT_SECONDS, delaySeconds) * 1000;
-  const fireAt = Math.min(soft, hard);
-  return Math.max(0, fireAt - i.now);
+  return Math.min(soft, hard);
+}
+
+// Delay (ms) desde `now` hasta que la respuesta puede salir.
+export function debounceDelayMs(i: DebounceInput, delaySeconds: number = RESPONSE_DELAY_SECONDS): number {
+  return Math.max(0, fireAtMs(i, delaySeconds) - i.now);
+}
+
+// Preparar la respuesta durante la espera (A1 de la auditoría de velocidad, 2-nov-2026): el job arranca ANTICIPO_MS
+// antes de que se cumpla la espera, el modelo escribe mientras tanto (Luna ~3 s) y la respuesta lista se retiene
+// hasta la hora de siempre (run.ts › holdUntil). Si el cliente escribe en ese rato, se descarta y se vuelve a la
+// espera normal. La respuesta nunca sale antes que antes; sale ~3 s después del modelo en vez de ~3 s + modelo.
+export const ANTICIPO_MS = 3_000;
+export function anticipar(delayMs: number): number {
+  return Math.max(0, delayMs - ANTICIPO_MS);
 }
 
 // Qué entrantes pendientes cuentan para el debounce: solo los posteriores al

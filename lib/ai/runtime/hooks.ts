@@ -17,7 +17,7 @@ import {
 import { humanPauseUntil } from "@/lib/agente-ia/opciones";
 import { loadBotOptions } from "./options";
 import { isPauseDue, pauseForHumanReply, reactivateDuePause } from "./pause";
-import { debounceDelayFor } from "./schedule";
+import { jobDelayFor } from "./schedule";
 import { resumeAgentOnFollowUpReply } from "@/lib/followups/reply";
 import { logError, safeErrorMessage } from "@/lib/log/safe-error";
 
@@ -72,7 +72,7 @@ export async function onInboundCustomerMessage(
     } else if (wrote && conv.agentState === "activo" && conv.agentStateChangedAt && writtenBefore(wrote, conv.agentStateChangedAt)) {
       return; // escrito antes de que el bot volviera (solo o con "Reactivar") y llegó tarde
     }
-    const delay = await debounceDelayFor(input.organizationId, input.conversationId, now);
+    const delay = await jobDelayFor(input.organizationId, input.conversationId, now);
     if (delay === null) return; // canal apagado o nada pendiente
     await withQueueTimeout(
       scheduleAgentRun(
@@ -166,7 +166,7 @@ export async function wakeAgentAfterTranscription(
   ports: Ports = {},
 ): Promise<void> {
   try {
-    const delay = await debounceDelayFor(input.organizationId, input.conversationId, ports.now ?? new Date());
+    const delay = await jobDelayFor(input.organizationId, input.conversationId, ports.now ?? new Date());
     if (delay === null) return; // canal apagado, agente pausado o nada pendiente
     await withQueueTimeout(
       scheduleAgentRun(ports.queue ?? bullAgentQueuePort(), ports.kv ?? redisKvPort(), input, delay),

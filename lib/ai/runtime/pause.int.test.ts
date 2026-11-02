@@ -5,6 +5,7 @@
 // envío (sendTextMessage) siguen el camino real. Solo con TEST_DATABASE_URL.
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import type { CallModelInput, CallModelResult } from "@/lib/ai/types";
+import { ANTICIPO_MS } from "./policy";
 
 const TEST_DATABASE_URL = process.env.TEST_DATABASE_URL;
 if (TEST_DATABASE_URL) process.env.DATABASE_URL = TEST_DATABASE_URL;
@@ -223,7 +224,7 @@ describe.skipIf(!TEST_DATABASE_URL)("Apagar bot por conversación (Postgres real
     const at = new Date(now.getTime() + 1_000);
     const id = await msg(CONV, { direction: "in", body: "¿siguen ahí?", at });
     await inbound(CONV, at, q, id);
-    expect(q.jobs.get(CONV)).toMatchObject({ delay: 15_000 });
+    expect(q.jobs.get(CONV)).toMatchObject({ delay: 15_000 - ANTICIPO_MS }); // con el anticipo de A1
     const { deps } = makeDeps();
     expect(await run.runAgent(job(), deps)).toEqual({ kind: "sent", bubbles: 1 });
   });

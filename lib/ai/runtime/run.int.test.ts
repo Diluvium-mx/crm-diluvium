@@ -6,6 +6,7 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import type { CallModelInput, CallModelResult } from "@/lib/ai/types";
 import { INTERNAL_TEXT_RETRY_NOTE } from "./internal-text";
+import { ANTICIPO_MS } from "./policy";
 
 const TEST_DATABASE_URL = process.env.TEST_DATABASE_URL;
 if (TEST_DATABASE_URL) process.env.DATABASE_URL = TEST_DATABASE_URL;
@@ -331,7 +332,7 @@ describe.skipIf(!TEST_DATABASE_URL)("runtime del Agente IA (Postgres real)", () 
     expect(await schedule.debounceDelayFor(ORG, CONV, new Date(t1.getTime() + 55_000))).toBe(5_000);
   });
 
-  it("mensaje nuevo durante la generación → descarta, regenera con TODO el contexto y envía solo la nueva", async () => {
+  it("mensaje nuevo durante la generación → descarta, vuelve a la espera y la siguiente corrida contesta TODO", async () => {
     await msg({ direction: "in", body: "¿precio?", at: ago(20_000) });
     const { deps, calls } = makeDeps({
       brain: ["respuesta vieja", "Cuesta $5,500 y sí enviamos a Monterrey."],
@@ -339,8 +340,12 @@ describe.skipIf(!TEST_DATABASE_URL)("runtime del Agente IA (Postgres real)", () 
         if (n === 1) await msg({ direction: "in", body: "¿envían a Monterrey?", at: new Date() });
       },
     });
+    // A1 (2-nov-2026): no se regenera al momento; de vuelta a la espera desde el mensaje nuevo (con su anticipo).
     const r = await run.runAgent(JOB, deps);
-    expect(r).toEqual({ kind: "sent", bubbles: 1 });
+    expect(r).toMatchObject({ kind: "reschedule", reason: "mensajes_nuevos_durante_generacion" });
+    if (r.kind === "reschedule") expect(r.delayMs).toBeGreaterThanOrEqual(15_000 - ANTICIPO_MS - 1_000);
+    expect(await agentOuts()).toEqual([]);
+    expect(await run.runAgent(JOB, deps)).toEqual({ kind: "sent", bubbles: 1 });
     expect(calls.map((c) => c.kind)).toEqual(["cerebro", "cerebro"]);
     expect(JSON.stringify(calls[1].input.messages)).toContain("¿envían a Monterrey?");
     expect((await agentOuts()).map((m) => m.body)).toEqual(["Cuesta $5,500 y sí enviamos a Monterrey."]);
@@ -451,7 +456,7 @@ describe.skipIf(!TEST_DATABASE_URL)("runtime del Agente IA (Postgres real)", () 
     expect(run.MAX_ROUNDS * (run.FILTER_TIMEOUT_MS + run.BRAIN_TIMEOUT_MS) + run.SATURATED_RETRY_MS + run.BRAIN_TIMEOUT_MS).toBeLessThan(LOCK_TTL_MS);
   });
 
-  it("cliente que escribe sin parar: nunca bucle inmediato (vuelve al debounce ≥ 15 s) y contesta cuando hace una pausa", async () => {
+  it("cliente que escribe sin parar: nunca bucle inmediato (vuelve al debounce, con su anticipo) y contesta cuando hace una pausa", async () => {
     await msg({ direction: "in", body: "hola", at: ago(120_000) }); // tope de 60 s ya vencido
     const writing = makeDeps({
       onBrain: async () => {
@@ -460,8 +465,8 @@ describe.skipIf(!TEST_DATABASE_URL)("runtime del Agente IA (Postgres real)", () 
     });
     const r = await run.runAgent(JOB, writing.deps);
     expect(r.kind).toBe("reschedule");
-    if (r.kind === "reschedule") expect(r.delayMs).toBeGreaterThanOrEqual(15_000); // nunca 0
-    expect(writing.calls).toHaveLength(run.MAX_ROUNDS); // acotado por corrida
+    if (r.kind === "reschedule") expect(r.delayMs).toBeGreaterThanOrEqual(15_000 - ANTICIPO_MS); // nunca 0
+    expect(writing.calls).toHaveLength(1); // una sola generación y de vuelta a la espera (A1)
     expect(await agentOuts()).toEqual([]);
     // El cliente para de escribir: la siguiente corrida contesta TODO.
     expect(await run.runAgent(JOB, makeDeps().deps)).toEqual({ kind: "sent", bubbles: 2 });
@@ -682,13 +687,88 @@ describe.skipIf(!TEST_DATABASE_URL)("runtime del Agente IA (Postgres real)", () 
     expect(await sweep.findOrphanConversations(new Date())).toEqual([]);
   });
 
+  // ── A1 y A2 (2-nov-2026, auditoría de velocidad) ──────────────────────────
+  it("A1: la respuesta lista espera a la hora de siempre (15 s tras el último mensaje) y después sale", async () => {
+    const at = ago(5_000);
+    await msg({ direction: "in", body: "¿precio?", at });
+    const esperas: number[] = [];
+    const { deps } = makeDeps();
+    deps.holdUntil = async (hasta) => {
+      esperas.push(hasta.getTime());
+    };
+    expect(await run.runAgent(JOB, deps)).toEqual({ kind: "sent", bubbles: 2 });
+    expect(esperas).toEqual([at.getTime() + 15_000]);
+  });
+
+  it("A1: si el cliente escribe mientras la respuesta espera, no sale y vuelve a la espera", async () => {
+    await msg({ direction: "in", body: "¿precio?", at: ago(5_000) });
+    const { deps, calls } = makeDeps();
+    deps.holdUntil = async () => {
+      await msg({ direction: "in", body: "¿y envían a Culiacán?", at: new Date() });
+    };
+    expect(await run.runAgent(JOB, deps)).toMatchObject({ kind: "reschedule", reason: "mensajes_nuevos_durante_generacion" });
+    expect(await agentOuts()).toEqual([]);
+    expect(calls.map((c) => c.kind)).toEqual(["cerebro"]);
+    expect((await usage()).map((u) => u.outcome)).toEqual(["discarded_stale"]);
+  });
+
+  async function mensajeDeAnuncio() {
+    const id = await msg({ direction: "in", body: "Hola\nbody: Compuertas contra inundaciones desde $5,500\nsourceType: ad", at: ago(10_000) });
+    await db.update(s.messages).set({ adReferral: { headline: "Compuertas contra inundaciones" } }).where(eq(s.messages.id, id));
+    return id;
+  }
+
+  it("A2: el anuncio se limpia durante la espera y al contestar ya no se vuelve a pagar", async () => {
+    await mensajeDeAnuncio();
+    const adCleaner = await import("./ad-cleaner");
+    const antes = makeDeps();
+    await adCleaner.prelimpiarAnuncios({ organizationId: ORG, conversationId: CONV }, antes.deps.callModel);
+    expect(antes.calls.map((c) => c.kind)).toEqual(["filtro"]);
+    const { deps, calls } = makeDeps();
+    expect(await run.runAgent(JOB, deps)).toEqual({ kind: "sent", bubbles: 2 });
+    expect(calls.map((c) => c.kind)).toEqual(["cerebro"]);
+  });
+
+  it("A2: dos que piden la misma limpieza a la vez la pagan una sola vez", async () => {
+    const id = await mensajeDeAnuncio();
+    const context = await import("./context");
+    const adCleaner = await import("./ad-cleaner");
+    const rows = await context.pendingInbound(ORG, CONV);
+    const { deps, calls } = makeDeps();
+    let soltar: () => void = () => undefined;
+    const puerta = new Promise<void>((r) => {
+      soltar = r;
+    });
+    const lento = async (modelId: string, input: CallModelInput) => {
+      await puerta;
+      return deps.callModel(modelId, input);
+    };
+    const ctx = { organizationId: ORG, conversationId: CONV, filterModelId: "gpt-5.6-luna", callModel: lento };
+    const a = adCleaner.cleanAdMessages(rows, ctx);
+    const b = adCleaner.cleanAdMessages(rows, ctx);
+    soltar();
+    const [ra, rb] = await Promise.all([a, b]);
+    expect(calls.filter((c) => c.kind === "filtro")).toHaveLength(1);
+    expect(ra.get(id)).toBe(rb.get(id));
+  });
+
+  it("A2: con el Agente IA apagado en el canal no se limpia nada por adelantado", async () => {
+    await mensajeDeAnuncio();
+    await db.update(s.channels).set({ aiAgentMode: "off" }).where(eq(s.channels.id, "ch_rt"));
+    const adCleaner = await import("./ad-cleaner");
+    const { deps, calls } = makeDeps();
+    await adCleaner.prelimpiarAnuncios({ organizationId: ORG, conversationId: CONV }, deps.callModel);
+    expect(calls).toEqual([]);
+  });
+
   it("hook de entrante: marca last_inbound_at y programa con debounce", async () => {
     const { port, kv, jobs } = fakeQueue();
     const at = new Date();
     await msg({ direction: "in", body: "hola", at });
     await hooks.onInboundCustomerMessage({ organizationId: ORG, conversationId: CONV, receivedAt: at }, { queue: port, kv, now: at });
     expect((await conv()).lastInboundAt?.getTime()).toBe(at.getTime());
-    expect(jobs.get(CONV)).toEqual({ state: "delayed", delay: 15_000 });
+    // El job arranca ANTICIPO_MS antes (la respuesta se prepara mientras y sale a los 15 s: A1).
+    expect(jobs.get(CONV)).toEqual({ state: "delayed", delay: 15_000 - ANTICIPO_MS });
   });
 
   // ── Revisión adversarial (P1/P2) ─────────────────────────────────────────
@@ -2175,7 +2255,7 @@ describe.skipIf(!TEST_DATABASE_URL)("runtime del Agente IA (Postgres real)", () 
     }
   });
 
-  it("pie del archivo: si el cliente escribe durante la generación, no arranca nada y se vuelve a generar con todo", async () => {
+  it("pie del archivo: si el cliente escribe durante la generación, no arranca nada y la siguiente corrida contesta con todo", async () => {
     await msg({ direction: "in", body: "¿me pasa el video?", at: ago(40_000) });
     await wf("video_mini", [{ kind: "send_media", assetId: "a_video", title: "Video" }]);
     const zernio = fakeZernio();
@@ -2189,6 +2269,8 @@ describe.skipIf(!TEST_DATABASE_URL)("runtime del Agente IA (Postgres real)", () 
       },
       zernio,
     );
+    expect(await run.runAgent(JOB, deps)).toMatchObject({ kind: "reschedule", reason: "mensajes_nuevos_durante_generacion" });
+    expect(await runs()).toEqual([]);
     expect(await run.runAgent(JOB, deps)).toEqual({ kind: "sent", bubbles: 0 });
     expect(calls.filter((c) => c.kind === "cerebro")).toHaveLength(2);
     expect((await runs()).map((r) => r.payload)).toEqual([{ pieDelAgente: "Claro, y sí hacemos envíos." }]);
