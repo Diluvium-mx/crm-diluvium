@@ -758,13 +758,19 @@ prototipos (tamaño real y ampliado) antes de construirlas; el dueño aprobó la
   píldora, genio) y eligió: brinco 490 ms y 8 px; la ventana **sale de la píldora** en 310 ms (nace al 20 % y transparente,
   rebota a 103 %) y al cerrarla con la píldora, la ✕ o Esc regresa a ella en 260 ms; abrir ⚡, plantillas u otra caja la
   quita de golpe. Si se vuelve a abrir a medio cerrar, sigue desde el mismo cuadro. Mientras se cierra no se puede tocar.
-  Código: `ventana-de-pildora.tsx` (envuelve a `FollowUpPanel` en el composer) y `followUpCerrando` en `composer.tsx`.
+  Código: `ventana-flotante.tsx` (`VentanaFlotante` envuelve a `FollowUpPanel` en el composer y `useSalida` la deja montada
+  mientras regresa a su botón; desde el 2-nov-2026 sirve también a ⚡, 📄 y 📎 Multimedia).
 - **La ventana flota sobre el chat** (31-oct-2026): iba DENTRO de la caja blanca del composer y la animación solo movía
   la ventana: al abrir, la caja crecía de golpe (de 89 a 324 px en un cuadro) y los mensajes brincaban; al cerrar, el
   hueco blanco se quedaba los 260 ms y se iba de golpe. La maqueta flotaba encima, por eso ahí se veía bien. El dueño
   comparó en la misma maqueta «como hoy», «el fondo crece con ella» y «flota sobre el chat» y eligió **flotar**: la ventana
   va encima del historial (`absolute`, a lo ancho de la caja, 8 px arriba de ella, `z-20`); la caja y los mensajes no se
   mueven y, abierta, tapa los últimos mensajes. Brinco y tiempos, iguales.
+- **⚡, 📄 y 📎 Multimedia también flotan** (2-nov-2026, pedido del dueño: «cambia demasiado la forma en que carga y
+  cómo se ve»): las tres ventanas iban dentro de la caja blanca, que crecía de golpe. Ahora usan la misma `VentanaFlotante`:
+  salen de su botón (`data-ventana-origen`: seguimiento, rapidos, plantillas, adjuntar) en 310 ms, flotan sobre el chat y
+  regresan a él en 260 ms (`useSalida`); si se abre otra, la anterior se quita de golpe. Con la ventana de 24 h cerrada, la
+  barra «📄 Enviar plantilla» se queda a la vista y abre/cierra la lista. 🕒 Programar y ▶ Automatizaciones siguen igual.
 
 ---
 

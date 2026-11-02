@@ -47,7 +47,7 @@ import { useIsMobile } from "@/components/ui/use-media-query";
 import { CloseX } from "@/components/ui/close-x";
 import { WorkflowPicker } from "./workflow-picker";
 import { bajaAlreadySeen, FollowUpPanel, FollowUpPill, markBajaSeen, useFollowUp } from "./followup-pill";
-import { VentanaDePildora } from "./ventana-de-pildora";
+import { useSalida, VentanaFlotante } from "./ventana-flotante";
 import { SpellcheckOverlay } from "@/components/spelling/spellcheck-overlay";
 import { useComposerTextRequests } from "../../_components/composer-text";
 import { saveChatDraft, useSavedChatDraft } from "./use-chat-draft";
@@ -145,12 +145,7 @@ export function Composer({
   const [bajaDismissed, setBajaDismissed] = useState<string | null>(null);
   const bajaAlert = followUp?.estado === "baja" && bajaDismissed !== followUp.contactId && !bajaAlreadySeen(followUp.contactId);
   const followUpPanelOpen = (followUpOpen || bajaAlert) && followUp !== null;
-  // Mientras regresa a la píldora (30-oct-2026, ventana-de-pildora.tsx): la píldora, la ✕ y Esc la cierran con
-  // animación; abrir ⚡, plantillas u otra caja la quita de golpe. Flota sobre el chat (31-oct-2026): no ocupa lugar
-  // en la caja blanca, por eso la caja no crece ni se encoge.
-  const [followUpCerrando, setFollowUpCerrando] = useState(false);
   const closeFollowUp = () => {
-    if (followUpPanelOpen) setFollowUpCerrando(true);
     setFollowUpOpen(false);
     if (followUp?.estado === "baja") {
       markBajaSeen(followUp.contactId);
@@ -163,7 +158,6 @@ export function Composer({
       return;
     }
     setFollowUpOpen(true);
-    setFollowUpCerrando(false);
     setSnippetOpen(false);
     setTemplateOpen(false);
     setWorkflowsOpen(false);
@@ -171,10 +165,17 @@ export function Composer({
     setScheduleOpen(false);
     setAttachMenuOpen(false);
   };
-  const followUpPanel = (followUpPanelOpen || followUpCerrando) && followUp !== null && (
-    <VentanaDePildora cerrando={!followUpPanelOpen} onCerrada={() => setFollowUpCerrando(false)}>
+  // Seguimiento, ⚡ Mensajes rápidos, 📄 Plantillas y 📎 Multimedia flotan sobre el chat y salen de su botón
+  // (ventana-flotante.tsx; 31-oct y 2-nov-2026): no ocupan lugar en la caja blanca, así que la caja no crece ni se encoge.
+  // Al cerrarse regresan a su botón; si se abre otra, la anterior se quita de golpe.
+  const salidaSeguimiento = useSalida(followUpPanelOpen, snippetOpen || templateOpen || multimediaOpen);
+  const salidaRapidos = useSalida(snippetOpen, followUpPanelOpen || templateOpen || multimediaOpen);
+  const salidaPlantillas = useSalida(templateOpen, followUpPanelOpen || snippetOpen || multimediaOpen);
+  const salidaMultimedia = useSalida(multimediaOpen, followUpPanelOpen || snippetOpen || templateOpen);
+  const followUpPanel = salidaSeguimiento.montada && followUp !== null && (
+    <VentanaFlotante origen="seguimiento" cerrando={salidaSeguimiento.cerrando} onCerrada={salidaSeguimiento.alCerrar}>
       <FollowUpPanel followUp={followUp} onClose={closeFollowUp} onChanged={confirmar} onAnticipar={anticipar} onRevertir={revertir} />
-    </VentanaDePildora>
+    </VentanaFlotante>
   );
   const [snippets, setSnippets] = useState<SnippetView[] | null>(null);
   const [snippetsError, setSnippetsError] = useState(false);
@@ -405,6 +406,20 @@ export function Composer({
     <p className="mb-2 text-xs text-muted-foreground">✏️ Tu borrador se guardó: podrás enviarlo cuando el cliente vuelva a escribir.</p>
   );
 
+  const templatePanel = salidaPlantillas.montada && (
+    <VentanaFlotante origen="plantillas" cerrando={salidaPlantillas.cerrando} onCerrada={salidaPlantillas.alCerrar}>
+      <TemplatePicker
+        firstName={contactFirstName}
+        timePhrase={contactTimePhrase}
+        onSubmit={(templateId, values, preview) => {
+          setTemplateOpen(false);
+          onSendTemplate(templateId, values, preview);
+        }}
+        onClose={() => setTemplateOpen(false)}
+      />
+    </VentanaFlotante>
+  );
+
   if (!windowOpen && channelType === "instagram") {
     return (
       <div className="border-t bg-card p-3 pb-[max(0.75rem,env(safe-area-inset-bottom))]">
@@ -420,28 +435,22 @@ export function Composer({
     return (
       <div className="relative border-t bg-card p-3 pb-[max(0.75rem,env(safe-area-inset-bottom))]">
         {followUpPanel}
-        {!scheduleOpen && !templateOpen && keptDraftNotice}
+        {templatePanel}
+        {/* Plantillas flota (2-nov-2026): la barra se queda a la vista y «Enviar plantilla» la abre y la cierra. */}
+        {!scheduleOpen && keptDraftNotice}
         {scheduleOpen ? (
           scheduleForm
-        ) : templateOpen ? (
-          <TemplatePicker
-            firstName={contactFirstName}
-            timePhrase={contactTimePhrase}
-            onSubmit={(templateId, values, preview) => {
-              setTemplateOpen(false);
-              onSendTemplate(templateId, values, preview);
-            }}
-            onClose={() => setTemplateOpen(false)}
-          />
         ) : (
           <div className="flex gap-2">
             {followUp && <FollowUpPill followUp={followUp} anticipo={followUpAnticipo} silencio={followUpSilencio} open={followUpPanelOpen} onToggle={toggleFollowUp} className="flex max-w-[45%] self-center" />}
             <button
               type="button"
               onClick={() => {
-                setTemplateOpen(true);
+                setTemplateOpen((open) => !open);
                 setFollowUpOpen(false);
               }}
+              aria-expanded={templateOpen}
+              data-ventana-origen="plantillas"
               className="flex flex-1 items-center justify-center gap-2 rounded-md bg-brand-navy px-4 py-2 text-sm font-medium text-brand-white transition-colors hover:bg-brand-navy-dark"
             >
               📄 Enviar plantilla
@@ -451,6 +460,7 @@ export function Composer({
               onClick={() => {
                 setScheduleOpen(true);
                 setFollowUpOpen(false);
+                setTemplateOpen(false);
               }}
               aria-label="Programar plantilla"
               title="Programar plantilla"
@@ -468,31 +478,25 @@ export function Composer({
     <div className="relative border-t bg-card p-3 pb-[max(0.75rem,env(safe-area-inset-bottom))]">
       {scheduleForm}
       {followUpPanel}
-      {snippetOpen && (
-        <SnippetPicker
-          key={`${snippetTab}:${snippetLinkId ?? ""}`}
-          conversationId={conversationId}
-          tab={snippetTab}
-          linkId={snippetLinkId}
-          onInsert={appendFragment}
-          onClose={() => setSnippetOpen(false)}
-        />
+      {salidaRapidos.montada && (
+        <VentanaFlotante origen="rapidos" cerrando={salidaRapidos.cerrando} onCerrada={salidaRapidos.alCerrar}>
+          <SnippetPicker
+            key={`${snippetTab}:${snippetLinkId ?? ""}`}
+            conversationId={conversationId}
+            tab={snippetTab}
+            linkId={snippetLinkId}
+            onInsert={appendFragment}
+            onClose={() => setSnippetOpen(false)}
+          />
+        </VentanaFlotante>
       )}
       {workflowsOpen && <WorkflowPicker onRun={runCommand} onClose={() => setWorkflowsOpen(false)} />}
-      {multimediaOpen && <MultimediaPicker selected={selectedAssets} onToggle={attachments.toggleLibrary} onClose={() => setMultimediaOpen(false)} />}
-      {templateOpen && (
-        <div className="mb-2">
-          <TemplatePicker
-            firstName={contactFirstName}
-            timePhrase={contactTimePhrase}
-            onSubmit={(templateId, values, preview) => {
-              setTemplateOpen(false);
-              onSendTemplate(templateId, values, preview);
-            }}
-            onClose={() => setTemplateOpen(false)}
-          />
-        </div>
+      {salidaMultimedia.montada && (
+        <VentanaFlotante origen="adjuntar" cerrando={salidaMultimedia.cerrando} onCerrada={salidaMultimedia.alCerrar}>
+          <MultimediaPicker selected={selectedAssets} onToggle={attachments.toggleLibrary} onClose={() => setMultimediaOpen(false)} />
+        </VentanaFlotante>
       )}
+      {templatePanel}
 
       {(attachments.notices.length > 0 || sendError) && (
         <div role="alert" className="mb-2 flex items-start justify-between gap-3 rounded-md border border-brand-orange/40 bg-brand-orange/10 px-3 py-1.5 text-xs">
@@ -639,6 +643,7 @@ export function Composer({
               }}
               aria-label="Insertar mensaje rápido"
               aria-expanded={snippetOpen}
+              data-ventana-origen="rapidos"
               title="Mensajes rápidos"
               className={`order-1 rounded-md border px-2.5 py-2 transition-colors sm:order-none ${
                 snippetOpen ? "border-brand-orange bg-brand-orange/10 text-brand-orange" : "text-brand-orange hover:bg-brand-orange/10"
@@ -658,6 +663,7 @@ export function Composer({
                 }}
                 aria-label="Enviar plantilla"
                 aria-expanded={templateOpen}
+                data-ventana-origen="plantillas"
                 title="Plantillas (aprobadas por Meta)"
                 className={`order-1 rounded-md border px-2.5 py-2 text-sm leading-4 transition-colors sm:order-none ${
                   templateOpen ? "border-brand-navy bg-brand-navy/10" : "hover:bg-brand-navy/10"
