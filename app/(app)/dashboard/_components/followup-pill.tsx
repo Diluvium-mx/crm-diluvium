@@ -405,6 +405,7 @@ export function FollowUpPill({
       aria-label={title}
       title={title}
       data-testid="followup-pill"
+      data-ventana-origen="seguimiento"
       data-estado={vista.estado}
       data-escena={enCurso?.escena}
       // px-6 sin palabra (Cancelado y dormido): conserva su tamaño y el robot queda en medio (junto a «Enviar
