@@ -33,7 +33,7 @@ describe("caché del historial (Anthropic)", () => {
     expect(out[0].providerOptions).toBeUndefined();
   });
 
-  it("con fotos o PDF (URL firmada que cambia) el punto va antes del primer mensaje con archivo", () => {
+  it("con fotos o PDF (URL firmada estable toda la hora) el punto también va antes del último turno del cliente", () => {
     const msgs: ModelMessage[] = [
       { role: "user", content: "hola" },
       { role: "assistant", content: "¿en qué te ayudo?" },
@@ -42,10 +42,10 @@ describe("caché del historial (Anthropic)", () => {
       { role: "user", content: "precio?" },
     ];
     const out = withHistoryCacheBreakpoint(msgs);
-    expect(out[1].providerOptions).toEqual(cc);
-    expect(out[3].providerOptions).toBeUndefined();
-    // Si la primera foto está en el primer mensaje, no hay nada estable que cachear.
+    expect(out[3].providerOptions).toEqual(cc);
+    expect(out[1].providerOptions).toBeUndefined();
+    // Aunque la foto esté en el primer mensaje.
     const first = withHistoryCacheBreakpoint([{ role: "user", content: [{ type: "image", image: new URL("https://x.test/b.jpg") }] }, { role: "assistant", content: "ok" }, { role: "user", content: "y?" }]);
-    expect(first.every((m) => m.providerOptions === undefined)).toBe(true);
+    expect(first[1].providerOptions).toEqual(cc);
   });
 });

@@ -12,9 +12,10 @@ export const ANTHROPIC_CACHE_CONTROL = { type: "ephemeral", ttl: "1h" } as const
 // Sonnet era volver a escribir ~19 mil tokens cuando pasaban más de 5 min entre respuestas.
 // Las dos marcas (system e historial) llevan el mismo TTL: Anthropic exige que una entrada
 // de 1 h vaya antes que cualquiera de 5 min. Detalle: docs/agente-ia.md › Caché de 1 hora.
-// Las fotos y PDF van como URL firmada que CAMBIA en cada respuesta: el prefijo con
-// ellas nunca se repite y marcarlo costaría 1.25× sin lecturas. Por eso el punto de
-// caché va, como máximo, justo ANTES del primer mensaje con imagen o archivo.
+// Fotos y PDF (2-nov-2026, A3 de la auditoría de velocidad): antes su URL firmada CAMBIABA en cada
+// respuesta y el punto iba antes de la primera foto (lo de después nunca se repetía). Ahora se firman
+// con la hora redonda (lib/ai/runtime/firma-imagen.ts): la URL es la misma toda esa hora y el
+// historial con fotos también se lee de caché; solo al cambiar la hora se vuelve a escribir.
 export function withHistoryCacheBreakpoint(messages: readonly ModelMessage[]): ModelMessage[] {
   const out: ModelMessage[] = [...messages];
   let lastUser = -1;
@@ -24,8 +25,7 @@ export function withHistoryCacheBreakpoint(messages: readonly ModelMessage[]): M
       break;
     }
   }
-  const firstMedia = out.findIndex((m) => Array.isArray(m.content) && m.content.some((p) => p.type === "image" || p.type === "file"));
-  const at = Math.min(lastUser, firstMedia === -1 ? lastUser : firstMedia) - 1;
+  const at = lastUser - 1;
   if (at < 0) return out;
   const target = out[at];
   out[at] = {

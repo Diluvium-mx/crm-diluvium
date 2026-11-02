@@ -9,6 +9,7 @@ import { sendAgentText } from "@/lib/messaging/send";
 import { startWorkflowRun } from "@/lib/workflows/executor";
 import { transcriptionEnabled } from "@/lib/ai/transcription/transcribe";
 import type { ObjectStorage } from "@/lib/storage/s3";
+import { FIRMA_IMAGEN_VIGENCIA_S, horaDeFirma } from "./firma-imagen";
 import { processAgentJob } from "./process";
 import {
   AGENT_QUEUE,
@@ -24,11 +25,12 @@ import { isWithinSchedule } from "@/lib/agente-ia/opciones";
 import { loadBotOptions } from "./options";
 import { runAgent, type RunDeps, type RunResult } from "./run";
 import { reactivateDuePauses } from "./pause";
-import { debounceDelayFor } from "./schedule";
+import { jobDelayFor } from "./schedule";
 import { findLostRetries, findOrphanConversations, findPendingAtOpening, noticeFailedAgentSends, OPENING_STAGGER_MS, reconcileStuckDrafts } from "./sweep";
 import { logError, safeErrorMessage } from "@/lib/log/safe-error";
 
 const SWEEP_EVERY_MS = 60_000;
+const MAX_HOLD_MS = 60_000;
 
 function describe(result: RunResult | null): string {
   if (!result) return "candado ocupado, reintento";
@@ -50,7 +52,14 @@ export function makeRunDeps(provider: MessagingProvider, storage: ObjectStorage 
     sendBubble: ({ organizationId, conversationId, text, messageId }) =>
       sendAgentText(provider, { organizationId, conversationId, text, messageId }),
     sleep: (ms) => new Promise((r) => setTimeout(r, ms)),
-    resolveImage: async (key) => (storage ? storage.signedGetUrl(key, 15 * 60) : null),
+    // A1: la respuesta lista espera a la hora de siempre (a lo más 60 s, por si algo raro la pone lejos).
+    holdUntil: async (at) => {
+      const ms = Math.min(at.getTime() - Date.now(), MAX_HOLD_MS);
+      if (ms > 0) await new Promise((r) => setTimeout(r, ms));
+    },
+    // Firma con la hora redonda: la misma URL toda la hora, así el modelo reutiliza lo que ya leyó (firma-imagen.ts).
+    resolveImage: async (key) =>
+      storage ? storage.signedGetUrl(key, FIRMA_IMAGEN_VIGENCIA_S, undefined, "inline", undefined, horaDeFirma(new Date())) : null,
     // Acciones del cerebro (Fase D): corridas de workflow con trigger "agent".
     startWorkflow: startWorkflowRun,
     // Parte 1: el agente espera la nota de voz solo si este worker la puede transcribir.
@@ -96,7 +105,7 @@ export function startAgentRuntime(opts: { provider: MessagingProvider; storage: 
     kv,
     now: runDeps.now,
     run: (job: AgentJob) => runAgent(job, runDeps),
-    delayFor: debounceDelayFor,
+    delayFor: jobDelayFor,
   };
   const worker = new Worker<AgentJob>(
     AGENT_QUEUE,

@@ -56,6 +56,8 @@ import { startOutboxWorker } from "./outbox";
 import { startChatUploadWorker } from "./chat-uploads";
 import { onInboundKeyword } from "@/lib/workflows/triggers";
 import { agentIngestHooks, wakeAgentAfterTranscription } from "@/lib/ai/runtime/hooks";
+import { prelimpiarAnuncios } from "@/lib/ai/runtime/ad-cleaner";
+import { FIRMA_IMAGEN_VIGENCIA_S, horaDeFirma } from "@/lib/ai/runtime/firma-imagen";
 import { closeInterruptedTranscriptions, staleTranscriptionIds, transcribeMessageAudio } from "@/lib/ai/transcription/transcribe";
 import { startAgentRuntime } from "@/lib/ai/runtime/worker";
 import { startLectorRuntime } from "@/lib/ai/runtime/lector-worker";
@@ -104,7 +106,9 @@ const agent = startAgentRuntime({ provider, storage });
 const lectorDeps = {
   now: () => new Date(),
   callModel,
-  resolveImage: async (key: string) => (storage ? storage.signedGetUrl(key, 15 * 60) : null),
+  // Misma firma estable que el Agente IA: el lector también reutiliza lo que ya leyó del chat con fotos.
+  resolveImage: async (key: string) =>
+    storage ? storage.signedGetUrl(key, FIRMA_IMAGEN_VIGENCIA_S, undefined, "inline", undefined, horaDeFirma(new Date())) : null,
   kv: redisKvPort(),
 };
 const lector = startLectorRuntime(lectorDeps);
@@ -126,6 +130,7 @@ const unavailable = startUnavailableWorker(provider, {
   onMediaMessage: enqueueMediaDownload,
   onRecovered: async (m) => {
     await agentIngestHooks.onInboundMessage?.(m);
+    void prelimpiarAnuncios(m, callModel);
     await onInboundKeyword(m);
   },
   onConfirmedUnavailable: async (m) => {
@@ -148,6 +153,8 @@ const worker = new Worker<InboundJob>(
         // del agente y aislado (nunca lanza): un fallo no re-encola la ingesta.
         onInboundMessage: async (m) => {
           await agentIngestHooks.onInboundMessage?.(m);
+          // El anuncio de Click-to-WhatsApp se limpia ya, durante la espera de la ráfaga (sin esperarlo aquí).
+          void prelimpiarAnuncios(m, callModel);
           await onInboundKeyword(m);
         },
         ...adsIngestHooks,

@@ -24,7 +24,9 @@ export interface ObjectStorage {
    * URL firmada y temporal de un objeto privado. `disposition`: "inline" para
    * verlo en el navegador (visor), "attachment" para forzar la descarga.
    * `contentType` (S2): el tipo con el que el bucket lo sirve, ignorando el que
-   * se guardó (así un archivo nunca se abre como HTML).
+   * se guardó (así un archivo nunca se abre como HTML). `signingDate`: firmar con esa hora en vez de
+   * la actual; con la misma hora la URL sale idéntica (lo usan las fotos que ve el Agente IA, para que
+   * el modelo reutilice lo que ya leyó: lib/ai/runtime/firma-imagen.ts).
    */
   signedGetUrl(
     key: string,
@@ -32,6 +34,7 @@ export interface ObjectStorage {
     downloadName?: string,
     disposition?: "inline" | "attachment",
     contentType?: string,
+    signingDate?: Date,
   ): Promise<string>;
   /** Lee un objeto completo en memoria (solo archivos chicos: falla si pasa `maxBytes`). */
   getBytes(key: string, maxBytes: number): Promise<Uint8Array>;
@@ -153,7 +156,7 @@ export function objectStorage(): ObjectStorage {
       }
       return new Uint8Array(Buffer.concat(chunks).subarray(0, bytes));
     },
-    signedGetUrl(key, expiresInSeconds, downloadName, disposition = "inline", contentType) {
+    signedGetUrl(key, expiresInSeconds, downloadName, disposition = "inline", contentType, signingDate) {
       return getSignedUrl(
         client,
         new GetObjectCommand({
@@ -166,7 +169,7 @@ export function objectStorage(): ObjectStorage {
               : {}),
           ...(contentType ? { ResponseContentType: contentType } : {}),
         }),
-        { expiresIn: expiresInSeconds },
+        { expiresIn: expiresInSeconds, ...(signingDate ? { signingDate } : {}) },
       );
     },
     probeSignedUrl(url) {
