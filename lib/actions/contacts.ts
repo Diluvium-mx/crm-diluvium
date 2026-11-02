@@ -1,16 +1,25 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import { and, desc, eq, gt, inArray, isNotNull, ne, or, sql, type SQL } from "drizzle-orm";
+import { and, eq, gt, inArray, isNotNull, ne, or } from "drizzle-orm";
 import { z } from "zod";
 import { requireActiveMembership } from "@/lib/auth/active-organization";
 import { roleAllows } from "@/lib/auth/permissions";
 import { db } from "@/lib/db";
 import { logError } from "@/lib/log/safe-error";
 import { contacts, contactTemperatureEnum } from "@/lib/db/schema/contacts";
-import { conversations } from "@/lib/db/schema/messaging";
 import { listFunnelStages } from "@/lib/contacts/funnel-stages";
-import { boardContactColumns, type BoardContact } from "@/lib/contacts/board-contact";
+import { type BoardContact } from "@/lib/contacts/board-contact";
+import {
+  buscarContactosEmbudo,
+  cargarEmbudo,
+  ENTRADA_MAS,
+  entradaKey,
+  pageEntrada,
+  selectBoardContacts,
+  type CargaEntrada,
+  type CursorEntrada,
+} from "@/lib/contacts/board-load";
 import { isStageKey } from "@/lib/contacts/stages";
 import { parseGhlContactsCsv } from "@/lib/import/ghl-contacts-csv";
 import { onContactStageEntered } from "@/lib/workflows/triggers";
@@ -21,7 +30,6 @@ import { cancelFollowUpsOnSale } from "@/lib/followups/sale";
 import { recordStageChanges } from "@/lib/contacts/stage-history";
 import {
   funnelSignalsForOrg,
-  lastInboundFromWindow,
   MAX_SIGNAL_CONVERSATIONS,
   type FunnelSignal,
 } from "@/lib/contacts/funnel-signals";
@@ -34,36 +42,6 @@ export type { ImportContactsFromCsvResult } from "@/lib/import/persist";
 
 async function requireActiveOrganizationId(): Promise<string> {
   return (await requireActiveMembership()).organizationId;
-}
-
-/**
- * Contactos del Embudo con la hora del último mensaje del cliente (ordena la columna
- * junto con stageChangedAt): max(window_expires_at) de sus chats en un solo agrupado
- * de `conversations` (hash join, sin subconsulta por contacto; ver
- * lastInboundFromWindow). `where` acota los contactos, siempre dentro de la organización.
- */
-async function selectBoardContacts(
-  organizationId: string,
-  where: SQL | undefined,
-  limit?: number,
-): Promise<BoardContact[]> {
-  const lastWindow = db
-    .select({
-      contactId: conversations.contactId,
-      windowMs: sql<number | string | null>`(extract(epoch from max(${conversations.windowExpiresAt})) * 1000)::float8`.as("window_ms"),
-    })
-    .from(conversations)
-    .where(eq(conversations.organizationId, organizationId))
-    .groupBy(conversations.contactId)
-    .as("last_window");
-  const query = db
-    .select({ ...boardContactColumns, windowMs: lastWindow.windowMs })
-    .from(contacts)
-    .leftJoin(lastWindow, eq(lastWindow.contactId, contacts.id))
-    .where(and(eq(contacts.organizationId, organizationId), where))
-    .orderBy(desc(contacts.stageChangedAt), desc(contacts.createdAt));
-  const rows = limit === undefined ? await query : await query.limit(limit);
-  return rows.map(({ windowMs, ...contact }) => ({ ...contact, lastInboundAt: lastInboundFromWindow(windowMs) }));
 }
 
 // Todos los agentes ven todos los contactos de su organización (CLAUDE.md §5):
@@ -114,6 +92,51 @@ export async function getContactsChangedSince(since: string) {
   // Destacado tampoco lleva hora: la lista completa de ids marcados (sin id = no destacado).
   const destacados = withMarks.flatMap((row) => (row.destacado ? [row.id] : []));
   return { contacts: tooMany ? [] : rows, temperatures, destacados, now, tooMany };
+}
+
+/**
+ * Lo que la página del Embudo recibe al abrir (lib/contacts/board-load.ts): las columnas completas salvo la de
+ * entrada (Inbox), que llega por partes, y las señales de toda la organización. `loadedAt` = hora del servidor
+ * tomada ANTES de leer (desde ahí se pone al día el SSE). `abrir` = ?contacto=<id>.
+ */
+export async function loadEmbudo(input: { abrir: string | null; loadedAt: string }): Promise<{
+  contacts: BoardContact[];
+  signals: Record<string, FunnelSignal>;
+  entrada: CargaEntrada | null;
+}> {
+  const organizationId = await requireActiveOrganizationId();
+  const abrir = input.abrir === null ? null : z.string().min(1).max(128).parse(input.abrir);
+  const loadedAt = new Date(z.iso.datetime().parse(input.loadedAt));
+  const signals = await funnelSignalsForOrg(organizationId);
+  const { contacts: lista, entrada } = await cargarEmbudo(organizationId, { abrir, loadedAt, conSenal: Object.keys(signals) });
+  return { contacts: lista, signals, entrada };
+}
+
+const cursorSchema = z.object({ at: z.number().finite(), created: z.number().finite(), id: z.string().min(1).max(128) });
+
+/** La siguiente tanda de la columna de entrada (al bajar en ella). */
+export async function getEntradaMas(after: CursorEntrada): Promise<{ contacts: BoardContact[]; cursor: CursorEntrada | null }> {
+  const organizationId = await requireActiveOrganizationId();
+  const cursor = cursorSchema.parse(after);
+  const key = await entradaKey(organizationId);
+  if (!key) return { contacts: [], cursor: null };
+  return pageEntrada(organizationId, key, cursor, ENTRADA_MAS);
+}
+
+/** Buscador del Embudo en el servidor: los que el tablero aún no tiene (nombre, teléfono o @usuario). */
+export async function buscarEnEmbudo(term: string): Promise<BoardContact[]> {
+  const organizationId = await requireActiveOrganizationId();
+  return buscarContactosEmbudo(organizationId, z.string().max(200).parse(term));
+}
+
+/**
+ * Primera puesta al día de las señales al abrir el Embudo: solo los contactos con mensajes desde `since`
+ * (ISO). La página ya trajo las de toda la organización; recalcularlas completas al conectarse el SSE era
+ * repetir el trabajo (auditoría de velocidad B4, 2-nov-2026).
+ */
+export async function getFunnelSignalsSince(since: string): Promise<Record<string, FunnelSignal>> {
+  const organizationId = await requireActiveOrganizationId();
+  return funnelSignalsForOrg(organizationId, undefined, new Date(z.iso.datetime().parse(since)));
 }
 
 /**

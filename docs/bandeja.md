@@ -465,8 +465,21 @@ automatización (`/banco` → Cerca de compra) o por otro vendedor se ve sin ref
   la tarjeta (`boardContactColumns` en `lib/contacts/board-contact.ts`: nombre, teléfono, etapa,
   temperatura, marca de prueba, canal de origen y horas); la carga inicial, los contactos nuevos y la
   puesta al día usan las mismas columnas. El pop-up carga lo demás al abrirse (`getContactDetails`).
-  Con 11,132 contactos la carga bajó de ~8.3 MB a ~3 MB. Si crece mucho más, el siguiente paso es
-  paginar la columna Inbox (98 % de los contactos, casi todos importados de GHL).
+  Con 11,132 contactos la carga bajó de ~8.3 MB a ~3 MB.
+- **Inbox por partes** (2-nov-2026, auditoría de velocidad B4; `lib/contacts/board-load.ts`): con ~14,600 contactos
+  el Embudo seguía mandando 728 kB comprimidos y 0.56 s en el servidor. Ahora llegan completas todas las columnas
+  menos la de entrada (papel `entrada`, Inbox, ~98 %), de la que llegan las 300 más recientes por actividad (el mismo
+  orden de `columnsByStage`), las que tienen temperatura o ⭐ (para los filtros), las que tienen señal (para «No
+  leído») y la de `?contacto=`. Al bajar en Inbox llegan tandas de 500 (`getEntradaMas`, cursor por actividad, alta e
+  id con orden de bytes). El contador dice el total: lo que se ve + `restantes` (los dados de alta antes de la carga
+  que aún no llegan); cada contacto que llega después (bajando, buscando, por la lupa, por una señal o un cambio en
+  vivo) y ya existía al cargar baja `restantes` (`entrada-por-partes.ts`). El buscador también pregunta al servidor
+  (`buscarEnEmbudo`, sin acentos con `SQL_SEARCH_FROM/TO`, teléfono con la misma regla de `phoneMatchesSearch`) y la
+  lupa trae a los que tengan la palabra (hasta 1,000). Una señal de un contacto que el tablero no tiene lo trae por id.
+  La primera puesta al día de señales al abrir pide solo lo movido desde la carga (`getFunnelSignalsSince`); una
+  reconexión después, toda la organización como antes. El texto para buscar de cada tarjeta se prepara una vez y el
+  buscador va diferido (`useDeferredValue`). Medido con 4,000 contactos de ejemplo: la página del Embudo pasó de
+  1,561 kB a 193 kB.
 - Fallos de red: las lecturas en vivo del Embudo (contactos nuevos, cambios, puesta al día) y del
   Detalle (también la carga al abrirlo, con "Reintentando…") se reintentan solas, 5 s … 60 s.
 
