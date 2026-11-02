@@ -68,16 +68,25 @@ export function lastInboundFromWindow(windowMs: number | string | null): number 
 export async function funnelSignalsForOrg(
   organizationId: string,
   conversationIds?: readonly string[],
+  since?: Date,
 ): Promise<Record<string, FunnelSignal>> {
-  const targeted = conversationIds !== undefined;
-  if (targeted && conversationIds.length === 0) return {};
+  if (conversationIds !== undefined && conversationIds.length === 0) return {};
+  // `since` (sin ids): los contactos con algún chat con mensaje desde esa hora, también los que quedaron en
+  // cero. Es la primera puesta al día al abrir el Embudo: la página ya trajo las de toda la organización.
+  const targeted = conversationIds !== undefined || since !== undefined;
 
-  const scope = targeted
-    ? sql`and c.contact_id in (
+  const scope =
+    conversationIds !== undefined
+      ? sql`and c.contact_id in (
         select t.contact_id from conversations t
         where t.organization_id = ${organizationId}
           and t.id in (${sql.join(conversationIds.map((id) => sql`${id}`), sql`, `)}))`
-    : sql``;
+      : since !== undefined
+        ? sql`and c.contact_id in (
+        select t.contact_id from conversations t
+        where t.organization_id = ${organizationId}
+          and t.last_message_at >= ${since.toISOString()}::timestamp)`
+        : sql``;
   // Ventana abierta = escribió en las últimas 24 h. ISO con cast: la columna guarda la
   // hora UTC sin zona (la escribe la app), igual que el barrido del agente.
   const now = sql`${new Date().toISOString()}::timestamp`;
