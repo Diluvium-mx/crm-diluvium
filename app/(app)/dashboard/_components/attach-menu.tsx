@@ -48,6 +48,7 @@ export function AttachMenu({
         onClick={onToggle}
         aria-label="Adjuntar"
         aria-haspopup="menu"
+        data-ventana-origen="adjuntar"
         aria-expanded={open}
         title="Adjuntar archivos o mandar de la Biblioteca"
         className={`rounded-md border px-2.5 py-2 text-brand-navy transition-colors dark:text-sky-300 ${
