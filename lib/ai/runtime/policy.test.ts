@@ -1,5 +1,8 @@
 import { describe, it, expect } from "vitest";
 import {
+  ANTICIPO_MS,
+  anticipar,
+  fireAtMs,
   debounceDelayMs,
   debounceWindow,
   decideGate,
@@ -181,3 +184,16 @@ describe("Opciones del bot en la política (26-sep-2026)", () => {
     expect(decideGate({ ...base, withinSchedule: false, humanRepliedSincePending: true })).toEqual({ action: "skip", reason: "respuesta_humana", pauseTo: "pausado_humano" });
   });
 });
+
+describe("A1: preparar la respuesta durante la espera (2-nov-2026)", () => {
+  it("la hora de salida es la de siempre: espera tras el último entrante, sin pasar del tope", () => {
+    expect(fireAtMs({ firstPendingAt: 0, lastInboundAt: 10_000 }, 15)).toBe(25_000);
+    expect(fireAtMs({ firstPendingAt: 0, lastInboundAt: 55_000 }, 15)).toBe(60_000);
+  });
+
+  it("el job arranca ANTICIPO_MS antes, nunca con delay negativo", () => {
+    expect(anticipar(15_000)).toBe(15_000 - ANTICIPO_MS);
+    expect(anticipar(1_000)).toBe(0);
+  });
+});
+

@@ -183,7 +183,8 @@
     pudo programar la corrida reabre la tarjeta; "Apagar" pausa antes de cerrar la tarjeta; el
     aviso automático al mover a Compra sin comprobante es neutral y no sale junto a "Comprobante
     dudoso"; el punto de caché de Anthropic va antes de la primera foto o PDF (su URL firmada
-    cambia en cada respuesta y la caché no se reutilizaría).
+    cambia en cada respuesta y la caché no se reutilizaría). Desde el 2-nov-2026 las fotos se
+    firman con la hora redonda y el punto ya no se corta ahí (`2026-11-02-respuesta-mas-rapida.md`).
   - Llaves con los nombres de Railway: `GEMINI_API_KEY`, `GROK_API_KEY`, `QWEN_API_KEY` (valor en
     el web de producción; `worker-production` las referencia). Prueba real del 25-sep: Gemini y
     Qwen contestan con herramientas; Grok rechazó la llave (hay que volver a copiarla).

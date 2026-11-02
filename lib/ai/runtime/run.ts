@@ -76,7 +76,7 @@ import { splitRepeated } from "@/lib/messaging/repeat";
 import { addNotice } from "./notices";
 import { AUTO_RESPONDER_NOTICE, looksLikeAutoResponder } from "./contestador";
 import { decideGate, toBubbles } from "./policy";
-import { rescheduleDelayFor } from "./schedule";
+import { fireAtFor, rescheduleDelayFor } from "./schedule";
 import { closePlan, markAgentReply, savePlan, setAgentState } from "./state";
 import {
   bubbleMessageId,
@@ -139,6 +139,10 @@ export type RunDeps = {
   // Parte 1: ¿este worker transcribe notas de voz (bucket + llave de OpenAI)? Solo
   // entonces el agente espera la transcripción (hasta 60 s desde que llegó el audio).
   transcriptionEnabled?: boolean;
+  // A1 (2-nov-2026, auditoría de velocidad): el job arranca unos segundos ANTES de que se cumpla la espera de la
+  // ráfaga (schedule.ts › jobDelayFor); la respuesta ya escrita espera aquí hasta esa hora antes de revisar si el
+  // cliente volvió a escribir y de salir. Sin esto (pruebas), sale en cuanto está lista.
+  holdUntil?: (at: Date) => Promise<void>;
 };
 
 export type RunResult =
@@ -520,6 +524,12 @@ export async function runAgent(job: { organizationId: string; conversationId: st
     }
     if (!cfg.goal) return { kind: "skipped", reason: "sin_goal" };
     if (!lastRead) return { kind: "noop", reason: "sin_pendientes" };
+    // A1: hasta qué hora espera la respuesta antes de salir (la de siempre: la espera de la ráfaga tras el último
+    // mensaje del cliente, o el tope desde el primero). El modelo escribe antes; la respuesta no sale antes.
+    const fireAt = deps.holdUntil ? await fireAtFor(snap, pending, options.responseDelaySeconds) : null;
+    const holdUntilFire = async () => {
+      if (fireAt && deps.holdUntil) await deps.holdUntil(fireAt);
+    };
     // Freno ante contestadores automáticos (7-oct-2026, caso Estafeta; contestador.ts): en las
     // últimas vueltas el contacto solo repitió lo mismo o mandó avisos que WhatsApp no deja ver.
     // PRIMERO la pausa (hasta «Activar»; nunca «se pausó» con el agente todavía activo) y luego el
@@ -550,6 +560,7 @@ export async function runAgent(job: { organizationId: string; conversationId: st
     // respuesta (horario, pausa, ventana, humano). Lo que el cliente escriba después
     // lo contesta el modelo como siempre.
     if (pending.every((p) => noDisponibleEstado(p.metadata) === "sin_contenido")) {
+      await holdUntilFire();
       const planId = await savePlan({ organizationId: org, conversationId: conv.id, bubbles: [UNAVAILABLE_REPLY_TEXT], triggerMessageId: lastRead.id, now: deps.now() });
       const stopped = await stopBeforeBubble(org, conv.id, humansAtStart, await inboundCount(org, conv.id));
       if (stopped) {
@@ -900,11 +911,16 @@ export async function runAgent(job: { organizationId: string; conversationId: st
     }
     const brainUsage = usageOf(used);
 
+    // A1: la respuesta ya escrita espera a que se cumpla la espera de la ráfaga.
+    await holdUntilFire();
+
     // ── Revisión antes de enviar: ¿llegó algo después de lo que leyó? ────────
+    // El cliente siguió escribiendo: esta respuesta no sale y se vuelve a la espera normal (desde su último
+    // mensaje); la siguiente corrida contesta TODO junto. Antes (sin A1) se regeneraba al momento.
     if ((await inboundCount(org, conv.id)) > readCount) {
       await recordAiUsage({ ...brainUsage, outcome: "discarded_stale" });
-      console.info(`[agente] ${conv.id}: respuesta descartada (entró un mensaje durante la generación), ronda ${round}`);
-      continue; // regenerar con TODO el contexto
+      console.info(`[agente] ${conv.id}: respuesta descartada (el cliente volvió a escribir antes de que saliera); de vuelta a la espera, ronda ${round}`);
+      return { kind: "reschedule", delayMs: await rescheduleDelayFor(org, conv.id, deps.now()), reason: "mensajes_nuevos_durante_generacion" };
     }
     // Fase E: si un vendedor movió la etapa durante la generación y con ella cambió
     // el modelo que debe contestar, esta respuesta no sale: se regenera con el correcto.
@@ -1164,11 +1180,11 @@ export async function runAgent(job: { organizationId: string; conversationId: st
       return { kind: "sent", bubbles: sent };
     }
     if (stopped === "entrante_nuevo" && sent === 0) {
-      // Nada salió: igual que la revisión antes de enviar, se descarta y se regenera con TODO.
+      // Nada salió: igual que la revisión antes de enviar, se descarta y se vuelve a la espera normal.
       if (planId) await closePlan(org, planId, "obsoleto");
       await recordAiUsage({ ...brainUsage, outcome: "discarded_stale" });
-      console.info(`[agente] ${conv.id}: respuesta descartada (entró un mensaje antes del 1er envío), ronda ${round}`);
-      continue;
+      console.info(`[agente] ${conv.id}: respuesta descartada (entró un mensaje antes del 1er envío); de vuelta a la espera, ronda ${round}`);
+      return { kind: "reschedule", delayMs: await rescheduleDelayFor(org, conv.id, deps.now()), reason: "mensajes_nuevos_durante_generacion" };
     }
     if (stopped) {
       // Detenido a propósito (un vendedor contestó, o se pausó o apagó el Agente IA): el resto
