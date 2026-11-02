@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState, useTransition } from "react";
+import { useCallback, useDeferredValue, useEffect, useMemo, useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import {
   DndContext,
@@ -16,15 +16,18 @@ import {
   type Modifier,
 } from "@dnd-kit/core";
 import { Mail, Pencil, Plus, X } from "lucide-react";
-import { getContactFullName, type BoardContact, type Stage, type Temperature } from "../_data/types";
+import { type BoardContact, type Stage, type Temperature } from "../_data/types";
 import { useFunnelStages } from "../../_components/funnel-stages-provider";
 import { StagesEditor } from "../../_components/stages-editor";
 import { NewContactDialog } from "./new-contact-dialog";
 import type { FunnelStage } from "@/lib/contacts/stages";
 import {
+  buscarEnEmbudo,
   getContactsByIds,
   getContactsChangedSince,
+  getEntradaMas,
   getFunnelSignals,
+  getFunnelSignalsSince,
   setContactDestacado,
   updateContactStage,
   updateContactTemperature,
@@ -43,6 +46,8 @@ import { tarjetaFondo } from "@/lib/contacts/tarjeta-fondo";
 import { useInboxStream } from "../../dashboard/_components/use-inbox-stream";
 import { clearContactCard, searchChatsByContact, setContactUnread } from "@/lib/inbox/actions";
 import { applyMarks, columnsByStage, mergeLiveContacts } from "./board-live";
+import { agregarNuevos, anotarLlegados, faltanEnContador, textoBuscable } from "./entrada-por-partes";
+import type { CargaEntrada } from "@/lib/contacts/board-load";
 import { CloseX } from "@/components/ui/close-x";
 
 // Una columna = una zona de destino (droppable). Se extrae a su propio
@@ -58,6 +63,43 @@ const MAX_LIVE_IDS = 200;
 // Durante la importación del historial del celular, el tablero se relee a lo más así.
 const HISTORY_REFRESH_MS = 30_000;
 const CHAT_SEARCH_ERROR = "No se pudo buscar en los chats. Intenta de nuevo.";
+const CARGAR_MAS_ERROR = "No se pudieron traer más contactos de la primera columna. Baja otra vez para reintentar.";
+// La primera puesta al día de las señales al abrir solo pide lo que se movió desde la carga (la página ya trajo
+// las de toda la organización) si el SSE se conecta antes de esto; después, toda la organización como siempre.
+const PRIMERA_RECARGA_MS = 15_000;
+// Lupa: de los contactos con la palabra que el tablero aún no tiene, a lo más estos se traen.
+const LUPA_MAX_TRAER = 1_000;
+
+// Fin de la columna de entrada (Inbox) con más por cargar: al acercarse, pide la siguiente tanda. Se vuelve a
+// observar al terminar cada tanda (si sigue a la vista, pide otra).
+function CargarMas({
+  root,
+  cargando,
+  onVisible,
+}: {
+  root: React.RefObject<HTMLDivElement | null>;
+  cargando: boolean;
+  onVisible: () => void;
+}) {
+  const ref = useRef<HTMLParagraphElement>(null);
+  useEffect(() => {
+    const el = ref.current;
+    if (!el || cargando) return;
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (entries.some((entry) => entry.isIntersecting)) onVisible();
+      },
+      { root: root.current, rootMargin: "600px 0px" },
+    );
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, [root, cargando, onVisible]);
+  return (
+    <p ref={ref} className="p-2 text-center text-xs text-muted-foreground">
+      {cargando ? "Cargando más contactos…" : "Hay más contactos abajo"}
+    </p>
+  );
+}
 
 function StageColumn({
   stage,
@@ -71,6 +113,10 @@ function StageColumn({
   onCardClick,
   onSetUnread,
   onClearCard,
+  faltan = 0,
+  hayMas = false,
+  cargandoMas = false,
+  onCargarMas,
 }: {
   stage: FunnelStage;
   contacts: BoardContact[];
@@ -87,6 +133,12 @@ function StageColumn({
   onCardClick: (contactId: string) => void;
   onSetUnread: (contactId: string, unread: boolean) => void;
   onClearCard: (contactId: string) => void;
+  /** Columna de entrada (Inbox) por partes: cuántos faltan por cargar (el contador dice el total). */
+  faltan?: number;
+  /** ¿Hay otra tanda por pedir al bajar? */
+  hayMas?: boolean;
+  cargandoMas?: boolean;
+  onCargarMas?: () => void;
 }) {
   const { setNodeRef, isOver } = useDroppable({ id: stage.key });
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -150,13 +202,13 @@ function StageColumn({
           >
             <Mail className="size-3.5" aria-hidden="true" />
           </button>
-          <span className="rounded-full bg-white/20 px-2 py-0.5 text-xs">{contacts.length}</span>
+          <span className="rounded-full bg-white/20 px-2 py-0.5 text-xs">{contacts.length + faltan}</span>
         </div>
       </div>
 
       <div ref={setColumnRef} className="min-h-0 flex-1 overflow-y-auto p-2">
         {contacts.length === 0 ? (
-          <p className="p-2 text-center text-xs text-muted-foreground">{emptyText}</p>
+          hayMas ? null : <p className="p-2 text-center text-xs text-muted-foreground">{emptyText}</p>
         ) : (
           <div style={{ height: rowVirtualizer.getTotalSize(), position: "relative", width: "100%" }}>
             {virtualItems.map((virtualRow) => {
@@ -191,6 +243,7 @@ function StageColumn({
             })}
           </div>
         )}
+        {hayMas && onCargarMas && <CargarMas root={scrollRef} cargando={cargandoMas} onVisible={onCargarMas} />}
       </div>
     </div>
   );
@@ -199,17 +252,40 @@ function StageColumn({
 export function ContactsBoard({
   initialContacts,
   initialSignals,
+  initialEntrada = null,
   loadedAt,
   openContactId = null,
 }: {
   initialContacts: BoardContact[];
   initialSignals: Signals;
+  /** Columna de entrada (Inbox) por partes: su clave, cuántos faltan y desde dónde pedir más. */
+  initialEntrada?: CargaEntrada | null;
   /** Hora del servidor (ISO) ANTES de leer initialContacts: desde ahí se ponen al día. */
   loadedAt: string;
   /** /embudo?contacto=<id>: abre ese contacto al entrar (desde la Bandeja, si aún no tiene chat). */
   openContactId?: string | null;
 }) {
   const [contacts, setContacts] = useState<BoardContact[]>(initialContacts);
+  // Columna de entrada por partes (lib/contacts/board-load.ts): cuántos faltan y el cursor de la siguiente tanda.
+  const [entrada, setEntrada] = useState<CargaEntrada | null>(initialEntrada);
+  const [syncedInitialEntrada, setSyncedInitialEntrada] = useState(initialEntrada);
+  const entradaRef = useRef(entrada);
+  const contactsRef = useRef(contacts);
+  useEffect(() => {
+    entradaRef.current = entrada;
+    contactsRef.current = contacts;
+  });
+  // Ids que el tablero ya tiene (también los que llegaron en este mismo instante): con ellos se sabe cuántos de
+  // los que faltaban acaban de llegar (entrada-por-partes.ts).
+  const idsRef = useRef<Set<string>>(new Set(initialContacts.map((contact) => contact.id)));
+  const loadedAtMsRef = useRef(new Date(loadedAt).getTime());
+  useEffect(() => {
+    loadedAtMsRef.current = new Date(loadedAt).getTime();
+  }, [loadedAt]);
+  const anotarLlegadosAlTablero = useCallback((llegados: readonly BoardContact[]) => {
+    const faltaban = anotarLlegados(idsRef.current, llegados, loadedAtMsRef.current);
+    if (faltaban > 0) setEntrada((e) => (e ? { ...e, restantes: Math.max(0, e.restantes - faltaban) } : e));
+  }, []);
   // Columnas del Embudo (editables; llegan en vivo por el contexto).
   const { stages, lastEvent: stagesEvent, refresh: refreshStages } = useFunnelStages();
   const stageKeys = useMemo(() => new Set(stages.map((s) => s.key)), [stages]);
@@ -324,6 +400,14 @@ export function ContactsBoard({
     setSyncedInitialSignals(initialSignals);
     setSignals(initialSignals);
   }
+  if (initialEntrada !== syncedInitialEntrada) {
+    setSyncedInitialEntrada(initialEntrada);
+    setEntrada(initialEntrada);
+  }
+  // Tras una recarga del servidor, los ids conocidos son los de la lista nueva (los que faltaban vuelven a contarse ahí).
+  useEffect(() => {
+    idsRef.current = new Set(contactsRef.current.map((contact) => contact.id));
+  }, [syncedInitialContacts]);
 
   // Tiempo real: un contacto NUEVO (p. ej. el primer WhatsApp de un número
   // desconocido) aparece arriba de su columna sin recargar. Se agrupan los
@@ -361,6 +445,7 @@ export function ContactsBoard({
     }
     newRetryMsRef.current = 0;
     if (!aliveRef.current || fresh.length === 0) return;
+    anotarLlegadosAlTablero(fresh);
     setContacts((current) => {
       const known = new Set(current.map((c) => c.id));
       const added = fresh.filter((c) => !known.has(c.id));
@@ -370,7 +455,7 @@ export function ContactsBoard({
       const known = new Set(current.map((c) => c.id));
       return [...fresh.filter((c) => !known.has(c.id)), ...current];
     });
-  }, [router]);
+  }, [router, anotarLlegadosAlTablero]);
   useEffect(() => {
     flushNewRef.current = flushNew;
   }, [flushNew]);
@@ -397,8 +482,19 @@ export function ContactsBoard({
   // `reload` (reconexión del SSE) o más de 200 conversaciones → toda la
   // organización. Si una petición falla, se reintenta sola con espera creciente
   // (5 s … 60 s): un aviso urgente no se pierde aunque la conversación quede quieta.
-  const signalQueueRef = useRef({ ids: new Set<string>(), full: false, running: false, retryMs: 0, retryPending: false });
+  const signalQueueRef = useRef({
+    ids: new Set<string>(),
+    full: false,
+    // Primera puesta al día al abrir: solo lo que se movió desde esta hora (ISO).
+    desde: null as string | null,
+    running: false,
+    retryMs: 0,
+    retryPending: false,
+  });
+  // Un aviso de un contacto que el tablero aún no tiene (columna de entrada por partes): se trae por id.
+  const scheduleLiveRef = useRef<(contactId: string | null) => void>(() => undefined);
   const signalTimerRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+  const primeraRecargaRef = useRef(true);
   // Al salir del Embudo: nada queda pidiendo señales (ni un reintento programado
   // por una petición que falle DESPUÉS de desmontar).
   useEffect(() => {
@@ -418,18 +514,22 @@ export function ContactsBoard({
     queue.running = true;
     let failed = false;
     try {
-      while (queue.full || queue.ids.size > 0) {
+      while (queue.full || queue.desde || queue.ids.size > 0) {
         const full = queue.full || queue.ids.size > MAX_SIGNAL_IDS;
-        const ids = full ? undefined : [...queue.ids];
+        const desde = full ? null : queue.desde;
+        const ids = full || desde ? undefined : [...queue.ids];
         queue.full = false;
-        queue.ids.clear();
+        if (full || desde) queue.desde = null;
+        if (!desde) queue.ids.clear();
         try {
-          const fresh = await getFunnelSignals(ids);
+          const fresh = desde ? await getFunnelSignalsSince(desde) : await getFunnelSignals(ids);
           if (!aliveRef.current) return;
           setSignals((current) => (full ? fresh : { ...current, ...fresh }));
+          for (const contactId of Object.keys(fresh)) if (!idsRef.current.has(contactId)) scheduleLiveRef.current(contactId);
           queue.retryMs = 0;
         } catch {
           if (full) queue.full = true;
+          else if (desde) queue.desde = desde;
           else for (const id of ids ?? []) queue.ids.add(id);
           failed = true;
           break;
@@ -535,6 +635,7 @@ export function ContactsBoard({
         if (apply.length > 0) {
           const at = Date.now();
           for (const contact of apply) recentLiveRef.current.set(contact.id, at);
+          anotarLlegadosAlTablero(apply);
           setContacts((current) => mergeLiveContacts(current, apply));
           const byId = new Map(apply.map((contact) => [contact.id, contact]));
           setLiveAdded((current) => current.map((contact) => byId.get(contact.id) ?? contact));
@@ -543,7 +644,7 @@ export function ContactsBoard({
     } finally {
       queue.running = false;
     }
-  }, [router]);
+  }, [router, anotarLlegadosAlTablero]);
   useEffect(() => {
     flushLiveRef.current = flushLive;
   }, [flushLive]);
@@ -564,6 +665,9 @@ export function ContactsBoard({
     },
     [flushLive],
   );
+  useEffect(() => {
+    scheduleLiveRef.current = scheduleLive;
+  }, [scheduleLive]);
   // Escrituras del vendedor (etapa o temperatura) en curso, por contacto.
   function beginWrite(contactId: string) {
     writesRef.current.set(contactId, (writesRef.current.get(contactId) ?? 0) + 1);
@@ -613,12 +717,21 @@ export function ContactsBoard({
     try {
       const rows = await searchChatsByContact(term);
       if (!aliveRef.current || seq !== chatSeqRef.current) return;
+      // Con la entrada por partes, algunos con la palabra pueden no estar en el tablero: se traen (a lo más 1,000).
+      const faltan = rows.map(([contactId]) => contactId).filter((contactId) => !idsRef.current.has(contactId)).slice(0, LUPA_MAX_TRAER);
+      const traidos: BoardContact[] = [];
+      for (let i = 0; i < faltan.length; i += MAX_LIVE_IDS) traidos.push(...(await getContactsByIds(faltan.slice(i, i + MAX_LIVE_IDS))));
+      if (!aliveRef.current || seq !== chatSeqRef.current) return;
+      if (traidos.length > 0) {
+        anotarLlegadosAlTablero(traidos);
+        setContacts((current) => agregarNuevos(current, traidos));
+      }
       setChatHits({ term, counts: new Map(rows) });
       setError((current) => (current === CHAT_SEARCH_ERROR ? null : current));
     } catch {
       if (aliveRef.current && seq === chatSeqRef.current) setError(CHAT_SEARCH_ERROR);
     }
-  }, []);
+  }, [anotarLlegadosAlTablero]);
   useEffect(() => {
     if (!chatTerm) return;
     const t = setTimeout(() => void runChatSearch(chatTerm), 300);
@@ -673,8 +786,14 @@ export function ContactsBoard({
     if (event.type === "reload") scheduleLive(null);
     if (event.type === "reload" || event.type === "conversation.updated" || event.type === "message.upserted" || event.type === "message.deleted") {
       const queue = signalQueueRef.current;
-      if (event.type === "reload") queue.full = true;
-      else queue.ids.add(event.conversationId);
+      if (event.type === "reload") {
+        // La primera al abrir (el SSE ya estaba abierto o se conectó enseguida): la página acaba de traer las
+        // señales de toda la organización; basta lo que se movió desde la carga (con 5 s de margen).
+        const primera = primeraRecargaRef.current && Date.now() - loadedAtMsRef.current < PRIMERA_RECARGA_MS;
+        primeraRecargaRef.current = false;
+        if (primera) queue.desde = new Date(loadedAtMsRef.current - 5_000).toISOString();
+        else queue.full = true;
+      } else queue.ids.add(event.conversationId);
       if (queue.running) return;
       // En espera de un reintento: un evento nuevo lo adelanta (no espera hasta 60 s).
       if (queue.retryPending) {
@@ -696,8 +815,10 @@ export function ContactsBoard({
     newTimerRef.current = setTimeout(() => void flushNew(), 500);
   }, { reloadIfOpen: true });
 
-  // Sin acentos ni mayúsculas (regla de todo buscador: lib/text/search.ts).
-  const normalizedSearch = normalizeSearch(search);
+  // Sin acentos ni mayúsculas (regla de todo buscador: lib/text/search.ts). Diferido: escribir no espera a que
+  // se vuelvan a armar las columnas.
+  const deferredSearch = useDeferredValue(search);
+  const normalizedSearch = normalizeSearch(deferredSearch);
 
   const cardFilter = useMemo(
     () => ({ temperature: temperatureFilter, destacado: destacadoOnly }),
@@ -710,6 +831,36 @@ export function ContactsBoard({
   const chatCounts = chatTerm ? (chatHits?.counts ?? null) : null;
   const chatSearching = chatTerm !== null && chatHits?.term !== chatTerm;
 
+  // Columna de entrada por partes: lo que el tablero aún no tiene se busca también en el servidor (a lo más
+  // 300) y se agrega; mientras, se ve lo que ya había.
+  const [buscandoTodos, setBuscandoTodos] = useState<string | null>(null);
+  const hayEntradaSinCargar = entrada !== null && entrada.cursor !== null;
+  useEffect(() => {
+    if (!nameSearch || nameSearch.length < 2 || !hayEntradaSinCargar) return;
+    let vivo = true;
+    const t = setTimeout(() => {
+      setBuscandoTodos(nameSearch);
+      buscarEnEmbudo(nameSearch)
+        .then((hallados) => {
+          if (!vivo || !aliveRef.current) return;
+          const nuevos = hallados.filter((contact) => !idsRef.current.has(contact.id));
+          if (nuevos.length > 0) {
+            anotarLlegadosAlTablero(nuevos);
+            setContacts((current) => agregarNuevos(current, nuevos));
+          }
+        })
+        .catch(() => undefined)
+        .finally(() => {
+          if (vivo) setBuscandoTodos((current) => (current === nameSearch ? null : current));
+        });
+    }, 300);
+    return () => {
+      vivo = false;
+      clearTimeout(t);
+    };
+  }, [nameSearch, hayEntradaSinCargar, anotarLlegadosAlTablero]);
+  const buscandoEnServidor = buscandoTodos !== null && buscandoTodos === nameSearch;
+
   const filteredContacts = useMemo(() => {
     if (!nameSearch && !filtering && !chatTerm) {
       return contacts;
@@ -719,16 +870,17 @@ export function ContactsBoard({
       if (filtering && !matchesCardFilter(contact, cardFilter)) return false;
       if (chatTerm) return (chatCounts?.get(contact.id) ?? 0) > 0;
       if (!nameSearch) return true;
-      const nameMatches = normalizeSearch(getContactFullName(contact)).includes(nameSearch);
+      const texto = textoBuscable(contact);
+      const nameMatches = texto.nombre.includes(nameSearch);
       const phoneMatches = phoneMatchesSearch(contact.phoneE164, nameSearch);
       // Instagram: también por @usuario (con o sin "@").
       const handle = nameSearch.replace(/^@+/, "");
-      const userMatches = !!handle && normalizeSearch(contact.instagramUsername ?? "").includes(handle);
+      const userMatches = !!handle && texto.usuario.includes(handle);
       return nameMatches || phoneMatches || userMatches;
     });
   }, [contacts, nameSearch, filtering, cardFilter, chatTerm, chatCounts]);
   const emptyText =
-    chatTerm && !chatCounts
+    (chatTerm && !chatCounts) || buscandoEnServidor
       ? "Buscando…"
       : chatTerm
         ? "Ninguno con esta búsqueda"
@@ -773,10 +925,11 @@ export function ContactsBoard({
   // (liveAdded), para que una recarga del servidor no lo quite antes de tiempo.
   const [creatingContact, setCreatingContact] = useState(false);
   const addAndOpen = useCallback((contact: BoardContact) => {
+    anotarLlegadosAlTablero([contact]);
     setContacts((current) => (current.some((c) => c.id === contact.id) ? current : [contact, ...current]));
     setLiveAdded((current) => (current.some((c) => c.id === contact.id) ? current : [contact, ...current]));
     setSelectedContactId(contact.id);
-  }, []);
+  }, [anotarLlegadosAlTablero]);
   // Abrir otro contacto por id (el que ya tiene ese teléfono): si no está en el tablero, se trae.
   const openContactById = useCallback(
     async (contactId: string) => {
@@ -786,13 +939,44 @@ export function ContactsBoard({
       }
       try {
         const [found] = await getContactsByIds([contactId]);
-        if (found) addAndOpen(found);
+        // Ya existía (puede venir de la entrada que faltaba cargar): se agrega sin guardarlo como «nuevo en vivo».
+        if (found) {
+          anotarLlegadosAlTablero([found]);
+          setContacts((current) => agregarNuevos(current, [found]));
+          setSelectedContactId(found.id);
+        }
       } catch {
         setError("No se pudo abrir ese contacto; búscalo por su teléfono.");
       }
     },
-    [contacts, addAndOpen],
+    [contacts, anotarLlegadosAlTablero],
   );
+
+  // Siguiente tanda de la columna de entrada (al acercarse a su final). Una a la vez.
+  const [cargandoMas, setCargandoMas] = useState(false);
+  const cargandoMasRef = useRef(false);
+  const cargarMasEntrada = useCallback(async () => {
+    const cursor = entradaRef.current?.cursor;
+    if (!cursor || cargandoMasRef.current) return;
+    cargandoMasRef.current = true;
+    setCargandoMas(true);
+    try {
+      const tanda = await getEntradaMas(cursor);
+      if (!aliveRef.current) return;
+      const nuevos = tanda.contacts.filter((contact) => !idsRef.current.has(contact.id));
+      anotarLlegadosAlTablero(nuevos);
+      if (nuevos.length > 0) setContacts((current) => agregarNuevos(current, nuevos));
+      // Sin más tandas, no falta nada (corrige si el conteo se desfasó, p. ej. por un contacto borrado).
+      setEntrada((e) => (e ? { ...e, cursor: tanda.cursor, restantes: tanda.cursor ? e.restantes : 0 } : e));
+      setError((current) => (current === CARGAR_MAS_ERROR ? null : current));
+    } catch {
+      if (aliveRef.current) setError(CARGAR_MAS_ERROR);
+    } finally {
+      cargandoMasRef.current = false;
+      if (aliveRef.current) setCargandoMas(false);
+    }
+  }, [anotarLlegadosAlTablero]);
+  const pedirMasEntrada = useCallback(() => void cargarMasEntrada(), [cargarMasEntrada]);
 
   const selectedContact = contacts.find((contact) => contact.id === selectedContactId) ?? null;
   const activeContact = activeContactId
@@ -1048,6 +1232,7 @@ export function ContactsBoard({
             <span className="text-xs text-muted-foreground">Escribe al menos 3 letras</span>
           )}
           {chatSearching && <span className="text-xs text-muted-foreground">Buscando en los chats…</span>}
+          {buscandoEnServidor && <span className="text-xs text-muted-foreground">Buscando en todos los contactos…</span>}
         </div>
         {/* Móvil: la barra va en su propio renglón (w-full) y el buscador toma el ancho que
             queda. Con la lupa son cuatro piezas: el buscador nace en ancho 0 (w-0) y se
@@ -1100,6 +1285,10 @@ export function ContactsBoard({
           {stages.map((stage) => {
             const column = unreadColumns.get(stage.key);
             const onlyUnread = unreadStages.has(stage.key);
+            // Columna de entrada por partes: el contador dice el total y al bajar llegan más (sin buscador,
+            // filtros, lupa ni «No leído»; con ellos ya están todos los que cumplen).
+            const esEntrada = entrada !== null && stage.key === entrada.key;
+            const sinFiltros = esEntrada && !nameSearch && !filtering && !chatTerm && !onlyUnread;
             return (
               <StageColumn
                 key={stage.key}
@@ -1114,6 +1303,10 @@ export function ContactsBoard({
                 onCardClick={handleCardClick}
                 onSetUnread={handleSetUnread}
                 onClearCard={handleClearCard}
+                faltan={esEntrada ? faltanEnContador(entrada.restantes, sinFiltros) : 0}
+                hayMas={sinFiltros && entrada.cursor !== null}
+                cargandoMas={cargandoMas}
+                onCargarMas={esEntrada ? pedirMasEntrada : undefined}
               />
             );
           })}
