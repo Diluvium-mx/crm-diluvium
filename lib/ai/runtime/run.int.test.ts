@@ -2879,6 +2879,33 @@ describe.skipIf(!TEST_DATABASE_URL)("runtime del Agente IA (Postgres real)", () 
     expect((await notices()).filter((n) => n.kind === "sin_respuesta")).toEqual([]);
   });
 
+  // ── Renglón sin palabras (3-nov-2026, dueño: «que nunca más vuelva a pasar»): «[]{?}» (2-nov) y U+5FFFF (25-oct) ──
+  it("caso 2-nov: pregunta de la altura + «[]{?}» → se pide otra respuesta y sale la limpia; «[]{?}» nunca le llega al cliente", async () => {
+    await msg({ direction: "in", body: "Si", at: ago(20_000) });
+    const z = fakeZernio();
+    const d = makeDeps({
+      brain: ["¿Hasta qué altura aproximada le sube el agua?\n\n[]{?}", "¿Hasta qué altura aproximada le sube el agua?", "no debe llamarse"],
+      brainToolCalls: [[], [{ toolName: "actualizar_detalle", input: { tiene_inundaciones: "si" } }]],
+    }, z);
+    expect(await run.runAgent(JOB, d.deps)).toEqual({ kind: "sent", bubbles: 1 });
+    expect(z.delivered).toEqual(["¿Hasta qué altura aproximada le sube el agua?"]);
+    expect(await openCard()).toBeFalsy();
+    const rows = (await usage()).filter((u) => u.stage === "cerebro");
+    expect(rows.map((u) => u.outcome)).toEqual(["error", "sent"]);
+    expect(rows[0].error).toContain("renglón sin palabras");
+  });
+
+  it("caso 25-oct: pregunta de la altura + burbuja con solo U+5FFFF, y el reintento igual → sale la pregunta limpia, sin tarjeta ni pausa", async () => {
+    await msg({ direction: "in", body: "Si", at: ago(20_000) });
+    const z = fakeZernio();
+    const d = makeDeps({ brain: ["¿Hasta qué altura aproximada le sube el agua?\n\n\u{5FFFF}", "¿Hasta qué altura aproximada le sube el agua?\n\n\u{5FFFF}", "no debe llamarse"] }, z);
+    expect(await run.runAgent(JOB, d.deps)).toEqual({ kind: "sent", bubbles: 1 });
+    expect(d.calls.filter((c) => c.kind === "cerebro")).toHaveLength(2);
+    expect(z.delivered).toEqual(["¿Hasta qué altura aproximada le sube el agua?"]);
+    expect(await openCard()).toBeFalsy();
+    expect(await agentError.hasUnresolvedAgentError(ORG, CONV)).toBe(false);
+  });
+
   it("parte limpia: ante un acuse, el reintento en blanco sigue siendo no contestar (no sale la parte limpia)", async () => {
     await msg({ direction: "in", body: "Ok gracias", at: ago(20_000) });
     const z = fakeZernio();
@@ -2910,6 +2937,8 @@ describe.skipIf(!TEST_DATABASE_URL)("runtime del Agente IA (Postgres real)", () 
   it("último candado: sendAgentText nunca manda un texto interno aunque llegue hasta ahí", async () => {
     const z = fakeZernio();
     await expect(send.sendAgentText(z.provider, { organizationId: ORG, conversationId: CONV, text: "[tool call?]", messageId: "m_interno" })).rejects.toThrow("nota interna");
+    await expect(send.sendAgentText(z.provider, { organizationId: ORG, conversationId: CONV, text: "[]{?}", messageId: "m_simbolos" })).rejects.toThrow("nota interna");
+    await expect(send.sendAgentText(z.provider, { organizationId: ORG, conversationId: CONV, text: "\u{5FFFF}", messageId: "m_invisible" })).rejects.toThrow("nota interna");
     expect(z.calls()).toBe(0);
   });
 
