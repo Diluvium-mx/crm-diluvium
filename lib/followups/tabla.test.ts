@@ -13,6 +13,8 @@ import {
   tableProblems,
   tableToInput,
   tableToStored,
+  tableForStage,
+  INBOX_FULL_CASES,
   type FollowUpTable,
 } from "./tabla";
 
@@ -108,6 +110,43 @@ describe("intentos", () => {
     const u = steps([true, false, true]);
     expect(nextStep(u, "cotizacion_sin_respuesta", 1)).toBe(3);
     expect(lastStep(steps([true, true, false]), "cotizacion_sin_respuesta")).toBe(2);
+  });
+});
+
+describe("Inbox: un solo intento por caso (2-nov-2026)", () => {
+  it("en la etapa de entrada cada caso se queda con el primero prendido, salvo asesor y pidió fecha", () => {
+    const t = tableForStage(FACTORY_TABLE, "entrada");
+    for (const c of EDITABLE_CASES) {
+      if (INBOX_FULL_CASES.has(c)) expect(t.casos[c]).toBe(FACTORY_TABLE.casos[c]);
+      else {
+        expect(t.casos[c].intentos).toEqual([true, false, false]);
+        expect(lastStep(t, c)).toBe(1);
+        expect(nextStep(t, c, 1)).toBeNull();
+      }
+    }
+    expect(lastStep(t, "asesor_sin_respuesta")).toBe(2);
+    expect(lastStep(t, "pidio_fecha")).toBe(3);
+    // Hora, «Qué busca», encendido y horario de vendedores no cambian.
+    expect(t.casos.solo_informacion).toMatchObject({ on: true, from: "19:00", to: "21:00", busca: FACTORY_TABLE.casos.solo_informacion.busca });
+    expect(t.vendedores).toBe(FACTORY_TABLE.vendedores);
+  });
+
+  it("si el 1.º está apagado en la tabla, queda solo el siguiente prendido; un caso apagado sigue apagado", () => {
+    const base: FollowUpTable = {
+      ...FACTORY_TABLE,
+      casos: {
+        ...FACTORY_TABLE.casos,
+        cotizacion_sin_respuesta: { ...FACTORY_TABLE.casos.cotizacion_sin_respuesta, intentos: [false, true, true] },
+        objecion: { ...FACTORY_TABLE.casos.objecion, on: false },
+      },
+    };
+    const t = tableForStage(base, "entrada");
+    expect(t.casos.cotizacion_sin_respuesta.intentos).toEqual([false, true, false]);
+    expect(t.casos.objecion.on).toBe(false);
+  });
+
+  it("en las demás etapas la tabla es la misma", () => {
+    for (const role of [null, "cerca_compra", "venta_cerrada"] as const) expect(tableForStage(FACTORY_TABLE, role)).toBe(FACTORY_TABLE);
   });
 });
 
