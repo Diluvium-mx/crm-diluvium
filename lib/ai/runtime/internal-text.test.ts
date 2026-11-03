@@ -20,6 +20,22 @@ const LEAKS = [
   "null.",
   "Winvalid.",
   "¡ileswi!",
+  // 3-nov-2026: renglón sin palabras y símbolos de programación (los dos reales y formas vecinas).
+  "[]{?}",
+  "\u{5FFFF}",
+  "\u200B",
+  "{}",
+  "[ ]",
+  "¿?",
+  "...",
+  "━━━━━━━",
+  "```",
+  "<tool>",
+  "{tool}",
+  "<|end|>",
+  "Hola {nombre}, ¿cómo está?",
+  "Le confirmo el tamaño | M",
+  "C:\\Users\\agente",
 ];
 
 const OK = [
@@ -42,7 +58,14 @@ const OK = [
   "**Dirección:**",
   "Sí",
   "😊",
+  "👍🏻",
+  "❤️",
+  "🇲🇽",
   "5500",
+  "$5,500",
+  "- La compuerta",
+  "• 1 año de garantía",
+  "*Tamaño M:* 91 cm a 100 cm",
   "https://articulo.mercadolibre.com.mx/MLM-1966051269-compuerta",
 ];
 
@@ -63,6 +86,18 @@ describe("findInternalText", () => {
   it("encuentra la palabra suelta detrás de una pregunta buena (caso 10-oct)", () => {
     const found = findInternalText(["¿Hasta qué altura aproximada le llega el agua?", "Winvalid"]);
     expect(found?.reason).toBe("palabra suelta sin sentido");
+  });
+  it("caso 2-nov: «[]{?}» como burbuja aparte detrás de la pregunta de la altura", () => {
+    const found = findInternalText(["¿Hasta qué altura aproximada le sube el agua?\n\n[]{?}"]);
+    expect(found).toEqual({ text: "[]{?}", reason: "renglón sin palabras (solo símbolos o caracteres invisibles)" });
+  });
+  it("caso 25-oct: una burbuja con solo un carácter que no es letra (U+5FFFF)", () => {
+    const found = findInternalText(["¿Hasta qué altura aproximada le sube el agua?", "\u{5FFFF}"]);
+    expect(found?.text).toBe("\u{5FFFF}");
+    expect(found?.reason).toContain("sin palabras");
+  });
+  it("los renglones en blanco entre párrafos no cuentan", () => {
+    expect(findInternalText(["La compuerta cuesta $5,500.\n\n   \n¿Usted tiene problemas de inundaciones?"])).toBeNull();
   });
   it("una respuesta normal de dos mensajes no tiene nada interno", () => {
     expect(findInternalText(OK.slice(0, 2))).toBeNull();
@@ -124,6 +159,9 @@ describe("cleanBeforeInternal", () => {
     expect(cleanBeforeInternal('¿Hasta qué altura aproximada le sube el agua?\n[tool calls]\nmulti_tool_use.parallel.parallel  code:\n{"tool_uses":[]}')).toBe("¿Hasta qué altura aproximada le sube el agua?");
     expect(cleanBeforeInternal("¿Hasta qué altura aproximadamente le sube el agua?\n[Need tool calls after text]")).toBe("¿Hasta qué altura aproximadamente le sube el agua?");
     expect(cleanBeforeInternal("Gracias por la medida.\n\nLe confirmo el tamaño en un momento.\n[tool]\nYou have 938 weighted tokens left")).toBe("Gracias por la medida.\n\nLe confirmo el tamaño en un momento.");
+    // 3-nov-2026: los dos casos que se colaron (25-oct y 2-nov).
+    expect(cleanBeforeInternal("¿Hasta qué altura aproximada le sube el agua?\n\n[]{?}")).toBe("¿Hasta qué altura aproximada le sube el agua?");
+    expect(cleanBeforeInternal("¿Hasta qué altura aproximada le sube el agua?\n\n\u{5FFFF}")).toBe("¿Hasta qué altura aproximada le sube el agua?");
   });
   it("nada que salvar: lo interno va primero, no hay nada interno o lo interno nombra un workflow", () => {
     expect(cleanBeforeInternal("[tool]\n¿Hasta qué altura le llega el agua?")).toBeNull();
