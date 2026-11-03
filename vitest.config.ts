@@ -24,5 +24,7 @@ export default defineConfig({
     // pisarían. La suite completa tarda <2 s, así que se corren los archivos en
     // serie. Los tests puros no tocan la base y no se ven afectados.
     fileParallelism: false,
+    // Antes de cada archivo: la base de pruebas en UTC, como Railway (test/base-utc.ts).
+    setupFiles: ["./test/base-utc.ts"],
   },
 });
