@@ -181,7 +181,13 @@ function StageColumn({
         isOver ? "scale-[1.01] shadow-lg ring-2 ring-brand-orange ring-offset-2 ring-offset-background" : ""
       }`}
     >
-      <div className="flex items-center justify-between rounded-t-lg bg-brand-navy px-3 py-2 text-brand-white">
+      {/* Columna temporal «Buen Fin» (3-nov-2026, dueño): encabezado rojo en vez del azul. Se quita
+          con la columna cuando termine la campaña. */}
+      <div
+        className={`flex items-center justify-between rounded-t-lg px-3 py-2 text-brand-white ${
+          stage.key === "buen_fin" ? "bg-red-600" : "bg-brand-navy"
+        }`}
+      >
         <span className="truncate text-sm font-semibold">{stage.name}</span>
         <div className="flex shrink-0 items-center gap-1.5">
           {/* «No leído» (30-sep-2026): píldora del mismo alto que el contador, solo el sobre.
