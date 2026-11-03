@@ -47,7 +47,8 @@ describe.skipIf(!TEST_DATABASE_URL)("Seguimientos en la base (modo ensayo)", () 
     await db.insert(s.user).values({ id: USER, name: "Vendedor", email: "vendedor@seg.test" });
     await db.insert(s.organization).values({ id: ORG, name: "Org", slug: "org-seg", createdAt: new Date() });
     await db.insert(s.channels).values({ id: CH, organizationId: ORG, type: "whatsapp", provider: "zernio", providerAccountId: "zacc_seg", displayName: "Diluvium", aiAgentMode: "auto" });
-    await db.insert(s.contacts).values({ id: CONTACT, organizationId: ORG, firstName: "Ana Lucía", phoneE164: "+525512345678" });
+    // En Prospecto: en Inbox cada caso tiene un solo intento (tableForStage, 2-nov-2026).
+    await db.insert(s.contacts).values({ id: CONTACT, organizationId: ORG, firstName: "Ana Lucía", phoneE164: "+525512345678", stage: "prospecto" });
     await db.insert(s.conversations).values({
       id: CONV,
       organizationId: ORG,
@@ -85,7 +86,7 @@ describe.skipIf(!TEST_DATABASE_URL)("Seguimientos en la base (modo ensayo)", () 
       lastIsCompany: true,
       ficha: ficha("faltan_medidas"),
       stages: await stagesMod.listFunnelStages(ORG),
-      stageKey: "inbox",
+      stageKey: "prospecto",
       monto: null,
       pago: null,
       now: NOW,
@@ -183,6 +184,43 @@ describe.skipIf(!TEST_DATABASE_URL)("Seguimientos en la base (modo ensayo)", () 
     [r] = await rows();
     expect(r.status).toBe("terminado");
     expect(await db.select().from(s.messages)).toHaveLength(0);
+  });
+
+  describe("Inbox (2-nov-2026): un solo seguimiento por caso, salvo asesor y pidió fecha", () => {
+    const toInbox = () => db.update(s.contacts).set({ stage: "inbox" }).where(d.eq(s.contacts.id, CONTACT));
+
+    it("solo sale el 1.º (texto antes del cierre); después espera respuesta y termina en frío, sin plantilla", async () => {
+      await toInbox();
+      expect(await reading({ stageKey: "inbox" })).toMatch(/seguimiento: faltan_medidas 1\.º .* texto/);
+      let [r] = await rows();
+      expect(r).toMatchObject({ status: "programado", intento: 1, totalIntentos: 1, door: "texto" });
+      await store.followUpSweepOnce(new Date(r.dueAt!.getTime() + MIN));
+      [r] = await rows();
+      expect(r).toMatchObject({ status: "esperando", intento: 1, totalIntentos: 1, door: null, templateName: null });
+      expect(r.intentos.map((a) => a.door)).toEqual(["texto"]);
+      await store.followUpSweepOnce(new Date(r.dueAt!.getTime() + MIN));
+      expect((await rows())[0].status).toBe("terminado");
+    });
+
+    it("«Asesor sin respuesta» conserva sus 2 intentos aunque el chat siga en Inbox", async () => {
+      await toInbox();
+      await reading({ stageKey: "inbox", ficha: ficha("asesor_sin_respuesta") });
+      const [r] = await rows();
+      expect(r).toMatchObject({ caso: "asesor_sin_respuesta", intento: 1, totalIntentos: 2 });
+    });
+
+    it("un chat que pasó a Inbox después de su 1.º ya no recibe el 2.º", async () => {
+      await reading();
+      let [r] = await rows();
+      await store.followUpSweepOnce(new Date(r.dueAt!.getTime() + MIN));
+      [r] = await rows();
+      expect(r).toMatchObject({ status: "programado", intento: 2 });
+      await toInbox();
+      await store.followUpSweepOnce(new Date(r.dueAt!.getTime() + MIN));
+      [r] = await rows();
+      expect(r.intentos.map((a) => a.door)).toEqual(["texto"]);
+      expect(r.status).not.toBe("programado");
+    });
   });
 
   it("mensaje nuevo que el lector no ha leído: espera; si pasan 30 min sin leerlo, se cancela", async () => {

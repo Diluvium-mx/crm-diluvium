@@ -52,7 +52,8 @@ describe.skipIf(!TEST_DATABASE_URL)("Tabla de seguimientos en la base", () => {
     await db.insert(s.user).values({ id: USER, name: "Daniel", email: "daniel@tab.test" });
     await db.insert(s.organization).values({ id: ORG, name: "Org", slug: "org-tab", createdAt: new Date() });
     await db.insert(s.channels).values({ id: CH, organizationId: ORG, type: "whatsapp", provider: "zernio", providerAccountId: "zacc_tab", displayName: "Diluvium", aiAgentMode: "auto" });
-    await db.insert(s.contacts).values({ id: CONTACT, organizationId: ORG, firstName: "Ana", phoneE164: "+525512345678" });
+    // En Prospecto: en Inbox cada caso tiene un solo intento (tableForStage, 2-nov-2026).
+    await db.insert(s.contacts).values({ id: CONTACT, organizationId: ORG, firstName: "Ana", phoneE164: "+525512345678", stage: "prospecto" });
     await db.insert(s.conversations).values({
       id: CONV,
       organizationId: ORG,
@@ -89,7 +90,7 @@ describe.skipIf(!TEST_DATABASE_URL)("Tabla de seguimientos en la base", () => {
       lastIsCompany: true,
       ficha: ficha(caso),
       stages: await stagesMod.listFunnelStages(ORG),
-      stageKey: "inbox",
+      stageKey: "prospecto",
       monto: null,
       pago: null,
       now: NOW,
