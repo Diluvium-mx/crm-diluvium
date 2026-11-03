@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { closingQuestion, isBareAck, onlyRepeatsLastQuestion, repeatNote, withoutUnansweredRepeat } from "./unanswered";
+import { closingQuestion, isBareAck, onlyRepeatsLastQuestion, repeatNote, withoutUnansweredRepeat, withoutUnansweredRepeatInComplement } from "./unanswered";
 
 const PREGUNTA = "¿Usted tiene problemas de inundaciones?";
 
@@ -91,5 +91,16 @@ describe("pregunta sin contestar, parte 2 (5-oct-2026)", () => {
     const note = repeatNote(PREGUNTA);
     expect(note).toContain(PREGUNTA);
     expect(note).toContain("No la repitas");
+  });
+});
+
+describe("en el complemento de un workflow (3-nov-2026)", () => {
+  it("la pregunta repetida se quita aunque no quede nada; otra pregunta o la misma con otras palabras sí sale", () => {
+    expect(withoutUnansweredRepeatInComplement([PREGUNTA], PREGUNTA)).toEqual({ keep: [], dropped: [PREGUNTA] });
+    expect(withoutUnansweredRepeat([PREGUNTA], PREGUNTA).keep).toEqual([PREGUNTA]);
+    expect(withoutUnansweredRepeatInComplement(["Con gusto.", PREGUNTA], PREGUNTA).keep).toEqual(["Con gusto."]);
+    const otra = "¿En su casa se le llega a meter el agua cuando llueve?";
+    expect(withoutUnansweredRepeatInComplement([otra], PREGUNTA).keep).toEqual([otra]);
+    expect(withoutUnansweredRepeatInComplement([PREGUNTA], null).keep).toEqual([PREGUNTA]);
   });
 });

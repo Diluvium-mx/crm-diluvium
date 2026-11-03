@@ -71,6 +71,14 @@ export function withoutUnansweredRepeat(bubbles: readonly string[], lastAsked: s
   return r.keep.length ? r : { keep: [...bubbles], dropped: [] };
 }
 
+/**
+ * Lo mismo en el complemento de un workflow (3-nov-2026, pregunta vital): ahí no contestar es válido, así que la
+ * pregunta repetida se quita aunque no quede nada (sin la salida de «nunca silencio» ni otro intento del modelo).
+ */
+export function withoutUnansweredRepeatInComplement(bubbles: readonly string[], lastAsked: string | null): { keep: string[]; dropped: string[] } {
+  return stripRepeat(bubbles, lastAsked);
+}
+
 /** ¿La respuesta es SOLO la pregunta que ya se le hizo al cliente (nada más que decirle)? */
 export function onlyRepeatsLastQuestion(bubbles: readonly string[], lastAsked: string | null): boolean {
   if (!bubbles.some((b) => /[\p{L}\p{N}]/u.test(b))) return false;

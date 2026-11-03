@@ -49,8 +49,8 @@ import { pauseForHumanReply } from "./pause";
 import { brainCandidates, brainModelForStage, handoffStage, impliedStage, type ModelSlot, type StageSignal } from "./model-by-stage";
 import { loadContactStage } from "@/lib/contacts/stage";
 import { listFunnelStages } from "@/lib/contacts/funnel-stages";
-import { complementNote, partialNote, saidText, withoutClosingQuestions } from "./complement";
-import { closingQuestion, isBareAck, onlyRepeatsLastQuestion, repeatNote, withoutUnansweredRepeat } from "./unanswered";
+import { complementNote, partialNote, saidText, withOneClosingQuestion, withoutClosingQuestions } from "./complement";
+import { asksSomething, closingQuestion, isBareAck, onlyRepeatsLastQuestion, repeatNote, withoutUnansweredRepeat, withoutUnansweredRepeatInComplement } from "./unanswered";
 import { clientNameWords, withoutUnknownNames } from "./nombre-cliente";
 import {
   alreadyHandled,
@@ -553,7 +553,14 @@ export async function runAgent(job: { organizationId: string; conversationId: st
     // (NOTHING_TOKEN). Si el cliente ya siguió escribiendo, se contesta como siempre.
     const byWorkflow = await answeredByWorkflow(org, conv.id, pending.map((p) => p.id));
     const complementOf = byWorkflow.get(lastRead.id) ?? null;
-    const workflowNote = complementOf ? complementNote(complementOf, pending.map(saidText)) : byWorkflow.size ? partialNote([...byWorkflow.values()][0]) : null;
+    // Pregunta vital (3-nov-2026, dueño): si el workflow terminó SIN pregunta (la Tabla, «Dónde medir»), el
+    // complemento cierra con UNA del dato que falte; si ya preguntó (Información, Precio 2), sin preguntas.
+    const complementMayAsk = complementOf !== null && !(await outboundTextsSinceLastInbound(org, conv.id)).some(asksSomething);
+    const workflowNote = complementOf
+      ? complementNote(complementOf, pending.map(saidText), { mayAsk: complementMayAsk })
+      : byWorkflow.size
+        ? partialNote([...byWorkflow.values()][0])
+        : null;
     // Caso SDA (29-sep-2026, lib/messaging/unavailable.ts): el PRIMER mensaje del
     // cliente no llegó (Meta 131060, confirmado por la doble verificación). Sale el
     // texto fijo del dueño, sin llamar al modelo, con las mismas reglas que cualquier
@@ -876,7 +883,7 @@ export async function runAgent(job: { organizationId: string; conversationId: st
     // al cliente sin respuesta; ahora se pide otra respuesta con una nota (otro modelo o, si no
     // hay, el mismo) y, si tampoco, no sale nada y el vendedor recibe el aviso amarillo. Solo un
     // acuse del cliente («ok», «gracias», 👍, sticker) deja volver a hacerla (Goal: PREGUNTA SIN
-    // CONTESTAR). En el complemento de un workflow ya no hay preguntas (withoutClosingQuestions).
+    // CONTESTAR). En el complemento de un workflow la pregunta repetida se quita sin otro intento (withoutUnansweredRepeatInComplement, 3-nov-2026).
     let repetida: string | null = null;
     const lastAsked = complementOf ? null : await lastQuestionAsked(org, conv.id, deps.now());
     const onlyRepeat = async (r: BrainOk): Promise<boolean> => {
@@ -1040,22 +1047,24 @@ export async function runAgent(job: { organizationId: string; conversationId: st
     // después del último mensaje del cliente (p. ej. la pregunta de un workflow) no sale
     // otra vez; si no queda ninguna, es como una respuesta de solo acciones.
     // Complemento de un workflow (30-sep-2026): sin preguntas; ahora le toca contestar al cliente
-    // (la pregunta del workflow, si la hizo, queda como la última).
+    // (la pregunta del workflow, si la hizo, queda como la última). Si el workflow no preguntó
+    // (3-nov-2026, pregunta vital), sale a lo mucho UNA, la del final.
     const { keep: drafted, dropped: questions } = text.trim()
       ? complementOf
-        ? withoutClosingQuestions(toBubbles(text, options.maxBubbles))
+        ? (complementMayAsk ? withOneClosingQuestion : withoutClosingQuestions)(toBubbles(text, options.maxBubbles))
         : { keep: toBubbles(text, options.maxBubbles), dropped: [] }
       : { keep: [], dropped: [] };
-    if (questions.length) console.info(`[agente] ${conv.id}: complemento de "${complementOf}" sin preguntas; no salen ${questions.length} pregunta(s)`);
+    if (questions.length) console.info(`[agente] ${conv.id}: complemento de "${complementOf}" ${complementMayAsk ? "con una sola pregunta" : "sin preguntas"}; no salen ${questions.length} pregunta(s)`);
     const { keep: unique, dropped: repeated } = drafted.length
       ? splitRepeated(drafted, await outboundTextsSinceLastInbound(org, conv.id))
       : { keep: [], dropped: [] };
     if (repeated.length) console.info(`[agente] ${conv.id}: no se repite lo que ya salió (${repeated.length} burbuja(s))`);
     // Pregunta sin contestar (3-oct-2026, ./unanswered.ts): si el cliente no contestó la última
     // pregunta y preguntó otra cosa, el Agente IA contesta su duda sin volver a hacer la MISMA
-    // pregunta; si solo iba la pregunta, sale (nunca silencio).
+    // pregunta; si solo iba la pregunta, sale (nunca silencio). En el complemento, callar es válido:
+    // la pregunta repetida se quita aunque no quede nada (3-nov-2026).
     const { keep: sinRepetir, dropped: unanswered } = unique.length
-      ? withoutUnansweredRepeat(unique, await lastQuestionAsked(org, conv.id, deps.now()))
+      ? (complementOf ? withoutUnansweredRepeatInComplement : withoutUnansweredRepeat)(unique, await lastQuestionAsked(org, conv.id, deps.now()))
       : { keep: [], dropped: [] };
     if (unanswered.length) console.info(`[agente] ${conv.id}: no se repite la pregunta sin contestar (${unanswered.length} burbuja(s))`);
     // Nombre del cliente (28-oct-2026, ./nombre-cliente.ts): el Agente IA solo lo llama por un nombre que dio
@@ -1246,7 +1255,7 @@ export async function runAgent(job: { organizationId: string; conversationId: st
       finishedAfterInbound ? `terminó la respuesta (${finishedAfterInbound} mensaje(s)) aunque el cliente escribió en medio; lo nuevo queda pendiente` : null,
       unconfirmed ? `${unconfirmed} mensaje(s) sin confirmar${omitted ? `; ${omitted} sin enviar (aviso)` : ""}` : null,
       complementOf ? `complemento de «${complementOf}»${out.kind !== "reply" ? ": nada que agregar" : ""}` : null,
-      questions.length ? `sin preguntas en el complemento; no salió: «${questions.join(" / ")}»` : null,
+      questions.length ? `${complementMayAsk ? "una sola pregunta" : "sin preguntas"} en el complemento; no salió: «${questions.join(" / ")}»` : null,
       repeated.length ? `no se repitió lo que ya salió: «${repeated.join(" / ")}»` : null,
       unanswered.length ? `no se repitió la pregunta sin contestar: «${unanswered.join(" / ")}»` : null,
       withheld ? `el workflow es la respuesta; no salió el texto del modelo: «${withheld.slice(0, 300)}»` : null,
