@@ -66,7 +66,8 @@ describe.skipIf(!TEST_DATABASE_URL)("Seguimientos en modo REAL (proveedor falso)
     await db.insert(s.organization).values({ id: ORG, name: "Org", slug: "org-envio", createdAt: new Date() });
     await db.insert(s.aiConfig).values({ organizationId: ORG, modeloFiltro: "gpt-5.6-luna", modeloCerebro: "claude-sonnet-5", goal: "x", seguimientosReal: true });
     await db.insert(s.channels).values({ id: CH, organizationId: ORG, type: "whatsapp", provider: "zernio", providerAccountId: "zacc_envio", displayName: "Diluvium", aiAgentMode: "auto" });
-    await db.insert(s.contacts).values({ id: CONTACT, organizationId: ORG, firstName: "Ana Lucía", phoneE164: "+525512345678" });
+    // En Prospecto: en Inbox cada caso tiene un solo intento (tableForStage, 2-nov-2026).
+    await db.insert(s.contacts).values({ id: CONTACT, organizationId: ORG, firstName: "Ana Lucía", phoneE164: "+525512345678", stage: "prospecto" });
     await db.insert(s.conversations).values({
       id: CONV,
       organizationId: ORG,
@@ -113,7 +114,7 @@ describe.skipIf(!TEST_DATABASE_URL)("Seguimientos en modo REAL (proveedor falso)
       lastIsCompany: true,
       ficha: ficha(),
       stages: await stagesMod.listFunnelStages(ORG),
-      stageKey: "inbox",
+      stageKey: "prospecto",
       monto: null,
       pago: null,
       now,
@@ -413,7 +414,7 @@ describe.skipIf(!TEST_DATABASE_URL)("Seguimientos en modo REAL (proveedor falso)
     await store.applyFollowUpReading({
       organizationId: ORG, conversationId: CONV, contactId: CONTACT, readUpTo: T0, stopAt: T0, lastIsCompany: true,
       ficha: ficha({ caso: "no_seguir", valeLaPena: false, motivo: "Dijo que ya lo compró en otro lado" }),
-      stages: await stagesMod.listFunnelStages(ORG), stageKey: "inbox", monto: null, pago: null, now: new Date(T0.getTime() + 4 * MIN),
+      stages: await stagesMod.listFunnelStages(ORG), stageKey: "prospecto", monto: null, pago: null, now: new Date(T0.getTime() + 4 * MIN),
     });
     expect(await view.loadFollowUpState(ORG, CONV)).toMatchObject({ estado: "dormido", razon: "No seguir: Dijo que ya lo compró en otro lado." });
     // El cliente escribió al último.

@@ -11,6 +11,7 @@
 // En ai_config: `seguimientos_casos` y `seguimientos_vendedores` (migración 0062); null = de fábrica.
 // Un caso guardado que ya no valide (editado a mano) vuelve al de fábrica: nunca queda uno imposible.
 import { z } from "zod";
+import type { StageRole } from "@/lib/contacts/stages";
 import { ALLOWED_FROM, ALLOWED_TO, CASE_RULES, FOLLOW_UP_CASES, type FollowUpCase } from "./cases";
 import { isHhmm, minutesOf } from "./time";
 
@@ -219,6 +220,27 @@ export function lastStep(table: FollowUpTable, caso: EditableCase): number {
   const steps = table.casos[caso].intentos;
   for (let k = MAX_STEPS; k >= 1; k--) if (steps[k - 1]) return k;
   return 0;
+}
+
+/** En Inbox conservan todos sus intentos: el cliente pidió algo (una persona o que le escribieran). */
+export const INBOX_FULL_CASES: ReadonlySet<EditableCase> = new Set(["asesor_sin_respuesta", "pidio_fecha"]);
+
+/**
+ * La tabla que vale para un chat según su etapa. En la de entrada (Inbox) cada caso se queda con UN solo
+ * intento, el primero que tenga prendido, salvo INBOX_FULL_CASES (decisión del dueño, 2-nov-2026: desde el 6-oct,
+ * en Inbox el 2.º intento salió 289 veces, contestó el 10 % y nadie avanzó ni compró; docs/seguimientos.md §31).
+ */
+export function tableForStage(table: FollowUpTable, stageRole: StageRole | null): FollowUpTable {
+  if (stageRole !== "entrada") return table;
+  const casos = Object.fromEntries(
+    EDITABLE_CASES.map((c) => {
+      const s = table.casos[c];
+      if (INBOX_FULL_CASES.has(c)) return [c, s];
+      const first = s.intentos.indexOf(true);
+      return [c, { ...s, intentos: [0, 1, 2].map((k) => k === first) as CaseSetting["intentos"] }];
+    }),
+  ) as Record<EditableCase, CaseSetting>;
+  return { ...table, casos };
 }
 
 // ── Cambios (confirmación e Historial) ───────────────────────────────────────

@@ -71,7 +71,8 @@ describe.skipIf(!TEST_DATABASE_URL)("Editar mensaje del seguimiento", () => {
     await db.insert(s.user).values({ id: USER, name: "Carlos", email: "carlos@editar.test" });
     await db.insert(s.aiConfig).values({ organizationId: ORG, modeloFiltro: "gpt-5.6-luna", modeloCerebro: "claude-sonnet-5", goal: "x", seguimientosReal: true });
     await db.insert(s.channels).values({ id: CH, organizationId: ORG, type: "whatsapp", provider: "zernio", providerAccountId: "zacc_editar", displayName: "Diluvium", aiAgentMode: "auto" });
-    await db.insert(s.contacts).values({ id: CONTACT, organizationId: ORG, firstName: "Ana", phoneE164: "+525512345678" });
+    // En Prospecto: en Inbox cada caso tiene un solo intento (tableForStage, 2-nov-2026).
+    await db.insert(s.contacts).values({ id: CONTACT, organizationId: ORG, firstName: "Ana", phoneE164: "+525512345678", stage: "prospecto" });
     await db.insert(s.conversations).values({
       id: CONV,
       organizationId: ORG,
@@ -124,7 +125,7 @@ describe.skipIf(!TEST_DATABASE_URL)("Editar mensaje del seguimiento", () => {
       lastIsCompany: true,
       ficha: ficha(),
       stages: await stagesMod.listFunnelStages(ORG),
-      stageKey: "inbox",
+      stageKey: "prospecto",
       monto: null,
       pago: null,
       now,

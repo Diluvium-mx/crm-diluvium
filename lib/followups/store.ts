@@ -20,7 +20,7 @@ import type { MessagingProvider } from "@/lib/messaging/provider";
 import { addNotice } from "@/lib/ai/runtime/notices";
 import { notifyContactUpdated } from "@/lib/contacts/notify-updated";
 import { zoneForPhone } from "./timezone";
-import { caseOn, nextStep, slotOf, type FollowUpTable } from "./tabla";
+import { caseOn, nextStep, slotOf, tableForStage, type FollowUpTable } from "./tabla";
 import { loadFollowUpTable } from "./tabla-store";
 import { logError } from "@/lib/log/safe-error";
 // Con otro nombre: el guardián de logs toma todo lo que termina en «Error» como un error crudo.
@@ -200,10 +200,11 @@ async function loadSignals(
     .where(and(eq(contactEntradas.organizationId, organizationId), eq(contactEntradas.contactId, contactId), sql`${contactEntradas.anchoCm} is not null`))
     .limit(1);
   const num = (v: unknown) => (v === null || v === undefined ? null : Number(v));
+  const stageRole = stages.find((s) => s.key === stageKey)?.role ?? null;
   return {
     hard: {
       asesorPendiente: await asesorPendiente(organizationId, conversationId),
-      stageRole: stages.find((s) => s.key === stageKey)?.role ?? null,
+      stageRole,
       monto: known ? known.monto : num(row.monto),
       pago: known ? known.pago : num(row.pago),
       tieneMedidas: Boolean(medida),
@@ -222,7 +223,8 @@ async function loadSignals(
     extranjero: foreignLadaLabel(row.phoneIso, row.phoneCode),
     stageKey,
     off: row.offAt !== null,
-    table: await loadFollowUpTable(organizationId, now),
+    // En Inbox, un solo intento por caso salvo asesor y pidió fecha (tableForStage, 2-nov-2026).
+    table: tableForStage(await loadFollowUpTable(organizationId, now), stageRole),
   };
 }
 

@@ -374,7 +374,7 @@ rápidos, 📄 Plantillas y 📎 Adjuntar (Bandeja y pop-up del Embudo usan el m
 
 - Se cancela si: el cliente escribe, un vendedor escribe, el contacto llega a la etapa con papel **Venta cerrada**,
   el Agente IA está apagado en el canal, el caso se apagó, o un vendedor lo cancela.
-- Máximo **3 intentos** por punto pendiente (2 en los casos que no venden, §6). Después: temperatura **frío**; aviso
+- Máximo **3 intentos** por punto pendiente (2 en los casos que no venden, §6; en Inbox, 1 salvo asesor y pidió fecha, §31). Después: temperatura **frío**; aviso
   🤖 solo en pago pendiente y asesor sin respuesta.
 - **Plantillas de seguimiento al mismo contacto: nunca dos en menos de 7 días.** Solo para la hora que pone el CRM: la
   que elige una persona con «Cambiar hora» sale a esa hora aunque otra plantilla le haya llegado hace menos de 7 días
@@ -1046,6 +1046,28 @@ el lector sí había puesto. Las fechas con día («hasta el 11 de noviembre», 
 - Sin migración. Pruebas: `ficha.test.ts`, `schedule.test.ts` (1-dic a las 19:00 con plantilla) y
   `lector-seguimiento.test.ts`. Sin banco con modelos (regla del 9-oct): se revisa en producción con las próximas
   lecturas que mencionen un mes.
+
+## 31. En Inbox, un solo seguimiento (2-nov-2026)
+
+**Decisión del dueño (2-nov-2026, «el punto 1, tal y como dices»):** a un chat en la etapa de entrada (Inbox) el
+Agente IA le escribe **una sola vez** por punto pendiente: el primer intento prendido del caso (de fábrica, el 1.º:
+texto antes de que cierre la ventana de 24 h). Ya no salen el 2.º (día 2) ni el 3.º (día 9). **Asesor sin respuesta** y
+**Pidió que le escribieran** conservan todos sus intentos: ahí el cliente pidió algo.
+
+**Por qué (lectura de prod, 6-oct → 2-nov, solo cifras; `notas/seguimientos-inbox/`):** a Inbox salieron 866
+seguimientos a 465 chats. El 1.º lo contestó el 20 % (77) y 15 avanzaron de etapa; el 2.º (289 plantillas) lo contestó
+el 10 %, ninguno avanzó y ninguno compró. Las 2 ventas que salieron de Inbox fueron de «Asesor sin respuesta». Casi
+todas las plantillas de Inbox caían en las 72 h gratis del anuncio (348 de 402): el ahorro es de mensajes a gente fría
+(y de riesgo con el tope de promociones de Meta, 131049), no de dinero. Prospecto (2,733 mensajes, 3 compras) se dejó
+igual: su 2.º intento sí dio 2 ventas.
+
+**Cómo** (`lib/followups/tabla.ts › tableForStage`, aplicado en `loadSignals` de `store.ts`): la tabla que vale para un
+chat en la etapa con papel **entrada** deja prendido solo el primer intento de cada caso (salvo `INBOX_FULL_CASES`).
+Como todo el seguimiento lee esa tabla, cuadran solos el total («1.º de 1»), el barrido, las sugerencias del vendedor y
+lo que ya estaba programado: un chat que vuelve a Inbox antes de su 2.º ya no lo recibe (el intento apagado se salta y
+termina en frío). Un seguimiento que ya mandó un vendedor cuenta como ese único intento. La tabla de Agente IA ›
+Seguimientos no cambia (sus casillas siguen valiendo en las demás etapas), el lector tampoco (sin gasto extra). Sin
+migración.
 
 ## Fuentes
 
