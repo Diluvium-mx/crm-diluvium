@@ -2,6 +2,8 @@
 
 ## Workflow «es la respuesta» de solo archivos pedido por el Agente IA (9-oct-2026, sin migración)
 
+> **3-nov-2026 (pregunta vital):** si el workflow terminó SIN pregunta (la Tabla, «Dónde medir»), el complemento ya puede cerrar con UNA pregunta del dato que falte; ver [2026-11-03-pregunta-vital.md](2026-11-03-pregunta-vital.md).
+
 Caso del dueño (8-oct, captura): activó «Dónde medir la entrada» con su pie («Le comparto un video de como debe medir su
 entrada☝🏻») y con «El workflow es la respuesta» marcada. El Agente IA lo mandó con **su** frase de cuatro renglones como
 pie (regla del 1-oct), no con la del dueño. Decisión del dueño: usar la casilla actual (opción 1B; la Tabla también la

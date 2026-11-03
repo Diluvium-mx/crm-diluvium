@@ -28,7 +28,10 @@ export function saidText(m: { type: string; body: string | null; transcripcion?:
 
 // El ÚLTIMO mensaje pendiente del cliente es el que contestó el workflow: modo complemento. `said`:
 // los mensajes del cliente que el agente está revisando (saidText), del más viejo al último.
-export function complementNote(workflowName: string, said: readonly string[]): string {
+// Pregunta vital (3-nov-2026, dueño: «que todos los workflows terminen haciendo una pregunta de acuerdo al contexto»):
+// `mayAsk` = el workflow terminó SIN pregunta (la Tabla, «Dónde medir»). Entonces el complemento cierra con UNA pregunta
+// del dato que falte, como Admin tras la Tabla; si el workflow ya preguntó (Información, Precio 2), sin preguntas como antes.
+export function complementNote(workflowName: string, said: readonly string[], opts: { mayAsk?: boolean } = {}): string {
   const shown = said.slice(-SAID_MAX).map((t) => `«${t}»`).join(" · ");
   const review =
     said.length > 1
@@ -36,13 +39,21 @@ export function complementNote(workflowName: string, said: readonly string[]): s
       : said.length === 1
         ? `Antes de esa respuesta el cliente mandó: ${shown}. Revisa `
         : "Revisa el último mensaje del cliente: ";
+  const answer = opts.mayAsk
+    ? "contéstala breve, sin repetir nada de lo que ya dijo el workflow. "
+    : "contéstala breve, sin repetir nada de lo que ya dijo el workflow y SIN hacer preguntas: ahora le toca contestar al cliente. ";
+  const close = opts.mayAsk
+    ? "El workflow no dejó ninguna pregunta: si todavía falta un dato vital para el siguiente paso (si tiene problemas de inundaciones, hasta dónde le sube el agua, la medida de su entrada o la foto, según FLUJO CONVERSACIONAL), termina con UNA sola pregunta para conseguirlo, nunca con la misma frase de una pregunta que ya se le hizo (sigue PREGUNTA SIN CONTESTAR). No preguntes si ya está en cierre o quiere pagar, si hizo una objeción de precio o si se está despidiendo. " +
+      `Si no hay nada que contestar aparte (un saludo, un "gracias", algo que el workflow ya contestó o una nota de voz sin contenido útil), escribe solo esa pregunta; si tampoco falta ningún dato, escribe exactamente ${NOTHING_TOKEN} y nada más; las acciones internas (detalle, etapa, avisos) sí puedes usarlas.`
+    : `Si ninguno trae algo así (un saludo, un "gracias", algo que el workflow ya contestó o una nota de voz sin contenido útil no necesitan respuesta aparte), escribe exactamente ${NOTHING_TOKEN} y nada más; las acciones internas (detalle, etapa, avisos) sí puedes usarlas.`;
   return (
     `El workflow «${workflowName}» ya le contestó al cliente con lo que aparece en "[Después de este mensaje ya se le envió al cliente: …]". ` +
     "Ese workflow contesta solo SU tema (p. ej. el precio, la tabla de tamaños o una entrada más ancha de lo que fabricamos). " +
     review +
-    "si alguno trae una pregunta o petición que el workflow no contestó de forma directa (p. ej. cuánto tarda el envío, de qué ciudad son o dónde están, cómo funciona, si es fácil de instalar, para qué tipo de puerta sirve, garantía, formas de pago u otra entrada con su propia medida), contéstala breve, sin repetir nada de lo que ya dijo el workflow y SIN hacer preguntas: ahora le toca contestar al cliente. " +
+    "si alguno trae una pregunta o petición que el workflow no contestó de forma directa (p. ej. cuánto tarda el envío, de qué ciudad son o dónde están, cómo funciona, si es fácil de instalar, para qué tipo de puerta sirve, garantía, formas de pago u otra entrada con su propia medida), " +
+    answer +
     "Que el workflow mencione el tema no basta: «envío gratis» no dice cuánto tarda el envío. Si el cliente dio la medida de OTRA entrada que el workflow no atendió, dile qué tamaño le corresponde y su precio. " +
-    `Si ninguno trae algo así (un saludo, un "gracias", algo que el workflow ya contestó o una nota de voz sin contenido útil no necesitan respuesta aparte), escribe exactamente ${NOTHING_TOKEN} y nada más; las acciones internas (detalle, etapa, avisos) sí puedes usarlas.`
+    close
   );
 }
 
@@ -92,4 +103,19 @@ export function withoutClosingQuestions(bubbles: readonly string[]): { keep: str
     if (/[\p{L}\p{N}]/u.test(text)) keep.push(text);
   }
   return { keep, dropped };
+}
+
+/**
+ * Complemento tras un workflow que terminó SIN pregunta (3-nov-2026): sale a lo mucho UNA, la del final del último
+ * mensaje. Las de los mensajes de antes, y otra pegada antes de esa, se quitan como en withoutClosingQuestions.
+ */
+export function withOneClosingQuestion(bubbles: readonly string[]): { keep: string[]; dropped: string[] } {
+  const last = bubbles.at(-1)?.trim() ?? "";
+  const cut = dropClosingQuestion(last);
+  if (cut === null) return withoutClosingQuestions(bubbles);
+  const question = last.slice(cut.length).trim();
+  const earlier = withoutClosingQuestions(bubbles.slice(0, -1));
+  const rest = withoutClosingQuestions([cut]);
+  const tail = rest.dropped.length === 0 ? last : rest.keep.length ? `${rest.keep[0]} ${question}` : question;
+  return { keep: [...earlier.keep, tail], dropped: [...earlier.dropped, ...rest.dropped] };
 }

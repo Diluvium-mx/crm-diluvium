@@ -2,6 +2,8 @@
 
 ## El workflow contesta SU tema; el Agente IA, lo que falte (30-sep-2026, sin migración)
 
+> **3-nov-2026 (pregunta vital):** si el workflow terminó SIN pregunta (la Tabla, «Dónde medir»), el complemento ya puede cerrar con UNA pregunta del dato que falte; ver [2026-11-03-pregunta-vital.md](2026-11-03-pregunta-vital.md).
+
 Caso del 29-sep (6:22 p.m. Mazatlán): «De que cd son y que precio tienen» disparó «Precio 2» por "precio". El
 workflow contestó el precio y terminó con su pregunta; su marca `contestaA` dejó el mensaje **entero** como contestado y
 nadie le dijo de qué ciudad somos (el agente, después, solo preguntó el nivel del agua). Pedido del dueño: «si tenemos un
