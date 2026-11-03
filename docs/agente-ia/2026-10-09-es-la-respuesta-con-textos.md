@@ -2,6 +2,8 @@
 
 ## Workflow «es la respuesta» con textos pedido por el Agente IA (9-oct-2026, sin migración)
 
+> **3-nov-2026 (pregunta vital):** si el workflow terminó SIN pregunta (la Tabla, «Dónde medir»), el complemento ya puede cerrar con UNA pregunta del dato que falte; ver [2026-11-03-pregunta-vital.md](2026-11-03-pregunta-vital.md).
+
 Caso del dueño (9-oct): creó en producción «Entrada mayor a 2.5 m» (paso 1: foto del poste con el pie «La compuerta más
 amplia que fabricamos es de 2.5 m. Para entradas más anchas no recomendamos cubrir todo el ancho, porque es más
 probable que haya filtraciones.»; paso 2: texto «Aun así, se puede colocar un soporte intermedio como el de la foto: un

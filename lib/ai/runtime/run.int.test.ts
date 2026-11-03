@@ -1808,6 +1808,50 @@ describe.skipIf(!TEST_DATABASE_URL)("runtime del Agente IA (Postgres real)", () 
     expect(await run.runAgent(JOB, makeDeps({ brain: ["x"] }, zernio).deps)).toEqual({ kind: "noop", reason: "sin_pendientes" });
   });
 
+  // ── Pregunta vital (3-nov-2026, dueño): tras un workflow que NO deja pregunta, el complemento cierra con UNA ──
+  it("pregunta vital: tras la Tabla (sin pregunta) el complemento cierra con UNA pregunta, como Admin; las de antes no salen", async () => {
+    const m1 = await msg({ direction: "in", body: "Tienen medidas o son una sola medida", at: ago(40_000) });
+    const wfId = await wf("tabla_tamanos_estandar", [{ kind: "send_text", text: "Aquí le comparto una foto de los tamaños disponibles para envío inmediato" }], { isAnswer: true });
+    await keywordRun("run_tabla", wfId, m1);
+    expect((await run.runAgent(JOB, makeDeps({ brain: ["x"] }).deps)).kind).toBe("reschedule");
+    const zernio = fakeZernio();
+    expect(await executor.executeWorkflowRun("run_tabla", execDeps(zernio))).toBe("done");
+    const late = makeDeps({ brain: ["Son 5 tamaños según el ancho. ¿Le sirve?\n\n" + PREGUNTA] }, zernio);
+    expect(await run.runAgent(JOB, late.deps)).toEqual({ kind: "sent", bubbles: 2 });
+    expect(lastUserText(late.calls[0].input)).toContain("El workflow no dejó ninguna pregunta");
+    expect(zernio.delivered).toEqual(["Aquí le comparto una foto de los tamaños disponibles para envío inmediato", "Son 5 tamaños según el ancho.", PREGUNTA]);
+    expect(await notices()).toEqual([]);
+  });
+
+  it("pregunta vital: si el workflow ya preguntó (Precio 2), el complemento sigue sin preguntas", async () => {
+    const m1 = await msg({ direction: "in", body: "De que cd son y que precio tienen", at: ago(40_000) });
+    const wfId = await wf("precio_2", [{ kind: "send_text", text: "Ahorita tenemos cualquier tamaño en $5,500 con envío gratis." }, { kind: "send_text", text: PREGUNTA }], { isAnswer: true });
+    await keywordRun("run_precio", wfId, m1);
+    expect((await run.runAgent(JOB, makeDeps({ brain: ["x"] }).deps)).kind).toBe("reschedule");
+    const zernio = fakeZernio();
+    expect(await executor.executeWorkflowRun("run_precio", execDeps(zernio))).toBe("done");
+    const late = makeDeps({ brain: ["Somos de Los Mochis, Sinaloa. ¿De dónde nos escribe?"] }, zernio);
+    expect(await run.runAgent(JOB, late.deps)).toEqual({ kind: "sent", bubbles: 1 });
+    expect(lastUserText(late.calls[0].input)).toContain("SIN hacer preguntas");
+    expect(zernio.delivered.at(-1)).toBe("Somos de Los Mochis, Sinaloa.");
+  });
+
+  it("pregunta vital: tras la Tabla, la MISMA pregunta que el cliente dejó sin contestar no sale (ni tarjeta ni otro intento)", async () => {
+    await msg({ direction: "out", source: "ai_agent", body: PREGUNTA, at: ago(60_000) });
+    const m1 = await msg({ direction: "in", body: "¿Qué medidas manejan?", at: ago(40_000) });
+    const wfId = await wf("tabla_tamanos_estandar", [{ kind: "send_text", text: "Aquí le comparto una foto de los tamaños disponibles para envío inmediato" }], { isAnswer: true });
+    await keywordRun("run_tabla", wfId, m1);
+    expect((await run.runAgent(JOB, makeDeps({ brain: ["x"] }).deps)).kind).toBe("reschedule");
+    const zernio = fakeZernio();
+    expect(await executor.executeWorkflowRun("run_tabla", execDeps(zernio))).toBe("done");
+    const late = makeDeps({ brain: [PREGUNTA] }, zernio);
+    expect(await run.runAgent(JOB, late.deps)).toEqual({ kind: "sent", bubbles: 0 });
+    expect(late.calls).toHaveLength(1);
+    expect(zernio.delivered).toEqual(["Aquí le comparto una foto de los tamaños disponibles para envío inmediato"]);
+    expect(await notices()).toEqual([]);
+    expect(await run.runAgent(JOB, makeDeps({ brain: ["x"] }, zernio).deps)).toEqual({ kind: "noop", reason: "sin_pendientes" });
+  });
+
   it("bug de la ráfaga (29-sep): «¿Cuánto tarda el envío?» + «Precio» → «Precio 2» contesta SOLO «Precio»; el agente contesta lo del envío", async () => {
     await msg({ direction: "in", body: "¿Cuánto tarda el envío?", at: ago(42_000) });
     const m2 = await msg({ direction: "in", body: "Precio", at: ago(40_000) });
@@ -1990,7 +2034,7 @@ describe.skipIf(!TEST_DATABASE_URL)("runtime del Agente IA (Postgres real)", () 
     expect((await sweep.findOrphanConversations(new Date(Date.now() + 2 * 60_000))).map((c) => c.conversationId)).not.toContain(CONV);
   });
 
-  it("«Dónde medir» con dos preguntas («¿Dónde mido y cuánto cuesta?»): sale el video y el complemento contesta SOLO el precio, sin preguntar y sin volver a mandar el video", async () => {
+  it("«Dónde medir» con dos preguntas («¿Dónde mido y cuánto cuesta?»): sale el video y el complemento contesta SOLO el precio, con UNA pregunta (el video no preguntó; 3-nov-2026) y sin volver a mandar el video", async () => {
     await libraryAsset("a_video", "video");
     await msg({ direction: "in", body: "¿Dónde mido y cuánto cuesta?", at: ago(40_000) });
     await wf("donde_medir", [{ kind: "send_media", assetId: "a_video", title: "Video", caption: PIE_MEDIR }], { isAnswer: true });
@@ -1999,15 +2043,16 @@ describe.skipIf(!TEST_DATABASE_URL)("runtime del Agente IA (Postgres real)", () 
     expect((await run.runAgent(JOB, first.deps)).kind).toBe("reschedule");
     const [r] = await runs();
     expect(await executor.executeWorkflowRun(r.id, mediaExecDeps(zernio))).toBe("done");
-    // En la revisión el modelo vuelve a pedir el video y, por costumbre, pregunta: ninguno de los dos sale.
-    const late = makeDeps({ brain: ["Cuesta $5,500 MXN con envío gratis.\n\n¿Ya tiene su medida?"], toolCalls: [WF_MEDIR] }, zernio);
-    expect(await run.runAgent(JOB, late.deps)).toEqual({ kind: "sent", bubbles: 1 });
-    expect(lastUserText(late.calls[0].input)).toContain("SIN hacer preguntas");
-    expect(zernio.delivered).toEqual([`📎 ${PIE_MEDIR}`, "Cuesta $5,500 MXN con envío gratis."]);
+    // En la revisión el modelo vuelve a pedir el video: no sale otra vez. El video no preguntó, así que su
+    // pregunta (una sola, la del final) sí sale (pregunta vital, 3-nov-2026); antes se quitaba.
+    const late = makeDeps({ brain: ["Cuesta $5,500 MXN con envío gratis. ¿Le quedó claro?\n\n¿Ya tiene su medida?"], toolCalls: [WF_MEDIR] }, zernio);
+    expect(await run.runAgent(JOB, late.deps)).toEqual({ kind: "sent", bubbles: 2 });
+    expect(lastUserText(late.calls[0].input)).toContain("El workflow no dejó ninguna pregunta");
+    expect(zernio.delivered).toEqual([`📎 ${PIE_MEDIR}`, "Cuesta $5,500 MXN con envío gratis.", "¿Ya tiene su medida?"]);
     expect(await runs()).toHaveLength(1);
     expect(await notices()).toEqual([]);
     const u = (await usage()).find((x) => x.stage === "cerebro" && (x.error ?? "").includes("complemento de «donde_medir»"))!;
-    expect(u.error).toContain("no salió: «¿Ya tiene su medida?»");
+    expect(u.error).toContain("no salió: «¿Le quedó claro?»");
   });
 
   it("«Dónde medir» y ráfaga: si el cliente escribe mientras el video va en camino, el agente espera y luego contesta lo nuevo como siempre (sin la nota del complemento)", async () => {

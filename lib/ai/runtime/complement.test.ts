@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { HANDOVER_TOKEN, NOTHING_TOKEN, parseBrainOutput } from "./brain";
-import { complementNote, partialNote, saidText, withoutClosingQuestions } from "./complement";
+import { complementNote, partialNote, saidText, withOneClosingQuestion, withoutClosingQuestions } from "./complement";
 
 describe("señal «nada que agregar» (complemento de un workflow, 30-sep-2026)", () => {
   it("sola → nothing; con texto → el texto sin la señal; vacío sin señal sigue siendo vacío", () => {
@@ -95,5 +95,37 @@ describe("withoutClosingQuestions: el complemento no pregunta", () => {
 
   it("sin preguntas, todo sale igual", () => {
     expect(withoutClosingQuestions(["Somos de Mazatlán.", "Enviamos gratis."])).toEqual({ keep: ["Somos de Mazatlán.", "Enviamos gratis."], dropped: [] });
+  });
+});
+
+describe("pregunta vital tras un workflow que no preguntó (3-nov-2026)", () => {
+  it("la nota con mayAsk pide UNA pregunta del dato que falte, sin la misma frase; sin mayAsk sigue prohibiendo preguntar", () => {
+    const note = complementNote("Tabla de tamaños (estándar)", ["Tienen medidas o son una sola medida"], { mayAsk: true });
+    expect(note).toContain("El workflow no dejó ninguna pregunta");
+    expect(note).toContain("termina con UNA sola pregunta");
+    expect(note).toContain("PREGUNTA SIN CONTESTAR");
+    expect(note).toContain("escribe solo esa pregunta");
+    expect(note).toContain(NOTHING_TOKEN);
+    expect(note).not.toContain("SIN hacer preguntas");
+    expect(complementNote("Precio 2", ["Precio"])).toContain("SIN hacer preguntas");
+  });
+
+  it("withOneClosingQuestion: sale solo la pregunta del final del último mensaje", () => {
+    expect(withOneClosingQuestion(["Tenemos 5 tamaños.", "¿Usted tiene problemas de inundaciones?"])).toEqual({ keep: ["Tenemos 5 tamaños.", "¿Usted tiene problemas de inundaciones?"], dropped: [] });
+    // La de un mensaje anterior se quita.
+    expect(withOneClosingQuestion(["Enviamos a todo México. ¿De dónde nos escribe?", "¿Usted tiene problemas de inundaciones?"])).toEqual({
+      keep: ["Enviamos a todo México.", "¿Usted tiene problemas de inundaciones?"],
+      dropped: ["¿De dónde nos escribe?"],
+    });
+    // Dos seguidas al final del último: queda la última.
+    expect(withOneClosingQuestion(["Con gusto. ¿Le sirvió la tabla? ¿Qué ancho tiene su entrada?"])).toEqual({
+      keep: ["Con gusto. ¿Qué ancho tiene su entrada?"],
+      dropped: ["¿Le sirvió la tabla?"],
+    });
+    // Una sola pregunta en el mismo mensaje se queda tal cual.
+    expect(withOneClosingQuestion(["Con gusto.\n¿Qué ancho tiene su entrada?"]).keep).toEqual(["Con gusto.\n¿Qué ancho tiene su entrada?"]);
+    // Sin pregunta al final, como withoutClosingQuestions.
+    expect(withOneClosingQuestion(["¿Le late? Somos de Los Mochis."])).toEqual(withoutClosingQuestions(["¿Le late? Somos de Los Mochis."]));
+    expect(withOneClosingQuestion([])).toEqual({ keep: [], dropped: [] });
   });
 });
