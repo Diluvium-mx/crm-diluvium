@@ -43,7 +43,19 @@ const FOREIGN_LETTER = String.raw`(?![\p{Script=Latin}\p{Script=Common}\p{Script
 const FOREIGN_SCRIPT = new RegExp(FOREIGN_LETTER, "u");
 // Una tira de letras ajenas con sus marcas, espacios intermedios y puntuación CJK («。», «、»).
 const FOREIGN_RUN = new RegExp(String.raw`(?:${FOREIGN_LETTER}[\p{M}\u3000-\u303F\uFF01-\uFF0F\uFF1A-\uFF20]*)+(?:[^\S\n]+(?:${FOREIGN_LETTER}[\p{M}\u3000-\u303F\uFF01-\uFF0F\uFF1A-\uFF20]*)+)*`, "gu");
-const HAS_CONTENT = /[\p{L}\p{N}\p{Extended_Pictographic}]/u;
+// Algo que el cliente puede leer: una letra, un número, un emoji o una bandera (🇲🇽 no es Extended_Pictographic).
+const HAS_CONTENT = /[\p{L}\p{N}\p{Extended_Pictographic}\p{Regional_Indicator}]/u;
+
+// Renglón sin palabras y símbolos de programación (3-nov-2026, dueño: «que nunca más vuelva a pasar»). Las reglas de
+// abajo buscaban FORMAS de basura y cada falla de GPT-5.6 Luna trae una nueva. Dos se colaron en el mismo momento
+// que el caso del 19-oct (el cliente contesta «Sí» a «¿Usted tiene problemas de inundaciones?» y Luna escribe su
+// llamada a actualizar_detalle como texto detrás de «¿Hasta qué altura aproximada le sube el agua?»): el 25-oct
+// una burbuja con solo U+5FFFF (un código que no es letra; al cliente le llega en blanco o como cuadrito) y el
+// 2-nov «[]{?}». Ninguna tenía letras, así que ninguna regla las vio. Ahora un renglón para el cliente necesita
+// algo que se pueda leer (HAS_CONTENT) y nunca lleva símbolos de programación. Revisión de prod (27-sep → 3-nov,
+// 22,477 mensajes del Agente IA, 22,933 renglones): los únicos renglones así fueron esas dos burbujas y las notas
+// viejas del 1 al 4-oct; «😊» (2 veces) pasa porque es emoji.
+const CODE_SYMBOLS = /[{}[\]<>`|\\]/;
 
 /** ¿Trae letras de otro alfabeto? */
 export function hasForeignScript(text: string): boolean {
@@ -86,6 +98,8 @@ const RULES: readonly { reason: string; test: (t: string) => boolean }[] = [
     return word !== undefined && !SINGLE_WORD_OK.has(normalizeSearch(word));
   } },
   { reason: "nota para el sistema", test: (t) => /sin acci[oó]n adicional|respuesta ya fue enviada|nota interna|\bwe need\b/i.test(t) },
+  { reason: "renglón sin palabras (solo símbolos o caracteres invisibles)", test: (t) => !HAS_CONTENT.test(t) },
+  { reason: "símbolos de programación", test: (t) => CODE_SYMBOLS.test(t) },
 ];
 
 /** Por qué el texto parece interno (para el registro y la tarjeta), o null si es para el cliente. */
@@ -141,7 +155,7 @@ export function cleanBeforeInternal(text: string): string | null {
 }
 
 export const INTERNAL_TEXT_RETRY_NOTE =
-  "Tu respuesta anterior NO se le envió al cliente porque traía una nota interna escrita como texto (corchetes, «tool», el nombre de una herramienta, JSON, una nota para ti o para el sistema, o una palabra suelta sin sentido). Escribe otra vez tu respuesta solo con lo que el cliente debe leer. Si hace falta una acción (Detalle, cotización, etapa, aviso o un archivo), llama su herramienta en esta misma respuesta: no escribas que la vas a llamar.";
+  "Tu respuesta anterior NO se le envió al cliente porque traía una nota interna escrita como texto (corchetes, llaves u otros símbolos de programación, «tool», el nombre de una herramienta, JSON, una nota para ti o para el sistema, una palabra suelta sin sentido o un renglón sin palabras). Escribe otra vez tu respuesta solo con lo que el cliente debe leer. Si hace falta una acción (Detalle, cotización, etapa, aviso o un archivo), llama su herramienta en esta misma respuesta: no escribas que la vas a llamar.";
 
 /** La respuesta completa en un renglón y recortada, para el registro (ai_usage.error). */
 export function replyExcerpt(text: string, max = 500): string {
