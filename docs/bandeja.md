@@ -242,6 +242,12 @@ clic abre un menú para cambiarla sin abrir el chat. Lista y panel quedan sincro
   patrón de íconos fijos, pura estética (`lib/contacts/tarjeta-fondo.ts` por id → `data-fondo`; patrones en
   `public/fondos/`): paquetería = cartón, costura = lila, chat propio = gris. Sin azul, amarillo ni naranja.
   Nunca junto con la señal: con azul o amarilla la tarjeta lleva ese color y, al atenderse, vuelve el patrón.
+- **Columna Buen Fin (3-nov-2026, dueño, temporal):** la única columna con encabezado **rojo** (`bg-red-600`)
+  en vez del azul marino; sale de su clave `buen_fin` en `StageColumn`. Va al final, después de Compra
+  (decisión del dueño), Modelo 1, sin regla del Agente IA: entran y salen solo a mano (el Agente IA solo
+  avanza, así que no saca a nadie; quien compre se arrastra a Compra para contar en Anuncios). En
+  Dashboard › Seguimientos, arrastrar a alguien aquí cuenta como «avanzó» (`seguimientos.ts` compara
+  posiciones). Al terminar la campaña se borra la columna y esa condición (mapa › Embudo › 36).
 - **Orden de cada columna:** de más reciente a más viejo por lo último entre "entró a la etapa"
   (`stage_changed_at`) y "el cliente escribió" (max `window_expires_at` − 24 h de sus chats: la ventana
   se mueve SOLO con entrantes). En vivo: la señal del SSE trae `lastInboundAt` y la tarjeta sube sin
