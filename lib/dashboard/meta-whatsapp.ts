@@ -81,9 +81,12 @@ export type MetaWhatsappSummary = {
   lastError: string | null;
 };
 
-function sumCost(rows: MetaPricingRow[]): number | null {
+// Sin renglones: US$0 solo si Meta ya se leyó bien alguna vez; si nunca se ha podido leer, «sin dato» (no un cero
+// que parezca que no se gastó nada).
+function sumCost(rows: MetaPricingRow[], sync: SyncRow | null): number | null {
   const withCost = rows.filter((r) => r.costUsd !== null);
-  return withCost.length ? round2(withCost.reduce((s, r) => s + (r.costUsd ?? 0), 0)) : rows.length ? null : 0;
+  if (withCost.length) return round2(withCost.reduce((s, r) => s + (r.costUsd ?? 0), 0));
+  return rows.length || !sync?.fetchedAt ? null : 0;
 }
 
 export function summarizeMetaMonth(rows: MetaPricingRow[], sync: SyncRow | null, now: Date): MetaWhatsappSummary {
@@ -94,10 +97,10 @@ export function summarizeMetaMonth(rows: MetaPricingRow[], sync: SyncRow | null,
   const prevMonth = rows.filter((r) => r.day.startsWith(prev));
   return {
     monthLabel: monthName.format(now),
-    totalUsd: sumCost(thisMonth),
+    totalUsd: sumCost(thisMonth, sync),
     charged: thisMonth.filter((r) => r.pricingType === "regular").reduce((s, r) => s + r.volume, 0),
     prevMonthLabel: monthName.format(prevStart),
-    prevTotalUsd: prevMonth.length ? sumCost(prevMonth) : null,
+    prevTotalUsd: prevMonth.length ? sumCost(prevMonth, sync) : null,
     updatedMinutesAgo: updatedMinutesAgo(sync, now),
     lastError: sync?.lastError ?? null,
   };
@@ -208,7 +211,7 @@ export function summarizeMetaHistory(input: {
   for (let d = input.range.desde; d <= last; d = addDays(d, 1)) series.push({ dia: d, total: round2(perDay.get(d) ?? 0) });
 
   return {
-    totalUsd: sumCost(rows),
+    totalUsd: sumCost(rows, input.sync),
     charged: charged.reduce((s, r) => s + r.volume, 0),
     free: freeOnes.reduce((s, r) => s + r.volume, 0),
     freeRows: grouped(freeOnes.map((r) => ({ label: freeLabel(r.pricingType), total: r.volume }))),
