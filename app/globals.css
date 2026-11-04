@@ -335,6 +335,51 @@
   background-size: 64px 64px;
 }
 
+/* ── Contorno que gira de la columna temporal «Buen Fin» (4-nov-2026, dueño) ──
+   Borde rojo de 2 px por fuera de la columna con un destello claro que le da la
+   vuelta sin parar (conic-gradient enmascarado para dejar solo el anillo). Solo en
+   la columna con clave buen_fin (data-borde-buen-fin en StageColumn); quieto si el
+   sistema pide menos movimiento. Se quita con la columna al terminar la campaña. */
+@property --buen-fin-angulo {
+  syntax: "<angle>";
+  inherits: false;
+  initial-value: 0deg;
+}
+[data-borde-buen-fin] {
+  position: relative;
+  border-color: transparent;
+}
+[data-borde-buen-fin]::before {
+  content: "";
+  position: absolute;
+  inset: -2px;
+  padding: 2px;
+  border-radius: calc(var(--radius-lg) + 2px);
+  background: conic-gradient(
+    from var(--buen-fin-angulo),
+    #dc2626 0deg 240deg,
+    #fca5a5 290deg,
+    #ffffff 320deg,
+    #fca5a5 340deg,
+    #dc2626 360deg
+  );
+  -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+  -webkit-mask-composite: xor;
+  mask-composite: exclude;
+  animation: buen-fin-girar 4s linear infinite;
+  pointer-events: none;
+}
+@keyframes buen-fin-girar {
+  to {
+    --buen-fin-angulo: 360deg;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  [data-borde-buen-fin]::before {
+    animation: none;
+  }
+}
+
 /* ── Enlaces: estilo propio (SIN fondo iluminado; ese es de botones) ──────────
    Opt-in con data-link, para no tocar el sidebar ni enlaces con estilo propio:
      data-link="text" → subrayado que se dibuja de izquierda a derecha y navy más
