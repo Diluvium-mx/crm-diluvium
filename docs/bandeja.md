@@ -243,7 +243,8 @@ clic abre un menú para cambiarla sin abrir el chat. Lista y panel quedan sincro
   `public/fondos/`): paquetería = cartón, costura = lila, chat propio = gris. Sin azul, amarillo ni naranja.
   Nunca junto con la señal: con azul o amarilla la tarjeta lleva ese color y, al atenderse, vuelve el patrón.
 - **Columna Buen Fin (3-nov-2026, dueño, temporal):** la única columna con encabezado **rojo** (`bg-red-600`)
-  en vez del azul marino; sale de su clave `buen_fin` en `StageColumn`. Va al final, después de Compra
+  en vez del azul marino y con temporizador junto al nombre hasta el 17-nov-2026 23:59 hora de Mazatlán
+  (`buen-fin-countdown.tsx`); los dos salen de su clave `buen_fin` en `StageColumn`. Va al final, después de Compra
   (decisión del dueño), Modelo 1, sin regla del Agente IA: entran y salen solo a mano (el Agente IA solo
   avanza, así que no saca a nadie; quien compre se arrastra a Compra para contar en Anuncios). En
   Dashboard › Seguimientos, arrastrar a alguien aquí cuenta como «avanzó» (`seguimientos.ts` compara
