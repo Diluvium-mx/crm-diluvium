@@ -16,7 +16,7 @@
     la etapa que mueve un vendedor salen siempre.
 - **Dónde se revisa:** al elegir la palabra clave (`onInboundKeyword`: el que ya no aplica no compite y el mensaje
   puede disparar otro que coincida), al ofrecer herramientas al Agente IA (`loadAgentTools` con la conversación: solo
-  se ofrece mientras aplica), al crear la corrida (`startWorkflowRun`, omitida con `ya_no_es_el_inicio` o
+  se ofrece mientras aplica) (desde el 4-nov-2026 la herramienta sigue en la lista por la caché, pero queda BLOQUEADA en ese chat: ver `2026-11-04-herramientas-iguales-cache.md`), al crear la corrida (`startWorkflowRun`, omitida con `ya_no_es_el_inicio` o
   `ya_enviado_a_este_contacto`) y otra vez al arrancar (`executeWorkflowRun`, paso 0: si dos corridas del mismo
   workflow llegan juntas —palabra clave y agente— gana la primera que arrancó).
 - **Pendiente (otro chat, análisis del flujo del Agente IA):** «El workflow es la respuesta» — qué hace el agente con

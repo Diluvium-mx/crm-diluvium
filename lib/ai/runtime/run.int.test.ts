@@ -1768,7 +1768,7 @@ describe.skipIf(!TEST_DATABASE_URL)("runtime del Agente IA (Postgres real)", () 
     expect((await runs()).find((r) => r.id === "run_ag_p")).toMatchObject({ status: "skipped", errorCode: executor.SKIP_ALREADY_SENT });
   });
 
-  it("solo al inicio: el Agente IA solo tiene la herramienta mientras nadie le ha contestado al cliente", async () => {
+  it("solo al inicio: el Agente IA solo puede usar la herramienta mientras nadie le ha contestado al cliente (después queda bloqueada, misma lista)", async () => {
     await msg({ direction: "in", body: "hola", at: ago(40_000) });
     const wfId = await wf("precio_2", [{ kind: "send_text", text: "Ahorita tenemos cualquier tamaño en $5,500." }]);
     await db.update(s.workflows).set({ triggerStartOnly: true }).where(eq(s.workflows.id, wfId));
@@ -1779,7 +1779,10 @@ describe.skipIf(!TEST_DATABASE_URL)("runtime del Agente IA (Postgres real)", () 
     await msg({ direction: "in", body: "¿y el precio?", at: new Date() });
     const second = makeDeps({ brain: ["Cuesta $5,500 MXN."] });
     expect((await run.runAgent(JOB, second.deps)).kind).toBe("sent");
-    expect(Object.keys(second.calls.find((c) => c.kind === "cerebro")!.input.tools ?? {})).not.toContain("wf_precio_2");
+    // La lista de herramientas es la misma (caché, 4-nov-2026); el último turno le dice que esa no.
+    const c2 = second.calls.find((c) => c.kind === "cerebro")!;
+    expect(Object.keys(c2.input.tools ?? {})).toEqual(Object.keys(first.calls.find((c) => c.kind === "cerebro")!.input.tools ?? {}));
+    expect(lastUserText(c2.input)).toContain("NO puedes usar en este chat (el CRM no las manda): wf_precio_2");
   });
 
   it("sin «El workflow es la respuesta» el agente no espera a la corrida por palabra clave y contesta el mismo mensaje, AUNQUE termine en pregunta (la casilla reemplazó a la regla automática)", async () => {
@@ -2331,7 +2334,7 @@ describe.skipIf(!TEST_DATABASE_URL)("runtime del Agente IA (Postgres real)", () 
   });
 
   // ── «Máximo de envíos por chat» (29-sep-2026) ───────────────────────────────
-  it("máximo por chat: el agente sabe cuántas veces ya salió la foto (1 de 2) y, al llegar a 2, la herramienta ya no se ofrece", async () => {
+  it("máximo por chat: el agente sabe cuántas veces ya salió la foto (1 de 2) y, al llegar a 2, la herramienta queda bloqueada", async () => {
     const KEY = "org/rt/library/a_tabla-tabla.png";
     await db.insert(s.mediaAssets).values({ id: "a_tabla", organizationId: ORG, kind: "image", title: "Tabla", fileName: "tabla.png", mimeType: "image/png", bytes: 3, storageKey: KEY });
     await wf("tabla_tamanos_estandar", [{ kind: "send_media", assetId: "a_tabla", title: "Tabla" }], { maxSendsPerChat: 2 });
@@ -2348,8 +2351,35 @@ describe.skipIf(!TEST_DATABASE_URL)("runtime del Agente IA (Postgres real)", () 
     const second = makeDeps({ brain: ["Es la foto de arriba."] });
     expect((await run.runAgent(JOB, second.deps)).kind).toBe("sent");
     const c2 = second.calls.find((c) => c.kind === "cerebro")!;
-    expect(Object.keys(c2.input.tools ?? {})).not.toContain("wf_tabla_tamanos_estandar");
+    expect(Object.keys(c2.input.tools ?? {})).toEqual(Object.keys(c1.input.tools ?? {}));
     expect(JSON.stringify(c2.input.messages)).toContain("ya se envió 2 de 2 veces en este chat: ya no se puede volver a mandar");
+    expect(lastUserText(c2.input)).toContain("wf_tabla_tamanos_estandar (");
+  });
+
+  it("herramienta bloqueada (4-nov-2026): si el modelo la pide igual, NO sale y se le pide otra respuesta UNA vez", async () => {
+    const KEY = "org/rt/library/a_tabla-tabla.png";
+    await db.insert(s.mediaAssets).values({ id: "a_tabla", organizationId: ORG, kind: "image", title: "Tabla", fileName: "tabla.png", mimeType: "image/png", bytes: 3, storageKey: KEY });
+    await wf("tabla_tamanos_estandar", [{ kind: "send_media", assetId: "a_tabla", title: "Tabla" }], { maxSendsPerChat: 1 });
+    await msg({ direction: "out", body: "Estos son los tamaños", at: ago(60_000), source: "ai_agent", attachments: [{ type: "image", url: "https://x", storageKey: KEY }] });
+    await msg({ direction: "in", body: "¿me la pasa otra vez?", at: ago(40_000) });
+    const zernio = fakeZernio();
+    const r = makeDeps({ brain: ["Claro, aquí se la mando.", "Es la foto de los tamaños que le mandé arriba."], brainToolCalls: [[{ toolName: "wf_tabla_tamanos_estandar", input: {} }], []] }, zernio);
+    expect(await run.runAgent(JOB, r.deps)).toEqual({ kind: "sent", bubbles: 1 });
+    const cerebro = r.calls.filter((c) => c.kind === "cerebro");
+    expect(cerebro).toHaveLength(2);
+    expect(lastUserText(cerebro[1].input)).toContain("que NO se puede usar en este chat y no se mandó");
+    expect(zernio.delivered).toEqual(["Es la foto de los tamaños que le mandé arriba."]);
+    expect(await runs()).toEqual([]);
+    expect((await usage()).filter((u) => u.stage === "cerebro").map((u) => u.outcome)).toEqual(["error", "sent"]);
+    // Si vuelve a pedirla en el reintento no hay un tercer intento: el candado de siempre (acción sin ejecutar)
+    // no manda nada y deja la tarjeta al vendedor; nunca sale un «se la mando» sin la foto.
+    await msg({ direction: "in", body: "¿y otra vez?", at: new Date() });
+    const zernio2 = fakeZernio();
+    const again = makeDeps({ brain: ["Se la mando.", "Va, se la mando."], toolCalls: [{ toolName: "wf_tabla_tamanos_estandar", input: {} }] }, zernio2);
+    expect((await run.runAgent(JOB, again.deps)).kind).toBe("failed");
+    expect(again.calls.filter((c) => c.kind === "cerebro")).toHaveLength(2);
+    expect(zernio2.delivered).toEqual([]);
+    expect(await runs()).toEqual([]);
   });
 
   it("media por herramienta: corrida 'agent' DESPUÉS del texto; palabra clave + herramienta del mismo workflow no se duplica; fijar_cotizacion solo con el total dicho por el agente", async () => {

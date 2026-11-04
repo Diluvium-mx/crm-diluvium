@@ -40,7 +40,7 @@ recibir el enlace?» a quien nunca se lo mandaron, y a otro MercadoPago le recha
 
 1. **Lada fuera de México: nunca** (regla estricta del dueño, 30-oct). Misma regla que los seguimientos
    (`foreignLadaLabel`): Perú, Ecuador, Chile, España… nunca; **+1 (Estados Unidos, Canadá) sí**; sin teléfono
-   (Instagram) sí. La herramienta ni se ofrece en ese chat y, si el modelo la pidiera igual, no sale nada (ni la frase del
+   (Instagram) sí. La herramienta ni se ofrece en ese chat (desde el 4-nov-2026 la herramienta sigue en la lista por la caché, pero queda BLOQUEADA en ese chat: ver `2026-11-04-herramientas-iguales-cache.md`) y, si el modelo la pidiera igual, no sale nada (ni la frase del
    asesor ni aviso: tampoco por medio de un asesor).
 2. **Debe cobrar el total acordado** (o la mitad en anticipo/liquidación). Total: el que puso un **vendedor** manda; si
    no, el que fija esta misma respuesta o el guardado; sin ninguno, uno que la empresa ya dijo en el chat. Si no cuadra:

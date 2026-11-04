@@ -4,7 +4,7 @@
 // Corre en el barrido de cada minuto del worker.
 //
 // La petición manda EXACTAMENTE el mismo system (brain-system.ts) y las mismas herramientas
-// (loadAgentTools sin conversación: todas las del agente, como en casi todos los chats) que
+// (loadAgentTools: desde el 4-nov-2026 la lista es la MISMA en todos los chats) que
 // una respuesta, más un mensaje mínimo y 1 token de salida: Anthropic solo LEE la caché y
 // su reloj de 1 h vuelve a empezar. Si la renovación no encuentra la caché (otro prefijo:
 // cambió el Goal, una FAQ o las herramientas), la escribe UNA vez y la sigue renovando; si la
@@ -18,7 +18,7 @@ import type { CallModelInput, CallModelResult } from "@/lib/ai/types";
 import { listFunnelStages } from "@/lib/contacts/funnel-stages";
 import { loadAgentTools } from "./actions";
 import { loadBrainSystem } from "./brain-system";
-import { effectiveTouch, keepAliveDue } from "./cache-keepalive-core";
+import { effectiveTouch, goodTouch, keepAliveDue, type TouchRow } from "./cache-keepalive-core";
 import { loadAgentConfig, orgCustomValues } from "./config";
 import { loadBotOptions } from "./options";
 import { recordAiUsage } from "./usage";
@@ -46,15 +46,13 @@ export type CacheState = {
 
 export async function cacheState(organizationId: string, modelId: string, now: Date): Promise<CacheState> {
   const start = START(aiUsage.createdAt, aiUsage.latencyMs);
-  // Respuestas que leyeron o escribieron caché; renovaciones solo si de verdad la leyeron.
-  const good = sql`(${aiUsage.outcome} is distinct from 'cache_renovada' and (coalesce(${aiUsage.cacheReadTokens}, 0) > 0 or coalesce(${aiUsage.cacheWriteTokens}, 0) > 0))
-        or (${aiUsage.outcome} = 'cache_renovada' and coalesce(${aiUsage.cacheReadTokens}, 0) > 0)`;
-  // Renovaciones que no la encontraron y la volvieron a escribir.
-  const cold = sql`${aiUsage.outcome} = 'cache_renovada' and coalesce(${aiUsage.cacheReadTokens}, 0) = 0 and coalesce(${aiUsage.cacheWriteTokens}, 0) > 0`;
-  const [row] = await db
+  // Las llamadas del cerebro a ese modelo en las últimas 2 h; goodTouch decide cuál tocó la caché compartida.
+  const recent = await db
     .select({
-      good: sql<string | null>`to_char(max(${start}) filter (where ${good}), ${sql.raw(ISO)})`,
-      lastAttempt: sql<string | null>`to_char(max(${start}) filter (where ${aiUsage.outcome} = 'cache_renovada'), ${sql.raw(ISO)})`,
+      start: sql<string>`to_char(${start}, ${sql.raw(ISO)})`,
+      outcome: aiUsage.outcome,
+      read: sql<number>`coalesce(${aiUsage.cacheReadTokens}, 0)::int`,
+      write: sql<number>`coalesce(${aiUsage.cacheWriteTokens}, 0)::int`,
     })
     .from(aiUsage)
     .where(
@@ -65,7 +63,12 @@ export async function cacheState(organizationId: string, modelId: string, now: D
         gte(aiUsage.createdAt, new Date(now.getTime() - LOOKBACK_MS)),
       ),
     );
-  const goodAt = row?.good ? new Date(row.good) : null;
+  const touches: TouchRow[] = recent.map((r) => ({ start: new Date(r.start), renewal: r.outcome === "cache_renovada", read: Number(r.read), write: Number(r.write) }));
+  const renewals = recent.filter((r) => r.outcome === "cache_renovada").map((r) => new Date(r.start).getTime());
+  const lastAttempt = renewals.length ? new Date(Math.max(...renewals)) : null;
+  const goodAt = goodTouch(touches);
+  // Renovaciones que no la encontraron y la volvieron a escribir.
+  const cold = sql`${aiUsage.outcome} = 'cache_renovada' and coalesce(${aiUsage.cacheReadTokens}, 0) = 0 and coalesce(${aiUsage.cacheWriteTokens}, 0) > 0`;
   const [colds] = await db
     .select({
       n: sql<number>`count(*)::int`,
@@ -85,7 +88,7 @@ export async function cacheState(organizationId: string, modelId: string, now: D
     );
   return {
     touch: effectiveTouch(goodAt, Number(colds?.n ?? 0), colds?.last ? new Date(colds.last) : null),
-    lastAttempt: row?.lastAttempt ? new Date(row.lastAttempt) : null,
+    lastAttempt,
   };
 }
 
