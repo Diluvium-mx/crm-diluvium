@@ -174,12 +174,23 @@ export function validateStageSet(stages: readonly Pick<FunnelStage, "key" | "nam
   return errors;
 }
 
+// Columnas que el Agente IA no ve (4-nov-2026, dueño): la temporal «Buen Fin» no entra a sus instrucciones, a
+// mover_etapa ni al lector. La lista de etapas va en el texto que Anthropic guarda en caché, así que crearla volvió
+// a cobrar todo el Goal de Sonnet (US$0.12 el 3-nov a las 16:42) y lo mismo pasaría al editarla o borrarla. Sus
+// contactos los atiende el Modelo 1 (model_slot 1), nunca Sonnet. Se quita junto con la columna.
+export const ETAPAS_FUERA_DEL_AGENTE: ReadonlySet<string> = new Set(["buen_fin"]);
+
+/** Las etapas que ve el Agente IA (sin las de ETAPAS_FUERA_DEL_AGENTE), en su orden. */
+export function stagesForAgent<T extends { key: string; position: number }>(stages: readonly T[]): T[] {
+  return sortStages(stages).filter((s) => !ETAPAS_FUERA_DEL_AGENTE.has(s.key));
+}
+
 // Texto que el CRM agrega a las instrucciones del agente en cada respuesta: las etapas
 // vigentes en orden, con su clave (la que acepta mover_etapa) y su regla. Cambiarlas en
 // el editor cambia esto en la siguiente respuesta, sin tocar el Goal. La de venta
 // cerrada lleva además la regla fija del CRM (VENTA_CERRADA_RULE).
 export function stagesInstructions(stages: readonly FunnelStage[]): string {
-  const ordered = sortStages(stages);
+  const ordered = stagesForAgent(stages);
   const lines = ordered.map((s, i) => {
     const rule = s.botRule.trim();
     const papel = s.role === "entrada" ? " (aquí llegan los contactos nuevos)" : "";
