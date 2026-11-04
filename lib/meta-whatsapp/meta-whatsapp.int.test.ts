@@ -197,7 +197,8 @@ describe.skipIf(!TEST_DATABASE_URL)("marca y cobro de Meta (Postgres real)", () 
 
     // La otra organización no ve nada de esto.
     const otra = await dash.metaWhatsappHistory(db, OTRA, { desde: "2026-11-01", hasta: "2026-11-30" }, { now });
-    expect(otra).toMatchObject({ totalUsd: 0, charged: 0, byOrigin: [], fromPhone: 0 });
+    // Nunca se ha leído Meta para ella: «sin dato», no US$0.
+    expect(otra).toMatchObject({ totalUsd: null, charged: 0, byOrigin: [], fromPhone: 0 });
     expect(await dash.metaWhatsappSummary(db, OTRA, { now })).toBeNull();
     expect(await dash.metaWhatsappSummary(db, ORG, { now })).toMatchObject({ monthLabel: "noviembre", totalUsd: 0.09, charged: 5, prevTotalUsd: null });
   });

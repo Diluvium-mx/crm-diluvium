@@ -23,6 +23,11 @@ describe("summarizeMetaMonth", () => {
     expect(summarizeMetaMonth(rows.slice(1), null, now).prevTotalUsd).toBeNull();
   });
 
+  it("sin renglones: US$0 si Meta ya se leyó bien; sin dato si nunca se ha podido leer", () => {
+    expect(summarizeMetaMonth([], { fetchedAt: new Date("2026-11-04T17:00:00Z"), lastError: null }, now).totalUsd).toBe(0);
+    expect(summarizeMetaMonth([], { fetchedAt: null, lastError: "404" }, now).totalUsd).toBeNull();
+  });
+
   it("si Meta no dio el costo, el monto queda sin dato (no en cero)", () => {
     const s = summarizeMetaMonth([{ day: "2026-11-01", category: "service", pricingType: "regular", volume: 3, costUsd: null }], null, now);
     expect(s.totalUsd).toBeNull();
