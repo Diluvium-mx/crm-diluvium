@@ -35,6 +35,7 @@ import {
   verifyingMetadata,
 } from "./unavailable";
 import { adoptLateEcho } from "./late-echo";
+import { metaMarkColumns } from "./meta-mark";
 import { EMPTIED_PAYLOAD_NOTICE, isEmptiedPayload } from "./dead-letter-retention";
 import { pendingFallbackNote, recordAdClickSafely, type FallbackJob, type RecordedClick } from "@/lib/ads/attribution";
 import { looksLikeAdMessage } from "@/lib/ads/referral";
@@ -1327,6 +1328,8 @@ async function ingestStatus(
             ? { errorCode: null, errorMessage: null }
             : {}),
         ...(event.providerMessageId && !message.providerMessageId ? { providerMessageId: event.providerMessageId } : {}),
+        // Marca de Meta (cobrado o gratis) del saliente: solo lo que trae el aviso (docs/meta-whatsapp.md).
+        ...(event.metaMark && message.direction === "out" ? metaMarkColumns(event.metaMark) : {}),
       })
       .where(and(eq(messages.id, message.id), eq(messages.organizationId, message.organizationId)));
     return `estado ${message.status} → ${status}`;

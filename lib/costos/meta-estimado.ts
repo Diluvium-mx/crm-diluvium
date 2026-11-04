@@ -1,7 +1,7 @@
-// Estimado de lo que Meta cobra por WhatsApp en un mes (reporte de costos, docs/costos.md › Meta). Meta todavía
-// no le da su cobro al CRM (feat/meta-costos espera el token), así que se cuenta mensaje por mensaje con las
-// mismas reglas que se revisaron contra Meta el 27-oct-2026 (Notion «Gastos CRM Sep/Oct»: coincidieron en el
-// 97 % de los mensajes y en el total de cobrables, 2,498 del 22-sep al 23-oct):
+// Estimado de lo que Meta cobra por WhatsApp en un mes (reporte de costos, docs/costos.md › Meta). Desde el
+// 4-nov-2026 el correo usa lo que REPORTA Meta (docs/meta-whatsapp.md); este estimado queda solo de respaldo para
+// un mes sin esa lectura. Cuenta mensaje por mensaje con las reglas que el CRM cree que usa Meta, y cuenta de más
+// (~14 %: 3,403 contra 2,985 en oct-2026, porque Meta da a veces más tiempo gratis por anuncio):
 // - Solo WhatsApp (Instagram no cobra), sin canales de prueba, sin lo importado ni lo mandado desde el celular,
 //   y solo lo entregado o leído.
 // - Gratis 72 h desde la primera respuesta (≤ 24 h) a un cliente que llegó por un anuncio.
@@ -14,11 +14,11 @@ type Database = Pick<typeof appDb, "execute">;
 
 export type MetaConteo = { marketing: number; utilidad: number; servicio: number };
 
-// Tarifas de Meta para México en dólares por mensaje cobrado (las que dio Meta, oct-2026), con el IVA YA
-// INCLUIDO: calibradas con el cobro real del 22-sep al 23-oct (312 de marketing, 47 de utilidad y 2,139 de
-// servicio = US$36.41 contra US$36.25 con IVA que cobró Meta, 0.5 % arriba). Sumarles otro 16 % daba US$42.24.
-// Si Meta cambia sus tarifas, se cambian aquí y en docs/costos.md.
-export const META_TARIFAS_USD = { marketing: 0.0431, utilidad: 0.0108, servicio: 0.0105 } as const;
+// Lo que cobró Meta por mensaje en oct-2026 (factura del 1-nov: US$44.16, SIN IVA; Meta no cobra IVA). Las de
+// antes (0.0431/0.0108/0.0105 «con IVA») salieron de una cifra equivocada del asistente de Meta (3-nov-2026).
+// Si Meta cambia sus tarifas, se cambian aquí, en META_FALLBACK_RATE_USD (lib/dashboard/meta-whatsapp.ts) y en
+// docs/costos.md.
+export const META_TARIFAS_USD = { marketing: 0.0407, utilidad: 0.0084, servicio: 0.0115 } as const;
 export const META_SERVICIO_GRATIS_MES = 1000;
 
 export function metaCostoUsd(c: MetaConteo): number {

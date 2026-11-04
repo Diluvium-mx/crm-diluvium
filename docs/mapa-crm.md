@@ -39,7 +39,7 @@ El orden es el del menú lateral tal como está hoy: Dashboard, Bandeja, Embudo,
 Agente IA, Automatización, **Seguimientos** (3.11: se agregó después y conserva los números), Configuración y el menú del usuario. El chat, la caja para escribir, el Detalle del
 contacto y los avisos se explican dentro de la Bandeja porque son **los mismos** en el pop-up del Embudo.
 
-- [3.1 Dashboard](mapa-crm/3.1-dashboard.md) — 3.1.1 Historial del gasto de IA · 3.1.2 Historial de etapas
+- [3.1 Dashboard](mapa-crm/3.1-dashboard.md) — 3.1.1 Historial del gasto de IA · 3.1.2 Historial de etapas · 3.1.3 Gasto de WhatsApp
 - [3.2 Bandeja](mapa-crm/3.2-bandeja.md)
   - [3.2.1 Chat: mensajes, avisos y tarjetas del agente](mapa-crm/3.2.1-chat.md)
   - [3.2.2 Caja para escribir (composer)](mapa-crm/3.2.2-caja-para-escribir.md)

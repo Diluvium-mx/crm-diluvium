@@ -2,10 +2,10 @@ import { describe, expect, it } from "vitest";
 import { metaCostoUsd } from "./meta-estimado";
 
 describe("metaCostoUsd", () => {
-  it("reproduce el cobro real de Meta del primer mes (Notion «Gastos CRM Sep/Oct»: US$36.25 con IVA)", () => {
-    // Los 2,498 mensajes cobrables del 22-sep al 23-oct que contó el CRM y que cobró Meta.
-    const usd = metaCostoUsd({ marketing: 312, utilidad: 47, servicio: 2139 });
-    expect(usd).toBeCloseTo(36.41, 2);
-    expect(Math.abs(usd / 36.25 - 1)).toBeLessThan(0.01);
+  it("con los mensajes que cobró Meta en octubre da su factura (US$44.16 sin IVA, 1-nov-2026)", () => {
+    // WhatsApp Manager › Precios de mensajes, oct 1–31: 345 de marketing, 69 de utilidad y 2,571 normales.
+    const usd = metaCostoUsd({ marketing: 345, utilidad: 69, servicio: 2571 });
+    expect(usd).toBeCloseTo(44.19, 2);
+    expect(Math.abs(usd / 44.16 - 1)).toBeLessThan(0.005);
   });
 });

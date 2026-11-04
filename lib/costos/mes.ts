@@ -174,15 +174,25 @@ export function renglonZernio(fila: ZernioFila | null, mes: Mes): { renglon: Ren
 
 // ---- Meta ----
 
-// Meta todavía no le da su cobro al CRM (falta el token de feat/meta-costos): se estima mensaje por mensaje.
-export function renglonMeta(conteo: MetaConteo | null): Renglon {
+// Lo que REPORTA Meta del mes completo (4-nov-2026, docs/meta-whatsapp.md: meta_whatsapp_pricing, días UTC). Sin
+// esa lectura (Zernio falló o el mes aún no se leía completo) sale el estimado del CRM, que cuenta de más.
+export type MetaReportado = { usd: number; mensajes: number };
+
+export function renglonMeta(conteo: MetaConteo | null, reportado: MetaReportado | null = null): Renglon {
   const base = { servicio: "Meta (WhatsApp)", paraQue: "Plantillas y mensajes cobrados" };
+  if (reportado) {
+    return {
+      ...base,
+      usd: round2(reportado.usd),
+      nota: `lo que reporta Meta (${reportado.mensajes.toLocaleString("es-MX")} mensajes cobrados); Meta lo cobra el día 1, sin IVA`,
+    };
+  }
   if (!conteo) return { ...base, usd: null, nota: "no se pudo contar" };
   const cobrados = conteo.marketing + conteo.utilidad + conteo.servicio;
   return {
     ...base,
     usd: round2(metaCostoUsd(conteo)),
-    nota: `estimado por el CRM con IVA (${cobrados.toLocaleString("es-MX")} mensajes cobrables); el monto exacto está en Meta Business Suite`,
+    nota: `estimado por el CRM (${cobrados.toLocaleString("es-MX")} mensajes cobrables; suele contar de más); el monto exacto está en Meta Business Suite`,
   };
 }
 

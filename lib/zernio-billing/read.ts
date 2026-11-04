@@ -103,7 +103,8 @@ export function parseZernioBillingStatus(json: unknown): Pick<ZernioReading, "su
   };
 }
 
-async function getJson(config: ZernioBillingConfig, path: string, fetchImpl: GetLike): Promise<unknown> {
+// También la usa la lectura del cobro de Meta (lib/meta-whatsapp/read.ts): misma llave y mismos errores.
+export async function getJson(config: ZernioBillingConfig, path: string, fetchImpl: GetLike): Promise<unknown> {
   const res = await fetchImpl(`${config.baseUrl}${path}`, {
     method: "GET",
     headers: { Accept: "application/json", Authorization: `Bearer ${config.apiKey}` },
