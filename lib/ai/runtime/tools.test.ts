@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { defaultStages } from "@/lib/contacts/stages";
-import { actualizarDetalleSchema, buildAgentTools, parseDetalle, TOOL_ACTUALIZAR_DETALLE, TOOL_AVISO_VENDEDOR, TOOL_FIJAR_COTIZACION, TOOL_MOVER_ETAPA, validateToolCalls } from "./tools";
+import { actualizarDetalleSchema, blockedCalled, blockedRetryNote, blockedToolsLine, buildAgentTools, parseDetalle, TOOL_ACTUALIZAR_DETALLE, TOOL_AVISO_VENDEDOR, TOOL_FIJAR_COTIZACION, TOOL_MOVER_ETAPA, validateToolCalls } from "./tools";
 
 const stages = defaultStages();
 
@@ -131,3 +131,24 @@ describe("mergeHandoffToolCalls (traspaso Luna → Sonnet, 27-sep-2026)", async 
   });
 });
 
+
+describe("herramientas bloqueadas en un chat (caché, 4-nov-2026)", () => {
+  const blocked = new Map([["wf_tabla_tamanos_estandar", "«Tabla» ya se envió 2 de 2 veces en este chat"]]);
+  const t = buildAgentTools(rows, stages, [], blocked);
+
+  it("la lista de herramientas es la misma con o sin bloqueos", () => {
+    expect(Object.keys(t.tools)).toEqual(Object.keys(buildAgentTools(rows, stages).tools));
+  });
+  it("una llamada bloqueada se ignora con su motivo y se reporta para el reintento", () => {
+    const calls = [{ toolName: "wf_tabla_tamanos_estandar", input: {} }, { toolName: "wf_datos_bancarios", input: {} }];
+    const { valid, ignored } = validateToolCalls(calls, t);
+    expect(valid).toEqual([{ kind: "workflow", workflow: { id: "w2", slug: "datos_bancarios", name: "Banco" } }]);
+    expect(ignored).toEqual(["wf_tabla_tamanos_estandar: no disponible en este chat («Tabla» ya se envió 2 de 2 veces en este chat)"]);
+    expect(blockedCalled([...calls, calls[0]], t)).toEqual(["wf_tabla_tamanos_estandar"]);
+  });
+  it("el modelo lo sabe en el último turno y en la nota del reintento; sin bloqueos, nada", () => {
+    expect(blockedToolsLine(t)).toBe("Herramientas que NO puedes usar en este chat (el CRM no las manda): wf_tabla_tamanos_estandar («Tabla» ya se envió 2 de 2 veces en este chat). No las pidas ni le digas al cliente que se las mandas.");
+    expect(blockedRetryNote(["wf_tabla_tamanos_estandar"], t)).toContain("NO se puede usar en este chat y no se mandó");
+    expect(blockedToolsLine(buildAgentTools(rows, stages))).toBe("");
+  });
+});

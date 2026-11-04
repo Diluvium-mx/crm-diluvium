@@ -37,6 +37,31 @@ export function keepAliveDue(now: Date, lastTouchStart: Date | null): boolean {
  * y 17:39). Si la siguiente renovación TAMBIÉN la reescribe, la renovación no coincide con las
  * respuestas: se deja de renovar hasta la siguiente respuesta real (a lo más dos escrituras).
  */
+/** Una llamada reciente del cerebro a ese modelo (respuesta o renovación), para goodTouch. */
+export type TouchRow = { start: Date; renewal: boolean; read: number; write: number };
+
+/**
+ * `good` de effectiveTouch, calculado de las llamadas de las últimas 2 h (4-nov-2026, el reloj de los
+ * toques): cuenta toda llamada que LEYÓ la caché y la respuesta que la ESCRIBIÓ sin leerla solo si no había
+ * una caché viva (ninguna lectura en la hora anterior: cambió el Goal o se venció). Si había una viva y la
+ * respuesta no la encontró, esa respuesta usó OTRA caché (otras herramientas o system): antes movía el
+ * reloj, la renovación se saltaba y la caché compartida se vencía (1-nov 17:23 → 18:15: 0.13 + 0.11).
+ */
+export function goodTouch(rows: readonly TouchRow[]): Date | null {
+  const sorted = [...rows].sort((a, b) => a.start.getTime() - b.start.getTime());
+  let lastRead: Date | null = null;
+  let good: Date | null = null;
+  for (const r of sorted) {
+    if (r.read > 0) {
+      lastRead = r.start;
+      good = r.start;
+    } else if (!r.renewal && r.write > 0 && (!lastRead || r.start.getTime() - lastRead.getTime() >= CACHE_TTL_MS)) {
+      good = r.start;
+    }
+  }
+  return good;
+}
+
 export function effectiveTouch(good: Date | null, coldSinceGood: number, lastCold: Date | null): Date | null {
   if (coldSinceGood === 1 && lastCold && (!good || lastCold > good)) return lastCold;
   return good;
