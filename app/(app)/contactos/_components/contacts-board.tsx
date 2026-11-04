@@ -20,6 +20,7 @@ import { type BoardContact, type Stage, type Temperature } from "../_data/types"
 import { useFunnelStages } from "../../_components/funnel-stages-provider";
 import { StagesEditor } from "../../_components/stages-editor";
 import { NewContactDialog } from "./new-contact-dialog";
+import { BuenFinCountdown } from "./buen-fin-countdown";
 import type { FunnelStage } from "@/lib/contacts/stages";
 import {
   buscarEnEmbudo,
@@ -141,6 +142,7 @@ function StageColumn({
   onCargarMas?: () => void;
 }) {
   const { setNodeRef, isOver } = useDroppable({ id: stage.key });
+  const buenFin = stage.key === "buen_fin";
   const scrollRef = useRef<HTMLDivElement>(null);
 
   // El contenedor scrolleable ES el droppable (ref combinada): así el
@@ -181,14 +183,18 @@ function StageColumn({
         isOver ? "scale-[1.01] shadow-lg ring-2 ring-brand-orange ring-offset-2 ring-offset-background" : ""
       }`}
     >
-      {/* Columna temporal «Buen Fin» (3-nov-2026, dueño): encabezado rojo en vez del azul. Se quita
-          con la columna cuando termine la campaña. */}
+      {/* Columna temporal «Buen Fin» (3-nov-2026, dueño): encabezado rojo en vez del azul y, junto al
+          nombre, el temporizador hasta el último día del Buen Fin. Se quitan con la columna cuando
+          termine la campaña. */}
       <div
         className={`flex items-center justify-between rounded-t-lg px-3 py-2 text-brand-white ${
-          stage.key === "buen_fin" ? "bg-red-600" : "bg-brand-navy"
+          buenFin ? "bg-red-600" : "bg-brand-navy"
         }`}
       >
-        <span className="truncate text-sm font-semibold">{stage.name}</span>
+        <div className="flex min-w-0 items-center gap-2">
+          <span className="truncate text-sm font-semibold">{stage.name}</span>
+          {buenFin && <BuenFinCountdown />}
+        </div>
         <div className="flex shrink-0 items-center gap-1.5">
           {/* «No leído» (30-sep-2026): píldora del mismo alto que el contador, solo el sobre.
               Naranja = prendido; tenue = la columna no tiene nada pendiente. */}
