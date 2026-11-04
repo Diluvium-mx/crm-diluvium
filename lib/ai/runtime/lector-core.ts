@@ -20,7 +20,7 @@
 import type { ModelMessage } from "ai";
 import { tool, type ToolSet } from "ai";
 import { z } from "zod";
-import { sortStages, stageForRole, stagesInstructions, type FunnelStage } from "@/lib/contacts/stages";
+import { stageForRole, stagesForAgent, stagesInstructions, type FunnelStage } from "@/lib/contacts/stages";
 import type { MessageAttachment } from "@/lib/db/schema";
 import type { ToolCallOutput } from "@/lib/ai/types";
 import { clip, messageText, neutralizeCrmHeader, type ThreadMessage } from "./transcript";
@@ -252,7 +252,7 @@ export function lectorSchemaFor(stageKeys: readonly string[], opts: { followUp?:
 }
 
 export function buildLectorTools(stages: readonly FunnelStage[], opts: { followUp?: boolean } = {}): { tools: ToolSet; stageKeys: string[] } {
-  const stageKeys = sortStages(stages).map((s) => s.key);
+  const stageKeys = stagesForAgent(stages).map((s) => s.key);
   return {
     tools: {
       [LECTOR_TOOL]: tool({

@@ -17,7 +17,7 @@
 import { tool, type ToolSet } from "ai";
 import { z } from "zod";
 import { toolNameFor } from "@/lib/workflows/defaults";
-import { sortStages, type FunnelStage } from "@/lib/contacts/stages";
+import { stagesForAgent, type FunnelStage } from "@/lib/contacts/stages";
 import type { ToolCallOutput } from "@/lib/ai/types";
 import { linkPagoDescription, type OpcionLink } from "@/lib/agente-ia/links-pago";
 
@@ -138,7 +138,7 @@ export function parseDetalle(input: unknown): DetalleIa | null {
 export const FIJAR_COTIZACION_DESCRIPTION =
   "Guarda el total de lo que el CLIENTE eligió comprar, en pesos (el total que le dijiste por lo que pidió: compuerta o compuertas más lo que incluya). No es para accesorios sueltos ni precios de referencia. Llámala cada vez que le des un total o el total cambie; si el cliente cambia lo que quiere (p. ej. de 2 compuertas a 1), llámala con el total nuevo cuando se lo digas.";
 export function moverEtapaDescription(stages: readonly FunnelStage[]): string {
-  const order = sortStages(stages)
+  const order = stagesForAgent(stages)
     .map((s) => `${s.key} (${s.name})`)
     .join(" → ");
   return `Avanza al contacto a una etapa del Embudo, por su clave: ${order}. Úsala cuando se cumpla la regla de esa etapa (sección ETAPAS DEL EMBUDO). Llévalo directo a la etapa que corresponde aunque se salte las de en medio (p. ej. si ya quiere pagar). Solo avanza; un retroceso o la misma etapa se ignoran.`;
@@ -155,7 +155,7 @@ export function buildAgentTools(
 ): AgentTools {
   const tools: ToolSet = {};
   const byName = new Map<string, AgentToolWorkflow>();
-  const stageKeys = sortStages(stages).map((s) => s.key);
+  const stageKeys = stagesForAgent(stages).map((s) => s.key);
   for (const w of rows) {
     const name = toolNameFor(w.slug);
     if (byName.has(name)) continue;
