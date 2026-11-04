@@ -17,7 +17,7 @@ Decisiones del dueño:
   límite; la Tabla = 2). Cuenta lo que YA SALIÓ en la conversación: el **archivo** del workflow (salientes no fallidos
   con ese `storageKey`, **aunque haya salido dentro de otro workflow**: la foto de «Precio 2» o «Información» cuenta)
   o, sin archivos, sus corridas que mandaron algo. Frena a la **palabra clave** y al **Agente IA**: no compite por la
-  palabra clave, no se ofrece como herramienta, se omite al crear la corrida (`maximo_por_chat`, cuenta también lo que
+  palabra clave, no se ofrece como herramienta (desde el 4-nov-2026 la herramienta sigue en la lista por la caché, pero queda BLOQUEADA en ese chat: ver `2026-11-04-herramientas-iguales-cache.md`), se omite al crear la corrida (`maximo_por_chat`, cuenta también lo que
   va en cola) y otra vez al arrancarla. El **comando del vendedor** (/tamaños) suma pero **puede pasarlo**. El Agente IA
   lo ve en el contexto del CRM: «… se ha enviado 1 de 2 veces en este chat» / «ya se envió 2 de 2 veces: ya no se puede
   volver a mandar».
