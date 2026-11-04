@@ -85,15 +85,25 @@ describe.skipIf(!TEST_DATABASE_URL)("Links de pago (Postgres real)", () => {
     expect(rows[0].newValue).toContain("1 compuerta estándar $5,500 · 6 MSI · https://mpago.la/EJEMPLO1");
   });
 
-  it("la herramienta se ofrece a México, +1 e Instagram; nunca a Perú; ni sin links", async () => {
-    const offered = async (c: Chat) => TOOL in (await actions.loadAgentTools(ORG, stages, { id: conv(c), contactId: contact(c) })).tools;
+  it("la herramienta va en todos los chats (caché, 4-nov-2026); a Perú queda bloqueada; sin links no existe", async () => {
     const TOOL = tools.TOOL_LINK_PAGO;
-    expect(await offered("mx")).toBe(true);
-    expect(await offered("eu")).toBe(true);
-    expect(await offered("ig")).toBe(true);
-    expect(await offered("pe")).toBe(false);
+    const load = (c: Chat) => actions.loadAgentTools(ORG, stages, { id: conv(c), contactId: contact(c) });
+    const usable = async (c: Chat) => {
+      const t = await load(c);
+      return TOOL in t.tools && !t.blocked.has(TOOL);
+    };
+    expect(await usable("mx")).toBe(true);
+    expect(await usable("eu")).toBe(true);
+    expect(await usable("ig")).toBe(true);
+    expect(await usable("pe")).toBe(false);
+    const pe = await load("pe");
+    expect(TOOL in pe.tools).toBe(true);
+    expect(pe.blocked.get(TOOL)).toContain("fuera de México");
+    expect(tools.blockedToolsLine(pe)).toContain(TOOL);
+    // La lista es idéntica a la de la renovación de la caché (sin conversación).
+    expect(Object.keys(pe.tools)).toEqual(Object.keys((await actions.loadAgentTools(ORG, stages)).tools));
     await store.replaceLinksPago(ORG, [], null);
-    expect(await offered("mx")).toBe(false);
+    expect(TOOL in (await load("mx")).tools).toBe(false);
   });
 
   it("con el total acordado sale el link exacto y el contacto va a Cerca de compra", async () => {
@@ -163,10 +173,10 @@ describe.skipIf(!TEST_DATABASE_URL)("Links de pago (Postgres real)", () => {
     expect((await plan("eu", "1_compuerta_estandar")).link).not.toBeNull();
   });
 
-  it("máximo 3 links del Agente IA por chat: después no se ofrece y, si lo pide, un asesor", async () => {
+  it("máximo 3 links del Agente IA por chat: después queda bloqueada y, si lo pide, un asesor", async () => {
     await quote("mx", 5500, "agente");
     for (let i = 0; i < 3; i++) await linkSent("mx", LINKS[i % 2].url, i);
-    expect(tools.TOOL_LINK_PAGO in (await actions.loadAgentTools(ORG, stages, { id: conv("mx"), contactId: contact("mx") })).tools).toBe(false);
+    expect((await actions.loadAgentTools(ORG, stages, { id: conv("mx"), contactId: contact("mx") })).blocked.get(tools.TOOL_LINK_PAGO)).toContain("máximo 3");
     const p = await plan("mx", "1_compuerta_estandar");
     expect(p.link).toBeNull();
     expect(p.linkFallback).not.toBeNull();

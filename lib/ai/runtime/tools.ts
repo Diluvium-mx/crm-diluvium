@@ -11,7 +11,14 @@
 //   contacto con lo que dijo el cliente (lib/ai/runtime/detalle.ts). Solo campos vacíos
 //   o que el propio agente llenó; lo del vendedor nunca se toca.
 // - `enviar_link_pago { opcion }` (30-oct-2026, lib/agente-ia/links-pago.ts): el CRM manda el link
-//   de MercadoPago de esa opción, tal cual; solo se ofrece si hay links y el chat puede recibirlos.
+//   de MercadoPago de esa opción, tal cual; se ofrece si la organización tiene links.
+// MISMA LISTA EN TODOS LOS CHATS (4-nov-2026, ahorro de caché; docs/agente-ia.md › Herramientas iguales
+// en todos los chats): las herramientas van al principio de lo que Anthropic y OpenAI guardan en caché,
+// así que una lista distinta por chat obligaba a volver a escribir el Goal completo (~US$0.13 con Sonnet;
+// 54 veces en 30 días). Lo que un chat NO puede usar (máximo de envíos, «solo al inicio», link a una lada
+// fuera de México o ya con el máximo de links) va en `blocked`: se le dice al modelo en el último turno
+// (blockedToolsLine) y, si aun así lo pide, el CRM no lo manda (validateToolCalls) y run.ts le pide otra
+// respuesta UNA vez (blockedRetryNote), para que nunca prometa algo que no sale.
 // Sin `execute`: el modelo devuelve texto + llamadas en UNA vuelta y el runtime
 // decide qué corre. Las reglas de negocio viven en el Goal, no aquí.
 import { tool, type ToolSet } from "ai";
@@ -37,8 +44,10 @@ export type AgentTools = {
   byName: ReadonlyMap<string, AgentToolWorkflow>;
   /** Claves de etapa que acepta mover_etapa, en el orden del Embudo. */
   stageKeys: readonly string[];
-  /** Opciones de enviar_link_pago (vacío = la herramienta no se ofrece). */
+  /** Opciones de enviar_link_pago (vacío = la organización no tiene links: la herramienta no existe). */
   linkOptions: readonly OpcionLink[];
+  /** Herramientas que ESTE chat no puede usar → por qué (para el modelo). Vacío sin conversación. */
+  blocked: ReadonlyMap<string, string>;
 };
 
 export const fijarCotizacionSchema = z.object({
@@ -152,6 +161,7 @@ export function buildAgentTools(
   rows: readonly { id: string; slug: string; name: string; description: string }[],
   stages: readonly FunnelStage[],
   linkOptions: readonly OpcionLink[] = [],
+  blocked: ReadonlyMap<string, string> = new Map(),
 ): AgentTools {
   const tools: ToolSet = {};
   const byName = new Map<string, AgentToolWorkflow>();
@@ -168,7 +178,25 @@ export function buildAgentTools(
   if (linkOptions.length) tools[TOOL_LINK_PAGO] = tool({ description: linkPagoDescription(linkOptions), inputSchema: linkPagoSchemaFor(linkOptions) });
   // Al final (orden estable): la caché del prompt de las herramientas de arriba no cambia.
   tools[TOOL_ACTUALIZAR_DETALLE] = tool({ description: ACTUALIZAR_DETALLE_DESCRIPTION, inputSchema: actualizarDetalleSchema });
-  return { tools, byName, stageKeys, linkOptions };
+  return { tools, byName, stageKeys, linkOptions, blocked };
+}
+
+/** Herramientas bloqueadas en este chat que el modelo pidió (sin repetir, en orden). */
+export function blockedCalled(calls: readonly ToolCallOutput[], tools: AgentTools): string[] {
+  return [...new Set(calls.map((c) => c.toolName).filter((name) => tools.blocked.has(name)))];
+}
+
+const blockedList = (names: readonly string[], tools: AgentTools) => names.map((n) => `${n} (${tools.blocked.get(n)})`).join("; ");
+
+/** Línea del contexto del CRM (último turno, fuera de la caché): lo que este chat no puede usar. */
+export function blockedToolsLine(tools: AgentTools): string {
+  if (tools.blocked.size === 0) return "";
+  return `Herramientas que NO puedes usar en este chat (el CRM no las manda): ${blockedList([...tools.blocked.keys()], tools)}. No las pidas ni le digas al cliente que se las mandas.`;
+}
+
+/** Nota del reintento cuando el modelo pidió una herramienta bloqueada. */
+export function blockedRetryNote(names: readonly string[], tools: AgentTools): string {
+  return `Pediste ${blockedList(names, tools)}, que NO se puede usar en este chat y no se mandó. Escribe tu respuesta otra vez sin pedirla y sin decirle al cliente que se la mandas.`;
 }
 
 export type ValidToolCall =
@@ -187,6 +215,11 @@ export function validateToolCalls(calls: readonly ToolCallOutput[], tools: Agent
   const ignored: string[] = [];
   const seen = new Set<string>();
   for (const c of calls) {
+    const bloqueo = tools.blocked.get(c.toolName);
+    if (bloqueo) {
+      ignored.push(`${c.toolName}: no disponible en este chat (${bloqueo})`);
+      continue;
+    }
     if (c.toolName === TOOL_FIJAR_COTIZACION) {
       const p = fijarCotizacionSchema.safeParse(c.input);
       if (p.success) valid.push({ kind: "cotizacion", monto: p.data.monto });

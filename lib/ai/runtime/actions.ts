@@ -28,7 +28,8 @@ import { takesAgentCaption } from "@/lib/workflows/steps";
 import { sendsByWorkflow } from "@/lib/workflows/max-per-chat";
 import { addNotice, hasOpenHandoverRequest } from "./notices";
 import { amountsIn, isBackedAmount } from "./lector-core";
-import { buildAgentTools, type AgentTools, type AvisoMotivo, type ValidToolCall } from "./tools";
+import { buildAgentTools, TOOL_LINK_PAGO, type AgentTools, type AvisoMotivo, type ValidToolCall } from "./tools";
+import { toolNameFor } from "@/lib/workflows/defaults";
 import { ladaSinLinks, LINK_POR_ASESOR, linkCuadra, linksDelAgente, MAX_LINKS_POR_CHAT, mensajesLink, opcionesDe, totalQueCubre, type OpcionLink } from "@/lib/agente-ia/links-pago";
 import { linksSentByAgent, listLinksPago, loadTextosLink } from "@/lib/agente-ia/links-pago-store";
 import { allowedAgentStage, ventaCerradaHeld } from "./venta-cerrada";
@@ -46,11 +47,13 @@ export type StartWorkflow = (input: StartRunInput) => Promise<StartRunResult>;
 
 // Herramientas de la organización en orden estable (position): workflows de
 // media habilitados con disparador "agente", más mover_etapa con las etapas vigentes.
-// Con la conversación, no se ofrece (el modelo no promete algo que no saldría):
+// La LISTA es la misma en todos los chats y en la renovación de la caché (4-nov-2026, ahorro de caché;
+// tools.ts). Con la conversación, lo que ese chat no puede usar va en `blocked` (el modelo no promete
+// algo que no saldría: se le dice en el último turno y el CRM no lo manda):
 // - un workflow «Solo al inicio» ESTRICTO que ya no aplica (ya le contestaron o ya le salió a
-//   este contacto); el de «solo al inicio por palabra clave» (la Tabla) sí se ofrece;
+//   este contacto); el de «solo al inicio por palabra clave» (la Tabla) sí se puede;
 // - uno que ya llegó a su «Máximo de envíos por chat» (29-sep-2026);
-// - enviar_link_pago a una lada fuera de México o con MAX_LINKS_POR_CHAT ya mandados (linkOptionsFor).
+// - enviar_link_pago a una lada fuera de México o con MAX_LINKS_POR_CHAT ya mandados (linkBlockFor).
 export async function loadAgentTools(
   organizationId: string,
   stages: readonly FunnelStage[],
@@ -79,33 +82,42 @@ export async function loadAgentTools(
       ),
     )
     .orderBy(asc(workflows.position), asc(workflows.slug));
-  const startOnly = all.filter((w) => w.startOnly && w.startOnlyAgent).map((w) => w.id);
-  const eligible =
-    conversation && startOnly.length ? await startOnlyEligible(organizationId, conversation.id, conversation.contactId, startOnly) : new Set<string>();
-  const sent = conversation ? await sendsByWorkflow(organizationId, conversation.id, all) : new Map<string, number>();
-  const rows = all.filter(
-    (w) => (!(w.startOnly && w.startOnlyAgent) || eligible.has(w.id)) && !(w.maxSendsPerChat && (sent.get(w.id) ?? 0) >= w.maxSendsPerChat),
-  );
-  return buildAgentTools(rows, stages, await linkOptionsFor(organizationId, conversation));
+  const links = linksDelAgente(await listLinksPago(organizationId));
+  const blocked = new Map<string, string>();
+  if (conversation) {
+    const startOnly = all.filter((w) => w.startOnly && w.startOnlyAgent).map((w) => w.id);
+    const eligible = startOnly.length ? await startOnlyEligible(organizationId, conversation.id, conversation.contactId, startOnly) : new Set<string>();
+    const sent = await sendsByWorkflow(organizationId, conversation.id, all);
+    for (const w of all) {
+      const name = toolNameFor(w.slug);
+      if (blocked.has(name)) continue;
+      const n = sent.get(w.id) ?? 0;
+      if (w.startOnly && w.startOnlyAgent && !eligible.has(w.id)) blocked.set(name, `«${w.name}» solo sale al inicio del chat y eso ya pasó`);
+      else if (w.maxSendsPerChat && n >= w.maxSendsPerChat) blocked.set(name, `«${w.name}» ya se envió ${n} de ${w.maxSendsPerChat} veces en este chat`);
+    }
+    if (links.length) {
+      const motivo = await linkBlockFor(organizationId, conversation, links.map((l) => l.url));
+      if (motivo) blocked.set(TOOL_LINK_PAGO, motivo);
+    }
+  }
+  return buildAgentTools(all, stages, links.length ? opcionesDe(links) : [], blocked);
 }
 
-// Opciones de enviar_link_pago. Sin conversación (renovación de la caché) se ofrecen si hay links,
-// como en casi todos los chats. Con conversación, nunca a una lada fuera de México (regla del dueño,
-// 30-oct-2026: Perú, España…; +1 sí) ni cuando el Agente IA ya mandó el máximo en ese chat. Los
-// «Solo vendedor» (precio especial) nunca.
-async function linkOptionsFor(organizationId: string, conversation?: { id: string; contactId: string }): Promise<OpcionLink[]> {
-  const links = linksDelAgente(await listLinksPago(organizationId));
-  if (links.length === 0) return [];
-  if (conversation) {
-    const [c] = await db
-      .select({ iso: contacts.phoneCountryIso, code: contacts.phoneCountryCode })
-      .from(contacts)
-      .where(and(eq(contacts.id, conversation.contactId), eq(contacts.organizationId, organizationId)))
-      .limit(1);
-    if (!c || ladaSinLinks(c.iso, c.code)) return [];
-    if ((await linksSentByAgent(organizationId, conversation.id, links.map((l) => l.url))) >= MAX_LINKS_POR_CHAT) return [];
-  }
-  return opcionesDe(links);
+// ¿Por qué ESTE chat no recibe links de pago? (null = sí puede). Nunca a una lada fuera de México
+// (regla del dueño, 30-oct-2026: Perú, España…; +1 sí) ni cuando el Agente IA ya mandó el máximo en
+// ese chat. Los «Solo vendedor» (precio especial) nunca son opción (linksDelAgente).
+async function linkBlockFor(organizationId: string, conversation: { id: string; contactId: string }, urls: readonly string[]): Promise<string | null> {
+  const [c] = await db
+    .select({ iso: contacts.phoneCountryIso, code: contacts.phoneCountryCode })
+    .from(contacts)
+    .where(and(eq(contacts.id, conversation.contactId), eq(contacts.organizationId, organizationId)))
+    .limit(1);
+  if (!c) return "no se encontró el contacto";
+  const pais = ladaSinLinks(c.iso, c.code);
+  if (pais) return `el cliente tiene lada ${pais}, fuera de México: nunca se le manda link de pago`;
+  const enviados = await linksSentByAgent(organizationId, conversation.id, urls);
+  if (enviados >= MAX_LINKS_POR_CHAT) return `ya salieron ${enviados} links de pago en este chat (máximo ${MAX_LINKS_POR_CHAT}); si lo vuelve a pedir, un asesor se lo manda`;
+  return null;
 }
 
 export type Aviso = {

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { effectiveTouch, keepAliveDue } from "./cache-keepalive-core";
+import { effectiveTouch, goodTouch, keepAliveDue } from "./cache-keepalive-core";
 
 // Mazatlán = UTC−7 todo el año (sin horario de verano).
 const mzt = (local: string) => new Date(`${local}:00-07:00`);
@@ -45,5 +45,25 @@ describe("renovación que reescribió la caché (9-oct-2026)", () => {
   it("sin reescrituras manda la última respuesta o renovación que la tocó", () => {
     expect(effectiveTouch(good, 0, null)).toEqual(good);
     expect(effectiveTouch(null, 0, null)).toBeNull();
+  });
+});
+
+describe("el reloj de los toques (4-nov-2026)", () => {
+  const t = (hhmm: string) => mzt(`2026-11-01T${hhmm}`);
+  const renov = (hhmm: string, read: number, write = 0) => ({ start: t(hhmm), renewal: true, read, write });
+  const resp = (hhmm: string, read: number, write = 0) => ({ start: t(hhmm), renewal: false, read, write });
+
+  it("una respuesta que NO encontró la caché viva (usó otra) no mueve el reloj: caso 1-nov 17:23", () => {
+    expect(goodTouch([renov("16:07", 26610), renov("16:58", 26610), resp("17:23", 0, 27879)])).toEqual(t("16:58"));
+  });
+  it("una respuesta que la leyó sí lo mueve", () => {
+    expect(goodTouch([renov("16:58", 26610), resp("17:23", 26610, 300)])).toEqual(t("17:23"));
+  });
+  it("si no había caché viva (se venció o cambió el Goal), la respuesta que la escribe sí cuenta", () => {
+    expect(goodTouch([renov("15:00", 26610), resp("16:30", 0, 27000)])).toEqual(t("16:30"));
+    expect(goodTouch([resp("16:30", 0, 27000)])).toEqual(t("16:30"));
+  });
+  it("una renovación que solo escribió no cuenta aquí (la lleva effectiveTouch)", () => {
+    expect(goodTouch([renov("22:37", 0, 27251)])).toBeNull();
   });
 });

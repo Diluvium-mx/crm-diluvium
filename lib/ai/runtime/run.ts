@@ -38,7 +38,7 @@ export const SIN_RESPUESTA_BODY = "El Agente IA no le escribió nada al cliente 
 export function repeatNoticeBody(question: string): string {
   return `El Agente IA solo iba a repetir la pregunta «${question}», que el cliente no contestó, y no salió. Revisa si hacía falta contestar.`;
 }
-import { mergeHandoffToolCalls, validateToolCalls, type ValidToolCall } from "./tools";
+import { blockedCalled, blockedRetryNote, blockedToolsLine, mergeHandoffToolCalls, validateToolCalls, type ValidToolCall } from "./tools";
 import { cleanBeforeInternal, findInternalText, hasForeignScript, INTERNAL_TEXT_RETRY_NOTE, replyExcerpt, stripForeignScript, unfinishedReply } from "./internal-text";
 import { applyDetalleByAgent, detalleContextFor, mergeDetalle } from "./detalle";
 import { transcriptionWaitMs } from "@/lib/ai/transcription/rules";
@@ -646,18 +646,19 @@ export async function runAgent(job: { organizationId: string; conversationId: st
     const detalleContext = await detalleContextFor(org, conv.contactId);
     // «Máximo de envíos por chat» (29-sep-2026): cuántas veces ya salió, p. ej. la tabla (1 de 2).
     const maxPerChatContext = await maxPerChatContextFor(org, conv.id);
+    // Herramientas (Fase D): una por workflow habilitado con "agente" + fijar_cotizacion. La lista es la
+    // misma en todos los chats (caché, 4-nov-2026); lo que este chat no puede usar va en el contexto.
+    const agentTools = await loadAgentTools(org, stages, { id: conv.id, contactId: conv.contactId });
     // Un modelo sin lectura de PDF (p. ej. Qwen) recibe el PDF como nota de texto.
     // Opciones del bot: sin imágenes ("[imagen]") o sin notas de voz ("[nota de voz]").
     const messagesFor = async (model: CatalogModel, avanzaA: string | null, nota: string | null = null) =>
       buildModelMessages(history, mediaUrls, {
         cleanText,
-        crmContext: [await crmContextFor(org, conv.contactId, stages, avanzaA), igChat.instagram ? instagramStageLine(stages) : null, detalleContext, maxPerChatContext, await followUpContextFor(org, conv.id), workflowNote, nota].filter(Boolean).join("\n"),
+        crmContext: [await crmContextFor(org, conv.contactId, stages, avanzaA), igChat.instagram ? instagramStageLine(stages) : null, detalleContext, maxPerChatContext, blockedToolsLine(agentTools), await followUpContextFor(org, conv.id), workflowNote, nota].filter(Boolean).join("\n"),
         ...(model.pdf ? {} : { maxPdfs: 0 }),
         ...(options.readImages ? {} : { maxImages: 0 }),
         ...(options.transcribeAudio ? {} : { voiceNotesOff: true }),
       });
-    // Herramientas (Fase D): una por workflow habilitado con "agente" + fijar_cotizacion.
-    const agentTools = await loadAgentTools(org, stages, { id: conv.id, contactId: conv.contactId });
     // ¿Sigue el agente a cargo? Si durante la llamada un vendedor contestó, pausaron
     // al agente o apagaron el canal, no hay tarjeta ni otro intento (ya decidió alguien).
     const stillInCharge = async (): Promise<boolean> => {
@@ -681,7 +682,7 @@ export async function runAgent(job: { organizationId: string; conversationId: st
     // Ante un acuse, la respuesta en blanco vale lo mismo que «nada que agregar» (14-oct-2026, dueño): antes contaba
     // como falla y dejaba la tarjeta «El agente no pudo responder», que bloquea el chat (5 de 10 en 14 días).
     const quietAck = (out: BrainOutput) => acuse && (out.kind === "nothing" || out.kind === "empty");
-    const attempt = async (model: CatalogModel, avanzaA: string | null = null, nota: string | null = null, foreignRetry = false, internalRetry = false, salvage: string | null = null): Promise<BrainOk | BrainFail> => {
+    const attempt = async (model: CatalogModel, avanzaA: string | null = null, nota: string | null = null, foreignRetry = false, internalRetry = false, salvage: string | null = null, blockedRetry = false): Promise<BrainOk | BrainFail> => {
       tried.add(model.id);
       const messages = await messagesFor(model, avanzaA, nota);
       const t0 = Date.now();
@@ -705,7 +706,7 @@ export async function runAgent(job: { organizationId: string; conversationId: st
         out = clean ? { ...out, text: clean } : { kind: "empty" };
         if (!clean && valid.length === 0 && !foreignRetry) {
           await recordAiUsage({ ...base, stage: "cerebro", modelId: res.modelId, provider: res.provider, usage: res.usage, latencyMs, outcome: "error", error: "solo letras de otro alfabeto; se pide otra respuesta" });
-          return attempt(model, avanzaA, nota, true, internalRetry, salvage);
+          return attempt(model, avanzaA, nota, true, internalRetry, salvage, blockedRetry);
         }
       }
       // Texto interno (10-oct-2026, dueño: «que no vuelva a ocurrir»; internal-text.ts › INTERNAL_TEXT_RETRY_NOTE):
@@ -716,7 +717,17 @@ export async function runAgent(job: { organizationId: string; conversationId: st
       if (internal && !internalRetry) {
         await recordAiUsage({ ...base, stage: "cerebro", modelId: res.modelId, provider: res.provider, usage: res.usage, latencyMs, outcome: "error", error: `texto interno (${internal.reason}); se pide otra respuesta — respuesta: «${replyExcerpt(out.kind === "reply" ? out.text : "")}»` });
         console.warn(`[agente] ${conv.id}: ${model.label} escribió texto interno (${internal.reason}); se le pide otra respuesta`);
-        return attempt(model, avanzaA, [nota, INTERNAL_TEXT_RETRY_NOTE].filter(Boolean).join("\n"), foreignRetry, true, out.kind === "reply" ? cleanBeforeInternal(out.text) : null);
+        return attempt(model, avanzaA, [nota, INTERNAL_TEXT_RETRY_NOTE].filter(Boolean).join("\n"), foreignRetry, true, out.kind === "reply" ? cleanBeforeInternal(out.text) : null, blockedRetry);
+      }
+      // Herramienta bloqueada en este chat (4-nov-2026; tools.ts › blocked): la lista es la misma en todos
+      // los chats por la caché, así que el modelo puede pedir algo que aquí ya no sale (p. ej. «Dónde medir»
+      // otra vez). No se manda y se le pide otra respuesta UNA vez, para que no prometa algo que no llega.
+      // Si vuelve a pedirla, la llamada se ignora (validateToolCalls) y sigue lo demás.
+      const bloqueadas = blockedCalled(res.toolCalls ?? [], agentTools);
+      if (bloqueadas.length && !blockedRetry) {
+        await recordAiUsage({ ...base, stage: "cerebro", modelId: res.modelId, provider: res.provider, usage: res.usage, latencyMs, outcome: "error", error: `pidió ${bloqueadas.join(", ")}, que no se puede en este chat; se pide otra respuesta` });
+        console.warn(`[agente] ${conv.id}: ${model.label} pidió ${bloqueadas.join(", ")} (bloqueada en este chat); se le pide otra respuesta`);
+        return attempt(model, avanzaA, [nota, blockedRetryNote(bloqueadas, agentTools)].filter(Boolean).join("\n"), foreignRetry, internalRetry, salvage, true);
       }
       // Parte limpia (19-oct-2026, dueño; internal-text.ts › cleanBeforeInternal): el reintento tampoco sirvió —otra
       // vez texto interno, o sin texto— → sale el texto bueno que iba ANTES de lo interno (el de esta respuesta o, si
