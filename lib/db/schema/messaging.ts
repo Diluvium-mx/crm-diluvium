@@ -308,9 +308,24 @@ export const messages = pgTable(
     // la escribe el worker (lib/ai/transcription) y la leen el agente y el chat. El
     // estado del intento (pendiente, lista, fallida, omitida) va en metadata.transcripcion.
     transcripcion: text("transcripcion"),
+    // Marca de Meta (4-nov-2026, docs/meta-whatsapp.md): lo que Meta dice de ESTE saliente de WhatsApp en
+    // sus avisos de estado (Zernio: `pricing` y `billingConversation` de message.delivered/read). null =
+    // sin marca: Meta la manda solo en uno de los avisos y los mensajes de antes del 4-nov no la tienen.
+    metaBillable: boolean("meta_billable"),
+    // marketing · utility · service · authentication · referral_conversion… (minúsculas, como Meta).
+    metaCategory: text("meta_category"),
+    // regular (cobrado) · free_entry_point (gratis por anuncio) · free_customer_service (gratis de servicio).
+    metaPricingType: text("meta_pricing_type"),
+    // La ventana de cobro de Meta de ese chat: hasta cuándo dura y qué la abrió (billingConversation).
+    metaWindowExpiresAt: timestamp("meta_window_expires_at"),
+    metaWindowOrigin: text("meta_window_origin"),
     createdAt: timestamp("created_at").defaultNow().notNull(),
   },
   (table) => [
+    // Sección «Gasto de WhatsApp» del Dashboard: solo los salientes con marca, por periodo.
+    index("messages_meta_mark_idx")
+      .on(table.organizationId, table.createdAt)
+      .where(sql`${table.metaCategory} is not null`),
     index("messages_conversation_created_idx").on(
       table.conversationId,
       sql`${table.createdAt} desc`,

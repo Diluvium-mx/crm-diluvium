@@ -19,6 +19,7 @@ export * from "./ai-credit";
 export * from "./ai-billing";
 export * from "./railway-billing";
 export * from "./zernio-billing";
+export * from "./meta-whatsapp";
 export * from "./ads";
 export * from "./followups";
 export * from "./opiniones";

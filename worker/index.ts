@@ -73,6 +73,8 @@ import { startDespertarWorker } from "./despertar";
 import { syncAiBilling } from "@/lib/ai/billing/sync";
 import { syncRailwayBilling } from "@/lib/railway-billing/sync";
 import { syncZernioBilling } from "@/lib/zernio-billing/sync";
+import { syncMetaWhatsappPricing } from "@/lib/meta-whatsapp/sync";
+import { backfillMetaMarks } from "@/lib/meta-whatsapp/backfill";
 import { refreshTemplatesInReview } from "@/lib/messaging/templates";
 
 const SWEEP_EVERY_MS = 60_000;
@@ -463,6 +465,21 @@ function zernioBillingTick() {
 }
 const zernioBillingTimer = setInterval(zernioBillingTick, ZERNIO_BILLING_EVERY_MS);
 
+// Cobro de Meta por WhatsApp (4-nov-2026, docs/meta-whatsapp.md): cada hora se lee de Zernio lo que Meta
+// reporta del número (lib/meta-whatsapp/sync.ts), y una vez al arrancar. Misma ZERNIO_API_KEY; solo lee.
+const META_PRICING_EVERY_MS = 60 * 60_000;
+let metaPricingRunning = false;
+function metaPricingTick() {
+  if (!migrationsReady || metaPricingRunning) return;
+  metaPricingRunning = true;
+  syncMetaWhatsappPricing()
+    .catch((error) => logError("[meta-cobro] la lectura del cobro de Meta falló", error))
+    .finally(() => {
+      metaPricingRunning = false;
+    });
+}
+const metaPricingTimer = setInterval(metaPricingTick, META_PRICING_EVERY_MS);
+
 // Plantillas al día solas (1-oct-2026): mientras alguna esté «En revisión», cada 10 min se le
 // pregunta a Meta su estado (lo mismo que «Ver estado»). Sin plantillas en revisión no consulta nada.
 const TEMPLATES_EVERY_MS = 10 * 60_000;
@@ -517,6 +534,7 @@ async function shutdown(signal: string) {
   clearInterval(billingTimer);
   clearInterval(railwayBillingTimer);
   clearInterval(zernioBillingTimer);
+  clearInterval(metaPricingTimer);
   clearInterval(templatesTimer);
   clearInterval(zernioCopyTimer);
   await Promise.all([worker.close(), mediaWorker?.close(), scheduled.close(), agent.close(), lector.close(), despertar.close(), followUps.close(), workflowsRunner.close(), outbox.close(), ads.close(), unavailable.close(), chatUploads?.close()]);
@@ -540,6 +558,13 @@ waitForMigrations()
     billing();
     railwayBillingTick();
     zernioBillingTick();
+    metaPricingTick();
+    // La marca de Meta de los últimos días con los avisos que aún guarda webhook_events (docs/meta-whatsapp.md).
+    backfillMetaMarks()
+      .then(({ events, marked }) => {
+        if (marked) console.info(`[meta-marca] relleno: ${marked} mensaje(s) con marca de ${events} aviso(s)`);
+      })
+      .catch((error) => logError("[meta-marca] el relleno de la marca falló", error));
     // Y las copias en Zernio que falten (envío blindado), sin esperar 10 min.
     zernioCopies();
     void worker.run();

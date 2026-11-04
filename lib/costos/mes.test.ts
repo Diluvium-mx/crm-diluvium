@@ -113,11 +113,17 @@ describe("renglonZernio", () => {
 });
 
 describe("renglonMeta y armarReporte", () => {
-  it("Meta estimado con IVA; el total suma lo que tiene dato y el costo por venta usa ese total", () => {
+  it("sin lo que reporta Meta: el estimado del CRM con las tarifas reales de octubre (sin IVA)", () => {
     const meta = renglonMeta({ marketing: 100, utilidad: 10, servicio: 1000 });
-    // 100 × 0.0431 + 10 × 0.0108 + 1000 × 0.0105 = 14.92 (IVA ya incluido en las tarifas)
+    // 100 × 0.0407 + 10 × 0.0084 + 1000 × 0.0115 = 15.654
+    expect(meta.usd).toBe(15.65);
+    expect(meta.nota).toMatch(/^estimado por el CRM \(1,110 mensajes cobrables; suele contar de más\)/);
+  });
+
+  it("Meta como lo reporta; el total suma lo que tiene dato y el costo por venta usa ese total", () => {
+    const meta = renglonMeta({ marketing: 100, utilidad: 10, servicio: 1000 }, { usd: 14.92, mensajes: 1110 });
     expect(meta.usd).toBe(14.92);
-    expect(meta.nota).toMatch(/^estimado por el CRM con IVA \(1,110 mensajes cobrables\)/);
+    expect(meta.nota).toBe("lo que reporta Meta (1,110 mensajes cobrados); Meta lo cobra el día 1, sin IVA");
 
     const r = armarReporte({
       mes: OCT,

@@ -2,8 +2,8 @@
 
 Pedido del dueño (23-oct-2026): tener todos los costos del CRM en el Dashboard, en un mismo lugar. Zernio es por
 donde entran y salen los mensajes de WhatsApp e Instagram. Lo que Meta cobra por WhatsApp (plantillas y, desde el
-1-oct-2026, mensajes de servicio) NO pasa por Zernio: Meta lo carga directo a la cuenta de WhatsApp (ver
-`docs/meta-costos.md` en la rama `feat/meta-costos`).
+1-oct-2026, mensajes de servicio) NO pasa por Zernio: Meta lo carga directo a la cuenta de WhatsApp. El CRM lo lee
+de Zernio, que da lo que reporta Meta (`docs/meta-whatsapp.md`, tarjeta «WhatsApp (Meta)»).
 
 ## Cómo cobra Zernio (docs.zernio.com/pricing, leído el 23-oct-2026)
 

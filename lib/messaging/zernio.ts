@@ -14,6 +14,7 @@
 // sale "malformed": queda en dead-letter en webhook_events (nada se pierde).
 import { createHmac, timingSafeEqual } from "node:crypto";
 import { zernioErrorDetail } from "./zernio-error";
+import { parseMetaMark } from "./meta-mark";
 import { MEDIA_HOSTS, resolveHost, safeFetch, safeUrl, UnsafeUrlError, type ResolveHost } from "@/lib/net/safe-fetch";
 import { z } from "zod";
 import {
@@ -652,11 +653,14 @@ export function normalizeZernioEvent(payload: unknown, context: { receivedAt?: D
       return { kind: "ignored", eventId, event, reason: "estado sin id de mensaje reconocible", malformed: true };
     }
     const ts = new Date(String((payload as Record<string, unknown>).timestamp ?? ""));
+    // La marca de Meta (cobrado o gratis) viaja en el mismo aviso (docs/meta-whatsapp.md).
+    const metaMark = parseMetaMark(payload as Record<string, unknown>);
     return {
       kind: "status",
       eventId,
       status,
       ...fields,
+      ...(metaMark ? { metaMark } : {}),
       at: Number.isNaN(ts.getTime()) ? new Date() : ts,
     };
   }

@@ -7,6 +7,7 @@
 // nunca lee el payload crudo del proveedor.
 import type { ConversationClick } from "@/lib/ads/referral";
 import type { TemplateVariable } from "@/lib/templates/types";
+import type { MetaMark } from "./meta-mark";
 
 export type ProviderName = "zernio" | "meta_cloud";
 
@@ -120,6 +121,8 @@ export type NormalizedStatusEvent = {
   providerInternalId?: string;
   errorCode?: string;
   errorMessage?: string;
+  /** Lo que Meta dice del mensaje: cobrado o gratis, categoría y su ventana (docs/meta-whatsapp.md). */
+  metaMark?: MetaMark;
   at: Date;
 };
 
