@@ -1,26 +1,47 @@
 import { describe, expect, it } from "vitest";
-import { mensajeResena, textoPlantillaResena } from "./mensaje";
+import { enlaceWhatsAppWeb, mensajesWhatsApp, nombreBonito, type DatosMensaje } from "./mensaje";
 
-const MZT = "America/Mazatlan";
-const TARDE = new Date("2026-10-27T22:00:00Z"); // 15:00 en Mazatlán
+const BASE: DatosMensaje = { tienda: "mercado_libre", nombre: "Leticia", trato: "sra", saludo: "buenos días", vendedor: "Carlos" };
 
-describe("mensaje que pide la reseña (texto fijo, sin IA)", () => {
-  it("saludo de la hora del cliente, la tienda y dónde se deja", () => {
-    const texto = mensajeResena("mercado_libre", TARDE, MZT);
-    expect(texto.startsWith("Hola, buenas tardes, le escribo de parte del equipo de Diluvium. Gracias por elegir nuestra compuerta en Mercado Libre.")).toBe(true);
-    expect(texto).toContain("en «Mis compras» › la compuerta › «Opinar»");
-    expect(texto).toContain("Y si gusta mandarnos la foto por aquí también");
+describe("mensajes para WhatsApp Web (textos fijos, sin IA)", () => {
+  it("saludo con el trato, su nombre y quién escribe; la pregunta nombra la tienda", () => {
+    const m = mensajesWhatsApp(BASE);
+    expect(m.saludo).toBe("Hola, buenos días, Sra. Leticia. Le habla Carlos, de Diluvium 😃");
+    expect(m.pregunta).toBe("Le escribo para saber cómo le fue con su compuerta anti-inundaciones que pidió en Mercado Libre. ¿Ya la pudo instalar?");
   });
 
-  it("la plantilla lleva la tienda en {{1}}, igual que la aprobada por Meta", () => {
-    expect(textoPlantillaResena("mercado_libre")).toBe(
-      "Hola, le escribo de parte del equipo de Diluvium por la compuerta que pidió en Mercado Libre. ¿Ya la pudo instalar? Nos ayuda mucho saber cómo le quedó.",
+  it("Sr., solo su nombre, sin nombre y sin vendedor", () => {
+    expect(mensajesWhatsApp({ ...BASE, nombre: "Roberto", trato: "sr", saludo: "buenas tardes" }).saludo).toBe(
+      "Hola, buenas tardes, Sr. Roberto. Le habla Carlos, de Diluvium 😃",
     );
+    expect(mensajesWhatsApp({ ...BASE, trato: null }).saludo).toBe("Hola, buenos días, Leticia. Le habla Carlos, de Diluvium 😃");
+    expect(mensajesWhatsApp({ ...BASE, nombre: "", vendedor: null }).saludo).toBe("Hola, buenos días. Le escribo de parte de Diluvium 😃");
   });
 
-  it("nunca ofrece nada a cambio ni pide estrellas", () => {
-    for (const texto of [mensajeResena("mercado_libre", TARDE, MZT), textoPlantillaResena("mercado_libre")]) {
-      expect(texto).not.toMatch(/estrella|descuento|regalo|c[oó]digo|gratis/i);
+  it("las tres respuestas dicen dónde se deja en su tienda", () => {
+    const ml = mensajesWhatsApp(BASE);
+    for (const t of [ml.bien, ml.problema, ml.sinInstalar]) expect(t).toContain("en Mercado Libre, en «Mis compras» › la compuerta › «Opinar»");
+    const amazon = mensajesWhatsApp({ ...BASE, tienda: "amazon" });
+    for (const t of [amazon.bien, amazon.problema, amazon.sinInstalar]) expect(t).toContain("«Mis pedidos» › la compuerta › «Escribir una opinión del producto»");
+    expect(amazon.pregunta).toContain("que pidió en Amazon");
+  });
+
+  it("nunca ofrece nada a cambio, ni comisión, ni pide estrellas", () => {
+    for (const t of Object.values(mensajesWhatsApp(BASE))) {
+      expect(t).not.toMatch(/estrella|descuento|regalo|c[oó]digo|gratis|comisi[oó]n|%/i);
     }
+  });
+
+  it("nombres en mayúsculas o minúsculas quedan bien escritos", () => {
+    expect(nombreBonito("YANUSA")).toBe("Yanusa");
+    expect(nombreBonito("maría josé")).toBe("María José");
+    expect(nombreBonito("McKenzie")).toBe("McKenzie");
+  });
+
+  it("WhatsApp Web con el saludo ya escrito; sin teléfono, no hay enlace", () => {
+    expect(enlaceWhatsAppWeb("+526691234567", "Hola, buenos días 😃")).toBe(
+      "https://web.whatsapp.com/send?phone=526691234567&text=Hola%2C%20buenos%20d%C3%ADas%20%F0%9F%98%83",
+    );
+    expect(enlaceWhatsAppWeb(null, "Hola")).toBeNull();
   });
 });

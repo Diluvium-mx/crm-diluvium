@@ -1,0 +1,2 @@
+ALTER TABLE "resenas_tienda" ADD COLUMN "trato" text;--> statement-breakpoint
+ALTER TABLE "resenas_tienda" ADD CONSTRAINT "resenas_tienda_trato_check" CHECK ("resenas_tienda"."trato" is null or "resenas_tienda"."trato" in ('sr', 'sra'));

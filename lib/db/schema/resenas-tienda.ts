@@ -30,6 +30,9 @@ export const resenasTienda = pgTable(
     estado: text("estado").notNull().default("por_pedir"),
     pedidaAt: timestamp("pedida_at"),
     pedidaPorUserId: text("pedida_por_user_id").references(() => user.id, { onDelete: "set null" }),
+    // Cómo se le habla en el mensaje de WhatsApp (6-nov-2026): sr | sra; null = solo su nombre. Lo elige
+    // el vendedor; nunca se adivina por el nombre.
+    trato: text("trato"),
     createdAt: timestamp("created_at").defaultNow().notNull(),
     updatedAt: timestamp("updated_at").defaultNow().notNull(),
   },
@@ -37,6 +40,7 @@ export const resenasTienda = pgTable(
     uniqueIndex("resenas_tienda_org_contact_uidx").on(t.organizationId, t.contactId),
     index("resenas_tienda_org_created_idx").on(t.organizationId, t.createdAt),
     check("resenas_tienda_tienda_check", sql`${t.tienda} in ('amazon', 'mercado_libre')`),
+    check("resenas_tienda_trato_check", sql`${t.trato} is null or ${t.trato} in ('sr', 'sra')`),
     check("resenas_tienda_origen_check", sql`${t.origen} in ('lector', 'manual')`),
     check(
       "resenas_tienda_estado_check",

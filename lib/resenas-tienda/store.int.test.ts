@@ -67,7 +67,7 @@ describe.skipIf(!TEST_DATABASE_URL)("reseñas en Amazon y Mercado Libre (Postgre
     expect(await anotar()).toBe(true);
     expect(await anotar({ frase: "Al final sí la pedí por Amazon" })).toBe(false);
     const [fila] = await queries.listarResenasTienda(ORG);
-    expect(fila).toMatchObject({ contacto: "Pedro", tienda: "amazon", estado: "por_pedir", frase: "Ya la encargué en Amazon, gracias", canal: "whatsapp", telefono: "+526681110000" });
+    expect(fila).toMatchObject({ contacto: "Pedro", tienda: "amazon", estado: "por_pedir", frase: "Ya la encargué en Amazon, gracias", telefono: "+526681110000", nombre: "Pedro", trato: null });
     expect(await store.compraEnTiendaDe(ORG, "c_pedro")).toEqual({ tienda: "amazon", estado: "por_pedir" });
   });
 
@@ -98,16 +98,16 @@ describe.skipIf(!TEST_DATABASE_URL)("reseñas en Amazon y Mercado Libre (Postgre
       ["Lucía Gómez", "por_pedir"],
       ["Pedro", "pedida"],
     ]);
-    expect(lista[0]).toMatchObject({ conversationId: null, canal: null, windowExpiresAt: null });
+    expect(lista[0]).toMatchObject({ conversationId: null, nombre: "Lucía" });
     // Otra organización no puede leer ni cambiar una fila ajena.
     expect(await queries.resenaTienda(OTRA, pedro.id)).toBeNull();
     expect(await store.cambiarEstadoResena(OTRA, pedro.id, "la_dejo")).toBe(false);
   });
 
-  it("«Deshacer» de Amazon: solo una de Amazon ya solicitada regresa a por pedir, y nunca la de otra organización", async () => {
+  it("«Deshacer»: solo una ya marcada regresa a por pedir (las dos tiendas), y nunca la de otra organización", async () => {
     await anotar();
     const [fila] = await queries.listarResenasTienda(ORG);
-    expect(await store.regresarAPorPedir(ORG, fila.id, NOW)).toBe(false); // todavía no estaba solicitada
+    expect(await store.regresarAPorPedir(ORG, fila.id, NOW)).toBe(false); // todavía no estaba marcada
     await store.marcarPedida(ORG, fila.id, "u_rt", NOW);
     expect(await store.regresarAPorPedir(OTRA, fila.id, NOW)).toBe(false);
     expect(await store.regresarAPorPedir(ORG, fila.id, NOW)).toBe(true);
@@ -116,28 +116,22 @@ describe.skipIf(!TEST_DATABASE_URL)("reseñas en Amazon y Mercado Libre (Postgre
     await anotar({ contactId: "c_lucia", conversationId: null, tienda: "mercado_libre", frase: null });
     const lucia = (await queries.listarResenasTienda(ORG)).find((f) => f.contactId === "c_lucia")!;
     await store.marcarPedida(ORG, lucia.id, "u_rt", NOW);
-    expect(await store.regresarAPorPedir(ORG, lucia.id, NOW)).toBe(false); // Mercado Libre: el texto ya salió
+    expect(await store.regresarAPorPedir(ORG, lucia.id, NOW)).toBe(true);
   });
 
-  it("sabe cuándo salió la plantilla «Reseña en tienda» en ese chat (no las de antes ni las que fallaron)", async () => {
-    await anotar({ tienda: "mercado_libre", frase: "Ya la pedí en Mercado Libre" });
-    const plantilla = (id: string, at: Date, status: "sent" | "failed", templateName = "resena_tienda") => ({
-      id, organizationId: ORG, conversationId: "conv_pedro", direction: "out" as const, source: "crm" as const,
-      type: "template" as const, body: "Hola…", templateName, status, createdAt: at, sentAt: at,
-    });
-    const antes = new Date(NOW.getTime() - 86_400_000);
-    const despues = new Date(NOW.getTime() + 86_400_000);
-    await db.insert(s.messages).values([
-      plantilla("m_antes", antes, "sent"),
-      plantilla("m_otra", despues, "sent", "seg_medidas"),
-      plantilla("m_fallo", new Date(despues.getTime() + 60_000), "failed"),
-    ]);
-    expect((await queries.listarResenasTienda(ORG))[0].plantillaAt).toBeNull();
-
-    await db.insert(s.messages).values(plantilla("m_ok", despues, "sent"));
+  it("guarda el trato (Sr. · Sra. · solo su nombre) y nunca el de otra organización", async () => {
+    await anotar();
     const [fila] = await queries.listarResenasTienda(ORG);
-    expect(fila.plantillaAt).toEqual(despues);
-    expect(fila.channelId).toBe("ch_rt");
-    expect(await queries.plantillaResenaId(ORG, "ch_rt")).toBeNull();
+    expect(await store.cambiarTrato(ORG, fila.id, "sr", NOW)).toBe(true);
+    expect((await queries.resenaTienda(ORG, fila.id))?.trato).toBe("sr");
+    expect(await store.cambiarTrato(OTRA, fila.id, "sra", NOW)).toBe(false);
+    expect(await store.cambiarTrato(ORG, fila.id, null, NOW)).toBe(true);
+    expect((await queries.resenaTienda(ORG, fila.id))?.trato).toBeNull();
+  });
+
+  it("el saludo lo firma el primer nombre de quien tiene la sesión", async () => {
+    await db.update(s.user).set({ name: "Carlos Navarro" }).where(d.eq(s.user.id, "u_rt"));
+    expect(await queries.nombreDelVendedor("u_rt")).toBe("Carlos");
+    expect(await queries.nombreDelVendedor("u_nadie")).toBeNull();
   });
 });
