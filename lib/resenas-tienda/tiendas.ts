@@ -16,6 +16,14 @@ export const TIENDA_NOMBRE: Readonly<Record<Tienda, string>> = {
 export const ESTADOS_RESENA = ["por_pedir", "pedida", "la_dejo", "no_quiso", "descartada"] as const;
 export type EstadoResena = (typeof ESTADOS_RESENA)[number];
 
+/** Cómo se le habla en el mensaje (6-nov-2026); sin trato = solo su nombre. */
+export const TRATOS = ["sr", "sra"] as const;
+export type Trato = (typeof TRATOS)[number];
+
+export function esTrato(v: unknown): v is Trato {
+  return typeof v === "string" && (TRATOS as readonly string[]).includes(v);
+}
+
 export function esTienda(v: unknown): v is Tienda {
   return typeof v === "string" && (TIENDAS as readonly string[]).includes(v);
 }

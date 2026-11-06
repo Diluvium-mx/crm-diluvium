@@ -186,3 +186,34 @@ a la lista solo con OK aparte de escritura en producción.
   quiso», el estado de cada fila y la caja de enlaces. «No compró ahí» ahora es **Quitar**, con el aviso de arriba del CRM.
   Las de Amazon ya no usaban el estado (una marcada como pedida por error volvía sola a «Por solicitar»); el mismo día
   volvió con «Ya la solicité» (abajo).
+
+## 8. Por WhatsApp Web, sin plantillas (6-nov-2026, decisión del dueño)
+
+El correo que mandan Amazon y Mercado Libre casi nadie lo abre (y cae en spam). Ahora el vendedor le escribe **él mismo**
+a cada cliente desde **WhatsApp Web**, sin costo, con mensajes listos. El CRM **ya no manda nada** en esta subpestaña
+(se quitaron `pedirResena`, `mandarPlantillaResena` y la plantilla `resena_tienda` de esta lista; la plantilla sigue en Meta).
+
+- **Mensajes fijos, sin IA** (`lib/resenas-tienda/mensaje.ts`, `mensajesWhatsApp`): se llenan solos con el saludo de la
+  hora del cliente, su primer nombre, el trato, quién escribe (primer nombre del usuario con la sesión abierta) y la tienda.
+  Dos de entrada para todos («Hola, buenos días, Sra. Leticia. Le habla Carlos, de Diluvium 😃» y «¿Ya la pudo instalar?»)
+  y tres respuestas según lo que conteste: **le fue bien**, **tuvo un problema** (primero se resuelve) y **todavía no la
+  instala** (opinión de la entrega, el empaque y la atención). Cada respuesta dice dónde se deja en su tienda.
+- **Lo que se descartó del borrador del dueño (y por qué):** el 5% de descuento por la reseña y «mi jefe me da comisión
+  por cada reseña» son reseñas incentivadas (prohibidas en las dos tiendas aunque se pregunte antes), y pedirla solo a los
+  contentos también está prohibido. Se pide a **todos**, sin nada a cambio y sin pedir estrellas (lo vigila
+  `mensaje.test.ts`).
+- **Trato** (`resenas_tienda.trato`: `sr` | `sra` | null = solo su nombre; migración 0079, porque la 0078 es de `feature/meta-marca`; si esa llega a `main` antes, se vuelve a generar el snapshot de la 0079 al mezclar): lo elige el vendedor; nunca se
+  adivina por el nombre. Los nombres en mayúsculas («YANUSA») salen como «Yanusa».
+- **Abrir en WhatsApp Web**: `web.whatsapp.com/send?phone=…&text=…` con el saludo ya escrito; la pregunta y las respuestas
+  se copian. Sin teléfono en el CRM, solo copiar.
+- **«Ya le escribí»** (pregunta antes) pasa al cliente a **Solicitadas**, donde siguen sus mensajes para cuando conteste,
+  con **Deshacer** (las dos tiendas). Como WhatsApp Web no le avisa al CRM lo que se manda desde ahí (Zernio no reenvía los
+  ecos de coexistencia), «Ya le escribí» **pausa al Agente IA** en su chat para que no le conteste él.
+- **Orden:** en Por solicitar, el que lo dijo hace más tiempo va primero.
+- **Mercado Libre:** igual que antes, se le escribe pasados 40 días de que lo dijo (Compra Protegida).
+- **Amazon (decisión del dueño, 6-nov-2026, sabiendo el riesgo):** también por WhatsApp, desde que lo dijo, y ya no con
+  «Solicitar una reseña» de Seller Central. Riesgo aceptado: el código de conducta G1801 no deja escribirle al comprador
+  por fuera de su servicio de mensajes; si un cliente lo reporta, puede afectar la cuenta. Las que ya se solicitaron en
+  Seller Central antes del 6-nov (`DESDE_WHATSAPP` en `vista.ts`) se quedan en Solicitadas **sin mensajes ni Deshacer**:
+  al usar ese botón se aceptó no mandar otra solicitud de ese pedido.
+

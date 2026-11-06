@@ -3,7 +3,7 @@ import { requireActiveMembership } from "@/lib/auth/active-organization";
 import { roleAllows } from "@/lib/auth/permissions";
 import { googleResenaUrl, listarOpiniones } from "@/lib/opiniones/queries";
 import { opinionVista } from "@/lib/opiniones/vista";
-import { listarResenasTienda } from "@/lib/resenas-tienda/queries";
+import { listarResenasTienda, nombreDelVendedor } from "@/lib/resenas-tienda/queries";
 import { resenaVista } from "@/lib/resenas-tienda/vista";
 import { parseSeguimientosSection } from "@/lib/seguimientos/sections";
 import { SeguimientosPanel } from "./_components/seguimientos-panel";
@@ -13,15 +13,16 @@ import { SeguimientosPanel } from "./_components/seguimientos-panel";
 // Libre». Todos los roles la ven, vendedor incluido (ACL `opinion`). Distinta de
 // Agente IA › Seguimientos.
 export default async function SeguimientosPage({ searchParams }: PageProps<"/seguimientos">) {
-  const { organizationId, role } = await requireActiveMembership();
+  const { organizationId, role, userId } = await requireActiveMembership();
   if (!roleAllows(role, "opinion", "read")) {
     redirect("/dashboard");
   }
   const seccion = parseSeguimientosSection((await searchParams).seccion);
-  const [filas, google, resenas] = await Promise.all([
+  const [filas, google, resenas, vendedor] = await Promise.all([
     listarOpiniones(organizationId),
     googleResenaUrl(organizationId),
     listarResenasTienda(organizationId),
+    nombreDelVendedor(userId),
   ]);
   const appUrl = process.env.APP_URL ?? "";
   const now = new Date();
@@ -30,7 +31,7 @@ export default async function SeguimientosPage({ searchParams }: PageProps<"/seg
       seccionInicial={seccion}
       opiniones={filas.map((f) => opinionVista(f, appUrl))}
       googleUrl={google}
-      resenas={resenas.flatMap((r) => resenaVista(r, now) ?? [])}
+      resenas={resenas.map((r) => resenaVista(r, now, vendedor))}
       puede={{
         crear: roleAllows(role, "opinion", "create"),
         editar: roleAllows(role, "opinion", "update"),
