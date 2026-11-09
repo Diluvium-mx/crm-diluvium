@@ -25,8 +25,11 @@ PROD y OK ESCRITURA PROD, que se cancela si no toca exactamente 1 fila.
 - **0072** (26-oct-2026): «Mostrador Paquetexpress», desde donde se piden las recolecciones a Paquete Express.
 - **En producción, sin migración** (29-oct-2026): el proveedor de las fundas a la medida (la 0075 de guías de Envia
   seguía en staging). Se deshace con `update contacts set sin_agente_ia = false where id = 'e5aeb75f-9c5c-4673-ae43-1ba54aec9227'`.
+- **En producción, sin migración** (9-nov-2026): un contacto con tarjeta de foto (la 0075 y la 0078 siguen sin llegar a
+  main). Se deshace con `update contacts set sin_agente_ia = false where id = 'd87bc548-54bd-4236-a0ec-854791cc7702'`.
 
-**Fondo en el Embudo (29-oct-2026):** los tres llevan además un fondo fijo de patrón en su tarjeta del Embudo
+
+**Fondo en el Embudo (29-oct-2026):** llevan además un fondo fijo en su tarjeta del Embudo
 (`lib/contacts/tarjeta-fondo.ts`, docs/mapa-crm/3.3-embudo.md › 34). Es aparte de esta marca: un chat sin Agente IA
 nuevo no lleva fondo hasta que se le asigne uno ahí.
 

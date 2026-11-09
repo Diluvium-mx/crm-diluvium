@@ -108,7 +108,8 @@ export function ContactCard({
   // pulsación larga es arrastrar (TouchSensor del board).
   // "Marcar como leído" si hay círculo o azul; si no, "Marcar como no leído".
   // «Quitar tarjeta» (6-oct-2026) solo en la azul o la amarilla: la deja en blanco.
-  // data-fondo (29-oct-2026): el patrón fijo de los chats que no son clientes, solo sin señal.
+  // data-fondo (29-oct-2026): el diseño fijo de los chats que no son clientes; con señal, se
+  // queda y el azul o el amarillo salen solo como contorno (9-nov-2026).
   const markable = canMarkRead(signal);
   const tone = funnelTone(signal);
   return (
@@ -124,7 +125,7 @@ export function ContactCard({
           {...attributes}
           {...listeners}
           data-funnel={tone}
-          data-fondo={tarjetaFondo(contact.id, tone)}
+          data-fondo={tarjetaFondo(contact.id)}
           data-funnel-card
           className={`w-full cursor-grab rounded-md bg-card text-left active:cursor-grabbing [&>div]:bg-transparent ${
             isDragging ? "opacity-40" : ""
