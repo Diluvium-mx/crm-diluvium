@@ -1330,7 +1330,7 @@ export function ContactsBoard({
           {activeContact ? (
             <div
               data-funnel={funnelTone(signals[activeContact.id])}
-              data-fondo={tarjetaFondo(activeContact.id, funnelTone(signals[activeContact.id]))}
+              data-fondo={tarjetaFondo(activeContact.id)}
               className="card-pickup w-[calc(100vw-2.5rem)] cursor-grabbing rounded-md bg-card shadow-2xl sm:w-72 [&>div]:bg-transparent"
             >
               <ContactCardContent
