@@ -299,11 +299,12 @@
 
 /* ── Fondo de las tarjetas que no son clientes (29-oct-2026) ──────────────────
    Pura estética y fijo (lib/contacts/tarjeta-fondo.ts): un color y un patrón de
-   íconos de public/fondos/ según lo que hacen. Nunca junto con la señal: si la
-   tarjeta pide atención (data-funnel) no lleva data-fondo. Sin azul (es «por
-   contestar»), amarillo («necesita al vendedor») ni naranja (nunca fondo extenso).
-   paqueteria = cartón con cajas y camión; costura = lila con carrete y tijeras;
-   propio = gris con flechas de traspaso y notas. Claro y oscuro. */
+   íconos de public/fondos/ según lo que hacen, o una foto. El diseño nunca se tapa
+   (9-nov-2026, dueño): si la tarjeta pide atención (data-funnel), la señal sale solo
+   como contorno. Sin azul (es «por contestar»), amarillo («necesita al vendedor») ni
+   naranja (nunca fondo extenso). paqueteria = cartón con cajas y camión; costura =
+   lila con carrete y tijeras; propio = gris con flechas de traspaso y notas; foto =
+   verde pálido con la cara a la derecha, sin tapar el texto. Claro y oscuro. */
 [data-fondo="paqueteria"] {
   --fondo-color: #f1e6d2;
   --fondo-patron: url("/fondos/paqueteria-claro.svg");
@@ -329,10 +330,32 @@
   --fondo-patron: url("/fondos/propio-oscuro.svg");
 }
 
+[data-fondo="foto"] {
+  --fondo-color: #e6eee7;
+  --fondo-patron: url("/fondos/foto-contacto.webp");
+}
+.dark [data-fondo="foto"] {
+  --fondo-color: #27332b;
+}
+
+/* Va después de data-funnel: con la señal encendida se queda el diseño, no el tinte. */
 [data-fondo] {
   background-color: var(--fondo-color);
   background-image: var(--fondo-patron);
   background-size: 64px 64px;
+}
+[data-fondo="foto"] {
+  background-position: right 8px center;
+  background-repeat: no-repeat;
+  background-size: auto 94%;
+}
+
+/* El contorno de la señal, un poco más grueso: sobre el diseño, 1 px no se distingue. */
+[data-fondo][data-funnel="pending"] > div {
+  box-shadow: 0 0 0 1px var(--funnel-pending-border);
+}
+[data-fondo][data-funnel="urgent"] > div {
+  box-shadow: 0 0 0 1px var(--funnel-urgent-border);
 }
 
 /* ── Contorno que gira de la columna temporal «Buen Fin» (4-nov-2026, dueño) ──
