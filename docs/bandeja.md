@@ -239,13 +239,17 @@ clic abre un menú para cambiarla sin abrir el chat. Lista y panel quedan sincro
 - La luz del cursor sobre la tarjeta es **gris** (`[data-funnel-card]`): antes era el mismo azul del
   "por contestar" y una tarjeta bajo el mouse parecía pendiente.
 - **Tarjeta con fondo (29-oct-2026, regla del dueño):** los chats que no son clientes llevan un color y un
-  patrón de íconos fijos, pura estética (`lib/contacts/tarjeta-fondo.ts` por id → `data-fondo`; patrones en
-  `public/fondos/`): paquetería = cartón, costura = lila, chat propio = gris. Sin azul, amarillo ni naranja.
-  Nunca junto con la señal: con azul o amarilla la tarjeta lleva ese color y, al atenderse, vuelve el patrón.
+  patrón de íconos fijos o una foto, pura estética (`lib/contacts/tarjeta-fondo.ts` por id → `data-fondo`; archivos en
+  `public/fondos/`): paquetería = cartón, costura = lila, chat propio = gris, foto = verde pálido con la cara a la
+  derecha. Sin azul, amarillo ni naranja. El diseño nunca se tapa (9-nov-2026): con la señal encendida se queda y el
+  azul o el amarillo salen solo como contorno (borde más un anillo de 1 px). El archivo de la foto es público como
+  todo `public/`, y queda en el repo que también lo es (lo aceptó el dueño): nombre neutro y sin datos del contacto.
 - **Columna Buen Fin (3-nov-2026, dueño, temporal):** la única columna con encabezado **rojo** (`bg-red-600`)
-  en vez del azul marino y con temporizador junto al nombre hasta el 17-nov-2026 23:59 hora de Mazatlán
-  (`buen-fin-countdown.tsx`); los dos salen de su clave `buen_fin` en `StageColumn`. Va al final, después de Compra
-  (decisión del dueño), Modelo 1, sin regla del Agente IA: entran y salen solo a mano (el Agente IA solo
+  en vez del azul marino, con contorno que gira (`[data-borde-buen-fin]` en `globals.css`) y, debajo del nombre, el
+  temporizador en dos fases (`buen-fin-countdown.tsx`): «Empieza en» hasta el 13-nov 00:00 y «En curso · termina en»
+  hasta el 18-nov 00:00, hora de Mazatlán. Todo sale de su clave `buen_fin` en `StageColumn`. Va al final, después de Compra
+  (decisión del dueño), Modelo 1 (nunca Sonnet) y fuera de las instrucciones del Agente IA y del lector
+  (`ETAPAS_FUERA_DEL_AGENTE`, 4-nov): entran y salen solo a mano (el Agente IA solo
   avanza, así que no saca a nadie; quien compre se arrastra a Compra para contar en Anuncios). En
   Dashboard › Seguimientos, arrastrar a alguien aquí cuenta como «avanzó» (`seguimientos.ts` compara
   posiciones). Al terminar la campaña se borra la columna y esa condición (mapa › Embudo › 36).

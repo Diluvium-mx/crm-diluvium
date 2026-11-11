@@ -193,11 +193,18 @@ export function describeOpcion({ clave, link }: OpcionLink): string {
   return `${clave} = ${link.nombre}: ${cubre}, ${pago}`;
 }
 
-export function linkPagoDescription(opciones: readonly OpcionLink[]): string {
-  return (
-    "Manda al cliente el link de MercadoPago para pagar con tarjeta: el CRM lo envía después de tu texto, con el monto y el link exactos (nunca escribas tú un link de pago). " +
-    "Úsala cuando el cliente elige pagar con tarjeta o pide el link de pago, con el total ya fijado; si lo vuelve a pedir, úsala otra vez. " +
-    `Opciones: ${opciones.map(describeOpcion).join("; ")}. ` +
-    "El link debe cobrar exactamente el total acordado (o la mitad, en las de anticipo o liquidación); si no hay una opción para lo que eligió, no la uses y sigue el Goal."
-  );
+// Descripción FIJA de la herramienta (11-nov-2026, caché en dos partes; docs/agente-ia.md › Caché en dos
+// partes): las herramientas van al principio de la caché, así que la lista de links ya no va aquí (cambiar
+// un link reescribía el Goal completo, ~US$0.11). La lista va en la sección LINKS DE PAGO del system,
+// después del Goal (linkOptionsInstructions); el CRM valida la clave que mande el modelo.
+export const LINK_PAGO_DESCRIPTION =
+  "Manda al cliente el link de MercadoPago para pagar con tarjeta: el CRM lo envía después de tu texto, con el monto y el link exactos (nunca escribas tú un link de pago). " +
+  "Úsala cuando el cliente elige pagar con tarjeta o pide el link de pago, con el total ya fijado; si lo vuelve a pedir, úsala otra vez. " +
+  "En «opcion» va la clave de una de las opciones de la sección LINKS DE PAGO de tus instrucciones. " +
+  "El link debe cobrar exactamente el total acordado (o la mitad, en las de anticipo o liquidación); si no hay una opción para lo que eligió, no la uses y sigue el Goal.";
+
+/** Sección del system con las opciones de enviar_link_pago (vacía sin links). */
+export function linkOptionsInstructions(opciones: readonly OpcionLink[]): string {
+  if (!opciones.length) return "";
+  return ["LINKS DE PAGO (opciones de enviar_link_pago; usa la clave)", ...opciones.map((o) => `- ${describeOpcion(o)}`)].join("\n");
 }

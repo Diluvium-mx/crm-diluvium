@@ -3,7 +3,7 @@
 import { and, eq, ne, sql } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { resenasTienda } from "@/lib/db/schema";
-import type { EstadoResena, Tienda } from "./tiendas";
+import type { EstadoResena, Tienda, Trato } from "./tiendas";
 
 /**
  * Lo que anotó el lector. Una fila por contacto: si ya estaba «por pedir» con otra tienda, se
@@ -82,7 +82,7 @@ export async function marcarPedida(organizationId: string, id: string, userId: s
     .where(and(eq(resenasTienda.id, id), eq(resenasTienda.organizationId, organizationId)));
 }
 
-/** «Deshacer» de Amazon: la que se marcó como solicitada por error regresa a por pedir. */
+/** «Deshacer»: la que se marcó como «Ya le escribí» por error regresa a por pedir (las dos tiendas). */
 export async function regresarAPorPedir(organizationId: string, id: string, now = new Date()): Promise<boolean> {
   const filas = await db
     .update(resenasTienda)
@@ -91,10 +91,19 @@ export async function regresarAPorPedir(organizationId: string, id: string, now 
       and(
         eq(resenasTienda.id, id),
         eq(resenasTienda.organizationId, organizationId),
-        eq(resenasTienda.tienda, "amazon"),
         eq(resenasTienda.estado, "pedida"),
       ),
     )
+    .returning({ id: resenasTienda.id });
+  return filas.length > 0;
+}
+
+/** Cómo se le habla en el mensaje (Sr. · Sra. · solo su nombre = null). */
+export async function cambiarTrato(organizationId: string, id: string, trato: Trato | null, now = new Date()): Promise<boolean> {
+  const filas = await db
+    .update(resenasTienda)
+    .set({ trato, updatedAt: now })
+    .where(and(eq(resenasTienda.id, id), eq(resenasTienda.organizationId, organizationId)))
     .returning({ id: resenasTienda.id });
   return filas.length > 0;
 }

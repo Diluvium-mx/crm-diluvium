@@ -182,19 +182,17 @@ function StageColumn({
       className={`flex min-h-0 w-[calc(100vw-2.5rem)] shrink-0 snap-center flex-col rounded-lg border bg-muted transition-all duration-150 sm:w-72 sm:snap-align-none ${
         isOver ? "scale-[1.01] shadow-lg ring-2 ring-brand-orange ring-offset-2 ring-offset-background" : ""
       }`}
+      // Columna temporal «Buen Fin» (3-nov-2026, dueño): contorno que gira (app/globals.css), encabezado rojo
+      // en vez del azul y, debajo del nombre, el temporizador de sus dos fases. Se quitan con la columna
+      // cuando termine la campaña.
+      data-borde-buen-fin={buenFin || undefined}
     >
-      {/* Columna temporal «Buen Fin» (3-nov-2026, dueño): encabezado rojo en vez del azul y, junto al
-          nombre, el temporizador hasta el último día del Buen Fin. Se quitan con la columna cuando
-          termine la campaña. */}
       <div
         className={`flex items-center justify-between rounded-t-lg px-3 py-2 text-brand-white ${
           buenFin ? "bg-red-600" : "bg-brand-navy"
         }`}
       >
-        <div className="flex min-w-0 items-center gap-2">
-          <span className="truncate text-sm font-semibold">{stage.name}</span>
-          {buenFin && <BuenFinCountdown />}
-        </div>
+        <span className="truncate text-sm font-semibold">{stage.name}</span>
         <div className="flex shrink-0 items-center gap-1.5">
           {/* «No leído» (30-sep-2026): píldora del mismo alto que el contador, solo el sobre.
               Naranja = prendido; tenue = la columna no tiene nada pendiente. */}
@@ -217,6 +215,7 @@ function StageColumn({
           <span className="rounded-full bg-white/20 px-2 py-0.5 text-xs">{contacts.length + faltan}</span>
         </div>
       </div>
+      {buenFin && <BuenFinCountdown />}
 
       <div ref={setColumnRef} className="min-h-0 flex-1 overflow-y-auto p-2">
         {contacts.length === 0 ? (
@@ -1331,7 +1330,7 @@ export function ContactsBoard({
           {activeContact ? (
             <div
               data-funnel={funnelTone(signals[activeContact.id])}
-              data-fondo={tarjetaFondo(activeContact.id, funnelTone(signals[activeContact.id]))}
+              data-fondo={tarjetaFondo(activeContact.id)}
               className="card-pickup w-[calc(100vw-2.5rem)] cursor-grabbing rounded-md bg-card shadow-2xl sm:w-72 [&>div]:bg-transparent"
             >
               <ContactCardContent

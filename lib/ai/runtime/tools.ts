@@ -19,14 +19,19 @@
 // fuera de México o ya con el máximo de links) va en `blocked`: se le dice al modelo en el último turno
 // (blockedToolsLine) y, si aun así lo pide, el CRM no lo manda (validateToolCalls) y run.ts le pide otra
 // respuesta UNA vez (blockedRetryNote), para que nunca prometa algo que no sale.
+// ESQUEMAS FIJOS (11-nov-2026, caché en dos partes; docs/agente-ia.md › Caché en dos partes): mover_etapa y
+// enviar_link_pago ya no llevan la lista de etapas ni de links en la herramienta (un enum o una descripción
+// con la lista). Editar una columna del Embudo o un link cambiaba las herramientas, que van ANTES del Goal en
+// la caché, y obligaba a reescribirlo todo (~US$0.11). Ahora las listas van en el system después del Goal
+// (ETAPAS DEL EMBUDO y LINKS DE PAGO) y el CRM valida aquí la clave que mande el modelo.
 // Sin `execute`: el modelo devuelve texto + llamadas en UNA vuelta y el runtime
 // decide qué corre. Las reglas de negocio viven en el Goal, no aquí.
 import { tool, type ToolSet } from "ai";
 import { z } from "zod";
 import { toolNameFor } from "@/lib/workflows/defaults";
-import { sortStages, type FunnelStage } from "@/lib/contacts/stages";
+import { stagesForAgent, type FunnelStage } from "@/lib/contacts/stages";
 import type { ToolCallOutput } from "@/lib/ai/types";
-import { linkPagoDescription, type OpcionLink } from "@/lib/agente-ia/links-pago";
+import { LINK_PAGO_DESCRIPTION, type OpcionLink } from "@/lib/agente-ia/links-pago";
 
 export const TOOL_FIJAR_COTIZACION = "fijar_cotizacion";
 export const TOOL_MOVER_ETAPA = "mover_etapa";
@@ -54,25 +59,20 @@ export const fijarCotizacionSchema = z.object({
   monto: z.number().positive().max(9_999_999).describe("Total cotizado al cliente en pesos mexicanos, p. ej. 5500"),
 });
 
-// Solo las claves vigentes (mínimo 1: z.enum exige una lista no vacía).
-export function moverEtapaSchemaFor(stageKeys: readonly string[]) {
-  const keys = stageKeys.length ? [...stageKeys] : ["inbox"];
-  return z.object({
-    etapa: z.enum(keys as [string, ...string[]]).describe("Clave de la etapa del Embudo a la que avanza el contacto (solo hacia adelante)"),
-  });
-}
+// Texto libre en el esquema (fijo para la caché); solo valen las claves vigentes (validateToolCalls).
+export const moverEtapaSchema = z.object({
+  etapa: z.string().max(80).describe("Clave de la etapa del Embudo a la que avanza el contacto (solo hacia adelante), de la sección ETAPAS DEL EMBUDO"),
+});
 
 export const avisoVendedorSchema = z.object({
   motivo: z.enum(AVISO_MOTIVOS).describe("cotejar_deposito = el cliente pagó y el pago cuadra (el vendedor ve \"Depósito recibido\"); cliente_pide_humano = pidió hablar con una persona; comprobante_dudoso = el comprobante no cuadra o se ve dudoso"),
   detalle: z.string().max(500).optional().describe("Qué debe saber el vendedor, en una frase (no hace falta con cotejar_deposito)"),
 });
 
-export function linkPagoSchemaFor(options: readonly OpcionLink[]) {
-  const claves = options.length ? options.map((o) => o.clave) : ["sin_links"];
-  return z.object({
-    opcion: z.enum(claves as [string, ...string[]]).describe("Clave del link que corresponde a lo que eligió el cliente"),
-  });
-}
+// Texto libre en el esquema (fijo para la caché); solo valen las claves vigentes (validateToolCalls).
+export const linkPagoSchema = z.object({
+  opcion: z.string().max(80).describe("Clave del link que corresponde a lo que eligió el cliente, de la sección LINKS DE PAGO"),
+});
 
 // Lo que ve el MODELO (todo opcional). El runtime vuelve a validar CAMPO POR CAMPO
 // (parseDetalle): un campo raro se descarta sin tirar los demás.
@@ -146,12 +146,8 @@ export function parseDetalle(input: unknown): DetalleIa | null {
 // segundo plano (lector.ts) lo corrige igual si el chat cambia después.
 export const FIJAR_COTIZACION_DESCRIPTION =
   "Guarda el total de lo que el CLIENTE eligió comprar, en pesos (el total que le dijiste por lo que pidió: compuerta o compuertas más lo que incluya). No es para accesorios sueltos ni precios de referencia. Llámala cada vez que le des un total o el total cambie; si el cliente cambia lo que quiere (p. ej. de 2 compuertas a 1), llámala con el total nuevo cuando se lo digas.";
-export function moverEtapaDescription(stages: readonly FunnelStage[]): string {
-  const order = sortStages(stages)
-    .map((s) => `${s.key} (${s.name})`)
-    .join(" → ");
-  return `Avanza al contacto a una etapa del Embudo, por su clave: ${order}. Úsala cuando se cumpla la regla de esa etapa (sección ETAPAS DEL EMBUDO). Llévalo directo a la etapa que corresponde aunque se salte las de en medio (p. ej. si ya quiere pagar). Solo avanza; un retroceso o la misma etapa se ignoran.`;
-}
+export const MOVER_ETAPA_DESCRIPTION =
+  "Avanza al contacto a una etapa del Embudo, por su clave (las claves, su orden y cuándo usar cada una están en la sección ETAPAS DEL EMBUDO). Úsala cuando se cumpla la regla de esa etapa. Llévalo directo a la etapa que corresponde aunque se salte las de en medio (p. ej. si ya quiere pagar). Solo avanza; un retroceso o la misma etapa se ignoran.";
 export const AVISO_VENDEDOR_DESCRIPTION =
   "Deja un aviso interno al vendedor; el cliente no lo ve y tú sigues atendiendo. Motivos: cotejar_deposito (pago que confirmaste), cliente_pide_humano, comprobante_dudoso (en una frase, por qué). Cuándo usar cada uno lo dice el Goal.";
 
@@ -165,7 +161,7 @@ export function buildAgentTools(
 ): AgentTools {
   const tools: ToolSet = {};
   const byName = new Map<string, AgentToolWorkflow>();
-  const stageKeys = sortStages(stages).map((s) => s.key);
+  const stageKeys = stagesForAgent(stages).map((s) => s.key);
   for (const w of rows) {
     const name = toolNameFor(w.slug);
     if (byName.has(name)) continue;
@@ -173,9 +169,9 @@ export function buildAgentTools(
     byName.set(name, { id: w.id, slug: w.slug, name: w.name });
   }
   tools[TOOL_FIJAR_COTIZACION] = tool({ description: FIJAR_COTIZACION_DESCRIPTION, inputSchema: fijarCotizacionSchema });
-  tools[TOOL_MOVER_ETAPA] = tool({ description: moverEtapaDescription(stages), inputSchema: moverEtapaSchemaFor(stageKeys) });
+  tools[TOOL_MOVER_ETAPA] = tool({ description: MOVER_ETAPA_DESCRIPTION, inputSchema: moverEtapaSchema });
   tools[TOOL_AVISO_VENDEDOR] = tool({ description: AVISO_VENDEDOR_DESCRIPTION, inputSchema: avisoVendedorSchema });
-  if (linkOptions.length) tools[TOOL_LINK_PAGO] = tool({ description: linkPagoDescription(linkOptions), inputSchema: linkPagoSchemaFor(linkOptions) });
+  if (linkOptions.length) tools[TOOL_LINK_PAGO] = tool({ description: LINK_PAGO_DESCRIPTION, inputSchema: linkPagoSchema });
   // Al final (orden estable): la caché del prompt de las herramientas de arriba no cambia.
   tools[TOOL_ACTUALIZAR_DETALLE] = tool({ description: ACTUALIZAR_DETALLE_DESCRIPTION, inputSchema: actualizarDetalleSchema });
   return { tools, byName, stageKeys, linkOptions, blocked };
@@ -227,8 +223,8 @@ export function validateToolCalls(calls: readonly ToolCallOutput[], tools: Agent
       continue;
     }
     if (c.toolName === TOOL_MOVER_ETAPA) {
-      const p = moverEtapaSchemaFor(tools.stageKeys).safeParse(c.input);
-      if (p.success) valid.push({ kind: "etapa", etapa: p.data.etapa });
+      const p = moverEtapaSchema.safeParse(c.input);
+      if (p.success && tools.stageKeys.includes(p.data.etapa)) valid.push({ kind: "etapa", etapa: p.data.etapa });
       else ignored.push(`${c.toolName}: argumentos inválidos`);
       continue;
     }
@@ -240,7 +236,7 @@ export function validateToolCalls(calls: readonly ToolCallOutput[], tools: Agent
     }
     if (c.toolName === TOOL_LINK_PAGO) {
       // Sin la herramienta ofrecida (chat que no recibe links) se ignora; uno por respuesta.
-      const p = tools.linkOptions.length ? linkPagoSchemaFor(tools.linkOptions).safeParse(c.input) : null;
+      const p = tools.linkOptions.length ? linkPagoSchema.safeParse(c.input) : null;
       const opcion = p?.success ? tools.linkOptions.find((o) => o.clave === p.data.opcion) : undefined;
       if (!opcion) ignored.push(`${c.toolName}: ${tools.linkOptions.length ? "opción inválida" : "herramienta no ofrecida en este chat"}`);
       else if (!valid.some((v) => v.kind === "link")) valid.push({ kind: "link", opcion });

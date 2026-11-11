@@ -3,7 +3,7 @@ import { describe, expect, it } from "vitest";
 import { defaultStages } from "@/lib/contacts/stages";
 import { phoneParts } from "@/lib/phone";
 import { buildAgentTools, mergeHandoffToolCalls, TOOL_ACTUALIZAR_DETALLE, TOOL_AVISO_VENDEDOR, TOOL_LINK_PAGO, validateToolCalls, type ValidToolCall } from "@/lib/ai/runtime/tools";
-import { ladaSinLinks, linkCuadra, linkPagoDescription, linksDelAgente, mensajesLink, opcionesDe, TEXTOS_DE_FABRICA, totalQueCubre, validateLinksPago, validateTextosLink, type LinkPago } from "./links-pago";
+import { ladaSinLinks, LINK_PAGO_DESCRIPTION, linkCuadra, linkOptionsInstructions, linksDelAgente, mensajesLink, opcionesDe, TEXTOS_DE_FABRICA, totalQueCubre, validateLinksPago, validateTextosLink, type LinkPago } from "./links-pago";
 
 const link = (posicion: number, nombre: string, monto: number, cubre: "total" | "mitad", meses: number, url: string, soloVendedor = false): LinkPago => ({ id: `l${posicion}`, nombre, monto, cubre, meses, url, soloVendedor, posicion });
 
@@ -82,11 +82,13 @@ describe("links de pago: reglas", () => {
     expect(validateLinksPago([{ ...ok[0], nombre: " " }])).toEqual(["Falta el nombre."]);
   });
 
-  it("la descripción de la herramienta dice qué cobra cada opción y que el modelo no escribe el link", () => {
-    const d = linkPagoDescription(opcionesDe(LINKS));
-    expect(d).toContain("1_compuerta_estandar = 1 compuerta estándar: cobra $5,500, hasta 6 meses sin intereses");
+  it("la sección LINKS DE PAGO dice qué cobra cada opción; la descripción fija dice que el modelo no escribe el link", () => {
+    const d = linkOptionsInstructions(opcionesDe(LINKS));
+    expect(linkOptionsInstructions([])).toBe("");
+    expect(LINK_PAGO_DESCRIPTION).toContain("nunca escribas tú un link de pago");
+    expect(LINK_PAGO_DESCRIPTION).not.toContain("1_compuerta_estandar");
+    expect(d).toContain("- 1_compuerta_estandar = 1 compuerta estándar: cobra $5,500, hasta 6 meses sin intereses");
     expect(d).toContain("medida_especial_anticipo = Medida especial anticipo: cobra $3,500, la mitad de un total de $7,000, de contado");
-    expect(d).toContain("nunca escribas tú un link de pago");
     expect(d).not.toContain("mpago");
   });
 });

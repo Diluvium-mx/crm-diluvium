@@ -149,7 +149,7 @@ describe.skipIf(!TEST_DATABASE_URL)("Agente IA: primer mensaje no disponible (Po
     const { deps, delivered, brain } = makeDeps();
     expect(await run.runAgent(JOB, deps)).toEqual({ kind: "sent", bubbles: 1 });
     expect(delivered).toEqual([
-      "¡Hola! Gracias por escribirnos 😊 Tuvimos una falla técnica y su mensaje no nos llegó. ¿Nos ayuda escribiéndolo de nuevo para seguir con su atención?",
+      "¡Hola! Gracias por escribirnos 😊 Su mensaje no nos llegó completo. ¿Nos lo puede escribir de nuevo? Si tiene activados los mensajes temporales, desactívelos en este chat para que sí nos lleguen.",
     ]);
     expect(brain).toHaveLength(0);
     expect((await agentOuts()).map((m) => m.body)).toEqual([rules.UNAVAILABLE_REPLY_TEXT]);
@@ -175,7 +175,7 @@ describe.skipIf(!TEST_DATABASE_URL)("Agente IA: primer mensaje no disponible (Po
     expect(brain).toHaveLength(1);
     const seen = JSON.stringify(brain[0].messages);
     expect(seen).toContain("¿Cuánto cuesta la compuerta para 90 cm?");
-    expect(seen).toContain("Tuvimos una falla técnica"); // sabe que ya se le mandó el texto fijo
+    expect(seen).toContain("Su mensaje no nos llegó completo"); // sabe que ya se le mandó el texto fijo
     expect(delivered).toEqual([rules.UNAVAILABLE_REPLY_TEXT, "¡Hola! Claro, ¿en qué te ayudo?"]);
     // Ya contestado: no se repite.
     expect(await run.runAgent(JOB, deps)).toEqual({ kind: "noop", reason: "sin_pendientes" });

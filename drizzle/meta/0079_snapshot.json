@@ -1,5 +1,5 @@
 {
-  "id": "4cb7a11e-a506-46bc-a807-0edfb8d9c4ae",
+  "id": "d5b5cb29-a98b-4c06-8561-feea677f3bf9",
   "prevId": "7b5a4ed3-e964-44c6-a356-fcece22a800b",
   "version": "7",
   "dialect": "postgresql",
@@ -1983,36 +1983,6 @@
           "primaryKey": false,
           "notNull": false
         },
-        "meta_billable": {
-          "name": "meta_billable",
-          "type": "boolean",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "meta_category": {
-          "name": "meta_category",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "meta_pricing_type": {
-          "name": "meta_pricing_type",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "meta_window_expires_at": {
-          "name": "meta_window_expires_at",
-          "type": "timestamp",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "meta_window_origin": {
-          "name": "meta_window_origin",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
         "created_at": {
           "name": "created_at",
           "type": "timestamp",
@@ -2022,28 +1992,6 @@
         }
       },
       "indexes": {
-        "messages_meta_mark_idx": {
-          "name": "messages_meta_mark_idx",
-          "columns": [
-            {
-              "expression": "organization_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "created_at",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "where": "\"messages\".\"meta_category\" is not null",
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        },
         "messages_conversation_created_idx": {
           "name": "messages_conversation_created_idx",
           "columns": [
@@ -6213,157 +6161,6 @@
       "checkConstraints": {},
       "isRLSEnabled": false
     },
-    "public.meta_whatsapp_pricing": {
-      "name": "meta_whatsapp_pricing",
-      "schema": "",
-      "columns": {
-        "organization_id": {
-          "name": "organization_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "channel_id": {
-          "name": "channel_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "day": {
-          "name": "day",
-          "type": "date",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "category": {
-          "name": "category",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "pricing_type": {
-          "name": "pricing_type",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "volume": {
-          "name": "volume",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": true,
-          "default": 0
-        },
-        "cost_usd": {
-          "name": "cost_usd",
-          "type": "numeric(14, 6)",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "fetched_at": {
-          "name": "fetched_at",
-          "type": "timestamp",
-          "primaryKey": false,
-          "notNull": true
-        }
-      },
-      "indexes": {},
-      "foreignKeys": {
-        "meta_whatsapp_pricing_organization_id_organization_id_fk": {
-          "name": "meta_whatsapp_pricing_organization_id_organization_id_fk",
-          "tableFrom": "meta_whatsapp_pricing",
-          "tableTo": "organization",
-          "columnsFrom": [
-            "organization_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
-        },
-        "meta_whatsapp_pricing_channel_id_channels_id_fk": {
-          "name": "meta_whatsapp_pricing_channel_id_channels_id_fk",
-          "tableFrom": "meta_whatsapp_pricing",
-          "tableTo": "channels",
-          "columnsFrom": [
-            "channel_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
-        }
-      },
-      "compositePrimaryKeys": {
-        "meta_whatsapp_pricing_pk": {
-          "name": "meta_whatsapp_pricing_pk",
-          "columns": [
-            "organization_id",
-            "channel_id",
-            "day",
-            "category",
-            "pricing_type"
-          ]
-        }
-      },
-      "uniqueConstraints": {},
-      "policies": {},
-      "checkConstraints": {},
-      "isRLSEnabled": false
-    },
-    "public.meta_whatsapp_pricing_sync": {
-      "name": "meta_whatsapp_pricing_sync",
-      "schema": "",
-      "columns": {
-        "organization_id": {
-          "name": "organization_id",
-          "type": "text",
-          "primaryKey": true,
-          "notNull": true
-        },
-        "fetched_at": {
-          "name": "fetched_at",
-          "type": "timestamp",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "attempted_at": {
-          "name": "attempted_at",
-          "type": "timestamp",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "last_error": {
-          "name": "last_error",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        }
-      },
-      "indexes": {},
-      "foreignKeys": {
-        "meta_whatsapp_pricing_sync_organization_id_organization_id_fk": {
-          "name": "meta_whatsapp_pricing_sync_organization_id_organization_id_fk",
-          "tableFrom": "meta_whatsapp_pricing_sync",
-          "tableTo": "organization",
-          "columnsFrom": [
-            "organization_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
-        }
-      },
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {},
-      "policies": {},
-      "checkConstraints": {},
-      "isRLSEnabled": false
-    },
     "public.ad_clicks": {
       "name": "ad_clicks",
       "schema": "",
@@ -7694,6 +7491,12 @@
           "primaryKey": false,
           "notNull": false
         },
+        "trato": {
+          "name": "trato",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
         "created_at": {
           "name": "created_at",
           "type": "timestamp",
@@ -7814,6 +7617,10 @@
         "resenas_tienda_tienda_check": {
           "name": "resenas_tienda_tienda_check",
           "value": "\"resenas_tienda\".\"tienda\" in ('amazon', 'mercado_libre')"
+        },
+        "resenas_tienda_trato_check": {
+          "name": "resenas_tienda_trato_check",
+          "value": "\"resenas_tienda\".\"trato\" is null or \"resenas_tienda\".\"trato\" in ('sr', 'sra')"
         },
         "resenas_tienda_origen_check": {
           "name": "resenas_tienda_origen_check",
