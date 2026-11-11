@@ -14,7 +14,7 @@ el **día 3 de cada mes**, sin pedirlo. Base: el informe del primer mes (Notion 
 | Zernio | Conecta WhatsApp e Instagram | El mes anterior de Zernio (`zernio_billing`, docs/zernio-costos.md); el día 3 ya está cerrado |
 | Meta (WhatsApp) | Plantillas y mensajes cobrados | Lo que **reporta Meta** del mes (días UTC, sin IVA; docs/meta-whatsapp.md). Sin esa lectura, el **estimado del CRM** (abajo) |
 
-El correo también trae el **total**, las **ventas del mes** (contactos que hoy están en la etapa de venta y entraron
+El correo también trae una línea del **ahorro por contestar desde el celular o WhatsApp Web** (docs/meta-whatsapp.md; no suma al total), el **total**, las **ventas del mes** (contactos que hoy están en la etapa de venta y entraron
 a ella en el mes, sin los de prueba) y el **costo del CRM por venta**. Si un servicio no tiene dato, sale «sin dato» y
 el total dice que va sin él.
 

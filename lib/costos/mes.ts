@@ -50,6 +50,8 @@ export type ReporteCostos = {
   tipoCambio: TipoCambio | null;
   // Nota de una sola vez para ese mes (NOTAS_DEL_MES).
   nota: string | null;
+  // Ahorro por contestar desde el celular o WhatsApp Web (docs/meta-whatsapp.md); null = no se pudo calcular.
+  celular: CelularReporte | null;
   // Avisos para el dueño: cobro pendiente, lectura vieja o con error.
   avisos: string[];
 };
@@ -196,6 +198,12 @@ export function renglonMeta(conteo: MetaConteo | null, reportado: MetaReportado 
   };
 }
 
+// ---- Celular y WhatsApp Web ----
+
+// Lo que el correo dice del ahorro del mes por contestar desde el celular o WhatsApp Web (no es un costo: no suma).
+export type CelularMes = { mensajes: number; ahorroUsd: number; cobradosMeta: number };
+export type CelularReporte = CelularMes & { ahorroMxn: number | null };
+
 // ---- Reporte ----
 
 export function armarReporte(input: {
@@ -207,6 +215,7 @@ export function armarReporte(input: {
   meta: Renglon;
   ventas: number | null;
   tipoCambio: TipoCambio | null;
+  celular?: CelularMes | null;
 }): ReporteCostos {
   const tc = input.tipoCambio?.mxnPorUsd ?? null;
   const renglones = [...input.ia.renglones, input.railway.renglon, input.zernio.renglon, input.meta].map((r) => ({
@@ -232,6 +241,7 @@ export function armarReporte(input: {
     costoPorVentaMxn: ventas && totalMxn !== null ? round2(totalMxn / ventas) : null,
     tipoCambio: input.tipoCambio,
     nota: NOTAS_DEL_MES[input.mes.clave] ?? null,
+    celular: input.celular ? { ...input.celular, ahorroMxn: tc === null ? null : round2(input.celular.ahorroUsd * tc) } : null,
     avisos,
   };
 }

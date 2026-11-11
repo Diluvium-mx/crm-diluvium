@@ -5,6 +5,7 @@ import { eq, sql } from "drizzle-orm";
 import type { db as appDb } from "@/lib/db";
 import { railwayBilling, zernioBilling } from "@/lib/db/schema";
 import { loadBillingSnapshots, spendByDay } from "@/lib/dashboard/ai-spend";
+import { cargarAhorroCelular } from "@/lib/meta-whatsapp/ahorro-celular";
 import { contarMetaCobrables } from "./meta-estimado";
 import { type Mes, type MetaReportado, type ReporteCostos, armarReporte, renglonMeta, renglonRailway, renglonZernio, renglonesIa } from "./mes";
 import type { TipoCambio } from "./tipo-cambio";
@@ -50,7 +51,7 @@ export async function cargarReporte(
   now: Date,
   tipoCambio: TipoCambio | null,
 ): Promise<ReporteCostos> {
-  const [billing, crmDays, [railway], [zernio], meta, metaReportado, ventas] = await Promise.all([
+  const [billing, crmDays, [railway], [zernio], meta, metaReportado, ventas, celular] = await Promise.all([
     loadBillingSnapshots(database, org.id),
     spendByDay(database, org.id, mes.desde),
     database.select().from(railwayBilling).where(eq(railwayBilling.organizationId, org.id)),
@@ -58,6 +59,8 @@ export async function cargarReporte(
     contarMetaCobrables(database, org.id, mes.desde, mes.hasta),
     cargarMetaReportado(database, org.id, mes),
     contarVentas(database, org.id, mes),
+    // Si falla, el correo sale igual sin esa línea.
+    cargarAhorroCelular(database, org.id, mes.desde, mes.hasta).catch(() => null),
   ]);
   return armarReporte({
     mes,
@@ -68,5 +71,6 @@ export async function cargarReporte(
     meta: renglonMeta(meta, metaReportado),
     ventas,
     tipoCambio,
+    celular: celular ? { mensajes: celular.total.mensajes, ahorroUsd: celular.total.ahorroUsd, cobradosMeta: celular.total.cobradosMeta } : null,
   });
 }

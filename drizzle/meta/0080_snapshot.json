@@ -1,6 +1,6 @@
 {
-  "id": "4cb7a11e-a506-46bc-a807-0edfb8d9c4ae",
-  "prevId": "7b5a4ed3-e964-44c6-a356-fcece22a800b",
+  "id": "4ee1af15-6ad4-4dbf-b988-40232b39eaf8",
+  "prevId": "d5b5cb29-a98b-4c06-8561-feea677f3bf9",
   "version": "7",
   "dialect": "postgresql",
   "tables": {
@@ -7694,6 +7694,12 @@
           "primaryKey": false,
           "notNull": false
         },
+        "trato": {
+          "name": "trato",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
         "created_at": {
           "name": "created_at",
           "type": "timestamp",
@@ -7814,6 +7820,10 @@
         "resenas_tienda_tienda_check": {
           "name": "resenas_tienda_tienda_check",
           "value": "\"resenas_tienda\".\"tienda\" in ('amazon', 'mercado_libre')"
+        },
+        "resenas_tienda_trato_check": {
+          "name": "resenas_tienda_trato_check",
+          "value": "\"resenas_tienda\".\"trato\" is null or \"resenas_tienda\".\"trato\" in ('sr', 'sra')"
         },
         "resenas_tienda_origen_check": {
           "name": "resenas_tienda_origen_check",

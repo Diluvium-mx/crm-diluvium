@@ -17,6 +17,7 @@ const base: ReporteCostos = {
   costoPorVentaMxn: 600.98,
   tipoCambio: { mxnPorUsd: 18.4993, dias: 22 },
   nota: null,
+  celular: null,
   avisos: [],
 };
 
@@ -50,6 +51,16 @@ describe("correo de costos", () => {
     expect(html).toContain("octubre de 2026: US$1,234.50");
     expect(html).not.toContain("Dólar a");
     expect(html).not.toContain("$22,837.25");
+  });
+
+  it("celular y WhatsApp Web: el ahorro del mes; si Meta cobró alguno, en naranja", () => {
+    const html = htmlCorreo({ ...base, celular: { mensajes: 120, ahorroUsd: 1.5, ahorroMxn: 27.75, cobradosMeta: 0 } });
+    expect(html).toContain("Celular y WhatsApp Web: <b>120</b> mensajes; desde el CRM habrían costado ≈ <b>$27.75</b>");
+    expect(html).toContain("(US$1.50)");
+    expect(html).not.toContain("Meta cobró");
+    const cobro = htmlCorreo({ ...base, celular: { mensajes: 120, ahorroUsd: 1.5, ahorroMxn: 27.75, cobradosMeta: 3 } });
+    expect(cobro).toContain("Meta cobró 3 de ellos.");
+    expect(htmlCorreo(base)).not.toContain("Celular y WhatsApp Web");
   });
 
   it("la nota de una sola vez va en su recuadro y los avisos en el naranja", () => {
