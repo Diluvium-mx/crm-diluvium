@@ -53,8 +53,11 @@ describe("herramientas del cerebro (Fase D reestructurada)", () => {
     );
     expect(valid).toEqual([{ kind: "etapa", etapa: "seguimiento" }]);
     expect(ignored).toEqual([`${TOOL_MOVER_ETAPA}: argumentos inválidos`]);
-    // La descripción de la herramienta lleva el orden actual con clave y nombre.
-    expect((t.tools[TOOL_MOVER_ETAPA] as { description?: string }).description).toContain("compra (Compra) → seguimiento (Seguimiento)");
+    // Caché en dos partes (11-nov): la herramienta es IDÉNTICA con otras columnas (la lista va en el system).
+    const desc = (x: typeof t) => (x.tools[TOOL_MOVER_ETAPA] as { description?: string }).description;
+    expect(desc(t)).toBe(desc(buildAgentTools(rows, stages)));
+    expect(JSON.stringify(t.tools[TOOL_MOVER_ETAPA].inputSchema)).toBe(JSON.stringify(buildAgentTools(rows, stages).tools[TOOL_MOVER_ETAPA].inputSchema));
+    expect(desc(t)).not.toContain("seguimiento");
   });
 
   it("actualizar_detalle (28-sep): null = sin dato y 0 cm es relleno; ninguno llega al Detalle", () => {

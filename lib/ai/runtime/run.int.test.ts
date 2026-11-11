@@ -2542,8 +2542,10 @@ describe.skipIf(!TEST_DATABASE_URL)("runtime del Agente IA (Postgres real)", () 
     expect(brain.input.system).toContain("ETAPAS DEL EMBUDO (las define el CRM)");
     expect(brain.input.system).toContain('4. cotizacion_enviada — "Cotización enviada": Cuando le mandas un total.');
     expect(brain.input.system!.indexOf("INSTRUCCIONES DEL CRM")).toBeLessThan(brain.input.system!.indexOf("ETAPAS DEL EMBUDO (las define el CRM)"));
-    // mover_etapa ofrece la clave nueva.
-    expect((brain.input.tools?.mover_etapa as { description?: string }).description).toContain("cotizacion_enviada (Cotización enviada)");
+    // Caché en dos partes (11-nov): la clave nueva está en el 2.º bloque del system (no en la herramienta, que es fija)
+    // y el CRM la acepta (la etapa cambió abajo).
+    expect(brain.input.system!.slice(brain.input.systemCacheBreak)).toContain("4. cotizacion_enviada");
+    expect((brain.input.tools?.mover_etapa as { description?: string }).description).not.toContain("cotizacion_enviada");
     expect(await contact()).toMatchObject({ stage: "cotizacion_enviada", stageChangedBy: "agente" });
     // Renombrada: el bloque cambia en la siguiente respuesta; la clave sigue.
     await fs.updateFunnelStage(ORG, nueva.id, { name: "Total enviado" });

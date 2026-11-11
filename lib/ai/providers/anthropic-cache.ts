@@ -1,6 +1,17 @@
-import type { ModelMessage } from "ai";
+import type { ModelMessage, SystemModelMessage } from "ai";
 
 export const ANTHROPIC_CACHE_CONTROL = { type: "ephemeral", ttl: "1h" } as const;
+
+// System en bloques con marca de caché (11-nov-2026, caché en dos partes; docs/agente-ia.md › Caché en dos
+// partes). Sin corte (o fuera de rango) va un solo bloque, como antes. Con corte, el bloque 1 (herramientas +
+// Goal) y el bloque 2 (FAQs, tallas, sufijo, etapas, links) llevan cada uno su marca: si solo cambia el 2,
+// Anthropic lee el 1 de caché. Juntos son el MISMO texto. Con la marca del historial son 3 de las 4 que
+// permite Anthropic. PURO.
+export function systemBlocks(system: string, cacheBreak?: number): SystemModelMessage[] {
+  const block = (content: string): SystemModelMessage => ({ role: "system", content, providerOptions: { anthropic: { cacheControl: ANTHROPIC_CACHE_CONTROL } } });
+  if (cacheBreak === undefined || cacheBreak <= 0 || cacheBreak >= system.length) return [block(system)];
+  return [block(system.slice(0, cacheBreak)), block(system.slice(cacheBreak))];
+}
 
 // Segundo punto de caché de Anthropic (Fase E, pendiente E, 25-sep-2026): además del
 // system, se marca el mensaje JUSTO ANTES del último turno del cliente. El historial

@@ -2,7 +2,7 @@ import { createAnthropic } from "@ai-sdk/anthropic";
 import { generateText, isStepCount } from "ai";
 import type { ProviderAdapter } from "../provider";
 import { DEFAULT_MODEL_TIMEOUT_MS } from "../types";
-import { ANTHROPIC_CACHE_CONTROL, withHistoryCacheBreakpoint } from "./anthropic-cache";
+import { systemBlocks, withHistoryCacheBreakpoint } from "./anthropic-cache";
 import { toModelUsage } from "./usage";
 
 // Adaptador Anthropic. La caché del prompt es EXPLÍCITA: el system se cachea con
@@ -22,11 +22,8 @@ export const anthropicAdapter: ProviderAdapter = {
     const anthropic = createAnthropic({ apiKey });
     const result = await generateText({
       model: anthropic(providerModelId),
-      system: {
-        role: "system",
-        content: input.system,
-        providerOptions: { anthropic: { cacheControl: ANTHROPIC_CACHE_CONTROL } },
-      },
+      // Caché en dos partes (11-nov-2026): con `systemCacheBreak`, dos bloques con su marca cada uno.
+      system: systemBlocks(input.system, input.systemCacheBreak),
       // Fase E: el historial también se cachea (anthropic-cache.ts). Ambas marcas, de 1 h.
       messages: withHistoryCacheBreakpoint(input.messages),
       ...(input.maxOutputTokens ? { maxOutputTokens: input.maxOutputTokens } : {}),
