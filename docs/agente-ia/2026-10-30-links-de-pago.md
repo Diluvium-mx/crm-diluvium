@@ -24,7 +24,7 @@ recibir el enlace?» a quien nunca se lo mandaron, y a otro MercadoPago le recha
 ### Cómo sale
 
 - Herramienta `enviar_link_pago { opcion }` (`lib/ai/runtime/tools.ts`): una opción por link, con clave sacada del nombre
-  («1_compuerta_estandar») y, en la descripción, qué cobra cada una. El modelo nunca escribe el link.
+  («1_compuerta_estandar») y qué cobra cada una (desde el 11-nov en la sección LINKS DE PAGO del system, no en la herramienta: ver 2026-11-11-cache-dos-partes.md). El modelo nunca escribe el link.
 - El CRM manda el link como **un mensaje más del Agente IA, después de su texto** (`run.ts`; entra al plan guardado, así
   que un reintento no lo duplica), con el texto de `mensajeLink`:
   «Aquí le paso el link para pagar $5,500 con tarjeta por MercadoPago ✅ / link / Puede pagar con tarjeta de crédito o

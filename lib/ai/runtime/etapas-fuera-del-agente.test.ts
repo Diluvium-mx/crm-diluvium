@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { defaultStages, stagesInstructions, type FunnelStage } from "@/lib/contacts/stages";
 import { buildBrainSystemWithRuntime } from "./brain";
 import { buildLectorTools } from "./lector-core";
-import { buildAgentTools, moverEtapaDescription } from "./tools";
+import { buildAgentTools } from "./tools";
 
 // La columna temporal «Buen Fin» (4-nov-2026, dueño) no debe tocar nada de lo que el Agente IA tiene en caché:
 // con ella o sin ella, las instrucciones, mover_etapa y el lector quedan idénticos a los de antes del 3-nov.
@@ -21,7 +21,6 @@ describe("columna Buen Fin fuera del Agente IA", () => {
 
   it("mover_etapa no la ofrece", () => {
     expect(buildAgentTools([], con).stageKeys).toEqual(buildAgentTools([], sin).stageKeys);
-    expect(moverEtapaDescription(con)).toBe(moverEtapaDescription(sin));
   });
 
   it("el lector tampoco la ve", () => {

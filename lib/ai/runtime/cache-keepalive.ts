@@ -117,7 +117,7 @@ export async function keepBrainCacheAlive(deps: KeepAliveDeps): Promise<number> 
       const t0 = Date.now();
       try {
         const res = await deps.callModel(modelId, {
-          system,
+          ...system,
           messages: [{ role: "user", content: "." }],
           tools,
           maxOutputTokens: 1,

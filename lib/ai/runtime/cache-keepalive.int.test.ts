@@ -80,7 +80,9 @@ describe.skipIf(!TEST_DATABASE_URL)("Renovación de la caché del Agente IA (Pos
     expect(m.calls[0].modelId).toBe(SONNET);
     expect(m.calls[0].input.maxOutputTokens).toBe(1);
     const expected = await brainSystem.loadBrainSystem(ORG, "GOAL: eres {{agente.nombre}} de {{empresa.nombre}}.", { contacto: "", vendedor: "un asesor", empresa: "Diluvium", agente: "Ángela" }, await (await import("@/lib/contacts/funnel-stages")).listFunnelStages(ORG), "balanceada");
-    expect(m.calls[0].input.system).toBe(expected);
+    expect(m.calls[0].input.system).toBe(expected.system);
+    // Caché en dos partes (11-nov): el mismo corte que una respuesta.
+    expect(m.calls[0].input.systemCacheBreak).toBe(expected.systemCacheBreak);
     expect(m.calls[0].input.system).toContain("Sí, a todo México.");
     const rows = await renewals();
     expect(rows).toHaveLength(1);
