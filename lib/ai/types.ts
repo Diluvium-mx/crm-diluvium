@@ -54,6 +54,9 @@ export type ModelUsage = {
 // `tools` queda cableado para la Fase B; el dry-run de la Fase A no lo usa.
 export type CallModelInput = {
   system: string;
+  // Caché en dos partes (11-nov-2026, solo Anthropic): dónde empieza el 2.º bloque del system, que lleva su
+  // propia marca de caché. Los demás proveedores lo ignoran y reciben el system completo.
+  systemCacheBreak?: number;
   messages: ModelMessage[];
   tools?: ToolSet;
   maxOutputTokens?: number;

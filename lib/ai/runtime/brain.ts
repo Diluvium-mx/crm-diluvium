@@ -8,6 +8,7 @@
 import type { ResponseLength } from "@/lib/agente-ia/opciones";
 import { sizesInstructions, type SizeRange } from "@/lib/contacts/sizes";
 import { stagesInstructions, type FunnelStage } from "@/lib/contacts/stages";
+import { linkOptionsInstructions, type OpcionLink } from "@/lib/agente-ia/links-pago";
 import { buildBrainSystem, type Faq } from "./knowledge";
 
 // Señal vieja de "Transferencia a humano" (Goals anteriores al 24-sep-2026): si el
@@ -38,16 +39,41 @@ export const LENGTH_LINES: Record<ResponseLength, string | null> = {
 // (solo cambian cuando alguien edita las columnas; el prefijo largo sigue en caché).
 // Tamaños (5-oct-2026): la tabla de Tallas y medidas va después de las FAQs y antes del sufijo (es parte del
 // conocimiento; solo cambia cuando alguien edita los rangos). Sin rangos, el system queda igual que antes.
+// Links de pago (11-nov-2026): sus opciones van al final (antes iban en la herramienta enviar_link_pago).
 export function buildBrainSystemWithRuntime(
   goal: string,
   faqs: readonly Faq[],
   stages: readonly FunnelStage[],
   length: ResponseLength = "balanceada",
   sizes: readonly SizeRange[] = [],
+  linkOptions: readonly OpcionLink[] = [],
 ): string {
+  return buildBrainSystemParts(goal, faqs, stages, length, sizes, linkOptions).system;
+}
+
+// CACHÉ EN DOS PARTES (11-nov-2026; docs/agente-ia.md › Caché en dos partes): el system se manda a Anthropic
+// en dos bloques, cada uno con su marca de caché. Bloque 1 = el Goal (con las herramientas, que van antes y ya
+// son fijas, ~25 mil tokens); bloque 2 = FAQs, tallas, sufijo, etapas y links (~3 mil). Si cambia una FAQ, un
+// link, una talla o una columna, Anthropic lee el bloque 1 de caché y solo vuelve a escribir el 2 (~US$0.01 en
+// vez de ~US$0.11). `systemCacheBreak` = dónde empieza el bloque 2 (el texto completo NO cambia: los demás
+// proveedores, como OpenAI con Luna, siguen recibiendo el mismo system de una pieza).
+export type BrainSystem = { system: string; systemCacheBreak: number };
+
+export function buildBrainSystemParts(
+  goal: string,
+  faqs: readonly Faq[],
+  stages: readonly FunnelStage[],
+  length: ResponseLength = "balanceada",
+  sizes: readonly SizeRange[] = [],
+  linkOptions: readonly OpcionLink[] = [],
+): BrainSystem {
   const line = LENGTH_LINES[length];
   const tamanos = sizesInstructions(sizes);
-  return `${buildBrainSystem(goal, faqs)}${tamanos ? `\n\n${tamanos}` : ""}\n\n${RUNTIME_SUFFIX}${line ? `\n${line}` : ""}\n\n${stagesInstructions(stages)}`;
+  const links = linkOptionsInstructions(linkOptions);
+  const base = buildBrainSystem(goal, faqs);
+  const system = `${base}${tamanos ? `\n\n${tamanos}` : ""}\n\n${RUNTIME_SUFFIX}${line ? `\n${line}` : ""}\n\n${stagesInstructions(stages)}${links ? `\n\n${links}` : ""}`;
+  // buildBrainSystem empieza con el Goal (sin espacios de los lados); lo demás va después.
+  return { system, systemCacheBreak: goal.trim().length };
 }
 
 // Complemento de un workflow «El workflow es la respuesta» (30-sep-2026, run.ts): el workflow ya

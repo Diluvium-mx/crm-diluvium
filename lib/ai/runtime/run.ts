@@ -688,7 +688,7 @@ export async function runAgent(job: { organizationId: string; conversationId: st
       const t0 = Date.now();
       let res: CallModelResult;
       try {
-        res = await deps.callModel(model.id, { system, messages, tools: agentTools.tools, maxOutputTokens: BRAIN_MAX_OUTPUT_TOKENS, timeoutMs: BRAIN_TIMEOUT_MS });
+        res = await deps.callModel(model.id, { ...system, messages, tools: agentTools.tools, maxOutputTokens: BRAIN_MAX_OUTPUT_TOKENS, timeoutMs: BRAIN_TIMEOUT_MS });
       } catch (error) {
         await recordAiUsage({ ...base, stage: "cerebro", modelId: model.id, provider: model.provider, usage: null, latencyMs: Date.now() - t0, outcome: "error", error: safeErrorMessage(error) });
         return { ok: false, model, info: classifyModelError(error, PROVIDER_META[model.provider].label) };
