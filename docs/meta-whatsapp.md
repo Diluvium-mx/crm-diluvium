@@ -32,6 +32,25 @@ mensaje está en `workflow_runs.message_ids`: palabra clave, comando del vendedo
 **Ángela** (`source = ai_agent`) → **Vendedores desde el CRM** (`crm`) → **Celular o WhatsApp Web** (`business_app`).
 «Lo que más cuesta» lista las automatizaciones (por nombre) y las plantillas (por nombre) con su costo aproximado.
 
+## Celular y WhatsApp Web: el ahorro (11-nov-2026, pedido del dueño)
+
+Lo que un vendedor manda desde la app del celular o WhatsApp Web no lo cobra Meta (coexistencia, docs/seguimientos.md
+[M4]); desde el CRM sí. El dueño pidió llevar el registro y evaluarlo cada mes para saber si de verdad se ahorra.
+`lib/meta-whatsapp/ahorro-celular.ts` toma cada mensaje con `source = business_app` (sin importados ni canales de prueba)
+y calcula cuánto habría costado desde el CRM:
+
+| Situación del chat en ese momento | Desde el CRM habría sido | Ahorro |
+|---|---|---|
+| Tiempo gratis del anuncio (marca de Meta `free_entry_point` vigente o, sin marca, las 72 h del CRM) | gratis | 0 |
+| Abierto (el cliente escribió en las últimas 24 h), antes de que se acaben los 1,000 normales gratis del mes | gratis | 0 |
+| Abierto, ya sin los 1,000 gratis (el día sale de `free_customer_service` de Meta; sin dato del mes, el día 7) | mensaje normal | lo que cobró Meta por normal ese mes |
+| Cerrado (el cliente no escribió en 24 h) | una plantilla de marketing por chat y día | lo que cobró Meta por marketing ese mes |
+
+Si Meta marca alguno de esos mensajes como cobrado, no cuenta como ahorro y se dice aparte en naranja: sería la señal de
+que la regla no se cumple. Antes de oct-2026 los normales eran gratis. No hay tabla nueva: se calcula con lo guardado
+(mensajes y lo que reporta Meta), que no se borra. Se ve en la sección (tarjeta «Celular y WhatsApp Web» con el periodo y
+los últimos 6 meses) y en el correo del día 3 (una línea; no suma al total porque es lo que NO se pagó).
+
 ## El correo del día 3
 
 `lib/costos/cargar.ts` › `cargarMetaReportado`: si hay renglones del mes y la última lectura buena es de **después** de

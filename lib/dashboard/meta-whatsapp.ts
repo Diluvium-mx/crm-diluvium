@@ -6,10 +6,12 @@
 //   automatizaciones, seguimientos, vendedores). Su costo es aproximado: mensajes × lo que cobró Meta en
 //   promedio por mensaje de ese tipo en el periodo.
 // Días UTC, como la factura de Meta. `summarize*` son PURAS; los `load*` solo consultan.
-import { and, eq, gte, lte, sql } from "drizzle-orm";
+import { eq, sql } from "drizzle-orm";
 import type { db as appDb } from "@/lib/db";
-import { metaWhatsappPricing, metaWhatsappPricingSync } from "@/lib/db/schema";
+import { metaWhatsappPricingSync } from "@/lib/db/schema";
 import { addDays, utcDay } from "@/lib/ai/billing/days";
+import { cargarAhorroCelular, type AhorroCelular, type AhorroMes } from "@/lib/meta-whatsapp/ahorro-celular";
+import { loadPricingRows, ratesFrom, type MetaPricingRow } from "@/lib/meta-whatsapp/rates";
 import type { DateRange } from "./range";
 import { shortDate } from "./railway";
 import type { DailyCount } from "./queries";
@@ -19,9 +21,7 @@ type Database = Pick<typeof appDb, "select" | "execute">;
 // Se lee cada hora y Meta reporta con unas horas de atraso: más de 3 h sin lectura buena ya es raro.
 export const META_STALE_MINUTES = 180;
 
-// Lo que cobró Meta por mensaje en oct-2026 (factura del 1-nov, sin IVA). Solo si en el periodo no hay
-// mensajes cobrados de ese tipo para sacar el promedio real.
-export const META_FALLBACK_RATE_USD: Record<string, number> = { marketing: 0.0407, utility: 0.0084, service: 0.0115 };
+export { META_FALLBACK_RATE_USD, ratesFrom, type MetaPricingRow } from "@/lib/meta-whatsapp/rates";
 
 const CATEGORY_LABELS: Record<string, string> = {
   marketing: "Plantillas de marketing",
@@ -53,7 +53,6 @@ const freeLabel = (t: string) => FREE_LABELS[t] ?? "Otros";
 const round2 = (n: number) => Math.round(n * 100) / 100;
 const monthName = new Intl.DateTimeFormat("es-MX", { timeZone: "UTC", month: "long" });
 
-export type MetaPricingRow = { day: string; category: string; pricingType: string; volume: number; costUsd: number | null };
 type SyncRow = { fetchedAt: Date | null; lastError: string | null };
 
 function updatedMinutesAgo(sync: SyncRow | null, now: Date): number | null {
@@ -106,19 +105,6 @@ export function summarizeMetaMonth(rows: MetaPricingRow[], sync: SyncRow | null,
   };
 }
 
-async function loadRows(database: Database, organizationId: string, desde: string, hasta: string): Promise<MetaPricingRow[]> {
-  return database
-    .select({
-      day: metaWhatsappPricing.day,
-      category: metaWhatsappPricing.category,
-      pricingType: metaWhatsappPricing.pricingType,
-      volume: metaWhatsappPricing.volume,
-      costUsd: metaWhatsappPricing.costUsd,
-    })
-    .from(metaWhatsappPricing)
-    .where(and(eq(metaWhatsappPricing.organizationId, organizationId), gte(metaWhatsappPricing.day, desde), lte(metaWhatsappPricing.day, hasta)));
-}
-
 async function loadSync(database: Database, organizationId: string): Promise<SyncRow | null> {
   const [row] = await database
     .select({ fetchedAt: metaWhatsappPricingSync.fetchedAt, lastError: metaWhatsappPricingSync.lastError })
@@ -137,7 +123,7 @@ export async function metaWhatsappSummary(
   const sync = await loadSync(database, organizationId);
   if (!sync) return null;
   const prevStart = utcDay(new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() - 1, 1)));
-  const rows = await loadRows(database, organizationId, prevStart, utcDay(now));
+  const rows = await loadPricingRows(database, organizationId, prevStart, utcDay(now));
   return summarizeMetaMonth(rows, sync, now);
 }
 
@@ -158,25 +144,12 @@ export type MetaWhatsappHistory = {
   topItems: BreakdownRow[];
   markedCharged: number;
   marksSince: string | null;
-  fromPhone: number;
+  // Celular o WhatsApp Web: el ahorro del periodo y el de los últimos 6 meses (para evaluarlo cada mes).
+  celular: AhorroCelular;
+  celularPorMes: AhorroMes[];
   updatedMinutesAgo: number | null;
   lastError: string | null;
 };
-
-// Lo que cobró Meta en promedio por mensaje de cada tipo en el periodo (o el de octubre si no hubo).
-export function ratesFrom(rows: MetaPricingRow[]): Record<string, number> {
-  const acc = new Map<string, { volume: number; cost: number }>();
-  for (const r of rows) {
-    if (r.pricingType !== "regular" || r.costUsd === null || r.volume <= 0) continue;
-    const cur = acc.get(r.category) ?? { volume: 0, cost: 0 };
-    cur.volume += r.volume;
-    cur.cost += r.costUsd;
-    acc.set(r.category, cur);
-  }
-  const rates: Record<string, number> = { ...META_FALLBACK_RATE_USD };
-  for (const [category, v] of acc) rates[category] = v.cost / v.volume;
-  return rates;
-}
 
 function grouped(entries: { label: string; total: number }[]): BreakdownRow[] {
   const byLabel = new Map<string, number>();
@@ -193,7 +166,8 @@ export function summarizeMetaHistory(input: {
   marks: MarkCount[];
   items: MarkItem[];
   marksSince: Date | null;
-  fromPhone: number;
+  celular: AhorroCelular;
+  celularPorMes: AhorroMes[];
   sync: SyncRow | null;
   now: Date;
 }): MetaWhatsappHistory {
@@ -223,7 +197,8 @@ export function summarizeMetaHistory(input: {
     ).slice(0, 8),
     markedCharged: input.marks.reduce((s, m) => s + m.messages, 0),
     marksSince: input.marksSince ? shortDate(input.marksSince) : null,
-    fromPhone: input.fromPhone,
+    celular: input.celular,
+    celularPorMes: input.celularPorMes,
     updatedMinutesAgo: updatedMinutesAgo(input.sync, input.now),
     lastError: input.sync?.lastError ?? null,
   };
@@ -260,8 +235,10 @@ export async function metaWhatsappHistory(
     where m.organization_id = ${organizationId} and m.direction = 'out' and m.meta_billable
       and m.meta_category is not null and m.created_at >= ${ini}::timestamp and m.created_at < ${fin}::timestamp`;
 
-  const [rows, sync, marks, items, [since], [phone]] = await Promise.all([
-    loadRows(database, organizationId, range.desde, range.hasta),
+  // Los últimos 6 meses del celular, aunque el periodo sea otro: es la evaluación mes a mes.
+  const seisMeses = utcDay(new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() - 5, 1)));
+  const [rows, sync, marks, items, [since], celular, historial] = await Promise.all([
+    loadPricingRows(database, organizationId, range.desde, range.hasta),
     loadSync(database, organizationId),
     database.execute<{ origin: MetaOrigin; category: string; messages: number }>(sql`
       select ${ORIGIN_SQL} as origin, m.meta_category as category, count(*)::int as messages ${charged()} group by 1, 2`),
@@ -274,10 +251,8 @@ export async function metaWhatsappHistory(
     database.execute<{ since: number | null }>(sql`
       select extract(epoch from min(created_at))::float8 as since from messages
       where organization_id = ${organizationId} and direction = 'out' and meta_category is not null`),
-    database.execute<{ n: number }>(sql`
-      select count(*)::int as n from messages
-      where organization_id = ${organizationId} and direction = 'out' and source = 'business_app' and imported_at is null
-        and created_at >= ${ini}::timestamp and created_at < ${fin}::timestamp`),
+    cargarAhorroCelular(database, organizationId, range.desde, range.hasta),
+    cargarAhorroCelular(database, organizationId, seisMeses, utcDay(now)),
   ]);
   return summarizeMetaHistory({
     range,
@@ -285,7 +260,8 @@ export async function metaWhatsappHistory(
     marks: [...marks],
     items: [...items],
     marksSince: since?.since ? new Date(Number(since.since) * 1000) : null,
-    fromPhone: phone?.n ?? 0,
+    celular: celular.total,
+    celularPorMes: historial.porMes,
     sync,
     now,
   });

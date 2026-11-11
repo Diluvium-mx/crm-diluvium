@@ -190,7 +190,9 @@ describe.skipIf(!TEST_DATABASE_URL)("marca y cobro de Meta (Postgres real)", () 
       { label: "«Precio 2» (automatización)", total: 0.01 },
     ]);
     expect(h.markedCharged).toBe(7);
-    expect(h.fromPhone).toBe(1);
+    // El del celular, sin anuncio ni mensaje del cliente en 24 h: desde el CRM habría sido una plantilla (0.0407).
+    expect(h.celular).toMatchObject({ mensajes: 1, plantillas: 1, normales: 0, ahorroUsd: 0.04, cobradosMeta: 0 });
+    expect(h.celularPorMes).toMatchObject([{ mes: "2026-11", mensajes: 1, ahorroUsd: 0.04 }]);
     expect(h.marksSince).toBe("4-nov");
     expect(h.series.at(-1)).toEqual({ dia: "2026-11-04", total: 0.09 });
     expect(h.series).toHaveLength(4);
@@ -198,9 +200,66 @@ describe.skipIf(!TEST_DATABASE_URL)("marca y cobro de Meta (Postgres real)", () 
     // La otra organización no ve nada de esto.
     const otra = await dash.metaWhatsappHistory(db, OTRA, { desde: "2026-11-01", hasta: "2026-11-30" }, { now });
     // Nunca se ha leído Meta para ella: «sin dato», no US$0.
-    expect(otra).toMatchObject({ totalUsd: null, charged: 0, byOrigin: [], fromPhone: 0 });
+    expect(otra).toMatchObject({ totalUsd: null, charged: 0, byOrigin: [], celular: { mensajes: 0, ahorroUsd: 0 } });
     expect(await dash.metaWhatsappSummary(db, OTRA, { now })).toBeNull();
     expect(await dash.metaWhatsappSummary(db, ORG, { now })).toMatchObject({ monthLabel: "noviembre", totalUsd: 0.09, charged: 5, prevTotalUsd: null });
+  });
+
+  it("celular y WhatsApp Web: cuánto habría costado cada mensaje desde el CRM", async () => {
+    const ahorro = await import("./ahorro-celular");
+    const t = (iso: string) => new Date(iso);
+    // Un contacto por chat (un contacto tiene un solo chat por número).
+    const conv = async (id: string, channelId = CH) => {
+      await db.insert(s.contacts).values({ id: `ct_${id}`, organizationId: ORG, firstName: "Cliente" });
+      await db.insert(s.conversations).values({ id, organizationId: ORG, contactId: `ct_${id}`, channelId });
+    };
+    const msg = (id: string, conversationId: string, at: string, extra: Partial<typeof s.messages.$inferInsert> = {}) =>
+      db.insert(s.messages).values({ id, organizationId: ORG, conversationId, direction: "out", source: "business_app", type: "text", status: "read", createdAt: t(at), ...extra });
+    const entrante = (id: string, conversationId: string, at: string, extra: Partial<typeof s.messages.$inferInsert> = {}) =>
+      msg(id, conversationId, at, { direction: "in", source: "contact", ...extra });
+    // Meta: los 1,000 gratis del mes se acaban el 2-nov; normales a 0.012 y marketing a 0.04.
+    await db.insert(s.metaWhatsappPricing).values([
+      { organizationId: ORG, channelId: CH, day: "2026-11-01", category: "service", pricingType: "free_customer_service", volume: 600, costUsd: 0, fetchedAt: now },
+      { organizationId: ORG, channelId: CH, day: "2026-11-02", category: "service", pricingType: "free_customer_service", volume: 500, costUsd: 0, fetchedAt: now },
+      { organizationId: ORG, channelId: CH, day: "2026-11-03", category: "service", pricingType: "regular", volume: 100, costUsd: 1.2, fetchedAt: now },
+      { organizationId: ORG, channelId: CH, day: "2026-11-03", category: "marketing", pricingType: "regular", volume: 10, costUsd: 0.4, fetchedAt: now },
+    ]);
+    // 1) Llegó por anuncio y se le contestó en 24 h: a las 30 h sigue gratis (72 h).
+    await conv("c_anuncio");
+    await entrante("i1", "c_anuncio", "2026-11-03T10:00:00Z", { adReferral: { source_id: "x" } });
+    await msg("o1", "c_anuncio", "2026-11-03T10:05:00Z", { source: "ai_agent" });
+    await msg("p1", "c_anuncio", "2026-11-04T16:00:00Z");
+    // 2) Sin anuncio, el cliente escribió hace 2 h: el 1-nov aún había gratis; el 4-nov ya era mensaje normal (×2).
+    await conv("c_abierto");
+    await entrante("i2", "c_abierto", "2026-11-01T08:00:00Z");
+    await msg("p2", "c_abierto", "2026-11-01T10:00:00Z");
+    await entrante("i3", "c_abierto", "2026-11-04T08:00:00Z");
+    await msg("p3", "c_abierto", "2026-11-04T10:00:00Z");
+    await msg("p4", "c_abierto", "2026-11-04T10:01:00Z");
+    // 3) Chat cerrado (sin mensaje del cliente en 24 h): dos mensajes el mismo día = una plantilla.
+    await conv("c_cerrado");
+    await entrante("i4", "c_cerrado", "2026-11-01T08:00:00Z");
+    await msg("p5", "c_cerrado", "2026-11-04T18:00:00Z");
+    await msg("p6", "c_cerrado", "2026-11-04T18:02:00Z");
+    // 4) La marca de Meta dice que el tiempo gratis del anuncio sigue (aunque el CRM no lo vea).
+    await conv("c_marca");
+    await msg("o2", "c_marca", "2026-11-04T09:00:00Z", { source: "ai_agent", metaBillable: false, metaPricingType: "free_entry_point", metaWindowExpiresAt: t("2026-11-08T09:00:00Z") });
+    await msg("p7", "c_marca", "2026-11-04T20:00:00Z");
+    // 5) Meta lo marcó como cobrado: no es ahorro.
+    await conv("c_cobrado");
+    await entrante("i5", "c_cobrado", "2026-11-04T07:00:00Z");
+    await msg("p8", "c_cobrado", "2026-11-04T08:00:00Z", { metaBillable: true, metaCategory: "service", metaPricingType: "regular" });
+    // No cuentan: canal de prueba, importado del celular, otra organización.
+    await db.insert(s.channels).values({ id: "ch_p", organizationId: ORG, type: "whatsapp", provider: "zernio", providerAccountId: "acc_p", displayName: "P", isTest: true });
+    await conv("c_prueba", "ch_p");
+    await msg("x1", "c_prueba", "2026-11-04T12:00:00Z");
+    await msg("x2", "c_cerrado", "2026-11-04T12:00:00Z", { importedAt: now });
+    await db.insert(s.messages).values({ id: "x3", organizationId: OTRA, conversationId: `cv_${OTRA}`, direction: "out", source: "business_app", type: "text", status: "read", createdAt: t("2026-11-04T12:00:00Z") });
+
+    const r = await ahorro.cargarAhorroCelular(db, ORG, "2026-11-01", "2026-11-30");
+    // Ahorro: 2 normales × 0.012 + 1 plantilla × 0.04 = 0.064.
+    expect(r.total).toEqual({ mensajes: 8, gratisAnuncio: 2, gratisMil: 1, normales: 2, plantillas: 1, ahorroUsd: 0.06, cobradosMeta: 1 });
+    expect(r.porMes).toEqual([{ mes: "2026-11", ...r.total }]);
   });
 
   it("correo del mes: usa lo que reportó Meta solo si se leyó después de que cerró el mes", async () => {

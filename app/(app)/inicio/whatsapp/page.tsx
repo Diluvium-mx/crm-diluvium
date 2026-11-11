@@ -11,6 +11,7 @@ import { BreakdownList } from "../_components/breakdown-list";
 import { DailyChart } from "../_components/daily-chart";
 import { RangeFilter } from "../_components/range-filter";
 import { MetaCards } from "./_components/meta-cards";
+import { CelularCard } from "./_components/celular-card";
 
 // Dashboard › Gasto de WhatsApp (4-nov-2026, pedido del dueño; docs/meta-whatsapp.md): lo que cobró Meta por
 // WhatsApp en el periodo, por tipo de mensaje, y quién lo gastó según la marca de Meta en cada mensaje. Solo
@@ -86,12 +87,7 @@ export default async function GastoWhatsappPage({ searchParams }: PageProps<"/in
         />
       </div>
 
-      {history.fromPhone > 0 && (
-        <p className="text-xs text-muted-foreground">
-          Desde el celular o WhatsApp Web salieron {history.fromPhone.toLocaleString("es-MX")} mensajes en el periodo: Meta no
-          los cobra.
-        </p>
-      )}
+      <CelularCard total={history.celular} porMes={history.celularPorMes} />
     </div>
   );
 }
