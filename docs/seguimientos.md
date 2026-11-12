@@ -198,6 +198,17 @@ que pedir un comprobante (en la mañana, para que alcance a pagar ese día).
 - **Día 9** = 7 días después del 2.º intento, a la hora del caso (nunca dos plantillas al mismo contacto en menos de
   7 días, §9).
 - Si un intento ya salió con plantilla, el siguiente con plantilla espera 7 días.
+- **Antes de que se acabe lo gratis del anuncio** (G2, decisión del dueño 11-nov-2026; `antesDeLoGratis` en
+  `lib/followups/schedule.ts`): si el cliente llegó por un anuncio, Meta no cobra nada (ni plantillas) mientras dura su
+  tiempo gratis. Una **plantilla** que saldría cuando ya se acabó se adelanta a antes de que se acabe, con las mismas
+  reglas: la hora del caso más tardía que quepa (si ninguna cabe, la última hora de plantilla, 7:00–19:00 del cliente),
+  al menos 1 h antes del cierre, a lo más 1 día antes de la hora de siempre, nunca a menos de 20 h del intento anterior
+  (8 h de silencio si es el 1.º) y con los 7 días entre plantillas. «Pidió fecha» (el cliente dijo cuándo) y «Asesor
+  sin respuesta» no se mueven; el texto tampoco (con la ventana abierta ya sale a buena hora). Si nada cabe, sale a la
+  hora de siempre. Hasta cuándo es gratis: la marca de Meta (`messages.meta_window_expires_at` de un saliente
+  `free_entry_point`, docs/meta-whatsapp.md; puede pasar de 72 h) y, sin marca, las 72 h del CRM (`lib/followups/gratis.ts`).
+  El log del lector lo dice: «(antes de que se acabe lo gratis del anuncio)». Ahorro estimado: ≈ US$1–2 al mes (unas
+  47 plantillas al mes salían justo después; dato del 27-oct).
 - **Con plantilla, nunca después de las 19:00**: una plantilla de noche que no es respuesta del Agente IA es rara
   (decisión del dueño, 2-oct). En los casos de noche, la plantilla sale de 18:00 a 19:00. **Salvo** la hora que elige
   el vendedor con «Cambiar hora»: con plantilla, hasta las 21:00 como el texto (decisión del dueño, 10-oct, §20).
