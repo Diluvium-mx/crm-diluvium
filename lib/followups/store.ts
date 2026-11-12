@@ -20,6 +20,7 @@ import type { MessagingProvider } from "@/lib/messaging/provider";
 import { addNotice } from "@/lib/ai/runtime/notices";
 import { notifyContactUpdated } from "@/lib/contacts/notify-updated";
 import { zoneForPhone } from "./timezone";
+import { freeUntilOf } from "./gratis";
 import { caseOn, nextStep, slotOf, tableForStage, type FollowUpTable } from "./tabla";
 import { loadFollowUpTable } from "./tabla-store";
 import { logError } from "@/lib/log/safe-error";
@@ -146,6 +147,8 @@ type Signals = {
   manualPause: boolean;
   channelOn: boolean;
   windowExpiresAt: Date | null;
+  /** Hasta cuándo es gratis el chat por el anuncio (G2): las plantillas que saldrían después se adelantan. */
+  freeUntil: Date | null;
   lastTemplateAt: Date | null;
   approved: Set<string>;
   lastClientAt: Date | null;
@@ -179,6 +182,7 @@ async function loadSignals(
       agentState: conversations.agentState,
       agentStateChangedAt: conversations.agentStateChangedAt,
       windowExpiresAt: conversations.windowExpiresAt,
+      adEntryAt: conversations.adEntryAt,
       mode: channels.aiAgentMode,
       channelType: channels.type,
       sinSeguimientos: contacts.sinSeguimientos,
@@ -216,6 +220,7 @@ async function loadSignals(
     // Un chat sin Agente IA (26-oct-2026) cuenta como apagado: los que tuviera se cancelan.
     channelOn: row.mode === "auto" && row.channelType === "whatsapp" && !row.sinAgenteIa,
     windowExpiresAt: row.windowExpiresAt,
+    freeUntil: await freeUntilOf(organizationId, conversationId, row.adEntryAt, now),
     lastTemplateAt: await lastTemplateAt(organizationId, contactId, now, await followUpsReal(organizationId)),
     approved: await approvedTemplateNames(organizationId),
     lastClientAt: row.lastInboundAt ?? (row.windowExpiresAt ? new Date(row.windowExpiresAt.getTime() - 24 * 60 * 60_000) : null),
@@ -444,8 +449,9 @@ async function applyReading(r: FollowUpReading): Promise<string | null> {
             fondo: ficha?.casoDeFondo,
             lastTemplateAt: signals.lastTemplateAt,
             table: signals.table,
+            freeUntil: signals.freeUntil,
           })
-        : planNext({ ...base, caso }, intento, signals.windowExpiresAt, now, r.vendorAttempts?.at(-1) ?? r.stopAt, signals.lastTemplateAt, signals.table);
+        : planNext({ ...base, caso }, intento, signals.windowExpiresAt, now, r.vendorAttempts?.at(-1) ?? r.stopAt, signals.lastTemplateAt, signals.table, signals.freeUntil);
     const picks: TemplatePicks = { plantilla2: base.plantilla2, plantilla3: base.plantilla3 };
     await save({
       ...base,
@@ -460,7 +466,7 @@ async function applyReading(r: FollowUpReading): Promise<string | null> {
       modo,
       presentarAt: modo === "sugerido" ? presentAtFor(plan.dueAt, now, signals.table.vendedores) : null,
     });
-    summary = `seguimiento: ${caso} ${intento}.º ${fmt.format(plan.dueAt)} ${plan.door}${vendorLogs.length ? ` (el vendedor ya hizo ${vendorLogs.length})` : ""}${modo === "sugerido" ? " (sugerido)" : ""}`;
+    summary = `seguimiento: ${caso} ${intento}.º ${fmt.format(plan.dueAt)} ${plan.door}${plan.gratisAnuncio ? " (antes de que se acabe lo gratis del anuncio)" : ""}${vendorLogs.length ? ` (el vendedor ya hizo ${vendorLogs.length})` : ""}${modo === "sugerido" ? " (sugerido)" : ""}`;
   });
   await announce(db, organizationId, conversationId, contactId);
   return `${summary!}${ajuste ? ` [${ajuste}]` : ""}`;
@@ -486,6 +492,7 @@ export function planNext(
   prevAt: Date,
   lastTemplate: Date | null,
   table: FollowUpTable,
+  freeUntil: Date | null = null,
 ): AttemptPlan {
   return planAttempt({
     caso: row.caso as Exclude<FollowUpCase, "no_seguir">,
@@ -500,6 +507,7 @@ export function planNext(
     prevAttemptAt: prevAt,
     lastTemplateAt: lastTemplate,
     table,
+    freeUntil,
   });
 }
 
@@ -554,7 +562,7 @@ function afterAttempt(row: FollowUpRow, log: FollowUpAttemptLog, signals: Signal
   const step = nextStep(signals.table, caso, row.intento);
   if (step !== null && step <= total) {
     const lastTemplate = log.door === "plantilla" && !log.error ? now : signals.lastTemplateAt;
-    const next = planNext(row, step, signals.windowExpiresAt, now, now, lastTemplate, signals.table);
+    const next = planNext(row, step, signals.windowExpiresAt, now, now, lastTemplate, signals.table, signals.freeUntil);
     const nextModo = signals.manualPause ? "sugerido" : "automatico";
     const picks: TemplatePicks = { plantilla2: row.plantilla2, plantilla3: row.plantilla3 };
     return {
@@ -743,7 +751,7 @@ async function skipStep(row: FollowUpRow, caso: Exclude<FollowUpCase, "no_seguir
   const step = nextStep(signals.table, caso, row.intento);
   const last = row.intentos.at(-1);
   if (step !== null && step <= total) {
-    const plan = planNext(row, step, signals.windowExpiresAt, now, last ? new Date(last.at) : row.basedOnMessageAt, signals.lastTemplateAt, signals.table);
+    const plan = planNext(row, step, signals.windowExpiresAt, now, last ? new Date(last.at) : row.basedOnMessageAt, signals.lastTemplateAt, signals.table, signals.freeUntil);
     const modo = signals.manualPause && !row.autoAprobado ? "sugerido" : "automatico";
     const picks: TemplatePicks = { plantilla2: row.plantilla2, plantilla3: row.plantilla3 };
     const done = await save(
@@ -974,7 +982,7 @@ export async function reopenCancelledFollowUp(organizationId: string, conversati
   const step = signals.table.casos[caso].intentos[row.intento - 1] ? row.intento : nextStep(signals.table, caso, row.intento);
   if (step === null) return false;
   const prev = row.intentos.at(-1);
-  const plan = planNext(row, step, signals.windowExpiresAt, now, prev ? new Date(prev.at) : row.basedOnMessageAt, signals.lastTemplateAt, signals.table);
+  const plan = planNext(row, step, signals.windowExpiresAt, now, prev ? new Date(prev.at) : row.basedOnMessageAt, signals.lastTemplateAt, signals.table, signals.freeUntil);
   const picks: TemplatePicks = { plantilla2: row.plantilla2, plantilla3: row.plantilla3 };
   const modo = signals.manualPause ? "sugerido" : "automatico";
   const done = await db

@@ -10,6 +10,8 @@
 // 2.º intento: día 2 desde la parada (pidió fecha: 2 días después del 1.º). 3.º: 7 días después
 //   del 2.º. Con plantilla nunca dos en menos de 7 días al mismo contacto, nunca después de
 //   las 19:00 (los casos de noche salen a las 18:00) y nunca antes de las 7:00.
+// Tiempo gratis del anuncio (G2, 11-nov-2026): una plantilla que saldría cuando ya se acabó lo gratis del anuncio se
+//   adelanta a antes de que se acabe, con las mismas reglas de siempre (`antesDeLoGratis`).
 // La hora de cada caso, qué intentos salen y el horario de los vendedores vienen de la tabla de la
 // organización (Agente IA › Seguimientos, lib/followups/tabla.ts; Parte 4, 6-oct-2026).
 import {
@@ -17,6 +19,8 @@ import {
   ALLOWED_TO,
   ASESOR_DELAY_MS,
   CASE_RULES,
+  FREE_ADVANCE_MAX_MS,
+  FREE_MIN_GAP_MS,
   MIN_SILENCE_MS,
   OCUPADO_DELAY_MS,
   TEMPLATE_BY_DOOR,
@@ -35,7 +39,8 @@ const MINUTE = 60_000;
 const DAY = 24 * 60 * MINUTE;
 
 export type Door = "texto" | "plantilla";
-export type AttemptPlan = { dueAt: Date; door: Door; templateName: string | null };
+/** `gratisAnuncio`: se adelantó para salir dentro del tiempo gratis del anuncio (G2). */
+export type AttemptPlan = { dueAt: Date; door: Door; templateName: string | null; gratisAnuncio?: true };
 
 export type PlanInput = {
   caso: Exclude<FollowUpCase, "no_seguir">;
@@ -58,9 +63,12 @@ export type PlanInput = {
   lastTemplateAt?: Date | null;
   /** Tabla de la organización (hora de cada caso). */
   table: FollowUpTable;
+  /** Hasta cuándo es gratis el chat por el anuncio (marca de Meta o las 72 h del CRM); null = no hay tiempo gratis. */
+  freeUntil?: Date | null;
 };
 
 const maxDate = (a: Date, b: Date) => (a.getTime() >= b.getTime() ? a : b);
+const minDate = (a: Date, b: Date) => (a.getTime() <= b.getTime() ? a : b);
 const dateOf = (t: Date, zone: string): LocalDate => {
   const p = localParts(t, zone);
   return { y: p.y, m: p.m, d: p.d };
@@ -233,8 +241,45 @@ function laterAttempt(input: PlanInput): AttemptPlan {
   return templateOnOrAfter(input, base);
 }
 
+/**
+ * G2 (decisión del dueño, 11-nov-2026): una PLANTILLA que saldría después de que se acabe el tiempo gratis del anuncio
+ * se adelanta a antes de que se acabe, con las reglas de siempre: a la hora del caso si cabe y, si no, a la última hora de
+ * plantilla (7:00–19:00 del cliente); al menos 1 h antes del cierre; a lo más 1 día antes de lo planeado; nunca a menos
+ * de 20 h del intento anterior (8 h de silencio si es el 1.º) y con los 7 días entre plantillas. Primero la hora del caso
+ * más tardía que quepa (respeta el momento de cada caso: la cotización en la tarde); si ninguna cabe, la última hora de
+ * plantilla antes del cierre. «Pidió fecha» (el cliente dijo cuándo) y «Asesor sin respuesta» no
+ * se mueven. Si nada cabe, sale a la hora de siempre.
+ */
+export function antesDeLoGratis(plan: AttemptPlan, input: PlanInput): AttemptPlan {
+  const { freeUntil, zone, now, caso } = input;
+  if (plan.door !== "plantilla" || !freeUntil || caso === "pidio_fecha" || caso === "asesor_sin_respuesta") return plan;
+  const hi = new Date(freeUntil.getTime() - WINDOW_MARGIN_MS);
+  if (plan.dueAt.getTime() <= hi.getTime()) return plan;
+  const prev = input.intento > 1 ? (input.prevAttemptAt ?? input.stopAt) : null;
+  let lo = maxDate(new Date(now.getTime() + MINUTE), new Date(plan.dueAt.getTime() - FREE_ADVANCE_MAX_MS));
+  lo = maxDate(lo, prev ? new Date(prev.getTime() + FREE_MIN_GAP_MS) : new Date(input.stopAt.getTime() + MIN_SILENCE_MS));
+  if (input.lastTemplateAt) lo = maxDate(lo, new Date(input.lastTemplateAt.getTime() + TEMPLATE_SPACING_DAYS * DAY));
+  if (lo.getTime() > hi.getTime()) return plan;
+  const caseTime = templateTimeOf(timingCase(caso, input.fondo), input.table);
+  // Primero la hora del caso (la más tardía que quepa); si ninguna cabe, la última hora de plantilla antes del cierre.
+  let atCase: Date | null = null;
+  let lastHour: Date | null = null;
+  for (let day = dateOf(hi, zone), i = 0; i < 3; day = addDays(day, -1), i++) {
+    const firstOfDay = maxDate(lo, zonedInstant(zone, day, ALLOWED_FROM));
+    const fits = (t: Date) => t.getTime() >= firstOfDay.getTime() && t.getTime() <= hi.getTime();
+    const caseOfDay = zonedInstant(zone, day, caseTime);
+    const lastOfDay = floor5(minDate(hi, zonedInstant(zone, day, TEMPLATE_LATEST)));
+    if (!atCase && fits(caseOfDay)) atCase = caseOfDay;
+    if (!lastHour && fits(lastOfDay)) lastHour = lastOfDay;
+  }
+  const best = atCase ?? lastHour;
+  if (!best) return plan;
+  return { ...templatePlan(caso, input.intento, best, zone), gratisAnuncio: true };
+}
+
 export function planAttempt(input: PlanInput): AttemptPlan {
-  return input.intento <= 1 ? firstAttempt(input) : laterAttempt(input);
+  const plan = input.intento <= 1 ? firstAttempt(input) : laterAttempt(input);
+  return antesDeLoGratis(plan, input);
 }
 
 /**
