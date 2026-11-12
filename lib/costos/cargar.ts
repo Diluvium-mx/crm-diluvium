@@ -5,11 +5,29 @@ import { eq, sql } from "drizzle-orm";
 import type { db as appDb } from "@/lib/db";
 import { railwayBilling, zernioBilling } from "@/lib/db/schema";
 import { loadBillingSnapshots, spendByDay } from "@/lib/dashboard/ai-spend";
+import { cargarAhorroCelular } from "@/lib/meta-whatsapp/ahorro-celular";
 import { contarMetaCobrables } from "./meta-estimado";
-import { type Mes, type ReporteCostos, armarReporte, renglonMeta, renglonRailway, renglonZernio, renglonesIa } from "./mes";
+import { type Mes, type MetaReportado, type ReporteCostos, armarReporte, renglonMeta, renglonRailway, renglonZernio, renglonesIa } from "./mes";
 import type { TipoCambio } from "./tipo-cambio";
 
 type Database = Pick<typeof appDb, "select" | "execute">;
+
+// Lo que reportó Meta del mes (días UTC, como su factura; docs/meta-whatsapp.md). Solo si la última lectura buena
+// es de DESPUÉS de que cerró el mes: antes, el mes podría salir incompleto y se usa el estimado.
+export async function cargarMetaReportado(database: Database, organizationId: string, mes: Mes): Promise<MetaReportado | null> {
+  // La hora de la lectura en segundos UTC: un timestamp sin zona leído crudo se tomaría en la hora local.
+  const [row] = await database.execute<{ usd: number | null; mensajes: number; renglones: number; leido: number | null }>(sql`
+    select sum(p.cost_usd)::float8 as usd,
+      coalesce(sum(p.volume) filter (where p.pricing_type = 'regular'), 0)::int as mensajes,
+      count(*)::int as renglones,
+      (select extract(epoch from s.fetched_at)::float8 from meta_whatsapp_pricing_sync s where s.organization_id = ${organizationId}) as leido
+    from meta_whatsapp_pricing p
+    where p.organization_id = ${organizationId} and p.day >= ${mes.desde}::date and p.day <= ${mes.hasta}::date
+  `);
+  const cierre = new Date(`${mes.hasta}T00:00:00Z`).getTime() + 86_400_000;
+  if (!row || row.renglones === 0 || row.usd === null || row.leido === null || Number(row.leido) * 1000 < cierre) return null;
+  return { usd: Number(row.usd), mensajes: Number(row.mensajes) };
+}
 
 // Ventas del mes, como en el informe del primer mes (27-oct-2026): contactos que HOY están en la etapa de venta
 // (papel `venta_cerrada`) y entraron a ella en el mes, hora de Mazatlán. El que entró y regresó a otra etapa no
@@ -33,13 +51,16 @@ export async function cargarReporte(
   now: Date,
   tipoCambio: TipoCambio | null,
 ): Promise<ReporteCostos> {
-  const [billing, crmDays, [railway], [zernio], meta, ventas] = await Promise.all([
+  const [billing, crmDays, [railway], [zernio], meta, metaReportado, ventas, celular] = await Promise.all([
     loadBillingSnapshots(database, org.id),
     spendByDay(database, org.id, mes.desde),
     database.select().from(railwayBilling).where(eq(railwayBilling.organizationId, org.id)),
     database.select().from(zernioBilling).where(eq(zernioBilling.organizationId, org.id)),
     contarMetaCobrables(database, org.id, mes.desde, mes.hasta),
+    cargarMetaReportado(database, org.id, mes),
     contarVentas(database, org.id, mes),
+    // Si falla, el correo sale igual sin esa línea.
+    cargarAhorroCelular(database, org.id, mes.desde, mes.hasta).catch(() => null),
   ]);
   return armarReporte({
     mes,
@@ -47,8 +68,9 @@ export async function cargarReporte(
     ia: renglonesIa({ billing, crmDays, mes }),
     railway: renglonRailway(railway ?? null, mes, now),
     zernio: renglonZernio(zernio ?? null, mes),
-    meta: renglonMeta(meta),
+    meta: renglonMeta(meta, metaReportado),
     ventas,
     tipoCambio,
+    celular: celular ? { mensajes: celular.total.mensajes, ahorroUsd: celular.total.ahorroUsd, cobradosMeta: celular.total.cobradosMeta } : null,
   });
 }

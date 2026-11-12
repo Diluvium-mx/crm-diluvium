@@ -12,9 +12,9 @@ el **día 3 de cada mes**, sin pedirlo. Base: el informe del primer mes (Notion 
 | IA · xAI, OpenRouter, Google | Modelos de reserva | Solo salen si ese mes gastaron algo. Google no da su cobro: se usa lo que registró el CRM y el correo lo dice |
 | Railway | Servidores del CRM | `railway_billing` (docs/railway-costos.md). Su periodo va **del 5 al 5**: el reporte de un mes lleva el periodo que empieza ese mes, y como el día 3 aún no cierra sale la **factura estimada** (plan + uso proyectado al corte) |
 | Zernio | Conecta WhatsApp e Instagram | El mes anterior de Zernio (`zernio_billing`, docs/zernio-costos.md); el día 3 ya está cerrado |
-| Meta (WhatsApp) | Plantillas y mensajes cobrados | **Estimado del CRM** con IVA (abajo), mientras Meta no le dé su cobro al CRM |
+| Meta (WhatsApp) | Plantillas y mensajes cobrados | Lo que **reporta Meta** del mes (días UTC, sin IVA; docs/meta-whatsapp.md). Sin esa lectura, el **estimado del CRM** (abajo) |
 
-El correo también trae el **total**, las **ventas del mes** (contactos que hoy están en la etapa de venta y entraron
+El correo también trae una línea del **ahorro por contestar desde el celular o WhatsApp Web** (docs/meta-whatsapp.md; no suma al total), el **total**, las **ventas del mes** (contactos que hoy están en la etapa de venta y entraron
 a ella en el mes, sin los de prueba) y el **costo del CRM por venta**. Si un servicio no tiene dato, sale «sin dato» y
 el total dice que va sin él.
 
@@ -36,23 +36,25 @@ Para IA se usa lo que cobró el proveedor y no lo que calcula el CRM: en Anthrop
 Meses: los proveedores cobran por día UTC y así se suman; las ventas y los mensajes de Meta se cuentan con el mes
 en hora de Mazatlán.
 
-### Meta (estimado)
+### Meta
 
-`lib/costos/meta-estimado.ts`, con las reglas que se revisaron mensaje por mensaje contra Meta el 27-oct-2026
-(coincidieron en el 97 % de los mensajes y en el total de cobrables):
+Desde el 4-nov-2026 el renglón usa **lo que reporta Meta** del mes (`meta_whatsapp_pricing`, lo lee el worker cada hora
+de Zernio; docs/meta-whatsapp.md), solo si la última lectura es de después de que cerró el mes. Meta cobra el día 1 a la
+tarjeta, en dólares y **sin IVA**: octubre de 2026 = US$44.16 (el correo del 3-nov dijo US$49.06 con el estimado).
+
+**Estimado (respaldo)** — `lib/costos/meta-estimado.ts`, solo para un mes sin esa lectura. Cuenta de más (~14 %: 3,403
+contra 2,985 en octubre), porque Meta a veces da más tiempo gratis por anuncio que las 72 h del CRM:
 
 - Solo WhatsApp, sin canales de prueba, sin lo importado ni lo mandado desde el celular, solo lo entregado o leído.
 - Gratis 72 h desde la primera respuesta (≤ 24 h) a un cliente que llegó por un anuncio.
 - Plantillas de marketing y de utilidad según su categoría; mensajes normales (servicio) después de los primeros
   1,000 del mes por número (Meta los cobra desde el 1-oct-2026).
-- Tarifas por mensaje cobrado, con el IVA ya incluido (oct-2026): marketing US$0.0431, utilidad US$0.0108, servicio
-  US$0.0105. Calibradas con el cobro real de Notion «Gastos CRM Sep/Oct»: los 2,498 mensajes cobrables del 22-sep al
-  23-oct (312 de marketing, 47 de utilidad, 2,139 de servicio) dan US$36.41 contra US$36.25 con IVA que cobró Meta
-  (0.5 % arriba). Sumarles otro 16 % daba US$42.24, de más. Si Meta cambia sus tarifas, se cambian en
-  `META_TARIFAS_USD` y aquí.
+- Tarifas: lo que cobró Meta por mensaje en octubre de 2026, sin IVA: marketing US$0.0407, utilidad US$0.0084, normal
+  US$0.0115 (con los mensajes que Meta cobró en octubre dan US$44.19 contra US$44.16 de la factura). Las de antes
+  (0.0431/0.0108/0.0105 «con IVA») salieron de una cifra equivocada del asistente de Meta. Si Meta cambia sus tarifas,
+  se cambian en `META_TARIFAS_USD`, en `META_FALLBACK_RATE_USD` (lib/dashboard/meta-whatsapp.ts) y aquí.
 
-El monto exacto sigue en Meta Business Suite › Facturación y pagos. Cuando entre `feat/meta-costos` (falta el token
-de Meta), el renglón pasa a usar lo que reporta Meta.
+El monto de la factura sigue en Meta Business Suite › Facturación y pagos › Cuentas › «Cuentas de mensajes».
 
 ## El correo
 

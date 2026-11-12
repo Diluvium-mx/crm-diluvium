@@ -202,7 +202,7 @@ a cada cliente desde **WhatsApp Web**, sin costo, con mensajes listos. El CRM **
   por cada reseña» son reseñas incentivadas (prohibidas en las dos tiendas aunque se pregunte antes), y pedirla solo a los
   contentos también está prohibido. Se pide a **todos**, sin nada a cambio y sin pedir estrellas (lo vigila
   `mensaje.test.ts`).
-- **Trato** (`resenas_tienda.trato`: `sr` | `sra` | null = solo su nombre; migración 0079, porque la 0078 es de `feature/meta-marca`; si esa llega a `main` antes, se vuelve a generar el snapshot de la 0079 al mezclar): lo elige el vendedor; nunca se
+- **Trato** (`resenas_tienda.trato`: `sr` | `sra` | null = solo su nombre; migración 0079; la 0078 se había apartado para `feature/meta-marca`, que entró como 0080): lo elige el vendedor; nunca se
   adivina por el nombre. Los nombres en mayúsculas («YANUSA») salen como «Yanusa».
 - **Abrir en WhatsApp Web**: `web.whatsapp.com/send?phone=…&text=…` con el saludo ya escrito; la pregunta y las respuestas
   se copian. Sin teléfono en el CRM, solo copiar.

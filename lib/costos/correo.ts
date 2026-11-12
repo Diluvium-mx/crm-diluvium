@@ -61,6 +61,16 @@ export function htmlCorreo(r: ReporteCostos): string {
     }</p>`;
   }
 
+  // Ahorro por el celular o WhatsApp Web (no suma al total: es lo que NO se pagó).
+  let celular = "";
+  if (r.celular) {
+    const c = r.celular;
+    const ahorro = montos(c.ahorroUsd, c.ahorroMxn);
+    celular = `<p style="margin:6px 0 0;color:#111827;">Celular y WhatsApp Web: <b>${c.mensajes.toLocaleString("es-MX")}</b> mensajes; desde el CRM habrían costado ≈ <b>${ahorro.principal}</b>${
+      ahorro.secundario ? ` <span style="color:${GRIS};">(${ahorro.secundario})</span>` : ""
+    }.${c.cobradosMeta > 0 ? ` <span style="color:${NARANJA};font-weight:bold;">Meta cobró ${c.cobradosMeta.toLocaleString("es-MX")} de ellos.</span>` : ""}</p>`;
+  }
+
   const tipoCambio = r.tipoCambio
     ? `<p style="margin:6px 0 0;color:${GRIS};font-size:12px;">Dólar a ${pesos(r.tipoCambio.mxnPorUsd)} (promedio de ${esc(r.mes.nombre.replace(/ de \d{4}$/, ""))}, Diario Oficial).</p>`
     : "";
@@ -90,6 +100,7 @@ ${filas}
 ${total}
 </table>
 ${ventas}
+${celular}
 ${tipoCambio}
 ${avisos}
 </div>`;
