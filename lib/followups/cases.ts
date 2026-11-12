@@ -136,6 +136,13 @@ export const TEMPLATE_EVENING = "18:00";
 export const MIN_SILENCE_MS = 8 * 60 * 60_000;
 /** ...y al menos 1 h antes de que cierre la ventana de 24 h. */
 export const WINDOW_MARGIN_MS = 60 * 60_000;
+/**
+ * Tiempo gratis del anuncio (G2, decisión del dueño 11-nov-2026): una plantilla que saldría después de que se acabe se
+ * adelanta a antes de que se acabe, a lo más 1 día, y nunca a menos de 20 h del intento anterior (que no le lleguen al
+ * cliente dos seguimientos casi juntos).
+ */
+export const FREE_ADVANCE_MAX_MS = 24 * 60 * 60_000;
+export const FREE_MIN_GAP_MS = 20 * 60 * 60_000;
 /** Dos plantillas de seguimiento al mismo contacto: al menos 7 días entre sí. */
 export const TEMPLATE_SPACING_DAYS = 7;
 /** Asesor sin respuesta: el 1.er intento, 2 h después. */

@@ -260,3 +260,85 @@ describe("¿saldría a esa hora? (aviso de «Cambiar hora»)", () => {
     expect(outsideSendHours(mx("2026-10-05T21:05"), CDMX)).toBe(true);
   });
 });
+
+describe("G2: antes de que se acabe lo gratis del anuncio (11-nov-2026)", () => {
+  // Llegó por anuncio y se le contestó el domingo 4-oct a las 16:00: gratis hasta el miércoles 7-oct a las 16:00.
+  const freeUntil = mx("2026-10-07T16:00");
+  const base = { zone: CDMX, stopAt: mx("2026-10-05T21:00"), windowExpiresAt: mx("2026-10-06T20:55"), table: T, freeUntil };
+
+  it("el 2.º, que saldría el miércoles a las 18:00 ya cobrado, sale a las 15:00 (1 h antes) y gratis", () => {
+    const sinG2 = planAttempt({ ...base, freeUntil: null, caso: "faltan_medidas", intento: 2, now: mx("2026-10-06T19:01"), prevAttemptAt: mx("2026-10-06T19:00") });
+    expect(at(sinG2.dueAt)).toBe("2026-10-07 18:00");
+    const p = planAttempt({ ...base, caso: "faltan_medidas", intento: 2, now: mx("2026-10-06T19:01"), prevAttemptAt: mx("2026-10-06T19:00") });
+    expect(at(p.dueAt)).toBe("2026-10-07 15:00");
+    expect(p).toMatchObject({ door: "plantilla", templateName: "hola_buenas_tardes", gratisAnuncio: true });
+  });
+
+  it("si la hora del caso cabe antes del cierre, sale a la hora del caso", () => {
+    // Gratis hasta el miércoles a las 20:00: la de las 18:00 ya cabía (no se mueve).
+    const p = planAttempt({ ...base, freeUntil: mx("2026-10-07T20:00"), caso: "faltan_medidas", intento: 2, now: mx("2026-10-06T19:01"), prevAttemptAt: mx("2026-10-06T19:00") });
+    expect(at(p.dueAt)).toBe("2026-10-07 18:00");
+    expect(p.gratisAnuncio).toBeUndefined();
+    // Cotización (18:00) con lo gratis hasta el jueves a las 9:30 y la de siempre el jueves a las 18:00: el miércoles a las 18:00.
+    const q = planAttempt({
+      ...base,
+      stopAt: mx("2026-10-06T21:00"),
+      freeUntil: mx("2026-10-08T09:30"),
+      caso: "cotizacion_sin_respuesta",
+      intento: 2,
+      now: mx("2026-10-06T21:01"),
+      prevAttemptAt: mx("2026-10-06T21:00"),
+    });
+    expect(at(q.dueAt)).toBe("2026-10-07 18:00");
+    expect(q.gratisAnuncio).toBe(true);
+  });
+
+  it("nunca a menos de 20 h del intento anterior: si no cabe, sale a la hora de siempre (cobrada)", () => {
+    const p = planAttempt({ ...base, caso: "faltan_medidas", intento: 2, now: mx("2026-10-07T00:01"), prevAttemptAt: mx("2026-10-07T00:00") });
+    expect(at(p.dueAt)).toBe("2026-10-07 18:00");
+    expect(p.gratisAnuncio).toBeUndefined();
+  });
+
+  it("a lo más 1 día antes de lo de siempre", () => {
+    // Lo gratis se acabó 2 días antes de la hora de siempre: no se adelanta tanto.
+    const p = planAttempt({ ...base, freeUntil: mx("2026-10-06T08:00"), caso: "faltan_medidas", intento: 2, now: mx("2026-10-05T21:01"), prevAttemptAt: mx("2026-10-05T21:00") });
+    expect(at(p.dueAt)).toBe("2026-10-07 18:00");
+    expect(p.gratisAnuncio).toBeUndefined();
+  });
+
+  it("respeta los 7 días entre plantillas", () => {
+    const p = planAttempt({
+      ...base,
+      caso: "faltan_medidas",
+      intento: 2,
+      now: mx("2026-10-06T19:01"),
+      prevAttemptAt: mx("2026-10-06T19:00"),
+      lastTemplateAt: mx("2026-10-01T15:00"),
+    });
+    expect(at(p.dueAt)).toBe("2026-10-08 18:00");
+    expect(p.gratisAnuncio).toBeUndefined();
+  });
+
+  it("«Pidió fecha» no se mueve (el cliente dijo cuándo) y el texto tampoco", () => {
+    const fecha = planAttempt({ ...base, caso: "pidio_fecha", intento: 2, fondo: "faltan_medidas", now: mx("2026-10-06T19:01"), prevAttemptAt: mx("2026-10-06T19:00") });
+    expect(fecha.gratisAnuncio).toBeUndefined();
+    const texto = planAttempt({ ...base, caso: "faltan_medidas", intento: 1, now: mx("2026-10-05T21:04") });
+    expect(texto).toMatchObject({ door: "texto" });
+    expect(texto.gratisAnuncio).toBeUndefined();
+  });
+
+  it("el 1.º que ya no cabía como texto (plantilla al día siguiente) también se adelanta, con 8 h de silencio", () => {
+    const p = planAttempt({
+      zone: CDMX,
+      table: T,
+      caso: "cotizacion_sin_respuesta",
+      intento: 1,
+      stopAt: mx("2026-10-05T13:00"),
+      windowExpiresAt: null,
+      now: mx("2026-10-05T13:04"),
+      freeUntil: mx("2026-10-06T12:00"),
+    });
+    expect(at(p.dueAt)).toBe("2026-10-06 11:00");
+    expect(p).toMatchObject({ door: "plantilla", gratisAnuncio: true });
+  });
+});
