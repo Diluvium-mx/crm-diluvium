@@ -64,7 +64,7 @@ export default async function GastoWhatsappPage({ searchParams }: PageProps<"/in
       <DailyChart title="Cobro por día" valueHeader="Cobro" format={formatUsd} series={history.series} />
 
       <div className="grid gap-3 md:grid-cols-3">
-        <BreakdownList title="Por tipo de mensaje" note="Lo que reporta Meta" total={sum(history.byCategory)} rows={history.byCategory} {...money} />
+        <BreakdownList title="Por tipo de mensaje" note="Mensajes que reporta Meta × su precio" total={sum(history.byCategory)} rows={history.byCategory} {...money} />
         <BreakdownList
           title="¿Quién lo gastó?"
           note={

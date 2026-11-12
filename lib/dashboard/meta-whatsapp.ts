@@ -21,7 +21,7 @@ type Database = Pick<typeof appDb, "select" | "execute">;
 // Se lee cada hora y Meta reporta con unas horas de atraso: más de 3 h sin lectura buena ya es raro.
 export const META_STALE_MINUTES = 180;
 
-export { META_FALLBACK_RATE_USD, ratesFrom, type MetaPricingRow } from "@/lib/meta-whatsapp/rates";
+export { META_RATE_USD, ratesFrom, type MetaPricingRow } from "@/lib/meta-whatsapp/rates";
 
 const CATEGORY_LABELS: Record<string, string> = {
   marketing: "Plantillas de marketing",
