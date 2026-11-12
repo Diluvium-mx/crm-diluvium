@@ -52,7 +52,7 @@ contra 2,985 en octubre), porque Meta a veces da más tiempo gratis por anuncio 
 - Tarifas: lo que cobró Meta por mensaje en octubre de 2026, sin IVA: marketing US$0.0407, utilidad US$0.0084, normal
   US$0.0115 (con los mensajes que Meta cobró en octubre dan US$44.19 contra US$44.16 de la factura). Las de antes
   (0.0431/0.0108/0.0105 «con IVA») salieron de una cifra equivocada del asistente de Meta. Si Meta cambia sus tarifas,
-  se cambian en `META_TARIFAS_USD`, en `META_FALLBACK_RATE_USD` (lib/dashboard/meta-whatsapp.ts) y aquí.
+  se cambian en `META_TARIFAS_USD`, en `META_RATE_USD` (lib/meta-whatsapp/rates.ts) y aquí.
 
 El monto de la factura sigue en Meta Business Suite › Facturación y pagos › Cuentas › «Cuentas de mensajes».
 

@@ -45,9 +45,26 @@ describe("readMetaPricing", () => {
       end: "2026-11-04T00:00:00.000Z",
       granularity: "DAILY",
       dimensions: "PRICING_CATEGORY,PRICING_TYPE",
-      metricTypes: "COST,VOLUME",
+      metricTypes: "VOLUME",
     });
     expect(init.headers.Authorization).toBe("Bearer sk-x");
+  });
+
+  it("Meta solo da mensajes: el costo sale de la tarifa por mensaje (cobrados) y los gratis valen 0", async () => {
+    const body = {
+      dataPoints: [
+        { start: "2026-10-31T00:00:00Z", pricingCategory: "SERVICE", pricingType: "REGULAR", volume: 2571, cost: null },
+        { start: "2026-10-31T00:00:00Z", pricingCategory: "MARKETING", pricingType: "REGULAR", volume: 345, cost: null },
+        { start: "2026-10-31T00:00:00Z", pricingCategory: "UTILITY", pricingType: "REGULAR", volume: 69, cost: null },
+        { start: "2026-10-31T00:00:00Z", pricingCategory: "SERVICE", pricingType: "FREE_ENTRY_POINT", volume: 14994, cost: null },
+        { start: "2026-10-31T00:00:00Z", pricingCategory: "RARA", pricingType: "REGULAR", volume: 2, cost: null },
+      ],
+    };
+    const fetchImpl = vi.fn(async () => new Response(JSON.stringify(body), { status: 200 }));
+    const rows = await readMetaPricing({ apiKey: "k", baseUrl: "https://zernio.com/api" }, "acc", { start: "2026-10-01", end: "2026-11-01" }, { fetchImpl });
+    const cost = Object.fromEntries(rows.map((r) => [`${r.category}/${r.pricingType}`, r.costUsd]));
+    // Octubre: 29.47 + 14.04 + 0.58 = 44.09, lo mismo que dio la página de Meta.
+    expect(cost).toEqual({ "service/regular": 29.471373, "marketing/regular": 14.04012, "utility/regular": 0.580014, "service/free_entry_point": 0, "rara/regular": null });
   });
 
   it("si Zernio responde error, el mensaje no trae la llave", async () => {

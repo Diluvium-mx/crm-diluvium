@@ -8,11 +8,23 @@ type Database = Pick<typeof appDb, "select">;
 
 export type MetaPricingRow = { day: string; category: string; pricingType: string; volume: number; costUsd: number | null };
 
-// Lo que cobró Meta por mensaje en oct-2026 (factura del 1-nov, sin IVA). Solo si en el periodo no hay mensajes
-// cobrados de ese tipo para sacar el promedio real.
-export const META_FALLBACK_RATE_USD: Record<string, number> = { marketing: 0.0407, utility: 0.0084, service: 0.0115 };
+// Lo que cobra Meta por mensaje cobrado, en dólares y sin IVA: el costo entre los mensajes de cada tipo que dio
+// WhatsApp Manager › Precios de mensajes para oct-2026 (14.04/345, 0.58/69 y 29.47/2,571; factura del 1-nov, US$44.16).
+// Meta NO le da el costo al CRM (11-nov-2026: «COST is not shown for businesses who bill through a partner»), así que el
+// costo es lo que reporta Meta en MENSAJES × esta tarifa. Si Meta cambia sus precios, se cambian aquí.
+export const META_RATE_USD: Record<string, number> = { marketing: 0.040696, utility: 0.008406, service: 0.011463 };
 
-// PURO: lo que cobró Meta en promedio por mensaje de cada tipo en esos renglones (o el de octubre si no hubo).
+const round6 = (n: number) => Math.round(n * 1e6) / 1e6;
+
+// PURO: el costo de un renglón de Meta: los cobrados (regular) × la tarifa de su tipo; los gratis, 0. Un tipo sin
+// tarifa conocida queda sin dato.
+export function costoDeMeta(p: { category: string; pricingType: string; volume: number }): number | null {
+  if (p.pricingType !== "regular") return 0;
+  const rate = META_RATE_USD[p.category];
+  return rate === undefined ? null : round6(p.volume * rate);
+}
+
+// PURO: lo que cobró Meta en promedio por mensaje de cada tipo en esos renglones (o la tarifa si no hubo).
 export function ratesFrom(rows: MetaPricingRow[]): Record<string, number> {
   const acc = new Map<string, { volume: number; cost: number }>();
   for (const r of rows) {
@@ -22,7 +34,7 @@ export function ratesFrom(rows: MetaPricingRow[]): Record<string, number> {
     cur.cost += r.costUsd;
     acc.set(r.category, cur);
   }
-  const rates: Record<string, number> = { ...META_FALLBACK_RATE_USD };
+  const rates: Record<string, number> = { ...META_RATE_USD };
   for (const [category, v] of acc) rates[category] = v.cost / v.volume;
   return rates;
 }
