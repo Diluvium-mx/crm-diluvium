@@ -16,7 +16,7 @@ export type MetaConteo = { marketing: number; utilidad: number; servicio: number
 
 // Lo que cobró Meta por mensaje en oct-2026 (factura del 1-nov: US$44.16, SIN IVA; Meta no cobra IVA). Las de
 // antes (0.0431/0.0108/0.0105 «con IVA») salieron de una cifra equivocada del asistente de Meta (3-nov-2026).
-// Si Meta cambia sus tarifas, se cambian aquí, en META_FALLBACK_RATE_USD (lib/dashboard/meta-whatsapp.ts) y en
+// Si Meta cambia sus tarifas, se cambian aquí, en META_RATE_USD (lib/meta-whatsapp/rates.ts) y en
 // docs/costos.md.
 export const META_TARIFAS_USD = { marketing: 0.0407, utilidad: 0.0084, servicio: 0.0115 } as const;
 export const META_SERVICIO_GRATIS_MES = 1000;

@@ -23,7 +23,7 @@ export function MetaCards({ history }: { history: MetaWhatsappHistory }) {
       </div>
       <div className="rounded-lg border bg-card p-4">
         <p className="text-xs font-medium text-muted-foreground">De dónde sale</p>
-        <p className="mt-1 text-sm">Lo que Meta reporta del número, el mismo dato de su factura.</p>
+        <p className="mt-1 text-sm">Los mensajes que reporta Meta del número, por lo que cobra Meta por cada uno.</p>
         <p className={`mt-1 text-xs ${fresh.tone === "orange" ? "text-brand-orange" : "text-muted-foreground"}`}>{fresh.text}</p>
       </div>
     </div>

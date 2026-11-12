@@ -42,8 +42,8 @@ describe("ratesFrom", () => {
       { day: "2026-11-01", category: "service", pricingType: "free_entry_point", volume: 400, costUsd: 0 },
     ]);
     expect(r.service).toBeCloseTo(0.012, 6);
-    expect(r.marketing).toBe(0.0407);
-    expect(r.utility).toBe(0.0084);
+    expect(r.marketing).toBe(0.040696);
+    expect(r.utility).toBe(0.008406);
   });
 });
 

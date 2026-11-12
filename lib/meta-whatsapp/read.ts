@@ -2,9 +2,11 @@
 // Zernio (`GET /v1/whatsapp/pricing-analytics`, que lo toma en vivo de `pricing_analytics` de la cuenta de
 // WhatsApp). Va con la misma ZERNIO_API_KEY de los mensajes: no necesita el token de Meta. Solo LEE: no cambia
 // nada ni cuesta nada. Por día UTC, categoría (marketing, utility, service…) y tipo de precio (regular = cobrado,
-// free_entry_point = gratis por anuncio, free_customer_service = gratis de servicio).
+// free_entry_point = gratis por anuncio, free_customer_service = gratis de servicio). Meta solo da MENSAJES a esta
+// cuenta (paga por medio de un socio): el costo es mensajes × lo que cobra Meta por mensaje (rates.ts).
 import { z } from "zod";
 import { getJson, type GetLike, type ZernioBillingConfig } from "@/lib/zernio-billing/read";
+import { costoDeMeta } from "./rates";
 
 export type MetaPricingPoint = { day: string; category: string; pricingType: string; volume: number; costUsd: number | null };
 
@@ -72,7 +74,10 @@ export async function readMetaPricing(
     end: range.end,
     granularity: "DAILY",
     dimensions: "PRICING_CATEGORY,PRICING_TYPE",
-    metricTypes: "COST,VOLUME",
+    // Solo mensajes: Meta no da el costo a negocios que pagan por medio de un socio como Zernio (pedirlo hace que Meta
+    // rechace toda la consulta, 11-nov-2026). El costo sale de la tarifa por mensaje (rates.ts).
+    metricTypes: "VOLUME",
   });
-  return parseMetaPricing(await getJson(config, `/v1/whatsapp/pricing-analytics?${query}`, options.fetchImpl ?? fetch));
+  const points = parseMetaPricing(await getJson(config, `/v1/whatsapp/pricing-analytics?${query}`, options.fetchImpl ?? fetch));
+  return points.map((p) => ({ ...p, costUsd: p.costUsd ?? costoDeMeta(p) }));
 }
