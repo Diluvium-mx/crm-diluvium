@@ -4,11 +4,11 @@ import { useSyncExternalStore } from "react";
 import { Timer } from "lucide-react";
 
 // Temporizador de la columna temporal «Buen Fin» (3-nov-2026, dueño; en dos fases desde el 4-nov). Antes del Buen
-// Fin cuenta lo que falta para que empiece (viernes 13 de noviembre de 2026 a las 00:00) y, durante sus cinco días,
-// lo que falta para que termine (martes 17 a las 23:59:59, o sea el miércoles 18 a las 00:00). Hora de Mazatlán
+// Fin cuenta lo que falta para que empiece (viernes 13 de noviembre de 2026 a las 00:00) y, durante sus seis días (el 13-nov-2026 el dueño lo alargó un día),
+// lo que falta para que termine (miércoles 18 a las 23:59:59, o sea el jueves 19 a las 00:00). Hora de Mazatlán
 // (UTC−7 todo el año). Se quita junto con la columna cuando termine la campaña.
 const INICIO_SEGUNDOS = Date.parse("2026-11-13T00:00:00-07:00") / 1000;
-const FIN_SEGUNDOS = Date.parse("2026-11-18T00:00:00-07:00") / 1000;
+const FIN_SEGUNDOS = Date.parse("2026-11-19T00:00:00-07:00") / 1000;
 
 export type FaseBuenFin = "antes" | "durante" | "termino";
 
@@ -53,7 +53,7 @@ export function BuenFinCountdown() {
   return (
     <div
       className="flex items-center justify-between gap-2 bg-red-600 px-3 pb-2 text-xs text-white"
-      title="El Buen Fin va del viernes 13 al martes 17 de noviembre (hora de Mazatlán)"
+      title="El Buen Fin va del viernes 13 al miércoles 18 de noviembre (hora de Mazatlán)"
     >
       {t === null ? (
         // Mismo alto antes de hidratar, para que la columna no brinque.
