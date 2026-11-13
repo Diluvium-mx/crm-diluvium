@@ -95,6 +95,7 @@ import { buildModelMessages, fitHistory } from "./transcript";
 import { recordAiUsage } from "./usage";
 import { agentVerifiedProof, allowedAgentStage, hasClientProof, vendorAnsweredProof } from "./venta-cerrada";
 import { hasClientPhoto, instagramAllowedStage, instagramStageLine } from "./instagram-entrada";
+import { buenFinOfertaLine } from "./buen-fin-oferta";
 import { followUpContextFor } from "@/lib/followups/reply";
 import { logError, safeErrorMessage } from "@/lib/log/safe-error";
 
@@ -654,7 +655,8 @@ export async function runAgent(job: { organizationId: string; conversationId: st
     const messagesFor = async (model: CatalogModel, avanzaA: string | null, nota: string | null = null) =>
       buildModelMessages(history, mediaUrls, {
         cleanText,
-        crmContext: [await crmContextFor(org, conv.contactId, stages, avanzaA), igChat.instagram ? instagramStageLine(stages) : null, detalleContext, maxPerChatContext, blockedToolsLine(agentTools), await followUpContextFor(org, conv.id), workflowNote, nota].filter(Boolean).join("\n"),
+        // Oferta del Buen Fin (13 al 17-nov-2026): aviso temporal fuera de la caché; se apaga solo.
+        crmContext: [await crmContextFor(org, conv.contactId, stages, avanzaA), igChat.instagram ? instagramStageLine(stages) : null, buenFinOfertaLine(deps.now()), detalleContext, maxPerChatContext, blockedToolsLine(agentTools), await followUpContextFor(org, conv.id), workflowNote, nota].filter(Boolean).join("\n"),
         ...(model.pdf ? {} : { maxPdfs: 0 }),
         ...(options.readImages ? {} : { maxImages: 0 }),
         ...(options.transcribeAudio ? {} : { voiceNotesOff: true }),
