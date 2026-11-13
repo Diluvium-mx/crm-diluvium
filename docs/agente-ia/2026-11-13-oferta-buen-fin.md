@@ -40,7 +40,7 @@ caché: **no cuesta reescritura** y el 19-nov a las 00:00 deja de salir sin que 
 
 **Pruebas con los modelos reales (13-nov, pedido explícito del dueño).** Simulador fuera del repo con el Goal, las FAQs,
 las herramientas y los links de producción (lectura con `default_transaction_read_only=on`) y los dos modelos (Luna y
-Sonnet 5.5): 32 casos de precio y objeciones, cuatro rondas (194 respuestas, ≈ US$2.5: Sonnet ≈ 2.1 con caché, Luna el resto). Lo que se corrigió entre rondas:
+Sonnet 5.5): 32 casos de precio y objeciones, cuatro rondas (194 respuestas, ≈ US$1.20 con las tarifas de lib/ai/pricing.ts: Sonnet 5.5 ≈ 1.14 y Luna ≈ 0.07). Lo que se corrigió entre rondas:
 ofrecía 6 MSI con el precio de contado, decía «no sé el precio en Amazon», Luna inventó el precio de Amazon, «no puedo
 compartir el precio anterior», ofrecía «apartar» y repetía la fecha límite. En la última ronda: nunca el precio normal,
 ni «gran descuento», ni la fecha vieja. Luna a veces contesta vacío (también sin el aviso: ya pasaba; en producción
