@@ -247,7 +247,7 @@ clic abre un menú para cambiarla sin abrir el chat. Lista y panel quedan sincro
 - **Columna Buen Fin (3-nov-2026, dueño, temporal):** la única columna con encabezado **rojo** (`bg-red-600`)
   en vez del azul marino, con contorno que gira (`[data-borde-buen-fin]` en `globals.css`) y, debajo del nombre, el
   temporizador en dos fases (`buen-fin-countdown.tsx`): «Empieza en» hasta el 13-nov 00:00 y «En curso · termina en»
-  hasta el 18-nov 00:00, hora de Mazatlán. Todo sale de su clave `buen_fin` en `StageColumn`. Va al final, después de Compra
+  hasta el 19-nov 00:00, hora de Mazatlán (alargado un día el 13-nov). Todo sale de su clave `buen_fin` en `StageColumn`. Va al final, después de Compra
   (decisión del dueño), Modelo 1 (nunca Sonnet) y fuera de las instrucciones del Agente IA y del lector
   (`ETAPAS_FUERA_DEL_AGENTE`, 4-nov): entran y salen solo a mano (el Agente IA solo
   avanza, así que no saca a nadie; quien compre se arrastra a Compra para contar en Anuncios). En
