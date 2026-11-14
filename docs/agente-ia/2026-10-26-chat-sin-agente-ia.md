@@ -27,6 +27,10 @@ PROD y OK ESCRITURA PROD, que se cancela si no toca exactamente 1 fila.
   seguía en staging). Se deshace con `update contacts set sin_agente_ia = false where id = 'e5aeb75f-9c5c-4673-ae43-1ba54aec9227'`.
 - **En producción, sin migración** (9-nov-2026): un contacto con tarjeta de foto (la 0075 y la 0078 siguen sin llegar a
   main). Se deshace con `update contacts set sin_agente_ia = false where id = 'd87bc548-54bd-4236-a0ec-854791cc7702'`.
+- **En producción, sin migración** (14-nov-2026): Estafeta, que manda los avisos de los envíos en plantillas que WhatsApp
+  no deja ver («[Unsupported message]»); se le puso el nombre «Estafeta» en la misma escritura (antes era su número) y
+  lleva la tarjeta rosa. Respaldo de la fila en `~/Documents/Diluvium CRM/notas/tarjeta-estafeta/`. Se deshace con
+  `update contacts set sin_agente_ia = false where id = '23fcc0c0-a453-4383-a2f8-a891dc2ce78c'`.
 
 
 **Fondo en el Embudo (29-oct-2026):** llevan además un fondo fijo en su tarjeta del Embudo

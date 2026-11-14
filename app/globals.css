@@ -302,12 +302,17 @@
    íconos de public/fondos/ según lo que hacen, o una foto. El diseño nunca se tapa
    (9-nov-2026, dueño): si la tarjeta pide atención (data-funnel), la señal sale solo
    como contorno. Sin azul (es «por contestar»), amarillo («necesita al vendedor») ni
-   naranja (nunca fondo extenso). paqueteria = cartón con cajas y camión; costura =
-   lila con carrete y tijeras; propio = gris con flechas de traspaso y notas; foto =
-   verde pálido con la cara a la derecha, sin tapar el texto. Claro y oscuro. */
+   naranja (nunca fondo extenso). paqueteria = cartón con cajas y camión; estafeta =
+   rosa con sobres y caja con lupa de rastreo (14-nov-2026); costura = lila con
+   carrete y tijeras; propio = gris con flechas de traspaso y notas; foto = verde
+   pálido con la cara a la derecha, sin tapar el texto. Claro y oscuro. */
 [data-fondo="paqueteria"] {
   --fondo-color: #f1e6d2;
   --fondo-patron: url("/fondos/paqueteria-claro.svg");
+}
+[data-fondo="estafeta"] {
+  --fondo-color: #f6e3e3;
+  --fondo-patron: url("/fondos/estafeta-claro.svg");
 }
 [data-fondo="costura"] {
   --fondo-color: #efe8f8;
@@ -320,6 +325,10 @@
 .dark [data-fondo="paqueteria"] {
   --fondo-color: #3b3022;
   --fondo-patron: url("/fondos/paqueteria-oscuro.svg");
+}
+.dark [data-fondo="estafeta"] {
+  --fondo-color: #3e2629;
+  --fondo-patron: url("/fondos/estafeta-oscuro.svg");
 }
 .dark [data-fondo="costura"] {
   --fondo-color: #2f2742;
