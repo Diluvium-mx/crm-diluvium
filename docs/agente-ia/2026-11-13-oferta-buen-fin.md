@@ -30,13 +30,26 @@ caché: **no cuesta reescritura** y el 19-nov a las 00:00 deja de salir sin que 
   que sí es un descuento considerable por el Buen Fin.
 - Si pide descuento o se le hace caro: ese ya es el precio de oferta y «no manejamos otro descuento».
 - Totales y `fijar_cotizacion` con $5,199 por compuerta estándar (si un vendedor ya fijó la cotización, esa manda).
-- Con la oferta la tarjeta es **de contado** (link de $5,199, `meses` 0): no ofrece meses sin intereses en la estándar; si
-  preguntan, el precio de oferta es de contado.
-- La página web también está en $5,199 y Amazon también tiene oferta (sin decir su precio); Mercado Libre todavía no (ahí
-  contesta lo de siempre del Goal).
-- No dice por su cuenta que la oferta es solo de la estándar. Si preguntan por la hecha a la medida, la mini o un repuesto
-  (funda, tira de hule): con amabilidad, la oferta es de los tamaños estándar y eso sigue con su precio (la hecha a la
-  medida, anticipo y el resto al estar fabricada).
+- ~~Con la oferta la tarjeta es de contado~~ (13-nov). **Desde el 14-nov:** con la oferta **sí hay meses sin intereses con
+  tarjeta de crédito**, sin decir cuántos (aunque el Goal diga «hasta 6» y la lista de links también); de contado con
+  crédito o débito con el mismo link.
+- ~~La web y Amazon sí, Mercado Libre todavía no~~ (13-nov). **Desde el 14-nov:** la oferta está en la página web (ahí sí
+  dice $5,199, es nuestra tienda), en Amazon y en Mercado Libre (de esas dos solo «también está en oferta», nunca su
+  precio). Las menciona **solo si** el cliente pregunta dónde más comprar o por una de ellas, o si duda de pagar por
+  WhatsApp (desconfía, teme un fraude): entonces, sin presionar, le ofrece comprar ahí con la oferta.
+- No dice por su cuenta que la oferta es solo de la estándar. Si preguntan por la hecha a la medida, la mini, los tapones
+  inflables (14-nov) o un repuesto (funda, tira de hule): con amabilidad, la oferta es de los tamaños estándar y eso sigue
+  con su precio (la hecha a la medida, anticipo y el resto al estar fabricada).
+- 14-nov: si alguien que compró antes del 13 pide que le regresen la diferencia: un asesor lo revisa con él, aviso al
+  vendedor (`cliente_pide_humano`, detalle «pide la diferencia del Buen Fin») y no promete nada.
+- 2 o más compuertas (dueño, 14-nov: se queda como está): el total va a $5,199 cada una ($10,398 y $15,597) y el link de
+  ese total lo manda el vendedor (o su precio especial; el de 3 es $15,000, más bajo).
+
+**Después del 18 (14-nov, decisión del dueño).** Del 19-nov 00:00 al 25-nov 23:59:59 sale otro aviso,
+`BUEN_FIN_TERMINO_LINE`: la oferta terminó, la compuerta vuelve al precio del Goal y ya no se usa $5,199 en totales ni
+cotizaciones. Si en el chat se dio el precio de oferta y el cliente quiere pagar, le dice con amabilidad que terminó el
+18, le da el precio de siempre y avisa al vendedor por si se le respeta (sin prometerlo); si en el chat no se habló de la
+oferta, no la menciona. El 26-nov ya no sale nada.
 
 **Pruebas con los modelos reales (13-nov, pedido explícito del dueño).** Simulador fuera del repo con el Goal, las FAQs,
 las herramientas y los links de producción (lectura con `default_transaction_read_only=on`) y los dos modelos (Luna y
@@ -50,9 +63,13 @@ contesta el otro modelo).
 - Workflows «Información» y «Precio 2»: el texto «Ahorita tenemos cualquier tamaño en $5,500 con envío gratis» cambia a
   «Ahorita tenemos todos los tamaños en oferta por el Buen Fin, del 13 al 18 de noviembre, por tan solo $5,199 con envío
   gratis.» (aplicado en producción el 13-nov) (los workflows no están en la caché: no cuesta). **El 19-nov se regresa** al texto de antes.
-- Links de pago: «1 compuerta estándar (Buen Fin)» de $5,199, de contado (link del dueño; cargado el 13-nov, posición 14). Cambiar los links es el bloque 2 de la
+- Links de pago: «1 compuerta estándar (Buen Fin)» de $5,199 (link del dueño; cargado el 13-nov, posición 14). **14-nov,
+  con OK ESCRITURA PROD:** su link de contado (mpago.li/1SYhpks) se cambió por uno **a meses** del dueño
+  (mpago.la/1d3SxjV, `meses` 6; misma fila; respaldo en notas/buen-fin/respaldo-links-pago-2026-11-14.tsv y fila del
+  Historial). Cambiar los links es el bloque 2 de la
   caché (~US$0.025 al cargarlo y otro tanto al quitarlo). **El 19-nov se quita.** Con 2 o más compuertas no hay link de
   oferta: el candado del total manda el aviso al vendedor para que lo mande él.
 
 **Al terminar.** El código se quita junto con la columna Buen Fin (`ETAPAS_FUERA_DEL_AGENTE`); mientras tanto no hace
-nada fuera de las fechas. Pruebas: `buen-fin-oferta.test.ts` (fechas de inicio y fin, sin «$5,500» ni «$5,999», reglas del dueño).
+nada fuera de las fechas (el aviso «ya terminó» se apaga solo el 26-nov). Pruebas: `buen-fin-oferta.test.ts` (fechas de
+inicio, fin y «ya terminó», sin «$5,500» ni «$5,999», meses sin número, reglas del dueño).
