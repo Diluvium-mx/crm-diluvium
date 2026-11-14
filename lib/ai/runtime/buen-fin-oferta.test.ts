@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { BUEN_FIN_OFERTA_LINE, BUEN_FIN_PRECIO, buenFinOfertaLine } from "./buen-fin-oferta";
+import { BUEN_FIN_OFERTA_LINE, BUEN_FIN_PRECIO, BUEN_FIN_TERMINO_LINE, buenFinOfertaLine } from "./buen-fin-oferta";
 
 // Horas de Mazatlán (UTC-7 todo el año).
 const at = (iso: string) => new Date(`${iso}-07:00`);
@@ -15,8 +15,13 @@ describe("buenFinOfertaLine", () => {
     expect(buenFinOfertaLine(at("2026-11-18T23:59:59"))).toBe(BUEN_FIN_OFERTA_LINE);
   });
 
-  it("se apaga solo el 19-nov a las 00:00 de Mazatlán", () => {
-    expect(buenFinOfertaLine(at("2026-11-19T00:00:00"))).toBeNull();
+  it("el 19-nov a las 00:00 cambia al aviso «ya terminó», que sale hasta el 25-nov (14-nov)", () => {
+    expect(buenFinOfertaLine(at("2026-11-19T00:00:00"))).toBe(BUEN_FIN_TERMINO_LINE);
+    expect(buenFinOfertaLine(at("2026-11-25T23:59:59"))).toBe(BUEN_FIN_TERMINO_LINE);
+  });
+
+  it("se apaga solo el 26-nov a las 00:00 de Mazatlán", () => {
+    expect(buenFinOfertaLine(at("2026-11-26T00:00:00"))).toBeNull();
     expect(buenFinOfertaLine(at("2026-12-01T10:00:00"))).toBeNull();
   });
 });
@@ -42,17 +47,31 @@ describe("BUEN_FIN_OFERTA_LINE (reglas del dueño, 13-nov)", () => {
 
   it("no dice por su cuenta que es solo para la estándar y contesta amable si preguntan por la medida o repuestos", () => {
     expect(BUEN_FIN_OFERTA_LINE).toContain("No digas por tu cuenta que la oferta es solo para las estándar");
-    expect(BUEN_FIN_OFERTA_LINE).toContain("la compuerta hecha a la medida, la mini o un repuesto (funda, tira de hule)");
+    expect(BUEN_FIN_OFERTA_LINE).toContain("la compuerta hecha a la medida, la mini, los tapones inflables o un repuesto (funda, tira de hule)");
     expect(BUEN_FIN_OFERTA_LINE).toContain("dile con amabilidad que la oferta del Buen Fin es para los tamaños estándar");
   });
 
-  it("con la oferta la tarjeta es de contado: no ofrece meses sin intereses en la estándar", () => {
-    expect(BUEN_FIN_OFERTA_LINE).toContain("es de contado (crédito o débito)");
-    expect(BUEN_FIN_OFERTA_LINE).toContain("no ofrezcas meses sin intereses en la compuerta estándar");
+  it("con la oferta sí hay meses sin intereses con crédito, sin decir cuántos (14-nov)", () => {
+    expect(BUEN_FIN_OFERTA_LINE).toContain("sí se puede pagar a meses sin intereses con tarjeta de crédito");
+    expect(BUEN_FIN_OFERTA_LINE).toContain("sin decir cuántos meses");
+    expect(BUEN_FIN_OFERTA_LINE).not.toMatch(/\b(3|6|9|12)\s*meses/);
+    expect(BUEN_FIN_OFERTA_LINE).not.toContain("no ofrezcas meses sin intereses");
   });
 
-  it("la página web y Amazon también tienen la oferta, sin decir el precio de Amazon", () => {
-    expect(BUEN_FIN_OFERTA_LINE).toContain("En la página web también está en $5,199 y en Amazon también hay oferta del Buen Fin (no digas el precio de Amazon)");
+  it("la web ($5,199), Amazon y Mercado Libre tienen la oferta; nunca el precio de Amazon ni de Mercado Libre (14-nov)", () => {
+    expect(BUEN_FIN_OFERTA_LINE).toContain("también está en nuestra página web, en $5,199, y en Amazon y Mercado Libre");
+    expect(BUEN_FIN_OFERTA_LINE).toContain("de Amazon y Mercado Libre di solo que también tienen la compuerta en oferta, nunca su precio");
+  });
+
+  it("menciona esas tiendas solo si preguntan dónde más comprar o si duda de pagar por WhatsApp (14-nov)", () => {
+    expect(BUEN_FIN_OFERTA_LINE).toContain("Menciona esas tiendas solo si el cliente pregunta dónde más puede comprarla");
+    expect(BUEN_FIN_OFERTA_LINE).toContain("si duda de pagar por WhatsApp (desconfía o teme un fraude)");
+  });
+
+  it("si alguien que ya compró pide la diferencia: un asesor lo revisa, aviso al vendedor y sin prometer (14-nov)", () => {
+    expect(BUEN_FIN_OFERTA_LINE).toContain("ya compró antes del 13 de noviembre pide que le regresen la diferencia");
+    expect(BUEN_FIN_OFERTA_LINE).toContain("aviso_vendedor motivo cliente_pide_humano");
+    expect(BUEN_FIN_OFERTA_LINE).toContain("no prometas nada");
   });
 
   it("no ofrece apartados ni el precio después del 18, y no esconde el precio de antes", () => {
@@ -64,5 +83,21 @@ describe("BUEN_FIN_OFERTA_LINE (reglas del dueño, 13-nov)", () => {
   it("usa el link de pago de la oferta y respeta la cotización de un vendedor", () => {
     expect(BUEN_FIN_OFERTA_LINE).toContain("link de pago de $5,199");
     expect(BUEN_FIN_OFERTA_LINE).toContain("si un vendedor ya fijó la cotización, esa manda");
+  });
+});
+
+describe("BUEN_FIN_TERMINO_LINE (dueño, 14-nov: después del 18)", () => {
+  it("vuelve al precio de siempre del Goal y ya no usa $5,199 en totales", () => {
+    expect(BUEN_FIN_TERMINO_LINE).toContain("terminó el 18 de noviembre");
+    expect(BUEN_FIN_TERMINO_LINE).toContain("volvió a su precio de siempre, el que dice el Goal");
+    expect(BUEN_FIN_TERMINO_LINE).toContain("ya no uses $5,199 en precios, totales ni fijar_cotizacion");
+    expect(BUEN_FIN_TERMINO_LINE).not.toMatch(/5[,.]?500|5[,.]?999/);
+  });
+
+  it("a quien se le dio la oferta: precio de siempre y aviso al vendedor, sin prometer que se respeta", () => {
+    expect(BUEN_FIN_TERMINO_LINE).toContain("Si en este chat se le dio el precio de oferta");
+    expect(BUEN_FIN_TERMINO_LINE).toContain("aviso_vendedor motivo cliente_pide_humano");
+    expect(BUEN_FIN_TERMINO_LINE).toContain("no prometas que se le respeta");
+    expect(BUEN_FIN_TERMINO_LINE).toContain("Si en este chat no se habló de la oferta, no la menciones");
   });
 });
