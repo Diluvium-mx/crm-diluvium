@@ -31,6 +31,11 @@ PROD y OK ESCRITURA PROD, que se cancela si no toca exactamente 1 fila.
   no deja ver («[Unsupported message]»); se le puso el nombre «Estafeta» en la misma escritura (antes era su número) y
   lleva la tarjeta rosa. Respaldo de la fila en `~/Documents/Diluvium CRM/notas/tarjeta-estafeta/`. Se deshace con
   `update contacts set sin_agente_ia = false where id = '23fcc0c0-a453-4383-a2f8-a891dc2ce78c'`.
+- **En producción, sin migración** (17-nov-2026): Envía (la plataforma de las guías) y Kalisch Acero (proveedor de acero),
+  que mandan avisos que WhatsApp no deja ver; se les puso su nombre en la misma escritura (antes era su número; 2 filas).
+  Kalisch tenía un seguimiento programado: se cancela solo al llegar su hora (`agente_apagado`). Respaldo en
+  `~/Documents/Diluvium CRM/notas/tarjeta-envia-kalisch/`. Se deshace con `update contacts set sin_agente_ia = false
+  where id in ('731c271c-1cb6-48cf-adc7-095d2db855dd', '2f6845b1-a5ec-48e3-81da-94b4f7e5393b')`.
 
 
 **Fondo en el Embudo (29-oct-2026):** llevan además un fondo fijo en su tarjeta del Embudo

@@ -303,9 +303,11 @@
    (9-nov-2026, dueño): si la tarjeta pide atención (data-funnel), la señal sale solo
    como contorno. Sin azul (es «por contestar»), amarillo («necesita al vendedor») ni
    naranja (nunca fondo extenso). paqueteria = cartón con cajas y camión; estafeta =
-   rosa con sobres y caja con lupa de rastreo (14-nov-2026); costura = lila con
-   carrete y tijeras; propio = gris con flechas de traspaso y notas; foto = verde
-   pálido con la cara a la derecha, sin tapar el texto. Claro y oscuro. */
+   rosa con sobres y caja con lupa de rastreo (14-nov-2026); envia = aguamarina con
+   etiquetas de guía e impresora y acero = gris grafito con martillo y tuercas
+   (17-nov-2026); costura = lila con carrete y tijeras; propio = gris con flechas
+   de traspaso y notas; foto = verde pálido con la cara a la derecha, sin tapar el
+   texto. Claro y oscuro. */
 [data-fondo="paqueteria"] {
   --fondo-color: #f1e6d2;
   --fondo-patron: url("/fondos/paqueteria-claro.svg");
@@ -313,6 +315,14 @@
 [data-fondo="estafeta"] {
   --fondo-color: #f6e3e3;
   --fondo-patron: url("/fondos/estafeta-claro.svg");
+}
+[data-fondo="envia"] {
+  --fondo-color: #dcf1ec;
+  --fondo-patron: url("/fondos/envia-claro.svg");
+}
+[data-fondo="acero"] {
+  --fondo-color: #d9dde2;
+  --fondo-patron: url("/fondos/acero-claro.svg");
 }
 [data-fondo="costura"] {
   --fondo-color: #efe8f8;
@@ -329,6 +339,14 @@
 .dark [data-fondo="estafeta"] {
   --fondo-color: #3e2629;
   --fondo-patron: url("/fondos/estafeta-oscuro.svg");
+}
+.dark [data-fondo="envia"] {
+  --fondo-color: #1f3631;
+  --fondo-patron: url("/fondos/envia-oscuro.svg");
+}
+.dark [data-fondo="acero"] {
+  --fondo-color: #1f2329;
+  --fondo-patron: url("/fondos/acero-oscuro.svg");
 }
 .dark [data-fondo="costura"] {
   --fondo-color: #2f2742;

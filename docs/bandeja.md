@@ -240,8 +240,9 @@ clic abre un menú para cambiarla sin abrir el chat. Lista y panel quedan sincro
   "por contestar" y una tarjeta bajo el mouse parecía pendiente.
 - **Tarjeta con fondo (29-oct-2026, regla del dueño):** los chats que no son clientes llevan un color y un
   patrón de íconos fijos o una foto, pura estética (`lib/contacts/tarjeta-fondo.ts` por id → `data-fondo`; archivos en
-  `public/fondos/`): paquetería = cartón, Estafeta = rosa con sobres y caja con lupa (14-nov-2026), costura = lila,
-  chat propio = gris, foto = verde pálido con la cara a la derecha. Sin azul, amarillo ni naranja. El diseño nunca
+  `public/fondos/`): paquetería = cartón, Estafeta = rosa con sobres y caja con lupa (14-nov-2026), Envía =
+  aguamarina con etiquetas e impresora y Kalisch Acero = gris grafito con martillo y tuercas (17-nov-2026), costura =
+  lila, chat propio = gris, foto = verde pálido con la cara a la derecha. Sin azul, amarillo ni naranja. El diseño nunca
   se tapa (9-nov-2026): con la señal encendida se queda y el azul o el amarillo salen solo como contorno (borde más
   un anillo de 1 px). El archivo de la foto es público como todo `public/`, y queda en el repo que también lo es (lo
   aceptó el dueño): nombre neutro y sin datos del contacto.
