@@ -36,6 +36,10 @@ PROD y OK ESCRITURA PROD, que se cancela si no toca exactamente 1 fila.
   Kalisch tenía un seguimiento programado: se cancela solo al llegar su hora (`agente_apagado`). Respaldo en
   `~/Documents/Diluvium CRM/notas/tarjeta-envia-kalisch/`. Se deshace con `update contacts set sin_agente_ia = false
   where id in ('731c271c-1cb6-48cf-adc7-095d2db855dd', '2f6845b1-a5ec-48e3-81da-94b4f7e5393b')`.
+- **En producción, sin migración** (17-nov-2026): PayPal, que manda avisos de pagos que WhatsApp no deja ver; se le puso
+  su nombre en la misma escritura (antes era su número; 1 fila). Respaldo en `~/Documents/Diluvium CRM/notas/tarjeta-paypal/`.
+  Se deshace con `update contacts set sin_agente_ia = false where id = '649447c8-8bba-4b8b-8ed1-9b7106ec2554'`.
+- **Regla del dueño (17-nov-2026):** todo chat que no es cliente y lleva tarjeta propia va siempre sin Agente IA.
 
 
 **Fondo en el Embudo (29-oct-2026):** llevan además un fondo fijo en su tarjeta del Embudo
