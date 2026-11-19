@@ -152,6 +152,9 @@ describe.skipIf(!TEST_DATABASE_URL)("runtime del Agente IA (Postgres real)", () 
     brainErrors?: (unknown | null)[]; // Fase E: error que lanza la llamada N al cerebro (null = contesta)
     onBrain?: (call: number) => Promise<void>; // efecto durante la generación
     onSleep?: () => Promise<void>; // efecto durante la pausa entre burbujas
+    // «Luna callada» (19-nov-2026): como en producción, OpenAI (gpt-…) devuelve su respuesta (razonamiento +
+    // llamadas con id) para poder continuarla. true = un proveedor que no la devuelve (reintento de siempre).
+    sinRespuestaDelProveedor?: boolean;
   };
 
   // Zernio de mentira CON su clave de idempotencia: la misma clave tras un 2xx devuelve
@@ -209,14 +212,31 @@ describe.skipIf(!TEST_DATABASE_URL)("runtime del Agente IA (Postgres real)", () 
       const err = script.brainErrors?.[brainCalls - 1];
       if (err) throw err;
       const outputs = script.brain ?? ["Claro, cuesta $5,500 MXN.\n\n¿Cuánto mide tu entrada?"];
+      const text = outputs[Math.min(brainCalls - 1, outputs.length - 1)];
+      const toolCalls = script.brainToolCalls?.[brainCalls - 1] ?? script.toolCalls ?? [];
+      const openai = modelId.startsWith("gpt-");
       return {
         modelId,
-        provider: modelId.startsWith("gpt-") ? "openai" : "anthropic",
+        provider: openai ? "openai" : "anthropic",
         providerModelId: modelId,
-        text: outputs[Math.min(brainCalls - 1, outputs.length - 1)],
+        text,
         usage: { inputTokens: 12_000, outputTokens: 60, cacheReadTokens: 11_400, cacheWriteTokens: 0 },
         finishReason: script.finishReason ?? "stop",
-        toolCalls: script.brainToolCalls?.[brainCalls - 1] ?? script.toolCalls ?? [],
+        toolCalls,
+        ...(openai && !script.sinRespuestaDelProveedor
+          ? {
+              responseMessages: [
+                {
+                  role: "assistant" as const,
+                  content: [
+                    { type: "reasoning" as const, text: "", providerOptions: { openai: { itemId: `rs_${brainCalls}` } } },
+                    ...(text ? [{ type: "text" as const, text }] : []),
+                    ...toolCalls.map((c, i) => ({ type: "tool-call" as const, toolCallId: `call_${brainCalls}_${i}`, toolName: c.toolName, input: c.input })),
+                  ],
+                },
+              ],
+            }
+          : {}),
       };
     };
     return { calls, callModel };
@@ -3331,7 +3351,12 @@ describe.skipIf(!TEST_DATABASE_URL)("runtime del Agente IA (Postgres real)", () 
   // ── 29-sep-2026 (dueño): red contra el silencio; el CRM nunca escribe un texto fijo ──
   const sinRespuesta = async () => (await notices()).filter((n) => n.kind === "sin_respuesta");
 
-  it("red contra el silencio (8-oct): Luna contesta solo con acciones y nadie le ha contestado → escribe otra vez Luna (con la nota), nunca Sonnet; la etapa de Luna se respeta", async () => {
+  // «Luna callada» (19-nov-2026, opción A del dueño; continuacion.ts): la segunda vuelta continúa la MISMA conversación.
+  const llamadasCerebro = (calls: { kind: string; modelId: string; input: CallModelInput }[]) => calls.filter((c) => c.kind === "cerebro");
+  const brainRows = async () => (await db.select().from(s.aiUsage).orderBy(s.aiUsage.createdAt)).filter((u) => u.stage === "cerebro");
+  const lastMessage = (input: CallModelInput) => input.messages.at(-1)!;
+
+  it("Luna callada: Luna contesta solo con acciones → el CRM le devuelve «listo» en la misma conversación y escribe Luna (solo texto, nunca Sonnet); la etapa de Luna se respeta", async () => {
     await dosModelos();
     await msg({ direction: "in", body: "¿De qué material es?", at: ago(20_000) });
     const { deps, calls } = makeDeps({
@@ -3339,8 +3364,130 @@ describe.skipIf(!TEST_DATABASE_URL)("runtime del Agente IA (Postgres real)", () 
       brainToolCalls: [[{ toolName: "mover_etapa", input: { etapa: "prospecto" } }], []],
     });
     expect(await run.runAgent(JOB, deps)).toEqual({ kind: "sent", bubbles: 1 });
+    const brain = llamadasCerebro(calls);
+    expect(brain.map((c) => c.modelId)).toEqual(["gpt-5.6-luna", "gpt-5.6-luna"]);
+    // Primera vuelta: la de siempre (puede pedir acciones).
+    expect(brain[0].input.toolChoice).toBeUndefined();
+    // Segunda vuelta: lo mismo que leyó + su llamada + «listo», y solo puede escribir. Sin la nota del reintento.
+    expect(brain[1].input.toolChoice).toBe("none");
+    expect(brain[1].input.messages.slice(0, brain[0].input.messages.length)).toEqual(brain[0].input.messages);
+    expect(brain[1].input.messages.at(-2)).toEqual({ role: "assistant", content: [{ type: "tool-call", toolCallId: "call_1_0", toolName: "mover_etapa", input: { etapa: "prospecto" } }] });
+    expect(lastMessage(brain[1].input)).toEqual({ role: "tool", content: [{ type: "tool-result", toolCallId: "call_1_0", toolName: "mover_etapa", output: { type: "text", value: "listo" } }] });
+    expect(JSON.stringify(brain[1].input.messages)).not.toContain(run.SIN_RESPUESTA_NOTE);
+    // Las mismas herramientas en las dos vueltas (misma caché del prompt).
+    expect(Object.keys(brain[1].input.tools ?? {})).toEqual(Object.keys(brain[0].input.tools ?? {}));
+    expect((await agentOuts()).map((m) => m.body)).toEqual(["Es de acero con funda impermeable de neopreno."]);
+    expect((await contact()).stage).toBe("prospecto");
+    expect(await brainOutcomes()).toEqual(["gpt-5.6-luna:sin_texto", "gpt-5.6-luna:sent"]);
+    const [primera, enviada] = await brainRows();
+    expect(primera.error).toContain("el CRM le devolvió «listo» a sus acciones");
+    expect(enviada.error).toContain("continuación");
+    expect(await sinRespuesta()).toHaveLength(0);
+  });
+
+  it("Luna callada (caso de producción): contesta que sí se inunda → Detalle, etapa y cotización de la 1.ª vuelta, una sola vez; lo que pida en la 2.ª se ignora", async () => {
+    await dosModelos();
+    await setStage("inbox");
+    await msg({ direction: "out", body: "¿Usted tiene problemas de inundaciones?", at: ago(60_000), source: "ai_agent" });
+    await msg({ direction: "in", body: "Sí, normalmente en septiembre y octubre", at: ago(20_000) });
+    const { deps, calls } = makeDeps({
+      brain: ["", "Entiendo, en temporada de lluvias es cuando más se necesita. Cuesta $5,500 con envío gratis. ¿Cuánto mide de ancho su entrada?"],
+      brainToolCalls: [
+        [
+          { toolName: "actualizar_detalle", input: { tiene_inundaciones: "si", nivel_agua_texto: "septiembre y octubre" } },
+          { toolName: "mover_etapa", input: { etapa: "prospecto" } },
+          { toolName: "fijar_cotizacion", input: { monto: 5500 } },
+        ],
+        // Con toolChoice "none" no debería pedir nada; si lo hiciera, no cuenta (ni se repite ni cambia nada).
+        [
+          { toolName: "mover_etapa", input: { etapa: "interesado" } },
+          { toolName: "fijar_cotizacion", input: { monto: 9999 } },
+          { toolName: "aviso_vendedor", input: { motivo: "cliente_pide_humano", detalle: "no debería salir" } },
+          { toolName: "actualizar_detalle", input: { tiene_inundaciones: "no" } },
+        ],
+      ],
+    });
+    expect(await run.runAgent(JOB, deps)).toEqual({ kind: "sent", bubbles: 1 });
+    const brain = llamadasCerebro(calls);
+    expect(brain).toHaveLength(2);
+    // Las tres acciones reciben su «listo».
+    expect((lastMessage(brain[1].input).content as { toolName: string; output: unknown }[]).map((p) => [p.toolName, p.output])).toEqual([
+      ["actualizar_detalle", { type: "text", value: "listo" }],
+      ["mover_etapa", { type: "text", value: "listo" }],
+      ["fijar_cotizacion", { type: "text", value: "listo" }],
+    ]);
+    expect((await agentOuts()).map((m) => m.body).at(-1)).toBe("Entiendo, en temporada de lluvias es cuando más se necesita. Cuesta $5,500 con envío gratis. ¿Cuánto mide de ancho su entrada?");
+    // La cotización de la 1.ª vuelta se guarda porque el monto va en el texto de la 2.ª (la regla de siempre); la de 9,999 no.
+    expect(await contact()).toMatchObject({ stage: "prospecto", montoCotizacion: "5500.00", tieneInundaciones: "si", nivelAguaTexto: "septiembre y octubre" });
+    expect(await notices()).toHaveLength(0);
+    expect(await brainOutcomes()).toEqual(["gpt-5.6-luna:sin_texto", "gpt-5.6-luna:sent"]);
+  });
+
+  it("Luna callada: si la segunda vuelta también llega en blanco, nada al cliente y aviso sin_respuesta (sus acciones sí quedan); sin una tercera llamada", async () => {
+    await dosModelos();
+    await msg({ direction: "in", body: "me interesa", at: ago(20_000) });
+    const { deps, calls } = makeDeps({ brain: ["", ""], brainToolCalls: [[{ toolName: "mover_etapa", input: { etapa: "prospecto" } }], []] });
+    expect(await run.runAgent(JOB, deps)).toEqual({ kind: "sent", bubbles: 0 });
+    const brain = llamadasCerebro(calls);
+    expect(brain).toHaveLength(2);
+    expect(brain[1].input.toolChoice).toBe("none");
+    expect(await agentOuts()).toHaveLength(0);
+    expect((await sinRespuesta()).map((n) => n.body)).toEqual([run.SIN_RESPUESTA_BODY]);
+    expect((await conv()).agentState).toBe("activo");
+    expect((await contact()).stage).toBe("prospecto");
+    expect(await brainOutcomes()).toEqual(["gpt-5.6-luna:sin_texto", "gpt-5.6-luna:sent"]);
+    expect((await brainRows())[0].error).toContain("tampoco escribió con «listo» (continuación)");
+    expect(await run.runAgent(JOB, makeDeps().deps)).toEqual({ kind: "noop", reason: "ya_atendido" });
+  });
+
+  it("Luna callada: si OpenAI rechaza la segunda vuelta, se le pregunta desde cero con la nota (el reintento de antes); el cliente recibe su respuesta", async () => {
+    await dosModelos();
+    await msg({ direction: "in", body: "¿De qué material es?", at: ago(20_000) });
+    const { deps, calls } = makeDeps({
+      brain: ["", "", "Es de acero con funda impermeable de neopreno."],
+      brainToolCalls: [[{ toolName: "mover_etapa", input: { etapa: "prospecto" } }], [], []],
+      brainErrors: [null, apiError(400, "Invalid input")],
+    });
+    expect(await run.runAgent(JOB, deps)).toEqual({ kind: "sent", bubbles: 1 });
+    const brain = llamadasCerebro(calls);
+    expect(brain.map((c) => c.input.toolChoice ?? "de siempre")).toEqual(["de siempre", "none", "de siempre"]);
+    expect(lastUserText(brain[2].input)).toContain(run.SIN_RESPUESTA_NOTE);
+    expect((await agentOuts()).map((m) => m.body)).toEqual(["Es de acero con funda impermeable de neopreno."]);
+    expect((await contact()).stage).toBe("prospecto");
+    expect(await brainOutcomes()).toEqual(["gpt-5.6-luna:error", "gpt-5.6-luna:sin_texto", "gpt-5.6-luna:sent"]);
+    expect((await brainRows())[0].error).toMatch(/^continuación con «listo»: /);
+    expect((await notices()).filter((n) => n.kind === "agente_error")).toHaveLength(0);
+  });
+
+  it("Luna callada: texto interno en la segunda vuelta → otra respuesta desde cero (nota del reintento + la de texto interno), sin acciones repetidas de más", async () => {
+    await dosModelos();
+    await msg({ direction: "in", body: "¿De qué material es?", at: ago(20_000) });
+    const { deps, calls } = makeDeps({
+      brain: ["", "[tool call] mover_etapa", "Es de acero con funda impermeable de neopreno."],
+      brainToolCalls: [[{ toolName: "mover_etapa", input: { etapa: "prospecto" } }], [], [{ toolName: "mover_etapa", input: { etapa: "prospecto" } }]],
+    });
+    expect(await run.runAgent(JOB, deps)).toEqual({ kind: "sent", bubbles: 1 });
+    const brain = llamadasCerebro(calls);
+    expect(brain.map((c) => c.input.toolChoice ?? "de siempre")).toEqual(["de siempre", "none", "de siempre"]);
+    expect(lastUserText(brain[2].input)).toContain(run.SIN_RESPUESTA_NOTE);
+    expect(lastUserText(brain[2].input)).toContain(INTERNAL_TEXT_RETRY_NOTE.slice(0, 40));
+    expect((await agentOuts()).map((m) => m.body)).toEqual(["Es de acero con funda impermeable de neopreno."]);
+    expect((await contact()).stage).toBe("prospecto");
+    expect(await sinRespuesta()).toHaveLength(0);
+  });
+
+  it("red contra el silencio (8-oct): un proveedor que no devuelve su respuesta (no OpenAI) → el reintento de siempre: escribe otra vez el mismo modelo con la nota, nunca Sonnet", async () => {
+    await dosModelos();
+    await msg({ direction: "in", body: "¿De qué material es?", at: ago(20_000) });
+    const { deps, calls } = makeDeps({
+      brain: ["", "Es de acero con funda impermeable de neopreno."],
+      brainToolCalls: [[{ toolName: "mover_etapa", input: { etapa: "prospecto" } }], []],
+      sinRespuestaDelProveedor: true,
+    });
+    expect(await run.runAgent(JOB, deps)).toEqual({ kind: "sent", bubbles: 1 });
     const brain = calls.filter((c) => c.kind === "cerebro");
     expect(brain.map((c) => c.modelId)).toEqual(["gpt-5.6-luna", "gpt-5.6-luna"]);
+    expect(brain[1].input.toolChoice).toBeUndefined();
     expect(lastUserText(brain[0].input)).not.toContain(run.SIN_RESPUESTA_NOTE);
     expect(lastUserText(brain[1].input)).toContain(run.SIN_RESPUESTA_NOTE);
     expect((await agentOuts()).map((m) => m.body)).toEqual(["Es de acero con funda impermeable de neopreno."]);

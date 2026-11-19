@@ -17,7 +17,7 @@
 - **Capa 2, nunca Sonnet por Luna** (decisión del dueño, «por nada del mundo»): en una etapa del Modelo 1,
   `brainCandidates` devuelve SOLO el Modelo 1 (aunque falte su llave: la tarjeta dice qué falta). Respuesta vacía → se
   le pide otra vez a Luna UNA vez con `SIN_RESPUESTA_NOTE` (`run.ts`); si tampoco, tarjeta «El agente no pudo
-  responder». Red contra el silencio → escribe otra vez Luna con la nota; si tampoco, aviso `sin_respuesta`. La
+  responder». Red contra el silencio → escribe otra vez Luna con la nota; si tampoco, aviso `sin_respuesta`. (Desde el 19-nov-2026, en Luna esa segunda vuelta continúa la misma conversación con «listo»: [Luna callada](2026-11-19-luna-callada.md).) La
   pregunta sin contestar y las letras de otro alfabeto ya usaban el mismo modelo cuando no hay otro. Lo único que
   sigue llevando a Sonnet desde una etapa del Modelo 1 es el **traspaso** (Luna mueve el contacto a una etapa del
   Modelo 2). Las etapas del Modelo 2 no cambian: si Sonnet falla o se queda sin texto, contesta Luna.

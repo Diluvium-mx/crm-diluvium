@@ -59,6 +59,9 @@ export type CallModelInput = {
   systemCacheBreak?: number;
   messages: ModelMessage[];
   tools?: ToolSet;
+  // «Luna callada» (19-nov-2026): "none" = el modelo solo puede escribir, no pedir acciones. Lo usa la
+  // segunda vuelta de la red contra el silencio (lib/ai/runtime/continuacion.ts). Sin valor, el de siempre.
+  toolChoice?: "auto" | "none";
   maxOutputTokens?: number;
   // Tope de espera de la llamada (ms); por defecto DEFAULT_MODEL_TIMEOUT_MS. Un
   // proveedor colgado no debe retener al worker ni la pantalla de prueba.
@@ -81,6 +84,7 @@ export type CallModelResult = {
   usage: ModelUsage;
   finishReason: string;
   toolCalls?: ToolCallOutput[];
+  responseMessages?: ModelMessage[];
 };
 
 // Lo que devuelve el adaptador de un proveedor; callModel completa el resto.
@@ -89,4 +93,9 @@ export type ProviderGenerateOutput = {
   usage: ModelUsage;
   finishReason: string;
   toolCalls?: ToolCallOutput[];
+  // «Luna callada» (19-nov-2026): la respuesta tal como la devuelve el AI SDK (razonamiento y llamadas a
+  // herramientas, con sus ids). Con ella el runtime continúa la MISMA conversación cuando el modelo pidió
+  // acciones y se quedó esperando su resultado. Hoy solo la entrega OpenAI (Luna): sus modelos de
+  // razonamiento escriben el mensaje DESPUÉS de recibir el resultado de cada acción.
+  responseMessages?: ModelMessage[];
 };

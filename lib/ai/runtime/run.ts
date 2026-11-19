@@ -12,7 +12,9 @@
 // haya alguien respondiendo, como Ángela en GHL, y se rige SOLO por el Goal y las
 // FAQs. Responde todo, sin trabas. Lo único que lo pausa es que un vendedor
 // conteste; si el cliente pide a una persona, avisa al vendedor y sigue activo.
+import type { ModelMessage } from "ai";
 import type { CallModelInput, CallModelResult, CatalogModel } from "@/lib/ai/types";
+import { continuationMessages } from "./continuacion";
 import { getModel } from "@/lib/ai/catalog";
 import { modelAvailability, PROVIDER_META } from "@/lib/ai/provider";
 import { hasUnresolvedAgentError, holdAgentForReview, recordAgentError, supersedeAgentErrors } from "./agent-error";
@@ -165,8 +167,13 @@ type BrainOk = {
   toolCalls: ValidToolCall[];
   ignored: string[];
   latencyMs: number;
+  // Lo que leyó el modelo en esta llamada (para continuarla: «Luna callada», continuacion.ts).
+  messages: ModelMessage[];
   // Parte limpia (19-oct-2026): el texto es lo bueno que iba antes del texto interno.
   parteLimpia?: true;
+  // «Luna callada» (19-nov-2026): segunda vuelta de la MISMA conversación (el CRM le devolvió «listo» a
+  // sus acciones). Solo trae texto; las acciones que cuentan son las de la primera vuelta.
+  continuacion?: true;
 };
 type BrainFail = { ok: false; model: CatalogModel; info: ModelErrorInfo };
 
@@ -684,20 +691,26 @@ export async function runAgent(job: { organizationId: string; conversationId: st
     // Ante un acuse, la respuesta en blanco vale lo mismo que «nada que agregar» (14-oct-2026, dueño): antes contaba
     // como falla y dejaba la tarjeta «El agente no pudo responder», que bloquea el chat (5 de 10 en 14 días).
     const quietAck = (out: BrainOutput) => acuse && (out.kind === "nothing" || out.kind === "empty");
-    const attempt = async (model: CatalogModel, avanzaA: string | null = null, nota: string | null = null, foreignRetry = false, internalRetry = false, salvage: string | null = null, blockedRetry = false): Promise<BrainOk | BrainFail> => {
+    // `continuar` («Luna callada», 19-nov-2026; continuacion.ts): en vez de preguntar desde cero, sigue la MISMA
+    // conversación de esa respuesta: le devuelve «listo» por cada acción que pidió y le pide el texto con
+    // toolChoice "none". Lo que pida de acciones en esta vuelta se ignora (las que cuentan son las de la primera).
+    // `nota` solo se usa si esta vuelta trae texto interno y hay que pedir otra respuesta desde cero.
+    const attempt = async (model: CatalogModel, avanzaA: string | null = null, nota: string | null = null, foreignRetry = false, internalRetry = false, salvage: string | null = null, blockedRetry = false, continuar: BrainOk | null = null): Promise<BrainOk | BrainFail> => {
       tried.add(model.id);
-      const messages = await messagesFor(model, avanzaA, nota);
+      const seguida = continuar ? continuationMessages(continuar.messages, continuar.res.responseMessages) : null;
+      const messages = seguida ?? (await messagesFor(model, avanzaA, nota));
       const t0 = Date.now();
       let res: CallModelResult;
       try {
-        res = await deps.callModel(model.id, { ...system, messages, tools: agentTools.tools, maxOutputTokens: BRAIN_MAX_OUTPUT_TOKENS, timeoutMs: BRAIN_TIMEOUT_MS });
+        res = await deps.callModel(model.id, { ...system, messages, tools: agentTools.tools, ...(seguida ? { toolChoice: "none" as const } : {}), maxOutputTokens: BRAIN_MAX_OUTPUT_TOKENS, timeoutMs: BRAIN_TIMEOUT_MS });
       } catch (error) {
-        await recordAiUsage({ ...base, stage: "cerebro", modelId: model.id, provider: model.provider, usage: null, latencyMs: Date.now() - t0, outcome: "error", error: safeErrorMessage(error) });
+        await recordAiUsage({ ...base, stage: "cerebro", modelId: model.id, provider: model.provider, usage: null, latencyMs: Date.now() - t0, outcome: "error", error: `${seguida ? "continuación con «listo»: " : ""}${safeErrorMessage(error)}` });
         return { ok: false, model, info: classifyModelError(error, PROVIDER_META[model.provider].label) };
       }
       const latencyMs = Date.now() - t0;
       let out = parseBrainOutput(res.text);
-      const { valid, ignored } = validateToolCalls(res.toolCalls ?? [], agentTools);
+      if (seguida && res.toolCalls?.length) console.warn(`[agente] ${conv.id}: ${model.label} pidió acciones en la continuación (${res.toolCalls.map((c) => c.toolName).join(", ")}); se ignoran`);
+      const { valid, ignored } = validateToolCalls(seguida ? [] : (res.toolCalls ?? []), agentTools);
       // Letras de otro alfabeto (6-oct-2026, dueño: «娱乐平台招商» le llegó a una clienta): se BORRAN y
       // sigue lo demás, sin tarjeta ni pausa. Si no queda texto ni acciones (caso «屹», 2-oct), se le
       // pide otra respuesta al mismo modelo UNA vez; si tampoco, cuenta como respuesta vacía y entran
@@ -708,7 +721,7 @@ export async function runAgent(job: { organizationId: string; conversationId: st
         out = clean ? { ...out, text: clean } : { kind: "empty" };
         if (!clean && valid.length === 0 && !foreignRetry) {
           await recordAiUsage({ ...base, stage: "cerebro", modelId: res.modelId, provider: res.provider, usage: res.usage, latencyMs, outcome: "error", error: "solo letras de otro alfabeto; se pide otra respuesta" });
-          return attempt(model, avanzaA, nota, true, internalRetry, salvage, blockedRetry);
+          return attempt(model, avanzaA, nota, true, internalRetry, salvage, blockedRetry, seguida ? continuar : null);
         }
       }
       // Texto interno (10-oct-2026, dueño: «que no vuelva a ocurrir»; internal-text.ts › INTERNAL_TEXT_RETRY_NOTE):
@@ -725,7 +738,7 @@ export async function runAgent(job: { organizationId: string; conversationId: st
       // los chats por la caché, así que el modelo puede pedir algo que aquí ya no sale (p. ej. «Dónde medir»
       // otra vez). No se manda y se le pide otra respuesta UNA vez, para que no prometa algo que no llega.
       // Si vuelve a pedirla, la llamada se ignora (validateToolCalls) y sigue lo demás.
-      const bloqueadas = blockedCalled(res.toolCalls ?? [], agentTools);
+      const bloqueadas = blockedCalled(seguida ? [] : (res.toolCalls ?? []), agentTools);
       if (bloqueadas.length && !blockedRetry) {
         await recordAiUsage({ ...base, stage: "cerebro", modelId: res.modelId, provider: res.provider, usage: res.usage, latencyMs, outcome: "error", error: `pidió ${bloqueadas.join(", ")}, que no se puede en este chat; se pide otra respuesta` });
         console.warn(`[agente] ${conv.id}: ${model.label} pidió ${bloqueadas.join(", ")} (bloqueada en este chat); se le pide otra respuesta`);
@@ -745,11 +758,13 @@ export async function runAgent(job: { organizationId: string; conversationId: st
       // "Nada que agregar" solo vale como complemento de un workflow; fuera de eso es respuesta vacía.
       // En el complemento, una respuesta en blanco también (con el Goal real de staging, Luna y
       // Sonnet a veces contestan vacío en vez de escribir la señal): el workflow ya contestó.
-      if (out.kind !== "reply" && !complementOf && !quietAck(out) && valid.length === 0) {
+      // La continuación en blanco no es una falla del modelo: sigue sin texto y la red contra el silencio deja el
+      // aviso sin_respuesta (las acciones de la primera vuelta ya están).
+      if (out.kind !== "reply" && !complementOf && !quietAck(out) && valid.length === 0 && !seguida) {
         await recordAiUsage({ ...base, stage: "cerebro", modelId: res.modelId, provider: res.provider, usage: res.usage, latencyMs, outcome: "error", error: `respuesta_vacia (${res.finishReason})` });
         return { ok: false, model, info: EMPTY_RESPONSE_INFO };
       }
-      return { ok: true, model, res, out, toolCalls: valid, ignored, latencyMs, ...(parteLimpia ? { parteLimpia: true } : {}) };
+      return { ok: true, model, res, out, toolCalls: valid, ignored, latencyMs, messages, ...(parteLimpia ? { parteLimpia: true } : {}), ...(seguida ? { continuacion: true } : {}) };
     };
     const usageOf = (r: BrainOk) => ({ ...base, stage: "cerebro" as const, modelId: r.res.modelId, provider: r.res.provider, usage: r.res.usage, latencyMs: r.latencyMs });
     // Red contra el silencio (29-sep-2026, dueño): ¿esta respuesta no le manda NADA al cliente?
@@ -875,8 +890,24 @@ export async function runAgent(job: { organizationId: string; conversationId: st
         const other =
           candidates.map((c) => getModel(c.modelId)).find((m): m is CatalogModel => m !== undefined && !tried.has(m.id)) ??
           (used.model.id === candidates[0].modelId ? used.model : undefined);
-        const rescue = other ? await attempt(other, null, SIN_RESPUESTA_NOTE) : null;
-        if (rescue?.ok && !(await isSilent(rescue))) {
+        // «Luna callada» (19-nov-2026, opción A del dueño; continuacion.ts): si vuelve a escribir el MISMO modelo y
+        // el proveedor devolvió su respuesta (OpenAI), no se le pregunta desde cero: se sigue esa conversación con
+        // «listo» por cada acción y solo puede escribir. Si esa vuelta falla (error del proveedor), el reintento de
+        // siempre; si llega en blanco, el aviso sin_respuesta de siempre. Las mismas dos llamadas que antes.
+        const continuable = other !== undefined && other.id === used.model.id && continuationMessages(used.messages, used.res.responseMessages) !== null;
+        let rescue = other ? await attempt(other, null, SIN_RESPUESTA_NOTE, false, false, null, false, continuable ? used : null) : null;
+        if (other && continuable && rescue && !rescue.ok) {
+          console.warn(`[agente] ${conv.id}: la continuación con «listo» falló (${rescue.info.kind}); se le pide otra respuesta desde cero`);
+          if (!(await stillInCharge())) return { kind: "skipped", reason: "cambio_durante_error" };
+          rescue = await attempt(other, null, SIN_RESPUESTA_NOTE);
+        }
+        if (rescue?.ok && !(await isSilent(rescue)) && rescue.continuacion) {
+          await recordAiUsage({ ...usageOf(used), outcome: "sin_texto", error: `sin texto; el CRM le devolvió «listo» a sus acciones y escribe en la misma conversación (${rescue.model.id})` });
+          console.warn(`[agente] ${conv.id}: ${used.model.label} contestó solo con acciones; se le devolvió «listo» y escribió en la misma conversación`);
+          // Las acciones son TODAS las de la primera vuelta (Detalle, etapa, cotización, workflows, avisos, link):
+          // la continuación no pudo pedir otras, así que nada se repite ni se pierde.
+          used = { ...rescue, toolCalls: callsOf(used), ignored: [...used.ignored, ...rescue.ignored] };
+        } else if (rescue?.ok && !(await isSilent(rescue))) {
           await recordAiUsage({ ...usageOf(used), outcome: "sin_texto", error: `sin texto; contesta ${rescue.model.id}` });
           console.warn(`[agente] ${conv.id}: ${used.model.label} contestó solo con acciones; escribe ${rescue.model.label}`);
           const toolCalls = mergeHandoffToolCalls(callsOf(used), callsOf(rescue));
@@ -884,7 +915,7 @@ export async function runAgent(job: { organizationId: string; conversationId: st
           toolCalls.push(...used.toolCalls.filter((c) => c.kind === "etapa"));
           used = { ...rescue, toolCalls, ignored: [...used.ignored, ...rescue.ignored] };
         } else {
-          if (rescue?.ok) await recordAiUsage({ ...usageOf(rescue), outcome: "sin_texto", error: `tampoco escribió; sin respuesta (${used.model.id})` });
+          if (rescue?.ok) await recordAiUsage({ ...usageOf(rescue), outcome: "sin_texto", error: `${rescue.continuacion ? "tampoco escribió con «listo» (continuación)" : "tampoco escribió"}; sin respuesta (${used.model.id})` });
           silencio = "sin_respuesta";
           console.warn(`[agente] ${conv.id}: ningún modelo le escribió al cliente${other ? "" : " (no hay otro modelo disponible)"}; aviso al vendedor`);
         }
@@ -1275,6 +1306,7 @@ export async function runAgent(job: { organizationId: string; conversationId: st
       captionedBy ? `el texto va como pie del archivo de «${captionedBy}»` : null,
       complementRun ? `cuando salga «${complementRun.slug}», el Agente IA revisa el mismo mensaje (complemento)` : null,
       used.parteLimpia ? "parte limpia: el reintento también traía texto interno o no escribió; salió el texto bueno de antes de lo interno" : null,
+      used.continuacion ? "continuación: la primera vuelta fue solo acciones; el CRM le devolvió «listo» y escribió en la misma conversación" : null,
       silencio === "contestado" ? "sin texto: ya le había salido algo al cliente después de su último mensaje" : null,
       silencio === "acuse" ? "sin texto: el cliente solo confirmó o agradeció (nada que agregar)" : null,
       silencio === "sin_respuesta" ? "sin texto: ningún modelo le escribió al cliente (aviso sin_respuesta)" : null,
