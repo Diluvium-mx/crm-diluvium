@@ -68,6 +68,12 @@ proveedor como Modelo 1 queda el reintento de siempre.
   (Detalle + etapa + cotización una sola vez, lo de la segunda vuelta ignorado); segunda vuelta en blanco → aviso;
   error de OpenAI → reintento de siempre; texto interno → desde cero; proveedor sin respuesta → reintento de siempre.
 
+**Prueba real (19-nov-2026, UNA llamada con OK del dueño, llave de staging, ~US$0.0002):** la segunda vuelta armada con
+el mismo código (`continuationMessages` + adaptador de OpenAI) a partir de una primera vuelta de ejemplo
+(`actualizar_detalle` + `mover_etapa`, sin texto, con razonamiento e ids `rs_`/`fc_` que se quitan). OpenAI la aceptó:
+`finishReason: stop`, 0 acciones pedidas, 2.9 s, y Luna escribió «Entiendo. ¿Hasta qué altura llega el agua
+aproximadamente y cuánto mide de ancho la entrada, en centímetros?».
+
 ### Cómo medirlo en producción (solo lectura, con «OK LECTURA PROD»)
 
 En `ai_usage` (etapa `cerebro`), la primera vuelta deja `outcome = 'sin_texto'` y su `error` dice qué pasó:
