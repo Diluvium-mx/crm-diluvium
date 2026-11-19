@@ -41,7 +41,7 @@ export function repeatNoticeBody(question: string): string {
   return `El Agente IA solo iba a repetir la pregunta «${question}», que el cliente no contestó, y no salió. Revisa si hacía falta contestar.`;
 }
 import { blockedCalled, blockedRetryNote, blockedToolsLine, mergeHandoffToolCalls, validateToolCalls, type ValidToolCall } from "./tools";
-import { cleanBeforeInternal, findInternalText, hasForeignScript, INTERNAL_TEXT_RETRY_NOTE, replyExcerpt, stripForeignScript, unfinishedReply } from "./internal-text";
+import { cleanBeforeInternal, findInternalText, hasDoubleAsterisks, hasForeignScript, INTERNAL_TEXT_RETRY_NOTE, replyExcerpt, stripDoubleAsterisks, stripForeignScript, unfinishedReply } from "./internal-text";
 import { applyDetalleByAgent, detalleContextFor, mergeDetalle } from "./detalle";
 import { transcriptionWaitMs } from "@/lib/ai/transcription/rules";
 import { handoverPauseUntil, humanPauseUntil, isWithinSchedule, type BotOptions } from "@/lib/agente-ia/opciones";
@@ -723,6 +723,14 @@ export async function runAgent(job: { organizationId: string; conversationId: st
           await recordAiUsage({ ...base, stage: "cerebro", modelId: res.modelId, provider: res.provider, usage: res.usage, latencyMs, outcome: "error", error: "solo letras de otro alfabeto; se pide otra respuesta" });
           return attempt(model, avanzaA, nota, true, internalRetry, salvage, blockedRetry, seguida ? continuar : null);
         }
+      }
+      // Asteriscos dobles (19-nov-2026, dueño; internal-text.ts › stripDoubleAsterisks): «**$5,500**» → «$5,500». Se
+      // borran aquí (así el anti-repetición, el candado y lo que se guarda ya los ven limpios y Luna no los vuelve a ver
+      // en el historial para copiarlos) y otra vez en la puerta de envío. Sin tarjeta, sin pausa y sin otra llamada.
+      if (out.kind === "reply" && hasDoubleAsterisks(out.text)) {
+        const clean = stripDoubleAsterisks(out.text);
+        console.info(`[agente] ${conv.id}: ${model.label} escribió asteriscos dobles (**); se borran`);
+        out = clean ? { ...out, text: clean } : { kind: "empty" };
       }
       // Texto interno (10-oct-2026, dueño: «que no vuelva a ocurrir»; internal-text.ts › INTERNAL_TEXT_RETRY_NOTE):
       // una respuesta con «[tool]», «[tool call]», «(update tool after written)»… se le vuelve a pedir al MISMO

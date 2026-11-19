@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { cleanBeforeInternal, findInternalText, hasForeignScript, internalTextReason, stripForeignScript, unfinishedReply } from "./internal-text";
+import { cleanBeforeInternal, findInternalText, hasDoubleAsterisks, hasForeignScript, internalTextReason, stripDoubleAsterisks, stripForeignScript, unfinishedReply } from "./internal-text";
 
 // Las formas reales que se colaron del 30-sep al 4-oct (datos del cliente cambiados) y textos
 // normales del Agente IA que NUNCA deben marcarse.
@@ -168,5 +168,37 @@ describe("cleanBeforeInternal", () => {
     expect(cleanBeforeInternal("¿Hasta qué altura le llega el agua?")).toBeNull();
     expect(cleanBeforeInternal("Sí, es removible y no requiere obra.\n\n[tool call] wf_video_instalacion_estandar")).toBeNull();
     expect(cleanBeforeInternal("━━━━\n[tool]")).toBeNull();
+  });
+});
+
+// 19-nov-2026 (dueño): los asteriscos dobles de Markdown se BORRAN y el texto sale igual (Luna resaltaba «**$5,500**»).
+describe("stripDoubleAsterisks", () => {
+  it("casos reales: precio, teléfono, medida y nombre para buscar → sin asteriscos, mismo texto", () => {
+    expect(stripDoubleAsterisks("La compuerta cuesta **$5,500** con envío gratis.")).toBe("La compuerta cuesta $5,500 con envío gratis.");
+    expect(stripDoubleAsterisks("Puede llamarnos al **668 241 9579** (WhatsApp y llamadas).")).toBe("Puede llamarnos al 668 241 9579 (WhatsApp y llamadas).");
+    expect(stripDoubleAsterisks("Para su entrada de **95 cm** le queda la **M**.\n\n¿Desea que se la apartemos?")).toBe("Para su entrada de 95 cm le queda la M.\n\n¿Desea que se la apartemos?");
+    expect(stripDoubleAsterisks("Búsquela como **Compuerta Anti Inundaciones Diluvium**")).toBe("Búsquela como Compuerta Anti Inundaciones Diluvium");
+  });
+  it("triples y espacios sueltos: no quedan asteriscos ni espacios dobles o antes del signo", () => {
+    expect(stripDoubleAsterisks("***Garantía de 1 año***")).toBe("Garantía de 1 año");
+    expect(stripDoubleAsterisks("Precio: ** $5,500 ** .")).toBe("Precio: $5,500.");
+    expect(stripDoubleAsterisks("Título\n**\n\n\n\nTexto")).toBe("Título\n\nTexto");
+  });
+  it("solo asteriscos → vacío (no sale nada)", () => {
+    expect(stripDoubleAsterisks("****")).toBe("");
+  });
+  it("un asterisco solo (negrita de WhatsApp) y los textos sin asteriscos quedan IDÉNTICOS", () => {
+    for (const t of [...OK.filter((t) => !t.includes("**")), "*Nota:* el envío es gratis", "Tamaño M* (consulte)", "Primero.\n\nSegundo.\n"]) {
+      expect(hasDoubleAsterisks(t)).toBe(false);
+      expect(stripDoubleAsterisks(t)).toBe(t);
+    }
+  });
+  it("no debilita el candado de texto interno: la nota entre paréntesis y la palabra suelta se siguen detectando", () => {
+    expect(internalTextReason(stripDoubleAsterisks("**(sin acción adicional, la respuesta ya fue enviada por el sistema)**"))).not.toBeNull();
+    expect(internalTextReason(stripDoubleAsterisks("**Winvalid**"))).toBe("palabra suelta sin sentido");
+    expect(internalTextReason(stripDoubleAsterisks("Cuesta **$5,500** con envío gratis."))).toBeNull();
+    // «**Dirección:**» (texto bueno de la lista) queda «Dirección:» y sigue pasando.
+    expect(stripDoubleAsterisks("**Dirección:**")).toBe("Dirección:");
+    expect(internalTextReason("Dirección:")).toBeNull();
   });
 });

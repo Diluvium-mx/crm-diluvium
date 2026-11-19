@@ -29,7 +29,7 @@ import { withTxRetry } from "@/lib/db/retry";
 import { channels, conversations, messages, templates } from "@/lib/db/schema";
 import { applyOutboundToConversation, latestInboundMessageId } from "./ingest";
 import { SendFailedError, type MessagingProvider, type SendResult } from "./provider";
-import { findInternalText, stripForeignScript } from "@/lib/ai/runtime/internal-text";
+import { findInternalText, stripDoubleAsterisks, stripForeignScript } from "@/lib/ai/runtime/internal-text";
 import { esMensajeDeLink, linkPagoBloqueado } from "@/lib/agente-ia/links-pago-store";
 import {
   canSendFreeForm,
@@ -250,10 +250,11 @@ function validText(raw: string): string {
 // del Agente IA (respuesta, texto suelto de un workflow, pie de un archivo, seguimiento) se le BORRAN
 // las letras de otro alfabeto («娱乐平台招商» le llegó a una clienta) y sale lo demás. Solo si no queda
 // nada, no sale. Lo del vendedor no se toca: lo escribió él.
+// 19-nov-2026 (dueño): también los asteriscos dobles de Markdown («**$5,500**»; internal-text.ts › stripDoubleAsterisks).
 function agentLanguage(text: string, source: string | undefined): string {
   if (source !== "ai_agent") return text;
-  const clean = stripForeignScript(text);
-  if (!clean) throw new SendRejectedError("not_retryable", "El texto del Agente IA solo traía letras de otro alfabeto y no se envió.");
+  const clean = stripDoubleAsterisks(stripForeignScript(text));
+  if (!clean) throw new SendRejectedError("not_retryable", "El texto del Agente IA solo traía letras de otro alfabeto o asteriscos y no se envió.");
   return clean;
 }
 
