@@ -25,13 +25,18 @@ export const openaiAdapter: ProviderAdapter = {
       maxRetries: 0,
       // Herramientas sin `execute` (Fase D): una sola vuelta; el modelo devuelve
       // texto + llamadas y el runtime decide qué corre (nada se ejecuta aquí).
-      ...(input.tools ? { tools: input.tools, stopWhen: isStepCount(1) } : {}),
+      // «Luna callada» (19-nov-2026): la segunda vuelta va con toolChoice "none" (solo texto).
+      ...(input.tools ? { tools: input.tools, stopWhen: isStepCount(1), ...(input.toolChoice ? { toolChoice: input.toolChoice } : {}) } : {}),
     });
     return {
       text: result.text,
       usage: toModelUsage(result.usage),
       finishReason: result.finishReason,
       toolCalls: result.toolCalls.map((c) => ({ toolName: c.toolName, input: c.input })),
+      // Los modelos de razonamiento de OpenAI terminan su turno al pedir una acción y escriben el mensaje
+      // hasta recibir el resultado (guía oficial: «Managing Function Calls With Reasoning Models»). Con estos
+      // mensajes (razonamiento + llamadas, con sus ids) el runtime les devuelve «listo» y les pide el texto.
+      responseMessages: result.response.messages,
     };
   },
 };
