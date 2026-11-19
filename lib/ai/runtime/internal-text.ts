@@ -85,6 +85,34 @@ export function stripForeignScript(text: string): string {
   return lines.join("\n").replace(/\n{3,}/g, "\n\n").trim();
 }
 
+// Asteriscos dobles (19-nov-2026, dueño). GPT-5.6 Luna a veces resalta con negritas de Markdown («**$5,500**»,
+// «**668 241 9579**», la medida, la garantía): 93 mensajes en 18 chats del 3-oct al 18-nov (91 de Luna, 2 sin modelo
+// registrado; Sonnet nunca), y al verlos en el historial los repite en el mismo chat. WhatsApp no los vuelve negritas
+// (el cliente ve los asteriscos) y en la Bandeja salen tal cual. Ni el Goal, ni las FAQs, ni las reglas de etapa, ni
+// los workflows, ni los mensajes rápidos, ni los links los traen; con Luna las instrucciones solas no bastan y
+// cambiar el Goal volvería a cobrar la caché. Como las letras de otro alfabeto: se BORRAN (dos o más seguidos) y el
+// texto sale igual, en run.ts al leer la respuesta y otra vez en la puerta de envío. Un asterisco solo (la negrita
+// de WhatsApp, «*Nota*») no se toca. Borrarlos no debilita las reglas de abajo: «**(nota)**» sigue siendo nota
+// entre paréntesis y «**Precio**» solo en su renglón sigue siendo palabra suelta.
+const DOUBLE_ASTERISKS = /\*{2,}/;
+
+/** ¿Trae dos o más asteriscos seguidos (negritas de Markdown)? */
+export function hasDoubleAsterisks(text: string): boolean {
+  return DOUBLE_ASTERISKS.test(text);
+}
+
+/** El texto sin los asteriscos dobles; los espacios que dejan se juntan. "" = no quedó nada para el cliente. */
+export function stripDoubleAsterisks(text: string): string {
+  if (!hasDoubleAsterisks(text)) return text;
+  return text
+    .replace(new RegExp(DOUBLE_ASTERISKS.source, "g"), "")
+    .split("\n")
+    .map((line) => line.replace(/[^\S\n]{2,}/g, " ").replace(/[^\S\n]+([.,;:!?)])/g, "$1").trimEnd())
+    .join("\n")
+    .replace(/\n{3,}/g, "\n\n")
+    .trim();
+}
+
 const RULES: readonly { reason: string; test: (t: string) => boolean }[] = [
   // Todo el mensaje entre corchetes: «[tool call?]», «[We need tool after response]».
   { reason: "mensaje entre corchetes", test: (t) => /^\[[^\]]*\]$/.test(t) },
