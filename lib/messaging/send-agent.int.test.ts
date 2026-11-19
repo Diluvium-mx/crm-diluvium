@@ -137,6 +137,19 @@ describe.skipIf(!TEST_DATABASE_URL)("envío del Agente IA (Postgres real)", () =
     expect(sent).toEqual(["¿Hasta qué nivel le sube el agua?", "谢谢"]);
   });
 
+  it("asteriscos dobles (19-nov): a lo del Agente IA se le borran los ** y sale igual; un * solo queda; lo del vendedor no se toca", async () => {
+    const c = await openConversation(1);
+    const sent: string[] = [];
+    const p = withProvider({ sendText: async (input: { text: string }) => (sent.push(input.text), { providerInternalId: `zA${sent.length}`, providerMessageId: `wamid.A${sent.length}` }) } as Partial<P>);
+    await send.sendAgentText(p, { organizationId: ORG, conversationId: c.id, text: "La compuerta cuesta **$5,500** con envío gratis.", messageId: randomUUID() });
+    await send.sendTextMessage(p, { organizationId: ORG, conversationId: c.id, text: "*Tamaño M:* 91 cm a 100 cm", source: "ai_agent" });
+    expect(sent).toEqual(["La compuerta cuesta $5,500 con envío gratis.", "*Tamaño M:* 91 cm a 100 cm"]);
+    expect((await outs()).map((m) => m.body).sort()).toEqual(["*Tamaño M:* 91 cm a 100 cm", "La compuerta cuesta $5,500 con envío gratis."]);
+    await expect(send.sendTextMessage(p, { organizationId: ORG, conversationId: c.id, text: "****", source: "ai_agent" })).rejects.toThrow(/asteriscos/);
+    await send.sendTextMessage(p, { organizationId: ORG, conversationId: c.id, sentByUserId: "u_vendedor", text: "**Oferta**" });
+    expect(sent.at(-1)).toBe("**Oferta**");
+  });
+
   it("sin source sigue siendo el envío humano de siempre (crm + vendedor, marca leído, primera respuesta)", async () => {
     const c = await openConversation(2);
     await send.sendTextMessage(

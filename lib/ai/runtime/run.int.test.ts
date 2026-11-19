@@ -3476,6 +3476,28 @@ describe.skipIf(!TEST_DATABASE_URL)("runtime del Agente IA (Postgres real)", () 
     expect(await sinRespuesta()).toHaveLength(0);
   });
 
+  it("asteriscos dobles (19-nov): Luna resalta con **…** → sale el mismo texto sin asteriscos (lo guardado también), sin tarjeta ni otra llamada", async () => {
+    await dosModelos();
+    await msg({ direction: "in", body: "precio?", at: ago(20_000) });
+    const { deps, calls } = makeDeps({ brain: ["La compuerta cuesta **$5,500** con envío gratis.\n\n¿Cuánto mide de ancho su entrada?"] });
+    expect(await run.runAgent(JOB, deps)).toEqual({ kind: "sent", bubbles: 2 });
+    expect(llamadasCerebro(calls)).toHaveLength(1);
+    expect((await agentOuts()).map((m) => m.body)).toEqual(["La compuerta cuesta $5,500 con envío gratis.", "¿Cuánto mide de ancho su entrada?"]);
+    expect(await notices()).toHaveLength(0);
+  });
+
+  it("asteriscos dobles + Luna callada: la segunda vuelta con **…** también sale limpia", async () => {
+    await dosModelos();
+    await msg({ direction: "in", body: "¿De qué material es?", at: ago(20_000) });
+    const { deps } = makeDeps({
+      brain: ["", "Es de **acero** con funda impermeable."],
+      brainToolCalls: [[{ toolName: "mover_etapa", input: { etapa: "prospecto" } }], []],
+    });
+    expect(await run.runAgent(JOB, deps)).toEqual({ kind: "sent", bubbles: 1 });
+    expect((await agentOuts()).map((m) => m.body)).toEqual(["Es de acero con funda impermeable."]);
+    expect((await contact()).stage).toBe("prospecto");
+  });
+
   it("red contra el silencio (8-oct): un proveedor que no devuelve su respuesta (no OpenAI) → el reintento de siempre: escribe otra vez el mismo modelo con la nota, nunca Sonnet", async () => {
     await dosModelos();
     await msg({ direction: "in", body: "¿De qué material es?", at: ago(20_000) });
