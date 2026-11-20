@@ -29,3 +29,4 @@ export * from "./stage-history";
 export * from "./spelling";
 export * from "./shipments";
 export * from "./links-pago";
+export * from "./crm-cost-months";

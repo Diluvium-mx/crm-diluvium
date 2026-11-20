@@ -5,6 +5,7 @@
 import { railwayFreshness, type RailwaySummary } from "@/lib/dashboard/railway";
 import { formatUsd } from "@/lib/usd-format";
 import { ProgressBar } from "@/components/ui/progress-bar";
+import { InfoNote } from "@/components/ui/info-note";
 
 export function RailwayCard({ summary }: { summary: RailwaySummary }) {
   const fresh = railwayFreshness(summary);
@@ -55,11 +56,11 @@ export function RailwayCard({ summary }: { summary: RailwaySummary }) {
           </div>
         )}
       </div>
-      <p className="mt-3 text-xs text-muted-foreground">
+      <InfoNote>
         {s.includedUsd !== null &&
           `El plan cobra ${formatUsd(s.includedUsd)} al mes e incluye ${formatUsd(s.includedUsd)} de uso; lo que pase de ahí se cobra a la tarjeta el día de corte. `}
         Lo lee el CRM de Railway cada 5 minutos. No incluye impuestos.
-      </p>
+      </InfoNote>
     </div>
   );
 }
