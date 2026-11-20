@@ -6,6 +6,7 @@
 import { ZERNIO_FREE_MESSAGES, zernioFreshness, type ZernioSummary } from "@/lib/dashboard/zernio";
 import { formatUsd } from "@/lib/usd-format";
 import { ProgressBar } from "@/components/ui/progress-bar";
+import { InfoNote } from "@/components/ui/info-note";
 
 const whole = new Intl.NumberFormat("es-MX");
 
@@ -73,10 +74,10 @@ export function ZernioCard({ summary }: { summary: ZernioSummary }) {
         </div>
       </div>
       {s.otherUsd > 0 && <p className="mt-3 text-sm tabular-nums">Otros cargos de Zernio: {formatUsd(s.otherUsd)}</p>}
-      <p className="mt-3 text-xs text-muted-foreground">
+      <InfoNote>
         Lo que Meta cobra por WhatsApp no pasa por Zernio. Zernio cobra a la tarjeta conforme se junta el consumo y anota los
         mensajes de cada día al día siguiente. Lo lee el CRM de Zernio cada 15 minutos. No incluye impuestos.
-      </p>
+      </InfoNote>
     </div>
   );
 }

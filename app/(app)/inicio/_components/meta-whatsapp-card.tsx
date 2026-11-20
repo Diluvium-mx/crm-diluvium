@@ -5,6 +5,7 @@
 import Link from "next/link";
 import { metaFreshness, type MetaWhatsappSummary } from "@/lib/dashboard/meta-whatsapp";
 import { formatUsd } from "@/lib/usd-format";
+import { InfoNote } from "@/components/ui/info-note";
 
 export function MetaWhatsappCard({ summary }: { summary: MetaWhatsappSummary }) {
   const fresh = metaFreshness(summary);
@@ -35,10 +36,10 @@ export function MetaWhatsappCard({ summary }: { summary: MetaWhatsappSummary }) 
           )}
         </div>
       </div>
-      <p className="mt-3 text-xs text-muted-foreground">
+      <InfoNote>
         Lo que Meta cobra por WhatsApp: plantillas y mensajes que salen cuando el chat ya no es gratis. Meta lo carga a la
         tarjeta el día 1, sin IVA. Lo lee el CRM de Zernio cada hora; Meta puede tardar unas horas en reportarlo.
-      </p>
+      </InfoNote>
     </div>
   );
 }

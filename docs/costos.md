@@ -56,6 +56,30 @@ contra 2,985 en octubre), porque Meta a veces da más tiempo gratis por anuncio 
 
 El monto de la factura sigue en Meta Business Suite › Facturación y pagos › Cuentas › «Cuentas de mensajes».
 
+## Dashboard › Costo del CRM
+
+Desde el 20-nov-2026 (pedido del dueño: «el monto mensual y total del mantenimiento del CRM») el Dashboard muestra
+hasta arriba la tarjeta **Costo del CRM** con la misma lista fija de arriba (mapa del CRM 3.1 › 115–118):
+
+- **Va**: lo que llevan este mes, días UTC. IA = el gasto del mes de la tarjeta Gasto de IA; Meta = lo que reporta
+  del mes; Zernio = lo que va cobrado; Railway = el uso de su periodo actual, nunca menos de lo que cuesta el plan
+  (US$5 en Hobby, se cobra igual). Railway cobra del 5 al 5: los días 1 a 4 todavía es el periodo del mes anterior.
+- **Cierre estimado**: IA con el promedio de los últimos 7 días (la misma proyección del Historial del gasto de IA),
+  Railway y Zernio con su factura estimada, Meta con lo que va llevado al mes completo. El primer día no se calcula.
+- **Mes pasado** y **Total desde que arrancó**: salen de la tabla `crm_cost_months` (migración 0081), una fila por
+  mes cerrado y organización. Hace falta porque Railway y Zernio solo guardan su periodo actual (y Zernio el
+  anterior): sin la tabla el total se perdería.
+
+**Quién llena la tabla:** el worker, cada hora (`lib/costos/guardar-mes.ts`), guarda el **mes anterior** con las
+mismas reglas de este correo (Railway = el periodo que EMPIEZA en ese mes; Zernio = su mes anterior ya cerrado; Meta =
+lo que reportó, solo si se leyó después del cierre). Los primeros **7 días** del mes siguiente (hora de Mazatlán) lo
+vuelve a calcular, porque Railway cierra el 5 y los proveedores tardan en reportar; un dato que ya no se puede leer
+(null) no borra el que ya estaba; después del día 7 queda fijo. No llama a ningún proveedor.
+
+**Meses de antes de la tabla:** septiembre y octubre de 2026 se cargan una sola vez a mano con `source = 'manual'`
+(el worker nunca los toca), con las cifras confirmadas por el dueño. Para corregir un mes: actualizar su fila y
+ponerle `source = 'manual'`.
+
 ## El correo
 
 - GitHub lo manda el **día 3 a las 9:00 de Mazatlán** (`.github/workflows/costos-mes.yml`) con el mes calendario

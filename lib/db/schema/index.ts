@@ -27,3 +27,4 @@ export * from "./resenas-tienda";
 export * from "./stage-history";
 export * from "./spelling";
 export * from "./links-pago";
+export * from "./crm-cost-months";
