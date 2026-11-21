@@ -407,12 +407,13 @@ export function ChatThread({
     channelType: detail.channel.type,
     windowExpiresAt: detail.windowExpiresAt ? new Date(detail.windowExpiresAt) : null,
     simulado: detail.simulado === true,
+    archivado: detail.channel.archived,
     adEntry: detail.adEntry && {
       entryAt: new Date(detail.adEntry.entryAt),
       firstReplyAt: detail.adEntry.firstReplyAt ? new Date(detail.adEntry.firstReplyAt) : null,
       metaFreeUntil: detail.adEntry.metaFreeUntil ? new Date(detail.adEntry.metaFreeUntil) : null,
     },
-    servicioGratisQuedan: detail.servicioGratisQuedan ?? null,
+    servicioGratis: detail.servicioGratis ? { quedan: detail.servicioGratis.quedan, hasta: new Date(detail.servicioGratis.hasta) } : null,
     now: new Date(nowMs),
   });
   const sellerCanWrite = canSellerWrite(detail.channel.type, detail.windowExpiresAt, nowMs);

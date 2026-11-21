@@ -14,7 +14,7 @@ import { META_RATE_USD } from "@/lib/meta-whatsapp/tarifas";
 import { humanAgentExpiresAt, isWindowOpen } from "@/lib/messaging/rules";
 
 export type WindowBarTone = "gratis" | "costo" | "aviso" | "cerrado";
-export type WindowBarIcon = "gift" | "coin" | "clock" | "template" | "instagram" | "test";
+export type WindowBarIcon = "gift" | "coin" | "clock" | "template" | "instagram" | "test" | "archive";
 
 export type WindowBar = {
   tone: WindowBarTone;
@@ -32,10 +32,12 @@ export type WindowBarInput = {
   windowExpiresAt: Date | null;
   /** Cliente de prueba de staging: nunca toca WhatsApp. */
   simulado: boolean;
-  /** Entrada por anuncio; metaFreeUntil = la marca de Meta vigente (puede pasar de 72 h). */
+  /** Número archivado (desconectado): desde ahí no se manda nada (ArchivedComposer). */
+  archivado: boolean;
+  /** Entrada por anuncio; metaFreeUntil = la marca de Meta de ESTA entrada, vigente o vencida (puede pasar de 72 h). */
   adEntry: { entryAt: Date; firstReplyAt: Date | null; metaFreeUntil: Date | null } | null;
-  /** Mensajes de servicio gratis que quedan este mes en el número (null = no se sabe). */
-  servicioGratisQuedan: number | null;
+  /** Mensajes normales gratis que quedan este mes en el número y hasta cuándo vale el dato (null = no se sabe). */
+  servicioGratis: { quedan: number; hasta: Date } | null;
   now: Date;
 };
 
@@ -77,10 +79,11 @@ export function tiempoQueQueda(ms: number): string {
   return m === 0 ? `${h} h` : `${h} h ${m} min`;
 }
 
-/** Hasta cuándo es gratis por el anuncio: primero la marca de Meta, si no la regla de 72 h del CRM. */
+/** Hasta cuándo es gratis por el anuncio: si Meta ya marcó esta entrada, manda su marca (vencida = ya no es gratis);
+ *  sin marca, la regla de 72 h del CRM. */
 function tiempoGratis(adEntry: WindowBarInput["adEntry"], now: Date) {
   if (!adEntry) return null;
-  if (adEntry.metaFreeUntil && adEntry.metaFreeUntil > now) return { status: "open" as const, until: adEntry.metaFreeUntil };
+  if (adEntry.metaFreeUntil) return adEntry.metaFreeUntil > now ? { status: "open" as const, until: adEntry.metaFreeUntil } : null;
   const fw = freeEntryWindow(adEntry.entryAt, adEntry.firstReplyAt, now);
   if (fw?.status === "open") return { status: "open" as const, until: fw.until };
   if (fw?.status === "pending") return { status: "pending" as const, replyBy: fw.replyBy };
@@ -96,6 +99,15 @@ export function windowBar(input: WindowBarInput): WindowBar {
       strong: "Cliente de prueba",
       rest: "· la ventana nunca cierra y no cuesta",
       title: "Cliente de prueba de staging: lo que se le manda nunca sale a WhatsApp.",
+    };
+  }
+  if (input.archivado) {
+    return {
+      tone: "cerrado",
+      icon: "archive",
+      strong: "No se puede escribir",
+      rest: "· este número ya no está conectado",
+      title: "El número de este chat ya no está conectado al CRM: el historial queda para consulta y no sale nada.",
     };
   }
   const abierta = isWindowOpen(windowExpiresAt, now);
@@ -164,25 +176,26 @@ export function windowBar(input: WindowBarInput): WindowBar {
   }
 
   if (abierta) {
-    const quedan = input.servicioGratisQuedan;
-    const gratisMes = quedan !== null && quedan >= GRATIS_MES_MARGEN;
+    // Los gratis del mes solo cuentan mientras el dato esté vigente (un chat abierto horas no los vuelve a leer).
+    const gratis = input.servicioGratis && now < input.servicioGratis.hasta ? input.servicioGratis.quedan : null;
+    const gratisMes = gratis !== null && gratis >= GRATIS_MES_MARGEN;
     if (queda < POCO_TIEMPO_MS) {
       return {
         tone: "aviso",
         icon: "clock",
         strong: `Cierra en ${tiempoQueQueda(queda)}`,
-        rest: "· después solo plantilla, que cuesta más",
+        rest: "· después solo plantilla, con costo",
         title: `Hasta esa hora se puede mandar texto libre (${gratisMes ? "hoy gratis: quedan de los 1,000 del mes" : `${TEXTO} cada mensaje`}). Después, desde el CRM solo sale plantilla: ${PLANTILLAS}.`,
       };
     }
     if (gratisMes) {
-      const aprox = Math.floor(quedan / 10) * 10;
+      const aprox = Math.floor(gratis / 10) * 10;
       return {
         tone: "gratis",
         icon: "gift",
         strong: "Gratis",
         rest: `· puedes escribir ${tiempoQueQueda(queda)} más · quedan ≈ ${aprox.toLocaleString("es-MX")} de los 1,000 del mes`,
-        title: `Meta no cobra los primeros 1,000 mensajes del mes (cuentan también los del Agente IA y las automatizaciones). Cuando se acaben, cada mensaje cuesta ${TEXTO}. La cuenta la reporta Meta y puede tardar unas horas.`,
+        title: `Meta no cobra los primeros 1,000 mensajes normales del mes (cuentan también los del Agente IA y las automatizaciones); las plantillas sí se cobran (${PLANTILLAS}). Cuando se acaben, cada mensaje cuesta ${TEXTO}. La cuenta la reporta Meta y puede tardar unas horas.`,
       };
     }
     return {
@@ -190,7 +203,7 @@ export function windowBar(input: WindowBarInput): WindowBar {
       icon: "coin",
       strong: "Con costo",
       rest: `· puedes escribir ${tiempoQueQueda(queda)} más`,
-      title: `Cada mensaje que sale del CRM (tuyo, del Agente IA o de una automatización) cuesta ${TEXTO}. ${CELULAR}`,
+      title: `Cada mensaje normal que sale del CRM (tuyo, del Agente IA o de una automatización) cuesta ${TEXTO}; una plantilla, ${PLANTILLAS}. ${CELULAR}`,
     };
   }
 
