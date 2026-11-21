@@ -51,9 +51,17 @@ El chat es un solo componente reutilizado en las dos secciones.
 
 ### Chat
 - **Encabezado:** nombre, teléfono, chip de etapa. Sin llamar, carpeta, correo ni borrar.
-- **Ventana de 24 h:** "Ventana abierta · quedan X h". Vencida → composer bloqueado con el aviso
-  "Pasaron 24 h desde su último mensaje. Solo se puede enviar una plantilla." (plantillas: con el
-  número real).
+- **Barra de arriba (20-nov-2026, propuesta A del dueño: «el precio primero, en una palabra»):** dice si lo que sale
+  del CRM es **Gratis**, **Con costo** o **Solo plantilla, con costo**, con el color del precio (verde, azul navy,
+  ámbar; gris = no se puede) y el por qué y los centavos en el title. Regla pura en `lib/inbox/window-bar.ts`
+  (con sus pruebas), pintada por `window-bar.tsx`. Casos: gratis por anuncio (la marca de Meta o 72 h), anuncio sin
+  contestar, anuncio con las 24 h vencidas (plantilla gratis), gratis del mes (quedan de los 1,000 de servicio, de lo
+  que reporta Meta cada hora: `lib/meta-whatsapp/gratis-mes.ts`; con menos de 50 o sin lectura de las últimas 6 h,
+  «Con costo»; el dato trae su vigencia —6 h o fin del mes UTC— para que un chat abierto horas no siga diciendo
+  «Gratis»), con costo, cierra en menos de 2 h, cerrada (gratis desde el celular), el cliente todavía no escribe,
+  número archivado (no se puede escribir) e Instagram (gratis; 24 h, de 24 h a 7 días solo un vendedor, después
+  nadie). La marca de Meta es la de la entrada actual (`metaFreeMarkSince`): si ya venció, no vuelve a las 72 h. Vencida → composer bloqueado y solo
+  plantilla (plantillas: con el número real). Mapa: Bandeja › 11 y 12.
 - **Burbujas:** cliente a la izquierda, nuestras a la derecha, separador por día.
 - **Estado del saliente:** 🕗 enviando · ✓ enviado · ✓✓ entregado · ✓✓ azul leído · ⚠ falló (motivo
   en palabras simples + Reintentar si es seguro). Ver "Envíos sin pérdidas ni duplicados" abajo.
