@@ -95,12 +95,12 @@ export default async function InicioPage({ searchParams }: PageProps<"/inicio">)
       </div>
 
       {/* 20-nov-2026 (opción A del dueño): arriba el costo del CRM; debajo una tarjeta chica por servicio que abre su
-          detalle. El Gasto de IA sale abierto la primera vez: el saldo importa más que las métricas (Fase E). */}
+          detalle con «Desglosar». 21-nov-2026: todas cerradas al entrar y una sola abierta a la vez (todo comprimido). */}
       {costo && <CostoCrmCard costo={costo} />}
       {(spend || meta || railway || zernio) && (
         <div className="grid grid-flow-row-dense gap-3 sm:grid-cols-2 lg:grid-cols-4">
           {spend && (
-            <CostTile id="ia" title="Gasto de IA" summary={iaTile(spend)} defaultOpen>
+            <CostTile id="ia" title="Gasto de IA" summary={iaTile(spend)}>
               <AiSpendCard summary={spend} canRegister={roleAllows(role, "aiSpend", "update")} />
             </CostTile>
           )}
