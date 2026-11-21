@@ -66,9 +66,11 @@ hasta arriba la tarjeta **Costo del CRM** con la misma lista fija de arriba (map
   (US$5 en Hobby, se cobra igual). Railway cobra del 5 al 5: los días 1 a 4 todavía es el periodo del mes anterior.
 - **Cierre estimado**: IA con el promedio de los últimos 7 días (la misma proyección del Historial del gasto de IA),
   Railway y Zernio con su factura estimada, Meta con lo que va llevado al mes completo. El primer día no se calcula.
-- **Mes pasado** y **Total desde que arrancó**: salen de la tabla `crm_cost_months` (migración 0081), una fila por
-  mes cerrado y organización. Hace falta porque Railway y Zernio solo guardan su periodo actual (y Zernio el
-  anterior): sin la tabla el total se perdería.
+- **Mes pasado**: sale de la tabla `crm_cost_months` (migración 0081), una fila por mes cerrado y organización. Hace
+  falta porque Railway y Zernio solo guardan su periodo actual (y Zernio el anterior): sin la tabla, los meses pasados
+  se perderían. Sin total acumulado (21-nov-2026, dueño): cada mes se ve por separado.
+- **Historial de costos** (botón de la tarjeta, `/inicio/costos`, mapa 3.1.4): el correo de este documento, en vivo, para
+  el mes en curso y para cada mes guardado (`lib/costos/historial*.ts`, mismo `htmlCorreo`).
 
 **Quién llena la tabla:** el worker, cada hora (`lib/costos/guardar-mes.ts`), guarda el **mes anterior** con las
 mismas reglas de este correo (Railway = el periodo que EMPIEZA en ese mes; Zernio = su mes anterior ya cerrado; Meta =
@@ -76,8 +78,10 @@ lo que reportó, solo si se leyó después del cierre). Los primeros **7 días**
 vuelve a calcular, porque Railway cierra el 5 y los proveedores tardan en reportar; un dato que ya no se puede leer
 (null) no borra el que ya estaba; después del día 7 queda fijo. No llama a ningún proveedor.
 
-**Meses de antes de la tabla:** septiembre y octubre de 2026 se cargan una sola vez a mano con `source = 'manual'`
-(el worker nunca los toca), con las cifras confirmadas por el dueño. Para corregir un mes: actualizar su fila y
+**Meses de antes de la tabla:** cargados a mano el 21-nov-2026 con `source = 'manual'` (el worker nunca los toca),
+verificados con las facturas: septiembre US$10.03 (IA 9.18 Anthropic + 0.85 OpenAI; Meta, Railway y Zernio en 0:
+Railway en prueba gratis y el crédito de Zernio cubrió la cuenta) y octubre US$99.97 (IA 41.02, Meta 44.16 = cargo a la
+tarjeta del 1-nov, Railway 13.74 = factura del periodo 5-oct → 5-nov, Zernio 1.05). Respaldo de antes en las notas. Para corregir un mes: actualizar su fila y
 ponerle `source = 'manual'`.
 
 ## El correo

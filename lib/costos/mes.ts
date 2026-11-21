@@ -78,8 +78,8 @@ const round2 = (n: number) => Math.round(n * 100) / 100;
 // ---- IA ----
 
 // Proveedores que siempre salen (aunque el mes dé 0); los demás solo si gastaron algo.
-const IA_FIJOS = ["anthropic", "openai"];
-const IA_PARA_QUE: Record<string, string> = {
+export const IA_FIJOS = ["anthropic", "openai"];
+export const IA_PARA_QUE: Record<string, string> = {
   anthropic: "Agente IA (Sonnet)",
   openai: "Agente IA (Luna) y audios",
 };
