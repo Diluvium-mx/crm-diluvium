@@ -14,13 +14,13 @@ export function RailwayCard({ summary }: { summary: RailwaySummary }) {
   const orange = s.includedTone === "orange";
   return (
     <div className="rounded-lg border bg-card p-4">
-      <div className="flex flex-wrap items-end justify-between gap-2">
+      <div className="flex flex-wrap items-center justify-between gap-2">
         <div>
-          <h2 className="text-sm font-semibold">Railway (servidores del CRM)</h2>
+          <h2 className="text-xl font-semibold sm:text-2xl">Railway (servidores del CRM)</h2>
           {(s.planLabel || period) && (
-            <span className="block text-xs text-muted-foreground">{[s.planLabel && `Plan ${s.planLabel}`, period].filter(Boolean).join(" · ")}</span>
+            <span className="mt-0.5 block text-sm text-muted-foreground">{[s.planLabel && `Plan ${s.planLabel}`, period].filter(Boolean).join(" · ")}</span>
           )}
-          <span className={`block text-xs ${fresh.tone === "orange" ? "text-brand-orange" : "text-muted-foreground"}`}>{fresh.text}</span>
+          <span className={`block text-sm ${fresh.tone === "orange" ? "text-brand-orange" : "text-muted-foreground"}`}>{fresh.text}</span>
         </div>
         <div className="text-right">
           <p className="text-xs text-muted-foreground">Factura estimada{s.periodEndLabel ? ` al ${s.periodEndLabel}` : ""}</p>

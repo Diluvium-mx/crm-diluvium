@@ -12,16 +12,16 @@ export function MetaWhatsappCard({ summary }: { summary: MetaWhatsappSummary }) 
   const s = summary;
   return (
     <div className="rounded-lg border bg-card p-4">
-      <div className="flex flex-wrap items-end justify-between gap-2">
+      <div className="flex flex-wrap items-center justify-between gap-2">
         <div>
           <div className="flex items-center gap-2">
-            <h2 className="text-sm font-semibold">WhatsApp (Meta)</h2>
+            <h2 className="text-xl font-semibold sm:text-2xl">WhatsApp (Meta)</h2>
             <Link href="/inicio/whatsapp" className="-my-1 rounded border px-2 py-1 text-xs font-medium text-foreground hover:bg-muted">
               Detalle
             </Link>
           </div>
-          <span className="block text-xs text-muted-foreground">Mes de {s.monthLabel} (días UTC)</span>
-          <span className={`block text-xs ${fresh.tone === "orange" ? "text-brand-orange" : "text-muted-foreground"}`}>{fresh.text}</span>
+          <span className="mt-0.5 block text-sm text-muted-foreground">Mes de {s.monthLabel} (días UTC)</span>
+          <span className={`block text-sm ${fresh.tone === "orange" ? "text-brand-orange" : "text-muted-foreground"}`}>{fresh.text}</span>
         </div>
         <div className="text-right">
           <p className="text-xs text-muted-foreground">Este mes</p>

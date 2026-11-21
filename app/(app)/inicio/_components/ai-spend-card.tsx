@@ -49,10 +49,10 @@ export function AiSpendCard({ summary, canRegister }: { summary: AiSpendSummary;
   const idle = summary.providers.filter(isIdleProvider);
   return (
     <div className="rounded-lg border bg-card p-4">
-      <div className="flex flex-wrap items-end justify-between gap-2">
+      <div className="flex flex-wrap items-center justify-between gap-2">
         <div>
-          <h2 className="text-sm font-semibold">Gasto de IA</h2>
-          <span className="text-xs text-muted-foreground">Gasto de {summary.monthLabel}</span>
+          <h2 className="text-xl font-semibold sm:text-2xl">Gasto de IA</h2>
+          <span className="mt-0.5 block text-sm text-muted-foreground">Gasto de {summary.monthLabel}</span>
         </div>
         <div className="text-right">
           <p className="text-xs text-muted-foreground">Total del mes</p>

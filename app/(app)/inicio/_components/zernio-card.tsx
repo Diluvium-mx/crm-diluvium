@@ -31,11 +31,11 @@ export function ZernioCard({ summary }: { summary: ZernioSummary }) {
     .join(" · ");
   return (
     <div className="rounded-lg border bg-card p-4">
-      <div className="flex flex-wrap items-end justify-between gap-2">
+      <div className="flex flex-wrap items-center justify-between gap-2">
         <div>
-          <h2 className="text-sm font-semibold">Zernio (WhatsApp e Instagram)</h2>
-          {s.monthLabel && <span className="block text-xs text-muted-foreground">Mes de {s.monthLabel} (días UTC)</span>}
-          <span className={`block text-xs ${fresh.tone === "orange" ? "text-brand-orange" : "text-muted-foreground"}`}>{fresh.text}</span>
+          <h2 className="text-xl font-semibold sm:text-2xl">Zernio (WhatsApp e Instagram)</h2>
+          {s.monthLabel && <span className="mt-0.5 block text-sm text-muted-foreground">Mes de {s.monthLabel} (días UTC)</span>}
+          <span className={`block text-sm ${fresh.tone === "orange" ? "text-brand-orange" : "text-muted-foreground"}`}>{fresh.text}</span>
         </div>
         <div className="text-right">
           <p className="text-xs text-muted-foreground">Factura estimada{s.monthLabel ? ` de ${s.monthLabel}` : ""}</p>
