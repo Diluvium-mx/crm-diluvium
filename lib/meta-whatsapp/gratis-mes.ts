@@ -32,7 +32,17 @@ export function gratisQueQuedan(renglones: Renglon[], leidoAt: Date | null, now:
   return Math.max(0, SERVICIO_GRATIS_MES - usados);
 }
 
-export async function servicioGratisQuedan(database: Database, organizationId: string, channelId: string, now: Date): Promise<number | null> {
+/** Gratis que quedan y hasta cuándo vale el dato: 6 h después de la lectura de Meta o el fin del mes UTC, lo que pase
+ *  antes. La barra lo deja de creer después (un chat abierto horas no debe seguir diciendo «Gratis»). */
+export type ServicioGratis = { quedan: number; hasta: Date };
+
+// PURO: hasta cuándo vale una lectura de Meta hecha en `leidoAt`.
+export function vigenciaGratis(leidoAt: Date): Date {
+  const finMes = Date.UTC(leidoAt.getUTCFullYear(), leidoAt.getUTCMonth() + 1, 1);
+  return new Date(Math.min(leidoAt.getTime() + GRATIS_MES_LECTURA_MAX_MS, finMes));
+}
+
+export async function servicioGratisQuedan(database: Database, organizationId: string, channelId: string, now: Date): Promise<ServicioGratis | null> {
   const { desde, hasta } = mesUtc(now);
   const [renglones, [sync]] = await Promise.all([
     database
@@ -51,5 +61,7 @@ export async function servicioGratisQuedan(database: Database, organizationId: s
       .from(metaWhatsappPricingSync)
       .where(eq(metaWhatsappPricingSync.organizationId, organizationId)),
   ]);
-  return gratisQueQuedan(renglones, sync?.fetchedAt ?? null, now);
+  const leidoAt = sync?.fetchedAt ?? null;
+  const quedan = gratisQueQuedan(renglones, leidoAt, now);
+  return quedan === null || !leidoAt ? null : { quedan, hasta: vigenciaGratis(leidoAt) };
 }

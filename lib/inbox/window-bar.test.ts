@@ -9,8 +9,9 @@ const base = (over: Partial<WindowBarInput> = {}): WindowBarInput => ({
   channelType: "whatsapp",
   windowExpiresAt: at(21 * H),
   simulado: false,
+  archivado: false,
   adEntry: null,
-  servicioGratisQuedan: null,
+  servicioGratis: null,
   now,
   ...over,
 });
@@ -35,18 +36,26 @@ describe("windowBar · WhatsApp", () => {
   });
 
   it("ventana normal con gratis del mes: Gratis y cuántos quedan (redondeado a 10)", () => {
-    const bar = windowBar(base({ servicioGratisQuedan: 647 }));
+    const bar = windowBar(base({ servicioGratis: { quedan: 647, hasta: at(3 * H) } }));
     expect(bar).toMatchObject({ tone: "gratis", strong: "Gratis", rest: "· puedes escribir 21 h más · quedan ≈ 640 de los 1,000 del mes" });
   });
 
   it("con menos de 50 gratis del mes ya dice Con costo (Meta reporta con atraso)", () => {
-    expect(windowBar(base({ servicioGratisQuedan: 49 })).strong).toBe("Con costo");
-    expect(windowBar(base({ servicioGratisQuedan: 50 })).strong).toBe("Gratis");
+    expect(windowBar(base({ servicioGratis: { quedan: 49, hasta: at(3 * H) } })).strong).toBe("Con costo");
+    expect(windowBar(base({ servicioGratis: { quedan: 50, hasta: at(3 * H) } })).strong).toBe("Gratis");
+  });
+
+  it("los gratis del mes dejan de valer cuando vence el dato (chat abierto horas)", () => {
+    expect(windowBar(base({ servicioGratis: { quedan: 600, hasta: at(-1) } })).strong).toBe("Con costo");
+  });
+
+  it("el title de los gratis del mes avisa que las plantillas sí se cobran", () => {
+    expect(windowBar(base({ servicioGratis: { quedan: 600, hasta: at(H) } })).title).toContain("las plantillas sí se cobran");
   });
 
   it("poco tiempo (< 2 h): aviso ámbar con minutos", () => {
     const bar = windowBar(base({ windowExpiresAt: at(45 * 60_000) }));
-    expect(bar).toMatchObject({ tone: "aviso", icon: "clock", strong: "Cierra en 45 min", rest: "· después solo plantilla, que cuesta más" });
+    expect(bar).toMatchObject({ tone: "aviso", icon: "clock", strong: "Cierra en 45 min", rest: "· después solo plantilla, con costo" });
     expect(bar.title).toContain("≈ 75 centavos la de venta");
     expect(windowBar(base({ windowExpiresAt: at(2 * H) })).strong).toBe("Con costo");
   });
@@ -79,6 +88,16 @@ describe("windowBar · WhatsApp", () => {
     const metaFreeUntil = at(100 * H);
     const bar = windowBar(base({ adEntry: { entryAt: at(-90 * H), firstReplyAt: at(-89 * H), metaFreeUntil } }));
     expect(bar.rest).toContain(`por anuncio hasta ${fechaBarra(metaFreeUntil)}`);
+  });
+
+  it("anuncio: si la marca de Meta de esta entrada ya venció, ya no es gratis (no vuelve a las 72 h)", () => {
+    const bar = windowBar(base({ adEntry: { entryAt: at(-50 * H), firstReplyAt: at(-49 * H), metaFreeUntil: at(-1 * H) } }));
+    expect(bar.strong).toBe("Con costo");
+  });
+
+  it("número archivado: no se puede escribir, aunque la ventana siga abierta", () => {
+    expect(windowBar(base({ archivado: true }))).toMatchObject({ tone: "cerrado", icon: "archive", strong: "No se puede escribir" });
+    expect(windowBar(base({ archivado: true, windowExpiresAt: at(-3 * H) })).strong).toBe("No se puede escribir");
   });
 
   it("anuncio con la ventana cerrada: Plantilla gratis hasta…", () => {
@@ -136,7 +155,7 @@ describe("windowBar · Instagram", () => {
   });
 
   it("los gratis del mes y los anuncios no aplican a Instagram", () => {
-    expect(ig({ servicioGratisQuedan: 900, adEntry: { entryAt: at(-1 * H), firstReplyAt: null, metaFreeUntil: null } }).rest).toBe(
+    expect(ig({ servicioGratis: { quedan: 900, hasta: at(H) }, adEntry: { entryAt: at(-1 * H), firstReplyAt: null, metaFreeUntil: null } }).rest).toBe(
       "· cualquiera puede escribir 21 h más",
     );
   });
