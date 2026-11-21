@@ -1,8 +1,11 @@
 # Gasto de WhatsApp (Meta): la marca de Meta y lo que reporta Meta
 
 Pedido del dueño (4-nov-2026): saber el gasto **exacto** de WhatsApp sin revisarlo a mano cada mes y saber **qué
-mensajes cuestan** (Ángela, automatizaciones, seguimientos, vendedores). Todo en segundo plano: **nada se ve en la
-Bandeja ni en el Embudo**, solo en el Dashboard (tarjeta «WhatsApp (Meta)» y su sección «Gasto de WhatsApp»).
+mensajes cuestan** (Ángela, automatizaciones, seguimientos, vendedores). Todo en segundo plano: el gasto se ve solo
+en el Dashboard (tarjeta «WhatsApp (Meta)» y su sección «Gasto de WhatsApp»). Desde el 20-nov-2026 la barra de arriba
+del chat usa dos datos de aquí para decir si un mensaje es gratis o cuesta: los gratis de servicio que quedan en el mes
+(`lib/meta-whatsapp/gratis-mes.ts`) y la marca de Meta «gratis por anuncio» (`metaFreeUntilOf` en
+lib/followups/gratis.ts). Ver docs/bandeja.md › Chat.
 No gasta IA (no llama a ningún modelo) ni cuesta en Zernio (Zernio cobra mensajes enviados y cuentas; leer es gratis).
 
 Antes (hasta el 3-nov-2026) el correo del día 3 estimaba a Meta con un conteo propio del CRM que contaba ~14 % de más

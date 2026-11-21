@@ -110,7 +110,8 @@ oficial, cada mensaje que llegue desde un anuncio entra completo, ordenado y sin
 
 - **Chat** (Bandeja y pop-up del Embudo): tarjeta compacta de 1–2 líneas (miniatura del bucket,
   "📣 Llegó por anuncio" y el nombre del anuncio), toda clicable → página del anuncio. Nunca la ficha.
-  Junto al aviso de 24 h: "Responde antes de X: 72 h gratis" o "Gratis por anuncio hasta X".
+  La ventana gratis la dice la barra de arriba del chat (20-nov-2026, `lib/inbox/window-bar.ts`): "Gratis por anuncio
+  hasta X", "Contesta antes de X y todo es gratis por 72 h" o, pasadas las 24 h, "Plantilla gratis hasta X".
 - **Sidebar "Anuncios"** (`/anuncios`, todos los miembros): la tabla de `components/anuncios/ads-table.tsx`
   (diseño de Pulido UI, contrato en docs/ui-anuncios-tabla.md) con datos de `listAdsForPeriod`
   (`lib/ads/queries.ts`) y el filtro de periodo del Dashboard (por omisión, el mes en curso). Reglas de
