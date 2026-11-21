@@ -5,7 +5,8 @@
 //   de lo que cuesta el plan (se cobra igual).
 // - Cierre estimado: si siguen al ritmo de estos días (IA: promedio de los últimos 7 días, como el Historial; Railway y
 //   Zernio: su factura estimada; Meta: lo que va llevado al mes completo). El primer día del mes no se calcula.
-// - Total: los meses cerrados que guardó el worker (crm_cost_months, lib/costos/guardar-mes.ts) más lo que va de este.
+// - Mes pasado: el que guardó el worker (crm_cost_months, lib/costos/guardar-mes.ts). 21-nov-2026 (dueño): sin total
+//   acumulado; cada mes se ve en Dashboard › Historial de costos.
 import { and, asc, eq, lt } from "drizzle-orm";
 import type { db as appDb } from "@/lib/db";
 import { crmCostMonths } from "@/lib/db/schema";
@@ -44,15 +45,10 @@ export type CostoCrm = {
   prevLabel: string;
   // null = el mes anterior aún no está guardado.
   prevUsd: number | null;
-  totalUsd: number;
-  // Primer mes que suma el total ("sep-2026").
-  desdeLabel: string;
-  meses: number;
 };
 
 const round2 = (n: number) => Math.round(n * 100) / 100;
 const monthName = new Intl.DateTimeFormat("es-MX", { month: "long", timeZone: "UTC" });
-const monthShort = new Intl.DateTimeFormat("es-MX", { month: "short", timeZone: "UTC" });
 
 function monthDate(month: string): Date {
   return new Date(`${month}-15T12:00:00Z`);
@@ -63,16 +59,12 @@ function prevMonthKey(month: string): string {
   return m === 1 ? `${y - 1}-12` : `${y}-${String(m - 1).padStart(2, "0")}`;
 }
 
-function shortLabel(month: string): string {
-  return `${monthShort.format(monthDate(month)).replace(".", "")}-${month.slice(0, 4)}`;
-}
-
 function daysInMonth(month: string): number {
   const [y, m] = month.split("-").map(Number);
   return new Date(Date.UTC(y, m, 0)).getUTCDate();
 }
 
-function sumaMes(fila: MesGuardado): number {
+export function sumaMes(fila: MesGuardado): number {
   return (fila.iaUsd ?? 0) + (fila.metaUsd ?? 0) + (fila.railwayUsd ?? 0) + (fila.zernioUsd ?? 0);
 }
 
@@ -116,9 +108,8 @@ export function resumirCostoCrm(input: {
     .map((s) => ({ servicio: s, label: SERVICIO_LABEL[s], usd: round2(tramos[s].va ?? 0), pct: vaUsd > 0 ? ((tramos[s].va ?? 0) / vaUsd) * 100 : 0 }))
     .sort((a, b) => b.usd - a.usd);
 
-  const cerrados = input.guardados.filter((g) => g.month < month).sort((a, b) => a.month.localeCompare(b.month));
   const prevKey = prevMonthKey(month);
-  const prev = cerrados.find((g) => g.month === prevKey);
+  const prev = input.guardados.find((g) => g.month === prevKey);
   return {
     monthLabel: monthName.format(monthDate(month)),
     vaUsd: round2(vaUsd),
@@ -127,9 +118,6 @@ export function resumirCostoCrm(input: {
     cierreUsd: cierreUsd === null ? null : round2(cierreUsd),
     prevLabel: monthName.format(monthDate(prevKey)),
     prevUsd: prev ? round2(sumaMes(prev)) : null,
-    totalUsd: round2(cerrados.reduce((sum, g) => sum + sumaMes(g), 0) + vaUsd),
-    desdeLabel: shortLabel(cerrados[0]?.month ?? month),
-    meses: cerrados.length + 1,
   };
 }
 

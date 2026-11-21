@@ -77,26 +77,16 @@ describe("resumirCostoCrm", () => {
     expect(resumirCostoCrm({ ...base, now: new Date("2026-11-01T10:00:00Z") }).cierreUsd).toBeNull();
   });
 
-  it("mes pasado y total desde el primer mes guardado", () => {
+  it("mes pasado: lo que guardó el worker de ese mes", () => {
     const c = resumirCostoCrm(base);
     expect(c.prevLabel).toBe("octubre");
     expect(c.prevUsd).toBe(98.64);
-    expect(c.totalUsd).toBe(10 + 98.64 + 50.45);
-    expect(c.desdeLabel).toBe("sep-2026");
-    expect(c.meses).toBe(3);
   });
 
-  it("sin meses guardados: el total es lo que va y empieza este mes", () => {
+  it("sin el mes pasado guardado no hay mes pasado (y ya no hay total acumulado)", () => {
     const c = resumirCostoCrm({ ...base, guardados: [] });
     expect(c.prevUsd).toBeNull();
-    expect(c.totalUsd).toBe(c.vaUsd);
-    expect(c.desdeLabel).toBe("nov-2026");
-    expect(c.meses).toBe(1);
-  });
-
-  it("no suma una fila guardada del mes en curso (solo los cerrados)", () => {
-    const c = resumirCostoCrm({ ...base, guardados: [...guardados, { month: "2026-11", iaUsd: 999, metaUsd: null, railwayUsd: null, zernioUsd: null }] });
-    expect(c.totalUsd).toBe(10 + 98.64 + 50.45);
+    expect(c).not.toHaveProperty("totalUsd");
   });
 
   it("un servicio sin lectura no suma y se avisa", () => {
