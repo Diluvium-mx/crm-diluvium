@@ -29,7 +29,7 @@ import {
 } from "./format";
 import { adCardFromRaw, adCardsForMessages, firstReplyAfter } from "@/lib/ads/queries";
 import { transcripcionMeta } from "@/lib/ai/transcription/rules";
-import { metaFreeUntilOf } from "@/lib/followups/gratis";
+import { metaFreeMarkSince } from "@/lib/followups/gratis";
 import { servicioGratisQuedan } from "@/lib/meta-whatsapp/gratis-mes";
 import { chatMatchesForConversations, conversationsWithChatMatch, type ChatMatch } from "./chat-search";
 import type {
@@ -323,7 +323,7 @@ async function detail(where: SQL): Promise<ConversationDetail | null> {
   const sigueCobro = channel.type === "whatsapp" && !channel.isTest && channel.archivedAt === null;
   const [firstReplyAt, metaFreeUntil, servicioGratis] = await Promise.all([
     conversation.adEntryAt ? firstReplyAfter(org, conversation.id, conversation.adEntryAt) : null,
-    conversation.adEntryAt ? metaFreeUntilOf(org, conversation.id, now) : null,
+    conversation.adEntryAt ? metaFreeMarkSince(org, conversation.id, conversation.adEntryAt) : null,
     sigueCobro ? servicioGratisQuedan(db, org, conversation.channelId, now) : null,
   ]);
   return {
@@ -333,7 +333,7 @@ async function detail(where: SQL): Promise<ConversationDetail | null> {
     isStarred: contact.destacado,
     unreadCount: conversation.unreadCount,
     adEntry: conversation.adEntryAt ? { entryAt: conversation.adEntryAt, firstReplyAt, metaFreeUntil } : null,
-    servicioGratisQuedan: servicioGratis,
+    servicioGratis,
     channel: { isTest: channel.isTest, archived: channel.archivedAt !== null, type: channel.type },
     simulado: esCuentaSimulada(channel.providerAccountId) && simuladorActivo(),
   };

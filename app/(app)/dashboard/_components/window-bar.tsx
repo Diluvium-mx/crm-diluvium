@@ -3,7 +3,7 @@
 // Barra de arriba del chat (Bandeja y pop-up del Embudo; 20-nov-2026, propuesta A del dueño): el precio primero, en
 // una palabra. Solo pinta: la regla vive en lib/inbox/window-bar.ts. Verde gratis, azul (navy) con costo, ámbar aviso
 // o acción, gris no se puede. El por qué y los centavos, al pasar el mouse (title).
-import { Clock, Coins, FileText, FlaskConical, Gift } from "lucide-react";
+import { Archive, Clock, Coins, FileText, FlaskConical, Gift } from "lucide-react";
 import type { ComponentType } from "react";
 import type { WindowBar, WindowBarIcon, WindowBarTone } from "@/lib/inbox/window-bar";
 import { InstagramGlyph } from "../../contactos/_components/contact-avatar";
@@ -22,6 +22,7 @@ const ICON: Record<WindowBarIcon, ComponentType<{ className?: string }>> = {
   template: FileText,
   instagram: InstagramGlyph,
   test: FlaskConical,
+  archive: Archive,
 };
 
 export function WindowBarView({ bar }: { bar: WindowBar }) {

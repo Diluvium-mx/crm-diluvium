@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { gratisQueQuedan, mesUtc } from "./gratis-mes";
+import { gratisQueQuedan, mesUtc, vigenciaGratis } from "./gratis-mes";
 
 const now = new Date("2026-11-05T15:00:00Z");
 const recien = new Date("2026-11-05T14:10:00Z");
@@ -37,5 +37,15 @@ describe("gratisQueQuedan", () => {
   it("sin lectura de Meta o con una de más de 6 h: no se sabe", () => {
     expect(gratisQueQuedan([], null, now)).toBeNull();
     expect(gratisQueQuedan([], new Date("2026-11-05T08:59:00Z"), now)).toBeNull();
+  });
+});
+
+describe("vigenciaGratis", () => {
+  it("6 h después de la lectura", () => {
+    expect(vigenciaGratis(new Date("2026-11-05T14:10:00Z"))).toEqual(new Date("2026-11-05T20:10:00Z"));
+  });
+
+  it("nunca pasa del fin del mes UTC (el 1 empiezan otros 1,000)", () => {
+    expect(vigenciaGratis(new Date("2026-11-30T21:00:00Z"))).toEqual(new Date("2026-12-01T00:00:00Z"));
   });
 });

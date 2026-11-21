@@ -4,7 +4,7 @@ Pedido del dueño (4-nov-2026): saber el gasto **exacto** de WhatsApp sin revisa
 mensajes cuestan** (Ángela, automatizaciones, seguimientos, vendedores). Todo en segundo plano: el gasto se ve solo
 en el Dashboard (tarjeta «WhatsApp (Meta)» y su sección «Gasto de WhatsApp»). Desde el 20-nov-2026 la barra de arriba
 del chat usa dos datos de aquí para decir si un mensaje es gratis o cuesta: los gratis de servicio que quedan en el mes
-(`lib/meta-whatsapp/gratis-mes.ts`) y la marca de Meta «gratis por anuncio» (`metaFreeUntilOf` en
+(`lib/meta-whatsapp/gratis-mes.ts`) y la marca de Meta «gratis por anuncio» de la entrada actual (`metaFreeMarkSince` en
 lib/followups/gratis.ts). Ver docs/bandeja.md › Chat.
 No gasta IA (no llama a ningún modelo) ni cuesta en Zernio (Zernio cobra mensajes enviados y cuentas; leer es gratis).
 
