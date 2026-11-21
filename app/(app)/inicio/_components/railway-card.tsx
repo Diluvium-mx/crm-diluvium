@@ -5,6 +5,7 @@
 import { railwayFreshness, type RailwaySummary } from "@/lib/dashboard/railway";
 import { formatUsd } from "@/lib/usd-format";
 import { ProgressBar } from "@/components/ui/progress-bar";
+import { InfoNote } from "@/components/ui/info-note";
 
 export function RailwayCard({ summary }: { summary: RailwaySummary }) {
   const fresh = railwayFreshness(summary);
@@ -13,13 +14,13 @@ export function RailwayCard({ summary }: { summary: RailwaySummary }) {
   const orange = s.includedTone === "orange";
   return (
     <div className="rounded-lg border bg-card p-4">
-      <div className="flex flex-wrap items-end justify-between gap-2">
+      <div className="flex flex-wrap items-center justify-between gap-2">
         <div>
-          <h2 className="text-sm font-semibold">Railway (servidores del CRM)</h2>
+          <h2 className="text-xl font-semibold sm:text-2xl">Railway (servidores del CRM)</h2>
           {(s.planLabel || period) && (
-            <span className="block text-xs text-muted-foreground">{[s.planLabel && `Plan ${s.planLabel}`, period].filter(Boolean).join(" · ")}</span>
+            <span className="mt-0.5 block text-sm text-muted-foreground">{[s.planLabel && `Plan ${s.planLabel}`, period].filter(Boolean).join(" · ")}</span>
           )}
-          <span className={`block text-xs ${fresh.tone === "orange" ? "text-brand-orange" : "text-muted-foreground"}`}>{fresh.text}</span>
+          <span className={`block text-sm ${fresh.tone === "orange" ? "text-brand-orange" : "text-muted-foreground"}`}>{fresh.text}</span>
         </div>
         <div className="text-right">
           <p className="text-xs text-muted-foreground">Factura estimada{s.periodEndLabel ? ` al ${s.periodEndLabel}` : ""}</p>
@@ -55,11 +56,11 @@ export function RailwayCard({ summary }: { summary: RailwaySummary }) {
           </div>
         )}
       </div>
-      <p className="mt-3 text-xs text-muted-foreground">
+      <InfoNote>
         {s.includedUsd !== null &&
           `El plan cobra ${formatUsd(s.includedUsd)} al mes e incluye ${formatUsd(s.includedUsd)} de uso; lo que pase de ahí se cobra a la tarjeta el día de corte. `}
         Lo lee el CRM de Railway cada 5 minutos. No incluye impuestos.
-      </p>
+      </InfoNote>
     </div>
   );
 }

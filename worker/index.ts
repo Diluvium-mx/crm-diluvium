@@ -73,6 +73,7 @@ import { startDespertarWorker } from "./despertar";
 import { syncAiBilling } from "@/lib/ai/billing/sync";
 import { syncRailwayBilling } from "@/lib/railway-billing/sync";
 import { syncZernioBilling } from "@/lib/zernio-billing/sync";
+import { guardarMesCerrado } from "@/lib/costos/guardar-mes";
 import { syncMetaWhatsappPricing } from "@/lib/meta-whatsapp/sync";
 import { backfillMetaMarks } from "@/lib/meta-whatsapp/backfill";
 import { refreshTemplatesInReview } from "@/lib/messaging/templates";
@@ -480,6 +481,21 @@ function metaPricingTick() {
 }
 const metaPricingTimer = setInterval(metaPricingTick, META_PRICING_EVERY_MS);
 
+// Costo del CRM por mes (20-nov-2026, docs/costos.md › Dashboard): cada hora guarda lo que costó el mes anterior
+// (lib/costos/guardar-mes.ts) con lo que ya leyeron los cobros de arriba; los primeros días del mes se vuelve a
+// guardar y después queda fijo. No llama a ningún proveedor. Sirve para el total del Dashboard.
+let costMonthRunning = false;
+function costMonthTick() {
+  if (!migrationsReady || costMonthRunning) return;
+  costMonthRunning = true;
+  guardarMesCerrado()
+    .catch((error) => logError("[costo-crm] no se pudo guardar el costo del mes", error))
+    .finally(() => {
+      costMonthRunning = false;
+    });
+}
+const costMonthTimer = setInterval(costMonthTick, META_PRICING_EVERY_MS);
+
 // Plantillas al día solas (1-oct-2026): mientras alguna esté «En revisión», cada 10 min se le
 // pregunta a Meta su estado (lo mismo que «Ver estado»). Sin plantillas en revisión no consulta nada.
 const TEMPLATES_EVERY_MS = 10 * 60_000;
@@ -535,6 +551,7 @@ async function shutdown(signal: string) {
   clearInterval(railwayBillingTimer);
   clearInterval(zernioBillingTimer);
   clearInterval(metaPricingTimer);
+  clearInterval(costMonthTimer);
   clearInterval(templatesTimer);
   clearInterval(zernioCopyTimer);
   await Promise.all([worker.close(), mediaWorker?.close(), scheduled.close(), agent.close(), lector.close(), despertar.close(), followUps.close(), workflowsRunner.close(), outbox.close(), ads.close(), unavailable.close(), chatUploads?.close()]);
@@ -559,6 +576,7 @@ waitForMigrations()
     railwayBillingTick();
     zernioBillingTick();
     metaPricingTick();
+    costMonthTick();
     // La marca de Meta de los últimos días con los avisos que aún guarda webhook_events (docs/meta-whatsapp.md).
     backfillMetaMarks()
       .then(({ events, marked }) => {

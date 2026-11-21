@@ -8,6 +8,8 @@ import type { AiSpendSummary, ProviderSpend } from "@/lib/dashboard/ai-spend";
 import { freshness, spendBar } from "@/lib/dashboard/ai-spend-bar";
 import { formatDollars, formatUsd } from "@/lib/usd-format";
 import { ProgressBar } from "@/components/ui/progress-bar";
+import { InfoNote } from "@/components/ui/info-note";
+import { isIdleProvider } from "@/lib/dashboard/costo-tiles";
 import { AiTopups } from "./ai-topups";
 
 function Balance({ p }: { p: ProviderSpend }) {
@@ -42,12 +44,15 @@ function Balance({ p }: { p: ProviderSpend }) {
 
 export function AiSpendCard({ summary, canRegister }: { summary: AiSpendSummary; canRegister: boolean }) {
   const total = summary.providers.reduce((sum, p) => sum + p.monthUsd, 0);
+  // 20-nov-2026 (opción A del dueño): los que no gastaron nada este mes y no tienen nada que avisar van en una línea.
+  const active = summary.providers.filter((p) => !isIdleProvider(p));
+  const idle = summary.providers.filter(isIdleProvider);
   return (
     <div className="rounded-lg border bg-card p-4">
-      <div className="flex flex-wrap items-end justify-between gap-2">
+      <div className="flex flex-wrap items-center justify-between gap-2">
         <div>
-          <h2 className="text-sm font-semibold">Gasto de IA</h2>
-          <span className="text-xs text-muted-foreground">Gasto de {summary.monthLabel}</span>
+          <h2 className="text-xl font-semibold sm:text-2xl">Gasto de IA</h2>
+          <span className="mt-0.5 block text-sm text-muted-foreground">Gasto de {summary.monthLabel}</span>
         </div>
         <div className="text-right">
           <p className="text-xs text-muted-foreground">Total del mes</p>
@@ -55,7 +60,7 @@ export function AiSpendCard({ summary, canRegister }: { summary: AiSpendSummary;
         </div>
       </div>
       <div className="mt-3 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-        {summary.providers.map((p) => {
+        {active.map((p) => {
           const fresh = freshness(p);
           return (
             <div key={p.provider} className="flex flex-col rounded-md border p-3">
@@ -71,10 +76,16 @@ export function AiSpendCard({ summary, canRegister }: { summary: AiSpendSummary;
           );
         })}
       </div>
-      <p className="mt-3 text-xs text-muted-foreground">
+      {idle.length > 0 && (
+        <p className="mt-3 text-xs text-muted-foreground tabular-nums">
+          Sin gasto este mes:{" "}
+          {idle.map((p) => (p.balanceUsd !== null && p.loadedUsd !== null ? `${p.label} (saldo ${formatUsd(Math.max(0, p.balanceUsd))})` : p.label)).join(" · ")}
+        </p>
+      )}
+      <InfoNote>
         El gasto y el saldo vienen de cada proveedor y se actualizan cada 5 minutos; los que dicen «estimado» salen del registro
         del CRM. No incluyen impuestos.
-      </p>
+      </InfoNote>
       <AiTopups topups={summary.topups} canRegister={canRegister} />
     </div>
   );

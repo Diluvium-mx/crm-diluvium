@@ -4,12 +4,11 @@
 // - AdReferralCard: tarjeta compacta de 1–2 líneas (miniatura, "📣 Llegó por
 //   anuncio" y el nombre del anuncio), toda clicable → página del anuncio.
 //   Nunca la ficha completa.
-// - AdFreeWindowNote: junto al aviso de 24 h, la ventana GRATIS de 72 h que
-//   abre la primera respuesta a un cliente que llegó por anuncio.
+// La ventana GRATIS del anuncio ya no va aquí: la dice la barra de arriba del chat
+// (20-nov-2026; lib/inbox/window-bar.ts).
 import Link from "next/link";
 import { useState } from "react";
-import { freeEntryWindow } from "@/lib/ads/free-window";
-import type { AdReferral, ConversationDetail } from "@/lib/inbox/types";
+import type { AdReferral } from "@/lib/inbox/types";
 
 export function AdReferralCard({ referral }: { referral: AdReferral }) {
   const [thumbFailed, setThumbFailed] = useState(false);
@@ -39,28 +38,4 @@ export function AdReferralCard({ referral }: { referral: AdReferral }) {
       </span>
     </Link>
   );
-}
-
-const TIME = new Intl.DateTimeFormat("es-MX", {
-  timeZone: "America/Mazatlan",
-  weekday: "short",
-  day: "numeric",
-  hour: "2-digit",
-  minute: "2-digit",
-});
-
-export function AdFreeWindowNote({ adEntry, nowMs }: { adEntry: ConversationDetail["adEntry"]; nowMs: number }) {
-  if (!adEntry) return null;
-  const fw = freeEntryWindow(
-    new Date(adEntry.entryAt),
-    adEntry.firstReplyAt ? new Date(adEntry.firstReplyAt) : null,
-    new Date(nowMs),
-  );
-  if (fw?.status === "open") {
-    return <span title="Llegó por anuncio: los mensajes (también plantillas) son gratis"> · 🎁 Gratis por anuncio hasta {TIME.format(fw.until)}</span>;
-  }
-  if (fw?.status === "pending") {
-    return <span title="Si respondes antes, se abren 72 h de mensajes gratis"> · 📣 Responde antes de {TIME.format(fw.replyBy)}: 72 h gratis</span>;
-  }
-  return null;
 }

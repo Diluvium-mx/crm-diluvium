@@ -12,6 +12,8 @@ import { aiSpendSummary } from "@/lib/dashboard/ai-spend";
 import { railwaySummary } from "@/lib/dashboard/railway";
 import { zernioSummary } from "@/lib/dashboard/zernio";
 import { metaWhatsappSummary } from "@/lib/dashboard/meta-whatsapp";
+import { cargarCostoCrm, resumirCostoCrm } from "@/lib/dashboard/costo-crm";
+import { iaTile, metaTile, railwayTile, zernioTile } from "@/lib/dashboard/costo-tiles";
 import { loadWhatsappStatus } from "@/lib/monitoring/dashboard-status";
 import { loadBotStatus } from "@/lib/monitoring/bot-silence";
 import { listFunnelStages } from "@/lib/contacts/funnel-stages";
@@ -19,6 +21,8 @@ import { AiSpendCard } from "./_components/ai-spend-card";
 import { RailwayCard } from "./_components/railway-card";
 import { ZernioCard } from "./_components/zernio-card";
 import { MetaWhatsappCard } from "./_components/meta-whatsapp-card";
+import { CostoCrmCard } from "./_components/costo-crm-card";
+import { CostTile } from "./_components/cost-tile";
 import { BreakdownList } from "./_components/breakdown-list";
 import { DailyChart } from "./_components/daily-chart";
 import { PeriodCards } from "./_components/period-cards";
@@ -29,8 +33,8 @@ import { followUpsReal as followUpsRealFor } from "@/lib/followups/store";
 import { StatusPill } from "./_components/whatsapp-status";
 
 // Dashboard (A2): destino al entrar. Todos lo ven completo, "Gasto de IA"
-// incluido (todos registran recargas, el vendedor también) y, desde la
-// Fase E, hasta arriba. Los datos se calculan en el servidor para la organización de la
+// incluido (todos registran recargas, el vendedor también). Desde el 20-nov-2026 (opción A del
+// dueño) arriba va el Costo del CRM y una tarjeta chica por servicio que abre su detalle. Los datos se calculan en el servidor para la organización de la
 // sesión (lib/dashboard/queries.ts).
 const CHANNEL_LABELS: Record<string, string> = {
   whatsapp: "WhatsApp",
@@ -49,7 +53,7 @@ export default async function InicioPage({ searchParams }: PageProps<"/inicio">)
   const range = resolveRange({ mes: param(params.mes), desde: param(params.desde), hasta: param(params.hasta) });
 
   const canSeeSpend = roleAllows(role, "aiSpend", "read");
-  const [cards, series, breakdown, spend, railway, zernio, meta, whatsapp, bot, stages, followUps, followUpsReal] = await Promise.all([
+  const [cards, series, breakdown, spend, railway, zernio, meta, whatsapp, bot, stages, followUps, followUpsReal, costoBase] = await Promise.all([
     newConversationsCards(db, organizationId),
     newConversationsByDay(db, organizationId, range),
     newConversationsBreakdown(db, organizationId, range),
@@ -68,7 +72,12 @@ export default async function InicioPage({ searchParams }: PageProps<"/inicio">)
     // Seguimientos del Agente IA en el periodo (Parte 4).
     followUpStats(db, organizationId, range),
     followUpsRealFor(organizationId),
+    // Costo del CRM (20-nov-2026): los meses cerrados que guardó el worker y la proyección del gasto de IA.
+    canSeeSpend ? cargarCostoCrm(db, organizationId) : null,
   ]);
+  const costo = costoBase
+    ? resumirCostoCrm({ now: new Date(), spend, iaProyeccionUsd: costoBase.iaProyeccionUsd, meta, railway, zernio, guardados: costoBase.guardados })
+    : null;
 
   const byStage = new Map(breakdown.porEtapa.map((b) => [b.clave, b.total]));
   const anuncioPct = breakdown.total > 0 ? Math.round((breakdown.porAnuncio / breakdown.total) * 100) : 0;
@@ -85,11 +94,33 @@ export default async function InicioPage({ searchParams }: PageProps<"/inicio">)
         )}
       </div>
 
-      {/* Fase E (decisión del dueño): el Gasto de IA va primero; el saldo importa más que las métricas. */}
-      {spend && <AiSpendCard summary={spend} canRegister={roleAllows(role, "aiSpend", "update")} />}
-      {railway && <RailwayCard summary={railway} />}
-      {zernio && <ZernioCard summary={zernio} />}
-      {meta && <MetaWhatsappCard summary={meta} />}
+      {/* 20-nov-2026 (opción A del dueño): arriba el costo del CRM; debajo una tarjeta chica por servicio que abre su
+          detalle con «Desglosar». 21-nov-2026: todas cerradas al entrar y una sola abierta a la vez (todo comprimido). */}
+      {costo && <CostoCrmCard costo={costo} />}
+      {(spend || meta || railway || zernio) && (
+        <div className="grid grid-flow-row-dense gap-3 sm:grid-cols-2 lg:grid-cols-4">
+          {spend && (
+            <CostTile id="ia" title="Gasto de IA" summary={iaTile(spend)}>
+              <AiSpendCard summary={spend} canRegister={roleAllows(role, "aiSpend", "update")} />
+            </CostTile>
+          )}
+          {meta && (
+            <CostTile id="meta" title="WhatsApp (Meta)" summary={metaTile(meta)}>
+              <MetaWhatsappCard summary={meta} />
+            </CostTile>
+          )}
+          {railway && (
+            <CostTile id="railway" title="Railway" summary={railwayTile(railway)}>
+              <RailwayCard summary={railway} />
+            </CostTile>
+          )}
+          {zernio && (
+            <CostTile id="zernio" title="Zernio" summary={zernioTile(zernio)}>
+              <ZernioCard summary={zernio} />
+            </CostTile>
+          )}
+        </div>
+      )}
 
       <header className="flex flex-wrap items-end justify-between gap-3">
         <div>

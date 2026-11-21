@@ -27,16 +27,15 @@ import { AgentErrorCard } from "./agent-error-card";
 import { AgentActivityPill } from "./agent-activity-pill";
 import { EVENT_BATCH_MS, newestChanged } from "./chat-events";
 import { interleaveNotices } from "@/lib/agente-ia/timeline";
-import { AdFreeWindowNote, AdReferralCard } from "./ad-referral-card";
+import { AdReferralCard } from "./ad-referral-card";
+import { WindowBarView } from "./window-bar";
+import { windowBar } from "@/lib/inbox/window-bar";
 import { SimuladorBar } from "./simulador-bar";
 import {
   bubbleTime,
   dayLabel,
   canSellerWrite,
-  isWindowOpen,
-  sellerDeadline,
   statusMark,
-  windowHoursLeft,
 } from "./format";
 import { formatPhone } from "@/lib/phone-format";
 import { PhoneLocation } from "@/components/ui/phone-location";
@@ -55,15 +54,6 @@ const NEAR_BOTTOM_PX = 120;
 // del servidor) y a lo más estas vueltas.
 const JUMP_PAGE_LIMIT = 100;
 const JUMP_MAX_PAGES = 50;
-// Instagram: hasta cuándo puede contestar un vendedor (hora de Mazatlán, como todo el CRM).
-const deadlineFormat = new Intl.DateTimeFormat("es-MX", {
-  timeZone: "America/Mazatlan",
-  weekday: "short",
-  day: "numeric",
-  month: "short",
-  hour: "2-digit",
-  minute: "2-digit",
-});
 
 // Mensaje pintado de forma optimista (aún sin id del servidor). Se reconcilia
 // con el `message.upserted` del SSE: al re-pedir el hilo, se descarta el
@@ -411,10 +401,21 @@ export function ChatThread({
   // Agente IA (Fase B): pausa + avisos; se recarga con mensajes nuevos y con el detalle.
   const { agent, reload: reloadAgent } = useConversationAgent(conversationId, arrivals, detail);
 
-  const windowOpen = isWindowOpen(detail.windowExpiresAt, nowMs);
-  const hoursLeft = windowHoursLeft(detail.windowExpiresAt, nowMs);
   // Instagram (docs/instagram.md): sin plantillas; un vendedor puede escribir hasta 7 días.
   const instagram = detail.channel.type === "instagram";
+  const bar = windowBar({
+    channelType: detail.channel.type,
+    windowExpiresAt: detail.windowExpiresAt ? new Date(detail.windowExpiresAt) : null,
+    simulado: detail.simulado === true,
+    archivado: detail.channel.archived,
+    adEntry: detail.adEntry && {
+      entryAt: new Date(detail.adEntry.entryAt),
+      firstReplyAt: detail.adEntry.firstReplyAt ? new Date(detail.adEntry.firstReplyAt) : null,
+      metaFreeUntil: detail.adEntry.metaFreeUntil ? new Date(detail.adEntry.metaFreeUntil) : null,
+    },
+    servicioGratis: detail.servicioGratis ? { quedan: detail.servicioGratis.quedan, hasta: new Date(detail.servicioGratis.hasta) } : null,
+    now: new Date(nowMs),
+  });
   const sellerCanWrite = canSellerWrite(detail.channel.type, detail.windowExpiresAt, nowMs);
   // Adjuntos (28-sep-2026): solo con la ventana abierta y el canal sin archivar.
   const canAttach = sellerCanWrite && !detail.channel.archived;
@@ -848,26 +849,8 @@ export function ChatThread({
         </span>
       </header>
 
-      {/* Aviso de ventana de 24 h */}
-      <div
-        className={`border-b px-4 py-1.5 text-center text-xs ${
-          windowOpen ? "bg-emerald-500/10 text-emerald-700 dark:text-emerald-300" : "bg-amber-500/10 text-amber-700 dark:text-amber-300"
-        }`}
-      >
-        {windowOpen
-          ? detail.simulado
-            ? "Cliente de prueba: la ventana nunca cierra"
-            : `Ventana abierta · quedan ${hoursLeft} h`
-          : instagram
-            ? sellerCanWrite
-              ? `Pasaron 24 h: en Instagram solo un vendedor puede contestar, hasta el ${deadlineFormat.format(sellerDeadline(detail.windowExpiresAt)!)} (el Agente IA y las automatizaciones ya no).`
-              : "Pasaron 7 días desde su último mensaje: Instagram no deja escribirle hasta que vuelva a escribir."
-          : detail.windowExpiresAt === null
-            ? // Chat abierto por nosotros (primer mensaje, 28-sep-2026): el cliente aún no escribe.
-              "El cliente todavía no escribe: mientras no conteste, solo se puede enviar una plantilla (o escríbele gratis desde WhatsApp Web)."
-            : "Pasaron 24 h desde su último mensaje. Solo se puede enviar una plantilla."}
-        <AdFreeWindowNote adEntry={detail.adEntry} nowMs={nowMs} />
-      </div>
+      {/* Barra de arriba (20-nov-2026, propuesta A): ¿lo que sale del CRM es gratis o cuesta? Regla: lib/inbox/window-bar.ts. */}
+      <WindowBarView bar={bar} />
       <AgentPausedBanner agent={agent} nowMs={nowMs} />
       {/* Búsqueda en los chats (lupa amarilla): la palabra y «1 de N» para recorrerla. */}
       {searchTerm && (
