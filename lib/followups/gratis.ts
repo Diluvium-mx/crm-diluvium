@@ -8,7 +8,9 @@ import { messages } from "@/lib/db/schema";
 import { firstReplyAfter } from "@/lib/ads/queries";
 import { freeEntryWindow } from "@/lib/ads/free-window";
 
-export async function freeUntilOf(organizationId: string, conversationId: string, adEntryAt: Date | null, now: Date): Promise<Date | null> {
+// La marca de Meta vigente: hasta cuándo es gratis el chat según Meta (free_entry_point), o null. También la usa la
+// barra del chat (lib/inbox/queries.ts › detail).
+export async function metaFreeUntilOf(organizationId: string, conversationId: string, now: Date): Promise<Date | null> {
   const [marca] = await db
     .select({ until: sql<Date | null>`max(${messages.metaWindowExpiresAt})`.mapWith(messages.metaWindowExpiresAt) })
     .from(messages)
@@ -21,7 +23,12 @@ export async function freeUntilOf(organizationId: string, conversationId: string
         gt(messages.metaWindowExpiresAt, now),
       ),
     );
-  if (marca?.until) return marca.until;
+  return marca?.until ?? null;
+}
+
+export async function freeUntilOf(organizationId: string, conversationId: string, adEntryAt: Date | null, now: Date): Promise<Date | null> {
+  const marca = await metaFreeUntilOf(organizationId, conversationId, now);
+  if (marca) return marca;
   if (!adEntryAt) return null;
   const ventana = freeEntryWindow(adEntryAt, await firstReplyAfter(organizationId, conversationId, adEntryAt), now);
   return ventana?.status === "open" ? ventana.until : null;

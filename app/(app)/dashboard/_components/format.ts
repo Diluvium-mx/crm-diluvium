@@ -1,7 +1,7 @@
 // Helpers de presentación de la bandeja, seguros para el cliente (sin BD).
 // La UI recibe los tipos *View ya listos; esto solo formatea fechas/estados.
 import type { ConversationListItem, MessageView } from "@/lib/inbox/types";
-import { canSendFreeForm, humanAgentExpiresAt } from "@/lib/messaging/rules";
+import { canSendFreeForm } from "@/lib/messaging/rules";
 
 function sameDay(a: Date, b: Date): boolean {
   return a.toDateString() === b.toDateString();
@@ -48,29 +48,12 @@ export const SEMAFORO_LABEL: Record<"verde" | "ambar" | "rojo", string> = {
   rojo: "Espera más de 1 h",
 };
 
-/** true si la ventana de 24 h sigue abierta. */
-export function isWindowOpen(windowExpiresAt: Date | null, nowMs: number): boolean {
-  return !!windowExpiresAt && new Date(windowExpiresAt).getTime() > nowMs;
-}
-
 /**
  * ¿Puede escribir el vendedor? WhatsApp: ventana de 24 h (fuera, plantilla). Instagram:
  * hasta 7 días desde el último mensaje del cliente (docs/instagram.md).
  */
 export function canSellerWrite(channelType: string, windowExpiresAt: Date | null, nowMs: number): boolean {
   return canSendFreeForm(channelType, windowExpiresAt ? new Date(windowExpiresAt) : null, new Date(nowMs), true);
-}
-
-/** Instagram: fin de los 7 días en que un vendedor todavía puede contestar. */
-export function sellerDeadline(windowExpiresAt: Date | null): Date | null {
-  return humanAgentExpiresAt(windowExpiresAt ? new Date(windowExpiresAt) : null);
-}
-
-/** Horas enteras restantes de la ventana (mín. 1 si sigue abierta). */
-export function windowHoursLeft(windowExpiresAt: Date | null, nowMs: number): number {
-  if (!windowExpiresAt) return 0;
-  const ms = new Date(windowExpiresAt).getTime() - nowMs;
-  return ms > 0 ? Math.max(1, Math.ceil(ms / 3_600_000)) : 0;
 }
 
 /** Etiqueta del separador por día dentro del hilo. */

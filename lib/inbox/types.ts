@@ -92,8 +92,11 @@ export type ConversationDetail = {
   /**
    * Entrada por anuncio (ventana GRATIS de 72 h de Meta: la abre la primera
    * respuesta del negocio dentro de 24 h). null = no llegó por anuncio.
+   * metaFreeUntil = la marca de Meta vigente (puede pasar de 72 h; lib/followups/gratis.ts).
    */
-  adEntry: { entryAt: Date; firstReplyAt: Date | null } | null;
+  adEntry: { entryAt: Date; firstReplyAt: Date | null; metaFreeUntil: Date | null } | null;
+  /** Mensajes de servicio gratis que le quedan este mes al número (de 1,000); null = no se sabe (lib/meta-whatsapp/gratis-mes.ts). */
+  servicioGratisQuedan: number | null;
   /** Canal de la conversación: de prueba (etiqueta), archivado (sin envíos) y su red. */
   channel: { isTest: boolean; archived: boolean; type: ChannelPlatform };
   /** Cliente de prueba de staging (lib/messaging/simulador.ts): el chat muestra «Escribir como el cliente». */

@@ -29,6 +29,8 @@ import {
 } from "./format";
 import { adCardFromRaw, adCardsForMessages, firstReplyAfter } from "@/lib/ads/queries";
 import { transcripcionMeta } from "@/lib/ai/transcription/rules";
+import { metaFreeUntilOf } from "@/lib/followups/gratis";
+import { servicioGratisQuedan } from "@/lib/meta-whatsapp/gratis-mes";
 import { chatMatchesForConversations, conversationsWithChatMatch, type ChatMatch } from "./chat-search";
 import type {
   ConversationDetail,
@@ -313,18 +315,25 @@ async function detail(where: SQL): Promise<ConversationDetail | null> {
     .limit(1);
   if (!row) return null;
   const { conversation, contact, channel } = row;
+  const org = conversation.organizationId;
+  const now = new Date();
+  // Barra del chat (lib/inbox/window-bar.ts): lo gratis del anuncio (primera respuesta y marca de Meta) y los 1,000
+  // gratis del mes del número. En paralelo: abrir el chat no debe tardar más. Los gratis del mes solo se leen de los
+  // números que el worker sigue (WhatsApp, no de prueba, sin archivar; lib/meta-whatsapp/sync.ts).
+  const sigueCobro = channel.type === "whatsapp" && !channel.isTest && channel.archivedAt === null;
+  const [firstReplyAt, metaFreeUntil, servicioGratis] = await Promise.all([
+    conversation.adEntryAt ? firstReplyAfter(org, conversation.id, conversation.adEntryAt) : null,
+    conversation.adEntryAt ? metaFreeUntilOf(org, conversation.id, now) : null,
+    sigueCobro ? servicioGratisQuedan(db, org, conversation.channelId, now) : null,
+  ]);
   return {
     id: conversation.id,
     contact: { ...toContact(contact), stage: contact.stage, temperature: contact.temperature },
     windowExpiresAt: conversation.windowExpiresAt,
     isStarred: contact.destacado,
     unreadCount: conversation.unreadCount,
-    adEntry: conversation.adEntryAt
-      ? {
-          entryAt: conversation.adEntryAt,
-          firstReplyAt: await firstReplyAfter(conversation.organizationId, conversation.id, conversation.adEntryAt),
-        }
-      : null,
+    adEntry: conversation.adEntryAt ? { entryAt: conversation.adEntryAt, firstReplyAt, metaFreeUntil } : null,
+    servicioGratisQuedan: servicioGratis,
     channel: { isTest: channel.isTest, archived: channel.archivedAt !== null, type: channel.type },
     simulado: esCuentaSimulada(channel.providerAccountId) && simuladorActivo(),
   };
