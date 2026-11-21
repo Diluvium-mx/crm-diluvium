@@ -1,6 +1,9 @@
 // «Costo del CRM» (20-nov-2026, opción A del dueño): hasta arriba del Dashboard, lo que va del mes, el cierre
-// estimado, el mes pasado y el total desde que arrancó el CRM, con una barra de qué parte se lleva cada servicio.
+// estimado y el mes pasado, con una barra de qué parte se lleva cada servicio. 21-nov-2026 (dueño): sin total
+// acumulado; a la derecha el botón «Historial de costos» (cada mes, con el correo del día 3 en vivo).
 // Sin lógica de datos: recibe el resumen ya calculado (lib/dashboard/costo-crm.ts).
+import { CalendarDays } from "lucide-react";
+import Link from "next/link";
 import type { CostoCrm, ServicioCosto } from "@/lib/dashboard/costo-crm";
 import { formatUsd } from "@/lib/usd-format";
 import { InfoNote } from "@/components/ui/info-note";
@@ -25,7 +28,7 @@ export function CostoCrmCard({ costo }: { costo: CostoCrm }) {
     .join(" · ");
   return (
     <div className="rounded-lg border bg-card p-4">
-      <div className="flex flex-wrap items-start justify-between gap-3">
+      <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
           <h2 className="text-sm font-semibold">Costo del CRM · {c.monthLabel}</h2>
           <p className="mt-1 text-4xl font-semibold tabular-nums">
@@ -33,11 +36,14 @@ export function CostoCrmCard({ costo }: { costo: CostoCrm }) {
           </p>
           <p className="text-xs text-muted-foreground tabular-nums">{detalle}</p>
         </div>
-        <div className="text-right">
-          <p className="text-xs text-muted-foreground">Total desde {c.desdeLabel}</p>
-          <p className="mt-1 text-4xl font-semibold tabular-nums">{formatUsd(c.totalUsd)}</p>
-          <p className="text-xs text-muted-foreground">{c.meses === 1 ? "1 mes" : `${c.meses} meses`}</p>
-        </div>
+        <Link
+          href="/inicio/costos"
+          data-link="card"
+          className="inline-flex items-center gap-2 whitespace-nowrap rounded-lg border-[1.5px] border-brand-navy-dark bg-brand-navy-dark/5 px-3.5 py-2 text-sm font-medium text-foreground hover:bg-brand-navy-dark/10"
+        >
+          <CalendarDays className="size-5 text-brand-navy-dark" aria-hidden="true" />
+          Historial de costos
+        </Link>
       </div>
       {c.partes.length > 0 && (
         <>
@@ -63,7 +69,7 @@ export function CostoCrmCard({ costo }: { costo: CostoCrm }) {
         Suma lo que cuesta tener el CRM funcionando: IA, WhatsApp (lo que cobra Meta), Railway (los servidores) y Zernio (la
         mensajería), con las mismas cuentas del correo de costos del día 3. Fuera: suscripciones, publicidad y dominio. En
         dólares y sin impuestos. «Va» es lo que llevan este mes (Railway, lo de su periodo actual, nunca menos del plan); el
-        cierre estimado sigue el ritmo de estos días. El total suma los meses cerrados y lo que va de este.
+        cierre estimado sigue el ritmo de estos días. Cada mes, con el correo del día 3, está en Historial de costos.
       </InfoNote>
     </div>
   );
