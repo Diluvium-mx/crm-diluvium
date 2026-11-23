@@ -39,6 +39,10 @@ PROD y OK ESCRITURA PROD, que se cancela si no toca exactamente 1 fila.
 - **En producción, sin migración** (17-nov-2026): PayPal, que manda avisos de pagos que WhatsApp no deja ver; se le puso
   su nombre en la misma escritura (antes era su número; 1 fila). Respaldo en `~/Documents/Diluvium CRM/notas/tarjeta-paypal/`.
   Se deshace con `update contacts set sin_agente_ia = false where id = '649447c8-8bba-4b8b-8ed1-9b7106ec2554'`.
+- **En producción, sin migración** (23-nov-2026): Facebook, que manda avisos que WhatsApp no deja ver (el Agente IA le
+  contestaba como a un cliente de Reino Unido); su nombre era «User» (el de su perfil) y pasó a «Facebook» en la misma
+  escritura (1 fila). Respaldo en `~/Documents/Diluvium CRM/notas/tarjeta-facebook/`. Se deshace con
+  `update contacts set sin_agente_ia = false where id = '48751871-9ce0-4edb-8f68-0b98a5ddc08b'`.
 - **Regla del dueño (17-nov-2026):** todo chat que no es cliente y lleva tarjeta propia va siempre sin Agente IA.
 
 
