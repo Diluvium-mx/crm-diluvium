@@ -3,7 +3,7 @@
 // Calendario de RANGO del CRM (23-nov-2026, pedido del dueño: «Desde» y «Hasta» en un solo control, como el de Meta
 // Ads). Un botón con el periodo escrito («12 nov – 30 nov 2026»); al picarle se abre un recuadro con los atajos a la
 // izquierda (Hoy, Ayer, Últimos 7 días, Últimos 30 días, Este mes, Mes pasado), dos meses juntos (primer clic = inicio,
-// segundo = fin; los días de en medio en azul suave) y abajo «Del … al …» con Cancelar y Aplicar. Los días después de
+// segundo = fin; los días de en medio en azul suave) y abajo Cancelar y Aplicar. Los días después de
 // hoy no se pueden elegir. Misma estética que el calendario de un día (date-time-picker.tsx). En el celular, el
 // recuadro trae los atajos y dos campos con el calendario del teléfono. Sin lógica de datos: las reglas viven en
 // lib/dates/range-picker.ts.
@@ -13,7 +13,6 @@ import { createPortal } from "react-dom";
 import { addMonths, MONTH_NAMES, monthMatrix, WEEKDAY_INITIALS } from "@/lib/dates/picker";
 import {
   formatRangeLabel,
-  formatRangeSentence,
   matchingPreset,
   nextRange,
   presetRange,
@@ -224,10 +223,8 @@ export function DateRangePicker({
                   />
                 </div>
               )}
-              <div className="flex flex-wrap items-center justify-between gap-3 border-t pt-3">
-                <span className="text-xs text-muted-foreground tabular-nums">
-                  {validDraft ? formatRangeSentence(draft.desde, draft.hasta) : "Elige el inicio y el fin"}
-                </span>
+              {/* 23-nov-2026 (dueño): sin «Del … al …» abajo; el rango ya se ve en los dos meses y en el botón. */}
+              <div className="flex items-center justify-end gap-3 border-t pt-3">
                 <div className="flex gap-2">
                   <button type="button" onClick={close} className="rounded-md border px-3 py-1.5 hover:bg-muted">
                     Cancelar

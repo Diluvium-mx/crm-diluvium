@@ -31,17 +31,6 @@ export function formatRangeLabel(desde: string, hasta: string): string {
   return `${corto(desde, !mismoAno)} – ${corto(hasta, true)}`;
 }
 
-// "12/11/2026"
-export function formatDayDmy(day: string): string {
-  const { y, m, d } = partes(day);
-  return `${String(d).padStart(2, "0")}/${String(m).padStart(2, "0")}/${y}`;
-}
-
-// El renglón de abajo del calendario: "Del 12/11/2026 al 30/11/2026" o "El 21/11/2026".
-export function formatRangeSentence(desde: string, hasta: string): string {
-  return desde === hasta ? `El ${formatDayDmy(desde)}` : `Del ${formatDayDmy(desde)} al ${formatDayDmy(hasta)}`;
-}
-
 export type RangePreset = "hoy" | "ayer" | "7" | "30" | "mes" | "mesPasado";
 
 export const RANGE_PRESETS: { key: RangePreset; label: string }[] = [

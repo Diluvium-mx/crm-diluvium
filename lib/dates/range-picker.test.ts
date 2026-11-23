@@ -1,7 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
   formatRangeLabel,
-  formatRangeSentence,
   matchingPreset,
   nextRange,
   presetRange,
@@ -11,16 +10,12 @@ import {
 
 const HOY = "2026-11-21";
 
-describe("formatRangeLabel / formatRangeSentence", () => {
+describe("formatRangeLabel", () => {
   it("un día, mismo año y años distintos", () => {
     expect(formatRangeLabel(HOY, HOY)).toBe("21 nov 2026");
     expect(formatRangeLabel("2026-11-12", "2026-11-30")).toBe("12 nov – 30 nov 2026");
     expect(formatRangeLabel("2026-12-28", "2027-01-03")).toBe("28 dic 2026 – 3 ene 2027");
     expect(formatRangeLabel("", "")).toBe("Elegir periodo");
-  });
-  it("el renglón de abajo", () => {
-    expect(formatRangeSentence("2026-11-12", "2026-11-30")).toBe("Del 12/11/2026 al 30/11/2026");
-    expect(formatRangeSentence(HOY, HOY)).toBe("El 21/11/2026");
   });
 });
 
