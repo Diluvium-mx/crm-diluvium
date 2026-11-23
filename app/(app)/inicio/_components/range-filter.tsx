@@ -1,13 +1,14 @@
 "use client";
 
-// Filtro de periodo compartido (Dashboard y tabla de Anuncios) en UNA fila:
-// atajos (Hoy, 7 días, 30 días, Este mes), mes (cambia al elegir) o rango libre
-// (desde/hasta + Aplicar). El estado vive en la URL (?mes= o ?desde=&hasta=);
-// el servidor valida y recalcula. `basePath` es la página que recibe los parámetros.
+// Filtro de periodo compartido (Dashboard, sus historiales y la tabla de Anuncios) en UNA fila: atajos (Hoy, 7 días,
+// 30 días, Este mes) y el periodo en un solo control (23-nov-2026, pedido del dueño: antes eran «Mes», «Desde»,
+// «Hasta» y «Aplicar»; ahora un calendario de rango como el de Meta Ads, components/ui/date-range-picker.tsx). El
+// estado vive en la URL (?mes= o ?desde=&hasta=): un mes completo (o este mes hasta hoy) va como ?mes=, igual que
+// antes; el servidor valida y recalcula. `basePath` es la página que recibe los parámetros.
 import { useRouter } from "next/navigation";
-import { useState } from "react";
 import { DASHBOARD_TIME_ZONE } from "@/lib/dashboard/range";
-import { DateTimePicker } from "@/components/ui/date-time-picker";
+import { rangeQuery } from "@/lib/dates/range-picker";
+import { DateRangePicker } from "@/components/ui/date-range-picker";
 
 function localDay(now: Date, timeZone: string): string {
   return new Intl.DateTimeFormat("en-CA", { timeZone, year: "numeric", month: "2-digit", day: "2-digit" }).format(now);
@@ -36,9 +37,6 @@ export function RangeFilter({
 }) {
   const router = useRouter();
   const extra = keep ? `&${keep}` : "";
-  const [from, setFrom] = useState(desde);
-  const [to, setTo] = useState(hasta);
-  const rangeValid = from !== "" && to !== "" && from <= to;
 
   const today = localDay(new Date(), timeZone);
   const shortcuts: { label: string; href: string; active: boolean }[] = [
@@ -49,7 +47,7 @@ export function RangeFilter({
   ];
 
   return (
-    <div className="flex flex-wrap items-end gap-3 text-xs">
+    <div className="flex flex-wrap items-center gap-2 text-xs">
       <div role="group" aria-label="Atajos de periodo" className="flex gap-1 rounded-lg bg-muted p-1 text-sm">
         {shortcuts.map((s) => (
           <button
@@ -63,35 +61,15 @@ export function RangeFilter({
           </button>
         ))}
       </div>
-      <label className="flex flex-col gap-1">
-        <span className="text-muted-foreground">Mes</span>
-        {/* Calendario del CRM en modo mes (26-oct-2026; antes el <input type="month"> del navegador). Ancho fijo: «septiembre» no recorre la fila. */}
-        <DateTimePicker
-          mode="month"
-          value={mes ?? ""}
-          onChange={(value) => {
-            if (value) router.push(`${basePath}?mes=${value}${extra}`);
-          }}
-          className="w-44 rounded-md border bg-background px-2 py-1.5 text-sm"
-        />
-      </label>
-      <span className="pb-2 text-muted-foreground">o</span>
-      <label className="flex flex-col gap-1">
-        <span className="text-muted-foreground">Desde</span>
-        <DateTimePicker mode="date" value={from} onChange={setFrom} className="rounded-md border bg-background px-2 py-1.5 text-sm" />
-      </label>
-      <label className="flex flex-col gap-1">
-        <span className="text-muted-foreground">Hasta</span>
-        <DateTimePicker mode="date" value={to} onChange={setTo} className="rounded-md border bg-background px-2 py-1.5 text-sm" />
-      </label>
-      <button
-        type="button"
-        disabled={!rangeValid}
-        onClick={() => router.push(`${basePath}?desde=${from}&hasta=${to}${extra}`)}
-        className="rounded-md bg-brand-navy px-3 py-1.5 text-sm font-medium text-brand-white transition-colors hover:bg-brand-navy-dark disabled:opacity-50"
-      >
-        Aplicar
-      </button>
+      <DateRangePicker
+        desde={desde}
+        hasta={hasta}
+        today={today}
+        onApply={(from, to) => {
+          const q = rangeQuery(from, to, today);
+          router.push("mes" in q ? `${basePath}?mes=${q.mes}${extra}` : `${basePath}?desde=${q.desde}&hasta=${q.hasta}${extra}`);
+        }}
+      />
     </div>
   );
 }
