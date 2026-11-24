@@ -51,17 +51,21 @@ El chat es un solo componente reutilizado en las dos secciones.
 
 ### Chat
 - **Encabezado:** nombre, teléfono, chip de etapa. Sin llamar, carpeta, correo ni borrar.
-- **Barra de arriba (20-nov-2026, propuesta A del dueño: «el precio primero, en una palabra»):** dice si lo que sale
-  del CRM es **Gratis**, **Con costo** o **Solo plantilla, con costo**, con el color del precio (verde, azul navy,
-  ámbar; gris = no se puede) y el por qué y los centavos en el title. Regla pura en `lib/inbox/window-bar.ts`
-  (con sus pruebas), pintada por `window-bar.tsx`. Casos: gratis por anuncio (la marca de Meta o 72 h), anuncio sin
-  contestar, anuncio con las 24 h vencidas (plantilla gratis), gratis del mes (quedan de los 1,000 de servicio, de lo
-  que reporta Meta cada hora: `lib/meta-whatsapp/gratis-mes.ts`; con menos de 50 o sin lectura de las últimas 6 h,
-  «Con costo»; el dato trae su vigencia —6 h o fin del mes UTC— para que un chat abierto horas no siga diciendo
-  «Gratis»), con costo, cierra en menos de 2 h, cerrada (gratis desde el celular), el cliente todavía no escribe,
-  número archivado (no se puede escribir) e Instagram (gratis; 24 h, de 24 h a 7 días solo un vendedor, después
-  nadie). La marca de Meta es la de la entrada actual (`metaFreeMarkSince`): si ya venció, no vuelve a las 72 h. Vencida → composer bloqueado y solo
-  plantilla (plantillas: con el número real). Mapa: Bandeja › 11 y 12.
+- **Barra de arriba (20-nov-2026, propuesta A del dueño: «el precio primero, en una palabra»; textos B1–B13 del
+  dueño del 24-nov-2026):** dice si lo que sale del CRM es gratis o cuánto cuesta, en pesos («Costo de msj: $0.21 ·
+  23 h disponible», «Gratis · 22 h disponible · 640 de 1,000», «Solo plantilla = $0.76 · gratis en WAB»…), con el
+  color del precio (verde, azul navy, ámbar; gris = no se puede) y el detalle en el title. Precios: `META_RATE_USD`
+  (lib/meta-whatsapp/tarifas.ts) × el dólar del DOF de noviembre (18.73) en `lib/inbox/window-bar.ts`. Regla pura en
+  `lib/inbox/window-bar.ts` (con sus pruebas), pintada por `window-bar.tsx`. Casos: gratis por anuncio (la marca de
+  Meta o 72 h), anuncio sin contestar, anuncio con las 24 h vencidas (plantilla gratis), gratis del mes (quedan de los
+  1,000 de servicio, de lo que reporta Meta cada hora: `lib/meta-whatsapp/gratis-mes.ts`; con menos de 50 o sin
+  lectura de las últimas 6 h pasa a «Costo de msj»; el dato trae su vigencia —6 h o fin del mes UTC— para que un chat
+  abierto horas no siga diciendo «Gratis»), con costo, menos de 2 h disponibles, cerrada (gratis en WAB), el cliente
+  todavía no escribe, número archivado e Instagram (gratis hasta la hora exacta de las 24 h y luego de los 7 días;
+  después nadie). La marca de Meta es la de la entrada actual (`metaFreeMarkSince`): si ya venció, no vuelve a las
+  72 h. Vencida → composer bloqueado y solo plantilla (plantillas: con el número real). Mapa: Bandeja › 11 y 12.
+- **Sin barra de pausa (24-nov-2026, decisión del dueño):** el chat ya no muestra «🤖 Pausado… · se activa en el
+  Detalle del contacto»; el estado y la hora de regreso viven en el Detalle del contacto.
 - **Burbujas:** cliente a la izquierda, nuestras a la derecha, separador por día.
 - **Estado del saliente:** 🕗 enviando · ✓ enviado · ✓✓ entregado · ✓✓ azul leído · ⚠ falló (motivo
   en palabras simples + Reintentar si es seguro). Ver "Envíos sin pérdidas ni duplicados" abajo.
@@ -398,7 +402,8 @@ activo). El composer tiene 🕒 junto a "Enviar" (y junto a "📄 Enviar plantil
 ### Apagar bot (25-sep-2026) → "Pausar agente" (26-sep-2026)
 > **Desde el 26-sep-2026 (pedido del dueño):** el control vive SOLO en "Detalle del contacto": "Pausar
 > agente" (menú igual, con "Pausar indefinidamente" en vez de "Hasta que lo reactive") y, pausado,
-> "Activar" (antes "Reactivar"). Se quitó del encabezado del chat; el aviso del hilo solo informa.
+> "Activar" (antes "Reactivar"). Se quitó del encabezado del chat; el aviso del hilo solo informaba y desde
+> el 24-nov-2026 tampoco sale (el estado queda solo en el Detalle).
 > Detalle: `docs/agente-ia.md` › Parte 1.
 
 Botón "🤖 Apagar bot" en el encabezado del chat (Bandeja y pop-up del Embudo, mismo componente) y

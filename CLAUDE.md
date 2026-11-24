@@ -435,10 +435,12 @@ Reglas de UI:
   `toLowerCase().includes` o `ilike` directo. La prueba guardiana
   `lib/text/search-guard.test.ts` falla si aparece uno; la única excepción anotada es el filtro de
   comandos del composer (Fase D).
-- **Barra de arriba del chat (20-nov-2026, propuesta A del dueño):** el precio primero, en una palabra («Gratis»,
-  «Con costo», «Solo plantilla, con costo», «Cierra en…») y el color es el precio (verde gratis, navy con costo, ámbar
-  aviso, gris no se puede); el por qué y los centavos, al pasar el mouse. Regla en `lib/inbox/window-bar.ts`; las
-  reglas de cobro salen de docs/meta-whatsapp.md y docs/seguimientos.md §3, nunca inventadas. Detalle: `docs/bandeja.md` › Chat.
+- **Barra de arriba del chat (20-nov-2026, propuesta A del dueño; textos B1–B13 del 24-nov-2026):** el precio
+  primero y en pesos («Costo de msj: $0.21 · 23 h disponible», «Gratis · 22 h disponible · 640 de 1,000», «Solo
+  plantilla = $0.76 · gratis en WAB»…); el color es el precio (verde gratis, navy con costo, ámbar aviso, gris no se
+  puede); el detalle, al pasar el mouse. Sin barra «🤖 Pausado…» en el chat (24-nov-2026). Regla en
+  `lib/inbox/window-bar.ts`; las reglas de cobro salen de docs/meta-whatsapp.md y docs/seguimientos.md §3, nunca
+  inventadas. Detalle: `docs/bandeja.md` › Chat.
 - **Seguimiento del Agente IA (2-oct-2026, decisión del dueño):** píldora 🤖 **en el hueco de la barra arriba de ⚡ 📄
   📎** (no agranda la barra; en el celular al final del renglón de iconos; con la ventana cerrada, junto a "Enviar
   plantilla"), solo cuando el chat tiene seguimiento; abre su burbuja (Ver mensaje · Editar mensaje · Cambiar hora · Lo mando yo ·

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { fechaBarra, tiempoQueQueda, windowBar, type WindowBarInput } from "./window-bar";
+import { COSTO_MSJ, COSTO_PLANTILLA, fechaBarra, pesos, tiempoQueQueda, windowBar, type WindowBarInput } from "./window-bar";
 
 const H = 3_600_000;
 const now = new Date("2026-11-20T19:00:00Z"); // vie 20, 12:00 p.m. en Mazatlán
@@ -27,48 +27,60 @@ describe("tiempoQueQueda", () => {
   });
 });
 
+describe("precios en pesos", () => {
+  it("mensaje $0.21, plantilla de venta $0.76 (dólar del DOF de noviembre, 18.73)", () => {
+    expect(COSTO_MSJ).toBe("$0.21");
+    expect(COSTO_PLANTILLA).toBe("$0.76");
+    expect(pesos(0.008406)).toBe("$0.16");
+  });
+});
+
 describe("windowBar · WhatsApp", () => {
-  it("ventana normal sin gratis del mes: Con costo, azul", () => {
+  it("B1 ventana normal sin gratis del mes: Costo de msj y lo disponible, azul", () => {
     const bar = windowBar(base());
-    expect(bar).toMatchObject({ tone: "costo", icon: "coin", strong: "Con costo", rest: "· puedes escribir 21 h más" });
-    expect(bar.title).toContain("≈ 20 centavos");
-    expect(bar.title).toContain("celular o WhatsApp Web no se cobra");
+    expect(bar).toMatchObject({ tone: "costo", icon: "coin", strong: "Costo de msj: $0.21", rest: "· 21 h disponible" });
+    expect(bar.title).toContain("$0.76 la de venta, $0.16 la de utilidad");
+    expect(bar.title).toContain("WAB = la app de WhatsApp Business");
   });
 
   it("ventana normal con gratis del mes: Gratis y cuántos quedan (redondeado a 10)", () => {
     const bar = windowBar(base({ servicioGratis: { quedan: 647, hasta: at(3 * H) } }));
-    expect(bar).toMatchObject({ tone: "gratis", strong: "Gratis", rest: "· puedes escribir 21 h más · quedan ≈ 640 de los 1,000 del mes" });
+    expect(bar).toMatchObject({ tone: "gratis", strong: "Gratis", rest: "· 21 h disponible · 640 de 1,000" });
   });
 
-  it("con menos de 50 gratis del mes ya dice Con costo (Meta reporta con atraso)", () => {
-    expect(windowBar(base({ servicioGratis: { quedan: 49, hasta: at(3 * H) } })).strong).toBe("Con costo");
+  it("con menos de 50 gratis del mes ya dice Costo de msj (Meta reporta con atraso)", () => {
+    expect(windowBar(base({ servicioGratis: { quedan: 49, hasta: at(3 * H) } })).strong).toBe("Costo de msj: $0.21");
     expect(windowBar(base({ servicioGratis: { quedan: 50, hasta: at(3 * H) } })).strong).toBe("Gratis");
   });
 
   it("los gratis del mes dejan de valer cuando vence el dato (chat abierto horas)", () => {
-    expect(windowBar(base({ servicioGratis: { quedan: 600, hasta: at(-1) } })).strong).toBe("Con costo");
+    expect(windowBar(base({ servicioGratis: { quedan: 600, hasta: at(-1) } })).strong).toBe("Costo de msj: $0.21");
   });
 
   it("el title de los gratis del mes avisa que las plantillas sí se cobran", () => {
-    expect(windowBar(base({ servicioGratis: { quedan: 600, hasta: at(H) } })).title).toContain("las plantillas sí se cobran");
+    expect(windowBar(base({ servicioGratis: { quedan: 600, hasta: at(H) } })).title).toContain("Las plantillas sí se cobran");
   });
 
-  it("poco tiempo (< 2 h): aviso ámbar con minutos", () => {
+  it("B6 poco tiempo (< 2 h): lo disponible, el costo del mensaje y el de la plantilla después", () => {
     const bar = windowBar(base({ windowExpiresAt: at(45 * 60_000) }));
-    expect(bar).toMatchObject({ tone: "aviso", icon: "clock", strong: "Cierra en 45 min", rest: "· después solo plantilla, con costo" });
-    expect(bar.title).toContain("≈ 75 centavos la de venta");
-    expect(windowBar(base({ windowExpiresAt: at(2 * H) })).strong).toBe("Con costo");
+    expect(bar).toMatchObject({ tone: "aviso", icon: "clock", strong: "45 min disponible", rest: "· Costo de msj: $0.21 · después plantilla: $0.76" });
+    expect(bar.title).toContain("$0.76 la de venta");
+    expect(windowBar(base({ windowExpiresAt: at(2 * H) })).strong).toBe("Costo de msj: $0.21");
+    expect(windowBar(base({ windowExpiresAt: at(45 * 60_000), servicioGratis: { quedan: 300, hasta: at(H) } }))).toMatchObject({
+      strong: "Gratis",
+      rest: "· 45 min disponible · 300 de 1,000 · después plantilla: $0.76",
+    });
   });
 
-  it("ventana cerrada: Solo plantilla, con costo · gratis desde el celular", () => {
+  it("B7 ventana cerrada: Solo plantilla = $0.76 · gratis en WAB", () => {
     const bar = windowBar(base({ windowExpiresAt: at(-3 * H) }));
-    expect(bar).toMatchObject({ tone: "aviso", icon: "template", strong: "Solo plantilla, con costo", rest: "· gratis desde el celular" });
+    expect(bar).toMatchObject({ tone: "aviso", icon: "template", strong: "Solo plantilla = $0.76", rest: "· gratis en WAB" });
     expect(bar.title).toContain("Pasaron 24 h");
   });
 
   it("el cliente todavía no escribe: solo plantilla y lo dice", () => {
     const bar = windowBar(base({ windowExpiresAt: null }));
-    expect(bar).toMatchObject({ strong: "Solo plantilla, con costo", rest: "· el cliente todavía no escribe · gratis desde el celular" });
+    expect(bar).toMatchObject({ strong: "Solo plantilla = $0.76", rest: "· espera mensaje o gratis en WAB" });
   });
 
   it("anuncio con tiempo gratis (regla de 72 h): Gratis por anuncio hasta…", () => {
@@ -81,7 +93,8 @@ describe("windowBar · WhatsApp", () => {
   it("anuncio: si la ventana de 24 h cierra antes que lo gratis, también dice cuánto queda para escribir", () => {
     const firstReplyAt = at(-10 * H);
     const bar = windowBar(base({ windowExpiresAt: at(5 * H), adEntry: { entryAt: at(-11 * H), firstReplyAt, metaFreeUntil: null } }));
-    expect(bar.rest).toBe(`por anuncio hasta ${fechaBarra(new Date(firstReplyAt.getTime() + 72 * H))} · puedes escribir 5 h más`);
+    expect(bar.rest).toBe(`por anuncio hasta ${fechaBarra(new Date(firstReplyAt.getTime() + 72 * H))}`);
+    expect(bar.title).toContain(`El texto libre se puede hasta ${fechaBarra(at(5 * H))}`);
   });
 
   it("anuncio: la marca de Meta manda (puede pasar de 72 h)", () => {
@@ -92,12 +105,12 @@ describe("windowBar · WhatsApp", () => {
 
   it("anuncio: si la marca de Meta de esta entrada ya venció, ya no es gratis (no vuelve a las 72 h)", () => {
     const bar = windowBar(base({ adEntry: { entryAt: at(-50 * H), firstReplyAt: at(-49 * H), metaFreeUntil: at(-1 * H) } }));
-    expect(bar.strong).toBe("Con costo");
+    expect(bar.strong).toBe("Costo de msj: $0.21");
   });
 
   it("número archivado: no se puede escribir, aunque la ventana siga abierta", () => {
-    expect(windowBar(base({ archivado: true }))).toMatchObject({ tone: "cerrado", icon: "archive", strong: "No se puede escribir" });
-    expect(windowBar(base({ archivado: true, windowExpiresAt: at(-3 * H) })).strong).toBe("No se puede escribir");
+    expect(windowBar(base({ archivado: true }))).toMatchObject({ tone: "cerrado", icon: "archive", strong: "No se puede escribir,", rest: "este número ya no está conectado" });
+    expect(windowBar(base({ archivado: true, windowExpiresAt: at(-3 * H) })).strong).toBe("No se puede escribir,");
   });
 
   it("anuncio con la ventana cerrada: Plantilla gratis hasta…", () => {
@@ -106,7 +119,7 @@ describe("windowBar · WhatsApp", () => {
     expect(bar).toMatchObject({
       tone: "gratis",
       strong: "Plantilla gratis",
-      rest: `hasta ${fechaBarra(new Date(firstReplyAt.getTime() + 72 * H))} · el texto ya no (pasaron 24 h)`,
+      rest: `hasta ${fechaBarra(new Date(firstReplyAt.getTime() + 72 * H))} · Costo de plantilla: $0.76`,
     });
   });
 
@@ -116,19 +129,19 @@ describe("windowBar · WhatsApp", () => {
     expect(bar).toMatchObject({
       tone: "aviso",
       icon: "gift",
-      strong: `Contesta antes de ${fechaBarra(new Date(entryAt.getTime() + 24 * H))}`,
-      rest: "y todo es gratis por 72 h",
+      strong: "Gratis",
+      rest: `hasta ${fechaBarra(new Date(entryAt.getTime() + 24 * H))}`,
     });
   });
 
   it("anuncio ya vencido: vuelve a las reglas de siempre", () => {
     const bar = windowBar(base({ adEntry: { entryAt: at(-100 * H), firstReplyAt: at(-99 * H), metaFreeUntil: null } }));
-    expect(bar.strong).toBe("Con costo");
+    expect(bar.strong).toBe("Costo de msj: $0.21");
   });
 
   it("anuncio que no se contestó a tiempo: sin gratis", () => {
     const bar = windowBar(base({ adEntry: { entryAt: at(-30 * H), firstReplyAt: at(-5 * H), metaFreeUntil: null } }));
-    expect(bar.strong).toBe("Con costo");
+    expect(bar.strong).toBe("Costo de msj: $0.21");
   });
 
   it("cliente de prueba: no cuesta y la ventana nunca cierra", () => {
@@ -140,23 +153,23 @@ describe("windowBar · Instagram", () => {
   const ig = (over: Partial<WindowBarInput> = {}) => windowBar(base({ channelType: "instagram", ...over }));
 
   it("dentro de 24 h: Gratis, cualquiera puede escribir", () => {
-    expect(ig()).toMatchObject({ tone: "gratis", icon: "instagram", strong: "Gratis", rest: "· cualquiera puede escribir 21 h más" });
+    expect(ig()).toMatchObject({ tone: "gratis", icon: "instagram", strong: "Gratis", rest: `hasta ${fechaBarra(at(21 * H))}` });
   });
 
   it("de 24 h a 7 días: Gratis, solo un vendedor, hasta…", () => {
     const windowExpiresAt = at(-5 * H);
     const hasta = new Date(windowExpiresAt.getTime() - 24 * H + 7 * 24 * H);
-    expect(ig({ windowExpiresAt })).toMatchObject({ tone: "gratis", strong: "Gratis", rest: `· solo un vendedor puede contestar, hasta ${fechaBarra(hasta)}` });
+    expect(ig({ windowExpiresAt })).toMatchObject({ tone: "gratis", strong: "Gratis", rest: `hasta ${fechaBarra(hasta)}` });
   });
 
   it("después de 7 días: no se puede escribir (gris)", () => {
-    expect(ig({ windowExpiresAt: at(-7 * 24 * H) })).toMatchObject({ tone: "cerrado", strong: "No se puede escribir" });
-    expect(ig({ windowExpiresAt: null }).rest).toBe("· en Instagram el cliente escribe primero");
+    expect(ig({ windowExpiresAt: at(-7 * 24 * H) })).toMatchObject({ tone: "cerrado", strong: "No se puede escribir", rest: "hasta que cliente responda" });
+    expect(ig({ windowExpiresAt: null }).rest).toBe("hasta que cliente responda");
   });
 
   it("los gratis del mes y los anuncios no aplican a Instagram", () => {
     expect(ig({ servicioGratis: { quedan: 900, hasta: at(H) }, adEntry: { entryAt: at(-1 * H), firstReplyAt: null, metaFreeUntil: null } }).rest).toBe(
-      "· cualquiera puede escribir 21 h más",
+      `hasta ${fechaBarra(at(21 * H))}`,
     );
   });
 });
