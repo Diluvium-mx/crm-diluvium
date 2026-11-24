@@ -11,7 +11,7 @@ export function ArchivedComposer() {
         className="w-full cursor-not-allowed resize-none rounded-md border bg-muted px-3 py-2 text-sm text-muted-foreground"
       />
       <p className="mt-1 text-center text-[11px] text-muted-foreground">
-        Este número ya no está conectado: el historial queda para consulta y no se puede escribir.
+        Solo para consulta: este número ya no está conectado.
       </p>
     </div>
   );
