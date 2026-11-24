@@ -22,7 +22,7 @@ import { DocumentCard } from "./document-card";
 import { MediaViewer } from "./media-viewer";
 import { VideoAttachment } from "./video-attachment";
 import { ScheduledInThread } from "./scheduled-in-thread";
-import { AgentNoticeLine, AgentPausedBanner, useConversationAgent } from "./agent-in-thread";
+import { AgentNoticeLine, useConversationAgent } from "./agent-in-thread";
 import { AgentErrorCard } from "./agent-error-card";
 import { AgentActivityPill } from "./agent-activity-pill";
 import { EVENT_BATCH_MS, newestChanged } from "./chat-events";
@@ -851,7 +851,6 @@ export function ChatThread({
 
       {/* Barra de arriba (20-nov-2026, propuesta A): ¿lo que sale del CRM es gratis o cuesta? Regla: lib/inbox/window-bar.ts. */}
       <WindowBarView bar={bar} />
-      <AgentPausedBanner agent={agent} nowMs={nowMs} />
       {/* Búsqueda en los chats (lupa amarilla): la palabra y «1 de N» para recorrerla. */}
       {searchTerm && (
         <div className="flex shrink-0 items-center gap-2 border-b border-busqueda-borde/50 bg-busqueda/15 px-3 py-1 text-xs md:px-4">

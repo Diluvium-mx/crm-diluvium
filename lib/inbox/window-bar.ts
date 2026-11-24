@@ -1,6 +1,8 @@
-// Barra de arriba del chat (20-nov-2026, propuesta A del dueño: «el precio primero, en una palabra»). Dice de un
-// vistazo si lo que sale del CRM es GRATIS o CUESTA, y el color es el precio: verde gratis, azul con costo, ámbar aviso
-// o acción, gris no se puede. Lo de los centavos va en el title (al pasar el mouse). Reglas de cobro (no inventar):
+// Barra de arriba del chat (20-nov-2026, propuesta A del dueño: «el precio primero, en una palabra»; textos B1–B13 del
+// dueño del 24-nov-2026: «Costo de msj: $0.21 · 23 h disponible», «Gratis · 22 h disponible · 640 de 1,000»,
+// «Solo plantilla = $0.76 · gratis en WAB»…). Dice de un vistazo si lo que sale del CRM es GRATIS o CUESTA, y el color
+// es el precio: verde gratis, azul con costo, ámbar aviso o acción, gris no se puede. El precio va en pesos en la barra;
+// el detalle (venta/utilidad, qué es «disponible», WAB) en el title. Reglas de cobro (no inventar):
 // docs/meta-whatsapp.md, docs/seguimientos.md §3 y docs/instagram.md:
 // - Anuncio: si se le contestó dentro de 24 h, todo lo que sale es gratis (también plantillas) mientras dure el tiempo
 //   gratis (la marca de Meta o, sin marca, 72 h; lib/followups/gratis.ts). Es precio, no permiso.
@@ -41,23 +43,26 @@ export type WindowBarInput = {
   now: Date;
 };
 
-// Menos de esto para que cierre la ventana = aviso «Cierra en…» (el dueño: «menos de 2 h»).
+// Menos de esto para que cierre la ventana = aviso ámbar «45 min disponible…» (B6; el dueño: «menos de 2 h»).
 export const POCO_TIEMPO_MS = 2 * 3_600_000;
-// Con menos de estos gratis del mes, la barra ya dice «Con costo»: lo que reporta Meta llega con horas de atraso.
+// Con menos de estos gratis del mes, la barra ya dice «Costo de msj»: lo que reporta Meta llega con horas de atraso.
 export const GRATIS_MES_MARGEN = 50;
 
-// Pesos por dólar para los centavos del title: el promedio de octubre del correo de costos (US$98.64 = $1,815).
-// Es aproximado a propósito («≈»); si Meta cambia precios se cambia META_RATE_USD y esto los sigue.
-const PESOS_POR_DOLAR_APROX = 18.4;
-function centavos(usd: number | undefined): string {
-  const c = Math.max(5, Math.round(((usd ?? 0) * PESOS_POR_DOLAR_APROX * 100) / 5) * 5);
-  return `≈ ${c} centavos`;
+// Precios en pesos (24-nov-2026, textos del dueño: «Costo de msj: $0.21», «Solo plantilla = $0.76»). Meta cobra en
+// dólares y sin IVA (META_RATE_USD); aquí se pasan a pesos con el dólar FIX del DOF: promedio del 1 al 24 de noviembre
+// de 2026 = 18.73 (lib/costos/tipo-cambio.ts lo lee igual). El monto en pesos se mueve con el dólar: si cambia mucho,
+// se actualiza esta línea.
+const PESOS_POR_DOLAR = 18.73;
+export function pesos(usd: number | undefined): string {
+  return `$${((usd ?? 0) * PESOS_POR_DOLAR).toFixed(2)}`;
 }
-const TEXTO = centavos(META_RATE_USD.service);
-const PLANTILLA_VENTA = centavos(META_RATE_USD.marketing);
-const PLANTILLA_UTILIDAD = centavos(META_RATE_USD.utility).replace(" centavos", "");
-const PLANTILLAS = `${PLANTILLA_VENTA} la de venta, ${PLANTILLA_UTILIDAD} la de utilidad`;
-const CELULAR = "Lo que escribas desde el celular o WhatsApp Web no se cobra.";
+/** Un mensaje normal (texto, foto, archivo) dentro de la ventana, ya sin los 1,000 gratis del mes. */
+export const COSTO_MSJ = pesos(META_RATE_USD.service);
+/** La plantilla de venta (marketing): la de casi todos los seguimientos. */
+export const COSTO_PLANTILLA = pesos(META_RATE_USD.marketing);
+const COSTO_UTILIDAD = pesos(META_RATE_USD.utility);
+const PLANTILLAS = `${COSTO_PLANTILLA} la de venta, ${COSTO_UTILIDAD} la de utilidad`;
+const WAB = "WAB = la app de WhatsApp Business del celular (o WhatsApp Web): lo que escribas ahí no se cobra.";
 
 const FECHA = new Intl.DateTimeFormat("es-MX", {
   timeZone: "America/Mazatlan",
@@ -105,8 +110,8 @@ export function windowBar(input: WindowBarInput): WindowBar {
     return {
       tone: "cerrado",
       icon: "archive",
-      strong: "No se puede escribir",
-      rest: "· este número ya no está conectado",
+      strong: "No se puede escribir,",
+      rest: "este número ya no está conectado",
       title: "El número de este chat ya no está conectado al CRM: el historial queda para consulta y no sale nada.",
     };
   }
@@ -119,8 +124,8 @@ export function windowBar(input: WindowBarInput): WindowBar {
         tone: "gratis",
         icon: "instagram",
         strong: "Gratis",
-        rest: `· cualquiera puede escribir ${tiempoQueQueda(queda)} más`,
-        title: "Instagram no cobra mensajes. Pasadas 24 h desde su último mensaje, solo un vendedor puede contestar (hasta 7 días); el Agente IA y las automatizaciones ya no.",
+        rest: `hasta ${fechaBarra(windowExpiresAt!)}`,
+        title: "Instagram no cobra mensajes. Hasta esa hora escribe cualquiera (también el Agente IA y las automatizaciones); después, hasta 7 días desde su último mensaje, solo un vendedor.",
       };
     }
     const vendedorHasta = humanAgentExpiresAt(windowExpiresAt);
@@ -129,49 +134,49 @@ export function windowBar(input: WindowBarInput): WindowBar {
         tone: "gratis",
         icon: "instagram",
         strong: "Gratis",
-        rest: `· solo un vendedor puede contestar, hasta ${fechaBarra(vendedorHasta)}`,
-        title: "Instagram no cobra mensajes. Pasaron 24 h desde su último mensaje: el Agente IA y las automatizaciones ya no pueden escribir.",
+        rest: `hasta ${fechaBarra(vendedorHasta)}`,
+        title: "Instagram no cobra mensajes. Ya pasaron 24 h desde su último mensaje: hasta esa hora solo un vendedor puede contestar (el Agente IA y las automatizaciones ya no).",
       };
     }
     return {
       tone: "cerrado",
       icon: "instagram",
       strong: "No se puede escribir",
-      rest: windowExpiresAt ? "· Instagram no deja hasta que el cliente vuelva a escribir" : "· en Instagram el cliente escribe primero",
-      title: "Instagram no tiene plantillas: después de 7 días sin mensajes del cliente nadie puede escribirle.",
+      rest: "hasta que cliente responda",
+      title: "Instagram no tiene plantillas: pasados 7 días sin mensajes del cliente (o si nunca ha escrito), nadie puede escribirle hasta que él escriba.",
     };
   }
 
   const gratis = tiempoGratis(input.adEntry, now);
   if (gratis?.status === "open") {
     if (abierta) {
-      // Si la ventana de 24 h cierra antes que lo gratis, también se dice cuánto queda para escribir.
+      // Si la ventana de 24 h cierra antes que lo gratis, el title dice hasta cuándo se puede mandar texto libre.
       const cierraAntes = windowExpiresAt! < gratis.until;
       return {
         tone: "gratis",
         icon: "gift",
         strong: "Gratis",
-        rest: `por anuncio hasta ${fechaBarra(gratis.until)}${cierraAntes ? ` · puedes escribir ${tiempoQueQueda(queda)} más` : ""}`,
+        rest: `por anuncio hasta ${fechaBarra(gratis.until)}`,
         title:
           "Llegó por anuncio: hasta esa hora todo lo que sale del CRM es gratis, también las plantillas." +
-          (cierraAntes ? " El texto libre solo se puede mientras el cliente haya escrito en las últimas 24 h; después, plantilla (gratis hasta esa hora)." : ""),
+          (cierraAntes ? ` El texto libre se puede hasta ${fechaBarra(windowExpiresAt!)} (24 h desde su último mensaje); después, solo plantilla, gratis hasta la hora de la barra.` : ""),
       };
     }
     return {
       tone: "gratis",
       icon: "gift",
       strong: "Plantilla gratis",
-      rest: `hasta ${fechaBarra(gratis.until)}${windowExpiresAt ? " · el texto ya no (pasaron 24 h)" : ""}`,
-      title: "Sigue el tiempo gratis del anuncio, pero pasaron 24 h desde su último mensaje: desde el CRM solo sale plantilla, y es gratis hasta esa hora.",
+      rest: `hasta ${fechaBarra(gratis.until)} · Costo de plantilla: ${COSTO_PLANTILLA}`,
+      title: `Sigue el tiempo gratis del anuncio, pero pasaron 24 h desde su último mensaje: desde el CRM solo sale plantilla, gratis hasta esa hora. Después cuesta ${PLANTILLAS}.`,
     };
   }
   if (gratis?.status === "pending") {
     return {
       tone: "aviso",
       icon: "gift",
-      strong: `Contesta antes de ${fechaBarra(gratis.replyBy)}`,
-      rest: "y todo es gratis por 72 h",
-      title: "Llegó por anuncio y nadie le ha contestado. Si le contestas antes de esa hora, todo lo que salga en las 72 h siguientes es gratis, también las plantillas.",
+      strong: "Gratis",
+      rest: `hasta ${fechaBarra(gratis.replyBy)}`,
+      title: "Llegó por anuncio y nadie le ha contestado: si le contestas antes de esa hora, lo que mandes es gratis y se abren 72 h más gratis (también las plantillas). Si no, se cobra como siempre.",
     };
   }
 
@@ -179,31 +184,34 @@ export function windowBar(input: WindowBarInput): WindowBar {
     // Los gratis del mes solo cuentan mientras el dato esté vigente (un chat abierto horas no los vuelve a leer).
     const gratis = input.servicioGratis && now < input.servicioGratis.hasta ? input.servicioGratis.quedan : null;
     const gratisMes = gratis !== null && gratis >= GRATIS_MES_MARGEN;
+    const disponible = `${tiempoQueQueda(queda)} disponible`;
+    const deMil = gratisMes ? `${(Math.floor(gratis / 10) * 10).toLocaleString("es-MX")} de 1,000` : "";
     if (queda < POCO_TIEMPO_MS) {
       return {
         tone: "aviso",
         icon: "clock",
-        strong: `Cierra en ${tiempoQueQueda(queda)}`,
-        rest: "· después solo plantilla, con costo",
-        title: `Hasta esa hora se puede mandar texto libre (${gratisMes ? "hoy gratis: quedan de los 1,000 del mes" : `${TEXTO} cada mensaje`}). Después, desde el CRM solo sale plantilla: ${PLANTILLAS}.`,
+        strong: gratisMes ? "Gratis" : disponible,
+        rest: gratisMes
+          ? `· ${disponible} · ${deMil} · después plantilla: ${COSTO_PLANTILLA}`
+          : `· Costo de msj: ${COSTO_MSJ} · después plantilla: ${COSTO_PLANTILLA}`,
+        title: `Disponible = lo que queda para mandar texto libre (24 h desde su último mensaje)${gratisMes ? "; hoy es gratis (quedan de los 1,000 del mes)" : `; cada mensaje cuesta ${COSTO_MSJ}`}. Después, desde el CRM solo sale plantilla: ${PLANTILLAS}.`,
       };
     }
     if (gratisMes) {
-      const aprox = Math.floor(gratis / 10) * 10;
       return {
         tone: "gratis",
         icon: "gift",
         strong: "Gratis",
-        rest: `· puedes escribir ${tiempoQueQueda(queda)} más · quedan ≈ ${aprox.toLocaleString("es-MX")} de los 1,000 del mes`,
-        title: `Meta no cobra los primeros 1,000 mensajes normales del mes (cuentan también los del Agente IA y las automatizaciones); las plantillas sí se cobran (${PLANTILLAS}). Cuando se acaben, cada mensaje cuesta ${TEXTO}. La cuenta la reporta Meta y puede tardar unas horas.`,
+        rest: `· ${disponible} · ${deMil}`,
+        title: `Meta no cobra los primeros 1,000 mensajes normales del mes (cuentan también los del Agente IA y las automatizaciones); quedan los que dice la barra. Las plantillas sí se cobran (${PLANTILLAS}). Cuando se acaben, cada mensaje cuesta ${COSTO_MSJ}. Disponible = lo que queda para mandar texto libre. La cuenta la reporta Meta y puede tardar unas horas.`,
       };
     }
     return {
       tone: "costo",
       icon: "coin",
-      strong: "Con costo",
-      rest: `· puedes escribir ${tiempoQueQueda(queda)} más`,
-      title: `Cada mensaje normal que sale del CRM (tuyo, del Agente IA o de una automatización) cuesta ${TEXTO}; una plantilla, ${PLANTILLAS}. ${CELULAR}`,
+      strong: `Costo de msj: ${COSTO_MSJ}`,
+      rest: `· ${disponible}`,
+      title: `Cada mensaje normal que sale del CRM (tuyo, del Agente IA o de una automatización) cuesta ${COSTO_MSJ}, ya sin los 1,000 gratis del mes. Disponible = lo que queda para mandar texto libre (24 h desde su último mensaje); después solo plantilla: ${PLANTILLAS}. ${WAB}`,
     };
   }
 
@@ -212,16 +220,16 @@ export function windowBar(input: WindowBarInput): WindowBar {
     return {
       tone: "aviso",
       icon: "template",
-      strong: "Solo plantilla, con costo",
-      rest: "· el cliente todavía no escribe · gratis desde el celular",
-      title: `Mientras el cliente no conteste, desde el CRM solo sale plantilla: ${PLANTILLAS}. ${CELULAR}`,
+      strong: `Solo plantilla = ${COSTO_PLANTILLA}`,
+      rest: "· espera mensaje o gratis en WAB",
+      title: `El cliente todavía no escribe: desde el CRM solo sale plantilla (${PLANTILLAS}). Cuando conteste, se puede mandar texto. ${WAB}`,
     };
   }
   return {
     tone: "aviso",
     icon: "template",
-    strong: "Solo plantilla, con costo",
-    rest: "· gratis desde el celular",
-    title: `Pasaron 24 h desde su último mensaje: desde el CRM solo sale plantilla (${PLANTILLAS}). ${CELULAR}`,
+    strong: `Solo plantilla = ${COSTO_PLANTILLA}`,
+    rest: "· gratis en WAB",
+    title: `Pasaron 24 h desde su último mensaje: desde el CRM solo sale plantilla (${PLANTILLAS}). ${WAB}`,
   };
 }

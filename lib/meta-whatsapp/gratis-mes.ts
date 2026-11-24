@@ -3,7 +3,7 @@
 // (docs/seguimientos.md §3, desde el 1-oct-2026); después cobra cada uno. Sale de lo que reporta Meta cada hora
 // (meta_whatsapp_pricing, días UTC como la factura; docs/meta-whatsapp.md): gratis usados = los free_customer_service
 // del mes. Si Meta ya cobró algún mensaje de servicio este mes, no queda ninguno.
-// Sin lectura reciente de Meta → null (no se sabe): la barra dice «Con costo», lo seguro.
+// Sin lectura reciente de Meta → null (no se sabe): la barra dice «Costo de msj», lo seguro.
 import { and, eq, gte, lte } from "drizzle-orm";
 import type { db as appDb } from "@/lib/db";
 import { metaWhatsappPricing, metaWhatsappPricingSync } from "@/lib/db/schema";

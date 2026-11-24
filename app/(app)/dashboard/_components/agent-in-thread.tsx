@@ -1,13 +1,12 @@
 "use client";
 
-// El Agente IA dentro del hilo (Fase B): aviso "🤖 Pausado · vuelve hoy 22:30" (o
-// "Pausado indefinidamente"), solo informativo desde el 26-sep-2026, y los avisos
-// del agente para el vendedor, intercalados en el hilo (discretos, sin acción). Se
+// El Agente IA dentro del hilo (Fase B): los avisos del agente para el vendedor,
+// intercalados en el hilo (discretos, sin acción). La barra «🤖 Pausado…» ya no sale
+// en el chat (decisión del dueño, 24-nov-2026): el estado vive en el Detalle del contacto. Se
 // recarga con cada evento SSE de la conversación (refreshToken), igual que los programados.
 import { useCallback, useEffect, useRef, useState } from "react";
 import { leer } from "@/lib/inbox/leer";
 import type { AgentNoticeView, AgentThreadView } from "@/lib/agente-ia/types";
-import { agentStatusLabel } from "@/lib/agente-ia/labels";
 import { EVENT_BATCH_MS } from "./chat-events";
 
 // Recarga con cada mensaje que llega o se va (refreshToken) y cada vez que la Bandeja
@@ -31,24 +30,6 @@ export function useConversationAgent(conversationId: string, refreshToken: numbe
     return () => clearTimeout(t);
   }, [load, refreshToken, detailKey, conversationId]);
   return { agent, reload: load };
-}
-
-export function AgentPausedBanner({
-  agent,
-  nowMs,
-}: {
-  agent: AgentThreadView | null;
-  // Reloj del chat: "hoy"/"mañana" se recalculan con él.
-  nowMs?: number;
-}) {
-  if (!agent || agent.channelMode === "off" || agent.agentState === "activo") return null;
-  // Solo informa: "Activar" vive en el Detalle del contacto (decisión del dueño, 26-sep-2026).
-  return (
-    <div className="border-b bg-muted/60 px-4 py-1.5 text-center text-xs text-foreground">
-      🤖 <span className="font-medium">{agentStatusLabel(agent, nowMs === undefined ? undefined : new Date(nowMs))}</span>
-      <span className="text-muted-foreground"> · se activa en el Detalle del contacto</span>
-    </div>
-  );
 }
 
 // Aviso del agente para el vendedor (guardia, pidió a un vendedor, freno, envío
