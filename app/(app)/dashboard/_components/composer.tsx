@@ -403,7 +403,7 @@ export function Composer({
 
   // Ventana cerrada: la caja no se ve, pero el borrador se queda para cuando el cliente vuelva a escribir.
   const keptDraftNotice = draft.trim() !== "" && (
-    <p className="mb-2 text-xs text-muted-foreground">✏️ Tu borrador se guardó: podrás enviarlo cuando el cliente vuelva a escribir.</p>
+    <p className="mb-2 text-xs text-muted-foreground">✏️ Borrador guardado hasta que cliente escriba de nuevo</p>
   );
 
   const templatePanel = salidaPlantillas.montada && (
@@ -425,7 +425,7 @@ export function Composer({
       <div className="border-t bg-card p-3 pb-[max(0.75rem,env(safe-area-inset-bottom))]">
         {keptDraftNotice}
         <p className="rounded-md border border-dashed px-3 py-2 text-center text-sm text-muted-foreground">
-          Pasaron más de 7 días desde el último mensaje del cliente: Instagram no deja escribirle hasta que vuelva a escribir.
+          Instagram no permite escribir a cliente
         </p>
       </div>
     );
