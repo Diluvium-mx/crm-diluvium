@@ -43,6 +43,10 @@ PROD y OK ESCRITURA PROD, que se cancela si no toca exactamente 1 fila.
   contestaba como a un cliente de Reino Unido); su nombre era «User» (el de su perfil) y pasó a «Facebook» en la misma
   escritura (1 fila). Respaldo en `~/Documents/Diluvium CRM/notas/tarjeta-facebook/`. Se deshace con
   `update contacts set sin_agente_ia = false where id = '48751871-9ce0-4edb-8f68-0b98a5ddc08b'`.
+- **En producción, sin migración** (25-nov-2026): una sucursal de paquetería en Manzanillo que tiene un paquete devuelto
+  (avisa por WhatsApp); se le puso nombre en la misma escritura (antes era su número; 1 fila) y lleva la tarjeta de
+  paquetería. Respaldo en `~/Documents/Diluvium CRM/notas/tarjeta-manzanillo/`. Se deshace con
+  `update contacts set sin_agente_ia = false where id = '7a93d04d-5c42-496c-a7f5-b3b67f959f94'`.
 - **Regla del dueño (17-nov-2026):** todo chat que no es cliente y lleva tarjeta propia va siempre sin Agente IA.
 
 
