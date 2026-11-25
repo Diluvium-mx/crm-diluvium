@@ -20,6 +20,9 @@ const FONDO_POR_CONTACTO: ReadonlyMap<string, TarjetaFondo> = new Map([
   ["d3bc6189-89c8-4739-b29d-06d9b4b909c6", "propio"],
   // Paquetería: desde aquí se piden las recolecciones (sin Agente IA, migración 0072).
   ["74f1580f-eddf-4833-ba12-7493c5323170", "paqueteria"],
+  // Sucursal de paquetería en Manzanillo con un paquete devuelto (sin Agente IA desde el 25-nov-2026, marcado en
+  // producción con OK): mismo diseño de paquetería.
+  ["7a93d04d-5c42-496c-a7f5-b3b67f959f94", "paqueteria"],
   // Estafeta: avisos de los envíos en plantillas que WhatsApp no deja ver (sin Agente IA desde el 14-nov-2026,
   // marcado en producción con OK).
   ["23fcc0c0-a453-4383-a2f8-a891dc2ce78c", "estafeta"],
