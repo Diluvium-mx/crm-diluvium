@@ -5,6 +5,7 @@
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import { requireActiveMembership } from "@/lib/auth/active-organization";
+import { esSoloLectura, relanzarSoloLectura } from "@/lib/auth/solo-lectura";
 import { roleAllows } from "@/lib/auth/permissions";
 import { deleteMediaAsset, listMediaAssets, MediaInUseError, renameMediaAsset, saveMediaThumbnail, type MediaAssetView } from "@/lib/media-library/service";
 import { isMultimedia, MediaRejectedError } from "@/lib/media-library/rules";
@@ -17,7 +18,7 @@ function requireMedia(role: string, action: "read" | "create" | "delete"): void 
 }
 
 export async function getMediaAssets(): Promise<MediaAssetView[]> {
-  const { organizationId, role } = await requireActiveMembership();
+  const { organizationId, role } = await requireActiveMembership({ acceso: "consulta" });
   requireMedia(role, "read");
   return listMediaAssets(organizationId);
 }
@@ -29,13 +30,17 @@ export async function getMultimediaAssets(): Promise<MediaAssetView[]> {
 
 /** Miniatura que hizo el navegador (JPEG chico en base64). Sin revalidar: la lista la trae la próxima vez. */
 export async function saveMediaThumbnailAction(input: { assetId: string; jpegBase64: string }): Promise<{ ok: boolean }> {
-  const { organizationId, role } = await requireActiveMembership();
+  // La manda sola la pantalla (Multimedia, Biblioteca) al ver un archivo sin miniatura: con
+  // «Solo lectura» no se guarda y tampoco sale el aviso (no presionó nada).
+  const { organizationId, role } = await requireActiveMembership({ acceso: "consulta" });
+  if (esSoloLectura(role)) return { ok: false };
   requireMedia(role, "create");
   const parsed = z.object({ assetId: idSchema, jpegBase64: z.string().max(100_000) }).safeParse(input);
   if (!parsed.success) return { ok: false };
   try {
     return { ok: await saveMediaThumbnail(organizationId, parsed.data.assetId, parsed.data.jpegBase64) };
   } catch (error) {
+    relanzarSoloLectura(error);
     if (error instanceof MediaRejectedError) return { ok: false };
     logError("[biblioteca] miniatura falló", error);
     return { ok: false };
@@ -50,6 +55,7 @@ export async function renameMediaAssetAction(input: { assetId: string; title: st
   try {
     await renameMediaAsset(organizationId, parsed.data.assetId, parsed.data.title);
   } catch (error) {
+    relanzarSoloLectura(error);
     if (error instanceof MediaRejectedError) return { ok: false, error: error.message };
     logError("[biblioteca] renombrar falló", error);
     return { ok: false, error: "No se pudo renombrar el archivo." };
@@ -66,6 +72,7 @@ export async function deleteMediaAssetAction(input: { assetId: string }): Promis
   try {
     await deleteMediaAsset(organizationId, parsed.data.assetId);
   } catch (error) {
+    relanzarSoloLectura(error);
     if (error instanceof MediaInUseError || error instanceof MediaRejectedError) return { ok: false, error: error.message };
     logError("[biblioteca] borrar falló", error);
     return { ok: false, error: "No se pudo borrar el archivo." };

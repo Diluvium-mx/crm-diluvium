@@ -14,6 +14,7 @@ import { z } from "zod";
 import { auth } from "@/lib/auth";
 import { requireActiveMembership } from "@/lib/auth/active-organization";
 import { roleAllows } from "@/lib/auth/permissions";
+import { esSoloLectura, relanzarSoloLectura } from "@/lib/auth/solo-lectura";
 import { signInNoticeHref } from "@/lib/auth/sign-in-notice";
 import { ipRateLimiter } from "@/lib/rate-limit";
 import { assignableRoles, isTeamRole, teamActionError, type TeamAction } from "@/lib/team/rules";
@@ -44,6 +45,7 @@ async function run(action: () => Promise<void>): Promise<TeamResult> {
     revalidatePath("/configuracion");
     return { ok: true };
   } catch (error) {
+    relanzarSoloLectura(error);
     if (error instanceof TeamError) return { ok: false, message: error.message };
     if (error instanceof z.ZodError) return { ok: false, message: error.issues[0]?.message ?? "Datos inválidos." };
     if (error instanceof APIError) return { ok: false, message: authErrorMessage(error) };
@@ -130,9 +132,11 @@ const teamLog = (actor: { organizationId: string; userId: string }, target: Team
 });
 
 export async function listSellers(): Promise<{ members: TeamMember[]; me: string; myRole: string }> {
-  const actor = await requireActiveMembership();
+  const actor = await requireActiveMembership({ acceso: "consulta" });
   if (!roleAllows(actor.role, "member", "update")) return { members: [], me: actor.userId, myRole: actor.role };
-  return { members: await listTeam(actor.organizationId), me: actor.userId, myRole: actor.role };
+  // «Solo lectura» ve el panel como el owner, botones incluidos (al presionarlos no se guarda nada).
+  const myRole = esSoloLectura(actor.role) ? "owner" : actor.role;
+  return { members: await listTeam(actor.organizationId), me: actor.userId, myRole };
 }
 
 const addSellerSchema = z.object({
@@ -167,6 +171,7 @@ export async function changeSellerRole(memberId: string, newRole: string): Promi
         body: { memberId, role: newRole as "agent", organizationId: actor.organizationId },
       });
     } catch (error) {
+      relanzarSoloLectura(error);
       if (error instanceof APIError) throw error;
       mapTeamDbError(error);
     }

@@ -153,6 +153,11 @@ Reglas duras:
   con restore de prueba en cada corrida. Secrets en el environment `production-backup`
   (solo `main`), rol `backup_ro` de solo lectura y TLS con CA fijada. Restore: `docs/backups.md`.
   **Sin servicios externos**: el CRM depende solo de GitHub, Railway y Meta.
+- **Rol «Solo lectura» (26-nov-2026, `lib/auth/solo-lectura.ts`):** ve todo, no guarda nada. Toda Server
+  Action cuenta como cambio y se le rechaza, salvo las que solo leen: esas piden
+  `requireActiveMembership({ acceso: "consulta" })` y se agregan a la lista de `lib/auth/solo-lectura-guard.test.ts`.
+  Todo `catch (error)` de una Server Action empieza con `relanzarSoloLectura(error)` (si no, no sale el aviso), y
+  toda ruta de API que escribe pide `{ acceso: "cambio" }`. La prueba guardiana vigila las tres cosas.
 - **Goal y FAQs del Agente IA (regla del dueño, 9-oct-2026):** los cambios se juntan y se aplican en
   producción **una sola vez al día, después de las 22:00 (Mazatlán)**, salvo un error grave que haya que
   corregir de inmediato. Cada guardado obliga a Anthropic a volver a cobrar el Goal completo (~US$0.09);
@@ -212,6 +217,7 @@ lo del vendedor y que al vendedor solo le falte Configuración):**
 |---|---|
 | Owner | Dueño de la cuenta: todo, incluido administrar a los admins (solo él asigna el rol owner). |
 | Admin | Todo lo del vendedor + Configuración (Vendedores). |
+| Solo lectura (`viewer`) | Desde el 26-nov-2026: ve TODO lo que ve el owner (Configuración incluida) y puede presionar botones, pero nada se guarda ni se envía (sale el aviso «Modo solo lectura: no se guardó nada»); solo escribe en los buscadores; abrir un chat no lo marca como leído. `roleAllows` responde como owner; lo frena `requireActiveMembership` (ver Reglas duras). |
 | Vendedor (`agent`) | Todas las herramientas del CRM menos la pestaña Configuración: Dashboard (incluido registrar recargas de IA), Bandeja, Embudo, Mensajes rápidos (fragmentos y crear/sincronizar plantillas de Meta), contactos en masa (importar/exportar/borrar), editar/borrar comentarios de otros, Anuncios, Agente IA (incluida la sección "Tallas y medidas", desde el 26-sep-2026) y Automatización. |
 
 ```

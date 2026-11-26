@@ -3,7 +3,8 @@
 // Acciones de la sección «Envío» del Detalle del contacto (guías de Envia, docs/envios.md). La organización
 // sale de la sesión. Ver las guías = leer el contacto; hacer o cancelar una = editarlo (vendedor incluido).
 import { z, ZodError } from "zod";
-import { requireActiveMembership, type ActiveMembership } from "@/lib/auth/active-organization";
+import { requireActiveMembership, type Acceso, type ActiveMembership } from "@/lib/auth/active-organization";
+import { relanzarSoloLectura } from "@/lib/auth/solo-lectura";
 import { roleAllows } from "@/lib/auth/permissions";
 import { phoneParts } from "@/lib/phone";
 import { db } from "@/lib/db";
@@ -28,8 +29,9 @@ import { contactPhoneE164, lastDestination, listContactShipments, shipmentView, 
 
 const contactIdSchema = z.string().trim().min(1).max(128);
 
-async function conPermiso(accion: "read" | "update"): Promise<ActiveMembership | null> {
-  const m = await requireActiveMembership();
+// `opciones.acceso`: las lecturas dicen "consulta" para que «Solo lectura» las vea (lib/auth/solo-lectura.ts).
+async function conPermiso(accion: "read" | "update", opciones: { acceso?: Acceso } = {}): Promise<ActiveMembership | null> {
+  const m = await requireActiveMembership(opciones);
   return roleAllows(m.role, "contact", accion) ? m : null;
 }
 
@@ -46,11 +48,12 @@ export type EnvioPanel = { ok: true; env: EnviaEnv | null; shipments: ShipmentVi
 /** Lo que pinta la sección «Envío»: las guías del contacto y si Envia está listo (y con qué cuenta). */
 export async function getEnvioPanel(contactId: string): Promise<EnvioPanel> {
   try {
-    const m = await conPermiso("read");
+    const m = await conPermiso("read", { acceso: "consulta" });
     if (!m) return { ok: false, message: "No tienes permiso para ver las guías." };
     const rows = await listContactShipments(m.organizationId, contactIdSchema.parse(contactId));
     return { ok: true, env: enviaConfigFrom(process.env)?.env ?? null, shipments: rows.map(shipmentView) };
   } catch (error) {
+    relanzarSoloLectura(error);
     logError("[envios] no se pudieron leer las guías", error);
     return { ok: false, message: "No se pudieron leer las guías." };
   }
@@ -73,7 +76,7 @@ export type EnvioForm =
 /** La ventana «Hacer guía» ya llena con lo que se sabe del contacto. */
 export async function getEnvioForm(contactId: string): Promise<EnvioForm> {
   try {
-    const m = await conPermiso("update");
+    const m = await conPermiso("update", { acceso: "consulta" });
     if (!m) return { ok: false, message: "No tienes permiso para hacer guías." };
     const deps = depsOrNull();
     if (!deps) return { ok: false, message: NO_CONFIG };
@@ -87,6 +90,7 @@ export async function getEnvioForm(contactId: string): Promise<EnvioForm> {
     try {
       savedPackages = await deps.client.listPackages();
     } catch (error) {
+      relanzarSoloLectura(error);
       // Sin embalajes guardados igual se puede hacer la guía con medidas a mano.
       logError("[envios] no se pudieron leer los embalajes de Envia", error);
     }
@@ -107,6 +111,7 @@ export async function getEnvioForm(contactId: string): Promise<EnvioForm> {
       zip,
     };
   } catch (error) {
+    relanzarSoloLectura(error);
     logError("[envios] no se pudo preparar la ventana de la guía", error);
     return { ok: false, message: errorText(error) };
   }
@@ -121,12 +126,13 @@ export type ZipLookup = { ok: true; zip: ZipInfo | null } | { ok: false; message
 
 export async function buscarCodigoPostal(postalCode: string): Promise<ZipLookup> {
   try {
-    const m = await conPermiso("update");
+    const m = await conPermiso("update", { acceso: "consulta" });
     if (!m) return { ok: false, message: "No tienes permiso para hacer guías." };
     const deps = depsOrNull();
     if (!deps) return { ok: false, message: NO_CONFIG };
     return { ok: true, zip: await deps.client.lookupZip(z.string().trim().max(10).parse(postalCode)) };
   } catch (error) {
+    relanzarSoloLectura(error);
     return { ok: false, message: errorText(error) };
   }
 }
@@ -141,6 +147,7 @@ export async function cotizarEnvio(input: ShipmentInput): Promise<CotizarResult>
     if (!deps) return { ok: false, message: NO_CONFIG };
     return { ok: true, ...(await quoteShipment(deps, m, input)) };
   } catch (error) {
+    relanzarSoloLectura(error);
     if (error instanceof ZodError) return { ok: false, message: firstIssue(error) };
     logError("[envios] no se pudo cotizar", error);
     return { ok: false, message: errorText(error) };
@@ -155,6 +162,7 @@ export async function generarGuia(input: CreateShipmentInput): Promise<CreateRes
     if (!deps) return { ok: false, message: NO_CONFIG, shipments: [] };
     return await createShipment(deps, m, input);
   } catch (error) {
+    relanzarSoloLectura(error);
     if (error instanceof ZodError) return { ok: false, message: firstIssue(error), shipments: [] };
     logError("[envios] no se pudo generar la guía", error);
     return { ok: false, message: errorText(error), shipments: [] };
@@ -169,6 +177,7 @@ export async function cancelarGuia(shipmentId: string): Promise<CancelOutcome> {
     if (!deps) return { ok: false, message: NO_CONFIG };
     return await cancelShipment(deps, m, z.string().trim().min(1).max(64).parse(shipmentId));
   } catch (error) {
+    relanzarSoloLectura(error);
     logError("[envios] no se pudo cancelar la guía", error);
     return { ok: false, message: errorText(error) };
   }

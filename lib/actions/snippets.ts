@@ -12,6 +12,7 @@ import { revalidatePath } from "next/cache";
 import { and, asc, eq } from "drizzle-orm";
 import { z } from "zod";
 import { requireActiveMembership } from "@/lib/auth/active-organization";
+import { relanzarSoloLectura } from "@/lib/auth/solo-lectura";
 import { roleAllows } from "@/lib/auth/permissions";
 import { db } from "@/lib/db";
 import { snippets } from "@/lib/db/schema/snippets";
@@ -60,7 +61,7 @@ function isDuplicateName(error: unknown): boolean {
 }
 
 export async function listSnippets(): Promise<SnippetView[]> {
-  const { organizationId } = await requireActiveMembership();
+  const { organizationId } = await requireActiveMembership({ acceso: "consulta" });
   const rows = await db
     .select()
     .from(snippets)
@@ -100,6 +101,7 @@ export async function createSnippet(input: CreateSnippetInput): Promise<SnippetV
     revalidatePath("/mensajes-rapidos");
     return toView(created);
   } catch (error) {
+    relanzarSoloLectura(error);
     if (isDuplicateName(error)) throw new Error(`Ya existe un mensaje rápido llamado "${parsed.name}".`);
     throw error;
   }
@@ -144,6 +146,7 @@ export async function updateSnippet(input: UpdateSnippetInput): Promise<SnippetV
     revalidatePath("/mensajes-rapidos");
     return toView(updated);
   } catch (error) {
+    relanzarSoloLectura(error);
     if (isDuplicateName(error)) throw new Error(`Ya existe un mensaje rápido llamado "${parsed.name}".`);
     throw error;
   }

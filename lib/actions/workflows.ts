@@ -7,6 +7,7 @@ import { revalidatePath } from "next/cache";
 import { and, asc, eq, gte, inArray, sql } from "drizzle-orm";
 import { z } from "zod";
 import { requireActiveMembership } from "@/lib/auth/active-organization";
+import { relanzarSoloLectura } from "@/lib/auth/solo-lectura";
 import { roleAllows } from "@/lib/auth/permissions";
 import { db } from "@/lib/db";
 import { listFunnelStages } from "@/lib/contacts/funnel-stages";
@@ -152,7 +153,7 @@ async function loadViews(organizationId: string): Promise<WorkflowView[]> {
 }
 
 export async function listWorkflows(): Promise<WorkflowView[]> {
-  const { organizationId, role } = await requireActiveMembership();
+  const { organizationId, role } = await requireActiveMembership({ acceso: "consulta" });
   requireWorkflow(role, "read");
   return loadViews(organizationId);
 }
@@ -310,6 +311,7 @@ export async function saveWorkflow(raw: WorkflowInput): Promise<{ ok: true; id: 
     revalidatePath("/automatizacion");
     return { ok: true, id };
   } catch (error) {
+    relanzarSoloLectura(error);
     if (isUniqueViolation(error)) return { ok: false, error: "Ese comando ya lo usa otro workflow." };
     logError("[workflows] no se pudo guardar", error);
     return { ok: false, error: "No se pudo guardar el workflow." };
@@ -441,7 +443,7 @@ export async function restoreDefaultWorkflows(): Promise<{ ok: true; created: nu
 }
 
 export async function listWorkflowRuns(): Promise<WorkflowRunView[]> {
-  const { organizationId, role } = await requireActiveMembership();
+  const { organizationId, role } = await requireActiveMembership({ acceso: "consulta" });
   requireWorkflow(role, "read");
   const rows = await listRecentRuns(organizationId, 100);
   return rows.map((r) => ({
@@ -453,7 +455,7 @@ export async function listWorkflowRuns(): Promise<WorkflowRunView[]> {
 
 /** Comandos disponibles para el composer ("/" del vendedor). */
 export async function listWorkflowCommands(): Promise<{ id: string; name: string; command: string }[]> {
-  const { organizationId, role } = await requireActiveMembership();
+  const { organizationId, role } = await requireActiveMembership({ acceso: "consulta" });
   requireWorkflow(role, "run");
   const rows = await db
     .select({ id: workflows.id, name: workflows.name, command: workflows.triggerCommand })
@@ -480,7 +482,7 @@ export type WorkflowQuickSend = {
  * escribir el comando (runWorkflowCommand).
  */
 export async function listWorkflowQuickSends(): Promise<WorkflowQuickSend[]> {
-  const { organizationId, role } = await requireActiveMembership();
+  const { organizationId, role } = await requireActiveMembership({ acceso: "consulta" });
   requireWorkflow(role, "run");
   const rows = await db
     .select({ id: workflows.id, name: workflows.name, command: workflows.triggerCommand })
@@ -549,6 +551,7 @@ export async function runWorkflowCommand(input: { conversationId: string; text: 
     if (r.status === "queued") await pauseAgentForManualSend(organizationId, parsed.data.conversationId);
     return { ok: true, runId: r.runId, status: r.status, reason: r.reason, name: wf.name };
   } catch (error) {
+    relanzarSoloLectura(error);
     logError("[workflows] comando falló", error);
     return { ok: false, error: "No se pudo ejecutar el comando." };
   }
@@ -581,6 +584,7 @@ export async function runWorkflowTest(input: { workflowId: string; conversationI
     revalidatePath("/automatizacion");
     return { ok: true, runId: r.runId, status: r.status, reason: r.reason, name: wf.name };
   } catch (error) {
+    relanzarSoloLectura(error);
     logError("[workflows] prueba falló", error);
     return { ok: false, error: "No se pudo ejecutar la prueba." };
   }
@@ -588,7 +592,7 @@ export async function runWorkflowTest(input: { workflowId: string; conversationI
 
 /** Conversaciones recientes para elegir dónde "Probar" (nombre + teléfono). */
 export async function listConversationsForTest(): Promise<{ id: string; label: string }[]> {
-  const { organizationId, role } = await requireActiveMembership();
+  const { organizationId, role } = await requireActiveMembership({ acceso: "consulta" });
   requireWorkflow(role, "update");
   const { contacts, channels } = await import("@/lib/db/schema");
   const rows = await db

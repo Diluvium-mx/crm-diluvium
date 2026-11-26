@@ -5,6 +5,7 @@
 // (el vendedor es quien lo usa). En modo ensayo nada de esto le manda algo al cliente.
 import { z } from "zod";
 import { requireActiveMembership } from "@/lib/auth/active-organization";
+import { relanzarSoloLectura } from "@/lib/auth/solo-lectura";
 import { localToInstant, validateSendAt, SEND_AT_MESSAGES } from "@/lib/scheduled/rules";
 import { enqueueDespertar } from "@/lib/queue/despertar";
 import { logError } from "@/lib/log/safe-error";
@@ -19,7 +20,7 @@ export type FollowUpActionResult = { ok: true; estado?: FollowUpState | null } |
 /** Lo que muestra la píldora del chat (seguimiento abierto, cancelado o dado de baja), o null (nunca rompe el composer). */
 export async function getFollowUp(conversationId: string): Promise<FollowUpState | null> {
   try {
-    const { organizationId } = await requireActiveMembership();
+    const { organizationId } = await requireActiveMembership({ acceso: "consulta" });
     return await loadFollowUpState(organizationId, id.parse(conversationId));
   } catch {
     return null;
@@ -84,6 +85,7 @@ export async function despertarSeguimiento(conversationId: string): Promise<Foll
   try {
     await enqueueDespertar({ organizationId, conversationId: conversation });
   } catch (error) {
+    relanzarSoloLectura(error);
     logError(`[despertar] no se pudo encolar ${conversation}`, error);
     return { ok: false, message: "No se pudo despertar. Inténtalo otra vez." };
   }
@@ -93,7 +95,7 @@ export async function despertarSeguimiento(conversationId: string): Promise<Foll
 /** «Editar mensaje» con la ventana cerrada: las plantillas que se pueden elegir, ya llenas (12-oct-2026). */
 export async function getFollowUpTemplateOptions(followUpId: string): Promise<FollowUpTemplateOption[] | null> {
   try {
-    const { organizationId } = await requireActiveMembership();
+    const { organizationId } = await requireActiveMembership({ acceso: "consulta" });
     return await followUpTemplateOptions(organizationId, id.parse(followUpId));
   } catch {
     return null;

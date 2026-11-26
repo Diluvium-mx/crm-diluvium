@@ -13,6 +13,7 @@
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import { requireActiveMembership } from "@/lib/auth/active-organization";
+import { relanzarSoloLectura } from "@/lib/auth/solo-lectura";
 import { roleAllows } from "@/lib/auth/permissions";
 import { messagingProvider, MessagingNotConfiguredError } from "@/lib/messaging";
 import {
@@ -50,7 +51,7 @@ function requireTemplateManage(role: string, action: "create" | "update" | "dele
 }
 
 export async function listTemplates(): Promise<TemplateView[]> {
-  const { organizationId } = await requireActiveMembership();
+  const { organizationId } = await requireActiveMembership({ acceso: "consulta" });
   return listTemplatesForOrg(organizationId);
 }
 
@@ -62,6 +63,7 @@ export async function syncTemplates(): Promise<TemplateActionResult<{ synced: nu
     revalidatePath("/mensajes-rapidos");
     return { ok: true, ...result };
   } catch (error) {
+    relanzarSoloLectura(error);
     return fail(error, "No se pudo sincronizar.", "sincronizar");
   }
 }
@@ -135,6 +137,7 @@ export async function createTemplate(
     revalidatePath("/mensajes-rapidos");
     return { ok: true, status: result.status, synced };
   } catch (error) {
+    relanzarSoloLectura(error);
     return fail(error, "No se pudo crear la plantilla.", "crear");
   }
 }
@@ -156,6 +159,7 @@ export async function updateTemplate(
     revalidatePath("/mensajes-rapidos");
     return { ok: true, status: result.status };
   } catch (error) {
+    relanzarSoloLectura(error);
     return fail(error, "No se pudo editar la plantilla.", "editar");
   }
 }
@@ -169,6 +173,7 @@ export async function deleteTemplate(input: { id: string }): Promise<TemplateAct
     revalidatePath("/mensajes-rapidos");
     return { ok: true };
   } catch (error) {
+    relanzarSoloLectura(error);
     return fail(error, "No se pudo borrar la plantilla.", "borrar");
   }
 }
@@ -187,6 +192,7 @@ export async function reviewTemplate(input: {
     const review = await templateReviewForOrg(organizationId, id);
     return { ok: true, ...review };
   } catch (error) {
+    relanzarSoloLectura(error);
     return fail(error, "No se pudo consultar a Meta.", "sincronizar");
   }
 }

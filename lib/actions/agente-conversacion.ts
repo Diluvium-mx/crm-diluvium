@@ -7,6 +7,7 @@
 import { revalidatePath } from "next/cache";
 import { z, ZodError } from "zod";
 import { requireActiveMembership } from "@/lib/auth/active-organization";
+import { relanzarSoloLectura } from "@/lib/auth/solo-lectura";
 import {
   loadContactAgents,
   loadConversationAgent,
@@ -25,7 +26,7 @@ function fail(error: unknown, fallback: string): AgentActionResult {
 }
 
 export async function getConversationAgent(conversationId: string): Promise<AgentThreadView | null> {
-  const { organizationId } = await requireActiveMembership();
+  const { organizationId } = await requireActiveMembership({ acceso: "consulta" });
   const row = await loadConversationAgent(organizationId, idSchema.parse(conversationId));
   if (!row) return null;
   return {
@@ -44,7 +45,7 @@ export async function getConversationAgent(conversationId: string): Promise<Agen
 }
 
 export async function getContactAgentStatus(contactId: string): Promise<ContactAgentView[]> {
-  const { organizationId } = await requireActiveMembership();
+  const { organizationId } = await requireActiveMembership({ acceso: "consulta" });
   const rows = await loadContactAgents(organizationId, idSchema.parse(contactId));
   return rows.map((r) => ({ ...r, channelMode: toAgentMode(r.channelMode), pausedUntil: r.pausedUntil?.toISOString() ?? null }));
 }
@@ -56,6 +57,7 @@ export async function reactivateAgent(input: { conversationId: string }): Promis
     revalidatePath("/dashboard");
     return { ok: true };
   } catch (error) {
+    relanzarSoloLectura(error);
     return fail(error, "No se pudo activar el agente.");
   }
 }
@@ -85,6 +87,7 @@ export async function pauseAgent(input: {
     revalidatePath("/dashboard");
     return { ok: true };
   } catch (error) {
+    relanzarSoloLectura(error);
     return fail(error, "No se pudo pausar el agente.");
   }
 }

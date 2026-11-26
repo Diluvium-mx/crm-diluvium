@@ -8,7 +8,7 @@ import { leerFotoClima } from "./store";
 
 export async function leerCintaClima(): Promise<ItemCinta[]> {
   try {
-    await requireActiveMembership();
+    await requireActiveMembership({ acceso: "consulta" });
   } catch {
     return [];
   }

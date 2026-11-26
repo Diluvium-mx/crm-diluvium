@@ -10,7 +10,7 @@ import type { AgentActivity } from "@/lib/agente-ia/activity";
 
 export async function getAgentActivity(conversationId: string): Promise<AgentActivity> {
   try {
-    const { organizationId } = await requireActiveMembership();
+    const { organizationId } = await requireActiveMembership({ acceso: "consulta" });
     return await loadAgentActivity(organizationId, idSchema.parse(conversationId));
   } catch {
     return null; // nunca rompe el chat

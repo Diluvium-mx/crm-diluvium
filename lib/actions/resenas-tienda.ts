@@ -7,6 +7,7 @@
 import { revalidatePath } from "next/cache";
 import { z, ZodError } from "zod";
 import { requireActiveMembership, type ActiveMembership } from "@/lib/auth/active-organization";
+import { relanzarSoloLectura } from "@/lib/auth/solo-lectura";
 import { roleAllows } from "@/lib/auth/permissions";
 import type { AgentActionResult } from "@/lib/agente-ia/types";
 import { pauseAgentForManualSend } from "@/lib/ai/runtime/hooks";
@@ -45,6 +46,7 @@ export async function yaLeEscribi(input: { id: string }): Promise<AgentActionRes
     revalidatePath(RUTA);
     return { ok: true };
   } catch (error) {
+    relanzarSoloLectura(error);
     if (error instanceof ZodError) return { ok: false, message: "Cliente no válido." };
     logError("[resenas-tienda] no se pudo marcar «Ya le escribí»", error);
     return { ok: false, message: "No se pudo guardar. Intenta de nuevo." };
@@ -65,6 +67,7 @@ export async function deshacerEscribi(input: { id: string }): Promise<AgentActio
     revalidatePath(RUTA);
     return { ok: true };
   } catch (error) {
+    relanzarSoloLectura(error);
     if (error instanceof ZodError) return { ok: false, message: "Cliente no válido." };
     logError("[resenas-tienda] no se pudo deshacer «Ya le escribí»", error);
     return { ok: false, message: "No se pudo guardar. Intenta de nuevo." };
@@ -81,6 +84,7 @@ export async function elegirTrato(input: { id: string; trato: string | null }): 
     revalidatePath(RUTA);
     return { ok: true };
   } catch (error) {
+    relanzarSoloLectura(error);
     if (error instanceof ZodError) return { ok: false, message: "Opción no válida." };
     logError("[resenas-tienda] no se pudo guardar el trato", error);
     return { ok: false, message: "No se pudo guardar. Intenta de nuevo." };
@@ -99,6 +103,7 @@ export async function quitarResena(input: { id: string }): Promise<AgentActionRe
     revalidatePath(RUTA);
     return { ok: true };
   } catch (error) {
+    relanzarSoloLectura(error);
     if (error instanceof ZodError) return { ok: false, message: "Cliente no válido." };
     logError("[resenas-tienda] no se pudo quitar de la lista", error);
     return { ok: false, message: "No se pudo guardar. Intenta de nuevo." };

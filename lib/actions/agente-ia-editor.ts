@@ -7,6 +7,7 @@
 import { revalidatePath } from "next/cache";
 import { z, ZodError } from "zod";
 import { requireActiveMembership } from "@/lib/auth/active-organization";
+import { relanzarSoloLectura } from "@/lib/auth/solo-lectura";
 import { roleAllows } from "@/lib/auth/permissions";
 import { DEFAULT_MODEL_1, modelsForRole } from "@/lib/ai/catalog";
 import { modelAvailability } from "@/lib/ai/provider";
@@ -48,7 +49,7 @@ async function requireManage() {
 }
 
 export async function getAgentEditor(): Promise<AgentEditorView> {
-  const { organizationId, role } = await requireActiveMembership();
+  const { organizationId, role } = await requireActiveMembership({ acceso: "consulta" });
   if (!roleAllows(role, "aiConfig", "read")) throw new Error("No tienes permiso para ver el Agente IA.");
   const data = await loadEditor(organizationId);
   // Canales: solo los NO archivados (sandbox y número de prueba se ocultan, no se borran).
@@ -116,6 +117,7 @@ async function run(fallback: string, fn: (m: { organizationId: string; userId: s
     revalidatePath("/agente-ia");
     return { ok: true };
   } catch (error) {
+    relanzarSoloLectura(error);
     if (error instanceof ZodError) return { ok: false, message: error.issues[0]?.message ?? fallback };
     if (error instanceof EditorNotFoundError) return { ok: false, message: error.message };
     logError(`[agente-ia] ${fallback}`, error);
