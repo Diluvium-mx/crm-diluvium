@@ -7,8 +7,19 @@
 import { useEffect, useId, useLayoutEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { CloseX } from "@/components/ui/close-x";
+import { CierreSoloLectura } from "@/components/solo-lectura/cierre-solo-lectura";
+import { bloqueaVentana } from "@/lib/auth/solo-lectura-navegador";
 
-export function ArcoDialog({
+// Las mismas props que la ventana (así acepta lo que se le agregue después).
+type ArcoDialogProps = Parameters<typeof ArcoDialogVentana>[0];
+
+/** Con «Solo lectura» no se abre (exportar y borrar son cambios o descargas): avisa y se cierra sola (27-nov-2026). */
+export function ArcoDialog(props: ArcoDialogProps) {
+  if (bloqueaVentana()) return <CierreSoloLectura onCerrar={props.onClose} />;
+  return <ArcoDialogVentana {...props} />;
+}
+
+function ArcoDialogVentana({
   title,
   onClose,
   children,

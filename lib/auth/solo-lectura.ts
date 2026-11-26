@@ -18,7 +18,8 @@ export const SOLO_LECTURA_ROLE = "viewer";
 /** Viaja en el error de la Server Action rechazada (Next conserva el digest en producción). */
 export const SOLO_LECTURA_DIGEST = "SOLO_LECTURA";
 
-export const SOLO_LECTURA_MENSAJE = "Modo solo lectura: no se guardó nada.";
+// Texto del aviso (27-nov-2026, decisión del dueño: solo «Modo solo lectura», sin «: no se guardó nada»).
+export const SOLO_LECTURA_MENSAJE = "Modo solo lectura";
 
 /**
  * Descargas que este rol no puede hacer (la ruta las rechaza y el navegador avisa en vez de bajar un archivo roto).
