@@ -25,16 +25,18 @@ export type ActiveMembership = { organizationId: string; userId: string; role: s
  * Qué hace quien llama, para el rol «Solo lectura» (lib/auth/solo-lectura.ts):
  * - "consulta": solo lee. Se le permite.
  * - "cambio": guarda, envía, borra o gasta. Se le rechaza con SoloLecturaError.
- * Sin decirlo: una Server Action cuenta como "cambio" (falla cerrado: una acción nueva queda
- * bloqueada hasta que alguien la declare de consulta); una página o ruta de API, como "consulta".
- * Las rutas de API que escriben lo declaran con `{ acceso: "cambio" }`.
+ * Sin decirlo cuenta como "cambio", en TODO (Server Actions, páginas y rutas): falla cerrado. Las
+ * páginas, layouts, rutas GET y acciones que solo leen lo declaran con `{ acceso: "consulta" }`.
+ * No se decide por el encabezado `next-action`: Next también corre Server Actions como formulario
+ * multipart SIN ese encabezado (action-handler.js › decodeAction), y así se saltaba el candado
+ * (revisión del 26-nov-2026).
  */
 export type Acceso = "consulta" | "cambio";
 
 export async function requireActiveMembership(opciones: { acceso?: Acceso } = {}): Promise<ActiveMembership> {
   const requestHeaders = await headers();
   const membership = await resolveMembership(requestHeaders);
-  const acceso = opciones.acceso ?? (requestHeaders.get("next-action") ? "cambio" : "consulta");
+  const acceso = opciones.acceso ?? "cambio";
   if (acceso === "cambio" && esSoloLectura(membership.role)) {
     throw new SoloLecturaError();
   }
@@ -88,3 +90,18 @@ async function resolveMembership(requestHeaders: Headers): Promise<ActiveMembers
   );
 }
 
+
+/**
+ * Para rutas PÚBLICAS (sin sesión obligatoria, p. ej. el formulario de opinión): ¿quien manda la petición
+ * tiene sesión de «Solo lectura»? Sin sesión o con cualquier error: false (el cliente nunca tiene sesión).
+ */
+export async function sesionEsSoloLectura(requestHeaders: Headers): Promise<boolean> {
+  try {
+    const session = await auth.api.getSession({ headers: requestHeaders });
+    if (!session) return false;
+    const rows = await db.select({ role: member.role }).from(member).where(eq(member.userId, session.user.id));
+    return rows.some((m) => esSoloLectura(m.role));
+  } catch {
+    return false;
+  }
+}

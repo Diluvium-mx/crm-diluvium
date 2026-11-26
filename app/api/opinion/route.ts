@@ -3,6 +3,8 @@
 // (128 bits al azar, una sola respuesta, vence a los 60 días). Límite por IP para que
 // nadie la use de buzón.
 import { ipRateLimiter } from "@/lib/rate-limit";
+import { sesionEsSoloLectura } from "@/lib/auth/active-organization";
+import { SOLO_LECTURA_HEADER, SOLO_LECTURA_MENSAJE } from "@/lib/auth/solo-lectura";
 import { logError } from "@/lib/log/safe-error";
 import { respuestaSchema } from "@/lib/opiniones/respuestas";
 import { responderOpinion, type ResultadoRespuesta } from "@/lib/opiniones/store";
@@ -21,6 +23,11 @@ const RESPUESTAS: Record<Exclude<ResultadoRespuesta, "ok">, { status: number; me
 export async function POST(req: Request): Promise<Response> {
   const limited = await ipRateLimiter.check(req, RULES);
   if (limited) return limited;
+
+  // «Solo lectura» (26-nov-2026): con su sesión puede abrir el enlace del cliente, pero no contestar por él.
+  if (await sesionEsSoloLectura(req.headers)) {
+    return Response.json({ ok: false, message: SOLO_LECTURA_MENSAJE }, { status: 403, headers: { [SOLO_LECTURA_HEADER]: "1" } });
+  }
 
   // Se rechaza por el tamaño declarado antes de leer, y otra vez por lo que llegó.
   const demasiado = Response.json({ ok: false, message: "La respuesta es demasiado larga." }, { status: 413 });

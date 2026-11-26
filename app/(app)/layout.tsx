@@ -55,7 +55,7 @@ export default async function AppLayout({
   // Diccionario del equipo del corrector ortográfico (docs/corrector.md).
   let teamWords: string[] = [];
   try {
-    const membership = await requireActiveMembership();
+    const membership = await requireActiveMembership({ acceso: "consulta" });
     role = membership.role;
     [stages, teamWords] = await Promise.all([
       listFunnelStages(membership.organizationId),

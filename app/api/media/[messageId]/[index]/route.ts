@@ -14,6 +14,7 @@ import { member, messages } from "@/lib/db/schema";
 import { OCTET, previewOf } from "@/lib/messaging/media-type";
 import { objectStorage, StorageNotConfiguredError } from "@/lib/storage/s3";
 import { safeErrorMessage } from "@/lib/log/safe-error";
+import { esSoloLectura, respuestaSoloLectura } from "@/lib/auth/solo-lectura";
 
 const SIGNED_URL_SECONDS = 300;
 
@@ -26,7 +27,7 @@ export async function GET(req: Request, { params }: RouteContext<"/api/media/[me
   if (!Number.isInteger(index) || index < 0) return new Response("índice inválido", { status: 400 });
 
   const [row] = await db
-    .select({ organizationId: messages.organizationId, attachments: messages.attachments })
+    .select({ organizationId: messages.organizationId, attachments: messages.attachments, role: member.role })
     .from(messages)
     .innerJoin(
       member,
@@ -57,6 +58,8 @@ export async function GET(req: Request, { params }: RouteContext<"/api/media/[me
   const verified = previewOf(attachment.verifiedMime) ? attachment.verifiedMime : undefined;
   const contentType = wantsThumb ? "image/png" : (verified ?? OCTET);
   const disposition = wantsThumb || (verified && search.get("download") !== "1") ? "inline" : "attachment";
+  // «Solo lectura» ve las fotos y los PDF del chat, pero no descarga archivos de clientes (decisión del dueño, 26-nov-2026).
+  if (disposition === "attachment" && esSoloLectura(row.role)) return respuestaSoloLectura();
 
   // ?bytes=1 → el archivo desde ESTE dominio, sin redirigir al bucket (1-oct-2026): el
   // visor lo necesita para dibujar e imprimir el PDF y para descargar una foto girada,

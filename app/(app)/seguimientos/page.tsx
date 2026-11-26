@@ -13,7 +13,7 @@ import { SeguimientosPanel } from "./_components/seguimientos-panel";
 // Libre». Todos los roles la ven, vendedor incluido (ACL `opinion`). Distinta de
 // Agente IA › Seguimientos.
 export default async function SeguimientosPage({ searchParams }: PageProps<"/seguimientos">) {
-  const { organizationId, role, userId } = await requireActiveMembership();
+  const { organizationId, role, userId } = await requireActiveMembership({ acceso: "consulta" });
   if (!roleAllows(role, "opinion", "read")) {
     redirect("/dashboard");
   }
