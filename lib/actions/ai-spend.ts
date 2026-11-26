@@ -8,6 +8,7 @@ import { revalidatePath } from "next/cache";
 import { and, eq } from "drizzle-orm";
 import { z, ZodError } from "zod";
 import { requireActiveMembership } from "@/lib/auth/active-organization";
+import { relanzarSoloLectura } from "@/lib/auth/solo-lectura";
 import { roleAllows } from "@/lib/auth/permissions";
 import { db } from "@/lib/db";
 import { aiCreditTopups } from "@/lib/db/schema";
@@ -35,6 +36,7 @@ async function run(fallback: string, fn: (m: { organizationId: string; userId: s
     revalidatePath("/inicio");
     return { ok: true };
   } catch (error) {
+    relanzarSoloLectura(error);
     if (error instanceof ZodError) return { ok: false, message: error.issues[0]?.message ?? fallback };
     logError(`[gasto-ia] ${fallback}`, error);
     return { ok: false, message: fallback };

@@ -4,6 +4,7 @@
 // su chat. Solo donde el simulador está activo (producción nunca). La organización sale de la SESIÓN.
 import { z } from "zod";
 import { requireActiveMembership } from "@/lib/auth/active-organization";
+import { relanzarSoloLectura } from "@/lib/auth/solo-lectura";
 import { escribirComoCliente, reiniciarClienteDePrueba } from "@/lib/messaging/simulador-store";
 import { simuladorActivo } from "@/lib/messaging/simulador";
 import { logError } from "@/lib/log/safe-error";
@@ -21,6 +22,7 @@ export async function escribirComoClienteDePrueba(text: unknown): Promise<Simula
     await escribirComoCliente(organizationId, parsed.data);
     return { ok: true };
   } catch (error) {
+    relanzarSoloLectura(error);
     logError("[simulador] no se pudo escribir como el cliente de prueba", error);
     return { ok: false, message: error instanceof Error ? error.message : "No se pudo mandar; inténtalo de nuevo." };
   }
@@ -33,6 +35,7 @@ export async function empezarDeNuevoClienteDePrueba(): Promise<SimuladorResult> 
     await reiniciarClienteDePrueba(organizationId);
     return { ok: true };
   } catch (error) {
+    relanzarSoloLectura(error);
     logError("[simulador] no se pudo reiniciar el cliente de prueba", error);
     return { ok: false, message: "No se pudo empezar de nuevo; inténtalo otra vez." };
   }

@@ -6,6 +6,7 @@
 // cualquier miembro (el agente es el vendedor y lo usa a diario).
 import { z } from "zod";
 import { requireActiveMembership } from "@/lib/auth/active-organization";
+import { relanzarSoloLectura } from "@/lib/auth/solo-lectura";
 import { enqueueScheduled, removeScheduledJob } from "@/lib/queue/scheduled";
 import { localToInstant } from "@/lib/scheduled/rules";
 import {
@@ -50,6 +51,7 @@ async function run(action: () => Promise<void>): Promise<ScheduleResult> {
     await action();
     return { ok: true };
   } catch (error) {
+    relanzarSoloLectura(error);
     if (error instanceof ScheduleError) return { ok: false, message: error.message };
     if (error instanceof z.ZodError) return { ok: false, message: "Datos inválidos." };
     throw error;
@@ -57,7 +59,7 @@ async function run(action: () => Promise<void>): Promise<ScheduleResult> {
 }
 
 export async function listScheduledMessages(conversationId: string): Promise<ScheduledView[]> {
-  const { organizationId } = await requireActiveMembership();
+  const { organizationId } = await requireActiveMembership({ acceso: "consulta" });
   return listScheduledForConversation(organizationId, id.parse(conversationId));
 }
 

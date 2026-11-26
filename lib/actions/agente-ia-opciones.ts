@@ -6,6 +6,7 @@
 import { revalidatePath } from "next/cache";
 import { ZodError } from "zod";
 import { requireActiveMembership } from "@/lib/auth/active-organization";
+import { relanzarSoloLectura } from "@/lib/auth/solo-lectura";
 import { roleAllows } from "@/lib/auth/permissions";
 import { botOptionsPatchSchema } from "@/lib/agente-ia/opciones";
 import { loadLastOptionsChange, saveBotOptions } from "@/lib/agente-ia/opciones-store";
@@ -25,6 +26,7 @@ export async function updateBotOptions(input: unknown): Promise<OptionsActionRes
     revalidatePath("/agente-ia");
     return { ok: true, options, lastChange: last ? { ...last, createdAt: last.createdAt.toISOString() } : null };
   } catch (error) {
+    relanzarSoloLectura(error);
     if (error instanceof ZodError) return { ok: false, message: error.issues[0]?.message ?? "Valor no válido." };
     // Sesión vencida, usuario desactivado o sin membresía: se dice tal cual (no es una falla
     // del servidor y no va al log de errores), igual que en el editor del agente.

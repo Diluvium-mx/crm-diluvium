@@ -3,7 +3,8 @@
 import { revalidatePath } from "next/cache";
 import { and, eq, gt, inArray, isNotNull, ne, or } from "drizzle-orm";
 import { z } from "zod";
-import { requireActiveMembership } from "@/lib/auth/active-organization";
+import { requireActiveMembership, type Acceso } from "@/lib/auth/active-organization";
+import { relanzarSoloLectura } from "@/lib/auth/solo-lectura";
 import { roleAllows } from "@/lib/auth/permissions";
 import { db } from "@/lib/db";
 import { logError } from "@/lib/log/safe-error";
@@ -40,14 +41,16 @@ import {
 
 export type { ImportContactsFromCsvResult } from "@/lib/import/persist";
 
-async function requireActiveOrganizationId(): Promise<string> {
-  return (await requireActiveMembership()).organizationId;
+// `acceso`: las lecturas dicen "consulta" para que el rol «Solo lectura» pueda verlas
+// (lib/auth/active-organization.ts); sin decirlo, cuenta como cambio.
+async function requireActiveOrganizationId(acceso?: Acceso): Promise<string> {
+  return (await requireActiveMembership({ acceso })).organizationId;
 }
 
 // Todos los agentes ven todos los contactos de su organización (CLAUDE.md §5):
 // sin filtro por dueño/asignado.
 export async function listContacts(): Promise<BoardContact[]> {
-  const organizationId = await requireActiveOrganizationId();
+  const organizationId = await requireActiveOrganizationId("consulta");
   return selectBoardContacts(organizationId, undefined);
 }
 
@@ -56,7 +59,7 @@ export async function listContacts(): Promise<BoardContact[]> {
  * 200 por llamada; siempre acotado a la organización activa.
  */
 export async function getContactsByIds(ids: string[]): Promise<BoardContact[]> {
-  const organizationId = await requireActiveOrganizationId();
+  const organizationId = await requireActiveOrganizationId("consulta");
   const wanted = z.array(z.string().min(1)).max(200).parse(ids);
   if (wanted.length === 0) return [];
   return selectBoardContacts(organizationId, inArray(contacts.id, wanted));
@@ -77,7 +80,7 @@ const MAX_CHANGED_SINCE = 200;
  * Acotado a la organización activa.
  */
 export async function getContactsChangedSince(since: string) {
-  const organizationId = await requireActiveOrganizationId();
+  const organizationId = await requireActiveOrganizationId("consulta");
   const from = new Date(new Date(z.iso.datetime().parse(since)).getTime() - CHANGED_SINCE_MARGIN_MS);
   const now = new Date().toISOString();
   const [rows, withMarks] = await Promise.all([
@@ -104,7 +107,7 @@ export async function loadEmbudo(input: { abrir: string | null; loadedAt: string
   signals: Record<string, FunnelSignal>;
   entrada: CargaEntrada | null;
 }> {
-  const organizationId = await requireActiveOrganizationId();
+  const organizationId = await requireActiveOrganizationId("consulta");
   const abrir = input.abrir === null ? null : z.string().min(1).max(128).parse(input.abrir);
   const loadedAt = new Date(z.iso.datetime().parse(input.loadedAt));
   const signals = await funnelSignalsForOrg(organizationId);
@@ -116,7 +119,7 @@ const cursorSchema = z.object({ at: z.number().finite(), created: z.number().fin
 
 /** La siguiente tanda de la columna de entrada (al bajar en ella). */
 export async function getEntradaMas(after: CursorEntrada): Promise<{ contacts: BoardContact[]; cursor: CursorEntrada | null }> {
-  const organizationId = await requireActiveOrganizationId();
+  const organizationId = await requireActiveOrganizationId("consulta");
   const cursor = cursorSchema.parse(after);
   const key = await entradaKey(organizationId);
   if (!key) return { contacts: [], cursor: null };
@@ -125,7 +128,7 @@ export async function getEntradaMas(after: CursorEntrada): Promise<{ contacts: B
 
 /** Buscador del Embudo en el servidor: los que el tablero aún no tiene (nombre, teléfono o @usuario). */
 export async function buscarEnEmbudo(term: string): Promise<BoardContact[]> {
-  const organizationId = await requireActiveOrganizationId();
+  const organizationId = await requireActiveOrganizationId("consulta");
   return buscarContactosEmbudo(organizationId, z.string().max(200).parse(term));
 }
 
@@ -135,7 +138,7 @@ export async function buscarEnEmbudo(term: string): Promise<BoardContact[]> {
  * repetir el trabajo (auditoría de velocidad B4, 2-nov-2026).
  */
 export async function getFunnelSignalsSince(since: string): Promise<Record<string, FunnelSignal>> {
-  const organizationId = await requireActiveOrganizationId();
+  const organizationId = await requireActiveOrganizationId("consulta");
   return funnelSignalsForOrg(organizationId, undefined, new Date(z.iso.datetime().parse(since)));
 }
 
@@ -145,7 +148,7 @@ export async function getFunnelSignalsSince(since: string): Promise<Record<strin
  * contactos de esas conversaciones, para el tiempo real. Ver lib/contacts/funnel-signals.ts.
  */
 export async function getFunnelSignals(conversationIds?: string[]): Promise<Record<string, FunnelSignal>> {
-  const organizationId = await requireActiveOrganizationId();
+  const organizationId = await requireActiveOrganizationId("consulta");
   const ids =
     conversationIds === undefined
       ? undefined
@@ -169,6 +172,7 @@ export async function createContact(input: ManualContactInput): Promise<CreateCo
     // Sin revalidatePath (ver CARD_ACTIONS_NO_REVALIDATE): el diálogo agrega la tarjeta.
     return contact ? { ok: true, contact } : { ok: false, message: "Se creó, pero no se pudo cargar: recarga la página." };
   } catch (error) {
+    relanzarSoloLectura(error);
     if (error instanceof z.ZodError) return { ok: false, message: error.issues[0]?.message ?? "Revisa los datos." };
     logError("[contactos] no se pudo crear el contacto", error);
     return { ok: false, message: "No se pudo crear el contacto. Inténtalo de nuevo." };
@@ -186,6 +190,7 @@ export async function editContactBasics(contactId: string, input: ContactBasicsI
     const id = z.string().trim().min(1).max(100).parse(contactId);
     return await updateContactBasics(organizationId, id, input, { kind: "vendedor", userId });
   } catch (error) {
+    relanzarSoloLectura(error);
     if (error instanceof z.ZodError) return { ok: false, message: error.issues[0]?.message ?? "Revisa los datos." };
     logError("[contactos] no se pudo editar el contacto", error);
     return { ok: false, message: "No se pudo guardar. Inténtalo de nuevo." };

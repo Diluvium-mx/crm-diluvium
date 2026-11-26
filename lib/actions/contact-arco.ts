@@ -10,6 +10,7 @@
 // lanzado desde una Server Action (lección de Plantillas, 28-sep-2026).
 import { z } from "zod";
 import { requireActiveMembership } from "@/lib/auth/active-organization";
+import { relanzarSoloLectura } from "@/lib/auth/solo-lectura";
 import { roleAllows } from "@/lib/auth/permissions";
 import { bullAgentQueuePort, cancelAgentRun, withQueueTimeout } from "@/lib/ai/runtime/queue";
 import { deleteContactAndData } from "@/lib/contacts/arco/delete";
@@ -36,13 +37,14 @@ export type ContactArcoSummaryResult = { ok: true; summary: ContactArcoSummary }
 
 export async function getContactArcoSummary(contactId: string): Promise<ContactArcoSummaryResult> {
   try {
-    const { organizationId, role } = await requireActiveMembership();
+    const { organizationId, role } = await requireActiveMembership({ acceso: "consulta" });
     if (!roleAllows(role, "contact", "read")) return { ok: false, message: "No tienes permiso para ver este contacto." };
     const parsed = contactIdSchema.safeParse(contactId);
     if (!parsed.success) return { ok: false, message: "Ese contacto ya no existe." };
     const summary = await contactArcoSummary(organizationId, parsed.data);
     return summary ? { ok: true, summary } : { ok: false, message: "Ese contacto ya no existe." };
   } catch (error) {
+    relanzarSoloLectura(error);
     logError("[datos personales] no se pudieron contar los datos del contacto", error);
     return { ok: false, message: "No se pudo revisar el contacto. Inténtalo de nuevo." };
   }
@@ -81,6 +83,7 @@ export async function deleteContact(input: z.input<typeof deleteSchema>): Promis
       retryToken: signPendingFiles({ organizationId, userId, keys: outcome.pendingFiles, issuedAt: Date.now() }),
     };
   } catch (error) {
+    relanzarSoloLectura(error);
     logError("[borrar contacto] falló", error);
     return { ok: false, message: "No se pudo borrar el contacto; no se borró nada. Inténtalo de nuevo." };
   }
@@ -103,6 +106,7 @@ export async function retryContactFilesDeletion(token: string): Promise<RetryCon
     if (failed.length === 0) return { ok: true, pendingFiles: 0, retryToken: null };
     return { ok: true, pendingFiles: failed.length, retryToken: signPendingFiles({ organizationId, userId, keys: failed, issuedAt: Date.now() }) };
   } catch (error) {
+    relanzarSoloLectura(error);
     if (error instanceof PendingFilesTokenError) return { ok: false, message: error.message };
     logError("[borrar contacto] el reintento de archivos falló", error);
     return { ok: false, message: "Siguen sin poderse borrar los archivos. Inténtalo en unos minutos." };

@@ -4,6 +4,7 @@ import { auth } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { member, user } from "@/lib/db/schema/auth";
 import { timeServerAction } from "@/lib/monitoring/slow-actions";
+import { esSoloLectura, SoloLecturaError } from "@/lib/auth/solo-lectura";
 
 // Nunca confiar en un organization_id que venga del cliente (CLAUDE.md §7),
 // ni tampoco en session.activeOrganizationId a secas: better-auth no lo
@@ -20,8 +21,27 @@ import { timeServerAction } from "@/lib/monitoring/slow-actions";
 // las que no lo aplican simplemente lo ignoran.
 export type ActiveMembership = { organizationId: string; userId: string; role: string };
 
-export async function requireActiveMembership(): Promise<ActiveMembership> {
+/**
+ * Qué hace quien llama, para el rol «Solo lectura» (lib/auth/solo-lectura.ts):
+ * - "consulta": solo lee. Se le permite.
+ * - "cambio": guarda, envía, borra o gasta. Se le rechaza con SoloLecturaError.
+ * Sin decirlo: una Server Action cuenta como "cambio" (falla cerrado: una acción nueva queda
+ * bloqueada hasta que alguien la declare de consulta); una página o ruta de API, como "consulta".
+ * Las rutas de API que escriben lo declaran con `{ acceso: "cambio" }`.
+ */
+export type Acceso = "consulta" | "cambio";
+
+export async function requireActiveMembership(opciones: { acceso?: Acceso } = {}): Promise<ActiveMembership> {
   const requestHeaders = await headers();
+  const membership = await resolveMembership(requestHeaders);
+  const acceso = opciones.acceso ?? (requestHeaders.get("next-action") ? "cambio" : "consulta");
+  if (acceso === "cambio" && esSoloLectura(membership.role)) {
+    throw new SoloLecturaError();
+  }
+  return membership;
+}
+
+async function resolveMembership(requestHeaders: Headers): Promise<ActiveMembership> {
   // Toda Server Action pasa por aquí: si tarda ≥ 1 s, sale en el log con su nombre.
   timeServerAction(requestHeaders);
   const session = await auth.api.getSession({ headers: requestHeaders });

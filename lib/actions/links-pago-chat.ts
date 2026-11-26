@@ -7,6 +7,7 @@
 import { and, eq } from "drizzle-orm";
 import { z } from "zod";
 import { requireActiveMembership } from "@/lib/auth/active-organization";
+import { relanzarSoloLectura } from "@/lib/auth/solo-lectura";
 import { db } from "@/lib/db";
 import { conversations } from "@/lib/db/schema";
 import { mensajesLink, type LinkPago, type TextosLink } from "@/lib/agente-ia/links-pago";
@@ -34,7 +35,7 @@ async function chatDeLaOrg(organizationId: string, conversationId: string) {
 }
 
 export async function listLinksPagoDelChat(conversationId: string): Promise<LinksPagoDelChat> {
-  const { organizationId } = await requireActiveMembership();
+  const { organizationId } = await requireActiveMembership({ acceso: "consulta" });
   const id = idSchema.parse(conversationId);
   if (!(await chatDeLaOrg(organizationId, id))) return { links: [], textos: await loadTextosLink(organizationId), bloqueo: null };
   const [links, textos, pais] = await Promise.all([listLinksPago(organizationId), loadTextosLink(organizationId), paisSinLinksDelChat(organizationId, id)]);
@@ -62,6 +63,7 @@ export async function sendLinkPago(conversationId: string, linkId: string): Prom
       sent++;
     }
   } catch (error) {
+    relanzarSoloLectura(error);
     if (sent > 0) await pauseAgentForManualSend(organizationId, convId).catch(() => undefined);
     if (error instanceof SendRejectedError) return { ok: false, message: error.message };
     logError("[links-pago] no se pudo mandar el link de pago", error);
@@ -75,6 +77,7 @@ export async function sendLinkPago(conversationId: string, linkId: string): Prom
     const to = roleKey(stages, "cerca_compra");
     if (to) await moveStageForward({ organizationId, contactId: conv.contactId, to, by: "sistema", now: new Date(), stages, fireStageTriggers: false, actorUserId: userId });
   } catch (error) {
+    relanzarSoloLectura(error);
     logError("[links-pago] no se pudo mover a Cerca de compra tras el link", error);
   }
   return { ok: true, sent };

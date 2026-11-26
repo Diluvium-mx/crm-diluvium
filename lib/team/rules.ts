@@ -10,13 +10,15 @@
 // "≥1 owner activo" con un trigger (migración de A4), y la UI esconde lo que
 // el usuario no puede hacer.
 
-export const TEAM_ROLES = ["owner", "admin", "agent"] as const;
+// viewer = «Solo lectura» (26-nov-2026, lib/auth/solo-lectura.ts): ve todo, no guarda nada.
+export const TEAM_ROLES = ["owner", "admin", "agent", "viewer"] as const;
 export type TeamRole = (typeof TEAM_ROLES)[number];
 
 export const ROLE_LABELS: Record<TeamRole, string> = {
   owner: "Owner",
   admin: "Admin",
   agent: "Vendedor",
+  viewer: "Solo lectura",
 };
 
 export type TeamActor = { userId: string; role: string };
@@ -83,5 +85,9 @@ export function teamActionError(
 
 /** Rol que se le puede ASIGNAR a alguien nuevo según quién lo crea. */
 export function assignableRoles(actorRole: string): TeamRole[] {
-  return hasRole(actorRole, "owner") ? ["agent", "admin", "owner"] : isTeamManager(actorRole) ? ["agent", "admin"] : [];
+  return hasRole(actorRole, "owner")
+    ? ["agent", "admin", "owner", "viewer"]
+    : isTeamManager(actorRole)
+      ? ["agent", "admin", "viewer"]
+      : [];
 }

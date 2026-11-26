@@ -12,7 +12,7 @@ const contactIdSchema = z.string().trim().min(1).max(200);
 
 export async function getLectorStatus(contactId: string): Promise<LectorStatusView | null> {
   try {
-    const { organizationId } = await requireActiveMembership();
+    const { organizationId } = await requireActiveMembership({ acceso: "consulta" });
     return await loadLectorStatus(organizationId, contactIdSchema.parse(contactId), new Date());
   } catch {
     return null;

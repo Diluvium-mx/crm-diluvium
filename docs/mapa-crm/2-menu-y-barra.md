@@ -14,9 +14,11 @@ Lo que se ve en todas las pantallas.
 
 ![Pantalla de «cargando» al tocar una pestaña (Embudo)](00-cargando.png)
 
+![Aviso «Modo solo lectura» al presionar algo con el rol Solo lectura (16)](00-aviso-solo-lectura.png)
+
 | # | Nombre oficial | Qué hace | Quién lo ve |
 |---|---|---|---|
-| 1 | **Menú lateral** | Lista de pestañas: Dashboard, Bandeja, Embudo, Mensajes rápidos, Anuncios, Agente IA, Automatización, **Seguimientos** (desde el 8-oct-2026), Configuración. Desde el 14-oct-2026 cada pestaña lleva su **ícono**, que hace un gesto corto **una sola vez** al pasar el cursor (o al llegar con Tab), como en Zernio: Dashboard, los cuadros aparecen uno por uno · Bandeja, brincan los puntitos de «escribiendo» · Embudo, cae una gota · Mensajes rápidos, se dibuja el rayo · Anuncios, se sacude el megáfono · Agente IA, parpadean las chispas · Automatización, se traza la conexión · Seguimientos, gira la estrella · Configuración, gira el engrane. Con «Reducir movimiento» en la computadora no se mueven. | Todos (Configuración solo Owner y Admin) |
+| 1 | **Menú lateral** | Lista de pestañas: Dashboard, Bandeja, Embudo, Mensajes rápidos, Anuncios, Agente IA, Automatización, **Seguimientos** (desde el 8-oct-2026), Configuración. Desde el 14-oct-2026 cada pestaña lleva su **ícono**, que hace un gesto corto **una sola vez** al pasar el cursor (o al llegar con Tab), como en Zernio: Dashboard, los cuadros aparecen uno por uno · Bandeja, brincan los puntitos de «escribiendo» · Embudo, cae una gota · Mensajes rápidos, se dibuja el rayo · Anuncios, se sacude el megáfono · Agente IA, parpadean las chispas · Automatización, se traza la conexión · Seguimientos, gira la estrella · Configuración, gira el engrane. Con «Reducir movimiento» en la computadora no se mueven. | Todos (Configuración solo Owner, Admin y Solo lectura) |
 | 2 | **Pestaña activa** | La pestaña en la que estás, resaltada con una barra blanca (a la izquierda de su ícono). | Todos |
 | 3 | **Logo Diluvium** | Solo identifica la marca; no es botón. | Todos |
 | 4 | **Correo de la sesión** | Con qué cuenta entraste. | Todos |
@@ -24,12 +26,13 @@ Lo que se ve en todas las pantallas.
 | 6 | **Cerrar sesión** | Ya no sale directo: abre el globo de confirmación (10). | Todos |
 | 7 | **Menú del usuario** (nombre y rol) | Abre **Mi cuenta** y **Cerrar sesión** (ver [Menú del usuario y Mi cuenta](3.9-menu-del-usuario.md#39-menú-del-usuario-y-mi-cuenta)). | Todos |
 | 8 | **Menú del vendedor** | Igual al de arriba pero **sin Configuración**. | Vendedor |
-| 9 | **Rol "Vendedor"** | Debajo del nombre se ve el rol de quien entró (Owner, Admin o Vendedor). | Todos |
+| 9 | **Rol "Vendedor"** | Debajo del nombre se ve el rol de quien entró (Owner, Admin, Vendedor o **Solo lectura**). | Todos |
 | 10 | **Globo «¿Cerrar sesión?»** | Sale pegado al botón que tocaste —el de la barra (6), el del menú del usuario (7) o el del cajón ☰ en el celular— con «Saldrás del CRM en este dispositivo». Esc o un clic fuera lo cierran sin salir. Desde el 1-oct-2026. | Todos |
 | 11 | **Cancelar** | Cierra el globo y te deja donde estabas. Ya viene seleccionado: un Enter no te saca por error. | Todos |
 | 12 | **Cerrar sesión** (naranja) | Ahora sí sale del CRM (dice «Saliendo…» mientras). Al salir se borran los **borradores** de los chats guardados en ese equipo (ver Borrador del chat en el Glosario; 29-oct-2026). | Todos |
 | 13 | **Aviso de actualización** | Píldora en la barra azul: **«Hay una nueva actualización del CRM: recarga la página»** con el botón naranja **Recargar**. Sale **solo** cuando falló algo que hizo el vendedor (enviar, guardar, adjuntar, abrir un PDF…) porque su pestaña es de antes de una actualización del CRM. **Nunca** sale solo por haber versión nueva, ni por un refresco automático que falló (mensajes nuevos, programados). Donde falló, el mensaje propio también lo dice en la burbuja al enviar, la foto HEIC, el PDF del visor y Mensajes rápidos; las demás pantallas conservan su mensaje. Se quita al recargar. En celular baja como franja azul debajo de la barra (Versión móvil › 13). | Todos |
 | 15 | **Pantalla de «cargando»** | Al tocar una pestaña del menú sale **al instante** la forma gris de esa pantalla (la Bandeja con su lista, el Embudo con sus columnas, el Dashboard con sus tarjetas; las demás, título y lista) mientras llegan sus datos; cuando llegan, se cambia sola por la pantalla real. Antes el clic no mostraba nada hasta tener la página completa. Con «Reducir movimiento» las formas no parpadean. Desde el 31-oct-2026. | Todos |
+| 16 | **Aviso «Modo solo lectura»** | Con el rol **Solo lectura** (26-nov-2026): al presionar algo que guardaría, enviaría o borraría (un botón, mover una tarjeta, cambiar la etapa…) sale arriba, centrado, **«Modo solo lectura: no se guardó nada.»** con un candado, y se va solo en unos segundos. También sale al intentar escribir o pegar en una caja que no sea un buscador. La pantalla queda como estaba; a veces el lugar donde se presionó dice además su propio «No se pudo…». | Solo lectura |
 
 **En celular** (pantalla de menos de 768 px) el menú lateral se esconde y la barra lleva un botón ☰ que abre el
 mismo menú en un cajón; ver [Versión móvil](3.10-version-movil.md#310-versión-móvil-celular).
@@ -49,4 +52,4 @@ pantalla se oscurece un poco). No cambia el tema ni toca nada; con «Reducir mov
 <sub>Para Code: `app/(app)/layout.tsx` (sidebar y barra), `nav-item.tsx`, `nav-icons.tsx` (íconos del menú; su movimiento en `app/globals.css` › «Íconos del menú»), `user-menu.tsx`, `sign-out-button.tsx` y
 `sign-out-confirm.tsx` (globo 10–12), `components/theme-toggle.tsx` (píldora), `theme-circle-transition.ts` (círculo),
 `theme-toggle-eggs.ts` (detalle escondido); estilos en `app/globals.css` › «Interruptor de tema»; aviso de actualización (13): `update-notice.tsx`, `lib/version/` y
-`app/api/version/route.ts`; pantalla de «cargando» (15; el 14 lo tiene la cinta del clima, aún en staging): `_components/esqueleto.tsx` y el `loading.tsx` de cada sección (con él, Next también precarga la sección; guion de captura `notas/capturas-mapa/capture-cargando.mjs`).</sub>
+`app/api/version/route.ts`; pantalla de «cargando» (15; el 14 lo tiene la cinta del clima, aún en staging): `_components/esqueleto.tsx` y el `loading.tsx` de cada sección (con él, Next también precarga la sección; guion de captura `notas/capturas-mapa/capture-cargando.mjs`); aviso «Modo solo lectura» (16): `components/solo-lectura/aviso-solo-lectura.tsx`, `lib/auth/solo-lectura.ts` y `solo-lectura-navegador.ts` (guion de captura `notas/capturas-mapa/capture-solo-lectura.mjs`).</sub>

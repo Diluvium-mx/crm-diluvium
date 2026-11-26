@@ -4,6 +4,7 @@ import {
   adminAc,
   ownerAc,
 } from "better-auth/plugins/organization/access";
+import { esSoloLectura } from "@/lib/auth/solo-lectura";
 
 export const statement = {
   ...defaultStatements,
@@ -100,15 +101,39 @@ export const agent = ac.newRole({
   // Sin `settings`: roleAllows falla cerrado → sin la sección Configuración.
 });
 
+// Solo lectura (26-nov-2026, lib/auth/solo-lectura.ts): para Better Auth solo tiene lecturas (sin
+// `member`, `organization` ni `invitation`), así que sus reglas de miembros lo rechazan.
+export const viewer = ac.newRole({
+  contact: ["read"],
+  tag: ["read"],
+  snippet: ["read"],
+  template: ["read"],
+  aiConfig: ["read"],
+  sizeRange: ["read"],
+  aiSpend: ["read"],
+  workflow: ["read"],
+  mediaAsset: ["read"],
+  funnelStage: ["read"],
+  opinion: ["read"],
+  spellingWord: ["read"],
+  settings: ["read"],
+});
+
 const roles = { owner, admin, agent } as const;
 
 /**
  * ¿El rol (owner|admin|agent) permite `action` sobre `resource`, según el ACL de
  * arriba? Fuente única: lee los grants de los roles, sin duplicar la política.
  * Un rol desconocido no permite nada (falla cerrado).
+ *
+ * Solo lectura responde COMO OWNER (decisión del dueño, 26-nov-2026: «que observe todo»): la
+ * interfaz le muestra lo mismo que al owner, botones incluidos. Lo que impide que guarde algo no
+ * es esto, sino requireActiveMembership (lib/auth/active-organization.ts), que lo rechaza en toda
+ * Server Action que no sea de consulta y en las rutas de API que escriben.
  */
 export function roleAllows(role: string, resource: keyof typeof statement, action: string): boolean {
-  const roleAc = roles[role as keyof typeof roles] as
+  const efectivo = esSoloLectura(role) ? "owner" : role;
+  const roleAc = roles[efectivo as keyof typeof roles] as
     | { statements: Record<string, readonly string[] | undefined> }
     | undefined;
   return roleAc?.statements[resource]?.includes(action) ?? false;

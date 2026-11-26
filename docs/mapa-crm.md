@@ -7,7 +7,8 @@ pedir cambios en una sola línea sin explicar nada técnico.
   basta con decir **Pestaña › sección › número › qué quieres** (ver [Cómo pedir un cambio](mapa-crm/4-como-pedir-un-cambio.md#4-cómo-pedir-un-cambio)).
 - Las capturas usan **datos de ejemplo** (nombres, teléfonos, montos y anuncios inventados), no clientes reales.
 - Los números no cambian con el tiempo: si algo se agrega, toma el siguiente número libre de su sección.
-- "Todos" en la columna *Quién lo ve* = Owner, Admin y Vendedor.
+- "Todos" en la columna *Quién lo ve* = Owner, Admin y Vendedor. **Solo lectura** (26-nov-2026) ve todo lo que ve el
+  Owner, pero no guarda nada (ver Inicio › Roles).
 
 Contenido: [1. Inicio](mapa-crm/1-inicio.md#1-inicio) · [2. Menú y barra de arriba](mapa-crm/2-menu-y-barra.md#2-menú-y-barra-de-arriba) ·
 [3. Pantallas](#3-pantallas-en-el-orden-del-menú) · [4. Cómo pedir un cambio](mapa-crm/4-como-pedir-un-cambio.md#4-cómo-pedir-un-cambio)

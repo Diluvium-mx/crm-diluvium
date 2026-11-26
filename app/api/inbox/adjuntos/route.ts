@@ -10,6 +10,7 @@
 import { Readable } from "node:stream";
 import type { ReadableStream as WebReadableStream } from "node:stream/web";
 import { requireActiveMembership } from "@/lib/auth/active-organization";
+import { respuestaSoloLectura, SoloLecturaError } from "@/lib/auth/solo-lectura";
 import { acquireUploadSlot } from "@/lib/chat-attachments/in-flight";
 import { ChatUploadRejectedError, storeChatUpload } from "@/lib/chat-attachments/upload";
 import { ipRateLimiter } from "@/lib/rate-limit";
@@ -22,8 +23,9 @@ const UPLOAD_RULES = [{ name: "chat-adjuntos", max: 200, windowMs: 10 * 60_000 }
 export async function POST(req: Request): Promise<Response> {
   let membership;
   try {
-    membership = await requireActiveMembership();
-  } catch {
+    membership = await requireActiveMembership({ acceso: "cambio" });
+  } catch (error) {
+    if (error instanceof SoloLecturaError) return respuestaSoloLectura();
     return Response.json({ error: "No autenticado." }, { status: 401 });
   }
   const limited = await ipRateLimiter.check(req, UPLOAD_RULES);

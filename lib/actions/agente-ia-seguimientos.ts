@@ -6,6 +6,7 @@
 import { revalidatePath } from "next/cache";
 import { ZodError } from "zod";
 import { requireActiveMembership } from "@/lib/auth/active-organization";
+import { relanzarSoloLectura } from "@/lib/auth/solo-lectura";
 import { roleAllows } from "@/lib/auth/permissions";
 import { tableFromInput, tableToInput, type FollowUpTableInput, type TableChange } from "@/lib/followups/tabla";
 import { loadLastTableChange, saveFollowUpTable } from "@/lib/followups/tabla-store";
@@ -29,6 +30,7 @@ export async function saveFollowUpTableAction(input: unknown): Promise<FollowUpT
     revalidatePath("/agente-ia");
     return { ok: true, table: tableToInput(table), changes, lastChange: last ? { author: last.author, at: last.at.toISOString() } : null };
   } catch (error) {
+    relanzarSoloLectura(error);
     if (error instanceof ZodError) return { ok: false, message: error.issues[0]?.message ?? "Valor no válido." };
     if (error instanceof Error && /^(No autenticado|Usuario desactivado|No tienes permiso|El usuario no tiene membresía)/.test(error.message)) {
       return { ok: false, message: error.message };

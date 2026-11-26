@@ -50,8 +50,8 @@ describe("teamActionError", () => {
 
 describe("assignableRoles", () => {
   it("el owner asigna cualquier rol; el admin no asigna owner; el agente nada", () => {
-    expect(assignableRoles("owner")).toEqual(["agent", "admin", "owner"]);
-    expect(assignableRoles("admin")).toEqual(["agent", "admin"]);
+    expect(assignableRoles("owner")).toEqual(["agent", "admin", "owner", "viewer"]);
+    expect(assignableRoles("admin")).toEqual(["agent", "admin", "viewer"]);
     expect(assignableRoles("agent")).toEqual([]);
   });
 });

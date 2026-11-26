@@ -11,6 +11,8 @@ import { UserMenu } from "./_components/user-menu";
 import { MobileNav } from "./_components/mobile-nav";
 import { StageChangeToasts } from "./_components/stage-change-toasts";
 import { UpdateNotice } from "./_components/update-notice";
+import { AvisoSoloLectura } from "@/components/solo-lectura/aviso-solo-lectura";
+import { esSoloLectura } from "@/lib/auth/solo-lectura";
 import { FunnelStagesProvider } from "./_components/funnel-stages-provider";
 import { listFunnelStages } from "@/lib/contacts/funnel-stages";
 import type { FunnelStage } from "@/lib/contacts/stages";
@@ -153,6 +155,8 @@ export default async function AppLayout({
         {/* Aviso emergente de cambio de etapa (Agente IA, automatización u otro
             vendedor), en todas las secciones. Solo con membresía: el SSE la exige. */}
         {role && <StageChangeToasts viewerUserId={session.user.id} />}
+        {/* «Solo lectura» (lib/auth/solo-lectura.ts): aviso al presionar algo y cajas sin escribir. */}
+        {esSoloLectura(role) && <AvisoSoloLectura />}
       </div>
     </div>
     </SpellingProvider>
