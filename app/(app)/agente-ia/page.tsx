@@ -20,7 +20,7 @@ import { AgenteEditor } from "./_components/agente-editor";
 // tabla de casos de los seguimientos del Agente IA (lib/followups/tabla.ts). "Historial" (28-sep-2026) = quién
 // cambió qué y cuándo; se carga al abrir la subpestaña.
 export default async function AgenteIaPage({ searchParams }: PageProps<"/agente-ia">) {
-  const { organizationId, role } = await requireActiveMembership();
+  const { organizationId, role } = await requireActiveMembership({ acceso: "consulta" });
   if (!roleAllows(role, "aiConfig", "read")) {
     redirect("/dashboard");
   }

@@ -11,7 +11,7 @@ import { FragmentosPlantillas } from "../snippets/_components/fragmentos-plantil
 // (aprobadas por Meta, fuera de 24 h). Los datos iniciales se cargan en el
 // servidor (acotados a la organización de la sesión); la UI gestiona el resto.
 export default async function MensajesRapidosPage() {
-  const { organizationId, role } = await requireActiveMembership();
+  const { organizationId, role } = await requireActiveMembership({ acceso: "consulta" });
   // Fragmentos y plantillas los gestionan todos los roles (ACL en
   // lib/auth/permissions.ts). El servidor lo vuelve a exigir en las acciones;
   // esto solo oculta los controles a quien no puede (un rol desconocido).

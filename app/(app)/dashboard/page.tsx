@@ -1,4 +1,5 @@
 import { requireActiveMembership } from "@/lib/auth/active-organization";
+import { esSoloLectura } from "@/lib/auth/solo-lectura";
 import { logError } from "@/lib/log/safe-error";
 import { simuladorActivo } from "@/lib/messaging/simulador";
 import { asegurarClienteDePrueba } from "@/lib/messaging/simulador-store";
@@ -14,9 +15,10 @@ import { SendFailuresBanner } from "./_components/send-failures-banner";
 // Arriba, la franja de envíos que fallan en serie (P4) y la del bot (horario o canal Apagado),
 // con datos del CRM. Si la de envíos no se puede leer, la Bandeja abre igual sin ella.
 export default async function BandejaPage({ searchParams }: PageProps<"/dashboard">) {
-  const { organizationId } = await requireActiveMembership();
+  const { organizationId, role } = await requireActiveMembership({ acceso: "consulta" });
   // Staging: el cliente de prueba siempre está (lib/messaging/simulador.ts); en producción no hace nada.
-  if (simuladorActivo()) await asegurarClienteDePrueba(organizationId).catch((error: unknown) => logError("[simulador] no se pudo preparar el cliente de prueba", error));
+  // «Solo lectura» no lo crea ni lo refresca (escribe en la base); si ya existe, lo ve.
+  if (simuladorActivo() && !esSoloLectura(role)) await asegurarClienteDePrueba(organizationId).catch((error: unknown) => logError("[simulador] no se pudo preparar el cliente de prueba", error));
   const [{ contacto }, banner, sendFailures] = await Promise.all([
     searchParams,
     loadBotBanner(organizationId),

@@ -3,11 +3,13 @@
 // 1. El aviso «Modo solo lectura: no se guardó nada» cuando el servidor rechaza algo: lo reconoce
 //    en la respuesta misma (Server Action con el digest SOLO_LECTURA o ruta con x-solo-lectura), así
 //    sale sin importar cómo maneje el error cada pantalla.
-// 2. No deja escribir fuera de los buscadores (`type="search"` o dentro de `data-buscador`): la caja
+// 2. Descargas de datos de clientes («Exportar datos», «Descargar» del visor, la foto girada): en vez de bajar
+//    un archivo (o uno roto: la ruta lo rechaza), sale el aviso. Todo <a download> cuenta.
+// 3. No deja escribir fuera de los buscadores (`type="search"` o dentro de `data-buscador`): la caja
 //    queda de solo lectura al enfocarla (se puede seleccionar y copiar) y al intentar teclear, pegar
 //    o soltar algo sale el mismo aviso.
 // Lo que de verdad impide guardar es el servidor; esto es para que se entienda qué pasó.
-import { esRechazoSoloLectura, SOLO_LECTURA_DIGEST, SOLO_LECTURA_HEADER } from "@/lib/auth/solo-lectura";
+import { esDescargaBloqueada, esRechazoSoloLectura, SOLO_LECTURA_DIGEST, SOLO_LECTURA_HEADER } from "@/lib/auth/solo-lectura";
 
 /** Cuánto se ve el aviso. */
 export const AVISO_MS = 2_600;
@@ -117,6 +119,17 @@ export function instalarSoloLectura(): void {
   });
 
   const objetivo = (event: Event) => (event.target instanceof Element ? event.target : null);
+  // Incluye el <a download> que se crea y se presiona por código (export-contact-dialog.tsx, viewer-rotated-download.ts).
+  document.addEventListener(
+    "click",
+    (event) => {
+      const enlace = objetivo(event)?.closest("a[href]");
+      if (!enlace || !(enlace.hasAttribute("download") || esDescargaBloqueada(enlace.getAttribute("href") ?? ""))) return;
+      event.preventDefault();
+      avisar();
+    },
+    true,
+  );
   document.addEventListener(
     "focusin",
     (event) => {

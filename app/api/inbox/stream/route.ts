@@ -23,7 +23,7 @@ export async function GET(request: Request): Promise<Response> {
   let membership;
   let sessionId: string;
   try {
-    membership = await requireActiveMembership();
+    membership = await requireActiveMembership({ acceso: "consulta" });
     const current = await auth.api.getSession({ headers: request.headers });
     if (!current) throw new Error("sin sesión");
     sessionId = current.session.id;

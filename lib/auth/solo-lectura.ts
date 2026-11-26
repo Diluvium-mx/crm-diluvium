@@ -3,9 +3,10 @@
 // pero nada se guarda ni se envía, y solo escribe en los buscadores.
 //
 // Tres barreras:
-// 1. Servidor (la que manda): requireActiveMembership() rechaza a este rol en toda Server Action que
-//    no se declare de consulta (`{ acceso: "consulta" }`) y en las rutas de API que escriben
-//    (`{ acceso: "cambio" }`). Una acción nueva queda bloqueada por defecto (falla cerrado).
+// 1. Servidor (la que manda): requireActiveMembership() rechaza a este rol en todo lo que no se declare
+//    de consulta (`{ acceso: "consulta" }`): Server Actions, páginas y rutas. Lo nuevo queda bloqueado
+//    por defecto (falla cerrado). Además: el formulario público de opinión no acepta respuestas con su
+//    sesión y no baja archivos del chat (`?download=1`) ni «Exportar datos».
 // 2. Navegador: components/solo-lectura/ muestra el aviso cuando el servidor rechaza algo y no deja
 //    escribir fuera de los buscadores.
 // 3. Better Auth por HTTP solo atiende entrar, salir y la sesión (lib/auth/allowed-routes.ts).
@@ -18,6 +19,30 @@ export const SOLO_LECTURA_ROLE = "viewer";
 export const SOLO_LECTURA_DIGEST = "SOLO_LECTURA";
 
 export const SOLO_LECTURA_MENSAJE = "Modo solo lectura: no se guardó nada.";
+
+/**
+ * Descargas que este rol no puede hacer (la ruta las rechaza y el navegador avisa en vez de bajar un archivo roto).
+ * Decisión del dueño (26-nov-2026): no descarga datos de clientes. «Exportar datos» del contacto y «Descargar» de
+ * los archivos del chat (?download=1). Ver las fotos y los PDF en el visor sí.
+ */
+const DESCARGAS_BLOQUEADAS = [
+  /^\/api\/contactos\/[^/]+\/exportar(?:[?#]|$)/,
+  /^\/api\/media\/[^/]+\/\d+\?(?:.*&)?download=1(?:&|#|$)/,
+  // «Imprimir guía» de Envia (la guía lleva la dirección del cliente; la ruta llega con las guías automáticas).
+  /^\/api\/envios\/[^/]+\/guia(?:[?#]|$)/,
+];
+
+/** ¿El enlace (ruta del CRM) es una descarga bloqueada para este rol? */
+export function esDescargaBloqueada(href: string): boolean {
+  let ruta = href;
+  try {
+    const url = new URL(href, "http://crm.local");
+    ruta = url.pathname + url.search;
+  } catch {
+    // href raro: se revisa tal cual.
+  }
+  return DESCARGAS_BLOQUEADAS.some((re) => re.test(ruta));
+}
 
 /** Encabezado de las rutas de API que rechazan al rol (el navegador lo usa para el aviso). */
 export const SOLO_LECTURA_HEADER = "x-solo-lectura";

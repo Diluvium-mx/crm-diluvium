@@ -51,8 +51,15 @@ describe("requireActiveMembership con «Solo lectura»", () => {
     await expect(requireActiveMembership({ acceso: "consulta" })).resolves.toEqual({ organizationId: "org1", userId: "u1", role: "viewer" });
   });
 
-  it("una página pasa; una ruta que escribe (acceso: cambio) se rechaza", async () => {
-    await expect(requireActiveMembership()).resolves.toMatchObject({ role: "viewer" });
+  it("sin el encabezado next-action (Server Action por formulario multipart) también se rechaza", async () => {
+    // Next corre las acciones «MPA» sin next-action (action-handler.js › decodeAction): antes así se saltaba el candado.
+    doubles.headers = new Headers({ "content-type": "multipart/form-data; boundary=----x" });
+    await expect(requireActiveMembership()).rejects.toBeInstanceOf(SoloLecturaError);
+  });
+
+  it("una página o ruta que declara consulta pasa; sin declararlo se rechaza", async () => {
+    await expect(requireActiveMembership({ acceso: "consulta" })).resolves.toMatchObject({ role: "viewer" });
+    await expect(requireActiveMembership()).rejects.toBeInstanceOf(SoloLecturaError);
     await expect(requireActiveMembership({ acceso: "cambio" })).rejects.toBeInstanceOf(SoloLecturaError);
   });
 
@@ -63,7 +70,8 @@ describe("requireActiveMembership con «Solo lectura»", () => {
       await expect(requireActiveMembership()).resolves.toMatchObject({ role });
       await expect(requireActiveMembership({ acceso: "cambio" })).resolves.toMatchObject({ role });
       comoPagina();
-      await expect(requireActiveMembership({ acceso: "cambio" })).resolves.toMatchObject({ role });
+      await expect(requireActiveMembership()).resolves.toMatchObject({ role });
+      await expect(requireActiveMembership({ acceso: "consulta" })).resolves.toMatchObject({ role });
     }
   });
 });

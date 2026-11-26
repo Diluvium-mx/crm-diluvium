@@ -21,7 +21,7 @@ function param(value: string | string[] | undefined): string | undefined {
 }
 
 export default async function HistorialEtapasPage({ searchParams }: PageProps<"/inicio/etapas">) {
-  const { organizationId, role } = await requireActiveMembership();
+  const { organizationId, role } = await requireActiveMembership({ acceso: "consulta" });
   if (!roleAllows(role, "funnelStage", "read")) notFound();
   const params = await searchParams;
   const range = resolveRange({ mes: param(params.mes), desde: param(params.desde), hasta: param(params.hasta) });

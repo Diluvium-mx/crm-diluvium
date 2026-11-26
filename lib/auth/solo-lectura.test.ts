@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  esDescargaBloqueada,
   esRechazoSoloLectura,
   esSoloLectura,
   respuestaSoloLectura,
@@ -33,6 +34,23 @@ describe("rol «Solo lectura»", () => {
     expect(res.status).toBe(403);
     expect(res.headers.get(SOLO_LECTURA_HEADER)).toBe("1");
     expect(await res.json()).toEqual({ error: SOLO_LECTURA_MENSAJE });
+  });
+});
+
+describe("descargas bloqueadas para «Solo lectura»", () => {
+  it("«Exportar datos» y «Descargar» del chat; ver fotos, PDF y la Biblioteca sí", () => {
+    expect(esDescargaBloqueada("/api/contactos/abc123/exportar")).toBe(true);
+    expect(esDescargaBloqueada("/api/contactos/abc%20123/exportar?sinArchivos=1")).toBe(true);
+    expect(esDescargaBloqueada("http://localhost:3000/api/contactos/x/exportar")).toBe(true);
+    expect(esDescargaBloqueada("/api/media/m1/0?download=1")).toBe(true);
+    expect(esDescargaBloqueada("/api/media/m%201/2?x=1&download=1")).toBe(true);
+    expect(esDescargaBloqueada("/api/envios/env_1/guia")).toBe(true);
+    expect(esDescargaBloqueada("/api/biblioteca/abc/original")).toBe(false);
+    expect(esDescargaBloqueada("/api/media/m1/0")).toBe(false);
+    expect(esDescargaBloqueada("/api/media/m1/0?thumb=1")).toBe(false);
+    expect(esDescargaBloqueada("/api/media/m1/0?bytes=1")).toBe(false);
+    expect(esDescargaBloqueada("/api/contactos/x/exportarlo")).toBe(false);
+    expect(esDescargaBloqueada("")).toBe(false);
   });
 });
 

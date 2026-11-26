@@ -130,6 +130,13 @@ describe("regla: «Solo lectura» (lib/auth/solo-lectura.ts)", () => {
     expect(tragan, "primera línea del catch: relanzarSoloLectura(error)").toEqual([]);
   });
 
+  it("las descargas cerradas a este rol piden la sesión con acceso: cambio", () => {
+    // «Exportar datos» del contacto (decisión del dueño, 26-nov-2026). Va también en DESCARGAS_BLOQUEADAS.
+    for (const ruta of ["app/api/contactos/[contactId]/exportar/route.ts"]) {
+      expect(readFileSync(join(ROOT, ruta), "utf8"), ruta).toContain('requireActiveMembership({ acceso: "cambio" })');
+    }
+  });
+
   it("las rutas de API que escriben piden la sesión con acceso: cambio", () => {
     const sinCandado: string[] = [];
     for (const file of files(join(ROOT, "app", "api"), (n) => n === "route.ts")) {
