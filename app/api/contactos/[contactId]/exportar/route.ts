@@ -11,6 +11,7 @@
 // requireActiveMembership (nunca del cliente) y un contacto de otra organización da 404 (no se
 // revela que existe). `?sinArchivos=1` = solo datos.json y chat.txt (cuando los archivos pasan el tope).
 import { requireActiveMembership } from "@/lib/auth/active-organization";
+import { respuestaSoloLectura, SoloLecturaError } from "@/lib/auth/solo-lectura";
 import { roleAllows } from "@/lib/auth/permissions";
 import { loadContactExport } from "@/lib/contacts/arco/export-data";
 import { EXPORT_MAX_FILE_BYTES, megabytes, type ExportFile } from "@/lib/contacts/arco/export-files";
@@ -58,8 +59,10 @@ async function* entries(
 export async function GET(req: Request, { params }: RouteContext<"/api/contactos/[contactId]/exportar">): Promise<Response> {
   let membership;
   try {
-    membership = await requireActiveMembership();
-  } catch {
+    // «Solo lectura» no descarga los datos de un cliente (decisión del dueño, 26-nov-2026): cuenta como cambio.
+    membership = await requireActiveMembership({ acceso: "cambio" });
+  } catch (error) {
+    if (error instanceof SoloLecturaError) return respuestaSoloLectura();
     return text("no autenticado", 401);
   }
   if (!roleAllows(membership.role, "contact", "export")) return text("sin permiso para exportar contactos", 403);

@@ -15,7 +15,7 @@ function param(value: string | string[] | undefined): string | undefined {
 }
 
 export default async function AnunciosPage({ searchParams }: PageProps<"/anuncios">) {
-  const { organizationId } = await requireActiveMembership();
+  const { organizationId } = await requireActiveMembership({ acceso: "consulta" });
   const params = await searchParams;
   const range = resolveRange({ mes: param(params.mes), desde: param(params.desde), hasta: param(params.hasta) });
   const ads = await listAdsForPeriod(organizationId, range);

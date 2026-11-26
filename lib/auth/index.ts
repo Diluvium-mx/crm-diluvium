@@ -7,7 +7,7 @@ import { db } from "@/lib/db";
 import { emailLockoutAfter, emailLockoutBefore } from "@/lib/auth/email-lockout";
 import { seedDefaultSizeRanges } from "@/lib/contacts/sizes-seed";
 import { seedDefaultWorkflows } from "@/lib/workflows/seed";
-import { ac, admin, agent, owner } from "@/lib/auth/permissions";
+import { ac, admin, agent, owner, viewer } from "@/lib/auth/permissions";
 
 if (!process.env.APP_URL) {
   throw new Error("APP_URL is not set");
@@ -90,7 +90,8 @@ export const auth = betterAuth({
     // una limpieza durable del almacenamiento, el borrado queda cerrado.
     organization({
       ac,
-      roles: { owner, admin, agent },
+      // viewer = «Solo lectura» (lib/auth/solo-lectura.ts).
+      roles: { owner, admin, agent, viewer },
       disableOrganizationDeletion: true,
       // Nadie crea organizaciones por HTTP (/api/auth/organization/create): el
       // CRM es de UNA organización (Diluvium). Si un vendedor pudiera crear otra,

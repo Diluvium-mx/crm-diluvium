@@ -162,7 +162,8 @@ export function DateRangePicker({
             </div>
             <div className="flex flex-col gap-3 p-3">
               {mobile ? (
-                <div className="flex flex-col gap-2">
+                // data-buscador: es un filtro (no guarda nada), así que «Solo lectura» sí escribe la fecha.
+                <div data-buscador className="flex flex-col gap-2">
                   <label className="flex flex-col gap-1 text-xs text-muted-foreground">
                     Desde
                     <input

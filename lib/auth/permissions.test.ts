@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { roleAllows, statement } from "./permissions";
+import { roleAllows, statement, viewer } from "./permissions";
 
 type Resource = keyof typeof statement;
 
@@ -133,5 +133,25 @@ describe("admin y owner tienen TODO lo del vendedor (26-sep-2026)", () => {
       for (const action of actions) if (roleAllows("admin", resource, action) && !roleAllows("agent", resource, action)) faltan.push(`${resource}.${action}`);
     }
     expect(faltan.sort()).toEqual(["member.create", "member.delete", "member.update", "settings.read"]);
+  });
+});
+
+describe("«Solo lectura» (26-nov-2026, lib/auth/solo-lectura.ts)", () => {
+  it("la interfaz le muestra lo mismo que al owner (roleAllows responde como owner)", () => {
+    for (const [resource, actions] of Object.entries(actionsByResource) as [keyof typeof actionsByResource, readonly string[]][]) {
+      for (const action of actions) {
+        expect(roleAllows("viewer", resource, action), `viewer ${resource}.${action}`).toBe(roleAllows("owner", resource, action));
+      }
+    }
+  });
+
+  it("para Better Auth solo tiene lecturas: ni miembros, ni organización, ni invitaciones", () => {
+    const grants = viewer.statements as Record<string, readonly string[]>;
+    for (const [resource, actions] of Object.entries(grants)) {
+      expect(actions, resource).toEqual(["read"]);
+    }
+    expect(grants.member).toBeUndefined();
+    expect(grants.organization).toBeUndefined();
+    expect(grants.invitation).toBeUndefined();
   });
 });

@@ -12,6 +12,7 @@
 import { z } from "zod";
 import { logError } from "@/lib/log/safe-error";
 import { requireActiveMembership } from "@/lib/auth/active-organization";
+import { relanzarSoloLectura } from "@/lib/auth/solo-lectura";
 import { messagingProvider, MessagingNotConfiguredError } from "@/lib/messaging";
 import { queueChatUploads, SendRejectedError, type ChatUploadToSend } from "@/lib/messaging/send";
 import { pauseAgentForManualSend } from "@/lib/ai/runtime/hooks";
@@ -84,6 +85,7 @@ export async function sendAttachments(conversationId: string, items: ChatSendIte
     await pauseAgentForManualSend(organizationId, parsed.data.conversationId);
     return { ok: true, messageIds };
   } catch (error) {
+    relanzarSoloLectura(error);
     if (error instanceof ChatUploadTokenError || error instanceof SendRejectedError || error instanceof ChatSendPlanError || error instanceof MultimediaError) {
       return { ok: false, message: error.message };
     }

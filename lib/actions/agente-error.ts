@@ -11,6 +11,7 @@
 import { revalidatePath } from "next/cache";
 import { ZodError } from "zod";
 import { requireActiveMembership } from "@/lib/auth/active-organization";
+import { relanzarSoloLectura } from "@/lib/auth/solo-lectura";
 import { idSchema } from "@/lib/agente-ia/settings";
 import type { AgentActionResult } from "@/lib/agente-ia/types";
 import { openAgentErrorConversation, reopenAgentError, resolveAgentError } from "@/lib/ai/runtime/agent-error";
@@ -29,6 +30,7 @@ export async function retryAgentAfterError(input: { noticeId: string }): Promise
     try {
       await withQueueTimeout(scheduleAgentRun(bullAgentQueuePort(), redisKvPort(), { conversationId: done.conversationId, organizationId }, 0), "reintentar");
     } catch (error) {
+      relanzarSoloLectura(error);
       // Sin corrida programada nadie quedaría a cargo: la tarjeta se reabre.
       logError("[agente-error] no se pudo programar el reintento", error);
       await reopenAgentError(organizationId, idSchema.parse(input.noticeId));
@@ -37,6 +39,7 @@ export async function retryAgentAfterError(input: { noticeId: string }): Promise
     revalidatePath("/dashboard");
     return { ok: true };
   } catch (error) {
+    relanzarSoloLectura(error);
     if (error instanceof ZodError) return { ok: false, message: "No se pudo reintentar." };
     logError("[agente-error] reintentar", error);
     return { ok: false, message: "No se pudo reintentar." };
@@ -59,6 +62,7 @@ export async function pauseAgentAfterError(input: { noticeId: string }): Promise
     revalidatePath("/dashboard");
     return { ok: true };
   } catch (error) {
+    relanzarSoloLectura(error);
     if (error instanceof ZodError) return { ok: false, message: "No se pudo apagar el agente." };
     logError("[agente-error] apagar", error);
     return { ok: false, message: "No se pudo apagar el agente." };

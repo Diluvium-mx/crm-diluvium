@@ -6,6 +6,7 @@
 // organización (CLAUDE.md §7).
 import { z } from "zod";
 import { requireActiveMembership } from "@/lib/auth/active-organization";
+import { esSoloLectura, relanzarSoloLectura } from "@/lib/auth/solo-lectura";
 import { isTemperatureFilter } from "@/lib/contacts/filters";
 import { chatSearchTerm } from "@/lib/text/search";
 import { messagingProvider, MessagingNotConfiguredError } from "@/lib/messaging";
@@ -50,7 +51,7 @@ function listParams(params: InboxListParams): InboxListParams {
 }
 
 export async function listConversations(params: InboxListParams & { cursor?: string | null } = {}): Promise<ConversationPage> {
-  const { organizationId } = await requireActiveMembership();
+  const { organizationId } = await requireActiveMembership({ acceso: "consulta" });
   return listConversationsForOrg(organizationId, { ...listParams(params), cursor: params.cursor });
 }
 
@@ -63,17 +64,17 @@ export async function getConversationItems(
   conversationIds: string[],
   params: InboxListParams = {},
 ): Promise<ConversationListItem[]> {
-  const { organizationId } = await requireActiveMembership();
+  const { organizationId } = await requireActiveMembership({ acceso: "consulta" });
   return listConversationItemsByIdsForOrg(organizationId, conversationIds.slice(0, 100), listParams(params));
 }
 
 export async function getConversation(conversationId: string): Promise<ConversationDetail | null> {
-  const { organizationId } = await requireActiveMembership();
+  const { organizationId } = await requireActiveMembership({ acceso: "consulta" });
   return getConversationForOrg(organizationId, conversationId);
 }
 
 export async function getConversationByContact(contactId: string): Promise<ConversationDetail | null> {
-  const { organizationId } = await requireActiveMembership();
+  const { organizationId } = await requireActiveMembership({ acceso: "consulta" });
   return getConversationByContactForOrg(organizationId, contactId);
 }
 
@@ -81,7 +82,7 @@ export async function listMessages(
   conversationId: string,
   params: { before?: string | null; limit?: number } = {},
 ): Promise<MessagePage | null> {
-  const { organizationId } = await requireActiveMembership();
+  const { organizationId } = await requireActiveMembership({ acceso: "consulta" });
   return listMessagesForOrg(organizationId, conversationId, params);
 }
 
@@ -93,21 +94,24 @@ const conversationIdInput = z.string().min(1).max(128);
  * palabra ([contactId, cuántos]). Con menos de 3 letras no busca (lista vacía).
  */
 export async function searchChatsByContact(search: string): Promise<Array<[string, number]>> {
-  const { organizationId } = await requireActiveMembership();
+  const { organizationId } = await requireActiveMembership({ acceso: "consulta" });
   const term = chatSearchTerm(chatSearchInput.parse(search));
   return term ? searchChatsByContactForOrg(organizationId, term) : [];
 }
 
 /** Chat abierto con la lupa amarilla: ids de los mensajes con la palabra, del más reciente al más viejo. */
 export async function listChatMatches(conversationId: string, search: string): Promise<string[]> {
-  const { organizationId } = await requireActiveMembership();
+  const { organizationId } = await requireActiveMembership({ acceso: "consulta" });
   const id = conversationIdInput.parse(conversationId);
   const term = chatSearchTerm(chatSearchInput.parse(search));
   return term ? listChatMatchIdsForOrg(organizationId, id, term) : [];
 }
 
 export async function markConversationRead(conversationId: string, upToMessageId?: string | null): Promise<void> {
-  const { organizationId } = await requireActiveMembership();
+  // Se manda sola al abrir un chat. «Solo lectura» no lo marca como leído (el vendedor seguiría
+  // sin ver que llegó algo) y tampoco recibe el aviso: no presionó nada.
+  const { organizationId, role } = await requireActiveMembership({ acceso: "consulta" });
+  if (esSoloLectura(role)) return;
   await markConversationReadForOrg(organizationId, conversationId, upToMessageId);
 }
 
@@ -170,6 +174,7 @@ export async function sendMessage(conversationId: string, text: string): Promise
     await pauseAgentForManualSend(organizationId, conversationId);
     return { ok: true, messageId, pending: status === "pending" };
   } catch (error) {
+    relanzarSoloLectura(error);
     const { code, message } = toSendError(error);
     return { ok: false, code, message };
   }
@@ -208,6 +213,7 @@ export async function sendTemplate(
     await pauseAgentForManualSend(organizationId, conversationId);
     return { ok: true, messageId, pending: status === "pending" };
   } catch (error) {
+    relanzarSoloLectura(error);
     const { code, message } = toSendError(error);
     return { ok: false, code, message };
   }
@@ -245,6 +251,7 @@ export async function startChatWithTemplate(contactId: string, templateId: strin
     await pauseAgentForManualSend(organizationId, out.conversationId);
     return { ok: true, conversationId: out.conversationId, pending: out.status === "pending" };
   } catch (error) {
+    relanzarSoloLectura(error);
     if (error instanceof DuplicatePhoneError) {
       return { ok: false, code: "duplicate_phone", message: error.message, otherContactId: error.otherContactId };
     }
@@ -276,6 +283,7 @@ export async function retryMessage(messageId: string): Promise<SendMessageResult
     await pauseAgentOnManualMessageId(organizationId, id);
     return { ok: true, messageId: id, pending: status === "pending" };
   } catch (error) {
+    relanzarSoloLectura(error);
     const { code, message } = toSendError(error);
     return { ok: false, code, message };
   }

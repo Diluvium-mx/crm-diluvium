@@ -7,7 +7,7 @@ import { MyAccountForm } from "./_components/my-account-form";
 // desde el menú del usuario, abajo del sidebar (antes era una pestaña de
 // Configuración, que ahora es solo de owner/admin).
 export default async function MiCuentaPage() {
-  await requireActiveMembership();
+  await requireActiveMembership({ acceso: "consulta" });
   const session = await auth.api.getSession({ headers: await headers() });
 
   return (

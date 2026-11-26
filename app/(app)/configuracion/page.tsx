@@ -13,7 +13,7 @@ export default async function ConfiguracionPage({ searchParams }: PageProps<"/co
   if (requested === "cuenta") redirect("/mi-cuenta");
   if (requested === "tallas") redirect("/agente-ia?seccion=tallas");
 
-  const { role } = await requireActiveMembership();
+  const { role } = await requireActiveMembership({ acceso: "consulta" });
   if (!roleAllows(role, "settings", "read")) redirect("/inicio");
 
   return (

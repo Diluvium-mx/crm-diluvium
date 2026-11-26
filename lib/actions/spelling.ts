@@ -26,7 +26,7 @@ export async function addSpellingWord(word: string): Promise<{ wordKey: string }
 
 /** Palabras del equipo, para refrescar el corrector sin recargar la página. */
 export async function getSpellingWords(): Promise<string[]> {
-  const { organizationId, role } = await requireActiveMembership();
+  const { organizationId, role } = await requireActiveMembership({ acceso: "consulta" });
   if (!roleAllows(role, "spellingWord", "read")) return [];
   return listTeamWords(organizationId);
 }

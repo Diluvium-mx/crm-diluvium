@@ -11,7 +11,7 @@ import { safeErrorMessage } from "@/lib/log/safe-error";
 export async function GET(_req: Request, { params }: RouteContext<"/api/biblioteca/[assetId]/original">): Promise<Response> {
   let organizationId: string;
   try {
-    ({ organizationId } = await requireActiveMembership());
+    ({ organizationId } = await requireActiveMembership({ acceso: "consulta" }));
   } catch {
     return new Response("no autenticado", { status: 401 });
   }

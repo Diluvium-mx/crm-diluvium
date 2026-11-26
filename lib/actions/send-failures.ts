@@ -5,6 +5,6 @@ import { requireActiveMembership } from "@/lib/auth/active-organization";
 import { recentSendFailures, sendFailureBannerLines } from "@/lib/monitoring/send-failures";
 
 export async function loadSendFailureLines(): Promise<string[]> {
-  const { organizationId } = await requireActiveMembership();
+  const { organizationId } = await requireActiveMembership({ acceso: "consulta" });
   return sendFailureBannerLines(await recentSendFailures({ organizationId }));
 }

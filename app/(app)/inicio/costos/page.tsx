@@ -24,7 +24,7 @@ function mesSiguiente(clave: string): string {
 }
 
 export default async function HistorialCostosPage({ searchParams }: PageProps<"/inicio/costos">) {
-  const { organizationId, role } = await requireActiveMembership();
+  const { organizationId, role } = await requireActiveMembership({ acceso: "consulta" });
   if (!roleAllows(role, "aiSpend", "read")) notFound();
   const params = await searchParams;
   const now = new Date();

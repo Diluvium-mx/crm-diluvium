@@ -91,7 +91,7 @@ const sizeRangesSchema = z
   .max(100, "No puede haber más de 100 rangos de tallas.");
 
 export async function getContactQualification(contactId: string) {
-  const membership = await requireActiveMembership();
+  const membership = await requireActiveMembership({ acceso: "consulta" });
   requirePermission(membership.role, "contact", "read");
   const parsedContactId = contactIdSchema.parse(contactId);
   return getContactQualificationData(db, membership.organizationId, parsedContactId);
@@ -104,7 +104,7 @@ export async function getContactQualification(contactId: string) {
  * admin y vendedor—; el servidor lo vuelve a exigir al modificar).
  */
 export async function getContactDetails(contactId: string) {
-  const membership = await requireActiveMembership();
+  const membership = await requireActiveMembership({ acceso: "consulta" });
   requirePermission(membership.role, "contact", "read");
   const data = await getContactQualificationData(db, membership.organizationId, contactIdSchema.parse(contactId));
   return {
@@ -172,7 +172,7 @@ export async function updateEntrada(
 }
 
 export async function listSizeRanges() {
-  const membership = await requireActiveMembership();
+  const membership = await requireActiveMembership({ acceso: "consulta" });
   requirePermission(membership.role, "sizeRange", "read");
   return listSizeRangesData(db, membership.organizationId);
 }

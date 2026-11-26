@@ -16,7 +16,7 @@ const DATE = new Intl.DateTimeFormat("es-MX", { timeZone: "America/Mazatlan", da
 export default async function AnuncioPage({ params, searchParams }: PageProps<"/anuncios/[adKey]">) {
   const { adKey } = await params;
   const pagina = (await searchParams).pagina;
-  const { organizationId } = await requireActiveMembership();
+  const { organizationId } = await requireActiveMembership({ acceso: "consulta" });
   const [ad, stages] = await Promise.all([getAd(organizationId, adKey, { page: typeof pagina === "string" ? Number(pagina) : 1 }), listFunnelStages(organizationId)]);
   if (!ad) notFound();
   // "Compraron" = la etapa con papel "Venta cerrada" (Compra, o como se llame hoy).

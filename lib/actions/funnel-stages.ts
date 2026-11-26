@@ -7,6 +7,7 @@
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import { requireActiveMembership } from "@/lib/auth/active-organization";
+import { relanzarSoloLectura } from "@/lib/auth/solo-lectura";
 import { roleAllows } from "@/lib/auth/permissions";
 import {
   countContactsByStage,
@@ -38,13 +39,13 @@ async function requireEdit() {
 
 /** Etapas vigentes de la organización, en orden (todos los roles). */
 export async function getFunnelStages(): Promise<FunnelStage[]> {
-  const { organizationId } = await requireActiveMembership();
+  const { organizationId } = await requireActiveMembership({ acceso: "consulta" });
   return listFunnelStages(organizationId);
 }
 
 /** Cuántos contactos hay en cada etapa (clave → total), para el pop-up de borrar. */
 export async function getContactCountsByStage(): Promise<Record<string, number>> {
-  const { organizationId } = await requireActiveMembership();
+  const { organizationId } = await requireActiveMembership({ acceso: "consulta" });
   return countContactsByStage(organizationId);
 }
 
@@ -60,6 +61,7 @@ async function run(
     for (const path of ["/embudo", "/agente-ia", "/inicio", "/anuncios", "/automatizacion", "/dashboard"]) revalidatePath(path);
     return { ok: true, ...out };
   } catch (error) {
+    relanzarSoloLectura(error);
     if (error instanceof z.ZodError) return { ok: false, message: error.issues[0]?.message ?? fallback };
     if (error instanceof FunnelStageError) return { ok: false, message: error.message };
     // Llave foránea: alguien movió un contacto a esa etapa justo en ese instante.

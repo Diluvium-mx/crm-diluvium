@@ -6,6 +6,7 @@
 import { revalidatePath } from "next/cache";
 import { ZodError } from "zod";
 import { requireActiveMembership } from "@/lib/auth/active-organization";
+import { relanzarSoloLectura } from "@/lib/auth/solo-lectura";
 import { roleAllows } from "@/lib/auth/permissions";
 import type { LinkPago, TextosLink } from "@/lib/agente-ia/links-pago";
 import { loadTextosLink, replaceLinksPago } from "@/lib/agente-ia/links-pago-store";
@@ -25,6 +26,7 @@ export async function saveLinksPago(input: unknown): Promise<LinksPagoActionResu
     revalidatePath("/agente-ia");
     return { ok: true, links, textos: await loadTextosLink(organizationId) };
   } catch (error) {
+    relanzarSoloLectura(error);
     if (error instanceof ZodError) return { ok: false, message: error.issues[0]?.message ?? "Valor no válido." };
     if (error instanceof Error && /^(No autenticado|Usuario desactivado|No tienes permiso|El usuario no tiene membresía)/.test(error.message)) {
       return { ok: false, message: error.message };

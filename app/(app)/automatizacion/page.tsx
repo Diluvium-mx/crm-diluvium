@@ -10,7 +10,7 @@ import { AutomatizacionPanel } from "./_components/automatizacion-panel";
 // usan desde el composer ("/tamaños"). Los datos iniciales se cargan en el
 // servidor, acotados a la organización de la sesión.
 export default async function AutomatizacionPage() {
-  const { role } = await requireActiveMembership();
+  const { role } = await requireActiveMembership({ acceso: "consulta" });
   if (!roleAllows(role, "workflow", "update")) {
     redirect("/dashboard");
   }

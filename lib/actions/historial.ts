@@ -6,6 +6,7 @@
 // La organización sale de la SESIÓN; la lectura vive en lib/historial/queries.ts.
 import { ZodError } from "zod";
 import { requireActiveMembership } from "@/lib/auth/active-organization";
+import { relanzarSoloLectura } from "@/lib/auth/solo-lectura";
 import { roleAllows } from "@/lib/auth/permissions";
 import { historyFilterSchema, historyRange, type HistoryFilter, type HistoryRow } from "@/lib/historial/labels";
 import { loadChangeDiff, loadHistory } from "@/lib/historial/queries";
@@ -16,7 +17,7 @@ export type HistoryResult = { ok: true; rows: HistoryRow[]; truncated: boolean }
 
 export async function getChangeHistory(input: HistoryFilter): Promise<HistoryResult> {
   try {
-    const { organizationId, role } = await requireActiveMembership();
+    const { organizationId, role } = await requireActiveMembership({ acceso: "consulta" });
     if (!roleAllows(role, "aiConfig", "read")) return { ok: false, message: "No tienes permiso para ver el historial." };
     const f = historyFilterSchema.parse(input);
     const { start, end } = historyRange(f.from, f.to);
@@ -24,6 +25,7 @@ export async function getChangeHistory(input: HistoryFilter): Promise<HistoryRes
     const canSeeManagerOnly = roleAllows(role, "member", "update");
     return { ok: true, ...(await loadHistory(organizationId, { type: f.type ?? null, start, end, includeAuto: f.includeAuto, canSeeManagerOnly })) };
   } catch (error) {
+    relanzarSoloLectura(error);
     if (error instanceof ZodError) return { ok: false, message: "Revisa los filtros." };
     logError("[historial] no se pudo cargar", error);
     return { ok: false, message: "No se pudo cargar el historial." };
@@ -34,12 +36,13 @@ export type ChangeDiffResult = { ok: true; diff: ChangeDiff } | { ok: false; mes
 
 export async function getChangeDiff(rowId: string): Promise<ChangeDiffResult> {
   try {
-    const { organizationId, role } = await requireActiveMembership();
+    const { organizationId, role } = await requireActiveMembership({ acceso: "consulta" });
     if (!roleAllows(role, "aiConfig", "read")) return { ok: false, message: "No tienes permiso para ver el historial." };
     if (typeof rowId !== "string" || rowId.length > 100) return { ok: false, message: "Ese cambio no existe." };
     const diff = await loadChangeDiff(organizationId, rowId, roleAllows(role, "member", "update"));
     return diff ? { ok: true, diff } : { ok: false, message: "Este cambio no tiene detalle." };
   } catch (error) {
+    relanzarSoloLectura(error);
     logError("[historial] no se pudo cargar el detalle", error);
     return { ok: false, message: "No se pudieron cargar los cambios." };
   }
