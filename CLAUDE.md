@@ -158,7 +158,7 @@ Reglas duras:
   páginas y rutas; nunca decidir por el encabezado `next-action`: Next corre acciones por formulario sin él). Lo que
   solo lee lo declara: páginas, layouts, rutas GET y Server Actions de consulta (estas, además, en la lista de
   `lib/auth/solo-lectura-guard.test.ts`). Todo `catch (error)` de una Server Action empieza con
-  `relanzarSoloLectura(error)` (si no, no sale el aviso). Tampoco baja datos de clientes ni contesta opiniones.
+  `relanzarSoloLectura(error)` (si no, no sale el aviso). Tampoco baja datos de clientes ni contesta opiniones. En el navegador, toda acción clave (Guardar, Borrar, Editar, Nuevo, Enviar, «Sí, …»…) muestra el aviso ANTES de abrir cualquier ventana (`esAccionClave`), y `TopConfirm`/`ArcoDialog` se cierran solos con ese rol (`cambia={false}` para las que no cambian nada).
 - **Goal y FAQs del Agente IA (regla del dueño, 9-oct-2026):** los cambios se juntan y se aplican en
   producción **una sola vez al día, después de las 22:00 (Mazatlán)**, salvo un error grave que haya que
   corregir de inmediato. Cada guardado obliga a Anthropic a volver a cobrar el Goal completo (~US$0.09);
@@ -218,7 +218,7 @@ lo del vendedor y que al vendedor solo le falte Configuración):**
 |---|---|
 | Owner | Dueño de la cuenta: todo, incluido administrar a los admins (solo él asigna el rol owner). |
 | Admin | Todo lo del vendedor + Configuración (Vendedores). |
-| Solo lectura (`viewer`) | Desde el 26-nov-2026: ve TODO lo que ve el owner (Configuración incluida) y puede presionar botones, pero nada se guarda ni se envía (sale el aviso «Modo solo lectura: no se guardó nada»); solo escribe en los buscadores; abrir un chat no lo marca como leído; no descarga datos de clientes («Exportar datos», «Descargar» del visor) ni contesta el formulario de opinión. `roleAllows` responde como owner; lo frena `requireActiveMembership` (ver Reglas duras). |
+| Solo lectura (`viewer`) | Desde el 26-nov-2026: ve TODO lo que ve el owner (Configuración incluida) y puede presionar botones, pero nada se guarda ni se envía (sale el aviso «Modo solo lectura»); solo escribe en los buscadores; abrir un chat no lo marca como leído; no descarga datos de clientes («Exportar datos», «Descargar» del visor) ni contesta el formulario de opinión. `roleAllows` responde como owner; lo frena `requireActiveMembership` (ver Reglas duras). |
 | Vendedor (`agent`) | Todas las herramientas del CRM menos la pestaña Configuración: Dashboard (incluido registrar recargas de IA), Bandeja, Embudo, Mensajes rápidos (fragmentos y crear/sincronizar plantillas de Meta), contactos en masa (importar/exportar/borrar), editar/borrar comentarios de otros, Anuncios, Agente IA (incluida la sección "Tallas y medidas", desde el 26-sep-2026) y Automatización. |
 
 ```

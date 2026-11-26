@@ -9,7 +9,7 @@ import {
   SOLO_LECTURA_MENSAJE,
   SoloLecturaError,
 } from "./solo-lectura";
-import { esCajaBloqueada, esRespuestaRechazada, esTeclaQueEscribe } from "./solo-lectura-navegador";
+import { esAccionClave, esCajaBloqueada, esRespuestaRechazada, esTeclaQueEscribe } from "./solo-lectura-navegador";
 
 describe("rol «Solo lectura»", () => {
   it("reconoce el rol, también junto a otros", () => {
@@ -101,5 +101,19 @@ describe("«Solo lectura» en el navegador", () => {
     const res = new Response(`1:E{"digest":"${SOLO_LECTURA_DIGEST}"}`, { status: 500 });
     await esRespuestaRechazada(res, true);
     expect(await res.text()).toContain(SOLO_LECTURA_DIGEST);
+  });
+});
+
+describe("acciones clave: el aviso sale antes de cualquier ventana (27-nov-2026)", () => {
+  it("guardar, borrar, editar, crear, enviar, cambiar, desactivar y las confirmaciones «Sí, …» cuentan", () => {
+    for (const nombre of ["Guardar", "Guardar cambios", "Borrar", "Borrar contacto", "Editar mensaje", "+ Nuevo workflow", "Nuevo contacto", "Crear enlace de prueba", "📄 Enviar plantilla", "Enviar", "Cambiar hora", "Desactivar", "Reactivar", "Sí, borrar", "Sí, guardar", "Pausar agente", "Programar para las 22:00", "Exportar datos", "Descargar", "Marcar como leído", "Quitar tarjeta", "Restablecer contraseña", "Cancelar guía", "Volver a darle seguimiento", "Ya la solicité", "Agregar"]) {
+      expect(esAccionClave(nombre), nombre).toBe(true);
+    }
+  });
+
+  it("cerrar, filtrar, buscar, ver y navegar no cuentan", () => {
+    for (const nombre of ["Cancelar", "Cerrar", "No", "Seguir editando", "Salir sin guardar", "Aplicar", "Buscar", "Todo", "No leído", "Destacado", "Workflows", "Biblioteca", "Historial", "Mi cuenta", "Cerrar sesión", "Sofía Sánchez", "Copiar", "Abrir", "Actualizar", "← Workflows", "Hoy", "7 días"]) {
+      expect(esAccionClave(nombre), nombre).toBe(false);
+    }
   });
 });
