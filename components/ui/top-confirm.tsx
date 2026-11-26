@@ -11,6 +11,8 @@
 //   llegue el texto, así el aviso sí se anuncia.
 // Sin lógica de datos. Respeta "reducir movimiento" (la animación es motion-safe).
 import { useEffect, useId, useLayoutEffect, useRef, useState } from "react";
+import { CierreSoloLectura } from "@/components/solo-lectura/cierre-solo-lectura";
+import { bloqueaVentana } from "@/lib/auth/solo-lectura-navegador";
 
 function TopLayer({ children }: { children: React.ReactNode }) {
   return (
@@ -22,7 +24,32 @@ function TopLayer({ children }: { children: React.ReactNode }) {
   );
 }
 
-export function TopConfirm({
+type TopConfirmProps = {
+  title: string;
+  children?: React.ReactNode;
+  confirmLabel: string;
+  // Texto del botón que no hace nada (p. ej. "Seguir editando"); por omisión "Cancelar".
+  cancelLabel?: string;
+  pendingLabel?: string;
+  pending?: boolean;
+  // La acción primaria no aplica todavía (p. ej. el nombre nuevo está vacío).
+  confirmDisabled?: boolean;
+  // false = no se enfoca "Cancelar" al abrir: el campo de adentro trae su propio autoFocus.
+  focusCancel?: boolean;
+  onConfirm: () => void;
+  onCancel: () => void;
+};
+
+/**
+ * Pregunta con «Cancelar» y la acción primaria. Con «Solo lectura» (lib/auth/solo-lectura.ts) no se abre: avisa y se
+ * cancela sola (27-nov-2026). `cambia={false}` para las que no cambian nada (p. ej. «Salir sin guardar»).
+ */
+export function TopConfirm({ cambia = true, ...props }: TopConfirmProps & { cambia?: boolean }) {
+  if (cambia && bloqueaVentana()) return <CierreSoloLectura onCerrar={props.onCancel} />;
+  return <TopConfirmVentana {...props} />;
+}
+
+function TopConfirmVentana({
   title,
   children,
   confirmLabel,

@@ -1,6 +1,6 @@
 "use client";
 
-// Aviso «Modo solo lectura: no se guardó nada» (26-nov-2026, decisión del dueño: aviso corto al
+// Aviso «Modo solo lectura» (26-nov-2026, decisión del dueño: aviso corto al
 // presionar algo que guardaría). Solo se monta para el rol «Solo lectura» (app/(app)/layout.tsx).
 // Mismo lugar que los avisos del CRM (TopNotice): abajo de la barra azul, centrado en el contenido.
 // La lógica (cuándo sale, qué cajas no dejan escribir) vive en lib/auth/solo-lectura-navegador.ts.

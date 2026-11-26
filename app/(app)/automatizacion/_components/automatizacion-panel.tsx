@@ -321,6 +321,7 @@ export function AutomatizacionPanel({
 
       {asking?.kind === "salir" && editing && (
         <TopConfirm
+          cambia={false}
           title={`Estás por salir de ${editing.original ? "Editar workflow" : "Nuevo workflow"}`}
           confirmLabel="Salir sin guardar"
           cancelLabel="Seguir editando"
