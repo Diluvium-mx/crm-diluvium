@@ -30,21 +30,6 @@ export async function cargarMetaReportado(database: Database, organizationId: st
   return { usd: Number(row.usd), mensajes: Number(row.mensajes) };
 }
 
-// Ventas del mes, como en el informe del primer mes (27-oct-2026): contactos que HOY están en la etapa de venta
-// (papel `venta_cerrada`) y entraron a ella en el mes, hora de Mazatlán. El que entró y regresó a otra etapa no
-// cuenta, ni los contactos de prueba. No depende del Historial de etapas (existe solo desde el 9-oct-2026).
-export async function contarVentas(database: Database, organizationId: string, mes: Mes): Promise<number> {
-  const [row] = await database.execute<{ ventas: string }>(sql`
-    select count(*)::text as ventas
-    from contacts c
-    join funnel_stages f on f.organization_id = c.organization_id and f.key = c.stage and f.role = 'venta_cerrada'
-    where c.organization_id = ${organizationId} and not c.es_prueba
-      and c.stage_changed_at >= (${mes.desde}::timestamp at time zone 'America/Mazatlan') at time zone 'UTC'
-      and c.stage_changed_at < ((${mes.hasta}::date + 1)::timestamp at time zone 'America/Mazatlan') at time zone 'UTC'
-  `);
-  return Number(row?.ventas ?? 0);
-}
-
 export async function cargarReporte(
   database: Database,
   org: { id: string; name: string },
@@ -52,14 +37,13 @@ export async function cargarReporte(
   now: Date,
   tipoCambio: TipoCambio | null,
 ): Promise<ReporteCostos> {
-  const [billing, crmDays, [railway], [zernio], meta, metaReportado, ventas, celular, compras] = await Promise.all([
+  const [billing, crmDays, [railway], [zernio], meta, metaReportado, celular, compras] = await Promise.all([
     loadBillingSnapshots(database, org.id),
     spendByDay(database, org.id, mes.desde),
     database.select().from(railwayBilling).where(eq(railwayBilling.organizationId, org.id)),
     database.select().from(zernioBilling).where(eq(zernioBilling.organizationId, org.id)),
     contarMetaCobrables(database, org.id, mes.desde, mes.hasta),
     cargarMetaReportado(database, org.id, mes),
-    contarVentas(database, org.id, mes),
     // Si falla, el correo sale igual sin esa línea.
     cargarAhorroCelular(database, org.id, mes.desde, mes.hasta).catch(() => null),
     cargarComprasReserva(database, org.id),
@@ -71,7 +55,6 @@ export async function cargarReporte(
     railway: renglonRailway(railway ?? null, mes, now),
     zernio: renglonZernio(zernio ?? null, mes),
     meta: renglonMeta(meta, metaReportado),
-    ventas,
     tipoCambio,
     celular: celular ? { mensajes: celular.total.mensajes, ahorroUsd: celular.total.ahorroUsd, cobradosMeta: celular.total.cobradosMeta } : null,
   });

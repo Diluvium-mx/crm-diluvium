@@ -12,7 +12,6 @@ import { railwaySummary } from "@/lib/dashboard/railway";
 import { zernioSummary } from "@/lib/dashboard/zernio";
 import { utcDay } from "@/lib/ai/billing/days";
 import { cargarAhorroCelular } from "@/lib/meta-whatsapp/ahorro-celular";
-import { contarVentas } from "./cargar";
 import { cargarComprasReserva } from "./compras-reserva";
 import { htmlCorreo } from "./correo";
 import { renglonesMesCerrado, renglonesMesEnCurso, type RenglonesMes } from "./historial";
@@ -96,8 +95,7 @@ export async function cargarHistorialCostos(
     renglones = renglonesMesCerrado(fila, renglonesIa({ billing, crmDays, mes: m, compras }).renglones);
   }
 
-  const [ventas, celular, tipoCambio] = await Promise.all([
-    contarVentas(database, org.id, m).catch(() => null),
+  const [celular, tipoCambio] = await Promise.all([
     cargarAhorroCelular(database, org.id, m.desde, m.hasta).catch(() => null),
     tipoCambioDe(mes.clave, mes.enCurso, now),
   ]);
@@ -108,7 +106,6 @@ export async function cargarHistorialCostos(
     railway: { renglon: renglones.railway, avisos: [] },
     zernio: { renglon: renglones.zernio, avisos: [] },
     meta: renglones.meta,
-    ventas,
     tipoCambio,
     celular: celular ? { mensajes: celular.total.mensajes, ahorroUsd: celular.total.ahorroUsd, cobradosMeta: celular.total.cobradosMeta } : null,
     enCurso: mes.enCurso,
