@@ -28,27 +28,52 @@ describe("mesAnterior / mesDe", () => {
 });
 
 describe("renglonesIa", () => {
-  it("suma solo los días del mes de lo que COBRÓ cada proveedor; Anthropic y OpenAI siempre; los demás si gastaron", () => {
+  it("suma solo los días del mes de lo que COBRÓ Anthropic y OpenAI; xAI, OpenRouter y Google van en un renglón con lo COMPRADO", () => {
     const { renglones, avisos } = renglonesIa({
       mes: OCT,
       billing: [
         snap("anthropic", { "2026-09-30": { todo: 9 }, "2026-10-01": { todo: 1.25, prod: 1, pruebas: 0.25 }, "2026-10-31": { todo: 2 }, "2026-11-01": { todo: 7 } }),
+        // Lo que se usa de los créditos de reserva ya no suma (ya se pagó al comprarlos).
         snap("xai", { "2026-10-05": { todo: 0.001 } }),
         snap("openrouter", { "2026-10-05": { todo: 0.5 } }),
       ],
       // El CRM calculó de más en Anthropic: no se usa porque hay reporte del proveedor.
       crmDays: [
         { day: "2026-10-01", provider: "anthropic", usd: 5 },
-        { day: "2026-10-02", provider: "google", usd: 0.75 },
+        // Uso de reserva: 0.001 + 0.5 + 0.25 < US$1 → «casi sin uso».
+        { day: "2026-10-02", provider: "google", usd: 0.25 },
+      ],
+      compras: [
+        { provider: "xai", amountUsd: 5, toppedUpOn: "2026-10-25" },
+        { provider: "google", amountUsd: 5.67, toppedUpOn: "2026-10-25" },
+        // De otro mes, o de Anthropic/OpenAI: no entran.
+        { provider: "openrouter", amountUsd: 5, toppedUpOn: "2026-09-25" },
+        { provider: "anthropic", amountUsd: 10, toppedUpOn: "2026-10-03" },
       ],
     });
     expect(renglones).toEqual([
       { servicio: "IA · Anthropic", paraQue: "Agente IA (Sonnet)", usd: 3.25, nota: null },
       { servicio: "IA · OpenAI", paraQue: "Agente IA (Luna) y audios", usd: 0, nota: null },
-      { servicio: "IA · Google", paraQue: "Agente IA", usd: 0.75, nota: "calculado por el CRM (el proveedor no da su cobro)" },
-      { servicio: "IA · OpenRouter", paraQue: "Agente IA", usd: 0.5, nota: null },
+      { servicio: "IA · (xAI, OpenRouter y Google)", paraQue: "Por si fallan Sonnet o Luna", usd: 10.67, nota: "créditos comprados el 25-oct; casi sin uso" },
     ]);
     expect(avisos).toEqual([]);
+  });
+
+  it("modelos de reserva: sin compras en el mes sale en 0; varias fechas; sin «casi sin uso» si se usó US$1 o más", () => {
+    const base = { mes: OCT, billing: [], crmDays: [] };
+    expect(renglonesIa({ ...base, compras: [] }).renglones.at(-1)).toEqual({
+      servicio: "IA · (xAI, OpenRouter y Google)",
+      paraQue: "Por si fallan Sonnet o Luna",
+      usd: 0,
+      nota: "sin compras ese mes",
+    });
+    const compras = [
+      { provider: "openrouter", amountUsd: 5, toppedUpOn: "2026-10-03" },
+      { provider: "xai", amountUsd: 5, toppedUpOn: "2026-10-20" },
+      { provider: "google", amountUsd: 2, toppedUpOn: "2026-10-20" },
+    ];
+    const usado = renglonesIa({ ...base, billing: [snap("openrouter", { "2026-11-02": { todo: 1.2 } })], compras }).renglones.at(-1);
+    expect(usado).toMatchObject({ usd: 12, nota: "créditos comprados el 3-oct y 20-oct" });
   });
 
   it("avisa si la última lectura es de antes del cierre o falló", () => {
@@ -59,6 +84,7 @@ describe("renglonesIa", () => {
         snap("openai", {}, { fetchedAt: null, lastError: "HTTP 500" }),
       ],
       crmDays: [],
+      compras: [],
     });
     expect(avisos).toEqual([
       "Anthropic: el último dato leído es del 20-oct; el monto del mes puede venir incompleto.",

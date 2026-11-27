@@ -24,6 +24,13 @@ function montos(usd: number | null, mxn: number | null): { principal: string; se
   return { principal: pesos(mxn), secundario: formatUsd(usd) };
 }
 
+// PURO: la línea del tipo de cambio, en texto plano. null = sin tipo de cambio (el aviso del reporte lo explica).
+export function notaTipoCambio(r: Pick<ReporteCostos, "tipoCambio" | "mes" | "enCurso">): string | null {
+  if (!r.tipoCambio) return null;
+  const mes = r.mes.nombre.replace(/ de \d{4}$/, "");
+  return `Pesos aproximados con el dólar promedio de ${mes}${r.enCurso ? " hasta hoy" : ""} (${pesos(r.tipoCambio.mxnPorUsd)}). El banco cobra con el del día de cada cargo.`;
+}
+
 export function asuntoCorreo(r: ReporteCostos): string {
   const total = r.totalMxn === null ? formatUsd(r.totalUsd) : `${pesos(r.totalMxn)} (${formatUsd(r.totalUsd)})`;
   return `Costos del CRM · ${r.mes.nombre} · ${total}`;
@@ -71,9 +78,9 @@ export function htmlCorreo(r: ReporteCostos): string {
     }.${c.cobradosMeta > 0 ? ` <span style="color:${NARANJA};font-weight:bold;">Meta cobró ${c.cobradosMeta.toLocaleString("es-MX")} de ellos.</span>` : ""}</p>`;
   }
 
-  const tipoCambio = r.tipoCambio
-    ? `<p style="margin:6px 0 0;color:${GRIS};font-size:12px;">Dólar a ${pesos(r.tipoCambio.mxnPorUsd)} (promedio de ${esc(r.mes.nombre.replace(/ de \d{4}$/, ""))}, Diario Oficial).</p>`
-    : "";
+  // Texto del dueño (27-nov-2026): los pesos son aproximados porque el banco cobra con el dólar del día de cada cargo.
+  const lineaTc = notaTipoCambio(r);
+  const tipoCambio = lineaTc ? `<p style="margin:6px 0 0;color:${GRIS};font-size:12px;">${esc(lineaTc)}</p>` : "";
 
   const nota = r.nota
     ? `<div style="margin:12px 0 4px;padding:10px 12px;border-left:4px solid ${NAVY};background:#F3F6FA;color:#111827;font-size:14px;">${esc(r.nota)}</div>`

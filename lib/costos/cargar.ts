@@ -6,6 +6,7 @@ import type { db as appDb } from "@/lib/db";
 import { railwayBilling, zernioBilling } from "@/lib/db/schema";
 import { loadBillingSnapshots, spendByDay } from "@/lib/dashboard/ai-spend";
 import { cargarAhorroCelular } from "@/lib/meta-whatsapp/ahorro-celular";
+import { cargarComprasReserva } from "./compras-reserva";
 import { contarMetaCobrables } from "./meta-estimado";
 import { type Mes, type MetaReportado, type ReporteCostos, armarReporte, renglonMeta, renglonRailway, renglonZernio, renglonesIa } from "./mes";
 import type { TipoCambio } from "./tipo-cambio";
@@ -51,7 +52,7 @@ export async function cargarReporte(
   now: Date,
   tipoCambio: TipoCambio | null,
 ): Promise<ReporteCostos> {
-  const [billing, crmDays, [railway], [zernio], meta, metaReportado, ventas, celular] = await Promise.all([
+  const [billing, crmDays, [railway], [zernio], meta, metaReportado, ventas, celular, compras] = await Promise.all([
     loadBillingSnapshots(database, org.id),
     spendByDay(database, org.id, mes.desde),
     database.select().from(railwayBilling).where(eq(railwayBilling.organizationId, org.id)),
@@ -61,11 +62,12 @@ export async function cargarReporte(
     contarVentas(database, org.id, mes),
     // Si falla, el correo sale igual sin esa línea.
     cargarAhorroCelular(database, org.id, mes.desde, mes.hasta).catch(() => null),
+    cargarComprasReserva(database, org.id),
   ]);
   return armarReporte({
     mes,
     organizacion: org.name,
-    ia: renglonesIa({ billing, crmDays, mes }),
+    ia: renglonesIa({ billing, crmDays, mes, compras }),
     railway: renglonRailway(railway ?? null, mes, now),
     zernio: renglonZernio(zernio ?? null, mes),
     meta: renglonMeta(meta, metaReportado),

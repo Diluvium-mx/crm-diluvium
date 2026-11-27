@@ -89,6 +89,18 @@ describe("resumirCostoCrm", () => {
     expect(c).not.toHaveProperty("totalUsd");
   });
 
+  it("modelos de reserva: la compra de crédito del mes suma a la IA (va y cierre); lo que se usa de ellos no", () => {
+    const conReserva = { ...spend, providers: [...spend.providers, provider({ provider: "openrouter", label: "OpenRouter", monthUsd: 0.8 })] };
+    const compras = [
+      { provider: "xai", amountUsd: 5, toppedUpOn: "2026-11-10" },
+      // De otro mes: no cuenta.
+      { provider: "google", amountUsd: 5.67, toppedUpOn: "2026-09-25" },
+    ];
+    const c = resumirCostoCrm({ ...base, spend: conReserva, compras });
+    expect(c.vaUsd).toBe(55.45);
+    expect((c.cierreUsd ?? 0) - (resumirCostoCrm(base).cierreUsd ?? 0)).toBeCloseTo(5, 2);
+  });
+
   it("un servicio sin lectura no suma y se avisa", () => {
     const c = resumirCostoCrm({ ...base, meta: { ...meta, totalUsd: null }, zernio: null });
     expect(c.sinDato).toEqual(["WhatsApp (Meta)", "Zernio"]);

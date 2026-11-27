@@ -9,7 +9,7 @@ el **día 3 de cada mes**, sin pedirlo. Base: el informe del primer mes (Notion 
 |---|---|---|
 | IA · Anthropic | Agente IA (Sonnet) | Lo que **cobró** Anthropic (`ai_provider_billing`, lo lee el worker cada 5 min) |
 | IA · OpenAI | Agente IA (Luna) y notas de voz | Lo que **cobró** OpenAI (igual) |
-| IA · xAI, OpenRouter, Google | Modelos de reserva | Solo salen si ese mes gastaron algo. Google no da su cobro: se usa lo que registró el CRM y el correo lo dice |
+| IA · (xAI, OpenRouter y Google) | Modelos de reserva («Por si fallan Sonnet o Luna») | Un solo renglón con lo que se **compró** de crédito en el mes (recargas registradas en Gasto de IA, `ai_credit_topups`). Lo que después se usa de esos créditos ya no suma: ya se pagó (decisión del dueño 27-nov-2026). Sin compras: «sin compras ese mes» |
 | Railway | Servidores del CRM | `railway_billing` (docs/railway-costos.md). Su periodo va **del 5 al 5**: el reporte de un mes lleva el periodo que empieza ese mes, y como el día 3 aún no cierra sale la **factura estimada** (plan + uso proyectado al corte) |
 | Zernio | Conecta WhatsApp e Instagram | El mes anterior de Zernio (`zernio_billing`, docs/zernio-costos.md); el día 3 ya está cerrado |
 | Meta (WhatsApp) | Plantillas y mensajes cobrados | Lo que **reporta Meta** del mes (días UTC, sin IVA; docs/meta-whatsapp.md). Sin esa lectura, el **estimado del CRM** (abajo) |
@@ -20,8 +20,12 @@ el total dice que va sin él.
 
 **En pesos** (decisión del dueño 28-oct-2026): cada monto sale en pesos y, abajo en gris, en dólares, con el
 **promedio del dólar del mes** que publica el Diario Oficial de la Federación (FIX; API pública de SIDOF, indicador
-158, sin llave ni registro; la de Banxico pide token): `lib/costos/tipo-cambio.ts`. Una línea al final dice a cuánto
-quedó el dólar. Si el Diario Oficial no responde, el correo sale igual, solo en dólares, con un aviso.
+158, sin llave ni registro; la de Banxico pide token): `lib/costos/tipo-cambio.ts`. Los pesos son **aproximados**: el
+banco cobra cada cargo con el dólar de ese día (y puede sumar comisión), y el dólar se movió mucho (promedio de
+septiembre 17.21, octubre 18.40, 19.70 el 26-nov-2026). Por eso la línea de abajo dice, con el texto del dueño
+(27-nov-2026): **«Pesos aproximados con el dólar promedio de octubre ($18.40). El banco cobra con el del día de cada
+cargo.»** (en el mes en curso: «promedio de noviembre hasta hoy»). Lo exacto en pesos solo está en el estado de cuenta.
+Si el Diario Oficial no responde, el correo sale igual, solo en dólares, con un aviso.
 
 **Nota de una sola vez:** `NOTAS_DEL_MES` en `lib/costos/mes.ts`. Octubre de 2026 (correo del 3-nov) explica que es el
 primer mes completo, que no hay mes anterior para comparar y que salió alto por pruebas y ajustes. Sin pie de texto
@@ -32,6 +36,8 @@ publicidad en Meta, las guías de Envia y el dominio. No son costo de tener el C
 
 Para IA se usa lo que cobró el proveedor y no lo que calcula el CRM: en Anthropic el CRM calcula ~12 % de más
 (informe del primer mes) y la tarjeta del Dashboard toma el mayor de los dos. Incluye lo de pruebas (staging).
+Anthropic y OpenAI van por lo que se **usó** en el mes (se paga por adelantado en recargas, pero se cuenta lo gastado);
+xAI, OpenRouter y Google, por lo que se **compró** en el mes, porque casi no se usan (renglón de arriba).
 
 Meses: los proveedores cobran por día UTC y así se suman; las ventas y los mensajes de Meta se cuentan con el mes
 en hora de Mazatlán.
@@ -61,7 +67,8 @@ El monto de la factura sigue en Meta Business Suite › Facturación y pagos ›
 Desde el 20-nov-2026 (pedido del dueño: «el monto mensual y total del mantenimiento del CRM») el Dashboard muestra
 hasta arriba la tarjeta **Costo del CRM** con la misma lista fija de arriba (mapa del CRM 3.1 › 115–118):
 
-- **Va**: lo que llevan este mes, días UTC. IA = el gasto del mes de la tarjeta Gasto de IA; Meta = lo que reporta
+- **Va**: lo que llevan este mes, días UTC. IA = el gasto del mes de la tarjeta Gasto de IA (sin xAI, OpenRouter ni Google,
+  que suman lo que se compró de crédito en el mes); Meta = lo que reporta
   del mes; Zernio = lo que va cobrado; Railway = el uso de su periodo actual, nunca menos de lo que cuesta el plan
   (US$5 en Hobby, se cobra igual). Railway cobra del 5 al 5: los días 1 a 4 todavía es el periodo del mes anterior.
 - **Cierre estimado**: IA con el promedio de los últimos 7 días (la misma proyección del Historial del gasto de IA),
@@ -80,7 +87,8 @@ vuelve a calcular, porque Railway cierra el 5 y los proveedores tardan en report
 
 **Meses de antes de la tabla:** cargados a mano el 21-nov-2026 con `source = 'manual'` (el worker nunca los toca),
 verificados con las facturas: septiembre US$10.03 (IA 9.18 Anthropic + 0.85 OpenAI; Meta, Railway y Zernio en 0:
-Railway en prueba gratis y el crédito de Zernio cubrió la cuenta) y octubre US$99.97 (IA 41.02, Meta 44.16 = cargo a la
+Railway en prueba gratis y el crédito de Zernio cubrió la cuenta; desde el 27-nov-2026 suma también los US$15.67 de
+crédito de xAI, OpenRouter y Google comprados el 25-sep → **US$25.70**) y octubre US$99.97 (IA 41.02, Meta 44.16 = cargo a la
 tarjeta del 1-nov, Railway 13.74 = factura del periodo 5-oct → 5-nov, Zernio 1.05). Respaldo de antes en las notas. Para corregir un mes: actualizar su fila y
 ponerle `source = 'manual'`.
 

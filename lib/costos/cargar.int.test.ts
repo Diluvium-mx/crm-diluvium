@@ -136,6 +136,7 @@ describe.skipIf(!TEST_DATABASE_URL)("reporte de costos (base real)", () => {
     expect(r.renglones.map((x) => [x.servicio, x.usd])).toEqual([
       ["IA · Anthropic", 0],
       ["IA · OpenAI", 0],
+      ["IA · (xAI, OpenRouter y Google)", 0],
       ["Railway", null],
       ["Zernio", null],
       ["Meta (WhatsApp)", 0],

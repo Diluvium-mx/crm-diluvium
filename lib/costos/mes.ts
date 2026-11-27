@@ -48,6 +48,8 @@ export type ReporteCostos = {
   costoPorVentaMxn: number | null;
   // Promedio del dólar en el mes (Diario Oficial); null = no se pudo leer y todo va en dólares.
   tipoCambio: TipoCambio | null;
+  // El mes todavía no termina (Historial de costos en vivo): el promedio del dólar es «hasta hoy».
+  enCurso: boolean;
   // Nota de una sola vez para ese mes (NOTAS_DEL_MES).
   nota: string | null;
   // Ahorro por contestar desde el celular o WhatsApp Web (docs/meta-whatsapp.md); null = no se pudo calcular.
@@ -84,16 +86,51 @@ export const IA_PARA_QUE: Record<string, string> = {
   openai: "Agente IA (Luna) y audios",
 };
 
+// Modelos de reserva (decisión del dueño 27-nov-2026): xAI, OpenRouter y Google se pagan por adelantado (recargas
+// registradas en el Dashboard, ai_credit_topups) y casi no se usan. Van en UN renglón con lo que se COMPRÓ de crédito
+// en el mes; lo que después se use de esos créditos ya no vuelve a sumar (ya se pagó). Anthropic y OpenAI siguen por
+// lo que se usó cada mes.
+export const IA_RESERVA = ["xai", "openrouter", "google"];
+export type CompraIa = { provider: string; amountUsd: number; toppedUpOn: string };
+export const RESERVA_RENGLON = { servicio: "IA · (xAI, OpenRouter y Google)", paraQue: "Por si fallan Sonnet o Luna" };
+// Por debajo de esto, lo usado de los créditos de reserva se considera «casi sin uso».
+const RESERVA_CASI_SIN_USO_USD = 1;
+
+// PURO: el renglón de los modelos de reserva. `usoUsd` = lo usado de esos créditos desde que empezó el mes (solo para
+// la nota; no suma).
+export function renglonReserva(compras: readonly CompraIa[], mes: Mes, usoUsd: number): Renglon {
+  const delMes = compras.filter((c) => IA_RESERVA.includes(c.provider) && c.toppedUpOn >= mes.desde && c.toppedUpOn <= mes.hasta);
+  const usd = round2(delMes.reduce((s, c) => s + c.amountUsd, 0));
+  if (usd === 0) return { ...RESERVA_RENGLON, usd: 0, nota: "sin compras ese mes" };
+  const dias = [...new Set(delMes.map((c) => c.toppedUpOn))].sort().map((d) => shortDate(new Date(`${d}T12:00:00Z`)));
+  const fechas = dias.length === 1 ? dias[0] : `${dias.slice(0, -1).join(", ")} y ${dias[dias.length - 1]}`;
+  return { ...RESERVA_RENGLON, usd, nota: `créditos comprados el ${fechas}${usoUsd < RESERVA_CASI_SIN_USO_USD ? "; casi sin uso" : ""}` };
+}
+
 // Por proveedor: lo que COBRÓ según su reporte (ai_provider_billing, incluye pruebas). Sin lectura del
-// proveedor (Google no da su cobro por API) se usa lo que registró el CRM y la nota lo dice.
+// proveedor se usa lo que registró el CRM y la nota lo dice. Los modelos de reserva van en un solo renglón con lo
+// que se compró en el mes (renglonReserva).
 export function renglonesIa(input: {
   billing: readonly BillingSnapshot[];
   crmDays: readonly DaySpend[];
   mes: Mes;
+  compras: readonly CompraIa[];
 }): { renglones: Renglon[]; avisos: string[] } {
   const { mes } = input;
   const snaps = new Map(input.billing.filter((b) => b.fetchedAt).map((b) => [b.provider, b]));
-  const otros = [...new Set([...snaps.keys(), ...input.crmDays.map((d) => d.provider)])].filter((p) => !IA_FIJOS.includes(p)).sort();
+  // Lo usado de los créditos de reserva desde que empezó el mes (solo para la nota «casi sin uso»).
+  let usoReserva = 0;
+  for (const p of IA_RESERVA) {
+    const snap = snaps.get(p);
+    if (snap) {
+      for (const [day, v] of Object.entries(snap.days)) if (day >= mes.desde) usoReserva += v.todo;
+    } else {
+      for (const d of input.crmDays) if (d.provider === p && d.day >= mes.desde) usoReserva += d.usd;
+    }
+  }
+  const otros = [...new Set([...snaps.keys(), ...input.crmDays.map((d) => d.provider)])]
+    .filter((p) => !IA_FIJOS.includes(p) && !IA_RESERVA.includes(p))
+    .sort();
   const providers = [...IA_FIJOS, ...otros];
   const renglones: Renglon[] = [];
   const avisos: string[] = [];
@@ -117,6 +154,10 @@ export function renglonesIa(input: {
     if (!IA_FIJOS.includes(provider) && round2(usd) === 0) continue;
     renglones.push({ servicio: `IA · ${providerLabel(provider)}`, paraQue: IA_PARA_QUE[provider] ?? "Agente IA", usd: round2(usd), nota });
   }
+  for (const p of IA_RESERVA) {
+    if (input.billing.find((b) => b.provider === p)?.lastError) avisos.push(`${providerLabel(p)}: la última lectura del cobro falló; revisa el Dashboard.`);
+  }
+  renglones.push(renglonReserva(input.compras, mes, usoReserva));
   return { renglones, avisos };
 }
 
@@ -216,6 +257,7 @@ export function armarReporte(input: {
   ventas: number | null;
   tipoCambio: TipoCambio | null;
   celular?: CelularMes | null;
+  enCurso?: boolean;
 }): ReporteCostos {
   const tc = input.tipoCambio?.mxnPorUsd ?? null;
   const renglones = [...input.ia.renglones, input.railway.renglon, input.zernio.renglon, input.meta].map((r) => ({
@@ -240,6 +282,7 @@ export function armarReporte(input: {
     costoPorVentaUsd: ventas ? round2(totalUsd / ventas) : null,
     costoPorVentaMxn: ventas && totalMxn !== null ? round2(totalMxn / ventas) : null,
     tipoCambio: input.tipoCambio,
+    enCurso: input.enCurso ?? false,
     nota: NOTAS_DEL_MES[input.mes.clave] ?? null,
     celular: input.celular ? { ...input.celular, ahorroMxn: tc === null ? null : round2(input.celular.ahorroUsd * tc) } : null,
     avisos,
