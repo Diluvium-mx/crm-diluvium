@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { asuntoCorreo, htmlCorreo } from "./correo";
+import { asuntoCorreo, htmlCorreo, notaTipoCambio } from "./correo";
 import { type ReporteCostos, mesDe } from "./mes";
 
 const base: ReporteCostos = {
@@ -16,6 +16,7 @@ const base: ReporteCostos = {
   costoPorVentaUsd: 32.49,
   costoPorVentaMxn: 600.98,
   tipoCambio: { mxnPorUsd: 18.4993, dias: 22 },
+  enCurso: false,
   nota: null,
   celular: null,
   avisos: [],
@@ -36,7 +37,7 @@ describe("correo de costos", () => {
     expect(html).toContain("(sin Railway)");
     expect(html).toContain("Ventas del mes: <b>38</b>");
     expect(html).toContain("Costo del CRM por venta: <b>$600.98</b>");
-    expect(html).toContain("Dólar a $18.50 (promedio de octubre, Diario Oficial).");
+    expect(html).toContain("Pesos aproximados con el dólar promedio de octubre ($18.50). El banco cobra con el del día de cada cargo.");
     expect(html).toContain("Diluvium &lt;MX&gt;");
     expect(html).not.toContain("Diluvium <MX>");
     expect(html).not.toContain("Correo automático del CRM");
@@ -49,7 +50,7 @@ describe("correo de costos", () => {
   it("sin tipo de cambio: solo dólares y sin la línea del dólar", () => {
     const html = htmlCorreo({ ...base, tipoCambio: null, totalMxn: null, costoPorVentaMxn: null, renglones: base.renglones.map((x) => ({ ...x, mxn: null })) });
     expect(html).toContain("octubre de 2026: US$1,234.50");
-    expect(html).not.toContain("Dólar a");
+    expect(html).not.toContain("Pesos aproximados");
     expect(html).not.toContain("$22,837.25");
   });
 
@@ -69,5 +70,13 @@ describe("correo de costos", () => {
     expect(html).toContain("Es el primer mes completo del CRM");
     expect(html).toContain("#DE8C11");
     expect(html).toContain("Railway marca un pago pendiente");
+  });
+
+  it("nota del tipo de cambio (texto del dueño): mes cerrado, mes en curso «hasta hoy» y sin tipo de cambio", () => {
+    expect(notaTipoCambio(base)).toBe("Pesos aproximados con el dólar promedio de octubre ($18.50). El banco cobra con el del día de cada cargo.");
+    expect(notaTipoCambio({ ...base, mes: mesDe("2026-11"), enCurso: true })).toBe(
+      "Pesos aproximados con el dólar promedio de noviembre hasta hoy ($18.50). El banco cobra con el del día de cada cargo.",
+    );
+    expect(notaTipoCambio({ ...base, tipoCambio: null })).toBeNull();
   });
 });

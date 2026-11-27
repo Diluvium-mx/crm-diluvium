@@ -76,7 +76,7 @@ export default async function InicioPage({ searchParams }: PageProps<"/inicio">)
     canSeeSpend ? cargarCostoCrm(db, organizationId) : null,
   ]);
   const costo = costoBase
-    ? resumirCostoCrm({ now: new Date(), spend, iaProyeccionUsd: costoBase.iaProyeccionUsd, meta, railway, zernio, guardados: costoBase.guardados })
+    ? resumirCostoCrm({ now: new Date(), spend, iaProyeccionUsd: costoBase.iaProyeccionUsd, meta, railway, zernio, guardados: costoBase.guardados, compras: costoBase.compras })
     : null;
 
   const byStage = new Map(breakdown.porEtapa.map((b) => [b.clave, b.total]));

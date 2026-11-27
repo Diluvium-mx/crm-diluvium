@@ -13,6 +13,7 @@ import { zernioSummary } from "@/lib/dashboard/zernio";
 import { utcDay } from "@/lib/ai/billing/days";
 import { cargarAhorroCelular } from "@/lib/meta-whatsapp/ahorro-celular";
 import { contarVentas } from "./cargar";
+import { cargarComprasReserva } from "./compras-reserva";
 import { htmlCorreo } from "./correo";
 import { renglonesMesCerrado, renglonesMesEnCurso, type RenglonesMes } from "./historial";
 import { type ReporteCostos, armarReporte, mesDe, renglonesIa } from "./mes";
@@ -77,6 +78,7 @@ export async function cargarHistorialCostos(
 
   let renglones: RenglonesMes;
   let cierreUsd: number | null = null;
+  const compras = await cargarComprasReserva(database, org.id);
   if (mes.enCurso) {
     const [spend, railway, zernio, meta, base] = await Promise.all([
       aiSpendSummary(database, org.id, { now }),
@@ -85,13 +87,13 @@ export async function cargarHistorialCostos(
       metaWhatsappSummary(database, org.id, { now }),
       cargarCostoCrm(database, org.id, { now }),
     ]);
-    renglones = renglonesMesEnCurso({ spend, railway, zernio, meta });
-    cierreUsd = resumirCostoCrm({ now, spend, iaProyeccionUsd: base.iaProyeccionUsd, meta, railway, zernio, guardados: base.guardados }).cierreUsd;
+    renglones = renglonesMesEnCurso({ spend, railway, zernio, meta, compras, mes: m });
+    cierreUsd = resumirCostoCrm({ now, spend, iaProyeccionUsd: base.iaProyeccionUsd, meta, railway, zernio, guardados: base.guardados, compras }).cierreUsd;
   } else {
     const fila = cerrados.find((g) => g.month === mes.clave);
     if (!fila) throw new Error(`Sin costo guardado de ${mes.clave}`);
     const [billing, crmDays] = await Promise.all([loadBillingSnapshots(database, org.id), spendByDay(database, org.id, m.desde)]);
-    renglones = renglonesMesCerrado(fila, renglonesIa({ billing, crmDays, mes: m }).renglones);
+    renglones = renglonesMesCerrado(fila, renglonesIa({ billing, crmDays, mes: m, compras }).renglones);
   }
 
   const [ventas, celular, tipoCambio] = await Promise.all([
@@ -109,6 +111,7 @@ export async function cargarHistorialCostos(
     ventas,
     tipoCambio,
     celular: celular ? { mensajes: celular.total.mensajes, ahorroUsd: celular.total.ahorroUsd, cobradosMeta: celular.total.cobradosMeta } : null,
+    enCurso: mes.enCurso,
   });
   return { meses, mes, reporte, html: htmlCorreo(reporte), cierreUsd };
 }

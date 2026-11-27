@@ -2,7 +2,8 @@
 // (lib/costos/correo.ts) tal como llega, para el mes en curso EN VIVO y para cada mes cerrado guardado en
 // crm_cost_months. Aquí van las reglas PURAS de qué renglones lleva cada mes; la carga está en historial-cargar.ts.
 // - Mes cerrado: Railway, Zernio y Meta salen de lo guardado (ya no se pueden volver a leer); la IA va por proveedor
-//   con lo que cobró cada uno si suma lo mismo que lo guardado, y si no, un solo renglón con lo guardado.
+//   con lo que cobró cada uno (y los modelos de reserva con lo que se compró) si suma lo mismo que lo guardado, y si
+//   no, un solo renglón con lo guardado.
 // - Mes en curso: lo que VA de cada servicio, con lo que ya calcularon las tarjetas del Dashboard (igual que el «va»
 //   del Costo del CRM). La nota de Railway y Zernio dice su factura estimada.
 import type { AiSpendSummary } from "@/lib/dashboard/ai-spend";
@@ -11,7 +12,7 @@ import type { MetaWhatsappSummary } from "@/lib/dashboard/meta-whatsapp";
 import type { RailwaySummary } from "@/lib/dashboard/railway";
 import type { ZernioSummary } from "@/lib/dashboard/zernio";
 import { formatUsd } from "@/lib/usd-format";
-import { IA_FIJOS, IA_PARA_QUE, type Renglon } from "./mes";
+import { type CompraIa, IA_FIJOS, IA_PARA_QUE, IA_RESERVA, type Mes, type Renglon, renglonReserva } from "./mes";
 
 export type RenglonesMes = { ia: Renglon[]; railway: Renglon; zernio: Renglon; meta: Renglon };
 
@@ -46,15 +47,21 @@ export function renglonesMesCerrado(fila: MesGuardado, iaPorProveedor: readonly 
 }
 
 // PURO: renglones del mes en curso con lo que VA de cada servicio (null = sin esa tarjeta: no hay lectura).
+// Los modelos de reserva van en un solo renglón con lo que se compró de crédito este mes (lib/costos/mes.ts).
 export function renglonesMesEnCurso(input: {
   spend: AiSpendSummary | null;
   railway: RailwaySummary | null;
   zernio: ZernioSummary | null;
   meta: MetaWhatsappSummary | null;
+  compras: readonly CompraIa[];
+  mes: Mes;
 }): RenglonesMes {
-  const ia: Renglon[] = (input.spend?.providers ?? [])
-    .filter((p) => IA_FIJOS.includes(p.provider) || Math.round(p.monthUsd * 100) !== 0)
+  const providers = input.spend?.providers ?? [];
+  const ia: Renglon[] = providers
+    .filter((p) => !IA_RESERVA.includes(p.provider) && (IA_FIJOS.includes(p.provider) || Math.round(p.monthUsd * 100) !== 0))
     .map((p) => ({ servicio: `IA · ${p.label}`, paraQue: IA_PARA_QUE[p.provider] ?? "Agente IA", usd: round2(p.monthUsd), nota: null }));
+  const usoReserva = providers.filter((p) => IA_RESERVA.includes(p.provider)).reduce((s, p) => s + p.monthUsd, 0);
+  ia.push(renglonReserva(input.compras, input.mes, usoReserva));
 
   const r = input.railway;
   let railway: Renglon = { ...BASE.railway, usd: null, nota: "sin lectura de Railway" };

@@ -33,7 +33,7 @@ describe.skipIf(!TEST_DATABASE_URL)("costo del CRM por mes (base real)", () => {
   }
 
   beforeEach(async () => {
-    await db.execute(d.sql`truncate crm_cost_months, ai_provider_billing, railway_billing, zernio_billing, meta_whatsapp_pricing, meta_whatsapp_pricing_sync, channels, organization cascade`);
+    await db.execute(d.sql`truncate crm_cost_months, ai_provider_billing, ai_credit_topups, railway_billing, zernio_billing, meta_whatsapp_pricing, meta_whatsapp_pricing_sync, channels, organization cascade`);
     await db.insert(s.organization).values({ id: ORG, name: ORG, slug: ORG, createdAt: new Date() });
     await db.insert(s.channels).values({ id: "wa", organizationId: ORG, type: "whatsapp", provider: "zernio", providerAccountId: "wa", displayName: "W" });
     // IA de octubre (y un día de noviembre que no cuenta para octubre).
@@ -115,5 +115,22 @@ describe.skipIf(!TEST_DATABASE_URL)("costo del CRM por mes (base real)", () => {
     ]);
     const base = await costo.cargarCostoCrm(db, ORG, { now: new Date("2026-11-20T12:00:00Z") });
     expect(base.guardados.map((g) => g.month)).toEqual(["2026-09"]);
+  });
+
+  it("la IA del mes incluye lo que se compró de crédito de los modelos de reserva (no lo que se usó de ellos)", async () => {
+    await db.insert(s.aiCreditTopups).values([
+      { id: "t1", organizationId: ORG, provider: "xai", amountUsd: 5, toppedUpOn: "2026-10-25" },
+      { id: "t2", organizationId: ORG, provider: "openrouter", amountUsd: 5, toppedUpOn: "2026-09-25" },
+      { id: "t3", organizationId: ORG, provider: "anthropic", amountUsd: 10, toppedUpOn: "2026-10-03" },
+    ]);
+    await db.insert(s.aiProviderBilling).values({
+      organizationId: ORG,
+      provider: "openrouter",
+      days: { "2026-10-12": { todo: 0.4 } },
+      fetchedAt: DIA3,
+      attemptedAt: DIA3,
+    });
+    await guardar.guardarMesCerrado({ now: DIA3 });
+    expect((await fila("2026-10"))?.iaUsd).toBe(35.5);
   });
 });
