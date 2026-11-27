@@ -47,6 +47,10 @@ PROD y OK ESCRITURA PROD, que se cancela si no toca exactamente 1 fila.
   (avisa por WhatsApp); se le puso nombre en la misma escritura (antes era su número; 1 fila) y lleva la tarjeta de
   paquetería. Respaldo en `~/Documents/Diluvium CRM/notas/tarjeta-manzanillo/`. Se deshace con
   `update contacts set sin_agente_ia = false where id = '7a93d04d-5c42-496c-a7f5-b3b67f959f94'`.
+- **En producción, sin migración** (27-nov-2026): Meta Business (el número de las páginas de Meta), que manda avisos que
+  WhatsApp no deja ver; se le puso nombre en la misma escritura (antes era su número; 1 fila) y lleva la tarjeta de
+  Facebook. Respaldo en `~/Documents/Diluvium CRM/notas/tarjeta-meta-business/`. Se deshace con
+  `update contacts set sin_agente_ia = false where id = '39d5fb8a-8b2e-457c-aa5a-a2071987e357'`.
 - **Regla del dueño (17-nov-2026):** todo chat que no es cliente y lleva tarjeta propia va siempre sin Agente IA.
 
 
