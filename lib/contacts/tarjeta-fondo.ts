@@ -34,6 +34,9 @@ const FONDO_POR_CONTACTO: ReadonlyMap<string, TarjetaFondo> = new Map([
   ["649447c8-8bba-4b8b-8ed1-9b7106ec2554", "paypal"],
   // Facebook: avisos que WhatsApp no deja ver (sin Agente IA desde el 23-nov-2026, marcado en producción con OK).
   ["48751871-9ce0-4edb-8f68-0b98a5ddc08b", "facebook"],
+  // Meta Business (el número de las páginas de Meta): mismo diseño que Facebook (sin Agente IA desde el 27-nov-2026,
+  // marcado en producción con OK).
+  ["39d5fb8a-8b2e-457c-aa5a-a2071987e357", "facebook"],
   // Proveedor de las fundas a la medida (sin Agente IA desde el 29-oct-2026, marcado en producción con OK).
   ["e5aeb75f-9c5c-4673-ae43-1ba54aec9227", "costura"],
   // Contacto con su foto de fondo (sin Agente IA desde el 9-nov-2026, pedido por el dueño).
