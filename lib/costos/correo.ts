@@ -24,6 +24,13 @@ function montos(usd: number | null, mxn: number | null): { principal: string; se
   return { principal: pesos(mxn), secundario: formatUsd(usd) };
 }
 
+// PURO: la línea del tipo de cambio, en texto plano. null = sin tipo de cambio (el aviso del reporte lo explica).
+export function notaTipoCambio(r: Pick<ReporteCostos, "tipoCambio" | "mes" | "enCurso">): string | null {
+  if (!r.tipoCambio) return null;
+  const mes = r.mes.nombre.replace(/ de \d{4}$/, "");
+  return `Pesos aproximados con el dólar promedio de ${mes}${r.enCurso ? " hasta hoy" : ""} (${pesos(r.tipoCambio.mxnPorUsd)}). El banco usa el dólar del día de cobro.`;
+}
+
 export function asuntoCorreo(r: ReporteCostos): string {
   const total = r.totalMxn === null ? formatUsd(r.totalUsd) : `${pesos(r.totalMxn)} (${formatUsd(r.totalUsd)})`;
   return `Costos del CRM · ${r.mes.nombre} · ${total}`;
@@ -35,7 +42,7 @@ export function htmlCorreo(r: ReporteCostos): string {
     .map((x) => {
       const m = montos(x.usd, x.mxn);
       return `<tr>
-  <td style="${celda}"><div style="font-weight:bold;color:#111827;">${esc(x.servicio)}</div><div style="color:${GRIS};font-size:13px;">${esc(x.paraQue)}</div>${
+  <td style="${celda}"><div style="font-weight:bold;color:#111827;">${esc(x.servicio)}</div>${x.paraQue ? `<div style="color:${GRIS};font-size:13px;">${esc(x.paraQue)}</div>` : ""}${
     x.nota ? `<div style="color:${GRIS};font-size:12px;margin-top:2px;">${esc(x.nota)}</div>` : ""
   }</td>
   <td style="${celda}text-align:right;white-space:nowrap;"><div style="color:${x.usd === null ? GRIS : "#111827"};">${m.principal}</div>${
@@ -53,27 +60,20 @@ export function htmlCorreo(r: ReporteCostos): string {
   }</td>
 </tr>`;
 
-  let ventas = "";
-  if (r.ventas !== null) {
-    const porVenta = r.costoPorVentaUsd === null ? null : montos(r.costoPorVentaUsd, r.costoPorVentaMxn);
-    ventas = `<p style="margin:16px 0 0;color:#111827;">Ventas del mes: <b>${r.ventas.toLocaleString("es-MX")}</b>${
-      porVenta ? ` · Costo del CRM por venta: <b>${porVenta.principal}</b>${porVenta.secundario ? ` <span style="color:${GRIS};">(${porVenta.secundario})</span>` : ""}` : ""
-    }</p>`;
-  }
-
   // Ahorro por el celular o WhatsApp Web (no suma al total: es lo que NO se pagó).
   let celular = "";
   if (r.celular) {
     const c = r.celular;
     const ahorro = montos(c.ahorroUsd, c.ahorroMxn);
-    celular = `<p style="margin:6px 0 0;color:#111827;">Celular y WhatsApp Web: <b>${c.mensajes.toLocaleString("es-MX")}</b> mensajes; desde el CRM habrían costado ≈ <b>${ahorro.principal}</b>${
+    celular = `<p style="margin:16px 0 0;color:#111827;">Celular y WhatsApp Web: <b>${c.mensajes.toLocaleString("es-MX")}</b> mensajes; desde el CRM habrían costado ≈ <b>${ahorro.principal}</b>${
       ahorro.secundario ? ` <span style="color:${GRIS};">(${ahorro.secundario})</span>` : ""
     }.${c.cobradosMeta > 0 ? ` <span style="color:${NARANJA};font-weight:bold;">Meta cobró ${c.cobradosMeta.toLocaleString("es-MX")} de ellos.</span>` : ""}</p>`;
   }
 
-  const tipoCambio = r.tipoCambio
-    ? `<p style="margin:6px 0 0;color:${GRIS};font-size:12px;">Dólar a ${pesos(r.tipoCambio.mxnPorUsd)} (promedio de ${esc(r.mes.nombre.replace(/ de \d{4}$/, ""))}, Diario Oficial).</p>`
-    : "";
+  // Texto del dueño (27-nov-2026): los pesos son aproximados porque el banco usa el dólar del día de cada cobro. Va
+  // centrado justo debajo del Total (pedido del dueño).
+  const lineaTc = notaTipoCambio(r);
+  const tipoCambio = lineaTc ? `<p style="margin:4px 0 0;color:${GRIS};font-size:12px;text-align:center;">${esc(lineaTc)}</p>` : "";
 
   const nota = r.nota
     ? `<div style="margin:12px 0 4px;padding:10px 12px;border-left:4px solid ${NAVY};background:#F3F6FA;color:#111827;font-size:14px;">${esc(r.nota)}</div>`
@@ -99,9 +99,8 @@ ${nota}
 ${filas}
 ${total}
 </table>
-${ventas}
-${celular}
 ${tipoCambio}
+${celular}
 ${avisos}
 </div>`;
 }

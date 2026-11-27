@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { asuntoCorreo, htmlCorreo } from "./correo";
+import { asuntoCorreo, htmlCorreo, notaTipoCambio } from "./correo";
 import { type ReporteCostos, mesDe } from "./mes";
 
 const base: ReporteCostos = {
@@ -12,10 +12,8 @@ const base: ReporteCostos = {
   totalUsd: 1234.5,
   totalMxn: 22837.25,
   sinDato: ["Railway"],
-  ventas: 38,
-  costoPorVentaUsd: 32.49,
-  costoPorVentaMxn: 600.98,
   tipoCambio: { mxnPorUsd: 18.4993, dias: 22 },
+  enCurso: false,
   nota: null,
   celular: null,
   avisos: [],
@@ -27,16 +25,16 @@ describe("correo de costos", () => {
     expect(asuntoCorreo({ ...base, totalMxn: null })).toBe("Costos del CRM · octubre de 2026 · US$1,234.50");
   });
 
-  it("pesos grandes y dólares abajo, «sin dato», notas, ventas, tipo de cambio; escapa el HTML; sin texto de pie", () => {
+  it("pesos grandes y dólares abajo, «sin dato», notas, tipo de cambio; sin ventas; escapa el HTML; sin texto de pie", () => {
     const html = htmlCorreo(base);
     expect(html).toContain("$22,837.25");
     expect(html).toContain("US$1,234.50");
     expect(html).toContain("sin dato");
     expect(html).toContain("Railway ya no tiene el periodo de ese mes");
     expect(html).toContain("(sin Railway)");
-    expect(html).toContain("Ventas del mes: <b>38</b>");
-    expect(html).toContain("Costo del CRM por venta: <b>$600.98</b>");
-    expect(html).toContain("Dólar a $18.50 (promedio de octubre, Diario Oficial).");
+    expect(html).not.toContain("Ventas del mes");
+    expect(html).not.toContain("Costo del CRM por venta");
+    expect(html).toContain("Pesos aproximados con el dólar promedio de octubre ($18.50). El banco usa el dólar del día de cobro.");
     expect(html).toContain("Diluvium &lt;MX&gt;");
     expect(html).not.toContain("Diluvium <MX>");
     expect(html).not.toContain("Correo automático del CRM");
@@ -47,9 +45,9 @@ describe("correo de costos", () => {
   });
 
   it("sin tipo de cambio: solo dólares y sin la línea del dólar", () => {
-    const html = htmlCorreo({ ...base, tipoCambio: null, totalMxn: null, costoPorVentaMxn: null, renglones: base.renglones.map((x) => ({ ...x, mxn: null })) });
+    const html = htmlCorreo({ ...base, tipoCambio: null, totalMxn: null, renglones: base.renglones.map((x) => ({ ...x, mxn: null })) });
     expect(html).toContain("octubre de 2026: US$1,234.50");
-    expect(html).not.toContain("Dólar a");
+    expect(html).not.toContain("Pesos aproximados");
     expect(html).not.toContain("$22,837.25");
   });
 
@@ -69,5 +67,26 @@ describe("correo de costos", () => {
     expect(html).toContain("Es el primer mes completo del CRM");
     expect(html).toContain("#DE8C11");
     expect(html).toContain("Railway marca un pago pendiente");
+  });
+
+  it("nota del tipo de cambio (texto del dueño): mes cerrado, mes en curso «hasta hoy» y sin tipo de cambio", () => {
+    expect(notaTipoCambio(base)).toBe("Pesos aproximados con el dólar promedio de octubre ($18.50). El banco usa el dólar del día de cobro.");
+    expect(notaTipoCambio({ ...base, mes: mesDe("2026-11"), enCurso: true })).toBe(
+      "Pesos aproximados con el dólar promedio de noviembre hasta hoy ($18.50). El banco usa el dólar del día de cobro.",
+    );
+    expect(notaTipoCambio({ ...base, tipoCambio: null })).toBeNull();
+  });
+  it("un renglón sin «para qué» (modelos de reserva) no pinta esa línea", () => {
+    const html = htmlCorreo({ ...base, renglones: [{ servicio: "IA · (xAI, OpenRouter y Google)", paraQue: "", usd: 15.67, nota: null, mxn: 269.74 }] });
+    expect(html).toContain("IA · (xAI, OpenRouter y Google)");
+    expect(html).not.toContain('font-size:13px;"></div>');
+  });
+  it("la nota del dólar va centrada justo debajo del Total (antes del celular)", () => {
+    const html = htmlCorreo({ ...base, celular: { mensajes: 1, ahorroUsd: 0.01, ahorroMxn: 0.18, cobradosMeta: 0 } });
+    const tabla = html.indexOf("</table>");
+    const nota = html.indexOf("Pesos aproximados");
+    expect(nota).toBeGreaterThan(tabla);
+    expect(nota).toBeLessThan(html.indexOf("Celular y WhatsApp Web"));
+    expect(html.slice(tabla, nota)).toContain("text-align:center");
   });
 });

@@ -19,7 +19,7 @@ const NOTAS_DEL_MES: Record<string, string> = {
     "Es el primer mes completo del CRM: todavía no hay un mes anterior con qué compararlo, y salió un poco alto por pruebas y ajustes. Desde noviembre el costo ya debe ser más razonable.",
 };
 
-// "2026-10" → del 1 al último día. Los proveedores cobran por día UTC; las ventas y los mensajes de Meta
+// "2026-10" → del 1 al último día. Los proveedores cobran por día UTC; los mensajes de Meta
 // se cuentan con el mes en hora de Mazatlán (lib/costos/cargar.ts).
 export type Mes = { clave: string; desde: string; hasta: string; nombre: string };
 
@@ -42,12 +42,10 @@ export type ReporteCostos = {
   totalMxn: number | null;
   // Servicios que no tuvieron dato: el total va sin ellos.
   sinDato: string[];
-  // Contactos que llegaron a la etapa de venta en el mes (null = no se pudo contar).
-  ventas: number | null;
-  costoPorVentaUsd: number | null;
-  costoPorVentaMxn: number | null;
   // Promedio del dólar en el mes (Diario Oficial); null = no se pudo leer y todo va en dólares.
   tipoCambio: TipoCambio | null;
+  // El mes todavía no termina (Historial de costos en vivo): el promedio del dólar es «hasta hoy».
+  enCurso: boolean;
   // Nota de una sola vez para ese mes (NOTAS_DEL_MES).
   nota: string | null;
   // Ahorro por contestar desde el celular o WhatsApp Web (docs/meta-whatsapp.md); null = no se pudo calcular.
@@ -84,16 +82,40 @@ export const IA_PARA_QUE: Record<string, string> = {
   openai: "Agente IA (Luna) y audios",
 };
 
+// Modelos de reserva (decisión del dueño 27-nov-2026): xAI, OpenRouter y Google se pagan por adelantado (recargas
+// registradas en el Dashboard, ai_credit_topups) y casi no se usan. Van en UN renglón, solo con su nombre y su monto
+// (sin texto debajo ni nota), con lo que se COMPRÓ de crédito en el mes, y solo salen el mes en que se compró: lo que
+// después se use de esos créditos ya no vuelve a sumar (ya se pagó). Anthropic y OpenAI siguen por lo que se usó.
+export const IA_RESERVA = ["xai", "openrouter", "google"];
+export type CompraIa = { provider: string; amountUsd: number; toppedUpOn: string };
+export const RESERVA_SERVICIO = "IA · (xAI, OpenRouter y Google)";
+
+// PURO: lo que se compró de crédito de los modelos de reserva en el mes.
+export function comprasReservaUsd(compras: readonly CompraIa[], mes: Mes): number {
+  const delMes = compras.filter((c) => IA_RESERVA.includes(c.provider) && c.toppedUpOn >= mes.desde && c.toppedUpOn <= mes.hasta);
+  return round2(delMes.reduce((s, c) => s + c.amountUsd, 0));
+}
+
+// PURO: el renglón de los modelos de reserva; null = ese mes no se compró crédito (no sale).
+export function renglonReserva(compras: readonly CompraIa[], mes: Mes): Renglon | null {
+  const usd = comprasReservaUsd(compras, mes);
+  return usd === 0 ? null : { servicio: RESERVA_SERVICIO, paraQue: "", usd, nota: null };
+}
+
 // Por proveedor: lo que COBRÓ según su reporte (ai_provider_billing, incluye pruebas). Sin lectura del
-// proveedor (Google no da su cobro por API) se usa lo que registró el CRM y la nota lo dice.
+// proveedor se usa lo que registró el CRM y la nota lo dice. Los modelos de reserva van en un solo renglón con lo
+// que se compró en el mes, solo si se compró (renglonReserva).
 export function renglonesIa(input: {
   billing: readonly BillingSnapshot[];
   crmDays: readonly DaySpend[];
   mes: Mes;
+  compras: readonly CompraIa[];
 }): { renglones: Renglon[]; avisos: string[] } {
   const { mes } = input;
   const snaps = new Map(input.billing.filter((b) => b.fetchedAt).map((b) => [b.provider, b]));
-  const otros = [...new Set([...snaps.keys(), ...input.crmDays.map((d) => d.provider)])].filter((p) => !IA_FIJOS.includes(p)).sort();
+  const otros = [...new Set([...snaps.keys(), ...input.crmDays.map((d) => d.provider)])]
+    .filter((p) => !IA_FIJOS.includes(p) && !IA_RESERVA.includes(p))
+    .sort();
   const providers = [...IA_FIJOS, ...otros];
   const renglones: Renglon[] = [];
   const avisos: string[] = [];
@@ -117,6 +139,11 @@ export function renglonesIa(input: {
     if (!IA_FIJOS.includes(provider) && round2(usd) === 0) continue;
     renglones.push({ servicio: `IA · ${providerLabel(provider)}`, paraQue: IA_PARA_QUE[provider] ?? "Agente IA", usd: round2(usd), nota });
   }
+  for (const p of IA_RESERVA) {
+    if (input.billing.find((b) => b.provider === p)?.lastError) avisos.push(`${providerLabel(p)}: la última lectura del cobro falló; revisa el Dashboard.`);
+  }
+  const reserva = renglonReserva(input.compras, mes);
+  if (reserva) renglones.push(reserva);
   return { renglones, avisos };
 }
 
@@ -213,9 +240,9 @@ export function armarReporte(input: {
   railway: ReturnType<typeof renglonRailway>;
   zernio: ReturnType<typeof renglonZernio>;
   meta: Renglon;
-  ventas: number | null;
   tipoCambio: TipoCambio | null;
   celular?: CelularMes | null;
+  enCurso?: boolean;
 }): ReporteCostos {
   const tc = input.tipoCambio?.mxnPorUsd ?? null;
   const renglones = [...input.ia.renglones, input.railway.renglon, input.zernio.renglon, input.meta].map((r) => ({
@@ -226,7 +253,6 @@ export function armarReporte(input: {
   // Suma de los renglones en pesos (no total × tipo de cambio) para que cuadre centavo por centavo.
   const totalMxn = tc === null ? null : round2(renglones.reduce((s, r) => s + (r.mxn ?? 0), 0));
   const sinDato = renglones.filter((r) => r.usd === null).map((r) => r.servicio);
-  const ventas = input.ventas;
   const avisos = [...input.ia.avisos, ...input.railway.avisos, ...input.zernio.avisos];
   if (tc === null) avisos.push("No se pudo leer el tipo de cambio del Diario Oficial: los montos van solo en dólares.");
   return {
@@ -236,10 +262,8 @@ export function armarReporte(input: {
     totalUsd,
     totalMxn,
     sinDato,
-    ventas,
-    costoPorVentaUsd: ventas ? round2(totalUsd / ventas) : null,
-    costoPorVentaMxn: ventas && totalMxn !== null ? round2(totalMxn / ventas) : null,
     tipoCambio: input.tipoCambio,
+    enCurso: input.enCurso ?? false,
     nota: NOTAS_DEL_MES[input.mes.clave] ?? null,
     celular: input.celular ? { ...input.celular, ahorroMxn: tc === null ? null : round2(input.celular.ahorroUsd * tc) } : null,
     avisos,

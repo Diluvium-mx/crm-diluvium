@@ -28,27 +28,40 @@ describe("mesAnterior / mesDe", () => {
 });
 
 describe("renglonesIa", () => {
-  it("suma solo los días del mes de lo que COBRÓ cada proveedor; Anthropic y OpenAI siempre; los demás si gastaron", () => {
+  it("suma solo los días del mes de lo que COBRÓ Anthropic y OpenAI; xAI, OpenRouter y Google van en un renglón con lo COMPRADO", () => {
     const { renglones, avisos } = renglonesIa({
       mes: OCT,
       billing: [
         snap("anthropic", { "2026-09-30": { todo: 9 }, "2026-10-01": { todo: 1.25, prod: 1, pruebas: 0.25 }, "2026-10-31": { todo: 2 }, "2026-11-01": { todo: 7 } }),
+        // Lo que se usa de los créditos de reserva ya no suma (ya se pagó al comprarlos).
         snap("xai", { "2026-10-05": { todo: 0.001 } }),
         snap("openrouter", { "2026-10-05": { todo: 0.5 } }),
       ],
       // El CRM calculó de más en Anthropic: no se usa porque hay reporte del proveedor.
       crmDays: [
         { day: "2026-10-01", provider: "anthropic", usd: 5 },
-        { day: "2026-10-02", provider: "google", usd: 0.75 },
+        { day: "2026-10-02", provider: "google", usd: 0.25 },
+      ],
+      compras: [
+        { provider: "xai", amountUsd: 5, toppedUpOn: "2026-10-25" },
+        { provider: "google", amountUsd: 5.67, toppedUpOn: "2026-10-25" },
+        // De otro mes, o de Anthropic/OpenAI: no entran.
+        { provider: "openrouter", amountUsd: 5, toppedUpOn: "2026-09-25" },
+        { provider: "anthropic", amountUsd: 10, toppedUpOn: "2026-10-03" },
       ],
     });
     expect(renglones).toEqual([
       { servicio: "IA · Anthropic", paraQue: "Agente IA (Sonnet)", usd: 3.25, nota: null },
       { servicio: "IA · OpenAI", paraQue: "Agente IA (Luna) y audios", usd: 0, nota: null },
-      { servicio: "IA · Google", paraQue: "Agente IA", usd: 0.75, nota: "calculado por el CRM (el proveedor no da su cobro)" },
-      { servicio: "IA · OpenRouter", paraQue: "Agente IA", usd: 0.5, nota: null },
+      { servicio: "IA · (xAI, OpenRouter y Google)", paraQue: "", usd: 10.67, nota: null },
     ]);
     expect(avisos).toEqual([]);
+  });
+
+  it("modelos de reserva: el mes sin compras de crédito no sale el renglón (aunque se hayan usado)", () => {
+    const billing = [snap("openrouter", { "2026-10-12": { todo: 1.2 } })];
+    const sinCompras = renglonesIa({ mes: OCT, billing, crmDays: [], compras: [{ provider: "xai", amountUsd: 5, toppedUpOn: "2026-09-25" }] });
+    expect(sinCompras.renglones.map((r) => r.servicio)).toEqual(["IA · Anthropic", "IA · OpenAI"]);
   });
 
   it("avisa si la última lectura es de antes del cierre o falló", () => {
@@ -59,6 +72,7 @@ describe("renglonesIa", () => {
         snap("openai", {}, { fetchedAt: null, lastError: "HTTP 500" }),
       ],
       crmDays: [],
+      compras: [],
     });
     expect(avisos).toEqual([
       "Anthropic: el último dato leído es del 20-oct; el monto del mes puede venir incompleto.",
@@ -132,26 +146,22 @@ describe("renglonMeta y armarReporte", () => {
       railway: { renglon: { servicio: "Railway", paraQue: "x", usd: null, nota: "n" }, avisos: [] },
       zernio: { renglon: { servicio: "Zernio", paraQue: "x", usd: 1, nota: null }, avisos: ["z"] },
       meta,
-      ventas: 10,
       tipoCambio: { mxnPorUsd: 18.5, dias: 22 },
     });
     expect(r.totalUsd).toBe(45.92);
     expect(r.sinDato).toEqual(["Railway"]);
-    expect(r.costoPorVentaUsd).toBe(4.59);
     expect(r.avisos).toEqual(["a", "z"]);
     // Pesos por renglón; el total es la suma de los renglones en pesos.
     expect(r.renglones.map((x) => x.mxn)).toEqual([555, null, 18.5, 276.02]);
     expect(r.totalMxn).toBe(849.52);
-    expect(r.costoPorVentaMxn).toBe(84.95);
-    expect(armarReporte({ ...r, ia: { renglones: [], avisos: [] }, railway: { renglon: meta, avisos: [] }, zernio: { renglon: meta, avisos: [] }, meta, ventas: 0 }).costoPorVentaUsd).toBeNull();
+    expect(r).not.toHaveProperty("ventas");
   });
 
   it("sin tipo de cambio: todo en dólares y un aviso", () => {
     const meta = renglonMeta({ marketing: 1, utilidad: 0, servicio: 0 });
     const vacio = { renglon: meta, avisos: [] };
-    const r = armarReporte({ mes: OCT, organizacion: "D", ia: { renglones: [], avisos: [] }, railway: vacio, zernio: vacio, meta, ventas: 3, tipoCambio: null });
+    const r = armarReporte({ mes: OCT, organizacion: "D", ia: { renglones: [], avisos: [] }, railway: vacio, zernio: vacio, meta, tipoCambio: null });
     expect(r.totalMxn).toBeNull();
-    expect(r.costoPorVentaMxn).toBeNull();
     expect(r.renglones.every((x) => x.mxn === null)).toBe(true);
     expect(r.avisos).toEqual(["No se pudo leer el tipo de cambio del Diario Oficial: los montos van solo en dólares."]);
   });
@@ -159,7 +169,7 @@ describe("renglonMeta y armarReporte", () => {
   it("la nota de una sola vez sale solo en el correo de octubre de 2026", () => {
     const meta = renglonMeta({ marketing: 0, utilidad: 0, servicio: 0 });
     const vacio = { renglon: meta, avisos: [] };
-    const base = { organizacion: "D", ia: { renglones: [], avisos: [] }, railway: vacio, zernio: vacio, meta, ventas: 1, tipoCambio: { mxnPorUsd: 18, dias: 1 } };
+    const base = { organizacion: "D", ia: { renglones: [], avisos: [] }, railway: vacio, zernio: vacio, meta, tipoCambio: { mxnPorUsd: 18, dias: 1 } };
     expect(armarReporte({ ...base, mes: OCT }).nota).toMatch(/^Es el primer mes completo del CRM/);
     expect(armarReporte({ ...base, mes: mesDe("2026-11") }).nota).toBeNull();
   });

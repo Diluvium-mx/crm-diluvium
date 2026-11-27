@@ -11,6 +11,8 @@ import { and, asc, eq, lt } from "drizzle-orm";
 import type { db as appDb } from "@/lib/db";
 import { crmCostMonths } from "@/lib/db/schema";
 import { addDays, monthStartUtc, utcDay } from "@/lib/ai/billing/days";
+import { cargarComprasReserva } from "@/lib/costos/compras-reserva";
+import { type CompraIa, IA_RESERVA, comprasReservaUsd, mesDe } from "@/lib/costos/mes";
 import { type AiSpendSummary, loadBillingSnapshots, loadTopupTotals, spendByDay } from "./ai-spend";
 import { buildSpendByDay, firstDay, projectMonth } from "./ai-spend-history";
 import type { MetaWhatsappSummary } from "./meta-whatsapp";
@@ -80,6 +82,9 @@ export function resumirCostoCrm(input: {
   railway: RailwaySummary | null;
   zernio: ZernioSummary | null;
   guardados: readonly MesGuardado[];
+  // Compras de crédito de los modelos de reserva (lib/costos/mes.ts › comprasReservaUsd): suman en el mes en que se
+  // compran y lo que se usa de ellos ya no (27-nov-2026).
+  compras?: readonly CompraIa[];
 }): CostoCrm {
   const { now } = input;
   const month = utcDay(now).slice(0, 7);
@@ -88,8 +93,10 @@ export function resumirCostoCrm(input: {
 
   const ia: Tramo = input.spend
     ? (() => {
-        const va = input.spend.providers.reduce((sum, p) => sum + p.monthUsd, 0);
-        return { va, cierre: Math.max(va, input.iaProyeccionUsd ?? va) };
+        const uso = input.spend.providers.filter((p) => !IA_RESERVA.includes(p.provider)).reduce((sum, p) => sum + p.monthUsd, 0);
+        const compras = comprasReservaUsd(input.compras ?? [], mesDe(month));
+        const va = uso + compras;
+        return { va, cierre: Math.max(va, (input.iaProyeccionUsd ?? uso) + compras) };
       })()
     : { va: null, cierre: null };
   const metaVa = input.meta?.totalUsd ?? null;
@@ -121,14 +128,14 @@ export function resumirCostoCrm(input: {
   };
 }
 
-export type CostoCrmBase = { guardados: MesGuardado[]; iaProyeccionUsd: number | null };
+export type CostoCrmBase = { guardados: MesGuardado[]; iaProyeccionUsd: number | null; compras: CompraIa[] };
 
 // Lo que la tarjeta necesita además de los resúmenes de las otras tarjetas: los meses guardados y la proyección de IA.
 export async function cargarCostoCrm(database: Database, organizationId: string, options: { now?: Date } = {}): Promise<CostoCrmBase> {
   const now = options.now ?? new Date();
   const month = utcDay(now).slice(0, 7);
   const from = [monthStartUtc(now), addDays(utcDay(now), -7)].sort()[0];
-  const [guardados, loads, billing, days] = await Promise.all([
+  const [guardados, loads, billing, days, compras] = await Promise.all([
     database
       .select({
         month: crmCostMonths.month,
@@ -143,8 +150,9 @@ export async function cargarCostoCrm(database: Database, organizationId: string,
     loadTopupTotals(database, organizationId),
     loadBillingSnapshots(database, organizationId),
     spendByDay(database, organizationId, from),
+    cargarComprasReserva(database, organizationId),
   ]);
   const spend = buildSpendByDay(days, billing, now);
   const projection = projectMonth(spend, now, firstDay(spend, loads));
-  return { guardados, iaProyeccionUsd: projection?.projectedUsd ?? null };
+  return { guardados, iaProyeccionUsd: projection?.projectedUsd ?? null, compras };
 }
