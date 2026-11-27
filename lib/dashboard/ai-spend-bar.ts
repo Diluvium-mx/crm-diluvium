@@ -17,21 +17,24 @@ export type SpendBar = {
 };
 
 // null = sin recarga registrada: no hay barra (la tarjeta pide registrar una).
+// Con crédito del plan vigente (27-nov-2026) el saldo comprado bajo no es alerta: el proveedor gasta primero el plan.
 export function spendBar(
-  p: Pick<ProviderSpend, "loadedUsd" | "spentSinceFirstUsd" | "balanceUsd">,
+  p: Pick<ProviderSpend, "loadedUsd" | "spentSinceFirstUsd" | "balanceUsd"> & { plan?: ProviderSpend["plan"] },
   options: { estimated?: boolean } = {},
 ): SpendBar | null {
   if (p.loadedUsd === null) return null;
   const spent = p.spentSinceFirstUsd ?? 0;
   const balance = p.balanceUsd ?? p.loadedUsd - spent;
   const pct = p.loadedUsd > 0 ? (spent / p.loadedUsd) * 100 : 100;
+  const conPlan = (p.plan?.leftUsd ?? 0) > 0;
   const exhausted = pct >= 100 || balance <= 0;
+  if (exhausted && conPlan) return { widthPct: 100, tone: "navy", text: "Sin saldo comprado: se usa el crédito del plan", exhausted: true };
   if (exhausted) return { widthPct: 100, tone: "orange", text: options.estimated === false ? "Sin saldo" : "Sin saldo estimado", exhausted: true };
   // Hacia abajo: nunca dice "100 %" mientras quede saldo.
   const shown = Math.max(0, Math.floor(pct));
   return {
     widthPct: Math.max(0, pct),
-    tone: pct >= SPEND_ALERT_PCT ? "orange" : "navy",
+    tone: pct >= SPEND_ALERT_PCT && !conPlan ? "orange" : "navy",
     text: `${shown} % usado · quedan ${formatUsd(balance)}`,
     exhausted: false,
   };

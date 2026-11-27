@@ -20,17 +20,22 @@ export function isIdleProvider(p: ProviderSpend): boolean {
   return spendBar(p, { estimated: p.source === "estimado" })?.tone !== "orange";
 }
 
+// Lo que el proveedor puede gastar todavía: el saldo comprado más lo que queda del crédito del plan (27-nov-2026).
+function disponible(p: ProviderSpend): number {
+  return Math.max(0, p.balanceUsd ?? 0) + (p.plan?.leftUsd ?? 0);
+}
+
 export function iaTile(spend: AiSpendSummary): TileResumen {
   const value = formatUsd(spend.providers.reduce((sum, p) => sum + p.monthUsd, 0));
   const stale = spend.providers.find((p) => freshness(p).tone === "orange");
   if (stale) return { value, sub: `${stale.label}: ${freshness(stale).text.toLowerCase()}`, tone: "orange" };
   const withBalance = spend.providers
     .filter((p) => !isIdleProvider(p) && p.balanceUsd !== null && spendBar(p, { estimated: p.source === "estimado" }))
-    .sort((a, b) => (a.balanceUsd ?? 0) - (b.balanceUsd ?? 0));
+    .sort((a, b) => disponible(a) - disponible(b));
   const low = withBalance[0];
   if (!low) return { value, sub: "Registra una recarga para ver el saldo", tone: "muted" };
   const tone = spendBar(low, { estimated: low.source === "estimado" })?.tone === "orange" ? "orange" : "muted";
-  return { value, sub: `Saldo más bajo: ${formatUsd(Math.max(0, low.balanceUsd ?? 0))} (${low.label})`, tone };
+  return { value, sub: `Saldo más bajo: ${formatUsd(disponible(low))} (${low.label}${low.plan ? ", con el crédito del plan" : ""})`, tone };
 }
 
 export function metaTile(meta: MetaWhatsappSummary): TileResumen {

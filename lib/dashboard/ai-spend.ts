@@ -9,6 +9,8 @@
 //   espacio Default); "Pruebas" = el resto (en Anthropic, el espacio "Pruebas").
 // - Saldo: xAI y OpenRouter lo dan directo; Anthropic y OpenAI no tienen API del saldo → recargas
 //   registradas − gasto real desde la primera recarga.
+// - Crédito de un plan (27-nov-2026, plan Max de Claude: US$100 al mes para Anthropic; lib/dashboard/ai-plan-credit.ts):
+//   se gasta antes que el saldo comprado, así que lo que cubre NO se descuenta de las recargas; se muestra aparte.
 // - Sin lectura del proveedor (Google, o sin llave de administración): el estimado de siempre,
 //   con el registro del CRM. Detalle: docs/investigacion/gasto-ia-saldo.md.
 import { sql } from "drizzle-orm";
@@ -18,6 +20,7 @@ import { addDays, monthStartUtc, round8, utcDay } from "@/lib/ai/billing/days";
 import { PROVIDER_META } from "@/lib/ai/provider";
 import type { ProviderId } from "@/lib/ai/types";
 import type { BillingDay, BillingDays } from "@/lib/db/schema/ai-billing";
+import { type PlanCredit, type PlanCreditStatus, coveredBetween, planCreditStatus } from "./ai-plan-credit";
 
 type Database = Pick<typeof appDb, "execute">;
 
@@ -44,8 +47,12 @@ export type ProviderSpend = {
   // null = sin recargas registradas ni saldo del proveedor (no hay saldo que mostrar).
   loadedUsd: number | null;
   firstTopupOn: string | null;
+  // Gastado del saldo COMPRADO desde la primera recarga (sin lo que cubrió el crédito del plan).
   spentSinceFirstUsd: number | null;
   balanceUsd: number | null;
+  // Crédito del plan del ciclo en curso (null = el proveedor no tiene plan) y lo que cubrió del gasto del mes.
+  plan: PlanCreditStatus | null;
+  monthPlanUsd: number;
 };
 
 export type TopupRow = { id: string; provider: string; label: string; amountUsd: number; toppedUpOn: string; author: string | null };
@@ -130,6 +137,7 @@ export function summarizeProviders(input: {
   loads: readonly Load[];
   billing?: readonly BillingSnapshot[];
   connected?: readonly string[];
+  plans?: readonly PlanCredit[];
 }): ProviderSpend[] {
   const monthEnd = nextMonthStart(input.monthStart);
   const recentFrom = recentFromDay(input.now);
@@ -145,7 +153,8 @@ export function summarizeProviders(input: {
   return [...seen].sort((a, b) => rank(a) - rank(b)).map((provider) => {
     const load = loadBy.get(provider);
     const snap = billingBy.get(provider);
-    const from = spendFrom(input.monthStart, load ? [load.firstTopupOn] : []);
+    const planDef = input.plans?.find((pl) => pl.provider === provider);
+    const from = spendFrom(input.monthStart, [...(load ? [load.firstTopupOn] : []), ...(planDef ? [planDef.startsOn] : [])]);
     const crmBy = new Map<string, number>();
     for (const d of input.days) if (d.provider === provider && d.day >= from) crmBy.set(d.day, (crmBy.get(d.day) ?? 0) + d.usd);
     const allDays = new Set<string>(crmBy.keys());
@@ -155,9 +164,11 @@ export function summarizeProviders(input: {
     let monthTests = 0;
     let sinceFirst = 0;
     let all = 0;
+    const totalBy = new Map<string, number>();
     for (const day of allDays) {
       const { prod, tests } = splitDay(provider, day, crmBy.get(day) ?? 0, snap?.days[day], recentFrom);
       all += prod + tests;
+      totalBy.set(day, prod + tests);
       if (day >= input.monthStart && day < monthEnd) {
         monthProd += prod;
         monthTests += tests;
@@ -165,6 +176,7 @@ export function summarizeProviders(input: {
       if (load && day >= load.firstTopupOn) sinceFirst += prod + tests;
     }
 
+    const plan = planDef ? planCreditStatus(planDef, totalBy, utcDay(input.now)) : null;
     let loadedUsd: number | null = null;
     let spentSinceFirstUsd: number | null = null;
     let balanceUsd: number | null = null;
@@ -177,8 +189,10 @@ export function summarizeProviders(input: {
     } else if (load) {
       loadedUsd = load.loadedUsd;
       firstTopupOn = load.firstTopupOn;
-      spentSinceFirstUsd = round8(sinceFirst);
-      balanceUsd = estimateBalance(load.loadedUsd, sinceFirst);
+      // Lo que cubrió el crédito del plan no sale de las recargas.
+      const fromPurchased = Math.max(0, sinceFirst - coveredBetween(plan, load.firstTopupOn, "9999-12-31"));
+      spentSinceFirstUsd = round8(fromPurchased);
+      balanceUsd = estimateBalance(load.loadedUsd, fromPurchased);
     }
 
     return {
@@ -194,6 +208,8 @@ export function summarizeProviders(input: {
       firstTopupOn,
       spentSinceFirstUsd,
       balanceUsd,
+      plan,
+      monthPlanUsd: round8(coveredBetween(plan, input.monthStart, monthEnd)),
     };
   });
 }
@@ -221,6 +237,17 @@ export async function loadTopupTotals(database: Database, organizationId: string
     group by provider
   `);
   return loadRows.map((r) => ({ provider: r.provider, loadedUsd: Number(r.loaded), firstTopupOn: r.first }));
+}
+
+// Créditos de planes de suscripción (ai_plan_credits).
+export async function loadPlanCredits(database: Database, organizationId: string): Promise<PlanCredit[]> {
+  const rows = await database.execute<{ provider: string; label: string; monthly: string; renews_day: number; starts_on: string }>(sql`
+    select provider, label, monthly_usd::text as monthly, renews_day, to_char(starts_on, 'YYYY-MM-DD') as starts_on
+    from ai_plan_credits
+    where organization_id = ${organizationId}
+    order by starts_on desc
+  `);
+  return rows.map((r) => ({ provider: r.provider, label: r.label, monthlyUsd: Number(r.monthly), renewsDay: Number(r.renews_day), startsOn: r.starts_on }));
 }
 
 // Última lectura de cada proveedor (ai_provider_billing).
@@ -277,7 +304,8 @@ export async function aiSpendSummary(database: Database, organizationId: string,
   const now = options.now ?? new Date();
   const monthStart = monthStartUtc(now);
   const loads = await loadTopupTotals(database, organizationId);
-  const days = await spendByDay(database, organizationId, spendFrom(monthStart, loads.map((l) => l.firstTopupOn)));
+  const plans = await loadPlanCredits(database, organizationId);
+  const days = await spendByDay(database, organizationId, spendFrom(monthStart, [...loads.map((l) => l.firstTopupOn), ...plans.map((pl) => pl.startsOn)]));
   const billing = await loadBillingSnapshots(database, organizationId);
   const topups = await listTopups(database, organizationId, { limit: 20 });
 
@@ -291,6 +319,7 @@ export async function aiSpendSummary(database: Database, organizationId: string,
       billing,
       // Solo si la variable de la llave EXISTE en el servidor (nunca su valor).
       connected: Object.values(PROVIDER_META).filter((m) => Boolean(process.env[m.envKey])).map((m) => m.id),
+      plans,
     }),
     topups,
   };

@@ -103,3 +103,20 @@ Reglas del Dashboard (`lib/dashboard/ai-spend.ts`):
 - Lo único que puede descuadrar Anthropic y OpenAI son las **recargas registradas** (monto en créditos,
   sin IVA, todas; con recarga automática, cada una). OpenAI tiene la recarga automática encendida (en US$5
   recarga hasta US$10): la del 20-oct-2026 (US$5) no estaba anotada y el saldo salía US$5 abajo.
+
+## Crédito del plan (27-nov-2026)
+
+El plan Max de Claude trae **US$100 al mes de créditos para la API de Anthropic** (el dueño los reclamó el 27-nov-2026
+en la organización del CRM; se renuevan cada día 17 y lo que sobra vence, no se acumula). Pedido del dueño: que se vea
+como **crédito, no como recarga ni gasto propio**, y que se aprecie el saldo.
+
+- Tabla `ai_plan_credits` (migración 0082): proveedor, nombre («Plan Max»), monto por ciclo, día de renovación y día del
+  primer crédito. Se da de alta a mano (no hay pantalla): una fila por organización y proveedor.
+- `lib/dashboard/ai-plan-credit.ts` reparte el gasto diario (días UTC) entre el crédito de cada ciclo: se gasta ANTES
+  que el saldo comprado, así que lo que cubre **no se descuenta de las recargas**. Lo que pasa de US$100 en un ciclo sí
+  sale del saldo comprado.
+- Dashboard › Gasto de IA, en la tarjeta de Anthropic: «Lo pagó el crédito del Plan Max: $X» bajo el gasto del mes,
+  **Saldo comprado** (recargas − lo que no cubrió el plan) y **Crédito del Plan Max** (lo que queda del ciclo, usado de
+  US$100, cuándo vence). La tarjeta chica de IA y la alerta de saldo cuentan lo disponible (saldo comprado + plan).
+- El gasto del mes sigue siendo el uso real de Anthropic (el Historial de costos no cambia).
+- Aproximado por día: Anthropic renueva a media tarde del día 17 y aquí ese día ya cuenta para el ciclo nuevo.

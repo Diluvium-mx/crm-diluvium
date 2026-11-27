@@ -22,6 +22,8 @@ function provider(p: Partial<ProviderSpend>): ProviderSpend {
     firstTopupOn: null,
     spentSinceFirstUsd: null,
     balanceUsd: null,
+    plan: null,
+    monthPlanUsd: 0,
     ...p,
   };
 }

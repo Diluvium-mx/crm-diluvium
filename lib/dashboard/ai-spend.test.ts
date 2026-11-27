@@ -173,3 +173,24 @@ describe("summarizeProviders", () => {
     });
   });
 });
+
+describe("crédito del plan (27-nov-2026)", () => {
+  it("lo que cubre el plan no baja el saldo comprado; se ve aparte con lo que queda", () => {
+    const [anthropic] = summarizeProviders({
+      now: new Date("2026-11-28T18:00:00Z"),
+      monthStart: "2026-11-01",
+      days: [
+        { day: "2026-11-20", provider: "anthropic", usd: 0.4 },
+        { day: "2026-11-27", provider: "anthropic", usd: 0.3 },
+        { day: "2026-11-28", provider: "anthropic", usd: 0.2 },
+      ],
+      loads: [{ provider: "anthropic", loadedUsd: 1, firstTopupOn: "2026-11-01" }],
+      plans: [{ provider: "anthropic", label: "Plan Max", monthlyUsd: 100, renewsDay: 17, startsOn: "2026-11-27" }],
+    }).filter((p) => p.provider === "anthropic");
+    expect(anthropic.monthUsd).toBeCloseTo(0.9);
+    expect(anthropic.monthPlanUsd).toBeCloseTo(0.5);
+    // Solo el 0.4 del 20-nov salió de la recarga.
+    expect(anthropic.balanceUsd).toBe(0.6);
+    expect(anthropic.plan).toMatchObject({ label: "Plan Max", usedUsd: 0.5, leftUsd: 99.5, expiresOn: "2026-12-17" });
+  });
+});

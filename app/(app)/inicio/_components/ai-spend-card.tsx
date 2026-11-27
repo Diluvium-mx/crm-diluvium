@@ -10,7 +10,31 @@ import { formatDollars, formatUsd } from "@/lib/usd-format";
 import { ProgressBar } from "@/components/ui/progress-bar";
 import { InfoNote } from "@/components/ui/info-note";
 import { isIdleProvider } from "@/lib/dashboard/costo-tiles";
+import { shortDate } from "@/lib/dashboard/railway";
 import { AiTopups } from "./ai-topups";
+
+// Crédito del plan (27-nov-2026, plan Max de Claude): no es recarga ni gasto propio; se ve aparte con lo que queda del
+// ciclo y cuándo vence. Lo que cubre no se descuenta del saldo comprado.
+function PlanCredit({ plan }: { plan: NonNullable<ProviderSpend["plan"]> }) {
+  const pct = plan.monthlyUsd > 0 ? (plan.usedUsd / plan.monthlyUsd) * 100 : 100;
+  return (
+    <div className="mt-3 flex flex-col gap-1 border-t pt-2">
+      <span className="text-xs text-muted-foreground">Crédito del {plan.label}</span>
+      <span className="text-2xl font-semibold tabular-nums text-foreground">{formatUsd(plan.leftUsd)}</span>
+      <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
+        <div className="min-w-24 flex-1">
+          <ProgressBar value={Math.min(100, pct)} tone="navy" label={`Crédito del ${plan.label} usado`} />
+        </div>
+        <span className="shrink-0 text-xs font-medium tabular-nums text-foreground">
+          {formatUsd(plan.usedUsd)} usados de {formatUsd(plan.monthlyUsd)}
+        </span>
+      </div>
+      <span className="text-xs text-muted-foreground">
+        Se gasta antes que el saldo; vence el {shortDate(new Date(`${plan.expiresOn}T12:00:00Z`))} y se renueva
+      </span>
+    </div>
+  );
+}
 
 function Balance({ p }: { p: ProviderSpend }) {
   const estimated = p.source === "estimado";
@@ -22,7 +46,7 @@ function Balance({ p }: { p: ProviderSpend }) {
   }
   return (
     <div className="mt-2 flex flex-col gap-1">
-      <span className="text-xs text-muted-foreground">{estimated ? "Saldo estimado" : "Saldo"}</span>
+      <span className="text-xs text-muted-foreground">{estimated ? "Saldo estimado" : p.plan ? "Saldo comprado" : "Saldo"}</span>
       <span className={`text-2xl font-semibold tabular-nums ${bar.tone === "orange" ? "text-brand-orange" : "text-foreground"}`}>
         {formatUsd(Math.max(0, p.balanceUsd ?? 0))}
       </span>
@@ -71,7 +95,13 @@ export function AiSpendCard({ summary, canRegister }: { summary: AiSpendSummary;
               <span className="text-xs tabular-nums text-muted-foreground">
                 En producción: {formatDollars(p.monthProdUsd)} · Pruebas: {formatDollars(p.monthTestsUsd)}
               </span>
+              {p.monthPlanUsd > 0 && (
+                <span className="text-xs tabular-nums text-muted-foreground">
+                  Lo pagó el crédito del {p.plan?.label ?? "plan"}: {formatUsd(p.monthPlanUsd)}
+                </span>
+              )}
               <Balance p={p} />
+              {p.plan && <PlanCredit plan={p.plan} />}
             </div>
           );
         })}
