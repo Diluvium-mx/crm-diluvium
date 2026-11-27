@@ -40,7 +40,6 @@ describe("renglonesIa", () => {
       // El CRM calculó de más en Anthropic: no se usa porque hay reporte del proveedor.
       crmDays: [
         { day: "2026-10-01", provider: "anthropic", usd: 5 },
-        // Uso de reserva: 0.001 + 0.5 + 0.25 < US$1 → «casi sin uso».
         { day: "2026-10-02", provider: "google", usd: 0.25 },
       ],
       compras: [
@@ -54,26 +53,15 @@ describe("renglonesIa", () => {
     expect(renglones).toEqual([
       { servicio: "IA · Anthropic", paraQue: "Agente IA (Sonnet)", usd: 3.25, nota: null },
       { servicio: "IA · OpenAI", paraQue: "Agente IA (Luna) y audios", usd: 0, nota: null },
-      { servicio: "IA · (xAI, OpenRouter y Google)", paraQue: "Por si fallan Sonnet o Luna", usd: 10.67, nota: "créditos comprados el 25-oct; casi sin uso" },
+      { servicio: "IA · (xAI, OpenRouter y Google)", paraQue: "", usd: 10.67, nota: null },
     ]);
     expect(avisos).toEqual([]);
   });
 
-  it("modelos de reserva: sin compras en el mes sale en 0; varias fechas; sin «casi sin uso» si se usó US$1 o más", () => {
-    const base = { mes: OCT, billing: [], crmDays: [] };
-    expect(renglonesIa({ ...base, compras: [] }).renglones.at(-1)).toEqual({
-      servicio: "IA · (xAI, OpenRouter y Google)",
-      paraQue: "Por si fallan Sonnet o Luna",
-      usd: 0,
-      nota: "sin compras ese mes",
-    });
-    const compras = [
-      { provider: "openrouter", amountUsd: 5, toppedUpOn: "2026-10-03" },
-      { provider: "xai", amountUsd: 5, toppedUpOn: "2026-10-20" },
-      { provider: "google", amountUsd: 2, toppedUpOn: "2026-10-20" },
-    ];
-    const usado = renglonesIa({ ...base, billing: [snap("openrouter", { "2026-11-02": { todo: 1.2 } })], compras }).renglones.at(-1);
-    expect(usado).toMatchObject({ usd: 12, nota: "créditos comprados el 3-oct y 20-oct" });
+  it("modelos de reserva: el mes sin compras de crédito no sale el renglón (aunque se hayan usado)", () => {
+    const billing = [snap("openrouter", { "2026-10-12": { todo: 1.2 } })];
+    const sinCompras = renglonesIa({ mes: OCT, billing, crmDays: [], compras: [{ provider: "xai", amountUsd: 5, toppedUpOn: "2026-09-25" }] });
+    expect(sinCompras.renglones.map((r) => r.servicio)).toEqual(["IA · Anthropic", "IA · OpenAI"]);
   });
 
   it("avisa si la última lectura es de antes del cierre o falló", () => {

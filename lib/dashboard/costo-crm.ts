@@ -12,7 +12,7 @@ import type { db as appDb } from "@/lib/db";
 import { crmCostMonths } from "@/lib/db/schema";
 import { addDays, monthStartUtc, utcDay } from "@/lib/ai/billing/days";
 import { cargarComprasReserva } from "@/lib/costos/compras-reserva";
-import { type CompraIa, IA_RESERVA, mesDe, renglonReserva } from "@/lib/costos/mes";
+import { type CompraIa, IA_RESERVA, comprasReservaUsd, mesDe } from "@/lib/costos/mes";
 import { type AiSpendSummary, loadBillingSnapshots, loadTopupTotals, spendByDay } from "./ai-spend";
 import { buildSpendByDay, firstDay, projectMonth } from "./ai-spend-history";
 import type { MetaWhatsappSummary } from "./meta-whatsapp";
@@ -82,7 +82,7 @@ export function resumirCostoCrm(input: {
   railway: RailwaySummary | null;
   zernio: ZernioSummary | null;
   guardados: readonly MesGuardado[];
-  // Compras de crédito de los modelos de reserva (lib/costos/mes.ts › renglonReserva): suman en el mes en que se
+  // Compras de crédito de los modelos de reserva (lib/costos/mes.ts › comprasReservaUsd): suman en el mes en que se
   // compran y lo que se usa de ellos ya no (27-nov-2026).
   compras?: readonly CompraIa[];
 }): CostoCrm {
@@ -94,7 +94,7 @@ export function resumirCostoCrm(input: {
   const ia: Tramo = input.spend
     ? (() => {
         const uso = input.spend.providers.filter((p) => !IA_RESERVA.includes(p.provider)).reduce((sum, p) => sum + p.monthUsd, 0);
-        const compras = renglonReserva(input.compras ?? [], mesDe(month), 0).usd ?? 0;
+        const compras = comprasReservaUsd(input.compras ?? [], mesDe(month));
         const va = uso + compras;
         return { va, cierre: Math.max(va, (input.iaProyeccionUsd ?? uso) + compras) };
       })()

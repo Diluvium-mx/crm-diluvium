@@ -47,7 +47,8 @@ export function renglonesMesCerrado(fila: MesGuardado, iaPorProveedor: readonly 
 }
 
 // PURO: renglones del mes en curso con lo que VA de cada servicio (null = sin esa tarjeta: no hay lectura).
-// Los modelos de reserva van en un solo renglón con lo que se compró de crédito este mes (lib/costos/mes.ts).
+// Los modelos de reserva van en un solo renglón con lo que se compró de crédito este mes, solo si se compró
+// (lib/costos/mes.ts).
 export function renglonesMesEnCurso(input: {
   spend: AiSpendSummary | null;
   railway: RailwaySummary | null;
@@ -60,8 +61,8 @@ export function renglonesMesEnCurso(input: {
   const ia: Renglon[] = providers
     .filter((p) => !IA_RESERVA.includes(p.provider) && (IA_FIJOS.includes(p.provider) || Math.round(p.monthUsd * 100) !== 0))
     .map((p) => ({ servicio: `IA · ${p.label}`, paraQue: IA_PARA_QUE[p.provider] ?? "Agente IA", usd: round2(p.monthUsd), nota: null }));
-  const usoReserva = providers.filter((p) => IA_RESERVA.includes(p.provider)).reduce((s, p) => s + p.monthUsd, 0);
-  ia.push(renglonReserva(input.compras, input.mes, usoReserva));
+  const reserva = renglonReserva(input.compras, input.mes);
+  if (reserva) ia.push(reserva);
 
   const r = input.railway;
   let railway: Renglon = { ...BASE.railway, usd: null, nota: "sin lectura de Railway" };
