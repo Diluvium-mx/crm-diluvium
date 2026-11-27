@@ -9,7 +9,7 @@ el **día 3 de cada mes**, sin pedirlo. Base: el informe del primer mes (Notion 
 |---|---|---|
 | IA · Anthropic | Agente IA (Sonnet) | Lo que **cobró** Anthropic (`ai_provider_billing`, lo lee el worker cada 5 min) |
 | IA · OpenAI | Agente IA (Luna) y notas de voz | Lo que **cobró** OpenAI (igual) |
-| IA · (xAI, OpenRouter y Google) | Modelos de reserva («Por si fallan Sonnet o Luna») | Un solo renglón con lo que se **compró** de crédito en el mes (recargas registradas en Gasto de IA, `ai_credit_topups`). Lo que después se usa de esos créditos ya no suma: ya se pagó (decisión del dueño 27-nov-2026). Sin compras: «sin compras ese mes» |
+| IA · (xAI, OpenRouter y Google) | Modelos de reserva | Un solo renglón, sin texto debajo ni nota, con lo que se **compró** de crédito en el mes (recargas registradas en Gasto de IA, `ai_credit_topups`). **Solo sale el mes en que se compró**; lo que después se usa de esos créditos ya no suma: ya se pagó (decisión del dueño 27-nov-2026) |
 | Railway | Servidores del CRM | `railway_billing` (docs/railway-costos.md). Su periodo va **del 5 al 5**: el reporte de un mes lleva el periodo que empieza ese mes, y como el día 3 aún no cierra sale la **factura estimada** (plan + uso proyectado al corte) |
 | Zernio | Conecta WhatsApp e Instagram | El mes anterior de Zernio (`zernio_billing`, docs/zernio-costos.md); el día 3 ya está cerrado |
 | Meta (WhatsApp) | Plantillas y mensajes cobrados | Lo que **reporta Meta** del mes (días UTC, sin IVA; docs/meta-whatsapp.md). Sin esa lectura, el **estimado del CRM** (abajo) |
@@ -23,8 +23,8 @@ el total dice que va sin él.
 158, sin llave ni registro; la de Banxico pide token): `lib/costos/tipo-cambio.ts`. Los pesos son **aproximados**: el
 banco cobra cada cargo con el dólar de ese día (y puede sumar comisión), y el dólar se movió mucho (promedio de
 septiembre 17.21, octubre 18.40, 19.70 el 26-nov-2026). Por eso la línea de abajo dice, con el texto del dueño
-(27-nov-2026): **«Pesos aproximados con el dólar promedio de octubre ($18.40). El banco cobra con el del día de cada
-cargo.»** (en el mes en curso: «promedio de noviembre hasta hoy»). Lo exacto en pesos solo está en el estado de cuenta.
+(27-nov-2026): **«Pesos aproximados con el dólar promedio de octubre ($18.40). El banco usa el dólar del día de
+cobro.»** (en el mes en curso: «promedio de noviembre hasta hoy»). Lo exacto en pesos solo está en el estado de cuenta.
 Si el Diario Oficial no responde, el correo sale igual, solo en dólares, con un aviso.
 
 **Nota de una sola vez:** `NOTAS_DEL_MES` en `lib/costos/mes.ts`. Octubre de 2026 (correo del 3-nov) explica que es el

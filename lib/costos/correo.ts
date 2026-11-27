@@ -28,7 +28,7 @@ function montos(usd: number | null, mxn: number | null): { principal: string; se
 export function notaTipoCambio(r: Pick<ReporteCostos, "tipoCambio" | "mes" | "enCurso">): string | null {
   if (!r.tipoCambio) return null;
   const mes = r.mes.nombre.replace(/ de \d{4}$/, "");
-  return `Pesos aproximados con el dólar promedio de ${mes}${r.enCurso ? " hasta hoy" : ""} (${pesos(r.tipoCambio.mxnPorUsd)}). El banco cobra con el del día de cada cargo.`;
+  return `Pesos aproximados con el dólar promedio de ${mes}${r.enCurso ? " hasta hoy" : ""} (${pesos(r.tipoCambio.mxnPorUsd)}). El banco usa el dólar del día de cobro.`;
 }
 
 export function asuntoCorreo(r: ReporteCostos): string {
@@ -42,7 +42,7 @@ export function htmlCorreo(r: ReporteCostos): string {
     .map((x) => {
       const m = montos(x.usd, x.mxn);
       return `<tr>
-  <td style="${celda}"><div style="font-weight:bold;color:#111827;">${esc(x.servicio)}</div><div style="color:${GRIS};font-size:13px;">${esc(x.paraQue)}</div>${
+  <td style="${celda}"><div style="font-weight:bold;color:#111827;">${esc(x.servicio)}</div>${x.paraQue ? `<div style="color:${GRIS};font-size:13px;">${esc(x.paraQue)}</div>` : ""}${
     x.nota ? `<div style="color:${GRIS};font-size:12px;margin-top:2px;">${esc(x.nota)}</div>` : ""
   }</td>
   <td style="${celda}text-align:right;white-space:nowrap;"><div style="color:${x.usd === null ? GRIS : "#111827"};">${m.principal}</div>${
@@ -78,7 +78,7 @@ export function htmlCorreo(r: ReporteCostos): string {
     }.${c.cobradosMeta > 0 ? ` <span style="color:${NARANJA};font-weight:bold;">Meta cobró ${c.cobradosMeta.toLocaleString("es-MX")} de ellos.</span>` : ""}</p>`;
   }
 
-  // Texto del dueño (27-nov-2026): los pesos son aproximados porque el banco cobra con el dólar del día de cada cargo.
+  // Texto del dueño (27-nov-2026): los pesos son aproximados porque el banco usa el dólar del día de cada cobro.
   const lineaTc = notaTipoCambio(r);
   const tipoCambio = lineaTc ? `<p style="margin:6px 0 0;color:${GRIS};font-size:12px;">${esc(lineaTc)}</p>` : "";
 

@@ -87,29 +87,28 @@ export const IA_PARA_QUE: Record<string, string> = {
 };
 
 // Modelos de reserva (decisión del dueño 27-nov-2026): xAI, OpenRouter y Google se pagan por adelantado (recargas
-// registradas en el Dashboard, ai_credit_topups) y casi no se usan. Van en UN renglón con lo que se COMPRÓ de crédito
-// en el mes; lo que después se use de esos créditos ya no vuelve a sumar (ya se pagó). Anthropic y OpenAI siguen por
-// lo que se usó cada mes.
+// registradas en el Dashboard, ai_credit_topups) y casi no se usan. Van en UN renglón, solo con su nombre y su monto
+// (sin texto debajo ni nota), con lo que se COMPRÓ de crédito en el mes, y solo salen el mes en que se compró: lo que
+// después se use de esos créditos ya no vuelve a sumar (ya se pagó). Anthropic y OpenAI siguen por lo que se usó.
 export const IA_RESERVA = ["xai", "openrouter", "google"];
 export type CompraIa = { provider: string; amountUsd: number; toppedUpOn: string };
-export const RESERVA_RENGLON = { servicio: "IA · (xAI, OpenRouter y Google)", paraQue: "Por si fallan Sonnet o Luna" };
-// Por debajo de esto, lo usado de los créditos de reserva se considera «casi sin uso».
-const RESERVA_CASI_SIN_USO_USD = 1;
+export const RESERVA_SERVICIO = "IA · (xAI, OpenRouter y Google)";
 
-// PURO: el renglón de los modelos de reserva. `usoUsd` = lo usado de esos créditos desde que empezó el mes (solo para
-// la nota; no suma).
-export function renglonReserva(compras: readonly CompraIa[], mes: Mes, usoUsd: number): Renglon {
+// PURO: lo que se compró de crédito de los modelos de reserva en el mes.
+export function comprasReservaUsd(compras: readonly CompraIa[], mes: Mes): number {
   const delMes = compras.filter((c) => IA_RESERVA.includes(c.provider) && c.toppedUpOn >= mes.desde && c.toppedUpOn <= mes.hasta);
-  const usd = round2(delMes.reduce((s, c) => s + c.amountUsd, 0));
-  if (usd === 0) return { ...RESERVA_RENGLON, usd: 0, nota: "sin compras ese mes" };
-  const dias = [...new Set(delMes.map((c) => c.toppedUpOn))].sort().map((d) => shortDate(new Date(`${d}T12:00:00Z`)));
-  const fechas = dias.length === 1 ? dias[0] : `${dias.slice(0, -1).join(", ")} y ${dias[dias.length - 1]}`;
-  return { ...RESERVA_RENGLON, usd, nota: `créditos comprados el ${fechas}${usoUsd < RESERVA_CASI_SIN_USO_USD ? "; casi sin uso" : ""}` };
+  return round2(delMes.reduce((s, c) => s + c.amountUsd, 0));
+}
+
+// PURO: el renglón de los modelos de reserva; null = ese mes no se compró crédito (no sale).
+export function renglonReserva(compras: readonly CompraIa[], mes: Mes): Renglon | null {
+  const usd = comprasReservaUsd(compras, mes);
+  return usd === 0 ? null : { servicio: RESERVA_SERVICIO, paraQue: "", usd, nota: null };
 }
 
 // Por proveedor: lo que COBRÓ según su reporte (ai_provider_billing, incluye pruebas). Sin lectura del
 // proveedor se usa lo que registró el CRM y la nota lo dice. Los modelos de reserva van en un solo renglón con lo
-// que se compró en el mes (renglonReserva).
+// que se compró en el mes, solo si se compró (renglonReserva).
 export function renglonesIa(input: {
   billing: readonly BillingSnapshot[];
   crmDays: readonly DaySpend[];
@@ -118,16 +117,6 @@ export function renglonesIa(input: {
 }): { renglones: Renglon[]; avisos: string[] } {
   const { mes } = input;
   const snaps = new Map(input.billing.filter((b) => b.fetchedAt).map((b) => [b.provider, b]));
-  // Lo usado de los créditos de reserva desde que empezó el mes (solo para la nota «casi sin uso»).
-  let usoReserva = 0;
-  for (const p of IA_RESERVA) {
-    const snap = snaps.get(p);
-    if (snap) {
-      for (const [day, v] of Object.entries(snap.days)) if (day >= mes.desde) usoReserva += v.todo;
-    } else {
-      for (const d of input.crmDays) if (d.provider === p && d.day >= mes.desde) usoReserva += d.usd;
-    }
-  }
   const otros = [...new Set([...snaps.keys(), ...input.crmDays.map((d) => d.provider)])]
     .filter((p) => !IA_FIJOS.includes(p) && !IA_RESERVA.includes(p))
     .sort();
@@ -157,7 +146,8 @@ export function renglonesIa(input: {
   for (const p of IA_RESERVA) {
     if (input.billing.find((b) => b.provider === p)?.lastError) avisos.push(`${providerLabel(p)}: la última lectura del cobro falló; revisa el Dashboard.`);
   }
-  renglones.push(renglonReserva(input.compras, mes, usoReserva));
+  const reserva = renglonReserva(input.compras, mes);
+  if (reserva) renglones.push(reserva);
   return { renglones, avisos };
 }
 

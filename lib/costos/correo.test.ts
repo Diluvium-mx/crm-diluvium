@@ -37,7 +37,7 @@ describe("correo de costos", () => {
     expect(html).toContain("(sin Railway)");
     expect(html).toContain("Ventas del mes: <b>38</b>");
     expect(html).toContain("Costo del CRM por venta: <b>$600.98</b>");
-    expect(html).toContain("Pesos aproximados con el dólar promedio de octubre ($18.50). El banco cobra con el del día de cada cargo.");
+    expect(html).toContain("Pesos aproximados con el dólar promedio de octubre ($18.50). El banco usa el dólar del día de cobro.");
     expect(html).toContain("Diluvium &lt;MX&gt;");
     expect(html).not.toContain("Diluvium <MX>");
     expect(html).not.toContain("Correo automático del CRM");
@@ -73,10 +73,15 @@ describe("correo de costos", () => {
   });
 
   it("nota del tipo de cambio (texto del dueño): mes cerrado, mes en curso «hasta hoy» y sin tipo de cambio", () => {
-    expect(notaTipoCambio(base)).toBe("Pesos aproximados con el dólar promedio de octubre ($18.50). El banco cobra con el del día de cada cargo.");
+    expect(notaTipoCambio(base)).toBe("Pesos aproximados con el dólar promedio de octubre ($18.50). El banco usa el dólar del día de cobro.");
     expect(notaTipoCambio({ ...base, mes: mesDe("2026-11"), enCurso: true })).toBe(
-      "Pesos aproximados con el dólar promedio de noviembre hasta hoy ($18.50). El banco cobra con el del día de cada cargo.",
+      "Pesos aproximados con el dólar promedio de noviembre hasta hoy ($18.50). El banco usa el dólar del día de cobro.",
     );
     expect(notaTipoCambio({ ...base, tipoCambio: null })).toBeNull();
+  });
+  it("un renglón sin «para qué» (modelos de reserva) no pinta esa línea", () => {
+    const html = htmlCorreo({ ...base, renglones: [{ servicio: "IA · (xAI, OpenRouter y Google)", paraQue: "", usd: 15.67, nota: null, mxn: 269.74 }] });
+    expect(html).toContain("IA · (xAI, OpenRouter y Google)");
+    expect(html).not.toContain('font-size:13px;"></div>');
   });
 });
