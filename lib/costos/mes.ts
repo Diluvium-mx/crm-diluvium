@@ -19,7 +19,7 @@ const NOTAS_DEL_MES: Record<string, string> = {
     "Es el primer mes completo del CRM: todavía no hay un mes anterior con qué compararlo, y salió un poco alto por pruebas y ajustes. Desde noviembre el costo ya debe ser más razonable.",
 };
 
-// "2026-10" → del 1 al último día. Los proveedores cobran por día UTC; las ventas y los mensajes de Meta
+// "2026-10" → del 1 al último día. Los proveedores cobran por día UTC; los mensajes de Meta
 // se cuentan con el mes en hora de Mazatlán (lib/costos/cargar.ts).
 export type Mes = { clave: string; desde: string; hasta: string; nombre: string };
 
@@ -42,10 +42,6 @@ export type ReporteCostos = {
   totalMxn: number | null;
   // Servicios que no tuvieron dato: el total va sin ellos.
   sinDato: string[];
-  // Contactos que llegaron a la etapa de venta en el mes (null = no se pudo contar).
-  ventas: number | null;
-  costoPorVentaUsd: number | null;
-  costoPorVentaMxn: number | null;
   // Promedio del dólar en el mes (Diario Oficial); null = no se pudo leer y todo va en dólares.
   tipoCambio: TipoCambio | null;
   // El mes todavía no termina (Historial de costos en vivo): el promedio del dólar es «hasta hoy».
@@ -244,7 +240,6 @@ export function armarReporte(input: {
   railway: ReturnType<typeof renglonRailway>;
   zernio: ReturnType<typeof renglonZernio>;
   meta: Renglon;
-  ventas: number | null;
   tipoCambio: TipoCambio | null;
   celular?: CelularMes | null;
   enCurso?: boolean;
@@ -258,7 +253,6 @@ export function armarReporte(input: {
   // Suma de los renglones en pesos (no total × tipo de cambio) para que cuadre centavo por centavo.
   const totalMxn = tc === null ? null : round2(renglones.reduce((s, r) => s + (r.mxn ?? 0), 0));
   const sinDato = renglones.filter((r) => r.usd === null).map((r) => r.servicio);
-  const ventas = input.ventas;
   const avisos = [...input.ia.avisos, ...input.railway.avisos, ...input.zernio.avisos];
   if (tc === null) avisos.push("No se pudo leer el tipo de cambio del Diario Oficial: los montos van solo en dólares.");
   return {
@@ -268,9 +262,6 @@ export function armarReporte(input: {
     totalUsd,
     totalMxn,
     sinDato,
-    ventas,
-    costoPorVentaUsd: ventas ? round2(totalUsd / ventas) : null,
-    costoPorVentaMxn: ventas && totalMxn !== null ? round2(totalMxn / ventas) : null,
     tipoCambio: input.tipoCambio,
     enCurso: input.enCurso ?? false,
     nota: NOTAS_DEL_MES[input.mes.clave] ?? null,

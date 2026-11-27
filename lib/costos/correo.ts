@@ -60,27 +60,20 @@ export function htmlCorreo(r: ReporteCostos): string {
   }</td>
 </tr>`;
 
-  let ventas = "";
-  if (r.ventas !== null) {
-    const porVenta = r.costoPorVentaUsd === null ? null : montos(r.costoPorVentaUsd, r.costoPorVentaMxn);
-    ventas = `<p style="margin:16px 0 0;color:#111827;">Ventas del mes: <b>${r.ventas.toLocaleString("es-MX")}</b>${
-      porVenta ? ` · Costo del CRM por venta: <b>${porVenta.principal}</b>${porVenta.secundario ? ` <span style="color:${GRIS};">(${porVenta.secundario})</span>` : ""}` : ""
-    }</p>`;
-  }
-
   // Ahorro por el celular o WhatsApp Web (no suma al total: es lo que NO se pagó).
   let celular = "";
   if (r.celular) {
     const c = r.celular;
     const ahorro = montos(c.ahorroUsd, c.ahorroMxn);
-    celular = `<p style="margin:6px 0 0;color:#111827;">Celular y WhatsApp Web: <b>${c.mensajes.toLocaleString("es-MX")}</b> mensajes; desde el CRM habrían costado ≈ <b>${ahorro.principal}</b>${
+    celular = `<p style="margin:16px 0 0;color:#111827;">Celular y WhatsApp Web: <b>${c.mensajes.toLocaleString("es-MX")}</b> mensajes; desde el CRM habrían costado ≈ <b>${ahorro.principal}</b>${
       ahorro.secundario ? ` <span style="color:${GRIS};">(${ahorro.secundario})</span>` : ""
     }.${c.cobradosMeta > 0 ? ` <span style="color:${NARANJA};font-weight:bold;">Meta cobró ${c.cobradosMeta.toLocaleString("es-MX")} de ellos.</span>` : ""}</p>`;
   }
 
-  // Texto del dueño (27-nov-2026): los pesos son aproximados porque el banco usa el dólar del día de cada cobro.
+  // Texto del dueño (27-nov-2026): los pesos son aproximados porque el banco usa el dólar del día de cada cobro. Va
+  // centrado justo debajo del Total (pedido del dueño).
   const lineaTc = notaTipoCambio(r);
-  const tipoCambio = lineaTc ? `<p style="margin:6px 0 0;color:${GRIS};font-size:12px;">${esc(lineaTc)}</p>` : "";
+  const tipoCambio = lineaTc ? `<p style="margin:4px 0 0;color:${GRIS};font-size:12px;text-align:center;">${esc(lineaTc)}</p>` : "";
 
   const nota = r.nota
     ? `<div style="margin:12px 0 4px;padding:10px 12px;border-left:4px solid ${NAVY};background:#F3F6FA;color:#111827;font-size:14px;">${esc(r.nota)}</div>`
@@ -106,9 +99,8 @@ ${nota}
 ${filas}
 ${total}
 </table>
-${ventas}
-${celular}
 ${tipoCambio}
+${celular}
 ${avisos}
 </div>`;
 }
