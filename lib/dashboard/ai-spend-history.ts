@@ -16,12 +16,14 @@ import {
   type TopupRow,
   listTopups,
   loadBillingSnapshots,
+  loadPlanCredits,
   loadTopupTotals,
   providerLabel,
   recentFromDay,
   spendByDay,
   splitDay,
 } from "./ai-spend";
+import { type PlanCredit, type PlanCreditStatus, coveredBetween, planCreditStatus } from "./ai-plan-credit";
 import type { DateRange } from "./range";
 
 type Database = Pick<typeof appDb, "execute">;
@@ -200,8 +202,16 @@ export function monthlyRows(input: {
   topups: readonly TopupRow[];
   firstDataDay: string | null;
   today: string;
+  // Créditos de planes (27-nov-2026): lo que cubren no sale de las recargas.
+  plans?: readonly PlanCredit[];
 }): MonthRow[] {
   if (!input.firstDataDay) return [];
+  const planStatus = new Map<string, PlanCreditStatus | null>();
+  for (const plan of input.plans ?? []) {
+    const byDay = new Map<string, number>();
+    for (const day of input.spend.keys()) byDay.set(day, sumDays(input.spend, day, day, plan.provider).total);
+    planStatus.set(plan.provider, planCreditStatus(plan, byDay, input.today));
+  }
   const rows: MonthRow[] = [];
   const current = input.today.slice(0, 7);
   for (let month = input.firstDataDay.slice(0, 7); month <= current; month = nextMonth(month)) {
@@ -215,7 +225,8 @@ export function monthlyRows(input: {
     for (const load of input.loads) {
       if (load.firstTopupOn > end) continue;
       const loaded = input.topups.filter((t) => t.provider === load.provider && t.toppedUpOn <= end).reduce((s, t) => s + t.amountUsd, 0);
-      const spent = sumDays(input.spend, load.firstTopupOn, end, load.provider).total;
+      const covered = coveredBetween(planStatus.get(load.provider) ?? null, load.firstTopupOn, addDays(end, 1));
+      const spent = sumDays(input.spend, load.firstTopupOn, end, load.provider).total - covered;
       balance = (balance ?? 0) + loaded - spent;
     }
     rows.push({
@@ -269,10 +280,11 @@ export async function aiSpendHistory(
 ): Promise<AiSpendHistory> {
   const now = options.now ?? new Date();
   const today = utcDay(now);
-  const [loads, billing, allTopups] = await Promise.all([
+  const [loads, billing, allTopups, plans] = await Promise.all([
     loadTopupTotals(database, organizationId),
     loadBillingSnapshots(database, organizationId),
     listTopups(database, organizationId),
+    loadPlanCredits(database, organizationId),
   ]);
   const prev = previousPeriod(range, today);
   // Desde lo más antiguo que haga falta: el periodo anterior, la primera recarga o el primer mes con datos.
@@ -314,7 +326,7 @@ export async function aiSpendHistory(
     byProvider,
     byModel: usage.byModel,
     byTask: usage.byTask,
-    months: monthlyRows({ spend, loads, topups: allTopups, firstDataDay, today }),
+    months: monthlyRows({ spend, loads, topups: allTopups, firstDataDay, today, plans }),
     firstDataDay,
   };
 }

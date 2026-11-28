@@ -19,6 +19,8 @@ function provider(p: Partial<ProviderSpend>): ProviderSpend {
     firstTopupOn: null,
     spentSinceFirstUsd: null,
     balanceUsd: null,
+    plan: null,
+    monthPlanUsd: 0,
     ...p,
   };
 }
@@ -76,5 +78,15 @@ describe("metaTile / railwayTile / zernioTile", () => {
   it("Zernio: factura estimada y mensajes contra los 10,000 gratis", () => {
     expect(zernioTile(zernio)).toEqual({ value: "≈ US$1.20", sub: "9,800 de 10,000 gratis", tone: "muted" });
     expect(zernioTile({ ...zernio, sentCount: 14236 }).sub).toBe("Pasó los 10,000 mensajes gratis");
+  });
+});
+
+describe("crédito del plan en la tarjeta chica de IA (27-nov-2026)", () => {
+  it("el saldo comprado casi en cero no es alerta si queda crédito del plan; cuenta el disponible", () => {
+    const plan = { label: "Plan Max", monthlyUsd: 100, usedUsd: 0.5, leftUsd: 99.5, expiresOn: "2026-12-17", coveredByDay: new Map<string, number>() };
+    const conPlan = provider({ monthUsd: 7.5, loadedUsd: 45, spentSinceFirstUsd: 44.85, balanceUsd: 0.15, plan, monthPlanUsd: 0.5 });
+    expect(iaTile(ai([conPlan, openai]))).toEqual({ value: "US$13.80", sub: "Saldo más bajo: US$8.90 (OpenAI)", tone: "muted" });
+    expect(iaTile(ai([conPlan])).sub).toBe("Saldo más bajo: US$99.65 (Anthropic, con el crédito del plan)");
+    expect(iaTile(ai([conPlan])).tone).toBe("muted");
   });
 });
